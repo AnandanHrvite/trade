@@ -257,7 +257,11 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
       const _hs = bbRsiStrategy.hardStop(_favWorstPts);
       if (_hs.hit) {
         position.slSource = "Stop Loss";
-        exitPrice  = parseFloat((position.entryPrice - _hs.stop * (position.side === "CE" ? 1 : -1)).toFixed(2));
+        const _stopLvl = parseFloat((position.entryPrice - _hs.stop * (position.side === "CE" ? 1 : -1)).toFixed(2));
+        // Gap-through: if the bar OPENED beyond the stop, the real fill is at the
+        // open (worse), not the stop level — don't understate loss on gap bars.
+        const _openBeyond = position.side === "CE" ? (candle.open < _stopLvl) : (candle.open > _stopLvl);
+        exitPrice  = _openBeyond ? candle.open : _stopLvl;
         exitReason = `SL (${_hs.stop}pts)`;
       }
 
@@ -310,6 +314,10 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
       }
 
       if (exitReason) {
+        // Exit-side slippage — options fill worse than the spot-implied exit.
+        // Applied on every exit fill (was previously entry-only despite the
+        // BB_RSI_SLIPPAGE_PTS comment claiming "entry & SL exit").
+        if (SLIPPAGE_PTS > 0) exitPrice = parseFloat((exitPrice - SLIPPAGE_PTS * (position.side === "CE" ? 1 : -1)).toFixed(2));
         const spotPnlPts = (exitPrice - position.entryPrice) * (position.side === "CE" ? 1 : -1);
         let pnl;
         if (OPTION_SIM) {

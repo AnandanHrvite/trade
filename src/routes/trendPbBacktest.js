@@ -174,8 +174,9 @@ function runTrendPbBacktest(allCandles, { baseline = false } = {}) {
         if (MAX_TRADE_LOSS > 0 && (advPrem - pos.optionEntryLtp) * LOT_SIZE <= -MAX_TRADE_LOSS) {
           closeAndPush(pos, advSpot, c.time, `Max trade loss (₹${MAX_TRADE_LOSS})`); position = null; continue;
         }
-        if (pos.side === "CE" && c.low <= pos.slSpot)  { closeAndPush(pos, pos.slSpot, c.time, `Stop hit (${pos.slSpot}${pos.trailArmed ? " · trail" : pos.breakevenArmed ? " · BE" : ""})`); position = null; continue; }
-        if (pos.side === "PE" && c.high >= pos.slSpot) { closeAndPush(pos, pos.slSpot, c.time, `Stop hit (${pos.slSpot}${pos.trailArmed ? " · trail" : pos.breakevenArmed ? " · BE" : ""})`); position = null; continue; }
+        // Gap-through: fill at the open if the bar gapped past the stop (worse).
+        if (pos.side === "CE" && c.low <= pos.slSpot)  { closeAndPush(pos, c.open < pos.slSpot ? c.open : pos.slSpot, c.time, `Stop hit (${pos.slSpot}${pos.trailArmed ? " · trail" : pos.breakevenArmed ? " · BE" : ""})`); position = null; continue; }
+        if (pos.side === "PE" && c.high >= pos.slSpot) { closeAndPush(pos, c.open > pos.slSpot ? c.open : pos.slSpot, c.time, `Stop hit (${pos.slSpot}${pos.trailArmed ? " · trail" : pos.breakevenArmed ? " · BE" : ""})`); position = null; continue; }
 
         // B. survived the candle → ratchet stop + close-based exits for the NEXT candle
         pos.candlesHeld++;

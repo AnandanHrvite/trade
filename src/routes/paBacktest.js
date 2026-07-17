@@ -250,12 +250,15 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
 
       // 1. SL hit (initial or swing-trailed)
       if (position.side === "CE" && candle.low <= position.stopLoss) {
-        exitPrice  = parseFloat((position.stopLoss - SLIPPAGE_PTS).toFixed(2)); // slippage works against you
+        // Gap-through: fill at the open if the bar gapped below the stop (worse).
+        const _fill = candle.open < position.stopLoss ? candle.open : position.stopLoss;
+        exitPrice  = parseFloat((_fill - SLIPPAGE_PTS).toFixed(2)); // slippage works against you
         const _isTrail = Math.abs(position.stopLoss - position.initialStopLoss) > 0.5;
         const _src = position.slSource || "Swing";
         exitReason = _isTrail ? `${_src} Trail SL hit` : `${_src} SL hit`;
       } else if (position.side === "PE" && candle.high >= position.stopLoss) {
-        exitPrice  = parseFloat((position.stopLoss + SLIPPAGE_PTS).toFixed(2)); // slippage works against you
+        const _fill = candle.open > position.stopLoss ? candle.open : position.stopLoss;
+        exitPrice  = parseFloat((_fill + SLIPPAGE_PTS).toFixed(2)); // slippage works against you
         const _isTrail = Math.abs(position.stopLoss - position.initialStopLoss) > 0.5;
         const _src = position.slSource || "Swing";
         exitReason = _isTrail ? `${_src} Trail SL hit` : `${_src} SL hit`;

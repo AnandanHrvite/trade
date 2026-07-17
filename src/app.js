@@ -2633,6 +2633,17 @@ server.listen(PORT, HOST, () => {
     console.warn(`   Tick recordings  : prune skipped — ${err.message}`);
   }
 
+  // Warn about DEAD legacy env keys. SWING_* and SCALP_* were renamed to
+  // EMA_RSI_ST_* / BB_RSI_* (2026-07-05) and are no longer read by any code, so
+  // an .env that still carries them silently ignores that tuning. Flag it once.
+  try {
+    const deadPrefixes = ["SWING_", "SCALP_"];
+    const dead = Object.keys(process.env).filter((k) => deadPrefixes.some((pre) => k.startsWith(pre)));
+    if (dead.length) {
+      console.warn(`   ⚠️  Dead env keys : ${dead.length} legacy ${deadPrefixes.join("/")}* key(s) in .env are IGNORED (renamed to EMA_RSI_ST_*/BB_RSI_*). Editing them has no effect — remove them. e.g. ${dead.slice(0, 3).join(", ")}${dead.length > 3 ? " …" : ""}`);
+    }
+  } catch (_) {}
+
   console.log(`\n📖 Dashboard → https://${EC2_IP}:${PORT}`);
   console.log(`   📜 Live Logs  → https://${EC2_IP}:${PORT}/logs`);
   console.log(`   ⚠️  Browser warning expected (self-signed cert) — click Advanced → Proceed\n`);

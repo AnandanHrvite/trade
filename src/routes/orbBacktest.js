@@ -184,13 +184,14 @@ function runOrbBacktest(allCandles, expirySet) {
             trades.push(buildTradeRecord(position)); position = null; continue;
           }
         }
-        // 5. hard SL breach against this candle's extreme
+        // 5. hard SL breach against this candle's extreme. Gap-through: fill at
+        //    the open if the bar gapped past the stop (worse than the stop level).
         if (position.side === "CE" && c.low <= position.slSpot) {
-          closePos(position, position.slSpot, c.time, `Hard SL hit (${position.slSpot})`);
+          closePos(position, c.open < position.slSpot ? c.open : position.slSpot, c.time, `Hard SL hit (${position.slSpot})`);
           trades.push(buildTradeRecord(position)); position = null; continue;
         }
         if (position.side === "PE" && c.high >= position.slSpot) {
-          closePos(position, position.slSpot, c.time, `Hard SL hit (${position.slSpot})`);
+          closePos(position, c.open > position.slSpot ? c.open : position.slSpot, c.time, `Hard SL hit (${position.slSpot})`);
           trades.push(buildTradeRecord(position)); position = null; continue;
         }
       }
