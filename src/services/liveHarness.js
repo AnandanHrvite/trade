@@ -70,11 +70,46 @@ const _liveOrders = new Map();   // sessionId → [{symbol, side, qty, orderId, 
 // naked SHORT when paper later "exits". Keyed by mode → { symbol, qty, orderId }.
 const _realPositions = new Map();
 
+// In-flight exchange-SL placement promises, keyed by mode. _maybePlaceExchangeSL
+// runs async and fire-and-forget after a BUY fill; if a paper exit arrives before
+// it resolves, _cancelExchangeSL must AWAIT this so it can cancel the SL-M that is
+// about to exist — otherwise a resting SL-M is orphaned on a squared-off position
+// (→ naked short if it later triggers). Not persisted (promises don't serialize).
+const _slPending = new Map();
+
 // Event log persisted to disk so the "Recent harness events" panel survives a
 // server restart / deploy (the ring buffer used to be wiped on every reboot).
 const DATA_DIR        = path.join(require("os").homedir(), "trading-data");
 const HARNESS_LOG_FILE = path.join(DATA_DIR, ".harness_events.json");
+const HARNESS_POS_FILE = path.join(DATA_DIR, ".harness_real_positions.json");
 const _harnessLog     = [];      // ring buffer of harness events for /live-harness/status
+
+// ── Confirmed real-position persistence ──────────────────────────────────────
+// _realPositions is authoritative for "do we truly hold this?", but it lives in
+// memory only. A crash / EC2 redeploy while a live position is open would empty
+// it, and the next paper exit would then SKIP the square-off — leaving an
+// orphaned broker long. Persist the whole map (atomic tmp+rename) on every
+// set/delete, and restore per-mode on install so paper's exit can still close it.
+function _persistRealPositions() {
+  try {
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    const obj = {};
+    for (const [m, rec] of _realPositions) {
+      // Strip any non-serializable helpers; keep only the fields we need to sell.
+      obj[m] = { symbol: rec.symbol, qty: rec.qty, orderId: rec.orderId, slOrderId: rec.slOrderId || null, ts: rec.ts };
+    }
+    const tmp = HARNESS_POS_FILE + ".tmp";
+    fs.writeFileSync(tmp, JSON.stringify(obj));
+    fs.renameSync(tmp, HARNESS_POS_FILE);
+  } catch (e) { console.error(`[harness] failed to persist real positions: ${e.message}`); }
+}
+function _loadRealPositionForMode(mode) {
+  try {
+    const obj = JSON.parse(fs.readFileSync(HARNESS_POS_FILE, "utf8"));
+    if (obj && obj[mode] && obj[mode].symbol && obj[mode].qty > 0) return obj[mode];
+  } catch (_) { /* no prior file / unreadable → nothing to restore */ }
+  return null;
+}
 
 function _loadHarnessLog() {
   try {
@@ -155,6 +190,7 @@ async function _maybePlaceExchangeSL(cfg, realRec) {
     const res = await _brokerFor(cfg).placeSLMOrder(realRec.symbol, -1, realRec.qty, trigger, { isFutures: cfg.isFutures });
     if (res && res.success) {
       realRec.slOrderId = res.orderId;
+      _persistRealPositions();   // so the resting SL-M survives a restart too
       _logEvent({ mode: cfg.mode, event: "EXCHANGE_SL_PLACED", symbol: realRec.symbol, trigger, slOrderId: res.orderId });
       console.log(`🛡️ [HARNESS LIVE][${cfg.mode}] Exchange SL-M @ ₹${trigger} (${Math.round(pct * 100)}% below ₹${prem}) orderId=${res.orderId}`);
     } else {
@@ -166,12 +202,21 @@ async function _maybePlaceExchangeSL(cfg, realRec) {
 // Best-effort cancel of a resting exchange SL-M. Always resolves (never rejects)
 // so the caller can safely chain the square-off SELL after it. Cancelling BEFORE
 // the market SELL prevents a double-sell (SL fires + our SELL → naked short).
-function _cancelExchangeSL(cfg, realRec) {
-  if (!realRec || !realRec.slOrderId) return Promise.resolve();
-  return Promise.resolve()
-    .then(() => _brokerFor(cfg).cancelOrder(realRec.slOrderId))
-    .then(() => { _logEvent({ mode: cfg.mode, event: "EXCHANGE_SL_CANCELLED", slOrderId: realRec.slOrderId }); })
-    .catch((e) => { console.warn(`[HARNESS][${cfg.mode}] exchange-SL cancel failed (${realRec.slOrderId}): ${e.message}`); });
+//
+// Races the placement: if the SL-M is still being placed when an exit fires,
+// await that placement FIRST (so realRec.slOrderId is populated), then cancel —
+// otherwise the placement would resolve after our SELL and orphan a live SL-M on
+// a position we no longer hold.
+async function _cancelExchangeSL(cfg, realRec) {
+  const pending = _slPending.get(cfg.mode);
+  if (pending) { try { await pending; } catch (_) { /* placement failed → nothing to cancel */ } _slPending.delete(cfg.mode); }
+  if (!realRec || !realRec.slOrderId) return;
+  try {
+    await _brokerFor(cfg).cancelOrder(realRec.slOrderId);
+    _logEvent({ mode: cfg.mode, event: "EXCHANGE_SL_CANCELLED", slOrderId: realRec.slOrderId });
+  } catch (e) {
+    console.warn(`[HARNESS][${cfg.mode}] exchange-SL cancel failed (${realRec.slOrderId}): ${e.message}`);
+  }
 }
 
 // ── Order hooks (registered into notify; Telegram is emitted by notify itself) ─
@@ -204,10 +249,12 @@ function _makeEntryHook(cfg) {
           // Record the confirmed real position so the exit hook knows we truly
           // hold it. Without this, a later paper exit would fire a naked SELL.
           _realPositions.set(cfg.mode, { symbol: p.symbol, qty: p.qty, orderId: result.orderId, ts: Date.now() });
+          _persistRealPositions();
           _logEvent({ mode: cfg.mode, event: "REAL_ENTRY_OK", orderId: result.orderId, symbol: p.symbol, qty: p.qty });
           console.log(`✅ [HARNESS LIVE][${cfg.mode}] BUY filled — orderId=${result.orderId}`);
           // Optional exchange-resident disaster stop (default OFF; fire-and-forget, fails safe).
-          _maybePlaceExchangeSL(cfg, _realPositions.get(cfg.mode));
+          // Track the in-flight placement so a fast exit can await + cancel it.
+          _slPending.set(cfg.mode, _maybePlaceExchangeSL(cfg, _realPositions.get(cfg.mode)));
           // Log to live trade log (separate from paper log)
           try {
             tradeLogger.appendTradeLog(cfg.liveLogKey, {
@@ -267,6 +314,7 @@ function _makeExitHook(cfg) {
     }
     // Clear the record up-front so a duplicate exit notify can't double-sell.
     _realPositions.delete(cfg.mode);
+    _persistRealPositions();
 
     const _doSell = () => _placeOrder({
       broker:      cfg.broker,
@@ -355,6 +403,19 @@ function installHarness({ mode, modeTag, broker, dryRun, isFutures, defaultQty, 
     entry: _makeEntryHook(cfg),
     exit:  _makeExitHook(cfg),
   });
+
+  // Restart recovery: if a real position was open when the process died, restore
+  // it so the next paper exit squares it off (rather than skipping as "no
+  // position" and orphaning a live broker long). Only for LIVE harnesses — a
+  // dry-run never held a real position.
+  if (!dr && !_realPositions.has(mode)) {
+    const restored = _loadRealPositionForMode(mode);
+    if (restored) {
+      _realPositions.set(mode, restored);
+      _logEvent({ mode, event: "REAL_POSITION_RESTORED", symbol: restored.symbol, qty: restored.qty, orderId: restored.orderId, slOrderId: restored.slOrderId || null });
+      console.log(`♻️ [HARNESS][${mode}] Restored confirmed live position from disk — ${restored.qty}× ${restored.symbol} (orderId=${restored.orderId})${restored.slOrderId ? `, resting SL-M ${restored.slOrderId}` : ""}. Paper exit will square it off.`);
+    }
+  }
 
   _logEvent({ mode, event: "HARNESS_INSTALLED", broker, dryRun: dr });
   console.log(`🔧 [HARNESS][${mode}] Installed — broker=${broker} mode=${dr ? "DRY-RUN (no real orders)" : "🔴 LIVE (real orders)"}`);
