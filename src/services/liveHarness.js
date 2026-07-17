@@ -77,6 +77,16 @@ const _realPositions = new Map();
 // (→ naked short if it later triggers). Not persisted (promises don't serialize).
 const _slPending = new Map();
 
+// In-flight BUY promises, keyed by mode. Registered SYNCHRONOUSLY when an entry
+// fires so a fast paper exit (within the order round-trip) can await it before
+// deciding whether we hold a position — otherwise the BUY fills AFTER the exit
+// skips, leaving an untracked real long. Also dedupes double-entries.
+const _pendingEntries = new Map();
+// Modes with a SELL currently in flight — dedupes concurrent exits WITHOUT
+// deleting the authoritative _realPositions record up-front (so a failed SELL
+// doesn't erase our knowledge that we still hold the position).
+const _exiting = new Set();
+
 // Event log persisted to disk so the "Recent harness events" panel survives a
 // server restart / deploy (the ring buffer used to be wiped on every reboot).
 const DATA_DIR        = path.join(require("os").homedir(), "trading-data");
@@ -199,6 +209,46 @@ async function _maybePlaceExchangeSL(cfg, realRec) {
   } catch (e) { console.warn(`[HARNESS][${cfg.mode}] exchange-SL error (skipped): ${e.message}`); }
 }
 
+// Bound every broker network call so a hung socket can't wedge an entry or exit
+// forever. A timed-out WRITE is surfaced as failure (NOT retried) — the order may
+// already be live, so the user is told to verify rather than risk a double-fill.
+function _brokerTimeoutMs() {
+  return Math.max(1500, parseInt(process.env.HARNESS_BROKER_TIMEOUT_MS || "8000", 10));
+}
+function _withTimeout(promise, ms, label) {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    Promise.resolve(promise).then(
+      (v) => { clearTimeout(t); resolve(v); },
+      (e) => { clearTimeout(t); reject(e); },
+    );
+  });
+}
+
+// Reconcile a tracked position against the ACTUAL broker book before selling.
+// Returns true (held), false (broker flat / not found), or null (couldn't check).
+// Guards against: a post-accept RMS reject (order id issued but never filled), an
+// MIS/intraday auto-square-off at ~15:20, an exchange SL-M that already fired, or
+// a manual close during downtime — any of which would make our SELL a naked short.
+async function _isPositionHeld(cfg, symbol) {
+  try {
+    const broker = _brokerFor(cfg);
+    if (typeof broker.getPositions !== "function") return null;
+    const pos = await _withTimeout(broker.getPositions(), Math.min(_brokerTimeoutMs(), 3000), "getPositions");
+    if (cfg.broker === "zerodha") {
+      const ts  = String(symbol).replace(/^(NSE:|BSE:)/, "").trim();
+      const row = ((pos && pos.net) || []).find((p) => p.tradingsymbol === ts);
+      return row ? (Number(row.quantity) || 0) !== 0 : false;
+    }
+    // Fyers: netPositions[].symbol is the full "NSE:...CE"; netQty 0 = flat.
+    const row = ((pos && pos.netPositions) || []).find((p) => p.symbol === symbol);
+    return row ? (Number(row.netQty) || 0) !== 0 : false;
+  } catch (e) {
+    console.warn(`[HARNESS][${cfg.mode}] getPositions reconcile failed: ${e.message}`);
+    return null;
+  }
+}
+
 // Best-effort cancel of a resting exchange SL-M. Always resolves (never rejects)
 // so the caller can safely chain the square-off SELL after it. Cancelling BEFORE
 // the market SELL prevents a double-sell (SL fires + our SELL → naked short).
@@ -233,41 +283,35 @@ function _makeEntryHook(cfg) {
       return;
     }
 
-    // Real order — fire-and-forget; paper has already committed state.position.
-    // We log success/failure to telemetry; if order fails the user must
-    // intervene (paper thinks it's in a position; broker has none).
-    _placeOrder({
-      broker:      cfg.broker,
-      symbol:      p.symbol,
-      qty:         p.qty,
-      sideAction:  "BUY",
-      isFutures:   cfg.isFutures,
-      tag:         `${cfg.mode}-HARN`,
-    })
-      .then(result => {
+    // Dedupe: never fire a second BUY while one is in flight or a position is
+    // already held for this mode (a duplicate notifyEntry would double-buy and
+    // only one would ever get sold).
+    if (_pendingEntries.has(cfg.mode) || _realPositions.has(cfg.mode)) {
+      _logEvent({ mode: cfg.mode, event: "REAL_ENTRY_SKIPPED_DUP", symbol: p.symbol });
+      console.warn(`⏭️ [HARNESS LIVE][${cfg.mode}] BUY skipped — entry already in flight / position held for ${p.symbol}.`);
+      return;
+    }
+
+    // Register the in-flight BUY SYNCHRONOUSLY so a fast exit can await it before
+    // deciding whether we hold a position.
+    const entryPromise = (async () => {
+      try {
+        const result = await _withTimeout(_placeOrder({
+          broker: cfg.broker, symbol: p.symbol, qty: p.qty,
+          sideAction: "BUY", isFutures: cfg.isFutures, tag: `${cfg.mode}-HARN`,
+        }), _brokerTimeoutMs(), "BUY");
         if (result && result.success) {
-          // Record the confirmed real position so the exit hook knows we truly
-          // hold it. Without this, a later paper exit would fire a naked SELL.
           _realPositions.set(cfg.mode, { symbol: p.symbol, qty: p.qty, orderId: result.orderId, ts: Date.now() });
           _persistRealPositions();
           _logEvent({ mode: cfg.mode, event: "REAL_ENTRY_OK", orderId: result.orderId, symbol: p.symbol, qty: p.qty });
           console.log(`✅ [HARNESS LIVE][${cfg.mode}] BUY filled — orderId=${result.orderId}`);
           // Optional exchange-resident disaster stop (default OFF; fire-and-forget, fails safe).
-          // Track the in-flight placement so a fast exit can await + cancel it.
           _slPending.set(cfg.mode, _maybePlaceExchangeSL(cfg, _realPositions.get(cfg.mode)));
-          // Log to live trade log (separate from paper log)
           try {
             tradeLogger.appendTradeLog(cfg.liveLogKey, {
-              _viaHarness: true,
-              event: "ENTRY",
-              orderId:     result.orderId,
-              symbol:      p.symbol,
-              qty:         p.qty,
-              side:        p.side,
-              spotAtEntry: p.spotAtEntry,
-              stopLoss:    p.stopLoss,
-              reason:      p.reason,
-              ts:          Date.now(),
+              _viaHarness: true, event: "ENTRY", orderId: result.orderId, symbol: p.symbol,
+              qty: p.qty, side: p.side, spotAtEntry: p.spotAtEntry, stopLoss: p.stopLoss,
+              reason: p.reason, ts: Date.now(),
             });
           } catch (_) {}
         } else {
@@ -275,17 +319,22 @@ function _makeEntryHook(cfg) {
           console.error(`🚨 [HARNESS LIVE][${cfg.mode}] BUY FAILED — paper opened virtual position but broker rejected. Symbol=${p.symbol} | ${JSON.stringify(result && result.raw).slice(0, 200)}`);
           try { notify.sendIfMaster(`🚨 ${cfg.mode} LIVE BUY REJECTED\nPaper opened a position but the broker order failed — you are NOT in this trade.\nSymbol: ${p.symbol}\n${JSON.stringify(result && result.raw).slice(0, 200)}`); } catch (_) {}
         }
-      })
-      .catch(err => {
+      } catch (err) {
+        // Includes timeouts: the order MAY have reached the exchange — do NOT
+        // record a position (we can't prove the fill) and tell the user to verify.
         _logEvent({ mode: cfg.mode, event: "REAL_ENTRY_EXCEPTION", symbol: p.symbol, error: err.message });
         console.error(`🚨 [HARNESS LIVE][${cfg.mode}] BUY exception: ${err.message}`);
-        try { notify.sendIfMaster(`🚨 ${cfg.mode} LIVE BUY ERROR\n${p.symbol}: ${err.message}\nPaper opened a position but the broker order errored — verify manually.`); } catch (_) {}
-      });
+        try { notify.sendIfMaster(`🚨 ${cfg.mode} LIVE BUY ERROR\n${p.symbol}: ${err.message}\nPaper opened a position but the broker order errored/timed out — verify manually.`); } catch (_) {}
+      } finally {
+        _pendingEntries.delete(cfg.mode);
+      }
+    })();
+    _pendingEntries.set(cfg.mode, entryPromise);
   };
 }
 
 function _makeExitHook(cfg) {
-  return function exitHook(p) {
+  return async function exitHook(p) {
     const expectedModeTag = cfg.modeTag;
     if (p.mode !== expectedModeTag) return;
 
@@ -294,6 +343,12 @@ function _makeExitHook(cfg) {
       console.log(`🧪 [HARNESS DRY-RUN][${cfg.mode}] Would SELL ${p.symbol} (square-off) | paper-pnl=${p.pnl}`);
       return;
     }
+
+    // Await any in-flight BUY for this mode first — a fast exit can arrive while
+    // the entry is still filling; without this we'd skip as "no position" and
+    // orphan the real long that fills a moment later.
+    const pendingEntry = _pendingEntries.get(cfg.mode);
+    if (pendingEntry) { try { await pendingEntry; } catch (_) {} }
 
     // Only square off a position we PROVABLY hold. If the entry never filled
     // (rejected/errored), paper still carries a virtual long — selling here
@@ -304,59 +359,83 @@ function _makeExitHook(cfg) {
       console.warn(`⏭️ [HARNESS LIVE][${cfg.mode}] Paper exit but no confirmed real position — skipping SELL (not short-selling ${p.symbol}).`);
       return;
     }
-    // Use the qty we actually bought as authoritative; never send a null qty.
-    const exitQty = real.qty || p.qty || cfg.defaultQty;
-    if (!exitQty || exitQty <= 0) {
-      _logEvent({ mode: cfg.mode, event: "REAL_EXIT_ABORT_BAD_QTY", symbol: p.symbol });
-      console.error(`🚨 [HARNESS LIVE][${cfg.mode}] Exit aborted — could not resolve a valid qty for ${p.symbol}. MANUAL square-off required.`);
-      try { notify.sendIfMaster(`🚨 ${cfg.mode} LIVE EXIT ABORTED — bad qty for ${p.symbol}. Square off manually NOW.`); } catch (_) {}
+
+    // Dedupe concurrent exits without dropping the record (a failed SELL must not
+    // erase our knowledge that we still hold the position).
+    if (_exiting.has(cfg.mode)) {
+      _logEvent({ mode: cfg.mode, event: "REAL_EXIT_SKIPPED_INFLIGHT", symbol: p.symbol });
       return;
     }
-    // Clear the record up-front so a duplicate exit notify can't double-sell.
-    _realPositions.delete(cfg.mode);
-    _persistRealPositions();
+    _exiting.add(cfg.mode);
 
-    const _doSell = () => _placeOrder({
-      broker:      cfg.broker,
-      symbol:      real.symbol || p.symbol,
-      qty:         exitQty,
-      sideAction:  "SELL",
-      isFutures:   cfg.isFutures,
-      tag:         `${cfg.mode}-HARN-EXIT`,
-    })
-      .then(result => {
-        if (result && result.success) {
-          _logEvent({ mode: cfg.mode, event: "REAL_EXIT_OK", orderId: result.orderId, symbol: p.symbol, paperPnl: p.pnl });
-          console.log(`✅ [HARNESS LIVE][${cfg.mode}] SELL filled — orderId=${result.orderId} | paper-pnl=${p.pnl}`);
-          try {
-            tradeLogger.appendTradeLog(cfg.liveLogKey, {
-              _viaHarness: true,
-              event: "EXIT",
-              orderId:     result.orderId,
-              symbol:      p.symbol,
-              side:        p.side,
-              spotAtEntry: p.spotAtEntry,
-              spotAtExit:  p.spotAtExit,
-              paperPnl:    p.pnl,
-              sessionPnl:  p.sessionPnl,
-              ts:          Date.now(),
-            });
-          } catch (_) {}
-        } else {
-          _logEvent({ mode: cfg.mode, event: "REAL_EXIT_FAIL", symbol: p.symbol, raw: result && result.raw });
-          console.error(`🚨 [HARNESS LIVE][${cfg.mode}] SELL FAILED — paper closed virtual position but broker rejected. Symbol=${p.symbol} — MANUAL ACTION REQUIRED.`);
-          try { notify.sendIfMaster(`🚨 ${cfg.mode} LIVE SELL REJECTED — MANUAL ACTION REQUIRED\nPaper closed but the broker still holds the position — square off ${p.symbol} manually NOW.\n${JSON.stringify(result && result.raw).slice(0, 200)}`); } catch (_) {}
-        }
-      })
-      .catch(err => {
+    try {
+      // Use the qty we actually bought as authoritative; never send a null qty.
+      const exitQty = real.qty || p.qty || cfg.defaultQty;
+      if (!exitQty || exitQty <= 0) {
+        _logEvent({ mode: cfg.mode, event: "REAL_EXIT_ABORT_BAD_QTY", symbol: p.symbol });
+        console.error(`🚨 [HARNESS LIVE][${cfg.mode}] Exit aborted — could not resolve a valid qty for ${p.symbol}. MANUAL square-off required.`);
+        try { notify.sendIfMaster(`🚨 ${cfg.mode} LIVE EXIT ABORTED — bad qty for ${p.symbol}. Square off manually NOW.`); } catch (_) {}
+        return;
+      }
+
+      // Reconcile against the broker before selling — the position may already be
+      // closed (post-accept reject, MIS auto-square, SL-M fired, manual close).
+      const held = await _isPositionHeld(cfg, real.symbol);
+      if (held === false) {
+        _realPositions.delete(cfg.mode); _persistRealPositions();
+        _logEvent({ mode: cfg.mode, event: "REAL_EXIT_ALREADY_FLAT", symbol: real.symbol });
+        console.warn(`⏭️ [HARNESS LIVE][${cfg.mode}] Broker shows FLAT for ${real.symbol} — skipping SELL (already closed, not short-selling).`);
+        return;
+      }
+      if (held === null && real._restored) {
+        // Restored-from-disk position we cannot verify → do NOT risk a naked
+        // short on a stale record. Alert for manual action; keep the record.
+        _logEvent({ mode: cfg.mode, event: "REAL_EXIT_UNVERIFIED_RESTORED", symbol: real.symbol });
+        console.error(`🚨 [HARNESS LIVE][${cfg.mode}] Could not verify RESTORED position ${real.symbol} against broker — NOT auto-selling.`);
+        try { notify.sendIfMaster(`🚨 ${cfg.mode} — could not verify restored live position ${real.symbol} against the broker; NOT auto-selling (avoids a possible naked short). Check & square off manually.`); } catch (_) {}
+        return;
+      }
+      // held === true, or (held === null on an in-session record we trust): sell.
+
+      // Cancel any resting exchange SL-M FIRST so it can't fire on the same
+      // position we're selling (→ naked short).
+      await _cancelExchangeSL(cfg, real);
+
+      let result;
+      try {
+        result = await _withTimeout(_placeOrder({
+          broker: cfg.broker, symbol: real.symbol || p.symbol, qty: exitQty,
+          sideAction: "SELL", isFutures: cfg.isFutures, tag: `${cfg.mode}-HARN-EXIT`,
+        }), _brokerTimeoutMs(), "SELL");
+      } catch (err) {
+        // Keep the record so a restart/retry can catch the still-open position.
         _logEvent({ mode: cfg.mode, event: "REAL_EXIT_EXCEPTION", symbol: p.symbol, error: err.message });
         console.error(`🚨 [HARNESS LIVE][${cfg.mode}] SELL exception: ${err.message}`);
-        try { notify.sendIfMaster(`🚨 ${cfg.mode} LIVE SELL ERROR — MANUAL ACTION REQUIRED\n${p.symbol}: ${err.message}\nPaper closed but the broker exit errored — verify/square off manually NOW.`); } catch (_) {}
-      });
+        try { notify.sendIfMaster(`🚨 ${cfg.mode} LIVE SELL ERROR — MANUAL ACTION REQUIRED\n${p.symbol}: ${err.message}\nPaper closed but the broker exit errored/timed out — verify/square off manually NOW.`); } catch (_) {}
+        return;
+      }
 
-    // Cancel any resting exchange SL-M FIRST, then square off — so the SL can't
-    // fire on the same position we're selling (which would open a naked short).
-    _cancelExchangeSL(cfg, real).then(_doSell);
+      if (result && result.success) {
+        // Clear ONLY after a confirmed successful SELL.
+        _realPositions.delete(cfg.mode); _persistRealPositions();
+        _logEvent({ mode: cfg.mode, event: "REAL_EXIT_OK", orderId: result.orderId, symbol: p.symbol, paperPnl: p.pnl });
+        console.log(`✅ [HARNESS LIVE][${cfg.mode}] SELL filled — orderId=${result.orderId} | paper-pnl=${p.pnl}`);
+        try {
+          tradeLogger.appendTradeLog(cfg.liveLogKey, {
+            _viaHarness: true, event: "EXIT", orderId: result.orderId, symbol: p.symbol,
+            side: p.side, spotAtEntry: p.spotAtEntry, spotAtExit: p.spotAtExit,
+            paperPnl: p.pnl, sessionPnl: p.sessionPnl, ts: Date.now(),
+          });
+        } catch (_) {}
+      } else {
+        // Keep the record — broker rejected, we still hold it.
+        _logEvent({ mode: cfg.mode, event: "REAL_EXIT_FAIL", symbol: p.symbol, raw: result && result.raw });
+        console.error(`🚨 [HARNESS LIVE][${cfg.mode}] SELL FAILED — paper closed virtual position but broker rejected. Symbol=${p.symbol} — MANUAL ACTION REQUIRED.`);
+        try { notify.sendIfMaster(`🚨 ${cfg.mode} LIVE SELL REJECTED — MANUAL ACTION REQUIRED\nPaper closed but the broker still holds the position — square off ${p.symbol} manually NOW.\n${JSON.stringify(result && result.raw).slice(0, 200)}`); } catch (_) {}
+      }
+    } finally {
+      _exiting.delete(cfg.mode);
+    }
   };
 }
 
@@ -411,6 +490,7 @@ function installHarness({ mode, modeTag, broker, dryRun, isFutures, defaultQty, 
   if (!dr && !_realPositions.has(mode)) {
     const restored = _loadRealPositionForMode(mode);
     if (restored) {
+      restored._restored = true;   // require broker confirmation before selling it
       _realPositions.set(mode, restored);
       _logEvent({ mode, event: "REAL_POSITION_RESTORED", symbol: restored.symbol, qty: restored.qty, orderId: restored.orderId, slOrderId: restored.slOrderId || null });
       console.log(`♻️ [HARNESS][${mode}] Restored confirmed live position from disk — ${restored.qty}× ${restored.symbol} (orderId=${restored.orderId})${restored.slOrderId ? `, resting SL-M ${restored.slOrderId}` : ""}. Paper exit will square it off.`);
