@@ -33,11 +33,12 @@
  *
  *   LIVE (LIVE_HARNESS_DRY_RUN=false)
  *     Places real market entry/exit orders via fyersBroker (PA, BB_RSI, ORB)
- *     or zerodhaBroker (EMA_RSI_ST). NOTE: the harness does NOT place a resting
- *     exchange stop-loss — paper's stopLoss is a SPOT level, not an option-
- *     premium trigger, so it can't be forwarded verbatim as an option SL-M. The
- *     in-process per-tick stop is the only stop today. (See TODO: derive an
- *     option-premium SL-M from the spot stop before enabling exchange stops.)
+ *     or zerodhaBroker (EMA_RSI_ST). Paper's stopLoss is a SPOT level, not an
+ *     option-premium trigger, so it is NOT forwarded verbatim as an SL-M; the
+ *     primary stop is the in-process per-tick stop. OPTIONALLY (default OFF,
+ *     HARNESS_EXCHANGE_SL_ENABLED=true) a percent-of-premium SL-M is left resting
+ *     at the exchange as a DISASTER backstop for when the process is dead — it is
+ *     cancelled before any normal square-off. Validate on dry-run before enabling.
  *
  * Concurrency:
  *   Multiple harnesses (one per mode) can be installed at once — each registers
@@ -122,6 +123,57 @@ async function _placeOrder({ broker, symbol, qty, sideAction, isFutures, tag }) 
   throw new Error(`Unknown broker: ${broker}`);
 }
 
+// ── Optional exchange-resident disaster stop (default OFF) ───────────────────
+// A percent-of-premium SL-M left resting at the exchange, so a hard crash while
+// in a live position still has SOME protection. This is a DISASTER backstop, NOT
+// the precise spot stop (paper's stop is a spot level, not an option trigger):
+//   trigger = entryPremium × (1 − HARNESS_SL_PCT)
+// EXPERIMENTAL — places REAL resting orders. Validate on a dry-run session before
+// enabling with HARNESS_EXCHANGE_SL_ENABLED=true. Everything here fails SAFE: any
+// missing data / bad trigger / broker error skips the SL (never places a bad one)
+// and the in-process per-tick stop remains.
+function _brokerFor(cfg) { return cfg.broker === "zerodha" ? (zerodhaBroker || fyersBroker) : fyersBroker; }
+
+async function _fetchOptionPremium(symbol) {
+  try {
+    const fyersData = require("../config/fyers");   // Fyers is the data feed for ALL strategies
+    const q = await fyersData.getQuotes([symbol]);
+    const lp = q && q.s === "ok" && q.d && q.d[0] && q.d[0].v && q.d[0].v.lp;
+    return Number(lp) > 0 ? Number(lp) : null;
+  } catch (_) { return null; }
+}
+
+async function _maybePlaceExchangeSL(cfg, realRec) {
+  if (!realRec) return;
+  if (String(process.env.HARNESS_EXCHANGE_SL_ENABLED || "false").toLowerCase() !== "true") return;
+  try {
+    const pct  = Math.min(0.95, Math.max(0.05, parseFloat(process.env.HARNESS_SL_PCT || "0.5")));
+    const prem = await _fetchOptionPremium(realRec.symbol);
+    if (!(prem > 0)) { console.warn(`[HARNESS][${cfg.mode}] exchange-SL skipped — no option premium for ${realRec.symbol}`); return; }
+    const trigger = parseFloat((prem * (1 - pct)).toFixed(1));
+    if (!(trigger > 0) || trigger >= prem) { console.warn(`[HARNESS][${cfg.mode}] exchange-SL skipped — bad trigger ${trigger} vs prem ${prem}`); return; }
+    const res = await _brokerFor(cfg).placeSLMOrder(realRec.symbol, -1, realRec.qty, trigger, { isFutures: cfg.isFutures });
+    if (res && res.success) {
+      realRec.slOrderId = res.orderId;
+      _logEvent({ mode: cfg.mode, event: "EXCHANGE_SL_PLACED", symbol: realRec.symbol, trigger, slOrderId: res.orderId });
+      console.log(`🛡️ [HARNESS LIVE][${cfg.mode}] Exchange SL-M @ ₹${trigger} (${Math.round(pct * 100)}% below ₹${prem}) orderId=${res.orderId}`);
+    } else {
+      console.warn(`[HARNESS][${cfg.mode}] exchange-SL placement failed: ${JSON.stringify(res && res.raw).slice(0, 150)}`);
+    }
+  } catch (e) { console.warn(`[HARNESS][${cfg.mode}] exchange-SL error (skipped): ${e.message}`); }
+}
+
+// Best-effort cancel of a resting exchange SL-M. Always resolves (never rejects)
+// so the caller can safely chain the square-off SELL after it. Cancelling BEFORE
+// the market SELL prevents a double-sell (SL fires + our SELL → naked short).
+function _cancelExchangeSL(cfg, realRec) {
+  if (!realRec || !realRec.slOrderId) return Promise.resolve();
+  return Promise.resolve()
+    .then(() => _brokerFor(cfg).cancelOrder(realRec.slOrderId))
+    .then(() => { _logEvent({ mode: cfg.mode, event: "EXCHANGE_SL_CANCELLED", slOrderId: realRec.slOrderId }); })
+    .catch((e) => { console.warn(`[HARNESS][${cfg.mode}] exchange-SL cancel failed (${realRec.slOrderId}): ${e.message}`); });
+}
+
 // ── Order hooks (registered into notify; Telegram is emitted by notify itself) ─
 function _makeEntryHook(cfg) {
   return function entryHook(p) {
@@ -154,6 +206,8 @@ function _makeEntryHook(cfg) {
           _realPositions.set(cfg.mode, { symbol: p.symbol, qty: p.qty, orderId: result.orderId, ts: Date.now() });
           _logEvent({ mode: cfg.mode, event: "REAL_ENTRY_OK", orderId: result.orderId, symbol: p.symbol, qty: p.qty });
           console.log(`✅ [HARNESS LIVE][${cfg.mode}] BUY filled — orderId=${result.orderId}`);
+          // Optional exchange-resident disaster stop (default OFF; fire-and-forget, fails safe).
+          _maybePlaceExchangeSL(cfg, _realPositions.get(cfg.mode));
           // Log to live trade log (separate from paper log)
           try {
             tradeLogger.appendTradeLog(cfg.liveLogKey, {
@@ -214,7 +268,7 @@ function _makeExitHook(cfg) {
     // Clear the record up-front so a duplicate exit notify can't double-sell.
     _realPositions.delete(cfg.mode);
 
-    _placeOrder({
+    const _doSell = () => _placeOrder({
       broker:      cfg.broker,
       symbol:      real.symbol || p.symbol,
       qty:         exitQty,
@@ -251,6 +305,10 @@ function _makeExitHook(cfg) {
         console.error(`🚨 [HARNESS LIVE][${cfg.mode}] SELL exception: ${err.message}`);
         try { notify.sendIfMaster(`🚨 ${cfg.mode} LIVE SELL ERROR — MANUAL ACTION REQUIRED\n${p.symbol}: ${err.message}\nPaper closed but the broker exit errored — verify/square off manually NOW.`); } catch (_) {}
       });
+
+    // Cancel any resting exchange SL-M FIRST, then square off — so the SL can't
+    // fire on the same position we're selling (which would open a naked short).
+    _cancelExchangeSL(cfg, real).then(_doSell);
   };
 }
 
