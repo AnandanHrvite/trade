@@ -6,6 +6,18 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Added — Day-wide option-chain recorder (SNAPSHOT replay reproducible for any strategy)
+
+Fixes the root cause of "same snapshot settings, different replay P&L". The per-strategy recorder only captured the single option symbol a *running* strategy polled (its position/entry candidate), plus VIX/OI only while that strategy's filter was on. So when a replay decision diverged even one candle it wanted a *different* strike with no recorded LTP → it fell back to a spot proxy → replay drifted from live. A brand-new strategy had no option data at all for old days.
+
+- **[src/utils/optionChainRecorder.js](src/utils/optionChainRecorder.js)** (new) — a pure-observer loop that, every few seconds during market hours, proactively polls the ATM±N CE/PE chain + INDIA VIX + current-month NIFTY futures OI and appends to the **same** per-day tick streams the replay already reads (`options.jsonl` / `vix.jsonl` / `oi.jsonl` via `tickRecorder`). Strategy-independent and date-based: the same ticks serve every strategy, present or future. Rides the existing socket fan-out for spot (never opens a second socket); one in-flight poll at a time; Fyers per-call symbol cap respected; failure logging throttled. Expiry is pinned once/day from the Market Context Snapshot so recorded strikes line up exactly with what replay resolves.
+- **Wiring**: started from [src/app.js](src/app.js) after the tick-recorder prune block. No replay-reader change needed — purely additive density + coverage.
+- **Knobs** (all in the Settings UI + README env table): `OPTION_CHAIN_RECORDER_ENABLED` (default `true`), `OPTION_CHAIN_RECORD_INTERVAL_SEC` (default `5`, 2–60), `OPTION_CHAIN_RECORD_STRIKES` (default `5`, ATM±N, 1–15). Reuses the master `TICK_RECORDER_ENABLED` switch and retention/prune.
+
+### Added — Replay "Delete all" (full wipe)
+
+- **[src/routes/replay.js](src/routes/replay.js)** — new **🗑 Delete all** button next to *Download all* on the Replay page, backed by `POST /replay/delete-all` → `tickRecorder.deleteRecordingsInRange({})`. Permanently removes every recorded day folder (raw ticks + session markers + market context) behind a strong confirm. Bulk counterpart to the existing per-row (marker-only) delete.
+
 ### Added — PA trend filter (course rule #1: trade breakouts with the trend)
 
 Optional regime gate for Price Action, distilled from the price-action course notes ([data/pa-course-transcript.txt](data/pa-course-transcript.txt)). The course's single most-repeated rule is *never trade a breakout against the trend*. Our PA fired all four patterns in any regime; this adds a default-**OFF** filter so it can be replay-validated before going live.

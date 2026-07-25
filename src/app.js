@@ -2633,6 +2633,16 @@ server.listen(PORT, HOST, () => {
     console.warn(`   Tick recordings  : prune skipped — ${err.message}`);
   }
 
+  // Day-wide option-chain + VIX + futures-OI recorder — strategy-independent, so
+  // a SNAPSHOT replay is reproducible for ANY strategy (not just the strike a
+  // live strategy traded). Pure observer; rides the existing socket fan-out and
+  // writes to the same tick streams. Gated by OPTION_CHAIN_RECORDER_ENABLED.
+  try {
+    require("./utils/optionChainRecorder").start();
+  } catch (err) {
+    console.warn(`   Option-chain rec : not started — ${err.message}`);
+  }
+
   // Warn about DEAD legacy env keys. SWING_* and SCALP_* were renamed to
   // EMA_RSI_ST_* / BB_RSI_* (2026-07-05) and are no longer read by any code, so
   // an .env that still carries them silently ignores that tuning. Flag it once.

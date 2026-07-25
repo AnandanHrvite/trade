@@ -155,6 +155,18 @@ router.post("/delete-session", express.json(), (req, res) => {
   }
 });
 
+// Full wipe — delete EVERY recorded day folder (raw ticks + session markers +
+// market context). Irreversible; these days can never be replayed again. This is
+// the bulk counterpart to the per-row (marker-only) delete.
+router.post("/delete-all", express.json(), (req, res) => {
+  try {
+    const out = tickRecorder.deleteRecordingsInRange({});   // no bounds → everything
+    res.json({ ok: true, deleted: out.deleted, kept: out.kept });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 router.post("/run", express.json(), async (req, res) => {
   const { date, mode, sessionId, speed, useCurrentSettings, noCache } = req.body || {};
   if (!date || !mode) {
@@ -543,6 +555,7 @@ ${buildSidebar('replay', false)}
           <option value="100">100 / page</option>
         </select>
         <button class="row-btn" onclick="downloadAll()" title="Download every recorded day's tick folder as one zip">⬇ Download all</button>
+        <button class="row-btn danger" onclick="deleteAllRecordings(this)" title="Permanently delete ALL recorded days — raw ticks, session markers and market context. Irreversible.">🗑 Delete all</button>
       </div>
     </div>
     <div id="sessions-meta" class="muted" style="margin-top:8px;"></div>
@@ -1330,6 +1343,32 @@ async function deleteSession(date, sessionId, btn) {
   } catch (e) {
     btn.disabled = false; btn.textContent = orig;
     alert('Delete failed: ' + e.message);
+  }
+}
+
+async function deleteAllRecordings(btn) {
+  if (!confirm('⚠️ Delete ALL recorded sessions?\\n\\n' +
+               'This permanently removes every recorded day — raw ticks, session ' +
+               'markers AND market context. These days can NEVER be replayed again.\\n\\n' +
+               'This cannot be undone. Continue?')) return;
+  const orig = btn.textContent;
+  btn.disabled = true; btn.textContent = '…';
+  try {
+    const r = await fetch('/replay/delete-all', { method: 'POST' });
+    const data = await r.json();
+    if (!data.ok) {
+      btn.disabled = false; btn.textContent = orig;
+      alert('Delete all failed: ' + (data.error || 'unknown'));
+      return;
+    }
+    _allSessionsCache = [];
+    _populateModeFilter();
+    renderSessions();
+    btn.disabled = false; btn.textContent = orig;
+    alert('Deleted ' + (data.deleted || 0) + ' recorded day(s).');
+  } catch (e) {
+    btn.disabled = false; btn.textContent = orig;
+    alert('Delete all failed: ' + e.message);
   }
 }
 
