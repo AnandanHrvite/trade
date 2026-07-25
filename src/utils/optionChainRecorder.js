@@ -124,13 +124,18 @@ function _onSpotTick(t) {
 }
 
 async function _poll() {
-  if (!_enabled() || !_isMarketHours() || _lastSpot == null) return;
-  if (_busy) return;
+  if (!_enabled() || !_isMarketHours()) return;
   // A replay run monkey-patches the shared fyers.getQuotes singleton to serve
   // recorded data at the replay clock. If we polled during that window we'd write
   // replay-clock prices into TODAY's real recording. Pause until it finishes.
   // (Lazy require avoids a load-time dep cycle; result is module-cached.)
   try { if (require("../services/tickReplay").isReplayInProgress()) return; } catch (_) {}
+  // Re-assert the spot subscription every cycle. socketManager.stop() — fired on
+  // EVERY strategy session stop — clears ALL secondary callbacks, so without this
+  // the recorder silently loses its spot feed (and freezes _lastSpot) after the
+  // first stop of the day. addCallback is an idempotent Map.set keyed by id.
+  try { socketManager.addCallback(CALLBACK_ID, _onSpotTick, null); } catch (_) {}
+  if (_lastSpot == null || _busy) return;
   _busy = true;
   try {
     const expiryCode = await _resolveExpiryCode();
@@ -150,6 +155,10 @@ async function _poll() {
     try { futSym = `NSE:NIFTY${instrument.getFuturesExpiry()}FUT`; symbols.push(futSym); } catch (_) {}
 
     for (let i = 0; i < symbols.length; i += MAX_SYMBOLS_PER_CALL) {
+      // Re-check before each batch: a replay could install its getQuotes stub
+      // during the await above (or between batches). Bail rather than record
+      // replay-clock data into today's file.
+      try { if (require("../services/tickReplay").isReplayInProgress()) break; } catch (_) {}
       const batch = symbols.slice(i, i + MAX_SYMBOLS_PER_CALL);
       const resp  = await fyers.getQuotes(batch);
       if (!resp || resp.s !== "ok" || !Array.isArray(resp.d)) continue;
