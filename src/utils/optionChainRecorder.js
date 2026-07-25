@@ -156,7 +156,7 @@ async function _poll() {
           const lp = Number(v.lp || v.ltp || 0);
           if (lp > 0) tickRecorder.recordVix(lp);
         } else if (futSym && sym === futSym) {
-          const oi = Number(v.oi || v.open_interest || 0);
+          const oi = Number(v.oi ?? v.open_interest ?? v.openInterest ?? 0);
           if (oi > 0) tickRecorder.recordOi(sym, oi);
         } else {
           const lp  = Number(v.lp || v.ltp || v.last_price || 0);
