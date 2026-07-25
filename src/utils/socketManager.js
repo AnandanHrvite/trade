@@ -87,8 +87,12 @@ class SocketManager {
    * Socket must already be started by the primary mode.
    */
   addCallback(callbackId, onTick, onLog) {
+    // Log only on a genuine first insert. Idempotent re-registration (e.g. the
+    // option-chain recorder re-asserts its callback every poll to survive a
+    // stop()-triggered _callbacks.clear()) must stay silent, or it floods /logs.
+    const isNew = !this._callbacks.has(callbackId);
     this._callbacks.set(callbackId, { onTick, onLog });
-    this._log(`📡 [SOCKET] Callback registered: ${callbackId} (total: ${this._callbacks.size})`);
+    if (isNew) this._log(`📡 [SOCKET] Callback registered: ${callbackId} (total: ${this._callbacks.size})`);
   }
 
   /**
