@@ -126,6 +126,11 @@ function _onSpotTick(t) {
 async function _poll() {
   if (!_enabled() || !_isMarketHours() || _lastSpot == null) return;
   if (_busy) return;
+  // A replay run monkey-patches the shared fyers.getQuotes singleton to serve
+  // recorded data at the replay clock. If we polled during that window we'd write
+  // replay-clock prices into TODAY's real recording. Pause until it finishes.
+  // (Lazy require avoids a load-time dep cycle; result is module-cached.)
+  try { if (require("../services/tickReplay").isReplayInProgress()) return; } catch (_) {}
   _busy = true;
   try {
     const expiryCode = await _resolveExpiryCode();

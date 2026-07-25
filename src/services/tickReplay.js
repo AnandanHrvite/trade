@@ -1582,6 +1582,10 @@ module.exports = {
   requestCancel,
   forceClearSharedState,
   deleteSessionMarker,
+  // True while a replay run has the fyers.getQuotes/socket stubs installed. Other
+  // observers (e.g. optionChainRecorder) must pause so they don't poll the stubbed
+  // getQuotes and write replay-clock data into today's real recording.
+  isReplayInProgress: () => _replayInProgress,
   // exposed for tests
   _internals: { _buildOptionTimeline, _lookupAtOrBefore, _createHarness, _invokeRoute, MODE_TO_MODULE },
 };
