@@ -78,7 +78,9 @@ for (const { live, label } of PAIRS) {
     const i = src.indexOf("async function stopSession");
     if (i < 0) throw new Error(`${live}: stopSession is not async (covered by the previous assertion)`);
     const body = src.slice(i, src.indexOf("\n}", i));
-    const exit = body.search(/await\s+(squareOff|placeLiveSell)\(/);
+    // Either the direct form, or wrapped in awaitExit() — the bounded wait that
+    // stops a hung broker socket from hanging /stop and gracefulShutdown forever.
+    const exit = body.search(/await\s+(awaitExit\(\s*)?(squareOff|placeLiveSell)\(/);
     assert.ok(exit >= 0, `${live}: stopSession does not await its square-off`);
 
     const save = body.search(SAVE_CALL);
@@ -128,5 +130,57 @@ for (const { live, paper, label } of PAIRS) {
   });
 }
 
-console.log(`\n${fail === 0 ? "ALL PASS" : "FAILURES"} — ${pass} passed, ${fail} failed\n`);
-process.exit(fail === 0 ? 0 : 1);
+// ── boundedExit behaviour (async — run last) ────────────────────────────────
+(async () => {
+  console.log("\nBounded exit wait");
+
+  const { awaitExit } = require("../src/utils/boundedExit");
+  const acheck = async (name, fn) => {
+    try { await fn(); console.log(`  ✅ ${name}`); pass++; }
+    catch (e) { console.log(`  ❌ ${name}\n       ${e.message}`); fail++; }
+  };
+  const after = (ms, val) => new Promise(r => setTimeout(() => r(val), ms));
+  const rejectAfter = (ms, msg) => new Promise((_, rj) => setTimeout(() => rj(new Error(msg)), ms));
+
+  await acheck("a fast exit resolves normally and is not disturbed", async () => {
+    assert.strictEqual(await awaitExit(after(5, "done"), "TEST", 500), "done");
+  });
+
+  await acheck("a hung exit rejects at the ceiling instead of hanging forever", async () => {
+    const t0 = Date.now();
+    await assert.rejects(() => awaitExit(after(5000, "never"), "TEST", 60), /NOT CONFIRMED/);
+    assert.ok(Date.now() - t0 < 1500, "the ceiling did not actually bound the wait");
+  });
+
+  await acheck("the ceiling message tells the operator the order may still be live", async () => {
+    try { await awaitExit(after(5000), "TEST", 40); assert.fail("should have rejected"); }
+    catch (e) {
+      assert.ok(/may still be in flight/.test(e.message), `unhelpful message: ${e.message}`);
+      assert.ok(/dashboard/.test(e.message), "must point the operator at the broker dashboard");
+    }
+  });
+
+  await acheck("a real exit error still propagates (not masked by the ceiling)", async () => {
+    await assert.rejects(() => awaitExit(rejectAfter(5, "broker rejected"), "TEST", 500), /broker rejected/);
+  });
+
+  // Losing the race must not leave an unhandled rejection: the process treats those
+  // as fatal, so a slow-then-failing broker call would kill the app minutes later.
+  await acheck("an exit that fails AFTER the ceiling does not crash the process", async () => {
+    let unhandled = null;
+    const onUnhandled = (e) => { unhandled = e; };
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      await assert.rejects(() => awaitExit(rejectAfter(60, "late failure"), "TEST", 20), /NOT CONFIRMED/);
+      await after(200);
+      assert.strictEqual(unhandled, null, `unhandled rejection escaped: ${unhandled && unhandled.message}`);
+    } finally { process.removeListener("unhandledRejection", onUnhandled); }
+  });
+
+  await acheck("a 0 ceiling opts out and waits for the exit however long it takes", async () => {
+    assert.strictEqual(await awaitExit(after(80, "slow"), "TEST", 0), "slow");
+  });
+
+  console.log(`\n${fail === 0 ? "ALL PASS" : "FAILURES"} — ${pass} passed, ${fail} failed\n`);
+  process.exit(fail === 0 ? 0 : 1);
+})();

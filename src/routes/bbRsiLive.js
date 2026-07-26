@@ -39,6 +39,7 @@ const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = 
 const fyers = require("../config/fyers");
 const tradeGuards = require("../utils/tradeGuards");
 const { notifyEntry, notifyExit, notifyStarted, notifySignal, notifyDayReport, sendTelegram, canSend, isConfigured } = require("../utils/notify");
+const { awaitExit } = require("../utils/boundedExit");   // bound the wait on a broker square-off
 const { getCharges } = require("../utils/charges");
 const { saveBbRsiPosition, clearBbRsiPosition } = require("../utils/positionPersist");
 const { logNearMiss } = require("../utils/nearMissLog");
@@ -1350,8 +1351,11 @@ async function stopSession() {
   state.running = false;
 
   if (state.position) {
-    try { await squareOff(state.lastTickPrice || state.position.entryPrice, "Session stopped"); }
-    catch (e) { console.error(`🚨 [BB_RSI] squareOff error: ${e.message} — check the Fyers dashboard`); }
+    try { await awaitExit(squareOff(state.lastTickPrice || state.position.entryPrice, "Session stopped"), "BB_RSI-LIVE"); }
+    catch (e) {
+      console.error(`🚨 [BB_RSI] ${e.message}`);
+      sendTelegram(`🚨 BB_RSI EXIT NOT CONFIRMED on session stop — ${e.message}`).catch(() => {});
+    }
   }
 
   stopOptionPolling();
@@ -1398,7 +1402,7 @@ router.get("/stop", async (req, res) => {
 // promise rejection rather than an error the caller could see.
 router.get("/exit", async (req, res) => {
   if (state.position) {
-    try { await squareOff(state.lastTickPrice || state.position.entryPrice, "Manual exit"); }
+    try { await awaitExit(squareOff(state.lastTickPrice || state.position.entryPrice, "Manual exit"), "BB_RSI-LIVE"); }
     catch (e) {
       log(`⚠️ [BB_RSI-LIVE] Manual exit failed: ${e.message} — check the Fyers dashboard`);
       return res.status(500).json({ success: false, error: e.message });

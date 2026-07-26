@@ -6,6 +6,16 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — bound the live square-off wait that the parity fix introduced
+
+Recheck of the parity work below. Awaiting the broker exit was correct, but it created the opposite failure and I had not bounded it.
+
+- **Neither broker SDK sets an HTTP timeout, and axios defaults to none.** A dead broker socket can hang until OS keepalive gives up — minutes. So `await squareOff(...)` inside `stopSession()` could hang the `/stop` request indefinitely, and stall `gracefulShutdown` on a deploy while PM2 waited to SIGKILL. New [src/utils/boundedExit.js](src/utils/boundedExit.js) caps the wait at `LIVE_EXIT_WAIT_MS` (default **20s**) for all four live routes. A healthy order round-trip is well under a second, so the ceiling never fires in normal operation and the books stay correct; it fires only in a real outage, where the operator gets a Telegram alert instead of a hung process.
+- **The timeout cancels nothing** — a market order that has left the process cannot be recalled. It only stops us *waiting*, which is why the message reads "may still be in flight, verify the dashboard" rather than "exit failed".
+- **A latent crash in the helper itself, caught by its own test**: when the ceiling won the race, the losing `exitPromise` kept running unobserved, so a slow-then-failing broker call surfaced as an unhandled rejection minutes later. A terminal handler is now attached, and it logs only when the ceiling actually fired (otherwise the caller is already receiving that rejection directly).
+
+Six behavioural assertions added to the parity suite (fast exit undisturbed, hung exit bounded, message names the risk, a real broker error still propagates un-masked, a post-ceiling failure cannot crash the process, `0` opts out). `npm run test:parity` is now 23.
+
 ### Fixed — the two ORB paper↔live defects were systemic: same bugs in BB_RSI, PA and EMA_RSI_ST live
 
 The ORB parity pass below found two root causes. Both turned out to be **defect classes, not ORB slips** — every other standalone `*Live.js` route had them too. The harness routes are unaffected (they execute their paper route directly).

@@ -56,6 +56,7 @@ const fyers       = require("../config/fyers");
 const fyersBroker = require("../services/fyersBroker");
 const tradeGuards = require("../utils/tradeGuards");
 const { notifyEntry, notifyExit, notifyStarted, notifyDayReport, sendTelegram } = require("../utils/notify");
+const { awaitExit } = require("../utils/boundedExit");   // bound the wait on a broker square-off
 const { getCharges } = require("../utils/charges");
 const { getISTMinutes, getBucketStart, fmtISTDateTime } = require("../utils/tradeUtils");
 
@@ -743,8 +744,11 @@ async function stopSession() {
   if (!state.running) return;
   state.running = false;
   if (state.position) {
-    try { await placeLiveSell("Session stopped"); }
-    catch (e) { log(`⚠️ Exit during session stop failed: ${e.message} — check the Fyers dashboard`); }
+    try { await awaitExit(placeLiveSell("Session stopped"), "ORB-LIVE"); }
+    catch (e) {
+      log(`⚠️ ${e.message}`);
+      sendTelegram(`🚨 ORB EXIT NOT CONFIRMED on session stop — ${e.message}`).catch(() => {});
+    }
   }
   stopOptionPolling();
 
@@ -777,8 +781,8 @@ router.get("/stop", async (req, res) => { await stopSession(); res.redirect("/or
 // user saw the position still open and had to refresh.
 router.get("/exit", async (req, res) => {
   if (state.position) {
-    try { await placeLiveSell("Manual exit"); }
-    catch (e) { log(`⚠️ Manual exit failed: ${e.message} — check the Fyers dashboard`); }
+    try { await awaitExit(placeLiveSell("Manual exit"), "ORB-LIVE"); }
+    catch (e) { log(`⚠️ ${e.message}`); }
   }
   res.redirect("/orb-live/status");
 });

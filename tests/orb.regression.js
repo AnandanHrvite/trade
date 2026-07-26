@@ -451,7 +451,7 @@ const ENTRIES  = ALL_SIGS.filter(x => x.sig.signal !== "NONE");
     const i = LIVE_SRC.indexOf("async function stopSession");
     assert.ok(i >= 0, "live stopSession is not async — it cannot await the exit");
     const body = LIVE_SRC.slice(i, LIVE_SRC.indexOf("\n}", i));
-    const sell = body.indexOf("await placeLiveSell");
+    const sell = body.search(/await\s+(awaitExit\(\s*)?placeLiveSell\(/);
     const save = body.indexOf("saveData(");
     const rec  = body.indexOf("orbRiskState.recordDay");
     assert.ok(sell >= 0, "live stopSession does not await the exit");
