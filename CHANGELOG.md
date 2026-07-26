@@ -6,6 +6,18 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — EMA9+VWAP red-team pass: a crash, a default-config EOD drift, two missing guards
+
+Fourth independent audit. Paper and the strategy module were **not** touched; every defect was in the backtest engine (plus one wrong log line).
+
+- **Critical — `TRADE_EXPIRY_DAY_ONLY=true` crashed the whole backtest.** The expiry-date block read `total` about 25 lines above its own `const total = candles.length;`, so turning the filter on threw `ReferenceError: Cannot access 'total' before initialization` and aborted the run. It never surfaced because `&&` short-circuits on the default (filter off) and `total` is only reached when the filter is ON. Introduced by the previous parity commit; `total` is now declared before its first use.
+- **High — EOD square-off fired one bar late, on the DEFAULT config.** Paper squares off inside `onCandleClose`, which runs when a bar *closes*, comparing the wall clock at that instant against `EMA9VWAP_EOD_EXIT_TIME`. The backtest compared the bar's *start*, so with the 15:15 default paper exited on the 15:10 bar (it closes at 15:15) while the backtest waited for the 15:15 bar and booked its 15:20 close. Now gated on the bar's close, matching `strategy.isEntryWindowOpen()`. This **changes default backtest numbers** — one trade per month (the one that runs to EOD): Mar-26 −₹18,963 → −₹18,742, Apr-26 +₹594 → +₹346. It is a correction toward paper, not an improvement.
+- **High — same-side SL cooldown was missing.** Paper's `_setSlPause` blocks re-entry on a stopped-out side for `EMA9VWAP_SL_PAUSE_CANDLES` (default 3) after a points-stop / option-stop / trail-SL hit. The backtest had no equivalent, so with any optional stop enabled it re-took the same side on a bar paper still had blocked. Mirrored, armed by exactly those three exits.
+- **Medium — chop guard was missing.** `EMA9VWAP_MAX_CONSEC_LOSSES` (default 0 = off) halts entries for the rest of a session after N straight losses in paper; the backtest ignored it entirely.
+- **Low — the live harness logged the wrong confirmation-candle default.** With the key unset, `/ema9vwap-live/start` printed `confirmation candle: ON` while the paper engine underneath ran it OFF. Log string only.
+
+Verified: `npm test` **20 assertions, 0 failed**; every new assertion mutation-tested (reverting each fix fails exactly its own test). Defaults are unchanged apart from the EOD trade documented above.
+
 ### Fixed — EMA9+VWAP: backtest exit PRECEDENCE did not match paper
 
 Found on a further red-team pass. Paper runs the protective stops in `onTick` — they fire on the ticks of a bar using the level set at the PREVIOUS bar's close, i.e. **before that bar ever closes** — and only then does `onCandleClose` run the time-stop and negative-candle checks. The backtest evaluated the candle-close rules FIRST, so whenever two rules fired on the same bar it attributed the exit to the wrong rule and (now that stops book their own level) to the wrong price.

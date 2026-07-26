@@ -147,7 +147,11 @@ router.get("/start", async (req, res) => {
   // notifyEntry/Exit calls. The confirmation-candle entry gate therefore runs
   // here EXACTLY as in paper (this harness has no entry path of its own) — log
   // its state so the inherited behaviour is explicit, not silent.
-  console.log(`🧪 [EMA9VWAP-LIVE-HARNESS] confirmation candle: ${(process.env.EMA9VWAP_CONFIRM_CANDLE_ENABLED || "true").toLowerCase() === "true" ? "ON (2-candle cross & close)" : "OFF (legacy intra-candle)"}`);
+  // Default MUST match ema9vwapPaper._confirmEnabled() ("false"). It read "true"
+  // here, so with the key unset every live start printed "confirmation candle: ON"
+  // while the engine underneath was running it OFF — the log said the opposite of
+  // what live was doing. String only; no gate is evaluated here.
+  console.log(`🧪 [EMA9VWAP-LIVE-HARNESS] confirmation candle: ${(process.env.EMA9VWAP_CONFIRM_CANDLE_ENABLED || "false").toLowerCase() === "true" ? "ON (2-candle cross & close)" : "OFF (entry on the cross candle's close)"}`);
   try {
     // _viaHarness=1 marks this as the ONE start that is allowed to run with the
     // harness attached; a paper-page start releases it instead (see paper /start).

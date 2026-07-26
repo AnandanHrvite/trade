@@ -201,7 +201,6 @@ async function runBT(env = {}) {
       `${stolen} bar(s) went to the negative-candle stop although the 25pt points stop was breached on that same bar — candle-close rules are being evaluated before the intrabar stops`);
   });
 
-  check("each optional stop actually takes effect when enabled", async () => {});
   for (const [k, v, label, re] of [
     ["EMA9VWAP_NEG_CANDLE_LIMIT", "3", "negative-candle stop", /Negative 3-candle stop/],
     ["EMA9VWAP_SL_MODE", "candle", "time-stop", /Time-stop/],
@@ -212,7 +211,80 @@ async function runBT(env = {}) {
     });
   }
 
-  // ── 4. Strategy integrity — the rules themselves must be untouched ─────────
+  // ── 4. Paper-parity guards the backtest used to be missing ────────────────
+  console.log("\nBacktest ↔ Paper parity");
+  const istMins = s => Math.floor((s + 19800) / 60) % 1440;
+  const istDay  = s => Math.floor((s + 19800) / 86400);
+
+  const expiryRun = await runBT({ TRADE_EXPIRY_DAY_ONLY: "true" }).catch(e => e);
+  check("TRADE_EXPIRY_DAY_ONLY=true runs instead of throwing", () => {
+    assert.ok(!(expiryRun instanceof Error),
+      `enabling the expiry-only filter threw: ${expiryRun && expiryRun.message} (const temporal-dead-zone regression)`);
+    assert.ok(expiryRun.summary, "run returned no summary");
+  });
+
+  check("EOD square-off takes the FIRST bar closing at/after the exit time", () => {
+    // Paper squares off inside onCandleClose, i.e. when the bar CLOSES, so the exit
+    // bar must be the earliest bar of that day whose close reached EMA9VWAP_EOD_EXIT_TIME
+    // and which the trade was still open on. Gating on the bar's START instead held
+    // the position one extra bar and booked a later price.
+    const EOD = 15 * 60 + 15, RES = 5;
+    const eods = base.trades.filter(t => /EOD square-off/.test(t.exitReason));
+    assert.ok(eods.length > 0, "no EOD exits in the fixture — cannot verify the boundary");
+    for (const t of eods) {
+      const day = istDay(t.exitTs);
+      const earlier = CANDLES.filter(c =>
+        istDay(c.time) === day && c.time > t.entryTs && c.time < t.exitTs &&
+        istMins(c.time) + RES >= EOD);
+      assert.strictEqual(earlier.length, 0,
+        `EOD exit at bar closing ${istMins(t.exitTs) + RES}min held past ${earlier.length} earlier bar(s) that already closed at/after the 15:15 cut`);
+    }
+  });
+
+  const slPause = await runBT({ EMA9VWAP_STOP_LOSS_PTS: "25", EMA9VWAP_SL_PAUSE_CANDLES: "10" });
+  const slNoPause = await runBT({ EMA9VWAP_STOP_LOSS_PTS: "25", EMA9VWAP_SL_PAUSE_CANDLES: "0" });
+  check("same-side SL cooldown blocks re-entry on the stopped-out side", () => {
+    const RES = 5, N = 10;
+    let violations = 0;
+    for (let i = 1; i < slPause.trades.length; i++) {
+      const t = slPause.trades[i];
+      for (let j = 0; j < i; j++) {
+        const p = slPause.trades[j];
+        if (!/^SL \(25pts\)/.test(p.exitReason)) continue;
+        if (p.side !== t.side || istDay(p.exitTs) !== istDay(t.entryTs)) continue;
+        if (t.entryTs < p.exitTs + N * RES * 60) violations++;
+      }
+    }
+    assert.strictEqual(violations, 0,
+      `${violations} entr(ies) re-took a side inside its ${N}-candle SL cooldown — paper's _setSlPause is not mirrored`);
+    assert.notStrictEqual(slPause.trades.length, slNoPause.trades.length,
+      "SL_PAUSE_CANDLES=10 and =0 produced the same trade count — the cooldown is inert, so this test proves nothing");
+  });
+
+  // CHOP=1 because this fixture's worst day only ever strings 2 losses together and
+  // never trades again after the 2nd — a threshold of 2 would be silently inert here.
+  const CHOP = 1;
+  const chopOn = await runBT({ EMA9VWAP_STOP_LOSS_PTS: "25", EMA9VWAP_MAX_CONSEC_LOSSES: String(CHOP) });
+  check("chop guard halts the day after N straight losses", () => {
+    const byDay = new Map();
+    for (const t of chopOn.trades) {
+      const d = istDay(t.entryTs);
+      if (!byDay.has(d)) byDay.set(d, []);
+      byDay.get(d).push(t);
+    }
+    for (const [d, ts] of byDay) {
+      let streak = 0;
+      for (let i = 0; i < ts.length; i++) {
+        assert.ok(streak < CHOP, `day ${d}: trade ${i + 1} was entered after ${streak} straight losses (chop guard = ${CHOP})`);
+        if (ts[i].pnl > 0) streak = 0; else if (ts[i].pnl < 0) streak++;
+      }
+    }
+    // Baseline = same stop config, chop guard off (`sl`), so the only difference is the guard.
+    assert.ok(chopOn.trades.length < sl.trades.length,
+      "chop guard removed no trades — the guard is inert, so this test proves nothing");
+  });
+
+  // ── 5. Strategy integrity — the rules themselves must be untouched ─────────
   console.log("\nStrategy integrity");
   check("EMA9 equals technicalindicators EMA(9) on close", () => {
     const { EMA } = require("technicalindicators");

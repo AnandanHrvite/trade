@@ -121,6 +121,11 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
   // Opposite-side (flip) cooldown — same keys/defaults as ema9vwapPaper._refreshConfig.
   const oppCooldownEnabled = (process.env.EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_ENABLED || "true").toLowerCase() === "true";
   const oppCooldownCandles = parseInt(process.env.EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_CANDLES || "3", 10);
+  // Same-side SL cooldown + chop guard — same keys/defaults ema9vwapPaper reads.
+  // slPauseCandles is inert until an optional protective stop is enabled (nothing
+  // arms it otherwise); chopMax defaults to 0 = off. Both were missing here.
+  const slPauseCandles = parseInt(process.env.EMA9VWAP_SL_PAUSE_CANDLES || "3", 10);
+  const chopMax        = parseInt(process.env.EMA9VWAP_MAX_CONSEC_LOSSES || "0", 10);
   // Reason patterns that do NOT arm the opposite cooldown (mirror paper _setOppositeCooldown).
   const OPP_EXEMPT_RE = /opposite signal|eod|day close|market closed|auto-stop|manual|session restart|simulation ended/i;
   // Candle resolution in minutes (from spacing) — drives the "4 candles" pause + cooldown windows.
@@ -138,6 +143,12 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
   const expiryOnly = (process.env.TRADE_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true";
   const expiryDates = new Set();
   let expiryLookupFailed = false;
+  // `total` is declared HERE, above its first use. It used to be declared ~25 lines
+  // below while this block already read it, so `TRADE_EXPIRY_DAY_ONLY=true` threw
+  // "Cannot access 'total' before initialization" (a const temporal-dead-zone error)
+  // and killed the whole run. It never surfaced because the `&&` short-circuits on
+  // the default (filter off) and `total` is only reached when the filter is ON.
+  const total = candles.length;
   if (expiryOnly && total > 0) {
     const { isExpiryDate } = require("../utils/nseHolidays");
     const _seen = new Set();
@@ -162,7 +173,14 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
   let pauseUntilTs = 0;            // block entries until this candle.time (seconds) — 3-loss pause
   let oppCooldownUntilTs = 0;      // block opposite-side entries until this candle.time (seconds)
   let oppCooldownLastSide = null;  // side that was last exited
-  const total = candles.length;
+  // Same-side SL cooldown (paper `_setSlPause`): after a PROTECTIVE stop-out, block
+  // new entries on THAT side for EMA9VWAP_SL_PAUSE_CANDLES candles. Paper has always
+  // done this; this engine did not, so with any optional stop enabled the backtest
+  // could re-enter the same side on the very next bar that paper still had blocked.
+  let slPauseUntilTs = { CE: 0, PE: 0 };
+  // Chop guard (paper `_chopConsecLosses` + EMA9VWAP_MAX_CONSEC_LOSSES): halt entries
+  // for the rest of the session after N straight losses; any win resets. 0 = off (default).
+  let chopConsecLosses = 0;
   const reportEvery = Math.max(1, Math.floor(total / 50));
 
   // Rolling 200-candle window reused via push/shift (mirrors paper's in-memory cap
@@ -182,8 +200,11 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
    *   Booking candle.close for a stop overstated the loss by the whole distance
    *   price ran past the stop inside the bar: a 25pt stop on a bar that fell 60pt
    *   booked −60 in the backtest and −25 in paper.
+   * @param {boolean} [armSlPause]  true for the three exits paper calls _setSlPause
+   *   on (points stop / option stop / trail-SL hit). Those, and only those, block
+   *   re-entry on the SAME side for EMA9VWAP_SL_PAUSE_CANDLES candles.
    */
-  function _closeTrade(candle, exitReason, exitLevel) {
+  function _closeTrade(candle, exitReason, exitLevel, armSlPause) {
     let exitPrice = Number.isFinite(exitLevel) ? exitLevel : candle.close;
     if (SLIPPAGE_PTS > 0) exitPrice = position.side === "CE" ? exitPrice - SLIPPAGE_PTS : exitPrice + SLIPPAGE_PTS;
     const spotPnlPts = _q((exitPrice - position.entryPrice) * (position.side === "CE" ? 1 : -1), 2);
@@ -245,10 +266,19 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
       consecLosses = 0;
       pauseUntilTs = 0; // a profitable/flat trade clears any remaining pause (matches paper)
     }
+    // Chop-guard streak — grows on a loss, cleared by a win, untouched by a flat
+    // trade. Independent of consecLosses above (which the 5-min rule resets to 0).
+    if (pnlRupees > 0)      chopConsecLosses = 0;
+    else if (pnlRupees < 0) chopConsecLosses += 1;
     // Opposite-side (flip) cooldown: arm unless the exit reason is exempt.
     if (oppCooldownEnabled && oppCooldownCandles > 0 && !OPP_EXEMPT_RE.test(exitReason)) {
       oppCooldownUntilTs  = candle.time + oppCooldownCandles * resMins * 60;
       oppCooldownLastSide = _exitedSide;
+    }
+    // Same-side SL cooldown — only the protective stops arm it, exactly as paper's
+    // _setSlPause is only called from the points stop, option stop and trail-SL hit.
+    if (armSlPause && slPauseCandles > 0) {
+      slPauseUntilTs[_exitedSide] = candle.time + slPauseCandles * resMins * 60;
     }
 
     position = null;
@@ -266,6 +296,7 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
       // Reset per-day circuit-breaker state (paper starts each session fresh).
       dailyLossHit = false; consecLosses = 0; pauseUntilTs = 0;
       oppCooldownUntilTs = 0; oppCooldownLastSide = null;
+      slPauseUntilTs = { CE: 0, PE: 0 }; chopConsecLosses = 0;
     }
     const mins = _istMins(candle.time);
     // M4: paper `return`s after a REVERSAL or EOD exit (no re-entry that candle) but
@@ -285,7 +316,7 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
     // ── EXIT (checked first, like paper's onCandleClose) ──
     if (position) {
       position.candlesHeld = (position.candlesHeld || 0) + 1;
-      let doExit = false, exitReason = "", blocksReentry = true, exitLevel;
+      let doExit = false, exitReason = "", blocksReentry = true, exitLevel, armSlPause = false;
 
       // ── Paper's REAL exit precedence, mirrored ──────────────────────────────
       // Paper runs the protective stops in onTick — they fire on the ticks of THIS
@@ -315,7 +346,7 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
 
       // (1) points stop — paper: per-tick, exits AT the cap level.
       if (!doExit && stopLossPts > 0 && _adverseExcursion <= -stopLossPts) {
-        doExit = true; exitReason = `SL (${stopLossPts}pts)`;
+        doExit = true; exitReason = `SL (${stopLossPts}pts)`; armSlPause = true;
         exitLevel = position.side === "CE"
           ? position.entryPrice - stopLossPts
           : position.entryPrice + stopLossPts;
@@ -323,7 +354,7 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
       // (2) option-premium stop — paper: per-tick on real premium. No option chain
       //     here, so it is converted to its spot-move equivalent (approximation).
       if (!doExit && _optStopSpotPts > 0 && _adverseExcursion <= -_optStopSpotPts) {
-        doExit = true; exitReason = `Option stop ${(optStopPct * 100).toFixed(0)}% (spot-equivalent)`;
+        doExit = true; exitReason = `Option stop ${(optStopPct * 100).toFixed(0)}% (spot-equivalent)`; armSlPause = true;
         exitLevel = position.side === "CE"
           ? position.entryPrice - _optStopSpotPts
           : position.entryPrice + _optStopSpotPts;
@@ -337,6 +368,7 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
           doExit = true;
           exitReason = `Trail SL hit @ ${_q(position.trailSL, 2)}`;
           exitLevel  = position.trailSL;   // paper: simulateSell(updatedSL, …)
+          armSlPause = true;
         }
       }
       // (4) legacy time-stop — only when EMA9VWAP_SL_MODE=candle.
@@ -368,11 +400,18 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
         doExit = true;
         exitReason = `EMA9 re-entered VWAP ${position.side === "CE" ? "top" : "bottom"} band`;
         blocksReentry = false;   // paper falls through here — cooldown is the guard
-      } else if (!doExit && mins >= eodExit) {
+      } else if (!doExit && mins + resMins >= eodExit) {
+        // Gated on the bar's CLOSE, not its start. Paper squares off inside
+        // onCandleClose, which runs when the bar closes, and compares the WALL CLOCK
+        // at that instant against EMA9VWAP_EOD_EXIT_TIME. Comparing the bar's START
+        // held the trade one bar too long: with the 15:15 default, paper exits on
+        // the 15:10 bar (it closes at 15:15) while this engine waited for the 15:15
+        // bar and booked its 15:20 close — a different exit price on every day that
+        // ran to EOD. Same candle-close semantics as strategy.isEntryWindowOpen().
         doExit = true;
         exitReason = "EOD square-off";
       }
-      if (doExit) { _closeTrade(candle, exitReason, exitLevel); blockEntryThisCandle = blocksReentry; }
+      if (doExit) { _closeTrade(candle, exitReason, exitLevel, armSlPause); blockEntryThisCandle = blocksReentry; }
     }
 
     // ── ENTRY (candle close, inside the entry window, daily guards) ──
@@ -387,7 +426,11 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
       //   • max trades/day  • latched daily-loss  • 3-loss pause  • opposite-side cooldown
       const _oppBlocked = oppCooldownEnabled && oppCooldownLastSide
         && oppCooldownLastSide !== side && candle.time < oppCooldownUntilTs;
-      if (dailyTrades < maxDailyTrades && !dailyLossHit && candle.time >= pauseUntilTs && !_oppBlocked) {
+      // Same-side SL cooldown + chop guard (both mirrored from paper; see above).
+      const _slPauseBlocked = candle.time < slPauseUntilTs[side];
+      const _chopBlocked    = chopMax > 0 && chopConsecLosses >= chopMax;
+      if (dailyTrades < maxDailyTrades && !dailyLossHit && candle.time >= pauseUntilTs
+          && !_oppBlocked && !_slPauseBlocked && !_chopBlocked) {
         // VIX gate — evaluated only when we would otherwise enter, like paper.
         const _vc = vixFilter.checkBacktestVix(vixLookup(candle.time), "STRONG", { mode: "ema9vwap" });
         if (_vc.allowed) {
