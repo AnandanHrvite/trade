@@ -264,6 +264,11 @@ let ptState = {
   _expiryDayBlocked:  false, // blocks entries on non-expiry days
   _simMode:           false, // simulation mode (fake ticks, no broker)
   _simScenario:       null,  // active scenario name
+  // Sticky "this session came from /simulate" marker. _simMode alone is NOT enough:
+  // onSimDone() clears it when the scenario finishes, so by the time the user presses
+  // Stop the engine looks like a real session and persisted the synthetic trades into
+  // the canonical paper history. Set in resetSimState(), cleared only by /start.
+  _simSession:        false,
   // Win/loss counters: maintained in simulateSell so /status/data doesn't filter on every poll
   _sessionWins:   0,
   _sessionLosses: 0,
@@ -870,7 +875,12 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
     vwapUpperAtEntry:  entryMeta.vwapUpperAtEntry != null ? entryMeta.vwapUpperAtEntry : null,
     vwapLowerAtEntry:  entryMeta.vwapLowerAtEntry != null ? entryMeta.vwapLowerAtEntry : null,
   };
-  try { require("../utils/positionPersist").saveEma9VwapPosition(ptState.position, { sessionPnl: ptState.sessionPnl }); } catch (_) {}
+  // Crash-recovery snapshot — real sessions only. A synthetic scenario position
+  // written here makes the next boot Telegram "🚨 Persisted EMA9+VWAP position
+  // found (crash recovery)!" for a trade that never existed.
+  if (!ptState._simMode && !ptState._simSession) {
+    try { require("../utils/positionPersist").saveEma9VwapPosition(ptState.position, { sessionPnl: ptState.sessionPnl }); } catch (_) {}
+  }
 
   // Set option symbol and start REST polling (no socket changes)
   // Skip option polling for futures and simulation mode — no option premium to track
@@ -1019,7 +1029,13 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   };
 
   ptState.sessionTrades.push(trade);
-  tradeLogger.appendTradeLog("ema9vwap", trade); // crash-safe per-trade JSONL
+  // Simulation isolation: a /simulate run must never reach the canonical audit log.
+  // These JSONL files are what the tuning workflow, Consolidation and the AI export
+  // all read as real paper history, and a synthetic trade there is indistinguishable
+  // from a live one (it carries today's date and a real option symbol).
+  if (!ptState._simMode && !ptState._simSession) {
+    tradeLogger.appendTradeLog("ema9vwap", trade); // crash-safe per-trade JSONL
+  }
   ptState.sessionPnl = parseFloat((ptState.sessionPnl + netPnl).toFixed(2));
   // Maintain O(1) counters so status endpoints don't need Array.filter on every poll
   if (netPnl > 0) { ptState._sessionWins++;   }
@@ -1636,9 +1652,30 @@ function onTick(tick) {
   const barLowChanged  = bar && bar.low  !== ptState._lastCheckedBarLow;
   const shouldCheckSignal = TRADE_RES === 5 || barHighChanged || barLowChanged;
 
-  if (_intraCandleEntryEnabled() && !ptState.position && bar && ptState.candles.length >= 30
-      && !ptState._entryPending && shouldCheckSignal
-      && (TRADE_RES === 5 || _cachedClosedCandleSL !== null)) {
+  // ── Gate: intra-candle entry OR confirmation-candle entry ───────────────────
+  // The confirmation-candle consume (see `if (_confirmEnabled())` below) lives
+  // inside this block, while onCandleClose SKIPS its own entry whenever confirm is
+  // on. So gating solely on _intraCandleEntryEnabled() meant CONFIRM=on +
+  // INTRACANDLE=off (its default) left NO entry path at all: every cross logged
+  // "🎯 ARMED CE", the status page showed "waiting for next candle to cross …",
+  // and the engine never traded. BB_RSI evaluates its armed signal at the top level
+  // of its tick handler for exactly this reason. Confirm now opens the gate too;
+  // when it does, the block below rewrites `signal` from the armed state, so the
+  // raw forming-bar signal still cannot enter.
+  //
+  // The old `(TRADE_RES === 5 || _cachedClosedCandleSL !== null)` clause is gone:
+  // it is a leftover from the SAR strategy ("wait until SAR is initialised").
+  // getSignal() returns stopLoss=null for EMA9+VWAP, so _cachedClosedCandleSL is
+  // ALWAYS null here — the clause was true only because of `TRADE_RES === 5`, and
+  // at the 3-min / 15-min options Settings offers it silently disabled this whole
+  // block. "At least one candle has closed" is already guaranteed by
+  // `ptState.candles.length >= 30` in the same condition. No change at 5-min.
+  //
+  // _expiryDayBlocked is checked here too — the candle-close path has always
+  // honoured it (lines ~1405/1423) but this path did not, so TRADE_EXPIRY_DAY_ONLY
+  // failed OPEN on any intra-candle entry.
+  if ((_intraCandleEntryEnabled() || _confirmEnabled()) && !ptState.position && bar && ptState.candles.length >= 30
+      && !ptState._entryPending && !ptState._expiryDayBlocked && shouldCheckSignal) {
 
     // Update throttle — record the high/low we're about to evaluate against
     if (TRADE_RES !== 5) {
@@ -1927,7 +1964,10 @@ function saveSession() {
   const losses = { length: ptState._sessionLosses };
 
   const session = {
-    date:        new Date().toISOString().split("T")[0],
+    // IST, not UTC. toISOString() is 5:30 behind IST and stamps the PREVIOUS day for
+    // anything saved between 00:00 and 05:30 IST — reachable via a night-deploy
+    // stopSession(). Every other date in this file already uses the IST locale form.
+    date:        new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
     strategy:    ACTIVE,
     instrument:  instrumentConfig.INSTRUMENT,
     startTime:   ptState.sessionStart,
@@ -1941,6 +1981,19 @@ function saveSession() {
                    : "N/A",
     sessionPnl:  ptState.sessionPnl,
   };
+
+  // ── Simulation isolation ────────────────────────────────────────────────────
+  // /simulate sets ptState.running itself and onSimDone() clears only _simMode, so
+  // the user's Stop click landed here looking like a real session: it pushed the
+  // synthetic trades into ema9vwap_paper_trades.json, moved `capital` and `totalPnl`
+  // by the simulated P&L, and Telegrammed a day report for a session that never
+  // happened. The replay engine already stubs fs for exactly this file
+  // (tickReplay PAPER_TRADES_RE) — the scenario simulator had no equivalent guard.
+  // Return the session so /stop still answers; just never persist or broadcast it.
+  if (ptState._simSession || ptState._simMode) {
+    log(`🧪 [PAPER] Simulation session — NOT written to paper history (${session.totalTrades} trade(s), PnL ₹${session.sessionPnl}).`);
+    return { ...session, simulated: true };
+  }
 
   data.sessions.push(session);
   data.totalPnl = parseFloat((data.totalPnl + ptState.sessionPnl).toFixed(2));
@@ -2147,7 +2200,22 @@ router.get("/start", async (req, res) => {
   ptState.currentBar    = null;
   ptState.barStartTime  = null;
   ptState.position      = null;
-  try { require("../utils/positionPersist").clearEma9VwapPosition(); } catch (_) {}
+  ptState._simSession   = false;   // a real session — persistence is live again
+  // The boot reconcile in app.js deliberately RETAINS this snapshot when the broker
+  // book came back empty (empty is indistinguishable from a swallowed API error), so
+  // it can re-check next boot. Clearing it here is still correct — a new session owns
+  // the file — but doing it silently threw away that pending check. Say so loudly.
+  try {
+    const _pp = require("../utils/positionPersist");
+    const _stale = _pp.loadEma9VwapPosition();
+    if (_stale && _stale.position) {
+      const _p = _stale.position;
+      const _msg = `⚠️ [PAPER] Discarding a crash-recovery snapshot at session start: ${_p.side} ${_p.symbol} entry ₹${_p.entryPrice} qty ${_p.qty}, saved ${_stale.savedAt}. If the boot check could not read the broker book, VERIFY at the broker — this was the last record of it.`;
+      log(_msg);
+      try { if (!ptState._simMode) sendTelegram(_msg); } catch (_) {}
+    }
+    _pp.clearEma9VwapPosition();
+  } catch (_) {}
   ptState.sessionTrades = [];
   ptState.sessionPnl    = 0;
   ptState.sessionStart  = istNow();
@@ -4703,7 +4771,14 @@ router.post("/simulate/start", async (req, res) => {
     ptState._sessionWins         = 0;
     ptState._sessionLosses       = 0;
     ptState._expiryDayBlocked    = false;
+    // These three are reset by /start but were missing here, so a scenario inherited
+    // them from whatever ran before it. A latched chop guard (N straight losses in a
+    // prior session) silently produced a 0-trade simulation that read as "no signals".
+    ptState._chopConsecLosses    = 0;
+    ptState._skipSignalCtx       = null;
+    ptState._sessionId           = null;
     ptState._simMode             = true;
+    ptState._simSession          = true;   // sticky — survives onSimDone clearing _simMode
     ptState._simScenario         = label;
     _cachedClosedCandleSL        = null;
     // 09:15 IST = 03:45 UTC on the same IST date

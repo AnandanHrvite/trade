@@ -662,6 +662,17 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     ss_clearPA:           sharedSocketState.clearPA,
     ss_setOrbActive:      sharedSocketState.setOrbActive,
     ss_clearOrb:          sharedSocketState.clearOrb,
+    // EMA9VWAP + TREND_PB were added to sharedSocketState after this stub list was
+    // written and never appended to it, so their replays mutated the REAL mutex:
+    // /start set it and, if the run threw before /stop, left it stuck (bricking the
+    // paper engine — /start then refuses with "Live Trading is currently active"
+    // and force-clear could not undo it). Worse, a replay run while that strategy
+    // was genuinely live cleared its flag at /stop, so the next sibling to stop saw
+    // isAnyActive()===false and killed the shared Fyers socket underneath it.
+    ss_setEma9VwapActive: sharedSocketState.setEma9VwapActive,
+    ss_clearEma9Vwap:     sharedSocketState.clearEma9Vwap,
+    ss_setTrendPbActive:  sharedSocketState.setTrendPbActive,
+    ss_clearTrendPb:      sharedSocketState.clearTrendPb,
     // fs originals — paper /stop calls saveSession() → savePaperData() which
     // writes the canonical {strategy}_paper_trades.json via fs.writeFileSync
     // + fs.renameSync directly (NOT via tradeLogger.appendTradeLog, which we
@@ -804,6 +815,10 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     sharedSocketState.clearPA           = () => {};
     sharedSocketState.setOrbActive      = () => {};
     sharedSocketState.clearOrb          = () => {};
+    sharedSocketState.setEma9VwapActive = () => {};
+    sharedSocketState.clearEma9Vwap     = () => {};
+    sharedSocketState.setTrendPbActive  = () => {};
+    sharedSocketState.clearTrendPb      = () => {};
 
     // fs: intercept writes to any canonical {strategy}_paper_trades.json (and
     // its .tmp sibling used for atomic temp+rename). Every paper route saves
@@ -940,6 +955,10 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     sharedSocketState.clearPA           = orig.ss_clearPA;
     sharedSocketState.setOrbActive      = orig.ss_setOrbActive;
     sharedSocketState.clearOrb          = orig.ss_clearOrb;
+    sharedSocketState.setEma9VwapActive = orig.ss_setEma9VwapActive;
+    sharedSocketState.clearEma9Vwap     = orig.ss_clearEma9Vwap;
+    sharedSocketState.setTrendPbActive  = orig.ss_setTrendPbActive;
+    sharedSocketState.clearTrendPb      = orig.ss_clearTrendPb;
     fs.writeFileSync = orig.fs_writeFileSync;
     fs.renameSync    = orig.fs_renameSync;
     // Clear any pass-through long-delay timers BEFORE restoring originals so
@@ -1498,6 +1517,12 @@ function replayPreflight() {
   if (sharedSocketState.isBbRsiActive())     activeModes.push(sharedSocketState.getBbRsiMode() || "bb_rsi");
   if (sharedSocketState.isPAActive())        activeModes.push(sharedSocketState.getPAMode() || "pa");
   if (sharedSocketState.isOrbActive())       activeModes.push(sharedSocketState.getOrbMode() || "orb");
+  // EMA9VWAP + TREND_PB were missing here, so this "don't replay while a strategy
+  // is running" guard did not protect them at all — a replay could be launched on
+  // top of a live EMA9+VWAP session, which is exactly what the comment above warns
+  // against (silenced trades, and the /stop mutex clear killing the shared socket).
+  if (sharedSocketState.isEma9VwapActive()) activeModes.push(sharedSocketState.getEma9VwapMode() || "ema9vwap");
+  if (sharedSocketState.isTrendPbActive())  activeModes.push(sharedSocketState.getTrendPbMode() || "trend_pb");
   if (activeModes.length > 0) {
     return {
       ok: false,
@@ -1536,12 +1561,19 @@ function forceClearSharedState() {
     bb_rsi:    sharedSocketState.getBbRsiMode(),
     pa:       sharedSocketState.getPAMode(),
     orb:      sharedSocketState.getOrbMode(),
+    ema9vwap: sharedSocketState.getEma9VwapMode(),
+    trend_pb: sharedSocketState.getTrendPbMode(),
     replayInProgress: _replayInProgress,
   };
   sharedSocketState.clear();
   sharedSocketState.clearBbRsi();
   sharedSocketState.clearPA();
   sharedSocketState.clearOrb();
+  // Without these two, the documented recovery path (POST /replay/force-clear, and
+  // the defensive call in runReplay's finally) could not unstick a leaked EMA9VWAP
+  // / TREND_PB flag — the strategy stayed unstartable until a full PM2 restart.
+  sharedSocketState.clearEma9Vwap();
+  sharedSocketState.clearTrendPb();
   _replayInProgress = false;
   return { ok: true, cleared: before };
 }

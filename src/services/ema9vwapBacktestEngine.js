@@ -345,8 +345,17 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
         : (position.entryPrice - candle.high);
 
       // (1) points stop — paper: per-tick, exits AT the cap level.
+      // NOTE on `blocksReentry` for the three PROTECTIVE stops below: paper fires
+      // them inside onTick, which `return`s from the TICK handler only — the bar
+      // still closes afterwards and onCandleClose's entry section runs normally, so
+      // paper CAN re-enter on the same bar a stop fired (the same-side SL cooldown
+      // and the opposite-side cooldown are what actually hold it back). This engine
+      // blocked the bar outright, which diverged from paper whenever both cooldowns
+      // were switched off. The candle-close rules (time-stop, negative-candle,
+      // reversal, EOD) DO `return` out of onCandleClose in paper, so those keep
+      // blocking the bar. Paper is canonical; the backtest moves to match it.
       if (!doExit && stopLossPts > 0 && _adverseExcursion <= -stopLossPts) {
-        doExit = true; exitReason = `SL (${stopLossPts}pts)`; armSlPause = true;
+        doExit = true; exitReason = `SL (${stopLossPts}pts)`; armSlPause = true; blocksReentry = false;
         exitLevel = position.side === "CE"
           ? position.entryPrice - stopLossPts
           : position.entryPrice + stopLossPts;
@@ -354,7 +363,7 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
       // (2) option-premium stop — paper: per-tick on real premium. No option chain
       //     here, so it is converted to its spot-move equivalent (approximation).
       if (!doExit && _optStopSpotPts > 0 && _adverseExcursion <= -_optStopSpotPts) {
-        doExit = true; exitReason = `Option stop ${(optStopPct * 100).toFixed(0)}% (spot-equivalent)`; armSlPause = true;
+        doExit = true; exitReason = `Option stop ${(optStopPct * 100).toFixed(0)}% (spot-equivalent)`; armSlPause = true; blocksReentry = false;
         exitLevel = position.side === "CE"
           ? position.entryPrice - _optStopSpotPts
           : position.entryPrice + _optStopSpotPts;
@@ -369,6 +378,7 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
           exitReason = `Trail SL hit @ ${_q(position.trailSL, 2)}`;
           exitLevel  = position.trailSL;   // paper: simulateSell(updatedSL, …)
           armSlPause = true;
+          blocksReentry = false;           // onTick exit — paper's bar still closes normally
         }
       }
       // (4) legacy time-stop — only when EMA9VWAP_SL_MODE=candle.

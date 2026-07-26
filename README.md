@@ -429,7 +429,7 @@ Full spec: [BB_RSI.md](BB_RSI.md).
 | `EMA9VWAP_MAX_DAILY_TRADES` / `EMA9VWAP_MAX_DAILY_LOSS` | `20` / `5000` | Daily caps |
 | `EMA9VWAP_OPT_STOP_PCT` / `EMA9VWAP_STOP_LOSS_PTS` | `0` / `0` | Optional catastrophe stops (0 = off; pure signal exit) |
 | `EMA9VWAP_REVERSAL_EXIT_ENABLED` | `true` | 2-candle reversal exit — square off when a candle closes hard against the position (CE: bearish close below both prior-2 lows; PE: bullish close above both prior-2 highs), evaluated on candle close |
-| `EMA9VWAP_CONFIRM_CANDLE_ENABLED` / `EMA9VWAP_INTRACANDLE_ENTRY` | `false` / `false` | Both off → entry on the cross candle's close |
+| `EMA9VWAP_CONFIRM_CANDLE_ENABLED` / `EMA9VWAP_INTRACANDLE_ENTRY` | `false` / `false` | Both off (the default) → entry on the cross candle's close. Confirm-on now works on its own (entry waits for the next bar to cross the signal bar's close); it used to require `EMA9VWAP_INTRACANDLE_ENTRY=true` as well or the engine armed signals it could never enter. Both toggles are honoured at every resolution Settings offers (3/5/15) |
 | `EMA9VWAP_SL_PAUSE_CANDLES` | `3` | Same-side SL cooldown (candles) — inert unless an optional stop is enabled |
 | `EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_ENABLED` / `_CANDLES` | `true` / `3` | Block the flip side for N candles after a signal-cross / reversal exit |
 | `EMA9VWAP_MAX_CONSEC_LOSSES` | `0` | Chop guard — sit out the session after N straight losses (0 = off) |

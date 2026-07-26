@@ -284,7 +284,91 @@ async function runBT(env = {}) {
       "chop guard removed no trades — the guard is inert, so this test proves nothing");
   });
 
-  // ── 5. Strategy integrity — the rules themselves must be untouched ─────────
+  // ── 5. Production invariants ──────────────────────────────────────────────
+  // These are source-level, on purpose. Each guards a call site that MUST stay
+  // guarded; the defects they encode were all "a list written for the original 4
+  // strategies that nobody extended", so the first three assert the rule for EVERY
+  // strategy — including the next one someone adds.
+  console.log("\nProduction invariants");
+  const SRC = f => fs.readFileSync(path.join(__dirname, "..", f), "utf8");
+  const PAPER  = SRC("src/routes/ema9vwapPaper.js");
+  const REPLAY = SRC("src/services/tickReplay.js");
+  const BTE    = SRC("src/services/ema9vwapBacktestEngine.js");
+  const SSS    = require("../src/utils/sharedSocketState");
+
+  check("replay stubs EVERY sharedSocketState mutator (no strategy can leak the mutex)", () => {
+    const mutators = Object.keys(SSS).filter(k => typeof SSS[k] === "function" && /^(set.*Active|setActive|clear.*|clear)$/.test(k));
+    assert.ok(mutators.length >= 12, `expected >=12 mutators, found ${mutators.length}`);
+    const missing = mutators.filter(m => !new RegExp(`sharedSocketState\\.${m}\\s*=\\s*\\(\\)\\s*=>`).test(REPLAY));
+    assert.strictEqual(missing.length, 0,
+      `tickReplay does not stub: ${missing.join(", ")} — a replay of that strategy mutates the REAL socket mutex`);
+  });
+
+  check("replayPreflight checks EVERY strategy's is*Active", () => {
+    // isAnyActive is the roll-up, not a per-strategy probe — exclude it.
+    const probes = Object.keys(SSS).filter(k => typeof SSS[k] === "function" && /^is.*Active$/.test(k) && k !== "isAnyActive");
+    const pre = REPLAY.slice(REPLAY.indexOf("function replayPreflight"), REPLAY.indexOf("function forceClearSharedState"));
+    const missing = probes.filter(p => !pre.includes(`${p}()`));
+    assert.strictEqual(missing.length, 0,
+      `replayPreflight ignores: ${missing.join(", ")} — a replay can be launched on top of that live session`);
+  });
+
+  check("forceClearSharedState clears EVERY strategy", () => {
+    const clears = Object.keys(SSS).filter(k => typeof SSS[k] === "function" && /^(clear.*|clear)$/.test(k));
+    const fn = REPLAY.slice(REPLAY.indexOf("function forceClearSharedState"));
+    const missing = clears.filter(c => !fn.includes(`sharedSocketState.${c}()`));
+    assert.strictEqual(missing.length, 0,
+      `force-clear cannot unstick: ${missing.join(", ")} — that strategy stays unstartable until a process restart`);
+  });
+
+  // The intra/confirm entry gate. Extract the exact condition text once and assert
+  // the three properties on it, so a regression in any one is pinpointed.
+  const GATE = (() => {
+    const i = PAPER.indexOf("if ((_intraCandleEntryEnabled() || _confirmEnabled())");
+    return i < 0 ? "" : PAPER.slice(i, PAPER.indexOf("{", PAPER.indexOf("shouldCheckSignal", i)));
+  })();
+
+  check("confirmation-candle entry is reachable with intra-candle entry OFF", () => {
+    assert.ok(GATE, "the intra/confirm entry gate no longer matches — CONFIRM=on may have no entry path again");
+    assert.ok(/_confirmEnabled\(\)/.test(GATE),
+      "the gate does not admit _confirmEnabled() — CONFIRM=on + INTRACANDLE=off arms signals that can never enter");
+  });
+
+  check("intra/confirm entry gate honours TRADE_EXPIRY_DAY_ONLY", () => {
+    assert.ok(/!ptState\._expiryDayBlocked/.test(GATE),
+      "_expiryDayBlocked is not in the gate — the expiry filter fails OPEN on this entry path");
+  });
+
+  check("entry gate does not depend on _cachedClosedCandleSL (always null here)", () => {
+    const { getSignal } = S;
+    const sl = getSignal(ZERO_VOL.slice(0, 300), { silent: true }).stopLoss;
+    assert.strictEqual(sl, null, "getSignal now returns a stopLoss — re-check this invariant");
+    assert.ok(!/_cachedClosedCandleSL/.test(GATE),
+      "the gate tests a value this strategy never sets, silently disabling entries at 3-min / 15-min");
+  });
+
+  check("simulation output cannot reach paper history, the audit log or crash recovery", () => {
+    for (const [site, re] of [
+      ["appendTradeLog",       /!ptState\._simMode && !ptState\._simSession\) \{\s*\n\s*tradeLogger\.appendTradeLog/],
+      ["saveEma9VwapPosition", /!ptState\._simMode && !ptState\._simSession\) \{[\s\S]{0,200}?saveEma9VwapPosition/],
+      ["saveSession persist",  /if \(ptState\._simSession \|\| ptState\._simMode\) \{[\s\S]{0,400}?return \{ \.\.\.session, simulated: true \}/],
+    ]) {
+      assert.ok(re.test(PAPER), `${site} is no longer simulation-guarded — /simulate can corrupt the canonical paper record`);
+    }
+    assert.ok(/ptState\._simSession\s*=\s*true/.test(PAPER) && /ptState\._simSession\s*=\s*false/.test(PAPER),
+      "_simSession is not both set (resetSimState) and cleared (/start)");
+  });
+
+  check("protective stops do not block same-bar re-entry (paper falls through; onTick returns)", () => {
+    // Paper's points/option/trail stops return from the TICK handler only — the bar
+    // still closes and onCandleClose's entry section runs. Blocking the bar here
+    // diverged from paper whenever both cooldowns were off.
+    const n = (BTE.match(/armSlPause = true; blocksReentry = false/g) || []).length
+            + (BTE.match(/blocksReentry = false;\s+\/\/ onTick exit/g) || []).length;
+    assert.strictEqual(n, 3, `expected all 3 protective stops to set blocksReentry=false, found ${n}`);
+  });
+
+  // ── 6. Strategy integrity — the rules themselves must be untouched ─────────
   console.log("\nStrategy integrity");
   check("EMA9 equals technicalindicators EMA(9) on close", () => {
     const { EMA } = require("technicalindicators");
