@@ -2613,6 +2613,16 @@ router.post("/manualEntry", async (req, res) => {
   try {
     const { validateAndGetOptionSymbol } = require("../config/instrument");
     const optResult = await validateAndGetOptionSymbol(spot, side, 'ema9vwap');
+    // Both automatic entry paths already refuse an unresolvable symbol; this
+    // manual route did not, so it would have entered on symbol=null (no premium
+    // → "spot proxy" P&L with the option stop inert). Same refusal, stated.
+    if (!optResult || optResult.invalid || !optResult.symbol) {
+      const why = optResult && optResult.staleExpiry
+        ? `${optResult.overrideKey}="${optResult.staleExpiry}" has expired — update it in Settings`
+        : "no valid option symbol could be resolved on Fyers";
+      log(`❌ [PAPER] Manual entry refused — ${why}`);
+      return res.status(409).json({ success: false, error: why });
+    }
     const symbol = optResult.symbol;
     const qty = getLotQty();   // clamped (MAX_LOT_MULTIPLIER) — don't recompute raw and bypass the cap
 

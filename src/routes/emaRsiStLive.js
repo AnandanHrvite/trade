@@ -1457,6 +1457,10 @@ async function onCandleClose(candle) {
       log(`🛑 [LIVE] Daily loss limit active — entry blocked (${signal})`);
       return;
     }
+    // Portfolio-wide daily loss cap (across ALL strategies; default disabled). The
+    // paper route applies this at exactly this point; live did not, so an armed cap
+    // stopped paper entering while live kept trading real money.
+    { const _pf = require("../utils/portfolioRisk").checkPortfolioCap(); if (_pf.blocked) { log(`🛑 [LIVE] ${_pf.reason} — entry blocked (${signal})`); return; } }
     if (tradeState._pauseUntilTime && Date.now() < tradeState._pauseUntilTime) {
       const resumeTime = new Date(tradeState._pauseUntilTime).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
       log(`⏸ [LIVE] Consecutive loss pause active — candle-close entry blocked until ~${resumeTime}`);
@@ -1769,6 +1773,9 @@ function onSpotTick(tick) {
       // silently skip — no re-entry allowed this candle (SL hit guard)
     } else if (tradeState._dailyLossHit) {
       // Daily loss kill switch latched — no more entries today (silent to avoid log spam)
+    } else if (require("../utils/portfolioRisk").checkPortfolioCap().blocked) {
+      // Portfolio-wide daily loss cap hit — no entries across any strategy (silent).
+      // Mirrors the paper route's intra-tick chain, which has always had this.
     } else if (tradeState._pauseUntilTime && Date.now() < tradeState._pauseUntilTime) {
       // Consecutive loss pause active — silently skip to avoid log spam
     } else if (false) { // 50% pause DISABLED
@@ -4106,14 +4113,19 @@ router.post("/reset", (req, res) => {
  * gracefulShutdown maps "EMA_RSI_ST_LIVE" → this route; without this export it was
  * skipped (typeof stopSession !== "function") and a real Zerodha position was left
  * open on a deploy while the shutdown alert falsely reported it squared off.
- * Fire-and-forget (squareOff is async); idempotent (no-op if flat/not running).
+ *
+ * AWAITS the square-off. It used to fire-and-forget, which meant two things: the
+ * try/catch could not catch anything (squareOff is async, so a broker failure was an
+ * unobserved promise rejection, not a caught error), and gracefulShutdown returned
+ * with the exit order still in flight — the same "reported squared off but wasn't"
+ * failure this function was added to prevent. Idempotent (no-op if flat/not running).
  */
-function stopSession(reason = "Shutdown square-off") {
+async function stopSession(reason = "Shutdown square-off") {
   if (!tradeState.running || !tradeState.position) return;
   try {
     const _px = tradeState.lastTickPrice || (tradeState.currentBar ? tradeState.currentBar.close : 0);
-    squareOff(_px, reason);
-  } catch (e) { try { log(`⚠️ [LIVE] stopSession squareoff error: ${e.message}`); } catch (_) {} }
+    await squareOff(_px, reason);
+  } catch (e) { try { log(`⚠️ [LIVE] stopSession squareoff error: ${e.message} — check the Zerodha dashboard`); } catch (_) {} }
 }
 router.stopSession = stopSession;
 

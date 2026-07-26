@@ -666,29 +666,41 @@ app.get("/", (req, res) => {
     : ``;
 
   // ── Option expiry override warning ───────────────────────────────────────
-  // Trigger when OPTION_EXPIRY_OVERRIDE is set AND that expiry day's session
-  // (15:30 IST close) is already past. User must update to next expiry.
+  // Trigger when an expiry override is set AND that expiry day's session (15:30
+  // IST close) is already past. Staleness is decided by instrument.js — the same
+  // predicate the entry guard uses — so this banner can never claim the expiry is
+  // fine while the engine is refusing to trade it (or vice versa).
+  //
+  // A PER-MODE override beats the common one inside validateAndGetOptionSymbol,
+  // so checking only OPTION_EXPIRY_OVERRIDE left the actually-binding key
+  // unchecked: a fresh common date could hide a stale EMA_RSI_ST-only date.
+  // Every override that is set is checked, and each is named in the banner.
   let optionExpiryAlertHtml = "";
-  const manualExpiryStr = (process.env.OPTION_EXPIRY_OVERRIDE || "").trim();
-  if (manualExpiryStr) {
-    const parts = manualExpiryStr.split("-");
-    const validShape = parts.length === 3 && !parts.some(p => isNaN(parseInt(p, 10)));
-    if (validShape) {
-      const expirySessionEndIST = new Date(`${manualExpiryStr}T15:30:00+05:30`);
-      const nowReal = new Date();
-      if (nowReal.getTime() > expirySessionEndIST.getTime()) {
-        const dispDate = new Date(`${manualExpiryStr}T00:00:00+05:30`)
-          .toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" });
-        optionExpiryAlertHtml =
-          `<div class="opt-expiry-alert">`
-          + `<span class="opt-expiry-icon">🚨</span>`
-          + `<div class="opt-expiry-text">`
-          +   `<div class="opt-expiry-title">Option expiry session ended</div>`
-          +   `<div class="opt-expiry-body">Manual expiry <strong>${dispDate}</strong> has passed. Update <strong>Option Expiry (manual)</strong> to the next expiry date before starting trades.</div>`
-          + `</div>`
-          + `<a href="/settings#OPTION_EXPIRY_OVERRIDE" class="opt-expiry-cta">Change Expiry →</a>`
-          + `</div>`;
-      }
+  {
+    const { isExpiryOverrideStale } = instrumentConfig;
+    const PER_MODE_PREFIXES = ["EMA_RSI_ST", "BB_RSI", "PA", "ORB", "EMA9VWAP", "TREND_PB"];
+    const candidates = [
+      { key: "OPTION_EXPIRY_OVERRIDE", label: "Option Expiry (manual, all modes)" },
+      ...PER_MODE_PREFIXES.map(p => ({ key: `${p}_OPTION_EXPIRY_OVERRIDE`, label: `${p} Option Expiry` })),
+    ];
+    const fmt = (d) => new Date(`${d}T00:00:00+05:30`)
+      .toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" });
+
+    const stale = candidates
+      .map(c => ({ ...c, value: (process.env[c.key] || "").trim() }))
+      .filter(c => c.value && isExpiryOverrideStale(c.value));
+
+    if (stale.length) {
+      const detail = stale.map(s => `<strong>${s.label}</strong> = ${fmt(s.value)}`).join("; ");
+      optionExpiryAlertHtml =
+        `<div class="opt-expiry-alert">`
+        + `<span class="opt-expiry-icon">🚨</span>`
+        + `<div class="opt-expiry-text">`
+        +   `<div class="opt-expiry-title">Option expiry session ended — entries are blocked</div>`
+        +   `<div class="opt-expiry-body">${detail}. That contract no longer exists, so affected strategies will refuse every entry until it is updated to the next expiry date.</div>`
+        + `</div>`
+        + `<a href="/settings#${stale[0].key}" class="opt-expiry-cta">Change Expiry →</a>`
+        + `</div>`;
     }
   }
 

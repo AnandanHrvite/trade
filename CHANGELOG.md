@@ -6,6 +6,20 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — the two ORB paper↔live defects were systemic: same bugs in BB_RSI, PA and EMA_RSI_ST live
+
+The ORB parity pass below found two root causes. Both turned out to be **defect classes, not ORB slips** — every other standalone `*Live.js` route had them too. The harness routes are unaffected (they execute their paper route directly).
+
+**1. The session-teardown race — real money missing from the books.** `bbRsiLive.js` and `paLive.js` both fired `squareOff(...)` un-awaited from `stopSession()`, then continued synchronously to `saveBbRsiSession()` / `savePASession()` and `notifyDayReport()` while the sell was still at the broker. Stop a live session holding a position and the saved session is missing its final trade and its P&L — a ₹240→₹300 exit on qty 65 is **₹3,814 that never reaches the books**. Both are now `async` and await the exit before any bookkeeping, with `state.running` cleared first so no tick is processed during the round-trip.
+
+`emaRsiStLive.js` has no session save inside `stopSession()`, so no P&L was lost there — but it called `squareOff` un-awaited inside a `try/catch` that **could not catch anything** (an async rejection is not a thrown error), and returned before the order went out. `gracefulShutdown` then proceeded toward `process.exit` with a real Zerodha position possibly still open — precisely the failure that function was added to prevent. Now awaited.
+
+Manual `/exit` in `bbRsiLive` and `paLive` had the same shape with no `.catch()` at all: it answered `"Position exit triggered"` before placing the order, and a broker failure became an unhandled rejection. Both now await and return HTTP 500 on failure.
+
+**2. The portfolio-wide daily loss cap was missing from every live route.** It was added to the six paper routes and none of the live ones, so with `PORTFOLIO_MAX_DAILY_LOSS` armed, paper stopped entering while live — the side with real money — kept trading. Now applied in `bbRsiLive`, `paLive` and `emaRsiStLive` (both its candle-close and intra-tick gate chains), at the same position in each sequence as its paper counterpart. All ten routes now check it. Block-only; it can never place or alter an order.
+
+**New suite: [tests/liveParity.regression.js](tests/liveParity.regression.js)** (`npm run test:parity`) — 17 cross-strategy assertions covering all four live routes: live applies the portfolio cap, `stopSession` is async, it awaits the exit before any save or day report, every caller observes the promise, and live honours the same shared entry gates as paper. All mutation-tested — reverting any single fix fails it. `npm test` is now 28 + 36 + 17.
+
 ### Fixed — ORB paper ↔ live parity: eight verified implementation differences closed
 
 Paper is canonical. `/orb-live-harness` runs `orbPaper.js` directly so it was never implicated; every defect below was in the standalone `/orb-live` route, a hand-written mirror that had drifted. **No strategy logic changed** — entry rules, exit rules, stop philosophy, sizing, strike/expiry selection and trading windows are untouched, and the backtest still produces the identical 9 trades / ₹3,878.

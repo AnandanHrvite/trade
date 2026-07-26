@@ -435,6 +435,33 @@ function parseDateToCode(dateStr) {
 }
 
 /**
+ * Has a manual expiry-override date already stopped being tradeable?
+ *
+ * An option contract is tradeable up to and including its expiry day's session
+ * close (15:30 IST), so "stale" means that moment has passed. The offset is
+ * written into the timestamp rather than relying on process.TZ so the answer is
+ * identical on a laptop and on EC2.
+ *
+ * This is the SINGLE definition of staleness — the dashboard banner in app.js
+ * and the hard guard in validateAndGetOptionSymbol() both call it, so the
+ * warning the operator sees and the behaviour of the engine can never disagree.
+ *
+ * @param {string} dateStr "YYYY-MM-DD"
+ * @returns {boolean} true ⇒ the override is in the past and must not be traded.
+ *                    Malformed or blank input returns false (not our job here —
+ *                    the caller already reports a format error).
+ */
+function isExpiryOverrideStale(dateStr) {
+  const raw = String(dateStr || "").trim();
+  if (!raw) return false;
+  const parts = raw.split("-");
+  if (parts.length !== 3 || parts.some((p) => isNaN(parseInt(p, 10)))) return false;
+  const sessionEnd = new Date(`${raw}T15:30:00+05:30`);
+  if (isNaN(sessionEnd.getTime())) return false;
+  return Date.now() > sessionEnd.getTime();
+}
+
+/**
  * Get a valid Fyers option symbol for entry.
  *
  * Priority:
@@ -473,9 +500,30 @@ async function validateAndGetOptionSymbol(spot, side, mode) {
   const expiryType   = modeType     || (process.env.OPTION_EXPIRY_TYPE     || "weekly").trim().toLowerCase();
   if (manualExpiry && manualExpiry.length >= 8) {
     const parts = manualExpiry.split("-");
+    const overrideKeyName = modeOverride ? `${modeKey}_OPTION_EXPIRY_OVERRIDE` : "OPTION_EXPIRY_OVERRIDE";
     if (parts.length !== 3 || parts.some(p => isNaN(parseInt(p)))) {
-      console.error(`[instrument] ❌ OPTION_EXPIRY_OVERRIDE format invalid: "${manualExpiry}" — expected YYYY-MM-DD`);
+      console.error(`[instrument] ❌ ${overrideKeyName} format invalid: "${manualExpiry}" — expected YYYY-MM-DD`);
       // Fall through to auto-detection
+    } else if (isExpiryOverrideStale(manualExpiry)) {
+      // ── STALE OVERRIDE — refuse, do not substitute ──────────────────────────
+      // Every OTHER branch below validates its symbol via getQuotes before
+      // returning it; this branch returned unvalidated, so a forgotten override
+      // handed the engines a symbol whose contract no longer exists. ORB and
+      // TREND_PB block on `invalid`, but EMA_RSI_ST and BB_RSI entered anyway
+      // and fell back to "spot proxy" P&L — with the percentage option stop
+      // (OPT_STOP_PCT) inert, because it needs an entry premium that never
+      // arrived. A configured stop that silently does not exist is the worst
+      // outcome available here, so refuse the trade instead.
+      //
+      // We deliberately do NOT fall through to auto-detection: quietly trading a
+      // DIFFERENT expiry than the one configured changes the premium, theta and
+      // therefore the risk of every position, which is the operator's decision to
+      // make, not ours. `invalid: true` is the shape callers already handle.
+      console.error(
+        `[instrument] ❌ ${overrideKeyName}="${manualExpiry}" has already expired — refusing to build an option symbol. ` +
+        `Update it in Settings to the next expiry (no entries will be taken until then).`
+      );
+      return { symbol: null, expiry: null, strike, side, invalid: true, staleExpiry: manualExpiry, overrideKey: overrideKeyName };
     } else {
     const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
     let code;
@@ -774,5 +822,6 @@ module.exports = {
   getProductType,
   getMarketContext,            // async — resolve the day's immutable Market Context Snapshot
   validateAndGetOptionSymbol,  // ✅ Use this for paper/live option entry
+  isExpiryOverrideStale,       // shared by the dashboard banner and the entry guard
 };
 

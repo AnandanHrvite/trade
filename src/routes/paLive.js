@@ -692,6 +692,10 @@ async function onCandleClose(bar) {
   }
   state._omhLogged = false;
   if (state._dailyLossHit) { log(`⏭️ [PA-LIVE] SKIP: daily loss limit hit`); return; }
+  // Portfolio-wide daily loss cap (across ALL strategies; default disabled).
+  // The paper route has always applied this at exactly this point; live did not,
+  // so an armed cap stopped paper entering while live kept trading real money.
+  { const _pf = require("../utils/portfolioRisk").checkPortfolioCap(); if (_pf.blocked) { log(`⏭️ [PA-LIVE] SKIP: ${_pf.reason}`); return; } }
   if (state._entryPending) { log(`⏭️ [PA-LIVE] SKIP: entry pending`); return; }
   if (state.sessionTrades.length >= _PA_MAX_TRADES) { log(`⏭️ [PA-LIVE] SKIP: max trades (${_PA_MAX_TRADES}) reached`); return; }
   if (state._slPauseUntil && Date.now() < state._slPauseUntil) {
@@ -1105,7 +1109,9 @@ router.get("/start", async (req, res) => {
   schedulePAEODBackup();
   scheduleAutoStop((msg) => {
     log(msg);
-    stopSession();
+    // stopSession is async (it awaits the broker square-off) — never leave that
+    // promise unobserved, or a failed exit dies silently with a position open.
+    stopSession().catch(e => log(`⚠️ [PA-LIVE] Auto-stop failed: ${e.message}`));
   });
 
   if (typeof paStrategy.reset === "function") paStrategy.reset();
@@ -1127,14 +1133,22 @@ router.get("/start", async (req, res) => {
   res.json({ success: true, message: "Price Action live trading started" });
 });
 
-function stopSession() {
+// PARITY with paPaper (canonical): paper's exit is synchronous, so its trade is in
+// state.sessionTrades and state.sessionPnl is final before any bookkeeping runs.
+// squareOff() here is a broker round-trip and used to be fired un-awaited, so
+// execution ran on to savePASession() and notifyDayReport() while the sell was still
+// in flight — the saved session was missing its final trade and its P&L.
+// state.running is cleared FIRST so no tick or candle close is processed during the
+// round-trip; squareOff does not read state.running.
+async function stopSession() {
   if (!state.running) return;
+  state.running = false;
 
   if (state.position) {
-    squareOff(state.lastTickPrice || state.position.entryPrice, "Session stopped").catch(e => console.error(`🚨 [PA-LIVE] squareOff error: ${e.message}`));
+    try { await squareOff(state.lastTickPrice || state.position.entryPrice, "Session stopped"); }
+    catch (e) { console.error(`🚨 [PA-LIVE] squareOff error: ${e.message} — check the Fyers dashboard`); }
   }
 
-  state.running = false;
   stopOptionPolling();
   clearPAEODBackup();
 
@@ -1169,14 +1183,21 @@ function stopSession() {
   });
 }
 
-router.get("/stop", (req, res) => {
-  stopSession();
+router.get("/stop", async (req, res) => {
+  await stopSession();
   res.json({ success: true, message: "Price Action live trading stopped" });
 });
 
-router.get("/exit", (req, res) => {
+// await: squareOff is a broker round-trip. Fired un-awaited it reported success
+// before the order was placed, and a broker failure surfaced as an unhandled
+// promise rejection rather than an error the caller could see.
+router.get("/exit", async (req, res) => {
   if (state.position) {
-    squareOff(state.lastTickPrice || state.position.entryPrice, "Manual exit");
+    try { await squareOff(state.lastTickPrice || state.position.entryPrice, "Manual exit"); }
+    catch (e) {
+      log(`⚠️ [PA-LIVE] Manual exit failed: ${e.message} — check the Fyers dashboard`);
+      return res.status(500).json({ success: false, error: e.message });
+    }
   }
   res.json({ success: true, message: "Position exit triggered" });
 });
