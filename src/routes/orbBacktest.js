@@ -94,15 +94,9 @@ function runOrbBacktest(allCandles, expirySet) {
   const ENTRY_END_MIN   = _parseMin("ORB_ENTRY_END",   "11:30");
   const SEED_PREMIUM    = parseFloat(process.env.ORB_BT_SEED_PREMIUM || "240");   // slightly-ITM ≈ ATM + one strike intrinsic
   const SLIPPAGE_PREM   = parseFloat(process.env.ORB_BT_SLIPPAGE_PTS || "1.5");   // spread+slippage haircut EACH way (premium pts); was 0/frictionless
-  // V3 (default) handles the OPTIONAL non-blocking retest INSIDE the engine, so the
-  // backtest just polls getSignal each candle and enters on the returned BUY (the
-  // engine returns BUY on the confirmation / retest / trend-resume candle). The old
-  // backtest-only `armed` retest gate below is V2-only (ORB_RETEST_ENABLED).
-  const V3_ON           = (process.env.ORB_ENTRY_V3_ENABLED || "true").toLowerCase() === "true";
-  const RETEST_ON       = (process.env.ORB_RETEST_ENABLED || "false").toLowerCase() === "true" && !V3_ON;
-  const RETEST_TOL_MIN  = parseFloat(process.env.ORB_RETEST_TOL_MIN || "5");
-  const RETEST_TOL_PCT  = parseFloat(process.env.ORB_RETEST_TOL_PCT || "0.1");
-  const RETEST_MAX_WAIT = parseInt(process.env.ORB_RETEST_MAX_WAIT || "6", 10);
+  // Confirmation and the retest/resume fallback both live INSIDE the engine, so the
+  // backtest has no entry logic of its own — it polls getSignal each candle. The old
+  // backtest-only `armed` retest gate and the V1/V2/V3 switches are gone.
 
   const byDate = new Map();
   for (const c of allCandles) {
@@ -123,7 +117,6 @@ function runOrbBacktest(allCandles, expirySet) {
     if (dayCandles.length < 5) { globalBase += _dayLen; continue; }
     if (EXPIRY_ONLY && expirySet && !expirySet.has(_dateStr)) { globalBase += _dayLen; continue; }
     let position = null;
-    let armed = null;   // retest gate: pending breakout waiting for a retest-and-hold
     let tradesTaken = 0;
     const maxTrades = parseInt(process.env.ORB_MAX_DAILY_TRADES || "1", 10);
 
@@ -198,13 +191,13 @@ function runOrbBacktest(allCandles, expirySet) {
 
       // Flat → eval ORB signal
       if (!position && tradesTaken < maxTrades && istMin < ENTRY_END_MIN) {
-        // Open the position at candle `oc` from signal `s`. Initial hard SL =
-        // that candle's own low (CE) / high (PE). Closes over `position` /
-        // `tradesTaken` from the day loop.
+        // Open the position at candle `oc` from signal `s`. Initial hard SL comes
+        // from the STRATEGY (s.slSpot = wider of the candle extreme and
+        // ORB_SL_ATR_MULT × ATR5) so the backtest matches paper/live exactly.
+        // Closes over `position` / `tradesTaken` from the day loop.
         const _open = (s, oc, suffix) => {
-          const initSl = s.side === "CE"
-            ? Math.round(oc.low  * 100) / 100
-            : Math.round(oc.high * 100) / 100;
+          const _fallback = s.side === "CE" ? oc.low : oc.high;
+          const initSl = Math.round((s.slSpot != null ? s.slSpot : _fallback) * 100) / 100;
           position = {
             date: istDateOf(oc.time),
             side: s.side,
@@ -233,27 +226,10 @@ function runOrbBacktest(allCandles, expirySet) {
         const _gIdx = globalBase + i;
         const seen  = allCandles.slice(Math.max(0, _gIdx - SIG_WINDOW), _gIdx + 1);
 
-        if (!RETEST_ON) {
-          // ── Immediate/confirmed entry (default). ──
-          const sig  = orbStrategy.getSignal(seen, { silent: true, alreadyTraded: false });
-          if ((sig.signal === "BUY_CE" || sig.signal === "BUY_PE") && _premOk) _open(sig, c);
-        } else if (!armed) {
-          // ── Retest gate, phase 1: arm on the breakout, do not enter yet. ──
-          const sig  = orbStrategy.getSignal(seen, { silent: true, alreadyTraded: false });
-          if ((sig.signal === "BUY_CE" || sig.signal === "BUY_PE") && _premOk) {
-            armed = { sig, level: sig.side === "CE" ? sig.orh : sig.orl, idx: i };
-          }
-        } else {
-          // ── Retest gate, phase 2: wait for pullback-and-hold of the edge. ──
-          const s   = armed.sig;
-          const tol = Math.max(RETEST_TOL_MIN, RETEST_TOL_PCT * (s.rangePts || 0));
-          const retestHold = s.side === "CE"
-            ? (c.low  <= armed.level + tol && c.close > armed.level)   // dipped to ORH, closed above
-            : (c.high >= armed.level - tol && c.close < armed.level);  // popped to ORL, closed below
-          const invalidated = s.side === "CE" ? c.close < s.orl : c.close > s.orh;
-          if (retestHold) { _open(s, c, " [retest entry]"); armed = null; }
-          else if (invalidated || (i - armed.idx) >= RETEST_MAX_WAIT) { armed = null; } // failed / never retested → no trade
-        }
+        // The engine owns confirmation AND the retest/resume fallback internally,
+        // so the backtest just polls it each candle and buys whatever it returns.
+        const sig = orbStrategy.getSignal(seen, { silent: true, alreadyTraded: false });
+        if ((sig.signal === "BUY_CE" || sig.signal === "BUY_PE") && _premOk) _open(sig, c);
       }
     }
     if (position) {
@@ -339,7 +315,7 @@ function _renderOrbResults(res, from, to, trades, stats) {
       { label: "STRONG Signals", value: trades.filter(t => t.strength === "STRONG").length },
       { label: "Avg Held Candles", value: trades.length ? Math.round(trades.reduce((a, t) => a + (t.held || 0), 0) / trades.length) : "—" },
     ],
-    notes: `Premium approximated via δ + θ from historical 5-min candles (no live option chain) — treat ₹ as directional only; slightly-ITM entry seeded at ₹${process.env.ORB_BT_SEED_PREMIUM || "240"}. Entry engine: ${(process.env.ORB_ENTRY_V3_ENABLED || "true").toLowerCase() === "true" ? `V3 trend-day — adaptive ATR-relative gates (OR vs ATR15 [${process.env.ORB_OR_ATR_MIN || "0.7"}–${process.env.ORB_OR_ATR_MAX || "2.5"}×], body vs ATR5, gap ≤ ${process.env.ORB_GAP_OR_MULT || "3"}×OR), break into fresh ground (prior-day H/L), ONE confirmation candle + VWAP side, ${(process.env.ORB_RETEST_MODE || "optional").toLowerCase() === "off" ? "no retest" : "OPTIONAL non-blocking retest"}` : ((process.env.ORB_ENTRY_V2_ENABLED || "true").toLowerCase() === "true" ? "V2 confirmed-breakout" : "V1 legacy immediate")}. Exits: structural spot SL → adaptive breakeven → EMA${process.env.ORB_TRAIL_EMA || "20"} close-trail → strong-opposite-candle → ₹${process.env.ORB_MAX_TRADE_LOSS || "1500"} / −${process.env.ORB_PREMIUM_STOP_PCT || "35"}% caps → 15:15 EOD. STEP-8 premium/spread gates apply in paper/live only.`,
+    notes: `Premium approximated via δ + θ from historical 5-min candles (no live option chain) — treat ₹ as directional only; slightly-ITM entry seeded at ₹${process.env.ORB_BT_SEED_PREMIUM || "240"}. Entry: 09:15–09:30 opening range, day sanity (OR ≤ ${process.env.ORB_OR_ATR_MAX || "2.5"}×ATR15, gap ≤ ${process.env.ORB_GAP_OR_MULT || "3"}×OR), first close beyond OR ± buffer, breakout body ≥ ${process.env.ORB_BODY_ATR_MULT || "0.6"}×ATR5 on the right side of VWAP, then ONE confirmation candle (or a retest/resume within ${process.env.ORB_RETEST_MAX_WAIT || "6"} candles); one trade/day, cut-off ${process.env.ORB_ENTRY_END || "11:30"} IST. Exits: initial SL = wider of the entry-candle extreme and ${process.env.ORB_SL_ATR_MULT || "1.5"}×ATR5 → breakeven at +${process.env.ORB_BREAKEVEN_PTS || "20"}pt → EMA${process.env.ORB_TRAIL_EMA || "20"} close-trail → ₹${process.env.ORB_MAX_TRADE_LOSS || "1500"} / −${process.env.ORB_PREMIUM_STOP_PCT || "35"}% caps → ${process.env.ORB_FORCED_EXIT || "15:15"} EOD. STEP-8 premium/spread gates apply in paper/live only.`,
   });
   res.send(html);
 }
@@ -485,7 +461,7 @@ ${buildSidebar('orbBacktest', liveActive)}
     <button class="preset-btn" onclick="goto('last3y')">Last 3 yr</button>
   </div>
   <div class="notes">
-    <b>Backtest sim model:</b> Option premium estimated via δ (BACKTEST_DELTA, default 0.55) + θ (BACKTEST_THETA_DAY, default ₹8/day) seeded at ₹${process.env.ORB_BT_SEED_PREMIUM || "180"} per side. Qty per trade = ${instrumentConfig.getLotQty()} (= NIFTY_LOT_SIZE ${process.env.NIFTY_LOT_SIZE || "65"} × LOT_MULTIPLIER ${process.env.LOT_MULTIPLIER || "1"}). Exits mirror the paper-trade route: initial hard SL = breakout candle low/high, breakeven after +${process.env.ORB_BREAKEVEN_PTS || "20"}pt, EMA${process.env.ORB_TRAIL_EMA || "20"} close-trail (exit only when a candle closes back across the EMA), strong-opposite-candle exit, a ₹${process.env.ORB_MAX_TRADE_LOSS || "1500"} per-trade loss cap, and a 15:15 EOD square-off. <b>Entry (${(process.env.ORB_ENTRY_V2_ENABLED || "true").toLowerCase() === "true" ? "V2 confirmed-breakout" : "V1 legacy immediate"}):</b> ${(process.env.ORB_ENTRY_V2_ENABLED || "true").toLowerCase() === "true" ? `first close to clear the OR edge by max(${process.env.ORB_BREAKOUT_BUFFER_MIN || "10"}pt, ${process.env.ORB_BREAKOUT_BUFFER_PCT || "0.20"}×range) is the committed breakout; it must be a strong one-directional candle (body ≥ ${process.env.ORB_MIN_BODY || "15"}pt & ≥ ${(parseFloat(process.env.ORB_BODY_PCT_MIN || "0.60") * 100)}% of candle, small breakout-side wick, close in the extreme, VWAP-aligned, EMA${process.env.ORB_TREND_EMA_FAST || "20"} slope in-trend, RSI ${process.env.ORB_RSI_CE_MIN || "55"}/${process.env.ORB_RSI_PE_MAX || "45"}); we do NOT buy that candle — the NEXT candle must confirm (HH+HC / LL+LC beyond the edge); trend regime EMA${process.env.ORB_TREND_EMA_FAST || "20"} vs EMA${process.env.ORB_TREND_EMA_SLOW || "50"} + ADX > ${process.env.ORB_ADX_MIN || "20"}; range ${process.env.ORB_MIN_RANGE_PTS || "30"}–${process.env.ORB_MAX_RANGE_PTS || "80"}pt; gap ≤ ${process.env.ORB_MAX_GAP_PTS || "80"}pt; one committed breakout/day. Seeded from a ${process.env.ORB_SIG_WINDOW || "260"}-bar multi-day window.` : `buys the breakout candle's close once it clears max(${process.env.ORB_BREAKOUT_BUFFER_MIN || "8"}pt, ${process.env.ORB_BREAKOUT_BUFFER_PCT || "0.15"}×range); wick / VWAP / volume filters only.`} <b>Experimental:</b> <code>ORB_RETEST_ENABLED=true</code> adds a pullback-and-hold retest gate. The backtest has no option chain, so the STEP-8 premium/spread gates apply in paper/live only. Use Replay (recorded ticks) for tick-accurate backtests.
+    <b>Backtest sim model:</b> Option premium estimated via δ (BACKTEST_DELTA, default 0.55) + θ (BACKTEST_THETA_DAY, default ₹8/day) seeded at ₹${process.env.ORB_BT_SEED_PREMIUM || "240"} per side. Qty per trade = ${instrumentConfig.getLotQty()} (= NIFTY_LOT_SIZE ${process.env.NIFTY_LOT_SIZE || "65"} × LOT_MULTIPLIER ${process.env.LOT_MULTIPLIER || "1"}). <b>Entry:</b> the 09:15–09:30 opening range is frozen; the day is skipped if OR &gt; ${process.env.ORB_OR_ATR_MAX || "2.5"}×ATR(15m) or the gap exceeds ${process.env.ORB_GAP_OR_MULT || "3"}×OR. The first 5-min <i>close</i> clearing the OR edge by max(15% of the range, 0.3×ATR5) is the one committed breakout of the day; it must be a decisive bar (body ≥ ${process.env.ORB_BODY_ATR_MULT || "0.6"}×ATR5) closing on the right side of session VWAP. That candle is never bought — the next candle must extend the move, or a retest-and-hold / trend-resume must occur within ${process.env.ORB_RETEST_MAX_WAIT || "6"} candles. Cut-off ${process.env.ORB_ENTRY_END || "11:30"} IST, one trade/day. <b>Exits mirror the paper route exactly:</b> initial hard SL = the wider of the entry candle's extreme and ${process.env.ORB_SL_ATR_MULT || "1.5"}×ATR(5m), breakeven after +${process.env.ORB_BREAKEVEN_PTS || "20"}pt, EMA${process.env.ORB_TRAIL_EMA || "20"} close-trail (exit only when a candle closes back across the EMA), a ₹${process.env.ORB_MAX_TRADE_LOSS || "1500"} per-trade loss cap, and a ${process.env.ORB_FORCED_EXIT || "15:15"} EOD square-off. The backtest has no option chain, so the premium/spread gates apply in paper/live only. Use Replay (recorded ticks) for tick-accurate backtests.
   </div>
 </main>
 <script>

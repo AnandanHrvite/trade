@@ -149,7 +149,20 @@ function stopOptionPolling() {
 }
 
 // ── Live BUY ────────────────────────────────────────────────────────────────
+// Guards the await window inside placeLiveBuy. state.position is only set AFTER
+// symbol resolve + option quote + the broker round-trip, so a second candle close
+// landing in that window would see a flat book and place a DUPLICATE real order.
+// onCandleClose is fire-and-forget from onTick — nothing upstream serialises this.
+let _entryInFlight = false;
+
 async function placeLiveBuy(side, sigSnapshot) {
+  if (_entryInFlight || state.position) return;
+  _entryInFlight = true;
+  try { await _placeLiveBuyImpl(side, sigSnapshot); }
+  finally { _entryInFlight = false; }
+}
+
+async function _placeLiveBuyImpl(side, sigSnapshot) {
   const spot = state.lastTickPrice;
   if (!spot || !side) return;
 
@@ -215,15 +228,15 @@ async function placeLiveBuy(side, sigSnapshot) {
     }
   }
 
-  // Initial hard SL = the breakout candle's own low (CE) / high (PE). Falls back
-  // to the OR boundary, then sig.slSpot. Mirrors orbPaper: the trade is then
-  // managed on each candle close by _managePositionOnClose (breakeven → EMA
-  // trend-trail → strong-opposite-candle) plus the per-trade loss cap.
-  const _brk = (state.candles || []).filter(c => c && typeof c.low === "number" && typeof c.high === "number").slice(-1)[0];
-  let _initSl = side === "CE"
-    ? (_brk ? _brk.low  : (sigSnapshot.orl != null ? sigSnapshot.orl : sigSnapshot.slSpot))
-    : (_brk ? _brk.high : (sigSnapshot.orh != null ? sigSnapshot.orh : sigSnapshot.slSpot));
-  _initSl = Math.round(_initSl * 100) / 100;
+  // Initial hard SL comes from the STRATEGY (sig.slSpot) — the wider of the entry
+  // candle's own extreme and ORB_SL_ATR_MULT × ATR(5m). Mirrors orbPaper exactly;
+  // the strategy is the single owner of stop placement so paper/live/backtest can
+  // never drift. Managed thereafter on each candle close by _managePositionOnClose
+  // (breakeven → EMA trend-trail) plus the per-trade loss cap.
+  const _fallbackSl = side === "CE"
+    ? (sigSnapshot.orl != null ? sigSnapshot.orl : spot)
+    : (sigSnapshot.orh != null ? sigSnapshot.orh : spot);
+  const _initSl = Math.round((sigSnapshot.slSpot != null ? sigSnapshot.slSpot : _fallbackSl) * 100) / 100;
   const pos = {
     side, symbol: optInfo.symbol, optionStrike: optInfo.strike, optionExpiry: optInfo.expiry,
     qty, entrySpot: spot, entryPrice: spot, optionEntryLtp,

@@ -6,6 +6,27 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Changed — ORB rebuilt: one engine, 9-key signal surface, ATR-based stop
+
+ORB had degraded to **1 entry in 39 sessions**. A gate-attribution replay over real Mar–Apr 2026 NIFTY 5-min candles found the cause, and a per-gate conditional-edge study decided what to keep. Every removal below is backed by that measurement, not by preference. `src/strategies/orb_breakout.js` carries the full ablation table in its header.
+
+**Why it stopped trading**
+- **`ORB_PRIORDAY_LEVEL_FILTER` had negative edge.** It required the 09:30–10:30 close to already clear the *entire* prior day's range. On the raw breakout population it **kept 7 trades at 0% win rate / −7.2pt average** while cutting 6 worth **+290.8pt — including both winners**. It is anti-correlated with the actual edge: the two winners came from the two *narrowest* opening ranges, and a narrow-OR day almost never clears PDH/PDL inside the first hour. **Deleted.**
+- **`ORB_CLOSE_POS_PCT` was a silent key collision.** V3 read the key that Settings and `.env` own as a *V2* value (`0.20`), overriding V3's intended `0.25`. **Deleted** — the gate itself measured weak-to-negative (removing it took net 132.9 → 346pt).
+- **The V2 engine took 0 trades in 39 sessions** and V1 was legacy. Both **deleted**, along with the `ORB_ENTRY_V2_ENABLED` / `ORB_ENTRY_V3_ENABLED` switches and the whole RSI / ADX / EMA20-50 / wick-% / volume / sweet-spot / fixed-point-range config surface.
+
+**The stop was killing the winners.** Each route recomputed its own initial SL as the entry candle's opposite extreme. But that candle is *by construction* a large-body momentum bar, so the stop sat ~one body away — exactly where the normal retracement lives. Measured median width **23pt, hit on 4 of 6 trades**, including the session that then ran 213pt our way. The stop is now the **wider of the structural extreme and `ORB_SL_ATR_MULT=1.5 × ATR(5m)`**, and it is owned by the strategy (`sig.slSpot`) — paper, live and backtest all consume the same value instead of each deriving one, so the three modes cannot drift. Worst-case rupee risk is **unchanged**: `ORB_MAX_TRADE_LOSS` / `ORB_PREMIUM_STOP_PCT` bind first.
+
+**Kept, with evidence** — the `0.6×ATR(5m)` body gate (removing it took the worst trade from 0 to −80pt and PF from ∞ to 3.3), the `OR ≤ 2.5×ATR(15m)` day filter, the gap filter, the VWAP side check, the one-candle confirmation, and the breakeven at +20pt (removing *that* cost 106pt and introduced a −77pt worst case). EMA20 close-trail beat EMA9 and was preferred over a chandelier trail whose results were non-monotonic in the multiplier — i.e. noise.
+
+**Net on the study, exits and data identical: 1 trade / 0pt → 9 trades / 3 winners / +346 spot points.** Stated plainly: two trades carry nearly all of that, 39 sessions cannot prove an edge, and ORB remains a right-tail strategy with many scratches. Collect clean paper sessions before enabling live.
+
+**Also**
+- **Duplicate-entry race closed.** `state.position` / `tradesTaken` were only set *after* two network round-trips inside the entry path, and `onCandleClose` is fire-and-forget from `onTick` — a candle close landing in that window would see a flat book and open a second position (in live, a second **real order**). Both paper and live now guard the await window.
+- **`ORB_DEBUG_TRACE`** (default off) prints the full per-candle entry funnel — every gate PASS/FAIL/SKIP with its numbers and the final decision. The same trace always rides back as `sig.gates`, so the skip log records the whole funnel instead of only the first blocking reason.
+- **Config surface cut from 66 Settings entries to 35** (signal surface: 9). `ORB_ATR_PERIOD`, the breakout-buffer multipliers and the retest tolerances became constants — structural choices, not tuning dials.
+- **`ORB_LIVE_DRY_RUN` flipped to `true`.** A rebuilt strategy should not be able to place a real order before a paper session validates it.
+
 ### Fixed — EMA9+VWAP red-team pass: a crash, a default-config EOD drift, two missing guards
 
 Fourth independent audit. Paper and the strategy module were **not** touched; every defect was in the backtest engine (plus one wrong log line).

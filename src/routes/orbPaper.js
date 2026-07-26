@@ -209,9 +209,26 @@ function stopOptionPolling() {
 
 // ── Trade simulation ────────────────────────────────────────────────────────
 
+// Guards the await window inside simulateBuy. state.position / state.tradesTaken
+// are only set AFTER two network round-trips (symbol resolve + option quote), so a
+// second candle close landing in that window would see a flat book and open a
+// duplicate position. onCandleClose is fire-and-forget from onTick, so nothing
+// upstream serialises this for us.
+let _entryInFlight = false;
+
 async function simulateBuy(side, sigSnapshot) {
   const spot = state.lastTickPrice;
   if (!spot || !side) return;
+  if (_entryInFlight || state.position) return;
+  _entryInFlight = true;
+  try {
+    await _simulateBuyInner(side, sigSnapshot, spot);
+  } finally {
+    _entryInFlight = false;
+  }
+}
+
+async function _simulateBuyInner(side, sigSnapshot, spot) {
 
   // Resolve ATM option symbol (auto expiry)
   let optInfo;
@@ -269,16 +286,18 @@ async function simulateBuy(side, sigSnapshot) {
   }
 
   const qty = instrumentConfig.getLotQty();
-  // ── Initial hard SL = the breakout candle's own low (CE) / high (PE) — the
-  //    most recent CLOSED candle. Falls back to the OR boundary, then the
-  //    signal's slSpot. This is the disaster stop; the trade is then managed on
-  //    each candle close by _managePositionOnClose (breakeven → EMA trend-trail
-  //    → strong-opposite-candle) plus the per-trade loss cap in _checkExits.
-  const _brk = (state.candles || []).filter(c => c && typeof c.low === "number" && typeof c.high === "number").slice(-1)[0];
-  let _initSl = side === "CE"
-    ? (_brk ? _brk.low  : (sigSnapshot.orl != null ? sigSnapshot.orl : sigSnapshot.slSpot))
-    : (_brk ? _brk.high : (sigSnapshot.orh != null ? sigSnapshot.orh : sigSnapshot.slSpot));
-  _initSl = Math.round(_initSl * 100) / 100;
+  // ── Initial hard SL comes from the STRATEGY (sig.slSpot) — the wider of the
+  //    entry candle's own extreme and ORB_SL_ATR_MULT × ATR(5m). The route used to
+  //    recompute this from state.candles, which duplicated the logic three ways
+  //    (paper/live/backtest) and produced a stop ~23pt wide that was hit on 4 of 6
+  //    trades — including the day that then ran 213pt our way. One owner now.
+  //    This is only the disaster stop; the trade is managed on each candle close by
+  //    _managePositionOnClose (breakeven → EMA trend-trail) plus the per-trade
+  //    rupee cap and premium-collapse stop in _checkExits.
+  const _fallbackSl = side === "CE"
+    ? (sigSnapshot.orl != null ? sigSnapshot.orl : spot)
+    : (sigSnapshot.orh != null ? sigSnapshot.orh : spot);
+  const _initSl = Math.round((sigSnapshot.slSpot != null ? sigSnapshot.slSpot : _fallbackSl) * 100) / 100;
   const pos = {
     side,
     symbol:         optInfo.symbol,
