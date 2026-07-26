@@ -70,11 +70,25 @@ let _STOP_MINS;
 let _EMA9VWAP_SL_PAUSE_CANDLES;   // same-side cooldown (candles) after an SL hit
 let _EMA9VWAP_EOD_EXIT_MINS;      // square off any open EMA9+VWAP position at/after this IST time (before day close)
 let _OPP_COOLDOWN_ENABLED;     // opposite-side cooldown toggle
-let _OPP_COOLDOWN_CANDLES;     // opposite-side cooldown in candles (× TRADE_RESOLUTION → minutes)
+let _OPP_COOLDOWN_CANDLES;     // opposite-side cooldown in candles (× resolution → minutes)
+let _START_MINS;               // entry-window open  (IST minutes) — refreshed at /start
+let _ENTRY_STOP_MINS;          // entry-window close (IST minutes) — refreshed at /start
 // Candle-trail (EMA9VWAP_CANDLE_TRAIL_*) is read live from process.env on each candle close
 // — INSTANT — so a Settings toggle takes effect without a restart.
 function _refreshConfig() {
-  TRADE_RES                              = parseInt(process.env.TRADE_RESOLUTION || "5", 10);
+  // EMA9+VWAP owns its timeframe. It used to read the GLOBAL TRADE_RESOLUTION,
+  // which the Settings UI documents as "EMA_RSI_ST candle timeframe" — so setting
+  // EMA_RSI_ST to 15-min silently turned this 5-min strategy into a 15-min one AND
+  // flipped its 3-loss breaker from a 20-min pause to a whole-day kill. Blank
+  // EMA9VWAP_RESOLUTION inherits TRADE_RESOLUTION, so existing .env files behave
+  // exactly as before.
+  const _resRaw = (process.env.EMA9VWAP_RESOLUTION || "").trim() || process.env.TRADE_RESOLUTION || "5";
+  const _res = parseInt(_resRaw, 10);
+  TRADE_RES                              = (Number.isFinite(_res) && _res > 0) ? _res : 5;
+  // Entry window — re-read here (was a module-load const) so the Settings UI's
+  // "Session restart" badge is truthful: stop + start now really does apply it.
+  _START_MINS                            = parseMins("EMA9VWAP_ENTRY_START", "10:30");
+  _ENTRY_STOP_MINS                       = parseMins("EMA9VWAP_ENTRY_END", "14:30");
   // Per-strategy caps take precedence, then the global caps, then the default. The
   // Settings UI + README expose EMA9VWAP_MAX_DAILY_*; honouring them here (with the
   // global fallback) makes those fields actually work and keeps the backtest engine —
@@ -123,13 +137,32 @@ function _setOppositeCooldown(exitedSide, reason) {
   log(`🔁 [PAPER] Opposite-side cooldown — no ${opp} entries for ${_OPP_COOLDOWN_CANDLES} candles (~${_OPP_COOLDOWN_CANDLES * getTradeResolution()} min)`);
 }
 
+// ── C1: live-harness lifecycle safety ────────────────────────────────────────
+// The harness hooks fire on notify payloads tagged "EMA9VWAP-PAPER" — the tag the
+// PAPER engine emits. It used to be removed ONLY by GET /ema9vwap-live/stop, so a
+// harness survived auto-stop / EOD / paper-stop / SIGTERM and stayed armed in the
+// same PM2 process. Starting PAPER the next morning then placed REAL orders.
+// Every path that ends a session now releases it, and paper /start refuses to run
+// under a harness it did not install (see the guard in /start).
+const LIVE_HARNESS_MODE = "EMA9VWAP-LIVE";
+function _releaseLiveHarness(reason) {
+  try {
+    const lh = require("../services/liveHarness");
+    if (!lh.isInstalled(LIVE_HARNESS_MODE)) return false;   // idempotent no-op
+    lh.uninstallHarness(LIVE_HARNESS_MODE);
+    log(`🔒 [PAPER] Live harness released (${reason}) — no further real orders can be placed from this engine.`);
+    return true;
+  } catch (err) {
+    console.error(`[EMA9VWAP-PAPER] harness release FAILED (${reason}): ${err.message}`);
+    return false;
+  }
+}
+
 // _STOP_MINS declared and populated by _refreshConfig() above
 
-// ── isMarketHours() cache (60-second TTL) ────────────────────────────────────
-// Called on every NIFTY tick (100-200/min). Creates a Date object each call.
-// Cache for 60 seconds — market hours don't change tick-to-tick.
-let _mktHoursCache   = null;
-let _mktHoursCacheTs = 0;
+// (The old 60-second isMarketHours() cache was removed — entry decisions now use
+//  the candle timestamp via isEntryWindowOpenForBar(), and the display-only
+//  wall-clock check is plain integer math that needs no cache.)
 
 // ── Persistence ──────────────────────────────────────────────────────────────
 // Data stored at ~/trading-data/ — OUTSIDE the project directory.
@@ -371,24 +404,37 @@ function getISTMinutes() {
 
 // EMA9+VWAP entry window: 10:30 → 14:30 IST (entries only; a trailing position
 // continues past 14:30 and is squared off at the EOD exit time / 15:15).
-const _START_MINS = parseMins("EMA9VWAP_ENTRY_START", "10:30");
+// _START_MINS / _ENTRY_STOP_MINS are declared above and populated by _refreshConfig().
+//
 // NSE regular session open (09:15 IST) — the floor for BUILDING candles (so VWAP
 // and EMA9 warm up from the session anchor), fixed regardless of the entry window.
 // Pre-open auction prints a wild wide-range bar; skipping it keeps VWAP/EMA clean.
 const _MKT_OPEN_MINS = 9 * 60 + 15;
-// Entry cutoff — no NEW entries at/after this IST time (default 14:30). Exits and
-// the EOD square-off are NOT gated by this.
-const _ENTRY_STOP_MINS = parseMins("EMA9VWAP_ENTRY_END", "14:30");
 
-// Trade EXECUTION gate: cached 60s TTL, uses fast integer IST calc
+/**
+ * THE entry-window gate. Delegates to the shared strategy helper so Paper, Live
+ * and Backtest evaluate one rule from one place.
+ *
+ * Evaluated from the CANDLE TIMESTAMP, never from wall-clock. The old
+ * isMarketHours() read Date.now() behind a 60-second cache, which made the
+ * boundary non-deterministic: a candle closing at 14:30:00 could be judged
+ * against a value computed at 14:29:05 and be allowed through. Candle time is
+ * exact, and it is the only clock a backtest or a replay has.
+ *
+ * @param {number} barTimeSec bar START time (unix seconds) of the signal candle
+ */
+function isEntryWindowOpenForBar(barTimeSec) {
+  if (ptState._simMode) return true; // synthetic scenario tester ignores the clock
+  if (!Number.isFinite(barTimeSec)) return false;
+  return _ema9vwapStrategy.isEntryWindowOpen(barTimeSec, TRADE_RES);
+}
+
+// Wall-clock "is the market open" — DISPLAY ONLY (chart forming-bar visibility).
+// Never used for a trading decision; uncached so it can never serve a stale answer.
 function isMarketHours() {
-  if (ptState._simMode) return true; // always "in hours" during simulation
-  const now = Date.now();
-  if (now - _mktHoursCacheTs < 60_000) return _mktHoursCache;
+  if (ptState._simMode) return true;
   const total = getISTMinutes();
-  _mktHoursCache   = total >= _START_MINS && total < _ENTRY_STOP_MINS;
-  _mktHoursCacheTs = now;
-  return _mktHoursCache;
+  return total >= _MKT_OPEN_MINS && total < _STOP_MINS;
 }
 
 // START gate: allow any time before TRADE_STOP_TIME
@@ -505,9 +551,25 @@ async function fetchOptionLtp(symbol) {
 
     if (response.s === 'ok' && response.d && response.d.length > 0) {
       const v = response.d[0].v || response.d[0];
-      // Try every known Fyers LTP field name
+      // ── Only LIVE prices may become an option premium ────────────────────────
+      // Traded price first, then the live quote (ask/bid) for a contract that has
+      // not printed yet — both are "what the market is now".
+      // close_price / prev_close_price are DELIBERATELY excluded: they are
+      // YESTERDAY's close. Accepting them silently recorded a stale premium as the
+      // entry price and quietly corrupted the trade's P&L. Returning null instead
+      // leaves optionEntryLtp unset, and simulateSell falls back to its documented,
+      // self-labelling "spot proxy (option LTP unavailable)" mode — wrong-but-
+      // visible beats wrong-but-hidden.
       const ltp = v.lp || v.ltp || v.last_price || v.last_traded_price
-               || v.ask_price || v.bid_price || v.close_price || v.prev_close_price;
+               || v.ask_price || v.bid_price;
+      if (!(ltp > 0) && (v.close_price > 0 || v.prev_close_price > 0)) {
+        if (!fetchOptionLtp._staleLogged) {
+          fetchOptionLtp._staleLogged = true;
+          setTimeout(() => { delete fetchOptionLtp._staleLogged; }, 30000);
+          log(`⚠️ [PAPER] ${symbol}: no live price (only prev/close ₹${v.close_price || v.prev_close_price}) — REFUSING it as a premium. P&L will use the spot-proxy fallback.`);
+        }
+        return null;
+      }
       if (ltp && ltp > 0) {
         if (fetchOptionLtp._rlActive) {
           log(`✅ [PAPER] Rate limit cleared — polling resumed`);
@@ -550,8 +612,15 @@ async function _optionPollTick(symbol) {
     if (!ptState.position || !ptState.optionSymbol) { stopOptionPolling(); return; }
     const ltp = await fetchOptionLtp(symbol);
     if (!ltp) return;
+    // ── Ownership check BEFORE publishing (must stay ahead of the write) ──────
+    // A reply that lands after the position closed — or after the engine moved to
+    // a different strike (a same-candle flip) — belongs to a contract we no longer
+    // hold. The old code checked only "is there a position", so a stale reply
+    // could publish the PREVIOUS contract's premium into ptState.optionLtp and the
+    // next entry would adopt it as its entry premium. Publish only while we still
+    // own `symbol`. Mirrors the guard in emaRsiStPaper._optionPollTick.
+    if (!ptState.position || ptState.optionSymbol !== symbol) return;
     ptState.optionLtp = ltp;
-    if (!ptState.position) return; // position may have closed while we awaited
     ptState.position.optionCurrentLtp = ltp;
     if (!ptState.position.optionEntryLtp) {
       ptState.position.optionEntryLtp = ltp;
@@ -1275,6 +1344,7 @@ async function onCandleClose(candle) {
       log(`════════════════════════════════════════════════════════════════════\n`);
       log("⏰ [PAPER] Market closed (" + _stopLabel + " IST) — auto-stopping paper trade engine.");
       ptState.running = false;
+      _releaseLiveHarness("EOD auto-stop");
       saveSession();
       // Release this strategy's socket callback + mode; stop the shared socket
       // only if no other strategy is still using it.
@@ -1320,10 +1390,11 @@ async function onCandleClose(candle) {
       _skipSignal("entry_pending", "an entry is already in flight", _side);
     } else if (ptState._expiryDayBlocked) {
       _skipSignal("expiry_day_only", "TRADE_EXPIRY_DAY_ONLY is on and today is not expiry", _side);
-    } else if (!isMarketHours()) {
+    } else if (!isEntryWindowOpenForBar(candle.time)) {
       const _hhmm = (t) => String(Math.floor(t / 60)).padStart(2, "0") + ":" + String(t % 60).padStart(2, "0");
+      const _closeMins = (Math.floor((candle.time + 19800) / 60) % 1440) + TRADE_RES;
       _skipSignal("entry_window",
-        `outside entry window — ${_hhmm(getISTMinutes())} not in [${_hhmm(_START_MINS)}, ${_hhmm(_ENTRY_STOP_MINS)})`,
+        `outside entry window — candle closes ${_hhmm(_closeMins)}, not in [${_hhmm(_START_MINS)}, ${_hhmm(_ENTRY_STOP_MINS)})`,
         _side);
     }
   }
@@ -1335,7 +1406,7 @@ async function onCandleClose(candle) {
   // and TRADE_STOP_TIME (e.g. a 3:20 PM candle-close with TRADE_STOP_TIME=15:30).
   // Skipped entirely when confirmation candle is ON — entry then waits for the
   // next-candle intra-bar cross (handled in onTick), never on this candle's close.
-  if (!_confirmEnabled() && !ptState.position && !ptState._entryPending && !ptState._expiryDayBlocked && isMarketHours() && (signal === "BUY_CE" || signal === "BUY_PE")) {
+  if (!_confirmEnabled() && !ptState.position && !ptState._entryPending && !ptState._expiryDayBlocked && isEntryWindowOpenForBar(candle.time) && (signal === "BUY_CE" || signal === "BUY_PE")) {
     // Candle-close entry — fallback when an intra-candle tick didn't already enter.
     log(`📋 [PAPER] Signal — candle-close entry @ ₹${candle.close} | ${reason}`);
     let _oiTag = ""; // appended to the entry reason so the trade records its OI context
@@ -1561,7 +1632,7 @@ function onTick(tick) {
       ptState._lastCheckedBarLow  = bar.low;
     }
     // Security: never enter outside market hours (e.g. if tick arrives at open/close boundary)
-    if (!isMarketHours()) {
+    if (!isEntryWindowOpenForBar(bar.time)) {
       // Log once until the market-hours window opens (reset below), then stay quiet —
       // avoids pre-market "outside market hours" spam when started early (e.g. 8:30 AM).
       if (!ptState._omhLogged) {
@@ -1972,6 +2043,20 @@ function generatePaperDailyReport(trades, sessionPnl) {
  * Connects to live Fyers socket and starts simulating trades
  */
 router.get("/start", async (req, res) => {
+  // ── C1 SAFETY NET — FIRST STATEMENT, before any early return ────────────────
+  // The harness fires on the "EMA9VWAP-PAPER" notify tag that THIS engine emits, so
+  // a harness left installed by an earlier live session would make a paper start
+  // place REAL Zerodha orders. Releasing it here — ahead of the token check, the
+  // running check and every other guard — is what makes "paper can never place a
+  // real order" hold even if a stop path was missed or /start aborts early.
+  // /ema9vwap-live/start invokes this same handler with _viaHarness=1 and is the
+  // ONLY caller allowed to keep the harness attached.
+  if (!req.query || req.query._viaHarness !== "1") {
+    if (_releaseLiveHarness("paper /start — harness was still installed")) {
+      log(`🛑 [PAPER] A live harness was still attached and has been REMOVED before starting. This session is paper-only.`);
+    }
+  }
+
   // Re-read env into module-level config so Settings UI changes and replay
   // env overrides (snapshot or simulator mode) take effect for this session.
   _refreshConfig();
@@ -1994,6 +2079,7 @@ router.get("/start", async (req, res) => {
       error: `Cannot start paper trading — Live Trading is currently active. Stop it first at /ema9vwap-live/stop`,
     });
   }
+
 
   // ── 0DTE expiry-day warning ────────────────────────────────────────────────
   // Block start if today is the configured EMA9+VWAP expiry — EMA9+VWAP strategy bleeds
@@ -2261,6 +2347,7 @@ router.get("/start", async (req, res) => {
       simulateSell(ptState.lastTickPrice, "Auto-stop " + _stopLabelAtStart, ptState.lastTickPrice);
     }
     ptState.running = false;
+    _releaseLiveHarness("scheduled auto-stop");
     stopOptionPolling();
     try {
       tickRecorder.recordSessionStop({
@@ -2306,6 +2393,9 @@ router.get("/start", async (req, res) => {
  * Stops the session, squares off virtual position, saves summary to disk
  */
 router.get("/stop", async (req, res) => {
+  // Release the harness before the running-guard: a stale harness must be
+  // removable even when the engine is already stopped.
+  _releaseLiveHarness("paper /stop");
   if (!ptState.running) {
     return res.status(400).json({ success: false, error: "Paper trading is not running." });
   }
@@ -2330,6 +2420,7 @@ router.get("/stop", async (req, res) => {
     socketManager.stop();
   }
   ptState.running = false;  // ← FIX: was missing — UI stayed "LIVE" after manual stop
+  // (harness already released at the top of this handler)
 
   try {
     tickRecorder.recordSessionStop({
@@ -4767,6 +4858,10 @@ router.post("/simulate/start", async (req, res) => {
  * shutdown Telegram falsely reported it squared. Idempotent: no-op if not running.
  */
 function stopSession(reason = "Shutdown square-off") {
+  // Release the harness FIRST and unconditionally. It must be dropped even when the
+  // engine is already stopped — a harness that outlived its session is exactly the
+  // state that let a later paper start place real orders.
+  _releaseLiveHarness("stopSession/shutdown");
   if (!ptState.running) return;
   try {
     if (ptState.position && ptState.currentBar) {
@@ -4780,8 +4875,12 @@ function stopSession(reason = "Shutdown square-off") {
     socketManager.stop();
   }
   ptState.running = false;
+  try { socketManager.removeCallback(CALLBACK_ID); } catch (_) {}
   try { saveSession(); } catch (_) {}
 }
 router.stopSession = stopSession;
+// Read-only view of engine state for sibling routes (the live-harness page needs
+// to know whether the paper engine is still running after the harness was released).
+router.getState = () => ({ running: ptState.running, hasPosition: !!ptState.position });
 
 module.exports = router;

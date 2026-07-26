@@ -2901,6 +2901,11 @@ async function gracefulShutdown(signal) {
       }
     }
 
+    // Belt-and-braces: drop every live harness after the sessions were stopped.
+    // Each route's stopSession() already releases its own, but an exception in one
+    // of them must not leave order hooks armed while the process winds down.
+    try { require("./services/liveHarness").uninstallHarness(); } catch (_) {}
+
     // Send Telegram alert SYNCHRONOUSLY (curl-based) so the message is
     // flushed before process.exit fires in 3-8s. An async https.request
     // here gets abandoned on exit if the API round-trip is slow, which

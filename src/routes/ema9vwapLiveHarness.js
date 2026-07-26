@@ -27,13 +27,13 @@ const liveDryRun      = require("../utils/liveDryRun");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
 
 // ── Programmatic invoker for the emaRsiStPaper express router ──────────────────
-function _invokePaperRoute(method, urlPath) {
+function _invokePaperRoute(method, urlPath, query = {}) {
   return new Promise((resolve, reject) => {
     let resolved = false;
     const finish = (payload) => { if (!resolved) { resolved = true; resolve(payload); } };
     const req = {
       method: method.toUpperCase(),
-      url: urlPath, path: urlPath, query: {},
+      url: urlPath, path: urlPath, query,
       headers: { host: "localhost" },
       get: () => undefined,
       app: { get: () => undefined, set: () => {} },
@@ -110,6 +110,13 @@ router.get("/start", async (req, res) => {
 
   let installed;
   try {
+    // Idempotent install: a leftover harness (previous session, failed stop) must
+    // never make Start fail or silently keep an older dryRun/broker config. Drop
+    // any existing one first, then install fresh.
+    if (liveHarness.isInstalled("EMA9VWAP-LIVE")) {
+      console.warn(`⚠️ [EMA9VWAP-LIVE] A harness was already installed — replacing it with a fresh one.`);
+      liveHarness.uninstallHarness("EMA9VWAP-LIVE");
+    }
     installed = liveHarness.installHarness({
       mode:       "EMA9VWAP-LIVE",
       modeTag:    "EMA9VWAP-PAPER",       // ema9vwapPaper's mode field in notify payloads
@@ -128,7 +135,9 @@ router.get("/start", async (req, res) => {
   // its state so the inherited behaviour is explicit, not silent.
   console.log(`🧪 [EMA9VWAP-LIVE-HARNESS] confirmation candle: ${(process.env.EMA9VWAP_CONFIRM_CANDLE_ENABLED || "true").toLowerCase() === "true" ? "ON (2-candle cross & close)" : "OFF (legacy intra-candle)"}`);
   try {
-    const startResp = await _invokePaperRoute("GET", "/start");
+    // _viaHarness=1 marks this as the ONE start that is allowed to run with the
+    // harness attached; a paper-page start releases it instead (see paper /start).
+    const startResp = await _invokePaperRoute("GET", "/start", { _viaHarness: "1" });
     if (startResp.status >= 400 && startResp.status !== 302) {
       liveHarness.uninstallHarness("EMA9VWAP-LIVE");
       return res.status(startResp.status).json({
@@ -151,12 +160,19 @@ router.get("/start", async (req, res) => {
 });
 
 router.get("/stop", async (req, res) => {
-  if (!liveHarness.isInstalled("EMA9VWAP-LIVE")) {
-    return res.status(400).json({ success: false, error: "Harness not installed." });
+  // Tolerant of a harness that has already been released (auto-stop / EOD /
+  // shutdown all release it now). Only refuse when there is genuinely nothing to
+  // stop — otherwise a released-but-still-running paper engine could never be
+  // stopped from this page.
+  const _harnessUp = liveHarness.isInstalled("EMA9VWAP-LIVE");
+  let _paperUp = false;
+  try { _paperUp = !!(ema9vwapPaperRoute.getState && ema9vwapPaperRoute.getState().running); } catch (_) {}
+  if (!_harnessUp && !_paperUp) {
+    return res.status(400).json({ success: false, error: "Harness not installed and paper engine not running." });
   }
   try {
-    const stopResp = await _invokePaperRoute("GET", "/stop");
-    liveHarness.uninstallHarness("EMA9VWAP-LIVE");
+    const stopResp = _paperUp ? await _invokePaperRoute("GET", "/stop") : { status: 200, body: { skipped: "paper not running" } };
+    liveHarness.uninstallHarness("EMA9VWAP-LIVE");   // idempotent
     return res.json({ success: true, message: "EMA9VWAP-LIVE harness stopped + paper session ended.", paperStopResp: stopResp });
   } catch (err) {
     try { liveHarness.uninstallHarness("EMA9VWAP-LIVE"); } catch (_) {}

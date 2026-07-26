@@ -17,11 +17,34 @@
  * The engine (paper/live-harness/backtest) reads `signal` for entries and
  * `exitCE` / `exitPE` for exits, so all three surfaces stay identical.
  *
- * VWAP note (same caveat the ORB strategy documents): the NIFTY spot index has
- * no real per-bar volume in the Fyers feed, so this VWAP degenerates to a
- * session-anchored TWAP (equal/tick-count-weighted HLC3) and the σ bands to a
- * TWAP standard deviation. It tracks the TradingView shape closely but values
- * are not tick-identical. Band multiplier + EMA period are env-tunable.
+ * ── Why equal-weight (TWAP), and why it is NOT optional ─────────────────────
+ * This VWAP is an EQUAL-WEIGHTED mean of HLC3 over the session, with σ bands from
+ * the equal-weighted variance. Volume is deliberately never read. That is a
+ * PARITY requirement, not a simplification:
+ *
+ *   • Fyers HISTORY for NSE:NIFTY50-INDEX DOES return per-bar volume
+ *     (e.g. 41,002,444 on a 5-min bar) — the Backtest sees it.
+ *   • The Fyers live TICK feed does NOT carry per-bar index volume; Paper/Live
+ *     build bars with `volume: tick.vol_traded_today || 0`, i.e. zero.
+ *   • Replay rebuilds bars from recorded ticks — also zero.
+ *
+ * So a volume-aware formula makes each engine compute a DIFFERENT band from the
+ * same session. Measured on 20 real April-2026 sessions, a volume-weighted
+ * Backtest vs an equal-weighted Paper differed by up to 80.49 points on a band
+ * line and flipped the signal/exit flag on 41 of 640 evaluations (6.4%).
+ * Equal-weight is the only formula all four engines can compute identically, and
+ * it is the formula every recorded Paper trade was produced with (Paper is
+ * canonical). Removing the volume branch is what makes ONE implementation
+ * authoritative — no engine can silently diverge.
+ *
+ * TRADE-OFF (documented, not hidden): TradingView's VWAP is volume-weighted, so
+ * absolute band values here will differ from a TV VWAP overlay on a volume-
+ * bearing NIFTY chart. The EMA9 cross, the σ-band shape and the session anchor
+ * are faithful; the weighting is not. Matching TV exactly would require per-bar
+ * volume on the LIVE path, which the tick feed does not provide — see
+ * "Remaining limitation" in the EMA9+VWAP section of README.md.
+ *
+ * Band multiplier + EMA period are env-tunable.
  *
  * Contract: getSignal(candles, opts) → {
  *   signal: "BUY_CE" | "BUY_PE" | "NONE", side, reason, stopLoss(=null),
@@ -59,13 +82,49 @@ function _strongMinSigma() { const s = parseFloat(process.env.EMA9VWAP_STRONG_MI
 function _strengthFilterOn() { return String(process.env.EMA9VWAP_STRENGTH_FILTER || "false").toLowerCase() === "true"; }
 // Classify a break distance (EMA9 beyond the band edge, in points) vs σ.
 function _gradeStrength(distPts, stdev) {
-  if (!(stdev > 0)) return "STRONG";           // no vol estimate → don't filter
+  // σ == 0 happens on the FIRST in-session candle (one sample, zero variance).
+  // Grading that "STRONG" would make the noisiest bar of the day rate best, so
+  // an unmeasurable break is graded WEAK — conservative, and it only matters
+  // when EMA9VWAP_STRENGTH_FILTER is on (the filter drops WEAK). With the
+  // filter off (the default) this label is metadata only and changes no trade.
+  if (!(stdev > 0)) return "WEAK";
   return distPts >= _strongMinSigma() * stdev ? "STRONG" : "WEAK";
 }
+// Parse "HH:MM" → minutes-of-day. Falls back to `def` on anything malformed
+// rather than silently collapsing to midnight (a bad value used to widen the
+// VWAP anchor / entry window to the whole day without a word).
+function _parseHHMM(raw, def) {
+  const m = /^\s*(\d{1,2}):(\d{2})\s*$/.exec(String(raw == null ? "" : raw));
+  if (!m) return def;
+  const h = parseInt(m[1], 10), mm = parseInt(m[2], 10);
+  if (!Number.isFinite(h) || !Number.isFinite(mm) || h > 23 || mm > 59) return def;
+  return h * 60 + mm;
+}
+
 function _anchorMins() {
-  const raw = process.env.EMA9VWAP_VWAP_SESSION_START || "09:15";
-  const [h, m] = raw.split(":").map(Number);
-  return (h || 0) * 60 + (isNaN(m) ? 0 : m);
+  return _parseHHMM(process.env.EMA9VWAP_VWAP_SESSION_START, 9 * 60 + 15);
+}
+
+/**
+ * THE entry-window rule, shared by Paper, Live and Backtest so no engine can
+ * drift. Evaluated from the CANDLE TIMESTAMP — never from wall-clock — so the
+ * same candle always yields the same answer in live, replay and backtest.
+ *
+ * The window bounds a signal by the time the signal EXISTS, i.e. the moment its
+ * candle CLOSES (= candle.time + resolution). This matches what Paper has always
+ * done (it evaluated wall-clock inside onCandleClose, which fires on the close);
+ * the Backtest used to gate on the candle's START time and therefore shifted the
+ * whole window one bar in both directions.
+ *
+ * @param {number} candleTimeSec  bar START time, unix seconds
+ * @param {number} resolutionMins bar length in minutes
+ */
+function isEntryWindowOpen(candleTimeSec, resolutionMins) {
+  const start = _parseHHMM(process.env.EMA9VWAP_ENTRY_START, 10 * 60 + 30);
+  const end   = _parseHHMM(process.env.EMA9VWAP_ENTRY_END,   14 * 60 + 30);
+  const res   = Number.isFinite(resolutionMins) && resolutionMins > 0 ? resolutionMins : 5;
+  const closeMins = _utcSecToIstMins(candleTimeSec) + res;   // when the bar closes
+  return closeMins >= start && closeMins < end;
 }
 
 /**
@@ -79,11 +138,12 @@ function computeVwapBands(candles, anchorMins, mult) {
   if (!candles || candles.length === 0) return null;
   if (anchorMins == null) anchorMins = _anchorMins();
   if (mult == null) mult = _bandMult();
-  let sumPV = 0, sumV = 0, sumPV2 = 0;       // volume-weighted accumulators
-  let sumP = 0, sumP2 = 0, count = 0;        // equal-weight fallback accumulators
-  // Count of in-session candles that actually carry volume. The volume-weighted
-  // branch below requires ALL of them to carry it — see the guard note there.
-  let volCount = 0;
+  // ── ONE authoritative weighting: EQUAL-WEIGHT (TWAP) of HLC3. See the
+  //    "Why equal-weight" note in the file header. `candle.volume` is
+  //    deliberately NOT read here — it is the only field whose provenance
+  //    differs between engines, and reading it is what made Paper and Backtest
+  //    compute different bands for the same session.
+  let sumP = 0, sumP2 = 0, count = 0;
   // Session-anchored: VWAP resets every trading day. The candle array may span many
   // days (warmup history), so restrict to the SAME IST date as the latest candle.
   const _lastDay = Math.floor((candles[candles.length - 1].time + 19800) / 86400);
@@ -92,25 +152,10 @@ function computeVwapBands(candles, anchorMins, mult) {
     if (_utcSecToIstMins(c.time) < anchorMins) continue;
     const tp = (c.high + c.low + c.close) / 3;   // HLC3 typical price (TV VWAP source)
     sumP += tp; sumP2 += tp * tp; count++;
-    const v = (typeof c.volume === "number" && c.volume > 0) ? c.volume : 0;
-    if (v > 0) { sumPV += tp * v; sumV += v; sumPV2 += tp * tp * v; volCount++; }
   }
   if (count === 0) return null;
-  let vwap, variance;
-  // Volume weighting is an ALL-OR-NOTHING decision for the session, not per candle.
-  // Previously any single volume-bearing candle flipped this branch on, and the
-  // volume-weighted sums then silently ignored every zero-volume candle. On a mixed
-  // session (warmup candles carry volume, live tick-built candles do not) that froze
-  // VWAP and the bands at the volume-bearing subset for the whole day. Requiring
-  // volCount === count keeps the documented behaviour — volume-weighted when the
-  // series really has volume, equal-weight TWAP otherwise — and never drops candles.
-  if (volCount === count && sumV > 0) {
-    vwap = sumPV / sumV;
-    variance = (sumPV2 / sumV) - vwap * vwap;
-  } else {
-    vwap = sumP / count;
-    variance = (sumP2 / count) - vwap * vwap;
-  }
+  const vwap     = sumP / count;
+  const variance = (sumP2 / count) - vwap * vwap;
   const stdev = Math.sqrt(Math.max(variance, 0));
   return {
     vwap:  _round2(vwap),
@@ -224,4 +269,8 @@ function getSignal(candles, opts) {
   return result;
 }
 
-module.exports = { NAME, DESCRIPTION, getSignal, computeVwapBands, vwapSeries };
+module.exports = {
+  NAME, DESCRIPTION, getSignal, computeVwapBands, vwapSeries,
+  // Shared so Paper / Live / Backtest cannot drift on the window rule.
+  isEntryWindowOpen,
+};

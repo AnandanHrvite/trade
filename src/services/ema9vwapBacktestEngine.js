@@ -16,6 +16,30 @@
  * P&L uses the same option-simulation model as the shared backtestEngine
  * (spotPnlPts × delta − theta − charges) so its numbers are comparable, and it
  * returns the same { summary, trades } shape the backtest HTML renders.
+ *
+ * ── M6: what this P&L model CANNOT do, and why ───────────────────────────────
+ * There is no historical NIFTY option chain available to this system — Fyers
+ * history serves the SPOT index only. Every option number below is therefore a
+ * model, not a measurement, and is deliberately left coarse rather than dressed
+ * up as precision:
+ *
+ *   • Entry premium is assumed flat at ₹200. Paper buys one strike ITM and the
+ *     real premiums observed in live paper ranged ₹51–₹208 — a 4× spread. So a
+ *     backtest ₹ figure is NOT comparable to a paper ₹ figure; only the sign,
+ *     the trade count and the spot-points column are.
+ *   • Delta is a constant 0.55 (BACKTEST_DELTA). Real one-strike-ITM delta is
+ *     nearer 0.6 and moves with spot, time and IV. No gamma is modelled.
+ *   • Theta is linear (BACKTEST_THETA_DAY / candles-per-day). Real theta
+ *     accelerates into expiry and is not linear intraday.
+ *   • IV is not modelled at all: no IV crush, no vol expansion on a break.
+ *   • The option-premium stop (EMA9VWAP_OPT_STOP_PCT) is expressed as a % of the
+ *     entry premium, which this engine does not have. It is converted to an
+ *     equivalent adverse SPOT move (pct × ₹200 / delta) — an approximation whose
+ *     error grows as the true premium departs from ₹200.
+ *
+ * Fixing any of these requires a historical option-chain data source. Until one
+ * exists, treat backtest ₹ P&L as an ordinal signal (better/worse), never as a
+ * forecast of live rupees.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -64,14 +88,34 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
   // EMA9_VWAP the only frictionless backtest, flattering its results vs siblings.
   const SLIPPAGE_PTS   = parseFloat(process.env.BACKTEST_SLIPPAGE_PTS || "1.5");
 
-  const entryStart     = _parseMins("EMA9VWAP_ENTRY_START", "10:30");
-  const entryEnd       = _parseMins("EMA9VWAP_ENTRY_END", "14:30");
+  // NOTE: the entry window is NOT parsed here on purpose. strategy.isEntryWindowOpen()
+  // is the single authoritative rule shared with paper/live — duplicating it locally
+  // is exactly how the candle-start vs candle-close off-by-one crept in.
   const eodExit        = _parseMins("EMA9VWAP_EOD_EXIT_TIME", "15:15");
   // Same fallback chain as paper (_refreshConfig): per-strategy → global → default,
   // so the backtest's daily caps mirror the canonical paper engine exactly.
   const maxDailyTrades = parseInt(process.env.EMA9VWAP_MAX_DAILY_TRADES || process.env.MAX_DAILY_TRADES || "20", 10);
   const maxDailyLoss   = parseFloat(process.env.EMA9VWAP_MAX_DAILY_LOSS || process.env.MAX_DAILY_LOSS || "5000");
   const reversalExit   = (process.env.EMA9VWAP_REVERSAL_EXIT_ENABLED || "true").toLowerCase() === "true";
+
+  // ── H4: optional protective stops — the SAME keys/defaults paper reads. These
+  //    used to be absent here entirely, so enabling any of them made the backtest
+  //    silently model a different strategy from the one paper traded.
+  //    All default OFF, so a default config produces byte-identical results.
+  const stopLossPts    = parseFloat(process.env.EMA9VWAP_STOP_LOSS_PTS || "0");
+  const optStopPct     = parseFloat(process.env.EMA9VWAP_OPT_STOP_PCT  || "0");
+  const negCandleLimit = parseInt(process.env.EMA9VWAP_NEG_CANDLE_LIMIT || "0", 10);
+  const candleTrailOn  = (process.env.EMA9VWAP_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true";
+  const candleTrailBars= Math.max(1, parseInt(process.env.EMA9VWAP_CANDLE_TRAIL_BARS || "3", 10));
+  const slModeCandle   = (process.env.EMA9VWAP_SL_MODE || "ema").toLowerCase() === "candle";
+  const _tradeGuards   = require("../utils/tradeGuards");
+  // Option-premium stop is expressed as a % of the ENTRY PREMIUM. The backtest has
+  // no option chain, so it is converted to the equivalent adverse SPOT move using
+  // the same delta the P&L sim uses:  spotPts = (pct x seedPremium) / delta.
+  // Approximation, flagged in the summary — see M6 in the README.
+  const _optStopSpotPts = (optStopPct > 0 && DELTA > 0)
+    ? (optStopPct * 200) / DELTA
+    : 0;
 
   // ── Guards mirrored from paper (previously absent from this engine) ──────────
   // Opposite-side (flip) cooldown — same keys/defaults as ema9vwapPaper._refreshConfig.
@@ -87,6 +131,29 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
   // the same resolver paper and live use, so all three surfaces agree.
   const vixLookup = vixFilter.buildVixLookup(vixCandles || []);
   let vixBlocked = 0;
+
+  // ── H4-f: expiry-day-only filter (TRADE_EXPIRY_DAY_ONLY), matching paper's
+  //    _expiryDayBlocked. Resolved ONCE per distinct IST date in the range rather
+  //    than per candle. Off by default → empty set → no effect.
+  const expiryOnly = (process.env.TRADE_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true";
+  const expiryDates = new Set();
+  let expiryLookupFailed = false;
+  if (expiryOnly && total > 0) {
+    const { isExpiryDate } = require("../utils/nseHolidays");
+    const _seen = new Set();
+    for (const c of candles) {
+      const d = new Date((c.time + 19800) * 1000).toISOString().slice(0, 10);
+      _seen.add(d);
+    }
+    for (const d of _seen) {
+      try { if (await isExpiryDate(d)) expiryDates.add(d); }
+      catch (_) { expiryLookupFailed = true; }
+    }
+    if (expiryLookupFailed) {
+      console.warn("[EMA9VWAP-BT] expiry-date lookup partially failed — expiry-only filter may under-report entries.");
+    }
+  }
+  const _istDateStr = (sec) => new Date((sec + 19800) * 1000).toISOString().slice(0, 10);
 
   let curDay = null, dailyTrades = 0, dailyPnl = 0;
   // Per-day circuit-breaker state (reset each trading day, like paper's per-session state).
@@ -190,7 +257,12 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
       oppCooldownUntilTs = 0; oppCooldownLastSide = null;
     }
     const mins = _istMins(candle.time);
-    let exitedThisCandle = false;
+    // M4: paper `return`s after a REVERSAL or EOD exit (no re-entry that candle) but
+    // FALLS THROUGH after a signal-exit, relying on the opposite-side cooldown to
+    // block the flip. The backtest used to block re-entry after EVERY exit, which
+    // diverged whenever EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_ENABLED=false. Track the two
+    // cases separately so both engines behave identically under every config.
+    let blockEntryThisCandle = false;
 
     // Extend the rolling window by the current candle; cap at 200 (paper's in-memory
     // cap). window now equals candles[max(0,i-199) .. i] — same view getSignal saw
@@ -202,12 +274,60 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
     // ── EXIT (checked first, like paper's onCandleClose) ──
     if (position) {
       position.candlesHeld = (position.candlesHeld || 0) + 1;
-      let doExit = false, exitReason = "";
+      let doExit = false, exitReason = "", blocksReentry = true;
+
+      // Paper's exit ORDER, mirrored exactly:
+      //   time-stop -> negative-candle -> candle-trail SL -> 2-candle reversal
+      //   -> signal exit -> EOD.  (All but reversal/signal/EOD default OFF.)
+      const _spotPnlPts = (candle.close - position.entryPrice) * (position.side === "CE" ? 1 : -1);
+
+      // H4-a: legacy time-stop, only when EMA9VWAP_SL_MODE=candle (paper parity).
+      if (slModeCandle) {
+        const _ts = _tradeGuards.checkTimeStop(position.candlesHeld, _spotPnlPts * DELTA);
+        if (_ts) { doExit = true; exitReason = _ts; }
+      }
+      // H4-b: negative-candle stop — still red after N candles.
+      if (!doExit && negCandleLimit > 0 && position.candlesHeld >= negCandleLimit && _spotPnlPts < 0) {
+        doExit = true; exitReason = `Negative ${negCandleLimit}-candle stop`;
+      }
+      // H4-c: catastrophic spot-points cap. Paper checks it per TICK, so it fires
+      // intrabar — modelled here against the candle's ADVERSE EXTREME (low for CE,
+      // high for PE), which is the closest a candle-loop can get.
+      if (!doExit && stopLossPts > 0) {
+        const _adverse = position.side === "CE"
+          ? (candle.low  - position.entryPrice)
+          : (position.entryPrice - candle.high);
+        if (_adverse <= -stopLossPts) {
+          doExit = true; exitReason = `SL (${stopLossPts}pts)`;
+        }
+      }
+      // H4-d: option-premium stop, converted to its spot-move equivalent (approx).
+      if (!doExit && _optStopSpotPts > 0) {
+        const _adverse = position.side === "CE"
+          ? (candle.low  - position.entryPrice)
+          : (position.entryPrice - candle.high);
+        if (_adverse <= -_optStopSpotPts) {
+          doExit = true; exitReason = `Option stop ${(optStopPct * 100).toFixed(0)}% (spot-equivalent)`;
+        }
+      }
+      // H4-e: N-bar candle trail (tighten-only), enforced intrabar like paper.
+      if (!doExit && candleTrailOn && window.length >= candleTrailBars) {
+        const _bars = window.slice(-candleTrailBars);
+        const _lvl = position.side === "CE"
+          ? Math.min(..._bars.map(c => c.low))
+          : Math.max(..._bars.map(c => c.high));
+        if (position.side === "CE" && (position.trailSL == null || _lvl > position.trailSL)) position.trailSL = _lvl;
+        if (position.side === "PE" && (position.trailSL == null || _lvl < position.trailSL)) position.trailSL = _lvl;
+        if (position.trailSL != null) {
+          const _hit = position.side === "CE" ? candle.low <= position.trailSL : candle.high >= position.trailSL;
+          if (_hit) { doExit = true; exitReason = `Trail SL hit @ ₹${_q(position.trailSL, 2)}`; }
+        }
+      }
       // Exit 2.5: 2-candle reversal engulf — mirrors paper onCandleClose. CE bails on a
       // bearish candle closing below both prior 2 lows; PE on a bullish candle closing
       // above both prior 2 highs. Positions never carry overnight (EOD square-off), so
       // candles[i-1]/[i-2] are always same-day while a position is open.
-      if (reversalExit && i >= 2) {
+      if (!doExit && reversalExit && i >= 2) {
         const prev1 = candles[i - 1], prev2 = candles[i - 2];
         const revCE = position.side === "CE" && candle.close < candle.open && candle.close < Math.min(prev1.low, prev2.low);
         const revPE = position.side === "PE" && candle.close > candle.open && candle.close > Math.max(prev1.high, prev2.high);
@@ -216,19 +336,21 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
       if (!doExit && ((position.side === "CE" && sig.exitCE) || (position.side === "PE" && sig.exitPE))) {
         doExit = true;
         exitReason = `EMA9 re-entered VWAP ${position.side === "CE" ? "top" : "bottom"} band`;
+        blocksReentry = false;   // paper falls through here — cooldown is the guard
       } else if (!doExit && mins >= eodExit) {
         doExit = true;
         exitReason = "EOD square-off";
       }
-      if (doExit) { _closeTrade(candle, exitReason); exitedThisCandle = true; }
+      if (doExit) { _closeTrade(candle, exitReason); blockEntryThisCandle = blocksReentry; }
     }
 
     // ── ENTRY (candle close, inside the entry window, daily guards) ──
     // exitedThisCandle mirrors paper's `return` after a candle-close exit — no new
     // entry on a candle that just closed a position.
-    if (!position && !exitedThisCandle && candle.time >= activeFromTs
+    if (!position && !blockEntryThisCandle && candle.time >= activeFromTs
         && (sig.signal === "BUY_CE" || sig.signal === "BUY_PE")
-        && mins >= entryStart && mins < entryEnd) {
+        && strategy.isEntryWindowOpen(candle.time, resMins)
+        && (!expiryOnly || expiryDates.has(_istDateStr(candle.time)))) {
       const side = sig.signal === "BUY_CE" ? "CE" : "PE";
       // Circuit breakers (mirror paper's entry gate + simulateBuy cooldowns):
       //   • max trades/day  • latched daily-loss  • 3-loss pause  • opposite-side cooldown

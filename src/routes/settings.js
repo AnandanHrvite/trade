@@ -268,6 +268,21 @@ const SETTINGS_SCHEMA = [
       { key: "EMA9VWAP_OPTION_EXPIRY_OVERRIDE", label: "Option Expiry Override (YYYY-MM-DD)", type: "text", effect: EFFECT.SESSION, desc: "Force a specific weekly expiry for EMA9+VWAP option entries. Blank = nearest weekly (intraday strategy, current week is fine).", default: "" },
       { key: "EMA9VWAP_VIX_ENABLED", label: "VIX Filter (EMA9+VWAP)", type: "select", options: ["", "true", "false"], effect: EFFECT.INSTANT, desc: "EMA9+VWAP-specific VIX gate. BLANK = inherit the global VIX_FILTER_ENABLED (which is ON unless explicitly false) — this is the historical behaviour and the safe default. Set true/false to decouple EMA9+VWAP from EMA_RSI_ST's VIX setting.", default: "" },
       { key: "EMA9VWAP_VIX_MAX_ENTRY", label: "VIX Max Entry (EMA9+VWAP)", type: "text", effect: EFFECT.INSTANT, desc: "Block EMA9+VWAP entries when India VIX is above this. Blank = inherit the global VIX_MAX_ENTRY (default 20).", default: "" },
+      // ── M5: keys that were live in code but invisible here (and therefore absent
+      //    from the per-day settings snapshot). All defaults are BLANK/current so a
+      //    Settings save writes nothing that changes behaviour.
+      { key: "EMA9VWAP_RESOLUTION", label: "Candle Resolution (min)", type: "select", options: ["", "3", "5", "15"], effect: EFFECT.SESSION, desc: "EMA9+VWAP candle timeframe. BLANK = inherit the global TRADE_RESOLUTION (which is labelled as EMA_RSI_ST's). Set 5 to pin this strategy to 5-min regardless of what EMA_RSI_ST uses.", default: "" },
+      { key: "EMA9VWAP_SL_PAUSE_CANDLES", label: "Same-Side SL Cooldown (candles)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.SESSION, desc: "After a stop-out, block new entries on THAT side for N candles. Inert unless an optional stop is enabled.", default: "3" },
+      { key: "EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_ENABLED", label: "Opposite-Side Cooldown", type: "toggle", effect: EFFECT.SESSION, desc: "After any non-flip exit, block the OPPOSITE side for N candles. Prevents whipsaw flips in chop. Default ON.", default: "true" },
+      { key: "EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_CANDLES", label: "Opposite-Side Cooldown (candles)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Cooldown length in candles (× resolution = minutes; 3 × 5-min = 15 min).", default: "3" },
+      { key: "EMA9VWAP_MAX_CONSEC_LOSSES", label: "Chop Guard (consecutive losses)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.INSTANT, desc: "Halt entries for the rest of the session after N straight losses (any win resets). 0 = OFF.", default: "0" },
+      { key: "EMA9VWAP_NEG_CANDLE_LIMIT", label: "Negative-Candle Stop (candles)", type: "number", min: 0, max: 20, step: 1, effect: EFFECT.INSTANT, desc: "Square off a trade that is still in the red after N candles. 0 = OFF (pure signal exit).", default: "0" },
+      { key: "EMA9VWAP_CANDLE_TRAIL_ENABLED", label: "N-Bar Candle Trail", type: "toggle", effect: EFFECT.INSTANT, desc: "Optional structural trailing stop at the N-bar low (CE) / high (PE), tighten-only. Default OFF.", default: "false" },
+      { key: "EMA9VWAP_CANDLE_TRAIL_BARS", label: "Candle Trail Bars", type: "number", min: 1, max: 10, step: 1, effect: EFFECT.INSTANT, desc: "Bars used for the candle trail low/high.", default: "3" },
+      { key: "EMA9VWAP_SL_MODE", label: "SL Mode", type: "select", options: ["ema", "candle"], effect: EFFECT.INSTANT, desc: "'ema' = pure signal exit (default). 'candle' re-enables the legacy flat-trade time-stop.", default: "ema" },
+      { key: "EMA9VWAP_STRENGTH_FILTER", label: "Drop WEAK Band Breaks", type: "toggle", effect: EFFECT.INSTANT, desc: "Only trade crosses that clear the band edge by ≥ the σ threshold below. Default OFF.", default: "false" },
+      { key: "EMA9VWAP_STRONG_MIN_SIGMA", label: "STRONG Break Threshold (σ)", type: "number", min: 0, max: 2, step: 0.05, effect: EFFECT.INSTANT, desc: "A break ≥ this many σ past the band edge grades STRONG, else WEAK. Only enforced when the filter above is ON.", default: "0.25" },
+      { key: "EMA9VWAP_OPTION_EXPIRY_TYPE", label: "Expiry Type (EMA9+VWAP)", type: "select", options: ["", "weekly", "monthly"], effect: EFFECT.SESSION, desc: "EMA9+VWAP-only expiry type for the override above. Blank = inherit the common Expiry Type.", default: "" },
     ],
   },
   {
@@ -630,6 +645,10 @@ const IMMEDIATE_KEYS = new Set([
   "BB_RSI_VIX_MAX_ENTRY", "BB_RSI_VIX_STRONG_ONLY", "PA_VIX_ENABLED", "PA_VIX_MAX_ENTRY",
   "OI_FILTER_ENABLED", "EMA_RSI_ST_OI_ENABLED", "BB_RSI_OI_ENABLED", "PA_OI_ENABLED", "ORB_OI_ENABLED",
   "EMA9VWAP_OI_ENABLED", "EMA9VWAP_VIX_ENABLED", "EMA9VWAP_VIX_MAX_ENTRY",
+  "EMA9VWAP_MAX_CONSEC_LOSSES", "EMA9VWAP_NEG_CANDLE_LIMIT", "EMA9VWAP_CANDLE_TRAIL_ENABLED",
+  "EMA9VWAP_CANDLE_TRAIL_BARS", "EMA9VWAP_SL_MODE", "EMA9VWAP_STRENGTH_FILTER",
+  "EMA9VWAP_STRONG_MIN_SIGMA", "EMA9VWAP_BAND_MULT", "EMA9VWAP_EMA_PERIOD",
+  "EMA9VWAP_REVERSAL_EXIT_ENABLED", "EMA9VWAP_OPT_STOP_PCT", "EMA9VWAP_STOP_LOSS_PTS",
   "OI_LOOKBACK_CANDLES", "OI_MIN_DELTA_PCT", "OI_FAIL_MODE",
   "INSTRUMENT", "NIFTY_LOT_SIZE", "STRIKE_OFFSET_CE", "STRIKE_OFFSET_PE", "LOT_MULTIPLIER",
   "OPTION_EXPIRY_OVERRIDE", "OPTION_EXPIRY_TYPE",
