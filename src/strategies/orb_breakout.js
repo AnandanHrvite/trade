@@ -51,10 +51,11 @@
  * rupee cap) and prices trades in rupees with costs. On the only sample available
  * (39 sessions, Mar-Apr 2026) it reports:
  *
- *     9 trades, 33% win rate, net ~3,112 INR, profit factor 1.39
- *     bootstrap 95% CI on mean/trade = [-1,334, +2,503] INR
- *     P(true edge <= 0) = ~39%
- *     the single best trade is 231% of net -- REMOVE IT AND THE RESULT IS -4,089 INR
+ *     9 trades, 33% win rate, net ~3,415 INR, profit factor 1.44
+ *     bootstrap 95% CI on mean/trade = [-1,288, +2,511] INR
+ *     P(true edge <= 0) = ~37%
+ *     the single best trade is 211% of net -- REMOVE IT AND THE RESULT IS -3,786 INR
+ *     the rupee budget clamped the stop on 9 of 9 trades (see ORB_SL_ATR_MULT below)
  *
  * Read that again: strip one trade out of nine and the strategy loses money. This
  * is not a validated edge, it is a right-tail lottery ticket measured over two
@@ -63,14 +64,16 @@
  * and the ablation numbers are directional evidence, not statistical proof --
  * e.g. the prior-day filter's removal is Fisher-exact p=0.152.
  *
- * Earlier, lower-fidelity passes quoted "+346 spot points, no losers" and later
- * "~6,737 INR". Both were optimistic: the first ignored costs entirely, the second
- * used a flat 20pt breakeven instead of the real max(20, 0.5xOR) rule. Trust
+ * Earlier, lower-fidelity passes quoted "+346 spot points, no losers", then
+ * "~6,737 INR", then "~3,112 INR". All were optimistic: the first ignored costs
+ * entirely; the second used a flat 20pt breakeven instead of the real
+ * max(20, 0.5xOR) rule; the third armed breakeven off the intrabar HIGH (paper arms
+ * it off the CLOSE) and modelled no opposite-candle exit at all. Trust
  * scripts/orbValidate.js over any number quoted from memory.
  *
  * STRONGEST UNTESTED HYPOTHESIS -- on this sample, a NARROW opening range was the
  * whole edge: OR < 1.5xATR15 gave 4 trades / 75% win / +10,700 INR, while
- * OR >= 1.5xATR15 gave 5 trades / 0% win / -7,587 INR. Mechanically sensible (a
+ * OR >= 1.5xATR15 gave 5 trades / 0% win / -7,285 INR. Mechanically sensible (a
  * quiet open stores energy the breakout releases). It is also n=9, so
  * ORB_OR_ATR_MAX stays at 2.5 rather than being tuned to it. Test this FIRST on
  * the long sample; it is the most likely real improvement in the whole design.
@@ -134,7 +137,12 @@ const BUFFER_OR_MULT  = 0.15;  // breakout buffer, as a fraction of the opening 
 const BUFFER_ATR_MULT = 0.30;  // ...or of ATR(5m), whichever is larger
 const RETEST_TOL_PCT  = 0.10;  // retest tolerance, as a fraction of the OR
 const RETEST_TOL_MIN  = 5;     // ...with this floor in points
-const TARGET_OR_MULT  = 1.5;   // informational target only — there is no target exit
+const TARGET_OR_MULT  = 1.5;   // informational target only — there is no target exit.
+                               // Exported so the routes' manual-entry path draws the
+                               // same line as an auto signal. It used to read its own
+                               // ORB_TARGET_RANGE_MULT env key, which meant changing
+                               // that key moved the line on manual trades and nowhere
+                               // else — a dial with no effect on any automated trade.
 
 // ── Time / date helpers (IST, fixed +05:30 — NSE never observes DST) ────────
 function _parseMins(envKey, fallback) {
@@ -529,4 +537,4 @@ function getSignal(candles, opts) {
   return done(Object.assign(sig, { reason: `Waiting for a retest or resume of ${side === "CE" ? "ORH" : "ORL"} (candle ${lastIdx - b}/${cfg.retestWindow + 1})` }));
 }
 
-module.exports = { NAME, DESCRIPTION, getSignal, computeOpeningRange, computeVwap, summarizeGates };
+module.exports = { NAME, DESCRIPTION, getSignal, computeOpeningRange, computeVwap, summarizeGates, TARGET_OR_MULT };

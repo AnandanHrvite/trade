@@ -6,6 +6,38 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — ORB: offline engines ran the exit stack in the wrong order, and two config dials did nothing
+
+Full 13-phase institutional review. Two correctness bugs, two phantom config keys, one corrected headline number.
+
+**Exit precedence — the offline engines had paper's timeline backwards.** Paper runs `_checkExits` on **every tick** (rupee cap → premium stop → hard SL) and `_managePositionOnClose` only when a candle **closes** (opposite candle → breakeven → EMA trail). So inside one candle the intrabar exits always get first refusal. Both `orbBacktest.js` and `scripts/orbValidate.js` evaluated them the other way round, letting a close-based rule book the candle's *close* on a bar where paper had already been stopped out minutes earlier. Reordered to match. Impact on the 39-session sample is small (net ₹3,868 → ₹3,878) because only one candle straddled both, but the exposure is unbounded on other samples — a bar that dips 60pt through the stop and recovers to a clean trend close was scored as a winner.
+
+**The EOD square-off was a candle late.** Paper checks the clock on every tick and exits at the first tick at/after `ORB_FORCED_EXIT`; the backtest booked `c.close` of that candle — five free minutes the live engine never gets. Now fills at `c.open`.
+
+**`scripts/orbValidate.js` — which produces the number quoted in the strategy header — modelled a gentler strategy than the one that trades.** It armed breakeven off the intrabar **high/low** rather than the **close**, so any trade that merely *touched* +20pt and gave it straight back was scored as a scratch instead of a loss; and it modelled **no opposite-candle exit at all**, which is ON by default in paper. Both fixed. The corrected authoritative figures on the only sample available (39 sessions, Mar–Apr 2026):
+
+| | old (wrong) | corrected |
+|---|---|---|
+| net | ₹3,112 | **₹3,415** |
+| profit factor | 1.39 | **1.44** |
+| P(true edge ≤ 0) | ~39% | **~37%** |
+| best trade as % of net | 231% | **211%** |
+| net without the best trade | −₹4,089 | **−₹3,786** |
+
+The conclusion is unchanged and unflattering: **strip one trade out of nine and the strategy loses money.** It also confirms the rupee budget clamped the stop on **9 of 9** trades — `ORB_SL_ATR_MULT` is fully inert at the shipped `ORB_MAX_TRADE_LOSS`.
+
+**Removed two config keys that could not change any automated trade** (Phase 2: a parameter with no measurable value is a liability):
+
+- `ORB_TARGET_RANGE_MULT` — `targetSpot` drives no exit anywhere; it is a chart line. Worse, the strategy hard-coded `1.5` for auto signals while only the *manual-entry* path read the env key, so changing it moved the line on manual trades and nowhere else. The strategy now exports `TARGET_OR_MULT` and both routes use it — one owner.
+- `ORB_LIVE_CAPITAL` — appeared in no `.env`, no Settings field and no doc, yet silently overrode the live dashboard's starting capital, so live and paper could disagree. Live now reads `FYERS_INV_AMOUNT`, identical to paper, matching the documented collapse of per-strategy capital keys into broker pools.
+- `ORB_PAPER_CAPITAL` deleted from `.env` — dead since that same collapse; paper reads `FYERS_INV_AMOUNT`.
+
+Three new assertions, all mutation-tested: intrabar exits precede close-based exits in *both* offline engines; the validation script models paper's exits rather than a friendlier subset; the removed keys cannot resurrect. Suite now **30 ORB assertions** (`npm test`: 28 + 30).
+
+**Verified clean in this pass, no change needed**: every `/orb-paper` and `/orb-live` page renders 200 with no `undefined`/`NaN` leaking into the HTML (the three `undefined` hits are `typeof` guards in client JS); the manual-entry synthetic-signal path reconciles its stop through `orbStopRisk` like every other entry; `realtime.js`, `consolidation.js` and `replay.js` are all still wired for ORB; the removed signal fields (`volRatio`, `wickRatio`, …) survive as explicit `null`s so historical trade records keep a stable shape; the risk breaker (`orbRiskState`) and OI gate are genuinely called by both paper and live; every ORB key read in code appears in the README and no key in `.env` is unread.
+
+**Remaining risk, unchanged and blocking**: 9 trades is not a validated edge. `scripts/orbValidate.js --from 2024-01-01` needs a live Fyers token and must be run before `ORB_LIVE_DRY_RUN` is turned off.
+
 ### Fixed — ORB backtest: the rupee cap overshot the very budget it enforces
 
 Second recheck pass. This one ran the backtest end-to-end for the first time since the rebuild — a path never executed in the previous passes, only reasoned about.

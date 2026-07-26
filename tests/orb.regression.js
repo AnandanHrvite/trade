@@ -375,6 +375,52 @@ const ENTRIES  = ALL_SIGS.filter(x => x.sig.signal !== "NONE");
     }
   });
 
+  // Paper's real timeline is: every TICK runs _checkExits (rupee cap → premium stop
+  // → hard SL); the candle CLOSE then runs _managePositionOnClose (opposite candle →
+  // breakeven → EMA trail). Offline engines see only OHLC, so they must evaluate the
+  // intrabar group FIRST — otherwise a close-based rule books the candle's close on a
+  // bar where paper was already stopped out minutes earlier.
+  check("offline engines check intrabar exits BEFORE close-based exits (paper's order)", () => {
+    const targets = [
+      ["../src/routes/orbBacktest.js", /Hard SL hit/,   /Strong opposite candle/, /Closed (below|above) EMA/],
+      ["../scripts/orbValidate.js",    /why = be \? "BE" : "SL"/, /why = "opp"/,  /why = "trail"/],
+    ];
+    for (const [rel, slRe, oppRe, emaRe] of targets) {
+      const src = fs.readFileSync(path.join(__dirname, rel), "utf-8");
+      const sl = src.search(slRe), opp = src.search(oppRe), ema = src.search(emaRe);
+      assert.ok(sl >= 0 && opp >= 0 && ema >= 0, `${rel}: could not locate all three exits (sl=${sl} opp=${opp} ema=${ema})`);
+      assert.ok(sl < opp, `${rel}: the opposite-candle exit is evaluated before the hard SL — it can book a close on a bar paper had already stopped out`);
+      assert.ok(sl < ema, `${rel}: the EMA trail is evaluated before the hard SL — same divergence from paper`);
+    }
+  });
+
+  // The validation script produces the number quoted in the strategy header, so its
+  // exit model is not allowed to be gentler than the paper route it stands in for.
+  check("the validation script models paper's exits, not a friendlier subset", () => {
+    const src = fs.readFileSync(path.join(__dirname, "../scripts/orbValidate.js"), "utf-8");
+    assert.ok(/ORB_OPP_CANDLE_EXIT/.test(src),
+      "orbValidate omits the opposite-candle exit that paper runs by default — every trade it saves is a fictional one");
+    // Breakeven must arm off the CLOSE. Arming off the intrabar high/low turns any
+    // trade that merely TOUCHED the trigger into a scratch, flattering every loser.
+    assert.ok(/favClose\s*=\s*side === "CE" \? c\.close - entry : entry - c\.close/.test(src),
+      "orbValidate does not derive its breakeven trigger from the candle close");
+    assert.ok(/!be && beTrig > 0 && favClose >= beTrig/.test(src),
+      "orbValidate arms breakeven from something other than the close — paper uses the close");
+  });
+
+  // Both were live dials that could not change any automated trade: one only moved a
+  // chart line on manual entries, the other appeared in no .env/Settings/doc yet
+  // silently overrode the live dashboard's starting capital.
+  check("removed phantom config keys stay removed", () => {
+    for (const rel of ["../src/routes/orbPaper.js", "../src/routes/orbLive.js", "../src/strategies/orb_breakout.js"]) {
+      const src = fs.readFileSync(path.join(__dirname, rel), "utf-8");
+      assert.ok(!/process\.env\.ORB_TARGET_RANGE_MULT/.test(src), `${rel} resurrected ORB_TARGET_RANGE_MULT`);
+      assert.ok(!/process\.env\.ORB_LIVE_CAPITAL/.test(src),      `${rel} resurrected ORB_LIVE_CAPITAL`);
+    }
+    const strat = require("../src/strategies/orb_breakout");
+    assert.strictEqual(typeof strat.TARGET_OR_MULT, "number", "the strategy must own the target multiplier the routes draw");
+  });
+
   console.log(`\n${fail === 0 ? "ALL PASS" : "FAILURES"} — ${pass} passed, ${fail} failed\n`);
   process.exit(fail === 0 ? 0 : 1);
 })().catch(err => { console.error("SUITE ERROR:", err); process.exit(1); });

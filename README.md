@@ -399,7 +399,6 @@ Full spec: [BB_RSI.md](BB_RSI.md).
 | `ORB_OPP_CANDLE_EXIT` / `ORB_OPP_CANDLE_BODY_MULT` | `true` / `0.3` | Exit on a strong opposite candle (body ≥ mult×OR, closing back inside the box) |
 | `ORB_MAX_TRADE_LOSS` | `1500` | Per-trade unrealised-₹ loss cap (`0` = off) |
 | `ORB_PREMIUM_STOP_PCT` | `35` | Exit if option premium collapses ≥ this % from entry (IV-crush/vega backstop) |
-| `ORB_TARGET_RANGE_MULT` | `1.5` | Informational chart line only — there is no target exit |
 | **— option selection —** | | |
 | `ORB_ITM_STEPS` | `1` | Strikes ITM (×50) for ~delta 0.6 (CE lower / PE higher). `0` = ATM |
 | `ORB_PREMIUM_GATE_ENABLED` | `true` | Skip when option LTP is outside the band below |

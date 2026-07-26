@@ -968,7 +968,10 @@ router.post("/manualEntry", async (req, res) => {
   const orh = or ? or.high : spot + 25;
   const orl = or ? or.low  : spot - 25;
   const slSpot = side === "CE" ? orl : orh;
-  const tgtMult = parseFloat(process.env.ORB_TARGET_RANGE_MULT || "1.5");
+  // Same constant the strategy uses for an auto signal — one owner, so a manual
+  // entry's chart line matches an automated one. (There is no target EXIT; this
+  // is display only.)
+  const tgtMult = orbStrategy.TARGET_OR_MULT;
   const targetSpot = side === "CE" ? orh + rangePts * tgtMult : orl - rangePts * tgtMult;
 
   const sig = {

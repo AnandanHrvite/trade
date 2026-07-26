@@ -73,14 +73,14 @@ function loadData() {
   if (_dataCache) return _dataCache;
   ensureDir();
   if (!fs.existsSync(PT_FILE)) {
-    const init = { capital: parseFloat(process.env.ORB_LIVE_CAPITAL || process.env.FYERS_INV_AMOUNT || "100000"), totalPnl: 0, sessions: [] };
+    const init = { capital: parseFloat(process.env.FYERS_INV_AMOUNT || "100000"), totalPnl: 0, sessions: [] };
     fs.writeFileSync(PT_FILE, JSON.stringify(init, null, 2));
     _dataCache = init; return init;
   }
   try { _dataCache = JSON.parse(fs.readFileSync(PT_FILE, "utf-8")); }
   catch (e) {
     console.error("[orb-live] orb_live_trades.json corrupt — resetting:", e.message);
-    _dataCache = { capital: parseFloat(process.env.ORB_LIVE_CAPITAL || process.env.FYERS_INV_AMOUNT || "100000"), totalPnl: 0, sessions: [] };
+    _dataCache = { capital: parseFloat(process.env.FYERS_INV_AMOUNT || "100000"), totalPnl: 0, sessions: [] };
     fs.writeFileSync(PT_FILE, JSON.stringify(_dataCache, null, 2));
   }
   return _dataCache;
@@ -676,7 +676,8 @@ router.post("/manualEntry", async (req, res) => {
   const orh = or ? or.high : spot + 25;
   const orl = or ? or.low : spot - 25;
   const slSpot = side === "CE" ? orl : orh;
-  const tgtMult = parseFloat(process.env.ORB_TARGET_RANGE_MULT || "1.5");
+  // Same constant the strategy uses for an auto signal (display only — no target exit).
+  const tgtMult = orbStrategy.TARGET_OR_MULT;
   const targetSpot = side === "CE" ? orh + rangePts * tgtMult : orl - rangePts * tgtMult;
   const sig = { signal: side === "CE" ? "BUY_CE" : "BUY_PE", side, orh, orl, rangePts, entrySpot: spot, slSpot, targetSpot, signalStrength: "MANUAL", reason: `🖐️ MANUAL ${side} entry @ spot ₹${spot}` };
   log(`🖐️ MANUAL ${side} entry triggered by user`);
@@ -739,8 +740,13 @@ router.get("/status/chart-data", (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Starting capital = the FYERS broker pool, identical to orbPaper's _orbCapital().
+// There used to be an ORB_LIVE_CAPITAL override here, but it appeared in no .env, no
+// Settings field and no doc — an unsettable key that silently made the live dashboard
+// show a different starting capital from paper. Per-strategy capital keys were
+// collapsed into broker-level pools (see CHANGELOG); this now follows that.
 function _orbLiveCapital() {
-  const v = parseFloat(process.env.ORB_LIVE_CAPITAL || process.env.FYERS_INV_AMOUNT);
+  const v = parseFloat(process.env.FYERS_INV_AMOUNT);
   return isNaN(v) ? 100000 : v;
 }
 

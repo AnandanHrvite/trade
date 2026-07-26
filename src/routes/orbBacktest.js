@@ -125,56 +125,36 @@ function runOrbBacktest(allCandles, expirySet) {
       const c = dayCandles[i];
       const istMin = _utcSecToIstMins(c.time);
 
-      // EOD forced exit
+      // EOD forced exit. Paper checks the clock on every TICK, so it squares off at
+      // the first tick at/after ORB_FORCED_EXIT — i.e. this candle's OPEN, not its
+      // close. Booking c.close handed the backtest an extra 5 minutes of drift the
+      // live engine never gets.
       if (position && istMin >= FORCED_EXIT_MIN) {
-        closePos(position, c.close, c.time, "EOD square-off (15:15)");
+        closePos(position, c.open, c.time, `EOD square-off (${process.env.ORB_FORCED_EXIT || "15:15"})`);
         trades.push(buildTradeRecord(position));
         position = null; continue;
       }
 
-      // In-position management (mirrors paper _managePositionOnClose + _checkExits):
-      //   strong-opposite-candle → breakeven → EMA close-trail → per-trade loss
-      //   cap → hard-SL breach. All evaluated on the current candle.
+      // ── In-position management ────────────────────────────────────────────
+      // ORDER MATTERS, AND IT MIRRORS PAPER'S REAL TIMELINE:
+      //   paper runs _checkExits on EVERY TICK   → rupee cap, premium stop, hard SL
+      //   paper runs _managePositionOnClose once → opposite candle, breakeven, EMA
+      // So inside a single candle the intrabar exits always get first refusal, and a
+      // close-based rule can only fire on a candle that never touched the stop.
+      //
+      // This file used to evaluate them the other way round (opposite/EMA first),
+      // which let a close-based rule book the candle's CLOSE on bars where paper had
+      // already been stopped out minutes earlier — the backtest silently reported a
+      // different trade from the one the live engine would have taken.
       if (position) {
-        const _bodyPts = Math.abs(c.close - c.open);
-        // 1. strong opposite reversal candle
-        const _oppThresh = OPP_MULT * (position.rangePts || 0);
-        if (OPP_ON && _oppThresh > 0 && _bodyPts >= _oppThresh &&
-            ((position.side === "CE" && c.close < c.open && c.close < position.orh) ||
-             (position.side === "PE" && c.close > c.open && c.close > position.orl))) {
-          closePos(position, c.close, c.time, `Strong opposite candle (body ${_bodyPts.toFixed(1)}pt)`);
-          trades.push(buildTradeRecord(position)); position = null; continue;
-        }
-        // 2. breakeven — lift hard SL to entry once far enough in profit (adaptive:
-        //    max(fixed, ORB_BREAKEVEN_OR_MULT × OR width), mirrors paper/live)
-        const _favPts = (c.close - position.entrySpot) * (position.side === "CE" ? 1 : -1);
-        const _bePts = (BE_OR_MULT > 0 && position.rangePts) ? Math.max(BE_PTS, Math.round(BE_OR_MULT * position.rangePts)) : BE_PTS;
-        if (!position.breakevenArmed && _bePts > 0 && _favPts >= _bePts) {
-          if (position.side === "CE" && position.entrySpot > position.slSpot) position.slSpot = position.entrySpot;
-          if (position.side === "PE" && position.entrySpot < position.slSpot) position.slSpot = position.entrySpot;
-          position.breakevenArmed = true;
-        }
-        // 3. EMA close-trail — exit only when THIS candle closes back across the
-        //    EMA, and only after price first closed on the correct side (emaArmed)
-        //    so a gap-day entry below a stale EMA isn't stopped out on candle 1.
-        const _ema = _emaOfCloses(dayCandles, i, TRAIL_EMA);
-        if (_ema != null) {
-          if (position.side === "CE") {
-            if (c.close >= _ema) position.emaArmed = true;
-            else if (position.emaArmed) { closePos(position, c.close, c.time, `Closed below EMA${TRAIL_EMA}`); trades.push(buildTradeRecord(position)); position = null; continue; }
-          } else {
-            if (c.close <= _ema) position.emaArmed = true;
-            else if (position.emaArmed) { closePos(position, c.close, c.time, `Closed above EMA${TRAIL_EMA}`); trades.push(buildTradeRecord(position)); position = null; continue; }
-          }
-        }
-        // 4. per-trade loss cap + premium disaster stop.
-        //    Both are evaluated against the candle's adverse extreme to decide IF
-        //    they trip, but the FILL is taken at the spot level where the threshold
-        //    is actually reached — not at the bar extreme. Paper/live check these
-        //    per tick and fill at that tick, so booking the bar's worst price here
-        //    systematically overshot the very budget the cap exists to enforce
-        //    (observed: a −₹2,052 fill on a ₹1,500 cap, 37% over). Gap-through is
-        //    still honest: if the bar OPENED past the level, fill at the open.
+        // ── 1. INTRABAR: per-trade loss cap + premium disaster stop ───────────
+        //    Evaluated against the candle's adverse extreme to decide IF they trip,
+        //    but the FILL is the spot level where the threshold is actually reached —
+        //    not the bar extreme. Paper/live check per tick and fill at that tick, so
+        //    booking the bar's worst price systematically overshot the very budget the
+        //    cap exists to enforce (observed: a −₹2,052 fill on a ₹1,500 cap, 37%
+        //    over). Gap-through stays honest: if the bar OPENED past the level, fill
+        //    at the open.
         if (MAX_TRADE_LOSS > 0 || PREM_STOP_PCT > 0) {
           const _adverse  = position.side === "CE" ? c.low : c.high;
           const _spotMove = position.side === "CE" ? (_adverse - position.entrySpot) : (position.entrySpot - _adverse);
@@ -195,8 +175,8 @@ function runOrbBacktest(allCandles, expirySet) {
             trades.push(buildTradeRecord(position)); position = null; continue;
           }
         }
-        // 5. hard SL breach against this candle's extreme. Gap-through: fill at
-        //    the open if the bar gapped past the stop (worse than the stop level).
+        // ── 2. INTRABAR: hard SL breach against this candle's extreme ─────────
+        //    Gap-through: fill at the open if the bar gapped past the stop.
         if (position.side === "CE" && c.low <= position.slSpot) {
           closePos(position, c.open < position.slSpot ? c.open : position.slSpot, c.time, `Hard SL hit (${position.slSpot})`);
           trades.push(buildTradeRecord(position)); position = null; continue;
@@ -204,6 +184,40 @@ function runOrbBacktest(allCandles, expirySet) {
         if (position.side === "PE" && c.high >= position.slSpot) {
           closePos(position, c.open > position.slSpot ? c.open : position.slSpot, c.time, `Hard SL hit (${position.slSpot})`);
           trades.push(buildTradeRecord(position)); position = null; continue;
+        }
+        // ── 3. CANDLE CLOSE: strong opposite reversal candle ──────────────────
+        const _bodyPts = Math.abs(c.close - c.open);
+        const _oppThresh = OPP_MULT * (position.rangePts || 0);
+        if (OPP_ON && _oppThresh > 0 && _bodyPts >= _oppThresh &&
+            ((position.side === "CE" && c.close < c.open && c.close < position.orh) ||
+             (position.side === "PE" && c.close > c.open && c.close > position.orl))) {
+          closePos(position, c.close, c.time, `Strong opposite candle (body ${_bodyPts.toFixed(1)}pt)`);
+          trades.push(buildTradeRecord(position)); position = null; continue;
+        }
+        // ── 4. CANDLE CLOSE: breakeven — lift the hard SL to entry once far enough
+        //    in profit (adaptive: max(fixed, ORB_BREAKEVEN_OR_MULT × OR width)).
+        //    Armed off the CLOSE, exactly as paper does — arming off the intrabar
+        //    high would protect trades that only touched the trigger and gave it back.
+        const _favPts = (c.close - position.entrySpot) * (position.side === "CE" ? 1 : -1);
+        const _bePts = (BE_OR_MULT > 0 && position.rangePts) ? Math.max(BE_PTS, Math.round(BE_OR_MULT * position.rangePts)) : BE_PTS;
+        if (!position.breakevenArmed && _bePts > 0 && _favPts >= _bePts) {
+          if (position.side === "CE" && position.entrySpot > position.slSpot) position.slSpot = position.entrySpot;
+          if (position.side === "PE" && position.entrySpot < position.slSpot) position.slSpot = position.entrySpot;
+          position.breakevenArmed = true;
+        }
+        // ── 5. CANDLE CLOSE: EMA close-trail — exit only when THIS candle closes
+        //    back across the EMA, and only after price first closed on the correct
+        //    side (emaArmed) so a gap-day entry below a stale EMA isn't stopped out
+        //    on candle 1.
+        const _ema = _emaOfCloses(dayCandles, i, TRAIL_EMA);
+        if (_ema != null) {
+          if (position.side === "CE") {
+            if (c.close >= _ema) position.emaArmed = true;
+            else if (position.emaArmed) { closePos(position, c.close, c.time, `Closed below EMA${TRAIL_EMA}`); trades.push(buildTradeRecord(position)); position = null; continue; }
+          } else {
+            if (c.close <= _ema) position.emaArmed = true;
+            else if (position.emaArmed) { closePos(position, c.close, c.time, `Closed above EMA${TRAIL_EMA}`); trades.push(buildTradeRecord(position)); position = null; continue; }
+          }
         }
       }
 
