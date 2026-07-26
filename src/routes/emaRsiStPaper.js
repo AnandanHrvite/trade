@@ -2928,7 +2928,7 @@ router.get("/status/data", (req, res) => {
       prevCandleHigh:    ptState.prevCandleHigh,
       prevCandleLow:     ptState.prevCandleLow,
       consecutiveLosses: ptState._consecutiveLosses || 0,
-      consecStreakLimit: _streakLimit(),   // 0 = breaker OFF — the card must not invent a "/ 3"
+      consecStreakLimit: _streakLimit(),   // 0 = breaker OFF — the card must not invent a denominator
       pauseUntilTime:    ptState._pauseUntilTime || null,
       dailyLossHit:      ptState._dailyLossHit || false,
       simMode:           ptState._simMode || false,
@@ -3977,17 +3977,21 @@ ${modalJS()}
       const wlEl = document.getElementById('ajax-wl');
       if (wlEl) wlEl.textContent = d.wins + 'W \u00b7 ' + d.losses + 'L';
 
+      // Streak limit comes from the server (EMA_RSI_ST_MAX_CONSEC_LOSSES); 0 = OFF.
+      // Never render a "/ 3" the engine will not act on.
+      const clLimit = Number(d.consecStreakLimit || 0);
+      const clNear  = clLimit > 0 && (d.consecutiveLosses || 0) >= clLimit - 1;
       const clEl = document.getElementById('ajax-consec-losses');
       if (clEl) {
-        clEl.textContent = (d.consecutiveLosses || 0) + ' / 3';
-        clEl.style.color = d.consecutiveLosses >= 2 ? '#ef4444' : '#fff';
+        clEl.textContent = (d.consecutiveLosses || 0) + (clLimit > 0 ? ' / ' + clLimit : '');
+        clEl.style.color = clNear ? '#ef4444' : '#fff';
         const card = clEl.closest('.sc');
-        if (card) card.style.borderTopColor = d.consecutiveLosses >= 2 ? '#ef4444' : '#4a6080';
+        if (card) card.style.borderTopColor = clNear ? '#ef4444' : '#4a6080';
       }
       const clStatus = document.getElementById('ajax-cl-status');
       if (clStatus) {
         const paused = d.pauseUntilTime && Date.now() < d.pauseUntilTime;
-        clStatus.textContent = paused ? '\u23f8 PAUSED' : d.consecutiveLosses >= 2 ? '\u26a0\ufe0f 1 more = pause' : '\u2705 OK';
+        clStatus.textContent = paused ? '\u23f8 PAUSED' : clLimit <= 0 ? '\u2796 breaker OFF' : clNear ? '\u26a0\ufe0f 1 more = pause' : '\u2705 OK';
         clStatus.style.color = paused ? '#f59e0b' : '#4a6080';
       }
 

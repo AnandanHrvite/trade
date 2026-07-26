@@ -124,6 +124,19 @@ function _setSlPause(side) {
   log(`⏸️ [PAPER] ${side} SL cooldown — no new ${side} entries for ${_EMA9VWAP_SL_PAUSE_CANDLES} candles`);
 }
 
+// ── Consecutive-loss streak limit ───────────────────────────────────────────
+// Single source for BOTH streak mechanisms: the session-halting chop guard and
+// the back-to-back-loss pause below. The pause used to fire at a HARDCODED 3,
+// which flatly contradicted EMA9VWAP_MAX_CONSEC_LOSSES=0 — Settings labels that
+// "0 = OFF", yet three losses still paused entries for 20 minutes. Both now read
+// the same key, so 0 really means off and N really means N.
+// Read live from env (not the cached config block) so a Settings save applies
+// mid-session, matching how the chop guard has always read it.
+function _streakLimit() {
+  const n = parseInt(process.env.EMA9VWAP_MAX_CONSEC_LOSSES || "0", 10);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
 // ── Opposite-side (flip) cooldown ───────────────────────────────────────────
 // After any non-flip exit, block entries on the OPPOSITE side for
 // EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_CANDLES candles. Prevents whipsaw flips on chop.
@@ -1057,24 +1070,25 @@ function simulateSell(exitPrice, reason, spotAtExit) {
     ptState._dailyLossHit = true;
     log(`🛑 [PAPER] DAILY LOSS LIMIT HIT — session loss ₹${Math.abs(ptState.sessionPnl)} >= ₹${MAX_DAILY_LOSS}. NO MORE ENTRIES TODAY.`);
   }
-  // After 3 back-to-back losses:
-  //   15-min: latch dailyLossHit = NO MORE ENTRIES TODAY. 3 losses on 15-min = bad market day, sit out.
-  //   5-min:  pause for 4 candles (20 min) then allow re-entry — shorter TF recovers faster.
+  // After EMA9VWAP_MAX_CONSEC_LOSSES back-to-back losses (0 = OFF, see _streakLimit):
+  //   15-min: latch dailyLossHit = NO MORE ENTRIES TODAY = bad market day, sit out.
+  //   5-min:  pause for 4 candles then allow re-entry — shorter TF recovers faster.
+  const _streakMax = _streakLimit();
   if (netPnl < 0) {
     ptState._consecutiveLosses = (ptState._consecutiveLosses || 0) + 1;
-    log(`📉 [PAPER] Consecutive losses: ${ptState._consecutiveLosses}`);
-    if (ptState._consecutiveLosses >= 3) {
+    log(`📉 [PAPER] Consecutive losses: ${ptState._consecutiveLosses}${_streakMax ? ` / ${_streakMax}` : " (breaker OFF)"}`);
+    if (_streakMax > 0 && ptState._consecutiveLosses >= _streakMax) {
       if (TRADE_RES >= 15) {
-        // 15-min: 3 losses = done for the day
+        // 15-min: streak limit reached = done for the day
         ptState._dailyLossHit = true;
-        log(`🛑 [PAPER] 3 consecutive losses on 15-min — NO MORE ENTRIES TODAY (daily kill latched)`);
-        // Keep _consecutiveLosses at 3 so UI correctly shows 3/3 with KILLED state
+        log(`🛑 [PAPER] ${ptState._consecutiveLosses} consecutive losses (≥ ${_streakMax}) on 15-min — NO MORE ENTRIES TODAY (daily kill latched)`);
+        // Keep the counter at the limit so the UI shows N/N with KILLED state
       } else {
-        // 5-min: pause 4 candles (~20 min) then resume
+        // 5-min: pause 4 candles then resume
         const pauseMs = 4 * getTradeResolution() * 60 * 1000;
         ptState._pauseUntilTime = simNow() + pauseMs;
         const resumeTime = new Date(ptState._pauseUntilTime).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
-        log(`⚠️ [PAPER] 3 consecutive losses — entries PAUSED for ${getTradeResolution() * 4} min (resume ~${resumeTime})`);
+        log(`⚠️ [PAPER] ${ptState._consecutiveLosses} consecutive losses (≥ ${_streakMax}) — entries PAUSED for ${getTradeResolution() * 4} min (resume ~${resumeTime})`);
         ptState._consecutiveLosses = 0; // reset only for 5-min (will re-enter later)
       }
     }
@@ -2898,6 +2912,7 @@ router.get("/status/data", (req, res) => {
       prevCandleHigh:    ptState.prevCandleHigh,
       prevCandleLow:     ptState.prevCandleLow,
       consecutiveLosses: ptState._consecutiveLosses || 0,
+      consecStreakLimit: _streakLimit(),   // 0 = breaker OFF — the card must not invent a denominator
       pauseUntilTime:    ptState._pauseUntilTime || null,
       dailyLossHit:      ptState._dailyLossHit || false,
       simMode:           ptState._simMode || false,
@@ -3303,8 +3318,8 @@ ${buildSidebar('ema9vwapPaper', sharedSocketState.getEma9VwapMode()==='EMA9VWAP_
     </div>
     <div class="sc" style="border-top:2px solid ${(ptState._consecutiveLosses||0) >= 2 ? '#ef4444' : '#4a6080'};" id="ajax-sc-cl">
       <div class="sc-label">Loss Streak</div>
-      <div class="sc-val" id="ajax-consec-losses" style="color:${(ptState._consecutiveLosses||0) >= 2 ? '#ef4444' : '#fff'}">${ptState._consecutiveLosses || 0} / 3</div>
-      <div id="ajax-cl-status" style="font-size:0.7rem;margin-top:4px;color:${ptState._pauseUntilTime && Date.now() < ptState._pauseUntilTime ? '#f59e0b' : '#4a6080'}">${ptState._pauseUntilTime && Date.now() < ptState._pauseUntilTime ? '⏸ PAUSED' : (ptState._consecutiveLosses||0) >= 2 ? '⚠️ 1 more = pause' : '✅ OK'}</div>
+      <div class="sc-val" id="ajax-consec-losses" style="color:${_streakLimit() > 0 && (ptState._consecutiveLosses||0) >= _streakLimit() - 1 ? '#ef4444' : '#fff'}">${ptState._consecutiveLosses || 0}${_streakLimit() > 0 ? ` / ${_streakLimit()}` : ''}</div>
+      <div id="ajax-cl-status" style="font-size:0.7rem;margin-top:4px;color:${ptState._pauseUntilTime && Date.now() < ptState._pauseUntilTime ? '#f59e0b' : '#4a6080'}">${ptState._pauseUntilTime && Date.now() < ptState._pauseUntilTime ? '⏸ PAUSED' : _streakLimit() <= 0 ? '➖ breaker OFF' : (ptState._consecutiveLosses||0) >= _streakLimit() - 1 ? '⚠️ 1 more = pause' : '✅ OK'}</div>
     </div>
     <div class="sc" style="border-top:2px solid ${ptState._dailyLossHit ? '#ef4444' : '#10b981'};" id="ajax-sc-dloss">
       <div class="sc-label">Daily Loss Limit</div>
@@ -3933,17 +3948,21 @@ ${modalJS()}
       const wlEl = document.getElementById('ajax-wl');
       if (wlEl) wlEl.textContent = d.wins + 'W \u00b7 ' + d.losses + 'L';
 
+      // Streak limit comes from the server (EMA9VWAP_MAX_CONSEC_LOSSES); 0 = OFF.
+      // Never render a "/ 3" the engine will not act on.
+      const clLimit = Number(d.consecStreakLimit || 0);
+      const clNear  = clLimit > 0 && (d.consecutiveLosses || 0) >= clLimit - 1;
       const clEl = document.getElementById('ajax-consec-losses');
       if (clEl) {
-        clEl.textContent = (d.consecutiveLosses || 0) + ' / 3';
-        clEl.style.color = d.consecutiveLosses >= 2 ? '#ef4444' : '#fff';
+        clEl.textContent = (d.consecutiveLosses || 0) + (clLimit > 0 ? ' / ' + clLimit : '');
+        clEl.style.color = clNear ? '#ef4444' : '#fff';
         const card = clEl.closest('.sc');
-        if (card) card.style.borderTopColor = d.consecutiveLosses >= 2 ? '#ef4444' : '#4a6080';
+        if (card) card.style.borderTopColor = clNear ? '#ef4444' : '#4a6080';
       }
       const clStatus = document.getElementById('ajax-cl-status');
       if (clStatus) {
         const paused = d.pauseUntilTime && Date.now() < d.pauseUntilTime;
-        clStatus.textContent = paused ? '\u23f8 PAUSED' : d.consecutiveLosses >= 2 ? '\u26a0\ufe0f 1 more = pause' : '\u2705 OK';
+        clStatus.textContent = paused ? '\u23f8 PAUSED' : clLimit <= 0 ? '\u2796 breaker OFF' : clNear ? '\u26a0\ufe0f 1 more = pause' : '\u2705 OK';
         clStatus.style.color = paused ? '#f59e0b' : '#4a6080';
       }
 

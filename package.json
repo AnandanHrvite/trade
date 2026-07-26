@@ -6,9 +6,10 @@
   "scripts": {
     "start": "node src/app.js",
     "dev": "nodemon src/app.js",
-    "test": "node tests/ema9vwap.regression.js && node tests/orb.regression.js && node tests/liveParity.regression.js",
+    "test": "node tests/ema9vwap.regression.js && node tests/orb.regression.js && node tests/liveParity.regression.js && node tests/configFidelity.regression.js",
     "test:orb": "node tests/orb.regression.js",
-    "test:parity": "node tests/liveParity.regression.js"
+    "test:parity": "node tests/liveParity.regression.js",
+    "test:config": "node tests/configFidelity.regression.js"
   },
   "dependencies": {
     "compression": "^1.8.1",

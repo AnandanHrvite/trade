@@ -6,6 +6,21 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — two ways the engines ignored their own configuration
+
+A configuration-fidelity audit of the **enabled** strategies (EMA_RSI_ST, BB_RSI, ORB, EMA9VWAP, TREND_PB — PA and STRADDLE are `*_MODE_ENABLED=false`) asked one question of every value in `.env`: is this what the engine actually acts on? Two answers were no, and both failed silently.
+
+**1. A stale option-expiry override was traded as if the contract still existed.** `OPTION_EXPIRY_OVERRIDE` was `2026-07-21`; the audit ran on the 26th. Because a per-mode override falls back to the common one, **all five enabled strategies** were pinned to an expiry five days dead. The manual-override branch of `validateAndGetOptionSymbol` was the only branch that returned its symbol **without** validating it via `getQuotes`, so the dead symbol reached the engines. ORB and TREND_PB blocked the entry; EMA_RSI_ST and BB_RSI **entered anyway**, logged `pnlMode: "spot proxy"`, and left `OPT_STOP_PCT` inert — it needs an entry premium that never arrived, so a configured 25% option stop simply did not exist for the life of the position.
+
+- Staleness now has one definition, `instrument.isExpiryOverrideStale()` — past the expiry day's 15:30 IST close, so the contract still trades all through its own expiry day. The dashboard banner and the entry guard both call it and can no longer disagree.
+- A stale override returns `{ invalid: true, symbol: null }` — the shape every caller already handles — plus the key name to fix. It deliberately does **not** fall through to auto-detection: quietly trading a different expiry changes premium, theta and therefore the risk of every position, which is the operator's decision, not the resolver's.
+- The dashboard banner checked only the *common* key, i.e. not the one that actually binds. It now checks the common key **and** all six per-mode keys, and names each stale one.
+- The `/manualEntry` routes in `emaRsiStPaper` / `ema9vwapPaper` were the last callers that never checked `invalid`; they would have entered on `symbol: null`. Both now refuse with HTTP 409.
+
+**2. The consecutive-loss breaker fired at a hardcoded 3, ignoring its config key.** `EMA_RSI_ST_MAX_CONSEC_LOSSES=0` — which Settings labels "0 = OFF" — while a second, legacy streak rule paused entries regardless. Three ₹500 losers on 5-min blocked entries for 20 minutes on a strategy whose streak breaker was explicitly disabled, with the day's ₹1,500 still well inside `MAX_DAILY_LOSS=2000`. The Loss Streak card compounded it by rendering "2 / 3 ⚠️ 1 more = pause" against a breaker that was off. Both streak mechanisms now read the same key in `emaRsiStPaper`, `emaRsiStLive`, `ema9vwapPaper` and `backtestEngine`, so `0` means off and `N` means `N`; the card renders the configured limit or "breaker OFF", never an invented denominator.
+
+New suite `tests/configFidelity.regression.js` (19 checks, `npm run test:config`, wired into `npm test`): the staleness boundary including the 15:30 edge and malformed input, per-mode-beats-common, that a *future* override still resolves (a guard that blocks everything is useless), that refusal never substitutes another expiry, and that no engine or card still carries a hardcoded 3. Its own first draft asserted against the developer's real `.env` — `instrument.js` calls `dotenv.config()` at require time, so env scrubbing must happen *after* the require; there is now an assertion that fails loudly if that regresses.
+
 ### Fixed — bound the live square-off wait that the parity fix introduced
 
 Recheck of the parity work below. Awaiting the broker exit was correct, but it created the opposite failure and I had not bounded it.

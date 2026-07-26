@@ -697,14 +697,21 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         // the entry gate via _dailyLossHit (below).
         if (_dailyPnl <= -MAX_DAILY_LOSS) _dailyLossHit = true;
 
-        // 3-consecutive-loss breaker — mirror paper EXACTLY (was an escalating pause):
-        //   15-min: 3 losses = done for the day (latch _dailyLossHit).
+        // Consecutive-loss breaker — mirror paper EXACTLY:
+        //   15-min: limit reached = done for the day (latch _dailyLossHit).
         //   5-min:  pause 4 candles then resume, and reset the counter.
+        // The limit is EMA_RSI_ST_MAX_CONSEC_LOSSES (0 = OFF), the SAME key the
+        // chop guard below uses. It was hardcoded to 3 here and in paper/live, so a
+        // configured 0 ("OFF") still paused entries — the backtest inherited that
+        // and would now over-report pauses paper no longer takes.
+        const _streakMax = parseInt(process.env.EMA_RSI_ST_MAX_CONSEC_LOSSES || "0", 10) > 0
+          ? parseInt(process.env.EMA_RSI_ST_MAX_CONSEC_LOSSES, 10)
+          : 0;
         if (pnlRupees < 0) {
           _consecutiveLosses++;
-          if (_consecutiveLosses >= 3) {
+          if (_streakMax > 0 && _consecutiveLosses >= _streakMax) {
             if (candleResolutionMins >= 15) {
-              _dailyLossHit = true; // keep _consecutiveLosses at 3 (KILLED state)
+              _dailyLossHit = true; // keep the counter at the limit (KILLED state)
             } else {
               _consecPauseUntilTs = candle.time + (4 * candleResolutionMins * 60);
               _consecutiveLosses  = 0;

@@ -65,6 +65,15 @@ function _setSlPause(side) {
   log(`⏸️ [LIVE] ${side} SL cooldown — no new ${side} entries for ${_EMA_RSI_ST_SL_PAUSE_CANDLES} candles`);
 }
 
+// ── Consecutive-loss streak limit ───────────────────────────────────────────
+// Same definition as orbPaper's/emaRsiStPaper's: EMA_RSI_ST_MAX_CONSEC_LOSSES,
+// 0 = OFF. Shared by the session-halting chop guard and the back-to-back-loss
+// pause, which used to fire at a hardcoded 3 regardless of this key.
+function _streakLimit() {
+  const n = parseInt(process.env.EMA_RSI_ST_MAX_CONSEC_LOSSES || "0", 10);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
 // ── Opposite-side (flip) cooldown ───────────────────────────────────────────
 // After any non-flip exit, block entries on the OPPOSITE side for
 // EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_CANDLES candles. Prevents whipsaw flips on chop.
@@ -166,6 +175,7 @@ function getISTMinutes() {
 }
 const sharedSocketState = require("../utils/sharedSocketState");
 const { notifyEntry, notifyExit, notifyStarted, notifySignal, notifyDayReport, sendTelegram, canSend, isConfigured } = require("../utils/notify");
+const { awaitExit } = require("../utils/boundedExit");   // bound the wait on a broker square-off
 const { fetchCandles } = require("../services/backtestEngine");
 const { fetchCandlesCached } = require("../utils/candleCache");
 // ── Live session persistence ──────────────────────────────────────────────────
@@ -1134,21 +1144,25 @@ async function squareOff(exitPrice, reason) {
     tradeState._dailyLossHit = true;
     log(`🛑 [LIVE] DAILY LOSS LIMIT HIT — today's loss ₹${Math.abs(_todayRealized)} >= ₹${MAX_DAILY_LOSS}. NO MORE ENTRIES TODAY.`);
   }
-  // ── Consecutive loss circuit breaker (mirrors paperTrade v36) ────────────────
+  // ── Consecutive loss circuit breaker (mirrors paperTrade) ────────────────────
+  // Gated by EMA_RSI_ST_MAX_CONSEC_LOSSES (0 = OFF) — see _streakLimit(). It used
+  // to fire at a hardcoded 3 in both modes, which ignored the key entirely; paper
+  // was fixed first and live follows it, so the two still make the same decision.
+  const _streakMax = _streakLimit();
   if (netPnl < 0) {
     tradeState._consecutiveLosses = (tradeState._consecutiveLosses || 0) + 1;
-    log(`📉 [LIVE] Consecutive losses: ${tradeState._consecutiveLosses}`);
-    if (tradeState._consecutiveLosses >= 3) {
+    log(`📉 [LIVE] Consecutive losses: ${tradeState._consecutiveLosses}${_streakMax ? ` / ${_streakMax}` : " (breaker OFF)"}`);
+    if (_streakMax > 0 && tradeState._consecutiveLosses >= _streakMax) {
       if (TRADE_RES >= 15) {
-        // 15-min: 3 losses = bad market day — latch daily kill, sit out
+        // 15-min: streak limit reached = bad market day — latch daily kill, sit out
         tradeState._dailyLossHit = true;
         tradeState._consecutiveLosses = 0;
-        log(`🛑 [LIVE] 3 consecutive losses on 15-min — NO MORE ENTRIES TODAY (daily kill latched)`);
+        log(`🛑 [LIVE] ${_streakMax} consecutive losses on 15-min — NO MORE ENTRIES TODAY (daily kill latched)`);
       } else {
         const pauseMs = 4 * TRADE_RES * 60 * 1000; // 4 candles — mirrors paperTrade exactly
         tradeState._pauseUntilTime = Date.now() + pauseMs;
         const resumeTime = new Date(tradeState._pauseUntilTime).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
-        log(`⚠️ [LIVE] 3 consecutive losses — entries PAUSED for ${TRADE_RES * 4} min (resume ~${resumeTime})`);
+        log(`⚠️ [LIVE] ${_streakMax} consecutive losses — entries PAUSED for ${TRADE_RES * 4} min (resume ~${resumeTime})`);
         tradeState._consecutiveLosses = 0;
       }
     }
@@ -2820,6 +2834,7 @@ router.get("/status/data", (req, res) => {
       prevCandleHigh:    tradeState.prevCandleHigh,
       prevCandleLow:     tradeState.prevCandleLow,
       consecutiveLosses: tradeState._consecutiveLosses || 0,
+      consecStreakLimit: _streakLimit(),   // 0 = breaker OFF — the card must not invent a denominator
       pauseUntilTime:    tradeState._pauseUntilTime || null,
       dailyLossHit:      tradeState._dailyLossHit || false,
       sessionStart:      tradeState.sessionStart,
@@ -3230,8 +3245,8 @@ ${buildSidebar('emaRsiStLive', tradeState.running, tradeState.running, {
     </div>
     <div class="sc" style="border-top:2px solid ${(tradeState._consecutiveLosses||0) >= 2 ? '#ef4444' : '#4a6080'};">
       <div class="sc-label">Loss Streak</div>
-      <div class="sc-val" id="ajax-lt-consec-losses" style="color:${(tradeState._consecutiveLosses||0) >= 2 ? '#ef4444' : '#fff'}">${tradeState._consecutiveLosses || 0} / 3</div>
-      <div id="ajax-lt-cl-status" style="font-size:0.7rem;margin-top:4px;color:${tradeState._pauseUntilTime && Date.now() < tradeState._pauseUntilTime ? '#f59e0b' : '#4a6080'}">${tradeState._pauseUntilTime && Date.now() < tradeState._pauseUntilTime ? '⏸ PAUSED' : (tradeState._consecutiveLosses||0) >= 2 ? '⚠️ 1 more = pause' : '✅ OK'}</div>
+      <div class="sc-val" id="ajax-lt-consec-losses" style="color:${_streakLimit() > 0 && (tradeState._consecutiveLosses||0) >= _streakLimit() - 1 ? '#ef4444' : '#fff'}">${tradeState._consecutiveLosses || 0}${_streakLimit() > 0 ? ` / ${_streakLimit()}` : ''}</div>
+      <div id="ajax-lt-cl-status" style="font-size:0.7rem;margin-top:4px;color:${tradeState._pauseUntilTime && Date.now() < tradeState._pauseUntilTime ? '#f59e0b' : '#4a6080'}">${tradeState._pauseUntilTime && Date.now() < tradeState._pauseUntilTime ? '⏸ PAUSED' : _streakLimit() <= 0 ? '➖ breaker OFF' : (tradeState._consecutiveLosses||0) >= _streakLimit() - 1 ? '⚠️ 1 more = pause' : '✅ OK'}</div>
     </div>
     <div class="sc" style="border-top:2px solid ${tradeState._dailyLossHit ? '#ef4444' : '#10b981'};" id="ajax-lt-sc-dloss">
       <div class="sc-label">Daily Loss Limit</div>
@@ -3887,17 +3902,21 @@ async function manualEntry(side) {
       const wlEl = document.getElementById('ajax-lt-wl');
       if (wlEl) wlEl.textContent = d.wins + 'W \u00b7 ' + d.losses + 'L';
 
+      // Streak limit comes from the server (EMA_RSI_ST_MAX_CONSEC_LOSSES); 0 = OFF.
+      // Never render a "/ 3" the engine will not act on.
+      const clLimit = Number(d.consecStreakLimit || 0);
+      const clNear  = clLimit > 0 && (d.consecutiveLosses || 0) >= clLimit - 1;
       const clEl = document.getElementById('ajax-lt-consec-losses');
       if (clEl) {
-        clEl.textContent = (d.consecutiveLosses || 0) + ' / 3';
-        clEl.style.color = d.consecutiveLosses >= 2 ? '#ef4444' : '#fff';
+        clEl.textContent = (d.consecutiveLosses || 0) + (clLimit > 0 ? ' / ' + clLimit : '');
+        clEl.style.color = clNear ? '#ef4444' : '#fff';
         const card = clEl.closest('.sc');
-        if (card) card.style.borderTopColor = d.consecutiveLosses >= 2 ? '#ef4444' : '#4a6080';
+        if (card) card.style.borderTopColor = clNear ? '#ef4444' : '#4a6080';
       }
       const clStatus = document.getElementById('ajax-lt-cl-status');
       if (clStatus) {
         const paused = d.pauseUntilTime && Date.now() < d.pauseUntilTime;
-        clStatus.textContent = paused ? '\u23f8 PAUSED' : d.consecutiveLosses >= 2 ? '\u26a0\ufe0f 1 more = pause' : '\u2705 OK';
+        clStatus.textContent = paused ? '\u23f8 PAUSED' : clLimit <= 0 ? '\u2796 breaker OFF' : clNear ? '\u26a0\ufe0f 1 more = pause' : '\u2705 OK';
         clStatus.style.color = paused ? '#f59e0b' : '#4a6080';
       }
 
@@ -4124,7 +4143,7 @@ async function stopSession(reason = "Shutdown square-off") {
   if (!tradeState.running || !tradeState.position) return;
   try {
     const _px = tradeState.lastTickPrice || (tradeState.currentBar ? tradeState.currentBar.close : 0);
-    await squareOff(_px, reason);
+    await awaitExit(squareOff(_px, reason), "EMA_RSI_ST-LIVE");
   } catch (e) { try { log(`⚠️ [LIVE] stopSession squareoff error: ${e.message} — check the Zerodha dashboard`); } catch (_) {} }
 }
 router.stopSession = stopSession;
