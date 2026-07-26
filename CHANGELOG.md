@@ -6,6 +6,16 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — EMA9+VWAP: backtest exit PRECEDENCE did not match paper
+
+Found on a further red-team pass. Paper runs the protective stops in `onTick` — they fire on the ticks of a bar using the level set at the PREVIOUS bar's close, i.e. **before that bar ever closes** — and only then does `onCandleClose` run the time-stop and negative-candle checks. The backtest evaluated the candle-close rules FIRST, so whenever two rules fired on the same bar it attributed the exit to the wrong rule and (now that stops book their own level) to the wrong price.
+
+Real numbers on 20 April-2026 sessions with a 25pt points stop + 2-candle negative-candle stop both enabled: **₹3,750 → ₹2,780** and three bars re-attributed from `Negative 2-candle stop` to `SL (25pts)` — the old order was reporting results ~26% better than paper would produce. Order is now `[points, option, trail-hit] > [time-stop, negative-candle] > [trail re-arm] > [reversal] > [signal] > [EOD]`.
+
+Also: the time-stop and negative-candle stop now measure P&L in **option-premium points** (the same δ+θ model the P&L sim uses) rather than raw spot points, because that is what paper measures — a theta-bled but spot-flat trade is red to paper and was green to the backtest.
+
+Default config is byte-identical (20 trades / ₹2,735 before and after) since every stop involved defaults to OFF, and paper signals are unchanged (0 diffs / 1,389 evaluations). The new regression assertion is mutation-tested: it FAILS against the pre-fix engine and passes against the fixed one.
+
 ### Fixed — EMA9+VWAP red-team pass: two defects introduced by the previous parity commit
 
 A from-scratch adversarial audit found that the backtest feature-parity work in `3e12da1` shipped two real bugs. Both are in the backtest / a disabled path — Paper and Live were never affected — but they made the backtest untrustworthy the moment the candle trail or a stop was enabled. Paper signals are bit-identical (0 diffs over 1,389 evaluations) and a default backtest is unchanged (20 trades / ₹2,735 before and after).

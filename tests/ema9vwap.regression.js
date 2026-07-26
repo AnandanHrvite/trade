@@ -172,6 +172,35 @@ async function runBT(env = {}) {
     }
   });
 
+  // Paper runs the protective stops in onTick (intrabar, from the prior close's
+  // level) and the time-stop / negative-candle in onCandleClose. So when both would
+  // fire on the same bar, the PROTECTIVE stop must win — and must book its own
+  // level, not the close. The engine used to check time-stop / negative-candle
+  // first, reporting the wrong rule and the wrong price.
+  const both = await runBT({ EMA9VWAP_STOP_LOSS_PTS: "25", EMA9VWAP_NEG_CANDLE_LIMIT: "2" });
+  check("protective stops outrank the candle-close stops (paper precedence)", () => {
+    const slHits = both.trades.filter(t => /^SL \(25pts\)/.test(t.exitReason));
+    assert.ok(slHits.length > 0, "the points stop never won a bar — precedence cannot be verified");
+    for (const t of slHits) {
+      assert.ok(Math.abs(Math.abs(t.spotPnlPts) - 25) < 0.011,
+        `a points-stop exit booked ${t.spotPnlPts}pts — a candle-close rule took the bar first`);
+    }
+    // The invariant with teeth: a candle-close rule may only win a bar the
+    // intrabar points stop did NOT already breach. Paper's points stop fires on
+    // that bar's ticks, before onCandleClose ever runs. Checking the exit bar's
+    // own adverse excursion proves the ordering directly, with no golden number.
+    const byTs = new Map(CANDLES.map(c => [c.time, c]));
+    let stolen = 0;
+    for (const t of both.trades.filter(x => /^Negative 2-candle stop/.test(x.exitReason))) {
+      const c = byTs.get(t.exitTs);
+      if (!c) continue;
+      const adverse = t.side === "CE" ? (c.low - t.entryPrice) : (t.entryPrice - c.high);
+      if (adverse <= -25) stolen++;
+    }
+    assert.strictEqual(stolen, 0,
+      `${stolen} bar(s) went to the negative-candle stop although the 25pt points stop was breached on that same bar — candle-close rules are being evaluated before the intrabar stops`);
+  });
+
   check("each optional stop actually takes effect when enabled", async () => {});
   for (const [k, v, label, re] of [
     ["EMA9VWAP_NEG_CANDLE_LIMIT", "3", "negative-candle stop", /Negative 3-candle stop/],

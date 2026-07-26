@@ -287,80 +287,77 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
       position.candlesHeld = (position.candlesHeld || 0) + 1;
       let doExit = false, exitReason = "", blocksReentry = true, exitLevel;
 
-      // Paper's exit ORDER, mirrored exactly:
-      //   time-stop -> negative-candle -> candle-trail SL -> 2-candle reversal
-      //   -> signal exit -> EOD.  (All but reversal/signal/EOD default OFF.)
+      // ── Paper's REAL exit precedence, mirrored ──────────────────────────────
+      // Paper runs the protective stops in onTick — they fire on the ticks of THIS
+      // bar, using the level set at the PREVIOUS bar's close, i.e. BEFORE this bar
+      // ever closes. Only then does onCandleClose run its own checks. So the true
+      // order is:
+      //     [points stop, option stop, trail hit]        (intrabar, from prior close)
+      //   > [time-stop, negative-candle]                 (onCandleClose)
+      //   > [trail re-arm]                               (onCandleClose)
+      //   > [2-candle reversal] > [signal exit] > [EOD]
+      // This engine previously ran time-stop and negative-candle FIRST, so when two
+      // rules fired on the same bar it reported the wrong one — and, now that stops
+      // book their own level, the wrong PRICE too. Example: 4 candles held, still
+      // red, 25pt stop, and bar 5 runs 40pt against. Paper exits on the points stop
+      // at entry−25; the old order exited on the negative-candle stop at the close,
+      // entry−40. A 15-point difference on the same bar.
       const _spotPnlPts = (candle.close - position.entryPrice) * (position.side === "CE" ? 1 : -1);
+      // Option-premium proxy for the two rules paper measures in PREMIUM points, not
+      // spot points: same δ+θ model the P&L sim uses, so a theta-bled-but-spot-flat
+      // trade is seen as red here exactly as paper sees it.
+      const _premPnlPts = OPTION_SIM
+        ? (_spotPnlPts * DELTA) - ((THETA_PER_DAY / CANDLES_PER_DAY) * (position.candlesHeld || 1))
+        : _spotPnlPts;
+      const _adverseExcursion = position.side === "CE"
+        ? (candle.low  - position.entryPrice)
+        : (position.entryPrice - candle.high);
 
-      // H4-a: legacy time-stop, only when EMA9VWAP_SL_MODE=candle (paper parity).
-      if (slModeCandle) {
-        const _ts = _tradeGuards.checkTimeStop(position.candlesHeld, _spotPnlPts * DELTA);
+      // (1) points stop — paper: per-tick, exits AT the cap level.
+      if (!doExit && stopLossPts > 0 && _adverseExcursion <= -stopLossPts) {
+        doExit = true; exitReason = `SL (${stopLossPts}pts)`;
+        exitLevel = position.side === "CE"
+          ? position.entryPrice - stopLossPts
+          : position.entryPrice + stopLossPts;
+      }
+      // (2) option-premium stop — paper: per-tick on real premium. No option chain
+      //     here, so it is converted to its spot-move equivalent (approximation).
+      if (!doExit && _optStopSpotPts > 0 && _adverseExcursion <= -_optStopSpotPts) {
+        doExit = true; exitReason = `Option stop ${(optStopPct * 100).toFixed(0)}% (spot-equivalent)`;
+        exitLevel = position.side === "CE"
+          ? position.entryPrice - _optStopSpotPts
+          : position.entryPrice + _optStopSpotPts;
+      }
+      // (3) trail HIT — against the level carried in from an earlier candle's close.
+      //     Checking before re-arming is what stops the trail firing on the very bar
+      //     that sets it (that bug took 20 of 20 exits).
+      if (!doExit && candleTrailOn && position.trailSL != null) {
+        const _hit = position.side === "CE" ? candle.low <= position.trailSL : candle.high >= position.trailSL;
+        if (_hit) {
+          doExit = true;
+          exitReason = `Trail SL hit @ ${_q(position.trailSL, 2)}`;
+          exitLevel  = position.trailSL;   // paper: simulateSell(updatedSL, …)
+        }
+      }
+      // (4) legacy time-stop — only when EMA9VWAP_SL_MODE=candle.
+      if (!doExit && slModeCandle) {
+        const _ts = _tradeGuards.checkTimeStop(position.candlesHeld, _premPnlPts);
         if (_ts) { doExit = true; exitReason = _ts; }
       }
-      // H4-b: negative-candle stop — still red after N candles.
-      if (!doExit && negCandleLimit > 0 && position.candlesHeld >= negCandleLimit && _spotPnlPts < 0) {
+      // (5) negative-candle stop — still red after N candles.
+      if (!doExit && negCandleLimit > 0 && position.candlesHeld >= negCandleLimit && _premPnlPts < 0) {
         doExit = true; exitReason = `Negative ${negCandleLimit}-candle stop`;
       }
-      // H4-c: catastrophic spot-points cap. Paper checks it per TICK, so it fires
-      // intrabar — modelled here against the candle's ADVERSE EXTREME (low for CE,
-      // high for PE), which is the closest a candle-loop can get.
-      if (!doExit && stopLossPts > 0) {
-        const _adverse = position.side === "CE"
-          ? (candle.low  - position.entryPrice)
-          : (position.entryPrice - candle.high);
-        if (_adverse <= -stopLossPts) {
-          doExit = true; exitReason = `SL (${stopLossPts}pts)`;
-          exitLevel = position.side === "CE"
-            ? position.entryPrice - stopLossPts
-            : position.entryPrice + stopLossPts;
-        }
+      // (6) trail RE-ARM for the next candle, tighten-only. Paper does this at
+      //     candle close, after the checks above and before the reversal check.
+      if (!doExit && candleTrailOn && window.length >= candleTrailBars) {
+        const _bars = window.slice(-candleTrailBars);
+        const _lvl = position.side === "CE"
+          ? Math.min(..._bars.map(c => c.low))
+          : Math.max(..._bars.map(c => c.high));
+        if (position.side === "CE" && (position.trailSL == null || _lvl > position.trailSL)) position.trailSL = _lvl;
+        if (position.side === "PE" && (position.trailSL == null || _lvl < position.trailSL)) position.trailSL = _lvl;
       }
-      // H4-d: option-premium stop, converted to its spot-move equivalent (approx).
-      if (!doExit && _optStopSpotPts > 0) {
-        const _adverse = position.side === "CE"
-          ? (candle.low  - position.entryPrice)
-          : (position.entryPrice - candle.high);
-        if (_adverse <= -_optStopSpotPts) {
-          doExit = true; exitReason = `Option stop ${(optStopPct * 100).toFixed(0)}% (spot-equivalent)`;
-          exitLevel = position.side === "CE"
-            ? position.entryPrice - _optStopSpotPts
-            : position.entryPrice + _optStopSpotPts;
-        }
-      }
-      // H4-e: N-bar candle trail (tighten-only).
-      //
-      // ORDER IS THE WHOLE POINT. Paper sets pos.stopLoss at CANDLE CLOSE and
-      // enforces it on the ticks of the FOLLOWING bar, so the bar that sets the
-      // trail can never trigger it. Checking first and updating second reproduces
-      // that. Doing it the other way round — update from a window that includes
-      // this bar, then test this bar's own low against it — is true by
-      // construction whenever the bar makes the N-bar extreme, and it hijacked
-      // 100% of exits (20/20 trades, 3 of them on candlesHeld=1).
-      if (!doExit && candleTrailOn) {
-        // (1) CHECK the level carried in from a previous candle's close.
-        if (position.trailSL != null) {
-          const _hit = position.side === "CE" ? candle.low <= position.trailSL : candle.high >= position.trailSL;
-          if (_hit) {
-            doExit = true;
-            exitReason = `Trail SL hit @ ₹${_q(position.trailSL, 2)}`;
-            exitLevel  = position.trailSL;   // paper: simulateSell(updatedSL, …)
-          }
-        }
-        // (2) Only then RE-ARM it from the closed window, tighten-only, for the
-        //     next candle. Skipped when we just exited — the position is gone.
-        if (!doExit && window.length >= candleTrailBars) {
-          const _bars = window.slice(-candleTrailBars);
-          const _lvl = position.side === "CE"
-            ? Math.min(..._bars.map(c => c.low))
-            : Math.max(..._bars.map(c => c.high));
-          if (position.side === "CE" && (position.trailSL == null || _lvl > position.trailSL)) position.trailSL = _lvl;
-          if (position.side === "PE" && (position.trailSL == null || _lvl < position.trailSL)) position.trailSL = _lvl;
-        }
-      }
-      // Exit 2.5: 2-candle reversal engulf — mirrors paper onCandleClose. CE bails on a
-      // bearish candle closing below both prior 2 lows; PE on a bullish candle closing
-      // above both prior 2 highs. Positions never carry overnight (EOD square-off), so
-      // candles[i-1]/[i-2] are always same-day while a position is open.
       if (!doExit && reversalExit && i >= 2) {
         const prev1 = candles[i - 1], prev2 = candles[i - 2];
         const revCE = position.side === "CE" && candle.close < candle.open && candle.close < Math.min(prev1.low, prev2.low);
