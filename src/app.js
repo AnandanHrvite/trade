@@ -2698,6 +2698,31 @@ async function saveDashExpiry(btn){
     if(!res){ btn.disabled = false; btn.textContent = label; return; }
     var d = await res.json();
     if(d && d.success){
+      // success:true only means process.env was updated — the .env write can
+      // still have failed, and the section auto-fill can pull in a key that
+      // needs a restart. Settings surfaces both; a green tick here while the
+      // change silently dies on the next PM2 restart would be worse than a
+      // plain failure, so mirror the same three outcomes.
+      if(!d.fileSaved){
+        await showAlert({
+          icon:'⚠️', title:'Applied, but NOT written to .env',
+          message:'The new expiry is live right now, but saving .env failed:\\n'
+                + (d.fileError || 'unknown error')
+                + '\\n\\nIt will be lost the next time the server restarts. Fix the file and save again.',
+          btnClass:'modal-btn-danger'
+        });
+        btn.textContent = '⚠ Not saved';                    // never a tick — the change is not durable
+        setTimeout(function(){ location.reload(); }, 700);
+        return;
+      }
+      if(d.needsRestart && d.needsRestart.length){
+        await showAlert({
+          icon:'🔄', title:'Saved — restart needed',
+          message:'Written to .env. These keys only take effect after a restart:\\n'
+                + d.needsRestart.join(', '),
+          btnClass:'modal-btn-primary'
+        });
+      }
       btn.textContent = '✓ Saved';
       setTimeout(function(){ location.reload(); }, 700);   // refresh expiry pill + stale-expiry banner
     } else {
