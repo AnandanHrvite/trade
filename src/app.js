@@ -1476,11 +1476,38 @@ app.get("/", (req, res) => {
       #trade-row, #bb_rsi-row, #pa-row { flex-wrap:wrap; }
       #trade-row .card, #bb_rsi-row .card, #pa-row .card { width:100%; flex:none; }
     }
-    /* Dashboard top bar — keep title, toggle, and actions on a single line */
-    .top-bar { flex-wrap:nowrap !important; overflow-x:auto; }
-    .top-bar > div:first-child { flex-shrink:0; }
-    .top-bar-meta { white-space:nowrap; }
-    .top-bar-right { flex-wrap:nowrap !important; flex-shrink:0; }
+    /* Dashboard top bar — keep title, toggle, and actions on a single line.
+       DESKTOP ONLY. These rules used to be unconditional, and being important
+       + flex-shrink:0 they beat both sharedNav's wrapping .top-bar-right and
+       its max-width:768px .top-bar wrap rule. On a 393px phone that pinned the
+       bar at its 920px content width, so Start All, Reset Token, the
+       expiry/holiday pills and the status badge all sat off screen behind
+       .main-content's overflow-x:clip — unreachable, not merely ugly.
+       Below 768px the shared wrapping behaviour is left alone. */
+    @media (min-width:769px) {
+      .top-bar { flex-wrap:nowrap !important; overflow-x:auto; }
+      .top-bar > div:first-child { flex-shrink:0; }
+      .top-bar-meta { white-space:nowrap; }
+      .top-bar-right { flex-wrap:nowrap !important; flex-shrink:0; }
+    }
+    /* Phone: let every top-bar group wrap onto its own line and fill the width.
+       min-width:0 is what actually lets the group shrink — a flex item's
+       automatic minimum size would otherwise hold it at its content width even
+       with wrapping enabled. */
+    @media (max-width:768px) {
+      .top-bar { flex-wrap:wrap; overflow-x:clip; row-gap:6px; }
+      .top-bar > div:first-child { flex:1 1 auto; min-width:0; }
+      .top-bar-right {
+        flex:1 1 100%; min-width:0; flex-wrap:wrap;
+        justify-content:flex-start; gap:6px;
+      }
+      .top-bar-right .top-bar-btn { flex:1 1 auto; justify-content:center; }
+      .dash-src-toggle { flex:0 0 auto; }
+      /* The expiry/holiday pills carry a full sentence and are white-space:nowrap
+         in sharedNav, so at 320px (iPhone SE) they alone still ran 11px past the
+         edge. Let them wrap rather than widen the bar. */
+      .top-bar-right .top-bar-cache { max-width:100%; min-width:0; white-space:normal; }
+    }
     ${modalCSS()}
     ${expiryHolidayModalCSS()}
   </style>

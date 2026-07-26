@@ -6,6 +6,14 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — the Dashboard top bar was unusable on a phone
+
+`.top-bar`/`.top-bar-right` carried `flex-wrap:nowrap !important` + `flex-shrink:0` with **no media query**, so they overrode both sharedNav's wrapping `.top-bar-right` and its `@media(max-width:768px)` wrap rule. Measured over CDP at a real 393px viewport (headless Chrome cannot go below 500px with `--window-size`, which is why this survived earlier screenshot checks — those renders were 500px cropped to look narrower): the bar was pinned at its **920px** content width and overflowed by 815px, putting Start All (Paper), Start All (Harness), Reset Token, the expiry/holiday pills and the status badge off screen behind `.main-content`'s `overflow-x:clip`. They were not merely cramped, they were unreachable.
+
+Those rules are now scoped to `min-width:769px`, with a phone counterpart that lets each group wrap onto its own line (`min-width:0` is the part that actually permits shrinking — a flex item's automatic minimum size holds it at content width otherwise) and lets the nowrap expiry/holiday pills wrap so they clear 320px too. Verified 0 elements wider than the viewport at 320/360/393/430/768px, and byte-identical computed styles at 1440px.
+
+Known and unchanged: the shared backup-nag banner is `position:fixed; top:0`, so it overlays the first ~58px of every page including the top bar's first row. Pre-existing and not specific to mobile.
+
 ### Added — the Dashboard expiry pill opens the expiry / holiday calendar
 
 The `📅 Next Expiry Date : 28/07/2026 - M - 1 day` pill in the Dashboard top bar was a read-only label, and the full NIFTY expiry calendar + NSE holiday list existed only behind the Settings page's `📅 EXPIRY & HOLIDAYS` button. Clicking either Dashboard pill now opens that same popup (Expiry Calendar / NSE Holidays tabs, REFRESH button).
