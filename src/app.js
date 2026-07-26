@@ -338,6 +338,11 @@ const OPEN_PATHS = [
   "/pa-paper/status",
   "/pa-paper/status/data",
   "/pa-backtest",
+  // ORB mode (read-only status data) — the dashboard's Start-All button poll uses
+  // a plain fetch (no secret prompt on a 10s timer), so these must be open or ORB
+  // is invisible to the Paper↔Live mutual lock, exactly like the five strategies above.
+  "/orb-paper/status/data",
+  "/orb-live/status/data",
   "/consolidation",       // read-only cross-mode trade history + analytics
   "/health",              // health check — must be open for uptime monitors / PM2 probes
   "/deploy/webhook",      // GitHub Actions webhook — must be open for GitHub to reach it
