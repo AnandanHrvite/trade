@@ -3,7 +3,41 @@ const router  = express.Router();
 const fs      = require("fs");
 const path    = require("path");
 const sharedSocketState = require("../utils/sharedSocketState");
-const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
+const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS, enabledStrategies } = require("../utils/sharedNav");
+
+/**
+ * Which strategy each shipped guide belongs to, so the Documents list can hide
+ * guides for strategies this install has switched off — the same rule the
+ * sidebar, Edge Analytics and the Consolidation Report already follow.
+ *
+ * Keys are lower-cased filenames; lookup is case-insensitive.
+ *
+ * A file that is NOT in this map is always listed. That direction matters: an
+ * unknown document (a user upload, a new guide added before this map is) must
+ * stay visible. Hiding by default would make uploads silently disappear.
+ *
+ * Listing only — GET /docs/file/:filename is deliberately NOT gated, so an
+ * existing bookmark or a "Sync to local" of a disabled strategy's guide still
+ * works. This is menu visibility, not access control.
+ */
+const GUIDE_MODE_BY_FILE = {
+  "ema_rsi_st_strategy_guide.html":    "EMA_RSI_ST",
+  "bb_rsi_strategy_guide.html":        "BB_RSI",
+  "price_action_strategy_guide.html":  "PA",
+  "orb_strategy_guide.html":           "ORB",
+  "ema9_vwap_strategy_guide.html":     "EMA9VWAP",
+  "trend_pullback_strategy_guide.html":"TREND_PB",
+};
+
+/**
+ * @param {string} filename
+ * @param {Set<string>} enabledModes
+ * @returns {boolean} true when the file should appear in the Documents list
+ */
+function isDocVisible(filename, enabledModes) {
+  const mode = GUIDE_MODE_BY_FILE[String(filename).toLowerCase()];
+  return !mode || enabledModes.has(mode);
+}
 
 function mdToHtml(md) {
   return md
@@ -29,12 +63,17 @@ router.get("/", (req, res) => {
   try { readme = fs.readFileSync(path.join(projectRoot, "README.md"), "utf-8"); } catch(e) { readme = "README.md not found"; }
   try { changelog = fs.readFileSync(path.join(projectRoot, "CHANGELOG.md"), "utf-8"); } catch(e) { changelog = "CHANGELOG.md not found"; }
 
-  // Read documents folder
+  // Read documents folder. Guides belonging to a strategy this install has
+  // switched off are hidden, matching the sidebar / Edge Analytics / Consolidation
+  // Report. enabledStrategies() reads process.env per call — Settings saves mutate
+  // it live — so this must not be hoisted out of the request handler.
   const docsDir = path.join(projectRoot, "documents");
-  let docFiles = [];
+  const enabledModes = new Set(enabledStrategies().map(s => s.mode));
+  let docFiles = [], hiddenCount = 0;
   try {
     docFiles = fs.readdirSync(docsDir)
       .filter(f => !f.startsWith("."))
+      .filter(f => { const ok = isDocVisible(f, enabledModes); if (!ok) hiddenCount++; return ok; })
       .map(f => {
         const stat = fs.statSync(path.join(docsDir, f));
         const ext = path.extname(f).toLowerCase();
@@ -172,7 +211,11 @@ ${buildSidebar("docs", liveActive)}
   <div id="guides" class="content">
     <div class="doc-card">
       <h1>Documents</h1>
-      <p style="margin-bottom:14px;">Files from the <code>documents/</code> folder (${docFiles.length} file${docFiles.length !== 1 ? "s" : ""}):</p>
+      <p style="margin-bottom:14px;">Files from the <code>documents/</code> folder (${docFiles.length} file${docFiles.length !== 1 ? "s" : ""}):${
+        hiddenCount > 0
+          ? ` <span style="color:#4a6080;font-size:0.78rem;">&nbsp;·&nbsp; ${hiddenCount} guide${hiddenCount !== 1 ? "s" : ""} hidden — strategy disabled in Settings</span>`
+          : ""
+      }</p>
       ${docListHtml}
     </div>
   </div>

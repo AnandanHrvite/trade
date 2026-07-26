@@ -6,6 +6,29 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Changed — /docs lists only the guides for enabled strategies
+
+The Documents tab listed all seven guides regardless of configuration, so an install running three strategies still offered six strategy guides. It now follows the same rule as the sidebar, Edge Analytics and the Consolidation Report, via the existing `enabledStrategies()` in [sharedNav.js](src/utils/sharedNav.js) — one source of truth rather than a seventh hard-coded strategy list. On the current config (`BB_RSI`, `PA`, `TREND_PB` = `MODE_ENABLED=false`) the list drops from 7 files to 4, with a muted "3 guides hidden — strategy disabled in Settings" note so nothing appears to have simply vanished.
+
+Two deliberate limits: a file **not** in the filename→strategy map is always listed, so a user upload or a guide added before the map is can never silently disappear; and `GET /docs/file/:filename` is **not** gated, so an existing bookmark or a "Sync to local" of a disabled strategy's guide still works. This is menu visibility, not access control. `enabledStrategies()` is read per request because Settings saves mutate `process.env` live.
+
+### Fixed — the six "whole session" charts were one chart with six sets of overlays
+
+Every strategy guide opened with a full-day candlestick chart, and all six were hand-written from the same template: the same ~24,1xx price base, the same 09:15–14:00 window, the same rally-then-fade shape, all exiting around 24,34x. Only the overlay lines differed, so side by side they read as the same picture — which is exactly how it looked with three guides open in three tabs. The hand-written overlays were also not derived from their own candles, so a line labelled "EMA20" was not the EMA20 of the bars beneath it.
+
+All six are now generated, each from its own price path and its own price base, with **every** overlay computed from the candles it is drawn over — EMA from the closes, the VWAP ±σ band by the same equal-weighted HLC3 formula [ema9_vwap.js](src/strategies/ema9_vwap.js) uses, Bollinger from a real rolling standard deviation, and ORB's opening-range box measured off the first three bars rather than typed in. Each day also illustrates something different about its strategy:
+
+- **EMA_RSI_ST** — a **bearish PE day** (24,6xx). Every other guide showed a CE; this one shows the mirror, with the EMA21 trail tightening downward from above.
+- **BB_RSI** — a **40-minute scalp** (23,8xx) inside a quiet range, banked by the profit lock. Makes the point that BB_RSI is not a trend rider.
+- **Price Action** — a **V-shaped double bottom** (24,4xx) with the neckline break deliberately *not* bought, and entry only on the retest.
+- **ORB** — a narrow 36-point opening box (25,1xx) and one trade held four hours.
+- **EMA9+VWAP** — two hours inside the channel doing nothing (22,9xx), one break, ended by the reversal rule rather than the signal exit — which is what actually happened on every winner in the first live sample.
+- **Trend Pullback** — a **staircase** (26,2xx) with two pullbacks, where only the second produces a qualifying resumption candle.
+
+Captions were rewritten to the new charts with their real times and prices, and one caption claim was corrected in the process: the passed-over first pullback was described as "before the entry window opens", but `TREND_PB_ENTRY_START` is 09:45 and the pullback is at 10:30 — it is skipped because no candle after it met the resumption test, which is the more useful lesson anyway.
+
+The generator is deterministic (a seeded LCG, no `Math.random`), so regenerating produces byte-identical output and the guides do not churn in git. Verified: the six charts now hash differently and occupy six non-overlapping price ranges (22.9k / 23.8k / 24.3k / 24.4k / 25.0k / 26.2k).
+
 ### Docs — all seven guides and both strategy reference files re-synced to the code
 
 A documentation pass over everything in [documents/](documents/) plus the root strategy references. No code behaviour changed; the only source edits are two stale **comments** and one README correction (see the end of this entry).
