@@ -641,6 +641,16 @@ app.get("/", (req, res) => {
     ...startAllModes.map((m) => ({ url: m.paper.replace('/start', '/status/data'), kind: 'paper' })),
     ...startAllLiveModes.map((m) => ({ url: m.live.replace('/start', '/status/data'), kind: 'live' })),
   ];
+  // Endpoint → display name, for the Start-All failure list and the 0DTE prompt.
+  // Built from the roster so it cannot drift from the endpoints actually called,
+  // and so the harness route of a strategy whose path ends in `-live` (EMA9+VWAP,
+  // TREND_PB) reads "Live (Harness)" instead of being mistaken for a pure-live one.
+  const startAllEndpointLabels = {};
+  for (const m of startAllModes) {
+    startAllEndpointLabels[m.paper] = `${m.label} Paper`;
+    if (m.live) startAllEndpointLabels[m.live] = `${m.label} Live`;
+    startAllEndpointLabels[m.harness] = `${m.label} Live (Harness)`;
+  }
 
   // ── Broker investment pools (paper) — remaining = pool + all-time paper P&L ──
   // Zerodha pool = EMA_RSI_ST; Fyers pool = BB_RSI + PA + ORB (enabled only).
@@ -1668,6 +1678,7 @@ var LIVE_ENDPOINTS    = ${JSON.stringify(startAllLiveModes.map((m) => m.live))};
 var HARNESS_ENDPOINTS = ${JSON.stringify(startAllModes.map((m) => m.harness))};
 var ALL_MODE_LABELS   = ${JSON.stringify(startAllModes.map((m) => m.label))};
 var LIVE_MODE_LABELS  = ${JSON.stringify(startAllLiveModes.map((m) => m.label))};
+var ENDPOINT_LABELS   = ${JSON.stringify(startAllEndpointLabels)};
 
 function _escHtml(s){
   return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
@@ -1675,12 +1686,10 @@ function _escHtml(s){
   });
 }
 
+// Server-supplied, so there is no second strategy list to keep in step with the
+// roster. Falls back to the raw URL for anything not in the map.
 function _prettyEndpoint(url){
-  var m = /\\/([\\w-]+)-(live|paper)(-harness)?\\/start/.exec(url);
-  if (!m) return url;
-  var mode = { ema_rsi_st:'EMA_RSI_ST', bb_rsi:'BB_RSI', pa:'Price Action', orb:'ORB', ema9vwap:'EMA9+VWAP', 'trend-pb':'TREND PB' }[m[1]] || m[1];
-  var kind = m[2] === 'paper' ? 'Paper' : (m[3] ? 'Live (Harness)' : 'Live');
-  return mode + ' ' + kind;
+  return ENDPOINT_LABELS[url] || url;
 }
 
 async function _startAll(endpoints){
