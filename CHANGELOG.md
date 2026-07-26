@@ -6,6 +6,14 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — `/settings/env` had been opened, and it returns the raw `.env`
+
+Two commits ago the allowlist was extended to cover every plain-`fetch` call the pages make, and `/settings/env` was in that list. It returns the **whole `.env` file unmasked** — `API_SECRET`, `LOGIN_SECRET`, `ZERODHA_API_SECRET`, `ACCESS_TOKEN`, `TELEGRAM_BOT_TOKEN` — so opening it meant anything past the login cookie could read every credential. (`/settings/data` is the masked view; the "View .env" modal only masks for *display*, after receiving the real values.) Removed from `OPEN_PATHS` and its one caller switched to `secretFetch`. Verified: the endpoint answers 403 again and the response no longer contains the secret.
+
+Also dropped the `/logout` entry added in the same pass: `GET /logout`, like `GET`/`POST /login`, is registered *above* the `API_SECRET` middleware and so never reaches it — the entry was dead config. Confirmed by probe (`/logout` still answers 302 with no allowlist entry).
+
+A sweep for the remaining ways a page can call the server — `<form action>`, `EventSource`, `XMLHttpRequest`, `sendBeacon`, `<iframe>`/`<img src>` — found nothing else blocked: the only form POSTs are `/auth/manual` and `/settings/audit` (both handled), and the log/cache iframes point at already-open pages.
+
 ### Fixed — the Start / Stop / Exit buttons on five strategy pages landed on a 403 page
 
 The `secretFetch` sweep below covered buttons that call their route with `fetch`. Five pages don't: ORB Paper, ORB Live, Trend PB Paper, BB_RSI Paper and PA Paper start and stop by **navigating** (`location.href = '/orb-paper/start'`). A browser navigation cannot carry the `x-api-secret` header, so with a secret set those buttons left the page showing `{"success":false,"error":"Forbidden — missing or wrong secret."}` — the session never started. The dashboard's Start All was unaffected (it already used `secretFetch`), which is why this stayed hidden.

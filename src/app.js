@@ -300,7 +300,8 @@ const OPEN_PATHS = [
   // /auth/manual, a plain <form method=POST>) — a browser navigation cannot send
   // the x-api-secret header, so gating them makes broker re-login and Logout
   // unreachable from the UI. All of them sit behind the LOGIN_SECRET cookie.
-  "/logout",                // clears the login cookie
+  // (/logout needs no entry — it is registered above this middleware, so it never
+  // reaches the gate. Same for GET/POST /login.)
   "/auth/login",            // starts the Fyers OAuth redirect
   "/auth/manual",           // paste-a-token recovery page + its form POST
   "/auth/zerodha/login",    // starts the Zerodha OAuth redirect
@@ -427,7 +428,10 @@ const OPEN_PATHS = [
   "/backup/status",       // sidebar backup-nag poll
   "/backup/data",         // Settings backup list — create/delete/restore stay protected
   "/backup/download",     // snapshot download (link navigation, read-only)
-  "/settings/env",        // Settings reads current env values (read-only)
+  // NOTE: /settings/env is deliberately NOT here. It returns the raw .env —
+  // API_SECRET, LOGIN_SECRET, ZERODHA_API_SECRET, ACCESS_TOKEN,
+  // TELEGRAM_BOT_TOKEN — with no masking (/settings/data is the masked view).
+  // Its one caller uses secretFetch.
   "/consolidation",       // read-only cross-mode trade history + analytics
   "/consolidation/data",
   "/health",              // health check — must be open for uptime monitors / PM2 probes

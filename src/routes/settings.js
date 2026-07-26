@@ -2673,7 +2673,10 @@ function showBulkModal(){
 
 function showEnvModal(){
   document.getElementById('envModal').style.display='block';
-  fetch('/settings/env').then(function(r){return r.json()}).then(function(data){
+  // secretFetch, not fetch: /settings/env returns unmasked .env values, so it
+  // stays behind API_SECRET. Masking below is display-only.
+  secretFetch('/settings/env').then(function(r){return r ? r.json() : null}).then(function(data){
+    if (!data) { document.getElementById('envModal').style.display='none'; return; }
     _envData=data;
     var keys=Object.keys(data).sort();
     var html='<table style="width:100%;border-collapse:collapse;font-size:0.78rem;font-family:IBM Plex Mono,monospace;">';
