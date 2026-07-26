@@ -6,6 +6,14 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Added — the Dashboard expiry pill opens the expiry / holiday calendar
+
+The `📅 Next Expiry Date : 28/07/2026 - M - 1 day` pill in the Dashboard top bar was a read-only label, and the full NIFTY expiry calendar + NSE holiday list existed only behind the Settings page's `📅 EXPIRY & HOLIDAYS` button. Clicking either Dashboard pill now opens that same popup (Expiry Calendar / NSE Holidays tabs, REFRESH button).
+
+The popup's CSS, markup and JS moved out of [settings.js](src/routes/settings.js) into `expiryHolidayModalCSS()` / `expiryHolidayModalHTML()` / `expiryHolidayModalJS()` in [sharedNav.js](src/utils/sharedNav.js), so both pages render one copy rather than two that can drift. Colours are literals there instead of `var(--…)` because the Dashboard has no `:root` variable block; the light-theme rewriter already covers `.holiday-table`, and the tab buttons got their own light-theme rules.
+
+The two pills also moved out of the idle-only block in the top bar — they used to disappear while any session was running, which is when the next expiry matters most.
+
 ### Added — option expiry can now be changed from the Dashboard
 
 `OPTION_EXPIRY_OVERRIDE` and `OPTION_EXPIRY_TYPE` were only editable on the Settings page, so fixing a stale expiry meant leaving the Dashboard. Both now appear as a compact strip in the broker row — a date field, a weekly/monthly select and a Save button. Settings keeps its own copy; this is a second editor for the same two keys, not a second source: Save posts to the same `POST /settings/save`, so the audit log and the per-mode daily settings snapshot record the change exactly as a Settings save does. Both keys are INSTANT-effect, so no restart is needed; the page reloads after saving so the expiry pill and the stale-expiry banner refresh.

@@ -1942,6 +1942,241 @@ async function secretGo(url, btn) {
 `;
 }
 
+/* ── NIFTY Expiry & NSE Holidays modal ──────────────────────────────────────
+ * One popup shared by Settings (📅 EXPIRY & HOLIDAYS button) and the Dashboard
+ * (the "Next Expiry Date" top-bar pill). Kept here rather than copied per page
+ * so the two never drift — the calendar is the same data on both.
+ * Colours are literals, not CSS vars: the Dashboard has no :root var block.
+ * A page must also include modalJS() (secretFetch + showAlert) for REFRESH.
+ */
+function expiryHolidayModalCSS() {
+  return `
+    /* ── Combined Expiry/Holidays modal tabs ───────────────── */
+    .eh-tab-btn {
+      background: transparent; border: 1px solid transparent; border-bottom: none;
+      border-top-left-radius: 7px; border-top-right-radius: 7px;
+      padding: 7px 14px; cursor: pointer; color: #4a6080;
+      font-size: 0.72rem; font-weight: 700; font-family: 'IBM Plex Mono', monospace;
+      letter-spacing: 0.4px; transition: all 0.15s; margin-bottom: -1px;
+    }
+    .eh-tab-btn:hover { color: #c8d8f0; }
+    .eh-tab-btn.eh-tab-active {
+      color: #22d3ee; border-color: #1a2640; border-bottom-color: #0d1117;
+      background: #0d1117;
+    }
+
+    /* ── Holiday modal table ─────────────────────────────── */
+    .holiday-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+    .holiday-table th {
+      text-align: left; padding: 8px 10px; font-size: 0.65rem; text-transform: uppercase;
+      letter-spacing: 1px; color: #4a6080; border-bottom: 1px solid #1a2236;
+    }
+    .holiday-table td {
+      padding: 7px 10px; border-bottom: 1px solid #1a2236; color: #c8d8f0;
+    }
+    .holiday-table tr:last-child td { border-bottom: none; }
+    .holiday-table tr:hover td { background: rgba(59,130,246,0.06); }
+    .holiday-table .past-holiday { opacity: 0.4; }
+    .holiday-table .today-holiday { color: #10b981; font-weight: 600; }
+    .holiday-table .preponed { color: #f59e0b; }
+    .holiday-table .monthly-row td { background: rgba(59,130,246,0.08); }
+    .expiry-legend { display:flex; gap:16px; padding:10px 0 4px; font-size:0.68rem; color:#4a6080; flex-wrap:wrap; }
+    .expiry-legend span { display:flex; align-items:center; gap:4px; }
+    .expiry-dot { width:8px; height:8px; border-radius:50%; display:inline-block; }
+    .holiday-modal-body {
+      max-height: 420px; overflow-y: auto; margin-top: 10px;
+      scrollbar-width: thin; scrollbar-color: #243048 transparent;
+    }
+    :root[data-theme="light"] .eh-tab-btn { color:#64748b; }
+    :root[data-theme="light"] .eh-tab-btn:hover { color:#334155; }
+    :root[data-theme="light"] .eh-tab-btn.eh-tab-active { color:#0891b2; border-color:#e0e4ea; border-bottom-color:#ffffff; background:#ffffff; }
+  `;
+}
+
+function expiryHolidayModalHTML() {
+  return `
+<div id="expiryHolidaysModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:9999;overflow-y:auto;padding:40px 20px;" onclick="if(event.target===this)this.style.display='none'">
+  <div style="max-width:640px;margin:0 auto;background:#0d1117;border:1px solid #1a2640;border-radius:12px;overflow:hidden;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:#111827;border-bottom:1px solid #1a2640;">
+      <span style="font-weight:700;font-size:0.95rem;color:#22d3ee;">📅 NIFTY Expiry &amp; NSE Holidays</span>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button id="holiday-refresh-btn" type="button" onclick="refreshHolidays()" title="Force-refresh NSE holidays from upstream API" style="padding:5px 12px;background:rgba(34,211,238,0.12);color:#22d3ee;border:1px solid rgba(34,211,238,0.25);border-radius:5px;font-size:0.72rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.3px;">📅 REFRESH</button>
+        <button onclick="document.getElementById('expiryHolidaysModal').style.display='none'" style="background:none;border:none;color:#4a6080;font-size:1.2rem;cursor:pointer;">&times;</button>
+      </div>
+    </div>
+    <div style="display:flex;gap:6px;padding:10px 16px 0;border-bottom:1px solid #1a2640;">
+      <button id="ehBtn-expiry" type="button" onclick="showExpHolTab('expiry')" class="eh-tab-btn eh-tab-active">Expiry Calendar</button>
+      <button id="ehBtn-holiday" type="button" onclick="showExpHolTab('holiday')" class="eh-tab-btn">NSE Holidays</button>
+    </div>
+    <!-- Expiry tab -->
+    <div id="ehTab-expiry">
+      <div style="padding:10px 16px 0;">
+        <div class="expiry-legend">
+          <span><span class="expiry-dot" style="background:#3b82f6;"></span> Monthly expiry</span>
+          <span><span class="expiry-dot" style="background:#f59e0b;"></span> Preponed (holiday)</span>
+        </div>
+      </div>
+      <div class="holiday-modal-body" style="padding:0 16px 16px;">
+        <table class="holiday-table">
+          <thead><tr><th>#</th><th>Expiry Date</th><th>Day</th><th>Type</th><th>Preponed To</th></tr></thead>
+          <tbody id="expiryTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+    <!-- Holiday tab -->
+    <div id="ehTab-holiday" style="display:none;">
+      <div class="holiday-modal-body" style="padding:12px 16px 16px;">
+        <table class="holiday-table">
+          <thead><tr><th>#</th><th>Date</th><th>Day</th><th>Holiday</th></tr></thead>
+          <tbody id="holidayTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>`;
+}
+
+function expiryHolidayModalJS() {
+  return `
+// ── NSE Holiday List Modal ──────────────────────────────────────────────────
+var _holidayNames = {
+  '01-15': 'Municipal Corp. Election – Maharashtra', '01-26': 'Republic Day',
+  '03-03': 'Holi', '03-26': 'Shri Ram Navami', '03-31': 'Shri Mahavir Jayanti',
+  '04-03': 'Good Friday', '04-14': 'Dr. Ambedkar Jayanti',
+  '05-01': 'Maharashtra Day', '05-28': 'Bakri Id', '06-26': 'Muharram',
+  '09-14': 'Ganesh Chaturthi', '10-02': 'Mahatma Gandhi Jayanti',
+  '10-20': 'Dussehra', '11-10': 'Diwali – Balipratipada',
+  '11-24': 'Prakash Gurpurb Sri Guru Nanak Dev', '12-25': 'Christmas'
+};
+
+async function loadHolidaysTable() {
+  var body = document.getElementById('holidayTableBody');
+  if (!body) return;
+  body.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#4a6080;padding:20px;">Loading holidays...</td></tr>';
+  try {
+    var res = await fetch('/api/holidays', {cache:'no-store'});
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    var data = await res.json();
+    if (!data.success || !data.holidays || !data.holidays.length) {
+      body.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#4a6080;padding:20px;">No holidays found</td></tr>';
+      return;
+    }
+    var todayStr = new Date(new Date().toLocaleString("en-US",{timeZone:"Asia/Kolkata"})).toISOString().split('T')[0];
+    var rows = '';
+    var n = 0;
+    data.holidays.sort().forEach(function(d) {
+      if (d < todayStr) return; // hide past holidays
+      var mmdd = d.slice(5);
+      var name = _holidayNames[mmdd] || '—';
+      var dt = new Date(d + 'T00:00:00');
+      var dayName = dt.toLocaleDateString('en-US', {weekday:'short'});
+      var display = dt.toLocaleDateString('en-IN', {day:'2-digit', month:'short', year:'numeric'});
+      var cls = d === todayStr ? 'today-holiday' : '';
+      n++;
+      rows += '<tr class="' + cls + '"><td>' + n + '</td><td>' + display + '</td><td>' + dayName + '</td><td>' + name + '</td></tr>';
+    });
+    if (!n) rows = '<tr><td colspan="4" style="text-align:center;color:#4a6080;padding:20px;">No upcoming holidays</td></tr>';
+    body.innerHTML = rows;
+  } catch(e) {
+    body.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#ef4444;padding:20px;">Failed to load holidays</td></tr>';
+  }
+}
+
+// ── NIFTY Expiry Calendar populator ─────────────────────────────────────────
+async function loadExpiriesTable() {
+  var body = document.getElementById('expiryTableBody');
+  if (!body) return;
+  body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#4a6080;padding:20px;">Loading expiry dates...</td></tr>';
+  try {
+    var res = await fetch('/api/expiry-dates', {cache:'no-store'});
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    var data = await res.json();
+    if (!data.success || !data.expiries || !data.expiries.length) {
+      body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#4a6080;padding:20px;">No expiry dates found</td></tr>';
+      return;
+    }
+    var yearEl = document.getElementById('expiryYearTitle');
+    if (yearEl) yearEl.textContent = 'NIFTY Options Expiry Calendar ' + data.year;
+    var todayStr = new Date(new Date().toLocaleString("en-US",{timeZone:"Asia/Kolkata"})).toISOString().split('T')[0];
+    var rows = '';
+    var n = 0;
+    data.expiries.forEach(function(e) {
+      if (e.date < todayStr) return; // hide past expiries
+      var dt = new Date(e.date + 'T00:00:00');
+      var display = dt.toLocaleDateString('en-IN', {day:'2-digit', month:'short', year:'numeric'});
+      var dayName = dt.toLocaleDateString('en-US', {weekday:'short'});
+      var type = e.monthly ? '<span style="color:#3b82f6;font-weight:600;">Monthly</span>' : 'Weekly';
+      var actual = display;
+      if (e.preponed) {
+        var aDt = new Date(e.actual + 'T00:00:00');
+        actual = aDt.toLocaleDateString('en-IN', {day:'2-digit', month:'short', year:'numeric'});
+      }
+      var cls = e.date === todayStr ? 'today-holiday' : '';
+      if (e.monthly) cls += ' monthly-row';
+      var preponedNote = e.preponed ? '<span class="preponed" title="Preponed due to holiday"> ⚠ ' + actual + '</span>' : '';
+      n++;
+      rows += '<tr class="' + cls + '"><td>' + n + '</td><td>' + display + '</td><td>' + dayName + '</td><td>' + type + '</td><td>' + (e.preponed ? preponedNote : '—') + '</td></tr>';
+    });
+    if (!n) rows = '<tr><td colspan="5" style="text-align:center;color:#4a6080;padding:20px;">No upcoming expiry dates</td></tr>';
+    body.innerHTML = rows;
+  } catch(e) {
+    body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#ef4444;padding:20px;">Failed to load expiry dates</td></tr>';
+  }
+}
+
+// ── Combined Expiry & Holidays modal (top-bar button) ───────────────────────
+function showExpiryHolidaysModal() {
+  var modal = document.getElementById('expiryHolidaysModal');
+  if (!modal) return;
+  modal.style.display = 'block';
+  showExpHolTab('expiry');
+  loadExpiriesTable();
+  loadHolidaysTable();
+}
+async function refreshHolidays() {
+  var btn = document.getElementById('holiday-refresh-btn');
+  if (!btn) return;
+  var orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ REFRESHING…';
+  btn.style.opacity = '0.6';
+  try {
+    var res = await secretFetch('/api/holidays/refresh', { method: 'POST' });
+    btn.disabled = false;
+    btn.textContent = orig;
+    btn.style.opacity = '1';
+    if (!res) return;
+    if (!res.ok) throw new Error('HTTP ' + res.status + ': ' + res.statusText);
+    var d = await res.json();
+    if (d.success) {
+      await showAlert({ icon:'✅', title:'Holidays Refreshed', message:'Fetched ' + d.count + ' holidays from NSE API.\\nCache updated.', btnClass:'modal-btn-success' });
+    } else {
+      await showAlert({ icon:'⚠️', title:'NSE API Unavailable', message:'NSE API is currently blocking requests or unavailable.\\nUsing fallback holiday list (' + (d.count||17) + ' holidays for 2026).', btnClass:'modal-btn-primary' });
+    }
+    // reload the table data so the modal reflects the refreshed cache
+    loadHolidaysTable();
+    loadExpiriesTable();
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = orig;
+    btn.style.opacity = '1';
+    showAlert({ icon:'❌', title:'Network Error', message: err.message + '\\nPlease check your connection and try again.', btnClass:'modal-btn-danger' });
+  }
+}
+function showExpHolTab(tab) {
+  var ex = document.getElementById('ehTab-expiry');
+  var ho = document.getElementById('ehTab-holiday');
+  var bex = document.getElementById('ehBtn-expiry');
+  var bho = document.getElementById('ehBtn-holiday');
+  if (!ex || !ho || !bex || !bho) return;
+  var isExpiry = (tab === 'expiry');
+  ex.style.display = isExpiry ? 'block' : 'none';
+  ho.style.display = isExpiry ? 'none'  : 'block';
+  bex.classList.toggle('eh-tab-active', isExpiry);
+  bho.classList.toggle('eh-tab-active', !isExpiry);
+}`;
+}
+
 /**
  * Styled error page — shared across all trade route files.
  * @param {string} title — error title
@@ -1977,4 +2212,4 @@ ${linkHref ? `<a href="${linkHref}" class="err-link">${linkText || 'Go Back'}</a
 </div></div></div></body></html>`;
 }
 
-module.exports = { STRATEGY_MODES, enabledStrategies, buildSidebar, sidebarCSS, toastJS, aiExportJS, logViewerHTML, faviconLink, modalCSS, modalJS, errorPage, tableEnhancerCSS, tableEnhancerJS };
+module.exports = { STRATEGY_MODES, enabledStrategies, buildSidebar, sidebarCSS, toastJS, aiExportJS, logViewerHTML, faviconLink, modalCSS, modalJS, expiryHolidayModalCSS, expiryHolidayModalHTML, expiryHolidayModalJS, errorPage, tableEnhancerCSS, tableEnhancerJS };

@@ -9,7 +9,8 @@ const { ACTIVE, getActiveStrategy } = require("./strategies");
 const instrumentConfig = require("./config/instrument");
 const zerodha  = require("./services/zerodhaBroker");
 const { clearFyersToken } = require("./config/fyers");
-const { buildSidebar, sidebarCSS, modalCSS, modalJS, enabledStrategies } = require("./utils/sharedNav");
+const { buildSidebar, sidebarCSS, modalCSS, modalJS, enabledStrategies,
+        expiryHolidayModalCSS, expiryHolidayModalHTML, expiryHolidayModalJS } = require("./utils/sharedNav");
 
 // Start-All route triplet per strategy, keyed by the canonical mode key in
 // sharedNav's STRATEGY_MODES. The dashboard's Start All (Paper / Live / Harness)
@@ -1244,6 +1245,9 @@ app.get("/", (req, res) => {
     :root[data-theme="light"] .top-bar-btn { background:#f8fafc; border-color:#e2e8f0; color:#475569; }
     :root[data-theme="light"] .top-bar-btn.run-paper { background:#dcfce7; border-color:#86efac; color:#16a34a; }
     :root[data-theme="light"] .top-bar-btn.run-live { background:#fee2e2; border-color:#fca5a5; color:#dc2626; }
+    /* Pills that open a popup — the rest of the pills are read-only labels. */
+    .top-bar-cache.clickable { cursor:pointer; }
+    .top-bar-cache.clickable:hover { filter:brightness(1.25); }
     :root[data-theme="light"] .top-bar-cache { background:#f0fdf4; border-color:#bbf7d0; color:#16a34a; }
     :root[data-theme="light"] .top-bar-cache.empty { background:#f8fafc; border-color:#e2e8f0; color:#64748b; }
     :root[data-theme="light"] .top-bar-cache.schedule { background:#ecfeff; border-color:#a5f3fc; color:#0891b2; }
@@ -1476,6 +1480,7 @@ app.get("/", (req, res) => {
     .top-bar-meta { white-space:nowrap; }
     .top-bar-right { flex-wrap:nowrap !important; flex-shrink:0; }
     ${modalCSS()}
+    ${expiryHolidayModalCSS()}
   </style>
 </head>
 <body>
@@ -1494,9 +1499,12 @@ ${buildSidebar('dashboard', liveActive)}
       ${anyModeActive ? '' : `
       <button id="btn-all-harness" class="top-bar-btn" style="border-color:#b45309;color:#b45309;" onclick="startAllHarness(this)" title="Start all Live (Harness) modes in DRY-RUN — runs Paper + logs would-be broker orders (${startAllModes.map((m) => m.label).join(' + ') || 'no strategy enabled'})">🧪 Start All (Harness)</button>
       <button id="btn-all-start" class="top-bar-btn run-paper" onclick="startAll(this)" title="Start all paper modes">▶ Start All (Paper)</button>
-      <button onclick="hardReset()" class="top-bar-btn" title="Clears Fyers + Zerodha tokens and restarts the server — use when tokens look stuck">🔄 Reset Token</button>
-      <span id="expiry-info-pill" class="top-bar-cache schedule empty" title="Next NIFTY weekly/monthly expiry"></span>
-      <span id="holiday-info-pill" class="top-bar-cache schedule empty" title="Next NSE trading holiday"></span>`}
+      <button onclick="hardReset()" class="top-bar-btn" title="Clears Fyers + Zerodha tokens and restarts the server — use when tokens look stuck">🔄 Reset Token</button>`}
+      <!-- Expiry / holiday pills stay outside the idle-only block: which expiry is
+           next matters most while a session is running. Click opens the shared
+           NIFTY Expiry & NSE Holidays calendar (same popup as Settings). -->
+      <span id="expiry-info-pill" class="top-bar-cache schedule empty clickable" title="Next NIFTY weekly/monthly expiry — click for the full expiry calendar" onclick="showExpiryHolidaysModal()"></span>
+      <span id="holiday-info-pill" class="top-bar-cache schedule empty clickable" title="Next NSE trading holiday — click for the full holiday list" onclick="showExpiryHolidaysModal()"></span>
       <div id="trading-status-alert" style="display:none;position:relative;"></div>
       ${liveActive ? '<span class="top-bar-badge live-active"><span style="width:5px;height:5px;border-radius:50%;background:#ef4444;display:inline-block;"></span>LIVE ACTIVE</span>' : ''}
       ${bbRsiModeOn && bbRsiMode === 'BB_RSI_LIVE' ? '<span class="top-bar-badge live-active" style="border-color:#f59e0b;"><span style="width:5px;height:5px;border-radius:50%;background:#f59e0b;display:inline-block;"></span>BB_RSI LIVE</span>' : ''}
@@ -1643,8 +1651,11 @@ ${buildSidebar('dashboard', liveActive)}
 
 </div>
 
+${expiryHolidayModalHTML()}
+
 <script>
 ${modalJS()}
+${expiryHolidayModalJS()}
 // ── Dashboard: Paper & Live trade status panels ──────────────────────────────
 function fmtPnl(v){ if(v===null||v===undefined) return {txt:'—',cls:'flat'}; var n=parseFloat(v); return {txt:(n>=0?'+':'')+'\u20b9'+n.toFixed(0),cls:n>0?'pos':n<0?'neg':'flat'}; }
 function fmtNum(v,prefix,suffix){ if(v===null||v===undefined) return '—'; return (prefix||'')+v+(suffix||''); }
@@ -2696,7 +2707,7 @@ async function saveDashExpiry(btn){
   }
 }
 
-// refreshHolidays() moved to Settings → Expiry & Holidays modal
+// refreshHolidays() lives in sharedNav's expiryHolidayModalJS() (injected above)
 // syncToLocal() moved to /docs page
 </script>
 </div></div>
