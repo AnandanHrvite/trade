@@ -1065,6 +1065,11 @@ app.get("/", (req, res) => {
       font-size:0.58rem; font-weight:700; text-transform:uppercase; letter-spacing:1px;
       padding:3px 9px; border-radius:20px; border:1px solid;
       background:#0e0e1e; border-color:#2a2a48; color:#4a5878;
+      /* As a plain flex item this defaulted to flex-shrink:1, so on a narrow
+         row the pill box was squeezed while DISCONNECTED — one unbreakable
+         word — kept its width and spilled out underneath the login button.
+         Refusing to shrink makes the row wrap the button instead. */
+      flex-shrink:0; white-space:nowrap;
     }
     .brk-row.ok .brk-status  { background:#071e0f; border-color:#0e4020; color:#34d399; }
     .brk-row.ok.blue .brk-status { background:#07112e; border-color:#0e2860; color:#60a5fa; }
@@ -1252,6 +1257,16 @@ app.get("/", (req, res) => {
       .util-strip { flex-direction:column; align-items:stretch; }
       .util-btn { justify-content:center; width:100%; }
       .util-info { margin:4px 0 0; text-align:center; }
+      /* Broker rows: status line first, then the login button on its own
+         full-width line. Both brokers then look the same (previously Fyers
+         squeezed its button onto line 1 and Zerodha pushed a half-width one
+         onto line 2), and the button becomes a proper 44px tap target. */
+      .brk-row { row-gap:8px; }
+      .brk-action.login {
+        flex:1 0 100%; display:flex; align-items:center; justify-content:center;
+        min-height:44px; font-size:0.8rem;
+      }
+      .brk-action.re-login { flex:0 0 auto; margin-left:auto; }
     }
 
     /* Light theme */
