@@ -1021,7 +1021,6 @@ app.get("/", (req, res) => {
        broker rows had a lot of dead horizontal space, so the expiry strip fills
        it instead of costing another line. */
     .brokers { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,0.95fr); gap:8px; margin-bottom:0; }
-    .brokers.solo { grid-template-columns:1fr; }   /* trade running — only the expiry strip renders */
     .brokers > .brk-expiry { grid-column:1 / -1; }
     /* flex-wrap:wrap (not nowrap) so the login button drops to its own line
        when the column is narrow instead of overflowing the clipped body and
@@ -1520,9 +1519,13 @@ ${buildSidebar('dashboard', liveActive)}
   ${optionExpiryAlertHtml}
 
   <!-- ① BROKER CONNECTIONS — compact single-line rows (hidden while a trade runs).
-       The option-expiry quick-edit shares this grid row so it costs no extra height. -->
-  <div class="brokers${anyModeActive ? ' solo' : ''}">
-    ${anyModeActive ? '' : `
+       The option-expiry quick-edit shares this grid row so it costs no extra
+       height, and hides with the rest of the controls mid-trade: switching the
+       expiry would change the contract the engine resolves for its next entry,
+       which is exactly what this block is hidden to prevent. Settings remains
+       reachable if it genuinely has to be changed during a session. -->
+  ${anyModeActive ? '' : `
+  <div class="brokers">
     <div class="brk-row ${fyersOk ? 'ok' : 'bad'}">
       <span class="brk-dot ${fyersOk ? 'pulse' : ''}"></span>
       <span class="brk-name">Fyers</span>
@@ -1544,7 +1547,7 @@ ${buildSidebar('dashboard', liveActive)}
         : zerodhaConf
           ? `<a href="/auth/zerodha/login" class="brk-action login zerodha">🔐 Login with Zerodha</a>`
           : `<span class="brk-action muted-hint">Set ZERODHA_API_KEY in .env</span>`}
-    </div>`}
+    </div>
     <div class="brk-cfg">
       <span class="brk-cfg-label" title="OPTION_EXPIRY_OVERRIDE / OPTION_EXPIRY_TYPE — the same keys as Settings. Applies to every mode that has not set its own per-mode expiry.">⏱ Expiry</span>
       <span class="brk-cfg-field">
@@ -1560,8 +1563,8 @@ ${buildSidebar('dashboard', liveActive)}
       <button type="button" class="brk-cfg-save" onclick="saveDashExpiry(this)" title="Save both keys to .env (same as Settings save)">Save</button>
       ${dashExpiryShadowHtml}
     </div>
-    ${anyModeActive ? '' : (zerodhaOk && zerodhaExpiryHtml ? `<div class="brk-expiry ${pastExpiry ? 'expired' : nearExpiry ? 'expiring' : 'valid'}">${zerodhaExpiryHtml}</div>` : '')}
-  </div>
+    ${zerodhaOk && zerodhaExpiryHtml ? `<div class="brk-expiry ${pastExpiry ? 'expired' : nearExpiry ? 'expiring' : 'valid'}">${zerodhaExpiryHtml}</div>` : ''}
+  </div>`}
 
   <!-- (utility buttons moved to top-bar-right; cache pill + schedule pills also live there) -->
 
