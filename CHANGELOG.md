@@ -12,6 +12,8 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 The strip takes the dead horizontal space the two broker rows were leaving rather than costing a new line: three grid tracks above 1500px (Fyers | Zerodha | Expiry), the strip dropping to its own full-width row below that, and the fields stacking on phones. When a trade is running the broker rows stay hidden as before and only the expiry strip renders.
 
+A per-mode key **shadows** the common one — `validateAndGetOptionSymbol` reads `modeOverride || commonOverride` — so with `EMA_RSI_ST_OPTION_EXPIRY_OVERRIDE=2026-07-28` set, editing the common date on the Dashboard would have reported success while EMA_RSI_ST kept trading 28 Jul. The strip now names every shadowing mode inline (`⚠ EMA_RSI_ST ignores this →`, linking to that key in Settings) and the label no longer claims the field "applies to all modes". The mode list is shared with the stale-expiry banner so a 7th strategy only has to be added once.
+
 ### Fixed — `/settings/env` had been opened, and it returns the raw `.env`
 
 Two commits ago the allowlist was extended to cover every plain-`fetch` call the pages make, and `/settings/env` was in that list. It returns the **whole `.env` file unmasked** — `API_SECRET`, `LOGIN_SECRET`, `ZERODHA_API_SECRET`, `ACCESS_TOKEN`, `TELEGRAM_BOT_TOKEN` — so opening it meant anything past the login cookie could read every credential. (`/settings/data` is the masked view; the "View .env" modal only masks for *display*, after receiving the real values.) Removed from `OPEN_PATHS` and its one caller switched to `secretFetch`. Verified: the endpoint answers 403 again and the response no longer contains the secret.

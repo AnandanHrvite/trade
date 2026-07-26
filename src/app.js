@@ -839,10 +839,13 @@ app.get("/", (req, res) => {
   // so checking only OPTION_EXPIRY_OVERRIDE left the actually-binding key
   // unchecked: a fresh common date could hide a stale EMA_RSI_ST-only date.
   // Every override that is set is checked, and each is named in the banner.
+  // Shared by the stale-expiry banner and the Dashboard expiry quick-edit, so a
+  // 7th strategy only has to be added in one place.
+  const PER_MODE_PREFIXES = ["EMA_RSI_ST", "BB_RSI", "PA", "ORB", "EMA9VWAP", "TREND_PB"];
+
   let optionExpiryAlertHtml = "";
   {
     const { isExpiryOverrideStale } = instrumentConfig;
-    const PER_MODE_PREFIXES = ["EMA_RSI_ST", "BB_RSI", "PA", "ORB", "EMA9VWAP", "TREND_PB"];
     const candidates = [
       { key: "OPTION_EXPIRY_OVERRIDE", label: "Option Expiry (manual, all modes)" },
       ...PER_MODE_PREFIXES.map(p => ({ key: `${p}_OPTION_EXPIRY_OVERRIDE`, label: `${p} Option Expiry` })),
@@ -875,6 +878,21 @@ app.get("/", (req, res) => {
   const dashExpiryDate = /^\d{4}-\d{2}-\d{2}$/.test(_rawExpiryOverride) ? _rawExpiryOverride : "";
   const dashExpiryType =
     (process.env.OPTION_EXPIRY_TYPE || "weekly").trim().toLowerCase() === "monthly" ? "monthly" : "weekly";
+
+  // A per-mode key SHADOWS the common one inside validateAndGetOptionSymbol
+  // (`modeOverride || commonOverride`, same for the type). Editing the common
+  // date here therefore does nothing for those modes — without saying so, the
+  // strip would report success while the strategy keeps trading the old
+  // contract. Name the shadowing modes and link to where they are editable.
+  const dashExpiryShadowedBy = PER_MODE_PREFIXES.filter(p =>
+    (process.env[`${p}_OPTION_EXPIRY_OVERRIDE`] || "").trim() ||
+    (process.env[`${p}_OPTION_EXPIRY_TYPE`]     || "").trim()
+  );
+  const dashExpiryShadowHtml = dashExpiryShadowedBy.length
+    ? `<a class="brk-cfg-warn" href="/settings#${dashExpiryShadowedBy[0]}_OPTION_EXPIRY_OVERRIDE"`
+      + ` title="These modes set their own expiry key, which beats the common one above. Change theirs in Settings.">`
+      + `⚠ ${dashExpiryShadowedBy.join(", ")} ${dashExpiryShadowedBy.length === 1 ? "ignores" : "ignore"} this →</a>`
+    : "";
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -1103,11 +1121,20 @@ app.get("/", (req, res) => {
     .brk-cfg-save:hover:not(:disabled) { filter:brightness(1.25); }
     .brk-cfg-save:active:not(:disabled) { transform:translateY(1px); }
     .brk-cfg-save:disabled { opacity:0.55; cursor:not-allowed; }
+    /* Shown only when a per-mode expiry key shadows the common one — takes the
+       whole line so it cannot be mistaken for part of the field row. */
+    .brk-cfg-warn {
+      flex:1 0 100%; text-decoration:none;
+      font-size:0.6rem; font-weight:600; line-height:1.3;
+      color:#fbbf24;
+    }
+    .brk-cfg-warn:hover { text-decoration:underline; }
     @media (max-width:640px) {
       .brk-cfg-label { flex:1 0 100%; }
       .brk-cfg-field { flex:1 1 0; min-width:104px; }
       .brk-cfg-save  { flex:1 0 100%; }
     }
+    :root[data-theme="light"] .brk-cfg-warn { color:#b45309; }
     :root[data-theme="light"] .brk-cfg { background:#ffffff; border-color:#e0e4ea; }
     :root[data-theme="light"] .brk-cfg-label { color:#94a3b8; }
     :root[data-theme="light"] .brk-cfg-input { color-scheme:light; background:#ffffff; border-color:#e2e8f0; color:#1e293b; }
@@ -1511,7 +1538,7 @@ ${buildSidebar('dashboard', liveActive)}
           : `<span class="brk-action muted-hint">Set ZERODHA_API_KEY in .env</span>`}
     </div>`}
     <div class="brk-cfg">
-      <span class="brk-cfg-label" title="OPTION_EXPIRY_OVERRIDE / OPTION_EXPIRY_TYPE — same keys as Settings, applies to all modes">⏱ Expiry</span>
+      <span class="brk-cfg-label" title="OPTION_EXPIRY_OVERRIDE / OPTION_EXPIRY_TYPE — the same keys as Settings. Applies to every mode that has not set its own per-mode expiry.">⏱ Expiry</span>
       <span class="brk-cfg-field">
         <input type="date" id="dashExpiryDate" class="brk-cfg-input" value="${dashExpiryDate}"
                title="Option Expiry (manual). Blank = auto-detect."/>
@@ -1523,6 +1550,7 @@ ${buildSidebar('dashboard', liveActive)}
         </select>
       </span>
       <button type="button" class="brk-cfg-save" onclick="saveDashExpiry(this)" title="Save both keys to .env (same as Settings save)">Save</button>
+      ${dashExpiryShadowHtml}
     </div>
     ${anyModeActive ? '' : (zerodhaOk && zerodhaExpiryHtml ? `<div class="brk-expiry ${pastExpiry ? 'expired' : nearExpiry ? 'expiring' : 'valid'}">${zerodhaExpiryHtml}</div>` : '')}
   </div>
