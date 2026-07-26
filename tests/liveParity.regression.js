@@ -181,6 +181,31 @@ for (const { live, paper, label } of PAIRS) {
     assert.strictEqual(await awaitExit(after(80, "slow"), "TEST", 0), "slow");
   });
 
+  // The ceiling is a SAFETY limit. A fat-fingered setting must not silently remove
+  // it — only an explicit 0 may. And Settings writes process.env expecting the
+  // change to apply without a restart, so it must be read live, not at module load.
+  const { _configuredTimeoutMs, FALLBACK_TIMEOUT_MS } = require("../src/utils/boundedExit");
+
+  await acheck("a malformed LIVE_EXIT_WAIT_MS falls back to the default, not to 'no limit'", async () => {
+    const prev = process.env.LIVE_EXIT_WAIT_MS;
+    try {
+      for (const bad of ["abc", "  ", "", undefined]) {
+        if (bad === undefined) delete process.env.LIVE_EXIT_WAIT_MS; else process.env.LIVE_EXIT_WAIT_MS = bad;
+        assert.strictEqual(_configuredTimeoutMs(), FALLBACK_TIMEOUT_MS, `LIVE_EXIT_WAIT_MS=${JSON.stringify(bad)} disabled the ceiling`);
+      }
+    } finally { if (prev === undefined) delete process.env.LIVE_EXIT_WAIT_MS; else process.env.LIVE_EXIT_WAIT_MS = prev; }
+  });
+
+  await acheck("LIVE_EXIT_WAIT_MS is read live, so a Settings change needs no restart", async () => {
+    const prev = process.env.LIVE_EXIT_WAIT_MS;
+    try {
+      process.env.LIVE_EXIT_WAIT_MS = "1234";
+      assert.strictEqual(_configuredTimeoutMs(), 1234, "the ceiling was cached at module load — Settings changes would do nothing");
+      process.env.LIVE_EXIT_WAIT_MS = "0";
+      assert.strictEqual(_configuredTimeoutMs(), 0, "an explicit 0 must still opt out");
+    } finally { if (prev === undefined) delete process.env.LIVE_EXIT_WAIT_MS; else process.env.LIVE_EXIT_WAIT_MS = prev; }
+  });
+
   console.log(`\n${fail === 0 ? "ALL PASS" : "FAILURES"} — ${pass} passed, ${fail} failed\n`);
   process.exit(fail === 0 ? 0 : 1);
 })();

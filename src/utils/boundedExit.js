@@ -28,7 +28,27 @@
  * still better than a hung process holding an open position nobody is told about.
  */
 
-const DEFAULT_TIMEOUT_MS = parseInt(process.env.LIVE_EXIT_WAIT_MS || "20000", 10);
+const FALLBACK_TIMEOUT_MS = 20000;
+
+/**
+ * The configured ceiling, read LIVE on every call — never cached at module load.
+ * Settings writes to process.env and expects changes to apply without a restart,
+ * which is how every other config read in this repo behaves.
+ *
+ * A malformed value (`LIVE_EXIT_WAIT_MS=abc`) falls back to the default rather than
+ * disabling the ceiling. Silently removing a safety limit because someone fat-
+ * fingered a setting is exactly the wrong direction; only an explicit `0` opts out.
+ */
+function _configuredTimeoutMs() {
+  const raw = process.env.LIVE_EXIT_WAIT_MS;
+  if (raw === undefined || raw === null || String(raw).trim() === "") return FALLBACK_TIMEOUT_MS;
+  const n = parseInt(raw, 10);
+  if (!Number.isFinite(n)) {
+    console.warn(`[boundedExit] LIVE_EXIT_WAIT_MS="${raw}" is not a number — using ${FALLBACK_TIMEOUT_MS}ms`);
+    return FALLBACK_TIMEOUT_MS;
+  }
+  return n;   // 0 (or negative) = explicit opt-out, honoured below
+}
 
 /**
  * Await a live square-off with a ceiling on the wait.
@@ -43,8 +63,8 @@ const DEFAULT_TIMEOUT_MS = parseInt(process.env.LIVE_EXIT_WAIT_MS || "20000", 10
  * @returns {Promise<*>}
  */
 function awaitExit(exitPromise, label, timeoutMs) {
-  const ms = Number.isFinite(timeoutMs) ? timeoutMs : DEFAULT_TIMEOUT_MS;
-  if (!(ms > 0)) return Promise.resolve(exitPromise);   // 0/blank = wait forever (opt-out)
+  const ms = Number.isFinite(timeoutMs) ? timeoutMs : _configuredTimeoutMs();
+  if (!(ms > 0)) return Promise.resolve(exitPromise);   // explicit 0 = wait forever
 
   let timer = null;
   let ceilingFired = false;
@@ -61,10 +81,13 @@ function awaitExit(exitPromise, label, timeoutMs) {
   });
 
   const ceiling = new Promise((_, reject) => {
-    timer = setTimeout(() => reject((ceilingFired = true) && new Error(
-      `[${label}] exit NOT CONFIRMED within ${Math.round(ms / 1000)}s — the order may still be in flight. ` +
-      `Verify the broker dashboard; the saved session may be missing this trade.`
-    )), ms);
+    timer = setTimeout(() => {
+      ceilingFired = true;
+      reject(new Error(
+        `[${label}] exit NOT CONFIRMED within ${Math.round(ms / 1000)}s — the order may still be in flight. ` +
+        `Verify the broker dashboard; the saved session may be missing this trade.`
+      ));
+    }, ms);
     // Never hold the event loop open just for this watchdog.
     if (timer && typeof timer.unref === "function") timer.unref();
   });
@@ -72,4 +95,4 @@ function awaitExit(exitPromise, label, timeoutMs) {
   return Promise.race([exitPromise, ceiling]).finally(() => { if (timer) clearTimeout(timer); });
 }
 
-module.exports = { awaitExit, DEFAULT_TIMEOUT_MS };
+module.exports = { awaitExit, FALLBACK_TIMEOUT_MS, _configuredTimeoutMs };

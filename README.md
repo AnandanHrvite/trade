@@ -273,6 +273,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 | `MAX_DAILY_LOSS` | `5000` | Daily kill-switch in INR (per-strategy) |
 | `PORTFOLIO_MAX_DAILY_LOSS` | `0` (off) | **Portfolio-wide** daily loss cap in INR across ALL strategies (sums today's realized paper P&L via the per-day JSONL logs). When the book's combined loss reaches this, every strategy stops taking new entries for the day. Fail-safe (only blocks, never places orders). `0`/unset = disabled. |
 | `MAX_DAILY_TRADES` | `20` | Daily entry cap — anti-overtrade on chop days. *(Settings UI seeds a tighter `5`.)* |
+| `LIVE_EXIT_WAIT_MS` | `20000` | Ceiling (ms) on how long a **live** square-off is waited on before the app stops waiting and alerts. Neither broker SDK sets an HTTP timeout, so an unbounded wait could hang `/stop` and stall `gracefulShutdown` on a deploy. It cancels nothing — a sent market order cannot be recalled — it only stops waiting, and the alert says to verify the broker dashboard. A healthy round-trip is well under a second, so the default never fires in normal operation. `0` = wait forever. |
 | `EMA_RSI_ST_LIVE_ENABLED` | `false` | Must be `true` AND `LIVE_HARNESS_DRY_RUN=false` for real Zerodha orders. When `LIVE_HARNESS_DRY_RUN=true` (default), EMA_RSI_ST Live logs the broker calls it would make (entry, hard-SL, trail, exit) but places none. |
 | `BACKTEST_OPTION_SIM` | `true` | Realistic option P&L (delta x theta) |
 | `RSI_CE_MIN` | `52` | CE entry: RSI(14) must be above this (bullish momentum floor) |

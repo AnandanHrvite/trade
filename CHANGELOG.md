@@ -21,6 +21,21 @@ A configuration-fidelity audit of the **enabled** strategies (EMA_RSI_ST, BB_RSI
 
 New suite `tests/configFidelity.regression.js` (19 checks, `npm run test:config`, wired into `npm test`): the staleness boundary including the 15:30 edge and malformed input, per-mode-beats-common, that a *future* override still resolves (a guard that blocks everything is useless), that refusal never substitutes another expiry, and that no engine or card still carries a hardcoded 3. Its own first draft asserted against the developer's real `.env` — `instrument.js` calls `dotenv.config()` at require time, so env scrubbing must happen *after* the require; there is now an assertion that fails loudly if that regresses.
 
+### Fixed — three defects in the new exit-wait helper, and it was undocumented
+
+Recheck of the bounded-wait work below. The helper was new code and had not itself been reviewed.
+
+- **The ceiling was read once at module load.** `LIVE_EXIT_WAIT_MS` was captured into a `const` when the file was first required, so changing it in Settings did nothing until a full server restart — while every other config read in this repo is live. Now read per call.
+- **A typo silently removed the safety limit.** `LIVE_EXIT_WAIT_MS=abc` → `parseInt` → `NaN` → the `> 0` guard failed → the helper returned an *unbounded* wait. A fat-fingered setting disabling a safety ceiling is exactly the wrong direction; a malformed value now warns and falls back to 20000ms, and only an explicit `0` opts out.
+- **Clever code in the reject path** — `reject((ceilingFired = true) && new Error(...))` worked only because the assignment evaluates truthy. Rewritten as two plain statements.
+- **The key was in no README table and no Settings field**, violating the repo rule that README is the user-facing spec for env vars and that nothing ships without a Settings control. Both added (`EFFECT.INSTANT`, matching the now-live read), and the rendered Settings page was verified to contain the new field.
+
+Four more assertions (malformed value falls back rather than disabling; the value is read live so Settings applies without a restart), both mutation-tested. `npm run test:parity` is now 25.
+
+**Correction to an earlier claim in this changelog**: previous passes reported "`/settings/` renders 200, ok". That request was hitting the **API_SECRET auth gate** (48KB), not the settings page (469KB) — it proved nothing about the settings UI. The ORB paper/live status pages were genuinely ungated and those render checks stand.
+
+Also noted, not changed (pre-existing, out of scope): `IMMEDIATE_KEYS` in [settings.js](src/routes/settings.js) is declared and never read.
+
 ### Fixed — bound the live square-off wait that the parity fix introduced
 
 Recheck of the parity work below. Awaiting the broker exit was correct, but it created the opposite failure and I had not bounded it.
