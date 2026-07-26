@@ -10,6 +10,26 @@
  * @param {object}  opts        - { showStopBtn, showStartBtn, showExitBtn, stopLabel, startLabel }
  */
 
+// Canonical strategy list + their Settings toggle keys, in sidebar order.
+// Single source of truth for "which strategies is this install running?" so
+// cross-strategy screens (Edge Analytics, Consolidation Report) stay in step
+// with the sidebar instead of hard-coding their own strategy lists.
+const STRATEGY_MODES = [
+  { mode: 'EMA_RSI_ST', label: 'EMA_RSI_ST',   envKey: 'EMA_RSI_ST_MODE_ENABLED' },
+  { mode: 'BB_RSI',     label: 'BB_RSI',       envKey: 'BB_RSI_MODE_ENABLED'     },
+  { mode: 'PA',         label: 'Price Action', envKey: 'PA_MODE_ENABLED'         },
+  { mode: 'ORB',        label: 'ORB',          envKey: 'ORB_MODE_ENABLED'        },
+  { mode: 'EMA9VWAP',   label: 'EMA9+VWAP',    envKey: 'EMA9VWAP_MODE_ENABLED'   },
+  { mode: 'TREND_PB',   label: 'Trend_PB',     envKey: 'TREND_PB_MODE_ENABLED'   },
+];
+
+// Strategies currently enabled in Settings (default ON, same as the sidebar).
+// Read from process.env on every call — Settings saves mutate process.env live,
+// so callers must not cache the result across requests.
+function enabledStrategies() {
+  return STRATEGY_MODES.filter(s => (process.env[s.envKey] || 'true').toLowerCase() === 'true');
+}
+
 function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   // Import bb_rsi/primary/PA/ORB state inline to avoid circular dependency issues
   let _bbRsiMode = null;
@@ -1934,4 +1954,4 @@ ${linkHref ? `<a href="${linkHref}" class="err-link">${linkText || 'Go Back'}</a
 </div></div></div></body></html>`;
 }
 
-module.exports = { buildSidebar, sidebarCSS, toastJS, aiExportJS, logViewerHTML, faviconLink, modalCSS, modalJS, errorPage, tableEnhancerCSS, tableEnhancerJS };
+module.exports = { STRATEGY_MODES, enabledStrategies, buildSidebar, sidebarCSS, toastJS, aiExportJS, logViewerHTML, faviconLink, modalCSS, modalJS, errorPage, tableEnhancerCSS, tableEnhancerJS };

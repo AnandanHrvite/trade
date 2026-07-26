@@ -16,7 +16,7 @@ const express = require("express");
 const router = express.Router();
 const fs = require("fs");
 const path = require("path");
-const { buildSidebar, sidebarCSS, faviconLink } = require("../utils/sharedNav");
+const { buildSidebar, sidebarCSS, faviconLink, enabledStrategies } = require("../utils/sharedNav");
 
 const _HOME = require("os").homedir();
 const DATA_DIR = path.join(_HOME, "trading-data");
@@ -96,7 +96,16 @@ function loadAllTrades() {
 }
 
 router.get("/", (req, res) => {
-  const trades = loadAllTrades();
+  // Only analyse strategies that are enabled in Settings — a disabled strategy is
+  // hidden from the sidebar, so it must not appear in the Strategy dropdown, the
+  // per-strategy table, or the "All" totals. Filtered per-request, never cached:
+  // Settings saves mutate process.env while the process is running.
+  const enabled    = enabledStrategies();
+  const enabledSet = new Set(enabled.map(s => s.mode));
+  const trades     = loadAllTrades().filter(t => enabledSet.has(t.mode));
+  const modeOptions = enabled
+    .map(s => `<option value="${s.mode}">${s.label}</option>`)
+    .join("\n        ");
 
   const theme = (process.env.UI_THEME || "dark").toLowerCase();
   const showConsolidationReport = (process.env.UI_SHOW_CONSOLIDATION_REPORT || "true").toLowerCase() === "true";
@@ -184,10 +193,7 @@ router.get("/", (req, res) => {
       <label>Strategy</label>
       <select id="fMode">
         <option value="">All</option>
-        <option value="EMA_RSI_ST">EMA_RSI_ST</option>
-        <option value="BB_RSI">BB_RSI</option>
-        <option value="PA">Price Action</option>
-        <option value="ORB">ORB</option>
+        ${modeOptions}
       </select>
       <label>Range</label>
       <select id="fRange">

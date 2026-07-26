@@ -23,7 +23,7 @@ const express = require("express");
 const router = express.Router();
 const fs = require("fs");
 const path = require("path");
-const { buildSidebar, sidebarCSS, faviconLink } = require("../utils/sharedNav");
+const { buildSidebar, sidebarCSS, faviconLink, enabledStrategies } = require("../utils/sharedNav");
 
 const _HOME = require("os").homedir();
 const DATA_DIR = path.join(_HOME, "trading-data");
@@ -95,7 +95,13 @@ function loadAllTrades() {
 }
 
 router.get("/", (req, res) => {
-  const trades = loadAllTrades();
+  // Only report strategies that are enabled in Settings — a disabled strategy is
+  // hidden from the sidebar, so its columns (and its trades in the day totals)
+  // must not appear here either. Filtered per-request, never cached: Settings
+  // saves mutate process.env while the process is running.
+  const enabled     = enabledStrategies();
+  const enabledSet  = new Set(enabled.map(s => s.mode));
+  const trades      = loadAllTrades().filter(t => enabledSet.has(t.mode));
   const theme = (process.env.UI_THEME || "dark").toLowerCase();
 
   const html = `<!DOCTYPE html>
@@ -234,8 +240,8 @@ router.get("/", (req, res) => {
 
 <script>
 const ALL = ${JSON.stringify(trades)};
-const MODES = ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB'];
-const MODE_LABEL={EMA_RSI_ST:'EMA_RSI_ST',BB_RSI:'BB_RSI',PA:'PA',ORB:'ORB',EMA9VWAP:'EMA9VWAP',TREND_PB:'TREND_PB'};
+const MODES = ${JSON.stringify(enabled.map(s => s.mode))};
+const MODE_LABEL = ${JSON.stringify(Object.fromEntries(enabled.map(s => [s.mode, s.mode])))};
 
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function inr2(n){ return (n<0?'-':'')+'₹'+Math.abs(n).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}); }
