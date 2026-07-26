@@ -868,6 +868,14 @@ app.get("/", (req, res) => {
     }
   }
 
+  // ── Dashboard quick-edit values for the two expiry keys (same keys the
+  // Settings page owns — this is a second editor, not a second source). The
+  // date is pattern-checked before it reaches a value="" attribute.
+  const _rawExpiryOverride = (process.env.OPTION_EXPIRY_OVERRIDE || "").trim();
+  const dashExpiryDate = /^\d{4}-\d{2}-\d{2}$/.test(_rawExpiryOverride) ? _rawExpiryOverride : "";
+  const dashExpiryType =
+    (process.env.OPTION_EXPIRY_TYPE || "weekly").trim().toLowerCase() === "monthly" ? "monthly" : "weekly";
+
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -990,7 +998,11 @@ app.get("/", (req, res) => {
     }
 
     /* ── BROKER CONNECTIONS — compact single-line rows ── */
-    .brokers { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-bottom:0; }
+    /* 3 tracks on wide screens: Fyers | Zerodha | Option-expiry controls. The
+       broker rows had a lot of dead horizontal space, so the expiry strip fills
+       it instead of costing another line. */
+    .brokers { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,0.95fr); gap:8px; margin-bottom:0; }
+    .brokers.solo { grid-template-columns:1fr; }   /* trade running — only the expiry strip renders */
     .brokers > .brk-expiry { grid-column:1 / -1; }
     /* flex-wrap:wrap (not nowrap) so the login button drops to its own line
        when the column is narrow instead of overflowing the clipped body and
@@ -1012,6 +1024,7 @@ app.get("/", (req, res) => {
     /* Stack the two broker rows on laptop/small-desktop widths so each gets the
        full content width and the login button always fits (was 720px — too low,
        it skipped the 13" MacBook band). */
+    @media (max-width:1500px) { .brokers { grid-template-columns:repeat(2,minmax(0,1fr)); } .brokers > .brk-cfg { grid-column:1 / -1; } }
     @media (max-width:1200px) { .brokers { grid-template-columns:1fr; } }
     .brk-row.ok   { border-color:#0d3a1e; background:#04100a; }
     .brk-row.ok.blue { border-color:#0d2545; background:#030b18; }
@@ -1057,6 +1070,48 @@ app.get("/", (req, res) => {
     .brk-expiry.expired  { background:#2d1600; border-color:#c05621; color:#f6ad55; }
     .brk-expiry.expiring { background:#2a1600; border-color:#744210; color:#fbd38d; }
     .brk-expiry.valid    { background:#070d14; border-color:#1a3050; color:#4a7090; }
+
+    /* ── Option expiry quick-edit (mirrors Settings → OPTION_EXPIRY_OVERRIDE /
+       OPTION_EXPIRY_TYPE; saves through the same POST /settings/save) ── */
+    .brk-cfg {
+      display:flex; align-items:center; gap:6px 8px; flex-wrap:wrap;
+      padding:5px 12px; border-radius:9px;
+      border:1px solid #1a2236; background:#0d1320;
+      min-width:0;
+    }
+    .brk-cfg-label {
+      font-size:0.58rem; font-weight:700; text-transform:uppercase; letter-spacing:1px;
+      color:#4a6080; flex:0 0 auto; white-space:nowrap;
+    }
+    /* max-width keeps the inputs from stretching across the whole strip when it
+       spans the full grid width on laptop/tablet. */
+    .brk-cfg-field { flex:1 1 116px; min-width:0; max-width:190px; }
+    .brk-cfg-input {
+      width:100%; min-width:0; color-scheme:dark;
+      background:#0a0f18; border:1px solid #243049; color:#c8d8f0;
+      border-radius:6px; padding:4px 7px;
+      font-size:0.7rem; font-family:inherit;
+    }
+    .brk-cfg-input:focus { outline:none; border-color:#3b82f6; }
+    .brk-cfg-save {
+      flex:0 0 auto; margin-left:auto; cursor:pointer; font-family:inherit;
+      padding:5px 12px; border-radius:6px; white-space:nowrap;
+      background:#0f2540; border:1px solid #1e4a7a; color:#93c5fd;
+      font-size:0.7rem; font-weight:700;
+      transition:filter 0.15s, transform 0.08s;
+    }
+    .brk-cfg-save:hover:not(:disabled) { filter:brightness(1.25); }
+    .brk-cfg-save:active:not(:disabled) { transform:translateY(1px); }
+    .brk-cfg-save:disabled { opacity:0.55; cursor:not-allowed; }
+    @media (max-width:640px) {
+      .brk-cfg-label { flex:1 0 100%; }
+      .brk-cfg-field { flex:1 1 0; min-width:104px; }
+      .brk-cfg-save  { flex:1 0 100%; }
+    }
+    :root[data-theme="light"] .brk-cfg { background:#ffffff; border-color:#e0e4ea; }
+    :root[data-theme="light"] .brk-cfg-label { color:#94a3b8; }
+    :root[data-theme="light"] .brk-cfg-input { color-scheme:light; background:#ffffff; border-color:#e2e8f0; color:#1e293b; }
+    :root[data-theme="light"] .brk-cfg-save { background:#dbeafe; border-color:#93c5fd; color:#2563eb; }
 
     /* ── Option expiry override RED alert (full-width, prominent) ── */
     .opt-expiry-alert {
@@ -1429,9 +1484,10 @@ ${buildSidebar('dashboard', liveActive)}
 
   ${optionExpiryAlertHtml}
 
-  <!-- ① BROKER CONNECTIONS — compact single-line rows (hidden while a trade runs) -->
-  ${anyModeActive ? '' : `
-  <div class="brokers">
+  <!-- ① BROKER CONNECTIONS — compact single-line rows (hidden while a trade runs).
+       The option-expiry quick-edit shares this grid row so it costs no extra height. -->
+  <div class="brokers${anyModeActive ? ' solo' : ''}">
+    ${anyModeActive ? '' : `
     <div class="brk-row ${fyersOk ? 'ok' : 'bad'}">
       <span class="brk-dot ${fyersOk ? 'pulse' : ''}"></span>
       <span class="brk-name">Fyers</span>
@@ -1453,9 +1509,23 @@ ${buildSidebar('dashboard', liveActive)}
         : zerodhaConf
           ? `<a href="/auth/zerodha/login" class="brk-action login zerodha">🔐 Login with Zerodha</a>`
           : `<span class="brk-action muted-hint">Set ZERODHA_API_KEY in .env</span>`}
+    </div>`}
+    <div class="brk-cfg">
+      <span class="brk-cfg-label" title="OPTION_EXPIRY_OVERRIDE / OPTION_EXPIRY_TYPE — same keys as Settings, applies to all modes">⏱ Expiry</span>
+      <span class="brk-cfg-field">
+        <input type="date" id="dashExpiryDate" class="brk-cfg-input" value="${dashExpiryDate}"
+               title="Option Expiry (manual). Blank = auto-detect."/>
+      </span>
+      <span class="brk-cfg-field">
+        <select id="dashExpiryType" class="brk-cfg-input" title="Weekly = Tuesday expiry. Monthly = last Thursday / preponed monthly.">
+          <option value="weekly"${dashExpiryType === 'weekly' ? ' selected' : ''}>weekly</option>
+          <option value="monthly"${dashExpiryType === 'monthly' ? ' selected' : ''}>monthly</option>
+        </select>
+      </span>
+      <button type="button" class="brk-cfg-save" onclick="saveDashExpiry(this)" title="Save both keys to .env (same as Settings save)">Save</button>
     </div>
-    ${zerodhaOk && zerodhaExpiryHtml ? `<div class="brk-expiry ${pastExpiry ? 'expired' : nearExpiry ? 'expiring' : 'valid'}">${zerodhaExpiryHtml}</div>` : ''}
-  </div>`}
+    ${anyModeActive ? '' : (zerodhaOk && zerodhaExpiryHtml ? `<div class="brk-expiry ${pastExpiry ? 'expired' : nearExpiry ? 'expiring' : 'valid'}">${zerodhaExpiryHtml}</div>` : '')}
+  </div>
 
   <!-- (utility buttons moved to top-bar-right; cache pill + schedule pills also live there) -->
 
@@ -2558,6 +2628,43 @@ async function hardReset(){
   } catch(e){
     showAlert({icon:'🔄',title:'Server Restarting',message:'Reset sent — server restarting. Reload in 6 seconds.',btnClass:'modal-btn-primary'});
     setTimeout(function(){ location.reload(); }, 6000);
+  }
+}
+
+// ── Option expiry quick-save (dashboard mirror of the Settings fields) ───────
+// Writes OPTION_EXPIRY_OVERRIDE + OPTION_EXPIRY_TYPE through POST /settings/save,
+// so the audit log + per-mode daily settings snapshot behave exactly as they do
+// when the change is made on the Settings page. Both keys are INSTANT effect.
+async function saveDashExpiry(btn){
+  var dateEl = document.getElementById('dashExpiryDate');
+  var typeEl = document.getElementById('dashExpiryType');
+  if(!dateEl || !typeEl) return;
+  var label = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    var res = await secretFetch('/settings/save', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        updates: {
+          OPTION_EXPIRY_OVERRIDE: (dateEl.value || '').trim(),
+          OPTION_EXPIRY_TYPE: typeEl.value
+        },
+        note: 'dashboard: option expiry quick-edit'
+      })
+    });
+    if(!res){ btn.disabled = false; btn.textContent = label; return; }
+    var d = await res.json();
+    if(d && d.success){
+      btn.textContent = '✓ Saved';
+      setTimeout(function(){ location.reload(); }, 700);   // refresh expiry pill + stale-expiry banner
+    } else {
+      btn.disabled = false; btn.textContent = label;
+      showAlert({icon:'❌',title:'Save Failed',message:(d && d.error) || 'Could not save expiry settings.',btnClass:'modal-btn-danger'});
+    }
+  } catch(e){
+    btn.disabled = false; btn.textContent = label;
+    showAlert({icon:'❌',title:'Save Failed',message:e.message,btnClass:'modal-btn-danger'});
   }
 }
 

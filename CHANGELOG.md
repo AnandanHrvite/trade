@@ -6,6 +6,12 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Added — option expiry can now be changed from the Dashboard
+
+`OPTION_EXPIRY_OVERRIDE` and `OPTION_EXPIRY_TYPE` were only editable on the Settings page, so fixing a stale expiry meant leaving the Dashboard. Both now appear as a compact strip in the broker row — a date field, a weekly/monthly select and a Save button. Settings keeps its own copy; this is a second editor for the same two keys, not a second source: Save posts to the same `POST /settings/save`, so the audit log and the per-mode daily settings snapshot record the change exactly as a Settings save does. Both keys are INSTANT-effect, so no restart is needed; the page reloads after saving so the expiry pill and the stale-expiry banner refresh.
+
+The strip takes the dead horizontal space the two broker rows were leaving rather than costing a new line: three grid tracks above 1500px (Fyers | Zerodha | Expiry), the strip dropping to its own full-width row below that, and the fields stacking on phones. When a trade is running the broker rows stay hidden as before and only the expiry strip renders.
+
 ### Fixed — `/settings/env` had been opened, and it returns the raw `.env`
 
 Two commits ago the allowlist was extended to cover every plain-`fetch` call the pages make, and `/settings/env` was in that list. It returns the **whole `.env` file unmasked** — `API_SECRET`, `LOGIN_SECRET`, `ZERODHA_API_SECRET`, `ACCESS_TOKEN`, `TELEGRAM_BOT_TOKEN` — so opening it meant anything past the login cookie could read every credential. (`/settings/data` is the masked view; the "View .env" modal only masks for *display*, after receiving the real values.) Removed from `OPEN_PATHS` and its one caller switched to `secretFetch`. Verified: the endpoint answers 403 again and the response no longer contains the secret.
