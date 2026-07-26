@@ -266,6 +266,8 @@ const SETTINGS_SCHEMA = [
       { key: "EMA9VWAP_STOP_LOSS_PTS", label: "Safety Spot-Points Stop", type: "number", min: 0, max: 200, step: 5, effect: EFFECT.INSTANT, desc: "Optional catastrophe stop in NIFTY spot points against entry. 0 = OFF (pure signal exit, the default).", default: "0" },
       { key: "EMA9VWAP_REVERSAL_EXIT_ENABLED", label: "2-Candle Reversal Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "ON by default — after entry, square off the instant a candle CLOSES hard against the position: a CE bails on a bearish candle (close below open) closing below BOTH previous 2 candles' lows; a PE on a bullish candle closing above both previous 2 highs. Evaluated on candle close, rolling reference. Turn off to hold purely to the signal/EOD exit.", default: "true" },
       { key: "EMA9VWAP_OPTION_EXPIRY_OVERRIDE", label: "Option Expiry Override (YYYY-MM-DD)", type: "text", effect: EFFECT.SESSION, desc: "Force a specific weekly expiry for EMA9+VWAP option entries. Blank = nearest weekly (intraday strategy, current week is fine).", default: "" },
+      { key: "EMA9VWAP_VIX_ENABLED", label: "VIX Filter (EMA9+VWAP)", type: "select", options: ["", "true", "false"], effect: EFFECT.INSTANT, desc: "EMA9+VWAP-specific VIX gate. BLANK = inherit the global VIX_FILTER_ENABLED (which is ON unless explicitly false) — this is the historical behaviour and the safe default. Set true/false to decouple EMA9+VWAP from EMA_RSI_ST's VIX setting.", default: "" },
+      { key: "EMA9VWAP_VIX_MAX_ENTRY", label: "VIX Max Entry (EMA9+VWAP)", type: "text", effect: EFFECT.INSTANT, desc: "Block EMA9+VWAP entries when India VIX is above this. Blank = inherit the global VIX_MAX_ENTRY (default 20).", default: "" },
     ],
   },
   {
@@ -627,7 +629,7 @@ const IMMEDIATE_KEYS = new Set([
   "VIX_FILTER_ENABLED", "VIX_MAX_ENTRY", "VIX_STRONG_ONLY", "VIX_FAIL_MODE",
   "BB_RSI_VIX_MAX_ENTRY", "BB_RSI_VIX_STRONG_ONLY", "PA_VIX_ENABLED", "PA_VIX_MAX_ENTRY",
   "OI_FILTER_ENABLED", "EMA_RSI_ST_OI_ENABLED", "BB_RSI_OI_ENABLED", "PA_OI_ENABLED", "ORB_OI_ENABLED",
-  "EMA9VWAP_OI_ENABLED",
+  "EMA9VWAP_OI_ENABLED", "EMA9VWAP_VIX_ENABLED", "EMA9VWAP_VIX_MAX_ENTRY",
   "OI_LOOKBACK_CANDLES", "OI_MIN_DELTA_PCT", "OI_FAIL_MODE",
   "INSTRUMENT", "NIFTY_LOT_SIZE", "STRIKE_OFFSET_CE", "STRIKE_OFFSET_PE", "LOT_MULTIPLIER",
   "OPTION_EXPIRY_OVERRIDE", "OPTION_EXPIRY_TYPE",

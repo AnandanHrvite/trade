@@ -82,7 +82,9 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
   // Candle resolution in minutes (from spacing) — drives the "4 candles" pause + cooldown windows.
   const resMins = candles.length >= 2 ? Math.max(1, Math.round((candles[1].time - candles[0].time) / 60)) : 5;
   // VIX gate: paper calls checkLiveVix("STRONG") with the default (EMA_RSI_ST) thresholds;
-  // checkBacktestVix self-gates on VIX_FILTER_ENABLED and fails per VIX_FAIL_MODE.
+  // checkBacktestVix self-gates on the EMA9_VWAP VIX config (EMA9VWAP_VIX_ENABLED,
+  // blank = inherit the global VIX_FILTER_ENABLED) and fails per VIX_FAIL_MODE —
+  // the same resolver paper and live use, so all three surfaces agree.
   const vixLookup = vixFilter.buildVixLookup(vixCandles || []);
   let vixBlocked = 0;
 
@@ -234,7 +236,7 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
         && oppCooldownLastSide !== side && candle.time < oppCooldownUntilTs;
       if (dailyTrades < maxDailyTrades && !dailyLossHit && candle.time >= pauseUntilTs && !_oppBlocked) {
         // VIX gate — evaluated only when we would otherwise enter, like paper.
-        const _vc = vixFilter.checkBacktestVix(vixLookup(candle.time), "STRONG", { mode: "ema_rsi_st" });
+        const _vc = vixFilter.checkBacktestVix(vixLookup(candle.time), "STRONG", { mode: "ema9vwap" });
         if (_vc.allowed) {
           let entryPrice = candle.close;
           if (SLIPPAGE_PTS > 0) entryPrice = side === "CE" ? entryPrice + SLIPPAGE_PTS : entryPrice - SLIPPAGE_PTS;

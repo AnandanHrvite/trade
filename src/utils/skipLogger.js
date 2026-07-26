@@ -8,8 +8,21 @@
  * Layout:  ~/trading-data/skips/{mode}_paper_skips_{YYYY-MM-DD}.jsonl
  * Rotation: new file per IST date — market is IST so grouping matches sessions.
  *
- * Only strategy / vix / spread gates are logged. Operational gates (cooldown,
- * daily-loss, max-trades, warmup, market-hours) are omitted as noise.
+ * Gate names are free-form strings supplied by the caller — this module never
+ * validates or filters them.
+ *
+ * Historically only strategy / vix / spread / oi gates were logged and the
+ * operational gates were omitted as noise. That left a real hole: a genuine
+ * signal rejected by the entry window, a circuit breaker or a cooldown appeared
+ * in NEITHER the trade log nor the skip log, so "why didn't it trade?" was
+ * unanswerable. EMA9+VWAP now also logs those operational gates
+ * (entry_window, daily_loss, portfolio_cap, consec_loss_pause, chop_guard,
+ * max_daily_trades, sl_cooldown, opposite_cooldown, expiry_day_only,
+ * entry_pending) — exactly one row per blocked signal, attributed to the gate
+ * that fired first. Other strategies still log strategy/vix/spread/oi only.
+ *
+ * NOTE when analysing: a `strategy` row means NO signal formed (a non-event,
+ * one per candle); every other gate means a real signal was blocked.
  */
 
 const fs = require("fs");

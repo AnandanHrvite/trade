@@ -692,8 +692,14 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
     return;
   }
   // Same-side SL cooldown: reject re-entry on a side that recently hit SL/option-stop.
+  // The `_skipSignalCtx` writer (set on this candle in onCandleClose) records the
+  // rejection in the skip log — logging only, the reject itself is unchanged.
   if (ptState._slPauseUntilBySide && ptState._slPauseUntilBySide[side] > simNow()) {
     log(`⏸️ [PAPER] ${side} SL cooldown active — entry rejected (${side} @ ₹${price})`);
+    if (ptState._skipSignalCtx) {
+      ptState._skipSignalCtx("sl_cooldown",
+        `${side} same-side SL cooldown active for another ${Math.ceil((ptState._slPauseUntilBySide[side] - simNow()) / 60000)} min`, side);
+    }
     ptState._entryPending = false;
     return;
   }
@@ -702,6 +708,10 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
       && ptState._oppositeCooldownLastSide !== side
       && ptState._oppositeCooldownUntilTs > simNow()) {
     log(`⏸️ [PAPER] Opposite-side cooldown active — entry rejected (last exit ${ptState._oppositeCooldownLastSide}, new ${side} @ ₹${price})`);
+    if (ptState._skipSignalCtx) {
+      ptState._skipSignalCtx("opposite_cooldown",
+        `opposite-side cooldown after a ${ptState._oppositeCooldownLastSide} exit — ${side} blocked for another ${Math.ceil((ptState._oppositeCooldownUntilTs - simNow()) / 60000)} min`, side);
+    }
     ptState._entryPending = false;
     return;
   }
@@ -1040,6 +1050,10 @@ function simulateSell(exitPrice, reason, spotAtExit) {
 // ── On each completed candle ──────────────────────────────────────────
 
 async function onCandleClose(candle) {
+  // Drop any previous candle's skip-log writer up front, so an early `return` in the
+  // exit section below can never leave a stale closure that would attribute a later
+  // rejection to the wrong candle. Re-armed further down once the signal is known.
+  ptState._skipSignalCtx = null;
   ptState.candles.push(candle);
   ptState.prevCandleHigh = candle.high;
   ptState.prevCandleLow  = candle.low;
@@ -1083,12 +1097,12 @@ async function onCandleClose(candle) {
   // OI buildup: sample futures OI each candle close (no-op unless an OI filter is
   // enabled; live only) so the series stays filled even on no-signal candles.
   if (!ptState._simMode) await oiFilter.recordOiSample(candle.close);
-  const _vixDisplay = (vixFilter.VIX_ENABLED && !ptState._simMode) ? getCachedVix() : null;
+  const _vixDisplay = (vixFilter.getVixEnabled("ema9vwap") && !ptState._simMode) ? getCachedVix() : null;
 
   log(`📊 [PAPER] ──── Candle close ──────────────────────────────────────`);
   log(`   OHLC: O=${candle.open} H=${candle.high} L=${candle.low} C=${candle.close} | body=${Math.abs(candle.close - candle.open).toFixed(1)}pt`);
   log(`   ${indicators.ema9!=null?`EMA9=${indicators.ema9} `:""}VWAP=${indicators.vwap!=null?indicators.vwap:"?"} band=[${indicators.vwapLower!=null?indicators.vwapLower:"?"}, ${indicators.vwapUpper!=null?indicators.vwapUpper:"?"}] σ=${indicators.stdev!=null?indicators.stdev:"?"}`);
-  log(`   Signal: ${signal} | VIX: ${!vixFilter.VIX_ENABLED ? "off" : _vixDisplay != null ? _vixDisplay.toFixed(1) : "n/a"} | ${reason}`);
+  log(`   Signal: ${signal} | VIX: ${!vixFilter.getVixEnabled("ema9vwap") ? "off" : _vixDisplay != null ? _vixDisplay.toFixed(1) : "n/a"} | ${reason}`);
   if (signal === "NONE" && !ptState.position) {
     skipLogger.appendSkipLog("ema9vwap", {
       gate: "strategy",
@@ -1274,6 +1288,46 @@ async function onCandleClose(candle) {
     return;
   }
 
+  // ── Audit trail for blocked signals (LOGGING ONLY — no decision is taken here) ──
+  // appendSkipLog above only fires for signal === "NONE", so a REAL cross rejected by
+  // the entry gate previously left no trace in either the trade log or the skip log.
+  // Each gate is now logged at its own decision point so exactly one row is written
+  // per blocked signal, always attributed to the gate that actually fired first:
+  //   • the three conditions swallowed by the entry `if` itself → logged right below
+  //   • VIX / OI / spread                                      → already self-logging
+  //   • circuit breakers                                       → logged at their `return`
+  //   • same-side / opposite-side cooldown                     → logged in simulateBuy
+  // `_skipSignal` is the shared writer so every row carries the same band context.
+  const _skipSignal = (gate, reason, side) => {
+    log(`🚫 [PAPER] Signal NOT taken — ${reason} | ${signal} @ ₹${candle.close}`);
+    skipLogger.appendSkipLog("ema9vwap", {
+      gate, reason,
+      spot: candle.close,
+      signal, side,
+      path: "candle-close",
+      ema9: indicators.ema9 ?? null,
+      vwap: indicators.vwap ?? null,
+      vwapUpper: indicators.vwapUpper ?? null,
+      vwapLower: indicators.vwapLower ?? null,
+      stdev: indicators.stdev ?? null,
+    });
+  };
+  ptState._skipSignalCtx = (signal === "BUY_CE" || signal === "BUY_PE") ? _skipSignal : null;
+
+  if (!_confirmEnabled() && !ptState.position && (signal === "BUY_CE" || signal === "BUY_PE")) {
+    const _side = signal === "BUY_CE" ? "CE" : "PE";
+    if (ptState._entryPending) {
+      _skipSignal("entry_pending", "an entry is already in flight", _side);
+    } else if (ptState._expiryDayBlocked) {
+      _skipSignal("expiry_day_only", "TRADE_EXPIRY_DAY_ONLY is on and today is not expiry", _side);
+    } else if (!isMarketHours()) {
+      const _hhmm = (t) => String(Math.floor(t / 60)).padStart(2, "0") + ":" + String(t % 60).padStart(2, "0");
+      _skipSignal("entry_window",
+        `outside entry window — ${_hhmm(getISTMinutes())} not in [${_hhmm(_START_MINS)}, ${_hhmm(_ENTRY_STOP_MINS)})`,
+        _side);
+    }
+  }
+
   // ── Entry: candle-close entry (primary path for TRADE_RESOLUTION >= 5) ─────
   // For 15-min resolution: fires here AND intra-tick (both guarded by same circuit breakers).
   // For 5-min resolution: fires only if intra-tick entry didn't already fire.
@@ -1286,7 +1340,7 @@ async function onCandleClose(candle) {
     log(`📋 [PAPER] Signal — candle-close entry @ ₹${candle.close} | ${reason}`);
     let _oiTag = ""; // appended to the entry reason so the trade records its OI context
     // ── VIX filter: block entry in high-volatility regimes ──────────────────
-    const _vixCheck = await checkLiveVix("STRONG");
+    const _vixCheck = await checkLiveVix("STRONG", { mode: "ema9vwap" });
     if (!_vixCheck.allowed) {
       log(`🌡️ [PAPER] VIX BLOCK — ${_vixCheck.reason} | Signal: ${signal}`);
       skipLogger.appendSkipLog("ema9vwap", {
@@ -1314,14 +1368,19 @@ async function onCandleClose(candle) {
       if (_oi.regime) _oiTag = ` | ${_oi.reason}`;
     }
     // ── Circuit breaker checks — must mirror intra-tick path exactly ──────────
+    // Each `return` now also writes ONE skip row (logging only — the conditions and
+    // the returns themselves are unchanged) so a blocked signal is auditable.
+    const _sideForSkip = signal === "BUY_CE" ? "CE" : "PE";
     if (ptState._dailyLossHit) {
       log(`🛑 [PAPER] Daily loss limit active — candle-close entry blocked (${signal})`);
+      _skipSignal("daily_loss", `daily loss limit latched (session PnL ₹${ptState.sessionPnl} vs cap ₹${_MAX_DAILY_LOSS})`, _sideForSkip);
       return;
     }
-    { const _pf = require("../utils/portfolioRisk").checkPortfolioCap(); if (_pf.blocked) { log(`🛑 [PAPER] ${_pf.reason} — candle-close entry blocked (${signal})`); return; } }
+    { const _pf = require("../utils/portfolioRisk").checkPortfolioCap(); if (_pf.blocked) { log(`🛑 [PAPER] ${_pf.reason} — candle-close entry blocked (${signal})`); _skipSignal("portfolio_cap", _pf.reason || "portfolio-wide daily loss cap hit", _sideForSkip); return; } }
     if (ptState._pauseUntilTime && simNow() < ptState._pauseUntilTime) {
       const resumeTime = new Date(ptState._pauseUntilTime).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
       log(`⏸ [PAPER] Consecutive loss pause active — candle-close entry blocked until ~${resumeTime}`);
+      _skipSignal("consec_loss_pause", `3-consecutive-loss pause active until ~${resumeTime}`, _sideForSkip);
       return;
     }
     if (false) { // 50% pause DISABLED — replaced by breakeven
@@ -1334,10 +1393,12 @@ async function onCandleClose(candle) {
     const _chopMax = parseInt(process.env.EMA9VWAP_MAX_CONSEC_LOSSES || "0", 10);
     if (_chopMax > 0 && (ptState._chopConsecLosses || 0) >= _chopMax) {
       log(`🚫 [PAPER] Chop guard — ${ptState._chopConsecLosses} consecutive losses (≥ ${_chopMax}) — EMA9+VWAP halted for the session (${signal})`);
+      _skipSignal("chop_guard", `${ptState._chopConsecLosses} consecutive losses (>= ${_chopMax}) — halted for the session`, _sideForSkip);
       return;
     }
     if (ptState.sessionTrades.length >= _MAX_DAILY_TRADES) {
       log(`🚫 [PAPER] Daily max trades reached — candle-close entry blocked (${signal})`);
+      _skipSignal("max_daily_trades", `daily max trades reached (${ptState.sessionTrades.length}/${_MAX_DAILY_TRADES})`, _sideForSkip);
       return;
     }
     const side = signal === "BUY_CE" ? "CE" : "PE";
@@ -1566,7 +1627,8 @@ function onTick(tick) {
       // ── VIX filter: use cached VIX (updated at candle close) to avoid async in tick handler ──
       // Skip VIX filter in simulation mode
       const _vixIntraVal = ptState._simMode ? null : getCachedVix();
-      const _vixIntraBlocked = !ptState._simMode && vixFilter.VIX_ENABLED && _vixIntraVal != null && _vixIntraVal > vixFilter.VIX_MAX_ENTRY;
+      const _vixIntraBlocked = !ptState._simMode && vixFilter.getVixEnabled("ema9vwap")
+        && _vixIntraVal != null && _vixIntraVal > vixFilter.getVixMaxEntry("ema9vwap");
       if (_vixIntraBlocked) {
         if (!ptState._vixBlockLoggedCandle || ptState._vixBlockLoggedCandle !== currentBarTime) {
           ptState._vixBlockLoggedCandle = currentBarTime;
@@ -1833,11 +1895,16 @@ function generatePaperDailyReport(trades, sessionPnl) {
 
     const exitGroups = {};
     trades.forEach(t => {
-      const label = t.exitReason.includes("50% rule")  ? "50% Rule"
-                  : t.exitReason.includes("SL hit")    ? "SL Hit"
+      // Buckets mirror the exits this engine can actually produce. "50% Rule" and
+      // "Opposite Signal" were removed — neither rule exists here (the 50% rule is
+      // disabled in code, and there is no opposite-signal exit), so they could only
+      // ever have reported 0. "SL Hit" / "Trail SL" are kept: they are reachable
+      // whenever the optional EMA9VWAP_STOP_LOSS_PTS / _OPT_STOP_PCT / _CANDLE_TRAIL_*
+      // stops are switched on.
+      const label = t.exitReason.includes("SL hit")    ? "SL Hit"
                   : t.exitReason.includes("reversal")  ? "2-Candle Reversal"
+                  : t.exitReason.includes("re-entered VWAP") ? "Signal Exit (band re-entry)"
                   : t.exitReason.includes("trail") || t.exitReason.includes("Trail") ? "Trail SL"
-                  : t.exitReason.includes("Opposite")  ? "Opposite Signal"
                   : t.exitReason.includes("EOD") || t.exitReason.includes("stop") ? "EOD/Stop"
                   : t.exitReason.includes("Manual")    ? "Manual Exit"
                   : "Other";
@@ -2003,6 +2070,7 @@ router.get("/start", async (req, res) => {
   ptState._cachedCE            = null; // clear pre-fetch cache on session start
   ptState._cachedPE            = null;
   ptState._maxTradesLoggedCandle = null;
+  ptState._skipSignalCtx       = null; // per-candle skip-log writer (set in onCandleClose)
   ptState._slHitCandleTime     = null;
   ptState._slPauseUntilBySide  = { CE: 0, PE: 0 }; // reset same-side SL cooldown
   ptState._oppositeCooldownUntilTs  = 0;
@@ -2041,7 +2109,10 @@ router.get("/start", async (req, res) => {
     const _ctOn   = (process.env.EMA9VWAP_CANDLE_TRAIL_ENABLED||"false").toLowerCase()==="true";
     const _negLim = parseInt(process.env.EMA9VWAP_NEG_CANDLE_LIMIT || "0", 10);
     const _slPts  = parseFloat(process.env.EMA9VWAP_STOP_LOSS_PTS || "0");
-    const _parts  = [`signal exit (EMA${Math.max(2, parseInt(process.env.EMA9VWAP_EMA_PERIOD||"9",10)||9)} re-enters band)`, "opposite signal"];
+    // NOTE: "opposite signal" is deliberately NOT listed — no such exit rule exists
+    // in this engine. An opposite cross cannot fire while a position is open (the
+    // re-entry cross closes it first), so the banner must not advertise it.
+    const _parts  = [`signal exit (EMA${Math.max(2, parseInt(process.env.EMA9VWAP_EMA_PERIOD||"9",10)||9)} re-enters band)`];
     if ((process.env.EMA9VWAP_REVERSAL_EXIT_ENABLED || "true").toLowerCase() === "true") _parts.push("2-candle reversal engulf");
     if (_slPts > 0)  _parts.push(`${_slPts}pt spot cap`);
     if (_optPct > 0) _parts.push(`option stop ${(_optPct*100).toFixed(0)}%`);
@@ -2050,7 +2121,10 @@ router.get("/start", async (req, res) => {
     _parts.push(`exit-before-close ${process.env.EMA9VWAP_EOD_EXIT_TIME||"15:15"}`, `EOD ${process.env.TRADE_STOP_TIME||"15:30"}`);
     log(`   Stop/exit   : ${_parts.join(" | ")}`);
   }
-  log(`   Risk guards : MaxDailyLoss=₹${process.env.MAX_DAILY_LOSS||5000} | MaxTrades=${process.env.MAX_DAILY_TRADES||6} | same-side SL cooldown ${process.env.EMA9VWAP_SL_PAUSE_CANDLES||3} candles | VIX ${(process.env.VIX_FILTER_ENABLED==="true")?("≤"+(process.env.VIX_MAX_ENTRY||20)):"off"}`);
+  // Print the RESOLVED per-strategy values actually in force (_refreshConfig has run),
+  // not the raw global env keys — the old line showed MAX_DAILY_* / VIX_FILTER_ENABLED,
+  // which are not what this engine reads, and defaulted MaxTrades to a stale "6".
+  log(`   Risk guards : MaxDailyLoss=₹${_MAX_DAILY_LOSS} | MaxTrades=${_MAX_DAILY_TRADES} | same-side SL cooldown ${_EMA9VWAP_SL_PAUSE_CANDLES} candles | opposite-side cooldown ${_OPP_COOLDOWN_ENABLED ? _OPP_COOLDOWN_CANDLES + " candles" : "off"} | VIX ${vixFilter.getVixEnabled("ema9vwap") ? ("≤" + vixFilter.getVixMaxEntry("ema9vwap")) : "off"} | OI ${oiFilter.getOiEnabled("ema9vwap") ? "on" : "off"}`);
   log(`════════════════════════════════════════════════════════════════════\n`);
 
   // Telegram: session started + checklist (same as live trade)
@@ -2722,9 +2796,9 @@ router.get("/status", (req, res) => {
 
   // VIX details for top-bar display
   const _vix          = getCachedVix();
-  const _vixEnabled   = vixFilter.VIX_ENABLED;
-  const _vixMaxEntry  = vixFilter.VIX_MAX_ENTRY;
-  const _vixStrongOnly = vixFilter.VIX_STRONG_ONLY;
+  const _vixEnabled   = vixFilter.getVixEnabled("ema9vwap");
+  const _vixMaxEntry  = vixFilter.getVixMaxEntry("ema9vwap");
+  const _vixStrongOnly = vixFilter.getVixStrongOnly("ema9vwap");
 
   const inr = (n) => typeof n === "number"
     ? `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -3041,7 +3115,7 @@ ${buildSidebar('ema9vwapPaper', sharedSocketState.getEma9VwapMode()==='EMA9VWAP_
     </div>
     <div class="sc" style="border-top:1.5px solid #6a5090;">
       <div class="sc-label">Trades Today</div>
-      <div class="sc-val"><span id="ajax-trade-count">${ptState.sessionTrades.length}</span> <span style="font-size:0.75rem;color:#4a6080;">/ ${process.env.MAX_DAILY_TRADES || 20}</span></div>
+      <div class="sc-val"><span id="ajax-trade-count">${ptState.sessionTrades.length}</span> <span style="font-size:0.75rem;color:#4a6080;">/ ${_MAX_DAILY_TRADES}</span></div>
       <div id="ajax-wl" style="font-size:0.7rem;color:#4a6080;margin-top:4px;">${ptState._sessionWins}W &middot; ${ptState._sessionLosses}L</div>
     </div>
     <div class="sc" style="border-top:2px solid ${(ptState._consecutiveLosses||0) >= 2 ? '#ef4444' : '#4a6080'};" id="ajax-sc-cl">
@@ -3051,7 +3125,7 @@ ${buildSidebar('ema9vwapPaper', sharedSocketState.getEma9VwapMode()==='EMA9VWAP_
     </div>
     <div class="sc" style="border-top:2px solid ${ptState._dailyLossHit ? '#ef4444' : '#10b981'};" id="ajax-sc-dloss">
       <div class="sc-label">Daily Loss Limit</div>
-      <div class="sc-val" id="ajax-daily-loss-val" style="color:${ptState._dailyLossHit ? '#ef4444' : '#fff'}">${inr(-(process.env.MAX_DAILY_LOSS || 5000))}</div>
+      <div class="sc-val" id="ajax-daily-loss-val" style="color:${ptState._dailyLossHit ? '#ef4444' : '#fff'}">${inr(-_MAX_DAILY_LOSS)}</div>
       <div id="ajax-daily-loss-status" style="font-size:0.7rem;margin-top:4px;color:${ptState._dailyLossHit ? '#ef4444' : '#10b981'}">${ptState._dailyLossHit ? '🛑 KILLED — no entries' : '✅ Active'}</div>
     </div>
     <div class="sc" style="border-top:1.5px solid #a07010;">

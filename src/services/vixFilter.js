@@ -8,6 +8,14 @@
  *   EMA_RSI_ST : VIX_FILTER_ENABLED, VIX_MAX_ENTRY,        VIX_STRONG_ONLY
  *   BB_RSI : BB_RSI_VIX_ENABLED,  BB_RSI_VIX_MAX_ENTRY   (STRONG_ONLY not used)
  *   PA    : PA_VIX_ENABLED,     PA_VIX_MAX_ENTRY      (STRONG_ONLY not used)
+ *   EMA9_VWAP : EMA9VWAP_VIX_ENABLED (TRI-STATE — unset falls back to the global
+ *               VIX_FILTER_ENABLED default so pre-existing behaviour is preserved),
+ *               EMA9VWAP_VIX_MAX_ENTRY, EMA9VWAP_VIX_STRONG_ONLY
+ *
+ * NOTE: every mode string a call site passes MUST have a branch in getVixEnabled()
+ * AND be listed in anyVixEnabled(). An unknown mode silently falls through to the
+ * EMA_RSI_ST keys — which is how "ema9vwap" shared EMA_RSI_ST's VIX config until
+ * 2026-07-26.
  *
  * Shared:
  *   VIX_FAIL_MODE = closed|open — behaviour when VIX data is unavailable.
@@ -34,6 +42,18 @@ function getVixEnabled(mode = "ema_rsi_st") {
   if (mode === "pa")       return process.env.PA_VIX_ENABLED       === "true";
   if (mode === "orb")      return process.env.ORB_VIX_ENABLED      === "true";
   if (mode === "trend_pb") return process.env.TREND_PB_VIX_ENABLED === "true";
+  // EMA9_VWAP: TRI-STATE, deliberately different from the modes above.
+  // Those strategies shipped with an opt-in per-mode toggle (unset = off). EMA9_VWAP
+  // has always run on the GLOBAL key, which is on-unless-explicitly-false — so a
+  // plain `=== "true"` default-off toggle would silently DISABLE a gate that is live
+  // today. Explicit true/false wins; unset falls through to the global default, which
+  // is exactly the behaviour before this key existed.
+  if (mode === "ema9vwap") {
+    const v = (process.env.EMA9VWAP_VIX_ENABLED || "").trim().toLowerCase();
+    if (v === "true")  return true;
+    if (v === "false") return false;
+    return process.env.VIX_FILTER_ENABLED !== "false";
+  }
   // EMA_RSI_ST default: on unless explicitly disabled
   return process.env.VIX_FILTER_ENABLED !== "false";
 }
@@ -43,6 +63,7 @@ function getVixMaxEntry(mode = "ema_rsi_st") {
   if (mode === "pa")       return parseFloat(process.env.PA_VIX_MAX_ENTRY       || process.env.VIX_MAX_ENTRY || "20");
   if (mode === "orb")      return parseFloat(process.env.ORB_VIX_MAX_ENTRY      || process.env.VIX_MAX_ENTRY || "22");
   if (mode === "trend_pb") return parseFloat(process.env.TREND_PB_VIX_MAX_ENTRY || process.env.VIX_MAX_ENTRY || "22");
+  if (mode === "ema9vwap") return parseFloat(process.env.EMA9VWAP_VIX_MAX_ENTRY || process.env.VIX_MAX_ENTRY || "20");
   return parseFloat(process.env.VIX_MAX_ENTRY || "20");
 }
 
@@ -51,12 +72,17 @@ function getVixStrongOnly(mode = "ema_rsi_st") {
   if (mode === "pa")       return parseFloat(process.env.PA_VIX_STRONG_ONLY       || process.env.VIX_STRONG_ONLY || "16");
   if (mode === "orb")      return parseFloat(process.env.ORB_VIX_STRONG_ONLY      || process.env.VIX_STRONG_ONLY || "18");
   if (mode === "trend_pb") return parseFloat(process.env.TREND_PB_VIX_STRONG_ONLY || process.env.VIX_STRONG_ONLY || "18");
+  if (mode === "ema9vwap") return parseFloat(process.env.EMA9VWAP_VIX_STRONG_ONLY || process.env.VIX_STRONG_ONLY || "16");
   return parseFloat(process.env.VIX_STRONG_ONLY || "16");
 }
 
 function anyVixEnabled() {
+  // MUST list every mode a call site can pass. fetchLiveVix() early-returns null when
+  // this is false, and checkLiveVix then falls through to VIX_FAIL_MODE (closed by
+  // default) — i.e. a mode missing from this list would block ALL of its entries the
+  // moment it is the only mode with VIX on.
   return getVixEnabled("ema_rsi_st") || getVixEnabled("bb_rsi") || getVixEnabled("pa") ||
-         getVixEnabled("orb") || getVixEnabled("trend_pb");
+         getVixEnabled("orb") || getVixEnabled("trend_pb") || getVixEnabled("ema9vwap");
 }
 
 // ── Live VIX cache (60-second TTL, shared across all modes) ─────────────────

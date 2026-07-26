@@ -321,7 +321,7 @@ function buildSkipMarkdown(records, meta = {}) {
   if (modes.length) m1.push(`modes: ${modes.join(", ")}`);
   out.push(`> ${m1.join(" · ")}`);
   out.push(`>`);
-  out.push(`> Skips are signals a gate blocked, so they never became trades. Structured for AI analysis: per-gate counts, a field legend, then the rejections — use it to see *why* trades didn't happen. Only strategy/VIX/spread/OI gates are logged (operational gates like cooldown and market-hours are not).`);
+  out.push(`> Skips are signals a gate blocked, so they never became trades. Structured for AI analysis: per-gate counts, a field legend, then the rejections — use it to see *why* trades didn't happen. A \`strategy\` row means no signal formed at all (a non-event, not a rejection); every other gate means a real signal was blocked. EMA9+VWAP also logs the operational gates — \`entry_window\`, \`daily_loss\`, \`portfolio_cap\`, \`consec_loss_pause\`, \`chop_guard\`, \`max_daily_trades\`, \`sl_cooldown\`, \`opposite_cooldown\`, \`expiry_day_only\`, \`entry_pending\`; other strategies log strategy/VIX/spread/OI only.`);
   out.push("");
 
   if (!skips.length) {
