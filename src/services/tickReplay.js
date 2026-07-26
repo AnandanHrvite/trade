@@ -805,17 +805,22 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     sharedSocketState.setOrbActive      = () => {};
     sharedSocketState.clearOrb          = () => {};
 
-    // fs: intercept writes to canonical paper_trades.json (and its .tmp
-    // sibling used for atomic temp+rename). Anything else passes through
-    // — replay's own JSONL output and the harness internals are untouched.
+    // fs: intercept writes to any canonical {strategy}_paper_trades.json (and
+    // its .tmp sibling used for atomic temp+rename). Every paper route saves
+    // its session through the same write+rename pair, so the guard must be
+    // strategy-agnostic — an EMA_RSI_ST-only pattern let BB_RSI / PA / ORB /
+    // EMA9VWAP / TREND_PB replays append phantom sessions to the real Paper
+    // Trade History. Anything else passes through — replay's own JSONL output
+    // and the harness internals are untouched.
+    const PAPER_TRADES_RE = /[\\/][a-z0-9_]+_paper_trades\.json(\.tmp)?$/i;
     fs.writeFileSync = function (file, data, opts) {
       const p = typeof file === "string" ? file : String(file);
-      if (/ema_rsi_st_paper_trades\.json(\.tmp)?$/.test(p)) return; // silently drop
+      if (PAPER_TRADES_RE.test(p)) return; // silently drop
       return orig.fs_writeFileSync(file, data, opts);
     };
     fs.renameSync = function (from, to) {
       const t = typeof to === "string" ? to : String(to);
-      if (/ema_rsi_st_paper_trades\.json$/.test(t)) return; // silently drop
+      if (PAPER_TRADES_RE.test(t)) return; // silently drop
       return orig.fs_renameSync(from, to);
     };
 
