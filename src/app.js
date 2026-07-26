@@ -9,7 +9,24 @@ const { ACTIVE, getActiveStrategy } = require("./strategies");
 const instrumentConfig = require("./config/instrument");
 const zerodha  = require("./services/zerodhaBroker");
 const { clearFyersToken } = require("./config/fyers");
-const { buildSidebar, sidebarCSS, modalCSS, modalJS } = require("./utils/sharedNav");
+const { buildSidebar, sidebarCSS, modalCSS, modalJS, enabledStrategies } = require("./utils/sharedNav");
+
+// Start-All route triplet per strategy, keyed by the canonical mode key in
+// sharedNav's STRATEGY_MODES. The dashboard's Start All (Paper / Live / Harness)
+// buttons are built by mapping enabledStrategies() over this table, so they list
+// exactly the strategies the sidebar lists — no strategy is hardcoded into the
+// buttons and none can be silently left out. `live: null` = the strategy has no
+// separate pure-live engine (its /…-live route IS the paper-wrapping harness),
+// so it takes part in Paper + Harness only. Wiring a new strategy into Start All
+// is one row here plus its row in STRATEGY_MODES.
+const START_ALL_ROUTES = {
+  EMA_RSI_ST: { paper: '/ema_rsi_st-paper/start', live: '/ema_rsi_st-live/start', harness: '/ema_rsi_st-live-harness/start' },
+  BB_RSI:     { paper: '/bb_rsi-paper/start',     live: '/bb_rsi-live/start',     harness: '/bb_rsi-live-harness/start'     },
+  PA:         { paper: '/pa-paper/start',         live: '/pa-live/start',         harness: '/pa-live-harness/start'         },
+  ORB:        { paper: '/orb-paper/start',        live: '/orb-live/start',        harness: '/orb-live-harness/start'        },
+  EMA9VWAP:   { paper: '/ema9vwap-paper/start',   live: null,                     harness: '/ema9vwap-live/start'           },
+  TREND_PB:   { paper: '/trend-pb-paper/start',   live: null,                     harness: '/trend-pb-live/start'           },
+};
 const sharedSocketState = require("./utils/sharedSocketState");
 
 const crypto = require("crypto");
@@ -605,6 +622,20 @@ app.get("/", (req, res) => {
     { key: 'EMA9VWAP', cls: 'ema9vwap', label: 'EMA9+VWAP',    on: ema9vwapModeOn },
     { key: 'TREND_PB', cls: 'trendpb',  label: 'TREND PB',     on: trendPbModeOn },
   ].filter((t) => t.on).map((t) => ({ key: t.key, cls: t.cls, label: t.label }));
+
+  // ── Start-All roster — the enabled strategies (same helper the sidebar uses)
+  // joined to their start routes. Read per request because Settings saves mutate
+  // process.env live. A strategy with no START_ALL_ROUTES row is skipped rather
+  // than crashing the dashboard.
+  const startAllModes = enabledStrategies()
+    .filter((s) => START_ALL_ROUTES[s.mode])
+    .map((s) => ({ label: s.label, ...START_ALL_ROUTES[s.mode] }));
+  const startAllLiveModes  = startAllModes.filter((m) => m.live);
+  // Button-state poll: same roster, /start → /status/data on each wired route.
+  const startAllPollTargets = [
+    ...startAllModes.map((m) => ({ url: m.paper.replace('/start', '/status/data'), kind: 'paper' })),
+    ...startAllLiveModes.map((m) => ({ url: m.live.replace('/start', '/status/data'), kind: 'live' })),
+  ];
 
   // ── Broker investment pools (paper) — remaining = pool + all-time paper P&L ──
   // Zerodha pool = EMA_RSI_ST; Fyers pool = BB_RSI + PA + ORB (enabled only).
@@ -1246,7 +1277,7 @@ ${buildSidebar('dashboard', liveActive)}
     </div>
     <div class="top-bar-right">
       ${anyModeActive ? '' : `
-      <button id="btn-all-harness" class="top-bar-btn" style="border-color:#b45309;color:#b45309;" onclick="startAllHarness(this)" title="Start all Live (Harness) modes in DRY-RUN — runs Paper + logs would-be broker orders (EMA_RSI_ST + BB_RSI + PA + ORB + EMA9+VWAP + TREND PB)">🧪 Start All (Harness)</button>
+      <button id="btn-all-harness" class="top-bar-btn" style="border-color:#b45309;color:#b45309;" onclick="startAllHarness(this)" title="Start all Live (Harness) modes in DRY-RUN — runs Paper + logs would-be broker orders (${startAllModes.map((m) => m.label).join(' + ') || 'no strategy enabled'})">🧪 Start All (Harness)</button>
       <button id="btn-all-start" class="top-bar-btn run-paper" onclick="startAll(this)" title="Start all paper modes">▶ Start All (Paper)</button>
       <button onclick="hardReset()" class="top-bar-btn" title="Clears Fyers + Zerodha tokens and restarts the server — use when tokens look stuck">🔄 Reset Token</button>
       <span id="expiry-info-pill" class="top-bar-cache schedule empty" title="Next NIFTY weekly/monthly expiry"></span>
@@ -1623,11 +1654,15 @@ async function pollDashboardStatus(){
 /* pollDashboardStatus disabled — dashboard no longer shows realtime data */
 
 // ── Quick Action: Start All Paper / All Live ────────────────────────────────
-var PAPER_ENDPOINTS = ['/ema_rsi_st-paper/start'${bbRsiModeOn ? ",'/bb_rsi-paper/start'" : ""}${paModeOn ? ",'/pa-paper/start'" : ""}${orbModeOn ? ",'/orb-paper/start'" : ""}${ema9vwapModeOn ? ",'/ema9vwap-paper/start'" : ""}${trendPbModeOn ? ",'/trend-pb-paper/start'" : ""}];
-var LIVE_ENDPOINTS  = ['/ema_rsi_st-live/start'${bbRsiModeOn ? ",'/bb_rsi-live/start'"  : ""}${paModeOn ? ",'/pa-live/start'"  : ""}${orbModeOn ? ",'/orb-live/start'" : ""}];
-// Harness routes wrap PAPER (LIVE = PAPER by construction); respect LIVE_HARNESS_DRY_RUN.
-// EMA9+VWAP has no separate pure-live engine — its /ema9vwap-live route IS the harness (Zerodha orders when dry-run off).
-var HARNESS_ENDPOINTS = ['/ema_rsi_st-live-harness/start'${bbRsiModeOn ? ",'/bb_rsi-live-harness/start'" : ""}${paModeOn ? ",'/pa-live-harness/start'" : ""}${orbModeOn ? ",'/orb-live-harness/start'" : ""}${ema9vwapModeOn ? ",'/ema9vwap-live/start'" : ""}${trendPbModeOn ? ",'/trend-pb-live/start'" : ""}];
+// All three lists are generated from the server-side startAllModes roster, which
+// is filtered by the *_MODE_ENABLED Settings toggles — only enabled strategies
+// appear here. Harness routes wrap PAPER (LIVE = PAPER by construction) and
+// respect LIVE_HARNESS_DRY_RUN.
+var PAPER_ENDPOINTS   = ${JSON.stringify(startAllModes.map((m) => m.paper))};
+var LIVE_ENDPOINTS    = ${JSON.stringify(startAllLiveModes.map((m) => m.live))};
+var HARNESS_ENDPOINTS = ${JSON.stringify(startAllModes.map((m) => m.harness))};
+var ALL_MODE_LABELS   = ${JSON.stringify(startAllModes.map((m) => m.label))};
+var LIVE_MODE_LABELS  = ${JSON.stringify(startAllLiveModes.map((m) => m.label))};
 
 function _escHtml(s){
   return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
@@ -1655,9 +1690,10 @@ async function _startAll(endpoints){
       // 0DTE expiry-day warning — pop confirm modal, optionally retry with ?force=1
       if (body && body.code === 'EXPIRY_DAY_0DTE'){
         var isLive = /-live\\//.test(ep);
+        var who = _prettyEndpoint(ep).replace(/ (Paper|Live.*)$/, '');
         var confirmCopy = isLive ? 'Start Anyway (Real Money)' : 'Start Anyway';
         var titleCopy   = isLive ? '0DTE Expiry Day — REAL MONEY at Risk' : '0DTE Expiry Day — Not Recommended';
-        var extraNote   = isLive ? '\\n\\nThis is LIVE trading with real capital. Cancel stops the ENTIRE Start All — nothing starts — so you can fix the EMA_RSI_ST Option Expiry in Settings first.' : '\\n\\nCancel stops the ENTIRE Start All — nothing starts — so you can fix the EMA_RSI_ST Option Expiry in Settings first. Or Start Anyway to run EMA_RSI_ST on 0DTE.';
+        var extraNote   = isLive ? '\\n\\nThis is LIVE trading with real capital. Cancel stops the ENTIRE Start All — nothing starts — so you can fix the ' + who + ' Option Expiry in Settings first.' : '\\n\\nCancel stops the ENTIRE Start All — nothing starts — so you can fix the ' + who + ' Option Expiry in Settings first. Or Start Anyway to run ' + who + ' on 0DTE.';
         var ok = await showConfirm({
           icon: '⚠️',
           title: titleCopy,
@@ -1680,9 +1716,9 @@ async function _startAll(endpoints){
             results.failures.push({ endpoint: ep, error: (e2 && e2.message) || 'Network error on retry' });
           }
         } else {
-          // User cancelled the 0DTE warning → abort the WHOLE Start All so nothing
-          // starts. EMA_RSI_ST is always first in the endpoint list, so at this point no
-          // other strategy has started yet — breaking here starts nothing.
+          // User cancelled the 0DTE warning → abort the rest of the Start All. The
+          // roster is Settings-driven, so the 0DTE strategy is not necessarily
+          // first; anything already started stays started and is reported below.
           results.aborted = true;
           break;
         }
@@ -1703,9 +1739,11 @@ async function _startAll(endpoints){
 
 async function _handleStartAllResult(btn, origText, label, result){
   if (result.aborted){
-    // 0DTE warning cancelled → nothing was started; just reset the button.
+    // 0DTE warning cancelled → the remaining strategies were skipped. Reload only
+    // if something did start before the cancel, so the page reflects reality.
     btn.disabled = false;
     btn.textContent = origText;
+    if (result.successes.length) location.reload();
     return;
   }
   if (result.failures.length === 0){
@@ -1732,13 +1770,23 @@ async function _handleStartAllResult(btn, origText, label, result){
   if (succeeded > 0) location.reload();
 }
 
+// Guard for an empty roster: every strategy disabled in Settings (or, for Live,
+// only harness-only strategies enabled) would otherwise "succeed" with 0 starts
+// and silently reload the page.
+async function _noModesEnabled(endpoints, what){
+  if (endpoints.length) return false;
+  await showAlert({
+    icon: '⚠️',
+    title: 'Nothing to start',
+    message: 'No strategy is enabled for ' + what + '. Enable one in Settings → Strategy Modes and try again.',
+    btnText: 'OK', btnClass: 'modal-btn-primary',
+  });
+  return true;
+}
+
 async function startAllPaper(btn){
-  var modeList = 'EMA_RSI_ST'
-    + (${bbRsiModeOn ? "' + BB_RSI'" : "''"})
-    + (${paModeOn ? "' + PA'" : "''"})
-    + (${orbModeOn ? "' + ORB'" : "''"})
-    + (${ema9vwapModeOn ? "' + EMA9+VWAP'" : "''"})
-    + (${trendPbModeOn ? "' + TREND PB'" : "''"});
+  if (await _noModesEnabled(PAPER_ENDPOINTS, 'Paper')) return;
+  var modeList = ALL_MODE_LABELS.join(' + ');
   var orig = btn.textContent;
   btn.disabled = true; btn.textContent = '⏳ Starting paper: ' + modeList + '...';
   var result = await _startAll(PAPER_ENDPOINTS);
@@ -1746,9 +1794,10 @@ async function startAllPaper(btn){
 }
 
 async function startAllLive(btn){
+  if (await _noModesEnabled(LIVE_ENDPOINTS, 'Live')) return;
   var ok = await showConfirm({
     icon: '⚠️', title: 'Start ALL Live Trades',
-    message: 'Start EMA_RSI_ST Live'+(${bbRsiModeOn ? "' + BB_RSI Live'" : "''"})+(${paModeOn ? "' + PA Live'" : "''"})+'?\\nReal orders will be placed on broker accounts.',
+    message: 'Start ' + LIVE_MODE_LABELS.join(' + ') + ' Live?\\nReal orders will be placed on broker accounts.',
     confirmText: 'Start All', confirmClass: 'modal-btn-danger'
   });
   if(!ok) return;
@@ -1759,12 +1808,8 @@ async function startAllLive(btn){
 }
 
 async function startAllHarness(btn){
-  var modeList = 'EMA_RSI_ST'
-    + (${bbRsiModeOn ? "' + BB_RSI'" : "''"})
-    + (${paModeOn ? "' + PA'" : "''"})
-    + (${orbModeOn ? "' + ORB'" : "''"})
-    + (${ema9vwapModeOn ? "' + EMA9+VWAP'" : "''"})
-    + (${trendPbModeOn ? "' + TREND PB'" : "''"});
+  if (await _noModesEnabled(HARNESS_ENDPOINTS, 'Live (Harness)')) return;
+  var modeList = ALL_MODE_LABELS.join(' + ');
   var ok = await showConfirm({
     icon: '🧪', title: 'Start ALL Live (Harness)',
     message: 'Start ' + modeList + ' via Paper Harness?\\n\\nEach runs Paper unchanged and logs the broker order it WOULD place. Orders follow the global DRY-RUN flag — no real orders while LIVE_HARNESS_DRY_RUN is ON.',
@@ -1785,14 +1830,8 @@ function startAll(btn){
 // ── Quick-Action button live state (mutual lock: Paper ↔ Live) ──────────────
 var _dashSrc = 'paper';            // top-bar toggle source; also drives the charts
 var _allBtnState = { paperOn:false, liveOn:false };
-var ALL_BTN_POLL = [
-  { url:'/ema_rsi_st-paper/status/data', kind:'paper' },
-  { url:'/ema_rsi_st-live/status/data',  kind:'live'  }
-  ${bbRsiModeOn ? ",{ url:'/bb_rsi-paper/status/data', kind:'paper' },{ url:'/bb_rsi-live/status/data', kind:'live' }" : ""}
-  ${paModeOn ? ",{ url:'/pa-paper/status/data', kind:'paper' },{ url:'/pa-live/status/data', kind:'live' }" : ""}
-  ${orbModeOn ? ",{ url:'/orb-paper/status/data', kind:'paper' },{ url:'/orb-live/status/data', kind:'live' }" : ""}
-  ${trendPbModeOn ? ",{ url:'/trend-pb-paper/status/data', kind:'paper' }" : ""}
-];
+// Derived from the same enabled-strategy roster as the Start-All endpoint lists.
+var ALL_BTN_POLL = ${JSON.stringify(startAllPollTargets)};
 
 function _applyAllBtnState(paperOn, liveOn){
   // Harness is a paper-side concept (Paper + dry-run live log) — only show it
