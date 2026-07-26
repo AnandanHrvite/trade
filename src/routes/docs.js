@@ -300,8 +300,8 @@ async function deleteDoc(name) {
     secondConfirmText: 'Yes, delete it'
   });
   if (!ok) return;
-  fetch('/docs/file/' + encodeURIComponent(name), { method: 'DELETE' })
-    .then(function(r) { return r.json(); })
+  secretFetch('/docs/file/' + encodeURIComponent(name), { method: 'DELETE' })
+    .then(function(r) { return r ? r.json() : { ok: false, error: 'Cancelled — API secret not provided.' }; })
     .then(function(d) { if (d.ok) location.reload(); else showAlert({ icon: '⚠️', title: 'Delete failed', message: d.error || 'Delete failed', btnClass: 'modal-btn-danger' }); })
     .catch(function() { showAlert({ icon: '⚠️', title: 'Delete failed', message: 'Network error', btnClass: 'modal-btn-danger' }); });
 }

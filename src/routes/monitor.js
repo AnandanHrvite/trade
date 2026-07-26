@@ -399,7 +399,8 @@ async function doAction(action, title, confirmMsg, destructive) {
   const buttons = document.querySelectorAll('.act-btn');
   buttons.forEach(b => b.disabled = true);
   try {
-    const r = await fetch('/monitor/action/' + action, { method: 'POST' });
+    const r = await secretFetch('/monitor/action/' + action, { method: 'POST' });
+    if (!r) return;
     const d = await r.json();
     if (d.ok) {
       if (typeof window.showToast === 'function') window.showToast(d.message || 'Done', 'success');

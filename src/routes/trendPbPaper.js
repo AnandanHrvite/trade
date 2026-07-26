@@ -1103,14 +1103,19 @@ ${modalJS()}
 async function tpbpHandleExit(btn) {
   var ok = await showConfirm({ icon:'🚪', title:'Exit position', message:'Exit current Trend Pullback position now?', confirmText:'Exit', confirmClass:'modal-btn-danger' });
   if (!ok) return;
+  var origLabel = btn.textContent;
   btn.disabled = true; btn.textContent = 'Exiting...';
-  fetch('/trend-pb-paper/exit').then(function(){ location.reload(); }).catch(function(){ location.reload(); });
+  secretFetch('/trend-pb-paper/exit').then(function(r){
+    if (!r) { btn.disabled = false; btn.textContent = origLabel; return; }
+    location.reload();
+  }).catch(function(){ location.reload(); });
 }
 async function tpbpManualEntry(side) {
   var ok = await showConfirm({ icon:'✋', title:'Manual entry', message:'Manual '+side+' entry at current spot? Bypasses the trend/pullback filter.', confirmText:'Enter '+side });
   if (!ok) return;
   try {
-    var r = await fetch('/trend-pb-paper/manualEntry', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ side: side }) });
+    var r = await secretFetch('/trend-pb-paper/manualEntry', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ side: side }) });
+    if (!r) return;
     var j = await r.json();
     if (!j.success) { alert('Entry failed: ' + (j.error || 'Unknown error')); return; }
     location.reload();

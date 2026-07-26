@@ -1879,9 +1879,13 @@ async function spHandleExit(btn) {
     confirmClass: 'modal-btn-danger'
   });
   if (!ok) return;
+  var origLabel = btn.textContent;
   btn.disabled = true;
   btn.textContent = 'Exiting...';
-  fetch('/pa-paper/exit').then(function(){ location.reload(); }).catch(function(){ location.reload(); });
+  secretFetch('/pa-paper/exit').then(function(r){
+    if (!r) { btn.disabled = false; btn.textContent = origLabel; return; }
+    location.reload();
+  }).catch(function(){ location.reload(); });
 }
 
 async function spManualEntry(side) {
@@ -1893,11 +1897,12 @@ async function spManualEntry(side) {
   });
   if (!ok) return;
   try {
-    var res = await fetch('/pa-paper/manualEntry', {
+    var res = await secretFetch('/pa-paper/manualEntry', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ side: side })
     });
+    if (!res) return;
     var data = await res.json();
     if (data.success) {
       location.reload();

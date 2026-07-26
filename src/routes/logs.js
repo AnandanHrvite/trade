@@ -435,7 +435,8 @@ ${embed ? '' : buildSidebar('logs', liveActive)}
   async function clearLogs() {
     var ok = await showDoubleConfirm({icon:'🧹',title:'Clear Logs',message:'Clear all logs from memory?\\nThis cannot be undone.',confirmText:'Clear',confirmClass:'modal-btn-danger',secondConfirmText:'Yes, clear all'});
     if (!ok) return;
-    fetch("/logs/clear", { method: "POST" }).then(function() {
+    secretFetch("/logs/clear", { method: "POST" }).then(function(r) {
+      if (!r) return;
       wrap.innerHTML = '<div class="empty-state"><div class="icon">🧹</div>Logs cleared — new entries will appear below.</div>';
       emptyEl    = null;
       totalAll   = 0;

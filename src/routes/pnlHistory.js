@@ -420,11 +420,12 @@ async function saveBaseline(){
   const notes = document.getElementById('mNotes').value;
   if (pnl === '' || !Number.isFinite(Number(pnl))) { toast('Enter a valid number', 'error'); return; }
   try {
-    const r = await fetch('/pnl-history/baseline/' + currentBroker, {
+    const r = await secretFetch('/pnl-history/baseline/' + currentBroker, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pnl: Number(pnl), notes }),
     });
+    if (!r) return;
     const j = await r.json();
     if (!j.success) { toast(j.error || 'Failed', 'error'); return; }
     toast('Baseline saved');
@@ -445,7 +446,8 @@ async function resetBaseline(broker){
   });
   if (!ok) return;
   try {
-    const r = await fetch('/pnl-history/baseline/' + broker + '/reset', { method: 'POST' });
+    const r = await secretFetch('/pnl-history/baseline/' + broker + '/reset', { method: 'POST' });
+    if (!r) return;
     const j = await r.json();
     if (!j.success) { toast(j.error || 'Failed', 'error'); return; }
     toast('Baseline reset');

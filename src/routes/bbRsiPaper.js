@@ -2111,9 +2111,13 @@ async function spHandleExit(btn) {
     confirmClass: 'modal-btn-danger'
   });
   if (!ok) return;
+  var origLabel = btn.textContent;
   btn.disabled = true;
   btn.textContent = 'Exiting...';
-  fetch('/bb_rsi-paper/exit').then(function(){ location.reload(); }).catch(function(){ location.reload(); });
+  secretFetch('/bb_rsi-paper/exit').then(function(r){
+    if (!r) { btn.disabled = false; btn.textContent = origLabel; return; }
+    location.reload();
+  }).catch(function(){ location.reload(); });
 }
 
 async function spHandleReset(btn) {
@@ -2129,7 +2133,8 @@ async function spHandleReset(btn) {
   if (!ok) return;
   if (btn) { btn.textContent = '⏳...'; btn.disabled = true; }
   try {
-    var res = await fetch('/bb_rsi-paper/reset');
+    var res = await secretFetch('/bb_rsi-paper/reset');
+    if (!res) { if (btn) { btn.textContent = '↺ Reset'; btn.disabled = false; } return; }
     var data;
     try { data = await res.json(); } catch(_) { data = { success: false, error: 'Server error (status ' + res.status + ')' }; }
     if (!data.success) {
@@ -2154,11 +2159,12 @@ async function spManualEntry(side) {
   });
   if (!ok) return;
   try {
-    var res = await fetch('/bb_rsi-paper/manualEntry', {
+    var res = await secretFetch('/bb_rsi-paper/manualEntry', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ side: side })
     });
+    if (!res) return;
     var data = await res.json();
     if (data.success) {
       location.reload();

@@ -1025,7 +1025,8 @@ async function forceClearStuckState(btn) {
   btn.disabled = true;
   btn.textContent = 'Clearing…';
   try {
-    const r = await fetch('/replay/force-clear', { method: 'POST' });
+    const r = await secretFetch('/replay/force-clear', { method: 'POST' });
+    if (!r) { btn.disabled = false; btn.textContent = 'Force clear'; return; }
     const data = await r.json();
     if (data.ok) {
       btn.textContent = 'Cleared ✓';
@@ -1329,11 +1330,12 @@ async function deleteSession(date, sessionId, btn) {
   const orig = btn.textContent;
   btn.disabled = true; btn.textContent = '…';
   try {
-    const r = await fetch('/replay/delete-session', {
+    const r = await secretFetch('/replay/delete-session', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ date, sessionId }),
     });
+    if (!r) { btn.disabled = false; btn.textContent = orig; return; }
     const data = await r.json();
     if (!data.ok) {
       btn.disabled = false; btn.textContent = orig;
@@ -1358,7 +1360,8 @@ async function deleteAllRecordings(btn) {
   const orig = btn.textContent;
   btn.disabled = true; btn.textContent = '…';
   try {
-    const r = await fetch('/replay/delete-all', { method: 'POST' });
+    const r = await secretFetch('/replay/delete-all', { method: 'POST' });
+    if (!r) { btn.disabled = false; btn.textContent = orig; return; }
     const data = await r.json();
     if (!data.ok) {
       btn.disabled = false; btn.textContent = orig;
@@ -1440,11 +1443,14 @@ function cmpDelta(bPnl, sPnl) {
 }
 
 async function callReplayApi(date, mode, sessionId, useCurrentSettings) {
-  const r = await fetch('/replay/run', {
+  const r = await secretFetch('/replay/run', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ date, mode, sessionId, speed: 0, useCurrentSettings }),
   });
+  // secretFetch returns null when the user cancels the API-secret prompt — the
+  // batch runner reads .error, so surface it the same way a failed run does.
+  if (!r) return { error: 'Cancelled — API secret not provided.' };
   return r.json();
 }
 
@@ -2376,7 +2382,7 @@ function cancelRange(btn) {
   }
   // Fire-and-forget — the in-flight callReplayApi promise resolves once the
   // server breaks its tick loop and finalises, which unblocks the batch.
-  fetch('/replay/cancel', { method: 'POST' }).catch(() => {});
+  secretFetch('/replay/cancel', { method: 'POST' }).catch(() => {});
 }
 
 // Seed inputs with empty constraints first so the elements are usable

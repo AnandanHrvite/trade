@@ -169,7 +169,9 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     ...(showPaPatternBacktest ? [{ key: 'paPatternBacktest', href: '/pa-pattern-backtest', icon: '△',  label: 'Pattern Test' }] : []),
     ...(showPaPaper           ? [{ key: 'paPaper',           href: '/pa-paper/status',     icon: '📐', label: 'Paper'    }] : []),
     ...(showSim     ? [{ key: 'paSim',     href: '/pa-paper/simulate',   icon: '🎮', label: 'Simulate' }] : []),
-    ...(showCompare ? [{ key: 'paCompare', href: '/compare/priceaction', icon: '⚖',  label: 'Compare'  }] : []),
+    // No PA Compare entry: compare.js only implements /trading (EMA_RSI_ST) and
+    // /bb_rsi. The old '/compare/priceaction' link had no route behind it, so with
+    // UI_SHOW_COMPARE=true it was a dead menu item.
     ...(showPaLive && !paPaperRunning ? [{ key: 'paLive',            href: '/pa-live/status',      icon: '📐', label: 'Live'     }] : []),
     ...(showPaLiveHarness && !paPaperRunning ? [{ key: 'paLiveHarness',     href: '/pa-live-harness',     icon: '🔧', label: 'Live (Harness)' }] : []),
   ];

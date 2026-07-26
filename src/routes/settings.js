@@ -2323,7 +2323,8 @@ async function backupCreateNow() {
   var btn = document.getElementById('backupCreateBtn');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Creating…'; }
   try {
-    var r = await fetch('/backup/create', { method: 'POST' });
+    var r = await secretFetch('/backup/create', { method: 'POST' });
+    if (!r) { if (btn) { btn.disabled = false; btn.textContent = '↻ Snapshot now'; } return; }
     var d = await r.json();
     if (d.ok) showToast('Snapshot created (' + backupFmtBytes(d.sizeBytes) + ')', 'success');
     else showToast('Snapshot failed: ' + (d.error || 'unknown'), 'error');
@@ -2349,7 +2350,8 @@ async function backupDelete(date) {
   });
   if (!ok) return false;
   try {
-    var r = await fetch('/backup/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ date: date }) });
+    var r = await secretFetch('/backup/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ date: date }) });
+    if (!r) return false;
     var d = await r.json();
     if (d.ok) { showToast('Deleted backup ' + date, 'success'); loadBackups(); }
     else showToast('Delete failed: ' + (d.error || 'unknown'), 'error');
@@ -2373,7 +2375,8 @@ async function backupRestore() {
   var btn = document.getElementById('backupRestoreBtn');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Restoring…'; }
   try {
-    var r = await fetch('/backup/restore', { method: 'POST', headers: { 'Content-Type': 'application/gzip' }, body: file });
+    var r = await secretFetch('/backup/restore', { method: 'POST', headers: { 'Content-Type': 'application/gzip' }, body: file });
+    if (!r) { if (btn) { btn.disabled = false; btn.textContent = '⟲ Restore'; } return; }
     var d = await r.json();
     if (d.ok) {
       showToast('Restored: ' + d.restored.join(', ') + '. Restart the server to load it.', 'success');

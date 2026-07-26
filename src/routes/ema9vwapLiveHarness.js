@@ -309,7 +309,8 @@ async function startSession() {
   if (!ok) return;
   document.getElementById('start-btn').disabled = true;
   try {
-    const r = await fetch('/ema9vwap-live/start');
+    const r = await secretFetch('/ema9vwap-live/start');
+    if (!r) { document.getElementById('start-btn').disabled = false; return; }
     const data = await r.json();
     if (data.success) {
       await showAlert({ icon: '✅', title: 'Started', message: data.message, btnClass: 'modal-btn-success' });
@@ -334,7 +335,8 @@ async function stopSession() {
   if (!ok) return;
   document.getElementById('stop-btn').disabled = true;
   try {
-    const r = await fetch('/ema9vwap-live/stop');
+    const r = await secretFetch('/ema9vwap-live/stop');
+    if (!r) { document.getElementById('stop-btn').disabled = false; return; }
     const data = await r.json();
     if (data.success) { await showAlert({ icon: '✅', title: 'Stopped', message: data.message, btnClass: 'modal-btn-success' }); location.reload(); }
     else { await showAlert({ icon: '⚠️', title: 'Stop failed', message: data.error || 'unknown', btnClass: 'modal-btn-danger' }); document.getElementById('stop-btn').disabled = false; }

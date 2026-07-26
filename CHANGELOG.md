@@ -6,6 +6,18 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — 35 buttons silently did nothing while `API_SECRET` was set
+
+Exit, Manual Entry, Reset, every harness Start/Stop, Replay's Run / Cancel / Delete, Backup Create / Delete / Restore, Clear Logs, the Monitor actions and the P&L baseline editor all called their protected route with a plain `fetch`, which sends no secret. The route answered 403, the handler read `.json()` off the error body and fell into its catch — the position stayed open, the session never started, and in the fire-and-forget cases (`Exit`) the page reloaded as if it had worked. All 35 call sites across 16 files now use `secretFetch`, which attaches the stored secret, prompts once per browser session on a 403 and retries. Each site handles `secretFetch`'s `null` (user cancelled the prompt) by restoring the button instead of throwing; the Exit buttons capture their real label first rather than resetting to a hard-coded "Exit".
+
+Verified by rendering every affected page and parsing its emitted client JS — 18 pages, all script blocks parse, and `secretFetch` is defined on each one that now calls it.
+
+This also closed a hole opened by the `OPEN_PREFIXES` change below: `docs.js` serves `GET /file/:name` **and** `DELETE /file/:name` from the same URL, so a method-blind prefix made guide deletion reachable without the secret. Prefix matches are now restricted to GET/HEAD (`OPEN_PATHS` stays method-agnostic — `deploy/webhook` and `tracker/fetch-and-start` are deliberately POSTable). Re-probed: `DELETE /docs/file/…` is 403 again while `GET` is 200.
+
+### Removed — the Price Action "Compare" menu item pointed at nothing
+
+`compare.js` implements `/compare/trading` and `/compare/bb_rsi` only. The sidebar's PA entry linked to `/compare/priceaction`, which has no route, so with `UI_SHOW_COMPARE=true` it was a dead item. Dropped; the EMA_RSI_ST and BB_RSI entries are unchanged.
+
 ### Fixed — most pages returned a raw 403 when `API_SECRET` was set
 
 Logging in was not enough to browse the app. `API_SECRET` is a second gate in front of the login cookie, and `OPEN_PATHS` — the allowlist of read-only routes that bypass it — had not been extended as pages were added. Verified with a real logged-in session against the repo's own `.env`: `/docs`, `/realtime`, `/replay`, `/monitor`, `/edge-analytics`, `/all-backtest`, `/orb-paper/status`, `/orb-backtest` and every live-harness page answered `403 {"error":"Forbidden — missing or wrong secret."}` while `/settings`, `/logs` and `/pa-paper/status` worked. Sidebar links carry no secret, so there was no way to reach the blocked half from the UI.

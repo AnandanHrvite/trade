@@ -1156,14 +1156,19 @@ ${modalJS()}
 async function orblHandleExit(btn) {
   var ok = await showConfirm({ icon:'🚪', title:'Exit position', message:'Exit ORB position now? ${dry ? "(DRY-RUN logged)" : "(REAL broker order)"}', confirmText:'Exit', confirmClass:'modal-btn-danger' });
   if (!ok) return;
+  var origLabel = btn.textContent;
   btn.disabled = true; btn.textContent = 'Exiting...';
-  fetch('/orb-live/exit').then(function(){ location.reload(); }).catch(function(){ location.reload(); });
+  secretFetch('/orb-live/exit').then(function(r){
+    if (!r) { btn.disabled = false; btn.textContent = origLabel; return; }
+    location.reload();
+  }).catch(function(){ location.reload(); });
 }
 async function orblManualEntry(side) {
   var ok = await showConfirm({ icon:'✋', title:'Manual entry', message:'Manual '+side+' entry. ${dry ? "DRY-RUN — logged only." : "REAL ORDER will be placed."}', confirmText:'Enter '+side, confirmClass: ${dry ? "''" : "'modal-btn-danger'"} });
   if (!ok) return;
   try {
-    var r = await fetch('/orb-live/manualEntry', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ side: side }) });
+    var r = await secretFetch('/orb-live/manualEntry', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ side: side }) });
+    if (!r) return;
     var j = await r.json();
     if (!j.success) { alert('Entry failed: ' + (j.error || 'Unknown error')); return; }
     location.reload();

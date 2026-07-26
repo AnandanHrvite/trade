@@ -449,7 +449,14 @@ const OPEN_PREFIXES = [
 app.use((req, res, next) => {
   const secret = process.env.API_SECRET;
   if (!secret) return next(); // no secret set → open (dev mode)
-  const isOpen = OPEN_PATHS.includes(req.path) || OPEN_PREFIXES.some(p => req.path.startsWith(p));
+  // Prefix matches are restricted to GET/HEAD: a prefix covers a whole subtree, and
+  // a write route can share a path with a read one — docs.js serves GET /file/:name
+  // and DELETE /file/:name from the same URL, so a method-blind prefix would have
+  // opened guide deletion. OPEN_PATHS stays method-agnostic; its entries are exact
+  // and a few (deploy/webhook, tracker/fetch-and-start) are deliberately POSTable.
+  const isReadMethod = req.method === "GET" || req.method === "HEAD";
+  const isOpen = OPEN_PATHS.includes(req.path)
+    || (isReadMethod && OPEN_PREFIXES.some(p => req.path.startsWith(p)));
   if (isOpen) return next();
   const token = req.headers["x-api-secret"] || req.query.secret;
   if (token !== secret) return res.status(403).json({ success: false, error: "Forbidden — missing or wrong secret." });
