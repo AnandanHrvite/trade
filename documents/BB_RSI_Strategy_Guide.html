@@ -153,6 +153,16 @@
   }
   .highlight strong { color: var(--accent2); }
 
+  .note {
+    background: rgba(59,130,246,0.06); border-left: 3px solid var(--accent2);
+    padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 12px 0;
+    font-size: 0.88rem; line-height: 1.65;
+  }
+  .note.warn    { background: rgba(251,191,36,0.06); border-left-color: var(--yellow); }
+  .note.success { background: rgba(38,166,154,0.06); border-left-color: var(--green); }
+  .note.danger  { background: rgba(239,83,80,0.07); border-left-color: var(--red); }
+  .note strong:first-child { display: block; margin-bottom: 4px; }
+
   ul { margin: 8px 0 8px 20px; }
   li { margin: 4px 0; }
 
@@ -378,7 +388,7 @@
   <div class="badge">NIFTY OPTIONS</div>
   <h1>BB_RSI Strategy</h1>
   <div class="sub">V7 &mdash; buy a Call or Put when NIFTY punches out of its Bollinger Band, with the trend behind it &mdash; explained in plain English</div>
-  <div class="version">V7 (updated 2026-07-16) &bull; 5-minute candles &bull; Bollinger-Band break + SuperTrend + RSI &bull; Confirmation candle &bull; Profit-lock + wide hard-stop + band re-entry + trend-flip exit</div>
+  <div class="version">V7 (updated 2026-07-26) &bull; 5-minute candles &bull; Bollinger-Band break + SuperTrend + RSI &bull; Confirmation candle &bull; Profit-lock + wide hard-stop + band re-entry + trend-flip exit</div>
   <div class="tags">Bollinger Bands (20 / 1) &bull; SuperTrend (10 / 3) &bull; RSI (70 for Calls, 40 for Puts) &bull; VIX filter &bull; Profit lock &bull; Wide hard stop &bull; Band re-entry &bull; Trend-flip exit</div>
 </div>
 
@@ -784,6 +794,14 @@
   </div>
 </div>
 
+<div class="tv-chart" id="bbr-exit"></div>
+<p class="tv-cap"><b>The exit stack in one picture.</b> After the buy at 24,246 the move ran to a best point of 24,318 &mdash; <b>+72 points</b>. The profit lock had already armed at +25, and its floor ratchets up to 50% of the peak, i.e. <b>+36 points = 24,282</b>. When price slipped back to that floor we banked it &rarr; <b>EXIT 24,282, +36 points</b>. The slower band-re-entry and SuperTrend-flip exits (dashed) would not have fired until several candles later, around 24,258.</p>
+
+<div class="note">
+  <strong>Real numbers &mdash; how the profit lock ratchets.</strong>
+  Best move so far +25 pts &rarr; floor arms at 50% = <strong>+12.5</strong>. Peak grows to +50 &rarr; floor rises to <strong>+25</strong>. Peak grows to +72 &rarr; floor rises to <strong>+36</strong>. The floor only ever goes up. So the trade is exited the moment the gain falls back to the current floor &mdash; here, at +36.
+</div>
+
 <div class="card card-purple" style="margin-top:14px;">
   <p style="font-size:0.9rem;"><strong>What we deliberately do NOT do:</strong> there is no fixed profit target, no trailing stop-loss that creeps up tick by tick, no "move the stop to break-even" step, and no time-based exit. The starting stop-loss line (the SuperTrend value at entry) is a reference for sizing risk &mdash; it doesn't trail. Profit is banked by the points-based profit lock; runners are handled by the candle-close SuperTrend flip.</p>
 </div>
@@ -948,6 +966,24 @@
   </div>
 </div>
 
+<h3 style="margin-top:22px;">Three live-mode fixes you should know about (26 July 2026)</h3>
+<p style="font-size:0.9rem;">None of these changed a trading rule. All three were about live mode doing something different from practice mode &mdash; and practice is always treated as the correct one.</p>
+
+<div class="note warn">
+  <strong>1. Stopping a live session could lose the final trade from your books.</strong>
+  When you pressed Stop while holding a position, the sell order was sent but <em>not waited for</em> &mdash; the code carried straight on to save the session and send the day report while the order was still at the broker. The saved session was missing its last trade and its profit. A &#8377;240&rarr;&#8377;300 exit on 65 units is <strong>&#8377;3,814 that never reached the books.</strong> Stopping now waits for the exit to complete before saving anything.
+</div>
+
+<div class="note warn">
+  <strong>2. …but that wait is now capped, or a dead broker could hang the whole app.</strong>
+  Neither broker SDK sets a network timeout, so a dead connection can hang for minutes. The wait is now capped at <code>LIVE_EXIT_WAIT_MS</code> (default <strong>20,000&nbsp;ms</strong>). A healthy order takes well under a second, so this never fires in normal use &mdash; only during a real outage, where you get a Telegram alert instead of a frozen process. Important: the timeout <strong>cancels nothing</strong>. A market order that has left the process cannot be recalled, so the alert says "may still be in flight, verify the dashboard" rather than "exit failed". Set it to <code>0</code> to opt out of the cap.
+</div>
+
+<div class="note warn">
+  <strong>3. The portfolio-wide loss cap was missing from live mode entirely.</strong>
+  <code>PORTFOLIO_MAX_DAILY_LOSS</code> was wired into all six practice routes and <em>none</em> of the live ones. So with the cap armed, practice would stop taking trades while live &mdash; the side with real money &mdash; carried on. All ten routes now check it, at the same point in the sequence. It can only ever block a new entry; it never places or changes an order.
+</div>
+
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <!-- 11. CONFIG REFERENCE                                                   -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
@@ -1058,7 +1094,17 @@
   <li><strong>Backtest option prices are estimated.</strong> History has no option quotes, so backtest profit is an approximation. Always confirm against paper and replay before trusting a result.</li>
   <li><strong>This strategy lives and dies by the trend.</strong> It makes money when the market picks a direction and runs, and it bleeds in choppy, sideways sessions. The optional ADX chop gate exists to sit those days out.</li>
   <li><strong>The hard stop is wide on purpose.</strong> 30 points sounds loose, but the fast band-re-entry exit catches the common small failures first &mdash; the wide stop is only there for the rare runaway. Don't tighten it without understanding that trade-off.</li>
+  <li><strong>It is regime-bimodal.</strong> In a low-volatility market the one-sigma band collapses to 25&ndash;50 points of pure noise and the strategy grinds. The single most useful lever is a band-width or VIX floor, not the RSI or SuperTrend numbers.</li>
 </ul>
+
+<div class="note danger">
+  <strong>Check this before you trust any BB_RSI session from before 26 July 2026.</strong>
+  A stale option-expiry date was being traded as if the contract still existed. BB_RSI was one of the two strategies that <em>entered the trade anyway</em>: it logged its profit-and-loss as <code>pnlMode: "spot proxy"</code> (priced off NIFTY points, because no option premium ever arrived), and &mdash; because the percentage option stop needs an entry premium to measure against &mdash; <strong>it ran with no option stop-loss at all</strong> for the whole life of the position.
+  <br><br>
+  This is now blocked: an expiry date is treated as dead once its own expiry day has closed at 15:30, and a dead date <strong>refuses the entry</strong> and names the setting to fix rather than quietly switching to a different expiry (a different expiry means different premium, different decay, different risk &mdash; your call, not the software's).
+  <br><br>
+  <strong>How to spot an affected session in your logs:</strong> trades stamped <code>pnlMode: "spot proxy"</code> together with "no_data" errors on the option price. Discard those sessions &mdash; they are a data hole, not a strategy result.
+</div>
 
 <div class="card card-green">
   <h4 class="green">The big correction in this edition</h4>
@@ -1066,7 +1112,7 @@
 </div>
 
 <div class="highlight">
-  <strong>Last checked: 17 July 2026</strong> &mdash; this guide was rewritten in plain English and brought up to date with the current V7 (SuperTrend) engine, then refreshed for the portfolio-wide loss cap and the backtest gap-fill / slippage changes.
+  <strong>Last checked: 26 July 2026</strong> &mdash; re-read against <code>src/strategies/bb_rsi.js</code>, <code>src/routes/bbRsiPaper.js</code>, <code>src/routes/bbRsiLive.js</code> and <code>src/routes/settings.js</code>. <strong>No trading rule changed in this edition.</strong> What is new is Section 10's three live-mode fixes (the session-teardown race, the capped broker wait, the missing portfolio loss cap) and the stale-expiry block above.
 </div>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
@@ -1074,7 +1120,7 @@
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <div style="margin-top:50px; padding:20px 0; border-top:1px solid var(--border); text-align:center;">
   <p style="font-size:0.75rem; color:var(--text2);">
-    BB_RSI V7 &bull; Strategy Guide (plain-English edition) &bull; updated 16 July 2026<br/>
+    BB_RSI V7 &bull; Strategy Guide (plain-English edition) &bull; updated 26 July 2026<br/>
     NIFTY Options &bull; 5-minute Bollinger-Band break + SuperTrend + RSI &bull; Confirmation candle &bull; Profit lock + wide hard stop + band re-entry + SuperTrend-flip exit
   </p>
 </div>
@@ -1236,6 +1282,28 @@
         color: "#7890c8", fill: "rgba(120,144,200,0.12)" }],
       markers: [{ i:4, type:"dot", color:"#fbbf24", price:24208 }],
       legend: [{ color:"#7890c8", label:"Bollinger Band (collapsed)" }, { color:"#fbbf24", label:"noise poke — no trade" }]
+    });
+    // Exit stack: the ratcheting profit lock fires long before the slower candle-close exits
+    TVChart.render("bbr-exit", {
+      title: "BB_RSI — the profit lock banks the winner",
+      subtitle: "5m · NIFTY · peak +72pt, floor ratcheted to +36pt",
+      times: ["10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20"],
+      candles: [[24240,24252,24236,24246],[24246,24268,24242,24262],[24262,24284,24258,24278],
+        [24278,24296,24272,24290],[24290,24312,24286,24306],[24306,24318,24298,24312],
+        [24312,24316,24290,24294],[24294,24298,24276,24280],[24280,24286,24262,24268],
+        [24268,24274,24252,24258],[24258,24264,24246,24252]],
+      bands: [{
+        upper: [24244,24252,24262,24272,24284,24294,24298,24298,24296,24292,24288],
+        mid:   [24228,24232,24238,24244,24252,24260,24264,24264,24262,24259,24256],
+        lower: [24212,24212,24214,24216,24220,24226,24230,24230,24228,24226,24224],
+        color: "#7890c8", fill: "rgba(120,144,200,0.10)" }],
+      overlays: [{ name:"profit-lock floor", color:"#fbbf24", dash:true,
+        data:[null,24258,24270,24278,24282,24282,24282,24282,24282,24282,24282] }],
+      markers: [{ i:0, type:"buy", price:24246, text:"BUY CE 24,246" },
+        { i:5, type:"dot", color:"#26a69a", price:24318, text:"peak +72pt" },
+        { i:6, type:"exit", price:24282, text:"EXIT — profit lock +36pt" }],
+      legend: [{ color:"#7890c8", label:"Bollinger Band" }, { color:"#fbbf24", label:"profit-lock floor" },
+        { color:"#26a69a", label:"BUY / peak" }, { color:"#ef5350", label:"EXIT" }]
     });
   };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", render);

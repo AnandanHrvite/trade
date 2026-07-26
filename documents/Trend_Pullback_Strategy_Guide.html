@@ -55,7 +55,7 @@
   <div class="kicker">Strategy 6 · Fyers · Plain-English edition</div>
   <h1>Trend Pullback (TREND_PB)</h1>
   <p>Wait for a clear trend, let the price dip back to a good buying spot, then buy an option only when the trend proves it is starting again. Buy into strength — never guess a turn. Explained here in everyday language.</p>
-  <p class="muted" style="margin-top:10px;">Updated 2026-07-17 &nbsp;·&nbsp; plain-English edition &nbsp;·&nbsp; all defaults read straight from the live code</p>
+  <p class="muted" style="margin-top:10px;">Updated 2026-07-26 &nbsp;·&nbsp; plain-English edition &nbsp;·&nbsp; all defaults read straight from the live code</p>
 </header>
 
 <!--LIVE_STATUS_PANEL-->
@@ -211,6 +211,16 @@
 
 <p>We buy on that candle's <strong>close</strong> — a confirmed, finished candle — never on a mid-candle spike (a "wick") that might vanish. For a downtrend it's the mirror: a red candle with a solid body that closes below EMA20(5m) and below the prior candle's low, and we buy a PE.</p>
 
+<div class="tv-chart" id="tpb-resume"></div>
+<p class="tv-cap"><b>Pullback, then the resumption candle.</b> The trend was up, then price drifted back to the orange EMA20 line and paused for three candles — that's the pullback (the orange dot). None of those candles qualified: too small a body, or they never closed back above the line. The candle at the green arrow did all four things at once — green, body 24 pts (needs 0.5&times;ATR = 15), closed above EMA20, and closed above the previous candle's high &rarr; <b>BUY CE on its close at 24,296</b>.</p>
+
+<div class="card accent">
+  <strong>Real numbers.</strong> Normal 5-min move (ATR) = 30 points, so the body must be at least 15 points.<br>
+  &bull; Candle A: green, body 9 pts &rarr; too small &rarr; <span style="color:#f85149">no trade</span>.<br>
+  &bull; Candle B: green, body 21 pts but closes at 24,268, still <em>below</em> EMA20 (24,272) &rarr; <span style="color:#f85149">no trade</span>.<br>
+  &bull; Candle C: green, body 24 pts, closes 24,296 above EMA20 (24,278) and above candle B's high (24,280) &rarr; <span style="color:#3fb950"><strong>BUY</strong></span>.
+</div>
+
 <div class="card accent">
   <strong>This is the "no volume" design in action.</strong> Because the NIFTY index has no genuine volume figure to lean on, the size of this candle's body <em>is</em> the conviction test. A big body means real buying pressure; a puny body means the bounce is half-hearted and we skip it. Simple, honest, and it can't be faked.
 </div>
@@ -336,6 +346,16 @@
   <li><strong>Honest stop-fills on gaps.</strong> If a candle gaps straight <em>past</em> the stop-loss, the backtest fills at the worse gap-open price, not the stop price — so a jumpy day isn't flattered by pretending you got out exactly at the stop.</li>
 </ul>
 
+<div class="card">
+  <strong>A replay can no longer break a live session (fixed 26 July 2026).</strong>
+  A replay is meant to run in a sandbox and never touch the real price feed. The sandbox list, however, had only been written for the original four strategies — Trend Pullback and EMA9+VWAP were never added to it. So a replay could clear this strategy's "I'm running" flag underneath it, and the next strategy to stop would then see nothing running and <strong>shut down the shared Fyers feed for everyone, possibly with a real position open.</strong> If the replay crashed before it finished, the flag stayed stuck and practice mode refused to start again. The sandbox now covers every strategy.
+</div>
+
+<div class="card warn">
+  <strong>A dead expiry date used to reach the engine (fixed 26 July 2026).</strong>
+  If an option-expiry override is left in the settings past its date, that contract no longer exists. Trend Pullback handled this <em>correctly</em> — it blocked the entry — but two other strategies traded on regardless. There is now one shared definition of "stale" (past 15:30 on the expiry day itself, so a contract still trades all through its own expiry day), and a stale date refuses the entry and names the exact setting to fix. It deliberately does <em>not</em> switch to a different expiry on your behalf: a different expiry means different premium, decay and risk.
+</div>
+
 <!-- ══════════════════════════════════════════════════════ -->
 <!-- 11. CONFIG                                              -->
 <!-- ══════════════════════════════════════════════════════ -->
@@ -419,11 +439,11 @@
 </div>
 
 <div class="card warn">
-  <strong>Last checked: 17 July 2026.</strong> This guide was rewritten in plain English. Every default value above was read straight from the live code and the README — nothing here is invented.
+  <strong>Last checked: 26 July 2026.</strong> Re-verified against <code>src/strategies/trend_pb.js</code>, <code>src/routes/trendPbPaper.js</code>, <code>src/routes/trendPbLiveHarness.js</code> and <code>src/routes/settings.js</code>. <strong>No trading rule changed</strong> — the 15-minute bias, the pullback, the resumption candle and the chandelier trail are exactly as described. New in this edition are the two Section 10 fixes (replay sandbox, stale expiry).
 </div>
 
 <footer style="text-align:center; padding:30px 0 10px; margin-top:40px; border-top:1px solid #21262d;">
-  <p class="muted">Trend Pullback (TREND_PB) — Strategy Guide (plain-English edition) &nbsp;|&nbsp; updated 17 July 2026</p>
+  <p class="muted">Trend Pullback (TREND_PB) — Strategy Guide (plain-English edition) &nbsp;|&nbsp; updated 26 July 2026</p>
 </footer>
 
 </div>
@@ -576,6 +596,23 @@ TVChart.render("tpb-session", {"title":"NIFTY 50 Index","subtitle":"5m · NSE ·
       overlays: [{ name:"EMA20", color:"#f5a623", data:[24244,24252,24262,24266,24262,24256] }],
       markers: [{ i:5, type:"dot", color:"#d29922", price:24206, text:"too deep — no trade" }],
       legend: [{ color:"#f5a623", label:"EMA20 (5m)" }, { color:"#d29922", label:"break" }]
+    });
+    // The pullback pause, then the one candle that ticks all four boxes
+    TVChart.render("tpb-resume", {
+      title: "Trend Pullback — three candles rejected, the fourth triggers",
+      subtitle: "5m · NIFTY · body ≥ 0.5×ATR, close above EMA20 and above prior high",
+      times: ["11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40"],
+      candles: [[24230,24262,24226,24258],[24258,24292,24254,24288],[24288,24296,24268,24274],
+        [24274,24280,24258,24263],[24263,24272,24256,24272],[24272,24282,24262,24268],
+        [24268,24300,24266,24296],[24296,24318,24290,24312],[24312,24334,24306,24328]],
+      overlays: [{ name:"EMA20", color:"#f5a623",
+        data:[24236,24248,24258,24264,24268,24272,24278,24288,24300] }],
+      markers: [
+        { i:3, type:"dot", color:"#d29922", price:24263, text:"pullback — A: body too small" },
+        { i:5, type:"dot", color:"#d29922", price:24268, text:"B: below EMA20" },
+        { i:6, type:"buy", price:24296, text:"BUY CE 24,296 — C: all four pass" }],
+      legend: [{ color:"#f5a623", label:"EMA20 (5m)" }, { color:"#d29922", label:"rejected candles" },
+        { color:"#26a69a", label:"resumption BUY" }]
     });
   };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", render);

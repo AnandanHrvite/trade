@@ -93,7 +93,7 @@ See [BB_RSI.md](BB_RSI.md) for the authoritative spec. Summary:
 - **Initial SL** = SuperTrend value at entry (no clamp). Used for risk sizing + display; it is **not** an intra-tick stop and does not trail.
 - **Exit** (per-tick, **spot points**): **Profit lock** — once peak favourable spot move ≥ `BB_RSI_PROFIT_LOCK_TRIGGER_PTS(25)`, exit when it gives back below `BB_RSI_PROFIT_LOCK_PCT(50)`% of peak (ratchets up: peak 100pts → lock 50pts); the upside exit. → **Hard stop** — exit if the trade moves ≥ `BB_RSI_STOP_LOSS_PTS(30)` against entry; a **wide** catastrophic loss cap that only clips deep adverse excursions on failed fades (the shown SuperTrend SL is display/sizing only). Both points-based so they work even on spot-proxy sessions. → **BB re-entry** (per-tick): exit the instant spot crosses back through the band (failed breakout), at the band line — not the bar close (`BB_RSI_BB_REENTRY_EXIT`, default on); armed only once the breakout has extended ≥ `BB_RSI_BB_REENTRY_ARM_PTS(10)` past the band, so a fresh entry sitting right at the band isn't knocked out by an immediate noise wick → **trend flip** on candle close (SuperTrend flip) handles trend runners → bid-ask spread guard → EOD. No break-even-to-entry snap, no SuperTrend/prev-candle SL trail, no % spot-trail, no time-stop.
 - **Per-side SL pause** (`BB_RSI_PER_SIDE_PAUSE`): an SL on CE only pauses CE entries; PE remains free, plus `BB_RSI_CONSEC_SL_EXTRA_PAUSE` extra candles per consecutive SL.
-- **Per-trade context logging** (additive): each trade record captures BB / RSI / trend context at entry and **MFE / MAE** (max-favorable + max-adverse excursion in pts and ₹) over the life of the trade, **`secsToMFE` / `secsToMAE`** (seconds from entry to that peak / trough — distinguishes early-peak-then-giveback from slow-grind, for trail tuning), plus **`vixAtExit`** — feeds the active paper-trade data-collection schema. This enrichment is now uniform across all 4 strategies (paper + live): each logs the signal diagnostics it computes at entry (EMA_RSI_ST: EMA9/slope/RSI/SAR/ADX; PA: RSI/ADX/trend/pattern/SR; ORB: VWAP-aligned/vol/wick pass flags) so post-window analysis can correlate behaviour with market conditions. Timing fields use each engine's replay-safe tick clock so replayed sessions reproduce identical values
+- **Per-trade context logging** (additive): each trade record captures BB / RSI / trend context at entry and **MFE / MAE** (max-favorable + max-adverse excursion in pts and ₹) over the life of the trade, **`secsToMFE` / `secsToMAE`** (seconds from entry to that peak / trough — distinguishes early-peak-then-giveback from slow-grind, for trail tuning), plus **`vixAtExit`** — feeds the active paper-trade data-collection schema. This enrichment is now uniform across all 4 strategies (paper + live): each logs the signal diagnostics it computes at entry (EMA_RSI_ST: EMA20/50/21 + RSI + SuperTrend; BB_RSI: BB bands / RSI / SuperTrend; PA: pattern/trend/SR; ORB: OR width, VWAP side, body-vs-ATR, gate funnel) so post-window analysis can correlate behaviour with market conditions. Timing fields use each engine's replay-safe tick clock so replayed sessions reproduce identical values
 
 ### Strategy 3: Price Action — Chart-Pattern Breakouts (5-min)
 - **Patterns (the only four entry logics, all default ON)**:
@@ -405,7 +405,7 @@ Full spec: [BB_RSI.md](BB_RSI.md).
 | **— option selection —** | | |
 | `ORB_ITM_STEPS` | `1` | Strikes ITM (×50) for ~delta 0.6 (CE lower / PE higher). `0` = ATM |
 | `ORB_PREMIUM_GATE_ENABLED` | `true` | Skip when option LTP is outside the band below |
-| `ORB_PREMIUM_MIN` / `ORB_PREMIUM_MAX` | `80` / `400` | Acceptable option-premium band (₹) |
+| `ORB_PREMIUM_MIN` / `ORB_PREMIUM_MAX` | `120` / `400` | Acceptable option-premium band (₹), widened for slightly-ITM premiums |
 | `ORB_MAX_SPREAD_PTS` | `2` | Skip when ask−bid exceeds this (falls back to `MAX_BID_ASK_SPREAD_PTS`; fails open with no depth) |
 | **— risk / regime —** | | |
 | `ORB_MAX_DAILY_TRADES` | `1` | Textbook 1/day — raise only if you accept the chop |
@@ -415,7 +415,7 @@ Full spec: [BB_RSI.md](BB_RSI.md).
 | `ORB_EXPIRY_DAY_ONLY` | `false` | Only trade ORB on weekly-expiry day |
 | `ORB_VIX_ENABLED` | `false` | Independent VIX filter |
 | `ORB_VIX_MAX_ENTRY` / `ORB_VIX_STRONG_ONLY` | `22` / `18` | Per-mode VIX thresholds |
-| `ORB_OI_ENABLED` | `true` | Apply the OI-buildup filter to ORB entries (needs the master OI switch on) |
+| `ORB_OI_ENABLED` | `false` | Apply the OI-buildup filter to ORB entries (needs the master OI switch on). **Note:** many deployed `.env` files set this to `true` — check Settings for the running value |
 | `ORB_SIG_WINDOW` / `ORB_BT_SEED_PREMIUM` / `ORB_BT_SLIPPAGE_PTS` | `260` / `240` / `1.5` | Backtest only: trailing bar window fed to `getSignal`, entry-premium proxy, per-side slippage haircut |
 | `ORB_MAX_WEEKLY_LOSS` | `9000` | Stop entries for the rest of the ISO-week once week realised P&L ≤ −this (₹; `0` = off) |
 | `ORB_LOSS_STREAK_SKIP` | `4` | Sit out the next day after this many consecutive losing days (one-day cool-off; `0` = off) |
@@ -815,7 +815,7 @@ src/
 
 - **Runtime**: Node.js + Express (HTTPS, self-signed cert)
 - **Data Feed**: Fyers WebSocket (single connection, multi-mode fan-out)
-- **Indicators**: `technicalindicators` (EMA, RSI, ADX, Parabolic SAR, Bollinger Bands)
+- **Indicators**: `technicalindicators` (EMA, RSI, ADX, ATR, Bollinger Bands) + SuperTrend from [src/utils/supertrend.js](src/utils/supertrend.js). **Parabolic SAR is no longer computed anywhere** — stripped from EMA_RSI_ST 2026-06-12 and from BB_RSI 2026-07-05; only filenames and comments still carry the name.
 - **Brokers**: Zerodha Kite Connect (EMA_RSI_ST live) + Fyers API v3 (bb_rsi + PA live + all data)
 - **Notifications**: Telegram Bot API with 17 per-mode toggles + master gate + consolidated EOD
 - **Charts**: Chart.js (theme-aware) + live candlestick overlays on status pages

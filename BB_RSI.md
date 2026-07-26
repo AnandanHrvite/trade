@@ -1,6 +1,6 @@
 # BB_RSI Strategy — Bollinger Bands + SuperTrend + RSI
 
-*Redefined 2026-05-29 (trend-flip exit + profit lock). **PSAR removed 2026-07-05 — SuperTrend is now the sole trend source (V7).*** Authoritative description of the **current** BB_RSI logic, transcribed from the code:
+*Redefined 2026-05-29 (trend-flip exit + profit lock). **PSAR removed 2026-07-05 — SuperTrend is now the sole trend source (V7).** Re-verified against the code 2026-07-26; entry/exit rules unchanged since 2026-07-05, additions this pass are §3a (confirmation candle, which was undocumented), §8 (stale-expiry block) and §8a (live-route parity).* Authoritative description of the **current** BB_RSI logic, transcribed from the code:
 - Entry signal: [src/strategies/bb_rsi.js](src/strategies/bb_rsi.js) (`getSignal`) — shared by all three modes.
 - Order/exit/trail management: [src/routes/bbRsiPaper.js](src/routes/bbRsiPaper.js) (paper is canonical) / [src/routes/bbRsiLive.js](src/routes/bbRsiLive.js). Backtest: [src/routes/bbRsiBacktest.js](src/routes/bbRsiBacktest.js). Replay drives the paper engine and inherits automatically.
 
@@ -43,6 +43,10 @@ Timeframe: **3 or 5-min** candles via `BB_RSI_RESOLUTION` (default 5). BB and RS
 
 Just the two RSI keys — there are no overbought/oversold caps. The **far-line filter** (`BB_RSI_MAX_ENTRY_SL_PTS`, `0` disables) skips entries where a freshly-flipped SuperTrend line sits 100s of pts away (uncapped risk). Optional `BB_RSI_RSI_TURNING` (default off): also require RSI momentum to confirm (CE: RSI not falling vs prior bar; PE: not rising). **Optional ADX trend filter** (`BB_RSI_ADX_ENABLED`, default off): block **all** entries when `ADX(14) < BB_RSI_ADX_MIN(20)` — the strategy wins in trends and bleeds in chop, so this sits out ranging sessions. All valid signals enter at the `BB_RSI` strength tier.
 
+### 3a. Confirmation candle (`BB_RSI_CONFIRM_CANDLE_ENABLED`, default **ON**)
+
+The signal candle does **not** enter. With confirmation on (the shipped default), a fully-closed candle must satisfy every rule in §3 (the *signal candle*), and then the **next** candle must cross that signal candle's close — CE above / PE below — at which point entry fires **intra-bar on the cross**. This filters the one-candle false breakout. `BB_RSI_CONFIRM_OUTSIDE_BAND` moves the confirmation evaluation to the next bar with an additional band guard. Turning the toggle OFF restores the legacy behaviour: enter at the signal candle's close.
+
 ## 4. Stop loss & profit lock
 
 The strategy is **SuperTrend-flip driven** for the trend exit, with a **profit lock** that banks small bb_rsi gains.
@@ -78,6 +82,17 @@ After an **SL hit** on a side, new entries on **that side** are blocked for `BB_
 
 - `BB_RSI_EXPIRY_DAY_ONLY` — when on, only trade on NIFTY weekly expiry day.
 - **Live order placement is double-gated**: `BB_RSI_ENABLED` **and** global `LIVE_HARNESS_DRY_RUN=false`, with `BB_RSI_LIVE_DRY_RUN` to keep BB_RSI simulated while others go live.
+- **Stale expiry override blocks entry (2026-07-26).** `BB_RSI_OPTION_EXPIRY_OVERRIDE` falls back to the common `OPTION_EXPIRY_OVERRIDE`. A date is stale once past **15:30 IST on its own expiry day** (`instrument.isExpiryOverrideStale()`), so a contract still trades all through its expiry day. Previously the manual-override branch was the only one that returned its symbol **without** validating it via `getQuotes`, so a dead symbol reached the engine: BB_RSI entered anyway, logged `pnlMode: "spot proxy"`, and left `BB_RSI_OPT_STOP_PCT` inert (it needs an entry premium that never arrived) — i.e. **no option stop for the life of the position**. A stale override now returns `{ invalid: true, symbol: null }` plus the key to fix, and deliberately does **not** fall through to auto-detection. Sessions showing `pnlMode: "spot proxy"` + `no_data` option errors are a data hole, not a result.
+
+## 8a. Live-route parity (2026-07-26) — no strategy logic changed
+
+Three defects where `bbRsiLive` behaved differently from canonical paper:
+
+1. **Session-teardown race.** `stopSession()` fired `squareOff()` un-awaited, then ran on to `saveBbRsiSession()` and `notifyDayReport()` while the sell was still at the broker — the saved session was missing its final trade and P&L (a ₹240→₹300 exit on qty 65 = **₹3,814** off the books). Now async and awaited, with `state.running` cleared first. Manual `/exit` had the same shape with no `.catch()`; it now awaits and returns 500 on broker failure.
+2. **Unbounded broker wait.** Neither SDK sets an HTTP timeout, so the fix above could hang `/stop` and stall `gracefulShutdown`. [src/utils/boundedExit.js](src/utils/boundedExit.js) caps it at `LIVE_EXIT_WAIT_MS` (default **20000**, `0` opts out, malformed value warns and falls back rather than disabling the ceiling; read per call so Settings applies without a restart). The timeout **cancels nothing** — the alert reads "may still be in flight, verify the dashboard".
+3. **`PORTFOLIO_MAX_DAILY_LOSS` was missing from every live route.** It was wired into the six paper routes only, so with the cap armed paper stopped entering while live kept trading. All ten routes now check it, at the same position in each gate chain. Block-only.
+
+Covered by `npm run test:parity` (25 assertions, all mutation-tested).
 
 ## 9. Charts (paper status, live status, replay)
 

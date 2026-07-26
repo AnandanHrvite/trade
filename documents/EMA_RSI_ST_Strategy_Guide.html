@@ -340,6 +340,9 @@
   .note.success {
     background: rgba(38,166,154,0.06); border-left-color: var(--green);
   }
+  .note.danger {
+    background: rgba(239,83,80,0.07); border-left-color: var(--red);
+  }
 
   /* ── Architecture diagram ────────────────────────── */
   .arch {
@@ -432,8 +435,8 @@
   <div class="sub">Ride a trend: buy a call when the market is clearly going up, a put when it's clearly going down</div>
   <div class="sub2">NIFTY index options &middot; Zerodha (live orders) &middot; Fyers (price data) &middot; 5-minute candles</div>
   <div class="version-box">
-    <strong>Plain-English edition &mdash; updated 2026-07-17.</strong> This guide explains the whole strategy in everyday language, with a glossary up front and a worked example in real rupees. Every setting and default here was read straight from the live code and the README.<br/>
-    <span style="color:var(--text3);">Latest refresh adds the new safety features from the 2026-07-17 hardening pass: an optional break-even floor (Section 6), a portfolio-wide loss cap and a restart-proof daily loss cap (Section 9), and a square-off-on-shutdown note (Section 11). All new features are <strong>off by default</strong>, so behaviour at the shipped settings is unchanged.</span>
+    <strong>Plain-English edition &mdash; updated 2026-07-26.</strong> This guide explains the whole strategy in everyday language, with a glossary up front and a worked example in real rupees. Every setting and default here was read straight from the live code.<br/>
+    <span style="color:var(--text3);">Latest refresh covers a production-certification pass on 26 July. <strong>No trading rule changed</strong> &mdash; no indicator, threshold, time window, sizing or expiry value is different. What changed is a set of bugs that were quietly corrupting results: NIFTY's spot price being recorded as if it were the option price (Section 9), a losing-streak brake that fired even when you had switched it off (Section 8), and a dead expiry date being traded as though the contract still existed (Section 11).</span>
   </div>
   <div class="toc">
     <div class="toc-title">Contents</div>
@@ -663,6 +666,9 @@
        One lot = 75 units, so profit = 80 x 75 = Rs 6,000.
        The meltdown stop (Rs 170) and points stop never had to fire.</pre>
 
+  <div class="tv-chart" id="ers-trail"></div>
+  <p class="tv-cap"><b>The safety line climbing behind a winner.</b> After the buy at 24,237 the orange EMA21 line rises with every finished candle, dragging the stop up behind price &mdash; it only ever tightens, never loosens. Notice the two dips at 11:40 and 12:20: price wobbled but <em>never touched</em> the line, so we held. At 13:05 a candle's range finally touches EMA21 &rarr; the trend is broken &rarr; <b>SELL</b>. No target was ever set; the line decided how far the winner ran.</p>
+
   <div class="note success"><strong>Why no fixed target?</strong> If we always sold at "+40%," we'd cut our biggest trend days short &mdash; and a few big days are what pay for all the small losing ones over a month. The trailing safety line keeps us in the move as long as it lasts, while the meltdown stop, points stop and negative-candle stop make sure a bad trade dies small.</div>
 </div>
 
@@ -674,8 +680,15 @@
     <tr><th>Cool-down</th><th>What it does</th></tr>
     <tr><td><strong>Same-side pause</strong></td><td>After a stop-out on one side (say a CE), we refuse to buy <em>that same side</em> again for a few candles. Stops us re-buying the exact setup that just lost, tick after tick. (Default 3 candles; the saved Settings use 2.)</td></tr>
     <tr><td><strong>Opposite-side (flip) pause</strong></td><td>After any stop-type exit, we also refuse to immediately <em>flip</em> to the other side for a few candles. This is the big one &mdash; it kills the "CE stopped out, buy PE, PE stopped out, buy CE&hellip;" whipsaw that quietly drains an account on a choppy day. It's on by default. (A normal opposite-signal exit or an end-of-day exit does not trigger this pause.)</td></tr>
-    <tr><td><strong>Choppy-day brake</strong></td><td>An optional switch: after a set number of losing trades in a row in one session, stop taking new trades for the rest of the day. Any single winner resets the count. Off by default.</td></tr>
+    <tr><td><strong>Choppy-day brake</strong> (<code>EMA_RSI_ST_MAX_CONSEC_LOSSES</code>)</td><td>An optional switch: after this many losing trades in a row in one session, stop taking new trades for the rest of the day. Any single winner resets the count. <strong>Off by default (0 = off).</strong></td></tr>
   </table>
+
+  <div class="note warn">
+    <strong>Fixed 26 July: the choppy-day brake used to fire even when it was switched off.</strong>
+    A second, older streak rule was hard-wired to pause after <strong>3</strong> losses and ignored your setting completely. So with <code>EMA_RSI_ST_MAX_CONSEC_LOSSES=0</code> &mdash; which the Settings page itself labels "0 = OFF" &mdash; three &#8377;500 losers on 5-minute candles still blocked all entries for 20 minutes, even though the day's &#8377;1,500 was well inside the &#8377;2,000 daily cap. The dashboard made it worse by showing "<em>2 / 3 &mdash; 1 more = pause</em>" against a brake you had disabled.
+    <br><br>
+    Both mechanisms now read the same setting. <strong>0 means off, and N means N.</strong> The Loss Streak card shows either your configured limit or the words "breaker OFF" &mdash; never an invented number.
+  </div>
 </div>
 
 <!-- ════════════════════════════════════════════════ 09 ═══ -->
@@ -693,6 +706,19 @@
     <tr><td><strong>Wide-spread skip</strong> <span class="tag tag-blue">live</span></td><td>Skip a real trade if the option's buy/sell gap is too wide to enter cleanly. Live only.</td></tr>
   </table>
   <div class="note warn"><strong>Keeping two numbers in sync:</strong> the option-meltdown stop is 15% of the premium. On a typical &#8377;200 option that's about &#8377;30 per unit, or roughly <strong>&#8377;2,250 on one lot</strong> (75 units). Two of those in a day already get close to a small daily-loss cap &mdash; so if you tighten one, sanity-check the other.</div>
+
+  <div class="note danger">
+    <strong>Fixed 26 July &mdash; the worst bug this strategy has had: NIFTY's price was being stored as the option's price.</strong>
+    When the option-price feed was slow, a fallback wrote the <em>spot</em> value (about &#8377;23,800) into the field that everything else reads as the <em>option premium</em> (about &#8377;180). The 15% option stop then compared 182 against 17,850, decided the option had collapsed, and force-closed the trade roughly one second after the real premium arrived. The exit was booked as (182 &minus; 23,800) &times; 65 = <strong>&minus;&#8377;15,35,170</strong>, which instantly latched the &#8377;2,000 daily loss cap and shut the strategy down for the day.
+    <br><br>
+    The field is now left empty instead, so the designed "price the trade off NIFTY points" fallback applies &mdash; and in live mode this also brings back the real exchange-side stop order, which that fake number had been suppressing.
+    <br><br>
+    <strong>What this means for your old records:</strong> any trade showing an absurd loss of this shape is a recording artefact, not a real result. Sessions from before this fix should not be used to judge the strategy.
+  </div>
+
+  <div class="note success">
+    <strong>Also fixed in the same pass:</strong> the end-of-day auto-stop used to tear down the <em>shared</em> NIFTY price feed while other strategies were still trading on it; paper mode could act on a position that had already moved into the next candle; the daily-loss latch reset itself on a restart; and the backtest quietly skipped the stop-loss pause, the opposite-side cooldown and the VIX check on one of its entry paths, and counted candles-held one bar late. Backtest over 1,500 real April-2026 candles moved from 68 trades / &minus;&#8377;12,277 to 71 trades / &minus;&#8377;8,934 &mdash; not better performance, just a more honest measurement.
+  </div>
 </div>
 
 <!-- ════════════════════════════════════════════════ 10 ═══ -->
@@ -763,10 +789,21 @@
   <ul style="margin:8px 0 8px 18px;line-height:1.7;">
     <li><strong>No trading on expiry day itself.</strong> If the option's expiry date is <em>today</em>, the strategy refuses to start &mdash; holding an option through its own expiry is too risky. (A replay of a past day is allowed to bypass this.)</li>
     <li><code>TRADE_EXPIRY_DAY_ONLY</code> &mdash; the opposite switch: when on, <em>only</em> trade on NIFTY expiry day.</li>
-    <li><code>EMA_RSI_ST_OPTION_EXPIRY_OVERRIDE</code> / <code>_TYPE</code> let this strategy trade a different weekly expiry from the other strategies. Left blank, it just follows the shared expiry.</li>
+    <li><code>EMA_RSI_ST_OPTION_EXPIRY_OVERRIDE</code> / <code>_TYPE</code> let this strategy trade a different weekly expiry from the other strategies. Left blank, it falls back to the shared <code>OPTION_EXPIRY_OVERRIDE</code>, and if that is blank too, to auto-detection.</li>
     <li><strong>Live trading has two locks.</strong> Real Zerodha orders only go out when <code>EMA_RSI_ST_LIVE_ENABLED=true</code> <em>and</em> the global dry-run switch (<code>LIVE_HARNESS_DRY_RUN</code>) is off. While dry-run is on (the default), the system <em>shows</em> the order it would have placed but sends nothing. Only turn dry-run off after checking that live and paper make the same decisions on a replayed day.</li>
     <li><strong>Clean shutdown squares off first.</strong> When the process is asked to stop (a deploy or restart signal), any open live position is now squared off before it exits &mdash; a redeploy can't leave a real trade stranded. And because several strategies share one price feed, stopping this one no longer tears that feed away from another strategy that still has a live position running.</li>
   </ul>
+
+  <div class="note danger">
+    <strong>Fixed 26 July &mdash; a dead expiry date was being traded as if the contract still existed.</strong>
+    If you type an expiry date into the override box and then forget about it, that date eventually passes. On 26 July the override still said <strong>2026-07-21</strong> &mdash; five days dead &mdash; and because a blank per-strategy override falls back to the shared one, <em>all five running strategies</em> were pinned to it. The manual-override path was the one place that handed its symbol straight to the engines <strong>without checking the contract was real</strong>.
+    <br><br>
+    The damage was quiet: ORB and Trend Pullback blocked the entry, but EMA_RSI_ST and BB_RSI <em>entered anyway</em>, logged their profit-and-loss as "spot proxy" (priced off NIFTY points because no premium ever arrived), and &mdash; because the option stop needs an entry premium to work from &mdash; <strong>ran with no option stop-loss at all</strong> for the life of the position.
+    <br><br>
+    Now there is one definition of "stale": past 15:30 on the expiry day itself, so a contract still trades all through its own expiry day. A stale override <strong>refuses the entry</strong> and names the exact setting to fix. It deliberately does <em>not</em> quietly fall back to another expiry &mdash; a different expiry means different premium, different time-decay and therefore different risk, which is your decision, not the software's. The dashboard warning banner now checks all six per-strategy override keys, not just the shared one.
+    <br><br>
+    <strong>Spot the symptom in your own logs:</strong> a trade recorded with <code>pnlMode: "spot proxy"</code> plus "no_data" errors on the option price means the expiry was wrong. Discard that session &mdash; it is a data hole, not a strategy result.
+  </div>
 </div>
 
 <!-- ════════════════════════════════════════════════ 12 ═══ -->
@@ -803,7 +840,7 @@
 
 <hr/>
 <p style="text-align:center;color:var(--text3);font-size:0.78rem;">
-  EMA_RSI_ST Strategy Guide (plain-English edition) &nbsp;|&nbsp; updated 17 July 2026 &nbsp;|&nbsp; all defaults read from the live code &amp; README.
+  EMA_RSI_ST Strategy Guide (plain-English edition) &nbsp;|&nbsp; updated 26 July 2026 &nbsp;|&nbsp; all defaults read from the live code.
   The code is always the final word (<code>strategy1_sar_ema_rsi.js</code>, <code>emaRsiStPaper.js</code>).
 </p>
 
@@ -963,6 +1000,24 @@
         { name:"EMA50", color:"#a78bfa", data:[24316,24315,24314,24313,24313,24312,24312,24311,24310,24309] }],
       markers: [{ i:6, type:"dot", color:"#fbbf24", price:24316, text:"no trade — EMAs not stacked" }],
       legend: [{ color:"#3b82f6", label:"EMA20" }, { color:"#a78bfa", label:"EMA50" }]
+    });
+    // Chart 4 — the EMA21 trailing safety line: tightens only, exits on a touch
+    TVChart.render("ers-trail", {
+      title: "EMA_RSI_ST — the EMA21 trail rides the winner out",
+      subtitle: "5m · NIFTY · no target; the trail decides the exit",
+      times: ["10:40","11:00","11:20","11:40","12:00","12:20","12:40","13:00","13:05","13:20"],
+      candles: [[24237,24262,24232,24256],[24256,24286,24250,24280],[24280,24312,24274,24306],
+        [24306,24320,24288,24314],[24314,24348,24308,24342],[24342,24356,24322,24336],
+        [24336,24374,24330,24368],[24368,24386,24360,24380],[24380,24384,24346,24352],
+        [24352,24360,24330,24338]],
+      overlays: [{ name:"EMA21 trail", color:"#f5a623",
+        data:[24218,24230,24248,24266,24286,24300,24318,24336,24350,24352] }],
+      markers: [{ i:0, type:"buy", price:24237, text:"BUY CE 24,237" },
+        { i:3, type:"dot", color:"#d29922", price:24288, text:"dip — line not touched" },
+        { i:5, type:"dot", color:"#d29922", price:24322, text:"dip — still held" },
+        { i:8, type:"exit", price:24350, text:"EXIT — candle touched EMA21" }],
+      legend: [{ color:"#f5a623", label:"EMA21 trail" }, { color:"#26a69a", label:"BUY" },
+        { color:"#d29922", label:"dips that did NOT exit" }, { color:"#ef5350", label:"EXIT" }]
     });
   };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", render);

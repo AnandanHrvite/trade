@@ -6,6 +6,33 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Docs — all seven guides and both strategy reference files re-synced to the code
+
+A documentation pass over everything in [documents/](documents/) plus the root strategy references. No code behaviour changed; the only source edits are two stale **comments** and one README correction (see the end of this entry).
+
+**ORB guide — the largest gap.** The guide still described the deleted V1/V2/V3 engines and their filters. Rewritten against the rebuilt single engine:
+
+- The "0.7×ATR15 minimum opening range", the "must clear yesterday's high/low" fresh-ground rule and the "close in the extreme fifth" filter are **deleted**, not toggled off. The 9-gate checklist was rewritten to the funnel the code actually runs (time window → trade budget → OR ready → OR vs ATR15 → gap → breakout → candle quality → confirmation → retest window → option gates), each with the real numbers.
+- The retest is now a built-in 6-candle fallback (`ORB_RETEST_MAX_WAIT`), not an optional `ORB_RETEST_ENABLED` experiment.
+- **The stop section was materially wrong and is now honest**: the strategy asks for 50–83 spot pts, but `ORB_MAX_TRADE_LOSS=1500` on a 65-lot ~0.6-delta option binds at ~38 pts, so `orbStopRisk` clamps the placed stop and `ORB_SL_ATR_MULT` is **inert**. Documented with the arithmetic (₹1,500 ÷ (65 × 0.60) ≈ 38 pts) and the ~₹2,300 figure needed for the full ATR stop.
+- New Section 10 "How much to trust the numbers" replaces the legacy-engines section: 9 trades / 39 sessions, PF 1.44, P(no edge) ≈ 37%, best trade = 211% of net (remove it → −₹3,786), the three superseded profit figures and why each was optimistic, the narrow-OR hypothesis, and why tuning `ORB_BODY_ATR_MULT` on this sample is selection bias.
+- Config section rewritten to the keys the code reads, plus a **dead-keys table** (`ORB_ENTRY_V*`, `ORB_OR_ATR_MIN`, `ORB_PRIORDAY_LEVEL_FILTER`, `ORB_CLOSE_POS_PCT`, `ORB_RSI_*`, `ORB_ADX_*`, `ORB_ATR_PERIOD`, `ORB_BUFFER_*`, `ORB_RETEST_TOL_*`, `ORB_TARGET_RANGE_MULT`, `ORB_STOP_PCT`, `ORB_SL_CANDLES`, `ORB_PREMIUM_LOCKIN_*`) — these are not "off", they are simply not read.
+- Also disclosed: the backtest cannot run the premium-band, spread or OI gates, so it always shows **more** trades than paper takes.
+
+**EMA9+VWAP guide.** The VWAP caveat said the difference from TradingView was "a point or two"; it is a permanent design decision with measured numbers (up to 80.5 pts of band difference and 41/640 flag flips when volume weighting was still in play, 0.00 / 0 after). Added `EMA9VWAP_RESOLUTION`, the candle-timestamp entry window, the first-candle-of-session guard, the confirm-candle toggle that used to block every trade, the replay socket-mutex fix, `/simulate` isolation, and that the backtest now honours the optional stops it previously ignored. Replaced the "12 settings are `.env`-only" note — they are all in Settings now. Known-gaps section rewritten around the 23-trade verdict (one trade carries the sample; 16 Jul had the frozen-VWAP bug; 21 Jul was 0DTE).
+
+**EMA_RSI_ST guide.** Added the spot-booked-as-premium defect (how to recognise the −₹15,35,170-shaped artefact in old records), the streak breaker that fired at a hardcoded 3 against a disabled key, and the stale-expiry block including the `pnlMode: "spot proxy"` symptom.
+
+**BB_RSI, Price Action, Trend Pullback guides.** No rule changed in any of them; each gained the live-parity section (session-teardown race losing the final trade from the books, the `LIVE_EXIT_WAIT_MS` ceiling that cancels nothing, the portfolio cap that was missing from every live route) and the stale-expiry note. The PA guide now states plainly that PA is `MODE_ENABLED=false` on this deployment.
+
+**Application Setup guide.** `npm test` / `test:orb` / `test:parity` / `test:config` documented (the guide still claimed there was no test step), plus four troubleshooting rows: the stale-expiry banner, `pnlMode: "spot proxy"` trades, the Loss Streak card's invented denominator, and why Stop now waits.
+
+**Charts.** Six new inline-SVG charts through the TVChart kit: ORB gained a skipped-day (OR too wide), a retest-held entry and a rupee-cap loser; BB_RSI gained the ratcheting profit-lock exit; EMA_RSI_ST gained the EMA21 trail riding a winner; EMA9+VWAP gained reversal-exit-vs-signal-exit; Trend Pullback gained the three-rejected-then-trigger pullback. Every guide now carries a worked "real numbers" box beside each rule. A QA harness executes each guide's chart scripts in a `vm` sandbox and asserts every `tv-chart` div has a render call, every render call has a div, every chart produces SVG with no `NaN`/`undefined`, tags balance and no TOC anchor is dead — all seven guides pass.
+
+**Root reference files.** [EMA_RSI_ST.md](EMA_RSI_ST.md) was rewritten: it still documented the **Parabolic SAR + EMA21-touch entry** removed on 2026-06-12, so its entry section, indicator list, exits, cooldowns and chart notes described a strategy that has not run for six weeks. Now the four-gate EMA-alignment / RSI-band / SuperTrend / close-beyond-EMA entry, with the code-vs-Settings default splits called out (`OPT_STOP_PCT` 0.15 vs 0.25, `MAX_DAILY_TRADES` 20 vs 5, `MAX_DAILY_LOSS` 5000 vs 3000, `EMA_RSI_ST_CANDLE_TRAIL_ENABLED` false vs true) and the note that the time-stop is inert at the shipped `SL_MODE=ema`. [BB_RSI.md](BB_RSI.md) gained §3a (the confirmation candle, default ON, which was undocumented) and the stale-expiry / live-parity sections.
+
+**Source edits in this pass** (comments and one README table only, no behaviour): `computeVwapBands`'s docblock in [src/strategies/ema9_vwap.js](src/strategies/ema9_vwap.js) still claimed "volume-weighted when candles carry real volume", contradicting its own file header and the implementation; README's ORB table listed `ORB_PREMIUM_MIN` as `80` (code default is `120`) and `ORB_OI_ENABLED` as `true` in one table and `false` in another (code default is `false`); the indicator list still named Parabolic SAR, which is no longer computed anywhere in `src/`.
+
 ### Fixed — two ways the engines ignored their own configuration
 
 A configuration-fidelity audit of the **enabled** strategies (EMA_RSI_ST, BB_RSI, ORB, EMA9VWAP, TREND_PB — PA and STRADDLE are `*_MODE_ENABLED=false`) asked one question of every value in `.env`: is this what the engine actually acts on? Two answers were no, and both failed silently.

@@ -129,9 +129,10 @@ function isEntryWindowOpen(candleTimeSec, resolutionMins) {
 
 /**
  * Session-anchored VWAP + Standard-Deviation bands over the given candles.
- * Volume-weighted when candles carry real volume; equal-weighted (TWAP) fallback
- * otherwise — exactly matching the ORB computeVwap convention, extended with the
- * volume-weighted variance TradingView uses for its "Standard Deviation" bands.
+ * ALWAYS equal-weighted (TWAP) over HLC3, with σ from the equal-weighted variance.
+ * Volume is deliberately never read — see "Why equal-weight" in the file header:
+ * it is the only field whose provenance differs between engines, and reading it is
+ * what made Paper and Backtest compute different bands for the same session.
  * Returns { vwap, upper, lower, stdev } or null if no in-session candles.
  */
 function computeVwapBands(candles, anchorMins, mult) {

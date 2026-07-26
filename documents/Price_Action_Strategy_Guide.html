@@ -222,7 +222,7 @@ td.pe { color: var(--red); }
     <p class="subtitle">Buy a CE or PE when NIFTY finishes one of four classic chart shapes and the breakout comes back to prove itself &mdash; explained in plain English</p>
     <div class="meta">
       <span>Plain-English edition</span>
-      <span>Updated: 2026-07-16</span>
+      <span>Updated: 2026-07-26</span>
       <span>NIFTY Options &middot; 4 Chart Patterns &middot; Retest-Confirmed &middot; 5-Min Candles</span>
     </div>
     <div class="pillars">
@@ -1122,6 +1122,21 @@ td.pe { color: var(--red); }
       </div>
     </div>
 
+    <div class="tip-box mt-2">
+      <div class="tip-title">Heads-up: Price Action is currently switched OFF on this machine</div>
+      <p class="fs-sm">The running config has <code>PA_MODE_ENABLED=false</code> and <code>PA_ENABLED=false</code>, so PA is hidden from the menus and takes no trades &mdash; in practice <em>or</em> live. Everything in this guide still describes the engine accurately; it simply isn't running. Turn <code>PA_MODE_ENABLED</code> on in Settings to bring it back.</p>
+    </div>
+
+    <div class="card mt-2" style="border-top:3px solid var(--yellow, #fbbf24);">
+      <h3>Three live-mode fixes (26 July 2026)</h3>
+      <p class="fs-sm">No trading rule changed. All three were live mode behaving differently from practice &mdash; and practice is always the one treated as correct.</p>
+      <ul class="fs-sm" style="margin-top:8px">
+        <li><strong>Stopping a live session could lose the last trade from your books.</strong> The sell order was sent but not waited for, so the session was saved &mdash; and the day report sent &mdash; while the order was still at the broker. A &#8377;240&rarr;&#8377;300 exit on 65 units is <strong>&#8377;3,814</strong> that never got recorded. Stopping now waits for the exit first. The manual <code>/exit</code> button had the same shape: it replied "Position exit triggered" <em>before</em> placing the order, and a broker failure vanished as an unhandled error. It now waits and reports a real failure.</li>
+        <li><strong>That wait is capped at <code>LIVE_EXIT_WAIT_MS</code> (default 20 seconds),</strong> because neither broker SDK sets a network timeout and a dead connection could otherwise hang the app for minutes. A healthy order takes under a second. The cap <strong>cancels nothing</strong> &mdash; an order already sent cannot be recalled &mdash; so the alert says "may still be in flight, verify the dashboard".</li>
+        <li><strong>The portfolio-wide daily loss cap was missing from live mode.</strong> It was wired into all six practice routes and none of the live ones, so with it armed, practice stopped trading while live kept going. All ten routes check it now.</li>
+      </ul>
+    </div>
+
     <div class="card mt-2" style="border-top:3px solid var(--purple);">
       <h3 style="color:var(--purple);">Backtest &mdash; <code>/pa-backtest</code> (test on the past)</h3>
       <p class="fs-sm">Runs the strategy over past dates to see how it would have done. History has no real option prices, so the backtest <strong>estimates</strong> the option: it assumes the option moves about 0.55 point for every NIFTY point (delta) and loses about 10 points of value per day to time-decay (theta), then subtracts brokerage and an optional slippage. So backtest profit is a good approximation, not the exact fills you'd get live &mdash; always sanity-check against paper. There's also a per-pattern view (<code>/pa-pattern-backtest</code>) that shows how each of the four patterns did on its own.</p>
@@ -1360,8 +1375,8 @@ td.pe { color: var(--red); }
     </div>
 
     <div class="tip-box mt-2">
-      <div class="tip-title">Last checked: 16 July 2026</div>
-      <p class="fs-sm">This guide was rewritten in plain English and re-verified against the live code (<code>src/routes/paPaper.js</code>) and the README. Every default above was read straight from the code &mdash; the rules are unchanged, only the wording is simpler.</p>
+      <div class="tip-title">Last checked: 26 July 2026</div>
+      <p class="fs-sm">Re-verified against the live code (<code>src/strategies/price_action.js</code>, <code>src/routes/paPaper.js</code>, <code>src/routes/paLive.js</code>, <code>src/routes/settings.js</code>). <strong>No trading rule changed</strong> &mdash; the patterns, retest, structural stop and trail are exactly as described. What is new in this edition is Section 12: PA is currently disabled in the running config, plus the three live-mode fixes (session-teardown race, capped broker wait, missing portfolio loss cap).</p>
     </div>
   </div>
 </section>
@@ -1371,7 +1386,7 @@ td.pe { color: var(--red); }
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <footer style="padding: 30px 0; border-top: 1px solid var(--border); text-align: center;">
   <div class="container">
-    <p class="text-muted fs-sm">NIFTY OPTIONS &mdash; Price Action Strategy Guide (plain-English edition) &nbsp;|&nbsp; updated 2026-07-16</p>
+    <p class="text-muted fs-sm">NIFTY OPTIONS &mdash; Price Action Strategy Guide (plain-English edition) &nbsp;|&nbsp; updated 2026-07-26</p>
     <p class="text-muted" style="font-size: 0.78rem; margin-top: 6px;">4 Chart Patterns &middot; Retest-Confirmed Entry &middot; Structural Stop (8&ndash;25 pts) &middot; Breakeven &rarr; Swing Trail &middot; No RSI / No ADX</p>
   </div>
 </footer>

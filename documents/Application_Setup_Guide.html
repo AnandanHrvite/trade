@@ -551,7 +551,7 @@
   <p class="subtitle">How to install the trading app, log the brokers in, and run it &mdash; explained in plain English</p>
   <div class="meta">
     <span><span class="badge badge-blue">Plain-English edition</span></span>
-    <span>Updated: 2026-07-17</span>
+    <span>Updated: 2026-07-26</span>
     <span>Palani Andawar Trading System &mdash; NIFTY options bot</span>
   </div>
 </header>
@@ -742,7 +742,15 @@ openssl req -x509 -newkey rsa:4096 \
       </tr>
       <tr>
         <td><code>node -c src/app.js</code></td>
-        <td>A quick spell-check for the code &mdash; it reads the main file and confirms there are no obvious typos that would stop it starting, <em>without</em> actually running it. Fast way to sanity-check before deploying. (There's no separate test or build step in this project.)</td>
+        <td>A quick spell-check for the code &mdash; it reads the main file and confirms there are no obvious typos that would stop it starting, <em>without</em> actually running it. The fastest sanity-check before deploying. (There is no build step in this project.)</td>
+      </tr>
+      <tr>
+        <td><code>npm test</code></td>
+        <td><strong>Run this before every deploy.</strong> It runs 106 automatic checks across four suites and prints a pass/fail count. They don't place any orders or touch your data &mdash; they just verify the rules still behave as documented.</td>
+      </tr>
+      <tr>
+        <td><code>npm run test:orb</code> &middot; <code>test:parity</code> &middot; <code>test:config</code></td>
+        <td>The same suites individually, when you only changed one area. <em>orb</em> = the ORB entry and exit rules; <em>parity</em> = live mode behaving the same as practice mode; <em>config</em> = every setting in your <code>.env</code> actually being obeyed by the engine.</td>
       </tr>
       <tr>
         <td><code>pm2 startOrRestart ecosystem.config.js --update-env</code></td>
@@ -977,18 +985,34 @@ openssl req -x509 -newkey rsa:4096 \
         <td>New code <strong>didn't take effect</strong> on the server</td>
         <td>Make sure the reload used the settings file: <code>pm2 startOrRestart ecosystem.config.js --update-env</code>. Reloading without naming that file reuses the old settings.</td>
       </tr>
+      <tr>
+        <td>A red banner says the <strong>option expiry is out of date</strong>, and trades are refused</td>
+        <td>You (or an earlier session) typed a fixed expiry date into the settings and it has now passed. The app treats a date as dead once its own expiry day has closed at 15:30, and it <strong>refuses to trade</strong> rather than quietly switching to a different expiry &mdash; a different expiry changes the option's price, its decay and its risk, so that is your decision, not the software's. The banner names the exact setting to clear. Clear it (leave it blank) to go back to automatic expiry detection.</td>
+      </tr>
+      <tr>
+        <td>Trades show <code>pnlMode: "spot proxy"</code> in the log</td>
+        <td>The option's real price was never received, so profit was estimated from NIFTY points instead. It usually means a wrong or dead expiry (row above) or a stale broker login. Any percentage-based option stop does <strong>not</strong> work in this state. Treat that session as a data hole, not a strategy result.</td>
+      </tr>
+      <tr>
+        <td>The <strong>Loss Streak card</strong> shows a limit you didn't set</td>
+        <td>Fixed on 26 July 2026. An old rule used to pause entries after 3 losses in a row regardless of your setting, and the card invented "/ 3" to match. Now the card shows either your configured limit or the words "breaker OFF" &mdash; and <code>0</code> genuinely means off.</td>
+      </tr>
+      <tr>
+        <td>Pressing <strong>Stop</strong> on a live page seems to hang</td>
+        <td>Stopping now <em>waits</em> for any open position to be sold before saving the session &mdash; otherwise the last trade went missing from the books. The wait is capped at <code>LIVE_EXIT_WAIT_MS</code> (default 20 seconds); a healthy order takes under a second, so a long wait means the broker is unreachable. If the cap fires you get a Telegram alert saying the order <em>may still be in flight</em> &mdash; check the dashboard, because an order already sent cannot be recalled.</td>
+      </tr>
     </tbody>
   </table>
 
   <div class="note note-warn">
-    <strong>Last updated: 17 July 2026.</strong> This guide was rewritten in plain English for non-technical readers, then refreshed to cover the latest safety features (whole-account loss cap, exchange-side disaster stop, wider crash-recovery, safer restarts and more honest backtests). Every command and file path above was checked against the project's own README, its startup settings, and the deployment steps.
+    <strong>Last updated: 26 July 2026.</strong> Refreshed after a configuration-fidelity and live-parity pass. New in this edition: four extra troubleshooting rows above (stale expiry, "spot proxy" trades, the Loss Streak card, and the capped square-off wait on Stop). Every command and file path was re-checked against the project's README, its startup settings and the deployment workflow. There is a test suite now &mdash; <code>npm test</code> runs 106 checks across four suites (ORB rules, EMA9+VWAP, live parity, config fidelity); run it before deploying.
   </div>
 </section>
 
 </div><!-- /.container -->
 
 <footer class="page-footer">
-  Application Setup Guide (plain-English edition) &nbsp;|&nbsp; Palani Andawar Trading System &nbsp;|&nbsp; updated 17 July 2026
+  Application Setup Guide (plain-English edition) &nbsp;|&nbsp; Palani Andawar Trading System &nbsp;|&nbsp; updated 26 July 2026
 </footer>
 
 </body>
