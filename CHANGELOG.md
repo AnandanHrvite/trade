@@ -6,6 +6,22 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Changed — ORB: adversarial re-review of the rebuild (claims corrected, no strategy logic changed)
+
+Independent review of the rebuild in the previous entry, run specifically to try to disprove it. **No entry or exit logic changed.** What changed is what we claim, plus one disclosure fix. Findings:
+
+- **The headline "+346 spot points, no losers" was a spot-points artifact.** With realistic option costs modelled (delta 0.6, 1.5pt slippage per side, theta, charges) the same 9 trades are **3 winners and 6 losers netting ~₹6,700**, and modelling the `ORB_MAX_TRADE_LOSS` cap — which neither study did — takes it from ₹9,736 to **₹6,737**.
+- **`ORB_SL_ATR_MULT` is inert.** The rupee cap (₹1,500 / 65 lot / ~0.6 delta ≈ **38 spot pts**) is tighter than the ATR stop (50–83pt), so it ends essentially every losing trade. Every multiplier from **1.0 to 2.5 gives an identical result**, as does the plain OR opposite edge. The stop redesign's real content was only that the *old* stop was tighter than the cap and fired first — direction supported, magnitude untested. Real risk is governed by `ORB_MAX_TRADE_LOSS`, not by this multiplier. Both routes now **log which stop binds at entry** so the dashboard's SL cannot mislead.
+- **The evidence is not statistically significant, and this is now stated everywhere.** Bootstrap 95% CI on mean-per-trade is **[−₹1,029, +₹2,998]** — a ~**25% chance the true edge is zero or negative**. One trade is **81%** of all profit; leave-one-out turns the result to ₹1,843. Reaching 95% confidence / 80% power needs **~147 trades ≈ 637 sessions ≈ 2.5 years**. The prior-day-filter removal is Fisher-exact **p = 0.152**.
+- **Selection bias identified in the ablation itself.** Tightening `ORB_BODY_ATR_MULT` (0 → 1.0) or `ORB_OR_ATR_MAX` (2.5 → 1.5) improves every metric *monotonically* (PF 1.4 → 14.6 / 29.3) purely by dropping scratch-cost trades while the 2–3 known winners survive at every threshold. Those curves are not evidence and must not be used to tune.
+- **Parameter sensitivity is otherwise healthy** — no cliffs. Breakeven is flat over 10–25pt; the ATR stop is flat over 1.2–2.5; the EMA trail is smooth (9 too tight, 13–55 within noise, 34 actually beat the shipped 20). Nothing shows the knife-edge behaviour that signals curve-fitting.
+- **Corrected an earlier call**: the entry cut-off. Widening to 14:30 looked *worse* in the original spot-points study but *better* in rupees under the final exit model (+₹15.6k vs +₹9.7k) while also producing the worst single trade. Genuinely undetermined; left at 11:30 on structural grounds only.
+- **Verified**: backtest, paper and live apply the same rupee cap, premium stop and strategy-owned `sig.slSpot` — no execution drift found.
+
+**Not reverted, and why.** The prior-day filter stays deleted despite p=0.152: it cut 100% of the sample's winners, and with it enabled ORB took 1 trade per 39 sessions — unvalidatable in any practical timeframe. The V1/V2 deletions stand (V2 took 0 trades in 39 sessions). The race fix and the single-owner stop are correctness work needing no statistical support.
+
+**Only remaining data blocker**: no Fyers token and no cache beyond Mar–Apr 2026, so the 250–500-session validation the review calls for could not be run. It should be run before `ORB_LIVE_DRY_RUN` is turned off.
+
 ### Fixed — EMA_RSI_ST production sign-off: spot was booked as an option premium, EOD killed the shared socket, backtest drifted from paper
 
 Multi-cycle audit run as a pre-production certification. The strategy module ([strategy1_sar_ema_rsi.js](src/strategies/strategy1_sar_ema_rsi.js)) is untouched except for exporting `isInTradingWindow` — 10 insertions, 1 deletion, all in the export block. No indicator, threshold, window, sizing or expiry value changed anywhere in the diff.

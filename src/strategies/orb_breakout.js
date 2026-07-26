@@ -2,9 +2,13 @@
  * ORB — Opening Range Breakout (NIFTY index options, slightly-ITM single leg)
  * ═════════════════════════════════════════════════════════════════════════════
  * ONE engine. No V1/V2/V3 branching, no RSI/ADX/EMA-stack, no prior-day filter,
- * no wick/volume/close-position gates. Every rule below survived a measured
- * ablation on 39 real NIFTY sessions (Mar–Apr 2026, 5-min spot); everything that
- * did not is deleted rather than left behind a toggle.
+ * no wick/volume/close-position gates. Rules were selected by ablation on 39 real
+ * NIFTY sessions (Mar–Apr 2026, 5-min spot) and what failed was deleted outright
+ * rather than left behind a toggle.
+ *
+ * READ "HOW MUCH TO TRUST THE NUMBERS" BELOW BEFORE CHANGING ANYTHING. 39 sessions
+ * is far too small to establish an edge; these constants are priors, not optima,
+ * and the ablation numbers are directional evidence, not statistical proof.
  *
  * ── THE PIPELINE ────────────────────────────────────────────────────────────
  *   1. Build the opening range 09:15–09:30 and FREEZE it (never recalculated).
@@ -20,36 +24,71 @@
  *      back through the box cancels the day.
  *   7. Entry is always a candle CLOSE — never intrabar.
  *
- * ── WHY THE INITIAL STOP IS ATR-BASED (the 2026-07-26 redesign) ─────────────
+ * ── WHY THE INITIAL STOP IS ATR-BASED (2026-07-26), AND ITS REAL LIMIT ─────
  * The breakout candle is BY CONSTRUCTION a large-body momentum bar. Placing the
- * stop at its opposite extreme puts it ~one body away — exactly where the normal
+ * stop at its opposite extreme puts it ~one body away -- exactly where the normal
  * post-momentum retracement lives. Measured: that stop had a median width of 23pt
  * and was hit on 4 of 6 trades, including the day that then ran 213pt our way.
- * The stop is now the WIDER of the structural extreme and ORB_SL_ATR_MULT × ATR(5m),
- * so it sits outside noise and lets the breakeven + trail actually manage the trade.
- * Rupee risk stays bounded by ORB_MAX_TRADE_LOSS / ORB_PREMIUM_STOP_PCT in the route.
+ * The stop is now the WIDER of the structural extreme and ORB_SL_ATR_MULT x ATR(5m).
+ *
+ * BUT KNOW THIS (2026-07-26 adversarial re-review): the route's ORB_MAX_TRADE_LOSS
+ * rupee cap is a TIGHTER stop than this one. At the shipped 1500 INR / 65-lot /
+ * ~0.6 delta it trips after only ~38 spot pts, while ORB_SL_ATR_MULT=1.5 sits at
+ * 50-83pt. So the rupee cap ends essentially every losing trade and the spot SL
+ * never binds. Consequences, all verified on the 39-session sample:
+ *   - every ATR multiplier from 1.0x to 2.5x gives an IDENTICAL result;
+ *   - so does using the plain OR opposite edge. The multiplier is not tuned, it
+ *     is INERT. Do not "optimise" it -- change ORB_MAX_TRADE_LOSS instead.
+ *   - the only thing that mattered was that the OLD stop was TIGHTER than the cap
+ *     and so fired first. Direction of the fix: supported. Magnitude: untested.
+ * The routes log which stop binds at entry (_effectiveRiskNote).
+ *
+ * ── HOW MUCH TO TRUST THE NUMBERS BELOW ────────────────────────────────────
+ * Sample: 39 sessions, 9 trades. With realistic option costs modelled the study
+ * nets ~6,737 INR, of which ONE trade is ~81%; drop the top two and it is
+ * negative. Bootstrap 95% CI on mean/trade = [-1029, +2998] INR, i.e. there is a
+ * ~25% chance the true edge is zero or negative. Establishing this edge at 95%
+ * confidence / 80% power would need ~147 trades ~= 637 sessions ~= 2.5 years.
+ * Nothing here is statistically proven. The removals below are justified by
+ * STRUCTURE and by the need to make the strategy measurable at all, not by
+ * significance -- e.g. the prior-day filter's removal is Fisher-exact p=0.152.
+ * Treat every constant as a prior to be revised, not as a fitted optimum.
  *
  * ── MEASURED ABLATION (39 sessions, spot points, identical exits) ───────────
- *   prior-day "fresh ground"  DELETED — kept 7 trades at 0% win / −7.2pt avg while
- *                             cutting 6 worth +290.8pt incl. BOTH winners.
- *   close-in-extreme %        DELETED — removing it took net 132.9 → 346pt.
- *   body ≥ 0.6×ATR(5m)        KEPT    — removing it with close-pos took worst-case
- *                                       from 0 to −80.1pt and PF from ∞ to 3.33.
- *   OR ≤ 2.5×ATR(15m)         KEPT    — cheap day-sanity guard.
- *   gap ≤ 3×OR                KEPT    — never fired in-sample; retained as a
- *                                       news-shock risk control, not as alpha.
- *   VWAP side                 KEPT    — never fired in-sample; retained as a
- *                                       standard directional guard.
- *   OR ≥ 0.7×ATR(15m)         DELETED — never fired, and the two winners came from
- *                                       the two NARROWEST opening ranges, so a
- *                                       floor is actively pointed the wrong way.
- *   RSI / ADX / EMA20-50      DELETED — the engine carrying them took 0 trades in
- *                                       39 sessions.
- *   wick % / volume / sweet-spot / fixed point ranges — DELETED (V1 legacy, dead).
+ *   prior-day "fresh ground"  DELETED -- kept 7 trades at 0% win / -7.2pt avg while
+ *                             cutting 6 worth +290.8pt incl. BOTH winners. NOT
+ *                             statistically significant (p=0.152); deleted because
+ *                             a filter that removes the entire right tail of a
+ *                             right-tail strategy is structurally wrong, AND
+ *                             because with it on the strategy took 1 trade per 39
+ *                             sessions, which can never be validated.
+ *   close-in-extreme %        DELETED -- removing it took net 132.9 -> 346pt.
+ *   body >= 0.6xATR(5m)       KEPT    -- but see the caveat: tightening this gate
+ *                             monotonically "improves" every metric (PF 1.42 at
+ *                             0.0 rising to 14.6 at 1.0) purely because it drops
+ *                             scratch-cost trades while the 2-3 known winners
+ *                             survive at every threshold. That is selection bias,
+ *                             not evidence. 0.6 is a prior, not an optimum.
+ *   OR <= 2.5xATR(15m)        KEPT    -- same caveat as above.
+ *   gap <= 3xOR               KEPT    -- never fired in-sample; a news-shock risk
+ *                             control, not alpha.
+ *   VWAP side                 KEPT    -- never fired in-sample; standard guard.
+ *   OR >= 0.7xATR(15m)        DELETED -- never fired, and the two winners came from
+ *                             the two NARROWEST opening ranges, so a floor is
+ *                             pointed the wrong way.
+ *   RSI / ADX / EMA20-50      DELETED -- the engine carrying them took 0 trades in
+ *                             39 sessions.
+ *   wick % / volume / sweet-spot / fixed point ranges -- DELETED (V1 legacy, dead).
  *
- * CAVEAT, stated plainly: 39 sessions and 9 resulting trades is a SMALL sample and
- * two trades carry nearly all the profit. This is a right-tail strategy — expect
- * many scratches and rare large winners. Re-measure before tuning any constant.
+ * Exit components, same sample: breakeven at +20pt is the single most valuable one
+ * (removing it cost 106pt and introduced a -77pt worst case) and is FLAT over
+ * 10-25pt, so it is not a fitted edge. The EMA trail is NOT flat: 9 is clearly too
+ * tight, but 34 beat the shipped 20 in-sample. 20 was kept as the incumbent, not
+ * because it was validated -- anything in 13-55 is within noise.
+ *
+ * Entry cut-off: 11:30 is a STRUCTURAL choice (an "opening range" breakout decays
+ * through the day), not a measured one. Extending to 14:30 looked better in rupees
+ * on this sample (+15.6k vs +9.7k) but also produced the worst single trade. Undetermined.
  *
  * Returns { signal, side, reason, orh, orl, rangePts, entrySpot, slSpot, targetSpot,
  *           signalStrength, vwap, atr5, atr15, gapPts, bodyPct, confirmed, gates }
