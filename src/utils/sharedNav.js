@@ -1991,6 +1991,7 @@ function expiryHolidayModalCSS() {
        reclaim it — 40px/20px leaves a 353px-wide card on a 393px iPhone, which
        wraps "28 Jul 2026" onto two lines. */
     .eh-modal { padding: 40px 20px; }
+    .eh-close { font-size: 1.2rem; }
     @media (max-width:640px) {
       .eh-modal { padding: 14px 6px; }
       .holiday-table { font-size: 0.72rem; }
@@ -1999,6 +2000,11 @@ function expiryHolidayModalCSS() {
          still does not fit, so nothing gets cut off. */
       .holiday-table td { padding: 7px 6px; white-space: nowrap; }
       .holiday-modal-body { max-height: 62vh; }
+      /* Fingers, not a mouse: close was 22px tall and the tabs 30px, against
+         the 44px this repo uses everywhere else on phones. */
+      .eh-close { min-width: 44px; min-height: 44px; font-size: 1.6rem; line-height: 1; }
+      .eh-tab-btn { min-height: 44px; padding: 7px 16px; }
+      #holiday-refresh-btn { min-height: 44px; }
     }
     /* Light theme. The global rewriter in modalJS() only covers .holiday-table
        TH (and borders), so the cell text, legend and scrollbar have to be
@@ -2027,7 +2033,7 @@ function expiryHolidayModalHTML() {
       <span style="font-weight:700;font-size:0.95rem;color:#22d3ee;">📅 NIFTY Expiry &amp; NSE Holidays</span>
       <div style="display:flex;gap:8px;align-items:center;">
         <button id="holiday-refresh-btn" type="button" onclick="refreshHolidays()" title="Force-refresh NSE holidays from upstream API" style="padding:5px 12px;background:rgba(34,211,238,0.12);color:#22d3ee;border:1px solid rgba(34,211,238,0.25);border-radius:5px;font-size:0.72rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.3px;">📅 REFRESH</button>
-        <button onclick="document.getElementById('expiryHolidaysModal').style.display='none'" style="background:none;border:none;color:#4a6080;font-size:1.2rem;cursor:pointer;">&times;</button>
+        <button class="eh-close" aria-label="Close" onclick="document.getElementById('expiryHolidaysModal').style.display='none'" style="background:none;border:none;color:#4a6080;cursor:pointer;">&times;</button>
       </div>
     </div>
     <div style="display:flex;gap:6px;padding:10px 16px 0;border-bottom:1px solid #1a2640;">
