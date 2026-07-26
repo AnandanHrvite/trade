@@ -338,12 +338,86 @@ const OPEN_PATHS = [
   "/pa-paper/status",
   "/pa-paper/status/data",
   "/pa-backtest",
-  // ORB mode (read-only status data) — the dashboard's Start-All button poll uses
-  // a plain fetch (no secret prompt on a 10s timer), so these must be open or ORB
-  // is invisible to the Paper↔Live mutual lock, exactly like the five strategies above.
+  "/pa-paper/history",
+  "/pa-paper/simulate",
+  "/pa-paper/status/chart-data",
+  "/pa-live/status/chart-data",
+  "/pa-pattern-backtest",         // per-pattern attribution dashboard
+  "/pa-pattern-backtest/idle",
+  "/pa-pattern-backtest/stats",
+  "/pa-pattern-backtest/trades",
+  // ORB mode (read-only status/history/chart) — /status/data in particular must be
+  // open or ORB is invisible to the dashboard's Start-All button poll, which uses a
+  // plain fetch (it runs on a 10s timer and must never pop the secret prompt).
+  "/orb-paper/status",
   "/orb-paper/status/data",
+  "/orb-paper/status/chart-data",
+  "/orb-paper/history",
+  "/orb-live/status",
   "/orb-live/status/data",
+  "/orb-live/status/chart-data",
+  "/orb-backtest",
+  "/orb-backtest/status",
+  "/orb-backtest/idle",
+  // EMA_RSI_ST / BB_RSI / EMA9+VWAP / Trend_PB — the read-only pages the sidebar
+  // links to that were never added alongside their /status entries above.
+  "/ema_rsi_st-paper/simulate",
+  "/ema_rsi_st-paper/status/chart-data",
+  "/ema_rsi_st-live/status/chart-data",
+  "/ema_rsi_st-backtest",
+  "/ema_rsi_st-backtest/status",
+  "/ema_rsi_st-backtest/idle",
+  "/bb_rsi-paper/history",
+  "/bb_rsi-paper/simulate",
+  "/bb_rsi-paper/status/chart-data",
+  "/bb_rsi-live/status/chart-data",
+  "/ema9vwap-paper/simulate",
+  "/ema9vwap-paper/status/chart-data",
+  "/ema9vwap-backtest",
+  "/ema9vwap-backtest/status",
+  "/ema9vwap-backtest/idle",
+  "/trend-pb-backtest",
+  "/trend-pb-backtest/status",
+  "/trend-pb-backtest/idle",
+  // Live-harness pages (read-only view + status poll). Their /start and /stop are
+  // deliberately NOT here — those place (or dry-run log) real broker orders.
+  "/ema_rsi_st-live-harness",
+  "/ema_rsi_st-live-harness/status/data",
+  "/bb_rsi-live-harness",
+  "/bb_rsi-live-harness/status/data",
+  "/pa-live-harness",
+  "/pa-live-harness/status/data",
+  "/orb-live-harness",
+  "/orb-live-harness/status/data",
+  "/ema9vwap-live",
+  "/trend-pb-live",
+  // Cross-strategy read-only screens reached from the sidebar / top bar.
+  "/realtime",            // unified real-time monitor
+  "/replay",              // tick-replay page — /replay/run and the delete/cancel POSTs stay protected
+  "/replay/list",
+  "/replay/preflight",
+  "/replay/download-day",
+  "/replay/download-all",
+  "/all-backtest",
+  "/all-backtest/stats",
+  "/edge-analytics",
+  "/consolidation-report",
+  "/live-consolidation",
+  "/live-consolidation/data",
+  "/pnl-history",         // manual year-wise P&L — the baseline POSTs stay protected
+  "/pnl-history/data",
+  "/compare/trading",
+  "/compare/bb_rsi",
+  "/docs",                // guide viewer — file/pdf reads are covered by OPEN_PREFIXES
+  "/monitor",             // EC2 health monitor — /monitor/action/* stays protected
+  "/monitor/data",
+  "/api/session-active",  // liveness probe — dashboard auto-swaps views on it
+  "/auth/socket-health",  // sidebar socket badge poll
+  "/backup/status",       // sidebar backup-nag poll
+  "/backup/data",         // Settings backup list — create/delete/restore stay protected
+  "/settings/env",        // Settings reads current env values (read-only)
   "/consolidation",       // read-only cross-mode trade history + analytics
+  "/consolidation/data",
   "/health",              // health check — must be open for uptime monitors / PM2 probes
   "/deploy/webhook",      // GitHub Actions webhook — must be open for GitHub to reach it
   "/deploy/status",       // deploy status poll — read-only
@@ -352,10 +426,30 @@ const OPEN_PATHS = [
   // NOTE: /ema_rsi_st-paper/start, /ema_rsi_st-paper/stop, /ema_rsi_st-paper/reset, /ema_rsi_st-paper/exit also require secret
   // NOTE: /api/holidays/refresh requires API_SECRET (write operation)
 ];
+// OPEN_PREFIXES: read-only routes that take a path parameter, so an exact match in
+// OPEN_PATHS can never hit them (e.g. /docs/file/pa-guide.html, /orb-paper/view/
+// trades/2026-07-24). Every route under these prefixes is a GET read — the paper
+// routers' write operations (restore-session, delete-session) sit elsewhere.
+const OPEN_PREFIXES = [
+  "/auth/callback",              // broker OAuth redirect — arrives with the broker's own query string
+  "/docs/file/",                 // guide HTML
+  "/docs/pdf/",                  // guide PDF export
+  "/ema_rsi_st-paper/view/",     // per-day trade / skip viewers
+  "/ema_rsi_st-paper/download/",
+  "/bb_rsi-paper/view/",
+  "/bb_rsi-paper/download/",
+  "/pa-paper/view/",
+  "/pa-paper/download/",
+  "/orb-paper/view/",
+  "/orb-paper/download/",
+  "/ema9vwap-paper/view/",
+  "/ema9vwap-paper/download/",
+  "/trend-pb-paper/view/",
+];
 app.use((req, res, next) => {
   const secret = process.env.API_SECRET;
   if (!secret) return next(); // no secret set → open (dev mode)
-  const isOpen = OPEN_PATHS.some(p => req.path === p || req.path.startsWith("/auth/callback"));
+  const isOpen = OPEN_PATHS.includes(req.path) || OPEN_PREFIXES.some(p => req.path.startsWith(p));
   if (isOpen) return next();
   const token = req.headers["x-api-secret"] || req.query.secret;
   if (token !== secret) return res.status(403).json({ success: false, error: "Forbidden — missing or wrong secret." });

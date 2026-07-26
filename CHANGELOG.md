@@ -6,6 +6,14 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — most pages returned a raw 403 when `API_SECRET` was set
+
+Logging in was not enough to browse the app. `API_SECRET` is a second gate in front of the login cookie, and `OPEN_PATHS` — the allowlist of read-only routes that bypass it — had not been extended as pages were added. Verified with a real logged-in session against the repo's own `.env`: `/docs`, `/realtime`, `/replay`, `/monitor`, `/edge-analytics`, `/all-backtest`, `/orb-paper/status`, `/orb-backtest` and every live-harness page answered `403 {"error":"Forbidden — missing or wrong secret."}` while `/settings`, `/logs` and `/pa-paper/status` worked. Sidebar links carry no secret, so there was no way to reach the blocked half from the UI.
+
+The allowlist now covers the read-only routes the sidebar and top bar actually link to, plus the plain-`fetch` polls those pages depend on (`/monitor/data`, `/replay/list`, `/backup/status`, `/auth/socket-health`, `/api/session-active`, `/settings/env`, the per-strategy `status/chart-data`). A companion `OPEN_PREFIXES` list handles the read-only routes that take a path parameter — `/docs/file/…`, `/docs/pdf/…`, and each paper router's `view/` and `download/` day viewers — which an exact-match allowlist can never reach; `/auth/callback` moved from a hard-coded `startsWith` into it.
+
+Nothing that acts was opened. Re-probed after the change: all 41 sidebar targets now answer 200 (or a redirect), and `/…/start`, `/stop`, `/exit`, `/reset`, `/replay/run`, `/monitor/action/*`, `/settings/save`, `/backup/create`, `/logs/clear` and `/pnl-history/baseline/*` all still answer 403. Two things this surfaced but did **not** change: the sidebar's `/compare/priceaction` link has no route behind it at all (`compare.js` defines only `/trading` and `/bb_rsi`), and several buttons call protected routes with a plain `fetch` instead of `secretFetch`, so they fail silently while a secret is set — both need their own fix.
+
 ### Fixed — Start All ignored the EMA_RSI_ST toggle and skipped two strategies on Live
 
 The dashboard's three Start-All buttons each built their own endpoint list, and `EMA_RSI_ST` was hard-coded into all three: with `EMA_RSI_ST_MODE_ENABLED=false` the strategy was hidden from the sidebar, the tiles and the docs, but Start All still started it. Start All (Live) had the opposite gap — its list stopped at four strategies, so `EMA9+VWAP` and `TREND_PB` were never included even when enabled.
