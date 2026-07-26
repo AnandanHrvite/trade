@@ -75,8 +75,8 @@ JSONL day files include settings snapshots written by [settings.js](src/routes/s
 
 ## Working in this repo
 
-- **Autonomous push**: commits to `main` are expected to push immediately (IDE auto-sync). Stage *only* task files; no review window after commit. See `feedback_autonomous_push.md`.
-- **Never** `--force` push, `--no-verify`, or bundle unrelated WIP into a commit.
+- **Commit freely, push only when asked**: make the change and commit without asking, then say it is committed and unpushed. **Do not `git push` unless the user explicitly says to** — a push to `main` auto-deploys to EC2 and restarts PM2, so the deploy moment is the user's call. Stage *only* task files. See `feedback_autonomous_push.md`.
+- **Never bypass a guard.** The `.githooks` pre-push blocks weekday pushes before 16:00 IST; if it rejects a push, report the block and stop. `ALLOW_PUSH=1` is the user's own escape hatch, not a tool for getting a task finished. Likewise **never** `--force` push, `--no-verify`, amend an already-pushed commit, or bundle unrelated WIP into a commit.
 - **Tuning is OPEN (deadline lifted 2026-05-27).** The paper-data-collection no-tuning window was ended early by the user; strategy tuning and bug fixes are now in scope for all strategies. The per-strategy notes in `project_{bb_rsi,pa,swing}_post_window_observations.md` are still useful context (hypotheses + daily P&L track) — read them before tuning, but they are no longer a freeze. Caveat: trades generated *before* a bug fix were produced by buggy code — don't tune thresholds on pre-fix data; collect clean post-fix sessions first.
 - **README.md is the user-facing spec** for env vars, routes, and per-strategy behaviour. Keep it in sync when adding env keys or routes.
 - **CHANGELOG.md** is hand-maintained; add an entry for user-visible changes.
