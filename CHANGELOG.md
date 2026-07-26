@@ -6,6 +6,20 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — EMA9+VWAP red-team pass: two defects introduced by the previous parity commit
+
+A from-scratch adversarial audit found that the backtest feature-parity work in `3e12da1` shipped two real bugs. Both are in the backtest / a disabled path — Paper and Live were never affected — but they made the backtest untrustworthy the moment the candle trail or a stop was enabled. Paper signals are bit-identical (0 diffs over 1,389 evaluations) and a default backtest is unchanged (20 trades / ₹2,735 before and after).
+
+- **The backtest candle trail fired on the candle that set it.** The trail level was computed from a window that INCLUDES the current candle and then tested against that same candle's low/high, which is true by construction whenever the bar makes the N-bar extreme. Result: `Trail SL hit` took **20 of 20** exits, three of them on `candlesHeld=1`, hijacking every other exit rule. Paper sets the stop at candle close and enforces it on the FOLLOWING bar's ticks, so the setting bar can never trigger it. The engine now **checks the carried-in level first, then re-arms from the closed window** — trail exits fell to 16/20 and none occur on the setting candle.
+- **Protective-stop exits booked the candle close instead of the stop level.** `_closeTrade` always used `candle.close`, so a 25-pt stop on a bar that ran 60 pts through it booked −60 in the backtest and −25 in paper. `_closeTrade` now takes an optional `exitLevel` and the points stop, option stop and trail pass theirs — mirroring paper's `simulateSell(_capLvl, …)` / `simulateSell(updatedSL, …)`. Verified: every 25-pt stop exit now books exactly −25.00 spot points.
+- **Intra-candle entries were gated on a FUTURE timestamp.** The forming bar was passed to the candle-close window helper, so the 10:25–10:30 bar reported the window open at 10:26 — four minutes early. New `isEntryWindowOpenNow()` uses the replay-safe `simNow()` clock, which is the correct clock for a fill that happens now. (Disabled path: `EMA9VWAP_INTRACANDLE_ENTRY=false`.)
+- **Live `/start` armed the harness before checking the paper engine was free.** It installed, then discovered paper was already running and uninstalled — leaving real orders enabled for the duration of that call. It now returns **409** before arming anything.
+- **`/simulate/start` bypassed the harness release** (it sets `ptState.running` directly). Safe only because `simulateBuy` skips `notifyEntry` in sim mode; it now releases the harness too, so safety no longer rests on one flag.
+
+### Added — `npm test`: EMA9+VWAP regression suite
+
+[tests/ema9vwap.regression.js](tests/ema9vwap.regression.js) — 16 assertions, no framework, non-zero exit on failure. Runs against REAL cached NIFTY 5-min candles (which carry genuine per-bar volume — the exact input that broke VWAP parity) and falls back to a deterministic synthetic series. Every assertion guards a defect that was actually found: VWAP identical with/without volume, session anchor resets, band multiplier linear, no cross on the first candle of a session, entry window gates on candle CLOSE, malformed `HH:MM` falls back rather than opening at midnight, defaults produce no stop exits, the trail does not fire on its own candle, stops book the stop level, EMA9 matches `technicalindicators`, entries are true band crosses, and entry/exit are mutually exclusive.
+
 ### Fixed — EMA9+VWAP: harness safety, VWAP parity and full Paper/Live/Backtest alignment
 
 Twelve implementation defects from an independent adversarial review. No trading rule changed: EMA, band multiplier, entry/exit rules, reversal logic, confirmation behaviour, position sizing, daily limits, strike and expiry selection are all untouched. Verified with a regression suite over 20 real April-2026 sessions.

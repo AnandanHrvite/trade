@@ -429,6 +429,20 @@ function isEntryWindowOpenForBar(barTimeSec) {
   return _ema9vwapStrategy.isEntryWindowOpen(barTimeSec, TRADE_RES);
 }
 
+/**
+ * Entry-window gate for an INTRA-CANDLE entry, which happens NOW rather than on a
+ * close. Passing the forming bar to isEntryWindowOpenForBar() asked "when will
+ * this bar close?" — a FUTURE timestamp — so the 10:25–10:30 bar reported the
+ * window open at 10:26, four minutes early. The moment of the fill is the correct
+ * clock here. simNow() keeps it replay-safe (replay pins Date.now to tick time)
+ * and sim-safe (the synthetic tester advances its own clock).
+ */
+function isEntryWindowOpenNow() {
+  if (ptState._simMode) return true;
+  const mins = Math.floor((Math.floor(simNow() / 1000) + 19800) / 60) % 1440;
+  return mins >= _START_MINS && mins < _ENTRY_STOP_MINS;
+}
+
 // Wall-clock "is the market open" — DISPLAY ONLY (chart forming-bar visibility).
 // Never used for a trading decision; uncached so it can never serve a stale answer.
 function isMarketHours() {
@@ -1632,7 +1646,7 @@ function onTick(tick) {
       ptState._lastCheckedBarLow  = bar.low;
     }
     // Security: never enter outside market hours (e.g. if tick arrives at open/close boundary)
-    if (!isEntryWindowOpenForBar(bar.time)) {
+    if (!isEntryWindowOpenNow()) {
       // Log once until the market-hours window opens (reset below), then stay quiet —
       // avoids pre-market "outside market hours" spam when started early (e.g. 8:30 AM).
       if (!ptState._omhLogged) {
@@ -4640,6 +4654,11 @@ function _post(url, body, btn, resetLabel) {
 
 router.post("/simulate/start", async (req, res) => {
   if (ptState.running) return res.json({ success: false, error: "Session already running. Stop it first." });
+  // The simulator sets ptState.running directly instead of going through /start, so
+  // it bypasses that handler's harness release. simulateBuy already skips notifyEntry
+  // in sim mode, but that is ONE guard; release here too so the safety does not rest
+  // on a single flag.
+  _releaseLiveHarness("simulate/start");
 
   const { mode = "scenario", scenario, basePrice = 24500, speed = 10, candleCount = 75, date } = req.body || {};
 

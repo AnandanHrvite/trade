@@ -108,6 +108,20 @@ router.get("/start", async (req, res) => {
     return res.status(401).json({ success: false, error: "Zerodha not authenticated for live orders. Complete Zerodha login first." });
   }
 
+  // Refuse BEFORE installing if a paper-only session is already running. Installing
+  // first and cleaning up after the paper /start returns 400 left the harness ARMED
+  // for the duration of that call — a candle close landing in that window would have
+  // emitted notifyEntry with real orders enabled, from a session the user started as
+  // paper. Check first, arm second.
+  let _paperAlreadyRunning = false;
+  try { _paperAlreadyRunning = !!(ema9vwapPaperRoute.getState && ema9vwapPaperRoute.getState().running); } catch (_) {}
+  if (_paperAlreadyRunning) {
+    return res.status(409).json({
+      success: false,
+      error: "A PAPER session is already running for EMA9+VWAP. Stop it at /ema9vwap-paper/stop before starting LIVE — the harness is deliberately not attached to a session it did not start.",
+    });
+  }
+
   let installed;
   try {
     // Idempotent install: a leftover harness (previous session, failed stop) must
