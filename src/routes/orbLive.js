@@ -1097,9 +1097,9 @@ ${bbRsiStyleCSS()}
 <body>
 <div class="app-shell">
 ${buildSidebar('orbLive', liveActive, state.running, {
-  showStartBtn: !state.running, startBtnJs: `location.href='/orb-live/start'`, startLabel: '▶ Start ORB Live',
-  showStopBtn: state.running,   stopBtnJs:  `location.href='/orb-live/stop'`,  stopLabel:  '■ Stop ORB Live',
-  showExitBtn: state.running && !!state.position, exitBtnJs: `location.href='/orb-live/exit'`, exitLabel: '🚪 Exit Trade',
+  showStartBtn: !state.running, startBtnJs: `secretGo('/orb-live/start', this)`, startLabel: '▶ Start ORB Live',
+  showStopBtn: state.running,   stopBtnJs:  `secretGo('/orb-live/stop', this)`,  stopLabel:  '■ Stop ORB Live',
+  showExitBtn: state.running && !!state.position, exitBtnJs: `secretGo('/orb-live/exit', this)`, exitLabel: '🚪 Exit Trade',
 })}
 <div class="main-content">
 

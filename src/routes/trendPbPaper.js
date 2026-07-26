@@ -1051,9 +1051,9 @@ ${bbRsiStyleCSS()}
 <body>
 <div class="app-shell">
 ${buildSidebar('trendPbPaper', liveActive, state.running, {
-  showStartBtn: !state.running, startBtnJs: `location.href='/trend-pb-paper/start'`, startLabel: '▶ Start Trend PB',
-  showStopBtn: state.running,   stopBtnJs:  `location.href='/trend-pb-paper/stop'`,  stopLabel:  '■ Stop Trend PB',
-  showExitBtn: state.running && !!state.position, exitBtnJs: `location.href='/trend-pb-paper/exit'`, exitLabel: '🚪 Exit Trade',
+  showStartBtn: !state.running, startBtnJs: `secretGo('/trend-pb-paper/start', this)`, startLabel: '▶ Start Trend PB',
+  showStopBtn: state.running,   stopBtnJs:  `secretGo('/trend-pb-paper/stop', this)`,  stopLabel:  '■ Stop Trend PB',
+  showExitBtn: state.running && !!state.position, exitBtnJs: `secretGo('/trend-pb-paper/exit', this)`, exitLabel: '🚪 Exit Trade',
 })}
 <div class="main-content">
 

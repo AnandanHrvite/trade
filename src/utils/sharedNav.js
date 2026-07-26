@@ -1727,6 +1727,27 @@ async function secretFetch(url, opts) {
   return res;
 }
 
+// Replacement for buttons that used to do location.href = '/x/start'. Those
+// routes require API_SECRET, and a browser navigation cannot carry the header —
+// it just lands on a raw 403 JSON page. Send it through secretFetch instead
+// (which prompts once per session), then reload so the page shows the new state.
+// Returns false when the user cancels the secret prompt, so nothing changed.
+async function secretGo(url, btn) {
+  var label = btn ? btn.textContent : null;
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  var res = null;
+  try {
+    res = await secretFetch(url);
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = label; }
+    await showAlert({ icon: '⚠️', title: 'Request failed', message: (e && e.message) || 'Network error', btnClass: 'modal-btn-danger' });
+    return false;
+  }
+  if (!res) { if (btn) { btn.disabled = false; btn.textContent = label; } return false; }
+  location.reload();
+  return true;
+}
+
 // ── Theme overriding ────────────────────────────────────────────────────────
 (function(){
   if ('${process.env.UI_THEME || "dark"}' !== 'light') return;

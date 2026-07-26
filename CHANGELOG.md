@@ -6,6 +6,14 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — the Start / Stop / Exit buttons on five strategy pages landed on a 403 page
+
+The `secretFetch` sweep below covered buttons that call their route with `fetch`. Five pages don't: ORB Paper, ORB Live, Trend PB Paper, BB_RSI Paper and PA Paper start and stop by **navigating** (`location.href = '/orb-paper/start'`). A browser navigation cannot carry the `x-api-secret` header, so with a secret set those buttons left the page showing `{"success":false,"error":"Forbidden — missing or wrong secret."}` — the session never started. The dashboard's Start All was unaffected (it already used `secretFetch`), which is why this stayed hidden.
+
+Added `secretGo(url, btn)` next to `secretFetch` in [sharedNav.js](src/utils/sharedNav.js): it sends the request with the secret, reloads on success, and restores the button if the user cancels the prompt. The 13 navigation buttons now call it. Verified on a running server — all five pages define `secretGo`, none still emit a `location.href` to a start/stop/exit route, and those routes still answer 403 to an unauthenticated request.
+
+The same audit found read-only destinations that are reached by link and so had the identical problem: `/logout`, `/auth/login`, `/auth/manual` (a plain `<form method=POST>`, so it cannot send a header either), `/auth/zerodha/login`, `/settings/audit`, `/backup/download`, both `/trade-logs/…/download-everything` routes and `/trend-pb-paper/download/…`. All are now open — gating them made broker re-login, Logout and every "download" button unreachable from the UI while leaving nothing safer. `/settings/audit` keeps its own `?secret=` prompt, exactly as `/settings` does. One dead link fixed in passing: the EMA9+VWAP backtest page's "Go to Live Trade" pointed at `/ema9vwap-live/status`, which does not exist — the harness page is `/ema9vwap-live`.
+
 ### Fixed — 35 buttons silently did nothing while `API_SECRET` was set
 
 Exit, Manual Entry, Reset, every harness Start/Stop, Replay's Run / Cancel / Delete, Backup Create / Delete / Restore, Clear Logs, the Monitor actions and the P&L baseline editor all called their protected route with a plain `fetch`, which sends no secret. The route answered 403, the handler read `.json()` off the error body and fell into its catch — the position stayed open, the session never started, and in the fire-and-forget cases (`Exit`) the page reloaded as if it had worked. All 35 call sites across 16 files now use `secretFetch`, which attaches the stored secret, prompts once per browser session on a 403 and retries. Each site handles `secretFetch`'s `null` (user cancelled the prompt) by restoring the button instead of throwing; the Exit buttons capture their real label first rather than resetting to a hard-coded "Exit".

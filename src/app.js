@@ -296,6 +296,14 @@ const OPEN_PATHS = [
   "/tracker/fetch-and-start", // auto-fetch + start (Zerodha read + SAR compute)
   "/result",                // read-only results
   "/result/all",
+  // Broker-auth + session links. These are plain <a> navigations (and, for
+  // /auth/manual, a plain <form method=POST>) — a browser navigation cannot send
+  // the x-api-secret header, so gating them makes broker re-login and Logout
+  // unreachable from the UI. All of them sit behind the LOGIN_SECRET cookie.
+  "/logout",                // clears the login cookie
+  "/auth/login",            // starts the Fyers OAuth redirect
+  "/auth/manual",           // paste-a-token recovery page + its form POST
+  "/auth/zerodha/login",    // starts the Zerodha OAuth redirect
   "/auth/status",           // read-only auth status
   "/auth/telegram-health",  // dashboard banner poll — Telegram delivery health (read-only)
   "/auth/telegram-ping",    // health-modal active probe — Telegram getMe (sends no message)
@@ -308,11 +316,14 @@ const OPEN_PATHS = [
   "/login-logs/clear",      // reset login logs
   "/settings",              // settings page (read-only view)
   "/settings/data",         // AJAX poll for current values
+  "/settings/audit",        // read-only settings-change audit view
   "/trade-logs",            // per-trade JSONL viewer (read-only)
   "/trade-logs/list",       // JSON: list of daily JSONL files
   "/trade-logs/view",       // JSON: parsed trades for one file
   "/trade-logs/download",   // download raw JSONL
   "/trade-logs/download-all",   // concat-download all daily trade JSONLs per mode
+  "/trade-logs/download-everything",       // every mode, one archive (link navigation)
+  "/trade-logs/skips/download-everything", // same for skip logs
   "/trade-logs/audit",      // JSON: settings audit (read-only)
   "/trade-logs/skips/list",     // JSON: list of daily skip files
   "/trade-logs/skips/view",     // JSON: parsed skip lines for one file
@@ -415,6 +426,7 @@ const OPEN_PATHS = [
   "/auth/socket-health",  // sidebar socket badge poll
   "/backup/status",       // sidebar backup-nag poll
   "/backup/data",         // Settings backup list — create/delete/restore stay protected
+  "/backup/download",     // snapshot download (link navigation, read-only)
   "/settings/env",        // Settings reads current env values (read-only)
   "/consolidation",       // read-only cross-mode trade history + analytics
   "/consolidation/data",
@@ -445,6 +457,7 @@ const OPEN_PREFIXES = [
   "/ema9vwap-paper/view/",
   "/ema9vwap-paper/download/",
   "/trend-pb-paper/view/",
+  "/trend-pb-paper/download/",
 ];
 app.use((req, res, next) => {
   const secret = process.env.API_SECRET;
