@@ -10,6 +10,7 @@ const { getLotQty } = instrumentConfig;
 const { getCharges } = require("../utils/charges");
 const { fetchCandlesWithCache, fetchCandlesSmartCache } = require("../utils/backtestCache");
 const confirmCandle = require("../utils/confirmCandle");
+const tradeGuards   = require("../utils/tradeGuards");
 
 
 function maxDaysForResolution(resolution) {
@@ -262,6 +263,9 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
   // Confirmation candle (cross & close, EMA_RSI_ST only — EMA_RSI_ST_CONFIRM_CANDLE_ENABLED).
   // { side, armedBarTime, triggerLevel, signalSL, reason, strength } | null.
   let _armedSwing = null;
+  // Arm decided at THIS candle's close, published at the top of the next candle —
+  // see the CONFIRMATION ARM block below for why it is staged rather than set live.
+  let _pendingArm = null;
   // EMA21 trail base from the PRIOR candle's close. Paper arms the EMA21 trail at a
   // candle's close and enforces it on the NEXT candle's ticks; using this candle's own
   // EMA21 to update the SL and then testing this candle's low/high against it is
@@ -298,7 +302,10 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
 
     // Extend window by one candle (current candle being evaluated)
     window.push(candle);
-    if (window.length > 200) window.shift(); // cap same as paper/live — prevents O(n²) indicator recalc
+    // Rolling indicator history — depth shared with paper + live (see
+    // tradeGuards.INDICATOR_HISTORY_CANDLES). Seeded at 30 above, so this window
+    // grows to exactly the shared depth and stays there.
+    if (window.length > tradeGuards.INDICATOR_HISTORY_CANDLES) window.shift();
 
     // ── Per-day EOD detection ─────────────────────────────────────────────────
     // A candle is the last of its trading day if the NEXT candle is a different
@@ -321,6 +328,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         _oppositeCooldownUntilTs  = 0;
         _oppositeCooldownLastSide = null;
         _armedSwing               = null; // drop any arm across the day boundary
+        _pendingArm               = null; // ...including one staged at yesterday's close
         if (_verbose) {
           // Count trades for previous day for the daily log
           // Use _dailyTradeCount (already tracked) instead of expensive trades.filter()
@@ -331,6 +339,13 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         }
       }
     }
+    // Publish the arm staged at the previous candle's close, and drop anything older
+    // in the same stroke — that unconditional overwrite IS emaRsiStPaper's "expire any
+    // arm whose confirmation candle has passed" rule (onCandleClose), which this engine
+    // otherwise only approximated via isNextBar() at fill time.
+    _armedSwing = _pendingArm;
+    _pendingArm = null;
+
     const nextCandle = candles[i + 1] || null;
     const nextDate   = nextCandle ? getISTDateStr(nextCandle.time) : null;
     const isLastCandleOfDay = !nextCandle || nextDate !== candleDate;
@@ -430,12 +445,56 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
     // Runs every candle (flat or in a position) and before any exit/entry `continue`.
     _prevEma21 = _sig.ema21;
 
-    // Count candles held (used for theta decay in PnL calculation)
-    // Placed after trail updates but before exit check — entry candle starts at 0
-    if (position) position.candlesHeld = (position.candlesHeld || 0) + 1;
+    // candlesHeld is NOT incremented here. It is incremented inside runExitChecks
+    // at the exact point emaRsiStPaper increments it — see the note there.
 
     // ── EXIT CHECK ────────────────────────────────────────────────────────────
-    if (position) {
+    // H1 — SAME-BAR EXIT PARITY.
+    // Paper and live enforce the tick-level stops from the moment of entry, so a
+    // position opened at 11:05 inside the 11:05 bar can stop out inside that same
+    // bar. This engine used to create the position at the BOTTOM of the iteration,
+    // so its first exit check was the NEXT candle — it could never reproduce a
+    // same-bar stop-out, which was 20 of the user's 65 recorded paper trades.
+    //
+    // Fix: the whole exit evaluation lives in this per-candle closure so it can be
+    // invoked twice — once for a position carried in from an earlier candle
+    // (entryBar=false, unchanged), and once immediately after an INTRA-BAR confirm
+    // fill on THIS candle (entryBar=true). It only ever reads `candle`; no future
+    // candle is touched, so no look-ahead is introduced. The candle-CLOSE entry
+    // path deliberately does NOT call it — see the note at that entry site.
+    //
+    // On the entry bar the rule set matches paper's ordering exactly:
+    //   run  — structural/trail SL, points cap, option-premium stop (paper's
+    //          per-tick stops, which fire before the bar closes), then opposite
+    //          signal and EOD (paper's candle-close rules, which do run on the
+    //          entry bar).
+    //   skip — EMA21 touch-back: paper explicitly skips it on the entry bar.
+    //   run  — negative-candle stop: ungated on purpose. candlesHeld becomes 1 at
+    //          the bar-close point below, exactly as paper's onCandleClose does on
+    //          the entry bar, so with the default LIMIT=2 it cannot fire — and if
+    //          LIMIT were 1, paper would fire it there too. Parity, not luck.
+    // Gap-through fill is also skipped on the entry bar: the bar's OPEN happened
+    // before we entered, so filling there would be fiction.
+    // ── Per-candle parity flags (mirror emaRsiStPaper's onCandleClose control flow) ──
+    // _openAtCandleClose: a position was STILL OPEN when this bar closed — i.e. it
+    //   survived the intra-bar tick stops. Paper's confirmation-arm block sits ABOVE
+    //   all of its candle-close exit rules and is gated on `!ptState.position`, so a
+    //   trade that exits AT this close (negative-candle / touch-back / opposite /
+    //   EOD) still blocks arming on its own exit candle. This engine evaluates entry
+    //   after the exit, so without this flag it would arm on that candle and enter a
+    //   full bar earlier than paper. A trade that exited on a TICK stop leaves the
+    //   flag false — paper's arm block does run in that case.
+    // _blockEntryAfterExit: paper `return`s out of onCandleClose after a
+    //   negative-candle stop and after an EOD square-off, so no entry can follow on
+    //   that same candle. It falls THROUGH after a touch-back or opposite-signal
+    //   exit, so those still allow one. Only reachable with the confirmation candle
+    //   OFF (the candle-close entry path); harmless otherwise.
+    let _openAtCandleClose   = false;
+    let _blockEntryAfterExit = false;
+
+    const runExitChecks = (opts) => {
+      const entryBar = !!(opts && opts.entryBar);
+      if (!position) return;
       let exitReason = null;
       let exitPrice  = candle.close;
 
@@ -450,11 +509,12 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         // only have filled at the (worse) open, not at the stop level. Modelling
         // the fill at the exact stop understates losses on gap/spike candles —
         // exactly the trades that hurt live. Use the worse of (stop, open).
+        // Not applicable on the entry bar (its open precedes our fill).
         if (position.side === "CE" && candle.low <= position.stopLoss) {
-          exitPrice  = candle.open < position.stopLoss ? candle.open : position.stopLoss;
+          exitPrice  = (!entryBar && candle.open < position.stopLoss) ? candle.open : position.stopLoss;
           exitReason = `${_slLabel} hit — low ${candle.low} <= SL ${position.stopLoss}${exitPrice < position.stopLoss ? ` (gap fill @ ${exitPrice})` : ""}`;
         } else if (position.side === "PE" && candle.high >= position.stopLoss) {
-          exitPrice  = candle.open > position.stopLoss ? candle.open : position.stopLoss;
+          exitPrice  = (!entryBar && candle.open > position.stopLoss) ? candle.open : position.stopLoss;
           exitReason = `${_slLabel} hit — high ${candle.high} >= SL ${position.stopLoss}${exitPrice > position.stopLoss ? ` (gap fill @ ${exitPrice})` : ""}`;
         }
       }
@@ -495,8 +555,31 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         }
       }
 
-      // Rule 1c: EMA21 touch-back exit
-      if (!exitReason && _sig.ema21 != null) {
+      // ── BAR CLOSE ───────────────────────────────────────────────────────────
+      // Everything above (rules 1 / 1a / 1b) is a per-TICK stop: paper enforces
+      // those continuously while the bar is still forming. Everything below is a
+      // candle-CLOSE rule that paper evaluates inside onCandleClose.
+      //
+      // emaRsiStPaper increments candlesHeld at the TOP of onCandleClose — after
+      // the bar's ticks, before every candle-close rule. That placement matters:
+      // paper tests the negative-candle stop IMMEDIATELY after incrementing, on
+      // the same bar. This engine used to increment at the top of the candle loop
+      // instead, so at any given bar its counter was one lower than paper's at the
+      // moment the rule was tested, and the 2-candle negative stop fired a full
+      // candle LATE (paper: close of entry+1, backtest: close of entry+2).
+      //
+      // Skipped when a tick stop already fired: paper's position is closed before
+      // onCandleClose runs, so paper never increments on that bar either.
+      if (!exitReason) {
+        position.candlesHeld = (position.candlesHeld || 0) + 1;
+        // The bar closed with us still holding — this is the exact moment paper's
+        // arm block sees a live position and therefore refuses to arm.
+        _openAtCandleClose = true;
+      }
+
+      // Rule 1c: EMA21 touch-back exit — paper skips this on the entry bar
+      // (the entry condition trivially satisfies a touch), so we do too.
+      if (!exitReason && !entryBar && _sig.ema21 != null) {
         if (candle.low <= _sig.ema21 && candle.high >= _sig.ema21) {
           exitReason = "EMA touch-back exit";
           exitPrice  = candle.close;
@@ -548,7 +631,10 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
           // Option premium change ≈ spotPnlPts × delta
           const premiumMovePts = spotPnlPts * DELTA;
           // Theta decay: proportional to candles held
-          const candlesHeld    = position.candlesHeld || 1;
+          // `?? 1` not `|| 1`: a same-bar (entry-bar) exit legitimately has 0
+          // candles held and must not be charged a candle of theta. Every other
+          // path has >= 1, so this is behaviour-identical for them.
+          const candlesHeld    = position.candlesHeld ?? 1;
           const thetaDecay     = quantize((THETA_PER_DAY / CANDLES_PER_DAY) * candlesHeld, 2);
           // Net option PnL per unit
           const netPremiumPts  = premiumMovePts - thetaDecay;
@@ -576,7 +662,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
           stopLoss:        position.stopLoss || "N/A",
           initialStopLoss: position.initialStopLoss || position.stopLoss || "N/A",
           bestPrice:       position.bestPrice || null,
-          candlesHeld:     position.candlesHeld || 1,
+          candlesHeld:     position.candlesHeld ?? 1,   // 0 on a same-bar exit — see theta note
           spotPnlPts,           // raw NIFTY point move (for display in UI)
           pnl:             pnlRupees,  // realistic ₹ PnL (or raw pts if sim disabled)
           pnlMode,
@@ -649,22 +735,35 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
           if (_verbose) console.log(`  🔁 Opposite-side cooldown — no ${position.side === "CE" ? "PE" : "CE"} entries for ${OPP_COOLDOWN_CANDLES} candles`);
         }
 
+        // Paper `return`s out of onCandleClose after these two, so no entry can
+        // follow on the same candle; it falls through after touch-back / opposite.
+        if (/negative \d+-candle stop|eod/i.test(exitReason)) _blockEntryAfterExit = true;
+
         // ── Notify strategy: optional exit callbacks
         const exitedSide = position.side;
         position = null;
         if (typeof strategy.onTradeClosed === "function") strategy.onTradeClosed();
         if (isSLExit && typeof strategy.onStopLossHit === "function") strategy.onStopLossHit(exitedSide);
       }
-    }
+    };
+
+    // Carried-in position: unchanged timing, unchanged rules.
+    runExitChecks({ entryBar: false });
 
     // ── ENTRY ─────────────────────────────────────────────────────────────────
     // Gate checks: same-side SL cooldown, consecutive-loss pause, daily loss limit
     const _sigSide = signal === "BUY_CE" ? "CE" : signal === "BUY_PE" ? "PE" : null;
-    const isSideCoolingDown = _sigSide && _slPauseUntilBySide[_sigSide] > 0 && candle.time < _slPauseUntilBySide[_sigSide];
-    const isOppositeCoolingDown = OPP_COOLDOWN_ENABLED
-                                  && _sigSide && _oppositeCooldownLastSide
-                                  && _sigSide !== _oppositeCooldownLastSide
-                                  && candle.time < _oppositeCooldownUntilTs;
+    // Per-SIDE, not per-signal: the confirmation fill enters the ARMED side, which is
+    // the previous candle's signal and need not equal this candle's _sigSide. Paper
+    // applies both cooldowns inside simulateBuy() against the side actually being
+    // bought, so every entry path gets them; this engine's fill path used to skip
+    // them entirely (masked before, because arming was itself blocked while paused).
+    const _sidePaused = (s) => !!s && _slPauseUntilBySide[s] > 0 && candle.time < _slPauseUntilBySide[s];
+    const _oppPaused  = (s) => !!(OPP_COOLDOWN_ENABLED && s && _oppositeCooldownLastSide
+                                  && s !== _oppositeCooldownLastSide
+                                  && candle.time < _oppositeCooldownUntilTs);
+    const isSideCoolingDown     = _sidePaused(_sigSide);
+    const isOppositeCoolingDown = _oppPaused(_sigSide);
     const isConsecPaused = _consecPauseUntilTs > 0 && candle.time < _consecPauseUntilTs;
     const isChopHalted   = _EMA_RSI_ST_MAX_CONSEC_LOSSES > 0 && _chopConsecLosses >= _EMA_RSI_ST_MAX_CONSEC_LOSSES;
     const isDailyLossHit = _dailyLossHit; // latched: daily-loss cap OR 3-consec-loss (15-min)
@@ -676,7 +775,34 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
     // instead of silently consuming the range's own opening candles as warm-up.
     const _isWarmupOnly = candle.time < activeFromTs;
 
-    if (!position && !_isWarmupOnly && !isEntryBlocked && !isConsecPaused && !isChopHalted && !isDailyLossHit && !isMaxTradesHit) {
+    // ── CONFIRMATION ARM (paper parity) ───────────────────────────────────────
+    // emaRsiStPaper arms at candle close gated ONLY on "flat + valid signal". Every
+    // risk guard — same-side SL pause, opposite-side cooldown, consecutive-loss
+    // pause, chop halt, daily-loss latch, max-trades, VIX, OI — is evaluated LATER,
+    // at fill time in onTick. This engine used to arm INSIDE its guard-gated entry
+    // block, so a signal printing on the LAST candle of a pause never armed at all,
+    // and the entry paper takes on the very next candle (pause now expired) was
+    // silently absent from every backtest.
+    //
+    // Staged into _pendingArm rather than assigned live: this candle's fill attempt
+    // below still has to consume the arm made at the PREVIOUS close, and writing
+    // _armedSwing here would destroy it.
+    //
+    // Still gated on: flat at this close (paper's `!ptState.position`, which for a
+    // trade exiting AT this close means no arm — see _openAtCandleClose), warm-up
+    // (paper has no candle-close handler for pre-loaded history), and the
+    // backtest-only expiry-day filter, which is retained exactly where it was.
+    if (confirmCandle.enabled("EMA_RSI_ST") && !position && !_openAtCandleClose
+        && !_isWarmupOnly && _sigSide
+        && !(expiryDates && !expiryDates.has(candleDate))) {
+      _pendingArm = {
+        side: _sigSide, armedBarTime: candle.time, triggerLevel: candle.close,
+        signalSL, reason, strength: signalStrength || "STRONG",
+      };
+      if (_verbose) console.log(`  🎯 ARM ${_sigSide} @ close ${candle.close} [${toIST(candle.time)}] — await next-candle cross`);
+    }
+
+    if (!position && !_blockEntryAfterExit && !_isWarmupOnly && !isEntryBlocked && !isConsecPaused && !isChopHalted && !isDailyLossHit && !isMaxTradesHit) {
       const _confirmSwing = confirmCandle.enabled("EMA_RSI_ST");
 
       // ── Confirmation candle (cross & close): fill an armed signal when THIS
@@ -685,7 +811,44 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
       if (_confirmSwing && _armedSwing) {
         const _a = _armedSwing;
         _armedSwing = null; // armed signal is good for exactly one candle — consume it
-        if (confirmCandle.isNextBar(candle.time, _a.armedBarTime, candleResolutionMins)) {
+        // ── Per-side cooldowns on the ARMED side ──────────────────────────────
+        // emaRsiStPaper rejects inside simulateBuy(), i.e. on EVERY entry path,
+        // against the side actually being bought. The arm is already consumed
+        // above, so a rejection burns it exactly as paper burns _armedSignal
+        // before its async order call. Keyed on _a.side, not _sigSide — the armed
+        // side is the PREVIOUS candle's signal and the two can differ.
+        if (_sidePaused(_a.side) || _oppPaused(_a.side)) {
+          if (_verbose) console.log(`  ⏸️ CONFIRM ${_a.side} rejected — ${_sidePaused(_a.side) ? "same-side SL" : "opposite-side"} cooldown active [${toIST(candle.time)}]`);
+          continue;
+        }
+        // VIX gate — same reason as the cooldowns above. emaRsiStPaper runs
+        // checkLiveVix() in onTick right before the confirmation entry, so the fill
+        // is gated on the VIX at FILL time with the ARMED signal's strength. This
+        // path used to skip it entirely (the check below sits under `if (_sigSide)`,
+        // which the fill never reaches), so with VIX filtering ON the backtest took
+        // confirmation entries paper would have blocked.
+        const _fillVixCheck = checkBacktestVix(lookupVix(candle.time), _a.strength);
+        if (!_fillVixCheck.allowed) {
+          _vixBlockCount++;
+          if (_verbose && _vixBlockCount <= 5) console.log(`  🌡️ VIX BLOCK (confirm fill): ${_fillVixCheck.reason} | ${_a.side} at ${toIST(candle.time)}`);
+          continue;
+        }
+        // ── Entry-window enforcement on the CONFIRMATION candle ────────────────
+        // Mirrors emaRsiStPaper / emaRsiStLive. getSignal() blocks bars outside
+        // TRADE_ENTRY_START/END, but this fill path never calls getSignal — so a
+        // signal candle closing at TRADE_ENTRY_END could otherwise fill on the
+        // candle after it. Engines that don't expose the window are unaffected.
+        const _confirmInWindow = typeof strategy.isInTradingWindow !== "function"
+                                 || strategy.isInTradingWindow(candle.time).ok;
+        // M4 — say what actually happened. An arm dies for one of two distinct
+        // reasons and the log used to blame the window for both.
+        const _isConfirmCandle = confirmCandle.isNextBar(candle.time, _a.armedBarTime, candleResolutionMins);
+        if (_verbose && !_isConfirmCandle) {
+          console.log(`  ⌛ ARM ${_a.side} expired — this is not its confirmation candle [${toIST(candle.time)}]`);
+        } else if (_verbose && !_confirmInWindow) {
+          console.log(`  ⏰ ARM ${_a.side} dropped — its confirmation candle is outside the entry window [${toIST(candle.time)}]`);
+        }
+        if (_confirmInWindow && _isConfirmCandle) {
           const _fill = confirmCandle.barCrossFill(_a.side, candle, _a.triggerLevel);
           if (_fill != null) {
             let entryPrice = _fill;
@@ -694,7 +857,31 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
                 ? quantize(entryPrice + SLIPPAGE_PTS, 2)
                 : quantize(entryPrice - SLIPPAGE_PTS, 2);
             }
-            const initSL = _a.signalSL != null ? quantize(_a.signalSL, 2) : null;
+            // Protective-stop correction — same shared helper as paper/live.
+            // `window` already holds THIS confirmation candle, so drop the last
+            // element: the resolver must see exactly what the live engines see,
+            // i.e. newest element = the SIGNAL candle. Dropping it also keeps the
+            // backtest free of look-ahead into the still-forming entry bar. The
+            // remainder IS the strategy's own 200-candle window — the search
+            // bound is that history, not a separate constant.
+            const _slFixConfirm = tradeGuards.resolveProtectiveStop({
+              side:       _a.side,
+              entryPrice,
+              stopLoss:   _a.signalSL != null ? quantize(_a.signalSL, 2) : null,
+              candles:    window,
+              // `beforeTime` (not a manual slice) excludes THIS confirmation
+              // candle, so the resolver sees the signal candle and older — the
+              // identical view paper/live get, and no look-ahead into the bar
+              // we are filling on.
+              beforeTime: candle.time,
+            });
+            if (_a.signalSL != null && _slFixConfirm.stopLoss == null) {
+              // M1 — no protective structure anywhere; do not open the position.
+              if (_verbose) console.log(`  🚫 ENTRY ABORTED — ${_slFixConfirm.reason}`);
+              continue;
+            }
+            const initSL = _slFixConfirm.stopLoss;
+            if (_verbose && _slFixConfirm.repaired) console.log(`  🛡️ Initial SL corrected — ${_slFixConfirm.reason}`);
             position = {
               side:            _a.side,
               entryPrice,
@@ -707,6 +894,13 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
               candlesHeld:     0,
             };
             if (_verbose) console.log(`  ✅ CONFIRM ENTER ${_a.side} @ ${entryPrice} [${toIST(candle.time)}] x-over ${_a.triggerLevel} SL=${initSL}`);
+            // H1: paper/live can stop out inside the entry bar — so must we.
+            runExitChecks({ entryBar: true });
+            // Paper's arm block sits at this close and is gated on `!ptState.position`.
+            // Still holding → it would not arm, so drop the arm staged above. But if the
+            // entry bar's own TICK stop already closed us out, paper is flat by then and
+            // does arm — so in that case the staged arm stands.
+            if (position || _openAtCandleClose) _pendingArm = null;
             continue;
           }
         }
@@ -739,11 +933,10 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
 
         // ── Confirmation candle ON: arm the signal — entry fires on the NEXT
         //    candle's cross (handled above), never on the signal candle itself. ──
-        if (_confirmSwing) {
-          _armedSwing = { side, armedBarTime: candle.time, triggerLevel: candle.close, signalSL, reason, strength };
-          if (_verbose) console.log(`  🎯 ARM ${side} @ close ${candle.close} [${toIST(candle.time)}] — await next-candle cross`);
-          continue;
-        }
+        // Confirmation candle ON: entry only ever happens via the next-candle cross
+        // in the fill block above. The arm itself was decided before this guarded
+        // block (see CONFIRMATION ARM) because paper does not guard it.
+        if (_confirmSwing) continue;
 
         // Entry at candle close — backtest's candle-granularity proxy for the
         // live intra-candle entry. Slippage worsens it (CE buy higher, PE buy lower).
@@ -755,7 +948,25 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         }
 
         // Initial SL = previous completed candle's low (CE) / high (PE), from getSignal.
-        const initSL = signalSL != null ? quantize(signalSL, 2) : null;
+        // Protective-stop correction — same shared helper as paper/live. Here the
+        // signal candle IS this candle and `window` already ends with it, matching
+        // emaRsiStPaper's candle-close entry path exactly.
+        const _slFixClose = tradeGuards.resolveProtectiveStop({
+          side,
+          entryPrice,
+          stopLoss: signalSL != null ? quantize(signalSL, 2) : null,
+          candles:  window,
+          // Entry is at THIS candle's close, so it is fully closed structure and
+          // must be visible; the next bar is the one still forming.
+          beforeTime: candle.time + candleResolutionMins * 60,
+        });
+        if (signalSL != null && _slFixClose.stopLoss == null) {
+          // M1 — no protective structure anywhere; do not open the position.
+          if (_verbose) console.log(`  🚫 ENTRY ABORTED — ${_slFixClose.reason}`);
+          continue;
+        }
+        const initSL = _slFixClose.stopLoss;
+        if (_verbose && _slFixClose.repaired) console.log(`  🛡️ Initial SL corrected — ${_slFixClose.reason}`);
 
         position = {
           side,
@@ -772,6 +983,16 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
           console.log(`  ✅ ENTER ${side} @ ${entryPrice} [${toIST(candle.time)}]  SL(prev-candle)=${initSL}`);
           console.log(`     Reason: ${reason}`);
         }
+        // NO entry-bar exit check on this path — and that is deliberate.
+        // This is the candle-CLOSE entry, reached only when the confirmation
+        // candle is OFF. emaRsiStPaper's matching path (the `!confirmCandle
+        // .enabled(...)` branch at the bottom of onCandleClose) runs AFTER every
+        // exit rule for that bar, and paper's next tick already belongs to the
+        // next bar — so paper cannot exit on its own candle-close entry bar.
+        // Calling runExitChecks here would also test the stop against a low/high
+        // that was printed BEFORE the close we filled at. The intra-bar confirm
+        // fill above is different: it enters mid-bar, so paper really can stop
+        // out inside that bar, which is why only that path checks.
       }
     }
   }

@@ -2789,7 +2789,11 @@ async function reconcileOrphanedPositions() {
         // (that would mask a real orphan). Only clear when the book was provably
         // readable (non-empty); otherwise retain + warn and re-check next boot.
         const _zReadable = ((zPos.net || []).length + (zPos.day || []).length) > 0;
-        const _zSnaps = [savedTrade, savedEma9Vwap].filter(Boolean).length;
+        // Count only snapshots that actually carry a position — loadTradePosition()
+        // returns the parsed file whenever it exists and is today's, even if the
+        // record has no `.position`, which used to trigger a spurious
+        // "retaining unverified snapshot" warning on an empty record.
+        const _zSnaps = [savedTrade, savedEma9Vwap].filter(x => x && x.position).length;
         if (_liveActive && _zSnaps > 0 && !_zReadable) {
           const msg = `⚠️ [STARTUP] Zerodha book came back EMPTY — can't tell flat from an API error. Retaining ${_zSnaps} crash snapshot(s) UNVERIFIED (re-checking next boot). Check Zerodha dashboard.`;
           console.warn(msg); sendTelegram(msg);
@@ -2817,7 +2821,7 @@ async function reconcileOrphanedPositions() {
         // that also returns []). Only clear snapshots when the book was provably
         // readable; otherwise retain + warn so a real orphan isn't masked.
         const _fReadable = Array.isArray(fPos.netPositions) && fPos.netPositions.length > 0;
-        const _fSnaps = [savedBbRsi, savedPA, savedOrb, savedTrendPb].filter(Boolean).length;
+        const _fSnaps = [savedBbRsi, savedPA, savedOrb, savedTrendPb].filter(x => x && x.position).length;
         if (_liveActive && _fSnaps > 0 && !_fReadable) {
           const msg = `⚠️ [STARTUP] Fyers book came back EMPTY — can't tell flat from an API error. Retaining ${_fSnaps} crash snapshot(s) UNVERIFIED (re-checking next boot). Check Fyers dashboard.`;
           console.warn(msg); sendTelegram(msg);

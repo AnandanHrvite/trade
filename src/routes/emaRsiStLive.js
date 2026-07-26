@@ -40,23 +40,23 @@ const { logNearMiss } = require("../utils/nearMissLog");
 const skipLogger = require("../utils/skipLogger");
 const confirmCandle = require("../utils/confirmCandle");
 
-// ── Module-level caches (avoid repeated env reads / allocations in hot paths) ─
-const TRADE_RES = parseInt(process.env.TRADE_RESOLUTION || "5", 10); // candle resolution in minutes
-let _cachedClosedCandleSL = null; // SAR SL from last FULLY CLOSED candle — updated in onCandleClose, used in every tick
+// ── Module-level config (re-read at /start, mirroring emaRsiStPaper) ─────────
+// These were `const`, frozen at module load, so a Settings edit NEVER reached the
+// live engine without a full process restart even though the Settings UI marks
+// these keys as taking effect on the next session. Paper already refreshed most
+// of them at /start, so the two engines could run the same session on different
+// values. Declared with `let` + refreshed by _refreshConfig() below.
+let TRADE_RES;                       // candle resolution in minutes
+let _cachedClosedCandleSL = null;    // SAR SL from last FULLY CLOSED candle — updated in onCandleClose, used in every tick
 
-const _MAX_DAILY_TRADES   = parseInt(process.env.MAX_DAILY_TRADES || "20", 10);
-const _MAX_DAILY_LOSS     = parseFloat(process.env.MAX_DAILY_LOSS || "5000");
-const _OPT_STOP_PCT       = parseFloat(process.env.OPT_STOP_PCT || "0.15");
-
+let _MAX_DAILY_TRADES;
+let _MAX_DAILY_LOSS;
+let _OPT_STOP_PCT;
 
 // Same-side SL cooldown config + helper (mirrors paper)
-const _EMA_RSI_ST_SL_PAUSE_CANDLES = parseInt(process.env.EMA_RSI_ST_SL_PAUSE_CANDLES || "3", 10);
+let _EMA_RSI_ST_SL_PAUSE_CANDLES;
 // Exit-before-close: square off open position at this IST time (default 15:15).
-const _EMA_RSI_ST_EOD_EXIT_MINS = (function() {
-  const raw = process.env.EMA_RSI_ST_EOD_EXIT_TIME || "15:15";
-  const [h, m] = raw.split(":").map(Number);
-  return isNaN(h) ? null : (h * 60 + (isNaN(m) ? 0 : m));
-})();
+let _EMA_RSI_ST_EOD_EXIT_MINS;
 function _setSlPause(side) {
   if (!_EMA_RSI_ST_SL_PAUSE_CANDLES || _EMA_RSI_ST_SL_PAUSE_CANDLES <= 0) return;
   tradeState._slPauseUntilBySide = tradeState._slPauseUntilBySide || { CE: 0, PE: 0 };
@@ -69,8 +69,8 @@ function _setSlPause(side) {
 // After any non-flip exit, block entries on the OPPOSITE side for
 // EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_CANDLES candles. Prevents whipsaw flips on chop.
 // Skipped for opposite-signal / EOD / manual exits.
-const _OPP_COOLDOWN_ENABLED = (process.env.EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_ENABLED || "true").toLowerCase() === "true";
-const _OPP_COOLDOWN_CANDLES = parseInt(process.env.EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_CANDLES || "3", 10);
+let _OPP_COOLDOWN_ENABLED;
+let _OPP_COOLDOWN_CANDLES;
 // Candle-trail (EMA_RSI_ST_CANDLE_TRAIL_*) is read live from process.env on each candle close
 // — INSTANT — so a Settings toggle takes effect without a restart.
 function _setOppositeCooldown(exitedSide, reason) {
@@ -84,29 +84,80 @@ function _setOppositeCooldown(exitedSide, reason) {
 }
 
 // EMA_RSI_ST (redefined): initial SL = the prev-candle low/high from getSignal, used as-is.
-function _applyInitialSLCap(stopLoss, entrySpot, side, lastCandle) {
-  return { stopLoss, capLog: null };
+//
+// The ONLY adjustment: an initial stop must be PROTECTIVE. Because the
+// confirmation candle fills one bar after the signal candle, the seeded level
+// can land on the wrong side of the fill (CE stop above entry / PE stop below),
+// which stops the trade out on the next tick. resolveProtectiveStop leaves the
+// seeded level untouched whenever it is already protective and otherwise steps
+// to the nearest structural low/high that is — same candle series, no ATR /
+// points / percentage / EMA substitute. Shared with emaRsiStPaper so the two
+// engines cannot drift.
+// `beforeTime` is the time of the bar that was still FORMING when the entry was
+// decided — captured by the caller BEFORE any await so a candle closing during
+// the order round-trip cannot change which structure the stop is derived from.
+function _applyInitialSLCap(stopLoss, entrySpot, side, lastCandle, beforeTime) {
+  const fix = tradeGuards.resolveProtectiveStop({
+    side,
+    entryPrice: entrySpot,
+    stopLoss:   stopLoss != null ? stopLoss : null,
+    candles:    tradeState.candles,
+    beforeTime,
+  });
+  return {
+    stopLoss: fix.stopLoss,
+    capLog:   fix.repaired ? `🛡️ [LIVE] Initial SL corrected — ${fix.reason}` : null,
+    // M1: a stop was seeded but NO protective structure exists anywhere in
+    // history. Never open a REAL position we cannot protect — the caller aborts.
+    unprotected: stopLoss != null && fix.stopLoss == null,
+    reason:   fix.reason,
+  };
 }
 
 // ── EOD stop time — cached at module load ─────────────────────────────────────
 // parseMins("TRADE_STOP_TIME","15:30") was called on every candle close.
-const _STOP_MINS = (function() {
-  const raw = process.env.TRADE_STOP_TIME || "15:30";
-  const [h, m] = raw.split(":").map(Number);
-  return h * 60 + (isNaN(m) ? 0 : m);
-})();
+let _STOP_MINS;
 
-// ── isMarketHours() cache (60-second TTL) ────────────────────────────────────
-let _mktHoursCache   = null;
-let _mktHoursCacheTs = 0;
-let _mktHoursParamsTs = 0;
+// ── isMarketHours() memo — keyed on the IST MINUTE, not a 60s wall-clock TTL ──
+// The old TTL was anchored to the last miss, so a verdict computed at 15:19:59
+// stayed cached until 15:20:59 and let an entry through ~59s past the cutoff.
+let _mktHoursCache    = null;
+let _mktHoursCacheMin = -1;
 
-// Cached start/stop mins — read from .env once at module load
-const _START_MINS      = (function(){ const [h,m]=(process.env.TRADE_START_TIME||"09:15").split(":").map(Number); return h*60+(isNaN(m)?0:m); })();
+let _START_MINS;
 // NSE regular session open (09:15 IST) — candle-build floor (pre-open auction +
 // pre-market ticks corrupt SuperTrend/SAR; matches Kite/TradingView). Fixed.
 const _MKT_OPEN_MINS   = 9 * 60 + 15;
-const _ENTRY_STOP_MINS = _STOP_MINS - 10;
+let _ENTRY_STOP_MINS;
+
+// Re-read every session-scoped key. Called at module load AND at /start so a
+// Settings change (or a replay env override) actually reaches this engine.
+function _refreshConfig() {
+  TRADE_RES              = parseInt(process.env.TRADE_RESOLUTION || "5", 10);
+  _MAX_DAILY_TRADES      = parseInt(process.env.MAX_DAILY_TRADES || "20", 10);
+  _MAX_DAILY_LOSS        = parseFloat(process.env.MAX_DAILY_LOSS || "5000");
+  _OPT_STOP_PCT          = parseFloat(process.env.OPT_STOP_PCT || "0.15");
+  _EMA_RSI_ST_SL_PAUSE_CANDLES = parseInt(process.env.EMA_RSI_ST_SL_PAUSE_CANDLES || "3", 10);
+  {
+    const raw = process.env.EMA_RSI_ST_EOD_EXIT_TIME || "15:15";
+    const [h, m] = raw.split(":").map(Number);
+    _EMA_RSI_ST_EOD_EXIT_MINS = isNaN(h) ? null : (h * 60 + (isNaN(m) ? 0 : m));
+  }
+  {
+    const raw = process.env.TRADE_STOP_TIME || "15:30";
+    const [h, m] = raw.split(":").map(Number);
+    _STOP_MINS = h * 60 + (isNaN(m) ? 0 : m);
+  }
+  {
+    const [h, m] = (process.env.TRADE_START_TIME || "09:15").split(":").map(Number);
+    _START_MINS = h * 60 + (isNaN(m) ? 0 : m);
+  }
+  _ENTRY_STOP_MINS      = _STOP_MINS - 10;  // entry cutoff sits 10 min before session end
+  _OPP_COOLDOWN_ENABLED = (process.env.EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_ENABLED || "true").toLowerCase() === "true";
+  _OPP_COOLDOWN_CANDLES = parseInt(process.env.EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_CANDLES || "3", 10);
+  _mktHoursCacheMin     = -1;               // invalidate the cached market-hours verdict
+}
+_refreshConfig();
 
 // Fast IST minutes (no Date/ICU allocation) — UTC+5:30 = +19800s
 function getISTMinutes() {
@@ -393,11 +444,10 @@ function parseMins(envKey, defaultVal) {
 // Trade EXECUTION gate: TRADE_START_TIME (default 09:15) to TRADE_STOP_TIME-10min (default 15:20)
 // Cached with 60-second TTL — called on every tick, Date object is expensive at 200 ticks/min.
 function isMarketHours() {
-  const now = Date.now();
-  if (now - _mktHoursCacheTs < 60_000) return _mktHoursCache;
   const total = getISTMinutes(); // fast: integer arithmetic only, no Date/ICU
-  _mktHoursCache   = total >= _START_MINS && total < _ENTRY_STOP_MINS;
-  _mktHoursCacheTs = now;
+  if (total === _mktHoursCacheMin) return _mktHoursCache;
+  _mktHoursCache    = total >= _START_MINS && total < _ENTRY_STOP_MINS;
+  _mktHoursCacheMin = total;
   return _mktHoursCache;
 }
 
@@ -517,12 +567,18 @@ function getCachedSymbol(side, currentSpot) {
 
 let _optionPollTimer = null;
 let _optionPollBusy  = false;  // skip a 1s cycle if the previous fetch is still in flight
+let _entryLtpProxyTimer = null; // 10s entry-premium fallback timer — owned by one position
 
 function startOptionPolling(symbol) {
   stopOptionPolling();
   // First fetch immediately on entry
   fetchOptionLtp(symbol).then(ltp => {
     if (!ltp) return;
+    // Ownership check BEFORE publishing — a reply that lands after the position
+    // closed (or after the engine moved strike) belongs to a contract we no
+    // longer hold; writing it would leave the OLD premium in state for the next
+    // trade to pick up. Must stay ahead of the tradeState.optionLtp write.
+    if (!tradeState.position || tradeState.optionSymbol !== symbol) return;
     tradeState.optionLtp = ltp;
     tradeState.optionLtpUpdatedAt = Date.now();
     if (tradeState.position) {
@@ -536,13 +592,35 @@ function startOptionPolling(symbol) {
     }
   }).catch(err => log(`❌ [LIVE] Initial option LTP fetch error: ${err.message}`));
 
-  // ── 10s timeout: if option LTP still null, use last tick price as proxy ───────
-  setTimeout(() => {
-    if (tradeState.position && !tradeState.position.optionEntryLtp && tradeState.lastTickPrice) {
-      const proxy = tradeState.lastTickPrice;
-      tradeState.position.optionEntryLtp     = proxy;
-      tradeState.position.optionEntryLtpTime = istNow();
-      log(`⚠️ [LIVE] Option LTP timeout — using spot ₹${proxy} as proxy entry LTP`);
+  // ── 10s timeout: flag that no option premium arrived. DIAGNOSTIC ONLY. ───────
+  // Mirrors emaRsiStPaper. This used to write tradeState.lastTickPrice — a SPOT
+  // price (~₹23,800) — into optionEntryLtp, which every consumer reads as an
+  // option PREMIUM (~₹180). On the live side that had two consequences:
+  //
+  //   1. The 25% option stop (optionLtp <= optionEntryLtp × 0.75) became
+  //      182 <= 17,850 → TRUE, firing a REAL squareOff market order ~1s after the
+  //      premium finally arrived.
+  //   2. placeHardSL() is only ever called from the two `if (!optionEntryLtp)`
+  //      branches above. Stamping the proxy made BOTH permanently unreachable for
+  //      that position — so with HARD_SL_ENABLED=true the exchange SL-M order was
+  //      silently never placed, and the "HARD SL FAILED" alert never fired either
+  //      because it lives inside the function that was never called.
+  //
+  // Leaving optionEntryLtp null fixes both: the first genuine premium sets it and
+  // places the hard SL exactly as designed. No threshold or rule changes.
+  //
+  // OWNERSHIP: belongs to the position that started THIS polling run; tracked,
+  // cleared by stopOptionPolling(), and re-checked against the held contract.
+  _entryLtpProxyTimer = setTimeout(() => {
+    _entryLtpProxyTimer = null;
+    if (tradeState.position && tradeState.optionSymbol === symbol
+        && !tradeState.position.optionEntryLtp) {
+      tradeState.position.optionEntryLtpMissing = true;
+      log(`⚠️ [LIVE] No option premium after 10s for ${symbol} — entry premium left UNSET (25% option stop inert until a real premium arrives). Spot is NOT used as a premium.`);
+      if (isHardSLEnabled()) {
+        log(`🚨 [LIVE] HARD SL cannot be placed yet — it needs a real option premium. Position is running WITHOUT exchange-level protection until the feed recovers.`);
+        sendTelegram(`🚨 EMA_RSI_ST LIVE — no option premium after 10s; Hard SL NOT placed. Position unprotected at the exchange.`).catch(() => {});
+      }
     }
   }, 10000);
   // Then every 1 second
@@ -566,6 +644,8 @@ function startOptionPolling(symbol) {
         }
         return;
       }
+      // Ownership check BEFORE publishing — see startOptionPolling's first fetch.
+      if (!tradeState.position || tradeState.optionSymbol !== symbol) return;
       tradeState.optionLtp = ltp;
       tradeState.optionLtpUpdatedAt = Date.now();
       if (tradeState._ltpStaleLogged) {
@@ -591,6 +671,8 @@ function startOptionPolling(symbol) {
 
 function stopOptionPolling() {
   if (_optionPollTimer) { clearInterval(_optionPollTimer); _optionPollTimer = null; }
+  // Cancel the entry-premium fallback so it can never fire against a later position.
+  if (_entryLtpProxyTimer) { clearTimeout(_entryLtpProxyTimer); _entryLtpProxyTimer = null; }
 }
 
 // ── EOD Backup Timer — force exit at 3:25 PM IST if tick-based exit missed ──
@@ -1143,7 +1225,11 @@ async function onCandleClose(candle) {
   tradeState.prevCandleHigh = candle.high;
   tradeState.prevCandleLow  = candle.low;
   tradeState.prevCandleMid  = parseFloat(((candle.high + candle.low) / 2).toFixed(2));
-  if (tradeState.candles.length > 200) tradeState.candles.shift();
+  // Rolling indicator history — depth shared with paper + backtest (see
+  // tradeGuards.INDICATOR_HISTORY_CANDLES). /start pre-loads ~21 calendar days,
+  // so this array is already well past the floor and this line only stops it
+  // growing; it does not trim the pre-loaded depth.
+  if (tradeState.candles.length > tradeGuards.INDICATOR_HISTORY_CANDLES) tradeState.candles.shift();
 
   const strategy = getActiveStrategy();
   const { signal, reason, stopLoss, signalStrength: _ccStrength, ...indicators } = strategy.getSignal(tradeState.candles);
@@ -1347,11 +1433,14 @@ async function onCandleClose(candle) {
       saveLiveSession();
       sharedSocketState.clear();
       stopOptionPolling();
-      // Only stop socket if no bb_rsi mode is piggybacking
-      if (!sharedSocketState.isBbRsiActive() && !sharedSocketState.isEma9VwapActive()) {
+      // Stop the shared socket only if NO other strategy is still subscribed. The
+      // old guard checked BB_RSI + EMA9_VWAP only, so an EMA_RSI_ST EOD stop tore
+      // the shared Fyers feed out from under a running PA / ORB / Trend_PB LIVE
+      // position — its per-tick stop would stop firing. Same guard /stop uses.
+      if (!sharedSocketState.isAnyActive() && socketManager.isRunning()) {
         socketManager.stop();
-      } else {
-        log("📡 [LIVE] Socket kept alive — bb_rsi mode still active");
+      } else if (sharedSocketState.isAnyActive()) {
+        log("📡 [LIVE] Socket kept alive — another strategy is still active");
       }
     }
     return;
@@ -1507,8 +1596,21 @@ async function onCandleClose(candle) {
         : null;
 
       // Initial SL = the prev-candle low/high from getSignal, used as-is (no-op cap).
-      const _slCapResult = _applyInitialSLCap(stopLoss, candle.close, side, _ccLastCandle);
+      // Entry fires at THIS candle's close, so it is fully closed structure; the
+      // bar still forming is the next one.
+      const _slCapResult = _applyInitialSLCap(stopLoss, candle.close, side, _ccLastCandle, candle.time + TRADE_RES * 60);
+      if (_slCapResult.unprotected) {
+        log(`🚫 [LIVE] Entry aborted — ${_slCapResult.reason}`);
+        skipLogger.appendSkipLog("ema_rsi_st", {
+          gate: "strategy", reason: "no protective structural stop available",
+          spot: candle.close, side, signal, path: "protective-stop",
+        });
+        tradeState._entryPending = false;
+        clearTimeout(_ltEntryTimer);
+        return;
+      }
       stopLoss = _slCapResult.stopLoss;
+      if (_slCapResult.capLog) log(_slCapResult.capLog);
 
       // Data-collection metadata — frozen at entry so the trade record is self-describing for offline analysis.
       const _entryIstMin     = Math.floor((Math.floor(Date.now() / 1000) + 19800) / 60) % 1440;
@@ -1697,7 +1799,28 @@ function onSpotTick(tick) {
     //    (the one AFTER a signal candle) crosses the armed signal candle's close. ──
     if (confirmCandle.enabled("EMA_RSI_ST")) {
       const _a = tradeState._armedSignal;
-      if (_a && confirmCandle.isNextBar(bar.time, _a.armedBarTime, TRADE_RES)
+      // ── Entry-window enforcement on the CONFIRMATION bar ────────────────────
+      // getSignal() blocks bars outside TRADE_ENTRY_START/END, but the branch
+      // below overwrites `signal` from the armed object, discarding that block.
+      // A signal candle closing at TRADE_ENTRY_END could therefore still buy on
+      // the bar after it. Re-check the window against the confirmation bar and
+      // drop the arm if it has expired — it can never confirm in a later bar.
+      // Evaluated ONCE per tick and reused — this runs on every tick of a
+      // confirmation bar.
+      const _isConfirmBar = !!_a && confirmCandle.isNextBar(bar.time, _a.armedBarTime, TRADE_RES);
+      const _confirmWin   = _isConfirmBar ? strategy.isInTradingWindow(bar.time) : null;
+      if (_isConfirmBar && !_confirmWin.ok) {
+        log(`⏰ [LIVE] Armed ${_a.side} dropped — its confirmation bar is outside the entry window (${_confirmWin.reason})`);
+        skipLogger.appendSkipLog("ema_rsi_st", {
+          gate: "strategy",
+          reason: _confirmWin.reason,
+          spot: ltp,
+          signal: _a.side === "CE" ? "BUY_CE" : "BUY_PE",
+          path: "confirmation",
+        });
+        tradeState._armedSignal = null;
+      }
+      if (_isConfirmBar && tradeState._armedSignal
             && confirmCandle.crossed(_a.side, ltp, _a.triggerLevel)) {
         signal     = _a.side === "CE" ? "BUY_CE" : "BUY_PE";
         reason     = `${_a.reason} | CONFIRM ${_a.side} x-over @${_a.triggerLevel}`;
@@ -1847,8 +1970,20 @@ function onSpotTick(tick) {
           : null;
 
         // ── HYBRID INITIAL SL CAP ─────────────────────────────────────────
-        const _slCapResultIntra = _applyInitialSLCap(stopLoss, ltp, side, _intraLastCandle);
+        // _currentBarTime was captured synchronously before the order round-trip.
+        const _slCapResultIntra = _applyInitialSLCap(stopLoss, ltp, side, _intraLastCandle, _currentBarTime);
+        if (_slCapResultIntra.unprotected) {
+          log(`🚫 [LIVE] Entry aborted — ${_slCapResultIntra.reason}`);
+          skipLogger.appendSkipLog("ema_rsi_st", {
+            gate: "strategy", reason: "no protective structural stop available",
+            spot: ltp, side, signal, path: "protective-stop",
+          });
+          tradeState._entryPending = false;
+          clearTimeout(_ltIntraTimer);
+          return;
+        }
         stopLoss = _slCapResultIntra.stopLoss;
+        if (_slCapResultIntra.capLog) log(_slCapResultIntra.capLog);
 
         // Data-collection metadata — frozen at entry so the trade record is self-describing for offline analysis.
         const _entryIstMinIntra    = Math.floor((Math.floor(Date.now() / 1000) + 19800) / 60) % 1440;
@@ -2025,6 +2160,11 @@ function onSpotTick(tick) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 router.get("/start", async (req, res) => {
+  // Re-read env into module-level config so Settings UI changes (and replay env
+  // overrides) take effect for this session — same contract emaRsiStPaper honours.
+  // Without this the live engine ran a session on whatever was in .env at process
+  // boot, silently ignoring every Settings edit.
+  _refreshConfig();
   const _auth = await verifyFyersToken();
   if (!_auth.ok)                          return res.status(401).json({ success: false, error: _auth.message, code: _auth.code });
   if (!zerodha.isAuthenticated())         return res.status(401).json({ success: false, error: "Zerodha not authenticated. Visit /auth/zerodha/login first." });
@@ -2471,6 +2611,15 @@ router.post("/manualEntry", async (req, res) => {
   if (!stopLoss) stopLoss = side === "CE" ? spot - MAX_SL : spot + MAX_SL;
 
   // Validate SL is on correct side (CE: below entry, PE: above entry)
+  //
+  // M5 — WHY THIS DIFFERS FROM THE AUTOMATED PATH (deliberate, not an oversight):
+  // the automated path repairs a non-protective stop with market structure
+  // (tradeGuards.resolveProtectiveStop → nearest protective candle low/high),
+  // because there it has a signal candle and a confirmation cross that define
+  // which structure is relevant. A manual entry has neither — the user is
+  // entering at an arbitrary moment with no signal candle, so "nearest
+  // structural level" has no defined meaning here. The fixed MAX_SL fallback
+  // below is the deliberate manual-mode behaviour and is left unchanged.
   if ((side === "CE" && stopLoss >= spot) || (side === "PE" && stopLoss <= spot)) {
     stopLoss = side === "CE" ? spot - MAX_SL : spot + MAX_SL;
     log(`⚠️ [LIVE] Manual ${side}: SL on wrong side — using ${MAX_SL}pt fixed SL @ ₹${stopLoss}`);

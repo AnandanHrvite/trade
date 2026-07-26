@@ -54,6 +54,13 @@ let _EMA_RSI_ST_SL_PAUSE_CANDLES;   // same-side cooldown (candles) after an SL 
 let _EMA_RSI_ST_EOD_EXIT_MINS;      // square off any open EMA_RSI_ST position at/after this IST time (before day close)
 let _OPP_COOLDOWN_ENABLED;     // opposite-side cooldown toggle
 let _OPP_COOLDOWN_CANDLES;     // opposite-side cooldown in candles (× TRADE_RESOLUTION → minutes)
+// Entry-window bounds — declared HERE (not further down as const) so
+// _refreshConfig() can keep them in step with _STOP_MINS. See the note there.
+let _START_MINS;
+let _ENTRY_STOP_MINS;
+// isMarketHours() memo — invalidated by _refreshConfig(), so declared before it.
+let _mktHoursCache    = null;
+let _mktHoursCacheMin = -1;   // IST minute the cached verdict was computed for
 // Candle-trail (EMA_RSI_ST_CANDLE_TRAIL_*) is read live from process.env on each candle close
 // — INSTANT — so a Settings toggle takes effect without a restart.
 function _refreshConfig() {
@@ -72,6 +79,15 @@ function _refreshConfig() {
   _EMA_RSI_ST_EOD_EXIT_MINS = (isNaN(eh)) ? _STOP_MINS : (eh * 60 + (isNaN(em) ? 0 : em));
   _OPP_COOLDOWN_ENABLED = (process.env.EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_ENABLED || "true").toLowerCase() === "true";
   _OPP_COOLDOWN_CANDLES = parseInt(process.env.EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_CANDLES || "3", 10);
+  // Entry-window bounds. These were `const` computed once at module load while
+  // _STOP_MINS above was refreshed here, so after a Settings change the two
+  // disagreed: set TRADE_STOP_TIME 15:30 → 16:00 and the session ran to 16:00
+  // while isMarketHours() still blocked every entry from 15:20 (the OLD
+  // _STOP_MINS − 10). Replay hit the same split, since it mutates process.env and
+  // then calls /start. Refreshed here so one value governs both.
+  _START_MINS      = parseMins("TRADE_START_TIME", "09:15");
+  _ENTRY_STOP_MINS = _STOP_MINS - 10;   // entry cutoff sits 10 min before session end
+  _mktHoursCacheMin = -1;               // invalidate the cached market-hours verdict
 }
 _refreshConfig();
 let _cachedClosedCandleSL = null; // seed SL (prev-candle low/high) from last FULLY CLOSED candle — updated in onCandleClose, used in every tick
@@ -104,8 +120,8 @@ function _setOppositeCooldown(exitedSide, reason) {
 // ── isMarketHours() cache (60-second TTL) ────────────────────────────────────
 // Called on every NIFTY tick (100-200/min). Creates a Date object each call.
 // Cache for 60 seconds — market hours don't change tick-to-tick.
-let _mktHoursCache   = null;
-let _mktHoursCacheTs = 0;
+// _mktHoursCache / _mktHoursCacheMin are declared with the config block at the
+// top — _refreshConfig() invalidates them, so they must exist before it first runs.
 
 // ── Persistence ──────────────────────────────────────────────────────────────
 // Data stored at ~/trading-data/ — OUTSIDE the project directory.
@@ -202,6 +218,7 @@ let ptState = {
   // Daily loss kill switch — latched true when session loss >= MAX_DAILY_LOSS (₹)
   // Blocks ALL new entries for the rest of the day. Resets only on session restart.
   _dailyLossHit: false,
+  _priorRealizedToday: 0,   // today's realized P&L from EARLIER sessions (restart recovery)
   // NOTE: socket is now managed by socketManager — no ptState.socket needed
   // Pre-fetched option symbols (populated after each candle close, used at entry)
   _cachedCE: null,
@@ -358,25 +375,26 @@ function getISTMinutes() {
   return (istMin % 1440); // minutes since midnight IST (0–1439)
 }
 
-// Cached start/stop mins — read from env ONCE at module load, never again
-const _START_MINS = parseMins("TRADE_START_TIME", "09:15");
+// _START_MINS / _ENTRY_STOP_MINS are declared at the top and assigned by
+// _refreshConfig() so a Settings change reaches them, exactly like _STOP_MINS.
 // NSE regular session open (09:15 IST) — the floor for building candles, fixed
 // regardless of TRADE_START_TIME. Pre-open auction (09:00–09:08) prints a wild
 // wide-range bar and pre-market ticks are stale/flat; both corrupt path-dependent
 // indicators (SuperTrend, SAR) and make trend flips diverge from Kite/TradingView.
 const _MKT_OPEN_MINS = 9 * 60 + 15;
-// _STOP_MINS already defined above (for EOD candle close)
-// Stop gate is STOP_MINS - 10 to avoid orphaned positions near close
-const _ENTRY_STOP_MINS = _STOP_MINS - 10;
 
-// Trade EXECUTION gate: cached 60s TTL, uses fast integer IST calc
+// Trade EXECUTION gate. Keyed on the IST MINUTE, not a 60s wall-clock TTL: the
+// old TTL was anchored to whenever the last miss happened, so a verdict computed
+// at 15:19:59 stayed cached until 15:20:59 and let an entry through ~59s after the
+// cutoff. Keying on the minute makes the boundary exact while still collapsing the
+// ~150 ticks/min to one computation. getISTMinutes() is integer-only (no ICU), so
+// the cache is about avoiding redundant work, not an expensive call.
 function isMarketHours() {
   if (ptState._simMode) return true; // always "in hours" during simulation
-  const now = Date.now();
-  if (now - _mktHoursCacheTs < 60_000) return _mktHoursCache;
   const total = getISTMinutes();
-  _mktHoursCache   = total >= _START_MINS && total < _ENTRY_STOP_MINS;
-  _mktHoursCacheTs = now;
+  if (total === _mktHoursCacheMin) return _mktHoursCache;
+  _mktHoursCache    = total >= _START_MINS && total < _ENTRY_STOP_MINS;
+  _mktHoursCacheMin = total;
   return _mktHoursCache;
 }
 
@@ -485,6 +503,7 @@ function getCachedSymbol(side, currentSpot) {
 
 let _optionPollTimer = null;
 let _optionPollBusy  = false; // guard: prevents overlapping getQuotes calls if network is slow
+let _entryLtpProxyTimer = null; // 10s entry-premium fallback timer — owned by one position
 let _rateLimitSkipCycles = 0; // skip N poll cycles after a rate-limit hit
 
 async function fetchOptionLtp(symbol) {
@@ -538,9 +557,34 @@ async function _optionPollTick(symbol) {
   try {
     if (!ptState.position || !ptState.optionSymbol) { stopOptionPolling(); return; }
     const ltp = await fetchOptionLtp(symbol);
-    if (!ltp) return;
+    if (!ltp) {
+      // ── Staleness alert (mirrors emaRsiStLive) ────────────────────────────
+      // A failed poll leaves ptState.optionLtp at its LAST value forever — there
+      // was no timestamp and no warning, so the 25% option stop and the exit P&L
+      // could both be computed from an arbitrarily old premium with nothing in
+      // the log to show it. Via emaRsiStLiveHarness that stale premium drives
+      // real orders. Warn only — the exit rules are unchanged.
+      const _staleMs = parseInt(process.env.LTP_STALE_THRESHOLD_SEC || "15", 10) * 1000;
+      if (ptState.optionLtpUpdatedAt && (Date.now() - ptState.optionLtpUpdatedAt) > _staleMs
+          && !ptState._ltpStaleLogged) {
+        log(`⚠️ [PAPER] Option LTP STALE — no update for ${Math.round((Date.now() - ptState.optionLtpUpdatedAt) / 1000)}s. Option stop + P&L are using a stale premium.`);
+        ptState._ltpStaleLogged = true;
+      }
+      return;
+    }
+    // ── Ownership check BEFORE publishing (must stay ahead of the write) ──────
+    // A reply that lands after the position closed — or after the engine moved
+    // to a different strike — belongs to a contract we no longer hold. Writing
+    // it to ptState.optionLtp used to leave the OLD contract's premium sitting
+    // in state (nothing clears it between trades), so the NEXT entry adopted it
+    // as its entry premium. Publish only while we still own `symbol`.
+    if (!ptState.position || ptState.optionSymbol !== symbol) return;
     ptState.optionLtp = ltp;
-    if (!ptState.position) return; // position may have closed while we awaited
+    ptState.optionLtpUpdatedAt = Date.now();
+    if (ptState._ltpStaleLogged) {
+      log(`✅ [PAPER] Option LTP recovered — ₹${ltp}`);
+      ptState._ltpStaleLogged = false;
+    }
     ptState.position.optionCurrentLtp = ltp;
     if (!ptState.position.optionEntryLtp) {
       ptState.position.optionEntryLtp = ltp;
@@ -570,24 +614,55 @@ function startOptionPolling(symbol) {
   function scheduleNext() {
     if (!_optionPollTimer) return; // polling was stopped
     _optionPollTimer = setTimeout(async () => {
-      await _optionPollTick(symbol);
+      // A rejection here used to kill the whole chain silently: scheduleNext()
+      // would never run, the premium would freeze at its last value, the 25%
+      // option stop could never fire, and the exit would book a stale premium.
+      // emaRsiStLive already guards its poll loop with try/catch — match it.
+      try { await _optionPollTick(symbol); }
+      catch (err) { log(`⚠️ [PAPER] Option poll error: ${err.message} — polling continues`); }
       scheduleNext(); // reschedule only after this call finishes
     }, 1000);
   }
 
-  // Kick off with an immediate tick, then start the loop
-  _optionPollTick(symbol).then(scheduleNext);
+  // Kick off with an immediate tick, then start the loop. The .catch keeps the
+  // chain alive if the very first poll throws — otherwise polling would never
+  // start and the 10s fallback below would stamp spot as the entry premium.
+  _optionPollTick(symbol)
+    .catch(err => log(`⚠️ [PAPER] Initial option poll error: ${err.message}`))
+    .then(scheduleNext);
 
   // Mark polling as active (non-null timer signals "running" to stopOptionPolling)
   _optionPollTimer = true; // placeholder until first setTimeout fires
 
-  // ── 10s timeout: if option LTP still null, use spot as proxy entry LTP ──
-  setTimeout(() => {
-    if (ptState.position && !ptState.position.optionEntryLtp && ptState.lastTickPrice) {
-      const proxy = ptState.lastTickPrice;
-      ptState.position.optionEntryLtp = proxy;
-      ptState.position.optionEntryLtpTime = istNow();
-      log(`⚠️ [PAPER] Option LTP timeout — using spot ₹${proxy} as proxy entry LTP`);
+  // ── 10s timeout: flag that no option premium arrived. DIAGNOSTIC ONLY. ──────
+  // This used to write ptState.lastTickPrice — a SPOT price, ~₹23,800 — into
+  // position.optionEntryLtp, a field every downstream consumer reads as an option
+  // PREMIUM (~₹180). The consequences were not cosmetic:
+  //
+  //   1. The 25% option stop compares optionLtp <= optionEntryLtp × 0.75. With the
+  //      spot proxy that is 182 <= 17,850 → TRUE on the first successful poll, so
+  //      the trade was force-closed ~1s after the premium finally arrived.
+  //   2. simulateSell then booked (182 − 23,800) × 65 = −₹1,535,170 as a real
+  //      trade, which instantly latched the ₹2,000 daily-loss kill switch and
+  //      ended the trading day.
+  //   3. Once stamped, the `if (!optionEntryLtp)` guard in _optionPollTick meant
+  //      the REAL premium never replaced it.
+  //
+  // Via emaRsiStLiveHarness (which runs live by wrapping this engine) that phantom
+  // exit became a real Zerodha order. The fix is to leave optionEntryLtp null and
+  // let this contract's own first successful poll set it — which is exactly what
+  // happens in the normal case. With it null, simulateSell falls through to its
+  // designed "spot proxy (option LTP unavailable)" mode and the option stop stays
+  // inert until a genuine premium exists. No threshold or rule changes.
+  //
+  // OWNERSHIP: this timer belongs to the position that started THIS polling run;
+  // it is tracked, cleared by stopOptionPolling(), and re-checks the held contract.
+  _entryLtpProxyTimer = setTimeout(() => {
+    _entryLtpProxyTimer = null;
+    if (ptState.position && ptState.optionSymbol === symbol
+        && !ptState.position.optionEntryLtp) {
+      ptState.position.optionEntryLtpMissing = true;
+      log(`⚠️ [PAPER] No option premium after 10s for ${symbol} — entry premium left UNSET (P&L falls back to spot proxy; 25% option stop stays inert until a real premium arrives). Spot is NOT used as a premium.`);
     }
   }, 10000);
 }
@@ -598,6 +673,8 @@ function stopOptionPolling() {
   }
   _optionPollTimer = null;
   _optionPollBusy  = false;
+  // Cancel the entry-premium fallback so it can never fire against a later position.
+  if (_entryLtpProxyTimer) { clearTimeout(_entryLtpProxyTimer); _entryLtpProxyTimer = null; }
 }
 
 // ── Simulated order (NO real API call) ──────────────────────────────────────
@@ -710,7 +787,52 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
   // ── INITIAL SL (EMA_RSI_ST redefined) ──────────────────────────────────────────
   // The stop passed in IS the previous-candle low (CE) / high (PE) from getSignal.
   // Used as-is; the execution layer trails it candle-by-candle (EMA21) from here.
+  //
+  // One correction only: an initial stop must be PROTECTIVE. The confirmation
+  // candle fills one bar after the signal candle, so the seeded level can land on
+  // the wrong side of the fill (CE stop above entry / PE stop below), which stops
+  // the trade out on the very next tick. resolveProtectiveStop keeps the seeded
+  // level untouched whenever it is protective and otherwise steps to the nearest
+  // structural low/high that is — same candle series, same philosophy.
+  // M2 race guard. simulateBuy runs inside the async symbol-lookup continuation,
+  // so a candle can close between the entry DECISION and this call — appending a
+  // candle and advancing ptState.currentBar. Reading the cutoff here would
+  // therefore be non-deterministic. Each call site captures it synchronously at
+  // the decision point and passes it in (`slBeforeTime`): the time of the bar
+  // that was still FORMING when the entry was decided. Everything at or after it
+  // is ignored, so the resolver always sees the signal candle and older.
+  const _slBeforeTime = entryMeta.slBeforeTime != null
+    ? entryMeta.slBeforeTime
+    : (ptState.currentBar ? ptState.currentBar.time : null);
+
   let _capLog = null;
+  const _slFix = tradeGuards.resolveProtectiveStop({
+    side,
+    entryPrice: price,
+    stopLoss:   stopLoss != null ? stopLoss : null,
+    candles:    ptState.candles,
+    beforeTime: _slBeforeTime,
+  });
+  const _initialSL = _slFix.stopLoss;
+  if (_slFix.repaired) _capLog = `🛡️ [PAPER] Initial SL corrected — ${_slFix.reason}`;
+
+  // M1 — never open a position we cannot protect. Reached only when a stop was
+  // seeded but NO protective structural level exists in the whole history; with
+  // the confirmation candle ON this is unreachable (the signal candle always
+  // qualifies). Refusing beats opening an unstopped position.
+  if (stopLoss != null && _initialSL == null) {
+    log(`🚫 [PAPER] Entry aborted — ${_slFix.reason}`);
+    skipLogger.appendSkipLog("ema_rsi_st", {
+      gate: "strategy",
+      reason: "no protective structural stop available",
+      spot: price,
+      side,
+      signal: side === "CE" ? "BUY_CE" : "BUY_PE",
+      path: "protective-stop",
+    });
+    ptState._entryPending = false;
+    return;
+  }
 
   // Data-collection metadata — frozen at entry so the trade record is self-describing for offline analysis.
   const _entryIstMin     = Math.floor((Math.floor(simNow() / 1000) + 19800) / 60) % 1440;
@@ -729,8 +851,8 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
     spotAtEntry:       _entrySpot,
     entryTime:         istNow(),
     reason,
-    stopLoss:          stopLoss || null,
-    initialStopLoss:   stopLoss || null,
+    stopLoss:          _initialSL,
+    initialStopLoss:   _initialSL,
     entryPrevMid:      entryPrevMid,   // mid of candle BEFORE entry (retained for trade-record continuity)
     entryBarTime:      ptState.currentBar ? ptState.currentBar.time : (ptState.candles.length ? ptState.candles[ptState.candles.length - 1].time : null),
     bestPrice:         null,
@@ -747,9 +869,12 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
     optionExpiry:      optDetails?.expiry     || null,
     optionStrike:      optDetails?.strike     || null,
     optionType:        optDetails?.optionType || side,
-    // Option premium tracking
-    optionEntryLtp:    ptState.optionLtp || null,  // premium at entry (if already subscribed)
-    optionCurrentLtp:  ptState.optionLtp || null,  // updated on each option tick
+    // Option premium tracking — always start EMPTY and let this contract's own
+    // first poll fill them (see _optionPollTick). Inheriting ptState.optionLtp
+    // here is what let a late reply from the PREVIOUS strike become this trade's
+    // entry premium. Matches emaRsiStLive, which already seeds both as null.
+    optionEntryLtp:    null,  // back-filled by this symbol's first successful poll
+    optionCurrentLtp:  null,  // updated on each option tick
     // Data-collection fields — surfaced on the trade record in simulateSell()
     signalStrength:    _signalStrength,
     vixAtEntry:        _vixAtEntry,
@@ -771,6 +896,8 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
   // Set option symbol and start REST polling (no socket changes)
   // Skip option polling for futures and simulation mode — no option premium to track
   ptState.optionSymbol = symbol;
+  // Explicit reset: this contract's premium must come from this contract's poll.
+  ptState.optionLtp = null;
   if (ptState._simMode) {
     log(`📊 [PAPER] Simulation mode — skipping option LTP polling`);
   } else if (instrumentConfig.INSTRUMENT !== "NIFTY_FUTURES") {
@@ -940,7 +1067,10 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   // latch _dailyLossHit = true and block ALL new entries for the rest of the day.
   // This is a hard stop — consecutive-loss pause does NOT clear it. Only session restart resets it.
   const MAX_DAILY_LOSS = _MAX_DAILY_LOSS;
-  if (!ptState._dailyLossHit && ptState.sessionPnl <= -Math.abs(MAX_DAILY_LOSS)) {
+  // Measured against session + prior-realized-today so a mid-day restart cannot
+  // hand the day a fresh loss budget (see the restart recovery in /start).
+  const _dayPnl = ptState.sessionPnl + (ptState._priorRealizedToday || 0);
+  if (!ptState._dailyLossHit && _dayPnl <= -Math.abs(MAX_DAILY_LOSS)) {
     ptState._dailyLossHit = true;
     log(`🛑 [PAPER] DAILY LOSS LIMIT HIT — session loss ₹${Math.abs(ptState.sessionPnl)} >= ₹${MAX_DAILY_LOSS}. NO MORE ENTRIES TODAY.`);
   }
@@ -1039,7 +1169,11 @@ async function onCandleClose(candle) {
   ptState.prevCandleHigh = candle.high;
   ptState.prevCandleLow  = candle.low;
   ptState.prevCandleMid  = parseFloat(((candle.high + candle.low) / 2).toFixed(2));
-  if (ptState.candles.length > 200) ptState.candles.shift();
+  // Rolling indicator history — depth shared with live + backtest (see
+  // tradeGuards.INDICATOR_HISTORY_CANDLES). /start pre-loads ~21 calendar days,
+  // so this array is already well past the floor and this line only stops it
+  // growing; it does not trim the pre-loaded depth.
+  if (ptState.candles.length > tradeGuards.INDICATOR_HISTORY_CANDLES) ptState.candles.shift();
 
   const strategy = getActiveStrategy();
   const { signal, reason, stopLoss, signalStrength, ...indicators } = strategy.getSignal(ptState.candles);
@@ -1077,7 +1211,28 @@ async function onCandleClose(candle) {
   if (!ptState._simMode) fetchLiveVix().catch(() => {});
   // OI buildup: sample futures OI each candle close (no-op unless an OI filter is
   // enabled; live only) so the series stays filled even on no-signal candles.
+  // ── POSITION IDENTITY SNAPSHOT — read this before the first await ───────────
+  // onCandleClose is invoked fire-and-forget from onTick, and the await below
+  // yields. When an OI filter is enabled recordOiSample() does a real getQuotes
+  // round-trip, so the rest of THIS function resumes long after onTick's
+  // synchronous body has finished — including the intra-bar confirmation entry
+  // for the NEXT bar, which can open a position in that window.
+  //
+  // Everything after the await is a candle-close rule for THIS bar, so it must
+  // only ever act on the position that was open when THIS bar closed. Without the
+  // check below, bar N's block would run against a position opened in bar N+1:
+  //   • candlesHeld incremented for a bar it was never held in, so the 2-candle
+  //     negative stop fired one bar early for the rest of that trade;
+  //   • bar N's EMA21 trail overwrote the stop just resolved for the new entry;
+  //   • the touch-back "skip on entry bar" guard compares candle.time against
+  //     entryBarTime — bar N ≠ bar N+1, so it did NOT skip, and a brand-new
+  //     position could be closed instantly by "EMA touch-back exit" computed from
+  //     the PREVIOUS bar's range.
+  // Live never had this: its onCandleClose has no await before the same block.
+  const _posAtClose = ptState.position;
   if (!ptState._simMode) await oiFilter.recordOiSample(candle.close);
+  // True only when the position open at this bar's close is still the one we hold.
+  const _ownsClose = !!_posAtClose && ptState.position === _posAtClose;
   const _vixDisplay = (vixFilter.VIX_ENABLED && !ptState._simMode) ? getCachedVix() : null;
 
   log(`📊 [PAPER] ──── Candle close ──────────────────────────────────────`);
@@ -1110,7 +1265,7 @@ async function onCandleClose(candle) {
       time: _candleIST,
     });
   }
-  if (ptState.position) {
+  if (_ownsClose) {   // candle-close rules act only on the position open at THIS close
     // Increment candles-held + time-stop check (flat trade = theta bleed)
     ptState.position.candlesHeld = (ptState.position.candlesHeld || 0) + 1;
     {
@@ -1169,7 +1324,7 @@ async function onCandleClose(candle) {
   // and the stop is set to whichever of (EMA21, candle-trail level) is TIGHTER —
   // i.e. closer to price (higher for CE, lower for PE). Tighten-only either way.
   // pos.stopLoss is then enforced intra-candle in onTick.
-  if (ptState.position) {
+  if (_ownsClose) {   // trail/touch-back belong to THIS bar's position only
     const pos     = ptState.position;
     let _newSL    = null;
     let _flipExit = false;
@@ -1232,7 +1387,7 @@ async function onCandleClose(candle) {
   // no separate candle-close SL check needed.
 
   // ── Exit Rule 3: Opposite signal ────────────────────────────────────────
-  if (ptState.position) {
+  if (_ownsClose) {   // opposite-signal exit is a THIS-bar rule
     const opposite = ptState.position.side === "CE" ? "BUY_PE" : "BUY_CE";
     if (signal === opposite) {
       simulateSell(candle.close, "Opposite signal exit", candle.close);
@@ -1248,7 +1403,7 @@ async function onCandleClose(candle) {
 
   // ── Exit-before-close: square off any open position at EMA_RSI_ST_EOD_EXIT_TIME ──
   // Fires ahead of the TRADE_STOP_TIME auto-stop; the engine keeps running until _STOP_MINS.
-  if (ptState.position && !ptState._simMode && _eodMinNow >= _EMA_RSI_ST_EOD_EXIT_MINS && _eodMinNow < _STOP_MINS) {
+  if (_ownsClose && !ptState._simMode && _eodMinNow >= _EMA_RSI_ST_EOD_EXIT_MINS && _eodMinNow < _STOP_MINS) {
     const _eLbl = String(Math.floor(_EMA_RSI_ST_EOD_EXIT_MINS/60)).padStart(2,"0") + ":" + String(_EMA_RSI_ST_EOD_EXIT_MINS%60).padStart(2,"0");
     log(`⏰ [PAPER] Exit-before-close ${_eLbl} — squaring off open ${ptState.position.side}`);
     simulateSell(candle.close, `Exit before day close ${_eLbl}`, candle.close);
@@ -1256,6 +1411,10 @@ async function onCandleClose(candle) {
   }
 
   if (_eodMinNow >= _STOP_MINS) {
+    // Deliberately NOT gated on _ownsClose. This is the hard session-end square-off
+    // and it sets running=false immediately after, so no later candle close will
+    // run. Any open position must be closed here, including one opened during this
+    // handler's await window — leaving it would strand a real position overnight.
     if (ptState.position) {
       log("⏰ [PAPER] EOD " + _stopLabel + " — auto square off");
       simulateSell(candle.close, "EOD square-off " + _stopLabel, candle.close);
@@ -1271,11 +1430,17 @@ async function onCandleClose(candle) {
       log("⏰ [PAPER] Market closed (" + _stopLabel + " IST) — auto-stopping paper trade engine.");
       ptState.running = false;
       saveSession();
-      // Only stop socket if no bb_rsi mode is piggybacking
-      if (!sharedSocketState.isBbRsiActive() && !sharedSocketState.isEma9VwapActive()) {
-        socketManager.stop();
-      }
+      // Clear THIS (primary) slot FIRST, then stop the shared socket only if no
+      // other strategy is still subscribed. The old guard checked BB_RSI +
+      // EMA9_VWAP only, so an EMA_RSI_ST EOD stop tore the shared Fyers feed out
+      // from under a running PA / ORB / Trend_PB engine — their candles, per-tick
+      // stops and EOD square-off all went dead. Same guard /stop already uses.
       sharedSocketState.clear();
+      if (!sharedSocketState.isAnyActive() && socketManager.isRunning()) {
+        socketManager.stop();
+      } else if (sharedSocketState.isAnyActive()) {
+        log("📡 [PAPER] Socket kept alive — another strategy is still active");
+      }
       stopOptionPolling();
     }
     return;
@@ -1410,6 +1575,9 @@ async function onCandleClose(candle) {
 
       simulateBuy(symbol, side, getLotQty(), candle.close, reason + _oiTag, stopLoss, candle.close, false, {
         signalStrength: "STRONG",
+        // Entry fires at THIS candle's close, so it is fully closed and counts as
+        // available structure; the next bar is the one still forming.
+        slBeforeTime: candle.time + TRADE_RES * 60,
         rsiAtEntry:   indicators.rsi    != null ? indicators.rsi   : null,
         ema9AtEntry:  indicators.ema9   != null ? indicators.ema9  : null,
         ema20AtEntry: indicators.ema20  != null ? indicators.ema20 : null,
@@ -1561,7 +1729,28 @@ function onTick(tick) {
     //    reason/SL/indicators into the trade record. ──
     if (confirmCandle.enabled("EMA_RSI_ST")) {
       const _a = ptState._armedSignal;
-      if (_a && confirmCandle.isNextBar(bar.time, _a.armedBarTime, TRADE_RES)
+      // ── Entry-window enforcement on the CONFIRMATION bar ────────────────────
+      // getSignal() blocks bars outside TRADE_ENTRY_START/END, but the branch
+      // below overwrites `signal` from the armed object, discarding that block.
+      // A signal candle closing at TRADE_ENTRY_END could therefore still buy on
+      // the bar after it. Re-check the window against the confirmation bar and
+      // drop the arm if it has expired — it can never confirm in a later bar.
+      // Evaluated ONCE per tick and reused — this runs on every tick of a
+      // confirmation bar.
+      const _isConfirmBar = !!_a && confirmCandle.isNextBar(bar.time, _a.armedBarTime, TRADE_RES);
+      const _confirmWin   = _isConfirmBar ? strategy.isInTradingWindow(bar.time) : null;
+      if (_isConfirmBar && !_confirmWin.ok) {
+        log(`⏰ [PAPER] Armed ${_a.side} dropped — its confirmation bar is outside the entry window (${_confirmWin.reason})`);
+        skipLogger.appendSkipLog("ema_rsi_st", {
+          gate: "strategy",
+          reason: _confirmWin.reason,
+          spot: ltp,
+          signal: _a.side === "CE" ? "BUY_CE" : "BUY_PE",
+          path: "confirmation",
+        });
+        ptState._armedSignal = null;
+      }
+      if (_isConfirmBar && ptState._armedSignal
             && confirmCandle.crossed(_a.side, ltp, _a.triggerLevel)) {
         signal     = _a.side === "CE" ? "BUY_CE" : "BUY_PE";
         reason     = `${_a.reason} | CONFIRM ${_a.side} x-over @${_a.triggerLevel}`;
@@ -1680,6 +1869,9 @@ function onTick(tick) {
 
         simulateBuy(symbol, side, getLotQty(), ltp, reason + _oiTag, stopLoss, ltp, true, {
           signalStrength: "STRONG",
+          // This bar is still forming — captured NOW, before the async gap, so a
+          // candle closing mid-lookup cannot change which structure is used.
+          slBeforeTime: bar.time,
           rsiAtEntry:   indicators.rsi    != null ? indicators.rsi   : null,
           ema9AtEntry:  indicators.ema9   != null ? indicators.ema9  : null,
           ema20AtEntry: indicators.ema20  != null ? indicators.ema20 : null,
@@ -1798,7 +1990,11 @@ function saveSession() {
   const losses = { length: ptState._sessionLosses };
 
   const session = {
-    date:        new Date().toISOString().split("T")[0],
+    // IST, not UTC. toISOString() is UTC and this file already warns about that
+    // trap in /start. It happened to agree while sessions ended by 15:30 IST
+    // (=10:00 UTC), but the daily-loss restart recovery now matches on this field,
+    // so it has to be the same calendar the rest of the engine reasons in.
+    date:        new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
     strategy:    ACTIVE,
     instrument:  instrumentConfig.INSTRUMENT,
     startTime:   ptState.sessionStart,
@@ -2010,12 +2206,58 @@ router.get("/start", async (req, res) => {
   ptState.prevCandleLow  = null;
   ptState.prevCandleMid  = null;
   ptState.optionLtp      = null;
+  ptState.optionLtpUpdatedAt = null;   // staleness tracking (mirrors live)
+  ptState._ltpStaleLogged    = false;
   ptState.optionSymbol   = null;
   ptState._consecutiveLosses   = 0;
   ptState._chopConsecLosses    = 0;   // chop-guard streak (EMA_RSI_ST_MAX_CONSEC_LOSSES)
   ptState._pauseUntilTime      = null;
   ptState._fiftyPctPauseUntil  = null;  // clear 50%-rule pause from previous session
   ptState._dailyLossHit        = false; // reset daily kill switch on new session
+  ptState._priorRealizedToday  = 0;     // re-seeded from disk just below
+  // ── Daily-loss RESTART RECOVERY (mirrors emaRsiStLive) ─────────────────────
+  // The kill switch used to be purely session-scoped, so a stop→start (or a crash
+  // + PM2 restart) mid-day reset the loss budget to ₹0 and the same day could
+  // breach MAX_DAILY_LOSS again and again. emaRsiStLive already recovered this;
+  // paper did not — and emaRsiStLiveHarness runs LIVE by wrapping this engine, so
+  // paper's latch IS the real-money daily kill switch on that path.
+  //
+  // Prior realized P&L is kept in a SEPARATE field rather than folded into
+  // sessionPnl: saveSession() persists sessionPnl verbatim, so seeding it would
+  // write prior P&L into the new session record and double-count on the NEXT
+  // restart. The latch checks the SUM (see simulateSell).
+  try {
+    // NOT during replay. Replay patches Date.now() to the recorded session's
+    // clock, so "today" resolves to the day being replayed — and loadPaperData()
+    // is the REAL session store. Without this guard, replaying 2026-07-20 would
+    // seed _priorRealizedToday with that day's actual recorded P&L, instantly
+    // latch the kill switch and return zero trades, destroying replay
+    // determinism (a replay must reproduce the session, not react to its result).
+    let _inReplay = false;
+    try { _inReplay = require("../services/tickReplay").isReplayInProgress(); } catch (_) {}
+    if (_inReplay) throw { __skip: true };
+
+    const _todayIst = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    let _realized = 0;
+    for (const s of (data.sessions || [])) {
+      // Session `date` is "YYYY-MM-DD"; older records were stamped in UTC and
+      // newer ones in IST. Both are compared as plain date strings, and a session
+      // that ends by 15:30 IST (10:00 UTC) has the same value either way.
+      if (String(s.date || "").slice(0, 10) === _todayIst) _realized += Number(s.sessionPnl) || 0;
+    }
+    if (_realized !== 0) {
+      ptState._priorRealizedToday = parseFloat(_realized.toFixed(2));
+      if (ptState._priorRealizedToday <= -Math.abs(_MAX_DAILY_LOSS)) {
+        ptState._dailyLossHit = true;
+        log(`♻️ [PAPER] Restart recovery — today's realized ₹${ptState._priorRealizedToday} ≤ -₹${_MAX_DAILY_LOSS}: daily kill-switch RE-ARMED (no new entries)`);
+      } else {
+        log(`♻️ [PAPER] Restart recovery — today's prior realized P&L ₹${ptState._priorRealizedToday} (kill-switch tracks session + prior)`);
+      }
+    }
+  } catch (e) {
+    if (e && e.__skip) log(`♻️ [PAPER] Replay run — daily-loss restart recovery skipped (must not read the real session store)`);
+    else log(`⚠️ [PAPER] daily-loss restart recovery failed: ${e.message}`);
+  }
   ptState._cachedCE            = null; // clear pre-fetch cache on session start
   ptState._cachedPE            = null;
   ptState._maxTradesLoggedCandle = null;
@@ -2201,10 +2443,15 @@ router.get("/start", async (req, res) => {
         reason: "auto_stop_eod",
       });
     } catch (_) {}
-    if (!sharedSocketState.isBbRsiActive() && !sharedSocketState.isEma9VwapActive()) {
-      socketManager.stop();
-    }
+    // Clear THIS slot first, then stop the shared socket only if nothing else is
+    // subscribed — see the EOD note in onCandleClose. The old BB_RSI+EMA9_VWAP-only
+    // guard killed the feed for a running PA / ORB / Trend_PB engine.
     sharedSocketState.clear();
+    if (!sharedSocketState.isAnyActive() && socketManager.isRunning()) {
+      socketManager.stop();
+    } else if (sharedSocketState.isAnyActive()) {
+      log("📡 [PAPER] Socket kept alive — another strategy is still active");
+    }
     saveSession();
   });
 
@@ -4530,11 +4777,17 @@ router.post("/simulate/start", async (req, res) => {
     ptState.prevCandleLow  = null;
     ptState.prevCandleMid  = null;
     ptState.optionLtp      = null;
+    ptState.optionLtpUpdatedAt = null;
+    ptState._ltpStaleLogged    = false;
     ptState.optionSymbol   = null;
     ptState._consecutiveLosses   = 0;
     ptState._pauseUntilTime      = null;
     ptState._fiftyPctPauseUntil  = null;
     ptState._dailyLossHit        = false;
+    // A simulation must be self-contained: without this, a REAL session that lost
+    // money earlier today would still be sitting in _priorRealizedToday and would
+    // latch the sim's daily kill switch against P&L the simulation never made.
+    ptState._priorRealizedToday  = 0;
     ptState._cachedCE            = null;
     ptState._cachedPE            = null;
     ptState._maxTradesLoggedCandle = null;

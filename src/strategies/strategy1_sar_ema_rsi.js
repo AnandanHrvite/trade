@@ -284,4 +284,13 @@ function getSignal(candles, opts) {
   });
 }
 
-module.exports = { NAME: NAME, DESCRIPTION: DESCRIPTION, getSignal: getSignal };
+// isInTradingWindow is exported so the execution engines can enforce the SAME
+// TRADE_ENTRY_START/END window on the confirmation candle's bar. Without it the
+// engines would have to re-parse the window themselves and could drift from the
+// signal path. The function itself is unchanged.
+module.exports = {
+  NAME: NAME,
+  DESCRIPTION: DESCRIPTION,
+  getSignal: getSignal,
+  isInTradingWindow: isInTradingWindow,
+};
