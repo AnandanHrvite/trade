@@ -408,6 +408,31 @@ const ENTRIES  = ALL_SIGS.filter(x => x.sig.signal !== "NONE");
       "orbValidate arms breakeven from something other than the close — paper uses the close");
   });
 
+  // The backtest cannot see an option chain, so premium / spread / OI gates simply do
+  // not run there. That is fine — silently NOT SAYING SO is not. The OI gate ships
+  // enabled, so the backtest reports more trades than paper will ever take.
+  check("the backtest discloses whichever paper/live-only gates are actually enabled", () => {
+    const { _paperOnlyGates } = require("../src/routes/orbBacktest");
+    const snap = { OI_FILTER_ENABLED: process.env.OI_FILTER_ENABLED, ORB_OI_ENABLED: process.env.ORB_OI_ENABLED, ORB_VIX_ENABLED: process.env.ORB_VIX_ENABLED };
+    try {
+      process.env.OI_FILTER_ENABLED = "true"; process.env.ORB_OI_ENABLED = "true"; process.env.ORB_VIX_ENABLED = "true";
+      const on = _paperOnlyGates().join(" | ");
+      assert.ok(/OI buildup/.test(on), `OI gate enabled but not disclosed: ${on}`);
+      assert.ok(/VIX/.test(on),        `VIX gate enabled but not disclosed: ${on}`);
+
+      process.env.OI_FILTER_ENABLED = "false"; process.env.ORB_OI_ENABLED = "false"; process.env.ORB_VIX_ENABLED = "false";
+      const off = _paperOnlyGates().join(" | ");
+      assert.ok(!/OI buildup/.test(off), `OI gate disabled but still claimed: ${off}`);
+      assert.ok(!/VIX/.test(off),        `VIX gate disabled but still claimed: ${off}`);
+    } finally {
+      for (const [k, v] of Object.entries(snap)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+    }
+    // the old hard-coded sentence named only premium/spread and could not go stale-proof
+    const src = fs.readFileSync(path.join(__dirname, "../src/routes/orbBacktest.js"), "utf-8");
+    assert.ok(!/premium\/spread gates apply in paper\/live only/.test(src),
+      "the hard-coded gate disclosure is back — it cannot track a toggle being flipped");
+  });
+
   // Both were live dials that could not change any automated trade: one only moved a
   // chart line on manual entries, the other appeared in no .env/Settings/doc yet
   // silently overrode the live dashboard's starting capital.

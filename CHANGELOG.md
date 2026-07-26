@@ -6,6 +6,18 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — ORB backtest hid the entry gates it cannot model (one of them ships ON)
+
+Recheck pass over the live-execution path — `orbLiveHarness.js`, crash recovery, and the offline-vs-paper gate surface. One real gap.
+
+- **The backtest's own disclosure said "premium/spread gates apply in paper/live only".** It omitted the **OI buildup filter, which is enabled in the shipped config** (`OI_FILTER_ENABLED=true` + `ORB_OI_ENABLED=true`), and the VIX gate. Those gates need a live option chain / VIX quote, so no offline engine can run them — meaning **the 9-trade study is an upper bound**: paper takes those trades or fewer, never more. Anyone comparing "backtest says 9, paper took 6" would have chased a phantom engine bug. The note is now built from the live env (`_paperOnlyGates()`) instead of being a hard-coded sentence that goes stale the moment a toggle flips, and it appears in both the results page and the saved `notes` field. New mutation-tested assertion; suite now **31 ORB assertions** (`npm test`: 28 + 31).
+
+**Verified clean in this pass, no change needed** — the live harness path in particular, which had not been audited since the rebuild:
+
+- **`/orb-live-harness/stop` cannot orphan a real position.** `simulateSell` is fully synchronous and fires `notifyExit` before returning, and the route invokes paper's `/stop` (which squares off any open position) *before* uninstalling the harness — so the real exit order goes out while the hook is still installed. The error path uninstalls too, but only after the same call.
+- **Crash recovery covers the harness path for ORB**, contrary to a standing note that said `.active_*_position.json` was written by the legacy `*Live.js` routes only. `orbPaper.js` persists on entry and clears on exit, and the harness *runs* paper; `app.js` reconciles that snapshot against the Fyers book on boot, and its `_liveActive` guard counts `LIVE_HARNESS_DRY_RUN=false` as well as `ORB_LIVE_ENABLED`, so a harness-only live session is not mistaken for paper.
+- The double gate holds: real orders need `ORB_LIVE_ENABLED=true` **and** both dry-run flags off, checked before the harness installs.
+
 ### Fixed — ORB: offline engines ran the exit stack in the wrong order, and two config dials did nothing
 
 Full 13-phase institutional review. Two correctness bugs, two phantom config keys, one corrected headline number.

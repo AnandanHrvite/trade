@@ -57,6 +57,13 @@
  *     the single best trade is 211% of net -- REMOVE IT AND THE RESULT IS -3,786 INR
  *     the rupee budget clamped the stop on 9 of 9 trades (see ORB_SL_ATR_MULT below)
  *
+ * AND THAT 9 IS AN UPPER BOUND. Paper/live also run entry gates that need a live
+ * option chain -- the premium band, the bid-ask spread cap and (shipped ENABLED) the
+ * OI buildup filter. None of them exist in historical spot candles, so neither the
+ * backtest nor orbValidate can model them. Whatever they block, paper takes FEWER
+ * trades than the study says, never more. /orb-backtest now prints which of those
+ * gates are live so the gap is visible on the page rather than implied.
+ *
  * Read that again: strip one trade out of nine and the strategy loses money. This
  * is not a validated edge, it is a right-tail lottery ticket measured over two
  * months. ~147 trades (~637 sessions, ~2.5 years) are needed for 95% confidence /

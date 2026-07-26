@@ -32,6 +32,33 @@ const ENDPOINT = "/orb-backtest";
 const RESULT_KEY = "ORB_BACKTEST";
 
 
+/**
+ * Names the entry gates that paper/live apply but this backtest CANNOT, because
+ * they need a live option chain (premium, bid-ask spread, futures OI) or a live
+ * VIX quote — none of which exist in historical 5-min spot candles.
+ *
+ * Built from the CURRENT env rather than hard-coded, because a hard-coded sentence
+ * silently goes stale the moment someone flips a toggle. Any gate listed here makes
+ * the backtest OPTIMISTIC on trade count: paper/live will take the same trades or
+ * fewer, never more. The OI gate in particular ships enabled and was invisible in
+ * this disclosure until 2026-07-26.
+ */
+function _paperOnlyGates() {
+  const on = (k, d) => (process.env[k] || d || "false").toLowerCase() === "true";
+  const g = [];
+  if (on("ORB_PREMIUM_GATE_ENABLED", "true")) g.push(`option-premium band ₹${process.env.ORB_PREMIUM_MIN || "80"}–₹${process.env.ORB_PREMIUM_MAX || "400"}`);
+  if (parseFloat(process.env.ORB_MAX_SPREAD_PTS || "0") > 0) g.push(`bid-ask spread ≤ ${process.env.ORB_MAX_SPREAD_PTS}pt`);
+  if (on("OI_FILTER_ENABLED") && on("ORB_OI_ENABLED")) g.push("OI buildup filter");
+  if (on("ORB_VIX_ENABLED")) g.push(`VIX ≤ ${process.env.ORB_VIX_MAX_ENTRY || "22"}`);
+  return g;
+}
+function _paperOnlyGatesNote() {
+  const g = _paperOnlyGates();
+  return g.length
+    ? `⚠️ ${g.length} entry gate${g.length > 1 ? "s are" : " is"} active in paper/live but NOT modelled here (no option chain in historical spot candles): ${g.join(", ")}. Paper/live will take these trades or FEWER — never more.`
+    : `No paper/live-only entry gates are currently enabled, so the trade count here should match paper.`;
+}
+
 function _utcSecToIstMins(unixSec) { return Math.floor((unixSec + 19800) / 60) % 1440; }
 function _parseMin(envKey, fallback) {
   const v = (process.env[envKey] || fallback).trim();
@@ -353,7 +380,7 @@ function _renderOrbResults(res, from, to, trades, stats) {
       { label: "STRONG Signals", value: trades.filter(t => t.strength === "STRONG").length },
       { label: "Avg Held Candles", value: trades.length ? Math.round(trades.reduce((a, t) => a + (t.held || 0), 0) / trades.length) : "—" },
     ],
-    notes: `Premium approximated via δ + θ from historical 5-min candles (no live option chain) — treat ₹ as directional only; slightly-ITM entry seeded at ₹${process.env.ORB_BT_SEED_PREMIUM || "240"}. Entry: 09:15–09:30 opening range, day sanity (OR ≤ ${process.env.ORB_OR_ATR_MAX || "2.5"}×ATR15, gap ≤ ${process.env.ORB_GAP_OR_MULT || "3"}×OR), first close beyond OR ± buffer, breakout body ≥ ${process.env.ORB_BODY_ATR_MULT || "0.6"}×ATR5 on the right side of VWAP, then ONE confirmation candle (or a retest/resume within ${process.env.ORB_RETEST_MAX_WAIT || "6"} candles); one trade/day, cut-off ${process.env.ORB_ENTRY_END || "11:30"} IST. Exits: initial SL = wider of the entry-candle extreme and ${process.env.ORB_SL_ATR_MULT || "1.5"}×ATR5 → breakeven at +${process.env.ORB_BREAKEVEN_PTS || "20"}pt → EMA${process.env.ORB_TRAIL_EMA || "20"} close-trail → ₹${process.env.ORB_MAX_TRADE_LOSS || "1500"} / −${process.env.ORB_PREMIUM_STOP_PCT || "35"}% caps → ${process.env.ORB_FORCED_EXIT || "15:15"} EOD. STEP-8 premium/spread gates apply in paper/live only.`,
+    notes: `Premium approximated via δ + θ from historical 5-min candles (no live option chain) — treat ₹ as directional only; slightly-ITM entry seeded at ₹${process.env.ORB_BT_SEED_PREMIUM || "240"}. Entry: 09:15–09:30 opening range, day sanity (OR ≤ ${process.env.ORB_OR_ATR_MAX || "2.5"}×ATR15, gap ≤ ${process.env.ORB_GAP_OR_MULT || "3"}×OR), first close beyond OR ± buffer, breakout body ≥ ${process.env.ORB_BODY_ATR_MULT || "0.6"}×ATR5 on the right side of VWAP, then ONE confirmation candle (or a retest/resume within ${process.env.ORB_RETEST_MAX_WAIT || "6"} candles); one trade/day, cut-off ${process.env.ORB_ENTRY_END || "11:30"} IST. Exits: initial SL = wider of the entry-candle extreme and ${process.env.ORB_SL_ATR_MULT || "1.5"}×ATR5 → breakeven at +${process.env.ORB_BREAKEVEN_PTS || "20"}pt → EMA${process.env.ORB_TRAIL_EMA || "20"} close-trail → ₹${process.env.ORB_MAX_TRADE_LOSS || "1500"} / −${process.env.ORB_PREMIUM_STOP_PCT || "35"}% caps → ${process.env.ORB_FORCED_EXIT || "15:15"} EOD. ${_paperOnlyGatesNote()}`,
   });
   res.send(html);
 }
@@ -499,7 +526,7 @@ ${buildSidebar('orbBacktest', liveActive)}
     <button class="preset-btn" onclick="goto('last3y')">Last 3 yr</button>
   </div>
   <div class="notes">
-    <b>Backtest sim model:</b> Option premium estimated via δ (BACKTEST_DELTA, default 0.55) + θ (BACKTEST_THETA_DAY, default ₹8/day) seeded at ₹${process.env.ORB_BT_SEED_PREMIUM || "240"} per side. Qty per trade = ${instrumentConfig.getLotQty()} (= NIFTY_LOT_SIZE ${process.env.NIFTY_LOT_SIZE || "65"} × LOT_MULTIPLIER ${process.env.LOT_MULTIPLIER || "1"}). <b>Entry:</b> the 09:15–09:30 opening range is frozen; the day is skipped if OR &gt; ${process.env.ORB_OR_ATR_MAX || "2.5"}×ATR(15m) or the gap exceeds ${process.env.ORB_GAP_OR_MULT || "3"}×OR. The first 5-min <i>close</i> clearing the OR edge by max(15% of the range, 0.3×ATR5) is the one committed breakout of the day; it must be a decisive bar (body ≥ ${process.env.ORB_BODY_ATR_MULT || "0.6"}×ATR5) closing on the right side of session VWAP. That candle is never bought — the next candle must extend the move, or a retest-and-hold / trend-resume must occur within ${process.env.ORB_RETEST_MAX_WAIT || "6"} candles. Cut-off ${process.env.ORB_ENTRY_END || "11:30"} IST, one trade/day. <b>Exits mirror the paper route exactly:</b> initial hard SL = the wider of the entry candle's extreme and ${process.env.ORB_SL_ATR_MULT || "1.5"}×ATR(5m), breakeven after +${process.env.ORB_BREAKEVEN_PTS || "20"}pt, EMA${process.env.ORB_TRAIL_EMA || "20"} close-trail (exit only when a candle closes back across the EMA), a ₹${process.env.ORB_MAX_TRADE_LOSS || "1500"} per-trade loss cap, and a ${process.env.ORB_FORCED_EXIT || "15:15"} EOD square-off. The backtest has no option chain, so the premium/spread gates apply in paper/live only. Use Replay (recorded ticks) for tick-accurate backtests.
+    <b>Backtest sim model:</b> Option premium estimated via δ (BACKTEST_DELTA, default 0.55) + θ (BACKTEST_THETA_DAY, default ₹8/day) seeded at ₹${process.env.ORB_BT_SEED_PREMIUM || "240"} per side. Qty per trade = ${instrumentConfig.getLotQty()} (= NIFTY_LOT_SIZE ${process.env.NIFTY_LOT_SIZE || "65"} × LOT_MULTIPLIER ${process.env.LOT_MULTIPLIER || "1"}). <b>Entry:</b> the 09:15–09:30 opening range is frozen; the day is skipped if OR &gt; ${process.env.ORB_OR_ATR_MAX || "2.5"}×ATR(15m) or the gap exceeds ${process.env.ORB_GAP_OR_MULT || "3"}×OR. The first 5-min <i>close</i> clearing the OR edge by max(15% of the range, 0.3×ATR5) is the one committed breakout of the day; it must be a decisive bar (body ≥ ${process.env.ORB_BODY_ATR_MULT || "0.6"}×ATR5) closing on the right side of session VWAP. That candle is never bought — the next candle must extend the move, or a retest-and-hold / trend-resume must occur within ${process.env.ORB_RETEST_MAX_WAIT || "6"} candles. Cut-off ${process.env.ORB_ENTRY_END || "11:30"} IST, one trade/day. <b>Exits mirror the paper route exactly:</b> initial hard SL = the wider of the entry candle's extreme and ${process.env.ORB_SL_ATR_MULT || "1.5"}×ATR(5m), breakeven after +${process.env.ORB_BREAKEVEN_PTS || "20"}pt, EMA${process.env.ORB_TRAIL_EMA || "20"} close-trail (exit only when a candle closes back across the EMA), a ₹${process.env.ORB_MAX_TRADE_LOSS || "1500"} per-trade loss cap, and a ${process.env.ORB_FORCED_EXIT || "15:15"} EOD square-off. ${_paperOnlyGatesNote()} Use Replay (recorded ticks) for tick-accurate backtests.
   </div>
 </main>
 <script>
@@ -527,3 +554,6 @@ a{color:${ACCENT};text-decoration:none;border:0.5px solid #0e1428;padding:8px 14
 module.exports = router;
 // Exposed for offline unit-testing of the entry/exit engine (no Fyers needed).
 module.exports.runOrbBacktest = runOrbBacktest;
+// Exported for the regression suite: the disclosure of paper/live-only entry gates
+// must track the live env, not a sentence someone forgets to update.
+module.exports._paperOnlyGates = _paperOnlyGates;
