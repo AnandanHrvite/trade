@@ -1987,6 +1987,19 @@ function expiryHolidayModalCSS() {
       max-height: 420px; overflow-y: auto; margin-top: 10px;
       scrollbar-width: thin; scrollbar-color: #243048 transparent;
     }
+    /* Backdrop padding lives here rather than inline so the phone rule below can
+       reclaim it — 40px/20px leaves a 353px-wide card on a 393px iPhone, which
+       wraps "28 Jul 2026" onto two lines. */
+    .eh-modal { padding: 40px 20px; }
+    @media (max-width:640px) {
+      .eh-modal { padding: 14px 6px; }
+      .holiday-table { font-size: 0.72rem; }
+      .holiday-table th { padding: 7px 6px; }
+      /* Dates stay on one line; the body already scrolls sideways if the row
+         still does not fit, so nothing gets cut off. */
+      .holiday-table td { padding: 7px 6px; white-space: nowrap; }
+      .holiday-modal-body { max-height: 62vh; }
+    }
     /* Light theme. The global rewriter in modalJS() only covers .holiday-table
        TH (and borders), so the cell text, legend and scrollbar have to be
        restated here — without this the dark #c8d8f0 cell colour survives and
@@ -2008,7 +2021,7 @@ function expiryHolidayModalCSS() {
 
 function expiryHolidayModalHTML() {
   return `
-<div id="expiryHolidaysModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:9999;overflow-y:auto;padding:40px 20px;" onclick="if(event.target===this)this.style.display='none'">
+<div id="expiryHolidaysModal" class="eh-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:9999;overflow-y:auto;" onclick="if(event.target===this)this.style.display='none'">
   <div style="max-width:640px;margin:0 auto;background:#0d1117;border:1px solid #1a2640;border-radius:12px;overflow:hidden;">
     <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:#111827;border-bottom:1px solid #1a2640;">
       <span style="font-weight:700;font-size:0.95rem;color:#22d3ee;">📅 NIFTY Expiry &amp; NSE Holidays</span>

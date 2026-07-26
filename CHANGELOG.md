@@ -28,6 +28,14 @@ Those rules are now scoped to `min-width:769px`, with a phone counterpart that l
 
 Known and unchanged: the shared backup-nag banner is `position:fixed; top:0`, so it overlays the first ~58px of every page including the top bar's first row. Pre-existing and not specific to mobile.
 
+### Fixed — the expiry pill and its popup on a phone
+
+`📅 Next Expiry Date : 28/07/2026 - M - 1 day` is 41 characters and 283px wide, so on a 393px iPhone it claimed a top-bar row of its own. Each schedule pill now carries a long and a short label and picks by viewport (`📅 28/07 · M · 1d`, 122px), re-picking on resize/rotate — the top bar measures **176px → 146px** at 393px, one row less before the broker cards start.
+
+The popup itself was cramped at that width: the 40px/20px backdrop padding left a 353px card, which wrapped `28 Jul 2026` onto two lines. That padding moved out of the inline style into `.eh-modal` so a ≤640px rule can drop it to 14px/6px (card 353px → 381px), with tighter cell padding and non-wrapping dates. The body already scrolls sideways, so a row that still doesn't fit scrolls rather than being cut. Measured over CDP at a real 393×852 viewport — `--window-size` clamps at 500px and never showed the wrap.
+
+Desktop is untouched: `getComputedStyle` for the backdrop, card, both tabs, th, td, monthly row, preponed cell, legend, dot, body and table is identical to the pre-extraction commit on both themes.
+
 ### Added — the Dashboard expiry pill opens the expiry / holiday calendar
 
 The `📅 Next Expiry Date : 28/07/2026 - M - 1 day` pill in the Dashboard top bar was a read-only label, and the full NIFTY expiry calendar + NSE holiday list existed only behind the Settings page's `📅 EXPIRY & HOLIDAYS` button. Clicking either Dashboard pill now opens that same popup (Expiry Calendar / NSE Holidays tabs, REFRESH button).
