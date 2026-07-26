@@ -1129,6 +1129,20 @@ app.get("/", (req, res) => {
       color:#fbbf24;
     }
     .brk-cfg-warn:hover { text-decoration:underline; }
+    /* Touch sizing. At the desktop scale these controls come out 26px tall with
+       an 11.2px font, which is both under the 44px tap target and — because iOS
+       Safari zooms the whole page when you focus an input whose font-size is
+       below 16px — makes tapping the date field yank the layout about. 16px is
+       the exact threshold, so it is set literally rather than in rem. */
+    @media (max-width:768px) {
+      .brk-cfg-input { font-size:16px; padding:9px 10px; min-height:44px; }
+      .brk-cfg-save  { font-size:0.85rem; padding:12px 16px; min-height:44px; }
+      /* It is a link to Settings, so give it a real tap target too rather than
+         a 21px-tall line of text. */
+      .brk-cfg-warn  { font-size:0.72rem; line-height:1.5; display:flex; align-items:center; min-height:44px; }
+      .brk-cfg-label { font-size:0.62rem; }
+      .brk-cfg       { gap:8px; padding:8px 12px; }
+    }
     @media (max-width:640px) {
       .brk-cfg-label { flex:1 0 100%; }
       .brk-cfg-field { flex:1 1 0; min-width:104px; }

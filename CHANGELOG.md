@@ -6,6 +6,10 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — the expiry quick-edit was too small to use on a phone
+
+Measured at a 393px viewport, the date field, the weekly/monthly select and Save all came out **26px tall with an 11.2px font**. Two problems: 26px is well under the 44px tap target, and iOS Safari zooms the entire page when you focus an input whose font-size is below 16px — so tapping the date field would have yanked the layout around. Below 768px the inputs now use a literal `16px` (that is the exact iOS threshold, so it is not expressed in rem) and every control has `min-height:44px`, including the per-mode warning link, which was a 21px-tall line of text despite being a link to Settings. Desktop is untouched — still 26px/11.2px at 1440px.
+
 ### Fixed — the Dashboard top bar was unusable on a phone
 
 `.top-bar`/`.top-bar-right` carried `flex-wrap:nowrap !important` + `flex-shrink:0` with **no media query**, so they overrode both sharedNav's wrapping `.top-bar-right` and its `@media(max-width:768px)` wrap rule. Measured over CDP at a real 393px viewport (headless Chrome cannot go below 500px with `--window-size`, which is why this survived earlier screenshot checks — those renders were 500px cropped to look narrower): the bar was pinned at its **920px** content width and overflowed by 815px, putting Start All (Paper), Start All (Harness), Reset Token, the expiry/holiday pills and the status badge off screen behind `.main-content`'s `overflow-x:clip`. They were not merely cramped, they were unreachable.
