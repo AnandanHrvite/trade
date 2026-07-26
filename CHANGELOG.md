@@ -6,6 +6,16 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — broker rows wrapped to two lines, and the expiry fields collided on iOS
+
+Three things, all found on a real device rather than in the headless harness:
+
+- **The date field ran into the type select on iPhone.** iOS gives `input[type=date]` an intrinsic minimum width from its rendered text ("Jul 28, 2026") and will not shrink below it however the flex item is sized, so side by side the date box grew straight into the select. Headless Chrome renders a narrower date control and never reproduced it. Below 640px the two fields and Save now take one full-width row each — verified collision-free even with the date control forced to a 260px minimum.
+- **`Market Data · WS · REST` / `Orders · Live Trade` removed.** Measured at 1250px, that text alone pushed the Zerodha login button onto a second line; without it the row fits. All four now-dead `.brk-role` rules went with it.
+- **The three-track broker grid started too early.** A broker row needs ~470px to keep its login button inline, and the 1500px threshold gave each one only 439px at a 1550px window — so it wrapped anyway. Raised to 1700px (1700 − 200px sidebar − 40px padding = 1460 content, ÷2.95fr ≈ 489 per broker). Both rows are now single-line at 1250 / 1550 / 1650 / 1750 / 1920px.
+
+Also raised the stale-expiry banner's "Change Expiry" button to a 44px tap target — it measured 31px, and it is the primary action of an alert that blocks entries.
+
 ### Fixed — the expiry quick-edit was too small to use on a phone
 
 Measured at a 393px viewport, the date field, the weekly/monthly select and Save all came out **26px tall with an 11.2px font**. Two problems: 26px is well under the 44px tap target, and iOS Safari zooms the entire page when you focus an input whose font-size is below 16px — so tapping the date field would have yanked the layout around. Below 768px the inputs now use a literal `16px` (that is the exact iOS threshold, so it is not expressed in rem) and every control has `min-height:44px`, including the per-mode warning link, which was a 21px-tall line of text despite being a link to Settings. Desktop is untouched — still 26px/11.2px at 1440px.

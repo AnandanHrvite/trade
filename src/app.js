@@ -1032,7 +1032,6 @@ app.get("/", (req, res) => {
       min-width:0;
     }
     .brk-name { font-size:0.82rem !important; }
-    .brk-role { font-size:0.62rem !important; flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .brk-wallet { margin-left:auto; display:flex; flex-direction:column; align-items:flex-end; line-height:1.1; flex:0 0 auto; }
     .brk-wallet-remain { font-size:0.92rem; font-weight:800; color:#e0eaf8; font-variant-numeric:tabular-nums; }
     .brk-wallet-sub { font-size:0.58rem; color:#4a6080; font-variant-numeric:tabular-nums; white-space:nowrap; }
@@ -1042,7 +1041,12 @@ app.get("/", (req, res) => {
     /* Stack the two broker rows on laptop/small-desktop widths so each gets the
        full content width and the login button always fits (was 720px — too low,
        it skipped the 13" MacBook band). */
-    @media (max-width:1500px) { .brokers { grid-template-columns:repeat(2,minmax(0,1fr)); } .brokers > .brk-cfg { grid-column:1 / -1; } }
+    /* 1700, not 1500: a broker row needs ~470px to keep its login button on the
+       same line, and three tracks only clear that above ~1650px viewport
+       (1700 - 200px sidebar - 40px page padding = 1460 content, /2.95fr ≈ 489
+       per broker). At the old 1500 threshold a 1550px window gave each broker
+       439px and the Zerodha login button dropped to a second line. */
+    @media (max-width:1700px) { .brokers { grid-template-columns:repeat(2,minmax(0,1fr)); } .brokers > .brk-cfg { grid-column:1 / -1; } }
     @media (max-width:1200px) { .brokers { grid-template-columns:1fr; } }
     .brk-row.ok   { border-color:#0d3a1e; background:#04100a; }
     .brk-row.ok.blue { border-color:#0d2545; background:#030b18; }
@@ -1057,7 +1061,6 @@ app.get("/", (req, res) => {
     .brk-row.bad .brk-dot { background:#ef4444; }
     .brk-dot.pulse { animation:pulse 1.5s infinite; }
     .brk-name { font-size:0.92rem; font-weight:700; color:#e0eaf8; letter-spacing:-0.2px; }
-    .brk-role { font-size:0.66rem; color:#4a6080; flex:0 1 auto; }
     .brk-status {
       font-size:0.58rem; font-weight:700; text-transform:uppercase; letter-spacing:1px;
       padding:3px 9px; border-radius:20px; border:1px solid;
@@ -1145,7 +1148,13 @@ app.get("/", (req, res) => {
     }
     @media (max-width:640px) {
       .brk-cfg-label { flex:1 0 100%; }
-      .brk-cfg-field { flex:1 1 0; min-width:104px; }
+      /* One control per row. Side by side these collided on a real iPhone:
+         iOS gives input[type=date] an intrinsic minimum width from its rendered
+         text ("Jul 28, 2026") and will not shrink below it however the flex item
+         is sized, so the date box grew straight into the type select. Headless
+         Chrome renders a narrower date control and never showed it. Stacking
+         removes the whole class of problem and gives full-width tap targets. */
+      .brk-cfg-field { flex:1 0 100%; max-width:none; min-width:0; }
       .brk-cfg-save  { flex:1 0 100%; }
     }
     :root[data-theme="light"] .brk-cfg-warn { color:#b45309; }
@@ -1181,7 +1190,10 @@ app.get("/", (req, res) => {
     .opt-expiry-cta:active { transform:translateY(1px); }
     @media (max-width:640px) {
       .opt-expiry-alert { flex-direction:column; align-items:flex-start; }
-      .opt-expiry-cta { width:100%; justify-content:center; }
+      /* Already full-width here, but it measured 31px tall on a 393px phone —
+         under the 44px tap target, and it is the primary action of a blocking
+         alert, so it is the one control on this page you least want to fumble. */
+      .opt-expiry-cta { width:100%; justify-content:center; min-height:44px; }
     }
 
     /* Compact utility strip (Start All / Reset Token) */
@@ -1229,7 +1241,6 @@ app.get("/", (req, res) => {
 
     /* Mobile */
     @media (max-width:640px) {
-      .brk-role { display:none; }
       .util-strip { flex-direction:column; align-items:stretch; }
       .util-btn { justify-content:center; width:100%; }
       .util-info { margin:4px 0 0; text-align:center; }
@@ -1242,7 +1253,6 @@ app.get("/", (req, res) => {
     :root[data-theme="light"] .brk-row.bad  { background:#fef2f2; border-color:#fecaca; }
     :root[data-theme="light"] .brk-row.muted { background:#f8fafc; border-color:#e2e8f0; }
     :root[data-theme="light"] .brk-name { color:#1e293b; }
-    :root[data-theme="light"] .brk-role { color:#94a3b8; }
     :root[data-theme="light"] .brk-wallet-remain { color:#1e293b; }
     :root[data-theme="light"] .brk-wallet-sub { color:#94a3b8; }
     :root[data-theme="light"] .brk-status { background:#f1f5f9; border-color:#e2e8f0; color:#94a3b8; }
@@ -1573,7 +1583,6 @@ ${buildSidebar('dashboard', liveActive)}
     <div class="brk-row ${fyersOk ? 'ok' : 'bad'}">
       <span class="brk-dot ${fyersOk ? 'pulse' : ''}"></span>
       <span class="brk-name">Fyers</span>
-      <span class="brk-role">Market Data · WS · REST</span>
       ${fyersWalletHtml}
       <span class="brk-status">${fyersOk ? 'Connected' : 'Disconnected'}</span>
       ${fyersOk
@@ -1583,7 +1592,6 @@ ${buildSidebar('dashboard', liveActive)}
     <div class="brk-row ${zerodhaOk ? 'ok blue' : zerodhaConf ? 'bad' : 'muted'}">
       <span class="brk-dot ${zerodhaOk ? 'pulse' : ''}"></span>
       <span class="brk-name">Zerodha</span>
-      <span class="brk-role">Orders · Live Trade</span>
       ${zerodhaWalletHtml}
       <span class="brk-status">${zerodhaOk ? 'Connected' : zerodhaConf ? 'Disconnected' : 'Not Configured'}</span>
       ${zerodhaOk
@@ -2353,6 +2361,34 @@ async function loadModuleCharts(){
 loadModuleCharts();
 
 // ── Market schedule pills (top bar) — independent of analytics panel ─────────
+// A phone can't spare a whole top-bar row per pill: "📅 Next Expiry Date :
+// 28/07/2026 - M - 1 day" is 41 characters and takes the full 393px width on
+// its own, pushing the broker rows off the first screen. Each pill therefore
+// carries both labels and picks one by viewport — the short form keeps the
+// date, the W/M type and the days, which is all the bar has to convey; the
+// popup behind the pill has the rest.
+var SCHED_PILL_NARROW = 768;
+function setSchedulePillLabel(el, full, short){
+  el.dataset.full  = full;
+  el.dataset.short = short;
+  el.textContent = window.innerWidth <= SCHED_PILL_NARROW ? short : full;
+}
+function applySchedulePillLabels(){
+  ['expiry-info-pill','holiday-info-pill'].forEach(function(id){
+    var el = document.getElementById(id);
+    if (!el || !el.dataset.full) return;
+    var want = window.innerWidth <= SCHED_PILL_NARROW ? el.dataset.short : el.dataset.full;
+    if (el.textContent !== want) el.textContent = want;
+  });
+}
+(function(){
+  var t = null;
+  window.addEventListener('resize', function(){
+    clearTimeout(t);
+    t = setTimeout(applySchedulePillLabels, 150);   // also covers rotate
+  });
+})();
+
 async function loadMarketSchedulePills(){
   function istDateISO(){ return new Date().toLocaleDateString('en-CA', { timeZone:'Asia/Kolkata' }); }
   function diffDays(iso){
@@ -2384,11 +2420,17 @@ async function loadMarketSchedulePills(){
       var d = diffDays(nextExp.date);
       var typeLbl = (nextExp.monthly ? 'M' : 'W') + (nextExp.preponed ? '*' : '');
       var when = d === 0 ? 'today' : d + (d === 1 ? ' day' : ' days');
+      var whenShort = d === 0 ? 'today' : d + 'd';
+      var dm = fmtDMY(nextExp.date).slice(0, 5);   // 28/07/2026 -> 28/07
       expEl.classList.remove('empty');
-      expEl.textContent = '📅 Next Expiry Date : ' + fmtDMY(nextExp.date) + ' - ' + typeLbl + ' - ' + when;
+      setSchedulePillLabel(
+        expEl,
+        '📅 Next Expiry Date : ' + fmtDMY(nextExp.date) + ' - ' + typeLbl + ' - ' + when,
+        '📅 ' + dm + ' · ' + typeLbl + ' · ' + whenShort
+      );
     } else {
       expEl.classList.add('empty');
-      expEl.textContent = '📅 No upcoming expiry';
+      setSchedulePillLabel(expEl, '📅 No upcoming expiry', '📅 No expiry');
     }
     // Next holiday
     var holidays = ((hr && hr.holidays) || []).slice().sort();
@@ -2404,7 +2446,11 @@ async function loadMarketSchedulePills(){
         var hwhen = hd === 0 ? 'today' : 'tomorrow';
         holEl.style.display = '';
         holEl.classList.remove('empty');
-        holEl.textContent = '🎉 Holiday ' + fmtDMY(nextHol) + ' · ' + hwhen;
+        setSchedulePillLabel(
+          holEl,
+          '🎉 Holiday ' + fmtDMY(nextHol) + ' · ' + hwhen,
+          '🎉 ' + fmtDMY(nextHol).slice(0, 5) + ' · ' + hwhen
+        );
       } else {
         holEl.style.display = 'none';
       }
