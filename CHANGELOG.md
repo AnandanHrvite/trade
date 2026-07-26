@@ -27,7 +27,11 @@ All six are now generated, each from its own price path and its own price base, 
 
 Captions were rewritten to the new charts with their real times and prices, and one caption claim was corrected in the process: the passed-over first pullback was described as "before the entry window opens", but `TREND_PB_ENTRY_START` is 09:45 and the pullback is at 10:30 — it is skipped because no candle after it met the resumption test, which is the more useful lesson anyway.
 
-The generator is deterministic (a seeded LCG, no `Math.random`), so regenerating produces byte-identical output and the guides do not churn in git. Verified: the six charts now hash differently and occupy six non-overlapping price ranges (22.9k / 23.8k / 24.3k / 24.4k / 25.0k / 26.2k).
+The generator is deterministic (a seeded LCG, no `Math.random`), so regenerating produces byte-identical output and the guides do not churn in git.
+
+**Follow-up from re-checking that change**: moving only the session charts left each guide internally inconsistent — the ORB session chart said 25,170 while ORB's own detail charts and its worked example still said 24,372 for what the text presents as the same example day. [tools/alignGuidePrices.js](tools/alignGuidePrices.js) shifted each guide's remaining charts *and* its quoted prices onto that guide's base. A constant offset, never a rescale: everything these guides teach is expressed in points (a 60-point box, a 38-point stop, +201 points) and adding a constant preserves every difference exactly — verified afterwards that the ORB box is still 60 points wide, the stop still 38, and `₹1,500` untouched. The price match is deliberately narrow (23,000–26,999, optional comma, optional decimals, with a lookbehind so it cannot fire inside a longer number) so rupee amounts, percentages, periods, dates and hex colours are not candidates.
+
+Final state, verified programmatically: **26 charts across 7 guides, all unique**, and the six strategy guides occupy six **non-overlapping** price bands — EMA9+VWAP 22,901–23,132 · BB_RSI 23,592–23,919 · Price Action 24,030–24,275 · EMA_RSI_ST 24,397–24,736 · ORB 25,048–25,425 · Trend Pullback 26,217–26,507. Two extra whole-file shifts were needed to clear the last overlaps (Price Action −300, BB_RSI −150); both are recorded in the tool.
 
 ### Docs — all seven guides and both strategy reference files re-synced to the code
 

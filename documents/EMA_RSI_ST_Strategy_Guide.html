@@ -493,7 +493,7 @@
     <tr><td><strong>SuperTrend</strong></td><td>A single line that flips from below the price (it's saying "trend is up") to above the price ("trend is down"). One clean yes/no read on which way the market is leaning.</td></tr>
     <tr><td><strong>Trailing stop (safety line)</strong></td><td>A price level that automatically closes the trade if it's hit. "Trailing" means it <em>follows</em> the price in the winning direction and only ever gets tighter &mdash; it never loosens. It's how we lock in more and more of a winner while capping a loser.</td></tr>
     <tr><td><strong>Break-even</strong></td><td>Moving your safety line to the price you paid, so the trade can't turn into a loss. The old <em>always-on</em> version was removed; there is now an <em>optional</em> break-even stop you can switch on (off by default) &mdash; see Section 6.</td></tr>
-    <tr><td><strong>Points</strong></td><td>NIFTY index points. If NIFTY goes from 24,300 to 24,325, that's a 25-point move.</td></tr>
+    <tr><td><strong>Points</strong></td><td>NIFTY index points. If NIFTY goes from 24,580 to 24,605, that's a 25-point move.</td></tr>
     <tr><td><strong>Bid-ask spread</strong></td><td>The gap between the price you can buy an option at and the price you can sell it at. A wide gap quietly eats your profit every time you enter and exit, so a live trade is skipped if the gap is too wide.</td></tr>
     <tr><td><strong>OI (open interest)</strong></td><td>How many option contracts are currently held open &mdash; a read on where the big money is positioned. An optional live-only check.</td></tr>
     <tr><td><strong>VIX</strong></td><td>The market's "fear gauge." High VIX means jumpy prices and expensive, fast-moving options &mdash; a riskier time to trade. We can tell the strategy to sit out when VIX is too high.</td></tr>
@@ -580,7 +580,7 @@
   </div>
 
   <div class="tv-chart" id="ers-entry"></div>
-  <p class="tv-cap"><b>A clean CE entry, start to finish.</b> The blue EMA20 stays above the purple EMA50 the whole time &mdash; the up-trend is intact. Price ran up, dipped back and kissed the EMAs, then a green candle closed back above EMA20: that's the <b>signal candle</b> (yellow dot, ~24,244). We don't buy it &mdash; the <em>next</em> candle pushes past its close, giving the proof, so we <b>BUY the CE at 24,266</b>. The trade rides up to ~24,344; when a later candle dips back and its range touches the climbing EMA21 trail, the trend has broken and we <b>EXIT at 24,304</b> for +38 spot points.</p>
+  <p class="tv-cap"><b>A clean CE entry, start to finish.</b> The blue EMA20 stays above the purple EMA50 the whole time &mdash; the up-trend is intact. Price ran up, dipped back and kissed the EMAs, then a green candle closed back above EMA20: that's the <b>signal candle</b> (yellow dot, ~24,524). We don't buy it &mdash; the <em>next</em> candle pushes past its close, giving the proof, so we <b>BUY the CE at 24,546</b>. The trade rides up to ~24,624; when a later candle dips back and its range touches the climbing EMA21 trail, the trend has broken and we <b>EXIT at 24,584</b> for +38 spot points.</p>
 
   <div class="tv-chart" id="ers-reject"></div>
   <p class="tv-cap"><b>What we DON'T take.</b> This green candle (yellow dot) closes up and <em>looks</em> tempting, but check&nbsp;1 fails: the blue EMA20 is still <b>below</b> the purple EMA50 &mdash; there is no confirmed up-trend, just chop. One good-looking candle is never enough; all four checks must line up, so this is <b>no trade</b>. Skipping setups like this &mdash; where the trend lines aren't stacked our way &mdash; is most of what keeps the strategy out of sideways days.</p>
@@ -620,7 +620,7 @@
   <p>There's also a switch-on-if-you-want <strong>break-even stop</strong>. When it's on and a trade gets <strong><code>EMA_RSI_ST_BREAKEVEN_PTS</code> points in profit</strong> (measured on the NIFTY spot, checked at each candle close), the safety line is lifted straight up to <strong>the exact price we bought at</strong>. From then on the worst case is roughly a scratch &mdash; a winner can no longer flip back into a loss. Like everything else here it only ever <em>tightens</em>: if the EMA21 trail has already climbed past our entry, this floor changes nothing.</p>
   <div class="card green-border">
     <h3 class="green">A quick example</h3>
-    <p>We buy a CE with NIFTY spot at <strong>24,358</strong>, and break-even is set to <strong>+25 points</strong>. NIFTY climbs to <strong>24,383</strong> at a candle close &mdash; that's +25, so the safety line jumps up to <strong>24,358</strong>, our entry. Now if the move dies and NIFTY slides back, we're taken out at roughly break-even instead of at a loss. A PE works the same way, just mirrored downward.</p>
+    <p>We buy a CE with NIFTY spot at <strong>24,638</strong>, and break-even is set to <strong>+25 points</strong>. NIFTY climbs to <strong>24,663</strong> at a candle close &mdash; that's +25, so the safety line jumps up to <strong>24,638</strong>, our entry. Now if the move dies and NIFTY slides back, we're taken out at roughly break-even instead of at a loss. A PE works the same way, just mirrored downward.</p>
   </div>
   <div class="note warn">This is <strong>off by default</strong> (<code>EMA_RSI_ST_BREAKEVEN_ENABLED=false</code>). It's the deliberate opt-in replacement for the old <em>always-on</em> "move-to-break-even" that used to be built in and was removed. When switched on it runs identically in practice, live and backtest. With it off, the safety line's job is done entirely by the starting level, the EMA21 trail and the optional tighteners above.</div>
 </div>
@@ -642,22 +642,22 @@
   </table>
 
   <h3 class="green">A worked example &mdash; a CE trend day</h3>
-  <pre style="background:var(--bg2);border:1px solid var(--card-border);border-radius:8px;padding:14px 16px;overflow-x:auto;font-size:0.82rem;line-height:1.6;color:var(--text);margin:14px 0;">10:35  A 5-min candle closes at 24,352.
-       - EMA20 (24,330) is above EMA50 (24,300)        -> trend up   [check 1]
+  <pre style="background:var(--bg2);border:1px solid var(--card-border);border-radius:8px;padding:14px 16px;overflow-x:auto;font-size:0.82rem;line-height:1.6;color:var(--text);margin:14px 0;">10:35  A 5-min candle closes at 24,632.
+       - EMA20 (24,610) is above EMA50 (24,580)        -> trend up   [check 1]
        - RSI is 63 (above 52, below 80)                -> strong     [check 2]
        - SuperTrend line sits below price              -> up         [check 3]
-       - The candle closed at 24,352, above EMA20      -> on-side    [check 4]
+       - The candle closed at 24,632, above EMA20      -> on-side    [check 4]
        All four pass. This is the SIGNAL candle. We do NOT buy yet.
 
-10:40  The next candle trades up through 24,352 (the signal's close).
-       -> That's our proof.  BUY a CE.  Spot ~24,358, premium paid = Rs 200.
-       First safety line = the previous candle's low, 24,340.
+10:40  The next candle trades up through 24,632 (the signal's close).
+       -> That's our proof.  BUY a CE.  Spot ~24,638, premium paid = Rs 200.
+       First safety line = the previous candle's low, 24,620.
        Meltdown line = 15% below Rs 200 = Rs 170 (a Rs 30-per-unit drop).
 
 11:15  Trade is nicely up; each finished candle drags EMA21 higher,
        so the safety line keeps climbing behind price. We just hold.
 
-12:30  Spot is 24,430, the option is worth Rs 300. Still trending. Hold.
+12:30  Spot is 24,710, the option is worth Rs 300. Still trending. Hold.
 
 13:05  A candle finally dips back and its range TOUCHES the EMA21 line.
        -> Trend broken.  SELL the CE at premium Rs 280.
@@ -667,7 +667,7 @@
        The meltdown stop (Rs 170) and points stop never had to fire.</pre>
 
   <div class="tv-chart" id="ers-trail"></div>
-  <p class="tv-cap"><b>The safety line climbing behind a winner.</b> After the buy at 24,237 the orange EMA21 line rises with every finished candle, dragging the stop up behind price &mdash; it only ever tightens, never loosens. Notice the two dips at 11:40 and 12:20: price wobbled but <em>never touched</em> the line, so we held. At 13:05 a candle's range finally touches EMA21 &rarr; the trend is broken &rarr; <b>SELL</b>. No target was ever set; the line decided how far the winner ran.</p>
+  <p class="tv-cap"><b>The safety line climbing behind a winner.</b> After the buy at 24,517 the orange EMA21 line rises with every finished candle, dragging the stop up behind price &mdash; it only ever tightens, never loosens. Notice the two dips at 11:40 and 12:20: price wobbled but <em>never touched</em> the line, so we held. At 13:05 a candle's range finally touches EMA21 &rarr; the trend is broken &rarr; <b>SELL</b>. No target was ever set; the line decided how far the winner ran.</p>
 
   <div class="note success"><strong>Why no fixed target?</strong> If we always sold at "+40%," we'd cut our biggest trend days short &mdash; and a few big days are what pay for all the small losing ones over a month. The trailing safety line keeps us in the move as long as it lasts, while the meltdown stop, points stop and negative-candle stop make sure a bad trade dies small.</div>
 </div>
@@ -709,7 +709,7 @@
 
   <div class="note danger">
     <strong>Fixed 26 July &mdash; the worst bug this strategy has had: NIFTY's price was being stored as the option's price.</strong>
-    When the option-price feed was slow, a fallback wrote the <em>spot</em> value (about &#8377;23,800) into the field that everything else reads as the <em>option premium</em> (about &#8377;180). The 15% option stop then compared 182 against 17,850, decided the option had collapsed, and force-closed the trade roughly one second after the real premium arrived. The exit was booked as (182 &minus; 23,800) &times; 65 = <strong>&minus;&#8377;15,35,170</strong>, which instantly latched the &#8377;2,000 daily loss cap and shut the strategy down for the day.
+    When the option-price feed was slow, a fallback wrote the <em>spot</em> value (about &#8377;24,080) into the field that everything else reads as the <em>option premium</em> (about &#8377;180). The 15% option stop then compared 182 against 17,850, decided the option had collapsed, and force-closed the trade roughly one second after the real premium arrived. The exit was booked as (182 &minus; 24,080) &times; 65 = <strong>&minus;&#8377;15,35,170</strong>, which instantly latched the &#8377;2,000 daily loss cap and shut the strategy down for the day.
     <br><br>
     The field is now left empty instead, so the designed "price the trade off NIFTY points" fallback applies &mdash; and in live mode this also brings back the real exchange-side stop order, which that fake number had been suppressing.
     <br><br>
@@ -975,30 +975,30 @@
     // Chart 1 — a clean CE entry: trend intact (EMA20>EMA50) → signal → proof → BUY → EMA21-trail EXIT
     TVChart.render("ers-entry", {
       title: "EMA_RSI_ST — 5-min NIFTY (a clean CE entry)",
-      candles: [[24200,24224,24196,24220],[24220,24244,24216,24240],[24240,24256,24234,24250],
-        [24250,24254,24224,24228],[24228,24234,24208,24214],[24214,24222,24206,24216],
-        [24216,24248,24214,24244],[24244,24270,24240,24266],[24266,24296,24262,24292],
-        [24292,24322,24288,24318],[24318,24344,24314,24340],[24340,24342,24300,24304]],
+      candles: [[24480,24504,24476,24500],[24500,24524,24496,24520],[24520,24536,24514,24530],
+        [24530,24534,24504,24508],[24508,24514,24488,24494],[24494,24502,24486,24496],
+        [24496,24528,24494,24524],[24524,24550,24520,24546],[24546,24576,24542,24572],
+        [24572,24602,24568,24598],[24598,24624,24594,24620],[24620,24622,24580,24584]],
       overlays: [
-        { name:"EMA20", color:"#3b82f6", data:[24206,24214,24222,24224,24220,24216,24218,24228,24242,24260,24280,24298] },
-        { name:"EMA50", color:"#a78bfa", data:[24190,24194,24200,24202,24202,24204,24206,24212,24220,24230,24242,24256] }],
-      markers: [{ i:6, type:"dot", price:24244 },
-        { i:7, type:"buy", price:24266, text:"BUY CE 24,266" },
-        { i:11, type:"exit", price:24304, text:"EXIT 24,304" }],
+        { name:"EMA20", color:"#3b82f6", data:[24486,24494,24502,24504,24500,24496,24498,24508,24522,24540,24560,24578] },
+        { name:"EMA50", color:"#a78bfa", data:[24470,24474,24480,24482,24482,24484,24486,24492,24500,24510,24522,24536] }],
+      markers: [{ i:6, type:"dot", price:24524 },
+        { i:7, type:"buy", price:24546, text:"BUY CE 24,546" },
+        { i:11, type:"exit", price:24584, text:"EXIT 24,584" }],
       legend: [{ color:"#3b82f6", label:"EMA20" }, { color:"#a78bfa", label:"EMA50" },
         { color:"#26a69a", label:"BUY" }, { color:"#ef5350", label:"EXIT / trail" }]
     });
     // Chart 2 — rejected setup: EMA20 still below EMA50, no confirmed trend → no trade
     TVChart.render("ers-reject", {
       title: "Rejected — EMA20 still below EMA50 (no trade)",
-      candles: [[24300,24316,24292,24298],[24298,24310,24284,24290],[24290,24304,24280,24296],
-        [24296,24312,24288,24300],[24300,24318,24294,24314],[24314,24322,24300,24306],
-        [24306,24320,24298,24316],[24316,24324,24302,24308],[24308,24318,24296,24302],
-        [24302,24312,24290,24298]],
+      candles: [[24580,24596,24572,24578],[24578,24590,24564,24570],[24570,24584,24560,24576],
+        [24576,24592,24568,24580],[24580,24598,24574,24594],[24594,24602,24580,24586],
+        [24586,24600,24578,24596],[24596,24604,24582,24588],[24588,24598,24576,24582],
+        [24582,24592,24570,24578]],
       overlays: [
-        { name:"EMA20", color:"#3b82f6", data:[24306,24304,24302,24301,24303,24304,24306,24306,24305,24303] },
-        { name:"EMA50", color:"#a78bfa", data:[24316,24315,24314,24313,24313,24312,24312,24311,24310,24309] }],
-      markers: [{ i:6, type:"dot", color:"#fbbf24", price:24316, text:"no trade — EMAs not stacked" }],
+        { name:"EMA20", color:"#3b82f6", data:[24586,24584,24582,24581,24583,24584,24586,24586,24585,24583] },
+        { name:"EMA50", color:"#a78bfa", data:[24596,24595,24594,24593,24593,24592,24592,24591,24590,24589] }],
+      markers: [{ i:6, type:"dot", color:"#fbbf24", price:24596, text:"no trade — EMAs not stacked" }],
       legend: [{ color:"#3b82f6", label:"EMA20" }, { color:"#a78bfa", label:"EMA50" }]
     });
     // Chart 4 — the EMA21 trailing safety line: tightens only, exits on a touch
@@ -1006,16 +1006,16 @@
       title: "EMA_RSI_ST — the EMA21 trail rides the winner out",
       subtitle: "5m · NIFTY · no target; the trail decides the exit",
       times: ["10:40","11:00","11:20","11:40","12:00","12:20","12:40","13:00","13:05","13:20"],
-      candles: [[24237,24262,24232,24256],[24256,24286,24250,24280],[24280,24312,24274,24306],
-        [24306,24320,24288,24314],[24314,24348,24308,24342],[24342,24356,24322,24336],
-        [24336,24374,24330,24368],[24368,24386,24360,24380],[24380,24384,24346,24352],
-        [24352,24360,24330,24338]],
+      candles: [[24517,24542,24512,24536],[24536,24566,24530,24560],[24560,24592,24554,24586],
+        [24586,24600,24568,24594],[24594,24628,24588,24622],[24622,24636,24602,24616],
+        [24616,24654,24610,24648],[24648,24666,24640,24660],[24660,24664,24626,24632],
+        [24632,24640,24610,24618]],
       overlays: [{ name:"EMA21 trail", color:"#f5a623",
-        data:[24218,24230,24248,24266,24286,24300,24318,24336,24350,24352] }],
-      markers: [{ i:0, type:"buy", price:24237, text:"BUY CE 24,237" },
-        { i:3, type:"dot", color:"#d29922", price:24288, text:"dip — line not touched" },
-        { i:5, type:"dot", color:"#d29922", price:24322, text:"dip — still held" },
-        { i:8, type:"exit", price:24350, text:"EXIT — candle touched EMA21" }],
+        data:[24498,24510,24528,24546,24566,24580,24598,24616,24630,24632] }],
+      markers: [{ i:0, type:"buy", price:24517, text:"BUY CE 24,517" },
+        { i:3, type:"dot", color:"#d29922", price:24568, text:"dip — line not touched" },
+        { i:5, type:"dot", color:"#d29922", price:24602, text:"dip — still held" },
+        { i:8, type:"exit", price:24630, text:"EXIT — candle touched EMA21" }],
       legend: [{ color:"#f5a623", label:"EMA21 trail" }, { color:"#26a69a", label:"BUY" },
         { color:"#d29922", label:"dips that did NOT exit" }, { color:"#ef5350", label:"EXIT" }]
     });

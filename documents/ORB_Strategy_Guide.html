@@ -465,10 +465,10 @@
   <p>After a decisive breakout candle, we look at the <strong>very next</strong> 5-minute candle. For a CE it must make a <em>higher high</em> AND a <em>higher close</em>, still above the box top and still above the fair-value line. (For a PE: lower low, lower close, below the box bottom, below VWAP.) That's our proof &mdash; we buy when that candle closes. This catches the days that break out and just keep going.</p>
 
   <div class="note note-info">
-    <strong>Real numbers.</strong> Box top = 24,325. Cushion = 9 pts, so a real break needs a close above 24,334.<br>
-    9:40 candle closes at <strong>24,352</strong>, green, big body &rarr; that's the breakout. <em>We do not buy.</em><br>
-    9:45 candle: high 24,378 (higher than 24,356) and close 24,372 (higher than 24,352) &rarr; <span style="color:var(--accent-green)"><strong>proof &mdash; BUY CE at 24,372</strong></span>.<br>
-    If instead 9:45 had closed at 24,344 &mdash; still above the box, but not higher than the breakout close &mdash; no buy yet; we move to the backup window below.
+    <strong>Real numbers.</strong> Box top = 25,275. Cushion = 9 pts, so a real break needs a close above 25,284.<br>
+    9:40 candle closes at <strong>25,302</strong>, green, big body &rarr; that's the breakout. <em>We do not buy.</em><br>
+    9:45 candle: high 25,328 (higher than 25,306) and close 25,322 (higher than 25,302) &rarr; <span style="color:var(--accent-green)"><strong>proof &mdash; BUY CE at 25,322</strong></span>.<br>
+    If instead 9:45 had closed at 25,294 &mdash; still above the box, but not higher than the breakout close &mdash; no buy yet; we move to the backup window below.
   </div>
 
   <h3>The backup way &mdash; resume or retest</h3>
@@ -487,7 +487,7 @@
   <p class="tv-cap"><b>Why we wait for proof.</b> Price poked above the box top on one green candle &mdash; but it never got clearly above the fair-value (VWAP) line, and the <em>very next</em> candle slammed straight back down <b>inside the box</b>. The confirmation never came, so we <b>never bought</b>. The orange dot marks the failed poke: a classic fakeout that the confirmation-plus-VWAP rule quietly filters out.</p>
 
   <div class="tv-chart" id="orb-retest"></div>
-  <p class="tv-cap"><b>The backup path in action.</b> The breakout candle (orange dot, 9:40) was decisive, but the very next candle <em>stalled</em> &mdash; no higher high, so no buy. We stayed armed. Two candles later price dipped back and kissed the box top from above, then <b>closed back above it</b> &mdash; a retest that held &rarr; <b>BUY CE at 24,341</b>. Had that dip <em>closed</em> below 24,325 (inside the box) instead, the day would simply have been cancelled.</p>
+  <p class="tv-cap"><b>The backup path in action.</b> The breakout candle (orange dot, 9:40) was decisive, but the very next candle <em>stalled</em> &mdash; no higher high, so no buy. We stayed armed. Two candles later price dipped back and kissed the box top from above, then <b>closed back above it</b> &mdash; a retest that held &rarr; <b>BUY CE at 25,291</b>. Had that dip <em>closed</em> below 25,275 (inside the box) instead, the day would simply have been cancelled.</p>
 </section>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
@@ -552,7 +552,7 @@
   </div>
 
   <div class="tv-chart" id="orb-stopped"></div>
-  <p class="tv-cap"><b>What a losing ORB day actually looks like.</b> Everything went right at the entry &mdash; decisive breakout, next candle confirmed, <b>BUY CE at 24,372</b>. Then it simply turned. The strategy's own stop sat at 24,327 (45 pts away), but the <b>&#8377;1,500 budget only allows about 38 points</b>, so the stop that was actually placed was 24,334 &mdash; and that is where the trade ended, for a loss of roughly &#8377;1,500. This is the normal shape of an ORB loser: <b>the rupee cap, not the chart, ends the trade.</b></p>
+  <p class="tv-cap"><b>What a losing ORB day actually looks like.</b> Everything went right at the entry &mdash; decisive breakout, next candle confirmed, <b>BUY CE at 25,322</b>. Then it simply turned. The strategy's own stop sat at 25,277 (45 pts away), but the <b>&#8377;1,500 budget only allows about 38 points</b>, so the stop that was actually placed was 25,284 &mdash; and that is where the trade ended, for a loss of roughly &#8377;1,500. This is the normal shape of an ORB loser: <b>the rupee cap, not the chart, ends the trade.</b></p>
 
   <div class="note note-warn">
     <strong>Why the EMA trail has to "arm" first.</strong> The trail only starts working once price has closed on the correct side of EMA20 at least once. Without that, a CE bought on a gap-down morning &mdash; with EMA20 still high from previous days &mdash; would be stopped out on its very first candle. Until the trail arms, the trade is protected by the hard stop, break-even, the opposite-candle rule and the rupee cap instead.
@@ -563,31 +563,31 @@
   </div>
 
   <h3>A worked example &mdash; a CE trend day</h3>
-  <pre><code>9:30   Box locks: top 24,325 / bottom 24,265  (60 points tall).
+  <pre><code>9:30   Box locks: top 25,275 / bottom 25,215  (60 points tall).
        Normal 15-min move today is ~40, so 60 ÷ 40 = 1.5×   → under 2.5, day OK
        NIFTY opened 25 pts from yesterday's close, 25 < 3×60 → no news gap, day OK
-       Breakout cushion = max(0.15×60, 0.30×ATR5, 1) = 9 pts → need a close > 24,334
+       Breakout cushion = max(0.15×60, 0.30×ATR5, 1) = 9 pts → need a close > 25,284
 
-9:40   A candle closes at 24,352 — clearly past 24,334.  It is green, its body is
+9:40   A candle closes at 25,302 — clearly past 25,284.  It is green, its body is
        28 pts (needs ≥ 0.6 × ATR5 = 18) and it closed above VWAP.
        →  This is the day's ONE breakout.   (We do NOT buy yet.)
 
-9:45   Next candle: high 24,378 > 24,356, close 24,372 > 24,352, still above VWAP.
+9:45   Next candle: high 25,328 > 25,306, close 25,322 > 25,302, still above VWAP.
        →  Proof.  BUY a CE on this close.
        Option is 1 strike in-the-money, priced ₹190, spread 1.2 pts — both fine.
-       Stop: strategy wants the wider of (this candle's low 24,340) and
-             (24,372 − 1.5×ATR5 = 24,327) → 24,327, i.e. 45 pts.
-             But ₹1,500 only allows ~38 pts → stop TIGHTENED to 24,334.
-             The log says "spot SL tightened 24,327 → 24,334".
+       Stop: strategy wants the wider of (this candle's low 25,290) and
+             (25,322 − 1.5×ATR5 = 25,277) → 25,277, i.e. 45 pts.
+             But ₹1,500 only allows ~38 pts → stop TIGHTENED to 25,284.
+             The log says "spot SL tightened 25,277 → 25,284".
 
-10:05  +30 points in profit (max(20, 0.5×60) = 30)  →  stop lifts to entry 24,372.
+10:05  +30 points in profit (max(20, 0.5×60) = 30)  →  stop lifts to entry 25,322.
        From here the trade cannot lose money.
 10:40  Trend keeps running; every candle closes above EMA20. We just hold.
 13:10  A candle finally CLOSES below EMA20  →  SELL. Trend's over.
        Win banked. The rupee cap and the meltdown stop never had to fire.</code></pre>
 
   <div class="tv-chart" id="orb-breakout"></div>
-  <p class="tv-cap"><b>The iconic ORB picture.</b> The blue dashed box is the 9:15&ndash;9:30 opening range. Price coiled inside it, then a big green candle closed clearly above the box top <em>and</em> above the fair-value (VWAP) line (orange dot = the breakout candle). We still didn't buy &mdash; only when the <em>next</em> candle pushed higher did we get our proof &rarr; <b>BUY CE at 24,372</b>. We then rode the orange EMA20 trend line up and sold the moment a candle <b>closed back below EMA20</b> &rarr; <b>EXIT 24,378</b>. No fixed target &mdash; the trend trail decided how far the winner ran.</p>
+  <p class="tv-cap"><b>The iconic ORB picture.</b> The blue dashed box is the 9:15&ndash;9:30 opening range. Price coiled inside it, then a big green candle closed clearly above the box top <em>and</em> above the fair-value (VWAP) line (orange dot = the breakout candle). We still didn't buy &mdash; only when the <em>next</em> candle pushed higher did we get our proof &rarr; <b>BUY CE at 25,322</b>. We then rode the orange EMA20 trend line up and sold the moment a candle <b>closed back below EMA20</b> &rarr; <b>EXIT 25,328</b>. No fixed target &mdash; the trend trail decided how far the winner ran.</p>
 
   <div class="note note-success">
     <strong>Why no fixed target?</strong> If we always sold at "+40%," we'd throw away the big trend days &mdash; and a few of those big days are what make the whole strategy profitable over a month. The trend trail keeps us in the move as long as it lasts, while the break-even, rupee-cap and meltdown stops make sure a bad trade dies small. The real skill is in the <em>entry</em> checklist &mdash; the exit just decides how much of a good entry we get to keep.
@@ -1017,17 +1017,17 @@
     // The iconic ORB trade: opening-range box → breakout candle → confirmation BUY → EMA20 close-trail EXIT
     TVChart.render("orb-breakout", {
       title: "ORB — 5-min NIFTY: box breakout, confirm, EMA20 exit",
-      candles: [[24290,24308,24278,24296],[24296,24312,24284,24288],[24288,24318,24276,24306],
-        [24306,24322,24294,24312],[24314,24356,24312,24352],[24352,24378,24348,24372],
-        [24372,24392,24366,24388],[24388,24406,24382,24400],[24400,24420,24394,24416],
-        [24416,24428,24408,24412],[24412,24420,24398,24404],[24404,24408,24372,24378]],
-      zones: [{ from:0, to:2, top:24325, bottom:24265, label:"Opening range", stroke:"#60a5fa" }],
+      candles: [[25240,25258,25228,25246],[25246,25262,25234,25238],[25238,25268,25226,25256],
+        [25256,25272,25244,25262],[25264,25306,25262,25302],[25302,25328,25298,25322],
+        [25322,25342,25316,25338],[25338,25356,25332,25350],[25350,25370,25344,25366],
+        [25366,25378,25358,25362],[25362,25370,25348,25354],[25354,25358,25322,25328]],
+      zones: [{ from:0, to:2, top:25275, bottom:25215, label:"Opening range", stroke:"#60a5fa" }],
       overlays: [
-        { name:"VWAP", color:"#a78bfa", data:[24292,24290,24292,24296,24304,24314,24326,24338,24350,24360,24368,24374] },
-        { name:"EMA20", color:"#f5a623", data:[24300,24298,24298,24300,24306,24316,24328,24342,24356,24368,24378,24392] }],
-      markers: [{ i:4, type:"dot", price:24352 },
-        { i:5, type:"buy", price:24372, text:"BUY CE 24,372" },
-        { i:11, type:"exit", price:24378, text:"EXIT — EMA20 close" }],
+        { name:"VWAP", color:"#a78bfa", data:[25242,25240,25242,25246,25254,25264,25276,25288,25300,25310,25318,25324] },
+        { name:"EMA20", color:"#f5a623", data:[25250,25248,25248,25250,25256,25266,25278,25292,25306,25318,25328,25342] }],
+      markers: [{ i:4, type:"dot", price:25302 },
+        { i:5, type:"buy", price:25322, text:"BUY CE 25,322" },
+        { i:11, type:"exit", price:25328, text:"EXIT — EMA20 close" }],
       legend: [{ color:"#60a5fa", label:"Opening range" }, { color:"#a78bfa", label:"VWAP" },
         { color:"#f5a623", label:"EMA20" }, { color:"#26a69a", label:"BUY" }, { color:"#ef5350", label:"EXIT" }]
     });
@@ -1036,14 +1036,14 @@
       title: "ORB — opening box too wide, whole day skipped",
       subtitle: "5m · NIFTY · OR 112pt vs ATR15 40pt = 2.8× (max 2.5×)",
       times: ["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20"],
-      candles: [[24150,24262,24148,24240],[24240,24264,24160,24176],[24176,24232,24152,24206],
-        [24206,24248,24196,24238],[24238,24252,24206,24214],[24214,24244,24202,24236],
-        [24236,24258,24222,24230],[24230,24240,24186,24196],[24196,24228,24184,24220],
-        [24220,24246,24208,24214],[24214,24226,24178,24188],[24188,24222,24176,24216],
-        [24216,24240,24202,24208],[24208,24218,24180,24192]],
-      zones: [{ from:0, to:2, top:24262, bottom:24150, label:"Opening range — 112pt", stroke:"#f85149", color:"rgba(248,81,73,0.07)" }],
-      overlays: [{ name:"VWAP", color:"#a78bfa", data:[24207,24206,24205,24209,24210,24213,24215,24213,24213,24213,24211,24211,24211,24209] }],
-      markers: [{ i:3, type:"dot", color:"#d29922", price:24238, text:"SKIPPED — box too wide" }],
+      candles: [[25100,25212,25098,25190],[25190,25214,25110,25126],[25126,25182,25102,25156],
+        [25156,25198,25146,25188],[25188,25202,25156,25164],[25164,25194,25152,25186],
+        [25186,25208,25172,25180],[25180,25190,25136,25146],[25146,25178,25134,25170],
+        [25170,25196,25158,25164],[25164,25176,25128,25138],[25138,25172,25126,25166],
+        [25166,25190,25152,25158],[25158,25168,25130,25142]],
+      zones: [{ from:0, to:2, top:25212, bottom:25100, label:"Opening range — 112pt", stroke:"#f85149", color:"rgba(248,81,73,0.07)" }],
+      overlays: [{ name:"VWAP", color:"#a78bfa", data:[25157,25156,25155,25159,25160,25163,25165,25163,25163,25163,25161,25161,25161,25159] }],
+      markers: [{ i:3, type:"dot", color:"#d29922", price:25188, text:"SKIPPED — box too wide" }],
       legend: [{ color:"#f85149", label:"Opening range (rejected)" }, { color:"#a78bfa", label:"VWAP" },
         { color:"#d29922", label:"no trade all day" }]
     });
@@ -1052,15 +1052,15 @@
       title: "ORB — confirmation stalled, retest held, entry taken",
       subtitle: "5m · NIFTY · the fallback window (≤6 candles)",
       times: ["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05"],
-      candles: [[24290,24310,24265,24300],[24300,24322,24288,24312],[24312,24325,24296,24318],
-        [24318,24352,24314,24348],[24348,24354,24336,24342],[24342,24346,24328,24341],
-        [24341,24368,24338,24362],[24362,24384,24356,24378],[24378,24398,24372,24392],
-        [24392,24404,24384,24396],[24396,24400,24378,24382]],
-      zones: [{ from:0, to:2, top:24325, bottom:24265, label:"Opening range", stroke:"#60a5fa" }],
-      overlays: [{ name:"VWAP", color:"#a78bfa", data:[24292,24298,24304,24312,24318,24322,24328,24336,24346,24354,24360] }],
-      markers: [{ i:3, type:"dot", price:24348, text:"breakout" },
-        { i:4, type:"dot", color:"#d29922", price:24342, text:"stalled — no buy" },
-        { i:5, type:"buy", price:24341, text:"BUY CE 24,341 — retest held" }],
+      candles: [[25240,25260,25215,25250],[25250,25272,25238,25262],[25262,25275,25246,25268],
+        [25268,25302,25264,25298],[25298,25304,25286,25292],[25292,25296,25278,25291],
+        [25291,25318,25288,25312],[25312,25334,25306,25328],[25328,25348,25322,25342],
+        [25342,25354,25334,25346],[25346,25350,25328,25332]],
+      zones: [{ from:0, to:2, top:25275, bottom:25215, label:"Opening range", stroke:"#60a5fa" }],
+      overlays: [{ name:"VWAP", color:"#a78bfa", data:[25242,25248,25254,25262,25268,25272,25278,25286,25296,25304,25310] }],
+      markers: [{ i:3, type:"dot", price:25298, text:"breakout" },
+        { i:4, type:"dot", color:"#d29922", price:25292, text:"stalled — no buy" },
+        { i:5, type:"buy", price:25291, text:"BUY CE 25,291 — retest held" }],
       legend: [{ color:"#60a5fa", label:"Opening range" }, { color:"#a78bfa", label:"VWAP" },
         { color:"#d29922", label:"stall" }, { color:"#26a69a", label:"BUY" }]
     });
@@ -1069,27 +1069,27 @@
       title: "ORB — a normal loser: the ₹1,500 cap ends the trade",
       subtitle: "5m · NIFTY · stop asked for 45pt, budget allowed 38pt",
       times: ["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55"],
-      candles: [[24290,24310,24265,24300],[24300,24322,24288,24312],[24312,24325,24296,24318],
-        [24318,24356,24314,24352],[24352,24378,24348,24372],[24372,24374,24350,24354],
-        [24354,24358,24330,24334],[24334,24340,24312,24318],[24318,24324,24300,24306]],
-      zones: [{ from:0, to:2, top:24325, bottom:24265, label:"Opening range", stroke:"#60a5fa" }],
-      overlays: [{ name:"VWAP", color:"#a78bfa", data:[24292,24298,24304,24314,24326,24330,24330,24328,24324] }],
-      markers: [{ i:3, type:"dot", price:24352, text:"breakout" },
-        { i:4, type:"buy", price:24372, text:"BUY CE 24,372" },
-        { i:6, type:"exit", price:24334, text:"EXIT — ₹1,500 cap (38pt)" }],
+      candles: [[25240,25260,25215,25250],[25250,25272,25238,25262],[25262,25275,25246,25268],
+        [25268,25306,25264,25302],[25302,25328,25298,25322],[25322,25324,25300,25304],
+        [25304,25308,25280,25284],[25284,25290,25262,25268],[25268,25274,25250,25256]],
+      zones: [{ from:0, to:2, top:25275, bottom:25215, label:"Opening range", stroke:"#60a5fa" }],
+      overlays: [{ name:"VWAP", color:"#a78bfa", data:[25242,25248,25254,25264,25276,25280,25280,25278,25274] }],
+      markers: [{ i:3, type:"dot", price:25302, text:"breakout" },
+        { i:4, type:"buy", price:25322, text:"BUY CE 25,322" },
+        { i:6, type:"exit", price:25284, text:"EXIT — ₹1,500 cap (38pt)" }],
       legend: [{ color:"#60a5fa", label:"Opening range" }, { color:"#a78bfa", label:"VWAP" },
         { color:"#26a69a", label:"BUY" }, { color:"#ef5350", label:"EXIT" }]
     });
     // False breakout: pokes above the box, no VWAP push, next candle falls back inside → no trade
     TVChart.render("orb-fakeout", {
       title: "ORB — false breakout falls back into the box (no trade)",
-      candles: [[24286,24306,24276,24298],[24298,24314,24288,24306],[24306,24322,24296,24312],
-        [24312,24324,24300,24318],[24318,24346,24314,24338],[24338,24340,24300,24306],
-        [24306,24316,24292,24298],[24298,24310,24286,24304],[24304,24318,24296,24312],
-        [24312,24326,24300,24308]],
-      zones: [{ from:0, to:2, top:24325, bottom:24265, label:"Opening range", stroke:"#60a5fa" }],
-      overlays: [{ name:"VWAP", color:"#a78bfa", data:[24304,24306,24308,24310,24312,24312,24310,24308,24308,24308] }],
-      markers: [{ i:5, type:"dot", color:"#d29922", price:24306 }],
+      candles: [[25236,25256,25226,25248],[25248,25264,25238,25256],[25256,25272,25246,25262],
+        [25262,25274,25250,25268],[25268,25296,25264,25288],[25288,25290,25250,25256],
+        [25256,25266,25242,25248],[25248,25260,25236,25254],[25254,25268,25246,25262],
+        [25262,25276,25250,25258]],
+      zones: [{ from:0, to:2, top:25275, bottom:25215, label:"Opening range", stroke:"#60a5fa" }],
+      overlays: [{ name:"VWAP", color:"#a78bfa", data:[25254,25256,25258,25260,25262,25262,25260,25258,25258,25258] }],
+      markers: [{ i:5, type:"dot", color:"#d29922", price:25256 }],
       legend: [{ color:"#60a5fa", label:"Opening range" }, { color:"#a78bfa", label:"VWAP" },
         { color:"#d29922", label:"fell back — no trade" }]
     });

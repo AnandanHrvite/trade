@@ -344,9 +344,9 @@ Bottom of channel = fair-value line &minus; (1 &times; the normal wobble)</code>
   </table>
 
   <div class="note note-info">
-    <strong>Real numbers &mdash; what the channel looks like at 11:00.</strong> Suppose the day's average typical price so far is <strong>24,180</strong> and the normal wobble (sigma) is <strong>28</strong> points. Then:<br>
-    Top of channel = 24,180 + 28 = <strong>24,208</strong> &nbsp;&middot;&nbsp; Bottom = 24,180 &minus; 28 = <strong>24,152</strong>.<br>
-    If the fast line was at 24,205 last candle (inside) and closes at 24,214 this candle (outside the top), that is a <strong>CE buy</strong>. The break distance is 24,214 &minus; 24,208 = 6 points = 0.21&sigma; &rarr; graded <strong>WEAK</strong> (needs 0.25&sigma; = 7 points to be STRONG).
+    <strong>Real numbers &mdash; what the channel looks like at 11:00.</strong> Suppose the day's average typical price so far is <strong>22,930</strong> and the normal wobble (sigma) is <strong>28</strong> points. Then:<br>
+    Top of channel = 22,930 + 28 = <strong>22,958</strong> &nbsp;&middot;&nbsp; Bottom = 22,930 &minus; 28 = <strong>22,902</strong>.<br>
+    If the fast line was at 22,955 last candle (inside) and closes at 22,964 this candle (outside the top), that is a <strong>CE buy</strong>. The break distance is 22,964 &minus; 22,958 = 6 points = 0.21&sigma; &rarr; graded <strong>WEAK</strong> (needs 0.25&sigma; = 7 points to be STRONG).
   </div>
 
   <div class="note note-warn">
@@ -393,7 +393,7 @@ Bottom of channel = fair-value line &minus; (1 &times; the normal wobble)</code>
   </div>
 
   <div class="tv-chart" id="ev-entry"></div>
-  <p class="tv-cap"><b>The break-out entry.</b> The fast line (green EMA 9) sat inside the blue VWAP &plusmn;1&sigma; channel while price drifted, then on one candle it closed <b>above the top band</b> &rarr; <b>BUY CE</b> at that candle's close (24,318). We held with no stop and no target while the move ran. It ended on a <b>sharp reversal candle</b> &mdash; a red candle that closed below the lows of both prior candles &rarr; <b>EXIT</b> (24,334), even though the fast line was still outside the band.</p>
+  <p class="tv-cap"><b>The break-out entry.</b> The fast line (green EMA 9) sat inside the blue VWAP &plusmn;1&sigma; channel while price drifted, then on one candle it closed <b>above the top band</b> &rarr; <b>BUY CE</b> at that candle's close (23,068). We held with no stop and no target while the move ran. It ended on a <b>sharp reversal candle</b> &mdash; a red candle that closed below the lows of both prior candles &rarr; <b>EXIT</b> (23,084), even though the fast line was still outside the band.</p>
 
   <h3>Strong vs weak break-outs</h3>
   <p>Not every break-out is equal. When the fast line pops out of the channel, the strategy now measures <em>how far</em> it pushed past the edge &mdash; measured in "normal wobbles" (sigma), so the yardstick shrinks or grows with the day's volatility. A break of at least <strong>0.25 of a wobble</strong> past the edge is graded <strong>STRONG</strong>; a smaller poke is graded <strong>WEAK</strong> (likely just noise nudging over the line).</p>
@@ -440,7 +440,7 @@ Bottom of channel = fair-value line &minus; (1 &times; the normal wobble)</code>
   </div>
 
   <div class="note note-info">
-    <strong>Reading the trade in the log.</strong> Each entry writes a line like <code>EMA9 24312.5 crossed ABOVE VWAP top 24298.1 (VWAP 24270.4 +1&sigma;) | break 14.4pt = STRONG</code>. That tells you the fast-line value, the channel edge it crossed, the fair-value line and band that defined it, and how decisively it broke &mdash; a fingerprint that identifies this strategy's trades in a mixed log.
+    <strong>Reading the trade in the log.</strong> Each entry writes a line like <code>EMA9 23062.5 crossed ABOVE VWAP top 23048.1 (VWAP 23020.4 +1&sigma;) | break 14.4pt = STRONG</code>. That tells you the fast-line value, the channel edge it crossed, the fair-value line and band that defined it, and how decisively it broke &mdash; a fingerprint that identifies this strategy's trades in a mixed log.
   </div>
 
   <div class="note note-warn">
@@ -634,19 +634,19 @@ Bottom of channel = fair-value line &minus; (1 &times; the normal wobble)</code>
   <p>Here's a textbook CE trade on a trending morning, with all the default settings (channel width 1&sigma;, trade window 10:30&ndash;14:30, sharp-reversal exit on). Follow the fast line and the top of the channel:</p>
 
   <pre><code>10:20  The channel right now:
-         Fair-value line  = 24,270
+         Fair-value line  = 23,020
          Normal wobble    = 28 points
-         Top of channel   = 24,270 + 28 = 24,298
-         Bottom of channel = 24,270 − 28 = 24,242
-       Fast line (EMA9) = 24,291  →  still INSIDE the channel. No trade yet.
+         Top of channel   = 23,020 + 28 = 23,048
+         Bottom of channel = 23,020 − 28 = 22,992
+       Fast line (EMA9) = 23,041  →  still INSIDE the channel. No trade yet.
 
-10:35  This candle CLOSES. The fast line has climbed to 24,313,
-       and the top of the channel is now 24,301.
-         Last candle: fast line 24,296 was BELOW the top (24,299)
-         This candle: fast line 24,313 is ABOVE the top (24,301)
+10:35  This candle CLOSES. The fast line has climbed to 23,063,
+       and the top of the channel is now 23,051.
+         Last candle: fast line 23,046 was BELOW the top (23,049)
+         This candle: fast line 23,063 is ABOVE the top (23,051)
        →  That's the break-out. BUY 1 CE at this candle's close.
           No stop-loss, no target set — we just hold.
-       Log: "EMA9 24313 crossed ABOVE VWAP top 24301 (VWAP 24274 +1σ) [STRONG]"
+       Log: "EMA9 23063 crossed ABOVE VWAP top 23051 (VWAP 23024 +1σ) [STRONG]"
 
 11:00–12:40  NIFTY keeps grinding up. Every 5-min candle closes with the
        fast line still poking above the top of the channel. We do nothing —
@@ -961,41 +961,41 @@ angry red candle can't instantly flip us into a losing put.</code></pre>
     // Chart 1 — the break-out entry: EMA9 crosses above the VWAP+1σ band → BUY CE, exit on a 2-candle reversal
     TVChart.render("ev-entry", {
       title: "EMA9 + VWAP — the break-out entry (5-min NIFTY)",
-      candles: [[24252,24264,24248,24260],[24260,24276,24256,24272],[24272,24290,24268,24286],
-        [24286,24304,24282,24300],[24300,24322,24296,24318],[24318,24340,24314,24336],
-        [24336,24356,24332,24352],[24352,24366,24346,24360],[24360,24368,24350,24356],
-        [24356,24358,24330,24334],[24334,24340,24320,24326]],
+      candles: [[23002,23014,22998,23010],[23010,23026,23006,23022],[23022,23040,23018,23036],
+        [23036,23054,23032,23050],[23050,23072,23046,23068],[23068,23090,23064,23086],
+        [23086,23106,23082,23102],[23102,23116,23096,23110],[23110,23118,23100,23106],
+        [23106,23108,23080,23084],[23084,23090,23070,23076]],
       bands: [{
-        upper: [24286,24290,24295,24300,24305,24311,24317,24323,24328,24332,24335],
-        lower: [24230,24234,24239,24244,24249,24255,24261,24267,24272,24276,24279],
-        mid:   [24258,24262,24267,24272,24277,24283,24289,24295,24300,24304,24307],
+        upper: [23036,23040,23045,23050,23055,23061,23067,23073,23078,23082,23085],
+        lower: [22980,22984,22989,22994,22999,23005,23011,23017,23022,23026,23029],
+        mid:   [23008,23012,23017,23022,23027,23033,23039,23045,23050,23054,23057],
         color: "#7890c8"
       }],
       overlays: [{ name:"EMA9", color:"#26a69a",
-        data:[24258,24264,24274,24286,24308,24324,24338,24348,24350,24344,24338] }],
+        data:[23008,23014,23024,23036,23058,23074,23088,23098,23100,23094,23088] }],
       markers: [
-        { i:4, type:"buy", price:24318, text:"BUY CE 24,318" },
-        { i:9, type:"exit", price:24334, text:"EXIT reversal" }],
+        { i:4, type:"buy", price:23068, text:"BUY CE 23,068" },
+        { i:9, type:"exit", price:23084, text:"EXIT reversal" }],
       legend: [{ color:"#26a69a", label:"EMA9 (5m)" }, { color:"#7890c8", label:"VWAP ±1σ" }, { color:"#ef5350", label:"EXIT" }]
     });
     // Chart 2 — STRONG vs WEAK: a shallow poke (skipped when the filter is on) vs a decisive break past the band
     TVChart.render("ev-strength", {
       title: "STRONG break vs WEAK poke",
-      candles: [[24198,24210,24190,24204],[24204,24216,24196,24208],[24208,24224,24202,24220],
-        [24220,24236,24216,24232],[24232,24238,24218,24222],[24222,24230,24210,24216],
-        [24216,24228,24208,24222],[24222,24240,24218,24236],[24236,24262,24234,24258],
-        [24258,24276,24252,24272],[24272,24288,24266,24284]],
+      candles: [[22948,22960,22940,22954],[22954,22966,22946,22958],[22958,22974,22952,22970],
+        [22970,22986,22966,22982],[22982,22988,22968,22972],[22972,22980,22960,22966],
+        [22966,22978,22958,22972],[22972,22990,22968,22986],[22986,23012,22984,23008],
+        [23008,23026,23002,23022],[23022,23038,23016,23034]],
       bands: [{
-        upper: [24228,24228,24228,24228,24228,24228,24228,24228,24228,24228,24228],
-        lower: [24172,24172,24172,24172,24172,24172,24172,24172,24172,24172,24172],
-        mid:   [24200,24200,24200,24200,24200,24200,24200,24200,24200,24200,24200],
+        upper: [22978,22978,22978,22978,22978,22978,22978,22978,22978,22978,22978],
+        lower: [22922,22922,22922,22922,22922,22922,22922,22922,22922,22922,22922],
+        mid:   [22950,22950,22950,22950,22950,22950,22950,22950,22950,22950,22950],
         color: "#7890c8"
       }],
       overlays: [{ name:"EMA9", color:"#26a69a",
-        data:[24202,24206,24214,24231,24228,24222,24222,24228,24239,24252,24266] }],
+        data:[22952,22956,22964,22981,22978,22972,22972,22978,22989,23002,23016] }],
       markers: [
-        { i:3, type:"dot", color:"#d29922", price:24231 },
-        { i:8, type:"dot", color:"#26a69a", price:24239, text:"STRONG break" }],
+        { i:3, type:"dot", color:"#d29922", price:22981 },
+        { i:8, type:"dot", color:"#26a69a", price:22989, text:"STRONG break" }],
       legend: [{ color:"#26a69a", label:"EMA9 (5m)" }, { color:"#7890c8", label:"VWAP ±1σ" }, { color:"#d29922", label:"WEAK poke (skipped)" }]
     });
     // The two exits: the sharp-reversal candle fires BEFORE the slower signal exit
@@ -1003,22 +1003,22 @@ angry red candle can't instantly flip us into a losing put.</code></pre>
       title: "EMA9+VWAP — reversal exit fires before the signal exit",
       subtitle: "5m · NIFTY · exits are checked in order, first match wins",
       times: ["11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55"],
-      candles: [[24196,24214,24192,24210],[24210,24228,24206,24224],[24224,24246,24220,24242],
-        [24242,24262,24238,24258],[24258,24278,24254,24274],[24274,24290,24270,24286],
-        [24286,24296,24280,24290],[24290,24294,24258,24262],[24262,24272,24248,24254],
-        [24254,24262,24240,24246],[24246,24252,24232,24238],[24238,24244,24226,24232]],
+      candles: [[22946,22964,22942,22960],[22960,22978,22956,22974],[22974,22996,22970,22992],
+        [22992,23012,22988,23008],[23008,23028,23004,23024],[23024,23040,23020,23036],
+        [23036,23046,23030,23040],[23040,23044,23008,23012],[23012,23022,22998,23004],
+        [23004,23012,22990,22996],[22996,23002,22982,22988],[22988,22994,22976,22982]],
       bands: [{
-        upper: [24212,24218,24226,24236,24246,24256,24264,24268,24270,24271,24271,24270],
-        lower: [24164,24166,24170,24174,24178,24182,24186,24186,24184,24181,24178,24174],
-        mid:   [24188,24192,24198,24205,24212,24219,24225,24227,24227,24226,24224,24222],
+        upper: [22962,22968,22976,22986,22996,23006,23014,23018,23020,23021,23021,23020],
+        lower: [22914,22916,22920,22924,22928,22932,22936,22936,22934,22931,22928,22924],
+        mid:   [22938,22942,22948,22955,22962,22969,22975,22977,22977,22976,22974,22972],
         color: "#a78bfa", fill: "rgba(167,139,250,0.06)"
       }],
       overlays: [{ name:"EMA9", color:"#26a69a",
-        data:[24206,24214,24225,24238,24252,24265,24274,24272,24268,24262,24256,24249] }],
+        data:[22956,22964,22975,22988,23002,23015,23024,23022,23018,23012,23006,22999] }],
       markers: [
-        { i:2, type:"buy", price:24242, text:"BUY CE — EMA9 above top" },
-        { i:7, type:"exit", price:24262, text:"EXIT — reversal candle" },
-        { i:9, type:"dot", color:"#d29922", price:24246, text:"signal exit would be here" }],
+        { i:2, type:"buy", price:22992, text:"BUY CE — EMA9 above top" },
+        { i:7, type:"exit", price:23012, text:"EXIT — reversal candle" },
+        { i:9, type:"dot", color:"#d29922", price:22996, text:"signal exit would be here" }],
       legend: [{ color:"#26a69a", label:"EMA9 (5m)" }, { color:"#a78bfa", label:"VWAP ±1σ" },
         { color:"#ef5350", label:"reversal EXIT" }, { color:"#d29922", label:"slower signal exit" }]
     });
