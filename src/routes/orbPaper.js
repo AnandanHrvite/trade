@@ -648,7 +648,7 @@ async function onCandleClose(bar) {
     // Only log when the signal actually evaluated (range formed) — pre-range
     // candles produce "waiting for OR" noise.
     if (sig.orh != null && sig.orl != null) {
-      skipLogger.appendSkipLog("orb", { gate: "signal_none", reason: sig.reason || "no signal", spot: _spot, orh: sig.orh, orl: sig.orl, rangePts: sig.rangePts });
+      skipLogger.appendSkipLog("orb", { gate: "signal_none", reason: sig.reason || "no signal", spot: _spot, orh: sig.orh, orl: sig.orl, rangePts: sig.rangePts, funnel: orbStrategy.summarizeGates(sig) });
     }
     return;
   }

@@ -279,6 +279,26 @@ function _tracer(candle, ctx) {
   };
 }
 
+/**
+ * Compact one-line encoding of a signal's gate funnel, for the skip log.
+ *
+ * The full `sig.gates` array is ~10 objects per candle. The skip log writes a row
+ * on every 5-min close once the opening range exists (~66 rows/session), so
+ * embedding the raw array would bloat the day file for little gain. This keeps the
+ * WHOLE funnel — which gates ran, in order, and how each resolved — in ~90 bytes:
+ *
+ *   "time window:P,trade budget:P,OR ready:P,OR vs ATR15:P,gap sanity:P,breakout:F"
+ *
+ * P=pass, F=fail, S=skipped (filter off / not seeded), I=informational.
+ * Without this the skip log records only the FIRST blocking reason, which is what
+ * made "why did ORB stop trading?" an archaeology exercise in the first place.
+ */
+function summarizeGates(sig) {
+  if (!sig || !Array.isArray(sig.gates) || !sig.gates.length) return null;
+  const code = { PASS: "P", FAIL: "F", SKIP: "S", INFO: "I" };
+  return sig.gates.map(g => `${g.gate}:${code[g.status] || "?"}`).join(",");
+}
+
 function _blank() {
   return {
     signal: "NONE", side: null, reason: "",
@@ -509,4 +529,4 @@ function getSignal(candles, opts) {
   return done(Object.assign(sig, { reason: `Waiting for a retest or resume of ${side === "CE" ? "ORH" : "ORL"} (candle ${lastIdx - b}/${cfg.retestWindow + 1})` }));
 }
 
-module.exports = { NAME, DESCRIPTION, getSignal, computeOpeningRange, computeVwap };
+module.exports = { NAME, DESCRIPTION, getSignal, computeOpeningRange, computeVwap, summarizeGates };

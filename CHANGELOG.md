@@ -6,6 +6,17 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — ORB: the skip log now really carries the gate funnel (the docs claimed it already did)
+
+Recheck pass over the previous three commits. One documentation claim was false, one label was stale; everything else verified clean.
+
+- **The README and CHANGELOG both stated that the skip log records the full gate funnel "rather than only the first blocking reason". It did not** — the `signal_none` skip row carried `sig.reason` and nothing else, so the funnel existed in memory and was thrown away. Now wired for real, via a new `summarizeGates()` that encodes the whole funnel compactly (**77 bytes**, e.g. `time window:P,trade budget:P,OR ready:P,OR vs ATR15:P,gap sanity:P,breakout:F`) rather than embedding ~10 objects on every 5-min row. Two new tests assert both that the encoding covers *every* gate and that both routes actually write it, so the claim cannot silently rot again.
+- **Stale Settings label** — `ORB_ITM_STEPS` was still labelled "V3 — …" months after the V3 engine was deleted. Its description now also notes that the ~0.6 delta it implies is what converts *Max Trade Loss* into the stop distance, so changing the strike step changes the effective stop width.
+
+**Verified clean in this pass** (no change needed): the full app boots with no errors beyond expected broker-auth failures; both test suites pass (28 + 24); every ORB key in the Settings UI is genuinely read somewhere in `src/`; no ORB key in `.env` is unread; `sig.gates` does not leak into trade records or the tick recorder; the ORB position-persistence round-trip preserves the clamped stop.
+
+**One earlier finding retracted**: an audit sweep flagged `ORB_ITM_STEPS` as read by no code. That was a false positive — `instrument.js` reads it through a computed key (`process.env[\`${mode}_ITM_STEPS\`]`) that a literal grep cannot see. Slightly-ITM strike selection works correctly, which also confirms the ~0.6 delta assumption used by the stop clamp.
+
 ### Fixed — ORB: live crash-recovery gap, a trace hole, and the first ORB test suite
 
 - **BLOCKER — ORB Live never persisted its position.** `orbPaper.js` wrote a crash-recovery snapshot; `orbLive.js`, which places **real Fyers orders**, did not — exactly backwards. `app.js` calls `loadOrbPosition()` on boot, so a restart mid-live-trade found nothing to reconcile: the user was left holding an untracked option with no orphan warning, while every other live route (`bbRsiLive` / `paLive` / `emaRsiStLive`) already persisted. ORB Live now snapshots on entry, **re-snapshots when the stop lifts to breakeven** (so recovery sees the current stop, not the entry stop), and clears on exit. Round-trip verified including the clamped stop level.

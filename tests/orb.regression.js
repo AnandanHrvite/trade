@@ -268,6 +268,30 @@ const ENTRIES  = ALL_SIGS.filter(x => x.sig.signal !== "NONE");
     }
   });
 
+  check("the skip log gets the WHOLE funnel, compactly (docs claim this — keep it true)", () => {
+    const withGates = ALL_SIGS.filter(x => x.sig.gates && x.sig.gates.length);
+    assert.ok(withGates.length, "no signal produced gates at all");
+    for (const { sig } of withGates) {
+      const f = S.summarizeGates(sig);
+      assert.ok(typeof f === "string" && f.length, "summarizeGates returned nothing for a traced signal");
+      assert.strictEqual(f.split(",").length, sig.gates.length, "funnel dropped gates — it must encode ALL of them, not just the blocker");
+      assert.ok(/^[^,]+:[PFSI](,[^,]+:[PFSI])*$/.test(f), `funnel not in name:CODE form: ${f}`);
+      assert.ok(f.length < 400, `funnel too long for a per-candle log row: ${f.length} bytes`);
+    }
+    assert.strictEqual(S.summarizeGates(null), null, "summarizeGates must tolerate a null signal");
+    assert.strictEqual(S.summarizeGates({}), null, "summarizeGates must tolerate a signal with no gates");
+  });
+
+  check("both routes actually WRITE the funnel to the skip log", () => {
+    for (const f of ["orbPaper.js", "orbLive.js"]) {
+      const src = fs.readFileSync(path.join(__dirname, "../src/routes", f), "utf-8");
+      const m = src.match(/appendSkipLog\("orb",\s*\{\s*gate:\s*"signal_none"[^}]*\}/);
+      assert.ok(m, `${f} has no signal_none skip log`);
+      assert.ok(/funnel:\s*orbStrategy\.summarizeGates\(sig\)/.test(m[0]),
+        `${f} logs signal_none WITHOUT the funnel — the README claim would be false`);
+    }
+  });
+
   check("removed config keys have no effect (dead knobs cannot resurrect)", () => {
     const baseline = ENTRIES.length;
     const dead = { ORB_PRIORDAY_LEVEL_FILTER: "true", ORB_CLOSE_POS_PCT: "0.01",

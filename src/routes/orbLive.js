@@ -494,7 +494,7 @@ async function onCandleClose(bar) {
 
   const sig = orbStrategy.getSignal(state.candles, { alreadyTraded: state.tradesTaken >= maxTrades });
   if (sig.signal === "NONE" || !sig.side) {
-    if (sig.orh != null && sig.orl != null) skipLogger.appendSkipLog("orb", { gate: "signal_none", reason: sig.reason, spot: _spot, orh: sig.orh, orl: sig.orl, rangePts: sig.rangePts, _live: true });
+    if (sig.orh != null && sig.orl != null) skipLogger.appendSkipLog("orb", { gate: "signal_none", reason: sig.reason, spot: _spot, orh: sig.orh, orl: sig.orl, rangePts: sig.rangePts, funnel: orbStrategy.summarizeGates(sig), _live: true });
     return;
   }
 
