@@ -1145,6 +1145,14 @@ app.get("/", (req, res) => {
       .brk-cfg-warn  { font-size:0.72rem; line-height:1.5; display:flex; align-items:center; min-height:44px; }
       .brk-cfg-label { font-size:0.62rem; }
       .brk-cfg       { gap:8px; padding:8px 12px; }
+      /* Between 641 and 768px the two fields still sit side by side, and the
+         190px cap is exactly what let the iOS date control — which will not
+         shrink below its intrinsic width — spill out over the select. Cap
+         removed, and the basis raised to 260px: that is wider than any
+         plausible intrinsic width, so when the strip cannot give both fields
+         260px they wrap onto separate full-width lines by themselves instead
+         of being squeezed into an overlap. No extra breakpoint needed. */
+      .brk-cfg-field { max-width:none; flex:1 1 260px; }
     }
     @media (max-width:640px) {
       .brk-cfg-label { flex:1 0 100%; }
