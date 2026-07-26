@@ -116,5 +116,50 @@ for (const [guide, id] of Object.entries(SESSIONS)) {
     `${buy} → ${exit} = ${diff} pts, caption claims +${claim}`);
 }
 
+// ── Every price quoted in ANY caption must be a value that chart actually draws.
+//    Covers all 26 charts, not just the six session ones. Tolerance 2 points, and
+//    the haystack is deliberately wide — a caption may legitimately name a level
+//    that is not a marker (a box edge, a peak high, the stop the strategy wanted),
+//    so candles, zones, overlays and bands all count.
+console.log("");
+{
+  const drawnValues = s => {
+    const v = [];
+    (s.candles || []).forEach(c => c.forEach(x => typeof x === "number" && v.push(x)));
+    (s.markers || []).forEach(m => typeof m.price === "number" && v.push(m.price));
+    (s.zones   || []).forEach(z => [z.top, z.bottom].forEach(x => typeof x === "number" && v.push(x)));
+    (s.overlays|| []).forEach(o => (o.data || []).forEach(x => typeof x === "number" && v.push(x)));
+    (s.bands   || []).forEach(b => ["upper", "lower", "mid"].forEach(k => (b[k] || []).forEach(x => typeof x === "number" && v.push(x))));
+    return v;
+  };
+  let charts = 0, prices = 0;
+  for (const file of fs.readdirSync(GUIDES).filter(f => f.endsWith(".html"))) {
+    const html = fs.readFileSync(path.join(GUIDES, file), "utf-8");
+    const re = /TVChart\.render\("([^"]+)", /g;
+    let m;
+    while ((m = re.exec(html)) !== null) {
+      let depth = 0, i = m.index + m[0].length, end = -1;
+      for (; i < html.length; i++) {
+        const ch = html[i];
+        if (ch === "(" || ch === "{" || ch === "[") depth++;
+        else if (ch === ")" || ch === "}" || ch === "]") { depth--; if (depth < 0) { end = i; break; } }
+      }
+      let s = null;
+      try { s = JSON.parse(html.slice(m.index + m[0].length, end)); }
+      catch (_) { try { s = eval("(" + html.slice(m.index + m[0].length, end) + ")"); } catch (_) { continue; } }
+      const di = html.indexOf(`id="${m[1]}"`);
+      const cs = di < 0 ? -1 : html.indexOf('<p class="tv-cap">', di);
+      if (cs < 0) continue;
+      const cap = html.slice(cs, html.indexOf("</p>", cs)).replace(/<[^>]+>/g, "");
+      const V = drawnValues(s);
+      const quoted = [...cap.matchAll(/(?<![\d.])(2[3-6]),(\d{3})(?![\d])/g)].map(x => parseInt(x[1] + x[2], 10));
+      const orphan = quoted.filter(q => !V.some(v => Math.abs(v - q) <= 2));
+      charts++; prices += quoted.length;
+      if (orphan.length) { fail++; console.log(`  ✗ ${file.replace("_Strategy_Guide.html", "")} #${m[1]} quotes ${orphan.join(",")} — not drawn on that chart`); }
+    }
+  }
+  check("all caption prices are drawn", true, `${prices} prices across ${charts} captioned charts`);
+}
+
 console.log(fail ? `\n${fail} check(s) failed — a guide draws something its text does not describe` : "\nevery marked entry/exit obeys the rule its caption states");
 process.exit(fail ? 1 : 0);
