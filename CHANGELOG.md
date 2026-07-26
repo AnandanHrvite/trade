@@ -6,6 +6,21 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — every screen in the app now works on a phone
+
+Swept all 65 screens (44 app pages, the 7 standalone strategy guides, the Settings gate + audit log, the broker login pages and the 404) at 320 / 360 / 393 / 430 / 768px, in both themes, measured over CDP at real mobile viewports. Four classes of problem, and the fix for each is shared rather than per-page wherever the cause was shared.
+
+- **Three pages laid themselves out wider than the phone and were zoomed out to fit.** The Settings App-Secret gate had **no viewport meta at all**, so the browser used its 980px desktop fallback and shrank the page to ~40% — legible only by pinch-zooming. `/docs` came out at 640px and `/result` at 440px. Eleven HTML documents in total were missing the tag (both broker login/error pages, four backtest and paper error pages, the Settings audit log, the printable contract note and the generic HTTP error page); all of them have it now.
+- **Tapping any filter field zoomed the whole page on iOS.** Every filter bar in the app rendered its inputs between 10.6px and 13.6px, and iOS Safari zooms the page whenever a field under **16px** takes focus — with no way to undo it. All form controls are now a literal `16px` below 768px (px, not rem: a rem value tracks the root size and can fall back under the threshold).
+- **Controls were too small to hit.** 44px is the minimum a fingertip lands on reliably; the app's controls measured 14–35px. The hamburger — the only route to the menu on a phone — was 36×30, and the drawer's own links were 35px. Buttons, inputs, selects, the tab strips, breadcrumbs, the backup banner's link and ✕, and the header links that carry no class of their own (📊 History, ← Status, 🤖 AI export) are all ≥44px now.
+- **Some controls could not be reached at all.** `.main-content` clips rather than scrolls below 768px, so anything pushed past the edge was painted nowhere. On `/trade-logs` that hid three of the five tabs; its download toolbar is `justify-content:flex-end` with no wrap, so the From/To date pickers overflowed off the **left** edge to x=-171. On Settings at 320px the per-section Load Defaults and 👁 buttons went the same way, and `SAVE ALL → .env` sat 710px inside a scroller whose scrollbar is deliberately hidden — nothing on screen suggested it was there.
+
+Also: rendered markdown wraps unbroken env keys (`EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_CANDLES` alone was dragging `/docs` out to 640px) while fenced blocks keep their formatting and scroll; the guides' setting tables scroll in their own box instead of stretching the document; and their two-column contents lists collapse to one.
+
+The shared alert banners are `position:fixed; top:0`, so whichever one is up sat on top of the sticky top bar and the hamburger — the known issue from the previous entry, and bigger tap targets would have made it worse. The visible banner's height is now published as `--banner-h` on `<html>` and the mobile stylesheet offsets the body, top bar, hamburger and drawer by it; the banner also drops its parenthetical hint on a phone (103px → 82px). Desktop still reads none of this, so its behaviour is unchanged.
+
+Verified: 0 pages overflow, 0 unreachable controls, 0 sub-16px fields and 0 sub-40px targets at all five widths in both themes. Desktop was re-measured against the pre-change build at 1440px across all 64 pages — every computed box is identical; the only three deltas are `flex-wrap:wrap` on `/result`'s nav (which changes nothing until the window is under ~960px, where the links used to run off the edge) and one new class name.
+
 ### Fixed — broker rows wrapped to two lines, and the expiry fields collided on iOS
 
 Three things, all found on a real device rather than in the headless harness:

@@ -179,6 +179,27 @@ router.get("/", (req, res) => {
     :root[data-theme="light"] .guide-link { background:#ffffff !important; border-color:#e0e4ea !important; color:#059669 !important; }
     :root[data-theme="light"] .guide-link:hover { background:#f8fafc !important; border-color:#2563eb !important; color:#2563eb !important; }
     :root[data-theme="light"] .guide-link span[style*="color:#4a6080"] { color:#94a3b8 !important; }
+
+    /* ── MOBILE ──
+       Last in the sheet on purpose: these selectors have the same specificity as
+       the base .doc-card rules above, so they only win by coming after them.
+       Rendered markdown is the one place the app prints text it did not author —
+       an unbroken env key such as EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_CANDLES has
+       no break opportunity, so it dragged the document out to 640px and the
+       browser zoomed the whole page down to 61% to fit it. overflow-wrap is
+       inherited, so setting it on the card covers the bare text nodes too, not
+       just the <code> spans. */
+    @media(max-width:768px){
+      .doc-card{padding:16px 14px;overflow-wrap:anywhere;word-break:break-word;}
+      .doc-card pre{max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;}
+      /* Fenced blocks keep their formatting and scroll rather than re-wrapping. */
+      .doc-card pre,.doc-card pre code{overflow-wrap:normal;word-break:normal;}
+      /* A markdown pipe-table row is one long line; it scrolls in its own box. */
+      .doc-card .md-tbl{overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap;}
+      .doc-card h1{font-size:1.1rem;}
+      .doc-card h2{font-size:0.95rem;}
+      .tabs{flex-wrap:wrap;}
+    }
   </style>
 </head>
 <body>

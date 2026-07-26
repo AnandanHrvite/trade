@@ -366,7 +366,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
 <div id="backup-nag-banner" role="status" style="display:none;position:fixed;top:0;left:0;right:0;z-index:99998;background:#1e3a5f;color:#fff;font-family:'IBM Plex Mono',monospace;font-size:0.8rem;font-weight:600;padding:9px 16px;text-align:center;border-bottom:2px solid #3b82f6;box-shadow:0 4px 16px rgba(0,0,0,0.4);">
   <span id="backup-nag-msg">📦 Today's data backup is ready</span>
   <a id="backup-nag-link" href="/backup/download" style="color:#fff;text-decoration:underline;margin-left:14px;font-weight:700;">⬇ Download now</a>
-  <span style="margin-left:14px;font-size:0.66rem;color:#bcd2f0;">(stays until you download today's copy)</span>
+  <span id="backup-nag-hint" style="margin-left:14px;font-size:0.66rem;color:#bcd2f0;">(stays until you download today's copy)</span>
   <button id="backup-nag-close" type="button" aria-label="Dismiss" title="Dismiss for this session" style="position:absolute;top:50%;right:14px;transform:translateY(-50%);background:transparent;border:none;color:#bcd2f0;font-size:1.1rem;line-height:1;cursor:pointer;padding:2px 6px;">✕</button>
 </div>
 <script>
@@ -647,6 +647,39 @@ function toggleNavGroup(gid){
   }
   poll();
   setInterval(poll, 30000);
+})();
+
+/* ── Fixed-banner height, published as --banner-h ───────────────────────────
+   All three alert banners are position:fixed at top:0, so whichever one is up
+   sits on top of the sticky top bar and the hamburger. On a phone that hides
+   the page title, the Start buttons and the only route to the menu — there is
+   no room to spare there. This publishes the visible banner's height on <html>;
+   the mobile stylesheet offsets body / .top-bar / .hamburger / .sidebar by it.
+   Desktop does not read the variable, so its layout is unchanged.            */
+(function(){
+  var IDS = ['socket-broken-banner','telegram-broken-banner','backup-nag-banner'];
+  var els = IDS.map(function(id){ return document.getElementById(id); }).filter(Boolean);
+  if (!els.length) return;
+  var last = -1;
+  function sync(){
+    var h = 0;
+    for (var i = 0; i < els.length; i++) {
+      // The banners share top:0 and only differ by z-index, so when two are up
+      // at once the taller one is what the page has to clear.
+      if (getComputedStyle(els[i]).display !== 'none') h = Math.max(h, els[i].offsetHeight);
+    }
+    if (h === last) return;
+    last = h;
+    document.documentElement.style.setProperty('--banner-h', h + 'px');
+  }
+  sync();
+  // The banners are shown/hidden by writing style.display, and their text is
+  // rewritten on each poll, so watch both the attribute and the contents.
+  var mo = new MutationObserver(sync);
+  els.forEach(function(el){ mo.observe(el, { attributes:true, attributeFilter:['style'], childList:true, subtree:true, characterData:true }); });
+  if (window.ResizeObserver) { var ro = new ResizeObserver(sync); els.forEach(function(el){ ro.observe(el); }); }
+  window.addEventListener('resize', sync);
+  window.addEventListener('orientationchange', sync);
 })();
 </script>`;
 }
@@ -982,8 +1015,11 @@ function sidebarCSS() {
          top-bar, and iOS 16+/iPhone 15 supports it (older browsers ignore it). */
       .main-content{margin-left:0;max-width:100%;min-width:0;overflow-x:clip;}
 
-      /* Hamburger button */
-      .hamburger{display:flex;flex-direction:column;gap:4px;cursor:pointer;padding:8px;background:none;border:none;position:fixed;top:8px;left:12px;z-index:300;}
+      /* Hamburger button — 44x44 hit area (it was 36x30, under the tap-target
+         minimum, and it is the ONLY way to reach the menu on a phone). The bars
+         themselves are unchanged; only the box around them grew, and it still
+         ends at x=46 so .top-bar's 48px left padding keeps clearing it. */
+      .hamburger{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;cursor:pointer;padding:0;background:none;border:none;position:fixed;top:var(--banner-h,0px);left:2px;min-width:44px;min-height:44px;z-index:300;}
       .hamburger span{display:block;width:20px;height:2px;background:#4a6080;border-radius:2px;transition:all 0.2s;}
 
       /* Overlay when sidebar open */
@@ -1026,6 +1062,68 @@ function sidebarCSS() {
       /* Flex rows that can run off-screen wrap instead */
       .run-bar,.capital-strip,.session-head{flex-wrap:wrap;}
       .cap-cell{min-width:50%;}
+
+      /* ── TOUCH TYPOGRAPHY ──
+         iOS Safari zooms the whole page when a field whose font-size is below
+         16px takes focus, and nothing the page does can undo that zoom. 16px is
+         the literal threshold, so it is written in px, not rem — a rem value
+         tracks the root font-size and can silently fall back under the limit.
+         Pages set these sizes through class selectors (.tbar input,
+         .config-input, .dl-range-inp, …) which outrank a bare element selector,
+         so the override needs !important to win. It lives inside this media
+         query, so desktop keeps its 10.6-13.6px filter bars unchanged. */
+      input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]),
+      select,textarea{font-size:16px !important;}
+
+      /* ── TAP TARGETS ──
+         44px is the smallest control a fingertip hits reliably. Every control
+         the app rendered measured between 17px and 32px tall. */
+      button,select,textarea,
+      input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]){min-height:44px;}
+      /* Anchors and spans styled as buttons are inline boxes, so a min-height
+         alone does nothing to them — they need a flex box before it applies. */
+      a.btn,a.export-btn,a.copy-btn,a.dw-toggle,a.brk-action,a.pdf-btn,a.tab,
+      a.top-bar-btn,a.run-btn,a.preset-btn,a.btn-download,a.btn-view,
+      a.bc-link,a.cr-link,a.act-btn,a.dash-chart-link,a.back,a.clear,
+      .tab,.collapse-toggle,.status-pill-dismiss,.top-bar-cache.clickable,
+      .fp,.sb-action-btn{min-height:44px;display:inline-flex;align-items:center;justify-content:center;}
+      /* The drawer's own links were 35px, and on a phone the drawer IS the
+         navigation. The sidebar already scrolls, so taller rows are safe. */
+      .sb-nav-item{min-height:44px;}
+      /* The dismiss ✕ on the dashboard status pill was 8px wide — a glyph, not a
+         control. It needs width as much as height. */
+      .status-pill-dismiss{min-width:44px;}
+      /* Navigation links that carry no class of their own (📊 History, ← Status,
+         🤖 AI export, ← Edge Analytics). Scoped to the header/toolbar rows so
+         links inside body prose keep flowing with the text they sit in. */
+      .top-bar a,.page-header a,.page-sub a,.section-title a{min-height:44px;display:inline-flex;align-items:center;}
+
+      /* Long unbreakable tokens (env keys, option symbols, file paths) inside
+         inline code have to wrap. Inside <pre> they must NOT — that block keeps
+         its formatting and scrolls sideways instead. */
+      code,kbd,samp{overflow-wrap:anywhere;word-break:break-word;}
+      pre code,pre kbd,pre samp{overflow-wrap:normal;word-break:normal;}
+
+      /* Shared fixed banners: the message ran underneath the absolutely
+         positioned ✕, and every control in them was 17-22px tall. Only padding
+         and the controls are touched — never the display property, because the banners are
+         shown/hidden through an inline style that an !important rule here would
+         override, pinning them permanently open. */
+      /* Nothing may sit under a fixed banner on a phone — see the --banner-h
+         block in the nav script. The variable is 0px whenever no banner is up,
+         so these four rules are inert the rest of the time. */
+      body{padding-top:var(--banner-h,0px);}
+      .top-bar{top:var(--banner-h,0px);}
+      .sidebar{top:var(--banner-h,0px);height:calc(100vh - var(--banner-h,0px));}
+
+      /* The parenthetical hint costs the banner a whole extra line at 393px and
+         repeats what the link already says. */
+      #backup-nag-hint{display:none;}
+      #backup-nag-banner{padding:8px 54px 8px 12px !important;line-height:1.6;}
+      #socket-broken-banner,#telegram-broken-banner{padding:8px 12px !important;line-height:1.7;}
+      #backup-nag-banner a,#socket-broken-banner a{display:inline-flex;align-items:center;min-height:44px;}
+      #backup-nag-close{min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center;padding:0 !important;right:4px !important;}
+      #socket-broken-banner button,#telegram-broken-banner button{display:inline-flex;align-items:center;justify-content:center;}
     }
     @media(max-width:400px){
       .stat-grid{grid-template-columns:1fr;}

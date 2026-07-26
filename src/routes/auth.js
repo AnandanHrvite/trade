@@ -299,7 +299,9 @@ router.get("/status/all", (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function buildSuccessPage(title, message) {
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><title>${title}</title>
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>${title}</title>
   ${faviconLink()}
   <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:-apple-system,sans-serif;background:#0f1117;color:#e2e8f0;display:flex;align-items:center;justify-content:center;min-height:100vh;}
   .card{background:#1a1f2e;border:1px solid #065f46;border-radius:16px;padding:40px 48px;text-align:center;max-width:480px;}
@@ -328,6 +330,15 @@ function buildLoginLandingPage(authUrl) {
   .hint{margin-top:18px;padding:14px;background:#0a1429;border:1px solid #1e3a5f;border-radius:10px;font-size:0.78rem;color:#94a3b8;line-height:1.6;}
   .hint b{color:#fbbf24;}
   a.back{display:inline-block;margin-top:18px;color:#64748b;font-size:0.78rem;text-decoration:none;}
+  /* These broker pages carry their own CSS and never load sharedNav's mobile
+     layer, so the touch sizing has to be repeated here. The back link measured
+     15px tall. */
+  @media(max-width:768px){
+    a.back{min-height:44px;display:inline-flex;align-items:center;justify-content:center;}
+    input,select,textarea{font-size:16px;min-height:44px;}
+    button,a.btn{min-height:44px;}
+    code{overflow-wrap:anywhere;word-break:break-word;}
+  }
 </style></head><body>
 <div class="card">
   <div class="icon">🔐</div>
@@ -373,6 +384,15 @@ function buildManualLoginPage(authUrl, errorMsg) {
   .submit:hover{background:#059669;}
   .hint{font-size:0.74rem;color:#64748b;line-height:1.6;margin-top:8px;}
   a.back{display:inline-block;margin-top:18px;color:#64748b;font-size:0.78rem;text-decoration:none;}
+  /* These broker pages carry their own CSS and never load sharedNav's mobile
+     layer, so the touch sizing has to be repeated here. The back link measured
+     15px tall. */
+  @media(max-width:768px){
+    a.back{min-height:44px;display:inline-flex;align-items:center;justify-content:center;}
+    input,select,textarea{font-size:16px;min-height:44px;}
+    button,a.btn{min-height:44px;}
+    code{overflow-wrap:anywhere;word-break:break-word;}
+  }
 </style></head><body>
 <div class="card">
   <h1>📋 Manual Fyers Login</h1>
@@ -493,7 +513,9 @@ function copyToken(){
 }
 
 function buildErrorPage(title, message) {
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><title>${title}</title>
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>${title}</title>
   ${faviconLink()}
   <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:-apple-system,sans-serif;background:#0f1117;color:#e2e8f0;display:flex;align-items:center;justify-content:center;min-height:100vh;}
   .card{background:#1a1f2e;border:1px solid #9b2c2c;border-radius:16px;padding:40px 48px;text-align:center;max-width:520px;}

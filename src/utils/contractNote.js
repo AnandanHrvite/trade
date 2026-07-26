@@ -226,7 +226,9 @@ function closeContractNote(){ var m=document.getElementById('cnModal'); if(m) m.
 function exportContractNotePDF(){
   var w=window.open('', '_blank');
   if(!w){ alert('Pop-up blocked — allow pop-ups for this site to export the contract note as PDF.'); return; }
-  var doc='<!DOCTYPE html><html><head><meta charset="utf-8"><title>'+_cnEsc(_CN_DOC.file)+'</title>'
+  var doc='<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">'
+    +'<meta name="viewport" content="width=device-width,initial-scale=1">'
+    +'<title>'+_cnEsc(_CN_DOC.file)+'</title>'
     +'<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">'
     +'<style>body{font-family:\\'Inter\\',system-ui,Arial,sans-serif;-webkit-font-smoothing:antialiased;color:#1f2733;margin:22px;}table{width:100%;}@media print{@page{margin:14mm;}}</style></head><body>'
     + _CN_DOC.body + '</body></html>';

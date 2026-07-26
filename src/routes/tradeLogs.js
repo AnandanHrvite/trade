@@ -634,6 +634,17 @@ router.get("/", (req, res) => {
       table { font-size:0.66rem; }
       th, td { padding:6px 8px; }
     }
+    /* The five tabs need 546px on one line, and .main-content clips instead of
+       scrolling below sharedNav's 768px breakpoint — so Login Logs, Server Logs
+       and Cache Files were painted past the right edge and could not be reached
+       at any scroll position. Not cramped: gone. */
+    @media (max-width:768px) {
+      .tabs { flex-wrap:wrap; }
+      /* .files-toolbar is justify-content:flex-end with no wrap, so once its
+         four controls stopped fitting the overflow went off the LEFT edge —
+         the From/To date pickers ended up at x=-171, clipped and unreachable. */
+      .files-toolbar { flex-wrap:wrap; justify-content:flex-start; }
+    }
 
     /* ── LIGHT THEME OVERRIDES ─────────────────────────────────────────
        Activated when UI_THEME=light. sharedNav.js sets data-theme="light"

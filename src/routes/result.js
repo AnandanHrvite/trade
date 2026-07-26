@@ -46,7 +46,12 @@ function shell(title, body) {
     }
     /* ── Top nav ── */
     nav {
-      display: flex; align-items: center; justify-content: space-between;
+      /* Wrapping is on at every width, not just under the mobile breakpoint: the
+         brand is nowrap and the eight links need 604px, so anything narrower than
+         ~960px (a phone in landscape, a half-width desktop window) pushed the
+         links off the right edge. With room to spare the wrap never triggers, so
+         wide layouts are unchanged. */
+      display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;
       padding: 16px 32px;
       border-bottom: 1px solid var(--border);
       background: var(--surface);
@@ -54,7 +59,7 @@ function shell(title, body) {
     }
     nav .brand { font-size: 1rem; font-weight: 700; color: #fff; letter-spacing: -0.3px; white-space: nowrap; }
     nav .brand span { color: var(--accent); }
-    nav .nav-links { display: flex; gap: 8px; }
+    nav .nav-links { display: flex; gap: 8px; flex-wrap: wrap; }
     nav .nav-links a {
       font-size: 0.78rem; font-weight: 500; color: var(--muted);
       text-decoration: none; padding: 6px 12px; border-radius: 6px;
@@ -183,7 +188,14 @@ function shell(title, body) {
     @media (max-width: 768px) {
       .page { padding: 18px 12px; }
       .page-header h1 { font-size: 1.25rem; }
+      /* The brand is white-space:nowrap and nav is justify-content:space-between,
+         so at 393px the two children could not share a line: the links were pushed
+         to x=349 and ran 47px off the right edge. Both have to be allowed to wrap. */
+      nav { flex-wrap: wrap; gap: 8px; padding: 12px; }
+      nav .brand { white-space: normal; font-size: 0.85rem; }
       nav .nav-links { flex-wrap: wrap; }
+      nav .nav-links a, a.btn, button { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+      input, select, textarea { font-size: 16px; }
       .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
       table { min-width: 560px; }
     }

@@ -1044,7 +1044,13 @@ router.get("/", (req, res) => {
   const appSecret = process.env.API_SECRET;
   if (appSecret && req.query.secret !== appSecret) {
     const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
-    return res.send(`<!DOCTYPE html><html><head><title>Settings - Auth</title>
+    // The viewport meta is what keeps this page on the phone's own width. Without
+    // it Chrome/Safari lay the document out at their 980px desktop fallback and
+    // then zoom the whole thing out to ~40%, which is how the App Secret gate
+    // rendered before — legible only by pinch-zooming.
+    return res.send(`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/>
+      <meta name="viewport" content="width=device-width,initial-scale=1"/>
+      <title>Settings - Auth</title>
       <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet"/>
       <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:'IBM Plex Mono',monospace;background:#040c18;color:#c8d8f0;display:flex;min-height:100vh;}
       ${sidebarCSS()}
@@ -1755,6 +1761,25 @@ router.get("/", (req, res) => {
       .pattern-grid .setting-row { border-right: none; }
       .setting-row { flex-wrap: wrap; }
       input[type="text"], input[type="number"], input[type="date"], input[type="time"], select { max-width: 360px; }
+    }
+
+    /* The top-bar actions are a deliberate single-line scroller with the
+       scrollbar hidden. On a phone that hides the fact it scrolls at all, and
+       SAVE ALL → .env — the whole point of this page — sat 710px off the right
+       edge with nothing on screen to suggest it was there. Below the shared
+       breakpoint they wrap instead. The row is styled inline, so these have to
+       be !important to win. */
+    @media (max-width:768px) {
+      .top-bar-btns {
+        flex-wrap: wrap !important; overflow-x: visible !important;
+        white-space: normal !important; margin-left: 0 !important; width: 100%;
+      }
+      /* A section header is a nowrap flex row ending in two flex-shrink:0
+         buttons, with a flex:1 rule line between. At 320px that pushed Load
+         Defaults and 👁 past the clipped right edge of .main-content. Dropping
+         the decorative rule and allowing a wrap keeps both on screen. */
+      .section-title { flex-wrap: wrap; }
+      .section-title::after { display: none; }
     }
 
     /* ── Mobile ──────────────────────────────────────────── */
@@ -3062,7 +3087,9 @@ router.get("/audit/data", (req, res) => {
 router.get("/audit", (req, res) => {
   const appSecret = process.env.API_SECRET;
   if (appSecret && req.query.secret !== appSecret) {
-    return res.status(401).send(`<!DOCTYPE html><html><body style="font-family:monospace;background:#040c18;color:#c8d8f0;padding:40px;">
+    return res.status(401).send(`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/>
+      <meta name="viewport" content="width=device-width,initial-scale=1"/></head>
+      <body style="font-family:monospace;background:#040c18;color:#c8d8f0;padding:40px;">
       <h2>Audit log — auth required</h2>
       <form onsubmit="event.preventDefault();window.location='/settings/audit?secret='+encodeURIComponent(this.s.value);">
         <input name="s" type="password" placeholder="App Secret" autofocus style="padding:10px;background:#0a1528;border:1px solid #1e3a5a;border-radius:6px;color:#c8d8f0;font-family:inherit;"/>
@@ -3131,7 +3158,9 @@ router.get("/audit", (req, res) => {
 
   const secret = req.query.secret || "";
 
-  res.send(`<!DOCTYPE html><html><head>
+  res.send(`<!DOCTYPE html><html lang="en"><head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Settings Audit Log</title>
 ${faviconLink()}
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet"/>

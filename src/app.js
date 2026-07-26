@@ -2707,7 +2707,7 @@ function showStatusPill(alertDiv, icon, msg, color){
   alertDiv.innerHTML = '<div style="display:inline-flex;align-items:center;gap:6px;background:#07111f;border:0.5px solid '
     +color+';border-radius:20px;padding:3px 10px 3px 8px;font-size:0.68rem;color:'+color+';white-space:nowrap;">'
     +'<span>'+icon+'</span> <span>'+msg+'</span>'
-    +' <span onclick="dismissStatusAlert()" style="cursor:pointer;opacity:0.5;margin-left:4px;">&#x2715;</span>'
+    +' <span class="status-pill-dismiss" role="button" aria-label="Dismiss" tabindex="0" onclick="dismissStatusAlert()" style="cursor:pointer;opacity:0.5;margin-left:4px;">&#x2715;</span>'
     +'</div>';
 }
 async function checkTradingStatus(){
@@ -2905,7 +2905,7 @@ app.use((err, req, res, next) => {
   const wantsHtml = (req.headers.accept || "").includes("text/html");
   if (wantsHtml) {
     res.status(code).type("html").send(
-      `<!doctype html><meta charset="utf-8"><title>${code}</title>` +
+      `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${code}</title>` +
       `<pre style="font:14px/1.4 ui-monospace,Menlo,monospace;padding:24px;color:#b91c1c">` +
       `${code} ${err && err.message ? String(err.message).replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c])) : "Error"}` +
       `</pre>`,
