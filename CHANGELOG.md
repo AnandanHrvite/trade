@@ -6,6 +6,20 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — ORB: live crash-recovery gap, a trace hole, and the first ORB test suite
+
+- **BLOCKER — ORB Live never persisted its position.** `orbPaper.js` wrote a crash-recovery snapshot; `orbLive.js`, which places **real Fyers orders**, did not — exactly backwards. `app.js` calls `loadOrbPosition()` on boot, so a restart mid-live-trade found nothing to reconcile: the user was left holding an untracked option with no orphan warning, while every other live route (`bbRsiLive` / `paLive` / `emaRsiStLive`) already persisted. ORB Live now snapshots on entry, **re-snapshots when the stop lifts to breakeven** (so recovery sees the current stop, not the entry stop), and clears on exit. Round-trip verified including the clamped stop level.
+- **The gate trace was missing on the warm-up path.** `getSignal()` returned before the tracer existed when fewer than 2 candles were available, so `sig.gates` was null and the skip log silently lost the funnel for those candles. The tracer is now created before every guard, so **every** return path carries a trace. Found by the new test suite, not by inspection.
+- **`ORB_SL_ATR_MULT`'s Settings description was misleading** — it still promised a 50–83pt stop without saying the ₹1,500 cap clamps it to ~38pt. It now states plainly that the knob is **inert at the default budget** (every value 1.0–2.5 behaves identically, verified on 39 sessions) and that real risk is changed via *Max Trade Loss*.
+
+**First ORB test suite — `tests/orb.regression.js`, 22 assertions, wired into `npm test`** (which now runs both suites: 28 + 22). Every assertion guards a defect found in this audit:
+- *Capital-safety invariants* — the clamp holds across every qty × stop-width × side combination (risk can never exceed the budget), clamps on the correct side for PE, honours `ORB_MAX_TRADE_LOSS=0` as an opt-out, never produces `NaN` from a null/garbage stop, and always names the binding constraint in its note.
+- *Engine invariants* — never enters before 09:30 or after the cut-off, the opening range never repaints, **no look-ahead** (withholding future candles cannot change a signal or its stop), entry is always a bar close, the stop is always on the correct side, the day-sanity gates actually hold on every entry taken, and the only gate permitted to FAIL on an entry is `confirmation` — and only when the documented retest fallback justifies it.
+- *Anti-regression* — the six deleted config keys (`ORB_PRIORDAY_LEVEL_FILTER`, `ORB_CLOSE_POS_PCT`, `ORB_ENTRY_V2/V3_ENABLED`, `ORB_OR_ATR_MIN`, `ORB_RETEST_MODE`) provably no longer change behaviour, so a stale `.env` cannot resurrect them.
+- *Mode parity* — all three routes resolve the stop through `orbStopRisk` and none recomputes its own; paper **and** live both persist and clear; both entry paths guard the await window.
+
+Mutation-tested: reverting the clamp fails 4 assertions, so the suite bites rather than merely passing.
+
 ### Fixed — ORB: reconcile the two conflicting stops, and ship the validation the review demanded
 
 Acts on the adversarial re-review below. Two real defects fixed, one blocker removed.

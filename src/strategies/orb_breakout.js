@@ -305,8 +305,16 @@ function getSignal(candles, opts) {
   const alreadyTraded = !!(opts && opts.alreadyTraded);
   const sig = _blank();
 
+  // The tracer is created BEFORE the warm-up guard so that `sig.gates` is present
+  // on EVERY return path. Callers (skipLogger, the /logs trace) treat gates as the
+  // record of why a candle produced no trade; a path that returned without one
+  // silently dropped that record.
+  const tr = _tracer(candles && candles.length ? candles[candles.length - 1] : null, sig);
+  const done = (s) => { s.gates = tr.rows; tr.emit(s.signal !== "NONE" ? `ENTER ${s.signal}` : `NO TRADE — ${s.reason}`); return s; };
+
   if (!candles || candles.length < 2) {
-    return Object.assign(sig, { reason: `Warming up (${candles ? candles.length : 0} candles)` });
+    tr.check("history", false, `${candles ? candles.length : 0} candles — need at least 2`);
+    return done(Object.assign(sig, { reason: `Warming up (${candles ? candles.length : 0} candles)` }));
   }
 
   const cfg = {
@@ -325,8 +333,6 @@ function getSignal(candles, opts) {
   const lastIst = _istMins(last.time);
   const day     = _istDay(last.time);
 
-  const tr = _tracer(last, sig);
-  const done = (s) => { s.gates = tr.rows; tr.emit(s.signal !== "NONE" ? `ENTER ${s.signal}` : `NO TRADE — ${s.reason}`); return s; };
 
   // ── 1. Session window ─────────────────────────────────────────────────────
   if (!tr.check("time window", lastIst >= cfg.orEnd && lastIst < cfg.entryEnd,

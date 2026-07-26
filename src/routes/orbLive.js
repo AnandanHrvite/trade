@@ -49,6 +49,7 @@ const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = 
 const oiFilter    = require("../services/oiFilter");   // paper-canonical: live must apply the same OI gate
 const orbRiskState = require("../utils/orbRiskState");
 const orbStopRisk  = require("../utils/orbStopRisk");
+const { saveOrbPosition, clearOrbPosition } = require("../utils/positionPersist");
 const tradeLogger = require("../utils/tradeLogger");
 const skipLogger  = require("../utils/skipLogger");
 const fyers       = require("../config/fyers");
@@ -265,6 +266,12 @@ async function _placeLiveBuyImpl(side, sigSnapshot) {
     entryReason: sigSnapshot.reason, entryOrderId,
   };
   state.position = pos;
+  // Crash-recovery snapshot. ORB LIVE places real Fyers orders, so a restart while
+  // a position is open must leave something for app.js to reconcile against the
+  // broker book — otherwise the user is left holding an untracked option with no
+  // orphan warning. Paper already persisted; live did not, which was exactly
+  // backwards. Mirrors bbRsiLive / paLive / emaRsiStLive.
+  try { saveOrbPosition(pos, { sessionPnl: state.sessionPnl || 0 }); } catch (_) {}
   state.optionLtp = optionEntryLtp;
   state.optionLtpUpdatedAt = Date.now();
   state.tradesTaken++;
@@ -372,6 +379,7 @@ async function _placeLiveSellImpl(reason) {
   });
 
   state.position = null;
+  try { clearOrbPosition(); } catch (_) {}   // position is closed — drop the snapshot
   state.optionLtp = null;
   state.optionLtpUpdatedAt = null;
   stopOptionPolling();
@@ -410,6 +418,8 @@ async function _managePositionOnClose(bar) {
   if (!pos.breakevenArmed && bePts > 0 && favPts >= bePts) {
     if (pos.side === "CE" && pos.entrySpot > pos.slSpot) pos.slSpot = Math.round(pos.entrySpot * 100) / 100;
     if (pos.side === "PE" && pos.entrySpot < pos.slSpot) pos.slSpot = Math.round(pos.entrySpot * 100) / 100;
+    // re-snapshot so crash recovery sees the lifted stop, not the entry stop
+    try { saveOrbPosition(pos, { sessionPnl: state.sessionPnl || 0 }); } catch (_) {}
     pos.breakevenArmed = true;
     log(`🔒 Breakeven armed — SL → entry ${pos.slSpot} (favourable ${favPts.toFixed(1)}pt ≥ ${bePts}pt)`);
   }

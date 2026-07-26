@@ -1,12 +1,13 @@
 {
   "name": "palani-andawar-trading-app",
   "version": "3.0.0",
-  "description": "Palani Andawar Trading App — NIFTY algo trading | Fyers (data) + Zerodha (orders) | Backtest · Paper Trade · Live Trade",
+  "description": "Palani Andawar Trading App \u2014 NIFTY algo trading | Fyers (data) + Zerodha (orders) | Backtest \u00b7 Paper Trade \u00b7 Live Trade",
   "main": "src/app.js",
   "scripts": {
     "start": "node src/app.js",
     "dev": "nodemon src/app.js",
-    "test": "node tests/ema9vwap.regression.js"
+    "test": "node tests/ema9vwap.regression.js && node tests/orb.regression.js",
+    "test:orb": "node tests/orb.regression.js"
   },
   "dependencies": {
     "compression": "^1.8.1",
