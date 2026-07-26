@@ -1993,7 +1993,12 @@ function expiryHolidayModalCSS() {
        the whole calendar reads as pale blue on white. */
     :root[data-theme="light"] .eh-tab-btn { color:#64748b; }
     :root[data-theme="light"] .eh-tab-btn:hover { color:#334155; }
-    :root[data-theme="light"] .eh-tab-btn.eh-tab-active { color:#0891b2; border-color:#e0e4ea; border-bottom-color:#ffffff; background:#ffffff; }
+    /* The selected tab keeps its dark chip on both themes — that is how this
+       popup has always looked. It needs its own light rule purely to win on
+       specificity: the theme-scoped .eh-tab-btn rule above (0,3,0) otherwise
+       outranks the plain .eh-tab-btn.eh-tab-active rule (0,2,0) and greys the
+       cyan label out. */
+    :root[data-theme="light"] .eh-tab-btn.eh-tab-active { color:#22d3ee; }
     :root[data-theme="light"] .holiday-table td { color:#334155; }
     :root[data-theme="light"] .holiday-table .today-holiday { color:#059669; }
     :root[data-theme="light"] .expiry-legend { color:#64748b; }
