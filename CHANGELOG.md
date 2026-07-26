@@ -6,6 +6,17 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — ORB backtest: the rupee cap overshot the very budget it enforces
+
+Second recheck pass. This one ran the backtest end-to-end for the first time since the rebuild — a path never executed in the previous passes, only reasoned about.
+
+- **The per-trade rupee cap booked its exit at the candle's worst extreme.** Paper and live check the cap per tick and fill at that tick; the backtest compressed a 5-min bar and filled at `c.low`/`c.high`, so the realised loss ran well past the ₹1,500 it exists to enforce — **−₹2,052 observed, 37% over budget.** It now fills at the spot level the threshold actually implies (`premium drop ÷ delta`), while still honouring gap-through: if the bar *opened* past that level, the fill is the open. Net on the study sample ₹3,545 → ₹3,868, and the worst trade tightens from −₹2,052 to −₹1,781 — the residual is exactly the cost overlay (₹195 slippage + ~₹86 charges), which paper and live incur too.
+- **The backtest now has end-to-end coverage.** Three new assertions: it runs and every trade record is free of `undefined`/`NaN`; no trade loses materially more than budget-plus-costs; and the cap fills at its threshold rather than the bar extreme. Mutation-tested — restoring the old bar-extreme fill fails 2 of them.
+
+Suite now 27 ORB assertions (`npm test`: 28 + 27).
+
+**Verified clean, no change needed**: backtest and `scripts/orbValidate.js` agree on the same 9 trades over the same sessions (₹3,868 vs ₹3,112, the gap being the δ/θ premium sim versus the linear cost model), so the two independent paths corroborate each other.
+
 ### Fixed — ORB: the skip log now really carries the gate funnel (the docs claimed it already did)
 
 Recheck pass over the previous three commits. One documentation claim was false, one label was stale; everything else verified clean.

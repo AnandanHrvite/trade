@@ -307,6 +307,47 @@ const ENTRIES  = ALL_SIGS.filter(x => x.sig.signal !== "NONE");
     }
   });
 
+  // ── Backtest end-to-end ──────────────────────────────────────────────────
+  console.log("\nBacktest end-to-end");
+
+  const BT = require("../src/routes/orbBacktest").runOrbBacktest;
+  const BT_TRADES = BT(CANDLES, null);
+
+  check("the backtest actually runs and produces well-formed records", () => {
+    assert.ok(Array.isArray(BT_TRADES), "runOrbBacktest did not return an array");
+    for (const t of BT_TRADES) {
+      for (const [k, v] of Object.entries(t)) {
+        assert.ok(v !== undefined, `field ${k} is undefined`);
+        assert.ok(!(typeof v === "number" && !isFinite(v)), `field ${k} is not finite`);
+      }
+    }
+  });
+
+  check("no backtest trade loses materially more than the per-trade budget", () => {
+    // The cap is enforced on GROSS premium movement; the booked pnl additionally
+    // carries the slippage haircut and charges, so allow exactly that overlay.
+    const cap   = parseFloat(process.env.ORB_MAX_TRADE_LOSS || "1500");
+    const qty   = parseInt(process.env.NIFTY_LOT_SIZE || "65", 10) * parseInt(process.env.LOT_MULTIPLIER || "1", 10);
+    const slip  = parseFloat(process.env.ORB_BT_SLIPPAGE_PTS || "1.5") * 2 * qty;
+    const allow = cap + slip + 150;   // 150 INR headroom for brokerage + taxes
+    for (const t of BT_TRADES) {
+      assert.ok(t.pnl >= -allow,
+        `${t.entry} ${t.side} lost ${Math.round(t.pnl)} INR, beyond the ${Math.round(allow)} INR budget+costs allowance`);
+    }
+  });
+
+  check("the rupee cap fills at the level it trips, not at the bar extreme", () => {
+    // Regression: the cap used to book at the candle's worst price, overshooting the
+    // budget by ~37% (a -2052 INR fill on a 1500 INR cap). It must fill at the spot
+    // level the threshold implies.
+    const src = fs.readFileSync(path.join(__dirname, "../src/routes/orbBacktest.js"), "utf-8");
+    const m = src.match(/_hitLoss \|\| _hitPrem[\s\S]{0,900}?closePos\(position,\s*([^,]+),/);
+    assert.ok(m, "could not locate the cap exit");
+    assert.ok(!/c\.(low|high)\s*,\s*c\.time/.test(m[0]),
+      "cap exit still books at the bar extreme — it will overshoot the risk budget");
+    assert.ok(/_fill/.test(m[1]), `cap exit fills with ${m[1].trim()}, expected the computed threshold level`);
+  });
+
   // ── Mode parity ──────────────────────────────────────────────────────────
   console.log("\nMode parity");
 

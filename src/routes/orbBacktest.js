@@ -167,14 +167,31 @@ function runOrbBacktest(allCandles, expirySet) {
             else if (position.emaArmed) { closePos(position, c.close, c.time, `Closed above EMA${TRAIL_EMA}`); trades.push(buildTradeRecord(position)); position = null; continue; }
           }
         }
-        // 4. per-trade loss cap + premium disaster stop (worst-case sim premium within candle)
+        // 4. per-trade loss cap + premium disaster stop.
+        //    Both are evaluated against the candle's adverse extreme to decide IF
+        //    they trip, but the FILL is taken at the spot level where the threshold
+        //    is actually reached — not at the bar extreme. Paper/live check these
+        //    per tick and fill at that tick, so booking the bar's worst price here
+        //    systematically overshot the very budget the cap exists to enforce
+        //    (observed: a −₹2,052 fill on a ₹1,500 cap, 37% over). Gap-through is
+        //    still honest: if the bar OPENED past the level, fill at the open.
         if (MAX_TRADE_LOSS > 0 || PREM_STOP_PCT > 0) {
-          const _spotMove = position.side === "CE" ? (c.low - position.entrySpot) : (position.entrySpot - c.high);
+          const _adverse  = position.side === "CE" ? c.low : c.high;
+          const _spotMove = position.side === "CE" ? (_adverse - position.entrySpot) : (position.entrySpot - _adverse);
           const _curPrem  = Math.max(0.05, position.optionEntryLtp + _spotMove * DELTA);
           const _hitLoss  = MAX_TRADE_LOSS > 0 && (_curPrem - position.optionEntryLtp) * LOT_SIZE <= -MAX_TRADE_LOSS;
           const _hitPrem  = PREM_STOP_PCT > 0 && _curPrem <= position.optionEntryLtp * (1 - PREM_STOP_PCT / 100);
           if (_hitLoss || _hitPrem) {
-            closePos(position, position.side === "CE" ? c.low : c.high, c.time, (_hitPrem && !_hitLoss) ? `Premium disaster stop (−${PREM_STOP_PCT}%)` : `Max trade loss (₹${MAX_TRADE_LOSS})`);
+            // premium drop that trips the binding threshold → the spot level it implies
+            const _dropPrem = _hitLoss
+              ? MAX_TRADE_LOSS / LOT_SIZE
+              : position.optionEntryLtp * (PREM_STOP_PCT / 100);
+            const _dropSpot = DELTA > 0 ? _dropPrem / DELTA : Math.abs(_spotMove);
+            let _fill = position.side === "CE" ? position.entrySpot - _dropSpot : position.entrySpot + _dropSpot;
+            // never better than the bar could actually offer
+            if (position.side === "CE") _fill = Math.min(_fill, c.open <= _fill ? c.open : _fill);
+            else                        _fill = Math.max(_fill, c.open >= _fill ? c.open : _fill);
+            closePos(position, _fill, c.time, (_hitPrem && !_hitLoss) ? `Premium disaster stop (−${PREM_STOP_PCT}%)` : `Max trade loss (₹${MAX_TRADE_LOSS})`);
             trades.push(buildTradeRecord(position)); position = null; continue;
           }
         }
