@@ -589,13 +589,17 @@ function startOptionPolling(symbol) {
   // Mark polling as active (non-null timer signals "running" to stopOptionPolling)
   _optionPollTimer = true; // placeholder until first setTimeout fires
 
-  // ── 10s timeout: if option LTP still null, use spot as proxy entry LTP ──
+  // ── 10s watchdog: warn (only) when the entry premium never arrived ──────────
+  // NEVER substitute spot here. optionEntryLtp is an OPTION PREMIUM; writing the
+  // NIFTY index level (~24,000) into it corrupts every downstream number — the
+  // exit would book (exitPremium − 24000) × qty as a multi-lakh phantom loss and
+  // latch the daily-loss kill switch. Leaving it null is the safe path: simulateSell
+  // already falls back to the documented "spot proxy (option LTP unavailable)" P&L
+  // mode, which is bounded, correctly signed and self-labelling in the trade record.
+  const _watchSymbol = symbol;
   setTimeout(() => {
-    if (ptState.position && !ptState.position.optionEntryLtp && ptState.lastTickPrice) {
-      const proxy = ptState.lastTickPrice;
-      ptState.position.optionEntryLtp = proxy;
-      ptState.position.optionEntryLtpTime = istNow();
-      log(`⚠️ [PAPER] Option LTP timeout — using spot ₹${proxy} as proxy entry LTP`);
+    if (ptState.position && ptState.optionSymbol === _watchSymbol && !ptState.position.optionEntryLtp) {
+      log(`⚠️ [PAPER] Option LTP unavailable 10s after entry (${_watchSymbol}) — entry premium NOT recorded. P&L for this trade will use the spot-proxy fallback.`);
     }
   }, 10000);
 }

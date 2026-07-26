@@ -23,7 +23,11 @@
  *
  * Toggles (all OFF by default):
  *   Master  : OI_FILTER_ENABLED          — kill-switch for every strategy
- *   Per-mode: EMA_RSI_ST_OI_ENABLED, BB_RSI_OI_ENABLED, PA_OI_ENABLED, ORB_OI_ENABLED
+ *   Per-mode: EMA_RSI_ST_OI_ENABLED, BB_RSI_OI_ENABLED, PA_OI_ENABLED, ORB_OI_ENABLED,
+ *             TREND_PB_OI_ENABLED, EMA9VWAP_OI_ENABLED
+ *   NOTE: every mode string a call site passes MUST have a branch in getOiEnabled().
+ *   An unknown mode silently falls through to the EMA_RSI_ST toggle — which is how
+ *   "ema9vwap" was dead from the day it was wired up.
  *   Tuning  : OI_LOOKBACK_CANDLES (3), OI_MIN_DELTA_PCT (1.0)
  *             OI_FAIL_MODE (open) — symmetry with VIX; default & documented = open
  *
@@ -45,6 +49,7 @@ function getOiEnabled(mode = "ema_rsi_st") {
   if (mode === "pa")    return process.env.PA_OI_ENABLED    === "true";
   if (mode === "orb")   return process.env.ORB_OI_ENABLED   === "true";
   if (mode === "trend_pb") return process.env.TREND_PB_OI_ENABLED === "true";
+  if (mode === "ema9vwap") return process.env.EMA9VWAP_OI_ENABLED === "true";
   return process.env.EMA_RSI_ST_OI_ENABLED === "true"; // EMA_RSI_ST
 }
 
@@ -64,7 +69,8 @@ function getOiMinDelta(mode = "ema_rsi_st") {
 
 function anyOiEnabled() {
   return getOiEnabled("ema_rsi_st") || getOiEnabled("bb_rsi") ||
-         getOiEnabled("pa")    || getOiEnabled("orb") || getOiEnabled("trend_pb");
+         getOiEnabled("pa")    || getOiEnabled("orb") || getOiEnabled("trend_pb") ||
+         getOiEnabled("ema9vwap");
 }
 
 // ── Shared OI series (ring buffer of {ts, oi, spot}, one sample per ~candle) ───

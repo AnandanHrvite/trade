@@ -42,6 +42,12 @@ function _utcSecToIstMins(unixSec) {
   return Math.floor((unixSec + 19800) / 60) % 1440;
 }
 
+// IST calendar-day index from a unix-SECONDS candle time. India has no DST, so a
+// fixed +5:30 shift is exact. Same convention computeVwapBands uses internally.
+function _istDay(unixSec) {
+  return Math.floor((unixSec + 19800) / 86400);
+}
+
 function _emaPeriod() { return Math.max(2, parseInt(process.env.EMA9VWAP_EMA_PERIOD || "9", 10) || 9); }
 function _bandMult()  { const m = parseFloat(process.env.EMA9VWAP_BAND_MULT); return isNaN(m) ? 1.0 : m; }
 // Strength grading: how far EMA9 broke PAST the band edge, measured in σ units
@@ -75,7 +81,9 @@ function computeVwapBands(candles, anchorMins, mult) {
   if (mult == null) mult = _bandMult();
   let sumPV = 0, sumV = 0, sumPV2 = 0;       // volume-weighted accumulators
   let sumP = 0, sumP2 = 0, count = 0;        // equal-weight fallback accumulators
-  let anyVol = false;
+  // Count of in-session candles that actually carry volume. The volume-weighted
+  // branch below requires ALL of them to carry it — see the guard note there.
+  let volCount = 0;
   // Session-anchored: VWAP resets every trading day. The candle array may span many
   // days (warmup history), so restrict to the SAME IST date as the latest candle.
   const _lastDay = Math.floor((candles[candles.length - 1].time + 19800) / 86400);
@@ -85,11 +93,18 @@ function computeVwapBands(candles, anchorMins, mult) {
     const tp = (c.high + c.low + c.close) / 3;   // HLC3 typical price (TV VWAP source)
     sumP += tp; sumP2 += tp * tp; count++;
     const v = (typeof c.volume === "number" && c.volume > 0) ? c.volume : 0;
-    if (v > 0) { sumPV += tp * v; sumV += v; sumPV2 += tp * tp * v; anyVol = true; }
+    if (v > 0) { sumPV += tp * v; sumV += v; sumPV2 += tp * tp * v; volCount++; }
   }
   if (count === 0) return null;
   let vwap, variance;
-  if (anyVol && sumV > 0) {
+  // Volume weighting is an ALL-OR-NOTHING decision for the session, not per candle.
+  // Previously any single volume-bearing candle flipped this branch on, and the
+  // volume-weighted sums then silently ignored every zero-volume candle. On a mixed
+  // session (warmup candles carry volume, live tick-built candles do not) that froze
+  // VWAP and the bands at the volume-bearing subset for the whole day. Requiring
+  // volCount === count keeps the documented behaviour — volume-weighted when the
+  // series really has volume, equal-weight TWAP otherwise — and never drops candles.
+  if (volCount === count && sumV > 0) {
     vwap = sumPV / sumV;
     variance = (sumPV2 / sumV) - vwap * vwap;
   } else {
@@ -145,9 +160,23 @@ function getSignal(candles, opts) {
   const ema9Prev = emaArr[emaArr.length - 2];   // aligns with previous candle
 
   const bandsNow  = computeVwapBands(candles, anchor, mult);                 // band at last candle
-  const bandsPrev = computeVwapBands(candles.slice(0, -1), anchor, mult);    // band at previous candle
+
+  // Session-boundary guard. computeVwapBands anchors on the IST day of the LAST
+  // candle it is given, so on the first candle of a new day `candles.slice(0,-1)`
+  // ends on YESTERDAY and returns yesterday's completed band — comparing today's
+  // EMA9 against it is meaningless. The previous band must come from the same
+  // session; when there is no same-day predecessor we are still warming up.
+  const _lastC = candles[candles.length - 1];
+  const _prevC = candles[candles.length - 2];
+  const _sameSession = !!_prevC && _istDay(_prevC.time) === _istDay(_lastC.time);
+  const bandsPrev = _sameSession ? computeVwapBands(candles.slice(0, -1), anchor, mult) : null;
   if (!bandsNow || !bandsPrev || ema9Now == null || ema9Prev == null) {
-    return { ...base, reason: "vwap warming up" };
+    return {
+      ...base,
+      reason: _sameSession
+        ? "vwap warming up"
+        : "vwap warming up — first candle of session (no same-day previous band)",
+    };
   }
 
   const upNow = bandsNow.upper, loNow = bandsNow.lower;
