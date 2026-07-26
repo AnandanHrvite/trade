@@ -408,6 +408,83 @@ const ENTRIES  = ALL_SIGS.filter(x => x.sig.signal !== "NONE");
       "orbValidate arms breakeven from something other than the close — paper uses the close");
   });
 
+  // ── Paper ↔ Live parity ──────────────────────────────────────────────────
+  // Paper is canonical. Live is a hand-written mirror, so every one of these
+  // pinned an actual defect found on 2026-07-26.
+  const PAPER_SRC = fs.readFileSync(path.join(__dirname, "../src/routes/orbPaper.js"), "utf-8");
+  const LIVE_SRC  = fs.readFileSync(path.join(__dirname, "../src/routes/orbLive.js"),  "utf-8");
+  const onCandleCloseOf = (src) => {
+    const i = src.indexOf("async function onCandleClose");
+    assert.ok(i >= 0, "onCandleClose not found");
+    return src.slice(i, src.indexOf("\n}", i));
+  };
+  // Order of the entry gates, as they appear in the source. Same list, same order.
+  const gateSeq = (body) => {
+    const seen = [];
+    const re = /maxTrades\b|maxLoss\b|checkPortfolioCap|getThrottle|_expiryDayBlocked|getSignal|ORB_VIX_ENABLED|getOiEnabled/g;
+    let m;
+    while ((m = re.exec(body))) if (seen[seen.length - 1] !== m[0]) { if (!seen.includes(m[0])) seen.push(m[0]); }
+    return seen;
+  };
+
+  check("paper and live run the SAME entry gates in the SAME order", () => {
+    const p = gateSeq(onCandleCloseOf(PAPER_SRC));
+    const l = gateSeq(onCandleCloseOf(LIVE_SRC));
+    assert.deepStrictEqual(l, p, `live gate order ${JSON.stringify(l)} != paper ${JSON.stringify(p)}`);
+    // spot-check the two that were actually wrong: the portfolio cap was missing
+    // from live entirely, and max-trades/daily-loss were swapped.
+    assert.ok(p.includes("checkPortfolioCap"), "paper lost the portfolio cap");
+    assert.ok(p.indexOf("maxTrades") < p.indexOf("maxLoss"), "paper's documented order is max-trades before daily-loss");
+  });
+
+  check("paper and live record the same set of skip-log gates", () => {
+    const gates = (src) => [...new Set((src.match(/gate: "[a-z_]+"/g) || []))].sort();
+    assert.deepStrictEqual(gates(LIVE_SRC), gates(PAPER_SRC),
+      "a rejection reason is recorded by one mode and not the other — the day files disagree on why no trade was taken");
+  });
+
+  // Paper's simulateSell is synchronous, so its stopSession bookkeeping always sees
+  // the final trade. Live's exit is a broker round-trip; firing it un-awaited let
+  // saveData()/recordDay()/notifyDayReport() run on a session missing its last trade
+  // (and skip the save entirely when it was the day's only trade).
+  check("live stopSession awaits the broker exit BEFORE it saves the session", () => {
+    const i = LIVE_SRC.indexOf("async function stopSession");
+    assert.ok(i >= 0, "live stopSession is not async — it cannot await the exit");
+    const body = LIVE_SRC.slice(i, LIVE_SRC.indexOf("\n}", i));
+    const sell = body.indexOf("await placeLiveSell");
+    const save = body.indexOf("saveData(");
+    const rec  = body.indexOf("orbRiskState.recordDay");
+    assert.ok(sell >= 0, "live stopSession does not await the exit");
+    assert.ok(save >= 0 && sell < save, "live saves the session before the exit completes");
+    assert.ok(rec  >= 0 && sell < rec,  "live records the risk-breaker day before the exit completes");
+  });
+
+  check("every caller of live stopSession observes its promise", () => {
+    // Strip comment lines first — prose that merely mentions stopSession() is not a call.
+    const decomment = (s) => s.split("\n").filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
+    for (const [file, raw] of [["orbLive.js", LIVE_SRC], ["app.js", fs.readFileSync(path.join(__dirname, "../src/app.js"), "utf-8")]]) {
+      const src = decomment(raw);
+      const re = /stopSession\(\)/g;
+      let m;
+      while ((m = re.exec(src))) {
+        const ctx = src.slice(Math.max(0, m.index - 30), m.index + 40);
+        if (/function stopSession/.test(ctx)) continue;          // the declaration itself
+        assert.ok(/await\s+(?:route\.)?stopSession\(\)|stopSession\(\)\s*\.(catch|then)/.test(ctx),
+          `${file}: stopSession() called without await/.catch — "${ctx.replace(/\s+/g, " ").trim()}" — a rejected broker exit would vanish`);
+      }
+    }
+  });
+
+  check("paper and live both re-persist the position when breakeven lifts the stop", () => {
+    for (const [name, src] of [["paper", PAPER_SRC], ["live", LIVE_SRC]]) {
+      const i = src.indexOf("breakevenArmed && bePts > 0");
+      assert.ok(i >= 0, `${name}: breakeven arm block not found`);
+      const block = src.slice(i, i + 900);
+      assert.ok(/saveOrbPosition/.test(block),
+        `${name} does not re-snapshot on breakeven — a crash would recover the pre-breakeven stop`);
+    }
+  });
+
   // The backtest cannot see an option chain, so premium / spread / OI gates simply do
   // not run there. That is fine — silently NOT SAYING SO is not. The OI gate ships
   // enabled, so the backtest reports more trades than paper will ever take.

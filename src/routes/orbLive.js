@@ -137,6 +137,7 @@ function startOptionPolling() {
           if (typeof ltp === "number" && ltp > 0) {
             state.optionLtp = ltp;
             state.optionLtpUpdatedAt = Date.now();
+            try { tickRecorder.recordOptionLtp(state.position.symbol, ltp, "orb-live"); } catch (_) {}
           }
         }
       } catch (_) {}
@@ -185,9 +186,15 @@ async function _placeLiveBuyImpl(side, sigSnapshot) {
         optionEntryLtp = ltp;
         optBid = Number(v.bid || v.bid_price || 0) || null;
         optAsk = Number(v.ask || v.ask_price || 0) || null;
+        try { tickRecorder.recordOptionLtp(optInfo.symbol, ltp, "orb-live"); } catch (_) {}
       }
     }
-  } catch (_) {}
+  } catch (e) {
+    // Paper logs and blocks here; live used to swallow the error, so a broker
+    // outage produced a bare "LTP unavailable" with no cause in the log.
+    log(`⚠️ Option LTP fetch failed: ${e.message} — entry blocked`);
+    return;
+  }
   if (!optionEntryLtp) { log(`❌ Option LTP unavailable — entry blocked`); return; }
 
   // ── STEP 8 — Option filter: slightly-ITM (resolved above), premium band, spread ──
@@ -286,6 +293,18 @@ async function _placeLiveBuyImpl(side, sigSnapshot) {
     qty, stopLoss: pos.slSpot,
     entryTime: pos.entryTime, entryReason: pos.entryReason,
   });
+
+  try {
+    tickRecorder.recordEntry({
+      mode: "orb-live",
+      sessionId: state._sessionId,
+      ts: Date.now(),
+      side, symbol: optInfo.symbol, qty,
+      spotEntry: spot, optionEntry: optionEntryLtp,
+      stopLoss: pos.slSpot, targetSpot: pos.targetSpot,
+      reason: pos.entryReason,
+    });
+  } catch (_) {}
 }
 
 // ── Live SELL / SQUARE-OFF ─────────────────────────────────────────────────
@@ -377,6 +396,14 @@ async function _placeLiveSellImpl(reason) {
     maxDrawdown: trade.maePnl,
     heldMs: trade.durationMs,
   });
+
+  try {
+    tickRecorder.recordExit({
+      mode: "orb-live", sessionId: state._sessionId, ts: Date.now(),
+      side: pos.side, symbol: pos.symbol, qty,
+      spotExit: exitSpot, optionExit: exitOptLtp, pnl, reason,
+    });
+  } catch (_) {}
 
   state.position = null;
   try { clearOrbPosition(); } catch (_) {}   // position is closed — drop the snapshot
@@ -477,10 +504,29 @@ async function onCandleClose(bar) {
 
   if (state.position) { await _managePositionOnClose(bar); return; }
   const _spot = bar && bar.close;
+
+  // Gate ORDER mirrors orbPaper exactly. Max-trades is checked BEFORE the daily-loss
+  // kill: once the day's trade budget is spent we bail SILENTLY (the day is over). A
+  // single ORB stop (~₹1.5k) already exceeds ORB_MAX_DAILY_LOSS, so leaving the loss
+  // gate first made it re-fire on every remaining candle and spam the skip log
+  // (200+ "daily_loss" rows/day) without ever changing an outcome.
+  const maxTrades = parseInt(process.env.ORB_MAX_DAILY_TRADES || "1", 10);
+  if (state.tradesTaken >= maxTrades) return; // expected, not a skip
+
+  // Daily-loss kill — only bites while trade budget remains (maxTrades > 1).
   const maxLoss = parseFloat(process.env.ORB_MAX_DAILY_LOSS || "3000");
   if (state.sessionPnl <= -maxLoss) { skipLogger.appendSkipLog("orb", { gate: "daily_loss", reason: `sessionPnl ${state.sessionPnl} <= -${maxLoss}`, spot: _spot, _live: true }); return; }
-  const maxTrades = parseInt(process.env.ORB_MAX_DAILY_TRADES || "1", 10);
-  if (state.tradesTaken >= maxTrades) return;
+
+  // Portfolio-wide daily loss cap (across ALL strategies; default disabled).
+  // Paper has always applied this; live did not, so an armed cap stopped paper
+  // entering while live kept trading real money. Block-only, never places an order.
+  {
+    const _pf = require("../utils/portfolioRisk").checkPortfolioCap();
+    if (_pf.blocked) {
+      skipLogger.appendSkipLog("orb", { gate: "portfolio_loss", reason: _pf.reason, spot: _spot, _live: true });
+      return;
+    }
+  }
 
   // Portfolio risk breaker — consecutive-losing-days / weekly-loss stop (live stream).
   const _throttle = orbRiskState.getThrottle("orb-live", tradeLogger.istDateString(Date.now()), state.sessionPnl);
@@ -490,7 +536,12 @@ async function onCandleClose(bar) {
     return;
   }
 
-  if (state._expiryDayBlocked) return;
+  // Expiry-day-only filter (skip-logged, as in paper — a silent return made the
+  // live day file show no reason at all for a session that took no trades).
+  if (state._expiryDayBlocked) {
+    skipLogger.appendSkipLog("orb", { gate: "expiry_day_only", reason: "Not an expiry day", spot: _spot, _live: true });
+    return;
+  }
 
   const sig = orbStrategy.getSignal(state.candles, { alreadyTraded: state.tradesTaken >= maxTrades });
   if (sig.signal === "NONE" || !sig.side) {
@@ -583,7 +634,12 @@ function scheduleAutoStop() {
   const stopMin = h * 60 + (isNaN(m) ? 0 : m);
   const minsLeft = stopMin - getISTMinutes();
   if (minsLeft <= 0) return;
-  _autoStopTimer = setTimeout(() => { log(`⏰ Auto-stop @ ${raw} IST`); stopSession(); }, minsLeft * 60 * 1000);
+  // stopSession is async (it awaits the broker exit) — never leave that promise
+  // unobserved, or a rejected exit dies silently at 15:30 with a real position open.
+  _autoStopTimer = setTimeout(() => {
+    log(`⏰ Auto-stop @ ${raw} IST`);
+    stopSession().catch(e => log(`⚠️ Auto-stop failed: ${e.message}`));
+  }, minsLeft * 60 * 1000);
 }
 
 // ── Routes ──────────────────────────────────────────────────────────────────
@@ -603,11 +659,24 @@ router.get("/start", async (req, res) => {
   const holiday = await isTradingAllowed();
   if (!holiday.allowed) return res.status(400).send(_errorPage("Trading Not Allowed", holiday.reason, "/orb-live/status", "← Back"));
 
+  // Past ORB_FORCED_EXIT = entries are useless. Paper refuses to start here; live
+  // used to open a session anyway, so the two had different session lifecycles.
+  const nowMin = getISTMinutes();
+  const stopMin = (function() {
+    const raw = process.env.ORB_FORCED_EXIT || "15:15";
+    const [h, m] = raw.split(":").map(Number);
+    return h * 60 + (isNaN(m) ? 0 : m);
+  })();
+  if (nowMin >= stopMin) {
+    return res.status(400).send(_errorPage("Session Closed", `Past ${process.env.ORB_FORCED_EXIT || "15:15"} IST — ORB does not enter after this`, "/orb-live/status", "← Back"));
+  }
+
   let _expiryBlocked = false;
   if ((process.env.ORB_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
     const { isExpiryDay } = require("../utils/nseHolidays");
     const isExpiry = await isExpiryDay();
     _expiryBlocked = !isExpiry;
+    log(`📅 Expiry-only mode: ${isExpiry ? "✅ Today is expiry — allowed" : "❌ Not expiry day — entries blocked"}`);
   }
 
   state = _freshState();
@@ -624,6 +693,27 @@ router.get("/start", async (req, res) => {
     resetVixCache();
     fetchLiveVix({ force: true }).catch(() => {});
   }
+  // Session capture — identical shape to orbPaper's, so a live session leaves the
+  // same audit/replay record a paper session does. Pure observer, try//catch-wrapped.
+  try {
+    tickRecorder.recordSessionStart({
+      mode: "orb-live",
+      sessionId: state._sessionId,
+      settings: tickRecorder.snapshotSettings ? tickRecorder.snapshotSettings() : {},
+      warmup: state.candles.map(c => ({ ...c })),
+      vix: getCachedVix(),
+      meta: {
+        instrument: instrumentConfig.INSTRUMENT,
+        resolutionMin: RES_MIN,
+        expiryDayBlocked: _expiryBlocked,
+        spotSymbol: NIFTY_INDEX_SYMBOL,
+        sessionStartISO: state.sessionStart,
+        recordsOptionLtps: true,
+        dryRun: isDryRun(),
+      },
+    });
+  } catch (_) {}
+
   if (socketManager.isRunning()) socketManager.addCallback(CALLBACK_ID, onTick, log);
   else { socketManager.start(NIFTY_INDEX_SYMBOL, () => {}, log); socketManager.addCallback(CALLBACK_ID, onTick, log); }
   scheduleAutoStop();
@@ -636,11 +726,32 @@ router.get("/start", async (req, res) => {
   res.redirect("/orb-live/status");
 });
 
-function stopSession() {
+// PARITY (paper is canonical): paper's stopSession calls simulateSell(), which is
+// fully synchronous — the trade is in state.sessionTrades and state.sessionPnl is
+// final before ANY of the bookkeeping below runs. Live's exit performs a broker
+// round-trip, and this function used to fire it un-awaited: execution ran straight
+// on to saveData() / orbRiskState.recordDay() / notifyDayReport() while the sell was
+// still in flight, so the session was persisted WITHOUT its final trade (and when
+// that was the day's only trade, `if (state.sessionTrades.length)` was false and the
+// whole session was never saved at all). Awaiting restores paper's ordering.
+//
+// state.running is cleared FIRST so no tick or candle close is processed during the
+// broker round-trip — paper's exit is instantaneous, so nothing else runs during it
+// there either. _placeLiveSellImpl does not read state.running, and the duplicate
+// guard (_squareOffInFlight) still protects the exit itself.
+async function stopSession() {
   if (!state.running) return;
-  if (state.position) placeLiveSell("Session stopped");
   state.running = false;
+  if (state.position) {
+    try { await placeLiveSell("Session stopped"); }
+    catch (e) { log(`⚠️ Exit during session stop failed: ${e.message} — check the Fyers dashboard`); }
+  }
   stopOptionPolling();
+
+  try {
+    tickRecorder.recordSessionStop({ mode: "orb-live", sessionId: state._sessionId || null, reason: "user_stop" });
+  } catch (_) {}
+
   socketManager.removeCallback(CALLBACK_ID);
   if (typeof sharedSocketState.clearOrb === "function") sharedSocketState.clearOrb();   // clear OWN mode first (else socket never stops → leak)
   if (!sharedSocketState.isAnyActive() && socketManager.isRunning()) socketManager.stop();
@@ -660,8 +771,17 @@ function stopSession() {
   notifyDayReport({ mode: `ORB-LIVE ${isDryRun() ? "(DRY-RUN)" : ""}`, sessionTrades: state.sessionTrades, sessionPnl: state.sessionPnl, sessionStart: state.sessionStart });
 }
 
-router.get("/stop", (req, res) => { stopSession(); res.redirect("/orb-live/status"); });
-router.get("/exit", (req, res) => { if (state.position) placeLiveSell("Manual exit"); res.redirect("/orb-live/status"); });
+router.get("/stop", async (req, res) => { await stopSession(); res.redirect("/orb-live/status"); });
+// await, as paper's synchronous simulateSell effectively does: without it the
+// redirect rendered the status page while the exit was still at the broker, so the
+// user saw the position still open and had to refresh.
+router.get("/exit", async (req, res) => {
+  if (state.position) {
+    try { await placeLiveSell("Manual exit"); }
+    catch (e) { log(`⚠️ Manual exit failed: ${e.message} — check the Fyers dashboard`); }
+  }
+  res.redirect("/orb-live/status");
+});
 
 router.post("/manualEntry", async (req, res) => {
   if (!state.running) return res.status(400).json({ success: false, error: "ORB live is not running." });

@@ -520,6 +520,11 @@ function _managePositionOnClose(bar) {
   if (!pos.breakevenArmed && bePts > 0 && favPts >= bePts) {
     if (pos.side === "CE" && pos.entrySpot > pos.slSpot) pos.slSpot = Math.round(pos.entrySpot * 100) / 100;
     if (pos.side === "PE" && pos.entrySpot < pos.slSpot) pos.slSpot = Math.round(pos.entrySpot * 100) / 100;
+    // Re-snapshot so crash recovery sees the LIFTED stop, not the entry stop.
+    // Persistence only — no decision, fill or exit changes here; it just stops a
+    // restart from resurrecting a stop the engine had already tightened. Live
+    // already did this, so without it the two modes recovered different stops.
+    try { require("../utils/positionPersist").saveOrbPosition(pos, { sessionPnl: state.sessionPnl }); } catch (_) {}
     pos.breakevenArmed = true;
     log(`🔒 [ORB-PAPER] Breakeven armed — SL → entry ${pos.slSpot} (favourable ${favPts.toFixed(1)}pt ≥ ${bePts}pt)`);
   }

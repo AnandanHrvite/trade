@@ -2898,7 +2898,11 @@ async function gracefulShutdown(signal) {
       if (route && typeof route.stopSession === "function") {
         try {
           console.log(`🔄 [SHUTDOWN] Stopping ${mode}...`);
-          route.stopSession();
+          // await: a live route's stopSession squares off through the broker and is
+          // async. Firing it un-awaited let the shutdown march on (and process.exit
+          // fire) while the exit order was still in flight. Sync stopSessions are
+          // unaffected — awaiting a non-promise resolves immediately.
+          await route.stopSession();
         } catch (err) {
           console.error(`⚠️ [SHUTDOWN] Error stopping ${mode}: ${err.message}`);
         }

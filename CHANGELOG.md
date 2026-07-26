@@ -6,6 +6,28 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — ORB paper ↔ live parity: eight verified implementation differences closed
+
+Paper is canonical. `/orb-live-harness` runs `orbPaper.js` directly so it was never implicated; every defect below was in the standalone `/orb-live` route, a hand-written mirror that had drifted. **No strategy logic changed** — entry rules, exit rules, stop philosophy, sizing, strike/expiry selection and trading windows are untouched, and the backtest still produces the identical 9 trades / ₹3,878.
+
+**Root cause 1 — live's exit performs I/O and paper's does not.** `simulateSell` is fully synchronous, so paper's `stopSession` always saw the final trade before its bookkeeping ran. `stopSession` in live fired `placeLiveSell` **un-awaited** and marched on to `saveData()` / `orbRiskState.recordDay()` / `notifyDayReport()` while the sell was still at the broker.
+
+- Stopping a live session holding a real position persisted a session **missing its final trade**, and when that was the day's only trade `if (state.sessionTrades.length)` was false so **the entire session was never saved** — `data.totalPnl` and displayed capital silently lost it. Exit at ₹300 from a ₹240 entry, qty 65 → **+₹3,814 vanished from live capital**. The weekly-loss and losing-streak breakers were fed the same understated number.
+- `stopSession` is now `async` and awaits the exit before any bookkeeping; `state.running` is cleared first so no tick or candle close is processed during the round-trip. Its three callers — `/orb-live/stop`, the 15:30 auto-stop, and `gracefulShutdown` in [app.js](src/app.js) — now await or `.catch()` it, so a rejected exit can no longer vanish. `/orb-live/exit` awaits too, so the redirect no longer renders a position that has already been closed.
+
+**Root cause 2 — gates added to paper were never mirrored into live.**
+
+- **The portfolio-wide daily loss cap ran in paper only.** With `PORTFOLIO_MAX_DAILY_LOSS=12000` and the book at −₹12,400, paper stopped entering while live kept trading real money. Now applied in live at the same position in the sequence. (Currently unset, so it was inert.)
+- **Entry-gate order was swapped**: paper checks max-trades before daily-loss (deliberately — its comment records that the reverse spammed 200+ `daily_loss` skip rows a day without changing any outcome); live had it the other way.
+- **Live had no "past `ORB_FORCED_EXIT`" start guard**, so it would open a session paper refuses.
+- **The expiry-day block returned silently** in live; paper skip-logs `expiry_day_only`. All nine skip-log gates now match exactly.
+- **The option-quote fetch error was swallowed** (`catch (_) {}`) where paper logs the cause.
+- **`tickRecorder` had zero call sites in live and six in paper**, so live sessions left no audit/replay record. All six mirrored (session start/stop, entry, exit, and both option-LTP paths).
+
+**Root cause 3 — persistence fidelity.** Live re-snapshotted the position when breakeven lifted the stop; paper did not, so a crash after breakeven recovered the pre-breakeven stop (CE entered 24,000, stop lifted 23,961 → 24,000; paper recovered 23,961). The one-line re-snapshot was added to **paper**: it is persistence only — no decision, fill or exit changes — and the alternative (deleting live's) would have degraded real-money crash recovery.
+
+Five new mutation-tested assertions pin the parity properties: identical entry-gate sequence, identical skip-gate set, `stopSession` awaiting the exit before saving, every caller observing its promise, and both modes re-persisting on breakeven. Suite now **36 ORB assertions** (`npm test`: 28 + 36).
+
 ### Fixed — ORB backtest hid the entry gates it cannot model (one of them ships ON)
 
 Recheck pass over the live-execution path — `orbLiveHarness.js`, crash recovery, and the offline-vs-paper gate surface. One real gap.
