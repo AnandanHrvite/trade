@@ -15,6 +15,7 @@ const express = require("express");
 const router  = express.Router();
 const { EMA } = require("technicalindicators");
 const orbStrategy = require("../strategies/orb_breakout");
+const orbStopRisk = require("../utils/orbStopRisk");
 const { fetchCandlesCachedBT } = require("../services/backtestEngine");
 const { buildSidebar, sidebarCSS, faviconLink } = require("../utils/sharedNav");
 const sharedSocketState = require("../utils/sharedSocketState");
@@ -196,8 +197,14 @@ function runOrbBacktest(allCandles, expirySet) {
         // ORB_SL_ATR_MULT × ATR5) so the backtest matches paper/live exactly.
         // Closes over `position` / `tradesTaken` from the day loop.
         const _open = (s, oc, suffix) => {
-          const _fallback = s.side === "CE" ? oc.low : oc.high;
-          const initSl = Math.round((s.slSpot != null ? s.slSpot : _fallback) * 100) / 100;
+          // Same reconciliation paper/live apply: the strategy's stop is clamped to
+          // whatever ORB_MAX_TRADE_LOSS actually allows, so all three modes place
+          // the stop at the same level. Without this the backtest used a 50–83pt
+          // stop while paper/live were really exiting at ~38pt on the rupee cap.
+          const initSl = orbStopRisk.resolveInitialStop({
+            side: s.side, entrySpot: oc.close, strategyStop: s.slSpot, qty: LOT_SIZE,
+            fallbackStop: s.side === "CE" ? oc.low : oc.high,
+          }).slSpot;
           position = {
             date: istDateOf(oc.time),
             side: s.side,

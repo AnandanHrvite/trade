@@ -41,18 +41,39 @@
  *     is INERT. Do not "optimise" it -- change ORB_MAX_TRADE_LOSS instead.
  *   - the only thing that mattered was that the OLD stop was TIGHTER than the cap
  *     and so fired first. Direction of the fix: supported. Magnitude: untested.
- * The routes log which stop binds at entry (_effectiveRiskNote).
+ * RECONCILED 2026-07-26: src/utils/orbStopRisk.js now clamps this stop to the level
+ * the rupee budget actually allows, so what the dashboard shows IS what executes.
+ * It logs when it clamps. Raise ORB_MAX_TRADE_LOSS if you want the full ATR stop.
  *
  * ── HOW MUCH TO TRUST THE NUMBERS BELOW ────────────────────────────────────
- * Sample: 39 sessions, 9 trades. With realistic option costs modelled the study
- * nets ~6,737 INR, of which ONE trade is ~81%; drop the top two and it is
- * negative. Bootstrap 95% CI on mean/trade = [-1029, +2998] INR, i.e. there is a
- * ~25% chance the true edge is zero or negative. Establishing this edge at 95%
- * confidence / 80% power would need ~147 trades ~= 637 sessions ~= 2.5 years.
- * Nothing here is statistically proven. The removals below are justified by
- * STRUCTURE and by the need to make the strategy measurable at all, not by
- * significance -- e.g. the prior-day filter's removal is Fisher-exact p=0.152.
- * Treat every constant as a prior to be revised, not as a fitted optimum.
+ * Authoritative figures come from `node scripts/orbValidate.js`, which drives THIS
+ * engine plus the full production exit stack (adaptive breakeven, EMA trail, the
+ * rupee cap) and prices trades in rupees with costs. On the only sample available
+ * (39 sessions, Mar-Apr 2026) it reports:
+ *
+ *     9 trades, 33% win rate, net ~3,112 INR, profit factor 1.39
+ *     bootstrap 95% CI on mean/trade = [-1,334, +2,503] INR
+ *     P(true edge <= 0) = ~39%
+ *     the single best trade is 231% of net -- REMOVE IT AND THE RESULT IS -4,089 INR
+ *
+ * Read that again: strip one trade out of nine and the strategy loses money. This
+ * is not a validated edge, it is a right-tail lottery ticket measured over two
+ * months. ~147 trades (~637 sessions, ~2.5 years) are needed for 95% confidence /
+ * 80% power. Every constant below is a PRIOR to be revised, not a fitted optimum,
+ * and the ablation numbers are directional evidence, not statistical proof --
+ * e.g. the prior-day filter's removal is Fisher-exact p=0.152.
+ *
+ * Earlier, lower-fidelity passes quoted "+346 spot points, no losers" and later
+ * "~6,737 INR". Both were optimistic: the first ignored costs entirely, the second
+ * used a flat 20pt breakeven instead of the real max(20, 0.5xOR) rule. Trust
+ * scripts/orbValidate.js over any number quoted from memory.
+ *
+ * STRONGEST UNTESTED HYPOTHESIS -- on this sample, a NARROW opening range was the
+ * whole edge: OR < 1.5xATR15 gave 4 trades / 75% win / +10,700 INR, while
+ * OR >= 1.5xATR15 gave 5 trades / 0% win / -7,587 INR. Mechanically sensible (a
+ * quiet open stores energy the breakout releases). It is also n=9, so
+ * ORB_OR_ATR_MAX stays at 2.5 rather than being tuned to it. Test this FIRST on
+ * the long sample; it is the most likely real improvement in the whole design.
  *
  * ── MEASURED ABLATION (39 sessions, spot points, identical exits) ───────────
  *   prior-day "fresh ground"  DELETED -- kept 7 trades at 0% win / -7.2pt avg while
@@ -93,9 +114,10 @@
  * Returns { signal, side, reason, orh, orl, rangePts, entrySpot, slSpot, targetSpot,
  *           signalStrength, vwap, atr5, atr15, gapPts, bodyPct, confirmed, gates }
  *   signal: "BUY_CE" | "BUY_PE" | "NONE"
- *   slSpot: the ACTUAL initial stop to place. Routes must use this rather than
- *           recomputing a stop of their own — one owner keeps paper/live/backtest
- *           in parity.
+ *   slSpot: the strategy's proposed initial stop. Routes must use this rather than
+ *           recomputing one of their own — a single owner keeps paper/live/backtest
+ *           in parity — and pass it through orbStopRisk.resolveInitialStop() to
+ *           reconcile it with the per-trade rupee budget before placing it.
  */
 
 const { ATR } = require("technicalindicators");

@@ -6,6 +6,19 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — ORB: reconcile the two conflicting stops, and ship the validation the review demanded
+
+Acts on the adversarial re-review below. Two real defects fixed, one blocker removed.
+
+- **The advertised stop was not the executing stop.** ORB carried two independent stops that disagreed: `sig.slSpot` (wider of the entry-candle extreme and `ORB_SL_ATR_MULT`×ATR5) at 50–83 spot pts, and `ORB_MAX_TRADE_LOSS` at ₹1,500 which on a 65-lot ~0.6-delta option trips after only **~38 spot pts**. The cap ended essentially every losing trade while the dashboard, the Telegram alert and the trade record all showed the wider level. New [src/utils/orbStopRisk.js](src/utils/orbStopRisk.js) reconciles them — the placed stop is the tighter of the two, so **what you see is what executes** — and logs whenever it clamps, making "the rupee budget is your real constraint" visible instead of silent. On the study sample it clamps on **9 of 9 trades**. P&L is unchanged (production already behaved this way); what changed is that the displayed level is now true. Raise `ORB_MAX_TRADE_LOSS` if you want the full ATR stop — that is a capital decision, so the default is the conservative direction.
+- **Applied identically in paper, live and backtest**, so the three modes place the stop at the same level. Previously the backtest used the 50–83pt stop while paper/live really exited at ~38pt on the cap — a silent backtest-vs-reality divergence.
+- **Removed duplicated logic**: the previous commit had copy-pasted the same risk-note helper into both routes. It now lives once, in the new module.
+- **New `scripts/orbValidate.js`** — the 250–500-session validation the review called for, as one command: `node scripts/orbValidate.js --from 2024-01-01 --to 2026-04-30`. It drives the real `getSignal()` plus the full production exit stack, prices trades in rupees with costs, and reports bootstrap CI, P(edge ≤ 0), single-trade concentration, per-regime breakdown (trend/chop, volatility, gap, side, exit type) and year/quarter stability. It writes nothing and places no orders. Still needs a Fyers token; that is now the only thing standing between here and a real answer.
+
+**The numbers got worse once measured properly.** Running the full production exit stack (the *adaptive* breakeven `max(20, 0.5×OR)`, which earlier ad-hoc sims had simplified to a flat 20pt) on the same 39 sessions gives **9 trades, 33% win rate, net ~₹3,112, PF 1.39** — with **P(true edge ≤ 0) ≈ 39%** and the best trade worth **231% of net (remove it: −₹4,089)**. Earlier figures in this changelog ("+346 spot points, no losers", then "~₹6,737") were both optimistic. `scripts/orbValidate.js` is now the authority; distrust any ORB number quoted from memory.
+
+**Strongest untested hypothesis, recorded rather than acted on**: a *narrow* opening range was the entire edge on this sample — `OR < 1.5×ATR15` gave 4 trades / 75% win / +₹10,700, `OR ≥ 1.5×ATR15` gave 5 trades / 0% win / −₹7,587. Mechanically sensible. It is n=9, so `ORB_OR_ATR_MAX` was deliberately **not** tuned to it. Test it first on the long sample.
+
 ### Changed — ORB: adversarial re-review of the rebuild (claims corrected, no strategy logic changed)
 
 Independent review of the rebuild in the previous entry, run specifically to try to disprove it. **No entry or exit logic changed.** What changed is what we claim, plus one disclosure fix. Findings:

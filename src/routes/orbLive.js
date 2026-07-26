@@ -48,6 +48,7 @@ const vixFilter   = require("../services/vixFilter");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
 const oiFilter    = require("../services/oiFilter");   // paper-canonical: live must apply the same OI gate
 const orbRiskState = require("../utils/orbRiskState");
+const orbStopRisk  = require("../utils/orbStopRisk");
 const tradeLogger = require("../utils/tradeLogger");
 const skipLogger  = require("../utils/skipLogger");
 const fyers       = require("../config/fyers");
@@ -149,34 +150,6 @@ function stopOptionPolling() {
 }
 
 // ── Live BUY ────────────────────────────────────────────────────────────────
-/**
- * Which stop actually binds — the spot SL, or the rupee cap?
- *
- * These are two INDEPENDENT stops and they routinely disagree. `sig.slSpot`
- * (wider of the entry-candle extreme and ORB_SL_ATR_MULT x ATR5) is 50-83 spot
- * pts on typical NIFTY volatility, while ORB_MAX_TRADE_LOSS=1500 on a 65-lot
- * slightly-ITM option is only ~38 spot pts of adverse move. The rupee cap
- * therefore fires FIRST on essentially every trade, and the spot SL shown on the
- * dashboard is not the level that ends the trade.
- *
- * Measured (39 sessions, Mar-Apr 2026): modelling the rupee cap took the study
- * result from +9,736 INR to +6,737 INR, and every ATR multiplier from 1.0x to
- * 2.5x produced an IDENTICAL result because none of them ever bound. Widening
- * the spot stop past the cap buys nothing.
- *
- * This logs both so the operator can see the real risk. It changes no behaviour.
- */
-function _effectiveRiskNote(side, entrySpot, slSpot, optionEntryLtp, qty) {
-  const maxTradeLoss = parseFloat(process.env.ORB_MAX_TRADE_LOSS || "1500");
-  const spotStopPts = Math.abs(entrySpot - slSpot);
-  if (!(maxTradeLoss > 0) || !qty) return `spot SL ${slSpot} (${spotStopPts.toFixed(1)}pt); no rupee cap`;
-  // premium pts of headroom before the cap trips, converted to spot via delta.
-  const delta = parseFloat(process.env.BACKTEST_DELTA || "0.55");
-  const capPremPts = maxTradeLoss / qty;
-  const capSpotPts = delta > 0 ? capPremPts / delta : Infinity;
-  const binds = capSpotPts < spotStopPts ? "RUPEE CAP" : "spot SL";
-  return `spot SL ${slSpot} (${spotStopPts.toFixed(1)}pt) vs \u20b9${maxTradeLoss} cap (~${capSpotPts.toFixed(1)}pt at delta ${delta}) -> ${binds} binds first`;
-}
 
 // Guards the await window inside placeLiveBuy. state.position is only set AFTER
 // symbol resolve + option quote + the broker round-trip, so a second candle close
@@ -262,10 +235,13 @@ async function _placeLiveBuyImpl(side, sigSnapshot) {
   // the strategy is the single owner of stop placement so paper/live/backtest can
   // never drift. Managed thereafter on each candle close by _managePositionOnClose
   // (breakeven → EMA trend-trail) plus the per-trade loss cap.
-  const _fallbackSl = side === "CE"
-    ? (sigSnapshot.orl != null ? sigSnapshot.orl : spot)
-    : (sigSnapshot.orh != null ? sigSnapshot.orh : spot);
-  const _initSl = Math.round((sigSnapshot.slSpot != null ? sigSnapshot.slSpot : _fallbackSl) * 100) / 100;
+  //    Reconciled against ORB_MAX_TRADE_LOSS by orbStopRisk so the level we show,
+  //    alert on and record is the level that actually ends the trade.
+  const _stop = orbStopRisk.resolveInitialStop({
+    side, entrySpot: spot, strategyStop: sigSnapshot.slSpot, qty,
+    fallbackStop: side === "CE" ? sigSnapshot.orl : sigSnapshot.orh,
+  });
+  const _initSl = _stop.slSpot;
   const pos = {
     side, symbol: optInfo.symbol, optionStrike: optInfo.strike, optionExpiry: optInfo.expiry,
     qty, entrySpot: spot, entryPrice: spot, optionEntryLtp,
@@ -294,7 +270,7 @@ async function _placeLiveBuyImpl(side, sigSnapshot) {
   state.tradesTaken++;
   startOptionPolling();
 
-  log(`   risk: ${_effectiveRiskNote(side, spot, pos.slSpot, optionEntryLtp, qty)}`);
+  log(`   risk: ${_stop.note}`);
 
   notifyEntry({
     mode: isDryRun() ? "ORB-LIVE (DRY-RUN)" : "ORB-LIVE",
