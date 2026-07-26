@@ -1987,9 +1987,17 @@ function expiryHolidayModalCSS() {
       max-height: 420px; overflow-y: auto; margin-top: 10px;
       scrollbar-width: thin; scrollbar-color: #243048 transparent;
     }
+    /* Light theme. The global rewriter in modalJS() only covers .holiday-table
+       TH (and borders), so the cell text, legend and scrollbar have to be
+       restated here — without this the dark #c8d8f0 cell colour survives and
+       the whole calendar reads as pale blue on white. */
     :root[data-theme="light"] .eh-tab-btn { color:#64748b; }
     :root[data-theme="light"] .eh-tab-btn:hover { color:#334155; }
     :root[data-theme="light"] .eh-tab-btn.eh-tab-active { color:#0891b2; border-color:#e0e4ea; border-bottom-color:#ffffff; background:#ffffff; }
+    :root[data-theme="light"] .holiday-table td { color:#334155; }
+    :root[data-theme="light"] .holiday-table .today-holiday { color:#059669; }
+    :root[data-theme="light"] .expiry-legend { color:#64748b; }
+    :root[data-theme="light"] .holiday-modal-body { scrollbar-color:#cbd5e1 transparent; }
   `;
 }
 

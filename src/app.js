@@ -1244,9 +1244,12 @@ app.get("/", (req, res) => {
     :root[data-theme="light"] .top-bar-btn { background:#f8fafc; border-color:#e2e8f0; color:#475569; }
     :root[data-theme="light"] .top-bar-btn.run-paper { background:#dcfce7; border-color:#86efac; color:#16a34a; }
     :root[data-theme="light"] .top-bar-btn.run-live { background:#fee2e2; border-color:#fca5a5; color:#dc2626; }
-    /* Pills that open a popup — the rest of the pills are read-only labels. */
+    /* Pills that open a popup — the rest of the pills are read-only labels.
+       Brightening is invisible on the light theme's near-white pill, so that
+       one darkens instead. */
     .top-bar-cache.clickable { cursor:pointer; }
     .top-bar-cache.clickable:hover { filter:brightness(1.25); }
+    :root[data-theme="light"] .top-bar-cache.clickable:hover { filter:brightness(0.94); }
     :root[data-theme="light"] .top-bar-cache { background:#f0fdf4; border-color:#bbf7d0; color:#16a34a; }
     :root[data-theme="light"] .top-bar-cache.empty { background:#f8fafc; border-color:#e2e8f0; color:#64748b; }
     :root[data-theme="light"] .top-bar-cache.schedule { background:#ecfeff; border-color:#a5f3fc; color:#0891b2; }

@@ -10,7 +10,9 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 The `📅 Next Expiry Date : 28/07/2026 - M - 1 day` pill in the Dashboard top bar was a read-only label, and the full NIFTY expiry calendar + NSE holiday list existed only behind the Settings page's `📅 EXPIRY & HOLIDAYS` button. Clicking either Dashboard pill now opens that same popup (Expiry Calendar / NSE Holidays tabs, REFRESH button).
 
-The popup's CSS, markup and JS moved out of [settings.js](src/routes/settings.js) into `expiryHolidayModalCSS()` / `expiryHolidayModalHTML()` / `expiryHolidayModalJS()` in [sharedNav.js](src/utils/sharedNav.js), so both pages render one copy rather than two that can drift. Colours are literals there instead of `var(--…)` because the Dashboard has no `:root` variable block; the light-theme rewriter already covers `.holiday-table`, and the tab buttons got their own light-theme rules.
+The popup's CSS, markup and JS moved out of [settings.js](src/routes/settings.js) into `expiryHolidayModalCSS()` / `expiryHolidayModalHTML()` / `expiryHolidayModalJS()` in [sharedNav.js](src/utils/sharedNav.js), so both pages render one copy rather than two that can drift. Colours are literals there instead of `var(--…)` because the Dashboard has no `:root` variable block.
+
+That swap cost the light theme at first: the global rewriter only restyles `.holiday-table` **th** (and borders), so with `UI_THEME=light` every cell kept the dark `#c8d8f0` and the calendar read as pale blue on white. Verified in headless Chrome, then fixed — the cell text, today-row, legend and scrollbar now have explicit light-theme rules alongside the tab buttons. The pill's hover also darkens instead of brightening in light mode, where brightening a near-white pill showed nothing.
 
 The two pills also moved out of the idle-only block in the top bar — they used to disappear while any session was running, which is when the next expiry matters most.
 
