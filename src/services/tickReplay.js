@@ -698,6 +698,38 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     // a phantom session to the real paper history file.
     fs_writeFileSync: fs.writeFileSync,
     fs_renameSync:    fs.renameSync,
+    // The narrow *_paper_trades.json regex missed every OTHER persistence write a
+    // paper /stop makes — the per-day audit JSONL (trades/{mode}_paper_trades_
+    // YYYY-MM-DD.jsonl) and the cumulative _paper_trades_log.jsonl (both written
+    // via appendFileSync / fs.promises.appendFile, which the History UI actually
+    // reads), the daily report .txt/.md, and .active_*_position.json crash-recovery
+    // snapshots. So intercept EVERY fs write primitive and drop any write that
+    // lands on canonical trading-data state (see _isProtectedTradingWrite). This
+    // is strategy-agnostic — a brand-new strategy is covered with no extra edit.
+    fs_appendFileSync:    fs.appendFileSync,
+    fs_unlinkSync:        fs.unlinkSync,
+    fs_copyFileSync:      fs.copyFileSync,
+    fs_writeFile:         fs.writeFile,
+    fs_appendFile:        fs.appendFile,
+    fs_unlink:            fs.unlink,
+    fs_rename:            fs.rename,
+    fs_copyFile:          fs.copyFile,
+    fs_createWriteStream: fs.createWriteStream,
+    fsp_writeFile:        fs.promises.writeFile,
+    fsp_appendFile:       fs.promises.appendFile,
+    fsp_unlink:           fs.promises.unlink,
+    fsp_rename:           fs.promises.rename,
+    fsp_copyFile:         fs.promises.copyFile,
+    // positionPersist mutators — stubbed as a deterministic belt-and-suspenders
+    // net for the async-drain micro-race (a coalesced re-drain could otherwise
+    // fire a real fs write just after uninstall restores the primitives).
+    pp: (() => {
+      const pp = require("../utils/positionPersist");
+      const keys = Object.keys(pp).filter(k => /^(save|clear)/.test(k));
+      const saved = {};
+      for (const k of keys) saved[k] = pp[k];
+      return { mod: pp, keys, saved };
+    })(),
     // setTimeout/clearTimeout originals — paper code uses setTimeout-driven
     // polling (option LTP every ~500ms-1s) to update ptState.optionLtp during
     // a trade. In replay, the pump processes thousands of ticks in seconds
@@ -844,24 +876,70 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     sharedSocketState.setTrendPbActive  = () => {};
     sharedSocketState.clearTrendPb      = () => {};
 
-    // fs: intercept writes to any canonical {strategy}_paper_trades.json (and
-    // its .tmp sibling used for atomic temp+rename). Every paper route saves
-    // its session through the same write+rename pair, so the guard must be
-    // strategy-agnostic — an EMA_RSI_ST-only pattern let BB_RSI / PA / ORB /
-    // EMA9VWAP / TREND_PB replays append phantom sessions to the real Paper
-    // Trade History. Anything else passes through — replay's own JSONL output
-    // and the harness internals are untouched.
-    const PAPER_TRADES_RE = /[\\/][a-z0-9_]+_paper_trades\.json(\.tmp)?$/i;
-    fs.writeFileSync = function (file, data, opts) {
-      const p = typeof file === "string" ? file : String(file);
-      if (PAPER_TRADES_RE.test(p)) return; // silently drop
-      return orig.fs_writeFileSync(file, data, opts);
+    // fs: a replay must never mutate the user's canonical state. Rather than
+    // enumerate filenames (the old *_paper_trades.json regex missed the per-day
+    // JSONL, the _log.jsonl, daily reports and .active_*_position.json), we block
+    // by LOCATION: any write under ~/trading-data is dropped EXCEPT the dirs a
+    // replay legitimately writes/reads — the recordings + replay outputs under
+    // ticks/ (_replay_trades, _replay_trades_sim, _replay_cache) and the disk
+    // caches (candle_cache, backtest_cache). Writes OUTSIDE trading-data (logs,
+    // tmp) pass through untouched. Strategy-agnostic: covers future strategies.
+    // ~/trading-data is the persistent state root the History UI / capital /
+    // crash-recovery all read from — defined identically across the paper routes,
+    // positionPersist and tradeLogger as os.homedir()/trading-data. Block ANY
+    // write that lands there, EXCEPT (a) the replay's own recordings + outputs
+    // under ROOT_DIR (…/data/ticks/_replay_trades*), which on some hosts sits
+    // under trading-data, and (b) the disk caches a day-replay warm-up may fill.
+    // Writes outside trading-data (repo, tmp, logs) pass through untouched.
+    const _DATA_DIR = path.join(require("os").homedir(), "trading-data");
+    const _ALLOW_PREFIXES = [
+      ROOT_DIR,                                        // recordings + all _replay_* outputs
+      path.join(_DATA_DIR, "candle_cache"),
+      path.join(_DATA_DIR, "backtest_cache"),
+    ].map(p => path.resolve(p) + path.sep);
+    function _isProtectedTradingWrite(target) {
+      let p;
+      try {
+        const s = typeof target === "string" ? target : (target && typeof target.toString === "function" ? target.toString() : "");
+        if (!s) return false;
+        p = path.resolve(s);
+      } catch (_) { return false; }
+      if (p !== _DATA_DIR && !p.startsWith(_DATA_DIR + path.sep)) return false; // outside trading-data → allow
+      for (const pre of _ALLOW_PREFIXES) if (p.startsWith(pre)) return false;   // replay-safe subtree → allow
+      return true;                                                             // canonical state → block
+    }
+    const _NULL_WRITABLE = () => {
+      const { Writable } = require("stream");
+      return new Writable({ write(_c, _e, cb) { cb(); }, writev(_c, cb) { cb(); }, final(cb) { cb(); } });
     };
-    fs.renameSync = function (from, to) {
-      const t = typeof to === "string" ? to : String(to);
-      if (PAPER_TRADES_RE.test(t)) return; // silently drop
-      return orig.fs_renameSync(from, to);
-    };
+    // Drop for callback-style fs ops: invoke the trailing callback synchronously
+    // with success so callers (e.g. positionPersist's drain) advance normally and
+    // no coalesced re-drain fires a real write after uninstall.
+    const _dropCb = (args) => { const cb = args[args.length - 1]; if (typeof cb === "function") cb(null); };
+    // Sync writers (test the destination for rename/copy).
+    fs.writeFileSync  = function (file, ...a) { if (_isProtectedTradingWrite(file)) return; return orig.fs_writeFileSync(file, ...a); };
+    fs.appendFileSync = function (file, ...a) { if (_isProtectedTradingWrite(file)) return; return orig.fs_appendFileSync(file, ...a); };
+    fs.unlinkSync     = function (file)       { if (_isProtectedTradingWrite(file)) return; return orig.fs_unlinkSync(file); };
+    fs.renameSync     = function (from, to)   { if (_isProtectedTradingWrite(to))   return; return orig.fs_renameSync(from, to); };
+    fs.copyFileSync   = function (src, dest, ...a) { if (_isProtectedTradingWrite(dest)) return; return orig.fs_copyFileSync(src, dest, ...a); };
+    // Async callback writers.
+    fs.writeFile   = function (file, ...a) { if (_isProtectedTradingWrite(file)) return _dropCb(a); return orig.fs_writeFile(file, ...a); };
+    fs.appendFile  = function (file, ...a) { if (_isProtectedTradingWrite(file)) return _dropCb(a); return orig.fs_appendFile(file, ...a); };
+    fs.unlink      = function (file, ...a) { if (_isProtectedTradingWrite(file)) return _dropCb(a); return orig.fs_unlink(file, ...a); };
+    fs.rename      = function (from, to, ...a) { if (_isProtectedTradingWrite(to))  return _dropCb(a); return orig.fs_rename(from, to, ...a); };
+    fs.copyFile    = function (src, dest, ...a) { if (_isProtectedTradingWrite(dest)) return _dropCb(a); return orig.fs_copyFile(src, dest, ...a); };
+    fs.createWriteStream = function (p, opts) { if (_isProtectedTradingWrite(p)) return _NULL_WRITABLE(); return orig.fs_createWriteStream(p, opts); };
+    // Promise writers — patch methods on the shared fs.promises object (loggers
+    // capture `const fsp = fs.promises` at require, so the object identity holds).
+    fs.promises.writeFile  = function (file, ...a) { if (_isProtectedTradingWrite(file)) return Promise.resolve(); return orig.fsp_writeFile(file, ...a); };
+    fs.promises.appendFile = function (file, ...a) { if (_isProtectedTradingWrite(file)) return Promise.resolve(); return orig.fsp_appendFile(file, ...a); };
+    fs.promises.unlink     = function (file)       { if (_isProtectedTradingWrite(file)) return Promise.resolve(); return orig.fsp_unlink(file); };
+    fs.promises.rename     = function (from, to)   { if (_isProtectedTradingWrite(to))   return Promise.resolve(); return orig.fsp_rename(from, to); };
+    fs.promises.copyFile   = function (src, dest, ...a) { if (_isProtectedTradingWrite(dest)) return Promise.resolve(); return orig.fsp_copyFile(src, dest, ...a); };
+    // Belt-and-suspenders: neutralise positionPersist save/clear so a replay can
+    // never create a phantom .active_*_position.json orphan (restored on next
+    // boot) or delete a genuine live snapshot, even across the async-drain race.
+    for (const k of orig.pp.keys) orig.pp.mod[k] = () => {};
 
     // setTimeout override — collapse SHORT delays (≤30s) to 0ms so that
     // setTimeout-chained polling (option LTP every 500ms-1s in live) fires
@@ -1014,8 +1092,23 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     sharedSocketState.clearEma9Vwap     = orig.ss_clearEma9Vwap;
     sharedSocketState.setTrendPbActive  = orig.ss_setTrendPbActive;
     sharedSocketState.clearTrendPb      = orig.ss_clearTrendPb;
-    fs.writeFileSync = orig.fs_writeFileSync;
-    fs.renameSync    = orig.fs_renameSync;
+    fs.writeFileSync     = orig.fs_writeFileSync;
+    fs.appendFileSync    = orig.fs_appendFileSync;
+    fs.unlinkSync        = orig.fs_unlinkSync;
+    fs.renameSync        = orig.fs_renameSync;
+    fs.copyFileSync      = orig.fs_copyFileSync;
+    fs.writeFile         = orig.fs_writeFile;
+    fs.appendFile        = orig.fs_appendFile;
+    fs.unlink            = orig.fs_unlink;
+    fs.rename            = orig.fs_rename;
+    fs.copyFile          = orig.fs_copyFile;
+    fs.createWriteStream = orig.fs_createWriteStream;
+    fs.promises.writeFile  = orig.fsp_writeFile;
+    fs.promises.appendFile = orig.fsp_appendFile;
+    fs.promises.unlink     = orig.fsp_unlink;
+    fs.promises.rename     = orig.fsp_rename;
+    fs.promises.copyFile   = orig.fsp_copyFile;
+    for (const k of orig.pp.keys) orig.pp.mod[k] = orig.pp.saved[k];
     // Clear any pass-through long-delay timers BEFORE restoring originals so
     // we use our tracked handles with the still-overridden clearTimeout.
     for (const h of _pendingLongTimers) {
