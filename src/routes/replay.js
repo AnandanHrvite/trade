@@ -204,41 +204,6 @@ router.post("/run", express.json(), async (req, res) => {
   }
 });
 
-// Day-based replay — run ANY strategy over a recorded DATE without needing that
-// strategy's own session marker. Builds a synthetic full-day session from the
-// day's shared ticks (current settings; expiry pinned from the recording). This
-// is how a NEWLY-ADDED strategy replays days recorded before it existed.
-router.post("/run-day", express.json(), async (req, res) => {
-  const { date, mode, speed, noCache } = req.body || {};
-  if (!date || !mode) {
-    return res.status(400).json({ ok: false, error: "date and mode are required" });
-  }
-  // Validate date shape before it reaches path.join(ROOT_DIR, date) — blocks any
-  // "../" traversal. (mode is validated against MODE_TO_MODULE inside replaySession.)
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    return res.status(400).json({ ok: false, error: "date must be YYYY-MM-DD" });
-  }
-  try {
-    const result = await tickReplay.replaySession({
-      date,
-      mode,
-      synthesize: true,          // no marker needed — synthesize a full-day session
-      useCurrentSettings: true,  // forced by synthesize; stated here for clarity
-      speed: typeof speed === "number" ? speed : 0,
-      // A synthetic session carries no settings snapshot, so the replay cache key
-      // can't fingerprint current settings — always recompute to avoid stale hits.
-      noCache: true,
-    });
-    const cnBroker = brokerForMode(mode);
-    if (result && Array.isArray(result.sessionTrades)) {
-      result.sessionTrades = attachContractNotes(result.sessionTrades, cnBroker);
-    }
-    res.json(result);
-  } catch (err) {
-    res.status(500).json({ ok: false, error: err.message });
-  }
-});
-
 // Strategy dropdown options — only show modes whose UI_SHOW_*_PAPER toggle
 // is on AND that tickReplay's MODE_TO_MODULE actually supports. Order matches
 // the sidebar so the dropdown feels familiar.
@@ -265,16 +230,6 @@ function _renderStrategyOptions() {
     opts.unshift(`<option value="all" selected>⚡ All strategies</option>`);
   }
   return opts.join("");
-}
-
-// Single-strategy options for Day Replay (no "All", no marker required). A new
-// strategy becomes replayable on any recorded day the moment it's added to
-// STRATEGY_OPTIONS + tickReplay's MODE_TO_MODULE.
-function _renderDayStrategyOptions() {
-  const on = (k) => (process.env[k] || "true").toLowerCase() === "true";
-  const enabled = STRATEGY_OPTIONS.filter(o => on(o.modeKey) && on(o.envKey));
-  const list = enabled.length ? enabled : STRATEGY_OPTIONS;
-  return list.map(o => `<option value="${o.mode}">${o.label}</option>`).join("");
 }
 
 router.get("/", (req, res) => {
@@ -580,26 +535,6 @@ ${buildSidebar('replay', false)}
     </div>
     <div id="range-progress" class="rp-block" style="display:none;"></div>
     <div id="range-result" style="margin-top:12px;"></div>
-  </div>
-
-  <div class="card" id="day-replay-card">
-    <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-      <strong>📅 Day replay — any strategy</strong>
-      <span class="source-chip" style="background:#134e2b; color:#86efac;">NO SESSION NEEDED</span>
-    </div>
-    <p class="sub" style="margin:8px 0 12px;">Replay a whole recorded date for <b>any</b> strategy — even one added later that never ran that day. Runs from the day's shared ticks using your <b>current settings</b>; option expiry is pinned from the recording. Warm-up candles are fetched live from the broker history API for the replayed date, so a valid broker login is required (0 trades usually means warm-up couldn't load).</p>
-    <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;">
-      <div style="display:flex; flex-direction:column; gap:4px;">
-        <label style="font-size:0.7rem; color:#94a3b8; text-transform:uppercase; letter-spacing:0.04em;">Date</label>
-        <input id="day-replay-date" type="date" class="sess-input">
-      </div>
-      <div style="display:flex; flex-direction:column; gap:4px;">
-        <label style="font-size:0.7rem; color:#94a3b8; text-transform:uppercase; letter-spacing:0.04em;">Strategy</label>
-        <select id="day-replay-mode" class="sess-input">${_renderDayStrategyOptions()}</select>
-      </div>
-      <button id="day-replay-btn" onclick="runDayReplay(this)">▶ Replay day</button>
-    </div>
-    <div id="day-replay-result" style="margin-top:12px;"></div>
   </div>
 
   <div class="card collapsed" id="sessions-card">
@@ -1462,47 +1397,6 @@ async function deleteAllRecordings(btn) {
   } catch (e) {
     btn.disabled = false; btn.textContent = orig;
     alert('Delete all failed: ' + e.message);
-  }
-}
-
-// Day replay — run any strategy over a whole recorded date, no session marker
-// needed. Backs the "Day replay — any strategy" card.
-async function runDayReplay(btn) {
-  var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
-    return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]; }); };
-  var date = document.getElementById('day-replay-date').value;
-  var mode = document.getElementById('day-replay-mode').value;
-  var out  = document.getElementById('day-replay-result');
-  if (!date) { alert('Pick a date to replay.'); return; }
-  var orig = btn.textContent;
-  btn.disabled = true; btn.textContent = 'Replaying…';
-  out.innerHTML = '<span style="color:#94a3b8;">Running ' + esc(mode) + ' for ' + esc(date) + '… (full recompute, may take ~1–2 min)</span>';
-  try {
-    var r = await secretFetch('/replay/run-day', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date: date, mode: mode }),
-      timeoutMs: 600000,  // full-day replay far exceeds the 15s default → 10 min
-    });
-    if (!r) { out.innerHTML = '<span style="color:#f87171;">Cancelled — API secret not provided.</span>'; return; }
-    var data = await r.json();
-    if (!data || !data.ok) {
-      out.innerHTML = '<span style="color:#f87171;">Failed: ' + esc((data && data.error) || 'unknown') + '</span>';
-      return;
-    }
-    var n   = (data.sessionTrades || []).length;
-    var pnl = (data.sessionPnl != null ? Number(data.sessionPnl) : 0);
-    var col = pnl >= 0 ? '#4ade80' : '#f87171';
-    var warn = (n === 0)
-      ? '<div style="margin-top:6px; color:#fbbf24; font-size:0.8rem;">0 trades — if this looks wrong, check the broker is logged in (warm-up candles are fetched live).</div>'
-      : '';
-    out.innerHTML = '<div style="padding:10px 12px; background:#0b1220; border:1px solid #1e293b; border-radius:6px;">' +
-      '<b>' + esc(mode) + '</b> · ' + esc(date) + ' → <b>' + n + '</b> trades · P&L <b style="color:' + col + ';">₹' + pnl.toFixed(2) + '</b>' +
-      '<span style="color:#64748b;"> · ' + (data.ticksReplayed || 0) + ' ticks</span>' + warn + '</div>';
-  } catch (e) {
-    out.innerHTML = '<span style="color:#f87171;">Failed: ' + esc(e.message) + '</span>';
-  } finally {
-    btn.disabled = false; btn.textContent = orig;
   }
 }
 
