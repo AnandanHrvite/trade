@@ -1060,32 +1060,35 @@ async function refreshPreflight() {
       // force-clear cannot help — it clears strategy mutexes, not the market
       // feed — so show a plain informational banner with the real way out
       // instead of a red "stuck state" alarm the user would act on in vain.
-      const isRecording = Array.isArray(data.activeModes) && data.activeModes.indexOf('__recording__') >= 0;
+      // activeModes is the definitive signal here; the reason-text fallback keeps
+      // this branch agreeing with showBlockAlert/isPreflightReject, which only
+      // ever see the message.
+      const isRecording = (Array.isArray(data.activeModes) && data.activeModes.indexOf('__recording__') >= 0)
+                          || isRecordingBlockReason(data.reason);
       if (isRecording) {
         banner.innerHTML =
           '<div class="banner warn" style="background:rgba(59,130,246,0.10);border-color:rgba(59,130,246,0.35);color:#93c5fd;">' +
             '📼 ' + (data.reason || 'The market recorder is running — replay is paused.') +
             '<div class="muted" style="color:#93c5fd;font-size:0.74rem;margin-top:3px;">Nothing is stuck. The recorder is protecting the archive for this trading day.</div>' +
           '</div>';
-        document.querySelectorAll('button.replay-btn').forEach(b => { b.disabled = true; b.title = (data.reason || ''); });
-        return;
+      } else {
+        // Two block causes: (1) a strategy (EMA_RSI_ST/BB_RSI/PA…) is actually running,
+        // or (2) a replay flag is set. Case 2 can be a genuine other-tab run OR a
+        // stuck flag left by a run that died mid-flight (e.g. a deploy). Either
+        // way the user needs a way out, so always offer Force clear — with wording
+        // matched to the cause.
+        const isAnotherReplay = /another replay is already running/i.test(data.reason || '');
+        const hint = isAnotherReplay
+          ? 'If another tab is genuinely running a replay, wait for it. If a run was interrupted (e.g. by a deploy) and nothing is actually running, force-clear the stuck flag.'
+          : 'Only force-clear if you have confirmed on the strategy pages that NO session is actually running.';
+        banner.innerHTML =
+          '<div class="banner warn" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">' +
+            '<div>⚠️ ' + (data.reason || 'Replay not allowed right now.') +
+              '<div class="muted" style="color:#fca5a5;font-size:0.74rem;margin-top:3px;">' + hint + '</div>' +
+            '</div>' +
+            '<button onclick="forceClearStuckState(this)" style="background:#7f1d1d;color:#fecaca;border:1px solid #b91c1c;padding:6px 12px;border-radius:6px;font-size:0.78rem;cursor:pointer;white-space:nowrap;">Force clear stuck state</button>' +
+          '</div>';
       }
-      // Two block causes: (1) a strategy (EMA_RSI_ST/BB_RSI/PA…) is actually running,
-      // or (2) a replay flag is set. Case 2 can be a genuine other-tab run OR a
-      // stuck flag left by a run that died mid-flight (e.g. a deploy). Either
-      // way the user needs a way out, so always offer Force clear — with wording
-      // matched to the cause.
-      const isAnotherReplay = /another replay is already running/i.test(data.reason || '');
-      const hint = isAnotherReplay
-        ? 'If another tab is genuinely running a replay, wait for it. If a run was interrupted (e.g. by a deploy) and nothing is actually running, force-clear the stuck flag.'
-        : 'Only force-clear if you have confirmed on the strategy pages that NO session is actually running.';
-      banner.innerHTML =
-        '<div class="banner warn" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">' +
-          '<div>⚠️ ' + (data.reason || 'Replay not allowed right now.') +
-            '<div class="muted" style="color:#fca5a5;font-size:0.74rem;margin-top:3px;">' + hint + '</div>' +
-          '</div>' +
-          '<button onclick="forceClearStuckState(this)" style="background:#7f1d1d;color:#fecaca;border:1px solid #b91c1c;padding:6px 12px;border-radius:6px;font-size:0.78rem;cursor:pointer;white-space:nowrap;">Force clear stuck state</button>' +
-        '</div>';
     }
     // Reflect on existing buttons
     document.querySelectorAll('button.replay-btn').forEach(b => {
@@ -1586,6 +1589,13 @@ async function freshPreflight() {
   }
 }
 
+// True when a preflight reason is "the day's ticks are being recorded" rather
+// than "a session is running". Kept as one helper so the banner, the block alert
+// and the range-run abort all classify the cause the same way.
+function isRecordingBlockReason(reason) {
+  return /market feed is recording/i.test(reason || '');
+}
+
 function showBlockAlert(reason) {
   // Remove any existing block alert first
   const existing = document.getElementById('block-alert');
@@ -1593,11 +1603,21 @@ function showBlockAlert(reason) {
   const div = document.createElement('div');
   div.id = 'block-alert';
   div.className = 'block-alert';
+  // The recorder block is NOT an active session, so the default "stop the
+  // session(s) from the Dashboard" instruction would send the user hunting for
+  // something that isn't there. Give the cause its own heading and way out.
+  const recording = isRecordingBlockReason(reason);
+  const heading = recording
+    ? '📼 Replay paused — the market recorder is running'
+    : '⛔ Replay blocked — a session is currently active';
+  const advice = recording
+    ? 'Nothing is stuck and no session is running. Replay after 15:30 IST, or turn off Always-On Spot Feed in Settings. This protects today&#39;s tick recording, which cannot be re-made.'
+    : 'Stop the active session(s) from the Dashboard, then try again. This protects your live/paper trade logs from being affected.';
   div.innerHTML =
     '<div>' +
-      '<strong>⛔ Replay blocked — a session is currently active</strong>' +
+      '<strong>' + heading + '</strong>' +
       '<div>' + reason + '</div>' +
-      '<div style="font-size:0.78rem;opacity:0.85;margin-top:4px;">Stop the active session(s) from the Dashboard, then try again. This protects your live/paper trade logs from being affected.</div>' +
+      '<div style="font-size:0.78rem;opacity:0.85;margin-top:4px;">' + advice + '</div>' +
     '</div>' +
     '<button class="ba-close" onclick="document.getElementById(\\'block-alert\\').remove()">Dismiss</button>';
   document.body.appendChild(div);
@@ -2364,11 +2384,14 @@ async function runSessionsBatch(sessions, context, btn, btnRestoreText) {
   let aborted = false;
 
   // Helper: detect the backend preflight rejection so we can abort the whole
-  // batch (a paper/live session was started mid-run). The backend
-  // replayPreflight() reason starts with "Cannot replay while".
+  // batch (a paper/live session was started mid-run, or the market recorder came
+  // up because the run crossed 09:15). The /run route surfaces the rejection as
+  // a plain { ok:false, error:<reason> }, so match on the reason text — all
+  // three replayPreflight() reasons must be listed or the batch keeps firing
+  // doomed requests at every remaining session instead of stopping once.
   function isPreflightReject(resp) {
     return resp && resp.ok === false && typeof resp.error === 'string' &&
-           /cannot replay while|already running/i.test(resp.error);
+           /cannot replay while|already running|market feed is recording/i.test(resp.error);
   }
 
   // Live-update the elapsed time every second so the user sees progress
