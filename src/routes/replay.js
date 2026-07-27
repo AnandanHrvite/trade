@@ -1056,6 +1056,20 @@ async function refreshPreflight() {
     if (data.ok) {
       banner.innerHTML = '<div class="banner ok">✅ Safe to replay — no live or paper session is active.</div>';
     } else {
+      // Cause (3): the day's tick recording is live. Nothing is stuck and
+      // force-clear cannot help — it clears strategy mutexes, not the market
+      // feed — so show a plain informational banner with the real way out
+      // instead of a red "stuck state" alarm the user would act on in vain.
+      const isRecording = Array.isArray(data.activeModes) && data.activeModes.indexOf('__recording__') >= 0;
+      if (isRecording) {
+        banner.innerHTML =
+          '<div class="banner warn" style="background:rgba(59,130,246,0.10);border-color:rgba(59,130,246,0.35);color:#93c5fd;">' +
+            '📼 ' + (data.reason || 'The market recorder is running — replay is paused.') +
+            '<div class="muted" style="color:#93c5fd;font-size:0.74rem;margin-top:3px;">Nothing is stuck. The recorder is protecting the archive for this trading day.</div>' +
+          '</div>';
+        document.querySelectorAll('button.replay-btn').forEach(b => { b.disabled = true; b.title = (data.reason || ''); });
+        return;
+      }
       // Two block causes: (1) a strategy (EMA_RSI_ST/BB_RSI/PA…) is actually running,
       // or (2) a replay flag is set. Case 2 can be a genuine other-tab run OR a
       // stuck flag left by a run that died mid-flight (e.g. a deploy). Either
