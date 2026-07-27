@@ -343,7 +343,7 @@ async function _streamJsonl(filePath, { onRec, filterFn } = {}) {
  *   - spot.jsonl is NOT loaded — `spotPath` is returned for the caller to
  *     stream-iterate (~25k records/day = the only large stream).
  */
-async function loadSessionData({ date, mode, sessionId }) {
+async function loadSessionData({ date, mode, sessionId, synthesize = false }) {
   if (!date) throw new Error("loadSessionData: date is required");
   if (!mode) throw new Error("loadSessionData: mode is required");
 
@@ -363,22 +363,40 @@ async function loadSessionData({ date, mode, sessionId }) {
   }
 
   const sessions = _readJsonl(path.join(dir, "sessions.jsonl"));
-  const startEvts = sessions.filter(s => s.e === "start" && s.mode === mode);
-  if (startEvts.length === 0) {
-    throw new Error(`No '${mode}' session-start event found in ${date}`);
-  }
 
-  let sessionStart;
-  if (sessionId) {
-    sessionStart = startEvts.find(s => s.sid === sessionId);
-    if (!sessionStart) throw new Error(`sessionId ${sessionId} not found for ${mode} on ${date}`);
+  let sessionStart, sessionStop;
+  if (synthesize) {
+    // ── Day-based replay: NO per-strategy marker required ────────────────────
+    // Build a SYNTHETIC full-day session so ANY strategy — including one CREATED
+    // AFTER this day was recorded — can replay the day's shared ticks. The window
+    // is the day's spot-tick span. There is no recorded settings snapshot or
+    // warm-up: replaySession() runs this in current-settings mode and lets the
+    // strategy fetch its own warm-up from the history API (expiry still pinned
+    // from the recorded Market Context Snapshot).
+    let firstT = Infinity, lastT = -Infinity;
+    await _streamJsonl(path.join(dir, "spot.jsonl"), {
+      onRec: r => { if (r.t < firstT) firstT = r.t; if (r.t > lastT) lastT = r.t; },
+    });
+    if (!Number.isFinite(firstT)) {
+      throw new Error(`No spot ticks recorded for ${date} — cannot day-replay ${mode}`);
+    }
+    sessionStart = { t: firstT, e: "start", mode, sid: `synthetic:${mode}:${date}`, settings: null, warmup: null, meta: { synthetic: true } };
+    sessionStop  = { t: lastT,  e: "stop",  mode, sid: sessionStart.sid, reason: "synth_day" };
   } else {
-    sessionStart = startEvts[0];
+    const startEvts = sessions.filter(s => s.e === "start" && s.mode === mode);
+    if (startEvts.length === 0) {
+      throw new Error(`No '${mode}' session-start event found in ${date}`);
+    }
+    if (sessionId) {
+      sessionStart = startEvts.find(s => s.sid === sessionId);
+      if (!sessionStart) throw new Error(`sessionId ${sessionId} not found for ${mode} on ${date}`);
+    } else {
+      sessionStart = startEvts[0];
+    }
+    sessionStop = sessions.find(s =>
+      s.e === "stop" && s.mode === mode && s.sid === sessionStart.sid && s.t >= sessionStart.t
+    );
   }
-
-  let sessionStop = sessions.find(s =>
-    s.e === "stop" && s.mode === mode && s.sid === sessionStart.sid && s.t >= sessionStart.t
-  );
 
   const startT = sessionStart.t;
   const stopT  = sessionStop ? sessionStop.t : Infinity;
@@ -596,7 +614,7 @@ function _lookupCanonicalSession(mode, sessionStartTs) {
  * The harness exposes `pumpTick(tick)` for the engine to fan ticks through
  * the captured callbacks.
  */
-function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles, recordedDateStr = null, outputSubdir = "_replay_trades", outputSuffix = "replay" }) {
+function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles, recordedDateStr = null, outputSubdir = "_replay_trades", outputSuffix = "replay", syntheticWarmup = false }) {
   const socketManager     = require("../utils/socketManager");
   const fyers             = require("../config/fyers");
   const notify            = require("../utils/notify");
@@ -759,20 +777,26 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     // /start calls fetchCandlesCached(spotSym, res, fromStr, toStr, fetchCandles)
     // — we short-circuit it to return the recorded warmup so replay is fully
     // deterministic (no live REST hit, no dependence on broker uptime).
-    fyers.getHistory = async function (_params) {
-      // Wrap warmup candles into Fyers history response shape:
-      //   { s:"ok", candles: [[ts, open, high, low, close, vol], ...] }
-      const rows = (warmupCandles || []).map(c =>
-        [c.time, c.open, c.high, c.low, c.close, c.volume || 0]
-      );
-      return { s: "ok", candles: rows };
-    };
-    backtestEngine.fetchCandles = async function (_sym, _res, _from, _to) {
-      return (warmupCandles || []).slice();
-    };
-    candleCache.fetchCandlesCached = async function (_sym, _res, _from, _to, _rawFetcher) {
-      return (warmupCandles || []).slice();
-    };
+    // Day-based (synthetic) replays have NO recorded warm-up, so we must NOT
+    // short-circuit these — leave the originals in place so the strategy's own
+    // /start fetches real historical warm-up as of the (overridden) replay clock.
+    // The recorded day's option/vix/oi/spot ticks still come purely from disk.
+    if (!syntheticWarmup) {
+      fyers.getHistory = async function (_params) {
+        // Wrap warmup candles into Fyers history response shape:
+        //   { s:"ok", candles: [[ts, open, high, low, close, vol], ...] }
+        const rows = (warmupCandles || []).map(c =>
+          [c.time, c.open, c.high, c.low, c.close, c.volume || 0]
+        );
+        return { s: "ok", candles: rows };
+      };
+      backtestEngine.fetchCandles = async function (_sym, _res, _from, _to) {
+        return (warmupCandles || []).slice();
+      };
+      candleCache.fetchCandlesCached = async function (_sym, _res, _from, _to, _rawFetcher) {
+        return (warmupCandles || []).slice();
+      };
+    }
 
     // tradeLogger: divert to replay-specific files so we don't pollute the
     // canonical paper log and can compare side-by-side. `outputSubdir` lets
@@ -1088,7 +1112,12 @@ function _invokeRoute(routeModule, method, urlPath, query = {}) {
  * Returns:
  *   { ok, sessionId, mode, ticksReplayed, durationMs, sessionTrades, sessionPnl, error? }
  */
-async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSettings = false, noCache = false } = {}) {
+async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSettings = false, noCache = false, synthesize = false } = {}) {
+  // Day-based replay (no per-strategy marker) has no recorded settings snapshot,
+  // so it can only run in current-settings mode. Expiry is still pinned from the
+  // recorded Market Context Snapshot (below), matching the "purely recorded
+  // market data" contract for the option contract.
+  if (synthesize) useCurrentSettings = true;
   // Guard: replay shares the process with live/paper engines via monkey-patches.
   // Refuse if anything is active so a real trade isn't accidentally silenced.
   const pre = replayPreflight();
@@ -1112,7 +1141,7 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     //    scan here to find the end bound — log so this isn't a silent gap that
     //    makes the Replay activity pane look frozen.
     console.log(`📼 [replay] ${mode} ${sessionId || date}: loading recorded session…`);
-    const data = await loadSessionData({ date, mode, sessionId });
+    const data = await loadSessionData({ date, mode, sessionId, synthesize });
 
     // 1a. Resolve the historical option expiry ONCE — from the recorded Market
     //     Context Snapshot when available (both toggles), else the legacy pin.
@@ -1210,6 +1239,9 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
       recordedDateStr: date,
       outputSubdir: useCurrentSettings ? "_replay_trades_sim" : "_replay_trades",
       outputSuffix: useCurrentSettings ? "sim" : "replay",
+      // Synthetic day sessions have no recorded warm-up → let /start fetch real
+      // history instead of returning an empty recorded snapshot.
+      syntheticWarmup: synthesize || !!(data.sessionStart.meta && data.sessionStart.meta.synthetic),
     });
     harness.install();
 
