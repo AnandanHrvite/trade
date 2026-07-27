@@ -941,7 +941,33 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     Date.now = orig.DateNow;
   }
 
+  // ── Date CONSTRUCTOR shim (day-based replay warm-up) ─────────────────────────
+  // setWallClock() patches only Date.now(). But strategies compute their warm-up
+  // fetch range with `new Date()` (no-arg) — which Date.now() does NOT affect — so
+  // a day-based (synthetic) replay would fetch TODAY's candles instead of the
+  // replayed date's, seeding indicators from the wrong day. During the strategy's
+  // /start ONLY, we also shim the global Date constructor so a no-arg `new Date()`
+  // returns the overridden wall time; every arg'd `new Date(x)` behaves normally.
+  // Scoped tightly (enable → /start → disable) so the hot per-tick path is untouched.
+  const _OrigDate = Date;
+  let _dateShimActive = false;
+  function _ShimDate(...args) {
+    if (args.length === 0) {
+      const base = _wallOverride == null ? orig.DateNow() : _wallOverride;
+      return new.target ? new _OrigDate(base) : new _OrigDate(base).toString();
+    }
+    return new.target ? new _OrigDate(...args) : _OrigDate(...args);
+  }
+  _ShimDate.prototype = _OrigDate.prototype;
+  _ShimDate.now   = () => (_wallOverride == null ? orig.DateNow() : _wallOverride);
+  _ShimDate.parse = _OrigDate.parse;
+  _ShimDate.UTC   = _OrigDate.UTC;
+  function enableDateShim()  { if (!_dateShimActive) { _dateShimActive = true;  global.Date = _ShimDate; } }
+  function disableDateShim() { if (_dateShimActive)  { _dateShimActive = false; global.Date = _OrigDate; } }
+
   function uninstall() {
+    // Defensive: never leave the Date constructor shim installed past a run.
+    try { disableDateShim(); } catch (_) {}
     socketManager.start             = orig.sm_start;
     socketManager.addCallback       = orig.sm_addCallback;
     socketManager.removeCallback    = orig.sm_removeCallback;
@@ -1019,7 +1045,7 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     }
   }
 
-  return { install, uninstall, pumpTick, setNow, setWallClock, clearWallClock, getCallbacks: () => callbacks };
+  return { install, uninstall, pumpTick, setNow, setWallClock, clearWallClock, enableDateShim, disableDateShim, getCallbacks: () => callbacks };
 }
 
 // ── Mode → route module mapping ─────────────────────────────────────────────
@@ -1260,6 +1286,11 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     //    recorded session-start IST time as "now", which always passes.
     harness.setNow(data.sessionStart.t);
     harness.setWallClock(data.sessionStart.t);
+    // Day-based (synthetic) replay fetches REAL warm-up history in /start, and
+    // strategies date their fetch range with `new Date()` (not Date.now()). Shim
+    // the Date constructor for the /start window so warm-up resolves to the
+    // REPLAYED date, not today. No-op for marker-based replays (warm-up stubbed).
+    if (synthesize) harness.enableDateShim();
     let startResp;
     try {
       // force=1 bypasses the EMA_RSI_ST 0DTE expiry-day refusal — that's a LIVE-trading
@@ -1268,6 +1299,7 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
       // override equal to the replay date). Other modes ignore the flag.
       startResp = await _invokeRoute(routeMod, "GET", "/start", { force: "1" });
     } finally {
+      if (synthesize) harness.disableDateShim();
       harness.clearWallClock();
     }
     if (startResp.status >= 400 && startResp.status !== 302) {
