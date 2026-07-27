@@ -114,7 +114,13 @@ function requestCancel() {
 //     (a new tunable could not move the key, so editing it re-served the stale
 //     result), keys are sorted for a stable hash, and oi/market files are
 //     fingerprinted. Old entries were computed under the leaky key — drop them.
-const REPLAY_CACHE_VERSION = 9;
+// v10: the harness now clears the shared vixFilter/oiFilter caches on install, so
+//     the VIX and OI gates read RECORDED values instead of whatever a live session
+//     (or the previous replay) had left in memory — the rewound replay clock made
+//     both caches' freshness checks compare against a future timestamp and never
+//     expire. Any result cached while a VIX/OI gate was enabled was computed off
+//     live data and must be recomputed.
+const REPLAY_CACHE_VERSION = 10;
 
 function _replayCacheDir() {
   return path.join(ROOT_DIR, "_replay_cache");
@@ -805,6 +811,18 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
   const SHORT_DELAY_CAP_MS = 30 * 1000;
   const _pendingLongTimers = new Set();
 
+  // Clear the shared VIX + OI caches. Called on install (so the run reads only
+  // recorded data) and on uninstall (so replay-clock-stamped entries can't be
+  // inherited by the next live/paper session — their timestamps sit in the past,
+  // which is self-healing for the TTL checks but NOT for the sync readers
+  // oiFilter.checkCachedOi/getCachedOi, which classify off _series with no
+  // freshness test at all). Best-effort: a missing module must never fail a run.
+  function _resetMarketDataCaches() {
+    for (const m of ["./vixFilter", "./oiFilter"]) {
+      try { require(m).resetCache(); } catch (_) { /* module absent or no resetCache */ }
+    }
+  }
+
   // Captured callbacks (paper modules call socketManager.addCallback / .start)
   const callbacks = []; // [{ id, onTick, onLog }]
 
@@ -914,6 +932,28 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     // skipLogger: silence skip logging during replay so re-evaluated gates
     // don't append phantom rows to the canonical ~/trading-data/skips/ files.
     skipLogger.appendSkipLog = () => {};
+
+    // vixFilter / oiFilter: wipe the process-global market-data caches so the
+    // run starts from a clean slate and every VIX/OI read falls through to the
+    // stubbed fyers.getQuotes (= the RECORDED value at the replay clock).
+    //
+    // Without this, a replay silently gated on TODAY's live data, because both
+    // caches are time-stamped with Date.now() — which this harness rewinds to
+    // the recorded day. Every freshness comparison therefore inverts:
+    //   vixFilter.fetchLiveVix()  → `now - _cachedVixTs < VIX_CACHE_TTL` is
+    //     computed with `now` WEEKS BEFORE the timestamp, so the difference is
+    //     negative, the cache never expires, and the value a live session (or a
+    //     prior replay) left behind is served for the whole run. freshCachedVix()
+    //     inverts identically, so the stale-guard can't catch it either.
+    //   oiFilter.recordOiSample() → `now - _lastSampleTs < SAMPLE_TTL` is
+    //     negative too, so the sampler returns WITHOUT fetching and _evaluate()
+    //     classifies the buildup from the live _series still in memory. The
+    //     30-min STALE_GAP_MS discard inverts the same way and never fires.
+    // emaRsiStPaper/ema9vwapPaper never reset the VIX cache at /start, and NO
+    // strategy resets the OI series by design (it's shared across the parallel
+    // engines), so this cannot be fixed inside the paper routes — replay owns
+    // these globals for the duration of its run.
+    _resetMarketDataCaches();
 
     // sharedSocketState: stub the mutators so /start's setActive() and
     // /stop's clear() don't touch real session state. Reads (isActive,
@@ -1174,6 +1214,10 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     _pendingLongTimers.clear();
     global.setTimeout   = orig.setTimeout_;
     global.clearTimeout = orig.clearTimeout_;
+    // Drop the VIX/OI values this run cached at the REPLAYED instant so the next
+    // live/paper session re-samples from the real market instead of reading a
+    // week-old recording out of a sync getter (see _resetMarketDataCaches).
+    _resetMarketDataCaches();
     callbacks.length = 0;
   }
 
