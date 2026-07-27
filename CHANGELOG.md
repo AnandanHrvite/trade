@@ -17,6 +17,18 @@ Two smaller archive-integrity fixes alongside it:
 - `FYERS_INV_AMOUNT` / `ZERODHA_INV_AMOUNT` are now captured in the session settings snapshot. They set each strategy's paper capital base, so a SNAPSHOT replay of an old day was reading **today's** investment amount — editing it silently changed a past day's replayed capital and return figures. New recordings pin it; old ones keep the current-env behaviour (there's nothing to pin).
 - `tickRecorder.recordMarketContext` is now stubbed for the duration of a replay, like every other recorder write. It is only reachable from the live socket handler today, but `Date.now()` inside a replay is the *replayed* date — so any future caller could have minted a `market.jsonl` for an old day out of today's option chain. The archive is read-only during a replay, with no exceptions.
 
+### Fixed — replay engine audit: stale cache results, a recording gap, and a path-traversal write
+
+Full re-audit of the recorder + replay engine. Five real defects:
+
+- **"My current settings" could silently re-serve a stale result.** The cache key was built from the key set captured *when the day was recorded*, read at today's values — so a tunable that did not exist back then could not move the key. Change it, re-run, and the cached result came back unchanged, making the setting look like it did nothing. The key now covers the union of the recorded keys and every managed key set today, sorted for a stable hash, and fingerprints `oi.jsonl` + `market.jsonl` as well. Cache version bumped to 9, which drops entries computed under the leaky key.
+- **A replay during market hours punched a permanent hole in that day's recording.** Now that the feed stays up with no strategy running, a replay started at 11:00 would stub `recordSpotTick` and pause the chain recorder for its whole duration — dropping real ticks from an archive that can never be re-made. `replayPreflight()` now refuses while the day is being recorded, and says to replay after 15:30 or turn the feed off.
+- **Path traversal in the day-folder lookup.** `POST /replay/run` and `deleteSessionMarker()` joined an unvalidated `date` straight onto the archive root — and the latter *rewrites* the `sessions.jsonl` it resolves, so a crafted date could clobber a file outside the archive. Validation now lives at the join site (`_dayDir`), so a new endpoint can't reintroduce it by forgetting to check.
+- **Day replays wrote a settings-blind cache entry.** A synthetic day session has no settings snapshot, so its key can't tell two configurations apart. `/replay/run-day` passes `noCache` and never reads one, but writing it left a trap for any future caller that didn't.
+- **A failed replay reported a nonsense duration** (e.g. "-38 days"): the error path measured elapsed time with `Date.now()` while the harness still had it pinned to the replayed instant. The cache pruner had the same latent exposure — with a replay-era clock it would have deleted every cached entry on one write.
+
+Also corrected the docs: the tick archive lives at `<repo>/data/ticks`, not `~/trading-data/ticks` as README and CLAUDE.md both claimed. On EC2 it survives deploys only because the deploy rsync runs without `--delete` — now written down, because adding one would erase every recorded day.
+
 ### Fixed — every screen in the app now works on a phone
 
 Swept all 65 screens (44 app pages, the 7 standalone strategy guides, the Settings gate + audit log, the broker login pages and the 404) at 320 / 360 / 393 / 430 / 768px, in both themes, measured over CDP at real mobile viewports. Four classes of problem, and the fix for each is shared rather than per-page wherever the cause was shared.

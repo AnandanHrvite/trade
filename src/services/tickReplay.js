@@ -44,7 +44,28 @@ const path     = require("path");
 const readline = require("readline");
 const crypto   = require("crypto");
 
-const { ROOT_DIR } = require("../utils/tickRecorder")._internals;
+const tickRecorder = require("../utils/tickRecorder");
+const { ROOT_DIR } = tickRecorder._internals;
+
+// The real wall clock, captured at load. The harness overrides global Date.now()
+// for the duration of a run, so anything measuring REAL elapsed time (durations,
+// cache mtimes) must go through this instead.
+const _realNow = Date.now;
+
+/**
+ * Resolve a recording day-folder, rejecting anything that isn't a bare
+ * YYYY-MM-DD. Every path.join(ROOT_DIR, date) goes through here: the day string
+ * arrives from a request body, and `deleteSessionMarker` REWRITES the file it
+ * resolves — so an unchecked "../../.." could clobber a sessions.jsonl outside
+ * the archive. Validating at the join site (rather than per route) means a new
+ * endpoint cannot reintroduce the hole by forgetting to check.
+ */
+function _dayDir(date) {
+  if (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    throw new Error(`Invalid recording date "${date}" — expected YYYY-MM-DD`);
+  }
+  return path.join(ROOT_DIR, date);
+}
 
 // ── Process-wide lock so two replays can't trample each other's monkey-patches ─
 let _replayInProgress = false;
@@ -89,7 +110,11 @@ function requestCancel() {
 // v8: expiry now resolved from the recorded Market Context Snapshot (market.jsonl)
 //     for BOTH snapshot and current-settings runs — old cache entries used the
 //     blank-auto-detect pin and must be invalidated.
-const REPLAY_CACHE_VERSION = 8;
+// v9: cache-key fix — sim-mode keys now cover settings added AFTER the recording
+//     (a new tunable could not move the key, so editing it re-served the stale
+//     result), keys are sorted for a stable hash, and oi/market files are
+//     fingerprinted. Old entries were computed under the leaky key — drop them.
+const REPLAY_CACHE_VERSION = 9;
 
 function _replayCacheDir() {
   return path.join(ROOT_DIR, "_replay_cache");
@@ -213,7 +238,7 @@ function _resolveReplayExpiryEnv({ marketContext, snapshot, mode }) {
 }
 
 function _buildReplayCacheKey({ mode, date, sessionStart, useCurrentSettings, expiryEnv }) {
-  const dir = path.join(ROOT_DIR, date);
+  const dir = _dayDir(date);
   // Sim mode: the result depends on the CURRENT value of the settings the
   // strategy reads — so key on those keys' current process.env values, using
   // the snapshot's key set (the managed-settings keys captured at record time).
@@ -221,12 +246,28 @@ function _buildReplayCacheKey({ mode, date, sessionStart, useCurrentSettings, ex
   // NODE_APP_INSTANCE, uptime, instance id, …) that change every restart and
   // would bust the cache on each deploy even with identical strategy settings.
   // Snapshot mode keys on the recorded session-start env (immutable on disk).
+  // Key order must be stable or the hash changes for identical settings, so both
+  // branches emit sorted keys (process.env enumeration order is not guaranteed
+  // to survive a restart).
+  const _sorted = (obj) => {
+    const out = {};
+    for (const k of Object.keys(obj).sort()) out[k] = obj[k] === undefined ? null : obj[k];
+    return out;
+  };
   let settingsBasis;
   if (useCurrentSettings) {
-    settingsBasis = {};
-    for (const k of Object.keys(sessionStart.settings || {})) settingsBasis[k] = process.env[k];
+    // Key on the UNION of the keys recorded that day and every managed key set
+    // TODAY, each read from the current env. Keying only on the RECORDED key set
+    // (the previous behaviour) meant a tunable that did not exist when the day
+    // was recorded could not move the cache key — so editing it re-served the
+    // stale cached result and the A/B looked like "the setting does nothing".
+    const keys = new Set(Object.keys(sessionStart.settings || {}));
+    for (const k of Object.keys(tickRecorder.snapshotSettings())) keys.add(k);
+    const cur = {};
+    for (const k of keys) cur[k] = process.env[k];
+    settingsBasis = _sorted(cur);
   } else {
-    settingsBasis = Object.assign({}, sessionStart.settings || {});
+    settingsBasis = _sorted(sessionStart.settings || {});
   }
   // Overlay the resolved historical expiry (from the Market Context Snapshot) so
   // the cache key reflects the contract the run will actually trade — and two
@@ -244,6 +285,11 @@ function _buildReplayCacheKey({ mode, date, sessionStart, useCurrentSettings, ex
       spot:     _fileFingerprint(path.join(dir, "spot.jsonl")),
       options:  _fileFingerprint(path.join(dir, "options.jsonl")),
       vix:      _fileFingerprint(path.join(dir, "vix.jsonl")),
+      // oi + market were missing: replaying TODAY's in-progress session twice
+      // could serve the first result after oi.jsonl had grown, and a market.jsonl
+      // written late (token unready on the first ticks) changes the pinned expiry.
+      oi:       _fileFingerprint(path.join(dir, "oi.jsonl")),
+      market:   _fileFingerprint(path.join(dir, "market.jsonl")),
     },
     settings: settingsBasis,
   };
@@ -267,7 +313,10 @@ function _pruneReplayCache() {
   try {
     const dir = _replayCacheDir();
     if (!fs.existsSync(dir)) return;
-    const cutoff = Date.now() - REPLAY_CACHE_RETAIN_DAYS * 86400_000;
+    // _realNow: if this ever runs while the harness has Date.now() pinned to a
+    // replayed instant weeks ago, every cache entry would look expired and the
+    // whole cache would be deleted on one write.
+    const cutoff = _realNow() - REPLAY_CACHE_RETAIN_DAYS * 86400_000;
     for (const f of fs.readdirSync(dir)) {
       if (!f.endsWith(".json")) continue;
       const fp = path.join(dir, f);
@@ -347,7 +396,7 @@ async function loadSessionData({ date, mode, sessionId, synthesize = false }) {
   if (!date) throw new Error("loadSessionData: date is required");
   if (!mode) throw new Error("loadSessionData: mode is required");
 
-  const dir = path.join(ROOT_DIR, date);
+  const dir = _dayDir(date);
   if (!fs.existsSync(dir)) {
     throw new Error(`No recording found for ${date} at ${dir}`);
   }
@@ -1596,7 +1645,11 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     };
     // Cache only complete (non-cancelled) results so a future identical re-run
     // short-circuits. Cancelled runs are partial — never cache.
-    if (!cancelled) _writeReplayCache(cacheKey, result);
+    // Synthetic day replays are never cached: they carry no settings snapshot, so
+    // the key's settings basis is empty and cannot tell two different current
+    // configurations apart. run-day passes noCache and so never READS such an
+    // entry, but writing one leaves a trap for any future caller that doesn't.
+    if (!cancelled && !synthesize) _writeReplayCache(cacheKey, result);
     return result;
   } catch (err) {
     return {
@@ -1604,7 +1657,10 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
       mode,
       sessionId: sessionId || null,
       error: err.message,
-      durationMs: Date.now() - startWall,
+      // _realNow, not Date.now(): a throw from inside /start or the tick pump
+      // leaves the wall clock pinned to the REPLAYED instant, which would report
+      // a duration of "-38 days" for a run that failed after two seconds.
+      durationMs: _realNow() - startWall,
     };
   } finally {
     try { harness && harness.uninstall(); } catch (_) {}
@@ -1703,6 +1759,23 @@ function replayPreflight() {
   if (_replayInProgress) {
     return { ok: false, reason: "Another replay is already running in this process.", activeModes: ["__replay__"] };
   }
+  // The day's recording is in progress. install() stubs tickRecorder.recordSpotTick
+  // and the option-chain recorder pauses itself for the run, so every real tick
+  // that arrives while a replay is streaming is dropped from TODAY's archive —
+  // silently punching a hole in a recording that can never be re-made. Before the
+  // always-on feed existed this could not happen (no strategy running meant no
+  // socket at all); now it can, so refuse. Outside 09:15–15:30, on weekends and
+  // holidays, and with the feed toggled off, replays run as before.
+  try {
+    const feed = require("../utils/spotFeedSupervisor");
+    if (feed.isRecordingActive()) {
+      return {
+        ok: false,
+        reason: "The live market feed is recording today's ticks right now — a replay would leave a permanent gap in that recording. Replay after 15:30 IST, or turn off Always-On Spot Feed in Settings.",
+        activeModes: ["__recording__"],
+      };
+    }
+  } catch (_) { /* supervisor unavailable → nothing is recording; allow */ }
   return { ok: true };
 }
 
@@ -1762,7 +1835,9 @@ function deleteSessionMarker({ date, sessionId }) {
   if (!date || !sessionId) {
     return { ok: false, error: "date and sessionId are required" };
   }
-  const dir  = path.join(ROOT_DIR, date);
+  let dir;
+  try { dir = _dayDir(date); }
+  catch (e) { return { ok: false, error: e.message }; }
   const file = path.join(dir, "sessions.jsonl");
   if (!fs.existsSync(file)) {
     return { ok: false, error: `No sessions.jsonl for ${date}` };
@@ -1794,5 +1869,5 @@ module.exports = {
   // getQuotes and write replay-clock data into today's real recording.
   isReplayInProgress: () => _replayInProgress,
   // exposed for tests
-  _internals: { _buildOptionTimeline, _lookupAtOrBefore, _createHarness, _invokeRoute, MODE_TO_MODULE, _resolveReplayExpiryEnv },
+  _internals: { _buildOptionTimeline, _lookupAtOrBefore, _createHarness, _invokeRoute, MODE_TO_MODULE, _resolveReplayExpiryEnv, _buildReplayCacheKey },
 };

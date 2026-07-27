@@ -198,6 +198,18 @@ function stop() {
   if (_timer) { clearTimeout(_timer); _timer = null; }
 }
 
+/**
+ * True while this supervisor is holding the feed open to record the day.
+ * replayPreflight() uses it to refuse a replay that would drop real ticks from
+ * today's archive (the replay harness stubs recordSpotTick for its duration).
+ * Deliberately scoped to the session window, so a socket left running for any
+ * other reason after 15:30 can never block replays permanently.
+ */
+function isRecordingActive() {
+  if (!_enabled() || !_inSession()) return false;
+  try { return socketManager.isRunning(); } catch (_) { return false; }
+}
+
 function getStats() {
   return {
     running:      _running,
@@ -209,4 +221,4 @@ function getStats() {
   };
 }
 
-module.exports = { start, stop, getStats };
+module.exports = { start, stop, isRecordingActive, getStats };
