@@ -3113,6 +3113,17 @@ server.listen(PORT, HOST, () => {
     console.warn(`   Option-chain rec : not started — ${err.message}`);
   }
 
+  // Shared spot-feed supervisor — keeps the Fyers tick feed up for the whole
+  // session so the day is recorded as a MARKET archive, independent of which
+  // strategies (if any) are running. Without it, a day with no strategy started
+  // recorded nothing, and stopping the last strategy ended the recording early.
+  // Gated by SPOT_FEED_ALWAYS_ON.
+  try {
+    require("./utils/spotFeedSupervisor").start();
+  } catch (err) {
+    console.warn(`   Spot feed keep-up: not started — ${err.message}`);
+  }
+
   // Warn about DEAD legacy env keys. SWING_* and SCALP_* were renamed to
   // EMA_RSI_ST_* / BB_RSI_* (2026-07-05) and are no longer read by any code, so
   // an .env that still carries them silently ignores that tuning. Flag it once.

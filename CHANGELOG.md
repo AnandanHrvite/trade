@@ -6,6 +6,17 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — the day is now recorded as a market archive, not as a by-product of running strategies
+
+Replay recording was strategy-dependent in one place that mattered: nothing ever opened the Fyers spot feed except a strategy's own `/start`, and the last strategy to stop tore it down again. So a day where you started **no** strategy recorded **nothing**, and stopping the last strategy at 14:00 ended that day's recording at 14:00 — leaving a partial archive that a strategy added later can never replay.
+
+A supervisor ([src/utils/spotFeedSupervisor.js](src/utils/spotFeedSupervisor.js), `SPOT_FEED_ALWAYS_ON=true` by default) now keeps the shared feed connected 09:15–15:30 IST regardless of what is running, and re-connects within ~10s if a strategy's `/stop` closes it mid-session. It opens no second socket (it asks the same `socketManager` singleton, so the fan-out invariant holds), registers no tick callback (`recordSpotTick` already runs inside the socket's message handler), places no order, and never stops a feed a strategy is still using. It stands down for: `SPOT_FEED_ALWAYS_ON=false`, an in-flight replay, a missing Fyers token, a dead token (`isAuthFailed`), and weekends/NSE holidays.
+
+Two smaller archive-integrity fixes alongside it:
+
+- `FYERS_INV_AMOUNT` / `ZERODHA_INV_AMOUNT` are now captured in the session settings snapshot. They set each strategy's paper capital base, so a SNAPSHOT replay of an old day was reading **today's** investment amount — editing it silently changed a past day's replayed capital and return figures. New recordings pin it; old ones keep the current-env behaviour (there's nothing to pin).
+- `tickRecorder.recordMarketContext` is now stubbed for the duration of a replay, like every other recorder write. It is only reachable from the live socket handler today, but `Date.now()` inside a replay is the *replayed* date — so any future caller could have minted a `market.jsonl` for an old day out of today's option chain. The archive is read-only during a replay, with no exceptions.
+
 ### Fixed — every screen in the app now works on a phone
 
 Swept all 65 screens (44 app pages, the 7 standalone strategy guides, the Settings gate + audit log, the broker login pages and the 404) at 320 / 360 / 393 / 430 / 768px, in both themes, measured over CDP at real mobile viewports. Four classes of problem, and the fix for each is shared rather than per-page wherever the cause was shared.

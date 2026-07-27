@@ -660,6 +660,12 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     tr_recordOi:           tickRecorder.recordOi,
     tr_recordSessionStart: tickRecorder.recordSessionStart,
     tr_recordSessionStop:  tickRecorder.recordSessionStop,
+    // The archive is read-only during a replay. recordMarketContext is only
+    // reachable from the LIVE socket handler today, but Date.now() is the replay
+    // clock in here — so any future caller would resolve the REPLAYED date and
+    // could mint a market.jsonl for an old day out of TODAY's option chain.
+    // Stub it so that can never happen.
+    tr_recordMarketContext: tickRecorder.recordMarketContext,
     // skipLogger original — replay must NOT write strategy/VIX/spread skip
     // rows into the canonical ~/trading-data/skips/ files. The skip gates are
     // re-evaluated on every replayed tick, so without this stub each replay
@@ -854,6 +860,7 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     tickRecorder.recordOi           = () => {};
     tickRecorder.recordSessionStart = () => {};
     tickRecorder.recordSessionStop  = () => {};
+    tickRecorder.recordMarketContext = () => false;
 
     // skipLogger: silence skip logging during replay so re-evaluated gates
     // don't append phantom rows to the canonical ~/trading-data/skips/ files.
@@ -1079,6 +1086,7 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     tickRecorder.recordOi           = orig.tr_recordOi;
     tickRecorder.recordSessionStart = orig.tr_recordSessionStart;
     tickRecorder.recordSessionStop  = orig.tr_recordSessionStop;
+    tickRecorder.recordMarketContext = orig.tr_recordMarketContext;
     skipLogger.appendSkipLog        = orig.sl_appendSkipLog;
     sharedSocketState.setActive         = orig.ss_setActive;
     sharedSocketState.clear             = orig.ss_clear;
