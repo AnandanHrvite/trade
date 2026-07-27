@@ -1383,12 +1383,16 @@ function _anaRenderTbl(tbodyId){
   }
 }
 
-// Parse entry/exit time "HH:MM, DD/MM/YYYY" or "HH:MM:SS, DD/MM/YYYY" → ms or null
+// Parse entry/exit time → ms or null. istNow() writes "DD/MM/YYYY, HH:MM:SS";
+// older records use "HH:MM, DD/MM/YYYY". Match the halves independently so field
+// order doesn't matter — the date half has no colon, the clock half no slash.
 function _parseTimeMs(t){
   if (!t) return null;
-  const m = String(t).match(/(\\d{1,2}):(\\d{2})(?::(\\d{2}))?,\\s*(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4})/);
-  if (!m) return null;
-  return new Date(+m[6], +m[5]-1, +m[4], +m[1], +m[2], +(m[3]||0)).getTime();
+  const s = String(t);
+  const d = s.match(/(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4})/);
+  const c = s.match(/(\\d{1,2}):(\\d{2})(?::(\\d{2}))?/);
+  if (!d || !c) return null;
+  return new Date(+d[3], +d[2]-1, +d[1], +c[1], +c[2], +(c[3]||0)).getTime();
 }
 function _hourOf(t){
   const ts = t.entryTime || '';
