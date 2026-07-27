@@ -1647,8 +1647,9 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     // short-circuits. Cancelled runs are partial — never cache.
     // Synthetic day replays are never cached: they carry no settings snapshot, so
     // the key's settings basis is empty and cannot tell two different current
-    // configurations apart. run-day passes noCache and so never READS such an
-    // entry, but writing one leaves a trap for any future caller that doesn't.
+    // configurations apart. The one caller (/replay/run with synthesize) forces
+    // noCache and so never READS such an entry, but writing one would leave a
+    // trap for any future caller that doesn't.
     if (!cancelled && !synthesize) _writeReplayCache(cacheKey, result);
     return result;
   } catch (err) {
