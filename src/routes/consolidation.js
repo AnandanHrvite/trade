@@ -670,12 +670,16 @@ function fmtDateTime(s){
   return v;
 }
 
-// Parse entry/exit times of the form "HH:MM, DD/MM/YYYY"
+// Parse entry/exit times. istNow() writes "DD/MM/YYYY, HH:MM:SS"; older records use
+// "HH:MM, DD/MM/YYYY". Match the date and clock halves independently so field order
+// doesn't matter — the date half has no colon and the clock half has no slash.
 function parseEntryTime(t){
   if (!t) return null;
-  const m = String(t).match(/(\\d{1,2}):(\\d{2}),\\s*(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4})/);
-  if (!m) return null;
-  return new Date(+m[5], +m[4]-1, +m[3], +m[1], +m[2]);
+  const s = String(t);
+  const d = s.match(/(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4})/);
+  const c = s.match(/(\\d{1,2}):(\\d{2})/);
+  if (!d || !c) return null;
+  return new Date(+d[3], +d[2]-1, +d[1], +c[1], +c[2]);
 }
 
 function getState(){
