@@ -80,16 +80,28 @@ function _inSession() {
   return m >= OPEN_MIN && m < CLOSE_MIN;
 }
 
+/**
+ * The IST calendar date as a Date whose LOCAL getters read back correctly, so
+ * getDay()/getMonth() are right whether the box runs UTC (EC2) or IST (dev Mac).
+ * Building from parts avoids the "shift the epoch by 5:30 and read local" trick,
+ * which double-shifts on an IST box.
+ */
+function _istDateObj() {
+  const d = new Date((Math.floor(Date.now() / 1000) + 19800) * 1000);
+  return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+}
+
 /** Weekend / NSE-holiday check, cached per IST date (the answer can't change). */
 async function _isTradingDay() {
   const day = _istDay();
   if (_tradingDay.day === day && _tradingDay.allowed !== null) return _tradingDay.allowed;
   let allowed = true;
   try {
-    // isTradingAllowed() also checks its own 07:00–16:00 window — a superset of
-    // ours, so it never rejects a moment we'd otherwise act on.
-    const r = await nseHolidays.isTradingAllowed();
-    allowed = !!(r && r.allowed);
+    // isNonTradingDay() is weekend + holiday ONLY — deliberately not
+    // isTradingAllowed(), which folds in its own 07:00–16:00 window. Caching a
+    // "false" that really meant "wrong time of day" would silently disable
+    // recording for the rest of the day if that window ever changed.
+    allowed = !(await nseHolidays.isNonTradingDay(_istDateObj()));
   } catch (_) {
     // Holiday list unreachable → assume trading. Recording an extra quiet day is
     // harmless; skipping a real one loses market data permanently.
@@ -116,12 +128,15 @@ async function _check() {
   try { if (require("../services/tickReplay").isReplayInProgress()) return; } catch (_) {}
 
   if (!_inSession()) {
-    // Session over. Release the connection so it isn't held open overnight —
-    // but never while a strategy is still using it (live square-off, a manual
-    // after-hours paper session, etc.).
+    // Outside the session the skip reason is stale — clear it so tomorrow's
+    // first "no token" (or similar) is reported again instead of being
+    // swallowed as a duplicate for the rest of the process's life.
+    _skipReason = null;
+    // Release the connection so it isn't held open overnight — but never while
+    // a strategy is still using it (live square-off, a manual after-hours paper
+    // session, etc.).
     if (socketManager.isRunning() && !sharedSocketState.isAnyActive()) {
       socketManager.stop();
-      _skipReason = null;   // allow the next session's messages through
       console.log("📡 [feed] market closed — shared spot feed released");
     }
     return;

@@ -1794,5 +1794,5 @@ module.exports = {
   // getQuotes and write replay-clock data into today's real recording.
   isReplayInProgress: () => _replayInProgress,
   // exposed for tests
-  _internals: { _buildOptionTimeline, _lookupAtOrBefore, _createHarness, _invokeRoute, MODE_TO_MODULE },
+  _internals: { _buildOptionTimeline, _lookupAtOrBefore, _createHarness, _invokeRoute, MODE_TO_MODULE, _resolveReplayExpiryEnv },
 };
