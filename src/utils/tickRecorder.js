@@ -69,6 +69,13 @@ let _flushTimer = null;
 let _exitHandlersInstalled = false;
 let _initialized = false;
 
+// The real wall clock, captured at load (tickRecorder is required at boot, via
+// socketManager, long before any replay). tickReplay's harness overrides the
+// global Date.now() for the duration of a run, so anything that decides WHICH
+// DAYS TO DELETE must read the real clock — a replay-era "today" would move the
+// retention cutoff, and this module owns an archive that cannot be re-made.
+const _realNow = Date.now;
+
 // ── IST date helper (matches socketManager._isMarketHours) ───────────────────
 function istDateString(unixMs) {
   // Fast IST: UTC+5:30 = +19800 seconds
@@ -383,7 +390,7 @@ function pruneOldRecordings(retainDays) {
   const days = Number.isFinite(retainDays) ? retainDays : RETAIN_DAYS;
   if (!fs.existsSync(ROOT_DIR)) return { kept: 0, deleted: 0 };
 
-  const cutoffMs = Date.now() - days * 86400_000;
+  const cutoffMs = _realNow() - days * 86400_000;
   const cutoffDate = istDateString(cutoffMs);
   let kept = 0, deleted = 0;
 
@@ -431,7 +438,7 @@ function getStats() {
   return {
     enabled: ENABLED,
     rootDir: ROOT_DIR,
-    today: istDateString(Date.now()),
+    today: istDateString(_realNow()),
     bufferDepth: {
       spot:     buffers.spot.length,
       options:  buffers.options.length,
@@ -458,5 +465,5 @@ module.exports = {
   deleteRecordingsInRange,
   getStats,
   // exposed for tests/replay
-  _internals: { ROOT_DIR, istDateString, dayDir, ensureDayDir, MAX_BUFFER_RECORDS, RETAIN_DAYS },
+  _internals: { ROOT_DIR, istDateString, dayDir, ensureDayDir, MAX_BUFFER_RECORDS, RETAIN_DAYS, realNow: _realNow },
 };

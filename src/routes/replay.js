@@ -162,7 +162,11 @@ router.post("/delete-session", express.json(), (req, res) => {
 // now, and rm-ing it mid-flush would leave a corrupt, marker-less day.
 router.post("/delete-all", express.json(), (req, res) => {
   try {
-    const yesterday = tickRecorder._internals.istDateString(Date.now() - 86400_000);
+    // realNow, not Date.now(): a replay running in this process has the global
+    // clock pinned to the REPLAYED day, which would silently redefine "yesterday"
+    // and delete the wrong slice of the archive.
+    const { istDateString, realNow } = tickRecorder._internals;
+    const yesterday = istDateString(realNow() - 86400_000);
     const out = tickRecorder.deleteRecordingsInRange({ to: yesterday });
     res.json({ ok: true, deleted: out.deleted, kept: out.kept, keptToday: true });
   } catch (err) {
