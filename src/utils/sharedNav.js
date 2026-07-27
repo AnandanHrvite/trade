@@ -1805,11 +1805,15 @@ async function secretFetch(url, opts) {
   opts.headers = opts.headers || {};
   var secret = getApiSecret();
   if (secret) opts.headers['x-api-secret'] = secret;
+  // Per-call timeout. Default 15s for normal API calls; long-running operations
+  // (e.g. a full-day tick replay = tens of thousands of ticks, well over 15s)
+  // pass a larger opts.timeoutMs, or 0 to disable the abort timer entirely.
+  var timeoutMs = (opts.timeoutMs != null) ? opts.timeoutMs : 15000;
   var controller = new AbortController();
-  var tid = setTimeout(function(){ controller.abort(); }, 15000);
+  var tid = (timeoutMs > 0) ? setTimeout(function(){ controller.abort(); }, timeoutMs) : null;
   opts.signal = controller.signal;
   var res;
-  try { res = await fetch(url, opts); } finally { clearTimeout(tid); }
+  try { res = await fetch(url, opts); } finally { if (tid) clearTimeout(tid); }
   if (res.status === 403) {
     sessionStorage.removeItem('__api_secret');
     var isRetry = !!secret;
@@ -1818,9 +1822,9 @@ async function secretFetch(url, opts) {
     if (secret === null) return null;
     opts.headers['x-api-secret'] = secret;
     var c2 = new AbortController();
-    var t2 = setTimeout(function(){ c2.abort(); }, 15000);
+    var t2 = (timeoutMs > 0) ? setTimeout(function(){ c2.abort(); }, timeoutMs) : null;
     opts.signal = c2.signal;
-    try { res = await fetch(url, opts); } finally { clearTimeout(t2); }
+    try { res = await fetch(url, opts); } finally { if (t2) clearTimeout(t2); }
   }
   return res;
 }

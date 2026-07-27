@@ -1457,11 +1457,13 @@ async function runDayReplay(btn) {
   btn.disabled = true; btn.textContent = 'Replaying…';
   out.innerHTML = '<span style="color:#94a3b8;">Running ' + esc(mode) + ' for ' + esc(date) + '… (full recompute, may take ~1–2 min)</span>';
   try {
-    var r = await fetch('/replay/run-day', {
+    var r = await secretFetch('/replay/run-day', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ date: date, mode: mode }),
+      timeoutMs: 600000,  // full-day replay far exceeds the 15s default → 10 min
     });
+    if (!r) { out.innerHTML = '<span style="color:#f87171;">Cancelled — API secret not provided.</span>'; return; }
     var data = await r.json();
     if (!data || !data.ok) {
       out.innerHTML = '<span style="color:#f87171;">Failed: ' + esc((data && data.error) || 'unknown') + '</span>';
@@ -1551,6 +1553,7 @@ async function callReplayApi(date, mode, sessionId, useCurrentSettings) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ date, mode, sessionId, speed: 0, useCurrentSettings }),
+    timeoutMs: 600000,  // a full-day replay far exceeds the 15s default → 10 min
   });
   // secretFetch returns null when the user cancels the API-secret prompt — the
   // batch runner reads .error, so surface it the same way a failed run does.
