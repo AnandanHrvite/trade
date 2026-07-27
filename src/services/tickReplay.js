@@ -949,6 +949,11 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
   // /start ONLY, we also shim the global Date constructor so a no-arg `new Date()`
   // returns the overridden wall time; every arg'd `new Date(x)` behaves normally.
   // Scoped tightly (enable → /start → disable) so the hot per-tick path is untouched.
+  // Tradeoff: the shim mutates the process-wide Date across the warm-up REST await,
+  // so a concurrent no-arg `new Date()` (a background timer, an SSE heartbeat) would
+  // read the replay date for that window. Harmless — non-persistent, no trade engine
+  // is active (preflight), and Date.now() was already overridden for a superset
+  // window pre-fix; worst case is an odd timestamp in a concurrent log line.
   const _OrigDate = Date;
   let _dateShimActive = false;
   function _ShimDate(...args) {
