@@ -156,6 +156,12 @@ router.get("/", (req, res) => {
     .tbl td{padding:7px 10px;border-top:0.5px solid #0e1e36;color:#c8d8f0;text-align:right;}
     .tbl td:first-child{text-align:left;}
     .tbl tr:hover td{background:rgba(56,189,248,0.05);}
+    .pager{display:flex;align-items:center;gap:6px;margin-top:10px;font-family:'IBM Plex Mono',monospace;font-size:0.64rem;color:#4a6080;flex-wrap:wrap;}
+    .pg-info{margin-right:auto;}
+    .pg-btn{background:#04090f;border:0.5px solid #0e1e36;color:#7dd3fc;padding:4px 9px;border-radius:5px;font-family:inherit;font-size:0.72rem;line-height:1;cursor:pointer;min-width:30px;min-height:28px;}
+    .pg-btn:hover:not(:disabled){background:#0c4a6e;}
+    .pg-btn:disabled{opacity:0.35;cursor:default;color:#3a5070;}
+    .pg-num{padding:0 4px;color:#c8d8f0;}
     .badge-mode{padding:2px 7px;border-radius:4px;font-size:0.58rem;font-weight:700;letter-spacing:0.5px;}
     .badge-EMA_RSI_ST{background:rgba(59,130,246,0.12);color:#3b82f6;border:0.5px solid rgba(59,130,246,0.3);}
     .badge-BB_RSI{background:rgba(245,158,11,0.12);color:#f59e0b;border:0.5px solid rgba(245,158,11,0.3);}
@@ -175,6 +181,10 @@ router.get("/", (req, res) => {
     :root[data-theme="light"] .tbl th{background:#f1f5f9!important;color:#64748b!important;border-bottom-color:#e0e4ea!important;}
     :root[data-theme="light"] .tbl td{border-color:#e0e4ea!important;color:#334155!important;}
     :root[data-theme="light"] .empty{color:#94a3b8!important;}
+    :root[data-theme="light"] .pager{color:#64748b!important;}
+    :root[data-theme="light"] .pg-btn{background:#f8fafc!important;border-color:#e0e4ea!important;color:#0369a1!important;}
+    :root[data-theme="light"] .pg-btn:hover:not(:disabled){background:#e0f2fe!important;}
+    :root[data-theme="light"] .pg-num{color:#1e293b!important;}
   </style>
 </head>
 <body>
@@ -223,14 +233,19 @@ function inr(n){ const v=Math.round(n); return (v<0?'-':'')+'₹'+Math.abs(v).to
 function sign(n){ return n>0?'+':''; }
 function pc(n){ return n>=0?'#10b981':'#ef4444'; }
 
-// "HH:MM, DD/MM/YYYY" (IST local) OR ISO "YYYY-MM-DDTHH:MM..Z" (UTC → +5:30)
+// istNow() writes "DD/MM/YYYY, HH:MM:SS" (IST). Older records may be "HH:MM, DD/MM/YYYY".
+// Both have exactly one clock field, so the first HH:MM in the string is the entry time —
+// the date half never contains a colon. ISO "YYYY-MM-DDTHH:MM..Z" is UTC, so shift +5:30.
 function entryHour(t){
   const v=String(t||'');
-  let m=v.match(/^(\\d{1,2}):(\\d{2}),/);
-  if(m) return +m[1];
-  m=v.match(/^\\d{4}-\\d{2}-\\d{2}T/);
-  if(m){ const d=new Date(v); if(!isNaN(d)) return new Date(d.getTime()+19800000).getUTCHours(); }
-  return null;
+  if(/^\\d{4}-\\d{2}-\\d{2}T/.test(v)){
+    const d=new Date(v);
+    return isNaN(d)?null:new Date(d.getTime()+19800000).getUTCHours();
+  }
+  const m=v.match(/(\\d{1,2}):(\\d{2})/);
+  if(!m) return null;
+  const h=+m[1];
+  return (h>=0&&h<=23)?h:null;
 }
 const DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 function weekday(dateStr){ if(!dateStr) return null; const d=new Date(dateStr+'T12:00:00'); return isNaN(d)?null:d.getDay(); }
@@ -342,37 +357,88 @@ function render(){
   h+='</div>';
   C.innerHTML=h;
 
+  paintTable('mode');
+  paintTable('reason');
   drawEquity(s.eqS);
   drawHour(arr);
   drawDow(arr);
 }
 
+// ── pagination ─────────────────────────────────────────────────────────────
+// Tables can grow unbounded (By Exit Reason has one row per distinct reason
+// string), so each is rendered a page at a time. Rows are computed once per
+// filter change and held here; paging only re-paints its own wrapper, never
+// re-runs stats(). Page resets to 1 whenever render() rebuilds the tables.
+const PAGE_SIZE = 10;
+const TBL = {};
+
+function registerTable(key, head, rows, rowFn){
+  TBL[key] = { head, rows, rowFn, page: 1 };
+  return '<div id="tw-'+key+'"></div>';
+}
+
+function paintTable(key){
+  const t = TBL[key];
+  const el = document.getElementById('tw-'+key);
+  if(!t || !el) return;
+  const total = t.rows.length;
+  const pages = Math.max(1, Math.ceil(total/PAGE_SIZE));
+  if(t.page > pages) t.page = pages;
+  if(t.page < 1)     t.page = 1;
+  const start = (t.page-1)*PAGE_SIZE;
+  const slice = t.rows.slice(start, start+PAGE_SIZE);
+
+  let h='<table class="tbl"><thead><tr>'+t.head+'</tr></thead><tbody>';
+  for(const r of slice) h+=t.rowFn(r);
+  h+='</tbody></table>';
+  if(total > PAGE_SIZE){
+    const first = t.page===1, last = t.page===pages;
+    h+='<div class="pager">'
+      +'<span class="pg-info">'+(start+1)+'–'+Math.min(start+PAGE_SIZE,total)+' of '+total+'</span>'
+      +'<button class="pg-btn" data-pg="'+key+'" data-go="1"'+(first?' disabled':'')+' title="First">«</button>'
+      +'<button class="pg-btn" data-pg="'+key+'" data-go="'+(t.page-1)+'"'+(first?' disabled':'')+' title="Previous">‹</button>'
+      +'<span class="pg-num">'+t.page+' / '+pages+'</span>'
+      +'<button class="pg-btn" data-pg="'+key+'" data-go="'+(t.page+1)+'"'+(last?' disabled':'')+' title="Next">›</button>'
+      +'<button class="pg-btn" data-pg="'+key+'" data-go="'+pages+'"'+(last?' disabled':'')+' title="Last">»</button>'
+      +'</div>';
+  }
+  el.innerHTML = h;
+}
+
+// Delegated so the buttons survive every innerHTML rebuild of #content.
+document.getElementById('content').addEventListener('click', e=>{
+  const b = e.target.closest('.pg-btn');
+  if(!b || b.disabled) return;
+  const t = TBL[b.dataset.pg];
+  if(!t) return;
+  t.page = +b.dataset.go;
+  paintTable(b.dataset.pg);
+});
+
 function modeTable(arr){
   const m=new Map();
   for(const t of arr){ if(!m.has(t.mode)) m.set(t.mode,[]); m.get(t.mode).push(t); }
   const rows=[...m.entries()].map(([mode,ts])=>({mode,s:stats(ts)})).sort((a,b)=>b.s.net-a.s.net);
-  let h='<table class="tbl"><thead><tr><th>Strategy</th><th>Trades</th><th>WR</th><th>Net</th><th>Exp</th><th>PF</th></tr></thead><tbody>';
-  for(const r of rows){
-    h+='<tr><td><span class="badge-mode badge-'+r.mode+'">'+r.mode+'</span></td>'
+  return registerTable('mode',
+    '<th>Strategy</th><th>Trades</th><th>WR</th><th>Net</th><th>Exp</th><th>PF</th>',
+    rows,
+    r=>'<tr><td><span class="badge-mode badge-'+r.mode+'">'+r.mode+'</span></td>'
       +'<td>'+r.s.n+'</td><td>'+r.s.wr.toFixed(0)+'%</td>'
       +'<td style="color:'+pc(r.s.net)+'">'+sign(r.s.net)+inr(r.s.net)+'</td>'
       +'<td style="color:'+pc(r.s.exp)+'">'+inr(r.s.exp)+'</td>'
-      +'<td>'+(r.s.pf===Infinity?'∞':r.s.pf.toFixed(2))+'</td></tr>';
-  }
-  return h+'</tbody></table>';
+      +'<td>'+(r.s.pf===Infinity?'∞':r.s.pf.toFixed(2))+'</td></tr>');
 }
 
 function reasonTable(arr){
   const m=groupNet(arr, t=>t.exitReason||'—');
   const rows=[...m.values()].sort((a,b)=>a.net-b.net); // worst first — find the bleed
-  let h='<table class="tbl"><thead><tr><th>Exit Reason</th><th>N</th><th>WR</th><th>Net</th><th>Avg</th></tr></thead><tbody>';
-  for(const r of rows){
-    h+='<tr><td title="'+esc(r.key)+'">'+esc(r.key.length>26?r.key.slice(0,26)+'…':r.key)+'</td>'
+  return registerTable('reason',
+    '<th>Exit Reason</th><th>N</th><th>WR</th><th>Net</th><th>Avg</th>',
+    rows,
+    r=>'<tr><td title="'+esc(r.key)+'">'+esc(r.key.length>26?r.key.slice(0,26)+'…':r.key)+'</td>'
       +'<td>'+r.n+'</td><td>'+(r.n?(r.wins/r.n*100).toFixed(0):0)+'%</td>'
       +'<td style="color:'+pc(r.net)+'">'+sign(r.net)+inr(r.net)+'</td>'
-      +'<td style="color:'+pc(r.net/r.n)+'">'+inr(r.net/r.n)+'</td></tr>';
-  }
-  return h+'</tbody></table>';
+      +'<td style="color:'+pc(r.net/r.n)+'">'+inr(r.net/r.n)+'</td></tr>');
 }
 
 function drawEquity(eqS){
