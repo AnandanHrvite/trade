@@ -175,18 +175,29 @@ router.post("/delete-all", express.json(), (req, res) => {
 });
 
 router.post("/run", express.json(), async (req, res) => {
-  const { date, mode, sessionId, speed, useCurrentSettings, noCache } = req.body || {};
+  const { date, mode, sessionId, speed, useCurrentSettings, noCache, synthesize } = req.body || {};
   if (!date || !mode) {
     return res.status(400).json({ ok: false, error: "date and mode are required" });
   }
+  // Validate date shape before it reaches path.join(ROOT_DIR, date) — blocks any
+  // "../" traversal. (mode is validated against MODE_TO_MODULE inside replaySession.)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return res.status(400).json({ ok: false, error: "date must be YYYY-MM-DD" });
+  }
   try {
+    // synthesize = replay the whole recorded DAY without that strategy's own
+    // session marker — how a strategy added later (or simply not started that
+    // day) gets replayed. replaySession() forces current-settings for it; the
+    // cache can't fingerprint those settings without a snapshot, so never cache.
+    const wholeDay = !!synthesize;
     const result = await tickReplay.replaySession({
       date,
       mode,
-      sessionId,
+      sessionId: wholeDay ? undefined : sessionId,
+      synthesize: wholeDay,
       speed: typeof speed === "number" ? speed : 0,
       useCurrentSettings: !!useCurrentSettings,
-      noCache: !!noCache,  // force fresh recompute + cache overwrite when true
+      noCache: wholeDay ? true : !!noCache,  // force fresh recompute + cache overwrite when true
     });
     // Attach a contract-note row (_cn) to each trade so the Replay page's
     // Report modal can build a contract note client-side, identical to the
@@ -1262,6 +1273,7 @@ async function loadSessions() {
       return;
     }
     _allSessionsCache = Array.isArray(data.sessions) ? data.sessions : [];
+    _allDatesCache    = Array.isArray(data.dates)    ? data.dates    : [];
     setRangeDefaults();
     _populateModeFilter();
     renderSessions();
@@ -1389,9 +1401,10 @@ async function deleteAllRecordings(btn) {
       alert('Delete all failed: ' + (data.error || 'unknown'));
       return;
     }
-    _allSessionsCache = [];
-    _populateModeFilter();
-    renderSessions();
+    // Re-fetch instead of clearing locally: today's folder is deliberately kept
+    // by the server, and the date pickers now also offer marker-less recorded
+    // days — a local wipe would leave both caches disagreeing with disk.
+    await loadSessions();
     btn.disabled = false; btn.textContent = orig;
     alert('Deleted ' + (data.deleted || 0) + ' recorded day(s).');
   } catch (e) {
@@ -1463,11 +1476,11 @@ function cmpDelta(bPnl, sPnl) {
   return (sPnl || 0) - (bPnl || 0);
 }
 
-async function callReplayApi(date, mode, sessionId, useCurrentSettings) {
+async function callReplayApi(date, mode, sessionId, useCurrentSettings, synthesize) {
   const r = await secretFetch('/replay/run', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ date, mode, sessionId, speed: 0, useCurrentSettings }),
+    body: JSON.stringify({ date, mode, sessionId, speed: 0, useCurrentSettings, synthesize: !!synthesize }),
     timeoutMs: 600000,  // a full-day replay far exceeds the 15s default → 10 min
   });
   // secretFetch returns null when the user cancels the API-secret prompt — the
@@ -1764,7 +1777,9 @@ function buildDiagnosticBlob(context, rows) {
     lines.push('----- SESSION ' + (i + 1) + ' -----');
     lines.push('Date:       ' + r.session.date);
     lines.push('Mode:       ' + r.session.mode);
-    lines.push('SessionID:  ' + r.session.sessionId);
+    lines.push('SessionID:  ' + (r.session.wholeDay
+      ? ((r.sim && r.sim.sessionId) || 'whole day') + '  (no session marker — full recorded day, current settings)'
+      : r.session.sessionId));
     if (r.baseline && r.baseline.ok) {
       lines.push('Baseline:   PnL=' + r.baseline.sessionPnl + ' | trades=' + r.baseline.tradeCount + ' | ticks=' + r.baseline.ticksReplayed);
       lines.push('Baseline trades (full JSON):');
@@ -1855,6 +1870,10 @@ function downloadDiagnostic(btn, context, rows) {
 
 // ── Date-range orchestration ───────────────────────────────────────────────
 let _allSessionsCache = [];
+// Every recorded day-folder on disk, session marker or not. The always-on feed
+// records a day even when no strategy ran, so these are the days a strategy can
+// be replayed over as a WHOLE DAY (synthetic session, current settings).
+let _allDatesCache = [];
 
 let _enabledDates = [];
 let _rangeFromFp = null;
@@ -1863,9 +1882,13 @@ let _rangeToFp   = null;
 function setRangeDefaults() {
   // Restrict From/To to dates that actually have a recording on disk.
   // Weekends and market holidays appear greyed out in the calendar.
+  // Includes days recorded by the always-on feed with NO session marker — in
+  // current-settings mode those replay as whole days (see pickSessionsInRange).
   const fromEl = document.getElementById('range-from');
   const toEl   = document.getElementById('range-to');
-  _enabledDates = Array.from(new Set(_allSessionsCache.map(s => s.date).filter(Boolean))).sort();
+  _enabledDates = Array.from(new Set(
+    _allSessionsCache.map(s => s.date).concat(_allDatesCache).filter(Boolean)
+  )).sort();
 
   if (_enabledDates.length === 0) {
     if (_rangeFromFp) { _rangeFromFp.destroy(); _rangeFromFp = null; }
@@ -1955,7 +1978,7 @@ function _allReplayModes() {
   return Array.prototype.map.call(sel.options, o => o.value).filter(v => v && v !== 'all');
 }
 
-function pickSessionsInRange(from, to, mode) {
+function pickSessionsInRange(from, to, mode, includeWholeDays) {
   // Sessions are deduped by sessionId in listRecordings, sorted newest-first.
   // We DON'T require durationMs != null. A session that crash-recovered or
   // was killed mid-flight has no stop record but still has a full spot/option
@@ -1965,9 +1988,26 @@ function pickSessionsInRange(from, to, mode) {
   // mode==='all' → every enabled paper mode; the batch runner replays each
   // session against its own mode, so a mixed list works as-is.
   const wanted = (mode === 'all') ? _allReplayModes() : [mode];
-  return _allSessionsCache
-    .filter(s => wanted.includes(s.mode) && s.date >= from && s.date <= to)
-    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : (a.startTs || 0) - (b.startTs || 0)));
+  const picked = _allSessionsCache
+    .filter(s => wanted.includes(s.mode) && s.date >= from && s.date <= to);
+
+  // Whole-day fill-in (current-settings runs only): a day recorded by the
+  // always-on feed carries no marker for a strategy that wasn't started — or
+  // that didn't exist yet. Replay it as a synthetic full-day session so a new
+  // strategy can be tested over every recorded day. Snapshot mode is excluded
+  // by the caller: there is no recorded settings snapshot to replay with.
+  if (includeWholeDays) {
+    const covered = new Set(picked.map(s => s.mode + '|' + s.date));
+    for (const date of _allDatesCache) {
+      if (!date || date < from || date > to) continue;
+      for (const m of wanted) {
+        if (covered.has(m + '|' + date)) continue;
+        picked.push({ date, mode: m, sessionId: null, wholeDay: true });
+      }
+    }
+  }
+
+  return picked.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : (a.startTs || 0) - (b.startTs || 0)));
 }
 
 function renderRangeResult(rows, context) {
@@ -2141,7 +2181,9 @@ function renderRangeResult(rows, context) {
     html += '<tr>' +
       '<td>' + r.session.date + '</td>' +
       '<td><span class="tag ' + rowTag + '">' + r.session.mode + '</span></td>' +
-      '<td><code style="font-size:0.7rem;color:#94a3b8;">' + r.session.sessionId + '</code></td>' +
+      '<td>' + (r.session.wholeDay
+        ? '<span class="muted" style="font-size:0.7rem;" title="This strategy had no session on this day — the whole recorded day was replayed with your current settings. Warm-up candles are fetched live, so the broker must be logged in.">whole day (no session)</span>'
+        : '<code style="font-size:0.7rem;color:#94a3b8;">' + r.session.sessionId + '</code>') + '</td>' +
       '<td class="num">' + (bOk ? (bPnl >= 0 ? '+' : '') + '₹' + bPnl.toFixed(2) : '<span style="color:#ef4444;">err</span>') + '</td>' +
       '<td class="num">' + (bOk ? bTrd : '–') + '</td>' +
       '<td class="num">' + (sOk ? (sPnl >= 0 ? '+' : '') + '₹' + sPnl.toFixed(2) : '<span style="color:#ef4444;">err</span>') + '</td>' +
@@ -2225,7 +2267,10 @@ async function runRange(btn) {
 
   const useCurrentSettings = (getSelectedSettingsSource() === 'current');
   const context = { mode, label: modeLabel, from, to, useCurrentSettings };
-  const sessions = pickSessionsInRange(from, to, mode);
+  // Only a current-settings run can cover days the strategy never ran on — a
+  // snapshot run replays each session's own recorded settings, which a
+  // marker-less day simply doesn't have.
+  const sessions = pickSessionsInRange(from, to, mode, useCurrentSettings);
   if (sessions.length === 0) {
     const pill = mode === 'all' ? 'all strategies' : mode;
     document.getElementById('range-result').innerHTML =
@@ -2324,7 +2369,7 @@ async function runSessionsBatch(sessions, context, btn, btnRestoreText) {
     renderProgress();
     let sim = null;
     try {
-      sim = await callReplayApi(s.date, s.mode, s.sessionId, useCurrentSettings);
+      sim = await callReplayApi(s.date, s.mode, s.sessionId, useCurrentSettings, s.wholeDay);
     } catch (e) {
       sim = { ok: false, error: e.message };
     }

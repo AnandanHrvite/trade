@@ -6,6 +6,18 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Changed — whole-day replay moved into the Date-range card (the separate "Day replay" card is gone)
+
+Replaying a recorded day for a strategy that has **no session marker** on it — a strategy you didn't start that day, or one that didn't exist yet — used to need its own card and its own `POST /replay/run-day`. Both are removed; the Date-range comparison card does it now.
+
+Run the range with **Settings source = "My current settings"** and every recorded day in the range that has no session for the chosen strategy is replayed as a whole day (`POST /replay/run` with `synthesize: true`). Pick **All strategies** and each strategy is filled in independently, so one run covers everything the archive holds. Such a row shows `whole day (no session)` instead of a session id and has no live baseline to compare against — the totals already track baseline and replay counts separately, so mixed runs stay honest.
+
+- **Snapshot runs are unchanged.** A marker-less day has no recorded settings snapshot to replay with, so the fill-in only applies to current-settings runs.
+- The From/To calendars now also enable days that were recorded with no strategy running (previously only days with a session marker were selectable, which made those days unreachable from this card).
+- Whole-day rows never read or write the result cache — a synthetic session carries no settings snapshot, so its cache key can't tell two configurations apart.
+- Warm-up candles for a whole-day run are fetched live from the history API, so the broker must be logged in or the run returns 0 trades.
+- `POST /replay/run` now validates `date` shape for every request, not just the synthetic path.
+
 ### Fixed — the day is now recorded as a market archive, not as a by-product of running strategies
 
 Replay recording was strategy-dependent in one place that mattered: nothing ever opened the Fyers spot feed except a strategy's own `/start`, and the last strategy to stop tore it down again. So a day where you started **no** strategy recorded **nothing**, and stopping the last strategy at 14:00 ended that day's recording at 14:00 — leaving a partial archive that a strategy added later can never replay.
