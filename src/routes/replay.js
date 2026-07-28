@@ -186,10 +186,14 @@ router.post("/run", express.json(), async (req, res) => {
   }
   try {
     // Only sessions that actually ran are replayable. A whole-day "synthesize"
-    // path used to exist here; it was removed because the recorder only saves
-    // option LTPs that a RUNNING strategy polled — on a day the strategy never
-    // ran there are no premiums for its strikes, so every trade silently priced
-    // off spot 1:1 and reported a P&L that looked real but wasn't.
+    // path used to exist here; it was removed because a marker-less day produced
+    // a P&L that looked real and wasn't. On 2026-07-28 an EMA9+VWAP whole-day run
+    // found NO recorded premiums for its own option symbol, so the getQuotes stub
+    // returned no_data and every trade fell through to paper's `spot proxy (option
+    // LTP unavailable)` branch — priced off the spot move 1:1. The day-wide
+    // optionChainRecorder is supposed to make this impossible (ATM±5, always on);
+    // why that strategy's symbol was still missing is UNRESOLVED, so the feature
+    // stays off until it is. See the CHANGELOG entry for the numbers.
     const result = await tickReplay.replaySession({
       date,
       mode,
@@ -1873,7 +1877,7 @@ let _rangeToFp   = null;
 function setRangeDefaults() {
   // Restrict From/To to dates that have a SESSION on disk. Days recorded by the
   // always-on feed with no session marker are deliberately excluded — nothing on
-  // this card can replay them (see the whole-day removal note in /replay/run).
+  // this card replays them any more (see the removal note in /replay/run).
   // Weekends and market holidays appear greyed out in the calendar.
   const fromEl = document.getElementById('range-from');
   const toEl   = document.getElementById('range-to');
@@ -1977,8 +1981,8 @@ function pickSessionsInRange(from, to, mode) {
   // mode==='all' → every enabled paper mode; the batch runner replays each
   // session against its own mode, so a mixed list works as-is.
   // Days with no session for the chosen strategy are NOT filled in as whole-day
-  // replays: the recorder only saves option LTPs a running strategy polled, so
-  // such a run prices every trade off spot 1:1 and reports a fake P&L.
+  // replays — that run can silently price every trade off spot 1:1 when the
+  // recording holds no premiums for the strategy's own symbol (see /replay/run).
   const wanted = (mode === 'all') ? _allReplayModes() : [mode];
   return _allSessionsCache
     .filter(s => wanted.includes(s.mode) && s.date >= from && s.date <= to)
