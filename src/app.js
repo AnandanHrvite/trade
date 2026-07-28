@@ -2074,11 +2074,18 @@ async function _handleStartAllResult(btn, origText, label, result){
     var skippedLines = (result.skipped || []).map(function(ep){
       return '• <strong>' + _escHtml(_prettyEndpoint(ep)) + '</strong>';
     }).join('<br>');
+    // A strategy earlier in the roster may also have failed outright before the
+    // cancel; this branch used to return before the failure list below ever ran,
+    // so those errors were dropped. Fold them into the same modal.
+    var abortedFails = result.failures.map(function(f){
+      return '• <strong>' + _escHtml(_prettyEndpoint(f.endpoint)) + '</strong>: ' + _escHtml(f.error);
+    }).join('<br>');
     await showAlert({
       icon: '⏭️',
       title: 'Start ' + label + ' — Stopped at the 0DTE warning',
       message: '<div style="text-align:left;">You cancelled the 0DTE warning, so these did NOT start:<br><br>'
         + (skippedLines || '• (none)')
+        + (abortedFails ? '<br><br>These failed earlier in the run:<br><br>' + abortedFails : '')
         + '<br><br>Already started: ' + result.successes.length + '. Fix the Option Expiry in Settings, or use Start Anyway.</div>',
       btnText: 'OK', btnClass: 'modal-btn-primary',
     });
