@@ -18,17 +18,16 @@ Two engines carry the expiry-day gate (EMA_RSI_ST and EMA9+VWAP), so on an expir
 
 Renamed to **"EMA9+VWAP Option Expiry (override)"** (a date picker now, matching EMA_RSI_ST's) and the help text spells out the fallback: blank means it inherits the common Option Expiry, so when that common date is today, EMA9+VWAP is on 0DTE and `/start` blocks.
 
-### Changed — whole-day replay moved into the Date-range card (the separate "Day replay" card is gone)
+### Removed — whole-day replay of days a strategy never ran (both the "Day replay" card and the Date-range fill-in)
 
-Replaying a recorded day for a strategy that has **no session marker** on it — a strategy you didn't start that day, or one that didn't exist yet — used to need its own card and its own `POST /replay/run-day`. Both are removed; the Date-range comparison card does it now.
+Replaying a recorded day for a strategy with **no session marker** on it produced a P&L that looked real and wasn't. The tick recorder is a passive observer: it only saves the option LTPs a *running* strategy polled ([recordOptionLtp](src/utils/tickRecorder.js#L219)). On a day the strategy never ran, none of its strikes are on disk, so every trade fell through to the `spot proxy (option LTP unavailable)` branch and was priced off the spot move 1:1 — plus a flat ₹100 charge estimate.
 
-Run the range with **Settings source = "My current settings"** and every recorded day in the range that has no session for the chosen strategy is replayed as a whole day (`POST /replay/run` with `synthesize: true`). Pick **All strategies** and each strategy is filled in independently, so one run covers everything the archive holds. Such a row shows `whole day (no session)` instead of a session id and has no live baseline to compare against — the totals already track baseline and replay counts separately, so mixed runs stay honest.
+Concretely: an EMA9+VWAP PE replayed on 2026-07-28 (paper never started that day) showed **−₹1829** for a 26.6-point adverse spot move — 26.6 × 65 qty + ₹100. A real ATM PE at ~0.5 delta would have lost roughly half of that. Nothing in the UI distinguished that number from a genuine one.
 
-- **Snapshot runs are unchanged.** A marker-less day has no recorded settings snapshot to replay with, so the fill-in only applies to current-settings runs.
-- The From/To calendars now also enable days that were recorded with no strategy running (previously only days with a session marker were selectable, which made those days unreachable from this card).
-- Whole-day rows never read or write the result cache — a synthetic session carries no settings snapshot, so its cache key can't tell two configurations apart.
-- Warm-up candles for a whole-day run are fetched live from the history API, so the broker must be logged in or the run returns 0 trades.
-- `POST /replay/run` now validates `date` shape for every request, not just the synthetic path.
+Both entry points are gone: `POST /replay/run` no longer accepts `synthesize`, and the Date-range card no longer fills in marker-less days. Only sessions that actually ran are replayable, which is the state the archive can honestly support. The `synthesize` path inside [tickReplay.js](src/services/tickReplay.js) is left in place but is now unreachable — reviving it needs the queued ATM±N option-chain recording first, so every strike is on disk regardless of who ran.
+
+- The From/To calendars again offer only days with a session marker; marker-less recorded days are not selectable.
+- Kept from the reverted work: `POST /replay/run` still validates `date` shape on every request (path-traversal guard), and Delete-all still re-fetches the session list rather than clearing it locally.
 
 ### Fixed — the day is now recorded as a market archive, not as a by-product of running strategies
 
