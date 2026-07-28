@@ -6,6 +6,18 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — a cancelled 0DTE warning no longer silently skips the rest of Start All
+
+Two engines carry the expiry-day gate (EMA_RSI_ST and EMA9+VWAP), so on an expiry day **Start All (Paper)** raises the same-looking warning twice. Cancelling (or clicking outside) the second one aborted the remaining strategies and just reloaded the dashboard with **no message at all** — the skipped engine looked started and sat stopped for the whole session. Three changes:
+
+- The warning's title now names the strategy (`EMA9+VWAP · 0DTE Expiry Day — Not Recommended`) so the second prompt can't read as a duplicate of the first.
+- Cancelling now shows exactly which strategies did **not** start, plus how many already did.
+- The warning body no longer claims "nothing starts" — strategies started before the cancel keep running, which is what actually happens.
+
+### Changed — EMA9+VWAP option-expiry override is easier to find in Settings
+
+Renamed to **"EMA9+VWAP Option Expiry (override)"** (a date picker now, matching EMA_RSI_ST's) and the help text spells out the fallback: blank means it inherits the common Option Expiry, so when that common date is today, EMA9+VWAP is on 0DTE and `/start` blocks.
+
 ### Changed — whole-day replay moved into the Date-range card (the separate "Day replay" card is gone)
 
 Replaying a recorded day for a strategy that has **no session marker** on it — a strategy you didn't start that day, or one that didn't exist yet — used to need its own card and its own `POST /replay/run-day`. Both are removed; the Date-range comparison card does it now.

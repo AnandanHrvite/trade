@@ -2011,8 +2011,12 @@ async function _startAll(endpoints){
         var isLive = /-live\\//.test(ep);
         var who = _prettyEndpoint(ep).replace(/ (Paper|Live.*)$/, '');
         var confirmCopy = isLive ? 'Start Anyway (Real Money)' : 'Start Anyway';
-        var titleCopy   = isLive ? '0DTE Expiry Day — REAL MONEY at Risk' : '0DTE Expiry Day — Not Recommended';
-        var extraNote   = isLive ? '\\n\\nThis is LIVE trading with real capital. Cancel stops the ENTIRE Start All — nothing starts — so you can fix the ' + who + ' Option Expiry in Settings first.' : '\\n\\nCancel stops the ENTIRE Start All — nothing starts — so you can fix the ' + who + ' Option Expiry in Settings first. Or Start Anyway to run ' + who + ' on 0DTE.';
+        // Name the strategy in the TITLE, not just the body. Two engines carry the
+        // 0DTE gate (EMA_RSI_ST + EMA9+VWAP), so Start All can raise this modal
+        // twice in a row; identical titles made the second read as a duplicate of
+        // the first and get dismissed, silently skipping that strategy.
+        var titleCopy   = who + ' · ' + (isLive ? '0DTE Expiry Day — REAL MONEY at Risk' : '0DTE Expiry Day — Not Recommended');
+        var extraNote   = isLive ? '\\n\\nThis is LIVE trading with real capital. Cancel stops ' + who + ' AND every strategy after it in this Start All (anything already started keeps running) so you can fix the ' + who + ' Option Expiry in Settings first.' : '\\n\\nCancel stops ' + who + ' AND every strategy after it in this Start All (anything already started keeps running) so you can fix the ' + who + ' Option Expiry in Settings first. Or Start Anyway to run ' + who + ' on 0DTE.';
         var ok = await showConfirm({
           icon: '⚠️',
           title: titleCopy,
@@ -2038,7 +2042,10 @@ async function _startAll(endpoints){
           // User cancelled the 0DTE warning → abort the rest of the Start All. The
           // roster is Settings-driven, so the 0DTE strategy is not necessarily
           // first; anything already started stays started and is reported below.
+          // Record what this cancel skipped (this endpoint + everything after it)
+          // so the result modal can name them instead of reloading silently.
           results.aborted = true;
+          results.skipped = endpoints.slice(i);
           break;
         }
         continue;
@@ -2058,10 +2065,23 @@ async function _startAll(endpoints){
 
 async function _handleStartAllResult(btn, origText, label, result){
   if (result.aborted){
-    // 0DTE warning cancelled → the remaining strategies were skipped. Reload only
-    // if something did start before the cancel, so the page reflects reality.
+    // 0DTE warning cancelled → the remaining strategies were skipped. Say WHICH
+    // ones: this used to reload the page with no message at all, so a cancelled
+    // (or backdrop-dismissed) warning looked exactly like a clean Start All and
+    // the skipped strategy sat stopped all day unnoticed.
     btn.disabled = false;
     btn.textContent = origText;
+    var skippedLines = (result.skipped || []).map(function(ep){
+      return '• <strong>' + _escHtml(_prettyEndpoint(ep)) + '</strong>';
+    }).join('<br>');
+    await showAlert({
+      icon: '⏭️',
+      title: 'Start ' + label + ' — Stopped at the 0DTE warning',
+      message: '<div style="text-align:left;">You cancelled the 0DTE warning, so these did NOT start:<br><br>'
+        + (skippedLines || '• (none)')
+        + '<br><br>Already started: ' + result.successes.length + '. Fix the Option Expiry in Settings, or use Start Anyway.</div>',
+      btnText: 'OK', btnClass: 'modal-btn-primary',
+    });
     if (result.successes.length) location.reload();
     return;
   }
