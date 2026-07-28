@@ -1338,6 +1338,11 @@ function _invokeRoute(routeModule, method, urlPath, query = {}) {
  *   { ok, sessionId, mode, ticksReplayed, durationMs, sessionTrades, sessionPnl, error? }
  */
 async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSettings = false, noCache = false, synthesize = false } = {}) {
+  // NOTE: `synthesize` has NO caller as of 2026-07-28 — /replay/run dropped it
+  // when whole-day replay was removed (a marker-less day produced a spot-proxy
+  // P&L that read as real; see the removal note in src/routes/replay.js). The
+  // path below is kept intact so it can be revived once that is diagnosed.
+  //
   // Day-based replay (no per-strategy marker) has no recorded settings snapshot,
   // so it can only run in current-settings mode. Expiry is still pinned from the
   // recorded Market Context Snapshot (below), matching the "purely recorded
@@ -1691,9 +1696,9 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     // short-circuits. Cancelled runs are partial — never cache.
     // Synthetic day replays are never cached: they carry no settings snapshot, so
     // the key's settings basis is empty and cannot tell two different current
-    // configurations apart. The one caller (/replay/run with synthesize) forces
-    // noCache and so never READS such an entry, but writing one would leave a
-    // trap for any future caller that doesn't.
+    // configurations apart. No caller passes `synthesize` today (see the param
+    // note above), so this is a guard for whoever revives that path — writing
+    // such an entry would leave a trap for a caller that doesn't force noCache.
     if (!cancelled && !synthesize) _writeReplayCache(cacheKey, result);
     return result;
   } catch (err) {
