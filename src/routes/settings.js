@@ -828,7 +828,7 @@ router.post("/save", (req, res) => {
     }
   }
 
-  mirrorCommonExpiryToModes(cleaned, explicitKeys, deleteSet);
+  mirrorCommonExpiryToModes(cleaned, explicitKeys, deleteSet, deleteKeys);
 
   const result = persistChanges(cleaned, deleteKeys, note, req);
   res.json({ ...result, envPath: ENV_PATH });
@@ -855,7 +855,26 @@ router.post("/save", (req, res) => {
 //     a mode, so writing their keys would create env keys nothing reads.
 // A blank date is mirrored too: clearing the common override must clear the
 // per-mode copies, otherwise "back to auto-detect" would apply to nobody.
-function mirrorCommonExpiryToModes(cleaned, explicitKeys, deleteSet) {
+// DELETING a common key (bulk paste `-KEY`) cascades for the same reason: the
+// copies this fan-out wrote would outlive it and keep every strategy pinned to
+// the date the operator just removed.
+function mirrorCommonExpiryToModes(cleaned, explicitKeys, deleteSet, deleteKeys) {
+  // Cascade deletes FIRST, so the mirror below skips whatever it queued.
+  const cascaded = [];
+  for (const common of ["OPTION_EXPIRY_OVERRIDE", "OPTION_EXPIRY_TYPE"]) {
+    if (!deleteSet.has(common)) continue;
+    for (const prefix of EXPIRY_MODE_PREFIXES) {
+      const modeKey = `${prefix}_${common}`;
+      if (explicitKeys.has(modeKey) || deleteSet.has(modeKey)) continue;  // caller's own value wins
+      deleteSet.add(modeKey);
+      deleteKeys.push(modeKey);
+      cascaded.push(modeKey);
+    }
+  }
+  if (cascaded.length) {
+    console.log(`[settings] expiry fan-out: common key deleted → also deleting ${cascaded.join(", ")}`);
+  }
+
   if (!explicitKeys.has("OPTION_EXPIRY_OVERRIDE") && !explicitKeys.has("OPTION_EXPIRY_TYPE")) return;
 
   const date = explicitKeys.has("OPTION_EXPIRY_OVERRIDE")
