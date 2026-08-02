@@ -24,6 +24,7 @@ const tradeLogger   = require("../utils/tradeLogger");
 const skipLogger    = require("../utils/skipLogger");
 const tickRecorder  = require("../utils/tickRecorder");
 const { logStore }  = require("../services/logger");
+const { EXPIRY_MODE_PREFIXES } = require("../config/instrument");
 
 // Use process.cwd() for the .env path — this is where Node was started,
 // which is always the project root (where .env lives).
@@ -57,8 +58,8 @@ const SETTINGS_SCHEMA = [
       { key: "EMA_RSI_ST_LIVE_ENABLED", label: "EMA_RSI_ST Live Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Zerodha" },
       { key: "EMA_RSI_ST_LIVE_DRY_RUN", label: "EMA_RSI_ST Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep EMA_RSI_ST in DRY-RUN (log only, no real order) even when the global Live Harness DRY-RUN is OFF. Lets other strategies trade real money while EMA_RSI_ST stays simulated. Default off.", default: "false" },
       { key: "TRADE_RESOLUTION", label: "Candle Resolution (min)", type: "select", options: ["3", "5", "15"], effect: EFFECT.SESSION, desc: "EMA_RSI_ST candle timeframe (3 / 5 / 15-min). BB_RSI & PA have their own resolution settings.", default: "5" },
-      { key: "EMA_RSI_ST_OPTION_EXPIRY_OVERRIDE", label: "EMA_RSI_ST Option Expiry (override)", type: "date", effect: EFFECT.INSTANT, desc: "EMA_RSI_ST-only override. When set, overrides the common Option Expiry. Use to keep EMA_RSI_ST on next-week expiry while bb_rsi/PA trade current expiry. Leave blank to fall back to common.", default: "" },
-      { key: "EMA_RSI_ST_OPTION_EXPIRY_TYPE", label: "EMA_RSI_ST Expiry Type", type: "select", options: ["", "weekly", "monthly"], effect: EFFECT.INSTANT, desc: "EMA_RSI_ST-only expiry type for the override above. Weekly = Tuesday expiry, Monthly = last Thursday/preponed monthly. Leave blank to fall back to the common Expiry Type.", default: "" },
+      { key: "EMA_RSI_ST_OPTION_EXPIRY_OVERRIDE", label: "EMA_RSI_ST Option Expiry (override)", type: "date", effect: EFFECT.INSTANT, desc: "EMA_RSI_ST-only override. When set, overrides the common Option Expiry. Use to keep EMA_RSI_ST on next-week expiry while bb_rsi/PA trade current expiry. Leave blank to fall back to common. Saving this field alone does NOT touch the common expiry — but saving the COMMON expiry (Settings or the Dashboard strip) overwrites this field with the common date, so re-apply the override after a common change.", default: "" },
+      { key: "EMA_RSI_ST_OPTION_EXPIRY_TYPE", label: "EMA_RSI_ST Expiry Type", type: "select", options: ["", "weekly", "monthly"], effect: EFFECT.INSTANT, desc: "EMA_RSI_ST-only expiry type for the override above. Weekly = Tuesday expiry, Monthly = last Thursday/preponed monthly. Leave blank to fall back to the common Expiry Type. Overwritten together with the date whenever the common expiry is saved.", default: "" },
       { key: "TRADE_EXPIRY_DAY_ONLY", label: "Trade Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only allow entries on NIFTY weekly expiry day (Tuesday, or Monday if Tuesday is holiday)", default: "false" },
       { key: "TRADE_ENTRY_START", label: "Entry Start Time", type: "time", effect: EFFECT.SESSION, desc: "Earliest time for new trade entries (HH:MM IST)", default: "10:30" },
       { key: "TRADE_ENTRY_END", label: "Entry End Time", type: "time", effect: EFFECT.SESSION, desc: "No new entries after this time (HH:MM IST)", default: "14:00" },
@@ -231,7 +232,7 @@ const SETTINGS_SCHEMA = [
       { key: "EMA9VWAP_OPT_STOP_PCT", label: "Safety Option-Premium Stop (fraction)", type: "number", min: 0, max: 0.5, step: 0.05, effect: EFFECT.INSTANT, desc: "Optional catastrophe stop on option premium (0.15 = exit if premium drops 15%). 0 = OFF (pure signal exit, the default).", default: "0" },
       { key: "EMA9VWAP_STOP_LOSS_PTS", label: "Safety Spot-Points Stop", type: "number", min: 0, max: 200, step: 5, effect: EFFECT.INSTANT, desc: "Optional catastrophe stop in NIFTY spot points against entry. 0 = OFF (pure signal exit, the default).", default: "0" },
       { key: "EMA9VWAP_REVERSAL_EXIT_ENABLED", label: "2-Candle Reversal Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "ON by default — after entry, square off the instant a candle CLOSES hard against the position: a CE bails on a bearish candle (close below open) closing below BOTH previous 2 candles' lows; a PE on a bullish candle closing above both previous 2 highs. Evaluated on candle close, rolling reference. Turn off to hold purely to the signal/EOD exit.", default: "true" },
-      { key: "EMA9VWAP_OPTION_EXPIRY_OVERRIDE", label: "EMA9+VWAP Option Expiry (override)", type: "date", effect: EFFECT.SESSION, desc: "EMA9+VWAP-only override. Leave blank to fall back to the common Option Expiry (Trading Settings) — so when that common date IS today, EMA9+VWAP is on 0DTE and /start blocks with the expiry-day warning. Set a date here to keep EMA9+VWAP on its own (e.g. next week's) expiry.", default: "" },
+      { key: "EMA9VWAP_OPTION_EXPIRY_OVERRIDE", label: "EMA9+VWAP Option Expiry (override)", type: "date", effect: EFFECT.INSTANT, desc: "EMA9+VWAP-only override. Leave blank to fall back to the common Option Expiry (Trading Settings) — so when that common date IS today, EMA9+VWAP is on 0DTE and /start blocks with the expiry-day warning. Set a date here to keep EMA9+VWAP on its own (e.g. next week's) expiry. Overwritten with the common date whenever the common expiry is saved.", default: "" },
       { key: "EMA9VWAP_VIX_ENABLED", label: "VIX Filter (EMA9+VWAP)", type: "select", options: ["", "true", "false"], effect: EFFECT.INSTANT, desc: "EMA9+VWAP-specific VIX gate. BLANK = inherit the global VIX_FILTER_ENABLED (which is ON unless explicitly false) — this is the historical behaviour and the safe default. Set true/false to decouple EMA9+VWAP from EMA_RSI_ST's VIX setting.", default: "" },
       { key: "EMA9VWAP_VIX_MAX_ENTRY", label: "VIX Max Entry (EMA9+VWAP)", type: "text", effect: EFFECT.INSTANT, desc: "Block EMA9+VWAP entries when India VIX is above this. Blank = inherit the global VIX_MAX_ENTRY (default 20).", default: "" },
       // ── M5: keys that were live in code but invisible here (and therefore absent
@@ -248,7 +249,7 @@ const SETTINGS_SCHEMA = [
       { key: "EMA9VWAP_SL_MODE", label: "SL Mode", type: "select", options: ["ema", "candle"], effect: EFFECT.INSTANT, desc: "'ema' = pure signal exit (default). 'candle' re-enables the legacy flat-trade time-stop.", default: "ema" },
       { key: "EMA9VWAP_STRENGTH_FILTER", label: "Drop WEAK Band Breaks", type: "toggle", effect: EFFECT.INSTANT, desc: "Only trade crosses that clear the band edge by ≥ the σ threshold below. Default OFF.", default: "false" },
       { key: "EMA9VWAP_STRONG_MIN_SIGMA", label: "STRONG Break Threshold (σ)", type: "number", min: 0, max: 2, step: 0.05, effect: EFFECT.INSTANT, desc: "A break ≥ this many σ past the band edge grades STRONG, else WEAK. Only enforced when the filter above is ON.", default: "0.25" },
-      { key: "EMA9VWAP_OPTION_EXPIRY_TYPE", label: "Expiry Type (EMA9+VWAP)", type: "select", options: ["", "weekly", "monthly"], effect: EFFECT.SESSION, desc: "EMA9+VWAP-only expiry type for the override above. Blank = inherit the common Expiry Type.", default: "" },
+      { key: "EMA9VWAP_OPTION_EXPIRY_TYPE", label: "Expiry Type (EMA9+VWAP)", type: "select", options: ["", "weekly", "monthly"], effect: EFFECT.INSTANT, desc: "EMA9+VWAP-only expiry type for the override above. Blank = inherit the common Expiry Type. Overwritten together with the date whenever the common expiry is saved.", default: "" },
     ],
   },
   {
@@ -319,8 +320,8 @@ const SETTINGS_SCHEMA = [
       { key: "LOT_MULTIPLIER", label: "Lot Multiplier", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "Number of lots per trade" },
       { key: "STRIKE_OFFSET_CE", label: "CE Strike Offset", type: "number", min: -200, max: 200, step: 50, effect: EFFECT.INSTANT, desc: "-50=ITM, 0=ATM, +50=OTM", default: "0" },
       { key: "STRIKE_OFFSET_PE", label: "PE Strike Offset", type: "number", min: -200, max: 200, step: 50, effect: EFFECT.INSTANT, desc: "+50=ITM, 0=ATM, -50=OTM", default: "0" },
-      { key: "OPTION_EXPIRY_OVERRIDE", label: "Option Expiry (manual)", type: "date", effect: EFFECT.INSTANT, desc: "Override auto-detected expiry. Leave blank for auto. Applies to EVERY strategy that has no per-strategy expiry override of its own (EMA_RSI_ST, BB_RSI, PA, ORB, EMA9+VWAP, Trend_PB). Setting today's date here puts those strategies on 0DTE — EMA_RSI_ST and EMA9+VWAP will then block at start with the expiry-day warning." },
-      { key: "OPTION_EXPIRY_TYPE", label: "Expiry Type", type: "select", options: ["weekly", "monthly"], effect: EFFECT.INSTANT, desc: "Weekly = normal Tuesday expiry. Monthly = last Thursday/preponed monthly expiry. Applies to all modes.", default: "weekly" },
+      { key: "OPTION_EXPIRY_OVERRIDE", label: "Option Expiry (manual)", type: "date", effect: EFFECT.INSTANT, desc: "Override auto-detected expiry. Leave blank for auto. Applies to EVERY strategy — saving it also copies the date + type into the per-strategy expiry keys (EMA_RSI_ST, ORB, EMA9+VWAP, Trend_PB), so no strategy can keep trading an older override. Setting today's date here puts every strategy on 0DTE — EMA_RSI_ST and EMA9+VWAP will then block at start with the expiry-day warning." },
+      { key: "OPTION_EXPIRY_TYPE", label: "Expiry Type", type: "select", options: ["weekly", "monthly"], effect: EFFECT.INSTANT, desc: "Weekly = normal Tuesday expiry. Monthly = last Thursday/preponed monthly expiry. Applies to all modes, and is copied into the per-strategy expiry-type keys together with the date above.", default: "weekly" },
       { key: "TICK_RECORDER_ENABLED", label: "Tick Recorder (for Replay)", type: "toggle", effect: EFFECT.SESSION, desc: "Record every spot/option/VIX tick to data/ticks/YYYY-MM-DD/*.jsonl during paper/live sessions. Required for Replay backtest. Pure observer — no impact on trading.", default: "true" },
       { key: "TICK_RECORDER_RETAIN_DAYS", label: "Tick Recordings Retention (days)", type: "number", min: 7, max: 180, step: 1, effect: EFFECT.SERVER, desc: "Auto-delete tick recordings older than this many days. ~10 MB/day across all streams — 30 days ≈ 300 MB. Lower if EBS is tight.", default: "30" },
       { key: "OPTION_CHAIN_RECORDER_ENABLED", label: "Day-Wide Option-Chain Recorder", type: "toggle", effect: EFFECT.INSTANT, desc: "Proactively record the ATM±N option chain + VIX + futures OI every few seconds during market hours — strategy-independent. Makes SNAPSHOT replay reproducible for ANY strategy (even a strike a live strategy didn't trade, or a brand-new strategy). Pure observer, no trading impact. Requires Tick Recorder ON.", default: "true" },
@@ -803,6 +804,12 @@ router.post("/save", (req, res) => {
     return res.status(400).json({ success: false, error: "No valid updates or deletes" });
   }
 
+  // Keys the CALLER actually sent, captured before the section auto-fill below
+  // adds defaults. The expiry fan-out keys off this (not off `cleaned`), so
+  // saving an unrelated key that merely auto-fills OPTION_EXPIRY_TYPE cannot
+  // re-stamp every strategy's expiry.
+  const explicitKeys = new Set(Object.keys(cleaned));
+
   // ── Auto-fill missing defaults: when saving any key from a section,
   // also write all missing keys from that section with their defaults.
   // This ensures .env gets the full config on first save even if user
@@ -821,9 +828,54 @@ router.post("/save", (req, res) => {
     }
   }
 
+  mirrorCommonExpiryToModes(cleaned, explicitKeys, deleteSet);
+
   const result = persistChanges(cleaned, deleteKeys, note, req);
   res.json({ ...result, envPath: ENV_PATH });
 });
+
+// ── Common expiry → per-mode fan-out ─────────────────────────────────────────
+// instrument.validateAndGetOptionSymbol resolves `modeOverride || commonOverride`,
+// so ANY per-mode expiry key silently beats the common one. Editing the common
+// expiry (Settings page or the Dashboard quick-edit, both of which POST here)
+// therefore used to leave a stale per-mode override trading the old contract
+// while the UI reported success. Saving the common pair now writes the same
+// date + type into every strategy that actually reads a per-mode key.
+//
+// Rules:
+//   • Trigger = the user explicitly saved a common expiry key (auto-filled
+//     defaults do not count — see `explicitKeys`).
+//   • Date + type are mirrored as a PAIR, so a mode can never end up with the
+//     new date under the old type (or vice versa).
+//   • A per-mode key sent in the SAME request wins and is left untouched. That
+//     is how a deliberate per-strategy override stays independent: editing only
+//     EMA_RSI_ST_OPTION_EXPIRY_* sends no common key, so nothing fans out, and
+//     "Save All" (which posts every field on the page) keeps what the UI shows.
+//   • Only prefixes in EXPIRY_MODE_PREFIXES are written — BB_RSI/PA never pass
+//     a mode, so writing their keys would create env keys nothing reads.
+// A blank date is mirrored too: clearing the common override must clear the
+// per-mode copies, otherwise "back to auto-detect" would apply to nobody.
+function mirrorCommonExpiryToModes(cleaned, explicitKeys, deleteSet) {
+  if (!explicitKeys.has("OPTION_EXPIRY_OVERRIDE") && !explicitKeys.has("OPTION_EXPIRY_TYPE")) return;
+
+  const date = explicitKeys.has("OPTION_EXPIRY_OVERRIDE")
+    ? cleaned.OPTION_EXPIRY_OVERRIDE
+    : (process.env.OPTION_EXPIRY_OVERRIDE || "").trim();
+  const type = explicitKeys.has("OPTION_EXPIRY_TYPE")
+    ? cleaned.OPTION_EXPIRY_TYPE
+    : (process.env.OPTION_EXPIRY_TYPE || "").trim();
+
+  const mirrored = [];
+  for (const prefix of EXPIRY_MODE_PREFIXES) {
+    const dateKey = `${prefix}_OPTION_EXPIRY_OVERRIDE`;
+    const typeKey = `${prefix}_OPTION_EXPIRY_TYPE`;
+    if (!explicitKeys.has(dateKey) && !deleteSet.has(dateKey)) { cleaned[dateKey] = date; mirrored.push(dateKey); }
+    if (!explicitKeys.has(typeKey) && !deleteSet.has(typeKey)) { cleaned[typeKey] = type; mirrored.push(typeKey); }
+  }
+  if (mirrored.length) {
+    console.log(`[settings] expiry fan-out: common ${date || "(auto)"}/${type || "(inherit)"} → ${mirrored.join(", ")}`);
+  }
+}
 
 // Apply a validated set of updates/deletes: mutate process.env + .env, write the
 // settings-audit log, and append per-mode daily settings snapshots. Shared by

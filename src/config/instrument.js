@@ -462,6 +462,21 @@ function isExpiryOverrideStale(dateStr) {
 }
 
 /**
+ * Strategy prefixes whose engines pass a `mode` to validateAndGetOptionSymbol()
+ * and therefore honour a `{PREFIX}_OPTION_EXPIRY_OVERRIDE` / `_TYPE` pair.
+ *
+ * BB_RSI and PA call it with NO mode (see the call sites in their live/paper
+ * routes), so `modeKey` is null and their per-mode keys are never read — listing
+ * them here would let the Settings fan-out and the dashboard "ignores this"
+ * warning claim an override that does nothing.
+ *
+ * SINGLE source for this list: the Settings save fan-out (routes/settings.js)
+ * and the dashboard expiry strip (app.js) both read it, so adding a 7th engine
+ * that passes a mode only has to be recorded here.
+ */
+const EXPIRY_MODE_PREFIXES = ["EMA_RSI_ST", "ORB", "EMA9VWAP", "TREND_PB"];
+
+/**
  * Get a valid Fyers option symbol for entry.
  *
  * Priority:
@@ -823,5 +838,6 @@ module.exports = {
   getMarketContext,            // async — resolve the day's immutable Market Context Snapshot
   validateAndGetOptionSymbol,  // ✅ Use this for paper/live option entry
   isExpiryOverrideStale,       // shared by the dashboard banner and the entry guard
+  EXPIRY_MODE_PREFIXES,        // strategies that actually read a per-mode expiry key
 };
 

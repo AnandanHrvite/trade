@@ -841,14 +841,18 @@ app.get("/", (req, res) => {
   // unchecked: a fresh common date could hide a stale EMA_RSI_ST-only date.
   // Every override that is set is checked, and each is named in the banner.
   // Shared by the stale-expiry banner and the Dashboard expiry quick-edit, so a
-  // 7th strategy only has to be added in one place.
-  const PER_MODE_PREFIXES = ["EMA_RSI_ST", "BB_RSI", "PA", "ORB", "EMA9VWAP", "TREND_PB"];
+  // 7th strategy only has to be added in one place — instrument.js, which owns
+  // the resolution rule. BB_RSI/PA are absent by design: they call
+  // validateAndGetOptionSymbol with NO mode, so their per-mode keys are inert
+  // and warning about them would send the operator chasing a dead key.
+  const PER_MODE_PREFIXES = instrumentConfig.EXPIRY_MODE_PREFIXES;
 
   let optionExpiryAlertHtml = "";
   {
     const { isExpiryOverrideStale } = instrumentConfig;
+    const COMMON_LABEL = "Option Expiry (manual, all modes)";
     const candidates = [
-      { key: "OPTION_EXPIRY_OVERRIDE", label: "Option Expiry (manual, all modes)" },
+      { key: "OPTION_EXPIRY_OVERRIDE", label: COMMON_LABEL },
       ...PER_MODE_PREFIXES.map(p => ({ key: `${p}_OPTION_EXPIRY_OVERRIDE`, label: `${p} Option Expiry` })),
     ];
     const fmt = (d) => new Date(`${d}T00:00:00+05:30`)
@@ -859,7 +863,18 @@ app.get("/", (req, res) => {
       .filter(c => c.value && isExpiryOverrideStale(c.value));
 
     if (stale.length) {
-      const detail = stale.map(s => `<strong>${s.label}</strong> = ${fmt(s.value)}`).join("; ");
+      // A common save now mirrors its date into every per-mode key, so the usual
+      // stale case is ONE date held by all of them. Group by date and collapse a
+      // group that includes the common key to that single label — repeating the
+      // same date five times reads like five separate problems.
+      const byDate = new Map();
+      for (const s of stale) {
+        if (!byDate.has(s.value)) byDate.set(s.value, []);
+        byDate.get(s.value).push(s.label);
+      }
+      const detail = [...byDate.entries()]
+        .map(([value, labels]) => `<strong>${labels.includes(COMMON_LABEL) ? COMMON_LABEL : labels.join(", ")}</strong> = ${fmt(value)}`)
+        .join("; ");
       optionExpiryAlertHtml =
         `<div class="opt-expiry-alert">`
         + `<span class="opt-expiry-icon">🚨</span>`
@@ -881,18 +896,21 @@ app.get("/", (req, res) => {
     (process.env.OPTION_EXPIRY_TYPE || "weekly").trim().toLowerCase() === "monthly" ? "monthly" : "weekly";
 
   // A per-mode key SHADOWS the common one inside validateAndGetOptionSymbol
-  // (`modeOverride || commonOverride`, same for the type). Editing the common
-  // date here therefore does nothing for those modes — without saying so, the
-  // strip would report success while the strategy keeps trading the old
-  // contract. Name the shadowing modes and link to where they are editable.
-  const dashExpiryShadowedBy = PER_MODE_PREFIXES.filter(p =>
-    (process.env[`${p}_OPTION_EXPIRY_OVERRIDE`] || "").trim() ||
-    (process.env[`${p}_OPTION_EXPIRY_TYPE`]     || "").trim()
-  );
+  // (`modeOverride || commonOverride`, same for the type), so a mode holding a
+  // DIFFERENT date keeps trading it and the strip would report a success that
+  // does not reach that strategy. Saving here mirrors the pair into every
+  // per-mode key (see mirrorCommonExpiryToModes in routes/settings.js), so the
+  // warning is only correct — and only shown — when a value actually differs:
+  // a mirrored copy is not a shadow, and neither is a blank key (it inherits).
+  const dashExpiryShadowedBy = PER_MODE_PREFIXES.filter(p => {
+    const date = (process.env[`${p}_OPTION_EXPIRY_OVERRIDE`] || "").trim();
+    const type = (process.env[`${p}_OPTION_EXPIRY_TYPE`]     || "").trim().toLowerCase();
+    return (date && date !== _rawExpiryOverride) || (type && type !== dashExpiryType);
+  });
   const dashExpiryShadowHtml = dashExpiryShadowedBy.length
     ? `<a class="brk-cfg-warn" href="/settings#${dashExpiryShadowedBy[0]}_OPTION_EXPIRY_OVERRIDE"`
-      + ` title="These modes set their own expiry key, which beats the common one above. Change theirs in Settings.">`
-      + `⚠ ${dashExpiryShadowedBy.join(", ")} ${dashExpiryShadowedBy.length === 1 ? "ignores" : "ignore"} this →</a>`
+      + ` title="These modes hold a DIFFERENT expiry of their own, which beats the common one above until you save here (saving overwrites them with this date + type).">`
+      + `⚠ ${dashExpiryShadowedBy.join(", ")} ${dashExpiryShadowedBy.length === 1 ? "differs" : "differ"} →</a>`
     : "";
 
   const html = `<!DOCTYPE html>
@@ -1649,7 +1667,7 @@ ${buildSidebar('dashboard', liveActive)}
           : `<span class="brk-action muted-hint">Set ZERODHA_API_KEY in .env</span>`}
     </div>
     <div class="brk-cfg">
-      <span class="brk-cfg-label" title="OPTION_EXPIRY_OVERRIDE / OPTION_EXPIRY_TYPE — the same keys as Settings. Applies to every mode that has not set its own per-mode expiry.">⏱ Expiry</span>
+      <span class="brk-cfg-label" title="OPTION_EXPIRY_OVERRIDE / OPTION_EXPIRY_TYPE — the same keys as Settings. Saving also copies this date + type into every per-strategy expiry key (EMA_RSI_ST, ORB, EMA9VWAP, TREND_PB), so no strategy is left on an older override.">⏱ Expiry</span>
       <span class="brk-cfg-field">
         <input type="date" id="dashExpiryDate" class="brk-cfg-input" value="${dashExpiryDate}"
                title="Option Expiry (manual). Blank = auto-detect."/>
@@ -2916,6 +2934,9 @@ async function hardReset(){
 // Writes OPTION_EXPIRY_OVERRIDE + OPTION_EXPIRY_TYPE through POST /settings/save,
 // so the audit log + per-mode daily settings snapshot behave exactly as they do
 // when the change is made on the Settings page. Both keys are INSTANT effect.
+// The route fans the pair out into every per-strategy expiry key server-side, so
+// this stays a two-key POST — do NOT list the per-mode keys here, or they would
+// count as "explicitly sent" and opt themselves OUT of that fan-out.
 async function saveDashExpiry(btn){
   var dateEl = document.getElementById('dashExpiryDate');
   var typeEl = document.getElementById('dashExpiryType');

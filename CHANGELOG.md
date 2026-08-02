@@ -6,6 +6,19 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — saving the common Option Expiry now actually reaches every strategy
+
+A per-strategy expiry key always beats the common one inside `validateAndGetOptionSymbol` (`modeOverride || commonOverride`), so changing the expiry on the **Dashboard** strip or in **Settings** left any strategy carrying its own override trading the *old* contract — while both screens reported a successful save. The Dashboard's `⚠ EMA_RSI_ST ignores this →` note was the only hint, and it appeared even for `BB_RSI_`/`PA_` keys that nothing reads.
+
+Saving `OPTION_EXPIRY_OVERRIDE` / `OPTION_EXPIRY_TYPE` now mirrors that date **and** type into `EMA_RSI_ST_`, `ORB_`, `EMA9VWAP_` and `TREND_PB_OPTION_EXPIRY_*` — one fan-out inside `POST /settings/save` ([settings.js](src/routes/settings.js)), so the Dashboard quick-edit, the Settings page and bulk-paste all behave identically. Details:
+
+- **Honoured list is single-sourced** as `EXPIRY_MODE_PREFIXES` in [instrument.js](src/config/instrument.js) — the four engines that pass a `mode`. `BB_RSI`/`PA` pass none, so their per-mode keys are inert and are deliberately never written (and no longer trigger the Dashboard warning or the stale-expiry banner).
+- **Per-strategy saves stay independent.** Editing only `EMA_RSI_ST_OPTION_EXPIRY_*` sends no common key, so nothing fans out. A per-mode key sent in the *same* request wins — that is what keeps **Save All** writing exactly what the page shows.
+- **Date + type move as a pair**, so a strategy can never end up on the new date under the old type. Clearing the common date clears the copies, so "back to auto-detect" reaches everyone.
+- **Auto-filled section defaults do not trigger it** — saving an unrelated key in *Common — Instrument & Backtest* can auto-fill `OPTION_EXPIRY_TYPE`, which must not re-stamp every strategy's expiry.
+- The Dashboard warning now reads `⚠ … differs →` and fires only on a genuine mismatch; the stale-expiry banner groups keys by date instead of repeating the same date five times.
+- `EMA9VWAP_OPTION_EXPIRY_OVERRIDE` / `_TYPE` are re-labelled **instant** (they were marked session-restart, but both are read from `process.env` at entry time) — otherwise every common expiry save would have raised a false "restart needed" prompt.
+
 ### Added — date-range filter in the Dashboard top row
 
 The Dashboard top bar now carries a **Range** selector next to the PAPER/LIVE toggle, with the same options as Edge Analytics: *All time* (default), *Last 7 days*, *Last 30 days*, *This FY (Apr–Mar)* and *Custom* (From/To date pickers). It narrows the cumulative P&L chart and every per-strategy chart — including their trade counts, W/L and net — and composes with the PAPER/LIVE toggle. Purely a client-side filter over the trades already loaded, so changing the range refetches nothing.
