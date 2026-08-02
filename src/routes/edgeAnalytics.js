@@ -16,7 +16,8 @@ const express = require("express");
 const router = express.Router();
 const fs = require("fs");
 const path = require("path");
-const { buildSidebar, sidebarCSS, faviconLink, enabledStrategies } = require("../utils/sharedNav");
+const { buildSidebar, sidebarCSS, faviconLink, enabledStrategies,
+        dateRangeOptionsHTML, dateRangeJS } = require("../utils/sharedNav");
 
 const _HOME = require("os").homedir();
 const DATA_DIR = path.join(_HOME, "trading-data");
@@ -206,13 +207,7 @@ router.get("/", (req, res) => {
         ${modeOptions}
       </select>
       <label>Range</label>
-      <select id="fRange">
-        <option value="all">All time</option>
-        <option value="7">Last 7 days</option>
-        <option value="30">Last 30 days</option>
-        <option value="fy">This FY (Apr–Mar)</option>
-        <option value="custom">Custom</option>
-      </select>
+      <select id="fRange">${dateRangeOptionsHTML('all')}</select>
       <span id="customWrap" style="display:none;">
         <label>From</label><input type="date" id="fFrom"/>
         <label>To</label><input type="date" id="fTo"/>
@@ -226,6 +221,7 @@ router.get("/", (req, res) => {
 </div>
 
 <script>
+${dateRangeJS()}
 const ALL = ${JSON.stringify(trades)};
 
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -250,22 +246,14 @@ function entryHour(t){
 const DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 function weekday(dateStr){ if(!dateStr) return null; const d=new Date(dateStr+'T12:00:00'); return isNaN(d)?null:d.getDay(); }
 
-function fyStart(){
-  const now=new Date();
-  const y = now.getMonth()>=3 ? now.getFullYear() : now.getFullYear()-1; // Apr=month 3
-  return y+'-04-01';
-}
-function ymd(d){ return d.toISOString().slice(0,10); }
-
+// Range bounds come from sharedNav's drRange() so this page and the Dashboard
+// top bar always resolve a given range to the same two dates.
 function currentFilter(){
   const book = document.querySelector('#segBook button.on').dataset.book;
   const mode = document.getElementById('fMode').value;
   const range = document.getElementById('fRange').value;
-  let from='', to='';
-  if(range==='custom'){ from=document.getElementById('fFrom').value; to=document.getElementById('fTo').value; }
-  else if(range==='fy'){ from=fyStart(); }
-  else if(range==='7'||range==='30'){ const d=new Date(); d.setDate(d.getDate()-(+range)+1); from=ymd(d); }
-  return {book,mode,from,to};
+  const r = drRange(range, document.getElementById('fFrom').value, document.getElementById('fTo').value);
+  return {book,mode,from:r.from,to:r.to};
 }
 function applyFilter(f){
   return ALL.filter(t=>{
@@ -492,7 +480,11 @@ document.querySelectorAll('#segBook button').forEach(b=>b.addEventListener('clic
 }));
 document.getElementById('fMode').addEventListener('change',render);
 document.getElementById('fRange').addEventListener('change',()=>{
-  document.getElementById('customWrap').style.display = document.getElementById('fRange').value==='custom'?'inline':'none';
+  const range = document.getElementById('fRange').value;
+  document.getElementById('customWrap').style.display = range==='custom'?'inline':'none';
+  // Only 'Current week expiry' needs the expiry calendar — fetched on first use
+  // and cached, so every later selection resolves without a round-trip.
+  if(range==='exp'){ drReady().then(render); return; }
   render();
 });
 document.getElementById('fFrom').addEventListener('change',render);

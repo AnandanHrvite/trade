@@ -2346,4 +2346,104 @@ ${linkHref ? `<a href="${linkHref}" class="err-link">${linkText || 'Go Back'}</a
 </div></div></div></body></html>`;
 }
 
-module.exports = { STRATEGY_MODES, enabledStrategies, buildSidebar, sidebarCSS, toastJS, aiExportJS, logViewerHTML, faviconLink, modalCSS, modalJS, expiryHolidayModalCSS, expiryHolidayModalHTML, expiryHolidayModalJS, errorPage, tableEnhancerCSS, tableEnhancerJS };
+// ── Shared trade date-range filter (Dashboard top bar + Edge Analytics) ──────
+// Both pages offer the same ranges over the same trade records, so the option
+// list AND the date maths live here once. A page-local copy would drift the
+// moment one side gained a range the other didn't — and the two pages would
+// then disagree about what, say, "Last month" covers on the 1st of a month.
+const DATE_RANGE_OPTIONS = [
+  { value: 'tm',     label: 'This month' },
+  { value: 'lm',     label: 'Last month' },
+  { value: 'exp',    label: 'Current week expiry' },
+  { value: 'all',    label: 'All' },
+  { value: 'custom', label: 'Custom' },
+];
+
+// `selected` defaults to 'all' so a page renders its full history until the
+// user narrows it — never a silently pre-filtered view.
+function dateRangeOptionsHTML(selected = 'all') {
+  return DATE_RANGE_OPTIONS
+    .map((o) => `<option value="${o.value}"${o.value === selected ? ' selected' : ''}>${o.label}</option>`)
+    .join('');
+}
+
+/**
+ * Client-side resolver injected into a page's <script>.
+ *
+ * drRange(key, customFrom, customTo) → { from, to } as inclusive 'YYYY-MM-DD'
+ * bounds, '' meaning open-ended. It is synchronous so existing sync render
+ * paths (Edge Analytics' currentFilter()) don't have to become async.
+ *
+ * The one range that needs server data is 'exp' (current week expiry), because
+ * a weekly expiry preponed by an NSE holiday can't be derived from the weekday
+ * alone. So a caller selecting 'exp' must await drReady() before resolving; the
+ * fetch is lazy (first 'exp' selection only, cached after) rather than fired at
+ * load, because the Dashboard already pulls the same calendar for its expiry
+ * pill and most page views never touch this range at all.
+ */
+function dateRangeJS() {
+  return `
+// ── Shared date-range resolver (sharedNav.dateRangeJS) ───────────────────────
+function drYmd(d){ var p=function(n){ return String(n).padStart(2,'0'); };
+  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()); }
+// Trade records are stamped in IST, so every boundary is an IST calendar day —
+// the browser's own timezone must not decide which month "this month" is.
+function drToday(){ return new Date().toLocaleDateString('en-CA',{ timeZone:'Asia/Kolkata' }); }
+function drParts(){ var p=drToday().split('-'); return { y:+p[0], m:+p[1]-1, d:+p[2] }; }
+function drShift(iso, days){ var p=iso.split('-');
+  var d=new Date(+p[0], +p[1]-1, +p[2]); d.setDate(d.getDate()+days); return drYmd(d); }
+
+var _drWindow = null;   // resolved { from, to } for the current expiry cycle
+var _drReady  = null;
+
+// Fallback if the expiry calendar can't be read: NIFTY weeklies expire Tuesday,
+// so the cycle runs Wednesday → the following Tuesday. Holiday preponement is
+// the only thing this misses, which is exactly what the calendar adds.
+function _drTuesdayWindow(){
+  var t=drParts(); var d=new Date(t.y,t.m,t.d);
+  var ahead=(2-d.getDay()+7)%7;                    // 0 when today IS Tuesday
+  var end=new Date(d); end.setDate(end.getDate()+ahead);
+  var start=new Date(end); start.setDate(start.getDate()-6);
+  return { from:drYmd(start), to:drYmd(end) };
+}
+
+// Lazy + memoised: the first caller starts the fetch, everyone after reuses it.
+function drReady(){
+  if(_drReady) return _drReady;
+  _drReady = fetch('/api/expiry-dates',{cache:'no-store'})
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(j){
+      var list=(j && j.expiries) || [];
+      var today=drToday(), prev='', cur='';
+      for(var i=0;i<list.length;i++){
+        var d=list[i].actual || list[i].date;       // .actual is the preponed date
+        if(!d) continue;
+        if(d < today) prev=d; else { cur=d; break; }
+      }
+      if(!prev && !cur){ _drWindow=_drTuesdayWindow(); return; }
+      // The cycle opens the day after the previous expiry and closes on this one.
+      // No prev  → first expiry of the calendar year, so step back a week.
+      // No cur   → past the last expiry of the year, so leave the end open.
+      _drWindow = { from: prev ? drShift(prev,1) : drShift(cur,-6), to: cur || '' };
+    })
+    .catch(function(){ _drWindow=_drTuesdayWindow(); });
+  return _drReady;
+}
+
+function drRange(key, customFrom, customTo){
+  var t=drParts();
+  if(key==='custom') return { from: customFrom || '', to: customTo || '' };
+  // Open end on 'tm': the month is still running, and no trade can be dated later.
+  if(key==='tm') return { from: drYmd(new Date(t.y,t.m,1)), to:'' };
+  // new Date(y,-1,1) rolls to last December and new Date(y,m,0) is the last day
+  // of the previous month, so January needs no special case.
+  if(key==='lm') return { from: drYmd(new Date(t.y,t.m-1,1)), to: drYmd(new Date(t.y,t.m,0)) };
+  // Unresolved calendar → fall back to the weekday window rather than silently
+  // widening to all-time, which would read as a much better/worse period.
+  if(key==='exp') return _drWindow || _drTuesdayWindow();
+  return { from:'', to:'' };                       // 'all'
+}
+`;
+}
+
+module.exports = { STRATEGY_MODES, enabledStrategies, buildSidebar, sidebarCSS, toastJS, aiExportJS, logViewerHTML, faviconLink, modalCSS, modalJS, expiryHolidayModalCSS, expiryHolidayModalHTML, expiryHolidayModalJS, errorPage, tableEnhancerCSS, tableEnhancerJS, DATE_RANGE_OPTIONS, dateRangeOptionsHTML, dateRangeJS };

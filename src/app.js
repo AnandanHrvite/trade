@@ -10,7 +10,8 @@ const instrumentConfig = require("./config/instrument");
 const zerodha  = require("./services/zerodhaBroker");
 const { clearFyersToken } = require("./config/fyers");
 const { buildSidebar, sidebarCSS, modalCSS, modalJS, enabledStrategies,
-        expiryHolidayModalCSS, expiryHolidayModalHTML, expiryHolidayModalJS } = require("./utils/sharedNav");
+        expiryHolidayModalCSS, expiryHolidayModalHTML, expiryHolidayModalJS,
+        dateRangeOptionsHTML, dateRangeJS } = require("./utils/sharedNav");
 
 // Start-All route triplet per strategy, keyed by the canonical mode key in
 // sharedNav's STRATEGY_MODES. The dashboard's Start All (Paper / Live / Harness)
@@ -1602,13 +1603,7 @@ ${buildSidebar('dashboard', liveActive)}
     </div>
     <div class="dash-range" id="dashRange" title="Date range for all charts">
       <label for="dashRangeSel">Range</label>
-      <select id="dashRangeSel">
-        <option value="all">All time</option>
-        <option value="7">Last 7 days</option>
-        <option value="30">Last 30 days</option>
-        <option value="fy">This FY (Apr–Mar)</option>
-        <option value="custom">Custom</option>
-      </select>
+      <select id="dashRangeSel">${dateRangeOptionsHTML('all')}</select>
       <span class="drg-custom" id="dashRangeCustom" style="display:none;">
         <input type="date" id="dashRangeFrom" title="From date (inclusive)"/>
         <input type="date" id="dashRangeTo" title="To date (inclusive)"/>
@@ -1686,7 +1681,7 @@ ${buildSidebar('dashboard', liveActive)}
 
   <!-- (utility buttons moved to top-bar-right; cache pill + schedule pills also live there) -->
 
-  <!-- ③ PER-MODULE CUMULATIVE P&L CHARTS (Paper/Live toggle, all-time) -->
+  <!-- ③ PER-MODULE CUMULATIVE P&L CHARTS (top-bar Paper/Live toggle + Range filter) -->
   <div class="mm-grid" style="--mm-cols:${dashCardCount};">
     <div class="mm-card ema_rsi_st" data-mode="EMA_RSI_ST">
       <div class="mm-hdr">
@@ -1755,7 +1750,7 @@ ${buildSidebar('dashboard', liveActive)}
     ${cumInlineInGrid ? cumCardInline : ''}
   </div>
 
-  <!-- ⑤ CUMULATIVE P&L CHART (Paper/Live toggle, all-time) — full-width fallback when it can't tuck into the grid -->
+  <!-- ⑤ CUMULATIVE P&L CHART (top-bar Paper/Live toggle + Range filter) — full-width fallback when it can't tuck into the grid -->
   ${cumInlineInGrid ? '' : cumCardBelow}
 
   ${analyticsPanelOn ? `
@@ -1777,6 +1772,7 @@ ${expiryHolidayModalHTML()}
 <script>
 ${modalJS()}
 ${expiryHolidayModalJS()}
+${dateRangeJS()}
 // ── Dashboard: Paper & Live trade status panels ──────────────────────────────
 function fmtPnl(v){ if(v===null||v===undefined) return {txt:'—',cls:'flat'}; var n=parseFloat(v); return {txt:(n>=0?'+':'')+'\u20b9'+n.toFixed(0),cls:n>0?'pos':n<0?'neg':'flat'}; }
 function fmtNum(v,prefix,suffix){ if(v===null||v===undefined) return '—'; return (prefix||'')+v+(suffix||''); }
@@ -2377,37 +2373,17 @@ function _updateChartStats(elId, trades){
 // The charts already hold the full trade list client-side, so the range is a
 // pure filter step: no refetch, and switching ranges cannot desync the total
 // chart from the per-module ones because both read the same _dashRange.
+// The option list and the date maths come from sharedNav's dateRangeJS() so
+// this page and Edge Analytics always mean the same thing by a given range.
 var _dashRange = { key:'all', from:'', to:'' };
-
-// Local-date YMD, not toISOString() — the server runs IST and toISOString()
-// shifts back to UTC, which would move "last 7 days" a day early after 05:30.
-function _rangeYmd(d){
-  var p = function(n){ return String(n).padStart(2,'0'); };
-  return d.getFullYear() + '-' + p(d.getMonth()+1) + '-' + p(d.getDate());
-}
-function _rangeFyStart(){
-  var now = new Date();
-  var y = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;  // Apr = month 3
-  return y + '-04-01';
-}
 
 function _readDashRange(){
   var sel = document.getElementById('dashRangeSel');
   var key = sel ? sel.value : 'all';
-  var from = '', to = '';
-  if (key === 'custom'){
-    var f = document.getElementById('dashRangeFrom');
-    var t = document.getElementById('dashRangeTo');
-    from = (f && f.value) || '';
-    to   = (t && t.value) || '';
-  } else if (key === 'fy'){
-    from = _rangeFyStart();
-  } else if (key === '7' || key === '30'){
-    var d = new Date();
-    d.setDate(d.getDate() - (+key) + 1);
-    from = _rangeYmd(d);
-  }
-  _dashRange = { key:key, from:from, to:to };
+  var f = document.getElementById('dashRangeFrom');
+  var t = document.getElementById('dashRangeTo');
+  var r = drRange(key, (f && f.value) || '', (t && t.value) || '');
+  _dashRange = { key:key, from:r.from, to:r.to };
 }
 
 function _applyDashRange(trades){
@@ -2473,12 +2449,21 @@ document.addEventListener('click', function(e){
 (function(){
   var sel = document.getElementById('dashRangeSel');
   if (!sel) return;
-  function onRangeChange(){
-    var custom = document.getElementById('dashRangeCustom');
-    if (custom) custom.style.display = sel.value === 'custom' ? '' : 'none';
+  function refreshRange(){
     _readDashRange();
     _renderDashTotal();
     ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB'].forEach(_renderModuleChart);
+  }
+  function syncCustomVisibility(){
+    var custom = document.getElementById('dashRangeCustom');
+    if (custom) custom.style.display = sel.value === 'custom' ? '' : 'none';
+  }
+  function onRangeChange(){
+    syncCustomVisibility();
+    // Only 'Current week expiry' needs the expiry calendar — fetched on first
+    // use and cached, so every later selection resolves without a round-trip.
+    if (sel.value === 'exp') { drReady().then(refreshRange); return; }
+    refreshRange();
   }
   sel.addEventListener('change', onRangeChange);
   ['dashRangeFrom','dashRangeTo'].forEach(function(id){
@@ -2487,10 +2472,10 @@ document.addEventListener('click', function(e){
   });
   // Adopt whatever the select actually shows before the first render: on a
   // back-navigation the browser restores the previous selection, and a default
-  // _dashRange of "all time" would then disagree with the visible label.
-  var custom0 = document.getElementById('dashRangeCustom');
-  if (custom0) custom0.style.display = sel.value === 'custom' ? '' : 'none';
+  // _dashRange of "All" would then disagree with the visible label.
+  syncCustomVisibility();
   _readDashRange();
+  if (sel.value === 'exp') drReady().then(refreshRange);
 })();
 
 loadDashCumCharts();
