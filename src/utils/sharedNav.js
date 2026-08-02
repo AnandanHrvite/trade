@@ -2446,4 +2446,4 @@ function drRange(key, customFrom, customTo){
 `;
 }
 
-module.exports = { STRATEGY_MODES, enabledStrategies, buildSidebar, sidebarCSS, toastJS, aiExportJS, logViewerHTML, faviconLink, modalCSS, modalJS, expiryHolidayModalCSS, expiryHolidayModalHTML, expiryHolidayModalJS, errorPage, tableEnhancerCSS, tableEnhancerJS, DATE_RANGE_OPTIONS, dateRangeOptionsHTML, dateRangeJS };
+module.exports = { STRATEGY_MODES, enabledStrategies, buildSidebar, sidebarCSS, toastJS, aiExportJS, logViewerHTML, faviconLink, modalCSS, modalJS, expiryHolidayModalCSS, expiryHolidayModalHTML, expiryHolidayModalJS, errorPage, tableEnhancerCSS, tableEnhancerJS, dateRangeOptionsHTML, dateRangeJS };
