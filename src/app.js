@@ -1341,6 +1341,16 @@ app.get("/", (req, res) => {
     :root[data-theme="light"] .dst-btn:hover:not(.active) { color:#475569; }
     :root[data-theme="light"] .dst-btn.active { background:#3b82f6; color:#fff; }
     :root[data-theme="light"] .dst-btn.active[data-src="live"] { background:#ef4444; color:#fff; }
+    /* Global date-range filter (top-bar) — narrows every chart on the dashboard.
+       Same option set as Edge Analytics so the two pages agree on what a range
+       means; wraps rather than widening the bar when Custom opens its inputs. */
+    .dash-range { display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap; flex-shrink:0; }
+    .dash-range label { font-size:0.58rem; text-transform:uppercase; letter-spacing:1px; color:#3a5070; font-family:'IBM Plex Mono',monospace; }
+    .dash-range select, .dash-range input { background:#07111f; border:1px solid #1a2236; color:#e0eaf8; padding:5px 8px; border-radius:4px; font-family:'IBM Plex Mono',monospace; font-size:0.7rem; outline:none; max-width:100%; }
+    .dash-range select:focus, .dash-range input:focus { border-color:#38bdf8; }
+    .dash-range .drg-custom { display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap; }
+    :root[data-theme="light"] .dash-range label { color:#64748b; }
+    :root[data-theme="light"] .dash-range select, :root[data-theme="light"] .dash-range input { background:#f8fafc; border-color:#e0e4ea; color:#334155; }
     .mm-stats { font-size:0.66rem; font-family:'IBM Plex Mono',monospace; color:#4a6080; margin-bottom:4px; }
     .mm-stats .pnl-pos { color:#10b981; font-weight:700; }
     .mm-stats .pnl-neg { color:#ef4444; font-weight:700; }
@@ -1550,6 +1560,7 @@ app.get("/", (req, res) => {
       }
       .top-bar-right .top-bar-btn { flex:1 1 auto; justify-content:center; }
       .dash-src-toggle { flex:0 0 auto; }
+      .dash-range { flex:0 0 auto; }
       /* The expiry/holiday pills carry a full sentence and are white-space:nowrap
          in sharedNav, so at 320px (iPhone SE) they alone still ran 11px past the
          edge. Let them wrap rather than widen the bar. */
@@ -1570,6 +1581,20 @@ ${buildSidebar('dashboard', liveActive)}
     <div class="dash-src-toggle" id="dashSrcToggle" title="Data source for all charts">
       <button type="button" class="dst-btn active" data-src="paper">PAPER</button>
       <button type="button" class="dst-btn" data-src="live">LIVE</button>
+    </div>
+    <div class="dash-range" id="dashRange" title="Date range for all charts">
+      <label for="dashRangeSel">Range</label>
+      <select id="dashRangeSel">
+        <option value="all">All time</option>
+        <option value="7">Last 7 days</option>
+        <option value="30">Last 30 days</option>
+        <option value="fy">This FY (Apr–Mar)</option>
+        <option value="custom">Custom</option>
+      </select>
+      <span class="drg-custom" id="dashRangeCustom" style="display:none;">
+        <input type="date" id="dashRangeFrom" title="From date (inclusive)"/>
+        <input type="date" id="dashRangeTo" title="To date (inclusive)"/>
+      </span>
     </div>
     <div class="top-bar-right">
       ${anyModeActive ? '' : `
@@ -2330,20 +2355,69 @@ function _updateChartStats(elId, trades){
   el.innerHTML = trades.length + ' trades · ' + wins + 'W/' + losses + 'L · <span class="' + cls + '">' + (total >= 0 ? '+' : '') + _fmtINR(total) + '</span>';
 }
 
+// ── Global date-range filter (top-bar) — applied to every chart on the page ──
+// The charts already hold the full trade list client-side, so the range is a
+// pure filter step: no refetch, and switching ranges cannot desync the total
+// chart from the per-module ones because both read the same _dashRange.
+var _dashRange = { key:'all', from:'', to:'' };
+
+// Local-date YMD, not toISOString() — the server runs IST and toISOString()
+// shifts back to UTC, which would move "last 7 days" a day early after 05:30.
+function _rangeYmd(d){
+  var p = function(n){ return String(n).padStart(2,'0'); };
+  return d.getFullYear() + '-' + p(d.getMonth()+1) + '-' + p(d.getDate());
+}
+function _rangeFyStart(){
+  var now = new Date();
+  var y = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;  // Apr = month 3
+  return y + '-04-01';
+}
+
+function _readDashRange(){
+  var sel = document.getElementById('dashRangeSel');
+  var key = sel ? sel.value : 'all';
+  var from = '', to = '';
+  if (key === 'custom'){
+    var f = document.getElementById('dashRangeFrom');
+    var t = document.getElementById('dashRangeTo');
+    from = (f && f.value) || '';
+    to   = (t && t.value) || '';
+  } else if (key === 'fy'){
+    from = _rangeFyStart();
+  } else if (key === '7' || key === '30'){
+    var d = new Date();
+    d.setDate(d.getDate() - (+key) + 1);
+    from = _rangeYmd(d);
+  }
+  _dashRange = { key:key, from:from, to:to };
+}
+
+function _applyDashRange(trades){
+  var f = _dashRange;
+  if (!f.from && !f.to) return trades || [];
+  return (trades || []).filter(function(t){
+    var d = t.date || '';
+    if (f.from && d < f.from) return false;
+    if (f.to   && d > f.to)   return false;
+    return true;
+  });
+}
+function _dashRangeActive(){ return !!(_dashRange.from || _dashRange.to); }
+
 var _dcData = { paper: null, live: null };
 var _dcChart = null;
 var _dcToggle = 'paper';
 
 function _renderDashTotal(){
   var src = _dcToggle;
-  var trades = _dcData[src] || [];
+  var trades = _applyDashRange(_dcData[src] || []);
   var total = trades.reduce(function(a,t){ return a + (t.pnl||0); }, 0);
   var dot = document.getElementById('dashCumDot');
   if (dot) dot.style.background = _pnlColor(total);
   var link = document.getElementById('dashCumLink');
   if (link) link.href = src === 'live' ? '/live-consolidation' : '/consolidation';
   var emptyEl = document.getElementById('dashCumEmpty');
-  if (emptyEl) emptyEl.textContent = 'No ' + src + ' trades yet';
+  if (emptyEl) emptyEl.textContent = 'No ' + src + ' trades ' + (_dashRangeActive() ? 'in this range' : 'yet');
   if (_dcChart) { _dcChart.destroy(); _dcChart = null; }
   _dcChart = _renderDashCumChart('dashCumChart', 'dashCumEmpty', trades);
   _updateChartStats('dash-cum-stats', trades);
@@ -2376,6 +2450,31 @@ document.addEventListener('click', function(e){
   _applyAllBtnState(_allBtnState.paperOn, _allBtnState.liveOn);
 });
 
+// Global date-range selector (top-bar) — re-renders the same charts the
+// Paper/Live toggle drives, so both filters always compose.
+(function(){
+  var sel = document.getElementById('dashRangeSel');
+  if (!sel) return;
+  function onRangeChange(){
+    var custom = document.getElementById('dashRangeCustom');
+    if (custom) custom.style.display = sel.value === 'custom' ? '' : 'none';
+    _readDashRange();
+    _renderDashTotal();
+    ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB'].forEach(_renderModuleChart);
+  }
+  sel.addEventListener('change', onRangeChange);
+  ['dashRangeFrom','dashRangeTo'].forEach(function(id){
+    var el = document.getElementById(id);
+    if (el) el.addEventListener('change', onRangeChange);
+  });
+  // Adopt whatever the select actually shows before the first render: on a
+  // back-navigation the browser restores the previous selection, and a default
+  // _dashRange of "all time" would then disagree with the visible label.
+  var custom0 = document.getElementById('dashRangeCustom');
+  if (custom0) custom0.style.display = sel.value === 'custom' ? '' : 'none';
+  _readDashRange();
+})();
+
 loadDashCumCharts();
 
 // ── Per-Module P&L Charts (Paper/Live toggle, all-time) ──────────────────────
@@ -2388,10 +2487,10 @@ function _renderModuleChart(mode){
   if (!card) return;
   var src = _mmToggle[mode];
   var all = _mmData[src] || [];
-  var trades = all.filter(function(t){ return (t.mode || '').toUpperCase() === mode; });
+  var trades = _applyDashRange(all.filter(function(t){ return (t.mode || '').toUpperCase() === mode; }));
   if (_mmCharts[mode]) { _mmCharts[mode].destroy(); _mmCharts[mode] = null; }
   var emptyEl = document.getElementById('mm-empty-' + mode);
-  if (emptyEl) emptyEl.textContent = 'No ' + src + ' trades yet';
+  if (emptyEl) emptyEl.textContent = 'No ' + src + ' trades ' + (_dashRangeActive() ? 'in this range' : 'yet');
   _mmCharts[mode] = _renderDashCumChart('mmChart-' + mode, 'mm-empty-' + mode, trades);
   _updateChartStats('mm-stats-' + mode, trades);
 }

@@ -6,6 +6,10 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Added — date-range filter in the Dashboard top row
+
+The Dashboard top bar now carries a **Range** selector next to the PAPER/LIVE toggle, with the same options as Edge Analytics: *All time* (default), *Last 7 days*, *Last 30 days*, *This FY (Apr–Mar)* and *Custom* (From/To date pickers). It narrows the cumulative P&L chart and every per-strategy chart — including their trade counts, W/L and net — and composes with the PAPER/LIVE toggle. Purely a client-side filter over the trades already loaded, so changing the range refetches nothing.
+
 ### Fixed — a cancelled 0DTE warning no longer silently skips the rest of Start All
 
 Two engines carry the expiry-day gate (EMA_RSI_ST and EMA9+VWAP), so on an expiry day **Start All (Paper)** raises the same-looking warning twice. Cancelling (or clicking outside) the second one aborted the remaining strategies and just reloaded the dashboard with **no message at all** — the skipped engine looked started and sat stopped for the whole session. Three changes:

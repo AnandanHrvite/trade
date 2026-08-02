@@ -62,6 +62,7 @@ The dashboard has **Start-All Paper** and **Start-All Live** buttons that start 
 
 - **Per-module cards** (EMA_RSI_ST / BB_RSI / PA) — each card has its own Paper/Live toggle, trades, win-rate, total-P&L, and a cumulative P&L chart. Charts colour green/red by P&L sign.
 - **Cumulative P&L card** with a Paper/Live toggle that swaps the data source feeding the per-module charts.
+- **Top-bar PAPER/LIVE toggle + Range selector** — one pair of controls drives every chart on the page. Range offers *All time* (default), *Last 7 days*, *Last 30 days*, *This FY (Apr–Mar)* and *Custom* (From/To), matching Edge Analytics. It filters the cumulative chart and all per-module cards (counts, W/L and net included) client-side — no refetch.
 - **Side-by-side broker rows** (Fyers + Zerodha on one row).
 - **Hover-only date labels** on charts (x-axis decluttered).
 - **Sync to Local button** — one click streams `~/trading-data/` as a `tar.gz` to the browser (server → client only). Lets you mirror the EC2 host's persistent data without SSH.
