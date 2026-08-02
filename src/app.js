@@ -1603,7 +1603,7 @@ ${buildSidebar('dashboard', liveActive)}
     </div>
     <div class="dash-range" id="dashRange" title="Date range for all charts">
       <label for="dashRangeSel">Range</label>
-      <select id="dashRangeSel">${dateRangeOptionsHTML('all')}</select>
+      <select id="dashRangeSel">${dateRangeOptionsHTML('tm')}</select>
       <span class="drg-custom" id="dashRangeCustom" style="display:none;">
         <input type="date" id="dashRangeFrom" title="From date (inclusive)"/>
         <input type="date" id="dashRangeTo" title="To date (inclusive)"/>
@@ -2375,7 +2375,10 @@ function _updateChartStats(elId, trades){
 // chart from the per-module ones because both read the same _dashRange.
 // The option list and the date maths come from sharedNav's dateRangeJS() so
 // this page and Edge Analytics always mean the same thing by a given range.
-var _dashRange = { key:'all', from:'', to:'' };
+// Placeholder only — the wire-up block below calls _readDashRange() to fill this
+// in from the select's own value before anything renders, so the page never
+// filters by a range that differs from the one shown in the bar.
+var _dashRange = { key:'', from:'', to:'' };
 
 function _readDashRange(){
   var sel = document.getElementById('dashRangeSel');
