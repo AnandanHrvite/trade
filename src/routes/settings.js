@@ -867,6 +867,12 @@ function mirrorCommonExpiryToModes(cleaned, explicitKeys, deleteSet, deleteKeys)
       const modeKey = `${prefix}_${common}`;
       if (explicitKeys.has(modeKey) || deleteSet.has(modeKey)) continue;  // caller's own value wins
       deleteSet.add(modeKey);
+      // Delete wins over a value in `cleaned` — same rule the route applies to
+      // the caller's own keys. Matters because the section auto-fill above runs
+      // BEFORE this cascade and may have just added this key at its default:
+      // leaving it in both would delete it from process.env yet re-append it to
+      // .env, so memory and disk would disagree until the next restart.
+      delete cleaned[modeKey];
       deleteKeys.push(modeKey);
       cascaded.push(modeKey);
     }
