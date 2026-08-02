@@ -2477,7 +2477,7 @@ document.addEventListener('click', function(e){
 
 loadDashCumCharts();
 
-// ── Per-Module P&L Charts (Paper/Live toggle, all-time) ──────────────────────
+// ── Per-Module P&L Charts (top-bar Paper/Live toggle + Range filter) ─────────
 var _mmData = { paper: null, live: null };
 var _mmCharts = {};
 var _mmToggle = { EMA_RSI_ST: 'paper', BB_RSI: 'paper', PA: 'paper', ORB: 'paper', EMA9VWAP: 'paper', TREND_PB: 'paper' };
