@@ -62,8 +62,17 @@ async function fetchCandles(symbol, resolution, from, to) {
   // from Kite/TradingView. Filtering here keeps every historical source — warmup
   // preload + backtest — consistent with the chart. No-op when the feed is already
   // 09:15+ (the usual case), so it is a safe defensive guard.
+  //
+  // INTRADAY ONLY. Fyers stamps a 1D/1W/1M bar at 00:00 IST, which is outside the
+  // session window, so applying this to a daily series silently deleted EVERY bar
+  // and every caller got an empty array (GAPS daily context, prev-day OHLC in
+  // BB_RSI/PA paper, the VIX daily lookup in backtests). A daily bar has no
+  // pre-open/post-close print to strip in the first place.
+  const _isIntraday = /^\d+$/.test(String(resolution));
   const _MKT_OPEN = 9 * 60 + 15, _MKT_CLOSE = 15 * 60 + 30;
-  const sessionOnly = unique.filter(c => { const m = getISTHHMM(c.time); return m >= _MKT_OPEN && m < _MKT_CLOSE; });
+  const sessionOnly = _isIntraday
+    ? unique.filter(c => { const m = getISTHHMM(c.time); return m >= _MKT_OPEN && m < _MKT_CLOSE; })
+    : unique;
   const _dropped = unique.length - sessionOnly.length;
   console.log(`   ✅ Total candles fetched: ${sessionOnly.length}${_dropped ? ` (dropped ${_dropped} pre-open/post-close)` : ""}`);
   if (global.gc) global.gc();
