@@ -6,6 +6,24 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — the Dashboard's broker wallets ignored the Range filter
+
+Picking "This month" narrowed every chart and stat on the Dashboard except the two numbers at the very top: the Fyers and Zerodha wallets kept quoting **all-time** paper P&L. A range-filtered curve sitting under an all-time wallet reads as a contradiction — the page appeared to disagree with itself about the same trades.
+
+- The wallets were built server-side from each paper-trade file's `totalPnl`, a single all-time aggregate with no per-trade dates in it, so no range could ever be applied. The delta is now summed client-side from the **same trade list the charts already load** and narrowed with the **same** `_applyDashRange`, so wallet and curve cannot quote different periods.
+- Each broker keeps its own strategy list — Zerodha = EMA_RSI_ST + EMA9+VWAP, Fyers = BB_RSI + PA + ORB, enabled strategies only — so a wallet still moves only for the strategies that actually trade through it. Unchanged from before; only the date window is new.
+- The wallet renders as the pool alone with a `…` delta until the trades land, rather than flashing an all-time figure under a "This month" label. The tooltip now says "paper P&L over the selected range".
+- Removes the now-unused `_readPnlCached` mtime cache from [app.js](src/app.js).
+
+### Changed — Consolidation Report uses the shared Range dropdown
+
+`/consolidation-report` still had its own nine-option list (All time · This week · Last week · This month · Last month · Last 7 days · Last 30 days · This FY · Custom) while the Dashboard and Edge Analytics had moved to the shared five (This month · Last month · Current week expiry · All · Custom). The same words could mean different dates on different pages.
+
+- The page now renders `dateRangeOptionsHTML()` and resolves bounds through `drRange()` from [sharedNav.js](src/utils/sharedNav.js), so **"This month" means one thing across the whole app** — including the IST-anchored month boundary the page's own `new Date()` maths got wrong for a browser outside IST.
+- Default range is **This month**, matching the Dashboard, instead of All time.
+- "Current week expiry" resolves off the NSE expiry calendar (lazily fetched on first use, as elsewhere), so a holiday-preponed weekly is handled.
+- The printed "Period:" line reads the selected option's own text instead of a private label map — the drift that let the two lists diverge in the first place. The page-local `ymd`/`fyStart`/`mondayOf` helpers are gone.
+
 ### Fixed — GAPS backtest failed with "Invalid input" (daily history exceeded the Fyers 366-day cap)
 
 `/gaps-backtest` failed at 40% on any normal range. Fyers rejects a **1D/1W/1M** history request wider than 366 days (`{code:-50, message:"Invalid input", data:{range_to:"Date range cannot exceed 366 days…"}}`), and GAPS asked for one 580-day daily call — its own 400-day indicator warm-up plus the 180-day default range.

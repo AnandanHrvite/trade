@@ -23,7 +23,8 @@ const express = require("express");
 const router = express.Router();
 const fs = require("fs");
 const path = require("path");
-const { buildSidebar, sidebarCSS, faviconLink, enabledStrategies } = require("../utils/sharedNav");
+const { buildSidebar, sidebarCSS, faviconLink, enabledStrategies,
+        dateRangeOptionsHTML, dateRangeJS } = require("../utils/sharedNav");
 
 const _HOME = require("os").homedir();
 const DATA_DIR = path.join(_HOME, "trading-data");
@@ -219,17 +220,7 @@ router.get("/", (req, res) => {
         <button data-book="all">Both</button>
       </div>
       <label>Range</label>
-      <select id="fRange">
-        <option value="all">All time</option>
-        <option value="tw">This week</option>
-        <option value="lw">Last week</option>
-        <option value="tm">This month</option>
-        <option value="lm">Last month</option>
-        <option value="7">Last 7 days</option>
-        <option value="30">Last 30 days</option>
-        <option value="fy">This FY (Apr–Mar)</option>
-        <option value="custom">Custom</option>
-      </select>
+      <select id="fRange">${dateRangeOptionsHTML('tm')}</select>
       <span id="customWrap" style="display:none;">
         <label>From</label><input type="date" id="fFrom"/>
         <label>To</label><input type="date" id="fTo"/>
@@ -242,6 +233,7 @@ router.get("/", (req, res) => {
 </div>
 
 <script>
+${dateRangeJS()}
 const ALL = ${JSON.stringify(trades)};
 const MODES = ${JSON.stringify(enabled.map(s => s.mode))};
 const MODE_LABEL = ${JSON.stringify(Object.fromEntries(enabled.map(s => [s.mode, s.mode])))};
@@ -251,25 +243,26 @@ function inr2(n){ return (n<0?'-':'')+'₹'+Math.abs(n).toLocaleString('en-IN',{
 function inr(n){ const v=Math.round(n); return (v<0?'-':'')+'₹'+Math.abs(v).toLocaleString('en-IN'); }
 function pc(n){ return n>=0?'#10b981':'#ef4444'; }
 
-function ymd(d){ const p=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()); }
-function fyStart(){ const now=new Date(); const y=now.getMonth()>=3?now.getFullYear():now.getFullYear()-1; return y+'-04-01'; }
-function mondayOf(d){ const x=new Date(d.getFullYear(),d.getMonth(),d.getDate()); const dow=(x.getDay()+6)%7; x.setDate(x.getDate()-dow); return x; }
 // 'YYYY-MM-DD' → "Tue, 14 Jul 2026"  (matches the Telegram day-report header)
 function prettyDate(s){ const d=new Date(s+'T12:00:00'); if(isNaN(d)) return s; return d.toLocaleDateString('en-IN',{weekday:'short',day:'2-digit',month:'short',year:'numeric'}); }
+
+// Range bounds come from sharedNav's drRange() — the same resolver the Dashboard
+// and Edge Analytics use, so "This month" means one thing across the whole app.
+// The printed "Period:" line reads the option's own text rather than a private
+// label map, which is what let this page's list drift from the others before.
+function rangeLabelFor(range, from, to){
+  if(range==='custom') return (from||'…')+' → '+(to||'…');
+  const sel = document.getElementById('fRange');
+  const txt = (sel.options[sel.selectedIndex] || {}).text || range;
+  // The expiry cycle is the one range whose dates a reader can't infer, so spell it out.
+  return range==='exp' ? txt+' ('+(from||'…')+' → '+(to||'today')+')' : txt;
+}
 
 function currentFilter(){
   const book = document.querySelector('#segBook button.on').dataset.book;
   const range = document.getElementById('fRange').value;
-  const now=new Date();
-  let from='', to='', rangeLabel='All time';
-  if(range==='custom'){ from=document.getElementById('fFrom').value; to=document.getElementById('fTo').value; rangeLabel=(from||'…')+' → '+(to||'…'); }
-  else if(range==='fy'){ from=fyStart(); rangeLabel='This FY ('+from.slice(0,4)+'–'+(+from.slice(0,4)+1)+')'; }
-  else if(range==='7'||range==='30'){ const d=new Date(); d.setDate(d.getDate()-(+range)+1); from=ymd(d); rangeLabel='Last '+range+' days'; }
-  else if(range==='tw'){ from=ymd(mondayOf(now)); rangeLabel='This week (from '+from+')'; }
-  else if(range==='lw'){ const m=mondayOf(now); const s=new Date(m); s.setDate(s.getDate()-7); const e=new Date(m); e.setDate(e.getDate()-1); from=ymd(s); to=ymd(e); rangeLabel='Last week ('+from+' → '+to+')'; }
-  else if(range==='tm'){ from=ymd(new Date(now.getFullYear(),now.getMonth(),1)); rangeLabel='This month'; }
-  else if(range==='lm'){ from=ymd(new Date(now.getFullYear(),now.getMonth()-1,1)); to=ymd(new Date(now.getFullYear(),now.getMonth(),0)); rangeLabel='Last month'; }
-  return {book,from,to,rangeLabel};
+  const r = drRange(range, document.getElementById('fFrom').value, document.getElementById('fTo').value);
+  return {book,from:r.from,to:r.to,rangeLabel:rangeLabelFor(range,r.from,r.to)};
 }
 function applyFilter(f){
   return ALL.filter(t=>{
@@ -370,7 +363,11 @@ document.querySelectorAll('#segBook button').forEach(b=>b.addEventListener('clic
   b.classList.add('on'); render();
 }));
 document.getElementById('fRange').addEventListener('change',()=>{
-  document.getElementById('customWrap').style.display = document.getElementById('fRange').value==='custom'?'inline':'none';
+  const range = document.getElementById('fRange').value;
+  document.getElementById('customWrap').style.display = range==='custom'?'inline':'none';
+  // Only 'Current week expiry' needs the expiry calendar — fetched on first use
+  // and cached, so every later selection resolves without a round-trip.
+  if(range==='exp'){ drReady().then(render); return; }
   render();
 });
 document.getElementById('fFrom').addEventListener('change',render);

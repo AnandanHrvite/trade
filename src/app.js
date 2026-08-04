@@ -667,25 +667,6 @@ app.get("/api/session-active", (req, res) => {
 });
 
 // ── Cached paper-P&L reader (dashboard wallets) ──────────────────────────────
-// The dashboard reads totalPnl from up to 5 (growing) paper-trade files per load.
-// Guard each read by a cheap mtime+size signature so an unchanged file is served
-// from memory instead of being re-read + JSON.parsed. A trade close bumps the
-// file's mtime/size, so the next read refreshes immediately (no staleness).
-const _pnlReadCache = new Map(); // file -> { sig, pnl }
-function _readPnlCached(dir, file) {
-  const full = path.join(dir, file);
-  let sig;
-  try { const st = fs.statSync(full); sig = `${st.mtimeMs}:${st.size}`; }
-  catch { _pnlReadCache.delete(file); return 0; }
-  const hit = _pnlReadCache.get(file);
-  if (hit && hit.sig === sig) return hit.pnl;
-  let pnl = 0;
-  try { pnl = Number(JSON.parse(fs.readFileSync(full, "utf-8")).totalPnl) || 0; }
-  catch { pnl = 0; }
-  _pnlReadCache.set(file, { sig, pnl });
-  return pnl;
-}
-
 // ── Home — HTML Dashboard ─────────────────────────────────────────────────────
 app.get("/", (req, res) => {
   // Redirect to Settings when Dashboard menu is hidden (user can re-enable from Settings → MENU VISIBILITY)
@@ -783,28 +764,41 @@ app.get("/", (req, res) => {
     startAllEndpointLabels[m.harness] = `${m.label} Live (Harness)`;
   }
 
-  // ── Broker investment pools (paper) — remaining = pool + all-time paper P&L ──
-  // Zerodha pool = EMA_RSI_ST; Fyers pool = BB_RSI + PA + ORB (enabled only).
-  const _tradingDir = path.join(os.homedir(), "trading-data");
-  const _readPnl = (file) => _readPnlCached(_tradingDir, file);
+  // ── Broker investment pools (paper) — remaining = pool + paper P&L over the
+  // top-bar date range. Zerodha pool = EMA_RSI_ST (+ EMA9+VWAP, also Zerodha);
+  // Fyers pool = BB_RSI + PA + ORB — enabled strategies only.
+  //
+  // The P&L half is filled in client-side from the same trade list the charts
+  // read, not from each file's all-time `totalPnl`: a wallet that ignored the
+  // range sat next to a range-filtered curve and the two openly disagreed.
+  // Sharing `_applyDashRange` is what keeps them from drifting apart again.
   const zerodhaInv = parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000");
   const fyersInv   = parseFloat(process.env.FYERS_INV_AMOUNT   || "100000");
-  let zerodhaPnl = _readPnl("ema_rsi_st_paper_trades.json");
-  if (ema9vwapModeOn) zerodhaPnl += _readPnl("ema9vwap_paper_trades.json"); // EMA9+VWAP also trades Zerodha
-  let fyersPnl = bbRsiModeOn ? _readPnl("bb_rsi_paper_trades.json") : 0;
-  if (paModeOn)       fyersPnl += _readPnl("pa_paper_trades.json");
-  if (orbModeOn)      fyersPnl += _readPnl("orb_paper_trades.json");
-  const _inr0 = (n) => '₹' + Math.round(n).toLocaleString('en-IN');
-  const _walletHtml = (inv, pnl) => {
-    const cls = pnl > 0 ? 'pos' : pnl < 0 ? 'neg' : 'zero';
-    const sign = pnl > 0 ? '▲ ' : pnl < 0 ? '▼ ' : '';
-    return `<span class="brk-wallet" title="Investment pool: ${_inr0(inv)} + all-time paper P&L">`
-      + `<span class="brk-wallet-remain">${_inr0(inv + pnl)}</span>`
-      + `<span class="brk-wallet-sub">of ${_inr0(inv)} · <span class="${cls}">${sign}${_inr0(Math.abs(pnl))}</span></span>`
-      + `</span>`;
+  const brokerPools = {
+    fyers: {
+      inv: fyersInv,
+      modes: [
+        ...(bbRsiModeOn ? ['BB_RSI'] : []),
+        ...(paModeOn ? ['PA'] : []),
+        ...(orbModeOn ? ['ORB'] : []),
+      ],
+    },
+    zerodha: {
+      inv: zerodhaInv,
+      modes: ['EMA_RSI_ST', ...(ema9vwapModeOn ? ['EMA9VWAP'] : [])],
+    },
   };
-  const fyersWalletHtml   = _walletHtml(fyersInv, fyersPnl);
-  const zerodhaWalletHtml = _walletHtml(zerodhaInv, zerodhaPnl);
+  const _inr0 = (n) => '₹' + Math.round(n).toLocaleString('en-IN');
+  // Rendered with the pool alone and a "…" delta: the range-filtered number is
+  // only knowable once the trade list lands, and showing an all-time figure in
+  // the meantime is exactly the mismatch this block exists to avoid.
+  const _walletHtml = (broker, inv) =>
+    `<span class="brk-wallet" title="Investment pool: ${_inr0(inv)} + paper P&L over the selected range">`
+    + `<span class="brk-wallet-remain" id="wallet-remain-${broker}">${_inr0(inv)}</span>`
+    + `<span class="brk-wallet-sub">of ${_inr0(inv)} · <span class="zero" id="wallet-pnl-${broker}">…</span></span>`
+    + `</span>`;
+  const fyersWalletHtml   = _walletHtml('fyers', fyersInv);
+  const zerodhaWalletHtml = _walletHtml('zerodha', zerodhaInv);
 
   // ── Cumulative P&L placement ─────────────────────────────────────────────
   // The strategy grid is 3 columns (EMA_RSI_ST is always shown). When the enabled
@@ -2482,6 +2476,7 @@ document.addEventListener('click', function(e){
     _readDashRange();
     _renderDashTotal();
     ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB','GAPS'].forEach(_renderModuleChart);
+    _renderBrokerWallets();
   }
   function syncCustomVisibility(){
     var custom = document.getElementById('dashRangeCustom');
@@ -2527,6 +2522,35 @@ function _renderModuleChart(mode){
   _updateChartStats('mm-stats-' + mode, trades);
 }
 
+// ── Broker wallets — remaining = investment pool + paper P&L in the SAME range
+// the charts are showing. Reads _mmData.paper (every mode, unfiltered by the
+// nav toggles) and narrows it with the pool's own mode list, so a broker's
+// wallet moves only for the strategies that actually trade through it.
+// Deliberately paper-only, and driven by _applyDashRange so the wallet and the
+// curve below it can never quote different periods.
+var BROKER_POOLS = ${JSON.stringify(brokerPools)};
+function _inr0(n){ return '₹' + Math.round(n).toLocaleString('en-IN'); }
+function _renderBrokerWallets(){
+  var all = _mmData.paper;
+  if (!all) return;                    // trades not loaded yet — keep the "…"
+  var rows = _applyDashRange(all);
+  Object.keys(BROKER_POOLS).forEach(function(broker){
+    var pool = BROKER_POOLS[broker];
+    var remainEl = document.getElementById('wallet-remain-' + broker);
+    var pnlEl    = document.getElementById('wallet-pnl-' + broker);
+    if (!remainEl && !pnlEl) return;   // wallets are hidden while a mode runs
+    var pnl = 0;
+    for (var i = 0; i < rows.length; i++){
+      if (pool.modes.indexOf(String(rows[i].mode || '').toUpperCase()) !== -1) pnl += (rows[i].pnl || 0);
+    }
+    if (remainEl) remainEl.textContent = _inr0(pool.inv + pnl);
+    if (pnlEl){
+      pnlEl.className   = pnl > 0 ? 'pos' : pnl < 0 ? 'neg' : 'zero';
+      pnlEl.textContent = (pnl > 0 ? '▲ ' : pnl < 0 ? '▼ ' : '') + _inr0(Math.abs(pnl));
+    }
+  });
+}
+
 async function loadModuleCharts(){
   try {
     var r1 = await fetch('/consolidation/data', { cache: 'no-store' });
@@ -2537,6 +2561,7 @@ async function loadModuleCharts(){
     if (r2.ok){ var d2 = await r2.json(); _mmData.live = (d2 && d2.trades) || []; }
   } catch(_){ _mmData.live = []; }
   ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB','GAPS'].forEach(_renderModuleChart);
+  _renderBrokerWallets();
 }
 
 loadModuleCharts();
