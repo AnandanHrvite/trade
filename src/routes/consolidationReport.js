@@ -4,7 +4,7 @@
  *
  * Mirrors the Telegram "CONSOLIDATED DAY REPORT" layout (per-strategy trades + P&L,
  * then Total / Wins / Losses / Win rate / Net P&L) but for every day at once, in a
- * table you can filter (Book · week / month / date-range) and export to PDF.
+ * table you can filter (Book + the shared sharedNav date range) and export to PDF.
  *
  * Reached via the "📑 Consolidation Report" button on the Edge Analytics page — it
  * is NOT a separate sidebar menu item. Read-only: loads the same per-strategy session

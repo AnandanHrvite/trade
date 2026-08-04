@@ -666,7 +666,6 @@ app.get("/api/session-active", (req, res) => {
   res.json({ active: !!sharedSocketState.isAnyActive() });
 });
 
-// ── Cached paper-P&L reader (dashboard wallets) ──────────────────────────────
 // ── Home — HTML Dashboard ─────────────────────────────────────────────────────
 app.get("/", (req, res) => {
   // Redirect to Settings when Dashboard menu is hidden (user can re-enable from Settings → MENU VISIBILITY)
