@@ -725,7 +725,7 @@ app.get("/", (req, res) => {
   const activeStrategyName = getActiveStrategy().NAME;
 
   // True when ANY strategy (paper or live) is currently running. While active we
-  // hide the dashboard's control buttons (Start All / Reset Token), broker
+  // hide the dashboard's control buttons (Start All), broker
   // connection cards, and schedule/cache pills so they can't be touched or
   // distract mid-trade — the running-status badge stays visible. Mirror of the
   // IDLE condition used for the top-bar badge below.
@@ -1239,7 +1239,7 @@ app.get("/", (req, res) => {
       .opt-expiry-cta { width:100%; justify-content:center; min-height:44px; }
     }
 
-    /* Compact utility strip (Start All / Reset Token) */
+    /* Compact utility strip (Start All) */
     .util-strip {
       display:flex; flex-wrap:wrap; align-items:center; gap:6px;
       padding:6px 10px; border-radius:9px;
@@ -1568,7 +1568,7 @@ app.get("/", (req, res) => {
        DESKTOP ONLY. These rules used to be unconditional, and being important
        + flex-shrink:0 they beat both sharedNav's wrapping .top-bar-right and
        its max-width:768px .top-bar wrap rule. On a 393px phone that pinned the
-       bar at its 920px content width, so Start All, Reset Token, the
+       bar at its 920px content width, so Start All, the
        expiry/holiday pills and the status badge all sat off screen behind
        .main-content's overflow-x:clip — unreachable, not merely ugly.
        Below 768px the shared wrapping behaviour is left alone. */
@@ -1624,8 +1624,11 @@ ${buildSidebar('dashboard', liveActive)}
     <div class="top-bar-right">
       ${anyModeActive ? '' : `
       <button id="btn-all-harness" class="top-bar-btn" style="border-color:#b45309;color:#b45309;" onclick="startAllHarness(this)" title="Start all Live (Harness) modes in DRY-RUN — runs Paper + logs would-be broker orders (${startAllModes.map((m) => m.label).join(' + ') || 'no strategy enabled'})">🧪 Start All (Harness)</button>
-      <button id="btn-all-start" class="top-bar-btn run-paper" onclick="startAll(this)" title="Start all paper modes">▶ Start All (Paper)</button>
-      <button onclick="hardReset()" class="top-bar-btn" title="Clears Fyers + Zerodha tokens and restarts the server — use when tokens look stuck">🔄 Reset Token</button>`}
+      <button id="btn-all-start" class="top-bar-btn run-paper" onclick="startAll(this)" title="Start all paper modes">▶ Start All (Paper)</button>`}
+      <!-- The manual "Reset Token" button was removed: token clearing is now
+           automatic (4:00 PM + 7:00 AM IST schedulers, and the login routes
+           wipe any DISCONNECTED broker's saved token before starting OAuth).
+           POST /admin/reset still exists for the rare stuck-socket case. -->
       <!-- Expiry / holiday pills stay outside the idle-only block: which expiry is
            next matters most while a session is running. Click opens the shared
            NIFTY Expiry & NSE Holidays calendar (same popup as Settings). -->
@@ -2915,31 +2918,6 @@ async function pollSessionActiveSwap(){
 }
 setInterval(pollSessionActiveSwap, 10000);
 // ─────────────────────────────────────────────────────────────────────────────
-
-async function hardReset(){
-  var ok = await showDoubleConfirm({
-    icon: '⚠️', title: 'Reset Token',
-    message: 'Clear Fyers + Zerodha tokens and restart the server?\\nYou will need to re-login both brokers after.',
-    confirmText: 'Reset', confirmClass: 'modal-btn-danger',
-    subject: 'All broker tokens + server restart',
-    secondConfirmText: 'Yes, reset tokens'
-  });
-  if(!ok) return;
-  try {
-    var res = await secretFetch('/admin/reset', {method:'POST'});
-    if(!res) return;
-    var d = await res.json();
-    if(d.success){
-      await showAlert({icon:'✅',title:'Reset Complete',message:d.message+'\\nPage will reload in 6 seconds.',btnClass:'modal-btn-success'});
-      setTimeout(function(){ location.reload(); }, 6000);
-    } else {
-      showAlert({icon:'❌',title:'Reset Failed',message:d.error||JSON.stringify(d),btnClass:'modal-btn-danger'});
-    }
-  } catch(e){
-    showAlert({icon:'🔄',title:'Server Restarting',message:'Reset sent — server restarting. Reload in 6 seconds.',btnClass:'modal-btn-primary'});
-    setTimeout(function(){ location.reload(); }, 6000);
-  }
-}
 
 // ── Option expiry quick-save (dashboard mirror of the Settings fields) ───────
 // Writes OPTION_EXPIRY_OVERRIDE + OPTION_EXPIRY_TYPE through POST /settings/save,

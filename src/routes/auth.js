@@ -24,6 +24,54 @@ const zerodha = require("../services/zerodhaBroker");
 const socketManager = require("../utils/socketManager");
 
 // ─────────────────────────────────────────────────────────────────────────────
+// LOGIN-TIME TOKEN HYGIENE
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * Wipe the saved token of every broker that is currently DISCONNECTED, then let
+ * the OAuth flow start. Called by both login entry points; it replaces the old
+ * manual "Reset Token" dashboard button.
+ *
+ * Why disconnected-only:
+ *   • A saved-but-dead token is exactly what the user is trying to replace, and
+ *     leaving the file on disk means the next boot can restore a token that
+ *     cannot trade — the dashboard then shows a broker that silently fails.
+ *   • A token belonging to a CONNECTED broker is never touched: logging into
+ *     Fyers must not knock out a working Zerodha session (and vice-versa), and a
+ *     "re-login" on a still-valid session keeps the old token usable until the
+ *     callback writes the new one. That also makes this safe to run mid-session:
+ *     nothing that a running engine depends on can be cleared here.
+ *
+ * Authenticated-ness is read the same way the dashboard renders its badges
+ * (ACCESS_TOKEN for Fyers, isAuthenticated() for Zerodha) so what gets cleared
+ * always matches what the user saw when they clicked.
+ *
+ * @param {"Fyers"|"Zerodha"} trigger — broker whose Login button was clicked
+ * @returns {string[]} names of the brokers whose tokens were cleared
+ */
+function clearDisconnectedTokens(trigger) {
+  const cleared = [];
+
+  if (!process.env.ACCESS_TOKEN) {
+    try { fyers.clearFyersToken(); cleared.push("Fyers"); }
+    catch (err) { console.warn(`⚠️ [Auth] Fyers token clear failed: ${err.message}`); }
+  }
+
+  let zerodhaOk = false;
+  try { zerodhaOk = zerodha.isAuthenticated(); } catch (_) { zerodhaOk = false; }
+  if (!zerodhaOk) {
+    try { zerodha.clearZerodhaToken(); cleared.push("Zerodha"); }
+    catch (err) { console.warn(`⚠️ [Auth] Zerodha token clear failed: ${err.message}`); }
+  }
+
+  console.log(
+    cleared.length
+      ? `🧹 [Auth] ${trigger} login clicked — cleared stale token(s): ${cleared.join(", ")}`
+      : `🧹 [Auth] ${trigger} login clicked — both brokers connected, no token cleared.`,
+  );
+  return cleared;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // FYERS AUTH
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -40,6 +88,7 @@ const socketManager = require("../utils/socketManager");
  * ?direct=1 to skip the landing page and redirect straight to Fyers.
  */
 router.get("/login", (req, res) => {
+  clearDisconnectedTokens("Fyers");
   const url = fyers.generateAuthCode();
   if (req.query.direct === "1") {
     console.log("🔐 [Fyers] Redirecting to login:", url);
@@ -225,6 +274,7 @@ router.get("/zerodha/login", (req, res) => {
       "ZERODHA_API_KEY missing in .env. Add it and restart."
     ));
   }
+  clearDisconnectedTokens("Zerodha");
   try {
     const url = zerodha.getLoginUrl();
     console.log("🔐 [Zerodha] Redirecting to login:", url);

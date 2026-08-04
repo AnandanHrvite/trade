@@ -6,6 +6,15 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Changed — token clearing is automatic; "Reset Token" button removed
+
+The Dashboard's 🔄 **Reset Token** button is gone. It was a manual chore for something the app already does on a schedule, and it also restarted the server, which is far more than "clear my token".
+
+- **Clicking a Login button now wipes the stale token first.** `GET /auth/login` and `GET /auth/zerodha/login` clear the saved token of every broker that is currently **disconnected**, then start OAuth. So a dead token can no longer be restored from disk on the next boot and show a broker as connected when it cannot trade.
+- **A connected broker's token is never touched.** Logging into Fyers cannot knock out a working Zerodha session (and vice-versa), and a "re-login" on a still-valid session keeps the old token usable until the callback writes the new one. That also makes the clear safe to run mid-session — nothing a running engine depends on can be cleared by it.
+- The scheduled clears are unchanged and unaffected: **4:00 PM IST** clears both tokens, **7:00 AM IST** clears both and restarts the process, and on boot each loader still discards a token saved on a previous IST day (or older than 20h).
+- `POST /admin/reset` (clear both + restart, API_SECRET-gated) still exists for the rare stuck-socket case; it just no longer has a button on the Dashboard.
+
 ### Added — GAPS strategy guide
 
 `documents/GAPS_Strategy_Guide.html`, the seventh guide, matching the format of the existing six: plain-English rules, a glossary, worked numbers, the full settings table and an explicit "what's still missing" section.
