@@ -93,8 +93,9 @@ Copy the structure of the most recently built strategy (currently
   beyond the stop fills at the open, never the better level. Apply a slippage haircut
   both ways (`{MODE}_BT_SLIPPAGE_PTS`) — without it, backtests of option *buying*
   always flatter.
-- `src/routes/{name}LiveHarness.js` — wraps Paper via `liveHarness.installHarness`,
-  so **Live ≡ Paper by construction**. Triple-gate real orders:
+- `src/routes/{name}LiveHarness.js` — wraps Paper via
+  `require("../services/liveHarness").installHarness({ mode, modeTag, broker,
+  liveLogKey })`, so **Live ≡ Paper by construction**. Triple-gate real orders:
   `{MODE}_LIVE_ENABLED=true` AND `LIVE_HARNESS_DRY_RUN=false` AND
   `{MODE}_LIVE_DRY_RUN≠true`.
 
