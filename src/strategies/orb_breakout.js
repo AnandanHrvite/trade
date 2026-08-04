@@ -460,13 +460,15 @@ function getSignal(candles, opts) {
     if (d === day && _istMins(candles[i].time) < cfg.orEnd) orEndIdx = i;
     else if (d < day) lastPriorDayIdx = i;
   }
-  // When today has no pre-09:30 bar (a start or restart after the open) the old
-  // code fell through to the WHOLE array — which includes today's post-OR bars, so
-  // the breakout candle helped set the very threshold it was about to be judged
-  // against, and the same session scored differently depending on when the process
-  // happened to boot. Fall back to prior days only: deterministic, never
-  // self-referential. With no prior day either the yardstick is simply absent and
-  // the ATR-dependent gates fail open exactly as they already do when unseeded.
+  // DEFENSIVE ONLY — this fallback is currently UNREACHABLE, and that is deliberate.
+  // A valid opening range requires a candle with 09:15 <= m < 09:30, which is also a
+  // candle with m < orEnd, so `or` being non-null already guarantees orEndIdx >= 0.
+  // The branch exists so that if the OR window and the freeze point are ever allowed
+  // to diverge, the yardstick degrades to PRIOR DAYS rather than to the whole array —
+  // the old `: candles` fallback would have included today's post-OR bars, letting
+  // the breakout candle help set the very threshold judging it. Verified unreachable
+  // by brute force (3,000 random sessions, 794 with a valid OR, 0 hits) — so this is
+  // hardening, not a fix for an observed defect.
   const yard = orEndIdx >= 0
     ? candles.slice(0, orEndIdx + 1)
     : (lastPriorDayIdx >= 0 ? candles.slice(0, lastPriorDayIdx + 1) : []);

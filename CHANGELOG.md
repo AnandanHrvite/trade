@@ -20,16 +20,18 @@ The distortion was large, and worst exactly where it should have been smallest �
 
 Two parity defects in [orbBacktest.js](src/routes/orbBacktest.js), both of which made it report trades the live engine could not have taken:
 
-- **The EMA trend-trail was effectively disabled during the whole entry window.** The backtest computed its EMA over `dayCandles` — today's bars only — so a 20-period EMA stayed `null` until ~11:05 IST. Paper computes the same trail over `state.candles`, a ~7-day preload, so its EMA20 is live from the first candle. Same rule, different data, different exits. It now uses the multi-day slice `getSignal` already receives.
+- **The EMA trend-trail was effectively disabled during most of the entry window.** The backtest computed its EMA over `dayCandles` — today's bars only — so a 20-period EMA returned `null` until the 20th bar of the session (index 19 = the 10:50 bar, first usable at its 10:55 close). Paper computes the same trail over `state.candles`, a ~7-day preload, so its EMA20 is live from the first candle. Same rule, different data, different exits. It now uses the multi-day slice `getSignal` already receives.
 - **Day 1 of any range had no prior-day history**, leaving ATR unseeded and the ATR-dependent gates failing *open*. Paper always carries its preload and never runs in that state, so the first day is now skipped rather than reported.
 
 ### Fixed — ORB recorded `wickPass: true` for a filter that does not exist
 
 The wick filter was deleted in the 2026-07-26 rebuild, but `getSignal` still hard-coded `sig.wickPass = true`, so every trade record and every AI export has carried a passing verdict from a gate that never ran. Left `null` now — no filter, no verdict. (`vwapAligned` is unchanged: that gate is real and genuinely passed.)
 
-### Fixed — ORB's volatility yardstick was non-deterministic on a late start
+### Hardened (not a bug) — ORB's volatility-yardstick fallback
 
-When today had no pre-09:30 bar (a start or restart after the open), `getSignal` fell back to the **whole** candle array — including today's post-OR bars, so the breakout candle helped set the very threshold it was about to be judged against, and the same session scored differently depending on when the process booted. It now falls back to prior days only.
+If `getSignal` ever reached the "today has no pre-09:30 bar" branch it fell back to the **whole** candle array, including today's post-OR bars — which would let the breakout candle help set the threshold judging it. It now degrades to prior days only.
+
+**This branch is currently unreachable and the change fixes nothing observable.** A valid opening range requires a candle with `09:15 ≤ m < 09:30`, which is also a candle with `m < orEnd`, so a non-null OR already guarantees the index is found; brute-forced over 3,000 random sessions (794 with a valid OR, 0 hits). It is defence-in-depth in case the OR window and the freeze point are ever allowed to diverge — listed here so it is not mistaken for a fix.
 
 ### Changed — ORB exit rules have ONE owner (`src/strategies/orbExits.js`)
 
