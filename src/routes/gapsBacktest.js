@@ -10,7 +10,7 @@
  *     yesterday = last CLOSED daily candle before that day  (daily series)
  *     todayOpen = open of the first intraday candle of the day
  *     gapsStrategy.getSignal(daily, todayOpen)  →  BUY_CE / BUY_PE / NONE
- *     exits: gap-fill stop (spot) → intraday EMA trail on a CLOSE through it → EOD
+ *     exits: gap-size stop (spot) → intraday EMA trail on a CLOSE through it → EOD
  *
  * Option P&L is δ+θ simulated (no historical option chain) — treat ₹ as
  * DIRECTIONAL, not exact. A spread/slippage haircut of GAPS_BT_SLIPPAGE_PTS is
@@ -129,7 +129,10 @@ function runGapsBacktest(intraday, daily) {
       entryTime: entryBar.time,
       entrySpot: sig.todayOpen,          // fill at the open — that IS the signal price
       optionEntryLtp: SEED_PREMIUM,
-      slSpot: sig.slSpot,
+      // Same rule as Paper: the stop is the gap SIZE from the fill. The backtest
+      // fills at the day's open, so this lands on yesterday's close exactly.
+      slPts:  sig.slPts,
+      slSpot: gapsStrategy.stopFromFill(sig.side, sig.todayOpen, sig.slPts),
       trailSpot: null,      // filled in as the trail is consulted, for the record
       entryReason: sig.reason,
       prevRsi: sig.prevRsi, prevEma: sig.prevEma, prevClose: sig.prevClose,
@@ -167,7 +170,7 @@ function runGapsBacktest(intraday, daily) {
     }
 
     // ── Walk the day's candles from the entry bar. Conservative ordering: the
-    //    adverse gap-fill stop is tested on the bar's high/low BEFORE the trail
+    //    adverse gap-size stop is tested on the bar's high/low BEFORE the trail
     //    is tested on the close, so a bar that touched both books the loss. ──
     let closed = false;
     const startIdx = dayCandles.indexOf(entryBar);
@@ -180,14 +183,17 @@ function runGapsBacktest(intraday, daily) {
         closed = true; break;
       }
 
-      // Gap-fill stop. If the bar OPENED beyond the level the fill is the open
+      // Gap-size stop. A null/NaN level must never read as a hit (`high >= null`
+      // is `high >= 0`), so require a real number first.
+      // If the bar OPENED beyond the level the fill is the open
       // (worse than the level) — never assume a better-than-market fill.
-      if (pos.side === "PE" && c.high >= pos.slSpot) {
-        close(c.open > pos.slSpot ? c.open : pos.slSpot, c.time, `Gap filled — stop hit (prev close ${pos.slSpot})`);
+      const _slOk = typeof pos.slSpot === "number" && Number.isFinite(pos.slSpot);
+      if (_slOk && pos.side === "PE" && c.high >= pos.slSpot) {
+        close(c.open > pos.slSpot ? c.open : pos.slSpot, c.time, `Stop hit — ${pos.slPts}pt (the gap) against, at ${pos.slSpot}`);
         closed = true; break;
       }
-      if (pos.side === "CE" && c.low <= pos.slSpot) {
-        close(c.open < pos.slSpot ? c.open : pos.slSpot, c.time, `Gap filled — stop hit (prev close ${pos.slSpot})`);
+      if (_slOk && pos.side === "CE" && c.low <= pos.slSpot) {
+        close(c.open < pos.slSpot ? c.open : pos.slSpot, c.time, `Stop hit — ${pos.slPts}pt (the gap) against, at ${pos.slSpot}`);
         closed = true; break;
       }
 
@@ -252,7 +258,7 @@ function _renderResults(res, from, to, trades, stats, meta) {
       { label: "Extreme-RSI days, wrong gap", value: setups },
       { label: "Trade frequency", value: meta.days ? `${((trades.length / meta.days) * 100).toFixed(1)}% of sessions` : "—" },
     ],
-    notes: `Entry (from the shared engine, identical to Paper): yesterday's DAILY RSI(${cfg.rsiLength} on ${cfg.rsiSource}) &gt; ${cfg.rsiUpper} with a gap DOWN → BUY PE; &lt; ${cfg.rsiLower} with a gap UP → BUY CE. Entry fills at the day's open inside ${process.env.GAPS_ENTRY_START || "09:15"}–${process.env.GAPS_ENTRY_END || "09:30"}. Exits: gap-fill stop at yesterday's close (tested on the bar high/low, worse-of open/level fill) → ${cfg.trailEnabled ? `trailing stop on a ${_resMin()}m CLOSE back through the ${_resMin()}m EMA${cfg.trailLength} (PE exits on a close ABOVE, CE on a close BELOW; the EMA spans days so it is warm at the open, exactly as in Paper)` : "trail DISABLED"} → ${process.env.GAPS_FORCED_EXIT || "15:15"} EOD. No fixed target, no breakeven, no time stop. Option premium δ+θ simulated (BACKTEST_DELTA ${DELTA_TXT()}, θ ₹${process.env.BACKTEST_THETA_DAY || "8"}/day) seeded at ₹${process.env.GAPS_BT_SEED_PREMIUM || "240"}, PLUS a spread/slippage haircut of ${process.env.GAPS_BT_SLIPPAGE_PTS || "1.5"}pt EACH way — treat ₹ as directional, not exact. <b>GAPS is a low-frequency strategy: a 30-day range will usually produce very few trades, so widen the range before drawing any conclusion.</b> Use Replay (recorded ticks) for tick-accurate fills.`,
+    notes: `Entry (from the shared engine, identical to Paper): yesterday's DAILY RSI(${cfg.rsiLength} on ${cfg.rsiSource}) &gt; ${cfg.rsiUpper} with a gap DOWN → BUY PE; &lt; ${cfg.rsiLower} with a gap UP → BUY CE. Entry fills at the day's open inside ${process.env.GAPS_ENTRY_START || "09:15"}–${process.env.GAPS_ENTRY_END || "09:30"}. Exits: base stop = the GAP SIZE in points from the fill — filling at the open, that is yesterday's close exactly (tested on the bar high/low, worse-of open/level fill) → ${cfg.trailEnabled ? `trailing stop on a ${_resMin()}m CLOSE back through the ${_resMin()}m EMA${cfg.trailLength} (PE exits on a close ABOVE, CE on a close BELOW; the EMA spans days so it is warm at the open, exactly as in Paper)` : "trail DISABLED"} → ${process.env.GAPS_FORCED_EXIT || "15:15"} EOD. No fixed target, no breakeven, no time stop. Option premium δ+θ simulated (BACKTEST_DELTA ${DELTA_TXT()}, θ ₹${process.env.BACKTEST_THETA_DAY || "8"}/day) seeded at ₹${process.env.GAPS_BT_SEED_PREMIUM || "240"}, PLUS a spread/slippage haircut of ${process.env.GAPS_BT_SLIPPAGE_PTS || "1.5"}pt EACH way — treat ₹ as directional, not exact. <b>GAPS is a low-frequency strategy: a 30-day range will usually produce very few trades, so widen the range before drawing any conclusion.</b> Use Replay (recorded ticks) for tick-accurate fills.`,
   });
   res.send(html);
 }

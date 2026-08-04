@@ -331,7 +331,7 @@ const SETTINGS_SCHEMA = [
       { key: "GAPS_EXIT_TF", label: "Exit Candle Timeframe (min)", type: "select", options: ["1", "3", "5", "10", "15", "30", "60"], effect: EFFECT.SESSION, desc: "The intraday timeframe the trailing EMA is built on, and whose CLOSE triggers the trail exit. Also the candle size drawn on the intraday chart. Default 5.", default: "5" },
 
       // ── Exits ──
-      { key: "GAPS_TRAIL_ENABLED", label: "EMA Trailing Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Trail the position with the intraday EMA (period set by Trail EMA Length) and exit when a candle CLOSES back THROUGH it — a PE exits on a close ABOVE the EMA, a CE on a close BELOW. This is a trailing stop, not a target: the level follows price every candle. Turn OFF to run gap-fill-stop-and-EOD only. Default on.", default: "true" },
+      { key: "GAPS_TRAIL_ENABLED", label: "EMA Trailing Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Trail the position with the intraday EMA (period set by Trail EMA Length) and exit when a candle CLOSES back THROUGH it — a PE exits on a close ABOVE the EMA, a CE on a close BELOW. This is a trailing stop, not a target: the level follows price every candle. Turn OFF to run gap-size-stop-and-EOD only. Default on.", default: "true" },
       { key: "GAPS_TRAIL_EMA_LENGTH", label: "Trail EMA Length", type: "number", effect: EFFECT.INSTANT, desc: "EMA period for the trailing stop, on the EXIT TIMEFRAME candles (not daily). Separate from the daily EMA Length above, which feeds the RSI — changing the RSI smoothing must not silently move the stop. Default 21.", default: "21" },
 
       // ── Sizing + expiry ──

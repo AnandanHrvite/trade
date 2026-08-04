@@ -223,7 +223,7 @@ ${buildSidebar('gapsLive', false)}
       </div>
       <div style="flex:2;min-width:220px;">
         <div class="label">Rules</div>
-        <div class="val" style="font-size:0.8rem;">RSI(${scfg.rsiLength} on ${scfg.rsiSource}) &gt;${scfg.rsiUpper} + gap down → PE · &lt;${scfg.rsiLower} + gap up → CE · SL = prev close (gap fill) · exit trails the ${scfg.trailEnabled ? `intraday EMA${scfg.trailLength}` : "— trail OFF"} (PE exits on a close ABOVE it, CE on a close BELOW)</div>
+        <div class="val" style="font-size:0.8rem;">RSI(${scfg.rsiLength} on ${scfg.rsiSource}) &gt;${scfg.rsiUpper} + gap down → PE · &lt;${scfg.rsiLower} + gap up → CE · SL = the gap size in points from the fill · exit trails the ${scfg.trailEnabled ? `intraday EMA${scfg.trailLength}` : "— trail OFF"} (PE exits on a close ABOVE it, CE on a close BELOW)</div>
       </div>
     </div>
     <div style="margin-top:16px;">
@@ -238,7 +238,7 @@ ${buildSidebar('gapsLive', false)}
   </div>
 
   <div class="card">
-    <div class="section-title">NIFTY Intraday (gap-fill stop + EMA${scfg.trailLength} trail)</div>
+    <div class="section-title">NIFTY Intraday (gap-size stop + EMA${scfg.trailLength} trail)</div>
     <div id="nifty-chart-container" style="background:#0a0f1c;border:1px solid #1a2236;border-radius:12px;overflow:hidden;position:relative;height:400px;">
       <div id="nifty-chart" style="width:100%;height:100%;"></div>
       <div style="position:absolute;top:10px;left:12px;font-size:0.68rem;color:#4a6080;pointer-events:none;z-index:2;">

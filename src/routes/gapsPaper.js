@@ -4,7 +4,8 @@
  * Extreme-RSI gap fade. One decision per day, taken at the open:
  *   yesterday's daily RSI > 90 + today gaps DOWN  → BUY PE
  *   yesterday's daily RSI < 10 + today gaps UP    → BUY CE
- *   SL     = yesterday's close exactly (the gap-fill level), on SPOT, per tick.
+ *   SL     = the GAP SIZE in points from the fill, on SPOT, per tick. Filling at
+ *            the open puts it exactly on yesterday's close (the gap-fill level).
  *   Target = the daily EMA21 of the last closed daily bar, taken as a fixed price
  *            level for the day; fires when an intraday candle CLOSES beyond it.
  *   EOD    = hard square-off at GAPS_FORCED_EXIT.
@@ -392,13 +393,17 @@ async function simulateBuy(side, sig) {
     entryTime:      istNow(),
     entryTimeMs:    Date.now(),
     entryBarTime:   Math.floor(getBucketStart(Date.now(), _resMin()) / 1000),
-    slSpot:         sig.slSpot,                       // yesterday's close = gap fill
-    initialSlSpot:  sig.slSpot,
+    // The stop is the GAP SIZE applied to the price we actually filled at, so a
+    // fill a little after the open keeps the risk at the gap instead of letting
+    // it stretch to yesterday's close. Filling at the open, the two are equal.
+    slPts:          sig.slPts,
+    slSpot:         gapsStrategy.stopFromFill(side, spot, sig.slPts),
+    initialSlSpot:  gapsStrategy.stopFromFill(side, spot, sig.slPts),
     trailEnabled:   trailOn,
     trailLength:    _trailLen(),
     trailSpot:      null,   // set on each candle close once the intraday EMA warms up
     trailBars:      0,      // how many candle closes the trail actually supervised
-    riskPts:        parseFloat(Math.abs(spot - sig.slSpot).toFixed(2)),
+    riskPts:        sig.slPts,   // by construction: the gap, in points
     // Signal context (kept on the trade record for analytics / reports)
     prevDate:       sig.prevDate,
     prevClose:      sig.prevClose,
@@ -428,16 +433,16 @@ async function simulateBuy(side, sig) {
   log(`🟢 [GAPS-PAPER] BUY_${side} ${optInfo.symbol} qty=${qty} @ spot=${spot} optLtp=₹${optionEntryLtp}`);
   log(`   ├─ Gap: prev close ${sig.prevClose} → open ${sig.todayOpen} = ${sig.gapPts > 0 ? "+" : ""}${sig.gapPts}pt (${sig.gapPct > 0 ? "+" : ""}${sig.gapPct}%) ${sig.gapDir}`);
   log(`   ├─ Yesterday RSI ${sig.prevRsi} (${sig.rsiSource}) vs bands ${sig.rsiLower}/${sig.rsiUpper} · daily EMA ${sig.prevEma}`);
-  log(`   └─ SL ${pos.slSpot} (gap fill, ${pos.riskPts}pt) · Trail ${trailOn ? `${_resMin()}m EMA${pos.trailLength} (exit on a close back through it)` : "DISABLED"} · EOD ${_envStr("GAPS_FORCED_EXIT", "15:15")}`);
+  log(`   └─ SL ${pos.slSpot} (${pos.riskPts}pt = the gap${Math.abs(spot - sig.todayOpen) > 0.01 ? `; filled ${(spot - sig.todayOpen).toFixed(2)}pt off the open ${sig.todayOpen}, so the level is not yesterday's close ${sig.prevClose}` : ""}) · Trail ${trailOn ? `${_resMin()}m EMA${pos.trailLength} (exit on a close back through it)` : "DISABLED"} · EOD ${_envStr("GAPS_FORCED_EXIT", "15:15")}`);
 
   // The trail needs `trailLength` intraday bars before it produces a value. The
   // preload pulls several days of history so it is normally warm at the open —
-  // but say so when it is not, because until then the gap-fill stop is the ONLY
+  // but say so when it is not, because until then the gap-size stop is the ONLY
   // exit and a reader should not assume the trail is silently protecting them.
   if (trailOn) {
     const t0 = gapsStrategy.computeTrailEma(state.candles, pos.trailLength);
     if (t0.last == null) {
-      log(`⚠️ [GAPS-PAPER] Trail EMA${pos.trailLength} not warm yet (${(state.candles || []).length}/${pos.trailLength} × ${_resMin()}m bars) — gap-fill stop and EOD are the only exits until it is.`);
+      log(`⚠️ [GAPS-PAPER] Trail EMA${pos.trailLength} not warm yet (${(state.candles || []).length}/${pos.trailLength} × ${_resMin()}m bars) — the gap-size stop and EOD are the only exits until it is.`);
     } else {
       pos.trailSpot = t0.last;
       log(`   └─ Trail starts at ${t0.last} (${side === "PE" ? "exit on a close ABOVE" : "exit on a close BELOW"} it)`);
@@ -565,7 +570,7 @@ function simulateSell(reason) {
 }
 
 // ── Exits ────────────────────────────────────────────────────────────────────
-// Tick level: the gap-fill stop only. Candle-close level: the intraday EMA
+// Tick level: the gap-size stop only. Candle-close level: the intraday EMA
 // trailing stop. Plus the EOD square-off. Nothing else — no target, no
 // breakeven, no time stop.
 function _checkExits(spotPrice) {
@@ -581,9 +586,13 @@ function _checkExits(spotPrice) {
   if (favPts < (pos.maeSpotPts || 0)) { pos.maeSpotPts = parseFloat(favPts.toFixed(2)); pos.secsToMAE = parseFloat(((Date.now() - pos.entryTimeMs) / 1000).toFixed(1)); }
   if (curPnl < (pos.maePnl     || 0)) pos.maePnl = parseFloat(curPnl.toFixed(2));
 
-  // Gap-fill stop — price came back to yesterday's close, the gap is filled.
-  if (pos.side === "PE" && spotPrice >= pos.slSpot) { simulateSell(`Gap filled — stop hit (${spotPrice} ≥ prev close ${pos.slSpot})`); return; }
-  if (pos.side === "CE" && spotPrice <= pos.slSpot) { simulateSell(`Gap filled — stop hit (${spotPrice} ≤ prev close ${pos.slSpot})`); return; }
+  // Base stop — price has moved the GAP SIZE against the fill.
+  // Guard the level explicitly: a null/NaN slSpot would make `spot >= null`
+  // evaluate as `spot >= 0` — true on the very first tick — and square the trade
+  // off instantly. Never let a missing level read as a hit.
+  if (typeof pos.slSpot !== "number" || !Number.isFinite(pos.slSpot)) return;
+  if (pos.side === "PE" && spotPrice >= pos.slSpot) { simulateSell(`Stop hit — ${pos.riskPts}pt (the gap) against, at ${pos.slSpot} (spot ${spotPrice})`); return; }
+  if (pos.side === "CE" && spotPrice <= pos.slSpot) { simulateSell(`Stop hit — ${pos.riskPts}pt (the gap) against, at ${pos.slSpot} (spot ${spotPrice})`); return; }
 }
 
 /**
@@ -601,7 +610,7 @@ function _checkTrailOnClose(bar) {
   if (!pos.trailEnabled) return;
 
   const t = gapsStrategy.computeTrailEma(state.candles, pos.trailLength);
-  if (t.last == null) return;      // still warming up — gap-fill stop only
+  if (t.last == null) return;      // still warming up — gap-size stop only
 
   pos.trailSpot = t.last;
   pos.trailBars = (pos.trailBars || 0) + 1;
@@ -992,7 +1001,8 @@ router.get("/status/chart-data", async (req, res) => {
     const candles = srcCandles.map(c => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close }));
     if (state.currentBar) candles.push({ time: state.currentBar.time, open: state.currentBar.open, high: state.currentBar.high, low: state.currentBar.low, close: state.currentBar.close });
 
-    // Yesterday's close (= the stop / gap-fill) is a flat reference line, and so
+    // Yesterday's close (where the stop lands on an at-the-open fill) is a flat
+    // reference line, and so
     // is the daily EMA that feeds the RSI — neither moves during the session.
     let prevCloseLine = [], emaLine = [];
     if (candles.length && state.daily && state.daily.ok) {
@@ -1254,7 +1264,7 @@ router.get("/status", (req, res) => {
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;">
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;"><div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">NIFTY @ Entry</div><div style="font-size:1.05rem;font-weight:700;color:#c8d8f0;">₹${pos.entrySpot ? pos.entrySpot.toFixed(2) : "—"}</div></div>
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;"><div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">NIFTY LTP</div><div id="ajax-nifty-ltp" style="font-size:1.05rem;font-weight:700;color:#c8d8f0;">${state.lastTickPrice ? "₹" + state.lastTickPrice.toFixed(2) : "—"}</div><div id="ajax-nifty-move" style="font-size:0.63rem;color:${spotMove != null && spotMove >= 0 ? "#10b981" : "#ef4444"};margin-top:2px;">${spotMove != null ? (spotMove >= 0 ? "▲" : "▼") + " " + Math.abs(spotMove).toFixed(1) + " pts" : "—"}</div></div>
-        <div style="background:#1c1400;border:1px solid #78350f;border-radius:8px;padding:12px 14px;"><div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Stop — gap fill</div><div style="font-size:1.05rem;font-weight:700;color:#f59e0b;">${pos.slSpot ? "₹" + pos.slSpot.toFixed(2) : "—"}</div><div style="font-size:0.6rem;color:#4a6080;margin-top:2px;">risk ${pos.riskPts}pt</div></div>
+        <div style="background:#1c1400;border:1px solid #78350f;border-radius:8px;padding:12px 14px;"><div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Stop — gap size</div><div style="font-size:1.05rem;font-weight:700;color:#f59e0b;">${pos.slSpot ? "₹" + pos.slSpot.toFixed(2) : "—"}</div><div style="font-size:0.6rem;color:#4a6080;margin-top:2px;">risk ${pos.riskPts}pt</div></div>
         <div style="background:#0a1f12;border:1px solid #0d4030;border-radius:8px;padding:12px 14px;"><div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Trail — ${_resMin()}m EMA${pos.trailLength || _trailLen()}</div><div style="font-size:1.05rem;font-weight:700;color:#10b981;">${!pos.trailEnabled ? "OFF" : pos.trailSpot != null ? "₹" + pos.trailSpot.toFixed(2) : "warming up"}</div><div style="font-size:0.6rem;color:#4a6080;margin-top:2px;">${!pos.trailEnabled ? "GAPS_TRAIL_ENABLED=false" : `exit on a close ${pos.side === "PE" ? "above" : "below"} it`}</div></div>
         <div style="background:#10131c;border:1px solid #1e2940;border-radius:8px;padding:12px 14px;"><div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Gap</div><div style="font-size:1.05rem;font-weight:700;color:${pos.gapDir === "UP" ? "#10b981" : "#ef4444"};">${pos.gapPts > 0 ? "+" : ""}${pos.gapPts}pt</div><div style="font-size:0.6rem;color:#4a6080;margin-top:2px;">${pos.gapDir}</div></div>
         <div style="background:#0a1f12;border:1px solid #0d4030;border-radius:8px;padding:12px 14px;"><div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Peak Premium</div><div style="font-size:1.05rem;font-weight:700;color:#10b981;">${pos.peakPremium ? "₹" + pos.peakPremium.toFixed(2) : "—"}</div></div>
@@ -1329,9 +1339,9 @@ ${process.env.CHART_ENABLED !== "false" ? `<!-- Daily chart: the series the stra
   </div>
 </div>
 
-<!-- Intraday chart: where the gap-fill stop and the EMA trail actually get hit -->
+<!-- Intraday chart: where the gap-size stop and the EMA trail actually get hit -->
 <div style="margin-bottom:18px;">
-  <div class="section-title">NIFTY ${_resMin()}-Min Intraday (gap-fill stop + EMA${_trailLen()} trail)</div>
+  <div class="section-title">NIFTY ${_resMin()}-Min Intraday (gap-size stop + EMA${_trailLen()} trail)</div>
   <div id="nifty-chart-container" style="background:#0a0f1c;border:1px solid #1a2236;border-radius:12px;overflow:hidden;position:relative;height:380px;">
     <div id="nifty-chart" style="width:100%;height:100%;"></div>
     <div style="position:absolute;top:10px;left:12px;font-size:0.68rem;color:#4a6080;pointer-events:none;z-index:2;">
@@ -1422,7 +1432,7 @@ async function gapsHandleExit(btn) {
 </script>
 
 <script>
-// ── Intraday chart (gap-fill stop line + moving EMA trail series) ──
+// ── Intraday chart (stop line + moving EMA trail series) ──
 (function(){
   if (typeof LightweightCharts === 'undefined' || '${process.env.CHART_ENABLED}' === 'false') return;
   var container = document.getElementById('nifty-chart');

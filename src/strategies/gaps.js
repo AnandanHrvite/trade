@@ -19,7 +19,11 @@
  *   CE (long):  yesterday's RSI  <  GAPS_RSI_LOWER (default 10)  AND
  *               today's open     >  yesterday's close             (gap UP)
  *
- * Stop loss  = yesterday's close exactly — the gap-fill level.
+ * Stop loss  = the GAP SIZE in points, applied from the actual fill: a PE is
+ *              stopped `gap` points ABOVE the fill, a CE `gap` points BELOW.
+ *              Filling at the open lands it exactly on yesterday's close (the
+ *              gap-fill level); filling later keeps the risk pinned at the gap
+ *              instead of letting it drift with the fill.
  * Trail      = EMA(GAPS_TRAIL_EMA_LENGTH, default 21) on the INTRADAY series
  *              (GAPS_EXIT_TF, default 5-min). It is a TRAILING STOP, not a
  *              target: the trade rides as long as price stays on the winning
@@ -39,7 +43,7 @@
  *
  * Returns:
  *   { signal:"BUY_CE"|"BUY_PE"|"NONE", side, reason, skipReason,
- *     entrySpot, slSpot, signalStrength,
+ *     entrySpot, slSpot, slPts, signalStrength,
  *     prevClose, prevRsi, prevEma, prevDate, todayOpen,
  *     gapPts, gapPct, gapDir, rsiUpper, rsiLower, rsiSource, warmup }
  */
@@ -47,7 +51,7 @@
 const { EMA, RSI } = require("technicalindicators");
 
 const NAME        = "GAPS";
-const DESCRIPTION = "Gaps — daily RSI(EMA21) beyond 90/10 then a next-day gap the other way; stop at the gap fill, trail the intraday EMA21";
+const DESCRIPTION = "Gaps — daily RSI(EMA21) beyond 90/10 then a next-day gap the other way; stop = the gap size in points, trail the intraday EMA21";
 
 const RSI_SOURCES = ["ema", "close", "open", "high", "low", "hl2", "hlc3", "ohlc4"];
 
@@ -101,12 +105,31 @@ function computeTrailEma(candles, length) {
 }
 
 /**
+ * The base stop, applied to whatever price we ACTUALLY filled at.
+ *
+ * The stop is the gap SIZE (`slPts`), so a PE — taken after a gap down — is
+ * stopped that many points ABOVE the fill, and a CE that many points BELOW.
+ * Filling at the open makes this land exactly on yesterday's close, which is
+ * the gap-fill level; filling later keeps the risk pinned at the gap rather
+ * than letting it grow with the fill.
+ */
+function stopFromFill(side, fillSpot, slPts) {
+  // Deliberately NOT Number(): Number(null) is 0 and Number("") is 0, so a
+  // missing fill price would silently become a stop of `slPts` — a level the
+  // market is already miles past, i.e. an instant stop-out on the first tick.
+  if (typeof fillSpot !== "number" || !Number.isFinite(fillSpot)) return null;
+  if (typeof slPts    !== "number" || !Number.isFinite(slPts))    return null;
+  const pts = Math.abs(slPts);
+  return _r2(side === "PE" ? fillSpot + pts : fillSpot - pts);
+}
+
+/**
  * The trailing-stop rule itself — the ONE place it is written down, so paper,
  * live, backtest and replay cannot drift apart.
  *
  * A PE is a bet on a fall, so it is stopped out when price closes back ABOVE the
  * trail; a CE is stopped when price closes BELOW it. Returns false whenever the
- * trail has not warmed up, which leaves the gap-fill stop as the only exit.
+ * trail has not warmed up, which leaves the gap-size stop as the only exit.
  */
 function trailExitHit(side, barClose, trailValue) {
   if (typeof barClose !== "number" || typeof trailValue !== "number") return false;
@@ -252,7 +275,7 @@ function getPrevDaySnapshot(dailyCandles, sessionDayUnixSec, cfg) {
 function _base(cfg) {
   return {
     signal: "NONE", side: null, reason: "", skipReason: "",
-    entrySpot: null, slSpot: null, signalStrength: null,
+    entrySpot: null, slSpot: null, slPts: null, signalStrength: null,
     prevClose: null, prevRsi: null, prevEma: null, prevDate: null,
     todayOpen: null, gapPts: null, gapPct: null, gapDir: null,
     rsiUpper: cfg.rsiUpper, rsiLower: cfg.rsiLower,
@@ -334,15 +357,20 @@ function getSignal(dailyCandles, todayOpen, opts) {
   base.side       = side;
   base.signal     = side === "CE" ? "BUY_CE" : "BUY_PE";
   base.entrySpot  = base.todayOpen;
-  base.slSpot     = snap.prevClose;   // gap fill, exactly
+  // The GAP SIZE is the base stop — a DISTANCE, not a fixed level. Filling at
+  // the open puts it exactly on yesterday's close (open ± gap == prev close);
+  // filling a little later keeps the risk pinned at the gap instead of letting
+  // it drift with the fill. Each surface applies it via stopFromFill().
+  base.slPts      = Math.abs(gapPts);
+  base.slSpot     = stopFromFill(side, base.todayOpen, base.slPts);
   base.signalStrength = "STRONG";
   const trailTxt = cfg.trailEnabled ? `trail EMA${cfg.trailLength} (intraday close-through)` : "trail DISABLED";
   base.reason =
     `GAPS ${side}: ${snap.prevDate} ${rsiTxt} ${side === "PE" ? `> ${cfg.rsiUpper} (overbought)` : `< ${cfg.rsiLower} (oversold)`} ` +
-    `→ ${gapTxt} → BUY ${side} @ ${base.todayOpen} | SL ${base.slSpot} (gap fill) | ${trailTxt}`;
+    `→ ${gapTxt} → BUY ${side} @ ${base.todayOpen} | SL ${base.slPts}pt (the gap) → ${base.slSpot} | ${trailTxt}`;
 
   if (!o.silent) {
-    console.log(`[GAPS] ENTER ${side} | prev ${snap.prevDate} close=${snap.prevClose} ${rsiTxt} EMA${cfg.emaLength}=${snap.prevEma} | open=${base.todayOpen} gap=${gapPts}pt ${base.gapDir} | SL=${base.slSpot} | ${trailTxt}`);
+    console.log(`[GAPS] ENTER ${side} | prev ${snap.prevDate} close=${snap.prevClose} ${rsiTxt} EMA${cfg.emaLength}=${snap.prevEma} | open=${base.todayOpen} gap=${gapPts}pt ${base.gapDir} | SL=${base.slPts}pt → ${base.slSpot} | ${trailTxt}`);
   }
   return base;
 }
@@ -355,6 +383,7 @@ module.exports = {
   computeDaily,
   computeTrailEma,
   trailExitHit,
+  stopFromFill,
   getPrevDaySnapshot,
   getSignal,
   _istDayOf,
