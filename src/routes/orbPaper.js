@@ -30,7 +30,7 @@ const sharedSocketState  = require("../utils/sharedSocketState");
 const socketManager      = require("../utils/socketManager");
 const tickRecorder       = require("../utils/tickRecorder");
 const { verifyFyersToken } = require("../utils/fyersAuthCheck");
-const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS, toastJS, tableEnhancerCSS, tableEnhancerJS } = require("../utils/sharedNav");
+const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
 const { renderHistoryPage, dailyFilesPaginate } = require("../utils/paperHistoryUI");
 const { bbRsiStyleCSS, bbRsiTopBar, bbRsiCapitalStrip, bbRsiStatGrid, bbRsiCurrentBar, bbRsiActivityLog } = require("../utils/bbRsiStyleUI");
 const { isTradingAllowed } = require("../utils/nseHolidays");
@@ -43,7 +43,7 @@ const aiExport    = require("../utils/aiExport");
 const fyers       = require("../config/fyers");
 const { notifyEntry, notifyExit, notifyStarted, notifyDayReport } = require("../utils/notify");
 const { getCharges } = require("../utils/charges");
-const { fmtISTDateTime, getISTMinutes, getBucketStart, parseOptionDetails } = require("../utils/tradeUtils");
+const { fmtISTDateTime, getISTMinutes, getBucketStart } = require("../utils/tradeUtils");
 const skipLogger = require("../utils/skipLogger");
 const tradeGuards = require("../utils/tradeGuards");
 const orbRiskState = require("../utils/orbRiskState");
@@ -1074,6 +1074,11 @@ router.get("/status", (req, res) => {
   const _vix = getCachedVix();
   const _vixEnabled = (process.env.ORB_VIX_ENABLED || "false").toLowerCase() === "true";
   const _vixMaxEntry = vixFilter.getVixMaxEntry("orb");
+  // ORB_VIX_STRONG_ONLY is a real, honoured threshold (vixFilter.checkLiveVix reads
+  // it for mode "orb"), but the badge used to hard-code Infinity here — so it read
+  // "NORMAL" right up to the block level and never showed the amber STRONG-ONLY
+  // band the setting configures. Same source as the gate.
+  const _vixStrongOnly = vixFilter.getVixStrongOnly("orb");
   const _maxTrades = parseInt(process.env.ORB_MAX_DAILY_TRADES || "1", 10);
   const _maxLoss   = parseFloat(process.env.ORB_MAX_DAILY_LOSS || "3000");
   const _forcedExit = process.env.ORB_FORCED_EXIT || "15:15";
@@ -1307,7 +1312,7 @@ ${bbRsiTopBar({
   title: "ORB Paper Trade",
   metaLine: `Strategy: ${orbStrategy.NAME} · OR ${_orStart}–${_orEnd} · Square-off ${_forcedExit} IST · ${state.running ? "Auto-refreshes every 2s" : "Stopped"}`,
   running: state.running,
-  vix: { enabled: _vixEnabled, value: _vix, maxEntry: _vixMaxEntry, strongOnly: Infinity },
+  vix: { enabled: _vixEnabled, value: _vix, maxEntry: _vixMaxEntry, strongOnly: _vixStrongOnly },
   primaryAction: { label: "Start ORB Paper", href: "/orb-paper/start" },
   stopAction:    { label: "Stop Session",    href: "/orb-paper/stop"  },
   historyHref: "/orb-paper/history",
@@ -1678,6 +1683,27 @@ router.get("/download/skips-all", (req, res) => {
   res.send(body);
 });
 
+// Per-date day files. The Real-Time monitor's "📋 Copy Day Log" button fetches
+// {prefix}/download/trades/:date + /download/skips/:date — ORB wrote both files
+// all along (skipLogger/tradeLogger mode "orb") but never exposed them, so it was
+// the only strategy on that page stuck showing "— No Day Log —". Same shape as
+// bb_rsi / PA / EMA_RSI_ST / EMA9+VWAP.
+router.get("/download/skips/:date", (req, res) => {
+  const date = req.params.date;
+  if (!_ORB_DATE_RE.test(date)) return res.status(400).send("bad date");
+  const p = skipLogger.filePathFor("orb", date);
+  if (!fs.existsSync(p)) return res.status(404).send("not found");
+  res.download(p, `orb_paper_skips_${date}.txt`);
+});
+
+router.get("/download/trades/:date", (req, res) => {
+  const date = req.params.date;
+  if (!_ORB_DATE_RE.test(date)) return res.status(400).send("bad date");
+  const p = tradeLogger.dailyFilePathFor("orb", date);
+  if (!fs.existsSync(p)) return res.status(404).send("not found");
+  res.download(p, `orb_paper_trades_${date}.txt`);
+});
+
 router.get("/view/skips/:date", (req, res) => {
   const date = req.params.date;
   if (!_ORB_DATE_RE.test(date)) return res.status(400).send("bad date");
@@ -1746,22 +1772,12 @@ router.get("/reset", (req, res) => {
   return res.json({ success: true, message: `ORB paper trade history cleared. Capital reset to ₹${fresh.toLocaleString("en-IN")}` });
 });
 
-// Delete a session by index (newest = last in array)
-router.post("/delete-session/:idx", (req, res) => {
-  try {
-    const idx = parseInt(req.params.idx, 10);
-    const data = loadData();
-    if (!Number.isFinite(idx) || idx < 0 || idx >= (data.sessions || []).length) {
-      return res.status(400).json({ success: false, error: "Invalid session index" });
-    }
-    const removed = data.sessions.splice(idx, 1)[0];
-    data.totalPnl = parseFloat((data.totalPnl - (removed.pnl || 0)).toFixed(2));
-    saveData(data);
-    return res.json({ success: true });
-  } catch (e) {
-    return res.status(500).json({ success: false, error: e.message });
-  }
-});
+// NOTE: there is deliberately only ONE session-delete endpoint above
+// (DELETE /session/:index) — the shared history page (paperHistoryUI) calls that
+// one, and it is what bb_rsi / PA / EMA_RSI_ST / EMA9+VWAP expose. A second
+// `POST /delete-session/:idx` used to sit here: unreachable from any UI, and it
+// adjusted totalPnl WITHOUT recomputing `capital`, so if anything had ever called
+// it the History page's capital figure would have silently gone out of sync.
 
 // Download all trades as JSONL
 router.get("/download/trades.jsonl", (req, res) => {

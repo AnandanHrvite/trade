@@ -19,12 +19,12 @@ const sharedSocketState = require("../utils/sharedSocketState");
 const { buildSidebar, sidebarCSS, faviconLink } = require("../utils/sharedNav");
 
 // hasDayLog: only strategies that expose /download/{trades,skips}/:date show
-// the Copy Day Log button. ORB paper exposes cumulative JSONL only.
+// the Copy Day Log button. TREND_PB still exposes cumulative JSONL only.
 const STRATEGY_DEFS = [
   { key:'EMA_RSI_ST',    label:'EMA_RSI_ST',        accentClass:'ema_rsi_st',    accent:'#3b82f6', paperPrefix:'/ema_rsi_st-paper',    livePrefix:'/ema_rsi_st-live',    hasDayLog:true,  modeFlag:'EMA_RSI_ST_MODE_ENABLED'    },
   { key:'BB_RSI',    label:'BB_RSI',        accentClass:'bb_rsi',    accent:'#f59e0b', paperPrefix:'/bb_rsi-paper',    livePrefix:'/bb_rsi-live',    hasDayLog:true,  modeFlag:'BB_RSI_MODE_ENABLED'    },
   { key:'PA',       label:'PRICE ACTION', accentClass:'pa',       accent:'#a855f7', paperPrefix:'/pa-paper',       livePrefix:'/pa-live',       hasDayLog:true,  modeFlag:'PA_MODE_ENABLED'       },
-  { key:'ORB',      label:'ORB',          accentClass:'orb',      accent:'#10b981', paperPrefix:'/orb-paper',      livePrefix:'/orb-live',      hasDayLog:false, modeFlag:'ORB_MODE_ENABLED'      },
+  { key:'ORB',      label:'ORB',          accentClass:'orb',      accent:'#10b981', paperPrefix:'/orb-paper',      livePrefix:'/orb-live',      hasDayLog:true,  modeFlag:'ORB_MODE_ENABLED'      },
   { key:'EMA9VWAP', label:'EMA9+VWAP',    accentClass:'ema9vwap', accent:'#06b6d4', paperPrefix:'/ema9vwap-paper', livePrefix:'/ema9vwap-live', hasDayLog:true,  modeFlag:'EMA9VWAP_MODE_ENABLED' },
   { key:'TREND_PB', label:'TREND PB',     accentClass:'trendpb',  accent:'#ec4899', paperPrefix:'/trend-pb-paper', livePrefix:'/trend-pb-live', hasDayLog:false, modeFlag:'TREND_PB_MODE_ENABLED' },
 ];

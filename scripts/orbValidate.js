@@ -30,7 +30,6 @@ process.env.TZ = "Asia/Calcutta";
 require("dotenv").config();
 
 const path = require("path");
-const { ATR } = require("technicalindicators");
 const orb = require(path.join(__dirname, "../src/strategies/orb_breakout"));
 const orbExits = require(path.join(__dirname, "../src/strategies/orbExits"));
 const orbStopRisk = require(path.join(__dirname, "../src/utils/orbStopRisk"));
@@ -164,10 +163,14 @@ function line(label, s) {
       if (exit == null) { const rest = dayC.slice(j + 1); exit = (rest[rest.length - 1] || bar).close; why = "EOD"; }
 
       const pts = r2(side === "CE" ? exit - entry : entry - exit);
-      const a = ATR.calculate({ period: 14, high: win.map(c => c.high), low: win.map(c => c.low), close: win.map(c => c.close) });
+      // atr5 comes from the SIGNAL, not a second hand-rolled ATR. This script used
+      // to call ATR.calculate() directly here, which re-introduced the overnight-gap
+      // contamination orb_breakout._atrAtLast() fixes (2026-08-04) — so the regime
+      // buckets below were sliced on a yardstick the engine no longer uses, and the
+      // reported ATR5 disagreed with the one the gates actually applied.
       trades.push({
         date: DATE(bar.time), side, pts, inr: toINR(pts), why, mae: r2(mae), mfe: r2(mfe),
-        orPts: sig.rangePts, gap: sig.gapPts, atr5: a.length ? r2(a[a.length - 1]) : null,
+        orPts: sig.rangePts, gap: sig.gapPts, atr5: sig.atr5,
         orAtr: sig.atr15 ? r2(sig.rangePts / sig.atr15) : null,
         clamped: st.clamped,
       });

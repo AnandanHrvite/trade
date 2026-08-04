@@ -371,6 +371,12 @@ async function _placeLiveSellImpl(reason) {
     stopLoss: pos.slSpot, initialStopLoss: pos.initialSlSpot,
     optionStrike: pos.optionStrike, optionExpiry: pos.optionExpiry, optionType: pos.side,
     signalStrength: pos.signalStrength, vixAtEntry: pos.vixAtEntry, vixAtExit: getCachedVix(),
+    // OI context. `pos` has captured these since the OI gate was added, but the
+    // trade record dropped them — so a LIVE row was missing two fields every PAPER
+    // row carries, and the two streams could not be compared field-for-field in the
+    // JSONL. Observer-only, exactly as in orbPaper.
+    oiAtEntry: pos.oiAtEntry != null ? pos.oiAtEntry : null,
+    oiRegime: pos.oiRegime || null,
     rangePts: pos.rangePts, orh: pos.orh, orl: pos.orl, targetSpot: pos.targetSpot,
     vwapAligned: pos.vwapAligned != null ? pos.vwapAligned : null,
     volPass: pos.volPass != null ? pos.volPass : null,
@@ -381,6 +387,7 @@ async function _placeLiveSellImpl(reason) {
     durationMs: Date.now() - pos.entryTimeMs, charges,
     entryOrderId: pos.entryOrderId, exitOrderId,
     isLive: !isDryRun(), isDryRun: isDryRun(),
+    isFutures: false,   // ORB is single-leg option buying — matches orbPaper's record
     instrument: "NIFTY_OPTIONS",
   };
   state.sessionTrades.push(trade);
@@ -845,6 +852,9 @@ router.get("/status", (req, res) => {
   const _vix = getCachedVix();
   const _vixEnabled = (process.env.ORB_VIX_ENABLED || "false").toLowerCase() === "true";
   const _vixMaxEntry = vixFilter.getVixMaxEntry("orb");
+  // Same source as the gate — see the note in orbPaper: hard-coding Infinity here
+  // hid the ORB_VIX_STRONG_ONLY band the operator had configured.
+  const _vixStrongOnly = vixFilter.getVixStrongOnly("orb");
   const _maxTrades = parseInt(process.env.ORB_MAX_DAILY_TRADES || "1", 10);
   const _maxLoss   = parseFloat(process.env.ORB_MAX_DAILY_LOSS || "3000");
   const _forcedExit = process.env.ORB_FORCED_EXIT || "15:15";
@@ -1067,7 +1077,7 @@ ${bbRsiTopBar({
   title: `ORB Live Trade${dry ? " (DRY-RUN)" : ""}`,
   metaLine: `${orbStrategy.NAME} · OR ${_orStart}–${_orEnd} · Square-off ${_forcedExit} IST · ${dry ? "decisions logged only" : "real Fyers orders"}`,
   running: state.running,
-  vix: { enabled: _vixEnabled, value: _vix, maxEntry: _vixMaxEntry, strongOnly: Infinity },
+  vix: { enabled: _vixEnabled, value: _vix, maxEntry: _vixMaxEntry, strongOnly: _vixStrongOnly },
   primaryAction: { label: dry ? "Start ORB (DRY)" : "Start ORB Live", href: "/orb-live/start", color: dry ? "#92400e" : "#7f1d1d" },
   stopAction:    { label: "Stop Session", href: "/orb-live/stop" },
   liveBadge: { kind: dry ? "dry" : "live" },

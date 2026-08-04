@@ -293,13 +293,20 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
       : '';
 
+    // ORB has a NATIVE live route (/orb-live sets ORB_LIVE in sharedSocketState),
+    // so it needs the same LIVE badge bb_rsi and PA get — without it an ORB live
+    // session placing real Fyers orders was the only one invisible in the sidebar.
+    const orbLiveBadge = p.key === 'orbLive' && _orbMode === 'ORB_LIVE'
+      ? `<span class="sb-nav-badge live">LIVE</span>`
+      : '';
+
     const orbPaperBadge = p.key === 'orbPaper' && _orbMode === 'ORB_PAPER'
       ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
       : '';
 
     return `<a href="${p.href}" class="sb-nav-item${isActive ? ' active' : ''}">
       <span class="sb-nav-icon">${p.icon}</span> ${p.label}
-      ${liveBadge}${runningBadge}${bbRsiLiveBadge}${bbRsiPaperBadge}${paLiveBadge}${paPaperBadge}${orbPaperBadge}
+      ${liveBadge}${runningBadge}${bbRsiLiveBadge}${bbRsiPaperBadge}${paLiveBadge}${paPaperBadge}${orbLiveBadge}${orbPaperBadge}
     </a>`;
   }
 

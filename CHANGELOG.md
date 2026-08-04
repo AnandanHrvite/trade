@@ -6,6 +6,33 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Changed — ORB implementation audit: settings, parity, UI and dead code
+
+A full pass over ORB against the standard the other five strategies already meet. **No trading behaviour changed** — no threshold, gate, ordering or fill rule was touched; `runOrbBacktest` produces identical trades before and after.
+
+**Settings**
+- Added `ORB_BT_SLIPPAGE_PTS` and `ORB_BT_SEED_PREMIUM` to the Settings UI. Both were code-only despite the identical `TREND_PB_BT_*` pair being exposed, so the ORB backtest's two honesty knobs could only be changed by hand-editing `.env`.
+- Regrouped the ORB Settings section into the house order used by Trend Pullback (live gates → entry → exits → option selection → risk/regime → backtest → debug). It previously interleaved the debug toggle, the ITM-strike knob and the spread cap among the exit and day-filter fields.
+- Flagged the **47 retired `ORB_*` keys** a deployed `.env` still carries from the pre-rebuild V1/V2/V3 engine (RSI, ADX, EMA20/50, wick, volume, sweet-spot, prior-day levels, the old %-based stop/target/trail…). They are read by no code, but `tickRecorder.snapshotSettings()` matches `/^ORB_/`, so every replay recording and daily-JSONL settings block advertises filters that do not exist — and several read as if they configure a live rule (`ORB_TRAIL_ENABLED` does **not** gate the EMA trail; `ORB_ATR_PERIOD` and `ORB_BUFFER_*_MULT` are hard-coded constants in `orb_breakout.js`; `ORB_TARGET_RANGE_MULT` became the exported `TARGET_OR_MULT`). [app.js](src/app.js) now warns at boot with an exact-key list, alongside the existing `SWING_`/`SCALP_` prefix warning — a prefix rule cannot catch these, since the live keys share the `ORB_` prefix. README carries a one-key-per-line bulk-delete block. The `.env` files themselves are the operator's to clear (local **and** EC2); deleting all 47 changes no behaviour.
+
+**Parity**
+- `ORB_VIX_STRONG_ONLY` is honoured by `vixFilter` for mode `orb`, but the ORB Paper and ORB Live status bars hard-coded `strongOnly: Infinity` — so the VIX chip read "NORMAL" right up to the block threshold and never showed the amber STRONG-ONLY band the setting configures. Both now read `vixFilter.getVixStrongOnly("orb")`.
+- ORB **Live** trade records dropped `oiAtEntry` / `oiRegime` (the position object had captured them all along) and `isFutures`, all of which ORB Paper writes — so live and paper rows could not be compared field-for-field in the JSONL. Added; observer-only.
+- `/orb-backtest`'s "gates active in paper/live but not modelled here" disclosure was wrong twice: it printed the premium band with a **₹80** default the engine never uses (the real default is ₹120), and it tested `ORB_MAX_SPREAD_PTS || "0"`, declaring the spread gate inactive whenever the ORB-specific key was simply unset — exactly the case where paper/live fall back to `MAX_BID_ASK_SPREAD_PTS` and the gate **is** active. Both now mirror the routes' own read order.
+- `ORB_DEBUG_TRACE` printed the per-candle funnel from bar-based harnesses too, so leaving the toggle on turned one multi-year `/orb-backtest` run into millions of lines through the `/logs` SSE ring. `getSignal`'s tracer now respects `opts.silent` (backtest + `orbValidate`); `sig.gates` is still populated everywhere, so nothing is lost.
+- `scripts/orbValidate.js` recomputed its reported `atr5` with a raw `ATR.calculate()`, re-introducing the overnight-gap contamination `_atrAtLast()` fixes — so the regime buckets it prints were sliced on a yardstick the engine no longer uses. It now reports `sig.atr5`.
+
+**UI**
+- ORB was the only strategy on `/realtime` stuck showing "— No Day Log —". It wrote both day files all along (`skipLogger`/`tradeLogger` mode `orb`) but never served them; added `/orb-paper/download/skips/:date` + `/download/trades/:date` (same shape as bb_rsi/PA/EMA_RSI_ST/EMA9+VWAP) and flipped `hasDayLog`.
+- Added the sidebar **LIVE** badge for `/orb-live`. ORB has a native live route that sets `ORB_LIVE` in `sharedSocketState`, and bb_rsi and PA both badge theirs — an ORB live session placing real Fyers orders was the only one invisible in the nav.
+
+**Dead code**
+- Removed `renderIdleForm()` from [orbBacktest.js](src/routes/orbBacktest.js) (~60 lines, never called — `/idle` redirects) and the now-unused `buildSidebar` / `sidebarCSS` / `sharedSocketState` imports it was the only consumer of.
+- Removed `POST /orb-paper/delete-session/:idx`. Unreachable — the shared history page calls `DELETE /session/:index` — and it adjusted `totalPnl` without recomputing `capital`, so anything that had called it would have desynced the History page's capital figure.
+- Removed unused imports from [orbPaper.js](src/routes/orbPaper.js) (`tableEnhancerCSS`, `tableEnhancerJS`, `toastJS`, `parseOptionDetails`).
+- Corrected the stale `ORB_SIG_WINDOW` comment (it claimed to seed "EMA20/EMA50/ADX/RSI" — all deleted in the rebuild; it seeds ATR(5m)/ATR(15m) and the EMA trail) and the `/orb-backtest` endpoint list in the file header.
+- README: `ORB_LIVE_DRY_RUN`'s default was documented as `true` in the ORB table and `false` in the live-gates table — the code default is `false`. Also de-duplicated the `ORB_MAX_WEEKLY_LOSS` / `ORB_LOSS_STREAK_SKIP` rows.
+
 ### Fixed — ORB's ATR was measuring the overnight gap, not intraday volatility
 
 Wilder's true range uses the **previous** bar's close, so on the first bar of a session `TR` collapsed to the close-to-open gap — a move nobody could trade. ORB freezes its volatility yardstick at 09:25, where a 14-period ATR spans ~2 bars of today and ~12 of yesterday, so that one contaminated bar carried roughly 1/14th of a full gap into every ATR-scaled threshold: the decisive-body gate (`0.6×ATR5`), the breakout buffer (`0.3×ATR5`), the ATR stop floor and the day filter (`OR ≤ 2.5×ATR15`).

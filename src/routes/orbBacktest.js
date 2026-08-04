@@ -5,9 +5,12 @@
  * shared backtest UI helper for full parity with bb_rsi/PA backtest pages.
  *
  * Endpoints:
- *   GET /orb-backtest                → form (no params)
- *   GET /orb-backtest?from=&to=      → run + render results
- *   GET /orb-backtest/idle           → idle landing
+ *   GET /orb-backtest                → redirects to the last 30 days (no separate
+ *                                      idle form — matches bb_rsi/PA/Trend_PB)
+ *   GET /orb-backtest?from=&to=      → queue a background job + progress page
+ *   GET /orb-backtest?…&jobId=       → render the completed job
+ *   GET /orb-backtest/status?jobId=  → job progress poll (JSON)
+ *   GET /orb-backtest/idle           → idle probe for /all-backtest (JSON or redirect)
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -17,8 +20,7 @@ const orbStrategy = require("../strategies/orb_breakout");
 const orbExits    = require("../strategies/orbExits");
 const orbStopRisk = require("../utils/orbStopRisk");
 const { fetchCandlesCachedBT } = require("../services/backtestEngine");
-const { buildSidebar, sidebarCSS, faviconLink } = require("../utils/sharedNav");
-const sharedSocketState = require("../utils/sharedSocketState");
+const { faviconLink } = require("../utils/sharedNav");
 const { getCharges } = require("../utils/charges");
 const { renderBacktestResults, computeBacktestStats } = require("../utils/backtestUI");
 const { saveResult } = require("../utils/resultStore");
@@ -46,8 +48,15 @@ const RESULT_KEY = "ORB_BACKTEST";
 function _paperOnlyGates() {
   const on = (k, d) => (process.env[k] || d || "false").toLowerCase() === "true";
   const g = [];
-  if (on("ORB_PREMIUM_GATE_ENABLED", "true")) g.push(`option-premium band ₹${process.env.ORB_PREMIUM_MIN || "80"}–₹${process.env.ORB_PREMIUM_MAX || "400"}`);
-  if (parseFloat(process.env.ORB_MAX_SPREAD_PTS || "0") > 0) g.push(`bid-ask spread ≤ ${process.env.ORB_MAX_SPREAD_PTS}pt`);
+  // Defaults MUST mirror the route's own reads (orbPaper/orbLive _simulateBuyInner):
+  // premium band ₹120–₹400, and a spread cap that falls back to the GLOBAL
+  // MAX_BID_ASK_SPREAD_PTS and then to 2pt. Hard-coding "80" here advertised a band
+  // the engine never used, and testing `ORB_MAX_SPREAD_PTS || "0"` declared the
+  // spread gate inactive whenever the ORB-specific key was simply unset — the exact
+  // case where the global fallback leaves it ACTIVE in paper/live.
+  if (on("ORB_PREMIUM_GATE_ENABLED", "true")) g.push(`option-premium band ₹${process.env.ORB_PREMIUM_MIN || "120"}–₹${process.env.ORB_PREMIUM_MAX || "400"}`);
+  const _maxSpread = parseFloat(process.env.ORB_MAX_SPREAD_PTS || process.env.MAX_BID_ASK_SPREAD_PTS || "2");
+  if (_maxSpread > 0) g.push(`bid-ask spread ≤ ${_maxSpread}pt`);
   if (on("OI_FILTER_ENABLED") && on("ORB_OI_ENABLED")) g.push("OI buildup filter");
   if (on("ORB_VIX_ENABLED")) g.push(`VIX ≤ ${process.env.ORB_VIX_MAX_ENTRY || "22"}`);
   return g;
@@ -99,12 +108,16 @@ function runOrbBacktest(allCandles, expirySet) {
   const PREM_GATE_ON = (process.env.ORB_PREMIUM_GATE_ENABLED || "true").toLowerCase() === "true";
   const PREM_MIN     = parseFloat(process.env.ORB_PREMIUM_MIN || "120");           // widened for slightly-ITM
   const PREM_MAX     = parseFloat(process.env.ORB_PREMIUM_MAX || "400");
-  // Signal engine (orb_breakout.getSignal) needs prior-day history to seed
-  // EMA20/EMA50/ADX/RSI. We feed it a trailing MULTI-DAY window ending at the
-  // current candle (OR + VWAP are day-scoped internally, so the prior days do
-  // not pollute today's range). ~260 5-min bars ≈ 3.5 trading days — enough to
-  // seed a 50-EMA + ADX from the first minute of every day except day 1 of the
-  // whole range (which then simply takes no trade — trend filter fails closed).
+  // Signal engine (orb_breakout.getSignal) needs prior-day history to seed its
+  // volatility yardsticks — ATR(5m) and ATR(15m) — and the shared exit engine
+  // needs it to seed the EMA trend-trail. We feed both a trailing MULTI-DAY
+  // window ending at the current candle (OR + VWAP are day-scoped internally, so
+  // the prior days do not pollute today's range). ~260 5-min bars ≈ 3.5 trading
+  // days, which covers a 14-period ATR on 15-min bars and a 20-EMA on 5-min from
+  // the first candle of every day except day 1 of the range — that day is skipped
+  // outright (see the _hasPriorDay parity guard below).
+  // Not exposed in Settings, matching TREND_PB_SIG_WINDOW: it is harness plumbing
+  // sized to the indicators, not a tuning dial.
   const SIG_WINDOW      = parseInt(process.env.ORB_SIG_WINDOW || "260", 10);
   const FORCED_EXIT_MIN = _parseMin("ORB_FORCED_EXIT", "15:15");
   const ENTRY_END_MIN   = _parseMin("ORB_ENTRY_END",   "11:30");
@@ -464,68 +477,6 @@ router.get("/", async (req, res) => {
   const { trades, stats } = job.result;
   return _renderOrbResults(res, from, to, trades, stats);
 });
-
-function renderIdleForm() {
-  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
-  const today = new Date().toISOString().slice(0, 10);
-  const def30 = (() => { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().slice(0, 10); })();
-  return `<!DOCTYPE html><html><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>${faviconLink()}<title>ORB Backtest</title>
-<script>(function(){ if ('${process.env.UI_THEME || "dark"}' === 'light') document.documentElement.setAttribute('data-theme', 'light'); })();</script>
-<style>
-*{box-sizing:border-box;margin:0;padding:0;font-family:'IBM Plex Mono',monospace;}
-body{background:#060810;color:#a0b8d8;}
-${sidebarCSS()}
-.main{flex:1;margin-left:200px;padding:20px;}
-@media(max-width:900px){.main{margin-left:0;padding:14px;}}
-.title{font-size:1.1rem;font-weight:700;color:#e0eaf8;margin-bottom:6px;}
-.sub{font-size:0.72rem;color:#4a6080;margin-bottom:18px;}
-.run-form{display:flex;align-items:flex-end;gap:10px;background:#08091a;border:0.5px solid #0e1428;border-radius:10px;padding:14px 18px;flex-wrap:wrap;}
-.run-form label{font-size:0.62rem;text-transform:uppercase;letter-spacing:1.2px;color:#4a6080;display:block;margin-bottom:4px;}
-.run-form input{background:#fff;border:1px solid #1e3a8a;color:#0f172a;padding:6px 10px;border-radius:5px;font-size:0.78rem;font-family:inherit;}
-.run-btn{background:${ACCENT};color:#040c18;border:1px solid ${ACCENT};padding:7px 16px;border-radius:5px;font-size:0.72rem;font-weight:700;cursor:pointer;font-family:inherit;}
-.run-btn:hover{filter:brightness(1.15);}
-.preset-row{display:flex;gap:6px;margin-top:14px;flex-wrap:wrap;}
-.preset-btn{font-size:0.65rem;padding:4px 12px;border-radius:4px;background:rgba(16,185,129,0.08);color:${ACCENT};border:0.5px solid rgba(16,185,129,0.2);cursor:pointer;font-family:inherit;}
-.preset-btn:hover{background:rgba(16,185,129,0.18);}
-.notes{margin-top:18px;font-size:0.72rem;color:#94a3b8;background:#08091a;border:0.5px solid #0e1428;border-radius:8px;padding:14px 16px;}
-</style></head><body>
-<div class="app-shell">
-${buildSidebar('orbBacktest', liveActive)}
-<main class="main">
-  <div class="title">🔍 ORB Backtest</div>
-  <div class="sub">Opening Range Breakout (15-min OR, 5-min confirm) — date-range historical backtest with delta + theta option premium simulation.</div>
-  <form method="get" class="run-form">
-    <div><label>From</label><input type="date" name="from" value="${def30}"/></div>
-    <div><label>To</label><input type="date" name="to" value="${today}"/></div>
-    <button type="submit" class="run-btn">▶ Run Backtest</button>
-  </form>
-  <div class="preset-row">
-    <button class="preset-btn" onclick="goto('thisWeek')">This week</button>
-    <button class="preset-btn" onclick="goto('thisMonth')">This month</button>
-    <button class="preset-btn" onclick="goto('last3')">Last 3 months</button>
-    <button class="preset-btn" onclick="goto('last6')">Last 6 months</button>
-    <button class="preset-btn" onclick="goto('thisYear')">This year</button>
-    <button class="preset-btn" onclick="goto('lastYear')">Last year</button>
-    <button class="preset-btn" onclick="goto('last2y')">Last 2 yr</button>
-    <button class="preset-btn" onclick="goto('last3y')">Last 3 yr</button>
-  </div>
-  <div class="notes">
-    <b>Backtest sim model:</b> Option premium estimated via δ (BACKTEST_DELTA, default 0.55) + θ (BACKTEST_THETA_DAY, default ₹8/day) seeded at ₹${process.env.ORB_BT_SEED_PREMIUM || "240"} per side. Qty per trade = ${instrumentConfig.getLotQty()} (= NIFTY_LOT_SIZE ${process.env.NIFTY_LOT_SIZE || "65"} × LOT_MULTIPLIER ${process.env.LOT_MULTIPLIER || "1"}). <b>Entry:</b> the 09:15–09:30 opening range is frozen; the day is skipped if OR &gt; ${process.env.ORB_OR_ATR_MAX || "2.5"}×ATR(15m) or the gap exceeds ${process.env.ORB_GAP_OR_MULT || "3"}×OR. The first 5-min <i>close</i> clearing the OR edge by max(15% of the range, 0.3×ATR5) is the one committed breakout of the day; it must be a decisive bar (body ≥ ${process.env.ORB_BODY_ATR_MULT || "0.6"}×ATR5) closing on the right side of session VWAP. That candle is never bought — the next candle must extend the move, or a retest-and-hold / trend-resume must occur within ${process.env.ORB_RETEST_MAX_WAIT || "6"} candles. Cut-off ${process.env.ORB_ENTRY_END || "11:30"} IST, one trade/day. <b>Exits mirror the paper route exactly:</b> initial hard SL = the wider of the entry candle's extreme and ${process.env.ORB_SL_ATR_MULT || "1.5"}×ATR(5m), breakeven after +${process.env.ORB_BREAKEVEN_PTS || "20"}pt, EMA${process.env.ORB_TRAIL_EMA || "20"} close-trail (exit only when a candle closes back across the EMA), a ₹${process.env.ORB_MAX_TRADE_LOSS || "1500"} per-trade loss cap, and a ${process.env.ORB_FORCED_EXIT || "15:15"} EOD square-off. ${_paperOnlyGatesNote()} Use Replay (recorded ticks) for tick-accurate backtests.
-  </div>
-</main>
-<script>
-function goto(p){
-  var d=new Date(),y=d.getFullYear(),m=d.getMonth(),day=d.getDay();
-  function f(dt){return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');}
-  var today=f(d);
-  var monday=new Date(d); monday.setDate(d.getDate()-(day===0?6:day-1));
-  var presets={thisWeek:[f(monday),today],thisMonth:[f(new Date(y,m,1)),today],last3:[f(new Date(y,m-2,1)),today],last6:[f(new Date(y,m-5,1)),today],thisYear:[f(new Date(y,0,1)),today],lastYear:[f(new Date(y-1,0,1)),f(new Date(y-1,11,31))],last2y:[f(new Date(y-2,0,1)),today],last3y:[f(new Date(y-3,0,1)),today]};
-  var p2=presets[p];
-  window.location='/orb-backtest?from='+p2[0]+'&to='+p2[1];
-}
-</script>
-</div></body></html>`;
-}
 
 function renderErrorPage(msg, from, to) {
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>${faviconLink()}<title>ORB Backtest Error</title>

@@ -330,8 +330,15 @@ function _extends(c, brk, side, orh, orl) {
  * `ORB_DEBUG_TRACE=true` additionally prints the human-readable table to the
  * console (and therefore to /logs). Default OFF; turn it on for a session when
  * you need to see why entries are not firing, then turn it back off.
+ *
+ * Printing is suppressed under `opts.silent` — the bar-based harnesses
+ * (orbBacktest, scripts/orbValidate) call getSignal once per candle over years
+ * of history, so an operator who left the toggle on would otherwise flood /logs
+ * with millions of lines from a single backtest run. `sig.gates` is still
+ * populated there, so nothing is lost: the funnel remains available to the
+ * caller either way.
  */
-function _tracer(candle, ctx) {
+function _tracer(candle, ctx, silent) {
   const rows = [];
   return {
     rows,
@@ -339,6 +346,7 @@ function _tracer(candle, ctx) {
     skip(gate, detail) { rows.push({ gate, status: "SKIP", detail: detail || "" }); },
     info(gate, detail) { rows.push({ gate, status: "INFO", detail: detail || "" }); },
     emit(decision) {
+      if (silent) return;
       if ((process.env.ORB_DEBUG_TRACE || "false").toLowerCase() !== "true") return;
       const t = candle ? new Date(candle.time * 1000).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false }) : "--:--:--";
       const head = [
@@ -404,7 +412,7 @@ function getSignal(candles, opts) {
   // on EVERY return path. Callers (skipLogger, the /logs trace) treat gates as the
   // record of why a candle produced no trade; a path that returned without one
   // silently dropped that record.
-  const tr = _tracer(candles && candles.length ? candles[candles.length - 1] : null, sig);
+  const tr = _tracer(candles && candles.length ? candles[candles.length - 1] : null, sig, silent);
   const done = (s) => { s.gates = tr.rows; tr.emit(s.signal !== "NONE" ? `ENTER ${s.signal}` : `NO TRADE — ${s.reason}`); return s; };
 
   if (!candles || candles.length < 2) {

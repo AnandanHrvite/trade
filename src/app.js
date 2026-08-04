@@ -3270,6 +3270,40 @@ server.listen(PORT, HOST, () => {
     }
   } catch (_) {}
 
+  // Same warning, by EXACT key rather than prefix: the 2026-07-26 ORB rebuild
+  // collapsed the strategy to one engine and DELETED the V1/V2/V3 filters (RSI,
+  // ADX, EMA20/50, wick %, volume, close-position, sweet-spot, prior-day levels,
+  // the old retest gate, the old %-based stop/target/trail). Their keys survive in
+  // deployed .env files, and a prefix rule cannot catch them because the LIVE keys
+  // share the same ORB_ prefix.
+  //
+  // These are worse than merely inert: tickRecorder.snapshotSettings() matches
+  // /^ORB_/, so every replay recording and every daily-JSONL settings block
+  // advertises filters that do not exist — and several read as if they configure a
+  // rule that IS live (ORB_TRAIL_ENABLED does not gate the EMA trail;
+  // ORB_ATR_PERIOD / ORB_BUFFER_*_MULT are hard-coded constants in
+  // orb_breakout.js; ORB_TARGET_RANGE_MULT became the exported TARGET_OR_MULT).
+  // README's ORB section carries a one-key-per-line bulk-delete block.
+  try {
+    const RETIRED_ORB_KEYS = [
+      "ORB_ADX_MIN", "ORB_ADX_PERIOD", "ORB_ATR_PERIOD", "ORB_BODY_PCT_MIN",
+      "ORB_BREAKOUT_BUFFER_MIN", "ORB_BREAKOUT_BUFFER_PCT", "ORB_BUFFER_ATR_MULT", "ORB_BUFFER_OR_MULT",
+      "ORB_CLOSE_POS_PCT", "ORB_CONFIRM_ENABLED", "ORB_ENTRY_V2_ENABLED", "ORB_ENTRY_V3_ENABLED",
+      "ORB_MAX_GAP_PTS", "ORB_MAX_RANGE_PTS", "ORB_MAX_WICK_RATIO", "ORB_MIN_BODY", "ORB_MIN_RANGE_PTS",
+      "ORB_OR_ATR_MIN", "ORB_PAPER_CAPITAL", "ORB_PREMIUM_LOCKIN_FLOOR_PCT", "ORB_PREMIUM_LOCKIN_PCT",
+      "ORB_PRIORDAY_LEVEL_FILTER", "ORB_RETEST_ENABLED", "ORB_RETEST_MODE", "ORB_RETEST_TOL_MIN",
+      "ORB_RETEST_TOL_PCT", "ORB_RSI_CE_MIN", "ORB_RSI_PERIOD", "ORB_RSI_PE_MAX", "ORB_SL_CANDLES",
+      "ORB_STOP_PCT", "ORB_STRONG_BODY", "ORB_SWEET_MAX", "ORB_SWEET_MIN", "ORB_TARGET_PCT",
+      "ORB_TARGET_RANGE_MULT", "ORB_TRAIL_ARM_PCT", "ORB_TRAIL_ENABLED", "ORB_TRAIL_LOCK_PCT",
+      "ORB_TREND_EMA_FAST", "ORB_TREND_EMA_SLOW", "ORB_VOL_FILTER_ENABLED", "ORB_VOL_LOOKBACK",
+      "ORB_VOL_MULT", "ORB_VWAP_FILTER_ENABLED", "ORB_WICK_FILTER_ENABLED", "ORB_WICK_PCT_MAX",
+    ];
+    const deadOrb = RETIRED_ORB_KEYS.filter((k) => k in process.env);
+    if (deadOrb.length) {
+      console.warn(`   ⚠️  Dead ORB keys : ${deadOrb.length} pre-rebuild ORB_* key(s) in .env are IGNORED (the V1/V2/V3 filters were deleted 2026-07-26). Editing them has no effect, and they leak into replay/JSONL settings snapshots — remove them (see README → ORB Mode). e.g. ${deadOrb.slice(0, 3).join(", ")}${deadOrb.length > 3 ? " …" : ""}`);
+    }
+  } catch (_) {}
+
   console.log(`\n📖 Dashboard → https://${EC2_IP}:${PORT}`);
   console.log(`   📜 Live Logs  → https://${EC2_IP}:${PORT}/logs`);
   console.log(`   ⚠️  Browser warning expected (self-signed cert) — click Advanced → Proceed\n`);

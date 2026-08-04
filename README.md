@@ -393,7 +393,7 @@ Full spec: [BB_RSI.md](BB_RSI.md).
 |-----|---------|-------|
 | `ORB_MODE_ENABLED` | `true` | Show/hide ORB menus in sidebar (and Settings section) |
 | `ORB_LIVE_ENABLED` | `false` | Must be `true` AND `LIVE_HARNESS_DRY_RUN=false` for real Fyers orders |
-| `ORB_LIVE_DRY_RUN` | `true` | Keep ORB in dry-run (log only) even when the global harness dry-run is off |
+| `ORB_LIVE_DRY_RUN` | `false` | Keep ORB in dry-run (log only) even when the global harness dry-run is off. Default off — the *global* `LIVE_HARNESS_DRY_RUN=true` is what holds ORB in dry-run out of the box |
 | `ORB_RANGE_START` / `ORB_RANGE_END` | `09:15` / `09:30` | Opening-range window (IST) |
 | `ORB_ENTRY_END` | `11:30` | Stale-breakout cutoff — no new entries past this |
 | `ORB_FORCED_EXIT` | `15:15` | Hard EOD square-off |
@@ -419,14 +419,71 @@ Full spec: [BB_RSI.md](BB_RSI.md).
 | `ORB_MAX_DAILY_TRADES` | `1` | Textbook 1/day — raise only if you accept the chop |
 | `ORB_MAX_DAILY_LOSS` | `3000` | ORB kill-switch (INR), checked only when flat |
 | `ORB_RISK_THROTTLE_ENABLED` | `true` | Portfolio breaker: sit out on a weekly-loss stop / losing streak (`~/trading-data/orb_risk_state.json`, paper + live tracked separately) |
-| `ORB_MAX_WEEKLY_LOSS` / `ORB_LOSS_STREAK_SKIP` | `9000` / `4` | Weekly realised-loss stop / consecutive losing days before sitting out |
+| `ORB_MAX_WEEKLY_LOSS` | `9000` | Stop entries for the rest of the ISO-week once week realised P&L ≤ −this (₹; `0` = off) |
+| `ORB_LOSS_STREAK_SKIP` | `4` | Sit out the next day after this many consecutive losing days (one-day cool-off; `0` = off) |
 | `ORB_EXPIRY_DAY_ONLY` | `false` | Only trade ORB on weekly-expiry day |
 | `ORB_VIX_ENABLED` | `false` | Independent VIX filter |
 | `ORB_VIX_MAX_ENTRY` / `ORB_VIX_STRONG_ONLY` | `22` / `18` | Per-mode VIX thresholds |
 | `ORB_OI_ENABLED` | `false` | Apply the OI-buildup filter to ORB entries (needs the master OI switch on). **Note:** many deployed `.env` files set this to `true` — check Settings for the running value |
-| `ORB_SIG_WINDOW` / `ORB_BT_SEED_PREMIUM` / `ORB_BT_SLIPPAGE_PTS` | `260` / `240` / `1.5` | Backtest only: trailing bar window fed to `getSignal`, entry-premium proxy, per-side slippage haircut |
-| `ORB_MAX_WEEKLY_LOSS` | `9000` | Stop entries for the rest of the ISO-week once week realised P&L ≤ −this (₹; `0` = off) |
-| `ORB_LOSS_STREAK_SKIP` | `4` | Sit out the next day after this many consecutive losing days (one-day cool-off; `0` = off) |
+| **— backtest sim —** | | |
+| `ORB_BT_SEED_PREMIUM` / `ORB_BT_SLIPPAGE_PTS` | `240` / `1.5` | Backtest only (both in Settings): entry-premium proxy for the δ+θ sim, and the per-side spread/slippage haircut |
+| `ORB_SIG_WINDOW` | `260` | Backtest only, **code-only** (no Settings field, same as `TREND_PB_SIG_WINDOW`): trailing 5-min bars fed to `getSignal` + the EMA trail so ATR(5m)/ATR(15m)/EMA20 are seeded. Harness plumbing sized to the indicators, not a tuning dial |
+
+> **Retired ORB keys — safe to delete from `.env` (2026-08-04).** The 2026-07-26 rebuild collapsed ORB to one engine and deleted the V1/V2/V3 filters outright (RSI, ADX, EMA20/50, wick %, volume, close-position, sweet-spot, prior-day levels, fixed point ranges, the old retest gate and the old %-based stop/target/trail). Their env keys were never cleaned up, so a deployed `.env` can still carry **47 ORB keys that no code reads**. They are inert — but they are also captured by `tickRecorder.snapshotSettings()` (`/^ORB_/`), so every replay recording and every daily-JSONL settings block advertises filters that do not exist, and anyone reading `.env` reasonably concludes ORB still has an RSI gate. **The app warns about them at boot** (`⚠️ Dead ORB keys : N pre-rebuild ORB_* key(s) …`, an exact-key list in `app.js` — a prefix rule can't be used here because the live keys share the `ORB_` prefix). To clear them, paste this into **Settings → 📋 BULK EDIT** (a leading `-` deletes a key), on the EC2 box as well as locally:
+>
+> **One key per line** — the bulk parser reads `-KEY` line-by-line, so several on one line collapse into a single junk key:
+>
+> ```
+> -ORB_ADX_MIN
+> -ORB_ADX_PERIOD
+> -ORB_ATR_PERIOD
+> -ORB_BODY_PCT_MIN
+> -ORB_BREAKOUT_BUFFER_MIN
+> -ORB_BREAKOUT_BUFFER_PCT
+> -ORB_BUFFER_ATR_MULT
+> -ORB_BUFFER_OR_MULT
+> -ORB_CLOSE_POS_PCT
+> -ORB_CONFIRM_ENABLED
+> -ORB_ENTRY_V2_ENABLED
+> -ORB_ENTRY_V3_ENABLED
+> -ORB_MAX_GAP_PTS
+> -ORB_MAX_RANGE_PTS
+> -ORB_MAX_WICK_RATIO
+> -ORB_MIN_BODY
+> -ORB_MIN_RANGE_PTS
+> -ORB_OR_ATR_MIN
+> -ORB_PAPER_CAPITAL
+> -ORB_PREMIUM_LOCKIN_FLOOR_PCT
+> -ORB_PREMIUM_LOCKIN_PCT
+> -ORB_PRIORDAY_LEVEL_FILTER
+> -ORB_RETEST_ENABLED
+> -ORB_RETEST_MODE
+> -ORB_RETEST_TOL_MIN
+> -ORB_RETEST_TOL_PCT
+> -ORB_RSI_CE_MIN
+> -ORB_RSI_PERIOD
+> -ORB_RSI_PE_MAX
+> -ORB_SL_CANDLES
+> -ORB_STOP_PCT
+> -ORB_STRONG_BODY
+> -ORB_SWEET_MAX
+> -ORB_SWEET_MIN
+> -ORB_TARGET_PCT
+> -ORB_TARGET_RANGE_MULT
+> -ORB_TRAIL_ARM_PCT
+> -ORB_TRAIL_ENABLED
+> -ORB_TRAIL_LOCK_PCT
+> -ORB_TREND_EMA_FAST
+> -ORB_TREND_EMA_SLOW
+> -ORB_VOL_FILTER_ENABLED
+> -ORB_VOL_LOOKBACK
+> -ORB_VOL_MULT
+> -ORB_VWAP_FILTER_ENABLED
+> -ORB_WICK_FILTER_ENABLED
+> -ORB_WICK_PCT_MAX
+> ```
+>
+> Note the traps in that list: `ORB_TRAIL_ENABLED=true` reads as if it gates `ORB_TRAIL_EMA` (it does not — the EMA trail is unconditional); `ORB_ATR_PERIOD` reads as if it sets the ATR lookback (that is the hard-coded `ATR_PERIOD = 14` in `orb_breakout.js`); `ORB_BUFFER_OR_MULT` / `ORB_BUFFER_ATR_MULT` read as if they size the breakout buffer (those are the hard-coded `BUFFER_OR_MULT = 0.15` / `BUFFER_ATR_MULT = 0.30`); and `ORB_TARGET_RANGE_MULT` used to move the target line on **manual entries only**, which is why it became the exported `TARGET_OR_MULT` constant instead. Deleting all 47 changes no behaviour — verify with `node scripts/orbValidate.js` before and after if you want the proof.
 
 ### EMA9 + VWAP Mode (EMA9 vs VWAP ±σ band, Zerodha)
 | Key | Default | Notes |
@@ -684,7 +741,7 @@ Blocks directional entries that fight the prevailing Open-Interest buildup: read
 ### Analytics & Tools
 | URL | Description |
 |-----|-------------|
-| `/realtime` | **Unified real-time monitor** — one screen for all enabled strategies with a PAPER/LIVE toggle. Cards for EMA_RSI_ST / BB_RSI / PA / ORB (each card is hidden when its `{STRATEGY}_MODE_ENABLED` is off) showing open position + today's stats, with a rollup table for **Today Total (Open + Closed)**. Read-only; polls each strategy's `/status/data` every 4s. Theme-aware. **Per-card Open Status + Copy Day Log buttons** (Copy Day Log copies raw entry + skip JSONL, not the human-readable summary). |
+| `/realtime` | **Unified real-time monitor** — one screen for all enabled strategies with a PAPER/LIVE toggle. Cards for EMA_RSI_ST / BB_RSI / PA / ORB (each card is hidden when its `{STRATEGY}_MODE_ENABLED` is off) showing open position + today's stats, with a rollup table for **Today Total (Open + Closed)**. Read-only; polls each strategy's `/status/data` every 4s. Theme-aware. **Per-card Open Status + Copy Day Log buttons** (Copy Day Log copies raw entry + skip JSONL, not the human-readable summary). Copy Day Log needs the strategy to expose `/download/trades/:date` + `/download/skips/:date`; **ORB now does** (2026-08-04 — it always wrote both day files, it just never served them, so it alone showed "— No Day Log —"). Trend_PB still doesn't. |
 | `/replay` | **Tick Replay** — deterministic re-run of a recorded paper session through the paper `onTick()` handlers. Single-date and date-range modes. Snapshot mode (session-start settings) vs current-settings mode (live `process.env`). Per-row diagnostic Replay buttons + downloadable diagnostic dump. Outputs land in `~/trading-data/_replay_trades/` (snapshot) or `_replay_trades_sim/` (current). |
 | `/all-backtest` | **Unified backtest dashboard** — runs the same date range across all enabled strategies and renders the per-strategy stats side by side. |
 | `/consolidation` | Cross-mode **paper** trade history + analytics (EMA_RSI_ST + BB_RSI + PA, daily/monthly/yearly roll-ups, Day View panel, per-mode breakdown) |
