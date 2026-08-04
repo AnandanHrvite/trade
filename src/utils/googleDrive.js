@@ -87,10 +87,6 @@ function isConnected() {
 function recordError(message) {
   writeStore({ lastError: { at: new Date().toISOString(), message: String(message).slice(0, 400) } });
 }
-function clearError() {
-  const s = readStore();
-  if (s.lastError) writeStore({ lastError: null });
-}
 
 // ── HTTP ─────────────────────────────────────────────────────────────────────
 /** Small JSON/form request. Resolves { status, headers, text, json } — never rejects on HTTP status. */
@@ -150,6 +146,9 @@ function emailFromIdToken(idToken) {
 }
 
 // ── Credentials ──────────────────────────────────────────────────────────────
+/** In-flight device authorisation, if any: { deviceCode, intervalMs, expiresAt, nextPollAt } */
+let _pending = null;
+
 /**
  * Save the OAuth client the user created in Google Cloud Console. Changing
  * either half invalidates any existing connection (the refresh token belongs to
@@ -174,8 +173,6 @@ function saveCredentials(clientId, clientSecret) {
 }
 
 // ── Device flow ──────────────────────────────────────────────────────────────
-let _pending = null;   // { deviceCode, intervalMs, expiresAt, nextPollAt }
-
 /** Step 1 — ask Google for a user code. Resolves { ok, userCode, verificationUrl, expiresIn }. */
 async function startDeviceAuth() {
   const s = readStore();
@@ -501,8 +498,6 @@ function status() {
 }
 
 module.exports = {
-  STORE_FILE,
-  isConfigured,
   isConnected,
   saveCredentials,
   startDeviceAuth,
@@ -511,6 +506,4 @@ module.exports = {
   disconnect,
   uploadFile,
   status,
-  clearError,
-  recordError,
 };
