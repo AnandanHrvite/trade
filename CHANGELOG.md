@@ -14,6 +14,7 @@ Respecified: "that GAP POINTS is the base SL". The stop is now a **distance** �
 - Filling at the open the two are identical, since `open ± gap == prev close`. They diverge when the fill is a little later inside the `09:15–09:30` window: the old rule let risk stretch toward yesterday's close, the new one keeps it pinned at the gap. Prev close 24,800, open 24,750 (50pt gap) → fill at 24,750 stops at 24,800; fill at 24,730 stops at 24,780, still exactly 50pt.
 - Entry conditions are unchanged (RSI > 90 with a gap DOWN → PE; RSI < 10 with a gap UP → CE), as is the EMA trail and the 15:15 square-off.
 - The rule lives in one place, `stopFromFill()` in [gaps.js](src/strategies/gaps.js), used by the engine, Paper and Backtest. The engine also publishes `slPts` so every surface reports the same risk figure instead of recomputing it from the fill.
+- **Refuses to trade without a stop**: if the level cannot be computed the entry is aborted and a `stop_uncomputable` skip is logged, rather than opening a position the exit path would then never stop out.
 - **Guarded**: `stopFromFill` rejects a non-numeric fill or distance and returns `null` rather than a level — `Number(null)` is `0`, so a coercing implementation would have produced a stop of `slPts`, which the first tick is already past. Both exit paths now also refuse to treat a null level as a hit, because `spot >= null` evaluates as `spot >= 0` and would square the trade off instantly.
 
 ### Changed — GAPS exit is a trailing EMA stop, not a fixed target

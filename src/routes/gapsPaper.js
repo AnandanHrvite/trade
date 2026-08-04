@@ -381,6 +381,17 @@ async function simulateBuy(side, sig) {
   const qty = gapsLotQty();
   const trailOn = _trailEnabled();
 
+  // Never open a position we cannot stop out. stopFromFill returns null on a
+  // non-numeric fill or gap, and _checkExits refuses to treat a null level as a
+  // hit — so without this the trade would run with NO stop at all, protected by
+  // nothing but the trail and the 15:15 square-off. Refuse the entry instead.
+  const slSpot = gapsStrategy.stopFromFill(side, spot, sig.slPts);
+  if (slSpot == null) {
+    log(`🚫 [GAPS-PAPER] Entry ABORTED — cannot compute the stop (fill=${spot}, gap=${sig.slPts}). Refusing to enter without one.`);
+    skipLogger.appendSkipLog("gaps", { gate: "stop_uncomputable", reason: `stop not computable (fill=${spot}, gap=${sig.slPts})`, side, spot, slPts: sig.slPts });
+    return;
+  }
+
   const pos = {
     side,
     symbol:         optInfo.symbol,
@@ -397,8 +408,8 @@ async function simulateBuy(side, sig) {
     // fill a little after the open keeps the risk at the gap instead of letting
     // it stretch to yesterday's close. Filling at the open, the two are equal.
     slPts:          sig.slPts,
-    slSpot:         gapsStrategy.stopFromFill(side, spot, sig.slPts),
-    initialSlSpot:  gapsStrategy.stopFromFill(side, spot, sig.slPts),
+    slSpot,
+    initialSlSpot:  slSpot,
     trailEnabled:   trailOn,
     trailLength:    _trailLen(),
     trailSpot:      null,   // set on each candle close once the intraday EMA warms up
