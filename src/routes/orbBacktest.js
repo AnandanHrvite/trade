@@ -48,18 +48,17 @@ const RESULT_KEY = "ORB_BACKTEST";
 function _paperOnlyGates() {
   const on = (k, d) => (process.env[k] || d || "false").toLowerCase() === "true";
   const g = [];
-  // Defaults MUST mirror the route's own reads (orbPaper/orbLive _simulateBuyInner):
-  // premium band ₹120–₹400, and a spread cap that falls back to the GLOBAL
-  // MAX_BID_ASK_SPREAD_PTS and then to 2pt. Hard-coding "80" here advertised a band
-  // the engine never used, and testing `ORB_MAX_SPREAD_PTS || "0"` declared the
-  // spread gate inactive whenever the ORB-specific key was simply unset — the exact
-  // case where the global fallback leaves it ACTIVE in paper/live.
+  // Every default here MUST mirror the route's own read (orbPaper/orbLive
+  // _simulateBuyInner). Hard-coding "80" for the premium floor advertised a band the
+  // engine never used — the real fallback is 120.
   if (on("ORB_PREMIUM_GATE_ENABLED", "true")) g.push(`option-premium band ₹${process.env.ORB_PREMIUM_MIN || "120"}–₹${process.env.ORB_PREMIUM_MAX || "400"}`);
   // The spread gate has no on/off switch — paper/live call tradeGuards.checkSpread()
-  // unconditionally, so it is ALWAYS active and must always be disclosed. A zero or
-  // non-numeric threshold does NOT disable it: checkSpread returns `spread <= max`,
-  // which is false for every real quote, so it would reject essentially every entry.
-  // Say so rather than falling silent, which is what a bare `> 0` test did.
+  // unconditionally — so it is ALWAYS active and must always be disclosed. Two ways
+  // the old `parseFloat(ORB_MAX_SPREAD_PTS || "0") > 0` test fell silent on a LIVE
+  // gate: (1) the ORB key unset, where paper/live fall back to the global
+  // MAX_BID_ASK_SPREAD_PTS and then 2pt; (2) a zero or non-numeric threshold, which
+  // does not disable the gate — checkSpread returns `spread <= max`, false for every
+  // real quote, so it rejects essentially every entry. Say so rather than hiding it.
   const _rawSpread = process.env.ORB_MAX_SPREAD_PTS || process.env.MAX_BID_ASK_SPREAD_PTS || "2";
   const _maxSpread = parseFloat(_rawSpread);
   g.push(Number.isFinite(_maxSpread) && _maxSpread > 0
