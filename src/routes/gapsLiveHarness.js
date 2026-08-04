@@ -223,7 +223,7 @@ ${buildSidebar('gapsLive', false)}
       </div>
       <div style="flex:2;min-width:220px;">
         <div class="label">Rules</div>
-        <div class="val" style="font-size:0.8rem;">RSI(${scfg.rsiLength} on ${scfg.rsiSource}) &gt;${scfg.rsiUpper} + gap down → PE · &lt;${scfg.rsiLower} + gap up → CE · SL = prev close · target = daily EMA${scfg.emaLength}</div>
+        <div class="val" style="font-size:0.8rem;">RSI(${scfg.rsiLength} on ${scfg.rsiSource}) &gt;${scfg.rsiUpper} + gap down → PE · &lt;${scfg.rsiLower} + gap up → CE · SL = prev close (gap fill) · exit trails the ${scfg.trailEnabled ? `intraday EMA${scfg.trailLength}` : "— trail OFF"} (PE exits on a close ABOVE it, CE on a close BELOW)</div>
       </div>
     </div>
     <div style="margin-top:16px;">
@@ -238,11 +238,11 @@ ${buildSidebar('gapsLive', false)}
   </div>
 
   <div class="card">
-    <div class="section-title">NIFTY Intraday (gap-fill stop + daily EMA target)</div>
+    <div class="section-title">NIFTY Intraday (gap-fill stop + EMA${scfg.trailLength} trail)</div>
     <div id="nifty-chart-container" style="background:#0a0f1c;border:1px solid #1a2236;border-radius:12px;overflow:hidden;position:relative;height:400px;">
       <div id="nifty-chart" style="width:100%;height:100%;"></div>
       <div style="position:absolute;top:10px;left:12px;font-size:0.68rem;color:#4a6080;pointer-events:none;z-index:2;">
-        <span style="color:#f59e0b;">── Prev close / stop</span> &nbsp;<span style="color:#3b82f6;">── Daily EMA${scfg.emaLength} / target</span>
+        <span style="color:#f59e0b;">── Prev close / stop</span> &nbsp;<span style="color:#3b82f6;">── Daily EMA${scfg.emaLength} (RSI source)</span> &nbsp;<span style="color:#10b981;">── EMA${scfg.trailLength} trail</span>
       </div>
     </div>
   </div>
@@ -266,7 +266,7 @@ async function refresh() {
       box.innerHTML =
         '<div style="flex:1;min-width:130px;"><div class="label">Yesterday close</div><div class="val">' + (data.prevClose != null ? data.prevClose : '—') + '</div></div>' +
         '<div style="flex:1;min-width:130px;"><div class="label">Yesterday RSI</div><div class="val">' + (data.prevRsi != null ? data.prevRsi : '—') + '</div></div>' +
-        '<div style="flex:1;min-width:130px;"><div class="label">Daily EMA (target)</div><div class="val">' + (data.prevEma != null ? data.prevEma : '—') + '</div></div>' +
+        '<div style="flex:1;min-width:130px;"><div class="label">Daily EMA (RSI source)</div><div class="val">' + (data.prevEma != null ? data.prevEma : '—') + '</div></div>' +
         '<div style="flex:1;min-width:130px;"><div class="label">Today open</div><div class="val">' + (data.todayOpen != null ? data.todayOpen : '—') + '</div></div>' +
         '<div style="flex:1;min-width:130px;"><div class="label">Gap</div><div class="val">' + g + '</div></div>';
     }
@@ -322,7 +322,9 @@ setInterval(refresh, 3000);
   var cs = chart.addCandlestickSeries({ upColor:'#10b981', downColor:'#ef4444', borderUpColor:'#10b981', borderDownColor:'#ef4444', wickUpColor:'#10b981', wickDownColor:'#ef4444' });
   var pcS = chart.addLineSeries({ color:'#f59e0b', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
   var emS = chart.addLineSeries({ color:'#3b82f6', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dotted, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
-  var entryLine = null, slLine = null, tgtLine = null, _zoomed = false;
+  // The trailing stop moves every candle, so it is a series, not a price line.
+  var trS = chart.addLineSeries({ color:'#10b981', lineWidth:2, priceLineVisible:false, lastValueVisible:true, crosshairMarkerVisible:false });
+  var entryLine = null, slLine = null, _zoomed = false;
   async function fetchChart(){
     try {
       var r = await fetch('/gaps-paper/status/chart-data', { cache:'no-store' });
@@ -332,7 +334,7 @@ setInterval(refresh, 3000);
         for (var _i=d.candles.length-1;_i>=0;_i--){ if(Math.floor((d.candles[_i].time+19800)/86400)===_dk) _cut=d.candles[_i].time; else break; }
         var _k=function(a){ return Array.isArray(a)?a.filter(function(x){return x.time>=_cut;}):a; };
         d.candles=_k(d.candles);
-        ['prevCloseLine','emaLine','markers'].forEach(function(kk){ if(d[kk]) d[kk]=_k(d[kk]); });
+        ['prevCloseLine','emaLine','trailSeries','markers'].forEach(function(kk){ if(d[kk]) d[kk]=_k(d[kk]); });
       })(); }
       if (d.candles && d.candles.length) {
         cs.setData(d.candles);
@@ -344,13 +346,12 @@ setInterval(refresh, 3000);
       }
       pcS.setData(d.prevCloseLine || []);
       emS.setData(d.emaLine || []);
+      trS.setData(d.trailSeries || []);
       if (d.markers && d.markers.length) cs.setMarkers(d.markers.slice().sort(function(a,b){return a.time-b.time;}));
       if (entryLine) { cs.removePriceLine(entryLine); entryLine = null; }
       if (slLine)    { cs.removePriceLine(slLine);    slLine = null; }
-      if (tgtLine)   { cs.removePriceLine(tgtLine);   tgtLine = null; }
       if (d.entryPrice) entryLine = cs.createPriceLine({ price:d.entryPrice, color:'#3b82f6', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dotted, axisLabelVisible:true, title:'Entry' });
       if (d.stopLoss)   slLine    = cs.createPriceLine({ price:d.stopLoss,   color:'#f59e0b', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'Gap fill / SL' });
-      if (d.target)     tgtLine   = cs.createPriceLine({ price:d.target,     color:'#10b981', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'EMA target' });
     } catch (e) {}
   }
   fetchChart();
