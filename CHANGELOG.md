@@ -6,6 +6,17 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Added — the daily backup can push itself to Google Drive
+
+The daily `.tar.gz` was only ever written to `~/trading-data/_backups/` on the same EC2 box it protects, and the banner nagged until you downloaded it by hand. Miss a few days and the only copy of that data is on the instance you're insuring against.
+
+- **Settings → Backup & Restore → Google Drive**: connect a Google account once and every daily snapshot is uploaded to Drive immediately after it's cut. Not connected = nothing is uploaded, exactly as before. Disconnect stops it again; files already on Drive are left alone.
+- Connecting uses Google's **device flow** — the card shows a short code you approve at google.com/device. The redirect-based flow isn't usable here: the app is served from `https://<ec2-ip>:3000` with a self-signed cert, and Google refuses redirect URIs that are raw IPs. No SSH and no public domain needed.
+- Scope is **`drive.file` only** — per-file access to files this bot created, so it can never read or delete anything else in the Drive. It's also a non-sensitive scope, so the OAuth client needs no Google verification review.
+- **☁ Backup to Drive now** button for a manual push (it cuts today's snapshot first if there isn't one yet), alongside the existing "Snapshot now" / "Download latest".
+- Failures are surfaced **in the page**: a red strip inside the card carries the last upload error with its timestamp, so a failed *automatic* 16:00 push is visible next time the card is opened rather than only in the logs. `BACKUP_TG_ENABLED` heartbeats now carry the Drive result too.
+- Credentials + refresh token live in `~/trading-data/.google_drive.json` (mode 0600), not `.env` — and that file is **excluded from the backup archive**, so a snapshot can never carry your Drive token off the box. Uploads are resumable-session based and the folder is pruned to `GDRIVE_RETAIN` (default 30) newest files. New keys: `GDRIVE_FOLDER_NAME`, `GDRIVE_RETAIN`. No new npm dependency.
+
 ### Fixed — the Dashboard's broker wallets ignored the Range filter
 
 Picking "This month" narrowed every chart and stat on the Dashboard except the two numbers at the very top: the Fyers and Zerodha wallets kept quoting **all-time** paper P&L. A range-filtered curve sitting under an all-time wallet reads as a contradiction — the page appeared to disagree with itself about the same trades.

@@ -13,6 +13,7 @@
  * Excluded (regenerated or disposable):
  *   trading-data/backtest_cache  trading-data/candle_cache   — disk caches
  *   trading-data/.fyers_token    trading-data/.zerodha_token — daily OAuth tokens
+ *   trading-data/.google_drive.json                          — Drive credentials
  *   trading-data/_backups        — the snapshot store itself (no self-nesting)
  *
  * Restore (documented on the Settings card + README):
@@ -50,6 +51,7 @@ const TAR_EXCLUDES = [
   "trading-data/_backups",
   "trading-data/.fyers_token",
   "trading-data/.zerodha_token",
+  "trading-data/.google_drive.json",   // Drive client secret + refresh token — never ship it inside a backup
 ];
 
 function isEnabled() {
@@ -324,6 +326,20 @@ function msUntilNextRun() {
   return delta;
 }
 
+/**
+ * Push a snapshot off-box to Google Drive — only if the user has connected an
+ * account from Settings. Failures are recorded (and surfaced in the Settings
+ * card) but never break the daily run: the local snapshot already exists.
+ * Returns a short suffix for the Telegram heartbeat.
+ */
+async function pushToDrive(file, trigger) {
+  let gdrive;
+  try { gdrive = require("./googleDrive"); } catch (_) { return ""; }
+  if (!gdrive.isConnected()) return "";
+  const up = await gdrive.uploadFile(file, { trigger });
+  return up.ok ? "\nGoogle Drive: ✅ uploaded" : `\nGoogle Drive: ⚠️ upload failed — ${up.error}`;
+}
+
 async function runDaily() {
   if (!isEnabled()) return;
   const date = istDateStr();
@@ -333,9 +349,10 @@ async function runDaily() {
     console.log(`[backup] daily snapshot ready: backup-${date}.tar.gz (${mb} MB)`);
     const pruned = pruneOld();
     if (pruned > 0) console.log(`[backup] pruned ${pruned} snapshot(s) older than ${retainDays()}d`);
+    const drive = await pushToDrive(r.file, "daily");
     if (tgEnabled()) {
       try {
-        require("./notify").sendTelegram(`📦 Data backup ready for ${date} (${mb} MB). Download it from Settings → Backup & Restore.`);
+        require("./notify").sendTelegram(`📦 Data backup ready for ${date} (${mb} MB). Download it from Settings → Backup & Restore.${drive}`);
       } catch (_) {}
     }
   } else {

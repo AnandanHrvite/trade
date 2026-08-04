@@ -660,7 +660,9 @@ Blocks directional entries that fight the prevailing Open-Interest buildup: read
 | `BACKUP_ENABLED` | `true` | Cut a daily self-contained `.tar.gz` snapshot of `~/trading-data` + `data/ticks` (caches & OAuth tokens excluded) into `~/trading-data/_backups/`. Download it from Settings → Backup & Restore; a banner nags on every page until the day's copy is downloaded. Pure observer — zero impact on trading. |
 | `BACKUP_HOUR_IST` | `16` | Hour of day (IST) the daily snapshot is cut (after market close). Timer armed at boot — restart to re-arm a changed hour. |
 | `BACKUP_RETAIN_DAYS` | `14` | Daily snapshots keep only the latest (a new one deletes the old). This prunes the hidden pre-restore safety snapshots older than this many days. |
-| `BACKUP_TG_ENABLED` | `false` | Send a Telegram message when each day's snapshot is ready (or if it fails). |
+| `BACKUP_TG_ENABLED` | `false` | Send a Telegram message when each day's snapshot is ready (or if it fails). Includes the Google Drive upload result when Drive is connected. |
+| `GDRIVE_FOLDER_NAME` | `Trading Bot Backups` | Drive folder the snapshots are uploaded into (created on first upload). Only used once Google Drive is connected from Settings → Backup & Restore. |
+| `GDRIVE_RETAIN` | `30` | Keep the newest N uploads in that Drive folder; older ones are deleted after each successful push. |
 | `LIVE_HARNESS_DRY_RUN` | `true` | **Global** kill-switch. When ON, all live order paths (PA/ORB harness routes **and EMA_RSI_ST Live**) log the broker call that *would* have been made but place no real order. When OFF, each strategy goes real **unless** its own `{STRATEGY}_LIVE_DRY_RUN` override is on. Switch OFF only after verifying decisions match paper. |
 | `HARNESS_EXCHANGE_SL_ENABLED` | `false` | **EXPERIMENTAL.** When on, each harness-live entry also leaves a resting **SL-M disaster stop** at the exchange, so a hard crash mid-position still has some protection (the primary stop is always the in-process per-tick stop). It's cancelled before any normal square-off. Places REAL resting orders — validate on a dry-run session first. Fails safe (skips the SL on any missing data / bad trigger). |
 | `HARNESS_SL_PCT` | `0.5` | Disaster-stop distance as a fraction of entry premium: SL-M trigger = entryPremium × (1 − this). E.g. entry ₹120, `0.5` → trigger ₹60. Only used when `HARNESS_EXCHANGE_SL_ENABLED=true`. |
@@ -844,6 +846,13 @@ Blocks directional entries that fight the prevailing Open-Interest buildup: read
 | `/backup/download?date=YYYY-MM-DD` | Streams `backup-<date>.tar.gz` and marks it downloaded |
 | `POST /backup/create` | Cut a snapshot for today now |
 | `POST /backup/restore` | Upload a `backup-*.tar.gz` (raw body) and restore it over `~/trading-data` + `data/ticks`. Takes a pre-restore safety snapshot first; validates entries against path-traversal; refused while a session is active. Restart after. |
+| `/backup/gdrive/status` | Google Drive connection state, last upload, last error (Settings card) |
+| `POST /backup/gdrive/credentials` | Save the Google OAuth client (id + secret) into `~/trading-data/.google_drive.json` |
+| `POST /backup/gdrive/connect` · `/backup/gdrive/poll` · `POST /backup/gdrive/cancel` | Device-flow connect: returns a user code to approve at google.com/device, then polls until approved |
+| `POST /backup/gdrive/disconnect` | Revoke + forget the Google account (stops all uploads) |
+| `POST /backup/gdrive/upload` | Push today's snapshot to Drive now (cuts one first if today has none) |
+
+**Off-site copy to Google Drive (optional).** A snapshot sitting on the same EC2 box doesn't survive losing that box. Connect a Google account from **Settings → Backup & Restore → Google Drive** and every daily snapshot is uploaded right after it's cut; disconnected means nothing is uploaded. One-time setup in Google Cloud Console: enable the **Google Drive API**, **publish** the OAuth consent screen (leaving it in *Testing* expires the connection every 7 days), and create an OAuth client of type **TVs and Limited Input devices** — the app is served from a bare IP with a self-signed cert, so the redirect-based OAuth flow can't be used and it connects via Google's device flow (a code you approve at google.com/device) instead. The scope is `drive.file` only: the bot can only touch files it created, never the rest of your Drive. Credentials and the refresh token live in `~/trading-data/.google_drive.json` (mode 0600) and are **excluded from the backup archive**, so a snapshot never carries them off the box. Upload failures — including from the automatic daily run — are shown as an error strip inside the Backup & Restore card until the next successful push.
 | `POST /{ema_rsi_st|bb_rsi|pa}-paper/history/restore` | Rebuild a deleted session for an IST date by replaying the daily JSONL trade log (idempotent; refuses while paper running) |
 
 ## Project Structure

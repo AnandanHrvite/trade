@@ -8,6 +8,15 @@
  * GET  /backup/download?date=…   → streams backup-<date>.tar.gz, marks it downloaded
  * POST /backup/create            → cut a snapshot for today now
  *
+ * Google Drive (optional off-site copy — see utils/googleDrive.js):
+ * GET  /backup/gdrive/status      → connection + last upload/error for the card
+ * POST /backup/gdrive/credentials → save the OAuth client (id + secret)
+ * POST /backup/gdrive/connect     → start the device flow, returns the user code
+ * GET  /backup/gdrive/poll        → poll until the user approves the code
+ * POST /backup/gdrive/cancel      → abandon an in-progress connect
+ * POST /backup/gdrive/disconnect  → revoke + forget the account
+ * POST /backup/gdrive/upload      → push today's snapshot to Drive now
+ *
  * Auth: inherits the app-wide gate (LOGIN_SECRET / API_SECRET middleware in app.js),
  * same as every other route. No extra gating here.
  */
@@ -17,6 +26,7 @@ const fs      = require("fs");
 const path    = require("path");
 const router  = express.Router();
 const backup  = require("../utils/backupManager");
+const gdrive  = require("../utils/googleDrive");
 const sharedSocketState = require("../utils/sharedSocketState");
 
 // ── GET /backup/status — lightweight poll for the download-nag banner ─────────
@@ -129,6 +139,63 @@ router.post("/restore", (req, res) => {
   });
 
   req.pipe(ws);
+});
+
+// ── Google Drive (optional off-site copy) ─────────────────────────────────────
+router.get("/gdrive/status", (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.json(gdrive.status());
+});
+
+router.post("/gdrive/credentials", (req, res) => {
+  const b = req.body || {};
+  const r = gdrive.saveCredentials(b.clientId, b.clientSecret);
+  if (!r.ok) return res.status(400).json(r);
+  console.log("[gdrive] OAuth client saved from Settings");
+  res.json({ ok: true, reconnectNeeded: !!r.reconnectNeeded, status: gdrive.status() });
+});
+
+router.post("/gdrive/connect", async (req, res) => {
+  const r = await gdrive.startDeviceAuth();
+  if (!r.ok) return res.status(400).json(r);
+  res.json(r);
+});
+
+router.get("/gdrive/poll", async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  const r = await gdrive.pollDeviceAuth();
+  res.json({ ...r, status: gdrive.status() });
+});
+
+router.post("/gdrive/cancel", (req, res) => {
+  gdrive.cancelDeviceAuth();
+  res.json({ ok: true });
+});
+
+router.post("/gdrive/disconnect", async (req, res) => {
+  await gdrive.disconnect();
+  res.json({ ok: true, status: gdrive.status() });
+});
+
+// Manual push. Cuts today's snapshot first if there isn't one yet, so the button
+// always uploads something current rather than yesterday's file.
+router.post("/gdrive/upload", async (req, res) => {
+  if (!gdrive.isConnected()) {
+    return res.status(400).json({ ok: false, error: "Google Drive is not connected" });
+  }
+  const date = backup.istDateStr();
+  let file = backup.getBackupFile(date);
+  if (!file) {
+    if (!backup.isEnabled()) {
+      return res.status(403).json({ ok: false, error: "Backup is disabled (BACKUP_ENABLED=false)" });
+    }
+    const snap = await backup.createSnapshot(date);
+    if (!snap.ok) return res.status(500).json({ ok: false, error: `Snapshot failed: ${snap.error}` });
+    file = snap.file;
+  }
+  const r = await gdrive.uploadFile(file, { trigger: "manual" });
+  if (!r.ok) return res.status(502).json({ ok: false, error: r.error, status: gdrive.status() });
+  res.json({ ok: true, ...r, status: gdrive.status() });
 });
 
 module.exports = router;

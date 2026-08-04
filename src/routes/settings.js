@@ -2539,16 +2539,243 @@ async function backupRestore() {
   }
   if (btn) { btn.disabled = false; btn.textContent = '⟲ Restore'; }
 }
+// ── Google Drive off-site copy ───────────────────────────────────────────────
+var _gdriveConnecting  = false;   // device flow in progress — freeze the status re-render
+var _gdrivePollTimer   = null;
+var _gdriveLastErrorAt = null;
+var _gdriveDismissedAt = null;    // the error stamp the user dismissed; a newer one re-shows
+
+function gdriveEsc(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function gdriveFmtTime(iso) {
+  if (!iso) return '';
+  try {
+    return new Date(iso).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+  } catch (e) { return iso; }
+}
+function gdriveDismissError() {
+  var box = document.getElementById('gdrive-error');
+  if (box) box.style.display = 'none';
+  _gdriveDismissedAt = _gdriveLastErrorAt;
+}
+// Persistent in-page error strip. Also how a FAILED automatic daily push gets
+// reported — the server keeps the last error, so it's here on the next open.
+function gdriveRenderError(err) {
+  var box = document.getElementById('gdrive-error');
+  var txt = document.getElementById('gdrive-error-text');
+  if (!box || !txt) return;
+  if (!err || !err.message) { box.style.display = 'none'; _gdriveLastErrorAt = null; return; }
+  _gdriveLastErrorAt = err.at || null;
+  if (_gdriveDismissedAt && _gdriveDismissedAt === _gdriveLastErrorAt) { box.style.display = 'none'; return; }
+  txt.innerHTML = '<b>⚠️ Drive upload failed</b>' + (err.at ? ' <span style="color:#9db4d6;">(' + gdriveEsc(gdriveFmtTime(err.at)) + ')</span>' : '') +
+                  '<br/>' + gdriveEsc(err.message);
+  box.style.display = 'block';
+}
+
+function gdriveBtn(label, fn, color, id) {
+  return '<button id="' + id + '" onclick="' + fn + '" style="padding:8px 16px;background:rgba(' + color + ',0.15);color:rgb(' + color + ');border:1px solid rgba(' + color + ',0.35);border-radius:7px;font-size:0.74rem;font-weight:700;cursor:pointer;font-family:\\'IBM Plex Mono\\',monospace;">' + label + '</button>';
+}
+
+function gdriveRender(d) {
+  var pill    = document.getElementById('gdrive-pill');
+  var main    = document.getElementById('gdrive-main');
+  var actions = document.getElementById('gdrive-actions');
+  var setup   = document.getElementById('gdrive-setup');
+  if (!pill || !main || !actions) return;
+
+  gdriveRenderError(d.lastError);
+
+  if (d.connected) {
+    pill.textContent = 'CONNECTED';
+    pill.style.background = 'rgba(16,185,129,0.15)'; pill.style.color = '#34d399';
+    var lines = ['✓ ' + gdriveEsc(d.account || 'Google account') + ' · folder <b style="color:#cfe0f8;">' + gdriveEsc(d.folderName) + '</b> · keeps last ' + d.retain];
+    if (d.lastUpload) {
+      lines.push('Last upload: <b style="color:#cfe0f8;">' + gdriveEsc(d.lastUpload.name) + '</b> · ' +
+                 backupFmtBytes(d.lastUpload.sizeBytes) + ' · ' + gdriveEsc(gdriveFmtTime(d.lastUpload.at)) +
+                 ' (' + gdriveEsc(d.lastUpload.trigger || 'manual') + ')');
+    } else {
+      lines.push('No upload yet — the next daily snapshot will be pushed automatically.');
+    }
+    main.innerHTML = lines.join('<br/>');
+    actions.innerHTML = gdriveBtn(d.uploading ? '⏳ Uploading…' : '☁ Backup to Drive now', 'gdriveUploadNow()', '96,165,250', 'gdriveUploadBtn') +
+                        gdriveBtn('Disconnect', 'gdriveDisconnect()', '148,163,184', 'gdriveDisconnectBtn');
+    if (d.uploading) { var ub = document.getElementById('gdriveUploadBtn'); if (ub) ub.disabled = true; }
+    if (setup) setup.open = false;
+  } else if (d.configured) {
+    pill.textContent = 'NOT CONNECTED';
+    pill.style.background = 'rgba(245,158,11,0.15)'; pill.style.color = '#fbbf24';
+    main.innerHTML = 'OAuth client saved (' + gdriveEsc(d.clientIdHint || '') + '). Click Connect and approve the code on Google.';
+    actions.innerHTML = gdriveBtn('🔗 Connect Google Drive', 'gdriveConnect()', '96,165,250', 'gdriveConnectBtn');
+  } else {
+    pill.textContent = 'NOT SET UP';
+    pill.style.background = 'rgba(90,108,138,0.18)'; pill.style.color = '#7e93b5';
+    main.innerHTML = 'Not connected — backups stay on this server only. Do the one-time Google setup below, then Connect.';
+    actions.innerHTML = '';
+    if (setup) setup.open = true;
+  }
+}
+
+async function loadGdrive() {
+  if (_gdriveConnecting) return;   // don't stomp the device-code panel mid-connect
+  try {
+    var r = await fetch('/backup/gdrive/status', { cache: 'no-store' });
+    gdriveRender(await r.json());
+  } catch (e) {
+    var main = document.getElementById('gdrive-main');
+    if (main) main.textContent = 'Failed to load Drive status: ' + e.message;
+  }
+}
+
+async function gdriveSaveCreds() {
+  var id  = (document.getElementById('gdriveClientId') || {}).value || '';
+  var sec = (document.getElementById('gdriveClientSecret') || {}).value || '';
+  var btn = document.getElementById('gdriveSaveBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  try {
+    var r = await secretFetch('/backup/gdrive/credentials', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clientId: id.trim(), clientSecret: sec.trim() })
+    });
+    if (r) {
+      var d = await r.json();
+      if (d.ok) {
+        showToast('Google client saved — now click Connect.', 'success');
+        var se = document.getElementById('gdriveClientSecret'); if (se) se.value = '';
+        gdriveRender(d.status);
+      } else {
+        showToast('Save failed: ' + (d.error || 'unknown'), 'error');
+      }
+    }
+  } catch (e) {
+    showToast('Save failed: ' + e.message, 'error');
+  }
+  if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+}
+
+async function gdriveConnect() {
+  var btn = document.getElementById('gdriveConnectBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Contacting Google…'; }
+  try {
+    var r = await secretFetch('/backup/gdrive/connect', { method: 'POST' });
+    if (!r) { if (btn) { btn.disabled = false; btn.textContent = '🔗 Connect Google Drive'; } return; }
+    var d = await r.json();
+    if (!d.ok) {
+      showToast('Connect failed: ' + (d.error || 'unknown'), 'error');
+      gdriveRenderError({ at: new Date().toISOString(), message: d.error || 'unknown' });
+      if (btn) { btn.disabled = false; btn.textContent = '🔗 Connect Google Drive'; }
+      return;
+    }
+    _gdriveConnecting = true;
+    var panel = document.getElementById('gdrive-device');
+    var code  = document.getElementById('gdrive-user-code');
+    var url   = document.getElementById('gdrive-verify-url');
+    var note  = document.getElementById('gdrive-device-note');
+    if (code) code.textContent = d.userCode;
+    if (url)  { url.href = d.verificationUrl; url.textContent = String(d.verificationUrl).replace(/^https?:\\/\\//, ''); }
+    if (note) note.textContent = 'Waiting for you to approve…';
+    if (panel) panel.style.display = 'block';
+    document.getElementById('gdrive-actions').innerHTML = '';
+    gdrivePollOnce(Date.now() + (d.expiresIn || 900) * 1000, (d.intervalSec || 5) * 1000);
+  } catch (e) {
+    showToast('Connect failed: ' + e.message, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = '🔗 Connect Google Drive'; }
+  }
+}
+
+function gdriveEndConnect(msg, kind) {
+  _gdriveConnecting = false;
+  if (_gdrivePollTimer) { clearTimeout(_gdrivePollTimer); _gdrivePollTimer = null; }
+  var panel = document.getElementById('gdrive-device');
+  if (panel) panel.style.display = 'none';
+  if (msg) showToast(msg, kind || 'info');
+  loadGdrive();
+}
+
+async function gdrivePollOnce(deadline, intervalMs) {
+  if (!_gdriveConnecting) return;
+  if (Date.now() > deadline) { gdriveEndConnect('The code expired — click Connect again.', 'error'); return; }
+  var d = null;
+  try {
+    var r = await fetch('/backup/gdrive/poll', { cache: 'no-store' });
+    d = await r.json();
+  } catch (e) { /* transient — keep polling */ }
+
+  if (d && d.state === 'connected') {
+    gdriveEndConnect('Google Drive connected' + (d.account ? ' as ' + d.account : '') + '. Daily backups will be pushed automatically.', 'success');
+    return;
+  }
+  if (d && (d.state === 'denied' || d.state === 'expired' || d.state === 'error')) {
+    var msg = d.state === 'denied' ? 'You denied access on Google.'
+            : d.state === 'expired' ? 'The code expired — click Connect again.'
+            : (d.error || 'Connect failed.');
+    gdriveRenderError({ at: new Date().toISOString(), message: msg });
+    gdriveEndConnect(msg, 'error');
+    return;
+  }
+  _gdrivePollTimer = setTimeout(function() { gdrivePollOnce(deadline, intervalMs); }, intervalMs);
+}
+
+async function gdriveCancelConnect() {
+  try { await secretFetch('/backup/gdrive/cancel', { method: 'POST' }); } catch (e) {}
+  gdriveEndConnect('Connect cancelled.', 'info');
+}
+
+async function gdriveDisconnect() {
+  var ok = await showDoubleConfirm({
+    icon: '☁', title: 'Disconnect Google Drive',
+    message: 'Daily backups will stop being pushed off-site. Files already on Drive are left untouched.\\n\\nDisconnect?',
+    confirmText: 'Disconnect', confirmClass: 'modal-btn-danger',
+    subject: 'Disconnect Google Drive', secondConfirmText: 'Yes, disconnect'
+  });
+  if (!ok) return;
+  try {
+    var r = await secretFetch('/backup/gdrive/disconnect', { method: 'POST' });
+    if (!r) return;
+    var d = await r.json();
+    showToast('Google Drive disconnected.', 'success');
+    gdriveRender(d.status);
+  } catch (e) {
+    showToast('Disconnect failed: ' + e.message, 'error');
+  }
+}
+
+async function gdriveUploadNow() {
+  var btn = document.getElementById('gdriveUploadBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Uploading…'; }
+  try {
+    var r = await secretFetch('/backup/gdrive/upload', { method: 'POST' });
+    if (!r) { if (btn) { btn.disabled = false; btn.textContent = '☁ Backup to Drive now'; } return; }
+    var d = await r.json();
+    if (d.ok) {
+      showToast('Uploaded to Drive (' + backupFmtBytes(d.sizeBytes) + ' in ' + d.seconds + 's)', 'success');
+      gdriveDismissError();
+    } else {
+      showToast('Drive upload failed: ' + (d.error || 'unknown'), 'error');
+      _gdriveDismissedAt = null;
+      gdriveRenderError({ at: new Date().toISOString(), message: d.error || 'unknown' });
+    }
+  } catch (e) {
+    showToast('Drive upload failed: ' + e.message, 'error');
+    _gdriveDismissedAt = null;
+    gdriveRenderError({ at: new Date().toISOString(), message: e.message });
+  }
+  if (btn) { btn.disabled = false; btn.textContent = '☁ Backup to Drive now'; }
+  loadBackups();
+  loadGdrive();
+}
+
 function showBackupModal() {
   var m = document.getElementById('backupModal');
   if (!m) return;
   m.style.display = 'block';
   loadBackups();
+  loadGdrive();
 }
 // Refresh the list only while the modal is open.
 setInterval(function() {
   var m = document.getElementById('backupModal');
-  if (m && m.style.display === 'block') loadBackups();
+  if (m && m.style.display === 'block') { loadBackups(); loadGdrive(); }
 }, 60000);
 
 // Kicks the server restart endpoint and polls /settings/data until it's back,
@@ -3143,6 +3370,58 @@ tar xzf backup-YYYY-MM-DD.tar.gz -C &lt;repo&gt;    data/ticks     # → &lt;rep
 # restart the app:
 pm2 startOrRestart ecosystem.config.js --update-env</pre>
       </details>
+      <!-- Google Drive off-site copy -->
+      <div style="margin-top:16px;padding-top:14px;border-top:1px solid #1a2640;">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px;">
+          <span style="font-size:0.78rem;font-weight:700;color:#60a5fa;">☁ Google Drive (off-site copy)</span>
+          <span id="gdrive-pill" style="font-size:0.62rem;font-weight:700;padding:2px 8px;border-radius:999px;background:rgba(90,108,138,0.18);color:#7e93b5;">…</span>
+        </div>
+        <div style="font-size:0.68rem;color:#7e93b5;line-height:1.5;margin-bottom:10px;">
+          Connect your Google account and every daily snapshot is pushed to Drive automatically right after it's cut.
+          Not connected = nothing is uploaded. Access is limited to files this bot creates — it can't see the rest of your Drive.
+        </div>
+
+        <!-- error strip: survives page refresh, shows failures from the automatic daily push too -->
+        <div id="gdrive-error" style="display:none;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.35);border-radius:8px;padding:9px 12px;margin-bottom:10px;font-size:0.68rem;color:#fca5a5;line-height:1.5;position:relative;">
+          <span id="gdrive-error-text"></span>
+          <button onclick="gdriveDismissError()" title="Dismiss" style="position:absolute;top:6px;right:8px;background:none;border:none;color:#fca5a5;font-size:0.9rem;line-height:1;cursor:pointer;">&times;</button>
+        </div>
+
+        <div id="gdrive-main" style="font-size:0.7rem;color:#9db4d6;line-height:1.6;margin-bottom:10px;">Loading…</div>
+
+        <!-- device-code panel, shown only while a connect is in progress -->
+        <div id="gdrive-device" style="display:none;background:#0a1426;border:1px solid #14233c;border-radius:8px;padding:12px;margin-bottom:10px;">
+          <div style="font-size:0.7rem;color:#9db4d6;line-height:1.6;">
+            1. Open <a id="gdrive-verify-url" href="https://www.google.com/device" target="_blank" rel="noopener" style="color:#60a5fa;font-weight:700;">google.com/device</a>
+            on any device &nbsp;·&nbsp; 2. enter this code &nbsp;·&nbsp; 3. approve access.
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:8px;">
+            <code id="gdrive-user-code" style="font-size:1.15rem;font-weight:700;letter-spacing:3px;color:#34d399;background:rgba(16,185,129,0.10);border:1px solid rgba(16,185,129,0.3);border-radius:7px;padding:6px 14px;">----</code>
+            <span id="gdrive-device-note" style="font-size:0.68rem;color:#fbbf24;">Waiting for you to approve…</span>
+            <button onclick="gdriveCancelConnect()" style="padding:6px 12px;background:rgba(148,163,184,0.12);color:#94a3b8;border:1px solid rgba(148,163,184,0.3);border-radius:7px;font-size:0.7rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">Cancel</button>
+          </div>
+        </div>
+
+        <div id="gdrive-actions" style="display:flex;gap:8px;flex-wrap:wrap;"></div>
+
+        <details id="gdrive-setup" style="margin-top:12px;">
+          <summary style="cursor:pointer;font-size:0.7rem;color:#7e93b5;font-weight:700;">One-time Google setup (needed once, ~3 min)</summary>
+          <div style="font-size:0.68rem;color:#9db4d6;line-height:1.7;margin-top:8px;">
+            1. Open <a href="https://console.cloud.google.com/" target="_blank" rel="noopener" style="color:#60a5fa;">console.cloud.google.com</a> → create a project.<br/>
+            2. <b>APIs &amp; Services → Library</b> → enable <b>Google Drive API</b>.<br/>
+            3. <b>OAuth consent screen</b> → External → fill in app name + your email → <b style="color:#fbbf24;">Publish app</b> (leaving it in <i>Testing</i> makes the connection expire every 7 days).<br/>
+            4. <b>Credentials → Create credentials → OAuth client ID</b> → application type <b style="color:#fbbf24;">TVs and Limited Input devices</b>.<br/>
+            5. Paste the Client ID + Secret below and save.
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px;">
+            <input type="text" id="gdriveClientId" placeholder="xxxx.apps.googleusercontent.com" autocomplete="off" style="flex:1;min-width:220px;padding:7px 10px;background:#0a1426;border:1px solid #1a2640;border-radius:7px;color:#cfe0f8;font-size:0.7rem;font-family:'IBM Plex Mono',monospace;"/>
+            <input type="password" id="gdriveClientSecret" placeholder="Client secret" autocomplete="new-password" style="flex:1;min-width:160px;padding:7px 10px;background:#0a1426;border:1px solid #1a2640;border-radius:7px;color:#cfe0f8;font-size:0.7rem;font-family:'IBM Plex Mono',monospace;"/>
+            <button onclick="gdriveSaveCreds()" id="gdriveSaveBtn" style="padding:7px 14px;background:rgba(59,130,246,0.15);color:#60a5fa;border:1px solid rgba(59,130,246,0.3);border-radius:7px;font-size:0.72rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">Save</button>
+          </div>
+          <div style="font-size:0.64rem;color:#5a6c8a;margin-top:6px;">Stored server-side in ~/trading-data/.google_drive.json (never in .env, never inside a backup archive).</div>
+        </details>
+      </div>
+
       <div style="margin-top:16px;padding-top:14px;border-top:1px solid #1a2640;">
         <div style="font-size:0.78rem;font-weight:700;color:#f59e0b;margin-bottom:6px;">⟲ Restore from a backup file</div>
         <div style="font-size:0.68rem;color:#7e93b5;line-height:1.5;margin-bottom:10px;">
