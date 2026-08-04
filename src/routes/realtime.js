@@ -27,7 +27,7 @@ const STRATEGY_DEFS = [
   { key:'ORB',      label:'ORB',          accentClass:'orb',      accent:'#10b981', paperPrefix:'/orb-paper',      livePrefix:'/orb-live',      hasDayLog:true,  modeFlag:'ORB_MODE_ENABLED'      },
   { key:'EMA9VWAP', label:'EMA9+VWAP',    accentClass:'ema9vwap', accent:'#06b6d4', paperPrefix:'/ema9vwap-paper', livePrefix:'/ema9vwap-live', hasDayLog:true,  modeFlag:'EMA9VWAP_MODE_ENABLED' },
   { key:'TREND_PB', label:'TREND PB',     accentClass:'trendpb',  accent:'#ec4899', paperPrefix:'/trend-pb-paper', livePrefix:'/trend-pb-live', hasDayLog:false, modeFlag:'TREND_PB_MODE_ENABLED' },
-  { key:'GAPS',     label:'GAPS',         accentClass:'gaps',     accent:'#0ea5e9', paperPrefix:'/gaps-paper',     livePrefix:'/gaps-live',     hasDayLog:false, modeFlag:'GAPS_MODE_ENABLED' },
+  { key:'GAPS',     label:'GAPS',         accentClass:'gaps',     accent:'#0ea5e9', paperPrefix:'/gaps-paper',     livePrefix:'/gaps-live',     hasDayLog:true,  modeFlag:'GAPS_MODE_ENABLED' },
 ];
 
 function enabledStrategies() {

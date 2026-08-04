@@ -427,6 +427,15 @@ async function simulateBuy(side, sig) {
   log(`   ├─ Yesterday RSI ${sig.prevRsi} (${sig.rsiSource}) vs bands ${sig.rsiLower}/${sig.rsiUpper} · daily EMA ${sig.prevEma}`);
   log(`   └─ SL ${pos.slSpot} (gap fill, ${pos.riskPts}pt) · Target ${targetOn ? `${pos.targetSpot} (daily EMA close-through)` : "DISABLED"} · EOD ${_envStr("GAPS_FORCED_EXIT", "15:15")}`);
 
+  // Rare but possible after a very large gap: the open is ALREADY past the daily
+  // EMA, so the target condition is satisfied before the trade has moved and the
+  // first exit-timeframe close will book it. That is the rule as written — flag it
+  // so a ~5-minute "Target" exit is not mistaken for a bug.
+  if (targetOn && pos.targetSpot != null &&
+      ((side === "PE" && spot < pos.targetSpot) || (side === "CE" && spot > pos.targetSpot))) {
+    log(`⚠️ [GAPS-PAPER] Entry ${spot} is ALREADY beyond the daily EMA target ${pos.targetSpot} — the first ${_resMin()}m close will hit the target immediately (expected: the gap overshot the mean-reversion level).`);
+  }
+
   notifyEntry({
     mode: "GAPS-PAPER",
     side, symbol: optInfo.symbol,
@@ -1563,6 +1572,27 @@ router.get("/download/skips-all", (req, res) => {
   let body = "";
   for (const d of dates) { try { const p = skipLogger.filePathFor("gaps", d); if (fs.existsSync(p)) body += fs.readFileSync(p, "utf8"); } catch (_) {} }
   res.send(body);
+});
+
+// {prefix}/download/trades/:date + /download/skips/:date — GAPS writes both day
+// files (skipLogger/tradeLogger mode "gaps"); these are what the Real-Time
+// monitor's Copy Day Log reads. Same shape as bb_rsi / PA / EMA_RSI_ST /
+// EMA9+VWAP / ORB — without them the GAPS card would sit on "— No Day Log —"
+// while the files existed on disk.
+router.get("/download/skips/:date", (req, res) => {
+  const date = req.params.date;
+  if (!_GAPS_DATE_RE.test(date)) return res.status(400).send("bad date");
+  const p = skipLogger.filePathFor("gaps", date);
+  if (!fs.existsSync(p)) return res.status(404).send("not found");
+  res.download(p, `gaps_paper_skips_${date}.txt`);
+});
+
+router.get("/download/trades/:date", (req, res) => {
+  const date = req.params.date;
+  if (!_GAPS_DATE_RE.test(date)) return res.status(400).send("bad date");
+  const p = tradeLogger.dailyFilePathFor("gaps", date);
+  if (!fs.existsSync(p)) return res.status(404).send("not found");
+  res.download(p, `gaps_paper_trades_${date}.txt`);
 });
 
 router.get("/view/skips/:date", (req, res) => {
