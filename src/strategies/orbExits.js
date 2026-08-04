@@ -233,6 +233,14 @@ function evaluateCloseExits(pos, bar, candles) {
  */
 function isLtpStale(updatedAtMs, nowMs) {
   if (!updatedAtMs) return false;
+  // NEVER during replay. The replay harness pins global Date.now() to the recorded
+  // session clock, which advances far faster than the real 3-second option-poll
+  // cadence — so both the stamp and this comparison are in replay time and the gap
+  // between two polls looks like many "minutes". The warning would fire on every
+  // single replay run, and an alarm that always fires trains you to ignore the one
+  // time it matters. Same lazy-require idiom as optionChainRecorder.js; lazy because
+  // tickReplay requires the routes, which require this module.
+  try { if (require("../services/tickReplay").isReplayInProgress()) return false; } catch (_) {}
   const staleMs = parseInt(process.env.LTP_STALE_THRESHOLD_SEC || "15", 10) * 1000;
   return (nowMs - updatedAtMs) > staleMs;
 }
