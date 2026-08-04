@@ -27,6 +27,22 @@ A seventh strategy, built to the same standard as the other six — Settings sec
 - The backtest's intra-bar ordering is conservative: the gap-fill stop is tested on the bar's high/low **before** the target is tested on the close, and a bar that opened beyond the stop fills at the open, never at the better level.
 - The Paper page's daily chart (candles + EMA21 + an RSI pane with the 90/10 band lines) is served from the same engine that produced the decision, so the chart cannot disagree with the trade.
 - `positionPersist` now covers GAPS (`.active_gaps_position.json`), reconciled against the Fyers book on boot like the other Fyers engines.
+- Per-strategy sizing (`GAPS_LOT_MULTIPLIER`) divides `getLotQty()` back down by the multiplier that function **actually applied** — it clamps to `MAX_LOT_MULTIPLIER` internally, so dividing by the raw `LOT_MULTIPLIER` recovered the wrong lot size whenever the global value exceeded the ceiling.
+- `GAPS_MAX_WEEKLY_LOSS` reads the per-day JSONL logs, substituting the in-memory session for today's file **only while a session is running** (`appendTradeLog` writes the day file asynchronously, so the file lags; but when idle `state.sessionPnl` can hold a rehydrated *previous* session, which would otherwise be double-counted).
+- A failed entry attempt (option LTP unavailable, expiry unresolved) no longer burns the day: the decision is locked only once a position exists, and a failure retries inside `GAPS_ENTRY_END`, throttled to one attempt per 5s. The pre-`await` guards are all synchronous, so concurrent ticks still cannot open two positions.
+
+### Fixed — Replay served intraday warm-up candles to DAILY-resolution requests
+
+Not GAPS-specific — this is the shared replay harness, and it is why the fix is recorded separately.
+
+`tickReplay.install()` stubs `fyers.getHistory`, `backtestEngine.fetchCandles` and `candleCache.fetchCandlesCached` to return the recorded warm-up so a run is deterministic and never hits the broker. Those stubs **ignored the requested resolution**. That was harmless while every strategy asked only for 3/5/15-min bars, but GAPS reads a daily EMA/RSI and yesterday's daily close: under replay it would have been handed 5-minute candles, computed EMA21/RSI14 over them and called one of them "yesterday's close" — decisions that look plausible, are meaningless, and silently break the rule that Replay and Paper must decide identically.
+
+- `D` / `W` / `M` requests now fall through to the real fetcher. Safe precisely because a **closed daily bar is immutable** — fetching it today returns exactly what the recorded session saw. Every intraday path is byte-for-byte unchanged, so the other six strategies replay as before.
+- Defence in depth in the engine: `getPrevDaySnapshot` verifies the series really is daily (at most one bar per IST day) and refuses with an explicit reason rather than computing a daily indicator over intraday bars. This guards every caller, not just the replay harness.
+
+### Fixed — GAPS day-log files were written but never served
+
+GAPS wrote both per-day files from the start (`skipLogger` / `tradeLogger` mode `gaps`) but did not expose the two endpoints `/realtime` fetches, so its card sat on "— No Day Log —" while the files existed on disk — the same defect the recent ORB pass fixed. Added `/gaps-paper/download/trades/:date` and `/download/skips/:date` (same shape and `YYYY-MM-DD` guard as the other strategies) and flipped `hasDayLog` to true. The new two-segment routes do not shadow the existing `/download/trades.jsonl`, `/download/daily-files` or `/download/skips-all`.
 
 **Validation**: 47 assertions over the engine and backtest exits (indicator alignment, both setups, both rejection paths, forming-bar isolation, configurable bands/source/length, warmup refusal, stop-before-target, EOD, target-disabled, no-gap skip) all pass; every touched file syntax-checks; the app boots and every GAPS page, JSON feed and export endpoint returns 200. **Not yet market-validated** — no paper session has run. Collect clean paper days and a `/replay` comparison before touching the live gates.
 
