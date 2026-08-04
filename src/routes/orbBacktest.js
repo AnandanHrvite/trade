@@ -13,8 +13,8 @@
 
 const express = require("express");
 const router  = express.Router();
-const { EMA } = require("technicalindicators");
 const orbStrategy = require("../strategies/orb_breakout");
+const orbExits    = require("../strategies/orbExits");
 const orbStopRisk = require("../utils/orbStopRisk");
 const { fetchCandlesCachedBT } = require("../services/backtestEngine");
 const { buildSidebar, sidebarCSS, faviconLink } = require("../utils/sharedNav");
@@ -75,16 +75,6 @@ function istHHMMSS(unixSec) {
 }
 function entryTsStr(unixSec) { return `${istDateOf(unixSec)}, ${istHHMMSS(unixSec)}`; }
 
-// EMA of candle closes up to (and including) index `uptoIdx`. Returns null until
-// `period` closes exist. Mirrors the paper/live EMA trend-trail (technicalindicators).
-function _emaOfCloses(candles, uptoIdx, period) {
-  if (uptoIdx + 1 < period) return null;
-  const closes = [];
-  for (let k = 0; k <= uptoIdx; k++) closes.push(candles[k].close);
-  const arr = EMA.calculate({ period, values: closes });
-  return arr && arr.length ? arr[arr.length - 1] : null;
-}
-
 function runOrbBacktest(allCandles, expirySet) {
   if (!allCandles || !allCandles.length) return [];
   // Ascending time order is required so the flat array aligns with the per-day
@@ -101,11 +91,9 @@ function runOrbBacktest(allCandles, expirySet) {
   // low/high, breakeven after +N pts, EMA close-trail, strong-opposite-candle
   // exit, per-trade rupee loss cap, 15:15 EOD. (Replaced the old 2-candle swing
   // trail that exited winners on the first pullback.)
-  const TRAIL_EMA      = Math.max(2, parseInt(process.env.ORB_TRAIL_EMA || "20", 10));
-  const BE_PTS         = parseFloat(process.env.ORB_BREAKEVEN_PTS || "20");
-  const BE_OR_MULT     = parseFloat(process.env.ORB_BREAKEVEN_OR_MULT || "0.5");   // adaptive breakeven
-  const OPP_ON         = (process.env.ORB_OPP_CANDLE_EXIT || "true").toLowerCase() === "true";
-  const OPP_MULT       = parseFloat(process.env.ORB_OPP_CANDLE_BODY_MULT || "0.3");
+  // Breakeven / EMA-trail / opposite-candle thresholds are NOT read here any more —
+  // they belong to the shared exit engine (src/strategies/orbExits.js), which reads
+  // them fresh per call so a Settings change takes effect without a restart.
   const MAX_TRADE_LOSS = parseFloat(process.env.ORB_MAX_TRADE_LOSS || "1500");
   const PREM_STOP_PCT  = parseFloat(process.env.ORB_PREMIUM_STOP_PCT || "35");     // premium disaster backstop
   const PREM_GATE_ON = (process.env.ORB_PREMIUM_GATE_ENABLED || "true").toLowerCase() === "true";
@@ -151,6 +139,9 @@ function runOrbBacktest(allCandles, expirySet) {
     for (let i = 0; i < dayCandles.length; i++) {
       const c = dayCandles[i];
       const istMin = _utcSecToIstMins(c.time);
+      // This candle's index in the flat multi-day array. Both the signal engine and
+      // the shared EMA trail need the multi-day window, not just today's bars.
+      const gIdx = globalBase + i;
 
       // EOD forced exit. Paper checks the clock on every TICK, so it squares off at
       // the first tick at/after ORB_FORCED_EXIT — i.e. this candle's OPEN, not its
@@ -186,8 +177,10 @@ function runOrbBacktest(allCandles, expirySet) {
           const _adverse  = position.side === "CE" ? c.low : c.high;
           const _spotMove = position.side === "CE" ? (_adverse - position.entrySpot) : (position.entrySpot - _adverse);
           const _curPrem  = Math.max(0.05, position.optionEntryLtp + _spotMove * DELTA);
-          const _hitLoss  = MAX_TRADE_LOSS > 0 && (_curPrem - position.optionEntryLtp) * LOT_SIZE <= -MAX_TRADE_LOSS;
-          const _hitPrem  = PREM_STOP_PCT > 0 && _curPrem <= position.optionEntryLtp * (1 - PREM_STOP_PCT / 100);
+          // Thresholds come from the shared exit engine — the backtest only decides
+          // the FILL price (below), never the rule.
+          const _hitLoss  = orbExits.isMaxTradeLossHit((_curPrem - position.optionEntryLtp) * LOT_SIZE);
+          const _hitPrem  = orbExits.isPremiumStopHit(_curPrem, position.optionEntryLtp);
           if (_hitLoss || _hitPrem) {
             // premium drop that trips the binding threshold → the spot level it implies
             const _dropPrem = _hitLoss
@@ -212,39 +205,23 @@ function runOrbBacktest(allCandles, expirySet) {
           closePos(position, c.open > position.slSpot ? c.open : position.slSpot, c.time, `Hard SL hit (${position.slSpot})`);
           trades.push(buildTradeRecord(position)); position = null; continue;
         }
-        // ── 3. CANDLE CLOSE: strong opposite reversal candle ──────────────────
-        const _bodyPts = Math.abs(c.close - c.open);
-        const _oppThresh = OPP_MULT * (position.rangePts || 0);
-        if (OPP_ON && _oppThresh > 0 && _bodyPts >= _oppThresh &&
-            ((position.side === "CE" && c.close < c.open && c.close < position.orh) ||
-             (position.side === "PE" && c.close > c.open && c.close > position.orl))) {
-          closePos(position, c.close, c.time, `Strong opposite candle (body ${_bodyPts.toFixed(1)}pt)`);
+        // ── 3–5. CANDLE CLOSE: opposite candle → breakeven → EMA trend-trail ──
+        //    One call into the SHARED exit engine (src/strategies/orbExits.js), the
+        //    same function paper and live run. These three rules used to be copied
+        //    out by hand here, which is how this file once evaluated them in the
+        //    wrong order and silently reported trades paper would never have taken.
+        //
+        //    The EMA window is the MULTI-DAY slice, not `dayCandles`. Paper computes
+        //    its trail over state.candles — a ~7-day preload — so its EMA20 is live
+        //    from the first candle of the session. This file used to pass today's
+        //    bars only, so a 20-period EMA stayed null until ~11:05 IST and the
+        //    trend-trail was effectively DEAD for the entire ORB entry window. Same
+        //    rule, different data, different trades: a real backtest/paper mismatch.
+        const _emaSeen = allCandles.slice(Math.max(0, gIdx - SIG_WINDOW), gIdx + 1);
+        const _d = orbExits.evaluateCloseExits(position, c, _emaSeen);
+        if (_d.exit) {
+          closePos(position, c.close, c.time, _d.reason);
           trades.push(buildTradeRecord(position)); position = null; continue;
-        }
-        // ── 4. CANDLE CLOSE: breakeven — lift the hard SL to entry once far enough
-        //    in profit (adaptive: max(fixed, ORB_BREAKEVEN_OR_MULT × OR width)).
-        //    Armed off the CLOSE, exactly as paper does — arming off the intrabar
-        //    high would protect trades that only touched the trigger and gave it back.
-        const _favPts = (c.close - position.entrySpot) * (position.side === "CE" ? 1 : -1);
-        const _bePts = (BE_OR_MULT > 0 && position.rangePts) ? Math.max(BE_PTS, Math.round(BE_OR_MULT * position.rangePts)) : BE_PTS;
-        if (!position.breakevenArmed && _bePts > 0 && _favPts >= _bePts) {
-          if (position.side === "CE" && position.entrySpot > position.slSpot) position.slSpot = position.entrySpot;
-          if (position.side === "PE" && position.entrySpot < position.slSpot) position.slSpot = position.entrySpot;
-          position.breakevenArmed = true;
-        }
-        // ── 5. CANDLE CLOSE: EMA close-trail — exit only when THIS candle closes
-        //    back across the EMA, and only after price first closed on the correct
-        //    side (emaArmed) so a gap-day entry below a stale EMA isn't stopped out
-        //    on candle 1.
-        const _ema = _emaOfCloses(dayCandles, i, TRAIL_EMA);
-        if (_ema != null) {
-          if (position.side === "CE") {
-            if (c.close >= _ema) position.emaArmed = true;
-            else if (position.emaArmed) { closePos(position, c.close, c.time, `Closed below EMA${TRAIL_EMA}`); trades.push(buildTradeRecord(position)); position = null; continue; }
-          } else {
-            if (c.close <= _ema) position.emaArmed = true;
-            else if (position.emaArmed) { closePos(position, c.close, c.time, `Closed above EMA${TRAIL_EMA}`); trades.push(buildTradeRecord(position)); position = null; continue; }
-          }
         }
       }
 
@@ -283,13 +260,20 @@ function runOrbBacktest(allCandles, expirySet) {
         // every trade if SEED_PREMIUM lies outside the band).
         const _premOk = !(PREM_GATE_ON && (SEED_PREMIUM < PREM_MIN || SEED_PREMIUM > PREM_MAX));
 
-        // Multi-day trailing window ending at THIS candle so getSignal (V2) can
-        // seed EMA/RSI/ADX from prior days. globalBase + i is this candle's index
-        // in the flat array. In V2 the signal fires on the CONFIRMATION candle,
-        // so `c` (= dayCandles[i]) is the entry candle and _open(sig, c) buys its
-        // close with the initial SL at its own low/high.
-        const _gIdx = globalBase + i;
-        const seen  = allCandles.slice(Math.max(0, _gIdx - SIG_WINDOW), _gIdx + 1);
+        // Multi-day trailing window ending at THIS candle so getSignal can seed
+        // ATR(5m)/ATR(15m) from prior days. The signal fires on the CONFIRMATION
+        // candle, so `c` is the entry candle and _open(sig, c) buys its close.
+        const seen = allCandles.slice(Math.max(0, gIdx - SIG_WINDOW), gIdx + 1);
+
+        // PARITY GUARD: paper/live ALWAYS hold a ~7-day preload, so getSignal there
+        // never runs without prior-day history. On the FIRST day of a backtest range
+        // the window contains today only, ATR is unseeded, and the ATR-dependent
+        // gates (decisive body, OR-vs-ATR15) fail OPEN — so the backtest could take a
+        // day-1 trade that paper, with its preload, would have filtered. Skip that
+        // day rather than report a trade the live engine could never produce.
+        const _hasPriorDay = seen.length > 0
+          && Math.floor((seen[0].time + 19800) / 86400) < Math.floor((c.time + 19800) / 86400);
+        if (!_hasPriorDay) continue;
 
         // The engine owns confirmation AND the retest/resume fallback internally,
         // so the backtest just polls it each candle and buys whatever it returns.

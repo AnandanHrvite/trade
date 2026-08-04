@@ -32,9 +32,9 @@ const express = require("express");
 const router  = express.Router();
 const fs      = require("fs");
 const path    = require("path");
-const { EMA } = require("technicalindicators");
 
 const orbStrategy        = require("../strategies/orb_breakout");
+const orbExits           = require("../strategies/orbExits");
 const instrumentConfig   = require("../config/instrument");
 const sharedSocketState  = require("../utils/sharedSocketState");
 const socketManager      = require("../utils/socketManager");
@@ -102,6 +102,7 @@ function _freshState() {
     tickCount: 0, lastTickTime: null, lastTickPrice: null,
     position: null, optionLtp: null, optionLtpUpdatedAt: null,
     log: [], _sessionId: null, _expiryDayBlocked: false,
+    _ltpStaleLogged: false,   // one stale-premium warning per trade, not per process
   };
 }
 
@@ -282,6 +283,7 @@ async function _placeLiveBuyImpl(side, sigSnapshot) {
   try { saveOrbPosition(pos, { sessionPnl: state.sessionPnl || 0 }); } catch (_) {}
   state.optionLtp = optionEntryLtp;
   state.optionLtpUpdatedAt = Date.now();
+  state._ltpStaleLogged = false;
   state.tradesTaken++;
   startOptionPolling();
 
@@ -413,89 +415,45 @@ async function _placeLiveSellImpl(reason) {
   stopOptionPolling();
 }
 
-// EMA of candle closes — null until `period` closes exist (seeded by the
-// multi-day preload). Uses the technicalindicators package (repo convention).
-function _computeEma(candles, period) {
-  if (!candles || candles.length < period) return null;
-  const closes = candles.map(c => c && c.close).filter(v => typeof v === "number");
-  if (closes.length < period) return null;
-  const arr = EMA.calculate({ period, values: closes });
-  return arr && arr.length ? arr[arr.length - 1] : null;
-}
+// ── In-position management ──────────────────────────────────────────────────
+// The RULES live in src/strategies/orbExits.js, shared with paper/backtest/validate.
+// These two functions are only the LIVE execution of a shared decision (place the
+// broker order, log, persist). Live used to re-implement every rule by hand, which
+// is precisely how live and paper drift apart without anyone noticing.
 
-// Per-candle-close management (mirrors orbPaper): strong-opposite-candle →
-// breakeven → EMA trend-trail (exit only on a candle CLOSE back across the EMA).
+// Per-candle-close management: strong-opposite-candle → breakeven → EMA trend-trail.
 async function _managePositionOnClose(bar) {
   const pos = state.position;
-  if (!pos || !bar || typeof bar.close !== "number") return;
-  const close = bar.close;
+  if (!pos) return;
 
-  const oppOn    = (process.env.ORB_OPP_CANDLE_EXIT || "true").toLowerCase() === "true";
-  const oppMult  = parseFloat(process.env.ORB_OPP_CANDLE_BODY_MULT || "0.3");
-  const oppThresh = oppMult * (pos.rangePts || 0);
-  const bodyPts  = Math.abs(bar.close - bar.open);
-  if (oppOn && oppThresh > 0 && bodyPts >= oppThresh) {
-    if (pos.side === "CE" && bar.close < bar.open && bar.close < pos.orh) return placeLiveSell(`Strong opposite candle (red body ${bodyPts.toFixed(1)}pt ≥ ${oppThresh.toFixed(1)}pt, closed below ORH)`);
-    if (pos.side === "PE" && bar.close > bar.open && bar.close > pos.orl) return placeLiveSell(`Strong opposite candle (green body ${bodyPts.toFixed(1)}pt ≥ ${oppThresh.toFixed(1)}pt, closed above ORL)`);
-  }
+  const d = orbExits.evaluateCloseExits(pos, bar, state.candles);
 
-  const beMult = parseFloat(process.env.ORB_BREAKEVEN_OR_MULT || "0.5");
-  const beFixed = parseFloat(process.env.ORB_BREAKEVEN_PTS || "20");
-  const bePts  = (beMult > 0 && pos.rangePts) ? Math.max(beFixed, Math.round(beMult * pos.rangePts)) : beFixed;
-  const favPts = (close - pos.entrySpot) * (pos.side === "CE" ? 1 : -1);
-  if (!pos.breakevenArmed && bePts > 0 && favPts >= bePts) {
-    if (pos.side === "CE" && pos.entrySpot > pos.slSpot) pos.slSpot = Math.round(pos.entrySpot * 100) / 100;
-    if (pos.side === "PE" && pos.entrySpot < pos.slSpot) pos.slSpot = Math.round(pos.entrySpot * 100) / 100;
+  if (d.breakevenArmed) {
     // re-snapshot so crash recovery sees the lifted stop, not the entry stop
     try { saveOrbPosition(pos, { sessionPnl: state.sessionPnl || 0 }); } catch (_) {}
-    pos.breakevenArmed = true;
-    log(`🔒 Breakeven armed — SL → entry ${pos.slSpot} (favourable ${favPts.toFixed(1)}pt ≥ ${bePts}pt)`);
+    log(`🔒 Breakeven armed — SL → entry ${pos.slSpot}`);
   }
-
-  // EMA exit only once price has first closed on the correct side of the EMA
-  // (emaArmed) — else a CE taken below a stale/gap-day EMA exits on candle 1.
-  const emaPeriod = Math.max(2, parseInt(process.env.ORB_TRAIL_EMA || "20", 10));
-  const ema = _computeEma(state.candles, emaPeriod);
-  if (ema != null) {
-    pos.lastEma = Math.round(ema * 100) / 100;
-    if (pos.side === "CE") {
-      if (close >= ema) pos.emaArmed = true;
-      else if (pos.emaArmed) return placeLiveSell(`Closed below EMA${emaPeriod} (${close} < ${pos.lastEma})`);
-    } else {
-      if (close <= ema) pos.emaArmed = true;
-      else if (pos.emaArmed) return placeLiveSell(`Closed above EMA${emaPeriod} (${close} > ${pos.lastEma})`);
-    }
-  }
+  if (d.exit) return placeLiveSell(d.reason);
 }
 
-// ── In-position tick management (mirrors paper): hard SL + per-trade loss cap ──
+// ── In-position tick management: rupee cap → premium stop → hard SL ──────────
 function _checkExits(spotPrice) {
   if (!state.position) return;
   const pos = state.position;
   const optLtp = state.optionLtp || pos.optionEntryLtp;
-  if (optLtp > pos.peakPremium) pos.peakPremium = optLtp;
 
-  // Track max favorable / adverse excursion — spot pts in trade direction + rupee PnL.
-  const _favPts = (spotPrice - pos.entrySpot) * (pos.side === "CE" ? 1 : -1);
-  const _curPnl = (optLtp - pos.optionEntryLtp) * pos.qty;
-  if (_favPts > (pos.mfeSpotPts || 0)) { pos.mfeSpotPts = parseFloat(_favPts.toFixed(2)); pos.secsToMFE = parseFloat(((Date.now() - pos.entryTimeMs) / 1000).toFixed(1)); }
-  if (_curPnl > (pos.mfePnl     || 0)) pos.mfePnl     = parseFloat(_curPnl.toFixed(2));
-  if (_favPts < (pos.maeSpotPts || 0)) { pos.maeSpotPts = parseFloat(_favPts.toFixed(2)); pos.secsToMAE = parseFloat(((Date.now() - pos.entryTimeMs) / 1000).toFixed(1)); }
-  if (_curPnl < (pos.maePnl     || 0)) pos.maePnl     = parseFloat(_curPnl.toFixed(2));
+  // Stale-premium warning. WARN ONLY, matching every other engine in this repo —
+  // the exit rules are unchanged. Live is where a stale premium drives REAL orders,
+  // so the absence of this warning mattered most here.
+  if (orbExits.isLtpStale(state.optionLtpUpdatedAt, Date.now()) && !state._ltpStaleLogged) {
+    log(`⚠️ Option LTP STALE — no update for ${Math.round((Date.now() - state.optionLtpUpdatedAt) / 1000)}s. Loss cap + premium stop + P&L are using a stale premium.`);
+    state._ltpStaleLogged = true;
+  }
 
-  // Per-trade loss cap (unrealised rupees) — the daily-loss gate only fires when
-  // flat, so this is what actually caps a single open trade.
-  const maxTradeLoss = parseFloat(process.env.ORB_MAX_TRADE_LOSS || "1500");
-  if (maxTradeLoss > 0 && _curPnl <= -maxTradeLoss) return placeLiveSell(`Max trade loss (₹${Math.round(_curPnl)} ≤ -₹${maxTradeLoss})`);
+  orbExits.trackExcursion(pos, spotPrice, optLtp, Date.now());
 
-  // Premium disaster backstop — exit if the option premium collapses by
-  // ORB_PREMIUM_STOP_PCT% from entry (catches IV-crush / vega losses the spot stop misses).
-  const premStopPct = parseFloat(process.env.ORB_PREMIUM_STOP_PCT || "35");
-  if (premStopPct > 0 && optLtp <= pos.optionEntryLtp * (1 - premStopPct / 100)) return placeLiveSell(`Premium disaster stop (₹${optLtp} ≤ −${premStopPct}% of entry ₹${pos.optionEntryLtp})`);
-
-  // Hard SL (breakout candle low/high, lifted to breakeven) — spot-based, per tick.
-  if (pos.side === "CE" && spotPrice <= pos.slSpot) return placeLiveSell(`Hard SL hit (${spotPrice} ≤ ${pos.slSpot})`);
-  if (pos.side === "PE" && spotPrice >= pos.slSpot) return placeLiveSell(`Hard SL hit (${spotPrice} ≥ ${pos.slSpot})`);
+  const d = orbExits.evaluateTickExits(pos, { spotPrice, optionLtp: optLtp });
+  if (d.exit) return placeLiveSell(d.reason);
 }
 
 async function onCandleClose(bar) {

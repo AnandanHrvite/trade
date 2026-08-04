@@ -30,8 +30,9 @@ process.env.TZ = "Asia/Calcutta";
 require("dotenv").config();
 
 const path = require("path");
-const { EMA, ATR } = require("technicalindicators");
+const { ATR } = require("technicalindicators");
 const orb = require(path.join(__dirname, "../src/strategies/orb_breakout"));
+const orbExits = require(path.join(__dirname, "../src/strategies/orbExits"));
 const orbStopRisk = require(path.join(__dirname, "../src/utils/orbStopRisk"));
 const { fetchCandlesCachedBT } = require(path.join(__dirname, "../src/services/backtestEngine"));
 
@@ -96,22 +97,9 @@ function line(label, s) {
   const DAYS = [...new Set(candles.map(c => DAY(c.time)))].sort((a, b) => a - b);
   console.log(`${candles.length} candles over ${DAYS.length} sessions\n`);
 
-  const emaCache = new Map();
-  const emaAt = (t, p) => {
-    const k = `${p}|${t}`;
-    if (emaCache.has(k)) return emaCache.get(k);
-    const i = IDX.get(t);
-    const a = EMA.calculate({ period: p, values: candles.slice(Math.max(0, i - 199), i + 1).map(c => c.close) });
-    const v = a.length ? a[a.length - 1] : null;
-    emaCache.set(k, v); return v;
-  };
+  // (the EMA trend-trail now comes from orbExits.evaluateCloseExits — no local copy)
 
-  const BE_PTS  = parseFloat(process.env.ORB_BREAKEVEN_PTS || "20");
-  const BE_OR   = parseFloat(process.env.ORB_BREAKEVEN_OR_MULT || "0.5");
-  const TRAIL   = parseInt(process.env.ORB_TRAIL_EMA || "20", 10);
-  const OPP_ON  = (process.env.ORB_OPP_CANDLE_EXIT || "true").toLowerCase() === "true";
-  const OPP_MLT = parseFloat(process.env.ORB_OPP_CANDLE_BODY_MULT || "0.3");
-  const EOD     = (() => { const [h, m] = (process.env.ORB_FORCED_EXIT || "15:15").split(":").map(Number); return h * 60 + m; })();
+  const EOD = (() => { const [h, m] = (process.env.ORB_FORCED_EXIT || "15:15").split(":").map(Number); return h * 60 + m; })();
 
   const trades = [];
   for (const d of DAYS) {
@@ -127,16 +115,27 @@ function line(label, s) {
         side, entrySpot: entry, strategyStop: sig.slSpot, qty: QTY,
         fallbackStop: side === "CE" ? sig.orl : sig.orh,
       });
-      // ── Exit model. MUST mirror the paper route, which is canonical:
-      //    per TICK   (_checkExits)            → hard SL / rupee cap
-      //    per CLOSE  (_managePositionOnClose) → opposite candle → breakeven → EMA
-      //    So intrabar exits get first refusal inside a candle; a close-based rule
+      // ── Exit model. Driven by the SHARED exit engine (src/strategies/orbExits.js)
+      //    — the same functions paper, live and the backtest route run, so the
+      //    statistics this script publishes describe the shipped strategy rather
+      //    than a fourth hand-written copy of it.
+      //
+      //    ORDER MIRRORS PAPER'S REAL TIMELINE:
+      //      per TICK   (_checkExits)            → rupee cap / premium stop / hard SL
+      //      per CLOSE  (_managePositionOnClose) → opposite candle → breakeven → EMA
+      //    so intrabar exits get first refusal inside a candle and a close-based rule
       //    can only fire on a bar that never touched the stop. The rupee cap is
-      //    already folded into `sl` by orbStopRisk above (it clamps the stop to the
-      //    level ORB_MAX_TRADE_LOSS allows), so the spot SL below IS the cap.
-      let sl = st.slSpot, be = false, armed = false, exit = null, why = null, mae = 0, mfe = 0;
-      const beTrig = Math.max(BE_PTS, Math.round(BE_OR * (sig.rangePts || 0)));
-      const oppThresh = OPP_MLT * (sig.rangePts || 0);
+      //    already folded into the stop by orbStopRisk above (it clamps to the level
+      //    ORB_MAX_TRADE_LOSS allows), so the spot SL here IS the cap.
+      //
+      //    `pos` is the minimal shape orbExits needs; it is mutated in place for
+      //    breakeven / EMA arming exactly as a live position would be.
+      const pos = {
+        side, entrySpot: entry, slSpot: st.slSpot,
+        orh: sig.orh, orl: sig.orl, rangePts: sig.rangePts,
+        breakevenArmed: false, emaArmed: false, lastEma: null,
+      };
+      let exit = null, why = null, mae = 0, mfe = 0;
       for (const c of dayC.slice(j + 1)) {
         // EOD squares off at the first tick at/after ORB_FORCED_EXIT — this bar's
         // OPEN, not the close of the last bar before it.
@@ -147,26 +146,19 @@ function line(label, s) {
         mfe = Math.max(mfe, fav); mae = Math.max(mae, adv);
 
         // 1. intrabar hard SL (gap-through fills at the open, as in paper/backtest)
-        if (side === "CE" ? c.low <= sl : c.high >= sl) {
-          exit = side === "CE" ? Math.min(sl, c.open) : Math.max(sl, c.open);
-          why = be ? "BE" : "SL"; break;
+        if (orbExits.isHardSlHit(side, side === "CE" ? c.low : c.high, pos.slSpot)) {
+          exit = side === "CE" ? Math.min(pos.slSpot, c.open) : Math.max(pos.slSpot, c.open);
+          why = pos.breakevenArmed ? "BE" : "SL"; break;
         }
-        // 2. close: strong opposite reversal candle
-        if (OPP_ON && oppThresh > 0 && Math.abs(c.close - c.open) >= oppThresh &&
-            ((side === "CE" && c.close < c.open && c.close < sig.orh) ||
-             (side === "PE" && c.close > c.open && c.close > sig.orl))) {
-          exit = c.close; why = "opp"; break;
-        }
-        // 3. close: breakeven. Armed off the CLOSE, as paper does — arming off the
-        //    intrabar high would protect trades that merely touched the trigger and
-        //    gave it straight back, which flatters every loser into a scratch.
-        const favClose = side === "CE" ? c.close - entry : entry - c.close;
-        if (!be && beTrig > 0 && favClose >= beTrig) { sl = entry; be = true; }
-        // 4. close: EMA trend-trail (arm first, then exit on a close back across)
-        const e = emaAt(c.time, TRAIL);
-        if (e != null) {
-          if (side === "CE" ? c.close >= e : c.close <= e) armed = true;
-          else if (armed) { exit = c.close; why = "trail"; break; }
+        // 2-4. close: opposite candle → breakeven → EMA trail, from the shared engine.
+        //      The EMA window is the same multi-day slice getSignal received, so the
+        //      trail is seeded before the open exactly as paper's preload makes it.
+        const ci = IDX.get(c.time);
+        const d = orbExits.evaluateCloseExits(pos, c, candles.slice(Math.max(0, ci - 199), ci + 1));
+        if (d.exit) {
+          exit = c.close;
+          why = /EMA/.test(d.reason) ? "trail" : "opp";
+          break;
         }
       }
       if (exit == null) { const rest = dayC.slice(j + 1); exit = (rest[rest.length - 1] || bar).close; why = "EOD"; }

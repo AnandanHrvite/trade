@@ -10,6 +10,21 @@
  * is far too small to establish an edge; these constants are priors, not optima,
  * and the ablation numbers are directional evidence, not statistical proof.
  *
+ * ── 2026-08-04: ATR WAS MEASURING THE OVERNIGHT GAP (fixed) ────────────────
+ * Wilder true range uses the PREVIOUS bar's close, so on the first bar of a session
+ * TR collapsed to the close-to-open gap — a move nobody could trade — and that value
+ * was then used as the yardstick for a 5-minute candle body, the breakout buffer and
+ * the opening-range width. Provable case: 2026-07-29 reported a body threshold of
+ * 34.8pt = 0.6 x ATR5, i.e. ATR(5m) = 58pt, on a session whose ENTIRE 15-minute
+ * opening range was 51.6pt. See _atrAtLast() for the fix and why it is exact.
+ *
+ * CONSEQUENCE: every ATR-scaled number below now reads LOWER (and no longer spikes
+ * after a big gap), so the engine takes MORE trades than it did before this date.
+ * That is the gate finally running at its intended strictness, not a loosening —
+ * but it does mean the constants below were chosen against a distorted ruler and
+ * every ablation figure quoted in this header predates the fix. Re-derive them with
+ * scripts/orbValidate.js before treating any of them as measured.
+ *
  * ── THE PIPELINE ────────────────────────────────────────────────────────────
  *   1. Build the opening range 09:15–09:30 and FREEZE it (never recalculated).
  *   2. Day sanity: OR ≤ ORB_OR_ATR_MAX × ATR(15m), and |gap| ≤ ORB_GAP_OR_MULT × OR.
@@ -213,19 +228,64 @@ function computeOpeningRange(candles) {
 }
 
 // ── Volatility yardsticks ───────────────────────────────────────────────────
+
+/**
+ * ATR over `bars`, with the OVERNIGHT GAP EXCLUDED from true range.
+ *
+ * BUG FIXED 2026-08-04. Wilder's true range is
+ *   TR[i] = max(H[i]−L[i], |H[i]−C[i−1]|, |L[i]−C[i−1]|)
+ * so on the first bar of a session C[i−1] is the PREVIOUS DAY's close and TR[i]
+ * collapses to the overnight gap. On an intraday series that is not a 5-minute (or
+ * 15-minute) move at all — nobody could have traded it — yet the result was being
+ * used as the yardstick for a 5-minute candle body, the breakout buffer and the
+ * opening-range width.
+ *
+ * The distortion was large and provable. On 2026-07-29 the engine reported a body
+ * threshold of 34.8pt = 0.6 × ATR5, i.e. ATR(5m) = 58pt, on a session whose ENTIRE
+ * 15-minute opening range was 51.6pt. An average 5-minute true range cannot exceed
+ * the 15-minute range that contains it; the excess was imported from the prior
+ * session's close-to-open jump. Because `yard` is frozen at 09:25 (see getSignal),
+ * a 14-period ATR there spans ~2 bars of today and ~12 of yesterday, so a single
+ * contaminated TR carried roughly 1/14th of a full gap into every threshold — and
+ * did so MOST strongly after the largest gaps, i.e. exactly backwards.
+ *
+ * HOW THE FIX WORKS — we do not hand-roll ATR (repo convention: use
+ * `technicalindicators`). Instead we neutralise the offending input. TR[i] equals
+ * H[i]−L[i] whenever C[i−1] lies inside [L[i], H[i]], so for every bar that opens a
+ * new IST day we clamp the PREVIOUS bar's close into that bar's range. C[i−1] feeds
+ * only TR[i] (bar i−1's own true range uses C[i−2]), so nothing else shifts. The
+ * package still computes the ATR; it just no longer sees a gap that never traded.
+ *
+ * Bars without a usable `time` are treated as contiguous — the clamp is skipped
+ * rather than guessed, so a caller that supplies a bare {high,low,close} series
+ * gets exactly the old behaviour instead of a silently wrong one.
+ */
 function _atrAtLast(bars, period) {
   if (!bars || bars.length < period + 1) return null;
-  const a = ATR.calculate({ period, high: bars.map(c => c.high), low: bars.map(c => c.low), close: bars.map(c => c.close) });
+  const high  = bars.map(c => c.high);
+  const low   = bars.map(c => c.low);
+  const close = bars.map(c => c.close);
+  for (let i = 1; i < bars.length; i++) {
+    const t = bars[i].time, p = bars[i - 1].time;
+    if (typeof t !== "number" || typeof p !== "number") continue;
+    if (_istDay(t) === _istDay(p)) continue;
+    // First bar of a new session: clamp the prior close into this bar's range so
+    // TR[i] resolves to H[i]−L[i] instead of the overnight gap.
+    close[i - 1] = Math.min(Math.max(close[i - 1], low[i]), high[i]);
+  }
+  const a = ATR.calculate({ period, high, low, close });
   return a && a.length ? a[a.length - 1] : null;
 }
 
 // Aggregate 5-min bars into :00/:15/:30/:45-aligned 15-min buckets, time-ordered.
+// `time` is the bucket's first 5-min bar, carried so _atrAtLast can see the IST
+// day boundary — without it the 15-min ATR silently keeps the overnight gap.
 function _to15m(candles) {
   const map = new Map(), order = [];
   for (const c of candles) {
     const key = _istDay(c.time) * 1000 + Math.floor(_istMins(c.time) / 15);
     const b = map.get(key);
-    if (!b) { map.set(key, { high: c.high, low: c.low, close: c.close }); order.push(key); }
+    if (!b) { map.set(key, { time: c.time, high: c.high, low: c.low, close: c.close }); order.push(key); }
     else { if (c.high > b.high) b.high = c.high; if (c.low < b.low) b.low = c.low; b.close = c.close; }
   }
   return order.map(k => map.get(k));
@@ -394,11 +454,22 @@ function getSignal(candles, opts) {
   // The opening range is frozen, so the volatility context that judges it is frozen
   // too: one stable ATR for the whole day means the committed breakout candle can
   // never be re-judged by later data, and the buffer/body thresholds never drift.
-  let orEndIdx = -1;
+  let orEndIdx = -1, lastPriorDayIdx = -1;
   for (let i = 0; i <= lastIdx; i++) {
-    if (_istDay(candles[i].time) === day && _istMins(candles[i].time) < cfg.orEnd) orEndIdx = i;
+    const d = _istDay(candles[i].time);
+    if (d === day && _istMins(candles[i].time) < cfg.orEnd) orEndIdx = i;
+    else if (d < day) lastPriorDayIdx = i;
   }
-  const yard  = orEndIdx >= 0 ? candles.slice(0, orEndIdx + 1) : candles;
+  // When today has no pre-09:30 bar (a start or restart after the open) the old
+  // code fell through to the WHOLE array — which includes today's post-OR bars, so
+  // the breakout candle helped set the very threshold it was about to be judged
+  // against, and the same session scored differently depending on when the process
+  // happened to boot. Fall back to prior days only: deterministic, never
+  // self-referential. With no prior day either the yardstick is simply absent and
+  // the ATR-dependent gates fail open exactly as they already do when unseeded.
+  const yard = orEndIdx >= 0
+    ? candles.slice(0, orEndIdx + 1)
+    : (lastPriorDayIdx >= 0 ? candles.slice(0, lastPriorDayIdx + 1) : []);
   const atr5  = _atrAtLast(yard, ATR_PERIOD);
   const atr15 = _atrAtLast(_to15m(yard), ATR_PERIOD);
   sig.atr5  = atr5  != null ? _r2(atr5)  : null;
@@ -469,8 +540,12 @@ function getSignal(candles, opts) {
   if (!tr.check("VWAP side", _vwapSideOk(brk, side, vwapAtBrk), `close ${brk.close} vs VWAP ${vwapAtBrk}`)) {
     return done(Object.assign(sig, { reason: `Breakout close ${brk.close} on the wrong side of VWAP ${vwapAtBrk} — no trade today` }));
   }
+  // vwapAligned records a gate that genuinely ran and passed, just above.
+  // wickPass used to be hard-coded true here — but the wick filter was DELETED in the
+  // 2026-07-26 rebuild (see the ablation note in the header), so every trade record
+  // and every AI export has been carrying `wickPass: true` for a filter that does not
+  // exist. Left null: no filter ran, so there is no verdict to report.
   sig.vwapAligned = true;
-  sig.wickPass = true;
 
   // ── 8. Entry construction. The strategy OWNS the stop — routes execute it. ──
   const _fire = (why, tag) => {

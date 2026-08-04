@@ -381,31 +381,90 @@ const ENTRIES  = ALL_SIGS.filter(x => x.sig.signal !== "NONE");
   // intrabar group FIRST — otherwise a close-based rule books the candle's close on a
   // bar where paper was already stopped out minutes earlier.
   check("offline engines check intrabar exits BEFORE close-based exits (paper's order)", () => {
+    // The close-based group now lives behind ONE call (orbExits.evaluateCloseExits),
+    // so the ordering invariant is: the intrabar hard-SL check must appear before it.
     const targets = [
-      ["../src/routes/orbBacktest.js", /Hard SL hit/,   /Strong opposite candle/, /Closed (below|above) EMA/],
-      ["../scripts/orbValidate.js",    /why = be \? "BE" : "SL"/, /why = "opp"/,  /why = "trail"/],
+      ["../src/routes/orbBacktest.js", /Hard SL hit/],
+      ["../scripts/orbValidate.js",    /isHardSlHit/],
     ];
-    for (const [rel, slRe, oppRe, emaRe] of targets) {
+    for (const [rel, slRe] of targets) {
+      // Strip comments first — this is an assertion about the order of EXECUTION,
+      // and prose that merely mentions a rule must not be able to fail (or pass) it.
+      const src = fs.readFileSync(path.join(__dirname, rel), "utf-8")
+        .replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
+      const sl = src.search(slRe), close = src.search(/evaluateCloseExits/);
+      assert.ok(sl >= 0, `${rel}: no intrabar hard-SL check found`);
+      assert.ok(close >= 0, `${rel}: does not delegate to orbExits.evaluateCloseExits — it has grown its own copy of the close-based rules again`);
+      assert.ok(sl < close, `${rel}: close-based exits are evaluated before the hard SL — they can book a close on a bar paper had already stopped out`);
+    }
+  });
+
+  // ── Anti-duplication: ONE owner for the exit rules ────────────────────────
+  // ORB's exits used to be hand-maintained in four places, which is how this repo
+  // once shipped a backtest that evaluated the rules in the wrong order and silently
+  // reported trades the live engine could not have taken. Nothing but orbExits.js may
+  // spell an exit rule out again.
+  check("no ORB engine keeps a private copy of an exit rule", () => {
+    const OWNED = [
+      [/ORB_BREAKEVEN_OR_MULT/,     "the adaptive-breakeven trigger"],
+      [/ORB_OPP_CANDLE_BODY_MULT/,  "the opposite-candle threshold"],
+      [/ORB_TRAIL_EMA/,             "the EMA trend-trail period"],
+      [/ORB_PREMIUM_STOP_PCT/,      "the premium disaster stop"],
+    ];
+    const CONSUMERS = ["../src/routes/orbPaper.js", "../src/routes/orbLive.js", "../scripts/orbValidate.js"];
+    for (const rel of CONSUMERS) {
       const src = fs.readFileSync(path.join(__dirname, rel), "utf-8");
-      const sl = src.search(slRe), opp = src.search(oppRe), ema = src.search(emaRe);
-      assert.ok(sl >= 0 && opp >= 0 && ema >= 0, `${rel}: could not locate all three exits (sl=${sl} opp=${opp} ema=${ema})`);
-      assert.ok(sl < opp, `${rel}: the opposite-candle exit is evaluated before the hard SL — it can book a close on a bar paper had already stopped out`);
-      assert.ok(sl < ema, `${rel}: the EMA trail is evaluated before the hard SL — same divergence from paper`);
+      // Strip comments and HTML/template display strings — a route may still NAME a
+      // key when it renders it; what it may not do is READ it to make a decision.
+      const code = src.replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
+      for (const [re, what] of OWNED) {
+        const reads = new RegExp(`process\\.env\\.${re.source.replace(/[/\\]/g, "")}`);
+        assert.ok(!reads.test(code),
+          `${rel} reads ${what} directly — that rule belongs to src/strategies/orbExits.js. Four copies is how paper, live, backtest and orbValidate silently drifted apart.`);
+      }
+      assert.ok(/require\(.*orbExits.*\)/.test(src),
+        `${rel} does not require the shared exit engine`);
     }
   });
 
   // The validation script produces the number quoted in the strategy header, so its
   // exit model is not allowed to be gentler than the paper route it stands in for.
-  check("the validation script models paper's exits, not a friendlier subset", () => {
-    const src = fs.readFileSync(path.join(__dirname, "../scripts/orbValidate.js"), "utf-8");
-    assert.ok(/ORB_OPP_CANDLE_EXIT/.test(src),
-      "orbValidate omits the opposite-candle exit that paper runs by default — every trade it saves is a fictional one");
-    // Breakeven must arm off the CLOSE. Arming off the intrabar high/low turns any
-    // trade that merely TOUCHED the trigger into a scratch, flattering every loser.
-    assert.ok(/favClose\s*=\s*side === "CE" \? c\.close - entry : entry - c\.close/.test(src),
-      "orbValidate does not derive its breakeven trigger from the candle close");
-    assert.ok(/!be && beTrig > 0 && favClose >= beTrig/.test(src),
-      "orbValidate arms breakeven from something other than the close — paper uses the close");
+  // Asserted BEHAVIOURALLY against the shared engine rather than by grepping text.
+  check("the shared exit engine really runs paper's rules, not a friendlier subset", () => {
+    const orbExits = require("../src/strategies/orbExits");
+    const snap = { opp: process.env.ORB_OPP_CANDLE_EXIT, mult: process.env.ORB_OPP_CANDLE_BODY_MULT,
+                   be: process.env.ORB_BREAKEVEN_PTS, beOr: process.env.ORB_BREAKEVEN_OR_MULT };
+    try {
+      process.env.ORB_OPP_CANDLE_EXIT = "true";
+      process.env.ORB_OPP_CANDLE_BODY_MULT = "0.3";
+      process.env.ORB_BREAKEVEN_PTS = "20";
+      process.env.ORB_BREAKEVEN_OR_MULT = "0";
+
+      // 1. the opposite-candle exit fires (orbValidate once omitted it entirely,
+      //    which made every trade it "saved" fictional)
+      const p1 = { side: "CE", entrySpot: 24000, slSpot: 23960, orh: 24010, orl: 23950,
+                   rangePts: 60, breakevenArmed: false, emaArmed: false };
+      const r1 = orbExits.evaluateCloseExits(p1, { open: 24005, close: 23980, high: 24006, low: 23979 }, []);
+      assert.ok(r1.exit && /opposite candle/i.test(r1.reason),
+        "the opposite-candle exit no longer fires at its documented default");
+
+      // 2. breakeven arms off the CLOSE, never the intrabar extreme. Arming off the
+      //    high turns any trade that merely TOUCHED the trigger into a scratch and
+      //    flatters every loser in the published statistics.
+      const p2 = { side: "CE", entrySpot: 24000, slSpot: 23960, orh: 24010, orl: 23950,
+                   rangePts: 60, breakevenArmed: false, emaArmed: false };
+      // high is +40 (past the 20pt trigger) but the CLOSE is only +5 → must NOT arm
+      orbExits.evaluateCloseExits(p2, { open: 24000, close: 24005, high: 24040, low: 23999 }, []);
+      assert.strictEqual(p2.breakevenArmed, false, "breakeven armed off the intrabar high, not the close");
+      assert.strictEqual(p2.slSpot, 23960, "the stop moved even though breakeven never armed");
+      // now the close itself clears the trigger → must arm, and lift the stop to entry
+      const r3 = orbExits.evaluateCloseExits(p2, { open: 24005, close: 24025, high: 24030, low: 24004 }, []);
+      assert.ok(r3.breakevenArmed, "breakeven did not arm on a close past the trigger");
+      assert.strictEqual(p2.slSpot, 24000, "breakeven did not lift the stop to entry");
+    } finally {
+      process.env.ORB_OPP_CANDLE_EXIT = snap.opp; process.env.ORB_OPP_CANDLE_BODY_MULT = snap.mult;
+      process.env.ORB_BREAKEVEN_PTS = snap.be;    process.env.ORB_BREAKEVEN_OR_MULT = snap.beOr;
+    }
   });
 
   // ── Paper ↔ Live parity ──────────────────────────────────────────────────
@@ -476,10 +535,13 @@ const ENTRIES  = ALL_SIGS.filter(x => x.sig.signal !== "NONE");
   });
 
   check("paper and live both re-persist the position when breakeven lifts the stop", () => {
+    // The rule now lives in orbExits, which reports `breakevenArmed` on the ONE candle
+    // that arms it. Both routes must act on that flag by re-snapshotting, else a crash
+    // recovers the pre-breakeven stop.
     for (const [name, src] of [["paper", PAPER_SRC], ["live", LIVE_SRC]]) {
-      const i = src.indexOf("breakevenArmed && bePts > 0");
-      assert.ok(i >= 0, `${name}: breakeven arm block not found`);
-      const block = src.slice(i, i + 900);
+      const i = src.search(/if \(d\.breakevenArmed\)/);
+      assert.ok(i >= 0, `${name}: no handler for the shared engine's breakevenArmed signal`);
+      const block = src.slice(i, i + 500);
       assert.ok(/saveOrbPosition/.test(block),
         `${name} does not re-snapshot on breakeven — a crash would recover the pre-breakeven stop`);
     }

@@ -6,6 +6,47 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — ORB's ATR was measuring the overnight gap, not intraday volatility
+
+Wilder's true range uses the **previous** bar's close, so on the first bar of a session `TR` collapsed to the close-to-open gap — a move nobody could trade. ORB freezes its volatility yardstick at 09:25, where a 14-period ATR spans ~2 bars of today and ~12 of yesterday, so that one contaminated bar carried roughly 1/14th of a full gap into every ATR-scaled threshold: the decisive-body gate (`0.6×ATR5`), the breakout buffer (`0.3×ATR5`), the ATR stop floor and the day filter (`OR ≤ 2.5×ATR15`).
+
+The distortion was large, and worst exactly where it should have been smallest — after the biggest gaps. Provable case: on **2026-07-29** the engine reported a body threshold of `34.8pt = 0.6×ATR5`, i.e. **ATR(5m) = 58pt**, on a session whose entire 15-minute opening range was **51.6pt**. An average 5-minute true range cannot exceed the 15-minute range containing it. Across the 14 logged sessions from 10-Jul the body gate blocked **7** of them at thresholds implying ATR5 of 25–58pt.
+
+`_atrAtLast()` ([orb_breakout.js](src/strategies/orb_breakout.js)) now excludes the cross-session true range. It does **not** hand-roll ATR (repo convention is `technicalindicators`): since `TR[i] = H[i]−L[i]` whenever `C[i−1]` lies inside `[L[i], H[i]]`, the previous close is clamped into the range of any bar that opens a new IST day. `C[i−1]` feeds only `TR[i]`, so nothing else shifts. `_to15m()` now carries a `time` so the 15-minute ATR can see the day boundary too — without it that series silently kept the gap. Verified on a synthetic series with a true 10pt 5-min range and one 120pt gap: **17.08 → 10.00**.
+
+**Expect more ORB trades.** Every ATR-scaled threshold now reads lower and no longer spikes after a gap. That is the gate running at its intended strictness, not a loosening — but it does mean ORB's constants were chosen against a distorted ruler, so every ablation figure in the engine header predates the fix and needs re-deriving with `scripts/orbValidate.js`.
+
+### Fixed — ORB backtest ran a dead EMA trail, and could trade a day paper never would
+
+Two parity defects in [orbBacktest.js](src/routes/orbBacktest.js), both of which made it report trades the live engine could not have taken:
+
+- **The EMA trend-trail was effectively disabled during the whole entry window.** The backtest computed its EMA over `dayCandles` — today's bars only — so a 20-period EMA stayed `null` until ~11:05 IST. Paper computes the same trail over `state.candles`, a ~7-day preload, so its EMA20 is live from the first candle. Same rule, different data, different exits. It now uses the multi-day slice `getSignal` already receives.
+- **Day 1 of any range had no prior-day history**, leaving ATR unseeded and the ATR-dependent gates failing *open*. Paper always carries its preload and never runs in that state, so the first day is now skipped rather than reported.
+
+### Fixed — ORB recorded `wickPass: true` for a filter that does not exist
+
+The wick filter was deleted in the 2026-07-26 rebuild, but `getSignal` still hard-coded `sig.wickPass = true`, so every trade record and every AI export has carried a passing verdict from a gate that never ran. Left `null` now — no filter, no verdict. (`vwapAligned` is unchanged: that gate is real and genuinely passed.)
+
+### Fixed — ORB's volatility yardstick was non-deterministic on a late start
+
+When today had no pre-09:30 bar (a start or restart after the open), `getSignal` fell back to the **whole** candle array — including today's post-OR bars, so the breakout candle helped set the very threshold it was about to be judged against, and the same session scored differently depending on when the process booted. It now falls back to prior days only.
+
+### Changed — ORB exit rules have ONE owner (`src/strategies/orbExits.js`)
+
+ORB's entry has had a single owner since the 2026-07-26 rebuild; its **exits** were hand-maintained in four places — `orbPaper` (canonical), `orbLive`, `orbBacktest` and `scripts/orbValidate.js`. That is how this repo once shipped a backtest that evaluated the close-based rules *before* the intrabar ones and "silently reported a different trade from the one the live engine would have taken".
+
+All four now call [orbExits.js](src/strategies/orbExits.js) — opposite-candle, breakeven, EMA trail, rupee cap, premium stop, hard SL and MFE/MAE tracking. Routes keep only *execution* (simulate a fill / place a broker order / back-solve a bar fill). Replay was never affected: it re-runs paper's own `onTick()`.
+
+**No behaviour change** — this is a faithful extraction of paper's rules, which stay canonical. Verified by fuzzing the extracted module against the shipped pre-refactor logic over **120,000 randomised cases** (side, prices, candle shapes, and randomised `ORB_MAX_TRADE_LOSS` / `ORB_PREMIUM_STOP_PCT` / `ORB_OPP_CANDLE_*` / `ORB_BREAKEVEN_*` / `ORB_TRAIL_EMA`): **0 mismatches** in exit reason, breakeven arming, stop level, EMA arming and `lastEma`.
+
+### Added — ORB now warns when the option premium goes stale
+
+ORB tracked `optionLtpUpdatedAt` and never read it, so a dead option poll fed the rupee cap, the premium stop and the exit P&L an arbitrarily old price with nothing in the log. It now logs once per trade, matching every other engine. **Warn only — the exit rules are unchanged** (see `emaRsiStPaper`); gating exits on staleness would be a behaviour change, not a bug fix.
+
+### Changed — `ORB_MAX_DAILY_LOSS` is now documented as inert at the default
+
+At `Max Trades/Day = 1` the trade budget is spent before the daily-loss gate can be tested, so the setting cannot change any outcome; at the ₹3,000 default one trade's ₹1,500 cap can never reach it either. The Settings description now says so and points at *Max Loss per Trade* for real per-trade risk. No behaviour change.
+
 ### Fixed — saving the common Option Expiry now actually reaches every strategy
 
 A per-strategy expiry key always beats the common one inside `validateAndGetOptionSymbol` (`modeOverride || commonOverride`), so changing the expiry on the **Dashboard** strip or in **Settings** left any strategy carrying its own override trading the *old* contract — while both screens reported a successful save. The Dashboard's `⚠ EMA_RSI_ST ignores this →` note was the only hint, and it appeared even for `BB_RSI_`/`PA_` keys that nothing reads.

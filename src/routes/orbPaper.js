@@ -22,9 +22,9 @@ const express = require("express");
 const router  = express.Router();
 const fs      = require("fs");
 const path    = require("path");
-const { EMA } = require("technicalindicators");
 
 const orbStrategy        = require("../strategies/orb_breakout");
+const orbExits           = require("../strategies/orbExits");
 const instrumentConfig   = require("../config/instrument");
 const sharedSocketState  = require("../utils/sharedSocketState");
 const socketManager      = require("../utils/socketManager");
@@ -110,6 +110,7 @@ function _freshState() {
     log:            [],
     _sessionId:     null,
     _expiryDayBlocked: false,
+    _ltpStaleLogged: false,   // one stale-premium warning per trade, not per process
   };
 }
 
@@ -350,6 +351,7 @@ async function _simulateBuyInner(side, sigSnapshot, spot) {
   try { require("../utils/positionPersist").saveOrbPosition(pos, { sessionPnl: state.sessionPnl }); } catch (_) {}
   state.optionLtp = optionEntryLtp;
   state.optionLtpUpdatedAt = Date.now();
+  state._ltpStaleLogged = false;
   state.tradesTaken++;
   startOptionPolling();
 
@@ -472,20 +474,12 @@ function simulateSell(reason) {
 }
 
 // ── In-position management ──────────────────────────────────────────────────
+// The RULES live in src/strategies/orbExits.js — one owner shared by paper, live,
+// backtest and scripts/orbValidate.js. Paper remains canonical (its behaviour is
+// what was extracted); these two functions are now just the paper EXECUTION of a
+// shared decision: simulate the fill, log, persist.
 
-// EMA of candle closes — null until `period` closes exist. Seeded from the
-// multi-day preload (see preloadHistory) so the trend-trail is live even for a
-// 09:35 entry (a 20-EMA on 5-min needs ~100 min of bars that today alone can't
-// supply). Uses the `technicalindicators` package (repo convention).
-function _computeEma(candles, period) {
-  if (!candles || candles.length < period) return null;
-  const closes = candles.map(c => c && c.close).filter(v => typeof v === "number");
-  if (closes.length < period) return null;
-  const arr = EMA.calculate({ period, values: closes });
-  return arr && arr.length ? arr[arr.length - 1] : null;
-}
-
-// Per-candle-close position management (replaces the old 2-candle swing trail):
+// Per-candle-close position management:
 //   1. Strong opposite reversal candle → exit now.
 //   2. Breakeven — once favourable by ORB_BREAKEVEN_PTS, lift the hard SL to entry.
 //   3. EMA trend-trail — exit only when a candle CLOSES back across the EMA, so a
@@ -493,106 +487,41 @@ function _computeEma(candles, period) {
 // The tick-level hard SL + per-trade loss cap live in _checkExits.
 function _managePositionOnClose(bar) {
   const pos = state.position;
-  if (!pos || !bar || typeof bar.close !== "number") return;
-  const close = bar.close;
+  if (!pos) return;
 
-  // 1. Strong opposite reversal candle (big body closing back inside the box)
-  const oppOn    = (process.env.ORB_OPP_CANDLE_EXIT || "true").toLowerCase() === "true";
-  const oppMult  = parseFloat(process.env.ORB_OPP_CANDLE_BODY_MULT || "0.3");
-  const oppThresh = oppMult * (pos.rangePts || 0);
-  const bodyPts  = Math.abs(bar.close - bar.open);
-  if (oppOn && oppThresh > 0 && bodyPts >= oppThresh) {
-    if (pos.side === "CE" && bar.close < bar.open && bar.close < pos.orh) {
-      return simulateSell(`Strong opposite candle (red body ${bodyPts.toFixed(1)}pt ≥ ${oppThresh.toFixed(1)}pt, closed below ORH)`);
-    }
-    if (pos.side === "PE" && bar.close > bar.open && bar.close > pos.orl) {
-      return simulateSell(`Strong opposite candle (green body ${bodyPts.toFixed(1)}pt ≥ ${oppThresh.toFixed(1)}pt, closed above ORL)`);
-    }
-  }
+  const d = orbExits.evaluateCloseExits(pos, bar, state.candles);
 
-  // 2. Breakeven — lift the hard SL to entry once far enough in profit (never loosens).
-  //    Adaptive: max(fixed pts, ORB_BREAKEVEN_OR_MULT × OR width) so a wide-range
-  //    day gets more room before the stop tightens to entry.
-  const beMult = parseFloat(process.env.ORB_BREAKEVEN_OR_MULT || "0.5");
-  const beFixed = parseFloat(process.env.ORB_BREAKEVEN_PTS || "20");
-  const bePts  = (beMult > 0 && pos.rangePts) ? Math.max(beFixed, Math.round(beMult * pos.rangePts)) : beFixed;
-  const favPts = (close - pos.entrySpot) * (pos.side === "CE" ? 1 : -1);
-  if (!pos.breakevenArmed && bePts > 0 && favPts >= bePts) {
-    if (pos.side === "CE" && pos.entrySpot > pos.slSpot) pos.slSpot = Math.round(pos.entrySpot * 100) / 100;
-    if (pos.side === "PE" && pos.entrySpot < pos.slSpot) pos.slSpot = Math.round(pos.entrySpot * 100) / 100;
+  if (d.breakevenArmed) {
     // Re-snapshot so crash recovery sees the LIFTED stop, not the entry stop.
     // Persistence only — no decision, fill or exit changes here; it just stops a
-    // restart from resurrecting a stop the engine had already tightened. Live
-    // already did this, so without it the two modes recovered different stops.
+    // restart from resurrecting a stop the engine had already tightened.
     try { require("../utils/positionPersist").saveOrbPosition(pos, { sessionPnl: state.sessionPnl }); } catch (_) {}
-    pos.breakevenArmed = true;
-    log(`🔒 [ORB-PAPER] Breakeven armed — SL → entry ${pos.slSpot} (favourable ${favPts.toFixed(1)}pt ≥ ${bePts}pt)`);
+    log(`🔒 [ORB-PAPER] Breakeven armed — SL → entry ${pos.slSpot}`);
   }
-
-  // 3. EMA trend-trail — exit only on a candle CLOSE back across the EMA, AND
-  //    only once price has first closed on the correct side of it (emaArmed).
-  //    Without the arm, a fresh entry taken below a stale/gap-day EMA (e.g. a CE
-  //    breakout on a gap-down morning, EMA still high from prior days) would be
-  //    stopped out on its very first candle. Until armed, the trade is protected
-  //    by breakeven + opposite-candle + the per-trade loss cap instead.
-  const emaPeriod = Math.max(2, parseInt(process.env.ORB_TRAIL_EMA || "20", 10));
-  const ema = _computeEma(state.candles, emaPeriod);
-  if (ema != null) {
-    pos.lastEma = Math.round(ema * 100) / 100;
-    if (pos.side === "CE") {
-      if (close >= ema) pos.emaArmed = true;
-      else if (pos.emaArmed) return simulateSell(`Closed below EMA${emaPeriod} (${close} < ${pos.lastEma})`);
-    } else {
-      if (close <= ema) pos.emaArmed = true;
-      else if (pos.emaArmed) return simulateSell(`Closed above EMA${emaPeriod} (${close} > ${pos.lastEma})`);
-    }
-  }
+  if (d.exit) simulateSell(d.reason);
 }
 
-// Tick-level exits: the hard SL (breakout candle low/high, lifted to breakeven)
-// and the per-trade rupee loss cap. Also tracks peak premium + MFE/MAE.
+// Tick-level exits: the per-trade rupee cap, the premium disaster stop and the
+// hard SL (lifted to breakeven). Also tracks peak premium + MFE/MAE.
 function _checkExits(spotPrice) {
   if (!state.position) return;
   const pos = state.position;
   const optLtp = state.optionLtp || pos.optionEntryLtp;
 
-  // Track peak option premium (observer-only — feeds the trade record/notify).
-  if (optLtp > pos.peakPremium) pos.peakPremium = optLtp;
-
-  // Track max favorable / adverse excursion — spot pts in trade direction + rupee PnL.
-  const _favPts = (spotPrice - pos.entrySpot) * (pos.side === "CE" ? 1 : -1);
-  const _curPnl = (optLtp - pos.optionEntryLtp) * pos.qty;
-  if (_favPts > (pos.mfeSpotPts || 0)) { pos.mfeSpotPts = parseFloat(_favPts.toFixed(2)); pos.secsToMFE = parseFloat(((Date.now() - pos.entryTimeMs) / 1000).toFixed(1)); }
-  if (_curPnl > (pos.mfePnl     || 0)) pos.mfePnl     = parseFloat(_curPnl.toFixed(2));
-  if (_favPts < (pos.maeSpotPts || 0)) { pos.maeSpotPts = parseFloat(_favPts.toFixed(2)); pos.secsToMAE = parseFloat(((Date.now() - pos.entryTimeMs) / 1000).toFixed(1)); }
-  if (_curPnl < (pos.maePnl     || 0)) pos.maePnl     = parseFloat(_curPnl.toFixed(2));
-
-  // Per-trade loss cap (unrealised rupees) — the daily-loss gate only fires when
-  // flat, so THIS is what actually caps a single open trade.
-  const maxTradeLoss = parseFloat(process.env.ORB_MAX_TRADE_LOSS || "1500");
-  if (maxTradeLoss > 0 && _curPnl <= -maxTradeLoss) {
-    simulateSell(`Max trade loss (₹${Math.round(_curPnl)} ≤ -₹${maxTradeLoss})`);
-    return;
+  // Stale-premium warning. WARN ONLY — every other engine in this repo does the
+  // same and leaves the exit rules untouched (see emaRsiStPaper). ORB was the one
+  // strategy that tracked optionLtpUpdatedAt and never read it, so a dead option
+  // poll silently fed the rupee cap and the premium stop an arbitrarily old price
+  // with nothing in the log to show it.
+  if (orbExits.isLtpStale(state.optionLtpUpdatedAt, Date.now()) && !state._ltpStaleLogged) {
+    log(`⚠️ [ORB-PAPER] Option LTP STALE — no update for ${Math.round((Date.now() - state.optionLtpUpdatedAt) / 1000)}s. Loss cap + premium stop + P&L are using a stale premium.`);
+    state._ltpStaleLogged = true;
   }
 
-  // Premium disaster backstop — exit if the option premium collapses by
-  // ORB_PREMIUM_STOP_PCT% from entry (catches IV-crush / vega losses that the
-  // spot-based stop can miss). Whichever of this / the ₹ cap / the spot SL fires first.
-  const premStopPct = parseFloat(process.env.ORB_PREMIUM_STOP_PCT || "35");
-  if (premStopPct > 0 && optLtp <= pos.optionEntryLtp * (1 - premStopPct / 100)) {
-    simulateSell(`Premium disaster stop (₹${optLtp} ≤ −${premStopPct}% of entry ₹${pos.optionEntryLtp})`);
-    return;
-  }
+  orbExits.trackExcursion(pos, spotPrice, optLtp, Date.now());
 
-  // Hard SL (breakout candle low/high, lifted to breakeven) — spot-based, per tick.
-  if (pos.side === "CE" && spotPrice <= pos.slSpot) {
-    simulateSell(`Hard SL hit (${spotPrice} ≤ ${pos.slSpot})`);
-    return;
-  }
-  if (pos.side === "PE" && spotPrice >= pos.slSpot) {
-    simulateSell(`Hard SL hit (${spotPrice} ≥ ${pos.slSpot})`);
-    return;
-  }
+  const d = orbExits.evaluateTickExits(pos, { spotPrice, optionLtp: optLtp });
+  if (d.exit) simulateSell(d.reason);
 }
 
 // ── Candle close handler ────────────────────────────────────────────────────

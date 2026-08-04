@@ -1,0 +1,253 @@
+/**
+ * ORB — SHARED EXIT ENGINE
+ * ═════════════════════════════════════════════════════════════════════════════
+ * The single owner of ORB's in-position rules. Paper, Live, Backtest and
+ * scripts/orbValidate.js all call THIS module; none of them may keep a private
+ * copy of an exit rule.
+ *
+ * WHY THIS EXISTS (2026-08-04)
+ * ─────────────────────────────
+ * ORB's entry has had one owner since the 2026-07-26 rebuild (orb_breakout.js), but
+ * its EXITS were hand-maintained in four places:
+ *
+ *     src/routes/orbPaper.js      _managePositionOnClose + _checkExits   (canonical)
+ *     src/routes/orbLive.js       a line-by-line re-implementation
+ *     src/routes/orbBacktest.js   ~70 inline lines inside the day loop
+ *     scripts/orbValidate.js      a fourth copy driving the published statistics
+ *
+ * That is not a hypothetical risk. orbBacktest.js still carries the comment
+ * describing when it evaluated the close-based rules BEFORE the intrabar ones and
+ * "silently reported a different trade from the one the live engine would have
+ * taken". Four copies means that class of divergence recurs on every edit, and it
+ * recurs SILENTLY — nothing in the repo compares the copies.
+ *
+ * Replay was never part of the problem: it re-runs paper's own onTick(), so it
+ * inherits whatever paper does. Making the other three inherit the same functions
+ * is what finally makes "Replay == Backtest == Paper == Live" structural rather
+ * than a review item.
+ *
+ * ── DESIGN NOTES ────────────────────────────────────────────────────────────
+ * • NO BEHAVIOUR CHANGE. This module is a faithful extraction of paper's rules,
+ *   which are canonical (see feedback_paper_logic_untouchable). Thresholds,
+ *   ordering, rounding and env keys are exactly as they were. If you want to
+ *   change a rule, that is a strategy hypothesis and belongs behind validation —
+ *   not in a refactor.
+ *
+ * • ORDERING IS PART OF THE CONTRACT. Paper's real timeline is:
+ *       every tick        → evaluateTickExits()   (rupee cap, premium stop, hard SL)
+ *       every candle close → evaluateCloseExits()  (opposite candle, breakeven, EMA)
+ *   so within one candle the intrabar exits always get first refusal, and a
+ *   close-based rule can only fire on a bar that never touched the stop. Harnesses
+ *   that replay bars rather than ticks MUST call them in that order.
+ *
+ * • DECISIONS ARE RETURNED, NOT EXECUTED. Paper simulates a fill, Live places a
+ *   broker order, Backtest back-solves a fill price from the bar. Those are
+ *   execution concerns; this module only decides. Mutation of the position is
+ *   limited to the bookkeeping each rule owns (breakeven stop, EMA arming,
+ *   excursion tracking) and is always explicit in the function name.
+ *
+ * • PREDICATES ARE EXPORTED SEPARATELY so a bar-based harness can ask "would this
+ *   have tripped inside the bar?" and then compute its own realistic fill, instead
+ *   of duplicating the threshold arithmetic.
+ */
+
+const { EMA } = require("technicalindicators");
+
+const _r2 = (x) => Math.round(x * 100) / 100;
+const _envNum = (key, dflt) => parseFloat(process.env[key] || dflt);
+const _envOn = (key, dflt) => (process.env[key] || dflt).toLowerCase() === "true";
+
+// ── Tunables, read fresh on every call ──────────────────────────────────────
+// Settings writes to process.env at runtime, so caching these would pin a value
+// until the next restart and make the Settings page lie.
+function maxTradeLossINR()   { return _envNum("ORB_MAX_TRADE_LOSS", "1500"); }
+function premiumStopPct()    { return _envNum("ORB_PREMIUM_STOP_PCT", "35"); }
+function trailEmaPeriod()    { return Math.max(2, parseInt(process.env.ORB_TRAIL_EMA || "20", 10)); }
+function oppositeExitOn()    { return _envOn("ORB_OPP_CANDLE_EXIT", "true"); }
+
+/**
+ * Adaptive breakeven trigger: max(fixed pts, ORB_BREAKEVEN_OR_MULT × OR width), so
+ * a wide-range day gets more room before the stop tightens to entry.
+ */
+function breakevenTriggerPts(rangePts) {
+  const mult  = _envNum("ORB_BREAKEVEN_OR_MULT", "0.5");
+  const fixed = _envNum("ORB_BREAKEVEN_PTS", "20");
+  return (mult > 0 && rangePts) ? Math.max(fixed, Math.round(mult * rangePts)) : fixed;
+}
+
+/** Opposite-candle body threshold, in points: ORB_OPP_CANDLE_BODY_MULT × OR width. */
+function oppositeCandleThreshPts(rangePts) {
+  return _envNum("ORB_OPP_CANDLE_BODY_MULT", "0.3") * (rangePts || 0);
+}
+
+/**
+ * EMA of candle closes — null until `period` closes exist. Seeded from the routes'
+ * multi-day preload so the trend-trail is live even for a 09:35 entry (a 20-EMA on
+ * 5-min needs ~100 minutes of bars that today alone cannot supply).
+ */
+function computeEma(candles, period) {
+  if (!candles || candles.length < period) return null;
+  const closes = candles.map(c => c && c.close).filter(v => typeof v === "number");
+  if (closes.length < period) return null;
+  const arr = EMA.calculate({ period, values: closes });
+  return arr && arr.length ? arr[arr.length - 1] : null;
+}
+
+// ── Threshold predicates (for bar-based harnesses that back-solve a fill) ────
+function isMaxTradeLossHit(unrealisedINR) {
+  const cap = maxTradeLossINR();
+  return cap > 0 && unrealisedINR <= -cap;
+}
+function isPremiumStopHit(optionLtp, entryLtp) {
+  const pct = premiumStopPct();
+  return pct > 0 && optionLtp <= entryLtp * (1 - pct / 100);
+}
+function isHardSlHit(side, spotPrice, slSpot) {
+  return side === "CE" ? spotPrice <= slSpot : spotPrice >= slSpot;
+}
+
+/**
+ * Peak-premium + MFE/MAE bookkeeping. Observer-only: feeds the trade record and the
+ * Telegram summary, never a decision. Separated from the exit evaluation so a
+ * harness can track excursion without also being forced through the tick rules.
+ *
+ * @param {object} pos        the open position (mutated)
+ * @param {number} spotPrice
+ * @param {number} optionLtp
+ * @param {number} nowMs      clock for secsToMFE/secsToMAE (injected so replay,
+ *                            which compresses time, stays honest)
+ */
+function trackExcursion(pos, spotPrice, optionLtp, nowMs) {
+  if (!pos) return;
+  if (optionLtp > pos.peakPremium) pos.peakPremium = optionLtp;
+
+  const favPts = (spotPrice - pos.entrySpot) * (pos.side === "CE" ? 1 : -1);
+  const curPnl = (optionLtp - pos.optionEntryLtp) * pos.qty;
+  if (favPts > (pos.mfeSpotPts || 0)) {
+    pos.mfeSpotPts = parseFloat(favPts.toFixed(2));
+    pos.secsToMFE  = parseFloat(((nowMs - pos.entryTimeMs) / 1000).toFixed(1));
+  }
+  if (curPnl > (pos.mfePnl || 0)) pos.mfePnl = parseFloat(curPnl.toFixed(2));
+  if (favPts < (pos.maeSpotPts || 0)) {
+    pos.maeSpotPts = parseFloat(favPts.toFixed(2));
+    pos.secsToMAE  = parseFloat(((nowMs - pos.entryTimeMs) / 1000).toFixed(1));
+  }
+  if (curPnl < (pos.maePnl || 0)) pos.maePnl = parseFloat(curPnl.toFixed(2));
+}
+
+/**
+ * Tick-level exits, in paper's order: per-trade rupee cap → premium disaster stop →
+ * spot hard SL (which may already have been lifted to breakeven).
+ *
+ * @returns {{exit:boolean, reason:string|null}}
+ */
+function evaluateTickExits(pos, { spotPrice, optionLtp }) {
+  if (!pos) return { exit: false, reason: null };
+
+  const curPnl = (optionLtp - pos.optionEntryLtp) * pos.qty;
+
+  // The daily-loss gate only fires when flat, so THIS is what caps one open trade.
+  if (isMaxTradeLossHit(curPnl)) {
+    return { exit: true, reason: `Max trade loss (₹${Math.round(curPnl)} ≤ -₹${maxTradeLossINR()})` };
+  }
+  // Catches IV-crush / vega losses the spot-based stop can miss.
+  if (isPremiumStopHit(optionLtp, pos.optionEntryLtp)) {
+    return { exit: true, reason: `Premium disaster stop (₹${optionLtp} ≤ −${premiumStopPct()}% of entry ₹${pos.optionEntryLtp})` };
+  }
+  if (isHardSlHit(pos.side, spotPrice, pos.slSpot)) {
+    return { exit: true, reason: `Hard SL hit (${spotPrice} ${pos.side === "CE" ? "≤" : "≥"} ${pos.slSpot})` };
+  }
+  return { exit: false, reason: null };
+}
+
+/**
+ * Candle-close management, in paper's order:
+ *   1. strong opposite reversal candle → exit now
+ *   2. breakeven — lift the hard SL to entry once far enough in profit (never loosens)
+ *   3. EMA trend-trail — exit only when a candle CLOSES back across the EMA, and only
+ *      after price has first closed on the correct side of it (emaArmed). Without the
+ *      arm, a fresh entry taken below a stale/gap-day EMA would be stopped out on its
+ *      very first candle.
+ *
+ * Mutates `pos.slSpot` / `pos.breakevenArmed` / `pos.emaArmed` / `pos.lastEma`.
+ * `breakevenArmed` in the result is true ONLY on the candle that arms it, so callers
+ * can log it and re-snapshot for crash recovery exactly once.
+ *
+ * @param {Array} candles  close series for the EMA trail (route state or day slice)
+ * @returns {{exit:boolean, reason:string|null, breakevenArmed:boolean}}
+ */
+function evaluateCloseExits(pos, bar, candles) {
+  const none = { exit: false, reason: null, breakevenArmed: false };
+  if (!pos || !bar || typeof bar.close !== "number") return none;
+  const close = bar.close;
+
+  // 1. Strong opposite reversal candle (big body closing back inside the box)
+  const oppThresh = oppositeCandleThreshPts(pos.rangePts);
+  const bodyPts   = Math.abs(bar.close - bar.open);
+  if (oppositeExitOn() && oppThresh > 0 && bodyPts >= oppThresh) {
+    if (pos.side === "CE" && bar.close < bar.open && bar.close < pos.orh) {
+      return { exit: true, reason: `Strong opposite candle (red body ${bodyPts.toFixed(1)}pt ≥ ${oppThresh.toFixed(1)}pt, closed below ORH)`, breakevenArmed: false };
+    }
+    if (pos.side === "PE" && bar.close > bar.open && bar.close > pos.orl) {
+      return { exit: true, reason: `Strong opposite candle (green body ${bodyPts.toFixed(1)}pt ≥ ${oppThresh.toFixed(1)}pt, closed above ORL)`, breakevenArmed: false };
+    }
+  }
+
+  // 2. Breakeven
+  let armedNow = false;
+  const bePts  = breakevenTriggerPts(pos.rangePts);
+  const favPts = (close - pos.entrySpot) * (pos.side === "CE" ? 1 : -1);
+  if (!pos.breakevenArmed && bePts > 0 && favPts >= bePts) {
+    if (pos.side === "CE" && pos.entrySpot > pos.slSpot) pos.slSpot = _r2(pos.entrySpot);
+    if (pos.side === "PE" && pos.entrySpot < pos.slSpot) pos.slSpot = _r2(pos.entrySpot);
+    pos.breakevenArmed = true;
+    armedNow = true;
+  }
+
+  // 3. EMA trend-trail
+  const emaPeriod = trailEmaPeriod();
+  const ema = computeEma(candles, emaPeriod);
+  if (ema != null) {
+    pos.lastEma = _r2(ema);
+    if (pos.side === "CE") {
+      if (close >= ema) pos.emaArmed = true;
+      else if (pos.emaArmed) return { exit: true, reason: `Closed below EMA${emaPeriod} (${close} < ${pos.lastEma})`, breakevenArmed: armedNow };
+    } else {
+      if (close <= ema) pos.emaArmed = true;
+      else if (pos.emaArmed) return { exit: true, reason: `Closed above EMA${emaPeriod} (${close} > ${pos.lastEma})`, breakevenArmed: armedNow };
+    }
+  }
+
+  return { exit: false, reason: null, breakevenArmed: armedNow };
+}
+
+/**
+ * Has the option premium gone stale? Warn-only across this repo — every other
+ * strategy logs it and leaves the exit rules untouched (see emaRsiStPaper: "Warn
+ * only — the exit rules are unchanged"), and ORB was the one engine missing the
+ * warning entirely. Gating exits on staleness would be a behaviour change, so it
+ * deliberately is not one.
+ */
+function isLtpStale(updatedAtMs, nowMs) {
+  if (!updatedAtMs) return false;
+  const staleMs = parseInt(process.env.LTP_STALE_THRESHOLD_SEC || "15", 10) * 1000;
+  return (nowMs - updatedAtMs) > staleMs;
+}
+
+module.exports = {
+  computeEma,
+  trackExcursion,
+  evaluateTickExits,
+  evaluateCloseExits,
+  isLtpStale,
+  // predicates + thresholds, for harnesses that must back-solve a fill price
+  isMaxTradeLossHit,
+  isPremiumStopHit,
+  isHardSlHit,
+  maxTradeLossINR,
+  premiumStopPct,
+  trailEmaPeriod,
+  oppositeExitOn,
+  breakevenTriggerPts,
+  oppositeCandleThreshPts,
+};
