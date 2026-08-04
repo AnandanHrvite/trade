@@ -44,6 +44,10 @@ Not GAPS-specific — this is the shared replay harness, and it is why the fix i
 
 GAPS wrote both per-day files from the start (`skipLogger` / `tradeLogger` mode `gaps`) but did not expose the two endpoints `/realtime` fetches, so its card sat on "— No Day Log —" while the files existed on disk — the same defect the recent ORB pass fixed. Added `/gaps-paper/download/trades/:date` and `/download/skips/:date` (same shape and `YYYY-MM-DD` guard as the other strategies) and flipped `hasDayLog` to true. The new two-segment routes do not shadow the existing `/download/trades.jsonl`, `/download/daily-files` or `/download/skips-all`.
 
+### Fixed — GAPS day-log and per-day viewer links were blocked by the API-secret gate
+
+Follow-on to the entry above: the endpoints existed but were unreachable from the UI. `OPEN_PREFIXES` in [app.js](src/app.js) exempts each strategy's `/{mode}-paper/view/` and `/download/` GET reads from the `API_SECRET` check, because `/realtime` and the History page link to them as plain anchors carrying no `x-api-secret` header and no `?secret=` query. All six existing strategies were listed; GAPS was not, so every GAPS day-log, trade viewer and skip viewer link returned `403 Forbidden` where the identical ORB link reached its route. Added the two GAPS prefixes. Verified by boot: the four GAPS read endpoints now return 404 for a date with no file — the same "route reached, nothing to serve" answer ORB gives — while `POST /gaps-paper/start` and `/reset` still return 403 without the secret, so no write path was opened.
+
 **Validation**: 47 assertions over the engine and backtest exits (indicator alignment, both setups, both rejection paths, forming-bar isolation, configurable bands/source/length, warmup refusal, stop-before-target, EOD, target-disabled, no-gap skip) all pass; every touched file syntax-checks; the app boots and every GAPS page, JSON feed and export endpoint returns 200. **Not yet market-validated** — no paper session has run. Collect clean paper days and a `/replay` comparison before touching the live gates.
 
 

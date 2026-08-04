@@ -465,6 +465,8 @@ const OPEN_PREFIXES = [
   "/ema9vwap-paper/download/",
   "/trend-pb-paper/view/",
   "/trend-pb-paper/download/",
+  "/gaps-paper/view/",
+  "/gaps-paper/download/",
 ];
 app.use((req, res, next) => {
   const secret = process.env.API_SECRET;
