@@ -468,8 +468,12 @@ const ENTRIES  = ALL_SIGS.filter(x => x.sig.signal !== "NONE");
   });
 
   // ── Paper ↔ Live parity ──────────────────────────────────────────────────
-  // Paper is canonical. Live is a hand-written mirror, so every one of these
-  // pinned an actual defect found on 2026-07-26.
+  // Paper is canonical. Every one of these pinned an actual defect found on
+  // 2026-07-26, when live was a hand-written mirror of paper end to end.
+  // Since 2026-08-04 the EXIT rules are shared (src/strategies/orbExits.js) and are
+  // guarded by the anti-duplication check above — but live's ENTRY path, its gate
+  // ORDER, its skip-log surface and its session teardown are still written out by
+  // hand in both files, so these assertions remain load-bearing.
   const PAPER_SRC = fs.readFileSync(path.join(__dirname, "../src/routes/orbPaper.js"), "utf-8");
   const LIVE_SRC  = fs.readFileSync(path.join(__dirname, "../src/routes/orbLive.js"),  "utf-8");
   const onCandleCloseOf = (src) => {

@@ -237,20 +237,26 @@ function isLtpStale(updatedAtMs, nowMs) {
   return (nowMs - updatedAtMs) > staleMs;
 }
 
+/**
+ * DELIBERATELY NARROW EXPORT SURFACE.
+ *
+ * Only the decision functions and the three threshold PREDICATES leave this module.
+ * The raw thresholds (breakevenTriggerPts, oppositeCandleThreshPts, trailEmaPeriod,
+ * maxTradeLossINR, premiumStopPct, oppositeExitOn) stay private on purpose: exporting
+ * a number invites a caller to re-derive the rule around it, which is precisely how
+ * ORB ended up with four copies of its exits in the first place. If a new harness
+ * needs a decision, ask for the decision — do not export the ingredients.
+ *
+ * The predicates exist only because a BAR-based harness (orbBacktest, orbValidate)
+ * must ask "would this have tripped inside the candle?" before it can compute a
+ * realistic fill price, which is an execution concern this module cannot answer.
+ */
 module.exports = {
-  computeEma,
   trackExcursion,
   evaluateTickExits,
   evaluateCloseExits,
   isLtpStale,
-  // predicates + thresholds, for harnesses that must back-solve a fill price
   isMaxTradeLossHit,
   isPremiumStopHit,
   isHardSlHit,
-  maxTradeLossINR,
-  premiumStopPct,
-  trailEmaPeriod,
-  oppositeExitOn,
-  breakevenTriggerPts,
-  oppositeCandleThreshPts,
 };
