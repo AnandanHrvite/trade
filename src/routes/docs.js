@@ -27,6 +27,7 @@ const GUIDE_MODE_BY_FILE = {
   "orb_strategy_guide.html":           "ORB",
   "ema9_vwap_strategy_guide.html":     "EMA9VWAP",
   "trend_pullback_strategy_guide.html":"TREND_PB",
+  "gaps_strategy_guide.html":          "GAPS",
 };
 
 /**
@@ -424,6 +425,12 @@ const GUIDE_STATUS = {
     { type: "live", label: "Live Orders (Fyers, via paper harness)", enableKey: "TREND_PB_LIVE_ENABLED", dryKey: "TREND_PB_LIVE_DRY_RUN" },
     { type: "bool", label: "VIX Regime Filter", key: "TREND_PB_VIX_ENABLED", def: "false" },
     { type: "bool", label: "OI Buildup Gate", key: "TREND_PB_OI_ENABLED", def: "false" },
+  ] }] },
+  "GAPS_Strategy_Guide.html": { title: "GAPS — Live Configuration", groups: [{ rows: [
+    { type: "bool", label: "GAPS Mode (sidebar + Settings section)", key: "GAPS_MODE_ENABLED", def: "true" },
+    { type: "bool", label: "GAPS Paper Trading", key: "GAPS_PAPER_ENABLED", def: "true" },
+    { type: "live", label: "Live Orders (Fyers, via paper harness)", enableKey: "GAPS_LIVE_ENABLED", dryKey: "GAPS_LIVE_DRY_RUN" },
+    { type: "bool", label: "EMA Trailing Stop", key: "GAPS_TRAIL_ENABLED", def: "true" },
   ] }] },
   "Application_Setup_Guide.html": { title: "System — Live Configuration", groups: [
     { heading: "Global gates", rows: [
