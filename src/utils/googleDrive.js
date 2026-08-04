@@ -400,7 +400,7 @@ async function deleteSameName(token, folderId, name, keepId) {
 async function pruneRemote(token, folderId, keep) {
   const q = `'${folderId}' in parents and trashed = false and mimeType != '${FOLDER_MIME}'`;
   const res = await driveJson(
-    `${FILES_URL}?q=${encodeURIComponent(q)}&orderBy=createdTime desc&fields=files(id,name)&pageSize=200`,
+    `${FILES_URL}?q=${encodeURIComponent(q)}&orderBy=${encodeURIComponent("createdTime desc")}&fields=files(id,name)&pageSize=200`,
     { token }
   );
   if (res.status !== 200 || !res.json || !Array.isArray(res.json.files)) return 0;

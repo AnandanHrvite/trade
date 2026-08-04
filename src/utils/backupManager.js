@@ -394,9 +394,16 @@ function start() {
       console.log("[backup] boot snapshot deferred (market hours) — scheduled run will create it");
     } else {
       // No snapshot for today yet — cut one now so there's always a file to download.
-      createSnapshot(date).then((r) => {
-        if (r.ok) console.log(`[backup] boot snapshot ready: backup-${date}.tar.gz (${(r.sizeBytes / 1048576).toFixed(2)} MB)`);
-        else console.warn(`[backup] boot snapshot failed: ${r.error}`);
+      // This branch runs at most once a day (a later restart finds the file and
+      // skips), so pushing it to Drive too can't turn restarts into repeat uploads.
+      // It's what covers a day the app was down at BACKUP_HOUR_IST.
+      createSnapshot(date).then(async (r) => {
+        if (r.ok) {
+          console.log(`[backup] boot snapshot ready: backup-${date}.tar.gz (${(r.sizeBytes / 1048576).toFixed(2)} MB)`);
+          await pushToDrive(r.file, "boot");
+        } else {
+          console.warn(`[backup] boot snapshot failed: ${r.error}`);
+        }
       });
     }
   }

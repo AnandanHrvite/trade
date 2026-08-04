@@ -2675,7 +2675,8 @@ async function gdriveConnect() {
     if (url)  { url.href = d.verificationUrl; url.textContent = String(d.verificationUrl).replace(/^https?:\\/\\//, ''); }
     if (note) note.textContent = 'Waiting for you to approve…';
     if (panel) panel.style.display = 'block';
-    document.getElementById('gdrive-actions').innerHTML = '';
+    var acts = document.getElementById('gdrive-actions');
+    if (acts) acts.innerHTML = '';
     gdrivePollOnce(Date.now() + (d.expiresIn || 900) * 1000, (d.intervalSec || 5) * 1000);
   } catch (e) {
     showToast('Connect failed: ' + e.message, 'error');
