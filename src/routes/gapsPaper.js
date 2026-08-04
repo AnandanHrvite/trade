@@ -1110,9 +1110,25 @@ router.get("/status/daily-chart-data", async (req, res) => {
         daily = state.dailyCandles;
       } catch (_) { daily = []; }
     }
-    const d = gapsStrategy.computeDaily(daily, cfg);
+    // Plot EXACTLY what the decision reads. The raw broker series may or may not
+    // carry today's forming daily bar, and if it does its close is the live price
+    // — not today's OPEN, which is what the entry is judged on. Either way the
+    // chart's last RSI point would differ from the deciding number. So rebuild
+    // the series the engine's way: closed history + a synthetic bar at the open.
+    let chartSource = daily;
+    if (state.daily && state.daily.ok && Array.isArray(state.daily.closedCandles) && state.todayOpen != null) {
+      const t = state.daily.closedCandles[state.daily.closedCandles.length - 1];
+      chartSource = state.daily.closedCandles.concat([{
+        time: t.time + 86400, open: state.todayOpen, high: state.todayOpen,
+        low: state.todayOpen, close: state.todayOpen,
+      }]);
+    } else if (state.daily && state.daily.ok && Array.isArray(state.daily.closedCandles)) {
+      chartSource = state.daily.closedCandles;   // before the open: closed bars only
+    }
+
+    const d = gapsStrategy.computeDaily(chartSource, cfg);
     const KEEP = Math.max(60, parseInt(process.env.GAPS_DAILY_CHART_BARS || "180", 10) || 180);
-    const candles = daily.slice(-KEEP).map(c => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close }));
+    const candles = chartSource.slice(-KEEP).map(c => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close }));
     const cut = candles.length ? candles[0].time : 0;
     return res.json({
       candles,
@@ -1127,6 +1143,10 @@ router.get("/status/daily-chart-data", async (req, res) => {
       prev: state.daily && state.daily.ok ? {
         date: state.daily.prevDate, close: state.daily.prevClose,
         rsi: state.daily.prevRsi, ema: state.daily.prevEma,
+      } : null,
+      // The deciding values, so the client can label the last bar honestly.
+      today: state.todayOpen != null ? {
+        open: state.todayOpen, rsi: state.todayRsi, ema: state.todayEma, synthetic: true,
       } : null,
     });
   } catch (err) {
