@@ -370,17 +370,24 @@ function putStream(sessionUrl, filePath, size) {
         reject(new Error(googleError({ status: res.statusCode, json, text }, `upload HTTP ${res.statusCode}`)));
       });
     });
-    req.setTimeout(UPLOAD_TIMEOUT_MS, () => req.destroy(new Error("upload timed out")));
-    req.on("error", reject);
-
     const rs = fs.createReadStream(filePath);
+    req.setTimeout(UPLOAD_TIMEOUT_MS, () => req.destroy(new Error("upload timed out")));
+    // pipe() does not tear the source down when the destination dies, so close
+    // the file handle explicitly on any request failure.
+    req.on("error", (err) => { rs.destroy(); reject(err); });
     rs.on("error", (err) => { req.destroy(err); reject(err); });
     rs.pipe(req);
   });
 }
 
-/** Delete every other file in the folder sharing this name (previous same-day pushes). */
+/**
+ * Delete every OTHER file in the folder sharing this name (previous same-day
+ * pushes). keepId is mandatory: without it every match looks deletable and we'd
+ * delete the upload we just made, so the caller skips this entirely if Drive
+ * didn't hand back an id.
+ */
 async function deleteSameName(token, folderId, name, keepId) {
+  if (!keepId) return 0;
   const q = `'${folderId}' in parents and name = '${name.replace(/'/g, "\\'")}' and trashed = false`;
   const res = await driveJson(`${FILES_URL}?q=${encodeURIComponent(q)}&fields=files(id)&pageSize=100`, { token });
   if (res.status !== 200 || !res.json || !Array.isArray(res.json.files)) return 0;
@@ -484,14 +491,12 @@ function status() {
     configured: isConfigured(),
     connected: isConnected(),
     account: s.account || null,
-    connectedAt: s.connectedAt || null,
     folderName: folderName(),
     retain: retainCount(),
     uploading: _uploading,
     // Never send the secret back to the browser; the leading project number is
     // enough to confirm which client is saved.
     clientIdHint: s.clientId ? String(s.clientId).slice(0, 12) + "…" : null,
-    hasSecret: !!s.clientSecret,
     lastUpload: s.lastUpload || null,
     lastError: s.lastError || null,
   };
