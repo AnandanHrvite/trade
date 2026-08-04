@@ -14,7 +14,12 @@ const tradeGuards   = require("../utils/tradeGuards");
 
 
 function maxDaysForResolution(resolution) {
-  if (["D", "W", "M"].includes(resolution)) return 365 * 10;
+  // Fyers rejects a day/week/month request wider than 366 days with
+  // {code:-50, message:"Invalid input", data:{range_to:"Date range cannot exceed
+  // 366 days for 1D, 1W and 1M resolutions."}} — so daily must be chunked too.
+  // fetchCandles() walks contiguous chunks and dedupes by timestamp, so this only
+  // changes the number of API calls, never the returned series.
+  if (["D", "W", "M"].includes(resolution)) return 366;
   if (["1", "2", "3"].includes(String(resolution))) return 30;
   return 100;
 }

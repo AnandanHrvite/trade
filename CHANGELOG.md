@@ -6,6 +6,14 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — GAPS backtest failed with "Invalid input" (daily history exceeded the Fyers 366-day cap)
+
+`/gaps-backtest` failed at 40% on any normal range. Fyers rejects a **1D/1W/1M** history request wider than 366 days (`{code:-50, message:"Invalid input", data:{range_to:"Date range cannot exceed 366 days…"}}`), and GAPS asked for one 580-day daily call — its own 400-day indicator warm-up plus the 180-day default range.
+
+- `maxDaysForResolution()` in [backtestEngine.js](src/services/backtestEngine.js) returned `365 * 10` for daily, so **only intraday requests were ever chunked**. It now returns 366; `fetchCandles()` already walks contiguous chunks and dedupes by timestamp, so the returned series is identical — just split across calls. Long-range daily fetches now work for every strategy, not only GAPS.
+- The same bug was silently breaking **GAPS Paper**: its 400-day daily fetch is inside a `try/catch`, so the rejection surfaced only as "Daily context unavailable" and the strategy could never arm. It goes through the same `fetchCandles()`, so the chunking fix covers it — no paper logic touched.
+- GAPS backtest now uses the **same warm-up convention as the other backtests** (emaRsiSt / ema9vwap): 150 calendar days of daily history computed in IST, instead of its own 400-day `toISOString()` window. That is ~103 trading sessions — ample for the ~35 closed bars RSI(14)-on-EMA21 needs. The 150 is a *floor*: because GAPS's requirement scales with the configured lengths (Settings allows EMA up to 200 / RSI up to 100), the runway grows with `needDaily` so a raised length can no longer under-fetch and fail with "Only N daily candle(s)".
+
 ### Changed — token clearing is automatic; "Reset Token" button removed
 
 The Dashboard's 🔄 **Reset Token** button is gone. It was a manual chore for something the app already does on a schedule, and it also restarted the server, which is far more than "clear my token".

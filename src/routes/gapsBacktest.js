@@ -294,12 +294,21 @@ router.get("/", async (req, res) => {
         }
 
         // Daily history needs a warmup runway BEFORE `from` so RSI-on-EMA is
-        // already seeded on the very first day of the range.
+        // already seeded on the very first day of the range. Baseline is the same
+        // convention as the other backtests (emaRsiSt / ema9vwap): 150 calendar
+        // days, measured in IST — ~103 sessions, ample for the ~35 closed bars
+        // RSI(14)-on-EMA21 needs. But GAPS's requirement scales with the configured
+        // lengths (Settings allows EMA up to 200 / RSI up to 100), so a fixed 150
+        // would silently under-fetch there: grow the runway with needDaily at ~1.5
+        // calendar days per session plus a holiday buffer. Wide ranges are safe
+        // because fetchCandles now chunks daily at the Fyers 366-day cap.
         backtestJobs.updateProgress(id, { phase: "Fetching daily candles (indicator warmup)…", pct: 40 });
-        const warmFrom = new Date(new Date(from).getTime() - 400 * 86400000).toISOString().slice(0, 10);
-        const daily = await fetchCandlesCachedBT(NIFTY_INDEX_SYMBOL, "D", warmFrom, to, false);
         const cfg = gapsStrategy.getConfig();
         const needDaily = cfg.rsiLength + (cfg.rsiSource === "ema" ? cfg.emaLength - 1 : 0) + 1;
+        const _warmupDays = Math.max(150, Math.ceil(needDaily * 1.5) + 30);
+        const warmFrom = new Date(new Date(from + "T00:00:00+05:30").getTime() - _warmupDays * 86400000)
+          .toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+        const daily = await fetchCandlesCachedBT(NIFTY_INDEX_SYMBOL, "D", warmFrom, to, false);
         if (!Array.isArray(daily) || daily.length < needDaily) {
           backtestJobs.failJob(id, `Only ${Array.isArray(daily) ? daily.length : 0} daily candle(s) — GAPS needs at least ${needDaily} for RSI(${cfg.rsiLength}) on ${cfg.rsiSource}. Re-login to Fyers or widen the range.`);
           return;
