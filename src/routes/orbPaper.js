@@ -496,7 +496,7 @@ function _managePositionOnClose(bar) {
     // Persistence only — no decision, fill or exit changes here; it just stops a
     // restart from resurrecting a stop the engine had already tightened.
     try { require("../utils/positionPersist").saveOrbPosition(pos, { sessionPnl: state.sessionPnl }); } catch (_) {}
-    log(`🔒 [ORB-PAPER] Breakeven armed — SL → entry ${pos.slSpot}`);
+    log(`🔒 [ORB-PAPER] Breakeven armed — SL → entry ${pos.slSpot} (favourable ${d.favPts.toFixed(1)}pt ≥ ${d.bePts}pt)`);
   }
   if (d.exit) simulateSell(d.reason);
 }

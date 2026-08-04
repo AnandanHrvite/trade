@@ -171,13 +171,16 @@ function evaluateTickExits(pos, { spotPrice, optionLtp }) {
  *
  * Mutates `pos.slSpot` / `pos.breakevenArmed` / `pos.emaArmed` / `pos.lastEma`.
  * `breakevenArmed` in the result is true ONLY on the candle that arms it, so callers
- * can log it and re-snapshot for crash recovery exactly once.
+ * can log it and re-snapshot for crash recovery exactly once. `favPts` / `bePts` ride
+ * along so the routes can keep logging the numbers that justified the arm — those
+ * are how a breakeven exit is diagnosed after the fact.
  *
  * @param {Array} candles  close series for the EMA trail (route state or day slice)
- * @returns {{exit:boolean, reason:string|null, breakevenArmed:boolean}}
+ * @returns {{exit:boolean, reason:string|null, breakevenArmed:boolean,
+ *            favPts:number|null, bePts:number|null}}
  */
 function evaluateCloseExits(pos, bar, candles) {
-  const none = { exit: false, reason: null, breakevenArmed: false };
+  const none = { exit: false, reason: null, breakevenArmed: false, favPts: null, bePts: null };
   if (!pos || !bar || typeof bar.close !== "number") return none;
   const close = bar.close;
 
@@ -186,10 +189,10 @@ function evaluateCloseExits(pos, bar, candles) {
   const bodyPts   = Math.abs(bar.close - bar.open);
   if (oppositeExitOn() && oppThresh > 0 && bodyPts >= oppThresh) {
     if (pos.side === "CE" && bar.close < bar.open && bar.close < pos.orh) {
-      return { exit: true, reason: `Strong opposite candle (red body ${bodyPts.toFixed(1)}pt ≥ ${oppThresh.toFixed(1)}pt, closed below ORH)`, breakevenArmed: false };
+      return { exit: true, reason: `Strong opposite candle (red body ${bodyPts.toFixed(1)}pt ≥ ${oppThresh.toFixed(1)}pt, closed below ORH)`, breakevenArmed: false, favPts: null, bePts: null };
     }
     if (pos.side === "PE" && bar.close > bar.open && bar.close > pos.orl) {
-      return { exit: true, reason: `Strong opposite candle (green body ${bodyPts.toFixed(1)}pt ≥ ${oppThresh.toFixed(1)}pt, closed above ORL)`, breakevenArmed: false };
+      return { exit: true, reason: `Strong opposite candle (green body ${bodyPts.toFixed(1)}pt ≥ ${oppThresh.toFixed(1)}pt, closed above ORL)`, breakevenArmed: false, favPts: null, bePts: null };
     }
   }
 
@@ -211,14 +214,14 @@ function evaluateCloseExits(pos, bar, candles) {
     pos.lastEma = _r2(ema);
     if (pos.side === "CE") {
       if (close >= ema) pos.emaArmed = true;
-      else if (pos.emaArmed) return { exit: true, reason: `Closed below EMA${emaPeriod} (${close} < ${pos.lastEma})`, breakevenArmed: armedNow };
+      else if (pos.emaArmed) return { exit: true, reason: `Closed below EMA${emaPeriod} (${close} < ${pos.lastEma})`, breakevenArmed: armedNow, favPts, bePts };
     } else {
       if (close <= ema) pos.emaArmed = true;
-      else if (pos.emaArmed) return { exit: true, reason: `Closed above EMA${emaPeriod} (${close} > ${pos.lastEma})`, breakevenArmed: armedNow };
+      else if (pos.emaArmed) return { exit: true, reason: `Closed above EMA${emaPeriod} (${close} > ${pos.lastEma})`, breakevenArmed: armedNow, favPts, bePts };
     }
   }
 
-  return { exit: false, reason: null, breakevenArmed: armedNow };
+  return { exit: false, reason: null, breakevenArmed: armedNow, favPts, bePts };
 }
 
 /**

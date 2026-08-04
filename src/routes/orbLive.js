@@ -431,7 +431,7 @@ async function _managePositionOnClose(bar) {
   if (d.breakevenArmed) {
     // re-snapshot so crash recovery sees the lifted stop, not the entry stop
     try { saveOrbPosition(pos, { sessionPnl: state.sessionPnl || 0 }); } catch (_) {}
-    log(`🔒 Breakeven armed — SL → entry ${pos.slSpot}`);
+    log(`🔒 Breakeven armed — SL → entry ${pos.slSpot} (favourable ${d.favPts.toFixed(1)}pt ≥ ${d.bePts}pt)`);
   }
   if (d.exit) return placeLiveSell(d.reason);
 }
