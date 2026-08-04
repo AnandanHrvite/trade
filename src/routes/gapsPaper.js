@@ -753,6 +753,11 @@ function onTick(tick) {
       } else {
         state.candles.push({ ...state.currentBar });
       }
+      // Keep a deep buffer: the trailing EMA is recomputed over this array, and an
+      // EMA seeded from a short window carries a startup transient. Measured on
+      // EMA21: ~1.5pt out 40 bars in, ~0.2pt at 60, and exactly 0 (to 2dp) by 100.
+      // The backtest computes the same EMA over the WHOLE range, so trimming this
+      // below ~120 would make Paper and Backtest exit on different bars.
       if (state.candles.length > 300) state.candles.shift();
       try { onCandleClose(state.currentBar); }
       catch (e) { console.error(`🚨 [GAPS-PAPER] onCandleClose error: ${e.message}`); }
@@ -790,18 +795,32 @@ function onTick(tick) {
   }
 }
 
-// ── Preload intraday history (so the chart is not empty at the open) ─────────
+// ── Preload intraday history ─────────────────────────────────────────────────
+// Not just so the chart is not empty: the trailing EMA is seeded from this, and
+// an EMA built from a short window carries a startup transient (see the buffer
+// note in onTick). The lookback therefore scales with the exit timeframe — a
+// fixed 5 days gives ~375 bars at 5-min but only ~31 at 60-min, which would put
+// the trail inside its transient and make Paper disagree with Backtest.
+const TRAIL_WARM_BARS = 150;   // comfortably past EMA21 convergence (~100 bars)
+
 async function preloadHistory() {
   try {
     const { fetchCandlesCached } = require("../utils/candleCache");
     const { fetchCandles } = require("../services/backtestEngine");
+    const resMin = _resMin();
+    const barsPerDay = Math.max(1, Math.round(375 / resMin));
+    // Trading days needed, then padded ~1.5× for weekends/holidays, floor of 5.
+    const lookbackDays = Math.max(5, Math.ceil((TRAIL_WARM_BARS / barsPerDay) * 1.5) + 2);
     const _now = new Date();
     const istToday = _now.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-    const istStart = new Date(_now.getTime() - 5 * 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-    const candles = await fetchCandlesCached(NIFTY_INDEX_SYMBOL, String(_resMin()), istStart, istToday, fetchCandles);
+    const istStart = new Date(_now.getTime() - lookbackDays * 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    const candles = await fetchCandlesCached(NIFTY_INDEX_SYMBOL, String(resMin), istStart, istToday, fetchCandles);
     if (Array.isArray(candles) && candles.length > 0) {
-      state.candles = candles.slice(-200);
-      log(`📊 [GAPS-PAPER] Preloaded ${state.candles.length} × ${_resMin()}-min spot candles (${istStart}→${istToday})`);
+      state.candles = candles.slice(-300);
+      log(`📊 [GAPS-PAPER] Preloaded ${state.candles.length} × ${resMin}-min spot candles (${istStart}→${istToday}, ${lookbackDays}d lookback)`);
+      if (_trailEnabled() && state.candles.length < TRAIL_WARM_BARS) {
+        log(`⚠️ [GAPS-PAPER] Only ${state.candles.length} bars preloaded (< ${TRAIL_WARM_BARS}) — the EMA${_trailLen()} trail starts inside its seeding transient, so early values may differ slightly from Backtest.`);
+      }
     } else {
       log(`📊 [GAPS-PAPER] No intraday history available — will build from live ticks`);
     }
