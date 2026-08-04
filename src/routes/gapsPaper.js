@@ -61,7 +61,8 @@ function _parseMins(envKey, fallback) {
   return (h || 0) * 60 + (isNaN(m) ? 0 : m);
 }
 function _envStr(key, fallback) { return String(process.env[key] || fallback); }
-function _targetEnabled() { return String(process.env.GAPS_TARGET_ENABLED || "true").toLowerCase() === "true"; }
+function _trailEnabled() { return String(process.env.GAPS_TRAIL_ENABLED || "true").toLowerCase() === "true"; }
+function _trailLen()     { return Math.max(2, parseInt(process.env.GAPS_TRAIL_EMA_LENGTH || "21", 10) || 21); }
 function _maxDailyTrades() { return Math.max(1, parseInt(process.env.GAPS_MAX_DAILY_TRADES || "1", 10) || 1); }
 function _maxDailyLoss()   { return parseFloat(process.env.GAPS_MAX_DAILY_LOSS  || "5000"); }
 function _maxWeeklyLoss()  { return parseFloat(process.env.GAPS_MAX_WEEKLY_LOSS || "0"); }
@@ -377,7 +378,7 @@ async function simulateBuy(side, sig) {
   }
 
   const qty = gapsLotQty();
-  const targetOn = _targetEnabled();
+  const trailOn = _trailEnabled();
 
   const pos = {
     side,
@@ -393,8 +394,10 @@ async function simulateBuy(side, sig) {
     entryBarTime:   Math.floor(getBucketStart(Date.now(), _resMin()) / 1000),
     slSpot:         sig.slSpot,                       // yesterday's close = gap fill
     initialSlSpot:  sig.slSpot,
-    targetSpot:     targetOn ? sig.targetSpot : null, // daily EMA21 level
-    targetEnabled:  targetOn,
+    trailEnabled:   trailOn,
+    trailLength:    _trailLen(),
+    trailSpot:      null,   // set on each candle close once the intraday EMA warms up
+    trailBars:      0,      // how many candle closes the trail actually supervised
     riskPts:        parseFloat(Math.abs(spot - sig.slSpot).toFixed(2)),
     // Signal context (kept on the trade record for analytics / reports)
     prevDate:       sig.prevDate,
@@ -425,22 +428,27 @@ async function simulateBuy(side, sig) {
   log(`🟢 [GAPS-PAPER] BUY_${side} ${optInfo.symbol} qty=${qty} @ spot=${spot} optLtp=₹${optionEntryLtp}`);
   log(`   ├─ Gap: prev close ${sig.prevClose} → open ${sig.todayOpen} = ${sig.gapPts > 0 ? "+" : ""}${sig.gapPts}pt (${sig.gapPct > 0 ? "+" : ""}${sig.gapPct}%) ${sig.gapDir}`);
   log(`   ├─ Yesterday RSI ${sig.prevRsi} (${sig.rsiSource}) vs bands ${sig.rsiLower}/${sig.rsiUpper} · daily EMA ${sig.prevEma}`);
-  log(`   └─ SL ${pos.slSpot} (gap fill, ${pos.riskPts}pt) · Target ${targetOn ? `${pos.targetSpot} (daily EMA close-through)` : "DISABLED"} · EOD ${_envStr("GAPS_FORCED_EXIT", "15:15")}`);
+  log(`   └─ SL ${pos.slSpot} (gap fill, ${pos.riskPts}pt) · Trail ${trailOn ? `${_resMin()}m EMA${pos.trailLength} (exit on a close back through it)` : "DISABLED"} · EOD ${_envStr("GAPS_FORCED_EXIT", "15:15")}`);
 
-  // Rare but possible after a very large gap: the open is ALREADY past the daily
-  // EMA, so the target condition is satisfied before the trade has moved and the
-  // first exit-timeframe close will book it. That is the rule as written — flag it
-  // so a ~5-minute "Target" exit is not mistaken for a bug.
-  if (targetOn && pos.targetSpot != null &&
-      ((side === "PE" && spot < pos.targetSpot) || (side === "CE" && spot > pos.targetSpot))) {
-    log(`⚠️ [GAPS-PAPER] Entry ${spot} is ALREADY beyond the daily EMA target ${pos.targetSpot} — the first ${_resMin()}m close will hit the target immediately (expected: the gap overshot the mean-reversion level).`);
+  // The trail needs `trailLength` intraday bars before it produces a value. The
+  // preload pulls several days of history so it is normally warm at the open —
+  // but say so when it is not, because until then the gap-fill stop is the ONLY
+  // exit and a reader should not assume the trail is silently protecting them.
+  if (trailOn) {
+    const t0 = gapsStrategy.computeTrailEma(state.candles, pos.trailLength);
+    if (t0.last == null) {
+      log(`⚠️ [GAPS-PAPER] Trail EMA${pos.trailLength} not warm yet (${(state.candles || []).length}/${pos.trailLength} × ${_resMin()}m bars) — gap-fill stop and EOD are the only exits until it is.`);
+    } else {
+      pos.trailSpot = t0.last;
+      log(`   └─ Trail starts at ${t0.last} (${side === "PE" ? "exit on a close ABOVE" : "exit on a close BELOW"} it)`);
+    }
   }
 
   notifyEntry({
     mode: "GAPS-PAPER",
     side, symbol: optInfo.symbol,
     spotAtEntry: spot, optionEntryLtp,
-    qty, stopLoss: pos.slSpot, target: pos.targetSpot,
+    qty, stopLoss: pos.slSpot, target: null,   // no fixed target — the exit is a trailing EMA
     entryTime: pos.entryTime,
     entryReason: pos.entryReason,
   });
@@ -452,7 +460,7 @@ async function simulateBuy(side, sig) {
       ts: Date.now(),
       side, symbol: optInfo.symbol, qty,
       spotEntry: spot, optionEntry: optionEntryLtp,
-      stopLoss: pos.slSpot, targetSpot: pos.targetSpot,
+      stopLoss: pos.slSpot, trailSpot: pos.trailSpot, trailLength: pos.trailLength,
       reason: pos.entryReason,
     });
   } catch (_) {}
@@ -491,7 +499,9 @@ function simulateSell(reason) {
     entryReason:    pos.entryReason,
     stopLoss:       pos.slSpot,
     initialStopLoss: pos.initialSlSpot,
-    targetSpot:     pos.targetSpot,
+    trailSpot:      pos.trailSpot,      // where the trailing EMA sat at exit
+    trailLength:    pos.trailLength,
+    trailBars:      pos.trailBars || 0, // candle closes the trail actually supervised
     optionStrike:   pos.optionStrike,
     optionExpiry:   pos.optionExpiry,
     optionType:     pos.side,
@@ -555,8 +565,9 @@ function simulateSell(reason) {
 }
 
 // ── Exits ────────────────────────────────────────────────────────────────────
-// Tick level: the gap-fill stop only. Candle-close level: the daily-EMA target.
-// Nothing else — no trail, no breakeven, no time stop.
+// Tick level: the gap-fill stop only. Candle-close level: the intraday EMA
+// trailing stop. Plus the EOD square-off. Nothing else — no target, no
+// breakeven, no time stop.
 function _checkExits(spotPrice) {
   if (!state.position) return;
   const pos = state.position;
@@ -576,21 +587,30 @@ function _checkExits(spotPrice) {
 }
 
 /**
- * Target: an intraday candle CLOSES through the daily EMA21 level in our
- * favour. Checked on candle close only, never on a wick.
+ * Trailing stop: the intraday EMA is recomputed on every candle close, and the
+ * trade exits when that candle CLOSES back through it — a PE on a close ABOVE,
+ * a CE on a close BELOW. Checked on candle close only, never on a wick.
+ *
+ * `state.candles` already ends with the bar just closed (onTick pushes it before
+ * calling here), so the EMA includes the bar being judged — same as reading the
+ * value off a TradingView chart after the candle prints.
  */
-function _checkTargetOnClose(bar) {
+function _checkTrailOnClose(bar) {
   const pos = state.position;
   if (!pos || !bar || typeof bar.close !== "number") return;
-  if (!pos.targetEnabled || pos.targetSpot == null) return;
-  const emaLen = gapsStrategy.getConfig().emaLength;
-  if (pos.side === "PE" && bar.close < pos.targetSpot) {
-    simulateSell(`Target — ${_resMin()}m candle closed below daily EMA${emaLen} (${bar.close} < ${pos.targetSpot})`);
-    return;
-  }
-  if (pos.side === "CE" && bar.close > pos.targetSpot) {
-    simulateSell(`Target — ${_resMin()}m candle closed above daily EMA${emaLen} (${bar.close} > ${pos.targetSpot})`);
-    return;
+  if (!pos.trailEnabled) return;
+
+  const t = gapsStrategy.computeTrailEma(state.candles, pos.trailLength);
+  if (t.last == null) return;      // still warming up — gap-fill stop only
+
+  pos.trailSpot = t.last;
+  pos.trailBars = (pos.trailBars || 0) + 1;
+
+  if (gapsStrategy.trailExitHit(pos.side, bar.close, t.last)) {
+    simulateSell(
+      `Trail — ${_resMin()}m candle closed ${pos.side === "PE" ? "above" : "below"} EMA${pos.trailLength} ` +
+      `(${bar.close} ${pos.side === "PE" ? ">" : "<"} ${t.last})`
+    );
   }
 }
 
@@ -710,7 +730,7 @@ async function evaluateOpenDecision() {
 
 // ── Candle close handler ─────────────────────────────────────────────────────
 function onCandleClose(bar) {
-  if (state.position) { _checkTargetOnClose(bar); return; }
+  if (state.position) { _checkTrailOnClose(bar); return; }
 }
 
 // ── onTick ───────────────────────────────────────────────────────────────────
@@ -835,7 +855,7 @@ router.get("/start", async (req, res) => {
 
   const cfg = gapsStrategy.getConfig();
   log(`🟢 [GAPS-PAPER] Session started — ${gapsStrategy.NAME}`);
-  log(`⚙️ [GAPS-PAPER] Settings: EMA${cfg.emaLength} · RSI(${cfg.rsiLength}) source=${cfg.rsiSource} · bands ${cfg.rsiLower}/${cfg.rsiUpper} · entry ${_envStr("GAPS_ENTRY_START", "09:15")}–${_envStr("GAPS_ENTRY_END", "09:30")} · exit TF ${_resMin()}m · target ${_targetEnabled() ? "ON (daily EMA close-through)" : "OFF"} · EOD ${_envStr("GAPS_FORCED_EXIT", "15:15")} · qty ${gapsLotQty()}`);
+  log(`⚙️ [GAPS-PAPER] Settings: EMA${cfg.emaLength} · RSI(${cfg.rsiLength}) source=${cfg.rsiSource} · bands ${cfg.rsiLower}/${cfg.rsiUpper} · entry ${_envStr("GAPS_ENTRY_START", "09:15")}–${_envStr("GAPS_ENTRY_END", "09:30")} · exit TF ${_resMin()}m · trail ${_trailEnabled() ? `ON (${_resMin()}m EMA${_trailLen()} close-through)` : "OFF"} · EOD ${_envStr("GAPS_FORCED_EXIT", "15:15")} · qty ${gapsLotQty()}`);
 
   await preloadHistory();
   await loadDailyContext();
@@ -953,14 +973,21 @@ router.get("/status/chart-data", async (req, res) => {
     const candles = srcCandles.map(c => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close }));
     if (state.currentBar) candles.push({ time: state.currentBar.time, open: state.currentBar.open, high: state.currentBar.high, low: state.currentBar.low, close: state.currentBar.close });
 
-    // The two levels this strategy actually uses, drawn as flat reference lines:
-    // yesterday's close (= the stop / gap-fill) and the daily EMA (= the target).
+    // Yesterday's close (= the stop / gap-fill) is a flat reference line, and so
+    // is the daily EMA that feeds the RSI — neither moves during the session.
     let prevCloseLine = [], emaLine = [];
     if (candles.length && state.daily && state.daily.ok) {
       const fromTime = candles[0].time, toTime = candles[candles.length - 1].time;
       prevCloseLine = [{ time: fromTime, value: state.daily.prevClose }, { time: toTime, value: state.daily.prevClose }];
       emaLine       = [{ time: fromTime, value: state.daily.prevEma   }, { time: toTime, value: state.daily.prevEma   }];
     }
+
+    // The trailing stop, from the same engine call the exit uses — so the line on
+    // the chart is literally the level that would close the trade.
+    const trailLen  = _trailLen();
+    const trailSeries = _trailEnabled()
+      ? gapsStrategy.computeTrailEma(candles, trailLen).series
+      : [];
 
     const markers = [];
     for (const t of state.sessionTrades) {
@@ -979,8 +1006,9 @@ router.get("/status/chart-data", async (req, res) => {
       candles, markers,
       stopLoss:   pos ? pos.slSpot     : (state.daily && state.daily.ok ? state.daily.prevClose : null),
       entryPrice: pos ? pos.entrySpot  : null,
-      target:     pos ? pos.targetSpot : (state.daily && state.daily.ok && _targetEnabled() ? state.daily.prevEma : null),
+      target:     null,   // no fixed target — see trailSeries
       prevCloseLine, emaLine,
+      trailSeries, trailLength: trailLen, trailEnabled: _trailEnabled(),
     });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -1075,10 +1103,10 @@ router.get("/status/data", (req, res) => {
     gapDir: gapPts == null ? null : gapPts > 0 ? "UP" : gapPts < 0 ? "DOWN" : "FLAT",
     decisionMade: state.decisionMade,
     lastSkipReason: state.lastSignal && state.lastSignal.signal === "NONE" ? (state.lastSignal.skipReason || state.lastSignal.reason) : null,
-    cfg: { emaLength: cfg.emaLength, rsiLength: cfg.rsiLength, rsiSource: cfg.rsiSource, upper: cfg.rsiUpper, lower: cfg.rsiLower, exitTf: _resMin(), targetEnabled: _targetEnabled() },
+    cfg: { emaLength: cfg.emaLength, rsiLength: cfg.rsiLength, rsiSource: cfg.rsiSource, upper: cfg.rsiUpper, lower: cfg.rsiLower, exitTf: _resMin(), trailEnabled: _trailEnabled(), trailLength: _trailLen() },
     position: pos ? {
       side: pos.side, symbol: pos.symbol, entrySpot: pos.entrySpot, optionEntryLtp: pos.optionEntryLtp,
-      slSpot: pos.slSpot, targetSpot: pos.targetSpot, initialSlSpot: pos.initialSlSpot,
+      slSpot: pos.slSpot, trailSpot: pos.trailSpot, trailLength: pos.trailLength, initialSlSpot: pos.initialSlSpot,
       optionStrike: pos.optionStrike, optionExpiry: pos.optionExpiry,
       peakPremium: pos.peakPremium, entryTime: pos.entryTime, signalStrength: pos.signalStrength,
       riskPts: pos.riskPts, gapPts: pos.gapPts, gapDir: pos.gapDir, prevRsi: pos.prevRsi,
@@ -1128,7 +1156,7 @@ router.get("/status", (req, res) => {
     { label: "Live PnL", value: `<span id="ajax-live-pnl" style="color:${livePnl == null ? "#c8d8f0" : pnlColor(livePnl)};">${livePnl == null ? "—" : (livePnl >= 0 ? "+" : "") + "₹" + livePnl.toLocaleString("en-IN", {minimumFractionDigits:2,maximumFractionDigits:2})}</span>`, sub: `<span id="ajax-live-pnl-sub">${pos ? "unrealised" : "no open position"}</span>`, accent: "#3b82f6" },
     { label: `Yesterday RSI (${cfg.rsiSource})`, value: `<span id="ajax-prev-rsi" style="color:${rsiColor};font-weight:800;">${daily ? daily.prevRsi : "—"}</span>`, sub: `<span id="ajax-rsi-state" style="font-size:0.6rem;color:#4a6080;">${rsiState || "no daily data"} · bands ${cfg.rsiLower}/${cfg.rsiUpper}</span>`, accent: rsiColor },
     { label: "Gap @ Open", value: `<span id="ajax-gap" style="color:${gapColor};font-weight:800;">${gapPts == null ? "—" : (gapPts > 0 ? "+" : "") + gapPts + "pt"}</span>`, sub: `<span id="ajax-gap-sub" style="font-size:0.6rem;color:#4a6080;">${daily ? `prev close ${daily.prevClose} → open ${state.todayOpen != null ? state.todayOpen : "—"}` : "waiting for daily data"}</span>`, accent: gapColor },
-    { label: `Daily EMA${cfg.emaLength} (target)`, value: `<span id="ajax-prev-ema">${daily ? "₹" + daily.prevEma : "—"}</span>`, sub: `<span style="font-size:0.6rem;color:#4a6080;">${_targetEnabled() ? `exit on a ${_resMin()}m close through it` : "target DISABLED"}</span>`, accent: "#7c3aed" },
+    { label: `Daily EMA${cfg.emaLength} (RSI source)`, value: `<span id="ajax-prev-ema">${daily ? "₹" + daily.prevEma : "—"}</span>`, sub: `<span style="font-size:0.6rem;color:#4a6080;">${_trailEnabled() ? `exit trails the ${_resMin()}m EMA${_trailLen()}` : "trail DISABLED"}</span>`, accent: "#7c3aed" },
     { label: "Win Rate", value: `<span id="ajax-wr">${winRate != null ? winRate + "%" : "—"}</span>`, sub: `<span id="ajax-wr-sub" style="font-size:0.6rem;color:#4a6080;">best ${(state.sessionTrades.length ? Math.max(...state.sessionTrades.map(t=>t.pnl||0)).toFixed(0) : "—")} / worst ${(state.sessionTrades.length ? Math.min(...state.sessionTrades.map(t=>t.pnl||0)).toFixed(0) : "—")}</span>`, accent: "#a07010" },
     { label: "Risk Breakers", value: `<span id="ajax-daily-loss-val" style="color:${dailyLossHit ? "#ef4444" : "#10b981"};">${dailyLossHit ? "HIT" : "OK"}</span>`, sub: `<span id="ajax-daily-loss-sub" style="font-size:0.6rem;color:#4a6080;">day -₹${_maxLoss.toLocaleString("en-IN")}${_maxWeek > 0 ? ` · week -₹${_maxWeek.toLocaleString("en-IN")} (now ₹${weeklyPnl()})` : ""}</span>`, accent: dailyLossHit ? "#ef4444" : "#10b981" },
     { label: "WebSocket Ticks", value: `<span id="ajax-tick-count">${(state.tickCount || 0).toLocaleString()}</span>`, sub: `Last: <span id="ajax-last-tick">${state.lastTickPrice ? "₹" + state.lastTickPrice.toLocaleString("en-IN") : "—"}</span>`, accent: "#2a6080" },
@@ -1208,7 +1236,7 @@ router.get("/status", (req, res) => {
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;"><div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">NIFTY @ Entry</div><div style="font-size:1.05rem;font-weight:700;color:#c8d8f0;">₹${pos.entrySpot ? pos.entrySpot.toFixed(2) : "—"}</div></div>
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;"><div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">NIFTY LTP</div><div id="ajax-nifty-ltp" style="font-size:1.05rem;font-weight:700;color:#c8d8f0;">${state.lastTickPrice ? "₹" + state.lastTickPrice.toFixed(2) : "—"}</div><div id="ajax-nifty-move" style="font-size:0.63rem;color:${spotMove != null && spotMove >= 0 ? "#10b981" : "#ef4444"};margin-top:2px;">${spotMove != null ? (spotMove >= 0 ? "▲" : "▼") + " " + Math.abs(spotMove).toFixed(1) + " pts" : "—"}</div></div>
         <div style="background:#1c1400;border:1px solid #78350f;border-radius:8px;padding:12px 14px;"><div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Stop — gap fill</div><div style="font-size:1.05rem;font-weight:700;color:#f59e0b;">${pos.slSpot ? "₹" + pos.slSpot.toFixed(2) : "—"}</div><div style="font-size:0.6rem;color:#4a6080;margin-top:2px;">risk ${pos.riskPts}pt</div></div>
-        <div style="background:#0a1f12;border:1px solid #0d4030;border-radius:8px;padding:12px 14px;"><div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Target — daily EMA${cfg.emaLength}</div><div style="font-size:1.05rem;font-weight:700;color:#10b981;">${pos.targetSpot != null ? "₹" + pos.targetSpot.toFixed(2) : "OFF"}</div><div style="font-size:0.6rem;color:#4a6080;margin-top:2px;">${pos.targetSpot != null ? `${_resMin()}m close-through` : "GAPS_TARGET_ENABLED=false"}</div></div>
+        <div style="background:#0a1f12;border:1px solid #0d4030;border-radius:8px;padding:12px 14px;"><div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Trail — ${_resMin()}m EMA${pos.trailLength || _trailLen()}</div><div style="font-size:1.05rem;font-weight:700;color:#10b981;">${!pos.trailEnabled ? "OFF" : pos.trailSpot != null ? "₹" + pos.trailSpot.toFixed(2) : "warming up"}</div><div style="font-size:0.6rem;color:#4a6080;margin-top:2px;">${!pos.trailEnabled ? "GAPS_TRAIL_ENABLED=false" : `exit on a close ${pos.side === "PE" ? "above" : "below"} it`}</div></div>
         <div style="background:#10131c;border:1px solid #1e2940;border-radius:8px;padding:12px 14px;"><div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Gap</div><div style="font-size:1.05rem;font-weight:700;color:${pos.gapDir === "UP" ? "#10b981" : "#ef4444"};">${pos.gapPts > 0 ? "+" : ""}${pos.gapPts}pt</div><div style="font-size:0.6rem;color:#4a6080;margin-top:2px;">${pos.gapDir}</div></div>
         <div style="background:#0a1f12;border:1px solid #0d4030;border-radius:8px;padding:12px 14px;"><div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Peak Premium</div><div style="font-size:1.05rem;font-weight:700;color:#10b981;">${pos.peakPremium ? "₹" + pos.peakPremium.toFixed(2) : "—"}</div></div>
       </div>
@@ -1284,11 +1312,11 @@ ${process.env.CHART_ENABLED !== "false" ? `<!-- Daily chart: the series the stra
 
 <!-- Intraday chart: where the stop and target actually get hit -->
 <div style="margin-bottom:18px;">
-  <div class="section-title">NIFTY ${_resMin()}-Min Intraday (gap-fill stop + daily EMA target)</div>
+  <div class="section-title">NIFTY ${_resMin()}-Min Intraday (gap-fill stop + EMA${_trailLen()} trail)</div>
   <div id="nifty-chart-container" style="background:#0a0f1c;border:1px solid #1a2236;border-radius:12px;overflow:hidden;position:relative;height:380px;">
     <div id="nifty-chart" style="width:100%;height:100%;"></div>
     <div style="position:absolute;top:10px;left:12px;font-size:0.68rem;color:#4a6080;pointer-events:none;z-index:2;">
-      <span style="color:#f59e0b;">── Prev close / stop</span> &nbsp;<span style="color:#3b82f6;">── Daily EMA${cfg.emaLength} / target</span>
+      <span style="color:#f59e0b;">── Prev close / stop</span> &nbsp;<span style="color:#3b82f6;">── Daily EMA${cfg.emaLength} (RSI source)</span> &nbsp;<span style="color:#10b981;">── ${_resMin()}m EMA${_trailLen()} trail</span>
     </div>
   </div>
 </div>` : ""}
@@ -1392,7 +1420,9 @@ async function gapsHandleExit(btn) {
   var cs = chart.addCandlestickSeries({ upColor:'#10b981', downColor:'#ef4444', borderUpColor:'#10b981', borderDownColor:'#ef4444', wickUpColor:'#10b981', wickDownColor:'#ef4444' });
   var pcS = chart.addLineSeries({ color:'#f59e0b', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
   var emS = chart.addLineSeries({ color:'#3b82f6', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dotted, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
-  var entryLine = null, slLine = null, tgtLine = null, _zoomed = false;
+  // The trailing stop is a MOVING line, so it is a series, not a price line.
+  var trS = chart.addLineSeries({ color:'#10b981', lineWidth:2, priceLineVisible:false, lastValueVisible:true, crosshairMarkerVisible:false });
+  var entryLine = null, slLine = null, _zoomed = false;
   async function fetchChart(){
     try {
       var r = await fetch('/gaps-paper/status/chart-data', { cache:'no-store' });
@@ -1402,7 +1432,7 @@ async function gapsHandleExit(btn) {
         for (var _i=d.candles.length-1;_i>=0;_i--){ if(Math.floor((d.candles[_i].time+19800)/86400)===_dk) _cut=d.candles[_i].time; else break; }
         var _k=function(a){ return Array.isArray(a)?a.filter(function(x){return x.time>=_cut;}):a; };
         d.candles=_k(d.candles);
-        ['prevCloseLine','emaLine','markers'].forEach(function(kk){ if(d[kk]) d[kk]=_k(d[kk]); });
+        ['prevCloseLine','emaLine','trailSeries','markers'].forEach(function(kk){ if(d[kk]) d[kk]=_k(d[kk]); });
       })(); }
       if (d.candles && d.candles.length) {
         cs.setData(d.candles);
@@ -1414,13 +1444,12 @@ async function gapsHandleExit(btn) {
       }
       pcS.setData(d.prevCloseLine || []);
       emS.setData(d.emaLine || []);
+      trS.setData(d.trailSeries || []);
       if (d.markers && d.markers.length) cs.setMarkers(d.markers.slice().sort(function(a,b){return a.time-b.time;}));
       if (entryLine) { cs.removePriceLine(entryLine); entryLine = null; }
       if (slLine)    { cs.removePriceLine(slLine);    slLine = null; }
-      if (tgtLine)   { cs.removePriceLine(tgtLine);   tgtLine = null; }
       if (d.entryPrice) entryLine = cs.createPriceLine({ price:d.entryPrice, color:'#3b82f6', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dotted, axisLabelVisible:true, title:'Entry' });
       if (d.stopLoss)   slLine    = cs.createPriceLine({ price:d.stopLoss,   color:'#f59e0b', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'Gap fill / SL' });
-      if (d.target)     tgtLine   = cs.createPriceLine({ price:d.target,     color:'#10b981', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'EMA target' });
     } catch (e) {}
   }
   fetchChart();

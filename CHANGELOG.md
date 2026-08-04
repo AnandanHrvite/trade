@@ -6,6 +6,19 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Changed — GAPS exit is a trailing EMA stop, not a fixed target
+
+The exit was specified again and it is a **trailing stop**, so the fixed daily-EMA21 target is gone. Entry is untouched (RSI > 90 with a gap DOWN → PE; RSI < 10 with a gap UP → CE), and so is the gap-fill stop and the 15:15 square-off.
+
+- **Old**: the daily EMA21 was pinned at 09:15 as one fixed price for the session, and the trade exited when a 5-min candle closed through it **in favour**. A daily EMA does not move during the day, so nothing trailed.
+- **New**: `EMA(GAPS_TRAIL_EMA_LENGTH=21)` on the **intraday** `GAPS_EXIT_TF=5`-minute candles. The trade rides while price stays on the winning side and exits when a candle closes back **through** it — a PE on a close **above**, a CE on a close **below**. The EMA is recomputed every candle, so the exit level moves with price. Note this is the **opposite** comparison to the old target, not just a different level.
+- `GAPS_TARGET_ENABLED` → `GAPS_TRAIL_ENABLED`; a key named "target" controlling a trailing stop would have been a lie. New `GAPS_TRAIL_EMA_LENGTH`, deliberately **separate** from `GAPS_EMA_LENGTH`: the latter is the *daily* EMA feeding the RSI ("EMA: EMA" source), and tuning the RSI smoothing must not silently move the stop. Both default to 21.
+- The trail EMA runs over a **continuous multi-day** intraday series, so it is warm at 09:15 instead of taking ~105 minutes to form. Paper already preloaded 5 days; the backtest now computes the EMA once across the whole range and looks it up per bar, rather than restarting each morning — computing it per-day would have made the backtest exit differently from Paper for the first 21 bars of every session. When the trail genuinely is not warm the route logs it, because until then the gap-fill stop is the only exit.
+- One rule, one place: `computeTrailEma()` and `trailExitHit()` live in [gaps.js](src/strategies/gaps.js) and are called by Paper, Backtest, the chart feed and (via Paper) Live and Replay. The intraday chart plots the trail from the same engine call the exit uses, so the green line is literally the level that would close the trade.
+- **Behaviour change worth knowing**: on a steady adverse drift the trail now exits *before* the gap fills, capping the loss earlier than the old stop-only path. Covered by a regression test.
+
+**Validation**: 67 assertions pass (20 new, covering EMA alignment and warm-up, both sides of the trail rule, stop-tested-before-trail, trail-beats-stop on a drift, a falling PE not being trailed out, trail disabled, and a non-default trail length). Booted twice to confirm the settings are live end-to-end: `GAPS_TRAIL_EMA_LENGTH=8` with `GAPS_EXIT_TF=15` moved the strategy config **and** the chart feed together. Still **not market-validated** — no paper session has run.
+
 ### Added — GAPS: a new strategy (extreme daily RSI + a next-day gap the other way)
 
 A seventh strategy, built to the same standard as the other six — Settings section, sidebar group, Paper, Backtest, Live-via-harness, Replay, History, Analytics, Reports, Export, Telegram, logs, charts, dashboard card, real-time monitor. No existing strategy's behaviour changed.
@@ -14,8 +27,8 @@ A seventh strategy, built to the same standard as the other six — Settings sec
 - Indicators, both on the NIFTY **daily** series: `EMA(GAPS_EMA_LENGTH=21)` of close, and `RSI(GAPS_RSI_LENGTH=14)` whose input source is configurable and defaults to **`ema`** — RSI computed over the EMA21 line rather than close. That is TradingView's "EMA: EMA" source; double-smoothing is what lets RSI actually reach 90 / 10.
 - Entry, decided **once at the open**: yesterday's daily RSI > `GAPS_RSI_UPPER=90` **and** today opens below yesterday's close → **BUY PE**; yesterday's RSI < `GAPS_RSI_LOWER=10` **and** today opens above yesterday's close → **BUY CE**.
 - Stop = yesterday's close exactly (the gap-fill level), on spot, per tick.
-- Target = the daily EMA21 of the last closed daily bar, pinned as a fixed level for the session; fires when a `GAPS_EXIT_TF=5`-minute candle **closes** through it in favour. `GAPS_TARGET_ENABLED=false` runs stop-and-EOD only.
-- Nothing else exits: no trail, no breakeven, no time stop. Anything open is squared off at `GAPS_FORCED_EXIT=15:15`.
+- Target = the daily EMA21 of the last closed daily bar, pinned as a fixed level for the session; fires when a `GAPS_EXIT_TF=5`-minute candle **closes** through it in favour. `GAPS_TARGET_ENABLED=false` runs stop-and-EOD only. *(Superseded before release — see "GAPS exit is a trailing EMA stop" above.)*
+- Nothing else exits: no breakeven, no time stop. Anything open is squared off at `GAPS_FORCED_EXIT=15:15`.
 - Slightly-ITM strike (`GAPS_ITM_STEPS=1`). Risk: `GAPS_MAX_DAILY_TRADES=1`, `GAPS_MAX_DAILY_LOSS=5000`, `GAPS_MAX_WEEKLY_LOSS` (rolling Mon→today, off by default), `GAPS_LOSS_STREAK_SKIP=3`, plus the shared portfolio cap.
 
 **One engine, four surfaces.** [src/strategies/gaps.js](src/strategies/gaps.js) is the only place the rules exist. Paper ([gapsPaper.js](src/routes/gapsPaper.js)) is canonical; Backtest ([gapsBacktest.js](src/routes/gapsBacktest.js)) calls the same `getSignal` and only re-implements the paper exits; Live ([gapsLiveHarness.js](src/routes/gapsLiveHarness.js)) *is* Paper wrapped by the shared harness, so Live = Paper by construction; Replay drives the paper route through recorded ticks.

@@ -20,10 +20,18 @@
  *               today's open     >  yesterday's close             (gap UP)
  *
  * Stop loss  = yesterday's close exactly — the gap-fill level.
- * Target     = the daily EMA21 of the last CLOSED daily candle, taken as a FIXED
- *              price level for the whole session. The route exits when an
- *              intraday candle CLOSES beyond it (see gapsPaper.js). The engine
- *              only publishes the level; it owns no exit logic.
+ * Trail      = EMA(GAPS_TRAIL_EMA_LENGTH, default 21) on the INTRADAY series
+ *              (GAPS_EXIT_TF, default 5-min). It is a TRAILING STOP, not a
+ *              target: the trade rides as long as price stays on the winning
+ *              side of that EMA, and exits when an intraday candle CLOSES back
+ *              THROUGH it — a PE exits on a close ABOVE the EMA, a CE on a close
+ *              BELOW. Because the EMA is recomputed every candle, the exit level
+ *              moves with price. Checked on candle close only, never on a wick.
+ *
+ * Note the two EMAs are deliberately separate settings. GAPS_EMA_LENGTH is the
+ * DAILY EMA that feeds the RSI ("EMA: EMA" source); GAPS_TRAIL_EMA_LENGTH is the
+ * INTRADAY EMA the stop trails. Both default to 21, but tuning the RSI smoothing
+ * must not silently move the trailing stop.
  *
  * "Yesterday" always means the last daily candle that CLOSED strictly before the
  * session day being evaluated — today's forming daily bar is dropped by IST day
@@ -31,7 +39,7 @@
  *
  * Returns:
  *   { signal:"BUY_CE"|"BUY_PE"|"NONE", side, reason, skipReason,
- *     entrySpot, slSpot, targetSpot, signalStrength,
+ *     entrySpot, slSpot, signalStrength,
  *     prevClose, prevRsi, prevEma, prevDate, todayOpen,
  *     gapPts, gapPct, gapDir, rsiUpper, rsiLower, rsiSource, warmup }
  */
@@ -39,7 +47,7 @@
 const { EMA, RSI } = require("technicalindicators");
 
 const NAME        = "GAPS";
-const DESCRIPTION = "Gaps — daily RSI(EMA21) beyond 90/10 then a next-day gap the other way; stop at the gap fill, target the daily EMA21";
+const DESCRIPTION = "Gaps — daily RSI(EMA21) beyond 90/10 then a next-day gap the other way; stop at the gap fill, trail the intraday EMA21";
 
 const RSI_SOURCES = ["ema", "close", "open", "high", "low", "hl2", "hlc3", "ohlc4"];
 
@@ -59,7 +67,52 @@ function getConfig() {
     rsiSource: RSI_SOURCES.includes(rawSrc) ? rawSrc : "ema",
     rsiUpper:  parseFloat(process.env.GAPS_RSI_UPPER || "90"),
     rsiLower:  parseFloat(process.env.GAPS_RSI_LOWER || "10"),
+    // Intraday trailing stop — a separate EMA from the daily one above.
+    trailLength:  Math.max(2, parseInt(process.env.GAPS_TRAIL_EMA_LENGTH || "21", 10) || 21),
+    trailEnabled: String(process.env.GAPS_TRAIL_ENABLED || "true").toLowerCase() === "true",
   };
+}
+
+/**
+ * The intraday trailing-stop EMA, as a time-aligned series so the chart plots
+ * exactly the line the exit used.
+ *
+ * `candles` must be the intraday series (GAPS_EXIT_TF bars) ending with the bar
+ * just CLOSED. Returns `last: null` while fewer than `length` bars exist — the
+ * caller must treat that as "no trail yet", never as a level of 0.
+ */
+function computeTrailEma(candles, length) {
+  const len = Math.max(2, parseInt(length, 10) || 21);
+  const out = { series: [], last: null, length: len, warmup: true };
+  if (!Array.isArray(candles) || candles.length < len) return out;
+
+  const bars = candles
+    .filter(c => c && typeof c.close === "number" && typeof c.time === "number")
+    .sort((a, b) => a.time - b.time);
+  if (bars.length < len) return out;
+
+  const arr = EMA.calculate({ period: len, values: bars.map(c => c.close) });
+  for (let i = 0; i < arr.length; i++) {
+    const c = bars[i + len - 1];
+    if (c) out.series.push({ time: c.time, value: _r2(arr[i]) });
+  }
+  if (out.series.length) { out.last = out.series[out.series.length - 1].value; out.warmup = false; }
+  return out;
+}
+
+/**
+ * The trailing-stop rule itself — the ONE place it is written down, so paper,
+ * live, backtest and replay cannot drift apart.
+ *
+ * A PE is a bet on a fall, so it is stopped out when price closes back ABOVE the
+ * trail; a CE is stopped when price closes BELOW it. Returns false whenever the
+ * trail has not warmed up, which leaves the gap-fill stop as the only exit.
+ */
+function trailExitHit(side, barClose, trailValue) {
+  if (typeof barClose !== "number" || typeof trailValue !== "number") return false;
+  if (side === "PE") return barClose > trailValue;
+  if (side === "CE") return barClose < trailValue;
+  return false;
 }
 
 /**
@@ -199,7 +252,7 @@ function getPrevDaySnapshot(dailyCandles, sessionDayUnixSec, cfg) {
 function _base(cfg) {
   return {
     signal: "NONE", side: null, reason: "", skipReason: "",
-    entrySpot: null, slSpot: null, targetSpot: null, signalStrength: null,
+    entrySpot: null, slSpot: null, signalStrength: null,
     prevClose: null, prevRsi: null, prevEma: null, prevDate: null,
     todayOpen: null, gapPts: null, gapPct: null, gapDir: null,
     rsiUpper: cfg.rsiUpper, rsiLower: cfg.rsiLower,
@@ -282,14 +335,14 @@ function getSignal(dailyCandles, todayOpen, opts) {
   base.signal     = side === "CE" ? "BUY_CE" : "BUY_PE";
   base.entrySpot  = base.todayOpen;
   base.slSpot     = snap.prevClose;   // gap fill, exactly
-  base.targetSpot = snap.prevEma;     // daily EMA21 of the last closed bar
   base.signalStrength = "STRONG";
+  const trailTxt = cfg.trailEnabled ? `trail EMA${cfg.trailLength} (intraday close-through)` : "trail DISABLED";
   base.reason =
     `GAPS ${side}: ${snap.prevDate} ${rsiTxt} ${side === "PE" ? `> ${cfg.rsiUpper} (overbought)` : `< ${cfg.rsiLower} (oversold)`} ` +
-    `→ ${gapTxt} → BUY ${side} @ ${base.todayOpen} | SL ${base.slSpot} (gap fill) | Target EMA${cfg.emaLength} ${base.targetSpot}`;
+    `→ ${gapTxt} → BUY ${side} @ ${base.todayOpen} | SL ${base.slSpot} (gap fill) | ${trailTxt}`;
 
   if (!o.silent) {
-    console.log(`[GAPS] ENTER ${side} | prev ${snap.prevDate} close=${snap.prevClose} ${rsiTxt} EMA${cfg.emaLength}=${snap.prevEma} | open=${base.todayOpen} gap=${gapPts}pt ${base.gapDir} | SL=${base.slSpot} target=${base.targetSpot}`);
+    console.log(`[GAPS] ENTER ${side} | prev ${snap.prevDate} close=${snap.prevClose} ${rsiTxt} EMA${cfg.emaLength}=${snap.prevEma} | open=${base.todayOpen} gap=${gapPts}pt ${base.gapDir} | SL=${base.slSpot} | ${trailTxt}`);
   }
   return base;
 }
@@ -300,6 +353,8 @@ module.exports = {
   RSI_SOURCES,
   getConfig,
   computeDaily,
+  computeTrailEma,
+  trailExitHit,
   getPrevDaySnapshot,
   getSignal,
   _istDayOf,

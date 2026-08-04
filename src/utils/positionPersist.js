@@ -482,7 +482,10 @@ function saveGapsPosition(position, sessionMeta) {
         spotAtEntry:     position.spotAtEntry || position.entrySpot,
         stopLoss:        position.stopLoss || position.slSpot,
         initialStopLoss: position.initialStopLoss || position.initialSlSpot,
-        targetSpot:      position.targetSpot,
+        // GAPS exits on a trailing EMA, not a fixed target. Persist where the
+        // trail sat so a crash-recovered position reports the real exit level.
+        trailSpot:       position.trailSpot,
+        trailLength:     position.trailLength,
         bestPrice:       position.bestPrice,
         entryTime:       position.entryTime,
         orderId:         position.orderId,
