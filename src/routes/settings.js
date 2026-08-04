@@ -3414,9 +3414,11 @@ pm2 startOrRestart ecosystem.config.js --update-env</pre>
           <div style="font-size:0.68rem;color:#9db4d6;line-height:1.7;margin-top:8px;">
             1. Open <a href="https://console.cloud.google.com/" target="_blank" rel="noopener" style="color:#60a5fa;">console.cloud.google.com</a> → create a project.<br/>
             2. <b>APIs &amp; Services → Library</b> → enable <b>Google Drive API</b>.<br/>
-            3. <b>OAuth consent screen</b> → External → fill in app name + your email → <b style="color:#fbbf24;">Publish app</b> (leaving it in <i>Testing</i> makes the connection expire every 7 days).<br/>
-            4. <b>Credentials → Create credentials → OAuth client ID</b> → application type <b style="color:#fbbf24;">TVs and Limited Input devices</b>.<br/>
-            5. Paste the Client ID + Secret below and save.
+            3. <a href="https://console.cloud.google.com/auth/overview" target="_blank" rel="noopener" style="color:#60a5fa;">Google Auth Platform</a> → <b>Get started</b> → fill in app name + your email → audience <b>External</b> → create.<br/>
+            4. <a href="https://console.cloud.google.com/auth/audience" target="_blank" rel="noopener" style="color:#60a5fa;">Google Auth Platform → <b>Audience</b></a> → under <i>Publishing status</i> click <b style="color:#fbbf24;">PUBLISH APP</b> → Confirm (leaving it in <i>Testing</i> makes the connection expire every 7 days).<br/>
+            5. <a href="https://console.cloud.google.com/auth/clients" target="_blank" rel="noopener" style="color:#60a5fa;">Google Auth Platform → <b>Clients</b></a> → <b>Create client</b> → application type <b style="color:#fbbf24;">TVs and Limited Input devices</b>.<br/>
+            6. Paste the Client ID + Secret below and save.<br/>
+            <span style="color:#5a6c8a;">Note: the old <i>APIs &amp; Services → OAuth consent screen</i> page is now <b>Google Auth Platform</b> in the left menu — same thing, new name.</span>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px;">
             <input type="text" id="gdriveClientId" placeholder="xxxx.apps.googleusercontent.com" autocomplete="off" style="flex:1;min-width:220px;padding:7px 10px;background:#0a1426;border:1px solid #1a2640;border-radius:7px;color:#cfe0f8;font-size:0.7rem;font-family:'IBM Plex Mono',monospace;"/>
