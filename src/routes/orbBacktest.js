@@ -55,8 +55,16 @@ function _paperOnlyGates() {
   // spread gate inactive whenever the ORB-specific key was simply unset — the exact
   // case where the global fallback leaves it ACTIVE in paper/live.
   if (on("ORB_PREMIUM_GATE_ENABLED", "true")) g.push(`option-premium band ₹${process.env.ORB_PREMIUM_MIN || "120"}–₹${process.env.ORB_PREMIUM_MAX || "400"}`);
-  const _maxSpread = parseFloat(process.env.ORB_MAX_SPREAD_PTS || process.env.MAX_BID_ASK_SPREAD_PTS || "2");
-  if (_maxSpread > 0) g.push(`bid-ask spread ≤ ${_maxSpread}pt`);
+  // The spread gate has no on/off switch — paper/live call tradeGuards.checkSpread()
+  // unconditionally, so it is ALWAYS active and must always be disclosed. A zero or
+  // non-numeric threshold does NOT disable it: checkSpread returns `spread <= max`,
+  // which is false for every real quote, so it would reject essentially every entry.
+  // Say so rather than falling silent, which is what a bare `> 0` test did.
+  const _rawSpread = process.env.ORB_MAX_SPREAD_PTS || process.env.MAX_BID_ASK_SPREAD_PTS || "2";
+  const _maxSpread = parseFloat(_rawSpread);
+  g.push(Number.isFinite(_maxSpread) && _maxSpread > 0
+    ? `bid-ask spread ≤ ${_maxSpread}pt`
+    : `bid-ask spread — threshold "${_rawSpread}" is not a positive number, so paper/live reject EVERY quote that has a spread`);
   if (on("OI_FILTER_ENABLED") && on("ORB_OI_ENABLED")) g.push("OI buildup filter");
   if (on("ORB_VIX_ENABLED")) g.push(`VIX ≤ ${process.env.ORB_VIX_MAX_ENTRY || "22"}`);
   return g;
