@@ -2701,6 +2701,10 @@ async function gdrivePollOnce(deadline, intervalMs) {
     var r = await fetch('/backup/gdrive/poll', { cache: 'no-store' });
     d = await r.json();
   } catch (e) { /* transient — keep polling */ }
+  // Cancel may have landed while this poll was in flight; the server has already
+  // forgotten the device code, so its "no connection in progress" reply is not
+  // something to report as a failure.
+  if (!_gdriveConnecting) return;
 
   if (d && d.state === 'connected') {
     gdriveEndConnect('Google Drive connected' + (d.account ? ' as ' + d.account : '') + '. Daily backups will be pushed automatically.', 'success');
