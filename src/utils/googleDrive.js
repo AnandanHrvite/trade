@@ -305,7 +305,7 @@ async function getAccessToken(force = false) {
         // screen is still in "Testing", where tokens expire after 7 days).
         if (/invalid_grant/i.test(msg)) {
           writeStore({ refreshToken: null, accessToken: null, accessExpiresAt: 0 });
-          throw new Error("Google revoked the connection — reconnect Drive. (If the OAuth consent screen is in Testing mode, publish it to Production so tokens stop expiring after 7 days.)");
+          throw new Error("Google revoked the connection — reconnect Drive. (If the app is still in Testing mode, publish it: Google Auth Platform → Audience → Publish app, so tokens stop expiring after 7 days.)");
         }
         throw new Error(`Token refresh failed: ${msg}`);
       }
