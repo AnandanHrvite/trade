@@ -21,6 +21,7 @@ const STRATEGY_MODES = [
   { mode: 'ORB',        label: 'ORB',          envKey: 'ORB_MODE_ENABLED'        },
   { mode: 'EMA9VWAP',   label: 'EMA9+VWAP',    envKey: 'EMA9VWAP_MODE_ENABLED'   },
   { mode: 'TREND_PB',   label: 'Trend_PB',     envKey: 'TREND_PB_MODE_ENABLED'   },
+  { mode: 'GAPS',       label: 'GAPS',         envKey: 'GAPS_MODE_ENABLED'       },
 ];
 
 // Strategies currently enabled in Settings (default ON, same as the sidebar).
@@ -38,6 +39,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   let _orbMode = null;
   let _ema9vwapMode = null;
   let _trendPbMode = null;
+  let _gapsMode = null;
   let _anyTradeActive = false;
   try {
     const sss = require('./sharedSocketState');
@@ -47,6 +49,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     _orbMode = sss.getOrbMode ? sss.getOrbMode() : null;
     _ema9vwapMode = sss.getEma9VwapMode ? sss.getEma9VwapMode() : null;
     _trendPbMode = sss.getTrendPbMode ? sss.getTrendPbMode() : null;
+    _gapsMode = sss.getGapsMode ? sss.getGapsMode() : null;
     _anyTradeActive = sss.isAnyActive ? sss.isAnyActive() : false;
   } catch (_) {}
 
@@ -73,6 +76,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const orbModeOn      = (process.env.ORB_MODE_ENABLED      || 'true').toLowerCase() === 'true';
   const ema9vwapModeOn = (process.env.EMA9VWAP_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const trendPbModeOn  = (process.env.TREND_PB_MODE_ENABLED || 'true').toLowerCase() === 'true';
+  const gapsModeOn     = (process.env.GAPS_MODE_ENABLED     || 'true').toLowerCase() === 'true';
 
   // ── Per-module menu-visibility toggles (managed from Settings page) ──
   const showSim      = (process.env.UI_SHOW_SIMULATE || 'false').toLowerCase() === 'true';
@@ -115,6 +119,10 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const showTrendPbPaper       = (process.env.UI_SHOW_TREND_PB_PAPER        || 'true').toLowerCase()  === 'true';
   const showTrendPbLive        = (process.env.UI_SHOW_TREND_PB_LIVE         || 'true').toLowerCase()  === 'true';
   const showTrendPbHistory     = (process.env.UI_SHOW_TREND_PB_HISTORY      || 'true').toLowerCase()  === 'true';
+  const showGapsBacktest      = (process.env.UI_SHOW_GAPS_BACKTEST         || 'true').toLowerCase()  === 'true';
+  const showGapsPaper         = (process.env.UI_SHOW_GAPS_PAPER            || 'true').toLowerCase()  === 'true';
+  const showGapsLive          = (process.env.UI_SHOW_GAPS_LIVE             || 'true').toLowerCase()  === 'true';
+  const showGapsHistory       = (process.env.UI_SHOW_GAPS_HISTORY          || 'true').toLowerCase()  === 'true';
 
   // ── System submenu toggles (Settings is always shown) ──
   const showTradeLogs  = (process.env.UI_SHOW_TRADE_LOGS  || 'true').toLowerCase() === 'true';
@@ -126,6 +134,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const orbKeys     = ['orbBacktest', 'orbPaper', 'orbLive', 'orbLiveHarness', 'orbHistory'];
   const ema9vwapKeys = ['ema9vwapBacktest', 'ema9vwapPaper', 'ema9vwapSim', 'ema9vwapLive', 'ema9vwapHistory'];
   const trendPbKeys = ['trendPbBacktest', 'trendPbPaper', 'trendPbLive', 'trendPbLiveHarness', 'trendPbHistory'];
+  const gapsKeys    = ['gapsBacktest', 'gapsPaper', 'gapsLive', 'gapsHistory'];
 
   const isTradingOpen  = tradingKeys.includes(activePage);
   const isBbRsiOpen    = bbRsiKeys.includes(activePage);
@@ -133,6 +142,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const isOrbOpen      = orbKeys.includes(activePage);
   const isEma9vwapOpen = ema9vwapKeys.includes(activePage);
   const isTrendPbOpen  = trendPbKeys.includes(activePage);
+  const isGapsOpen     = gapsKeys.includes(activePage);
 
   // When a strategy's PAPER session is running, hide its Live / Live (Harness)
   // entries — paper and live are mutually exclusive per strategy, so the live
@@ -143,6 +153,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const orbPaperRunning      = _orbMode      === 'ORB_PAPER';
   const ema9vwapPaperRunning = _ema9vwapMode === 'EMA9VWAP_PAPER';
   const trendPbPaperRunning  = _trendPbMode  === 'TREND_PB_PAPER';
+  const gapsPaperRunning     = _gapsMode     === 'GAPS_PAPER';
 
   // Build a ema_rsi_st items list with per-feature toggle
   const emaRsiStItems = [
@@ -199,6 +210,13 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     ...(showTrendPbHistory  ? [{ key: 'trendPbHistory',  href: '/trend-pb-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 
+  const gapsItems = [
+    ...(showGapsBacktest ? [{ key: 'gapsBacktest', href: '/gaps-backtest',      icon: '🔍', label: 'Backtest' }] : []),
+    ...(showGapsPaper    ? [{ key: 'gapsPaper',    href: '/gaps-paper/status',  icon: '🕳', label: 'Paper'   }] : []),
+    ...(showGapsLive && !gapsPaperRunning ? [{ key: 'gapsLive', href: '/gaps-live', icon: '📡', label: 'Live' }] : []),
+    ...(showGapsHistory  ? [{ key: 'gapsHistory',  href: '/gaps-paper/history', icon: '📜', label: 'History' }] : []),
+  ];
+
   // ── Grouped navigation sections (collapsible) ──
   const topLevelItems = [
     ...(showDashboard   ? [{ key: 'dashboard',         href: '/',                   icon: '⌂',  label: 'Dashboard' }] : []),
@@ -243,6 +261,11 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       header: 'TREND PULLBACK', collapsible: true, collapsed: !isTrendPbOpen,
       groupId: 'nav-trend-pb',
       items: trendPbItems,
+    }] : []),
+    ...(gapsModeOn ? [{
+      header: 'GAPS', collapsible: true, collapsed: !isGapsOpen,
+      groupId: 'nav-gaps',
+      items: gapsItems,
     }] : []),
     {
       header: 'SYSTEM', collapsible: false,
@@ -304,9 +327,17 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
       : '';
 
+    const gapsLiveBadge = p.key === 'gapsLive' && _gapsMode === 'GAPS_LIVE'
+      ? `<span class="sb-nav-badge live">LIVE</span>`
+      : '';
+
+    const gapsPaperBadge = p.key === 'gapsPaper' && _gapsMode === 'GAPS_PAPER'
+      ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
+      : '';
+
     return `<a href="${p.href}" class="sb-nav-item${isActive ? ' active' : ''}">
       <span class="sb-nav-icon">${p.icon}</span> ${p.label}
-      ${liveBadge}${runningBadge}${bbRsiLiveBadge}${bbRsiPaperBadge}${paLiveBadge}${paPaperBadge}${orbLiveBadge}${orbPaperBadge}
+      ${liveBadge}${runningBadge}${bbRsiLiveBadge}${bbRsiPaperBadge}${paLiveBadge}${paPaperBadge}${orbLiveBadge}${orbPaperBadge}${gapsLiveBadge}${gapsPaperBadge}
     </a>`;
   }
 

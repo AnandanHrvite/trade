@@ -155,6 +155,7 @@ const _EXPIRY_PIN_KEYS = [
   "ORB_OPTION_EXPIRY_OVERRIDE",      "ORB_OPTION_EXPIRY_TYPE",
   "EMA9VWAP_OPTION_EXPIRY_OVERRIDE", "EMA9VWAP_OPTION_EXPIRY_TYPE",
   "TREND_PB_OPTION_EXPIRY_OVERRIDE", "TREND_PB_OPTION_EXPIRY_TYPE",
+  "GAPS_OPTION_EXPIRY_OVERRIDE",     "GAPS_OPTION_EXPIRY_TYPE",
 ];
 function _pinnedExpirySettings(snapshot) {
   const snap = snapshot || {};
@@ -175,6 +176,7 @@ const _MODE_TO_ENV_PREFIX = {
   "orb-paper":        "ORB",          // (…, 'ORB')
   "ema9vwap-paper":   "EMA9VWAP",     // (…, 'ema9vwap')
   "trend-pb-paper":   "TREND_PB",     // (…, 'TREND_PB')
+  "gaps-paper":       "GAPS",         // (…, 'GAPS')
   // bb_rsi-paper / pa-paper: NO mode arg → common OPTION_EXPIRY_* only (prefix null).
 };
 
@@ -587,6 +589,7 @@ const _MODE_TO_CANONICAL_FILE = {
   "orb-paper":      "orb_paper_trades.json",
   "ema9vwap-paper": "ema9vwap_paper_trades.json",
   "trend-pb-paper": "trend_pb_paper_trades.json",
+  "gaps-paper":     "gaps_paper_trades.json",
 };
 function _lookupCanonicalSession(mode, sessionStartTs) {
   const fname = _MODE_TO_CANONICAL_FILE[mode];
@@ -752,6 +755,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     ss_clearEma9Vwap:     sharedSocketState.clearEma9Vwap,
     ss_setTrendPbActive:  sharedSocketState.setTrendPbActive,
     ss_clearTrendPb:      sharedSocketState.clearTrendPb,
+    ss_setGapsActive:     sharedSocketState.setGapsActive,
+    ss_clearGaps:         sharedSocketState.clearGaps,
     // fs originals — paper /stop calls saveSession() → savePaperData() which
     // writes the canonical {strategy}_paper_trades.json via fs.writeFileSync
     // + fs.renameSync directly (NOT via tradeLogger.appendTradeLog, which we
@@ -971,6 +976,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     sharedSocketState.clearEma9Vwap     = () => {};
     sharedSocketState.setTrendPbActive  = () => {};
     sharedSocketState.clearTrendPb      = () => {};
+    sharedSocketState.setGapsActive     = () => {};
+    sharedSocketState.clearGaps         = () => {};
 
     // fs: a replay must never mutate the user's canonical state. Rather than
     // enumerate filenames (the old *_paper_trades.json regex missed the per-day
@@ -1189,6 +1196,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     sharedSocketState.clearEma9Vwap     = orig.ss_clearEma9Vwap;
     sharedSocketState.setTrendPbActive  = orig.ss_setTrendPbActive;
     sharedSocketState.clearTrendPb      = orig.ss_clearTrendPb;
+    sharedSocketState.setGapsActive     = orig.ss_setGapsActive;
+    sharedSocketState.clearGaps         = orig.ss_clearGaps;
     fs.writeFileSync     = orig.fs_writeFileSync;
     fs.appendFileSync    = orig.fs_appendFileSync;
     fs.unlinkSync        = orig.fs_unlinkSync;
@@ -1255,6 +1264,7 @@ const MODE_TO_MODULE = {
   "orb-paper":      "../routes/orbPaper",
   "ema9vwap-paper": "../routes/ema9vwapPaper",
   "trend-pb-paper": "../routes/trendPbPaper",
+  "gaps-paper":     "../routes/gapsPaper",
   // Live modes are NOT supported for replay (they place real orders). If a
   // live session was recorded, replay it as the matching paper mode.
 };
@@ -1799,6 +1809,7 @@ function replayPreflight() {
   // against (silenced trades, and the /stop mutex clear killing the shared socket).
   if (sharedSocketState.isEma9VwapActive()) activeModes.push(sharedSocketState.getEma9VwapMode() || "ema9vwap");
   if (sharedSocketState.isTrendPbActive())  activeModes.push(sharedSocketState.getTrendPbMode() || "trend_pb");
+  if (sharedSocketState.isGapsActive())     activeModes.push(sharedSocketState.getGapsMode() || "gaps");
   if (activeModes.length > 0) {
     return {
       ok: false,
@@ -1856,6 +1867,7 @@ function forceClearSharedState() {
     orb:      sharedSocketState.getOrbMode(),
     ema9vwap: sharedSocketState.getEma9VwapMode(),
     trend_pb: sharedSocketState.getTrendPbMode(),
+    gaps:     sharedSocketState.getGapsMode(),
     replayInProgress: _replayInProgress,
   };
   sharedSocketState.clear();
@@ -1867,6 +1879,7 @@ function forceClearSharedState() {
   // / TREND_PB flag — the strategy stayed unstartable until a full PM2 restart.
   sharedSocketState.clearEma9Vwap();
   sharedSocketState.clearTrendPb();
+  sharedSocketState.clearGaps();
   _replayInProgress = false;
   return { ok: true, cleared: before };
 }

@@ -68,6 +68,7 @@ function collectTodayStats(istDate) {
     ORB:      { trades: 0, wins: 0, losses: 0, pnl: 0 },
     EMA9VWAP: { trades: 0, wins: 0, losses: 0, pnl: 0 },
     TREND_PB: { trades: 0, wins: 0, losses: 0, pnl: 0 },
+    GAPS:     { trades: 0, wins: 0, losses: 0, pnl: 0 },
   };
 
   // loadAllTrades() returns flattened paper trades with `date` = session date

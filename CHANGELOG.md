@@ -6,6 +6,31 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Added — GAPS: a new strategy (extreme daily RSI + a next-day gap the other way)
+
+A seventh strategy, built to the same standard as the other six — Settings section, sidebar group, Paper, Backtest, Live-via-harness, Replay, History, Analytics, Reports, Export, Telegram, logs, charts, dashboard card, real-time monitor. No existing strategy's behaviour changed.
+
+**The rules, in full** — deliberately minimal; no trend filter, volume, ADX, VWAP, OI, confirmation candle or multi-timeframe logic was added.
+- Indicators, both on the NIFTY **daily** series: `EMA(GAPS_EMA_LENGTH=21)` of close, and `RSI(GAPS_RSI_LENGTH=14)` whose input source is configurable and defaults to **`ema`** — RSI computed over the EMA21 line rather than close. That is TradingView's "EMA: EMA" source; double-smoothing is what lets RSI actually reach 90 / 10.
+- Entry, decided **once at the open**: yesterday's daily RSI > `GAPS_RSI_UPPER=90` **and** today opens below yesterday's close → **BUY PE**; yesterday's RSI < `GAPS_RSI_LOWER=10` **and** today opens above yesterday's close → **BUY CE**.
+- Stop = yesterday's close exactly (the gap-fill level), on spot, per tick.
+- Target = the daily EMA21 of the last closed daily bar, pinned as a fixed level for the session; fires when a `GAPS_EXIT_TF=5`-minute candle **closes** through it in favour. `GAPS_TARGET_ENABLED=false` runs stop-and-EOD only.
+- Nothing else exits: no trail, no breakeven, no time stop. Anything open is squared off at `GAPS_FORCED_EXIT=15:15`.
+- Slightly-ITM strike (`GAPS_ITM_STEPS=1`). Risk: `GAPS_MAX_DAILY_TRADES=1`, `GAPS_MAX_DAILY_LOSS=5000`, `GAPS_MAX_WEEKLY_LOSS` (rolling Mon→today, off by default), `GAPS_LOSS_STREAK_SKIP=3`, plus the shared portfolio cap.
+
+**One engine, four surfaces.** [src/strategies/gaps.js](src/strategies/gaps.js) is the only place the rules exist. Paper ([gapsPaper.js](src/routes/gapsPaper.js)) is canonical; Backtest ([gapsBacktest.js](src/routes/gapsBacktest.js)) calls the same `getSignal` and only re-implements the paper exits; Live ([gapsLiveHarness.js](src/routes/gapsLiveHarness.js)) *is* Paper wrapped by the shared harness, so Live = Paper by construction; Replay drives the paper route through recorded ticks.
+
+**Correctness details worth recording**
+- "Yesterday" is resolved by IST day number, so today's forming daily bar can never leak into the signal — the same bar is read in Paper, Live, Backtest and Replay. If the daily indicator series doesn't end on that bar (a history hole), the engine refuses rather than quoting a stale RSI as if it were yesterday's.
+- Indicator alignment is explicit and verified: `EMA(p)` over N values yields N−p+1 points mapping to `values[i+p−1]`; `RSI(L)` over M values yields M−L points mapping to `values[j+L]`. With the default `ema` source that means ~35 closed daily candles are needed before the first signal — the route reports warmup instead of guessing.
+- Today's open is taken from the daily bar's open where available, then the first intraday candle, then the first tick — and the source is recorded on the trade, so a session started late is visibly *not* using the official open.
+- The backtest's intra-bar ordering is conservative: the gap-fill stop is tested on the bar's high/low **before** the target is tested on the close, and a bar that opened beyond the stop fills at the open, never at the better level.
+- The Paper page's daily chart (candles + EMA21 + an RSI pane with the 90/10 band lines) is served from the same engine that produced the decision, so the chart cannot disagree with the trade.
+- `positionPersist` now covers GAPS (`.active_gaps_position.json`), reconciled against the Fyers book on boot like the other Fyers engines.
+
+**Validation**: 47 assertions over the engine and backtest exits (indicator alignment, both setups, both rejection paths, forming-bar isolation, configurable bands/source/length, warmup refusal, stop-before-target, EOD, target-disabled, no-gap skip) all pass; every touched file syntax-checks; the app boots and every GAPS page, JSON feed and export endpoint returns 200. **Not yet market-validated** — no paper session has run. Collect clean paper days and a `/replay` comparison before touching the live gates.
+
+
 ### Changed — ORB implementation audit: settings, parity, UI and dead code
 
 A full pass over ORB against the standard the other five strategies already meet. **No trading behaviour changed** — no threshold, gate, ordering or fill rule was touched; `runOrbBacktest` produces identical trades before and after.

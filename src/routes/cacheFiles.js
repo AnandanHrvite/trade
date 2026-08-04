@@ -62,6 +62,7 @@ const STRATEGY_BADGE = {
   pa:       { label: "PA",       cls: "mode-pa" },
   orb:      { label: "ORB",      cls: "mode-orb" },
   trend_pb: { label: "TREND PB", cls: "mode-trend_pb" },
+  gaps:     { label: "GAPS", cls: "mode-gaps" },
 };
 
 // Cache: abs path → { mtimeMs, meta } so we don't re-parse a file every list call.
@@ -83,7 +84,7 @@ function _istDateFromMs(ms) {
 function detectMeta(group, rel, abs, mtimeMs) {
   if (!group.tagged) return { strat: null, date: null };
   // Filename-encoded modes (replay / replay_sim outputs) — no per-file date.
-  const nameMatch = path.basename(rel).match(/^(ema_rsi_st|bb_rsi|pa|orb|trend_pb)\b/i);
+  const nameMatch = path.basename(rel).match(/^(ema_rsi_st|bb_rsi|pa|orb|trend_pb|gaps)\b/i);
   if (nameMatch) return { strat: nameMatch[1].toLowerCase(), date: null };
   // Hash-named replay-cache JSON: read embedded mode/date, with an mtime cache.
   const cached = _tagCache.get(abs);
@@ -370,6 +371,7 @@ router.get("/", (req, res) => {
     .mode-pa       { color:#a78bfa; }
     .mode-orb      { color:#10b981; }
     .mode-trend_pb { color:#f472b6; }
+    .mode-gaps { color:#0ea5e9; }
     .mode-sim      { color:#ec4899; }
     .mode-desc { font-size:0.66rem; color:#4a6080; margin:6px 14px 0; font-style:italic; }
     .mode-meta { font-size:0.68rem; color:#4a6080; }
@@ -503,6 +505,7 @@ ${embed ? '' : buildSidebar('cacheFiles', liveActive)}
     pa:       { label: 'PA',       cls: 'mode-pa' },
     orb:      { label: 'ORB',      cls: 'mode-orb' },
     trend_pb: { label: 'TREND PB', cls: 'mode-trend_pb' },
+    gaps:     { label: 'GAPS', cls: 'mode-gaps' },
   };
   function badgeHtml(strat) {
     var b = STRAT_BADGE[strat];

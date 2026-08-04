@@ -45,6 +45,9 @@ All four strategies run **in parallel** on the same WebSocket — different cand
 | **Trend Pullback Paper** | 15m trend bias + 5m pullback/resumption (single-leg slightly-ITM CE/PE) | 5-min | Simulated | `/trend-pb-paper` |
 | **Trend Pullback Backtest** | Same + walk-forward OOS folds + dumb-baseline comparison | 5-min historical | Historical | `/trend-pb-backtest` |
 | **Trend Pullback Live (Harness)** | Runs Live by wrapping Paper (Fyers orders, triple-gated dry-run) | 5-min | Fyers (PAPER-wrapped) | `/trend-pb-live` |
+| **GAPS Paper** | Extreme daily RSI + next-day gap the other way (single-leg slightly-ITM CE/PE) | Daily signal, 5-min exits | Simulated | `/gaps-paper` |
+| **GAPS Backtest** | Same engine over a date range (daily signal + intraday exit sim) | Daily + 5-min historical | Historical | `/gaps-backtest` |
+| **GAPS Live (Harness)** | Runs Live by wrapping Paper (Fyers orders, triple-gated dry-run) | Daily signal, 5-min exits | Fyers (PAPER-wrapped) | `/gaps-live` |
 | **Replay** | Re-runs a recorded paper session through the paper `onTick()` | Recorded ticks | Recorded | `/replay` |
 | **All Backtest** | Unified backtest dashboard (per-strategy stats) | Per-strategy | Historical | `/all-backtest` |
 | **Manual Tracker** | — (trails SL only) | 15-min | Zerodha | `/tracker` |
@@ -165,6 +168,26 @@ See [BB_RSI.md](BB_RSI.md) for the authoritative spec. Summary:
 - **LIVE = PAPER** (`/trend-pb-live`, [src/routes/trendPbLiveHarness.js](src/routes/trendPbLiveHarness.js)): runs Live by wrapping the Paper engine with the shared harness — it triggers `/trend-pb-paper/start` under the hood and places real **Fyers** orders as paper's entries/exits fire, so Live = Paper by construction (no separate live decision path). **Triple-gated to dry-run**: real orders require `TREND_PB_LIVE_ENABLED=true` AND `LIVE_HARNESS_DRY_RUN=false` AND `TREND_PB_LIVE_DRY_RUN` not-true, plus an authenticated Fyers session — by default nothing places a real order. Validate that Live decisions match Paper on a recorded `/replay` session before flipping the gates. (Like ORB, it ships without positionPersist crash-recovery of an open live position — a restart mid-trade won't auto-reconcile the broker position.)
 - **Backtest** (`/trend-pb-backtest`, [src/routes/trendPbBacktest.js](src/routes/trendPbBacktest.js)): replays 5-min candles through the **same** `getSignal` and re-implements the paper SPOT exits (paper canonical — it does NOT use the shared engine). Option P&L is δ+θ simulated seeded slightly-ITM, **plus a spread/slippage haircut** `TREND_PB_BT_SLIPPAGE_PTS=1.5`pt each way (`getCharges` on top) — so the curve doesn't lie about option-buying costs. Reports the full stat set (win rate, profit factor, expectancy, Sharpe, equity-curve max-drawdown, R:R). Two honesty features baked in: (1) a **dumb baseline** — the same range run with a naive "enter in the 15m-trend direction at the window open, same trail+EOD, NO pullback filter" engine — the strategy must beat it or its filters are noise; (2) **walk-forward** ([src/utils/walkForward.js](src/utils/walkForward.js)) — trades split into rolling ~20-day out-of-sample folds with a stability verdict and thin-fold (< 20 trades) flags, since a "win" inside a tiny sample is noise, not proven edge.
 
+### Strategy 7: GAPS — extreme daily RSI + a next-day gap the other way (single-leg slightly-ITM CE/PE, Fyers)
+> **Deliberately minimal.** Two facts about yesterday, one about today's open. No trend filter, no volume, no ADX, no VWAP, no OI, no confirmation candle, no multi-timeframe logic — by design, not by omission. Signal source: [src/strategies/gaps.js](src/strategies/gaps.js) (pure, stateless; shared by Paper, Backtest and Replay).
+- **Indicators — both on the NIFTY DAILY series**:
+  - `EMA(GAPS_EMA_LENGTH=21)` of daily close.
+  - `RSI(GAPS_RSI_LENGTH=14)` whose **input source is configurable and defaults to `ema`** — i.e. RSI is computed over the EMA21 series, not over close. This is TradingView's **"EMA: EMA"** source option: plotting RSI on the EMA line double-smooths it so it actually reaches the 90 / 10 extremes a close-sourced RSI almost never touches. `GAPS_RSI_SOURCE=close` gives a plain RSI; `open`/`high`/`low`/`hl2`/`hlc3`/`ohlc4` are also accepted.
+- **Entry — evaluated ONCE, at today's open**:
+  - **PE (short)**: yesterday's daily RSI **>** `GAPS_RSI_UPPER=90` **and** today's open **below** yesterday's close (gap **DOWN**).
+  - **CE (long)**: yesterday's daily RSI **<** `GAPS_RSI_LOWER=10` **and** today's open **above** yesterday's close (gap **UP**).
+  - "Yesterday" always means the last daily candle that closed **strictly before** the session day — today's forming daily bar is dropped by IST day number, so Paper, Live, Backtest and Replay all read the same bar. If the daily indicator series does not end on that bar (a history hole), the engine **refuses** rather than quoting a stale RSI.
+  - Window `GAPS_ENTRY_START=09:15` → `GAPS_ENTRY_END=09:30`. The gap decision is only valid at the open, so keep this short; starting a session after the window logs a skip and takes no trade.
+- **Stop loss**: yesterday's close **exactly** — the gap-fill level, measured on SPOT, checked per tick. PE stops when spot ≥ prev close; CE stops when spot ≤ prev close.
+- **Target**: the **daily EMA21 of the last closed daily bar**, locked in at 09:15 as a fixed price level for the whole session. Fires when a `GAPS_EXIT_TF=5`-minute candle **CLOSES** through it in your favour (PE → closes below, CE → closes above) — a close, never a wick. `GAPS_TARGET_ENABLED=false` runs stop-and-EOD only.
+- **No other exit exists** — no trailing stop, no breakeven, no time stop, no ATR exit, no opposite-candle exit. Anything still open is squared off at `GAPS_FORCED_EXIT=15:15`.
+- **Option**: slightly-ITM (`GAPS_ITM_STEPS=1`, ~delta 0.6). Sizing via `GAPS_LOT_MULTIPLIER` (0 = inherit the global `LOT_MULTIPLIER`; clamped by `MAX_LOT_MULTIPLIER`).
+- **Risk**: `GAPS_MAX_DAILY_TRADES=1` (one decision per day by construction), `GAPS_MAX_DAILY_LOSS=5000`, `GAPS_MAX_WEEKLY_LOSS=0` (off; when set, a rolling Mon→today cap read from the per-day GAPS JSONL logs), `GAPS_LOSS_STREAK_SKIP=3` consecutive-loss breaker, plus the shared portfolio-wide cap. **No VIX or OI gate** — none was specified, so none was added.
+- **Charts**: the Paper page renders the **daily** chart the strategy actually reads — daily candles + `EMA21` + an RSI pane with the configured `90` / `10` band lines, all served from the same engine that produced the decision, so the chart can never disagree with the trade. Below it, the intraday chart draws the gap-fill stop and the daily-EMA target as price lines.
+- Runs on the shared **Fyers** socket in parallel with the other strategies; paper trades persist to `~/trading-data/gaps_paper_trades.json` + the per-day JSONL audit log (`mode: "gaps"`).
+- **LIVE = PAPER** (`/gaps-live`, [src/routes/gapsLiveHarness.js](src/routes/gapsLiveHarness.js)): runs Live by wrapping the Paper engine with the shared harness — it triggers `/gaps-paper/start` under the hood and places real **Fyers** orders as paper's entry/exit fires, so Live = Paper by construction. **Triple-gated to dry-run**: real orders require `GAPS_LIVE_ENABLED=true` AND `LIVE_HARNESS_DRY_RUN=false` AND `GAPS_LIVE_DRY_RUN` not-true, plus an authenticated Fyers session. An open GAPS position is crash-recovered via `positionPersist` (`.active_gaps_position.json`) and reconciled against the broker book on boot.
+- **Backtest** (`/gaps-backtest`, [src/routes/gapsBacktest.js](src/routes/gapsBacktest.js)): fetches the daily series (with ~400 days of warmup runway before `from` so RSI-on-EMA is seeded on day one) plus `GAPS_EXIT_TF` intraday candles, then drives the **same** `getSignal` per session and re-implements the paper exits (paper canonical). Conservative intra-bar ordering: the gap-fill stop is tested on the bar's high/low **before** the target is tested on the close, and a bar that opened beyond the stop fills at the open, never at the better level. Option P&L is δ+θ simulated seeded at `GAPS_BT_SEED_PREMIUM=240` **plus a spread/slippage haircut** `GAPS_BT_SLIPPAGE_PTS=1.5`pt each way. **GAPS is low-frequency** — a 30-day range usually produces very few trades, so the default range is 180 days; widen it before drawing any conclusion.
+
 ### Tick Replay — deterministic re-run of recorded sessions
 - Every trading day records spot, option (incl. entry-time bid/ask), VIX, and futures-OI ticks to `<repo>/data/ticks/YYYY-MM-DD/*.jsonl` when `TICK_RECORDER_ENABLED=true` (default; pure observer, no trade-path impact). OI is recorded only while an OI filter is enabled. Retention: `TICK_RECORDER_RETAIN_DAYS=30`.
   - **Note the location**: unlike the rest of the persistent state, the tick archive lives *inside* the repo directory (`data/ticks`), not in `~/trading-data`. On EC2 that is `/var/www/html/trade/data/ticks`, and it survives deploys only because the deploy rsync runs **without `--delete`** ([.github/workflows/deployCodeToEc2.yml](.github/workflows/deployCodeToEc2.yml) leaves `ARGS` at its default). Adding `--delete` there would erase every recorded day on the next push — recordings that can never be re-made.
@@ -239,6 +262,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   orb_paper_trades.json           # ORB paper sessions
   orb_live_trades.json            # ORB live sessions
   trend_pb_paper_trades.json      # Trend Pullback paper sessions
+  gaps_paper_trades.json          # GAPS paper sessions
   historical_pnl.json             # One-time P&L baselines per broker (Kite / Fyers)
   .active_ema_rsi_st_position.json     # Crash recovery — EMA_RSI_ST position
   .active_bb_rsi_position.json     # Crash recovery — bb_rsi position
@@ -246,12 +270,14 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   .active_ema9vwap_position.json  # Crash recovery — EMA9+VWAP position
   .active_orb_position.json       # Crash recovery — ORB position
   .active_trend_pb_position.json  # Crash recovery — Trend Pullback position
+  .active_gaps_position.json      # Crash recovery — GAPS position
   .harness_events.json            # Live-harness event log (DRY-RUN/real order events), survives restart
   ema_rsi_st_paper_trades_log.jsonl    # Crash-safe per-trade JSONL audit (cumulative)
   bb_rsi_paper_trades_log.jsonl
   pa_paper_trades_log.jsonl
   orb_paper_trades_log.jsonl
   trend_pb_paper_trades_log.jsonl
+  gaps_paper_trades_log.jsonl
   trades/                         # Per-day JSONL files: {mode}_paper_trades_YYYY-MM-DD.jsonl
                                   # (one file per strategy per day; seeded with a settings snapshot
                                   #  + checkpoint note, re-snapshotted on every config save)
@@ -264,7 +290,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   reports/                        # Daily trade reports
 ```
 
-> Boot-time orphan-position reconciliation now covers **all six** engines — EMA_RSI_ST, BB_RSI, PA, EMA9+VWAP, ORB, and Trend Pullback each persist an `.active_*_position.json` snapshot via `positionPersist.js` and are reconciled against broker state on restart. On boot the snapshot is only cleared when the broker book is **provably readable**; an empty/unauthenticated book (expired token or a swallowed API error returning `[]`/`{}`) is treated as "cannot verify" — the snapshot is retained and the user warned to re-check, rather than masking a real orphan. Unverified snapshots are only retained when real orders are possible (harness not dry-run, or a native `*_LIVE_ENABLED`); paper-only boots clear stale snapshots silently.
+> Boot-time orphan-position reconciliation now covers **all seven** engines — EMA_RSI_ST, BB_RSI, PA, EMA9+VWAP, ORB, Trend Pullback and GAPS each persist an `.active_*_position.json` snapshot via `positionPersist.js` and are reconciled against broker state on restart. On boot the snapshot is only cleared when the broker book is **provably readable**; an empty/unauthenticated book (expired token or a swallowed API error returning `[]`/`{}`) is treated as "cannot verify" — the snapshot is retained and the user warned to re-check, rather than masking a real orphan. Unverified snapshots are only retained when real orders are possible (harness not dry-run, or a native `*_LIVE_ENABLED`); paper-only boots clear stale snapshots silently.
 
 ## Key .env Settings
 
@@ -315,7 +341,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 
 > Common expiry knobs (`OPTION_EXPIRY_OVERRIDE`, `OPTION_EXPIRY_TYPE`) live under **Common — Instrument & Backtest** in Settings and are read by `src/config/instrument.js` for every engine that does not set its own per-mode override.
 >
-> **Saving the common expiry fans it out to every per-strategy key (2026-08-02).** A per-mode override always beats the common one (`modeOverride || commonOverride`), so changing the common date used to leave any strategy holding its own override on the old contract while the UI reported success. Saving `OPTION_EXPIRY_OVERRIDE` / `OPTION_EXPIRY_TYPE` — from the **Settings** page or the **Dashboard** expiry strip, both of which POST `/settings/save` — now writes the same date **and** type into `EMA_RSI_ST_`, `ORB_`, `EMA9VWAP_` and `TREND_PB_OPTION_EXPIRY_*`. (`BB_RSI_*` / `PA_*` are excluded on purpose: those engines call `validateAndGetOptionSymbol` with no mode, so their per-mode keys are never read — the honoured list is `EXPIRY_MODE_PREFIXES` in `src/config/instrument.js`.) Clearing the common date clears the copies too, so "back to auto-detect" reaches every strategy — and deleting a common key outright (bulk paste `-OPTION_EXPIRY_OVERRIDE`) cascades the delete to the copies. Saving a **per-strategy** expiry field on its own stays independent — it sends no common key, so nothing fans out — and a per-mode key sent in the *same* save (including **Save All**, which posts every field on the page) keeps its own value. The Dashboard's `⚠ … differs →` warning now fires only when a strategy's stored expiry actually differs from the common one.
+> **Saving the common expiry fans it out to every per-strategy key (2026-08-02).** A per-mode override always beats the common one (`modeOverride || commonOverride`), so changing the common date used to leave any strategy holding its own override on the old contract while the UI reported success. Saving `OPTION_EXPIRY_OVERRIDE` / `OPTION_EXPIRY_TYPE` — from the **Settings** page or the **Dashboard** expiry strip, both of which POST `/settings/save` — now writes the same date **and** type into `EMA_RSI_ST_`, `ORB_`, `EMA9VWAP_`, `TREND_PB_` and `GAPS_OPTION_EXPIRY_*`. (`BB_RSI_*` / `PA_*` are excluded on purpose: those engines call `validateAndGetOptionSymbol` with no mode, so their per-mode keys are never read — the honoured list is `EXPIRY_MODE_PREFIXES` in `src/config/instrument.js`.) Clearing the common date clears the copies too, so "back to auto-detect" reaches every strategy — and deleting a common key outright (bulk paste `-OPTION_EXPIRY_OVERRIDE`) cascades the delete to the copies. Saving a **per-strategy** expiry field on its own stays independent — it sends no common key, so nothing fans out — and a per-mode key sent in the *same* save (including **Save All**, which posts every field on the page) keeps its own value. The Dashboard's `⚠ … differs →` warning now fires only when a strategy's stored expiry actually differs from the common one.
 >
 > **A stale override blocks trading, by design (2026-07-26).** An override whose expiry-day session (15:30 IST) has passed names a contract that no longer exists. `validateAndGetOptionSymbol` now refuses to build a symbol from it — every strategy skips the entry and logs the key to fix — instead of returning the dead symbol unvalidated, which used to let EMA_RSI_ST and BB_RSI enter on "spot proxy" P&L with the option-premium stop inert. It deliberately does **not** substitute the auto-detected nearest expiry: silently trading a different expiry changes premium, theta and therefore the risk of every position. The Dashboard banner flags every stale override, common and per-mode.
 
@@ -539,12 +565,39 @@ Trend-continuation option-buyer: 15m trend bias (swing structure + EMA20>EMA50 +
 | `TREND_PB_BT_SLIPPAGE_PTS` | `1.5` | Backtest spread/slippage haircut, each way (premium pts) |
 | `TREND_PB_BT_SEED_PREMIUM` | `240` | Assumed slightly-ITM entry premium for the backtest δ+θ sim |
 
+### GAPS Mode (daily extreme RSI + next-day gap, Fyers)
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `GAPS_MODE_ENABLED` | `true` | Master toggle — sidebar group + Settings section |
+| `GAPS_PAPER_ENABLED` | `true` | Allow `/gaps-paper/start` |
+| `GAPS_EMA_LENGTH` | `21` | Daily EMA period — the RSI source **and** the profit target level |
+| `GAPS_RSI_LENGTH` | `14` | Daily RSI period |
+| `GAPS_RSI_SOURCE` | `ema` | What RSI is calculated ON. `ema` = TradingView's "EMA: EMA" (RSI plotted on the EMA line, double-smoothed so it reaches the extremes). Also `close`/`open`/`high`/`low`/`hl2`/`hlc3`/`ohlc4` |
+| `GAPS_RSI_UPPER` | `90` | Yesterday's RSI must be above this for the PE setup |
+| `GAPS_RSI_LOWER` | `10` | Yesterday's RSI must be below this for the CE setup |
+| `GAPS_ENTRY_START` / `GAPS_ENTRY_END` | `09:15` / `09:30` | Entry window (IST) — the gap decision is only valid at the open |
+| `GAPS_EXIT_TF` | `5` | Which candle CLOSE is checked for the daily-EMA target (also the intraday chart's candle size) |
+| `GAPS_TARGET_ENABLED` | `true` | Exit on a candle close through the daily EMA. Off = stop-and-EOD only |
+| `GAPS_FORCED_EXIT` | `15:15` | EOD square-off (IST) |
+| `GAPS_ITM_STEPS` | `1` | Strikes shifted in-the-money (~delta 0.6); 0 = ATM |
+| `GAPS_LOT_MULTIPLIER` | `0` | Per-strategy lot multiplier; 0 = inherit the global `LOT_MULTIPLIER` (clamped by `MAX_LOT_MULTIPLIER`) |
+| `GAPS_MAX_DAILY_TRADES` | `1` | Daily trade cap — GAPS decides once, at the open |
+| `GAPS_MAX_DAILY_LOSS` | `5000` | Daily loss kill-switch (₹); 0 = off |
+| `GAPS_MAX_WEEKLY_LOSS` | `0` | Rolling Mon→today loss cap (₹) read from the per-day GAPS JSONL logs; 0 = off |
+| `GAPS_LOSS_STREAK_SKIP` | `3` | Risk breaker — pause entries after N consecutive losers (0 = off) |
+| `GAPS_LIVE_ENABLED` | `false` | Master switch for live orders — see Live Harness table |
+| `GAPS_LIVE_DRY_RUN` | `false` | Keep GAPS in dry-run even when the global harness dry-run is off |
+| `GAPS_BT_SLIPPAGE_PTS` | `1.5` | Backtest spread/slippage haircut, each way (premium pts) |
+| `GAPS_BT_SEED_PREMIUM` | `240` | Assumed slightly-ITM entry premium for the backtest δ+θ sim |
+| `GAPS_DAILY_CHART_BARS` | `180` | Daily candles rendered on the GAPS daily EMA/RSI chart |
+
 ### Paper Investment Pools (per broker)
 Paper capital is pooled per broker, not per strategy. Each strategy's running capital = its broker pool + that strategy's all-time paper P&L. The Real-Time Monitor (dashboard) shows each pool's remaining balance.
 | Key | Default | Notes |
 |-----|---------|-------|
 | `ZERODHA_INV_AMOUNT` | `100000` | Paper investment pool for Zerodha strategies (EMA_RSI_ST) |
-| `FYERS_INV_AMOUNT` | `100000` | Paper investment pool for Fyers strategies (BB_RSI + PA + ORB + Trend Pullback) |
+| `FYERS_INV_AMOUNT` | `100000` | Paper investment pool for Fyers strategies (BB_RSI + PA + ORB + Trend Pullback + GAPS) |
 
 ### VIX Filter (per-module)
 | Key | Default | Notes |

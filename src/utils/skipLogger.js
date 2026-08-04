@@ -40,6 +40,7 @@ const FILE_PREFIX_BY_MODE = {
   orb:      "orb_paper_skips_",
   ema9vwap: "ema9vwap_paper_skips_",
   trend_pb: "trend_pb_paper_skips_",
+  gaps:     "gaps_paper_skips_",
 };
 
 try { fs.mkdirSync(SKIPS_DIR, { recursive: true }); } catch (_) {}

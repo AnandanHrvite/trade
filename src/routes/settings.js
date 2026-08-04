@@ -309,6 +309,49 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
+    section: "GAPS STRATEGY — Fyers",
+    icon: "🕳",
+    fields: [
+      // ── Enable / live gating ──
+      { key: "GAPS_PAPER_ENABLED", label: "GAPS Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow /gaps-paper/start. Turn off to keep the pages visible but block new paper sessions. Default on.", default: "true" },
+      { key: "GAPS_LIVE_ENABLED", label: "GAPS Live Orders (gates /gaps-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Master switch for GAPS Live trading. Must be true AND LIVE_HARNESS_DRY_RUN=false AND GAPS_LIVE_DRY_RUN=false for real orders to fire.", default: "false" },
+      { key: "GAPS_LIVE_DRY_RUN", label: "GAPS Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep GAPS in DRY-RUN (log only, no real order) even when the global Live Harness DRY-RUN is OFF. Default off.", default: "false" },
+
+      // ── Indicators (daily chart) ──
+      { key: "GAPS_EMA_LENGTH", label: "EMA Length (daily)", type: "number", min: 2, max: 200, step: 1, effect: EFFECT.SESSION, desc: "EMA period on the DAILY close. It is both the RSI input source (when RSI Source = ema) and the profit target level. Default 21.", default: "21" },
+      { key: "GAPS_RSI_LENGTH", label: "RSI Length (daily)", type: "number", min: 2, max: 100, step: 1, effect: EFFECT.SESSION, desc: "RSI period on the DAILY series. Default 14.", default: "14" },
+      { key: "GAPS_RSI_SOURCE", label: "RSI Input Source", type: "select", options: ["ema", "close", "open", "high", "low", "hl2", "hlc3", "ohlc4"], effect: EFFECT.SESSION, desc: "What RSI is calculated ON. 'ema' (default) feeds RSI the EMA line instead of close — this is TradingView's \"EMA: EMA\" source, which double-smooths RSI so it actually reaches the 90/10 extremes. 'close' gives a plain RSI.", default: "ema" },
+      { key: "GAPS_RSI_UPPER", label: "RSI Upper Band (overbought)", type: "number", min: 50, max: 100, step: 1, effect: EFFECT.INSTANT, desc: "Yesterday's daily RSI must be ABOVE this for a PE (short) setup. Default 90.", default: "90" },
+      { key: "GAPS_RSI_LOWER", label: "RSI Lower Band (oversold)", type: "number", min: 0, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "Yesterday's daily RSI must be BELOW this for a CE (long) setup. Default 10.", default: "10" },
+
+      // ── Session windows ──
+      { key: "GAPS_ENTRY_START", label: "Entry Window Start", type: "time", effect: EFFECT.SESSION, desc: "No entries before this IST time. GAPS acts on the open, so this is normally 09:15.", default: "09:15" },
+      { key: "GAPS_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No entries at/after this IST time. The gap decision is only valid right at the open — keep this window short. Default 09:30.", default: "09:30" },
+      { key: "GAPS_FORCED_EXIT", label: "Forced Exit (EOD square-off)", type: "time", effect: EFFECT.SESSION, desc: "Hard square-off time for any open GAPS position. Default 15:15 IST.", default: "15:15" },
+      { key: "GAPS_EXIT_TF", label: "Exit Candle Timeframe (min)", type: "select", options: ["1", "3", "5", "10", "15", "30", "60"], effect: EFFECT.SESSION, desc: "Which candle CLOSE is checked for the daily-EMA target. Also the candle size drawn on the intraday chart. Default 5.", default: "5" },
+
+      // ── Exits ──
+      { key: "GAPS_TARGET_ENABLED", label: "EMA Target Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Exit when an exit-timeframe candle CLOSES through the daily EMA in your favour (PE → close below it, CE → close above it). Turn OFF to run stop-and-EOD only. Default on.", default: "true" },
+
+      // ── Sizing + expiry ──
+      { key: "GAPS_LOT_MULTIPLIER", label: "Lot Multiplier (GAPS only)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.INSTANT, desc: "Overrides the global LOT_MULTIPLIER for GAPS only. 0 = inherit the global value (default). Clamped by MAX_LOT_MULTIPLIER.", default: "0" },
+      { key: "GAPS_ITM_STEPS", label: "ITM Steps (strikes in-the-money)", type: "number", min: 0, max: 3, step: 1, effect: EFFECT.INSTANT, desc: "How many 50-pt strikes in-the-money to buy (1 ≈ delta 0.6, less theta bleed than ATM). 0 = ATM. Default 1.", default: "1" },
+      { key: "GAPS_OPTION_EXPIRY_OVERRIDE", label: "Expiry Override (GAPS)", type: "text", effect: EFFECT.INSTANT, desc: "GAPS-only expiry date (YYYY-MM-DD). Blank = inherit the common expiry override. Overwritten whenever the common expiry is saved.", default: "" },
+      { key: "GAPS_OPTION_EXPIRY_TYPE", label: "Expiry Type (GAPS)", type: "select", options: ["", "weekly", "monthly"], effect: EFFECT.INSTANT, desc: "GAPS-only expiry type for the override above. Blank = inherit the common Expiry Type.", default: "" },
+
+      // ── Risk ──
+      { key: "GAPS_MAX_DAILY_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 5, step: 1, effect: EFFECT.SESSION, desc: "Daily trade cap. GAPS takes ONE decision per day at the open, so 1 is the natural value. Default 1.", default: "1" },
+      { key: "GAPS_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 0, max: 50000, step: 500, effect: EFFECT.SESSION, desc: "Daily loss kill-switch — blocks new entries once the session P&L is at or below -this. 0 = OFF. Default 5000.", default: "5000" },
+      { key: "GAPS_MAX_WEEKLY_LOSS", label: "Max Weekly Loss (₹)", type: "number", min: 0, max: 200000, step: 1000, effect: EFFECT.SESSION, desc: "Rolling Mon→today loss cap read from the per-day GAPS trade logs. Blocks new entries once the week's P&L is at or below -this. 0 = OFF (default).", default: "0" },
+      { key: "GAPS_LOSS_STREAK_SKIP", label: "Risk Breaker (consecutive losses)", type: "number", min: 0, max: 6, step: 1, effect: EFFECT.SESSION, desc: "Pause entries for the rest of the session after this many consecutive losing GAPS trades. 0 = OFF. Default 3.", default: "3" },
+
+      // ── Backtest realism ──
+      { key: "GAPS_BT_SLIPPAGE_PTS", label: "Backtest Spread/Slippage Haircut (pts each way)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.BACKTEST, desc: "Premium points shaved off EACH side (buy higher / sell lower) in the backtest to model the option bid-ask spread + slippage the δ+θ sim can't see. Default 1.5.", default: "1.5" },
+      { key: "GAPS_BT_SEED_PREMIUM", label: "Backtest Seed Premium (₹)", type: "number", min: 50, max: 800, step: 10, effect: EFFECT.BACKTEST, desc: "Assumed slightly-ITM option entry premium for the backtest δ+θ P&L sim (no historical option chain). Default 240.", default: "240" },
+      { key: "GAPS_DAILY_CHART_BARS", label: "Daily Chart Bars", type: "number", min: 60, max: 500, step: 10, effect: EFFECT.INSTANT, desc: "How many daily candles the GAPS daily EMA/RSI chart renders. Default 180.", default: "180" },
+    ],
+  },
+  {
     section: "OPEN-INTEREST FILTER (OI + Price Buildup)",
     icon: "📊",
     fields: [
@@ -401,6 +444,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_ORB_STARTED",      label: "ORB — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an ORB paper/live session is started", default: "true" },
       { key: "TG_EMA9VWAP_STARTED", label: "EMA9+VWAP — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an EMA9+VWAP paper/live session is started", default: "true" },
       { key: "TG_TREND_PB_STARTED", label: "Trend Pullback — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a Trend Pullback paper/live session is started", default: "true" },
+      { key: "TG_GAPS_STARTED", label: "GAPS — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a GAPS paper/live session is started (includes yesterday's close, RSI and EMA)", default: "true" },
 
       { key: "TG_EMA_RSI_ST_ENTRY", label: "EMA_RSI_ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST (5-min) trade entry (paper + live)", default: "true" },
       { key: "TG_BB_RSI_ENTRY", label: "BB_RSI — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BB_RSI trade entry (paper + live)", default: "true" },
@@ -408,6 +452,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_ORB_ENTRY",      label: "ORB — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every ORB trade entry (paper + live)", default: "true" },
       { key: "TG_EMA9VWAP_ENTRY", label: "EMA9+VWAP — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA9+VWAP trade entry (paper + live)", default: "true" },
       { key: "TG_TREND_PB_ENTRY", label: "Trend Pullback — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Trend Pullback trade entry (paper + live)", default: "true" },
+      { key: "TG_GAPS_ENTRY", label: "GAPS — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every GAPS trade entry (paper + live)", default: "true" },
 
       { key: "TG_EMA_RSI_ST_EXIT", label: "EMA_RSI_ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST (5-min) trade exit (paper + live)", default: "true" },
       { key: "TG_BB_RSI_EXIT", label: "BB_RSI — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BB_RSI trade exit (paper + live)", default: "true" },
@@ -415,6 +460,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_ORB_EXIT",      label: "ORB — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every ORB trade exit (paper + live)", default: "true" },
       { key: "TG_EMA9VWAP_EXIT", label: "EMA9+VWAP — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA9+VWAP trade exit (paper + live)", default: "true" },
       { key: "TG_TREND_PB_EXIT", label: "Trend Pullback — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Trend Pullback trade exit (paper + live)", default: "true" },
+      { key: "TG_GAPS_EXIT", label: "GAPS — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every GAPS trade exit (paper + live)", default: "true" },
 
       { key: "TG_EMA_RSI_ST_SIGNALS", label: "EMA_RSI_ST — Signal/Skip Alerts", type: "toggle", effect: EFFECT.INSTANT, desc: "Candle-close alerts when flat (why a EMA_RSI_ST trade was/wasn't taken)", default: "true" },
       { key: "TG_BB_RSI_SIGNALS", label: "BB_RSI — Signal/Skip Alerts", type: "toggle", effect: EFFECT.INSTANT, desc: "Candle-close alerts when flat (why a BB_RSI trade was/wasn't taken)", default: "false" },
@@ -427,6 +473,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_ORB_DAYREPORT",      label: "ORB — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send ORB day summary (trades, win rate, P&L) when the session is stopped", default: "true" },
       { key: "TG_EMA9VWAP_DAYREPORT", label: "EMA9+VWAP — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send EMA9+VWAP day summary (trades, win rate, P&L) when the session is stopped", default: "true" },
       { key: "TG_TREND_PB_DAYREPORT", label: "Trend Pullback — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send Trend Pullback day summary (trades, win rate, P&L) when the session is stopped", default: "true" },
+      { key: "TG_GAPS_DAYREPORT", label: "GAPS — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send GAPS day summary (trades, win rate, P&L) when the session is stopped", default: "true" },
 
       { key: "TG_DAYREPORT_CONSOLIDATED", label: "Consolidated Day Report (Market Close)", type: "toggle", effect: EFFECT.INSTANT, desc: "Send one combined end-of-day summary across all modes at 15:30 IST", default: "true" },
     ],
@@ -471,6 +518,7 @@ const SETTINGS_SCHEMA = [
       { key: "ORB_MODE_ENABLED",       label: "ORB Mode (Opening Range Breakout)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the ORB sidebar group AND the ORB strategy section in Settings. When off, both are hidden.", default: "true" },
       { key: "EMA9VWAP_MODE_ENABLED",  label: "EMA9+VWAP Mode",            type: "toggle", effect: EFFECT.INSTANT, desc: "Show the EMA9+VWAP sidebar group AND the EMA9+VWAP strategy section in Settings. When off, both are hidden.", default: "true" },
       { key: "TREND_PB_MODE_ENABLED",  label: "Trend Pullback Mode",       type: "toggle", effect: EFFECT.INSTANT, desc: "Show the TREND PULLBACK sidebar group AND the Trend Pullback strategy section in Settings. When off, both are hidden.", default: "true" },
+      { key: "GAPS_MODE_ENABLED",      label: "GAPS Mode",                 type: "toggle", effect: EFFECT.INSTANT, desc: "Show the GAPS sidebar group AND the GAPS strategy section in Settings. When off, both are hidden and /gaps-paper/start is blocked.", default: "true" },
       { key: "UI_SHOW_SIMULATE",       label: "Show Simulate Menu",        type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Simulate' inside EMA_RSI_ST / BB_RSI / Price Action groups in the sidebar", default: "false", subheader: "Shared sub-menus (all strategies)" },
       { key: "UI_SHOW_COMPARE",        label: "Show Compare Menu",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Compare' inside EMA_RSI_ST / BB_RSI / Price Action groups in the sidebar", default: "false" },
       { key: "UI_SHOW_TRACKER",        label: "Show Tracker Menu (EMA_RSI_ST only)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Tracker' inside the EMA_RSI_ST group in the sidebar", default: "false" },
@@ -512,6 +560,12 @@ const SETTINGS_SCHEMA = [
       { key: "UI_SHOW_TREND_PB_PAPER",    label: "Trend Pullback → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Paper' inside the Trend Pullback group", default: "true" },
       { key: "UI_SHOW_TREND_PB_LIVE",     label: "Trend Pullback → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Live' inside the Trend Pullback group — runs LIVE by wrapping PAPER (Fyers orders), guaranteeing LIVE = PAPER decisions. Real orders need TREND_PB_LIVE_ENABLED=true AND LIVE_HARNESS_DRY_RUN=false; otherwise it's dry-run.", default: "true" },
       { key: "UI_SHOW_TREND_PB_HISTORY",  label: "Trend Pullback → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'History' inside the Trend Pullback group", default: "true" },
+
+      // ── GAPS submenu ──
+      { key: "UI_SHOW_GAPS_BACKTEST", label: "GAPS → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Backtest' inside the GAPS group", default: "true", subheader: "GAPS sub-menus" },
+      { key: "UI_SHOW_GAPS_PAPER",    label: "GAPS → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Paper' inside the GAPS group", default: "true" },
+      { key: "UI_SHOW_GAPS_LIVE",     label: "GAPS → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Live' inside the GAPS group — runs LIVE by wrapping PAPER (Fyers orders), guaranteeing LIVE = PAPER decisions. Real orders need GAPS_LIVE_ENABLED=true AND LIVE_HARNESS_DRY_RUN=false; otherwise it's dry-run.", default: "true" },
+      { key: "UI_SHOW_GAPS_HISTORY",  label: "GAPS → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'History' inside the GAPS group", default: "true" },
 
       // ── System submenu (Settings is always shown) ──
       { key: "UI_SHOW_LOGS",       label: "Logs → Server Logs tab", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the '📜 Server Logs' tab in the Logs page (live server-log viewer)", default: "true", subheader: "System sub-menus" },
@@ -559,6 +613,7 @@ const MODE_SECTION_TITLES = {
   orb:      "ORB STRATEGY (Opening Range Breakout) — Fyers",
   ema9vwap: "EMA9 + VWAP STRATEGY — Zerodha",
   trend_pb: "TREND PULLBACK STRATEGY — Fyers",
+  gaps:     "GAPS STRATEGY — Fyers",
 };
 const SNAPSHOT_COMMON_SECTION_TITLES = new Set([
   "Instrument & Backtest",
@@ -566,7 +621,7 @@ const SNAPSHOT_COMMON_SECTION_TITLES = new Set([
   "OPEN-INTEREST FILTER (OI + Price Buildup)",
 ]);
 
-const _MODE_KEYS = { ema_rsi_st: new Set(), bb_rsi: new Set(), pa: new Set(), orb: new Set(), ema9vwap: new Set(), trend_pb: new Set() };
+const _MODE_KEYS = { ema_rsi_st: new Set(), bb_rsi: new Set(), pa: new Set(), orb: new Set(), ema9vwap: new Set(), trend_pb: new Set(), gaps: new Set() };
 const _KEY_TO_MODES = new Map();
 (function buildModeKeyIndex() {
   const commonKeys = [];
@@ -1060,7 +1115,7 @@ router.post("/restart", (req, res) => {
 // cache & logs always clear fully. The aggregate paper JSON + capital restore is
 // handled client-side via the per-strategy /reset endpoints (full paper wipe only).
 // Auto-gated by the app.js x-api-secret middleware (not in OPEN_PATHS).
-const RESET_PAPER_MODES = ["ema_rsi_st", "bb_rsi", "pa", "orb", "ema9vwap", "trend_pb"];
+const RESET_PAPER_MODES = ["ema_rsi_st", "bb_rsi", "pa", "orb", "ema9vwap", "trend_pb", "gaps"];
 const _RESET_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 router.post("/reset-data", (req, res) => {
@@ -1353,6 +1408,7 @@ router.get("/", (req, res) => {
   const orbModeOn      = (envData["ORB_MODE_ENABLED"]      ?? process.env.ORB_MODE_ENABLED      ?? "true").toLowerCase() === "true";
   const ema9vwapModeOn = (envData["EMA9VWAP_MODE_ENABLED"] ?? process.env.EMA9VWAP_MODE_ENABLED ?? "true").toLowerCase() === "true";
   const trendPbModeOn  = (envData["TREND_PB_MODE_ENABLED"] ?? process.env.TREND_PB_MODE_ENABLED ?? "true").toLowerCase() === "true";
+  const gapsModeOn     = (envData["GAPS_MODE_ENABLED"]     ?? process.env.GAPS_MODE_ENABLED     ?? "true").toLowerCase() === "true";
   // Server Logs (📜 LOGS) and Cache Files buttons moved into the Logs (/trade-logs) page as tabs —
   // UI_SHOW_LOGS / UI_SHOW_CACHE_FILES now gate those tabs there, not top-bar buttons here.
   // (bbRsiModeOn already computed above for isFieldFrozen)
@@ -1363,6 +1419,7 @@ router.get("/", (req, res) => {
     "ORB STRATEGY (Opening Range Breakout) — Fyers":                orbModeOn,
     "EMA9 + VWAP STRATEGY — Zerodha":                               ema9vwapModeOn,
     "TREND PULLBACK STRATEGY — Fyers":                              trendPbModeOn,
+    "GAPS STRATEGY — Fyers":                                        gapsModeOn,
   };
 
   const sectionsHtml = SETTINGS_SCHEMA.map((s, idx) => {

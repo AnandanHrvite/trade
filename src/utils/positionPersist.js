@@ -466,6 +466,65 @@ function clearTrendPbPosition() {
   console.log("[PERSIST] Trend_PB position file cleared.");
 }
 
+// ── GAPS (daily signal, intraday exits, Fyers) ───────────────────────────────
+
+const GAPS_POS_FILE = path.join(DATA_DIR, ".active_gaps_position.json");
+
+function saveGapsPosition(position, sessionMeta) {
+  try {
+    if (!position) { _persistAtomic(GAPS_POS_FILE, null); return; }
+    const data = {
+      position: {
+        side:            position.side,
+        symbol:          position.symbol,
+        qty:             position.qty,
+        entryPrice:      position.entryPrice,
+        spotAtEntry:     position.spotAtEntry || position.entrySpot,
+        stopLoss:        position.stopLoss || position.slSpot,
+        initialStopLoss: position.initialStopLoss || position.initialSlSpot,
+        targetSpot:      position.targetSpot,
+        bestPrice:       position.bestPrice,
+        entryTime:       position.entryTime,
+        orderId:         position.orderId,
+        optionEntryLtp:  position.optionEntryLtp,
+        optionStrike:    position.optionStrike,
+        optionExpiry:    position.optionExpiry,
+        optionType:      position.optionType || position.side,
+      },
+      sessionMeta: sessionMeta || {},
+      savedAt: Date.now(),
+      savedDate: new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
+    };
+    _persistAtomic(GAPS_POS_FILE, JSON.stringify(data, null, 2));
+    console.log(`💾 [PERSIST] GAPS position saved: ${position.side} ${position.symbol} @ ₹${position.entryPrice}`);
+  } catch (err) {
+    console.warn(`⚠️ [PERSIST] Could not save GAPS position: ${err.message}`);
+  }
+}
+
+function loadGapsPosition() {
+  try {
+    if (!fs.existsSync(GAPS_POS_FILE)) return null;
+    const data = JSON.parse(fs.readFileSync(GAPS_POS_FILE, "utf-8"));
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    if (data.savedDate && data.savedDate !== today) {
+      console.log(`[PERSIST] Stale GAPS position from ${data.savedDate} — discarding.`);
+      fs.unlinkSync(GAPS_POS_FILE);
+      return null;
+    }
+    if (data.position) console.log(`[PERSIST] GAPS position loaded: ${data.position.side} ${data.position.symbol} @ ₹${data.position.entryPrice}`);
+    return data;
+  } catch (err) {
+    console.warn(`[PERSIST] Could not load GAPS position: ${err.message}`);
+    return null;
+  }
+}
+
+function clearGapsPosition() {
+  _persistAtomic(GAPS_POS_FILE, null);
+  console.log("[PERSIST] GAPS position file cleared.");
+}
+
 module.exports = {
   saveTradePosition, loadTradePosition, clearTradePosition,
   saveBbRsiPosition, loadBbRsiPosition, clearBbRsiPosition,
@@ -473,4 +532,5 @@ module.exports = {
   saveEma9VwapPosition, loadEma9VwapPosition, clearEma9VwapPosition,
   saveOrbPosition, loadOrbPosition, clearOrbPosition,
   saveTrendPbPosition, loadTrendPbPosition, clearTrendPbPosition,
+  saveGapsPosition, loadGapsPosition, clearGapsPosition,
 };

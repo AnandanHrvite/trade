@@ -440,6 +440,7 @@ const GUIDE_STATUS = {
       { type: "bool", label: "ORB Mode", key: "ORB_MODE_ENABLED", def: "true" },
       { type: "bool", label: "EMA9+VWAP Mode", key: "EMA9VWAP_MODE_ENABLED", def: "true" },
       { type: "bool", label: "Trend Pullback Mode", key: "TREND_PB_MODE_ENABLED", def: "true" },
+      { type: "bool", label: "GAPS Mode", key: "GAPS_MODE_ENABLED", def: "true" },
     ] },
   ] },
 };

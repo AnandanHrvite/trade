@@ -228,6 +228,7 @@ const STRATEGY_OPTIONS = [
   { mode: "orb-paper",      label: "ORB Paper",      envKey: "UI_SHOW_ORB_PAPER",      modeKey: "ORB_MODE_ENABLED" },
   { mode: "ema9vwap-paper", label: "EMA9+VWAP Paper", envKey: "UI_SHOW_EMA9VWAP_PAPER", modeKey: "EMA9VWAP_MODE_ENABLED" },
   { mode: "trend-pb-paper", label: "Trend Pullback Paper", envKey: "UI_SHOW_TREND_PB_PAPER", modeKey: "TREND_PB_MODE_ENABLED" },
+  { mode: "gaps-paper", label: "GAPS Paper", envKey: "UI_SHOW_GAPS_PAPER", modeKey: "GAPS_MODE_ENABLED" },
 ];
 
 function _renderStrategyOptions() {
@@ -274,6 +275,7 @@ button:disabled { background:#374151; cursor:not-allowed; }
 .tag.pa       { background:rgba(168,85,247,0.15);  color:#c084fc; }
 .tag.orb      { background:rgba(16,185,129,0.15);  color:#34d399; }
 .tag.ema9vwap { background:rgba(6,182,212,0.15);   color:#22d3ee; }
+.tag.gaps     { background:rgba(14,165,233,0.15);  color:#38bdf8; }
 .tag.trendpb  { background:rgba(236,72,153,0.15);  color:#f9a8d4; }
 .tag-incomplete { display:inline-block; padding:2px 8px; border-radius:4px; font-size:0.65rem; font-weight:600; background:rgba(245,158,11,0.15); color:#fbbf24; border:1px solid rgba(245,158,11,0.35); margin-left:4px; }
 .row-incomplete td { opacity:0.65; }
@@ -607,6 +609,7 @@ function modeTag(mode) {
   if (mode.startsWith('orb'))      return 'orb';
   if (mode.startsWith('ema9vwap')) return 'ema9vwap';
   if (mode.startsWith('trend-pb')) return 'trendpb';
+  if (mode.startsWith('gaps'))     return 'gaps';
   return 'pa';
 }
 
@@ -1645,6 +1648,7 @@ function _modeLabel(mode) {
        : mode === 'orb-paper'      ? 'ORB Paper'
        : mode === 'ema9vwap-paper' ? 'EMA9+VWAP Paper'
        : mode === 'trend-pb-paper' ? 'Trend Pullback Paper'
+       : mode === 'gaps-paper' ? 'GAPS Paper'
        : mode;
 }
 
@@ -2533,7 +2537,7 @@ ${contractNoteClientJS()}
 var _CN_RANGE_ROWS = [], _CN_RANGE_CTX = null;
 var _CN_SINGLE_TRADES = null, _CN_SINGLE_LABEL = '';
 function _cnModeLabel(m){
-  return m==='all'?'All Strategies':m==='ema_rsi_st-paper'?'EMA_RSI_ST Paper':m==='bb_rsi-paper'?'BB_RSI Paper':m==='pa-paper'?'PA Paper':m==='orb-paper'?'ORB Paper':m==='ema9vwap-paper'?'EMA9+VWAP Paper':m==='trend-pb-paper'?'Trend Pullback Paper':(m||'Replay');
+  return m==='all'?'All Strategies':m==='ema_rsi_st-paper'?'EMA_RSI_ST Paper':m==='bb_rsi-paper'?'BB_RSI Paper':m==='pa-paper'?'PA Paper':m==='orb-paper'?'ORB Paper':m==='ema9vwap-paper'?'EMA9+VWAP Paper':m==='trend-pb-paper'?'Trend Pullback Paper':m==='gaps-paper'?'GAPS Paper':(m||'Replay');
 }
 function openReplayReportAll(){
   var trades=[]; for(var i=0;i<_CN_RANGE_ROWS.length;i++){ var r=_CN_RANGE_ROWS[i]; if(r&&r.sim&&r.sim.ok&&r.sim.sessionTrades) trades=trades.concat(r.sim.sessionTrades); }

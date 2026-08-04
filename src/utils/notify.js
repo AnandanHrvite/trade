@@ -12,14 +12,14 @@
  *
  * Toggle hierarchy:
  *   TG_ENABLED                                  — master gate; if false, nothing sends
- *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB}_STARTED    — session-start alerts (per mode)
- *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB}_ENTRY      — trade entry alerts (per mode)
- *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB}_EXIT       — trade exit alerts (per mode)
+ *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|GAPS}_STARTED    — session-start alerts (per mode)
+ *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|GAPS}_ENTRY      — trade entry alerts (per mode)
+ *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|GAPS}_EXIT       — trade exit alerts (per mode)
  *   TG_{EMA_RSI_ST|BB_RSI|PA|EMA9VWAP}_SIGNALS                 — candle-close skip/signal alerts (these modes only)
- *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB}_DAYREPORT  — per-mode day report on session stop
+ *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|GAPS}_DAYREPORT  — per-mode day report on session stop
  *   TG_DAYREPORT_CONSOLIDATED                   — one combined day report at market close
  *
- *   (ORB and TREND_PB emit no SIGNAL alerts, so they have no _SIGNALS toggle.)
+ *   (ORB, TREND_PB and GAPS emit no SIGNAL alerts, so they have no _SIGNALS toggle.)
  *
  * If TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID are missing, all functions silently
  * do nothing — no errors.
@@ -98,6 +98,7 @@ function modeGroup(mode) {
   if (m === "ORB"      || m.startsWith("ORB-")      || m.startsWith("ORB_"))      return "ORB";
   if (m === "EMA9VWAP" || m.startsWith("EMA9VWAP-") || m.startsWith("EMA9VWAP_")) return "EMA9VWAP";
   if (m === "TREND_PB" || m.startsWith("TREND_PB-") || m.startsWith("TREND_PB_")) return "TREND_PB";
+  if (m === "GAPS"     || m.startsWith("GAPS-")     || m.startsWith("GAPS_"))     return "GAPS";
   return "EMA_RSI_ST";
 }
 
@@ -366,6 +367,8 @@ function modeLabel(mode) {
   if (m.startsWith("EMA9VWAP-LIVE"))   return "⚡ EMA9+VWAP LIVE" + m.slice("EMA9VWAP-LIVE".length);
   if (m.startsWith("TREND_PB-PAPER"))  return "📈 TREND PB PAPER" + m.slice("TREND_PB-PAPER".length);
   if (m.startsWith("TREND_PB-LIVE"))   return "⚡ TREND PB LIVE" + m.slice("TREND_PB-LIVE".length);
+  if (m.startsWith("GAPS-PAPER"))      return "🕳 GAPS PAPER" + m.slice("GAPS-PAPER".length);
+  if (m.startsWith("GAPS-LIVE"))       return "⚡ GAPS LIVE" + m.slice("GAPS-LIVE".length);
   return m;
 }
 
@@ -593,7 +596,7 @@ function notifyDayReport({ mode, sessionTrades, sessionPnl, sessionStart, sessio
 }
 
 /**
- * notifyConsolidatedDayReport({ byMode: { EMA_RSI_ST, BB_RSI, PA, ORB, EMA9VWAP, TREND_PB } })
+ * notifyConsolidatedDayReport({ byMode: { EMA_RSI_ST, BB_RSI, PA, ORB, EMA9VWAP, TREND_PB, GAPS } })
  * Fires once at market close (15:30 IST). Gated by TG_DAYREPORT_CONSOLIDATED.
  * Each byMode entry: { trades, wins, losses, pnl }
  * Returns true if a message was dispatched, false if gated off — the EOD
@@ -604,7 +607,7 @@ function notifyConsolidatedDayReport({ byMode }) {
   if (!canSend("TG_DAYREPORT_CONSOLIDATED")) return false;
 
   // Only include strategies that are currently enabled in Settings.
-  const groups = ["EMA_RSI_ST", "BB_RSI", "PA", "ORB", "EMA9VWAP", "TREND_PB"].filter(isModeEnabled);
+  const groups = ["EMA_RSI_ST", "BB_RSI", "PA", "ORB", "EMA9VWAP", "TREND_PB", "GAPS"].filter(isModeEnabled);
   let totalTrades = 0, totalPnl = 0, totalWins = 0, totalLosses = 0;
   const rows = [];
 

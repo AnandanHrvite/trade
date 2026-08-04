@@ -474,7 +474,7 @@ function isExpiryOverrideStale(dateStr) {
  * and the dashboard expiry strip (app.js) both read it, so adding a 7th engine
  * that passes a mode only has to be recorded here.
  */
-const EXPIRY_MODE_PREFIXES = ["EMA_RSI_ST", "ORB", "EMA9VWAP", "TREND_PB"];
+const EXPIRY_MODE_PREFIXES = ["EMA_RSI_ST", "ORB", "EMA9VWAP", "TREND_PB", "GAPS"];
 
 /**
  * Get a valid Fyers option symbol for entry.
@@ -490,12 +490,12 @@ const EXPIRY_MODE_PREFIXES = ["EMA_RSI_ST", "ORB", "EMA9VWAP", "TREND_PB"];
  */
 async function validateAndGetOptionSymbol(spot, side, mode) {
   let strike = calcATMStrike(spot, side);
-  // ── ORB and TREND_PB trade slightly ITM (~delta 0.6): higher delta tracks the
-  //    trend move better and decays slower in % than ATM. Shift the strike ITM by
+  // ── ORB, TREND_PB and GAPS trade slightly ITM (~delta 0.6): higher delta tracks
+  //    the move better and decays slower in % than ATM. Shift the strike ITM by
   //    {MODE}_ITM_STEPS × 50 (CE → lower strike, PE → higher strike). Default 1 step.
   //    Set {MODE}_ITM_STEPS=0 to fall back to ATM. ─────────────────────────────
   const _itmMode = String(mode || "").toUpperCase();
-  if (_itmMode === "ORB" || _itmMode === "TREND_PB") {
+  if (_itmMode === "ORB" || _itmMode === "TREND_PB" || _itmMode === "GAPS") {
     const itmSteps = parseInt(process.env[`${_itmMode}_ITM_STEPS`] || "1", 10);
     if (itmSteps > 0 && (side === "CE" || side === "PE")) {
       const shifted = side === "CE" ? strike - itmSteps * 50 : strike + itmSteps * 50;

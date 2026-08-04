@@ -36,6 +36,7 @@ const PAPER_SOURCES = [
   { mode: "ORB",        file: "orb_paper_trades.json" },
   { mode: "EMA9VWAP",   file: "ema9vwap_paper_trades.json" },
   { mode: "TREND_PB",   file: "trend_pb_paper_trades.json" },
+  { mode: "GAPS",       file: "gaps_paper_trades.json" },
 ];
 const LIVE_SOURCES = [
   { mode: "EMA_RSI_ST", file: "ema_rsi_st_live_trades.json" },
@@ -44,6 +45,7 @@ const LIVE_SOURCES = [
   { mode: "ORB",        file: "orb_live_trades.json" },
   { mode: "EMA9VWAP",   file: "ema9vwap_live_trades.json" },
   { mode: "TREND_PB",   file: "trend_pb_live_trades.json" },
+  { mode: "GAPS",       file: "gaps_live_trades.json" },
 ];
 
 function safeRead(p) {
@@ -163,6 +165,7 @@ router.get("/", (req, res) => {
     .badge-ORB{background:rgba(16,185,129,0.12);color:#10b981;}
     .badge-EMA9VWAP{background:rgba(6,182,212,0.12);color:#06b6d4;}
     .badge-TREND_PB{background:rgba(236,72,153,0.12);color:#ec4899;}
+    .badge-GAPS{background:rgba(14,165,233,0.12);color:#0ea5e9;}
     .res-profit{color:#10b981;font-weight:700;}
     .res-loss{color:#ef4444;font-weight:700;}
     .res-flat{color:#4a6080;}

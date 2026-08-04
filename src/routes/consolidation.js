@@ -26,6 +26,7 @@ const SOURCES = [
   { mode: "ORB",      file: path.join(DATA_DIR, "orb_paper_trades.json"),      color: "#10b981" },
   { mode: "EMA9VWAP", file: path.join(DATA_DIR, "ema9vwap_paper_trades.json"), color: "#06b6d4" },
   { mode: "TREND_PB", file: path.join(DATA_DIR, "trend_pb_paper_trades.json"), color: "#ec4899" },
+  { mode: "GAPS",     file: path.join(DATA_DIR, "gaps_paper_trades.json"),     color: "#0ea5e9" },
 ];
 
 function safeRead(p) {
@@ -330,6 +331,7 @@ router.get("/", (req, res) => {
         <option value="ORB">ORB</option>
         <option value="EMA9VWAP">EMA9+VWAP</option>
         <option value="TREND_PB">TREND PB</option>
+        <option value="GAPS">GAPS</option>
       </select>
       <label>Side</label>
       <select id="fSide">
@@ -1199,7 +1201,7 @@ function wireTableControls(){
 // ── Analytics Panel ─────────────────────────────────────────────────────────
 let _anaVisible = false;
 const _anaCharts = {};
-const _MODE_COLOR = { EMA_RSI_ST: '#3b82f6', BB_RSI: '#f59e0b', PA: '#a855f7', ORB: '#10b981', EMA9VWAP: '#06b6d4', TREND_PB: '#ec4899' };
+const _MODE_COLOR = { EMA_RSI_ST: '#3b82f6', BB_RSI: '#f59e0b', PA: '#a855f7', ORB: '#10b981', EMA9VWAP: '#06b6d4', TREND_PB: '#ec4899', GAPS: '#0ea5e9' };
 
 function fmtAna(v){ return '₹' + Math.round(Math.abs(v||0)).toLocaleString('en-IN'); }
 function fmtAnaSigned(v){ const n = v||0; return (n>=0?'+':'-') + '₹' + Math.round(Math.abs(n)).toLocaleString('en-IN'); }

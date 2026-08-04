@@ -33,6 +33,9 @@ let ema9vwapMode = null;
 // Trend Pullback mode: "TREND_PB_PAPER" | "TREND_PB_LIVE" | null
 let trendPbMode = null;
 
+// GAPS mode: "GAPS_PAPER" | "GAPS_LIVE" | null
+let gapsMode = null;
+
 // ── Primary mode (15-min) ─────────────────────────────────────────────────
 
 function setActive(mode) {
@@ -141,12 +144,31 @@ function getTrendPbMode() {
   return trendPbMode;
 }
 
+// ── GAPS mode (daily signal, intraday exits — secondary socket callback) ──
+
+function setGapsActive(mode) {
+  gapsMode = mode;
+}
+
+function clearGaps() {
+  gapsMode = null;
+}
+
+function isGapsActive() {
+  return gapsMode !== null;
+}
+
+function getGapsMode() {
+  return gapsMode;
+}
+
 // ── Combined queries ──────────────────────────────────────────────────────
 
 /** Any mode using the socket? */
 function isAnyActive() {
   return primaryMode !== null || bbRsiMode !== null || paMode !== null ||
-         orbMode !== null || ema9vwapMode !== null || trendPbMode !== null;
+         orbMode !== null || ema9vwapMode !== null || trendPbMode !== null ||
+         gapsMode !== null;
 }
 
 /** Can the given mode start? Returns { allowed, reason } */
@@ -200,6 +222,14 @@ function canStart(mode) {
       if (trendPbMode === "TREND_PB_PAPER") return { allowed: false, reason: "Trend Pullback Paper is running — stop it first" };
       if (trendPbMode === "TREND_PB_LIVE")  return { allowed: false, reason: "Trend Pullback Live is already running" };
       return { allowed: true };
+    case "GAPS_PAPER":
+      if (gapsMode === "GAPS_LIVE")  return { allowed: false, reason: "GAPS Live is running — stop it first" };
+      if (gapsMode === "GAPS_PAPER") return { allowed: false, reason: "GAPS Paper is already running" };
+      return { allowed: true };
+    case "GAPS_LIVE":
+      if (gapsMode === "GAPS_PAPER") return { allowed: false, reason: "GAPS Paper is running — stop it first" };
+      if (gapsMode === "GAPS_LIVE")  return { allowed: false, reason: "GAPS Live is already running" };
+      return { allowed: true };
     default:
       return { allowed: false, reason: "Unknown mode: " + mode };
   }
@@ -218,6 +248,8 @@ module.exports = {
   setEma9VwapActive, clearEma9Vwap, isEma9VwapActive, getEma9VwapMode,
   // Trend Pullback
   setTrendPbActive, clearTrendPb, isTrendPbActive, getTrendPbMode,
+  // GAPS
+  setGapsActive, clearGaps, isGapsActive, getGapsMode,
   // Combined
   isAnyActive, canStart,
 };
