@@ -6,6 +6,15 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Changed — GAPS judges the entry on TODAY's RSI, not yesterday's
+
+Respecified: "RSI has to be checked current day only, with source as EMA". The two halves of the entry now read **different days** — the RSI is **today's**, while the gap is still measured against **yesterday's close**.
+
+- **Today's RSI** is the daily RSI including today's bar. At 09:15 that bar has exactly one price, today's open, so it is built from the open: `computeTodayRsi()` appends a synthetic daily bar at the open to the closed history and recomputes EMA + RSI over it. Source stays `GAPS_RSI_SOURCE=ema` (RSI on the EMA21 line).
+- Using the **open** rather than the live spot is deliberate and load-bearing. It is the price the rest of the decision already rests on, it is fixed the instant the market opens, and it makes Paper, Live, Backtest and Replay compute the identical number. A live-spot RSI would drift second by second and could never be reproduced in Replay — which would break the rule that Replay and Paper must decide identically.
+- This genuinely changes decisions, it is not a relabelling: a gap large enough to bend the EMA moves today's RSI off yesterday's value, and a gap that drags it back inside the band is now correctly rejected. Covered by a regression test.
+- `prevRsi` is still computed and reported everywhere for reference; `todayRsi` is what the entry is judged on, and it is what the trade record, the JSONL export, the status feed and the tables now show. Before the open the Paper page falls back to yesterday's value and **labels it provisional** rather than implying the decision is settled.
+
 ### Changed — GAPS stop is the gap SIZE from the fill, not the gap-fill level
 
 Respecified: "that GAP POINTS is the base SL". The stop is now a **distance** — the size of the gap — applied to the price actually filled, rather than a fixed level at yesterday's close.

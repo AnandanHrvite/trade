@@ -174,8 +174,10 @@ See [BB_RSI.md](BB_RSI.md) for the authoritative spec. Summary:
   - `EMA(GAPS_EMA_LENGTH=21)` of daily close.
   - `RSI(GAPS_RSI_LENGTH=14)` whose **input source is configurable and defaults to `ema`** — i.e. RSI is computed over the EMA21 series, not over close. This is TradingView's **"EMA: EMA"** source option: plotting RSI on the EMA line double-smooths it so it actually reaches the 90 / 10 extremes a close-sourced RSI almost never touches. `GAPS_RSI_SOURCE=close` gives a plain RSI; `open`/`high`/`low`/`hl2`/`hlc3`/`ohlc4` are also accepted.
 - **Entry — evaluated ONCE, at today's open**:
-  - **PE (short)**: yesterday's daily RSI **>** `GAPS_RSI_UPPER=90` **and** today's open **below** yesterday's close (gap **DOWN**).
-  - **CE (long)**: yesterday's daily RSI **<** `GAPS_RSI_LOWER=10` **and** today's open **above** yesterday's close (gap **UP**).
+  - **PE (short)**: **today's** daily RSI **>** `GAPS_RSI_UPPER=90` **and** today's open **below** yesterday's close (gap **DOWN**).
+  - **CE (long)**: **today's** daily RSI **<** `GAPS_RSI_LOWER=10` **and** today's open **above** yesterday's close (gap **UP**).
+  - The two halves read **different days**: the RSI is **today's**, the gap is measured against **yesterday's close**.
+  - **Today's RSI** is the daily RSI including today's bar. At 09:15 that bar has exactly one price — today's open — so it is built from the open. Using the open rather than the live spot is deliberate: it is the price the whole decision already rests on, it is fixed the moment the market opens, and it makes Paper, Live, Backtest and Replay compute the identical number. A live-spot RSI would drift second by second and could never be reproduced in Replay.
   - "Yesterday" always means the last daily candle that closed **strictly before** the session day — today's forming daily bar is dropped by IST day number, so Paper, Live, Backtest and Replay all read the same bar. If the daily indicator series does not end on that bar (a history hole), the engine **refuses** rather than quoting a stale RSI.
   - Window `GAPS_ENTRY_START=09:15` → `GAPS_ENTRY_END=09:30`. The gap decision is only valid at the open, so keep this short; starting a session after the window logs a skip and takes no trade.
 - **Stop loss**: the **gap size in points**, measured on SPOT from the price actually filled — a PE is stopped that many points **above** the fill, a CE that many points **below**. Checked per tick.

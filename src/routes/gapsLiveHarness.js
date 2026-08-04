@@ -223,7 +223,7 @@ ${buildSidebar('gapsLive', false)}
       </div>
       <div style="flex:2;min-width:220px;">
         <div class="label">Rules</div>
-        <div class="val" style="font-size:0.8rem;">RSI(${scfg.rsiLength} on ${scfg.rsiSource}) &gt;${scfg.rsiUpper} + gap down → PE · &lt;${scfg.rsiLower} + gap up → CE · SL = the gap size in points from the fill · exit trails the ${scfg.trailEnabled ? `intraday EMA${scfg.trailLength}` : "— trail OFF"} (PE exits on a close ABOVE it, CE on a close BELOW)</div>
+        <div class="val" style="font-size:0.8rem;">TODAY's RSI(${scfg.rsiLength} on ${scfg.rsiSource}) &gt;${scfg.rsiUpper} + gap down vs yesterday's close → PE · &lt;${scfg.rsiLower} + gap up → CE · SL = the gap size in points from the fill · exit trails the ${scfg.trailEnabled ? `intraday EMA${scfg.trailLength}` : "— trail OFF"} (PE exits on a close ABOVE it, CE on a close BELOW)</div>
       </div>
     </div>
     <div style="margin-top:16px;">
@@ -265,7 +265,7 @@ async function refresh() {
       var g = data.gapPts == null ? '—' : (data.gapPts > 0 ? '+' : '') + data.gapPts + 'pt ' + (data.gapDir || '');
       box.innerHTML =
         '<div style="flex:1;min-width:130px;"><div class="label">Yesterday close</div><div class="val">' + (data.prevClose != null ? data.prevClose : '—') + '</div></div>' +
-        '<div style="flex:1;min-width:130px;"><div class="label">Yesterday RSI</div><div class="val">' + (data.prevRsi != null ? data.prevRsi : '—') + '</div></div>' +
+        '<div style="flex:1;min-width:130px;"><div class="label">RSI (today)</div><div class="val">' + (data.todayRsi != null ? data.todayRsi : (data.prevRsi != null ? data.prevRsi + ' *' : '—')) + '</div></div>' +
         '<div style="flex:1;min-width:130px;"><div class="label">Daily EMA (RSI source)</div><div class="val">' + (data.prevEma != null ? data.prevEma : '—') + '</div></div>' +
         '<div style="flex:1;min-width:130px;"><div class="label">Today open</div><div class="val">' + (data.todayOpen != null ? data.todayOpen : '—') + '</div></div>' +
         '<div style="flex:1;min-width:130px;"><div class="label">Gap</div><div class="val">' + g + '</div></div>';

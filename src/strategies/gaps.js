@@ -13,11 +13,17 @@
  *     on the EMA line, which double-smooths it so it actually reaches 90 / 10.
  *     Set GAPS_RSI_SOURCE=close for a plain RSI.
  *
- * Entry (evaluated ONCE, at today's open):
- *   PE (short): yesterday's RSI  >  GAPS_RSI_UPPER (default 90)  AND
- *               today's open     <  yesterday's close             (gap DOWN)
- *   CE (long):  yesterday's RSI  <  GAPS_RSI_LOWER (default 10)  AND
- *               today's open     >  yesterday's close             (gap UP)
+ * Entry (evaluated ONCE, at today's open). Note the two halves read DIFFERENT
+ * days: the RSI is TODAY's, the gap is measured against YESTERDAY's close.
+ *   PE (short): TODAY's RSI   >  GAPS_RSI_UPPER (default 90)  AND
+ *               today's open  <  yesterday's close             (gap DOWN)
+ *   CE (long):  TODAY's RSI   <  GAPS_RSI_LOWER (default 10)  AND
+ *               today's open  >  yesterday's close             (gap UP)
+ *
+ * "TODAY's RSI" is the daily RSI including today's bar. At 09:15 that bar has
+ * only one price — today's open — so it is built from the open. Using the open
+ * rather than the live spot is what lets Paper, Live, Backtest and Replay all
+ * compute the same number; a live-spot RSI would drift second by second.
  *
  * Stop loss  = the GAP SIZE in points, applied from the actual fill: a PE is
  *              stopped `gap` points ABOVE the fill, a CE `gap` points BELOW.
@@ -39,19 +45,21 @@
  *
  * "Yesterday" always means the last daily candle that CLOSED strictly before the
  * session day being evaluated — today's forming daily bar is dropped by IST day
- * number, so paper, live, backtest and replay all read the same bar.
+ * number, so paper, live, backtest and replay all read the same bar. Today's RSI
+ * is then computed by appending a synthetic bar at today's open to that history.
  *
  * Returns:
  *   { signal:"BUY_CE"|"BUY_PE"|"NONE", side, reason, skipReason,
  *     entrySpot, slSpot, slPts, signalStrength,
- *     prevClose, prevRsi, prevEma, prevDate, todayOpen,
+ *     prevClose, prevRsi, prevEma, prevDate, todayOpen, todayRsi, todayEma,
  *     gapPts, gapPct, gapDir, rsiUpper, rsiLower, rsiSource, warmup }
+ * `todayRsi` is what the entry is judged on; `prevRsi` is kept for reference.
  */
 
 const { EMA, RSI } = require("technicalindicators");
 
 const NAME        = "GAPS";
-const DESCRIPTION = "Gaps — daily RSI(EMA21) beyond 90/10 then a next-day gap the other way; stop = the gap size in points, trail the intraday EMA21";
+const DESCRIPTION = "Gaps — TODAY's daily RSI(EMA21) beyond 90/10 with a gap the other way vs yesterday's close; stop = the gap size in points, trail the intraday EMA21";
 
 const RSI_SOURCES = ["ema", "close", "open", "high", "low", "hl2", "hlc3", "ohlc4"];
 
@@ -268,8 +276,56 @@ function getPrevDaySnapshot(dailyCandles, sessionDayUnixSec, cfg) {
     sourceLabel: d.sourceLabel,
     emaSeries: d.emaSeries,
     rsiSeries: d.rsiSeries,
+    closedCandles: closed,
     cfg,
   };
+}
+
+/**
+ * TODAY's daily RSI — the value the entry is judged on.
+ *
+ * The rule reads the CURRENT day's RSI, not yesterday's. At 09:15 today's daily
+ * candle has only just opened, so the one price it has is today's open: this
+ * appends a synthetic daily bar at `todayOpen` and recomputes EMA + RSI over the
+ * closed history plus that bar.
+ *
+ * Using the OPEN rather than the live spot is deliberate. It is the price the
+ * whole decision is already based on, it is fixed the moment the market opens,
+ * and it makes Paper, Live, Backtest and Replay compute the identical number —
+ * a live-spot RSI would drift second by second and could never be reproduced.
+ *
+ * Returns { ok, rsi, ema, reason }.
+ */
+function computeTodayRsi(closedCandles, todayOpen, sessionDayUnixSec, cfg) {
+  cfg = cfg || getConfig();
+  if (!Array.isArray(closedCandles) || !closedCandles.length) {
+    return { ok: false, rsi: null, ema: null, reason: "No closed daily candles to extend" };
+  }
+  if (typeof todayOpen !== "number" || !(todayOpen > 0)) {
+    return { ok: false, rsi: null, ema: null, reason: "Today's open not known yet" };
+  }
+
+  const prev = closedCandles[closedCandles.length - 1];
+  // Put the synthetic bar on today's IST day so it can never collide with the
+  // last closed one (which would make the series non-daily).
+  const todayTime = Number.isFinite(Number(sessionDayUnixSec))
+    ? Number(sessionDayUnixSec)
+    : prev.time + 86400;
+  if (_istDayOf(todayTime) <= _istDayOf(prev.time)) {
+    return { ok: false, rsi: null, ema: null, reason: "Session day is not after the last closed daily candle" };
+  }
+
+  const withToday = closedCandles.concat([{
+    time: todayTime, open: todayOpen, high: todayOpen, low: todayOpen, close: todayOpen,
+  }]);
+
+  const d = computeDaily(withToday, cfg);
+  const lastRsi = d.rsiSeries.length ? d.rsiSeries[d.rsiSeries.length - 1] : null;
+  const lastEma = d.emaSeries.length ? d.emaSeries[d.emaSeries.length - 1] : null;
+  if (!lastRsi || !lastEma || lastRsi.time !== todayTime || lastEma.time !== todayTime) {
+    return { ok: false, rsi: null, ema: null, reason: "Daily indicator series does not reach today's bar" };
+  }
+  return { ok: true, rsi: lastRsi.value, ema: lastEma.value, reason: "", sourceLabel: d.sourceLabel };
 }
 
 function _base(cfg) {
@@ -277,7 +333,8 @@ function _base(cfg) {
     signal: "NONE", side: null, reason: "", skipReason: "",
     entrySpot: null, slSpot: null, slPts: null, signalStrength: null,
     prevClose: null, prevRsi: null, prevEma: null, prevDate: null,
-    todayOpen: null, gapPts: null, gapPct: null, gapDir: null,
+    todayOpen: null, todayRsi: null, todayEma: null,
+    gapPts: null, gapPct: null, gapDir: null,
     rsiUpper: cfg.rsiUpper, rsiLower: cfg.rsiLower,
     rsiSource: cfg.rsiSource, emaLength: cfg.emaLength, rsiLength: cfg.rsiLength,
     warmup: false,
@@ -323,32 +380,45 @@ function getSignal(dailyCandles, todayOpen, opts) {
   base.gapPct  = snap.prevClose ? _r2((gapPts / snap.prevClose) * 100) : null;
   base.gapDir  = gapPts > 0 ? "UP" : gapPts < 0 ? "DOWN" : "FLAT";
 
+  // TODAY's RSI decides — the current day's value, extended with today's open.
+  // The GAP still measures against YESTERDAY's close, which is the other half
+  // of the rule and is read from the snapshot above.
+  const today = computeTodayRsi(snap.closedCandles, todayOpen, o.sessionDayUnixSec, cfg);
+  if (!today.ok) {
+    base.warmup = true;
+    base.skipReason = `Cannot compute today's daily RSI — ${today.reason}`;
+    base.reason = base.skipReason;
+    return base;
+  }
+  base.todayRsi = today.rsi;
+  base.todayEma = today.ema;
+
   if (o.alreadyTraded) {
     base.skipReason = "Daily trade budget spent — GAPS takes its decision once, at the open";
     base.reason = base.skipReason;
     return base;
   }
 
-  const rsiTxt = `RSI(${cfg.rsiLength} on ${snap.sourceLabel}) ${snap.prevRsi}`;
+  const rsiTxt = `today's RSI(${cfg.rsiLength} on ${snap.sourceLabel}) ${base.todayRsi}`;
   const gapTxt = `open ${base.todayOpen} vs prev close ${snap.prevClose} = ${gapPts > 0 ? "+" : ""}${gapPts}pt (${base.gapPct > 0 ? "+" : ""}${base.gapPct}%) ${base.gapDir}`;
 
   // ── The two setups. Mirror images, nothing else gates them. ────────────────
-  const overbought = snap.prevRsi > cfg.rsiUpper;
-  const oversold   = snap.prevRsi < cfg.rsiLower;
+  const overbought = base.todayRsi > cfg.rsiUpper;
+  const oversold   = base.todayRsi < cfg.rsiLower;
 
   if (!overbought && !oversold) {
-    base.skipReason = `${snap.prevDate}: ${rsiTxt} is inside the band [${cfg.rsiLower}, ${cfg.rsiUpper}] — not an extreme, no setup`;
+    base.skipReason = `${rsiTxt} is inside the band [${cfg.rsiLower}, ${cfg.rsiUpper}] — not an extreme, no setup`;
     base.reason = base.skipReason;
     return base;
   }
 
   if (overbought && base.gapDir !== "DOWN") {
-    base.skipReason = `${snap.prevDate}: ${rsiTxt} > ${cfg.rsiUpper} (overbought) but ${gapTxt} — needs a gap DOWN for the PE setup`;
+    base.skipReason = `${rsiTxt} > ${cfg.rsiUpper} (overbought) but ${gapTxt} — needs a gap DOWN for the PE setup`;
     base.reason = base.skipReason;
     return base;
   }
   if (oversold && base.gapDir !== "UP") {
-    base.skipReason = `${snap.prevDate}: ${rsiTxt} < ${cfg.rsiLower} (oversold) but ${gapTxt} — needs a gap UP for the CE setup`;
+    base.skipReason = `${rsiTxt} < ${cfg.rsiLower} (oversold) but ${gapTxt} — needs a gap UP for the CE setup`;
     base.reason = base.skipReason;
     return base;
   }
@@ -366,7 +436,7 @@ function getSignal(dailyCandles, todayOpen, opts) {
   base.signalStrength = "STRONG";
   const trailTxt = cfg.trailEnabled ? `trail EMA${cfg.trailLength} (intraday close-through)` : "trail DISABLED";
   base.reason =
-    `GAPS ${side}: ${snap.prevDate} ${rsiTxt} ${side === "PE" ? `> ${cfg.rsiUpper} (overbought)` : `< ${cfg.rsiLower} (oversold)`} ` +
+    `GAPS ${side}: ${rsiTxt} ${side === "PE" ? `> ${cfg.rsiUpper} (overbought)` : `< ${cfg.rsiLower} (oversold)`} ` +
     `→ ${gapTxt} → BUY ${side} @ ${base.todayOpen} | SL ${base.slPts}pt (the gap) → ${base.slSpot} | ${trailTxt}`;
 
   if (!o.silent) {
@@ -382,6 +452,7 @@ module.exports = {
   getConfig,
   computeDaily,
   computeTrailEma,
+  computeTodayRsi,
   trailExitHit,
   stopFromFill,
   getPrevDaySnapshot,

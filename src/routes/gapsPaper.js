@@ -149,6 +149,8 @@ function _freshState() {
     dailyCandles:   [],
     daily:          null,     // getPrevDaySnapshot() result
     todayOpen:      null,
+    todayRsi:       null,   // TODAY's daily RSI — the value the entry is judged on
+    todayEma:       null,
     todayOpenSource: null,
     decisionMade:   false,    // the open-decision is taken once per session
     lastSignal:     null,
@@ -295,8 +297,11 @@ async function loadDailyContext() {
   }
   log(`📅 [GAPS-PAPER] Daily context (${state.dailyCandles.length} daily candles, ${state.daily.closedCount} closed)`);
   log(`📊 [GAPS-PAPER] Yesterday ${state.daily.prevDate}: close=${state.daily.prevClose} · EMA${cfg.emaLength}=${state.daily.prevEma} · RSI(${cfg.rsiLength} on ${state.daily.sourceLabel})=${state.daily.prevRsi} · bands ${cfg.rsiLower}/${cfg.rsiUpper}`);
+  // The entry is judged on TODAY's RSI, which needs today's open. Until that is
+  // known this can only be a provisional read off yesterday's bar — say so,
+  // rather than letting it look like the decision has already been made.
   const ob = state.daily.prevRsi > cfg.rsiUpper, os = state.daily.prevRsi < cfg.rsiLower;
-  log(`🔎 [GAPS-PAPER] Setup armed: ${ob ? `OVERBOUGHT — a gap DOWN today triggers BUY PE` : os ? `OVERSOLD — a gap UP today triggers BUY CE` : `none (RSI inside [${cfg.rsiLower}, ${cfg.rsiUpper}]) — today will be a no-trade day unless the band changes`}`);
+  log(`🔎 [GAPS-PAPER] Provisional (yesterday's RSI ${state.daily.prevRsi}): ${ob ? "OVERBOUGHT — a gap DOWN today would trigger BUY PE" : os ? "OVERSOLD — a gap UP today would trigger BUY CE" : `none (RSI inside [${cfg.rsiLower}, ${cfg.rsiUpper}])`}. The decision uses TODAY's RSI, recomputed once the open is known.`);
   return true;
 }
 
@@ -315,6 +320,7 @@ function resolveTodayOpen() {
   for (const c of state.dailyCandles) {
     if (c && gapsStrategy._istDayOf(c.time) === todayDay && typeof c.open === "number" && c.open > 0) {
       state.todayOpen = Math.round(c.open * 100) / 100;
+      refreshTodayRsi();
       state.todayOpenSource = "daily bar open";
       return true;
     }
@@ -326,6 +332,7 @@ function resolveTodayOpen() {
     const mins = Math.floor((c.time + 19800) / 60) % 1440;
     if (mins >= sessionStartMin && typeof c.open === "number" && c.open > 0) {
       state.todayOpen = Math.round(c.open * 100) / 100;
+      refreshTodayRsi();
       state.todayOpenSource = `first ${_resMin()}-min candle open`;
       return true;
     }
@@ -333,6 +340,7 @@ function resolveTodayOpen() {
 
   if (state.lastTickPrice > 0) {
     state.todayOpen = Math.round(state.lastTickPrice * 100) / 100;
+    refreshTodayRsi();
     state.todayOpenSource = "first tick (session started after the open — NOT the official open)";
     return true;
   }
@@ -418,8 +426,10 @@ async function simulateBuy(side, sig) {
     // Signal context (kept on the trade record for analytics / reports)
     prevDate:       sig.prevDate,
     prevClose:      sig.prevClose,
-    prevRsi:        sig.prevRsi,
+    prevRsi:        sig.prevRsi,     // yesterday's, for reference only
     prevEma:        sig.prevEma,
+    todayRsi:       sig.todayRsi,    // the value the entry was actually judged on
+    todayEma:       sig.todayEma,
     todayOpen:      sig.todayOpen,
     todayOpenSource: state.todayOpenSource,
     gapPts:         sig.gapPts,
@@ -443,7 +453,7 @@ async function simulateBuy(side, sig) {
 
   log(`🟢 [GAPS-PAPER] BUY_${side} ${optInfo.symbol} qty=${qty} @ spot=${spot} optLtp=₹${optionEntryLtp}`);
   log(`   ├─ Gap: prev close ${sig.prevClose} → open ${sig.todayOpen} = ${sig.gapPts > 0 ? "+" : ""}${sig.gapPts}pt (${sig.gapPct > 0 ? "+" : ""}${sig.gapPct}%) ${sig.gapDir}`);
-  log(`   ├─ Yesterday RSI ${sig.prevRsi} (${sig.rsiSource}) vs bands ${sig.rsiLower}/${sig.rsiUpper} · daily EMA ${sig.prevEma}`);
+  log(`   ├─ TODAY's RSI ${sig.todayRsi} (${sig.rsiSource}) vs bands ${sig.rsiLower}/${sig.rsiUpper} · today's EMA ${sig.todayEma} (yesterday's RSI was ${sig.prevRsi})`);
   log(`   └─ SL ${pos.slSpot} (${pos.riskPts}pt = the gap${Math.abs(spot - sig.todayOpen) > 0.01 ? `; filled ${(spot - sig.todayOpen).toFixed(2)}pt off the open ${sig.todayOpen}, so the level is not yesterday's close ${sig.prevClose}` : ""}) · Trail ${trailOn ? `${_resMin()}m EMA${pos.trailLength} (exit on a close back through it)` : "DISABLED"} · EOD ${_envStr("GAPS_FORCED_EXIT", "15:15")}`);
 
   // The trail needs `trailLength` intraday bars before it produces a value. The
@@ -529,6 +539,8 @@ function simulateSell(reason) {
     prevClose:      pos.prevClose,
     prevRsi:        pos.prevRsi,
     prevEma:        pos.prevEma,
+    todayRsi:       pos.todayRsi,
+    todayEma:       pos.todayEma,
     todayOpen:      pos.todayOpen,
     todayOpenSource: pos.todayOpenSource,
     gapPts:         pos.gapPts,
@@ -713,7 +725,7 @@ async function evaluateOpenDecision() {
 
   log(`🔎 [GAPS-PAPER] Open decision — today's open ${state.todayOpen} (${state.todayOpenSource})`);
   if (sig.prevClose != null) {
-    log(`   ├─ Yesterday ${sig.prevDate}: close ${sig.prevClose} · RSI ${sig.prevRsi} (${sig.rsiSource}) · EMA ${sig.prevEma}`);
+    log(`   ├─ Yesterday ${sig.prevDate}: close ${sig.prevClose} (the gap reference) · TODAY's RSI ${sig.todayRsi} (${sig.rsiSource})`);
     log(`   ├─ Gap: ${sig.gapPts > 0 ? "+" : ""}${sig.gapPts}pt (${sig.gapPct > 0 ? "+" : ""}${sig.gapPct}%) ${sig.gapDir}`);
   }
 
@@ -725,6 +737,7 @@ async function evaluateOpenDecision() {
       reason: sig.skipReason || sig.reason,
       spot: state.lastTickPrice,
       prevClose: sig.prevClose, prevRsi: sig.prevRsi, prevEma: sig.prevEma,
+      todayRsi: sig.todayRsi, todayEma: sig.todayEma,
       todayOpen: sig.todayOpen, gapPts: sig.gapPts, gapPct: sig.gapPct, gapDir: sig.gapDir,
     });
     return;
@@ -813,6 +826,25 @@ function onTick(tick) {
   if (!state.position && !state.decisionMade) {
     evaluateOpenDecision().catch(e => console.error(`🚨 [GAPS-PAPER] open-decision error: ${e.message}`));
   }
+}
+
+/**
+ * Recompute TODAY's daily RSI. The entry is judged on the CURRENT day's value,
+ * which needs today's open — so this is a no-op until the open is known, and is
+ * called again the moment it resolves.
+ */
+function refreshTodayRsi() {
+  state.todayRsi = null;
+  state.todayEma = null;
+  if (!state.daily || !state.daily.ok || state.todayOpen == null) return;
+  const r = gapsStrategy.computeTodayRsi(
+    state.daily.closedCandles, state.todayOpen, Math.floor(Date.now() / 1000), gapsStrategy.getConfig());
+  if (!r.ok) { log(`⚠️ [GAPS-PAPER] Could not compute today's RSI — ${r.reason}`); return; }
+  state.todayRsi = r.rsi;
+  state.todayEma = r.ema;
+  const cfg = gapsStrategy.getConfig();
+  const st = r.rsi > cfg.rsiUpper ? "OVERBOUGHT" : r.rsi < cfg.rsiLower ? "OVERSOLD" : "NEUTRAL";
+  log(`📊 [GAPS-PAPER] TODAY's RSI(${cfg.rsiLength} on ${state.daily.sourceLabel}) = ${r.rsi} (${st}) — computed from today's open ${state.todayOpen}; yesterday's was ${state.daily.prevRsi}`);
 }
 
 // ── Preload intraday history ─────────────────────────────────────────────────
@@ -918,6 +950,7 @@ router.get("/start", async (req, res) => {
         gapsDaily: state.daily && state.daily.ok ? {
           prevDate: state.daily.prevDate, prevClose: state.daily.prevClose,
           prevRsi: state.daily.prevRsi, prevEma: state.daily.prevEma,
+          todayRsi: state.todayRsi, todayEma: state.todayEma,
           rsiSource: cfg.rsiSource, rsiLength: cfg.rsiLength, emaLength: cfg.emaLength,
           rsiUpper: cfg.rsiUpper, rsiLower: cfg.rsiLower,
         } : null,
@@ -1137,6 +1170,8 @@ router.get("/status/data", (req, res) => {
     prevClose: daily ? daily.prevClose : null,
     prevRsi:   daily ? daily.prevRsi   : null,
     prevEma:   daily ? daily.prevEma   : null,
+    todayRsi:  state.todayRsi,
+    todayEma:  state.todayEma,
     dailyReason: state.daily && !state.daily.ok ? state.daily.reason : null,
     todayOpen: state.todayOpen, todayOpenSource: state.todayOpenSource,
     gapPts, gapPct: (gapPts != null && daily && daily.prevClose) ? parseFloat(((gapPts / daily.prevClose) * 100).toFixed(2)) : null,
@@ -1181,7 +1216,12 @@ router.get("/status", (req, res) => {
   const daily = state.daily && state.daily.ok ? state.daily : null;
   const gapPts = (daily && state.todayOpen != null) ? parseFloat((state.todayOpen - daily.prevClose).toFixed(2)) : null;
   const gapDir = gapPts == null ? null : gapPts > 0 ? "UP" : gapPts < 0 ? "DOWN" : "FLAT";
-  const rsiState = !daily ? null : daily.prevRsi > cfg.rsiUpper ? "OVERBOUGHT" : daily.prevRsi < cfg.rsiLower ? "OVERSOLD" : "NEUTRAL";
+  // The decision uses TODAY's RSI. Before the open only yesterday's exists, so
+  // fall back to it and label the tile as provisional rather than implying the
+  // decision value is already known.
+  const rsiShown = state.todayRsi != null ? state.todayRsi : (daily ? daily.prevRsi : null);
+  const rsiIsToday = state.todayRsi != null;
+  const rsiState = rsiShown == null ? null : rsiShown > cfg.rsiUpper ? "OVERBOUGHT" : rsiShown < cfg.rsiLower ? "OVERSOLD" : "NEUTRAL";
   const rsiColor = rsiState === "OVERBOUGHT" ? "#ef4444" : rsiState === "OVERSOLD" ? "#10b981" : "#4a6080";
   const gapColor = gapDir === "UP" ? "#10b981" : gapDir === "DOWN" ? "#ef4444" : "#4a6080";
 
@@ -1194,7 +1234,7 @@ router.get("/status", (req, res) => {
     { label: "Session PnL", value: `<span id="ajax-session-pnl" style="color:${pnlColor(state.sessionPnl)};">${typeof state.sessionPnl === "number" ? (state.sessionPnl >= 0 ? "+" : "") + "₹" + state.sessionPnl.toLocaleString("en-IN", {minimumFractionDigits:2, maximumFractionDigits:2}) : "—"}</span>`, accent: pnlColor(state.sessionPnl) },
     { label: "Trades Today", value: `<span id="ajax-trade-count">${state.tradesTaken || 0}</span> <span style="font-size:0.75rem;color:#4a6080;">/ ${_maxTrades}</span>`, sub: `<span id="ajax-wl">${wins}W · ${losses}L</span>`, accent: "#6a5090" },
     { label: "Live PnL", value: `<span id="ajax-live-pnl" style="color:${livePnl == null ? "#c8d8f0" : pnlColor(livePnl)};">${livePnl == null ? "—" : (livePnl >= 0 ? "+" : "") + "₹" + livePnl.toLocaleString("en-IN", {minimumFractionDigits:2,maximumFractionDigits:2})}</span>`, sub: `<span id="ajax-live-pnl-sub">${pos ? "unrealised" : "no open position"}</span>`, accent: "#3b82f6" },
-    { label: `Yesterday RSI (${cfg.rsiSource})`, value: `<span id="ajax-prev-rsi" style="color:${rsiColor};font-weight:800;">${daily ? daily.prevRsi : "—"}</span>`, sub: `<span id="ajax-rsi-state" style="font-size:0.6rem;color:#4a6080;">${rsiState || "no daily data"} · bands ${cfg.rsiLower}/${cfg.rsiUpper}</span>`, accent: rsiColor },
+    { label: `${rsiIsToday ? "TODAY's" : "Yesterday's"} RSI (${cfg.rsiSource})`, value: `<span id="ajax-prev-rsi" style="color:${rsiColor};font-weight:800;">${rsiShown != null ? rsiShown : "—"}</span>`, sub: `<span id="ajax-rsi-state" style="font-size:0.6rem;color:#4a6080;">${rsiState || "no daily data"} · bands ${cfg.rsiLower}/${cfg.rsiUpper}${rsiIsToday ? "" : " · provisional until the open"}</span>`, accent: rsiColor },
     { label: "Gap @ Open", value: `<span id="ajax-gap" style="color:${gapColor};font-weight:800;">${gapPts == null ? "—" : (gapPts > 0 ? "+" : "") + gapPts + "pt"}</span>`, sub: `<span id="ajax-gap-sub" style="font-size:0.6rem;color:#4a6080;">${daily ? `prev close ${daily.prevClose} → open ${state.todayOpen != null ? state.todayOpen : "—"}` : "waiting for daily data"}</span>`, accent: gapColor },
     { label: `Daily EMA${cfg.emaLength} (RSI source)`, value: `<span id="ajax-prev-ema">${daily ? "₹" + daily.prevEma : "—"}</span>`, sub: `<span style="font-size:0.6rem;color:#4a6080;">${_trailEnabled() ? `exit trails the ${_resMin()}m EMA${_trailLen()}` : "trail DISABLED"}</span>`, accent: "#7c3aed" },
     { label: "Win Rate", value: `<span id="ajax-wr">${winRate != null ? winRate + "%" : "—"}</span>`, sub: `<span id="ajax-wr-sub" style="font-size:0.6rem;color:#4a6080;">best ${(state.sessionTrades.length ? Math.max(...state.sessionTrades.map(t=>t.pnl||0)).toFixed(0) : "—")} / worst ${(state.sessionTrades.length ? Math.min(...state.sessionTrades.map(t=>t.pnl||0)).toFixed(0) : "—")}</span>`, accent: "#a07010" },
@@ -1211,7 +1251,7 @@ router.get("/status", (req, res) => {
     const bg = rsiState === "NEUTRAL" ? "#0d1320" : "#0a1f0a";
     const bd = rsiState === "NEUTRAL" ? "#1a2236" : "#065f46";
     return `<div style="background:${bg};border:1px solid ${bd};border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:0.8rem;color:#c8d8f0;">
-      <b style="color:${rsiColor};">${rsiState}</b> — yesterday (${daily.prevDate}) closed ${daily.prevClose} with RSI(${cfg.rsiLength} on ${daily.sourceLabel}) <b>${daily.prevRsi}</b> and EMA${cfg.emaLength} ${daily.prevEma}. ${armed}.
+      <b style="color:${rsiColor};">${rsiState}</b> — ${rsiIsToday ? `TODAY's RSI(${cfg.rsiLength} on ${daily.sourceLabel}) is <b>${rsiShown}</b>, computed from today's open ${state.todayOpen}` : `yesterday's RSI(${cfg.rsiLength} on ${daily.sourceLabel}) is <b>${rsiShown}</b> (provisional — today's is computed at the open)`}. The gap is measured against yesterday's (${daily.prevDate}) close ${daily.prevClose}. ${armed}.
       ${state.todayOpen != null ? ` Today opened <b>${state.todayOpen}</b> (${state.todayOpenSource}) — gap <b style="color:${gapColor};">${gapPts > 0 ? "+" : ""}${gapPts}pt ${gapDir}</b>.` : " Waiting for today's open."}
       ${state.decisionMade && !pos && !state.sessionTrades.length ? `<div style="margin-top:6px;color:#94a3b8;">Decision taken: no trade — ${state.lastSignal ? (state.lastSignal.skipReason || state.lastSignal.reason) : "see log"}</div>` : ""}
     </div>`;
@@ -1238,7 +1278,7 @@ router.get("/status", (req, res) => {
             <span style="font-size:2.2rem;font-weight:900;color:${pos.side === "CE" ? "#10b981" : "#ef4444"};">${pos.side}</span>
             <div>
               <div style="font-size:0.72rem;color:${pos.side === "CE" ? "#10b981" : "#ef4444"};">${pos.side === "CE" ? "CALL · oversold + gap up" : "PUT · overbought + gap down"}</div>
-              <span style="font-size:0.65rem;font-weight:700;color:#94a3b8;">gap ${pos.gapPts > 0 ? "+" : ""}${pos.gapPts}pt ${pos.gapDir} · prev RSI ${pos.prevRsi}</span>
+              <span style="font-size:0.65rem;font-weight:700;color:#94a3b8;">gap ${pos.gapPts > 0 ? "+" : ""}${pos.gapPts}pt ${pos.gapDir} · today's RSI ${pos.todayRsi}</span>
             </div>
           </div>
           <div style="width:1px;height:44px;background:#134e35;"></div>
@@ -1526,7 +1566,7 @@ async function gapsHandleExit(btn) {
         '<td style="padding:8px 12px;font-size:0.7rem;color:#94a3b8;">' + (t.exitTime||'') + '</td>' +
         '<td style="padding:8px 12px;color:' + sc + ';font-weight:800;">' + (t.side||'—') + '</td>' +
         '<td style="padding:8px 12px;font-weight:700;">' + (t.gapPts!=null?(t.gapPts>0?'+':'')+t.gapPts:'—') + '</td>' +
-        '<td style="padding:8px 12px;">' + (t.prevRsi!=null?t.prevRsi:'—') + '</td>' +
+        '<td style="padding:8px 12px;">' + (t.todayRsi!=null?t.todayRsi:(t.prevRsi!=null?t.prevRsi:'—')) + '</td>' +
         '<td style="padding:8px 12px;font-weight:700;">' + (t.spotAtEntry||'—') + '</td>' +
         '<td style="padding:8px 12px;font-weight:700;">' + (t.spotAtExit||'—') + '</td>' +
         '<td style="padding:8px 12px;color:#60a5fa;">' + (t.optionEntryLtp!=null?'₹'+t.optionEntryLtp:'—') + '</td>' +
@@ -1537,7 +1577,7 @@ async function gapsHandleExit(btn) {
     }).join('');
     box.innerHTML = '<table style="width:100%;border-collapse:collapse;font-family:monospace;font-size:0.78rem;">' +
       '<thead><tr style="background:#0a0f1c;">' +
-        ['Entry Time','Exit Time','Side','Gap','PrevRSI','E.Spot','X.Spot','E.Opt','X.Opt','PnL','Exit Reason'].map(function(h){ return '<th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">'+h+'</th>'; }).join('') +
+        ['Entry Time','Exit Time','Side','Gap','RSI (today)','E.Spot','X.Spot','E.Opt','X.Opt','PnL','Exit Reason'].map(function(h){ return '<th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">'+h+'</th>'; }).join('') +
       '</tr></thead><tbody>' + rows + '</tbody></table>';
   }
 
@@ -1557,8 +1597,9 @@ async function gapsHandleExit(btn) {
       var bestN = (d.bestTrade != null) ? Math.round(d.bestTrade) : null, worstN = (d.worstTrade != null) ? Math.round(d.worstTrade) : null;
       setText('ajax-wr-sub', 'best ' + (bestN==null?'—':bestN) + ' / worst ' + (worstN==null?'—':worstN));
       var rsiEl2 = document.getElementById('ajax-prev-rsi');
-      if (rsiEl2) { rsiEl2.textContent = d.prevRsi != null ? d.prevRsi : '—';
-        rsiEl2.style.color = (d.prevRsi != null && d.cfg) ? (d.prevRsi > d.cfg.upper ? '#ef4444' : d.prevRsi < d.cfg.lower ? '#10b981' : '#4a6080') : '#4a6080'; }
+      if (rsiEl2) { var _r = d.todayRsi != null ? d.todayRsi : d.prevRsi;
+        rsiEl2.textContent = _r != null ? _r : '—';
+        rsiEl2.style.color = (_r != null && d.cfg) ? (_r > d.cfg.upper ? '#ef4444' : _r < d.cfg.lower ? '#10b981' : '#4a6080') : '#4a6080'; }
       var gapEl = document.getElementById('ajax-gap');
       if (gapEl) { gapEl.textContent = d.gapPts == null ? '—' : (d.gapPts>0?'+':'') + d.gapPts + 'pt';
         gapEl.style.color = d.gapDir === 'UP' ? '#10b981' : d.gapDir === 'DOWN' ? '#ef4444' : '#4a6080'; }

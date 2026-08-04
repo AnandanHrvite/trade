@@ -136,6 +136,7 @@ function runGapsBacktest(intraday, daily) {
       trailSpot: null,      // filled in as the trail is consulted, for the record
       entryReason: sig.reason,
       prevRsi: sig.prevRsi, prevEma: sig.prevEma, prevClose: sig.prevClose,
+      todayRsi: sig.todayRsi, todayEma: sig.todayEma,
       gapPts: sig.gapPts, gapPct: sig.gapPct, gapDir: sig.gapDir,
     };
 
@@ -164,6 +165,7 @@ function runGapsBacktest(intraday, daily) {
         pnl: p.pnl, reason, entryReason: pos.entryReason,
         gapPts: pos.gapPts, gapPct: pos.gapPct, gapDir: pos.gapDir,
         prevRsi: pos.prevRsi, prevEma: pos.prevEma, prevClose: pos.prevClose,
+        todayRsi: pos.todayRsi, todayEma: pos.todayEma,
         strength: "STRONG",
         eOpt: pos.optionEntryLtp, xOpt: p.exitPrem, held: p.held,
       });
@@ -247,7 +249,7 @@ function _renderResults(res, from, to, trades, stats, meta) {
     activePage: "gapsBacktest",
     extraTradeColumns: [
       { key: "gapPts", label: "Gap (pt)" },
-      { key: "prevRsi", label: "Prev RSI" },
+      { key: "todayRsi", label: "RSI (today)" },
       { key: "held", label: "Held" },
     ],
     extraStats: [
