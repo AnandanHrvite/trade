@@ -785,7 +785,7 @@ verifiable. **Nothing goes live until `LIVE_HARNESS_DRY_RUN` has been off-tested
 
 ### Non-negotiables throughout
 - `node -c` on every touched file; commit per phase, never bundled.
-- Do not push 09:00–16:00 IST on a weekday (`.githooks` pre-push will block it — report the block, do
+- Do not push 09:00–15:30 IST on a weekday (`.githooks` pre-push will block it — report the block, do
   not bypass).
 - Paper decision/fill/exit semantics remain canonical: when backtest or live disagrees with paper,
   fix backtest/live.
