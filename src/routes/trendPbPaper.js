@@ -93,6 +93,11 @@ function _freshState() {
     sessionStart:   null,
     sessionTrades:  [],
     sessionPnl:     0,
+    // True when sessionTrades were restored from a PREVIOUS day’s saved session by the
+    // restart fallback in rehydrateSessionFromJsonl() — they are not today’s trades.
+    // Exposed as `staleSession` so the shared monitors don’t report a week-old session
+    // as today’s P&L. A fresh session start clears it.
+    _staleSession:  false,
     tradesTaken:    0,
     consecutiveLosses: 0,
     candles:        [],
@@ -133,15 +138,22 @@ function rehydrateSessionFromJsonl() {
     for (const s of (data.sessions || [])) for (const t of (s.trades || [])) seen.add(keyOf(t));
     let trades = all.filter(t => !seen.has(keyOf(t)));
     let source = "today's live session";
+    let stale  = false;
     if (!trades.length) {
       const saved = (data.sessions || []).filter(s => Array.isArray(s.trades) && s.trades.length);
       if (saved.length) {
         const last = saved.reduce((a, b) => (String(b.date) > String(a.date) ? b : a));
         trades = last.trades;
         source = `last session (${last.date || "?"})`;
+        // Stale only when today's day-file has no trades at all — then what we just
+        // restored really is a previous day. If today HAS trades and step 1 filtered
+        // them all out, they are already in a saved session, so the session restored
+        // here is today's own stopped session and its P&L is genuinely today's.
+        stale  = all.length === 0;
       }
     }
     if (!trades.length) return;
+    state._staleSession = stale;
     state.sessionTrades = trades;
     state.tradesTaken   = trades.length;
     state.sessionPnl = parseFloat(trades.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0).toFixed(2));
@@ -896,6 +908,7 @@ router.get("/status/data", (req, res) => {
 
   res.json({
     running: state.running, sessionPnl: state.sessionPnl, tradesTaken: state.tradesTaken,
+    staleSession: state._staleSession || false,
     sessionTrades: state.sessionTrades.slice(-50), log: state.log.slice(-100),
     tickCount: state.tickCount, lastTickPrice: state.lastTickPrice,
     candles: state.candles.length, currentBar: state.currentBar, sessionStart: state.sessionStart,
@@ -947,7 +960,7 @@ router.get("/status", (req, res) => {
 
   const statCards = [
     { label: "Session PnL", value: `<span id="ajax-session-pnl" style="color:${pnlColor(state.sessionPnl)};">${typeof state.sessionPnl === "number" ? (state.sessionPnl >= 0 ? "+" : "") + "₹" + state.sessionPnl.toLocaleString("en-IN", {minimumFractionDigits:2, maximumFractionDigits:2}) : "—"}</span>`, accent: pnlColor(state.sessionPnl) },
-    { label: "Trades Today", value: `<span id="ajax-trade-count">${state.tradesTaken || 0}</span> <span style="font-size:0.75rem;color:#4a6080;">/ ${_maxTrades}</span>`, sub: `<span id="ajax-wl">${wins}W · ${losses}L</span>`, accent: "#6a5090" },
+    { label: state._staleSession ? "Trades (Last Session)" : "Trades Today", value: `<span id="ajax-trade-count">${state.tradesTaken || 0}</span> <span style="font-size:0.75rem;color:#4a6080;">/ ${_maxTrades}</span>`, sub: `<span id="ajax-wl">${wins}W · ${losses}L</span>`, accent: "#6a5090" },
     { label: "Live PnL", value: `<span id="ajax-live-pnl" style="color:${livePnl == null ? "#c8d8f0" : pnlColor(livePnl)};">${livePnl == null ? "—" : (livePnl >= 0 ? "+" : "") + "₹" + livePnl.toLocaleString("en-IN", {minimumFractionDigits:2,maximumFractionDigits:2})}</span>`, sub: `<span id="ajax-live-pnl-sub">${pos ? "unrealised" : "no open position"}</span>`, accent: "#3b82f6" },
     { label: "Win Rate", value: `<span id="ajax-wr">${winRate != null ? winRate + "%" : "—"}</span>`, sub: `<span id="ajax-wr-sub" style="font-size:0.6rem;color:#4a6080;">single best ${(state.sessionTrades.length ? Math.max(...state.sessionTrades.map(t=>t.pnl||0)).toFixed(0) : "—")} / worst ${(state.sessionTrades.length ? Math.min(...state.sessionTrades.map(t=>t.pnl||0)).toFixed(0) : "—")}</span>`, accent: "#a07010" },
     { label: "Trend Bias", value: `<span id="ajax-trend-bias" style="color:${_biasColor};font-weight:800;">${_diag.trendBias || "—"}</span>`, sub: `<span id="ajax-trend-sub" style="font-size:0.6rem;color:#4a6080;">15m structure${_diag.atr5 != null ? ` · ATR5 ${_diag.atr5}` : ""}</span>`, accent: "#7c3aed" },

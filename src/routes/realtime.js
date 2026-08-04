@@ -352,6 +352,15 @@ function tradeCountOf(d) {
   if (!d) return 0;
   return d.tradeCount ?? d.tradesTaken ?? 0;
 }
+// After a restart with no trades yet today, a strategy restores its LAST saved session
+// so its own page isn't blank — flagged as staleSession. Those are not today's trades,
+// so every "today" figure on this monitor must read zero for them; otherwise a week-old
+// win shows up as today's P&L.
+function isStale(d) { return !!(d && d.staleSession); }
+function todayClosed(d) { return isStale(d) ? 0 : (+(d?.sessionPnl ?? 0) || 0); }
+function todayTrades(d) { return isStale(d) ? 0 : (tradeCountOf(d) || 0); }
+function todayWins(d)   { return isStale(d) ? 0 : (d?.wins   ?? 0); }
+function todayLosses(d) { return isStale(d) ? 0 : (d?.losses ?? 0); }
 // EMA_RSI_ST/BB_RSI/PA: logs[] + logTotal. ORB: log[] (strings only).
 function logsOf(d) {
   if (!d) return { lines: [], total: 0 };
@@ -441,10 +450,10 @@ function renderColumn(strategy, d) {
     bodyEl.innerHTML = \`<div class="flat-block">FLAT — no open position</div>\`;
   }
 
-  const sessPnl = d.sessionPnl ?? 0;
+  const sessPnl = todayClosed(d);
   statsEl.innerHTML = \`
-    <div class="stat"><div class="lbl">Trades</div><div class="val">\${tradeCountOf(d)}</div></div>
-    <div class="stat"><div class="lbl">W / L</div><div class="val">\${d.wins ?? 0} / \${d.losses ?? 0}</div></div>
+    <div class="stat"><div class="lbl">Trades</div><div class="val">\${todayTrades(d)}</div></div>
+    <div class="stat"><div class="lbl">W / L</div><div class="val">\${todayWins(d)} / \${todayLosses(d)}</div></div>
     <div class="stat"><div class="lbl">Session P&amp;L</div><div class="val \${cls(sessPnl)}">\${fmtINR(sessPnl)}</div></div>\`;
 
   const ltp = d.lastTickPrice ? fmtNum(d.lastTickPrice) : '—';
@@ -468,11 +477,11 @@ function renderRollup(all) {
     }
     anyData = true;
     const open = +openPnl(d) || 0;
-    const closed = +(d.sessionPnl ?? 0) || 0;
+    const closed = todayClosed(d);
     const dayTotal = open + closed;
-    const trades = tradeCountOf(d) || 0;
-    const w = d.wins ?? 0;
-    const l = d.losses ?? 0;
+    const trades = todayTrades(d);
+    const w = todayWins(d);
+    const l = todayLosses(d);
     if (d.running) anyRunning = true;
     totalOpen += open;
     totalClosed += closed;

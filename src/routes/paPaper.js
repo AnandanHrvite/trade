@@ -129,6 +129,11 @@ let state = {
   sessionTrades:  [],
   sessionStart:   null,
   sessionPnl:     0,
+  // True when sessionTrades were restored from a PREVIOUS day’s saved session by the
+  // restart fallback in rehydrateSessionFromJsonl() — they are not today’s trades.
+  // Exposed as `staleSession` so the shared monitors don’t report a week-old session
+  // as today’s P&L. A fresh session start clears it.
+  _staleSession:  false,
   tickCount:      0,
   lastTickTime:   null,
   lastTickPrice:  null,
@@ -164,6 +169,7 @@ function rehydrateSessionFromJsonl() {
     }
     let trades = all.filter(t => !seen.has(keyOf(t)));
     let source = "today's live session";
+    let stale  = false;
 
     // 2. Nothing live today → show the most recent saved session so the screen
     //    isn't blank after a restart. Read-only; Start Paper resets it.
@@ -173,10 +179,16 @@ function rehydrateSessionFromJsonl() {
         const last = saved.reduce((a, b) => (String(b.date) > String(a.date) ? b : a));
         trades = last.trades;
         source = `last session (${last.date || "?"})`;
+        // Stale only when today's day-file has no trades at all — then what we just
+        // restored really is a previous day. If today HAS trades and step 1 filtered
+        // them all out, they are already in a saved session, so the session restored
+        // here is today's own stopped session and its P&L is genuinely today's.
+        stale  = all.length === 0;
       }
     }
     if (!trades.length) return;
 
+    state._staleSession = stale;
     state.sessionTrades = trades;
     state.sessionPnl = parseFloat(trades.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0).toFixed(2));
     state._wins   = trades.filter(t => Number(t.pnl) > 0).length;
@@ -1306,6 +1318,7 @@ router.get("/status/data", (req, res) => {
     } : null,
     sessionPnl:    state.sessionPnl,
     unrealised,
+    staleSession:  state._staleSession || false,
     tradeCount:    state.sessionTrades.length,
     wins:          state._wins || 0,
     losses:        state._losses || 0,
@@ -1678,7 +1691,7 @@ ${buildSidebar('paPaper', liveActive, state.running)}
     <div class="sc-val" id="ajax-session-pnl" style="color:${pnlColor(state.sessionPnl)};">${inr(state.sessionPnl)}</div>
   </div>
   <div class="sc" style="border-top:1.5px solid #6a5090;">
-    <div class="sc-label">Trades Today</div>
+    <div class="sc-label">${state._staleSession ? "Trades (Last Session)" : "Trades Today"}</div>
     <div class="sc-val"><span id="ajax-trade-count">${state.sessionTrades.length}</span> <span style="font-size:0.75rem;color:#4a6080;">/ ${_PA_MAX_TRADES}</span></div>
     <div id="ajax-wl" style="font-size:0.7rem;color:#4a6080;margin-top:4px;">${wins}W \u00b7 ${losses}L</div>
   </div>

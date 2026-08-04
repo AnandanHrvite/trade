@@ -253,6 +253,11 @@ let ptState = {
   // Win/loss counters: maintained in simulateSell so /status/data doesn't filter on every poll
   _sessionWins:   0,
   _sessionLosses: 0,
+  // True when sessionTrades were restored from a PREVIOUS day's saved session by the
+  // restart fallback below — they are not today's trades. Exposed as `staleSession` so
+  // the shared monitors don't count a week-old session as today's P&L. Cleared by
+  // /start, which rebuilds the session from scratch.
+  _staleSession:  false,
 };
 
 // ── Crash/restart recovery: rehydrate the in-memory session from today's JSONL ──
@@ -278,19 +283,27 @@ function rehydrateSessionFromJsonl() {
     }
     let trades = all.filter(t => !seen.has(keyOf(t)));
     let source = "today's live session";
+    let stale  = false;
 
     // 2. Nothing live today → show the most recent saved session so the screen
-    //    isn't blank after a restart. Read-only; Start Paper resets it.
+    //    isn't blank after a restart. Read-only; Start Paper resets it. Flagged
+    //    stale so the shared monitors don't report it as today's P&L.
     if (!trades.length) {
       const saved = (data.sessions || []).filter(s => Array.isArray(s.trades) && s.trades.length);
       if (saved.length) {
         const last = saved.reduce((a, b) => (String(b.date) > String(a.date) ? b : a));
         trades = last.trades;
         source = `last session (${last.date || "?"})`;
+        // Stale only when today's day-file has no trades at all — then what we just
+        // restored really is a previous day. If today HAS trades and step 1 filtered
+        // them all out, they are already in a saved session, so the session restored
+        // here is today's own stopped session and its P&L is genuinely today's.
+        stale  = all.length === 0;
       }
     }
     if (!trades.length) return;
 
+    ptState._staleSession = stale;
     ptState.sessionTrades = trades;
     ptState.sessionPnl = parseFloat(trades.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0).toFixed(2));
     ptState._sessionWins   = trades.filter(t => Number(t.pnl) > 0).length;
@@ -2208,6 +2221,7 @@ router.get("/start", async (req, res) => {
   ptState.barStartTime  = null;
   ptState.position      = null;
   ptState.sessionTrades = [];
+  ptState._staleSession = false;
   ptState.sessionPnl    = 0;
   ptState.sessionStart  = istNow();
   ptState.log           = [];
@@ -2934,6 +2948,7 @@ router.get("/status/data", (req, res) => {
       simMode:           ptState._simMode || false,
       simScenario:       ptState._simScenario || null,
       sessionStart:      ptState.sessionStart,
+      staleSession:      ptState._staleSession || false,
       tradeCount:        ptState.sessionTrades.length,
       wins:              ptState._sessionWins,
       losses:            ptState._sessionLosses,
@@ -3328,7 +3343,7 @@ ${buildSidebar('emaRsiStPaper', sharedSocketState.getMode()==='EMA_RSI_ST_LIVE',
       <div class="sc-val" id="ajax-session-pnl" style="color:${pnlColor(ptState.sessionPnl)};">${inr(ptState.sessionPnl)}</div>
     </div>
     <div class="sc" style="border-top:1.5px solid #6a5090;">
-      <div class="sc-label">Trades Today</div>
+      <div class="sc-label">${ptState._staleSession ? "Trades (Last Session)" : "Trades Today"}</div>
       <div class="sc-val"><span id="ajax-trade-count">${ptState.sessionTrades.length}</span> <span style="font-size:0.75rem;color:#4a6080;">/ ${process.env.MAX_DAILY_TRADES || 20}</span></div>
       <div id="ajax-wl" style="font-size:0.7rem;color:#4a6080;margin-top:4px;">${ptState._sessionWins}W &middot; ${ptState._sessionLosses}L</div>
     </div>
@@ -3416,7 +3431,7 @@ ${buildSidebar('emaRsiStPaper', sharedSocketState.getMode()==='EMA_RSI_ST_LIVE',
   ${ptState.sessionTrades.length > 0 ? `
   <div style="margin-bottom:24px;">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;">
-      <div class="section-title" style="margin-bottom:0;">Today's Trades</div>
+      <div class="section-title" style="margin-bottom:0;">Session Trades</div>
       <select id="ptSide" onchange="ptFilter()" style="background:#0d1320;border:1px solid #1a2236;color:#c8d8f0;padding:4px 8px;border-radius:6px;font-size:0.73rem;">
         <option value="">All Sides</option><option value="CE">CE</option><option value="PE">PE</option>
       </select>
@@ -4794,6 +4809,7 @@ router.post("/simulate/start", async (req, res) => {
     ptState.barStartTime  = null;
     ptState.position      = null;
     ptState.sessionTrades = [];
+    ptState._staleSession = false;
     ptState.sessionPnl    = 0;
     ptState.sessionStart  = istNow();
     ptState.log           = [];
