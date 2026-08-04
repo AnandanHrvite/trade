@@ -982,7 +982,7 @@ function stopSession() {
 router.get("/stop", (req, res) => { stopSession(); res.redirect("/gaps-paper/status"); });
 router.get("/exit", (req, res) => { if (state.position) simulateSell("Manual exit"); res.redirect("/gaps-paper/status"); });
 
-// ── /status/chart-data — intraday candles + SL/target overlay + markers ───────
+// ── /status/chart-data — intraday candles + SL line + moving trail + markers ──
 router.get("/status/chart-data", async (req, res) => {
   try {
     let srcCandles = state.candles;
@@ -1329,7 +1329,7 @@ ${process.env.CHART_ENABLED !== "false" ? `<!-- Daily chart: the series the stra
   </div>
 </div>
 
-<!-- Intraday chart: where the stop and target actually get hit -->
+<!-- Intraday chart: where the gap-fill stop and the EMA trail actually get hit -->
 <div style="margin-bottom:18px;">
   <div class="section-title">NIFTY ${_resMin()}-Min Intraday (gap-fill stop + EMA${_trailLen()} trail)</div>
   <div id="nifty-chart-container" style="background:#0a0f1c;border:1px solid #1a2236;border-radius:12px;overflow:hidden;position:relative;height:380px;">
@@ -1422,7 +1422,7 @@ async function gapsHandleExit(btn) {
 </script>
 
 <script>
-// ── Intraday chart (stop + target levels) ──
+// ── Intraday chart (gap-fill stop line + moving EMA trail series) ──
 (function(){
   if (typeof LightweightCharts === 'undefined' || '${process.env.CHART_ENABLED}' === 'false') return;
   var container = document.getElementById('nifty-chart');
