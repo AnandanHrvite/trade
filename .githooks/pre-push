@@ -1,8 +1,8 @@
 #!/bin/sh
 #
 # pre-push: block pushes only during the weekday trading window,
-# 09:00-16:00 IST (Mon-Fri). Every other time is free:
-#   - weekdays before 09:00 and from 16:00 onward
+# 09:00-15:30 IST (Mon-Fri). Every other time is free:
+#   - weekdays before 09:00 and from 15:30 onward
 #   - all day Saturday and Sunday
 # Escape hatch: ALLOW_PUSH=1 git push ...
 #
@@ -17,19 +17,22 @@ fi
 
 DOW=$(TZ='Asia/Kolkata' date +%u)   # 1=Mon .. 7=Sun
 HOUR=$(TZ='Asia/Kolkata' date +%H)  # 00..23 (zero-padded)
+MIN=$(TZ='Asia/Kolkata' date +%M)   # 00..59 (zero-padded)
 HOUR=$((10#$HOUR))                  # force base-10 (avoid octal on 08/09)
+MIN=$((10#$MIN))
+NOW=$((HOUR * 60 + MIN))            # minutes since midnight IST
 
 # Weekend: no restriction
 if [ "$DOW" -ge 6 ]; then
   exit 0
 fi
 
-# Weekday 09:00-15:59 IST -> block (16:00 itself is allowed)
-if [ "$HOUR" -ge 9 ] && [ "$HOUR" -lt 16 ]; then
+# Weekday 09:00-15:29 IST -> block (15:30 itself is allowed)
+if [ "$NOW" -ge 540 ] && [ "$NOW" -lt 930 ]; then
   echo "----------------------------------------------------------------" >&2
-  echo " PUSH BLOCKED: weekday pushes are blocked 09:00-16:00 IST." >&2
+  echo " PUSH BLOCKED: weekday pushes are blocked 09:00-15:30 IST." >&2
   echo " Now: $(TZ='Asia/Kolkata' date '+%a %H:%M IST')" >&2
-  echo " Push before 9 AM, from 4 PM onward, or any time on the weekend." >&2
+  echo " Push before 9 AM, from 3:30 PM onward, or any time on the weekend." >&2
   echo " Emergency override:  ALLOW_PUSH=1 git push" >&2
   echo "----------------------------------------------------------------" >&2
   exit 1
