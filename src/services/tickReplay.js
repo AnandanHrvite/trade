@@ -891,8 +891,18 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     // short-circuit these — leave the originals in place so the strategy's own
     // /start fetches real historical warm-up as of the (overridden) replay clock.
     // The recorded day's option/vix/oi/spot ticks still come purely from disk.
+    // The recorded warm-up is an INTRADAY series (the session's own resolution).
+    // A strategy that asks for DAILY/WEEKLY/MONTHLY bars — GAPS reads a daily
+    // EMA/RSI and yesterday's daily close — must never be handed those intraday
+    // bars: it would compute its indicators over 5-min candles and call one of
+    // them "yesterday's close", silently producing decisions that bear no
+    // relation to the recorded session. Those resolutions fall through to the
+    // real fetcher instead, which is safe *because* a closed daily bar is
+    // immutable: fetching it today returns exactly what the recorded session saw.
+    const _isBarResDaily = (res) => ["D", "W", "M"].includes(String(res || "").toUpperCase());
     if (!syntheticWarmup) {
-      fyers.getHistory = async function (_params) {
+      fyers.getHistory = async function (params) {
+        if (_isBarResDaily(params && params.resolution)) return orig.fyers_getHistory(params);
         // Wrap warmup candles into Fyers history response shape:
         //   { s:"ok", candles: [[ts, open, high, low, close, vol], ...] }
         const rows = (warmupCandles || []).map(c =>
@@ -900,10 +910,12 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
         );
         return { s: "ok", candles: rows };
       };
-      backtestEngine.fetchCandles = async function (_sym, _res, _from, _to) {
+      backtestEngine.fetchCandles = async function (sym, res, from, to) {
+        if (_isBarResDaily(res)) return orig.bt_fetchCandles(sym, res, from, to);
         return (warmupCandles || []).slice();
       };
-      candleCache.fetchCandlesCached = async function (_sym, _res, _from, _to, _rawFetcher) {
+      candleCache.fetchCandlesCached = async function (sym, res, from, to, rawFetcher) {
+        if (_isBarResDaily(res)) return orig.cc_fetchCandlesCached(sym, res, from, to, rawFetcher);
         return (warmupCandles || []).slice();
       };
     }

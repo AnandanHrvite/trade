@@ -139,6 +139,21 @@ function getPrevDaySnapshot(dailyCandles, sessionDayUnixSec, cfg) {
     .filter(c => c && typeof c.close === "number" && _istDayOf(c.time) < cutDay)
     .sort((a, b) => a.time - b.time);
 
+  // Sanity: this MUST be a daily series (at most one bar per IST day). Being
+  // handed an intraday series instead is silent poison — EMA21/RSI14 would be
+  // computed over 5-min bars and one of them called "yesterday's close", giving
+  // decisions that look plausible and are meaningless. Cheap to check, so check
+  // it rather than trusting every caller (paper, backtest and the replay
+  // harness's candle stubs all feed this).
+  for (let i = 1; i < closed.length; i++) {
+    if (_istDayOf(closed[i].time) === _istDayOf(closed[i - 1].time)) {
+      return Object.assign(empty, {
+        closedCount: closed.length,
+        reason: `Candle series is NOT daily — ${_istDateStr(closed[i].time)} has more than one bar. Refusing to compute a daily RSI/EMA over intraday candles.`,
+      });
+    }
+  }
+
   const d = computeDaily(closed, cfg);
   const need = d.minCandles || (cfg.rsiLength + 1);
   if (closed.length < need) {
