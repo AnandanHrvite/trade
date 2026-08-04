@@ -333,11 +333,18 @@ function msUntilNextRun() {
  * Returns a short suffix for the Telegram heartbeat.
  */
 async function pushToDrive(file, trigger) {
-  let gdrive;
-  try { gdrive = require("./googleDrive"); } catch (_) { return ""; }
-  if (!gdrive.isConnected()) return "";
-  const up = await gdrive.uploadFile(file, { trigger });
-  return up.ok ? "\nGoogle Drive: ✅ uploaded" : `\nGoogle Drive: ⚠️ upload failed — ${up.error}`;
+  try {
+    const gdrive = require("./googleDrive");
+    if (!gdrive.isConnected()) return "";
+    const up = await gdrive.uploadFile(file, { trigger });
+    return up.ok ? "\nGoogle Drive: ✅ uploaded" : `\nGoogle Drive: ⚠️ upload failed — ${up.error}`;
+  } catch (err) {
+    // Nothing here may escape: runDaily awaits this from a setTimeout callback,
+    // and a rejection there would skip scheduleNext() and kill the daily timer
+    // for the rest of the process.
+    console.warn(`[backup] Google Drive push errored: ${err.message}`);
+    return `\nGoogle Drive: ⚠️ upload failed — ${err.message}`;
+  }
 }
 
 async function runDaily() {
