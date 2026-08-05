@@ -25,9 +25,39 @@ const fs = require("fs");
 const path = require("path");
 const { buildSidebar, sidebarCSS, faviconLink, enabledStrategies,
         dateRangeOptionsHTML, dateRangeJS } = require("../utils/sharedNav");
+const { fetchCandlesCachedBT } = require("../services/backtestEngine");
+const { VIX_SYMBOL } = require("../services/vixFilter");
 
 const _HOME = require("os").homedir();
 const DATA_DIR = path.join(_HOME, "trading-data");
+
+// Per-day India VIX, fetched from Fyers daily candles (NSE:INDIAVIX-INDEX) — shown
+// here regardless of whether any strategy's VIX filter is enabled, so it can't rely
+// on vixAtEntry (that is only captured when a filter runs). One close per trading day.
+// Cached in-memory keyed by the date span; TTL keeps today's still-forming close fresh.
+const VIX_MAP_TTL_MS = 15 * 60 * 1000;
+let _vixMapCache = null; // { from, to, ts, map }
+
+async function loadVixByDate(fromDate, toDate) {
+  const now = Date.now();
+  if (_vixMapCache && _vixMapCache.from === fromDate && _vixMapCache.to === toDate
+      && (now - _vixMapCache.ts) < VIX_MAP_TTL_MS) {
+    return _vixMapCache.map;
+  }
+  const map = {};
+  try {
+    const candles = await fetchCandlesCachedBT(VIX_SYMBOL, "D", fromDate, toDate, false);
+    for (const c of (candles || [])) {
+      const d = new Date(c.time * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+      const close = Number(c.close);
+      if (isFinite(close) && close > 0) map[d] = close;
+    }
+  } catch (err) {
+    console.warn(`[ConsolidationReport] VIX fetch failed: ${err.message}`);
+  }
+  _vixMapCache = { from: fromDate, to: toDate, ts: now, map };
+  return map;
+}
 
 // Mirror the source maps used by consolidation.js (paper) + liveConsolidation.js (live).
 const PAPER_SOURCES = [
@@ -68,9 +98,6 @@ function loadBook(sources, book) {
           mode: src.mode,
           date: sessionDate,
           pnl:  Number(t.pnl) || 0,
-          // VIX is market-wide, so any strategy's entry-VIX represents the day.
-          // Kept per-trade here; byDay() averages the non-null values into one figure.
-          vix:  (t.vixAtEntry != null && isFinite(Number(t.vixAtEntry))) ? Number(t.vixAtEntry) : null,
         });
       }
     }
@@ -100,7 +127,7 @@ function loadAllTrades() {
   return trades;
 }
 
-router.get("/", (req, res) => {
+router.get("/", async (req, res) => {
   // Only report strategies that are enabled in Settings — a disabled strategy is
   // hidden from the sidebar, so its columns (and its trades in the day totals)
   // must not appear here either. Filtered per-request, never cached: Settings
@@ -109,6 +136,15 @@ router.get("/", (req, res) => {
   const enabledSet  = new Set(enabled.map(s => s.mode));
   const trades      = loadAllTrades().filter(t => enabledSet.has(t.mode));
   const theme = (process.env.UI_THEME || "dark").toLowerCase();
+
+  // Daily VIX from Fyers across the full recorded span (oldest trade → today, IST),
+  // so any day the client filters to has a value. Embedded and looked up client-side.
+  let vixByDate = {};
+  if (trades.length) {
+    const fromDate = trades[0].date; // loadAllTrades() sorts oldest → newest
+    const toDate   = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    vixByDate = await loadVixByDate(fromDate, toDate);
+  }
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -238,6 +274,7 @@ router.get("/", (req, res) => {
 <script>
 ${dateRangeJS()}
 const ALL = ${JSON.stringify(trades)};
+const VIX_BY_DATE = ${JSON.stringify(vixByDate)};   // { 'YYYY-MM-DD': vixClose } from Fyers
 const MODES = ${JSON.stringify(enabled.map(s => s.mode))};
 const MODE_LABEL = ${JSON.stringify(Object.fromEntries(enabled.map(s => [s.mode, s.mode])))};
 
@@ -282,16 +319,13 @@ function byDay(arr){
   const m=new Map();
   for(const t of arr){
     const d=t.date||'—';
-    if(!m.has(d)) m.set(d,{ date:d, modes:{}, n:0, wins:0, losses:0, net:0, vixSum:0, vixCnt:0 });
+    if(!m.has(d)) m.set(d,{ date:d, modes:{}, n:0, wins:0, losses:0, net:0 });
     const g=m.get(d);
     if(!g.modes[t.mode]) g.modes[t.mode]={n:0,pnl:0};
     g.modes[t.mode].n++; g.modes[t.mode].pnl+=t.pnl;
     g.n++; g.net+=t.pnl;
     if(t.pnl>0) g.wins++; else if(t.pnl<0) g.losses++;
-    if(t.vix!=null){ g.vixSum+=t.vix; g.vixCnt++; }
   }
-  // Collapse the day's entry-VIX readings into one representative average.
-  for(const g of m.values()) g.vix = g.vixCnt ? g.vixSum/g.vixCnt : null;
   return [...m.values()].sort((a,b)=>b.date.localeCompare(a.date)); // newest day first
 }
 
@@ -340,7 +374,8 @@ function render(){
 
   let body='';
   for(const g of days){
-    let row='<td>'+esc(prettyDate(g.date))+'</td><td>'+fmtVix(g.vix)+'</td>';
+    const dayVix = (VIX_BY_DATE[g.date]!=null) ? VIX_BY_DATE[g.date] : null;
+    let row='<td>'+esc(prettyDate(g.date))+'</td><td>'+fmtVix(dayVix)+'</td>';
     for(const mo of activeModes){
       const c=g.modes[mo];
       if(!c || !c.n){ row+='<td class="muted">—</td>'; continue; }
@@ -354,9 +389,9 @@ function render(){
     body+='<tr>'+row+'</tr>';
   }
 
-  // totals footer — VIX averaged across the days that have a reading (equal weight per day)
-  const vixDays = days.filter(g => g.vix != null);
-  const avgVix  = vixDays.length ? vixDays.reduce((s,g)=>s+g.vix,0)/vixDays.length : null;
+  // totals footer — VIX averaged across the shown days that have a Fyers reading
+  const vixVals = days.map(g => VIX_BY_DATE[g.date]).filter(v => v != null);
+  const avgVix  = vixVals.length ? vixVals.reduce((s,v)=>s+v,0)/vixVals.length : null;
   let foot='<tr><td><b>TOTAL</b></td><td>'+fmtVix(avgVix)+'</td>';
   for(const mo of activeModes){ const c=totByMode[mo]; foot+='<td><span style="color:'+pc(c.pnl)+'">'+inr2(c.pnl)+'</span><br><span class="cnt">'+c.n+'</span></td>'; }
   foot+='<td>'+tN+'</td><td style="color:#10b981">'+tW+'</td><td style="color:#ef4444">'+tL+'</td><td>'+tWR.toFixed(0)+'%</td>'
