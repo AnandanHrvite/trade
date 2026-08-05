@@ -68,6 +68,9 @@ function loadBook(sources, book) {
           mode: src.mode,
           date: sessionDate,
           pnl:  Number(t.pnl) || 0,
+          // VIX is market-wide, so any strategy's entry-VIX represents the day.
+          // Kept per-trade here; byDay() averages the non-null values into one figure.
+          vix:  (t.vixAtEntry != null && isFinite(Number(t.vixAtEntry))) ? Number(t.vixAtEntry) : null,
         });
       }
     }
@@ -242,6 +245,7 @@ function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;',
 function inr2(n){ return (n<0?'-':'')+'₹'+Math.abs(n).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function inr(n){ const v=Math.round(n); return (v<0?'-':'')+'₹'+Math.abs(v).toLocaleString('en-IN'); }
 function pc(n){ return n>=0?'#10b981':'#ef4444'; }
+function fmtVix(n){ return (n==null)?'<span class="muted">—</span>':n.toFixed(2); }
 
 // 'YYYY-MM-DD' → "Tue, 14 Jul 2026"  (matches the Telegram day-report header)
 function prettyDate(s){ const d=new Date(s+'T12:00:00'); if(isNaN(d)) return s; return d.toLocaleDateString('en-IN',{weekday:'short',day:'2-digit',month:'short',year:'numeric'}); }
@@ -278,13 +282,16 @@ function byDay(arr){
   const m=new Map();
   for(const t of arr){
     const d=t.date||'—';
-    if(!m.has(d)) m.set(d,{ date:d, modes:{}, n:0, wins:0, losses:0, net:0 });
+    if(!m.has(d)) m.set(d,{ date:d, modes:{}, n:0, wins:0, losses:0, net:0, vixSum:0, vixCnt:0 });
     const g=m.get(d);
     if(!g.modes[t.mode]) g.modes[t.mode]={n:0,pnl:0};
     g.modes[t.mode].n++; g.modes[t.mode].pnl+=t.pnl;
     g.n++; g.net+=t.pnl;
     if(t.pnl>0) g.wins++; else if(t.pnl<0) g.losses++;
+    if(t.vix!=null){ g.vixSum+=t.vix; g.vixCnt++; }
   }
+  // Collapse the day's entry-VIX readings into one representative average.
+  for(const g of m.values()) g.vix = g.vixCnt ? g.vixSum/g.vixCnt : null;
   return [...m.values()].sort((a,b)=>b.date.localeCompare(a.date)); // newest day first
 }
 
@@ -327,13 +334,13 @@ function render(){
   h+='</div>';
 
   // the daily table
-  let thead='<tr><th>Date</th>';
+  let thead='<tr><th>Date</th><th>VIX</th>';
   for(const mo of activeModes) thead+='<th>'+esc(MODE_LABEL[mo])+'</th>';
   thead+='<th>Trades</th><th>W</th><th>L</th><th>Win%</th><th>Net P&amp;L</th><th>Result</th></tr>';
 
   let body='';
   for(const g of days){
-    let row='<td>'+esc(prettyDate(g.date))+'</td>';
+    let row='<td>'+esc(prettyDate(g.date))+'</td><td>'+fmtVix(g.vix)+'</td>';
     for(const mo of activeModes){
       const c=g.modes[mo];
       if(!c || !c.n){ row+='<td class="muted">—</td>'; continue; }
@@ -347,8 +354,10 @@ function render(){
     body+='<tr>'+row+'</tr>';
   }
 
-  // totals footer
-  let foot='<tr><td><b>TOTAL</b></td>';
+  // totals footer — VIX averaged across the days that have a reading (equal weight per day)
+  const vixDays = days.filter(g => g.vix != null);
+  const avgVix  = vixDays.length ? vixDays.reduce((s,g)=>s+g.vix,0)/vixDays.length : null;
+  let foot='<tr><td><b>TOTAL</b></td><td>'+fmtVix(avgVix)+'</td>';
   for(const mo of activeModes){ const c=totByMode[mo]; foot+='<td><span style="color:'+pc(c.pnl)+'">'+inr2(c.pnl)+'</span><br><span class="cnt">'+c.n+'</span></td>'; }
   foot+='<td>'+tN+'</td><td style="color:#10b981">'+tW+'</td><td style="color:#ef4444">'+tL+'</td><td>'+tWR.toFixed(0)+'%</td>'
     +'<td style="color:'+pc(tNet)+'">'+inr2(tNet)+'</td><td class="'+(tNet>=0?'res-profit':'res-loss')+'">'+(tNet>=0?'🟢':'🔴')+'</td></tr>';
