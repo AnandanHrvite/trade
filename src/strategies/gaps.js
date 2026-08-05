@@ -20,9 +20,9 @@
  *   CE (long):  TODAY's RSI   <  GAPS_RSI_LOWER (default 10)  AND
  *               today's open  >  yesterday's close             (gap UP)
  *
- * Which RSI decides is a toggle: GAPS_RSI_ENTRY_PREV_DAY. Default false uses
- * TODAY's RSI (below); true uses YESTERDAY's closed RSI instead. The gap half is
- * unchanged either way. Meant for A/B'ing the two in paper.
+ * Which RSI decides is a dropdown: GAPS_RSI_ENTRY_SOURCE. Default "today_open"
+ * uses TODAY's RSI (below); "prev_close" uses YESTERDAY's closed RSI instead. The
+ * gap half is unchanged either way. Meant for A/B'ing the two in paper.
  *
  * "TODAY's RSI" is the daily RSI including today's bar. At 09:15 that bar has
  * only one price — today's open — so it is built from the open. Using the open
@@ -83,10 +83,10 @@ function getConfig() {
     rsiSource: RSI_SOURCES.includes(rawSrc) ? rawSrc : "ema",
     rsiUpper:  parseFloat(process.env.GAPS_RSI_UPPER || "90"),
     rsiLower:  parseFloat(process.env.GAPS_RSI_LOWER || "10"),
-    // Which daily RSI decides the entry. Default false → TODAY's RSI (the series
-    // extended with today's open). true → the PREVIOUS day's closed RSI. A toggle
-    // so the two can be A/B'd in paper before either is trusted.
-    rsiEntryPrevDay: String(process.env.GAPS_RSI_ENTRY_PREV_DAY || "false").toLowerCase() === "true",
+    // Which daily RSI decides the entry. "today_open" (default) → TODAY's RSI (the
+    // series extended with today's open). "prev_close" → the PREVIOUS day's closed
+    // RSI. A dropdown so the two can be A/B'd in paper before either is trusted.
+    rsiEntryPrevDay: String(process.env.GAPS_RSI_ENTRY_SOURCE || "today_open").trim().toLowerCase() === "prev_close",
     // Intraday trailing stop — a separate EMA from the daily one above.
     trailLength:  Math.max(2, parseInt(process.env.GAPS_TRAIL_EMA_LENGTH || "21", 10) || 21),
     trailEnabled: String(process.env.GAPS_TRAIL_ENABLED || "true").toLowerCase() === "true",

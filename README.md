@@ -579,7 +579,7 @@ Trend-continuation option-buyer: 15m trend bias (swing structure + EMA20>EMA50 +
 | `GAPS_EMA_LENGTH` | `21` | Daily EMA period — the RSI source **only**; not an exit level (see `GAPS_TRAIL_EMA_LENGTH`) |
 | `GAPS_RSI_LENGTH` | `14` | Daily RSI period |
 | `GAPS_RSI_SOURCE` | `ema` | What RSI is calculated ON. `ema` = TradingView's "EMA: EMA" (RSI plotted on the EMA line, double-smoothed so it reaches the extremes). Also `close`/`open`/`high`/`low`/`hl2`/`hlc3`/`ohlc4` |
-| `GAPS_RSI_ENTRY_PREV_DAY` | `false` | Which RSI decides the entry. `false` = TODAY's RSI (daily series extended with today's open); `true` = the PREVIOUS day's closed RSI. Gap is always measured vs yesterday's close either way |
+| `GAPS_RSI_ENTRY_SOURCE` | `today_open` | Which RSI decides the entry. `today_open` = TODAY's RSI (daily series extended with today's open); `prev_close` = the PREVIOUS day's closed RSI. Gap is always measured vs yesterday's close either way |
 | `GAPS_RSI_UPPER` | `90` | Yesterday's RSI must be above this for the PE setup |
 | `GAPS_RSI_LOWER` | `10` | Yesterday's RSI must be below this for the CE setup |
 | `GAPS_ENTRY_START` / `GAPS_ENTRY_END` | `09:15` / `09:30` | Entry window (IST) — the gap decision is only valid at the open |

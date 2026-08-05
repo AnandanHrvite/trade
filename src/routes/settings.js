@@ -24,7 +24,6 @@ const tradeLogger   = require("../utils/tradeLogger");
 const skipLogger    = require("../utils/skipLogger");
 const tickRecorder  = require("../utils/tickRecorder");
 const { logStore }  = require("../services/logger");
-const { EXPIRY_MODE_PREFIXES } = require("../config/instrument");
 
 // Use process.cwd() for the .env path — this is where Node was started,
 // which is always the project root (where .env lives).
@@ -58,8 +57,6 @@ const SETTINGS_SCHEMA = [
       { key: "EMA_RSI_ST_LIVE_ENABLED", label: "EMA_RSI_ST Live Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Zerodha" },
       { key: "EMA_RSI_ST_LIVE_DRY_RUN", label: "EMA_RSI_ST Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep EMA_RSI_ST in DRY-RUN (log only, no real order) even when the global Live Harness DRY-RUN is OFF. Lets other strategies trade real money while EMA_RSI_ST stays simulated. Default off.", default: "false" },
       { key: "TRADE_RESOLUTION", label: "Candle Resolution (min)", type: "select", options: ["3", "5", "15"], effect: EFFECT.SESSION, desc: "EMA_RSI_ST candle timeframe (3 / 5 / 15-min). BB_RSI & PA have their own resolution settings.", default: "5" },
-      { key: "EMA_RSI_ST_OPTION_EXPIRY_OVERRIDE", label: "EMA_RSI_ST Option Expiry (override)", type: "date", effect: EFFECT.INSTANT, desc: "EMA_RSI_ST-only override. When set, overrides the common Option Expiry. Use to keep EMA_RSI_ST on next-week expiry while bb_rsi/PA trade current expiry. Leave blank to fall back to common. Saving this field alone does NOT touch the common expiry — but saving the COMMON expiry (Settings or the Dashboard strip) overwrites this field with the common date, so re-apply the override after a common change.", default: "" },
-      { key: "EMA_RSI_ST_OPTION_EXPIRY_TYPE", label: "EMA_RSI_ST Expiry Type", type: "select", options: ["", "weekly", "monthly"], effect: EFFECT.INSTANT, desc: "EMA_RSI_ST-only expiry type for the override above. Weekly = Tuesday expiry, Monthly = last Thursday/preponed monthly. Leave blank to fall back to the common Expiry Type. Overwritten together with the date whenever the common expiry is saved.", default: "" },
       { key: "TRADE_EXPIRY_DAY_ONLY", label: "Trade Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only allow entries on NIFTY weekly expiry day (Tuesday, or Monday if Tuesday is holiday)", default: "false" },
       { key: "TRADE_ENTRY_START", label: "Entry Start Time", type: "time", effect: EFFECT.SESSION, desc: "Earliest time for new trade entries (HH:MM IST)", default: "10:30" },
       { key: "TRADE_ENTRY_END", label: "Entry End Time", type: "time", effect: EFFECT.SESSION, desc: "No new entries after this time (HH:MM IST)", default: "14:00" },
@@ -248,7 +245,6 @@ const SETTINGS_SCHEMA = [
       { key: "EMA9VWAP_OPT_STOP_PCT", label: "Safety Option-Premium Stop (fraction)", type: "number", min: 0, max: 0.5, step: 0.05, effect: EFFECT.INSTANT, desc: "Optional catastrophe stop on option premium (0.15 = exit if premium drops 15%). 0 = OFF (pure signal exit, the default).", default: "0" },
       { key: "EMA9VWAP_STOP_LOSS_PTS", label: "Safety Spot-Points Stop", type: "number", min: 0, max: 200, step: 5, effect: EFFECT.INSTANT, desc: "Optional catastrophe stop in NIFTY spot points against entry. 0 = OFF (pure signal exit, the default).", default: "0" },
       { key: "EMA9VWAP_REVERSAL_EXIT_ENABLED", label: "2-Candle Reversal Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "ON by default — after entry, square off the instant a candle CLOSES hard against the position: a CE bails on a bearish candle (close below open) closing below BOTH previous 2 candles' lows; a PE on a bullish candle closing above both previous 2 highs. Evaluated on candle close, rolling reference. Turn off to hold purely to the signal/EOD exit.", default: "true" },
-      { key: "EMA9VWAP_OPTION_EXPIRY_OVERRIDE", label: "EMA9+VWAP Option Expiry (override)", type: "date", effect: EFFECT.INSTANT, desc: "EMA9+VWAP-only override. Leave blank to fall back to the common Option Expiry (Trading Settings) — so when that common date IS today, EMA9+VWAP is on 0DTE and /start blocks with the expiry-day warning. Set a date here to keep EMA9+VWAP on its own (e.g. next week's) expiry. Overwritten with the common date whenever the common expiry is saved.", default: "" },
       { key: "EMA9VWAP_VIX_ENABLED", label: "VIX Filter (EMA9+VWAP)", type: "select", options: ["", "true", "false"], effect: EFFECT.INSTANT, desc: "EMA9+VWAP-specific VIX gate. BLANK = inherit the global VIX_FILTER_ENABLED (which is ON unless explicitly false) — this is the historical behaviour and the safe default. Set true/false to decouple EMA9+VWAP from EMA_RSI_ST's VIX setting.", default: "" },
       { key: "EMA9VWAP_VIX_MAX_ENTRY", label: "VIX Max Entry (EMA9+VWAP)", type: "text", effect: EFFECT.INSTANT, desc: "Block EMA9+VWAP entries when India VIX is above this. Blank = inherit the global VIX_MAX_ENTRY (default 20).", default: "" },
       // ── M5: keys that were live in code but invisible here (and therefore absent
@@ -265,7 +261,6 @@ const SETTINGS_SCHEMA = [
       { key: "EMA9VWAP_SL_MODE", label: "SL Mode", type: "select", options: ["ema", "candle"], effect: EFFECT.INSTANT, desc: "'ema' = pure signal exit (default). 'candle' re-enables the legacy flat-trade time-stop.", default: "ema" },
       { key: "EMA9VWAP_STRENGTH_FILTER", label: "Drop WEAK Band Breaks", type: "toggle", effect: EFFECT.INSTANT, desc: "Only trade crosses that clear the band edge by ≥ the σ threshold below. Default OFF.", default: "false" },
       { key: "EMA9VWAP_STRONG_MIN_SIGMA", label: "STRONG Break Threshold (σ)", type: "number", min: 0, max: 2, step: 0.05, effect: EFFECT.INSTANT, desc: "A break ≥ this many σ past the band edge grades STRONG, else WEAK. Only enforced when the filter above is ON.", default: "0.25" },
-      { key: "EMA9VWAP_OPTION_EXPIRY_TYPE", label: "Expiry Type (EMA9+VWAP)", type: "select", options: ["", "weekly", "monthly"], effect: EFFECT.INSTANT, desc: "EMA9+VWAP-only expiry type for the override above. Blank = inherit the common Expiry Type. Overwritten together with the date whenever the common expiry is saved.", default: "" },
     ],
   },
   {
@@ -321,7 +316,7 @@ const SETTINGS_SCHEMA = [
       { key: "GAPS_EMA_LENGTH", label: "EMA Length (daily)", type: "number", min: 2, max: 200, step: 1, effect: EFFECT.SESSION, desc: "EMA period on the DAILY close. Used ONLY as the RSI input source (when RSI Source = ema) — it is not an exit level. The exit trails a separate intraday EMA, set by Trail EMA Length below. Default 21.", default: "21" },
       { key: "GAPS_RSI_LENGTH", label: "RSI Length (daily)", type: "number", min: 2, max: 100, step: 1, effect: EFFECT.SESSION, desc: "RSI period on the DAILY series. Default 14.", default: "14" },
       { key: "GAPS_RSI_SOURCE", label: "RSI Input Source", type: "select", options: ["ema", "close", "open", "high", "low", "hl2", "hlc3", "ohlc4"], effect: EFFECT.SESSION, desc: "What RSI is calculated ON. 'ema' (default) feeds RSI the EMA line instead of close — this is TradingView's \"EMA: EMA\" source, which double-smooths RSI so it actually reaches the 90/10 extremes. 'close' gives a plain RSI.", default: "ema" },
-      { key: "GAPS_RSI_ENTRY_PREV_DAY", label: "Entry uses PREVIOUS-day RSI", type: "toggle", effect: EFFECT.SESSION, desc: "Which daily RSI decides the entry. OFF (default) = TODAY's RSI, built by extending the daily series with today's open. ON = the PREVIOUS day's closed RSI (yesterday's settled value). The gap is always measured vs yesterday's close either way. Flip to A/B the two in paper. Default off.", default: "false" },
+      { key: "GAPS_RSI_ENTRY_SOURCE", label: "Entry RSI calculation", type: "select", options: [{ value: "today_open", label: "Today's open value" }, { value: "prev_close", label: "Yesterday's close value" }], effect: EFFECT.SESSION, desc: "Which daily RSI decides the entry. 'Today's open value' (default) extends the daily series with today's open and reads that RSI. 'Yesterday's close value' uses the previous day's closed RSI instead. The gap is always measured vs yesterday's close either way. Switch to A/B the two in paper.", default: "today_open" },
       { key: "GAPS_RSI_UPPER", label: "RSI Upper Band (overbought)", type: "number", min: 50, max: 100, step: 1, effect: EFFECT.INSTANT, desc: "TODAY's daily RSI must be ABOVE this for a PE (short) setup. Today's RSI is the daily RSI including today's bar, built from today's open — the gap is what is measured against yesterday's close. Default 90.", default: "90" },
       { key: "GAPS_RSI_LOWER", label: "RSI Lower Band (oversold)", type: "number", min: 0, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "TODAY's daily RSI must be BELOW this for a CE (long) setup. Today's RSI is the daily RSI including today's bar, built from today's open — the gap is what is measured against yesterday's close. Default 10.", default: "10" },
 
@@ -1288,9 +1283,11 @@ router.get("/", (req, res) => {
     }
 
     if (f.type === "select") {
-      const opts = f.options.map(o =>
-        `<option value="${o}" ${o === val ? "selected" : ""}>${o}</option>`
-      ).join("");
+      const opts = f.options.map(o => {
+        const ov = (o && typeof o === "object") ? o.value : o;
+        const ol = (o && typeof o === "object") ? o.label : o;
+        return `<option value="${ov}" ${ov === val ? "selected" : ""}>${ol}</option>`;
+      }).join("");
       return `
         <div class="${rowClass}" ${frozenAttr}>
           <div class="setting-info">
