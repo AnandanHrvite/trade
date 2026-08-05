@@ -216,13 +216,15 @@ function runOrbBacktest(allCandles, expirySet) {
           }
         }
         // ── 2. INTRABAR: hard SL breach against this candle's extreme ─────────
-        //    Gap-through: fill at the open if the bar gapped past the stop.
-        if (position.side === "CE" && c.low <= position.slSpot) {
-          closePos(position, c.open < position.slSpot ? c.open : position.slSpot, c.time, `Hard SL hit (${position.slSpot})`);
-          trades.push(buildTradeRecord(position)); position = null; continue;
-        }
-        if (position.side === "PE" && c.high >= position.slSpot) {
-          closePos(position, c.open > position.slSpot ? c.open : position.slSpot, c.time, `Hard SL hit (${position.slSpot})`);
+        //    The DECISION is delegated to the shared exit engine's predicate (so a
+        //    future change to isHardSlHit propagates here automatically); only the
+        //    FILL is local. Gap-through: fill at the open if the bar gapped past it.
+        const _slExtreme = position.side === "CE" ? c.low : c.high;
+        if (orbExits.isHardSlHit(position.side, _slExtreme, position.slSpot)) {
+          const _fill = position.side === "CE"
+            ? (c.open < position.slSpot ? c.open : position.slSpot)
+            : (c.open > position.slSpot ? c.open : position.slSpot);
+          closePos(position, _fill, c.time, `Hard SL hit (${position.slSpot})`);
           trades.push(buildTradeRecord(position)); position = null; continue;
         }
         // ── 3–5. CANDLE CLOSE: opposite candle → breakeven → EMA trend-trail ──
