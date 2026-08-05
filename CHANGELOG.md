@@ -6,6 +6,14 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Removed — the 0DTE expiry-day start guard
+
+Every strategy is intraday-only, so trading options that expire the same day (0DTE) is just a normal session, not a hazard to block. The expiry-day guard on EMA_RSI_ST (Paper + Live) and EMA9+VWAP (Paper) is gone entirely: `/start` no longer returns `EXPIRY_DAY_0DTE`, the "0DTE Expiry Day — Not Recommended / REAL MONEY at Risk" confirm modals and the Start-All variant are removed, and the `?force=1` bypass (plus its use in tickReplay) is dropped. The detector helpers and the `force` param on `handleStart`/`ltHandleStart` were deleted. Setting today's date in **Option Expiry** now simply puts every strategy on same-day expiry with no prompt.
+
+### Changed — one common option expiry for every strategy
+
+All engines are intraday on the same weekly expiry, so the per-strategy expiry overrides were removed. Settings now shows a single **Option Expiry** / **Expiry Type** pair (under *Instrument & Backtest*, also on the Dashboard strip); the `EMA_RSI_ST_`, `EMA9VWAP_` and `GAPS_OPTION_EXPIRY_*` fields, the common→per-mode fan-out, and the Dashboard "differs" warning are gone. `validateAndGetOptionSymbol` reads `OPTION_EXPIRY_OVERRIDE` only. Replay of older recordings is unaffected — tickReplay still honours any per-mode expiry captured in a recorded snapshot. No change to how the nearest expiry is auto-detected when the override is blank.
+
 ### Added — GAPS can decide on the previous day's RSI
 
 New dropdown **Settings → GAPS → "Entry RSI calculation"** (`GAPS_RSI_ENTRY_SOURCE`, default `today_open`). *Today's open value* keeps today's behaviour — the entry reads TODAY's daily RSI, built by extending the series with today's open. *Yesterday's close value* makes it read the PREVIOUS day's closed RSI instead. The gap is still measured against yesterday's close in both modes. Meant to A/B the two in paper before trusting either.

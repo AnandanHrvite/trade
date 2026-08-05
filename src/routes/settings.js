@@ -330,11 +330,9 @@ const SETTINGS_SCHEMA = [
       { key: "GAPS_TRAIL_ENABLED", label: "EMA Trailing Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Trail the position with the intraday EMA (period set by Trail EMA Length) and exit when a candle CLOSES back THROUGH it — a PE exits on a close ABOVE the EMA, a CE on a close BELOW. This is a trailing stop, not a target: the level follows price every candle. Turn OFF to run gap-size-stop-and-EOD only. Default on.", default: "true" },
       { key: "GAPS_TRAIL_EMA_LENGTH", label: "Trail EMA Length", type: "number", effect: EFFECT.INSTANT, desc: "EMA period for the trailing stop, on the EXIT TIMEFRAME candles (not daily). Separate from the daily EMA Length above, which feeds the RSI — changing the RSI smoothing must not silently move the stop. Default 21.", default: "21" },
 
-      // ── Sizing + expiry ──
+      // ── Sizing ──
       { key: "GAPS_LOT_MULTIPLIER", label: "Lot Multiplier (GAPS only)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.INSTANT, desc: "Overrides the global LOT_MULTIPLIER for GAPS only. 0 = inherit the global value (default). Clamped by MAX_LOT_MULTIPLIER.", default: "0" },
       { key: "GAPS_ITM_STEPS", label: "ITM Steps (strikes in-the-money)", type: "number", min: 0, max: 3, step: 1, effect: EFFECT.INSTANT, desc: "How many 50-pt strikes in-the-money to buy (1 ≈ delta 0.6, less theta bleed than ATM). 0 = ATM. Default 1.", default: "1" },
-      { key: "GAPS_OPTION_EXPIRY_OVERRIDE", label: "Expiry Override (GAPS)", type: "text", effect: EFFECT.INSTANT, desc: "GAPS-only expiry date (YYYY-MM-DD). Blank = inherit the common expiry override. Overwritten whenever the common expiry is saved.", default: "" },
-      { key: "GAPS_OPTION_EXPIRY_TYPE", label: "Expiry Type (GAPS)", type: "select", options: ["", "weekly", "monthly"], effect: EFFECT.INSTANT, desc: "GAPS-only expiry type for the override above. Blank = inherit the common Expiry Type.", default: "" },
 
       // ── Risk ──
       { key: "GAPS_MAX_DAILY_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 5, step: 1, effect: EFFECT.SESSION, desc: "Daily trade cap. GAPS takes ONE decision per day at the open, so 1 is the natural value. Default 1.", default: "1" },
@@ -376,7 +374,7 @@ const SETTINGS_SCHEMA = [
       { key: "LOT_MULTIPLIER", label: "Lot Multiplier", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "Number of lots per trade" },
       { key: "STRIKE_OFFSET_CE", label: "CE Strike Offset", type: "number", min: -200, max: 200, step: 50, effect: EFFECT.INSTANT, desc: "-50=ITM, 0=ATM, +50=OTM", default: "0" },
       { key: "STRIKE_OFFSET_PE", label: "PE Strike Offset", type: "number", min: -200, max: 200, step: 50, effect: EFFECT.INSTANT, desc: "+50=ITM, 0=ATM, -50=OTM", default: "0" },
-      { key: "OPTION_EXPIRY_OVERRIDE", label: "Option Expiry (manual)", type: "date", effect: EFFECT.INSTANT, desc: "Override auto-detected expiry. Leave blank for auto. Applies to EVERY strategy — saving it also copies the date + type into the per-strategy expiry keys (EMA_RSI_ST, ORB, EMA9+VWAP, Trend_PB), so no strategy can keep trading an older override. Setting today's date here puts every strategy on 0DTE — EMA_RSI_ST and EMA9+VWAP will then block at start with the expiry-day warning." },
+      { key: "OPTION_EXPIRY_OVERRIDE", label: "Option Expiry (manual)", type: "date", effect: EFFECT.INSTANT, desc: "Override auto-detected expiry. Leave blank for auto. Applies to EVERY strategy — saving it also copies the date + type into the per-strategy expiry keys (EMA_RSI_ST, ORB, EMA9+VWAP, Trend_PB), so no strategy can keep trading an older override. Setting today's date here puts every strategy on same-day expiry (0DTE)." },
       { key: "OPTION_EXPIRY_TYPE", label: "Expiry Type", type: "select", options: ["weekly", "monthly"], effect: EFFECT.INSTANT, desc: "Weekly = normal Tuesday expiry. Monthly = last Thursday/preponed monthly expiry. Applies to all modes, and is copied into the per-strategy expiry-type keys together with the date above.", default: "weekly" },
       { key: "TICK_RECORDER_ENABLED", label: "Tick Recorder (for Replay)", type: "toggle", effect: EFFECT.SESSION, desc: "Record every spot/option/VIX tick to data/ticks/YYYY-MM-DD/*.jsonl during paper/live sessions. Required for Replay backtest. Pure observer — no impact on trading.", default: "true" },
       { key: "TICK_RECORDER_RETAIN_DAYS", label: "Tick Recordings Retention (days)", type: "number", min: 7, max: 180, step: 1, effect: EFFECT.SERVER, desc: "Auto-delete tick recordings older than this many days. ~10 MB/day across all streams — 30 days ≈ 300 MB. Lower if EBS is tight.", default: "30" },
@@ -689,7 +687,6 @@ const IMMEDIATE_KEYS = new Set([
   "OI_LOOKBACK_CANDLES", "OI_MIN_DELTA_PCT", "OI_FAIL_MODE",
   "INSTRUMENT", "NIFTY_LOT_SIZE", "STRIKE_OFFSET_CE", "STRIKE_OFFSET_PE", "LOT_MULTIPLIER",
   "OPTION_EXPIRY_OVERRIDE", "OPTION_EXPIRY_TYPE",
-  "EMA_RSI_ST_OPTION_EXPIRY_OVERRIDE", "EMA_RSI_ST_OPTION_EXPIRY_TYPE",
   "BACKTEST_CAPITAL", "BACKTEST_OPTION_SIM",
   "BACKTEST_DELTA", "BACKTEST_THETA_DAY", "ZERODHA_INV_AMOUNT", "FYERS_INV_AMOUNT",
   "PA_ENABLED",
@@ -896,79 +893,9 @@ router.post("/save", (req, res) => {
     }
   }
 
-  mirrorCommonExpiryToModes(cleaned, explicitKeys, deleteSet, deleteKeys);
-
   const result = persistChanges(cleaned, deleteKeys, note, req);
   res.json({ ...result, envPath: ENV_PATH });
 });
-
-// ── Common expiry → per-mode fan-out ─────────────────────────────────────────
-// instrument.validateAndGetOptionSymbol resolves `modeOverride || commonOverride`,
-// so ANY per-mode expiry key silently beats the common one. Editing the common
-// expiry (Settings page or the Dashboard quick-edit, both of which POST here)
-// therefore used to leave a stale per-mode override trading the old contract
-// while the UI reported success. Saving the common pair now writes the same
-// date + type into every strategy that actually reads a per-mode key.
-//
-// Rules:
-//   • Trigger = the user explicitly saved a common expiry key (auto-filled
-//     defaults do not count — see `explicitKeys`).
-//   • Date + type are mirrored as a PAIR, so a mode can never end up with the
-//     new date under the old type (or vice versa).
-//   • A per-mode key sent in the SAME request wins and is left untouched. That
-//     is how a deliberate per-strategy override stays independent: editing only
-//     EMA_RSI_ST_OPTION_EXPIRY_* sends no common key, so nothing fans out, and
-//     "Save All" (which posts every field on the page) keeps what the UI shows.
-//   • Only prefixes in EXPIRY_MODE_PREFIXES are written — BB_RSI/PA never pass
-//     a mode, so writing their keys would create env keys nothing reads.
-// A blank date is mirrored too: clearing the common override must clear the
-// per-mode copies, otherwise "back to auto-detect" would apply to nobody.
-// DELETING a common key (bulk paste `-KEY`) cascades for the same reason: the
-// copies this fan-out wrote would outlive it and keep every strategy pinned to
-// the date the operator just removed.
-function mirrorCommonExpiryToModes(cleaned, explicitKeys, deleteSet, deleteKeys) {
-  // Cascade deletes FIRST, so the mirror below skips whatever it queued.
-  const cascaded = [];
-  for (const common of ["OPTION_EXPIRY_OVERRIDE", "OPTION_EXPIRY_TYPE"]) {
-    if (!deleteSet.has(common)) continue;
-    for (const prefix of EXPIRY_MODE_PREFIXES) {
-      const modeKey = `${prefix}_${common}`;
-      if (explicitKeys.has(modeKey) || deleteSet.has(modeKey)) continue;  // caller's own value wins
-      deleteSet.add(modeKey);
-      // Delete wins over a value in `cleaned` — same rule the route applies to
-      // the caller's own keys. Matters because the section auto-fill above runs
-      // BEFORE this cascade and may have just added this key at its default:
-      // leaving it in both would delete it from process.env yet re-append it to
-      // .env, so memory and disk would disagree until the next restart.
-      delete cleaned[modeKey];
-      deleteKeys.push(modeKey);
-      cascaded.push(modeKey);
-    }
-  }
-  if (cascaded.length) {
-    console.log(`[settings] expiry fan-out: common key deleted → also deleting ${cascaded.join(", ")}`);
-  }
-
-  if (!explicitKeys.has("OPTION_EXPIRY_OVERRIDE") && !explicitKeys.has("OPTION_EXPIRY_TYPE")) return;
-
-  const date = explicitKeys.has("OPTION_EXPIRY_OVERRIDE")
-    ? cleaned.OPTION_EXPIRY_OVERRIDE
-    : (process.env.OPTION_EXPIRY_OVERRIDE || "").trim();
-  const type = explicitKeys.has("OPTION_EXPIRY_TYPE")
-    ? cleaned.OPTION_EXPIRY_TYPE
-    : (process.env.OPTION_EXPIRY_TYPE || "").trim();
-
-  const mirrored = [];
-  for (const prefix of EXPIRY_MODE_PREFIXES) {
-    const dateKey = `${prefix}_OPTION_EXPIRY_OVERRIDE`;
-    const typeKey = `${prefix}_OPTION_EXPIRY_TYPE`;
-    if (!explicitKeys.has(dateKey) && !deleteSet.has(dateKey)) { cleaned[dateKey] = date; mirrored.push(dateKey); }
-    if (!explicitKeys.has(typeKey) && !deleteSet.has(typeKey)) { cleaned[typeKey] = type; mirrored.push(typeKey); }
-  }
-  if (mirrored.length) {
-    console.log(`[settings] expiry fan-out: common ${date || "(auto)"}/${type || "(inherit)"} → ${mirrored.join(", ")}`);
-  }
-}
 
 // Apply a validated set of updates/deletes: mutate process.env + .env, write the
 // settings-audit log, and append per-mode daily settings snapshots. Shared by

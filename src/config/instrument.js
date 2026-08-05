@@ -462,21 +462,6 @@ function isExpiryOverrideStale(dateStr) {
 }
 
 /**
- * Strategy prefixes whose engines pass a `mode` to validateAndGetOptionSymbol()
- * and therefore honour a `{PREFIX}_OPTION_EXPIRY_OVERRIDE` / `_TYPE` pair.
- *
- * BB_RSI and PA call it with NO mode (see the call sites in their live/paper
- * routes), so `modeKey` is null and their per-mode keys are never read — listing
- * them here would let the Settings fan-out and the dashboard "ignores this"
- * warning claim an override that does nothing.
- *
- * SINGLE source for this list: the Settings save fan-out (routes/settings.js)
- * and the dashboard expiry strip (app.js) both read it, so adding a 7th engine
- * that passes a mode only has to be recorded here.
- */
-const EXPIRY_MODE_PREFIXES = ["EMA_RSI_ST", "ORB", "EMA9VWAP", "TREND_PB", "GAPS"];
-
-/**
  * Get a valid Fyers option symbol for entry.
  *
  * Priority:
@@ -506,16 +491,13 @@ async function validateAndGetOptionSymbol(spot, side, mode) {
   console.log(`[instrument] validateAndGetOptionSymbol() called: spot=${spot}, side=${side}, strike=${strike}${mode ? `, mode=${mode}` : ""}`);
 
   // ── Manual expiry override — skip all auto-detection ──────────────────────
-  // Per-mode override takes precedence over the common override. e.g. EMA_RSI_ST_OPTION_EXPIRY_OVERRIDE
-  // lets EMA_RSI_ST trade next-week options (avoid 0DTE) while bb_rsi/PA continue on common expiry.
-  const modeKey = mode ? String(mode).toUpperCase() : null;
-  const modeOverride = modeKey ? (process.env[`${modeKey}_OPTION_EXPIRY_OVERRIDE`] || "").trim() : "";
-  const modeType     = modeKey ? (process.env[`${modeKey}_OPTION_EXPIRY_TYPE`]     || "").trim().toLowerCase() : "";
-  const manualExpiry = modeOverride || (process.env.OPTION_EXPIRY_OVERRIDE || "").trim();
-  const expiryType   = modeType     || (process.env.OPTION_EXPIRY_TYPE     || "weekly").trim().toLowerCase();
+  // ONE common expiry for every strategy — all engines are intraday on the same
+  // weekly expiry. Blank = auto-detect. There is no per-strategy expiry override.
+  const manualExpiry = (process.env.OPTION_EXPIRY_OVERRIDE || "").trim();
+  const expiryType   = (process.env.OPTION_EXPIRY_TYPE     || "weekly").trim().toLowerCase();
   if (manualExpiry && manualExpiry.length >= 8) {
     const parts = manualExpiry.split("-");
-    const overrideKeyName = modeOverride ? `${modeKey}_OPTION_EXPIRY_OVERRIDE` : "OPTION_EXPIRY_OVERRIDE";
+    const overrideKeyName = "OPTION_EXPIRY_OVERRIDE";
     if (parts.length !== 3 || parts.some(p => isNaN(parseInt(p)))) {
       console.error(`[instrument] ❌ ${overrideKeyName} format invalid: "${manualExpiry}" — expected YYYY-MM-DD`);
       // Fall through to auto-detection
@@ -838,6 +820,5 @@ module.exports = {
   getMarketContext,            // async — resolve the day's immutable Market Context Snapshot
   validateAndGetOptionSymbol,  // ✅ Use this for paper/live option entry
   isExpiryOverrideStale,       // shared by the dashboard banner and the entry guard
-  EXPIRY_MODE_PREFIXES,        // strategies that actually read a per-mode expiry key
 };
 
