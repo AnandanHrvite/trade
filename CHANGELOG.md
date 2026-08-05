@@ -6,6 +6,10 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Added — GAPS can decide on the previous day's RSI
+
+New toggle **Settings → GAPS → "Entry uses PREVIOUS-day RSI"** (`GAPS_RSI_ENTRY_PREV_DAY`, default off). Off keeps today's behaviour — the entry reads TODAY's daily RSI, built by extending the series with today's open. On makes it read YESTERDAY's closed RSI instead. The gap is still measured against yesterday's close in both modes. Meant to A/B the two in paper before trusting either.
+
 ### Added — the daily backup can push itself to Google Drive
 
 The daily `.tar.gz` was only ever written to `~/trading-data/_backups/` on the same EC2 box it protects, and the banner nagged until you downloaded it by hand. Miss a few days and the only copy of that data is on the instance you're insuring against.
