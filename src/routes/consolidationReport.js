@@ -27,6 +27,7 @@ const { buildSidebar, sidebarCSS, faviconLink, enabledStrategies,
         dateRangeOptionsHTML, dateRangeJS } = require("../utils/sharedNav");
 const { fetchCandlesCachedBT } = require("../services/backtestEngine");
 const { VIX_SYMBOL } = require("../services/vixFilter");
+const fyers = require("../config/fyers");
 
 const _HOME = require("os").homedir();
 const DATA_DIR = path.join(_HOME, "trading-data");
@@ -36,15 +37,21 @@ const DATA_DIR = path.join(_HOME, "trading-data");
 // on vixAtEntry (that is only captured when a filter runs). One close per trading day.
 // Cached in-memory keyed by the date span; TTL keeps today's still-forming close fresh.
 const VIX_MAP_TTL_MS = 15 * 60 * 1000;
-let _vixMapCache = null; // { from, to, ts, map }
+let _vixMapCache = null; // { from, to, ts, map, note }
 
+function istTodayCR() {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+}
+
+/** @returns {Promise<{map: Object, note: string}>} — note explains an empty map */
 async function loadVixByDate(fromDate, toDate) {
   const now = Date.now();
   if (_vixMapCache && _vixMapCache.from === fromDate && _vixMapCache.to === toDate
       && (now - _vixMapCache.ts) < VIX_MAP_TTL_MS) {
-    return _vixMapCache.map;
+    return { map: _vixMapCache.map, note: _vixMapCache.note };
   }
   const map = {};
+  let note = "";
   try {
     const candles = await fetchCandlesCachedBT(VIX_SYMBOL, "D", fromDate, toDate, false);
     for (const c of (candles || [])) {
@@ -53,10 +60,49 @@ async function loadVixByDate(fromDate, toDate) {
       if (isFinite(close) && close > 0) map[d] = close;
     }
   } catch (err) {
-    console.warn(`[ConsolidationReport] VIX fetch failed: ${err.message}`);
+    note = `VIX history fetch failed: ${err.message}`;
+    console.warn(`[ConsolidationReport] ${note}`);
   }
-  _vixMapCache = { from: fromDate, to: toDate, ts: now, map };
-  return map;
+
+  // backtestEngine.fetchChunk() returns [] for BOTH "no_data" and an API/auth error
+  // (its empty-candles check runs before the s!=="ok" throw), so an expired Fyers
+  // token is indistinguishable from a genuine no-data range — the column just went
+  // blank with nothing in the logs. Probe the raw response once to say which it was.
+  if (!Object.keys(map).length && !note) {
+    try {
+      const raw = await fyers.getHistory({
+        symbol: VIX_SYMBOL, resolution: "D", date_format: "1",
+        range_from: fromDate, range_to: toDate, cont_flag: "1",
+      });
+      const s = (raw && raw.s) || "error";
+      note = s === "ok"      ? "Fyers returned no daily VIX candles for this range"
+           : s === "no_data" ? "Fyers returned no_data for the daily VIX series — usually an expired Fyers token; log in to Fyers again and reload"
+           : `Fyers ${s}: ${(raw && (raw.message || (raw.data && JSON.stringify(raw.data)))) || "no detail"}`;
+    } catch (err) {
+      note = `VIX history probe failed: ${err.message}`;
+    }
+    console.warn(`[ConsolidationReport] VIX daily fetch empty — ${note}`);
+  }
+
+  // Today's daily bar is not always stamped while the session is still running, so
+  // fill the current day from the live quote. Uses getQuotes directly (not
+  // vixFilter.fetchLiveVix) so a page view never writes a VIX tick into the
+  // recorder — replay must see only the poll cadence the live engines produced.
+  const today = istTodayCR();
+  if (map[today] == null && toDate >= today) {
+    try {
+      const q = await fyers.getQuotes([VIX_SYMBOL]);
+      const lp = q && q.s === "ok" && q.d && q.d[0] && q.d[0].v && q.d[0].v.lp;
+      if (typeof lp === "number" && lp > 0) map[today] = lp;
+    } catch (err) {
+      console.warn(`[ConsolidationReport] live VIX quote failed: ${err.message}`);
+    }
+  }
+
+  // Never cache an empty map — otherwise a fetch that failed on an expired token
+  // keeps the column blank for 15 more minutes after the user logs back in.
+  _vixMapCache = Object.keys(map).length ? { from: fromDate, to: toDate, ts: now, map, note } : null;
+  return { map, note };
 }
 
 // Mirror the source maps used by consolidation.js (paper) + liveConsolidation.js (live).
@@ -139,11 +185,11 @@ router.get("/", async (req, res) => {
 
   // Daily VIX from Fyers across the full recorded span (oldest trade → today, IST),
   // so any day the client filters to has a value. Embedded and looked up client-side.
-  let vixByDate = {};
+  let vixByDate = {}, vixNote = "";
   if (trades.length) {
     const fromDate = trades[0].date; // loadAllTrades() sorts oldest → newest
-    const toDate   = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-    vixByDate = await loadVixByDate(fromDate, toDate);
+    const toDate   = istTodayCR();
+    ({ map: vixByDate, note: vixNote } = await loadVixByDate(fromDate, toDate));
   }
 
   const html = `<!DOCTYPE html>
@@ -275,6 +321,7 @@ router.get("/", async (req, res) => {
 ${dateRangeJS()}
 const ALL = ${JSON.stringify(trades)};
 const VIX_BY_DATE = ${JSON.stringify(vixByDate)};   // { 'YYYY-MM-DD': vixClose } from Fyers
+const VIX_NOTE    = ${JSON.stringify(vixNote)};     // why the VIX column is empty, if it is
 const MODES = ${JSON.stringify(enabled.map(s => s.mode))};
 const MODE_LABEL = ${JSON.stringify(Object.fromEntries(enabled.map(s => [s.mode, s.mode])))};
 
@@ -397,7 +444,11 @@ function render(){
   foot+='<td>'+tN+'</td><td style="color:#10b981">'+tW+'</td><td style="color:#ef4444">'+tL+'</td><td>'+tWR.toFixed(0)+'%</td>'
     +'<td style="color:'+pc(tNet)+'">'+inr2(tNet)+'</td><td class="'+(tNet>=0?'res-profit':'res-loss')+'">'+(tNet>=0?'🟢':'🔴')+'</td></tr>';
 
-  h+='<div class="panel"><h3>Daily Breakdown</h3><div class="tbl-scroll"><table class="tbl"><thead>'+thead+'</thead><tbody>'+body+'</tbody><tfoot>'+foot+'</tfoot></table></div></div>';
+  // Silence is the worst outcome here — if every VIX cell is a dash, say why.
+  const vixWarn = (!vixVals.length && VIX_NOTE)
+    ? '<div class="rh-meta" style="margin-top:8px;color:#f59e0b">⚠️ VIX unavailable — '+esc(VIX_NOTE)+'</div>' : '';
+
+  h+='<div class="panel"><h3>Daily Breakdown</h3><div class="tbl-scroll"><table class="tbl"><thead>'+thead+'</thead><tbody>'+body+'</tbody><tfoot>'+foot+'</tfoot></table></div>'+vixWarn+'</div>';
   C.innerHTML=h;
 }
 
