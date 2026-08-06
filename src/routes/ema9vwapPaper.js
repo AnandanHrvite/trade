@@ -347,6 +347,8 @@ function rehydrateSessionFromJsonl() {
   }
 }
 rehydrateSessionFromJsonl();
+// A previous day's session may only stay on screen while the market is shut.
+require("../utils/staleSessionGate").clearStaleSessionOnTradingDay(() => ptState, "[EMA9VWAP-PAPER]");
 
 // ── Simulation clock ────────────────────────────────────────────────────────
 let _simClockMs = 0;

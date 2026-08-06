@@ -6,6 +6,10 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — a Paper page could show yesterday's session on a trading day
+
+On boot each Paper route rehydrates its Session Trades, and when today's log holds no trades it falls back to the most recent saved session so the screen isn't blank. That fallback was also firing on trading days: start a session, take no trade, restart the server, and the page came back showing the PREVIOUS day's trades — with the chart backfilled to that day too, since the backfill follows the restored trades. The result looked like a live session but was entirely yesterday (seen on ORB Paper, 6 Aug: a 5-Aug trade drawn over the 5-Aug chart). The fallback is now kept only when today is a weekend or an NSE holiday — so Friday's result still shows on Saturday and Sunday — and is cleared on any trading day, where the page shows today's own session even when it is empty. Applies to all seven Paper pages (EMA_RSI_ST, BB_RSI, PA, ORB, EMA9+VWAP, Trend_PB, GAPS).
+
 ### Removed — the 0DTE expiry-day start guard
 
 Every strategy is intraday-only, so trading options that expire the same day (0DTE) is just a normal session, not a hazard to block. The expiry-day guard on EMA_RSI_ST (Paper + Live) and EMA9+VWAP (Paper) is gone entirely: `/start` no longer returns `EXPIRY_DAY_0DTE`, the "0DTE Expiry Day — Not Recommended / REAL MONEY at Risk" confirm modals and the Start-All variant are removed, and the `?force=1` bypass (plus its use in tickReplay) is dropped. The detector helpers and the `force` param on `handleStart`/`ltHandleStart` were deleted. Setting today's date in **Option Expiry** now simply puts every strategy on same-day expiry with no prompt.

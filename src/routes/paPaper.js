@@ -200,6 +200,8 @@ function rehydrateSessionFromJsonl() {
   }
 }
 rehydrateSessionFromJsonl();
+// A previous day's session may only stay on screen while the market is shut.
+require("../utils/staleSessionGate").clearStaleSessionOnTradingDay(() => state, "[PA-PAPER]");
 
 // ── Simulation mode time override ───────────────────────────────────────────
 // In sim mode, simulated clock advances with each tick so market-hour checks pass

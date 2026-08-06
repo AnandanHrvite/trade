@@ -183,15 +183,20 @@ function rehydrateSessionFromJsonl() {
     for (const s of (data.sessions || [])) for (const t of (s.trades || [])) seen.add(keyOf(t));
     let trades = all.filter(t => !seen.has(keyOf(t)));
     let source = "today's live session";
+    let stale  = false;
     if (!trades.length) {
       const saved = (data.sessions || []).filter(s => Array.isArray(s.trades) && s.trades.length);
       if (saved.length) {
         const last = saved.reduce((a, b) => (String(b.date) > String(a.date) ? b : a));
         trades = last.trades;
         source = `last session (${last.date || "?"})`;
+        // Stale only when today's day-file has no trades at all — then what we just
+        // restored really is a previous day's session (see staleSessionGate).
+        stale  = all.length === 0;
       }
     }
     if (!trades.length) return;
+    state._staleSession = stale;
     state.sessionTrades = trades;
     state.tradesTaken   = trades.length;
     state.sessionPnl = parseFloat(trades.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0).toFixed(2));
@@ -202,6 +207,8 @@ function rehydrateSessionFromJsonl() {
   }
 }
 rehydrateSessionFromJsonl();
+// A previous day's session may only stay on screen while the market is shut.
+require("../utils/staleSessionGate").clearStaleSessionOnTradingDay(() => state, "[GAPS-PAPER]");
 
 /**
  * Realised P&L for the current ISO week (Mon → today), read from the per-day

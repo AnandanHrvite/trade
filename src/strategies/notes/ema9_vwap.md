@@ -5,6 +5,7 @@ Engine: `src/strategies/ema9_vwap.js` · Routes: `ema9vwap*.js` · Env prefix: `
 Append a dated bullet whenever this strategy changes. Newest on top.
 
 ## Log
+- 2026-08-06: Paper page no longer resurrects a PREVIOUS day's session on a trading day — the boot rehydrate's "last saved session" fallback (and the chart backfill that follows its trades' day) is now cleared unless today is a weekend/NSE holiday, so a restart with no trades yet shows today's empty session instead of yesterday's trades over yesterday's chart (new `src/utils/staleSessionGate.js`).
 - 2026-08-05: Removed the 0DTE expiry-day guard entirely (Paper) — no more `/start` refusal, `EXPIRY_DAY_0DTE` modal, or `?force=1` bypass. Intraday-only, so same-day expiry is a normal session. Dropped the detector helpers and the frontend confirm flow (`force` param gone from `handleStart`).
 - 2026-08-05: Dropped the per-strategy expiry override — 0DTE guard now reads the common OPTION_EXPIRY_OVERRIDE only (all strategies share one intraday expiry). Removed EMA9VWAP_OPTION_EXPIRY_* from Settings.
 <!-- - 2026-08-05: what changed and why -->

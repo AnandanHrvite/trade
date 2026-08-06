@@ -184,6 +184,8 @@ function rehydrateSessionFromJsonl() {
   }
 }
 rehydrateSessionFromJsonl();
+// A previous day's session may only stay on screen while the market is shut.
+require("../utils/staleSessionGate").clearStaleSessionOnTradingDay(() => state, "[ORB-PAPER]");
 
 // ── Option LTP polling ──────────────────────────────────────────────────────
 

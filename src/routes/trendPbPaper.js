@@ -164,6 +164,8 @@ function rehydrateSessionFromJsonl() {
   }
 }
 rehydrateSessionFromJsonl();
+// A previous day's session may only stay on screen while the market is shut.
+require("../utils/staleSessionGate").clearStaleSessionOnTradingDay(() => state, "[TREND_PB-PAPER]");
 
 // ── Option LTP polling (recursive setTimeout so the replay harness advances it) ──
 const OPTION_POLL_MS = 3000;
