@@ -752,7 +752,7 @@ app.get("/", (req, res) => {
     ...startAllModes.map((m) => ({ url: m.paper.replace('/start', '/status/data'), kind: 'paper' })),
     ...startAllLiveModes.map((m) => ({ url: m.live.replace('/start', '/status/data'), kind: 'live' })),
   ];
-  // Endpoint → display name, for the Start-All failure list and the 0DTE prompt.
+  // Endpoint → display name, for the Start-All failure list.
   // Built from the roster so it cannot drift from the endpoints actually called,
   // and so the harness route of a strategy whose path ends in `-live` (EMA9+VWAP,
   // TREND_PB) reads "Live (Harness)" instead of being mistaken for a pure-live one.
@@ -836,58 +836,27 @@ app.get("/", (req, res) => {
     : ``;
 
   // ── Option expiry override warning ───────────────────────────────────────
-  // Trigger when an expiry override is set AND that expiry day's session (15:30
-  // IST close) is already past. Staleness is decided by instrument.js — the same
-  // predicate the entry guard uses — so this banner can never claim the expiry is
-  // fine while the engine is refusing to trade it (or vice versa).
-  //
-  // A PER-MODE override beats the common one inside validateAndGetOptionSymbol,
-  // so checking only OPTION_EXPIRY_OVERRIDE left the actually-binding key
-  // unchecked: a fresh common date could hide a stale EMA_RSI_ST-only date.
-  // Every override that is set is checked, and each is named in the banner.
-  // Shared by the stale-expiry banner and the Dashboard expiry quick-edit, so a
-  // 7th strategy only has to be added in one place — instrument.js, which owns
-  // the resolution rule. BB_RSI/PA are absent by design: they call
-  // validateAndGetOptionSymbol with NO mode, so their per-mode keys are inert
-  // and warning about them would send the operator chasing a dead key.
-  const PER_MODE_PREFIXES = instrumentConfig.EXPIRY_MODE_PREFIXES;
-
+  // Trigger when the common expiry override is set AND that expiry day's session
+  // (15:30 IST close) is already past. Staleness is decided by instrument.js —
+  // the same predicate the entry guard uses — so this banner can never claim the
+  // expiry is fine while the engine is refusing to trade it (or vice versa).
+  // There is ONE common expiry for every strategy (no per-mode override), so
+  // there is exactly one key to check.
   let optionExpiryAlertHtml = "";
   {
     const { isExpiryOverrideStale } = instrumentConfig;
-    const COMMON_LABEL = "Option Expiry (manual, all modes)";
-    const candidates = [
-      { key: "OPTION_EXPIRY_OVERRIDE", label: COMMON_LABEL },
-      ...PER_MODE_PREFIXES.map(p => ({ key: `${p}_OPTION_EXPIRY_OVERRIDE`, label: `${p} Option Expiry` })),
-    ];
-    const fmt = (d) => new Date(`${d}T00:00:00+05:30`)
-      .toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" });
-
-    const stale = candidates
-      .map(c => ({ ...c, value: (process.env[c.key] || "").trim() }))
-      .filter(c => c.value && isExpiryOverrideStale(c.value));
-
-    if (stale.length) {
-      // A common save now mirrors its date into every per-mode key, so the usual
-      // stale case is ONE date held by all of them. Group by date and collapse a
-      // group that includes the common key to that single label — repeating the
-      // same date five times reads like five separate problems.
-      const byDate = new Map();
-      for (const s of stale) {
-        if (!byDate.has(s.value)) byDate.set(s.value, []);
-        byDate.get(s.value).push(s.label);
-      }
-      const detail = [...byDate.entries()]
-        .map(([value, labels]) => `<strong>${labels.includes(COMMON_LABEL) ? COMMON_LABEL : labels.join(", ")}</strong> = ${fmt(value)}`)
-        .join("; ");
+    const value = (process.env.OPTION_EXPIRY_OVERRIDE || "").trim();
+    if (value && isExpiryOverrideStale(value)) {
+      const fmt = (d) => new Date(`${d}T00:00:00+05:30`)
+        .toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" });
       optionExpiryAlertHtml =
         `<div class="opt-expiry-alert">`
         + `<span class="opt-expiry-icon">🚨</span>`
         + `<div class="opt-expiry-text">`
         +   `<div class="opt-expiry-title">Option expiry session ended — entries are blocked</div>`
-        +   `<div class="opt-expiry-body">${detail}. That contract no longer exists, so affected strategies will refuse every entry until it is updated to the next expiry date.</div>`
+        +   `<div class="opt-expiry-body"><strong>Option Expiry (manual)</strong> = ${fmt(value)}. That contract no longer exists, so every strategy will refuse entries until it is updated to the next expiry date.</div>`
         + `</div>`
-        + `<a href="/settings#${stale[0].key}" class="opt-expiry-cta">Change Expiry →</a>`
+        + `<a href="/settings#OPTION_EXPIRY_OVERRIDE" class="opt-expiry-cta">Change Expiry →</a>`
         + `</div>`;
     }
   }
@@ -899,24 +868,6 @@ app.get("/", (req, res) => {
   const dashExpiryDate = /^\d{4}-\d{2}-\d{2}$/.test(_rawExpiryOverride) ? _rawExpiryOverride : "";
   const dashExpiryType =
     (process.env.OPTION_EXPIRY_TYPE || "weekly").trim().toLowerCase() === "monthly" ? "monthly" : "weekly";
-
-  // A per-mode key SHADOWS the common one inside validateAndGetOptionSymbol
-  // (`modeOverride || commonOverride`, same for the type), so a mode holding a
-  // DIFFERENT date keeps trading it and the strip would report a success that
-  // does not reach that strategy. Saving here mirrors the pair into every
-  // per-mode key (see mirrorCommonExpiryToModes in routes/settings.js), so the
-  // warning is only correct — and only shown — when a value actually differs:
-  // a mirrored copy is not a shadow, and neither is a blank key (it inherits).
-  const dashExpiryShadowedBy = PER_MODE_PREFIXES.filter(p => {
-    const date = (process.env[`${p}_OPTION_EXPIRY_OVERRIDE`] || "").trim();
-    const type = (process.env[`${p}_OPTION_EXPIRY_TYPE`]     || "").trim().toLowerCase();
-    return (date && date !== _rawExpiryOverride) || (type && type !== dashExpiryType);
-  });
-  const dashExpiryShadowHtml = dashExpiryShadowedBy.length
-    ? `<a class="brk-cfg-warn" href="/settings#${dashExpiryShadowedBy[0]}_OPTION_EXPIRY_OVERRIDE"`
-      + ` title="These modes hold a DIFFERENT expiry of their own, which beats the common one above until you save here (saving overwrites them with this date + type).">`
-      + `⚠ ${dashExpiryShadowedBy.join(", ")} ${dashExpiryShadowedBy.length === 1 ? "differs" : "differ"} →</a>`
-    : "";
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -1670,7 +1621,7 @@ ${buildSidebar('dashboard', liveActive)}
           : `<span class="brk-action muted-hint">Set ZERODHA_API_KEY in .env</span>`}
     </div>
     <div class="brk-cfg">
-      <span class="brk-cfg-label" title="OPTION_EXPIRY_OVERRIDE / OPTION_EXPIRY_TYPE — the same keys as Settings. Saving also copies this date + type into every per-strategy expiry key (EMA_RSI_ST, ORB, EMA9VWAP, TREND_PB, GAPS), so no strategy is left on an older override.">⏱ Expiry</span>
+      <span class="brk-cfg-label" title="OPTION_EXPIRY_OVERRIDE / OPTION_EXPIRY_TYPE — the same keys as Settings. One common expiry for every strategy. Blank = auto-detect.">⏱ Expiry</span>
       <span class="brk-cfg-field">
         <input type="date" id="dashExpiryDate" class="brk-cfg-input" value="${dashExpiryDate}"
                title="Option Expiry (manual). Blank = auto-detect."/>
@@ -1682,7 +1633,6 @@ ${buildSidebar('dashboard', liveActive)}
         </select>
       </span>
       <button type="button" class="brk-cfg-save" onclick="saveDashExpiry(this)" title="Save both keys to .env (same as Settings save)">Save</button>
-      ${dashExpiryShadowHtml}
     </div>
     ${zerodhaOk && zerodhaExpiryHtml ? `<div class="brk-expiry ${pastExpiry ? 'expired' : nearExpiry ? 'expiring' : 'valid'}">${zerodhaExpiryHtml}</div>` : ''}
   </div>`}
@@ -2064,50 +2014,6 @@ async function _startAll(endpoints){
       if (!r){ results.failures.push({ endpoint: ep, error: 'No response from server' }); continue; }
       var body = null;
       try { body = await r.json(); } catch(_) { /* non-JSON body */ }
-      // 0DTE expiry-day warning — pop confirm modal, optionally retry with ?force=1
-      if (body && body.code === 'EXPIRY_DAY_0DTE'){
-        var isLive = /-live\\//.test(ep);
-        var who = _prettyEndpoint(ep).replace(/ (Paper|Live.*)$/, '');
-        var confirmCopy = isLive ? 'Start Anyway (Real Money)' : 'Start Anyway';
-        // Name the strategy in the TITLE, not just the body. Two engines carry the
-        // 0DTE gate (EMA_RSI_ST + EMA9+VWAP), so Start All can raise this modal
-        // twice in a row; identical titles made the second read as a duplicate of
-        // the first and get dismissed, silently skipping that strategy.
-        var titleCopy   = who + ' · ' + (isLive ? '0DTE Expiry Day — REAL MONEY at Risk' : '0DTE Expiry Day — Not Recommended');
-        var extraNote   = isLive ? '\\n\\nThis is LIVE trading with real capital. Cancel stops ' + who + ' AND every strategy after it in this Start All (anything already started keeps running) so you can fix the ' + who + ' Option Expiry in Settings first.' : '\\n\\nCancel stops ' + who + ' AND every strategy after it in this Start All (anything already started keeps running) so you can fix the ' + who + ' Option Expiry in Settings first. Or Start Anyway to run ' + who + ' on 0DTE.';
-        var ok = await showConfirm({
-          icon: '⚠️',
-          title: titleCopy,
-          message: (body.message || '0DTE detected') + extraNote,
-          confirmText: confirmCopy,
-          confirmClass: 'modal-btn-danger'
-        });
-        if (ok){
-          try {
-            var r2 = await secretFetch(ep + '?force=1');
-            var body2 = null;
-            try { body2 = await r2.json(); } catch(_) {}
-            if (r2 && r2.ok && (!body2 || body2.success !== false)){
-              results.successes.push({ endpoint: ep });
-            } else {
-              var msg2 = (body2 && (body2.error || body2.message)) || ('HTTP ' + (r2 ? r2.status : '?'));
-              results.failures.push({ endpoint: ep, status: r2 ? r2.status : 0, error: msg2 });
-            }
-          } catch(e2){
-            results.failures.push({ endpoint: ep, error: (e2 && e2.message) || 'Network error on retry' });
-          }
-        } else {
-          // User cancelled the 0DTE warning → abort the rest of the Start All. The
-          // roster is Settings-driven, so the 0DTE strategy is not necessarily
-          // first; anything already started stays started and is reported below.
-          // Record what this cancel skipped (this endpoint + everything after it)
-          // so the result modal can name them instead of reloading silently.
-          results.aborted = true;
-          results.skipped = endpoints.slice(i);
-          break;
-        }
-        continue;
-      }
       if (r.ok && (!body || body.success !== false)){
         results.successes.push({ endpoint: ep });
       } else {
@@ -2122,34 +2028,6 @@ async function _startAll(endpoints){
 }
 
 async function _handleStartAllResult(btn, origText, label, result){
-  if (result.aborted){
-    // 0DTE warning cancelled → the remaining strategies were skipped. Say WHICH
-    // ones: this used to reload the page with no message at all, so a cancelled
-    // (or backdrop-dismissed) warning looked exactly like a clean Start All and
-    // the skipped strategy sat stopped all day unnoticed.
-    btn.disabled = false;
-    btn.textContent = origText;
-    var skippedLines = (result.skipped || []).map(function(ep){
-      return '• <strong>' + _escHtml(_prettyEndpoint(ep)) + '</strong>';
-    }).join('<br>');
-    // A strategy earlier in the roster may also have failed outright before the
-    // cancel; this branch used to return before the failure list below ever ran,
-    // so those errors were dropped. Fold them into the same modal.
-    var abortedFails = result.failures.map(function(f){
-      return '• <strong>' + _escHtml(_prettyEndpoint(f.endpoint)) + '</strong>: ' + _escHtml(f.error);
-    }).join('<br>');
-    await showAlert({
-      icon: '⏭️',
-      title: 'Start ' + label + ' — Stopped at the 0DTE warning',
-      message: '<div style="text-align:left;">You cancelled the 0DTE warning, so these did NOT start:<br><br>'
-        + (skippedLines || '• (none)')
-        + (abortedFails ? '<br><br>These failed earlier in the run:<br><br>' + abortedFails : '')
-        + '<br><br>Already started: ' + result.successes.length + '. Fix the Option Expiry in Settings, or use Start Anyway.</div>',
-      btnText: 'OK', btnClass: 'modal-btn-primary',
-    });
-    if (result.successes.length) location.reload();
-    return;
-  }
   if (result.failures.length === 0){
     location.reload();
     return;

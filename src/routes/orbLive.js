@@ -812,7 +812,16 @@ router.get("/status/chart-data", (req, res) => {
     try {
       const or = orbStrategy.computeOpeningRange(state.candles);
       if (or && candles.length) {
-        const ft = candles[0].time, tt = candles[candles.length - 1].time;
+        // Anchor to the latest trading day only — the client trims every series to
+        // today, so a line starting at candles[0] (7-day warm-up buffer) loses its
+        // first point and collapses to a single invisible point. See orbPaper.js.
+        const _istDay = t => Math.floor((t + 19800) / 86400);
+        const _lastDay = _istDay(candles[candles.length - 1].time);
+        let ft = candles[candles.length - 1].time;
+        for (let i = candles.length - 1; i >= 0; i--) {
+          if (_istDay(candles[i].time) === _lastDay) ft = candles[i].time; else break;
+        }
+        const tt = candles[candles.length - 1].time;
         orhLine = [{ time: ft, value: or.high }, { time: tt, value: or.high }];
         orlLine = [{ time: ft, value: or.low },  { time: tt, value: or.low }];
       }

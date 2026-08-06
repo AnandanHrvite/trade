@@ -20,6 +20,10 @@
  *   CE (long):  TODAY's RSI   <  GAPS_RSI_LOWER (default 10)  AND
  *               today's open  >  yesterday's close             (gap UP)
  *
+ * Which RSI decides is a dropdown: GAPS_RSI_ENTRY_SOURCE. Default "today_open"
+ * uses TODAY's RSI (below); "prev_close" uses YESTERDAY's closed RSI instead. The
+ * gap half is unchanged either way. Meant for A/B'ing the two in paper.
+ *
  * "TODAY's RSI" is the daily RSI including today's bar. At 09:15 that bar has
  * only one price — today's open — so it is built from the open. Using the open
  * rather than the live spot is what lets Paper, Live, Backtest and Replay all
@@ -79,6 +83,10 @@ function getConfig() {
     rsiSource: RSI_SOURCES.includes(rawSrc) ? rawSrc : "ema",
     rsiUpper:  parseFloat(process.env.GAPS_RSI_UPPER || "90"),
     rsiLower:  parseFloat(process.env.GAPS_RSI_LOWER || "10"),
+    // Which daily RSI decides the entry. "today_open" (default) → TODAY's RSI (the
+    // series extended with today's open). "prev_close" → the PREVIOUS day's closed
+    // RSI. A dropdown so the two can be A/B'd in paper before either is trusted.
+    rsiEntryPrevDay: String(process.env.GAPS_RSI_ENTRY_SOURCE || "today_open").trim().toLowerCase() === "prev_close",
     // Intraday trailing stop — a separate EMA from the daily one above.
     trailLength:  Math.max(2, parseInt(process.env.GAPS_TRAIL_EMA_LENGTH || "21", 10) || 21),
     trailEnabled: String(process.env.GAPS_TRAIL_ENABLED || "true").toLowerCase() === "true",
@@ -337,6 +345,7 @@ function _base(cfg) {
     gapPts: null, gapPct: null, gapDir: null,
     rsiUpper: cfg.rsiUpper, rsiLower: cfg.rsiLower,
     rsiSource: cfg.rsiSource, emaLength: cfg.emaLength, rsiLength: cfg.rsiLength,
+    rsiEntryPrevDay: cfg.rsiEntryPrevDay, decideRsi: null,
     warmup: false,
   };
 }
@@ -380,18 +389,28 @@ function getSignal(dailyCandles, todayOpen, opts) {
   base.gapPct  = snap.prevClose ? _r2((gapPts / snap.prevClose) * 100) : null;
   base.gapDir  = gapPts > 0 ? "UP" : gapPts < 0 ? "DOWN" : "FLAT";
 
-  // TODAY's RSI decides — the current day's value, extended with today's open.
-  // The GAP still measures against YESTERDAY's close, which is the other half
-  // of the rule and is read from the snapshot above.
+  // TODAY's RSI — the current day's value, extended with today's open. Still
+  // computed for display even in prev-day mode. The GAP always measures against
+  // YESTERDAY's close, which is the other half of the rule (from the snapshot).
+  const usePrev = cfg.rsiEntryPrevDay === true;
   const today = computeTodayRsi(snap.closedCandles, todayOpen, o.sessionDayUnixSec, cfg);
-  if (!today.ok) {
+  if (today.ok) {
+    base.todayRsi = today.rsi;
+    base.todayEma = today.ema;
+  } else if (!usePrev) {
+    // Only fatal when today's RSI is the deciding value — in prev-day mode the
+    // snapshot already gave us a validated prevRsi, so a failed today-extend
+    // must not block the trade.
     base.warmup = true;
     base.skipReason = `Cannot compute today's daily RSI — ${today.reason}`;
     base.reason = base.skipReason;
     return base;
   }
-  base.todayRsi = today.rsi;
-  base.todayEma = today.ema;
+
+  // Which RSI drives the decision. base.prevRsi is guaranteed by snap.ok above.
+  const decideRsi = usePrev ? base.prevRsi : base.todayRsi;
+  base.decideRsi  = decideRsi;
+  const rsiWhich  = usePrev ? "prev-day" : "today's";
 
   if (o.alreadyTraded) {
     base.skipReason = "Daily trade budget spent — GAPS takes its decision once, at the open";
@@ -399,12 +418,12 @@ function getSignal(dailyCandles, todayOpen, opts) {
     return base;
   }
 
-  const rsiTxt = `today's RSI(${cfg.rsiLength} on ${snap.sourceLabel}) ${base.todayRsi}`;
+  const rsiTxt = `${rsiWhich} RSI(${cfg.rsiLength} on ${snap.sourceLabel}) ${decideRsi}`;
   const gapTxt = `open ${base.todayOpen} vs prev close ${snap.prevClose} = ${gapPts > 0 ? "+" : ""}${gapPts}pt (${base.gapPct > 0 ? "+" : ""}${base.gapPct}%) ${base.gapDir}`;
 
   // ── The two setups. Mirror images, nothing else gates them. ────────────────
-  const overbought = base.todayRsi > cfg.rsiUpper;
-  const oversold   = base.todayRsi < cfg.rsiLower;
+  const overbought = decideRsi > cfg.rsiUpper;
+  const oversold   = decideRsi < cfg.rsiLower;
 
   if (!overbought && !oversold) {
     base.skipReason = `${rsiTxt} is inside the band [${cfg.rsiLower}, ${cfg.rsiUpper}] — not an extreme, no setup`;

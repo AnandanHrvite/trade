@@ -191,7 +191,7 @@ const _MODE_TO_ENV_PREFIX = {
 //     ignored so a standing override in today's Settings (e.g. a next-week
 //     EMA_RSI_ST date) can't leak into an old-day replay. Current settings only
 //     override NON-expiry strategy config. If the recorded day used an explicit
-//     override (e.g. EMA_RSI_ST deliberately traded next-week to dodge 0DTE),
+//     override (e.g. EMA_RSI_ST deliberately traded next-week to avoid same-day expiry),
 //     that recorded date IS the historical truth → honored as-is, with the
 //     recorded weekly/monthly TYPE (instrument.js only consults the type WHEN an
 //     override date is present).
@@ -1519,11 +1519,7 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     if (synthesize) harness.enableDateShim();
     let startResp;
     try {
-      // force=1 bypasses the EMA_RSI_ST 0DTE expiry-day refusal — that's a LIVE-trading
-      // safety gate (don't open a same-day-expiry EMA_RSI_ST). A historical replay must not
-      // be aborted by it (e.g. replaying an expiry-day session, or with an expiry
-      // override equal to the replay date). Other modes ignore the flag.
-      startResp = await _invokeRoute(routeMod, "GET", "/start", { force: "1" });
+      startResp = await _invokeRoute(routeMod, "GET", "/start", {});
     } finally {
       if (synthesize) harness.disableDateShim();
       harness.clearWallClock();

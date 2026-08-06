@@ -959,7 +959,18 @@ router.get("/status/chart-data", async (req, res) => {
     try {
       const or = orbStrategy.computeOpeningRange(srcCandles);
       if (or && candles.length) {
-        const fromTime = candles[0].time;
+        // Anchor both OR lines to the LATEST trading day only. The candle buffer
+        // carries ~7 days of warm-up history, but the client trims every series to
+        // today; a line starting at candles[0] (days back) loses its first point to
+        // that trim and collapses to a single, invisible point — which is why the
+        // ORH/ORL lines had stopped drawing on the Paper & Replay charts. Start at
+        // today's first candle so both endpoints survive the trim.
+        const _istDay = t => Math.floor((t + 19800) / 86400);
+        const _lastDay = _istDay(candles[candles.length - 1].time);
+        let fromTime = candles[candles.length - 1].time;
+        for (let i = candles.length - 1; i >= 0; i--) {
+          if (_istDay(candles[i].time) === _lastDay) fromTime = candles[i].time; else break;
+        }
         const toTime = candles[candles.length - 1].time;
         // Lightweight Charts needs sorted ascending values
         orhLine = [

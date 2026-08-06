@@ -465,21 +465,6 @@ function isStartAllowed() {
   return getISTMinutes() < _STOP_MINS;
 }
 
-// ── 0DTE expiry-day detector (same logic as emaRsiStPaper) ──────────────────────
-// EMA_RSI_ST on 0DTE = bad idea. /start refuses unless ?force=1 is passed.
-function _getEffectiveEmaRsiStExpiry() {
-  const swing  = (process.env.EMA_RSI_ST_OPTION_EXPIRY_OVERRIDE || "").trim();
-  const common = (process.env.OPTION_EXPIRY_OVERRIDE || "").trim();
-  return swing || common || null;
-}
-function _getISTDateStr() {
-  const ist = new Date(Date.now() + 19800000);
-  return ist.toISOString().slice(0, 10);
-}
-function isEmaRsiStExpiringToday() {
-  const expiry = _getEffectiveEmaRsiStExpiry();
-  return expiry && expiry === _getISTDateStr();
-}
 
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
 
@@ -2193,19 +2178,6 @@ router.get("/start", async (req, res) => {
   if (tradeState.running)                 return res.status(400).json({ success: false, error: "Trading already running." });
   if (sharedSocketState.isActive())       return res.status(400).json({ success: false, error: "Paper Trading is active. Stop it first at /ema_rsi_st-paper/stop" });
 
-  // ── 0DTE expiry-day warning ────────────────────────────────────────────────
-  // Block live start if today is the configured expiry — 0DTE on EMA_RSI_ST
-  // will bleed real money via theta+gamma. User must override with ?force=1.
-  if (isEmaRsiStExpiringToday() && req.query.force !== "1") {
-    const _exp = _getEffectiveEmaRsiStExpiry();
-    return res.status(409).json({
-      success: false,
-      code: "EXPIRY_DAY_0DTE",
-      expiry: _exp,
-      message: `Configured expiry (${_exp}) is today — that's 0DTE. EMA_RSI_ST strategy is not designed for same-day expiry (theta+gamma will crush option premium). Update EMA_RSI_ST_OPTION_EXPIRY_OVERRIDE to next week's expiry in Settings, or click "Start Anyway" to proceed.`,
-    });
-  }
-
   // ── NEW: Trading session validation (holidays + time check) ────────────────
   const tradingCheck = await isTradingAllowed();
   if (!tradingCheck.allowed) {
@@ -3630,29 +3602,13 @@ async function ltHandleExit(btn) {
     if (btn) { btn.textContent = '🚪 Exit Trade'; btn.disabled = false; }
   }
 }
-async function ltHandleStart(btn, force) {
+async function ltHandleStart(btn) {
   if (btn) { btn.textContent = '⏳ Starting...'; btn.disabled = true; }
   try {
-    var url = force ? '/ema_rsi_st-live/start?force=1' : '/ema_rsi_st-live/start';
-    var res = await secretFetch(url);
+    var res = await secretFetch('/ema_rsi_st-live/start');
     if (!res) { if (btn) { btn.textContent = '▶ Start'; btn.disabled = false; } return; }
     var data = await res.json();
     if (!data.success) {
-      // 0DTE expiry-day warning — show confirm modal, retry with force=1 if accepted
-      if (data.code === 'EXPIRY_DAY_0DTE') {
-        var ok = await showConfirm({
-          icon: '⚠️',
-          title: '0DTE Expiry Day — REAL MONEY at Risk',
-          message: data.message + '\\n\\nThis is LIVE trading with real capital. Strongly recommend: cancel and update EMA_RSI_ST Option Expiry in Settings instead.',
-          confirmText: 'Start Anyway (Real Money)',
-          confirmClass: 'modal-btn-danger'
-        });
-        if (!ok) {
-          if (btn) { btn.textContent = '▶ Start'; btn.disabled = false; }
-          return;
-        }
-        return ltHandleStart(btn, true);  // retry with force=1
-      }
       ltShowToast('❌ ' + (data.error || 'Failed to start'), '#ef4444');
       if (btn) { btn.textContent = '▶ Start'; btn.disabled = false; }
       return;
