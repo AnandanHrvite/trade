@@ -6,6 +6,10 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — "insufficient authentication scopes" on the Drive backup upload said nothing useful
+
+Google only grants the scopes registered on the consent screen, so an OAuth app whose **Google Auth Platform → Data Access** list never had `.../auth/drive.file` added still connects happily — the device flow succeeds and Settings shows **CONNECTED** — but the token carries only `email`. Nothing fails until the first Drive write, which came back as a bare *Could not create the Drive folder: Request had insufficient authentication scopes.* with no hint that the fix is in the Google Console rather than in the bot. That error now names the missing scope and says to add it under Data Access and then Disconnect/Connect again (the existing token is email-only and cannot be upgraded in place). The one-time setup guide in the Backup & Restore card and in the README gained the Data Access step it was missing.
+
 ### Fixed — a Paper page could show yesterday's session on a trading day
 
 On boot each Paper route rehydrates its Session Trades, and when today's log holds no trades it falls back to the most recent saved session so the screen isn't blank. That fallback was also firing on trading days: start a session, take no trade, restart the server, and the page came back showing the PREVIOUS day's trades — with the chart backfilled to that day too, since the backfill follows the restored trades. The result looked like a live session but was entirely yesterday (seen on ORB Paper, 6 Aug: a 5-Aug trade drawn over the 5-Aug chart). The fallback is now kept only when today is a weekend or an NSE holiday — so Friday's result still shows on Saturday and Sunday — and is cleared on any trading day, where the page shows today's own session even when it is empty. Applies to all seven Paper pages (EMA_RSI_ST, BB_RSI, PA, ORB, EMA9+VWAP, Trend_PB, GAPS).
