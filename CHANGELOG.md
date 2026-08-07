@@ -6,6 +6,14 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Changed — the login page now looks like a trading terminal, and fits a phone properly
+
+The old login screen was a padlock emoji on a plain box, sized in `vw` units that squeezed it on a phone and left the input small enough that iOS Safari zoomed the whole page in the moment you tapped it. It has been rebuilt as a proper terminal sign-in: a chart-arrow brand mark, the **TRADING BOT** wordmark over an *Algorithmic Execution Terminal* strapline, a live **IST clock** and a green *system online* pulse across the top, and an **Access Key** field with a lock glyph and a show/hide-password eye. Signing in shows an *Authenticating…* state so a slow connection doesn't look dead.
+
+On mobile — iPhone 17 Pro Max included — the card now uses `100dvh` so the browser chrome can't clip it, respects the safe-area insets around the notch and home indicator, keeps every tap target at 48 px or more, and holds the input at 16 px so iOS no longer zooms on focus. Short landscape viewports top-align and scroll instead of squashing, and the whole thing collapses cleanly on narrow phones.
+
+Light mode is now served pre-applied on the `<html>` tag rather than switched on by a script after paint, so `UI_THEME=light` no longer flashes dark first. Nothing about the login flow changed — the same password field, rate-limit countdown, OTP unlock and silent GPS capture are all still there.
+
 ### Added — a live lockout countdown and an OTP escape hatch on the login page
 
 Getting the password wrong `LOGIN_RATE_MAX` times used to leave a flat *"Try again in 1 minutes"* with no way to tell whether the wait was nearly over, and no way out but waiting. The lockout message is now a **live countdown** (`4:32`, ticking down) with the password box disabled until it reaches zero, at which point the page reloads itself; reloading mid-lockout keeps the countdown instead of resetting the message.

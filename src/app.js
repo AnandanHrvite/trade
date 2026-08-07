@@ -95,76 +95,234 @@ function _sha256(s) { return crypto.createHash("sha256").update(String(s)).diges
 function loginPageHTML(error, opts = {}) {
   const lockedSec = Number(opts.lockedSec) > 0 ? Math.ceil(Number(opts.lockedSec)) : 0;
   const otpOffer  = lockedSec > 0 && _loginOtpReady();
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  // Theme is a server-side setting, so stamp it on <html> in the markup instead
+  // of via a client script — that removes the dark-flash before paint on light.
+  const isLight   = (process.env.UI_THEME || "dark") === "light";
+  return `<!DOCTYPE html><html lang="en"${isLight ? ' data-theme="light"' : ''}><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="${isLight ? '#eef2f7' : '#05080f'}">
+<meta name="color-scheme" content="${isLight ? 'light' : 'dark'}">
+<meta name="robots" content="noindex,nofollow">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Login — Trading Bot</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>ௐ</text></svg>">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700&family=IBM+Plex+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
+:root{
+  --bg:#05080f;--bg2:#080d18;
+  --card:rgba(13,19,32,.88);--card-b:#1a2236;
+  --text:#e6eefc;--muted:#6b86ad;--dim:#3f5878;
+  --field:#070d18;--field-b:#1b2b42;
+  --accent:#3b82f6;--accent2:#22d3ee;--accent-d:#1d3fa8;
+  --ok:#22c55e;--err:#f87171;--err-bg:#1c0610;--err-b:#500e20;
+  --grid:rgba(59,130,246,.055);
+  --ring:rgba(59,130,246,.18);
+  --shadow:0 24px 70px rgba(0,0,0,.62);
+}
+:root[data-theme="light"]{
+  --bg:#eef2f7;--bg2:#f8fafc;
+  --card:rgba(255,255,255,.94);--card-b:#e2e8f0;
+  --text:#0f172a;--muted:#64748b;--dim:#94a3b8;
+  --field:#f8fafc;--field-b:#dfe6ef;
+  --accent:#2563eb;--accent2:#0ea5e9;--accent-d:#1d4ed8;
+  --ok:#16a34a;--err:#dc2626;--err-bg:#fef2f2;--err-b:#fecaca;
+  --grid:rgba(37,99,235,.07);
+  --ring:rgba(37,99,235,.16);
+  --shadow:0 18px 50px rgba(15,23,42,.13);
+}
 *{margin:0;padding:0;box-sizing:border-box;}
-body{background:#080c14;font-family:'IBM Plex Sans',sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;}
-.login-box{background:#0d1320;border:1px solid #1a2236;border-radius:14px;padding:40px 36px;width:360px;max-width:90vw;box-shadow:0 8px 40px rgba(0,0,0,0.5);}
-.login-icon{font-size:2rem;text-align:center;margin-bottom:12px;}
-.login-title{font-size:1rem;font-weight:700;color:#e0eaf8;text-align:center;margin-bottom:4px;}
-.login-sub{font-size:0.7rem;color:#3a5070;text-align:center;margin-bottom:24px;}
-.login-input{width:100%;padding:11px 14px;border-radius:8px;border:1px solid #1a2a40;background:#070d18;color:#e0eaf8;font-size:0.85rem;font-family:inherit;outline:none;transition:border-color 0.15s;}
-.login-input:focus{border-color:#3b82f6;}
-.login-btn{width:100%;margin-top:14px;padding:11px;border-radius:8px;border:none;background:#1e40af;color:#fff;font-size:0.82rem;font-weight:700;font-family:inherit;cursor:pointer;transition:background 0.15s;}
-.login-btn:hover{background:#2563eb;}
-.login-error{margin-top:12px;padding:8px 12px;border-radius:7px;background:#1c0610;border:1px solid #500e20;color:#f87171;font-size:0.75rem;text-align:center;display:${error ? 'block' : 'none'};}
-.login-btn:disabled{background:#1a2236;color:#3a5070;cursor:not-allowed;}
-.otp-box{margin-top:18px;padding-top:16px;border-top:1px solid #1a2236;}
-.otp-title{font-size:0.72rem;font-weight:700;color:#93b4dd;text-align:center;margin-bottom:4px;}
-.otp-hint{font-size:0.66rem;color:#3a5070;text-align:center;margin-bottom:10px;}
-.otp-box .login-input{margin-bottom:0;}
-.otp-msg{margin-top:10px;font-size:0.7rem;text-align:center;color:#93b4dd;min-height:1em;}
-.otp-msg.err{color:#f87171;}
-.otp-msg.ok{color:#4ade80;}
-:root[data-theme="light"] { background-color:#f4f6f9; }
-:root[data-theme="light"] body { background:#f4f6f9; }
-:root[data-theme="light"] .login-box { background:#ffffff; border-color:#e0e4ea; box-shadow:0 8px 40px rgba(0,0,0,0.1); }
-:root[data-theme="light"] .login-title { color:#1e293b; }
-:root[data-theme="light"] .login-sub { color:#94a3b8; }
-:root[data-theme="light"] .login-input { background:#f8fafc; border-color:#e0e4ea; color:#1e293b; }
-:root[data-theme="light"] .login-input:focus { border-color:#3b82f6; }
-:root[data-theme="light"] .login-btn { background:#2563eb; }
-:root[data-theme="light"] .login-btn:hover { background:#1d4ed8; }
-:root[data-theme="light"] .login-error { background:#fef2f2; border-color:#fecaca; color:#dc2626; }
-:root[data-theme="light"] .login-btn:disabled { background:#e2e8f0; color:#94a3b8; }
-:root[data-theme="light"] .otp-box { border-top-color:#e0e4ea; }
-:root[data-theme="light"] .otp-title { color:#1e293b; }
-:root[data-theme="light"] .otp-hint, :root[data-theme="light"] .otp-msg { color:#64748b; }
-:root[data-theme="light"] .otp-msg.err { color:#dc2626; }
-:root[data-theme="light"] .otp-msg.ok  { color:#16a34a; }
+html{-webkit-text-size-adjust:100%;background:var(--bg);}
+body{
+  background:var(--bg);color:var(--text);
+  font-family:'IBM Plex Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  min-height:100vh;min-height:100dvh;
+  display:flex;align-items:center;justify-content:center;
+  padding:calc(24px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right))
+          calc(24px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));
+  -webkit-tap-highlight-color:transparent;overflow-x:hidden;
+}
+/* Ambient glow + terminal grid — decorative, pointer-transparent, fixed so it
+   never adds scroll height on short mobile viewports. */
+body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:radial-gradient(900px 520px at 50% -10%,rgba(59,130,246,.16),transparent 70%),
+             radial-gradient(700px 460px at 90% 110%,rgba(34,211,238,.10),transparent 70%),
+             linear-gradient(180deg,var(--bg) 0%,var(--bg2) 100%);}
+body::after{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
+  background-image:linear-gradient(var(--grid) 1px,transparent 1px),
+                   linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+  background-size:44px 44px;
+  -webkit-mask-image:radial-gradient(circle at 50% 42%,#000 0%,transparent 76%);
+          mask-image:radial-gradient(circle at 50% 42%,#000 0%,transparent 76%);}
+.shell{position:relative;z-index:1;width:100%;max-width:404px;}
+.card{background:var(--card);border:1px solid var(--card-b);border-radius:18px;
+  padding:28px 26px 24px;box-shadow:var(--shadow);position:relative;overflow:hidden;
+  -webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);}
+.card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,transparent,var(--accent),var(--accent2),transparent);
+  background-size:200% 100%;animation:sweep 7s linear infinite;}
+@keyframes sweep{from{background-position:200% 0}to{background-position:-200% 0}}
+.stat{display:flex;align-items:center;justify-content:space-between;gap:10px;
+  font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:.6rem;font-weight:500;letter-spacing:.11em;text-transform:uppercase;color:var(--dim);margin-bottom:22px;}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--ok);display:inline-block;
+  margin-right:7px;vertical-align:middle;animation:pulse 2.4s ease-out infinite;}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(34,197,94,.45)}70%{box-shadow:0 0 0 7px rgba(34,197,94,0)}100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}}
+.brand{display:flex;flex-direction:column;align-items:center;text-align:center;margin-bottom:24px;}
+.mark{width:56px;height:56px;border-radius:16px;display:grid;place-items:center;margin-bottom:14px;
+  background:linear-gradient(145deg,rgba(59,130,246,.22),rgba(34,211,238,.08));
+  border:1px solid rgba(59,130,246,.34);box-shadow:0 8px 22px rgba(0,0,0,.32);}
+.mark svg{width:29px;height:29px;display:block;}
+.brand h1{font-size:1.2rem;font-weight:700;letter-spacing:.17em;text-transform:uppercase;line-height:1.2;}
+.tag{margin-top:7px;font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:.58rem;font-weight:500;
+  letter-spacing:.2em;text-transform:uppercase;color:var(--muted);}
+.lbl{display:block;font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:.6rem;font-weight:600;
+  letter-spacing:.15em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;}
+.wrap{position:relative;display:flex;align-items:center;}
+.wrap .ico{position:absolute;left:14px;width:15px;height:15px;color:var(--dim);pointer-events:none;}
+/* 16px font-size is deliberate: anything smaller makes iOS Safari zoom the page
+   on focus, which breaks the centred layout on iPhone. */
+.login-input{width:100%;min-height:48px;padding:13px 14px;border-radius:10px;
+  border:1px solid var(--field-b);background:var(--field);color:var(--text);
+  font-size:16px;font-family:inherit;outline:none;transition:border-color .15s,box-shadow .15s;}
+.wrap .login-input{padding-left:40px;padding-right:48px;}
+.login-input::placeholder{color:var(--dim);}
+.login-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--ring);}
+.login-input:disabled{opacity:.55;cursor:not-allowed;}
+.eye{position:absolute;right:5px;width:40px;height:40px;border:none;background:none;color:var(--dim);
+  cursor:pointer;display:grid;place-items:center;border-radius:9px;}
+.eye:hover,.eye:focus-visible{color:var(--text);outline:none;}
+.eye svg{width:17px;height:17px;display:block;}
+.login-btn{width:100%;margin-top:16px;min-height:50px;padding:14px;border-radius:10px;border:none;
+  background:linear-gradient(135deg,var(--accent-d),var(--accent));color:#fff;
+  font-size:.8rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;font-family:inherit;
+  cursor:pointer;display:flex;align-items:center;justify-content:center;gap:9px;
+  box-shadow:0 8px 22px rgba(37,99,235,.26);transition:filter .15s,transform .08s,box-shadow .15s;}
+.login-btn svg{width:15px;height:15px;flex:none;}
+.login-btn:hover{filter:brightness(1.13);}
+.login-btn:active{transform:translateY(1px);}
+.login-btn:disabled{background:var(--field);color:var(--dim);box-shadow:none;filter:none;cursor:not-allowed;}
+.btn-alt{background:transparent;border:1px solid var(--field-b);color:var(--text);box-shadow:none;}
+.btn-alt:hover{filter:none;border-color:var(--accent);color:var(--accent);}
+.login-error{margin-top:14px;padding:10px 12px;border-radius:9px;background:var(--err-bg);
+  border:1px solid var(--err-b);color:var(--err);font-size:.74rem;line-height:1.45;text-align:center;
+  display:${error ? 'block' : 'none'};}
+.foot{margin-top:20px;padding-top:14px;border-top:1px solid var(--card-b);
+  display:flex;align-items:center;justify-content:center;gap:7px;
+  font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:.58rem;font-weight:500;
+  letter-spacing:.09em;text-transform:uppercase;color:var(--dim);}
+.foot svg{width:11px;height:11px;flex:none;}
+.legal{margin-top:16px;text-align:center;font-size:.62rem;line-height:1.5;color:var(--dim);}
+.otp-box{margin-top:20px;padding-top:18px;border-top:1px solid var(--card-b);}
+.otp-title{font-size:.74rem;font-weight:600;color:var(--text);text-align:center;margin-bottom:5px;}
+.otp-hint{font-size:.66rem;line-height:1.45;color:var(--muted);text-align:center;margin-bottom:12px;}
+.otp-msg{margin-top:11px;font-size:.7rem;text-align:center;color:var(--muted);min-height:1em;}
+.otp-msg.err{color:var(--err);}
+.otp-msg.ok{color:var(--ok);}
+/* Narrow phones (iPhone SE / mini) */
+@media (max-width:400px){
+  .card{padding:24px 19px 20px;border-radius:16px;}
+  .brand h1{font-size:1.06rem;letter-spacing:.14em;}
+  .stat{font-size:.55rem;letter-spacing:.08em;}
+}
+/* Short viewports (landscape phones) — top-align so the card can scroll */
+@media (max-height:660px){
+  body{align-items:flex-start;}
+  .brand{margin-bottom:18px;}
+  .mark{width:46px;height:46px;border-radius:13px;margin-bottom:11px;}
+  .mark svg{width:24px;height:24px;}
+  .stat{margin-bottom:16px;}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important;}
+}
 </style></head><body>
-<div class="login-box">
-<div class="login-icon">🔒</div>
-<div class="login-title">Trading Bot</div>
-<div class="login-sub">Enter password to continue</div>
-<form id="loginForm" method="POST" action="/login">
-<input type="password" name="password" id="pwdInput" class="login-input" placeholder="Password" autofocus required>
+<div class="shell">
+<div class="card">
+<div class="stat"><span><span class="dot"></span>System online</span><span id="clock">--:--:--&nbsp;IST</span></div>
+<div class="brand">
+<div class="mark">
+<svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
+<defs><linearGradient id="lg" x1="0" y1="32" x2="32" y2="0"><stop stop-color="#3b82f6"/><stop offset="1" stop-color="#22d3ee"/></linearGradient></defs>
+<path d="M3 25l8-9.5 6 5L29 6" stroke="url(#lg)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M22.5 6H29v6.5" stroke="url(#lg)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+</div>
+<h1>Trading Bot</h1>
+<div class="tag">Algorithmic Execution Terminal</div>
+</div>
+<form id="loginForm" method="POST" action="/login" autocomplete="on">
+<label class="lbl" for="pwdInput">Access key</label>
+<div class="wrap">
+<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+<input type="password" name="password" id="pwdInput" class="login-input" placeholder="Enter password" autocomplete="current-password" autofocus required>
+<button type="button" class="eye" id="pwdToggle" aria-label="Show password">
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+</button>
+</div>
 <input type="hidden" name="lat" id="lat">
 <input type="hidden" name="lon" id="lon">
 <input type="hidden" name="geoCity" id="geoCity">
-<button type="submit" class="login-btn" id="loginBtn">Login</button>
+<button type="submit" class="login-btn" id="loginBtn">
+<span>Unlock terminal</span>
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+</button>
 </form>
 <div class="login-error" id="loginError">${error || ''}</div>
 ${otpOffer ? `<div class="otp-box">
 <div class="otp-title">Locked out? Unlock with OTP</div>
 <div class="otp-hint">Enter your registered mobile number — the code goes to Telegram.</div>
 <input type="tel" id="otpMobile" class="login-input" placeholder="Registered mobile number" inputmode="numeric" autocomplete="tel">
-<button type="button" class="login-btn" id="otpSendBtn">Send OTP to Telegram</button>
+<button type="button" class="login-btn btn-alt" id="otpSendBtn">Send OTP to Telegram</button>
 <div id="otpStep2" style="display:none;margin-top:14px;">
 <input type="text" id="otpCode" class="login-input" placeholder="6-digit OTP" inputmode="numeric" maxlength="6" autocomplete="one-time-code">
-<button type="button" class="login-btn" id="otpVerifyBtn">Verify &amp; Unlock</button>
+<button type="button" class="login-btn btn-alt" id="otpVerifyBtn">Verify &amp; Unlock</button>
 </div>
 <div class="otp-msg" id="otpMsg"></div>
 </div>` : ''}
+<div class="foot">
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+<span>Encrypted session · NSE hours 09:15–15:30 IST</span>
+</div>
+</div>
+<div class="legal">Authorized access only. Every attempt is logged.</div>
 </div>
 <script>
+// ── IST clock ──────────────────────────────────────────────────────────────
 (function(){
-  if ('${process.env.UI_THEME || "dark"}' === 'light') {
-    document.documentElement.setAttribute('data-theme', 'light');
+  var el = document.getElementById('clock');
+  if (!el) return;
+  function tick(){
+    try {
+      el.innerHTML = new Date().toLocaleTimeString('en-IN', { timeZone:'Asia/Kolkata', hour12:false }) + '&nbsp;IST';
+    } catch (e) { el.textContent = ''; }
+    setTimeout(tick, 1000);
   }
+  tick();
+})();
+// ── Show / hide password ───────────────────────────────────────────────────
+(function(){
+  var btn = document.getElementById('pwdToggle');
+  var pwd = document.getElementById('pwdInput');
+  if (!btn || !pwd) return;
+  btn.addEventListener('click', function(){
+    var show = pwd.type === 'password';
+    pwd.type = show ? 'text' : 'password';
+    btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+    btn.style.color = show ? 'var(--accent)' : '';
+    pwd.focus();
+  });
+})();
+// ── Submit feedback (disabled only AFTER the browser has serialised the form) ─
+(function(){
+  var form = document.getElementById('loginForm');
+  var btn  = document.getElementById('loginBtn');
+  if (!form || !btn) return;
+  form.addEventListener('submit', function(){
+    setTimeout(function(){ if (!btn.disabled) { btn.disabled = true; btn.textContent = 'Authenticating…'; } }, 0);
+  });
 })();
 // ── Lockout countdown ──────────────────────────────────────────────────────
 (function(){
