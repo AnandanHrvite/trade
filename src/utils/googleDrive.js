@@ -128,12 +128,20 @@ function postForm(url, fields, timeoutMs) {
 /** Best-effort Google error text — their payloads nest it two different ways. */
 function googleError(res, fallback) {
   const j = res && res.json;
+  let msg = null;
   if (j) {
-    if (j.error && typeof j.error === "object" && j.error.message) return j.error.message;
-    if (typeof j.error === "string") return j.error_description ? `${j.error}: ${j.error_description}` : j.error;
+    if (j.error && typeof j.error === "object" && j.error.message) msg = j.error.message;
+    else if (typeof j.error === "string") msg = j.error_description ? `${j.error}: ${j.error_description}` : j.error;
   }
-  if (res && res.text) return String(res.text).slice(0, 200);
-  return fallback || "unknown error";
+  if (!msg && res && res.text) msg = String(res.text).slice(0, 200);
+  if (!msg) return fallback || "unknown error";
+  // Google grants only the scopes registered on the consent screen — an app whose
+  // Data Access list is missing drive.file connects fine but gets an email-only
+  // token, so the first Drive write is what fails. Name the fix outright.
+  if (/insufficient authentication scopes|ACCESS_TOKEN_SCOPE_INSUFFICIENT/i.test(msg)) {
+    msg += " — add the scope .../auth/drive.file under Google Auth Platform → Data Access, then Disconnect and Connect again here.";
+  }
+  return msg;
 }
 
 /** Read the email out of an id_token without verifying — it came from Google over TLS. */
