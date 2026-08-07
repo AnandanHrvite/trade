@@ -385,8 +385,10 @@ function render(){
   const gen = new Date().toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'});
   const days = byDay(arr);
 
-  // Only show strategy columns that actually traded in this range (keeps it narrow)
-  const activeModes = MODES.filter(mo => arr.some(t => t.mode===mo));
+  // Show a column for EVERY strategy enabled in Settings, even one that took no
+  // trade in this range — a missing column reads as "that strategy isn't running"
+  // when it actually means "it ran and found nothing". Zero-trade days show a dash.
+  const activeModes = MODES;
 
   // overall totals
   let tN=0,tW=0,tL=0,tNet=0; const totByMode={};
@@ -440,7 +442,11 @@ function render(){
   const vixVals = days.map(g => VIX_BY_DATE[g.date]).filter(v => v != null);
   const avgVix  = vixVals.length ? vixVals.reduce((s,v)=>s+v,0)/vixVals.length : null;
   let foot='<tr><td><b>TOTAL</b></td><td>'+fmtVix(avgVix)+'</td>';
-  for(const mo of activeModes){ const c=totByMode[mo]; foot+='<td><span style="color:'+pc(c.pnl)+'">'+inr2(c.pnl)+'</span><br><span class="cnt">'+c.n+'</span></td>'; }
+  for(const mo of activeModes){
+    const c=totByMode[mo];
+    if(!c || !c.n){ foot+='<td class="muted">—</td>'; continue; }
+    foot+='<td><span style="color:'+pc(c.pnl)+'">'+inr2(c.pnl)+'</span><br><span class="cnt">'+c.n+'</span></td>';
+  }
   foot+='<td>'+tN+'</td><td style="color:#10b981">'+tW+'</td><td style="color:#ef4444">'+tL+'</td><td>'+tWR.toFixed(0)+'%</td>'
     +'<td style="color:'+pc(tNet)+'">'+inr2(tNet)+'</td><td class="'+(tNet>=0?'res-profit':'res-loss')+'">'+(tNet>=0?'🟢':'🔴')+'</td></tr>';
 
