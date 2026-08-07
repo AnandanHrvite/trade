@@ -1563,27 +1563,34 @@ router.get("/", (req, res) => {
       gap: 18px;
       align-items: start;
     }
+    /* Height is deliberate: the index must clear the fold or it alone gives the
+       page a scrollbar the content never needed. Rows are ~32px, not ~41px, and
+       the cap subtracts what sits above the index — 177px of top bar + search
+       bar on a wide window, ~211px once the top-bar buttons wrap to two rows —
+       so on a short screen the list scrolls inside itself instead of running
+       off the bottom. */
     .sec-rail {
       position: sticky; top: 12px;
-      max-height: calc(100vh - 40px); overflow-y: auto;
+      max-height: calc(100vh - 230px); overflow-y: auto;
       background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
-      padding: 8px; scrollbar-width: thin;
+      padding: 6px; scrollbar-width: thin;
     }
     .rail-group {
-      font-size: 0.58rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1.4px;
-      color: var(--dim); padding: 12px 10px 6px;
+      font-size: 0.55rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1.4px;
+      color: var(--dim); padding: 9px 10px 3px;
     }
-    .rail-group:first-child { padding-top: 4px; }
+    .rail-group:first-child { padding-top: 3px; }
     .rail-item {
       display: flex; align-items: center; gap: 8px; width: 100%;
-      padding: 8px 10px; margin-bottom: 2px;
+      padding: 5px 9px; margin-bottom: 1px;
       background: transparent; border: 1px solid transparent; border-radius: 8px;
-      color: var(--text); font-family: inherit; font-size: 0.78rem; font-weight: 600;
-      text-align: left; cursor: pointer; transition: background 0.12s, border-color 0.12s, color 0.12s;
+      color: var(--text); font-family: inherit; font-size: 0.76rem; font-weight: 600;
+      line-height: 1.3; text-align: left; cursor: pointer;
+      transition: background 0.12s, border-color 0.12s, color 0.12s;
     }
     .rail-item:hover { background: var(--surface2); border-color: var(--border); }
     .rail-item.active { background: rgba(59,130,246,0.12); border-color: rgba(59,130,246,0.35); color: var(--text2); }
-    .rail-icon { font-size: 0.85rem; flex-shrink: 0; }
+    .rail-icon { font-size: 0.8rem; line-height: 1; flex-shrink: 0; }
     .rail-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .rail-count {
       font-size: 0.6rem; font-family: 'JetBrains Mono', monospace; color: var(--dim);
@@ -2183,12 +2190,17 @@ function showSection(id, opts) {
       else if (cr.bottom > rr.bottom) rail.scrollTop += (cr.bottom - rr.bottom);
     }
   }
-  // Bring the section header back on screen only when it has scrolled away
+  // Bring the section header back on screen only when it has scrolled away.
+  // On desktop go to the top of the page rather than scrolling the header to
+  // the viewport edge — the top bar is sticky and would sit on top of it.
   if (opts.top !== false) {
     var head = target.querySelector('.section-head');
     if (head) {
       var hr = head.getBoundingClientRect();
-      if (hr.top < 0 || hr.top > window.innerHeight - 60) head.scrollIntoView({ block: 'nearest' });
+      if (hr.top < 100 || hr.top > window.innerHeight - 60) {
+        if (window.innerWidth <= 900) head.scrollIntoView({ block: 'nearest' });
+        else window.scrollTo({ top: 0 });
+      }
     }
   }
 }
