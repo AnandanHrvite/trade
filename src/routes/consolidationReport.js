@@ -304,6 +304,11 @@ router.get("/", async (req, res) => {
         <button data-book="live">Live</button>
         <button data-book="all">Both</button>
       </div>
+      <label>Strategy</label>
+      <select id="fMode">
+        <option value="all">All strategies</option>
+        ${enabled.map(s => `<option value="${s.mode}">${s.mode}</option>`).join("\n        ")}
+      </select>
       <label>Range</label>
       <select id="fRange">${dateRangeOptionsHTML('tm')}</select>
       <span id="customWrap" style="display:none;">
@@ -348,13 +353,15 @@ function rangeLabelFor(range, from, to){
 
 function currentFilter(){
   const book = document.querySelector('#segBook button.on').dataset.book;
+  const mode = document.getElementById('fMode').value;
   const range = document.getElementById('fRange').value;
   const r = drRange(range, document.getElementById('fFrom').value, document.getElementById('fTo').value);
-  return {book,from:r.from,to:r.to,rangeLabel:rangeLabelFor(range,r.from,r.to)};
+  return {book,mode,from:r.from,to:r.to,rangeLabel:rangeLabelFor(range,r.from,r.to)};
 }
 function applyFilter(f){
   return ALL.filter(t=>{
     if(f.book!=='all' && t.book!==f.book) return false;
+    if(f.mode!=='all' && t.mode!==f.mode) return false;
     if(f.from && t.date < f.from) return false;
     if(f.to   && t.date > f.to)   return false;
     return true;
@@ -388,7 +395,8 @@ function render(){
   // Show a column for EVERY strategy enabled in Settings, even one that took no
   // trade in this range — a missing column reads as "that strategy isn't running"
   // when it actually means "it ran and found nothing". Zero-trade days show a dash.
-  const activeModes = MODES;
+  // With one strategy picked in the dropdown, only that column is meaningful.
+  const activeModes = f.mode==='all' ? MODES : [f.mode];
 
   // overall totals
   let tN=0,tW=0,tL=0,tNet=0; const totByMode={};
@@ -398,7 +406,7 @@ function render(){
 
   let head='<div class="rpt-head"><div>'
     +'<div class="rh-title">Consolidated Day Report</div>'
-    +'<div class="rh-meta">Book: <b>'+bookLabel+'</b> &nbsp;·&nbsp; Period: <b>'+esc(f.rangeLabel)+'</b> &nbsp;·&nbsp; Trading days: <b>'+days.length+'</b> &nbsp;·&nbsp; Trades: <b>'+tN+'</b></div>'
+    +'<div class="rh-meta">Book: <b>'+bookLabel+'</b> &nbsp;·&nbsp; Strategy: <b>'+esc(f.mode==='all'?'All':(MODE_LABEL[f.mode]||f.mode))+'</b> &nbsp;·&nbsp; Period: <b>'+esc(f.rangeLabel)+'</b> &nbsp;·&nbsp; Trading days: <b>'+days.length+'</b> &nbsp;·&nbsp; Trades: <b>'+tN+'</b></div>'
     +'</div><div class="rh-brand">ௐ Palani Andawar Thunai ॐ<br>Generated '+esc(gen)+'</div></div>';
 
   if(!days.length){ C.innerHTML=head+'<div class="empty">No trades for this filter. Try widening the range or switching Book.</div>'; return; }
@@ -463,6 +471,7 @@ document.querySelectorAll('#segBook button').forEach(b=>b.addEventListener('clic
   document.querySelectorAll('#segBook button').forEach(x=>x.classList.remove('on'));
   b.classList.add('on'); render();
 }));
+document.getElementById('fMode').addEventListener('change',render);
 document.getElementById('fRange').addEventListener('change',()=>{
   const range = document.getElementById('fRange').value;
   document.getElementById('customWrap').style.display = range==='custom'?'inline':'none';
