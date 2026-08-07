@@ -6,6 +6,14 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Changed — Settings is now an index and one section at a time, not a giant accordion
+
+Opening a section used to unroll every one of its settings in a single column — EMA_RSI_ST alone was 31 rows, Menu Visibility 52 — so one click turned into a ten-screen scroll with no idea where you were. The page is now split in two: a **section index down the left** (grouped *Strategies* / *Trading* / *System*, each row showing how many settings it holds), and **exactly one section on the right**, itself divided into **sub-tabs** — Mode & Session, Entry Signal, Exits, Risk, and so on. Picking a strategy and a tab lands you on roughly a screenful of rows instead of a wall of them. Nothing about what the settings do, or how they save, changed.
+
+The index also earns its keep while you work: a section holding unsaved edits gets an amber dot, and **search** now filters the index itself — each entry shows its match count, sections with no match drop out, and the open section shows every hit across all of its tabs at once. Each section has its own URL (`/settings#orb`), so a reload or a bookmark comes back where you left off.
+
+On a phone — iPhone 17 Pro Max included — the index becomes a horizontal chip strip above the fields, rows stack their label above a full-width control, toggles stay beside their label, inputs sit at 16 px so iOS stops zooming on focus, and the targets you hit most — the index chips and Save/Discard — are 44 px. Nothing overflows the viewport sideways any more.
+
 ### Changed — the login page now looks like a trading terminal, and fits a phone properly
 
 The old login screen was a padlock emoji on a plain box, sized in `vw` units that squeezed it on a phone and left the input small enough that iOS Safari zoomed the whole page in the moment you tapped it. It has been rebuilt as a proper terminal sign-in: a chart-arrow brand mark, the **TRADING BOT** wordmark over an *Algorithmic Execution Terminal* strapline, a live **IST clock** and a green *system online* pulse across the top, and an **Access Key** field with a lock glyph and a show/hide-password eye. Signing in shows an *Authenticating…* state so a slow connection doesn't look dead.

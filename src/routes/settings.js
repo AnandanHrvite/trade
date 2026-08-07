@@ -53,20 +53,22 @@ const SETTINGS_SCHEMA = [
   {
     section: "EMA_RSI_ST STRATEGY (EMA 20/50 + RSI + SuperTrend) — Zerodha",
     icon: "📊",
+    nav: "EMA_RSI_ST",
+    group: "Strategies",
     fields: [
-      { key: "EMA_RSI_ST_LIVE_ENABLED", label: "EMA_RSI_ST Live Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Zerodha." },
+      { key: "EMA_RSI_ST_LIVE_ENABLED", label: "EMA_RSI_ST Live Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Zerodha.", subheader: "Mode & Session" },
       { key: "EMA_RSI_ST_LIVE_DRY_RUN", label: "EMA_RSI_ST Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep this strategy simulated even when live is on.", default: "false" },
       // Candle timeframe is GLOBAL — see TRADE_RESOLUTION in "Instrument & Backtest".
       { key: "TRADE_EXPIRY_DAY_ONLY", label: "Trade Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only trade on weekly expiry day.", default: "false" },
       { key: "TRADE_ENTRY_START", label: "Entry Start Time", type: "time", effect: EFFECT.SESSION, desc: "Earliest entry time (IST).", default: "10:30" },
       { key: "TRADE_ENTRY_END", label: "Entry End Time", type: "time", effect: EFFECT.SESSION, desc: "No new entries after this time (IST).", default: "14:00" },
       { key: "EMA_RSI_ST_EOD_EXIT_TIME", label: "Exit Before Day Close", type: "time", effect: EFFECT.SESSION, desc: "Close any open position at this time (IST).", default: "14:30" },
-      { key: "VIX_FILTER_ENABLED", label: "VIX Filter (EMA_RSI_ST)", type: "toggle", effect: EFFECT.INSTANT, desc: "Block entries when VIX is high." },
+      { key: "VIX_FILTER_ENABLED", label: "VIX Filter (EMA_RSI_ST)", type: "toggle", effect: EFFECT.INSTANT, desc: "Block entries when VIX is high.", subheader: "Filters & Limits" },
       { key: "VIX_MAX_ENTRY", label: "EMA_RSI_ST VIX Max Entry", type: "number", min: 10, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "Block entries above this VIX.", default: "20" },
       { key: "MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 50000, step: 500, effect: EFFECT.SESSION, desc: "Stop trading after this much loss.", default: "3000" },
       { key: "MAX_DAILY_TRADES", label: "Max Daily Trades", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Max entries per day.", default: "5" },
       // ── Entry rule (all 3 must be true): EMA alignment + RSI gate + SuperTrend side ──
-      { key: "EMA_RSI_ST_EMA_FAST", label: "EMA Fast/Mid Period", type: "number", min: 5, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "Fast EMA period.", default: "20" },
+      { key: "EMA_RSI_ST_EMA_FAST", label: "EMA Fast/Mid Period", type: "number", min: 5, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "Fast EMA period.", default: "20", subheader: "Entry Signal" },
       { key: "EMA_RSI_ST_EMA_SLOW", label: "EMA Slow Period", type: "number", min: 20, max: 200, step: 1, effect: EFFECT.INSTANT, desc: "Slow EMA period.", default: "50" },
       { key: "EMA_RSI_ST_EMA_TRIPLE_STACK_ENABLED", label: "Triple-Stack EMA (9>20>50)", type: "toggle", effect: EFFECT.INSTANT, desc: "Require a 9>20>50 EMA stack (stricter).", default: "false" },
       { key: "EMA_RSI_ST_EMA_FASTEST", label: "EMA Fastest Period", type: "number", min: 5, max: 20, step: 1, effect: EFFECT.INSTANT, desc: "Fastest EMA period (triple-stack only).", default: "9" },
@@ -80,7 +82,7 @@ const SETTINGS_SCHEMA = [
       { key: "EMA_RSI_ST_SUPERTREND_PERIOD", label: "SuperTrend ATR Period", type: "number", min: 5, max: 30, step: 1, effect: EFFECT.INSTANT, desc: "SuperTrend ATR period.", default: "10" },
       { key: "EMA_RSI_ST_SUPERTREND_MULT", label: "SuperTrend Multiplier", type: "number", min: 1, max: 6, step: 0.5, effect: EFFECT.INSTANT, desc: "SuperTrend band width multiplier.", default: "3" },
       // ── Stops & exits ──
-      { key: "OPT_STOP_PCT", label: "Option Stop %", type: "number", min: 0.05, max: 0.50, step: 0.05, effect: EFFECT.SESSION, desc: "Exit if option premium drops this fraction.", default: "0.25" },
+      { key: "OPT_STOP_PCT", label: "Option Stop %", type: "number", min: 0.05, max: 0.50, step: 0.05, effect: EFFECT.SESSION, desc: "Exit if option premium drops this fraction.", default: "0.25", subheader: "Exits & Cooldowns" },
       { key: "EMA_RSI_ST_STOP_LOSS_PTS", label: "Stop Loss (pts)", type: "number", min: 0, max: 200, step: 5, effect: EFFECT.INSTANT, desc: "Max loss per trade in points (0 = off).", default: "25" },
       { key: "EMA_RSI_ST_MAX_CONSEC_LOSSES", label: "Chop Guard (consec losses)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.INSTANT, desc: "Stop for the day after this many losses in a row (0 = off).", default: "0" },
       { key: "EMA_RSI_ST_NEG_CANDLE_LIMIT", label: "Negative-Candle Stop (candles)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.INSTANT, desc: "Exit if still losing after this many candles (0 = off).", default: "2" },
@@ -94,8 +96,10 @@ const SETTINGS_SCHEMA = [
   {
     section: "BB_RSI STRATEGY (BB+SuperTrend+RSI) — Fyers",
     icon: "⚡",
+    nav: "BB_RSI",
+    group: "Strategies",
     fields: [
-      { key: "BB_RSI_ENABLED", label: "BB_RSI Live Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Fyers.", default: "false" },
+      { key: "BB_RSI_ENABLED", label: "BB_RSI Live Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Fyers.", default: "false", subheader: "Mode, Session & VIX" },
       { key: "BB_RSI_EXPIRY_DAY_ONLY", label: "BB_RSI Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only trade on weekly expiry day.", default: "false" },
       { key: "BB_RSI_VIX_ENABLED", label: "VIX Filter (BB_RSI)", type: "toggle", effect: EFFECT.INSTANT, desc: "Block entries when VIX is high.", default: "false" },
       { key: "BB_RSI_VIX_MAX_ENTRY", label: "BB_RSI VIX Max Entry", type: "number", min: 10, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "Block entries above this VIX.", default: "20" },
@@ -103,7 +107,7 @@ const SETTINGS_SCHEMA = [
       { key: "BB_RSI_ENTRY_START", label: "Entry Start Time", type: "time", effect: EFFECT.SESSION, desc: "Earliest entry time (IST).", default: "09:21" },
       { key: "BB_RSI_ENTRY_END", label: "Entry End Time", type: "time", effect: EFFECT.SESSION, desc: "No new entries after this time (IST).", default: "14:30" },
       // ── Bollinger Bands ──
-      { key: "BB_RSI_BB_PERIOD", label: "BB Period", type: "number", min: 10, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Bollinger Band period.", default: "20" },
+      { key: "BB_RSI_BB_PERIOD", label: "BB Period", type: "number", min: 10, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Bollinger Band period.", default: "20", subheader: "Entry Signal" },
       { key: "BB_RSI_BB_STDDEV", label: "BB Std Dev", type: "number", min: 0.5, max: 3.0, step: 0.1, effect: EFFECT.SESSION, desc: "Bollinger Band standard deviation.", default: "1" },
       // ── RSI ──
       { key: "BB_RSI_RSI_PERIOD", label: "RSI Period", type: "number", min: 7, max: 21, step: 1, effect: EFFECT.SESSION, desc: "RSI period.", default: "14" },
@@ -120,7 +124,7 @@ const SETTINGS_SCHEMA = [
       { key: "BB_RSI_ADX_ENABLED", label: "ADX Trend Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Only trade when the market is trending.", default: "false" },
       { key: "BB_RSI_ADX_MIN", label: "ADX Min (trend floor)", type: "number", min: 0, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Minimum ADX to allow entries.", default: "20" },
       // ── Profit lock (bank small bb_rsi profits) + hard stop (catastrophic loss cap) ──
-      { key: "BB_RSI_PROFIT_LOCK_TRIGGER_PTS", label: "Profit Lock Trigger (pts)", type: "number", min: 0, max: 300, step: 5, effect: EFFECT.SESSION, desc: "Arm the profit lock after this many points gained (0 = off).", default: "25" },
+      { key: "BB_RSI_PROFIT_LOCK_TRIGGER_PTS", label: "Profit Lock Trigger (pts)", type: "number", min: 0, max: 300, step: 5, effect: EFFECT.SESSION, desc: "Arm the profit lock after this many points gained (0 = off).", default: "25", subheader: "Exits" },
       { key: "BB_RSI_PROFIT_LOCK_PCT", label: "Profit Lock % of Peak", type: "number", min: 10, max: 95, step: 5, effect: EFFECT.SESSION, desc: "Exit if profit falls below this % of its peak.", default: "50" },
       { key: "BB_RSI_STOP_LOSS_PTS", label: "Stop Loss (pts)", type: "number", min: 0, max: 200, step: 5, effect: EFFECT.SESSION, desc: "Max loss per trade in points (0 = off).", default: "30" },
       { key: "BB_RSI_BB_REENTRY_EXIT", label: "BB Re-Entry Exit", type: "toggle", effect: EFFECT.SESSION, desc: "Exit when price crosses back through the band.", default: "true" },
@@ -128,7 +132,7 @@ const SETTINGS_SCHEMA = [
       // ── Risk management ──
       // SL & exits are SuperTrend-driven: initial SL = SuperTrend value at entry (no clamp); exit on
       // candle-close SuperTrend flip; the profit lock (above) is the only hard intra-tick exit.
-      { key: "BB_RSI_SLIPPAGE_PTS", label: "Slippage (pts)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.SESSION, desc: "Simulated slippage per side, in points.", default: "1.5" },
+      { key: "BB_RSI_SLIPPAGE_PTS", label: "Slippage (pts)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.SESSION, desc: "Simulated slippage per side, in points.", default: "1.5", subheader: "Risk & Pauses" },
       { key: "BB_RSI_MAX_DAILY_TRADES", label: "Max Daily Trades", type: "number", min: 5, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Max entries per day.", default: "30" },
       { key: "BB_RSI_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 20000, step: 500, effect: EFFECT.SESSION, desc: "Stop trading after this much loss.", default: "4000" },
       { key: "BB_RSI_SL_PAUSE_CANDLES", label: "SL Pause (candles)", type: "number", min: 1, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Pause this many candles after a stop.", default: "3" },
@@ -139,15 +143,17 @@ const SETTINGS_SCHEMA = [
   {
     section: "PRICE ACTION STRATEGY (5-min) — Fyers",
     icon: "📐",
+    nav: "Price Action",
+    group: "Strategies",
     fields: [
-      { key: "PA_ENABLED", label: "PA Live Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Fyers.", default: "false" },
+      { key: "PA_ENABLED", label: "PA Live Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Fyers.", default: "false", subheader: "Mode & Session" },
       { key: "PA_EXPIRY_DAY_ONLY", label: "PA Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only trade on weekly expiry day.", default: "false" },
       { key: "PA_VIX_ENABLED", label: "VIX Filter (PA)", type: "toggle", effect: EFFECT.INSTANT, desc: "Block entries when VIX is high.", default: "false" },
       { key: "PA_VIX_MAX_ENTRY", label: "PA VIX Max Entry", type: "number", min: 10, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "Block entries above this VIX.", default: "20" },
       { key: "PA_ENTRY_START", label: "Entry Start Time", type: "time", effect: EFFECT.SESSION, desc: "Earliest entry time (IST).", default: "09:20" },
       { key: "PA_ENTRY_END", label: "Entry End Time", type: "time", effect: EFFECT.SESSION, desc: "No new entries after this time (IST).", default: "14:30" },
       // ── Pattern toggles (the only four entry logics) ──
-      { key: "PA_PATTERN_DOUBLE_BOTTOM", label: "Double Bottom (W) → CE", type: "toggle", effect: EFFECT.SESSION, desc: "Trade double-bottom (W) breakouts as CE.", default: "true" },
+      { key: "PA_PATTERN_DOUBLE_BOTTOM", label: "Double Bottom (W) → CE", type: "toggle", effect: EFFECT.SESSION, desc: "Trade double-bottom (W) breakouts as CE.", default: "true", subheader: "Patterns & Trend" },
       { key: "PA_PATTERN_DOUBLE_TOP",    label: "Double Top (M) → PE",    type: "toggle", effect: EFFECT.SESSION, desc: "Trade double-top (M) breakdowns as PE.", default: "true" },
       { key: "PA_PATTERN_ASC_TRIANGLE",  label: "Ascending Triangle → CE", type: "toggle", effect: EFFECT.SESSION, desc: "Trade ascending-triangle breakouts as CE.", default: "true" },
       { key: "PA_PATTERN_DESC_TRIANGLE", label: "Descending Triangle → PE", type: "toggle", effect: EFFECT.SESSION, desc: "Trade descending-triangle breakdowns as PE.", default: "true" },
@@ -159,7 +165,7 @@ const SETTINGS_SCHEMA = [
       // structural SL placement (buffer beyond the pattern level) are computed internally
       // by the engine — no knobs. The SL sits at the pattern's invalidation level itself.
       // ── Exit: breakeven then swing trail ──
-      { key: "PA_BREAKEVEN_TRIGGER", label: "Breakeven Trigger (₹)", type: "number", min: 0, max: 2000, step: 50, effect: EFFECT.SESSION, desc: "Move stop to breakeven after this much profit (₹, 0 = off).", default: "300" },
+      { key: "PA_BREAKEVEN_TRIGGER", label: "Breakeven Trigger (₹)", type: "number", min: 0, max: 2000, step: 50, effect: EFFECT.SESSION, desc: "Move stop to breakeven after this much profit (₹, 0 = off).", default: "300", subheader: "Exits & Risk" },
       { key: "PA_BREAKEVEN_BUFFER", label: "Breakeven Buffer (pts)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.SESSION, desc: "Cushion above/below entry for the breakeven stop, in points.", default: "1" },
       { key: "PA_SLIPPAGE_PTS", label: "Slippage (pts)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.SESSION, desc: "Simulated slippage for backtest, in points.", default: "0" },
       { key: "PA_MAX_DAILY_TRADES", label: "Max Daily Trades", type: "number", min: 5, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Max entries per day.", default: "30" },
@@ -171,8 +177,10 @@ const SETTINGS_SCHEMA = [
   {
     section: "ORB STRATEGY (Opening Range Breakout) — Fyers",
     icon: "📋",
+    nav: "ORB",
+    group: "Strategies",
     fields: [
-      { key: "ORB_LIVE_ENABLED", label: "ORB Live Orders (gates /orb-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live ORB orders via Fyers.", default: "false" },
+      { key: "ORB_LIVE_ENABLED", label: "ORB Live Orders (gates /orb-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live ORB orders via Fyers.", default: "false", subheader: "Mode & Entry" },
       { key: "ORB_LIVE_DRY_RUN", label: "ORB Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep ORB simulated even when live is on.", default: "false" },
 
       // ── Entry: session window + day sanity + breakout quality ──────────
@@ -186,7 +194,7 @@ const SETTINGS_SCHEMA = [
 
       // ── Exits (all owned by src/strategies/orbExits.js — one engine for
       //    paper, live, backtest and scripts/orbValidate.js) ──────────────
-      { key: "ORB_SL_ATR_MULT", label: "Initial Stop — \u00d7 ATR(5m)", type: "number", min: 0.5, max: 3, step: 0.1, effect: EFFECT.INSTANT, desc: "Initial stop width as a multiple of ATR.", default: "1.5" },
+      { key: "ORB_SL_ATR_MULT", label: "Initial Stop — \u00d7 ATR(5m)", type: "number", min: 0.5, max: 3, step: 0.1, effect: EFFECT.INSTANT, desc: "Initial stop width as a multiple of ATR.", default: "1.5", subheader: "Exits" },
       { key: "ORB_BREAKEVEN_PTS", label: "Exit — Breakeven After (pts)", type: "number", min: 0, max: 60, step: 5, effect: EFFECT.INSTANT, desc: "Move stop to entry after this many points profit (0 = off).", default: "20" },
       { key: "ORB_BREAKEVEN_OR_MULT", label: "Exit — Breakeven × OR Width", type: "number", min: 0, max: 1.5, step: 0.1, effect: EFFECT.INSTANT, desc: "Scale the breakeven trigger by range width (0 = off).", default: "0.5" },
       { key: "ORB_TRAIL_EMA", label: "Exit — EMA Trail Period", type: "number", min: 2, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "Trail exit: leave when price closes back across this EMA.", default: "20" },
@@ -198,14 +206,14 @@ const SETTINGS_SCHEMA = [
 
       // ── Option selection + tradability gates (paper/live only — the
       //    backtest has no option chain) ───────────────────────────────────
-      { key: "ORB_ITM_STEPS", label: "Slightly-ITM Strike Steps", type: "number", min: 0, max: 3, step: 1, effect: EFFECT.SESSION, desc: "Strikes in-the-money to trade (0 = ATM).", default: "1" },
+      { key: "ORB_ITM_STEPS", label: "Slightly-ITM Strike Steps", type: "number", min: 0, max: 3, step: 1, effect: EFFECT.SESSION, desc: "Strikes in-the-money to trade (0 = ATM).", default: "1", subheader: "Option Selection" },
       { key: "ORB_PREMIUM_GATE_ENABLED", label: "Premium-Range Gate", type: "toggle", effect: EFFECT.INSTANT, desc: "Skip entries when the option price is out of range.", default: "true" },
       { key: "ORB_PREMIUM_MIN", label: "Min Option Premium (₹)", type: "number", min: 20, max: 500, step: 5, effect: EFFECT.INSTANT, desc: "Skip entry if the option price is below this (₹).", default: "120" },
       { key: "ORB_PREMIUM_MAX", label: "Max Option Premium (₹)", type: "number", min: 100, max: 1000, step: 10, effect: EFFECT.INSTANT, desc: "Skip entry if the option price is above this (₹).", default: "400" },
       { key: "ORB_MAX_SPREAD_PTS", label: "Max Option Bid-Ask Spread (pts)", type: "number", min: 0.5, max: 10, step: 0.5, effect: EFFECT.INSTANT, desc: "Skip entry if the bid-ask spread is wider than this.", default: "2" },
 
       // ── Risk / regime ────────────────────────────────────────────────
-      { key: "ORB_MAX_DAILY_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 3, step: 1, effect: EFFECT.SESSION, desc: "Max entries per day.", default: "1" },
+      { key: "ORB_MAX_DAILY_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 3, step: 1, effect: EFFECT.SESSION, desc: "Max entries per day.", default: "1", subheader: "Risk & Regime" },
       { key: "ORB_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 20000, step: 500, effect: EFFECT.SESSION, desc: "Stop trading after this much loss.", default: "3000" },
       { key: "ORB_RISK_THROTTLE_ENABLED", label: "Risk Breaker (weekly loss / losing streak)", type: "toggle", effect: EFFECT.INSTANT, desc: "Pause after a bad week or a losing streak.", default: "true" },
       { key: "ORB_MAX_WEEKLY_LOSS", label: "Max Weekly Loss (₹)", type: "number", min: 0, max: 60000, step: 500, effect: EFFECT.INSTANT, desc: "Stop for the week after this much loss (0 = off).", default: "9000" },
@@ -216,7 +224,7 @@ const SETTINGS_SCHEMA = [
       { key: "ORB_VIX_STRONG_ONLY", label: "ORB VIX Strong Only", type: "number", min: 8, max: 30, step: 1, effect: EFFECT.INSTANT, desc: "Above this VIX, allow only strong signals.", default: "18" },
 
       // ── Backtest-only sim knobs (mirrors TREND_PB_BT_*) ──────────────
-      { key: "ORB_BT_SLIPPAGE_PTS", label: "Backtest Spread/Slippage Haircut (pts each way)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.INSTANT, desc: "Backtest cost per side, in points.", default: "1.5" },
+      { key: "ORB_BT_SLIPPAGE_PTS", label: "Backtest Spread/Slippage Haircut (pts each way)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.INSTANT, desc: "Backtest cost per side, in points.", default: "1.5", subheader: "Backtest & Debug" },
       { key: "ORB_BT_SEED_PREMIUM", label: "Backtest Seed Premium (₹)", type: "number", min: 50, max: 800, step: 10, effect: EFFECT.INSTANT, desc: "Assumed entry premium for the backtest (₹).", default: "240" },
 
       // ── Debug ────────────────────────────────────────────────────────
@@ -226,45 +234,52 @@ const SETTINGS_SCHEMA = [
   {
     section: "EMA9 + VWAP STRATEGY — Zerodha",
     icon: "📈",
+    nav: "EMA9 + VWAP",
+    group: "Strategies",
     fields: [
-      { key: "EMA9VWAP_LIVE_ENABLED", label: "EMA9+VWAP Live Orders (gates /ema9vwap-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Zerodha.", default: "false" },
+      { key: "EMA9VWAP_LIVE_ENABLED", label: "EMA9+VWAP Live Orders (gates /ema9vwap-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Zerodha.", default: "false", subheader: "Mode & Session" },
       { key: "EMA9VWAP_LIVE_DRY_RUN", label: "EMA9+VWAP Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep this strategy simulated even when live is on.", default: "false" },
-      { key: "EMA9VWAP_BAND_MULT", label: "VWAP Band σ Multiplier", type: "number", min: 0, max: 4, step: 0.5, effect: EFFECT.INSTANT, desc: "VWAP band width (σ multiplier).", default: "1" },
-      { key: "EMA9VWAP_EMA_PERIOD", label: "EMA Period", type: "number", min: 2, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "EMA period.", default: "9" },
       { key: "EMA9VWAP_VWAP_SESSION_START", label: "VWAP Session Anchor", type: "time", effect: EFFECT.SESSION, desc: "Time VWAP resets each day (IST).", default: "09:15" },
       { key: "EMA9VWAP_ENTRY_START", label: "Entry Window Start", type: "time", effect: EFFECT.SESSION, desc: "No entries before this time (IST).", default: "10:30" },
       { key: "EMA9VWAP_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No new entries after this time (IST).", default: "14:30" },
       { key: "EMA9VWAP_EOD_EXIT_TIME", label: "EOD Square-Off", type: "time", effect: EFFECT.SESSION, desc: "Hard square-off time (IST).", default: "15:15" },
       { key: "EMA9VWAP_STOP_TIME", label: "Engine Auto-Stop", type: "time", effect: EFFECT.SESSION, desc: "Time the engine stops for the day (IST).", default: "15:30" },
-      { key: "EMA9VWAP_MAX_DAILY_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 40, step: 1, effect: EFFECT.SESSION, desc: "Max entries per day.", default: "20" },
-      { key: "EMA9VWAP_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 50000, step: 500, effect: EFFECT.SESSION, desc: "Stop trading after this much loss.", default: "5000" },
+      // ── Entry signal ──
+      { key: "EMA9VWAP_BAND_MULT", label: "VWAP Band σ Multiplier", type: "number", min: 0, max: 4, step: 0.5, effect: EFFECT.INSTANT, desc: "VWAP band width (σ multiplier).", default: "1", subheader: "Entry Signal" },
+      { key: "EMA9VWAP_EMA_PERIOD", label: "EMA Period", type: "number", min: 2, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "EMA period.", default: "9" },
       { key: "EMA9VWAP_CONFIRM_CANDLE_ENABLED", label: "Confirmation Candle", type: "toggle", effect: EFFECT.INSTANT, desc: "Wait for a second candle to confirm entry.", default: "false" },
       { key: "EMA9VWAP_INTRACANDLE_ENTRY", label: "Intra-Candle Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow entries mid-candle instead of on close.", default: "false" },
-      { key: "EMA9VWAP_OPT_STOP_PCT", label: "Safety Option-Premium Stop (fraction)", type: "number", min: 0, max: 0.5, step: 0.05, effect: EFFECT.INSTANT, desc: "Exit if option premium drops this fraction (0 = off).", default: "0" },
+      { key: "EMA9VWAP_STRENGTH_FILTER", label: "Drop WEAK Band Breaks", type: "toggle", effect: EFFECT.INSTANT, desc: "Only trade breaks that clear the band edge.", default: "false" },
+      { key: "EMA9VWAP_STRONG_MIN_SIGMA", label: "STRONG Break Threshold (σ)", type: "number", min: 0, max: 2, step: 0.05, effect: EFFECT.INSTANT, desc: "How far past the band edge counts as strong (σ).", default: "0.25" },
+      // ── Exits ──
+      { key: "EMA9VWAP_OPT_STOP_PCT", label: "Safety Option-Premium Stop (fraction)", type: "number", min: 0, max: 0.5, step: 0.05, effect: EFFECT.INSTANT, desc: "Exit if option premium drops this fraction (0 = off).", default: "0", subheader: "Exits" },
       { key: "EMA9VWAP_STOP_LOSS_PTS", label: "Safety Spot-Points Stop", type: "number", min: 0, max: 200, step: 5, effect: EFFECT.INSTANT, desc: "Max loss per trade in points (0 = off).", default: "0" },
       { key: "EMA9VWAP_REVERSAL_EXIT_ENABLED", label: "2-Candle Reversal Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Exit on a strong reversal candle.", default: "true" },
-      { key: "EMA9VWAP_VIX_ENABLED", label: "VIX Filter (EMA9+VWAP)", type: "select", options: ["", "true", "false"], effect: EFFECT.INSTANT, desc: "VIX filter (blank = use the global setting).", default: "" },
-      { key: "EMA9VWAP_VIX_MAX_ENTRY", label: "VIX Max Entry (EMA9+VWAP)", type: "text", effect: EFFECT.INSTANT, desc: "Block entries above this VIX (blank = use global).", default: "" },
-      // ── M5: keys that were live in code but invisible here (and therefore absent
-      //    from the per-day settings snapshot). All defaults are BLANK/current so a
-      //    Settings save writes nothing that changes behaviour.
-      { key: "EMA9VWAP_SL_PAUSE_CANDLES", label: "Same-Side SL Cooldown (candles)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Pause the same side this many candles after a stop.", default: "3" },
-      { key: "EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_ENABLED", label: "Opposite-Side Cooldown", type: "toggle", effect: EFFECT.SESSION, desc: "Pause the opposite side briefly after an exit.", default: "true" },
-      { key: "EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_CANDLES", label: "Opposite-Side Cooldown (candles)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Opposite-side cooldown length in candles.", default: "3" },
-      { key: "EMA9VWAP_MAX_CONSEC_LOSSES", label: "Chop Guard (consecutive losses)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.INSTANT, desc: "Stop for the day after this many losses in a row (0 = off).", default: "0" },
       { key: "EMA9VWAP_NEG_CANDLE_LIMIT", label: "Negative-Candle Stop (candles)", type: "number", min: 0, max: 20, step: 1, effect: EFFECT.INSTANT, desc: "Exit if still losing after this many candles (0 = off).", default: "0" },
       { key: "EMA9VWAP_CANDLE_TRAIL_ENABLED", label: "N-Bar Candle Trail", type: "toggle", effect: EFFECT.INSTANT, desc: "Add a candle-based trailing stop.", default: "false" },
       { key: "EMA9VWAP_CANDLE_TRAIL_BARS", label: "Candle Trail Bars", type: "number", min: 1, max: 10, step: 1, effect: EFFECT.INSTANT, desc: "Candles used for the trailing stop.", default: "3" },
       { key: "EMA9VWAP_SL_MODE", label: "SL Mode", type: "select", options: ["ema", "candle"], effect: EFFECT.INSTANT, desc: "Exit style: signal-only or candle time-stop.", default: "ema" },
-      { key: "EMA9VWAP_STRENGTH_FILTER", label: "Drop WEAK Band Breaks", type: "toggle", effect: EFFECT.INSTANT, desc: "Only trade breaks that clear the band edge.", default: "false" },
-      { key: "EMA9VWAP_STRONG_MIN_SIGMA", label: "STRONG Break Threshold (σ)", type: "number", min: 0, max: 2, step: 0.05, effect: EFFECT.INSTANT, desc: "How far past the band edge counts as strong (σ).", default: "0.25" },
+      // ── Risk & filters ──
+      // M5: keys that were live in code but invisible here (and therefore absent
+      // from the per-day settings snapshot). All defaults are BLANK/current so a
+      // Settings save writes nothing that changes behaviour.
+      { key: "EMA9VWAP_MAX_DAILY_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 40, step: 1, effect: EFFECT.SESSION, desc: "Max entries per day.", default: "20", subheader: "Risk & Filters" },
+      { key: "EMA9VWAP_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 50000, step: 500, effect: EFFECT.SESSION, desc: "Stop trading after this much loss.", default: "5000" },
+      { key: "EMA9VWAP_VIX_ENABLED", label: "VIX Filter (EMA9+VWAP)", type: "select", options: ["", "true", "false"], effect: EFFECT.INSTANT, desc: "VIX filter (blank = use the global setting).", default: "" },
+      { key: "EMA9VWAP_VIX_MAX_ENTRY", label: "VIX Max Entry (EMA9+VWAP)", type: "text", effect: EFFECT.INSTANT, desc: "Block entries above this VIX (blank = use global).", default: "" },
+      { key: "EMA9VWAP_SL_PAUSE_CANDLES", label: "Same-Side SL Cooldown (candles)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Pause the same side this many candles after a stop.", default: "3" },
+      { key: "EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_ENABLED", label: "Opposite-Side Cooldown", type: "toggle", effect: EFFECT.SESSION, desc: "Pause the opposite side briefly after an exit.", default: "true" },
+      { key: "EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_CANDLES", label: "Opposite-Side Cooldown (candles)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Opposite-side cooldown length in candles.", default: "3" },
+      { key: "EMA9VWAP_MAX_CONSEC_LOSSES", label: "Chop Guard (consecutive losses)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.INSTANT, desc: "Stop for the day after this many losses in a row (0 = off).", default: "0" },
     ],
   },
   {
     section: "TREND PULLBACK STRATEGY — Fyers",
     icon: "📈",
+    nav: "Trend Pullback",
+    group: "Strategies",
     fields: [
-      { key: "TREND_PB_LIVE_ENABLED", label: "Trend Pullback Live Orders (gates /trend-pb-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Fyers.", default: "false" },
+      { key: "TREND_PB_LIVE_ENABLED", label: "Trend Pullback Live Orders (gates /trend-pb-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Fyers.", default: "false", subheader: "Mode & Entry" },
       { key: "TREND_PB_LIVE_DRY_RUN", label: "Trend Pullback Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep this strategy simulated even when live is on.", default: "false" },
       // ── Entry (15m bias + 5m pullback/resumption) ──
       { key: "TREND_PB_SWING_LOOKBACK", label: "Swing Pivot Lookback (15m bars)", type: "number", min: 1, max: 5, step: 1, effect: EFFECT.INSTANT, desc: "Bars each side that define a swing point.", default: "2" },
@@ -276,7 +291,7 @@ const SETTINGS_SCHEMA = [
       { key: "TREND_PB_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No new entries after this time (IST).", default: "14:30" },
       { key: "TREND_PB_ATR_FLOOR_PTS", label: "ATR5 Floor (skip if below, pts)", type: "number", min: 0, max: 100, step: 5, effect: EFFECT.INSTANT, desc: "Skip when volatility is below this (0 = off).", default: "0" },
       // ── Exit (highest priority — right-tail via spot trailing) ──
-      { key: "TREND_PB_STOP_CLAMP_MIN", label: "Initial Stop Clamp — Min (pts)", type: "number", min: 3, max: 30, step: 1, effect: EFFECT.INSTANT, desc: "Smallest allowed stop distance, in points.", default: "8" },
+      { key: "TREND_PB_STOP_CLAMP_MIN", label: "Initial Stop Clamp — Min (pts)", type: "number", min: 3, max: 30, step: 1, effect: EFFECT.INSTANT, desc: "Smallest allowed stop distance, in points.", default: "8", subheader: "Exits" },
       { key: "TREND_PB_STOP_CLAMP_MAX", label: "Initial Stop Clamp — Max (pts)", type: "number", min: 10, max: 80, step: 1, effect: EFFECT.INSTANT, desc: "Largest allowed stop distance, in points.", default: "30" },
       { key: "TREND_PB_BREAKEVEN_R", label: "Breakeven Trigger (× initial risk)", type: "number", min: 0, max: 3, step: 0.25, effect: EFFECT.INSTANT, desc: "Move stop to entry after this much gain (× risk, 0 = off).", default: "1.0" },
       { key: "TREND_PB_TRAIL_ATR_MULT", label: "ATR Chandelier Trail (× ATR5)", type: "number", min: 1, max: 6, step: 0.5, effect: EFFECT.INSTANT, desc: "Trailing stop distance as a multiple of ATR.", default: "2.5" },
@@ -286,7 +301,7 @@ const SETTINGS_SCHEMA = [
       { key: "TREND_PB_PREMIUM_STOP_PCT", label: "Premium Disaster Stop (%)", type: "number", min: 0, max: 80, step: 5, effect: EFFECT.INSTANT, desc: "Exit if the option premium drops this % (0 = off).", default: "35" },
       { key: "TREND_PB_FORCED_EXIT", label: "EOD Square-Off", type: "time", effect: EFFECT.SESSION, desc: "Hard square-off time (IST).", default: "15:15" },
       // ── Option selection + risk ──
-      { key: "TREND_PB_ITM_STEPS", label: "ITM Steps (strikes in-the-money)", type: "number", min: 0, max: 3, step: 1, effect: EFFECT.INSTANT, desc: "Strikes in-the-money to buy (0 = ATM).", default: "1" },
+      { key: "TREND_PB_ITM_STEPS", label: "ITM Steps (strikes in-the-money)", type: "number", min: 0, max: 3, step: 1, effect: EFFECT.INSTANT, desc: "Strikes in-the-money to buy (0 = ATM).", default: "1", subheader: "Option & Risk" },
       { key: "TREND_PB_PREMIUM_MIN", label: "Min Option Premium (₹)", type: "number", min: 0, max: 1000, step: 10, effect: EFFECT.INSTANT, desc: "Skip entry if the option price is below this (₹).", default: "120" },
       { key: "TREND_PB_PREMIUM_MAX", label: "Max Option Premium (₹)", type: "number", min: 0, max: 2000, step: 10, effect: EFFECT.INSTANT, desc: "Skip entry if the option price is above this (₹).", default: "400" },
       { key: "TREND_PB_MAX_SPREAD_PTS", label: "Max Bid-Ask Spread (pts)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.INSTANT, desc: "Skip entry if the bid-ask spread is wider than this.", default: "2" },
@@ -296,21 +311,23 @@ const SETTINGS_SCHEMA = [
       { key: "TREND_PB_VIX_ENABLED", label: "VIX Filter", type: "toggle", effect: EFFECT.INSTANT, desc: "Block entries when VIX is out of range.", default: "false" },
       { key: "TREND_PB_VIX_MAX_ENTRY", label: "VIX Max Entry", type: "number", min: 8, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "Block entries above this VIX.", default: "22" },
       { key: "TREND_PB_OI_ENABLED", label: "OI Buildup Gate", type: "toggle", effect: EFFECT.INSTANT, desc: "Block entries fighting an OI buildup.", default: "false" },
-      { key: "TREND_PB_BT_SLIPPAGE_PTS", label: "Backtest Spread/Slippage Haircut (pts each way)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.INSTANT, desc: "Backtest cost per side, in points.", default: "1.5" },
+      { key: "TREND_PB_BT_SLIPPAGE_PTS", label: "Backtest Spread/Slippage Haircut (pts each way)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.INSTANT, desc: "Backtest cost per side, in points.", default: "1.5", subheader: "Backtest" },
       { key: "TREND_PB_BT_SEED_PREMIUM", label: "Backtest Seed Premium (₹)", type: "number", min: 50, max: 800, step: 10, effect: EFFECT.INSTANT, desc: "Assumed entry premium for the backtest (₹).", default: "240" },
     ],
   },
   {
     section: "GAPS STRATEGY — Fyers",
     icon: "🕳",
+    nav: "GAPS",
+    group: "Strategies",
     fields: [
       // ── Enable / live gating ──
-      { key: "GAPS_PAPER_ENABLED", label: "GAPS Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new GAPS paper sessions.", default: "true" },
+      { key: "GAPS_PAPER_ENABLED", label: "GAPS Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new GAPS paper sessions.", default: "true", subheader: "Mode & Live" },
       { key: "GAPS_LIVE_ENABLED", label: "GAPS Live Orders (gates /gaps-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live GAPS orders via Fyers.", default: "false" },
       { key: "GAPS_LIVE_DRY_RUN", label: "GAPS Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep GAPS simulated even when live is on.", default: "false" },
 
       // ── Indicators (daily chart) ──
-      { key: "GAPS_EMA_LENGTH", label: "EMA Length (daily)", type: "number", min: 2, max: 200, step: 1, effect: EFFECT.SESSION, desc: "Daily EMA period used to feed RSI.", default: "21" },
+      { key: "GAPS_EMA_LENGTH", label: "EMA Length (daily)", type: "number", min: 2, max: 200, step: 1, effect: EFFECT.SESSION, desc: "Daily EMA period used to feed RSI.", default: "21", subheader: "Entry Signal (daily)" },
       { key: "GAPS_RSI_LENGTH", label: "RSI Length (daily)", type: "number", min: 2, max: 100, step: 1, effect: EFFECT.SESSION, desc: "Daily RSI period.", default: "14" },
       { key: "GAPS_RSI_SOURCE", label: "RSI Input Source", type: "select", options: ["ema", "close", "open", "high", "low", "hl2", "hlc3", "ohlc4"], effect: EFFECT.SESSION, desc: "What RSI is calculated on.", default: "ema" },
       { key: "GAPS_RSI_ENTRY_SOURCE", label: "Entry RSI calculation", type: "select", options: [{ value: "today_open", label: "Today's open value" }, { value: "prev_close", label: "Yesterday's close value" }], effect: EFFECT.SESSION, desc: "Which RSI value decides the entry.", default: "today_open" },
@@ -318,7 +335,7 @@ const SETTINGS_SCHEMA = [
       { key: "GAPS_RSI_LOWER", label: "RSI Lower Band (oversold)", type: "number", min: 0, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "CE setup needs RSI below this (oversold).", default: "10" },
 
       // ── Session windows ──
-      { key: "GAPS_ENTRY_START", label: "Entry Window Start", type: "time", effect: EFFECT.SESSION, desc: "No entries before this time (IST).", default: "09:15" },
+      { key: "GAPS_ENTRY_START", label: "Entry Window Start", type: "time", effect: EFFECT.SESSION, desc: "No entries before this time (IST).", default: "09:15", subheader: "Session & Exits" },
       { key: "GAPS_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No entries after this time (IST).", default: "09:30" },
       { key: "GAPS_FORCED_EXIT", label: "Forced Exit (EOD square-off)", type: "time", effect: EFFECT.SESSION, desc: "Hard square-off time (IST).", default: "15:15" },
       { key: "GAPS_EXIT_TF", label: "Exit Candle Timeframe (min)", type: "select", options: ["1", "3", "5", "10", "15", "30", "60"], effect: EFFECT.SESSION, desc: "Candle timeframe for the trailing exit.", default: "5" },
@@ -328,7 +345,7 @@ const SETTINGS_SCHEMA = [
       { key: "GAPS_TRAIL_EMA_LENGTH", label: "Trail EMA Length", type: "number", effect: EFFECT.INSTANT, desc: "EMA period for the trailing stop.", default: "21" },
 
       // ── Sizing ──
-      { key: "GAPS_LOT_MULTIPLIER", label: "Lot Multiplier (GAPS only)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.INSTANT, desc: "Lots per trade for GAPS (0 = use global).", default: "0" },
+      { key: "GAPS_LOT_MULTIPLIER", label: "Lot Multiplier (GAPS only)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.INSTANT, desc: "Lots per trade for GAPS (0 = use global).", default: "0", subheader: "Sizing & Risk" },
       { key: "GAPS_ITM_STEPS", label: "ITM Steps (strikes in-the-money)", type: "number", min: 0, max: 3, step: 1, effect: EFFECT.INSTANT, desc: "Strikes in-the-money to buy (0 = ATM).", default: "1" },
 
       // ── Risk ──
@@ -338,7 +355,7 @@ const SETTINGS_SCHEMA = [
       { key: "GAPS_LOSS_STREAK_SKIP", label: "Risk Breaker (consecutive losses)", type: "number", min: 0, max: 6, step: 1, effect: EFFECT.SESSION, desc: "Pause for the day after this many losses in a row (0 = off).", default: "3" },
 
       // ── Backtest realism ──
-      { key: "GAPS_BT_SLIPPAGE_PTS", label: "Backtest Spread/Slippage Haircut (pts each way)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.BACKTEST, desc: "Backtest cost per side, in points.", default: "1.5" },
+      { key: "GAPS_BT_SLIPPAGE_PTS", label: "Backtest Spread/Slippage Haircut (pts each way)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.BACKTEST, desc: "Backtest cost per side, in points.", default: "1.5", subheader: "Backtest & Chart" },
       { key: "GAPS_BT_SEED_PREMIUM", label: "Backtest Seed Premium (₹)", type: "number", min: 50, max: 800, step: 10, effect: EFFECT.BACKTEST, desc: "Assumed entry premium for the backtest (₹).", default: "240" },
       { key: "GAPS_DAILY_CHART_BARS", label: "Daily Chart Bars", type: "number", min: 60, max: 500, step: 10, effect: EFFECT.INSTANT, desc: "Daily candles shown on the chart.", default: "180" },
     ],
@@ -346,6 +363,8 @@ const SETTINGS_SCHEMA = [
   {
     section: "OPEN-INTEREST FILTER (OI + Price Buildup)",
     icon: "📊",
+    nav: "OI Filter",
+    group: "Trading",
     fields: [
       { key: "OI_FILTER_ENABLED", label: "OI Filter MASTER (all strategies)", type: "toggle", effect: EFFECT.INSTANT, desc: "Master switch for the open-interest filter.", default: "false" },
       { key: "EMA_RSI_ST_OI_ENABLED", label: "OI Filter (EMA_RSI_ST)", type: "toggle", effect: EFFECT.INSTANT, desc: "Apply the OI filter to this strategy.", default: "false" },
@@ -361,8 +380,10 @@ const SETTINGS_SCHEMA = [
   {
     section: "Instrument & Backtest",
     icon: "📈",
+    nav: "Instrument & Backtest",
+    group: "Trading",
     fields: [
-      { key: "CHART_ENABLED", label: "Live NIFTY Chart", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the candlestick chart on status pages.", default: "true" },
+      { key: "CHART_ENABLED", label: "Live NIFTY Chart", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the candlestick chart on status pages.", default: "true", subheader: "Instrument & Session" },
       { key: "VIX_FAIL_MODE", label: "VIX Unavailable (all modules)", type: "select", options: ["closed", "open"], effect: EFFECT.INSTANT, desc: "What to do when VIX data is missing.", default: "closed" },
       { key: "TRADE_RESOLUTION", label: "Candle Resolution (min) — ALL strategies", type: "select", options: ["3", "5", "15"], effect: EFFECT.SESSION, desc: "Candle timeframe in minutes. One global setting — every strategy uses it.", default: "5" },
       { key: "TRADE_START_TIME", label: "Market Start Time", type: "time", effect: EFFECT.SESSION, desc: "Market open time (IST).", default: "09:15" },
@@ -374,21 +395,21 @@ const SETTINGS_SCHEMA = [
       { key: "STRIKE_OFFSET_PE", label: "PE Strike Offset", type: "number", min: -200, max: 200, step: 50, effect: EFFECT.INSTANT, desc: "PE strike vs ATM (+50=ITM, 0=ATM, -50=OTM).", default: "0" },
       { key: "OPTION_EXPIRY_OVERRIDE", label: "Option Expiry (manual)", type: "date", effect: EFFECT.INSTANT, desc: "Manually set the option expiry for all strategies (blank = auto)." },
       { key: "OPTION_EXPIRY_TYPE", label: "Expiry Type", type: "select", options: ["weekly", "monthly"], effect: EFFECT.INSTANT, desc: "Weekly or monthly expiry.", default: "weekly" },
-      { key: "TICK_RECORDER_ENABLED", label: "Tick Recorder (for Replay)", type: "toggle", effect: EFFECT.SESSION, desc: "Record ticks so sessions can be replayed.", default: "true" },
+      { key: "TICK_RECORDER_ENABLED", label: "Tick Recorder (for Replay)", type: "toggle", effect: EFFECT.SESSION, desc: "Record ticks so sessions can be replayed.", default: "true", subheader: "Recording & Replay" },
       { key: "TICK_RECORDER_RETAIN_DAYS", label: "Tick Recordings Retention (days)", type: "number", min: 7, max: 180, step: 1, effect: EFFECT.SERVER, desc: "Delete tick recordings older than this.", default: "30" },
       { key: "OPTION_CHAIN_RECORDER_ENABLED", label: "Day-Wide Option-Chain Recorder", type: "toggle", effect: EFFECT.INSTANT, desc: "Record the option chain for replay.", default: "true" },
       { key: "OPTION_CHAIN_RECORD_INTERVAL_SEC", label: "Option-Chain Record Interval (sec)", type: "number", min: 2, max: 60, step: 1, effect: EFFECT.INSTANT, desc: "How often to record the option chain (sec).", default: "5" },
       { key: "OPTION_CHAIN_RECORD_STRIKES", label: "Option-Chain Strikes (ATM±N)", type: "number", min: 1, max: 15, step: 1, effect: EFFECT.INSTANT, desc: "Strikes each side of ATM to record.", default: "5" },
       { key: "SPOT_FEED_ALWAYS_ON", label: "Always-On Spot Feed (day recording)", type: "toggle", effect: EFFECT.INSTANT, desc: "Record the spot feed all day, even with no strategy running.", default: "true" },
-      { key: "LIVE_HARNESS_DRY_RUN", label: "Live Harness DRY-RUN (GLOBAL)", type: "toggle", effect: EFFECT.SESSION, desc: "Global switch: log live orders but place none.", default: "true" },
+      { key: "LIVE_HARNESS_DRY_RUN", label: "Live Harness DRY-RUN (GLOBAL)", type: "toggle", effect: EFFECT.SESSION, desc: "Global switch: log live orders but place none.", default: "true", subheader: "Live Safety" },
       { key: "LIVE_EXIT_WAIT_MS", label: "Live Exit Wait Ceiling (ms)", type: "number", min: 0, max: 120000, step: 1000, effect: EFFECT.INSTANT, desc: "How long to wait on a live exit before alerting (ms).", default: "20000" },
       { key: "PA_LIVE_DRY_RUN", label: "PA Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep PA simulated even when live is on.", default: "false" },
       { key: "BB_RSI_LIVE_DRY_RUN", label: "BB_RSI Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep BB_RSI simulated even when live is on.", default: "false" },
-      { key: "BACKTEST_OPTION_SIM", label: "Option Simulation (legacy bar-based BT only)", type: "toggle", effect: EFFECT.BACKTEST, desc: "Simulate option P&L in the legacy backtest." },
+      { key: "BACKTEST_OPTION_SIM", label: "Option Simulation (legacy bar-based BT only)", type: "toggle", effect: EFFECT.BACKTEST, desc: "Simulate option P&L in the legacy backtest.", subheader: "Backtest Simulation" },
       { key: "BACKTEST_DELTA", label: "Delta", type: "number", min: 0.1, max: 1.0, step: 0.05, effect: EFFECT.BACKTEST, desc: "Option delta for premium simulation." },
       { key: "BACKTEST_THETA_DAY", label: "Theta ₹/day", type: "number", min: 0, max: 50, step: 1, effect: EFFECT.BACKTEST, desc: "Daily theta decay in rupees." },
       { key: "BACKTEST_SLIPPAGE_PTS", label: "Slippage (pts)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.BACKTEST, desc: "Simulated slippage per side, in points.", default: "0" },
-      { key: "LTP_STALE_THRESHOLD_SEC", label: "LTP Stale Alert (sec)", type: "number", min: 5, max: 60, step: 5, effect: EFFECT.INSTANT, desc: "Warn if the option price hasn't updated for this long (sec).", default: "15" },
+      { key: "LTP_STALE_THRESHOLD_SEC", label: "LTP Stale Alert (sec)", type: "number", min: 5, max: 60, step: 5, effect: EFFECT.INSTANT, desc: "Warn if the option price hasn't updated for this long (sec).", default: "15", subheader: "Execution Guards" },
       { key: "LTP_STALE_FALLBACK_SEC", label: "LTP Stale Fallback (sec)", type: "number", min: 1, max: 30, step: 1, effect: EFFECT.SESSION, desc: "Use candle close if the option price is older than this (sec).", default: "5" },
       { key: "GAP_THRESHOLD_PTS", label: "Gap Threshold (pts)", type: "number", min: 10, max: 200, step: 5, effect: EFFECT.SESSION, desc: "Skip the first candle on a big overnight gap.", default: "50" },
       { key: "MAX_BID_ASK_SPREAD_PTS", label: "Max Bid-Ask Spread (pts)", type: "number", min: 0, max: 20, step: 0.5, effect: EFFECT.SESSION, desc: "Reject entries when the spread is wider than this.", default: "2" },
@@ -397,7 +418,7 @@ const SETTINGS_SCHEMA = [
       { key: "HARD_SL_ENABLED", label: "Hard SL (Exchange)", type: "toggle", effect: EFFECT.SESSION, desc: "Place a stop-loss order at the exchange on entry.", default: "false" },
       { key: "HARD_SL_DELTA", label: "Hard SL Delta", type: "number", min: 0.2, max: 0.8, step: 0.05, effect: EFFECT.INSTANT, desc: "Delta used to convert the spot stop to a premium trigger.", default: "0.5" },
       { key: "NIFTY_SPOT_FALLBACK", label: "NIFTY Spot Fallback", type: "number", min: 15000, max: 35000, step: 50, effect: EFFECT.INSTANT, desc: "Fallback NIFTY price when no live quote.", default: "24000" },
-      { key: "ZERODHA_INV_AMOUNT", label: "Zerodha Investment Amount (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.INSTANT, desc: "Paper money pool for Zerodha strategies (₹).", default: "100000" },
+      { key: "ZERODHA_INV_AMOUNT", label: "Zerodha Investment Amount (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.INSTANT, desc: "Paper money pool for Zerodha strategies (₹).", default: "100000", subheader: "Capital" },
       { key: "FYERS_INV_AMOUNT", label: "Fyers Investment Amount (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.INSTANT, desc: "Paper money pool for Fyers strategies (₹).", default: "100000" },
       { key: "BACKTEST_CAPITAL", label: "Backtest Capital (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.BACKTEST },
     ],
@@ -405,6 +426,8 @@ const SETTINGS_SCHEMA = [
   {
     section: "Server & Broker",
     icon: "🖥️",
+    nav: "Server & Broker",
+    group: "System",
     fields: [
       { key: "PORT", label: "Port", type: "number", min: 1000, max: 65535, step: 1, effect: EFFECT.SERVER },
       { key: "EC2_IP", label: "EC2 IP", type: "text", effect: EFFECT.SERVER },
@@ -417,6 +440,8 @@ const SETTINGS_SCHEMA = [
   {
     section: "Backup & Restore",
     icon: "📦",
+    nav: "Backup & Restore",
+    group: "System",
     fields: [
       { key: "BACKUP_ENABLED", label: "Daily Data Backup", type: "toggle", effect: EFFECT.INSTANT, desc: "Cut a daily downloadable backup of your data.", default: "true" },
       { key: "BACKUP_HOUR_IST", label: "Snapshot Hour (IST)", type: "number", min: 0, max: 23, step: 1, effect: EFFECT.SERVER, desc: "Hour of day the backup is taken (IST).", default: "16" },
@@ -427,11 +452,13 @@ const SETTINGS_SCHEMA = [
   {
     section: "Telegram",
     icon: "📱",
+    nav: "Telegram",
+    group: "System",
     fields: [
-      { key: "TELEGRAM_CHAT_ID", label: "Chat ID", type: "text", effect: EFFECT.INSTANT, desc: "Leave blank to disable notifications." },
+      { key: "TELEGRAM_CHAT_ID", label: "Chat ID", type: "text", effect: EFFECT.INSTANT, desc: "Leave blank to disable notifications.", subheader: "Connection" },
       { key: "TG_ENABLED", label: "Telegram Alerts (Master)", type: "toggle", effect: EFFECT.INSTANT, desc: "Master switch for all Telegram alerts.", default: "true" },
 
-      { key: "TG_EMA_RSI_ST_STARTED", label: "EMA_RSI_ST — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an EMA_RSI_ST session starts.", default: "true" },
+      { key: "TG_EMA_RSI_ST_STARTED", label: "EMA_RSI_ST — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an EMA_RSI_ST session starts.", default: "true", subheader: "Session Start" },
       { key: "TG_BB_RSI_STARTED", label: "BB_RSI — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a BB_RSI session starts.", default: "true" },
       { key: "TG_PA_STARTED",    label: "Price Action — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a Price Action session starts.", default: "true" },
       { key: "TG_ORB_STARTED",      label: "ORB — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an ORB session starts.", default: "true" },
@@ -439,7 +466,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_TREND_PB_STARTED", label: "Trend Pullback — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a Trend Pullback session starts.", default: "true" },
       { key: "TG_GAPS_STARTED", label: "GAPS — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a GAPS session starts.", default: "true" },
 
-      { key: "TG_EMA_RSI_ST_ENTRY", label: "EMA_RSI_ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST entry.", default: "true" },
+      { key: "TG_EMA_RSI_ST_ENTRY", label: "EMA_RSI_ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST entry.", default: "true", subheader: "Trade Entry" },
       { key: "TG_BB_RSI_ENTRY", label: "BB_RSI — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BB_RSI entry.", default: "true" },
       { key: "TG_PA_ENTRY",    label: "Price Action — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Price Action entry.", default: "true" },
       { key: "TG_ORB_ENTRY",      label: "ORB — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every ORB entry.", default: "true" },
@@ -447,7 +474,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_TREND_PB_ENTRY", label: "Trend Pullback — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Trend Pullback entry.", default: "true" },
       { key: "TG_GAPS_ENTRY", label: "GAPS — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every GAPS entry.", default: "true" },
 
-      { key: "TG_EMA_RSI_ST_EXIT", label: "EMA_RSI_ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST exit.", default: "true" },
+      { key: "TG_EMA_RSI_ST_EXIT", label: "EMA_RSI_ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST exit.", default: "true", subheader: "Trade Exit" },
       { key: "TG_BB_RSI_EXIT", label: "BB_RSI — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BB_RSI exit.", default: "true" },
       { key: "TG_PA_EXIT",    label: "Price Action — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Price Action exit.", default: "true" },
       { key: "TG_ORB_EXIT",      label: "ORB — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every ORB exit.", default: "true" },
@@ -455,12 +482,12 @@ const SETTINGS_SCHEMA = [
       { key: "TG_TREND_PB_EXIT", label: "Trend Pullback — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Trend Pullback exit.", default: "true" },
       { key: "TG_GAPS_EXIT", label: "GAPS — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every GAPS exit.", default: "true" },
 
-      { key: "TG_EMA_RSI_ST_SIGNALS", label: "EMA_RSI_ST — Signal/Skip Alerts", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert why a trade was or wasn't taken.", default: "true" },
+      { key: "TG_EMA_RSI_ST_SIGNALS", label: "EMA_RSI_ST — Signal/Skip Alerts", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert why a trade was or wasn't taken.", default: "true", subheader: "Signal / Skip" },
       { key: "TG_BB_RSI_SIGNALS", label: "BB_RSI — Signal/Skip Alerts", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert why a trade was or wasn't taken.", default: "false" },
       { key: "TG_PA_SIGNALS",    label: "Price Action — Signal/Skip Alerts", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert why a trade was or wasn't taken.", default: "false" },
       { key: "TG_EMA9VWAP_SIGNALS", label: "EMA9+VWAP — Signal/Skip Alerts", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert why a trade was or wasn't taken.", default: "false" },
 
-      { key: "TG_EMA_RSI_ST_DAYREPORT", label: "EMA_RSI_ST — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send an EMA_RSI_ST day summary on stop.", default: "true" },
+      { key: "TG_EMA_RSI_ST_DAYREPORT", label: "EMA_RSI_ST — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send an EMA_RSI_ST day summary on stop.", default: "true", subheader: "Day Reports" },
       { key: "TG_BB_RSI_DAYREPORT", label: "BB_RSI — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a BB_RSI day summary on stop.", default: "true" },
       { key: "TG_PA_DAYREPORT",    label: "Price Action — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a Price Action day summary on stop.", default: "true" },
       { key: "TG_ORB_DAYREPORT",      label: "ORB — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send an ORB day summary on stop.", default: "true" },
@@ -474,6 +501,8 @@ const SETTINGS_SCHEMA = [
   {
     section: "CHARGES & STT — Trading Costs",
     icon: "💰",
+    nav: "Charges & STT",
+    group: "Trading",
     fields: [
       { key: "STT_OPT_SELL_PCT",       label: "Options STT (%)",      type: "number", min: 0, max: 1,  step: 0.01,  effect: EFFECT.INSTANT, desc: "STT on option sells (% of premium).", default: "0.15" },
       { key: "STT_FUT_SELL_PCT",       label: "Futures STT (%)",      type: "number", min: 0, max: 1,  step: 0.01,  effect: EFFECT.INSTANT, desc: "STT on futures sells (% of turnover).", default: "0.05" },
@@ -488,6 +517,8 @@ const SETTINGS_SCHEMA = [
   {
     section: "UI PREFERENCES",
     icon: "🎨",
+    nav: "UI Preferences",
+    group: "System",
     fields: [
       { key: "UI_THEME", label: "Application Theme", type: "select", options: ["dark", "light"], effect: EFFECT.INSTANT, desc: "Switch between dark and light mode.", default: "dark" },
     ],
@@ -495,6 +526,8 @@ const SETTINGS_SCHEMA = [
   {
     section: "MENU VISIBILITY — Show / hide sidebar items",
     icon: "👁",
+    nav: "Menu Visibility",
+    group: "System",
     fields: [
       { key: "UI_SHOW_DASHBOARD",      label: "Show Dashboard",            type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Dashboard menu.", default: "false", subheader: "Top-level menu items" },
       { key: "UI_SHOW_ALL_BACKTEST",   label: "Show All Backtest",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show the all-strategy Backtest menu.", default: "true" },
@@ -569,23 +602,25 @@ const SETTINGS_SCHEMA = [
   {
     section: "SECURITY & SAFETY — Auth, Rate Limits, Broker Resilience",
     icon: "🔒",
+    nav: "Security & Safety",
+    group: "System",
     fields: [
       // ── Credentials ─────────────────────────────────────────────────────────
-      { key: "API_SECRET",   label: "App Secret",     type: "password", effect: EFFECT.INSTANT, desc: "Password for action routes and settings (blank = off)." },
+      { key: "API_SECRET",   label: "App Secret",     type: "password", effect: EFFECT.INSTANT, desc: "Password for action routes and settings (blank = off).", subheader: "Credentials" },
       { key: "LOGIN_SECRET", label: "Login Password", type: "password", effect: EFFECT.INSTANT, desc: "Page login password (blank = open access)." },
 
       // ── Login / session ─────────────────────────────────────────────────────
-      { key: "LOGIN_SESSION_MIN",     label: "Login Idle Timeout (min)",      type: "number", min: 5,  max: 240, step: 5,  effect: EFFECT.INSTANT, desc: "Idle minutes before login expires.",                       default: "15" },
+      { key: "LOGIN_SESSION_MIN",     label: "Login Idle Timeout (min)",      type: "number", min: 5,  max: 240, step: 5,  effect: EFFECT.INSTANT, desc: "Idle minutes before login expires.",                       default: "15", subheader: "Login & Session" },
       { key: "LOGIN_RATE_MAX",        label: "Login: Max Failed Attempts",    type: "number", min: 1,  max: 50,  step: 1,  effect: EFFECT.INSTANT, desc: "Wrong-password attempts allowed before lockout.", default: "5" },
       { key: "LOGIN_RATE_WINDOW_MIN", label: "Login: Lockout Window (min)",   type: "number", min: 1,  max: 1440, step: 1, effect: EFFECT.INSTANT, desc: "Lockout window length, in minutes.",                                          default: "15" },
       { key: "LOGIN_OTP_MOBILE",      label: "Login: OTP Mobile Number",      type: "text",   effect: EFFECT.INSTANT, desc: "Typing this number on a locked-out login page sends an OTP to Telegram that clears the lockout (blank = off).", default: "" },
 
       // ── Write rate limit (POST/PUT/DELETE/PATCH per IP) ─────────────────────
-      { key: "WRITE_RATE_PER_MIN", label: "Write Rate (req/min/IP)", type: "number", min: 0,   max: 6000, step: 10, effect: EFFECT.INSTANT, desc: "Max state-changing requests per minute per IP (0 = off).", default: "120" },
+      { key: "WRITE_RATE_PER_MIN", label: "Write Rate (req/min/IP)", type: "number", min: 0,   max: 6000, step: 10, effect: EFFECT.INSTANT, desc: "Max state-changing requests per minute per IP (0 = off).", default: "120", subheader: "Rate Limits" },
       { key: "WRITE_RATE_BURST",   label: "Write Rate Burst",        type: "number", min: 1,   max: 500,  step: 1,  effect: EFFECT.INSTANT, desc: "Short-burst request allowance.",  default: "30"  },
 
       // ── Broker resilience (circuit breaker + retry) ─────────────────────────
-      { key: "BROKER_CB_FAIL_THRESHOLD",     label: "Broker Circuit: Fail Threshold",      type: "number", min: 2, max: 30,  step: 1,  effect: EFFECT.INSTANT, desc: "Failures before the broker circuit opens.",                                       default: "5"  },
+      { key: "BROKER_CB_FAIL_THRESHOLD",     label: "Broker Circuit: Fail Threshold",      type: "number", min: 2, max: 30,  step: 1,  effect: EFFECT.INSTANT, desc: "Failures before the broker circuit opens.",                                       default: "5", subheader: "Broker Resilience" },
       { key: "BROKER_CB_OPEN_SEC",           label: "Broker Circuit: Open Duration (sec)", type: "number", min: 5, max: 600, step: 5,  effect: EFFECT.INSTANT, desc: "Seconds the broker circuit stays open.",                    default: "30" },
       { key: "BROKER_RETRY_WRITE_ATTEMPTS",  label: "Order Retry Attempts (writes)",       type: "number", min: 1, max: 4,   step: 1,  effect: EFFECT.INSTANT, desc: "Attempts for order writes (1 = no retry).", default: "2" },
       { key: "BROKER_RETRY_READ_ATTEMPTS",   label: "Query Retry Attempts (reads)",        type: "number", min: 1, max: 6,   step: 1,  effect: EFFECT.INSTANT, desc: "Attempts for data reads.",                                  default: "3"  },
@@ -593,6 +628,17 @@ const SETTINGS_SCHEMA = [
     ],
   },
 ];
+
+// URL-safe id for a section — it is the `#hash` of the Settings page, so it has
+// to survive a round-trip through location.hash and a CSS attribute selector.
+// Built from the short `nav` label when there is one; section titles carry
+// brackets, slashes and em-dashes that would come back percent-encoded.
+function sectionSlug(s) {
+  return String(s.nav || s.section)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
 
 // ── Per-mode settings snapshot for the daily trade-log JSONL ────────────────
 // Each mode's daily JSONL file is seeded with a settings snapshot before the
@@ -1295,7 +1341,7 @@ router.get("/", (req, res) => {
   });
 
   // Group consecutive PA_PATTERN_* fields into a 2-column grid wrapper
-  function renderSectionFields(fields) {
+  function renderTabFields(fields) {
     const out = [];
     let group = [];
     const flushGroup = () => {
@@ -1309,15 +1355,30 @@ router.get("/", (req, res) => {
         group.push(renderField(f));
       } else {
         flushGroup();
-        if (f.subheader) {
-          out.push(`<div class="subgroup-header">${f.subheader}</div>`);
-        }
         out.push(renderField(f));
       }
     }
     flushGroup();
     return out.join("");
   }
+
+  // ── Sub-tabs inside a section ──────────────────────────────────────────────
+  // A field carrying `subheader` opens a new tab; fields before the first one
+  // fall into an implicit "General" tab. One tab → no tab bar is rendered.
+  function splitIntoTabs(fields) {
+    const tabs = [];
+    let cur = null;
+    for (const f of fields) {
+      if (f.subheader || !cur) {
+        cur = { title: f.subheader || "General", fields: [] };
+        tabs.push(cur);
+      }
+      cur.fields.push(f);
+    }
+    return tabs;
+  }
+
+  const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
   // Build a flat key→default map so the client can populate the form with
   // schema defaults on demand (used by the "Load Defaults" button per section).
@@ -1346,30 +1407,67 @@ router.get("/", (req, res) => {
     "GAPS STRATEGY — Fyers":                                        gapsModeOn,
   };
 
+  // Rail entries are collected while the sections render so the index and the
+  // panes can never drift apart.
+  const railItems = [];
   const sectionsHtml = SETTINGS_SCHEMA.map((s, idx) => {
     if (SECTION_TO_MASTER[s.section] === false) return "";
-    const sectionId = s.section.replace(/\s+/g, "-").toLowerCase();
-    const eyeBtn = `<button type="button" class="section-eye-btn" onclick="event.stopPropagation();showSectionSummary(${idx})" title="View all configured values">👁</button>`;
-    const defaultsBtn = `<button type="button" class="section-defaults-btn" onclick="event.stopPropagation();loadSectionDefaults('${sectionId}')" title="Fill all fields in this section with the recommended schema defaults — does NOT save until you click Save Changes">↺ Load Defaults</button>`;
-    const openClass = idx === 0 ? ' open' : '';
+    const sectionId = sectionSlug(s);
+    const eyeBtn = `<button type="button" class="section-eye-btn" onclick="showSectionSummary(${idx})" title="View all configured values">👁</button>`;
+    const defaultsBtn = `<button type="button" class="section-defaults-btn" onclick="loadSectionDefaults('${sectionId}')" title="Fill all fields in this section with the recommended schema defaults — does NOT save until you click Save Changes">↺ Load Defaults</button>`;
     const fieldCount = s.fields.length;
+    const tabs = splitIntoTabs(s.fields);
+    railItems.push({ group: s.group || "System", id: sectionId, icon: s.icon, nav: s.nav || s.section, count: fieldCount });
+
+    const tabBar = tabs.length > 1
+      ? `<div class="tab-bar">${tabs.map((t, i) =>
+          `<button type="button" class="tab-btn${i === 0 ? " active" : ""}" data-tab="${i}" onclick="showTab(this)">${esc(t.title)}<span class="tab-n">${t.fields.length}</span></button>`
+        ).join("")}</div>`
+      : "";
+    const panels = tabs.map((t, i) =>
+      `<div class="tab-panel${i === 0 ? " active" : ""}" data-tab="${i}">${renderTabFields(t.fields)}</div>`
+    ).join("");
+
     return `
-    <div class="settings-section${openClass}" data-section="${sectionId}">
-      <div class="section-title" onclick="toggleSection(this)">
-        <span class="section-chevron">▶</span>
-        ${s.icon} ${s.section}
-        <span style="font-size:0.6rem;color:var(--dim);font-weight:500;letter-spacing:0;text-transform:none;">${fieldCount} settings</span>
-        ${defaultsBtn}
-        ${eyeBtn}
+    <div class="settings-section" data-section="${sectionId}">
+      <div class="section-head">
+        <div class="section-head-title">${s.icon} ${s.section}<span class="sh-count">${fieldCount} settings</span></div>
+        <div class="section-head-actions">${defaultsBtn}${eyeBtn}</div>
       </div>
-      <div class="section-card">
-        ${renderSectionFields(s.fields)}
-      </div>
+      ${tabBar}
+      <div class="section-card">${panels}</div>
     </div>`;
+  }).join("");
+
+  // Server Control has no schema fields but still needs an index entry.
+  railItems.push({ group: "System", id: "server-control", icon: "🔄", nav: "Server Control", count: 0 });
+
+  const RAIL_GROUP_ORDER = ["Strategies", "Trading", "System"];
+  const railHtml = RAIL_GROUP_ORDER.map(g => {
+    const items = railItems.filter(r => r.group === g);
+    if (!items.length) return "";
+    return `<div class="rail-group">${g}</div>` + items.map(r => `
+      <button type="button" class="rail-item" data-target="${r.id}" onclick="showSection('${r.id}')">
+        <span class="rail-icon">${r.icon}</span>
+        <span class="rail-label">${esc(r.nav)}</span>
+        ${r.count ? `<span class="rail-count" data-count="${r.count}">${r.count}</span>` : ""}
+        <span class="rail-dot" title="unsaved changes in this section"></span>
+      </button>`).join("");
   }).join("");
 
   const sectionSummaryJSON = JSON.stringify(sectionSummaries);
   const schemaDefaultsJSON = JSON.stringify(SCHEMA_DEFAULTS);
+  const sectionNamesJSON = JSON.stringify(
+    SETTINGS_SCHEMA.reduce((m, s, i) => { m[i] = s.section; return m; }, {})
+  );
+  // key → section id, so the index can flag which sections hold unsaved edits
+  const keySectionJSON = JSON.stringify(
+    SETTINGS_SCHEMA.reduce((m, s) => {
+      const id = sectionSlug(s);
+      for (const f of s.fields) m[f.key] = id;
+      return m;
+    }, {})
+  );
 
   res.setHeader("Content-Type", "text/html");
   res.send(`<!DOCTYPE html>
@@ -1456,7 +1554,49 @@ router.get("/", (req, res) => {
     .bc-current { color: var(--text2); padding: 2px 6px; }
 
     /* ── Page ─────────────────────────────────────────────── */
-    .page { padding: 28px 28px 60px; max-width: 880px; }
+    .page { padding: 24px 28px 60px; max-width: 1220px; }
+
+    /* ── Two-pane shell: section index on the left, one section on the right ── */
+    .settings-split {
+      display: grid;
+      grid-template-columns: 238px minmax(0, 1fr);
+      gap: 18px;
+      align-items: start;
+    }
+    .sec-rail {
+      position: sticky; top: 12px;
+      max-height: calc(100vh - 40px); overflow-y: auto;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+      padding: 8px; scrollbar-width: thin;
+    }
+    .rail-group {
+      font-size: 0.58rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1.4px;
+      color: var(--dim); padding: 12px 10px 6px;
+    }
+    .rail-group:first-child { padding-top: 4px; }
+    .rail-item {
+      display: flex; align-items: center; gap: 8px; width: 100%;
+      padding: 8px 10px; margin-bottom: 2px;
+      background: transparent; border: 1px solid transparent; border-radius: 8px;
+      color: var(--text); font-family: inherit; font-size: 0.78rem; font-weight: 600;
+      text-align: left; cursor: pointer; transition: background 0.12s, border-color 0.12s, color 0.12s;
+    }
+    .rail-item:hover { background: var(--surface2); border-color: var(--border); }
+    .rail-item.active { background: rgba(59,130,246,0.12); border-color: rgba(59,130,246,0.35); color: var(--text2); }
+    .rail-icon { font-size: 0.85rem; flex-shrink: 0; }
+    .rail-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .rail-count {
+      font-size: 0.6rem; font-family: 'JetBrains Mono', monospace; color: var(--dim);
+      background: var(--surface2); border-radius: 4px; padding: 1px 5px; flex-shrink: 0;
+    }
+    .rail-item.active .rail-count { color: var(--accent); }
+    .rail-count.hit { color: var(--accent); background: rgba(59,130,246,0.14); }
+    .rail-dot {
+      width: 7px; height: 7px; border-radius: 50%; background: var(--yellow);
+      flex-shrink: 0; visibility: hidden;
+    }
+    .rail-item.dirty .rail-dot { visibility: visible; }
+    .rail-item.search-hidden { display: none; }
 
     /* ── Sticky save bar ─────────────────────────────────── */
     .save-bar {
@@ -1471,62 +1611,56 @@ router.get("/", (req, res) => {
     .save-bar .change-count::before { content:''; display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--yellow); margin-right:8px; vertical-align:middle; }
     .save-bar .btn-group { display: flex; gap: 10px; }
 
-    /* ── Section ─────────────────────────────────────────── */
-    .settings-section { margin-bottom: 16px; }
-    .section-title {
-      font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
-      letter-spacing: 1.5px; color: var(--muted);
-      margin-bottom: 0;
-      display: flex; align-items: center; gap: 10px;
-      cursor: pointer; user-select: none;
+    /* ── Section: only the selected one is mounted on screen ── */
+    .settings-section { display: none; }
+    .settings-section.active { display: block; }
+    .section-head {
+      display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
       padding: 12px 16px;
       background: var(--surface);
       border: 1px solid var(--border);
-      border-radius: 12px;
-      transition: all 0.2s;
+      border-radius: 12px 12px 0 0;
+      border-bottom: none; /* the tab bar or the card continues the box */
     }
-    .section-title:hover { background: var(--surface2); border-color: var(--border2); }
-    .settings-section.open > .section-title { border-radius: 12px 12px 0 0; border-bottom-color: transparent; }
-    .section-title::after { content:''; flex:1; height:1px; background:var(--border); }
-    .section-chevron {
-      display: inline-flex; align-items: center; justify-content: center;
-      width: 20px; height: 20px; font-size: 0.65rem; color: var(--muted);
-      transition: transform 0.25s ease; flex-shrink: 0;
+    .section-head-title {
+      flex: 1; min-width: 0;
+      font-size: 0.78rem; font-weight: 700; color: var(--text2);
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
     }
-    .settings-section.open .section-chevron { transform: rotate(90deg); }
+    .sh-count { font-size: 0.6rem; color: var(--dim); font-weight: 500; }
+    .section-head-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+    /* ── Sub-tabs inside a section ─────────────────────────── */
+    .tab-bar {
+      display: flex; flex-wrap: wrap; gap: 6px;
+      padding: 0 12px 10px;
+      background: var(--surface);
+      border-left: 1px solid var(--border); border-right: 1px solid var(--border);
+    }
+    .tab-btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 12px; border-radius: 7px;
+      background: var(--surface2); border: 1px solid var(--border);
+      color: var(--muted); font-family: inherit; font-size: 0.7rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.6px; cursor: pointer;
+      transition: color 0.12s, border-color 0.12s, background 0.12s;
+    }
+    .tab-btn:hover { color: var(--text2); border-color: var(--border2); }
+    .tab-btn.active { background: rgba(59,130,246,0.12); border-color: rgba(59,130,246,0.4); color: var(--accent); }
+    .tab-n { font-size: 0.6rem; font-weight: 600; opacity: 0.7; letter-spacing: 0; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    /* While searching, tabs are irrelevant — every matching row is shown at once */
+    .sec-pane.searching .tab-bar { display: none; }
+    .sec-pane.searching .tab-panel { display: block; }
+
     .section-card {
       background: var(--surface);
       border: 1px solid var(--border);
       border-top: none;
       border-radius: 0 0 12px 12px;
       overflow: hidden;
-      max-height: 0;
-      opacity: 0;
-      transition: max-height 0.35s ease, opacity 0.25s ease;
     }
-    .settings-section.open > .section-card {
-      max-height: 5000px;
-      opacity: 1;
-    }
-
-    /* ── Sub-group header inside a section ─────────────────── */
-    .subgroup-header {
-      font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
-      letter-spacing: 1.2px; color: var(--text2);
-      padding: 14px 20px 8px;
-      background: var(--surface2);
-      border-bottom: 1px solid var(--border);
-      display: flex; align-items: center; gap: 10px;
-    }
-    .subgroup-header::before {
-      content:''; display:inline-block;
-      width: 3px; height: 12px; border-radius: 2px;
-      background: var(--accent);
-    }
-    .subgroup-header::after {
-      content:''; flex: 1; height: 1px; background: var(--border);
-    }
-    .setting-row + .subgroup-header { margin-top: 4px; }
 
     /* ── Search bar ─────────────────────────────────────── */
     .settings-search-bar {
@@ -1553,9 +1687,14 @@ router.get("/", (req, res) => {
     .settings-search-bar.active { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(59,130,246,0.15), 0 4px 14px rgba(0,0,0,0.18); }
     .setting-row.search-hit { box-shadow: inset 3px 0 0 var(--accent); }
     .setting-row.search-miss { display: none !important; }
-    .subgroup-header.search-miss { display: none !important; }
-    .settings-section.search-hidden { display: none !important; }
     .ssb-empty { color: var(--yellow); font-style: italic; }
+    .sec-none {
+      display: none; padding: 22px 20px; text-align: center;
+      font-size: 0.8rem; color: var(--muted);
+      background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    }
+    .sec-pane.no-hits .settings-section { display: none !important; }
+    .sec-pane.no-hits .sec-none { display: block; }
 
     /* ── Setting row ─────────────────────────────────────── */
     .setting-row {
@@ -1572,7 +1711,7 @@ router.get("/", (req, res) => {
     .field-desc { font-size: 0.68rem; color: var(--muted); margin-top: 4px; line-height: 1.4; }
 
     /* ── Inputs ──────────────────────────────────────────── */
-    input[type="text"], input[type="number"], input[type="date"], input[type="time"], select {
+    input[type="text"], input[type="number"], input[type="date"], input[type="time"], input[type="password"], select {
       background: var(--bg);
       border: 1px solid var(--border);
       color: var(--text);
@@ -1832,10 +1971,81 @@ router.get("/", (req, res) => {
        rules below don't start until 640px. Collapse the 2-up pattern grid, let
        rows wrap, and give inputs more room so values aren't clipped/squeezed. */
     @media (max-width:1200px) {
+      .settings-split { grid-template-columns: 200px minmax(0, 1fr); gap: 14px; }
       .pattern-grid { grid-template-columns: 1fr; }
       .pattern-grid .setting-row { border-right: none; }
       .setting-row { flex-wrap: wrap; }
-      input[type="text"], input[type="number"], input[type="date"], input[type="time"], select { max-width: 360px; }
+      input[type="text"], input[type="number"], input[type="date"], input[type="time"], input[type="password"], select { max-width: 360px; }
+    }
+
+    /* ── Tablet / phone: the index turns into a horizontal chip strip ──
+       Below this width a 200px column would leave nothing for the fields, so
+       the rail unsticks, scrolls sideways above the pane, and drops its group
+       headings. It stays sticky under the save bar so switching section never
+       needs a scroll back to the top. */
+    @media (max-width:900px) {
+      .settings-split { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+      /* Static, not sticky: the save bar already owns top:0 and would cover it. */
+      .sec-rail {
+        position: static;
+        display: flex; gap: 6px; padding: 8px;
+        max-height: none; overflow-x: auto; overflow-y: hidden;
+        -webkit-overflow-scrolling: touch; scrollbar-width: none;
+        overscroll-behavior-x: contain;
+      }
+      .sec-rail::-webkit-scrollbar { display: none; }
+      .rail-group { display: none; }
+      .rail-item {
+        width: auto; flex-shrink: 0; margin-bottom: 0;
+        min-height: 44px; padding: 8px 12px;
+        background: var(--surface2); border-color: var(--border);
+      }
+      .rail-label { max-width: 46vw; }
+    }
+
+    /* ── Phone (incl. iPhone 17 Pro Max, 440pt wide) ──
+       One column everywhere: the label block and its control stack instead of
+       fighting for the same row, controls go full-width with 44px touch
+       targets, and nothing is allowed to push the page sideways. */
+    @media (max-width:640px) {
+      .page { padding: 12px 12px 48px; max-width: 100%; }
+      .settings-split { gap: 10px; }
+      .section-head { padding: 10px 12px; gap: 8px; }
+      .section-head-title { font-size: 0.74rem; }
+      .section-head-actions { width: 100%; }
+      .section-defaults-btn, .section-eye-btn { margin-left: 0; min-height: 34px; }
+      .section-defaults-btn { flex: 1; text-align: center; }
+      .tab-bar { padding: 0 10px 8px; gap: 5px; }
+      .tab-btn { min-height: 38px; padding: 6px 10px; font-size: 0.66rem; }
+      .setting-row {
+        display: block; padding: 12px 14px;
+      }
+      .setting-info { margin-bottom: 8px; }
+      .setting-label { font-size: 0.82rem; line-height: 1.35; }
+      .effect-badge { margin-left: 6px; }
+      .env-key-tag { display: inline-block; margin: 4px 0 0 0; }
+      .setting-row > input,
+      .setting-row > select,
+      .setting-row > div:last-child:not(.setting-info) { width: 100%; }
+      input[type="text"], input[type="number"], input[type="date"], input[type="time"], input[type="password"], select {
+        min-width: 0; max-width: 100%; width: 100%;
+        font-size: 16px; /* iOS zooms the page on focus below 16px */
+        padding: 11px 14px;
+      }
+      input[type="time"] { width: 100% !important; }
+      .toggle-switch { margin-left: auto; }
+      .setting-row .toggle-switch { display: block; }
+      /* A toggle is small enough to stay beside its label — only text inputs
+         and selects need the full-width stack above. */
+      .setting-row:has(> .toggle-switch) { display: flex; align-items: center; gap: 12px; }
+      .setting-row:has(> .toggle-switch) .setting-info { margin-bottom: 0; }
+      .custom-row { flex-direction: column; align-items: stretch; }
+      .custom-row input[type="text"] { min-width: 100%; }
+      .save-bar { padding: 10px 12px; }
+      .save-bar .btn-group { flex: 1; }
+      .save-bar .btn-group button { flex: 1; min-height: 44px; }
+      .top-bar { padding: 12px 12px 12px 48px; }
+      .summary-table { font-size: 0.7rem; }
     }
 
     /* The top-bar actions are a deliberate single-line scroller with the
@@ -1849,25 +2059,6 @@ router.get("/", (req, res) => {
         flex-wrap: wrap !important; overflow-x: visible !important;
         white-space: normal !important; margin-left: 0 !important; width: 100%;
       }
-      /* A section header is a nowrap flex row ending in two flex-shrink:0
-         buttons, with a flex:1 rule line between. At 320px that pushed Load
-         Defaults and 👁 past the clipped right edge of .main-content. Dropping
-         the decorative rule and allowing a wrap keeps both on screen. */
-      .section-title { flex-wrap: wrap; }
-      .section-title::after { display: none; }
-    }
-
-    /* ── Mobile ──────────────────────────────────────────── */
-    @media (max-width:640px) {
-      .page { padding: 16px 14px 40px; }
-      .top-bar { padding: 14px 14px 14px 50px; }
-      .setting-row { padding: 12px 14px; flex-wrap: wrap; }
-      .pattern-grid { grid-template-columns: 1fr; }
-      .pattern-grid .setting-row { border-right: none; }
-      input[type="text"], input[type="number"], input[type="date"], input[type="time"], select { min-width: 120px; max-width: 100%; width: 100%; }
-      .custom-row { flex-direction: column; align-items: stretch; }
-      .custom-row input[type="text"] { min-width: 100%; }
-      .save-bar { padding: 10px 14px; }
     }
   </style>
 </head>
@@ -1919,22 +2110,34 @@ router.get("/", (req, res) => {
         <span class="ssb-count" id="settingsSearchCount"></span>
         <button type="button" class="ssb-clear" id="settingsSearchClear" onclick="document.getElementById('settingsSearchInput').value='';filterSettings('');" title="Clear (Esc)">✕</button>
       </div>
-      ${sectionsHtml}
+      <div class="settings-split">
+        <aside class="sec-rail" id="secRail" aria-label="Settings sections">
+          ${railHtml}
+        </aside>
 
-      <!-- Restart Server -->
-      <div class="settings-section">
-        <div class="section-title">🔄 Server Control</div>
-        <div class="restart-section">
-          <div class="restart-info">
-            <div class="restart-title">Restart Server</div>
-            <div class="restart-desc">
-              Restarts the Node.js process to apply all pending changes (Port, API keys, cached values).
-              Active trading sessions will be stopped. The page will reload automatically.
+        <div class="sec-pane" id="secPane">
+          ${sectionsHtml}
+
+          <!-- Restart Server -->
+          <div class="settings-section" data-section="server-control">
+            <div class="section-head">
+              <div class="section-head-title">🔄 Server Control</div>
+            </div>
+            <div class="restart-section" style="margin-top:0;border-radius:0 0 12px 12px;">
+              <div class="restart-info">
+                <div class="restart-title">Restart Server</div>
+                <div class="restart-desc">
+                  Restarts the Node.js process to apply all pending changes (Port, API keys, cached values).
+                  Active trading sessions will be stopped. The page will reload automatically.
+                </div>
+              </div>
+              <button class="btn-restart" id="restartBtn" onclick="restartServer()">
+                <span>🔄</span> Restart Server
+              </button>
             </div>
           </div>
-          <button class="btn-restart" id="restartBtn" onclick="restartServer()">
-            <span>🔄</span> Restart Server
-          </button>
+
+          <div class="sec-none" id="secNone">No setting matches your search.</div>
         </div>
       </div>
     </div>
@@ -1946,70 +2149,129 @@ router.get("/", (req, res) => {
 
 <script>
 ${modalJS()}
-function toggleSection(titleEl) {
-  var section = titleEl.parentElement;
-  var willOpen = !section.classList.contains('open');
-  // Accordion: close every other settings-section first
-  if (willOpen) {
-    document.querySelectorAll('.settings-section.open').forEach(function(s){
-      if (s !== section) s.classList.remove('open');
-    });
+// ── Section index: exactly one section is on screen at a time ───────────────
+var _keySection     = ${keySectionJSON};
+var _activeSection  = null;
+var _ssbPrevSection = null; // section open before a search began (restored on clear)
+
+function showSection(id, opts) {
+  opts = opts || {};
+  var pane = document.getElementById('secPane');
+  var target = pane.querySelector('.settings-section[data-section="' + id + '"]');
+  if (!target) return;
+  pane.querySelectorAll('.settings-section.active').forEach(function(s){ s.classList.remove('active'); });
+  target.classList.add('active');
+  document.querySelectorAll('.rail-item').forEach(function(b){
+    b.classList.toggle('active', b.getAttribute('data-target') === id);
+  });
+  _activeSection = id;
+  // Picking a section by hand during a search is a real choice — don't snap
+  // back to wherever the search started once the box is cleared.
+  if (!opts.auto) _ssbPrevSection = null;
+  if (opts.hash !== false) { try { history.replaceState(null, '', '#' + id); } catch (e) {} }
+  // Keep the selected entry in view. On phones the index is a horizontal strip,
+  // so scrollIntoView is right; on desktop the rail scrolls inside itself and
+  // scrollIntoView would drag the whole window with it, so nudge it by hand.
+  var rail = document.getElementById('secRail');
+  var chip = rail ? rail.querySelector('.rail-item[data-target="' + id + '"]') : null;
+  if (chip && rail) {
+    if (window.innerWidth <= 900) {
+      chip.scrollIntoView({ block: 'nearest', inline: 'center' });
+    } else {
+      var cr = chip.getBoundingClientRect(), rr = rail.getBoundingClientRect();
+      if (cr.top < rr.top) rail.scrollTop -= (rr.top - cr.top);
+      else if (cr.bottom > rr.bottom) rail.scrollTop += (cr.bottom - rr.bottom);
+    }
   }
-  section.classList.toggle('open');
+  // Bring the section header back on screen only when it has scrolled away
+  if (opts.top !== false) {
+    var head = target.querySelector('.section-head');
+    if (head) {
+      var hr = head.getBoundingClientRect();
+      if (hr.top < 0 || hr.top > window.innerHeight - 60) head.scrollIntoView({ block: 'nearest' });
+    }
+  }
 }
 
+function showTab(btn) {
+  var section = btn.closest('.settings-section');
+  if (!section) return;
+  var idx = btn.getAttribute('data-tab');
+  section.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.toggle('active', b === btn); });
+  section.querySelectorAll('.tab-panel').forEach(function(p){
+    p.classList.toggle('active', p.getAttribute('data-tab') === idx);
+  });
+}
+
+// Flag index entries whose section holds unsaved edits
+function updateRailDirty() {
+  var counts = {};
+  window._dirtyKeys.forEach(function(k){
+    var sid = _keySection[k];
+    if (sid) counts[sid] = (counts[sid] || 0) + 1;
+  });
+  document.querySelectorAll('.rail-item').forEach(function(b){
+    b.classList.toggle('dirty', !!counts[b.getAttribute('data-target')]);
+  });
+}
+
+// Open the section named in the URL hash, else the first one in the index.
+// The hash is matched against the index by value rather than fed into a
+// selector: a hand-edited '#a"]' would make querySelector throw and take the
+// rest of this script — dirty tracking included — down with it.
+(function initSections(){
+  var wanted = '';
+  try { wanted = decodeURIComponent((location.hash || '').replace(/^#/, '')); } catch (e) {}
+  var items = document.querySelectorAll('.rail-item');
+  if (!items.length) return;
+  var target = null;
+  items.forEach(function(b){
+    if (!target && b.getAttribute('data-target') === wanted) target = wanted;
+  });
+  showSection(target || items[0].getAttribute('data-target'), { hash: false, top: false });
+})();
+
 // ── Settings search: filter rows by label / env key / description ──
-var _ssbPrevOpenIds = null; // snapshot of which sections were open before search began
+// While a query is active the index shows only sections with matches (and how
+// many), and the open section shows every matching row across all its tabs.
 function filterSettings(rawQuery) {
   var q = String(rawQuery || '').trim().toLowerCase();
   var bar = document.getElementById('settingsSearchBar');
   var countEl = document.getElementById('settingsSearchCount');
+  var pane = document.getElementById('secPane');
 
   // Empty query → restore pre-search state
   if (!q) {
     bar.classList.remove('active');
     countEl.textContent = '';
     countEl.classList.remove('ssb-empty');
+    pane.classList.remove('searching', 'no-hits');
     document.querySelectorAll('.setting-row.search-hit, .setting-row.search-miss').forEach(function(r){
       r.classList.remove('search-hit', 'search-miss');
     });
-    document.querySelectorAll('.settings-section.search-hidden').forEach(function(s){
-      s.classList.remove('search-hidden');
+    document.querySelectorAll('.rail-item').forEach(function(b){
+      b.classList.remove('search-hidden');
+      var c = b.querySelector('.rail-count');
+      if (c) { c.textContent = c.getAttribute('data-count'); c.classList.remove('hit'); }
     });
-    document.querySelectorAll('.subgroup-header.search-miss').forEach(function(h){
-      h.classList.remove('search-miss');
-    });
-    if (_ssbPrevOpenIds) {
-      // Restore which sections were open before the search began
-      document.querySelectorAll('.settings-section').forEach(function(s){
-        var id = s.getAttribute('data-section');
-        if (_ssbPrevOpenIds.indexOf(id) !== -1) s.classList.add('open');
-        else s.classList.remove('open');
-      });
-      _ssbPrevOpenIds = null;
-    }
+    if (_ssbPrevSection) { showSection(_ssbPrevSection, { top: false, auto: true }); _ssbPrevSection = null; }
     return;
   }
 
-  // First keystroke of a new search → snapshot the currently-open sections
-  if (_ssbPrevOpenIds === null) {
-    _ssbPrevOpenIds = Array.prototype.map.call(
-      document.querySelectorAll('.settings-section.open'),
-      function(s){ return s.getAttribute('data-section'); }
-    );
-  }
+  // First keystroke of a new search → remember where the user was
+  if (_ssbPrevSection === null) _ssbPrevSection = _activeSection;
 
   bar.classList.add('active');
-  var totalHits = 0;
-  var sections = document.querySelectorAll('.settings-section');
-  sections.forEach(function(section){
-    if (!section.hasAttribute('data-section')) return; // skip Server-Control section
-    var rows = section.querySelectorAll('.setting-row');
+  pane.classList.add('searching');
+
+  var totalHits = 0, firstHitId = null, activeHits = 0;
+  document.querySelectorAll('.settings-section[data-section]').forEach(function(section){
+    var id = section.getAttribute('data-section');
     var sectionHits = 0;
-    rows.forEach(function(row){
-      var label = (row.querySelector('.setting-label') || {}).textContent || '';
+    section.querySelectorAll('.setting-row').forEach(function(row){
+      var label  = (row.querySelector('.setting-label') || {}).textContent || '';
       var keyTag = (row.querySelector('.env-key-tag') || {}).textContent || '';
-      var desc  = (row.querySelector('.field-desc') || {}).textContent || '';
+      var desc   = (row.querySelector('.field-desc') || {}).textContent || '';
       var hay = (label + ' ' + keyTag + ' ' + desc).toLowerCase();
       if (hay.indexOf(q) !== -1) {
         row.classList.add('search-hit');
@@ -2020,28 +2282,20 @@ function filterSettings(rawQuery) {
         row.classList.add('search-miss');
       }
     });
-    if (sectionHits > 0) {
-      section.classList.remove('search-hidden');
-      section.classList.add('open'); // auto-expand sections with matches
-    } else {
-      section.classList.add('search-hidden');
+    var rail = document.querySelector('.rail-item[data-target="' + id + '"]');
+    if (rail) {
+      rail.classList.toggle('search-hidden', sectionHits === 0);
+      var c = rail.querySelector('.rail-count');
+      if (c) { c.textContent = sectionHits; c.classList.toggle('hit', sectionHits > 0); }
     }
-    // Hide subgroup headers whose rows are all misses
-    var headers = section.querySelectorAll('.subgroup-header');
-    headers.forEach(function(h){
-      var anyHit = false;
-      var n = h.nextElementSibling;
-      while (n && !n.classList.contains('subgroup-header')) {
-        if (n.classList.contains('setting-row') && !n.classList.contains('search-miss')) { anyHit = true; break; }
-        // also check nested rows (e.g. inside .pattern-grid)
-        if (n.querySelector && n.querySelector('.setting-row:not(.search-miss)')) { anyHit = true; break; }
-        n = n.nextElementSibling;
-      }
-      if (anyHit) h.classList.remove('search-miss');
-      else h.classList.add('search-miss');
-    });
+    if (sectionHits > 0 && !firstHitId) firstHitId = id;
+    if (id === _activeSection) activeHits = sectionHits;
     totalHits += sectionHits;
   });
+
+  // Nothing to see in the open section → jump to the first one that has matches
+  if (totalHits > 0 && activeHits === 0 && firstHitId) showSection(firstHitId, { top: false, auto: true });
+  pane.classList.toggle('no-hits', totalHits === 0);
 
   countEl.classList.toggle('ssb-empty', totalHits === 0);
   countEl.textContent = totalHits === 0 ? 'no matches' : (totalHits + ' match' + (totalHits === 1 ? '' : 'es'));
@@ -2130,6 +2384,7 @@ function updateSaveBar() {
   var bar = document.getElementById('saveBar');
   var count = document.getElementById('changeCount');
   var n = window._dirtyKeys.size;
+  updateRailDirty();
   if (n > 0) {
     bar.classList.add('visible');
     count.textContent = n + ' change' + (n > 1 ? 's' : '');
@@ -3095,7 +3350,7 @@ ${expiryHolidayModalJS()}
 // ── Section Summary (Eye icon) ─────────────────────────────────────────────
 var _sectionSummaries = ${sectionSummaryJSON};
 var _schemaDefaults   = ${schemaDefaultsJSON};
-var _sectionNames = { 0: 'Trading Strategy (5-min)', 1: 'BB_RSI Strategy (BB+SuperTrend+RSI)' };
+var _sectionNames = ${sectionNamesJSON};
 
 // ── Load Defaults (per section) ────────────────────────────────────────────
 // Populates every input in the section with its schema default, marks dirty,
