@@ -804,6 +804,8 @@ const OPEN_PATHS = [
   "/all-backtest",
   "/all-backtest/stats",
   "/edge-analytics",
+  "/advisor",             // settings advisor — read-only, suggests but never writes
+  "/advisor/data",
   "/consolidation-report",
   "/live-consolidation",
   "/live-consolidation/data",
@@ -974,6 +976,7 @@ app.use("/consolidation",       require("./routes/consolidation"));     // ← u
 app.use("/live-consolidation",  require("./routes/liveConsolidation")); // ← unified cross-mode LIVE trade history + analytics
 app.use("/edge-analytics",      require("./routes/edgeAnalytics"));     // ← edge metrics (WR/expectancy/PF/drawdown/by-hour) over recorded trades
 app.use("/consolidation-report", require("./routes/consolidationReport")); // ← printable consolidated report (paper+live, week/month/range filters, Save-as-PDF)
+app.use("/advisor",             require("./routes/advisor"));           // ← offline settings advisor over the recorded trade book (read-only)
 app.use("/realtime",            require("./routes/realtime"));          // ← unified real-time monitor (PAPER/LIVE toggle, all 3 strategies)
 app.use("/replay",              require("./routes/replay"));            // ← deterministic tick-replay backtest (PAPER = REPLAY = LIVE)
 app.use("/all-backtest",   require("./routes/allBacktest"));    // ← unified backtest dashboard (all 3 strategies, stats only)
@@ -3629,6 +3632,10 @@ server.listen(PORT, HOST, () => {
   // ── Daily downloadable data backup snapshot ────────────────────────────────
   try { require("./utils/backupManager").start(); }
   catch (err) { console.warn(`[backup] scheduler start failed: ${err.message}`); }
+
+  // ── Weekly settings-advisor snapshot (Sunday 08:00 IST, offline) ───────────
+  try { require("./utils/settingsAdvisor").start(); }
+  catch (err) { console.warn(`[advisor] scheduler start failed: ${err.message}`); }
 });
 
 // ── Position Reconciliation — detect orphaned positions after crash ──────────

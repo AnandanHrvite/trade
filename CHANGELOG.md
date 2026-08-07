@@ -6,6 +6,16 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Added — a Settings Advisor that reads your own trades and says what to change
+
+Edge Analytics tells you *what happened* — win rate, profit factor, which hour bled. Turning that into "so change **which** setting?" was still a manual read. The new **Settings Advisor** (`/advisor`) closes that gap: it reads the same recorded trade book and returns plain-English findings that each name the actual `.env` key involved — *"the 09:00 hour lost ₹5,400 over 12 entries; it is the first hour you trade, so try moving `GAPS_ENTRY_START` to 10:00"*.
+
+It runs **offline**. No LLM, no API key, no network call and no cost — it is a deterministic rules engine, so the same trades always produce the same advice, and it can only ever name a key that exists. Eight checks run per strategy: overall profit factor, the worst exit-reason bucket, a losing entry hour, CE-vs-PE skew, weekday drag, the worst day against the daily-loss cap, the longest intraday loss run against the streak brake, and how much longer losers are held than winners.
+
+Everything is sample-gated, because advice from four trades is noise: a strategy needs `ADVISOR_MIN_TRADES` (default 20) in the window before it gets any suggestion at all — below that it just says so — and each bucket (exit reason, hour, weekday) needs five trades of its own. The exit-reason check is skipped entirely for a strategy with a profit factor above 1.5, since in a healthy strategy the stop-loss bucket is *supposed* to hold the losses. Loss runs are measured **within a single session**, to match what the per-day brakes actually act on.
+
+**It suggests; it never writes.** Nothing is applied for you — each finding links the key to Settings, so acting on one is still a normal save with its checkpoint note and audit trail. A snapshot is taken every Sunday 08:00 IST to `~/trading-data/.advisor_report.json` (idempotent per week, with catch-up after a redeploy) and can optionally be Telegrammed via `ADVISOR_TELEGRAM`; the page itself always recomputes live, with Paper/Live and window filters. Gated by `UI_SHOW_ADVISOR` in Settings → Menu Visibility.
+
 ### Changed — Settings is now an index and one section at a time, not a giant accordion
 
 Opening a section used to unroll every one of its settings in a single column — EMA_RSI_ST alone was 31 rows, Menu Visibility 52 — so one click turned into a ten-screen scroll with no idea where you were. The page is now split in two: a **section index down the left** (grouped *Strategies* / *Trading* / *System*, each row showing how many settings it holds), and **exactly one section on the right**, itself divided into **sub-tabs** — Mode & Session, Entry Signal, Exits, Risk, and so on. Picking a strategy and a tab lands you on roughly a screenful of rows instead of a wall of them. Nothing about what the settings do, or how they save, changed.

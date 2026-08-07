@@ -681,6 +681,7 @@ Blocks directional entries that fight the prevailing Open-Interest buildup: read
 | `UI_SHOW_PAPER_HISTORY` / `UI_SHOW_LIVE_HISTORY` | `true` | Cross-mode history menus |
 | `UI_SHOW_EDGE_ANALYTICS` | `true` | Top-level "Edge Analytics" menu (`/edge-analytics`) |
 | `UI_SHOW_CONSOLIDATION_REPORT` | `true` | "📑 Consolidation Report" button on the Edge Analytics page → the daily consolidated report (`/consolidation-report`) |
+| `UI_SHOW_ADVISOR` | `true` | Top-level "Settings Advisor" menu (`/advisor`) |
 | `{EMA_RSI_ST,BB_RSI,PA,ORB,EMA9VWAP,TREND_PB}_MODE_ENABLED` | `true` | Master toggle — hides sidebar group AND Settings section for that strategy |
 | `UI_SHOW_SIMULATE` | `false` | Show "Simulate" link under each mode in sidebar |
 | `UI_SHOW_COMPARE` | `false` | Show "Compare" link |
@@ -720,6 +721,15 @@ Blocks directional entries that fight the prevailing Open-Interest buildup: read
 | `TG_DAYREPORT_CONSOLIDATED` | `true` | One combined day report at 15:30 IST across all six modes |
 
 > All alerts and the consolidated report also respect the strategy master toggles (`{EMA_RSI_ST,BB_RSI,PA,ORB,EMA9VWAP,TREND_PB}_MODE_ENABLED`): a disabled strategy sends no alerts and is omitted from the consolidated report, regardless of its `TG_*` toggles.
+
+### Settings Advisor (offline weekly trade-record review → `/advisor`)
+| Key | Default | Notes |
+|-----|---------|-------|
+| `ADVISOR_LOOKBACK_DAYS` | `90` | How far back the review reads trades (clamped 7–3650) |
+| `ADVISOR_MIN_TRADES` | `20` | A strategy below this many trades in the window gets no suggestions, only a "too few to tune" note (clamped 5–500). A bucket (exit reason / hour / weekday) needs 5 trades of its own — that floor is fixed in code |
+| `ADVISOR_TELEGRAM` | `false` | Telegram the top findings every Sunday 08:00 IST. Also needs `TG_ENABLED` |
+
+> The advisor is a **rules engine, not an LLM** — no network call, no API key, no cost, and it can only name env keys that exist. It is read-only: it never writes a setting, so acting on a finding stays a manual Settings save with the usual checkpoint note + audit trail. The weekly snapshot lands at `~/trading-data/.advisor_report.json` (idempotent per week, with boot catch-up after a redeploy); the page itself always recomputes live.
 
 ### Charges (April 2026 rates)
 | Key | Default | Notes |
@@ -803,6 +813,7 @@ Blocks directional entries that fight the prevailing Open-Interest buildup: read
 | `/live-consolidation` | Cross-mode **live** trade history + analytics (parity with `/consolidation` for live data) |
 | `/consolidation-report` | **Consolidation Report** — a **day-by-day** consolidated report (one table row per trading day), mirroring the Telegram "CONSOLIDATED DAY REPORT" layout: per-strategy trades + P&L columns, then Total / Wins / Losses / Win rate / Net P&L + a 🟢/🔴 result per day, with a totals footer. Book toggle (Paper / Live / **Both**) + a Range preset (**This week / Last week / This month / Last month / Last 7·30 days / This FY / All time / Custom**). Reached via the **📑 Consolidation Report** button on the Edge Analytics page (not a separate sidebar item). **🖨 Save as PDF** prints through a dedicated `@media print` stylesheet (app chrome hidden, white A4-landscape page, page-break-safe table) — the browser's native print-to-PDF; no external library. Reads the same session files as `/consolidation` + `/live-consolidation`; writes nothing. Gated by `UI_SHOW_CONSOLIDATION_REPORT`. |
 | `/edge-analytics` | **Edge Analytics** — read-only edge dashboard over your recorded trades. Paper/Live book toggle + per-strategy + date-range (This month / Last month / Current week expiry / All / Custom — the same shared set as the Dashboard top bar) filters that recompute instantly client-side. Headline cards (trades, win rate, net P&L, expectancy, profit factor, avg win/loss + payoff, max drawdown, win/loss streaks), an equity curve, P&L-by-hour-of-day and P&L-by-weekday bar charts, and **By Strategy** + **By Exit Reason** breakdown tables (worst reason first, to surface the bleed). Reads the same session files as `/consolidation` + `/live-consolidation`; writes nothing. Gated by `UI_SHOW_EDGE_ANALYTICS`. |
+| `/advisor` | **Settings Advisor** — offline weekly review of your own trade record that names the Settings key to look at. No external service, no API key, no cost: a deterministic rules engine (not an LLM) over the same trade set `/edge-analytics` renders. Checks profit factor, the worst exit-reason bucket, losing entry hours, CE/PE skew, weekday drag, worst day vs the daily-loss cap, intraday loss runs vs the streak brake, and winner-vs-loser holding time. Every finding is sample-gated (a strategy needs `ADVISOR_MIN_TRADES`, a bucket needs 5 trades) and carries the real env keys involved. **Suggests only — never writes a setting.** Book (Paper/Live) + window filters; a weekly snapshot is taken Sunday 08:00 IST to `~/trading-data/.advisor_report.json`. Gated by `UI_SHOW_ADVISOR`. |
 | `/pnl-history` | Broker-wise realised P&L (one-time past baselines per broker + auto-computed live-bot P&L by FY) |
 | `/compare/trading` | Paper vs Backtest comparison (EMA_RSI_ST) |
 | `/compare/bb_rsi` | Paper vs Backtest comparison (bb_rsi) |

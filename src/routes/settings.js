@@ -515,6 +515,17 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
+    section: "SETTINGS ADVISOR — Weekly trade-record review",
+    icon: "🧭",
+    nav: "Settings Advisor",
+    group: "System",
+    fields: [
+      { key: "ADVISOR_LOOKBACK_DAYS", label: "Lookback (days)",  type: "number", min: 7, max: 3650, step: 1, effect: EFFECT.INSTANT, desc: "How far back the weekly review reads trades.", default: "90" },
+      { key: "ADVISOR_MIN_TRADES",    label: "Min trades to advise", type: "number", min: 5, max: 500, step: 1, effect: EFFECT.INSTANT, desc: "A strategy below this many trades gets no suggestions (too small to trust).", default: "20" },
+      { key: "ADVISOR_TELEGRAM",      label: "Weekly Telegram summary", type: "toggle", effect: EFFECT.INSTANT, desc: "Telegram the top findings every Sunday 08:00 IST (needs Telegram master ON).", default: "false" },
+    ],
+  },
+  {
     section: "UI PREFERENCES",
     icon: "🎨",
     nav: "UI Preferences",
@@ -537,6 +548,7 @@ const SETTINGS_SCHEMA = [
       { key: "UI_SHOW_PAPER_HISTORY",  label: "Show Paper Traded History", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Paper Traded History menu.", default: "true" },
       { key: "UI_SHOW_LIVE_HISTORY",   label: "Show Live Traded History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Live Traded History menu.", default: "true" },
       { key: "UI_SHOW_EDGE_ANALYTICS", label: "Show Edge Analytics",       type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Edge Analytics menu.", default: "true" },
+      { key: "UI_SHOW_ADVISOR",        label: "Show Settings Advisor",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Settings Advisor menu.", default: "true" },
       { key: "UI_SHOW_CONSOLIDATION_REPORT", label: "Show Consolidation Report button", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Consolidation Report button.", default: "true" },
       { key: "EMA_RSI_ST_MODE_ENABLED",     label: "EMA_RSI_ST Mode",                type: "toggle", effect: EFFECT.INSTANT, desc: "Show the EMA_RSI_ST menu and settings.", default: "true", subheader: "Strategy master toggles" },
       { key: "BB_RSI_MODE_ENABLED",     label: "BB_RSI Mode",                type: "toggle", effect: EFFECT.INSTANT, desc: "Show the BB_RSI menu and settings.", default: "true" },

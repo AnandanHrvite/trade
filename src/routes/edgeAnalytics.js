@@ -499,3 +499,8 @@ render();
 });
 
 module.exports = router;
+
+// Exported so settingsAdvisor.js analyses exactly the trade set this page shows.
+// Same reasoning as consolidation.js → consolidatedEodReporter.js: one loader, so
+// the page and the advisor can never disagree about what a trade is.
+module.exports.loadAllTrades = loadAllTrades;

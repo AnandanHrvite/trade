@@ -90,6 +90,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const showPaperHist   = (process.env.UI_SHOW_PAPER_HISTORY || 'true').toLowerCase()  === 'true';
   const showLiveHist    = (process.env.UI_SHOW_LIVE_HISTORY  || 'true').toLowerCase()  === 'true';
   const showEdgeAnalytics = (process.env.UI_SHOW_EDGE_ANALYTICS || 'true').toLowerCase() === 'true';
+  const showAdvisor       = (process.env.UI_SHOW_ADVISOR || 'true').toLowerCase() === 'true';
 
   // ── Per-strategy submenu toggles ──
   const showEmaRsiStBacktest = (process.env.UI_SHOW_EMA_RSI_ST_BACKTEST || 'true').toLowerCase() === 'true';
@@ -225,6 +226,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     ...(showPaperHist   ? [{ key: 'consolidation',     href: '/consolidation',      icon: '🧾', label: 'Paper Traded History' }] : []),
     ...(showLiveHist    ? [{ key: 'liveConsolidation', href: '/live-consolidation', icon: '🔴', label: 'Live Traded History' }] : []),
     ...(showEdgeAnalytics ? [{ key: 'edgeAnalytics',   href: '/edge-analytics',     icon: '📈', label: 'Edge Analytics' }] : []),
+    ...(showAdvisor       ? [{ key: 'advisor',         href: '/advisor',            icon: '🧭', label: 'Settings Advisor' }] : []),
   ];
 
   const sections = [
