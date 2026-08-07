@@ -195,6 +195,7 @@ router.post("/gdrive/upload", async (req, res) => {
   }
   const r = await gdrive.uploadFile(file, { trigger: "manual" });
   if (!r.ok) return res.status(502).json({ ok: false, error: r.error, status: gdrive.status() });
+  backup.markDriveUploaded(date, "manual");   // off-site copy exists → stop nagging
   res.json({ ok: true, ...r, status: gdrive.status() });
 });
 

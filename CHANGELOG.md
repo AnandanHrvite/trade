@@ -6,6 +6,10 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Changed — a snapshot on Google Drive now clears the "not downloaded" nag
+
+The download banner and the Backup & Restore row only tracked *local* downloads, so a day whose snapshot had already been pushed to Google Drive by the daily job still showed **⏳ not downloaded** and still nagged on every page — asking for a second copy of a file that was already off-site. A successful Drive upload (daily, boot or the manual **Backup to Drive now** button) is now recorded against that date: the banner stays hidden and the row shows **☁ safe in Drive**. Cutting a fresh snapshot for the same date re-arms the nag, since that new file has not been uploaded yet.
+
 ### Changed — one global candle timeframe instead of four
 
 The candle size was set in four separate places: `TRADE_RESOLUTION` (labelled as EMA_RSI_ST's, in that strategy's section), `BB_RSI_RESOLUTION`, `PA_RESOLUTION` and `EMA9VWAP_RESOLUTION`. They could silently disagree — three strategies on 5-min and one on 15-min — and a "resolu" search in Settings returned three near-identical dropdowns. There is now **one** setting: `TRADE_RESOLUTION`, moved into the common **Instrument & Backtest** section and labelled *Candle Resolution (min) — ALL strategies* (3 / 5 / 15). BB_RSI, PA and EMA9+VWAP read it in Live, Paper and Backtest (including the PA per-pattern backtest); the three per-strategy keys are deleted from the code, Settings, README and `.env.example`, and are ignored if still present in a `.env`. Because it is now a common key it also lands in **every** mode's per-day settings snapshot rather than only EMA_RSI_ST's.

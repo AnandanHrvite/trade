@@ -667,7 +667,8 @@ function toggleNavGroup(gid){
   }
 
   function render(d){
-    if(!d || !d.enabled || !d.exists || d.downloaded){ banner.style.display = 'none'; return; }
+    // Downloaded locally OR already pushed to Google Drive = the day is safe.
+    if(!d || !d.enabled || !d.exists || d.downloaded || d.driveUploaded){ banner.style.display = 'none'; return; }
     if(isDismissedNow(d)){ banner.style.display = 'none'; return; }
     msgEl.dataset.date = d.date;
     msgEl.textContent = '📦 Data backup for ' + d.date + ' is ready';

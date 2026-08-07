@@ -98,6 +98,26 @@ function markDownloaded(dateStr) {
   state[dateStr] = { ...(state[dateStr] || {}), downloaded: true, downloadedAt: new Date().toISOString() };
   writeState(state);
 }
+/**
+ * Record that a snapshot reached Google Drive. An off-site copy is as safe as a
+ * local one, so this stands the download nag down for that date — the banner and
+ * the Settings row stop asking once the daily push (or a manual one) succeeded.
+ */
+function markDriveUploaded(dateStr, trigger) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateStr))) return;
+  const state = readState();
+  state[dateStr] = {
+    ...(state[dateStr] || {}),
+    driveUploadedAt: new Date().toISOString(),
+    driveTrigger: trigger || "manual",
+  };
+  writeState(state);
+}
+/** "…/backup-2026-08-07.tar.gz" → "2026-08-07" (null for the pre-restore files). */
+function dateFromFile(file) {
+  const m = String(file || "").match(/backup-(\d{4}-\d{2}-\d{2})\.tar\.gz$/);
+  return m ? m[1] : null;
+}
 
 // ── Create a snapshot ─────────────────────────────────────────────────────────
 /**
@@ -251,7 +271,12 @@ function listBackups() {
     let sizeBytes = 0, mtimeMs = 0;
     try { const st = fs.statSync(path.join(BACKUP_DIR, n)); sizeBytes = st.size; mtimeMs = st.mtimeMs; } catch (_) {}
     const s = state[date] || {};
-    return { date, file: n, sizeBytes, mtimeMs, downloaded: !!s.downloaded, downloadedAt: s.downloadedAt || null };
+    return {
+      date, file: n, sizeBytes, mtimeMs,
+      downloaded: !!s.downloaded, downloadedAt: s.downloadedAt || null,
+      driveUploaded: !!s.driveUploadedAt, driveUploadedAt: s.driveUploadedAt || null,
+      driveTrigger: s.driveTrigger || null,
+    };
   }).sort((a, b) => (a.date < b.date ? 1 : -1));
 }
 
@@ -277,7 +302,9 @@ function todayStatus() {
   const date = istDateStr();
   const exists = !!getBackupFile(date);
   const s = readState()[date] || {};
-  return { enabled: isEnabled(), date, exists, downloaded: !!s.downloaded };
+  // driveUploaded counts as "safe" too — the banner only nags while today's
+  // snapshot has neither been downloaded nor pushed off-site.
+  return { enabled: isEnabled(), date, exists, downloaded: !!s.downloaded, driveUploaded: !!s.driveUploadedAt };
 }
 
 // ── Prune ─────────────────────────────────────────────────────────────────────
@@ -337,7 +364,12 @@ async function pushToDrive(file, trigger) {
     const gdrive = require("./googleDrive");
     if (!gdrive.isConnected()) return "";
     const up = await gdrive.uploadFile(file, { trigger });
-    return up.ok ? "\nGoogle Drive: ✅ uploaded" : `\nGoogle Drive: ⚠️ upload failed — ${up.error}`;
+    if (up.ok) {
+      const d = dateFromFile(file);
+      if (d) markDriveUploaded(d, trigger);   // off-site copy exists → stop nagging
+      return "\nGoogle Drive: ✅ uploaded";
+    }
+    return `\nGoogle Drive: ⚠️ upload failed — ${up.error}`;
   } catch (err) {
     // Nothing here may escape: runDaily awaits this from a setTimeout callback,
     // and a rejection there would skip scheduleNext() and kill the daily timer
@@ -427,6 +459,7 @@ module.exports = {
   listBackups,
   getBackupFile,
   markDownloaded,
+  markDriveUploaded,
   todayStatus,
   pruneOld,
   istDateStr,

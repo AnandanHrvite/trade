@@ -2363,7 +2363,9 @@ async function loadBackups() {
     body.innerHTML = d.backups.map(function(b) {
       var status = b.downloaded
         ? '<span style="color:#10b981;">✓ downloaded</span>'
-        : '<span style="color:#fbbf24;">⏳ not downloaded</span>';
+        : (b.driveUploaded
+            ? '<span style="color:#10b981;" title="Off-site copy on Google Drive — no local download needed">☁ safe in Drive</span>'
+            : '<span style="color:#fbbf24;">⏳ not downloaded</span>');
       return '<tr style="border-top:1px solid rgba(59,130,246,0.12);">' +
         '<td style="padding:6px 8px;color:#cfe0f8;font-weight:600;">' + b.date + '</td>' +
         '<td style="padding:6px 8px;color:#9db4d6;">' + backupFmtBytes(b.sizeBytes) + '</td>' +
@@ -3271,7 +3273,7 @@ ${expiryHolidayModalHTML()}
           <div style="font-size:0.7rem;color:#7e93b5;line-height:1.5;">
             Self-contained <code style="color:#9dc1f0;">.tar.gz</code> of <code style="color:#9dc1f0;">~/trading-data</code> + recorded ticks
             (caches &amp; OAuth tokens excluded). Download today's copy locally so an EC2 loss never loses data.
-            A banner nags on every page until you've downloaded the day's file.
+            A banner nags on every page until the day's file is downloaded — or pushed to Google Drive.
           </div>
           <div id="backup-status-line" style="font-size:0.7rem;color:#7e93b5;margin-top:8px;">Loading…</div>
         </div>
