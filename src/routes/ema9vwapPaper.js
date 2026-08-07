@@ -76,13 +76,10 @@ let _ENTRY_STOP_MINS;          // entry-window close (IST minutes) — refreshed
 // Candle-trail (EMA9VWAP_CANDLE_TRAIL_*) is read live from process.env on each candle close
 // — INSTANT — so a Settings toggle takes effect without a restart.
 function _refreshConfig() {
-  // EMA9+VWAP owns its timeframe. It used to read the GLOBAL TRADE_RESOLUTION,
-  // which the Settings UI documents as "EMA_RSI_ST candle timeframe" — so setting
-  // EMA_RSI_ST to 15-min silently turned this 5-min strategy into a 15-min one AND
-  // flipped its 3-loss breaker from a 20-min pause to a whole-day kill. Blank
-  // EMA9VWAP_RESOLUTION inherits TRADE_RESOLUTION, so existing .env files behave
-  // exactly as before.
-  const _resRaw = (process.env.EMA9VWAP_RESOLUTION || "").trim() || process.env.TRADE_RESOLUTION || "5";
+  // Candle timeframe is GLOBAL: TRADE_RESOLUTION drives every strategy. The old
+  // per-strategy EMA9VWAP_RESOLUTION override was removed — one Settings knob now
+  // sets the candle size for the whole app.
+  const _resRaw = process.env.TRADE_RESOLUTION || "5";
   const _res = parseInt(_resRaw, 10);
   TRADE_RES                              = (Number.isFinite(_res) && _res > 0) ? _res : 5;
   // Entry window — re-read here (was a module-load const) so the Settings UI's

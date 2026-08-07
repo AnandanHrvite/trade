@@ -372,7 +372,7 @@ Bottom of channel = fair-value line &minus; (1 &times; the normal wobble)</code>
       <tr><td><code>EMA9VWAP_EMA_PERIOD</code></td><td><code>9</code></td><td>How many candles the fast line averages. Smaller = faster and twitchier; larger = smoother and slower.</td></tr>
       <tr><td><code>EMA9VWAP_BAND_MULT</code></td><td><code>1</code></td><td>How wide the channel is, in "normal wobbles." <code>1</code> = one wobble each side (the standard setting). Set it to <code>0</code> and the channel collapses to a single fair-value line &mdash; then we'd just trade the fast line crossing the plain VWAP.</td></tr>
       <tr><td><code>EMA9VWAP_VWAP_SESSION_START</code></td><td><code>09:15</code></td><td>The time each morning the fair-value maths starts counting from (the market open).</td></tr>
-      <tr><td><code>EMA9VWAP_RESOLUTION</code></td><td><em>blank</em></td><td>Candle size for <em>this</em> strategy. Leave blank and it copies the global <code>TRADE_RESOLUTION</code>. This key exists because the global one is labelled as EMA_RSI_ST's &mdash; changing it there used to silently turn this into a 15-minute strategy (and turn its 3-loss brake into a whole-day kill).</td></tr>
+      <tr><td><code>TRADE_RESOLUTION</code></td><td><code>5</code></td><td>Candle size in minutes (3 / 5 / 15). One global setting shared by every strategy &mdash; it lives in Settings &rarr; Instrument &amp; Backtest. Remember it also scales this strategy's candle-counted brakes (the 3-loss pause, cooldowns).</td></tr>
     </tbody>
   </table>
 
@@ -763,7 +763,7 @@ angry red candle can't instantly flip us into a losing put.</code></pre>
       <tr><td><code>EMA9VWAP_EMA_PERIOD</code></td><td><code>9</code></td><td>How many candles the fast line averages.</td></tr>
       <tr><td><code>EMA9VWAP_BAND_MULT</code></td><td><code>1</code></td><td>Channel width in "normal wobbles" (1 = the standard &plusmn;1&sigma;; 0 = collapse to a single fair-value line).</td></tr>
       <tr><td><code>EMA9VWAP_VWAP_SESSION_START</code></td><td><code>09:15</code></td><td>Time each morning the fair-value maths starts from (resets daily).</td></tr>
-      <tr><td><code>EMA9VWAP_RESOLUTION</code></td><td><em>blank</em></td><td>Candle size for this strategy only. Blank = copy the global <code>TRADE_RESOLUTION</code>.</td></tr>
+      <tr><td><code>TRADE_RESOLUTION</code></td><td><code>5</code></td><td>Candle size in minutes (3 / 5 / 15) &mdash; one global setting shared by every strategy.</td></tr>
       <tr><td><code>EMA9VWAP_STRENGTH_FILTER</code></td><td><code>false</code></td><td>When on, skip WEAK break-outs and only trade STRONG ones (Section 4). Off = trade every break-out, but still record its STRONG/WEAK grade in the log.</td></tr>
       <tr><td><code>EMA9VWAP_STRONG_MIN_SIGMA</code></td><td><code>0.25</code></td><td>How far past the channel edge (in "normal wobbles") a break must reach to count as STRONG. Smaller = more break-outs graded strong.</td></tr>
     </tbody>

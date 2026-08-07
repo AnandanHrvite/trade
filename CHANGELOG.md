@@ -6,6 +6,12 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Changed — one global candle timeframe instead of four
+
+The candle size was set in four separate places: `TRADE_RESOLUTION` (labelled as EMA_RSI_ST's, in that strategy's section), `BB_RSI_RESOLUTION`, `PA_RESOLUTION` and `EMA9VWAP_RESOLUTION`. They could silently disagree — three strategies on 5-min and one on 15-min — and a "resolu" search in Settings returned three near-identical dropdowns. There is now **one** setting: `TRADE_RESOLUTION`, moved into the common **Instrument & Backtest** section and labelled *Candle Resolution (min) — ALL strategies* (3 / 5 / 15). BB_RSI, PA and EMA9+VWAP read it in Live, Paper and Backtest (including the PA per-pattern backtest); the three per-strategy keys are deleted from the code, Settings, README and `.env.example`, and are ignored if still present in a `.env`. Because it is now a common key it also lands in **every** mode's per-day settings snapshot rather than only EMA_RSI_ST's.
+
+Behaviour is unchanged for any `.env` where the keys already agreed (all `5` here). If yours had them differing, the strategies that used to override now follow `TRADE_RESOLUTION` — check that value before the next session, and remove the dead `BB_RSI_RESOLUTION` / `PA_RESOLUTION` / `EMA9VWAP_RESOLUTION` lines via Settings → Bulk Edit (`-KEY`).
+
 ### Fixed — "insufficient authentication scopes" on the Drive backup upload said nothing useful
 
 Google only grants the scopes registered on the consent screen, so an OAuth app whose **Google Auth Platform → Data Access** list never had `.../auth/drive.file` added still connects happily — the device flow succeeds and Settings shows **CONNECTED** — but the token carries only `email`. Nothing fails until the first Drive write, which came back as a bare *Could not create the Drive folder: Request had insufficient authentication scopes.* with no hint that the fix is in the Google Console rather than in the bot. That error now names the missing scope and says to add it under Data Access and then Disconnect/Connect again (the existing token is email-only and cannot be upgraded in place). The one-time setup guide in the Backup & Restore card and in the README gained the Data Access step it was missing.

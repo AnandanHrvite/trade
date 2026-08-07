@@ -1032,7 +1032,7 @@
     <tr><td><code>BB_RSI_MODE_ENABLED</code></td><td><code>true</code></td><td>Show BB_RSI in the menu and Settings. Off = hidden.</td></tr>
     <tr><td><code>BB_RSI_ENABLED</code></td><td><code>false</code></td><td>The master switch for real live orders (still needs the global dry-run off).</td></tr>
     <tr><td><code>BB_RSI_LIVE_DRY_RUN</code></td><td><code>&mdash;</code></td><td>Keep BB_RSI in "pretend" mode even when other strategies go live.</td></tr>
-    <tr><td><code>BB_RSI_RESOLUTION</code></td><td><code>5</code></td><td>Candle size in minutes &mdash; <code>3</code> or <code>5</code>.</td></tr>
+    <tr><td><code>TRADE_RESOLUTION</code></td><td><code>5</code></td><td>Candle size in minutes (3 / 5 / 15). One global setting shared by every strategy &mdash; it lives in Settings &rarr; Instrument &amp; Backtest.</td></tr>
     <tr><td><code>BB_RSI_ENTRY_START</code></td><td><code>09:21</code></td><td>Earliest time of day a new trade may start.</td></tr>
     <tr><td><code>BB_RSI_ENTRY_END</code></td><td><code>14:30</code></td><td>Latest time a new trade may start &mdash; the day's too far gone after this.</td></tr>
     <tr><td><code>BB_RSI_EXPIRY_DAY_ONLY</code></td><td><code>false</code></td><td>If on, only trade on NIFTY weekly-expiry day.</td></tr>

@@ -56,7 +56,7 @@ const SETTINGS_SCHEMA = [
     fields: [
       { key: "EMA_RSI_ST_LIVE_ENABLED", label: "EMA_RSI_ST Live Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Zerodha." },
       { key: "EMA_RSI_ST_LIVE_DRY_RUN", label: "EMA_RSI_ST Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep this strategy simulated even when live is on.", default: "false" },
-      { key: "TRADE_RESOLUTION", label: "Candle Resolution (min)", type: "select", options: ["3", "5", "15"], effect: EFFECT.SESSION, desc: "Candle timeframe in minutes.", default: "5" },
+      // Candle timeframe is GLOBAL — see TRADE_RESOLUTION in "Instrument & Backtest".
       { key: "TRADE_EXPIRY_DAY_ONLY", label: "Trade Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only trade on weekly expiry day.", default: "false" },
       { key: "TRADE_ENTRY_START", label: "Entry Start Time", type: "time", effect: EFFECT.SESSION, desc: "Earliest entry time (IST).", default: "10:30" },
       { key: "TRADE_ENTRY_END", label: "Entry End Time", type: "time", effect: EFFECT.SESSION, desc: "No new entries after this time (IST).", default: "14:00" },
@@ -102,7 +102,6 @@ const SETTINGS_SCHEMA = [
       { key: "BB_RSI_VIX_STRONG_ONLY", label: "BB_RSI VIX Strong Only", type: "number", min: 8, max: 30, step: 1, effect: EFFECT.INSTANT, desc: "Above this VIX, allow only strong signals.", default: "16" },
       { key: "BB_RSI_ENTRY_START", label: "Entry Start Time", type: "time", effect: EFFECT.SESSION, desc: "Earliest entry time (IST).", default: "09:21" },
       { key: "BB_RSI_ENTRY_END", label: "Entry End Time", type: "time", effect: EFFECT.SESSION, desc: "No new entries after this time (IST).", default: "14:30" },
-      { key: "BB_RSI_RESOLUTION", label: "Candle (min)", type: "select", options: ["3", "5"], effect: EFFECT.SESSION, desc: "Candle timeframe in minutes.", default: "5" },
       // ── Bollinger Bands ──
       { key: "BB_RSI_BB_PERIOD", label: "BB Period", type: "number", min: 10, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Bollinger Band period.", default: "20" },
       { key: "BB_RSI_BB_STDDEV", label: "BB Std Dev", type: "number", min: 0.5, max: 3.0, step: 0.1, effect: EFFECT.SESSION, desc: "Bollinger Band standard deviation.", default: "1" },
@@ -147,7 +146,6 @@ const SETTINGS_SCHEMA = [
       { key: "PA_VIX_MAX_ENTRY", label: "PA VIX Max Entry", type: "number", min: 10, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "Block entries above this VIX.", default: "20" },
       { key: "PA_ENTRY_START", label: "Entry Start Time", type: "time", effect: EFFECT.SESSION, desc: "Earliest entry time (IST).", default: "09:20" },
       { key: "PA_ENTRY_END", label: "Entry End Time", type: "time", effect: EFFECT.SESSION, desc: "No new entries after this time (IST).", default: "14:30" },
-      { key: "PA_RESOLUTION", label: "Candle (min)", type: "select", options: ["5", "3"], effect: EFFECT.SESSION, desc: "Candle timeframe in minutes.", default: "5" },
       // ── Pattern toggles (the only four entry logics) ──
       { key: "PA_PATTERN_DOUBLE_BOTTOM", label: "Double Bottom (W) → CE", type: "toggle", effect: EFFECT.SESSION, desc: "Trade double-bottom (W) breakouts as CE.", default: "true" },
       { key: "PA_PATTERN_DOUBLE_TOP",    label: "Double Top (M) → PE",    type: "toggle", effect: EFFECT.SESSION, desc: "Trade double-top (M) breakdowns as PE.", default: "true" },
@@ -250,7 +248,6 @@ const SETTINGS_SCHEMA = [
       // ── M5: keys that were live in code but invisible here (and therefore absent
       //    from the per-day settings snapshot). All defaults are BLANK/current so a
       //    Settings save writes nothing that changes behaviour.
-      { key: "EMA9VWAP_RESOLUTION", label: "Candle Resolution (min)", type: "select", options: ["", "3", "5", "15"], effect: EFFECT.SESSION, desc: "Candle timeframe (blank = use global).", default: "" },
       { key: "EMA9VWAP_SL_PAUSE_CANDLES", label: "Same-Side SL Cooldown (candles)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Pause the same side this many candles after a stop.", default: "3" },
       { key: "EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_ENABLED", label: "Opposite-Side Cooldown", type: "toggle", effect: EFFECT.SESSION, desc: "Pause the opposite side briefly after an exit.", default: "true" },
       { key: "EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_CANDLES", label: "Opposite-Side Cooldown (candles)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Opposite-side cooldown length in candles.", default: "3" },
@@ -367,6 +364,7 @@ const SETTINGS_SCHEMA = [
     fields: [
       { key: "CHART_ENABLED", label: "Live NIFTY Chart", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the candlestick chart on status pages.", default: "true" },
       { key: "VIX_FAIL_MODE", label: "VIX Unavailable (all modules)", type: "select", options: ["closed", "open"], effect: EFFECT.INSTANT, desc: "What to do when VIX data is missing.", default: "closed" },
+      { key: "TRADE_RESOLUTION", label: "Candle Resolution (min) — ALL strategies", type: "select", options: ["3", "5", "15"], effect: EFFECT.SESSION, desc: "Candle timeframe in minutes. One global setting — every strategy uses it.", default: "5" },
       { key: "TRADE_START_TIME", label: "Market Start Time", type: "time", effect: EFFECT.SESSION, desc: "Market open time (IST).", default: "09:15" },
       { key: "TRADE_STOP_TIME", label: "Market Stop Time", type: "time", effect: EFFECT.SESSION, desc: "Auto-stop and square-off time (IST).", default: "15:30" },
       { key: "INSTRUMENT", label: "Trade Type", type: "select", options: ["NIFTY_OPTIONS", "NIFTY_FUTURES"], effect: EFFECT.INSTANT, desc: "Options (CE/PE) or Futures." },
@@ -722,7 +720,6 @@ const SESSION_RESTART_KEYS = new Set([
   "TRADE_ENTRY_START", "TRADE_ENTRY_END",
   "BB_RSI_ENTRY_START", "BB_RSI_ENTRY_END",
   // BB_RSI settings — need session restart
-  "BB_RSI_RESOLUTION",
   "BB_RSI_BB_PERIOD", "BB_RSI_BB_STDDEV",
   "BB_RSI_RSI_PERIOD", "BB_RSI_RSI_CE_THRESHOLD",
   "BB_RSI_RSI_PE_THRESHOLD", "BB_RSI_RSI_TURNING",

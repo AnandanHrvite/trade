@@ -1213,7 +1213,7 @@ td.pe { color: var(--red); }
           <tbody>
             <tr><td><code>PA_MODE_ENABLED</code></td><td><code>true</code></td><td>Show Price Action in the menu and Settings. Off = hidden.</td></tr>
             <tr><td><code>PA_ENABLED</code></td><td><code>false</code></td><td>Master switch for placing real live orders (still needs the global dry-run off).</td></tr>
-            <tr><td><code>PA_RESOLUTION</code></td><td><code>5</code></td><td>Candle size in minutes (can be set to 3).</td></tr>
+            <tr><td><code>TRADE_RESOLUTION</code></td><td><code>5</code></td><td>Candle size in minutes (3 / 5 / 15). One global setting shared by every strategy &mdash; it lives in Settings &rarr; Instrument &amp; Backtest.</td></tr>
             <tr><td><code>PA_ENTRY_START</code></td><td><code>09:21</code></td><td>Earliest a new trade may start in the morning.</td></tr>
             <tr><td><code>PA_ENTRY_END</code></td><td><code>14:30</code></td><td>Latest a new trade may start &mdash; nothing fresh after mid-afternoon.</td></tr>
             <tr><td><code>PA_EXPIRY_DAY_ONLY</code></td><td><code>false</code></td><td>If on, only trade on weekly-expiry day.</td></tr>

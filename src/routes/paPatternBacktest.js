@@ -224,7 +224,7 @@ router.get("/run", async (req, res) => {
   const defTo   = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
   const from       = req.query.from       || defFrom;
   const to         = req.query.to         || defTo;
-  const resolution = req.query.resolution || process.env.PA_RESOLUTION || "5";
+  const resolution = req.query.resolution || process.env.TRADE_RESOLUTION || "5";
   const symbol     = "NSE:NIFTY50-INDEX";
   const capital    = parseInt(process.env.BACKTEST_CAPITAL || "100000", 10);
 
@@ -284,7 +284,7 @@ router.get("/", (req, res) => {
   const defTo   = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
   const from       = req.query.from       || defFrom;
   const to         = req.query.to         || defTo;
-  const resolution = req.query.resolution || process.env.PA_RESOLUTION || "5";
+  const resolution = req.query.resolution || process.env.TRADE_RESOLUTION || "5";
 
   // Only render panels for patterns currently enabled in settings
   // (PA_PATTERN_<KEY>=true). Disabled patterns are hidden so this page

@@ -6,7 +6,7 @@
 
 All numeric values below are the **code defaults**; every one is overridable from the Settings UI (env var in parentheses).
 
-Timeframe: **3 or 5-min** candles via `BB_RSI_RESOLUTION` (default 5). BB and RSI use **close**. Broker: **Fyers** (live + all data); paper is simulated on the same tick feed.
+Timeframe: **3 / 5 / 15-min** candles via the global `TRADE_RESOLUTION` (default 5) — shared by every strategy. BB and RSI use **close**. Broker: **Fyers** (live + all data); paper is simulated on the same tick feed.
 
 ---
 

@@ -306,7 +306,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 
 | Key | Default | Notes |
 |-----|---------|-------|
-| `TRADE_RESOLUTION` | `5` | Candle size in minutes — `3`, `5`, or `15` (logic is resolution-agnostic). |
+| `TRADE_RESOLUTION` | `5` | **Global candle size in minutes** — `3`, `5`, or `15`. One setting for **every** strategy (EMA_RSI_ST / BB_RSI / PA / EMA9+VWAP); lives in the Settings **Instrument & Backtest** section. The old per-strategy keys (`BB_RSI_RESOLUTION`, `PA_RESOLUTION`, `EMA9VWAP_RESOLUTION`) are removed and ignored. |
 | `MAX_DAILY_LOSS` | `5000` | Daily kill-switch in INR (per-strategy) |
 | `PORTFOLIO_MAX_DAILY_LOSS` | `0` (off) | **Portfolio-wide** daily loss cap in INR across ALL strategies (sums today's realized paper P&L via the per-day JSONL logs). When the book's combined loss reaches this, every strategy stops taking new entries for the day. Fail-safe (only blocks, never places orders). `0`/unset = disabled. |
 | `MAX_DAILY_TRADES` | `20` | Daily entry cap — anti-overtrade on chop days. *(Settings UI seeds a tighter `5`.)* |
@@ -351,7 +351,6 @@ Full spec: [BB_RSI.md](BB_RSI.md).
 |-----|---------|-------|
 | `BB_RSI_MODE_ENABLED` | `true` | Show/hide bb_rsi menus in sidebar (also hides BB_RSI section in Settings) |
 | `BB_RSI_ENABLED` | `false` | Must be `true` for Fyers bb_rsi orders |
-| `BB_RSI_RESOLUTION` | `5` | BB_RSI candle size — `3` or `5` min |
 | `BB_RSI_BB_PERIOD` / `BB_RSI_BB_STDDEV` | `20` / `1` | Bollinger inputs (std-dev **1** — tighter than the charting default of 2) |
 | `BB_RSI_RSI_CE_THRESHOLD` | `70` | Take CE entry only when RSI is above this |
 | `BB_RSI_RSI_PE_THRESHOLD` | `40` | Take PE entry only when RSI is below this |
@@ -384,7 +383,6 @@ Full spec: [BB_RSI.md](BB_RSI.md).
 |-----|---------|-------|
 | `PA_MODE_ENABLED` | `true` | Show/hide PA menus in sidebar (also hides PA section in Settings) |
 | `PA_ENABLED` | `false` | Must be `true` (+ `LIVE_HARNESS_DRY_RUN=false`) for Fyers PA live orders |
-| `PA_RESOLUTION` | `5` | Candle size in minutes (`5` or `3`) |
 | `PA_ENTRY_START` / `PA_ENTRY_END` | `09:20` / `14:30` | Entry window (IST) |
 | `PA_PATTERN_DOUBLE_BOTTOM` | `true` | Toggle Double Bottom (W) → CE |
 | `PA_PATTERN_DOUBLE_TOP` | `true` | Toggle Double Top (M) → PE |
@@ -539,7 +537,6 @@ Full spec: [BB_RSI.md](BB_RSI.md).
 | `EMA9VWAP_VIX_ENABLED` | _(blank)_ | **Tri-state.** Blank = inherit the global `VIX_FILTER_ENABLED` (on unless explicitly `false`) — the historical behaviour. `true`/`false` decouples EMA9+VWAP from EMA_RSI_ST's VIX setting |
 | `EMA9VWAP_VIX_MAX_ENTRY` | _(blank)_ | Blank = inherit the global `VIX_MAX_ENTRY` (20). Block entries when India VIX is above this |
 | `EMA9VWAP_VIX_STRONG_ONLY` | _(blank)_ | Blank = inherit `VIX_STRONG_ONLY` (16). Inert in practice — EMA9+VWAP always submits `STRONG` to the VIX check |
-| `EMA9VWAP_RESOLUTION` | _(blank)_ | EMA9+VWAP candle timeframe. Blank = inherit the global `TRADE_RESOLUTION` (which the Settings UI labels as EMA_RSI_ST's). Set `5` to pin this strategy independently of EMA_RSI_ST |
 
 ### Trend Pullback Mode (15m bias + 5m pullback, Fyers)
 Trend-continuation option-buyer: 15m trend bias (swing structure + EMA20>EMA50 + slope + session VWAP) → healthy 5m pullback into the EMA20(5m) zone → resumption candle closing beyond the prior bar with body ≥ ATR-fraction. All exits ride on **spot** except the premium disaster backstop. No fixed target, no partial booking, fixed lot size. Runs on the shared Fyers socket.

@@ -91,7 +91,7 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
   const OPTION_SIM  = isFutures ? false : (process.env.BACKTEST_OPTION_SIM !== "false");
   const DELTA       = isFutures ? 1.0 : parseFloat(process.env.BACKTEST_DELTA || "0.55");
   const THETA_DAY   = isFutures ? 0   : parseFloat(process.env.BACKTEST_THETA_DAY || "10");
-  const BB_RSI_RES   = parseInt(process.env.BB_RSI_RESOLUTION || "5", 10);
+  const BB_RSI_RES   = parseInt(process.env.TRADE_RESOLUTION || "5", 10);
   // Candles per 6.5-hour (390-min) day for theta — derived from the ACTUAL bar spacing,
   // not BB_RSI_RES, so it stays correct even if the run's ?resolution= differs from the env.
   const _btResMins  = candles.length >= 2 ? Math.max(1, Math.round((candles[1].time - candles[0].time) / 60)) : BB_RSI_RES;
@@ -631,7 +631,7 @@ router.get("/", async (req, res) => {
   const defTo   = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
   const from       = req.query.from       || defFrom;
   const to         = req.query.to         || defTo;
-  const resolution = req.query.resolution || process.env.BB_RSI_RESOLUTION || "5";
+  const resolution = req.query.resolution || process.env.TRADE_RESOLUTION || "5";
   const capital    = parseInt(process.env.BACKTEST_CAPITAL || "100000", 10);
   const symbol     = "NSE:NIFTY50-INDEX";
   const skipCache  = req.query.skipCache === "true";

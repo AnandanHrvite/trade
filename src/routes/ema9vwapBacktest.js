@@ -55,11 +55,9 @@ router.get("/", async (req, res) => {
   const defTo   = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
   const from       = req.query.from       || defFrom;
   const to         = req.query.to         || defTo;
-  // H1: EMA9+VWAP owns its timeframe. Blank EMA9VWAP_RESOLUTION inherits the global
-  // TRADE_RESOLUTION so existing configs are unchanged; an explicit ?resolution=
-  // still wins for ad-hoc runs. Same precedence the paper engine uses.
+  // Candle timeframe is GLOBAL (TRADE_RESOLUTION); an explicit ?resolution= still
+  // wins for ad-hoc runs. Same precedence the paper engine uses.
   const resolution = req.query.resolution
-    || (process.env.EMA9VWAP_RESOLUTION || "").trim()
     || process.env.TRADE_RESOLUTION
     || "5";
   const capital    = parseInt(process.env.BACKTEST_CAPITAL || "100000", 10);

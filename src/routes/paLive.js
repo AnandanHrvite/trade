@@ -47,7 +47,7 @@ const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
 const CALLBACK_ID = "PA_LIVE";
 
 // ── Module-level config ─────────────────────────────────────────────────────
-const PA_RES            = parseInt(process.env.PA_RESOLUTION || "5", 10);
+const PA_RES            = parseInt(process.env.TRADE_RESOLUTION || "5", 10);
 const _PA_MAX_TRADES    = parseInt(process.env.PA_MAX_DAILY_TRADES || "30", 10);
 const _PA_MAX_LOSS      = parseFloat(process.env.PA_MAX_DAILY_LOSS || "2000");
 const _PA_PAUSE_CANDLES = parseInt(process.env.PA_SL_PAUSE_CANDLES || "2", 10);
