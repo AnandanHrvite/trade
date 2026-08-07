@@ -402,6 +402,7 @@ ${buildSidebar('paPatternBacktest', liveActive)}
       <select id="paRes">
         <option value="3" ${resolution==="3"?"selected":""}>3-min</option>
         <option value="5" ${resolution==="5"?"selected":""}>5-min</option>
+        <option value="15" ${resolution==="15"?"selected":""}>15-min</option>
       </select>
     </div>
     <button class="run-btn" id="runAllBtn">▶▶ Run All Patterns</button>
