@@ -187,11 +187,12 @@ body::after{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
 .login-input{width:100%;min-height:48px;padding:13px 14px;border-radius:10px;
   border:1px solid var(--field-b);background:var(--field);color:var(--text);
   font-size:16px;font-family:inherit;outline:none;transition:border-color .15s,box-shadow .15s;}
-.wrap .login-input{padding-left:40px;padding-right:48px;}
+.wrap .login-input{padding-left:40px;padding-right:52px;}
 .login-input::placeholder{color:var(--dim);}
 .login-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--ring);}
 .login-input:disabled{opacity:.55;cursor:not-allowed;}
-.eye{position:absolute;right:5px;width:40px;height:40px;border:none;background:none;color:var(--dim);
+/* 44×44 = Apple's minimum touch target; it still fits inside the 48px field. */
+.eye{position:absolute;right:3px;width:44px;height:44px;border:none;background:none;color:var(--dim);
   cursor:pointer;display:grid;place-items:center;border-radius:9px;}
 .eye:hover,.eye:focus-visible{color:var(--text);outline:none;}
 .eye svg{width:17px;height:17px;display:block;}
@@ -297,7 +298,7 @@ ${otpOffer ? `<div class="otp-box">
   function tick(){
     try {
       el.innerHTML = new Date().toLocaleTimeString('en-IN', { timeZone:'Asia/Kolkata', hour12:false }) + '&nbsp;IST';
-    } catch (e) { el.textContent = ''; }
+    } catch (e) { el.textContent = ''; return; }  // no tz support — stop, don't loop on the same failure
     setTimeout(tick, 1000);
   }
   tick();
@@ -320,8 +321,17 @@ ${otpOffer ? `<div class="otp-box">
   var form = document.getElementById('loginForm');
   var btn  = document.getElementById('loginBtn');
   if (!form || !btn) return;
+  var busy = false;
   form.addEventListener('submit', function(){
-    setTimeout(function(){ if (!btn.disabled) { btn.disabled = true; btn.textContent = 'Authenticating…'; } }, 0);
+    setTimeout(function(){
+      if (btn.disabled) return;            // locked out — the countdown owns the button
+      busy = true; btn.disabled = true; btn.textContent = 'Authenticating…';
+    }, 0);
+  });
+  // Coming back to this page from the bfcache (browser Back) restores the DOM
+  // as-is, which would otherwise leave the button stuck on "Authenticating…".
+  window.addEventListener('pageshow', function(e){
+    if (e.persisted && busy) location.reload();
   });
 })();
 // ── Lockout countdown ──────────────────────────────────────────────────────
