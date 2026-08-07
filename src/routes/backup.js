@@ -3,7 +3,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * Surfaced as a "Backup & Restore" card inside the Settings page (no nav item).
  *
- * GET  /backup/status            → { enabled, date, exists, downloaded }  (banner poll)
+ * GET  /backup/status            → { enabled, date, exists, downloaded, driveUploaded }  (banner poll)
  * GET  /backup/data              → { enabled, backups: [...], hour, retainDays }
  * GET  /backup/download?date=…   → streams backup-<date>.tar.gz, marks it downloaded
  * POST /backup/create            → cut a snapshot for today now
