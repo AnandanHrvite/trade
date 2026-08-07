@@ -75,6 +75,18 @@ router.get("/", (req, res) => {
     .f-keys{margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;}
     .f-key{font-family:'IBM Plex Mono',monospace;font-size:0.62rem;background:rgba(56,189,248,0.1);border:0.5px solid rgba(56,189,248,0.3);color:#7dd3fc;padding:2px 7px;border-radius:4px;text-decoration:none;}
     .f-key:hover{background:rgba(56,189,248,0.2);}
+    /* The By-Strategy table is 7 monospace columns — narrower than a phone. The
+       shared mobile stylesheet puts overflow-x:clip on .main-content, which would
+       silently cut the right-hand columns off, so the table gets its own scroller
+       rather than being squeezed or truncated. */
+    .tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+    /* min-width:max-content is what makes the scroller actually work. With
+       width:100% alone the table box stays at the wrapper's width while an
+       over-long cell spills past it — measured at 440px: the cell rendered 573px
+       wide, the table stayed 390px, and the overspill was clipped rather than
+       scrolled. max(100%, max-content) fills the panel when there is room and
+       grows the table (so the wrapper scrolls) when there is not. */
+    .tbl-wrap > .tbl{min-width:max-content;}
     .tbl{width:100%;border-collapse:collapse;font-family:'IBM Plex Mono',monospace;font-size:0.72rem;}
     .tbl th{padding:8px 10px;text-align:right;font-size:0.56rem;text-transform:uppercase;letter-spacing:1px;color:#1e3050;background:#04090f;border-bottom:0.5px solid #0e1e36;}
     .tbl th:first-child{text-align:left;}
@@ -82,6 +94,56 @@ router.get("/", (req, res) => {
     .tbl td:first-child{text-align:left;}
     .empty{text-align:center;padding:50px 20px;color:#4a6080;font-size:0.85rem;}
     .note{font-size:0.68rem;color:#4a6080;line-height:1.6;}
+    /* Shown only when the table really is wider than its scroller — a table cut
+       off at the screen edge with no affordance reads as broken, not swipeable. */
+    .scroll-hint{display:none;font-family:'IBM Plex Mono',monospace;font-size:0.6rem;color:#3a5070;margin-top:6px;}
+    .scroll-hint.on{display:block;}
+
+    /* ── TOUCH, any orientation ───────────────────────────────────────────────
+       A width-only breakpoint misses a phone in landscape: an iPhone 17 Pro Max
+       turned sideways is 956px wide, so it kept 31px targets and an 11.5px select
+       that iOS zooms into on focus. These are the rules that depend on the input
+       being a finger rather than on how much room there is. Placed before the
+       width block so the narrow-phone layout still wins on a portrait phone. */
+    @media (pointer: coarse){
+      .tbar select,.tbar button{min-height:44px;font-size:16px;}
+      .f-key{min-height:44px;display:inline-flex;align-items:center;padding:0 10px;}
+      .main-content{padding-left:max(18px, env(safe-area-inset-left));padding-right:max(18px, env(safe-area-inset-right));}
+    }
+
+    /* ── MOBILE (iPhone 17 Pro Max = 440px logical width) ─────────────────────
+       Three things this page needs on a phone that it does not need on desktop:
+       clearance for the fixed 44px hamburger (this page has no top bar of its
+       own, so the title would sit under it), 16px form controls (below 16px iOS
+       Safari zooms the whole page in on focus), and 44px tap targets. Horizontal
+       padding uses the safe-area insets so nothing hides under the notch in
+       landscape, and the bottom clears the home indicator. body already carries
+       padding-top:var(--banner-h) from the shared stylesheet, so the alert
+       banners are not double-counted here. */
+    @media(max-width:768px){
+      .main-content{
+        padding:52px max(12px, env(safe-area-inset-right)) calc(40px + env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+      }
+      .page-title{font-size:1rem;}
+      .page-sub{font-size:0.7rem;}
+      .tbar{padding:12px;gap:8px 10px;}
+      .tbar label{flex:0 0 auto;}
+      /* flex-basis 140px keeps each label+select pair on its own row at 440px
+         instead of two cramped pairs sharing one. */
+      .tbar select{flex:1 1 140px;min-width:0;font-size:16px;min-height:44px;}
+      .btn{flex:1 1 100%;min-height:44px;font-size:0.82rem;}
+      .meta{flex:1 1 100%;margin-left:0;font-size:0.62rem;line-height:1.5;}
+      .stat-grid{gap:8px;}
+      .sc{padding:10px 12px;}
+      .sc-val{font-size:0.95rem;}
+      .panel{padding:12px;}
+      .f{padding:12px;}
+      .f-title{font-size:0.8rem;}
+      .f-detail,.f-sug{font-size:0.76rem;}
+      /* Settings links are the only tappable thing inside a card. */
+      .f-key{min-height:44px;display:inline-flex;align-items:center;padding:0 10px;font-size:0.68rem;}
+      .tbl th,.tbl td{white-space:nowrap;}
+    }
     :root[data-theme="light"] body{background:#f4f6f9!important;color:#334155!important;}
     :root[data-theme="light"] .main-content{background:#f4f6f9!important;}
     :root[data-theme="light"] .page-title{color:#1e293b!important;}
@@ -110,9 +172,9 @@ router.get("/", (req, res) => {
       <select id="fBook"><option value="paper">Paper</option><option value="live">Live</option></select>
       <label>Window</label>
       <select id="fDays">
-        <option value="30">Last 30 days</option>
-        <option value="90" selected>Last 90 days</option>
-        <option value="180">Last 180 days</option>
+        <option value="30">30 days</option>
+        <option value="90" selected>90 days</option>
+        <option value="180">180 days</option>
         <option value="3650">Everything</option>
       </select>
       <button class="btn" id="btnRun">↻ Re-analyse</button>
@@ -178,7 +240,7 @@ function render(r){
   }
   h += '</div>';
 
-  h += '<div class="panel"><h3>By Strategy — worst first</h3><table class="tbl"><thead><tr>'
+  h += '<div class="panel"><h3>By Strategy — worst first</h3><div class="tbl-wrap"><table class="tbl"><thead><tr>'
     + '<th>Strategy</th><th>Trades</th><th>WR</th><th>Net</th><th>Per trade</th><th>PF</th><th>Worst run (1 day)</th>'
     + '</tr></thead><tbody>';
   for(const m of r.perMode){
@@ -188,7 +250,7 @@ function render(r){
       + '<td>'+(m.profitFactor===null?'∞':m.profitFactor.toFixed(2))+'</td>'
       + '<td>'+m.maxLossStreak+'L</td></tr>';
   }
-  h += '</tbody></table></div>';
+  h += '</tbody></table></div><div class="scroll-hint" id="tblHint">← swipe the table sideways for the rest →</div></div>';
 
   h += '<div class="panel"><h3>How to read this</h3><p class="note">'
     + 'Findings only appear once a strategy has at least '+r.minTrades+' trades in the window, and a bucket '
@@ -198,7 +260,20 @@ function render(r){
     + '</p></div>';
 
   document.getElementById('content').innerHTML = h;
+
+  // The hint depends on the rendered width, so it can only be decided after the
+  // table is in the DOM — and again on rotate/resize.
+  syncTableHint();
 }
+
+function syncTableHint(){
+  const wrap = document.querySelector('.tbl-wrap');
+  const hint = document.getElementById('tblHint');
+  if(!wrap || !hint) return;
+  hint.classList.toggle('on', wrap.scrollWidth > wrap.clientWidth + 1);
+}
+window.addEventListener('resize', syncTableHint);
+window.addEventListener('orientationchange', syncTableHint);
 
 function card(label, val, colour){
   return '<div class="sc" style="--accent:'+colour+'"><div class="sc-label">'+label+'</div>'

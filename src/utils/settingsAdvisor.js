@@ -333,16 +333,31 @@ function findingsForMode(mode, label, list, minTrades) {
     const earliest = Math.min(...hours.map(g => g.key));
     const latest   = Math.max(...hours.map(g => g.key));
     if (worst.net < 0) {
-      const hh = String(worst.key).padStart(2, "0");
-      const atStart = worst.key === earliest && K.entryStart;
-      const atEnd   = worst.key === latest   && K.entryEnd;
+      const hh      = String(worst.key).padStart(2, "0");
+      const isFirst = worst.key === earliest;
+      const isLast  = worst.key === latest;
+      // An edge hour is only actionable if this strategy actually has a key for
+      // that edge — ORB, for one, has no entry-START key (its window opens off
+      // the opening range), so "move the start" would name a setting that does
+      // not exist, and "it sits mid-window" would be plainly wrong.
+      let suggestion, keys;
+      if (isFirst && K.entryStart) {
+        suggestion = `It is the first hour you trade — try moving ${K.entryStart} to ${String(worst.key + 1).padStart(2, "0")}:00 and re-check next week.`;
+        keys = [K.entryStart];
+      } else if (isLast && K.entryEnd) {
+        suggestion = `It is the last hour you trade — try moving ${K.entryEnd} back to ${hh}:00 and re-check next week.`;
+        keys = [K.entryEnd];
+      } else if (isFirst || isLast) {
+        suggestion = `It is the ${isFirst ? "first" : "last"} hour you trade, but this strategy has no entry-window setting for that edge — the window is set by the strategy's own rules. Note it and watch whether it repeats.`;
+        keys = [];
+      } else {
+        suggestion = `It sits mid-window, so it cannot be cut without losing the hours around it. Watch it rather than changing the window.`;
+        keys = [];
+      }
       add(`hour-${worst.key}`, "medium",
         `${label}: the ${hh}:00 hour lost ${inr(-worst.net)}`,
         `${worst.n} entries in that hour, ${(worst.wins / worst.n * 100).toFixed(0)}% green, net ${inr(worst.net)}.`,
-        atStart ? `It is the first hour you trade — try moving ${K.entryStart} to ${String(worst.key + 1).padStart(2, "0")}:00 and re-check next week.`
-        : atEnd  ? `It is the last hour you trade — try moving ${K.entryEnd} back to ${hh}:00 and re-check next week.`
-                 : `It sits mid-window, so it cannot be cut without losing the hours around it. Watch it rather than changing the window.`,
-        [atStart ? K.entryStart : null, atEnd ? K.entryEnd : null]);
+        suggestion, keys);
     }
   }
 
@@ -387,19 +402,26 @@ function findingsForMode(mode, label, list, minTrades) {
   // settings, so different advice — never suggest one in the other's language.
   const runLen = maxIntradayLossStreak(list);
   if (runLen >= 4) {
-    const brake = num(envKeyValue(K.lossStreak), 0);
-    if (K.lossStreak && brake > 0 && runLen >= brake + 2) {
-      add("loss-streak", "medium",
-        `${label}: ${runLen} losses in a row in one session`,
-        `${K.lossStreak} is set to ${brake}, yet a single session still ran to ${runLen} straight losses.`,
-        `The brake is not stopping the day where you set it — check it is actually being applied by this engine before changing anything else.`,
-        [K.lossStreak]);
-    } else if (K.lossStreak && brake <= 0) {
-      add("loss-streak", "medium",
-        `${label}: ${runLen} losses in a row in one session, with no streak brake`,
-        `${K.lossStreak} is off, so a chop day runs until the daily-loss cap or the clock stops it.`,
-        `Set ${K.lossStreak} to 3 — the day then stops after three straight losses instead of grinding on.`,
-        [K.lossStreak]);
+    // Branch on which key the strategy HAS first, then on its value. Ordering it
+    // the other way round let a strategy that owns both keys (EMA_RSI_ST) fall
+    // through to the slPause branch whenever its brake was roughly holding — and
+    // that branch's text claims the strategy has no streak brake at all.
+    if (K.lossStreak) {
+      const brake = num(envKeyValue(K.lossStreak), 0);
+      if (brake <= 0) {
+        add("loss-streak", "medium",
+          `${label}: ${runLen} losses in a row in one session, with no streak brake`,
+          `${K.lossStreak} is off, so a chop day runs until the daily-loss cap or the clock stops it.`,
+          `Set ${K.lossStreak} to 3 — the day then stops after three straight losses instead of grinding on.`,
+          [K.lossStreak]);
+      } else if (runLen >= brake + 2) {
+        add("loss-streak", "medium",
+          `${label}: ${runLen} losses in a row in one session`,
+          `${K.lossStreak} is set to ${brake}, yet a single session still ran to ${runLen} straight losses.`,
+          `The brake is not stopping the day where you set it — check it is actually being applied by this engine before changing anything else.`,
+          [K.lossStreak]);
+      }
+      // brake set and roughly holding (runLen < brake + 2) → nothing to say.
     } else if (K.slPause) {
       const pause = num(envKeyValue(K.slPause), 0);
       add("loss-streak", "medium",
