@@ -578,6 +578,7 @@ const SETTINGS_SCHEMA = [
       { key: "LOGIN_SESSION_MIN",     label: "Login Idle Timeout (min)",      type: "number", min: 5,  max: 240, step: 5,  effect: EFFECT.INSTANT, desc: "Idle minutes before login expires.",                       default: "15" },
       { key: "LOGIN_RATE_MAX",        label: "Login: Max Failed Attempts",    type: "number", min: 1,  max: 50,  step: 1,  effect: EFFECT.INSTANT, desc: "Wrong-password attempts allowed before lockout.", default: "5" },
       { key: "LOGIN_RATE_WINDOW_MIN", label: "Login: Lockout Window (min)",   type: "number", min: 1,  max: 1440, step: 1, effect: EFFECT.INSTANT, desc: "Lockout window length, in minutes.",                                          default: "15" },
+      { key: "LOGIN_OTP_MOBILE",      label: "Login: OTP Mobile Number",      type: "text",   effect: EFFECT.INSTANT, desc: "Typing this number on a locked-out login page sends an OTP to Telegram that clears the lockout (blank = off).", default: "" },
 
       // ── Write rate limit (POST/PUT/DELETE/PATCH per IP) ─────────────────────
       { key: "WRITE_RATE_PER_MIN", label: "Write Rate (req/min/IP)", type: "number", min: 0,   max: 6000, step: 10, effect: EFFECT.INSTANT, desc: "Max state-changing requests per minute per IP (0 = off).", default: "120" },
@@ -698,7 +699,7 @@ const IMMEDIATE_KEYS = new Set([
   "TG_DAYREPORT_CONSOLIDATED",
   "NIFTY_SPOT_FALLBACK", "CACHE_MAX_DAYS",
   "BB_RSI_ENABLED", "BB_RSI_MODE_ENABLED", "BB_RSI_VIX_ENABLED", "BB_RSI_EXPIRY_DAY_ONLY",
-  "API_SECRET", "LOGIN_SECRET", "UI_THEME",
+  "API_SECRET", "LOGIN_SECRET", "LOGIN_OTP_MOBILE", "UI_THEME",
   "UI_SHOW_SIMULATE", "UI_SHOW_COMPARE", "UI_SHOW_TRACKER",
   // EMA_RSI_ST thresholds — read from process.env inside getSignal() / per-tick on every candle
   "RSI_CE_MIN", "RSI_CE_MAX", "RSI_PE_MAX", "RSI_PE_MIN",

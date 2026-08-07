@@ -6,6 +6,14 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Added — a live lockout countdown and an OTP escape hatch on the login page
+
+Getting the password wrong `LOGIN_RATE_MAX` times used to leave a flat *"Try again in 1 minutes"* with no way to tell whether the wait was nearly over, and no way out but waiting. The lockout message is now a **live countdown** (`4:32`, ticking down) with the password box disabled until it reaches zero, at which point the page reloads itself; reloading mid-lockout keeps the countdown instead of resetting the message.
+
+Below it, when a mobile number is saved in **Settings → Security & Safety → Login: OTP Mobile Number** (`LOGIN_OTP_MOBILE`) and Telegram is configured, the locked-out page also offers **Unlock with OTP**: type that number, a 6-digit code goes to the Telegram chat, and entering it clears the lockout for that IP straight away. The code only removes the rate-limit block — the password is still required to get in.
+
+The two endpoints (`POST /login/otp/send` / `/login/otp/verify`) refuse to do anything unless the caller's IP is actually locked out, reply identically for a right and a wrong number so the saved number can't be fished out, and cap each lockout at 5 send requests (60 s apart) and 5 wrong codes; codes expire after 5 minutes. Blank `LOGIN_OTP_MOBILE` — the default — leaves the login page exactly as it was apart from the countdown.
+
 ### Changed — a snapshot on Google Drive now clears the "not downloaded" nag
 
 The download banner and the Backup & Restore row only tracked *local* downloads, so a day whose snapshot had already been pushed to Google Drive by the daily job still showed **⏳ not downloaded** and still nagged on every page — asking for a second copy of a file that was already off-site. A successful Drive upload (daily, boot or the manual **Backup to Drive now** button) is now recorded against that date: the banner stays hidden and the row shows **☁ safe in Drive**. Cutting a fresh snapshot for the same date re-arms the nag, since that new file has not been uploaded yet.

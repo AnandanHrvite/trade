@@ -701,6 +701,7 @@ Blocks directional entries that fight the prevailing Open-Interest buildup: read
 | `LOGIN_SECRET` | — | Page-level password gate. Leave blank for open access. |
 | `LOGIN_SESSION_MIN` | `15` | Idle minutes before the login cookie expires (each request slides the timer). |
 | `LOGIN_RATE_MAX` / `LOGIN_RATE_WINDOW_MIN` | `5` / `15` | Failed-attempt rate-limit per IP |
+| `LOGIN_OTP_MOBILE` | — | Mobile number that can unlock a rate-limited login. On the locked-out page, typing this number sends a 6-digit OTP to Telegram (`POST /login/otp/send`); entering it (`POST /login/otp/verify`) clears that IP's lockout so the password can be retried without waiting for the countdown. Needs Telegram configured. Blank = feature off. Code valid 5 min, 5 sends + 5 wrong tries per lockout. |
 | `WRITE_RATE_PER_MIN` / `WRITE_RATE_BURST` | `120` / `30` | Per-IP cap on POST/PUT/DELETE/PATCH (`0` disables) |
 | `BROKER_CB_FAIL_THRESHOLD` / `BROKER_CB_OPEN_SEC` | `5` / `30` | Broker circuit breaker — opens after N consecutive failures, half-open probe after T sec |
 | `BROKER_RETRY_WRITE_ATTEMPTS` / `BROKER_RETRY_READ_ATTEMPTS` / `BROKER_RETRY_BASE_MS` | `2` / `3` / `150` | Order / query retry — writes use linear backoff and only retry pre-flight errors (never double-place) |

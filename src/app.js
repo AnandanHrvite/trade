@@ -35,7 +35,7 @@ const sharedSocketState = require("./utils/sharedSocketState");
 const crypto = require("crypto");
 const loginLogStore = require("./utils/loginLogStore");
 const fyersBroker   = require("./services/fyersBroker");
-const { sendTelegram, sendTelegramSync, getTelegramHealth } = require("./utils/notify");
+const { sendTelegram, sendTelegramSync, getTelegramHealth, isConfigured: telegramConfigured } = require("./utils/notify");
 const consolidatedEodReporter = require("./utils/consolidatedEodReporter");
 const { loadTradePosition, clearTradePosition, loadBbRsiPosition, clearBbRsiPosition, loadPAPosition, clearPAPosition, loadEma9VwapPosition, clearEma9VwapPosition, loadOrbPosition, clearOrbPosition, loadTrendPbPosition, clearTrendPbPosition, loadGapsPosition, clearGapsPosition } = require("./utils/positionPersist");
 const app = express();
@@ -63,7 +63,38 @@ function loginMaxAge() {
   const m = Number(process.env.LOGIN_SESSION_MIN);
   return Number.isFinite(m) && m >= 1 ? m * 60 : 900; // default 15 min
 }
-function loginPageHTML(error) {
+// ── OTP unlock (locked-out escape hatch) ────────────────────────────────────
+// When an IP is rate-limited, the owner can prove identity by typing the mobile
+// number saved in Settings (LOGIN_OTP_MOBILE). A one-time code is then sent to
+// the configured Telegram chat; entering it clears the lockout for that IP so
+// the password can be retried without waiting out the timer.
+const LOGIN_OTP_TTL_MS      = 5 * 60 * 1000; // code validity
+const LOGIN_OTP_RESEND_MS   = 60 * 1000;     // cooldown between sends per IP
+const LOGIN_OTP_MAX_SENDS   = 5;             // send requests per lockout per IP
+const LOGIN_OTP_MAX_TRIES   = 5;             // wrong-code attempts per code
+// One record per IP. `hash`/`codeExpiresAt`/`tries` are the live code; `sends`/
+// `lastSentAt` are throttle state that must OUTLIVE the code — a verify that
+// wipes the record would reset the send cap and reopen unlimited guessing of
+// the saved mobile. `expiresAt` (record lifetime, ≥ the lockout) drives eviction.
+const _loginOtps = {};  // { ip: { hash, codeExpiresAt, tries, sends, lastSentAt, expiresAt } }
+
+/** Digits-only form of the mobile saved in Settings ("" when not configured). */
+function _loginOtpMobile() {
+  return String(process.env.LOGIN_OTP_MOBILE || "").replace(/\D/g, "");
+}
+/** OTP unlock is offered only when both a mobile and Telegram are configured. */
+function _loginOtpReady() {
+  return _loginOtpMobile().length >= 6 && telegramConfigured();
+}
+function _clientIp(req) {
+  return req.headers["x-forwarded-for"]?.split(",")[0]?.trim()
+      || req.socket?.remoteAddress || "unknown";
+}
+function _sha256(s) { return crypto.createHash("sha256").update(String(s)).digest("hex"); }
+
+function loginPageHTML(error, opts = {}) {
+  const lockedSec = Number(opts.lockedSec) > 0 ? Math.ceil(Number(opts.lockedSec)) : 0;
+  const otpOffer  = lockedSec > 0 && _loginOtpReady();
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Login — Trading Bot</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>ௐ</text></svg>">
@@ -80,6 +111,14 @@ body{background:#080c14;font-family:'IBM Plex Sans',sans-serif;min-height:100vh;
 .login-btn{width:100%;margin-top:14px;padding:11px;border-radius:8px;border:none;background:#1e40af;color:#fff;font-size:0.82rem;font-weight:700;font-family:inherit;cursor:pointer;transition:background 0.15s;}
 .login-btn:hover{background:#2563eb;}
 .login-error{margin-top:12px;padding:8px 12px;border-radius:7px;background:#1c0610;border:1px solid #500e20;color:#f87171;font-size:0.75rem;text-align:center;display:${error ? 'block' : 'none'};}
+.login-btn:disabled{background:#1a2236;color:#3a5070;cursor:not-allowed;}
+.otp-box{margin-top:18px;padding-top:16px;border-top:1px solid #1a2236;}
+.otp-title{font-size:0.72rem;font-weight:700;color:#93b4dd;text-align:center;margin-bottom:4px;}
+.otp-hint{font-size:0.66rem;color:#3a5070;text-align:center;margin-bottom:10px;}
+.otp-box .login-input{margin-bottom:0;}
+.otp-msg{margin-top:10px;font-size:0.7rem;text-align:center;color:#93b4dd;min-height:1em;}
+.otp-msg.err{color:#f87171;}
+.otp-msg.ok{color:#4ade80;}
 :root[data-theme="light"] { background-color:#f4f6f9; }
 :root[data-theme="light"] body { background:#f4f6f9; }
 :root[data-theme="light"] .login-box { background:#ffffff; border-color:#e0e4ea; box-shadow:0 8px 40px rgba(0,0,0,0.1); }
@@ -90,6 +129,12 @@ body{background:#080c14;font-family:'IBM Plex Sans',sans-serif;min-height:100vh;
 :root[data-theme="light"] .login-btn { background:#2563eb; }
 :root[data-theme="light"] .login-btn:hover { background:#1d4ed8; }
 :root[data-theme="light"] .login-error { background:#fef2f2; border-color:#fecaca; color:#dc2626; }
+:root[data-theme="light"] .login-btn:disabled { background:#e2e8f0; color:#94a3b8; }
+:root[data-theme="light"] .otp-box { border-top-color:#e0e4ea; }
+:root[data-theme="light"] .otp-title { color:#1e293b; }
+:root[data-theme="light"] .otp-hint, :root[data-theme="light"] .otp-msg { color:#64748b; }
+:root[data-theme="light"] .otp-msg.err { color:#dc2626; }
+:root[data-theme="light"] .otp-msg.ok  { color:#16a34a; }
 </style></head><body>
 <div class="login-box">
 <div class="login-icon">🔒</div>
@@ -100,15 +145,83 @@ body{background:#080c14;font-family:'IBM Plex Sans',sans-serif;min-height:100vh;
 <input type="hidden" name="lat" id="lat">
 <input type="hidden" name="lon" id="lon">
 <input type="hidden" name="geoCity" id="geoCity">
-<button type="submit" class="login-btn">Login</button>
+<button type="submit" class="login-btn" id="loginBtn">Login</button>
 </form>
-<div class="login-error">${error || ''}</div>
+<div class="login-error" id="loginError">${error || ''}</div>
+${otpOffer ? `<div class="otp-box">
+<div class="otp-title">Locked out? Unlock with OTP</div>
+<div class="otp-hint">Enter your registered mobile number — the code goes to Telegram.</div>
+<input type="tel" id="otpMobile" class="login-input" placeholder="Registered mobile number" inputmode="numeric" autocomplete="tel">
+<button type="button" class="login-btn" id="otpSendBtn">Send OTP to Telegram</button>
+<div id="otpStep2" style="display:none;margin-top:14px;">
+<input type="text" id="otpCode" class="login-input" placeholder="6-digit OTP" inputmode="numeric" maxlength="6" autocomplete="one-time-code">
+<button type="button" class="login-btn" id="otpVerifyBtn">Verify &amp; Unlock</button>
+</div>
+<div class="otp-msg" id="otpMsg"></div>
+</div>` : ''}
 </div>
 <script>
 (function(){
   if ('${process.env.UI_THEME || "dark"}' === 'light') {
     document.documentElement.setAttribute('data-theme', 'light');
   }
+})();
+// ── Lockout countdown ──────────────────────────────────────────────────────
+(function(){
+  var left = ${lockedSec};
+  if (left <= 0) return;
+  var box = document.getElementById('loginError');
+  var btn = document.getElementById('loginBtn');
+  var pwd = document.getElementById('pwdInput');
+  if (btn) btn.disabled = true;
+  if (pwd) { pwd.disabled = true; pwd.blur(); }
+  box.style.display = 'block';
+  function fmt(s){ var m = Math.floor(s/60), r = s%60; return m + ':' + (r<10?'0':'') + r; }
+  function tick(){
+    if (left <= 0) { location.reload(); return; }
+    box.textContent = 'Too many attempts. Try again in ' + fmt(left);
+    left--;
+    setTimeout(tick, 1000);
+  }
+  tick();
+})();
+// ── OTP unlock ─────────────────────────────────────────────────────────────
+(function(){
+  var sendBtn = document.getElementById('otpSendBtn');
+  if (!sendBtn) return;
+  var verifyBtn = document.getElementById('otpVerifyBtn');
+  var msg = document.getElementById('otpMsg');
+  function say(text, cls){ msg.textContent = text; msg.className = 'otp-msg' + (cls ? ' ' + cls : ''); }
+  function post(url, payload, btn, label){
+    btn.disabled = true;
+    return fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) })
+      .then(function(r){ return r.json().catch(function(){ return { success:false, error:'Server error.' }; }); })
+      .catch(function(){ return { success:false, error:'Network error. Try again.' }; })
+      .then(function(d){ btn.disabled = false; btn.textContent = label; return d; });
+  }
+  sendBtn.addEventListener('click', function(){
+    var mobile = (document.getElementById('otpMobile').value || '').trim();
+    if (mobile.replace(/\\D/g, '').length < 6) { say('Enter your mobile number.', 'err'); return; }
+    say('Sending…');
+    sendBtn.textContent = 'Sending…';
+    post('/login/otp/send', { mobile: mobile }, sendBtn, 'Resend OTP').then(function(d){
+      say(d.message || d.error || '', d.success ? 'ok' : 'err');
+      if (d.success) {
+        document.getElementById('otpStep2').style.display = 'block';
+        document.getElementById('otpCode').focus();
+      }
+    });
+  });
+  verifyBtn.addEventListener('click', function(){
+    var code = (document.getElementById('otpCode').value || '').trim();
+    if (!/^\\d{6}$/.test(code)) { say('Enter the 6-digit OTP.', 'err'); return; }
+    say('Verifying…');
+    verifyBtn.textContent = 'Verifying…';
+    post('/login/otp/verify', { otp: code }, verifyBtn, 'Verify & Unlock').then(function(d){
+      if (d.success) { say('Unlocked — reloading…', 'ok'); location.reload(); }
+      else say(d.error || 'Invalid OTP.', 'err');
+    });
+  });
 })();
 // Request browser GPS on page load (silent — if denied, fields stay empty)
 if (navigator.geolocation) {
@@ -135,7 +248,11 @@ app.get("/login", (req, res) => {
   const secret = process.env.LOGIN_SECRET;
   if (!secret) return res.redirect("/");
   res.setHeader("Content-Type", "text/html");
-  res.send(loginPageHTML());
+  // Re-render the countdown after a reload so the lockout stays visible.
+  const remainMs = _loginLockRemainingMs(_clientIp(req));
+  res.send(remainMs > 0
+    ? loginPageHTML(`Too many attempts. Try again in ${Math.ceil(remainMs / 60000)} minutes.`, { lockedSec: remainMs / 1000 })
+    : loginPageHTML());
 });
 
 // ── Login rate limiting — brute-force protection ─────────────────────────────
@@ -144,6 +261,13 @@ const _loginAttempts = {};  // { ip: { count, firstAttempt } }
 let _lastLoginSweep = 0;
 function _loginRateMax()    { const n = Number(process.env.LOGIN_RATE_MAX);        return Number.isFinite(n) && n >= 1 ? n : 5; }
 function _loginRateWindow() { const m = Number(process.env.LOGIN_RATE_WINDOW_MIN); return (Number.isFinite(m) && m >= 1 ? m : 15) * 60 * 1000; }
+/** Milliseconds left on this IP's lockout (0 when it isn't locked out). */
+function _loginLockRemainingMs(ip) {
+  const entry = _loginAttempts[ip];
+  if (!entry || entry.count < _loginRateMax()) return 0;
+  const remain = _loginRateWindow() - (Date.now() - entry.firstAttempt);
+  return remain > 0 ? remain : 0;
+}
 
 app.post("/login", (req, res) => {
   const secret = process.env.LOGIN_SECRET;
@@ -164,6 +288,9 @@ app.post("/login", (req, res) => {
     for (const k of Object.keys(_loginAttempts)) {
       if (now - _loginAttempts[k].firstAttempt > winMs) delete _loginAttempts[k];
     }
+    for (const k of Object.keys(_loginOtps)) {
+      if (now > _loginOtps[k].expiresAt) delete _loginOtps[k];
+    }
   }
   if (_loginAttempts[ip]) {
     const entry = _loginAttempts[ip];
@@ -171,10 +298,11 @@ app.post("/login", (req, res) => {
       // Window expired — reset
       _loginAttempts[ip] = { count: 0, firstAttempt: now };
     } else if (entry.count >= maxTry) {
-      const waitMin = Math.ceil((winMs - (now - entry.firstAttempt)) / 60000);
+      const remainMs = winMs - (now - entry.firstAttempt);
+      const waitMin  = Math.ceil(remainMs / 60000);
       console.warn(`🚫 [LOGIN] Rate limited IP ${ip} — ${entry.count} failed attempts. Wait ${waitMin}min.`);
       res.setHeader("Content-Type", "text/html");
-      return res.status(429).send(loginPageHTML(`Too many attempts. Try again in ${waitMin} minutes.`));
+      return res.status(429).send(loginPageHTML(`Too many attempts. Try again in ${waitMin} minutes.`, { lockedSec: remainMs / 1000 }));
     }
   } else {
     _loginAttempts[ip] = { count: 0, firstAttempt: now };
@@ -233,6 +361,98 @@ app.post("/login", (req, res) => {
 
   res.setHeader("Content-Type", "text/html");
   res.send(loginPageHTML("Wrong password. Please try again."));
+});
+
+// ── POST /login/otp/send — mail a one-time unlock code to Telegram ──────────
+// Only reachable while the caller's IP is actually locked out, so this adds no
+// attack surface outside the lockout. The reply is deliberately identical for a
+// right and a wrong mobile number (no number enumeration) and every request —
+// right or wrong — burns one of the LOGIN_OTP_MAX_SENDS slots.
+app.post("/login/otp/send", (req, res) => {
+  if (!process.env.LOGIN_SECRET) return res.status(400).json({ success: false, error: "Login is not enabled." });
+  if (!_loginOtpReady())        return res.status(400).json({ success: false, error: "OTP unlock is not configured." });
+
+  const ip = _clientIp(req);
+  if (_loginLockRemainingMs(ip) <= 0) return res.status(400).json({ success: false, error: "Not locked out — just log in." });
+
+  const now  = Date.now();
+  const prev = _loginOtps[ip];
+  if (prev) {
+    if (prev.sends >= LOGIN_OTP_MAX_SENDS) {
+      return res.status(429).json({ success: false, error: "Too many OTP requests. Wait out the lockout." });
+    }
+    const waitMs = LOGIN_OTP_RESEND_MS - (now - prev.lastSentAt);
+    if (waitMs > 0) {
+      return res.status(429).json({ success: false, error: `Please wait ${Math.ceil(waitMs / 1000)}s before requesting another OTP.` });
+    }
+  }
+
+  // The record must survive the whole lockout, else the send cap resets early.
+  const record = {
+    hash: null, codeExpiresAt: 0, tries: 0,
+    sends: (prev?.sends || 0) + 1,
+    lastSentAt: now,
+    expiresAt: now + Math.max(LOGIN_OTP_TTL_MS, _loginLockRemainingMs(ip)),
+  };
+  const generic = "If the number is correct, an OTP has been sent to Telegram.";
+  const typed   = String(req.body?.mobile || "").replace(/\D/g, "");
+  const saved   = _loginOtpMobile();
+  // Compare the last 10 digits so a typed "+91…" / "0…" prefix still matches.
+  const match   = typed.length >= 6 && typed.slice(-10) === saved.slice(-10);
+
+  if (!match) {
+    // Burn a slot anyway, else a wrong number could be guessed without limit.
+    _loginOtps[ip] = record;
+    console.warn(`🚫 [LOGIN] OTP requested with a non-matching mobile from ${ip}`);
+    return res.json({ success: true, message: generic });
+  }
+
+  const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, "0");
+  record.hash = _sha256(code);
+  record.codeExpiresAt = now + LOGIN_OTP_TTL_MS;
+  _loginOtps[ip] = record;
+  console.log(`🔑 [LOGIN] OTP unlock code sent to Telegram for ${ip}`);
+  sendTelegram(
+    `🔐 Trading Bot login OTP: ${code}\n` +
+    `Valid ${Math.round(LOGIN_OTP_TTL_MS / 60000)} min. Requested from IP ${ip}.\n` +
+    `It clears the login lockout. Ignore this if it wasn't you.`
+  ).catch(() => {});
+  return res.json({ success: true, message: generic });
+});
+
+// ── POST /login/otp/verify — clear this IP's lockout ────────────────────────
+// A correct code only removes the rate-limit block; the password is still
+// required to get a session.
+app.post("/login/otp/verify", (req, res) => {
+  if (!process.env.LOGIN_SECRET) return res.status(400).json({ success: false, error: "Login is not enabled." });
+
+  const ip    = _clientIp(req);
+  const entry = _loginOtps[ip];
+  const now   = Date.now();
+  // Only the code is ever invalidated here — the record (and its send cap)
+  // stays, so verify can't be used to reset the throttle.
+  if (!entry || !entry.hash || now > entry.codeExpiresAt) {
+    if (entry) entry.hash = null;
+    return res.status(400).json({ success: false, error: "No valid OTP — request a new one." });
+  }
+  if (entry.tries >= LOGIN_OTP_MAX_TRIES) {
+    entry.hash = null;
+    return res.status(429).json({ success: false, error: "Too many wrong OTPs — request a new one." });
+  }
+  entry.tries++;
+
+  const typed = String(req.body?.otp || "").replace(/\D/g, "");
+  const ok = typed.length === 6 && crypto.timingSafeEqual(
+    Buffer.from(_sha256(typed), "hex"), Buffer.from(entry.hash, "hex"));
+  if (!ok) {
+    console.warn(`🚫 [LOGIN] Wrong OTP from ${ip} (${entry.tries}/${LOGIN_OTP_MAX_TRIES})`);
+    return res.status(401).json({ success: false, error: `Invalid OTP. ${LOGIN_OTP_MAX_TRIES - entry.tries} attempt(s) left.` });
+  }
+
+  delete _loginOtps[ip];
+  delete _loginAttempts[ip];
+  console.log(`🔓 [LOGIN] Lockout cleared by OTP for ${ip}`);
+  return res.json({ success: true });
 });
 
 app.get("/logout", (req, res) => {
