@@ -44,6 +44,7 @@ const { notifyEntry, notifyExit, notifyStarted, notifyDayReport } = require("../
 const { getCharges } = require("../utils/charges");
 const { fmtISTDateTime, getISTMinutes, getBucketStart } = require("../utils/tradeUtils");
 const skipLogger = require("../utils/skipLogger");
+const capitalPool = require("../utils/capitalPool");
 const tradeGuards = require("../utils/tradeGuards");
 
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
@@ -271,6 +272,14 @@ async function simulateBuy(side, sig) {
 
   const qty = instrumentConfig.getLotQty();
 
+  // ── Capital check — advisory only: an overdrawn pool raises a dashboard alert,
+  //    it never stops the trade (a paper session must keep collecting data).
+  const _cap = capitalPool.check("trend_pb", qty * optionEntryLtp);
+  if (!_cap.ok) {
+    log(`⚠️ [TREND_PB-PAPER] ${_cap.reason} — entry taken anyway, pool now overdrawn`);
+    capitalPool.noteShortfall("trend_pb", _cap, { side, symbol: optInfo.symbol });
+  }
+
   // ── Initial hard SL = structural (pullback low CE / high PE), clamped to a
   //    sane band so a wide structure doesn't over-risk and a tight one doesn't
   //    get noise-stopped. risk = clamp(|entry - structuralStop|, min, max).
@@ -321,6 +330,7 @@ async function simulateBuy(side, sig) {
   };
 
   state.position = pos;
+  capitalPool.block("trend_pb", qty * optionEntryLtp, { side, symbol: optInfo.symbol, qty, premium: optionEntryLtp });
   try { require("../utils/positionPersist").saveTrendPbPosition(pos, { sessionPnl: state.sessionPnl }); } catch (_) {}
   state.optionLtp = optionEntryLtp;
   state.optionLtpUpdatedAt = Date.now();
@@ -436,6 +446,7 @@ function simulateSell(reason) {
   } catch (_) {}
 
   state.position = null;
+  capitalPool.release("trend_pb", pnl);
   try { require("../utils/positionPersist").clearTrendPbPosition(); } catch (_) {}
   state.optionLtp = null;
   state.optionLtpUpdatedAt = null;

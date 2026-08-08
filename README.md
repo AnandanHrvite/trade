@@ -593,10 +593,24 @@ Trend-continuation option-buyer: 15m trend bias (swing structure + EMA20>EMA50 +
 
 ### Paper Investment Pools (per broker)
 Paper capital is pooled per broker, not per strategy. Each strategy's running capital = its broker pool + that strategy's all-time paper P&L. The Real-Time Monitor (dashboard) shows each pool's remaining balance.
+
+With `PAPER_CAPITAL_GATE_ENABLED` on (the default) the pool is spendable money rather than a display figure — [capitalPool.js](src/utils/capitalPool.js) tracks:
+
+```
+available(broker) = INV_AMOUNT + realized P&L of that broker's paper strategies
+                    − qty × premium blocked by their currently OPEN positions
+```
+
+The reservation is released with the trade's net P&L on exit, so a losing day shrinks the pool and a winning day grows it.
+
+**Running out never stops a trade.** A paper session must keep collecting data, so an entry the pool cannot fund is taken anyway, the pool goes negative, and the Real-Time monitor raises an amber **"Capital pool exhausted"** banner naming the strategy, what it needed and how short it was (`GET /realtime/capital` backs it; the last 20 shortfalls are kept in memory). The tracker can never place, resize or stop an order, and every internal failure fails open. It is skipped during Replay/simulation so a replay is not judged against today's pool.
+
 | Key | Default | Notes |
 |-----|---------|-------|
-| `ZERODHA_INV_AMOUNT` | `100000` | Paper investment pool for Zerodha strategies (EMA_RSI_ST) |
+| `ZERODHA_INV_AMOUNT` | `100000` | Paper investment pool for Zerodha strategies (EMA_RSI_ST + EMA9+VWAP) |
 | `FYERS_INV_AMOUNT` | `100000` | Paper investment pool for Fyers strategies (BB_RSI + PA + ORB + Trend Pullback + GAPS) |
+| `PAPER_CAPITAL_GATE_ENABLED` | `true` | Track the pool across paper entries/exits and alert when it runs dry. `false` = the amounts are display-only (pre-2026-08-08 behaviour) |
+| `PAPER_CAPITAL_EST_PREMIUM` | `200` | Premium assumed by the check for EMA_RSI_ST / EMA9+VWAP / BB_RSI / PA, which decide before their option quote arrives. The block is corrected to the real premium on the first option poll (~1s later). ORB / Trend PB / GAPS already know the quote and use it directly |
 
 ### VIX Filter (per-module)
 | Key | Default | Notes |

@@ -42,6 +42,7 @@ const { getCharges } = require("../utils/charges");
 const tradeGuards = require("../utils/tradeGuards");
 const { logNearMiss } = require("../utils/nearMissLog");
 const skipLogger = require("../utils/skipLogger");
+const capitalPool = require("../utils/capitalPool");
 const confirmCandle = require("../utils/confirmCandle");
 const tickSimulator = require("../services/tickSimulator");
 
@@ -291,6 +292,8 @@ function startOptionPolling(symbol) {
         state.position.optionCurrentLtp = ltp;
         if (!state.position.optionEntryLtp) {
           state.position.optionEntryLtp = ltp;
+          // Real premium known — replace the estimate blocked at entry.
+          capitalPool.updateBlock("bb_rsi", (state.position.qty || 0) * ltp, { sim: state._simMode });
           log(`📌 [BB_RSI-PAPER] Option entry LTP: ₹${ltp}`);
         }
       }
@@ -302,7 +305,10 @@ function startOptionPolling(symbol) {
       state.optionLtp = ltp;
       state.optionLtpUpdatedAt = Date.now();
       state.position.optionCurrentLtp = ltp;
-      if (!state.position.optionEntryLtp) state.position.optionEntryLtp = ltp;
+      if (!state.position.optionEntryLtp) {
+        state.position.optionEntryLtp = ltp;
+        capitalPool.updateBlock("bb_rsi", (state.position.qty || 0) * ltp, { sim: state._simMode });
+      }
     }
     scheduleNext();
   });
@@ -320,6 +326,16 @@ function stopOptionPolling() {
 
 function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtEntry, slSource, entryMeta = {}) {
   if (state.position) return;
+
+  // ── Capital check — advisory only: an overdrawn pool raises a dashboard alert,
+  //    it never stops the trade. The real premium is stamped by the first option
+  //    poll (~1s from now), so check the assumed premium and true the block up there.
+  const _estCost = qty * capitalPool.estimatedPremium();
+  const _cap = capitalPool.check("bb_rsi", _estCost, { sim: state._simMode });
+  if (!_cap.ok) {
+    log(`⚠️ [BB_RSI-PAPER] ${_cap.reason} — entry taken anyway, pool now overdrawn`);
+    capitalPool.noteShortfall("bb_rsi", _cap, { side, symbol });
+  }
 
   const optDetails = parseOptionDetails(symbol);
 
@@ -395,6 +411,7 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtE
   };
 
   state.optionSymbol = symbol;
+  capitalPool.block("bb_rsi", _estCost, { side, symbol, qty, premium: null }, { sim: state._simMode });
   if (!state._simMode && instrumentConfig.INSTRUMENT !== "NIFTY_FUTURES") {
     startOptionPolling(symbol);
   }
@@ -582,6 +599,7 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   }
 
   state.position = null;
+  capitalPool.release("bb_rsi", netPnl, { sim: state._simMode });
 
   if (!state._simMode) {
     notifyExit({

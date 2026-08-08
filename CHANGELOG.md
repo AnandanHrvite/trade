@@ -6,6 +6,18 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Changed — the paper investment amount is now real money, not a label
+
+`ZERODHA_INV_AMOUNT` and `FYERS_INV_AMOUNT` were display-only. Every paper page rendered `capital = investment + its own P&L`, but no strategy ever checked the money before entering: five Fyers strategies could each open a lot in the same minute against a pool that could only fund two, and nothing on screen would notice. Setting the amount to ₹20,000 changed a number and nothing else.
+
+The pool is now spendable. On entry a strategy reserves `qty × entry premium`; on exit the reservation is released along with the trade's net P&L, so a losing day genuinely shrinks the pool and a winning day grows it. Concretely, with ₹1,00,000 on Fyers and a NIFTY lot of 65 at ₹200: the first entry blocks ₹13,000 and leaves ₹87,000 free, three concurrent positions leave ₹61,000, and if the day closes ₹4,000 down tomorrow starts from ₹96,000.
+
+**Running out does not stop anything.** A paper session exists to collect data, and a strategy going silently quiet for the rest of the day is worse than an overdrawn play-money balance — so the entry is taken, the pool goes negative, and the Real-Time monitor raises an amber *"Capital pool exhausted — trades are still running"* banner: how far each broker pool is overdrawn, and the last few entries with what they needed versus what was left. It also names the fix (raise the amount in Settings, or reset that strategy's paper history). Backed by `GET /realtime/capital`, polled on the same 4s tick as the rest of the page.
+
+One `capitalPool` owns this for all seven paper strategies. Realized P&L is **derived** from the same `{mode}_paper_trades.json` files the History pages and the wallet ribbon already show — plus the running session's exits, which have not reached that file yet — so resetting a history or deleting a session self-heals the pool with no extra wiring. ORB / Trend PB / GAPS fetch their option quote before entering and block the exact cost; EMA_RSI_ST / EMA9+VWAP / BB_RSI / PA decide on a synchronous callback ~1s before their premium arrives, so they block `PAPER_CAPITAL_EST_PREMIUM` (default ₹200) and correct it to the real premium on the first poll.
+
+The tracker is purely observational — it cannot place, size, alter or stop an order — and every internal failure fails open, so a disk hiccup can never disturb the book. It is skipped during Replay and the scenario tester: a replay of an old session must not be judged against today's pool. Turn the whole thing off with `PAPER_CAPITAL_GATE_ENABLED=false` (Settings → Instrument & Backtest → Capital) to get the old display-only behaviour back.
+
 ### Added — a Settings Advisor that reads your own trades and says what to change
 
 Edge Analytics tells you *what happened* — win rate, profit factor, which hour bled. Turning that into "so change **which** setting?" was still a manual read. The new **Settings Advisor** (`/advisor`) closes that gap: it reads the same recorded trade book and returns plain-English findings that each name the actual `.env` key involved — *"the 09:00 hour lost ₹5,400 over 12 entries; it is the first hour you trade, so try moving `GAPS_ENTRY_START` to 10:00"*.

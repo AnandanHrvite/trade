@@ -421,6 +421,8 @@ const SETTINGS_SCHEMA = [
       { key: "ZERODHA_INV_AMOUNT", label: "Zerodha Investment Amount (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.INSTANT, desc: "Paper money pool for Zerodha strategies (₹).", default: "100000", subheader: "Capital" },
       { key: "FYERS_INV_AMOUNT", label: "Fyers Investment Amount (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.INSTANT, desc: "Paper money pool for Fyers strategies (₹).", default: "100000" },
       { key: "BACKTEST_CAPITAL", label: "Backtest Capital (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.BACKTEST },
+      { key: "PAPER_CAPITAL_GATE_ENABLED", label: "Track Paper Capital", type: "toggle", effect: EFFECT.INSTANT, desc: "Treat the investment amounts as real money: block qty × premium on entry, release it with the P&L on exit, so profits grow the pool and losses shrink it. Running out never stops a trade — the Real-Time dashboard raises an alert instead. Off = display only.", default: "true" },
+      { key: "PAPER_CAPITAL_EST_PREMIUM", label: "Assumed Premium for Capital Check (₹)", type: "number", min: 20, max: 1000, step: 10, effect: EFFECT.INSTANT, desc: "EMA_RSI_ST / EMA9+VWAP / BB_RSI / PA decide before their option quote arrives — this premium is assumed for the check, then corrected to the real one a second later.", default: "200" },
     ],
   },
   {
@@ -746,6 +748,7 @@ const IMMEDIATE_KEYS = new Set([
   "OPTION_EXPIRY_OVERRIDE", "OPTION_EXPIRY_TYPE",
   "BACKTEST_CAPITAL", "BACKTEST_OPTION_SIM",
   "BACKTEST_DELTA", "BACKTEST_THETA_DAY", "ZERODHA_INV_AMOUNT", "FYERS_INV_AMOUNT",
+  "PAPER_CAPITAL_GATE_ENABLED", "PAPER_CAPITAL_EST_PREMIUM",
   "PA_ENABLED",
   "TELEGRAM_CHAT_ID", "TELEGRAM_BOT_TOKEN",
   "TG_ENABLED",

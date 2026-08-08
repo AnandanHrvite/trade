@@ -5,6 +5,7 @@ Engine: `src/strategies/orb_breakout.js`, `src/strategies/orbExits.js` · Routes
 Append a dated bullet whenever this strategy changes. Newest on top.
 
 ## Log
+- 2026-08-08: paper entries now report against the shared Fyers capital pool (`src/utils/capitalPool.js`) — the exact `qty × option LTP` is blocked on entry and released with the net P&L on exit. Advisory only: an entry the pool cannot fund is still taken and raises the Real-Time dashboard alert instead of being skipped.
 - 2026-08-06: Paper page no longer resurrects a PREVIOUS day's session on a trading day — the boot rehydrate's "last saved session" fallback (and the chart backfill that follows its trades' day) is now cleared unless today is a weekend/NSE holiday, so a restart with no trades yet shows today's empty session instead of yesterday's trades over yesterday's chart (new `src/utils/staleSessionGate.js`).
 - 2026-08-05: fixed the ORH/ORL overlay lines vanishing on the Paper/Replay/Live charts — they were anchored at candles[0] (7-day warm-up buffer) so the client's trim-to-today filter dropped the first point and collapsed each line to a single invisible point; now anchored to the first candle of the latest trading day (orbPaper.js, orbLive.js; Replay inherits Paper's chart-data).
 - 2026-08-05: backtest hard-SL now delegates the DECISION to the shared exit engine's `orbExits.isHardSlHit` predicate instead of an inline `c.low<=sl`/`c.high>=sl` compare (fill stays local); removes latent drift if isHardSlHit ever changes. No behaviour change today.

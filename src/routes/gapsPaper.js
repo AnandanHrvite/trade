@@ -43,6 +43,7 @@ const { notifyEntry, notifyExit, notifyStarted, notifyDayReport } = require("../
 const { getCharges } = require("../utils/charges");
 const { fmtISTDateTime, getISTMinutes, getBucketStart } = require("../utils/tradeUtils");
 const skipLogger = require("../utils/skipLogger");
+const capitalPool = require("../utils/capitalPool");
 
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
 const CALLBACK_ID        = "gapsPaper";
@@ -396,6 +397,14 @@ async function simulateBuy(side, sig) {
   const qty = gapsLotQty();
   const trailOn = _trailEnabled();
 
+  // ── Capital check — advisory only: an overdrawn pool raises a dashboard alert,
+  //    it never stops the trade (a paper session must keep collecting data).
+  const _cap = capitalPool.check("gaps", qty * optionEntryLtp);
+  if (!_cap.ok) {
+    log(`⚠️ [GAPS-PAPER] ${_cap.reason} — entry taken anyway, pool now overdrawn`);
+    capitalPool.noteShortfall("gaps", _cap, { side, symbol: optInfo.symbol });
+  }
+
   // Never open a position we cannot stop out. stopFromFill returns null on a
   // non-numeric fill or gap, and _checkExits refuses to treat a null level as a
   // hit — so without this the trade would run with NO stop at all, protected by
@@ -452,6 +461,7 @@ async function simulateBuy(side, sig) {
   };
 
   state.position = pos;
+  capitalPool.block("gaps", qty * optionEntryLtp, { side, symbol: optInfo.symbol, qty, premium: optionEntryLtp });
   try { require("../utils/positionPersist").saveGapsPosition(pos, { sessionPnl: state.sessionPnl }); } catch (_) {}
   state.optionLtp = optionEntryLtp;
   state.optionLtpUpdatedAt = Date.now();
@@ -593,6 +603,7 @@ function simulateSell(reason) {
   } catch (_) {}
 
   state.position = null;
+  capitalPool.release("gaps", pnl);
   try { require("../utils/positionPersist").clearGapsPosition(); } catch (_) {}
   state.optionLtp = null;
   state.optionLtpUpdatedAt = null;

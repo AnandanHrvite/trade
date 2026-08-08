@@ -48,6 +48,7 @@ const skipLogger = require("../utils/skipLogger");
 const tradeGuards = require("../utils/tradeGuards");
 const orbRiskState = require("../utils/orbRiskState");
 const orbStopRisk  = require("../utils/orbStopRisk");
+const capitalPool  = require("../utils/capitalPool");
 
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
 const CALLBACK_ID        = "orbPaper";
@@ -302,6 +303,15 @@ async function _simulateBuyInner(side, sigSnapshot, spot) {
   }
 
   const qty = instrumentConfig.getLotQty();
+
+  // ── Capital check — advisory only: an overdrawn pool raises a dashboard alert,
+  //    it never stops the trade (a paper session must keep collecting data).
+  const _cap = capitalPool.check("orb", qty * optionEntryLtp);
+  if (!_cap.ok) {
+    log(`⚠️ [ORB-PAPER] ${_cap.reason} — entry taken anyway, pool now overdrawn`);
+    capitalPool.noteShortfall("orb", _cap, { side, symbol: optInfo.symbol });
+  }
+
   // ── Initial hard SL comes from the STRATEGY (sig.slSpot) — the wider of the
   //    entry candle's own extreme and ORB_SL_ATR_MULT × ATR(5m). The route used to
   //    recompute this from state.candles, which duplicated the logic three ways
@@ -362,6 +372,7 @@ async function _simulateBuyInner(side, sigSnapshot, spot) {
   };
 
   state.position = pos;
+  capitalPool.block("orb", qty * optionEntryLtp, { side, symbol: optInfo.symbol, qty, premium: optionEntryLtp });
   try { require("../utils/positionPersist").saveOrbPosition(pos, { sessionPnl: state.sessionPnl }); } catch (_) {}
   state.optionLtp = optionEntryLtp;
   state.optionLtpUpdatedAt = Date.now();
@@ -481,6 +492,7 @@ function simulateSell(reason) {
   } catch (_) {}
 
   state.position = null;
+  capitalPool.release("orb", pnl);
   try { require("../utils/positionPersist").clearOrbPosition(); } catch (_) {}
   state.optionLtp = null;
   state.optionLtpUpdatedAt = null;

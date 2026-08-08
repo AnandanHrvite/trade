@@ -37,6 +37,7 @@ const { getCharges } = require("../utils/charges");
 const tradeGuards = require("../utils/tradeGuards");
 const { logNearMiss } = require("../utils/nearMissLog");
 const skipLogger = require("../utils/skipLogger");
+const capitalPool = require("../utils/capitalPool");
 const confirmCandle = require("../utils/confirmCandle");
 const tickSimulator = require("../services/tickSimulator");
 const { EMA, RSI } = require("technicalindicators");
@@ -600,6 +601,8 @@ async function _optionPollTick(symbol) {
     if (!ptState.position.optionEntryLtp) {
       ptState.position.optionEntryLtp = ltp;
       ptState.position.optionEntryLtpTime = istNow();
+      // Real premium known — replace the estimate blocked at entry.
+      capitalPool.updateBlock("ema_rsi_st", (ptState.position.qty || 0) * ltp, { sim: ptState._simMode });
       log(`📌 [PAPER] Option entry LTP: ₹${ltp} (SPOT @ ₹${ptState.position.spotAtEntry} | SL: ₹${ptState.position.stopLoss})`);
     }
 
@@ -845,6 +848,16 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
     return;
   }
 
+  // ── Capital check — advisory only: an overdrawn pool raises a dashboard alert,
+  //    it never stops the trade. The real premium is stamped by the first option
+  //    poll (~1s from now), so check the assumed premium and true the block up there.
+  const _estCost = qty * capitalPool.estimatedPremium();
+  const _cap = capitalPool.check("ema_rsi_st", _estCost, { sim: ptState._simMode });
+  if (!_cap.ok) {
+    log(`⚠️ [PAPER] ${_cap.reason} — entry taken anyway, pool now overdrawn`);
+    capitalPool.noteShortfall("ema_rsi_st", _cap, { side, symbol });
+  }
+
   // Data-collection metadata — frozen at entry so the trade record is self-describing for offline analysis.
   const _entryIstMin     = Math.floor((Math.floor(simNow() / 1000) + 19800) / 60) % 1440;
   const _entryHourIST    = Math.floor(_entryIstMin / 60);
@@ -907,6 +920,7 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
   // Set option symbol and start REST polling (no socket changes)
   // Skip option polling for futures and simulation mode — no option premium to track
   ptState.optionSymbol = symbol;
+  capitalPool.block("ema_rsi_st", _estCost, { side, symbol, qty, premium: null }, { sim: ptState._simMode });
   // Explicit reset: this contract's premium must come from this contract's poll.
   ptState.optionLtp = null;
   if (ptState._simMode) {
@@ -1163,6 +1177,7 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   }
 
   ptState.position = null;
+  capitalPool.release("ema_rsi_st", netPnl, { sim: ptState._simMode });
 
   // Opposite-side (flip) cooldown — block opposite-side entry for N candles.
   _setOppositeCooldown(side, reason);

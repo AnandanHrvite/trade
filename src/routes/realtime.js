@@ -48,6 +48,21 @@ function brokerPools(strategies) {
   return pools;
 }
 
+// Capital-pool poll — per-broker money and any entry the pool could not fund.
+// Read-only; the alert banner is the only consumer.
+router.get("/capital", (req, res) => {
+  try {
+    const capitalPool = require("../utils/capitalPool");
+    res.json({
+      enabled: capitalPool.isEnabled(),
+      pools: capitalPool.snapshot(),
+      alerts: capitalPool.getAlerts(),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get("/", (req, res) => {
   const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
   res.send(renderPage({ liveActive, sidebarKey: "dashboard", autoFlipBack: false }));
@@ -136,6 +151,15 @@ ${faviconLink()}
   .w-remain { font-size:1.5rem; font-weight:700; line-height:1.2; margin-top:4px; font-variant-numeric:tabular-nums; }
   .w-meta { display:flex; justify-content:space-between; font-size:0.72rem; color:#7d8aa3; margin-top:4px; }
   .w-delta { font-variant-numeric:tabular-nums; font-weight:600; }
+
+  /* Capital shortfall alert — a paper entry the broker pool could not fund.
+     Amber, not red: nothing was stopped, the play money simply ran out. */
+  .cap-alert { background:#2a1f06; border:1px solid #7c5e10; border-left:4px solid #f59e0b; border-radius:10px; padding:12px 16px; margin-bottom:18px; }
+  .cap-alert-head { font-size:0.9rem; font-weight:700; color:#fbbf24; letter-spacing:0.3px; }
+  .cap-alert-sub { font-size:0.75rem; color:#c9a94a; margin-top:4px; line-height:1.55; }
+  .cap-alert-list { margin:8px 0 0; padding:0; list-style:none; display:flex; flex-direction:column; gap:4px; }
+  .cap-alert-list li { font-size:0.72rem; color:#e6d9a8; font-variant-numeric:tabular-nums; }
+  .cap-alert-list .t { color:#9a8a55; }
 
   .cols { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(280px,100%), 1fr)); gap:14px; margin-bottom:18px; }
 
@@ -291,6 +315,10 @@ ${sidebar}
       <button data-mode="LIVE">LIVE</button>
     </div>` : ''}
   </div>
+
+  <!-- Capital shortfall alert — filled by /realtime/capital. Trades are never
+       stopped when the pool runs dry; this is how you find out that it did. -->
+  <div class="cap-alert" id="cap-alert" hidden></div>
 
   ${(pools.length && !sessionActive) ? `<div class="wallets">\n${walletsHtml}\n  </div>` : ''}
 
@@ -540,6 +568,40 @@ function renderWallets(all) {
   }
 }
 
+// Capital alert — the broker pool could not fund an entry. The trade was taken
+// anyway (a paper session must keep collecting data), so this banner is the only
+// place that says the play money ran out.
+function renderCapitalAlert(d) {
+  const box = document.getElementById('cap-alert');
+  if (!box) return;
+  const alerts = (d && d.alerts) || [];
+  const pools  = (d && d.pools)  || {};
+  const dry    = Object.values(pools).filter(p => p && p.available < 0);
+  if (!alerts.length && !dry.length) { box.hidden = true; box.innerHTML = ''; return; }
+
+  const short = alerts.length ? alerts[0] : null;
+  const poolLine = dry.map(p =>
+    p.broker.toUpperCase() + ' overdrawn by ' + fmtINR(Math.abs(p.available))
+    + ' (invested ' + fmtINR(p.base) + ', P&L ' + fmtINR(p.realized) + ', ' + fmtINR(p.blocked) + ' in open positions)'
+  ).join(' · ');
+
+  const rows = alerts.slice(0, 5).map(a => {
+    const t = new Date(a.ts).toLocaleTimeString('en-IN', { hour12:false });
+    return '<li><span class="t">' + t + '</span> — ' + a.label + ' ' + (a.side || '')
+         + ' needed ' + fmtINR(a.cost) + ', pool had ' + fmtINR(a.available)
+         + ' (short ' + fmtINR(a.short) + ')</li>';
+  }).join('');
+
+  box.innerHTML =
+      '<div class="cap-alert-head">⚠️ Capital pool exhausted — trades are still running</div>'
+    + '<div class="cap-alert-sub">'
+    + (poolLine || 'A paper entry cost more than the broker pool had left.')
+    + '<br>Nothing was stopped. Raise the investment amount in Settings → Instrument &amp; Backtest → Capital, or reset the paper history for that strategy.</div>'
+    + (rows ? '<ul class="cap-alert-list">' + rows + '</ul>' : '')
+    + (short && alerts.length > 5 ? '<div class="cap-alert-sub">…and ' + (alerts.length - 5) + ' more</div>' : '');
+  box.hidden = false;
+}
+
 async function poll() {
   const eps = ENDPOINTS[mode];
   const fetchOne = url => fetch(url, { cache:'no-store' })
@@ -550,6 +612,7 @@ async function poll() {
   STRATEGY_KEYS.forEach((k, i) => { all[k] = results[i]; renderColumn(k, results[i]); });
   renderRollup(all);
   renderWallets(all);
+  fetchOne('/realtime/capital').then(renderCapitalAlert);
 }
 
 document.querySelectorAll('#mode-toggle button').forEach(b => {

@@ -54,6 +54,7 @@ const { getCharges } = require("../utils/charges");
 const tradeGuards = require("../utils/tradeGuards");
 const { logNearMiss } = require("../utils/nearMissLog");
 const skipLogger = require("../utils/skipLogger");
+const capitalPool = require("../utils/capitalPool");
 const confirmCandle = require("../utils/confirmCandle");
 const tickSimulator = require("../services/tickSimulator");
 const { EMA } = require("technicalindicators");
@@ -653,6 +654,8 @@ async function _optionPollTick(symbol) {
     if (!ptState.position.optionEntryLtp) {
       ptState.position.optionEntryLtp = ltp;
       ptState.position.optionEntryLtpTime = istNow();
+      // Real premium known — replace the estimate blocked at entry.
+      capitalPool.updateBlock("ema9vwap", (ptState.position.qty || 0) * ltp, { sim: ptState._simMode });
       log(`📌 [PAPER] Option entry LTP: ₹${ltp} (SPOT @ ₹${ptState.position.spotAtEntry} | SL: ₹${ptState.position.stopLoss})`);
     }
 
@@ -812,6 +815,17 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
     ptState._entryPending = false;
     return;
   }
+
+  // ── Capital check — advisory only: an overdrawn pool raises a dashboard alert,
+  //    it never stops the trade. The real premium is stamped by the first option
+  //    poll (~1s from now), so check the assumed premium and true the block up there.
+  const _estCost = qty * capitalPool.estimatedPremium();
+  const _cap = capitalPool.check("ema9vwap", _estCost, { sim: ptState._simMode });
+  if (!_cap.ok) {
+    log(`⚠️ [PAPER] ${_cap.reason} — entry taken anyway, pool now overdrawn`);
+    capitalPool.noteShortfall("ema9vwap", _cap, { side, symbol });
+  }
+
   const optDetails = parseOptionDetails(symbol);
 
   // Capture the prev-candle reference at entry time — tick exit rule uses this FIXED value forever.
@@ -894,6 +908,7 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
   // Set option symbol and start REST polling (no socket changes)
   // Skip option polling for futures and simulation mode — no option premium to track
   ptState.optionSymbol = symbol;
+  capitalPool.block("ema9vwap", _estCost, { side, symbol, qty, premium: null }, { sim: ptState._simMode });
   if (ptState._simMode) {
     log(`📊 [PAPER] Simulation mode — skipping option LTP polling`);
   } else if (instrumentConfig.INSTRUMENT !== "NIFTY_FUTURES") {
@@ -1144,6 +1159,7 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   }
 
   ptState.position = null;
+  capitalPool.release("ema9vwap", netPnl, { sim: ptState._simMode });
   try { require("../utils/positionPersist").clearEma9VwapPosition(); } catch (_) {}
 
   // Opposite-side (flip) cooldown — block opposite-side entry for N candles.

@@ -366,6 +366,10 @@ const _SETTINGS_KEY_MATCHERS = [
   //   capital/return figures. Only new recordings carry it (old days keep the
   //   current-env behaviour — nothing to pin).
   /_INV_AMOUNT$/,
+  //   PAPER_CAPITAL_* — the capital gate that can refuse an entry the pool
+  //   cannot fund. It is skipped during replay, but pinning it keeps the
+  //   snapshot honest about how the recorded session was gated.
+  /^PAPER_CAPITAL_/,
 ];
 
 function snapshotSettings() {

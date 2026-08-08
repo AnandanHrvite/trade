@@ -796,6 +796,7 @@ const OPEN_PATHS = [
   "/trend-pb-live",
   // Cross-strategy read-only screens reached from the sidebar / top bar.
   "/realtime",            // unified real-time monitor
+  "/realtime/capital",    // capital-pool poll — read-only, drives the shortfall alert banner
   "/replay",              // tick-replay page — /replay/run and the delete/cancel POSTs stay protected
   "/replay/list",
   "/replay/preflight",
