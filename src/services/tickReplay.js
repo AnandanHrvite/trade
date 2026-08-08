@@ -156,7 +156,6 @@ const _EXPIRY_PIN_KEYS = [
   "EMA9VWAP_OPTION_EXPIRY_OVERRIDE", "EMA9VWAP_OPTION_EXPIRY_TYPE",
   "TREND_PB_OPTION_EXPIRY_OVERRIDE", "TREND_PB_OPTION_EXPIRY_TYPE",
   "GAPS_OPTION_EXPIRY_OVERRIDE",     "GAPS_OPTION_EXPIRY_TYPE",
-  "TDS_OPTION_EXPIRY_OVERRIDE",      "TDS_OPTION_EXPIRY_TYPE",
 ];
 function _pinnedExpirySettings(snapshot) {
   const snap = snapshot || {};
@@ -178,7 +177,12 @@ const _MODE_TO_ENV_PREFIX = {
   "ema9vwap-paper":   "EMA9VWAP",     // (…, 'ema9vwap')
   "trend-pb-paper":   "TREND_PB",     // (…, 'TREND_PB')
   "gaps-paper":       "GAPS",         // (…, 'GAPS')
-  "trend-day-scalp-paper": "TDS",     // (…, 'TDS')
+  // trend-day-scalp-paper is deliberately ABSENT. It passes mode "TDS" to
+  // validateAndGetOptionSymbol, but that mode arg only selects the ITM-steps
+  // branch — instrument.js resolves expiry from the COMMON OPTION_EXPIRY_*
+  // keys only ("There is no per-strategy expiry override"). Listing it here
+  // would mirror a TDS_OPTION_EXPIRY_* key nothing reads, and a hand-set one
+  // would be honoured by replay while paper ignored it.
   // bb_rsi-paper / pa-paper: NO mode arg → common OPTION_EXPIRY_* only (prefix null).
 };
 

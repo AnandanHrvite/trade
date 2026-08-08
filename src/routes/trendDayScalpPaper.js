@@ -630,6 +630,16 @@ function _checkExits(spotPrice) {
 // ── The day gate — evaluated ONCE, then frozen ───────────────────────────────
 function _maybeDecideDayGate() {
   if (state.dayGate && state.dayGate.decided) return;
+  // evaluateDayGate anchors on the IST day of the LAST candle it is given, and
+  // preloadHistory loads several days of warm-up. Starting a session before the
+  // open therefore hands it a series ending YESTERDAY — it would decide and
+  // FREEZE yesterday's verdict, and today's real gate would never run. Only ever
+  // decide once the series has actually reached today.
+  const last = state.candles.length ? state.candles[state.candles.length - 1] : null;
+  if (!last) return;
+  const today = tdsStrategy._istDayOf(Math.floor(Date.now() / 1000));
+  if (tdsStrategy._istDayOf(last.time) !== today) return;
+
   // Feed the engine the CLOSED bars only; the forming bar must never move the gate.
   const gate = tdsStrategy.evaluateDayGate(state.candles, { silent: true });
   if (!gate.decided) return;
@@ -716,7 +726,13 @@ async function evaluateEntry() {
 function onCandleClose(bar) {
   _maybeDecideDayGate();
   if (state.position) return;                    // exits are per-tick, not per-bar
-  if (getISTMinutes() >= _parseMins("TDS_ENTRY_END", "14:00")) return;
+  // Gate on the BAR's close time, exactly as the engine does — not on the wall
+  // clock. The two disagree at the boundary: the 13:55 bar closes AT 14:00, so a
+  // wall-clock `>= 14:00` check drops the last legal entry bar that the engine
+  // (and therefore the backtest) still accepts.
+  if (!bar || typeof bar.time !== "number") return;
+  const _closeMins = tdsStrategy._utcSecToIstMins(bar.time) + _resMin();
+  if (_closeMins > _parseMins("TDS_ENTRY_END", "14:00")) return;
   evaluateEntry().catch(e => console.error(`🚨 [TDS-PAPER] entry-eval error: ${e.message}`));
 }
 
@@ -1094,10 +1110,10 @@ ${buildSidebar('trendDayScalpPaper', liveActive)}
 <div class="main">
 ${bbRsiTopBar({
   title: "⚡ Trend Day Scalp — Paper",
-  subtitle: `Day gate ${_envStr("TDS_GATE_TIME", "10:15")} → pullback into VWAP/EMA${cfg.emaPeriod} → fixed ${cfg.targetR}R`,
+  metaLine: `Day gate ${_envStr("TDS_GATE_TIME", "10:15")} → pullback into VWAP/EMA${cfg.emaPeriod} → fixed ${cfg.targetR}R · SL ${cfg.minSlPts}-${cfg.maxSlPts}pt · max ${_maxDailyTrades()}/day`,
   running: state.running,
-  startHref: "/trend-day-scalp-paper/start",
-  stopHref:  "/trend-day-scalp-paper/stop",
+  primaryAction: { href: "/trend-day-scalp-paper/start", label: "▶ Start", color: "#7e22ce" },
+  stopAction:    { href: "/trend-day-scalp-paper/stop",  label: "■ Stop" },
   historyHref: "/trend-day-scalp-paper/history",
 })}
 
