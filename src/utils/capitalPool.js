@@ -335,8 +335,9 @@ function release(strategyKey, netPnl, opts = {}) {
     }
     if (wasBlocked > 0) {
       const pool = getPool(brokerOf(strategyKey));
+      const shown = Number.isFinite(p) ? p : 0;   // never print ₹NaN
       console.log(`💰 [CAPITAL] ${STRATEGIES[strategyKey].label} released ₹${wasBlocked.toFixed(0)} `
-        + `${p >= 0 ? "+" : "−"}₹${Math.abs(p).toFixed(0)} — `
+        + `${shown >= 0 ? "+" : "−"}₹${Math.abs(shown).toFixed(0)} — `
         + `${pool.broker.toUpperCase()} pool: ₹${pool.available.toFixed(0)} free of ₹${(pool.base + pool.realized).toFixed(0)}`);
     }
   } catch (_) {}
@@ -348,21 +349,18 @@ function clear(strategyKey) {
   if (s) { s.blocked = 0; s.meta = null; }
 }
 
+// Exactly what the callers use — the per-broker/per-strategy accessors
+// (getPool / brokerOf / baseCapital / realizedFor / blockedFor) stay internal;
+// snapshot() already hands out everything a reader needs.
 module.exports = {
-  STRATEGIES,
-  isEnabled,
-  estimatedPremium,
-  baseCapital,
-  brokerOf,
-  realizedFor,
-  blockedFor,
-  getPool,
-  snapshot,
-  check,
-  noteShortfall,
-  getAlerts,
-  block,
-  updateBlock,
-  release,
-  clear,
+  isEnabled,          // settings/UI: is the pool being tracked at all
+  estimatedPremium,   // engines that decide before their option quote arrives
+  check,              // advisory affordability report (never stops a trade)
+  noteShortfall,      // record an entry the pool could not fund
+  getAlerts,          // dashboard banner feed
+  snapshot,           // both brokers, for /realtime/capital
+  block,              // reserve on entry
+  updateBlock,        // correct the reservation once the real premium lands
+  release,            // free on exit and book the P&L
+  clear,              // free without a P&L (session stopped without square-off)
 };

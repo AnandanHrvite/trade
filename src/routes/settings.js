@@ -3596,12 +3596,7 @@ ${expiryHolidayModalHTML()}
     <div style="padding:18px 20px 20px;max-height:74vh;overflow-y:auto;">
       <div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-bottom:12px;">
         <div style="flex:1;min-width:240px;">
-          <div style="font-size:0.7rem;color:#7e93b5;line-height:1.5;">
-            Self-contained <code style="color:#9dc1f0;">.tar.gz</code> of <code style="color:#9dc1f0;">~/trading-data</code> + recorded ticks
-            (caches &amp; OAuth tokens excluded). Download today's copy locally so an EC2 loss never loses data.
-            A banner nags on every page until the day's file is downloaded — or pushed to Google Drive.
-          </div>
-          <div id="backup-status-line" style="font-size:0.7rem;color:#7e93b5;margin-top:8px;">Loading…</div>
+          <div id="backup-status-line" style="font-size:0.7rem;color:#7e93b5;">Loading…</div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <button onclick="backupCreateNow()" id="backupCreateBtn" style="padding:8px 16px;background:rgba(59,130,246,0.15);color:#60a5fa;border:1px solid rgba(59,130,246,0.3);border-radius:7px;font-size:0.74rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">↻ Snapshot now</button>
@@ -3630,10 +3625,8 @@ pm2 startOrRestart ecosystem.config.js --update-env</pre>
         <div style="font-size:0.78rem;font-weight:700;color:#c084fc;margin-bottom:6px;">🔑 Secrets (.env + certs)</div>
         <div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;">
           <div style="flex:1;min-width:240px;font-size:0.68rem;color:#7e93b5;line-height:1.5;">
-            The snapshot above holds your <b>data</b> only. <code style="color:#9dc1f0;">.env</code> and
-            <code style="color:#9dc1f0;">certs/</code> are <b style="color:#c084fc;">never</b> in it and are never pushed to Drive —
-            they hold broker keys and the TLS private key. Without them a fresh server won't start.
-            Download them here and keep them somewhere private (password manager / encrypted drive) — <b style="color:#f59e0b;">not</b> in Google Drive.
+            Never in the snapshot, never sent to Drive. A new server won't start without them —
+            keep this file somewhere private.
           </div>
           <button onclick="backupDownloadSecrets()" id="backupSecretsBtn" style="padding:8px 16px;background:rgba(192,132,252,0.15);color:#c084fc;border:1px solid rgba(192,132,252,0.3);border-radius:7px;font-size:0.74rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">🔑 Download .env + certs</button>
         </div>
@@ -3652,11 +3645,6 @@ pm2 startOrRestart ecosystem.config.js --update-env</pre>
           <span style="font-size:0.78rem;font-weight:700;color:#60a5fa;">☁ Google Drive (off-site copy)</span>
           <span id="gdrive-pill" style="font-size:0.62rem;font-weight:700;padding:2px 8px;border-radius:999px;background:rgba(90,108,138,0.18);color:#7e93b5;">…</span>
         </div>
-        <div style="font-size:0.68rem;color:#7e93b5;line-height:1.5;margin-bottom:10px;">
-          Connect your Google account and every daily snapshot is pushed to Drive automatically right after it's cut.
-          Not connected = nothing is uploaded. Access is limited to files this bot creates — it can't see the rest of your Drive.
-        </div>
-
         <!-- error strip: survives page refresh, shows failures from the automatic daily push too -->
         <div id="gdrive-error" style="display:none;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.35);border-radius:8px;padding:9px 12px;margin-bottom:10px;font-size:0.68rem;color:#fca5a5;line-height:1.5;position:relative;">
           <span id="gdrive-error-text"></span>
@@ -3703,12 +3691,6 @@ pm2 startOrRestart ecosystem.config.js --update-env</pre>
 
       <div style="margin-top:16px;padding-top:14px;border-top:1px solid #1a2640;">
         <div style="font-size:0.78rem;font-weight:700;color:#f59e0b;margin-bottom:6px;">⟲ Restore from a backup file</div>
-        <div style="font-size:0.68rem;color:#7e93b5;line-height:1.5;margin-bottom:10px;">
-          Upload a <code style="color:#9dc1f0;">backup-*.tar.gz</code> to restore it here — no SSH needed.
-          This <b style="color:#f59e0b;">overwrites</b> <code style="color:#9dc1f0;">~/trading-data</code> and <code style="color:#9dc1f0;">data/ticks</code> on the server.
-          A safety snapshot of current data is taken first, and restore is blocked while any session is running.
-          A server restart is recommended afterwards.
-        </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
           <input type="file" id="backupRestoreFile" accept=".gz,.tgz,application/gzip" style="font-size:0.7rem;color:#9db4d6;flex:1;min-width:200px;"/>
           <button onclick="backupRestore()" id="backupRestoreBtn" style="padding:8px 16px;background:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid rgba(245,158,11,0.3);border-radius:7px;font-size:0.74rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">⟲ Restore</button>
