@@ -603,7 +603,7 @@ available(broker) = INV_AMOUNT + realized P&L of that broker's paper strategies
 
 The reservation is released with the trade's net P&L on exit, so a losing day shrinks the pool and a winning day grows it.
 
-**Running out never stops a trade.** A paper session must keep collecting data, so an entry the pool cannot fund is taken anyway, the pool goes negative, and the Real-Time monitor raises an amber **"Capital pool exhausted"** banner naming the strategy, what it needed and how short it was (`GET /realtime/capital` backs it; the last 20 shortfalls are kept in memory). The tracker can never place, resize or stop an order, and every internal failure fails open. It is skipped during Replay/simulation so a replay is not judged against today's pool.
+**Running out never stops a trade.** A paper session must keep collecting data, so an entry the pool cannot fund is taken anyway, the pool goes negative, and the Real-Time monitor raises an amber **"Paper capital pool exhausted"** banner naming the strategy, what it needed and how short it was (`GET /realtime/capital` backs it; the last 20 shortfalls are kept in memory). The tracker can never place, resize or stop an order, and every internal failure fails open. It is skipped during Replay/simulation so a replay is not judged against today's pool.
 
 | Key | Default | Notes |
 |-----|---------|-------|

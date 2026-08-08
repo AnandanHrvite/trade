@@ -603,9 +603,9 @@ function renderPools(d) {
 // place that says the play money ran out.
 function renderCapitalAlert(d) {
   const box = document.getElementById('cap-alert');
-  if (!box) return;
-  const alerts = (d && d.alerts) || [];
-  const pools  = (d && d.pools)  || {};
+  if (!box || !d) return;   // failed poll — keep the alert up, same as the ribbon
+  const alerts = d.alerts || [];
+  const pools  = d.pools  || {};
   const dry    = Object.values(pools).filter(p => p && p.available < 0);
   if (!alerts.length && !dry.length) { box.hidden = true; box.innerHTML = ''; return; }
 
@@ -622,7 +622,10 @@ function renderCapitalAlert(d) {
   }).join('');
 
   box.innerHTML =
-      '<div class="cap-alert-head">⚠️ Capital pool exhausted — trades are still running</div>'
+      // Says PAPER explicitly: unlike the ribbon this banner stays up under the
+      // LIVE toggle (an alert you can hide by switching tabs is not an alert),
+      // so it must name whose money ran out.
+      '<div class="cap-alert-head">⚠️ Paper capital pool exhausted — trades are still running</div>'
     + '<div class="cap-alert-sub">'
     + (poolLine || 'A paper entry cost more than the broker pool had left.')
     + '<br>Nothing was stopped. Raise the investment amount in Settings → Instrument &amp; Backtest → Capital, or reset the paper history for that strategy.</div>'
