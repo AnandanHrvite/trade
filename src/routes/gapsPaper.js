@@ -397,14 +397,6 @@ async function simulateBuy(side, sig) {
   const qty = gapsLotQty();
   const trailOn = _trailEnabled();
 
-  // ── Capital check — advisory only: an overdrawn pool raises a dashboard alert,
-  //    it never stops the trade (a paper session must keep collecting data).
-  const _cap = capitalPool.check("gaps", qty * optionEntryLtp);
-  if (!_cap.ok) {
-    log(`⚠️ [GAPS-PAPER] ${_cap.reason} — entry taken anyway, pool now overdrawn`);
-    capitalPool.noteShortfall("gaps", _cap, { side, symbol: optInfo.symbol });
-  }
-
   // Never open a position we cannot stop out. stopFromFill returns null on a
   // non-numeric fill or gap, and _checkExits refuses to treat a null level as a
   // hit — so without this the trade would run with NO stop at all, protected by
@@ -414,6 +406,15 @@ async function simulateBuy(side, sig) {
     log(`🚫 [GAPS-PAPER] Entry ABORTED — cannot compute the stop (fill=${spot}, gap=${sig.slPts}). Refusing to enter without one.`);
     skipLogger.appendSkipLog("gaps", { gate: "stop_uncomputable", reason: `stop not computable (fill=${spot}, gap=${sig.slPts})`, side, spot, slPts: sig.slPts });
     return;
+  }
+
+  // ── Capital check — advisory only: an overdrawn pool raises a dashboard alert,
+  //    it never stops the trade (a paper session must keep collecting data).
+  //    Sits AFTER the last abort path, so an alert always means a real entry.
+  const _cap = capitalPool.check("gaps", qty * optionEntryLtp);
+  if (!_cap.ok) {
+    log(`⚠️ [GAPS-PAPER] ${_cap.reason} — entry taken anyway, pool now overdrawn`);
+    capitalPool.noteShortfall("gaps", _cap, { side, symbol: optInfo.symbol });
   }
 
   const pos = {
