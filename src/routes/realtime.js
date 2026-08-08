@@ -92,12 +92,17 @@ function renderPage({ liveActive, sidebarKey = "realtime", autoFlipBack = false 
 
   const pools           = brokerPools(strategies);
   const poolsJson       = JSON.stringify(pools);
-  const inrFmt = n => '₹' + Number(n).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+  // Sign goes BEFORE the ₹, matching the client's fmtINR — otherwise an
+  // overdrawn pool paints "₹-1,50,000" and jumps to "-₹1,50,000" on first poll.
+  const inrFmt = n => (Number(n) < 0 ? '-' : '') + '₹' + Math.abs(Number(n)).toLocaleString('en-IN', { maximumFractionDigits: 0 });
   // Seed the ribbon with the real pool so the first paint is already right —
   // otherwise a page opened with positions open shows the untouched investment
   // amount as "free to trade" until the first 4s poll corrects it.
   let poolSnap = {};
   try { poolSnap = require("../utils/capitalPool").snapshot(); } catch (_) {}
+  // Mirrors the client's cls() — the first paint must carry the same colour the
+  // poll would give it, or an overdrawn pool shows grey for the first 4 seconds.
+  const clsOf = n => (n === null || n === undefined || isNaN(n) || +n === 0) ? 'pos-zero' : (+n > 0 ? 'pos-pos' : 'pos-neg');
   // Headline is FREE cash — the number that decides whether the next entry fits.
   // The pool's worth (investment + P&L) and what open positions hold sit below it.
   const walletsHtml = pools.map(p => {
@@ -106,9 +111,9 @@ function renderPage({ liveActive, sidebarKey = "realtime", autoFlipBack = false 
     return `
     <div class="wallet" id="wallet-${p.id}">
       <div class="w-head"><span class="w-broker">${p.label}</span><span class="w-sub">${p.sub}</span></div>
-      <div class="w-remain" id="wallet-remain-${p.id}">${inrFmt(q.available)}</div>
+      <div class="w-remain ${clsOf(q.available < 0 ? -1 : q.realized)}" id="wallet-remain-${p.id}">${inrFmt(q.available)}</div>
       <div class="w-cap">Free to trade</div>
-      <div class="w-meta"><span>Invested ${inrFmt(p.inv)}</span><span class="w-delta" id="wallet-delta-${p.id}">${sign}${inrFmt(Math.abs(q.realized))}</span></div>
+      <div class="w-meta"><span>Invested ${inrFmt(p.inv)}</span><span class="w-delta ${clsOf(q.realized)}" id="wallet-delta-${p.id}">${sign}${inrFmt(Math.abs(q.realized))}</span></div>
       <div class="w-meta"><span id="wallet-used-${p.id}">In use ${inrFmt(q.blocked)}</span><span id="wallet-pool-${p.id}">Pool ${inrFmt(q.base + q.realized)}</span></div>
     </div>`;
   }).join('\n');
