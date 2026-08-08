@@ -2692,7 +2692,7 @@ async function backupDownloadSecrets() {
       return;
     }
     var blob = await r.blob();
-    // Filename comes from the server's Content-Disposition; fall back to today.
+    // Filename comes from the server's Content-Disposition (secrets-<date>.tar.gz).
     var name = 'secrets.tar.gz';
     var cd = r.headers.get('Content-Disposition') || '';
     var m = cd.match(/filename="([^"]+)"/);

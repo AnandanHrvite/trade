@@ -230,7 +230,13 @@ function createSecretsBundle() {
       if (code !== 0 && code !== 1) {
         return resolve({ ok: false, error: `tar exited ${code}: ${stderr.trim().slice(0, 200)}` });
       }
-      resolve({ ok: true, buffer: Buffer.concat(chunks), entries });
+      const buffer = Buffer.concat(chunks);
+      // A backup that is silently empty is worse than one that fails loudly — the
+      // user would file it away believing their keys are safe. Require a real gzip.
+      if (buffer.length < 2 || buffer[0] !== 0x1f || buffer[1] !== 0x8b) {
+        return resolve({ ok: false, error: `tar produced ${buffer.length} bytes, not a gzip archive` });
+      }
+      resolve({ ok: true, buffer, entries });
     });
   });
 }

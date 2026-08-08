@@ -113,18 +113,26 @@ router.get("/download", (req, res) => {
 // therefore fetches it via secretFetch + a blob download, not a link navigation
 // (a plain <a> cannot carry the x-api-secret header).
 router.get("/secrets", async (req, res) => {
-  const r = await backup.createSecretsBundle();
-  if (!r.ok) {
-    console.warn(`[backup] secrets bundle failed: ${r.error}`);
-    return res.status(500).json({ ok: false, error: r.error });
+  // createSecretsBundle always resolves, but Express 4 does not catch a rejected
+  // async handler — an unexpected throw would hang the request instead of 500ing.
+  try {
+    const r = await backup.createSecretsBundle();
+    if (!r.ok) {
+      console.warn(`[backup] secrets bundle failed: ${r.error}`);
+      return res.status(500).json({ ok: false, error: r.error });
+    }
+    const date = backup.istDateStr();
+    res.setHeader("Content-Type", "application/gzip");
+    res.setHeader("Content-Disposition", `attachment; filename="secrets-${date}.tar.gz"`);
+    res.setHeader("Content-Length", r.buffer.length);
+    res.setHeader("Cache-Control", "no-store");
+    console.log(`[backup] secrets bundle served: ${r.entries.join(" + ")} (${(r.buffer.length / 1024).toFixed(1)} KB)`);
+    res.end(r.buffer);
+  } catch (err) {
+    console.warn(`[backup] secrets bundle threw: ${err.message}`);
+    if (!res.headersSent) res.status(500).json({ ok: false, error: err.message });
+    else res.destroy(err);
   }
-  const date = backup.istDateStr();
-  res.setHeader("Content-Type", "application/gzip");
-  res.setHeader("Content-Disposition", `attachment; filename="secrets-${date}.tar.gz"`);
-  res.setHeader("Content-Length", r.buffer.length);
-  res.setHeader("Cache-Control", "no-store");
-  console.log(`[backup] secrets bundle served: ${r.entries.join(" + ")} (${(r.buffer.length / 1024).toFixed(1)} KB)`);
-  res.end(r.buffer);
 });
 
 // ── POST /backup/restore — upload a .tar.gz and restore it ────────────────────
