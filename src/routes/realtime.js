@@ -329,7 +329,7 @@ ${sidebar}
   <!-- Shown during a running session too: while trading is exactly when "how much
        is left" matters. Numbers come from /realtime/capital, not from the
        per-strategy pages, so they include what open positions are holding. -->
-  ${pools.length ? `<div class="wallets">\n${walletsHtml}\n  </div>` : ''}
+  ${pools.length ? `<div class="wallets" id="wallets">\n${walletsHtml}\n  </div>` : ''}
 
   <div class="cols">
 ${cardsHtml}
@@ -560,6 +560,11 @@ function renderRollup(all) {
 // holding and the P&L of a session that has not been saved yet.
 //   headline = free to trade   ·   Pool = investment + P&L   ·   In use = blocked
 function renderPools(d) {
+  // The pool is paper money only — there is no live-margin equivalent, so the
+  // ribbon has nothing honest to say in LIVE mode. Hide it rather than show
+  // paper rupees under a LIVE heading.
+  const box = document.getElementById('wallets');
+  if (box) box.style.display = (mode === 'LIVE') ? 'none' : '';
   const pools = (d && d.pools) || null;
   if (!pools) return;   // failed poll — keep the last good numbers on screen
   const set = (id, text, klass) => {
@@ -617,11 +622,14 @@ async function poll() {
   const fetchOne = url => fetch(url, { cache:'no-store' })
     .then(r => r.ok ? r.json() : null)
     .catch(() => null);
-  const results = await Promise.all(STRATEGY_KEYS.map(k => fetchOne(eps[k])));
+  // Capital rides along with the strategy fetches — one round trip, not two.
+  const results = await Promise.all(
+    STRATEGY_KEYS.map(k => fetchOne(eps[k])).concat(fetchOne('/realtime/capital'))
+  );
+  const capital = results.pop();
   const all = {};
   STRATEGY_KEYS.forEach((k, i) => { all[k] = results[i]; renderColumn(k, results[i]); });
   renderRollup(all);
-  const capital = await fetchOne('/realtime/capital');
   renderPools(capital);
   renderCapitalAlert(capital);
 }
