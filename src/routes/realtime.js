@@ -44,7 +44,7 @@ function brokerPools(strategies) {
   if (strategies.some(s => BROKER_OF[s.key] === 'ZERODHA'))
     pools.push({ id:'ZERODHA', label:'ZERODHA', sub:'EMA_RSI_ST · EMA9+VWAP', inv:z });
   if (strategies.some(s => BROKER_OF[s.key] === 'FYERS'))
-    pools.push({ id:'FYERS', label:'FYERS', sub:'BB_RSI · PA · ORB · TREND PB', inv:f });
+    pools.push({ id:'FYERS', label:'FYERS', sub:'BB_RSI · PA · ORB · TREND PB · GAPS', inv:f });
   return pools;
 }
 
@@ -71,8 +71,10 @@ router.get("/", (req, res) => {
 function renderPage({ liveActive, sidebarKey = "realtime", autoFlipBack = false } = {}) {
   const sidebar = buildSidebar(sidebarKey, liveActive);
   const strategies = enabledStrategies();
-  // Hide the broker-balance ribbon while any session is running — mirrors the
-  // dashboard convention of hiding broker cards mid-trade so they can't distract.
+  // Mid-session the PAPER/LIVE source toggle is hidden — the running session
+  // decides the source, so letting it be switched would only mislead. (The
+  // broker-balance ribbon used to be hidden here too; it now stays up, because
+  // while trading is exactly when "how much is left" matters.)
   const sessionActive = sharedSocketState.isAnyActive();
 
   const endpointsJson = JSON.stringify({
@@ -90,13 +92,16 @@ function renderPage({ liveActive, sidebarKey = "realtime", autoFlipBack = false 
 
   const pools           = brokerPools(strategies);
   const poolsJson       = JSON.stringify(pools);
-  const brokerOfJson    = JSON.stringify(BROKER_OF);
   const inrFmt = n => '₹' + Number(n).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+  // Headline is FREE cash — the number that decides whether the next entry fits.
+  // The pool's worth (investment + P&L) and what open positions hold sit below it.
   const walletsHtml = pools.map(p => `
     <div class="wallet" id="wallet-${p.id}">
       <div class="w-head"><span class="w-broker">${p.label}</span><span class="w-sub">${p.sub}</span></div>
       <div class="w-remain" id="wallet-remain-${p.id}">${inrFmt(p.inv)}</div>
+      <div class="w-cap">Free to trade</div>
       <div class="w-meta"><span>Invested ${inrFmt(p.inv)}</span><span class="w-delta" id="wallet-delta-${p.id}">—</span></div>
+      <div class="w-meta"><span id="wallet-used-${p.id}">In use —</span><span id="wallet-pool-${p.id}">Pool —</span></div>
     </div>`).join('\n');
 
   const cardsHtml = strategies.map(s => `
@@ -149,6 +154,7 @@ ${faviconLink()}
   .w-broker { font-size:0.95rem; font-weight:700; letter-spacing:0.6px; color:#cbd5e1; }
   .w-sub { font-size:0.66rem; color:#7d8aa3; text-transform:uppercase; letter-spacing:0.4px; }
   .w-remain { font-size:1.5rem; font-weight:700; line-height:1.2; margin-top:4px; font-variant-numeric:tabular-nums; }
+  .w-cap { font-size:0.62rem; color:#7d8aa3; text-transform:uppercase; letter-spacing:0.5px; }
   .w-meta { display:flex; justify-content:space-between; font-size:0.72rem; color:#7d8aa3; margin-top:4px; }
   .w-delta { font-variant-numeric:tabular-nums; font-weight:600; }
 
@@ -320,7 +326,10 @@ ${sidebar}
        stopped when the pool runs dry; this is how you find out that it did. -->
   <div class="cap-alert" id="cap-alert" hidden></div>
 
-  ${(pools.length && !sessionActive) ? `<div class="wallets">\n${walletsHtml}\n  </div>` : ''}
+  <!-- Shown during a running session too: while trading is exactly when "how much
+       is left" matters. Numbers come from /realtime/capital, not from the
+       per-strategy pages, so they include what open positions are holding. -->
+  ${pools.length ? `<div class="wallets">\n${walletsHtml}\n  </div>` : ''}
 
   <div class="cols">
 ${cardsHtml}
@@ -352,7 +361,6 @@ const STRATEGY_LABELS  = ${labelsJson};
 const STRATEGY_ACCENTS = ${accentsJson};
 const JSONL_PREFIX     = ${dayLogPrefixes};
 const WALLET_POOLS     = ${poolsJson};
-const BROKER_OF        = ${brokerOfJson};
 let mode = 'PAPER';
 let timer = null;
 
@@ -546,25 +554,28 @@ function renderRollup(all) {
   tbody.innerHTML = html;
 }
 
-// Broker wallet = investment pool + all-time P&L of every strategy on that broker.
-// totalPnl is exposed by each /status/data; fall back to (capital - inv) when absent.
-function renderWallets(all) {
+// Broker wallets, straight from the capital pool — one source, so the ribbon
+// cannot disagree with the alert banner below it. Summing the per-strategy
+// /status/data totals (the old way) missed both the money open positions are
+// holding and the P&L of a session that has not been saved yet.
+//   headline = free to trade   ·   Pool = investment + P&L   ·   In use = blocked
+function renderPools(d) {
+  const pools = (d && d.pools) || null;
+  if (!pools) return;   // failed poll — keep the last good numbers on screen
+  const set = (id, text, klass) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = text;
+    if (klass) el.className = klass;
+  };
   for (const p of WALLET_POOLS) {
-    let pnl = 0;
-    for (const k of STRATEGY_KEYS) {
-      if (BROKER_OF[k] !== p.id) continue;
-      const d = all[k];
-      if (!d) continue;
-      const tp = (d.totalPnl !== undefined && d.totalPnl !== null) ? +d.totalPnl
-               : (d.capital  !== undefined && d.capital  !== null) ? (+d.capital - p.inv)
-               : 0;
-      pnl += (+tp || 0);
-    }
-    const remain = p.inv + pnl;
-    const remEl = document.getElementById('wallet-remain-' + p.id);
-    const dEl   = document.getElementById('wallet-delta-' + p.id);
-    if (remEl) { remEl.textContent = fmtINR(remain); remEl.className = 'w-remain ' + cls(pnl); }
-    if (dEl)   { dEl.textContent = (pnl >= 0 ? '▲ ' : '▼ ') + fmtINR(Math.abs(pnl)); dEl.className = 'w-delta ' + cls(pnl); }
+    const q = pools[p.id.toLowerCase()];
+    if (!q) continue;
+    // Free cash drives the colour: red the moment the book is past its money.
+    set('wallet-remain-' + p.id, fmtINR(q.available), 'w-remain ' + cls(q.available < 0 ? -1 : q.realized));
+    set('wallet-delta-'  + p.id, (q.realized >= 0 ? '▲ ' : '▼ ') + fmtINR(Math.abs(q.realized)), 'w-delta ' + cls(q.realized));
+    set('wallet-used-'   + p.id, 'In use ' + fmtINR(q.blocked));
+    set('wallet-pool-'   + p.id, 'Pool ' + fmtINR(q.base + q.realized));
   }
 }
 
@@ -610,8 +621,9 @@ async function poll() {
   const all = {};
   STRATEGY_KEYS.forEach((k, i) => { all[k] = results[i]; renderColumn(k, results[i]); });
   renderRollup(all);
-  renderWallets(all);
-  fetchOne('/realtime/capital').then(renderCapitalAlert);
+  const capital = await fetchOne('/realtime/capital');
+  renderPools(capital);
+  renderCapitalAlert(capital);
 }
 
 document.querySelectorAll('#mode-toggle button').forEach(b => {
