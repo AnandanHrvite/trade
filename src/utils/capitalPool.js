@@ -257,13 +257,22 @@ function noteShortfall(strategyKey, cap, ctx = {}) {
   } catch (_) {}
 }
 
-/** Newest-first shortfall alerts, optionally only those newer than `sinceMs`. */
-function getAlerts(sinceMs) {
-  const cutoff = Number.isFinite(sinceMs) ? sinceMs : 0;
-  return _alerts.filter(a => a.ts >= cutoff).reverse();
+// Midnight IST for `nowMs`, in epoch ms.
+function _istDayStartMs(nowMs) {
+  const IST_OFFSET = 19800000; // +05:30
+  const t = (Number.isFinite(nowMs) ? nowMs : Date.now()) + IST_OFFSET;
+  return Math.floor(t / 86400000) * 86400000 - IST_OFFSET;
 }
 
-function clearAlerts() { _alerts = []; }
+/**
+ * Newest-first shortfall alerts. Scoped to the current IST trading day unless
+ * `sinceMs` says otherwise: the process runs for weeks under PM2, and a banner
+ * still reporting a shortfall from three days ago is noise, not an alert.
+ */
+function getAlerts(sinceMs) {
+  const cutoff = Number.isFinite(sinceMs) ? sinceMs : _istDayStartMs();
+  return _alerts.filter(a => a.ts >= cutoff).reverse();
+}
 
 /** Reserve `cost` against the strategy's broker pool. Overwrites any stale block. */
 function block(strategyKey, cost, meta = {}, opts = {}) {
@@ -341,7 +350,6 @@ module.exports = {
   check,
   noteShortfall,
   getAlerts,
-  clearAlerts,
   block,
   updateBlock,
   release,
