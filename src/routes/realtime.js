@@ -4,9 +4,12 @@
  * Read-only single screen that shows current state for every strategy that is
  * enabled in Settings (EMA_RSI_ST / BB_RSI / PA / ORB), side-by-side,
  * with a common rollup P&L table below. Toggle at the top switches between
- * PAPER and LIVE data sources. The page polls each strategy's existing
- * /status/data endpoint every 4s — no new backend aggregation; we read from
- * the same source the dedicated pages already use.
+ * PAPER and LIVE data sources. Every 4s the page polls each strategy's existing
+ * /status/data endpoint — the same source the dedicated pages use — plus this
+ * router's own /capital, the one piece that cannot come from a per-strategy
+ * page because it is cross-strategy by nature (see utils/capitalPool.js). The
+ * latter feeds the broker wallet ribbon and the shortfall alert banner; both
+ * read that single response, so they can never disagree.
  *
  * The strategy list is gated by {STRATEGY}_MODE_ENABLED (Settings → Menu
  * Visibility). Field-shape differences between strategies are normalised in
