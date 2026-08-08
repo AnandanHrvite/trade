@@ -16,6 +16,11 @@
  *   trading-data/.google_drive.json                          — Drive credentials
  *   trading-data/_backups        — the snapshot store itself (no self-nesting)
  *
+ * Secrets (.env + certs/) are NOT in a snapshot and never will be — snapshots go
+ * to Google Drive, and broker keys / the TLS private key must not be pushed
+ * off-site. createSecretsBundle() serves them as a separate on-demand download
+ * the user stores privately. Both halves are needed to rebuild a server.
+ *
  * Restore (documented on the Settings card + README):
  *   tar xzf backup-YYYY-MM-DD.tar.gz -C ~      # trading-data/ → $HOME; data/ticks/ → repo's data/
  *   (move data/ticks into the repo if you unpacked elsewhere) then restart PM2.
@@ -169,6 +174,63 @@ function createSnapshot(dateStr = istDateStr(), opts = {}) {
       } catch (err) {
         resolve({ ok: false, error: err.message });
       }
+    });
+  });
+}
+
+// ── Secrets bundle (.env + certs) ─────────────────────────────────────────────
+// Deliberately NOT part of createSnapshot: daily snapshots go to Google Drive,
+// and broker keys / the TLS private key must never be pushed off-site by us.
+// Built in memory and streamed straight to the caller — never written to disk,
+// so there is no window in which a snapshot or the Drive uploader could pick it
+// up. The payload is a few KB, so buffering costs nothing and lets a mid-tar
+// failure return a clean JSON error instead of a truncated download.
+const SECRET_ENTRIES  = [".env", "certs"];   // repo-root-relative
+const SECRETS_MAX_BYTES = 8 * 1024 * 1024;   // sanity cap — a stray huge file must not eat the heap
+
+/**
+ * Build the .env + certs archive in memory.
+ * Resolves { ok, buffer, entries } or { ok:false, error }.
+ */
+function createSecretsBundle() {
+  return new Promise((resolve) => {
+    const entries = SECRET_ENTRIES.filter(e => fs.existsSync(path.join(REPO_ROOT, e)));
+    if (!entries.length) {
+      return resolve({ ok: false, error: "Neither .env nor certs/ exists on this server" });
+    }
+
+    const tar = spawn("tar", ["-czf", "-", "-C", REPO_ROOT, ...entries], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    const chunks = [];
+    let total = 0, stderr = "", aborted = false;
+
+    tar.stdout.on("data", (c) => {
+      total += c.length;
+      if (total > SECRETS_MAX_BYTES) {
+        if (aborted) return;
+        aborted = true;
+        chunks.length = 0;                       // drop what we have — it is unusable anyway
+        try { tar.kill("SIGKILL"); } catch (_) {}
+        return resolve({ ok: false, error: `Bundle exceeds ${SECRETS_MAX_BYTES / 1048576} MB — refusing` });
+      }
+      chunks.push(c);
+    });
+    tar.stderr.on("data", (c) => { stderr += c.toString(); });
+    tar.on("error", (err) => {
+      if (aborted) return;
+      aborted = true;
+      resolve({ ok: false, error: err.message });
+    });
+    tar.on("close", (code) => {
+      if (aborted) return;
+      aborted = true;
+      // tar exit 1 = "file changed as we read it" — non-fatal, same as createSnapshot.
+      if (code !== 0 && code !== 1) {
+        return resolve({ ok: false, error: `tar exited ${code}: ${stderr.trim().slice(0, 200)}` });
+      }
+      resolve({ ok: true, buffer: Buffer.concat(chunks), entries });
     });
   });
 }
@@ -454,6 +516,7 @@ function start() {
 module.exports = {
   start,
   createSnapshot,
+  createSecretsBundle,
   restoreFromFile,
   deleteBackup,
   listBackups,

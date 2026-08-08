@@ -39,6 +39,12 @@
  *   look richer, never poorer — it can never manufacture a phantom rejection.
  * • Purely observational. It can never place, size, alter OR stop an order, and
  *   every failure path fails OPEN.
+ * • Models the OPTION PREMIUM outlay (`qty × premium`), which is what these
+ *   strategies actually spend. Under `INSTRUMENT=NIFTY_FUTURES` there is no
+ *   premium and no option poll, so the reservation stays at the assumed-premium
+ *   estimate and is nominal — the P&L side of the pool is still exact. Nothing
+ *   else in the app models futures margin either; don't read the blocked figure
+ *   as exposure in that mode.
  * • Disabled during replay/simulation: a replay would otherwise be judged
  *   against TODAY's pool rather than the pool that existed when the session was
  *   recorded, which would make replays non-reproducible.
@@ -310,11 +316,16 @@ function updateBlock(strategyKey, cost, opts = {}) {
  */
 function release(strategyKey, netPnl, opts = {}) {
   try {
-    if (opts.sim || _inReplay() || !brokerOf(strategyKey)) return;
+    if (!brokerOf(strategyKey)) return;
+    // Free the reservation FIRST and unconditionally. Returning money is always
+    // safe, and doing it before the sim/replay guard means a block can never be
+    // stranded by the mode flag differing between entry and exit.
+    const existing = _live.get(strategyKey);
+    const wasBlocked = existing ? existing.blocked : 0;
+    if (existing) { existing.blocked = 0; existing.meta = null; }
+
+    if (opts.sim || _inReplay()) return;
     const s = _liveOf(strategyKey);
-    const wasBlocked = s.blocked;
-    s.blocked = 0;
-    s.meta = null;
     const p = Number(netPnl);
     if (Number.isFinite(p)) {
       // Re-sync the epoch first so a session saved between entry and exit does

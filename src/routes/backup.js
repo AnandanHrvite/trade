@@ -7,6 +7,7 @@
  * GET  /backup/data              → { enabled, backups: [...], hour, retainDays }
  * GET  /backup/download?date=…   → streams backup-<date>.tar.gz, marks it downloaded
  * POST /backup/create            → cut a snapshot for today now
+ * GET  /backup/secrets           → .env + certs/ as a .tar.gz (never in a snapshot; API_SECRET required)
  *
  * Google Drive (optional off-site copy — see utils/googleDrive.js):
  * GET  /backup/gdrive/status      → connection + last upload/error for the card
@@ -98,6 +99,32 @@ router.get("/download", (req, res) => {
     }
   });
   stream.pipe(res);
+});
+
+// ── GET /backup/secrets — download .env + certs/ as a one-off .tar.gz ──────────
+// The daily snapshot deliberately excludes these (it is pushed to Google Drive).
+// Without them a restored box still cannot boot: app.js exits 10 on missing
+// certs, and every broker key lives in .env. So they are offered here instead,
+// for the user to store privately.
+//
+// SECURITY: this returns plaintext secrets, so — unlike /backup/download — it is
+// deliberately NOT in app.js's OPEN_PATHS. It requires API_SECRET, matching
+// /settings/env, which already serves the raw .env to this same page. The client
+// therefore fetches it via secretFetch + a blob download, not a link navigation
+// (a plain <a> cannot carry the x-api-secret header).
+router.get("/secrets", async (req, res) => {
+  const r = await backup.createSecretsBundle();
+  if (!r.ok) {
+    console.warn(`[backup] secrets bundle failed: ${r.error}`);
+    return res.status(500).json({ ok: false, error: r.error });
+  }
+  const date = backup.istDateStr();
+  res.setHeader("Content-Type", "application/gzip");
+  res.setHeader("Content-Disposition", `attachment; filename="secrets-${date}.tar.gz"`);
+  res.setHeader("Content-Length", r.buffer.length);
+  res.setHeader("Cache-Control", "no-store");
+  console.log(`[backup] secrets bundle served: ${r.entries.join(" + ")} (${(r.buffer.length / 1024).toFixed(1)} KB)`);
+  res.end(r.buffer);
 });
 
 // ── POST /backup/restore — upload a .tar.gz and restore it ────────────────────

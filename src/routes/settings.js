@@ -2669,6 +2669,49 @@ function backupDownloadLatest() {
   setTimeout(loadBackups, 2000);
   return false;
 }
+// Secrets download goes through secretFetch + a blob: /backup/secrets requires
+// the API secret (it returns plaintext keys), and a plain link navigation cannot
+// carry the x-api-secret header the way /backup/download's open route can.
+async function backupDownloadSecrets() {
+  var ok = await showConfirm({
+    icon: '🔑', title: 'Download secrets',
+    message: 'This downloads your .env (broker keys, tokens, login secret) and certs/ (TLS private key) in plain text.\\n\\nStore the file somewhere private — a password manager or encrypted drive. Do not put it in Google Drive or any shared folder.\\n\\nContinue?',
+    confirmText: 'Download', confirmClass: 'modal-btn-primary'
+  });
+  if (!ok) return;
+  var btn = document.getElementById('backupSecretsBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Building…'; }
+  var url = null;
+  try {
+    var r = await secretFetch('/backup/secrets');
+    if (!r) return;                                   // user cancelled the API-secret prompt
+    if (!r.ok) {
+      var msg = 'HTTP ' + r.status;
+      try { var d = await r.json(); if (d && d.error) msg = d.error; } catch (_) {}
+      showToast('Secrets download failed: ' + msg, 'error');
+      return;
+    }
+    var blob = await r.blob();
+    // Filename comes from the server's Content-Disposition; fall back to today.
+    var name = 'secrets.tar.gz';
+    var cd = r.headers.get('Content-Disposition') || '';
+    var m = cd.match(/filename="([^"]+)"/);
+    if (m) name = m[1];
+    url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    showToast('Secrets downloaded (' + backupFmtBytes(blob.size) + ') — keep it private.', 'success');
+  } catch (e) {
+    showToast('Secrets download failed: ' + e.message, 'error');
+  } finally {
+    // Revoke after the browser has had a tick to start the download.
+    if (url) setTimeout(function(){ URL.revokeObjectURL(url); }, 30000);
+    if (btn) { btn.disabled = false; btn.textContent = '🔑 Download .env + certs'; }
+  }
+}
 async function backupCreateNow() {
   var btn = document.getElementById('backupCreateBtn');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Creating…'; }
@@ -3582,6 +3625,27 @@ tar xzf backup-YYYY-MM-DD.tar.gz -C &lt;repo&gt;    data/ticks     # → &lt;rep
 # restart the app:
 pm2 startOrRestart ecosystem.config.js --update-env</pre>
       </details>
+      <!-- Secrets bundle — deliberately outside the snapshot / Drive push -->
+      <div style="margin-top:16px;padding-top:14px;border-top:1px solid #1a2640;">
+        <div style="font-size:0.78rem;font-weight:700;color:#c084fc;margin-bottom:6px;">🔑 Secrets (.env + certs)</div>
+        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;">
+          <div style="flex:1;min-width:240px;font-size:0.68rem;color:#7e93b5;line-height:1.5;">
+            The snapshot above holds your <b>data</b> only. <code style="color:#9dc1f0;">.env</code> and
+            <code style="color:#9dc1f0;">certs/</code> are <b style="color:#c084fc;">never</b> in it and are never pushed to Drive —
+            they hold broker keys and the TLS private key. Without them a fresh server won't start.
+            Download them here and keep them somewhere private (password manager / encrypted drive) — <b style="color:#f59e0b;">not</b> in Google Drive.
+          </div>
+          <button onclick="backupDownloadSecrets()" id="backupSecretsBtn" style="padding:8px 16px;background:rgba(192,132,252,0.15);color:#c084fc;border:1px solid rgba(192,132,252,0.3);border-radius:7px;font-size:0.74rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">🔑 Download .env + certs</button>
+        </div>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;font-size:0.72rem;color:#7e93b5;font-weight:700;">How to restore secrets on a fresh EC2 box</summary>
+          <pre style="margin-top:8px;background:#0a1426;border:1px solid #14233c;border-radius:8px;padding:12px;font-size:0.68rem;color:#aac4ea;overflow-x:auto;white-space:pre-wrap;"># unpack inside the cloned repo (restores .env and certs/ with their file modes):
+tar xzf secrets-YYYY-MM-DD.tar.gz -C &lt;repo&gt;
+# then the data snapshot, then start:
+pm2 startOrRestart ecosystem.config.js --update-env</pre>
+        </details>
+      </div>
+
       <!-- Google Drive off-site copy -->
       <div style="margin-top:16px;padding-top:14px;border-top:1px solid #1a2640;">
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px;">
