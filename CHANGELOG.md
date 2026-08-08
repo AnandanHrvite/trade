@@ -6,6 +6,18 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Added — a one-click download for the two things a backup deliberately leaves out
+
+The daily snapshot is the *data*: `~/trading-data` and the recorded ticks. It has never contained `.env` or `certs/`, and that is on purpose — snapshots get pushed to Google Drive, and those two files hold every broker key and the TLS private key. The gap only shows up on the day it matters: restore a snapshot onto a fresh EC2 box and the app still will not start, because `app.js` exits with code 10 on missing certs and every key it reads lives in `.env`. GitHub does not fill the gap either — both are gitignored.
+
+**Settings → Backup & Restore** now has a **🔑 Download .env + certs** button that hands you those two as a `secrets-<date>.tar.gz`. Unpacking it into a cloned repo puts both back with their original file modes (`key.pem` stays 0600); together with a restored snapshot, that is a complete server.
+
+The bundle is built in memory and streamed straight to the browser — it is never written to disk, so there is no moment at which a snapshot or the Drive uploader could sweep it up. It stays off Drive by construction, not by an exclude rule that a later edit could drop. Because it returns plaintext secrets the route requires `API_SECRET` (unlike `/backup/download`, which is open so a plain link can fetch it), and the button warns before downloading: keep the file in a password manager or on an encrypted drive, not in Google Drive.
+
+### Changed — trimmed the explanatory text in Backup & Restore
+
+The card's three intro paragraphs described what each button did before you had used it once. They are gone; the schedule line, the snapshot table and the two collapsed "how to restore" blocks carry what is actually needed.
+
 ### Changed — the paper investment amount is now real money, not a label
 
 `ZERODHA_INV_AMOUNT` and `FYERS_INV_AMOUNT` were display-only. Every paper page rendered `capital = investment + its own P&L`, but no strategy ever checked the money before entering: five Fyers strategies could each open a lot in the same minute against a pool that could only fund two, and nothing on screen would notice. Setting the amount to ₹20,000 changed a number and nothing else.
