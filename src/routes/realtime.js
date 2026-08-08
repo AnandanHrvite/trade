@@ -93,16 +93,25 @@ function renderPage({ liveActive, sidebarKey = "realtime", autoFlipBack = false 
   const pools           = brokerPools(strategies);
   const poolsJson       = JSON.stringify(pools);
   const inrFmt = n => '₹' + Number(n).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+  // Seed the ribbon with the real pool so the first paint is already right —
+  // otherwise a page opened with positions open shows the untouched investment
+  // amount as "free to trade" until the first 4s poll corrects it.
+  let poolSnap = {};
+  try { poolSnap = require("../utils/capitalPool").snapshot(); } catch (_) {}
   // Headline is FREE cash — the number that decides whether the next entry fits.
   // The pool's worth (investment + P&L) and what open positions hold sit below it.
-  const walletsHtml = pools.map(p => `
+  const walletsHtml = pools.map(p => {
+    const q = poolSnap[p.id.toLowerCase()] || { realized: 0, blocked: 0, available: p.inv, base: p.inv };
+    const sign = q.realized >= 0 ? '▲ ' : '▼ ';
+    return `
     <div class="wallet" id="wallet-${p.id}">
       <div class="w-head"><span class="w-broker">${p.label}</span><span class="w-sub">${p.sub}</span></div>
-      <div class="w-remain" id="wallet-remain-${p.id}">${inrFmt(p.inv)}</div>
+      <div class="w-remain" id="wallet-remain-${p.id}">${inrFmt(q.available)}</div>
       <div class="w-cap">Free to trade</div>
-      <div class="w-meta"><span>Invested ${inrFmt(p.inv)}</span><span class="w-delta" id="wallet-delta-${p.id}">—</span></div>
-      <div class="w-meta"><span id="wallet-used-${p.id}">In use —</span><span id="wallet-pool-${p.id}">Pool —</span></div>
-    </div>`).join('\n');
+      <div class="w-meta"><span>Invested ${inrFmt(p.inv)}</span><span class="w-delta" id="wallet-delta-${p.id}">${sign}${inrFmt(Math.abs(q.realized))}</span></div>
+      <div class="w-meta"><span id="wallet-used-${p.id}">In use ${inrFmt(q.blocked)}</span><span id="wallet-pool-${p.id}">Pool ${inrFmt(q.base + q.realized)}</span></div>
+    </div>`;
+  }).join('\n');
 
   const cardsHtml = strategies.map(s => `
     <div class="card ${s.accentClass}" id="card-${s.key}">

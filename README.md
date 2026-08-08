@@ -592,7 +592,7 @@ Trend-continuation option-buyer: 15m trend bias (swing structure + EMA20>EMA50 +
 | `GAPS_DAILY_CHART_BARS` | `180` | Daily candles rendered on the GAPS daily EMA/RSI chart |
 
 ### Paper Investment Pools (per broker)
-Paper capital is pooled per broker, not per strategy. Each strategy's running capital = its broker pool + that strategy's all-time paper P&L. The Real-Time Monitor (dashboard) shows each pool's remaining balance.
+Paper capital is pooled per broker, not per strategy. Each strategy's running capital = its broker pool + that strategy's all-time paper P&L. The Real-Time Monitor (dashboard) carries a wallet ribbon per broker — headline **free to trade**, with *Invested / P&L* and *In use / Pool* beneath — and it stays up during a running session, since that is when free cash matters. It is hidden under the LIVE toggle: the pool is paper money and has no live-margin equivalent.
 
 With `PAPER_CAPITAL_GATE_ENABLED` on (the default) the pool is spendable money rather than a display figure — [capitalPool.js](src/utils/capitalPool.js) tracks:
 

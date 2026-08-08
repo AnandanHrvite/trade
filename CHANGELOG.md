@@ -24,9 +24,20 @@ The card's three intro paragraphs described what each button did before you had 
 
 The pool is now spendable. On entry a strategy reserves `qty × entry premium`; on exit the reservation is released along with the trade's net P&L, so a losing day genuinely shrinks the pool and a winning day grows it. Concretely, with ₹1,00,000 on Fyers and a NIFTY lot of 65 at ₹200: the first entry blocks ₹13,000 and leaves ₹87,000 free, three concurrent positions leave ₹61,000, and if the day closes ₹4,000 down tomorrow starts from ₹96,000.
 
+You can also see it. The Real-Time monitor's wallet ribbon used to sum each strategy's own saved P&L — missing both what open positions were holding and the P&L of a session not yet written to disk — and it was hidden outright while a session ran, which is the one time "how much is left" matters. It now reads from the pool, stays up during a session, and leads with free cash (red the moment the book is past its money):
+
+```
+FYERS                    BB_RSI · PA · ORB · TREND PB · GAPS
+₹85,500  free to trade
+Invested ₹1,00,000                              ▼ ₹1,500
+In use ₹13,000                              Pool ₹98,500
+```
+
+The ribbon and the alert banner share one source, so they cannot disagree; the first paint is server-rendered from the same snapshot, so a page opened mid-position is already right rather than correcting itself 4s later. It is hidden under the LIVE toggle — the pool is paper money with no live-margin equivalent, and paper rupees under a LIVE heading would be a lie.
+
 **Running out does not stop anything.** A paper session exists to collect data, and a strategy going silently quiet for the rest of the day is worse than an overdrawn play-money balance — so the entry is taken, the pool goes negative, and the Real-Time monitor raises an amber *"Capital pool exhausted — trades are still running"* banner: how far each broker pool is overdrawn, and the last few entries with what they needed versus what was left. It also names the fix (raise the amount in Settings, or reset that strategy's paper history). Backed by `GET /realtime/capital`, polled on the same 4s tick as the rest of the page.
 
-One `capitalPool` owns this for all seven paper strategies. Realized P&L is **derived** from the same `{mode}_paper_trades.json` files the History pages and the wallet ribbon already show — plus the running session's exits, which have not reached that file yet — so resetting a history or deleting a session self-heals the pool with no extra wiring. ORB / Trend PB / GAPS fetch their option quote before entering and block the exact cost; EMA_RSI_ST / EMA9+VWAP / BB_RSI / PA decide on a synchronous callback ~1s before their premium arrives, so they block `PAPER_CAPITAL_EST_PREMIUM` (default ₹200) and correct it to the real premium on the first poll.
+One `capitalPool` owns this for all seven paper strategies. Realized P&L is **derived** from the same `{mode}_paper_trades.json` files the History pages already show — plus the running session's exits, which have not reached that file yet — so resetting a history or deleting a session self-heals the pool with no extra wiring. ORB / Trend PB / GAPS fetch their option quote before entering and block the exact cost; EMA_RSI_ST / EMA9+VWAP / BB_RSI / PA decide on a synchronous callback ~1s before their premium arrives, so they block `PAPER_CAPITAL_EST_PREMIUM` (default ₹200) and correct it to the real premium on the first poll.
 
 The tracker is purely observational — it cannot place, size, alter or stop an order — and every internal failure fails open, so a disk hiccup can never disturb the book. It is skipped during Replay and the scenario tester: a replay of an old session must not be judged against today's pool. Turn the whole thing off with `PAPER_CAPITAL_GATE_ENABLED=false` (Settings → Instrument & Backtest → Capital) to get the old display-only behaviour back.
 

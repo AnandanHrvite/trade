@@ -26,9 +26,10 @@
  * Design notes
  * ────────────
  * • Realized P&L is DERIVED, never duplicated. It is read from the same
- *   `~/trading-data/{mode}_paper_trades.json` files the History pages and the
- *   Real-Time wallet ribbon already render, so a history reset or a deleted
- *   session self-heals the pool with no extra wiring. Reads are memoised.
+ *   `~/trading-data/{mode}_paper_trades.json` files the History pages already
+ *   render, so a history reset or a deleted session self-heals the pool with no
+ *   extra wiring. Reads are memoised. (The Real-Time wallet ribbon reads this
+ *   module instead, so it can never disagree with the pool.)
  * • A session's P&L only lands in that file when the session is saved (/stop or
  *   EOD). To keep the pool honest intraday, `release()` also accumulates the
  *   running session P&L in memory; that accumulator is dropped as soon as the
