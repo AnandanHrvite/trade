@@ -579,7 +579,6 @@ function renderCapitalAlert(d) {
   const dry    = Object.values(pools).filter(p => p && p.available < 0);
   if (!alerts.length && !dry.length) { box.hidden = true; box.innerHTML = ''; return; }
 
-  const short = alerts.length ? alerts[0] : null;
   const poolLine = dry.map(p =>
     p.broker.toUpperCase() + ' overdrawn by ' + fmtINR(Math.abs(p.available))
     + ' (invested ' + fmtINR(p.base) + ', P&L ' + fmtINR(p.realized) + ', ' + fmtINR(p.blocked) + ' in open positions)'
@@ -598,7 +597,7 @@ function renderCapitalAlert(d) {
     + (poolLine || 'A paper entry cost more than the broker pool had left.')
     + '<br>Nothing was stopped. Raise the investment amount in Settings → Instrument &amp; Backtest → Capital, or reset the paper history for that strategy.</div>'
     + (rows ? '<ul class="cap-alert-list">' + rows + '</ul>' : '')
-    + (short && alerts.length > 5 ? '<div class="cap-alert-sub">…and ' + (alerts.length - 5) + ' more</div>' : '');
+    + (alerts.length > 5 ? '<div class="cap-alert-sub">…and ' + (alerts.length - 5) + ' more</div>' : '');
   box.hidden = false;
 }
 

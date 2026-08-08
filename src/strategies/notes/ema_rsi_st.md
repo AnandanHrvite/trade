@@ -5,6 +5,7 @@ Engine: `src/strategies/strategy1_sar_ema_rsi.js` · Routes: `emaRsiSt*.js` · E
 Append a dated bullet whenever this strategy changes. Newest on top.
 
 ## Log
+- 2026-08-08: stopSession now frees the capital-pool reservation unconditionally (`capitalPool.clear`) — its square-off is conditional on `currentBar` and wrapped in a try/catch, so a position could survive it and leave the broker pool permanently short.
 - 2026-08-08: paper entries now report against the shared Zerodha capital pool (`src/utils/capitalPool.js`). Entry is synchronous and the premium only lands on the first option poll, so `qty × PAPER_CAPITAL_EST_PREMIUM` is blocked up front and corrected to the real premium there; released with the net P&L on exit. Advisory only — an unfundable entry is still taken and raises the Real-Time dashboard alert.
 - 2026-08-07: `TRADE_RESOLUTION` moved out of the EMA_RSI_ST Settings section into **Instrument & Backtest** — it is now the single global candle timeframe for every strategy (no engine/logic change here; the same key, same value).
 - 2026-08-06: Paper page no longer resurrects a PREVIOUS day's session on a trading day — the boot rehydrate's "last saved session" fallback (and the chart backfill that follows its trades' day) is now cleared unless today is a weekend/NSE holiday, so a restart with no trades yet shows today's empty session instead of yesterday's trades over yesterday's chart (new `src/utils/staleSessionGate.js`).

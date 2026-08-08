@@ -166,7 +166,8 @@ function getPool(broker) {
     if (b > 0) {
       blocked += b;
       const s = _live.get(key);
-      positions.push({ key, label: def.label, blocked: b, ...(s && s.meta ? s.meta : {}) });
+      // Fixed fields last — meta is caller-supplied and must not clobber them.
+      positions.push({ ...(s && s.meta ? s.meta : {}), key, label: def.label, blocked: b });
     }
   }
   realized = parseFloat(realized.toFixed(2));
@@ -259,7 +260,7 @@ function noteShortfall(strategyKey, cap, ctx = {}) {
 /** Newest-first shortfall alerts, optionally only those newer than `sinceMs`. */
 function getAlerts(sinceMs) {
   const cutoff = Number.isFinite(sinceMs) ? sinceMs : 0;
-  return _alerts.filter(a => a.ts >= cutoff).slice().reverse();
+  return _alerts.filter(a => a.ts >= cutoff).reverse();
 }
 
 function clearAlerts() { _alerts = []; }

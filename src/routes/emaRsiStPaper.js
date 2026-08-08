@@ -4997,6 +4997,10 @@ function stopSession(reason = "Shutdown square-off") {
       simulateSell(ptState.currentBar.close, reason, ptState.currentBar.close);
     }
   } catch (e) { try { log(`⚠️ [PAPER] stopSession squareoff error: ${e.message}`); } catch (_) {} }
+  // The square-off above is conditional on currentBar and can throw, so a
+  // position may survive it. Free its capital reservation either way — a leaked
+  // block would keep shrinking the broker pool for the rest of the process.
+  capitalPool.clear("ema_rsi_st");
   try { stopOptionPolling(); } catch (_) {}
   if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
   sharedSocketState.clear();
