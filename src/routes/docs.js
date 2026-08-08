@@ -28,6 +28,7 @@ const GUIDE_MODE_BY_FILE = {
   "ema9_vwap_strategy_guide.html":     "EMA9VWAP",
   "trend_pullback_strategy_guide.html":"TREND_PB",
   "gaps_strategy_guide.html":          "GAPS",
+  "trend_day_scalp_strategy_guide.html": "TDS",
 };
 
 /**
@@ -432,6 +433,11 @@ const GUIDE_STATUS = {
     { type: "live", label: "Live Orders (Fyers, via paper harness)", enableKey: "GAPS_LIVE_ENABLED", dryKey: "GAPS_LIVE_DRY_RUN" },
     { type: "bool", label: "EMA Trailing Stop", key: "GAPS_TRAIL_ENABLED", def: "true" },
   ] }] },
+  "TREND_DAY_SCALP_Strategy_Guide.html": { title: "Trend Day Scalp — Live Configuration", groups: [{ rows: [
+    { type: "bool", label: "Trend Day Scalp Mode (sidebar + Settings section)", key: "TDS_MODE_ENABLED", def: "true" },
+    { type: "bool", label: "Trend Day Scalp Paper Trading", key: "TDS_PAPER_ENABLED", def: "true" },
+    { type: "live", label: "Live Orders (Fyers, via paper harness)", enableKey: "TDS_LIVE_ENABLED", dryKey: "TDS_LIVE_DRY_RUN" },
+  ] }] },
   "Application_Setup_Guide.html": { title: "System — Live Configuration", groups: [
     { heading: "Global gates", rows: [
       { type: "globaldry", label: "Live Harness DRY-RUN (global kill-switch)", key: "LIVE_HARNESS_DRY_RUN" },
@@ -448,6 +454,7 @@ const GUIDE_STATUS = {
       { type: "bool", label: "EMA9+VWAP Mode", key: "EMA9VWAP_MODE_ENABLED", def: "true" },
       { type: "bool", label: "Trend Pullback Mode", key: "TREND_PB_MODE_ENABLED", def: "true" },
       { type: "bool", label: "GAPS Mode", key: "GAPS_MODE_ENABLED", def: "true" },
+      { type: "bool", label: "Trend Day Scalp Mode", key: "TDS_MODE_ENABLED", def: "true" },
     ] },
   ] },
 };

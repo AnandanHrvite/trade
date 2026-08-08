@@ -26,6 +26,7 @@ const FILE_BY_MODE = {
   ema9vwap: "ema9vwap_paper_trades_log.jsonl",
   trend_pb: "trend_pb_paper_trades_log.jsonl",
   gaps:     "gaps_paper_trades_log.jsonl",
+  trend_day_scalp: "trend_day_scalp_paper_trades_log.jsonl",
   // Live-harness log keys. The harnesses install with liveLogKey "{mode}-live"
   // (liveHarness.js calls appendTradeLog(cfg.liveLogKey, …)); without these entries
   // filePathFor() threw "unknown mode" and every live trade was silently dropped.
@@ -36,6 +37,7 @@ const FILE_BY_MODE = {
   "ema9vwap-live": "ema9vwap_live_trades_log.jsonl",
   "trend_pb-live": "trend_pb_live_trades_log.jsonl",
   "gaps-live":     "gaps_live_trades_log.jsonl",
+  "trend_day_scalp-live": "trend_day_scalp_live_trades_log.jsonl",
 };
 
 const DAILY_PREFIX_BY_MODE = {
@@ -46,6 +48,7 @@ const DAILY_PREFIX_BY_MODE = {
   ema9vwap: "ema9vwap_paper_trades_",
   trend_pb: "trend_pb_paper_trades_",
   gaps:     "gaps_paper_trades_",
+  trend_day_scalp: "trend_day_scalp_paper_trades_",
   "ema_rsi_st-live":    "ema_rsi_st_live_trades_",
   "bb_rsi-live":    "bb_rsi_live_trades_",
   "pa-live":       "pa_live_trades_",
@@ -53,6 +56,7 @@ const DAILY_PREFIX_BY_MODE = {
   "ema9vwap-live": "ema9vwap_live_trades_",
   "trend_pb-live": "trend_pb_live_trades_",
   "gaps-live":     "gaps_live_trades_",
+  "trend_day_scalp-live": "trend_day_scalp_live_trades_",
 };
 
 // One-time dir ensure at module load — keeps the hot-path append sync-free.

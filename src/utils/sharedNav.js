@@ -22,6 +22,7 @@ const STRATEGY_MODES = [
   { mode: 'EMA9VWAP',   label: 'EMA9+VWAP',    envKey: 'EMA9VWAP_MODE_ENABLED'   },
   { mode: 'TREND_PB',   label: 'Trend_PB',     envKey: 'TREND_PB_MODE_ENABLED'   },
   { mode: 'GAPS',       label: 'GAPS',         envKey: 'GAPS_MODE_ENABLED'       },
+  { mode: 'TDS',        label: 'Trend Day Scalp', envKey: 'TDS_MODE_ENABLED'     },
 ];
 
 // Strategies currently enabled in Settings (default ON, same as the sidebar).
@@ -40,6 +41,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   let _ema9vwapMode = null;
   let _trendPbMode = null;
   let _gapsMode = null;
+  let _trendDayScalpMode = null;
   let _anyTradeActive = false;
   try {
     const sss = require('./sharedSocketState');
@@ -50,6 +52,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     _ema9vwapMode = sss.getEma9VwapMode ? sss.getEma9VwapMode() : null;
     _trendPbMode = sss.getTrendPbMode ? sss.getTrendPbMode() : null;
     _gapsMode = sss.getGapsMode ? sss.getGapsMode() : null;
+    _trendDayScalpMode = sss.getTrendDayScalpMode ? sss.getTrendDayScalpMode() : null;
     _anyTradeActive = sss.isAnyActive ? sss.isAnyActive() : false;
   } catch (_) {}
 
@@ -77,6 +80,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const ema9vwapModeOn = (process.env.EMA9VWAP_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const trendPbModeOn  = (process.env.TREND_PB_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const gapsModeOn     = (process.env.GAPS_MODE_ENABLED     || 'true').toLowerCase() === 'true';
+  const tdsModeOn      = (process.env.TDS_MODE_ENABLED      || 'true').toLowerCase() === 'true';
 
   // ── Per-module menu-visibility toggles (managed from Settings page) ──
   const showSim      = (process.env.UI_SHOW_SIMULATE || 'false').toLowerCase() === 'true';
@@ -124,6 +128,11 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const showGapsPaper         = (process.env.UI_SHOW_GAPS_PAPER            || 'true').toLowerCase()  === 'true';
   const showGapsLive          = (process.env.UI_SHOW_GAPS_LIVE             || 'true').toLowerCase()  === 'true';
   const showGapsHistory       = (process.env.UI_SHOW_GAPS_HISTORY          || 'true').toLowerCase()  === 'true';
+  // Trend Day Scalp — never traded; ships visible but its Live page is triple-gated to dry-run.
+  const showTdsBacktest       = (process.env.UI_SHOW_TDS_BACKTEST          || 'true').toLowerCase()  === 'true';
+  const showTdsPaper          = (process.env.UI_SHOW_TDS_PAPER             || 'true').toLowerCase()  === 'true';
+  const showTdsLive           = (process.env.UI_SHOW_TDS_LIVE              || 'true').toLowerCase()  === 'true';
+  const showTdsHistory        = (process.env.UI_SHOW_TDS_HISTORY           || 'true').toLowerCase()  === 'true';
 
   // ── System submenu toggles (Settings is always shown) ──
   const showTradeLogs  = (process.env.UI_SHOW_TRADE_LOGS  || 'true').toLowerCase() === 'true';
@@ -136,6 +145,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const ema9vwapKeys = ['ema9vwapBacktest', 'ema9vwapPaper', 'ema9vwapSim', 'ema9vwapLive', 'ema9vwapHistory'];
   const trendPbKeys = ['trendPbBacktest', 'trendPbPaper', 'trendPbLive', 'trendPbLiveHarness', 'trendPbHistory'];
   const gapsKeys    = ['gapsBacktest', 'gapsPaper', 'gapsLive', 'gapsHistory'];
+  const tdsKeys     = ['trendDayScalpBacktest', 'trendDayScalpPaper', 'trendDayScalpLive', 'trendDayScalpHistory'];
 
   const isTradingOpen  = tradingKeys.includes(activePage);
   const isBbRsiOpen    = bbRsiKeys.includes(activePage);
@@ -144,6 +154,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const isEma9vwapOpen = ema9vwapKeys.includes(activePage);
   const isTrendPbOpen  = trendPbKeys.includes(activePage);
   const isGapsOpen     = gapsKeys.includes(activePage);
+  const isTdsOpen      = tdsKeys.includes(activePage);
 
   // When a strategy's PAPER session is running, hide its Live / Live (Harness)
   // entries — paper and live are mutually exclusive per strategy, so the live
@@ -155,6 +166,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const ema9vwapPaperRunning = _ema9vwapMode === 'EMA9VWAP_PAPER';
   const trendPbPaperRunning  = _trendPbMode  === 'TREND_PB_PAPER';
   const gapsPaperRunning     = _gapsMode     === 'GAPS_PAPER';
+  const tdsPaperRunning      = _trendDayScalpMode === 'TREND_DAY_SCALP_PAPER';
 
   // Build a ema_rsi_st items list with per-feature toggle
   const emaRsiStItems = [
@@ -218,6 +230,13 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     ...(showGapsHistory  ? [{ key: 'gapsHistory',  href: '/gaps-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 
+  const tdsItems = [
+    ...(showTdsBacktest ? [{ key: 'trendDayScalpBacktest', href: '/trend-day-scalp-backtest',     icon: '🔍', label: 'Backtest' }] : []),
+    ...(showTdsPaper    ? [{ key: 'trendDayScalpPaper',    href: '/trend-day-scalp-paper/status', icon: '⚡', label: 'Paper'    }] : []),
+    ...(showTdsLive && !tdsPaperRunning ? [{ key: 'trendDayScalpLive', href: '/trend-day-scalp-live', icon: '📡', label: 'Live' }] : []),
+    ...(showTdsHistory  ? [{ key: 'trendDayScalpHistory',  href: '/trend-day-scalp-paper/history', icon: '📜', label: 'History' }] : []),
+  ];
+
   // ── Grouped navigation sections (collapsible) ──
   const topLevelItems = [
     ...(showDashboard   ? [{ key: 'dashboard',         href: '/',                   icon: '⌂',  label: 'Dashboard' }] : []),
@@ -268,6 +287,11 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       header: 'GAPS', collapsible: true, collapsed: !isGapsOpen,
       groupId: 'nav-gaps',
       items: gapsItems,
+    }] : []),
+    ...(tdsModeOn ? [{
+      header: 'TREND DAY SCALP', collapsible: true, collapsed: !isTdsOpen,
+      groupId: 'nav-trend-day-scalp',
+      items: tdsItems,
     }] : []),
     {
       header: 'SYSTEM', collapsible: false,
@@ -337,9 +361,17 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
       : '';
 
+    const tdsLiveBadge = p.key === 'trendDayScalpLive' && _trendDayScalpMode === 'TREND_DAY_SCALP_LIVE'
+      ? `<span class="sb-nav-badge live">LIVE</span>`
+      : '';
+
+    const tdsPaperBadge = p.key === 'trendDayScalpPaper' && _trendDayScalpMode === 'TREND_DAY_SCALP_PAPER'
+      ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
+      : '';
+
     return `<a href="${p.href}" class="sb-nav-item${isActive ? ' active' : ''}">
       <span class="sb-nav-icon">${p.icon}</span> ${p.label}
-      ${liveBadge}${runningBadge}${bbRsiLiveBadge}${bbRsiPaperBadge}${paLiveBadge}${paPaperBadge}${orbLiveBadge}${orbPaperBadge}${gapsLiveBadge}${gapsPaperBadge}
+      ${liveBadge}${runningBadge}${bbRsiLiveBadge}${bbRsiPaperBadge}${paLiveBadge}${paPaperBadge}${orbLiveBadge}${orbPaperBadge}${gapsLiveBadge}${gapsPaperBadge}${tdsLiveBadge}${tdsPaperBadge}
     </a>`;
   }
 

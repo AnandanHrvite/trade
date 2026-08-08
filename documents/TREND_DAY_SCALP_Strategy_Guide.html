@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trend Day Scalp — Strategy Guide</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0 18px 80px;
+    background: #0d1117; color: #c9d1d9;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.65; font-size: 16px;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; }
+  header.hero {
+    margin: 0 -18px 8px; padding: 40px 26px 30px;
+    background: linear-gradient(135deg, #161b22 0%, #101d24 100%);
+    border-bottom: 3px solid #0ea5e9;
+  }
+  header.hero .kicker { color: #0ea5e9; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; font-size: 0.72rem; }
+  header.hero h1 { margin: 6px 0 8px; font-size: 2rem; color: #f0f6fc; }
+  header.hero p { margin: 0; color: #8b949e; max-width: 640px; }
+  h2 { color: #f0f6fc; font-size: 1.35rem; margin: 38px 0 12px; padding-bottom: 8px; border-bottom: 1px solid #21262d; }
+  h3 { color: #58a6ff; font-size: 1.05rem; margin: 24px 0 8px; }
+  code { background: rgba(110,118,129,0.18); color: #7dd3fc; padding: 1.5px 6px; border-radius: 4px; font-size: 0.85em; font-family: 'SF Mono', ui-monospace, Menlo, monospace; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 18px 22px; margin: 14px 0; }
+  .card.accent { border-left: 4px solid #0ea5e9; }
+  .card.warn { border-left: 4px solid #d29922; background: #1c1a12; }
+  .card.bad  { border-left: 4px solid #f85149; background: #1c1214; }
+  ul, ol { padding-left: 22px; }
+  li { margin: 5px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.88rem; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #21262d; vertical-align: top; }
+  th { color: #8b949e; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.6px; }
+  td code { white-space: nowrap; }
+  .flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 14px 0; }
+  .flow .step { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 8px 14px; font-size: 0.85rem; }
+  .flow .arrow { color: #0ea5e9; font-weight: 700; }
+  .pill { display: inline-block; background: rgba(14,165,233,0.15); color: #0ea5e9; border: 1px solid rgba(14,165,233,0.35); border-radius: 20px; padding: 2px 12px; font-size: 0.78rem; font-weight: 600; }
+  .muted { color: #6e7681; font-size: 0.85rem; }
+  a { color: #58a6ff; }
+  .num { font-family: 'SF Mono', ui-monospace, Menlo, monospace; color: #f0f6fc; }
+  /* TradingView-style chart wrapper */
+  .tv-chart { margin: 16px 0 6px; border: 1px solid #30363d; border-radius: 10px; overflow: hidden; background: #0d1626; }
+  .tv-chart .tv-svg { width: 100%; height: auto; display: block; }
+  .tv-cap { color: #8b949e; font-size: 0.82rem; margin: 0 0 16px; padding-left: 4px; }
+  .tv-cap b { color: #c9d1d9; }
+  .tv-empty { color: #6e7681; padding: 40px; text-align: center; font-size: 0.9rem; }
+
+/* ── MOBILE (shared block — keep in sync across all guides) ── */
+  @media (max-width: 768px) {
+    /* The setting tables are three columns of prose. A table cannot lay out
+       narrower than its min-content width, so at 393px they ran up to 259px past
+       the right edge and the browser zoomed the whole guide out to fit. Each one
+       now scrolls inside its own box and the page keeps the phone's width. */
+    table { display: block; width: 100%; max-width: 100%; overflow-x: auto;
+            -webkit-overflow-scrolling: touch; }
+    /* Long env keys wrap; fenced blocks keep their formatting and scroll. */
+    code { overflow-wrap: anywhere; word-break: break-word; }
+    pre { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    pre code { overflow-wrap: normal; word-break: normal; }
+    img, svg, canvas { max-width: 100%; }
+    .tv-chart { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    /* .cols is a two-up flex row with no wrap — the second card was pushed off
+       screen rather than dropping under the first. */
+    .cols { flex-direction: column; }
+    .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+    [style*="grid-template-columns"] { grid-template-columns: 1fr !important; }
+    /* Contents links are the guide's only navigation, and they were 18-31px.
+       The three guides each mark theirs up differently: nav.toc (ORB, EMA9VWAP,
+       Setup), a nav.no-print link bar (Price Action) and a two-column card list
+       (BB_RSI, EMA_RSI_ST, Trend Pullback). */
+    nav.toc a, .toc a, nav.no-print .container a,
+    .card li a { min-height: 44px; display: inline-flex; align-items: center; }
+    /* A two-column contents list leaves ~170px per column at 393px. */
+    ul[style*="columns"], ol[style*="columns"] { columns: 1 !important; -webkit-columns: 1 !important; }
+    .hero { padding-left: 16px; padding-right: 16px; }
+    .hero h1 { font-size: 1.7rem; }
+    .section { padding: 20px 14px; }
+  }
+/* ── END MOBILE ── */</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <div class="kicker">Strategy 8 · Fyers · Plain-English edition</div>
+  <h1>Trend Day Scalp</h1>
+  <p>Most days NIFTY goes nowhere in particular, and a bought option quietly bleeds while it does. This strategy spends the first hour deciding whether today is worth trading <em>at all</em>. On most days the answer is no, and it does nothing. When the answer is yes, it buys one dip in the direction the day already chose, risks a fixed 12–18 points, and takes a fixed profit.</p>
+  <p class="muted" style="margin-top:10px;">Updated 2026-08-09 &nbsp;·&nbsp; plain-English edition &nbsp;·&nbsp; every number below is produced by running the live engine</p>
+</header>
+
+<!--LIVE_STATUS_PANEL-->
+
+<div class="card bad">
+  <strong>Read this first: this strategy has never traded.</strong> Not one paper session, not one live order. Every figure in this guide comes from the engine running on constructed candles. There is no win rate here because none has been measured.
+</div>
+
+<div class="card">
+  <strong>What's inside</strong>
+  <ol style="margin:10px 0 0; columns:2; column-gap:30px;">
+    <li><a href="#idea">The idea in one minute</a></li>
+    <li><a href="#why">Why it was built this way</a></li>
+    <li><a href="#glossary">Words you'll see</a></li>
+    <li><a href="#gate">Step 1 — Is today worth trading?</a></li>
+    <li><a href="#entry">Step 2 — Buying the dip</a></li>
+    <li><a href="#exit">Step 3 — How we get out</a></li>
+    <li><a href="#reject">Days it says no</a></li>
+    <li><a href="#money">The money, with real numbers</a></li>
+    <li><a href="#risk">Safety limits</a></li>
+    <li><a href="#modes">Paper, Live, Backtest &amp; Replay</a></li>
+    <li><a href="#config">All the settings, explained</a></li>
+    <li><a href="#missing">What's still missing</a></li>
+  </ol>
+</div>
+
+<h2 id="idea">1. The idea in one minute</h2>
+
+<p>Buying an option is a race against the clock. Every day you hold one, time decay takes a slice, so a day where price wanders sideways is a slow loss even when you are not wrong. The usual response is to trade more carefully. This strategy's response is to <b>trade far less often</b>.</p>
+
+<p>At <b>10:15</b> it looks at the first hour once and asks three questions. Did the market actually move? Has it stayed on one side of its average price? Has it committed, or is it hugging the middle? If any answer is no, the day is over before it began — no trade, no loss, nothing.</p>
+
+<p>When all three are yes, the direction is locked for the rest of the day and it waits for one thing: a dip back to the average price that gets bought straight back up. That is the entry. From there the trade has a fixed stop, a fixed target, and one single move of the stop to break-even. Nothing trails, nothing is left to judgement.</p>
+
+<h2 id="why">2. Why it was built this way</h2>
+
+<p>The other seven strategies in this app share a shape: they buy a breakout and let the winner run. That produces a handful of very large winners carrying a long tail of small losses. ORB's own notes record nine trades where the single best one was 211% of the total profit — remove that one trade and the strategy loses money.</p>
+
+<p>This one is built to be the opposite: <b>low but steady</b>. It gives up the huge winner on purpose, in exchange for a result that does not depend on catching it.</p>
+
+<div class="card">
+  <strong>The number that shaped every rule below.</strong>
+  <p style="margin:8px 0 0;">On one lot, a round trip costs about <b>₹88 in statutory charges</b> plus roughly 1.5 points of slippage on each side (~₹195). Call it <b>₹300 gone</b> before the trade is right about anything. At a delta of 0.6, that is about <b>17 index points of movement just to break even</b>.</p>
+  <p style="margin:8px 0 0;">That is why the target is 2.5× the risk and not a scalper's ten points. A strategy whose average win is twelve points cannot survive its own costs, no matter how often it is right.</p>
+</div>
+
+<h2 id="glossary">3. Words you'll see</h2>
+
+<table>
+<tr><th>Word</th><th>What it actually means</th></tr>
+<tr><td><b>VWAP</b></td><td>The day's average price, rebuilt from 09:15 each morning. Price above it means buyers have had the upper hand today.</td></tr>
+<tr><td><b>EMA20</b></td><td>A smoothed line following the last 20 candles. Price tends to fall back to it and bounce during a trend.</td></tr>
+<tr><td><b>The zone</b></td><td>Whichever of those two lines sits <i>nearer</i> to price. That is where a dip is bought.</td></tr>
+<tr><td><b>ATR</b></td><td>How far the market has been moving per candle lately. Used to judge whether a candle is decisive or limp.</td></tr>
+<tr><td><b>R</b></td><td>One unit of risk. If the stop is 18 points away, 1R = 18 points and the 2.5R target is 45.0 points.</td></tr>
+<tr><td><b>Break-even jump</b></td><td>The one and only time the stop moves — to just above entry, so a winner cannot turn into a loser.</td></tr>
+</table>
+
+<h2 id="gate">4. Step 1 — Is today worth trading?</h2>
+
+<p>At 10:15 the engine freezes a verdict for the whole day. Three tests, all of which must pass:</p>
+
+<table>
+<tr><th>Test</th><th>Why it exists</th><th>On the day below</th></tr>
+<tr><td><b>The day actually moved</b><br><span class="muted">first hour ≥ 0.5% of spot</span></td><td>A quiet first hour usually means a quiet day, and a quiet day has no move big enough to pay for the option.</td><td>160.5pt = 0.66% of 24334 (need >= 0.5%) ✅</td></tr>
+<tr><td><b>One-directional</b><br><span class="muted">last 6 closes all on the same side of VWAP</span></td><td>If price keeps crossing back and forth over its own average, that is chop. Chop is where bought options go to die.</td><td>all 6 above VWAP 24258.97 ✅</td></tr>
+<tr><td><b>Committed, not drifting</b><br><span class="muted">spot at least 0.35× the range away from VWAP</span></td><td>Price can technically stay above VWAP while sitting right on top of it. That is not a trend, it is a coin flip.</td><td>75.03pt vs need 56.18pt (0.35 x range) ✅</td></tr>
+</table>
+
+<div class="chart-box"><div id="tds-gate"></div></div>
+
+<p>All three passed, so this became a <b>CE-only day</b>: from 10:15 until the close it will consider buying calls and nothing else. It will not flip if price reverses. It will not take a put. The direction was decided once.</p>
+
+<div class="card warn">
+  <strong>Why 0.35 and not something rounder.</strong> On a day that climbs in a perfectly straight line, the average price ends up exactly halfway between the low and the high — so spot finishes exactly 0.5× the range above VWAP. Setting this test at 0.6 would therefore reject <i>every</i> ordinary trend day and only accept days that accelerate into 10:15, which happens a handful of times a year. A choppy day scores about 0.1. 0.35 separates the two without asking for a miracle.
+</div>
+
+<h2 id="entry">5. Step 2 — Buying the dip</h2>
+
+<p>Now it waits. The entry is not the breakout — breakouts are where an option is most expensive. It is the pullback afterwards, which is where the same move is on sale.</p>
+
+<p>Four things have to line up on one closed candle:</p>
+
+<ol>
+  <li><b>Price dipped to the zone.</b> Within the last 3 candles, the low reached whichever of VWAP / EMA20 is nearer. A wick counts — on a real trend day price often just grazes the line and bounces.</li>
+  <li><b>It closed back through it.</b> The dip was bought, not continued.</li>
+  <li><b>The move is fresh.</b> Either this candle itself dipped in, or the one before closed on the wrong side. This stops it buying the fifth candle of a rally that left the zone long ago.</li>
+  <li><b>The candle means it.</b> Green, with a body of at least 0.4× ATR. A tiny indecisive candle is not a reclaim.</li>
+</ol>
+
+<div class="chart-box"><div id="tds-trade"></div></div>
+
+<p>On the day above that happened at <b>11:20</b>. The zone sat at <b>24337.91</b> (the EMA20, which was nearer than VWAP at 24319.73). Price dipped to <b>24335.41</b> and closed back at <b>24353.41</b> with a body of 14 points — comfortably past the 7.26 points required by that day's ATR of 18.14.</p>
+
+<h2 id="exit">6. Step 3 — How we get out</h2>
+
+<p>Everything is decided at entry. There is no judgement left afterwards.</p>
+
+<table>
+<tr><th>Level</th><th>Where</th><th>Why</th></tr>
+<tr><td><b>Stop</b></td><td>24335.41 — 18 points below entry</td><td>The low of the dip. If the dip that was supposed to be bought keeps going, the read was wrong.</td></tr>
+<tr><td><b>Target</b></td><td>24398.41 — 2.5R, 45.0 points</td><td>Taken and done. Not trailed past, not held for more.</td></tr>
+<tr><td><b>Break-even jump</b></td><td>at 24371.41, stop moves to 24356.41</td><td>Once the trade is up by one unit of risk, the stop moves once to just above entry and <b>never moves again</b>.</td></tr>
+<tr><td><b>Time stop</b></td><td>25 minutes</td><td>If it has not reached +1R by then, it is going nowhere and is only paying time decay.</td></tr>
+<tr><td><b>Premium stop</b></td><td>option down 25%</td><td>Catches the case where the index sits still but the option bleeds anyway.</td></tr>
+</table>
+
+<p>On this day the break-even jump armed at <b>11:25</b> and the target was reached at <b>11:55</b> — <b>Target hit (2.5R)</b> at 24398.41.</p>
+
+<div class="card">
+  <strong>Why there is no trailing stop.</strong> Every other strategy in this app trails, and it is exactly what turns their winners into scratches — a normal pullback taps the trail and the trade is closed just before the move continues. Here the fixed target does that job instead. The stop makes precisely one move, to break-even, and then holds still.
+</div>
+
+<h2 id="reject">7. Days it says no</h2>
+
+<p>This is the part that matters most, because it is what most days look like.</p>
+
+<div class="chart-box"><div id="tds-reject"></div></div>
+
+<p>Price here keeps crossing its own average. The gate reports:</p>
+
+<table>
+<tr><th>Test</th><th>Result</th></tr>
+<tr><td>first-hour range</td><td>❌ 30pt = 0.12% of 24180 (need >= 0.5%)</td></tr>
+<tr><td>6 closes one side of VWAP</td><td>❌ crosses VWAP 24191 within the last 6 bars</td></tr>
+<tr><td>extension from VWAP</td><td>✅ 11pt vs need 10.5pt (0.35 x range)</td></tr>
+</table>
+
+<p>Two failures, so the day is off. Note the third test passed — that is the point of having three. Price was 11 points from VWAP, which clears the bar, but on a range of only 30 points that is meaningless. A single test would have been fooled.</p>
+
+<p class="muted">A day that trades nothing produces ₹0. On a strategy built around buying options, ₹0 on a bad day is the whole edge.</p>
+
+<h2 id="money">8. The money, with real numbers</h2>
+
+<p>One lot (65 qty), one strike in-the-money so delta is about 0.6, entry premium around ₹240. Charges below come from the app's own charges calculator, not an estimate.</p>
+
+<table>
+<tr><th>Outcome</th><th>Index move</th><th>Option</th><th>Gross</th><th>Charges</th><th>Net</th></tr>
+<tr><td><b>Target hit</b></td><td>+45.0 pt</td><td>₹240 → ₹267</td><td>₹1755</td><td>−₹88</td><td class="pos"><b>+₹1667</b></td></tr>
+<tr><td><b>Break-even exit</b></td><td>+3 pt</td><td>₹240 → ₹241.8</td><td>₹117</td><td>−₹84</td><td>+₹33</td></tr>
+<tr><td><b>Stop hit</b></td><td>−18 pt</td><td>₹240 → ₹229.2</td><td>−₹702</td><td>−₹83</td><td class="neg"><b>−₹785</b></td></tr>
+</table>
+
+<p class="muted">These exclude slippage, which in practice takes roughly another ₹200 off every round trip. Add that back before judging any of it.</p>
+
+<div class="card warn">
+  <strong>Do the arithmetic yourself before believing any of this.</strong> With a win of about ₹1667 and a loss of about ₹785, and slippage on top, you need to win roughly four trades in ten just to stand still. Whether this strategy does that is <b>completely unknown</b>. Nothing here is evidence that it does.
+</div>
+
+<h2 id="risk">9. Safety limits</h2>
+
+<table>
+<tr><th>Limit</th><th>Default</th><th>What it does</th></tr>
+<tr><td>Max trades/day</td><td>2</td><td>Costs are charged per trade, so trading more is usually worse, not better.</td></tr>
+<tr><td>Stop-outs that end the day</td><td>2</td><td>Two real stop-outs and the day is finished. A break-even or time-stop exit does <b>not</b> count — those are scratches, not bad reads.</td></tr>
+<tr><td>Daily loss cap</td><td>₹1,500</td><td>About one and a half stops. The worst realistic day is bounded.</td></tr>
+<tr><td>Daily profit lock</td><td>₹1,500</td><td>Once ahead by this much, the day ends. Handing profit back is what destroys a steady curve.</td></tr>
+<tr><td>No new entries after</td><td>14:00</td><td>Late entries have no room left to reach the target.</td></tr>
+<tr><td>Everything flat by</td><td>15:10</td><td>Nothing is carried overnight.</td></tr>
+<tr><td>Portfolio cap</td><td>shared</td><td>Respects <code>PORTFOLIO_MAX_DAILY_LOSS</code> across every strategy, if you set it.</td></tr>
+</table>
+
+<h2 id="modes">10. Paper, Live, Backtest &amp; Replay</h2>
+
+<table>
+<tr><th>Where</th><th>What it is</th></tr>
+<tr><td><a href="/trend-day-scalp-paper/status"><b>Paper</b></a></td><td>The real engine on live prices, simulated fills. This is the authority — the other two copy it.</td></tr>
+<tr><td><a href="/trend-day-scalp-backtest"><b>Backtest</b></a></td><td>Same signal engine over a date range. Where a candle touched both the stop and the target, it books the <b>loss</b>; a candle that gapped past a level fills at the open, never the better price.</td></tr>
+<tr><td><a href="/trend-day-scalp-live"><b>Live</b></a></td><td>Wraps Paper, so live decisions cannot drift from paper ones. Real orders need three switches on at once and are off by default.</td></tr>
+<tr><td><a href="/replay"><b>Replay</b></a></td><td>Re-runs a recorded day tick by tick. This is how you check that live and paper agree.</td></tr>
+</table>
+
+<h2 id="config">11. All the settings, explained</h2>
+
+<p>Every one of these is in <a href="/settings">Settings → Trend Day Scalp</a>. The defaults are shown; none of them is a tuned optimum.</p>
+
+<table>
+<tr><th>Setting</th><th>Default</th><th>What it changes</th></tr>
+<tr><td>Day Gate Time</td><td>10:15</td><td>When the day is judged. Judged once, then frozen.</td></tr>
+<tr><td>Min First-Hour Range</td><td>0.5%</td><td>Raise it to trade fewer, livelier days.</td></tr>
+<tr><td>Closes One Side of VWAP</td><td>6</td><td>How persistent the direction must be.</td></tr>
+<tr><td>Extension from VWAP</td><td>0.35× range</td><td>How committed the day must be. See the warning in section 4 before raising it.</td></tr>
+<tr><td>Zone EMA Period</td><td>20</td><td>The second of the two lines that form the buy zone.</td></tr>
+<tr><td>ATR Period</td><td>14</td><td>Feeds the conviction test.</td></tr>
+<tr><td>Reclaim Body</td><td>0.4× ATR</td><td>How decisive the entry candle must be.</td></tr>
+<tr><td>Pullback Lookback</td><td>3 bars</td><td>How far back the dip may have happened.</td></tr>
+<tr><td>Min / Max Stop</td><td>12 / 18 pt</td><td>Tighter than the minimum gets widened to it. <b>Wider than the maximum skips the trade entirely</b> — it is never tightened into the structure.</td></tr>
+<tr><td>Target</td><td>2.5R</td><td>The fixed profit, as a multiple of the stop.</td></tr>
+<tr><td>Break-even Arms At</td><td>+1R</td><td>When the stop makes its one move.</td></tr>
+<tr><td>Break-even Buffer</td><td>3 pt</td><td>Where it lands: entry + this.</td></tr>
+<tr><td>Time Stop</td><td>25 min</td><td>0 turns it off.</td></tr>
+<tr><td>Premium Stop</td><td>25%</td><td>0 turns it off.</td></tr>
+<tr><td>ITM Steps</td><td>1</td><td>How deep in-the-money to buy. 1 ≈ delta 0.6.</td></tr>
+<tr><td>Max Trades/Day</td><td>2</td><td>Costs are per trade.</td></tr>
+<tr><td>Backtest Slippage</td><td>1.5 pt each way</td><td>Without this, option-buying backtests always flatter.</td></tr>
+</table>
+
+<h2 id="missing">12. What's still missing</h2>
+
+<div class="card bad">
+  <strong>Nothing here has been validated.</strong> Zero paper sessions, zero live trades. Every constant was chosen from the cost arithmetic in section 2, not fitted to data. Treat all of it as a starting guess.
+</div>
+
+<p>Before this is trusted with money:</p>
+<ol>
+  <li>Run <b>Paper</b> for a long stretch. Because it stands aside on most days, a couple of weeks will produce only a handful of trades — that is not a sample.</li>
+  <li><b>Replay</b> those recorded days and confirm the replayed decisions match what Paper did.</li>
+  <li>Only then look at the live switches, and leave <code>LIVE_HARNESS_DRY_RUN=true</code> for a while first, reading the "order I would have placed" log lines.</li>
+</ol>
+
+<div class="card warn">
+  <strong>Known limitations, stated plainly.</strong>
+  <ul style="margin:8px 0 0;">
+    <li><b>Backtest rupees are simulated.</b> There is no historical option-price data, so premiums are modelled from the index move plus time decay. Direction is meaningful; the exact ₹ is not.</li>
+    <li><b>The premium stop cannot be backtested honestly.</b> It fires on the modelled premium curve, not on a real volatility collapse.</li>
+    <li><b>Very few trades.</b> The day gate is designed to reject most sessions, so any statistic from a short range is noise.</li>
+    <li><b>No volatility or open-interest awareness.</b> A chaotic day is treated exactly like a calm one.</li>
+    <li><b>The three gate thresholds have never been tested against each other.</b> They may be redundant, or one may be doing all the work. Only a long paper sample will tell.</li>
+    <li><b>1 lot only.</b> There is no position sizing beyond the lot multiplier, and no averaging.</li>
+  </ul>
+</div>
+
+<p class="muted" style="margin-top:30px;">Engine: <code>src/strategies/trend_day_scalp.js</code> · Paper: <code>src/routes/trendDayScalpPaper.js</code> · Backtest: <code>src/routes/trendDayScalpBacktest.js</code> · Live harness: <code>src/routes/trendDayScalpLiveHarness.js</code>. The rules exist only in the engine file; the others call into it.</p>
+
+</div><!-- /wrap -->
+
+<script>
+/* ============================================================================
+ * TVChart v2 — dependency-free TradingView-style candlestick renderer.
+ * Adds: OHLC header, subtitle, bottom time axis, last-price tag/line,
+ *       denser-candle support. Backward-compatible spec from v1.
+ * Pure buildSVG(spec) -> string (no DOM), never throws on bad data.
+ * ==========================================================================*/
+(function (global) {
+  "use strict";
+  function isNum(x) { return typeof x === "number" && isFinite(x); }
+  function esc(s) { return String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+  function fmt(v) { return isNum(v) ? v.toFixed(2).replace(/\.00$/,"") : "—"; }
+
+  function priceRange(spec) {
+    var lo = Infinity, hi = -Infinity;
+    function eat(v){ if(isNum(v)){ if(v>hi)hi=v; if(v<lo)lo=v; } }
+    (spec.candles||[]).forEach(function(c){ eat(c[1]); eat(c[2]); });
+    (spec.overlays||[]).forEach(function(o){ (o.data||[]).forEach(eat); });
+    (spec.bands||[]).forEach(function(b){ (b.upper||[]).forEach(eat); (b.lower||[]).forEach(eat); (b.mid||[]).forEach(eat); });
+    (spec.markers||[]).forEach(function(m){ if(isNum(m.price)) eat(m.price); });
+    if(!isFinite(lo)||!isFinite(hi)){ lo=0; hi=1; }
+    if(lo===hi){ lo-=1; hi+=1; }
+    var pad=(hi-lo)*0.10; return { lo:lo-pad, hi:hi+pad };
+  }
+
+  function buildSVG(spec) {
+    spec = spec||{};
+    var candles = spec.candles||[]; var n = candles.length;
+    if(!n) return '<div class="tv-empty">chart data unavailable</div>';
+    var W=880, H=440, padL=6, padR=74, padT=52, padB=40;
+    var rng=priceRange(spec); var plotW=W-padL-padR, plotH=H-padT-padB;
+    var slot=plotW/n; var cw=Math.max(2,Math.min(20,slot*0.66)); var wickW=Math.max(0.8,cw*0.12);
+    var up="#26a69a",down="#ef5350",grid="#1b2636",axis="#5a7499",txt="#e8eef8",mut="#8b98ac";
+    function X(i){ return padL+slot*(i+0.5); }
+    function Y(p){ return padT+(rng.hi-p)/(rng.hi-rng.lo)*plotH; }
+    var out=[];
+    out.push('<svg viewBox="0 0 '+W+' '+H+'" class="tv-svg" role="img" aria-label="'+esc(spec.title||"price chart")+'" preserveAspectRatio="xMidYMid meet">');
+    out.push('<rect x="0" y="0" width="'+W+'" height="'+H+'" fill="#0d1421"/>');
+
+    // horizontal price grid + right-side labels
+    for(var g=0;g<=4;g++){ var gp=rng.hi-(rng.hi-rng.lo)*(g/4); var gy=Y(gp);
+      out.push('<line x1="'+padL+'" y1="'+gy+'" x2="'+(W-padR)+'" y2="'+gy+'" stroke="'+grid+'" stroke-width="1"/>');
+      out.push('<text x="'+(W-padR+6)+'" y="'+(gy+3.5)+'" fill="'+axis+'" font-size="10.5" font-family="monospace">'+gp.toFixed(0)+'</text>'); }
+
+    // vertical time grid + bottom axis labels (every ~1/7 of the candles)
+    var times = spec.times || [];
+    var step = Math.max(1, Math.round(n/7));
+    for(var t=0;t<n;t+=step){ var tx=X(t);
+      out.push('<line x1="'+tx+'" y1="'+padT+'" x2="'+tx+'" y2="'+(H-padB)+'" stroke="'+grid+'" stroke-width="0.7" opacity="0.5"/>');
+      if(times[t]) out.push('<text x="'+tx+'" y="'+(H-padB+15)+'" fill="'+axis+'" font-size="10" text-anchor="middle" font-family="system-ui">'+esc(times[t])+'</text>'); }
+
+    // zones (e.g. ORB opening-range box)
+    (spec.zones||[]).forEach(function(z){ if(!isNum(z.from)||!isNum(z.to)) return;
+      var zx=X(z.from)-cw/2, zw=X(z.to)-X(z.from)+cw; var zTop=Y(isNum(z.top)?z.top:rng.hi), zBot=Y(isNum(z.bottom)?z.bottom:rng.lo);
+      out.push('<rect x="'+zx+'" y="'+zTop+'" width="'+zw+'" height="'+(zBot-zTop)+'" fill="'+(z.color||"rgba(96,165,250,0.10)")+'" stroke="'+(z.stroke||"rgba(96,165,250,0.5)")+'" stroke-dasharray="4 3" stroke-width="1"/>');
+      if(z.label) out.push('<text x="'+(zx+4)+'" y="'+(zTop-4)+'" fill="'+(z.stroke||"#60a5fa")+'" font-size="10.5" font-weight="600">'+esc(z.label)+'</text>'); });
+
+    // band envelopes (VWAP band / Bollinger)
+    (spec.bands||[]).forEach(function(b){ var u=b.upper||[], l=b.lower||[];
+      if(u.length&&l.length){ var pts=[]; for(var i=0;i<u.length;i++) if(isNum(u[i])) pts.push(X(i)+","+Y(u[i]));
+        for(var j=l.length-1;j>=0;j--) if(isNum(l[j])) pts.push(X(j)+","+Y(l[j]));
+        out.push('<polygon points="'+pts.join(" ")+'" fill="'+(b.fill||"rgba(120,144,200,0.08)")+'"/>');
+        [u,l].forEach(function(line){ var d=line.map(function(v,i){ return (isNum(v)?(i?"L":"M")+X(i)+" "+Y(v):""); }).join(" ");
+          out.push('<path d="'+d+'" fill="none" stroke="'+(b.color||"#a78bfa")+'" stroke-width="1.3" opacity="0.85"/>'); }); }
+      if(b.mid){ var dm=b.mid.map(function(v,i){ return (isNum(v)?(i?"L":"M")+X(i)+" "+Y(v):""); }).join(" ");
+        out.push('<path d="'+dm+'" fill="none" stroke="'+(b.color||"#a78bfa")+'" stroke-width="1" stroke-dasharray="2 3" opacity="0.7"/>'); } });
+
+    // candlesticks
+    candles.forEach(function(c,i){ if(!c||!isNum(c[0])||!isNum(c[3])) return;
+      var o=c[0],h=c[1],lw=c[2],cl=c[3]; var col=cl>=o?up:down, cx=X(i);
+      if(isNum(h)&&isNum(lw)) out.push('<rect x="'+(cx-wickW/2)+'" y="'+Y(h)+'" width="'+wickW+'" height="'+Math.max(0.5,Y(lw)-Y(h))+'" fill="'+col+'"/>');
+      var yo=Y(o),yc=Y(cl),top=Math.min(yo,yc),bh=Math.max(1,Math.abs(yc-yo));
+      out.push('<rect x="'+(cx-cw/2)+'" y="'+top+'" width="'+cw+'" height="'+bh+'" fill="'+col+'"/>'); });
+
+    // overlay indicator lines (EMA / VWAP / MAs)
+    (spec.overlays||[]).forEach(function(ov){ var d=(ov.data||[]).map(function(v,i){ return (isNum(v)?(i?"L":"M")+X(i)+" "+Y(v):""); }).join(" ");
+      out.push('<path d="'+d+'" fill="none" stroke="'+(ov.color||"#fbbf24")+'" stroke-width="'+(ov.width||1.6)+'" '+(ov.dash?'stroke-dasharray="5 3" ':"")+'opacity="0.95"/>'); });
+
+    // last-price dashed line + right-axis tag (TradingView style)
+    if(spec.lastPriceTag !== false){ var last=candles[n-1]; if(last&&isNum(last[3])){ var lp=last[3], ly=Y(lp);
+      var lcol=(isNum(last[0])&&lp>=last[0])?up:down;
+      out.push('<line x1="'+padL+'" y1="'+ly+'" x2="'+(W-padR)+'" y2="'+ly+'" stroke="'+lcol+'" stroke-width="0.8" stroke-dasharray="2 2" opacity="0.7"/>');
+      out.push('<rect x="'+(W-padR)+'" y="'+(ly-8)+'" width="'+padR+'" height="16" fill="'+lcol+'"/>');
+      out.push('<text x="'+(W-padR+6)+'" y="'+(ly+3.5)+'" fill="#0d1421" font-size="10.5" font-weight="700" font-family="monospace">'+lp.toFixed(2)+'</text>'); } }
+
+    // markers (buy / exit / dot)
+    (spec.markers||[]).forEach(function(m){ if(!isNum(m.i)) return; var mx=X(m.i);
+      var my=isNum(m.price)?Y(m.price):(m.type==="buy"?H-padB-14:padT+14);
+      var isBuy=m.type==="buy", isExit=m.type==="exit"; var col=m.color||(isBuy?"#26a69a":isExit?"#ef5350":"#fbbf24");
+      if(isBuy||isExit){ var ay=isBuy?my+18:my-18, tri=isBuy?(mx-6)+","+ay+" "+(mx+6)+","+ay+" "+mx+","+(ay-10):(mx-6)+","+ay+" "+(mx+6)+","+ay+" "+mx+","+(ay+10);
+        out.push('<polygon points="'+tri+'" fill="'+col+'"/>'); }
+      else out.push('<circle cx="'+mx+'" cy="'+my+'" r="3.5" fill="'+col+'" stroke="#0d1421" stroke-width="1"/>');
+      if(m.text){ var lblY=isBuy?my+34:(isExit?my-26:my-10); var tw=m.text.length*6.2+10;
+        out.push('<rect x="'+(mx-tw/2)+'" y="'+(lblY-11)+'" width="'+tw+'" height="15" rx="3" fill="'+col+'" opacity="0.94"/>');
+        out.push('<text x="'+mx+'" y="'+lblY+'" fill="#0d1421" font-size="10.5" font-weight="700" text-anchor="middle" font-family="system-ui">'+esc(m.text)+'</text>'); } });
+
+    // header: title, subtitle, and OHLC readout (TradingView top-left)
+    out.push('<text x="'+padL+'" y="17" fill="'+txt+'" font-size="13" font-weight="700" font-family="system-ui">'+esc(spec.title||"")+'</text>');
+    if(spec.subtitle) out.push('<text x="'+padL+'" y="32" fill="'+mut+'" font-size="10.5" font-family="system-ui">'+esc(spec.subtitle)+'</text>');
+    if(spec.ohlc !== false){ var f=candles[n-1]; if(f){ var oc=(isNum(f[0])&&isNum(f[3])&&f[3]>=f[0])?up:down;
+      var parts=[["O",f[0]],["H",f[1]],["L",f[2]],["C",f[3]]], hx=spec.subtitle?padL:padL, hy=spec.subtitle?46:32;
+      var lx=padL;
+      parts.forEach(function(p){ out.push('<text x="'+lx+'" y="'+hy+'" font-size="10.5" font-family="monospace" fill="'+mut+'">'+p[0]+'</text>');
+        lx+=11; out.push('<text x="'+lx+'" y="'+hy+'" font-size="10.5" font-family="monospace" fill="'+oc+'">'+fmt(p[1])+'</text>'); lx+=(fmt(p[1]).length*6.4)+10; }); } }
+
+    // legend (bottom-left, above time axis)
+    var lgx=padL, lgy=H-4;
+    (spec.legend||[]).forEach(function(lg){ out.push('<rect x="'+lgx+'" y="'+(lgy-8)+'" width="14" height="3" rx="1.5" fill="'+(lg.color||"#fbbf24")+'"/>');
+      out.push('<text x="'+(lgx+18)+'" y="'+(lgy-4)+'" fill="'+axis+'" font-size="10" font-family="system-ui">'+esc(lg.label)+'</text>');
+      lgx+=22+lg.label.length*6.1; });
+
+    out.push("</svg>"); return out.join("");
+  }
+
+  var TVChart = { buildSVG: buildSVG, render: function(elId, spec){ try { var el=document.getElementById(elId); if(!el) return; el.innerHTML=buildSVG(spec); } catch(e){} } };
+  global.TVChart = TVChart;
+})(window);
+</script>
+<script>
+(function(){ if(typeof TVChart==="undefined") return;
+  TVChart.render("tds-gate", {"title":"NIFTY 50 Index","subtitle":"5m \u00b7 NSE \u00b7 the 10:15 day gate \u2014 first hour judged once, then frozen","times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10"],"candles":[[24180,24197.5,24177,24194],[24194,24208.5,24191,24205],[24205,24224.5,24202,24221],[24221,24233.5,24218,24230],[24230,24246.5,24227,24243],[24243,24261.5,24240,24258],[24258,24269.5,24255,24266],[24266,24286.5,24263,24283],[24283,24298.5,24280,24295],[24295,24312.5,24292,24309],[24309,24322.5,24306,24319],[24319,24337.5,24316,24334]],"overlays":[{"name":"VWAP","color":"#8b5cf6","data":[24189.5,24195.5,24202.28,24208.5,24214.57,24221,24227.07,24233.38,24239.8,24246.27,24252.59,24258.97]}],"markers":[{"i":0,"type":"dot","color":"#64748b","price":24180,"text":"session open 24180"},{"i":11,"type":"dot","color":"#10b981","price":24334,"text":"gate 10:15 \u2192 CE day"}],"legend":[{"color":"#8b5cf6","label":"session VWAP (equal-weight HLC3)"},{"color":"#10b981","label":"gate PASSED \u2014 CE only"}]});
+  TVChart.render("tds-trade", {"title":"NIFTY 50 Index","subtitle":"5m \u00b7 NSE \u00b7 pullback into the VWAP/EMA20 zone, reclaimed \u2014 fixed 2.5R target","times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55"],"candles":[[24180,24197.5,24177,24194],[24194,24208.5,24191,24205],[24205,24224.5,24202,24221],[24221,24233.5,24218,24230],[24230,24246.5,24227,24243],[24243,24261.5,24240,24258],[24258,24269.5,24255,24266],[24266,24286.5,24263,24283],[24283,24298.5,24280,24295],[24295,24312.5,24292,24309],[24309,24322.5,24306,24319],[24319,24337.5,24316,24334],[24334,24345,24330.5,24341],[24341,24354,24337.5,24350],[24350,24359,24346.5,24355],[24355,24367,24351.5,24363],[24363,24373,24359.5,24369],[24369,24383,24365.5,24379],[24379,24387,24375.5,24383],[24383,24394,24379.5,24390],[24390,24403,24386.5,24399],[24399,24409,24395.5,24405],[24405,24407.5,24388.5,24392],[24392,24394.5,24372.5,24376],[24376,24378.5,24361.5,24365],[24339.41,24354.91,24335.41,24353.41],[24353.41,24371.41,24349.41,24367.41],[24367.41,24380.41,24363.41,24376.41],[24376.41,24380.41,24366.41,24370.41],[24370.41,24386.41,24366.41,24382.41],[24382.41,24394.41,24378.41,24390.41],[24390.41,24394.41,24382.41,24386.41],[24386.41,24401.41,24382.41,24397.41]],"overlays":[{"name":"VWAP","color":"#8b5cf6","data":[24189.5,24195.5,24202.28,24208.5,24214.57,24221,24227.07,24233.38,24239.8,24246.27,24252.59,24258.97,24265.12,24270.98,24276.48,24281.73,24286.75,24291.7,24296.45,24301.02,24305.55,24309.98,24313.72,24316.53,24318.6,24319.73,24321.32,24323.18,24324.88,24326.66,24328.63,24330.48,24332.4]},{"name":"EMA20","color":"#3b82f6","data":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,24304.35,24313.36,24322.09,24328.75,24333.25,24336.27,24337.91,24340.72,24344.11,24346.62,24350.03,24353.87,24356.97,24360.82]},{"name":"stop","color":"#f59e0b","dash":true,"width":1.2,"data":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,24335.41,24356.41,24356.41,24356.41,24356.41,24356.41,24356.41,24356.41]},{"name":"target","color":"#10b981","dash":true,"width":1.2,"data":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,24398.41,24398.41,24398.41,24398.41,24398.41,24398.41,24398.41,24398.41]}],"markers":[{"i":23,"type":"dot","color":"#94a3b8","price":24394.5,"text":"pullback starts"},{"i":25,"type":"buy","price":24353.41,"text":"BUY CE @ 24353.41"},{"i":26,"type":"dot","color":"#f59e0b","price":24371.41,"text":"+1R \u2192 stop to 24356.41"},{"i":32,"type":"exit","price":24398.41,"text":"EXIT \u2014 Target hit (2.5R)"}],"legend":[{"color":"#8b5cf6","label":"VWAP"},{"color":"#3b82f6","label":"EMA20 (the zone is whichever is nearer)"},{"color":"#f59e0b","label":"stop 24335.41 (18pt)"},{"color":"#10b981","label":"target 24398.41 (2.5R)"}]});
+  TVChart.render("tds-reject", {"title":"NIFTY 50 Index","subtitle":"5m \u00b7 NSE \u00b7 price keeps crossing VWAP \u2014 the 10:15 gate says NO TRADE","times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10"],"candles":[[24180,24206,24176,24202],[24202,24206,24176,24180],[24180,24206,24176,24202],[24202,24206,24176,24180],[24180,24206,24176,24202],[24202,24206,24176,24180],[24180,24206,24176,24202],[24202,24206,24176,24180],[24180,24206,24176,24202],[24202,24206,24176,24180],[24180,24206,24176,24202],[24202,24206,24176,24180]],"overlays":[{"name":"VWAP","color":"#8b5cf6","data":[24194.67,24191,24192.22,24191,24191.73,24191,24191.52,24191,24191.41,24191,24191.33,24191]}],"markers":[{"i":11,"type":"dot","color":"#f59e0b","price":24180,"text":"gate FAILED \u2192 stand aside"}],"legend":[{"color":"#8b5cf6","label":"session VWAP"},{"color":"#f59e0b","label":"rejected \u2014 no trade all day"}]});
+})();
+</script>
+
+</body>
+</html>

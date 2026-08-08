@@ -45,7 +45,7 @@ function sendAiSkipMarkdown(res, records, baseName, meta) {
   res.send(md);
 }
 
-const MODES = ["ema_rsi_st", "bb_rsi", "pa", "orb", "ema9vwap", "trend_pb", "gaps"];
+const MODES = ["ema_rsi_st", "bb_rsi", "pa", "orb", "ema9vwap", "trend_pb", "gaps", "trend_day_scalp"];
 
 function validMode(m) { return MODES.includes(m); }
 function validDate(d) { return typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d); }
@@ -528,6 +528,7 @@ function enabledModesFromEnv() {
     ema9vwap: on(process.env.EMA9VWAP_MODE_ENABLED),
     trend_pb: on(process.env.TREND_PB_MODE_ENABLED),
     gaps:     on(process.env.GAPS_MODE_ENABLED),
+    trend_day_scalp: on(process.env.TDS_MODE_ENABLED),
   };
 }
 
@@ -585,6 +586,7 @@ router.get("/", (req, res) => {
     .mode-ema9vwap { color:#06b6d4; }
     .mode-trend_pb { color:#ec4899; }
     .mode-gaps { color:#0ea5e9; }
+    .mode-trend_day_scalp { color:#a855f7; }
     .mode-meta { font-size:0.68rem; color:#4a6080; }
     table { width:100%; border-collapse:collapse; font-size:0.72rem; }
     th, td { padding:8px 12px; text-align:left; border-bottom:1px solid #121a2a; }
@@ -958,6 +960,7 @@ ${buildSidebar('tradeLogs', liveActive)}
     { key: 'ema9vwap', label: 'EMA9+VWAP',    cls: 'mode-ema9vwap' },
     { key: 'trend_pb', label: 'TREND PB',     cls: 'mode-trend_pb' },
     { key: 'gaps',     label: 'GAPS',         cls: 'mode-gaps' },
+    { key: 'trend_day_scalp', label: 'TREND DAY SCALP', cls: 'mode-trend_day_scalp' },
   ];
   function enabledModes() { return MODE_LIST.filter(function(m){ return ENABLED_MODES[m.key] !== false; }); }
 
@@ -971,14 +974,14 @@ ${buildSidebar('tradeLogs', liveActive)}
   })();
 
   // Per-section page state.
-  var _filesPage  = { ema_rsi_st:1, bb_rsi:1, pa:1, orb:1, ema9vwap:1, trend_pb:1, gaps:1 };
-  var _skipsPage  = { ema_rsi_st:1, bb_rsi:1, pa:1, orb:1, ema9vwap:1, trend_pb:1, gaps:1 };
+  var _filesPage  = { ema_rsi_st:1, bb_rsi:1, pa:1, orb:1, ema9vwap:1, trend_pb:1, gaps:1, trend_day_scalp:1 };
+  var _skipsPage  = { ema_rsi_st:1, bb_rsi:1, pa:1, orb:1, ema9vwap:1, trend_pb:1, gaps:1, trend_day_scalp:1 };
   var _auditPage  = 1;
   var _view = { mode:null, date:null, kind:null, page:1, total:0, pageSize:25 }; // modal state
 
   // Section totals cached so the badge survives prev/next clicks without refetching all modes.
-  var _filesTotals = { ema_rsi_st:0, bb_rsi:0, pa:0, orb:0, ema9vwap:0, trend_pb:0, gaps:0 };
-  var _skipsTotals = { ema_rsi_st:0, bb_rsi:0, pa:0, orb:0, ema9vwap:0, trend_pb:0, gaps:0 };
+  var _filesTotals = { ema_rsi_st:0, bb_rsi:0, pa:0, orb:0, ema9vwap:0, trend_pb:0, gaps:0, trend_day_scalp:0 };
+  var _skipsTotals = { ema_rsi_st:0, bb_rsi:0, pa:0, orb:0, ema9vwap:0, trend_pb:0, gaps:0, trend_day_scalp:0 };
 
   function fmtSize(n) {
     if (n < 1024) return n + ' B';

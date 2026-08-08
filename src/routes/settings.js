@@ -316,6 +316,56 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
+    section: "TREND DAY SCALP STRATEGY — Fyers",
+    icon: "⚡",
+    nav: "TREND DAY SCALP",
+    group: "Strategies",
+    fields: [
+      // ── Enable / live gating ──
+      { key: "TDS_PAPER_ENABLED", label: "Trend Day Scalp Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new Trend Day Scalp paper sessions.", default: "true", subheader: "Mode & Live" },
+      { key: "TDS_LIVE_ENABLED", label: "Trend Day Scalp Live Orders (gates /trend-day-scalp-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Fyers. NEVER traded — paper-validate first.", default: "false" },
+      { key: "TDS_LIVE_DRY_RUN", label: "Trend Day Scalp Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep it simulated even when live is on.", default: "false" },
+
+      // ── The day gate (decided once, then frozen) ──
+      { key: "TDS_GATE_TIME", label: "Day Gate Time", type: "time", effect: EFFECT.SESSION, desc: "The one moment the day is judged trendable (IST). Decided once, then frozen.", default: "10:15", subheader: "Day Gate (decided once, then frozen)" },
+      { key: "TDS_SESSION_START", label: "Session / VWAP Anchor", type: "time", effect: EFFECT.SESSION, desc: "Where the first-hour range and the VWAP both start (IST).", default: "09:15" },
+      { key: "TDS_MIN_RANGE_PCT", label: "Min First-Hour Range (% of spot)", type: "number", min: 0, max: 5, step: 0.05, effect: EFFECT.SESSION, desc: "The day must have actually moved. A dead range has no juice for an option buyer.", default: "0.5" },
+      { key: "TDS_VWAP_STREAK_BARS", label: "Closes One Side of VWAP", type: "number", min: 1, max: 30, step: 1, effect: EFFECT.SESSION, desc: "How many of the last closes must all sit on the same side of VWAP.", default: "6" },
+      { key: "TDS_EXTENSION_MULT", label: "Extension from VWAP (× range)", type: "number", min: 0, max: 3, step: 0.05, effect: EFFECT.SESSION, desc: "Spot must sit this many × the first-hour range away from VWAP. A linear trend day scores exactly 0.5, so 0.6+ rejects almost everything.", default: "0.35" },
+
+      // ── Entry ──
+      { key: "TDS_EMA_PERIOD", label: "Zone EMA Period", type: "number", min: 2, max: 200, step: 1, effect: EFFECT.SESSION, desc: "The pullback zone is whichever of VWAP / this EMA sits nearer to price.", default: "20", subheader: "Entry (pullback + reclaim)" },
+      { key: "TDS_ATR_PERIOD", label: "ATR Period", type: "number", min: 2, max: 100, step: 1, effect: EFFECT.SESSION, desc: "ATR that scales the conviction body.", default: "14" },
+      { key: "TDS_BODY_ATR_MULT", label: "Reclaim Body (× ATR)", type: "number", min: 0, max: 3, step: 0.05, effect: EFFECT.SESSION, desc: "The reclaim candle's body must be at least this × ATR — the conviction gate.", default: "0.4" },
+      { key: "TDS_PULLBACK_WINDOW", label: "Pullback Lookback (bars)", type: "number", min: 1, max: 20, step: 1, effect: EFFECT.SESSION, desc: "How many recent bars can supply the pullback touch. A wick counts.", default: "3" },
+      { key: "TDS_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No new entries after this time (IST).", default: "14:00" },
+      { key: "TDS_FORCED_EXIT", label: "Forced Exit (EOD square-off)", type: "time", effect: EFFECT.SESSION, desc: "Hard square-off time (IST).", default: "15:10" },
+      { key: "TDS_RESOLUTION", label: "Candle Timeframe (min)", type: "select", options: ["1", "3", "5", "10", "15", "30", "60"], effect: EFFECT.SESSION, desc: "Signal + exit candle timeframe.", default: "5" },
+
+      // ── Risk (the part that makes the result steady) ──
+      { key: "TDS_MIN_SL_PTS", label: "Min Stop Distance (pts)", type: "number", min: 1, max: 100, step: 1, effect: EFFECT.SESSION, desc: "A tighter structural stop is widened to this — never tightened inside the structure.", default: "12", subheader: "Risk (fixed stop, fixed target)" },
+      { key: "TDS_MAX_SL_PTS", label: "Max Stop Distance (pts)", type: "number", min: 1, max: 200, step: 1, effect: EFFECT.SESSION, desc: "A wider structural stop SKIPS the trade entirely. Keeps every loss the same size.", default: "18" },
+      { key: "TDS_TARGET_R", label: "Target (× risk)", type: "number", min: 0.5, max: 10, step: 0.1, effect: EFFECT.SESSION, desc: "Fixed target as a multiple of the stop distance. Taken, never trailed past.", default: "2.5" },
+      { key: "TDS_BREAKEVEN_R", label: "Breakeven Arms At (× risk)", type: "number", min: 0, max: 5, step: 0.1, effect: EFFECT.SESSION, desc: "Favourable move at which the stop makes its ONE jump.", default: "1" },
+      { key: "TDS_BREAKEVEN_BUFFER_PTS", label: "Breakeven Buffer (pts)", type: "number", min: 0, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Where the stop lands on that jump: entry ± this. It never moves again.", default: "3" },
+      { key: "TDS_TIME_STOP_MINS", label: "Time Stop (min)", type: "number", min: 0, max: 375, step: 5, effect: EFFECT.SESSION, desc: "Flat if breakeven has not armed within this long (0 = off). A stalled option only pays theta.", default: "25" },
+      { key: "TDS_PREMIUM_STOP_PCT", label: "Premium Stop (%)", type: "number", min: 0, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Exit if the option itself drops this % (0 = off). Catches an IV crush the spot stop cannot see.", default: "25" },
+
+      // ── Sizing & day-level breakers ──
+      { key: "TDS_LOT_MULTIPLIER", label: "Lot Multiplier (Trend Day Scalp only)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.INSTANT, desc: "Lots per trade (0 = use global).", default: "0", subheader: "Sizing & Day Breakers" },
+      { key: "TDS_ITM_STEPS", label: "ITM Steps (strikes in-the-money)", type: "number", min: 0, max: 3, step: 1, effect: EFFECT.INSTANT, desc: "Strikes in-the-money to buy (0 = ATM). 1 step ≈ delta 0.6.", default: "1" },
+      { key: "TDS_MAX_DAILY_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Max entries per day. Friction is per-trade, so fewer is usually better.", default: "2" },
+      { key: "TDS_MAX_DAILY_LOSSES", label: "Stop-outs That End the Day", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Day ends after this many REAL stop-outs (0 = off). Breakeven and time-stop exits do not count.", default: "2" },
+      { key: "TDS_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 0, max: 50000, step: 250, effect: EFFECT.SESSION, desc: "Stop trading after this much loss (0 = off).", default: "1500" },
+      { key: "TDS_DAILY_PROFIT_LOCK", label: "Daily Profit Lock (₹)", type: "number", min: 0, max: 50000, step: 250, effect: EFFECT.SESSION, desc: "Stop for the day once this much is banked (0 = off). Giving profit back is what wrecks a steady curve.", default: "1500" },
+      { key: "TDS_MAX_WEEKLY_LOSS", label: "Max Weekly Loss (₹)", type: "number", min: 0, max: 200000, step: 1000, effect: EFFECT.SESSION, desc: "Stop for the week after this much loss (0 = off).", default: "0" },
+
+      // ── Backtest ──
+      { key: "TDS_BT_SLIPPAGE_PTS", label: "Backtest Spread/Slippage Haircut (pts each way)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.BACKTEST, desc: "Backtest cost per side, in points. Without this, option-buying backtests always flatter.", default: "1.5", subheader: "Backtest" },
+      { key: "TDS_BT_SEED_PREMIUM", label: "Backtest Seed Premium (₹)", type: "number", min: 50, max: 800, step: 10, effect: EFFECT.BACKTEST, desc: "Assumed entry premium for the backtest (₹).", default: "240" },
+    ],
+  },
+  {
     section: "GAPS STRATEGY — Fyers",
     icon: "🕳",
     nav: "GAPS",
@@ -467,6 +517,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_EMA9VWAP_STARTED", label: "EMA9+VWAP — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an EMA9+VWAP session starts.", default: "true" },
       { key: "TG_TREND_PB_STARTED", label: "Trend Pullback — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a Trend Pullback session starts.", default: "true" },
       { key: "TG_GAPS_STARTED", label: "GAPS — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a GAPS session starts.", default: "true" },
+      { key: "TG_TDS_STARTED", label: "Trend Day Scalp — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a Trend Day Scalp session starts.", default: "true" },
 
       { key: "TG_EMA_RSI_ST_ENTRY", label: "EMA_RSI_ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST entry.", default: "true", subheader: "Trade Entry" },
       { key: "TG_BB_RSI_ENTRY", label: "BB_RSI — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BB_RSI entry.", default: "true" },
@@ -475,6 +526,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_EMA9VWAP_ENTRY", label: "EMA9+VWAP — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA9+VWAP entry.", default: "true" },
       { key: "TG_TREND_PB_ENTRY", label: "Trend Pullback — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Trend Pullback entry.", default: "true" },
       { key: "TG_GAPS_ENTRY", label: "GAPS — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every GAPS entry.", default: "true" },
+      { key: "TG_TDS_ENTRY", label: "Trend Day Scalp — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Trend Day Scalp entry.", default: "true" },
 
       { key: "TG_EMA_RSI_ST_EXIT", label: "EMA_RSI_ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST exit.", default: "true", subheader: "Trade Exit" },
       { key: "TG_BB_RSI_EXIT", label: "BB_RSI — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BB_RSI exit.", default: "true" },
@@ -483,6 +535,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_EMA9VWAP_EXIT", label: "EMA9+VWAP — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA9+VWAP exit.", default: "true" },
       { key: "TG_TREND_PB_EXIT", label: "Trend Pullback — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Trend Pullback exit.", default: "true" },
       { key: "TG_GAPS_EXIT", label: "GAPS — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every GAPS exit.", default: "true" },
+      { key: "TG_TDS_EXIT", label: "Trend Day Scalp — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Trend Day Scalp exit.", default: "true" },
 
       { key: "TG_EMA_RSI_ST_SIGNALS", label: "EMA_RSI_ST — Signal/Skip Alerts", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert why a trade was or wasn't taken.", default: "true", subheader: "Signal / Skip" },
       { key: "TG_BB_RSI_SIGNALS", label: "BB_RSI — Signal/Skip Alerts", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert why a trade was or wasn't taken.", default: "false" },
@@ -496,6 +549,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_EMA9VWAP_DAYREPORT", label: "EMA9+VWAP — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send an EMA9+VWAP day summary on stop.", default: "true" },
       { key: "TG_TREND_PB_DAYREPORT", label: "Trend Pullback — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a Trend Pullback day summary on stop.", default: "true" },
       { key: "TG_GAPS_DAYREPORT", label: "GAPS — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a GAPS day summary on stop.", default: "true" },
+      { key: "TG_TDS_DAYREPORT", label: "Trend Day Scalp — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a Trend Day Scalp day summary on stop.", default: "true" },
 
       { key: "TG_DAYREPORT_CONSOLIDATED", label: "Consolidated Day Report (Market Close)", type: "toggle", effect: EFFECT.INSTANT, desc: "Send one combined end-of-day summary at 15:30 IST.", default: "true" },
     ],
@@ -559,6 +613,7 @@ const SETTINGS_SCHEMA = [
       { key: "EMA9VWAP_MODE_ENABLED",  label: "EMA9+VWAP Mode",            type: "toggle", effect: EFFECT.INSTANT, desc: "Show the EMA9+VWAP menu and settings.", default: "true" },
       { key: "TREND_PB_MODE_ENABLED",  label: "Trend Pullback Mode",       type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Trend Pullback menu and settings.", default: "true" },
       { key: "GAPS_MODE_ENABLED",      label: "GAPS Mode",                 type: "toggle", effect: EFFECT.INSTANT, desc: "Show the GAPS menu and settings.", default: "true" },
+      { key: "TDS_MODE_ENABLED",       label: "Trend Day Scalp Mode",      type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Trend Day Scalp menu and settings.", default: "true" },
       { key: "UI_SHOW_SIMULATE",       label: "Show Simulate Menu",        type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Simulate sub-menu.", default: "false", subheader: "Shared sub-menus (all strategies)" },
       { key: "UI_SHOW_COMPARE",        label: "Show Compare Menu",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Compare sub-menu.", default: "false" },
       { key: "UI_SHOW_TRACKER",        label: "Show Tracker Menu (EMA_RSI_ST only)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Tracker sub-menu (EMA_RSI_ST).", default: "false" },
@@ -606,6 +661,12 @@ const SETTINGS_SCHEMA = [
       { key: "UI_SHOW_GAPS_PAPER",    label: "GAPS → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under GAPS.", default: "true" },
       { key: "UI_SHOW_GAPS_LIVE",     label: "GAPS → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live under GAPS.", default: "true" },
       { key: "UI_SHOW_GAPS_HISTORY",  label: "GAPS → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under GAPS.", default: "true" },
+
+      // ── Trend Day Scalp submenu ──
+      { key: "UI_SHOW_TDS_BACKTEST", label: "Trend Day Scalp → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under Trend Day Scalp.", default: "true", subheader: "Trend Day Scalp sub-menus" },
+      { key: "UI_SHOW_TDS_PAPER",    label: "Trend Day Scalp → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under Trend Day Scalp.", default: "true" },
+      { key: "UI_SHOW_TDS_LIVE",     label: "Trend Day Scalp → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live under Trend Day Scalp.", default: "true" },
+      { key: "UI_SHOW_TDS_HISTORY",  label: "Trend Day Scalp → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under Trend Day Scalp.", default: "true" },
 
       // ── System submenu (Settings is always shown) ──
       { key: "UI_SHOW_LOGS",       label: "Logs → Server Logs tab", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Server Logs tab.", default: "true", subheader: "System sub-menus" },
@@ -668,6 +729,7 @@ const MODE_SECTION_TITLES = {
   ema9vwap: "EMA9 + VWAP STRATEGY — Zerodha",
   trend_pb: "TREND PULLBACK STRATEGY — Fyers",
   gaps:     "GAPS STRATEGY — Fyers",
+  trend_day_scalp: "TREND DAY SCALP STRATEGY — Fyers",
 };
 const SNAPSHOT_COMMON_SECTION_TITLES = new Set([
   "Instrument & Backtest",
@@ -675,7 +737,7 @@ const SNAPSHOT_COMMON_SECTION_TITLES = new Set([
   "OPEN-INTEREST FILTER (OI + Price Buildup)",
 ]);
 
-const _MODE_KEYS = { ema_rsi_st: new Set(), bb_rsi: new Set(), pa: new Set(), orb: new Set(), ema9vwap: new Set(), trend_pb: new Set(), gaps: new Set() };
+const _MODE_KEYS = { ema_rsi_st: new Set(), bb_rsi: new Set(), pa: new Set(), orb: new Set(), ema9vwap: new Set(), trend_pb: new Set(), gaps: new Set(), trend_day_scalp: new Set() };
 const _KEY_TO_MODES = new Map();
 (function buildModeKeyIndex() {
   const commonKeys = [];
@@ -1098,7 +1160,7 @@ router.post("/restart", (req, res) => {
 // cache & logs always clear fully. The aggregate paper JSON + capital restore is
 // handled client-side via the per-strategy /reset endpoints (full paper wipe only).
 // Auto-gated by the app.js x-api-secret middleware (not in OPEN_PATHS).
-const RESET_PAPER_MODES = ["ema_rsi_st", "bb_rsi", "pa", "orb", "ema9vwap", "trend_pb", "gaps"];
+const RESET_PAPER_MODES = ["ema_rsi_st", "bb_rsi", "pa", "orb", "ema9vwap", "trend_pb", "gaps", "trend_day_scalp"];
 const _RESET_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 router.post("/reset-data", (req, res) => {
@@ -1409,6 +1471,7 @@ router.get("/", (req, res) => {
   const ema9vwapModeOn = (envData["EMA9VWAP_MODE_ENABLED"] ?? process.env.EMA9VWAP_MODE_ENABLED ?? "true").toLowerCase() === "true";
   const trendPbModeOn  = (envData["TREND_PB_MODE_ENABLED"] ?? process.env.TREND_PB_MODE_ENABLED ?? "true").toLowerCase() === "true";
   const gapsModeOn     = (envData["GAPS_MODE_ENABLED"]     ?? process.env.GAPS_MODE_ENABLED     ?? "true").toLowerCase() === "true";
+  const tdsModeOn      = (envData["TDS_MODE_ENABLED"]      ?? process.env.TDS_MODE_ENABLED      ?? "true").toLowerCase() === "true";
   // Server Logs (📜 LOGS) and Cache Files buttons moved into the Logs (/trade-logs) page as tabs —
   // UI_SHOW_LOGS / UI_SHOW_CACHE_FILES now gate those tabs there, not top-bar buttons here.
   // (bbRsiModeOn already computed above for isFieldFrozen)
@@ -1420,6 +1483,7 @@ router.get("/", (req, res) => {
     "EMA9 + VWAP STRATEGY — Zerodha":                               ema9vwapModeOn,
     "TREND PULLBACK STRATEGY — Fyers":                              trendPbModeOn,
     "GAPS STRATEGY — Fyers":                                        gapsModeOn,
+    "TREND DAY SCALP STRATEGY — Fyers":                             tdsModeOn,
   };
 
   // Rail entries are collected while the sections render so the index and the

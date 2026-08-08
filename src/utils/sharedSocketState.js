@@ -36,6 +36,9 @@ let trendPbMode = null;
 // GAPS mode: "GAPS_PAPER" | "GAPS_LIVE" | null
 let gapsMode = null;
 
+// Trend Day Scalp mode: "TREND_DAY_SCALP_PAPER" | "TREND_DAY_SCALP_LIVE" | null
+let trendDayScalpMode = null;
+
 // ── Primary mode (15-min) ─────────────────────────────────────────────────
 
 function setActive(mode) {
@@ -162,13 +165,31 @@ function getGapsMode() {
   return gapsMode;
 }
 
+// ── Trend Day Scalp mode (5-min, day-gated) ─────────────────────────────────
+
+function setTrendDayScalpActive(mode) {
+  trendDayScalpMode = mode;
+}
+
+function clearTrendDayScalp() {
+  trendDayScalpMode = null;
+}
+
+function isTrendDayScalpActive() {
+  return trendDayScalpMode !== null;
+}
+
+function getTrendDayScalpMode() {
+  return trendDayScalpMode;
+}
+
 // ── Combined queries ──────────────────────────────────────────────────────
 
 /** Any mode using the socket? */
 function isAnyActive() {
   return primaryMode !== null || bbRsiMode !== null || paMode !== null ||
          orbMode !== null || ema9vwapMode !== null || trendPbMode !== null ||
-         gapsMode !== null;
+         gapsMode !== null || trendDayScalpMode !== null;
 }
 
 /** Can the given mode start? Returns { allowed, reason } */
@@ -230,6 +251,14 @@ function canStart(mode) {
       if (gapsMode === "GAPS_PAPER") return { allowed: false, reason: "GAPS Paper is running — stop it first" };
       if (gapsMode === "GAPS_LIVE")  return { allowed: false, reason: "GAPS Live is already running" };
       return { allowed: true };
+    case "TREND_DAY_SCALP_PAPER":
+      if (trendDayScalpMode === "TREND_DAY_SCALP_LIVE")  return { allowed: false, reason: "Trend Day Scalp Live is running — stop it first" };
+      if (trendDayScalpMode === "TREND_DAY_SCALP_PAPER") return { allowed: false, reason: "Trend Day Scalp Paper is already running" };
+      return { allowed: true };
+    case "TREND_DAY_SCALP_LIVE":
+      if (trendDayScalpMode === "TREND_DAY_SCALP_PAPER") return { allowed: false, reason: "Trend Day Scalp Paper is running — stop it first" };
+      if (trendDayScalpMode === "TREND_DAY_SCALP_LIVE")  return { allowed: false, reason: "Trend Day Scalp Live is already running" };
+      return { allowed: true };
     default:
       return { allowed: false, reason: "Unknown mode: " + mode };
   }
@@ -250,6 +279,8 @@ module.exports = {
   setTrendPbActive, clearTrendPb, isTrendPbActive, getTrendPbMode,
   // GAPS
   setGapsActive, clearGaps, isGapsActive, getGapsMode,
+  // Trend Day Scalp
+  setTrendDayScalpActive, clearTrendDayScalp, isTrendDayScalpActive, getTrendDayScalpMode,
   // Combined
   isAnyActive, canStart,
 };

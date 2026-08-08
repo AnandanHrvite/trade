@@ -48,6 +48,9 @@ All four strategies run **in parallel** on the same WebSocket — different cand
 | **GAPS Paper** | Extreme daily RSI + next-day gap the other way (single-leg slightly-ITM CE/PE) | Daily signal, 5-min exits | Simulated | `/gaps-paper` |
 | **GAPS Backtest** | Same engine over a date range (daily signal + intraday exit sim) | Daily + 5-min historical | Historical | `/gaps-backtest` |
 | **GAPS Live (Harness)** | Runs Live by wrapping Paper (Fyers orders, triple-gated dry-run) | Daily signal, 5-min exits | Fyers (PAPER-wrapped) | `/gaps-live` |
+| **Trend Day Scalp Paper** | 10:15 day gate locks the side, then a VWAP/EMA20 pullback-reclaim (single-leg slightly-ITM CE/PE) | 5-min | Simulated | `/trend-day-scalp-paper` |
+| **Trend Day Scalp Backtest** | Same engine over a date range (conservative intra-bar ordering) | 5-min historical | Historical | `/trend-day-scalp-backtest` |
+| **Trend Day Scalp Live (Harness)** | Runs Live by wrapping Paper (Fyers orders, triple-gated dry-run) | 5-min | Fyers (PAPER-wrapped) | `/trend-day-scalp-live` |
 | **Replay** | Re-runs a recorded paper session through the paper `onTick()` | Recorded ticks | Recorded | `/replay` |
 | **All Backtest** | Unified backtest dashboard (per-strategy stats) | Per-strategy | Historical | `/all-backtest` |
 | **Manual Tracker** | — (trails SL only) | 15-min | Zerodha | `/tracker` |
@@ -193,6 +196,38 @@ See [BB_RSI.md](BB_RSI.md) for the authoritative spec. Summary:
 - **LIVE = PAPER** (`/gaps-live`, [src/routes/gapsLiveHarness.js](src/routes/gapsLiveHarness.js)): runs Live by wrapping the Paper engine with the shared harness — it triggers `/gaps-paper/start` under the hood and places real **Fyers** orders as paper's entry/exit fires, so Live = Paper by construction. **Triple-gated to dry-run**: real orders require `GAPS_LIVE_ENABLED=true` AND `LIVE_HARNESS_DRY_RUN=false` AND `GAPS_LIVE_DRY_RUN` not-true, plus an authenticated Fyers session. An open GAPS position is crash-recovered via `positionPersist` (`.active_gaps_position.json`) and reconciled against the broker book on boot.
 - **Backtest** (`/gaps-backtest`, [src/routes/gapsBacktest.js](src/routes/gapsBacktest.js)): fetches the daily series (with ~400 days of warmup runway before `from` so RSI-on-EMA is seeded on day one) plus `GAPS_EXIT_TF` intraday candles, then drives the **same** `getSignal` per session and re-implements the paper exits (paper canonical). Conservative intra-bar ordering: the gap-size stop is tested on the bar's high/low **before** the trail is tested on the close, and a bar that opened beyond the stop fills at the open, never at the better level. Option P&L is δ+θ simulated seeded at `GAPS_BT_SEED_PREMIUM=240` **plus a spread/slippage haircut** `GAPS_BT_SLIPPAGE_PTS=1.5`pt each way. **GAPS is low-frequency** — a 30-day range usually produces very few trades, so the default range is 180 days; widen it before drawing any conclusion.
 
+### Strategy 8: TREND DAY SCALP — a 10:15 day gate, then one bought dip (single-leg slightly-ITM CE/PE, Fyers)
+
+**Never traded.** Zero paper sessions, zero live orders. Every constant below is a prior derived from the cost arithmetic, not a fitted optimum. Collect clean paper days and diff them against `/replay` before touching any live gate.
+
+**Why it exists.** Every other engine here is a naked directional bet that lets winners run, and each is right-tail dependent — ORB's own header records 9 trades where the best is 211% of net (remove it and the strategy is −₹3,786); EMA9+VWAP's +₹16k was one trade. This one inverts that on purpose: a **fixed** target, a **fixed**-size stop, and a day filter whose main job is to produce a **zero** instead of a loss. It gives up the huge winner to get a result that does not depend on catching one.
+
+**The binding constraint is friction, not signal.** Measured with this repo's own `charges.js` on 1 lot: ~₹90 statutory + ~1.5 premium points of slippage per side (~₹225) ≈ **₹315 gone before the trade is right about anything**. At delta ~0.6 that is ~17 spot points of edge just to break even — which is why the target floor is 2.5R and not a scalper's ten points.
+
+- **Day gate** — evaluated ONCE on the 5-min bar closing at `TDS_GATE_TIME=10:15`, then **frozen for the day**. All three must hold:
+  1. first-hour (`TDS_SESSION_START=09:15` → gate) range ≥ `TDS_MIN_RANGE_PCT=0.5`% of spot — the day actually moved;
+  2. the last `TDS_VWAP_STREAK_BARS=6` closes are ALL on the same side of the running VWAP — one-directional, not chop;
+  3. `|spot − VWAP| ≥ TDS_EXTENSION_MULT=0.35 ×` the first-hour range — committed, not drifting on the line.
+  - Fail any one → **NO TRADE TODAY**. That zero is the design goal, not a missed opportunity.
+  - **Why 0.35 and not 0.6**: on a perfectly linear ramp the time-weighted VWAP lands at `(L+H)/2`, so spot−VWAP is *exactly* 0.5 × range. A 0.6 threshold therefore rejects every clean linear trend day and only admits ones that accelerate into 10:15 — a handful per year. A flat/chopping session scores ~0.1, so 0.35 still separates committed from drifting. Verified in the offline harness.
+- **Direction is LOCKED by the gate**: spot above VWAP → **CE only**, below → **PE only**. Never counter-trend, never flips later in the day.
+- **Entry** — a pullback into the zone that is immediately reclaimed, on a closed 5-min bar. The zone is the **nearer** of VWAP and `EMA(TDS_EMA_PERIOD=20)` to price (max of the two for CE, min for PE). All four must hold:
+  - *touch* — the lowest low of the last `TDS_PULLBACK_WINDOW=3` bars reached the zone. **A wick is enough**: `trend_pb.js` already defines a pullback that way, and on a genuine trend day price usually just grazes the line and bounces — demanding a *close* beyond it means waiting for the trend to actually break before buying its continuation.
+  - *reclaim* — this bar CLOSES back beyond the zone.
+  - *freshness* — either the previous bar closed on the wrong side of its own zone (a multi-bar dip) or THIS bar's low dipped in (a pin bar). Blocks firing on every bar of a rally already under way.
+  - *conviction* — right colour, body ≥ `TDS_BODY_ATR_MULT=0.4 × ATR(TDS_ATR_PERIOD=14)`.
+  - Window: gate → `TDS_ENTRY_END=14:00`.
+- **Stop** = the pullback extreme, **floor-clamped** to `TDS_MIN_SL_PTS=12`. If the structure needs MORE than `TDS_MAX_SL_PTS=18` the trade is **SKIPPED** — never widened, and never tightened inside the structure. Every loss is the same size.
+- **Target** = a FIXED `entry ± TDS_TARGET_R=2.5 ×` the stop distance. Taken when reached, not trailed past.
+- **Exits**, in the order tested on every tick: hard stop → fixed target → **breakeven jump** (at `+TDS_BREAKEVEN_R=1`R the stop moves **ONCE** to `entry ± TDS_BREAKEVEN_BUFFER_PTS=3` and then **never moves again**) → time stop (`TDS_TIME_STOP_MINS=25`, only while un-armed) → premium stop (`TDS_PREMIUM_STOP_PCT=25`%, catches an IV crush the spot stop cannot see) → EOD `TDS_FORCED_EXIT=15:10`.
+  - **There is deliberately NO rolling trail and no partial booking.** A rolling trail is exactly what turns this repo's other engines' winners into scratches; the fixed target does that job instead.
+- **Day-level breakers**: `TDS_MAX_DAILY_TRADES=2`, `TDS_MAX_DAILY_LOSSES=2` **real stop-outs** ends the day (a breakeven or time-stop exit is a scratch and does **not** count), `TDS_MAX_DAILY_LOSS=1500`, `TDS_DAILY_PROFIT_LOCK=1500` (stop while ahead — handing profit back is what wrecks a steady curve), `TDS_MAX_WEEKLY_LOSS=0` (off), plus the shared portfolio-wide cap.
+- **Option**: slightly-ITM (`TDS_ITM_STEPS=1`, ~delta 0.6). Sizing via `TDS_LOT_MULTIPLIER` (0 = inherit the global `LOT_MULTIPLIER`; clamped by `MAX_LOT_MULTIPLIER`).
+- **Deliberately NOT here** (do not "helpfully" add them): no VIX gate, no OI filter, no ADX, no volume, no RSI, no SuperTrend, no multi-timeframe bias, no confirmation candle, no averaging, no pyramiding.
+- **Determinism**: every value the decision reads comes from CLOSED 5-min candle OHLC — never the live spot — so Paper, Backtest, Live and Replay compute identical numbers. The VWAP is **equal-weighted HLC3** (a TWAP), matching `ema9_vwap.js`: the Fyers live tick feed carries no per-bar index volume while Fyers HISTORY does, so a volume-weighted VWAP would make Paper and Backtest disagree about the same session.
+- **LIVE = PAPER** (`/trend-day-scalp-live`, [src/routes/trendDayScalpLiveHarness.js](src/routes/trendDayScalpLiveHarness.js)): wraps the Paper engine with the shared harness, so Live = Paper by construction. **Triple-gated to dry-run**: real orders require `TDS_LIVE_ENABLED=true` AND `LIVE_HARNESS_DRY_RUN=false` AND `TDS_LIVE_DRY_RUN` not-true, plus an authenticated Fyers session. An open position is crash-recovered via `positionPersist` (`.active_trend_day_scalp_position.json`, which persists the full bracket including whether breakeven had already armed) and reconciled against the broker book on boot.
+- **Backtest** (`/trend-day-scalp-backtest`, [src/routes/trendDayScalpBacktest.js](src/routes/trendDayScalpBacktest.js)): drives the **same** `evaluateDayGate` + `getSignal` and re-implements only paper's exits (paper canonical). **Conservative intra-bar ordering** — the adverse stop is tested on the bar's high/low **before** the favourable target, so a bar touching both books the LOSS; a bar that opened beyond a level fills at the **open**, never the better level; the breakeven jump arms off the bar's favourable extreme but the moved stop can only be hit on a **later** bar. Option P&L is δ+θ simulated seeded at `TDS_BT_SEED_PREMIUM=240` plus a `TDS_BT_SLIPPAGE_PTS=1.5`pt haircut **each way**. The premium stop fires on that modelled curve, not on a real IV crush. **The gate rejects most sessions by design, so a short range shows very few trades.**
+
 ### Tick Replay — deterministic re-run of recorded sessions
 - Every trading day records spot, option (incl. entry-time bid/ask), VIX, and futures-OI ticks to `<repo>/data/ticks/YYYY-MM-DD/*.jsonl` when `TICK_RECORDER_ENABLED=true` (default; pure observer, no trade-path impact). OI is recorded only while an OI filter is enabled. Retention: `TICK_RECORDER_RETAIN_DAYS=30`.
   - **Note the location**: unlike the rest of the persistent state, the tick archive lives *inside* the repo directory (`data/ticks`), not in `~/trading-data`. On EC2 that is `/var/www/html/trade/data/ticks`, and it survives deploys only because the deploy rsync runs **without `--delete`** ([.github/workflows/deployCodeToEc2.yml](.github/workflows/deployCodeToEc2.yml) leaves `ARGS` at its default). Adding `--delete` there would erase every recorded day on the next push — recordings that can never be re-made.
@@ -268,6 +303,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   orb_live_trades.json            # ORB live sessions
   trend_pb_paper_trades.json      # Trend Pullback paper sessions
   gaps_paper_trades.json          # GAPS paper sessions
+  trend_day_scalp_paper_trades.json # Trend Day Scalp paper sessions
   historical_pnl.json             # One-time P&L baselines per broker (Kite / Fyers)
   .active_ema_rsi_st_position.json     # Crash recovery — EMA_RSI_ST position
   .active_bb_rsi_position.json     # Crash recovery — bb_rsi position
@@ -276,6 +312,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   .active_orb_position.json       # Crash recovery — ORB position
   .active_trend_pb_position.json  # Crash recovery — Trend Pullback position
   .active_gaps_position.json      # Crash recovery — GAPS position
+  .active_trend_day_scalp_position.json # Crash recovery — Trend Day Scalp position
   .harness_events.json            # Live-harness event log (DRY-RUN/real order events), survives restart
   ema_rsi_st_paper_trades_log.jsonl    # Crash-safe per-trade JSONL audit (cumulative)
   bb_rsi_paper_trades_log.jsonl
@@ -283,6 +320,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   orb_paper_trades_log.jsonl
   trend_pb_paper_trades_log.jsonl
   gaps_paper_trades_log.jsonl
+  trend_day_scalp_paper_trades_log.jsonl
   trades/                         # Per-day JSONL files: {mode}_paper_trades_YYYY-MM-DD.jsonl
                                   # (one file per strategy per day; seeded with a settings snapshot
                                   #  + checkpoint note, re-snapshotted on every config save)
@@ -590,6 +628,46 @@ Trend-continuation option-buyer: 15m trend bias (swing structure + EMA20>EMA50 +
 | `GAPS_BT_SLIPPAGE_PTS` | `1.5` | Backtest spread/slippage haircut, each way (premium pts) |
 | `GAPS_BT_SEED_PREMIUM` | `240` | Assumed slightly-ITM entry premium for the backtest δ+θ sim |
 | `GAPS_DAILY_CHART_BARS` | `180` | Daily candles rendered on the GAPS daily EMA/RSI chart |
+
+
+### Trend Day Scalp Mode (10:15 day gate → VWAP/EMA20 pullback, Fyers)
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `TDS_MODE_ENABLED` | `true` | Master toggle — sidebar group + Settings section |
+| `TDS_PAPER_ENABLED` | `true` | Allow `/trend-day-scalp-paper/start` |
+| `TDS_LIVE_ENABLED` | `false` | Gates real Fyers orders on `/trend-day-scalp-live/start` |
+| `TDS_LIVE_DRY_RUN` | `false` | Per-strategy dry-run override — keeps it simulated even when live is on |
+| `TDS_GATE_TIME` | `10:15` | The one moment the day is judged tradeable. Decided once, then **frozen** |
+| `TDS_SESSION_START` | `09:15` | Where the first-hour range and the session VWAP both start (IST) |
+| `TDS_MIN_RANGE_PCT` | `0.5` | First-hour range must be ≥ this % of spot — a dead range has no juice for a buyer |
+| `TDS_VWAP_STREAK_BARS` | `6` | How many of the last closes must ALL sit on the same side of VWAP |
+| `TDS_EXTENSION_MULT` | `0.35` | `\|spot − VWAP\|` must be ≥ this × the range. **A linear trend day scores exactly 0.5**, so 0.6+ rejects almost everything — see the strategy section |
+| `TDS_EMA_PERIOD` | `20` | The pullback zone is whichever of VWAP / this EMA sits **nearer** to price |
+| `TDS_ATR_PERIOD` | `14` | ATR that scales the conviction body |
+| `TDS_BODY_ATR_MULT` | `0.4` | Reclaim candle body must be ≥ this × ATR |
+| `TDS_PULLBACK_WINDOW` | `3` | How many recent bars may supply the pullback touch (a **wick** counts) |
+| `TDS_ENTRY_END` | `14:00` | No new entries after this (IST) |
+| `TDS_FORCED_EXIT` | `15:10` | Hard EOD square-off (IST) |
+| `TDS_RESOLUTION` | `5` | Signal + exit candle timeframe (min) |
+| `TDS_MIN_SL_PTS` | `12` | A tighter structural stop is **widened** to this |
+| `TDS_MAX_SL_PTS` | `18` | A wider structural stop **SKIPS the trade** — never tightened into the structure |
+| `TDS_TARGET_R` | `2.5` | Fixed target as a multiple of the stop distance. Taken, never trailed past |
+| `TDS_BREAKEVEN_R` | `1` | Favourable move at which the stop makes its **one** jump |
+| `TDS_BREAKEVEN_BUFFER_PTS` | `3` | Where it lands: `entry ± this`. It never moves again |
+| `TDS_TIME_STOP_MINS` | `25` | Flat if breakeven has not armed within this long (0 = off) |
+| `TDS_PREMIUM_STOP_PCT` | `25` | Exit if the option itself drops this % (0 = off) |
+| `TDS_ITM_STEPS` | `1` | Strikes in-the-money to buy (0 = ATM). 1 step ≈ delta 0.6 |
+| `TDS_LOT_MULTIPLIER` | `0` | Lots per trade (0 = inherit global `LOT_MULTIPLIER`; clamped by `MAX_LOT_MULTIPLIER`) |
+| `TDS_MAX_DAILY_TRADES` | `2` | Max entries per day — friction is per-trade, so fewer is usually better |
+| `TDS_MAX_DAILY_LOSSES` | `2` | Day ends after this many **real stop-outs** (0 = off). Breakeven / time-stop exits do NOT count |
+| `TDS_MAX_DAILY_LOSS` | `1500` | Stop trading after this much loss (0 = off) |
+| `TDS_DAILY_PROFIT_LOCK` | `1500` | Stop for the day once this much is banked (0 = off) |
+| `TDS_MAX_WEEKLY_LOSS` | `0` | Rolling Mon→today cap read from the per-day JSONL logs (0 = off) |
+| `TDS_BT_SLIPPAGE_PTS` | `1.5` | Backtest cost per side, in points |
+| `TDS_BT_SEED_PREMIUM` | `240` | Assumed entry premium for the backtest (₹) |
+| `UI_SHOW_TDS_BACKTEST` / `_PAPER` / `_LIVE` / `_HISTORY` | `true` | Sidebar sub-menu visibility |
+| `TG_TDS_STARTED` / `_ENTRY` / `_EXIT` / `_DAYREPORT` | `true` | Telegram alerts for this strategy |
 
 ### Paper Investment Pools (per broker)
 Paper capital is pooled per broker, not per strategy. Each strategy's running capital = its broker pool + that strategy's all-time paper P&L. The Real-Time Monitor (dashboard) carries a wallet ribbon per broker — headline **free to trade**, with *Invested / P&L* and *In use / Pool* beneath — and it stays up during a running session, since that is when free cash matters. It is hidden under the LIVE toggle: the pool is paper money and has no live-margin equivalent.

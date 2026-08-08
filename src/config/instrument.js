@@ -475,12 +475,12 @@ function isExpiryOverrideStale(dateStr) {
  */
 async function validateAndGetOptionSymbol(spot, side, mode) {
   let strike = calcATMStrike(spot, side);
-  // ── ORB, TREND_PB and GAPS trade slightly ITM (~delta 0.6): higher delta tracks
+  // ── ORB, TREND_PB, GAPS and TDS (Trend Day Scalp) trade slightly ITM (~delta 0.6): higher delta tracks
   //    the move better and decays slower in % than ATM. Shift the strike ITM by
   //    {MODE}_ITM_STEPS × 50 (CE → lower strike, PE → higher strike). Default 1 step.
   //    Set {MODE}_ITM_STEPS=0 to fall back to ATM. ─────────────────────────────
   const _itmMode = String(mode || "").toUpperCase();
-  if (_itmMode === "ORB" || _itmMode === "TREND_PB" || _itmMode === "GAPS") {
+  if (_itmMode === "ORB" || _itmMode === "TREND_PB" || _itmMode === "GAPS" || _itmMode === "TDS") {
     const itmSteps = parseInt(process.env[`${_itmMode}_ITM_STEPS`] || "1", 10);
     if (itmSteps > 0 && (side === "CE" || side === "PE")) {
       const shifted = side === "CE" ? strike - itmSteps * 50 : strike + itmSteps * 50;

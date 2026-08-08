@@ -156,6 +156,7 @@ const _EXPIRY_PIN_KEYS = [
   "EMA9VWAP_OPTION_EXPIRY_OVERRIDE", "EMA9VWAP_OPTION_EXPIRY_TYPE",
   "TREND_PB_OPTION_EXPIRY_OVERRIDE", "TREND_PB_OPTION_EXPIRY_TYPE",
   "GAPS_OPTION_EXPIRY_OVERRIDE",     "GAPS_OPTION_EXPIRY_TYPE",
+  "TDS_OPTION_EXPIRY_OVERRIDE",      "TDS_OPTION_EXPIRY_TYPE",
 ];
 function _pinnedExpirySettings(snapshot) {
   const snap = snapshot || {};
@@ -177,6 +178,7 @@ const _MODE_TO_ENV_PREFIX = {
   "ema9vwap-paper":   "EMA9VWAP",     // (…, 'ema9vwap')
   "trend-pb-paper":   "TREND_PB",     // (…, 'TREND_PB')
   "gaps-paper":       "GAPS",         // (…, 'GAPS')
+  "trend-day-scalp-paper": "TDS",     // (…, 'TDS')
   // bb_rsi-paper / pa-paper: NO mode arg → common OPTION_EXPIRY_* only (prefix null).
 };
 
@@ -590,6 +592,7 @@ const _MODE_TO_CANONICAL_FILE = {
   "ema9vwap-paper": "ema9vwap_paper_trades.json",
   "trend-pb-paper": "trend_pb_paper_trades.json",
   "gaps-paper":     "gaps_paper_trades.json",
+  "trend-day-scalp-paper": "trend_day_scalp_paper_trades.json",
 };
 function _lookupCanonicalSession(mode, sessionStartTs) {
   const fname = _MODE_TO_CANONICAL_FILE[mode];
@@ -757,6 +760,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     ss_clearTrendPb:      sharedSocketState.clearTrendPb,
     ss_setGapsActive:     sharedSocketState.setGapsActive,
     ss_clearGaps:         sharedSocketState.clearGaps,
+    ss_setTrendDayScalpActive: sharedSocketState.setTrendDayScalpActive,
+    ss_clearTrendDayScalp:     sharedSocketState.clearTrendDayScalp,
     // fs originals — paper /stop calls saveSession() → savePaperData() which
     // writes the canonical {strategy}_paper_trades.json via fs.writeFileSync
     // + fs.renameSync directly (NOT via tradeLogger.appendTradeLog, which we
@@ -990,6 +995,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     sharedSocketState.clearTrendPb      = () => {};
     sharedSocketState.setGapsActive     = () => {};
     sharedSocketState.clearGaps         = () => {};
+    sharedSocketState.setTrendDayScalpActive = () => {};
+    sharedSocketState.clearTrendDayScalp     = () => {};
 
     // fs: a replay must never mutate the user's canonical state. Rather than
     // enumerate filenames (the old *_paper_trades.json regex missed the per-day
@@ -1210,6 +1217,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     sharedSocketState.clearTrendPb      = orig.ss_clearTrendPb;
     sharedSocketState.setGapsActive     = orig.ss_setGapsActive;
     sharedSocketState.clearGaps         = orig.ss_clearGaps;
+    sharedSocketState.setTrendDayScalpActive = orig.ss_setTrendDayScalpActive;
+    sharedSocketState.clearTrendDayScalp     = orig.ss_clearTrendDayScalp;
     fs.writeFileSync     = orig.fs_writeFileSync;
     fs.appendFileSync    = orig.fs_appendFileSync;
     fs.unlinkSync        = orig.fs_unlinkSync;
@@ -1277,6 +1286,7 @@ const MODE_TO_MODULE = {
   "ema9vwap-paper": "../routes/ema9vwapPaper",
   "trend-pb-paper": "../routes/trendPbPaper",
   "gaps-paper":     "../routes/gapsPaper",
+  "trend-day-scalp-paper": "../routes/trendDayScalpPaper",
   // Live modes are NOT supported for replay (they place real orders). If a
   // live session was recorded, replay it as the matching paper mode.
 };
@@ -1818,6 +1828,7 @@ function replayPreflight() {
   if (sharedSocketState.isEma9VwapActive()) activeModes.push(sharedSocketState.getEma9VwapMode() || "ema9vwap");
   if (sharedSocketState.isTrendPbActive())  activeModes.push(sharedSocketState.getTrendPbMode() || "trend_pb");
   if (sharedSocketState.isGapsActive())     activeModes.push(sharedSocketState.getGapsMode() || "gaps");
+  if (sharedSocketState.isTrendDayScalpActive && sharedSocketState.isTrendDayScalpActive()) activeModes.push(sharedSocketState.getTrendDayScalpMode() || "trend_day_scalp");
   if (activeModes.length > 0) {
     return {
       ok: false,
@@ -1876,6 +1887,7 @@ function forceClearSharedState() {
     ema9vwap: sharedSocketState.getEma9VwapMode(),
     trend_pb: sharedSocketState.getTrendPbMode(),
     gaps:     sharedSocketState.getGapsMode(),
+    trend_day_scalp: sharedSocketState.getTrendDayScalpMode ? sharedSocketState.getTrendDayScalpMode() : null,
     replayInProgress: _replayInProgress,
   };
   sharedSocketState.clear();
@@ -1888,6 +1900,7 @@ function forceClearSharedState() {
   sharedSocketState.clearEma9Vwap();
   sharedSocketState.clearTrendPb();
   sharedSocketState.clearGaps();
+  if (sharedSocketState.clearTrendDayScalp) sharedSocketState.clearTrendDayScalp();
   _replayInProgress = false;
   return { ok: true, cleared: before };
 }

@@ -528,6 +528,76 @@ function clearGapsPosition() {
   console.log("[PERSIST] GAPS position file cleared.");
 }
 
+// ── TREND_DAY_SCALP (5-min, day-gated pullback scalp, Fyers) ─────────────────
+
+const TDS_POS_FILE = path.join(DATA_DIR, ".active_trend_day_scalp_position.json");
+
+function saveTrendDayScalpPosition(position, sessionMeta) {
+  try {
+    if (!position) { _persistAtomic(TDS_POS_FILE, null); return; }
+    const data = {
+      position: {
+        side:            position.side,
+        symbol:          position.symbol,
+        qty:             position.qty,
+        entryPrice:      position.entryPrice,
+        spotAtEntry:     position.spotAtEntry || position.entrySpot,
+        stopLoss:        position.stopLoss || position.slSpot,
+        initialStopLoss: position.initialStopLoss || position.initialSlSpot,
+        // The FULL bracket, so a crash-recovered position reports the real exit
+        // levels rather than only the stop. beArmed matters: once armed the stop
+        // has already made its one and only move and must not be re-derived.
+        target:          position.targetSpot,
+        beArmSpot:       position.beArmSpot,
+        beStopSpot:      position.beStopSpot,
+        beArmed:         !!position.beArmed,
+        slPts:           position.slPts,
+        targetR:         position.targetR,
+        entryUnixSec:    position.entryUnixSec,
+        timeStopMins:    position.timeStopMins,
+        premiumStopPct:  position.premiumStopPct,
+        bestPrice:       position.bestPrice,
+        entryTime:       position.entryTime,
+        orderId:         position.orderId,
+        optionEntryLtp:  position.optionEntryLtp,
+        optionStrike:    position.optionStrike,
+        optionExpiry:    position.optionExpiry,
+        optionType:      position.optionType || position.side,
+      },
+      sessionMeta: sessionMeta || {},
+      savedAt: Date.now(),
+      savedDate: new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
+    };
+    _persistAtomic(TDS_POS_FILE, JSON.stringify(data, null, 2));
+    console.log(`💾 [PERSIST] TREND_DAY_SCALP position saved: ${position.side} ${position.symbol} @ ₹${position.entryPrice}`);
+  } catch (err) {
+    console.warn(`⚠️ [PERSIST] Could not save TREND_DAY_SCALP position: ${err.message}`);
+  }
+}
+
+function loadTrendDayScalpPosition() {
+  try {
+    if (!fs.existsSync(TDS_POS_FILE)) return null;
+    const data = JSON.parse(fs.readFileSync(TDS_POS_FILE, "utf-8"));
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    if (data.savedDate && data.savedDate !== today) {
+      console.log(`[PERSIST] Stale TREND_DAY_SCALP position from ${data.savedDate} — discarding.`);
+      fs.unlinkSync(TDS_POS_FILE);
+      return null;
+    }
+    if (data.position) console.log(`[PERSIST] TREND_DAY_SCALP position loaded: ${data.position.side} ${data.position.symbol} @ ₹${data.position.entryPrice}`);
+    return data;
+  } catch (err) {
+    console.warn(`[PERSIST] Could not load TREND_DAY_SCALP position: ${err.message}`);
+    return null;
+  }
+}
+
+function clearTrendDayScalpPosition() {
+  _persistAtomic(TDS_POS_FILE, null);
+  console.log("[PERSIST] TREND_DAY_SCALP position file cleared.");
+}
+
 module.exports = {
   saveTradePosition, loadTradePosition, clearTradePosition,
   saveBbRsiPosition, loadBbRsiPosition, clearBbRsiPosition,
@@ -536,4 +606,5 @@ module.exports = {
   saveOrbPosition, loadOrbPosition, clearOrbPosition,
   saveTrendPbPosition, loadTrendPbPosition, clearTrendPbPosition,
   saveGapsPosition, loadGapsPosition, clearGapsPosition,
+  saveTrendDayScalpPosition, loadTrendDayScalpPosition, clearTrendDayScalpPosition,
 };

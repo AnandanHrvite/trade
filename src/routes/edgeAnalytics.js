@@ -32,6 +32,7 @@ const PAPER_SOURCES = [
   { mode: "EMA9VWAP", file: "ema9vwap_paper_trades.json" },
   { mode: "TREND_PB", file: "trend_pb_paper_trades.json" },
   { mode: "GAPS",     file: "gaps_paper_trades.json" },
+  { mode: "TDS",      file: "trend_day_scalp_paper_trades.json" },
 ];
 const LIVE_SOURCES = [
   { mode: "EMA_RSI_ST",    file: "ema_rsi_st_live_trades.json" },
@@ -41,6 +42,7 @@ const LIVE_SOURCES = [
   { mode: "EMA9VWAP", file: "ema9vwap_live_trades.json" },
   { mode: "TREND_PB", file: "trend_pb_live_trades.json" },
   { mode: "GAPS",     file: "gaps_live_trades.json" },
+  { mode: "TDS",      file: "trend_day_scalp_live_trades.json" },
 ];
 
 function safeRead(p) {
