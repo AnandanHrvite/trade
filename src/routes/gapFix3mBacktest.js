@@ -395,7 +395,7 @@ function _renderResults(res, from, to, trades, stats, meta) {
     ? ` ${empty.length} block(s) returned no candles at all (${empty.map(e => `<code>${escHtml(e.symbol)}</code> ${escHtml(e.from)}→${escHtml(e.to)}`).join(", ")}) — normally a window with no trading days in it, but an expired Fyers token also returns no data rather than an auth error.`
     : "";
   const coverage = rejected.length
-    ? `<b style="color:#f59e0b;">⚠ Partial coverage — ${rejected.length} of ${blocksTotal(meta)} contract(s) were REFUSED by Fyers:</b> ${rejected.map(r => `<code>${escHtml(r.symbol)}</code> ${escHtml(r.from)}→${escHtml(r.to)} (${escHtml(r.error)})`).join(", ")}. ${rejected.every(r => r.delisted) ? "A NIFTY futures contract is delisted once it expires, so Fyers cannot serve history for a month that has already passed" : "Each reason above is Fyers' own"} — those sessions are simply absent from everything below, not flat.${emptyNote} `
+    ? `<b style="color:#f59e0b;">⚠ Partial coverage — ${rejected.length} of ${blocksTotal(meta)} contract(s) could not be fetched:</b> ${rejected.map(r => `<code>${escHtml(r.symbol)}</code> ${escHtml(r.from)}→${escHtml(r.to)} (${escHtml(r.error)})`).join(", ")}. ${rejected.every(r => r.delisted) ? "A NIFTY futures contract is delisted once it expires, so history for a month that has already passed cannot be fetched at all — those blocks are not even requested" : "Each reason above is Fyers' own"} — those sessions are simply absent from everything below, not flat.${emptyNote} `
     : `Contracts fetched: ${served.map(s => `<code>${escHtml(s.symbol)}</code> ${escHtml(s.from)}→${escHtml(s.to)}`).join(", ") || "—"}.${emptyNote} `;
   const html = renderBacktestResults({
     mode: "GAP_FIX_3M",
@@ -523,7 +523,7 @@ router.get("/", async (req, res) => {
           backtestJobs.failJob(id,
             rejected.length && !served.length
               ? allDelisted
-                ? `No usable futures data for ${from} → ${to}. Every contract in that range was refused by Fyers: ${rejList}. ` +
+                ? `No usable futures data for ${from} → ${to}. Not one contract in that range is still listed: ${rejList}. ` +
                   `A NIFTY futures contract is DELISTED after it expires, so history for a month that has already passed can never be fetched — this strategy can only be backtested over contracts that still exist. ` +
                   `Try ${ENDPOINT}?from=${win.from}&to=${win.to} (the current ${win.symbol} contract).`
                 : `Fyers refused every contract for ${from} → ${to}: ${rejList}. That wording is Fyers' own — it names what it rejected. ` +
