@@ -116,6 +116,11 @@ function _frontMonthSymbol(d) {
  * The range is clamped to today: a futures contract has no history for a day
  * that has not happened yet, and asking for one is how a valid symbol still gets
  * refused.
+ *
+ * `expiry` is reported rather than used. It is what lets a test check the split
+ * against Fyers' real symbol master instead of against the rule that produced it —
+ * the only way to catch the roll drifting away from the exchange again. Don't drop
+ * it because nothing at runtime reads it.
  */
 function buildContractBlocks(from, to, todayStr) {
   const start = new Date(`${from}T00:00:00Z`);

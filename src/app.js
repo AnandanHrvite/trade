@@ -2067,7 +2067,7 @@ ${buildSidebar('dashboard', liveActive)}
                title="Option Expiry (manual). Blank = auto-detect."/>
       </span>
       <span class="brk-cfg-field">
-        <select id="dashExpiryType" class="brk-cfg-input" title="Weekly = Tuesday expiry. Monthly = last Thursday / preponed monthly.">
+        <select id="dashExpiryType" class="brk-cfg-input" title="Weekly = Tuesday expiry. Monthly = last Tuesday of the month (getLastTuesdayOfMonth), or the preponed date when NSE moves it.">
           <option value="weekly"${dashExpiryType === 'weekly' ? ' selected' : ''}>weekly</option>
           <option value="monthly"${dashExpiryType === 'monthly' ? ' selected' : ''}>monthly</option>
         </select>
