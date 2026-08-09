@@ -115,6 +115,7 @@ const PAPER_SOURCES = [
   { mode: "TREND_PB",   file: "trend_pb_paper_trades.json" },
   { mode: "GAPS",       file: "gaps_paper_trades.json" },
   { mode: "TDS",        file: "trend_day_scalp_paper_trades.json" },
+  { mode: "GAP3M",      file: "gap_fix_3m_paper_trades.json" },
 ];
 const LIVE_SOURCES = [
   { mode: "EMA_RSI_ST", file: "ema_rsi_st_live_trades.json" },
@@ -125,6 +126,7 @@ const LIVE_SOURCES = [
   { mode: "TREND_PB",   file: "trend_pb_live_trades.json" },
   { mode: "GAPS",       file: "gaps_live_trades.json" },
   { mode: "TDS",        file: "trend_day_scalp_live_trades.json" },
+  { mode: "GAP3M",      file: "gap_fix_3m_live_trades.json" },
 ];
 
 function safeRead(p) {
@@ -255,6 +257,7 @@ router.get("/", async (req, res) => {
     .badge-TREND_PB{background:rgba(236,72,153,0.12);color:#ec4899;}
     .badge-GAPS{background:rgba(14,165,233,0.12);color:#0ea5e9;}
     .badge-TDS{background:rgba(168,85,247,0.12);color:#a855f7;}
+    .badge-GAP3M{background:rgba(56,189,248,0.12);color:#38bdf8;}
     .res-profit{color:#10b981;font-weight:700;}
     .res-loss{color:#ef4444;font-weight:700;}
     .res-flat{color:#4a6080;}

@@ -51,6 +51,9 @@ All four strategies run **in parallel** on the same WebSocket — different cand
 | **Trend Day Scalp Paper** | 10:15 day gate locks the side, then a VWAP/EMA20 pullback-reclaim (single-leg slightly-ITM CE/PE) | 5-min | Simulated | `/trend-day-scalp-paper` |
 | **Trend Day Scalp Backtest** | Same engine over a date range (conservative intra-bar ordering) | 5-min historical | Historical | `/trend-day-scalp-backtest` |
 | **Trend Day Scalp Live (Harness)** | Runs Live by wrapping Paper (Fyers orders, triple-gated dry-run) | 5-min | Fyers (PAPER-wrapped) | `/trend-day-scalp-live` |
+| **3M Gap Fix Scalp Paper** | Fades a 3-min NIFTY **FUTURES** gap back to its fill level unless the next candle breaks the day high/low on volume | 3-min (futures) | Simulated | `/gap-fix-3m-paper` |
+| **3M Gap Fix Scalp Backtest** | Same engine over a date range, front-month contract rolled like the live path | 3-min historical (futures) | Historical | `/gap-fix-3m-backtest` |
+| **3M Gap Fix Scalp Live (Harness)** | Runs Live by wrapping Paper (Fyers orders, triple-gated dry-run) | 3-min (futures) | Fyers (PAPER-wrapped) | `/gap-fix-3m-live` |
 | **Replay** | Re-runs a recorded paper session through the paper `onTick()` | Recorded ticks | Recorded | `/replay` |
 | **All Backtest** | Unified backtest dashboard (per-strategy stats) | Per-strategy | Historical | `/all-backtest` |
 | **Manual Tracker** | — (trails SL only) | 15-min | Zerodha | `/tracker` |
@@ -258,6 +261,34 @@ See [BB_RSI.md](BB_RSI.md) for the authoritative spec. Summary:
 - **Click any trade row** to focus chart on that trade only; click-to-reset restores full session view
 - **Chart zoom preserved** across auto-refresh (even while focused on a trade)
 
+### Strategy 9: 3M GAP FIX SCALP — fade a 3-minute FUTURES gap back into itself (single-leg slightly-ITM CE/PE, Fyers)
+
+**Never traded, and its trade frequency has never been measured.** Zero paper sessions, zero live orders. Every constant is a prior; `GAP3M_MIN_GAP_PTS` is a friction floor rather than a fitted value. Collect clean paper days and diff them against `/replay` before touching any live gate.
+
+**The chart is NIFTY FUTURES, and that is not a preference.** Measured on this repo's own cached NIFTY 50 **index** candles over 39 sessions: only 12 intraday gaps occurred, the largest was **2.1 points**, median **0.45**. An index is a continuously recomputed average of 50 stocks — it has no order book, so it does not leave voids. NIFTY futures is one traded contract with a real book, and that book is what gaps. The index is still read for exactly two things: the option **strike** (strikes are struck on the index, not on the future) and the second chart on the Paper page. No rule reads it.
+
+**The rules** ([src/strategies/gap_fix_3m.js](src/strategies/gap_fix_3m.js) — the only place they exist):
+
+- **Day high / day low** — running over today's in-session futures bars, and **FROZEN** into the setup the moment a gap is found. A stop must not drift away from an open trade, and a frozen level is the only kind Replay can reproduce.
+- **Gap** — between two consecutive closed bars A and B: gap **up** when `B.low > A.high`, gap **down** when `B.high < A.low`. Strict inequality — a touch is not a void. Smaller than `GAP3M_MIN_GAP_PTS=20` is ignored.
+- **Why 20 and not 5** — the gap size **is** the target. `charges.js` on 1 lot takes ~₹90 round-trip plus ~1.5 premium points of slippage per side; at delta ~0.6 that is **~7.3 index points** before the trade has made anything, and a target must clear it with room. Below ~17 the strategy is negative-expectancy by arithmetic whatever the win rate says.
+- **Confirm** — the next bar (`GAP3M_CONFIRM_BARS=1`) decides, and the decision table is exhaustive:
+  - broke the day extreme **AND** volume ≥ `GAP3M_VOL_MULT=1.5 ×` the average of the previous `GAP3M_VOL_AVG_BARS=20` bars → **SKIP**. Real breakout.
+  - broke it **AND volume is unknown** → **SKIP**, fail-safe. Without volume the break cannot be shown to be weak, and fading a genuine breakout is the expensive mistake.
+  - **returned** (`GAP3M_RETURN_MODE=reverse_close`: closes against the gap AND gives back ground vs the gap bar's close) → **ENTER**. A weak-volume poke that came back still qualifies, and is the strongest form of the setup.
+  - otherwise → wait; the setup expires with the bar.
+- **Direction** — gap up is faded DOWN (buy PE), gap down faded UP (buy CE).
+- **Target** = the gap's fill level (`A.high` for a gap up, `A.low` for a gap down). **Stop** = the frozen day extreme ± `GAP3M_SL_BUFFER_PTS=0`. Both are LEVELS, both frozen, neither ever moves.
+- **The geometry to understand before tuning anything.** Target + stop is a FIXED span — the distance from the gap's far edge to the day extreme — and where the confirm candle closes decides how that span is split. Run on one 22pt gap with only the confirm close changed, the engine returns R:R from **3.75** (shallow return, stop close by) down to **0.27** (deep return back inside the void, stop far away). A shallow return is the better trade even though a deep one looks more convincing, which is why `reverse_close` is the default and `into_gap` is the option.
+- **Exits**: gap filled → day extreme taken out → EOD `GAP3M_FORCED_EXIT=15:15`. That is all. **No trail, no breakeven jump, no partial booking, no time stop, no premium stop, no re-entry.**
+- **Three guards ship OFF on purpose**: `GAP3M_MIN_RR`, `GAP3M_MAX_SL_PTS` and `GAP3M_MAX_EXTREME_DIST_PTS` all default to `0`. Out of the box the engine does exactly what the rules say — including taking a wide-stop trade when the gap forms far from the day extreme. They are levers for once there is data, not guesses baked into a default.
+- **Day-level breakers**: `GAP3M_MAX_DAILY_TRADES=3`, `GAP3M_MAX_DAILY_LOSSES=2` stop-outs, `GAP3M_MAX_DAILY_LOSS=3000`, `GAP3M_DAILY_PROFIT_LOCK=0` (off), `GAP3M_MAX_WEEKLY_LOSS=0` (off), plus the shared portfolio-wide cap.
+- **Option**: slightly-ITM (`GAP3M_ITM_STEPS=1`, ~delta 0.6), strike chosen off the **index** spot. Sizing via `GAP3M_LOT_MULTIPLIER` (0 = inherit the global `LOT_MULTIPLIER`; clamped by `MAX_LOT_MULTIPLIER`).
+- **How the data arrives.** Closed 3-min futures bars come from the Fyers **history** endpoint, refreshed once per bar `GAP3M_HISTORY_LAG_MS=5000` after it closes — the same endpoint the backtest and replay read, which is what makes the four modes agree on a session. The live futures price the two exit levels are checked against comes from a quote poll every `GAP3M_FUT_POLL_MS=2000`, because the shared tick socket carries the **index**, not the future. **Exits therefore resolve at ~2-second granularity, not per tick** — the honest caveat when reading a fill price.
+- **LIVE = PAPER** (`/gap-fix-3m-live`, [src/routes/gapFix3mLiveHarness.js](src/routes/gapFix3mLiveHarness.js)): wraps the Paper engine with the shared harness. **Triple-gated to dry-run**: real orders require `GAP3M_LIVE_ENABLED=true` AND `LIVE_HARNESS_DRY_RUN=false` AND `GAP3M_LIVE_DRY_RUN` not-true, plus an authenticated Fyers session. An open position is crash-recovered via `positionPersist` (`.active_gap_fix_3m_position.json`) and reconciled against the broker book on boot.
+- **Backtest** (`/gap-fix-3m-backtest`, [src/routes/gapFix3mBacktest.js](src/routes/gapFix3mBacktest.js)): drives the **same** `getSignal` and re-implements only paper's exits (paper canonical). There is no continuous futures series, so the range is split into **front-month contract blocks** using the identical roll rule the live path uses (roll on the day before the last Thursday) and each block is fetched from its own symbol — bars from two contracts are never adjacent inside a session, so a roll can never be mistaken for a gap. **Conservative intra-bar ordering**: the stop is tested on the bar's high/low **before** the target, so a bar touching both books the LOSS; a bar that opened beyond a level fills at the **open**. Option P&L is δ+θ simulated seeded at `GAP3M_BT_SEED_PREMIUM=240` plus `GAP3M_BT_SLIPPAGE_PTS=1.5`pt each way.
+
+
 ## Quick Start (EC2)
 
 ```bash
@@ -307,6 +338,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   trend_pb_paper_trades.json      # Trend Pullback paper sessions
   gaps_paper_trades.json          # GAPS paper sessions
   trend_day_scalp_paper_trades.json # Trend Day Scalp paper sessions
+  gap_fix_3m_paper_trades.json    # 3M Gap Fix Scalp paper sessions
   historical_pnl.json             # One-time P&L baselines per broker (Kite / Fyers)
   .active_ema_rsi_st_position.json     # Crash recovery — EMA_RSI_ST position
   .active_bb_rsi_position.json     # Crash recovery — bb_rsi position
@@ -316,6 +348,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   .active_trend_pb_position.json  # Crash recovery — Trend Pullback position
   .active_gaps_position.json      # Crash recovery — GAPS position
   .active_trend_day_scalp_position.json # Crash recovery — Trend Day Scalp position
+  .active_gap_fix_3m_position.json # Crash recovery — 3M Gap Fix Scalp position
   .harness_events.json            # Live-harness event log (DRY-RUN/real order events), survives restart
   ema_rsi_st_paper_trades_log.jsonl    # Crash-safe per-trade JSONL audit (cumulative)
   bb_rsi_paper_trades_log.jsonl
@@ -672,6 +705,42 @@ Trend-continuation option-buyer: 15m trend bias (swing structure + EMA20>EMA50 +
 | `UI_SHOW_TDS_BACKTEST` / `_PAPER` / `_LIVE` / `_HISTORY` | `true` | Sidebar sub-menu visibility |
 | `TG_TDS_STARTED` / `_ENTRY` / `_EXIT` / `_DAYREPORT` | `true` | Telegram alerts for this strategy |
 
+### 3M Gap Fix Scalp Mode (3-min NIFTY FUTURES gap fade, Fyers)
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `GAP3M_MODE_ENABLED` | `true` | Master toggle — sidebar group + Settings section |
+| `GAP3M_PAPER_ENABLED` | `true` | Allow `/gap-fix-3m-paper/start` |
+| `GAP3M_LIVE_ENABLED` | `false` | Gates real Fyers orders on `/gap-fix-3m-live/start` |
+| `GAP3M_LIVE_DRY_RUN` | `false` | Per-strategy dry-run override — keeps it simulated even when live is on |
+| `GAP3M_RESOLUTION` | `3` | Candle timeframe (min). **Strategy-level, deliberately not the repo-wide 5** — a void that survives aggregation into a 5-min bar is a much rarer animal |
+| `GAP3M_MIN_GAP_PTS` | `20` | Ignore voids smaller than this. The gap size **is** the target, and ~7.3 index points go to charges + slippage before the trade has made anything |
+| `GAP3M_CONFIRM_BARS` | `1` | How many bars after the gap may still decide it. `1` = only the very next candle, which is the rule as written |
+| `GAP3M_RETURN_MODE` | `reverse_close` | `reverse_close` = closes against the gap AND gives back ground vs the gap bar. `into_gap` = closes right back inside the void (stricter, and it enters closer to the target — worse R:R) |
+| `GAP3M_VOL_MULT` | `1.5` | A candle breaking the day extreme on ≥ this × average volume is a REAL breakout — leave it alone |
+| `GAP3M_VOL_AVG_BARS` | `20` | Bars of the same session the average volume is taken over |
+| `GAP3M_SESSION_START` | `09:15` | Where the day high / low start being tracked (IST) |
+| `GAP3M_ENTRY_START` | `09:30` | No entries before this — the day needs a high and a low worth stopping against (IST) |
+| `GAP3M_ENTRY_END` | `15:00` | No new entries after this (IST) |
+| `GAP3M_FORCED_EXIT` | `15:15` | Hard EOD square-off (IST) — a gap that never filled is closed here |
+| `GAP3M_SL_BUFFER_PTS` | `0` | Stop sits this far past the day extreme. `0` = exactly on it, as the rule states |
+| `GAP3M_MAX_SL_PTS` | `0` | **Off by default.** Skip when the day extreme is further away than this |
+| `GAP3M_MIN_RR` | `0` | **Off by default.** Skip when the gap-fill target is small relative to the stop |
+| `GAP3M_MAX_EXTREME_DIST_PTS` | `0` | **Off by default.** Skip when the gap formed too far from the day extreme to be fading against it |
+| `GAP3M_LOT_MULTIPLIER` | `0` | Lots per trade (0 = inherit global `LOT_MULTIPLIER`; clamped by `MAX_LOT_MULTIPLIER`) |
+| `GAP3M_ITM_STEPS` | `1` | Strikes in-the-money to buy (0 = ATM). 1 step ≈ delta 0.6. Strike chosen off the **index** spot |
+| `GAP3M_MAX_DAILY_TRADES` | `3` | Max entries per day |
+| `GAP3M_MAX_DAILY_LOSSES` | `2` | Day ends after this many stop-outs (0 = off) |
+| `GAP3M_MAX_DAILY_LOSS` | `3000` | Stop trading after this much loss (0 = off) |
+| `GAP3M_DAILY_PROFIT_LOCK` | `0` | Stop for the day once this much is banked (0 = off, the default) |
+| `GAP3M_MAX_WEEKLY_LOSS` | `0` | Rolling Mon→today cap read from the per-day JSONL logs (0 = off) |
+| `GAP3M_FUT_POLL_MS` | `2000` | How often the live NIFTY futures price is fetched. **This is the granularity every exit is checked at** — the shared tick socket carries the index, not the future |
+| `GAP3M_HISTORY_LAG_MS` | `5000` | How long after a bar closes before the Fyers history endpoint is asked for it. Too short and the bar is not published yet, delaying every decision by a whole candle |
+| `GAP3M_BT_SLIPPAGE_PTS` | `1.5` | Backtest cost per side, in points |
+| `GAP3M_BT_SEED_PREMIUM` | `240` | Assumed entry premium for the backtest (₹) |
+| `UI_SHOW_GAP3M_BACKTEST` / `_PAPER` / `_LIVE` / `_HISTORY` | `true` | Sidebar sub-menu visibility |
+| `TG_GAP3M_STARTED` / `_ENTRY` / `_EXIT` / `_DAYREPORT` | `true` | Telegram alerts for this strategy |
+
 ### Paper Investment Pools (per broker)
 Paper capital is pooled per broker, not per strategy. Each strategy's running capital = its broker pool + that strategy's all-time paper P&L. The Real-Time Monitor (dashboard) carries a wallet ribbon per broker — headline **free to trade**, with *Invested / P&L* and *In use / Pool* beneath — and it stays up during a running session, since that is when free cash matters. It is hidden under the LIVE toggle: the pool is paper money and has no live-margin equivalent.
 
@@ -897,6 +966,14 @@ Blocks directional entries that fight the prevailing Open-Interest buildup: read
 | `/trend-pb-paper/status` | Trend Pullback paper trade + NIFTY chart with VWAP/EMA20 overlay |
 | `/trend-pb-paper/history` | Trend Pullback sessions (per-session delete + view modal) |
 | `/trend-pb-live` | Trend Pullback live via the paper-wrapping harness (Fyers orders; gated by `TREND_PB_LIVE_ENABLED` + `LIVE_HARNESS_DRY_RUN` + `TREND_PB_LIVE_DRY_RUN`) |
+
+### 3M Gap Fix Scalp
+| URL | Description |
+|-----|-------------|
+| `/gap-fix-3m-backtest` | 3M Gap Fix Scalp date-range backtest (front-month futures, rolled like the live path) |
+| `/gap-fix-3m-paper/status` | Paper trade — NIFTY FUTURES chart with the gap band, day high/low and bracket, plus the index chart |
+| `/gap-fix-3m-paper/history` | Sessions (per-session delete + view modal) |
+| `/gap-fix-3m-live` | Live via the paper-wrapping harness (Fyers orders; gated by `GAP3M_LIVE_ENABLED` + `LIVE_HARNESS_DRY_RUN` + `GAP3M_LIVE_DRY_RUN`) |
 
 ### Analytics & Tools
 | URL | Description |

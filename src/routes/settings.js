@@ -366,6 +366,57 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
+    section: "3M GAP FIX SCALP STRATEGY — Fyers (NIFTY FUTURES)",
+    icon: "\u{1F573}",
+    nav: "3M GAP FIX SCALP",
+    group: "Strategies",
+    fields: [
+      // ── Enable / live gating ──
+      { key: "GAP3M_PAPER_ENABLED", label: "3M Gap Fix Scalp Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new 3M Gap Fix Scalp paper sessions.", default: "true", subheader: "Mode & Live" },
+      { key: "GAP3M_LIVE_ENABLED", label: "3M Gap Fix Scalp Live Orders (gates /gap-fix-3m-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Fyers. NEVER traded — paper-validate first.", default: "false" },
+      { key: "GAP3M_LIVE_DRY_RUN", label: "3M Gap Fix Scalp Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep it simulated even when live is on.", default: "false" },
+
+      // ── The gap ──
+      { key: "GAP3M_RESOLUTION", label: "Candle Timeframe (min)", type: "select", options: ["1", "2", "3", "5", "10", "15"], effect: EFFECT.SESSION, desc: "Strategy-level timeframe, deliberately NOT the repo-wide 5-min default. A void that survives aggregation into a 5-min bar is a much rarer animal.", default: "3", subheader: "The gap (NIFTY FUTURES chart)" },
+      { key: "GAP3M_MIN_GAP_PTS", label: "Minimum Gap (pts)", type: "number", min: 0, max: 200, step: 1, effect: EFFECT.SESSION, desc: "Ignore voids smaller than this. The gap size IS the target, and ~17 index points of move are needed just to cover charges + slippage at delta 0.6 — below ~17 the strategy is negative-expectancy by arithmetic.", default: "20" },
+      { key: "GAP3M_CONFIRM_BARS", label: "Confirm Within (bars)", type: "number", min: 1, max: 10, step: 1, effect: EFFECT.SESSION, desc: "How many bars after the gap may still decide it. 1 = only the very next candle, which is the rule as written.", default: "1" },
+      { key: "GAP3M_RETURN_MODE", label: "What Counts as \"Returning\"", type: "select", options: ["reverse_close", "into_gap"], effect: EFFECT.SESSION, desc: "reverse_close = the candle closes against the gap AND gives back ground vs the gap bar. into_gap = it closes right back inside the void (stricter, and it enters closer to the target).", default: "reverse_close" },
+
+      // ── The break test ──
+      { key: "GAP3M_VOL_MULT", label: "Breakout Volume (× average)", type: "number", min: 0, max: 10, step: 0.1, effect: EFFECT.SESSION, desc: "A candle breaking the day high/low on at least this × the average volume is a REAL breakout — leave it alone.", default: "1.5", subheader: "The break test (futures volume)" },
+      { key: "GAP3M_VOL_AVG_BARS", label: "Volume Average (bars)", type: "number", min: 1, max: 200, step: 1, effect: EFFECT.SESSION, desc: "How many earlier bars of the same session the average volume is taken over.", default: "20" },
+
+      // ── Window ──
+      { key: "GAP3M_SESSION_START", label: "Session Start (day high/low anchor)", type: "time", effect: EFFECT.SESSION, desc: "Where the day's high and low start being tracked (IST).", default: "09:15", subheader: "Session window" },
+      { key: "GAP3M_ENTRY_START", label: "Entry Window Start", type: "time", effect: EFFECT.SESSION, desc: "No entries before this — the day needs a high and a low worth stopping against (IST).", default: "09:30" },
+      { key: "GAP3M_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No new entries after this time (IST).", default: "15:00" },
+      { key: "GAP3M_FORCED_EXIT", label: "Forced Exit (EOD square-off)", type: "time", effect: EFFECT.SESSION, desc: "Hard square-off time (IST). A gap that never filled is closed here.", default: "15:15" },
+
+      // ── Risk. The three caps default to 0 = OFF so the engine ships doing exactly what the rules say. ──
+      { key: "GAP3M_SL_BUFFER_PTS", label: "Stop Buffer Beyond the Day Extreme (pts)", type: "number", min: 0, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Stop sits this far past the day high/low, so a one-tick poke does not take it out. 0 = exactly on the extreme, as the rule states.", default: "0", subheader: "Risk" },
+      { key: "GAP3M_MAX_SL_PTS", label: "Max Stop Distance (pts, 0 = off)", type: "number", min: 0, max: 500, step: 5, effect: EFFECT.SESSION, desc: "Skip the setup when the day extreme is further away than this. OFF by default: the rule says the day extreme IS the stop, however far.", default: "0" },
+      { key: "GAP3M_MIN_RR", label: "Minimum Reward:Risk (0 = off)", type: "number", min: 0, max: 10, step: 0.1, effect: EFFECT.SESSION, desc: "Skip when the gap-fill target is small relative to the stop. OFF by default, but a gap far from the day extreme can otherwise offer a 20pt target against a 200pt stop.", default: "0" },
+      { key: "GAP3M_MAX_EXTREME_DIST_PTS", label: "Max Gap-to-Extreme Distance (pts, 0 = off)", type: "number", min: 0, max: 500, step: 5, effect: EFFECT.SESSION, desc: "Skip when the gap formed too far from the day high/low to be fading against it. OFF by default.", default: "0" },
+
+      // ── Sizing & day-level breakers ──
+      { key: "GAP3M_LOT_MULTIPLIER", label: "Lot Multiplier (3M Gap Fix Scalp only)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.INSTANT, desc: "Lots per trade. 0 = use the global LOT_MULTIPLIER, which is the default.", default: "0", subheader: "Sizing & Day Breakers" },
+      { key: "GAP3M_ITM_STEPS", label: "ITM Steps (strikes in-the-money)", type: "number", min: 0, max: 3, step: 1, effect: EFFECT.INSTANT, desc: "Strikes in-the-money to buy (0 = ATM). 1 step ≈ delta 0.6. The strike is chosen off the NIFTY 50 INDEX, not the future.", default: "1" },
+      { key: "GAP3M_MAX_DAILY_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 20, step: 1, effect: EFFECT.SESSION, desc: "Max entries per day.", default: "3" },
+      { key: "GAP3M_MAX_DAILY_LOSSES", label: "Stop-outs That End the Day", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Day ends after this many stop-outs (0 = off).", default: "2" },
+      { key: "GAP3M_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 0, max: 50000, step: 250, effect: EFFECT.SESSION, desc: "Stop trading after this much loss (0 = off).", default: "3000" },
+      { key: "GAP3M_DAILY_PROFIT_LOCK", label: "Daily Profit Lock (₹)", type: "number", min: 0, max: 50000, step: 250, effect: EFFECT.SESSION, desc: "Stop for the day once this much is banked (0 = off, the default).", default: "0" },
+      { key: "GAP3M_MAX_WEEKLY_LOSS", label: "Max Weekly Loss (₹)", type: "number", min: 0, max: 200000, step: 1000, effect: EFFECT.SESSION, desc: "Stop for the week after this much loss (0 = off).", default: "0" },
+
+      // ── Data plumbing ──
+      { key: "GAP3M_FUT_POLL_MS", label: "Futures Quote Poll (ms)", type: "number", min: 500, max: 30000, step: 500, effect: EFFECT.SESSION, desc: "How often the live NIFTY futures price is fetched. This is the granularity every exit is checked at — the shared tick socket carries the INDEX, not the future.", default: "2000", subheader: "Data plumbing" },
+      { key: "GAP3M_HISTORY_LAG_MS", label: "Bar-Close History Lag (ms)", type: "number", min: 0, max: 60000, step: 500, effect: EFFECT.SESSION, desc: "How long after a bar closes before the Fyers history endpoint is asked for it. Too short and the bar is not published yet, which delays every decision by a whole candle.", default: "5000" },
+
+      // ── Backtest ──
+      { key: "GAP3M_BT_SLIPPAGE_PTS", label: "Backtest Spread/Slippage Haircut (pts each way)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.BACKTEST, desc: "Backtest cost per side, in points. Without this, option-buying backtests always flatter.", default: "1.5", subheader: "Backtest" },
+      { key: "GAP3M_BT_SEED_PREMIUM", label: "Backtest Seed Premium (₹)", type: "number", min: 50, max: 800, step: 10, effect: EFFECT.BACKTEST, desc: "Assumed entry premium for the backtest (₹).", default: "240" },
+    ],
+  },
+  {
     section: "GAPS STRATEGY — Fyers",
     icon: "🕳",
     nav: "GAPS",
@@ -518,6 +569,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_TREND_PB_STARTED", label: "Trend Pullback — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a Trend Pullback session starts.", default: "true" },
       { key: "TG_GAPS_STARTED", label: "GAPS — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a GAPS session starts.", default: "true" },
       { key: "TG_TDS_STARTED", label: "Trend Day Scalp — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a Trend Day Scalp session starts.", default: "true" },
+      { key: "TG_GAP3M_STARTED", label: "3M Gap Fix Scalp — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a 3M Gap Fix Scalp session starts.", default: "true" },
 
       { key: "TG_EMA_RSI_ST_ENTRY", label: "EMA_RSI_ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST entry.", default: "true", subheader: "Trade Entry" },
       { key: "TG_BB_RSI_ENTRY", label: "BB_RSI — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BB_RSI entry.", default: "true" },
@@ -527,6 +579,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_TREND_PB_ENTRY", label: "Trend Pullback — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Trend Pullback entry.", default: "true" },
       { key: "TG_GAPS_ENTRY", label: "GAPS — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every GAPS entry.", default: "true" },
       { key: "TG_TDS_ENTRY", label: "Trend Day Scalp — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Trend Day Scalp entry.", default: "true" },
+      { key: "TG_GAP3M_ENTRY", label: "3M Gap Fix Scalp — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every 3M Gap Fix Scalp entry.", default: "true" },
 
       { key: "TG_EMA_RSI_ST_EXIT", label: "EMA_RSI_ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST exit.", default: "true", subheader: "Trade Exit" },
       { key: "TG_BB_RSI_EXIT", label: "BB_RSI — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BB_RSI exit.", default: "true" },
@@ -536,6 +589,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_TREND_PB_EXIT", label: "Trend Pullback — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Trend Pullback exit.", default: "true" },
       { key: "TG_GAPS_EXIT", label: "GAPS — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every GAPS exit.", default: "true" },
       { key: "TG_TDS_EXIT", label: "Trend Day Scalp — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Trend Day Scalp exit.", default: "true" },
+      { key: "TG_GAP3M_EXIT", label: "3M Gap Fix Scalp — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every 3M Gap Fix Scalp exit.", default: "true" },
 
       { key: "TG_EMA_RSI_ST_SIGNALS", label: "EMA_RSI_ST — Signal/Skip Alerts", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert why a trade was or wasn't taken.", default: "true", subheader: "Signal / Skip" },
       { key: "TG_BB_RSI_SIGNALS", label: "BB_RSI — Signal/Skip Alerts", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert why a trade was or wasn't taken.", default: "false" },
@@ -550,6 +604,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_TREND_PB_DAYREPORT", label: "Trend Pullback — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a Trend Pullback day summary on stop.", default: "true" },
       { key: "TG_GAPS_DAYREPORT", label: "GAPS — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a GAPS day summary on stop.", default: "true" },
       { key: "TG_TDS_DAYREPORT", label: "Trend Day Scalp — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a Trend Day Scalp day summary on stop.", default: "true" },
+      { key: "TG_GAP3M_DAYREPORT", label: "3M Gap Fix Scalp — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a 3M Gap Fix Scalp day summary on stop.", default: "true" },
 
       { key: "TG_DAYREPORT_CONSOLIDATED", label: "Consolidated Day Report (Market Close)", type: "toggle", effect: EFFECT.INSTANT, desc: "Send one combined end-of-day summary at 15:30 IST.", default: "true" },
     ],
@@ -614,6 +669,7 @@ const SETTINGS_SCHEMA = [
       { key: "TREND_PB_MODE_ENABLED",  label: "Trend Pullback Mode",       type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Trend Pullback menu and settings.", default: "true" },
       { key: "GAPS_MODE_ENABLED",      label: "GAPS Mode",                 type: "toggle", effect: EFFECT.INSTANT, desc: "Show the GAPS menu and settings.", default: "true" },
       { key: "TDS_MODE_ENABLED",       label: "Trend Day Scalp Mode",      type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Trend Day Scalp menu and settings.", default: "true" },
+      { key: "GAP3M_MODE_ENABLED",     label: "3M Gap Fix Scalp Mode",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show the 3M Gap Fix Scalp menu and settings.", default: "true" },
       { key: "UI_SHOW_SIMULATE",       label: "Show Simulate Menu",        type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Simulate sub-menu.", default: "false", subheader: "Shared sub-menus (all strategies)" },
       { key: "UI_SHOW_COMPARE",        label: "Show Compare Menu",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Compare sub-menu.", default: "false" },
       { key: "UI_SHOW_TRACKER",        label: "Show Tracker Menu (EMA_RSI_ST only)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Tracker sub-menu (EMA_RSI_ST).", default: "false" },
@@ -667,6 +723,12 @@ const SETTINGS_SCHEMA = [
       { key: "UI_SHOW_TDS_PAPER",    label: "Trend Day Scalp → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under Trend Day Scalp.", default: "true" },
       { key: "UI_SHOW_TDS_LIVE",     label: "Trend Day Scalp → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live under Trend Day Scalp.", default: "true" },
       { key: "UI_SHOW_TDS_HISTORY",  label: "Trend Day Scalp → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under Trend Day Scalp.", default: "true" },
+
+      // ── 3M Gap Fix Scalp submenu ──
+      { key: "UI_SHOW_GAP3M_BACKTEST", label: "3M Gap Fix Scalp → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under 3M Gap Fix Scalp.", default: "true", subheader: "3M Gap Fix Scalp sub-menus" },
+      { key: "UI_SHOW_GAP3M_PAPER",    label: "3M Gap Fix Scalp → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under 3M Gap Fix Scalp.", default: "true" },
+      { key: "UI_SHOW_GAP3M_LIVE",     label: "3M Gap Fix Scalp → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live under 3M Gap Fix Scalp.", default: "true" },
+      { key: "UI_SHOW_GAP3M_HISTORY",  label: "3M Gap Fix Scalp → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under 3M Gap Fix Scalp.", default: "true" },
 
       // ── System submenu (Settings is always shown) ──
       { key: "UI_SHOW_LOGS",       label: "Logs → Server Logs tab", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Server Logs tab.", default: "true", subheader: "System sub-menus" },
@@ -730,6 +792,7 @@ const MODE_SECTION_TITLES = {
   trend_pb: "TREND PULLBACK STRATEGY — Fyers",
   gaps:     "GAPS STRATEGY — Fyers",
   trend_day_scalp: "TREND DAY SCALP STRATEGY — Fyers",
+  gap_fix_3m: "3M GAP FIX SCALP STRATEGY — Fyers (NIFTY FUTURES)",
 };
 const SNAPSHOT_COMMON_SECTION_TITLES = new Set([
   "Instrument & Backtest",
@@ -737,7 +800,7 @@ const SNAPSHOT_COMMON_SECTION_TITLES = new Set([
   "OPEN-INTEREST FILTER (OI + Price Buildup)",
 ]);
 
-const _MODE_KEYS = { ema_rsi_st: new Set(), bb_rsi: new Set(), pa: new Set(), orb: new Set(), ema9vwap: new Set(), trend_pb: new Set(), gaps: new Set(), trend_day_scalp: new Set() };
+const _MODE_KEYS = { ema_rsi_st: new Set(), bb_rsi: new Set(), pa: new Set(), orb: new Set(), ema9vwap: new Set(), trend_pb: new Set(), gaps: new Set(), trend_day_scalp: new Set(), gap_fix_3m: new Set() };
 const _KEY_TO_MODES = new Map();
 (function buildModeKeyIndex() {
   const commonKeys = [];
@@ -1160,7 +1223,7 @@ router.post("/restart", (req, res) => {
 // cache & logs always clear fully. The aggregate paper JSON + capital restore is
 // handled client-side via the per-strategy /reset endpoints (full paper wipe only).
 // Auto-gated by the app.js x-api-secret middleware (not in OPEN_PATHS).
-const RESET_PAPER_MODES = ["ema_rsi_st", "bb_rsi", "pa", "orb", "ema9vwap", "trend_pb", "gaps", "trend_day_scalp"];
+const RESET_PAPER_MODES = ["ema_rsi_st", "bb_rsi", "pa", "orb", "ema9vwap", "trend_pb", "gaps", "trend_day_scalp", "gap_fix_3m"];
 const _RESET_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 router.post("/reset-data", (req, res) => {
@@ -1472,6 +1535,7 @@ router.get("/", (req, res) => {
   const trendPbModeOn  = (envData["TREND_PB_MODE_ENABLED"] ?? process.env.TREND_PB_MODE_ENABLED ?? "true").toLowerCase() === "true";
   const gapsModeOn     = (envData["GAPS_MODE_ENABLED"]     ?? process.env.GAPS_MODE_ENABLED     ?? "true").toLowerCase() === "true";
   const tdsModeOn      = (envData["TDS_MODE_ENABLED"]      ?? process.env.TDS_MODE_ENABLED      ?? "true").toLowerCase() === "true";
+  const gap3mModeOn    = (envData["GAP3M_MODE_ENABLED"]    ?? process.env.GAP3M_MODE_ENABLED    ?? "true").toLowerCase() === "true";
   // Server Logs (📜 LOGS) and Cache Files buttons moved into the Logs (/trade-logs) page as tabs —
   // UI_SHOW_LOGS / UI_SHOW_CACHE_FILES now gate those tabs there, not top-bar buttons here.
   // (bbRsiModeOn already computed above for isFieldFrozen)
@@ -1484,6 +1548,7 @@ router.get("/", (req, res) => {
     "TREND PULLBACK STRATEGY — Fyers":                              trendPbModeOn,
     "GAPS STRATEGY — Fyers":                                        gapsModeOn,
     "TREND DAY SCALP STRATEGY — Fyers":                             tdsModeOn,
+    "3M GAP FIX SCALP STRATEGY — Fyers (NIFTY FUTURES)":            gap3mModeOn,
   };
 
   // Rail entries are collected while the sections render so the index and the

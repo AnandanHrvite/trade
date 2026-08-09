@@ -39,6 +39,9 @@ let gapsMode = null;
 // Trend Day Scalp mode: "TREND_DAY_SCALP_PAPER" | "TREND_DAY_SCALP_LIVE" | null
 let trendDayScalpMode = null;
 
+// 3M Gap Fix Scalp mode: "GAP_FIX_3M_PAPER" | "GAP_FIX_3M_LIVE" | null
+let gapFix3mMode = null;
+
 // ── Primary mode (15-min) ─────────────────────────────────────────────────
 
 function setActive(mode) {
@@ -183,13 +186,31 @@ function getTrendDayScalpMode() {
   return trendDayScalpMode;
 }
 
+// ── 3M Gap Fix Scalp mode (3-min futures gap fade) ──────────────────────────
+
+function setGapFix3mActive(mode) {
+  gapFix3mMode = mode;
+}
+
+function clearGapFix3m() {
+  gapFix3mMode = null;
+}
+
+function isGapFix3mActive() {
+  return gapFix3mMode !== null;
+}
+
+function getGapFix3mMode() {
+  return gapFix3mMode;
+}
+
 // ── Combined queries ──────────────────────────────────────────────────────
 
 /** Any mode using the socket? */
 function isAnyActive() {
   return primaryMode !== null || bbRsiMode !== null || paMode !== null ||
          orbMode !== null || ema9vwapMode !== null || trendPbMode !== null ||
-         gapsMode !== null || trendDayScalpMode !== null;
+         gapsMode !== null || trendDayScalpMode !== null || gapFix3mMode !== null;
 }
 
 /** Can the given mode start? Returns { allowed, reason } */
@@ -259,6 +280,14 @@ function canStart(mode) {
       if (trendDayScalpMode === "TREND_DAY_SCALP_PAPER") return { allowed: false, reason: "Trend Day Scalp Paper is running — stop it first" };
       if (trendDayScalpMode === "TREND_DAY_SCALP_LIVE")  return { allowed: false, reason: "Trend Day Scalp Live is already running" };
       return { allowed: true };
+    case "GAP_FIX_3M_PAPER":
+      if (gapFix3mMode === "GAP_FIX_3M_LIVE")  return { allowed: false, reason: "3M Gap Fix Scalp Live is running — stop it first" };
+      if (gapFix3mMode === "GAP_FIX_3M_PAPER") return { allowed: false, reason: "3M Gap Fix Scalp Paper is already running" };
+      return { allowed: true };
+    case "GAP_FIX_3M_LIVE":
+      if (gapFix3mMode === "GAP_FIX_3M_PAPER") return { allowed: false, reason: "3M Gap Fix Scalp Paper is running — stop it first" };
+      if (gapFix3mMode === "GAP_FIX_3M_LIVE")  return { allowed: false, reason: "3M Gap Fix Scalp Live is already running" };
+      return { allowed: true };
     default:
       return { allowed: false, reason: "Unknown mode: " + mode };
   }
@@ -281,6 +310,8 @@ module.exports = {
   setGapsActive, clearGaps, isGapsActive, getGapsMode,
   // Trend Day Scalp
   setTrendDayScalpActive, clearTrendDayScalp, isTrendDayScalpActive, getTrendDayScalpMode,
+  // 3M Gap Fix Scalp
+  setGapFix3mActive, clearGapFix3m, isGapFix3mActive, getGapFix3mMode,
   // Combined
   isAnyActive, canStart,
 };

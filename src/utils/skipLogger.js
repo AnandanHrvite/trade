@@ -42,6 +42,7 @@ const FILE_PREFIX_BY_MODE = {
   trend_pb: "trend_pb_paper_skips_",
   gaps:     "gaps_paper_skips_",
   trend_day_scalp: "trend_day_scalp_paper_skips_",
+  gap_fix_3m: "gap_fix_3m_paper_skips_",
 };
 
 try { fs.mkdirSync(SKIPS_DIR, { recursive: true }); } catch (_) {}

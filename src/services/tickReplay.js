@@ -183,6 +183,9 @@ const _MODE_TO_ENV_PREFIX = {
   // keys only ("There is no per-strategy expiry override"). Listing it here
   // would mirror a TDS_OPTION_EXPIRY_* key nothing reads, and a hand-set one
   // would be honoured by replay while paper ignored it.
+  // gap-fix-3m-paper is ABSENT for the same reason as trend-day-scalp-paper: it
+  // passes mode "GAP3M" only to select the ITM-steps branch, and expiry still
+  // comes from the COMMON OPTION_EXPIRY_* keys.
   // bb_rsi-paper / pa-paper: NO mode arg → common OPTION_EXPIRY_* only (prefix null).
 };
 
@@ -597,6 +600,7 @@ const _MODE_TO_CANONICAL_FILE = {
   "trend-pb-paper": "trend_pb_paper_trades.json",
   "gaps-paper":     "gaps_paper_trades.json",
   "trend-day-scalp-paper": "trend_day_scalp_paper_trades.json",
+  "gap-fix-3m-paper":      "gap_fix_3m_paper_trades.json",
 };
 function _lookupCanonicalSession(mode, sessionStartTs) {
   const fname = _MODE_TO_CANONICAL_FILE[mode];
@@ -766,6 +770,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     ss_clearGaps:         sharedSocketState.clearGaps,
     ss_setTrendDayScalpActive: sharedSocketState.setTrendDayScalpActive,
     ss_clearTrendDayScalp:     sharedSocketState.clearTrendDayScalp,
+    ss_setGapFix3mActive:      sharedSocketState.setGapFix3mActive,
+    ss_clearGapFix3m:          sharedSocketState.clearGapFix3m,
     // fs originals — paper /stop calls saveSession() → savePaperData() which
     // writes the canonical {strategy}_paper_trades.json via fs.writeFileSync
     // + fs.renameSync directly (NOT via tradeLogger.appendTradeLog, which we
@@ -1001,6 +1007,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     sharedSocketState.clearGaps         = () => {};
     sharedSocketState.setTrendDayScalpActive = () => {};
     sharedSocketState.clearTrendDayScalp     = () => {};
+    sharedSocketState.setGapFix3mActive      = () => {};
+    sharedSocketState.clearGapFix3m          = () => {};
 
     // fs: a replay must never mutate the user's canonical state. Rather than
     // enumerate filenames (the old *_paper_trades.json regex missed the per-day
@@ -1223,6 +1231,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     sharedSocketState.clearGaps         = orig.ss_clearGaps;
     sharedSocketState.setTrendDayScalpActive = orig.ss_setTrendDayScalpActive;
     sharedSocketState.clearTrendDayScalp     = orig.ss_clearTrendDayScalp;
+    sharedSocketState.setGapFix3mActive      = orig.ss_setGapFix3mActive;
+    sharedSocketState.clearGapFix3m          = orig.ss_clearGapFix3m;
     fs.writeFileSync     = orig.fs_writeFileSync;
     fs.appendFileSync    = orig.fs_appendFileSync;
     fs.unlinkSync        = orig.fs_unlinkSync;
@@ -1291,6 +1301,7 @@ const MODE_TO_MODULE = {
   "trend-pb-paper": "../routes/trendPbPaper",
   "gaps-paper":     "../routes/gapsPaper",
   "trend-day-scalp-paper": "../routes/trendDayScalpPaper",
+  "gap-fix-3m-paper":      "../routes/gapFix3mPaper",
   // Live modes are NOT supported for replay (they place real orders). If a
   // live session was recorded, replay it as the matching paper mode.
 };
@@ -1833,6 +1844,7 @@ function replayPreflight() {
   if (sharedSocketState.isTrendPbActive())  activeModes.push(sharedSocketState.getTrendPbMode() || "trend_pb");
   if (sharedSocketState.isGapsActive())     activeModes.push(sharedSocketState.getGapsMode() || "gaps");
   if (sharedSocketState.isTrendDayScalpActive && sharedSocketState.isTrendDayScalpActive()) activeModes.push(sharedSocketState.getTrendDayScalpMode() || "trend_day_scalp");
+  if (sharedSocketState.isGapFix3mActive && sharedSocketState.isGapFix3mActive()) activeModes.push(sharedSocketState.getGapFix3mMode() || "gap_fix_3m");
   if (activeModes.length > 0) {
     return {
       ok: false,
@@ -1892,6 +1904,7 @@ function forceClearSharedState() {
     trend_pb: sharedSocketState.getTrendPbMode(),
     gaps:     sharedSocketState.getGapsMode(),
     trend_day_scalp: sharedSocketState.getTrendDayScalpMode ? sharedSocketState.getTrendDayScalpMode() : null,
+    gap_fix_3m: sharedSocketState.getGapFix3mMode ? sharedSocketState.getGapFix3mMode() : null,
     replayInProgress: _replayInProgress,
   };
   sharedSocketState.clear();
@@ -1905,6 +1918,7 @@ function forceClearSharedState() {
   sharedSocketState.clearTrendPb();
   sharedSocketState.clearGaps();
   if (sharedSocketState.clearTrendDayScalp) sharedSocketState.clearTrendDayScalp();
+  if (sharedSocketState.clearGapFix3m) sharedSocketState.clearGapFix3m();
   _replayInProgress = false;
   return { ok: true, cleared: before };
 }

@@ -23,6 +23,7 @@ const orbStrategy   = require("../strategies/orb_breakout");
 const trendPbStrategy = require("../strategies/trend_pb");
 const gapsStrategy    = require("../strategies/gaps");
 const tdsStrategy     = require("../strategies/trend_day_scalp");
+const gap3mStrategy   = require("../strategies/gap_fix_3m");
 const sharedSocketState = require("../utils/sharedSocketState");
 
 const EMA_RSI_ST_KEY = ACTIVE;
@@ -32,6 +33,7 @@ const ORB_KEY   = "ORB_BACKTEST";
 const TREND_PB_KEY = "TREND_PB_BACKTEST";
 const GAPS_KEY     = "GAPS_BACKTEST";
 const TDS_KEY      = "TREND_DAY_SCALP_BACKTEST";
+const GAP3M_KEY    = "GAP_FIX_3M_BACKTEST";
 
 function _modeOn(envKey) {
   return (process.env[envKey] || "true").toLowerCase() === "true";
@@ -142,6 +144,7 @@ router.get("/", (req, res) => {
   const trendPbOn  = _modeOn("TREND_PB_MODE_ENABLED");
   const gapsOn     = _modeOn("GAPS_MODE_ENABLED");
   const tdsOn      = _modeOn("TDS_MODE_ENABLED");
+  const gap3mOn    = _modeOn("GAP3M_MODE_ENABLED");
 
   const emaRsiStResult    = emaRsiStOn    ? loadResult(EMA_RSI_ST_KEY)    : null;
   const bbRsiResult    = bbRsiOn    ? loadResult(BB_RSI_KEY)    : null;
@@ -150,6 +153,7 @@ router.get("/", (req, res) => {
   const trendPbResult  = trendPbOn  ? loadResult(TREND_PB_KEY) : null;
   const gapsResult     = gapsOn     ? loadResult(GAPS_KEY)     : null;
   const tdsResult      = tdsOn      ? loadResult(TDS_KEY)      : null;
+  const gap3mResult    = gap3mOn    ? loadResult(GAP3M_KEY)    : null;
 
   const emaRsiStPanel = emaRsiStOn ? renderPanel(
     "EMA_RSI_ST", { bg: "rgba(59,130,246,0.12)", fg: "#60a5fa", border: "rgba(59,130,246,0.25)" },
@@ -184,6 +188,11 @@ router.get("/", (req, res) => {
     "TREND DAY SCALP", { bg: "rgba(168,85,247,0.12)", fg: "#c084fc", border: "rgba(168,85,247,0.25)" },
     tdsStrategy && tdsStrategy.NAME ? tdsStrategy.NAME : "TREND_DAY_SCALP",
     TDS_KEY, "/trend-day-scalp-backtest", tdsResult
+  ) : "";
+  const gap3mPanel = gap3mOn ? renderPanel(
+    "3M GAP FIX SCALP", { bg: "rgba(56,189,248,0.12)", fg: "#7dd3fc", border: "rgba(56,189,248,0.25)" },
+    gap3mStrategy && gap3mStrategy.NAME ? gap3mStrategy.NAME : "3M_GAP_FIX_SCALP",
+    GAP3M_KEY, "/gap-fix-3m-backtest", gap3mResult
   ) : "";
 
   res.setHeader("Content-Type", "text/html");
@@ -327,7 +336,8 @@ ${buildSidebar('allBacktest', liveActive)}
   ${trendPbPanel}
   ${gapsPanel}
   ${tdsPanel}
-  ${(!emaRsiStOn && !bbRsiOn && !paOn && !orbOn && !trendPbOn && !gapsOn && !tdsOn) ? `
+  ${gap3mPanel}
+  ${(!emaRsiStOn && !bbRsiOn && !paOn && !orbOn && !trendPbOn && !gapsOn && !tdsOn && !gap3mOn) ? `
   <div style="background:#08091a;border:0.5px solid #0e1428;border-radius:10px;padding:24px;text-align:center;color:#94a3b8;font-size:0.78rem;">
     No strategies enabled. Toggle one on in <a href="/settings" style="color:#60a5fa;">Settings → Strategy Modes</a>.
   </div>` : ""}

@@ -29,6 +29,7 @@ const GUIDE_MODE_BY_FILE = {
   "trend_pullback_strategy_guide.html":"TREND_PB",
   "gaps_strategy_guide.html":          "GAPS",
   "trend_day_scalp_strategy_guide.html": "TDS",
+  "3m_gap_fix_scalp_strategy_guide.html": "GAP3M",
 };
 
 /**
@@ -438,6 +439,11 @@ const GUIDE_STATUS = {
     { type: "bool", label: "Trend Day Scalp Paper Trading", key: "TDS_PAPER_ENABLED", def: "true" },
     { type: "live", label: "Live Orders (Fyers, via paper harness)", enableKey: "TDS_LIVE_ENABLED", dryKey: "TDS_LIVE_DRY_RUN" },
   ] }] },
+  "3M_GAP_FIX_SCALP_Strategy_Guide.html": { title: "3M Gap Fix Scalp — Live Configuration", groups: [{ rows: [
+    { type: "bool", label: "3M Gap Fix Scalp Mode (sidebar + Settings section)", key: "GAP3M_MODE_ENABLED", def: "true" },
+    { type: "bool", label: "3M Gap Fix Scalp Paper Trading", key: "GAP3M_PAPER_ENABLED", def: "true" },
+    { type: "live", label: "Live Orders (Fyers, via paper harness)", enableKey: "GAP3M_LIVE_ENABLED", dryKey: "GAP3M_LIVE_DRY_RUN" },
+  ] }] },
   "Application_Setup_Guide.html": { title: "System — Live Configuration", groups: [
     { heading: "Global gates", rows: [
       { type: "globaldry", label: "Live Harness DRY-RUN (global kill-switch)", key: "LIVE_HARNESS_DRY_RUN" },
@@ -455,6 +461,7 @@ const GUIDE_STATUS = {
       { type: "bool", label: "Trend Pullback Mode", key: "TREND_PB_MODE_ENABLED", def: "true" },
       { type: "bool", label: "GAPS Mode", key: "GAPS_MODE_ENABLED", def: "true" },
       { type: "bool", label: "Trend Day Scalp Mode", key: "TDS_MODE_ENABLED", def: "true" },
+      { type: "bool", label: "3M Gap Fix Scalp Mode", key: "GAP3M_MODE_ENABLED", def: "true" },
     ] },
   ] },
 };

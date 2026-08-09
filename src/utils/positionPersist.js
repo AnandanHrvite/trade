@@ -598,6 +598,81 @@ function clearTrendDayScalpPosition() {
   console.log("[PERSIST] TREND_DAY_SCALP position file cleared.");
 }
 
+// ── 3M_GAP_FIX_SCALP (3-min NIFTY futures gap fade, Fyers) ──────────────────
+// Both exit levels are FROZEN prices, so a crash-recovered position can be
+// reconstructed exactly: there is no trail state and no breakeven flag to lose.
+// entryPrice / spotAtEntry are FUTURES prices — that is the instrument every
+// level of this strategy is measured on.
+
+const GAP3M_POS_FILE = path.join(DATA_DIR, ".active_gap_fix_3m_position.json");
+
+function saveGapFix3mPosition(position, sessionMeta) {
+  try {
+    if (!position) { _persistAtomic(GAP3M_POS_FILE, null); return; }
+    const data = {
+      position: {
+        side:            position.side,
+        symbol:          position.symbol,
+        qty:             position.qty,
+        entryPrice:      position.entryPrice,
+        spotAtEntry:     position.spotAtEntry || position.entrySpot,
+        indexAtEntry:    position.indexAtEntry,
+        futuresSymbol:   position.futuresSymbol,
+        stopLoss:        position.stopLoss || position.slSpot,
+        initialStopLoss: position.initialStopLoss || position.initialSlSpot,
+        target:          position.targetSpot,
+        slPts:           position.slPts,
+        targetPts:       position.targetPts,
+        rr:              position.rr,
+        gapDir:          position.gapDir,
+        gapSize:         position.gapSize,
+        gapTop:          position.gapTop,
+        gapBottom:       position.gapBottom,
+        gapFillLevel:    position.gapFillLevel,
+        dayHighAtEntry:  position.dayHighAtEntry,
+        dayLowAtEntry:   position.dayLowAtEntry,
+        entryUnixSec:    position.entryUnixSec,
+        entryTime:       position.entryTime,
+        orderId:         position.orderId,
+        optionEntryLtp:  position.optionEntryLtp,
+        optionStrike:    position.optionStrike,
+        optionExpiry:    position.optionExpiry,
+        optionType:      position.optionType || position.side,
+      },
+      sessionMeta: sessionMeta || {},
+      savedAt: Date.now(),
+      savedDate: new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
+    };
+    _persistAtomic(GAP3M_POS_FILE, JSON.stringify(data, null, 2));
+    console.log(`💾 [PERSIST] 3M_GAP_FIX_SCALP position saved: ${position.side} ${position.symbol} @ ₹${position.entryPrice}`);
+  } catch (err) {
+    console.warn(`⚠️ [PERSIST] Could not save 3M_GAP_FIX_SCALP position: ${err.message}`);
+  }
+}
+
+function loadGapFix3mPosition() {
+  try {
+    if (!fs.existsSync(GAP3M_POS_FILE)) return null;
+    const data = JSON.parse(fs.readFileSync(GAP3M_POS_FILE, "utf-8"));
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    if (data.savedDate && data.savedDate !== today) {
+      console.log(`[PERSIST] Stale 3M_GAP_FIX_SCALP position from ${data.savedDate} — discarding.`);
+      fs.unlinkSync(GAP3M_POS_FILE);
+      return null;
+    }
+    if (data.position) console.log(`[PERSIST] 3M_GAP_FIX_SCALP position loaded: ${data.position.side} ${data.position.symbol} @ ₹${data.position.entryPrice}`);
+    return data;
+  } catch (err) {
+    console.warn(`[PERSIST] Could not load 3M_GAP_FIX_SCALP position: ${err.message}`);
+    return null;
+  }
+}
+
+function clearGapFix3mPosition() {
+  _persistAtomic(GAP3M_POS_FILE, null);
+  console.log("[PERSIST] 3M_GAP_FIX_SCALP position file cleared.");
+}
+
 module.exports = {
   saveTradePosition, loadTradePosition, clearTradePosition,
   saveBbRsiPosition, loadBbRsiPosition, clearBbRsiPosition,
@@ -607,4 +682,5 @@ module.exports = {
   saveTrendPbPosition, loadTrendPbPosition, clearTrendPbPosition,
   saveGapsPosition, loadGapsPosition, clearGapsPosition,
   saveTrendDayScalpPosition, loadTrendDayScalpPosition, clearTrendDayScalpPosition,
+  saveGapFix3mPosition, loadGapFix3mPosition, clearGapFix3mPosition,
 };
