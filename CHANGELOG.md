@@ -6,6 +6,20 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — the Dashboard laid itself out by strategy count instead of by screen width
+
+Every strategy card was forced onto one row: the grid's column count was pinned to the number of enabled strategies. At nine strategies each card was ~180px wide on a 1920px screen — the stats line wrapped and the sparkline collapsed into noise — and anywhere between 1101px and 1700px it was ~100px. The count was also maintained by hand and had already drifted (3M GAP FIX was missing from it), which is why one card sat alone on a second row.
+
+The grid now fits as many cards of **at least 250px** as the row allows and wraps the rest — 250px being what a card needs to keep `27 trades · 8W/19L · +₹4,910.40` on one line. Nothing to keep in sync when a strategy is added. Measured over 16 viewports from 320px to 2560px: cards come out 272px at 1920, 293px at 1440, 359px on an iPad, 420px on an **iPhone 17 Pro Max** (440×956), with no horizontal overflow at any width.
+
+Three things that were unreachable rather than merely cramped are fixed with it:
+
+- **The top bar hid its own controls on a laptop.** It was pinned to one line and handed the leftovers to `overflow-x:auto`; the bar's natural width is ~1350px, so under a ~1600px viewport the expiry/holiday pills and the status badge sat inside a scroller with no visible scrollbar. It now wraps to a second line when one line genuinely will not fit — a 1920px screen is unchanged.
+- **The status pill's dismiss ✕ fell off a 320px screen**, taking the only way to close the pill with it.
+- **Empty strategy cards left a ~100px void.** Hiding the chart canvas left its fixed-height wrapper behind; the wrapper now collapses too, so "no trades in this range" sits under the header instead of below a blank band.
+
+Also: the analytics sub-header printed a literal `&middot;` — it is written through `textContent`, which takes the character, not the entity.
+
 ### Added — the 3M gap-fix backtest now reports the void sizes that actually occur
 
 A run reporting **0 gap setups seen** left the only useful question unanswered: how big do the voids between 3-minute NIFTY futures bars actually get? A count filtered by `GAP3M_MIN_GAP_PTS` cannot say, so there was no way to tell a threshold that is slightly too high from a strategy with nothing to trade.

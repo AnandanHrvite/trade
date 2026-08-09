@@ -1238,12 +1238,11 @@ app.get("/", (req, res) => {
   const zerodhaWalletHtml = _walletHtml('zerodha', zerodhaInv);
 
   // ── Cumulative P&L placement ─────────────────────────────────────────────
-  // The strategy grid is 3 columns (EMA_RSI_ST is always shown). When the enabled
-  // cards leave a clean 2-column gap in their last row, the Cumulative P&L card
-  // tucks into that gap beside the last card; otherwise it falls back to a
-  // full-width band below the grid (the default for any other card count).
-  const dashCardCount   = 1 + (bbRsiModeOn ? 1 : 0) + (paModeOn ? 1 : 0) + (orbModeOn ? 1 : 0) + (ema9vwapModeOn ? 1 : 0) + (trendPbModeOn ? 1 : 0) + (gapsModeOn ? 1 : 0) + (tdsModeOn ? 1 : 0);
-  const cumInlineInGrid = (dashCardCount % 3) === 1;
+  // Always a full-width band below the strategy grid. It used to tuck into the
+  // last row's spare columns when the enabled-card count left a clean gap, but
+  // that arithmetic assumed a fixed 3-column grid; the grid is now width-driven
+  // (see .mm-grid) so the number of columns depends on the viewport, not on how
+  // many strategies are on, and no card count can predict where the gap lands.
   const cumCardInner = `
     <div class="dash-chart-hdr">
       <div class="dash-chart-title">
@@ -1255,7 +1254,6 @@ app.get("/", (req, res) => {
     </div>
     <div class="dash-chart-wrap"><canvas id="dashCumChart"></canvas></div>
     <div id="dashCumEmpty" class="dash-chart-empty" style="display:none;">No paper trades yet</div>`;
-  const cumCardInline = `<div class="dash-chart-card dash-cum-inline" id="dashCumCard">${cumCardInner}</div>`;
   const cumCardBelow  = `<div class="dash-chart-card" id="dashCumCard" style="margin-top:4px;">${cumCardInner}</div>`;
 
   // ── Token expiry warning ─────────────────────────────────────────────────
@@ -1722,16 +1720,22 @@ app.get("/", (req, res) => {
 
     /* ── PER-MODULE START CARDS ── */
     /* ── PER-MODULE P&L CHART CARDS (Paper/Live toggle) ── */
-    /* Columns pinned to the actual enabled-strategy count (--mm-cols, set
-       inline from dashCardCount) so the cards fill one row with no empty
-       trailing column. Collapses to fewer cols on narrow screens. */
-    .mm-grid { display:grid; grid-template-columns:repeat(var(--mm-cols,4), minmax(0,1fr)); gap:10px; }
+    /* Columns follow the available WIDTH, not the number of enabled strategies.
+       They used to be pinned to the strategy count (--mm-cols), so every new
+       strategy made every card narrower: at nine of them a card was ~180px on a
+       1920px screen, and just above the old 1100px breakpoint it was ~100px —
+       the stats line and the sparkline both collapsed into noise. The count was
+       also hand-maintained and had already drifted (3M GAP FIX was missing from
+       it, which is why one card sat alone on a second row).
+       250px is what a card needs to keep its stats line — "27 trades · 8W/19L ·
+       +₹4,910.40" — on one line, so the row simply fits as many cards of at
+       least that width as it can and wraps the rest. min(100%,250px) keeps the
+       floor itself from overflowing a viewport narrower than 250px. */
+    .mm-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(min(100%,250px), 1fr)); gap:10px; }
     /* Grid items default to min-width:auto, which can force a track wider than
        its share and overflow the (clipped) page. Let them shrink so the grids
        always reflow to the available width. */
     .mm-grid > *, .da-grid > *, .ts-grid > * { min-width:0; }
-    @media (max-width:1100px) { .mm-grid { grid-template-columns:repeat(2, minmax(0,1fr)); } }
-    @media (max-width:560px)  { .mm-grid { grid-template-columns:1fr; } }
     .mm-card { background:#0d1320; border:1px solid #1a2236; border-radius:9px; padding:8px 10px 9px; display:flex; flex-direction:column; }
     .mm-hdr { display:flex; align-items:center; gap:8px; padding-bottom:6px; border-bottom:1px solid #1a2236; margin-bottom:6px; }
     .mm-dot { width:7px; height:7px; border-radius:50%; background:#4a6080; flex-shrink:0; }
@@ -1771,7 +1775,10 @@ app.get("/", (req, res) => {
     .mm-stats .pnl-neg { color:#ef4444; font-weight:700; }
     .mm-stats .pnl-flat { color:#4a6080; font-weight:700; }
     .mm-wrap { position:relative; height:100px; }
-    .mm-empty { text-align:center; padding:38px 20px 14px; color:#4a6080; font-size:0.72rem; }
+    /* The lopsided top padding used to push this line past the empty chart box;
+       that box now collapses when there is nothing to draw, so the padding is
+       even again. */
+    .mm-empty { text-align:center; padding:20px 14px; color:#4a6080; font-size:0.72rem; }
     :root[data-theme="light"] .mm-card { background:#ffffff; border-color:#e0e4ea; }
     :root[data-theme="light"] .mm-hdr { border-bottom-color:#e0e4ea; }
     :root[data-theme="light"] .mm-title { color:#475569; }
@@ -1862,10 +1869,7 @@ app.get("/", (req, res) => {
     .dash-chart-link { font-size:0.66rem; color:#60a5fa; text-decoration:none; font-weight:600; padding:3px 9px; border-radius:5px; border:1px solid #1a3a6a; background:#080e1a; transition:filter 0.15s; margin-left:auto; }
     .dash-chart-link:hover { filter:brightness(1.25); }
     .dash-chart-wrap { position:relative; height:clamp(140px, 26vh, 360px); }
-    /* Cumulative card tucked into the strategy grid: span the 2-col gap, match card chart height */
-    .dash-cum-inline { grid-column:1 / -1; }
-    .dash-cum-inline .dash-chart-wrap { height:130px; }
-    .dash-chart-empty { text-align:center; padding:46px 20px 14px; color:#4a6080; font-size:0.72rem; }
+    .dash-chart-empty { text-align:center; padding:28px 20px; color:#4a6080; font-size:0.72rem; }
     @media (max-width:900px) { .dash-chart-grid { grid-template-columns:1fr; } }
     :root[data-theme="light"] .dash-chart-card { background:#ffffff; border-color:#e0e4ea; }
     :root[data-theme="light"] .dash-chart-title { color:#475569; }
@@ -1948,19 +1952,24 @@ app.get("/", (req, res) => {
       #trade-row, #bb_rsi-row, #pa-row { flex-wrap:wrap; }
       #trade-row .card, #bb_rsi-row .card, #pa-row .card { width:100%; flex:none; }
     }
-    /* Dashboard top bar — keep title, toggle, and actions on a single line.
-       DESKTOP ONLY. These rules used to be unconditional, and being important
-       + flex-shrink:0 they beat both sharedNav's wrapping .top-bar-right and
-       its max-width:768px .top-bar wrap rule. On a 393px phone that pinned the
-       bar at its 920px content width, so Start All, the
-       expiry/holiday pills and the status badge all sat off screen behind
-       .main-content's overflow-x:clip — unreachable, not merely ugly.
-       Below 768px the shared wrapping behaviour is left alone. */
+    /* Dashboard top bar — DESKTOP ONLY (below 768px the shared phone rules own
+       it, and pinning the bar there once put Start All, the expiry/holiday
+       pills and the status badge off screen behind .main-content's
+       overflow-x:clip).
+       This used to force the whole bar onto one line (flex-wrap:nowrap +
+       flex-shrink:0 on the right-hand group) and hand the leftovers to
+       overflow-x:auto. The bar's natural width is ~1350px, so anything under a
+       ~1600px viewport parked the expiry/holiday pills and the status badge
+       inside a scroller — and with no visible scrollbar on a trackpad that
+       reads as "the badges are gone", which is what a 13"/14" MacBook saw.
+       Wrapping is the honest version: the bar still renders as one line
+       whenever one line fits (nothing changes on a 1920px screen), and drops
+       the right-hand group onto a second line only when it genuinely cannot,
+       instead of hiding it. row-gap keeps the two lines from touching. */
     @media (min-width:769px) {
-      .top-bar { flex-wrap:nowrap !important; overflow-x:auto; }
+      .top-bar { flex-wrap:wrap; row-gap:6px; }
       .top-bar > div:first-child { flex-shrink:0; }
       .top-bar-meta { white-space:nowrap; }
-      .top-bar-right { flex-wrap:nowrap !important; flex-shrink:0; }
     }
     /* Phone: let every top-bar group wrap onto its own line and fill the width.
        min-width:0 is what actually lets the group shrink — a flex item's
@@ -1980,6 +1989,14 @@ app.get("/", (req, res) => {
          in sharedNav, so at 320px (iPhone SE) they alone still ran 11px past the
          edge. Let them wrap rather than widen the bar. */
       .top-bar-right .top-bar-cache { max-width:100%; min-width:0; white-space:normal; }
+      /* Same problem, different pill: the trading-status pill ("Weekend —
+         markets resume Monday 9:15 AM") is built in JS and its inner box carries
+         an INLINE white-space:nowrap, so at 320px it ran 45px past the edge and
+         took its dismiss ✕ behind .main-content's overflow-x:clip with it — the
+         one control that closes the pill, unreachable. The inline style is why
+         this needs !important. */
+      #trading-status-alert { max-width:100%; min-width:0; }
+      #trading-status-alert > div { max-width:100%; white-space:normal !important; }
     }
     ${modalCSS()}
     ${expiryHolidayModalCSS()}
@@ -2080,7 +2097,7 @@ ${buildSidebar('dashboard', liveActive)}
   <!-- (utility buttons moved to top-bar-right; cache pill + schedule pills also live there) -->
 
   <!-- ③ PER-MODULE CUMULATIVE P&L CHARTS (top-bar Paper/Live toggle + Range filter) -->
-  <div class="mm-grid" style="--mm-cols:${dashCardCount};">
+  <div class="mm-grid">
     <div class="mm-card ema_rsi_st" data-mode="EMA_RSI_ST">
       <div class="mm-hdr">
         <span class="mm-dot"></span>
@@ -2178,11 +2195,10 @@ ${buildSidebar('dashboard', liveActive)}
       <div class="mm-empty" id="mm-empty-GAP3M" style="display:none;">No paper trades yet</div>
     </div>
     ` : ''}
-    ${cumInlineInGrid ? cumCardInline : ''}
   </div>
 
-  <!-- ⑤ CUMULATIVE P&L CHART (top-bar Paper/Live toggle + Range filter) — full-width fallback when it can't tuck into the grid -->
-  ${cumInlineInGrid ? '' : cumCardBelow}
+  <!-- ⑤ CUMULATIVE P&L CHART (top-bar Paper/Live toggle + Range filter) — full-width band below the strategy grid -->
+  ${cumCardBelow}
 
   ${analyticsPanelOn ? `
   <!-- ⑥ Dashboard analytics panel — market-hour aware -->
@@ -2662,12 +2678,18 @@ function _renderDashCumChart(canvasId, emptyId, trades){
   var canvas = document.getElementById(canvasId);
   var empty  = document.getElementById(emptyId);
   if (!canvas) return null;
+  // The canvas sits in a fixed-height wrapper (.mm-wrap / .dash-chart-wrap), so
+  // hiding the canvas alone left the wrapper's height behind as an empty band
+  // above the "no trades" line. Collapse the wrapper too.
+  var wrap = canvas.parentElement;
   if (!trades || !trades.length){
     if (empty) empty.style.display = 'block';
     canvas.style.display = 'none';
+    if (wrap) wrap.style.display = 'none';
     return null;
   }
   if (empty) empty.style.display = 'none';
+  if (wrap) wrap.style.display = '';
   canvas.style.display = 'block';
   var s = _buildCumSeries(trades);
   var isLight = document.documentElement.getAttribute('data-theme') === 'light';
@@ -3190,7 +3212,9 @@ setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily 
     var marketOpen = isMarketOpenNow(holidays);
 
     if (marketOpen) {
-      setMode('live', 'Polling every 8s &middot; ' + istDateISO());
+      // setMode writes this through textContent, so it takes the character, not
+      // the HTML entity — "&middot;" printed itself verbatim.
+      setMode('live', 'Polling every 8s · ' + istDateISO());
       var liveResults = await Promise.all(SESSION_TILES.map(function(t){
         return fetchJSON(LIVE_URLS[t.key]);
       }));
@@ -3201,7 +3225,7 @@ setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily 
       clearPoll();
       _pollTimer = setInterval(refresh, 8000);
     } else {
-      setMode('post', 'Paper + Live combined &middot; refreshed ' + istDateISO());
+      setMode('post', 'Paper + Live combined · refreshed ' + istDateISO());
       var [paper, live] = await Promise.all([
         fetchJSON('/consolidation/data?enabledOnly=1'),
         fetchJSON('/live-consolidation/data?enabledOnly=1'),
