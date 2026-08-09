@@ -43,11 +43,17 @@ function resetManager() {
   socketManager._lastTickAt = null;
   socketManager._stopped = false;
   socketManager._onLog = () => {};
+  socketManager._clearWatchdog();
   // Stand in for the SDK so subscribe/unsubscribe are observable and offline.
-  const wire = { subscribed: [], unsubscribed: [] };
+  // The listener/connect surface is stubbed too, so tests may call start()
+  // without opening anything — _connect() attaches handlers and dials out.
+  const wire = { subscribed: [], unsubscribed: [], connects: 0 };
   socketManager._skt = {
     subscribe:   (syms) => wire.subscribed.push(...syms),
     unsubscribe: (syms) => wire.unsubscribed.push(...syms),
+    on() {}, removeAllListeners() {}, close() {},
+    connect: () => { wire.connects++; },
+    mode() {}, FullMode: 'full',
   };
   return wire;
 }
@@ -264,6 +270,41 @@ test("option traffic alone does not make a dead spot feed look alive", () => {
   assert.strictEqual(optSeen.length, 20, "the option ticks really were processed");
   assert.strictEqual(socketManager._lastSpotTickAt, spotClock,
     "the watchdog clock must only advance on ticks the strategies actually received");
+});
+
+test("switching the spot instrument re-learns attribution instead of dropping ticks", () => {
+  const wire = resetManager();
+  socketManager._symbol = SPOT;
+  socketManager._routeTick(spotTick(24000));
+  socketManager.subscribeExtra(OPT);
+
+  const spotSeen = [];
+  socketManager.addCallback("strategy", (t) => spotSeen.push(t.ltp), () => {});
+  socketManager.start("NSE:NIFTYBANK-INDEX", null, () => {});
+
+  assert.strictEqual(socketManager._spotTickSymbol, null, "old attribution must be discarded");
+  assert.deepStrictEqual(socketManager.getExtraSymbols(), [],
+    "extras must go too — the probe only runs with none subscribed");
+  assert.ok(wire.unsubscribed.includes(OPT));
+
+  // Ticks for the NEW instrument flow immediately; none are burned re-learning.
+  socketManager._routeTick({ symbol: "NSE:NIFTYBANK-INDEX", ltp: 52000 });
+  assert.deepStrictEqual(spotSeen, [52000]);
+  assert.strictEqual(socketManager._spotTickSymbol, "NSE:NIFTYBANK-INDEX");
+  socketManager._clearWatchdog();
+});
+
+test("expired tombstones are pruned rather than accumulating", () => {
+  resetManager();
+  socketManager._routeTick(spotTick(24000));
+  socketManager._tombstones.set("NSE:STALE-A", Date.now() - 1);   // already expired
+  socketManager._tombstones.set("NSE:STALE-B", Date.now() - 1);
+  socketManager.subscribeExtra(OPT);
+  socketManager.unsubscribeExtra(OPT);                            // triggers a prune
+
+  assert.strictEqual(socketManager._tombstones.has("NSE:STALE-A"), false);
+  assert.strictEqual(socketManager._tombstones.has("NSE:STALE-B"), false);
+  assert.strictEqual(socketManager._tombstones.has(OPT), true, "the live one must remain");
 });
 
 test("reconnect re-asserts every option subscription", () => {

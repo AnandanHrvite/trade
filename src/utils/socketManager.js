@@ -142,6 +142,25 @@ class SocketManager {
       if (onLog) onLog(`📡 [SOCKET] Reusing existing connection for ${spotSymbol}`);
       return;
     }
+    // Reaching here means a DIFFERENT spot instrument (the same-symbol case
+    // returned above). Everything the attribution probe learned describes the
+    // old one, so it must be re-learned — and the probe only runs with no extras
+    // subscribed, so those go too. Skipping this would leave the strict spot
+    // match rejecting every tick of the new instrument until the bail-out fired
+    // 50 ticks later. All call sites currently pass the same NIFTY index symbol,
+    // so this is a latent path, not a live one.
+    if (this._symbol && this._symbol !== spotSymbol) {
+      if (this._extraSymbols.size) {
+        this._tombstone(Array.from(this._extraSymbols));
+        this._sendUnsubscribe(Array.from(this._extraSymbols));
+        this._extraSymbols.clear();
+      }
+      this._spotTickSymbol     = null;
+      this._attributionLogged  = false;
+      this._extrasEverUsed     = false;
+      this._unattributedStreak = 0;
+      this._lastSpotTickAt     = null;
+    }
     this._symbol        = spotSymbol;
     this._onSpotTick    = onSpotTick;
     this._onLog         = onLog;
@@ -438,7 +457,14 @@ class SocketManager {
 
   /** Mark symbols as known-not-spot for TOMBSTONE_MS. */
   _tombstone(symbols) {
-    const until = Date.now() + TOMBSTONE_MS;
+    const now = Date.now();
+    // Bulk-prune while we are here. _isTombstoned only prunes what it is asked
+    // about, so a symbol never seen again would sit in the map for the life of
+    // the process. This runs a handful of times a day — free.
+    for (const [sym, until] of this._tombstones) {
+      if (now >= until) this._tombstones.delete(sym);
+    }
+    const until = now + TOMBSTONE_MS;
     for (const s of symbols) this._tombstones.set(s, until);
   }
 
