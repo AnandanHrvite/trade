@@ -74,14 +74,16 @@ function simulate(bars, startIdx, side, entrySpot, slPts, cfg, cost) {
   const entryTime = bars[startIdx].time;
   const forcedExitMin = tds._parseHHMM(process.env.TDS_FORCED_EXIT, 15 * 60 + 10);
 
-  const finish = (exitSpot, reason) => {
-    const barsHeld = Math.max(0, (bars[bars.length - 1].time - entryTime) / 60 / cfg.resolutionMins);
+  // Theta is charged from the ACTUAL exit bar, not the last bar of the day — an
+  // EOD exit at 15:10 must not be billed for the 15:25 bar it never held.
+  const finish = (exitSpot, exitTime, reason) => {
+    const barsHeld = Math.max(0, (exitTime - entryTime) / 60 / cfg.resolutionMins);
     return { pnl: cost(side, entrySpot, exitSpot, barsHeld), reason, riskPts: slPts };
   };
 
   for (let i = startIdx + 1; i < bars.length; i++) {
     const c = bars[i];
-    if (MIN(c.time) >= forcedExitMin) return finish(c.open, "EOD");
+    if (MIN(c.time) >= forcedExitMin) return finish(c.open, c.time, "EOD");
 
     const stopTouched = isCE ? c.low <= slSpot : c.high >= slSpot;
     const tgtTouched  = isCE ? c.high >= targetSpot : c.low <= targetSpot;
@@ -107,7 +109,7 @@ function simulate(bars, startIdx, side, entrySpot, slPts, cfg, cost) {
     }
   }
   const last = bars[bars.length - 1];
-  return finish(last.close, "EOD (no more bars)");
+  return finish(last.close, last.time, "EOD (no more bars)");
 }
 
 function stats(trades) {
@@ -123,8 +125,13 @@ function stats(trades) {
 (async () => {
   const from  = arg("from", "2025-01-01");
   const to    = arg("to", "2026-08-09");
-  const iters = parseInt(arg("iters", "300"), 10);
-  const seed  = parseInt(arg("seed", "20260809"), 10);
+  // A malformed --iters/--seed must not degrade silently: parseInt("x") is NaN,
+  // and mulberry32(NaN) quietly becomes seed 0, so a typo would look like a run.
+  const iters = (v => Number.isFinite(v) && v > 0 ? v : 300)(parseInt(arg("iters", "300"), 10));
+  const seed  = (v => Number.isFinite(v) ? v : 20260809)(parseInt(arg("seed", "20260809"), 10));
+  if (String(arg("seed", "")) && !Number.isFinite(parseInt(arg("seed", "20260809"), 10))) {
+    console.log(`--seed was not a number; using ${seed}`);
+  }
 
   const cfg = tds.getConfig();
   const LOT = instrumentConfig.getLotQty();
@@ -182,44 +189,66 @@ function stats(trades) {
   if (!days.length) { console.log("Nothing to test."); process.exit(0); }
 
   // ── ARM 1: the real strategy ──────────────────────────────────────────────
+  // Record WHICH days actually produced a trade — the random arm must use exactly
+  // those days and no others.
   const realTrades = [];
+  const tradedDays = [];
   for (const d of days) {
     const bars = d.idxs.map(i => all[i]);
     for (const p of d.eligible) {
       const sig = tds.getSignal(all.slice(0, d.idxs[p] + 1), { dayGate: d.gate, cfg, silent: true });
       if (sig.signal === "NONE" || !sig.side) continue;
-      const localIdx = d.idxs.indexOf(d.idxs[p]);
-      realTrades.push(simulate(bars, localIdx, sig.side, sig.entrySpot, sig.slPts, cfg, cost));
+      realTrades.push(simulate(bars, p, sig.side, sig.entrySpot, sig.slPts, cfg, cost));
+      tradedDays.push(d);
       break;   // one trade per day in both arms, so the comparison is like-for-like
     }
   }
+  console.log(`the real entry fired on ${tradedDays.length} of those ${days.length} days\n`);
+  if (!tradedDays.length) { console.log("The entry never fires — nothing to compare."); process.exit(0); }
 
-  // ── ARM 2: random entry on the same days, same rules ──────────────────────
-  // The stop is sized the same way — the pullback extreme of the last N bars,
-  // floored and capped — so only the TIMING differs.
+  // ── ARM 2: random entry on the SAME days, same rules ──────────────────────
+  // Two things must be matched or the test is rigged. Same DAYS: comparing the
+  // real arm's 6 trades against a random arm's 12 would punish the random arm for
+  // nothing more than trading twice as often against a negative cost drag. Same
+  // STOP RULE: the pullback extreme of the last N bars, floored and capped, so the
+  // only thing that differs between the arms is the TIMING of the entry.
   const rand = mulberry32(seed);
   const randomNets = [], randomPfs = [];
+  let skipped = 0;
   for (let it = 0; it < iters; it++) {
     const trades = [];
-    for (const d of days) {
+    for (const d of tradedDays) {
       const bars = d.idxs.map(i => all[i]);
-      const p = d.eligible[Math.floor(rand() * d.eligible.length)];
-      const localIdx = d.idxs.indexOf(d.idxs[p]);
-      const bar = all[d.idxs[p]];
       const side = d.gate.side;
-      const win = [];
-      for (let q = localIdx; q >= 0 && win.length < cfg.pullbackWindow; q--) win.unshift(bars[q]);
-      const struct = side === "CE"
-        ? bar.close - Math.min(...win.map(c => c.low))
-        : Math.max(...win.map(c => c.high)) - bar.close;
-      if (struct > cfg.maxSlPts) continue;              // same skip rule as the engine
-      const slPts = Math.max(struct, cfg.minSlPts);
-      if (!(slPts > 0)) continue;
-      trades.push(simulate(bars, localIdx, side, bar.close, slPts, cfg, cost));
+      // Re-draw when the random bar's structural stop exceeds the cap — the engine
+      // would have skipped it too, and silently dropping the day would leave the
+      // arms with different trade counts again.
+      let placed = false;
+      for (let attempt = 0; attempt < 40 && !placed; attempt++) {
+        const p = d.eligible[Math.floor(rand() * d.eligible.length)];
+        const bar = bars[p];
+        const win = [];
+        for (let q = p; q >= 0 && win.length < cfg.pullbackWindow; q--) win.unshift(bars[q]);
+        const struct = side === "CE"
+          ? bar.close - Math.min(...win.map(c => c.low))
+          : Math.max(...win.map(c => c.high)) - bar.close;
+        if (struct > cfg.maxSlPts) continue;            // same skip rule as the engine
+        const slPts = Math.max(struct, cfg.minSlPts);
+        if (!(slPts > 0)) continue;
+        trades.push(simulate(bars, p, side, bar.close, slPts, cfg, cost));
+        placed = true;
+      }
+      if (!placed) skipped++;
     }
     const s = stats(trades);
+    if (!s.n) continue;
     randomNets.push(s.net);
     randomPfs.push(s.pf === Infinity ? 99 : s.pf);
+  }
+  if (!randomNets.length) { console.log("No random draw produced a tradeable bar — cannot compare."); process.exit(1); }
+  if (skipped) {
+    const perDraw = skipped / iters;
+    console.log(`(${perDraw.toFixed(2)} day(s) per draw had no bar inside the ${cfg.maxSlPts}pt stop cap after 40 tries — those days are absent from the random arm)\n`);
   }
 
   // ── Verdict ───────────────────────────────────────────────────────────────
