@@ -203,7 +203,11 @@ function stats(trades) {
       break;   // one trade per day in both arms, so the comparison is like-for-like
     }
   }
-  console.log(`the real entry fired on ${tradedDays.length} of those ${days.length} days\n`);
+  console.log(`the real entry fired on ${tradedDays.length} of those ${days.length} days`);
+  // Both arms are capped at ONE trade per day so the comparison isolates timing.
+  // The production backtest allows TDS_MAX_DAILY_TRADES, so the rupee figures below
+  // will NOT match /trend-day-scalp-backtest — only the percentile is the result here.
+  console.log(`(one trade per day in both arms — these rupees are not comparable to the backtest page, only to each other)\n`);
   if (!tradedDays.length) { console.log("The entry never fires — nothing to compare."); process.exit(0); }
 
   // ── ARM 2: random entry on the SAME days, same rules ──────────────────────
@@ -259,7 +263,8 @@ function stats(trades) {
   const beaten = randomNets.filter(x => x < R.net).length;
   const pct = (beaten / randomNets.length) * 100;
 
-  console.log(`REAL   entries: ${R.n} trades · WR ${R.wr.toFixed(0)}% · PF ${R.pf.toFixed(2)} · net ₹${R.net.toFixed(0)} · ₹${R.exp.toFixed(0)}/trade`);
+  const pfStr = R.pf === Infinity ? "∞ (no losers)" : R.pf.toFixed(2);
+  console.log(`REAL   entries: ${R.n} trades · WR ${R.wr.toFixed(0)}% · PF ${pfStr} · net ₹${R.net.toFixed(0)} · ₹${R.exp.toFixed(0)}/trade`);
   console.log(`RANDOM entries: ${iters} draws on the SAME days, same stop/target/exits`);
   console.log(`   net   p5 ₹${q(randomNets,.05).toFixed(0)}  p25 ₹${q(randomNets,.25).toFixed(0)}  median ₹${q(randomNets,.5).toFixed(0)}  p75 ₹${q(randomNets,.75).toFixed(0)}  p95 ₹${q(randomNets,.95).toFixed(0)}`);
   console.log(`   PF    p5 ${q(randomPfs,.05).toFixed(2)}  median ${q(randomPfs,.5).toFixed(2)}  p95 ${q(randomPfs,.95).toFixed(2)}`);
