@@ -356,7 +356,6 @@ function runGapFix3mBacktest(intraday) {
     if (!sawGap) skipped.push({ date: istDateOf(dayTs), reason: `no gap of ${cfg.minGapPts}pt or more all session` });
   }
 
-  voidStats.largest = Math.round(voidStats.largest * 100) / 100;
   return { trades, days, skipped, gapStats, voidStats };
 }
 

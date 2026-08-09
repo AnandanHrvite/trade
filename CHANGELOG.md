@@ -6,6 +6,12 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Added — the 3M gap-fix backtest now reports the void sizes that actually occur
+
+A run reporting **0 gap setups seen** left the only useful question unanswered: how big do the voids between 3-minute NIFTY futures bars actually get? A count filtered by `GAP3M_MIN_GAP_PTS` cannot say, so there was no way to tell a threshold that is slightly too high from a strategy with nothing to trade.
+
+The results page now shows **Largest void seen** and **Voids ≥5 / ≥10 / ≥20pt**, measured across every pair of consecutive same-session bars with no minimum applied. Purely diagnostic — the entry rules are untouched — and it rounds to two decimals before comparing, exactly as `findGap()` does, so the counts cannot disagree with "gap setups seen" at the threshold.
+
 ### Fixed — a year-long 3M gap-fix backtest tripped Fyers' rate limit
 
 Running `/gap-fix-3m-backtest` over 2025 fired twelve doomed requests in about a second and the last two came back **request limit reached — code 429**, which then read as the reason the range failed. It wasn't: those contracts were delisted, and the rate limit was self-inflicted.
