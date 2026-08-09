@@ -331,7 +331,7 @@ const SETTINGS_SCHEMA = [
       { key: "TDS_SESSION_START", label: "Session / VWAP Anchor", type: "time", effect: EFFECT.SESSION, desc: "Where the first-hour range and the VWAP both start (IST).", default: "09:15" },
       { key: "TDS_MIN_RANGE_PCT", label: "Min First-Hour Range (% of spot)", type: "number", min: 0, max: 5, step: 0.05, effect: EFFECT.SESSION, desc: "The day must have actually moved. A dead range has no juice for an option buyer.", default: "0.5" },
       { key: "TDS_VWAP_STREAK_BARS", label: "Closes One Side of VWAP", type: "number", min: 1, max: 30, step: 1, effect: EFFECT.SESSION, desc: "How many of the last closes must all sit on the same side of VWAP.", default: "6" },
-      { key: "TDS_EXTENSION_MULT", label: "Extension from VWAP (× range)", type: "number", min: 0, max: 3, step: 0.05, effect: EFFECT.SESSION, desc: "Spot must sit this many × the first-hour range away from VWAP. A linear trend day scores exactly 0.5, so 0.6+ rejects almost everything.", default: "0.35" },
+      { key: "TDS_EXTENSION_MULT", label: "Extension from VWAP (× range)", type: "number", min: 0, max: 3, step: 0.05, effect: EFFECT.SESSION, desc: "Spot must sit this many × the first-hour range away from VWAP. MEASURED over 39 sessions: median 0.18, p90 0.39 — so 0.35 passed only 13% of days and starved the strategy. 0.20 is just above the median.", default: "0.20" },
 
       // ── Entry ──
       { key: "TDS_EMA_PERIOD", label: "Zone EMA Period", type: "number", min: 2, max: 200, step: 1, effect: EFFECT.SESSION, desc: "The pullback zone is whichever of VWAP / this EMA sits nearer to price.", default: "20", subheader: "Entry (pullback + reclaim)" },
@@ -344,7 +344,7 @@ const SETTINGS_SCHEMA = [
 
       // ── Risk (the part that makes the result steady) ──
       { key: "TDS_MIN_SL_PTS", label: "Min Stop Distance (pts)", type: "number", min: 1, max: 100, step: 1, effect: EFFECT.SESSION, desc: "A tighter structural stop is widened to this — never tightened inside the structure.", default: "12", subheader: "Risk (fixed stop, fixed target)" },
-      { key: "TDS_MAX_SL_PTS", label: "Max Stop Distance (pts)", type: "number", min: 1, max: 200, step: 1, effect: EFFECT.SESSION, desc: "A wider structural stop SKIPS the trade entirely. Keeps every loss the same size.", default: "18" },
+      { key: "TDS_MAX_SL_PTS", label: "Max Stop Distance (pts)", type: "number", min: 1, max: 200, step: 1, effect: EFFECT.SESSION, desc: "A wider structural stop SKIPS the trade entirely. MEASURED: real pullback stops are median 35pt, so the old 18 skipped 48 of 53 setups and kept only the shallowest. 40pt covers ~p60. Note ~35pt ≈ ₹1,400 premium risk on 1 lot.", default: "40" },
       { key: "TDS_TARGET_R", label: "Target (× risk)", type: "number", min: 0.5, max: 10, step: 0.1, effect: EFFECT.SESSION, desc: "Fixed target as a multiple of the stop distance. Taken, never trailed past.", default: "2.5" },
       { key: "TDS_BREAKEVEN_R", label: "Breakeven Arms At (× risk)", type: "number", min: 0, max: 5, step: 0.1, effect: EFFECT.SESSION, desc: "Favourable move at which the stop makes its ONE jump.", default: "1" },
       { key: "TDS_BREAKEVEN_BUFFER_PTS", label: "Breakeven Buffer (pts)", type: "number", min: 0, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Where the stop lands on that jump: entry ± this. It never moves again.", default: "3" },
@@ -356,8 +356,8 @@ const SETTINGS_SCHEMA = [
       { key: "TDS_ITM_STEPS", label: "ITM Steps (strikes in-the-money)", type: "number", min: 0, max: 3, step: 1, effect: EFFECT.INSTANT, desc: "Strikes in-the-money to buy (0 = ATM). 1 step ≈ delta 0.6.", default: "1" },
       { key: "TDS_MAX_DAILY_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Max entries per day. Friction is per-trade, so fewer is usually better.", default: "2" },
       { key: "TDS_MAX_DAILY_LOSSES", label: "Stop-outs That End the Day", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Day ends after this many REAL stop-outs (0 = off). Breakeven and time-stop exits do not count.", default: "2" },
-      { key: "TDS_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 0, max: 50000, step: 250, effect: EFFECT.SESSION, desc: "Stop trading after this much loss (0 = off).", default: "1500" },
-      { key: "TDS_DAILY_PROFIT_LOCK", label: "Daily Profit Lock (₹)", type: "number", min: 0, max: 50000, step: 250, effect: EFFECT.SESSION, desc: "Stop for the day once this much is banked (0 = off). Giving profit back is what wrecks a steady curve.", default: "1500" },
+      { key: "TDS_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 0, max: 50000, step: 250, effect: EFFECT.SESSION, desc: "Stop trading after this much loss (0 = off). Raised with the stop cap — at 1500 a single 40pt stop-out ends the day, making the trade budget a dead letter.", default: "3000" },
+      { key: "TDS_DAILY_PROFIT_LOCK", label: "Daily Profit Lock (₹)", type: "number", min: 0, max: 50000, step: 250, effect: EFFECT.SESSION, desc: "Stop for the day once this much is banked (0 = off). Giving profit back is what wrecks a steady curve.", default: "3000" },
       { key: "TDS_MAX_WEEKLY_LOSS", label: "Max Weekly Loss (₹)", type: "number", min: 0, max: 200000, step: 1000, effect: EFFECT.SESSION, desc: "Stop for the week after this much loss (0 = off).", default: "0" },
 
       // ── Backtest ──

@@ -11,8 +11,14 @@
  * momentum close, and each one is right-tail dependent — ORB's own header records
  * 9 trades where the single best is 211% of net (remove it and the strategy is
  * -3,786 INR); EMA9_VWAP's +16k was one trade. This engine deliberately inverts
- * that: a FIXED target (no "let it run"), a stop that is always the same size,
- * and a day filter whose main job is to produce a ZERO rather than a loss.
+ * that: a FIXED target (no "let it run"), a stop taken from structure rather
+ * than from hope, and a day filter whose main job is to produce a ZERO rather
+ * than a loss.
+ *
+ * NOTE: the first version of this file claimed "a stop that is always the same
+ * size" and capped it at 18 points to enforce that. Measured against real
+ * candles the claim was false and the cap was fatal — see TDS_MAX_SL_PTS in
+ * getConfig(). Stops now run roughly 12-40 points.
  *
  * The binding constraint is friction, not signal. Measured with this repo's own
  * charges.js on 1 lot: ~90 INR of statutory charges plus ~1.5 premium points of
@@ -29,7 +35,8 @@
  *          running VWAP — one-directional, not a chop that keeps crossing
  *       c. |spot - VWAP| >= TDS_EXTENSION_MULT x the first-hour range — the day has
  *          committed to a side, not drifting on the line. See getConfig() for why
- *          the default is 0.35 and not the 0.6 this was first specced with.
+ *          the default is 0.20 — it is MEASURED from the real distribution,
+ *          not reasoned from an idealised ramp as 0.35 and 0.6 were.
  *     Fail any one → NO TRADE TODAY. That zero is the whole point.
  *  2. DIRECTION IS LOCKED BY THE GATE. Spot above VWAP → CE only. Below → PE only.
  *     Never counter-trend, and it never flips later in the day.
@@ -45,7 +52,12 @@
  *       • conviction — right colour, and body >= TDS_BODY_ATR_MULT x ATR(5m)
  *  4. STOP = the pullback extreme. Floor-clamped to TDS_MIN_SL_PTS; if the
  *     structure needs MORE than TDS_MAX_SL_PTS the trade is SKIPPED, never
- *     widened and never tightened inside the structure. Every loss is the same size.
+ *     widened and never tightened inside the structure.
+ *     The cap is 40, MEASURED (see getConfig). It was 18, which skipped 48 of
+ *     53 real setups and left only the shallowest — that single number is why
+ *     the first backtest produced 5 trades in a year. Losses are NOT all the
+ *     same size any more: they range roughly 12-40pt, about 500-1,600 rupees
+ *     of premium on 1 lot.
  *  5. TARGET = a FIXED entry ± TDS_TARGET_R x the stop distance. Taken when reached.
  *  6. Route-owned exits, in this priority: stop → target → breakeven jump at
  *     +TDS_BREAKEVEN_R (stop moves ONCE to entry ± TDS_BREAKEVEN_BUFFER_PTS and
@@ -76,10 +88,18 @@
  * That parity requirement is not negotiable — see the header of ema9_vwap.js.
  *
  * ── NOT MARKET-VALIDATED ────────────────────────────────────────────────────
- * Zero trades, paper or live. Every constant below is a PRIOR chosen from the
- * friction arithmetic above, not a fitted optimum, and nothing here has been
- * measured on a real session. Collect clean paper days and diff them against
- * /replay before touching any live gate.
+ * Zero trades, paper or live.
+ *
+ * TDS_MAX_SL_PTS and TDS_EXTENSION_MULT are now set from a MEASURED distribution
+ * (39 sessions, Mar-Apr 2026) because their first values were derived from
+ * idealised arithmetic and produced 5 trades in a year. Measured-from is not the
+ * same as validated: 39 sessions and 17 trades cannot tell 0.15 from 0.20, and
+ * the P&L across that sweep ran -2,676 to +758 — noise. Neither value was picked
+ * for its P&L, deliberately.
+ *
+ * Every OTHER constant is still an unmeasured prior from the friction arithmetic
+ * above. Collect clean paper days and diff them against /replay before touching
+ * any live gate.
  *
  * Contract:
  *   getConfig()                              -> live env read (never cached)
@@ -96,7 +116,7 @@ const { EMA, ATR } = require("technicalindicators");
 const NAME = "TREND_DAY_SCALP";
 const DESCRIPTION =
   "Trend Day Scalp — 10:15 day gate (range + VWAP streak + extension) locks the side, " +
-  "then a pullback-and-reclaim of the VWAP/EMA20 zone; fixed 12-18pt stop, fixed 2.5R target, one breakeven jump";
+  "then a pullback-and-reclaim of the VWAP/EMA20 zone; structural stop floored at 12pt and capped at 40pt, fixed 2.5R target, one breakeven jump";
 
 // ── primitives ───────────────────────────────────────────────────────────────
 function _r2(x) { return Math.round(x * 100) / 100; }
@@ -156,14 +176,20 @@ function getConfig() {
     gateMin:         _parseHHMM(process.env.TDS_GATE_TIME,    10 * 60 + 15),
     minRangePct:     _numEnv("TDS_MIN_RANGE_PCT",    0.5, 0),
     vwapStreakBars:  _intEnv("TDS_VWAP_STREAK_BARS",   6, 1, 100),
-    // 0.35, NOT the 0.6 this strategy was first specced with. Arithmetic, not
-    // taste: on a perfectly LINEAR ramp from L to H the time-weighted VWAP lands
-    // at (L+H)/2, so spot-minus-VWAP is exactly 0.5 x range — a 0.6 threshold
-    // rejects every clean linear trend day and only admits ones that accelerate
-    // into the gate, which is a handful per year. A flat/chopping session scores
-    // ~0.1, so 0.35 still separates "committed" from "drifting" while leaving
-    // ordinary trend days tradeable. Verified in the offline harness.
-    extensionMult:   _numEnv("TDS_EXTENSION_MULT",  0.35, 0),
+    // 0.20, MEASURED — the earlier 0.35 (and the 0.6 before it) came from
+    // arithmetic on an idealised path and was simply wrong. The "linear ramp
+    // scores 0.5" reasoning assumes price walks from L to H with VWAP anchored
+    // at the open; real first hours are not that, VWAP tracks price closely, and
+    // the measured spot-to-VWAP distance over 39 sessions is median 0.18 x range,
+    // p90 0.39. So 0.35 sat near the 85th percentile and passed 13% of days —
+    // "extreme only", not "committed". 0.20 sits just above the median, i.e.
+    // roughly the more-committed half of days.
+    //
+    // Deliberately NOT the best-scoring value: on that sample 0.15 nets +758 and
+    // 0.20 nets -683, but the whole sweep runs -2676..+758 on 17 trades, which
+    // is noise. Picking the peak would be fitting to 39 sessions. This leg is set
+    // from the distribution, and the P&L is left to a real out-of-sample run.
+    extensionMult:   _numEnv("TDS_EXTENSION_MULT",  0.20, 0),
     // Entry
     emaPeriod:       _intEnv("TDS_EMA_PERIOD",        20, 2, 400),
     atrPeriod:       _intEnv("TDS_ATR_PERIOD",        14, 2, 400),
@@ -172,7 +198,24 @@ function getConfig() {
     entryEndMin:     _parseHHMM(process.env.TDS_ENTRY_END, 14 * 60),
     // Risk
     minSlPts:        _numEnv("TDS_MIN_SL_PTS",        12, 0),
-    maxSlPts:        _numEnv("TDS_MAX_SL_PTS",        18, 0),
+    // 40, MEASURED — and this was the defect that made the strategy produce 5
+    // trades in a year. With the cap removed, 39 sessions yield 53 valid
+    // pullback-and-reclaim setups whose structural stop (reclaim close back to
+    // the pullback extreme) is median 35pt, p25 26pt, p75 47pt. An 18pt cap
+    // therefore SKIPPED 48 of 53 — and the 5 survivors were the shallowest
+    // touches, i.e. adversely selected, which is why every one of them lost.
+    //
+    // The entry rule and the risk rule were mutually exclusive by geometry: a
+    // pullback deep enough to reach VWAP/EMA20 on 5-min NIFTY is 25-35 index
+    // points, and no cap near 18 can pay for it. 40 covers ~p60 of the real
+    // distribution while still refusing the 47pt+ tail.
+    //
+    // The cost is honest and must not be glossed: ~35pt of index risk is roughly
+    // 1,400 rupees of premium on 1 lot at delta 0.6, NOT the small fixed risk
+    // this strategy was first pitched with. TDS_MAX_DAILY_LOSS moved 1500 -> 3000
+    // for the same reason — at 1500 a single stop-out ends the day, which makes
+    // the 2-trade budget and the stop-out breaker dead letters.
+    maxSlPts:        _numEnv("TDS_MAX_SL_PTS",        40, 0),
     targetR:         _numEnv("TDS_TARGET_R",         2.5, 0),
     breakevenR:      _numEnv("TDS_BREAKEVEN_R",      1.0, 0),
     breakevenBuffer: _numEnv("TDS_BREAKEVEN_BUFFER_PTS", 3, 0),

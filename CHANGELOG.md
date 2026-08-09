@@ -26,6 +26,22 @@ Ships with Paper (canonical), Backtest and a Live harness triple-gated to dry-ru
 
 **It has never traded.** Zero paper sessions, zero live orders. Every constant is a prior taken from the cost arithmetic, not a fitted optimum. Collect clean paper days and diff them against `/replay` before touching any live gate.
 
+### Fixed — TREND_DAY_SCALP produced 5 trades in a year, and the reason was one number
+
+The first backtest of this strategy returned **5 trades over 249 sessions in 2025** (1 win, PF 0.53) and **0 trades in 2026 to date**. That is not a selective strategy, it is a broken one, and the cause was a design error rather than a tuning miss.
+
+**The stop cap and the entry rule were mutually exclusive by geometry.** The entry waits for a pullback into the VWAP / EMA20 zone; the risk rule then capped the resulting stop at 18 index points. Measured over 39 real sessions with the cap removed, there are **53 valid pullback-and-reclaim setups**, and their structural stop — reclaim close back to the pullback extreme — is **median 35pt** (p25 26, p75 47). An 18pt cap therefore **skipped 48 of the 53**, and the five that squeezed through were the shallowest touches, i.e. adversely selected. All of them lost. A pullback deep enough to reach VWAP/EMA20 on 5-minute NIFTY simply costs 25–35 points, and no cap near 18 can pay for it. `TDS_MAX_SL_PTS` is now **40**.
+
+**The extension gate was set by arithmetic on a path that does not exist.** The original reasoning — "a linear ramp puts VWAP at the midpoint, so spot−VWAP is 0.5× the range" — assumes the first hour walks in a straight line with VWAP anchored at the open. Real first hours do not, and VWAP tracks price far more closely: the measured distance is **median 0.18× the range, p90 0.39**. The shipped `0.35` sat near the 85th percentile and passed **13% of days**. It is now **0.20**, just above the measured median.
+
+`TDS_MAX_DAILY_LOSS` and `TDS_DAILY_PROFIT_LOCK` move **1500 → 3000**, forced by the wider stop: at ₹1,500 a single 40pt stop-out ends the day, which makes the two-trade budget and the stop-out breaker dead letters.
+
+**Two things this entry is honest about.** First, the cost: ~35pt of index risk is roughly **₹1,400 of premium on one lot**, so the "small fixed risk, every loss the same size" framing in the original entry was wrong and has been removed from the code header, the README and the guide. Second, neither new value was chosen for its P&L — on the 39-session sample the extension sweep runs −2,676 to +758 across 17 trades, which is noise, and `0.15` scored better than the `0.20` that shipped. Both were set from the measured distribution instead, precisely so this is not a curve fit.
+
+On the local 39-session sample the strategy now takes **10 trades instead of 0** (30% win rate, net −₹738). It trades; it is not yet shown to make money. That is the honest state.
+
+**If you are running this on EC2, code defaults are not enough** — `.env` overrides them, and it already holds the old `TDS_MAX_SL_PTS=18` / `TDS_EXTENSION_MULT=0.35` / `TDS_MAX_DAILY_LOSS=1500` / `TDS_DAILY_PROFIT_LOCK=1500`. Change those four in Settings, or the deploy will change nothing.
+
 ### Added — a one-click download for the two things a backup deliberately leaves out
 
 The daily snapshot is the *data*: `~/trading-data` and the recorded ticks. It has never contained `.env` or `certs/`, and that is on purpose — snapshots get pushed to Google Drive, and those two files hold every broker key and the TLS private key. The gap only shows up on the day it matters: restore a snapshot onto a fresh EC2 box and the app still will not start, because `app.js` exits with code 10 on missing certs and every key it reads lives in `.env`. GitHub does not fill the gap either — both are gitignored.

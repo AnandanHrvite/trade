@@ -207,7 +207,7 @@ See [BB_RSI.md](BB_RSI.md) for the authoritative spec. Summary:
 - **Day gate** — evaluated ONCE on the 5-min bar closing at `TDS_GATE_TIME=10:15`, then **frozen for the day**. All three must hold:
   1. first-hour (`TDS_SESSION_START=09:15` → gate) range ≥ `TDS_MIN_RANGE_PCT=0.5`% of spot — the day actually moved;
   2. the last `TDS_VWAP_STREAK_BARS=6` closes are ALL on the same side of the running VWAP — one-directional, not chop;
-  3. `|spot − VWAP| ≥ TDS_EXTENSION_MULT=0.35 ×` the first-hour range — committed, not drifting on the line.
+  3. `|spot − VWAP| ≥ TDS_EXTENSION_MULT=0.20 ×` the first-hour range — committed, not drifting on the line. **Measured**, not reasoned: the real distribution over 39 sessions is median 0.18 / p90 0.39, so the original 0.35 passed only 13% of days.
   - Fail any one → **NO TRADE TODAY**. That zero is the design goal, not a missed opportunity.
   - **Why 0.35 and not 0.6**: on a perfectly linear ramp the time-weighted VWAP lands at `(L+H)/2`, so spot−VWAP is *exactly* 0.5 × range. A 0.6 threshold therefore rejects every clean linear trend day and only admits ones that accelerate into 10:15 — a handful per year. A flat/chopping session scores ~0.1, so 0.35 still separates committed from drifting. Verified in the offline harness.
 - **Direction is LOCKED by the gate**: spot above VWAP → **CE only**, below → **PE only**. Never counter-trend, never flips later in the day.
@@ -217,11 +217,13 @@ See [BB_RSI.md](BB_RSI.md) for the authoritative spec. Summary:
   - *freshness* — either the previous bar closed on the wrong side of its own zone (a multi-bar dip) or THIS bar's low dipped in (a pin bar). Blocks firing on every bar of a rally already under way.
   - *conviction* — right colour, body ≥ `TDS_BODY_ATR_MULT=0.4 × ATR(TDS_ATR_PERIOD=14)`.
   - Window: gate → `TDS_ENTRY_END=14:00`.
-- **Stop** = the pullback extreme, **floor-clamped** to `TDS_MIN_SL_PTS=12`. If the structure needs MORE than `TDS_MAX_SL_PTS=18` the trade is **SKIPPED** — never widened, and never tightened inside the structure. Every loss is the same size.
+- **Stop** = the pullback extreme, **floor-clamped** to `TDS_MIN_SL_PTS=12`. If the structure needs MORE than `TDS_MAX_SL_PTS=40` the trade is **SKIPPED** — never widened, and never tightened inside the structure.
+  - **The cap was 18 and that was a design error.** Measured over 39 sessions: valid setups have a structural stop of **median 35pt** (p25 26, p75 47), so an 18pt cap skipped **48 of 53** setups and kept only the shallowest — adversely selected, and all of them lost. A pullback deep enough to reach VWAP/EMA20 on 5-min NIFTY simply costs 25–35 index points.
+  - **Be clear about the cost:** ~35pt of index risk is roughly **₹1,400 of premium on 1 lot** at delta 0.6. This is no longer the "small fixed risk" the strategy was first pitched with.
 - **Target** = a FIXED `entry ± TDS_TARGET_R=2.5 ×` the stop distance. Taken when reached, not trailed past.
 - **Exits**, in the order tested on every tick: hard stop → fixed target → **breakeven jump** (at `+TDS_BREAKEVEN_R=1`R the stop moves **ONCE** to `entry ± TDS_BREAKEVEN_BUFFER_PTS=3` and then **never moves again**) → time stop (`TDS_TIME_STOP_MINS=25`, only while un-armed) → premium stop (`TDS_PREMIUM_STOP_PCT=25`%, catches an IV crush the spot stop cannot see) → EOD `TDS_FORCED_EXIT=15:10`.
   - **There is deliberately NO rolling trail and no partial booking.** A rolling trail is exactly what turns this repo's other engines' winners into scratches; the fixed target does that job instead.
-- **Day-level breakers**: `TDS_MAX_DAILY_TRADES=2`, `TDS_MAX_DAILY_LOSSES=2` **real stop-outs** ends the day (a breakeven or time-stop exit is a scratch and does **not** count), `TDS_MAX_DAILY_LOSS=1500`, `TDS_DAILY_PROFIT_LOCK=1500` (stop while ahead — handing profit back is what wrecks a steady curve), `TDS_MAX_WEEKLY_LOSS=0` (off), plus the shared portfolio-wide cap.
+- **Day-level breakers**: `TDS_MAX_DAILY_TRADES=2`, `TDS_MAX_DAILY_LOSSES=2` **real stop-outs** ends the day (a breakeven or time-stop exit is a scratch and does **not** count), `TDS_MAX_DAILY_LOSS=3000`, `TDS_DAILY_PROFIT_LOCK=3000` (stop while ahead — handing profit back is what wrecks a steady curve), `TDS_MAX_WEEKLY_LOSS=0` (off), plus the shared portfolio-wide cap.
 - **Option**: slightly-ITM (`TDS_ITM_STEPS=1`, ~delta 0.6). Sizing via `TDS_LOT_MULTIPLIER` (0 = inherit the global `LOT_MULTIPLIER`; clamped by `MAX_LOT_MULTIPLIER`).
 - **Deliberately NOT here** (do not "helpfully" add them): no VIX gate, no OI filter, no ADX, no volume, no RSI, no SuperTrend, no multi-timeframe bias, no confirmation candle, no averaging, no pyramiding.
 - **Determinism**: every value the decision reads comes from CLOSED 5-min candle OHLC — never the live spot — so Paper, Backtest, Live and Replay compute identical numbers. The VWAP is **equal-weighted HLC3** (a TWAP), matching `ema9_vwap.js`: the Fyers live tick feed carries no per-bar index volume while Fyers HISTORY does, so a volume-weighted VWAP would make Paper and Backtest disagree about the same session.
@@ -642,7 +644,7 @@ Trend-continuation option-buyer: 15m trend bias (swing structure + EMA20>EMA50 +
 | `TDS_SESSION_START` | `09:15` | Where the first-hour range and the session VWAP both start (IST) |
 | `TDS_MIN_RANGE_PCT` | `0.5` | First-hour range must be ≥ this % of spot — a dead range has no juice for a buyer |
 | `TDS_VWAP_STREAK_BARS` | `6` | How many of the last closes must ALL sit on the same side of VWAP |
-| `TDS_EXTENSION_MULT` | `0.35` | `\|spot − VWAP\|` must be ≥ this × the range. **A linear trend day scores exactly 0.5**, so 0.6+ rejects almost everything — see the strategy section |
+| `TDS_EXTENSION_MULT` | `0.20` | `\|spot − VWAP\|` must be ≥ this × the range. **Measured** median 0.18 / p90 0.39 over 39 sessions — the old `0.35` passed only 13% of days |
 | `TDS_EMA_PERIOD` | `20` | The pullback zone is whichever of VWAP / this EMA sits **nearer** to price |
 | `TDS_ATR_PERIOD` | `14` | ATR that scales the conviction body |
 | `TDS_BODY_ATR_MULT` | `0.4` | Reclaim candle body must be ≥ this × ATR |
@@ -651,7 +653,7 @@ Trend-continuation option-buyer: 15m trend bias (swing structure + EMA20>EMA50 +
 | `TDS_FORCED_EXIT` | `15:10` | Hard EOD square-off (IST) |
 | `TDS_RESOLUTION` | `5` | Signal + exit candle timeframe (min) |
 | `TDS_MIN_SL_PTS` | `12` | A tighter structural stop is **widened** to this |
-| `TDS_MAX_SL_PTS` | `18` | A wider structural stop **SKIPS the trade** — never tightened into the structure |
+| `TDS_MAX_SL_PTS` | `40` | A wider structural stop **SKIPS the trade** — never tightened into the structure. **Was `18`, which skipped 48 of 53 real setups** (median structural stop is 35pt) |
 | `TDS_TARGET_R` | `2.5` | Fixed target as a multiple of the stop distance. Taken, never trailed past |
 | `TDS_BREAKEVEN_R` | `1` | Favourable move at which the stop makes its **one** jump |
 | `TDS_BREAKEVEN_BUFFER_PTS` | `3` | Where it lands: `entry ± this`. It never moves again |
@@ -661,8 +663,8 @@ Trend-continuation option-buyer: 15m trend bias (swing structure + EMA20>EMA50 +
 | `TDS_LOT_MULTIPLIER` | `0` | Lots per trade (0 = inherit global `LOT_MULTIPLIER`; clamped by `MAX_LOT_MULTIPLIER`) |
 | `TDS_MAX_DAILY_TRADES` | `2` | Max entries per day — friction is per-trade, so fewer is usually better |
 | `TDS_MAX_DAILY_LOSSES` | `2` | Day ends after this many **real stop-outs** (0 = off). Breakeven / time-stop exits do NOT count |
-| `TDS_MAX_DAILY_LOSS` | `1500` | Stop trading after this much loss (0 = off) |
-| `TDS_DAILY_PROFIT_LOCK` | `1500` | Stop for the day once this much is banked (0 = off) |
+| `TDS_MAX_DAILY_LOSS` | `3000` | Stop trading after this much loss (0 = off). Raised with the stop cap — at `1500` one 40pt stop-out ends the day |
+| `TDS_DAILY_PROFIT_LOCK` | `3000` | Stop for the day once this much is banked (0 = off) |
 | `TDS_MAX_WEEKLY_LOSS` | `0` | Rolling Mon→today cap read from the per-day JSONL logs (0 = off) |
 | `TDS_BT_SLIPPAGE_PTS` | `1.5` | Backtest cost per side, in points |
 | `TDS_BT_SEED_PREMIUM` | `240` | Assumed entry premium for the backtest (₹) |

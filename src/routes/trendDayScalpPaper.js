@@ -80,8 +80,8 @@ function _parseMins(envKey, fallback) {
 function _envStr(key, fallback) { return String(process.env[key] || fallback); }
 function _maxDailyTrades()  { return Math.max(1, parseInt(process.env.TDS_MAX_DAILY_TRADES || "2", 10) || 2); }
 function _maxDailyLosses()  { return Math.max(0, parseInt(process.env.TDS_MAX_DAILY_LOSSES || "2", 10)); }
-function _maxDailyLoss()    { return parseFloat(process.env.TDS_MAX_DAILY_LOSS   || "1500"); }
-function _dailyProfitLock() { return parseFloat(process.env.TDS_DAILY_PROFIT_LOCK || "1500"); }
+function _maxDailyLoss()    { return parseFloat(process.env.TDS_MAX_DAILY_LOSS   || "3000"); }
+function _dailyProfitLock() { return parseFloat(process.env.TDS_DAILY_PROFIT_LOCK || "3000"); }
 function _maxWeeklyLoss()   { return parseFloat(process.env.TDS_MAX_WEEKLY_LOSS  || "0"); }
 
 /**

@@ -156,7 +156,7 @@
 <tr><th>Test</th><th>Why it exists</th><th>On the day below</th></tr>
 <tr><td><b>The day actually moved</b><br><span class="muted">first hour ≥ 0.5% of spot</span></td><td>A quiet first hour usually means a quiet day, and a quiet day has no move big enough to pay for the option.</td><td>160.5pt = 0.66% of 24334 (need >= 0.5%) ✅</td></tr>
 <tr><td><b>One-directional</b><br><span class="muted">last 6 closes all on the same side of VWAP</span></td><td>If price keeps crossing back and forth over its own average, that is chop. Chop is where bought options go to die.</td><td>all 6 above VWAP 24258.97 ✅</td></tr>
-<tr><td><b>Committed, not drifting</b><br><span class="muted">spot at least 0.35× the range away from VWAP</span></td><td>Price can technically stay above VWAP while sitting right on top of it. That is not a trend, it is a coin flip.</td><td>75.03pt vs need 56.18pt (0.35 x range) ✅</td></tr>
+<tr><td><b>Committed, not drifting</b><br><span class="muted">spot at least 0.20× the range away from VWAP</span></td><td>Price can technically stay above VWAP while sitting right on top of it. That is not a trend, it is a coin flip.</td><td>75.03pt vs need 32.10pt (0.20 x range) ✅</td></tr>
 </table>
 
 <div class="chart-box"><div id="tds-gate"></div></div>
@@ -164,12 +164,7 @@
 <p>All three passed, so this became a <b>CE-only day</b>: from 10:15 until the close it will consider buying calls and nothing else. It will not flip if price reverses. It will not take a put. The direction was decided once.</p>
 
 <div class="card warn">
-  <strong>Why 0.35 and not something rounder.</strong> On a day that climbs in a perfectly straight line, the average price ends up exactly halfway between the low and the high — so spot finishes exactly 0.5× the range above VWAP. Setting this test at 0.6 would therefore reject <i>every</i> ordinary trend day and only accept days that accelerate into 10:15, which happens a handful of times a year. A choppy day scores about 0.1. 0.35 separates the two without asking for a miracle.
-</div>
-
-<h2 id="entry">5. Step 2 — Buying the dip</h2>
-
-<p>Now it waits. The entry is not the breakout — breakouts are where an option is most expensive. It is the pullback afterwards, which is where the same move is on sale.</p>
+  <strong>Why 0.20 — and why the first two answers were wrong.</strong> This threshold was originally set by arithmetic on an idealised path: on a day that climbs in a perfectly straight line the average price sits exactly halfway between the low and the high, so spot finishes 0.5× the range above VWAP. That reasoning gave 0.6 first, then 0.35. Both were wrong, because real first hours do not climb in straight lines — VWAP tracks price much more closely than the idealised case. <b>Measured over 39 real sessions the distance is median 0.18× the range and p90 is 0.39.</b> A 0.35 setting therefore sat near the 85th percentile and passed just 13% of days, which is how the first backtest of this strategy produced five trades in a year. 0.20 sits just above the measured median: roughly the more-committed half of days. It is <i>not</i> the value that scored best on that sample — 0.15 did — because 17 trades cannot tell those two apart, and picking the winner of a noisy sweep is how you fit a curve to nothing.</p>
 
 <p>Four things have to line up on one closed candle:</p>
 
@@ -215,7 +210,7 @@
 <tr><th>Test</th><th>Result</th></tr>
 <tr><td>first-hour range</td><td>❌ 30pt = 0.12% of 24180 (need >= 0.5%)</td></tr>
 <tr><td>6 closes one side of VWAP</td><td>❌ crosses VWAP 24191 within the last 6 bars</td></tr>
-<tr><td>extension from VWAP</td><td>✅ 11pt vs need 10.5pt (0.35 x range)</td></tr>
+<tr><td>extension from VWAP</td><td>✅ 11pt vs need 6pt (0.20 x range)</td></tr>
 </table>
 
 <p>Two failures, so the day is off. Note the third test passed — that is the point of having three. Price was 11 points from VWAP, which clears the bar, but on a range of only 30 points that is meaningless. A single test would have been fooled.</p>
@@ -245,8 +240,8 @@
 <tr><th>Limit</th><th>Default</th><th>What it does</th></tr>
 <tr><td>Max trades/day</td><td>2</td><td>Costs are charged per trade, so trading more is usually worse, not better.</td></tr>
 <tr><td>Stop-outs that end the day</td><td>2</td><td>Two real stop-outs and the day is finished. A break-even or time-stop exit does <b>not</b> count — those are scratches, not bad reads.</td></tr>
-<tr><td>Daily loss cap</td><td>₹1,500</td><td>About one and a half stops. The worst realistic day is bounded.</td></tr>
-<tr><td>Daily profit lock</td><td>₹1,500</td><td>Once ahead by this much, the day ends. Handing profit back is what destroys a steady curve.</td></tr>
+<tr><td>Daily loss cap</td><td>₹3,000</td><td>About two stops. Raised with the stop cap — at ₹1,500 a single 40pt stop-out ended the day, which made the two-trade budget meaningless.</td></tr>
+<tr><td>Daily profit lock</td><td>₹3,000</td><td>Once ahead by this much, the day ends. Handing profit back is what destroys a steady curve.</td></tr>
 <tr><td>No new entries after</td><td>14:00</td><td>Late entries have no room left to reach the target.</td></tr>
 <tr><td>Everything flat by</td><td>15:10</td><td>Nothing is carried overnight.</td></tr>
 <tr><td>Portfolio cap</td><td>shared</td><td>Respects <code>PORTFOLIO_MAX_DAILY_LOSS</code> across every strategy, if you set it.</td></tr>
@@ -271,12 +266,12 @@
 <tr><td>Day Gate Time</td><td>10:15</td><td>When the day is judged. Judged once, then frozen.</td></tr>
 <tr><td>Min First-Hour Range</td><td>0.5%</td><td>Raise it to trade fewer, livelier days.</td></tr>
 <tr><td>Closes One Side of VWAP</td><td>6</td><td>How persistent the direction must be.</td></tr>
-<tr><td>Extension from VWAP</td><td>0.35× range</td><td>How committed the day must be. See the warning in section 4 before raising it.</td></tr>
+<tr><td>Extension from VWAP</td><td>0.20× range</td><td>How committed the day must be. Measured, not reasoned — see section 4. Raising it starves the strategy fast.</td></tr>
 <tr><td>Zone EMA Period</td><td>20</td><td>The second of the two lines that form the buy zone.</td></tr>
 <tr><td>ATR Period</td><td>14</td><td>Feeds the conviction test.</td></tr>
 <tr><td>Reclaim Body</td><td>0.4× ATR</td><td>How decisive the entry candle must be.</td></tr>
 <tr><td>Pullback Lookback</td><td>3 bars</td><td>How far back the dip may have happened.</td></tr>
-<tr><td>Min / Max Stop</td><td>12 / 18 pt</td><td>Tighter than the minimum gets widened to it. <b>Wider than the maximum skips the trade entirely</b> — it is never tightened into the structure.</td></tr>
+<tr><td>Min / Max Stop</td><td>12 / 40 pt</td><td>Tighter than the minimum gets widened to it. <b>Wider than the maximum skips the trade entirely</b> — it is never tightened into the structure. <b>The maximum was 18 and that was the single worst decision in this strategy:</b> measured over 39 sessions, real setups need a median of 35pt, so 18 threw away 48 of 53 of them and kept only the shallowest. Note the cost — 35pt of index risk is roughly ₹1,400 of premium on one lot.</td></tr>
 <tr><td>Target</td><td>2.5R</td><td>The fixed profit, as a multiple of the stop.</td></tr>
 <tr><td>Break-even Arms At</td><td>+1R</td><td>When the stop makes its one move.</td></tr>
 <tr><td>Break-even Buffer</td><td>3 pt</td><td>Where it lands: entry + this.</td></tr>
