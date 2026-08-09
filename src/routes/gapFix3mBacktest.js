@@ -445,8 +445,18 @@ router.get("/", async (req, res) => {
       try {
         console.log(`🔍 3M_GAP_FIX_SCALP Backtest job ${id}: ${from} → ${to}`);
         const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+        const win = currentContractWindow(todayStr);
         const blocks = buildContractBlocks(from, to, todayStr);
-        if (!blocks.length) { backtestJobs.failJob(id, `Invalid date range ${from} → ${to}.`); return; }
+        if (!blocks.length) {
+          // The range is clamped to today, so a well-formed range can still empty
+          // out — by lying entirely in the future. That is not a malformed date,
+          // and saying so sends the reader hunting for a typo that is not there.
+          const parsable = !isNaN(new Date(`${from}T00:00:00Z`).getTime());
+          backtestJobs.failJob(id, parsable && from > todayStr
+            ? `${from} → ${to} is in the future — there is no futures history for a session that has not happened yet. The current contract's window is ${ENDPOINT}?from=${win.from}&to=${win.to} (${win.symbol}).`
+            : `Invalid date range ${from} → ${to}.`);
+          return;
+        }
 
         // Fetch each contract INDEPENDENTLY. A NIFTY futures contract is delisted
         // once it expires and Fyers then answers "Invalid symbol provided" — which
@@ -485,7 +495,6 @@ router.get("/", async (req, res) => {
         }
         const intraday = all.sort((a, b) => a.time - b.time);
         if (intraday.length < 50) {
-          const win = currentContractWindow(new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }));
           const rejList = rejected.map(r => `${r.symbol} (${r.error})`).join("; ");
           // Only blame delisting when Fyers actually said the symbol is unknown.
           // Any other refusal — a bad parameter, a dead session — has its own
