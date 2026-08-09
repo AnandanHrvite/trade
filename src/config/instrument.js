@@ -107,18 +107,25 @@ function getNearestThursdayExpiry() {
 }
 
 /**
- * Get current month futures expiry (last Thursday of the month)
- * Rolls to next month in the expiry week (Tue before last Thu)
+ * Get current month futures expiry (last TUESDAY of the month)
+ * Rolls to the next month on the day before expiry, so the expiring contract's
+ * final illiquid session is never traded.
+ *
+ * NSE moved NIFTY derivative expiry off Thursday; this function used to compute
+ * the last Thursday and so named a contract that does not exist for the last two
+ * days of every month — Fyers answers "Invalid symbol provided" for it. Verified
+ * against Fyers' own symbol master (public.fyers.in/sym_details/NSE_FO.csv):
+ * NIFTY26AUGFUT expires 25-Aug-2026 (Tue), 26SEP 29-Sep-2026 (Tue), 26OCT
+ * 27-Oct-2026 (Tue) — every one a Tuesday, none a Thursday.
  */
 function getFuturesExpiry() {
   const now = new Date();
   const ist = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
 
-  // Find last Thursday of current month
-  function lastThursdayOf(year, month) {
-    const lastDay = new Date(year, month + 1, 0); // last day of month
-    const day = lastDay.getDay();
-    const daysBack = (day - 4 + 7) % 7;
+  // Find last Tuesday of the given month
+  function lastTuesdayOf(year, month) {
+    const lastDay = new Date(year, month + 1, 0); // day 0 of next month = last day of this one
+    const daysBack = (lastDay.getDay() - 2 + 7) % 7; // 2 = Tuesday
     lastDay.setDate(lastDay.getDate() - daysBack);
     return lastDay;
   }
@@ -126,15 +133,15 @@ function getFuturesExpiry() {
   const year  = ist.getFullYear();
   const month = ist.getMonth();
 
-  let expiry = lastThursdayOf(year, month);
+  let expiry = lastTuesdayOf(year, month);
 
-  // If today is within 2 days of expiry (Tue/Wed/Thu of expiry week) → roll to next month
+  // On the day before expiry (and on expiry day itself) → roll to next month
   const diffDays = Math.floor((expiry - ist) / (1000 * 60 * 60 * 24));
   if (diffDays <= 1) {
     // Roll to next month
     const nextMonth = month === 11 ? 0 : month + 1;
     const nextYear  = month === 11 ? year + 1 : year;
-    expiry = lastThursdayOf(nextYear, nextMonth);
+    expiry = lastTuesdayOf(nextYear, nextMonth);
   }
 
   const mon = MONTHS[expiry.getMonth()];
