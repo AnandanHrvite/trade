@@ -14,7 +14,7 @@
  * CONTRACT ROLL. There is no continuous NIFTY futures series, so the range is
  * split into blocks by FRONT-MONTH contract using the identical roll rule the
  * live path uses (instrument.getFuturesExpiry: roll on the day before the last
- * Thursday), and each block is fetched from its own symbol. Bars from different
+ * Tuesday), and each block is fetched from its own symbol. Bars from different
  * contracts are never adjacent inside one session, so a roll can never be
  * mistaken for a gap.
  *
@@ -33,7 +33,14 @@
 const express = require("express");
 const router  = express.Router();
 const gapStrategy = require("../strategies/gap_fix_3m");
-const { fetchCandlesCachedBT } = require("../services/backtestEngine");
+// fetchCandles, NOT fetchCandlesCachedBT. The cached variant is month-granular:
+// it rewrites the requested range into WHOLE calendar months before calling
+// Fyers, so "29 Jul → 9 Aug" goes out as 1–31 Jul and 1–31 Aug. That is harmless
+// for a perpetual index but wrong for a futures contract — the widened range runs
+// past today and past the contract's own expiry, and Fyers refuses it. This
+// strategy's servable window is about one contract anyway, so a disk cache keyed
+// by month would buy almost nothing.
+const { fetchCandles } = require("../services/backtestEngine");
 const { faviconLink } = require("../utils/sharedNav");
 const { getCharges } = require("../utils/charges");
 const { renderBacktestResults, computeBacktestStats } = require("../utils/backtestUI");
@@ -60,46 +67,64 @@ function istHHMMSS(unixSec) {
 function entryTsStr(unixSec) { return `${istDateOf(unixSec)}, ${istHHMMSS(unixSec)}`; }
 
 // ── Futures contract roll ────────────────────────────────────────────────────
-function _lastThursdayOf(year, monthIdx) {
+/**
+ * A NIFTY monthly futures contract expires on the last TUESDAY of its month.
+ * Confirmed against Fyers' own symbol master (public.fyers.in/sym_details/
+ * NSE_FO.csv): NIFTY26AUGFUT expires 25-Aug-2026, 26SEP 29-Sep-2026, 26OCT
+ * 27-Oct-2026 — all Tuesdays. Only currently-listed contracts can be backtested
+ * at all (expired ones are delisted), so the older last-Thursday convention can
+ * never apply to a range this page is able to serve.
+ */
+function _lastExpiryOf(year, monthIdx) {
   const lastDay = new Date(Date.UTC(year, monthIdx + 1, 0));
-  const daysBack = (lastDay.getUTCDay() - 4 + 7) % 7;
+  const daysBack = (lastDay.getUTCDay() - 2 + 7) % 7; // 2 = Tuesday
   lastDay.setUTCDate(lastDay.getUTCDate() - daysBack);
   return lastDay;
 }
 
 /**
- * The FRONT-MONTH futures symbol on a given calendar date. Mirrors
- * instrument.getFuturesExpiry(): the contract rolls on the day before the last
- * Thursday, so the expiring contract's final illiquid session is never used.
+ * The expiry date of the FRONT-MONTH contract on a given calendar date. Mirrors
+ * instrument.getFuturesExpiry(): the contract rolls on the day before expiry, so
+ * the expiring contract's final illiquid session is never used.
  * @param {Date} d a UTC-midnight date standing for an IST calendar day
  */
-function _frontMonthSymbol(d) {
+function _frontMonthExpiry(d) {
   const y = d.getUTCFullYear(), m = d.getUTCMonth();
-  let expiry = _lastThursdayOf(y, m);
+  const expiry = _lastExpiryOf(y, m);
   const diffDays = Math.floor((expiry.getTime() - d.getTime()) / 86400000);
-  if (diffDays <= 1) {
-    const nm = m === 11 ? 0 : m + 1;
-    const ny = m === 11 ? y + 1 : y;
-    expiry = _lastThursdayOf(ny, nm);
-  }
+  if (diffDays > 1) return expiry;
+  const nm = m === 11 ? 0 : m + 1;
+  const ny = m === 11 ? y + 1 : y;
+  return _lastExpiryOf(ny, nm);
+}
+
+function _frontMonthSymbol(d) {
+  const expiry = _frontMonthExpiry(d);
   return `NSE:NIFTY${String(expiry.getUTCFullYear()).slice(2)}${_MONTHS[expiry.getUTCMonth()]}FUT`;
 }
 
 /**
- * Split [from, to] into contiguous {symbol, from, to} blocks, one per front-month
- * contract. Returned dates are YYYY-MM-DD IST calendar days.
+ * Split [from, to] into contiguous {symbol, from, to, expiry} blocks, one per
+ * front-month contract. Returned dates are YYYY-MM-DD IST calendar days.
+ *
+ * The range is clamped to today: a futures contract has no history for a day
+ * that has not happened yet, and asking for one is how a valid symbol still gets
+ * refused.
  */
-function buildContractBlocks(from, to) {
+function buildContractBlocks(from, to, todayStr) {
   const start = new Date(`${from}T00:00:00Z`);
-  const end   = new Date(`${to}T00:00:00Z`);
-  if (isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) return [];
+  let   end   = new Date(`${to}T00:00:00Z`);
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) return [];
+  const today = new Date(`${todayStr || new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" })}T00:00:00Z`);
+  if (!isNaN(today.getTime()) && end > today) end = today;
+  if (start > end) return [];
   const blocks = [];
   for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
     const sym = _frontMonthSymbol(d);
     const ds = d.toISOString().slice(0, 10);
     const last = blocks[blocks.length - 1];
     if (last && last.symbol === sym) last.to = ds;
-    else blocks.push({ symbol: sym, from: ds, to: ds });
+    else blocks.push({ symbol: sym, from: ds, to: ds, expiry: _frontMonthExpiry(d).toISOString().slice(0, 10) });
   }
   return blocks;
 }
@@ -317,6 +342,28 @@ function blocksTotal(meta) {
   return (meta.served || []).length + (meta.rejected || []).length + (meta.empty || []).length;
 }
 
+/**
+ * Readable text for whatever the Fyers SDK threw.
+ *
+ * On an HTTP error the SDK rejects with the raw Fyers body — a PLAIN OBJECT
+ * ({s, code, message, data}), not an Error. Reading only `.message` off it
+ * reduces every parameter complaint to the bare word "Invalid input" and throws
+ * away `data`, which is the one field that says WHICH parameter Fyers disliked
+ * (e.g. {range_to: "Date range cannot exceed 366 days…"}). Keep the whole thing.
+ */
+function fyersErrText(err) {
+  if (err && typeof err === "object" && !(err instanceof Error)) {
+    const bits = [err.message || err.s || "error"];
+    if (err.code != null) bits.push(`code ${err.code}`);
+    if (err.data && typeof err.data === "object") {
+      const detail = Object.entries(err.data).map(([k, v]) => `${k}: ${v}`).join("; ");
+      if (detail) bits.push(detail);
+    } else if (err.data) bits.push(String(err.data));
+    return bits.join(" — ");
+  }
+  return String((err && err.message) || err);
+}
+
 /** Escape text that came from an external API before it lands in the notes HTML. */
 function escHtml(x) {
   return String(x == null ? "" : x).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -337,7 +384,7 @@ function _renderResults(res, from, to, trades, stats, meta) {
     ? ` ${empty.length} block(s) returned no candles at all (${empty.map(e => `<code>${escHtml(e.symbol)}</code> ${escHtml(e.from)}→${escHtml(e.to)}`).join(", ")}) — normally a window with no trading days in it, but an expired Fyers token also returns no data rather than an auth error.`
     : "";
   const coverage = rejected.length
-    ? `<b style="color:#f59e0b;">⚠ Partial coverage — ${rejected.length} of ${blocksTotal(meta)} contract(s) were REFUSED by Fyers:</b> ${rejected.map(r => `<code>${escHtml(r.symbol)}</code> ${escHtml(r.from)}→${escHtml(r.to)} (${escHtml(r.error)})`).join(", ")}. A NIFTY futures contract is delisted once it expires, so Fyers cannot serve history for a month that has already passed — those sessions are simply absent from everything below, not flat.${emptyNote} `
+    ? `<b style="color:#f59e0b;">⚠ Partial coverage — ${rejected.length} of ${blocksTotal(meta)} contract(s) were REFUSED by Fyers:</b> ${rejected.map(r => `<code>${escHtml(r.symbol)}</code> ${escHtml(r.from)}→${escHtml(r.to)} (${escHtml(r.error)})`).join(", ")}. ${rejected.every(r => r.delisted) ? "A NIFTY futures contract is delisted once it expires, so Fyers cannot serve history for a month that has already passed" : "Each reason above is Fyers' own"} — those sessions are simply absent from everything below, not flat.${emptyNote} `
     : `Contracts fetched: ${served.map(s => `<code>${escHtml(s.symbol)}</code> ${escHtml(s.from)}→${escHtml(s.to)}`).join(", ") || "—"}.${emptyNote} `;
   const html = renderBacktestResults({
     mode: "GAP_FIX_3M",
@@ -366,7 +413,7 @@ function _renderResults(res, from, to, trades, stats, meta) {
       { label: "Skipped — never returned", value: gs.noReturn },
       { label: "Trade frequency", value: meta.days ? `${((trades.length / meta.days) * 100).toFixed(1)}% of sessions` : "—" },
     ],
-    notes: `${coverage}<b>Chart:</b> NIFTY <b>FUTURES</b> ${cfg.resolutionMins}-min, front-month, rolled on the day before the last Thursday exactly as the live path does. The NIFTY 50 index is not read here — measured on this repo's own cached index candles the largest intraday 5-min index gap over 39 sessions was 2.1 points, because an index is a computed average with no order book. <b>Setup:</b> a gap of ≥ ${cfg.minGapPts}pt between two consecutive bars (a price void, strict inequality), then the next ${cfg.confirmBars} bar(s) decide — if the bar breaks the day's high/low with volume ≥ ${cfg.volMult}× the average of the previous ${cfg.volAvgBars} bars the breakout is treated as REAL and skipped; if it returns instead (<code>${cfg.returnMode}</code>) the gap is faded. <b>Levels:</b> target = the gap's fill level, stop = the day extreme frozen as of the gap bar${cfg.slBufferPts ? ` ± ${cfg.slBufferPts}pt` : ""}. Neither ever moves; there is no trail, no breakeven, no time stop and no premium stop. Optional guards ${cfg.maxSlPts || cfg.minRR || cfg.maxExtremeDist ? `<b>ON</b>: ${[cfg.maxSlPts ? `max SL ${cfg.maxSlPts}pt` : null, cfg.minRR ? `min R:R ${cfg.minRR}` : null, cfg.maxExtremeDist ? `gap within ${cfg.maxExtremeDist}pt of the extreme` : null].filter(Boolean).join(", ")}` : "are all OFF (defaults)"}. Max ${process.env.GAP3M_MAX_DAILY_TRADES || "3"} trades/day, day ends on ${process.env.GAP3M_MAX_DAILY_LOSSES || "2"} stop-outs / ₹${process.env.GAP3M_MAX_DAILY_LOSS || "3000"} loss. <b>Intra-bar ordering is conservative:</b> the stop is tested on the bar high/low BEFORE the target, so a bar touching both books the loss, and a bar that opened beyond a level fills at the open. Option premium is δ+θ simulated (BACKTEST_DELTA ${process.env.BACKTEST_DELTA || "0.55"}, θ ₹${process.env.BACKTEST_THETA_DAY || "8"}/day) seeded at ₹${process.env.GAP3M_BT_SEED_PREMIUM || "240"}, PLUS ${process.env.GAP3M_BT_SLIPPAGE_PTS || "1.5"}pt slippage EACH way — treat ₹ as directional, not exact. <b>This strategy has NEVER traded live or on paper. Nothing here is validated, and the futures gap frequency has never been measured.</b>`,
+    notes: `${coverage}<b>Chart:</b> NIFTY <b>FUTURES</b> ${cfg.resolutionMins}-min, front-month, rolled on the day before the last Tuesday (NIFTY futures expiry) exactly as the live path does. The NIFTY 50 index is not read here — measured on this repo's own cached index candles the largest intraday 5-min index gap over 39 sessions was 2.1 points, because an index is a computed average with no order book. <b>Setup:</b> a gap of ≥ ${cfg.minGapPts}pt between two consecutive bars (a price void, strict inequality), then the next ${cfg.confirmBars} bar(s) decide — if the bar breaks the day's high/low with volume ≥ ${cfg.volMult}× the average of the previous ${cfg.volAvgBars} bars the breakout is treated as REAL and skipped; if it returns instead (<code>${cfg.returnMode}</code>) the gap is faded. <b>Levels:</b> target = the gap's fill level, stop = the day extreme frozen as of the gap bar${cfg.slBufferPts ? ` ± ${cfg.slBufferPts}pt` : ""}. Neither ever moves; there is no trail, no breakeven, no time stop and no premium stop. Optional guards ${cfg.maxSlPts || cfg.minRR || cfg.maxExtremeDist ? `<b>ON</b>: ${[cfg.maxSlPts ? `max SL ${cfg.maxSlPts}pt` : null, cfg.minRR ? `min R:R ${cfg.minRR}` : null, cfg.maxExtremeDist ? `gap within ${cfg.maxExtremeDist}pt of the extreme` : null].filter(Boolean).join(", ")}` : "are all OFF (defaults)"}. Max ${process.env.GAP3M_MAX_DAILY_TRADES || "3"} trades/day, day ends on ${process.env.GAP3M_MAX_DAILY_LOSSES || "2"} stop-outs / ₹${process.env.GAP3M_MAX_DAILY_LOSS || "3000"} loss. <b>Intra-bar ordering is conservative:</b> the stop is tested on the bar high/low BEFORE the target, so a bar touching both books the loss, and a bar that opened beyond a level fills at the open. Option premium is δ+θ simulated (BACKTEST_DELTA ${process.env.BACKTEST_DELTA || "0.55"}, θ ₹${process.env.BACKTEST_THETA_DAY || "8"}/day) seeded at ₹${process.env.GAP3M_BT_SEED_PREMIUM || "240"}, PLUS ${process.env.GAP3M_BT_SLIPPAGE_PTS || "1.5"}pt slippage EACH way — treat ₹ as directional, not exact. <b>This strategy has NEVER traded live or on paper. Nothing here is validated, and the futures gap frequency has never been measured.</b>`,
   });
   res.send(html);
 }
@@ -391,7 +438,8 @@ router.get("/", async (req, res) => {
     (async () => {
       try {
         console.log(`🔍 3M_GAP_FIX_SCALP Backtest job ${id}: ${from} → ${to}`);
-        const blocks = buildContractBlocks(from, to);
+        const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+        const blocks = buildContractBlocks(from, to, todayStr);
         if (!blocks.length) { backtestJobs.failJob(id, `Invalid date range ${from} → ${to}.`); return; }
 
         // Fetch each contract INDEPENDENTLY. A NIFTY futures contract is delisted
@@ -415,25 +463,38 @@ router.get("/", async (req, res) => {
           const blk = blocks[b];
           backtestJobs.updateProgress(id, { phase: `Fetching ${blk.symbol} (${blk.from} → ${blk.to})…`, pct: Math.round((b / blocks.length) * 65) });
           try {
-            const part = await fetchCandlesCachedBT(blk.symbol, String(_resMin()), blk.from, blk.to, false);
+            // Exact range, block by block. The roll already ends every block a
+            // day before its contract expires, and the range was clamped to
+            // today, so no request can reach for a session this symbol never had.
+            const part = await fetchCandles(blk.symbol, String(_resMin()), blk.from, blk.to);
             const n = Array.isArray(part) ? part.length : 0;
             if (n > 0) { all.push(...part); served.push({ ...blk, candles: n }); }
             else empty.push({ ...blk });
           } catch (err) {
-            const msg = String((err && err.message) || err);
-            rejected.push({ ...blk, error: /Invalid symbol/i.test(msg) ? "contract expired — Fyers no longer lists it" : msg.slice(0, 160) });
-            console.warn(`[gap-fix-3m-backtest] ${blk.symbol} (${blk.from} → ${blk.to}) refused: ${msg.slice(0, 200)}`);
+            const msg = fyersErrText(err);
+            const delisted = /Invalid symbol/i.test(msg);
+            rejected.push({ ...blk, delisted, error: delisted ? "contract expired — Fyers no longer lists it" : msg.slice(0, 200) });
+            console.warn(`[gap-fix-3m-backtest] ${blk.symbol} (${blk.from} → ${blk.to}) refused: ${msg.slice(0, 300)}`);
           }
         }
         const intraday = all.sort((a, b) => a.time - b.time);
         if (intraday.length < 50) {
           const win = currentContractWindow(new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }));
           const rejList = rejected.map(r => `${r.symbol} (${r.error})`).join("; ");
+          // Only blame delisting when Fyers actually said the symbol is unknown.
+          // Any other refusal — a bad parameter, a dead session — has its own
+          // reason attached, and dressing it up as "expired contract" sends the
+          // reader to fix the one thing that is not wrong.
+          const allDelisted = rejected.length > 0 && rejected.every(r => r.delisted);
           backtestJobs.failJob(id,
             rejected.length && !served.length
-              ? `No usable futures data for ${from} → ${to}. Every contract in that range was refused: ${rejList}. ` +
-                `A NIFTY futures contract is DELISTED after it expires, so Fyers cannot serve history for a month that has already passed — this strategy can only be backtested over contracts that still exist. ` +
-                `Try ${ENDPOINT}?from=${win.from}&to=${win.to} (the current ${win.symbol} contract). If that fails too, the Fyers session needs re-login — an expired token returns no data rather than an auth error.`
+              ? allDelisted
+                ? `No usable futures data for ${from} → ${to}. Every contract in that range was refused by Fyers: ${rejList}. ` +
+                  `A NIFTY futures contract is DELISTED after it expires, so history for a month that has already passed can never be fetched — this strategy can only be backtested over contracts that still exist. ` +
+                  `Try ${ENDPOINT}?from=${win.from}&to=${win.to} (the current ${win.symbol} contract).`
+                : `Fyers refused every contract for ${from} → ${to}: ${rejList}. That wording is Fyers' own — it names what it rejected. ` +
+                  `"Could not authenticate the user" means the Fyers session needs re-login; anything else is a request Fyers would not serve, not a missing contract. ` +
+                  `The current contract's own window is ${ENDPOINT}?from=${win.from}&to=${win.to} (${win.symbol}).`
               : intraday.length === 0
                 ? `Fyers returned no historical candles for ${from} → ${to} on ${blocks.map(b => b.symbol).join(", ")}. Most often the Fyers session needs re-login — an expired token returns no data (not an auth error). Log in to Fyers again, then retry.`
                 : `Only ${intraday.length} futures candle(s) for ${from} → ${to}${rejList ? ` (unavailable: ${rejList})` : ""} — widen the range or use the current contract's own window (${win.from} → ${win.to}).`);
