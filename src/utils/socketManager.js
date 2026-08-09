@@ -50,6 +50,11 @@ const BASE_BACKOFF         = 2_000;
 // The token is invalid — reconnecting won't help. We stop the loop, fire a Telegram
 // alert, and surface a "broken" health state so the dashboard banner can light up.
 const AUTH_FAIL_LIMIT      = 3;
+// Consecutive unattributable ticks (no spot delivery in between) before option
+// multiplexing is abandoned. Ticks arrive several per second, so this is ~10s of
+// a feed the strategies are getting nothing from — unambiguous, and far above
+// any plausible one-off oddity.
+const UNATTRIBUTED_BAIL    = 50;
 
 /**
  * Resolve the instrument symbol carried by a raw SDK tick.
@@ -98,6 +103,11 @@ class SocketManager {
     this._attributionLogged = false;
     this._unattributedCount = 0;
     this._unattributedLoggedAt = 0;
+    // Consecutive unattributable ticks with no spot delivery in between. Reset
+    // by every successful spot tick; crossing the limit disables option sharing
+    // for the rest of the session (see _bailOutOfExtras).
+    this._unattributedStreak = 0;
+    this._extrasDisabled     = false;
   }
 
   // ── Public API ──────────────────────────────────────────────────────────────
@@ -172,7 +182,7 @@ class SocketManager {
    * Callers MUST check this before relying on extra subscriptions.
    */
   canSubscribeExtras() {
-    return !this._stopped && this._spotTickSymbol !== null;
+    return !this._stopped && !this._extrasDisabled && this._spotTickSymbol !== null;
   }
 
   /**
@@ -264,6 +274,8 @@ class SocketManager {
     this._extraSymbols.clear();
     this._onExtraTick = null;
     this._spotTickSymbol = null;  // re-probe on the next session
+    this._extrasDisabled = false; // a new session gets a fresh chance
+    this._unattributedStreak = 0;
     this._clearRetry();
     this._clearWatchdog();
     this._detachListeners();
@@ -316,6 +328,9 @@ class SocketManager {
       return;
     }
 
+    // A spot tick got through, so attribution is still working.
+    this._unattributedStreak = 0;
+
     // Record raw tick for after-hours replay (no-op when TICK_RECORDER_ENABLED=false).
     // Done before fan-out so even if a strategy throws, the tick is still captured.
     try { tickRecorder.recordSpotTick(t); } catch (_) {}
@@ -337,10 +352,36 @@ class SocketManager {
    */
   _noteUnattributed(sym) {
     this._unattributedCount++;
+    this._unattributedStreak++;
+    // Dropping ticks is the safe response to ONE odd tick. A long run of them
+    // with no spot delivery in between means something else: the wire is
+    // labelling the spot instrument differently from what we learned, so the
+    // strategies have stopped receiving ticks entirely. That is a silent
+    // trading halt, and the watchdog cannot see it because ticks ARE arriving
+    // (_lastTickAt keeps updating). Give up on sharing the connection and go
+    // back to the known-good arrangement: spot only, options over REST.
+    if (this._unattributedStreak >= UNATTRIBUTED_BAIL) { this._bailOutOfExtras(); return; }
     const now = Date.now();
     if (now - this._unattributedLoggedAt < 60_000) return;
     this._unattributedLoggedAt = now;
     this._log(`⚠️  [SOCKET] ${this._unattributedCount} tick(s) dropped — unattributable symbol (last: ${sym || 'none'})`);
+  }
+
+  /**
+   * Abandon option multiplexing for the rest of the session. Sticky on purpose:
+   * re-probing would re-subscribe and fall straight back into the same state,
+   * so this stays off until stop() starts a genuinely new session.
+   */
+  _bailOutOfExtras() {
+    const dropped = Array.from(this._extraSymbols);
+    this._extrasDisabled     = true;
+    this._unattributedStreak = 0;
+    this._extraSymbols.clear();
+    if (dropped.length) this._sendUnsubscribe(dropped);
+    // Cleared so the next tick re-learns it — with no extras subscribed every
+    // tick is spot again, which is exactly the pre-feature behaviour.
+    this._spotTickSymbol = null;
+    this._log(`🛑 [SOCKET] ${UNATTRIBUTED_BAIL} consecutive unattributable ticks — option streaming DISABLED for this session, unsubscribed ${dropped.length} contract(s). Strategies revert to REST option polling; spot feed restored.`);
   }
 
   _detachListeners() {

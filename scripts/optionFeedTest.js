@@ -138,6 +138,43 @@ test("spot ticks are unaffected when no options are subscribed", () => {
     "pre-existing behaviour must be untouched when the feature is dormant");
 });
 
+test("a sustained run of unattributable ticks restores the spot feed", () => {
+  const wire = resetManager();
+  const spotSeen = [];
+  socketManager.addCallback("strategy", (t) => spotSeen.push(t.ltp), () => {});
+  socketManager._routeTick(spotTick(24000));
+  socketManager.subscribeExtra(OPT);
+
+  // The wire starts labelling the index differently from what we learned, so
+  // every spot tick now fails attribution and the strategies get nothing.
+  for (let i = 0; i < 60; i++) socketManager._routeTick({ symbol: "Nifty 50", ltp: 24000 + i });
+
+  assert.strictEqual(socketManager.getExtraSymbols().length, 0, "options must be dropped");
+  assert.ok(wire.unsubscribed.includes(OPT), "the contract must be unsubscribed on the wire");
+  assert.strictEqual(socketManager.canSubscribeExtras(), false, "bail-out must be sticky for the session");
+
+  // With no extras subscribed the next tick re-probes and flows through again.
+  socketManager._routeTick({ symbol: "Nifty 50", ltp: 24100 });
+  assert.ok(spotSeen.includes(24100), "the spot feed must be flowing again after the bail-out");
+  assert.strictEqual(optionFeed.track("gaps-paper", OPT, () => {}), false,
+    "engines must be told to stay on REST");
+});
+
+test("stop() gives the next session a fresh attribution chance", () => {
+  resetManager();
+  socketManager._routeTick(spotTick(24000));
+  socketManager.subscribeExtra(OPT);
+  for (let i = 0; i < 60; i++) socketManager._routeTick({ symbol: "Nifty 50", ltp: 24000 });
+  assert.strictEqual(socketManager.canSubscribeExtras(), false);
+
+  socketManager.stop();
+  socketManager._stopped = false;            // as start() would leave it
+  socketManager._skt = { subscribe(){}, unsubscribe(){} };
+  socketManager._routeTick(spotTick(24000));
+  assert.strictEqual(socketManager.canSubscribeExtras(), true,
+    "a new session must not inherit the previous session's bail-out");
+});
+
 test("reconnect re-asserts every option subscription", () => {
   const wire = resetManager();
   socketManager._routeTick(spotTick(24000));
@@ -205,6 +242,19 @@ test("release drops the subscription only when the last owner leaves", () => {
   optionFeed.release("pa-paper");
   assert.deepStrictEqual(socketManager.getExtraSymbols(), [],
     "nobody holds it any more — it must be unsubscribed");
+});
+
+test("one owner switching strike does not evict a price another owner is using", () => {
+  resetManager();
+  socketManager._routeTick(spotTick(24000));
+  optionFeed.track("bb_rsi-paper", OPT, () => {});
+  optionFeed.track("pa-paper", OPT, () => {});
+  socketManager._routeTick(optTick(OPT, 182));
+
+  optionFeed.track("pa-paper", OPT2, () => {});   // PA moves to a different strike
+  const still = optionFeed.getFresh(OPT, 5000);
+  assert.ok(still && still.ltp === 182,
+    "BB_RSI still holds this contract — its cached price must survive PA's switch");
 });
 
 test("switching strike releases the old contract", () => {

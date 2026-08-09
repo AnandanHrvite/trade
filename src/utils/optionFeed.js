@@ -150,7 +150,14 @@ function sweep() {
     socketManager.unsubscribeExtra(symbol);
     prices.delete(symbol);
   }
-  if (!leases.size && sweepTimer) { clearInterval(sweepTimer); sweepTimer = null; }
+  if (!leases.size) {
+    // Nobody is holding anything, so no reader can exist. Drop the price cache
+    // outright — the loop above only evicts symbols still listed as subscribed,
+    // which misses entries orphaned by a socketManager.stop() (it clears its own
+    // symbol set), and those would otherwise survive to the end of the day.
+    prices.clear();
+    if (sweepTimer) { clearInterval(sweepTimer); sweepTimer = null; }
+  }
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────
@@ -174,8 +181,10 @@ function track(ownerId, symbol, onLtp) {
 
   ensureBound();
 
-  const existing = leases.get(ownerId);
-  if (existing && existing.symbol !== symbol) prices.delete(existing.symbol);
+  // Switching strike deliberately does NOT drop the old symbol's cached price
+  // here: another strategy may still be holding that same contract, and evicting
+  // it would push that strategy back onto a REST poll for no reason. The sweeper
+  // owns eviction, and it only evicts once nobody holds the symbol at all.
   leases.set(ownerId, { symbol, onLtp: typeof onLtp === 'function' ? onLtp : null, renewedAt: Date.now() });
 
   if (!socketManager.subscribeExtra(symbol)) {
@@ -248,4 +257,4 @@ function _reset() {
   stats.ticks = stats.restSkipped = stats.restFallback = stats.subscribeRefused = 0;
 }
 
-module.exports = { track, getFresh, release, isEnabled, freshMs, getStats, _reset, _onExtraTick: onExtraTick };
+module.exports = { track, getFresh, release, isEnabled, getStats, _reset, _onExtraTick: onExtraTick };
