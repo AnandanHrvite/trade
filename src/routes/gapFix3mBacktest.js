@@ -312,17 +312,28 @@ router.get("/idle", (req, res) => {
   return res.redirect(ENDPOINT);
 });
 
+/** Total contract blocks a run attempted, however each one turned out. */
+function blocksTotal(meta) {
+  return ((meta.served || []).length + (meta.rejected || []).length + (meta.empty || []).length) || 1;
+}
+
 function _renderResults(res, from, to, trades, stats, meta) {
   const inf = (x) => x === Infinity ? "∞" : x;
   const cfg = gapStrategy.getConfig();
   const gs = meta.gapStats || { gaps: 0, brokeOut: 0, noReturn: 0, unknownVol: 0 };
   const served = meta.served || [];
   const rejected = meta.rejected || [];
+  const empty = meta.empty || [];
   // A partially-served range is NOT the same result as a fully-served one, and a
-  // silent gap in coverage reads as "nothing traded then". Say it out loud.
+  // silent gap in coverage reads as "nothing traded then". Say it out loud — and
+  // keep REFUSED (contract delisted, unfetchable forever) separate from EMPTY
+  // (no trading days in that window), because they call for different actions.
+  const emptyNote = empty.length
+    ? ` ${empty.length} block(s) returned no candles at all (${empty.map(e => `<code>${e.symbol}</code> ${e.from}→${e.to}`).join(", ")}) — normally a window with no trading days in it, but an expired Fyers token also returns no data rather than an auth error.`
+    : "";
   const coverage = rejected.length
-    ? `<b style="color:#f59e0b;">⚠ Partial coverage — ${rejected.length} of ${served.length + rejected.length} contract(s) could not be fetched:</b> ${rejected.map(r => `<code>${r.symbol}</code> ${r.from}→${r.to} (${r.error})`).join(", ")}. A NIFTY futures contract is delisted once it expires, so Fyers cannot serve history for a month that has already passed — those sessions are simply absent from everything below, not flat. `
-    : `Contracts fetched: ${served.map(s => `<code>${s.symbol}</code> ${s.from}→${s.to}`).join(", ") || "—"}. `;
+    ? `<b style="color:#f59e0b;">⚠ Partial coverage — ${rejected.length} of ${blocksTotal(meta)} contract(s) were REFUSED by Fyers:</b> ${rejected.map(r => `<code>${r.symbol}</code> ${r.from}→${r.to} (${r.error})`).join(", ")}. A NIFTY futures contract is delisted once it expires, so Fyers cannot serve history for a month that has already passed — those sessions are simply absent from everything below, not flat.${emptyNote} `
+    : `Contracts fetched: ${served.map(s => `<code>${s.symbol}</code> ${s.from}→${s.to}`).join(", ") || "—"}.${emptyNote} `;
   const html = renderBacktestResults({
     mode: "GAP_FIX_3M",
     accent: ACCENT,
@@ -383,9 +394,18 @@ router.get("/", async (req, res) => {
         // fetchChunk raises as a throw. Letting that escape meant one dead contract
         // killed a whole multi-month run, so every block is isolated: what Fyers
         // still serves is kept, what it refuses is recorded and reported.
+        // REFUSED and EMPTY are different diagnoses and must not be merged.
+        //   refused — Fyers actively rejected the symbol (a throw). The contract
+        //             is delisted, and those sessions can never be fetched.
+        //   empty   — the call succeeded but returned nothing. That is a block
+        //             with no trading days in it (a short holiday window), OR an
+        //             expired token, which returns no_data rather than an auth
+        //             error. Calling that "delisted" is the misdiagnosis this
+        //             repo has already been bitten by once.
         const all = [];
         const served = [];
         const rejected = [];
+        const empty = [];
         for (let b = 0; b < blocks.length; b++) {
           const blk = blocks[b];
           backtestJobs.updateProgress(id, { phase: `Fetching ${blk.symbol} (${blk.from} → ${blk.to})…`, pct: Math.round((b / blocks.length) * 65) });
@@ -393,11 +413,11 @@ router.get("/", async (req, res) => {
             const part = await fetchCandlesCachedBT(blk.symbol, String(_resMin()), blk.from, blk.to, false);
             const n = Array.isArray(part) ? part.length : 0;
             if (n > 0) { all.push(...part); served.push({ ...blk, candles: n }); }
-            else rejected.push({ ...blk, error: "no data returned" });
+            else empty.push({ ...blk });
           } catch (err) {
             const msg = String((err && err.message) || err);
             rejected.push({ ...blk, error: /Invalid symbol/i.test(msg) ? "contract expired — Fyers no longer lists it" : msg.slice(0, 160) });
-            console.warn(`[gap-fix-3m-backtest] ${blk.symbol} (${blk.from} → ${blk.to}) unavailable: ${msg.slice(0, 200)}`);
+            console.warn(`[gap-fix-3m-backtest] ${blk.symbol} (${blk.from} → ${blk.to}) refused: ${msg.slice(0, 200)}`);
           }
         }
         const intraday = all.sort((a, b) => a.time - b.time);
@@ -425,7 +445,7 @@ router.get("/", async (req, res) => {
         try { saveResult(RESULT_KEY, { summary: stats, params: { from, to, resolution: String(_resMin()) } }); }
         catch (e) { console.warn("[gap-fix-3m-backtest] saveResult failed:", e.message); }
 
-        backtestJobs.completeJob(id, { trades: result.trades, stats, from, to, meta: { days: result.days, skipped: result.skipped, gapStats: result.gapStats, served, rejected } });
+        backtestJobs.completeJob(id, { trades: result.trades, stats, from, to, meta: { days: result.days, skipped: result.skipped, gapStats: result.gapStats, served, rejected, empty } });
         console.log(`✅ 3M_GAP_FIX_SCALP Backtest job ${id} complete — ${result.trades.length} trades over ${result.days} sessions (${result.gapStats.gaps} gap setups seen)`);
       } catch (err) {
         console.error("[gap-fix-3m-backtest] job error:", err);
