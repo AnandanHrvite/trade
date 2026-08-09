@@ -302,7 +302,7 @@ function attributeQuotes(resp, symbols, futSym, optSym) {
   if (!resp || resp.s !== "ok" || !Array.isArray(resp.d)) return out;
   for (const row of resp.d) {
     const v = (row && row.v) || {};
-    const ltp = v.lp != null ? v.lp : v.ltp;
+    const ltp = v.lp || v.ltp;   // same idiom as every other quote reader in the repo
     if (typeof ltp !== "number" || !Number.isFinite(ltp) || !(ltp > 0)) continue;
     let sym = row && (row.n || row.symbol);
     if (!sym && resp.d.length === 1 && Array.isArray(symbols) && symbols.length === 1) sym = symbols[0];
@@ -333,6 +333,11 @@ function startPolling() {
         state.lastFutPrice = q.futLtp;
         state.lastFutAt = Date.now();
         _updateFormingFut(q.futLtp);
+        // Recorded into the tick recorder's per-symbol quote stream. There is no
+        // futures tick stream, and this is inert for replay — the timeline is
+        // keyed by symbol, so a futures row can never be served for an option
+        // lookup. It is kept because it is the only recorded trace of the price
+        // this strategy's exits were actually measured against.
         try { tickRecorder.recordOptionLtp(futSym, q.futLtp, "gap-fix-3m-paper-fut"); } catch (_) {}
       }
     } catch (_) {}
@@ -408,8 +413,9 @@ async function _maybeRefreshFutHistory() {
  * Record a failed history fetch and back off. The poll runs every
  * GAP3M_FUT_POLL_MS (2s by default) and the bucket guard only advances on
  * SUCCESS, so without a backoff a dead token would turn one bar into ~90
- * history calls. Backoff grows 5s at a time and is capped at one bar, which is
- * the soonest a retry could produce anything new anyway.
+ * history calls. Backoff grows 5s per failure to a 60s ceiling, and never
+ * exceeds one bar — so at the 3-min default there is still at least one attempt
+ * per bar, which is the soonest a retry could return anything new anyway.
  */
 function _noteHistoryFailure(why) {
   state._histFailures++;
