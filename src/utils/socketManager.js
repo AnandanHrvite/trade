@@ -55,6 +55,13 @@ const AUTH_FAIL_LIMIT      = 3;
 // a feed the strategies are getting nothing from — unambiguous, and far above
 // any plausible one-off oddity.
 const UNATTRIBUTED_BAIL    = 50;
+// How long a just-unsubscribed option symbol stays known-not-spot. Removing a
+// symbol from _extraSymbols is instant, but the wire keeps delivering whatever
+// it had already queued — and a tick matching neither the extras set nor the
+// spot symbol would otherwise be treated as spot. Generous because the cost of
+// holding a tombstone is one map entry and the cost of missing one is a
+// corrupted candle series.
+const TOMBSTONE_MS         = 60_000;
 
 /**
  * Resolve the instrument symbol carried by a raw SDK tick.
@@ -108,6 +115,14 @@ class SocketManager {
     // for the rest of the session (see _bailOutOfExtras).
     this._unattributedStreak = 0;
     this._extrasDisabled     = false;
+    // Whether any option has shared this connection yet. The strict spot match
+    // costs nothing once options are in play, but before the day's first trade
+    // there is nothing to disambiguate — so it stays off and the tick path is
+    // byte-for-byte what it was before this feature existed.
+    this._extrasEverUsed     = false;
+    // symbol → expiry ms. Symbols we have unsubscribed but whose queued ticks
+    // may still arrive; they must never be mistaken for the spot instrument.
+    this._tombstones         = new Map();
   }
 
   // ── Public API ──────────────────────────────────────────────────────────────
@@ -195,7 +210,11 @@ class SocketManager {
     if (!this.canSubscribeExtras()) return false;
     if (symbol === this._spotTickSymbol || symbol === this._symbol) return false;
     if (this._extraSymbols.has(symbol)) return true;
+    // Re-entering a strike we just left: the tombstone has done its job and
+    // must go, or every tick for the new subscription would be discarded.
+    this._tombstones.delete(symbol);
     this._extraSymbols.add(symbol);
+    this._extrasEverUsed = true;
     // A subscribe that fails on the wire must not leave the symbol marked as
     // subscribed — the reconnect path would keep re-asserting a bad symbol and
     // routing would silently drop ticks that never arrive.
@@ -208,6 +227,7 @@ class SocketManager {
   unsubscribeExtra(symbol) {
     if (!symbol || !this._extraSymbols.has(symbol)) return;
     this._extraSymbols.delete(symbol);
+    this._tombstone([symbol]);
     this._sendUnsubscribe([symbol]);
     this._log(`📡 [SOCKET] −option ${symbol} (extras: ${this._extraSymbols.size})`);
   }
@@ -270,11 +290,19 @@ class SocketManager {
     this._callbacks.clear();  // clear all secondary callbacks too
     // Drop option subscriptions before the connection goes away, so a restart
     // does not re-assert symbols nobody is holding a position in any more.
-    if (this._extraSymbols.size) this._sendUnsubscribe(Array.from(this._extraSymbols));
+    if (this._extraSymbols.size) {
+      // Tombstones deliberately OUTLIVE the session: the next session's
+      // attribution probe runs with an empty extras set, so a straggling option
+      // tick arriving during teardown could otherwise be learned as the spot
+      // symbol — poisoning routing for the whole of the next session.
+      this._tombstone(Array.from(this._extraSymbols));
+      this._sendUnsubscribe(Array.from(this._extraSymbols));
+    }
     this._extraSymbols.clear();
     this._onExtraTick = null;
     this._spotTickSymbol = null;  // re-probe on the next session
     this._extrasDisabled = false; // a new session gets a fresh chance
+    this._extrasEverUsed = false;
     this._unattributedStreak = 0;
     this._clearRetry();
     this._clearWatchdog();
@@ -301,6 +329,11 @@ class SocketManager {
     if (!t || !t.ltp) return;
     const sym = tickSymbol(t);
 
+    // A contract we have just unsubscribed, still draining off the wire. This
+    // check must come FIRST: it is no longer in _extraSymbols, so without it the
+    // tick would fall through and be delivered as spot. Expected, so no warning.
+    if (sym && this._isTombstoned(sym)) return;
+
     // Attribution probe: while no extras are subscribed every tick is spot, so
     // the first resolvable symbol we see IS the spot symbol on the wire.
     if (this._spotTickSymbol === null && this._extraSymbols.size === 0 && sym) {
@@ -319,11 +352,19 @@ class SocketManager {
       return;
     }
 
-    // While options share the connection, a tick we cannot positively attribute
-    // to the spot instrument must be DROPPED. Feeding an unidentified tick to
-    // the strategies risks writing an option premium into the NIFTY candle
-    // series, which is unrecoverable corruption — a dropped tick is not.
-    if (this._extraSymbols.size > 0 && sym !== this._spotTickSymbol) {
+    // Once we know what the spot instrument looks like on the wire, delivery is
+    // a POSITIVE match against it — not "anything that wasn't an option".
+    // Gating on `_extraSymbols.size > 0` instead would leave a hole every time a
+    // contract is dropped: its queued ticks arrive with the set already empty
+    // and get delivered as spot, writing an option premium into the candle
+    // series. Unrecoverable corruption; a dropped tick is not.
+    //
+    // Skipped before the first option ever shares the connection, and again
+    // once we have given up on sharing it — in both states there is nothing to
+    // disambiguate, so the check could only cost us genuine spot ticks. Those
+    // sessions behave exactly as they did before this feature.
+    if (this._extrasEverUsed && !this._extrasDisabled
+        && this._spotTickSymbol !== null && sym !== this._spotTickSymbol) {
       this._noteUnattributed(sym);
       return;
     }
@@ -377,11 +418,27 @@ class SocketManager {
     this._extrasDisabled     = true;
     this._unattributedStreak = 0;
     this._extraSymbols.clear();
-    if (dropped.length) this._sendUnsubscribe(dropped);
-    // Cleared so the next tick re-learns it — with no extras subscribed every
-    // tick is spot again, which is exactly the pre-feature behaviour.
-    this._spotTickSymbol = null;
+    // Tombstoned, not just unsubscribed: queued option ticks will keep arriving
+    // for a moment, and with the strict spot check now disabled they would be
+    // delivered as spot. `_spotTickSymbol` is deliberately KEPT — re-learning it
+    // from whatever arrives next could latch onto one of those very ticks.
+    if (dropped.length) { this._tombstone(dropped); this._sendUnsubscribe(dropped); }
     this._log(`🛑 [SOCKET] ${UNATTRIBUTED_BAIL} consecutive unattributable ticks — option streaming DISABLED for this session, unsubscribed ${dropped.length} contract(s). Strategies revert to REST option polling; spot feed restored.`);
+  }
+
+  /** Mark symbols as known-not-spot for TOMBSTONE_MS. */
+  _tombstone(symbols) {
+    const until = Date.now() + TOMBSTONE_MS;
+    for (const s of symbols) this._tombstones.set(s, until);
+  }
+
+  /** True while `sym` is a recently-dropped contract. Prunes as it goes. */
+  _isTombstoned(sym) {
+    const until = this._tombstones.get(sym);
+    if (until === undefined) return false;
+    if (Date.now() < until) return true;
+    this._tombstones.delete(sym);
+    return false;
   }
 
   _detachListeners() {

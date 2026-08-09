@@ -35,6 +35,10 @@ function resetManager() {
   socketManager._spotTickSymbol = null;
   socketManager._attributionLogged = false;
   socketManager._unattributedCount = 0;
+  socketManager._unattributedStreak = 0;
+  socketManager._extrasDisabled = false;
+  socketManager._extrasEverUsed = false;
+  socketManager._tombstones.clear();
   socketManager._stopped = false;
   socketManager._onLog = () => {};
   // Stand in for the SDK so subscribe/unsubscribe are observable and offline.
@@ -128,6 +132,60 @@ test("unattributable ticks are dropped while options are subscribed", () => {
   assert.strictEqual(socketManager._unattributedCount, 2);
 });
 
+test("ticks still draining after an unsubscribe are never taken for spot", () => {
+  resetManager();
+  const spotSeen = [];
+  socketManager.addCallback("strategy", (t) => spotSeen.push(t.ltp), () => {});
+  socketManager._routeTick(spotTick(24000));
+  socketManager.subscribeExtra(OPT);
+  socketManager._routeTick(optTick(OPT, 182));
+
+  // Position closed → unsubscribed locally, but the wire is still delivering.
+  socketManager.unsubscribeExtra(OPT);
+  socketManager._routeTick(optTick(OPT, 181));
+  socketManager._routeTick(optTick(OPT, 180));
+  socketManager._routeTick(spotTick(24010));
+
+  assert.deepStrictEqual(spotSeen, [24000, 24010],
+    "an option premium leaked into the candle series after unsubscribe");
+});
+
+test("re-entering the same strike clears its tombstone", () => {
+  resetManager();
+  socketManager._routeTick(spotTick(24000));
+  socketManager.subscribeExtra(OPT);
+  socketManager.unsubscribeExtra(OPT);
+
+  const optSeen = [];
+  socketManager.setExtraTickHandler((sym, t) => optSeen.push(t.ltp));
+  socketManager.subscribeExtra(OPT);            // straight back into the strike
+  socketManager._routeTick(optTick(OPT, 175));
+  assert.deepStrictEqual(optSeen, [175],
+    "a stale tombstone must not blank out a fresh subscription");
+});
+
+test("an option tick during teardown cannot become the next session's spot symbol", () => {
+  resetManager();
+  socketManager._routeTick(spotTick(24000));
+  socketManager.subscribeExtra(OPT);
+  socketManager.stop();
+
+  // New session; a straggler for the old contract lands before any spot tick.
+  socketManager._stopped = false;
+  socketManager._skt = { subscribe(){}, unsubscribe(){} };
+  const spotSeen = [];
+  socketManager.addCallback("strategy", (t) => spotSeen.push(t.ltp), () => {});
+  socketManager._routeTick(optTick(OPT, 179));
+
+  assert.strictEqual(socketManager._spotTickSymbol, null,
+    "an option symbol must never be learned as the spot symbol");
+  assert.deepStrictEqual(spotSeen, [], "and it must not reach the strategies");
+
+  socketManager._routeTick(spotTick(24000));
+  assert.strictEqual(socketManager._spotTickSymbol, SPOT);
+  assert.deepStrictEqual(spotSeen, [24000]);
+});
+
 test("spot ticks are unaffected when no options are subscribed", () => {
   resetManager();
   const spotSeen = [];
@@ -136,6 +194,20 @@ test("spot ticks are unaffected when no options are subscribed", () => {
   socketManager._routeTick({ ltp: 24010 });
   assert.deepStrictEqual(spotSeen, [24000, 24010],
     "pre-existing behaviour must be untouched when the feature is dormant");
+});
+
+test("a feed with inconsistent symbols is not penalised before options are used", () => {
+  resetManager();
+  const spotSeen = [];
+  socketManager.addCallback("strategy", (t) => spotSeen.push(t.ltp), () => {});
+  // Some index ticks carry a symbol, some don't. Nothing is subscribed yet, so
+  // every one of them must still be delivered — this is the whole morning
+  // before the day's first trade.
+  socketManager._routeTick(spotTick(24000));
+  socketManager._routeTick({ ltp: 24010 });
+  socketManager._routeTick(spotTick(24020));
+  assert.deepStrictEqual(spotSeen, [24000, 24010, 24020],
+    "the strict spot match must stay dormant until an option actually shares the socket");
 });
 
 test("a sustained run of unattributable ticks restores the spot feed", () => {
