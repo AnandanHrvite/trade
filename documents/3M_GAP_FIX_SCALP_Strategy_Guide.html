@@ -275,7 +275,7 @@
 <table>
 <tr><th>Mode</th><th>Route</th><th>What it does</th></tr>
 <tr><td>Paper</td><td><code>/gap-fix-3m-paper</code></td><td>The canonical engine. Real data, simulated orders. Every rule lives here.</td></tr>
-<tr><td>Backtest</td><td><code>/gap-fix-3m-backtest</code></td><td>Same signal engine over a date range. Splits the range by front-month futures contract and rolls on the day before the last Tuesday (NIFTY futures expire on the last Tuesday of their month), exactly as the live path does. <b>Only reaches back as far as contracts that still exist</b> — see below.</td></tr>
+<tr><td>Backtest</td><td><code>/gap-fix-3m-backtest</code></td><td>Same signal engine over a date range. Splits the range by front-month futures contract and rolls two days before the last Tuesday (NIFTY futures expire on the last Tuesday of their month), exactly as the live path does. <b>Only reaches back as far as contracts that still exist</b> — see below.</td></tr>
 <tr><td>Live</td><td><code>/gap-fix-3m-live</code></td><td>Wraps Paper, so Live and Paper cannot disagree. Triple-gated to dry-run.</td></tr>
 <tr><td>Replay</td><td><code>/replay</code></td><td>Re-runs a recorded session bar by bar.</td></tr>
 </table>

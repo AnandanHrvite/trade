@@ -10,7 +10,7 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 `instrument.getFuturesExpiry()` computed the **last Thursday** of the month. NSE has moved NIFTY derivative expiry to **Tuesday**, so for the last two days of every month the code named a contract that does not exist and Fyers answered *Invalid symbol provided*. Verified against Fyers' own symbol master (`public.fyers.in/sym_details/NSE_FO.csv`): `NIFTY26AUGFUT` expires 25-Aug-2026, `26SEP` 29-Sep-2026, `26OCT` 27-Oct-2026 — every one a Tuesday.
 
-The roll now uses the last Tuesday, in `instrument.getFuturesExpiry()` (3M gap-fix paper and live, and the OI filter's futures symbol) and in the 3M gap-fix backtest's own block splitter. The contract still rolls the day before expiry, so the expiring session is never traded. A test now checks every block the splitter produces against the real symbol master rather than against the rule that produced it.
+The roll now uses the last Tuesday, in `instrument.getFuturesExpiry()` (3M gap-fix paper and live, and the OI filter's futures symbol) and in the 3M gap-fix backtest's own block splitter. The contract rolls once expiry is two days away, so its last two illiquid sessions are never traded — and the backtest now mirrors that timing exactly, which it previously missed by a day because `getFuturesExpiry()` compares against a timestamp carrying a time-of-day. A test now checks every block the splitter produces against the real symbol master rather than against the rule that produced it.
 
 ### Fixed — the 3M gap-fix backtest asked Fyers for days that cannot exist
 
