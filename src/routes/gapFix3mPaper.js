@@ -193,6 +193,7 @@ function _freshState() {
     _histInFlight:  false,
     _histBucket:    null,   // bucket whose history fetch has already been done
     _histFailures:  0,
+    _histNextTryMs: null,   // backoff floor after a failed history fetch
     _entryInFlight: false,
     _lastEntryAttemptMs: null,
     _pendingEntry:  null,   // a signalled entry whose FILL failed — retried per poll
@@ -282,32 +283,57 @@ function weeklyPnl() {
 let _pollTimer = null;
 let _pollStopped = true;
 
+/**
+ * Split one getQuotes response into { futLtp, optLtp }.
+ *
+ * Attribution is STRICTLY by symbol — never "whatever is left over". Some Fyers
+ * response shapes omit the symbol on a row, and an else-branch would then write
+ * the OPTION premium into the futures price: ~240 compared against a futures
+ * gap-fill target of ~24252 satisfies targetHit() immediately and books a fake
+ * "gap filled" exit on the first poll after entry. An unidentifiable row is
+ * dropped instead, except when a single-symbol request came back with a single
+ * row, where there is nothing to confuse it with.
+ *
+ * Exported for the offline test harness — this is the function that decides
+ * which number every exit is measured against.
+ */
+function attributeQuotes(resp, symbols, futSym, optSym) {
+  const out = { futLtp: null, optLtp: null };
+  if (!resp || resp.s !== "ok" || !Array.isArray(resp.d)) return out;
+  for (const row of resp.d) {
+    const v = (row && row.v) || {};
+    const ltp = v.lp != null ? v.lp : v.ltp;
+    if (typeof ltp !== "number" || !Number.isFinite(ltp) || !(ltp > 0)) continue;
+    let sym = row && (row.n || row.symbol);
+    if (!sym && resp.d.length === 1 && Array.isArray(symbols) && symbols.length === 1) sym = symbols[0];
+    if (!sym) continue;
+    if (optSym && sym === optSym) out.optLtp = ltp;
+    else if (sym === futSym) out.futLtp = ltp;
+  }
+  return out;
+}
+
 function startPolling() {
   stopPolling();
   _pollStopped = false;
   const poll = async () => {
     if (_pollStopped) return;
     try {
-      const symbols = [state.futSymbol || futSymbol()];
-      if (state.position) symbols.push(state.position.symbol);
+      const futSym = state.futSymbol || futSymbol();
+      const optSym = state.position ? state.position.symbol : null;
+      const symbols = optSym ? [futSym, optSym] : [futSym];
       const r = await fyers.getQuotes(symbols);
-      if (r && r.s === "ok" && Array.isArray(r.d)) {
-        for (const row of r.d) {
-          const sym = row && (row.n || row.symbol);
-          const v = (row && row.v) || {};
-          const ltp = v.lp != null ? v.lp : v.ltp;
-          if (typeof ltp !== "number" || !(ltp > 0)) continue;
-          if (state.position && sym === state.position.symbol) {
-            state.optionLtp = ltp;
-            state.optionLtpUpdatedAt = Date.now();
-            try { tickRecorder.recordOptionLtp(state.position.symbol, ltp, "gap-fix-3m-paper"); } catch (_) {}
-          } else {
-            state.lastFutPrice = ltp;
-            state.lastFutAt = Date.now();
-            _updateFormingFut(ltp);
-            try { tickRecorder.recordOptionLtp(sym || state.futSymbol, ltp, "gap-fix-3m-paper-fut"); } catch (_) {}
-          }
-        }
+      const q = attributeQuotes(r, symbols, futSym, optSym);
+      if (q.optLtp != null) {
+        state.optionLtp = q.optLtp;
+        state.optionLtpUpdatedAt = Date.now();
+        try { tickRecorder.recordOptionLtp(optSym, q.optLtp, "gap-fix-3m-paper"); } catch (_) {}
+      }
+      if (q.futLtp != null) {
+        state.lastFutPrice = q.futLtp;
+        state.lastFutAt = Date.now();
+        _updateFormingFut(q.futLtp);
+        try { tickRecorder.recordOptionLtp(futSym, q.futLtp, "gap-fix-3m-paper-fut"); } catch (_) {}
       }
     } catch (_) {}
 
@@ -354,6 +380,7 @@ async function _maybeRefreshFutHistory() {
   const bucketMs = getBucketStart(Date.now(), resMin);
   if (state._histBucket === bucketMs) return;
   if (Date.now() - bucketMs < _historyLagMs()) return;
+  if (state._histNextTryMs && Date.now() < state._histNextTryMs) return;
 
   state._histInFlight = true;
   try {
@@ -361,15 +388,35 @@ async function _maybeRefreshFutHistory() {
     if (Array.isArray(bars) && bars.length) {
       state._histBucket = bucketMs;
       state._histFailures = 0;
+      state._histNextTryMs = null;
       _mergeFuturesBars(bars);
     } else {
-      state._histFailures++;
-      if (state._histFailures === 3 || state._histFailures % 20 === 0) {
-        log(`⚠️ [GAP3M-PAPER] Futures history returned no candles ${state._histFailures}× — an expired Fyers token returns no data rather than an auth error. Re-login if this persists.`);
-      }
+      // An EXPIRED Fyers token returns no data rather than an auth error, so
+      // "empty" and "broken" look identical here — both are treated as a failure.
+      _noteHistoryFailure(null);
     }
+  } catch (e) {
+    // A throw must count as a failure too. Without this branch a rejecting
+    // fetch left _histFailures at 0, so the operator never saw the warning.
+    _noteHistoryFailure(e && e.message);
   } finally {
     state._histInFlight = false;
+  }
+}
+
+/**
+ * Record a failed history fetch and back off. The poll runs every
+ * GAP3M_FUT_POLL_MS (2s by default) and the bucket guard only advances on
+ * SUCCESS, so without a backoff a dead token would turn one bar into ~90
+ * history calls. Backoff grows 5s at a time and is capped at one bar, which is
+ * the soonest a retry could produce anything new anyway.
+ */
+function _noteHistoryFailure(why) {
+  state._histFailures++;
+  const backoffMs = Math.min(_resMin() * 60_000, 5000 * Math.min(state._histFailures, 12));
+  state._histNextTryMs = Date.now() + backoffMs;
+  if (state._histFailures === 3 || state._histFailures % 20 === 0) {
+    log(`⚠️ [GAP3M-PAPER] Futures history unavailable ${state._histFailures}× ${why ? `(${why}) ` : ""}— an expired Fyers token returns NO DATA rather than an auth error. Re-login if this persists. Retrying in ${Math.round(backoffMs / 1000)}s.`);
   }
 }
 
@@ -410,11 +457,15 @@ function _mergeFuturesBars(bars) {
   state.dayLow  = ext.low;
 
   if (!fresh.length) return;
-  state.lastClosedBarTime = fresh[fresh.length - 1].time;
-  for (const bar of fresh) {
-    try { onCandleClose(bar); }
-    catch (e) { console.error(`🚨 [GAP3M-PAPER] onCandleClose error: ${e.message}`); }
-  }
+  const newest = fresh[fresh.length - 1];
+  state.lastClosedBarTime = newest.time;
+  // Fire ONCE, for the newest bar only. evaluateEntry always reads the LAST
+  // element of state.candles, so replaying older bars would re-evaluate the same
+  // series N times — normally harmless, but if history only starts answering
+  // mid-session (a token restored at 13:00) `fresh` is the whole day and this
+  // would be ~100 identical evaluations in one tick of the poll loop.
+  try { onCandleClose(newest); }
+  catch (e) { console.error(`🚨 [GAP3M-PAPER] onCandleClose error: ${e.message}`); }
 }
 
 // ── Trade simulation ─────────────────────────────────────────────────────────
@@ -1539,3 +1590,6 @@ a{color:#3b82f6;text-decoration:none;border:0.5px solid #0e1e36;padding:8px 14px
 
 module.exports = router;
 module.exports.stopSession = stopSession;
+// Exposed for offline unit-testing — this decides which number every exit
+// is measured against, so it is tested rather than trusted.
+module.exports.attributeQuotes = attributeQuotes;
