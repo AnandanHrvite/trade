@@ -6,6 +6,12 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — a year-long 3M gap-fix backtest tripped Fyers' rate limit
+
+Running `/gap-fix-3m-backtest` over 2025 fired twelve doomed requests in about a second and the last two came back **request limit reached — code 429**, which then read as the reason the range failed. It wasn't: those contracts were delisted, and the rate limit was self-inflicted.
+
+Fyers lists only the current month and the two after it, so a contract whose expiry has passed can only ever be refused. That is now decided locally — an expired block is recorded as delisted without a request. A consequence worth knowing: since blocks run up to today and each contract expires before the next block starts, **only the last block of any range can still be listed**, so partial coverage is the normal outcome of any range wider than the current contract, not a fault.
+
 ### Fixed — the NIFTY futures contract name was two days wrong every month
 
 `instrument.getFuturesExpiry()` computed the **last Thursday** of the month. NSE has moved NIFTY derivative expiry to **Tuesday**, so for the last two days of every month the code named a contract that does not exist and Fyers answered *Invalid symbol provided*. Verified against Fyers' own symbol master (`public.fyers.in/sym_details/NSE_FO.csv`): `NIFTY26AUGFUT` expires 25-Aug-2026, `26SEP` 29-Sep-2026, `26OCT` 27-Oct-2026 — every one a Tuesday.

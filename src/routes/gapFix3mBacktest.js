@@ -476,12 +476,26 @@ router.get("/", async (req, res) => {
         //             expired token, which returns no_data rather than an auth
         //             error. Calling that "delisted" is the misdiagnosis this
         //             repo has already been bitten by once.
+        // Blocks run up to today and a contract expires before its successor's
+        // block begins, so in practice only the LAST block can still be listed —
+        // every earlier month is decided below without a request. Partial
+        // coverage is therefore the normal outcome of any range wider than the
+        // current contract, not a fault.
         const all = [];
         const served = [];
         const rejected = [];
         const empty = [];
         for (let b = 0; b < blocks.length; b++) {
           const blk = blocks[b];
+          // Don't ask about a contract that cannot exist. Fyers lists only the
+          // current month and the two after it; everything older is delisted, so
+          // the answer is already known. Asking anyway is what made a 12-month
+          // range fire a dozen refusals in a second and trip Fyers' rate limit —
+          // and "request limit reached" then buries the real reason.
+          if (blk.expiry < todayStr) {
+            rejected.push({ ...blk, delisted: true, error: "contract expired — Fyers no longer lists it" });
+            continue;
+          }
           backtestJobs.updateProgress(id, { phase: `Fetching ${blk.symbol} (${blk.from} → ${blk.to})…`, pct: Math.round((b / blocks.length) * 65) });
           try {
             // Exact range, block by block. The roll already ends every block two
