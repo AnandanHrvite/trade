@@ -314,7 +314,12 @@ router.get("/idle", (req, res) => {
 
 /** Total contract blocks a run attempted, however each one turned out. */
 function blocksTotal(meta) {
-  return ((meta.served || []).length + (meta.rejected || []).length + (meta.empty || []).length) || 1;
+  return (meta.served || []).length + (meta.rejected || []).length + (meta.empty || []).length;
+}
+
+/** Escape text that came from an external API before it lands in the notes HTML. */
+function escHtml(x) {
+  return String(x == null ? "" : x).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
 function _renderResults(res, from, to, trades, stats, meta) {
@@ -329,11 +334,11 @@ function _renderResults(res, from, to, trades, stats, meta) {
   // keep REFUSED (contract delisted, unfetchable forever) separate from EMPTY
   // (no trading days in that window), because they call for different actions.
   const emptyNote = empty.length
-    ? ` ${empty.length} block(s) returned no candles at all (${empty.map(e => `<code>${e.symbol}</code> ${e.from}→${e.to}`).join(", ")}) — normally a window with no trading days in it, but an expired Fyers token also returns no data rather than an auth error.`
+    ? ` ${empty.length} block(s) returned no candles at all (${empty.map(e => `<code>${escHtml(e.symbol)}</code> ${escHtml(e.from)}→${escHtml(e.to)}`).join(", ")}) — normally a window with no trading days in it, but an expired Fyers token also returns no data rather than an auth error.`
     : "";
   const coverage = rejected.length
-    ? `<b style="color:#f59e0b;">⚠ Partial coverage — ${rejected.length} of ${blocksTotal(meta)} contract(s) were REFUSED by Fyers:</b> ${rejected.map(r => `<code>${r.symbol}</code> ${r.from}→${r.to} (${r.error})`).join(", ")}. A NIFTY futures contract is delisted once it expires, so Fyers cannot serve history for a month that has already passed — those sessions are simply absent from everything below, not flat.${emptyNote} `
-    : `Contracts fetched: ${served.map(s => `<code>${s.symbol}</code> ${s.from}→${s.to}`).join(", ") || "—"}.${emptyNote} `;
+    ? `<b style="color:#f59e0b;">⚠ Partial coverage — ${rejected.length} of ${blocksTotal(meta)} contract(s) were REFUSED by Fyers:</b> ${rejected.map(r => `<code>${escHtml(r.symbol)}</code> ${escHtml(r.from)}→${escHtml(r.to)} (${escHtml(r.error)})`).join(", ")}. A NIFTY futures contract is delisted once it expires, so Fyers cannot serve history for a month that has already passed — those sessions are simply absent from everything below, not flat.${emptyNote} `
+    : `Contracts fetched: ${served.map(s => `<code>${escHtml(s.symbol)}</code> ${escHtml(s.from)}→${escHtml(s.to)}`).join(", ") || "—"}.${emptyNote} `;
   const html = renderBacktestResults({
     mode: "GAP_FIX_3M",
     accent: ACCENT,
@@ -468,7 +473,7 @@ function renderErrorPage(msg, from, to) {
 <style>body{font-family:'IBM Plex Mono',monospace;background:#060810;color:#a0b8d8;padding:40px;text-align:center;}
 h2{color:#ef4444;margin-bottom:12px;}p{margin-bottom:18px;}
 a{color:${ACCENT};text-decoration:none;border:0.5px solid #0e1428;padding:8px 14px;border-radius:6px;}</style>
-</head><body><h2>3M Gap Fix Scalp Backtest Failed</h2><p>${msg}</p><p><b>${from || ""}</b> → <b>${to || ""}</b></p><a href="${ENDPOINT}">← Back</a></body></html>`;
+</head><body><h2>3M Gap Fix Scalp Backtest Failed</h2><p>${escHtml(msg)}</p><p><b>${escHtml(from || "")}</b> → <b>${escHtml(to || "")}</b></p><a href="${ENDPOINT}">← Back</a></body></html>`;
 }
 
 module.exports = router;
