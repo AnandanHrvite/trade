@@ -108,8 +108,10 @@ function getNearestThursdayExpiry() {
 
 /**
  * Get current month futures expiry (last TUESDAY of the month)
- * Rolls to the next month on the day before expiry, so the expiring contract's
- * final illiquid session is never traded.
+ * Rolls to the next month once expiry is TWO days away or nearer, so the
+ * expiring contract's last two illiquid sessions are never traded. (`ist` carries
+ * a time-of-day, so the `diffDays <= 1` test below is already true two calendar
+ * days out — the two-day roll is the real behaviour, and the backtest mirrors it.)
  *
  * NSE moved NIFTY derivative expiry off Thursday; this function used to compute
  * the last Thursday and so named a contract that does not exist for the last two
@@ -135,7 +137,7 @@ function getFuturesExpiry() {
 
   let expiry = lastTuesdayOf(year, month);
 
-  // On the day before expiry (and on expiry day itself) → roll to next month
+  // Expiry two days away or nearer → roll to next month
   const diffDays = Math.floor((expiry - ist) / (1000 * 60 * 60 * 24));
   if (diffDays <= 1) {
     // Roll to next month

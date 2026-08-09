@@ -13,7 +13,7 @@
  *
  * CONTRACT ROLL. There is no continuous NIFTY futures series, so the range is
  * split into blocks by FRONT-MONTH contract using the identical roll rule the
- * live path uses (instrument.getFuturesExpiry: roll on the day before the last
+ * live path uses (instrument.getFuturesExpiry: roll two days before the last
  * Tuesday), and each block is fetched from its own symbol. Bars from different
  * contracts are never adjacent inside one session, so a roll can never be
  * mistaken for a gap.
@@ -84,15 +84,21 @@ function _lastExpiryOf(year, monthIdx) {
 
 /**
  * The expiry date of the FRONT-MONTH contract on a given calendar date. Mirrors
- * instrument.getFuturesExpiry(): the contract rolls on the day before expiry, so
- * the expiring contract's final illiquid session is never used.
+ * instrument.getFuturesExpiry(), which rolls once expiry is TWO days away or
+ * nearer, so the expiring contract's last two illiquid sessions are never used.
+ *
+ * Two, not one. getFuturesExpiry() compares against a timestamp carrying a
+ * time-of-day, so its `diffDays <= 1` test fires a whole day earlier than the
+ * same test would on bare dates. Paper is canonical, so the backtest matches
+ * what paper actually does rather than what the comment there used to imply —
+ * otherwise the two read different contracts on the same two days each month.
  * @param {Date} d a UTC-midnight date standing for an IST calendar day
  */
 function _frontMonthExpiry(d) {
   const y = d.getUTCFullYear(), m = d.getUTCMonth();
   const expiry = _lastExpiryOf(y, m);
   const diffDays = Math.floor((expiry.getTime() - d.getTime()) / 86400000);
-  if (diffDays > 1) return expiry;
+  if (diffDays > 2) return expiry;
   const nm = m === 11 ? 0 : m + 1;
   const ny = m === 11 ? y + 1 : y;
   return _lastExpiryOf(ny, nm);
@@ -413,7 +419,7 @@ function _renderResults(res, from, to, trades, stats, meta) {
       { label: "Skipped — never returned", value: gs.noReturn },
       { label: "Trade frequency", value: meta.days ? `${((trades.length / meta.days) * 100).toFixed(1)}% of sessions` : "—" },
     ],
-    notes: `${coverage}<b>Chart:</b> NIFTY <b>FUTURES</b> ${cfg.resolutionMins}-min, front-month, rolled on the day before the last Tuesday (NIFTY futures expiry) exactly as the live path does. The NIFTY 50 index is not read here — measured on this repo's own cached index candles the largest intraday 5-min index gap over 39 sessions was 2.1 points, because an index is a computed average with no order book. <b>Setup:</b> a gap of ≥ ${cfg.minGapPts}pt between two consecutive bars (a price void, strict inequality), then the next ${cfg.confirmBars} bar(s) decide — if the bar breaks the day's high/low with volume ≥ ${cfg.volMult}× the average of the previous ${cfg.volAvgBars} bars the breakout is treated as REAL and skipped; if it returns instead (<code>${cfg.returnMode}</code>) the gap is faded. <b>Levels:</b> target = the gap's fill level, stop = the day extreme frozen as of the gap bar${cfg.slBufferPts ? ` ± ${cfg.slBufferPts}pt` : ""}. Neither ever moves; there is no trail, no breakeven, no time stop and no premium stop. Optional guards ${cfg.maxSlPts || cfg.minRR || cfg.maxExtremeDist ? `<b>ON</b>: ${[cfg.maxSlPts ? `max SL ${cfg.maxSlPts}pt` : null, cfg.minRR ? `min R:R ${cfg.minRR}` : null, cfg.maxExtremeDist ? `gap within ${cfg.maxExtremeDist}pt of the extreme` : null].filter(Boolean).join(", ")}` : "are all OFF (defaults)"}. Max ${process.env.GAP3M_MAX_DAILY_TRADES || "3"} trades/day, day ends on ${process.env.GAP3M_MAX_DAILY_LOSSES || "2"} stop-outs / ₹${process.env.GAP3M_MAX_DAILY_LOSS || "3000"} loss. <b>Intra-bar ordering is conservative:</b> the stop is tested on the bar high/low BEFORE the target, so a bar touching both books the loss, and a bar that opened beyond a level fills at the open. Option premium is δ+θ simulated (BACKTEST_DELTA ${process.env.BACKTEST_DELTA || "0.55"}, θ ₹${process.env.BACKTEST_THETA_DAY || "8"}/day) seeded at ₹${process.env.GAP3M_BT_SEED_PREMIUM || "240"}, PLUS ${process.env.GAP3M_BT_SLIPPAGE_PTS || "1.5"}pt slippage EACH way — treat ₹ as directional, not exact. <b>This strategy has NEVER traded live or on paper. Nothing here is validated, and the futures gap frequency has never been measured.</b>`,
+    notes: `${coverage}<b>Chart:</b> NIFTY <b>FUTURES</b> ${cfg.resolutionMins}-min, front-month, rolled two days before the last Tuesday (NIFTY futures expiry) exactly as the live path does. The NIFTY 50 index is not read here — measured on this repo's own cached index candles the largest intraday 5-min index gap over 39 sessions was 2.1 points, because an index is a computed average with no order book. <b>Setup:</b> a gap of ≥ ${cfg.minGapPts}pt between two consecutive bars (a price void, strict inequality), then the next ${cfg.confirmBars} bar(s) decide — if the bar breaks the day's high/low with volume ≥ ${cfg.volMult}× the average of the previous ${cfg.volAvgBars} bars the breakout is treated as REAL and skipped; if it returns instead (<code>${cfg.returnMode}</code>) the gap is faded. <b>Levels:</b> target = the gap's fill level, stop = the day extreme frozen as of the gap bar${cfg.slBufferPts ? ` ± ${cfg.slBufferPts}pt` : ""}. Neither ever moves; there is no trail, no breakeven, no time stop and no premium stop. Optional guards ${cfg.maxSlPts || cfg.minRR || cfg.maxExtremeDist ? `<b>ON</b>: ${[cfg.maxSlPts ? `max SL ${cfg.maxSlPts}pt` : null, cfg.minRR ? `min R:R ${cfg.minRR}` : null, cfg.maxExtremeDist ? `gap within ${cfg.maxExtremeDist}pt of the extreme` : null].filter(Boolean).join(", ")}` : "are all OFF (defaults)"}. Max ${process.env.GAP3M_MAX_DAILY_TRADES || "3"} trades/day, day ends on ${process.env.GAP3M_MAX_DAILY_LOSSES || "2"} stop-outs / ₹${process.env.GAP3M_MAX_DAILY_LOSS || "3000"} loss. <b>Intra-bar ordering is conservative:</b> the stop is tested on the bar high/low BEFORE the target, so a bar touching both books the loss, and a bar that opened beyond a level fills at the open. Option premium is δ+θ simulated (BACKTEST_DELTA ${process.env.BACKTEST_DELTA || "0.55"}, θ ₹${process.env.BACKTEST_THETA_DAY || "8"}/day) seeded at ₹${process.env.GAP3M_BT_SEED_PREMIUM || "240"}, PLUS ${process.env.GAP3M_BT_SLIPPAGE_PTS || "1.5"}pt slippage EACH way — treat ₹ as directional, not exact. <b>This strategy has NEVER traded live or on paper. Nothing here is validated, and the futures gap frequency has never been measured.</b>`,
   });
   res.send(html);
 }
