@@ -720,8 +720,11 @@ async function evaluateEntry() {
       state._pendingEntry = null;
     } else {
       // A failed FILL is an infrastructure problem, not a decision. Hold the
-      // signal so the next ticks can retry it — see _retryPendingEntry.
-      state._pendingEntry = { side: sig.side, sig };
+      // signal so the next ticks can retry it — see _retryPendingEntry. The
+      // retry throttle lives on THIS object, not on state._lastEntryAttemptMs:
+      // sharing that field would let a retry firing seconds before a bar close
+      // throttle out the new bar's own evaluation.
+      state._pendingEntry = { side: sig.side, sig, lastAttemptMs: Date.now() };
       log(`⚠️ [TDS-PAPER] Entry attempt failed — retrying every ${ENTRY_RETRY_MS / 1000}s until this bar is superseded`);
     }
   }
@@ -744,10 +747,10 @@ async function _retryPendingEntry() {
   if (state.position || state._entryInFlight) return;
   if (state.dayClosed || state.tradesTaken >= _maxDailyTrades()) { state._pendingEntry = null; return; }
   if (getISTMinutes() >= _parseMins("TDS_FORCED_EXIT", "15:10")) { state._pendingEntry = null; return; }
-  if (state._lastEntryAttemptMs && Date.now() - state._lastEntryAttemptMs < ENTRY_RETRY_MS) return;
+  if (Date.now() - p.lastAttemptMs < ENTRY_RETRY_MS) return;
 
   state._entryInFlight = true;
-  state._lastEntryAttemptMs = Date.now();
+  p.lastAttemptMs = Date.now();
   try {
     await simulateBuy(p.side, p.sig);
   } finally {
