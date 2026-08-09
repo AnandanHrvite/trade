@@ -275,10 +275,15 @@
 <table>
 <tr><th>Mode</th><th>Route</th><th>What it does</th></tr>
 <tr><td>Paper</td><td><code>/gap-fix-3m-paper</code></td><td>The canonical engine. Real data, simulated orders. Every rule lives here.</td></tr>
-<tr><td>Backtest</td><td><code>/gap-fix-3m-backtest</code></td><td>Same signal engine over a date range. Splits the range by front-month futures contract and rolls on the day before the last Thursday, exactly as the live path does.</td></tr>
+<tr><td>Backtest</td><td><code>/gap-fix-3m-backtest</code></td><td>Same signal engine over a date range. Splits the range by front-month futures contract and rolls on the day before the last Thursday, exactly as the live path does. <b>Only reaches back as far as contracts that still exist</b> — see below.</td></tr>
 <tr><td>Live</td><td><code>/gap-fix-3m-live</code></td><td>Wraps Paper, so Live and Paper cannot disagree. Triple-gated to dry-run.</td></tr>
 <tr><td>Replay</td><td><code>/replay</code></td><td>Re-runs a recorded session bar by bar.</td></tr>
 </table>
+
+<div class="card warn">
+  <strong>You cannot backtest this one over a long history, and that is not a limitation of the code.</strong> A NIFTY futures contract is <b>delisted the moment it expires</b>, and Fyers then answers <code>Invalid symbol provided</code> for that symbol — there is simply no history for a month that has already gone. Every other strategy here backtests on the NIFTY index, which never expires; this one needs futures, so it can only be run over contracts that are still listed. In practice that is roughly the current month, which is why the default range is the current contract's own window rather than the usual last-90-days.
+  <p style="margin:10px 0 0;">A wider range still works — each contract is fetched separately, and anything Fyers refuses is reported as <b>partial coverage</b> naming the missing symbols, so an absent month is never quietly read as a quiet market. One caveat worth knowing: a block that comes back <em>empty</em> is reported differently from one that was <em>refused</em>, because an expired Fyers token also returns no data rather than an auth error — an all-empty run points you at re-logging in, not at delisting.</p>
+</div>
 
 <div class="card">
   <strong>How the data actually arrives.</strong> Closed 3-minute futures candles come from the Fyers <em>history</em> endpoint, refreshed once per bar a few seconds after it closes — the same endpoint the backtest and replay read, which is what makes the four modes agree on a session. The live futures price used to check the two exit levels comes from a quote poll every <code>GAP3M_FUT_POLL_MS</code> (default 2 seconds), because the app's shared tick socket carries the index, not the future. That 2-second granularity is the resolution at which exits are checked, and it is worth knowing before you read a fill price too literally.
@@ -342,6 +347,7 @@
     <li><b>It has never traded.</b> Zero paper sessions, zero live orders. Every number in this guide comes from the engine run on constructed candles, not from a market.</li>
     <li><b>The futures gap distribution has never been measured.</b> The 39-session measurement in section 2 was made on <em>index</em> candles, which is what proved the index unusable — the futures gap frequency, which decides how often this strategy trades at all, is unknown. It could be several setups a week or almost none.</li>
     <li><b>20 points is a floor, not an optimum.</b> <code>GAP3M_MIN_GAP_PTS</code> was derived from the cost arithmetic in section 4. It has not been fitted to anything, and the right value may be well above it.</li>
+    <li><b>There is barely any backtest history to have.</b> Expired futures contracts are delisted, so the usable range is roughly the current contract — not the years the other strategies can draw on. Whatever this strategy is judged on will mostly have to be forward-collected paper sessions.</li>
     <li><b>Backtest rupees are simulated.</b> There is no historical option chain, so premium is modelled from delta and theta with a slippage haircut each way. Treat backtest P&amp;L as directional, not exact.</li>
     <li><b>Exits are checked every ~2 seconds, not tick by tick.</b> The backtest and replay check them once per bar. Expect fills to differ.</li>
     <li><b>Reward-to-risk is not controlled.</b> Section 7 shows it can land anywhere from 0.27 to 3.75 on the same gap. Until there is data, <code>GAP3M_MIN_RR</code> stays off and that variance is simply carried.</li>
