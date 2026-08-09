@@ -4,7 +4,7 @@
  * ONE permanent WebSocket. The spot index (NSE:NIFTY50-INDEX) is the primary
  * subscription; option contracts can be added and removed on the fly as
  * strategies enter and exit trades (see utils/optionFeed.js, which owns the
- * leasing/refcount policy — this file only owns the wire).
+ * leasing policy — this file only owns the wire).
  *
  * ── Symbol attribution (why the probe exists) ────────────────────────────────
  * Every tick from the SDK lands in ONE `message` handler. Before options rode
@@ -87,7 +87,13 @@ class SocketManager {
     this._retryCount     = 0;
     this._retryTimer     = null;
     this._watchdog       = null;
-    this._lastTickAt     = null;
+    this._lastTickAt     = null;   // ANY tick — spot or option (health display)
+    // Last tick actually delivered to the strategies. The watchdog reconnects on
+    // spot silence, and before options shared this socket the two were the same
+    // number. They are not any more: option ticks alone would keep _lastTickAt
+    // fresh while the spot subscription was dead, hiding a total trading halt
+    // behind a healthy-looking clock. The watchdog reads THIS one.
+    this._lastSpotTickAt = null;
     this._connectedAt    = null;
     this._lastDownAt     = null;   // when the socket last went into a non-connected state
     this._authFailCount  = 0;      // consecutive auth-rejection errors (resets on tick)
@@ -276,6 +282,7 @@ class SocketManager {
       lastErrorCode: this._lastErrorCode,
       lastErrorMsg:  this._lastErrorMsg,
       lastTickAt:    this._lastTickAt,
+      lastSpotTickAt: this._lastSpotTickAt,
       downForMs:     this._lastDownAt ? downForMs : 0,
       inMarketHours: inMarket,
       optionSymbols:      this._extraSymbols.size,
@@ -301,6 +308,7 @@ class SocketManager {
     this._extraSymbols.clear();
     this._onExtraTick = null;
     this._spotTickSymbol = null;  // re-probe on the next session
+    this._lastSpotTickAt = null;  // watchdog clock starts fresh with the session
     this._extrasDisabled = false; // a new session gets a fresh chance
     this._extrasEverUsed = false;
     this._unattributedStreak = 0;
@@ -369,8 +377,10 @@ class SocketManager {
       return;
     }
 
-    // A spot tick got through, so attribution is still working.
+    // A spot tick got through, so attribution is still working — and this is
+    // the clock the watchdog reconnects on.
     this._unattributedStreak = 0;
+    this._lastSpotTickAt = Date.now();
 
     // Record raw tick for after-hours replay (no-op when TICK_RECORDER_ENABLED=false).
     // Done before fan-out so even if a strategy throws, the tick is still captured.
@@ -498,6 +508,7 @@ class SocketManager {
       if (this._stopped) { this._detachListeners(); this._closeConnection(); return; }
       this._connectedAt = Date.now();
       this._lastTickAt  = Date.now();
+      this._lastSpotTickAt = Date.now();
       this._lastDownAt  = null;
       this._log(`✅ [SOCKET] Connected — subscribing: ${this._symbol}`);
       skt.subscribe([this._symbol]);
@@ -591,10 +602,13 @@ class SocketManager {
         if (this._stopped) { this._clearWatchdog(); return; }
         if (this._authFailed) return;  // don't try to reconnect on dead auth
         if (!this._isMarketHours()) return;
-        const silence = this._lastTickAt ? Date.now() - this._lastTickAt : Infinity;
+        // SPOT silence, not "any traffic" silence: option ticks alone must never
+        // convince this that the feed the strategies actually run on is alive.
+        const silence = this._lastSpotTickAt ? Date.now() - this._lastSpotTickAt : Infinity;
         if (silence > HEARTBEAT_MS) {
-          this._log(`⚠️  [SOCKET] Watchdog: no tick for ${Math.round(silence / 1000)}s — reconnecting`);
-          this._lastTickAt = Date.now();
+          this._log(`⚠️  [SOCKET] Watchdog: no spot tick for ${Math.round(silence / 1000)}s — reconnecting`);
+          this._lastTickAt     = Date.now();
+          this._lastSpotTickAt = Date.now();
           this._clearRetry();
           this._connect();
         }

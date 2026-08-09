@@ -39,6 +39,8 @@ function resetManager() {
   socketManager._extrasDisabled = false;
   socketManager._extrasEverUsed = false;
   socketManager._tombstones.clear();
+  socketManager._lastSpotTickAt = null;
+  socketManager._lastTickAt = null;
   socketManager._stopped = false;
   socketManager._onLog = () => {};
   // Stand in for the SDK so subscribe/unsubscribe are observable and offline.
@@ -245,6 +247,23 @@ test("stop() gives the next session a fresh attribution chance", () => {
   socketManager._routeTick(spotTick(24000));
   assert.strictEqual(socketManager.canSubscribeExtras(), true,
     "a new session must not inherit the previous session's bail-out");
+});
+
+test("option traffic alone does not make a dead spot feed look alive", () => {
+  resetManager();
+  socketManager._routeTick(spotTick(24000));
+  socketManager.subscribeExtra(OPT);
+  const optSeen = [];
+  socketManager.setExtraTickHandler((sym, t) => optSeen.push(t.ltp));
+  const spotClock = socketManager._lastSpotTickAt;
+
+  // Spot goes silent while the option keeps ticking — the watchdog reconnects on
+  // spot silence, so its clock must NOT advance here.
+  for (let i = 0; i < 20; i++) socketManager._routeTick(optTick(OPT, 180 + i));
+
+  assert.strictEqual(optSeen.length, 20, "the option ticks really were processed");
+  assert.strictEqual(socketManager._lastSpotTickAt, spotClock,
+    "the watchdog clock must only advance on ticks the strategies actually received");
 });
 
 test("reconnect re-asserts every option subscription", () => {
