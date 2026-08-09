@@ -160,6 +160,10 @@ class SocketManager {
       this._extrasEverUsed     = false;
       this._unattributedStreak = 0;
       this._lastSpotTickAt     = null;
+      // _extrasDisabled is deliberately NOT cleared. A bail-out means this wire
+      // was labelling ticks in a way we could not follow, which is a property of
+      // the feed rather than of the instrument — so switching instruments is no
+      // reason to trust it again. Only stop(), a genuinely new session, does.
     }
     this._symbol        = spotSymbol;
     this._onSpotTick    = onSpotTick;

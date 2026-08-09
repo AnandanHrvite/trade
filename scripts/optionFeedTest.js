@@ -294,6 +294,21 @@ test("switching the spot instrument re-learns attribution instead of dropping ti
   socketManager._clearWatchdog();
 });
 
+test("a bailed-out session is not re-trusted by switching instrument", () => {
+  resetManager();
+  socketManager._symbol = SPOT;
+  socketManager._routeTick(spotTick(24000));
+  socketManager.subscribeExtra(OPT);
+  for (let i = 0; i < 60; i++) socketManager._routeTick({ symbol: "Nifty 50", ltp: 24000 });
+  assert.strictEqual(socketManager._extrasDisabled, true);
+
+  socketManager.start("NSE:NIFTYBANK-INDEX", null, () => {});
+  socketManager._routeTick({ symbol: "NSE:NIFTYBANK-INDEX", ltp: 52000 });
+  assert.strictEqual(socketManager.canSubscribeExtras(), false,
+    "the wire, not the instrument, is what failed — a switch must not clear the bail-out");
+  socketManager._clearWatchdog();
+});
+
 test("expired tombstones are pruned rather than accumulating", () => {
   resetManager();
   socketManager._routeTick(spotTick(24000));
