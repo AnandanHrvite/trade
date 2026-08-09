@@ -226,9 +226,14 @@ function runGapFix3mBacktest(intraday) {
 
     for (let i = 1; i < bars.length; i++) {
       const a = bars[i - 1], b = bars[i];
-      const size = b.low > a.high ? b.low - a.high
-                 : b.high < a.low ? a.low - b.high
-                 : 0;
+      // Round BEFORE comparing, exactly as the engine's findGap() does. A void of
+      // a true 20.00 can land on 19.999999999 after a float subtraction, and this
+      // readout is meant to be held against "gap setups seen" — the two must not
+      // disagree at the threshold they are compared on.
+      const raw = b.low > a.high ? b.low - a.high
+                : b.high < a.low ? a.low - b.high
+                : 0;
+      const size = Math.round(raw * 100) / 100;
       if (size <= 0) continue;
       voidStats.voids++;
       if (size > voidStats.largest) voidStats.largest = size;
