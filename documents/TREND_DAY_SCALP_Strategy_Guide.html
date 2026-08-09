@@ -285,7 +285,7 @@
 <h2 id="missing">12. What's still missing</h2>
 
 <div class="card bad">
-  <strong>Nothing here has been validated.</strong> Zero paper sessions, zero live trades. Every constant was chosen from the cost arithmetic in section 2, not fitted to data. Treat all of it as a starting guess.
+  <strong>Nothing here has been validated.</strong> Zero paper sessions, zero live trades. Treat all of it as a starting guess. <b>Two of the constants have already been caught being wrong.</b> The stop cap shipped at 18 points and the extension gate at 0.35, both derived from arithmetic rather than from candles — together they produced <b>five trades in the whole of 2025 and none in 2026</b>. Measured against real sessions, valid setups need a median stop of 35 points, so the 18pt cap was discarding 48 of every 53 setups and keeping only the shallowest. They are now 40 and 0.20, set from the measured distribution. On a 39-session sample that turns 0 trades into 10 — but the net on those 10 is <b>−₹738</b>. The strategy trades now; it is not yet shown to make money, and nothing in this guide should be read as saying otherwise.
 </div>
 
 <p>Before this is trusted with money:</p>
@@ -300,7 +300,7 @@
   <ul style="margin:8px 0 0;">
     <li><b>Backtest rupees are simulated.</b> There is no historical option-price data, so premiums are modelled from the index move plus time decay. Direction is meaningful; the exact ₹ is not.</li>
     <li><b>The premium stop cannot be backtested honestly.</b> It fires on the modelled premium curve, not on a real volatility collapse.</li>
-    <li><b>Very few trades.</b> The day gate is designed to reject most sessions, so any statistic from a short range is noise.</li>
+    <li><b>Very few trades.</b> The day gate is designed to reject most sessions, so any statistic from a short range is noise. On the measured sample the gate passes about 31% of days and a trade follows on roughly a quarter of those — about 10 trades per 39 sessions.</li>
     <li><b>No volatility or open-interest awareness.</b> A chaotic day is treated exactly like a calm one.</li>
     <li><b>The three gate thresholds have never been tested against each other.</b> They may be redundant, or one may be doing all the work. Only a long paper sample will tell.</li>
     <li><b>1 lot only.</b> There is no position sizing beyond the lot multiplier, and no averaging.</li>
