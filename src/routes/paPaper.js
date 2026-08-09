@@ -23,6 +23,7 @@ const { getSymbol, getLotQty, validateAndGetOptionSymbol } = instrumentConfig;
 const sharedSocketState = require("../utils/sharedSocketState");
 const socketManager = require("../utils/socketManager");
 const tickRecorder  = require("../utils/tickRecorder");
+const optionFeed    = require("../utils/optionFeed");
 const { verifyFyersToken } = require("../utils/fyersAuthCheck");
 const { buildSidebar, sidebarCSS, modalCSS, modalJS, errorPage, tableEnhancerCSS, tableEnhancerJS } = require("../utils/sharedNav");
 const { dailyFilesPaginate, renderHistoryPage } = require("../utils/paperHistoryUI");
@@ -271,38 +272,54 @@ async function fetchOptionLtp(symbol) {
   return null;
 }
 
+const OPTION_FEED_OWNER = "pa-paper";
+
+/**
+ * Single place the option premium enters state, whichever source produced it.
+ * `at` is when the price was OBSERVED, not when it was applied — a staleness
+ * guard reading optionLtpUpdatedAt must not be told a 2s-old tick is current.
+ * A null/zero ltp is a no-op, so a failed REST poll leaves the last good price
+ * standing exactly as before.
+ */
+function _applyOptionLtp(ltp, at) {
+  if (!(ltp > 0) || !state.position) return;
+  state.optionLtp = ltp;
+  state.optionLtpUpdatedAt = at || Date.now();
+  state.position.optionCurrentLtp = ltp;
+  if (!state.position.optionEntryLtp) {
+    state.position.optionEntryLtp = ltp;
+    // Real premium known — replace the estimate blocked at entry.
+    capitalPool.updateBlock("pa", (state.position.qty || 0) * ltp, { sim: state._simMode });
+    log(`📌 [PA-PAPER] Option entry LTP: ₹${ltp}`);
+  }
+}
+
 function startOptionPolling(symbol) {
   stopOptionPolling();
+  // Stream the held contract on the shared Fyers websocket. Ticks push straight
+  // into state, so the premium a stop-loss reads is current instead of up to one
+  // poll interval old. The REST poll below stays as the fallback and is what
+  // renews the lease — stop polling and the subscription lapses on its own.
+  const _onStreamed = (ltp, at) => {
+    if (state.position && state.optionSymbol === symbol) _applyOptionLtp(ltp, at);
+  };
+  optionFeed.track(OPTION_FEED_OWNER, symbol, _onStreamed);
   function scheduleNext() {
     if (!_optionPollTimer) return;
     const delay = _rateLimitBackoff > 0 ? 2000 : 500;
     _optionPollTimer = setTimeout(async () => {
       if (!state.position || !state.optionSymbol) { stopOptionPolling(); return; }
-      const ltp = await fetchOptionLtp(symbol);
-      if (ltp && state.position) {
-        state.optionLtp = ltp;
-        state.optionLtpUpdatedAt = Date.now();
-        state.position.optionCurrentLtp = ltp;
-        if (!state.position.optionEntryLtp) {
-          state.position.optionEntryLtp = ltp;
-          // Real premium known — replace the estimate blocked at entry.
-          capitalPool.updateBlock("pa", (state.position.qty || 0) * ltp, { sim: state._simMode });
-          log(`📌 [PA-PAPER] Option entry LTP: ₹${ltp}`);
-        }
-      }
+      optionFeed.track(OPTION_FEED_OWNER, symbol, _onStreamed);
+      const streamed = optionFeed.getFresh(symbol);
+      if (streamed) _applyOptionLtp(streamed.ltp, streamed.at);
+      else _applyOptionLtp(await fetchOptionLtp(symbol), Date.now());
       scheduleNext();
     }, delay);
   }
+  // The first price still comes over REST: the subscription has only just been
+  // placed, so the stream has nothing yet and entry must not wait for a tick.
   fetchOptionLtp(symbol).then(ltp => {
-    if (ltp && state.position) {
-      state.optionLtp = ltp;
-      state.optionLtpUpdatedAt = Date.now();
-      state.position.optionCurrentLtp = ltp;
-      if (!state.position.optionEntryLtp) {
-        state.position.optionEntryLtp = ltp;
-        capitalPool.updateBlock("pa", (state.position.qty || 0) * ltp, { sim: state._simMode });
-      }
-    }
+    _applyOptionLtp(ltp, Date.now());
     scheduleNext();
   });
   _optionPollTimer = true;
@@ -311,6 +328,7 @@ function startOptionPolling(symbol) {
 function stopOptionPolling() {
   if (_optionPollTimer && _optionPollTimer !== true) clearTimeout(_optionPollTimer);
   _optionPollTimer = null;
+  try { optionFeed.release(OPTION_FEED_OWNER); } catch (_) {}
 }
 
 // parseOptionDetails imported from tradeUtils

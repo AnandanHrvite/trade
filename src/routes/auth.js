@@ -238,7 +238,12 @@ router.get("/status", (req, res) => {
 // users get an in-page red alert the moment the Fyers WebSocket auth dies (or
 // the feed has been silent for >60s during market hours). Cheap, no auth needed.
 router.get("/socket-health", (req, res) => {
-  res.json(socketManager.getHealth());
+  // optionFeed rides this same connection, and whether it actually activated is
+  // only observable here — `symbolAttribution` non-null plus a rising
+  // `restSkipped` means option prices are streaming instead of being polled.
+  let optionFeed = null;
+  try { optionFeed = require("../utils/optionFeed").getStats(); } catch (_) {}
+  res.json({ ...socketManager.getHealth(), optionFeed });
 });
 
 // Telegram delivery health — polled by the dashboard banner so a blocked /

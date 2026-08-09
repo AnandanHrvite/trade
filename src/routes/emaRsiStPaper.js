@@ -23,6 +23,7 @@ const { getSymbol, getLotQty, validateAndGetOptionSymbol } = instrumentConfig;
 const sharedSocketState = require("../utils/sharedSocketState");
 const socketManager = require("../utils/socketManager"); // ← robust socket wrapper
 const tickRecorder  = require("../utils/tickRecorder");
+const optionFeed    = require("../utils/optionFeed");
 const { verifyFyersToken } = require("../utils/fyersAuthCheck");
 const { buildSidebar, sidebarCSS, toastJS, logViewerHTML, faviconLink, modalCSS, modalJS, tableEnhancerCSS, tableEnhancerJS } = require("../utils/sharedNav");
 const { dailyFilesPaginate, renderHistoryPage } = require("../utils/paperHistoryUI");
@@ -517,6 +518,10 @@ let _optionPollTimer = null;
 let _optionPollBusy  = false; // guard: prevents overlapping getQuotes calls if network is slow
 let _entryLtpProxyTimer = null; // 10s entry-premium fallback timer — owned by one position
 let _rateLimitSkipCycles = 0; // skip N poll cycles after a rate-limit hit
+const OPTION_FEED_OWNER = "ema_rsi_st-paper";
+// Rebound per position in startOptionPolling so the closure captures the symbol
+// actually held; null while flat.
+let _onStreamedOptionLtp = null;
 
 async function fetchOptionLtp(symbol) {
   try {
@@ -561,6 +566,37 @@ async function fetchOptionLtp(symbol) {
   return null;
 }
 
+// ── Publishing a premium — shared by the REST poll and the websocket push ────
+// Both sources must apply the SAME ownership check, recovery log and capital
+// re-block, so the write lives in exactly one place.
+//   `at` is when the price was OBSERVED. It must never be stamped with "now"
+//   for a streamed tick, because the staleness alert in _optionPollTick
+//   compares against this very field to decide the premium can still be trusted.
+function _publishOptionLtp(symbol, ltp, at) {
+  // ── Ownership check BEFORE publishing (must stay ahead of the write) ──────
+  // A reply that lands after the position closed — or after the engine moved
+  // to a different strike — belongs to a contract we no longer hold. Writing
+  // it to ptState.optionLtp used to leave the OLD contract's premium sitting
+  // in state (nothing clears it between trades), so the NEXT entry adopted it
+  // as its entry premium. Publish only while we still own `symbol`.
+  if (!ptState.position || ptState.optionSymbol !== symbol) return;
+  if (!(ltp > 0)) return;
+  ptState.optionLtp = ltp;
+  ptState.optionLtpUpdatedAt = at || Date.now();
+  if (ptState._ltpStaleLogged) {
+    log(`✅ [PAPER] Option LTP recovered — ₹${ltp}`);
+    ptState._ltpStaleLogged = false;
+  }
+  ptState.position.optionCurrentLtp = ltp;
+  if (!ptState.position.optionEntryLtp) {
+    ptState.position.optionEntryLtp = ltp;
+    ptState.position.optionEntryLtpTime = istNow();
+    // Real premium known — replace the estimate blocked at entry.
+    capitalPool.updateBlock("ema_rsi_st", (ptState.position.qty || 0) * ltp, { sim: ptState._simMode });
+    log(`📌 [PAPER] Option entry LTP: ₹${ltp} (SPOT @ ₹${ptState.position.spotAtEntry} | SL: ₹${ptState.position.stopLoss})`);
+  }
+}
+
 // ── Option LTP poll tick — shared logic used by immediate fetch + recurring loop ──
 async function _optionPollTick(symbol) {
   if (_optionPollBusy) return; // skip if previous call still in flight
@@ -568,7 +604,13 @@ async function _optionPollTick(symbol) {
   _optionPollBusy = true;
   try {
     if (!ptState.position || !ptState.optionSymbol) { stopOptionPolling(); return; }
-    const ltp = await fetchOptionLtp(symbol);
+    // Socket-first. The contract is streamed on the shared websocket, so this
+    // REST call fires only when the stream is quiet or unavailable — and the
+    // track() below is what renews the lease keeping it subscribed.
+    optionFeed.track(OPTION_FEED_OWNER, symbol, _onStreamedOptionLtp);
+    const streamed = optionFeed.getFresh(symbol);
+    const ltp   = streamed ? streamed.ltp : await fetchOptionLtp(symbol);
+    const ltpAt = streamed ? streamed.at  : Date.now();
     if (!ltp) {
       // ── Staleness alert (mirrors emaRsiStLive) ────────────────────────────
       // A failed poll leaves ptState.optionLtp at its LAST value forever — there
@@ -584,27 +626,7 @@ async function _optionPollTick(symbol) {
       }
       return;
     }
-    // ── Ownership check BEFORE publishing (must stay ahead of the write) ──────
-    // A reply that lands after the position closed — or after the engine moved
-    // to a different strike — belongs to a contract we no longer hold. Writing
-    // it to ptState.optionLtp used to leave the OLD contract's premium sitting
-    // in state (nothing clears it between trades), so the NEXT entry adopted it
-    // as its entry premium. Publish only while we still own `symbol`.
-    if (!ptState.position || ptState.optionSymbol !== symbol) return;
-    ptState.optionLtp = ltp;
-    ptState.optionLtpUpdatedAt = Date.now();
-    if (ptState._ltpStaleLogged) {
-      log(`✅ [PAPER] Option LTP recovered — ₹${ltp}`);
-      ptState._ltpStaleLogged = false;
-    }
-    ptState.position.optionCurrentLtp = ltp;
-    if (!ptState.position.optionEntryLtp) {
-      ptState.position.optionEntryLtp = ltp;
-      ptState.position.optionEntryLtpTime = istNow();
-      // Real premium known — replace the estimate blocked at entry.
-      capitalPool.updateBlock("ema_rsi_st", (ptState.position.qty || 0) * ltp, { sim: ptState._simMode });
-      log(`📌 [PAPER] Option entry LTP: ₹${ltp} (SPOT @ ₹${ptState.position.spotAtEntry} | SL: ₹${ptState.position.stopLoss})`);
-    }
+    _publishOptionLtp(symbol, ltp, ltpAt);
 
     // ── Option LTP stop — 50% mid DISABLED ──
     // Previously: if option premium dropped below 50% mid threshold, force exit.
@@ -620,6 +642,13 @@ async function _optionPollTick(symbol) {
 function startOptionPolling(symbol) {
   stopOptionPolling(); // clear any previous
   _optionPollBusy = false;
+
+  // Stream the held contract on the shared Fyers websocket. Ticks publish
+  // straight through _publishOptionLtp, so the premium the exit rules read is
+  // current rather than up to a poll interval old. Subscribing here (not on the
+  // first poll) gets the stream warming while the immediate REST fetch runs.
+  _onStreamedOptionLtp = (ltp, at) => _publishOptionLtp(symbol, ltp, at);
+  optionFeed.track(OPTION_FEED_OWNER, symbol, _onStreamedOptionLtp);
 
   // ── Recursive setTimeout loop (replaces setInterval) ──────────────────────
   // setInterval fires regardless of whether the previous async call has resolved.
@@ -687,6 +716,10 @@ function stopOptionPolling() {
   }
   _optionPollTimer = null;
   _optionPollBusy  = false;
+  _onStreamedOptionLtp = null;
+  // Release the websocket lease now rather than letting it lapse, so the
+  // contract is unsubscribed the moment the position is gone.
+  try { optionFeed.release(OPTION_FEED_OWNER); } catch (_) {}
   // Cancel the entry-premium fallback so it can never fire against a later position.
   if (_entryLtpProxyTimer) { clearTimeout(_entryLtpProxyTimer); _entryLtpProxyTimer = null; }
 }

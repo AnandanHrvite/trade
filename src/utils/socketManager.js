@@ -1,8 +1,26 @@
 /**
  * socketManager.js
  * ─────────────────────────────────────────────────────────────────────────────
- * ONE permanent WebSocket → NSE:NIFTY50-INDEX only.
- * Option LTP → Fyers REST API polled every 3 seconds. No socket changes.
+ * ONE permanent WebSocket. The spot index (NSE:NIFTY50-INDEX) is the primary
+ * subscription; option contracts can be added and removed on the fly as
+ * strategies enter and exit trades (see utils/optionFeed.js, which owns the
+ * leasing/refcount policy — this file only owns the wire).
+ *
+ * ── Symbol attribution (why the probe exists) ────────────────────────────────
+ * Every tick from the SDK lands in ONE `message` handler. Before options rode
+ * this socket, every tick was by definition a spot tick, so the fan-out could
+ * hand them all to the strategies. That is no longer true: an option tick fed
+ * into a strategy's candle builder would corrupt the NIFTY candles outright.
+ *
+ * The SDK's tick field carrying the symbol is not contractually documented, so
+ * we do not guess it. Instead we LEARN it: while only the spot is subscribed,
+ * every tick is spot, so the first resolvable symbol string we see IS the spot
+ * symbol's on-the-wire representation. Option subscriptions are refused until
+ * that probe succeeds. Routing is then exact-match in both directions and
+ * anything unattributable is dropped rather than guessed.
+ *
+ * Failure mode is therefore always "no option ticks, REST polling continues"
+ * — never "option prices leak into spot candles".
  *
  * FIX: Fyers SDK enforces a hard singleton — calling `new fyersDataSocket()`
  * more than once throws "Only one instance of DataSocket is allowed."
@@ -33,6 +51,20 @@ const BASE_BACKOFF         = 2_000;
 // alert, and surface a "broken" health state so the dashboard banner can light up.
 const AUTH_FAIL_LIMIT      = 3;
 
+/**
+ * Resolve the instrument symbol carried by a raw SDK tick.
+ * The field name is not contractually documented, so every plausible key is
+ * tried. Returns a trimmed non-empty string, or null when the tick carries no
+ * usable identifier (which the caller MUST treat as "cannot attribute").
+ */
+function tickSymbol(t) {
+  if (!t || typeof t !== 'object') return null;
+  const raw = t.symbol || t.sym || t.n || t.ex_sym || t.exSymbol || null;
+  if (typeof raw !== 'string') return null;
+  const s = raw.trim();
+  return s.length ? s : null;
+}
+
 class SocketManager {
   constructor() {
     this._symbol         = null;
@@ -54,6 +86,18 @@ class SocketManager {
     // Map of callbackId → { onTick, onLog }
     // When secondary modes (bb_rsi) register, ticks are dispatched to ALL callbacks.
     this._callbacks  = new Map();
+    // ── Extra (non-spot) subscriptions — option contracts ──────────────────
+    // Set of exact Fyers symbols currently subscribed alongside the spot index.
+    // Re-asserted on every reconnect. optionFeed owns when entries appear/vanish.
+    this._extraSymbols     = new Set();
+    this._onExtraTick      = null;   // (symbol, tick) => void — set by optionFeed
+    // On-the-wire representation of the spot symbol, LEARNED from live ticks
+    // while only the spot was subscribed. null until the probe succeeds; extras
+    // are refused while it is null. See the header note on symbol attribution.
+    this._spotTickSymbol   = null;
+    this._attributionLogged = false;
+    this._unattributedCount = 0;
+    this._unattributedLoggedAt = 0;
   }
 
   // ── Public API ──────────────────────────────────────────────────────────────
@@ -111,6 +155,70 @@ class SocketManager {
     return !this._stopped;
   }
 
+  // ── Extra (option) subscriptions ────────────────────────────────────────────
+
+  /**
+   * Install the handler that receives ticks for extra (non-spot) symbols.
+   * Single handler by design — optionFeed is the only owner and does its own
+   * per-symbol fan-out. Called with (symbol, rawTick).
+   */
+  setExtraTickHandler(fn) {
+    this._onExtraTick = typeof fn === 'function' ? fn : null;
+  }
+
+  /**
+   * True once ticks have been observed to carry a resolvable symbol, which is
+   * the precondition for safely multiplexing options onto this connection.
+   * Callers MUST check this before relying on extra subscriptions.
+   */
+  canSubscribeExtras() {
+    return !this._stopped && this._spotTickSymbol !== null;
+  }
+
+  /**
+   * Subscribe an additional instrument (an option contract) on the existing
+   * connection. Idempotent. Returns false when attribution is unproven or the
+   * socket is down — the caller must then keep using its REST fallback.
+   */
+  subscribeExtra(symbol) {
+    if (!symbol || typeof symbol !== 'string') return false;
+    if (!this.canSubscribeExtras()) return false;
+    if (symbol === this._spotTickSymbol || symbol === this._symbol) return false;
+    if (this._extraSymbols.has(symbol)) return true;
+    this._extraSymbols.add(symbol);
+    // A subscribe that fails on the wire must not leave the symbol marked as
+    // subscribed — the reconnect path would keep re-asserting a bad symbol and
+    // routing would silently drop ticks that never arrive.
+    if (!this._sendSubscribe([symbol])) { this._extraSymbols.delete(symbol); return false; }
+    this._log(`📡 [SOCKET] +option ${symbol} (extras: ${this._extraSymbols.size})`);
+    return true;
+  }
+
+  /** Drop an extra subscription. Idempotent; safe when the socket is down. */
+  unsubscribeExtra(symbol) {
+    if (!symbol || !this._extraSymbols.has(symbol)) return;
+    this._extraSymbols.delete(symbol);
+    this._sendUnsubscribe([symbol]);
+    this._log(`📡 [SOCKET] −option ${symbol} (extras: ${this._extraSymbols.size})`);
+  }
+
+  /** Currently subscribed extra symbols (diagnostics / health surface). */
+  getExtraSymbols() {
+    return Array.from(this._extraSymbols);
+  }
+
+  _sendSubscribe(symbols) {
+    if (!this._skt || this._stopped) return false;
+    try { this._skt.subscribe(symbols); return true; }
+    catch (e) { this._log(`⚠️  [SOCKET] subscribe(${symbols.join(',')}) failed: ${e.message}`); return false; }
+  }
+
+  _sendUnsubscribe(symbols) {
+    if (!this._skt || this._stopped) return false;
+    try { this._skt.unsubscribe(symbols); return true; }
+    catch (e) { this._log(`⚠️  [SOCKET] unsubscribe(${symbols.join(',')}) failed: ${e.message}`); return false; }
+  }
+
   /** True once we've given up on a permanent auth failure (Fyers code -15). */
   isAuthFailed() {
     return this._authFailed;
@@ -140,6 +248,9 @@ class SocketManager {
       lastTickAt:    this._lastTickAt,
       downForMs:     this._lastDownAt ? downForMs : 0,
       inMarketHours: inMarket,
+      optionSymbols:      this._extraSymbols.size,
+      symbolAttribution:  this._spotTickSymbol,
+      unattributedTicks:  this._unattributedCount,
     };
   }
 
@@ -147,6 +258,12 @@ class SocketManager {
     this._stopped    = true;
     this._onSpotTick = null;  // clear callback FIRST — prevents residual ticks reaching onTick()
     this._callbacks.clear();  // clear all secondary callbacks too
+    // Drop option subscriptions before the connection goes away, so a restart
+    // does not re-assert symbols nobody is holding a position in any more.
+    if (this._extraSymbols.size) this._sendUnsubscribe(Array.from(this._extraSymbols));
+    this._extraSymbols.clear();
+    this._onExtraTick = null;
+    this._spotTickSymbol = null;  // re-probe on the next session
     this._clearRetry();
     this._clearWatchdog();
     this._detachListeners();
@@ -161,6 +278,69 @@ class SocketManager {
   _log(msg) {
     if (this._onLog) this._onLog(msg);
     else console.log(msg);
+  }
+
+  /**
+   * Decide what a single tick is and deliver it. Split out of the `message`
+   * handler so the attribution rules — the part that can corrupt candles if it
+   * is wrong — are directly testable without a live socket.
+   */
+  _routeTick(t) {
+    if (!t || !t.ltp) return;
+    const sym = tickSymbol(t);
+
+    // Attribution probe: while no extras are subscribed every tick is spot, so
+    // the first resolvable symbol we see IS the spot symbol on the wire.
+    if (this._spotTickSymbol === null && this._extraSymbols.size === 0 && sym) {
+      this._spotTickSymbol = sym;
+      if (!this._attributionLogged) {
+        this._attributionLogged = true;
+        this._log(`📡 [SOCKET] Tick symbol attribution OK ("${sym}") — options may share this connection`);
+      }
+    }
+
+    // Option tick → dedicated handler, never the strategy fan-out.
+    if (sym && this._extraSymbols.has(sym)) {
+      if (this._onExtraTick) {
+        try { this._onExtraTick(sym, t); } catch (e) { this._log(`🚨 [SOCKET] Option fan-out error (${sym}): ${e.message}`); }
+      }
+      return;
+    }
+
+    // While options share the connection, a tick we cannot positively attribute
+    // to the spot instrument must be DROPPED. Feeding an unidentified tick to
+    // the strategies risks writing an option premium into the NIFTY candle
+    // series, which is unrecoverable corruption — a dropped tick is not.
+    if (this._extraSymbols.size > 0 && sym !== this._spotTickSymbol) {
+      this._noteUnattributed(sym);
+      return;
+    }
+
+    // Record raw tick for after-hours replay (no-op when TICK_RECORDER_ENABLED=false).
+    // Done before fan-out so even if a strategy throws, the tick is still captured.
+    try { tickRecorder.recordSpotTick(t); } catch (_) {}
+    // Primary callback
+    if (this._onSpotTick) {
+      try { this._onSpotTick(t); } catch (e) { this._log(`🚨 [SOCKET] onSpotTick error: ${e.message}`); }
+    }
+    // Fan-out to all secondary callbacks (bb_rsi, etc.)
+    for (const [id, cb] of this._callbacks) {
+      try { if (cb.onTick) cb.onTick(t); } catch (e) { this._log(`🚨 [SOCKET] Fan-out error (${id}): ${e.message}`); }
+    }
+  }
+
+  /**
+   * Throttled notice for ticks that match neither the spot nor any subscribed
+   * option. Expected to stay at zero; a rising count means the SDK labels
+   * option ticks differently from the symbol we subscribed with, in which case
+   * options simply keep using their REST fallback.
+   */
+  _noteUnattributed(sym) {
+    this._unattributedCount++;
+    const now = Date.now();
+    if (now - this._unattributedLoggedAt < 60_000) return;
+    this._unattributedLoggedAt = now;
+    this._log(`⚠️  [SOCKET] ${this._unattributedCount} tick(s) dropped — unattributable symbol (last: ${sym || 'none'})`);
   }
 
   _detachListeners() {
@@ -224,6 +404,15 @@ class SocketManager {
       this._log(`✅ [SOCKET] Connected — subscribing: ${this._symbol}`);
       skt.subscribe([this._symbol]);
       skt.mode(skt.FullMode);
+      // Re-assert option subscriptions the previous connection carried — a
+      // reconnect resets the server-side subscription set, and a strategy
+      // holding a position would otherwise silently lose its price feed.
+      if (this._extraSymbols.size) {
+        const extras = Array.from(this._extraSymbols);
+        if (this._sendSubscribe(extras)) {
+          this._log(`📡 [SOCKET] Re-subscribed ${extras.length} option symbol(s) after reconnect`);
+        }
+      }
     });
 
     skt.on('message', (msg) => {
@@ -237,20 +426,7 @@ class SocketManager {
       // rejection can't escape to the global unhandledRejection handler; cheap
       // boolean guard, resolves at most once/day.
       try { _marketContext().maybeCapture().catch(() => {}); } catch (_) {}
-      ticks.forEach(t => {
-        if (!t || !t.ltp) return;
-        // Record raw tick for after-hours replay (no-op when TICK_RECORDER_ENABLED=false).
-        // Done before fan-out so even if a strategy throws, the tick is still captured.
-        try { tickRecorder.recordSpotTick(t); } catch (_) {}
-        // Primary callback
-        if (this._onSpotTick) {
-          try { this._onSpotTick(t); } catch (e) { this._log(`🚨 [SOCKET] onSpotTick error: ${e.message}`); }
-        }
-        // Fan-out to all secondary callbacks (bb_rsi, etc.)
-        for (const [id, cb] of this._callbacks) {
-          try { if (cb.onTick) cb.onTick(t); } catch (e) { this._log(`🚨 [SOCKET] Fan-out error (${id}): ${e.message}`); }
-        }
-      });
+      ticks.forEach(t => this._routeTick(t));
     });
 
     skt.on('error', (err) => {
@@ -343,3 +519,5 @@ class SocketManager {
 }
 
 module.exports = new SocketManager();
+// Exported for unit tests — the attribution rules live and die by this resolver.
+module.exports.tickSymbol = tickSymbol;

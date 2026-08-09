@@ -6,6 +6,22 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Changed — option prices now arrive on the socket the spot feed already uses
+
+Every engine used to ask Fyers over REST what its own option was worth, on its own timer: BB_RSI and PA every 500 ms, EMA_RSI_ST and EMA9_VWAP every second, the rest every 3 seconds. Five strategies holding positions at the same time is roughly **340 requests a minute against a ~200/minute data budget**, and the premium a stop-loss reads could be up to a poll interval old.
+
+Those contracts were already available on the websocket carrying the NIFTY index. They now ride it. While a position is open the premium updates on every tick, and the REST call fires only when the stream has gone quiet — so the request count falls to near zero for held contracts and exits price off a current premium instead of a slightly old one.
+
+**What that means for results.** Entry signals are untouched: they read the index feed and candles, which are unchanged. Exits will differ slightly, because a stop-loss or profit-lock now sees the price move sooner. Losses tend to be smaller; the flip side is being taken out by fast spikes that a 3-second poll would have slept through. Old paper results and new ones are therefore not directly comparable, and `/replay` baselines recorded before this want re-recording.
+
+**How it is kept from breaking anything.** Ticks all arrive through one handler, so an option price reaching a strategy's spot handler would be written straight into the NIFTY candle series. The SDK's tick field carrying the symbol is not contractually documented, so it is not guessed: while only the index is subscribed every tick is by definition spot, and the first resolvable symbol seen is recorded as the spot symbol's on-the-wire form. Option subscriptions are refused until that succeeds, routing is then exact-match in both directions, and any tick matching neither is dropped rather than assumed. If the feed never yields a usable symbol, nothing subscribes and every engine keeps polling exactly as before.
+
+Subscriptions are held by short leases renewed from the poll loop each engine already runs, rather than by a refcount needing a balanced release on every exit path — a missed release cannot leak a subscription for the rest of the day, and a crash or restart frees it on its own. Reconnects re-assert whatever was held. Replay is untouched: a run disables the stream and stays on its recorded REST timeline, so it can neither bypass that timeline nor place a real subscription from inside a simulation.
+
+New keys `OPTION_SOCKET_FEED_ENABLED` (default on, instant kill-switch), `OPTION_SOCKET_FRESH_MS`, `OPTION_SOCKET_LEASE_MS` and `OPTION_SOCKET_RECORD_MS`, all in Settings under "Option Price Feed". Covered by 19 assertions in `scripts/optionFeedTest.js`, most of them aimed at the one failure that would be unrecoverable rather than merely disappointing.
+
+**Not validated against a live feed.** Whether Fyers labels streamed ticks with the exact symbol we subscribe decides whether this activates at all — the first session's log says which (`Tick symbol attribution OK`, or a rising dropped-tick count). Until then the fallback carries it and behaviour is the old behaviour. `3M_GAP_FIX_SCALP` is deliberately left on REST: it must poll for the futures price anyway and gets its option in the same batched call, so it makes no extra request to save.
+
 ### Added — 3M_GAP_FIX_SCALP, and the measurement that decided which chart it reads
 
 A gap is a band of prices nothing traded through: one candle's low sitting above the previous candle's high. They tend to get filled, which makes them fadeable — but only when the jump that made them was not the start of a real move. This strategy finds one on a 3-minute chart, lets the **very next candle** settle that question, and fades it back to its own fill level if the answer is no.

@@ -29,6 +29,7 @@ const instrumentConfig   = require("../config/instrument");
 const sharedSocketState  = require("../utils/sharedSocketState");
 const socketManager      = require("../utils/socketManager");
 const tickRecorder       = require("../utils/tickRecorder");
+const optionFeed         = require("../utils/optionFeed");
 const { verifyFyersToken } = require("../utils/fyersAuthCheck");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
 const { renderHistoryPage, dailyFilesPaginate } = require("../utils/paperHistoryUI");
@@ -195,25 +196,50 @@ require("../utils/staleSessionGate").clearStaleSessionOnTradingDay(() => state, 
 // state.optionLtp with replay-time. setInterval is not patched by the harness, so
 // it stayed frozen in replay (exit priced at the entry premium). 3s cadence in live.
 const OPTION_POLL_MS = 3000;
+// Socket-first: the held contract is streamed on the shared Fyers websocket via
+// optionFeed, so the REST call below fires only when the stream is quiet or
+// unavailable. The loop itself stays — it renews the optionFeed lease, and it is
+// the fallback that keeps behaviour identical if the stream is down.
+const OPTION_FEED_OWNER = "orb-paper";
 let _optionPollTimer = null;
 let _optionPollStopped = true;
+
+/**
+ * Single place the option premium enters state, whichever source produced it.
+ * `at` is when the price was OBSERVED, not when it was applied — a staleness
+ * guard reading optionLtpUpdatedAt must not be told a 3s-old tick is current.
+ * Socket ticks are already recorded (throttled) by optionFeed, so only the REST
+ * path records here — otherwise replay would see the same price twice.
+ */
+function _applyOptionLtp(symbol, ltp, at, record) {
+  if (!(ltp > 0) || !state.position) return;
+  state.optionLtp = ltp;
+  state.optionLtpUpdatedAt = at || Date.now();
+  if (record) { try { tickRecorder.recordOptionLtp(symbol, ltp, "orb-paper"); } catch (_) {} }
+}
+
 function startOptionPolling() {
   stopOptionPolling();
   _optionPollStopped = false;
   const poll = async () => {
     if (_optionPollStopped) return;
     if (state.position) {
-      try {
-        const r = await fyers.getQuotes([state.position.symbol]);
-        if (r && r.s === "ok" && r.d && r.d.length) {
-          const ltp = r.d[0].v && (r.d[0].v.lp || r.d[0].v.ltp);
-          if (typeof ltp === "number" && ltp > 0) {
-            state.optionLtp = ltp;
-            state.optionLtpUpdatedAt = Date.now();
-            try { tickRecorder.recordOptionLtp(state.position.symbol, ltp, "orb-paper"); } catch (_) {}
+      const symbol = state.position.symbol;
+      optionFeed.track(OPTION_FEED_OWNER, symbol, (ltp, at) => {
+        if (state.position && state.position.symbol === symbol) _applyOptionLtp(symbol, ltp, at, false);
+      });
+      const streamed = optionFeed.getFresh(symbol);
+      if (streamed) {
+        _applyOptionLtp(symbol, streamed.ltp, streamed.at, false);
+      } else {
+        try {
+          const r = await fyers.getQuotes([symbol]);
+          if (r && r.s === "ok" && r.d && r.d.length) {
+            const ltp = r.d[0].v && (r.d[0].v.lp || r.d[0].v.ltp);
+            if (typeof ltp === "number" && ltp > 0) _applyOptionLtp(symbol, ltp, Date.now(), true);
           }
-        }
-      } catch (_) {}
+        } catch (_) {}
+      }
     }
     if (!_optionPollStopped) _optionPollTimer = setTimeout(poll, OPTION_POLL_MS);
   };
@@ -222,6 +248,7 @@ function startOptionPolling() {
 function stopOptionPolling() {
   _optionPollStopped = true;
   if (_optionPollTimer) { clearTimeout(_optionPollTimer); _optionPollTimer = null; }
+  try { optionFeed.release(OPTION_FEED_OWNER); } catch (_) {}
 }
 
 // ── Trade simulation ────────────────────────────────────────────────────────
