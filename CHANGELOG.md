@@ -6,6 +6,14 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — one delisted futures contract no longer kills a whole 3M gap-fix backtest
+
+Running `/gap-fix-3m-backtest` over anything longer than the current contract failed outright with **Invalid symbol provided** and no explanation. The cause is a real external constraint rather than a bug in the strategy: a NIFTY futures contract is **delisted once it expires**, Fyers then rejects the symbol, and `backtestEngine.fetchChunk` raises any non-`ok` response as a throw. The backtest fetched its front-month contract blocks in one unguarded loop, so the first dead month aborted the run — and a 90-day range always starts on one.
+
+Each contract block is now fetched **independently**. What Fyers still serves is used; what it refuses is recorded with a translated reason (`contract expired — Fyers no longer lists it`, not a raw API dump) and reported on the results page as **partial coverage**, naming the missing symbols and their date ranges. That distinction matters: a silently absent month reads as "nothing traded then" when it actually means "never looked". When every contract in the range is dead the job still fails, but with a message that explains the delisting, offers the current contract's window as a working range, and keeps the expired-token hint as the other cause.
+
+The **default range** also changed, from the repo-standard last-90-days to the window the current front-month contract covers — the only range Fyers is certain to serve. Widening it by hand still works and simply reports what could not be fetched. The honest consequence is that this strategy cannot be backtested over a long history on Fyers at all; it is limited to contracts that still exist.
+
 ### Changed — option prices now arrive on the socket the spot feed already uses
 
 Every engine used to ask Fyers over REST what its own option was worth, on its own timer: BB_RSI and PA every 500 ms, EMA_RSI_ST and EMA9_VWAP every second, the rest every 3 seconds. Five strategies holding positions at the same time is roughly **340 requests a minute against a ~200/minute data budget**, and the premium a stop-loss reads could be up to a poll interval old.
