@@ -163,6 +163,7 @@ function _freshState() {
     lastSignal:     null,
     _entryInFlight: false,
     _lastEntryAttemptMs: null,
+    _pendingEntry:  null,   // a signalled entry whose FILL failed — retried per tick
   };
 }
 
@@ -715,9 +716,43 @@ async function evaluateEntry() {
     await simulateBuy(sig.side, sig);
   } finally {
     state._entryInFlight = false;
-    if (!state.position) {
-      log(`⚠️ [TDS-PAPER] Entry attempt failed — will retry on a later setup (throttled ${ENTRY_RETRY_MS / 1000}s)`);
+    if (state.position) {
+      state._pendingEntry = null;
+    } else {
+      // A failed FILL is an infrastructure problem, not a decision. Hold the
+      // signal so the next ticks can retry it — see _retryPendingEntry.
+      state._pendingEntry = { side: sig.side, sig };
+      log(`⚠️ [TDS-PAPER] Entry attempt failed — retrying every ${ENTRY_RETRY_MS / 1000}s until this bar is superseded`);
     }
+  }
+}
+
+/**
+ * Retry a signalled entry whose FILL failed (option LTP unavailable, expiry
+ * unresolved, quotes blip). The DECISION is already made and reads only CLOSED
+ * bars, so re-running it mid-bar cannot change it — this re-attempts only the
+ * broker side, throttled so a persistent failure never hammers the API.
+ *
+ * The pending signal is dropped at the next candle close (onCandleClose), so a
+ * stale setup can never fill minutes later off a bar the market has moved past.
+ * Without this, a one-second quote blip cost the whole day's setup: TDS takes
+ * ~2 trades on the minority of days that pass the gate at all.
+ */
+async function _retryPendingEntry() {
+  const p = state._pendingEntry;
+  if (!p) return;
+  if (state.position || state._entryInFlight) return;
+  if (state.dayClosed || state.tradesTaken >= _maxDailyTrades()) { state._pendingEntry = null; return; }
+  if (getISTMinutes() >= _parseMins("TDS_FORCED_EXIT", "15:10")) { state._pendingEntry = null; return; }
+  if (state._lastEntryAttemptMs && Date.now() - state._lastEntryAttemptMs < ENTRY_RETRY_MS) return;
+
+  state._entryInFlight = true;
+  state._lastEntryAttemptMs = Date.now();
+  try {
+    await simulateBuy(p.side, p.sig);
+  } finally {
+    state._entryInFlight = false;
+    if (state.position) state._pendingEntry = null;
   }
 }
 
@@ -725,6 +760,9 @@ async function evaluateEntry() {
 // The gate and the entry both read CLOSED bars only, so both are driven from here.
 function onCandleClose(bar) {
   _maybeDecideDayGate();
+  // A new bar supersedes any setup still waiting on a failed fill — the market
+  // has moved on, and this bar's own evaluation is the current truth.
+  state._pendingEntry = null;
   if (state.position) return;                    // exits are per-tick, not per-bar
   // Gate on the BAR's close time, exactly as the engine does — not on the wall
   // clock. The two disagree at the boundary: the 13:55 bar closes AT 14:00, so a
@@ -785,6 +823,10 @@ function onTick(tick) {
 
   if (state.position) _checkExits(price);
 
+  if (!state.position && state._pendingEntry) {
+    _retryPendingEntry().catch(e => console.error(`🚨 [TDS-PAPER] entry-retry error: ${e.message}`));
+  }
+
   if (state.position) {
     const nowMin = getISTMinutes();
     if (nowMin >= _parseMins("TDS_FORCED_EXIT", "15:10")) {
@@ -812,7 +854,20 @@ async function preloadHistory() {
     const candles = await fetchCandlesCached(NIFTY_INDEX_SYMBOL, String(resMin), istStart, istToday, fetchCandles);
     if (Array.isArray(candles) && candles.length > 0) {
       state.candles = candles.slice(-300);
-      log(`📊 [TDS-PAPER] Preloaded ${state.candles.length} × ${resMin}-min spot candles (${istStart}→${istToday}, ${lookbackDays}d lookback)`);
+      // Fyers history includes TODAY'S STILL-FORMING bar. Leaving it in
+      // state.candles is wrong twice over: starting between 10:10 and 10:15 would
+      // let the day gate decide — and FREEZE for the whole session — off an
+      // incomplete 10:10 bar; and if the first live tick lands in a later bucket
+      // the truncated bar is never completed, silently skewing EMA/ATR/VWAP all
+      // day and breaking Paper≡Backtest. Hoist it into currentBar instead: ticks
+      // keep filling it and onCandleClose fires when it really closes.
+      const _bucketMs  = getBucketStart(Date.now(), resMin);
+      const _lastLoaded = state.candles[state.candles.length - 1];
+      if (_lastLoaded && _lastLoaded.time === Math.floor(_bucketMs / 1000)) {
+        state.currentBar   = state.candles.pop();
+        state.barStartTime = _bucketMs;
+      }
+      log(`📊 [TDS-PAPER] Preloaded ${state.candles.length} × ${resMin}-min closed spot candles (${istStart}→${istToday}, ${lookbackDays}d lookback)${state.currentBar ? ` + the forming ${resMin}m bar` : ""}`);
       if (state.candles.length < WARM_BARS) {
         log(`⚠️ [TDS-PAPER] Only ${state.candles.length} bars preloaded (< ${WARM_BARS}) — EMA/ATR start inside their seeding transient, so early values may differ slightly from Backtest.`);
       }
