@@ -178,7 +178,7 @@ function currentContractWindow(todayStr) {
  *        current session.
  */
 function runGapFix3mBacktest(intraday) {
-  if (!intraday || !intraday.length) return { trades: [], days: 0, skipped: [], gapStats: { gaps: 0, brokeOut: 0, noReturn: 0, unknownVol: 0 } };
+  if (!intraday || !intraday.length) return { trades: [], days: 0, skipped: [], gapStats: { gaps: 0, brokeOut: 0, noReturn: 0, unknownVol: 0 }, voidStats: { voids: 0, largest: 0, atLeast5: 0, atLeast10: 0, atLeast20: 0 } };
 
   const cfg = gapStrategy.getConfig();
   const DELTA        = parseFloat(process.env.BACKTEST_DELTA || "0.55");
@@ -212,12 +212,30 @@ function runGapFix3mBacktest(intraday) {
   const skipped = [];
   let days = 0;
   const gapStats = { gaps: 0, brokeOut: 0, noReturn: 0, unknownVol: 0 };
+  // Every void between consecutive bars, measured with NO minimum applied. When a
+  // run reports zero setups the only useful question is "how big do the voids
+  // actually get?", and a threshold-filtered count cannot answer it. Diagnostic
+  // only — nothing here feeds a decision.
+  const voidStats = { voids: 0, largest: 0, atLeast5: 0, atLeast10: 0, atLeast20: 0 };
 
   for (const k of dayKeys) {
     const bars = byDay.get(k);
     if (!bars || bars.length < 3) continue;
     days++;
     const dayTs = bars[0].time;
+
+    for (let i = 1; i < bars.length; i++) {
+      const a = bars[i - 1], b = bars[i];
+      const size = b.low > a.high ? b.low - a.high
+                 : b.high < a.low ? a.low - b.high
+                 : 0;
+      if (size <= 0) continue;
+      voidStats.voids++;
+      if (size > voidStats.largest) voidStats.largest = size;
+      if (size >= 5)  voidStats.atLeast5++;
+      if (size >= 10) voidStats.atLeast10++;
+      if (size >= 20) voidStats.atLeast20++;
+    }
 
     let dayPnl = 0, dayTrades = 0, dayStopOuts = 0, dayClosed = false;
     let pos = null;
@@ -333,7 +351,8 @@ function runGapFix3mBacktest(intraday) {
     if (!sawGap) skipped.push({ date: istDateOf(dayTs), reason: `no gap of ${cfg.minGapPts}pt or more all session` });
   }
 
-  return { trades, days, skipped, gapStats };
+  voidStats.largest = Math.round(voidStats.largest * 100) / 100;
+  return { trades, days, skipped, gapStats, voidStats };
 }
 
 // ── Routes ──────────────────────────────────────────────────────────────────
@@ -384,6 +403,7 @@ function _renderResults(res, from, to, trades, stats, meta) {
   const inf = (x) => x === Infinity ? "∞" : x;
   const cfg = gapStrategy.getConfig();
   const gs = meta.gapStats || { gaps: 0, brokeOut: 0, noReturn: 0, unknownVol: 0 };
+  const vs = meta.voidStats || { voids: 0, largest: 0, atLeast5: 0, atLeast10: 0, atLeast20: 0 };
   const served = meta.served || [];
   const rejected = meta.rejected || [];
   const empty = meta.empty || [];
@@ -419,6 +439,8 @@ function _renderResults(res, from, to, trades, stats, meta) {
       { label: "Max Drawdown", value: `₹${stats.maxDrawdown}` },
       { label: "Sessions scanned", value: meta.days },
       { label: "Gap setups seen", value: gs.gaps },
+      { label: "Largest void seen", value: `${vs.largest}pt` },
+      { label: "Voids ≥5 / ≥10 / ≥20pt", value: `${vs.atLeast5} / ${vs.atLeast10} / ${vs.atLeast20}` },
       { label: "Skipped — real breakout", value: gs.brokeOut },
       { label: "Skipped — volume unknown", value: gs.unknownVol },
       { label: "Skipped — never returned", value: gs.noReturn },
@@ -545,7 +567,7 @@ router.get("/", async (req, res) => {
         try { saveResult(RESULT_KEY, { summary: stats, params: { from, to, resolution: String(_resMin()) } }); }
         catch (e) { console.warn("[gap-fix-3m-backtest] saveResult failed:", e.message); }
 
-        backtestJobs.completeJob(id, { trades: result.trades, stats, from, to, meta: { days: result.days, skipped: result.skipped, gapStats: result.gapStats, served, rejected, empty } });
+        backtestJobs.completeJob(id, { trades: result.trades, stats, from, to, meta: { days: result.days, skipped: result.skipped, gapStats: result.gapStats, voidStats: result.voidStats, served, rejected, empty } });
         console.log(`✅ 3M_GAP_FIX_SCALP Backtest job ${id} complete — ${result.trades.length} trades over ${result.days} sessions (${result.gapStats.gaps} gap setups seen)`);
       } catch (err) {
         console.error("[gap-fix-3m-backtest] job error:", err);
