@@ -6,6 +6,20 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — the NIFTY futures contract name was two days wrong every month
+
+`instrument.getFuturesExpiry()` computed the **last Thursday** of the month. NSE has moved NIFTY derivative expiry to **Tuesday**, so for the last two days of every month the code named a contract that does not exist and Fyers answered *Invalid symbol provided*. Verified against Fyers' own symbol master (`public.fyers.in/sym_details/NSE_FO.csv`): `NIFTY26AUGFUT` expires 25-Aug-2026, `26SEP` 29-Sep-2026, `26OCT` 27-Oct-2026 — every one a Tuesday.
+
+The roll now uses the last Tuesday, in `instrument.getFuturesExpiry()` (3M gap-fix paper and live, and the OI filter's futures symbol) and in the 3M gap-fix backtest's own block splitter. The contract still rolls the day before expiry, so the expiring session is never traded. A test now checks every block the splitter produces against the real symbol master rather than against the rule that produced it.
+
+### Fixed — the 3M gap-fix backtest asked Fyers for days that cannot exist
+
+`/gap-fix-3m-backtest` failed on the current, still-listed contract with a bare **Invalid input**. The backtest fetched through the month-granular cache, which rewrites the requested range into **whole calendar months** before calling Fyers: "29 Jul → 9 Aug" went out as 1–31 Jul and 1–31 Aug. Harmless for a perpetual index, wrong for a futures contract — the widened range reaches past today and past the contract's own expiry, and Fyers refuses it.
+
+The backtest now fetches the **exact** block range instead, and the range is clamped to today before any request is built. A month-keyed disk cache bought almost nothing here anyway, since the servable window is about one contract.
+
+Refusals are also now reported in full. The Fyers SDK rejects with the raw response body as a plain object — reading only `.message` off it reduced every parameter complaint to the words "Invalid input" and discarded `data`, the one field that names the parameter Fyers rejected. The whole payload (message, code, and detail) now reaches the page, and the failure only blames delisting when Fyers actually said the symbol is unknown; an authentication failure reads as one and sends you to re-login.
+
 ### Fixed — one delisted futures contract no longer kills a whole 3M gap-fix backtest
 
 Running `/gap-fix-3m-backtest` over anything longer than the current contract failed outright with **Invalid symbol provided** and no explanation. The cause is a real external constraint rather than a bug in the strategy: a NIFTY futures contract is **delisted once it expires**, Fyers then rejects the symbol, and `backtestEngine.fetchChunk` raises any non-`ok` response as a throw. The backtest fetched its front-month contract blocks in one unguarded loop, so the first dead month aborted the run — and a 90-day range always starts on one.
