@@ -484,8 +484,8 @@ router.get("/", async (req, res) => {
           const blk = blocks[b];
           backtestJobs.updateProgress(id, { phase: `Fetching ${blk.symbol} (${blk.from} → ${blk.to})…`, pct: Math.round((b / blocks.length) * 65) });
           try {
-            // Exact range, block by block. The roll already ends every block a
-            // day before its contract expires, and the range was clamped to
+            // Exact range, block by block. The roll already ends every block two
+            // days before its contract expires, and the range was clamped to
             // today, so no request can reach for a session this symbol never had.
             const part = await fetchCandles(blk.symbol, String(_resMin()), blk.from, blk.to);
             const n = Array.isArray(part) ? part.length : 0;
