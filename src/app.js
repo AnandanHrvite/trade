@@ -2199,7 +2199,7 @@ ${buildSidebar('dashboard', liveActive)}
     ` : ''}
   </div>
   <div class="mm-card mm-grid-empty" id="mmGridEmpty" style="display:none;">
-    <div class="mm-empty">No strategy traded in this range</div>
+    <div class="mm-empty" id="mmGridEmptyTxt">No trades yet</div>
   </div>
 
   <!-- ⑤ CUMULATIVE P&L CHART (top-bar Paper/Live toggle + Range filter) — full-width band below the strategy grid -->
@@ -2886,6 +2886,11 @@ function _updateModuleGridEmpty(){
     if (c.style.display !== 'none') anyVisible = true;
   });
   note.style.display = anyVisible ? 'none' : '';
+  if (anyVisible) return;
+  // Same wording as the per-card and cumulative empty lines, so the note names
+  // the source and range the grid is actually showing.
+  var txt = document.getElementById('mmGridEmptyTxt');
+  if (txt) txt.textContent = 'No strategy has any ' + _dashSrc + ' trades ' + (_dashRangeActive() ? 'in this range' : 'yet');
 }
 
 function _renderModuleChart(mode){
@@ -3103,11 +3108,11 @@ setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily 
     return fetch(url, { cache:'no-store' }).then(function(r){ return r.ok ? r.json() : null; }).catch(function(){ return null; });
   }
 
-  // Has this strategy actually traded today? A closed trade counts, and so does
-  // an open position — it is a trade taken, just not finished yet. A failed
+  // Keep a tile only if the strategy has something to report today: a closed
+  // trade, or an open position — a trade taken, just not finished yet. A failed
   // status fetch (d == null) is not proof of an idle strategy, so it keeps its
   // tile and shows OFFLINE rather than disappearing mid-session.
-  function tookTradeToday(d){
+  function shouldShowLiveTile(d){
     if (!d) return true;
     var taken = d.tradeCount != null ? d.tradeCount : (d.tradesTaken || 0);
     return (+taken > 0) || !!d.position;
@@ -3116,7 +3121,7 @@ setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily 
   function renderLive(data) {
     // data: { EMA_RSI_ST, BB_RSI, ... } keyed by tile, each from /{strat}-paper/status/data
     // Only strategies that took a trade today get a card; idle ones are omitted.
-    var tiles = SESSION_TILES.filter(function(t){ return tookTradeToday(data[t.key]); });
+    var tiles = SESSION_TILES.filter(function(t){ return shouldShowLiveTile(data[t.key]); });
     if (!tiles.length) {
       return '<div class="da-empty">No strategy has taken a trade yet today.</div>';
     }

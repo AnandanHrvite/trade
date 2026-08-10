@@ -12,7 +12,7 @@ Nine enabled strategies meant nine cards on every screen of the Dashboard, whate
 
 A strategy with nothing to report is now left out entirely, in both places:
 
-- **The per-module P&L cards** hide when the strategy has no trades in the selected Paper/Live source and date range. The grid re-flows around what is left. If nothing traded in the range, one line — *No strategy traded in this range* — stands in for all of them instead of nine empty cards.
+- **The per-module P&L cards** hide when the strategy has no trades in the selected Paper/Live source and date range. The grid re-flows around what is left. If nothing traded, one line — *No strategy has any paper trades in this range* — stands in for all of them instead of nine empty cards.
 - **The analytics panel** does the same for the session tiles. After hours it keeps only the strategies that traded on the last trading day (plus TOTAL); during market hours it keeps the ones that have taken a trade today, where an open position counts as a trade taken — it is just not finished yet. When no strategy has traded yet, the panel says so in a line.
 
 Nothing about which strategies are *enabled* changes — a strategy that is off was never shown, and one that is on reappears the moment it takes its first trade. A strategy whose status fetch *fails* is not treated as idle: it keeps its tile and shows OFFLINE, because a failed read is not proof that nothing happened.
