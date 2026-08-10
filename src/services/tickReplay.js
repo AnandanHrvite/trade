@@ -209,7 +209,7 @@ const _MODE_TO_ENV_PREFIX = {
 //     IGNORES OPTION_EXPIRY_TYPE unless an override date is set, so a recorded
 //     `type=monthly` with no override still traded the weekly nearest. We
 //     therefore pin marketContext.weeklyExpiry (which IS that nearest — the same
-//     getNearestExpiryFromOptionChain result captured at record time) as a
+//     getNearestExpiryDateFromOptionChain result captured at record time) as a
 //     weekly-format date, regardless of the recorded type. This is exactly the
 //     path that used to leak today's expiry via new Date()/live REST.
 //

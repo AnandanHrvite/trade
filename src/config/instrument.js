@@ -317,36 +317,6 @@ function expiryTimestampToDate(ts) {
 }
 
 /**
- * Convert expiry code to a Date object.
- * Weekly  "26331" → 2026-03-31 (YYMDD, M = month code 1-9, O, N, D)
- * Monthly "26AUG" → that month's scheduled expiry (last Tuesday), before prepone.
- */
-function expiryCodeToDate(code) {
-  const raw = String(code || "").trim().toUpperCase();
-
-  // Monthly form: YY + 3-letter month
-  const monthly = raw.match(/^(\d{2})([A-Z]{3})$/);
-  if (monthly) {
-    const monthIndex = MONTHS.indexOf(monthly[2]);
-    if (monthIndex === -1) throw new Error(`[instrument] Invalid month '${monthly[2]}' in expiry: ${code}`);
-    return lastExpiryWeekdayOf(2000 + parseInt(monthly[1], 10), monthIndex);
-  }
-
-  // e.g. "26331" = 2026-03-31
-  const yy = raw.substring(0, 2);
-  const mCode = raw.substring(2, 3);
-  const dd = raw.substring(3, 5);
-
-  const year = 2000 + parseInt(yy);
-  const monthIndex = MONTH_CODE.indexOf(mCode);
-  if (monthIndex === -1) throw new Error(`[instrument] Invalid month code '${mCode}' in expiry: ${code}`);
-  const day = parseInt(dd);
-  if (isNaN(day) || day < 1 || day > 31) throw new Error(`[instrument] Invalid day '${dd}' in expiry: ${code}`);
-
-  return new Date(year, monthIndex, day);
-}
-
-/**
  * Convert Date object to expiry code (e.g. "26331")
  * Format: YYMDD where M is month code (1-9, O, N, D)
  */
@@ -610,10 +580,13 @@ async function validateAndGetOptionSymbol(spot, side, mode) {
 
   // ── Step 3: Monthly expiry (last Tuesday of month) + getQuotes() validation ──
   // Rolls to next month once this month's has passed, so late-month retries do
-  // not re-test a contract that has already expired.
+  // not re-test a contract that has already expired. "Passed" is measured against
+  // the nearest still-tradeable weekly date rather than today, so 15:30 on expiry
+  // day rolls here exactly when it rolls there; ISO strings compare by calendar
+  // day, which the Date objects themselves would not (they carry different times).
   console.warn(`[instrument] ⚠️  Weekly expiry ${weeklyExpiry} not available, trying monthly...`);
   let monthlyDate = lastExpiryWeekdayOf(ist.getFullYear(), ist.getMonth());
-  if (monthlyDate.getDate() < ist.getDate()) {
+  if (formatDateToYYYYMMDD(monthlyDate) < formatDateToYYYYMMDD(weeklyDate)) {
     monthlyDate = lastExpiryWeekdayOf(
       ist.getMonth() === 11 ? ist.getFullYear() + 1 : ist.getFullYear(),
       ist.getMonth() === 11 ? 0 : ist.getMonth() + 1
