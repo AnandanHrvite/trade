@@ -313,7 +313,11 @@ function expiryTimestampToDate(ts) {
   const ms = n > 1e10 ? n : n * 1000;   // seconds vs milliseconds
   const d  = new Date(ms);
   if (isNaN(d.getTime())) return null;
-  return new Date(d.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+  // Re-check after the IST round-trip too: this Date is handed straight to
+  // expiryCodeFor, and an Invalid Date there would build a "NaN" symbol rather
+  // than fail — null instead falls through to the computed-expiry path.
+  const ist = new Date(d.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+  return isNaN(ist.getTime()) ? null : ist;
 }
 
 /**
