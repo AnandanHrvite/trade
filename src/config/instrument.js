@@ -434,6 +434,9 @@ function parseExpiryDateString(dateStr) {
   if (parts.length !== 3 || parts.some(p => isNaN(parseInt(p, 10)))) return null;
   const [a, b, c] = parts.map(p => parseInt(p, 10));
   const [year, month, day] = String(parts[0]).length === 4 ? [a, b, c] : [c, b, a];
+  // Insist on a 4-digit year: `new Date(26, …)` silently means 1926, and that
+  // date would still format into a plausible-looking — but wrong — expiry code.
+  if (year < 2000 || year > 2100 || month < 1 || month > 12 || day < 1 || day > 31) return null;
   const d = new Date(year, month - 1, day, 12, 0, 0, 0);
   return isNaN(d.getTime()) ? null : d;
 }
