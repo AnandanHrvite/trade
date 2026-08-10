@@ -10,16 +10,6 @@
           }
         ]
       }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"UserPromptSubmit\",\"additionalContext\":\"Answer style: SHORT and crisp — 1-2 lines max by default. Very simple plain English, no jargon. If the work speaks for itself, a one-line confirmation is enough; saying nothing extra is better than padding. Add a small real-numbers example only when it actually helps understanding. No tables, no headings, no multi-section summaries unless the user asks. MEMORY RULE: do NOT write or update memory files unless the user explicitly asks in that prompt (e.g. -update memory-). Never save memory on your own after making code changes.\"}}'"
-          }
-        ]
-      }
     ]
   }
 }
