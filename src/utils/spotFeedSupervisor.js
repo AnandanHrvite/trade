@@ -166,10 +166,14 @@ async function _check() {
 function _schedule() {
   if (!_running) return;
   _timer = setTimeout(async () => {
+    // `finally`, not a bare call after catch: a rejection carrying no Error
+    // makes the catch body itself throw on `.message`, which would skip the
+    // re-arm and kill the supervisor for the rest of the process.
     try { await _check(); } catch (err) {
-      console.warn(`[spotFeedSupervisor] check failed: ${err.message}`);
+      console.warn(`[spotFeedSupervisor] check failed: ${(err && err.message) || err}`);
+    } finally {
+      _schedule();
     }
-    _schedule();
   }, CHECK_MS);
   if (_timer && typeof _timer.unref === "function") _timer.unref();
 }

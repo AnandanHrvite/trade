@@ -173,7 +173,7 @@ function scheduleNext() {
 function start() {
   // Catch-up: if we booted after today's 15:32 and haven't sent yet, send now.
   maybeSendForToday().catch((err) =>
-    console.error("[EOD] boot catch-up failed:", err.message));
+    console.error("[EOD] boot catch-up failed:", (err && err.message) || err));
   scheduleNext();
 }
 

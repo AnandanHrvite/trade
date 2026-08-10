@@ -621,9 +621,14 @@ function msUntilNextRun() {
 function scheduleNext() {
   if (_timer) clearTimeout(_timer);
   _timer = setTimeout(() => {
+    // This callback is SYNCHRONOUS, so anything escaping it is an
+    // uncaughtException and app.js exits the process on those. A throw carrying
+    // no Error would make the catch body throw on `.message` and do exactly
+    // that — hence the guarded read, and `finally` so the weekly run re-arms
+    // even then.
     try { maybeRunForPeriod(); }
-    catch (err) { console.error(`[advisor] weekly run failed: ${err.message}`); }
-    scheduleNext();
+    catch (err) { console.error(`[advisor] weekly run failed: ${(err && err.message) || err}`); }
+    finally { scheduleNext(); }
   }, msUntilNextRun());
   if (_timer.unref) _timer.unref();
 }
