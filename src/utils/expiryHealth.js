@@ -69,7 +69,6 @@ let _state = {
   symbol:     null,
   expiry:     null,
   expiryDate: null,
-  rolledTo:   null,   // set for one cycle after an automatic roll, for the log line
   reason:     null,
   checkedAt:  null,
 };
@@ -121,7 +120,7 @@ function _skipReason() {
 }
 
 function _setState(patch) {
-  _state = { ..._state, rolledTo: null, ...patch, checkedAt: Date.now() };
+  _state = { ..._state, ...patch, checkedAt: Date.now() };
 }
 
 /**
@@ -166,14 +165,13 @@ async function check() {
       return _state;
     }
 
-    const rolledTo = _maybeRoll(auto);
+    _maybeRoll(auto);
     _setState({
       status: "ok",
       symbol: auto.symbol,
       expiry: auto.expiry,
       expiryDate: auto.expiryDate || null,
       reason: null,
-      rolledTo,
     });
   } catch (err) {
     _setState({ status: "unknown", symbol: null, expiry: null, expiryDate: null, reason: `check errored (${err.message})` });
@@ -187,17 +185,18 @@ async function check() {
 
 /**
  * Write the resolved expiry into OPTION_EXPIRY_OVERRIDE when the stored value is
- * blank or already expired. Returns the date written, or null if nothing changed.
+ * blank or already expired. The change is announced by log + Telegram rather than
+ * returned, so there is one record of it and no state that nothing reads.
  */
 function _maybeRoll(auto) {
-  if (!_autoRollEnabled() || !auto.expiryDate) return null;
+  if (!_autoRollEnabled() || !auto.expiryDate) return;
 
   const instrument = require("../config/instrument");
   const current    = (process.env.OPTION_EXPIRY_OVERRIDE || "").trim();
 
   // A live, forward-dated override is a deliberate choice — leave it alone.
-  if (current && !instrument.isExpiryOverrideStale(current)) return null;
-  if (current === auto.expiryDate) return null;
+  if (current && !instrument.isExpiryOverrideStale(current)) return;
+  if (current === auto.expiryDate) return;
 
   // The code decides weekly vs monthly from the date itself; keep the Settings
   // dropdown honest about which one this contract actually is.
@@ -211,17 +210,15 @@ function _maybeRoll(auto) {
     );
     if (!res || res.success === false) {
       console.warn(`[expiryHealth] ⚠️  Could not save rolled expiry: ${(res && res.error) || "unknown error"}`);
-      return null;
+      return;
     }
     console.log(`[expiryHealth] 🔄 Expiry rolled ${current || "(blank)"} → ${auto.expiryDate} (${auto.expiry}, ${type}) — Settings and Dashboard updated`);
     notify.sendIfMaster(
       `🔄 <b>Option expiry updated automatically</b>\n` +
       `${current || "(blank)"} → <b>${auto.expiryDate}</b> (${auto.expiry}, ${type})`
     );
-    return auto.expiryDate;
   } catch (err) {
     console.warn(`[expiryHealth] ⚠️  Expiry roll failed: ${err.message}`);
-    return null;
   }
 }
 
