@@ -2578,6 +2578,14 @@ function multiSelectCSS() {
     :root[data-theme="light"] .ms-opt{color:#334155!important;}
     :root[data-theme="light"] .ms-opt:hover{background:#f1f5f9!important;}
     :root[data-theme="light"] .ms-sep{background:#e0e4ea!important;}
+    /* Phone: match what a page's own toolbar rules give .tbar select — the control
+       it replaced stretched and had a bigger touch target. The menu is pinned to
+       both edges so a 200px popup can't hang off a 390px screen. */
+    @media(max-width:700px){
+      .ms{flex:1 1 140px;min-width:0;}
+      .ms-btn{width:100%;min-width:0;padding:8px 10px;}
+      .ms-menu{left:0;right:0;min-width:0;}
+    }
   `;
 }
 
