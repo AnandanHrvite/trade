@@ -499,7 +499,7 @@ h2{color:#ef4444;margin-bottom:12px;}p{margin-bottom:18px;}
 a{color:${ACCENT};text-decoration:none;border:0.5px solid #0e1428;padding:8px 14px;border-radius:6px;}
 :root[data-theme="light"] body{background:#f4f6f9;color:#334155;}
 :root[data-theme="light"] h2{color:#b91c1c;}
-:root[data-theme="light"] a{border-color:#e0e4ea;background:#ffffff;}
+:root[data-theme="light"] a{border-color:#e0e4ea;background:#ffffff;color:#047857;}
 @media(max-width:768px){body{padding:24px 14px;}a{min-height:44px;display:inline-flex;align-items:center;justify-content:center;}}</style>
 </head><body><h2>ORB Backtest Failed</h2><p>${msg}</p><p><b>${from || ""}</b> → <b>${to || ""}</b></p><a href="/orb-backtest">← Back</a></body></html>`;
 }

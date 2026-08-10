@@ -376,6 +376,16 @@ function buildSuccessPage(title, message) {
 :root[data-theme="light"] .hint{background:#f8fafc;border-color:#e0e4ea;}
 :root[data-theme="light"] .back{color:#4b5769;}
 :root[data-theme="light"] input{background:#f8fafc;border-color:#e0e4ea;color:#334155;}
+/* The card's own accents were picked for the dark panel: the secondary link
+   and the amber step labels read 1.6-1.8:1 once the card turns white. */
+:root[data-theme="light"] .alt{color:#1d4ed8;border-color:#bfdbfe;}
+:root[data-theme="light"] .step-label,
+:root[data-theme="light"] .label,
+:root[data-theme="light"] .hint b{color:#92400e;}
+:root[data-theme="light"] code{color:#1d4ed8;}
+:root[data-theme="light"] code.amber{color:#92400e;}
+:root[data-theme="light"] .url-box,
+:root[data-theme="light"] .token-box{background:#f8fafc;border-color:#e0e4ea;color:#334155;}
 @media(max-width:768px){
   body{padding:16px 12px;align-items:flex-start;}
   .card{width:100%;max-width:100%;padding:26px 18px;}
@@ -412,7 +422,8 @@ function buildLoginLandingPage(authUrl) {
     a.back{min-height:44px;display:inline-flex;align-items:center;justify-content:center;}
     input,select,textarea{font-size:16px;min-height:44px;}
     button,a.btn{min-height:44px;}
-    code{overflow-wrap:anywhere;word-break:break-word;}
+    code{overflow-wrap:anywhere;word-break:break-word;color:#93c5fd;}
+    code.amber{color:#fbbf24;}
   }
 
 :root[data-theme="light"] body{background:#f4f6f9;color:#334155;}
@@ -422,6 +433,16 @@ function buildLoginLandingPage(authUrl) {
 :root[data-theme="light"] .hint{background:#f8fafc;border-color:#e0e4ea;}
 :root[data-theme="light"] .back{color:#4b5769;}
 :root[data-theme="light"] input{background:#f8fafc;border-color:#e0e4ea;color:#334155;}
+/* The card's own accents were picked for the dark panel: the secondary link
+   and the amber step labels read 1.6-1.8:1 once the card turns white. */
+:root[data-theme="light"] .alt{color:#1d4ed8;border-color:#bfdbfe;}
+:root[data-theme="light"] .step-label,
+:root[data-theme="light"] .label,
+:root[data-theme="light"] .hint b{color:#92400e;}
+:root[data-theme="light"] code{color:#1d4ed8;}
+:root[data-theme="light"] code.amber{color:#92400e;}
+:root[data-theme="light"] .url-box,
+:root[data-theme="light"] .token-box{background:#f8fafc;border-color:#e0e4ea;color:#334155;}
 @media(max-width:768px){
   body{padding:16px 12px;align-items:flex-start;}
   .card{width:100%;max-width:100%;padding:26px 18px;}
@@ -480,7 +501,8 @@ function buildManualLoginPage(authUrl, errorMsg) {
     a.back{min-height:44px;display:inline-flex;align-items:center;justify-content:center;}
     input,select,textarea{font-size:16px;min-height:44px;}
     button,a.btn{min-height:44px;}
-    code{overflow-wrap:anywhere;word-break:break-word;}
+    code{overflow-wrap:anywhere;word-break:break-word;color:#93c5fd;}
+    code.amber{color:#fbbf24;}
   }
 
 :root[data-theme="light"] body{background:#f4f6f9;color:#334155;}
@@ -490,6 +512,16 @@ function buildManualLoginPage(authUrl, errorMsg) {
 :root[data-theme="light"] .hint{background:#f8fafc;border-color:#e0e4ea;}
 :root[data-theme="light"] .back{color:#4b5769;}
 :root[data-theme="light"] input{background:#f8fafc;border-color:#e0e4ea;color:#334155;}
+/* The card's own accents were picked for the dark panel: the secondary link
+   and the amber step labels read 1.6-1.8:1 once the card turns white. */
+:root[data-theme="light"] .alt{color:#1d4ed8;border-color:#bfdbfe;}
+:root[data-theme="light"] .step-label,
+:root[data-theme="light"] .label,
+:root[data-theme="light"] .hint b{color:#92400e;}
+:root[data-theme="light"] code{color:#1d4ed8;}
+:root[data-theme="light"] code.amber{color:#92400e;}
+:root[data-theme="light"] .url-box,
+:root[data-theme="light"] .token-box{background:#f8fafc;border-color:#e0e4ea;color:#334155;}
 @media(max-width:768px){
   body{padding:16px 12px;align-items:flex-start;}
   .card{width:100%;max-width:100%;padding:26px 18px;}
@@ -516,8 +548,8 @@ function buildManualLoginPage(authUrl, errorMsg) {
   <div class="step">
     <div class="step-label">Step 2 — Log in on Fyers</div>
     <div class="hint">Complete the Fyers login flow. After it succeeds, Fyers redirects to a URL like<br>
-      <code style="color:#93c5fd;">https://&lt;your-bot&gt;/auth/callback?auth_code=XYZ123&amp;state=...</code><br>
-      If that page never opens but you can see the URL in the address bar (or in the Fyers app), you can still grab the <code style="color:#fbbf24;">auth_code</code> value from it.
+      <code>https://&lt;your-bot&gt;/auth/callback?auth_code=XYZ123&amp;state=...</code><br>
+      If that page never opens but you can see the URL in the address bar (or in the Fyers app), you can still grab the <code class="amber">auth_code</code> value from it.
     </div>
   </div>
 
@@ -584,6 +616,16 @@ function buildManualSuccessPage(accessToken) {
 :root[data-theme="light"] .hint{background:#f8fafc;border-color:#e0e4ea;}
 :root[data-theme="light"] .back{color:#4b5769;}
 :root[data-theme="light"] input{background:#f8fafc;border-color:#e0e4ea;color:#334155;}
+/* The card's own accents were picked for the dark panel: the secondary link
+   and the amber step labels read 1.6-1.8:1 once the card turns white. */
+:root[data-theme="light"] .alt{color:#1d4ed8;border-color:#bfdbfe;}
+:root[data-theme="light"] .step-label,
+:root[data-theme="light"] .label,
+:root[data-theme="light"] .hint b{color:#92400e;}
+:root[data-theme="light"] code{color:#1d4ed8;}
+:root[data-theme="light"] code.amber{color:#92400e;}
+:root[data-theme="light"] .url-box,
+:root[data-theme="light"] .token-box{background:#f8fafc;border-color:#e0e4ea;color:#334155;}
 @media(max-width:768px){
   body{padding:16px 12px;align-items:flex-start;}
   .card{width:100%;max-width:100%;padding:26px 18px;}
@@ -646,6 +688,16 @@ function buildErrorPage(title, message) {
 :root[data-theme="light"] .hint{background:#f8fafc;border-color:#e0e4ea;}
 :root[data-theme="light"] .back{color:#4b5769;}
 :root[data-theme="light"] input{background:#f8fafc;border-color:#e0e4ea;color:#334155;}
+/* The card's own accents were picked for the dark panel: the secondary link
+   and the amber step labels read 1.6-1.8:1 once the card turns white. */
+:root[data-theme="light"] .alt{color:#1d4ed8;border-color:#bfdbfe;}
+:root[data-theme="light"] .step-label,
+:root[data-theme="light"] .label,
+:root[data-theme="light"] .hint b{color:#92400e;}
+:root[data-theme="light"] code{color:#1d4ed8;}
+:root[data-theme="light"] code.amber{color:#92400e;}
+:root[data-theme="light"] .url-box,
+:root[data-theme="light"] .token-box{background:#f8fafc;border-color:#e0e4ea;color:#334155;}
 @media(max-width:768px){
   body{padding:16px 12px;align-items:flex-start;}
   .card{width:100%;max-width:100%;padding:26px 18px;}
