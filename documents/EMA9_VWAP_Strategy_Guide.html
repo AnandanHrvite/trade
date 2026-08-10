@@ -594,9 +594,9 @@ Bottom of channel = fair-value line &minus; (1 &times; the normal wobble)</code>
       </tr>
       <tr>
         <td>Candle-trailing stop</td>
-        <td><code>EMA9VWAP_CANDLE_TRAIL_ENABLED</code> / <code>_BARS</code></td>
+        <td><code>EMA9VWAP_CANDLE_TRAIL_ENABLED</code> / <code>EMA9VWAP_CANDLE_TRAIL_BARS</code></td>
         <td><code>false</code> / <code>3</code></td>
-        <td>Trail a stop behind the recent candles &mdash; for a CE it follows the lowest low of the last few candles upward, tightening only, never loosening. <code>_BARS</code> = how many candles it looks back.</td>
+        <td>Trail a stop behind the recent candles &mdash; for a CE it follows the lowest low of the last few candles upward, tightening only, never loosening. <code>EMA9VWAP_CANDLE_TRAIL_BARS</code> = how many candles it looks back.</td>
       </tr>
       <tr>
         <td>Not-working-yet cut</td>
@@ -630,18 +630,25 @@ Bottom of channel = fair-value line &minus; (1 &times; the normal wobble)</code>
 
   <p>VIX is the market's fear gauge. When it's high, options get expensive and prices swing violently &mdash; a riskier time to trade. This strategy can sit out those days.</p>
 
-  <div class="note note-warn">
-    <strong>An important quirk: the VIX limits here are the SHARED, global ones.</strong> Most other strategies have their own private VIX dials. EMA9+VWAP does <em>not</em> &mdash; it uses the global <code>VIX_*</code> settings (the same ones the EMA_RSI_ST strategy uses). So if you change <code>VIX_MAX_ENTRY</code> to loosen or tighten it here, you're also changing it for that other strategy. There is no <code>EMA9VWAP_VIX_*</code> dial to adjust this strategy on its own.
+  <div class="note note-success">
+    <strong>This strategy now has its own VIX dials &mdash; earlier editions of this guide said it did not, and that is out of date.</strong>
+    There are three private keys, and each one works the same way: <b>leave it blank and the global setting is used; fill it in and it wins for this strategy only.</b> That is the best of both &mdash; you can loosen or tighten EMA9+VWAP on its own without disturbing any other strategy, and if you never touch them nothing changes from how it behaved before.
   </div>
 
   <table>
     <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
     <tbody>
-      <tr><td><code>VIX_FILTER_ENABLED</code></td><td><code>true</code></td><td>The on/off switch. On by default &mdash; so the VIX check is active unless you turn it off.</td></tr>
-      <tr><td><code>VIX_MAX_ENTRY</code></td><td><code>20</code></td><td>If VIX is above 20, don't take any new trade &mdash; too jumpy, options too pricey.</td></tr>
-      <tr><td><code>VIX_STRONG_ONLY</code></td><td><code>16</code></td><td>Between 16 and 20, only take the very best ("strong") signals. Now that break-outs are graded (Section 4), a WEAK break in this VIX band is skipped &mdash; only a STRONG break trades.</td></tr>
+      <tr><td><code>EMA9VWAP_VIX_ENABLED</code></td><td><em>blank</em></td><td>The on/off switch for this strategy alone. Blank means "do whatever the global switch says", which is the default. Set it to <code>true</code> or <code>false</code> to override just here.</td></tr>
+      <tr><td><code>EMA9VWAP_VIX_MAX_ENTRY</code></td><td><em>blank</em> (&rarr; <code>20</code>)</td><td>Above this VIX, take no new trade &mdash; too jumpy, options too pricey. Blank falls back to the global <code>VIX_MAX_ENTRY</code>, which is 20.</td></tr>
+      <tr><td><code>EMA9VWAP_VIX_STRONG_ONLY</code></td><td><em>blank</em> (&rarr; <code>16</code>)</td><td>Between this level and the max above, only take the very best signals. Since break-outs are graded (Section 4), a WEAK break in this band is skipped and only a STRONG break trades. Blank falls back to the global <code>VIX_STRONG_ONLY</code>, which is 16.</td></tr>
+      <tr><td><code>VIX_FILTER_ENABLED</code></td><td><code>true</code></td><td>The app-wide switch every strategy falls back to. On by default.</td></tr>
+      <tr><td><code>VIX_MAX_ENTRY</code> / <code>VIX_STRONG_ONLY</code></td><td><code>20</code> / <code>16</code></td><td>The app-wide levels used whenever the two private keys above are left blank. Change these and you change every strategy that has no private value of its own.</td></tr>
     </tbody>
   </table>
+
+  <div class="note note-info">
+    <strong>Worked through with numbers.</strong> Suppose VIX is <b>17.5</b> and all three private keys are blank. The strategy falls back to the global pair: 17.5 is under the 20 hard block, so trading is allowed &mdash; but it is above 16, so we are in the "best signals only" band and a WEAK break-out is skipped. Now set <code>EMA9VWAP_VIX_STRONG_ONLY=19</code>. The same 17.5 is now below 19, so this strategy takes WEAK break-outs again &mdash; and no other strategy's behaviour has changed.
+  </div>
 
   <h3>Two more live-only safety checks</h3>
   <p>When trading real money, two extra guards can run before a buy goes through:</p>
@@ -673,7 +680,7 @@ Bottom of channel = fair-value line &minus; (1 &times; the normal wobble)</code>
       <tr><td>Losing-streak breaker</td><td>&mdash;</td><td>automatic</td><td>3 losses in a row &rarr; a 5-minute pause (about 4 candles). A longer 15-minute version shuts the strategy for the day. A single winning trade clears the pause.</td></tr>
       <tr><td>Chop guard</td><td><code>EMA9VWAP_MAX_CONSEC_LOSSES</code></td><td><code>0</code></td><td>Optionally sit out the rest of the day after this many straight losses. <code>0</code> = off. Any winner resets the count.</td></tr>
       <tr><td>Same-side cool-off</td><td><code>EMA9VWAP_SL_PAUSE_CANDLES</code></td><td><code>3</code></td><td>After a stop-loss is hit, block re-entering the <em>same</em> side for a few candles. This only matters if you've switched on one of the optional stops in Section 6 &mdash; the normal signal exit isn't a stop-loss, so it doesn't trigger this.</td></tr>
-      <tr><td>Opposite-side cool-off</td><td><code>EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_ENABLED</code> / <code>_CANDLES</code></td><td><code>true</code> / <code>3</code></td><td>After an exit, block flipping to the <em>opposite</em> side (CE&rarr;PE or PE&rarr;CE) for 3 candles &mdash; stops the strategy whipsawing back and forth in choppy conditions.</td></tr>
+      <tr><td>Opposite-side cool-off</td><td><code>EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_ENABLED</code> / <code>EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_CANDLES</code></td><td><code>true</code> / <code>3</code></td><td>After an exit, block flipping to the <em>opposite</em> side (CE&rarr;PE or PE&rarr;CE) for 3 candles &mdash; stops the strategy whipsawing back and forth in choppy conditions.</td></tr>
     </tbody>
   </table>
 
@@ -817,7 +824,7 @@ angry red candle can't instantly flip us into a losing put.</code></pre>
       <tr><td><code>EMA9VWAP_REVERSAL_EXIT_ENABLED</code></td><td><code>true</code></td><td>Sell early on a sharp reversal candle (CE: a red candle closing below both previous candles' lows; PE: a green candle closing above both previous highs).</td></tr>
       <tr><td><code>EMA9VWAP_OPT_STOP_PCT</code></td><td><code>0</code></td><td>Optional: sell if the option price drops this fraction below entry (0 = off).</td></tr>
       <tr><td><code>EMA9VWAP_STOP_LOSS_PTS</code></td><td><code>0</code></td><td>Optional: sell once NIFTY moves this many points against you (0 = off).</td></tr>
-      <tr><td><code>EMA9VWAP_CANDLE_TRAIL_ENABLED</code> / <code>_BARS</code></td><td><code>false</code> / <code>3</code></td><td>Optional trailing stop behind the last few candles (tightens only).</td></tr>
+      <tr><td><code>EMA9VWAP_CANDLE_TRAIL_ENABLED</code> / <code>EMA9VWAP_CANDLE_TRAIL_BARS</code></td><td><code>false</code> / <code>3</code></td><td>Optional trailing stop behind the last few candles (tightens only).</td></tr>
       <tr><td><code>EMA9VWAP_NEG_CANDLE_LIMIT</code></td><td><code>0</code></td><td>Optional: give up on a still-losing trade after this many candles (0 = off).</td></tr>
       <tr><td><code>EMA9VWAP_SL_MODE</code></td><td><code>ema</code></td><td>Set to <code>candle</code> to bring back the old "held long enough" timer; <code>ema</code> = let the signal exit decide.</td></tr>
     </tbody>
@@ -832,17 +839,28 @@ angry red candle can't instantly flip us into a losing put.</code></pre>
       <tr><td><code>PORTFOLIO_MAX_DAILY_LOSS</code></td><td><code>0</code></td><td>Shared cap across all six strategies: once the whole bot's combined day loss hits this many &#8377;, block new entries everywhere. <code>0</code> = off. Fails open (only ever blocks, never places an order).</td></tr>
       <tr><td><code>EMA9VWAP_MAX_CONSEC_LOSSES</code></td><td><code>0</code></td><td>Optional: sit out the rest of the day after this many straight losses (0 = off).</td></tr>
       <tr><td><code>EMA9VWAP_SL_PAUSE_CANDLES</code></td><td><code>3</code></td><td>After a stop-loss, block a same-side re-entry for this many candles (only relevant if an optional stop is on).</td></tr>
-      <tr><td><code>EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_ENABLED</code> / <code>_CANDLES</code></td><td><code>true</code> / <code>3</code></td><td>After an exit, block flipping to the opposite side for this many candles.</td></tr>
+      <tr><td><code>EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_ENABLED</code> / <code>EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_CANDLES</code></td><td><code>true</code> / <code>3</code></td><td>After an exit, block flipping to the opposite side for this many candles.</td></tr>
     </tbody>
   </table>
 
-  <div class="env-group">Jumpiness filter (VIX &mdash; global keys, no private dial)</div>
+  <div class="env-group">Jumpiness filter (VIX) &mdash; private keys, each falling back to the global one</div>
   <table>
     <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
     <tbody>
-      <tr><td><code>VIX_FILTER_ENABLED</code></td><td><code>true</code></td><td>The shared VIX on/off switch (this strategy has no <code>EMA9VWAP_VIX_*</code> of its own).</td></tr>
-      <tr><td><code>VIX_MAX_ENTRY</code></td><td><code>20</code></td><td>Above this VIX, take no new trades.</td></tr>
-      <tr><td><code>VIX_STRONG_ONLY</code></td><td><code>16</code></td><td>Between here and the max, take only "strong" signals &mdash; a WEAK break-out (Section 4) is skipped in this band.</td></tr>
+      <tr><td><code>EMA9VWAP_VIX_ENABLED</code></td><td><em>blank</em></td><td>On/off for this strategy alone. Blank = follow the global switch (Section 7).</td></tr>
+      <tr><td><code>EMA9VWAP_VIX_MAX_ENTRY</code></td><td><em>blank</em> (&rarr; <code>20</code>)</td><td>Above this VIX, take no new trades here. Blank = use the global level.</td></tr>
+      <tr><td><code>EMA9VWAP_VIX_STRONG_ONLY</code></td><td><em>blank</em> (&rarr; <code>16</code>)</td><td>Between here and the max, only STRONG break-outs trade. Blank = use the global level.</td></tr>
+      <tr><td><code>VIX_FILTER_ENABLED</code></td><td><code>true</code></td><td>The shared on/off switch that the blank values above fall back to.</td></tr>
+      <tr><td><code>VIX_MAX_ENTRY</code></td><td><code>20</code></td><td>The shared hard block. Changing it affects every strategy without a private value.</td></tr>
+      <tr><td><code>VIX_STRONG_ONLY</code></td><td><code>16</code></td><td>The shared "best signals only" band &mdash; a WEAK break-out (Section 4) is skipped in it.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="env-group">Crowd-positioning filter (open interest)</div>
+  <table>
+    <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td><code>EMA9VWAP_OI_ENABLED</code></td><td><code>false</code></td><td>Reads where the big money is positioned (open interest) and blocks a buy that fights a confirmed build-up against us. Off by default, and it only does anything when the app-wide OI filter is also on. Live trading only &mdash; practice and backtest never have this data.</td></tr>
     </tbody>
   </table>
 

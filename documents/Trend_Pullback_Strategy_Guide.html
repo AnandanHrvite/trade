@@ -433,8 +433,16 @@
 <table>
   <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
   <tr><td><code>TREND_PB_SWING_LOOKBACK</code></td><td><code>2</code></td><td>How many candles on each side define a "peak" or "dip" when spotting the staircase. Bigger = only counts more significant swings.</td></tr>
+  <tr><td><code>TREND_PB_EMA_FAST</code> / <code>TREND_PB_EMA_SLOW</code></td><td><code>20</code> / <code>50</code></td><td>The two trend lines on the 15-minute chart. For an uptrend the fast one must be above the slow one and tilting up — that is checks 2 and 3 of the big-picture test in Section 3. Making them further apart (say 20/100) demands a slower, more established trend.</td></tr>
+  <tr><td><code>TREND_PB_EMA5_PERIOD</code></td><td><code>20</code></td><td>The trend line on the fast <b>5-minute</b> chart — the one price dips back to. This is the "good buying spot" that Section 4 talks about. Smaller hugs price tighter, so dips reach it more often but mean less.</td></tr>
+  <tr><td><code>TREND_PB_VWAP_FILTER_ENABLED</code></td><td><code>true</code></td><td>Check 4 of the big-picture test: price must also be on the right side of the day's average price (VWAP). Turning it off removes one of the four agreement checks and will let through more marginal trends.</td></tr>
+  <tr><td><code>TREND_PB_ATR_PERIOD</code></td><td><code>14</code></td><td>How many candles are used to work out "a normal move for today". Every setting below that is measured in ATR depends on this one number.</td></tr>
+  <tr><td><code>TREND_PB_ATR_FLOOR_PTS</code></td><td><code>0</code> (off)</td><td>Skip the day entirely if a normal 5-minute move is smaller than this. A dead, quiet market has no move big enough to pay for the option. <code>0</code> means the check is off.</td></tr>
   <tr><td><code>TREND_PB_BODY_ATR_MULT</code></td><td><code>0.5</code></td><td>How big the resumption candle's body must be, as a fraction of the normal move (ATR). This is the "conviction" test that stands in for volume.</td></tr>
   <tr><td><code>TREND_PB_PULLBACK_MAX_ATR</code></td><td><code>1.5</code></td><td>How deep a pullback is still allowed, measured in normal-moves (ATR) below the trend line. Deeper than this = the trend's breaking, skip it.</td></tr>
+  <tr><td><code>TREND_PB_PULLBACK_TOUCH_ATR</code></td><td><code>0.25</code></td><td>How close the dip has to get before it counts as having "reached" the trend line — within a quarter of a normal move. Without a little tolerance, a dip that stops one point short would be thrown away for no good reason.</td></tr>
+  <tr><td><code>TREND_PB_MIN_PULLBACK_BARS</code></td><td><code>2</code></td><td>How many candles must lean against the trend before it counts as a real pause. At 1, a single wick would qualify — that is a flicker, not a breather.</td></tr>
+  <tr><td><code>TREND_PB_PULLBACK_WINDOW</code></td><td><code>6</code></td><td>How many recent candles are searched for that pullback. Widen it and you will start buying rallies whose dip happened half an hour ago.</td></tr>
 </table>
 
 <h3>When we sell</h3>
@@ -443,19 +451,27 @@
   <tr><td><code>TREND_PB_STOP_CLAMP_MIN</code> / <code>TREND_PB_STOP_CLAMP_MAX</code></td><td><code>8</code> / <code>30</code></td><td>Keeps the starting stop-loss sensible — never tighter than 8 points, never wider than 30 (in spot points).</td></tr>
   <tr><td><code>TREND_PB_BREAKEVEN_R</code></td><td><code>1.0</code></td><td>How much profit (in "R", i.e. multiples of what we first risked) before the stop moves up to our entry price.</td></tr>
   <tr><td><code>TREND_PB_TRAIL_ATR_MULT</code></td><td><code>2.5</code></td><td>How far below the best price the chandelier trailing-stop hangs, in normal-moves (ATR). Bigger = looser trail, lets the trade breathe more.</td></tr>
+  <tr><td><code>TREND_PB_TRAIL_EMA</code></td><td><code>20</code></td><td>The trend line used for the "trend broke" exit — if a 5-minute candle <em>closes</em> back across this line, the move is over and we sell. Separate from the chandelier trail; whichever fires first wins.</td></tr>
   <tr><td><code>TREND_PB_TIME_STOP_CANDLES</code></td><td><code>6</code></td><td>Exit a trade that's still going nowhere after this many candles (~30 minutes), to avoid slow time-decay bleed.</td></tr>
+  <tr><td><code>TREND_PB_TIME_STOP_FLAT_PTS</code></td><td><code>12</code></td><td>What "going nowhere" actually means: the trade is within this many points of where we bought. Move more than 12 points either way and the time stop leaves it alone.</td></tr>
+  <tr><td><code>TREND_PB_PREMIUM_STOP_PCT</code></td><td><code>35</code> %</td><td>The one rule that watches the option's own price instead of the index. If the premium collapses by this much, get out — this catches a volatility crush the index-based stop cannot see. <code>0</code> turns it off.</td></tr>
+  <tr><td><code>TREND_PB_MAX_TRADE_LOSS</code></td><td><code>0</code> (off)</td><td>A per-trade rupee cap, used by the backtest. <code>0</code> means no cap, so the stop-loss alone decides. Set it and no single trade may lose more than that amount.</td></tr>
 </table>
 
 <h3>Picking the option</h3>
 <table>
   <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
   <tr><td><code>TREND_PB_ITM_STEPS</code></td><td><code>1</code></td><td>How many strikes in-the-money to buy (1 &asymp; a "delta 0.6" option). 0 would be at-the-money.</td></tr>
+  <tr><td><code>TREND_PB_PREMIUM_GATE_ENABLED</code></td><td><code>true</code></td><td>Whether the two price checks below are applied at all. Off, and the strategy will buy the option whatever it costs.</td></tr>
+  <tr><td><code>TREND_PB_PREMIUM_MIN</code> / <code>TREND_PB_PREMIUM_MAX</code></td><td><code>₹120</code> / <code>₹400</code></td><td>Skip the trade if the option is cheaper than the first or dearer than the second. Too cheap is a near-worthless lottery ticket that barely moves; too dear ties up a lot of money for the same index move.</td></tr>
+  <tr><td><code>TREND_PB_MAX_SPREAD_PTS</code></td><td><code>2</code></td><td>Skip if the gap between the option's buy price and sell price is wider than this. A wide gap is a cost you pay twice — once getting in, once getting out — before the trade is right about anything.</td></tr>
 </table>
 
 <h3>Jumpiness filter (VIX)</h3>
 <table>
   <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
   <tr><td><code>TREND_PB_VIX_ENABLED</code> / <code>TREND_PB_VIX_MAX_ENTRY</code></td><td><code>false</code> / <code>22</code></td><td>Turn the VIX filter on, and the VIX level above which we don't trade. Off by default.</td></tr>
+  <tr><td><code>TREND_PB_VIX_STRONG_ONLY</code></td><td><code>18</code></td><td>The middle band. Above this VIX (but below the hard block) the strategy only takes setups it grades as <em>strong</em> — a jumpy market is allowed, but only the best-looking trades in it. Falls back to the app-wide <code>VIX_STRONG_ONLY</code> if not set.</td></tr>
   <tr><td><code>TREND_PB_OI_ENABLED</code></td><td><code>false</code></td><td>Block entries that fight a confirmed crowd (OI) buildup. Off by default; needs the master OI filter on.</td></tr>
 </table>
 
@@ -465,6 +481,15 @@
   <tr><td><code>TREND_PB_MAX_DAILY_TRADES</code></td><td><code>3</code></td><td>Most trades allowed in one session. Picky by design — usually fewer.</td></tr>
   <tr><td><code>TREND_PB_MAX_DAILY_LOSS</code></td><td><code>5000</code></td><td>Stop taking new trades once the day's loss hits this (&#8377;).</td></tr>
   <tr><td><code>TREND_PB_LOSS_STREAK_SKIP</code></td><td><code>3</code></td><td>Pause new entries after this many losing sessions in a row (0 = off).</td></tr>
+</table>
+
+<h3>Walk-forward testing only</h3>
+<p class="muted" style="margin-bottom:8px;">A walk-forward test tunes the settings on one stretch of history and then checks them on the <em>next</em> stretch it has never seen — the honest way to find out whether a setting genuinely works or was merely fitted to the past. These two only affect that tool.</p>
+<table>
+  <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>TREND_PB_WF_TEST_DAYS</code></td><td><code>20</code></td><td>How many days long each unseen test stretch is.</td></tr>
+  <tr><td><code>TREND_PB_WF_MIN_TRADES</code></td><td><code>20</code></td><td>How many trades a stretch must produce before its result is treated as meaningful at all. Below this, the numbers are noise and are ignored.</td></tr>
+  <tr><td><code>TREND_PB_SIG_WINDOW</code></td><td><code>300</code></td><td>How many earlier candles the backtest loads before the first day it tests. The 50-period line on the 15-minute chart needs a long run-up before it means anything, so without this the first day or two would be judged on a half-warmed indicator.</td></tr>
 </table>
 
 <h3>Going live</h3>

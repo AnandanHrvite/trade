@@ -796,7 +796,7 @@
       <tr><td><code>EMA_RSI_ST_EMA_SLOW</code></td><td>50</td><td>The slower trend line. Fast-above-slow (or below) is the core direction check.</td></tr>
       <tr><td><code>EMA_RSI_ST_EMA_TRIPLE_STACK_ENABLED</code></td><td>false</td><td>Stricter mode. Off = just fast-vs-slow. On = also require the very fast EMA9 on top (EMA9 &gt; EMA20 &gt; EMA50). Cuts weak, flat setups.</td></tr>
       <tr><td><code>EMA_RSI_ST_EMA_FASTEST</code></td><td>9</td><td>The very fast trend line &mdash; only used when the stricter mode above is on.</td></tr>
-      <tr><td><code>EMA_RSI_ST_SUPERTREND_PERIOD</code> / <code>_MULT</code></td><td>10 / 3</td><td>The two dials that shape the SuperTrend line &mdash; the main direction check.</td></tr>
+      <tr><td><code>EMA_RSI_ST_SUPERTREND_PERIOD</code> / <code>EMA_RSI_ST_SUPERTREND_MULT</code></td><td>10 / 3</td><td>The two dials that shape the SuperTrend line &mdash; the main direction check. The <b>period</b> is how many candles it averages; the <b>multiplier</b> is how far off price the line sits, in normal-moves (ATR). A bigger multiplier puts the line further away, so the trend "flips" less often &mdash; fewer trades, but each one survives more noise.</td></tr>
       <tr><td><code>EMA_RSI_ST_CLOSE_BEYOND_EMA_ENABLED</code></td><td>true</td><td>Check 4: the signal candle must actually <em>close</em> on our side of the base trend line. Blocks dips that only look bullish because older lines are still stacked.</td></tr>
       <tr><td><code>EMA_RSI_ST_CONFIRM_CANDLE_ENABLED</code></td><td>true</td><td>The "wait for proof" step: don't buy the signal candle &mdash; wait for the next candle to push past its close. Off = buy immediately (older style).</td></tr>
     </table>
@@ -821,9 +821,9 @@
       <tr><td><code>EMA_RSI_ST_BREAKEVEN_ENABLED</code> / <code>_PTS</code></td><td>false / 25</td><td>Optional break-even floor: once a trade is this many points in profit (spot, at candle close), raise the safety line to the entry price so a winner can't turn into a loss. Tighten-only. Off by default.</td></tr>
       <tr><td><code>EMA_RSI_ST_NEG_CANDLE_LIMIT</code></td><td>2</td><td>Cut a trade that's still losing after this many finished candles. Winners are left alone. 0 = off.</td></tr>
       <tr><td><code>EMA_RSI_ST_STOP_LOSS_PTS</code></td><td>0</td><td>Hard "catastrophe" cap in NIFTY points. 0 = off. (Settings page turns it on at 25.)</td></tr>
-      <tr><td><code>EMA_RSI_ST_CANDLE_TRAIL_ENABLED</code> / <code>_BARS</code></td><td>false / 3</td><td>Add a recent-lows trail on top of EMA21; the tighter of the two wins. (Settings page turns this on.)</td></tr>
+      <tr><td><code>EMA_RSI_ST_CANDLE_TRAIL_ENABLED</code> / <code>EMA_RSI_ST_CANDLE_TRAIL_BARS</code></td><td>false / 3</td><td>Add a recent-lows trail on top of EMA21; the tighter of the two wins. (Settings page turns this on.)</td></tr>
       <tr><td><code>EMA_RSI_ST_SL_PAUSE_CANDLES</code></td><td>3</td><td>Same-side pause: block re-buying the side that just got stopped, for this many candles. (Settings page uses 2.)</td></tr>
-      <tr><td><code>EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_ENABLED</code> / <code>_CANDLES</code></td><td>true / 3</td><td>Flip pause: after a stop-out, block flipping to the other side for this many candles &mdash; the whipsaw guard. (Settings page uses 2.)</td></tr>
+      <tr><td><code>EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_ENABLED</code> / <code>EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_CANDLES</code></td><td>true / 3</td><td>Flip pause: after a stop-out, block flipping to the other side for this many candles &mdash; the whipsaw guard. (Settings page uses 2.)</td></tr>
       <tr><td><code>EMA_RSI_ST_MAX_CONSEC_LOSSES</code></td><td>0</td><td>Choppy-day brake: stop trading for the day after this many losses in a row. 0 = off.</td></tr>
       <tr><td><code>EMA_RSI_ST_EOD_EXIT_TIME</code></td><td>15:15</td><td>Square off any open trade at this time, ahead of the close. (Settings page uses 14:30.)</td></tr>
     </table>
@@ -842,6 +842,18 @@
       <tr><td><code>TRADE_STOP_TIME</code></td><td>15:30</td><td>Sell everything and stop the engine at this time. Never hold overnight.</td></tr>
     </table>
   </div>
+
+  <div class="env-group">
+    <div class="env-group-title">Switching it on, and the two locks before real money</div>
+    <table>
+      <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+      <tr><td><code>EMA_RSI_ST_MODE_ENABLED</code></td><td>true</td><td>The master switch for the whole strategy. Off, and it vanishes from the menu and the Settings page &mdash; nothing runs, nothing is shown.</td></tr>
+      <tr><td><code>EMA_RSI_ST_LIVE_ENABLED</code></td><td>false</td><td><strong>Lock 1 of 2 for real money.</strong> Allows real Zerodha orders from this strategy. On its own it is not enough &mdash; see the next row.</td></tr>
+      <tr><td><code>LIVE_HARNESS_DRY_RUN</code></td><td>true</td><td><strong>Lock 2 of 2 &mdash; the app-wide master brake.</strong> While this is <code>true</code> (the default) <em>no</em> strategy sends a real order; each one logs the order it <em>would</em> have placed instead. Both locks must be undone before a single rupee moves.</td></tr>
+      <tr><td><code>EMA_RSI_ST_LIVE_DRY_RUN</code></td><td>false</td><td>A private brake for this strategy alone. Turn it on and EMA_RSI_ST stays simulated even after the two locks above are undone for everything else &mdash; useful when you trust the other strategies but want to keep watching this one.</td></tr>
+      <tr><td><code>EMA_RSI_ST_SL_MODE</code></td><td><code>ema</code></td><td>Which line the live stop-loss follows. <code>ema</code> (the default) trails the EMA21. <code>candle</code> trails the recent candle lows instead. Anything else is read as <code>ema</code>, so a typo fails safely rather than removing the stop.</td></tr>
+    </table>
+  </div>
 </div>
 
 <!-- ════════════════════════════════════════════════ 11 ═══ -->
@@ -850,7 +862,7 @@
   <ul style="margin:8px 0 8px 18px;line-height:1.7;">
     <li><strong>No trading on expiry day itself.</strong> If the option's expiry date is <em>today</em>, the strategy refuses to start &mdash; holding an option through its own expiry is too risky. (A replay of a past day is allowed to bypass this.)</li>
     <li><code>TRADE_EXPIRY_DAY_ONLY</code> &mdash; the opposite switch: when on, <em>only</em> trade on NIFTY expiry day.</li>
-    <li><code>EMA_RSI_ST_OPTION_EXPIRY_OVERRIDE</code> / <code>_TYPE</code> let this strategy trade a different weekly expiry from the other strategies. Left blank, it falls back to the shared <code>OPTION_EXPIRY_OVERRIDE</code>, and if that is blank too, to auto-detection.</li>
+    <li><strong>There is one shared expiry, not one per strategy.</strong> <code>OPTION_EXPIRY_OVERRIDE</code> (and <code>OPTION_EXPIRY_TYPE</code>) set the contract <em>every</em> strategy trades; leave them blank and it is detected automatically. The old per-strategy keys <code>EMA_RSI_ST_OPTION_EXPIRY_OVERRIDE</code> / <code>_TYPE</code> were <b>removed on 5 August 2026</b> &mdash; if you still have them in your <code>.env</code>, they are dead text and change nothing. They were dropped because all strategies trade the same intraday expiry anyway, and having five ways to set it made a stale date five times harder to spot.</li>
     <li><strong>Live trading has two locks.</strong> Real Zerodha orders only go out when <code>EMA_RSI_ST_LIVE_ENABLED=true</code> <em>and</em> the global dry-run switch (<code>LIVE_HARNESS_DRY_RUN</code>) is off. While dry-run is on (the default), the system <em>shows</em> the order it would have placed but sends nothing. Only turn dry-run off after checking that live and paper make the same decisions on a replayed day.</li>
     <li><strong>Clean shutdown squares off first.</strong> When the process is asked to stop (a deploy or restart signal), any open live position is now squared off before it exits &mdash; a redeploy can't leave a real trade stranded. And because several strategies share one price feed, stopping this one no longer tears that feed away from another strategy that still has a live position running.</li>
   </ul>

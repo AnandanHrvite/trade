@@ -1359,7 +1359,9 @@ td.pe { color: var(--red); }
           <tbody>
             <tr><td><code>PA_ENABLED</code></td><td><code>false</code></td><td>Must be on for any real order.</td></tr>
             <tr><td><code>LIVE_HARNESS_DRY_RUN</code></td><td><code>true</code></td><td>Global master safety. While on, the system only <em>pretends</em> to place orders.</td></tr>
+            <tr><td><code>PA_LIVE_ENABLED</code></td><td><code>false</code></td><td>The per-strategy lock on real money. Real Fyers orders need this on <em>and</em> the global brake above off.</td></tr>
             <tr><td><code>PA_LIVE_DRY_RUN</code></td><td><code>false</code></td><td>Keep PA in pretend mode even when the global switch is off.</td></tr>
+            <tr><td><code>PA_VIX_STRONG_ONLY</code></td><td><code>16</code></td><td>The middle VIX band. Above this level (but below the hard block) only setups graded <em>strong</em> are taken &mdash; a jumpy market is allowed, but only its best-looking trades. Falls back to the app-wide <code>VIX_STRONG_ONLY</code> when not set.</td></tr>
           </tbody>
         </table>
       </div>

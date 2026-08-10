@@ -170,66 +170,6 @@
   /* CSS CHARTS                                                             */
   /* ════════════════════════════════════════════════════════════════════════ */
 
-  /* ── BB Chart ──────────────────────────────────────────── */
-  .bb-chart {
-    position: relative; width: 100%; height: 320px; background: var(--bg2);
-    border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
-    margin: 14px 0;
-  }
-  .bb-band {
-    position: absolute; left: 5%; right: 5%;
-    border: 2px dashed rgba(59,130,246,0.5); border-radius: 40%;
-  }
-  .bb-upper { top: 15%; height: 0; border-bottom: 2px dashed rgba(59,130,246,0.6); }
-  .bb-lower { bottom: 18%; height: 0; border-top: 2px dashed rgba(59,130,246,0.6); }
-  .bb-sma {
-    position: absolute; top: 48%; left: 5%; right: 5%; height: 0;
-    border-top: 2px solid rgba(251,191,36,0.6);
-  }
-  .bb-label {
-    position: absolute; font-size: 0.65rem; font-weight: 600; color: var(--text2);
-  }
-  .bb-label.upper { top: 11%; right: 6%; color: var(--blue); }
-  .bb-label.sma { top: 44%; right: 6%; color: var(--yellow); }
-  .bb-label.lower { bottom: 14%; right: 6%; color: var(--blue); }
-
-  .candle {
-    position: absolute; width: 8px;
-  }
-  .candle .wick {
-    position: absolute; width: 2px; left: 3px; background: #888;
-  }
-  .candle .body {
-    position: absolute; width: 8px; border-radius: 1px;
-  }
-  .candle.bull .body { background: var(--green); }
-  .candle.bear .body { background: var(--red); }
-  .candle.bull .wick { background: var(--green); }
-  .candle.bear .wick { background: var(--red); }
-
-  .signal-marker {
-    position: absolute; padding: 3px 8px; border-radius: 4px; font-size: 0.65rem;
-    font-weight: 700; white-space: nowrap; z-index: 5;
-  }
-  .signal-marker.ce {
-    background: var(--green); color: #000;
-  }
-  .signal-marker.pe {
-    background: var(--red); color: #fff;
-  }
-  .signal-marker::after {
-    content: ''; position: absolute; width: 0; height: 0;
-    left: 50%; transform: translateX(-50%);
-  }
-  .signal-marker.ce::after {
-    bottom: -6px; border-left: 5px solid transparent; border-right: 5px solid transparent;
-    border-top: 6px solid var(--green);
-  }
-  .signal-marker.pe::after {
-    top: -6px; border-left: 5px solid transparent; border-right: 5px solid transparent;
-    border-bottom: 6px solid var(--red);
-  }
-
   /* ── RSI Gauge ─────────────────────────────────────────── */
   .rsi-gauge {
     display: flex; height: 40px; border-radius: 8px; overflow: hidden;
@@ -245,21 +185,6 @@
   .rsi-labels {
     display: flex; justify-content: space-between; font-size: 0.65rem; color: var(--text2);
     margin-top: 4px; padding: 0 4px;
-  }
-
-  /* ── PSAR Chart ────────────────────────────────────────── */
-  .psar-chart {
-    position: relative; width: 100%; height: 220px; background: var(--bg2);
-    border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
-    margin: 14px 0; padding: 20px 0;
-  }
-  .psar-dot {
-    position: absolute; width: 8px; height: 8px; border-radius: 50%;
-  }
-  .psar-dot.bull { background: var(--green); }
-  .psar-dot.bear { background: var(--red); }
-  .psar-price-line {
-    position: absolute; height: 3px; border-radius: 2px;
   }
 
   /* ── Profit Trail Chart ────────────────────────────────── */
@@ -374,7 +299,7 @@
     tbody td { color: #333; border-bottom-color: #e5e7eb; }
     code { background: #f0f0f0; color: #7c3aed; }
     .cover { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    .bb-chart, .psar-chart, .trail-chart { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .trail-chart { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .rsi-gauge, .vix-bar { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   }
 
@@ -951,7 +876,9 @@
   <tbody>
     <tr><td><code>BB_RSI_MODE_ENABLED</code></td><td><code>true</code></td><td>Show BB_RSI in the menu and Settings. Off = hidden.</td></tr>
     <tr><td><code>BB_RSI_ENABLED</code></td><td><code>false</code></td><td>The master switch for real live orders (still needs the global dry-run off).</td></tr>
-    <tr><td><code>BB_RSI_LIVE_DRY_RUN</code></td><td><code>&mdash;</code></td><td>Keep BB_RSI in "pretend" mode even when other strategies go live.</td></tr>
+    <tr><td><code>BB_RSI_LIVE_ENABLED</code></td><td><code>false</code></td><td><strong>The first of the two locks on real money.</strong> Allows real Fyers orders from BB_RSI. On its own it does nothing &mdash; the global brake <code>LIVE_HARNESS_DRY_RUN</code> must also be off before a rupee moves.</td></tr>
+    <tr><td><code>BB_RSI_LIVE_DRY_RUN</code></td><td><code>false</code></td><td>A private brake for BB_RSI alone: keep it in "pretend" mode even when the other strategies have gone live.</td></tr>
+    <tr><td><code>BB_RSI_OI_ENABLED</code></td><td><code>false</code></td><td>Reads where the big money is positioned (open interest) and blocks a buy that fights a confirmed build-up against us. Off by default, and it only does anything when the app-wide OI filter is on too. Live trading only &mdash; practice and backtest have no such data.</td></tr>
     <tr><td><code>TRADE_RESOLUTION</code></td><td><code>5</code></td><td>Candle size in minutes (3 / 5 / 15). One global setting shared by every strategy &mdash; it lives in Settings &rarr; Instrument &amp; Backtest.</td></tr>
     <tr><td><code>BB_RSI_ENTRY_START</code></td><td><code>09:21</code></td><td>Earliest time of day a new trade may start.</td></tr>
     <tr><td><code>BB_RSI_ENTRY_END</code></td><td><code>14:30</code></td><td>Latest time a new trade may start &mdash; the day's too far gone after this.</td></tr>

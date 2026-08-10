@@ -281,28 +281,83 @@
 
 <h2 id="config">11. All the settings, explained</h2>
 
-<p>Every one of these is in <a href="/settings">Settings → Trend Day Scalp</a>. The defaults are shown; none of them is a tuned optimum.</p>
+<p>Every one of these is in <a href="/settings">Settings → Trend Day Scalp</a>. The name in <code>CODE</code> is what the setting is called in the <code>.env</code> file, so you can find it either way. The defaults are shown; <b>none of them is a tuned optimum</b> — they are starting guesses, and two of them have already been caught being wrong (see section 12).</p>
 
+<h3>Turning it on and off</h3>
 <table>
 <tr><th>Setting</th><th>Default</th><th>What it changes</th></tr>
-<tr><td>Day Gate Time</td><td>10:15</td><td>When the day is judged. Judged once, then frozen.</td></tr>
-<tr><td>Min First-Hour Range</td><td>0.5%</td><td>Raise it to trade fewer, livelier days.</td></tr>
-<tr><td>Closes One Side of VWAP</td><td>6</td><td>How persistent the direction must be.</td></tr>
-<tr><td>Extension from VWAP</td><td>0.20× range</td><td>How committed the day must be. Measured, not reasoned — see section 4. Raising it starves the strategy fast.</td></tr>
-<tr><td>Zone EMA Period</td><td>20</td><td>The second of the two lines that form the buy zone.</td></tr>
-<tr><td>ATR Period</td><td>14</td><td>Feeds the conviction test.</td></tr>
-<tr><td>Reclaim Body</td><td>0.4× ATR</td><td>How decisive the entry candle must be.</td></tr>
-<tr><td>Pullback Lookback</td><td>3 bars</td><td>How far back the dip may have happened.</td></tr>
-<tr><td>Min / Max Stop</td><td>12 / 40 pt</td><td>Tighter than the minimum gets widened to it. <b>Wider than the maximum skips the trade entirely</b> — it is never tightened into the structure. <b>The maximum was 18 and that was the single worst decision in this strategy:</b> measured over 39 sessions, real setups need a median of 35pt, so 18 threw away 48 of 53 of them and kept only the shallowest. Note the cost — 35pt of index risk is roughly ₹1,400 of premium on one lot.</td></tr>
-<tr><td>Target</td><td>2.5R</td><td>The fixed profit, as a multiple of the stop.</td></tr>
-<tr><td>Break-even Arms At</td><td>+1R</td><td>When the stop makes its one move.</td></tr>
-<tr><td>Break-even Buffer</td><td>3 pt</td><td>Where it lands: entry + this.</td></tr>
-<tr><td>Time Stop</td><td>25 min</td><td>0 turns it off.</td></tr>
-<tr><td>Premium Stop</td><td>25%</td><td>0 turns it off.</td></tr>
-<tr><td>ITM Steps</td><td>1</td><td>How deep in-the-money to buy. 1 ≈ delta 0.6.</td></tr>
-<tr><td>Max Trades/Day</td><td>2</td><td>Costs are per trade.</td></tr>
-<tr><td>Backtest Slippage</td><td>1.5 pt each way</td><td>Without this, option-buying backtests always flatter.</td></tr>
+<tr><td>Trend Day Scalp Mode<br><code>TDS_MODE_ENABLED</code></td><td><code>true</code></td><td>The master switch for the whole strategy. Off, and it disappears from the menu and the settings page entirely — nothing runs.</td></tr>
+<tr><td>Paper Trading<br><code>TDS_PAPER_ENABLED</code></td><td><code>true</code></td><td>Allows new practice sessions to start. This is pretend money on real live prices, so leaving it on costs you nothing.</td></tr>
+<tr><td>Live Orders<br><code>TDS_LIVE_ENABLED</code></td><td><code>false</code></td><td><b>Real money.</b> Off by default, and it must stay off until this strategy has been paper-traded for a long stretch — it has never placed a live order. Even switching it on is not enough on its own; see the row below.</td></tr>
+<tr><td>Live DRY-RUN override<br><code>TDS_LIVE_DRY_RUN</code></td><td><code>false</code></td><td>A private brake for this strategy only. Turn it on and Trend Day Scalp stays simulated even when live trading is switched on everywhere else — useful when you trust the other strategies but not this one yet. (There is also a global brake, <code>LIVE_HARNESS_DRY_RUN</code>, which overrules everything.)</td></tr>
+<tr><td>Lot Multiplier<br><code>TDS_LOT_MULTIPLIER</code></td><td><code>0</code></td><td>How many lots per trade. <code>0</code> means "use whatever the app-wide setting says", which is the sensible choice unless you deliberately want this strategy bigger or smaller than the others.</td></tr>
 </table>
+
+<h3>The clock</h3>
+<table>
+<tr><th>Setting</th><th>Default</th><th>What it changes</th></tr>
+<tr><td>Session / VWAP Anchor<br><code>TDS_SESSION_START</code></td><td><code>09:15</code></td><td>Where the first hour starts counting and where the day's average price (VWAP) is anchored. This is the market open — there is no good reason to move it.</td></tr>
+<tr><td>Day Gate Time<br><code>TDS_GATE_TIME</code></td><td><code>10:15</code></td><td>The single moment the day is judged. Move it later and you judge on more evidence but leave less day to trade; move it earlier and you decide on noise.</td></tr>
+<tr><td>Entry Window End<br><code>TDS_ENTRY_END</code></td><td><code>14:00</code></td><td>No <em>new</em> trades after this. A trade already open is unaffected. Late entries have too little day left to reach a 2.5R target before the forced exit.</td></tr>
+<tr><td>Forced Exit<br><code>TDS_FORCED_EXIT</code></td><td><code>15:10</code></td><td>Anything still open is sold here, win or lose. We never hold an option overnight — a weekend or a gap can destroy it while you sleep.</td></tr>
+<tr><td>Candle Timeframe<br><code>TDS_RESOLUTION</code></td><td><code>5</code></td><td>How many minutes each candle covers. Everything else — the ATR, the bodies, the time stop — is measured against this, so changing it changes the whole strategy, not just the chart.</td></tr>
+</table>
+
+<h3>The day gate — the three questions asked at 10:15</h3>
+<table>
+<tr><th>Setting</th><th>Default</th><th>What it changes</th></tr>
+<tr><td>Min First-Hour Range<br><code>TDS_MIN_RANGE_PCT</code></td><td><code>0.5</code> %</td><td><b>Question 1: did the day actually move?</b> The first hour's high-to-low must be at least this percentage of the index. On a 24,000 index that is 120 points. Raise it to trade fewer, livelier days; lower it and you start buying options on dead mornings, which is how time decay eats you.</td></tr>
+<tr><td>Closes One Side of VWAP<br><code>TDS_VWAP_STREAK_BARS</code></td><td><code>6</code></td><td><b>Question 2: has it picked a side?</b> This many of the most recent candle closes must <em>all</em> be on the same side of the day's average price. If price keeps crossing back and forth, that is chop, and chop is where bought options die. Raise it and you demand more persistence.</td></tr>
+<tr><td>Extension from VWAP<br><code>TDS_EXTENSION_MULT</code></td><td><code>0.20</code> × range</td><td><b>Question 3: has it committed, or is it hugging the middle?</b> Price must sit at least this many times the first-hour range away from the average. This number was <b>measured, not reasoned</b> — see section 4. Raising it starves the strategy alarmingly fast: 0.35 passed only 13% of days.</td></tr>
+</table>
+
+<h3>The entry</h3>
+<table>
+<tr><th>Setting</th><th>Default</th><th>What it changes</th></tr>
+<tr><td>Zone EMA Period<br><code>TDS_EMA_PERIOD</code></td><td><code>20</code></td><td>The buy zone is whichever is <em>nearer</em> to price: the day's average (VWAP) or this moving average. A smaller number hugs price more tightly, so dips reach the zone more often but mean less.</td></tr>
+<tr><td>ATR Period<br><code>TDS_ATR_PERIOD</code></td><td><code>14</code></td><td>How many candles are used to work out "a normal move for today". Everything sized in ATR below depends on it.</td></tr>
+<tr><td>Reclaim Body<br><code>TDS_BODY_ATR_MULT</code></td><td><code>0.4</code> × ATR</td><td>How decisive the entry candle must be. Its body must be at least this fraction of a normal move. This is the conviction test — a small, indecisive candle is not somebody buying the dip, it is nobody doing anything.</td></tr>
+<tr><td>Pullback Lookback<br><code>TDS_PULLBACK_WINDOW</code></td><td><code>3</code> bars</td><td>How recently the dip must have touched the zone. A wick counts — on a real trend day price often just grazes the line and bounces. Widen it and you start buying rallies that left the zone long ago.</td></tr>
+</table>
+
+<h3>Getting out</h3>
+<table>
+<tr><th>Setting</th><th>Default</th><th>What it changes</th></tr>
+<tr><td>Min Stop Distance<br><code>TDS_MIN_SL_PTS</code></td><td><code>12</code> pts</td><td>If the structure puts the stop closer than this, it is <em>widened</em> to 12. A stop inside the noise is not a stop, it is a donation.</td></tr>
+<tr><td>Max Stop Distance<br><code>TDS_MAX_SL_PTS</code></td><td><code>40</code> pts</td><td>If the structure needs a wider stop than this, the trade is <b>skipped entirely</b> — the stop is never tightened into the structure. <b>This was 18, and it was the single worst decision in this strategy:</b> real setups need a median of 35 points, so 18 threw away 48 of 53 of them and kept only the shallowest. Know the cost — 35 points of index risk is roughly ₹1,400 of premium on one lot.</td></tr>
+<tr><td>Target<br><code>TDS_TARGET_R</code></td><td><code>2.5</code> × risk</td><td>The fixed profit, as a multiple of the stop distance. If the stop is 20 points away, the target is 50. Taken and done — never trailed past. At 2.5 you only need to be right <b>29% of the time</b> to break even.</td></tr>
+<tr><td>Break-even Arms At<br><code>TDS_BREAKEVEN_R</code></td><td><code>1</code> × risk</td><td>How far in profit the trade must go before the stop makes its one and only move. At 1, a trade that goes 20 points your way (on a 20-point stop) can no longer become a loss.</td></tr>
+<tr><td>Break-even Buffer<br><code>TDS_BREAKEVEN_BUFFER_PTS</code></td><td><code>3</code> pts</td><td>Where the stop lands on that jump: your entry price plus this. The small buffer means a scratch exit still covers a little of the costs instead of being exactly zero.</td></tr>
+<tr><td>Time Stop<br><code>TDS_TIME_STOP_MINS</code></td><td><code>25</code> min</td><td>If break-even has not armed within this long, the trade is closed flat. A stalled option is not neutral — it is quietly paying time decay every minute. <code>0</code> turns it off.</td></tr>
+<tr><td>Premium Stop<br><code>TDS_PREMIUM_STOP_PCT</code></td><td><code>25</code> %</td><td>The only rule that watches the option's own price rather than the index. If the premium collapses by this much, get out — this catches a volatility crush that the index-based stop simply cannot see. <code>0</code> turns it off.</td></tr>
+</table>
+
+<h3>Which option to buy</h3>
+<table>
+<tr><th>Setting</th><th>Default</th><th>What it changes</th></tr>
+<tr><td>ITM Steps<br><code>TDS_ITM_STEPS</code></td><td><code>1</code></td><td>How far inside the money to buy. <code>0</code> is at-the-money; <code>1</code> is one strike in, which moves about 60 paise for every 1 point the index moves and loses value slowly. Cheap far-out options move less and decay faster — bad for a strategy that holds for half an hour.</td></tr>
+</table>
+
+<h3>Safety limits</h3>
+<table>
+<tr><th>Setting</th><th>Default</th><th>What it changes</th></tr>
+<tr><td>Max Trades/Day<br><code>TDS_MAX_DAILY_TRADES</code></td><td><code>2</code></td><td>Costs are charged per trade, not per day, so fewer is usually better. This is the main brake on over-trading a good day into a bad one.</td></tr>
+<tr><td>Stop-outs That End the Day<br><code>TDS_MAX_DAILY_LOSSES</code></td><td><code>2</code></td><td>After this many <em>real</em> stop-outs the day is over. Break-even exits and time-stops do not count — only trades that actually hit the stop. <code>0</code> turns it off.</td></tr>
+<tr><td>Max Daily Loss<br><code>TDS_MAX_DAILY_LOSS</code></td><td><code>₹3,000</code></td><td>A rupee cap for the day. This was raised alongside the stop cap for a reason: at ₹1,500 a single 40-point stop-out would end the day by itself, which made the two-trade budget meaningless. <code>0</code> turns it off.</td></tr>
+<tr><td>Max Weekly Loss<br><code>TDS_MAX_WEEKLY_LOSS</code></td><td><code>0</code> (off)</td><td>The same idea over a whole week, for when a run of bad days needs stopping rather than a single bad day.</td></tr>
+<tr><td>Daily Profit Lock<br><code>TDS_DAILY_PROFIT_LOCK</code></td><td><code>₹3,000</code></td><td>Stop for the day once this much is <em>banked</em>. Giving profit back is what wrecks a steady equity curve, and this strategy's whole promise is steadiness. <code>0</code> turns it off.</td></tr>
+</table>
+
+<h3>Backtest only — these change nothing in real or practice trading</h3>
+<table>
+<tr><th>Setting</th><th>Default</th><th>What it changes</th></tr>
+<tr><td>Backtest Seed Premium<br><code>TDS_BT_SEED_PREMIUM</code></td><td><code>₹240</code></td><td>History has no record of what options actually cost, so the backtest has to assume an entry price. This is that assumption. It affects the rupee figures a backtest reports, not the decisions it makes.</td></tr>
+<tr><td>Backtest Slippage<br><code>TDS_BT_SLIPPAGE_PTS</code></td><td><code>1.5</code> pts each way</td><td>A cost haircut applied to both entry and exit in a backtest. Without it, option-buying backtests always look better than reality, because in real life you never get filled at the price on the screen.</td></tr>
+</table>
+
+<div class="card warn">
+  <strong>Two settings live outside this page.</strong> <code>LIVE_HARNESS_DRY_RUN</code> is the app-wide master brake — while it is <code>true</code> (the default) no strategy places a real order, whatever its own switches say. And the global lot size is used whenever <code>TDS_LOT_MULTIPLIER</code> is <code>0</code>. This strategy has <b>no VIX filter and no open-interest filter</b> of its own — a chaotic day is treated exactly like a calm one, which is listed as a known limitation in section 12.
+</div>
 
 <h2 id="missing">12. What's still missing</h2>
 
@@ -545,5 +600,6 @@
 })();
 </script>
 
+</div><!-- /.wrap -->
 </body>
 </html>

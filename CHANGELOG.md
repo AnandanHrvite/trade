@@ -6,6 +6,31 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — every setting a strategy reads is now explained in its guide, and three guides were wrong
+
+An audit of all nine guides against the code (every `process.env` read, every helper-wrapped read, and the Settings UI registry) found **69 settings that the code reads but no guide explained**, and four documented settings that no longer exist. All are now correct:
+
+| Guide | Was | Now |
+|---|---|---|
+| Trend Day Scalp | **0 of 32** keys named | 32/32, grouped into on-off / clock / day gate / entry / exits / option / safety / backtest |
+| Trend Pullback | 23 of 44 | 44/44 |
+| EMA9+VWAP | 25 of 31 | 31/31 |
+| EMA_RSI_ST | 18 of 24 | 24/24 |
+| Price Action | 32 of 34 | 34/34 |
+| BB_RSI | 33 of 35 | 35/35 |
+| GAPS | 24 of 25 | 25/25 |
+| ORB, 3M GAP FIX | already complete | unchanged |
+
+Trend Day Scalp's settings section listed friendly labels only — "Day Gate Time", "Min / Max Stop" — with no way to know which `.env` key any of them was. Every row in every guide now carries both the label and the `CODE` name, its default, and what changes if you move it.
+
+Three factual corrections, each verified against the code rather than assumed:
+
+- **EMA9+VWAP claimed it had no private VIX dials.** It has three — `EMA9VWAP_VIX_ENABLED`, `_MAX_ENTRY`, `_STRONG_ONLY` — read at `src/services/vixFilter.js:51-75`, each falling back to the global value when left blank. The guide told you to change the shared `VIX_*` keys and warned that doing so would affect other strategies; that was unnecessary and wrong.
+- **EMA_RSI_ST and GAPS both documented a per-strategy expiry override.** `EMA_RSI_ST_OPTION_EXPIRY_OVERRIDE` / `_TYPE` and `GAPS_OPTION_EXPIRY_OVERRIDE` / `_TYPE` were removed on 2026-08-05 (see `src/strategies/notes/ema_rsi_st.md`); all strategies share one `OPTION_EXPIRY_OVERRIDE`. Both guides now say so and flag the old keys as dead text.
+- **Suffix shorthand hid keys from search.** Rows written as `EMA9VWAP_CANDLE_TRAIL_ENABLED / _BARS` meant that searching a guide for `EMA9VWAP_CANDLE_TRAIL_BARS` found nothing. Both names are spelled out.
+
+Keys the guides deliberately list as *removed* (BB_RSI's PSAR pair, ORB's 24 deleted filters) were checked and are correctly described as dead — `ORB_RETEST_ENABLED` in particular survives only in a settings-snapshot key list and is read by nothing.
+
 ### Changed — every strategy guide now shows the rule instead of describing it
 
 The nine guides in `documents/` between them carried 34 charts, and they were unevenly spread: BB_RSI illustrated its indicators with hand-positioned CSS `<div>`s rather than real data, six guides showed only the Call side of a two-sided strategy, and no guide drew a losing trade. There are now **63 charts**, all generated from candle series with the indicators computed off them — the Bollinger bands, EMAs, VWAP bands, SuperTrend, RSI and ATR on every chart are the real formulas run over the candles underneath, not lines drawn by eye.
