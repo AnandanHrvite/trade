@@ -1066,7 +1066,7 @@ function sidebarCSS() {
     .sb-exit-btn:hover{background:rgba(239,68,68,0.06);}
     .sb-paper-btn{border-color:#78350f;color:#f59e0b;}
     .sb-paper-btn:hover{background:rgba(245,158,11,0.06);border-color:#f59e0b;}
-    .sb-reset-btn{border-color:#312e0f;color:#a16207;font-size:0.62rem;}
+    .sb-reset-btn{border-color:#312e0f;color:#f59e0b;font-size:0.62rem;}
     .sb-reset-btn:hover{background:rgba(161,98,7,0.06);}
 
     /* ── MAIN CONTENT ── */

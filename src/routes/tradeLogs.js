@@ -1478,7 +1478,7 @@ ${buildSidebar('tradeLogs', liveActive)}
               '<td class="from-val">' + fmtVal(e.from) + '</td>' +
               '<td class="to-val">'   + fmtVal(e.to)   + '</td>' +
               '<td style="color:var(--muted-1,#8ba1c2);font-size:0.66rem;">' + escHtml(e.source || '') + '</td>' +
-              '<td>' + (hasNote ? '<span class="audit-note">📝 ' + escHtml(e.note) + '</span>' : '<span style="color:#2a3a5a;">—</span>') + '</td>' +
+              '<td>' + (hasNote ? '<span class="audit-note">📝 ' + escHtml(e.note) + '</span>' : '<span style="color:var(--muted-2,#6d85a8);">—</span>') + '</td>' +
               '<td><button class="btn btn-restore" title="Revert this key to its previous value" onclick="restoreAudit(\\'' + entB64 + '\\')">↩ Restore</button></td>' +
             '</tr>';
           }).join('') +
@@ -1576,16 +1576,16 @@ ${buildSidebar('tradeLogs', liveActive)}
         <input type="checkbox" id="rd_skip" onchange="rdSyncAll()" style="width:16px;height:16px;cursor:pointer;"> Skip trade history
       </label>
       <label style="display:flex;align-items:center;gap:9px;padding:7px 0;cursor:pointer;font-size:0.82rem;color:#cfe0f8;">
-        <input type="checkbox" id="rd_cache" onchange="rdSyncAll()" style="width:16px;height:16px;cursor:pointer;"> Cache <span style="color:#5a6c8a;font-size:0.7rem;">(clears fully)</span>
+        <input type="checkbox" id="rd_cache" onchange="rdSyncAll()" style="width:16px;height:16px;cursor:pointer;"> Cache <span style="color:var(--muted-2,#6d85a8);font-size:0.7rem;">(clears fully)</span>
       </label>
       <label style="display:flex;align-items:center;gap:9px;padding:7px 0;cursor:pointer;font-size:0.82rem;color:#cfe0f8;">
-        <input type="checkbox" id="rd_logs" onchange="rdSyncAll()" style="width:16px;height:16px;cursor:pointer;"> Logs <span style="color:#5a6c8a;font-size:0.7rem;">(clears fully)</span>
+        <input type="checkbox" id="rd_logs" onchange="rdSyncAll()" style="width:16px;height:16px;cursor:pointer;"> Logs <span style="color:var(--muted-2,#6d85a8);font-size:0.7rem;">(clears fully)</span>
       </label>
       <label style="display:flex;align-items:center;gap:9px;padding:7px 0;cursor:pointer;font-size:0.82rem;color:#cfe0f8;">
         <input type="checkbox" id="rd_ticks" onchange="rdSyncAll()" style="width:16px;height:16px;cursor:pointer;"> Ticks data
       </label>
       <div style="margin-top:14px;padding-top:12px;border-top:1px solid #1a2640;">
-        <div style="font-size:0.72rem;color:#8aa0c0;margin-bottom:6px;">Date range <span style="color:#5a6c8a;">(optional — applies to Paper, Skip &amp; Ticks; leave blank to wipe all)</span></div>
+        <div style="font-size:0.72rem;color:#8aa0c0;margin-bottom:6px;">Date range <span style="color:var(--muted-2,#6d85a8);">(optional — applies to Paper, Skip &amp; Ticks; leave blank to wipe all)</span></div>
         <div style="display:flex;gap:10px;">
           <label style="flex:1;font-size:0.68rem;color:#8aa0c0;">From<br><input type="date" id="rd_from" style="width:100%;margin-top:3px;padding:6px 8px;background:#0a0e17;border:1px solid #1a2640;border-radius:6px;color:#cfe0f8;font-family:'IBM Plex Mono',monospace;font-size:0.78rem;"></label>
           <label style="flex:1;font-size:0.68rem;color:#8aa0c0;">To<br><input type="date" id="rd_to" style="width:100%;margin-top:3px;padding:6px 8px;background:#0a0e17;border:1px solid #1a2640;border-radius:6px;color:#cfe0f8;font-family:'IBM Plex Mono',monospace;font-size:0.78rem;"></label>

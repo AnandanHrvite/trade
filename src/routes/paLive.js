@@ -2113,7 +2113,7 @@ function showSCModal(t){
   }
 
   var contractHtml='<div style="background:#06100e;border:1px solid #0d3020;border-radius:10px;padding:12px 14px;margin-bottom:10px;">'
-    +'<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:#1a6040;margin-bottom:8px;font-weight:700;">\uD83D\uDCCB Option Contract</div>'
+    +'<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:#34d399;margin-bottom:8px;font-weight:700;">\uD83D\uDCCB Option Contract</div>'
     +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;">'
     +cell('Symbol',t.symbol||'\u2014','#a0f0c0')
     +cell('Strike',t.strike||'\u2014','#fff')
@@ -2124,7 +2124,7 @@ function showSCModal(t){
     +'</div></div>';
 
   var entryHtml='<div style="background:#060c18;border:1px solid #0d2040;border-radius:10px;padding:12px 14px;margin-bottom:10px;">'
-    +'<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:#1a4080;margin-bottom:8px;font-weight:700;">\uD83D\uDFE2 Entry</div>'
+    +'<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:#60a5fa;margin-bottom:8px;font-weight:700;">\uD83D\uDFE2 Entry</div>'
     +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;">'
     +cell('Entry Time',t.entry||'\u2014','#c8d8f0')
     +cell('NIFTY Spot @ Entry',fmt(t.eSpot),'#fff','Index price at entry')
@@ -2136,7 +2136,7 @@ function showSCModal(t){
     +'</div></div>';
 
   var exitHtml='<div style="background:#0c0608;border:1px solid #3a0d12;border-radius:10px;padding:12px 14px;margin-bottom:10px;">'
-    +'<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:#801a20;margin-bottom:8px;font-weight:700;">\uD83D\uDD34 Exit</div>'
+    +'<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:#f87171;margin-bottom:8px;font-weight:700;">\uD83D\uDD34 Exit</div>'
     +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;">'
     +cell('Exit Time',t.exit||'\u2014','#c8d8f0')
     +cell('NIFTY Spot @ Exit',fmt(t.xSpot),'#fff','Index price at exit')

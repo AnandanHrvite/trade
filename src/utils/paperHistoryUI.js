@@ -542,7 +542,7 @@ function showHistoryTradeModal(sessionIdx, tradeIdx){
   badge.style.border = '1px solid ' + (t.side === 'CE' ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)');
 
   var contractHtml = '<div style="background:#06100e;border:1px solid #0d3020;border-radius:10px;padding:12px 14px;margin-bottom:10px;">'
-    + '<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:#1a6040;margin-bottom:8px;font-weight:700;">Option Contract</div>'
+    + '<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:#34d399;margin-bottom:8px;font-weight:700;">Option Contract</div>'
     + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;">'
     + histCell('Symbol', t.symbol || '\\u2014', '#c8d8f0')
     + histCell('Strike', t.optionStrike || '\\u2014', '#e0eaf8')
@@ -552,7 +552,7 @@ function showHistoryTradeModal(sessionIdx, tradeIdx){
     + histCell('PnL Mode', t.pnlMode || 'spot-diff', '#8b8bf0')
     + '</div></div>';
   var entryHtml = '<div style="background:#060c18;border:1px solid #0d2040;border-radius:10px;padding:12px 14px;margin-bottom:10px;">'
-    + '<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:#1a4080;margin-bottom:8px;font-weight:700;">Entry</div>'
+    + '<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:#60a5fa;margin-bottom:8px;font-weight:700;">Entry</div>'
     + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;">'
     + histCell('Entry Time', t.entryTime || '\\u2014', '#c8d8f0')
     + histCell('NIFTY Spot @ Entry', histFmt(eSpot), '#e0eaf8')
@@ -562,7 +562,7 @@ function showHistoryTradeModal(sessionIdx, tradeIdx){
     + histCell('Entry Signal', t.entryReason || '\\u2014', '#c8d8f0')
     + '</div></div>';
   var exitHtml = '<div style="background:#0c0608;border:1px solid #3a0d12;border-radius:10px;padding:12px 14px;margin-bottom:10px;">'
-    + '<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:#801a20;margin-bottom:8px;font-weight:700;">Exit</div>'
+    + '<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:#f87171;margin-bottom:8px;font-weight:700;">Exit</div>'
     + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;">'
     + histCell('Exit Time', t.exitTime || '\\u2014', '#c8d8f0')
     + histCell('NIFTY Spot @ Exit', histFmt(xSpot), '#e0eaf8')

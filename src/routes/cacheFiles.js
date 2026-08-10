@@ -393,7 +393,7 @@ router.get("/", (req, res) => {
     .num  { font-family:'IBM Plex Mono',monospace; }
     .fname { font-family:'IBM Plex Mono',monospace; color:#c8d8f0; word-break:break-all; }
     .tag { display:inline-block; font-size:0.6rem; font-weight:700; letter-spacing:0.5px; padding:2px 7px; border-radius:10px; border:1px solid currentColor; text-transform:uppercase; }
-    .tag-none { color:#475569; }
+    .tag-none { color:var(--muted-2,#6d85a8); }
     .sdate { font-family:'IBM Plex Mono',monospace; font-size:0.66rem; color:var(--muted-1,#8ba1c2); }
     .tag-filter { display:flex; align-items:center; gap:6px; font-size:0.62rem; color:var(--muted-1,#8ba1c2); text-transform:uppercase; letter-spacing:0.5px; }
     .tag-filter select { padding:3px 7px; background:#0a1528; border:1px solid #1e3a5a; border-radius:5px; color:#c8d8f0; font-family:inherit; font-size:0.66rem; outline:none; }

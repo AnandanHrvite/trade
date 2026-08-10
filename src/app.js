@@ -1448,7 +1448,7 @@ app.get("/", (req, res) => {
       padding:9px 12px; border-radius:8px; font-size:0.7rem; color:var(--muted-2,#6d85a8);
       background:#0c0c18; border:1px dashed #252550; text-align:center;
     }
-    .broker-no-config code { color:#6070a0; font-family:monospace; }
+    .broker-no-config code { color:var(--muted-2,#6d85a8); font-family:monospace; }
     .broker-expiry-warn {
       margin-top:10px; padding:7px 10px; border-radius:7px; font-size:0.7rem; line-height:1.5;
     }

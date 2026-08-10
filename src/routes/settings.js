@@ -2770,13 +2770,13 @@ async function loadBackups() {
     var d = await r.json();
     if (!d.enabled) {
       statusLine.innerHTML = '⚠️ Backup is disabled — enable <b>Daily Data Backup</b> below.';
-      body.innerHTML = '<tr><td colspan="4" style="padding:10px 8px;color:#5a6c8a;">Disabled.</td></tr>';
+      body.innerHTML = '<tr><td colspan="4" style="padding:10px 8px;color:var(--muted-2,#6d85a8);">Disabled.</td></tr>';
       return;
     }
     statusLine.textContent = 'Daily at ' + String(d.hour).padStart(2, '0') + ':00 IST · keeps latest only (new replaces old) · ' + d.backups.length + ' on server';
     if (!d.backups.length) {
       _backupLatestDate = null;
-      body.innerHTML = '<tr><td colspan="4" style="padding:10px 8px;color:#5a6c8a;">No snapshots yet — click "Snapshot now".</td></tr>';
+      body.innerHTML = '<tr><td colspan="4" style="padding:10px 8px;color:var(--muted-2,#6d85a8);">No snapshots yet — click "Snapshot now".</td></tr>';
       return;
     }
     _backupLatestDate = d.backups[0].date;
@@ -3746,7 +3746,7 @@ ${expiryHolidayModalHTML()}
             <th style="padding:6px 8px;">Date</th><th style="padding:6px 8px;">Size</th>
             <th style="padding:6px 8px;">Status</th><th style="padding:6px 8px;text-align:right;">Download</th>
           </tr></thead>
-          <tbody id="backupListBody"><tr><td colspan="4" style="padding:10px 8px;color:#5a6c8a;">Loading…</td></tr></tbody>
+          <tbody id="backupListBody"><tr><td colspan="4" style="padding:10px 8px;color:var(--muted-2,#6d85a8);">Loading…</td></tr></tbody>
         </table>
       </div>
       <details style="margin-top:12px;">
@@ -3812,17 +3812,17 @@ pm2 startOrRestart ecosystem.config.js --update-env</pre>
             2. <b>APIs &amp; Services → Library</b> → enable <b>Google Drive API</b>.<br/>
             3. <a href="https://console.cloud.google.com/auth/overview" target="_blank" rel="noopener" style="color:#60a5fa;">Google Auth Platform</a> → <b>Get started</b> → fill in app name + your email → audience <b>External</b> → create.<br/>
             4. <a href="https://console.cloud.google.com/auth/audience" target="_blank" rel="noopener" style="color:#60a5fa;">Google Auth Platform → <b>Audience</b></a> → under <i>Publishing status</i> click <b style="color:#fbbf24;">PUBLISH APP</b> → Confirm (leaving it in <i>Testing</i> makes the connection expire every 7 days).<br/>
-            5. <a href="https://console.cloud.google.com/auth/scopes" target="_blank" rel="noopener" style="color:#60a5fa;">Google Auth Platform → <b>Data Access</b></a> → <b>Add or remove scopes</b> → tick <b style="color:#fbbf24;">.../auth/drive.file</b> → Update → <b>Save</b>. <span style="color:#5a6c8a;">Skipping this is what causes “insufficient authentication scopes” later — Google only grants scopes listed here.</span><br/>
+            5. <a href="https://console.cloud.google.com/auth/scopes" target="_blank" rel="noopener" style="color:#60a5fa;">Google Auth Platform → <b>Data Access</b></a> → <b>Add or remove scopes</b> → tick <b style="color:#fbbf24;">.../auth/drive.file</b> → Update → <b>Save</b>. <span style="color:var(--muted-2,#6d85a8);">Skipping this is what causes “insufficient authentication scopes” later — Google only grants scopes listed here.</span><br/>
             6. <a href="https://console.cloud.google.com/auth/clients" target="_blank" rel="noopener" style="color:#60a5fa;">Google Auth Platform → <b>Clients</b></a> → <b>Create client</b> → application type <b style="color:#fbbf24;">TVs and Limited Input devices</b>.<br/>
             7. Paste the Client ID + Secret below and save.<br/>
-            <span style="color:#5a6c8a;">Note: the old <i>APIs &amp; Services → OAuth consent screen</i> page is now <b>Google Auth Platform</b> in the left menu — same thing, new name.</span>
+            <span style="color:var(--muted-2,#6d85a8);">Note: the old <i>APIs &amp; Services → OAuth consent screen</i> page is now <b>Google Auth Platform</b> in the left menu — same thing, new name.</span>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px;">
             <input type="text" id="gdriveClientId" placeholder="xxxx.apps.googleusercontent.com" autocomplete="off" style="flex:1;min-width:220px;padding:7px 10px;background:#0a1426;border:1px solid #1a2640;border-radius:7px;color:#cfe0f8;font-size:0.7rem;font-family:'IBM Plex Mono',monospace;"/>
             <input type="password" id="gdriveClientSecret" placeholder="Client secret" autocomplete="new-password" style="flex:1;min-width:160px;padding:7px 10px;background:#0a1426;border:1px solid #1a2640;border-radius:7px;color:#cfe0f8;font-size:0.7rem;font-family:'IBM Plex Mono',monospace;"/>
             <button onclick="gdriveSaveCreds()" id="gdriveSaveBtn" style="padding:7px 14px;background:rgba(59,130,246,0.15);color:#60a5fa;border:1px solid rgba(59,130,246,0.3);border-radius:7px;font-size:0.72rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">Save</button>
           </div>
-          <div style="font-size:0.64rem;color:#5a6c8a;margin-top:6px;">Stored server-side in ~/trading-data/.google_drive.json (never in .env, never inside a backup archive).</div>
+          <div style="font-size:0.64rem;color:var(--muted-2,#6d85a8);margin-top:6px;">Stored server-side in ~/trading-data/.google_drive.json (never in .env, never inside a backup archive).</div>
         </details>
       </div>
 

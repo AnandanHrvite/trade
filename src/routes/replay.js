@@ -331,7 +331,7 @@ button:disabled { background:#374151; cursor:not-allowed; }
 .rf-dl.copied { background:#15803d; border-color:#22c55e; color:#fff; }
 .rng-stats { margin-top:8px; font-size:0.8rem; color:#cbd5e1; }
 .rng-stats strong { color:#e2e8f0; }
-.rng-sep { color:#475569; margin:0 8px; }
+.rng-sep { color:var(--muted-2,#6d85a8); margin:0 8px; }
 .rng-analytics-title { margin-top:16px; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.04em; color:#94a3b8; font-weight:600; }
 .rollup-table { margin-top:6px; }
 .rollup-table tbody tr:hover { background:#0f172a; }
