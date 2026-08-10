@@ -56,6 +56,10 @@ router.get("/", (req, res) => {
       --text2:    #e0eaf8;
       --muted:    #8ba1c2;
       --dim:      #6d85a8;
+      --accent:   #3b82f6;
+      --green:    #10b981;
+      --red:      #ef4444;
+      --yellow:   #f59e0b;
     }
     /* Light skin — this page is variable-driven, so one block covers it. */
     :root[data-theme="light"] {

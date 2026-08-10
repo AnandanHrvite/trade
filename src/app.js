@@ -123,7 +123,7 @@ function loginPageHTML(error, opts = {}) {
 :root{
   --bg:#05080f;--bg2:#080d18;
   --card:rgba(13,19,32,.88);--card-b:#1a2236;
-  --text:#e6eefc;--muted:#6b86ad;--dim:#3f5878;
+  --text:#e6eefc;--muted:#6b86ad;--dim:#6d85a8;
   --field:#070d18;--field-b:#1b2b42;
   --accent:#3b82f6;--accent2:#22d3ee;--accent-d:#1d3fa8;
   --ok:#22c55e;--err:#f87171;--err-bg:#1c0610;--err-b:#500e20;
@@ -134,7 +134,7 @@ function loginPageHTML(error, opts = {}) {
 :root[data-theme="light"]{
   --bg:#eef2f7;--bg2:#f8fafc;
   --card:rgba(255,255,255,.94);--card-b:#e2e8f0;
-  --text:#0f172a;--muted:#64748b;--dim:#94a3b8;
+  --text:#0f172a;--muted:#4b5769;--dim:#5c6b7f;
   --field:#f8fafc;--field-b:#dfe6ef;
   --accent:#2563eb;--accent2:#0ea5e9;--accent-d:#1d4ed8;
   --ok:#16a34a;--err:#dc2626;--err-bg:#fef2f2;--err-b:#fecaca;

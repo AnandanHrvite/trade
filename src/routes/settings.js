@@ -1655,8 +1655,8 @@ router.get("/", (req, res) => {
       --border2:  #cbd5e1;
       --text:     #334155;
       --text2:    #1e293b;
-      --muted:    #64748b;
-      --dim:      #94a3b8;
+      --muted:    #4b5769;
+      --dim:      #5c6b7f;
       --accent:   #2563eb;
       --green:    #059669;
       --red:      #dc2626;
