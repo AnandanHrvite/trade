@@ -2097,7 +2097,9 @@ ${buildSidebar('dashboard', liveActive)}
   <!-- (utility buttons moved to top-bar-right; cache pill + schedule pills also live there) -->
 
   <!-- ③ PER-MODULE CUMULATIVE P&L CHARTS (top-bar Paper/Live toggle + Range filter) -->
-  <div class="mm-grid">
+  <!-- Cards are hidden client-side unless the strategy actually traded in the
+       selected source/range — see _renderModuleChart. -->
+  <div class="mm-grid" id="mmGrid">
     <div class="mm-card ema_rsi_st" data-mode="EMA_RSI_ST">
       <div class="mm-hdr">
         <span class="mm-dot"></span>
@@ -2195,6 +2197,9 @@ ${buildSidebar('dashboard', liveActive)}
       <div class="mm-empty" id="mm-empty-GAP3M" style="display:none;">No paper trades yet</div>
     </div>
     ` : ''}
+  </div>
+  <div class="mm-card mm-grid-empty" id="mmGridEmpty" style="display:none;">
+    <div class="mm-empty">No strategy traded in this range</div>
   </div>
 
   <!-- ⑤ CUMULATIVE P&L CHART (top-bar Paper/Live toggle + Range filter) — full-width band below the strategy grid -->
@@ -2870,6 +2875,19 @@ var _mmData = { paper: null, live: null };
 var _mmCharts = {};
 var _mmToggle = { EMA_RSI_ST: 'paper', BB_RSI: 'paper', PA: 'paper', ORB: 'paper', EMA9VWAP: 'paper', TREND_PB: 'paper', GAPS: 'paper', TDS: 'paper', GAP3M: 'paper' };
 
+// A strategy with no trades in the selected source+range has nothing to show,
+// so its whole card is hidden rather than kept as a "0 trades" placeholder.
+// When that empties the grid, one note stands in for all of them.
+function _updateModuleGridEmpty(){
+  var note = document.getElementById('mmGridEmpty');
+  if (!note) return;
+  var anyVisible = false;
+  document.querySelectorAll('.mm-card[data-mode]').forEach(function(c){
+    if (c.style.display !== 'none') anyVisible = true;
+  });
+  note.style.display = anyVisible ? 'none' : '';
+}
+
 function _renderModuleChart(mode){
   var card = document.querySelector('.mm-card[data-mode="' + mode + '"]');
   if (!card) return;
@@ -2877,10 +2895,13 @@ function _renderModuleChart(mode){
   var all = _mmData[src] || [];
   var trades = _applyDashRange(all.filter(function(t){ return (t.mode || '').toUpperCase() === mode; }));
   if (_mmCharts[mode]) { _mmCharts[mode].destroy(); _mmCharts[mode] = null; }
+  card.style.display = trades.length ? '' : 'none';
+  if (!trades.length) { _updateModuleGridEmpty(); return; }  // never draw into a hidden card
   var emptyEl = document.getElementById('mm-empty-' + mode);
   if (emptyEl) emptyEl.textContent = 'No ' + src + ' trades ' + (_dashRangeActive() ? 'in this range' : 'yet');
   _mmCharts[mode] = _renderDashCumChart('mmChart-' + mode, 'mm-empty-' + mode, trades);
   _updateChartStats('mm-stats-' + mode, trades);
+  _updateModuleGridEmpty();
 }
 
 // ── Broker wallets — remaining = investment pool + paper P&L in the SAME range
@@ -3080,15 +3101,24 @@ setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily 
     return fetch(url, { cache:'no-store' }).then(function(r){ return r.ok ? r.json() : null; }).catch(function(){ return null; });
   }
 
+  // Has this strategy actually traded today? A closed trade counts, and so does
+  // an open position — it is a trade taken, just not finished yet.
+  function tookTradeToday(d){
+    if (!d) return false;
+    var taken = d.tradeCount != null ? d.tradeCount : (d.tradesTaken || 0);
+    return (+taken > 0) || !!d.position;
+  }
+
   function renderLive(data) {
     // data: { EMA_RSI_ST, BB_RSI, ... } keyed by tile, each from /{strat}-paper/status/data
-    var html = '<div class="da-grid cols-' + Math.min(SESSION_TILES.length, 6) + '">';
-    SESSION_TILES.forEach(function(t){
+    // Only strategies that took a trade today get a card; idle ones are omitted.
+    var tiles = SESSION_TILES.filter(function(t){ return tookTradeToday(data[t.key]); });
+    if (!tiles.length) {
+      return '<div class="da-empty">No strategy has taken a trade yet today.</div>';
+    }
+    var html = '<div class="da-grid cols-' + Math.min(tiles.length, 6) + '">';
+    tiles.forEach(function(t){
       var d = data[t.key];
-      if (!d) {
-        html += '<div class="da-tile ' + t.cls + '"><div class="da-tile-hdr">' + t.label + '<span class="da-pill">OFFLINE</span></div><div class="da-sub-line">No data</div></div>';
-        return;
-      }
       // Field names vary by strategy (ORB uses livePnl/tradesTaken) — fall back.
       var open = d.unrealisedPnl !== undefined ? d.unrealisedPnl : (d.unrealised !== undefined ? d.unrealised : (d.livePnl || 0));
       var closed = d.sessionPnl || 0;
@@ -3154,13 +3184,18 @@ setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily 
     var lastDay = lastTradingDate(combinedAgg.byDate);
     var lastDayAgg = lastDay ? aggregateTrades(combined, lastDay, lastDay) : null;
 
-    // ── Last session card (per strategy) ── enabled tiles + a TOTAL card
-    var lastHtml = '<div class="da-grid cols-' + Math.min(SESSION_TILES.length + 1, 6) + '">';
-    SESSION_TILES.forEach(function(t){
+    // ── Last session card (per strategy) ── only strategies that traded that
+    // day, plus a TOTAL card. A strategy that sat out adds nothing to read.
+    var tiles = SESSION_TILES.filter(function(t){
       var s = lastDayAgg ? lastDayAgg.byStrategy[t.key] : null;
-      var net = s ? s.net : 0;
-      var trades = s ? s.t : 0;
-      var w = s ? s.w : 0, l = s ? s.l : 0;
+      return !!(s && s.t > 0);
+    });
+    var lastHtml = '<div class="da-grid cols-' + Math.min(tiles.length + 1, 6) + '">';
+    tiles.forEach(function(t){
+      var s = lastDayAgg.byStrategy[t.key];
+      var net = s.net;
+      var trades = s.t;
+      var w = s.w, l = s.l;
       lastHtml += '<div class="da-tile ' + t.cls + '">' +
         '<div class="da-tile-hdr">' + t.label + '<span class="da-pill">' + trades + 'T</span></div>' +
         '<div class="da-big ' + cls(net) + '">' + fmtINR(net) + '</div>' +

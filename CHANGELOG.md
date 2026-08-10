@@ -6,6 +6,17 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Changed — the Dashboard only shows strategies that actually traded
+
+Nine enabled strategies meant nine cards on every screen of the Dashboard, whatever they did. On 10 Aug six of the nine had taken no trade at all, so most of the page was `0 trades · No paper trades in this range` and `₹0 · 0W / 0L · WR 0%` — placeholders that had to be read past to find the four cards carrying a number.
+
+A strategy with nothing to report is now left out entirely, in both places:
+
+- **The per-module P&L cards** hide when the strategy has no trades in the selected Paper/Live source and date range. The grid re-flows around what is left. If nothing traded in the range, one line — *No strategy traded in this range* — stands in for all of them instead of nine empty cards.
+- **The analytics panel** does the same for the session tiles. After hours it keeps only the strategies that traded on the last trading day (plus TOTAL); during market hours it keeps the ones that have taken a trade today, where an open position counts as a trade taken — it is just not finished yet. When no strategy has traded yet, the panel says so in a line.
+
+Nothing about which strategies are *enabled* changes — a strategy that is off was never shown, and one that is on reappears the moment it takes its first trade.
+
 ### Fixed — the Dashboard laid itself out by strategy count instead of by screen width
 
 Every strategy card was forced onto one row: the grid's column count was pinned to the number of enabled strategies. At nine strategies each card was ~180px wide on a 1920px screen — the stats line wrapped and the sparkline collapsed into noise — and anywhere between 1101px and 1700px it was ~100px. The count was also maintained by hand and had already drifted (3M GAP FIX was missing from it), which is why one card sat alone on a second row.
