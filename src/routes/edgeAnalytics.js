@@ -11,7 +11,14 @@
  * and a per-strategy breakdown table — plus the risk-adjusted set: Sharpe, Sortino,
  * SQN, recovery factor, Kelly size, edge confidence (t-test), hold time, cost drag,
  * daily P&L, underwater drawdown, P&L distribution, rolling form, weekday×hour heatmap,
- * MFE/MAE trade efficiency, a bootstrap Monte Carlo, and side / hold / VIX / strength cuts.
+ * MFE/MAE trade efficiency, a bootstrap Monte Carlo, and side / hold / VIX / strength cuts —
+ * plus the edge-quality set: expectancy in R, break-even win rate + cushion, top-5 profit
+ * concentration, net ex top-5, equity-curve R², trades/day, worst red run, a monthly P&L
+ * grid, an R-multiple distribution and an Nth-trade-of-the-day cut.
+ *
+ * Layout is a scanning dashboard, not a chart viewer: short chart boxes, cards stepping
+ * 8 → 4 → 2 columns, and tables/heat grids scrolling inside their own panel so the phone
+ * layout never scrolls horizontally.
  *
  * Sample gates: ratios that need a sample (Sharpe, Sortino, SQN, Kelly, edge confidence,
  * Monte Carlo) render "—" below MIN_DAYS / MIN_TRADES rather than a number built on noise.
@@ -153,7 +160,7 @@ router.get("/", (req, res) => {
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
   ${faviconLink()}
   <title>ௐ Palani Andawar Thunai ॐ — Edge Analytics</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet"/>
@@ -161,12 +168,19 @@ router.get("/", (req, res) => {
   <script>(function(){ if ('${theme}' === 'light') document.documentElement.setAttribute('data-theme','light'); })();</script>
   <style>
     *{box-sizing:border-box;margin:0;padding:0;}
-    body{font-family:'Inter',sans-serif;background:#040c18;color:#e0eaf8;overflow-x:hidden;}
+    body{font-family:'Inter',sans-serif;background:#040c18;color:#e0eaf8;overflow-x:hidden;-webkit-font-smoothing:antialiased;-webkit-text-size-adjust:100%;}
     ${sidebarCSS()}
-    .main-content{flex:1;margin-left:200px;padding:18px 22px 40px;min-width:0;min-height:100vh;}
-    @media(max-width:900px){.main-content{margin-left:0;padding:14px;}}
-    .page-title{font-size:1.1rem;font-weight:700;color:#e0eaf8;margin-bottom:2px;}
-    .page-sub{font-size:0.72rem;color:#4a6080;margin-bottom:14px;}
+    /* Padding uses env() so the notch/home-indicator never clips a card in
+       landscape on an iPhone; max() keeps the desktop value on every other device. */
+    .main-content{flex:1;margin-left:200px;padding:16px 20px 40px;min-width:0;min-height:100vh;}
+    @media(max-width:900px){.main-content{margin-left:0;
+      padding:12px max(12px,env(safe-area-inset-right)) calc(28px + env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));}}
+    .page-title{font-size:1.05rem;font-weight:700;color:#e0eaf8;margin-bottom:2px;}
+    .page-sub{font-size:0.7rem;color:#4a6080;margin-bottom:12px;line-height:1.5;}
+    /* section rule — groups the three card rows so 24 numbers read as three ideas */
+    .sect{display:flex;align-items:center;gap:8px;font-family:'IBM Plex Mono',monospace;font-size:0.55rem;
+      text-transform:uppercase;letter-spacing:1.6px;color:#3a5070;margin:0 0 7px;}
+    .sect::after{content:'';flex:1;height:1px;background:#0e1e36;}
     .tbar{display:flex;align-items:center;gap:8px;padding:10px 12px;background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;margin-bottom:14px;flex-wrap:wrap;}
     .tbar label{font-size:0.58rem;text-transform:uppercase;letter-spacing:1px;color:#3a5070;font-family:'IBM Plex Mono',monospace;}
     .tbar input,.tbar select{background:#04090f;border:0.5px solid #0e1e36;color:#e0eaf8;padding:6px 10px;border-radius:6px;font-family:'IBM Plex Mono',monospace;font-size:0.72rem;outline:none;}
@@ -176,31 +190,46 @@ router.get("/", (req, res) => {
     .seg button.on{background:#0c4a6e;color:#7dd3fc;}
     .cr-link{margin-left:auto;background:#0c4a6e;border:0.5px solid #1e5a80;color:#7dd3fc;padding:7px 14px;border-radius:6px;font-family:'IBM Plex Mono',monospace;font-size:0.72rem;font-weight:600;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;}
     .cr-link:hover{background:#0e5a84;}
-    .stat-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:10px;margin-bottom:16px;}
-    @media(max-width:1300px){.stat-grid{grid-template-columns:repeat(4,1fr);}}
-    @media(max-width:560px){.stat-grid{grid-template-columns:repeat(2,1fr);}}
-    .sc{background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;padding:12px 14px;position:relative;overflow:hidden;}
+    /* 8 → 4 → 2 columns: every step divides 8 evenly, so a card row never ends
+       ragged. 2 columns is the iPhone layout (390-440pt wide). */
+    .stat-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:8px;margin-bottom:12px;}
+    @media(max-width:1500px){.stat-grid{grid-template-columns:repeat(4,1fr);}}
+    @media(max-width:700px){.stat-grid{grid-template-columns:repeat(2,1fr);gap:7px;}}
+    .sc{background:#07111f;border:0.5px solid #0e1e36;border-radius:9px;padding:10px 12px;position:relative;overflow:hidden;}
     .sc::before{content:'';position:absolute;top:0;left:0;width:3px;height:100%;background:var(--accent,#38bdf8);}
-    .sc-label{font-size:0.55rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;margin-bottom:5px;font-family:'IBM Plex Mono',monospace;}
-    .sc-val{font-size:1.05rem;font-weight:700;font-family:'IBM Plex Mono',monospace;color:#e0eaf8;}
-    .sc-sub{font-size:0.6rem;color:#4a6080;margin-top:3px;}
-    .panel{background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;padding:14px 16px;margin-bottom:14px;}
-    .panel h3{font-size:0.62rem;text-transform:uppercase;letter-spacing:1.4px;color:#3a5070;margin-bottom:10px;font-family:'IBM Plex Mono',monospace;}
-    .row2{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+    .sc-label{font-size:0.52rem;text-transform:uppercase;letter-spacing:1.1px;color:#3a5070;margin-bottom:4px;font-family:'IBM Plex Mono',monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .sc-val{font-size:0.95rem;font-weight:700;font-family:'IBM Plex Mono',monospace;color:#e0eaf8;font-variant-numeric:tabular-nums;line-height:1.25;}
+    .sc-sub{font-size:0.57rem;color:#4a6080;margin-top:2px;line-height:1.35;}
+    .panel{background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;padding:12px 14px;margin-bottom:12px;min-width:0;}
+    /* Grid children default to min-width:auto, so a wide table would stretch its
+       panel past the viewport and get clipped by body{overflow-x:hidden} instead
+       of scrolling inside its own wrapper. min-width:0 is what makes it scroll. */
+    .row2 > *,.row3 > *{min-width:0;}
+    .panel h3{font-size:0.6rem;text-transform:uppercase;letter-spacing:1.3px;color:#3a5070;margin-bottom:8px;font-family:'IBM Plex Mono',monospace;}
+    .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
     @media(max-width:1000px){.row2{grid-template-columns:1fr;}}
-    .row3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;}
+    .row3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
     @media(max-width:1100px){.row3{grid-template-columns:1fr;}}
-    .chart-wrap{position:relative;height:260px;}
-    .chart-wrap.tall{height:300px;}
-    .chart-wrap.short{height:200px;}
+    /* Chart boxes are deliberately short — this is a scanning dashboard, not a
+       chart viewer; the tallest (equity) is still under a third of a laptop screen. */
+    .chart-wrap{position:relative;height:200px;}
+    .chart-wrap.tall{height:240px;}
+    .chart-wrap.short{height:165px;}
+    @media(max-width:700px){
+      .chart-wrap{height:175px;}
+      .chart-wrap.tall{height:200px;}
+      .chart-wrap.short{height:150px;}
+      .panel{padding:11px 12px;margin-bottom:10px;}
+      .sc-val{font-size:0.9rem;}
+    }
     .cap{font-family:'IBM Plex Mono',monospace;font-size:0.62rem;color:#4a6080;margin:-4px 0 10px;line-height:1.6;}
     .mini{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:10px;}
     .mini > div{background:#04090f;border:0.5px solid #0e1e36;border-radius:8px;padding:8px 10px;}
     .mini .k{font-family:'IBM Plex Mono',monospace;font-size:0.54rem;text-transform:uppercase;letter-spacing:1px;color:#3a5070;}
     .mini .v{font-family:'IBM Plex Mono',monospace;font-size:0.85rem;font-weight:700;color:#e0eaf8;margin-top:2px;}
-    .hm{width:100%;border-collapse:separate;border-spacing:3px;font-family:'IBM Plex Mono',monospace;font-size:0.6rem;}
+    .hm{width:100%;border-collapse:separate;border-spacing:3px;font-family:'IBM Plex Mono',monospace;font-size:0.6rem;font-variant-numeric:tabular-nums;}
     .hm th{color:#3a5070;font-weight:600;font-size:0.54rem;text-transform:uppercase;letter-spacing:1px;padding:2px 0;}
-    .hm td{text-align:center;padding:8px 3px;border-radius:5px;background:#04090f;border:0.5px solid #0e1e36;color:#c8d8f0;white-space:nowrap;}
+    .hm td{text-align:center;padding:7px 2px;border-radius:5px;background:#04090f;border:0.5px solid #0e1e36;color:#c8d8f0;white-space:nowrap;min-width:38px;}
     .hm td.void{color:#16243c;}
     .hm .rowlab{text-align:right;color:#3a5070;background:none;border:none;padding-right:6px;}
     .sc[title],.mini > div[title],.hm td[title]{cursor:help;}
@@ -214,7 +243,11 @@ router.get("/", (req, res) => {
     :root[data-theme="light"] .mini .v{color:#1e293b;}
     :root[data-theme="light"] .hm td.void{color:#cbd5e1!important;}
     :root[data-theme="light"] .hm .rowlab{background:none!important;border:none!important;}
-    .tbl{width:100%;border-collapse:collapse;font-family:'IBM Plex Mono',monospace;font-size:0.72rem;}
+    /* Tables scroll inside their own panel instead of widening the page — the
+       phone layout must never scroll horizontally as a whole. */
+    .tblwrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+    .tblwrap .tbl{min-width:330px;}
+    .tbl{width:100%;border-collapse:collapse;font-family:'IBM Plex Mono',monospace;font-size:0.7rem;font-variant-numeric:tabular-nums;}
     .tbl th{padding:8px 10px;text-align:right;font-size:0.56rem;text-transform:uppercase;letter-spacing:1px;color:#1e3050;background:#04090f;border-bottom:0.5px solid #0e1e36;font-weight:600;}
     .tbl th:first-child{text-align:left;}
     .tbl td{padding:7px 10px;border-top:0.5px solid #0e1e36;color:#c8d8f0;text-align:right;}
@@ -232,6 +265,18 @@ router.get("/", (req, res) => {
     .badge-PA{background:rgba(168,85,247,0.12);color:#a855f7;border:0.5px solid rgba(168,85,247,0.3);}
     .badge-ORB{background:rgba(16,185,129,0.12);color:#10b981;border:0.5px solid rgba(16,185,129,0.3);}
     .empty{text-align:center;padding:50px 20px;color:#4a6080;font-size:0.85rem;}
+    /* phone: full-width controls, 44px touch targets, no cramped two-up rows */
+    @media(max-width:700px){
+      .tbar{gap:6px;padding:8px 10px;margin-bottom:10px;}
+      .tbar select,.tbar input{flex:1 1 120px;min-width:0;padding:8px 10px;}
+      .seg button{padding:8px 14px;}
+      .cr-link{margin-left:0;width:100%;justify-content:center;padding:9px 14px;}
+      #cntPill{margin-left:0!important;}
+      .tbl{font-size:0.66rem;}
+      .tbl th,.tbl td{padding:6px 7px;}
+      .mini{gap:6px;}
+      .hm td{font-size:0.55rem;min-width:38px;}
+    }
     /* light theme */
     :root[data-theme="light"] body{background:#f4f6f9!important;color:#334155!important;}
     :root[data-theme="light"] .main-content{background:#f4f6f9!important;}
@@ -245,6 +290,8 @@ router.get("/", (req, res) => {
     :root[data-theme="light"] .tbl th{background:#f1f5f9!important;color:#64748b!important;border-bottom-color:#e0e4ea!important;}
     :root[data-theme="light"] .tbl td{border-color:#e0e4ea!important;color:#334155!important;}
     :root[data-theme="light"] .empty{color:#94a3b8!important;}
+    :root[data-theme="light"] .sect{color:#64748b!important;}
+    :root[data-theme="light"] .sect::after{background:#e0e4ea!important;}
     :root[data-theme="light"] .pager{color:#64748b!important;}
     :root[data-theme="light"] .pg-btn{background:#f8fafc!important;border-color:#e0e4ea!important;color:#0369a1!important;}
     :root[data-theme="light"] .pg-btn:hover:not(:disabled){background:#e0f2fe!important;}
@@ -295,17 +342,20 @@ function pc(n){ return n>=0?'#10b981':'#ef4444'; }
 // istNow() writes "DD/MM/YYYY, HH:MM:SS" (IST). Older records may be "HH:MM, DD/MM/YYYY".
 // Both have exactly one clock field, so the first HH:MM in the string is the entry time —
 // the date half never contains a colon. ISO "YYYY-MM-DDTHH:MM..Z" is UTC, so shift +5:30.
-function entryHour(t){
+function entryMins(t){
   const v=String(t||'');
   if(/^\\d{4}-\\d{2}-\\d{2}T/.test(v)){
     const d=new Date(v);
-    return isNaN(d)?null:new Date(d.getTime()+19800000).getUTCHours();
+    if(isNaN(d)) return null;
+    const u=new Date(d.getTime()+19800000);
+    return u.getUTCHours()*60+u.getUTCMinutes();
   }
   const m=v.match(/(\\d{1,2}):(\\d{2})/);
   if(!m) return null;
-  const h=+m[1];
-  return (h>=0&&h<=23)?h:null;
+  const h=+m[1], mi=+m[2];
+  return (h>=0&&h<=23&&mi>=0&&mi<=59)?h*60+mi:null;
 }
+function entryHour(t){ const m=entryMins(t); return m===null?null:Math.floor(m/60); }
 const DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 function weekday(dateStr){ if(!dateStr) return null; const d=new Date(dateStr+'T12:00:00'); return isNaN(d)?null:d.getDay(); }
 
@@ -430,6 +480,46 @@ function quality(arr,s){
     winDays: d.filter(x=>x.net>0).length,
   };
 }
+// Edge-quality metrics — the "is this book actually worth trading" set.
+// R = the average losing trade, the only risk unit every engine here shares
+// (stop-loss is spot-based on some strategies and premium-based on others).
+function edgeStats(arr,s,days){
+  const R=Math.abs(s.avgLoss)||null;
+  const beWR=s.payoff>0?100/(1+s.payoff):null;
+  const winners=arr.filter(t=>t.pnl>0).map(t=>t.pnl).sort((a,b)=>b-a);
+  const grossWin=winners.reduce((a,v)=>a+v,0);
+  const top=winners.slice(0,5), topSum=top.reduce((a,v)=>a+v,0);
+  // Equity-curve straightness: R² of a least-squares line through the curve.
+  // 0.95+ = steady grind, 0.3 = one lucky trade carrying the whole book.
+  let r2=null;
+  if(s.eqS.length>=3){
+    const n=s.eqS.length; let sx=0,sy=0,sxy=0,sxx=0;
+    for(let i=0;i<n;i++){ sx+=i; sy+=s.eqS[i]; sxy+=i*s.eqS[i]; sxx+=i*i; }
+    const den=n*sxx-sx*sx;
+    if(den!==0){
+      const b=(n*sxy-sx*sy)/den, a=(sy-b*sx)/n, ym=sy/n;
+      let ssr=0,sst=0;
+      for(let i=0;i<n;i++){ const f=a+b*i; ssr+=(s.eqS[i]-f)*(s.eqS[i]-f); sst+=(s.eqS[i]-ym)*(s.eqS[i]-ym); }
+      if(sst>0) r2=Math.max(0,1-ssr/sst);
+    }
+  }
+  // Longest run of consecutive red days — what a bad week actually looks like.
+  let red=0,maxRed=0;
+  for(const d of daily(arr)){ if(d.net<0){ red++; if(red>maxRed) maxRed=red; } else red=0; }
+  return {
+    R,
+    expR:   R?s.exp/R:null,
+    beWR,
+    edgeGap:beWR===null?null:s.wr-beWR,
+    topShare: grossWin>0?topSum/grossWin*100:null,
+    netExTop: winners.length?s.net-topSum:null,
+    topN:   top.length,
+    r2,
+    perDay: days?arr.length/days:null,
+    maxRed,
+  };
+}
+
 function sqnGrade(v){
   if(v===null) return '';
   if(v<1.6) return 'poor';
@@ -469,6 +559,10 @@ function monteCarlo(arr,sims,paths){
 let charts={};
 function destroyCharts(){ for(const k in charts){ try{charts[k].destroy();}catch(_){} } charts={}; }
 
+// One breakpoint constant for the JS side: fewer axis ticks on a phone, and a
+// re-render when the layout actually crosses the line (not on every resize px).
+function MOBILE(){ return window.matchMedia('(max-width:700px)').matches; }
+
 function themed(){
   const light = document.documentElement.getAttribute('data-theme')==='light';
   return { grid: light?'rgba(0,0,0,0.06)':'rgba(255,255,255,0.05)', tick: light?'#64748b':'#4a6080' };
@@ -493,7 +587,7 @@ function render(){
     {l:'Max Drawdown',v:inr(s.maxDD),sub:'peak-to-trough',a:'#ef4444'},
     {l:'Streaks',v:s.maxW+'W / '+s.maxL+'L',sub:'best run / worst run',a:'#a855f7'},
   ];
-  let h=cardRow(cards);
+  let h='<div class="sect">Performance</div>'+cardRow(cards);
 
   // ── row 2: risk-adjusted quality. Every card carries a plain-English title
   // so a number like "SQN 2.4" is readable without looking it up.
@@ -502,7 +596,7 @@ function render(){
   // grey accent when the metric is blank, so a "—" card never shows a red bar
   const acc=(v,good,ok)=>v===null||v===undefined?'#3a5070':(v>=good?'#10b981':(v>=ok?'#f59e0b':'#ef4444'));
   const needDays='need '+MIN_DAYS+'+ days', needN='need '+MIN_TRADES+'+ trades';
-  h+=cardRow([
+  h+='<div class="sect">Risk-adjusted</div>'+cardRow([
     {l:'Sharpe',v:nz(q.sharpe,v=>v.toFixed(2)),sub:q.okDays?q.days+' trading days':needDays,a:acc(q.sharpe,1,0),
      t:'Return per unit of swing, annualised from your daily P&L. Above 1 is good, above 2 is very good.'},
     {l:'Sortino',v:nz(q.sortino,v=>v.toFixed(2)),sub:q.okDays?'downside only':needDays,a:acc(q.sortino,1.5,0),
@@ -523,6 +617,28 @@ function render(){
      t:'Brokerage + taxes already deducted from the P&L above. High % means the edge is being eaten by costs.'},
   ]);
 
+  // ── row 3: edge quality — how much cushion the win rate has, how much of the
+  // profit is one lucky tail, and how straight the curve really is.
+  const e=edgeStats(arr,s,q.days);
+  h+='<div class="sect">Edge quality</div>'+cardRow([
+    {l:'Expectancy (R)',v:nz(e.expR,v=>(v>0?'+':'')+v.toFixed(2)+'R'),sub:e.R?'R = avg loss '+inr(e.R):'no losses yet',a:e.expR===null?'#3a5070':pc(e.expR),
+     t:'Average trade measured in units of your average loss. +0.30R means each trade earns about a third of a typical loss.'},
+    {l:'Break-even WR',v:nz(e.beWR,v=>v.toFixed(1)+'%'),sub:'you have '+s.wr.toFixed(1)+'%',a:'#38bdf8',
+     t:'Win rate this payoff needs just to break even. Anything above it is edge.'},
+    {l:'Win-rate Cushion',v:nz(e.edgeGap,v=>(v>0?'+':'')+v.toFixed(1)+' pts'),sub:e.edgeGap===null?'':(e.edgeGap>0?'above break-even':'below break-even'),a:e.edgeGap===null?'#3a5070':pc(e.edgeGap),
+     t:'How far your win rate sits above the break-even line. A thin cushion means small slippage or cost changes can flip the system.'},
+    {l:'Top-'+e.topN+' Concentration',v:nz(e.topShare,v=>v.toFixed(0)+'%'),sub:'of gross profit',a:e.topShare===null?'#3a5070':(e.topShare>=60?'#ef4444':(e.topShare>=40?'#f59e0b':'#10b981')),
+     t:'Share of all profit made by the best few trades. Above 60% means the book is a lottery, not a system.'},
+    {l:'Net ex Top-'+e.topN,v:nz(e.netExTop,v=>inr(v)),sub:'if the best never happened',a:e.netExTop===null?'#3a5070':pc(e.netExTop),
+     t:'What the book earns with its biggest winners removed. Negative here is the classic right-tail lottery.'},
+    {l:'Curve Straightness',v:nz(e.r2,v=>v.toFixed(2)),sub:'R² of equity fit',a:acc(e.r2,0.8,0.5),
+     t:'How closely the equity curve follows a straight line. 0.90+ is a steady grind, 0.30 means one trade carried everything.'},
+    {l:'Trades / Day',v:nz(e.perDay,v=>v.toFixed(1)),sub:q.days+' trading days',a:'#38bdf8',
+     t:'Average number of trades taken on a day the system traded.'},
+    {l:'Worst Red Run',v:e.maxRed+(e.maxRed===1?' day':' days'),sub:'consecutive losing days',a:e.maxRed>=4?'#ef4444':(e.maxRed>=3?'#f59e0b':'#10b981'),
+     t:'Longest streak of losing days — the run your daily-loss cap and your nerves have to survive.'},
+  ]);
+
   h+='<div class="panel"><h3>Equity Curve (cumulative net P&L · trade-by-trade)</h3><div class="chart-wrap tall"><canvas id="eqChart"></canvas></div></div>';
 
   h+='<div class="row2">';
@@ -540,9 +656,14 @@ function render(){
   h+='<div class="panel"><h3>P&L by Weekday</h3><div class="chart-wrap"><canvas id="dowChart"></canvas></div></div>';
   h+='</div>';
 
+  h+='<div class="row2">';
   h+='<div class="panel"><h3>Weekday × Hour Heatmap (net P&L)</h3>'
-    +'<div class="cap">Green = the slot makes money. Hover a cell for trades and win rate.</div>'
+    +'<div class="cap">Green = the slot makes money. Tap or hover a cell for trades and win rate.</div>'
     +heatmapHTML(arr)+'</div>';
+  h+='<div class="panel"><h3>Monthly P&L</h3>'
+    +'<div class="cap">One cell per month, plus the year total — the view a desk reviews on the 1st.</div>'
+    +monthlyHTML(arr)+'</div>';
+  h+='</div>';
 
   h+='<div class="row2">';
   h+='<div class="panel"><h3>Trade P&L Distribution</h3><div class="cap">Best '+inr(s.best)+' · worst '+inr(s.worst)
@@ -550,6 +671,15 @@ function render(){
   h+='<div class="panel"><h3>Rolling '+rollWindow(arr.length)+'-Trade Form</h3>'
     +'<div class="cap">Is the edge improving or fading? Blue = expectancy per trade, purple = win rate.</div>'
     +'<div class="chart-wrap"><canvas id="rollChart"></canvas></div></div>';
+  h+='</div>';
+
+  h+='<div class="row2">';
+  h+='<div class="panel"><h3>R-Multiple Distribution</h3>'
+    +'<div class="cap">'+(e.R?'1R = your average loss ('+inr(e.R)+'). A healthy book has a fat +2R and beyond tail.':'No losing trades yet — R cannot be set.')+'</div>'
+    +'<div class="chart-wrap"><canvas id="rChart"></canvas></div></div>';
+  h+='<div class="panel"><h3>Nth Trade of the Day</h3>'
+    +'<div class="cap">Does the day get worse after the first entries? This is the cut that justifies a trade cap.</div>'
+    +seqTable(arr)+'</div>';
   h+='</div>';
 
   h+='<div class="row2">';
@@ -579,6 +709,7 @@ function render(){
 
   paintTable('mode');
   paintTable('reason');
+  paintTable('seq');
   paintTable('side');
   paintTable('hold');
   paintTable('strength');
@@ -590,6 +721,7 @@ function render(){
   drawDow(arr);
   drawHist(arr);
   drawRolling(arr);
+  drawR(arr,e.R);
   drawMae(arr);
   drawMC(arr);
 }
@@ -626,9 +758,9 @@ function paintTable(key){
   const start = (t.page-1)*PAGE_SIZE;
   const slice = t.rows.slice(start, start+PAGE_SIZE);
 
-  let h='<table class="tbl"><thead><tr>'+t.head+'</tr></thead><tbody>';
+  let h='<div class="tblwrap"><table class="tbl"><thead><tr>'+t.head+'</tr></thead><tbody>';
   for(const r of slice) h+=t.rowFn(r);
-  h+='</tbody></table>';
+  h+='</tbody></table></div>';
   if(total > PAGE_SIZE){
     const first = t.page===1, last = t.page===pages;
     h+='<div class="pager">'
@@ -689,7 +821,7 @@ function drawEquity(eqS){
     }]},
     options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false},
       tooltip:{callbacks:{title:i=>'Trade #'+i[0].label, label:c=>'Equity: '+inr(c.parsed.y)}}},
-      scales:{ x:{grid:{color:th.grid},ticks:{color:th.tick,maxTicksLimit:12}}, y:{grid:{color:th.grid},ticks:{color:th.tick,callback:v=>inr(v)}} } }
+      scales:{ x:{grid:{color:th.grid},ticks:{color:th.tick,maxTicksLimit:MOBILE()?6:12}}, y:{grid:{color:th.grid},ticks:{color:th.tick,callback:v=>inr(v)}} } }
   });
 }
 
@@ -781,11 +913,11 @@ function extremesHTML(arr){
     +'<td style="text-align:left">'+esc(t.mode)+' '+esc(t.side)+'</td>'
     +'<td style="text-align:left" title="'+esc(t.exitReason)+'">'+esc(t.exitReason.length>22?t.exitReason.slice(0,22)+'…':t.exitReason)+'</td>'
     +'<td style="color:'+pc(t.pnl)+'">'+sign(t.pnl)+inr(t.pnl)+'</td></tr>';
-  let h='<table class="tbl"><thead><tr><th>Date</th><th style="text-align:left">Trade</th><th style="text-align:left">Exit</th><th>P&L</th></tr></thead><tbody>';
+  let h='<div class="tblwrap"><table class="tbl"><thead><tr><th>Date</th><th style="text-align:left">Trade</th><th style="text-align:left">Exit</th><th>P&L</th></tr></thead><tbody>';
   for(const t of top) h+=row(t);
   if(bot.length) h+='<tr><td colspan="4" style="color:#3a5070;text-align:center;font-size:0.6rem;letter-spacing:1px;">WORST</td></tr>';
   for(const t of bot) h+=row(t);
-  return h+'</tbody></table>';
+  return h+'</tbody></table></div>';
 }
 
 // MFE = best the trade ever was, MAE = worst it ever was (spot points / ₹,
@@ -829,6 +961,90 @@ function mcHTML(arr){
     +'</div><div class="chart-wrap short"><canvas id="mcChart"></canvas></div>';
 }
 
+// Entry order within a day. Trades arrive grouped by file, so they are sorted
+// by entry clock here — "the 3rd trade of the day" must mean the same thing
+// whether it came from BB_RSI or ORB.
+const SEQ_ORDER=['1st','2nd','3rd','4th','5th+'];
+function seqTable(arr){
+  const byDay=new Map();
+  for(const t of arr){
+    if(!t.date) continue;
+    if(!byDay.has(t.date)) byDay.set(t.date,[]);
+    byDay.get(t.date).push(t);
+  }
+  const seq=new Map();
+  for(const list of byDay.values()){
+    const ordered=[...list].sort((a,b)=>{
+      const ma=entryMins(a.entryTime), mb=entryMins(b.entryTime);
+      if(ma===null&&mb===null) return 0;
+      if(ma===null) return 1;
+      if(mb===null) return -1;
+      return ma-mb;
+    });
+    ordered.forEach((t,i)=>seq.set(t,SEQ_ORDER[Math.min(i,4)]));
+  }
+  return bucketTable('seq',arr,t=>seq.get(t)||'—',SEQ_ORDER.concat('—'));
+}
+
+const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function monthlyHTML(arr){
+  const cells=new Map();   // 'YYYY-M' -> {net,n,wins}
+  const years=new Set();
+  for(const t of arr){
+    if(!t.date||t.date.length<7) continue;
+    const y=+t.date.slice(0,4), mo=+t.date.slice(5,7)-1;
+    if(!(y>0)||!(mo>=0&&mo<=11)) continue;
+    years.add(y);
+    const k=y+'-'+mo;
+    if(!cells.has(k)) cells.set(k,{net:0,n:0,wins:0});
+    const g=cells.get(k); g.net+=t.pnl; g.n++; if(t.pnl>0) g.wins++;
+  }
+  if(!cells.size) return '<div class="cap">No dated trades in this filter.</div>';
+  let maxAbs=0;
+  for(const g of cells.values()) maxAbs=Math.max(maxAbs,Math.abs(g.net));
+  let h='<div style="overflow-x:auto"><table class="hm"><thead><tr><th></th>';
+  for(const m of MONTHS) h+='<th>'+m+'</th>';
+  h+='<th>Year</th></tr></thead><tbody>';
+  for(const y of [...years].sort()){
+    h+='<tr><td class="rowlab">'+y+'</td>';
+    let yNet=0,yN=0;
+    for(let mo=0;mo<12;mo++){
+      const g=cells.get(y+'-'+mo);
+      if(!g){ h+='<td class="void">·</td>'; continue; }
+      yNet+=g.net; yN+=g.n;
+      const a=0.12+0.55*(maxAbs?Math.abs(g.net)/maxAbs:0);
+      const bg=g.net>=0?'rgba(16,185,129,'+a.toFixed(2)+')':'rgba(239,68,68,'+a.toFixed(2)+')';
+      h+='<td style="background:'+bg+'" title="'+MONTHS[mo]+' '+y+' — '+inr(g.net)+' · '+g.n+' trades · '
+        +(g.wins/g.n*100).toFixed(0)+'% WR">'+shortInr(g.net)+'</td>';
+    }
+    h+='<td style="font-weight:700;color:'+pc(yNet)+'" title="'+y+' total — '+inr(yNet)+' · '+yN+' trades">'+shortInr(yNet)+'</td></tr>';
+  }
+  return h+'</tbody></table></div>';
+}
+
+function drawR(arr,R){
+  const el=document.getElementById('rChart');
+  if(!el||!R) return;
+  const th=themed();
+  const labels=['≤ -3R','-3..-2R','-2..-1R','-1..0R','0..1R','1..2R','2..3R','≥ 3R'];
+  const counts=new Array(8).fill(0);
+  for(const t of arr){
+    const r=t.pnl/R;
+    let i;
+    if(r<=-3) i=0; else if(r<-2) i=1; else if(r<-1) i=2; else if(r<0) i=3;
+    else if(r<1) i=4; else if(r<2) i=5; else if(r<3) i=6; else i=7;
+    counts[i]++;
+  }
+  charts.r=new Chart(el,{
+    type:'bar',
+    data:{ labels, datasets:[{data:counts,backgroundColor:labels.map((_,i)=>i<4?'rgba(239,68,68,0.65)':'rgba(16,185,129,0.65)')}]},
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false},
+      tooltip:{callbacks:{label:c=>c.parsed.y+' trades'}}},
+      scales:{ x:{grid:{display:false},ticks:{color:th.tick,maxRotation:60,autoSkip:true,maxTicksLimit:MOBILE()?5:8}},
+               y:{grid:{color:th.grid},ticks:{color:th.tick,precision:0}} } }
+  });
+}
+
 function heatmapHTML(arr){
   const cells=new Map(); let maxAbs=0;
   for(const t of arr){
@@ -868,7 +1084,7 @@ function drawDaily(d){
     data:{ labels:d.map(x=>x.date.slice(8,10)+'/'+x.date.slice(5,7)), datasets:[{data:net,backgroundColor:barColors(net)}]},
     options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false},
       tooltip:{callbacks:{label:c=>{const g=d[c.dataIndex]; return [inr(g.net),g.n+' trades · '+(g.wins/g.n*100).toFixed(0)+'% WR'];}}}},
-      scales:{ x:{grid:{display:false},ticks:{color:th.tick,maxTicksLimit:14}}, y:{grid:{color:th.grid},ticks:{color:th.tick,callback:v=>inr(v)}} } }
+      scales:{ x:{grid:{display:false},ticks:{color:th.tick,maxTicksLimit:MOBILE()?7:14}}, y:{grid:{color:th.grid},ticks:{color:th.tick,callback:v=>inr(v)}} } }
   });
 }
 
@@ -880,7 +1096,7 @@ function drawDrawdown(eqS){
       fill:true,backgroundColor:'rgba(239,68,68,0.18)'}]},
     options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false},
       tooltip:{callbacks:{title:i=>'Trade #'+i[0].label,label:c=>'Below peak: '+inr(c.parsed.y)}}},
-      scales:{ x:{grid:{color:th.grid},ticks:{color:th.tick,maxTicksLimit:12}}, y:{grid:{color:th.grid},ticks:{color:th.tick,callback:v=>inr(v)}} } }
+      scales:{ x:{grid:{color:th.grid},ticks:{color:th.tick,maxTicksLimit:MOBILE()?6:12}}, y:{grid:{color:th.grid},ticks:{color:th.tick,callback:v=>inr(v)}} } }
   });
 }
 
@@ -898,7 +1114,7 @@ function drawHist(arr){
     data:{ labels, datasets:[{data:counts,backgroundColor:mids.map(m=>m>=0?'rgba(16,185,129,0.65)':'rgba(239,68,68,0.65)')}]},
     options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false},
       tooltip:{callbacks:{label:c=>c.parsed.y+' trades'}}},
-      scales:{ x:{grid:{display:false},ticks:{color:th.tick,maxRotation:60,minRotation:0,autoSkip:true,maxTicksLimit:10}},
+      scales:{ x:{grid:{display:false},ticks:{color:th.tick,maxRotation:60,minRotation:0,autoSkip:true,maxTicksLimit:MOBILE()?5:10}},
                y:{grid:{color:th.grid},ticks:{color:th.tick,precision:0}} } }
   });
 }
@@ -921,7 +1137,7 @@ function drawRolling(arr){
     options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{labels:{color:th.tick,boxWidth:10,font:{size:10}}},
       tooltip:{callbacks:{title:i=>'Trade #'+i[0].label,
         label:c=>c.datasetIndex===0?('Expectancy: '+inr(c.parsed.y)):('Win rate: '+c.parsed.y.toFixed(0)+'%')}}},
-      scales:{ x:{grid:{color:th.grid},ticks:{color:th.tick,maxTicksLimit:10}},
+      scales:{ x:{grid:{color:th.grid},ticks:{color:th.tick,maxTicksLimit:MOBILE()?5:10}},
                y:{position:'left',grid:{color:th.grid},ticks:{color:th.tick,callback:v=>inr(v)}},
                y1:{position:'right',min:0,max:100,grid:{display:false},ticks:{color:th.tick,callback:v=>v+'%'}} } }
   });
@@ -971,6 +1187,11 @@ document.getElementById('fRange').addEventListener('change',()=>{
   // and cached, so every later selection resolves without a round-trip.
   if(range==='exp'){ drReady().then(render); return; }
   render();
+});
+let _wasMobile=MOBILE();
+window.addEventListener('resize',()=>{
+  const m=MOBILE();
+  if(m!==_wasMobile){ _wasMobile=m; render(); }   // tick density differs per layout
 });
 document.getElementById('fFrom').addEventListener('change',render);
 document.getElementById('fTo').addEventListener('change',render);

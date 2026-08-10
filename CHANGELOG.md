@@ -6,6 +6,19 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Changed — Edge Analytics: an edge-quality card row, two new cuts, and a layout that fits a phone
+
+Three follow-ups to the pro-metrics pass: more analytics, smaller charts, and a page that works on an iPhone.
+
+- **New "Edge quality" card row** — **Expectancy in R** (the average trade measured in average-loss units), **Break-even win rate** and the **win-rate cushion** above it, **Top-5 concentration** (what share of all profit the five best trades made — above 60% and the book is a lottery, not a system), **Net ex Top-5**, **Curve straightness** (R² of a least-squares line through the equity curve — 0.90 is a grind, 0.30 means one trade carried everything), **Trades/day**, and the **worst red run** in consecutive losing days. The three card rows now sit under **Performance / Risk-adjusted / Edge quality** rules instead of running together as 24 loose numbers.
+- **Monthly P&L grid** — one cell per month with a year total, coloured like the heatmap; the view a desk reviews on the 1st.
+- **R-multiple distribution** — trades bucketed from ≤−3R to ≥+3R, so the right tail is visible rather than inferred.
+- **Nth trade of the day** — the cut that justifies (or refutes) a per-day trade cap. Trades are sorted by entry clock across strategies first, so "3rd trade" means the same thing whether it came from BB_RSI or ORB.
+- **Charts are ~25% shorter** (equity 300→240px, standard 260→200px, 200→165px, and 200/175/150px on a phone). This is a scanning dashboard; the tallest panel is now under a third of a laptop screen.
+- **Phone layout** — cards step 8 → 4 → 2 columns (every step divides 8, so a row never ends ragged), full-width controls with 44px touch targets, `env(safe-area-inset-*)` padding for the notch and home indicator, tables and both heat grids scrolling inside their own panel, and fewer axis ticks below 700px with a re-render when the layout crosses that line. Grid children get `min-width:0` — without it a wide table stretches its panel past the viewport and gets clipped by `overflow-x:hidden` instead of scrolling.
+
+Verified over the DevTools protocol at 390×844, 440×956 (iPhone 17 Pro Max), 834×1112 and 1512×950, in both themes and on both a 134-trade and a 3-trade book: no console errors, no `NaN`/`undefined` in the output, all ten canvases drawn, card columns 2/4/8 as designed, and **zero horizontal page overflow** at every width.
+
 ### Added — Edge Analytics now answers the questions a professional trading desk asks
 
 The page told you *what* happened (win rate, net, profit factor). It did not tell you whether the result was **skill or luck**, how much **heat** you sat through to get it, or what a bad run would look like. Sixteen new read-only panels close that gap — same trade files, same filters, still nothing written.
