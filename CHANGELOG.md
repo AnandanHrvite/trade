@@ -15,7 +15,9 @@ A strategy with nothing to report is now left out entirely, in both places:
 - **The per-module P&L cards** hide when the strategy has no trades in the selected Paper/Live source and date range. The grid re-flows around what is left. If nothing traded in the range, one line — *No strategy traded in this range* — stands in for all of them instead of nine empty cards.
 - **The analytics panel** does the same for the session tiles. After hours it keeps only the strategies that traded on the last trading day (plus TOTAL); during market hours it keeps the ones that have taken a trade today, where an open position counts as a trade taken — it is just not finished yet. When no strategy has traded yet, the panel says so in a line.
 
-Nothing about which strategies are *enabled* changes — a strategy that is off was never shown, and one that is on reappears the moment it takes its first trade.
+Nothing about which strategies are *enabled* changes — a strategy that is off was never shown, and one that is on reappears the moment it takes its first trade. A strategy whose status fetch *fails* is not treated as idle: it keeps its tile and shows OFFLINE, because a failed read is not proof that nothing happened.
+
+Fixed alongside it: the analytics panel's live-status URL map had no entry for **EMA9+VWAP**, so during market hours that tile fetched `/undefined` and could only ever render OFFLINE. It now reads `/ema9vwap-paper/status/data` like every other strategy.
 
 ### Fixed — the Dashboard laid itself out by strategy count instead of by screen width
 

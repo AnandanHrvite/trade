@@ -2897,8 +2897,9 @@ function _renderModuleChart(mode){
   if (_mmCharts[mode]) { _mmCharts[mode].destroy(); _mmCharts[mode] = null; }
   card.style.display = trades.length ? '' : 'none';
   if (!trades.length) { _updateModuleGridEmpty(); return; }  // never draw into a hidden card
-  var emptyEl = document.getElementById('mm-empty-' + mode);
-  if (emptyEl) emptyEl.textContent = 'No ' + src + ' trades ' + (_dashRangeActive() ? 'in this range' : 'yet');
+  // The card's own "no trades" line is unreachable from here now that an empty
+  // card is hidden outright; _renderDashCumChart still owns it for the shared
+  // cumulative card below the grid.
   _mmCharts[mode] = _renderDashCumChart('mmChart-' + mode, 'mm-empty-' + mode, trades);
   _updateChartStats('mm-stats-' + mode, trades);
   _updateModuleGridEmpty();
@@ -3061,7 +3062,8 @@ setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily 
   var SESSION_TILES = ${JSON.stringify(dashSessionTiles)};
   var LIVE_URLS = {
     EMA_RSI_ST:'/ema_rsi_st-paper/status/data', BB_RSI:'/bb_rsi-paper/status/data',
-    PA:'/pa-paper/status/data', ORB:'/orb-paper/status/data', TREND_PB:'/trend-pb-paper/status/data', GAPS:'/gaps-paper/status/data', TDS:'/trend-day-scalp-paper/status/data', GAP3M:'/gap-fix-3m-paper/status/data'
+    PA:'/pa-paper/status/data', ORB:'/orb-paper/status/data', EMA9VWAP:'/ema9vwap-paper/status/data',
+    TREND_PB:'/trend-pb-paper/status/data', GAPS:'/gaps-paper/status/data', TDS:'/trend-day-scalp-paper/status/data', GAP3M:'/gap-fix-3m-paper/status/data'
   };
 
   function fmtINR(n) {
@@ -3102,9 +3104,11 @@ setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily 
   }
 
   // Has this strategy actually traded today? A closed trade counts, and so does
-  // an open position — it is a trade taken, just not finished yet.
+  // an open position — it is a trade taken, just not finished yet. A failed
+  // status fetch (d == null) is not proof of an idle strategy, so it keeps its
+  // tile and shows OFFLINE rather than disappearing mid-session.
   function tookTradeToday(d){
-    if (!d) return false;
+    if (!d) return true;
     var taken = d.tradeCount != null ? d.tradeCount : (d.tradesTaken || 0);
     return (+taken > 0) || !!d.position;
   }
@@ -3119,6 +3123,10 @@ setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily 
     var html = '<div class="da-grid cols-' + Math.min(tiles.length, 6) + '">';
     tiles.forEach(function(t){
       var d = data[t.key];
+      if (!d) {
+        html += '<div class="da-tile ' + t.cls + '"><div class="da-tile-hdr">' + t.label + '<span class="da-pill">OFFLINE</span></div><div class="da-sub-line">No data</div></div>';
+        return;
+      }
       // Field names vary by strategy (ORB uses livePnl/tradesTaken) — fall back.
       var open = d.unrealisedPnl !== undefined ? d.unrealisedPnl : (d.unrealised !== undefined ? d.unrealised : (d.livePnl || 0));
       var closed = d.sessionPnl || 0;
