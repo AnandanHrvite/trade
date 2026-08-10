@@ -1022,11 +1022,34 @@ app.use("/all-backtest",   require("./routes/allBacktest"));    // ← unified b
 app.use("/pnl-history",    require("./routes/pnlHistory"));    // ← manual year-wise P&L (Kite + Fyers) + live bot overlay
 
 // ── Holiday Management API ────────────────────────────────────────────────────
-const { refreshHolidayCache, getNSEHolidays, formatDateToYYYYMMDD } = require("./utils/nseHolidays");
+const {
+  refreshHolidayCache, getNSEHolidayDetails, getHolidaySource, getExpiryCalendar,
+} = require("./utils/nseHolidays");
+
+// Both calendar endpoints answer for the current year AND the next one by
+// default, so the UI keeps working across a year boundary: on 30 Dec the list
+// rolls into January instead of emptying out. `?year=` asks for one explicit
+// year. Nothing is pinned to a hardcoded year anywhere below.
+function calendarYears(req) {
+  const raw = req.query && req.query.year;
+  if (raw === undefined || raw === "") {
+    const y = new Date().getFullYear();
+    return { years: [y, y + 1], error: null };
+  }
+  const y = Number.parseInt(raw, 10);
+  if (!Number.isFinite(y) || y < 2015 || y > 2100) {
+    return { years: [], error: "year must be an integer between 2015 and 2100" };
+  }
+  return { years: [y], error: null };
+}
 
 app.post("/api/holidays/refresh", async (req, res) => {
   try {
-    const result = await refreshHolidayCache();
+    // Refresh the year being viewed (defaults to the current one). The util
+    // also warms year+1, which is what makes next year appear the moment NSE
+    // publishes it — no restart, no code edit.
+    const raw = (req.query && req.query.year) || (req.body && req.body.year);
+    const result = await refreshHolidayCache(raw);
     res.json(result);
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -1035,8 +1058,21 @@ app.post("/api/holidays/refresh", async (req, res) => {
 
 app.get("/api/holidays", async (req, res) => {
   try {
-    const holidays = await getNSEHolidays();
-    res.json({ success: true, holidays, count: holidays.length });
+    const { years, error } = calendarYears(req);
+    if (error) return res.status(400).json({ success: false, error });
+
+    const details = [];
+    const sources = {};
+    for (const y of years) {
+      const list = await getNSEHolidayDetails(y);
+      details.push(...list);
+      sources[y] = { count: list.length, source: await getHolidaySource(y) };
+    }
+    const holidays = details.map(h => h.date);
+    // `holidays` stays a flat array of ISO dates — every existing caller reads
+    // that shape. `details` adds the API-supplied names, `sources` says where
+    // each year came from (api / disk / fallback / derived).
+    res.json({ success: true, holidays, details, count: holidays.length, year: years[0], years, sources });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -1045,46 +1081,13 @@ app.get("/api/holidays", async (req, res) => {
 // ── NIFTY Option Expiry Dates ─────────────────────────────────────────────────
 app.get("/api/expiry-dates", async (req, res) => {
   try {
-    const holidays = await getNSEHolidays();
-    const year = new Date().getFullYear();
-    const results = [];
+    const { years, error } = calendarYears(req);
+    if (error) return res.status(400).json({ success: false, error });
 
-    // Generate all Tuesdays (weekly) and last Tuesdays (monthly) for the year
-    for (let m = 0; m < 12; m++) {
-      // Last Tuesday of month (monthly expiry)
-      const lastDay = new Date(year, m + 1, 0);
-      const daysBack = (lastDay.getDay() - 2 + 7) % 7;
-      const lastTue = new Date(year, m + 1, -daysBack);
+    const expiries = [];
+    for (const y of years) expiries.push(...await getExpiryCalendar(y));
 
-      // All Tuesdays in this month (weekly expiry)
-      let d = new Date(year, m, 1);
-      const dow = d.getDay();
-      const firstTue = dow <= 2 ? 2 - dow : 9 - dow;
-      d.setDate(firstTue + 1);
-
-      while (d.getMonth() === m) {
-        const iso = formatDateToYYYYMMDD(d);
-        const isMonthly = d.getDate() === lastTue.getDate();
-        let actual = iso;
-        let preponed = false;
-        // Check if expiry falls on holiday → prepone to previous trading day
-        if (holidays.includes(iso)) {
-          let prev = new Date(d);
-          for (let i = 0; i < 7; i++) {
-            prev.setDate(prev.getDate() - 1);
-            const pIso = formatDateToYYYYMMDD(prev);
-            if (prev.getDay() !== 0 && prev.getDay() !== 6 && !holidays.includes(pIso)) {
-              actual = pIso;
-              preponed = true;
-              break;
-            }
-          }
-        }
-        results.push({ date: iso, actual, preponed, monthly: isMonthly });
-        d.setDate(d.getDate() + 7);
-      }
-    }
-    res.json({ success: true, expiries: results, year });
+    res.json({ success: true, expiries, year: years[0], years });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

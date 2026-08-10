@@ -2188,6 +2188,12 @@ function expiryHolidayModalCSS() {
     .holiday-table .preponed { color: #f59e0b; }
     .holiday-table .monthly-row td { background: rgba(59,130,246,0.08); }
     .expiry-legend { display:flex; gap:16px; padding:10px 0 4px; font-size:0.68rem; color:#4a6080; flex-wrap:wrap; }
+    .eh-source-note { padding:0 16px 12px; font-size:0.64rem; color:#4a6080; letter-spacing:0.3px; }
+    /* Year divider — the calendar now runs past 31 Dec into the next year. */
+    .holiday-table .year-row td {
+      background:rgba(59,130,246,0.05); color:#60a5fa; font-size:0.66rem;
+      letter-spacing:1px; font-weight:700; padding-top:10px;
+    }
     .expiry-legend span { display:flex; align-items:center; gap:4px; }
     .expiry-dot { width:8px; height:8px; border-radius:50%; display:inline-block; }
     .holiday-modal-body {
@@ -2228,6 +2234,7 @@ function expiryHolidayModalCSS() {
     :root[data-theme="light"] .holiday-table td { color:#334155; }
     :root[data-theme="light"] .holiday-table .today-holiday { color:#059669; }
     :root[data-theme="light"] .expiry-legend { color:#64748b; }
+    :root[data-theme="light"] .eh-source-note { color:#64748b; }
     :root[data-theme="light"] .holiday-modal-body { scrollbar-color:#cbd5e1 transparent; }
   `;
 }
@@ -2264,12 +2271,14 @@ function expiryHolidayModalHTML() {
     </div>
     <!-- Holiday tab -->
     <div id="ehTab-holiday" style="display:none;">
-      <div class="holiday-modal-body" style="padding:12px 16px 16px;">
+      <div class="holiday-modal-body" style="padding:12px 16px 4px;">
         <table class="holiday-table">
           <thead><tr><th>#</th><th>Date</th><th>Day</th><th>Holiday</th></tr></thead>
           <tbody id="holidayTableBody"></tbody>
         </table>
       </div>
+      <!-- Where each year's list came from. Blank until the first load. -->
+      <div id="holidaySourceNote" class="eh-source-note"></div>
     </div>
   </div>
 </div>`;
@@ -2278,15 +2287,35 @@ function expiryHolidayModalHTML() {
 function expiryHolidayModalJS() {
   return `
 // ── NSE Holiday List Modal ──────────────────────────────────────────────────
-var _holidayNames = {
-  '01-15': 'Municipal Corp. Election – Maharashtra', '01-26': 'Republic Day',
-  '03-03': 'Holi', '03-26': 'Shri Ram Navami', '03-31': 'Shri Mahavir Jayanti',
-  '04-03': 'Good Friday', '04-14': 'Dr. Ambedkar Jayanti',
-  '05-01': 'Maharashtra Day', '05-28': 'Bakri Id', '06-26': 'Muharram',
-  '09-14': 'Ganesh Chaturthi', '10-02': 'Mahatma Gandhi Jayanti',
-  '10-20': 'Dussehra', '11-10': 'Diwali – Balipratipada',
-  '11-24': 'Prakash Gurpurb Sri Guru Nanak Dev', '12-25': 'Christmas'
-};
+// Holiday names come from the API (NSE's own "description"), never from a
+// hardcoded MM-DD table — the lunar holidays (Holi, Diwali, Id …) move every
+// year, so a table here would read blank or plain wrong from January onwards.
+function _ehEsc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g, function(c) {
+    return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c];
+  });
+}
+
+// "2027: not published by NSE yet" is worth saying out loud — an empty next
+// year is exactly the failure this screen used to hide.
+function _ehYearSource(year, s) {
+  s = s || {};
+  var days = s.count + (s.count === 1 ? ' day' : ' days');
+  if (!s.count)              return year + ': not published by NSE yet';
+  if (s.source === 'api')    return year + ': live from NSE · ' + days;
+  if (s.source === 'disk')   return year + ': saved copy · ' + days;
+  if (s.source === 'derived') return year + ': not published yet — fixed dates only (' + days + ')';
+  return year + ': built-in list · ' + days;
+}
+
+function _ehSourceNote(data) {
+  var el = document.getElementById('holidaySourceNote');
+  if (!el) return;
+  var src = (data && data.sources) || {};
+  el.textContent = Object.keys(src).sort().map(function(y) {
+    return _ehYearSource(y, src[y]);
+  }).join('   ·   ');
+}
 
 async function loadHolidaysTable() {
   var body = document.getElementById('holidayTableBody');
@@ -2296,17 +2325,22 @@ async function loadHolidaysTable() {
     var res = await fetch('/api/holidays', {cache:'no-store'});
     if (!res.ok) throw new Error('HTTP ' + res.status);
     var data = await res.json();
-    if (!data.success || !data.holidays || !data.holidays.length) {
+    _ehSourceNote(data);
+    // Named list when the API supplies one; bare dates are the safety net.
+    var list = (data.details && data.details.length)
+      ? data.details.slice()
+      : (data.holidays || []).map(function(d) { return { date: d, name: '—' }; });
+    if (!data.success || !list.length) {
       body.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#4a6080;padding:20px;">No holidays found</td></tr>';
       return;
     }
     var todayStr = new Date(new Date().toLocaleString("en-US",{timeZone:"Asia/Kolkata"})).toISOString().split('T')[0];
     var rows = '';
     var n = 0;
-    data.holidays.sort().forEach(function(d) {
+    list.sort(function(a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; }).forEach(function(h) {
+      var d = h.date;
       if (d < todayStr) return; // hide past holidays
-      var mmdd = d.slice(5);
-      var name = _holidayNames[mmdd] || '—';
+      var name = _ehEsc(h.name || '—');
       var dt = new Date(d + 'T00:00:00');
       var dayName = dt.toLocaleDateString('en-US', {weekday:'short'});
       var display = dt.toLocaleDateString('en-IN', {day:'2-digit', month:'short', year:'numeric'});
@@ -2335,12 +2369,19 @@ async function loadExpiriesTable() {
       return;
     }
     var yearEl = document.getElementById('expiryYearTitle');
-    if (yearEl) yearEl.textContent = 'NIFTY Options Expiry Calendar ' + data.year;
+    if (yearEl) yearEl.textContent = 'NIFTY Options Expiry Calendar ' + (data.years || [data.year]).join(' – ');
     var todayStr = new Date(new Date().toLocaleString("en-US",{timeZone:"Asia/Kolkata"})).toISOString().split('T')[0];
     var rows = '';
     var n = 0;
+    var lastYear = '';
     data.expiries.forEach(function(e) {
       if (e.date < todayStr) return; // hide past expiries
+      // The list spans a year boundary now, so mark where the next year starts.
+      var yr = e.date.slice(0, 4);
+      if (lastYear && yr !== lastYear) {
+        rows += '<tr class="year-row"><td colspan="5">' + yr + '</td></tr>';
+      }
+      lastYear = yr;
       var dt = new Date(e.date + 'T00:00:00');
       var display = dt.toLocaleDateString('en-IN', {day:'2-digit', month:'short', year:'numeric'});
       var dayName = dt.toLocaleDateString('en-US', {weekday:'short'});
@@ -2387,10 +2428,15 @@ async function refreshHolidays() {
     if (!res) return;
     if (!res.ok) throw new Error('HTTP ' + res.status + ': ' + res.statusText);
     var d = await res.json();
+    // Report per year — a refresh covers the current year and the next one, and
+    // the next one is legitimately empty until NSE publishes it.
+    var lines = Object.keys(d.sources || {}).sort().map(function(y) {
+      return _ehYearSource(y, d.sources[y]);
+    }).join('\\n');
     if (d.success) {
-      await showAlert({ icon:'✅', title:'Holidays Refreshed', message:'Fetched ' + d.count + ' holidays from NSE API.\\nCache updated.', btnClass:'modal-btn-success' });
+      await showAlert({ icon:'✅', title:'Holidays Refreshed', message:(lines || ('Fetched ' + d.count + ' holidays.')) + '\\nCache updated.', btnClass:'modal-btn-success' });
     } else {
-      await showAlert({ icon:'⚠️', title:'NSE API Unavailable', message:'NSE API is currently blocking requests or unavailable.\\nUsing fallback holiday list (' + (d.count||17) + ' holidays for 2026).', btnClass:'modal-btn-primary' });
+      await showAlert({ icon:'⚠️', title:'NSE API Unavailable', message:'NSE API is blocking requests or unreachable.\\nShowing the last saved copy / fallback list:\\n' + (lines || ('' + d.count + ' holidays')), btnClass:'modal-btn-primary' });
     }
     // reload the table data so the modal reflects the refreshed cache
     loadHolidaysTable();

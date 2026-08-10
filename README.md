@@ -341,6 +341,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   trend_day_scalp_paper_trades.json # Trend Day Scalp paper sessions
   gap_fix_3m_paper_trades.json    # 3M Gap Fix Scalp paper sessions
   historical_pnl.json             # One-time P&L baselines per broker (Kite / Fyers)
+  nse_holidays.json               # Last good NSE holiday fetch, keyed by year — keeps 2027+ working if NSE blocks the box
   .active_ema_rsi_st_position.json     # Crash recovery — EMA_RSI_ST position
   .active_bb_rsi_position.json     # Crash recovery — bb_rsi position
   .active_pa_position.json        # Crash recovery — PA position
@@ -1016,9 +1017,9 @@ Blocks directional entries that fight the prevailing Open-Interest buildup: read
 ### API Endpoints
 | URL | Description |
 |-----|-------------|
-| `/api/holidays` | NSE holiday list |
-| `/api/holidays/refresh` | Refresh NSE holiday cache |
-| `/api/expiry-dates` | NIFTY weekly/monthly expiry calendar |
+| `/api/holidays` | NSE holiday list — current year **and** next, with names and per-year source. `?year=YYYY` for one year |
+| `/api/holidays/refresh` | Refresh the NSE holiday cache from the API. `?year=YYYY` (defaults to the current year; always warms `year+1` too) |
+| `/api/expiry-dates` | NIFTY weekly/monthly expiry calendar — current year **and** next. `?year=YYYY` for one year |
 | `/api/cache-info` | Candle cache stats |
 | `/auth/status/all` | Combined broker auth status |
 | `/sync/info` | Size preview of `~/trading-data/` (used by Sync to Local button) |

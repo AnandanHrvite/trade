@@ -6,6 +6,18 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — The expiry & holiday calendar now works in any year, not just 2026
+
+The popup was pinned to 2026 in three places and would have degraded quietly on 1 Jan 2027.
+
+- **Holiday names came from a hardcoded MM-DD table** in the client. Holi, Diwali and Id move every year, so from January the Holiday tab would have shown dashes. Names now come from NSE's own `description` field, through the API.
+- **The fallback list was `year === 2026 ? [...] : []`.** Any year NSE couldn't be reached for fell back to *no holidays at all* — the bot would have treated Republic Day 2027 as a normal session. Resolution order is now: memory cache → NSE API → **on-disk snapshot** (`~/trading-data/nse_holidays.json`, written on every successful fetch, so a year fetched once survives restarts and later blocking) → the built-in 2026 list → the five fixed-date holidays that hold in every year (Republic Day, Maharashtra Day, Independence Day, Gandhi Jayanti, Christmas, weekends dropped).
+- **The calendar stopped at 31 Dec.** After the last expiry of the year the Expiry tab read "No upcoming expiry dates" and the top-bar pill read "No upcoming expiry" until 1 Jan. Both `/api/holidays` and `/api/expiry-dates` now answer for the current year **and** the next one, with a year divider row in the table; `?year=YYYY` asks for one explicit year (400 outside 2015–2100).
+- **REFRESH fetches the year you're looking at**, plus the year after it — so clicking it in December picks up next year's calendar the moment NSE publishes it, with no restart and no code change. The result is reported per year, and an unpublished year says so instead of showing an empty table.
+- **The NSE API call never actually worked.** It advertised `Accept-Encoding: gzip, deflate, br` and then parsed the compressed bytes as text, so every fetch failed and the bot ran permanently on the fallback list. Responses are now decompressed (gzip/deflate/br), non-200s are rejected, and the body is capped at 5 MB. Live NSE data returns 20 holidays for 2026 against the fallback's 16 — the four extras (Mahashivratri, Id-Ul-Fitr, Independence Day, Diwali Laxmi Pujan) all fall on weekends in 2026, so **no trading day changes this year**; the calendar is simply real now.
+- **Holiday lookups are year-aware.** `isNSEHoliday()` used to check any date against the *current* year's list, so a backtest or replay crossing a year boundary silently saw no holidays. It now uses the calendar for the year of the date being checked, and the expiry generator honours the April-2025 Thursday→Tuesday cutover for past years too.
+- A footer line under the Holiday tab says where each year's list came from (`2026: live from NSE · 20 days · 2027: not published by NSE yet`), so a degraded calendar is visible rather than silent.
+
 ### Changed — Win/loss rupee totals on the report, and a multi-pick strategy filter
 
 - **Consolidation Report TOTAL row now splits the money, not just the count.** Each strategy cell used to read `₹394.46` over `24 · 7W / 17L`, which hides whether a flat net came from small trades or from a big win cancelling a big loss. It now carries the gross win and gross loss under the counts (`₹1,500 / -₹300`), and the overall **W** and **L** columns carry their own totals.
