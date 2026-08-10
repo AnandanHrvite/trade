@@ -284,6 +284,9 @@ async function loadDiskStore() {
         if (!list.length) return;
         if (_years.has(Number(y))) return;
         const entry = makeEntry(list, 'disk');
+        // A year that survives the file but yields no usable dates (hand-edited
+        // or half-written) must not be cached as a real, empty calendar.
+        if (!entry.dates.length) return;
         // Deliberately stale: the snapshot is a safety net, not a reason to skip
         // the API. ensureYear() still tries NSE first and only falls back here.
         entry.fetchedAt = 0;
