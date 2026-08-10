@@ -1309,13 +1309,16 @@ app.get("/", (req, res) => {
   if (!optionExpiryAlertHtml) {
     try {
       const health = require("./utils/expiryHealth").getState();
+      // `reason` can carry a broker/exception message, so it is escaped before
+      // reaching the markup rather than trusted to stay plain text.
+      const reason = String(health.reason || "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
       if (health.status === "fail") {
         optionExpiryAlertHtml =
           `<div class="opt-expiry-alert">`
           + `<span class="opt-expiry-icon">🚨</span>`
           + `<div class="opt-expiry-text">`
           +   `<div class="opt-expiry-title">Option expiry could not be resolved — entries will be skipped</div>`
-          +   `<div class="opt-expiry-body">Auto-detection found no NIFTY contract the broker will quote${health.reason ? ` (${health.reason})` : ""}. Set <strong>Option Expiry (manual)</strong> for this week.</div>`
+          +   `<div class="opt-expiry-body">Auto-detection found no NIFTY contract the broker will quote${reason ? ` (${reason})` : ""}. Set <strong>Option Expiry (manual)</strong> for this week.</div>`
           + `</div>`
           + `<a href="/settings#OPTION_EXPIRY_OVERRIDE" class="opt-expiry-cta">Set Expiry →</a>`
           + `</div>`;
