@@ -474,7 +474,12 @@ function scheduleNext() {
   if (_timer) clearTimeout(_timer);
   const wait = msUntilNextRun();
   _timer = setTimeout(async () => {
-    await runDaily();
+    // runDaily awaits the Drive upload, and googleDrive rejects on any network
+    // fault. Unguarded, one dropped connection skipped scheduleNext() and no
+    // further backup ran until the next restart — the data-loss window this
+    // whole module exists to close.
+    try { await runDaily(); }
+    catch (err) { console.error(`[backup] daily run failed: ${err.message}`); }
     scheduleNext();
   }, wait);
   if (_timer.unref) _timer.unref();
@@ -511,7 +516,9 @@ function start() {
         } else {
           console.warn(`[backup] boot snapshot failed: ${r.error}`);
         }
-      });
+      // Fire-and-forget: pushToDrive rejects on any network fault, and with no
+      // catch that surfaced as a boot-time "🚨 UNHANDLED REJECTION" telegram.
+      }).catch((err) => console.warn(`[backup] boot snapshot failed: ${err.message}`));
     }
   }
   scheduleNext();

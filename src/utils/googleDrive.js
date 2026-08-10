@@ -96,6 +96,10 @@ function httpRequest(url, { method = "GET", headers = {}, body = null, timeoutMs
       let text = "";
       res.setEncoding("utf8");
       res.on("data", (c) => { text += c; });
+      // A socket reset AFTER the headers arrive emits on the RESPONSE, not the
+      // request. With no listener that is an unhandled 'error' event, which node
+      // rethrows — killing the process over a dropped Drive connection.
+      res.on("error", reject);
       res.on("end", () => {
         let json = null;
         try { json = text ? JSON.parse(text) : null; } catch (_) {}
@@ -364,6 +368,10 @@ async function ensureFolder(token) {
 /** PUT the file body into an open resumable session. Resolves the Drive file JSON. */
 function putStream(sessionUrl, filePath, size) {
   return new Promise((resolve, reject) => {
+    // Opened before the request so the response handler below can always close
+    // it — the 'response' callback only ever fires later, but declaring it first
+    // keeps that a fact rather than a timing assumption.
+    const rs = fs.createReadStream(filePath);
     const req = https.request(sessionUrl, {
       method: "PUT",
       headers: { "Content-Type": "application/gzip", "Content-Length": size },
@@ -371,6 +379,9 @@ function putStream(sessionUrl, filePath, size) {
       let text = "";
       res.setEncoding("utf8");
       res.on("data", (c) => { text += c; });
+      // Same as httpRequest: an unlistened 'error' on the response stream is
+      // fatal to the process. Tear the upload's file handle down with it.
+      res.on("error", (err) => { rs.destroy(); reject(err); });
       res.on("end", () => {
         let json = null;
         try { json = text ? JSON.parse(text) : null; } catch (_) {}
@@ -378,7 +389,6 @@ function putStream(sessionUrl, filePath, size) {
         reject(new Error(googleError({ status: res.statusCode, json, text }, `upload HTTP ${res.statusCode}`)));
       });
     });
-    const rs = fs.createReadStream(filePath);
     req.setTimeout(UPLOAD_TIMEOUT_MS, () => req.destroy(new Error("upload timed out")));
     // pipe() does not tear the source down when the destination dies, so close
     // the file handle explicitly on any request failure.

@@ -1,5 +1,11 @@
 require("dotenv").config();
 require("./services/logger");              // ← MUST be first: intercepts all console.* from here on
+// Express 4 does not forward a rejected `async (req, res)` handler to the error
+// middleware — the request hangs forever and the rejection lands on the
+// process-level unhandledRejection handler below (Telegram alert, no response).
+// This patches the router layer so every async route reaches the central error
+// handler instead. MUST run before the route modules are required.
+require("./utils/asyncRouteErrors").install();
 
 const express     = require("express");
 const compression = require("compression");

@@ -145,6 +145,15 @@ async function fetchNSEHolidays() {
         chunks.push(chunk);
       });
 
+      // NSE resets connections aggressively when it rate-limits. Once the
+      // headers are through, that reset arrives as an 'error' on the RESPONSE
+      // stream — req.on('error') below never sees it, and an unlistened 'error'
+      // event is rethrown by node, killing the process over a holiday lookup.
+      res.on('error', (e) => {
+        console.warn('[nseHolidays] ⚠️  NSE API response stream failed:', e.message);
+        reject(e);
+      });
+
       res.on('end', () => {
         try {
           if (res.statusCode !== 200) {

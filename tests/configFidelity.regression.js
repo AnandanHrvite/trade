@@ -72,18 +72,15 @@ Object.assign(process.env, {
   OPTION_EXPIRY_OVERRIDE:   "",
   OPTION_EXPIRY_TYPE:       "weekly",
 });
-// Per-mode overrides beat the common one inside the resolver, so a real one left in
-// place would silently substitute itself for the date under test.
-for (const p of ["EMA_RSI_ST", "BB_RSI", "PA", "ORB", "EMA9VWAP", "TREND_PB"]) {
+// Per-mode expiry overrides were REMOVED on 2026-08-05 (README "One common expiry
+// for every strategy"): instrument.js now reads OPTION_EXPIRY_OVERRIDE only. They are
+// still scrubbed here so a leftover key in a developer's .env cannot make the
+// single-key assertion below pass for the wrong reason.
+const RETIRED_PREFIXES = ["EMA_RSI_ST", "BB_RSI", "PA", "ORB", "EMA9VWAP", "TREND_PB"];
+for (const p of RETIRED_PREFIXES) {
   delete process.env[`${p}_OPTION_EXPIRY_OVERRIDE`];
   delete process.env[`${p}_OPTION_EXPIRY_TYPE`];
 }
-
-// Fail loudly rather than silently testing the wrong thing if that ever regresses.
-assert.ok(
-  !process.env.EMA_RSI_ST_OPTION_EXPIRY_OVERRIDE && !process.env.ORB_OPTION_EXPIRY_OVERRIDE,
-  "per-mode expiry overrides leaked in from .env — this suite would assert against real config"
-);
 
 // IST calendar date N days from now, as "YYYY-MM-DD". Derived from the clock rather
 // than hardcoded so the suite does not rot into passing (or failing) on a fixed date.
@@ -152,19 +149,34 @@ check("a stale override blocks EVERY mode, including the ones with no per-mode k
   }
 });
 
-check("a stale PER-MODE override is caught even when the common one is fresh", async () => {
-  // This is the case the old dashboard banner could not see: the per-mode key wins
-  // inside the resolver, so a fresh common date hid a stale EMA_RSI_ST-only date.
+check("a RETIRED per-mode override is ignored — the common key is the only one that binds", async () => {
+  // Per-mode expiry keys were removed on 2026-08-05; every engine trades the one
+  // common weekly expiry. A leftover {MODE}_OPTION_EXPIRY_OVERRIDE in an old .env
+  // must therefore be completely inert — the danger is a half-migration where it
+  // still silently wins for one strategy and quietly trades a different contract.
   process.env.OPTION_EXPIRY_OVERRIDE = FUTURE;
-  process.env.EMA_RSI_ST_OPTION_EXPIRY_OVERRIDE = PAST;
+  process.env.EMA_RSI_ST_OPTION_EXPIRY_OVERRIDE = PAST;   // stale, and must NOT bind
   try {
-    const blocked = await resolve("CE", "EMA_RSI_ST");
-    assert.strictEqual(blocked.invalid, true, "stale per-mode override must block");
-    assert.strictEqual(blocked.overrideKey, "EMA_RSI_ST_OPTION_EXPIRY_OVERRIDE",
-      "the error must name the per-mode key, not the common one");
-    // ...and a mode without its own override still trades the fresh common date.
-    const allowed = await resolve("CE", "ORB");
-    assert.ok(!allowed.invalid && allowed.symbol, "ORB should still resolve on the fresh common expiry");
+    const r = await resolve("CE", "EMA_RSI_ST");
+    assert.ok(!r.invalid, "a stale retired per-mode key must not block the fresh common expiry");
+    assert.ok(/^NSE:NIFTY/.test(r.symbol || ""), `expected a NIFTY symbol, got ${r.symbol}`);
+    // ...and a mode that never had its own key behaves identically.
+    const other = await resolve("CE", "ORB");
+    assert.ok(!other.invalid && other.symbol, "ORB should resolve on the same common expiry");
+  } finally {
+    delete process.env.EMA_RSI_ST_OPTION_EXPIRY_OVERRIDE;
+  }
+});
+
+check("the common key still blocks even when a retired per-mode key is fresh", async () => {
+  // The mirror image: a fresh per-mode leftover must not rescue a stale common
+  // date, or the refuse-the-trade guard could be bypassed by dead config.
+  process.env.OPTION_EXPIRY_OVERRIDE = PAST;
+  process.env.EMA_RSI_ST_OPTION_EXPIRY_OVERRIDE = FUTURE;
+  try {
+    const r = await resolve("CE", "EMA_RSI_ST");
+    assert.strictEqual(r.invalid, true, "a stale common expiry must block regardless of retired keys");
+    assert.strictEqual(r.overrideKey, "OPTION_EXPIRY_OVERRIDE", "the error must name the common key");
   } finally {
     delete process.env.EMA_RSI_ST_OPTION_EXPIRY_OVERRIDE;
   }
@@ -198,13 +210,22 @@ check("the dashboard banner shares the resolver's staleness predicate", () => {
     "app.js still hand-rolls the 15:30 IST boundary; delete it and use isExpiryOverrideStale");
 });
 
-check("the dashboard banner checks per-mode overrides, not just the common one", () => {
-  const app = decomment(read("app.js"));
-  const m = app.match(/PER_MODE_PREFIXES\s*=\s*\[([^\]]+)\]/);
-  assert.ok(m, "app.js does not enumerate per-mode expiry prefixes");
-  for (const p of ["EMA_RSI_ST", "BB_RSI", "PA", "ORB", "EMA9VWAP", "TREND_PB"]) {
-    assert.ok(m[1].includes(p), `banner does not check ${p}_OPTION_EXPIRY_OVERRIDE`);
+check("no engine has re-grown a per-mode expiry override", () => {
+  // The banner used to enumerate per-mode prefixes because the resolver honoured
+  // them. Both sides were removed together on 2026-08-05, so the invariant that
+  // matters now is the inverse: nothing in src/ may READ a {MODE}_OPTION_EXPIRY_*
+  // key again, or the Settings page and the Dashboard banner — which only show the
+  // common one — would stop describing what the engines actually trade.
+  const readers = [];
+  for (const p of RETIRED_PREFIXES) {
+    for (const f of ["config/instrument.js", "app.js", "routes/settings.js"]) {
+      if (new RegExp(`${p}_OPTION_EXPIRY_(OVERRIDE|TYPE)`).test(decomment(read(f)))) {
+        readers.push(`${f}: ${p}_OPTION_EXPIRY_*`);
+      }
+    }
   }
+  assert.deepStrictEqual(readers, [],
+    `per-mode expiry overrides are retired but still read by: ${readers.join(", ")}`);
 });
 
 check("manual-entry routes refuse an unresolvable symbol, like the automatic paths do", () => {

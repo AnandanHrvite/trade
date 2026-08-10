@@ -156,7 +156,12 @@ function scheduleNext() {
   if (_timer) clearTimeout(_timer);
   const wait = msUntilNextReportIST();
   _timer = setTimeout(async () => {
-    await maybeSendForToday();
+    // The reschedule MUST survive a failed send. Without the catch, one rejection
+    // (a disk error reading the trade book, a Telegram throw) skipped
+    // scheduleNext() and silently killed the report for every remaining day of
+    // the process — the failure that hides all the later ones.
+    try { await maybeSendForToday(); }
+    catch (err) { console.error(`[EOD] scheduled report failed: ${err.message}`); }
     scheduleNext(); // reschedule for next day
   }, wait);
   // Allow process exit even if this timer is pending

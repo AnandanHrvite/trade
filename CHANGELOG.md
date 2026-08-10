@@ -6,6 +6,20 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — A failing page now shows an error instead of spinning forever
+
+Express 4 hands a handler's *synchronous* throw to the error middleware, but an `async` handler never throws synchronously — it returns a rejected promise, which Express 4 ignores. The request was then never answered at all: the page spun until the browser gave up, nothing was logged as an HTTP error, and the rejection surfaced only as a process-level `🚨 UNHANDLED REJECTION` Telegram. Roughly a hundred handlers are `async (req, res)` — every `/status`, `/start`, `/stop` and backtest endpoint — so any one of them awaiting a broker call during a Fyers/Zerodha hiccup produced exactly that: a dead page and an alarming telegram with no context.
+
+New [utils/asyncRouteErrors.js](src/utils/asyncRouteErrors.js) patches the Express router layer once at boot (before any route module is required), so a rejected handler reaches the same central error handler a synchronous throw always did — a 500 page with the message, logged as `[ERROR] <method> <path>`. Route files are unchanged and stay plain Express: there is no wrapper for the next handler to forget. A rejection *after* the response was already sent closes the stream instead of double-writing, and a rejection carrying no `Error` gets a real message rather than a blank 500.
+
+### Fixed — Three ways the process could be killed by a dropped connection
+
+An `'error'` event with no listener is rethrown by Node, and `app.js` answers an uncaught exception by exiting so PM2 restarts into a clean process. Three places listened on the *request* but not the *response*, so a socket reset arriving **after** the headers — the normal shape of an NSE rate-limit or a dropped Drive upload — took the whole app down mid-session: [googleDrive.js](src/utils/googleDrive.js) (both the JSON call and the resumable upload, which now also closes the file handle) and [nseHolidays.js](src/utils/nseHolidays.js). The Fyers socket got the same treatment: its `connect` handler and its reconnect timer both called into the SDK unguarded, where a throw was an uncaught exception rather than a retry — the watchdog already recovers from a lost subscription, so losing the process was never the better outcome.
+
+### Fixed — A single failed run no longer stops the daily backup and EOD report for good
+
+Both schedulers re-arm themselves at the end of their own timer callback, and neither guarded the work in between. One rejection — a dropped Drive upload in [backupManager.js](src/utils/backupManager.js), a disk error in [consolidatedEodReporter.js](src/utils/consolidatedEodReporter.js) — skipped the re-arm, and that strategy simply never ran again until the next restart. Silent, and worst in exactly the case the module exists for. Both now log the failure and reschedule regardless, matching the pattern `spotFeedSupervisor` and `optionChainRecorder` already used. The boot-time snapshot's fire-and-forget promise gained the `.catch()` it was missing.
+
 ### Added — The theme can follow the clock
 
 **Settings → UI Preferences → Application Theme** now offers `auto` beside `dark` and `light`. On `auto` the app renders light between 06:00 and 18:00 IST and dark the rest of the day, so an evening session no longer means a white screen. Every page already read `UI_THEME` through its own copy of the same one-line bootstrap; those fourteen copies now call `resolveTheme()` from new [utils/theme.js](src/utils/theme.js), which collapses `auto` to a real `dark`/`light` on the server before the markup is built — the page still paints its final theme on first paint, with no flash and no client-side clock. `dark` and `light` behave exactly as before, and anything unrecognised falls back to dark. A page open across the 18:00 boundary keeps the theme it loaded with until it next loads.

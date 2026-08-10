@@ -534,23 +534,31 @@ class SocketManager {
 
     const skt = this._skt;
 
+    // Every SDK call in here is third-party code reached from an EventEmitter
+    // callback: a throw would be an uncaughtException, and app.js answers that by
+    // exiting the process. Losing the subscription is recoverable — the watchdog
+    // reconnects on spot silence. Killing the process mid-session is not.
     skt.on('connect', () => {
-      if (this._stopped) { this._detachListeners(); this._closeConnection(); return; }
-      this._connectedAt = Date.now();
-      this._lastTickAt  = Date.now();
-      this._lastSpotTickAt = Date.now();
-      this._lastDownAt  = null;
-      this._log(`✅ [SOCKET] Connected — subscribing: ${this._symbol}`);
-      skt.subscribe([this._symbol]);
-      skt.mode(skt.FullMode);
-      // Re-assert option subscriptions the previous connection carried — a
-      // reconnect resets the server-side subscription set, and a strategy
-      // holding a position would otherwise silently lose its price feed.
-      if (this._extraSymbols.size) {
-        const extras = Array.from(this._extraSymbols);
-        if (this._sendSubscribe(extras)) {
-          this._log(`📡 [SOCKET] Re-subscribed ${extras.length} option symbol(s) after reconnect`);
+      try {
+        if (this._stopped) { this._detachListeners(); this._closeConnection(); return; }
+        this._connectedAt = Date.now();
+        this._lastTickAt  = Date.now();
+        this._lastSpotTickAt = Date.now();
+        this._lastDownAt  = null;
+        this._log(`✅ [SOCKET] Connected — subscribing: ${this._symbol}`);
+        skt.subscribe([this._symbol]);
+        skt.mode(skt.FullMode);
+        // Re-assert option subscriptions the previous connection carried — a
+        // reconnect resets the server-side subscription set, and a strategy
+        // holding a position would otherwise silently lose its price feed.
+        if (this._extraSymbols.size) {
+          const extras = Array.from(this._extraSymbols);
+          if (this._sendSubscribe(extras)) {
+            this._log(`📡 [SOCKET] Re-subscribed ${extras.length} option symbol(s) after reconnect`);
+          }
         }
+      } catch (e) {
+        this._log(`🚨 [SOCKET] connect handler failed: ${e.message} — watchdog will retry`);
       }
     });
 
@@ -608,7 +616,15 @@ class SocketManager {
       if (!this._stopped && !this._authFailed) this._scheduleReconnect();
     });
 
-    skt.connect();
+    // Treat a failed connect() exactly like the failed getInstance() above: back
+    // off and retry, rather than letting it escape to whichever caller ran us
+    // (start() from a route, the watchdog, or the retry timer).
+    try {
+      skt.connect();
+    } catch (e) {
+      this._log(`❌ [SOCKET] connect() threw: ${e.message}`);
+      this._scheduleReconnect();
+    }
   }
 
   _scheduleReconnect() {
@@ -618,7 +634,14 @@ class SocketManager {
     const delay = Math.min(BASE_BACKOFF * Math.pow(2, this._retryCount), MAX_BACKOFF);
     this._retryCount++;
     this._log(`🔁 [SOCKET] Retry in ${(delay / 1000).toFixed(1)}s (attempt ${this._retryCount})`);
-    this._retryTimer = setTimeout(() => { if (!this._stopped) this._connect(); }, delay);
+    // A throw from _connect() here is an uncaughtException (timer callback, no
+    // caller to catch it) and app.js exits the process on those. The watchdog
+    // already reconnects on spot silence, so swallowing and logging keeps the
+    // session alive; crashing over one failed retry does not.
+    this._retryTimer = setTimeout(() => {
+      try { if (!this._stopped) this._connect(); }
+      catch (e) { this._log(`🚨 [SOCKET] Reconnect attempt threw: ${e.message} — watchdog will retry`); }
+    }, delay);
   }
 
   _clearRetry() {
