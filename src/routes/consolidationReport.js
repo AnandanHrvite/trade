@@ -24,7 +24,8 @@ const router = express.Router();
 const fs = require("fs");
 const path = require("path");
 const { buildSidebar, sidebarCSS, faviconLink, enabledStrategies,
-        dateRangeOptionsHTML, dateRangeJS } = require("../utils/sharedNav");
+        dateRangeOptionsHTML, dateRangeJS,
+        multiSelectCSS, multiSelectHTML, multiSelectJS } = require("../utils/sharedNav");
 const { fetchCandlesCachedBT } = require("../services/backtestEngine");
 const { VIX_SYMBOL } = require("../services/vixFilter");
 const fyers = require("../config/fyers");
@@ -221,6 +222,7 @@ router.get("/", async (req, res) => {
     .seg{display:inline-flex;border:0.5px solid #0e1e36;border-radius:6px;overflow:hidden;}
     .seg button{background:#04090f;border:none;color:#4a6080;padding:6px 12px;font-family:'IBM Plex Mono',monospace;font-size:0.7rem;cursor:pointer;}
     .seg button.on{background:#0c4a6e;color:#7dd3fc;}
+${multiSelectCSS()}
     .pdf-btn{margin-left:auto;background:#0c4a6e;border:0.5px solid #1e5a80;color:#7dd3fc;padding:7px 14px;border-radius:6px;font-family:'IBM Plex Mono',monospace;font-size:0.72rem;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px;}
     .pdf-btn:hover{background:#0e5a84;}
     .rpt-head{background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;padding:14px 16px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;}
@@ -321,10 +323,7 @@ router.get("/", async (req, res) => {
         <button data-book="all">Both</button>
       </div>
       <label>Strategy</label>
-      <select id="fMode">
-        <option value="all">All strategies</option>
-        ${enabled.map(s => `<option value="${s.mode}">${s.mode}</option>`).join("\n        ")}
-      </select>
+      ${multiSelectHTML('fMode', enabled.map(s => ({ value: s.mode, label: s.mode })), 'All strategies')}
       <label>Range</label>
       <select id="fRange">${dateRangeOptionsHTML('tm')}</select>
       <span id="customWrap" style="display:none;">
@@ -340,6 +339,7 @@ router.get("/", async (req, res) => {
 
 <script>
 ${dateRangeJS()}
+${multiSelectJS()}
 const ALL = ${JSON.stringify(trades)};
 const VIX_BY_DATE = ${JSON.stringify(vixByDate)};   // { 'YYYY-MM-DD': vixClose } from Fyers
 const VIX_NOTE    = ${JSON.stringify(vixNote)};     // why the VIX column is empty, if it is
@@ -369,15 +369,15 @@ function rangeLabelFor(range, from, to){
 
 function currentFilter(){
   const book = document.querySelector('#segBook button.on').dataset.book;
-  const mode = document.getElementById('fMode').value;
+  const modes = msValues('fMode');           // [] = every strategy, i.e. no filter
   const range = document.getElementById('fRange').value;
   const r = drRange(range, document.getElementById('fFrom').value, document.getElementById('fTo').value);
-  return {book,mode,from:r.from,to:r.to,rangeLabel:rangeLabelFor(range,r.from,r.to)};
+  return {book,modes,from:r.from,to:r.to,rangeLabel:rangeLabelFor(range,r.from,r.to)};
 }
 function applyFilter(f){
   return ALL.filter(t=>{
     if(f.book!=='all' && t.book!==f.book) return false;
-    if(f.mode!=='all' && t.mode!==f.mode) return false;
+    if(f.modes.length && f.modes.indexOf(t.mode)===-1) return false;
     if(f.from && t.date < f.from) return false;
     if(f.to   && t.date > f.to)   return false;
     return true;
@@ -423,23 +423,25 @@ function render(){
   // Show a column for EVERY strategy enabled in Settings, even one that took no
   // trade in this range — a missing column reads as "that strategy isn't running"
   // when it actually means "it ran and found nothing". Zero-trade days show a dash.
-  // With one strategy picked in the dropdown, only that column is meaningful.
-  const activeModes = f.mode==='all' ? MODES : [f.mode];
+  // With a subset ticked, only those columns are meaningful — MODES order is kept
+  // so the columns don't reshuffle as boxes are ticked.
+  const activeModes = f.modes.length ? MODES.filter(m => f.modes.indexOf(m)>=0) : MODES;
 
   // overall totals
-  let tN=0,tW=0,tL=0,tNet=0; const totByMode={};
-  for(const mo of activeModes) totByMode[mo]={n:0,pnl:0,wins:0,losses:0};
+  let tN=0,tW=0,tL=0,tNet=0,tWP=0,tLP=0; const totByMode={};
+  for(const mo of activeModes) totByMode[mo]={n:0,pnl:0,wins:0,losses:0,winPnl:0,lossPnl:0};
   for(const t of arr){
     tN++; tNet+=t.pnl;
-    if(t.pnl>0)tW++; else if(t.pnl<0)tL++;
+    if(t.pnl>0){ tW++; tWP+=t.pnl; } else if(t.pnl<0){ tL++; tLP+=t.pnl; }
     const m=totByMode[t.mode];
-    if(m){ m.n++; m.pnl+=t.pnl; if(t.pnl>0)m.wins++; else if(t.pnl<0)m.losses++; }
+    if(m){ m.n++; m.pnl+=t.pnl;
+      if(t.pnl>0){ m.wins++; m.winPnl+=t.pnl; } else if(t.pnl<0){ m.losses++; m.lossPnl+=t.pnl; } }
   }
   const tWR = tN?(tW/tN*100):0;
 
   let head=vixWarn+'<div class="rpt-head"><div>'
     +'<div class="rh-title">Consolidated Day Report</div>'
-    +'<div class="rh-meta">Book: <b>'+bookLabel+'</b> &nbsp;·&nbsp; Strategy: <b>'+esc(f.mode==='all'?'All':(MODE_LABEL[f.mode]||f.mode))+'</b> &nbsp;·&nbsp; Period: <b>'+esc(f.rangeLabel)+'</b> &nbsp;·&nbsp; Trading days: <b>'+days.length+'</b> &nbsp;·&nbsp; Trades: <b>'+tN+'</b></div>'
+    +'<div class="rh-meta">Book: <b>'+bookLabel+'</b> &nbsp;·&nbsp; Strategy: <b>'+esc(f.modes.length ? f.modes.map(m=>MODE_LABEL[m]||m).join(', ') : 'All')+'</b> &nbsp;·&nbsp; Period: <b>'+esc(f.rangeLabel)+'</b> &nbsp;·&nbsp; Trading days: <b>'+days.length+'</b> &nbsp;·&nbsp; Trades: <b>'+tN+'</b></div>'
     +'</div><div class="rh-brand">ௐ Palani Andawar Thunai ॐ<br>Generated '+esc(gen)+'</div></div>';
 
   if(!days.length){ C.innerHTML=head+'<div class="empty">No trades for this filter. Try widening the range or switching Book.</div>'; return; }
@@ -486,11 +488,17 @@ function render(){
     const c=totByMode[mo];
     if(!c || !c.n){ foot+='<td class="muted">—</td>'; continue; }
     // Per-strategy totals need the same W/L split the overall TOTAL shows — a bare
-    // trade count hides which strategy actually won its trades.
+    // trade count hides which strategy actually won its trades. The rupee split under
+    // it is what the net alone hides: a small net can be a big win cancelling a big loss.
     foot+='<td><span style="color:'+pc(c.pnl)+'">'+inr2(c.pnl)+'</span><br><span class="cnt">'+c.n+' · '
-      +'<span style="color:#10b981">'+c.wins+'W</span> / <span style="color:#ef4444">'+c.losses+'L</span></span></td>';
+      +'<span style="color:#10b981">'+c.wins+'W</span> / <span style="color:#ef4444">'+c.losses+'L</span></span>'
+      +'<br><span class="cnt"><span style="color:#10b981">'+inr(c.winPnl)+'</span> / <span style="color:#ef4444">'+inr(c.lossPnl)+'</span></span></td>';
   }
-  foot+='<td>'+tN+'</td><td style="color:#10b981">'+tW+'</td><td style="color:#ef4444">'+tL+'</td><td>'+tWR.toFixed(0)+'%</td>'
+  // The colour lives on an inner span: the light-theme .cnt rule is !important,
+  // so a colour set on .cnt itself would be greyed out in light mode.
+  foot+='<td>'+tN+'</td>'
+    +'<td style="color:#10b981">'+tW+'<br><span class="cnt"><span style="color:#10b981">'+inr(tWP)+'</span></span></td>'
+    +'<td style="color:#ef4444">'+tL+'<br><span class="cnt"><span style="color:#ef4444">'+inr(tLP)+'</span></span></td><td>'+tWR.toFixed(0)+'%</td>'
     +'<td style="color:'+pc(tNet)+'">'+inr2(tNet)+'</td><td class="'+(tNet>=0?'res-profit':'res-loss')+'">'+(tNet>=0?'🟢':'🔴')+'</td></tr>';
 
   h+='<div class="panel"><h3>Daily Breakdown</h3><div class="tbl-scroll"><table class="tbl"><thead>'+thead+'</thead><tbody>'+body+'</tbody><tfoot>'+foot+'</tfoot></table></div></div>';
@@ -502,7 +510,7 @@ document.querySelectorAll('#segBook button').forEach(b=>b.addEventListener('clic
   document.querySelectorAll('#segBook button').forEach(x=>x.classList.remove('on'));
   b.classList.add('on'); render();
 }));
-document.getElementById('fMode').addEventListener('change',render);
+msInit('fMode', render);
 document.getElementById('fRange').addEventListener('change',()=>{
   const range = document.getElementById('fRange').value;
   document.getElementById('customWrap').style.display = range==='custom'?'inline':'none';

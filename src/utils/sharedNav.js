@@ -2551,4 +2551,107 @@ function drRange(key, customFrom, customTo){
 `;
 }
 
-module.exports = { STRATEGY_MODES, enabledStrategies, buildSidebar, sidebarCSS, toastJS, aiExportJS, logViewerHTML, faviconLink, modalCSS, modalJS, expiryHolidayModalCSS, expiryHolidayModalHTML, expiryHolidayModalJS, errorPage, tableEnhancerCSS, tableEnhancerJS, dateRangeOptionsHTML, dateRangeJS };
+/* ── Checkbox multi-select ──────────────────────────────────────────────────
+ * A native <select> can only answer "one strategy or all", which is the wrong
+ * question on a comparison page — "EMA_RSI_ST + ORB, ignore the rest" needs a
+ * checkbox list. Same three-part shape as the date-range helper (CSS / HTML /
+ * JS) so a page picks it up with three interpolations and one msInit() call.
+ *
+ * Contract: msValues(id) → array of checked values, and [] when everything is
+ * ticked. Empty means "no filter", so a caller can keep its existing
+ * "all strategies" code path untouched.
+ */
+function multiSelectCSS() {
+  return `
+    .ms{position:relative;display:inline-block;font-family:'IBM Plex Mono',monospace;}
+    .ms-btn{display:inline-flex;align-items:center;justify-content:space-between;gap:10px;min-width:150px;background:#04090f;border:0.5px solid #0e1e36;color:#e0eaf8;padding:6px 10px;border-radius:6px;font-family:inherit;font-size:0.72rem;cursor:pointer;}
+    .ms-btn:hover,.ms.open .ms-btn{border-color:#38bdf8;}
+    .ms-caret{color:#4a6080;font-size:0.55rem;}
+    .ms-menu{display:none;position:absolute;z-index:60;top:calc(100% + 4px);left:0;min-width:200px;max-height:300px;overflow-y:auto;background:#07111f;border:0.5px solid #0e1e36;border-radius:8px;padding:4px;box-shadow:0 10px 28px rgba(0,0,0,0.55);}
+    .ms.open .ms-menu{display:block;}
+    .ms-opt{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:5px;font-size:0.72rem;color:#c7d6ea;cursor:pointer;white-space:nowrap;}
+    .ms-opt:hover{background:#0c1c30;}
+    .ms-opt input{width:13px;height:13px;margin:0;accent-color:#38bdf8;cursor:pointer;}
+    .ms-sep{height:0.5px;background:#0e1e36;margin:4px 2px;}
+    :root[data-theme="light"] .ms-btn{background:#f8fafc!important;border-color:#e0e4ea!important;color:#334155!important;}
+    :root[data-theme="light"] .ms-menu{background:#fff!important;border-color:#e0e4ea!important;box-shadow:0 10px 28px rgba(15,23,42,0.14)!important;}
+    :root[data-theme="light"] .ms-opt{color:#334155!important;}
+    :root[data-theme="light"] .ms-opt:hover{background:#f1f5f9!important;}
+    :root[data-theme="light"] .ms-sep{background:#e0e4ea!important;}
+  `;
+}
+
+// Every box ships ticked, so the page opens on the same unfiltered view the old
+// "All" option gave — the control starts wide and the user narrows it.
+function multiSelectHTML(id, items, allLabel = 'All') {
+  const e = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const opts = items
+    .map((it) => `<label class="ms-opt"><input type="checkbox" value="${e(it.value)}" checked/>${e(it.label)}</label>`)
+    .join('');
+  return `<div class="ms" id="${e(id)}" data-all-label="${e(allLabel)}">`
+    + `<button type="button" class="ms-btn" aria-haspopup="true" aria-expanded="false"><span class="ms-text">${e(allLabel)}</span><span class="ms-caret">▼</span></button>`
+    + `<div class="ms-menu"><label class="ms-opt"><input type="checkbox" class="ms-all" checked/>${e(allLabel)}</label><div class="ms-sep"></div>${opts}</div>`
+    + `</div>`;
+}
+
+function multiSelectJS() {
+  return `
+// ── Shared checkbox multi-select (sharedNav.multiSelectJS) ───────────────────
+function _msBoxes(root){ return root.querySelectorAll('.ms-menu input[type=checkbox]:not(.ms-all)'); }
+
+// [] when everything is ticked — callers read that as "no filter".
+function msValues(id){
+  var root=document.getElementById(id); if(!root) return [];
+  var boxes=_msBoxes(root), out=[];
+  for(var i=0;i<boxes.length;i++) if(boxes[i].checked) out.push(boxes[i].value);
+  return out.length===boxes.length ? [] : out;
+}
+
+// Unticking the last box would leave a blank page, which reads as "no data"
+// rather than "no filter" — so an empty selection snaps back to everything.
+function _msNormalise(root){
+  var boxes=_msBoxes(root), any=false;
+  for(var i=0;i<boxes.length;i++) if(boxes[i].checked){ any=true; break; }
+  if(!any) for(var j=0;j<boxes.length;j++) boxes[j].checked=true;
+}
+
+function _msPaint(root){
+  var boxes=_msBoxes(root), sel=[];
+  for(var i=0;i<boxes.length;i++) if(boxes[i].checked) sel.push(boxes[i].parentNode.textContent.trim());
+  var all=root.querySelector('.ms-all');
+  if(all) all.checked = sel.length===boxes.length;
+  var allLabel=root.getAttribute('data-all-label')||'All';
+  root.querySelector('.ms-text').textContent =
+    (sel.length===boxes.length) ? allLabel : (sel.length<=2 ? sel.join(', ') : sel.length+' selected');
+}
+
+function msInit(id, onChange){
+  var root=document.getElementById(id); if(!root) return;
+  var btn=root.querySelector('.ms-btn');
+  btn.addEventListener('click', function(e){
+    e.stopPropagation();
+    root.classList.toggle('open');
+    btn.setAttribute('aria-expanded', root.classList.contains('open') ? 'true' : 'false');
+  });
+  // Keep the menu open while ticking boxes — picking three strategies should
+  // not cost three trips through the dropdown.
+  root.querySelector('.ms-menu').addEventListener('click', function(e){ e.stopPropagation(); });
+  var all=root.querySelector('.ms-all');
+  if(all) all.addEventListener('change', function(){
+    var boxes=_msBoxes(root);
+    for(var i=0;i<boxes.length;i++) boxes[i].checked = all.checked;
+    _msNormalise(root); _msPaint(root); if(onChange) onChange();
+  });
+  var boxes=_msBoxes(root);
+  for(var i=0;i<boxes.length;i++) boxes[i].addEventListener('change', function(){
+    _msNormalise(root); _msPaint(root); if(onChange) onChange();
+  });
+  document.addEventListener('click', function(){
+    root.classList.remove('open'); btn.setAttribute('aria-expanded','false');
+  });
+  _msPaint(root);
+}
+`;
+}
+
+module.exports = { STRATEGY_MODES, enabledStrategies, buildSidebar, sidebarCSS, toastJS, aiExportJS, logViewerHTML, faviconLink, modalCSS, modalJS, expiryHolidayModalCSS, expiryHolidayModalHTML, expiryHolidayModalJS, errorPage, tableEnhancerCSS, tableEnhancerJS, dateRangeOptionsHTML, dateRangeJS, multiSelectCSS, multiSelectHTML, multiSelectJS };

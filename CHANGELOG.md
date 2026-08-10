@@ -6,6 +6,11 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Changed — Win/loss rupee totals on the report, and a multi-pick strategy filter
+
+- **Consolidation Report TOTAL row now splits the money, not just the count.** Each strategy cell used to read `₹394.46` over `24 · 7W / 17L`, which hides whether a flat net came from small trades or from a big win cancelling a big loss. It now carries the gross win and gross loss under the counts (`₹1,500 / -₹300`), and the overall **W** and **L** columns carry their own totals.
+- **Strategy filter is a checkbox list on both Edge Analytics and the Consolidation Report.** The old `<select>` could only ask "one strategy or all"; comparing two — EMA_RSI_ST + ORB, ignoring the rest — was impossible. Every box starts ticked (same unfiltered view as before), the button shows the picks (`EMA_RSI_ST, ORB` → `3 selected` → `All`), the menu stays open while ticking, and unticking the last box snaps back to all rather than leaving a blank page that reads as "no data". The report's columns and printed header follow the selection. Shared helper in `sharedNav.js` (`multiSelectCSS/HTML/JS`), so a third page picks it up with three interpolations and one `msInit()` call.
+
 ### Changed — Edge Analytics: an edge-quality card row, two new cuts, and a layout that fits a phone
 
 Three follow-ups to the pro-metrics pass: more analytics, smaller charts, and a page that works on an iPhone.

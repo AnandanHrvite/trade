@@ -30,7 +30,8 @@ const router = express.Router();
 const fs = require("fs");
 const path = require("path");
 const { buildSidebar, sidebarCSS, faviconLink, enabledStrategies,
-        dateRangeOptionsHTML, dateRangeJS } = require("../utils/sharedNav");
+        dateRangeOptionsHTML, dateRangeJS,
+        multiSelectCSS, multiSelectHTML, multiSelectJS } = require("../utils/sharedNav");
 
 const _HOME = require("os").homedir();
 const DATA_DIR = path.join(_HOME, "trading-data");
@@ -150,9 +151,7 @@ router.get("/", (req, res) => {
   const enabled    = enabledStrategies();
   const enabledSet = new Set(enabled.map(s => s.mode));
   const trades     = loadAllTrades().filter(t => enabledSet.has(t.mode));
-  const modeOptions = enabled
-    .map(s => `<option value="${s.mode}">${s.label}</option>`)
-    .join("\n        ");
+  const modePicker = multiSelectHTML('fMode', enabled.map(s => ({ value: s.mode, label: s.label })), 'All');
 
   const theme = (process.env.UI_THEME || "dark").toLowerCase();
   const showConsolidationReport = (process.env.UI_SHOW_CONSOLIDATION_REPORT || "true").toLowerCase() === "true";
@@ -188,6 +187,7 @@ router.get("/", (req, res) => {
     .seg{display:inline-flex;border:0.5px solid #0e1e36;border-radius:6px;overflow:hidden;}
     .seg button{background:#04090f;border:none;color:#4a6080;padding:6px 12px;font-family:'IBM Plex Mono',monospace;font-size:0.7rem;cursor:pointer;}
     .seg button.on{background:#0c4a6e;color:#7dd3fc;}
+${multiSelectCSS()}
     .cr-link{margin-left:auto;background:#0c4a6e;border:0.5px solid #1e5a80;color:#7dd3fc;padding:7px 14px;border-radius:6px;font-family:'IBM Plex Mono',monospace;font-size:0.72rem;font-weight:600;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;}
     .cr-link:hover{background:#0e5a84;}
     /* 8 → 4 → 2 columns: every step divides 8 evenly, so a card row never ends
@@ -312,10 +312,7 @@ router.get("/", (req, res) => {
         <button data-book="live">Live</button>
       </div>
       <label>Strategy</label>
-      <select id="fMode">
-        <option value="">All</option>
-        ${modeOptions}
-      </select>
+      ${modePicker}
       <label>Range</label>
       <select id="fRange">${dateRangeOptionsHTML('all')}</select>
       <span id="customWrap" style="display:none;">
@@ -332,6 +329,7 @@ router.get("/", (req, res) => {
 
 <script>
 ${dateRangeJS()}
+${multiSelectJS()}
 const ALL = ${JSON.stringify(trades)};
 
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -363,15 +361,15 @@ function weekday(dateStr){ if(!dateStr) return null; const d=new Date(dateStr+'T
 // top bar always resolve a given range to the same two dates.
 function currentFilter(){
   const book = document.querySelector('#segBook button.on').dataset.book;
-  const mode = document.getElementById('fMode').value;
+  const modes = msValues('fMode');           // [] = every strategy, i.e. no filter
   const range = document.getElementById('fRange').value;
   const r = drRange(range, document.getElementById('fFrom').value, document.getElementById('fTo').value);
-  return {book,mode,from:r.from,to:r.to};
+  return {book,modes,from:r.from,to:r.to};
 }
 function applyFilter(f){
   return ALL.filter(t=>{
     if(t.book!==f.book) return false;
-    if(f.mode && t.mode!==f.mode) return false;
+    if(f.modes.length && f.modes.indexOf(t.mode)===-1) return false;
     if(f.from && t.date < f.from) return false;
     if(f.to   && t.date > f.to)   return false;
     return true;
@@ -1179,7 +1177,7 @@ document.querySelectorAll('#segBook button').forEach(b=>b.addEventListener('clic
   document.querySelectorAll('#segBook button').forEach(x=>x.classList.remove('on'));
   b.classList.add('on'); render();
 }));
-document.getElementById('fMode').addEventListener('change',render);
+msInit('fMode', render);
 document.getElementById('fRange').addEventListener('change',()=>{
   const range = document.getElementById('fRange').value;
   document.getElementById('customWrap').style.display = range==='custom'?'inline':'none';
