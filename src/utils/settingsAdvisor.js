@@ -635,9 +635,14 @@ function scheduleNext() {
 
 /** Boot hook: catch up on a missed week (redeploys are frequent), then schedule. */
 function start() {
+  // Same shape, same reason as scheduleNext above: this catch-up is synchronous,
+  // so a throw carrying no Error would make the catch body throw on `.message`
+  // and skip scheduleNext() — arming nothing, for the life of the process. Its
+  // caller in app.js wraps start() in a try, so that failure would be logged and
+  // look handled while the weekly advisor silently never ran.
   try { maybeRunForPeriod(); }
-  catch (err) { console.error(`[advisor] boot catch-up failed: ${err.message}`); }
-  scheduleNext();
+  catch (err) { console.error(`[advisor] boot catch-up failed: ${(err && err.message) || err}`); }
+  finally { scheduleNext(); }
 }
 
 module.exports = { analyze, runWeekly, readReport, start, MODE_KEYS };
