@@ -1887,6 +1887,7 @@ window.__ltInit = true;
     '#0a0e18':'#f8fafc','#060c18':'#f4f6f9','#04060e':'#f4f6f9',
     '#0a1020':'#ffffff','#0a1628':'#ffffff','#0e1c33':'#f1f5f9',
     '#0c4a6e':'#e0f2fe','#0d1f17':'#f0fdf4','#1e293b':'#f1f5f9',
+    '#10131c':'#f8fafc','#0a1f12':'#f0fdf4',
     '#0d1a2a':'#f8fafc','#101828':'#f8fafc',
     '#050d1a':'#f4f6f9','#060810':'#f4f6f9','#060c1a':'#f4f6f9',
     '#080e1a':'#f8fafc','#0a1220':'#f8fafc','#0a1424':'#f8fafc',
@@ -1968,7 +1969,7 @@ window.__ltInit = true;
     '#3a1020':'#fca5a5','#5a1010':'#fca5a5','#3a0d12':'#fca5a5',
     '#243048':'#cbd5e1','#253347':'#334155','#2a2a48':'#e2e8f0',
     '#1a2a18':'#d1fae5','#1a2a3a':'#e0e4ea','#1a4080':'#93c5fd',
-    '#312e0f':'#fcd34d','#2a3446':'#e0e4ea',
+    '#312e0f':'#fcd34d','#2a3446':'#e0e4ea','#0d4030':'#86efac',
   };
 
   function rewriteInlineStyles() {

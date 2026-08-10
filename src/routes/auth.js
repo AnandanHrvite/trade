@@ -386,6 +386,8 @@ function buildSuccessPage(title, message) {
 :root[data-theme="light"] code.amber{color:#92400e;}
 :root[data-theme="light"] .url-box,
 :root[data-theme="light"] .token-box{background:#f8fafc;border-color:#e0e4ea;color:#334155;}
+:root[data-theme="light"] .card p{color:#4b5769;}
+:root[data-theme="light"] p.msg{background:#f8fafc;color:#334155;}
 @media(max-width:768px){
   body{padding:16px 12px;align-items:flex-start;}
   .card{width:100%;max-width:100%;padding:26px 18px;}
@@ -443,6 +445,8 @@ function buildLoginLandingPage(authUrl) {
 :root[data-theme="light"] code.amber{color:#92400e;}
 :root[data-theme="light"] .url-box,
 :root[data-theme="light"] .token-box{background:#f8fafc;border-color:#e0e4ea;color:#334155;}
+:root[data-theme="light"] .card p{color:#4b5769;}
+:root[data-theme="light"] p.msg{background:#f8fafc;color:#334155;}
 @media(max-width:768px){
   body{padding:16px 12px;align-items:flex-start;}
   .card{width:100%;max-width:100%;padding:26px 18px;}
@@ -522,6 +526,8 @@ function buildManualLoginPage(authUrl, errorMsg) {
 :root[data-theme="light"] code.amber{color:#92400e;}
 :root[data-theme="light"] .url-box,
 :root[data-theme="light"] .token-box{background:#f8fafc;border-color:#e0e4ea;color:#334155;}
+:root[data-theme="light"] .card p{color:#4b5769;}
+:root[data-theme="light"] p.msg{background:#f8fafc;color:#334155;}
 @media(max-width:768px){
   body{padding:16px 12px;align-items:flex-start;}
   .card{width:100%;max-width:100%;padding:26px 18px;}
@@ -604,7 +610,7 @@ function buildManualSuccessPage(accessToken) {
   .token-box{background:#0a1429;border:1px solid #1e3a5f;border-radius:8px;padding:12px;font-family:monospace;font-size:0.72rem;color:#93c5fd;word-break:break-all;line-height:1.5;max-height:180px;overflow:auto;-webkit-user-select:all;user-select:all;}
   .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
   .btn{flex:1;min-width:130px;background:#2563eb;color:#fff;text-decoration:none;text-align:center;padding:11px 14px;border-radius:8px;font-weight:600;font-size:0.85rem;border:none;cursor:pointer;}
-  .btn.success{background:#10b981;}
+  .btn.success{background:#047857;}
   .btn.secondary{background:#1e3a5f;}
   .btn:hover{filter:brightness(1.15);}
   .hint{font-size:0.74rem;color:var(--muted-1,#8ba1c2);line-height:1.6;margin-top:14px;text-align:center;}
@@ -626,6 +632,8 @@ function buildManualSuccessPage(accessToken) {
 :root[data-theme="light"] code.amber{color:#92400e;}
 :root[data-theme="light"] .url-box,
 :root[data-theme="light"] .token-box{background:#f8fafc;border-color:#e0e4ea;color:#334155;}
+:root[data-theme="light"] .card p{color:#4b5769;}
+:root[data-theme="light"] p.msg{background:#f8fafc;color:#334155;}
 @media(max-width:768px){
   body{padding:16px 12px;align-items:flex-start;}
   .card{width:100%;max-width:100%;padding:26px 18px;}
@@ -698,6 +706,8 @@ function buildErrorPage(title, message) {
 :root[data-theme="light"] code.amber{color:#92400e;}
 :root[data-theme="light"] .url-box,
 :root[data-theme="light"] .token-box{background:#f8fafc;border-color:#e0e4ea;color:#334155;}
+:root[data-theme="light"] .card p{color:#4b5769;}
+:root[data-theme="light"] p.msg{background:#f8fafc;color:#334155;}
 @media(max-width:768px){
   body{padding:16px 12px;align-items:flex-start;}
   .card{width:100%;max-width:100%;padding:26px 18px;}
@@ -705,7 +715,7 @@ function buildErrorPage(title, message) {
   input{font-size:16px;min-height:44px;}
 }
 </style></head>
-  <body><div class="card"><div class="icon">❌</div><h1>${title}</h1><p>${message}</p><a href="/">← Back to Dashboard</a></div></body></html>`;
+  <body><div class="card"><div class="icon">❌</div><h1>${title}</h1><p class="msg">${message}</p><a href="/">← Back to Dashboard</a></div></body></html>`;
 }
 
 module.exports = router;
