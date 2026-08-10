@@ -205,9 +205,13 @@ router.get("/", (req, res) => {
     .hm .rowlab{text-align:right;color:#3a5070;background:none;border:none;padding-right:6px;}
     .sc[title],.mini > div[title],.hm td[title]{cursor:help;}
     :root[data-theme="light"] .cap{color:#64748b!important;}
-    :root[data-theme="light"] .mini > div,:root[data-theme="light"] .hm td{background:#f8fafc!important;border-color:#e0e4ea!important;color:#334155!important;}
+    :root[data-theme="light"] .mini > div{background:#f8fafc!important;border-color:#e0e4ea!important;color:#334155!important;}
+    /* No !important on the heatmap cell background or the mini value colour: an
+       author !important beats an inline style, which would flatten the green/red
+       the JS writes inline. Higher specificity alone is enough over the base rule. */
+    :root[data-theme="light"] .hm td{background:#f8fafc;border-color:#e0e4ea;color:#334155;}
     :root[data-theme="light"] .mini .k,:root[data-theme="light"] .hm th,:root[data-theme="light"] .hm .rowlab{color:#64748b!important;}
-    :root[data-theme="light"] .mini .v{color:#1e293b!important;}
+    :root[data-theme="light"] .mini .v{color:#1e293b;}
     :root[data-theme="light"] .hm td.void{color:#cbd5e1!important;}
     :root[data-theme="light"] .hm .rowlab{background:none!important;border:none!important;}
     .tbl{width:100%;border-collapse:collapse;font-family:'IBM Plex Mono',monospace;font-size:0.72rem;}
