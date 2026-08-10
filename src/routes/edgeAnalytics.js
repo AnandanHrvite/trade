@@ -774,7 +774,9 @@ function bucketTable(key,arr,keyFn,order){
 
 function extremesHTML(arr){
   const sorted=[...arr].sort((a,b)=>b.pnl-a.pnl);
-  const top=sorted.slice(0,5), bot=sorted.slice(-5).reverse();
+  // Under 10 trades the top-5 and bottom-5 slices overlap, so list the book once.
+  const split=sorted.length>10;
+  const top=split?sorted.slice(0,5):sorted, bot=split?sorted.slice(-5).reverse():[];
   const row=t=>'<tr><td>'+esc(t.date)+'</td>'
     +'<td style="text-align:left">'+esc(t.mode)+' '+esc(t.side)+'</td>'
     +'<td style="text-align:left" title="'+esc(t.exitReason)+'">'+esc(t.exitReason.length>22?t.exitReason.slice(0,22)+'…':t.exitReason)+'</td>'
