@@ -54,7 +54,9 @@ const BB_RSI_RES            = parseInt(process.env.TRADE_RESOLUTION || "5", 10);
 const _BB_RSI_MAX_TRADES    = parseInt(process.env.BB_RSI_MAX_DAILY_TRADES || "30", 10);
 const _BB_RSI_MAX_LOSS      = parseFloat(process.env.BB_RSI_MAX_DAILY_LOSS || "2000");
 const _BB_RSI_PAUSE_CANDLES = parseInt(process.env.BB_RSI_SL_PAUSE_CANDLES || "2", 10);
-const _OPT_STOP_PCT        = parseFloat(process.env.OPT_STOP_PCT || "0.15");
+// Note: BB_RSI has no option-premium stop. The shared OPT_STOP_PCT belongs to
+// EMA_RSI_ST; BB_RSI exits on BB re-entry / hard stop / profit lock / trend flip
+// only (see src/strategies/bb_rsi.js), so it is deliberately not read here.
 // Per-side SL pause — when true, an SL on CE only pauses CE entries (PE still allowed)
 const _BB_RSI_PER_SIDE_PAUSE = (process.env.BB_RSI_PER_SIDE_PAUSE || "true") === "true";
 
@@ -1548,8 +1550,6 @@ router.get("/status/data", (req, res) => {
   const optPremiumPnl = (optEntryLtp && optCurrentLtp) ? parseFloat(((optCurrentLtp - optEntryLtp) * (pos ? pos.qty : 0) - _chgOpt).toFixed(2)) : null;
   const optPremiumMove = (optEntryLtp && optCurrentLtp) ? parseFloat((optCurrentLtp - optEntryLtp).toFixed(2)) : null;
   const optPremiumPct = (optEntryLtp && optCurrentLtp && optEntryLtp > 0) ? parseFloat(((optCurrentLtp - optEntryLtp) / optEntryLtp * 100).toFixed(2)) : null;
-  const OPT_STOP_PCT_VAL = _OPT_STOP_PCT;
-  const optStopPrice = optEntryLtp ? parseFloat((optEntryLtp * (1 - OPT_STOP_PCT_VAL)).toFixed(2)) : null;
 
   res.json({
     running:       state.running,
@@ -1592,8 +1592,6 @@ router.get("/status/data", (req, res) => {
       optPremiumPnl,
       optPremiumMove,
       optPremiumPct,
-      optStopPrice,
-      optStopPct:        Math.round(OPT_STOP_PCT_VAL * 100),
       liveClose:         state.lastTickPrice || null,
       trailActivatePts:  pos.trailActivatePts || null,
       reason:            pos.reason || null,
@@ -1658,9 +1656,6 @@ router.get("/status", (req, res) => {
   const optPremiumPct  = (optEntryLtp && optCurrentLtp && optEntryLtp > 0)
     ? parseFloat(((optCurrentLtp - optEntryLtp) / optEntryLtp * 100).toFixed(2))
     : null;
-  const OPT_STOP_PCT_VAL = _OPT_STOP_PCT;
-  const optStopPrice   = optEntryLtp ? parseFloat((optEntryLtp * (1 - OPT_STOP_PCT_VAL)).toFixed(2)) : null;
-  const optStopPct     = Math.round(OPT_STOP_PCT_VAL * 100);
 
   const liveClose  = state.lastTickPrice || null;
   const pointsMoved = pos && liveClose
@@ -1798,11 +1793,6 @@ router.get("/status", (req, res) => {
           <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Stop Loss${pos.slSource ? " (" + pos.slSource + ")" : ""}</div>
           <div id="ax-stop-loss" style="font-size:1.05rem;font-weight:700;color:#f59e0b;">${pos.stopLoss ? inr(pos.stopLoss) : "\u2014"}</div>
           <div style="font-size:0.63rem;color:#4a6080;margin-top:2px;">Risk: ${pos.stopLoss ? inr(Math.abs(pos.entryPrice - pos.stopLoss) * pos.qty) : "\u2014"}</div>
-        </div>
-        <div style="background:#1c0d00;border:1px solid #92400e;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Option SL (${optStopPct}% stop)</div>
-          <div id="ax-opt-sl" style="font-size:1.05rem;font-weight:700;color:#f97316;">${optStopPrice ? "\u20b9" + optStopPrice.toFixed(2) : "\u2014"}</div>
-          <div style="font-size:0.63rem;color:#4a6080;margin-top:2px;">${optEntryLtp ? "entry \u20b9" + optEntryLtp.toFixed(2) + " \u00d7 " + (100 - optStopPct) + "%" : "awaiting entry LTP"}</div>
         </div>
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
           <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Peak P&L</div>
@@ -2675,8 +2665,6 @@ logFilter();
             pctEl.style.color = p.optPremiumPct >= 0 ? '#10b981' : '#ef4444';
           }
         }
-        var optSlEl = document.getElementById('ax-opt-sl');
-        if (optSlEl) optSlEl.textContent = p.optStopPrice ? '\u20b9' + p.optStopPrice.toFixed(2) : '\u2014';
         var optPnlEl = document.getElementById('ax-opt-pnl');
         if (optPnlEl && p.optPremiumPnl !== null) {
           optPnlEl.textContent = (p.optPremiumPnl >= 0 ? '+' : '') + INR(p.optPremiumPnl);

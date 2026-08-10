@@ -6,6 +6,14 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — the BB_RSI live page no longer shows an option stop-loss that cannot fire
+
+The live page had an **Option SL** tile showing `entry premium × (1 − OPT_STOP_PCT)` — for a ₹200 entry it read ₹170, in the same orange as the real stop-loss tile beside it. But `OPT_STOP_PCT` is EMA_RSI_ST's setting. No BB_RSI exit has ever read that number: the engine (`src/strategies/bb_rsi.js`), the paper route and the backtest all exit on BB re-entry, the 30-point hard stop, the profit lock, or a SuperTrend flip — and nothing else. The tile was a stop-loss that would never trigger, sitting next to one that would.
+
+The tile is gone, along with the `optStopPrice` / `optStopPct` fields it fed. **Exits are unchanged** — no trade behaves differently, the page simply stops claiming a protection it never had. Paper stays canonical, so the fix removes the display rather than adding the stop to live.
+
+This is the same class of bug fixed earlier in ORB, where the dashboard showed a wide stop while a rupee cap quietly closed the trade sooner. Nothing else displays this figure; EMA_RSI_ST and EMA9+VWAP keep their Option SL tiles, and there the number really does fire.
+
 ### Fixed — every setting a strategy reads is now explained in its guide, and three guides were wrong
 
 An audit of all nine guides against the code (every `process.env` read, every helper-wrapped read, and the Settings UI registry) found **69 settings that the code reads but no guide explained**, and four documented settings that no longer exist. All are now correct:
