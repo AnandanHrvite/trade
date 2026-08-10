@@ -305,7 +305,7 @@ function getProductType() {
  * Convert a Unix timestamp (seconds) OR milliseconds expiry from Fyers into the
  * expiry Date, read in IST. `ts` arrives as a JSON string from the REST API, so
  * it is coerced explicitly rather than relied on to compare/multiply correctly.
- * e.g. "1741113000" → 2026-Mar-03
+ * e.g. "1772532000" → 2026-Mar-03
  */
 function expiryTimestampToDate(ts) {
   const n = Number(ts);
@@ -329,9 +329,10 @@ function dateToExpiryCode(date) {
 
 /**
  * Call the Fyers Option Chain REST API directly (bypasses the JS SDK which lacks optionchain()).
- * Returns the nearest expiry as a Date (read in IST), or null on any failure —
+ * Returns the nearest expiry as a Date (read in IST), or null on any failure
+ * (missing token, HTTP/parse error, timeout, error status, unknown shape) —
  * a null tells the caller to fall through to the computed-expiry path, which
- * holiday-preponed and getQuotes-validates on its own.
+ * prepones off holidays and validates via getQuotes on its own.
  *
  * Endpoint: GET https://api-t1.fyers.in/data/options-chain-v3
  *   (`/data/v3/options-chain` is NOT a route — it answers 404 "page not found",
@@ -710,9 +711,9 @@ async function isSymbolValidViaQuotes(symbol, _retried = false) {
  */
 async function getMarketContext() {
   // Prefer the live Option Chain (holiday-adjusted, the real nearest tradeable
-  // expiry, and what strategies auto-detect via Step 1). It returns null only on
-  // an ok-but-unknown response shape; in that rare case compute next-Tuesday and
-  // prepone off a holiday — mirroring validateAndGetOptionSymbol Step 2, so the
+  // expiry, and what strategies auto-detect via Step 1). When it is unavailable
+  // it returns null; we then compute the nearest weekly and prepone off a holiday
+  // through the SAME helper validateAndGetOptionSymbol Step 2 uses, so the
   // recorded expiry can't drift from what the strategy trades in a holiday week.
   let weekly = null;
   try { weekly = await getNearestExpiryDateFromOptionChain(); } catch (_) { /* fall back below */ }
