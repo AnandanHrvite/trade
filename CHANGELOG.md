@@ -6,6 +6,20 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Added — Edge Analytics now answers the questions a professional trading desk asks
+
+The page told you *what* happened (win rate, net, profit factor). It did not tell you whether the result was **skill or luck**, how much **heat** you sat through to get it, or what a bad run would look like. Sixteen new read-only panels close that gap — same trade files, same filters, still nothing written.
+
+- **Risk-adjusted card row** — **Sharpe** and **Sortino** (annualised from daily P&L), **System Quality (SQN)** with its Van Tharp grade, **Recovery Factor**, **Kelly Size**, **Edge Confidence** (a t-test on per-trade P&L: *84.5% — could be luck* vs *likely real edge*), **Avg Hold** and **Cost Drag** (brokerage as a % of gross — the number that quietly decides whether a scalping edge survives). Every card carries a plain-English tooltip; ratios that need a sample show `—` with *need 10+ days* / *need 20+ trades* instead of a number built on three trades.
+- **Daily P&L** bars with a green-days line (*33 days · 58% green · best ₹10,914 · worst −₹5,154*), and an **underwater drawdown** curve showing how far below the peak the book has been, trade by trade.
+- **Weekday × Hour heatmap** — the single view that says "Tuesday 11:00 pays, Thursday 14:00 bleeds", with trades and win rate on hover.
+- **P&L distribution** histogram and **rolling 20-trade form** (expectancy + win rate) — is the edge fading or improving?
+- **Trade efficiency (MFE/MAE)** — average best-case move vs average heat, **capture %** (how much of the favourable move you kept), ₹ **left on the table** by winners, how many **losers were once green** (breakeven-stop candidates), and the median heat a *winner* survived — the number your stop must clear. Plus a heat-vs-P&L scatter.
+- **Monte Carlo** — the same trades reshuffled 1,000 times: % of runs that end profitable, the median outcome, the 1-in-20 bad run, and the drawdown to actually plan capital for, over 30 sample paths.
+- **Four new cuts** — By Side (CE/PE), By Hold Time, By Signal Strength, By VIX at Entry, plus a **biggest winners & losers** table.
+
+The loader now carries the fields these need (duration, MFE/MAE, VIX, signal strength, charges, points) straight from the existing trade records; nothing new is recorded, and any engine that does not log a field is excluded from that metric rather than counted as zero. Verified by rendering the page in headless Chrome against two synthetic books — 134 trades across four engines with mixed field coverage, and a 3-trade book — with an error trap installed: no runtime errors, no `NaN`/`undefined` in the output, and the sample gates correctly blanking on the small book.
+
 ### Fixed — the BB_RSI live page no longer shows an option stop-loss that cannot fire
 
 The live page had an **Option SL** tile showing `entry premium × (1 − OPT_STOP_PCT)` — for a ₹200 entry it read ₹170, in the same orange as the real stop-loss tile beside it. But `OPT_STOP_PCT` is EMA_RSI_ST's setting. No BB_RSI exit has ever read that number: the engine (`src/strategies/bb_rsi.js`), the paper route and the backtest all exit on BB re-entry, the 30-point hard stop, the profit lock, or a SuperTrend flip — and nothing else. The tile was a stop-loss that would never trigger, sitting next to one that would.

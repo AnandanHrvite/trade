@@ -8,7 +8,13 @@
  *
  * Metrics: win rate, expectancy, profit factor, payoff, avg win/loss, max drawdown,
  * win/loss streaks, equity curve, P&L by hour-of-day, P&L by weekday, P&L by exit reason,
- * and a per-strategy breakdown table.
+ * and a per-strategy breakdown table — plus the risk-adjusted set: Sharpe, Sortino,
+ * SQN, recovery factor, Kelly size, edge confidence (t-test), hold time, cost drag,
+ * daily P&L, underwater drawdown, P&L distribution, rolling form, weekday×hour heatmap,
+ * MFE/MAE trade efficiency, a bootstrap Monte Carlo, and side / hold / VIX / strength cuts.
+ *
+ * Sample gates: ratios that need a sample (Sharpe, Sortino, SQN, Kelly, edge confidence,
+ * Monte Carlo) render "—" below MIN_DAYS / MIN_TRADES rather than a number built on noise.
  *
  * Gated by UI_SHOW_EDGE_ANALYTICS (Settings → Menu Visibility). No new data is written.
  */
@@ -54,6 +60,13 @@ function safeRead(p) {
   } catch (_) { return {}; }
 }
 
+// Numeric coercion helpers — trade records are hand-built per engine, so any
+// field can be absent/null on some strategies. null (not 0) means "not recorded",
+// which the client uses to exclude the trade from that metric instead of
+// silently averaging a zero in.
+function num(v) { const n = Number(v); return Number.isFinite(n) ? n : null; }
+function round(v, d) { const n = num(v); return n === null ? null : Math.round(n * Math.pow(10, d)) / Math.pow(10, d); }
+
 function loadBook(sources, book) {
   const out = [];
   for (const src of sources) {
@@ -61,15 +74,35 @@ function loadBook(sources, book) {
     for (const s of (data.sessions || [])) {
       const sessionDate = String(s.date || "").slice(0, 10);
       for (const t of (s.trades || [])) {
+        const side = t.side || t.optionType || "";
+        // Same formula the engines use for pnlPoints — recomputed only when the
+        // engine did not record it (ORB), so every strategy can be compared.
+        let pts = round(t.pnlPoints, 2);
+        if (pts === null && num(t.entryPrice) !== null && num(t.exitPrice) !== null) {
+          pts = round((num(t.exitPrice) - num(t.entryPrice)) * (side === "PE" ? -1 : 1), 2);
+        }
+        const durMs = num(t.durationMs);
         out.push({
           book,
           mode:        src.mode,
           date:        sessionDate,
-          side:        t.side || t.optionType || "",
+          side,
           entryTime:   t.entryTime || "",
           exitTime:    t.exitTime || "",
           pnl:         Number(t.pnl) || 0,
           exitReason:  t.exitReason || "—",
+          // Extra dimensions for the pro metrics. Rounded to keep the embedded
+          // payload small — these feed averages/percentiles, not accounting.
+          qty:      num(t.qty),
+          durMin:   durMs === null ? null : Math.round(durMs / 60000),
+          pts,
+          mfePts:   round(t.mfeSpotPts, 2),   // best favourable spot excursion (≥0)
+          maePts:   round(t.maeSpotPts, 2),   // worst adverse spot excursion (≤0)
+          mfeRs:    round(t.mfePnl, 0),       // peak unrealised ₹ (≥0) — not on every engine
+          maeRs:    round(t.maePnl, 0),       // worst unrealised ₹ (≤0) — not on every engine
+          vix:      round(t.vixAtEntry, 2),
+          strength: t.signalStrength || null,
+          charges:  round(t.charges, 2),
         });
       }
     }
@@ -155,8 +188,28 @@ router.get("/", (req, res) => {
     .panel h3{font-size:0.62rem;text-transform:uppercase;letter-spacing:1.4px;color:#3a5070;margin-bottom:10px;font-family:'IBM Plex Mono',monospace;}
     .row2{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
     @media(max-width:1000px){.row2{grid-template-columns:1fr;}}
+    .row3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;}
+    @media(max-width:1100px){.row3{grid-template-columns:1fr;}}
     .chart-wrap{position:relative;height:260px;}
     .chart-wrap.tall{height:300px;}
+    .chart-wrap.short{height:200px;}
+    .cap{font-family:'IBM Plex Mono',monospace;font-size:0.62rem;color:#4a6080;margin:-4px 0 10px;line-height:1.6;}
+    .mini{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:10px;}
+    .mini > div{background:#04090f;border:0.5px solid #0e1e36;border-radius:8px;padding:8px 10px;}
+    .mini .k{font-family:'IBM Plex Mono',monospace;font-size:0.54rem;text-transform:uppercase;letter-spacing:1px;color:#3a5070;}
+    .mini .v{font-family:'IBM Plex Mono',monospace;font-size:0.85rem;font-weight:700;color:#e0eaf8;margin-top:2px;}
+    .hm{width:100%;border-collapse:separate;border-spacing:3px;font-family:'IBM Plex Mono',monospace;font-size:0.6rem;}
+    .hm th{color:#3a5070;font-weight:600;font-size:0.54rem;text-transform:uppercase;letter-spacing:1px;padding:2px 0;}
+    .hm td{text-align:center;padding:8px 3px;border-radius:5px;background:#04090f;border:0.5px solid #0e1e36;color:#c8d8f0;white-space:nowrap;}
+    .hm td.void{color:#16243c;}
+    .hm .rowlab{text-align:right;color:#3a5070;background:none;border:none;padding-right:6px;}
+    .sc[title],.mini > div[title],.hm td[title]{cursor:help;}
+    :root[data-theme="light"] .cap{color:#64748b!important;}
+    :root[data-theme="light"] .mini > div,:root[data-theme="light"] .hm td{background:#f8fafc!important;border-color:#e0e4ea!important;color:#334155!important;}
+    :root[data-theme="light"] .mini .k,:root[data-theme="light"] .hm th,:root[data-theme="light"] .hm .rowlab{color:#64748b!important;}
+    :root[data-theme="light"] .mini .v{color:#1e293b!important;}
+    :root[data-theme="light"] .hm td.void{color:#cbd5e1!important;}
+    :root[data-theme="light"] .hm .rowlab{background:none!important;border:none!important;}
     .tbl{width:100%;border-collapse:collapse;font-family:'IBM Plex Mono',monospace;font-size:0.72rem;}
     .tbl th{padding:8px 10px;text-align:right;font-size:0.56rem;text-transform:uppercase;letter-spacing:1px;color:#1e3050;background:#04090f;border-bottom:0.5px solid #0e1e36;font-weight:600;}
     .tbl th:first-child{text-align:left;}
@@ -199,7 +252,7 @@ router.get("/", (req, res) => {
   ${buildSidebar('edgeAnalytics', false)}
   <div class="main-content">
     <h1 class="page-title">📈 Edge Analytics</h1>
-    <p class="page-sub">Win rate · expectancy · profit factor · drawdown · best hours — computed from your recorded trades.</p>
+    <p class="page-sub">Win rate · expectancy · profit factor · Sharpe · system quality · drawdown · MFE/MAE · Monte Carlo — computed from your recorded trades.</p>
 
     <div class="tbar">
       <label>Book</label>
@@ -307,6 +360,108 @@ function groupNet(arr, keyFn){
   return m;
 }
 
+// ── math helpers (shared by the pro metrics below) ─────────────────────────
+function mean(a){ return a.length ? a.reduce((x,y)=>x+y,0)/a.length : 0; }
+function sd(a){ if(a.length<2) return 0; const m=mean(a); return Math.sqrt(a.reduce((s,v)=>s+(v-m)*(v-m),0)/(a.length-1)); }
+function median(a){ if(!a.length) return 0; const s=[...a].sort((x,y)=>x-y); const m=s.length>>1; return s.length%2?s[m]:(s[m-1]+s[m])/2; }
+function pctlOf(sorted,p){ if(!sorted.length) return 0; const i=Math.min(sorted.length-1,Math.max(0,Math.round((sorted.length-1)*p))); return sorted[i]; }
+// Abramowitz-Stegun 7.1.26 erf → normal CDF. Only used to turn the expectancy
+// t-stat into a p-value, so 1e-7 accuracy is far more than enough.
+function normCdf(z){
+  const s=z<0?-1:1, x=Math.abs(z)/Math.SQRT2;
+  const t=1/(1+0.3275911*x);
+  const y=1-(((((1.061405429*t-1.453152027)*t)+1.421413741)*t-0.284496736)*t+0.254829592)*t*Math.exp(-x*x);
+  return 0.5*(1+s*y);
+}
+function fld(arr,key){ const o=[]; for(const t of arr){ if(t[key]!==null&&t[key]!==undefined) o.push(t[key]); } return o; }
+
+// One row per trading day — the basis for Sharpe/Sortino (per-trade P&L is not
+// a return series; per-day is the closest thing this book has to one).
+function daily(arr){
+  const m=new Map();
+  for(const t of arr){
+    if(!t.date) continue;
+    if(!m.has(t.date)) m.set(t.date,{date:t.date,net:0,n:0,wins:0});
+    const g=m.get(t.date); g.net+=t.pnl; g.n++; if(t.pnl>0) g.wins++;
+  }
+  return [...m.values()].sort((a,b)=>a.date.localeCompare(b.date));
+}
+
+// Risk-adjusted / quality metrics. Anything that cannot be computed from the
+// filtered set returns null, and the card renders "—" rather than a fake 0.
+const MIN_DAYS=10, MIN_TRADES=20;
+function quality(arr,s){
+  const d=daily(arr), dn=d.map(x=>x.net);
+  const dMu=mean(dn), dSd=sd(dn);
+  const neg=dn.filter(v=>v<0);
+  const dSdDown=neg.length?Math.sqrt(neg.reduce((a,v)=>a+v*v,0)/neg.length):0;
+  const p=arr.map(t=>t.pnl), pSd=sd(p), pMu=mean(p);
+  const wr=s.wr/100;
+  const durs=fld(arr,'durMin');
+  const chg=fld(arr,'charges');
+  const costs=chg.reduce((a,v)=>a+v,0);
+  const gross=s.net+costs;
+  // Sample gates: a ratio built on 2 days or 5 trades is noise dressed as a
+  // number, so those cards stay blank until the book is big enough to mean it.
+  const okDays=d.length>=MIN_DAYS, okN=arr.length>=MIN_TRADES;
+  const t=(okN&&pSd>0)?pMu/(pSd/Math.sqrt(arr.length)):null;
+  return {
+    days:d.length, daily:d, okDays, okN,
+    // ×√252 annualises a daily figure — the convention every broker report uses.
+    sharpe:  (okDays&&dSd>0)?dMu/dSd*Math.sqrt(252):null,
+    sortino: (okDays&&dSdDown>0)?dMu/dSdDown*Math.sqrt(252):null,
+    // Van Tharp SQN — sample capped at 100 so a long book cannot inflate it.
+    sqn:     (okN&&pSd>0)?Math.sqrt(Math.min(arr.length,100))*pMu/pSd:null,
+    recovery: s.maxDD<0?s.net/Math.abs(s.maxDD):null,
+    kelly:   (okN&&s.payoff>0)?(wr-(1-wr)/s.payoff)*100:null,
+    tstat:   t,
+    pval:    t===null?null:2*(1-normCdf(Math.abs(t))),
+    avgHold: durs.length?mean(durs):null,
+    medHold: durs.length?median(durs):null,
+    costs:   chg.length?costs:null,
+    costPct: (chg.length&&gross>0)?costs/gross*100:null,
+    bestDay: d.length?Math.max(...dn):0,
+    worstDay:d.length?Math.min(...dn):0,
+    avgDay:  d.length?dMu:0,
+    winDays: d.filter(x=>x.net>0).length,
+  };
+}
+function sqnGrade(v){
+  if(v===null) return '';
+  if(v<1.6) return 'poor';
+  if(v<2.0) return 'below average';
+  if(v<2.5) return 'average';
+  if(v<3.0) return 'good';
+  if(v<5.0) return 'excellent';
+  return 'superb';
+}
+
+// Bootstrap Monte Carlo: resample the same trades in random order (with
+// replacement) to ask "how much of this curve is the order of the trades?".
+// Returns percentile outcomes + a handful of sample paths to draw.
+function monteCarlo(arr,sims,paths){
+  const p=arr.map(t=>t.pnl), n=p.length;
+  if(n<10) return null;
+  const finals=[],dds=[],sample=[];
+  for(let s=0;s<sims;s++){
+    let eq=0,peak=0,dd=0; const path=(s<paths)?[0]:null;
+    for(let i=0;i<n;i++){
+      eq+=p[(Math.random()*n)|0];
+      if(eq>peak) peak=eq;
+      if(eq-peak<dd) dd=eq-peak;
+      if(path) path.push(eq);
+    }
+    finals.push(eq); dds.push(dd); if(path) sample.push(path);
+  }
+  finals.sort((a,b)=>a-b); dds.sort((a,b)=>a-b);
+  return {
+    sims, n, sample,
+    winRate: finals.filter(v=>v>0).length/sims*100,
+    p5: pctlOf(finals,0.05), p50: pctlOf(finals,0.50), p95: pctlOf(finals,0.95),
+    ddMed: pctlOf(dds,0.50), dd5: pctlOf(dds,0.05),  // dd5 = the bad 1-in-20 drawdown
+  };
+}
+
 let charts={};
 function destroyCharts(){ for(const k in charts){ try{charts[k].destroy();}catch(_){} } charts={}; }
 
@@ -334,14 +489,69 @@ function render(){
     {l:'Max Drawdown',v:inr(s.maxDD),sub:'peak-to-trough',a:'#ef4444'},
     {l:'Streaks',v:s.maxW+'W / '+s.maxL+'L',sub:'best run / worst run',a:'#a855f7'},
   ];
-  let h='<div class="stat-grid">';
-  for(const c of cards) h+='<div class="sc" style="--accent:'+c.a+'"><div class="sc-label">'+c.l+'</div><div class="sc-val" style="color:'+c.a+'">'+c.v+'</div><div class="sc-sub">'+c.sub+'</div></div>';
-  h+='</div>';
+  let h=cardRow(cards);
+
+  // ── row 2: risk-adjusted quality. Every card carries a plain-English title
+  // so a number like "SQN 2.4" is readable without looking it up.
+  const q=quality(arr,s);
+  const nz=(v,f)=>v===null||v===undefined?'—':f(v);
+  // grey accent when the metric is blank, so a "—" card never shows a red bar
+  const acc=(v,good,ok)=>v===null||v===undefined?'#3a5070':(v>=good?'#10b981':(v>=ok?'#f59e0b':'#ef4444'));
+  const needDays='need '+MIN_DAYS+'+ days', needN='need '+MIN_TRADES+'+ trades';
+  h+=cardRow([
+    {l:'Sharpe',v:nz(q.sharpe,v=>v.toFixed(2)),sub:q.okDays?q.days+' trading days':needDays,a:acc(q.sharpe,1,0),
+     t:'Return per unit of swing, annualised from your daily P&L. Above 1 is good, above 2 is very good.'},
+    {l:'Sortino',v:nz(q.sortino,v=>v.toFixed(2)),sub:q.okDays?'downside only':needDays,a:acc(q.sortino,1.5,0),
+     t:'Like Sharpe but only counts losing days as risk. Higher is better.'},
+    {l:'System Quality',v:nz(q.sqn,v=>v.toFixed(2)),sub:q.okN?sqnGrade(q.sqn):needN,a:acc(q.sqn,2,1.6),
+     t:'Van Tharp SQN = how big the average trade is compared with how much it varies, scaled by sample size (capped at 100 trades). Below 1.6 = poor, 2.0-2.5 = average, above 3 = excellent.'},
+    {l:'Recovery Factor',v:nz(q.recovery,v=>v.toFixed(2)),sub:'net ÷ max drawdown',a:acc(q.recovery,3,1),
+     t:'How many times the worst drawdown you earned back. 1.0 means you made exactly what you once lost from the peak.'},
+    {l:'Kelly Size',v:nz(q.kelly,v=>v.toFixed(1)+'%'),sub:q.okN?'theoretical max risk':needN,a:q.kelly===null?'#3a5070':(q.kelly>0?'#38bdf8':'#ef4444'),
+     t:'Bet size the Kelly formula suggests for this win rate + payoff. Negative means the edge is negative. Traders normally risk a quarter of this.'},
+    {l:'Edge Confidence',v:nz(q.pval,v=>(100-v*100).toFixed(1)+'%'),
+     sub:q.pval===null?needN:(q.pval<0.05?'likely real edge':'could be luck'),
+     a:q.pval===null?'#3a5070':(q.pval<0.05?'#10b981':'#f59e0b'),
+     t:'Chance that this expectancy is not just luck (t-test on per-trade P&L). Below 95% means the sample is still too small or too noisy to trust.'},
+    {l:'Avg Hold',v:nz(q.avgHold,v=>fmtMin(v)),sub:q.medHold===null?'':'median '+fmtMin(q.medHold),a:'#38bdf8',
+     t:'Average time a position stayed open, entry to exit.'},
+    {l:'Cost Drag',v:nz(q.costs,v=>inr(v)),sub:q.costPct===null?'not recorded':q.costPct.toFixed(1)+'% of gross',a:q.costs===null?'#3a5070':'#f59e0b',
+     t:'Brokerage + taxes already deducted from the P&L above. High % means the edge is being eaten by costs.'},
+  ]);
 
   h+='<div class="panel"><h3>Equity Curve (cumulative net P&L · trade-by-trade)</h3><div class="chart-wrap tall"><canvas id="eqChart"></canvas></div></div>';
+
+  h+='<div class="row2">';
+  h+='<div class="panel"><h3>Daily P&L</h3><div class="cap">'+q.days+' days · '
+    +(q.days?(q.winDays/q.days*100).toFixed(0):0)+'% green days · best '+inr(q.bestDay)
+    +' · worst '+inr(q.worstDay)+' · avg '+inr(q.avgDay)+'/day</div>'
+    +'<div class="chart-wrap"><canvas id="dayChart"></canvas></div></div>';
+  h+='<div class="panel"><h3>Drawdown (underwater — how far below the peak)</h3>'
+    +'<div class="cap">Max '+inr(s.maxDD)+' · currently '+inr(curDD(s.eqS))+' below peak</div>'
+    +'<div class="chart-wrap"><canvas id="ddChart"></canvas></div></div>';
+  h+='</div>';
+
   h+='<div class="row2">';
   h+='<div class="panel"><h3>P&L by Hour of Day (entry)</h3><div class="chart-wrap"><canvas id="hourChart"></canvas></div></div>';
   h+='<div class="panel"><h3>P&L by Weekday</h3><div class="chart-wrap"><canvas id="dowChart"></canvas></div></div>';
+  h+='</div>';
+
+  h+='<div class="panel"><h3>Weekday × Hour Heatmap (net P&L)</h3>'
+    +'<div class="cap">Green = the slot makes money. Hover a cell for trades and win rate.</div>'
+    +heatmapHTML(arr)+'</div>';
+
+  h+='<div class="row2">';
+  h+='<div class="panel"><h3>Trade P&L Distribution</h3><div class="cap">Best '+inr(s.best)+' · worst '+inr(s.worst)
+    +' · median '+inr(median(arr.map(t=>t.pnl)))+'</div><div class="chart-wrap"><canvas id="histChart"></canvas></div></div>';
+  h+='<div class="panel"><h3>Rolling '+rollWindow(arr.length)+'-Trade Form</h3>'
+    +'<div class="cap">Is the edge improving or fading? Blue = expectancy per trade, purple = win rate.</div>'
+    +'<div class="chart-wrap"><canvas id="rollChart"></canvas></div></div>';
+  h+='</div>';
+
+  h+='<div class="row2">';
+  h+='<div class="panel"><h3>Trade Efficiency (MFE / MAE)</h3>'+efficiencyHTML(arr)
+    +'<div class="chart-wrap short"><canvas id="maeChart"></canvas></div></div>';
+  h+='<div class="panel"><h3>Monte Carlo (1,000 reshuffles of these trades)</h3>'+mcHTML(arr)+'</div>';
   h+='</div>';
 
   // per-strategy table (only when viewing All)
@@ -349,14 +559,44 @@ function render(){
   h+='<div class="panel"><h3>By Strategy</h3>'+modeTable(arr)+'</div>';
   h+='<div class="panel"><h3>By Exit Reason</h3>'+reasonTable(arr)+'</div>';
   h+='</div>';
+
+  h+='<div class="row3">';
+  h+='<div class="panel"><h3>By Side</h3>'+bucketTable('side',arr,t=>t.side||'—',null)+'</div>';
+  h+='<div class="panel"><h3>By Hold Time</h3>'+bucketTable('hold',arr,t=>holdBucket(t.durMin),HOLD_ORDER)+'</div>';
+  h+='<div class="panel"><h3>By Signal Strength</h3>'+bucketTable('strength',arr,t=>t.strength||'—',null)+'</div>';
+  h+='</div>';
+
+  h+='<div class="row2">';
+  h+='<div class="panel"><h3>By VIX at Entry</h3>'+bucketTable('vix',arr,t=>vixBucket(t.vix),VIX_ORDER)+'</div>';
+  h+='<div class="panel"><h3>Biggest Winners &amp; Losers</h3>'+extremesHTML(arr)+'</div>';
+  h+='</div>';
+
   C.innerHTML=h;
 
   paintTable('mode');
   paintTable('reason');
+  paintTable('side');
+  paintTable('hold');
+  paintTable('strength');
+  paintTable('vix');
   drawEquity(s.eqS);
+  drawDaily(q.daily);
+  drawDrawdown(s.eqS);
   drawHour(arr);
   drawDow(arr);
+  drawHist(arr);
+  drawRolling(arr);
+  drawMae(arr);
+  drawMC(arr);
 }
+
+function cardRow(cards){
+  let h='<div class="stat-grid">';
+  for(const c of cards) h+='<div class="sc" style="--accent:'+c.a+'"'+(c.t?' title="'+esc(c.t)+'"':'')
+    +'><div class="sc-label">'+c.l+'</div><div class="sc-val" style="color:'+c.a+'">'+c.v+'</div><div class="sc-sub">'+c.sub+'</div></div>';
+  return h+'</div>';
+}
+function fmtMin(m){ if(m===null||m===undefined) return '—'; if(m<60) return Math.round(m)+'m'; const hh=Math.floor(m/60); return hh+'h '+Math.round(m-hh*60)+'m'; }
 
 // ── pagination ─────────────────────────────────────────────────────────────
 // Tables can grow unbounded (By Exit Reason has one row per distinct reason
@@ -476,6 +716,239 @@ function drawDow(arr){
     options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false},
       tooltip:{callbacks:{label:c=>{const g=m.get(days[c.dataIndex]); return [inr(g.net),g.n+' trades · '+(g.wins/g.n*100).toFixed(0)+'% WR'];}}}},
       scales:{ x:{grid:{display:false},ticks:{color:th.tick}}, y:{grid:{color:th.grid},ticks:{color:th.tick,callback:v=>inr(v)}} } }
+  });
+}
+
+// ── new panels ─────────────────────────────────────────────────────────────
+function shortInr(n){
+  const v=Math.round(n), a=Math.abs(v);
+  if(a>=1000) return (v<0?'-':'')+'₹'+(a/1000).toFixed(a>=10000?0:1)+'k';
+  return inr(v);
+}
+function underwater(eqS){
+  const out=[]; let peak=0;
+  for(const e of eqS){ if(e>peak) peak=e; out.push(e-peak); }
+  return out;
+}
+function curDD(eqS){ const u=underwater(eqS); return u.length?u[u.length-1]:0; }
+function rollWindow(n){ return n>=100?20:(n>=40?10:5); }
+
+const HOLD_ORDER=['< 5m','5-15m','15-30m','30-60m','> 60m','—'];
+function holdBucket(m){
+  if(m===null||m===undefined) return '—';
+  if(m<5) return '< 5m';
+  if(m<15) return '5-15m';
+  if(m<30) return '15-30m';
+  if(m<60) return '30-60m';
+  return '> 60m';
+}
+const VIX_ORDER=['< 12','12-15','15-18','18-22','> 22','—'];
+function vixBucket(v){
+  if(v===null||v===undefined) return '—';
+  if(v<12) return '< 12';
+  if(v<15) return '12-15';
+  if(v<18) return '15-18';
+  if(v<22) return '18-22';
+  return '> 22';
+}
+
+// Generic "slice the book by one dimension" table — side, hold time, VIX,
+// signal strength all share the same five columns.
+function bucketTable(key,arr,keyFn,order){
+  const m=groupNet(arr,keyFn);
+  let rows=[...m.values()];
+  if(order) rows.sort((a,b)=>order.indexOf(a.key)-order.indexOf(b.key));
+  else      rows.sort((a,b)=>b.net-a.net);
+  return registerTable(key,
+    '<th>Bucket</th><th>N</th><th>WR</th><th>Net</th><th>Avg</th>',
+    rows,
+    r=>'<tr><td>'+esc(r.key)+'</td><td>'+r.n+'</td>'
+      +'<td>'+(r.n?(r.wins/r.n*100).toFixed(0):0)+'%</td>'
+      +'<td style="color:'+pc(r.net)+'">'+sign(r.net)+inr(r.net)+'</td>'
+      +'<td style="color:'+pc(r.net/r.n)+'">'+inr(r.net/r.n)+'</td></tr>');
+}
+
+function extremesHTML(arr){
+  const sorted=[...arr].sort((a,b)=>b.pnl-a.pnl);
+  const top=sorted.slice(0,5), bot=sorted.slice(-5).reverse();
+  const row=t=>'<tr><td>'+esc(t.date)+'</td>'
+    +'<td style="text-align:left">'+esc(t.mode)+' '+esc(t.side)+'</td>'
+    +'<td style="text-align:left" title="'+esc(t.exitReason)+'">'+esc(t.exitReason.length>22?t.exitReason.slice(0,22)+'…':t.exitReason)+'</td>'
+    +'<td style="color:'+pc(t.pnl)+'">'+sign(t.pnl)+inr(t.pnl)+'</td></tr>';
+  let h='<table class="tbl"><thead><tr><th>Date</th><th style="text-align:left">Trade</th><th style="text-align:left">Exit</th><th>P&L</th></tr></thead><tbody>';
+  for(const t of top) h+=row(t);
+  if(bot.length) h+='<tr><td colspan="4" style="color:#3a5070;text-align:center;font-size:0.6rem;letter-spacing:1px;">WORST</td></tr>';
+  for(const t of bot) h+=row(t);
+  return h+'</tbody></table>';
+}
+
+// MFE = best the trade ever was, MAE = worst it ever was (spot points / ₹,
+// captured tick-by-tick by every engine). Together they say whether exits are
+// too early, stops too tight, or winners handed back.
+function efficiencyHTML(arr){
+  const mfe=arr.filter(t=>t.mfePts!==null), mae=arr.filter(t=>t.maePts!==null);
+  if(!mfe.length&&!mae.length) return '<div class="cap">No MFE/MAE recorded for these trades.</div>';
+  const cap=arr.filter(t=>t.mfePts!==null&&t.pts!==null&&t.mfePts>0);
+  const capPct=cap.length?cap.reduce((a,t)=>a+t.pts,0)/cap.reduce((a,t)=>a+t.mfePts,0)*100:null;
+  const winners=arr.filter(t=>t.pnl>0), losers=arr.filter(t=>t.pnl<0);
+  const wLeft=winners.filter(t=>t.mfeRs!==null);
+  const left=wLeft.reduce((a,t)=>a+Math.max(0,t.mfeRs-t.pnl),0);
+  const wasGreen=losers.filter(t=>t.mfeRs!==null?t.mfeRs>0:(t.mfePts!==null&&t.mfePts>0));
+  const winHeat=winners.filter(t=>t.maePts!==null).map(t=>Math.abs(t.maePts));
+  const loseMfe=losers.filter(t=>t.mfePts!==null).map(t=>t.mfePts);
+  const cell=(k,v,t)=>'<div'+(t?' title="'+esc(t)+'"':'')+'><div class="k">'+k+'</div><div class="v">'+v+'</div></div>';
+  return '<div class="mini">'
+    +cell('Avg MFE',mfe.length?mean(mfe.map(t=>t.mfePts)).toFixed(1)+' pts':'—','Average best-case move in your favour while the trade was open.')
+    +cell('Avg MAE',mae.length?mean(mae.map(t=>Math.abs(t.maePts))).toFixed(1)+' pts':'—','Average heat — how far the trade went against you before closing.')
+    +cell('Capture',capPct===null?'—':capPct.toFixed(0)+'%','Share of the favourable move you actually kept. Under ~35% usually means exits are late or trails are loose.')
+    +cell('Left on Table',wLeft.length?inr(left):'—','Total ₹ that winners gave back from their peak (only engines that log peak ₹).')
+    +cell('Losers Once Green',losers.length?wasGreen.length+' / '+losers.length:'—','Losing trades that were in profit at some point — candidates for a breakeven stop.')
+    +cell('Winners\\' Heat',winHeat.length?median(winHeat).toFixed(1)+' pts':'—','Median drawdown a winning trade survived. Your stop must be wider than this.')
+    +cell('Loser Peak',loseMfe.length?median(loseMfe).toFixed(1)+' pts':'—','Median best move a losing trade reached before dying.')
+    +cell('Scratch Rate',arr.length?(arr.filter(t=>t.pnl===0).length/arr.length*100).toFixed(0)+'%':'—','Share of trades that closed flat.')
+    +'</div>';
+}
+
+let MC=null;
+function mcHTML(arr){
+  MC=monteCarlo(arr,1000,30);
+  if(!MC) return '<div class="cap">Needs at least 10 trades in the filter.</div>';
+  const cell=(k,v,c,t)=>'<div'+(t?' title="'+esc(t)+'"':'')+'><div class="k">'+k+'</div><div class="v"'+(c?' style="color:'+c+'"':'')+'>'+v+'</div></div>';
+  return '<div class="cap">Same trades, random order, 1,000 times — shows how much of the curve was luck.</div>'
+    +'<div class="mini">'
+    +cell('Profitable Runs',MC.winRate.toFixed(0)+'%',MC.winRate>=80?'#10b981':(MC.winRate>=60?'#f59e0b':'#ef4444'),'How often the reshuffled book ended in profit. Under 80% means the edge is fragile.')
+    +cell('Median Outcome',inr(MC.p50),pc(MC.p50),'The middle result across all 1,000 runs.')
+    +cell('Bad Run (5%)',inr(MC.p5),pc(MC.p5),'1-in-20 worst final P&L — plan capital for this, not the median.')
+    +cell('Expected Max DD',inr(MC.ddMed),'#ef4444','Typical worst peak-to-trough dip. Your 1-in-20 case is '+inr(MC.dd5)+'.')
+    +'</div><div class="chart-wrap short"><canvas id="mcChart"></canvas></div>';
+}
+
+function heatmapHTML(arr){
+  const cells=new Map(); let maxAbs=0;
+  for(const t of arr){
+    const d=weekday(t.date), hr=entryHour(t.entryTime);
+    if(d===null||hr===null||d<1||d>5) continue;
+    const k=d+'|'+hr;
+    if(!cells.has(k)) cells.set(k,{net:0,n:0,wins:0});
+    const g=cells.get(k); g.net+=t.pnl; g.n++; if(t.pnl>0) g.wins++;
+  }
+  if(!cells.size) return '<div class="cap">No entry times recorded for these trades.</div>';
+  const hours=[...new Set([...cells.keys()].map(k=>+k.split('|')[1]))].sort((a,b)=>a-b);
+  for(const g of cells.values()) maxAbs=Math.max(maxAbs,Math.abs(g.net));
+  let h='<div style="overflow-x:auto"><table class="hm"><thead><tr><th></th>';
+  for(const hr of hours) h+='<th>'+String(hr).padStart(2,'0')+'</th>';
+  h+='</tr></thead><tbody>';
+  for(const d of [1,2,3,4,5]){
+    if(!hours.some(hr=>cells.has(d+'|'+hr))) continue;
+    h+='<tr><td class="rowlab">'+DOW[d]+'</td>';
+    for(const hr of hours){
+      const g=cells.get(d+'|'+hr);
+      if(!g){ h+='<td class="void">·</td>'; continue; }
+      const a=0.12+0.55*(maxAbs?Math.abs(g.net)/maxAbs:0);
+      const bg=g.net>=0?'rgba(16,185,129,'+a.toFixed(2)+')':'rgba(239,68,68,'+a.toFixed(2)+')';
+      h+='<td style="background:'+bg+'" title="'+DOW[d]+' '+String(hr).padStart(2,'0')+':00 — '+inr(g.net)
+        +' · '+g.n+' trades · '+(g.wins/g.n*100).toFixed(0)+'% WR">'+shortInr(g.net)+'</td>';
+    }
+    h+='</tr>';
+  }
+  return h+'</tbody></table></div>';
+}
+
+function drawDaily(d){
+  const th=themed();
+  const net=d.map(x=>x.net);
+  charts.day=new Chart(document.getElementById('dayChart'),{
+    type:'bar',
+    data:{ labels:d.map(x=>x.date.slice(8,10)+'/'+x.date.slice(5,7)), datasets:[{data:net,backgroundColor:barColors(net)}]},
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false},
+      tooltip:{callbacks:{label:c=>{const g=d[c.dataIndex]; return [inr(g.net),g.n+' trades · '+(g.wins/g.n*100).toFixed(0)+'% WR'];}}}},
+      scales:{ x:{grid:{display:false},ticks:{color:th.tick,maxTicksLimit:14}}, y:{grid:{color:th.grid},ticks:{color:th.tick,callback:v=>inr(v)}} } }
+  });
+}
+
+function drawDrawdown(eqS){
+  const th=themed(), u=underwater(eqS);
+  charts.dd=new Chart(document.getElementById('ddChart'),{
+    type:'line',
+    data:{ labels:u.map((_,i)=>i+1), datasets:[{data:u,borderColor:'#ef4444',borderWidth:1.5,pointRadius:0,tension:0.1,
+      fill:true,backgroundColor:'rgba(239,68,68,0.18)'}]},
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false},
+      tooltip:{callbacks:{title:i=>'Trade #'+i[0].label,label:c=>'Below peak: '+inr(c.parsed.y)}}},
+      scales:{ x:{grid:{color:th.grid},ticks:{color:th.tick,maxTicksLimit:12}}, y:{grid:{color:th.grid},ticks:{color:th.tick,callback:v=>inr(v)}} } }
+  });
+}
+
+function drawHist(arr){
+  const th=themed(), p=arr.map(t=>t.pnl);
+  const lo=Math.min(...p), hi=Math.max(...p);
+  const bins=Math.min(20,Math.max(6,Math.ceil(Math.sqrt(p.length))));
+  const w=(hi-lo)/bins||1;
+  const counts=new Array(bins).fill(0), labels=[];
+  for(let i=0;i<bins;i++) labels.push(shortInr(lo+i*w)+'…'+shortInr(lo+(i+1)*w));
+  for(const v of p){ let i=Math.floor((v-lo)/w); if(i>=bins) i=bins-1; if(i<0) i=0; counts[i]++; }
+  const mids=labels.map((_,i)=>lo+(i+0.5)*w);
+  charts.hist=new Chart(document.getElementById('histChart'),{
+    type:'bar',
+    data:{ labels, datasets:[{data:counts,backgroundColor:mids.map(m=>m>=0?'rgba(16,185,129,0.65)':'rgba(239,68,68,0.65)')}]},
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false},
+      tooltip:{callbacks:{label:c=>c.parsed.y+' trades'}}},
+      scales:{ x:{grid:{display:false},ticks:{color:th.tick,maxRotation:60,minRotation:0,autoSkip:true,maxTicksLimit:10}},
+               y:{grid:{color:th.grid},ticks:{color:th.tick,precision:0}} } }
+  });
+}
+
+function drawRolling(arr){
+  const th=themed(), w=rollWindow(arr.length);
+  if(arr.length<w) return;
+  const exp=[],wr=[],lab=[];
+  let sum=0,wins=0;
+  for(let i=0;i<arr.length;i++){
+    sum+=arr[i].pnl; if(arr[i].pnl>0) wins++;
+    if(i>=w){ sum-=arr[i-w].pnl; if(arr[i-w].pnl>0) wins--; }
+    if(i>=w-1){ exp.push(sum/w); wr.push(wins/w*100); lab.push(i+1); }
+  }
+  charts.roll=new Chart(document.getElementById('rollChart'),{
+    type:'line',
+    data:{ labels:lab, datasets:[
+      {label:'Expectancy',data:exp,borderColor:'#38bdf8',borderWidth:2,pointRadius:0,tension:0.2,yAxisID:'y'},
+      {label:'Win rate',data:wr,borderColor:'#a855f7',borderWidth:1.5,pointRadius:0,tension:0.2,borderDash:[4,3],yAxisID:'y1'}]},
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{labels:{color:th.tick,boxWidth:10,font:{size:10}}},
+      tooltip:{callbacks:{title:i=>'Trade #'+i[0].label,
+        label:c=>c.datasetIndex===0?('Expectancy: '+inr(c.parsed.y)):('Win rate: '+c.parsed.y.toFixed(0)+'%')}}},
+      scales:{ x:{grid:{color:th.grid},ticks:{color:th.tick,maxTicksLimit:10}},
+               y:{position:'left',grid:{color:th.grid},ticks:{color:th.tick,callback:v=>inr(v)}},
+               y1:{position:'right',min:0,max:100,grid:{display:false},ticks:{color:th.tick,callback:v=>v+'%'}} } }
+  });
+}
+
+function drawMae(arr){
+  const th=themed();
+  const pts=arr.filter(t=>t.maePts!==null);
+  if(!pts.length) return;
+  const mk=t=>({x:Math.abs(t.maePts),y:t.pnl});
+  charts.mae=new Chart(document.getElementById('maeChart'),{
+    type:'scatter',
+    data:{ datasets:[
+      {label:'Winners',data:pts.filter(t=>t.pnl>0).map(mk),backgroundColor:'rgba(16,185,129,0.6)',pointRadius:3},
+      {label:'Losers', data:pts.filter(t=>t.pnl<=0).map(mk),backgroundColor:'rgba(239,68,68,0.6)',pointRadius:3}]},
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{labels:{color:th.tick,boxWidth:10,font:{size:10}}},
+      tooltip:{callbacks:{label:c=>'Heat '+c.parsed.x.toFixed(1)+' pts → '+inr(c.parsed.y)}}},
+      scales:{ x:{title:{display:true,text:'Heat taken (adverse points)',color:th.tick,font:{size:9}},grid:{color:th.grid},ticks:{color:th.tick}},
+               y:{grid:{color:th.grid},ticks:{color:th.tick,callback:v=>inr(v)}} } }
+  });
+}
+
+function drawMC(){
+  if(!MC) return;
+  const th=themed();
+  const ds=MC.sample.map(p=>({data:p,borderColor:'rgba(125,211,252,0.16)',borderWidth:1,pointRadius:0,tension:0.1,fill:false}));
+  charts.mc=new Chart(document.getElementById('mcChart'),{
+    type:'line',
+    data:{ labels:MC.sample.length?MC.sample[0].map((_,i)=>i):[], datasets:ds },
+    options:{ responsive:true, maintainAspectRatio:false, animation:false,
+      plugins:{legend:{display:false},tooltip:{enabled:false}},
+      scales:{ x:{grid:{color:th.grid},ticks:{color:th.tick,maxTicksLimit:8}},
+               y:{grid:{color:th.grid},ticks:{color:th.tick,callback:v=>inr(v)}} } }
   });
 }
 
