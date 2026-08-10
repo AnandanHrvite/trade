@@ -15,6 +15,7 @@ const router = express.Router();
 const fs = require("fs");
 const path = require("path");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS, toastJS, aiExportJS } = require("../utils/sharedNav");
+const { resolveTheme } = require("../utils/theme");
 
 const _HOME = require("os").homedir();
 const DATA_DIR = path.join(_HOME, "trading-data");
@@ -123,7 +124,7 @@ router.get("/", (req, res) => {
   <title>ௐ Palani Andawar Thunai ॐ — Consolidation</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet"/>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-  <script>(function(){ if ('${process.env.UI_THEME || "dark"}' === 'light') document.documentElement.setAttribute('data-theme', 'light'); })();</script>
+  <script>(function(){ if ('${resolveTheme()}' === 'light') document.documentElement.setAttribute('data-theme', 'light'); })();</script>
   <style>
     *{box-sizing:border-box;margin:0;padding:0;}
     body{font-family:'Inter',sans-serif;background:#040c18;color:#e0eaf8;overflow-x:hidden;}

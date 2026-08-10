@@ -32,6 +32,7 @@ const path = require("path");
 const { buildSidebar, sidebarCSS, faviconLink, enabledStrategies,
         dateRangeOptionsHTML, dateRangeJS,
         multiSelectCSS, multiSelectHTML, multiSelectJS } = require("../utils/sharedNav");
+const { resolveTheme } = require("../utils/theme");
 
 const _HOME = require("os").homedir();
 const DATA_DIR = path.join(_HOME, "trading-data");
@@ -153,7 +154,7 @@ router.get("/", (req, res) => {
   const trades     = loadAllTrades().filter(t => enabledSet.has(t.mode));
   const modePicker = multiSelectHTML('fMode', enabled.map(s => ({ value: s.mode, label: s.label })), 'All');
 
-  const theme = (process.env.UI_THEME || "dark").toLowerCase();
+  const theme = resolveTheme();
   const showConsolidationReport = (process.env.UI_SHOW_CONSOLIDATION_REPORT || "true").toLowerCase() === "true";
   const html = `<!DOCTYPE html>
 <html lang="en">

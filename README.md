@@ -849,7 +849,7 @@ Blocks directional entries that fight the prevailing Open-Interest buildup: read
 ### UI Visibility Toggles
 | Key | Default | Notes |
 |-----|---------|-------|
-| `UI_THEME` | `dark` | `dark` or `light` |
+| `UI_THEME` | `dark` | `dark`, `light`, or `auto` (light 06:00–18:00 IST, dark otherwise — resolved per page load) |
 | `UI_SHOW_DASHBOARD` | `false` | When off, `/` redirects to Settings |
 | `UI_SHOW_ALL_BACKTEST` | `true` | Top-level "Backtest" (unified) menu |
 | `UI_SHOW_REALTIME` | `true` | Dashboard auto-swaps to Real-Time monitor while any session is running |

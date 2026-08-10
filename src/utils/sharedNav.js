@@ -10,6 +10,8 @@
  * @param {object}  opts        - { showStopBtn, showStartBtn, showExitBtn, stopLabel, startLabel }
  */
 
+const { resolveTheme } = require('./theme');
+
 // Canonical strategy list + their Settings toggle keys, in sidebar order.
 // Single source of truth for "which strategies is this install running?" so
 // cross-strategy screens (Edge Analytics, Consolidation Report) stay in step
@@ -1957,7 +1959,7 @@ async function secretGo(url, btn) {
 
 // ── Theme overriding ────────────────────────────────────────────────────────
 (function(){
-  if ('${process.env.UI_THEME || "dark"}' !== 'light') return;
+  if ('${resolveTheme()}' !== 'light') return;
   document.documentElement.setAttribute('data-theme', 'light');
 
   // ── Force body style immediately ──

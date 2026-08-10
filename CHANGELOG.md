@@ -6,6 +6,10 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Added — The theme can follow the clock
+
+**Settings → UI Preferences → Application Theme** now offers `auto` beside `dark` and `light`. On `auto` the app renders light between 06:00 and 18:00 IST and dark the rest of the day, so an evening session no longer means a white screen. Every page already read `UI_THEME` through its own copy of the same one-line bootstrap; those fourteen copies now call `resolveTheme()` from new [utils/theme.js](src/utils/theme.js), which collapses `auto` to a real `dark`/`light` on the server before the markup is built — the page still paints its final theme on first paint, with no flash and no client-side clock. `dark` and `light` behave exactly as before, and anything unrecognised falls back to dark. A page open across the 18:00 boundary keeps the theme it loaded with until it next loads.
+
 ### Added — The option expiry now keeps itself up to date
 
 Fixing auto-detection removed the reason the expiry had to be typed in each week; this removes the typing. New [utils/expiryHealth.js](src/utils/expiryHealth.js) runs the **same** resolution an entry runs — once at boot and every `EXPIRY_HEALTHCHECK_MINS` (default 30) between 08:00 and 15:30 IST, so the answer is known before the open rather than at the moment a setup is missed.

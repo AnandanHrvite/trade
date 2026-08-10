@@ -12,6 +12,7 @@ const { clearFyersToken } = require("./config/fyers");
 const { buildSidebar, sidebarCSS, modalCSS, modalJS, enabledStrategies,
         expiryHolidayModalCSS, expiryHolidayModalHTML, expiryHolidayModalJS,
         dateRangeOptionsHTML, dateRangeJS } = require("./utils/sharedNav");
+const { resolveTheme } = require("./utils/theme");
 
 // Start-All route triplet per strategy, keyed by the canonical mode key in
 // sharedNav's STRATEGY_MODES. The dashboard's Start All (Paper / Live / Harness)
@@ -99,7 +100,7 @@ function loginPageHTML(error, opts = {}) {
   const otpOffer  = lockedSec > 0 && _loginOtpReady();
   // Theme is a server-side setting, so stamp it on <html> in the markup instead
   // of via a client script — that removes the dark-flash before paint on light.
-  const isLight   = (process.env.UI_THEME || "dark") === "light";
+  const isLight   = resolveTheme() === "light";
   return `<!DOCTYPE html><html lang="en"${isLight ? ' data-theme="light"' : ''}><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="${isLight ? '#eef2f7' : '#05080f'}">

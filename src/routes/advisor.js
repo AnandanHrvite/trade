@@ -15,6 +15,7 @@ const express = require("express");
 const router = express.Router();
 const { buildSidebar, sidebarCSS, faviconLink } = require("../utils/sharedNav");
 const advisor = require("../utils/settingsAdvisor");
+const { resolveTheme } = require("../utils/theme");
 
 router.get("/data", (req, res) => {
   try {
@@ -32,7 +33,7 @@ router.get("/data", (req, res) => {
 });
 
 router.get("/", (req, res) => {
-  const theme = (process.env.UI_THEME || "dark").toLowerCase();
+  const theme = resolveTheme();
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>

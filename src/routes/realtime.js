@@ -20,6 +20,7 @@ const express = require("express");
 const router  = express.Router();
 const sharedSocketState = require("../utils/sharedSocketState");
 const { buildSidebar, sidebarCSS, faviconLink } = require("../utils/sharedNav");
+const { resolveTheme } = require("../utils/theme");
 
 // hasDayLog: only strategies that expose /download/{trades,skips}/:date show
 // the Copy Day Log button. TREND_PB still exposes cumulative JSONL only.
@@ -152,7 +153,7 @@ function renderPage({ liveActive, sidebarKey = "realtime", autoFlipBack = false 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Real-Time Monitor</title>
 ${faviconLink()}
-<script>(function(){ if ('${process.env.UI_THEME || "dark"}' === 'light') document.documentElement.setAttribute('data-theme', 'light'); })();</script>
+<script>(function(){ if ('${resolveTheme()}' === 'light') document.documentElement.setAttribute('data-theme', 'light'); })();</script>
 <style>
   ${sidebarCSS()}
   body { margin:0; background:#040c18; color:#e0eaf8; font-family:'Segoe UI',-apple-system,sans-serif; }

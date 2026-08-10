@@ -24,6 +24,7 @@ const {
   attachContractNotes, brokerForRoute,
   contractNoteModalHTML, contractNoteClientJS,
 } = require("./contractNote");
+const { resolveTheme } = require("./theme");
 
 function inr(n) {
   return typeof n === "number"
@@ -57,11 +58,12 @@ function dailyFilesPaginate(allRows, query) {
 }
 
 // ── Theme: activation script + light-mode overrides ─────────────────────────
-// The Settings UI writes UI_THEME (dark|light). This <script> flips the
+// The Settings UI writes UI_THEME (dark|light|auto); resolveTheme() turns auto
+// into a concrete dark/light for this render. This <script> flips the
 // data-theme attribute so the :root[data-theme="light"] rules below (and the
 // shared sidebar/top-bar rules in sidebarCSS) take effect.
 function themeInitScript() {
-  return `<script>(function(){ if ('${process.env.UI_THEME || "dark"}' === 'light') document.documentElement.setAttribute('data-theme', 'light'); })();</script>`;
+  return `<script>(function(){ if ('${resolveTheme()}' === 'light') document.documentElement.setAttribute('data-theme', 'light'); })();</script>`;
 }
 
 // Light-mode overrides for the history page's own classes (sidebarCSS only

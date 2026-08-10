@@ -26,6 +26,7 @@
 
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("./sharedNav");
 const sharedSocketState = require("./sharedSocketState");
+const { resolveTheme } = require("./theme");
 const { aiExportButton, aiExportScriptTag } = require("./backtestAiExport");
 
 // ── Stats computer ──────────────────────────────────────────────────────────
@@ -131,7 +132,7 @@ function renderBacktestResults(opts) {
 ${faviconLink()}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <title>${mode} Backtest — ${strategyName}</title>
-<script>(function(){ if ('${process.env.UI_THEME || "dark"}' === 'light') document.documentElement.setAttribute('data-theme', 'light'); })();</script>
+<script>(function(){ if ('${resolveTheme()}' === 'light') document.documentElement.setAttribute('data-theme', 'light'); })();</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'IBM Plex Mono',monospace;background:#060810;color:#a0b8d8;min-height:100vh;}

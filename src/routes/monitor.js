@@ -10,6 +10,7 @@ const os      = require("os");
 const { exec } = require("child_process");
 const router  = express.Router();
 const sharedSocketState = require("../utils/sharedSocketState");
+const { resolveTheme } = require("../utils/theme");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS, toastJS } = require("../utils/sharedNav");
 const backtestCache = require("../utils/backtestCache");
 const backtestJobs  = require("../utils/backtestJobManager");
@@ -318,7 +319,7 @@ ${modalJS()}
 
 /* ── theme ── */
 (function(){
-  var theme = '${process.env.UI_THEME || "dark"}';
+  var theme = '${resolveTheme()}';
   if (theme === 'light') document.documentElement.setAttribute('data-theme','light');
 })();
 

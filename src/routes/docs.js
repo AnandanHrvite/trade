@@ -3,6 +3,7 @@ const router  = express.Router();
 const fs      = require("fs");
 const path    = require("path");
 const sharedSocketState = require("../utils/sharedSocketState");
+const { resolveTheme } = require("../utils/theme");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS, enabledStrategies } = require("../utils/sharedNav");
 
 /**
@@ -246,7 +247,7 @@ ${buildSidebar("docs", liveActive)}
 </div>
 <script>
 ${modalJS()}
-(function(){ if ('${process.env.UI_THEME || "dark"}' === 'light') document.documentElement.setAttribute('data-theme', 'light'); })();
+(function(){ if ('${resolveTheme()}' === 'light') document.documentElement.setAttribute('data-theme', 'light'); })();
 function showTab(el, id) {
   document.querySelectorAll('.tab').forEach(function(t){ t.classList.remove('active'); });
   document.querySelectorAll('.content').forEach(function(c){ c.classList.remove('active'); });

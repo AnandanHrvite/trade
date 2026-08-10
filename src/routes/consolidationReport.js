@@ -29,6 +29,7 @@ const { buildSidebar, sidebarCSS, faviconLink, enabledStrategies,
 const { fetchCandlesCachedBT } = require("../services/backtestEngine");
 const { VIX_SYMBOL } = require("../services/vixFilter");
 const fyers = require("../config/fyers");
+const { resolveTheme } = require("../utils/theme");
 
 const _HOME = require("os").homedir();
 const DATA_DIR = path.join(_HOME, "trading-data");
@@ -186,7 +187,7 @@ router.get("/", async (req, res) => {
   const enabled     = enabledStrategies();
   const enabledSet  = new Set(enabled.map(s => s.mode));
   const trades      = loadAllTrades().filter(t => enabledSet.has(t.mode));
-  const theme = (process.env.UI_THEME || "dark").toLowerCase();
+  const theme = resolveTheme();
 
   // Daily VIX from Fyers across the full recorded span (oldest trade → today, IST),
   // so any day the client filters to has a value. Embedded and looked up client-side.

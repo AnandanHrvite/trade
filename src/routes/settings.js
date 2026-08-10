@@ -17,6 +17,7 @@ const router  = express.Router();
 const fs      = require("fs");
 const path    = require("path");
 const sharedSocketState = require("../utils/sharedSocketState");
+const { resolveTheme } = require("../utils/theme");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS,
         expiryHolidayModalCSS, expiryHolidayModalHTML, expiryHolidayModalJS } = require("../utils/sharedNav");
 const settingsAudit = require("../utils/settingsAudit");
@@ -649,7 +650,7 @@ const SETTINGS_SCHEMA = [
     nav: "UI Preferences",
     group: "System",
     fields: [
-      { key: "UI_THEME", label: "Application Theme", type: "select", options: ["dark", "light"], effect: EFFECT.INSTANT, desc: "Switch between dark and light mode.", default: "dark" },
+      { key: "UI_THEME", label: "Application Theme", type: "select", options: ["dark", "light", "auto"], effect: EFFECT.INSTANT, desc: "Switch between dark and light mode. auto = light during the day (06:00–18:00 IST) and dark at night; each page picks its theme when it loads.", default: "dark" },
     ],
   },
   {
@@ -1341,7 +1342,7 @@ router.get("/", (req, res) => {
       </div>
       </div></div>
       <script>
-      (function(){ if ('${process.env.UI_THEME || "dark"}' === 'light') document.documentElement.setAttribute('data-theme', 'light'); })();
+      (function(){ if ('${resolveTheme()}' === 'light') document.documentElement.setAttribute('data-theme', 'light'); })();
       function go(e){e.preventDefault();var s=document.getElementById('secretInput').value;if(!s)return;window.location='/settings?secret='+encodeURIComponent(s);}
       ${req.query.secret ? "document.getElementById('authErr').style.display='block';" : ""}
       </script></body></html>`);
