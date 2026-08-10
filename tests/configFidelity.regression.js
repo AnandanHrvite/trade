@@ -213,9 +213,14 @@ check("the dashboard banner shares the resolver's staleness predicate", () => {
 check("no engine has re-grown a per-mode expiry override", () => {
   // The banner used to enumerate per-mode prefixes because the resolver honoured
   // them. Both sides were removed together on 2026-08-05, so the invariant that
-  // matters now is the inverse: nothing in src/ may READ a {MODE}_OPTION_EXPIRY_*
-  // key again, or the Settings page and the Dashboard banner — which only show the
-  // common one — would stop describing what the engines actually trade.
+  // matters now is the inverse: the three files that decide what the operator sees
+  // and what the engines trade must not read a {MODE}_OPTION_EXPIRY_* key again,
+  // or the Settings page and the Dashboard banner — which only show the common one
+  // — would stop describing the contract actually being traded.
+  //
+  // services/tickReplay.js is deliberately NOT checked: it reads those keys out of
+  // a RECORDED settings snapshot, so a session recorded before the removal still
+  // replays on the expiry it actually traded. That is history, not live config.
   const readers = [];
   for (const p of RETIRED_PREFIXES) {
     for (const f of ["config/instrument.js", "app.js", "routes/settings.js"]) {

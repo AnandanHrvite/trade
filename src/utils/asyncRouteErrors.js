@@ -95,7 +95,10 @@ function install() {
 
     let ret;
     try {
-      ret = fn.call(this, req, res, onward);
+      // Called bare, exactly as express does — NOT fn.call(this, …). A layer
+      // handler written as `function (req, res)` sees the same `this` it always
+      // did; binding it to the Layer here would be a silent behaviour change.
+      ret = fn(req, res, onward);
     } catch (err) {
       return next(err);                        // synchronous throw — express's own path
     }
@@ -118,7 +121,7 @@ function install() {
       if (typeof fn !== "function" || fn.length !== 4) return originalError.call(this, error, req, res, next);
       let ret;
       try {
-        ret = fn.call(this, error, req, res, next);
+        ret = fn(error, req, res, next);        // bare call, as express does
       } catch (err) {
         return next(err);
       }

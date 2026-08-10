@@ -477,10 +477,12 @@ function scheduleNext() {
     // runDaily awaits the Drive upload, and googleDrive rejects on any network
     // fault. Unguarded, one dropped connection skipped scheduleNext() and no
     // further backup ran until the next restart — the data-loss window this
-    // whole module exists to close.
+    // whole module exists to close. `finally`, not just `catch`, because a
+    // rejection carrying no Error would make the catch body itself throw on
+    // `.message` and skip the reschedule all over again.
     try { await runDaily(); }
-    catch (err) { console.error(`[backup] daily run failed: ${err.message}`); }
-    scheduleNext();
+    catch (err) { console.error(`[backup] daily run failed: ${(err && err.message) || err}`); }
+    finally { scheduleNext(); }
   }, wait);
   if (_timer.unref) _timer.unref();
 }
@@ -518,7 +520,7 @@ function start() {
         }
       // Fire-and-forget: pushToDrive rejects on any network fault, and with no
       // catch that surfaced as a boot-time "🚨 UNHANDLED REJECTION" telegram.
-      }).catch((err) => console.warn(`[backup] boot snapshot failed: ${err.message}`));
+      }).catch((err) => console.warn(`[backup] boot snapshot failed: ${(err && err.message) || err}`));
     }
   }
   scheduleNext();

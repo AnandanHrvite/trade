@@ -370,25 +370,33 @@ function putStream(sessionUrl, filePath, size) {
   return new Promise((resolve, reject) => {
     // Opened before the request so the response handler below can always close
     // it — the 'response' callback only ever fires later, but declaring it first
-    // keeps that a fact rather than a timing assumption.
+    // keeps that a fact rather than a timing assumption. The file handle is now
+    // open before https.request runs, so a synchronous throw from it (a
+    // malformed sessionUrl handed back by Google) must not leak the descriptor.
     const rs = fs.createReadStream(filePath);
-    const req = https.request(sessionUrl, {
-      method: "PUT",
-      headers: { "Content-Type": "application/gzip", "Content-Length": size },
-    }, (res) => {
-      let text = "";
-      res.setEncoding("utf8");
-      res.on("data", (c) => { text += c; });
-      // Same as httpRequest: an unlistened 'error' on the response stream is
-      // fatal to the process. Tear the upload's file handle down with it.
-      res.on("error", (err) => { rs.destroy(); reject(err); });
-      res.on("end", () => {
-        let json = null;
-        try { json = text ? JSON.parse(text) : null; } catch (_) {}
-        if (res.statusCode === 200 || res.statusCode === 201) return resolve(json || {});
-        reject(new Error(googleError({ status: res.statusCode, json, text }, `upload HTTP ${res.statusCode}`)));
+    let req;
+    try {
+      req = https.request(sessionUrl, {
+        method: "PUT",
+        headers: { "Content-Type": "application/gzip", "Content-Length": size },
+      }, (res) => {
+        let text = "";
+        res.setEncoding("utf8");
+        res.on("data", (c) => { text += c; });
+        // Same as httpRequest: an unlistened 'error' on the response stream is
+        // fatal to the process. Tear the upload's file handle down with it.
+        res.on("error", (err) => { rs.destroy(); reject(err); });
+        res.on("end", () => {
+          let json = null;
+          try { json = text ? JSON.parse(text) : null; } catch (_) {}
+          if (res.statusCode === 200 || res.statusCode === 201) return resolve(json || {});
+          reject(new Error(googleError({ status: res.statusCode, json, text }, `upload HTTP ${res.statusCode}`)));
+        });
       });
-    });
+    } catch (e) {
+      rs.destroy();
+      return reject(e);
+    }
     req.setTimeout(UPLOAD_TIMEOUT_MS, () => req.destroy(new Error("upload timed out")));
     // pipe() does not tear the source down when the destination dies, so close
     // the file handle explicitly on any request failure.

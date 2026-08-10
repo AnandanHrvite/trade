@@ -156,13 +156,15 @@ function scheduleNext() {
   if (_timer) clearTimeout(_timer);
   const wait = msUntilNextReportIST();
   _timer = setTimeout(async () => {
-    // The reschedule MUST survive a failed send. Without the catch, one rejection
-    // (a disk error reading the trade book, a Telegram throw) skipped
-    // scheduleNext() and silently killed the report for every remaining day of
-    // the process — the failure that hides all the later ones.
+    // The reschedule MUST survive a failed send. Without it, one rejection (a
+    // disk error reading the trade book, a Telegram throw) skipped scheduleNext()
+    // and silently killed the report for every remaining day of the process —
+    // the failure that hides all the later ones. `finally`, not just `catch`,
+    // because a rejection carrying no Error would make the catch body itself
+    // throw on `.message` and skip the reschedule all over again.
     try { await maybeSendForToday(); }
-    catch (err) { console.error(`[EOD] scheduled report failed: ${err.message}`); }
-    scheduleNext(); // reschedule for next day
+    catch (err) { console.error(`[EOD] scheduled report failed: ${(err && err.message) || err}`); }
+    finally { scheduleNext(); }  // reschedule for next day
   }, wait);
   // Allow process exit even if this timer is pending
   if (_timer.unref) _timer.unref();
