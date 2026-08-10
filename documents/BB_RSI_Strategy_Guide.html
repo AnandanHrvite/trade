@@ -486,6 +486,22 @@
   <p>This is the current, up-to-date design. The one big change to know about: the strategy's trend tool used to be something called <strong>Parabolic SAR (PSAR)</strong>. <strong>PSAR is gone.</strong> A single tool, <strong>SuperTrend</strong>, now does all the trend work by itself &mdash; it decides the direction, it sets the starting stop-loss line, and it fires the "the trend has turned, get out" exit. If you have read an older copy of this guide that mentions PSAR, ignore those parts: everything below describes V7.</p>
 </div>
 
+<!-- ── how to read the charts (plain-English key) ── -->
+<div class="tv-key" style="margin:18px 0 6px; border:1px solid #2b3648; border-left:4px solid #60a5fa; border-radius:10px; background:#101725; padding:14px 18px;">
+  <div style="font-weight:700; color:#e8eef8; font-size:0.95rem; margin-bottom:8px;">New to charts? Read this once and every picture below makes sense</div>
+  <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:8px 20px; font-size:0.84rem; line-height:1.55; color:#a9b6c9;">
+    <div><b style="color:#26a69a;">Green bar</b> &mdash; that slice of time ended <b>higher</b> than it started. Buyers won.</div>
+    <div><b style="color:#ef5350;">Red bar</b> &mdash; that slice of time ended <b>lower</b> than it started. Sellers won.</div>
+    <div><b style="color:#e8eef8;">The thin spike</b> above and below each bar is the highest and lowest price touched inside it.</div>
+    <div><b style="color:#26a69a;">&#9650; Triangle up</b> = the moment we <b>bought</b>. <b style="color:#ef5350;">&#9660; Triangle down</b> = the moment we <b>sold</b>.</div>
+    <div><b style="color:#fbbf24;">Yellow dot</b> = the candle that set off the signal &mdash; the thing the strategy was waiting for.</div>
+    <div><b style="color:#fbbf24;">Dashed line with a price tag</b> = a level that matters: a stop-loss, a target, or a floor under our profit.</div>
+    <div><b style="color:#94a3b8;">Shaded column</b> = the stretch of time we were actually holding the option.</div>
+    <div><b style="color:#7890c8;">Coloured lines</b> are the strategy's tools. The small legend under each chart names them.</div>
+  </div>
+  <div style="font-size:0.8rem; color:#7d8ba0; margin-top:9px;"><b style="color:#a9b6c9;">A word on "points".</b> Every price on these charts is the <b>index level itself</b> &mdash; not rupees, and not the price of the option you buy. So "+30 points" means the index moved 30 points our way. As a rough rule of thumb the option we buy gains a little over <b>half a point</b> for each point the index moves, and one lot is about 75 units &mdash; so a 30-point index move is roughly &#8377;1,200 on one lot before costs.</div>
+</div>
+
 <div class="tv-chart" id="bbr-session"></div>
 <p class="tv-cap"><b>A whole BB_RSI day &mdash; note how short the trade is.</b> For two hours the price wanders quietly <em>inside</em> the blue Bollinger band; there is nothing to do. At <b>11:10</b> a candle finally closes <em>above</em> the upper edge with SuperTrend green and RSI above 70 (yellow dot = the signal candle), the next candle crosses its close &rarr; <b>BUY CE at 23,791</b> (11:15). The move runs <b>+50 points</b> to a peak of 23,841 at 11:55. The profit lock had already armed at +25, and its floor sits at <b>half the peak gain</b> &mdash; 23,791 + 25 = <b>23,816</b>. At 12:05 price slips back to that floor and the trade is banked &rarr; <b>EXIT 23,816, +25 points</b>. Held for <b>50 minutes</b>, then back to waiting &mdash; BB_RSI is a scalper, not a trend rider. The rest of the day stays inside the band and takes no further trade.</p>
 
@@ -547,88 +563,8 @@
   <p>The middle line is the average price over the last 20 candles. The upper and lower bands sit one "standard deviation" away &mdash; a fancy phrase that just means "a typical amount of wiggle." Most charts use a width of 2; we use a tighter <strong>1</strong>, so the bands hug the price and a breakout registers sooner. When a candle <strong>closes above the upper band</strong>, that's the raw spark for a Call. <strong>Closing below the lower band</strong> is the spark for a Put.</p>
 </div>
 
-<div class="bb-chart">
-  <div class="bb-label upper">Upper band</div>
-  <div class="bb-label sma">20-candle average</div>
-  <div class="bb-label lower">Lower band</div>
-
-  <div class="bb-upper"></div>
-  <div class="bb-sma"></div>
-  <div class="bb-lower"></div>
-
-  <div class="candle bull" style="left:8%; bottom:38%; height:60px;">
-    <div class="wick" style="top:0; height:60px;"></div>
-    <div class="body" style="top:15px; height:30px;"></div>
-  </div>
-  <div class="candle bear" style="left:13%; bottom:42%; height:50px;">
-    <div class="wick" style="top:0; height:50px;"></div>
-    <div class="body" style="top:10px; height:28px;"></div>
-  </div>
-  <div class="candle bull" style="left:18%; bottom:40%; height:55px;">
-    <div class="wick" style="top:0; height:55px;"></div>
-    <div class="body" style="top:12px; height:30px;"></div>
-  </div>
-  <div class="candle bull" style="left:23%; bottom:44%; height:52px;">
-    <div class="wick" style="top:0; height:52px;"></div>
-    <div class="body" style="top:8px; height:32px;"></div>
-  </div>
-  <div class="candle bull" style="left:28%; bottom:48%; height:58px;">
-    <div class="wick" style="top:0; height:58px;"></div>
-    <div class="body" style="top:10px; height:35px;"></div>
-  </div>
-  <div class="candle bull" style="left:33%; bottom:52%; height:65px;">
-    <div class="wick" style="top:0; height:65px;"></div>
-    <div class="body" style="top:8px; height:40px;"></div>
-  </div>
-  <div class="candle bull" style="left:38%; bottom:56%; height:70px;">
-    <div class="wick" style="top:0; height:70px;"></div>
-    <div class="body" style="top:5px; height:45px;"></div>
-  </div>
-  <div class="signal-marker ce" style="left:34%; top:6%;">BUY CE</div>
-
-  <div class="candle bull" style="left:43%; bottom:58%; height:60px;">
-    <div class="wick" style="top:0; height:60px;"></div>
-    <div class="body" style="top:10px; height:35px;"></div>
-  </div>
-  <div class="candle bear" style="left:48%; bottom:54%; height:55px;">
-    <div class="wick" style="top:0; height:55px;"></div>
-    <div class="body" style="top:10px; height:30px;"></div>
-  </div>
-  <div class="candle bear" style="left:53%; bottom:48%; height:60px;">
-    <div class="wick" style="top:0; height:60px;"></div>
-    <div class="body" style="top:12px; height:32px;"></div>
-  </div>
-  <div class="candle bear" style="left:58%; bottom:42%; height:55px;">
-    <div class="wick" style="top:0; height:55px;"></div>
-    <div class="body" style="top:10px; height:28px;"></div>
-  </div>
-  <div class="candle bear" style="left:63%; bottom:36%; height:60px;">
-    <div class="wick" style="top:0; height:60px;"></div>
-    <div class="body" style="top:8px; height:35px;"></div>
-  </div>
-  <div class="candle bear" style="left:68%; bottom:30%; height:58px;">
-    <div class="wick" style="top:0; height:58px;"></div>
-    <div class="body" style="top:10px; height:30px;"></div>
-  </div>
-  <div class="candle bear" style="left:73%; bottom:20%; height:72px;">
-    <div class="wick" style="top:0; height:72px;"></div>
-    <div class="body" style="top:8px; height:45px;"></div>
-  </div>
-  <div class="signal-marker pe" style="left:70%; bottom:6%;">BUY PE</div>
-
-  <div class="candle bear" style="left:78%; bottom:22%; height:55px;">
-    <div class="wick" style="top:0; height:55px;"></div>
-    <div class="body" style="top:12px; height:28px;"></div>
-  </div>
-  <div class="candle bull" style="left:83%; bottom:26%; height:50px;">
-    <div class="wick" style="top:0; height:50px;"></div>
-    <div class="body" style="top:10px; height:28px;"></div>
-  </div>
-  <div class="candle bull" style="left:88%; bottom:32%; height:48px;">
-    <div class="wick" style="top:0; height:48px;"></div>
-    <div class="body" style="top:10px; height:26px;"></div>
-  </div>
-</div>
+<div class="tv-chart" id="bbr-bands"></div>
+<p class="tv-cap"><b>All three tools on one screen &mdash; read it top to bottom.</b> The blue channel is the Bollinger Band, the green/red line hugging the candles is SuperTrend, and the purple line in the strip underneath is RSI. For the first two hours price sits <em>inside</em> the channel and RSI drifts around the middle &mdash; nothing to do. Then a candle <b>closes above the top edge</b> (first yellow dot) at the same moment SuperTrend is green underneath the price and RSI has pushed past <b>70</b>: three lights, so a Call is armed. Later the day rolls over, and the mirror image happens &mdash; a candle <b>closes below the bottom edge</b> with SuperTrend now red above the price and RSI under <b>40</b>, arming a Put. Everything in between is the strategy waiting.</p>
 
 <!-- ── RSI ── -->
 <h3 class="blue">2. RSI &mdash; is there real force behind the push?</h3>
@@ -664,36 +600,8 @@
   <p style="margin-top:8px; font-size:0.9rem;"><strong>This is the big V7 change.</strong> Older versions used PSAR for these jobs. PSAR has been removed from the code entirely; SuperTrend is always on and there is no toggle to switch trend tools any more.</p>
 </div>
 
-<div class="psar-chart">
-  <div style="position:absolute; left:5%; top:70%; width:12%; height:3px; background:var(--green); border-radius:2px; transform:rotate(-8deg);"></div>
-  <div style="position:absolute; left:16%; top:62%; width:12%; height:3px; background:var(--green); border-radius:2px; transform:rotate(-10deg);"></div>
-  <div style="position:absolute; left:27%; top:50%; width:12%; height:3px; background:var(--green); border-radius:2px; transform:rotate(-8deg);"></div>
-  <div style="position:absolute; left:38%; top:40%; width:12%; height:3px; background:var(--green); border-radius:2px; transform:rotate(-5deg);"></div>
-  <div style="position:absolute; left:49%; top:35%; width:12%; height:3px; background:var(--green); border-radius:2px; transform:rotate(-2deg);"></div>
-  <div style="position:absolute; left:60%; top:34%; width:10%; height:3px; background:var(--yellow); border-radius:2px; transform:rotate(3deg);"></div>
-  <div style="position:absolute; left:69%; top:38%; width:10%; height:3px; background:var(--red); border-radius:2px; transform:rotate(8deg);"></div>
-  <div style="position:absolute; left:78%; top:46%; width:10%; height:3px; background:var(--red); border-radius:2px; transform:rotate(10deg);"></div>
-
-  <!-- SuperTrend line below price (bullish) -->
-  <div class="psar-dot bull" style="left:8%; top:82%;"></div>
-  <div class="psar-dot bull" style="left:20%; top:74%;"></div>
-  <div class="psar-dot bull" style="left:32%; top:63%;"></div>
-  <div class="psar-dot bull" style="left:44%; top:52%;"></div>
-  <div class="psar-dot bull" style="left:56%; top:45%;"></div>
-
-  <!-- SuperTrend line above price (bearish, after flip) -->
-  <div class="psar-dot bear" style="left:68%; top:26%;"></div>
-  <div class="psar-dot bear" style="left:80%; top:32%;"></div>
-
-  <div style="position:absolute; left:16%; top:6%; font-size:0.7rem; color:var(--green); font-weight:600;">Line BELOW price = up-trend (buy CE side)</div>
-  <div style="position:absolute; left:42%; top:14%; font-size:0.65rem; color:var(--text2);">SL set here at entry; flip = exit</div>
-  <div style="position:absolute; right:8%; top:6%; font-size:0.7rem; color:var(--red); font-weight:600;">FLIP = EXIT</div>
-  <div style="position:absolute; left:62%; top:24%; font-size:1.2rem; color:var(--yellow);">&#8593;</div>
-  <div style="position:absolute; left:58%; bottom:8%; font-size:0.65rem; color:var(--yellow); font-weight:600;">Trend flips to the other side</div>
-
-  <div style="position:absolute; left:6%; bottom:8%; font-size:0.7rem; color:var(--cyan); font-weight:600;">ENTRY</div>
-  <div style="position:absolute; left:6%; top:72%; width:1px; height:12%; border-left:2px dashed var(--cyan);"></div>
-</div>
+<div class="tv-chart" id="bbr-supertrend"></div>
+<p class="tv-cap"><b>What a SuperTrend flip actually looks like.</b> On the left the line is <span style="color:var(--green);">green and running underneath the candles</span> &mdash; that is an up-trend, and only Calls are allowed. Price stalls, rolls over, and at the yellow marker the line <b>jumps to the other side of the price and turns red</b>. That single jump is the flip: the trend has changed its mind. If we were holding a Call, that candle's close sells it. From there the line stays <span style="color:var(--red);">red above the price</span> and only Puts are allowed. Notice the line never crosses through the candles &mdash; it teleports from one side to the other, which is why the flip is so easy to spot.</p>
 
 <div class="card card-purple">
   <h4 class="purple">Before any of this runs</h4>
@@ -728,6 +636,9 @@
   </div>
 </div>
 
+<div class="tv-chart" id="bbr-pe"></div>
+<p class="tv-cap"><b>The Put side, so you can see both halves.</b> Everything is the same picture turned upside down. Price grinds sideways, then a candle <b>closes below the bottom edge</b> of the channel (yellow dot) while SuperTrend is red above the price and RSI has dropped under <b>40</b>. The next candle keeps falling, so we buy an <b>ATM Put</b>. Price drops about <b>33 points</b> at its best, which arms the profit lock and sets a floor half-way back (the amber line). Price bounces to that floor and we take the money &mdash; roughly <b>+17 points</b>, in and out inside 15 minutes. If you understand the Call chart above, you already understand this one; nothing new is happening.</p>
+
 <div class="card card-yellow">
   <h4 style="color:var(--yellow);">Why the "not too far away" check matters (step 4)</h4>
   <p>Right after SuperTrend flips, its line can sit a very long way from the price &mdash; sometimes 100+ points. Since that line is our starting stop-loss, a far-away line means a huge amount of room to lose. So the strategy simply <strong>skips</strong> any entry where the line is more than <strong>50 points</strong> from the close (setting <code>BB_RSI_MAX_ENTRY_SL_PTS</code>). It caps the risk without needing a made-up tight stop. Set it to <code>0</code> to turn the check off.</p>
@@ -756,6 +667,9 @@
   </ul>
   <p>If both hold, we buy at that second candle's closing price. If the next candle stalls or slips back inside the band, the spring is released and nothing happens &mdash; a fake poke costs us nothing. (Turning <code>BB_RSI_CONFIRM_OUTSIDE_BAND</code> off makes it enter the moment price crosses the arming level during the next bar; turning <code>BB_RSI_CONFIRM_CANDLE_ENABLED</code> off buys straight on the arming candle with no wait. The defaults are the careful setting.)</p>
 </div>
+
+<div class="tv-chart" id="bbr-noconfirm"></div>
+<p class="tv-cap"><b>The trade that never happened &mdash; and this is the point of the rule.</b> A candle closes above the top band with everything else agreeing, so the trade is <b>armed</b> (yellow dot). The amber line is the bar the next candle has to clear: it must close <em>above</em> that level <em>and</em> still be outside the band. Instead the next candle opens a little higher, gets sold hard, and closes <b>12 points lower</b> &mdash; back inside the channel. Two failures out of two, so the spring is released and <b>we buy nothing</b>. This poke cost us exactly zero. Without this one-candle wait we'd have bought the high of the move and been in a loser immediately.</p>
 
 <div class="tv-chart" id="bbr-entry"></div>
 <p class="tv-cap"><b>A band-break trade, start to finish.</b> Price closes above the upper Bollinger Band (yellow dot = the arming candle). The <em>next</em> candle pushes further and stays outside &rarr; <b>BUY CE at 23,650</b>. The move runs for a few candles, then a candle closes back <em>inside</em> the band &mdash; the breakout has failed, so the band-re-entry exit fires &rarr; <b>EXIT at 23,634</b>. (Here SuperTrend never flipped and the 30-point hard stop was never hit; the band re-entry got us out first.)</p>
@@ -829,6 +743,12 @@
 
 <div class="tv-chart" id="bbr-exit"></div>
 <p class="tv-cap"><b>The exit stack in one picture.</b> After the buy at 23,836 the move ran to a best point of 23,908 &mdash; <b>+72 points</b>. The profit lock had already armed at +25, and its floor ratchets up to 50% of the peak, i.e. <b>+36 points = 23,872</b>. When price slipped back to that floor we banked it &rarr; <b>EXIT 23,872, +36 points</b>. The slower band-re-entry and SuperTrend-flip exits (dashed) would not have fired until several candles later, around 23,848.</p>
+
+<div class="tv-chart" id="bbr-stop"></div>
+<p class="tv-cap"><b>A losing trade, and the brake that stops it getting worse.</b> The break looked fine and we bought a Call at <b>23,731</b>. One candle later the whole move unravelled and price went straight back down through the band, through the average, and kept going. The red line is the hard stop &mdash; simply <b>30 points below where we bought</b>, at 23,701. Price touches it and we are out, no argument, no waiting for the candle to finish. Look at where price ended up afterwards: without that brake this trade keeps bleeding. That is the entire job of the hard stop &mdash; it is not there to make money, it is there to stop one bad trade ruining a week.</p>
+
+<div class="tv-chart" id="bbr-runner"></div>
+<p class="tv-cap"><b>The honest trade-off &mdash; what the profit lock costs you.</b> Same rules, but this time NIFTY went on a genuine trend run. We bought at <b>23,340</b>, price ran up about 31 points, the lock armed and set its floor half-way back at <b>23,355</b>, price dipped to it, and we were out with <b>+15 points</b> after 15 minutes. Then look what happened: the trend kept climbing another <b>133 points</b> (the grey section) while we sat and watched. This is not a bug &mdash; it is the deliberate design. BB_RSI takes lots of small, quick, high-probability bites and accepts that it will never catch the big move. If you want the big move, that is what the trend strategies are for.</p>
 
 <div class="note">
   <strong>Real numbers &mdash; how the profit lock ratchets.</strong>
@@ -1164,10 +1084,12 @@
 <!-- ══════════════════════════════════════════════════════ -->
 <script>
 /* ============================================================================
- * TVChart v2 — dependency-free TradingView-style candlestick renderer.
- * Adds: OHLC header, subtitle, bottom time axis, last-price tag/line,
- *       denser-candle support. Backward-compatible spec from v1.
+ * TVChart v3 — dependency-free TradingView-style candlestick renderer.
+ * v2 features: OHLC header, subtitle, bottom time axis, last-price tag/line.
+ * v3 adds:   hlines (labelled price levels), shades (vertical highlight spans),
+ *            pane (RSI / volume / line sub-panel under the price chart).
  * Pure buildSVG(spec) -> string (no DOM), never throws on bad data.
+ * Backward-compatible with every v1/v2 spec.
  * ==========================================================================*/
 (function (global) {
   "use strict";
@@ -1182,19 +1104,43 @@
     (spec.overlays||[]).forEach(function(o){ (o.data||[]).forEach(eat); });
     (spec.bands||[]).forEach(function(b){ (b.upper||[]).forEach(eat); (b.lower||[]).forEach(eat); (b.mid||[]).forEach(eat); });
     (spec.markers||[]).forEach(function(m){ if(isNum(m.price)) eat(m.price); });
+    (spec.hlines||[]).forEach(function(h){ eat(h.price); });
+    (spec.zones||[]).forEach(function(z){ eat(z.top); eat(z.bottom); });
     if(!isFinite(lo)||!isFinite(hi)){ lo=0; hi=1; }
     if(lo===hi){ lo-=1; hi+=1; }
     var pad=(hi-lo)*0.10; return { lo:lo-pad, hi:hi+pad };
+  }
+
+  // Build a path that starts a fresh subpath after every gap. Indicator series
+  // are null until they have enough history (EMA/BB/RSI warm-up), and a path
+  // that opens with "L" is invalid — that used to drop the whole line.
+  function linePath(data, X, Y) {
+    var d = "", pen = false;
+    for (var i=0;i<data.length;i++){
+      if(!isNum(data[i])){ pen = false; continue; }
+      d += (pen ? "L" : "M") + X(i) + " " + Y(data[i]) + " "; pen = true;
+    }
+    return d;
   }
 
   function buildSVG(spec) {
     spec = spec||{};
     var candles = spec.candles||[]; var n = candles.length;
     if(!n) return '<div class="tv-empty">chart data unavailable</div>';
-    var W=880, H=440, padL=6, padR=74, padT=52, padB=40;
-    var rng=priceRange(spec); var plotW=W-padL-padR, plotH=H-padT-padB;
+
+    var pane = null;
+    if (spec.pane && spec.pane.data && spec.pane.data.length) pane = spec.pane;
+    var paneH  = pane ? (isNum(pane.height) ? pane.height : 92) : 0;
+    var paneGap = pane ? 12 : 0;
+
+    var W=880, padL=6, padR=74, padT=52, padB=40, plotH=348;
+    var H = padT + plotH + paneGap + paneH + padB;
+    var rng=priceRange(spec); var plotW=W-padL-padR;
     var slot=plotW/n; var cw=Math.max(2,Math.min(20,slot*0.66)); var wickW=Math.max(0.8,cw*0.12);
     var up="#26a69a",down="#ef5350",grid="#1b2636",axis="#5a7499",txt="#e8eef8",mut="#8b98ac";
+    var plotBot = padT+plotH;
+    var paneTop = plotBot+paneGap, paneBot = paneTop+paneH;
+    var axisBot = pane ? paneBot : plotBot;
     function X(i){ return padL+slot*(i+0.5); }
     function Y(p){ return padT+(rng.hi-p)/(rng.hi-rng.lo)*plotH; }
     var out=[];
@@ -1210,8 +1156,15 @@
     var times = spec.times || [];
     var step = Math.max(1, Math.round(n/7));
     for(var t=0;t<n;t+=step){ var tx=X(t);
-      out.push('<line x1="'+tx+'" y1="'+padT+'" x2="'+tx+'" y2="'+(H-padB)+'" stroke="'+grid+'" stroke-width="0.7" opacity="0.5"/>');
-      if(times[t]) out.push('<text x="'+tx+'" y="'+(H-padB+15)+'" fill="'+axis+'" font-size="10" text-anchor="middle" font-family="system-ui">'+esc(times[t])+'</text>'); }
+      out.push('<line x1="'+tx+'" y1="'+padT+'" x2="'+tx+'" y2="'+axisBot+'" stroke="'+grid+'" stroke-width="0.7" opacity="0.5"/>');
+      if(times[t]) out.push('<text x="'+tx+'" y="'+(axisBot+15)+'" fill="'+axis+'" font-size="10" text-anchor="middle" font-family="system-ui">'+esc(times[t])+'</text>'); }
+
+    // vertical highlight spans (e.g. "position held", "no-trade window")
+    (spec.shades||[]).forEach(function(s){ if(!isNum(s.from)||!isNum(s.to)) return;
+      var sx=X(s.from)-slot/2, sw=Math.max(1,X(s.to)-X(s.from)+slot);
+      out.push('<rect x="'+sx+'" y="'+padT+'" width="'+sw+'" height="'+plotH+'" fill="'+(s.color||"rgba(96,165,250,0.07)")+'"/>');
+      if(s.label){ var sly = s.labelBottom ? (padT+plotH-7) : (padT+13);
+        out.push('<text x="'+(sx+sw/2)+'" y="'+sly+'" fill="'+(s.text||"#7c93b5")+'" font-size="10" text-anchor="middle" font-family="system-ui">'+esc(s.label)+'</text>'); } });
 
     // zones (e.g. ORB opening-range box)
     (spec.zones||[]).forEach(function(z){ if(!isNum(z.from)||!isNum(z.to)) return;
@@ -1224,10 +1177,23 @@
       if(u.length&&l.length){ var pts=[]; for(var i=0;i<u.length;i++) if(isNum(u[i])) pts.push(X(i)+","+Y(u[i]));
         for(var j=l.length-1;j>=0;j--) if(isNum(l[j])) pts.push(X(j)+","+Y(l[j]));
         out.push('<polygon points="'+pts.join(" ")+'" fill="'+(b.fill||"rgba(120,144,200,0.08)")+'"/>');
-        [u,l].forEach(function(line){ var d=line.map(function(v,i){ return (isNum(v)?(i?"L":"M")+X(i)+" "+Y(v):""); }).join(" ");
-          out.push('<path d="'+d+'" fill="none" stroke="'+(b.color||"#a78bfa")+'" stroke-width="1.3" opacity="0.85"/>'); }); }
-      if(b.mid){ var dm=b.mid.map(function(v,i){ return (isNum(v)?(i?"L":"M")+X(i)+" "+Y(v):""); }).join(" ");
-        out.push('<path d="'+dm+'" fill="none" stroke="'+(b.color||"#a78bfa")+'" stroke-width="1" stroke-dasharray="2 3" opacity="0.7"/>'); } });
+        [u,l].forEach(function(line){
+          out.push('<path d="'+linePath(line,X,Y)+'" fill="none" stroke="'+(b.color||"#a78bfa")+'" stroke-width="1.3" opacity="0.85"/>'); }); }
+      if(b.mid){
+        out.push('<path d="'+linePath(b.mid,X,Y)+'" fill="none" stroke="'+(b.color||"#a78bfa")+'" stroke-width="1" stroke-dasharray="2 3" opacity="0.7"/>'); } });
+
+    // labelled horizontal price levels (stop / target / neckline / OR high-low)
+    (spec.hlines||[]).forEach(function(hl){ if(!isNum(hl.price)) return;
+      var hy=Y(hl.price), hc=hl.color||"#fbbf24";
+      out.push('<line x1="'+padL+'" y1="'+hy+'" x2="'+(W-padR)+'" y2="'+hy+'" stroke="'+hc+'" stroke-width="'+(hl.width||1.2)+'" '+(hl.solid?"":'stroke-dasharray="6 4" ')+'opacity="0.9"/>');
+      out.push('<rect x="'+(W-padR)+'" y="'+(hy-8)+'" width="'+padR+'" height="16" fill="'+hc+'" opacity="0.92"/>');
+      out.push('<text x="'+(W-padR+5)+'" y="'+(hy+3.5)+'" fill="#0d1421" font-size="10" font-weight="700" font-family="monospace">'+hl.price.toFixed(0)+'</text>');
+      if(hl.label){ var lw=hl.label.length*5.9+10;
+        // labelAt (0..1) slides the tag along the line so it can dodge markers
+        var lx1=padL+3+(isNum(hl.labelAt)?hl.labelAt:0)*(W-padR-padL-lw-6);
+        lx1=Math.max(padL+3,Math.min(lx1,W-padR-lw-3));
+        out.push('<rect x="'+lx1+'" y="'+(hy-15)+'" width="'+lw+'" height="14" rx="3" fill="'+hc+'" opacity="0.92"/>');
+        out.push('<text x="'+(lx1+5)+'" y="'+(hy-4.5)+'" fill="#0d1421" font-size="9.8" font-weight="700" font-family="system-ui">'+esc(hl.label)+'</text>'); } });
 
     // candlesticks
     candles.forEach(function(c,i){ if(!c||!isNum(c[0])||!isNum(c[3])) return;
@@ -1237,8 +1203,8 @@
       out.push('<rect x="'+(cx-cw/2)+'" y="'+top+'" width="'+cw+'" height="'+bh+'" fill="'+col+'"/>'); });
 
     // overlay indicator lines (EMA / VWAP / MAs)
-    (spec.overlays||[]).forEach(function(ov){ var d=(ov.data||[]).map(function(v,i){ return (isNum(v)?(i?"L":"M")+X(i)+" "+Y(v):""); }).join(" ");
-      out.push('<path d="'+d+'" fill="none" stroke="'+(ov.color||"#fbbf24")+'" stroke-width="'+(ov.width||1.6)+'" '+(ov.dash?'stroke-dasharray="5 3" ':"")+'opacity="0.95"/>'); });
+    (spec.overlays||[]).forEach(function(ov){
+      out.push('<path d="'+linePath(ov.data||[],X,Y)+'" fill="none" stroke="'+(ov.color||"#fbbf24")+'" stroke-width="'+(ov.width||1.6)+'" '+(ov.dash?'stroke-dasharray="5 3" ':"")+'opacity="0.95"/>'); });
 
     // last-price dashed line + right-axis tag (TradingView style)
     if(spec.lastPriceTag !== false){ var last=candles[n-1]; if(last&&isNum(last[3])){ var lp=last[3], ly=Y(lp);
@@ -1249,23 +1215,61 @@
 
     // markers (buy / exit / dot)
     (spec.markers||[]).forEach(function(m){ if(!isNum(m.i)) return; var mx=X(m.i);
-      var my=isNum(m.price)?Y(m.price):(m.type==="buy"?H-padB-14:padT+14);
+      var my=isNum(m.price)?Y(m.price):(m.type==="buy"?plotBot-14:padT+14);
       var isBuy=m.type==="buy", isExit=m.type==="exit"; var col=m.color||(isBuy?"#26a69a":isExit?"#ef5350":"#fbbf24");
       if(isBuy||isExit){ var ay=isBuy?my+18:my-18, tri=isBuy?(mx-6)+","+ay+" "+(mx+6)+","+ay+" "+mx+","+(ay-10):(mx-6)+","+ay+" "+(mx+6)+","+ay+" "+mx+","+(ay+10);
         out.push('<polygon points="'+tri+'" fill="'+col+'"/>'); }
       else out.push('<circle cx="'+mx+'" cy="'+my+'" r="3.5" fill="'+col+'" stroke="#0d1421" stroke-width="1"/>');
       if(m.text){ var lblY=isBuy?my+34:(isExit?my-26:my-10); var tw=m.text.length*6.2+10;
-        out.push('<rect x="'+(mx-tw/2)+'" y="'+(lblY-11)+'" width="'+tw+'" height="15" rx="3" fill="'+col+'" opacity="0.94"/>');
-        out.push('<text x="'+mx+'" y="'+lblY+'" fill="#0d1421" font-size="10.5" font-weight="700" text-anchor="middle" font-family="system-ui">'+esc(m.text)+'</text>'); } });
+        var lx0=Math.max(padL+1,Math.min(mx-tw/2,W-padR-tw-1));
+        out.push('<rect x="'+lx0+'" y="'+(lblY-11)+'" width="'+tw+'" height="15" rx="3" fill="'+col+'" opacity="0.94"/>');
+        out.push('<text x="'+(lx0+tw/2)+'" y="'+lblY+'" fill="#0d1421" font-size="10.5" font-weight="700" text-anchor="middle" font-family="system-ui">'+esc(m.text)+'</text>'); } });
+
+    // ── sub-panel: RSI / volume / any line series ─────────────────────────
+    if(pane){
+      var pd=pane.data||[], pType=pane.type||"line";
+      var plo=Infinity, phi=-Infinity;
+      pd.forEach(function(v){ if(isNum(v)){ if(v>phi)phi=v; if(v<plo)plo=v; } });
+      if(pType==="rsi"){ plo=0; phi=100; }
+      if(pType==="volume"){ plo=0; }
+      if(isNum(pane.min)) plo=pane.min;
+      if(isNum(pane.max)) phi=pane.max;
+      if(!isFinite(plo)||!isFinite(phi)){ plo=0; phi=1; }
+      if(plo===phi){ plo-=1; phi+=1; }
+      var pPad=(pType==="rsi"||pType==="volume")?0:(phi-plo)*0.12;
+      var pLo=plo-pPad, pHi=phi+pPad;
+      function PY(v){ return paneTop+(pHi-v)/(pHi-pLo)*paneH; }
+      out.push('<rect x="'+padL+'" y="'+paneTop+'" width="'+(W-padR-padL)+'" height="'+paneH+'" fill="#0b111c"/>');
+      out.push('<line x1="'+padL+'" y1="'+paneTop+'" x2="'+(W-padR)+'" y2="'+paneTop+'" stroke="'+grid+'" stroke-width="1"/>');
+
+      // guide levels inside the pane (e.g. RSI 70 / 40)
+      (pane.levels||[]).forEach(function(lv){ var v=isNum(lv)?lv:lv.value; if(!isNum(v)) return;
+        var c=(lv&&lv.color)||"#3f5570", ly2=PY(v);
+        out.push('<line x1="'+padL+'" y1="'+ly2+'" x2="'+(W-padR)+'" y2="'+ly2+'" stroke="'+c+'" stroke-width="1" stroke-dasharray="4 3" opacity="0.8"/>');
+        out.push('<text x="'+(W-padR+6)+'" y="'+(ly2+3.5)+'" fill="'+c+'" font-size="10" font-family="monospace">'+v+'</text>'); });
+
+      if(pType==="volume"){
+        var bw=Math.max(1.5,slot*0.6);
+        pd.forEach(function(v,i){ if(!isNum(v)) return; var c2=candles[i];
+          var col2=(c2&&isNum(c2[0])&&isNum(c2[3])&&c2[3]>=c2[0])?"rgba(38,166,154,0.55)":"rgba(239,83,80,0.55)";
+          if(pane.colors&&pane.colors[i]) col2=pane.colors[i];
+          var by=PY(v); out.push('<rect x="'+(X(i)-bw/2)+'" y="'+by+'" width="'+bw+'" height="'+Math.max(0.5,paneBot-by)+'" fill="'+col2+'"/>'); });
+      } else {
+        out.push('<path d="'+linePath(pd,X,PY)+'" fill="none" stroke="'+(pane.color||"#c084fc")+'" stroke-width="1.6"/>');
+      }
+      (pane.markers||[]).forEach(function(m){ if(!isNum(m.i)||!isNum(m.value)) return;
+        out.push('<circle cx="'+X(m.i)+'" cy="'+PY(m.value)+'" r="3.2" fill="'+(m.color||"#fbbf24")+'" stroke="#0b111c" stroke-width="1"/>'); });
+      if(pane.label) out.push('<text x="'+(padL+5)+'" y="'+(paneTop+13)+'" fill="'+mut+'" font-size="10.5" font-weight="600" font-family="system-ui">'+esc(pane.label)+'</text>');
+    }
 
     // header: title, subtitle, and OHLC readout (TradingView top-left)
     out.push('<text x="'+padL+'" y="17" fill="'+txt+'" font-size="13" font-weight="700" font-family="system-ui">'+esc(spec.title||"")+'</text>');
     if(spec.subtitle) out.push('<text x="'+padL+'" y="32" fill="'+mut+'" font-size="10.5" font-family="system-ui">'+esc(spec.subtitle)+'</text>');
     if(spec.ohlc !== false){ var f=candles[n-1]; if(f){ var oc=(isNum(f[0])&&isNum(f[3])&&f[3]>=f[0])?up:down;
-      var parts=[["O",f[0]],["H",f[1]],["L",f[2]],["C",f[3]]], hx=spec.subtitle?padL:padL, hy=spec.subtitle?46:32;
+      var parts=[["O",f[0]],["H",f[1]],["L",f[2]],["C",f[3]]], hy2=spec.subtitle?46:32;
       var lx=padL;
-      parts.forEach(function(p){ out.push('<text x="'+lx+'" y="'+hy+'" font-size="10.5" font-family="monospace" fill="'+mut+'">'+p[0]+'</text>');
-        lx+=11; out.push('<text x="'+lx+'" y="'+hy+'" font-size="10.5" font-family="monospace" fill="'+oc+'">'+fmt(p[1])+'</text>'); lx+=(fmt(p[1]).length*6.4)+10; }); } }
+      parts.forEach(function(p){ out.push('<text x="'+lx+'" y="'+hy2+'" font-size="10.5" font-family="monospace" fill="'+mut+'">'+p[0]+'</text>');
+        lx+=11; out.push('<text x="'+lx+'" y="'+hy2+'" font-size="10.5" font-family="monospace" fill="'+oc+'">'+fmt(p[1])+'</text>'); lx+=(fmt(p[1]).length*6.4)+10; }); } }
 
     // legend (bottom-left, above time axis)
     var lgx=padL, lgy=H-4;
@@ -1338,6 +1342,12 @@
       legend: [{ color:"#7890c8", label:"Bollinger Band" }, { color:"#fbbf24", label:"profit-lock floor" },
         { color:"#26a69a", label:"BUY / peak" }, { color:"#ef5350", label:"EXIT" }]
     });
+    TVChart.render("bbr-bands", {"title":"NIFTY 50 · 5m — the three tools that must agree","subtitle":"Bollinger 20/1 (blue channel) · SuperTrend 10/3 (green = up, red = down) · RSI 14 below","times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55","12:00","12:05","12:10","12:15","12:20","12:25","12:30","12:35","12:40","12:45","12:50","12:55","13:00","13:05","13:10","13:15","13:20","13:25","13:30"],"candles":[[23480,23487.8,23475.84,23483.24],[23483.24,23492.16,23479.56,23486.49],[23486.49,23492.93,23479.43,23483.31],[23483.31,23488.42,23478.5,23482.43],[23482.43,23488.77,23477.12,23480.91],[23480.91,23483.76,23475.84,23479.41],[23479.41,23482.46,23475.04,23476.98],[23476.98,23481.57,23473.77,23480.22],[23480.22,23485.49,23477.48,23480.46],[23480.46,23486.64,23477.98,23482.63],[23482.63,23487.62,23476.97,23480.53],[23480.53,23487.37,23478.14,23483.99],[23483.99,23485.99,23480.88,23482.23],[23482.23,23485.39,23478.68,23483.14],[23483.14,23490.53,23481.15,23485.74],[23485.74,23491.78,23477.66,23483.71],[23483.71,23489.29,23477.38,23484.9],[23484.9,23488.25,23480.38,23483.62],[23483.62,23490.81,23480.58,23487.44],[23487.44,23495.83,23485.34,23491.6],[23491.6,23494.97,23485.14,23491.07],[23491.07,23499.19,23488.84,23493.03],[23493.03,23510.66,23491.03,23506.81],[23506.81,23524.4,23501.04,23520.47],[23520.47,23533.52,23516.91,23527.83],[23527.83,23540.23,23524.59,23535.01],[23535.01,23556.01,23528.65,23549.22],[23549.22,23562.3,23545.1,23558.52],[23558.52,23576.4,23553.93,23565.75],[23565.75,23569.79,23558.92,23564.46],[23564.46,23569.79,23560.91,23564.26],[23564.26,23566.37,23560.8,23563.93],[23563.93,23574.06,23560.11,23569.64],[23569.64,23578.89,23566.65,23572.89],[23572.89,23579.93,23564.11,23571.71],[23571.71,23575.86,23569.73,23572.29],[23572.29,23577.21,23565.14,23570.13],[23570.13,23572.11,23560.37,23562.3],[23562.3,23564.51,23556.92,23559.88],[23559.88,23566.26,23548.93,23556.43],[23556.43,23559.64,23543.19,23549.65],[23549.65,23554.2,23531.33,23535.36],[23535.36,23537.38,23523.1,23526.35],[23526.35,23531.9,23509.11,23514.63],[23514.63,23517.68,23497.45,23502.95],[23502.95,23506.62,23488.04,23496.89],[23496.89,23504.85,23484.15,23487.81],[23487.81,23495.15,23473.82,23480.47],[23480.47,23483.33,23474.5,23477.97],[23477.97,23482.86,23474.99,23478.07],[23478.07,23485.65,23472.79,23480.42],[23480.42,23484.38,23475.08,23478.64]],"bands":[{"upper":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,23486.26,23487.1,23487.95,23491.48,23496.96,23502.58,23508.46,23515.86,23523.63,23531.42,23538.02,23543.88,23549.1,23554.46,23559.64,23564.12,23568.11,23571.32,23573.19,23574.39,23574.9,23574.23,23572.37,23571.23,23571.59,23572.96,23574.3,23575.09,23574.85,23573.26,23571.03,23568.15,23564.81],"mid":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,23483.15,23483.54,23483.87,23485.04,23486.94,23489.29,23492.07,23495.68,23499.6,23503.86,23507.95,23512.14,23516.14,23520.51,23525,23529.29,23533.72,23537.98,23541.92,23545.54,23548.78,23551.71,23553.83,23554.8,23554.51,23553.27,23551.36,23548.29,23544.39,23540,23535.68,23531.49,23527.22],"lower":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,23480.04,23479.98,23479.79,23478.6,23476.92,23476,23475.68,23475.5,23475.57,23476.3,23477.88,23480.4,23483.18,23486.56,23490.36,23494.46,23499.33,23504.64,23510.65,23516.69,23522.66,23529.19,23535.29,23538.37,23537.43,23533.58,23528.42,23521.49,23513.93,23506.74,23500.33,23494.83,23489.63],"color":"#7890c8","fill":"rgba(120,144,200,0.10)"}],"overlays":[{"name":"SuperTrend up","color":"#26a69a","width":1.9,"data":[null,null,null,null,null,null,null,null,null,23452.49,23452.49,23452.94,23455.09,23455.09,23458.24,23458.24,23458.24,23458.24,23458.24,23461.09,23461.09,23464.35,23468.27,23476.39,23487.54,23493.8,23499.37,23509.87,23519,23519.54,23522.36,23523.21,23526.56,23532.63,23532.63,23534.19,23534.19,23534.19,23534.19,23534.19,23534.19,23534.19,null,null,null,null,null,null,null,null,null,null]},{"name":"SuperTrend down","color":"#ef5350","width":1.9,"data":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,23572.45,23565.33,23553.98,23544.67,23543.34,23534.83,23526.89,23524.44,23524.04,23522.87]}],"markers":[{"i":22,"type":"dot","color":"#fbbf24","price":23506.81,"text":"closes ABOVE top band"},{"i":43,"type":"dot","color":"#fbbf24","price":23514.63,"text":"closes BELOW bottom band"}],"pane":{"type":"rsi","label":"RSI 14","color":"#c084fc","data":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,54.27,50.5,52.58,50.14,56.62,62.35,61.24,63.81,75.9,82.24,84.59,86.47,89.26,90.63,91.53,89.87,89.6,89.12,90.1,90.62,88.8,88.92,85.31,73.65,70.45,66.03,58.31,46.07,40.32,34.32,29.6,27.49,24.65,22.61,21.95,22.05,24.46,23.86],"levels":[{"value":70,"color":"#26a69a"},{"value":40,"color":"#ef5350"}],"markers":[{"i":22,"value":75.9,"color":"#26a69a"},{"i":43,"value":34.32,"color":"#ef5350"}]},"legend":[{"color":"#7890c8","label":"Bollinger 20/1"},{"color":"#26a69a","label":"SuperTrend up"},{"color":"#ef5350","label":"SuperTrend down"},{"color":"#c084fc","label":"RSI 14"}]});
+    TVChart.render("bbr-supertrend", {"title":"SuperTrend (10, 3) — the line flips sides when the trend turns","subtitle":"Line UNDER price = up-trend, buy Calls · line OVER price = down-trend, buy Puts","times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55","12:00"],"candles":[[23600,23607,23595.33,23603.53],[23603.53,23619.65,23599.77,23615.41],[23615.41,23626.53,23609.74,23623.17],[23623.17,23635.65,23620.99,23631.36],[23631.36,23640.64,23625.38,23635.22],[23635.22,23644.11,23633.32,23642.43],[23642.43,23653.13,23637.5,23650.9],[23650.9,23665.69,23644.73,23656.33],[23656.33,23665.64,23651.61,23660.72],[23660.72,23668.99,23655.45,23663.73],[23663.73,23673.82,23660.69,23671.17],[23671.17,23684.02,23668.6,23681.81],[23681.81,23695.72,23677.45,23689.5],[23689.5,23699.22,23682.8,23693.43],[23693.43,23706.28,23691.23,23704.43],[23704.43,23713.78,23701.92,23708.73],[23708.73,23711.38,23706.51,23709.97],[23709.97,23716.07,23702.31,23712.05],[23712.05,23719.53,23708.41,23714.17],[23714.17,23717.97,23706.39,23710.49],[23710.49,23715.13,23694.89,23701.39],[23701.39,23704.15,23691.03,23693.45],[23693.45,23700.43,23681.37,23689.05],[23689.05,23694.9,23679.87,23681.94],[23681.94,23687.64,23669,23674.32],[23674.32,23682.73,23665.25,23668.9],[23668.9,23677.93,23656.52,23664.1],[23664.1,23670.35,23641.63,23651.11],[23651.11,23653.89,23637.65,23643],[23643,23649.09,23636.61,23639.41],[23639.41,23648.55,23618.94,23626.14],[23626.14,23633.28,23612.42,23619.79],[23619.79,23623.14,23608.61,23612.24],[23612.24,23617.54,23593.51,23599.3]],"overlays":[{"name":"SuperTrend up","color":"#26a69a","width":1.9,"data":[null,null,null,null,null,null,null,null,null,23616.26,23621.96,23630.92,23640.24,23644.39,23652.25,23662.46,23666.62,23666.98,23672.63,23672.63,23672.63,23672.63,23672.63,23672.63,23672.63,null,null,null,null,null,null,null,null,null]},{"name":"SuperTrend down","color":"#ef5350","width":1.9,"data":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,23719.86,23714.93,23707.56,23697.04,23692.74,23687.54,23677.51,23669.43,23660.94]}],"markers":[{"i":6,"type":"dot","color":"#26a69a","price":23611.5,"text":"line under price = UP"},{"i":25,"type":"exit","color":"#fbbf24","price":23719.86,"text":"FLIP — trend turned, exit"},{"i":31,"type":"dot","color":"#ef5350","price":23659.28,"text":"line over price = DOWN"}],"legend":[{"color":"#26a69a","label":"SuperTrend up-trend"},{"color":"#ef5350","label":"SuperTrend down-trend"},{"color":"#fbbf24","label":"the flip"}]});
+    TVChart.render("bbr-pe", {"title":"BB_RSI — the same rules upside down: a break DOWN buys a Put","subtitle":"5m NIFTY · close below the lower band + SuperTrend down + RSI under 40","times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55","12:00","12:05","12:10","12:15","12:20","12:25","12:30","12:35","12:40"],"candles":[[23920,23921.8,23916.07,23917.29],[23917.29,23921.33,23909.69,23915.86],[23915.86,23918.03,23914.49,23916.58],[23916.58,23921.84,23907.9,23912.4],[23912.4,23915.43,23909.98,23912.43],[23912.43,23918.27,23910.12,23915.43],[23915.43,23918.18,23912.15,23915.91],[23915.91,23924.84,23910.45,23918.17],[23918.17,23926.55,23914.49,23918],[23918,23926.31,23910.91,23918.82],[23918.82,23928.65,23913.31,23920.55],[23920.55,23923.97,23918.12,23921.84],[23921.84,23924.12,23916.99,23920.67],[23920.67,23926.61,23912.58,23916.08],[23916.08,23921.69,23914.01,23919],[23919,23922.65,23907.19,23914.51],[23914.51,23920.26,23906.21,23912.04],[23912.04,23918.78,23909.41,23912.53],[23912.53,23916.31,23906.46,23908.69],[23908.69,23914.6,23904.19,23907.15],[23907.15,23912.74,23902.13,23908.42],[23908.42,23914.8,23894.2,23901.53],[23901.53,23907.79,23888.3,23893.15],[23893.15,23898.43,23879.65,23886.65],[23886.65,23890.49,23869.28,23874.23],[23874.23,23876.28,23855.9,23859.18],[23859.18,23865.02,23840.89,23847.88],[23847.88,23850.15,23832.86,23835.99],[23835.99,23839.84,23827.7,23829.75],[23829.75,23834.44,23816.54,23819.66],[23819.66,23824.76,23802.38,23809.46],[23809.46,23813.7,23802.39,23806.97],[23806.97,23809.06,23798.94,23802.88],[23802.88,23805.06,23790.92,23793.65],[23793.65,23798.81,23789.4,23791.86],[23791.86,23796.64,23785.55,23791.95],[23791.95,23797.89,23788.15,23794.32],[23794.32,23799.52,23790.75,23794.6],[23794.6,23804.45,23788.92,23799.59],[23799.59,23803.94,23796.55,23801.55],[23801.55,23805.69,23799.02,23802.33],[23802.33,23804.08,23800.5,23802.71]],"bands":[{"upper":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,23919.51,23919.35,23919.61,23920.23,23921.08,23922.38,23923.78,23924.72,23925.05,23924.5,23923.35,23921.42,23918.36,23914.58,23910.68,23905.55,23900.04,23893.97,23887.05,23879.83,23872.04,23863.14,23854.2],"mid":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,23915.7,23915.25,23914.54,23913.37,23912.08,23910.17,23907.36,23903.95,23899.85,23895.43,23890.48,23884.92,23879.18,23873.29,23867.17,23860.81,23854.68,23848.8,23842.9,23837.44,23832.16,23826.86,23821.92],"lower":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,23911.89,23911.15,23909.47,23906.51,23903.08,23897.96,23890.94,23883.18,23874.65,23866.36,23857.61,23848.42,23840,23832,23823.66,23816.07,23809.32,23803.63,23798.75,23795.05,23792.28,23790.58,23789.64],"color":"#7890c8","fill":"rgba(120,144,200,0.10)"}],"overlays":[{"name":"SuperTrend up","color":"#26a69a","width":1.9,"data":[null,null,null,null,null,null,null,null,null,23889.72,23890.38,23891.73,23892.06,23892.06,23892.06,23892.06,23892.06,23892.06,23892.06,23892.06,23892.06,23892.06,23892.06,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]},{"name":"SuperTrend down","color":"#ef5350","width":1.9,"data":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,23927.86,23921.2,23909.38,23899.16,23888.28,23879.49,23872.02,23862.17,23855.18,23849.45,23843.14,23837.55,23833.55,23833.55,23833.55,23833.55,23833.55,23833.55,23833.55]}],"hlines":[{"price":23857.56,"color":"#fbbf24","label":"profit-lock floor"}],"markers":[{"i":23,"type":"dot","color":"#fbbf24","price":23898.43,"text":"arms the trade"},{"i":24,"type":"exit","color":"#26a69a","price":23874.23,"text":"BUY PE 23874"},{"i":26,"type":"buy","color":"#ef5350","price":23857.56,"text":"EXIT 23858"}],"pane":{"type":"rsi","label":"RSI 14","color":"#c084fc","data":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,53.45,44.73,40.78,41.88,36.22,34.23,37.3,29.31,22.89,19.35,14.68,11.16,9.35,7.9,7.26,6.37,5.61,5.44,5.17,4.6,4.5,4.61,7.78,8.17,15.02,17.62,18.69,19.24],"levels":[{"value":70,"color":"#26a69a"},{"value":40,"color":"#ef5350"}],"markers":[{"i":23,"value":19.35,"color":"#ef5350"}]},"legend":[{"color":"#7890c8","label":"Bollinger 20/1"},{"color":"#ef5350","label":"SuperTrend down"},{"color":"#fbbf24","label":"profit-lock floor"}]});
+    TVChart.render("bbr-noconfirm", {"title":"The trade that never happened — the proof candle failed","subtitle":"Break is armed, but the next candle closes lower and slips back inside the band","times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55","12:00"],"candles":[[23540,23540.92,23538.37,23539.6],[23539.6,23544.27,23538.13,23542.29],[23542.29,23545.55,23538.66,23542.39],[23542.39,23544.43,23541,23542.39],[23542.39,23547.1,23538.14,23543.36],[23543.36,23548.75,23541,23544.49],[23544.49,23549.33,23542.91,23547.34],[23547.34,23549.93,23542.74,23545.42],[23545.42,23548.48,23537.81,23544.44],[23544.44,23548.67,23541.07,23545.87],[23545.87,23547.29,23542.15,23545.29],[23545.29,23550.01,23542.01,23547.3],[23547.3,23549.54,23542.89,23545.56],[23545.56,23549.95,23544.05,23547.31],[23547.31,23550.01,23544.18,23546.64],[23546.64,23549.42,23542.43,23545.29],[23545.29,23547.26,23542.47,23544.54],[23544.54,23547.13,23540.86,23543.07],[23543.07,23546.52,23540.72,23543.01],[23543.01,23545.84,23539.17,23542.13],[23542.13,23546.75,23540.92,23544.66],[23544.66,23555.21,23542.52,23552.64],[23554.14,23555.64,23538.14,23540.64],[23540.64,23543.89,23538.58,23540.58],[23540.58,23545.42,23534.27,23537.48],[23537.48,23542.29,23533.13,23535.31],[23535.31,23537.76,23530.7,23533.82],[23533.82,23538.57,23524.13,23528.69],[23528.69,23530.84,23525.29,23527.01],[23527.01,23529.94,23518.1,23525.69],[23525.69,23531.03,23520.06,23528.2],[23528.2,23535.7,23519.44,23527.9],[23527.9,23530.14,23523.57,23527.91],[23527.91,23533.7,23525.75,23529.5]],"bands":[{"upper":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,23546.42,23546.34,23547.52,23547.56,23547.59,23547.76,23547.92,23547.8,23548.02,23548.14,23547.96,23547.54,23546.81,23546.13,23545.16],"mid":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,23544.39,23544.64,23545.16,23545.07,23544.98,23544.69,23544.23,23543.55,23542.71,23541.84,23540.83,23539.98,23539.01,23538.13,23537.24],"lower":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,23542.36,23542.94,23542.8,23542.58,23542.37,23541.62,23540.54,23539.3,23537.4,23535.54,23533.7,23532.42,23531.21,23530.13,23529.32],"color":"#7890c8","fill":"rgba(120,144,200,0.10)"}],"overlays":[{"name":"SuperTrend up","color":"#26a69a","width":1.9,"data":[null,null,null,null,null,null,null,null,null,23524.59,23524.92,23525.79,23526.03,23527.05,23527.42,23527.42,23527.42,23527.42,23527.42,23527.42,23527.42,23527.98,23527.98,23527.98,23527.98,23527.98,23527.98,23527.98,null,null,null,null,null,null]},{"name":"SuperTrend down","color":"#ef5350","width":1.9,"data":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,23553.27,23550.24,23550.24,23550.24,23550.24,23550.24]}],"hlines":[{"price":23552.64,"color":"#fbbf24","label":"must close above this to buy"}],"markers":[{"i":21,"type":"dot","color":"#fbbf24","price":23552.64,"text":"armed"},{"i":22,"type":"dot","color":"#ef5350","price":23540.64,"text":"failed — NO TRADE"}],"legend":[{"color":"#7890c8","label":"Bollinger 20/1"},{"color":"#fbbf24","label":"arming close"},{"color":"#ef5350","label":"proof candle failed"}]});
+    TVChart.render("bbr-stop", {"title":"BB_RSI — the losing trade, and the 30-point brake that ends it","subtitle":"5m NIFTY · the breakout snapped straight back; the wide hard stop caps the damage","times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55","12:00","12:05","12:10","12:15","12:20","12:25","12:30"],"candles":[[23700,23707.38,23695.99,23703.24],[23703.24,23706.05,23700.36,23702.7],[23702.7,23704.53,23696.29,23700.93],[23700.93,23705.65,23696.41,23700.6],[23700.6,23702.79,23697.76,23700.89],[23700.89,23704.13,23693.74,23698.16],[23698.16,23704.62,23695.74,23701.47],[23701.47,23707.78,23695.13,23699.74],[23699.74,23706.44,23694.69,23703.61],[23703.61,23706.76,23700.9,23703.89],[23703.89,23710.91,23697.16,23701.65],[23701.65,23705.74,23694.87,23699.57],[23699.57,23707.88,23696.28,23702.32],[23702.32,23706.02,23697.57,23703.61],[23703.61,23706.35,23693.91,23701.63],[23701.63,23707.3,23694.04,23699.12],[23699.12,23702.28,23697.81,23700.79],[23700.79,23703.36,23694.09,23698.71],[23698.71,23702.2,23695.49,23699.3],[23699.3,23703.64,23695.31,23700.9],[23700.9,23707.18,23695.58,23700.38],[23700.38,23709.28,23696.26,23704.57],[23704.57,23727.19,23697.34,23718.02],[23718.02,23733.37,23714.25,23731.49],[23731.49,23745.14,23729.1,23742.2],[23742.2,23751.94,23737.42,23748.67],[23748.67,23752.23,23735.41,23739.81],[23739.81,23750.56,23730.42,23735.3],[23735.3,23744.6,23724.61,23731.02],[23731.02,23735.38,23715.65,23719.01],[23719.01,23725.84,23700.81,23711.52],[23711.52,23719.25,23695.13,23699.63],[23699.63,23709.57,23678.55,23686.64],[23686.64,23694.65,23675.69,23682.44],[23682.44,23694.68,23665.05,23670.05],[23670.05,23675.81,23658.22,23664.67],[23664.67,23666.87,23658.75,23664.5],[23664.5,23667.6,23660.05,23662.98],[23662.98,23673.17,23649.88,23656.35],[23656.35,23661.35,23650.55,23653.46]],"bands":[{"upper":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,23702.81,23702.61,23702.84,23706.03,23711.09,23716.88,23722.64,23726.01,23728.51,23730.28,23730.93,23731.21,23731.21,23731.32,23731.42,23731.9,23732.39,23732.5,23732.49,23732.4,23732.03],"mid":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,23701.14,23701,23701.09,23701.95,23703.49,23705.56,23708.08,23710,23711.78,23713.15,23713.9,23714.4,23714.4,23713.62,23712.56,23710.98,23709.26,23707.44,23705.66,23703.51,23701.14],"lower":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,23699.47,23699.39,23699.34,23697.87,23695.89,23694.24,23693.52,23693.99,23695.05,23696.02,23696.87,23697.59,23697.59,23695.92,23693.7,23690.06,23686.13,23682.38,23678.83,23674.62,23670.25],"color":"#7890c8","fill":"rgba(120,144,200,0.10)"}],"overlays":[{"name":"SuperTrend up","color":"#26a69a","width":1.9,"data":[null,null,null,null,null,null,null,null,null,23677.1,23677.1,23677.1,23677.1,23677.1,23677.1,23677.1,23677.1,23677.1,23677.1,23677.1,23677.1,23677.1,23677.1,23686.16,23698.42,23705.5,23705.5,23705.5,23705.5,23705.5,23705.5,null,null,null,null,null,null,null,null,null]},{"name":"SuperTrend down","color":"#ef5350","width":1.9,"data":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,23758.13,23749.2,23740.49,23738.55,23725.1,23717.53,23715.33,23714.87,23707.19]}],"hlines":[{"price":23701.49,"color":"#ef5350","label":"hard stop — 30 pts under entry"}],"shades":[{"from":23,"to":30,"color":"rgba(239,83,80,0.09)","label":"in the trade","labelBottom":true}],"markers":[{"i":23,"type":"buy","price":23731.49,"text":"BUY CE 23731"},{"i":30,"type":"exit","price":23701.49,"text":"STOPPED −30 pts"}],"pane":{"type":"rsi","label":"RSI 14","color":"#c084fc","data":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,46.8,42.27,46.02,42.33,43.71,47.38,46.32,55.03,71.19,79.23,83.24,85.11,73.09,67.83,63.19,52.36,46.96,39.92,33.93,32.25,27.85,26.19,26.13,25.63,23.51,22.63],"levels":[{"value":70,"color":"#26a69a"},{"value":40,"color":"#ef5350"}]},"legend":[{"color":"#7890c8","label":"Bollinger 20/1"},{"color":"#ef5350","label":"hard stop"},{"color":"#26a69a","label":"BUY"}]});
+    TVChart.render("bbr-runner", {"title":"Why BB_RSI is a scalper, not a trend rider","subtitle":"5m NIFTY · the profit lock banks +15 pts, then the trend runs another 133 pts without us","times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55","12:00","12:05","12:10","12:15","12:20","12:25","12:30","12:35","12:40","12:45","12:50","12:55","13:00","13:05","13:10","13:15","13:20","13:25","13:30"],"candles":[[23320,23326.05,23313.95,23320.21],[23320.21,23322.79,23315.56,23317.66],[23317.66,23320.64,23315.82,23318.33],[23318.33,23320.61,23315.93,23317.79],[23317.79,23319.12,23315.65,23316.93],[23316.93,23319.53,23309.93,23316.33],[23316.33,23319.31,23313.92,23316.34],[23316.34,23318.71,23312.51,23314.7],[23314.7,23316.29,23311.85,23314.68],[23314.68,23319.58,23311.94,23316.49],[23316.49,23321.43,23310.36,23316.25],[23316.25,23322.32,23311.85,23319.66],[23319.66,23326.05,23314.34,23318.03],[23318.03,23320.89,23312.43,23317.32],[23317.32,23319.28,23315.68,23317.58],[23317.58,23323.17,23314.02,23319.24],[23319.24,23320.84,23314.17,23317.23],[23317.23,23323.38,23314.31,23320.1],[23320.1,23323.33,23317.7,23321.47],[23321.47,23326.94,23318.1,23323.91],[23323.91,23326.68,23318.42,23322.85],[23322.85,23338.94,23318.5,23334.64],[23334.64,23342.87,23330.21,23340.19],[23340.19,23356.75,23332.73,23350.44],[23350.44,23358.32,23346.29,23354.86],[23354.86,23370.82,23348.54,23363.67],[23363.67,23370.27,23361.64,23367.58],[23367.58,23381.12,23364.64,23375.57],[23375.57,23382.04,23374.5,23380.77],[23380.77,23390.58,23377.44,23388.07],[23388.07,23401.39,23384.91,23397],[23397,23412.66,23392.54,23405.23],[23405.23,23413.33,23400.27,23410.54],[23410.54,23425.85,23404.03,23417.25],[23417.25,23427.56,23414.82,23424.84],[23424.84,23436,23419.3,23433.55],[23433.55,23443.3,23431.4,23441.46],[23441.46,23448.54,23438.15,23445.6],[23445.6,23456.46,23441.54,23454.17],[23454.17,23467.53,23446.52,23460.06],[23460.06,23472.01,23457.47,23468.82],[23468.82,23476.42,23464.24,23473.15],[23473.15,23481.75,23469.64,23478.21],[23478.21,23488.87,23462.96,23469.62],[23469.62,23477.08,23460.66,23467.08],[23467.08,23469.75,23459.57,23464.41],[23464.41,23469.07,23452.68,23456.75],[23456.75,23460.38,23439.15,23444.96],[23444.96,23446.9,23433.43,23438.23],[23438.23,23441.38,23426.27,23429.36],[23429.36,23432.13,23414.93,23419.52],[23419.52,23421.88,23403.76,23406.83]],"bands":[{"upper":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,23320.2,23320.53,23323.3,23326.4,23330.83,23335.16,23340.3,23345.29,23350.88,23356.52,23362.54,23369.15,23376.15,23383.07,23390.12,23397.35,23404.92,23412.55,23419.78,23427.17,23434.31,23441.39,23448.26,23454.84,23459.67,23463.47,23466.49,23468.17,23468.61,23468.29,23467.51,23466.83,23466.77],"mid":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,23318.01,23318.14,23318.99,23320.09,23321.72,23323.62,23325.98,23328.54,23331.59,23334.89,23338.47,23342.51,23346.79,23351.41,23356.41,23361.77,23367.49,23373.7,23379.97,23386.61,23393.42,23400.72,23407.64,23414.54,23420.5,23426.11,23431.15,23435.61,23439.08,23441.95,23444.01,23445.14,23445.22],"lower":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,23315.82,23315.75,23314.68,23313.78,23312.61,23312.08,23311.66,23311.79,23312.3,23313.26,23314.4,23315.87,23317.43,23319.75,23322.7,23326.19,23330.06,23334.85,23340.16,23346.05,23352.53,23360.05,23367.02,23374.24,23381.33,23388.75,23395.81,23403.05,23409.55,23415.61,23420.51,23423.45,23423.67],"color":"#7890c8","fill":"rgba(120,144,200,0.10)"}],"overlays":[{"name":"SuperTrend up","color":"#26a69a","width":1.9,"data":[null,null,null,null,null,null,null,null,null,23296.08,23296.08,23296.08,23296.83,23296.83,23296.83,23296.83,23296.83,23296.83,23298.14,23299.72,23299.72,23301.9,23308.58,23312.37,23319.58,23323.53,23330.83,23336.34,23343.11,23348.43,23356.19,23363.3,23367.5,23373.03,23379.64,23385.26,23395.62,23402.67,23407.93,23413.74,23421.42,23427.7,23433.7,23433.7,23433.7,23433.7,23433.7,23433.7,23433.7,null,null,null]},{"name":"SuperTrend down","color":"#ef5350","width":1.9,"data":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,23479.88,23470.12,23460.19]}],"hlines":[{"price":23355.5,"color":"#fbbf24","label":"profit-lock floor"}],"shades":[{"from":22,"to":25,"color":"rgba(38,166,154,0.10)","label":"in the trade — 15 min","labelBottom":true},{"from":26,"to":49,"color":"rgba(148,163,184,0.10)","label":"out — watching this happen","text":"#aab6c6","labelBottom":true}],"markers":[{"i":22,"type":"buy","price":23340.19,"text":"BUY CE 23340"},{"i":25,"type":"exit","price":23355.5,"text":"EXIT +15 pts"},{"i":43,"type":"dot","color":"#94a3b8","price":23488.87,"text":"+133 pts missed"}],"legend":[{"color":"#7890c8","label":"Bollinger 20/1"},{"color":"#fbbf24","label":"profit-lock floor"},{"color":"#26a69a","label":"BUY"},{"color":"#ef5350","label":"EXIT"}]});
   };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", render);
   else render();

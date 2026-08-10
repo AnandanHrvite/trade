@@ -296,6 +296,22 @@
     <div class="pillar">Zerodha (live)</div>
   </div>
 
+  <!-- ── how to read the charts (plain-English key) ── -->
+  <div class="tv-key" style="margin:18px 0 6px; border:1px solid #2b3648; border-left:4px solid #60a5fa; border-radius:10px; background:#101725; padding:14px 18px;">
+    <div style="font-weight:700; color:#e8eef8; font-size:0.95rem; margin-bottom:8px;">New to charts? Read this once and every picture below makes sense</div>
+    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:8px 20px; font-size:0.84rem; line-height:1.55; color:#a9b6c9;">
+      <div><b style="color:#26a69a;">Green bar</b> &mdash; that slice of time ended <b>higher</b> than it started. Buyers won.</div>
+      <div><b style="color:#ef5350;">Red bar</b> &mdash; that slice of time ended <b>lower</b> than it started. Sellers won.</div>
+      <div><b style="color:#e8eef8;">The thin spike</b> above and below each bar is the highest and lowest price touched inside it.</div>
+      <div><b style="color:#26a69a;">&#9650; Triangle up</b> = the moment we <b>bought</b>. <b style="color:#ef5350;">&#9660; Triangle down</b> = the moment we <b>sold</b>.</div>
+      <div><b style="color:#fbbf24;">Yellow dot</b> = the candle that set off the signal &mdash; the thing the strategy was waiting for.</div>
+      <div><b style="color:#fbbf24;">Dashed line with a price tag</b> = a level that matters: a stop-loss, a target, or a floor under our profit.</div>
+      <div><b style="color:#94a3b8;">Shaded column</b> = the stretch of time we were actually holding the option.</div>
+      <div><b style="color:#7890c8;">Coloured lines</b> are the strategy's tools. The small legend under each chart names them.</div>
+    </div>
+    <div style="font-size:0.8rem; color:#7d8ba0; margin-top:9px;"><b style="color:#a9b6c9;">A word on "points".</b> Every price on these charts is the <b>index level itself</b> &mdash; not rupees, and not the price of the option you buy. So "+30 points" means the index moved 30 points our way. As a rough rule of thumb the option we buy gains a little over <b>half a point</b> for each point the index moves, and one lot is about 75 units &mdash; so a 30-point index move is roughly &#8377;1,200 on one lot before costs.</div>
+  </div>
+
   <div class="tv-chart" id="ev-session"></div>
   <p class="tv-cap"><b>A whole EMA9+VWAP day &mdash; one break, ended by a reversal candle.</b> For the first two hours the green fast line (EMA 9) drifts <em>inside</em> the purple VWAP &plusmn;1&sigma; channel &mdash; nothing to do (grey dot marks that quiet drift; note the channel is narrow while the market is calm and widens as it moves). At <b>11:45</b> the fast line <b>closes above the top band</b> &rarr; <b>BUY CE at 23,013</b>, and we hold with <em>no</em> stop and <em>no</em> target while the move runs to about 23,096. It ends on a <b>sharp 2-candle reversal</b> &rarr; <b>EXIT 23,056</b> (13:05), roughly <b>+43 spot points</b>. Notice the exit came from the reversal rule, not from the fast line folding back inside &mdash; that is what happened on every winner in the first live sample.</p>
 
@@ -376,6 +392,9 @@ Bottom of channel = fair-value line &minus; (1 &times; the normal wobble)</code>
     </tbody>
   </table>
 
+  <div class="tv-chart" id="ev-channel"></div>
+  <p class="tv-cap"><b>The whole strategy, in one picture &mdash; there is nothing else on the screen.</b> The <span style="color:#26a69a;"><b>green line</b></span> is the fast line: an average of the last 9 candle closes, so it hugs the price and turns quickly. The <span style="color:#8b5cf6;"><b>purple channel</b></span> is fair value: the middle dotted line is the day's running average price, and the two solid edges sit one "normal wobble" above and below it. Both are rebuilt from scratch at 9:15 every morning. Watch what the channel does through the day &mdash; it starts narrow (about <b>20 points</b> wide here) and widens to <b>40 points</b> as the day's prices spread out, so the same yardstick automatically becomes stricter on a wild day and looser on a quiet one. As long as the green line stays <em>between</em> the purple edges, nothing happens. We are only interested in the moment it steps outside.</p>
+
   <div class="note note-info">
     <strong>Real numbers &mdash; what the channel looks like at 11:00.</strong> Suppose the day's average typical price so far is <strong>22,930</strong> and the normal wobble (sigma) is <strong>28</strong> points. Then:<br>
     Top of channel = 22,930 + 28 = <strong>22,958</strong> &nbsp;&middot;&nbsp; Bottom = 22,930 &minus; 28 = <strong>22,902</strong>.<br>
@@ -428,6 +447,9 @@ Bottom of channel = fair-value line &minus; (1 &times; the normal wobble)</code>
   <div class="tv-chart" id="ev-entry"></div>
   <p class="tv-cap"><b>The break-out entry.</b> The fast line (green EMA 9) sat inside the blue VWAP &plusmn;1&sigma; channel while price drifted, then on one candle it closed <b>above the top band</b> &rarr; <b>BUY CE</b> at that candle's close (23,068). We held with no stop and no target while the move ran. It ended on a <b>sharp reversal candle</b> &mdash; a red candle that closed below the lows of both prior candles &rarr; <b>EXIT</b> (23,084), even though the fast line was still outside the band.</p>
 
+  <div class="tv-chart" id="ev-pe"></div>
+  <p class="tv-cap"><b>The Put side &mdash; the same rule, pointing down.</b> Price drifts, then rolls over. The green fast line, which had been sitting inside the channel, closes <b>below the bottom edge</b> &rarr; we buy a <b>Put at 23,218</b>. From there we hold with no stop and no target while the fall continues. About an hour and a half later a strong green candle closes above the highs of both candles before it &mdash; that is the "the move just flipped" warning &mdash; and we sell at <b>23,147</b>, roughly <b>+71 points</b> in our favour. If you can read this chart you can read every chart in this guide: there is one line, one channel, and one question &mdash; is the line inside or outside?</p>
+
   <h3>Strong vs weak break-outs</h3>
   <p>Not every break-out is equal. When the fast line pops out of the channel, the strategy now measures <em>how far</em> it pushed past the edge &mdash; measured in "normal wobbles" (sigma), so the yardstick shrinks or grows with the day's volatility. A break of at least <strong>0.25 of a wobble</strong> past the edge is graded <strong>STRONG</strong>; a smaller poke is graded <strong>WEAK</strong> (likely just noise nudging over the line).</p>
 
@@ -452,6 +474,9 @@ Bottom of channel = fair-value line &minus; (1 &times; the normal wobble)</code>
       <tr><td><code>EMA9VWAP_ENTRY_END</code></td><td><code>14:30</code></td><td>Latest we'll open a <em>new</em> trade. A trade that's already open can keep running past this time &mdash; only fresh entries stop here.</td></tr>
     </tbody>
   </table>
+
+  <div class="tv-chart" id="ev-window"></div>
+  <p class="tv-cap"><b>Two identical signals, and only one of them is allowed to trade.</b> This is a full day, 9:15 to 3:30. The green middle stripe is the window where new trades may open. At <b>10:45</b> the fast line breaks out of the top of the channel &mdash; inside the window, so we buy. Later, at <b>14:55</b>, the fast line does exactly the same thing again, just as cleanly &mdash; but it is past the 14:30 cutoff, so the strategy <b>refuses it</b> and only logs it. Nothing about the signal was worse; there simply isn't enough day left for the move to pay off before the 3:15 forced sell. The grey stripes are the two periods we sit out: the noisy first hour, and the run-in to the closing bell.</p>
 
   <div class="note note-info">
     <strong>The window is measured by the candle, not by the clock.</strong> A signal is judged by the moment its candle <em>closes</em>. So the 10:25&ndash;10:30 candle counts as 10:30 &mdash; it is the first candle that can trade. This one rule is shared by practice, live and backtest, so all three now agree exactly. (The backtest used to check the candle's <em>start</em> time, which shifted its whole window one bar in both directions.)
@@ -535,6 +560,9 @@ Bottom of channel = fair-value line &minus; (1 &times; the normal wobble)</code>
 
   <div class="tv-chart" id="ev-exits"></div>
   <p class="tv-cap"><b>The two ways out, side by side.</b> The fast green line (EMA9) pushed above the top of the purple channel &rarr; <b>BUY CE</b>. It then rode the move for several candles. Two things could end it: the <b>sharp-reversal exit</b> (the big red candle at the orange dot, closing below both previous candles' lows) or the slower <b>signal exit</b> (the green line folding back inside the channel, a few candles later). Whichever comes first wins &mdash; here the reversal exit did, banking the move about 20 points higher than the signal exit would have. In the first 23 practice trades, <em>every winner</em> came from this reversal exit.</p>
+
+  <div class="tv-chart" id="ev-signalexit"></div>
+  <p class="tv-cap"><b>What the patient exit costs &mdash; the same trade with the reversal exit switched OFF.</b> We bought at <b>23,149</b> and the move ran to <b>23,207</b>, a best gain of <b>+58 points</b>. But the exit rule here is "wait for the fast line to fold back inside the channel", and a 9-candle average is slow to turn. Price topped out, rolled over, and kept falling through the red shaded stretch while the line took another hour to come back inside. We finally sold at <b>+20 points</b> &mdash; we handed back <b>38 of the 58 points</b> we were up. This is precisely why the sharp-reversal exit is on by default and is checked <em>first</em>: it is the rule that gets you out near the top instead of near the bottom.</p>
 
   <div class="note note-warn">
     <strong>Note on order: the reversal check runs BEFORE the signal check.</strong> So a violent candle can close the trade before the fast line has folded back inside the channel. If you'd rather hold purely to the channel signal, set <code>EMA9VWAP_REVERSAL_EXIT_ENABLED=false</code> &mdash; but be aware the pure signal exit was 0 for 3 in the first sample.
@@ -869,10 +897,12 @@ angry red candle can't instantly flip us into a losing put.</code></pre>
 <!-- ══════════════════════════════════════════════════════ -->
 <script>
 /* ============================================================================
- * TVChart v2 — dependency-free TradingView-style candlestick renderer.
- * Adds: OHLC header, subtitle, bottom time axis, last-price tag/line,
- *       denser-candle support. Backward-compatible spec from v1.
+ * TVChart v3 — dependency-free TradingView-style candlestick renderer.
+ * v2 features: OHLC header, subtitle, bottom time axis, last-price tag/line.
+ * v3 adds:   hlines (labelled price levels), shades (vertical highlight spans),
+ *            pane (RSI / volume / line sub-panel under the price chart).
  * Pure buildSVG(spec) -> string (no DOM), never throws on bad data.
+ * Backward-compatible with every v1/v2 spec.
  * ==========================================================================*/
 (function (global) {
   "use strict";
@@ -887,19 +917,43 @@ angry red candle can't instantly flip us into a losing put.</code></pre>
     (spec.overlays||[]).forEach(function(o){ (o.data||[]).forEach(eat); });
     (spec.bands||[]).forEach(function(b){ (b.upper||[]).forEach(eat); (b.lower||[]).forEach(eat); (b.mid||[]).forEach(eat); });
     (spec.markers||[]).forEach(function(m){ if(isNum(m.price)) eat(m.price); });
+    (spec.hlines||[]).forEach(function(h){ eat(h.price); });
+    (spec.zones||[]).forEach(function(z){ eat(z.top); eat(z.bottom); });
     if(!isFinite(lo)||!isFinite(hi)){ lo=0; hi=1; }
     if(lo===hi){ lo-=1; hi+=1; }
     var pad=(hi-lo)*0.10; return { lo:lo-pad, hi:hi+pad };
+  }
+
+  // Build a path that starts a fresh subpath after every gap. Indicator series
+  // are null until they have enough history (EMA/BB/RSI warm-up), and a path
+  // that opens with "L" is invalid — that used to drop the whole line.
+  function linePath(data, X, Y) {
+    var d = "", pen = false;
+    for (var i=0;i<data.length;i++){
+      if(!isNum(data[i])){ pen = false; continue; }
+      d += (pen ? "L" : "M") + X(i) + " " + Y(data[i]) + " "; pen = true;
+    }
+    return d;
   }
 
   function buildSVG(spec) {
     spec = spec||{};
     var candles = spec.candles||[]; var n = candles.length;
     if(!n) return '<div class="tv-empty">chart data unavailable</div>';
-    var W=880, H=440, padL=6, padR=74, padT=52, padB=40;
-    var rng=priceRange(spec); var plotW=W-padL-padR, plotH=H-padT-padB;
+
+    var pane = null;
+    if (spec.pane && spec.pane.data && spec.pane.data.length) pane = spec.pane;
+    var paneH  = pane ? (isNum(pane.height) ? pane.height : 92) : 0;
+    var paneGap = pane ? 12 : 0;
+
+    var W=880, padL=6, padR=74, padT=52, padB=40, plotH=348;
+    var H = padT + plotH + paneGap + paneH + padB;
+    var rng=priceRange(spec); var plotW=W-padL-padR;
     var slot=plotW/n; var cw=Math.max(2,Math.min(20,slot*0.66)); var wickW=Math.max(0.8,cw*0.12);
     var up="#26a69a",down="#ef5350",grid="#1b2636",axis="#5a7499",txt="#e8eef8",mut="#8b98ac";
+    var plotBot = padT+plotH;
+    var paneTop = plotBot+paneGap, paneBot = paneTop+paneH;
+    var axisBot = pane ? paneBot : plotBot;
     function X(i){ return padL+slot*(i+0.5); }
     function Y(p){ return padT+(rng.hi-p)/(rng.hi-rng.lo)*plotH; }
     var out=[];
@@ -915,8 +969,15 @@ angry red candle can't instantly flip us into a losing put.</code></pre>
     var times = spec.times || [];
     var step = Math.max(1, Math.round(n/7));
     for(var t=0;t<n;t+=step){ var tx=X(t);
-      out.push('<line x1="'+tx+'" y1="'+padT+'" x2="'+tx+'" y2="'+(H-padB)+'" stroke="'+grid+'" stroke-width="0.7" opacity="0.5"/>');
-      if(times[t]) out.push('<text x="'+tx+'" y="'+(H-padB+15)+'" fill="'+axis+'" font-size="10" text-anchor="middle" font-family="system-ui">'+esc(times[t])+'</text>'); }
+      out.push('<line x1="'+tx+'" y1="'+padT+'" x2="'+tx+'" y2="'+axisBot+'" stroke="'+grid+'" stroke-width="0.7" opacity="0.5"/>');
+      if(times[t]) out.push('<text x="'+tx+'" y="'+(axisBot+15)+'" fill="'+axis+'" font-size="10" text-anchor="middle" font-family="system-ui">'+esc(times[t])+'</text>'); }
+
+    // vertical highlight spans (e.g. "position held", "no-trade window")
+    (spec.shades||[]).forEach(function(s){ if(!isNum(s.from)||!isNum(s.to)) return;
+      var sx=X(s.from)-slot/2, sw=Math.max(1,X(s.to)-X(s.from)+slot);
+      out.push('<rect x="'+sx+'" y="'+padT+'" width="'+sw+'" height="'+plotH+'" fill="'+(s.color||"rgba(96,165,250,0.07)")+'"/>');
+      if(s.label){ var sly = s.labelBottom ? (padT+plotH-7) : (padT+13);
+        out.push('<text x="'+(sx+sw/2)+'" y="'+sly+'" fill="'+(s.text||"#7c93b5")+'" font-size="10" text-anchor="middle" font-family="system-ui">'+esc(s.label)+'</text>'); } });
 
     // zones (e.g. ORB opening-range box)
     (spec.zones||[]).forEach(function(z){ if(!isNum(z.from)||!isNum(z.to)) return;
@@ -929,10 +990,23 @@ angry red candle can't instantly flip us into a losing put.</code></pre>
       if(u.length&&l.length){ var pts=[]; for(var i=0;i<u.length;i++) if(isNum(u[i])) pts.push(X(i)+","+Y(u[i]));
         for(var j=l.length-1;j>=0;j--) if(isNum(l[j])) pts.push(X(j)+","+Y(l[j]));
         out.push('<polygon points="'+pts.join(" ")+'" fill="'+(b.fill||"rgba(120,144,200,0.08)")+'"/>');
-        [u,l].forEach(function(line){ var d=line.map(function(v,i){ return (isNum(v)?(i?"L":"M")+X(i)+" "+Y(v):""); }).join(" ");
-          out.push('<path d="'+d+'" fill="none" stroke="'+(b.color||"#a78bfa")+'" stroke-width="1.3" opacity="0.85"/>'); }); }
-      if(b.mid){ var dm=b.mid.map(function(v,i){ return (isNum(v)?(i?"L":"M")+X(i)+" "+Y(v):""); }).join(" ");
-        out.push('<path d="'+dm+'" fill="none" stroke="'+(b.color||"#a78bfa")+'" stroke-width="1" stroke-dasharray="2 3" opacity="0.7"/>'); } });
+        [u,l].forEach(function(line){
+          out.push('<path d="'+linePath(line,X,Y)+'" fill="none" stroke="'+(b.color||"#a78bfa")+'" stroke-width="1.3" opacity="0.85"/>'); }); }
+      if(b.mid){
+        out.push('<path d="'+linePath(b.mid,X,Y)+'" fill="none" stroke="'+(b.color||"#a78bfa")+'" stroke-width="1" stroke-dasharray="2 3" opacity="0.7"/>'); } });
+
+    // labelled horizontal price levels (stop / target / neckline / OR high-low)
+    (spec.hlines||[]).forEach(function(hl){ if(!isNum(hl.price)) return;
+      var hy=Y(hl.price), hc=hl.color||"#fbbf24";
+      out.push('<line x1="'+padL+'" y1="'+hy+'" x2="'+(W-padR)+'" y2="'+hy+'" stroke="'+hc+'" stroke-width="'+(hl.width||1.2)+'" '+(hl.solid?"":'stroke-dasharray="6 4" ')+'opacity="0.9"/>');
+      out.push('<rect x="'+(W-padR)+'" y="'+(hy-8)+'" width="'+padR+'" height="16" fill="'+hc+'" opacity="0.92"/>');
+      out.push('<text x="'+(W-padR+5)+'" y="'+(hy+3.5)+'" fill="#0d1421" font-size="10" font-weight="700" font-family="monospace">'+hl.price.toFixed(0)+'</text>');
+      if(hl.label){ var lw=hl.label.length*5.9+10;
+        // labelAt (0..1) slides the tag along the line so it can dodge markers
+        var lx1=padL+3+(isNum(hl.labelAt)?hl.labelAt:0)*(W-padR-padL-lw-6);
+        lx1=Math.max(padL+3,Math.min(lx1,W-padR-lw-3));
+        out.push('<rect x="'+lx1+'" y="'+(hy-15)+'" width="'+lw+'" height="14" rx="3" fill="'+hc+'" opacity="0.92"/>');
+        out.push('<text x="'+(lx1+5)+'" y="'+(hy-4.5)+'" fill="#0d1421" font-size="9.8" font-weight="700" font-family="system-ui">'+esc(hl.label)+'</text>'); } });
 
     // candlesticks
     candles.forEach(function(c,i){ if(!c||!isNum(c[0])||!isNum(c[3])) return;
@@ -942,8 +1016,8 @@ angry red candle can't instantly flip us into a losing put.</code></pre>
       out.push('<rect x="'+(cx-cw/2)+'" y="'+top+'" width="'+cw+'" height="'+bh+'" fill="'+col+'"/>'); });
 
     // overlay indicator lines (EMA / VWAP / MAs)
-    (spec.overlays||[]).forEach(function(ov){ var d=(ov.data||[]).map(function(v,i){ return (isNum(v)?(i?"L":"M")+X(i)+" "+Y(v):""); }).join(" ");
-      out.push('<path d="'+d+'" fill="none" stroke="'+(ov.color||"#fbbf24")+'" stroke-width="'+(ov.width||1.6)+'" '+(ov.dash?'stroke-dasharray="5 3" ':"")+'opacity="0.95"/>'); });
+    (spec.overlays||[]).forEach(function(ov){
+      out.push('<path d="'+linePath(ov.data||[],X,Y)+'" fill="none" stroke="'+(ov.color||"#fbbf24")+'" stroke-width="'+(ov.width||1.6)+'" '+(ov.dash?'stroke-dasharray="5 3" ':"")+'opacity="0.95"/>'); });
 
     // last-price dashed line + right-axis tag (TradingView style)
     if(spec.lastPriceTag !== false){ var last=candles[n-1]; if(last&&isNum(last[3])){ var lp=last[3], ly=Y(lp);
@@ -954,23 +1028,61 @@ angry red candle can't instantly flip us into a losing put.</code></pre>
 
     // markers (buy / exit / dot)
     (spec.markers||[]).forEach(function(m){ if(!isNum(m.i)) return; var mx=X(m.i);
-      var my=isNum(m.price)?Y(m.price):(m.type==="buy"?H-padB-14:padT+14);
+      var my=isNum(m.price)?Y(m.price):(m.type==="buy"?plotBot-14:padT+14);
       var isBuy=m.type==="buy", isExit=m.type==="exit"; var col=m.color||(isBuy?"#26a69a":isExit?"#ef5350":"#fbbf24");
       if(isBuy||isExit){ var ay=isBuy?my+18:my-18, tri=isBuy?(mx-6)+","+ay+" "+(mx+6)+","+ay+" "+mx+","+(ay-10):(mx-6)+","+ay+" "+(mx+6)+","+ay+" "+mx+","+(ay+10);
         out.push('<polygon points="'+tri+'" fill="'+col+'"/>'); }
       else out.push('<circle cx="'+mx+'" cy="'+my+'" r="3.5" fill="'+col+'" stroke="#0d1421" stroke-width="1"/>');
       if(m.text){ var lblY=isBuy?my+34:(isExit?my-26:my-10); var tw=m.text.length*6.2+10;
-        out.push('<rect x="'+(mx-tw/2)+'" y="'+(lblY-11)+'" width="'+tw+'" height="15" rx="3" fill="'+col+'" opacity="0.94"/>');
-        out.push('<text x="'+mx+'" y="'+lblY+'" fill="#0d1421" font-size="10.5" font-weight="700" text-anchor="middle" font-family="system-ui">'+esc(m.text)+'</text>'); } });
+        var lx0=Math.max(padL+1,Math.min(mx-tw/2,W-padR-tw-1));
+        out.push('<rect x="'+lx0+'" y="'+(lblY-11)+'" width="'+tw+'" height="15" rx="3" fill="'+col+'" opacity="0.94"/>');
+        out.push('<text x="'+(lx0+tw/2)+'" y="'+lblY+'" fill="#0d1421" font-size="10.5" font-weight="700" text-anchor="middle" font-family="system-ui">'+esc(m.text)+'</text>'); } });
+
+    // ── sub-panel: RSI / volume / any line series ─────────────────────────
+    if(pane){
+      var pd=pane.data||[], pType=pane.type||"line";
+      var plo=Infinity, phi=-Infinity;
+      pd.forEach(function(v){ if(isNum(v)){ if(v>phi)phi=v; if(v<plo)plo=v; } });
+      if(pType==="rsi"){ plo=0; phi=100; }
+      if(pType==="volume"){ plo=0; }
+      if(isNum(pane.min)) plo=pane.min;
+      if(isNum(pane.max)) phi=pane.max;
+      if(!isFinite(plo)||!isFinite(phi)){ plo=0; phi=1; }
+      if(plo===phi){ plo-=1; phi+=1; }
+      var pPad=(pType==="rsi"||pType==="volume")?0:(phi-plo)*0.12;
+      var pLo=plo-pPad, pHi=phi+pPad;
+      function PY(v){ return paneTop+(pHi-v)/(pHi-pLo)*paneH; }
+      out.push('<rect x="'+padL+'" y="'+paneTop+'" width="'+(W-padR-padL)+'" height="'+paneH+'" fill="#0b111c"/>');
+      out.push('<line x1="'+padL+'" y1="'+paneTop+'" x2="'+(W-padR)+'" y2="'+paneTop+'" stroke="'+grid+'" stroke-width="1"/>');
+
+      // guide levels inside the pane (e.g. RSI 70 / 40)
+      (pane.levels||[]).forEach(function(lv){ var v=isNum(lv)?lv:lv.value; if(!isNum(v)) return;
+        var c=(lv&&lv.color)||"#3f5570", ly2=PY(v);
+        out.push('<line x1="'+padL+'" y1="'+ly2+'" x2="'+(W-padR)+'" y2="'+ly2+'" stroke="'+c+'" stroke-width="1" stroke-dasharray="4 3" opacity="0.8"/>');
+        out.push('<text x="'+(W-padR+6)+'" y="'+(ly2+3.5)+'" fill="'+c+'" font-size="10" font-family="monospace">'+v+'</text>'); });
+
+      if(pType==="volume"){
+        var bw=Math.max(1.5,slot*0.6);
+        pd.forEach(function(v,i){ if(!isNum(v)) return; var c2=candles[i];
+          var col2=(c2&&isNum(c2[0])&&isNum(c2[3])&&c2[3]>=c2[0])?"rgba(38,166,154,0.55)":"rgba(239,83,80,0.55)";
+          if(pane.colors&&pane.colors[i]) col2=pane.colors[i];
+          var by=PY(v); out.push('<rect x="'+(X(i)-bw/2)+'" y="'+by+'" width="'+bw+'" height="'+Math.max(0.5,paneBot-by)+'" fill="'+col2+'"/>'); });
+      } else {
+        out.push('<path d="'+linePath(pd,X,PY)+'" fill="none" stroke="'+(pane.color||"#c084fc")+'" stroke-width="1.6"/>');
+      }
+      (pane.markers||[]).forEach(function(m){ if(!isNum(m.i)||!isNum(m.value)) return;
+        out.push('<circle cx="'+X(m.i)+'" cy="'+PY(m.value)+'" r="3.2" fill="'+(m.color||"#fbbf24")+'" stroke="#0b111c" stroke-width="1"/>'); });
+      if(pane.label) out.push('<text x="'+(padL+5)+'" y="'+(paneTop+13)+'" fill="'+mut+'" font-size="10.5" font-weight="600" font-family="system-ui">'+esc(pane.label)+'</text>');
+    }
 
     // header: title, subtitle, and OHLC readout (TradingView top-left)
     out.push('<text x="'+padL+'" y="17" fill="'+txt+'" font-size="13" font-weight="700" font-family="system-ui">'+esc(spec.title||"")+'</text>');
     if(spec.subtitle) out.push('<text x="'+padL+'" y="32" fill="'+mut+'" font-size="10.5" font-family="system-ui">'+esc(spec.subtitle)+'</text>');
     if(spec.ohlc !== false){ var f=candles[n-1]; if(f){ var oc=(isNum(f[0])&&isNum(f[3])&&f[3]>=f[0])?up:down;
-      var parts=[["O",f[0]],["H",f[1]],["L",f[2]],["C",f[3]]], hx=spec.subtitle?padL:padL, hy=spec.subtitle?46:32;
+      var parts=[["O",f[0]],["H",f[1]],["L",f[2]],["C",f[3]]], hy2=spec.subtitle?46:32;
       var lx=padL;
-      parts.forEach(function(p){ out.push('<text x="'+lx+'" y="'+hy+'" font-size="10.5" font-family="monospace" fill="'+mut+'">'+p[0]+'</text>');
-        lx+=11; out.push('<text x="'+lx+'" y="'+hy+'" font-size="10.5" font-family="monospace" fill="'+oc+'">'+fmt(p[1])+'</text>'); lx+=(fmt(p[1]).length*6.4)+10; }); } }
+      parts.forEach(function(p){ out.push('<text x="'+lx+'" y="'+hy2+'" font-size="10.5" font-family="monospace" fill="'+mut+'">'+p[0]+'</text>');
+        lx+=11; out.push('<text x="'+lx+'" y="'+hy2+'" font-size="10.5" font-family="monospace" fill="'+oc+'">'+fmt(p[1])+'</text>'); lx+=(fmt(p[1]).length*6.4)+10; }); } }
 
     // legend (bottom-left, above time axis)
     var lgx=padL, lgy=H-4;
@@ -1055,6 +1167,10 @@ angry red candle can't instantly flip us into a losing put.</code></pre>
       legend: [{ color:"#26a69a", label:"EMA9 (5m)" }, { color:"#a78bfa", label:"VWAP ±1σ" },
         { color:"#ef5350", label:"reversal EXIT" }, { color:"#d29922", label:"slower signal exit" }]
     });
+    TVChart.render("ev-channel", {"title":"The only two things this strategy looks at","subtitle":"5m NIFTY · green = the fast line (EMA 9) · purple channel = fair value ± one normal wobble, rebuilt from 09:15 each day","times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55","12:00","12:05","12:10","12:15","12:20","12:25","12:30","12:35","12:40","12:45","12:50","12:55","13:00","13:05","13:10","13:15","13:20","13:25","13:30","13:35","13:40"],"candles":[[22860,22867.28,22854.64,22863.33],[22863.33,22868.91,22859.57,22864.96],[22864.96,22875.37,22853.94,22871.65],[22871.65,22883.37,22864.39,22875.46],[22875.46,22894,22869.76,22881.85],[22881.85,22892.83,22874.04,22885.4],[22885.4,22891.6,22883.33,22888.06],[22888.06,22895.2,22884.87,22891.19],[22891.19,22895.67,22881.78,22887.84],[22887.84,22891.39,22876.62,22881.68],[22881.68,22884.71,22870.78,22873.62],[22873.62,22877.59,22862.54,22865.34],[22865.34,22869.55,22850.62,22857.04],[22857.04,22862.74,22843.34,22847.9],[22847.9,22851.76,22841.08,22842.49],[22842.49,22848.36,22827.46,22832.91],[22832.91,22834.78,22823.73,22827.54],[22827.54,22837.16,22818.17,22823.72],[22823.72,22831.43,22816.2,22827.53],[22827.53,22831.44,22819.9,22828.12],[22828.12,22832.66,22825.46,22827.62],[22827.62,22833.81,22824.79,22830.56],[22830.56,22839.3,22827.96,22835.57],[22835.57,22845.12,22830.02,22841.81],[22841.81,22848.87,22839.7,22844.93],[22844.93,22848.7,22839.68,22844.32],[22844.32,22849.51,22842.86,22847.4],[22847.4,22855.46,22845.29,22853.02],[22853.02,22856.85,22849.12,22853.44],[22853.44,22862.16,22850.34,22857.49],[22857.49,22859.94,22853.46,22857.55],[22857.55,22864.04,22853.99,22861.79],[22861.79,22864.75,22853.99,22857.57],[22857.57,22859.99,22852.46,22855.42],[22855.42,22857.48,22849.3,22850.59],[22850.59,22855.89,22845.56,22849.67],[22849.67,22851.8,22842.99,22844.58],[22844.58,22847.16,22839.11,22841.63],[22841.63,22845.2,22836.62,22838.37],[22838.37,22841.53,22829.51,22833.39],[22833.39,22837.65,22828.85,22833.43],[22833.43,22839.36,22823.24,22829.2],[22829.2,22830.74,22824.28,22826.81],[22826.81,22829.37,22818.15,22822.23],[22822.23,22829.17,22819.11,22823.72],[22823.72,22829.63,22820.84,22824.33],[22824.33,22826.9,22820.57,22822.71],[22822.71,22825.86,22819.1,22821.89],[22821.89,22828.71,22817.61,22825.1],[22825.1,22829.35,22822.03,22826.54],[22826.54,22833.89,22824.39,22829.84],[22829.84,22831.75,22826.66,22830.21],[22830.21,22833.19,22828.5,22830.26],[22830.26,22838.19,22824.88,22834.71]],"bands":[{"upper":[22861.75,22864.48,22866.54,22871.62,22877.22,22880.79,22884.02,22886.84,22888.27,22888.41,22887.78,22886.94,22886.37,22886.06,22885.82,22885.77,22885.69,22885.26,22884.59,22883.69,22882.68,22881.64,22880.61,22879.65,22878.82,22878.04,22877.35,22876.82,22876.38,22876.08,22875.8,22875.64,22875.44,22875.16,22874.8,22874.4,22873.96,22873.49,22873.01,22872.54,22872.08,22871.63,22871.21,22870.83,22870.43,22870.02,22869.62,22869.23,22868.82,22868.42,22868.02,22867.63,22867.26,22866.9],"mid":[22861.75,22863.12,22864.41,22866.91,22869.9,22872.26,22874.46,22876.46,22877.79,22878.33,22878.15,22877.35,22875.94,22874.18,22872.25,22870,22867.57,22865.28,22863.16,22861.33,22859.77,22858.4,22857.35,22856.59,22856.1,22855.65,22855.31,22855.17,22855.1,22855.15,22855.21,22855.36,22855.46,22855.47,22855.39,22855.25,22855.01,22854.68,22854.31,22853.82,22853.32,22852.78,22852.19,22851.53,22850.92,22850.35,22849.78,22849.21,22848.69,22848.23,22847.86,22847.51,22847.19,22846.92],"lower":[22861.75,22861.75,22862.27,22862.2,22862.58,22863.74,22864.91,22866.08,22867.3,22868.25,22868.53,22867.75,22865.52,22862.3,22858.67,22854.22,22849.44,22845.29,22841.73,22838.96,22836.86,22835.16,22834.09,22833.52,22833.38,22833.25,22833.27,22833.51,22833.81,22834.22,22834.62,22835.07,22835.48,22835.79,22835.98,22836.09,22836.06,22835.88,22835.61,22835.1,22834.57,22833.93,22833.16,22832.23,22831.41,22830.69,22829.94,22829.19,22828.55,22828.05,22827.71,22827.39,22827.13,22826.95],"color":"#8b5cf6","fill":"rgba(139,92,246,0.09)"}],"overlays":[{"name":"EMA 9","color":"#26a69a","width":1.9,"data":[null,null,null,null,null,null,null,null,22878.86,22879.42,22878.26,22875.68,22871.95,22867.14,22862.21,22856.35,22850.59,22845.21,22841.68,22838.97,22836.7,22835.47,22835.49,22836.75,22838.39,22839.58,22841.14,22843.52,22845.5,22847.9,22849.83,22852.22,22853.29,22853.72,22853.09,22852.41,22850.84,22849,22846.87,22844.18,22842.03,22839.46,22836.93,22833.99,22831.94,22830.42,22828.87,22827.48,22827,22826.91,22827.5,22828.04,22828.48,22829.73]}],"markers":[{"i":10,"type":"dot","color":"#94a3b8","price":22878.15,"text":"fair-value line (VWAP)"},{"i":30,"type":"dot","color":"#c4b5fd","price":22875.8,"text":"top of channel"},{"i":44,"type":"dot","color":"#c4b5fd","price":22831.41,"text":"bottom of channel"}],"legend":[{"color":"#26a69a","label":"EMA 9 (the fast line)"},{"color":"#8b5cf6","label":"VWAP ± 1 wobble"}]});
+    TVChart.render("ev-pe", {"title":"The Put side — the fast line drops out of the bottom","subtitle":"5m NIFTY · EMA 9 was inside the channel last candle, closes below it this candle","times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55","12:00","12:05","12:10","12:15","12:20","12:25","12:30","12:35","12:40","12:45","12:50","12:55","13:00","13:05","13:10"],"candles":[[23240,23247.75,23237.41,23241.66],[23241.66,23246.67,23235.35,23242.38],[23242.38,23251.32,23233.93,23246.19],[23246.19,23254.12,23238.4,23244.93],[23244.93,23248.3,23242.8,23246.76],[23246.76,23255.06,23243.29,23251],[23251,23259.36,23245.19,23252.71],[23252.71,23260.45,23246.44,23253.2],[23253.2,23261.54,23246.74,23253.11],[23253.11,23257.5,23251.1,23254.95],[23254.95,23259.97,23246.54,23256.32],[23256.32,23267.85,23247.63,23261.01],[23261.01,23263.11,23258.01,23261.19],[23261.19,23266.13,23254.77,23258.53],[23258.53,23266.12,23250.67,23259.03],[23259.03,23270.02,23250.5,23262.48],[23262.48,23268.87,23243.82,23251.61],[23251.61,23253.09,23247.48,23248.87],[23248.87,23256.63,23237.14,23245.24],[23245.24,23254.68,23226.76,23237.38],[23237.38,23239.87,23223.17,23228.02],[23228.02,23233.61,23214.76,23221.24],[23221.24,23223.58,23215.82,23218.38],[23218.38,23225.14,23199.58,23207.39],[23207.39,23210.1,23200.28,23205.38],[23205.38,23210.56,23198.09,23202.22],[23202.22,23205.6,23192.81,23196.96],[23196.96,23198.69,23187.61,23191.48],[23191.48,23193.46,23187.3,23189.93],[23189.93,23192.49,23182.6,23186.55],[23186.55,23192.19,23172.55,23182.4],[23182.4,23188.88,23169.06,23174.07],[23174.07,23177.26,23164.02,23166.98],[23166.98,23171.21,23161.94,23164.99],[23164.99,23171.51,23154.04,23157.63],[23157.63,23161.45,23141.17,23146.93],[23146.93,23149.04,23137.39,23143.87],[23143.87,23148.52,23133.53,23137.42],[23137.42,23145.5,23136.14,23141.33],[23141.33,23145.86,23136.36,23142.84],[23142.84,23147.39,23140.51,23144.43],[23144.43,23151.41,23136.82,23147.42],[23147.42,23150.43,23143.15,23145.39],[23145.39,23150.72,23142.03,23147.88],[23147.88,23156.15,23146.46,23152.16],[23152.16,23157.28,23148.75,23153.89],[23153.89,23159.8,23149.22,23157.39],[23157.39,23161.62,23150.68,23155.54]],"bands":[{"upper":[23242.27,23242.27,23243.49,23245,23245.68,23247.61,23249.61,23251.09,23252.18,23253.1,23253.73,23255.11,23256.53,23257.44,23258,23258.79,23258.76,23258.47,23258.14,23257.94,23258.18,23258.63,23258.94,23259.44,23259.84,23259.92,23259.97,23260.02,23259.9,23259.69,23259.46,23259.22,23259.06,23258.81,23258.54,23258.44,23258.31,23258.07,23257.62,23257.02,23256.28,23255.48,23254.62,23253.73,23252.8,23251.85,23250.91,23249.98],"mid":[23242.27,23241.87,23242.52,23243.34,23243.86,23244.85,23245.93,23246.86,23247.63,23248.32,23248.86,23249.69,23250.54,23251.21,23251.7,23252.28,23252.43,23252.28,23251.97,23251.35,23250.35,23249.12,23247.82,23246.27,23244.63,23243.05,23241.4,23239.66,23237.96,23236.26,23234.53,23232.74,23230.82,23228.91,23226.98,23224.83,23222.63,23220.45,23218.42,23216.5,23214.73,23213.08,23211.53,23210.06,23208.76,23207.55,23206.44,23205.39],"lower":[23242.27,23241.47,23241.54,23241.68,23242.05,23242.09,23242.25,23242.63,23243.09,23243.54,23243.99,23244.28,23244.56,23244.97,23245.4,23245.78,23246.09,23246.09,23245.8,23244.76,23242.52,23239.6,23236.7,23233.1,23229.43,23226.19,23222.83,23219.3,23216.01,23212.84,23209.6,23206.26,23202.58,23199.02,23195.41,23191.23,23186.96,23182.84,23179.22,23175.98,23173.18,23170.68,23168.43,23166.38,23164.72,23163.25,23161.97,23160.8],"color":"#8b5cf6","fill":"rgba(139,92,246,0.09)"}],"overlays":[{"name":"EMA 9","color":"#26a69a","width":1.9,"data":[null,null,null,null,null,null,null,null,23247.99,23249.38,23250.77,23252.82,23254.49,23255.3,23256.05,23257.33,23256.19,23254.72,23252.83,23249.74,23245.39,23240.56,23236.13,23230.38,23225.38,23220.75,23215.99,23211.09,23206.86,23202.8,23198.72,23193.79,23188.43,23183.74,23178.52,23172.2,23166.53,23160.71,23156.83,23154.04,23152.11,23151.18,23150.02,23149.59,23150.1,23150.86,23152.17,23152.84]}],"shades":[{"from":22,"to":41,"color":"rgba(239,83,80,0.07)","label":"holding the Put — 95 min","labelBottom":true}],"markers":[{"i":22,"type":"exit","color":"#26a69a","price":23218.38,"text":"BUY PE 23218"},{"i":41,"type":"buy","color":"#ef5350","price":23147.42,"text":"EXIT 23147 (+71 pts)"}],"legend":[{"color":"#26a69a","label":"EMA 9"},{"color":"#8b5cf6","label":"VWAP ± 1 wobble"},{"color":"#26a69a","label":"BUY PE"},{"color":"#ef5350","label":"EXIT"}]});
+    TVChart.render("ev-window", {"title":"Same signal, different clock — only one of these is allowed to trade","subtitle":"5m NIFTY · a full session · new trades only between 10:30 and 14:30","times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55","12:00","12:05","12:10","12:15","12:20","12:25","12:30","12:35","12:40","12:45","12:50","12:55","13:00","13:05","13:10","13:15","13:20","13:25","13:30","13:35","13:40","13:45","13:50","13:55","14:00","14:05","14:10","14:15","14:20","14:25","14:30","14:35","14:40","14:45","14:50","14:55","15:00","15:05","15:10","15:15","15:20","15:25"],"candles":[[22980,22985.88,22976.84,22982.93],[22982.93,22985.42,22979.77,22983.64],[22983.64,22989.09,22978.39,22982.85],[22982.85,22989.56,22978.62,22983.98],[22983.98,22992.96,22980.02,22988.47],[22988.47,22993.82,22985.61,22991.11],[22991.11,22992.71,22985.96,22988.43],[22988.43,22991.19,22981.63,22986.34],[22986.34,22989.12,22982.34,22984.44],[22984.44,22988.56,22981.15,22985.64],[22985.64,22993.14,22980.29,22985.07],[22985.07,22990.28,22979.65,22988.05],[22988.05,22992.67,22986.09,22989.59],[22989.59,22996.37,22985.87,22989.69],[22989.69,22991.71,22984.52,22988.15],[22988.15,22990.8,22981.16,22986.59],[22986.59,22994.94,22984.65,22991.69],[22991.69,23000.53,22986.35,22997.44],[22997.44,23009.88,22991.17,23002.17],[23002.17,23016.51,22997.93,23011.98],[23011.98,23023.62,23005.23,23018.18],[23018.18,23029.01,23014.41,23023.68],[23023.68,23033.25,23020.96,23028.24],[23028.24,23036.81,23024.39,23033.8],[23033.8,23047.79,23028.1,23042.84],[23042.84,23053.52,23040.1,23046.39],[23046.39,23060.3,23038.12,23051.79],[23051.79,23069.19,23046.53,23061.52],[23061.52,23073.83,23054.88,23067.45],[23067.45,23080.33,23063.8,23076.61],[23076.61,23082.03,23067.14,23070.51],[23070.51,23072.95,23063.91,23067.75],[23067.75,23071.12,23063.49,23064.88],[23064.88,23071.39,23056.54,23061.84],[23061.84,23063.16,23051.7,23054.11],[23054.11,23058.7,23044.24,23053.14],[23053.14,23058.7,23046.17,23048.77],[23048.77,23056.31,23037.31,23041.48],[23041.48,23044.22,23035.07,23038.42],[23038.42,23041.09,23033.78,23036.38],[23036.38,23040.44,23027.1,23032.47],[23032.47,23038.98,23025.83,23032.06],[23032.06,23035.54,23028.13,23033.76],[23033.76,23036.7,23024.91,23029.51],[23029.51,23034.93,23024.14,23029.82],[23029.82,23033.08,23028.08,23031.56],[23031.56,23039.09,23027.39,23033.88],[23033.88,23038.74,23025.42,23030.68],[23030.68,23033.46,23029.42,23031.71],[23031.71,23035.03,23023.51,23030.49],[23030.49,23034.48,23025.39,23029.09],[23029.09,23036.26,23022.59,23029.77],[23029.77,23032.98,23024.75,23030.34],[23030.34,23034.23,23020.5,23026.26],[23026.26,23028.14,23024.9,23026.88],[23026.88,23028.95,23022.89,23024.84],[23024.84,23027.86,23019.43,23022.43],[23022.43,23027.22,23015.99,23021.54],[23021.54,23026.41,23013.3,23017.92],[23017.92,23022.92,23014.55,23018.46],[23018.46,23026.68,23015.36,23025.08],[23025.08,23034.68,23020.48,23030.86],[23030.86,23042.23,23028.84,23039.11],[23039.11,23049.37,23036.28,23045.71],[23045.71,23052.41,23039.63,23049.67],[23049.67,23066.98,23044.31,23059.7],[23059.7,23071.89,23056.71,23067.63],[23067.63,23076.7,23064.81,23074.55],[23074.55,23085.01,23069.77,23080.51],[23080.51,23098.15,23075.95,23090.91],[23090.91,23099.6,23087.11,23094.7],[23094.7,23102.3,23090.11,23098.82],[23098.82,23101.56,23092.71,23097.77],[23097.77,23107.72,23092.59,23101.56],[23101.56,23106.32,23098.59,23102.11]],"bands":[{"upper":[22981.88,22982.94,22983.41,22983.88,22985.67,22987.79,22988.53,22988.46,22988.26,22988.08,22988.02,22987.96,22988.38,22988.92,22989,22988.9,22989.24,22990.23,22992.19,22995.12,22998.5,23002.18,23005.83,23009.36,23013.34,23017.56,23021.49,23025.9,23030.36,23035.09,23039.15,23042.26,23044.9,23047.04,23048.53,23049.63,23050.61,23051.2,23051.48,23051.66,23051.68,23051.67,23051.65,23051.56,23051.45,23051.38,23051.38,23051.32,23051.26,23051.15,23051.04,23050.92,23050.81,23050.64,23050.47,23050.28,23050.05,23049.8,23049.52,23049.23,23049.01,23048.91,23048.99,23049.25,23049.6,23050.23,23051.14,23052.25,23053.57,23055.25,23057.07,23058.94,23060.72,23062.53,23064.33],"mid":[22981.88,22982.41,22982.76,22983.08,22983.89,22984.94,22985.53,22985.63,22985.6,22985.55,22985.61,22985.64,22985.93,22986.27,22986.39,22986.38,22986.62,22987.07,22987.81,22988.86,22990.13,22991.6,22993.16,22994.76,22996.56,22998.48,23000.39,23002.49,23004.66,23006.96,23009.09,23010.94,23012.62,23014.11,23015.32,23016.34,23017.28,23018.01,23018.56,23019.02,23019.37,23019.68,23019.97,23020.21,23020.42,23020.65,23020.92,23021.14,23021.36,23021.52,23021.68,23021.83,23021.97,23022.07,23022.15,23022.21,23022.23,23022.22,23022.17,23022.11,23022.11,23022.22,23022.45,23022.78,23023.16,23023.67,23024.29,23025,23025.77,23026.66,23027.61,23028.57,23029.52,23030.48,23031.44],"lower":[22981.88,22981.88,22982.11,22982.29,22982.12,22982.09,22982.53,22982.81,22982.93,22983.02,22983.19,22983.32,22983.48,22983.61,22983.79,22983.86,22983.99,22983.91,22983.42,22982.59,22981.77,22981.02,22980.49,22980.17,22979.77,22979.41,22979.3,22979.08,22978.95,22978.82,22979.04,22979.62,22980.35,22981.18,22982.11,22983.04,22983.96,22984.83,22985.63,22986.38,22987.05,22987.69,22988.3,22988.86,22989.39,22989.92,22990.46,22990.97,22991.45,22991.9,22992.33,22992.74,22993.14,22993.49,22993.83,22994.14,22994.41,22994.64,22994.82,22994.98,22995.21,22995.52,22995.9,22996.31,22996.72,22997.11,22997.45,22997.74,22997.97,22998.08,22998.15,22998.21,22998.32,22998.42,22998.54],"color":"#8b5cf6","fill":"rgba(139,92,246,0.09)"}],"overlays":[{"name":"EMA 9","color":"#26a69a","width":1.9,"data":[null,null,null,null,null,null,null,null,22985.8,22985.77,22985.63,22986.11,22986.81,22987.38,22987.54,22987.35,22988.22,22990.06,22992.48,22996.38,23000.74,23005.33,23009.91,23014.69,23020.32,23025.53,23030.78,23036.93,23043.04,23049.75,23053.9,23056.67,23058.31,23059.02,23058.04,23057.06,23055.4,23052.62,23049.78,23047.1,23044.17,23041.75,23040.15,23038.02,23036.38,23035.42,23035.11,23034.22,23033.72,23033.08,23032.28,23031.78,23031.49,23030.44,23029.73,23028.75,23027.49,23026.3,23024.62,23023.39,23023.73,23025.15,23027.95,23031.5,23035.13,23040.05,23045.56,23051.36,23057.19,23063.93,23070.09,23075.83,23080.22,23084.49,23088.01]}],"shades":[{"from":0,"to":14,"color":"rgba(148,163,184,0.11)","label":"first hour — too noisy","text":"#aab6c6"},{"from":64,"to":74,"color":"rgba(148,163,184,0.11)","label":"too close to the bell","text":"#aab6c6"},{"from":15,"to":63,"color":"rgba(38,166,154,0.06)","label":"10:30 – 14:30 · the only time we open a trade","text":"#7fd1c1","labelBottom":true}],"markers":[{"i":18,"type":"buy","price":23002.17,"text":"BUY CE 10:45"},{"i":68,"type":"dot","color":"#94a3b8","price":23057.19,"text":"14:55 cross — REFUSED"}],"legend":[{"color":"#26a69a","label":"EMA 9"},{"color":"#8b5cf6","label":"VWAP ± 1 wobble"},{"color":"#26a69a","label":"allowed"},{"color":"#94a3b8","label":"outside the window"}]});
+    TVChart.render("ev-signalexit", {"title":"The patient exit — and what patience costs","subtitle":"5m NIFTY · with the sharp-reversal exit switched off, the trade runs until the fast line folds back inside","times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55","12:00","12:05","12:10","12:15","12:20","12:25","12:30","12:35","12:40","12:45","12:50","12:55"],"candles":[[23100,23105.18,23090.16,23097.44],[23097.44,23100.91,23094.77,23096.21],[23096.21,23104.2,23092.92,23099.38],[23099.38,23105.67,23092.52,23101.77],[23101.77,23107.49,23099.43,23105.94],[23105.94,23112.46,23100.78,23105.51],[23105.51,23109.61,23102.57,23105.32],[23105.32,23110.71,23102.63,23105.81],[23105.81,23113.35,23101.93,23107.89],[23107.89,23116.43,23102.11,23112.91],[23112.91,23119.73,23109.14,23115.79],[23115.79,23124.31,23108.55,23120.15],[23120.15,23124.63,23113.35,23117.86],[23117.86,23126.5,23113.32,23121.15],[23121.15,23133.55,23118.23,23126.56],[23126.56,23135.16,23119.68,23131.1],[23131.1,23143.4,23126.83,23137.5],[23137.5,23152.83,23131.4,23148.72],[23148.72,23164.36,23143.79,23160.39],[23160.39,23175.27,23154.91,23168.1],[23168.1,23189.15,23164.79,23181.43],[23181.43,23192.52,23179.58,23190.23],[23190.23,23204.86,23186.9,23195.47],[23195.47,23201.79,23193.2,23196.64],[23196.64,23203.02,23193.8,23200.07],[23200.07,23206.56,23193.32,23199.79],[23199.79,23202.48,23195,23197.84],[23197.84,23203.29,23188.82,23193.7],[23193.7,23196.1,23180.34,23184.18],[23184.18,23189.33,23172.62,23175.93],[23175.93,23181.03,23165.94,23168.97],[23168.97,23175.08,23161.5,23167.93],[23167.93,23171.75,23164.11,23166.54],[23166.54,23168.86,23157.45,23160.92],[23160.92,23166.4,23153.22,23156.53],[23156.53,23160.36,23150.5,23153.63],[23153.63,23156.34,23149.31,23152.39],[23152.39,23157.28,23144.16,23149.77],[23149.77,23155.32,23137.13,23143.45],[23143.45,23145.96,23135.13,23142.37],[23142.37,23145.48,23138.44,23141.64],[23141.64,23145.64,23132.47,23137.24],[23137.24,23143.76,23126.12,23132.22],[23132.22,23135.96,23124.32,23127.24],[23127.24,23133.5,23120.33,23125.47]],"bands":[{"upper":[23097.59,23097.59,23098.57,23099.5,23102.13,23104.1,23105.05,23105.81,23106.65,23107.89,23109.85,23111.88,23113.56,23115.16,23117.48,23119.72,23122.75,23126.59,23131.66,23137.26,23143.66,23150.13,23156.57,23162.09,23166.98,23171.29,23174.92,23177.83,23179.76,23180.99,23181.67,23182.08,23182.41,23182.48,23182.39,23182.16,23181.86,23181.5,23181.02,23180.46,23179.94,23179.37,23178.75,23178.09,23177.42],"mid":[23097.59,23097.45,23097.91,23098.43,23099.6,23100.71,23101.44,23102.06,23102.69,23103.47,23104.51,23105.6,23106.6,23107.58,23108.82,23110.06,23111.58,23113.4,23115.65,23118.17,23121.04,23124.06,23127.18,23130.09,23132.85,23135.43,23137.76,23139.82,23141.44,23142.7,23143.64,23144.41,23145.11,23145.62,23145.99,23146.24,23146.41,23146.52,23146.49,23146.35,23146.24,23146.06,23145.78,23145.4,23144.98],"lower":[23097.59,23097.3,23097.24,23097.36,23097.07,23097.32,23097.83,23098.3,23098.72,23099.04,23099.16,23099.32,23099.64,23100,23100.16,23100.4,23100.4,23100.2,23099.64,23099.08,23098.42,23097.99,23097.78,23098.1,23098.72,23099.56,23100.61,23101.8,23103.11,23104.41,23105.62,23106.75,23107.81,23108.76,23109.6,23110.32,23110.97,23111.54,23111.96,23112.25,23112.55,23112.75,23112.81,23112.71,23112.53],"color":"#8b5cf6","fill":"rgba(139,92,246,0.09)"}],"overlays":[{"name":"EMA 9","color":"#26a69a","width":1.9,"data":[null,null,null,null,null,null,null,null,23102.81,23104.83,23107.02,23109.65,23111.29,23113.26,23115.92,23118.96,23122.67,23127.88,23134.38,23141.12,23149.18,23157.39,23165.01,23171.34,23177.08,23181.62,23184.87,23186.63,23186.14,23184.1,23181.07,23178.45,23176.06,23173.04,23169.73,23166.51,23163.69,23160.91,23157.41,23154.41,23151.85,23148.93,23145.59,23141.92,23138.63]}],"shades":[{"from":25,"to":30,"color":"rgba(239,83,80,0.09)","label":"giving it back while we wait for the line","text":"#e79b9b","labelBottom":true}],"markers":[{"i":17,"type":"buy","price":23148.72,"text":"BUY CE 23149"},{"i":25,"type":"dot","color":"#26a69a","price":23206.56,"text":"best +58 pts"},{"i":30,"type":"exit","price":23168.97,"text":"EXIT +20 pts"}],"legend":[{"color":"#26a69a","label":"EMA 9"},{"color":"#8b5cf6","label":"VWAP ± 1 wobble"},{"color":"#26a69a","label":"BUY / peak"},{"color":"#ef5350","label":"EXIT"}]});
   };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", render);
   else render();

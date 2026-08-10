@@ -6,6 +6,26 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Changed — every strategy guide now shows the rule instead of describing it
+
+The nine guides in `documents/` between them carried 34 charts, and they were unevenly spread: BB_RSI illustrated its indicators with hand-positioned CSS `<div>`s rather than real data, six guides showed only the Call side of a two-sided strategy, and no guide drew a losing trade. There are now **63 charts**, all generated from candle series with the indicators computed off them — the Bollinger bands, EMAs, VWAP bands, SuperTrend, RSI and ATR on every chart are the real formulas run over the candles underneath, not lines drawn by eye.
+
+What each guide gained:
+
+- **BB_RSI** — the two hand-drawn CSS mock charts replaced with real ones (the three tools on one screen with an RSI sub-panel; a SuperTrend flip), plus the Put side, a failed confirmation candle, the 30-point hard stop ending a loser, and the trade-off chart showing the profit lock banking +15 while the trend ran another 133 points without it.
+- **EMA_RSI_ST** — all four entry checks on one screen, the Put side, the two-red-closes cut, and a whipsaw day taking three stop-outs in a row.
+- **EMA9+VWAP** — the channel anatomy, the Put side, the 10:30–14:30 window refusing an otherwise clean 14:55 cross, and what the patient signal exit costs when the reversal exit is switched off.
+- **Price Action** — the two bearish patterns (Double Top, Descending Triangle) that had no pictures at all, and a textbook setup stopped out at the 25-point cap.
+- **ORB** — the short side, and a breakout dying on a close back inside the box while the move it would have caught runs on without it.
+- **Trend Pullback** — the 15-minute bias check it is built on, the downtrend mirror, and the time-stop.
+- **GAPS** — the Call side, and a losing day where the trail cuts at −25 instead of the −74 hard stop.
+- **3M GAP FIX** — the gap-down/Call mirror with a volume sub-panel, and a real gap refused for being under the 20-point floor.
+- **Trend Day Scalp** — a PE-only day end to end, and the 1R loser.
+
+Every guide also opens with a **plain-English key** explaining candles, colours, the buy/sell triangles, the shaded holding period, and what "points" mean in rupees — so the charts are readable by someone who has never used a trading terminal.
+
+**Chart kit (TVChart v2 → v3, identical copy in all nine guides).** Adds labelled horizontal price levels, RSI/volume sub-panels and shaded time spans. Fixes a latent bug in v2: any indicator line whose series began with `null` (which is every EMA, Bollinger band and RSI, during warm-up) produced an SVG path starting with `L` and silently rendered nothing — so several lines the old captions referred to were never actually visible.
+
 ### Changed — the Dashboard only shows strategies that actually traded
 
 Nine enabled strategies meant nine cards on every screen of the Dashboard, whatever they did. On 10 Aug six of the nine had taken no trade at all, so most of the page was `0 trades · No paper trades in this range` and `₹0 · 0W / 0L · WR 0%` — placeholders that had to be read past to find the four cards carrying a number.

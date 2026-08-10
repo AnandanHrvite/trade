@@ -507,6 +507,22 @@
 
   <p>Live orders go through <strong>Zerodha</strong>; all the price data comes from <strong>Fyers</strong>. The maths never changes with the market's mood &mdash; the same rules run whether NIFTY is calm or wild.</p>
 
+  <!-- ── how to read the charts (plain-English key) ── -->
+  <div class="tv-key" style="margin:18px 0 6px; border:1px solid #2b3648; border-left:4px solid #60a5fa; border-radius:10px; background:#101725; padding:14px 18px;">
+    <div style="font-weight:700; color:#e8eef8; font-size:0.95rem; margin-bottom:8px;">New to charts? Read this once and every picture below makes sense</div>
+    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:8px 20px; font-size:0.84rem; line-height:1.55; color:#a9b6c9;">
+      <div><b style="color:#26a69a;">Green bar</b> &mdash; that slice of time ended <b>higher</b> than it started. Buyers won.</div>
+      <div><b style="color:#ef5350;">Red bar</b> &mdash; that slice of time ended <b>lower</b> than it started. Sellers won.</div>
+      <div><b style="color:#e8eef8;">The thin spike</b> above and below each bar is the highest and lowest price touched inside it.</div>
+      <div><b style="color:#26a69a;">&#9650; Triangle up</b> = the moment we <b>bought</b>. <b style="color:#ef5350;">&#9660; Triangle down</b> = the moment we <b>sold</b>.</div>
+      <div><b style="color:#fbbf24;">Yellow dot</b> = the candle that set off the signal &mdash; the thing the strategy was waiting for.</div>
+      <div><b style="color:#fbbf24;">Dashed line with a price tag</b> = a level that matters: a stop-loss, a target, or a floor under our profit.</div>
+      <div><b style="color:#94a3b8;">Shaded column</b> = the stretch of time we were actually holding the option.</div>
+      <div><b style="color:#7890c8;">Coloured lines</b> are the strategy's tools. The small legend under each chart names them.</div>
+    </div>
+    <div style="font-size:0.8rem; color:#7d8ba0; margin-top:9px;"><b style="color:#a9b6c9;">A word on "points".</b> Every price on these charts is the <b>index level itself</b> &mdash; not rupees, and not the price of the option you buy. So "+30 points" means the index moved 30 points our way. As a rough rule of thumb the option we buy gains a little over <b>half a point</b> for each point the index moves, and one lot is about 75 units &mdash; so a 30-point index move is roughly &#8377;1,200 on one lot before costs.</div>
+  </div>
+
   <div class="tv-chart" id="ers-session"></div>
   <p class="tv-cap"><b>A whole EMA_RSI_ST day &mdash; and this one is a <em>PE</em> (falling market).</b> All morning the blue EMA20 sits <em>above</em> the purple EMA50, so a CE is possible but the other checks never line up &mdash; we wait. Around <b>11:20</b> the market rolls over: EMA20 crosses <em>below</em> EMA50, RSI drops into the PE band, SuperTrend turns red, and the candle closes below EMA20 &mdash; all four checks (yellow dot = the signal candle). The next candle pushes lower as proof &rarr; <b>BUY PE at 24,629</b> (11:25). From there the orange EMA21 line trails <em>down</em> above price, tightening the whole afternoon &mdash; and price never bounces far enough to touch it, so the trail never fires. What ends the trade is the <b>exit-before-close</b> rule at <b>14:30</b> (<code>EMA_RSI_ST_EOD_EXIT_TIME</code>) &rarr; <b>EXIT 24,455</b>, about <b>+174 spot points</b> in our favour, because a PE gains as NIFTY falls. Not every trade ends on a signal; a good number simply run out of day. Most days never line up all four checks and we don't trade at all.</p>
 </div>
@@ -612,11 +628,17 @@
     </div>
   </div>
 
+  <div class="tv-chart" id="ers-stack"></div>
+  <p class="tv-cap"><b>All four checks, on one screen.</b> Read it left to right. At the start of the morning the <span style="color:#3b82f6;"><b>blue EMA20</b></span> is still <em>below</em> the <span style="color:#a78bfa;"><b>purple EMA50</b></span> &mdash; yesterday's downward drift is still in the averages, <b>check 1 fails</b>, and no Call can be bought no matter how good the candles look. At the grey dot the blue line finally crosses <b>above</b> the purple one: the trend has officially turned up, and Calls become possible. It then takes another two and a half hours before everything lines up at once &mdash; at the yellow dot the blue line is over the purple, the <span style="color:#26a69a;"><b>green SuperTrend</b></span> line is running underneath the price, RSI is at <b>72</b> (inside the 52&ndash;80 band in the strip below), and the candle closes above the blue line. That candle is the <b>signal</b>. Notice how much of the screen is spent with no valid setup at all &mdash; that waiting is normal and intended.</p>
+
   <div class="tv-chart" id="ers-entry"></div>
   <p class="tv-cap"><b>A clean CE entry, start to finish.</b> The blue EMA20 stays above the purple EMA50 the whole time &mdash; the up-trend is intact. Price ran up, dipped back and kissed the EMAs, then a green candle closed back above EMA20: that's the <b>signal candle</b> (yellow dot, ~24,524). We don't buy it &mdash; the <em>next</em> candle pushes past its close, giving the proof, so we <b>BUY the CE at 24,546</b>. The trade rides up to ~24,624; when a later candle dips back and its range touches the climbing EMA21 trail, the trend has broken and we <b>EXIT at 24,584</b> for +38 spot points.</p>
 
   <div class="tv-chart" id="ers-reject"></div>
   <p class="tv-cap"><b>What we DON'T take.</b> This green candle (yellow dot) closes up and <em>looks</em> tempting, but check&nbsp;1 fails: the blue EMA20 is still <b>below</b> the purple EMA50 &mdash; there is no confirmed up-trend, just chop. One good-looking candle is never enough; all four checks must line up, so this is <b>no trade</b>. Skipping setups like this &mdash; where the trend lines aren't stacked our way &mdash; is most of what keeps the strategy out of sideways days.</p>
+
+  <div class="tv-chart" id="ers-pe"></div>
+  <p class="tv-cap"><b>The Put side &mdash; the same four checks, every one flipped.</b> Blue EMA20 is <em>below</em> purple EMA50 (down-trend), RSI has fallen under 48, SuperTrend is on the down side, and the candle at the yellow dot <b>closes below</b> the blue line. That is the signal. The next candle trades down through the signal's close &mdash; the proof &mdash; so we buy a <b>Put at 24,576</b>. From there the orange EMA21 line trails <em>above</em> price, dropping lower with every finished candle, and we simply hold. Roughly two hours later a bounce finally reaches up and touches that orange line &rarr; the down-trend is broken &rarr; <b>EXIT at 24,493</b>, about <b>+83 points</b> in our favour. Same picture as the Call chart, held up to a mirror.</p>
 
   <div class="note">The RSI numbers above (52&ndash;80 for CE, 20&ndash;48 for PE) are the built-in code defaults. The saved Settings page uses a slightly tighter band (ceiling 70 for CE, floor 30 for PE) &mdash; so a real install is a touch more cautious than these raw defaults. The "not overheated" ceiling is what keeps us from jumping onto a move that has already run too far.</div>
 </div>
@@ -702,6 +724,9 @@
   <div class="tv-chart" id="ers-trail"></div>
   <p class="tv-cap"><b>The safety line climbing behind a winner.</b> After the buy at 24,517 the orange EMA21 line rises with every finished candle, dragging the stop up behind price &mdash; it only ever tightens, never loosens. Notice the two dips at 11:40 and 12:20: price wobbled but <em>never touched</em> the line, so we held. At 13:05 a candle's range finally touches EMA21 &rarr; the trend is broken &rarr; <b>SELL</b>. No target was ever set; the line decided how far the winner ran.</p>
 
+  <div class="tv-chart" id="ers-negcandle"></div>
+  <p class="tv-cap"><b>The rule that kills losers quickly.</b> The setup was fine and we bought at <b>24,629</b> (the grey line marks our entry price). Then the move simply died. The first candle after entry closed <em>below</em> our entry &mdash; still a loss. The second candle closed lower again &mdash; still a loss. That is the whole test: <b>two finished candles in a row with the trade under water</b>, so it is cut at <b>&minus;17 points</b> without waiting for the trailing stop to be reached. Compare this with the winners elsewhere in this guide, which are left alone for hours. That asymmetry is deliberate &mdash; losers are shown the door, winners are given room.</p>
+
   <div class="note success"><strong>Why no fixed target?</strong> If we always sold at "+40%," we'd cut our biggest trend days short &mdash; and a few big days are what pay for all the small losing ones over a month. The trailing safety line keeps us in the move as long as it lasts, while the meltdown stop, points stop and negative-candle stop make sure a bad trade dies small.</div>
 </div>
 
@@ -715,6 +740,9 @@
     <tr><td><strong>Opposite-side (flip) pause</strong></td><td>After any stop-type exit, we also refuse to immediately <em>flip</em> to the other side for a few candles. This is the big one &mdash; it kills the "CE stopped out, buy PE, PE stopped out, buy CE&hellip;" whipsaw that quietly drains an account on a choppy day. It's on by default. (A normal opposite-signal exit or an end-of-day exit does not trigger this pause.)</td></tr>
     <tr><td><strong>Choppy-day brake</strong> (<code>EMA_RSI_ST_MAX_CONSEC_LOSSES</code>)</td><td>An optional switch: after this many losing trades in a row in one session, stop taking new trades for the rest of the day. Any single winner resets the count. <strong>Off by default (0 = off).</strong></td></tr>
   </table>
+
+  <div class="tv-chart" id="ers-chop"></div>
+  <p class="tv-cap"><b>The day these rules exist for.</b> This is a sideways, whipsawing session. Three separate times the four checks lined up perfectly, we bought, and the market immediately turned and knocked us out on the trailing stop &mdash; <b>&minus;18, &minus;11, &minus;18 points</b>, about <b>&minus;47 points</b> for the day. Not one of the three setups looked bad at the time. That is the point: on a day with no real trend, a trend-following strategy is a machine for buying tops and selling bottoms. The yellow bands are the three-candle cool-down after each stop-out, which is what stops this being six losses instead of three &mdash; and if you switch the losing-streak brake on, the day would have ended after the third one.</p>
 
   <div class="note warn">
     <strong>Fixed 26 July: the choppy-day brake used to fire even when it was switched off.</strong>
@@ -883,10 +911,12 @@
 <!-- ══════════════════════════════════════════════════════ -->
 <script>
 /* ============================================================================
- * TVChart v2 — dependency-free TradingView-style candlestick renderer.
- * Adds: OHLC header, subtitle, bottom time axis, last-price tag/line,
- *       denser-candle support. Backward-compatible spec from v1.
+ * TVChart v3 — dependency-free TradingView-style candlestick renderer.
+ * v2 features: OHLC header, subtitle, bottom time axis, last-price tag/line.
+ * v3 adds:   hlines (labelled price levels), shades (vertical highlight spans),
+ *            pane (RSI / volume / line sub-panel under the price chart).
  * Pure buildSVG(spec) -> string (no DOM), never throws on bad data.
+ * Backward-compatible with every v1/v2 spec.
  * ==========================================================================*/
 (function (global) {
   "use strict";
@@ -901,19 +931,43 @@
     (spec.overlays||[]).forEach(function(o){ (o.data||[]).forEach(eat); });
     (spec.bands||[]).forEach(function(b){ (b.upper||[]).forEach(eat); (b.lower||[]).forEach(eat); (b.mid||[]).forEach(eat); });
     (spec.markers||[]).forEach(function(m){ if(isNum(m.price)) eat(m.price); });
+    (spec.hlines||[]).forEach(function(h){ eat(h.price); });
+    (spec.zones||[]).forEach(function(z){ eat(z.top); eat(z.bottom); });
     if(!isFinite(lo)||!isFinite(hi)){ lo=0; hi=1; }
     if(lo===hi){ lo-=1; hi+=1; }
     var pad=(hi-lo)*0.10; return { lo:lo-pad, hi:hi+pad };
+  }
+
+  // Build a path that starts a fresh subpath after every gap. Indicator series
+  // are null until they have enough history (EMA/BB/RSI warm-up), and a path
+  // that opens with "L" is invalid — that used to drop the whole line.
+  function linePath(data, X, Y) {
+    var d = "", pen = false;
+    for (var i=0;i<data.length;i++){
+      if(!isNum(data[i])){ pen = false; continue; }
+      d += (pen ? "L" : "M") + X(i) + " " + Y(data[i]) + " "; pen = true;
+    }
+    return d;
   }
 
   function buildSVG(spec) {
     spec = spec||{};
     var candles = spec.candles||[]; var n = candles.length;
     if(!n) return '<div class="tv-empty">chart data unavailable</div>';
-    var W=880, H=440, padL=6, padR=74, padT=52, padB=40;
-    var rng=priceRange(spec); var plotW=W-padL-padR, plotH=H-padT-padB;
+
+    var pane = null;
+    if (spec.pane && spec.pane.data && spec.pane.data.length) pane = spec.pane;
+    var paneH  = pane ? (isNum(pane.height) ? pane.height : 92) : 0;
+    var paneGap = pane ? 12 : 0;
+
+    var W=880, padL=6, padR=74, padT=52, padB=40, plotH=348;
+    var H = padT + plotH + paneGap + paneH + padB;
+    var rng=priceRange(spec); var plotW=W-padL-padR;
     var slot=plotW/n; var cw=Math.max(2,Math.min(20,slot*0.66)); var wickW=Math.max(0.8,cw*0.12);
     var up="#26a69a",down="#ef5350",grid="#1b2636",axis="#5a7499",txt="#e8eef8",mut="#8b98ac";
+    var plotBot = padT+plotH;
+    var paneTop = plotBot+paneGap, paneBot = paneTop+paneH;
+    var axisBot = pane ? paneBot : plotBot;
     function X(i){ return padL+slot*(i+0.5); }
     function Y(p){ return padT+(rng.hi-p)/(rng.hi-rng.lo)*plotH; }
     var out=[];
@@ -929,8 +983,15 @@
     var times = spec.times || [];
     var step = Math.max(1, Math.round(n/7));
     for(var t=0;t<n;t+=step){ var tx=X(t);
-      out.push('<line x1="'+tx+'" y1="'+padT+'" x2="'+tx+'" y2="'+(H-padB)+'" stroke="'+grid+'" stroke-width="0.7" opacity="0.5"/>');
-      if(times[t]) out.push('<text x="'+tx+'" y="'+(H-padB+15)+'" fill="'+axis+'" font-size="10" text-anchor="middle" font-family="system-ui">'+esc(times[t])+'</text>'); }
+      out.push('<line x1="'+tx+'" y1="'+padT+'" x2="'+tx+'" y2="'+axisBot+'" stroke="'+grid+'" stroke-width="0.7" opacity="0.5"/>');
+      if(times[t]) out.push('<text x="'+tx+'" y="'+(axisBot+15)+'" fill="'+axis+'" font-size="10" text-anchor="middle" font-family="system-ui">'+esc(times[t])+'</text>'); }
+
+    // vertical highlight spans (e.g. "position held", "no-trade window")
+    (spec.shades||[]).forEach(function(s){ if(!isNum(s.from)||!isNum(s.to)) return;
+      var sx=X(s.from)-slot/2, sw=Math.max(1,X(s.to)-X(s.from)+slot);
+      out.push('<rect x="'+sx+'" y="'+padT+'" width="'+sw+'" height="'+plotH+'" fill="'+(s.color||"rgba(96,165,250,0.07)")+'"/>');
+      if(s.label){ var sly = s.labelBottom ? (padT+plotH-7) : (padT+13);
+        out.push('<text x="'+(sx+sw/2)+'" y="'+sly+'" fill="'+(s.text||"#7c93b5")+'" font-size="10" text-anchor="middle" font-family="system-ui">'+esc(s.label)+'</text>'); } });
 
     // zones (e.g. ORB opening-range box)
     (spec.zones||[]).forEach(function(z){ if(!isNum(z.from)||!isNum(z.to)) return;
@@ -943,10 +1004,23 @@
       if(u.length&&l.length){ var pts=[]; for(var i=0;i<u.length;i++) if(isNum(u[i])) pts.push(X(i)+","+Y(u[i]));
         for(var j=l.length-1;j>=0;j--) if(isNum(l[j])) pts.push(X(j)+","+Y(l[j]));
         out.push('<polygon points="'+pts.join(" ")+'" fill="'+(b.fill||"rgba(120,144,200,0.08)")+'"/>');
-        [u,l].forEach(function(line){ var d=line.map(function(v,i){ return (isNum(v)?(i?"L":"M")+X(i)+" "+Y(v):""); }).join(" ");
-          out.push('<path d="'+d+'" fill="none" stroke="'+(b.color||"#a78bfa")+'" stroke-width="1.3" opacity="0.85"/>'); }); }
-      if(b.mid){ var dm=b.mid.map(function(v,i){ return (isNum(v)?(i?"L":"M")+X(i)+" "+Y(v):""); }).join(" ");
-        out.push('<path d="'+dm+'" fill="none" stroke="'+(b.color||"#a78bfa")+'" stroke-width="1" stroke-dasharray="2 3" opacity="0.7"/>'); } });
+        [u,l].forEach(function(line){
+          out.push('<path d="'+linePath(line,X,Y)+'" fill="none" stroke="'+(b.color||"#a78bfa")+'" stroke-width="1.3" opacity="0.85"/>'); }); }
+      if(b.mid){
+        out.push('<path d="'+linePath(b.mid,X,Y)+'" fill="none" stroke="'+(b.color||"#a78bfa")+'" stroke-width="1" stroke-dasharray="2 3" opacity="0.7"/>'); } });
+
+    // labelled horizontal price levels (stop / target / neckline / OR high-low)
+    (spec.hlines||[]).forEach(function(hl){ if(!isNum(hl.price)) return;
+      var hy=Y(hl.price), hc=hl.color||"#fbbf24";
+      out.push('<line x1="'+padL+'" y1="'+hy+'" x2="'+(W-padR)+'" y2="'+hy+'" stroke="'+hc+'" stroke-width="'+(hl.width||1.2)+'" '+(hl.solid?"":'stroke-dasharray="6 4" ')+'opacity="0.9"/>');
+      out.push('<rect x="'+(W-padR)+'" y="'+(hy-8)+'" width="'+padR+'" height="16" fill="'+hc+'" opacity="0.92"/>');
+      out.push('<text x="'+(W-padR+5)+'" y="'+(hy+3.5)+'" fill="#0d1421" font-size="10" font-weight="700" font-family="monospace">'+hl.price.toFixed(0)+'</text>');
+      if(hl.label){ var lw=hl.label.length*5.9+10;
+        // labelAt (0..1) slides the tag along the line so it can dodge markers
+        var lx1=padL+3+(isNum(hl.labelAt)?hl.labelAt:0)*(W-padR-padL-lw-6);
+        lx1=Math.max(padL+3,Math.min(lx1,W-padR-lw-3));
+        out.push('<rect x="'+lx1+'" y="'+(hy-15)+'" width="'+lw+'" height="14" rx="3" fill="'+hc+'" opacity="0.92"/>');
+        out.push('<text x="'+(lx1+5)+'" y="'+(hy-4.5)+'" fill="#0d1421" font-size="9.8" font-weight="700" font-family="system-ui">'+esc(hl.label)+'</text>'); } });
 
     // candlesticks
     candles.forEach(function(c,i){ if(!c||!isNum(c[0])||!isNum(c[3])) return;
@@ -956,8 +1030,8 @@
       out.push('<rect x="'+(cx-cw/2)+'" y="'+top+'" width="'+cw+'" height="'+bh+'" fill="'+col+'"/>'); });
 
     // overlay indicator lines (EMA / VWAP / MAs)
-    (spec.overlays||[]).forEach(function(ov){ var d=(ov.data||[]).map(function(v,i){ return (isNum(v)?(i?"L":"M")+X(i)+" "+Y(v):""); }).join(" ");
-      out.push('<path d="'+d+'" fill="none" stroke="'+(ov.color||"#fbbf24")+'" stroke-width="'+(ov.width||1.6)+'" '+(ov.dash?'stroke-dasharray="5 3" ':"")+'opacity="0.95"/>'); });
+    (spec.overlays||[]).forEach(function(ov){
+      out.push('<path d="'+linePath(ov.data||[],X,Y)+'" fill="none" stroke="'+(ov.color||"#fbbf24")+'" stroke-width="'+(ov.width||1.6)+'" '+(ov.dash?'stroke-dasharray="5 3" ':"")+'opacity="0.95"/>'); });
 
     // last-price dashed line + right-axis tag (TradingView style)
     if(spec.lastPriceTag !== false){ var last=candles[n-1]; if(last&&isNum(last[3])){ var lp=last[3], ly=Y(lp);
@@ -968,23 +1042,61 @@
 
     // markers (buy / exit / dot)
     (spec.markers||[]).forEach(function(m){ if(!isNum(m.i)) return; var mx=X(m.i);
-      var my=isNum(m.price)?Y(m.price):(m.type==="buy"?H-padB-14:padT+14);
+      var my=isNum(m.price)?Y(m.price):(m.type==="buy"?plotBot-14:padT+14);
       var isBuy=m.type==="buy", isExit=m.type==="exit"; var col=m.color||(isBuy?"#26a69a":isExit?"#ef5350":"#fbbf24");
       if(isBuy||isExit){ var ay=isBuy?my+18:my-18, tri=isBuy?(mx-6)+","+ay+" "+(mx+6)+","+ay+" "+mx+","+(ay-10):(mx-6)+","+ay+" "+(mx+6)+","+ay+" "+mx+","+(ay+10);
         out.push('<polygon points="'+tri+'" fill="'+col+'"/>'); }
       else out.push('<circle cx="'+mx+'" cy="'+my+'" r="3.5" fill="'+col+'" stroke="#0d1421" stroke-width="1"/>');
       if(m.text){ var lblY=isBuy?my+34:(isExit?my-26:my-10); var tw=m.text.length*6.2+10;
-        out.push('<rect x="'+(mx-tw/2)+'" y="'+(lblY-11)+'" width="'+tw+'" height="15" rx="3" fill="'+col+'" opacity="0.94"/>');
-        out.push('<text x="'+mx+'" y="'+lblY+'" fill="#0d1421" font-size="10.5" font-weight="700" text-anchor="middle" font-family="system-ui">'+esc(m.text)+'</text>'); } });
+        var lx0=Math.max(padL+1,Math.min(mx-tw/2,W-padR-tw-1));
+        out.push('<rect x="'+lx0+'" y="'+(lblY-11)+'" width="'+tw+'" height="15" rx="3" fill="'+col+'" opacity="0.94"/>');
+        out.push('<text x="'+(lx0+tw/2)+'" y="'+lblY+'" fill="#0d1421" font-size="10.5" font-weight="700" text-anchor="middle" font-family="system-ui">'+esc(m.text)+'</text>'); } });
+
+    // ── sub-panel: RSI / volume / any line series ─────────────────────────
+    if(pane){
+      var pd=pane.data||[], pType=pane.type||"line";
+      var plo=Infinity, phi=-Infinity;
+      pd.forEach(function(v){ if(isNum(v)){ if(v>phi)phi=v; if(v<plo)plo=v; } });
+      if(pType==="rsi"){ plo=0; phi=100; }
+      if(pType==="volume"){ plo=0; }
+      if(isNum(pane.min)) plo=pane.min;
+      if(isNum(pane.max)) phi=pane.max;
+      if(!isFinite(plo)||!isFinite(phi)){ plo=0; phi=1; }
+      if(plo===phi){ plo-=1; phi+=1; }
+      var pPad=(pType==="rsi"||pType==="volume")?0:(phi-plo)*0.12;
+      var pLo=plo-pPad, pHi=phi+pPad;
+      function PY(v){ return paneTop+(pHi-v)/(pHi-pLo)*paneH; }
+      out.push('<rect x="'+padL+'" y="'+paneTop+'" width="'+(W-padR-padL)+'" height="'+paneH+'" fill="#0b111c"/>');
+      out.push('<line x1="'+padL+'" y1="'+paneTop+'" x2="'+(W-padR)+'" y2="'+paneTop+'" stroke="'+grid+'" stroke-width="1"/>');
+
+      // guide levels inside the pane (e.g. RSI 70 / 40)
+      (pane.levels||[]).forEach(function(lv){ var v=isNum(lv)?lv:lv.value; if(!isNum(v)) return;
+        var c=(lv&&lv.color)||"#3f5570", ly2=PY(v);
+        out.push('<line x1="'+padL+'" y1="'+ly2+'" x2="'+(W-padR)+'" y2="'+ly2+'" stroke="'+c+'" stroke-width="1" stroke-dasharray="4 3" opacity="0.8"/>');
+        out.push('<text x="'+(W-padR+6)+'" y="'+(ly2+3.5)+'" fill="'+c+'" font-size="10" font-family="monospace">'+v+'</text>'); });
+
+      if(pType==="volume"){
+        var bw=Math.max(1.5,slot*0.6);
+        pd.forEach(function(v,i){ if(!isNum(v)) return; var c2=candles[i];
+          var col2=(c2&&isNum(c2[0])&&isNum(c2[3])&&c2[3]>=c2[0])?"rgba(38,166,154,0.55)":"rgba(239,83,80,0.55)";
+          if(pane.colors&&pane.colors[i]) col2=pane.colors[i];
+          var by=PY(v); out.push('<rect x="'+(X(i)-bw/2)+'" y="'+by+'" width="'+bw+'" height="'+Math.max(0.5,paneBot-by)+'" fill="'+col2+'"/>'); });
+      } else {
+        out.push('<path d="'+linePath(pd,X,PY)+'" fill="none" stroke="'+(pane.color||"#c084fc")+'" stroke-width="1.6"/>');
+      }
+      (pane.markers||[]).forEach(function(m){ if(!isNum(m.i)||!isNum(m.value)) return;
+        out.push('<circle cx="'+X(m.i)+'" cy="'+PY(m.value)+'" r="3.2" fill="'+(m.color||"#fbbf24")+'" stroke="#0b111c" stroke-width="1"/>'); });
+      if(pane.label) out.push('<text x="'+(padL+5)+'" y="'+(paneTop+13)+'" fill="'+mut+'" font-size="10.5" font-weight="600" font-family="system-ui">'+esc(pane.label)+'</text>');
+    }
 
     // header: title, subtitle, and OHLC readout (TradingView top-left)
     out.push('<text x="'+padL+'" y="17" fill="'+txt+'" font-size="13" font-weight="700" font-family="system-ui">'+esc(spec.title||"")+'</text>');
     if(spec.subtitle) out.push('<text x="'+padL+'" y="32" fill="'+mut+'" font-size="10.5" font-family="system-ui">'+esc(spec.subtitle)+'</text>');
     if(spec.ohlc !== false){ var f=candles[n-1]; if(f){ var oc=(isNum(f[0])&&isNum(f[3])&&f[3]>=f[0])?up:down;
-      var parts=[["O",f[0]],["H",f[1]],["L",f[2]],["C",f[3]]], hx=spec.subtitle?padL:padL, hy=spec.subtitle?46:32;
+      var parts=[["O",f[0]],["H",f[1]],["L",f[2]],["C",f[3]]], hy2=spec.subtitle?46:32;
       var lx=padL;
-      parts.forEach(function(p){ out.push('<text x="'+lx+'" y="'+hy+'" font-size="10.5" font-family="monospace" fill="'+mut+'">'+p[0]+'</text>');
-        lx+=11; out.push('<text x="'+lx+'" y="'+hy+'" font-size="10.5" font-family="monospace" fill="'+oc+'">'+fmt(p[1])+'</text>'); lx+=(fmt(p[1]).length*6.4)+10; }); } }
+      parts.forEach(function(p){ out.push('<text x="'+lx+'" y="'+hy2+'" font-size="10.5" font-family="monospace" fill="'+mut+'">'+p[0]+'</text>');
+        lx+=11; out.push('<text x="'+lx+'" y="'+hy2+'" font-size="10.5" font-family="monospace" fill="'+oc+'">'+fmt(p[1])+'</text>'); lx+=(fmt(p[1]).length*6.4)+10; }); } }
 
     // legend (bottom-left, above time axis)
     var lgx=padL, lgy=H-4;
@@ -1052,6 +1164,10 @@
       legend: [{ color:"#f5a623", label:"EMA21 trail" }, { color:"#26a69a", label:"BUY" },
         { color:"#d29922", label:"dips that did NOT exit" }, { color:"#ef5350", label:"EXIT" }]
     });
+    TVChart.render("ers-stack", {"title":"All four checks on one candle — this is the whole entry rule","subtitle":"5m NIFTY · EMA20 over EMA50 · RSI between 52 and 80 · SuperTrend up · candle closes above EMA20","candles":[[24394.62,24400.21,24390.06,24395.24],[24395.24,24398.61,24391.03,24392.77],[24392.77,24400.79,24390.32,24397.05],[24397.05,24405.47,24394.01,24400.29],[24400.29,24403.56,24394.94,24396.87],[24396.87,24402.25,24392.18,24398.88],[24398.88,24400.98,24396.7,24399.33],[24399.33,24405.72,24397.6,24402.26],[24402.26,24412.6,24399.13,24408.65],[24408.65,24421.56,24405.1,24418.39],[24418.39,24430.87,24409.71,24424.5],[24424.5,24434.5,24416.93,24425.89],[24425.89,24437.45,24419.74,24432.7],[24432.7,24444,24429.45,24440.51],[24440.51,24449.98,24436.16,24445.51],[24445.51,24455.23,24437.95,24450.35],[24450.35,24456.64,24443.93,24453.31],[24453.31,24466.08,24451.55,24464.24],[24464.24,24475.83,24454.9,24468.79],[24468.79,24483.3,24459.16,24479.38],[24479.38,24485.69,24470.64,24482.16],[24482.16,24491.97,24474.36,24485.77],[24485.77,24497.86,24481.11,24489.08],[24489.08,24499.79,24478.54,24493.45],[24493.45,24500.64,24488.39,24496.33],[24496.33,24513.88,24491.51,24507.27],[24507.27,24515.81,24500.14,24510.39],[24510.39,24526.63,24506.31,24520.11],[24520.11,24529.18,24514.4,24524.13],[24524.13,24542.69,24520.22,24532.22],[24532.22,24537.34,24527.34,24533.5],[24533.5,24540.6,24526.94,24534.12],[24534.12,24540.26,24522.61,24529.52],[24529.52,24533.36,24527.75,24530.05],[24530.05,24536.96,24521.86,24530.66],[24530.66,24535.2,24527.27,24530.83],[24530.83,24535.36,24526.9,24531.48],[24531.48,24537.96,24523.31,24531.8],[24531.8,24539.42,24520.83,24528.36],[24528.36,24530.2,24518.69,24521.55],[24521.55,24529.71,24518.62,24522.61],[24522.61,24539.53,24512.83,24530.74],[24530.74,24541.81,24528.56,24539.61],[24539.61,24552.1,24535.54,24548.63],[24548.63,24558.39,24545.82,24552.14],[24552.14,24559.2,24548.41,24555.7],[24555.7,24565.97,24551.55,24558.52],[24558.52,24570.96,24550.46,24564],[24564,24574.13,24560.32,24569.48]],"overlays":[{"name":"EMA 20","color":"#3b82f6","width":1.7,"data":[24404.52,24403.4,24402.8,24402.56,24402.02,24401.72,24401.49,24401.56,24402.24,24403.78,24405.75,24407.67,24410.05,24412.95,24416.05,24419.32,24422.56,24426.53,24430.55,24435.2,24439.67,24444.06,24448.35,24452.65,24456.81,24461.61,24466.26,24471.39,24476.41,24481.73,24486.66,24491.18,24494.83,24498.18,24501.28,24504.09,24506.7,24509.09,24510.93,24511.94,24512.95,24514.65,24517.02,24520.03,24523.09,24526.2,24529.28,24532.58,24536.1]},{"name":"EMA 50","color":"#a78bfa","width":1.7,"data":[null,24440.17,24438.48,24436.98,24435.41,24433.98,24432.62,24431.43,24430.53,24430.06,24429.84,24429.68,24429.8,24430.22,24430.82,24431.59,24432.44,24433.69,24435.06,24436.8,24438.58,24440.43,24442.34,24444.34,24446.38,24448.77,24451.19,24453.89,24456.64,24459.61,24462.5,24465.31,24467.83,24470.27,24472.64,24474.92,24477.14,24479.28,24481.21,24482.79,24484.35,24486.17,24488.27,24490.63,24493.05,24495.5,24497.97,24500.56,24503.27]},{"name":"SuperTrend up","color":"#26a69a","width":1.7,"data":[null,null,null,null,null,null,null,null,null,null,24385.94,24389.51,24390.71,24398.27,24404.31,24406.51,24410.42,24418.56,24422.86,24425.75,24432.72,24436.97,24442.9,24442.9,24447.36,24453.53,24459.05,24466.34,24472.23,24480.1,24483.14,24485.38,24485.38,24485.38,24485.38,24487.8,24489.52,24489.52,24489.52,24489.52,24489.52,24489.52,24490.43,24498.55,24507.59,24510.52,24515.47,24515.59,24522.5]},{"name":"SuperTrend down","color":"#ef5350","width":1.7,"data":[24421.32,24421.32,24421.32,24421.32,24421.32,24421.32,24421.32,24421.32,24421.32,24421.32,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]}],"markers":[{"i":20,"type":"dot","color":"#94a3b8","price":24439.67,"text":"check 1 — blue crosses above purple"},{"i":40,"type":"dot","color":"#fbbf24","price":24522.61,"text":"all four pass — SIGNAL"}],"pane":{"type":"rsi","label":"RSI 14 — must sit between 52 and 80","color":"#c084fc","data":[25.38,23.81,31.69,37,33.99,37.22,37.95,42.63,51.27,60.93,65.55,66.52,70.84,74.85,77.03,78.94,80.03,83.43,84.61,86.94,87.47,88.15,88.75,89.51,89.99,91.57,91.95,93.03,93.42,94.14,94.25,94.3,87.71,87.82,87.95,87.98,88.14,88.22,81.82,70.87,71.51,75.88,79.57,82.5,83.49,84.45,85.19,86.52,87.71],"levels":[{"value":80,"color":"#ef5350"},{"value":52,"color":"#26a69a"}],"markers":[{"i":40,"value":71.51,"color":"#fbbf24"}]},"legend":[{"color":"#3b82f6","label":"EMA 20"},{"color":"#a78bfa","label":"EMA 50"},{"color":"#26a69a","label":"SuperTrend up"},{"color":"#c084fc","label":"RSI 14"}],"times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55","12:00","12:05","12:10","12:15","12:20","12:25","12:30","12:35","12:40","12:45","12:50","12:55","13:00","13:05","13:10","13:15"]});
+    TVChart.render("ers-pe", {"title":"The Put side — every check simply flipped upside down","subtitle":"5m NIFTY · EMA20 under EMA50 · RSI under 48 · SuperTrend down · candle closes below EMA20","candles":[[24691.61,24698.2,24676.83,24681.36],[24681.36,24685.96,24666.59,24668.86],[24668.86,24671.57,24651.49,24656.29],[24656.29,24661.12,24638.87,24645.36],[24645.36,24648.84,24628.47,24633.06],[24633.06,24635.01,24625.38,24627.58],[24627.58,24629.28,24611.86,24615.2],[24615.2,24619.6,24602.98,24606.52],[24606.52,24610.91,24586.24,24594.35],[24594.35,24603.17,24579.71,24589.87],[24589.87,24597.09,24575.03,24580.64],[24580.64,24585.53,24566.87,24569.84],[24569.84,24578.2,24556.11,24563.96],[24563.96,24571.06,24557.79,24562.76],[24562.76,24571.83,24555.44,24566.84],[24566.84,24572.5,24563.53,24568.55],[24568.55,24573.16,24561.2,24568.11],[24568.11,24572.81,24560.83,24567.01],[24567.01,24570.33,24564.94,24569.09],[24569.09,24576.7,24564.18,24571.94],[24571.94,24579.42,24568.94,24576.3],[24576.3,24584.42,24558.16,24565.25],[24565.25,24573.03,24552.34,24556.05],[24556.05,24561.94,24545.85,24553.57],[24553.57,24561.36,24538.03,24545.48],[24545.48,24550.34,24535.91,24540.14],[24540.14,24547.51,24526.85,24533.47],[24533.47,24541.24,24519.46,24525.49],[24525.49,24529.55,24515.32,24520.55],[24520.55,24529.56,24511,24515.15],[24515.15,24522.15,24500.43,24505.58],[24505.58,24510.01,24490.56,24494.49],[24494.49,24498.31,24486.79,24491.9],[24491.9,24498.1,24479.7,24486.98],[24486.98,24493.43,24471.29,24477.13],[24477.13,24481.34,24471.68,24475.34],[24475.34,24480.68,24464.23,24468.23],[24468.23,24473.92,24457.6,24464.12],[24464.12,24466.44,24457.4,24460.79],[24460.79,24474.18,24453.54,24466.75],[24466.75,24469.78,24464.01,24466.51],[24466.51,24471.67,24461.81,24466.91],[24466.91,24470.52,24462.99,24466.89],[24466.89,24475.07,24461.21,24471.21],[24471.21,24481.2,24466.37,24477.9],[24477.9,24481.21,24476.58,24479.69],[24479.69,24494.22,24476.26,24486.62],[24486.62,24498.63,24483.8,24489.99],[24489.99,24496.76,24488.01,24493.6],[24493.6,24505.53,24487.43,24502.81],[24502.81,24511.94,24496.52,24503.75],[24503.75,24517.45,24500.07,24510.59],[24510.59,24522.51,24507.19,24518.62],[24518.62,24524.89,24512.04,24522.59],[24522.59,24526.11,24520.97,24523.58]],"overlays":[{"name":"EMA 50","color":"#a78bfa","width":1.7,"data":[null,null,24734.67,24731.17,24727.32,24723.41,24719.17,24714.75,24710.03,24705.32,24700.43,24695.31,24690.16,24685.16,24680.52,24676.13,24671.89,24667.78,24663.91,24660.3,24657.01,24653.41,24649.59,24645.83,24641.89,24637.9,24633.81,24629.56,24625.28,24620.96,24616.44,24611.66,24606.96,24602.26,24597.35,24592.56,24587.69,24582.84,24578.06,24573.69,24569.49,24565.47,24561.6,24558.05,24554.91,24551.96,24549.4,24547.07,24544.97,24543.32,24541.77,24540.54,24539.69,24539.01,24538.41]},{"name":"EMA 21 trail","color":"#f97316","width":1.5,"dash":true,"data":[24725.58,24720.42,24714.59,24708.3,24701.46,24694.74,24687.51,24680.15,24672.35,24664.85,24657.19,24649.25,24641.5,24634.34,24628.2,24622.78,24617.81,24613.19,24609.18,24605.8,24603.12,24599.67,24595.71,24591.88,24587.66,24583.34,24578.81,24573.96,24569.1,24564.2,24558.87,24553.02,24547.46,24541.96,24536.07,24530.55,24524.88,24519.36,24514.03,24509.74,24505.81,24502.27,24499.05,24496.52,24494.83,24493.45,24492.83,24492.57,24492.67,24493.59,24494.51,24495.97,24498.03,24500.27,24502.39]}],"shades":[{"from":21,"to":46,"color":"rgba(239,83,80,0.07)","label":"holding the Put","labelBottom":true}],"markers":[{"i":20,"type":"dot","color":"#fbbf24","price":24576.3,"text":"SIGNAL candle"},{"i":21,"type":"exit","color":"#26a69a","price":24576.3,"text":"BUY PE 24576"},{"i":46,"type":"buy","color":"#ef5350","price":24492.83,"text":"EXIT 24493 (+83 pts)"}],"pane":{"type":"rsi","label":"RSI 14 — must sit between 20 and 48","color":"#c084fc","data":[15.91,13.46,11.54,10.17,8.9,8.4,7.38,6.76,6,5.75,5.25,4.73,4.48,4.42,8.39,10.07,10.02,9.89,12.29,15.62,20.57,17.73,15.78,15.29,13.78,12.88,11.84,10.73,10.09,9.44,8.4,7.38,7.16,6.75,6.01,5.89,5.4,5.14,4.93,11.86,11.82,12.32,12.32,18.09,26.19,28.24,35.67,38.98,42.4,50.08,50.8,55.81,60.84,63.08,63.64],"levels":[{"value":48,"color":"#ef5350"},{"value":20,"color":"#26a69a"}],"markers":[{"i":20,"value":20.57,"color":"#fbbf24"}]},"legend":[{"color":"#a78bfa","label":"EMA 50"},{"color":"#f97316","label":"EMA 21 trail"},{"color":"#c084fc","label":"RSI 14"}],"times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55","12:00","12:05","12:10","12:15","12:20","12:25","12:30","12:35","12:40","12:45","12:50","12:55","13:00","13:05","13:10","13:15","13:20","13:25","13:30","13:35","13:40","13:45"]});
+    TVChart.render("ers-negcandle", {"title":"The rule that cuts losers fast — two red closes and it is over","subtitle":"5m NIFTY · the trade never once showed a profit at a candle close, so it is cut without waiting for the stop","candles":[[24567.37,24583.74,24563.28,24578.71],[24578.71,24596.7,24573.85,24586.57],[24586.57,24593.02,24584.84,24588.99],[24588.99,24599.6,24585.3,24594.26],[24594.26,24609.13,24587.89,24599.93],[24599.93,24614.92,24595.18,24610.56],[24610.56,24621.92,24603.57,24616.04],[24616.04,24623.98,24612.26,24618.47],[24618.47,24629.08,24615,24623.56],[24623.56,24631.15,24622.02,24628.2],[24628.2,24637.17,24625.97,24634.75],[24634.75,24638.74,24629.1,24636.89],[24636.89,24649.05,24632.52,24642.93],[24642.93,24647.09,24639.1,24643.11],[24643.11,24645.75,24637.37,24641.89],[24641.89,24644.92,24632.79,24635.01],[24635.01,24640.22,24626.79,24634.52],[24634.52,24641.96,24627.54,24632.82],[24632.82,24639.63,24625.2,24631.22],[24631.22,24635.29,24626.73,24629.44],[24629.44,24638.44,24626.44,24634.44],[24634.44,24635.44,24618.44,24621.44],[24621.44,24623.44,24609.44,24612.44],[24612.44,24614.63,24608.92,24613.16],[24613.16,24617.2,24608.86,24612.27],[24612.27,24616.01,24608.78,24611.12],[24611.12,24620.05,24608.65,24612.95],[24612.95,24617.45,24605.79,24610.27],[24610.27,24615.1,24606.44,24608.25],[24608.25,24613.55,24596.1,24605.04],[24605.04,24608.29,24599.63,24602.52]],"overlays":[{"name":"EMA 50","color":"#a78bfa","width":1.7,"data":[24501.45,24504.79,24508.09,24511.47,24514.94,24518.69,24522.5,24526.27,24530.08,24533.93,24537.88,24541.77,24545.73,24549.55,24553.17,24556.38,24559.45,24562.32,24565.03,24567.55,24570.18,24572.19,24573.76,24575.31,24576.76,24578.11,24579.47,24580.68,24581.76,24582.67,24583.45]},{"name":"EMA 21 trail","color":"#f97316","width":1.5,"dash":true,"data":[24530.21,24535.34,24540.21,24545.13,24550.11,24555.6,24561.1,24566.31,24571.52,24576.67,24581.95,24586.95,24592.04,24596.68,24600.79,24603.9,24606.68,24609.06,24611.07,24612.74,24614.72,24615.33,24615.06,24614.89,24614.65,24614.33,24614.21,24613.85,24613.34,24612.59,24611.67]}],"hlines":[{"price":24629.44,"color":"#94a3b8","label":"we bought here"}],"shades":[{"from":21,"to":22,"color":"rgba(239,83,80,0.10)","label":"two closes, both under water","text":"#e79b9b"}],"markers":[{"i":20,"type":"buy","price":24629.44,"text":"BUY CE 24629"},{"i":22,"type":"exit","price":24612.44,"text":"CUT -17 pts"}],"legend":[{"color":"#a78bfa","label":"EMA 50"},{"color":"#f97316","label":"EMA 21 trail"},{"color":"#94a3b8","label":"entry price"},{"color":"#ef5350","label":"cut after 2 candles"}],"times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45"]});
+    TVChart.render("ers-chop", {"title":"The day the brakes exist for — three trades, three stop-outs","subtitle":"5m NIFTY · every setup looked fine, every one was thrown out within 7 candles · total -47 pts","candles":[[24701.71,24711.76,24699.46,24709.84],[24709.84,24716.55,24706.65,24711.71],[24711.71,24721.9,24706.85,24716.71],[24716.71,24722.02,24714.04,24717.81],[24717.81,24725.02,24714.61,24723.38],[24723.38,24727.24,24719.21,24724.38],[24724.38,24729,24718.71,24724.88],[24724.88,24729.55,24721.71,24725.26],[24725.26,24733.93,24721.93,24731.64],[24731.64,24741.13,24727.8,24737.74],[24737.74,24744.49,24732.16,24739.75],[24739.75,24742.76,24736.63,24740.45],[24740.45,24755.47,24736.31,24746.28],[24746.28,24756.66,24744.45,24752.78],[24752.78,24762.38,24746.73,24756.67],[24756.67,24761.77,24754.15,24759.1],[24759.1,24767.99,24755.23,24764.89],[24764.89,24774.63,24754.19,24760.74],[24760.74,24765.02,24749.98,24754.98],[24754.98,24760.7,24745.61,24752.95],[24752.95,24765.45,24734.05,24745.12],[24745.12,24749.04,24731.75,24736.81],[24736.81,24740.37,24718.6,24724.48],[24724.48,24727.49,24710.93,24718.77],[24718.77,24722.34,24705.51,24709.34],[24709.34,24712.58,24699.85,24703.2],[24703.2,24718.1,24698.85,24714.37],[24714.37,24726.59,24708.96,24722.42],[24722.42,24734.85,24715.95,24731.5],[24731.5,24743.36,24726.43,24736.5],[24736.5,24749.37,24731.1,24747.35],[24747.35,24761.37,24741.12,24759.29],[24759.29,24774.69,24751.98,24764.87],[24764.87,24777.32,24758.3,24770.87],[24770.87,24782.43,24768.59,24779.9],[24779.9,24785.38,24769.4,24773.27],[24773.27,24778.77,24756.61,24761.59],[24761.59,24766.94,24753.81,24759.22],[24759.22,24761.21,24751.33,24754.48],[24754.48,24762.29,24737.77,24743.41],[24743.41,24747.85,24733.04,24739.36],[24739.36,24744.06,24722.49,24727.74],[24727.74,24736.61,24713.77,24718.22],[24718.22,24721.22,24702.61,24708.15],[24708.15,24720.98,24701.59,24716.72],[24716.72,24725.98,24712.63,24723.12],[24723.12,24732.56,24714.18,24727.76],[24727.76,24745.98,24723.16,24737.62],[24737.62,24752.21,24732.47,24743.26],[24743.26,24754.8,24739.34,24752.87],[24752.87,24762.6,24749.42,24753.83],[24753.83,24765.25,24747.01,24760.15],[24760.15,24776.57,24752.91,24768.41],[24768.41,24780.18,24761.8,24777.08],[24777.08,24779.06,24768.38,24771.75],[24771.75,24775.56,24755.42,24760.11],[24760.11,24762.52,24746.35,24749.04],[24749.04,24757,24734.42,24742.21],[24742.21,24743.71,24734.15,24736.63],[24736.63,24742.7,24720.31,24728.79],[24728.79,24733.57,24711.72,24717.91],[24717.91,24724.71,24700.26,24707.72],[24707.72,24713.9,24689.39,24697.62],[24697.62,24706.63,24686.98,24697.27],[24697.27,24708.14,24687.7,24702.77],[24702.77,24713.04,24699.74,24709.23],[24709.23,24716.2,24705.08,24714.69],[24714.69,24722.26,24708.21,24714.49]],"overlays":[{"name":"EMA 50","color":"#a78bfa","width":1.7,"data":[null,null,null,null,24639.49,24642.82,24646.03,24649.14,24652.38,24655.72,24659.02,24662.21,24665.51,24668.93,24672.37,24675.77,24679.27,24682.46,24685.31,24687.96,24690.2,24692.03,24693.3,24694.3,24694.89,24695.22,24695.97,24697,24698.36,24699.85,24701.72,24703.97,24706.36,24708.89,24711.68,24714.09,24715.95,24717.65,24719.09,24720.05,24720.81,24721.08,24720.97,24720.46,24720.32,24720.43,24720.71,24721.38,24722.23,24723.44,24724.63,24726.02,24727.68,24729.62,24731.27,24732.4,24733.06,24733.42,24733.54,24733.35,24732.75,24731.77,24730.43,24729.13,24728.09,24727.35,24726.86,24726.37]},{"name":"EMA 21 trail","color":"#f97316","width":1.5,"dash":true,"data":[24670.38,24674.13,24678.01,24681.62,24685.42,24688.96,24692.23,24695.23,24698.54,24702.1,24705.53,24708.7,24712.12,24715.81,24719.53,24723.13,24726.92,24730,24732.27,24734.15,24735.15,24735.3,24734.31,24732.9,24730.76,24728.25,24726.99,24726.58,24727.02,24727.88,24729.65,24732.35,24735.3,24738.54,24742.3,24745.11,24746.61,24747.76,24748.37,24747.92,24747.14,24745.38,24742.91,24739.75,24737.65,24736.33,24735.55,24735.74,24736.43,24737.92,24739.37,24741.26,24743.72,24746.76,24749.03,24750.04,24749.95,24749.24,24748.1,24746.34,24743.76,24740.48,24736.58,24733.01,24730.26,24728.35,24727.11,24725.96]}],"shades":[{"from":21,"to":24,"color":"rgba(251,191,36,0.13)","text":"#e0c07a","label":"cool-down"},{"from":39,"to":42,"color":"rgba(251,191,36,0.13)","text":"#e0c07a"},{"from":56,"to":59,"color":"rgba(251,191,36,0.13)","text":"#e0c07a"}],"markers":[{"i":20,"type":"buy","price":24752.95,"text":"BUY 1"},{"i":21,"type":"exit","price":24735.3,"text":"-18 pts"},{"i":32,"type":"buy","price":24759.29,"text":"BUY 2"},{"i":39,"type":"exit","price":24747.92,"text":"-11 pts"},{"i":53,"type":"buy","price":24768.41,"text":"BUY 3"},{"i":56,"type":"exit","price":24749.95,"text":"-18 pts"}],"legend":[{"color":"#a78bfa","label":"EMA 50"},{"color":"#f97316","label":"EMA 21 trail"},{"color":"#fbbf24","label":"3-candle cool-down after each stop"}],"times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55","12:00","12:05","12:10","12:15","12:20","12:25","12:30","12:35","12:40","12:45","12:50","12:55","13:00","13:05","13:10","13:15","13:20","13:25","13:30","13:35","13:40","13:45","13:50","13:55","14:00","14:05","14:10","14:15","14:20","14:25","14:30","14:35","14:40","14:45","14:50"]});
   };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", render);
   else render();

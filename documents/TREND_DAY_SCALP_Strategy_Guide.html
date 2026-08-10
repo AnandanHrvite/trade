@@ -159,6 +159,22 @@
 <tr><td><b>Committed, not drifting</b><br><span class="muted">spot at least 0.20× the range away from VWAP</span></td><td>Price can technically stay above VWAP while sitting right on top of it. That is not a trend, it is a coin flip.</td><td>75.03pt vs need 32.10pt (0.20 x range) ✅</td></tr>
 </table>
 
+<!-- ── how to read the charts (plain-English key) ── -->
+<div class="tv-key" style="margin:18px 0 6px; border:1px solid #2b3648; border-left:4px solid #60a5fa; border-radius:10px; background:#101725; padding:14px 18px;">
+  <div style="font-weight:700; color:#e8eef8; font-size:0.95rem; margin-bottom:8px;">New to charts? Read this once and every picture below makes sense</div>
+  <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:8px 20px; font-size:0.84rem; line-height:1.55; color:#a9b6c9;">
+    <div><b style="color:#26a69a;">Green bar</b> &mdash; that slice of time ended <b>higher</b> than it started. Buyers won.</div>
+    <div><b style="color:#ef5350;">Red bar</b> &mdash; that slice of time ended <b>lower</b> than it started. Sellers won.</div>
+    <div><b style="color:#e8eef8;">The thin spike</b> above and below each bar is the highest and lowest price touched inside it.</div>
+    <div><b style="color:#26a69a;">&#9650; Triangle up</b> = the moment we <b>bought</b>. <b style="color:#ef5350;">&#9660; Triangle down</b> = the moment we <b>sold</b>.</div>
+    <div><b style="color:#fbbf24;">Yellow dot</b> = the candle that set off the signal &mdash; the thing the strategy was waiting for.</div>
+    <div><b style="color:#fbbf24;">Dashed line with a price tag</b> = a level that matters: a stop-loss, a target, or a floor under our profit.</div>
+    <div><b style="color:#94a3b8;">Shaded column</b> = the stretch of time we were actually holding the option.</div>
+    <div><b style="color:#7890c8;">Coloured lines</b> are the strategy's tools. The small legend under each chart names them.</div>
+  </div>
+  <div style="font-size:0.8rem; color:#7d8ba0; margin-top:9px;"><b style="color:#a9b6c9;">A word on "points".</b> Every price on these charts is the <b>index level itself</b> &mdash; not rupees, and not the price of the option you buy. So "+30 points" means the index moved 30 points our way. As a rough rule of thumb the option we buy gains a little over <b>half a point</b> for each point the index moves, and one lot is about 75 units &mdash; so a 30-point index move is roughly &#8377;1,200 on one lot before costs.</div>
+</div>
+
 <div class="chart-box"><div id="tds-gate"></div></div>
 
 <p>All three passed, so this became a <b>CE-only day</b>: from 10:15 until the close it will consider buying calls and nothing else. It will not flip if price reverses. It will not take a put. The direction was decided once.</p>
@@ -193,6 +209,12 @@
 </table>
 
 <p>On this day the break-even jump armed at <b>11:25</b> and the target was reached at <b>11:55</b> — <b>Target hit (2.5R)</b> at 24398.41.</p>
+
+<div class="chart-box"><div id="tds-pe"></div></div>
+<p class="tv-cap"><b>The same machine pointing the other way.</b> The grey band on the left is the first hour, and at 10:15 it is judged once: the day moved <b>0.63%</b> (needs 0.5%), the last six closes were <em>all</em> below VWAP, and price sat <b>74 points</b> from VWAP against the 31 required. Three passes, so this is a <b>PE-only day</b> &mdash; from here it will not buy a single Call no matter what price does. Later the market bounces back up into the zone (the nearer of the purple VWAP and blue EMA20 lines), and one decisive red candle rejects it and closes back below &rarr; <b>BUY PE at 24,483</b>. The stop goes at the top of that bounce, <b>24 points</b> away, and that distance is our "1R". Target is fixed at <b>2.5R = 60 points</b>. Ten minutes later the trade is up 1R so the stop makes its one and only move, up to break-even. Half an hour after that the target prints and we are done &mdash; no trailing, no second-guessing.</p>
+
+<div class="chart-box"><div id="tds-stopped"></div></div>
+<p class="tv-cap"><b>And the loser, which looks almost identical until it doesn't.</b> Good day gate, clean dip into the zone, a convincing green candle reclaiming it &rarr; <b>BUY CE at 24,443</b>, stop 21 points below at the low of the dip. Then price hangs about for a few candles, never gets the 1R it needs to move the stop to break-even, and rolls over. <b>25 minutes</b> after entry the dip low gives way and we are out for <b>exactly 1R</b>. That is the whole design in one picture: every loss is the same size, and every win is 2.5 of them. You do not need to be right often &mdash; at this shape, being right <b>29% of the time</b> is break-even.</p>
 
 <div class="card">
   <strong>Why there is no trailing stop.</strong> Every other strategy in this app trails, and it is exactly what turns their winners into scratches — a normal pullback taps the trail and the trade is closed just before the move continues. Here the fixed target does that job instead. The stop makes precisely one move, to break-even, and then holds still.
@@ -313,10 +335,12 @@
 
 <script>
 /* ============================================================================
- * TVChart v2 — dependency-free TradingView-style candlestick renderer.
- * Adds: OHLC header, subtitle, bottom time axis, last-price tag/line,
- *       denser-candle support. Backward-compatible spec from v1.
+ * TVChart v3 — dependency-free TradingView-style candlestick renderer.
+ * v2 features: OHLC header, subtitle, bottom time axis, last-price tag/line.
+ * v3 adds:   hlines (labelled price levels), shades (vertical highlight spans),
+ *            pane (RSI / volume / line sub-panel under the price chart).
  * Pure buildSVG(spec) -> string (no DOM), never throws on bad data.
+ * Backward-compatible with every v1/v2 spec.
  * ==========================================================================*/
 (function (global) {
   "use strict";
@@ -331,19 +355,43 @@
     (spec.overlays||[]).forEach(function(o){ (o.data||[]).forEach(eat); });
     (spec.bands||[]).forEach(function(b){ (b.upper||[]).forEach(eat); (b.lower||[]).forEach(eat); (b.mid||[]).forEach(eat); });
     (spec.markers||[]).forEach(function(m){ if(isNum(m.price)) eat(m.price); });
+    (spec.hlines||[]).forEach(function(h){ eat(h.price); });
+    (spec.zones||[]).forEach(function(z){ eat(z.top); eat(z.bottom); });
     if(!isFinite(lo)||!isFinite(hi)){ lo=0; hi=1; }
     if(lo===hi){ lo-=1; hi+=1; }
     var pad=(hi-lo)*0.10; return { lo:lo-pad, hi:hi+pad };
+  }
+
+  // Build a path that starts a fresh subpath after every gap. Indicator series
+  // are null until they have enough history (EMA/BB/RSI warm-up), and a path
+  // that opens with "L" is invalid — that used to drop the whole line.
+  function linePath(data, X, Y) {
+    var d = "", pen = false;
+    for (var i=0;i<data.length;i++){
+      if(!isNum(data[i])){ pen = false; continue; }
+      d += (pen ? "L" : "M") + X(i) + " " + Y(data[i]) + " "; pen = true;
+    }
+    return d;
   }
 
   function buildSVG(spec) {
     spec = spec||{};
     var candles = spec.candles||[]; var n = candles.length;
     if(!n) return '<div class="tv-empty">chart data unavailable</div>';
-    var W=880, H=440, padL=6, padR=74, padT=52, padB=40;
-    var rng=priceRange(spec); var plotW=W-padL-padR, plotH=H-padT-padB;
+
+    var pane = null;
+    if (spec.pane && spec.pane.data && spec.pane.data.length) pane = spec.pane;
+    var paneH  = pane ? (isNum(pane.height) ? pane.height : 92) : 0;
+    var paneGap = pane ? 12 : 0;
+
+    var W=880, padL=6, padR=74, padT=52, padB=40, plotH=348;
+    var H = padT + plotH + paneGap + paneH + padB;
+    var rng=priceRange(spec); var plotW=W-padL-padR;
     var slot=plotW/n; var cw=Math.max(2,Math.min(20,slot*0.66)); var wickW=Math.max(0.8,cw*0.12);
     var up="#26a69a",down="#ef5350",grid="#1b2636",axis="#5a7499",txt="#e8eef8",mut="#8b98ac";
+    var plotBot = padT+plotH;
+    var paneTop = plotBot+paneGap, paneBot = paneTop+paneH;
+    var axisBot = pane ? paneBot : plotBot;
     function X(i){ return padL+slot*(i+0.5); }
     function Y(p){ return padT+(rng.hi-p)/(rng.hi-rng.lo)*plotH; }
     var out=[];
@@ -359,8 +407,15 @@
     var times = spec.times || [];
     var step = Math.max(1, Math.round(n/7));
     for(var t=0;t<n;t+=step){ var tx=X(t);
-      out.push('<line x1="'+tx+'" y1="'+padT+'" x2="'+tx+'" y2="'+(H-padB)+'" stroke="'+grid+'" stroke-width="0.7" opacity="0.5"/>');
-      if(times[t]) out.push('<text x="'+tx+'" y="'+(H-padB+15)+'" fill="'+axis+'" font-size="10" text-anchor="middle" font-family="system-ui">'+esc(times[t])+'</text>'); }
+      out.push('<line x1="'+tx+'" y1="'+padT+'" x2="'+tx+'" y2="'+axisBot+'" stroke="'+grid+'" stroke-width="0.7" opacity="0.5"/>');
+      if(times[t]) out.push('<text x="'+tx+'" y="'+(axisBot+15)+'" fill="'+axis+'" font-size="10" text-anchor="middle" font-family="system-ui">'+esc(times[t])+'</text>'); }
+
+    // vertical highlight spans (e.g. "position held", "no-trade window")
+    (spec.shades||[]).forEach(function(s){ if(!isNum(s.from)||!isNum(s.to)) return;
+      var sx=X(s.from)-slot/2, sw=Math.max(1,X(s.to)-X(s.from)+slot);
+      out.push('<rect x="'+sx+'" y="'+padT+'" width="'+sw+'" height="'+plotH+'" fill="'+(s.color||"rgba(96,165,250,0.07)")+'"/>');
+      if(s.label){ var sly = s.labelBottom ? (padT+plotH-7) : (padT+13);
+        out.push('<text x="'+(sx+sw/2)+'" y="'+sly+'" fill="'+(s.text||"#7c93b5")+'" font-size="10" text-anchor="middle" font-family="system-ui">'+esc(s.label)+'</text>'); } });
 
     // zones (e.g. ORB opening-range box)
     (spec.zones||[]).forEach(function(z){ if(!isNum(z.from)||!isNum(z.to)) return;
@@ -373,10 +428,23 @@
       if(u.length&&l.length){ var pts=[]; for(var i=0;i<u.length;i++) if(isNum(u[i])) pts.push(X(i)+","+Y(u[i]));
         for(var j=l.length-1;j>=0;j--) if(isNum(l[j])) pts.push(X(j)+","+Y(l[j]));
         out.push('<polygon points="'+pts.join(" ")+'" fill="'+(b.fill||"rgba(120,144,200,0.08)")+'"/>');
-        [u,l].forEach(function(line){ var d=line.map(function(v,i){ return (isNum(v)?(i?"L":"M")+X(i)+" "+Y(v):""); }).join(" ");
-          out.push('<path d="'+d+'" fill="none" stroke="'+(b.color||"#a78bfa")+'" stroke-width="1.3" opacity="0.85"/>'); }); }
-      if(b.mid){ var dm=b.mid.map(function(v,i){ return (isNum(v)?(i?"L":"M")+X(i)+" "+Y(v):""); }).join(" ");
-        out.push('<path d="'+dm+'" fill="none" stroke="'+(b.color||"#a78bfa")+'" stroke-width="1" stroke-dasharray="2 3" opacity="0.7"/>'); } });
+        [u,l].forEach(function(line){
+          out.push('<path d="'+linePath(line,X,Y)+'" fill="none" stroke="'+(b.color||"#a78bfa")+'" stroke-width="1.3" opacity="0.85"/>'); }); }
+      if(b.mid){
+        out.push('<path d="'+linePath(b.mid,X,Y)+'" fill="none" stroke="'+(b.color||"#a78bfa")+'" stroke-width="1" stroke-dasharray="2 3" opacity="0.7"/>'); } });
+
+    // labelled horizontal price levels (stop / target / neckline / OR high-low)
+    (spec.hlines||[]).forEach(function(hl){ if(!isNum(hl.price)) return;
+      var hy=Y(hl.price), hc=hl.color||"#fbbf24";
+      out.push('<line x1="'+padL+'" y1="'+hy+'" x2="'+(W-padR)+'" y2="'+hy+'" stroke="'+hc+'" stroke-width="'+(hl.width||1.2)+'" '+(hl.solid?"":'stroke-dasharray="6 4" ')+'opacity="0.9"/>');
+      out.push('<rect x="'+(W-padR)+'" y="'+(hy-8)+'" width="'+padR+'" height="16" fill="'+hc+'" opacity="0.92"/>');
+      out.push('<text x="'+(W-padR+5)+'" y="'+(hy+3.5)+'" fill="#0d1421" font-size="10" font-weight="700" font-family="monospace">'+hl.price.toFixed(0)+'</text>');
+      if(hl.label){ var lw=hl.label.length*5.9+10;
+        // labelAt (0..1) slides the tag along the line so it can dodge markers
+        var lx1=padL+3+(isNum(hl.labelAt)?hl.labelAt:0)*(W-padR-padL-lw-6);
+        lx1=Math.max(padL+3,Math.min(lx1,W-padR-lw-3));
+        out.push('<rect x="'+lx1+'" y="'+(hy-15)+'" width="'+lw+'" height="14" rx="3" fill="'+hc+'" opacity="0.92"/>');
+        out.push('<text x="'+(lx1+5)+'" y="'+(hy-4.5)+'" fill="#0d1421" font-size="9.8" font-weight="700" font-family="system-ui">'+esc(hl.label)+'</text>'); } });
 
     // candlesticks
     candles.forEach(function(c,i){ if(!c||!isNum(c[0])||!isNum(c[3])) return;
@@ -386,8 +454,8 @@
       out.push('<rect x="'+(cx-cw/2)+'" y="'+top+'" width="'+cw+'" height="'+bh+'" fill="'+col+'"/>'); });
 
     // overlay indicator lines (EMA / VWAP / MAs)
-    (spec.overlays||[]).forEach(function(ov){ var d=(ov.data||[]).map(function(v,i){ return (isNum(v)?(i?"L":"M")+X(i)+" "+Y(v):""); }).join(" ");
-      out.push('<path d="'+d+'" fill="none" stroke="'+(ov.color||"#fbbf24")+'" stroke-width="'+(ov.width||1.6)+'" '+(ov.dash?'stroke-dasharray="5 3" ':"")+'opacity="0.95"/>'); });
+    (spec.overlays||[]).forEach(function(ov){
+      out.push('<path d="'+linePath(ov.data||[],X,Y)+'" fill="none" stroke="'+(ov.color||"#fbbf24")+'" stroke-width="'+(ov.width||1.6)+'" '+(ov.dash?'stroke-dasharray="5 3" ':"")+'opacity="0.95"/>'); });
 
     // last-price dashed line + right-axis tag (TradingView style)
     if(spec.lastPriceTag !== false){ var last=candles[n-1]; if(last&&isNum(last[3])){ var lp=last[3], ly=Y(lp);
@@ -398,23 +466,61 @@
 
     // markers (buy / exit / dot)
     (spec.markers||[]).forEach(function(m){ if(!isNum(m.i)) return; var mx=X(m.i);
-      var my=isNum(m.price)?Y(m.price):(m.type==="buy"?H-padB-14:padT+14);
+      var my=isNum(m.price)?Y(m.price):(m.type==="buy"?plotBot-14:padT+14);
       var isBuy=m.type==="buy", isExit=m.type==="exit"; var col=m.color||(isBuy?"#26a69a":isExit?"#ef5350":"#fbbf24");
       if(isBuy||isExit){ var ay=isBuy?my+18:my-18, tri=isBuy?(mx-6)+","+ay+" "+(mx+6)+","+ay+" "+mx+","+(ay-10):(mx-6)+","+ay+" "+(mx+6)+","+ay+" "+mx+","+(ay+10);
         out.push('<polygon points="'+tri+'" fill="'+col+'"/>'); }
       else out.push('<circle cx="'+mx+'" cy="'+my+'" r="3.5" fill="'+col+'" stroke="#0d1421" stroke-width="1"/>');
       if(m.text){ var lblY=isBuy?my+34:(isExit?my-26:my-10); var tw=m.text.length*6.2+10;
-        out.push('<rect x="'+(mx-tw/2)+'" y="'+(lblY-11)+'" width="'+tw+'" height="15" rx="3" fill="'+col+'" opacity="0.94"/>');
-        out.push('<text x="'+mx+'" y="'+lblY+'" fill="#0d1421" font-size="10.5" font-weight="700" text-anchor="middle" font-family="system-ui">'+esc(m.text)+'</text>'); } });
+        var lx0=Math.max(padL+1,Math.min(mx-tw/2,W-padR-tw-1));
+        out.push('<rect x="'+lx0+'" y="'+(lblY-11)+'" width="'+tw+'" height="15" rx="3" fill="'+col+'" opacity="0.94"/>');
+        out.push('<text x="'+(lx0+tw/2)+'" y="'+lblY+'" fill="#0d1421" font-size="10.5" font-weight="700" text-anchor="middle" font-family="system-ui">'+esc(m.text)+'</text>'); } });
+
+    // ── sub-panel: RSI / volume / any line series ─────────────────────────
+    if(pane){
+      var pd=pane.data||[], pType=pane.type||"line";
+      var plo=Infinity, phi=-Infinity;
+      pd.forEach(function(v){ if(isNum(v)){ if(v>phi)phi=v; if(v<plo)plo=v; } });
+      if(pType==="rsi"){ plo=0; phi=100; }
+      if(pType==="volume"){ plo=0; }
+      if(isNum(pane.min)) plo=pane.min;
+      if(isNum(pane.max)) phi=pane.max;
+      if(!isFinite(plo)||!isFinite(phi)){ plo=0; phi=1; }
+      if(plo===phi){ plo-=1; phi+=1; }
+      var pPad=(pType==="rsi"||pType==="volume")?0:(phi-plo)*0.12;
+      var pLo=plo-pPad, pHi=phi+pPad;
+      function PY(v){ return paneTop+(pHi-v)/(pHi-pLo)*paneH; }
+      out.push('<rect x="'+padL+'" y="'+paneTop+'" width="'+(W-padR-padL)+'" height="'+paneH+'" fill="#0b111c"/>');
+      out.push('<line x1="'+padL+'" y1="'+paneTop+'" x2="'+(W-padR)+'" y2="'+paneTop+'" stroke="'+grid+'" stroke-width="1"/>');
+
+      // guide levels inside the pane (e.g. RSI 70 / 40)
+      (pane.levels||[]).forEach(function(lv){ var v=isNum(lv)?lv:lv.value; if(!isNum(v)) return;
+        var c=(lv&&lv.color)||"#3f5570", ly2=PY(v);
+        out.push('<line x1="'+padL+'" y1="'+ly2+'" x2="'+(W-padR)+'" y2="'+ly2+'" stroke="'+c+'" stroke-width="1" stroke-dasharray="4 3" opacity="0.8"/>');
+        out.push('<text x="'+(W-padR+6)+'" y="'+(ly2+3.5)+'" fill="'+c+'" font-size="10" font-family="monospace">'+v+'</text>'); });
+
+      if(pType==="volume"){
+        var bw=Math.max(1.5,slot*0.6);
+        pd.forEach(function(v,i){ if(!isNum(v)) return; var c2=candles[i];
+          var col2=(c2&&isNum(c2[0])&&isNum(c2[3])&&c2[3]>=c2[0])?"rgba(38,166,154,0.55)":"rgba(239,83,80,0.55)";
+          if(pane.colors&&pane.colors[i]) col2=pane.colors[i];
+          var by=PY(v); out.push('<rect x="'+(X(i)-bw/2)+'" y="'+by+'" width="'+bw+'" height="'+Math.max(0.5,paneBot-by)+'" fill="'+col2+'"/>'); });
+      } else {
+        out.push('<path d="'+linePath(pd,X,PY)+'" fill="none" stroke="'+(pane.color||"#c084fc")+'" stroke-width="1.6"/>');
+      }
+      (pane.markers||[]).forEach(function(m){ if(!isNum(m.i)||!isNum(m.value)) return;
+        out.push('<circle cx="'+X(m.i)+'" cy="'+PY(m.value)+'" r="3.2" fill="'+(m.color||"#fbbf24")+'" stroke="#0b111c" stroke-width="1"/>'); });
+      if(pane.label) out.push('<text x="'+(padL+5)+'" y="'+(paneTop+13)+'" fill="'+mut+'" font-size="10.5" font-weight="600" font-family="system-ui">'+esc(pane.label)+'</text>');
+    }
 
     // header: title, subtitle, and OHLC readout (TradingView top-left)
     out.push('<text x="'+padL+'" y="17" fill="'+txt+'" font-size="13" font-weight="700" font-family="system-ui">'+esc(spec.title||"")+'</text>');
     if(spec.subtitle) out.push('<text x="'+padL+'" y="32" fill="'+mut+'" font-size="10.5" font-family="system-ui">'+esc(spec.subtitle)+'</text>');
     if(spec.ohlc !== false){ var f=candles[n-1]; if(f){ var oc=(isNum(f[0])&&isNum(f[3])&&f[3]>=f[0])?up:down;
-      var parts=[["O",f[0]],["H",f[1]],["L",f[2]],["C",f[3]]], hx=spec.subtitle?padL:padL, hy=spec.subtitle?46:32;
+      var parts=[["O",f[0]],["H",f[1]],["L",f[2]],["C",f[3]]], hy2=spec.subtitle?46:32;
       var lx=padL;
-      parts.forEach(function(p){ out.push('<text x="'+lx+'" y="'+hy+'" font-size="10.5" font-family="monospace" fill="'+mut+'">'+p[0]+'</text>');
-        lx+=11; out.push('<text x="'+lx+'" y="'+hy+'" font-size="10.5" font-family="monospace" fill="'+oc+'">'+fmt(p[1])+'</text>'); lx+=(fmt(p[1]).length*6.4)+10; }); } }
+      parts.forEach(function(p){ out.push('<text x="'+lx+'" y="'+hy2+'" font-size="10.5" font-family="monospace" fill="'+mut+'">'+p[0]+'</text>');
+        lx+=11; out.push('<text x="'+lx+'" y="'+hy2+'" font-size="10.5" font-family="monospace" fill="'+oc+'">'+fmt(p[1])+'</text>'); lx+=(fmt(p[1]).length*6.4)+10; }); } }
 
     // legend (bottom-left, above time axis)
     var lgx=padL, lgy=H-4;
@@ -434,6 +540,8 @@
   TVChart.render("tds-gate", {"title":"NIFTY 50 Index","subtitle":"5m \u00b7 NSE \u00b7 the 10:15 day gate \u2014 first hour judged once, then frozen","times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10"],"candles":[[24180,24197.5,24177,24194],[24194,24208.5,24191,24205],[24205,24224.5,24202,24221],[24221,24233.5,24218,24230],[24230,24246.5,24227,24243],[24243,24261.5,24240,24258],[24258,24269.5,24255,24266],[24266,24286.5,24263,24283],[24283,24298.5,24280,24295],[24295,24312.5,24292,24309],[24309,24322.5,24306,24319],[24319,24337.5,24316,24334]],"overlays":[{"name":"VWAP","color":"#8b5cf6","data":[24189.5,24195.5,24202.28,24208.5,24214.57,24221,24227.07,24233.38,24239.8,24246.27,24252.59,24258.97]}],"markers":[{"i":0,"type":"dot","color":"#64748b","price":24180,"text":"session open 24180"},{"i":11,"type":"dot","color":"#10b981","price":24334,"text":"gate 10:15 \u2192 CE day"}],"legend":[{"color":"#8b5cf6","label":"session VWAP (equal-weight HLC3)"},{"color":"#10b981","label":"gate PASSED \u2014 CE only"}]});
   TVChart.render("tds-trade", {"title":"NIFTY 50 Index","subtitle":"5m \u00b7 NSE \u00b7 pullback into the VWAP/EMA20 zone, reclaimed \u2014 fixed 2.5R target","times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55"],"candles":[[24180,24197.5,24177,24194],[24194,24208.5,24191,24205],[24205,24224.5,24202,24221],[24221,24233.5,24218,24230],[24230,24246.5,24227,24243],[24243,24261.5,24240,24258],[24258,24269.5,24255,24266],[24266,24286.5,24263,24283],[24283,24298.5,24280,24295],[24295,24312.5,24292,24309],[24309,24322.5,24306,24319],[24319,24337.5,24316,24334],[24334,24345,24330.5,24341],[24341,24354,24337.5,24350],[24350,24359,24346.5,24355],[24355,24367,24351.5,24363],[24363,24373,24359.5,24369],[24369,24383,24365.5,24379],[24379,24387,24375.5,24383],[24383,24394,24379.5,24390],[24390,24403,24386.5,24399],[24399,24409,24395.5,24405],[24405,24407.5,24388.5,24392],[24392,24394.5,24372.5,24376],[24376,24378.5,24361.5,24365],[24339.41,24354.91,24335.41,24353.41],[24353.41,24371.41,24349.41,24367.41],[24367.41,24380.41,24363.41,24376.41],[24376.41,24380.41,24366.41,24370.41],[24370.41,24386.41,24366.41,24382.41],[24382.41,24394.41,24378.41,24390.41],[24390.41,24394.41,24382.41,24386.41],[24386.41,24401.41,24382.41,24397.41]],"overlays":[{"name":"VWAP","color":"#8b5cf6","data":[24189.5,24195.5,24202.28,24208.5,24214.57,24221,24227.07,24233.38,24239.8,24246.27,24252.59,24258.97,24265.12,24270.98,24276.48,24281.73,24286.75,24291.7,24296.45,24301.02,24305.55,24309.98,24313.72,24316.53,24318.6,24319.73,24321.32,24323.18,24324.88,24326.66,24328.63,24330.48,24332.4]},{"name":"EMA20","color":"#3b82f6","data":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,24304.35,24313.36,24322.09,24328.75,24333.25,24336.27,24337.91,24340.72,24344.11,24346.62,24350.03,24353.87,24356.97,24360.82]},{"name":"stop","color":"#f59e0b","dash":true,"width":1.2,"data":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,24335.41,24356.41,24356.41,24356.41,24356.41,24356.41,24356.41,24356.41]},{"name":"target","color":"#10b981","dash":true,"width":1.2,"data":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,24398.41,24398.41,24398.41,24398.41,24398.41,24398.41,24398.41,24398.41]}],"markers":[{"i":23,"type":"dot","color":"#94a3b8","price":24394.5,"text":"pullback starts"},{"i":25,"type":"buy","price":24353.41,"text":"BUY CE @ 24353.41"},{"i":26,"type":"dot","color":"#f59e0b","price":24371.41,"text":"+1R \u2192 stop to 24356.41"},{"i":32,"type":"exit","price":24398.41,"text":"EXIT \u2014 Target hit (2.5R)"}],"legend":[{"color":"#8b5cf6","label":"VWAP"},{"color":"#3b82f6","label":"EMA20 (the zone is whichever is nearer)"},{"color":"#f59e0b","label":"stop 24335.41 (18pt)"},{"color":"#10b981","label":"target 24398.41 (2.5R)"}]});
   TVChart.render("tds-reject", {"title":"NIFTY 50 Index","subtitle":"5m \u00b7 NSE \u00b7 price keeps crossing VWAP \u2014 the 10:15 gate says NO TRADE","times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10"],"candles":[[24180,24206,24176,24202],[24202,24206,24176,24180],[24180,24206,24176,24202],[24202,24206,24176,24180],[24180,24206,24176,24202],[24202,24206,24176,24180],[24180,24206,24176,24202],[24202,24206,24176,24180],[24180,24206,24176,24202],[24202,24206,24176,24180],[24180,24206,24176,24202],[24202,24206,24176,24180]],"overlays":[{"name":"VWAP","color":"#8b5cf6","data":[24194.67,24191,24192.22,24191,24191.73,24191,24191.52,24191,24191.41,24191,24191.33,24191]}],"markers":[{"i":11,"type":"dot","color":"#f59e0b","price":24180,"text":"gate FAILED \u2192 stand aside"}],"legend":[{"color":"#8b5cf6","label":"session VWAP"},{"color":"#f59e0b","label":"rejected \u2014 no trade all day"}]});
+    TVChart.render("tds-pe", {"title":"A PE-only day — the gate pointed down at 10:15 and never changed its mind","subtitle":"5m NIFTY · first hour moved 0.63% · six closes all below VWAP · 74.08 pts from VWAP against 30.83 needed","candles":[[24620,24622.28,24606.27,24611.74],[24611.74,24618.02,24595.66,24600.95],[24600.95,24606.78,24586.13,24589.78],[24589.78,24600.82,24579.41,24583.24],[24583.24,24590.23,24562.7,24569.68],[24569.68,24577.2,24554.33,24557.15],[24557.15,24565.4,24528.85,24542.77],[24542.77,24547.83,24524.96,24529.46],[24529.46,24533.79,24513.78,24516.19],[24516.19,24522.06,24503.07,24507.82],[24507.82,24513.13,24481.16,24489.53],[24489.53,24498.2,24473.32,24481.81],[24481.81,24489.23,24468.12,24472.47],[24472.47,24478.05,24466.63,24470.14],[24470.14,24472.75,24467.37,24469.92],[24469.92,24472.09,24466.59,24469.73],[24469.73,24475.98,24459.28,24470.76],[24470.76,24475.31,24463.12,24468.09],[24468.09,24472.97,24464.24,24468.16],[24468.16,24470.33,24460.03,24464.26],[24464.26,24466.34,24456.52,24460.92],[24460.92,24473,24455.12,24468.1],[24468.1,24486.56,24465.12,24481.67],[24481.67,24496.68,24478.71,24487.82],[24487.82,24507.01,24484.14,24499.97],[24502.97,24505.97,24479.97,24482.97],[24482.97,24492.61,24464.6,24470.97],[24470.97,24473.52,24457.1,24463.53],[24463.53,24471.17,24447.71,24457.26],[24457.26,24460.68,24443.57,24448.49],[24448.49,24453.53,24433.01,24442.88],[24442.88,24452.44,24425.16,24434.78],[24434.78,24440.69,24424.03,24426.18],[24426.18,24428.39,24413.85,24419.09],[24419.09,24420.45,24407.93,24410.46],[24410.46,24418.55,24389.48,24398.95],[24398.95,24401.59,24388.99,24392.85],[24392.85,24399.75,24386.59,24389.12],[24389.12,24391.48,24382.72,24385.12],[24385.12,24388.59,24372.98,24379.67]],"overlays":[{"name":"VWAP","color":"#8b5cf6","width":1.7,"data":[24613.43,24609.15,24604.18,24600.09,24594.91,24589.58,24583.3,24577.15,24570.94,24564.95,24558.55,24552.38,24546.55,24541.19,24536.45,24532.26,24528.52,24525.21,24522.22,24519.35,24516.59,24514.26,24512.67,24511.63,24511.05,24510.23,24508.96,24507.38,24505.7,24503.88,24501.92,24499.9,24497.79,24495.52,24493.16,24490.64,24488.04,24485.51,24482.97,24480.4]},{"name":"EMA 20","color":"#3b82f6","width":1.7,"data":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,24516.68,24511.37,24507.25,24504.81,24503.2,24502.89,24500.99,24498.13,24494.84,24491.26,24487.19,24482.97,24478.38,24473.41,24468.23,24462.73,24456.66,24450.58,24444.73,24439.05,24433.39]}],"hlines":[{"price":24507.01,"color":"#ef5350","label":"stop — the top of the bounce (24 pts = 1R)","labelAt":0.02},{"price":24422.87,"color":"#26a69a","label":"target — 2.5R, and we are done","labelAt":0.55}],"shades":[{"from":0,"to":12,"color":"rgba(148,163,184,0.10)","label":"the first hour · judged once at 10:15","text":"#aab6c6"},{"from":25,"to":33,"color":"rgba(239,83,80,0.06)","label":"holding the Put","labelBottom":true}],"markers":[{"i":25,"type":"exit","color":"#26a69a","price":24482.97,"text":"BUY PE 24483"},{"i":27,"type":"dot","color":"#fbbf24","price":24458.93,"text":"+1R → stop jumps to break-even"},{"i":33,"type":"buy","color":"#ef5350","price":24422.87,"text":"TARGET 24423 (+60 pts)"}],"legend":[{"color":"#8b5cf6","label":"VWAP"},{"color":"#3b82f6","label":"EMA 20"},{"color":"#ef5350","label":"stop"},{"color":"#26a69a","label":"target (2.5R)"}],"times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55","12:00","12:05","12:10","12:15","12:20","12:25","12:30"]});
+    TVChart.render("tds-stopped", {"title":"The same setup, stopped out — this is what most losers look like","subtitle":"5m NIFTY · the dip that was supposed to be bought simply kept going · loss = exactly 1R","candles":[[24280,24303.58,24270.66,24295.24],[24295.24,24315.11,24290.55,24307.31],[24307.31,24323.88,24297.01,24317.32],[24317.32,24335.12,24308.13,24329.73],[24329.73,24344.87,24324.57,24340.21],[24340.21,24367.07,24335.12,24358.11],[24358.11,24374.82,24351.29,24366.27],[24366.27,24381.73,24361.97,24379.39],[24379.39,24393.53,24374.47,24388.05],[24388.05,24408.83,24383.85,24404.58],[24404.58,24421.9,24401,24417.03],[24417.03,24434.73,24413.97,24428.3],[24428.3,24450.04,24424.29,24440.16],[24440.16,24450.2,24437.58,24446.91],[24446.91,24455.86,24442.2,24449.39],[24449.39,24461.46,24447.2,24457.99],[24457.99,24468.8,24455.27,24464.46],[24464.46,24471.12,24459.32,24464.92],[24464.92,24471.41,24461.27,24467.39],[24467.39,24478.94,24462.31,24475.21],[24475.21,24484.23,24472.03,24478.55],[24478.55,24481.1,24466.05,24470.02],[24470.02,24480.27,24452.68,24461.96],[24461.96,24468.43,24442.37,24450.18],[24450.18,24459,24432.89,24439.6],[24439.6,24447.23,24424.76,24433.05],[24433.05,24436.04,24423.85,24427.01],[24424.01,24446.01,24422.01,24443.01],[24443.01,24446.13,24436.73,24440.93],[24440.93,24450.19,24437.55,24446.38],[24446.38,24451.14,24441.27,24448.12],[24448.12,24453.26,24434.32,24436.95],[24436.95,24443.44,24413.39,24420.57],[24420.57,24422.59,24405.94,24408.22],[24408.22,24410.89,24391.48,24397.39],[24397.39,24407.68,24385.33,24392.11],[24392.11,24397.52,24380.5,24385.69],[24385.69,24391.48,24371.95,24377.76],[24377.76,24380.67,24371.34,24374.69]],"overlays":[{"name":"VWAP","color":"#8b5cf6","width":1.7,"data":[24289.83,24297.08,24302.3,24307.8,24313.55,24320.2,24326.47,24332.46,24338.34,24344.41,24350.68,24356.93,24363.17,24369.01,24374.35,24379.43,24384.34,24388.82,24392.92,24396.88,24400.76,24404.01,24406.67,24408.62,24410.03,24410.99,24411.66,24412.56,24413.55,24414.59,24415.63,24416.44,24416.72,24416.59,24416.12,24415.53,24414.78,24413.88,24412.9]},{"name":"EMA 20","color":"#3b82f6","width":1.7,"data":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,24399.9,24407.39,24413.35,24417.98,24421.05,24422.82,24423.79,24424.1,24425.9,24427.33,24429.14,24430.95,24431.52,24430.48,24428.36,24425.41,24422.24,24418.76,24414.85,24411.03]}],"hlines":[{"price":24422.01,"color":"#ef5350","label":"stop — the low of the dip (21 pts = 1R)","labelAt":0.02},{"price":24495.51,"color":"#26a69a","label":"target — never got near it","labelAt":0.5}],"shades":[{"from":27,"to":32,"color":"rgba(239,83,80,0.09)","label":"in the trade — 25 min","labelBottom":true}],"markers":[{"i":27,"type":"buy","price":24443.01,"text":"BUY CE 24443"},{"i":32,"type":"exit","price":24422.01,"text":"STOPPED −21 pts (1R)"}],"legend":[{"color":"#8b5cf6","label":"VWAP"},{"color":"#3b82f6","label":"EMA 20"},{"color":"#ef5350","label":"stop (1R)"},{"color":"#26a69a","label":"target (2.5R)"}],"times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55","12:00","12:05","12:10","12:15","12:20","12:25"]});
 })();
 </script>
 
