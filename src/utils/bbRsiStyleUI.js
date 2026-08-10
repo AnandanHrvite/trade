@@ -27,10 +27,10 @@ body{font-family:'Inter',sans-serif;background:#060810;color:#c0d0e8;min-height:
 /* Top bar */
 .top-bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px;}
 .top-bar-title{font-size:1.15rem;font-weight:700;color:#e0eaf8;}
-.top-bar-meta{font-size:0.68rem;color:#4a6080;margin-top:3px;}
+.top-bar-meta{font-size:0.68rem;color:var(--muted-1,#8ba1c2);margin-top:3px;}
 .top-bar-right{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
-.top-bar-badge{font-size:0.65rem;font-weight:700;padding:4px 10px;border-radius:6px;text-transform:uppercase;letter-spacing:0.8px;display:inline-flex;align-items:center;gap:5px;border:1px solid #1a2236;color:#4a6080;}
-.badge-running{background:#064e3b;color:#10b981;border:1px solid #10b981;}
+.top-bar-badge{font-size:0.65rem;font-weight:700;padding:4px 10px;border-radius:6px;text-transform:uppercase;letter-spacing:0.8px;display:inline-flex;align-items:center;gap:5px;border:1px solid #1a2236;color:var(--muted-1,#8ba1c2);}
+.badge-running{background:#064e3b;color:#34d399;border:1px solid #10b981;}
 .badge-stopped{background:#1c1017;color:#ef4444;border:1px solid #ef4444;}
 .badge-dry{background:rgba(245,158,11,0.12);color:#fbbf24;border:1px solid rgba(245,158,11,0.4);}
 .badge-live{background:rgba(239,68,68,0.12);color:#ef4444;border:1px solid rgba(239,68,68,0.4);}
@@ -44,24 +44,24 @@ body{font-family:'Inter',sans-serif;background:#060810;color:#c0d0e8;min-height:
 .capital-strip{display:flex;background:#0d1320;border:1px solid #1a2236;border-radius:9px;overflow:hidden;margin-bottom:14px;}
 .cap-cell{flex:1;padding:11px 16px;border-right:1px solid #1a2236;}
 .cap-cell:last-child{border-right:none;}
-.cap-label{font-size:0.56rem;text-transform:uppercase;letter-spacing:1.5px;color:#4a6080;margin-bottom:4px;}
+.cap-label{font-size:0.56rem;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted-1,#8ba1c2);margin-bottom:4px;}
 .cap-val{font-size:1rem;font-weight:700;font-family:'IBM Plex Mono',monospace;color:#c8d8f0;}
 
 /* Stat cards */
 .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:9px;margin-bottom:16px;}
 .sc{background:#0d1320;border:1px solid #1a2236;border-radius:8px;padding:12px 14px;position:relative;overflow:hidden;}
-.sc-label{font-size:0.56rem;text-transform:uppercase;letter-spacing:1.2px;color:#4a6080;margin-bottom:5px;}
+.sc-label{font-size:0.56rem;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted-1,#8ba1c2);margin-bottom:5px;}
 .sc-val{font-size:1rem;font-weight:700;font-family:'IBM Plex Mono',monospace;color:#c8d8f0;}
-.sc-sub{font-size:0.6rem;color:#4a6080;margin-top:3px;}
+.sc-sub{font-size:0.6rem;color:var(--muted-1,#8ba1c2);margin-top:3px;}
 
 /* Section title */
-.section-title{font-size:0.58rem;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:#4a6080;margin-bottom:8px;display:flex;align-items:center;gap:8px;}
+.section-title{font-size:0.58rem;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:var(--muted-1,#8ba1c2);margin-bottom:8px;display:flex;align-items:center;gap:8px;}
 .section-title::after{content:'';flex:1;height:0.5px;background:#1a2236;}
 
 /* Copy buttons */
 .copy-btn{background:#0d1320;border:1px solid #1a2236;color:#4a9cf5;padding:4px 12px;border-radius:6px;font-size:0.68rem;cursor:pointer;font-family:inherit;transition:all 0.15s;white-space:nowrap;}
 .copy-btn:hover{background:#0a1e3d;border-color:#3b82f6;}
-.copy-btn.copied{background:#064e3b;border-color:#10b981;color:#10b981;}
+.copy-btn.copied{background:#064e3b;border-color:#10b981;color:#34d399;}
 
 /* Pulse animation */
 @keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.4;}}
@@ -130,7 +130,7 @@ function bbRsiTopBar(opts) {
     ? `<a href="${o.historyHref}" style="background:rgba(59,130,246,0.08);border:0.5px solid rgba(59,130,246,0.3);color:#60a5fa;padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;text-decoration:none;font-family:inherit;">\u{1f4ca} History</a>`
     : "";
   const resetBtn = o.resetJs
-    ? `<button onclick="${o.resetJs}" style="background:#07111f;border:0.5px solid #0e1e36;color:#4a6080;padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;cursor:pointer;font-family:inherit;">↺ Reset</button>`
+    ? `<button onclick="${o.resetJs}" style="background:#07111f;border:0.5px solid #0e1e36;color:var(--muted-1,#8ba1c2);padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;cursor:pointer;font-family:inherit;">↺ Reset</button>`
     : "";
 
   return `
@@ -177,7 +177,7 @@ function bbRsiCapitalStrip(opts) {
     <div class="cap-label">All-Time PnL</div>
     <div class="cap-val" id="${o.allTimeId || "ajax-alltime-pnl"}" style="color:${allColor};">${allTime >= 0 ? "+" : ""}₹${allTime.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
   </div>
-  <div class="cap-cell" style="font-size:0.62rem;color:#4a6080;max-width:200px;line-height:1.5;display:flex;align-items:center;">${o.note || "Capital updates when sessions complete. Reset wipes history."}</div>
+  <div class="cap-cell" style="font-size:0.62rem;color:var(--muted-1,#8ba1c2);max-width:200px;line-height:1.5;display:flex;align-items:center;">${o.note || "Capital updates when sessions complete. Reset wipes history."}</div>
 </div>`;
 }
 
@@ -257,7 +257,7 @@ function bbRsiActivityLog(opts) {
       <option value="100">100/page</option>
       <option value="9999">All</option>
     </select>
-    <span id="logCount" style="font-size:0.7rem;color:#4a6080;"></span>
+    <span id="logCount" style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);"></span>
     <button class="copy-btn" onclick="copyActivityLog(this)" style="margin-left:auto;">\u{1f4cb} Copy Log</button>
   </div>
   <div id="logBox" class="log-box"></div>
@@ -284,7 +284,7 @@ function logRender(){
   var start=(logPg-1)*logPP, slice=logFiltered.slice(start,start+logPP);
   document.getElementById('logCount').textContent = logFiltered.length+' of '+LOG_ALL.length;
   var box=document.getElementById('logBox');
-  if(slice.length===0){ box.innerHTML='<div style="color:#4a6080;font-size:0.78rem;">No entries match.</div>'; document.getElementById('logPag').innerHTML=''; return; }
+  if(slice.length===0){ box.innerHTML='<div style="color:var(--muted-1,#8ba1c2);font-size:0.78rem;">No entries match.</div>'; document.getElementById('logPag').innerHTML=''; return; }
   box.innerHTML = slice.map(function(l){
     var isBuy = l.indexOf('BUY')>=0;
     var isExit = l.indexOf('Exit')>=0;

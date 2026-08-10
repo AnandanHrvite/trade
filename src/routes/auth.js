@@ -23,6 +23,12 @@ const fyers   = require("../config/fyers");
 const zerodha = require("../services/zerodhaBroker");
 const socketManager = require("../utils/socketManager");
 
+/** `data-theme="light"` when UI_THEME resolves to light — these broker-auth
+ *  screens render outside sharedNav, so they need their own theme hook. */
+function _authLightAttr() {
+  return require("../utils/theme").resolveTheme() === "light" ? ' data-theme="light"' : "";
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // LOGIN-TIME TOKEN HYGIENE
 // ─────────────────────────────────────────────────────────────────────────────
@@ -354,7 +360,7 @@ router.get("/status/all", (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function buildSuccessPage(title, message) {
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/>
+  return `<!DOCTYPE html><html lang="en"${_authLightAttr()}><head><meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>${title}</title>
   ${faviconLink()}
@@ -362,13 +368,27 @@ function buildSuccessPage(title, message) {
   .card{background:#1a1f2e;border:1px solid #065f46;border-radius:16px;padding:40px 48px;text-align:center;max-width:480px;}
   .icon{font-size:3rem;margin-bottom:16px;}h1{font-size:1.3rem;font-weight:700;color:#10b981;margin-bottom:12px;}
   p{font-size:0.9rem;color:#a0aec0;line-height:1.6;margin-bottom:24px;}
-  a{display:inline-block;background:#4299e1;color:#fff;text-decoration:none;padding:10px 24px;border-radius:8px;font-weight:600;}</style></head>
+  a{display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:10px 24px;border-radius:8px;font-weight:600;}
+:root[data-theme="light"] body{background:#f4f6f9;color:#334155;}
+:root[data-theme="light"] .card{background:#ffffff;border-color:#e0e4ea;box-shadow:0 1px 3px rgba(0,0,0,0.06);}
+:root[data-theme="light"] h1,:root[data-theme="light"] h2{color:#1e293b;}
+:root[data-theme="light"] .sub,:root[data-theme="light"] .hint{color:#4b5769;}
+:root[data-theme="light"] .hint{background:#f8fafc;border-color:#e0e4ea;}
+:root[data-theme="light"] .back{color:#4b5769;}
+:root[data-theme="light"] input{background:#f8fafc;border-color:#e0e4ea;color:#334155;}
+@media(max-width:768px){
+  body{padding:16px 12px;align-items:flex-start;}
+  .card{width:100%;max-width:100%;padding:26px 18px;}
+  a,button,.submit,.back{min-height:44px;display:inline-flex;align-items:center;justify-content:center;}
+  input{font-size:16px;min-height:44px;}
+}
+</style></head>
   <body><div class="card"><div class="icon">✅</div><h1>${title}</h1><p>${message}</p><a href="/">← Back to Dashboard</a></div></body></html>`;
 }
 
 function buildLoginLandingPage(authUrl) {
   const safeUrl = String(authUrl).replace(/"/g, "&quot;");
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/>
+  return `<!DOCTYPE html><html lang="en"${_authLightAttr()}><head><meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Fyers Login</title>${faviconLink()}
 <style>
@@ -384,7 +404,7 @@ function buildLoginLandingPage(authUrl) {
   .alt:hover{border-color:#3b82f6;color:#bfdbfe;}
   .hint{margin-top:18px;padding:14px;background:#0a1429;border:1px solid #1e3a5f;border-radius:10px;font-size:0.78rem;color:#94a3b8;line-height:1.6;}
   .hint b{color:#fbbf24;}
-  a.back{display:inline-block;margin-top:18px;color:#64748b;font-size:0.78rem;text-decoration:none;}
+  a.back{display:inline-block;margin-top:18px;color:var(--muted-1,#8ba1c2);font-size:0.78rem;text-decoration:none;}
   /* These broker pages carry their own CSS and never load sharedNav's mobile
      layer, so the touch sizing has to be repeated here. The back link measured
      15px tall. */
@@ -394,6 +414,20 @@ function buildLoginLandingPage(authUrl) {
     button,a.btn{min-height:44px;}
     code{overflow-wrap:anywhere;word-break:break-word;}
   }
+
+:root[data-theme="light"] body{background:#f4f6f9;color:#334155;}
+:root[data-theme="light"] .card{background:#ffffff;border-color:#e0e4ea;box-shadow:0 1px 3px rgba(0,0,0,0.06);}
+:root[data-theme="light"] h1,:root[data-theme="light"] h2{color:#1e293b;}
+:root[data-theme="light"] .sub,:root[data-theme="light"] .hint{color:#4b5769;}
+:root[data-theme="light"] .hint{background:#f8fafc;border-color:#e0e4ea;}
+:root[data-theme="light"] .back{color:#4b5769;}
+:root[data-theme="light"] input{background:#f8fafc;border-color:#e0e4ea;color:#334155;}
+@media(max-width:768px){
+  body{padding:16px 12px;align-items:flex-start;}
+  .card{width:100%;max-width:100%;padding:26px 18px;}
+  a,button,.submit,.back{min-height:44px;display:inline-flex;align-items:center;justify-content:center;}
+  input{font-size:16px;min-height:44px;}
+}
 </style></head><body>
 <div class="card">
   <div class="icon">🔐</div>
@@ -416,7 +450,7 @@ function buildManualLoginPage(authUrl, errorMsg) {
   const errBlock = errorMsg
     ? `<div style="background:#3b0a0a;border:1px solid #9b2c2c;border-radius:10px;padding:12px 14px;margin-bottom:18px;font-size:0.82rem;color:#fca5a5;line-height:1.5;">⚠️ ${String(errorMsg).replace(/</g, "&lt;")}</div>`
     : "";
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/>
+  return `<!DOCTYPE html><html lang="en"${_authLightAttr()}><head><meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Fyers — Manual Login</title>${faviconLink()}
 <style>
@@ -435,10 +469,10 @@ function buildManualLoginPage(authUrl, errorMsg) {
   .btn:hover{filter:brightness(1.15);}
   textarea{width:100%;min-height:90px;background:#0a1429;border:1px solid #1e3a5f;border-radius:8px;padding:10px 12px;color:#e2e8f0;font-family:monospace;font-size:0.78rem;resize:vertical;line-height:1.5;}
   textarea:focus{outline:none;border-color:#3b82f6;}
-  .submit{display:block;width:100%;background:#10b981;color:#fff;border:none;padding:13px;border-radius:10px;font-weight:700;font-size:0.92rem;cursor:pointer;margin-top:12px;}
+  .submit{display:block;width:100%;background:#047857;color:#fff;border:none;padding:13px;border-radius:10px;font-weight:700;font-size:0.92rem;cursor:pointer;margin-top:12px;}
   .submit:hover{background:#059669;}
-  .hint{font-size:0.74rem;color:#64748b;line-height:1.6;margin-top:8px;}
-  a.back{display:inline-block;margin-top:18px;color:#64748b;font-size:0.78rem;text-decoration:none;}
+  .hint{font-size:0.74rem;color:var(--muted-1,#8ba1c2);line-height:1.6;margin-top:8px;}
+  a.back{display:inline-block;margin-top:18px;color:var(--muted-1,#8ba1c2);font-size:0.78rem;text-decoration:none;}
   /* These broker pages carry their own CSS and never load sharedNav's mobile
      layer, so the touch sizing has to be repeated here. The back link measured
      15px tall. */
@@ -448,6 +482,20 @@ function buildManualLoginPage(authUrl, errorMsg) {
     button,a.btn{min-height:44px;}
     code{overflow-wrap:anywhere;word-break:break-word;}
   }
+
+:root[data-theme="light"] body{background:#f4f6f9;color:#334155;}
+:root[data-theme="light"] .card{background:#ffffff;border-color:#e0e4ea;box-shadow:0 1px 3px rgba(0,0,0,0.06);}
+:root[data-theme="light"] h1,:root[data-theme="light"] h2{color:#1e293b;}
+:root[data-theme="light"] .sub,:root[data-theme="light"] .hint{color:#4b5769;}
+:root[data-theme="light"] .hint{background:#f8fafc;border-color:#e0e4ea;}
+:root[data-theme="light"] .back{color:#4b5769;}
+:root[data-theme="light"] input{background:#f8fafc;border-color:#e0e4ea;color:#334155;}
+@media(max-width:768px){
+  body{padding:16px 12px;align-items:flex-start;}
+  .card{width:100%;max-width:100%;padding:26px 18px;}
+  a,button,.submit,.back{min-height:44px;display:inline-flex;align-items:center;justify-content:center;}
+  input{font-size:16px;min-height:44px;}
+}
 </style></head><body>
 <div class="card">
   <h1>📋 Manual Fyers Login</h1>
@@ -510,7 +558,7 @@ function buildManualSuccessPage(accessToken) {
   const tok = String(accessToken || "");
   // HTML-escape so the token can never break out of the textarea attribute or DOM.
   const tokEsc = tok.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/>
+  return `<!DOCTYPE html><html lang="en"${_authLightAttr()}><head><meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Fyers Login Successful</title>${faviconLink()}
 <style>
@@ -527,7 +575,21 @@ function buildManualSuccessPage(accessToken) {
   .btn.success{background:#10b981;}
   .btn.secondary{background:#1e3a5f;}
   .btn:hover{filter:brightness(1.15);}
-  .hint{font-size:0.74rem;color:#64748b;line-height:1.6;margin-top:14px;text-align:center;}
+  .hint{font-size:0.74rem;color:var(--muted-1,#8ba1c2);line-height:1.6;margin-top:14px;text-align:center;}
+
+:root[data-theme="light"] body{background:#f4f6f9;color:#334155;}
+:root[data-theme="light"] .card{background:#ffffff;border-color:#e0e4ea;box-shadow:0 1px 3px rgba(0,0,0,0.06);}
+:root[data-theme="light"] h1,:root[data-theme="light"] h2{color:#1e293b;}
+:root[data-theme="light"] .sub,:root[data-theme="light"] .hint{color:#4b5769;}
+:root[data-theme="light"] .hint{background:#f8fafc;border-color:#e0e4ea;}
+:root[data-theme="light"] .back{color:#4b5769;}
+:root[data-theme="light"] input{background:#f8fafc;border-color:#e0e4ea;color:#334155;}
+@media(max-width:768px){
+  body{padding:16px 12px;align-items:flex-start;}
+  .card{width:100%;max-width:100%;padding:26px 18px;}
+  a,button,.submit,.back{min-height:44px;display:inline-flex;align-items:center;justify-content:center;}
+  input{font-size:16px;min-height:44px;}
+}
 </style></head><body>
 <div class="card">
   <div class="icon">✅</div>
@@ -568,7 +630,7 @@ function copyToken(){
 }
 
 function buildErrorPage(title, message) {
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/>
+  return `<!DOCTYPE html><html lang="en"${_authLightAttr()}><head><meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>${title}</title>
   ${faviconLink()}
@@ -576,7 +638,21 @@ function buildErrorPage(title, message) {
   .card{background:#1a1f2e;border:1px solid #9b2c2c;border-radius:16px;padding:40px 48px;text-align:center;max-width:520px;}
   .icon{font-size:3rem;margin-bottom:16px;}h1{font-size:1.3rem;font-weight:700;color:#fc8181;margin-bottom:12px;}
   p{font-size:0.82rem;color:#a0aec0;line-height:1.6;background:#0a0a0a;padding:12px 16px;border-radius:8px;text-align:left;margin-bottom:24px;font-family:monospace;word-break:break-all;}
-  a{display:inline-block;background:#4299e1;color:#fff;text-decoration:none;padding:10px 24px;border-radius:8px;font-weight:600;}</style></head>
+  a{display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:10px 24px;border-radius:8px;font-weight:600;}
+:root[data-theme="light"] body{background:#f4f6f9;color:#334155;}
+:root[data-theme="light"] .card{background:#ffffff;border-color:#e0e4ea;box-shadow:0 1px 3px rgba(0,0,0,0.06);}
+:root[data-theme="light"] h1,:root[data-theme="light"] h2{color:#1e293b;}
+:root[data-theme="light"] .sub,:root[data-theme="light"] .hint{color:#4b5769;}
+:root[data-theme="light"] .hint{background:#f8fafc;border-color:#e0e4ea;}
+:root[data-theme="light"] .back{color:#4b5769;}
+:root[data-theme="light"] input{background:#f8fafc;border-color:#e0e4ea;color:#334155;}
+@media(max-width:768px){
+  body{padding:16px 12px;align-items:flex-start;}
+  .card{width:100%;max-width:100%;padding:26px 18px;}
+  a,button,.submit,.back{min-height:44px;display:inline-flex;align-items:center;justify-content:center;}
+  input{font-size:16px;min-height:44px;}
+}
+</style></head>
   <body><div class="card"><div class="icon">❌</div><h1>${title}</h1><p>${message}</p><a href="/">← Back to Dashboard</a></div></body></html>`;
 }
 

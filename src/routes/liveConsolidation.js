@@ -133,36 +133,36 @@ router.get("/", (req, res) => {
     .main-content{flex:1;margin-left:200px;padding:18px 22px 40px;min-height:100vh;}
     @media(max-width:900px){.main-content{margin-left:0;padding:14px;}}
     .page-title{font-size:1.1rem;font-weight:700;color:#e0eaf8;margin-bottom:2px;}
-    .page-sub{font-size:0.72rem;color:#4a6080;margin-bottom:14px;}
+    .page-sub{font-size:0.72rem;color:var(--muted-1,#8ba1c2);margin-bottom:14px;}
     .stat-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:16px;}
     @media(max-width:1100px){.stat-grid{grid-template-columns:repeat(3,1fr);}}
     @media(max-width:560px){.stat-grid{grid-template-columns:repeat(2,1fr);}}
     .sc{background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;padding:12px 14px;position:relative;overflow:hidden;}
     .sc::before{content:'';position:absolute;top:0;left:0;width:3px;height:100%;background:var(--accent,#ef4444);}
-    .sc-label{font-size:0.55rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;margin-bottom:5px;font-family:'IBM Plex Mono',monospace;}
+    .sc-label{font-size:0.55rem;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted-2,#6d85a8);margin-bottom:5px;font-family:'IBM Plex Mono',monospace;}
     .sc-val{font-size:1.15rem;font-weight:700;font-family:'IBM Plex Mono',monospace;color:#e0eaf8;}
-    .sc-sub{font-size:0.6rem;color:#4a6080;margin-top:3px;}
+    .sc-sub{font-size:0.6rem;color:var(--muted-1,#8ba1c2);margin-top:3px;}
 
     .panel{background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;padding:14px 16px;margin-bottom:14px;}
-    .panel h3{font-size:0.62rem;text-transform:uppercase;letter-spacing:1.4px;color:#3a5070;margin-bottom:10px;font-family:'IBM Plex Mono',monospace;}
+    .panel h3{font-size:0.62rem;text-transform:uppercase;letter-spacing:1.4px;color:var(--muted-2,#6d85a8);margin-bottom:10px;font-family:'IBM Plex Mono',monospace;}
 
     .tbar{display:flex;align-items:center;gap:8px;padding:10px 12px;background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;margin-bottom:12px;flex-wrap:wrap;}
-    .tbar label{font-size:0.58rem;text-transform:uppercase;letter-spacing:1px;color:#3a5070;font-family:'IBM Plex Mono',monospace;}
+    .tbar label{font-size:0.58rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-2,#6d85a8);font-family:'IBM Plex Mono',monospace;}
     .tbar input,.tbar select{background:#04090f;border:0.5px solid #0e1e36;color:#e0eaf8;padding:6px 10px;border-radius:6px;font-family:'IBM Plex Mono',monospace;font-size:0.72rem;outline:none;}
     .tbar input:focus,.tbar select:focus{border-color:#ef4444;}
     .btn{background:#0d1320;border:1px solid #1a2236;color:#f87171;padding:6px 12px;border-radius:6px;font-size:0.7rem;cursor:pointer;font-family:inherit;transition:all 0.15s;}
     .btn:hover:not(:disabled){background:#2d0a0a;border-color:#ef4444;}
     .btn:disabled{opacity:0.4;cursor:not-allowed;}
-    .btn.copied{background:#064e3b!important;border-color:#10b981!important;color:#10b981!important;}
+    .btn.copied{background:#064e3b!important;border-color:#10b981!important;color:#34d399!important;}
     .btn.warn{border-color:rgba(239,68,68,0.3);color:#ef4444;}
     .btn.warn:hover{background:rgba(239,68,68,0.08);}
     .btn.danger{background:rgba(239,68,68,0.08);border-color:rgba(239,68,68,0.35);color:#f87171;}
     .btn.danger:hover:not(:disabled){background:rgba(239,68,68,0.18);border-color:#ef4444;}
-    :root[data-theme="light"] .btn.danger{background:#fef2f2!important;border-color:#fca5a5!important;color:#dc2626!important;}
+    :root[data-theme="light"] .btn.danger{background:#fef2f2!important;border-color:#fca5a5!important;color:#b91c1c!important;}
     :root[data-theme="light"] .btn.danger:hover:not(:disabled){background:#fee2e2!important;border-color:#ef4444!important;}
 
     .tbl{width:100%;border-collapse:collapse;font-family:'IBM Plex Mono',monospace;font-size:0.72rem;}
-    .tbl th{padding:8px 10px;text-align:left;font-size:0.56rem;text-transform:uppercase;letter-spacing:1px;color:#1e3050;background:#04090f;border-bottom:0.5px solid #0e1e36;font-weight:600;position:sticky;top:0;}
+    .tbl th{padding:8px 10px;text-align:left;font-size:0.56rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-2,#6d85a8);background:#04090f;border-bottom:0.5px solid #0e1e36;font-weight:600;position:sticky;top:0;}
     .tbl th.sortable{cursor:pointer;user-select:none;}
     .tbl th.sortable:hover{color:#f87171;}
     .tbl th.sortable::after{content:'⇅';margin-left:4px;opacity:0.35;font-size:0.7rem;}
@@ -172,16 +172,16 @@ router.get("/", (req, res) => {
     .tbl tr:hover td{background:rgba(239,68,68,0.04);}
     .tbl-wrap{overflow-x:auto;max-height:560px;overflow-y:auto;border:0.5px solid #0e1e36;border-radius:10px;}
 
-    .pager{display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap;font-family:'IBM Plex Mono',monospace;font-size:0.66rem;color:#4a6080;}
-    .pager label{font-size:0.55rem;text-transform:uppercase;letter-spacing:1px;color:#3a5070;}
+    .pager{display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap;font-family:'IBM Plex Mono',monospace;font-size:0.66rem;color:var(--muted-1,#8ba1c2);}
+    .pager label{font-size:0.55rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-2,#6d85a8);}
     .pager select{background:#04090f;border:0.5px solid #0e1e36;color:#e0eaf8;padding:3px 6px;border-radius:5px;font-family:inherit;font-size:0.66rem;outline:none;cursor:pointer;}
     .pager select:focus{border-color:#ef4444;}
-    .pager-info{margin:0 4px;color:#4a6080;}
+    .pager-info{margin:0 4px;color:var(--muted-1,#8ba1c2);}
     .pager-btn{padding:3px 8px;font-size:0.72rem;line-height:1;min-width:26px;}
     .pager-btn:disabled{opacity:0.35;cursor:not-allowed;}
-    :root[data-theme="light"] .pager label{color:#64748b!important;}
+    :root[data-theme="light"] .pager label{color:#4b5769!important;}
     :root[data-theme="light"] .pager select{background:#f8fafc!important;border-color:#e0e4ea!important;color:#334155!important;}
-    :root[data-theme="light"] .pager,:root[data-theme="light"] .pager-info{color:#64748b!important;}
+    :root[data-theme="light"] .pager,:root[data-theme="light"] .pager-info{color:#4b5769!important;}
     .badge{display:inline-block;padding:2px 7px;border-radius:4px;font-size:0.6rem;font-weight:700;}
     .badge-ce{background:rgba(16,185,129,0.12);color:#10b981;border:0.5px solid rgba(16,185,129,0.25);}
     .badge-pe{background:rgba(239,68,68,0.12);color:#ef4444;border:0.5px solid rgba(239,68,68,0.25);}
@@ -193,29 +193,29 @@ router.get("/", (req, res) => {
     .roll-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}
     @media(max-width:1100px){.roll-grid{grid-template-columns:1fr;}}
     .chart-wrap{position:relative;height:240px;}
-    .empty{text-align:center;padding:40px 20px;color:#4a6080;font-size:0.8rem;}
+    .empty{text-align:center;padding:40px 20px;color:var(--muted-1,#8ba1c2);font-size:0.8rem;}
 
     /* Light theme overrides */
     :root[data-theme="light"] body{background:#f4f6f9!important;color:#334155!important;}
     :root[data-theme="light"] .main-content{background:#f4f6f9!important;}
     :root[data-theme="light"] .page-title{color:#1e293b!important;}
-    :root[data-theme="light"] .page-sub{color:#94a3b8!important;}
+    :root[data-theme="light"] .page-sub{color:#5c6b7f!important;}
     :root[data-theme="light"] .sc{background:#fff!important;border-color:#e0e4ea!important;box-shadow:0 1px 3px rgba(0,0,0,0.06)!important;}
-    :root[data-theme="light"] .sc-label{color:#64748b!important;}
+    :root[data-theme="light"] .sc-label{color:#4b5769!important;}
     :root[data-theme="light"] .sc-val{color:#1e293b!important;}
-    :root[data-theme="light"] .sc-sub{color:#94a3b8!important;}
+    :root[data-theme="light"] .sc-sub{color:#5c6b7f!important;}
     :root[data-theme="light"] .panel{background:#fff!important;border-color:#e0e4ea!important;box-shadow:0 1px 3px rgba(0,0,0,0.06)!important;}
-    :root[data-theme="light"] .panel h3{color:#64748b!important;}
+    :root[data-theme="light"] .panel h3{color:#4b5769!important;}
     :root[data-theme="light"] .tbar{background:#fff!important;border-color:#e0e4ea!important;}
-    :root[data-theme="light"] .tbar label{color:#64748b!important;}
+    :root[data-theme="light"] .tbar label{color:#4b5769!important;}
     :root[data-theme="light"] .tbar input,.tbar select{background:#f8fafc!important;border-color:#e0e4ea!important;color:#334155!important;}
     :root[data-theme="light"] .btn{background:#f8fafc!important;border-color:#e0e4ea!important;color:#dc2626!important;}
     :root[data-theme="light"] .btn:hover{background:#fef2f2!important;border-color:#ef4444!important;}
-    :root[data-theme="light"] .tbl th{background:#f1f5f9!important;color:#64748b!important;border-bottom-color:#e0e4ea!important;}
+    :root[data-theme="light"] .tbl th{background:#f1f5f9!important;color:#4b5769!important;border-bottom-color:#e0e4ea!important;}
     :root[data-theme="light"] .tbl td{border-color:#e0e4ea!important;color:#334155!important;}
     :root[data-theme="light"] .tbl tr:hover td{background:rgba(239,68,68,0.05)!important;}
     :root[data-theme="light"] .tbl-wrap{border-color:#e0e4ea!important;}
-    :root[data-theme="light"] .empty{color:#94a3b8!important;}
+    :root[data-theme="light"] .empty{color:#5c6b7f!important;}
 
     @media(max-width:768px){
       .stat-grid{grid-template-columns:repeat(2,1fr);}
@@ -287,7 +287,7 @@ router.get("/", (req, res) => {
       <input type="text" id="fSearch" placeholder="symbol / reason…" style="min-width:160px;"/>
       <button class="btn" onclick="applyFilters()">Apply</button>
       <button class="btn" onclick="resetFilters()">Reset</button>
-      <span class="tbar-count" id="fCount" style="margin-left:auto;font-size:0.7rem;color:#4a6080;"></span>
+      <span class="tbar-count" id="fCount" style="margin-left:auto;font-size:0.7rem;color:var(--muted-1,#8ba1c2);"></span>
     </div>
 
     <!-- Bulk copy bar -->
@@ -309,7 +309,7 @@ router.get("/", (req, res) => {
       <button class="btn danger" onclick="resetLive('bb_rsi')" ${bbRsiLive ? 'disabled title="BB_RSI live is running — stop it first"' : ''}>🗑 BB_RSI Live</button>
       <button class="btn danger" onclick="resetLive('pa')"    ${paLive    ? 'disabled title="PA live is running — stop it first"'    : ''}>🗑 PA Live</button>
       <button class="btn danger" onclick="resetLive('all')"   ${(emaRsiStLive || bbRsiLive || paLive) ? 'disabled title="Stop all live sessions first"' : ''} style="font-weight:700;">🗑 Reset ALL Live</button>
-      <span style="margin-left:auto;font-size:0.64rem;color:#4a6080;line-height:1.4;">Clears the stored trade log only · real broker orders are unaffected</span>
+      <span style="margin-left:auto;font-size:0.64rem;color:var(--muted-1,#8ba1c2);line-height:1.4;">Clears the stored trade log only · real broker orders are unaffected</span>
     </div>
 
     <!-- Analytics -->
@@ -623,7 +623,7 @@ function renderRollupTable(id, rows){
   const tb = document.querySelector('#' + id + ' tbody');
   updateSortIndicators(id);
   if (!rows.length){
-    tb.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#4a6080;padding:18px;">No data</td></tr>';
+    tb.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--muted-1,#8ba1c2);padding:18px;">No data</td></tr>';
     _rendered[id] = [];
     updatePagerUI(id, 0, 0, 1, 1);
     return;

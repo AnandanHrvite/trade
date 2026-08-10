@@ -558,19 +558,19 @@ router.get("/", (req, res) => {
     ${modalCSS()}
     .page { padding:22px 28px 80px; max-width:1240px; }
     h1 { font-size:1.05rem; color:#60a5fa; font-weight:600; margin-bottom:4px; }
-    .sub { font-size:0.72rem; color:#4a6080; margin-bottom:18px; }
+    .sub { font-size:0.72rem; color:var(--muted-1,#8ba1c2); margin-bottom:18px; }
     .tabs-row { display:flex; align-items:flex-end; justify-content:space-between; gap:12px; border-bottom:1px solid #1a2236; margin-bottom:14px; flex-wrap:wrap; }
     .tabs { display:flex; gap:6px; }
-    .page-size-ctrl { display:flex; align-items:center; gap:8px; padding-bottom:6px; font-size:0.66rem; color:#4a6080; text-transform:uppercase; letter-spacing:0.5px; }
+    .page-size-ctrl { display:flex; align-items:center; gap:8px; padding-bottom:6px; font-size:0.66rem; color:var(--muted-1,#8ba1c2); text-transform:uppercase; letter-spacing:0.5px; }
     .page-size-ctrl select { padding:5px 9px; background:#0a1528; border:1px solid #1e3a5a; border-radius:6px; color:#c8d8f0; font-family:inherit; font-size:0.72rem; outline:none; }
     .pager { display:flex; align-items:center; justify-content:space-between; padding:8px 14px; background:#08111e; border-top:1px solid #121a2a; gap:10px; flex-wrap:wrap; }
-    .pager-info { font-size:0.66rem; color:#64748b; font-family:'IBM Plex Mono',monospace; }
+    .pager-info { font-size:0.66rem; color:var(--muted-1,#8ba1c2); font-family:'IBM Plex Mono',monospace; }
     .pager-btns { display:flex; align-items:center; gap:6px; }
     .pager-btns button { font-size:0.66rem; padding:3px 10px; background:#0a1528; border:1px solid #1e3a5a; border-radius:5px; color:#94a3b8; cursor:pointer; font-family:inherit; }
     .pager-btns button:hover:not(:disabled) { color:#60a5fa; border-color:#3b82f6; }
     .pager-btns button:disabled { opacity:0.35; cursor:not-allowed; }
     .pager-btns .pager-page { font-size:0.66rem; color:#94a3b8; font-family:'IBM Plex Mono',monospace; padding:0 4px; }
-    .tab { padding:9px 16px; cursor:pointer; font-size:0.74rem; font-weight:600; color:#4a6080; border-bottom:2px solid transparent; user-select:none; }
+    .tab { padding:9px 16px; cursor:pointer; font-size:0.74rem; font-weight:600; color:var(--muted-1,#8ba1c2); border-bottom:2px solid transparent; user-select:none; }
     .tab.active { color:#60a5fa; border-bottom-color:#3b82f6; }
     .tab .badge { display:inline-block; margin-left:6px; padding:1px 7px; font-size:0.6rem; background:#0a1528; border:1px solid #1e3a5a; border-radius:999px; color:#94a3b8; }
     .tab-pane { display:none; }
@@ -589,12 +589,12 @@ router.get("/", (req, res) => {
     .mode-gaps { color:#0ea5e9; }
     .mode-trend_day_scalp { color:#a855f7; }
     .mode-gap_fix_3m { color:#38bdf8; }
-    .mode-meta { font-size:0.68rem; color:#4a6080; }
+    .mode-meta { font-size:0.68rem; color:var(--muted-1,#8ba1c2); }
     table { width:100%; border-collapse:collapse; font-size:0.72rem; }
     th, td { padding:8px 12px; text-align:left; border-bottom:1px solid #121a2a; }
-    th { background:#0a0e18; color:#64748b; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; font-size:0.62rem; }
+    th { background:#0a0e18; color:var(--muted-1,#8ba1c2); font-weight:600; text-transform:uppercase; letter-spacing:0.5px; font-size:0.62rem; }
     tr:hover td { background:#0d1320; }
-    .empty { padding:18px 14px; color:#4a6080; font-size:0.72rem; font-style:italic; }
+    .empty { padding:18px 14px; color:var(--muted-1,#8ba1c2); font-size:0.72rem; font-style:italic; }
     .btn { font-size:0.66rem; font-weight:600; padding:4px 10px; border-radius:5px; border:1px solid; cursor:pointer; font-family:inherit; text-decoration:none; display:inline-flex; align-items:center; gap:4px; white-space:nowrap; }
     .btn-view     { background:#071428; border-color:#0e2850; color:#60a5fa; }
     .btn-download { background:#060a14; border-color:#0e1a28; color:#818cf8; }
@@ -603,13 +603,13 @@ router.get("/", (req, res) => {
     .btn:hover { filter:brightness(1.2); }
     .actions { display:flex; gap:5px; }
     .files-toolbar { display:flex; justify-content:flex-end; align-items:center; gap:10px; margin-bottom:14px; }
-    .dl-range-lbl { font-size:0.68rem; color:#4a6080; display:flex; align-items:center; gap:5px; }
+    .dl-range-lbl { font-size:0.68rem; color:var(--muted-1,#8ba1c2); display:flex; align-items:center; gap:5px; }
     .dl-range-inp { font-size:0.68rem; padding:4px 6px; border:1px solid #cfe0f4; border-radius:5px; background:#fff; color:#1d3a5f; }
     .btn-download-all { font-size:0.72rem; padding:7px 14px; }
     .num { font-family:'IBM Plex Mono',monospace; }
     .filt-bar { display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; align-items:center; }
     .filt-bar input, .filt-bar select { padding:6px 10px; background:#0a1528; border:1px solid #1e3a5a; border-radius:6px; color:#c8d8f0; font-family:inherit; font-size:0.72rem; outline:none; }
-    .filt-bar label { font-size:0.66rem; color:#4a6080; text-transform:uppercase; letter-spacing:0.5px; }
+    .filt-bar label { font-size:0.66rem; color:var(--muted-1,#8ba1c2); text-transform:uppercase; letter-spacing:0.5px; }
     .badge-ck { display:inline-block; padding:1px 7px; font-size:0.6rem; background:rgba(245,158,11,0.12); border:1px solid rgba(245,158,11,0.3); border-radius:4px; color:#fbbf24; margin-left:6px; }
 
     /* Audit table */
@@ -628,7 +628,7 @@ router.get("/", (req, res) => {
     .tv-box { width:100%; max-width:1100px; background:#0a1018; border:1px solid #1a2236; border-radius:10px; }
     .tv-head { display:flex; align-items:center; justify-content:space-between; padding:14px 18px; border-bottom:1px solid #1a2236; }
     .tv-title { font-size:0.85rem; font-weight:600; color:#c8d8f0; }
-    .tv-close { background:transparent; border:none; color:#64748b; cursor:pointer; font-size:1.2rem; padding:0 6px; }
+    .tv-close { background:transparent; border:none; color:var(--muted-1,#8ba1c2); cursor:pointer; font-size:1.2rem; padding:0 6px; }
     .tv-body { padding:12px 18px 18px; max-height:70vh; overflow-y:auto; }
     .tv-body table { font-size:0.68rem; }
     .tv-body pre { background:#0d1320; border:1px solid #1a2236; border-radius:5px; padding:9px 11px; font-family:'IBM Plex Mono',monospace; font-size:0.66rem; color:#94a3b8; white-space:pre-wrap; word-break:break-all; }
@@ -659,28 +659,28 @@ router.get("/", (req, res) => {
     :root[data-theme="light"] body { background:#f4f6f9; color:#334155; }
     :root[data-theme="light"] .page { color:#334155; }
     :root[data-theme="light"] h1 { color:#1e40af; }
-    :root[data-theme="light"] .sub { color:#64748b; }
+    :root[data-theme="light"] .sub { color:#4b5769; }
     :root[data-theme="light"] .sub code { background:#f1f5f9; padding:1px 5px; border-radius:3px; color:#475569; }
     :root[data-theme="light"] .tabs-row { border-bottom-color:#e0e4ea; }
-    :root[data-theme="light"] .page-size-ctrl { color:#64748b; }
+    :root[data-theme="light"] .page-size-ctrl { color:#4b5769; }
     :root[data-theme="light"] .page-size-ctrl select { background:#fff; border-color:#e0e4ea; color:#334155; }
     :root[data-theme="light"] .pager { background:#f8fafc; border-top-color:#e0e4ea; }
-    :root[data-theme="light"] .pager-info, :root[data-theme="light"] .pager-btns .pager-page { color:#64748b; }
+    :root[data-theme="light"] .pager-info, :root[data-theme="light"] .pager-btns .pager-page { color:#4b5769; }
     :root[data-theme="light"] .pager-btns button { background:#fff; border-color:#e0e4ea; color:#475569; }
     :root[data-theme="light"] .pager-btns button:hover:not(:disabled) { color:#1e40af; border-color:#3b82f6; }
-    :root[data-theme="light"] .tab { color:#94a3b8; }
+    :root[data-theme="light"] .tab { color:#5c6b7f; }
     :root[data-theme="light"] .tab.active { color:#1e40af; border-bottom-color:#3b82f6; }
-    :root[data-theme="light"] .tab .badge { background:#f1f5f9; border-color:#e0e4ea; color:#64748b; }
+    :root[data-theme="light"] .tab .badge { background:#f1f5f9; border-color:#e0e4ea; color:#4b5769; }
     :root[data-theme="light"] .mode-section { background:#fff; border-color:#e0e4ea; }
     :root[data-theme="light"] .mode-head { background:#f8fafc; border-bottom-color:#e0e4ea; }
-    :root[data-theme="light"] .mode-meta { color:#94a3b8; }
-    :root[data-theme="light"] th { background:#f1f5f9; color:#64748b; }
+    :root[data-theme="light"] .mode-meta { color:#5c6b7f; }
+    :root[data-theme="light"] th { background:#f1f5f9; color:#4b5769; }
     :root[data-theme="light"] th, :root[data-theme="light"] td { border-bottom-color:#e0e4ea; }
     :root[data-theme="light"] tr:hover td { background:#f8fafc; }
-    :root[data-theme="light"] .empty { color:#94a3b8; }
+    :root[data-theme="light"] .empty { color:#5c6b7f; }
     :root[data-theme="light"] .filt-bar input,
     :root[data-theme="light"] .filt-bar select { background:#fff; border-color:#e0e4ea; color:#334155; }
-    :root[data-theme="light"] .filt-bar label { color:#64748b; }
+    :root[data-theme="light"] .filt-bar label { color:#4b5769; }
     :root[data-theme="light"] .btn-view     { background:#eff6ff; border-color:#bfdbfe; color:#1e40af; }
     :root[data-theme="light"] .btn-download { background:#eef2ff; border-color:#c7d2fe; color:#4338ca; }
     :root[data-theme="light"] .btn-delete   { background:#fef2f2; border-color:#fecaca; color:#b91c1c; }
@@ -689,7 +689,7 @@ router.get("/", (req, res) => {
     :root[data-theme="light"] .tv-box { background:#fff; border-color:#e0e4ea; }
     :root[data-theme="light"] .tv-head { border-bottom-color:#e0e4ea; }
     :root[data-theme="light"] .tv-title { color:#1e293b; }
-    :root[data-theme="light"] .tv-close { color:#94a3b8; }
+    :root[data-theme="light"] .tv-close { color:#5c6b7f; }
     :root[data-theme="light"] .tv-body pre { background:#f8fafc; border-color:#e0e4ea; color:#475569; }
     :root[data-theme="light"] .audit-row.has-note { background:rgba(59,130,246,0.04); }
     :root[data-theme="light"] .audit-note { color:#475569; }
@@ -774,7 +774,7 @@ ${buildSidebar('tradeLogs', liveActive)}
       </select>
       <label><input id="filtNoted" type="checkbox" onchange="onAuditFilterChange()"/> Checkpoints only (have note)</label>
       <span style="flex:1"></span>
-      <span id="auditCount" style="font-size:0.66rem; color:#4a6080;"></span>
+      <span id="auditCount" style="font-size:0.66rem; color:var(--muted-1,#8ba1c2);"></span>
     </div>
     <div id="auditArea">Loading…</div>
   </div>
@@ -1211,19 +1211,19 @@ ${buildSidebar('tradeLogs', liveActive)}
           var byGate = {};
           items.forEach(function(s){ var g = s.gate || 'unknown'; byGate[g] = (byGate[g] || 0) + 1; });
           var gateList = Object.keys(byGate).sort(function(a,b){ return byGate[b] - byGate[a]; });
-          html = '<div style="margin-bottom:10px;font-size:0.72rem;color:#4a6080;">' + _view.total + ' skip record(s) · showing page ' + _view.page + '.</div>';
+          html = '<div style="margin-bottom:10px;font-size:0.72rem;color:var(--muted-1,#8ba1c2);">' + _view.total + ' skip record(s) · showing page ' + _view.page + '.</div>';
           html += '<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">' +
             gateList.map(function(g){ return '<span style="font-size:0.66rem;padding:3px 9px;background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.3);border-radius:4px;color:#fbbf24;"><b>' + byGate[g] + '</b> · ' + escHtml(g) + ' (this page)</span>'; }).join('') +
             '</div>';
           html += items.map(function(s, i){
             var when = s.ts || '';
-            return '<div style="margin-bottom:9px;"><div style="font-size:0.66rem;color:#64748b;margin-bottom:3px;">#' + (startIdx + i + 1) + ' · ' + escHtml(when) + ' · gate=<span style="color:#fbbf24;">' + escHtml(s.gate || '?') + '</span>' + (s.reason ? ' · reason=' + escHtml(s.reason) : '') + '</div><pre>' + escHtml(JSON.stringify(s, null, 2)) + '</pre></div>';
+            return '<div style="margin-bottom:9px;"><div style="font-size:0.66rem;color:var(--muted-1,#8ba1c2);margin-bottom:3px;">#' + (startIdx + i + 1) + ' · ' + escHtml(when) + ' · gate=<span style="color:#fbbf24;">' + escHtml(s.gate || '?') + '</span>' + (s.reason ? ' · reason=' + escHtml(s.reason) : '') + '</div><pre>' + escHtml(JSON.stringify(s, null, 2)) + '</pre></div>';
           }).join('');
         } else {
-          html = '<div style="margin-bottom:10px;font-size:0.72rem;color:#4a6080;">' + _view.total + ' record(s) in this file · showing page ' + _view.page + '.</div>';
+          html = '<div style="margin-bottom:10px;font-size:0.72rem;color:var(--muted-1,#8ba1c2);">' + _view.total + ' record(s) in this file · showing page ' + _view.page + '.</div>';
           html += items.map(function(t, i){
             var label = t.type === 'checkpoint' ? '🔖 CHECKPOINT' : ('#' + (startIdx + i + 1));
-            return '<div style="margin-bottom:9px;"><div style="font-size:0.66rem;color:#64748b;margin-bottom:3px;">' + label + (t.loggedAt ? ' · ' + escHtml(t.loggedAt) : '') + '</div><pre>' + escHtml(JSON.stringify(t, null, 2)) + '</pre></div>';
+            return '<div style="margin-bottom:9px;"><div style="font-size:0.66rem;color:var(--muted-1,#8ba1c2);margin-bottom:3px;">' + label + (t.loggedAt ? ' · ' + escHtml(t.loggedAt) : '') + '</div><pre>' + escHtml(JSON.stringify(t, null, 2)) + '</pre></div>';
           }).join('');
         }
         html += pagerHtml('view', null, _view.page, _view.pageSize, _view.total);
@@ -1334,11 +1334,11 @@ ${buildSidebar('tradeLogs', liveActive)}
           var gates = Object.keys(r.byGate || {}).map(function(g){ return [g, r.byGate[g]]; });
           gates.sort(function(a,b){ return b[1] - a[1]; });
           var top = gates.slice(0, 3).map(function(g){ return '<span title="' + escHtml(g[0]) + '" style="display:inline-block;margin-right:6px;font-size:0.62rem;color:#94a3b8;"><span style="color:#fbbf24;">' + g[1] + '</span> ' + escHtml(g[0]) + '</span>'; }).join('');
-          if (gates.length > 3) top += '<span style="font-size:0.62rem;color:#4a6080;">+' + (gates.length - 3) + ' more</span>';
+          if (gates.length > 3) top += '<span style="font-size:0.62rem;color:var(--muted-1,#8ba1c2);">+' + (gates.length - 3) + ' more</span>';
           return '<tr>' +
             '<td class="num">' + escHtml(r.date) + '</td>' +
             '<td class="num">' + r.total + '</td>' +
-            '<td>' + (top || '<span style="color:#4a6080;">—</span>') + '</td>' +
+            '<td>' + (top || '<span style="color:var(--muted-1,#8ba1c2);">—</span>') + '</td>' +
             '<td class="num">' + fmtSize(r.size) + '</td>' +
             '<td class="num">' + fmtMtime(r.mtimeMs) + '</td>' +
             '<td><div class="actions">' +
@@ -1454,7 +1454,7 @@ ${buildSidebar('tradeLogs', liveActive)}
           catch (_) { return ts; }
         };
         var fmtVal = function(v){
-          if (v === null || v === undefined) return '<span style="color:#4a6080;">∅</span>';
+          if (v === null || v === undefined) return '<span style="color:var(--muted-1,#8ba1c2);">∅</span>';
           var s = String(v);
           if (s.length > 60) return '<span title="' + escHtml(s) + '">' + escHtml(s.slice(0, 60)) + '…</span>';
           return escHtml(s);
@@ -1477,7 +1477,7 @@ ${buildSidebar('tradeLogs', liveActive)}
               '<td style="font-weight:600;color:#e2e8f0;">' + escHtml(e.key || '') + '</td>' +
               '<td class="from-val">' + fmtVal(e.from) + '</td>' +
               '<td class="to-val">'   + fmtVal(e.to)   + '</td>' +
-              '<td style="color:#64748b;font-size:0.66rem;">' + escHtml(e.source || '') + '</td>' +
+              '<td style="color:var(--muted-1,#8ba1c2);font-size:0.66rem;">' + escHtml(e.source || '') + '</td>' +
               '<td>' + (hasNote ? '<span class="audit-note">📝 ' + escHtml(e.note) + '</span>' : '<span style="color:#2a3a5a;">—</span>') + '</td>' +
               '<td><button class="btn btn-restore" title="Revert this key to its previous value" onclick="restoreAudit(\\'' + entB64 + '\\')">↩ Restore</button></td>' +
             '</tr>';
@@ -1562,7 +1562,7 @@ ${buildSidebar('tradeLogs', liveActive)}
   <div style="max-width:480px;margin:0 auto;background:#0d1117;border:1px solid #1a2640;border-radius:12px;overflow:hidden;">
     <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:#111827;border-bottom:1px solid #1a2640;">
       <span style="font-weight:700;font-size:0.95rem;color:#f87171;">🧹 Reset Data</span>
-      <button onclick="closeResetDataModal()" style="background:none;border:none;color:#4a6080;font-size:1.2rem;cursor:pointer;">&times;</button>
+      <button onclick="closeResetDataModal()" style="background:none;border:none;color:var(--muted-1,#8ba1c2);font-size:1.2rem;cursor:pointer;">&times;</button>
     </div>
     <div style="padding:18px 20px 20px;">
       <div style="font-size:0.78rem;color:#9db4d6;margin-bottom:12px;">Pick what to reset. Deletions cannot be undone.</div>

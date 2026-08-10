@@ -6,6 +6,24 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — The light theme now actually reaches the whole app, and every screen fits a phone
+
+An audit drove headless Chrome over all 69 screens at 440×956 (iPhone 17 Pro Max) and 390×844, in both themes, measuring text/background contrast, horizontal overflow, tap-target size and font size. It started at 130+ failures and ends at zero.
+
+The light theme had two structural holes. It re-maps the dark palette at runtime, but that rewriter only ever touched inline `style=""` attributes — so any colour a page set through its own `<style>` block (strategy accents, panel badges, card titles, empty states) simply stayed on its dark value over a white background. It now walks the CSSOM as well, remapping rule declarations with the original `!important` priority so the cascade is unchanged. Two latent bugs surfaced there: the emitted regexes lost their backslashes to the template literal that carries them (`[;}\s]` became `[;}s]`, so an inline style written as `…; color:#fff` was skipped), and since CSS nesting shipped every `CSSStyleRule` exposes a `cssRules` list, which made the first version of the walker recurse past every rule instead of mapping it. The second hole: the theme runtime lived inside `modalJS()`, so the five pages that render a sidebar without a modal — Real-Time, Settings Advisor, Edge Analytics, Consolidation Report, Trend PB Backtest — rendered fully dark whatever `UI_THEME` said. It is now `themeJS()`, emitted by both `modalJS()` and `buildSidebar()`, self-guarded so pages carrying both run it once.
+
+In the dark theme the muted-text ramp was unreadable rather than merely subtle: stat-card labels sat at 1.44:1, sidebar navigation at 1.91:1, and the drawer — the only way to move around on a phone — was effectively invisible. The two muted tiers are now CSS tokens (`--muted-1` / `--muted-2`) defined once per theme, so a label can no longer be correct in one skin and unreadable in the other, and both clear 4.5:1 on their own surfaces. Filled buttons that carried white labels (blue, cyan, purple, pink, green, red) were all between 2.5:1 and 4.0:1 and moved one shade darker.
+
+Responsiveness: the Real-Time rollup table silently clipped its last three columns behind `overflow:hidden` and now scrolls; the backtest breadcrumb bled 8px past each edge at phone width; the drawer's brand line printed underneath the fixed hamburger; group headers, pager arrows and error-page links were below the 44px touch minimum; and ~60 micro-labels rendered between 8.3px and 9.9px. The standalone screens that never had a light skin or a breakpoint at all — broker auth, `/result`, the backtest progress/queue interstitials, the four backtest error pages — got both.
+
+### Fixed — GAPS pages returned a raw 403 to anyone who clicked them
+
+Every strategy's read-only routes are listed in `OPEN_PATHS` so a browser navigation (which cannot carry the `x-api-secret` header) reaches them. GAPS was the one strategy missing, so with `API_SECRET` set — the normal configuration — its Paper, History, Live and Backtest links all landed on `{"success":false,"error":"Forbidden"}`, and the Real-Time monitor's GAPS tile showed "Endpoint unavailable". The strategy is on by default, so this affected the live UI.
+
+### Fixed — The EMA_RSI_ST Live page threw on every fresh load
+
+`#ltModal` is only rendered once the session has trades, but its click handler was attached unconditionally, so an empty session logged an uncaught `TypeError` and dropped the remainder of that script block.
+
 ### Fixed — A failing page now shows an error instead of spinning forever
 
 Express 4 hands a handler's *synchronous* throw to the error middleware, but an `async` handler never throws synchronously — it returns a rejected promise, which Express 4 ignores. The request was then never answered at all: the page spun until the browser gave up, nothing was logged as an HTTP error, and the rejection surfaced only as a process-level `🚨 UNHANDLED REJECTION` Telegram. Roughly a hundred handlers are `async (req, res)` — every `/status`, `/start`, `/stop` and backtest endpoint — so any one of them awaiting a broker call during a Fyers/Zerodha hiccup produced exactly that: a dead page and an alarming telegram with no context.

@@ -1264,7 +1264,7 @@ router.get("/status", (req, res) => {
 <style>${sidebarCSS()}${modalCSS()}${bbRsiStyleCSS()}
 .gap-card{background:#0a1020;border:1px solid #1a2236;border-radius:10px;padding:14px 16px;margin-bottom:18px;}
 .gap-row{display:flex;gap:20px;flex-wrap:wrap;font-size:0.78rem;color:#e2e8f0;margin-top:8px;}
-.gap-row .k{color:#64748b;margin-right:5px;}
+.gap-row .k{color:var(--muted-1,#8ba1c2);margin-right:5px;}
 .brk{font-size:0.72rem;color:#f59e0b;margin-top:8px;}
 .chart-box{background:#0a0f1c;border:1px solid #1a2236;border-radius:12px;overflow:hidden;position:relative;}
 </style>
@@ -1276,7 +1276,7 @@ ${bbRsiTopBar({
   title: "🕳 3M Gap Fix Scalp — Paper",
   metaLine: `NIFTY FUTURES ${cfg.resolutionMins}m · gap ≥${cfg.minGapPts}pt faded to its fill level · SL = the day's high/low · a volume break of the extreme is skipped`,
   running: state.running,
-  primaryAction: { href: "/gap-fix-3m-paper/start", label: "▶ Start", color: "#0ea5e9" },
+  primaryAction: { href: "/gap-fix-3m-paper/start", label: "▶ Start", color: "#0369a1" },
   stopAction:    { href: "/gap-fix-3m-paper/stop",  label: "■ Stop" },
   historyHref: "/gap-fix-3m-paper/history",
 })}
@@ -1285,11 +1285,11 @@ ${bbRsiCapitalStrip({ starting: startCap, current: startCap + (data.totalPnl || 
 
 <div class="gap-card">
   <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
-    <div style="font-size:0.7rem;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;font-weight:600;">Today — the gap watch</div>
+    <div style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;">Today — the gap watch</div>
     <div style="font-size:0.8rem;color:#94a3b8;" id="fut-sym">${state.futSymbol || futSymbol()}</div>
   </div>
   <div class="gap-row" id="gap-row"><div>Waiting for the first closed futures candles…</div></div>
-  <div id="gap-skip" style="font-size:0.72rem;color:#64748b;margin-top:8px;"></div>
+  <div id="gap-skip" style="font-size:0.72rem;color:var(--muted-1,#8ba1c2);margin-top:8px;"></div>
   ${state.dayClosed ? `<div class="brk">⏸️ ${state.dayClosedReason}</div>` : ""}
 </div>
 
@@ -1305,17 +1305,17 @@ ${bbRsiStatGrid([
 ${bbRsiCurrentBar({ bar: state.formingFut, resMin: cfg.resolutionMins })}
 
 <div style="margin-bottom:18px;">
-  <div style="font-size:0.7rem;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;font-weight:600;">NIFTY FUTURES ${cfg.resolutionMins}m — the decision chart (gap band, day high/low, bracket)</div>
+  <div style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;font-weight:600;">NIFTY FUTURES ${cfg.resolutionMins}m — the decision chart (gap band, day high/low, bracket)</div>
   <div class="chart-box" style="height:420px;">
     <div id="chart" style="width:100%;height:100%;"></div>
-    <div style="position:absolute;top:10px;left:12px;font-size:0.68rem;color:#4a6080;pointer-events:none;z-index:2;">
+    <div style="position:absolute;top:10px;left:12px;font-size:0.68rem;color:var(--muted-1,#8ba1c2);pointer-events:none;z-index:2;">
       <span style="color:#f59e0b;">── Day high / low (stop)</span> &nbsp;<span style="color:#0ea5e9;">── Gap band</span> &nbsp;<span style="color:#10b981;">── Gap fill (target)</span>
     </div>
   </div>
 </div>
 
 <div style="margin-bottom:18px;">
-  <div style="font-size:0.7rem;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;font-weight:600;">NIFTY 50 INDEX ${cfg.resolutionMins}m — strike reference only (no rule reads it)</div>
+  <div style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;font-weight:600;">NIFTY 50 INDEX ${cfg.resolutionMins}m — strike reference only (no rule reads it)</div>
   <div class="chart-box" style="height:240px;"><div id="idxchart" style="width:100%;height:100%;"></div></div>
 </div>
 
@@ -1359,7 +1359,7 @@ setInterval(gapRefresh, 4000);
   function mk(el, h) {
     return LightweightCharts.createChart(el, {
       width: el.clientWidth, height: el.clientHeight,
-      layout:{ background:{type:'solid',color:'#0a0f1c'}, textColor:'#4a6080', fontSize:11, fontFamily:"'IBM Plex Mono', monospace" },
+      layout:{ background:{type:'solid',color:'#0a0f1c'}, textColor:'#8ba1c2', fontSize:11, fontFamily:"'IBM Plex Mono', monospace" },
       grid:{ vertLines:{color:'#111827'}, horzLines:{color:'#111827'} },
       crosshair:{ mode: LightweightCharts.CrosshairMode.Normal },
       rightPriceScale:{ borderColor:'#1a2236' },
@@ -1417,19 +1417,19 @@ setInterval(gapRefresh, 4000);
 
 function _positionCardHtml(pos, optLtp) {
   if (!pos) {
-    return `<div style="background:#0a1020;border:1px solid #1a2236;border-radius:10px;padding:14px 16px;color:#64748b;font-size:0.78rem;">No open position.</div>`;
+    return `<div style="background:#0a1020;border:1px solid #1a2236;border-radius:10px;padding:14px 16px;color:var(--muted-1,#8ba1c2);font-size:0.78rem;">No open position.</div>`;
   }
   const live = optLtp != null ? ((optLtp - pos.optionEntryLtp) * pos.qty).toFixed(0) : "—";
   return `<div style="background:#0a1020;border:1px solid #1a2236;border-radius:10px;padding:14px 16px;">
-  <div style="font-size:0.7rem;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;font-weight:600;margin-bottom:8px;">Open position</div>
+  <div style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;margin-bottom:8px;">Open position</div>
   <div style="display:flex;gap:20px;flex-wrap:wrap;font-size:0.8rem;color:#e2e8f0;">
-    <div><span style="color:#64748b;">Side</span> ${pos.side}</div>
-    <div><span style="color:#64748b;">Symbol</span> ${pos.symbol}</div>
-    <div><span style="color:#64748b;">Entry (fut)</span> ${pos.entrySpot}</div>
-    <div><span style="color:#64748b;">Gap fill</span> ${pos.targetSpot} (${pos.targetPts}pt)</div>
-    <div><span style="color:#64748b;">Stop</span> ${pos.slSpot} (${pos.riskPts}pt)</div>
-    <div><span style="color:#64748b;">R:R</span> ${pos.rr}</div>
-    <div><span style="color:#64748b;">Live P&L</span> ₹${live}</div>
+    <div><span style="color:var(--muted-1,#8ba1c2);">Side</span> ${pos.side}</div>
+    <div><span style="color:var(--muted-1,#8ba1c2);">Symbol</span> ${pos.symbol}</div>
+    <div><span style="color:var(--muted-1,#8ba1c2);">Entry (fut)</span> ${pos.entrySpot}</div>
+    <div><span style="color:var(--muted-1,#8ba1c2);">Gap fill</span> ${pos.targetSpot} (${pos.targetPts}pt)</div>
+    <div><span style="color:var(--muted-1,#8ba1c2);">Stop</span> ${pos.slSpot} (${pos.riskPts}pt)</div>
+    <div><span style="color:var(--muted-1,#8ba1c2);">R:R</span> ${pos.rr}</div>
+    <div><span style="color:var(--muted-1,#8ba1c2);">Live P&L</span> ₹${live}</div>
   </div>
 </div>`;
 }

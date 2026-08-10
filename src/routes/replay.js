@@ -268,7 +268,7 @@ table { width:100%; border-collapse:collapse; font-size:0.85rem; }
 th, td { padding:8px 10px; text-align:left; border-bottom:1px solid #1e293b; }
 th { color:#94a3b8; font-weight:600; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.04em; }
 tbody tr:hover { background:#1a2236; }
-button { background:#3b82f6; color:#fff; border:0; padding:6px 14px; border-radius:6px; cursor:pointer; font-size:0.8rem; }
+button { background:#2563eb; color:#fff; border:0; padding:6px 14px; border-radius:6px; cursor:pointer; font-size:0.8rem; }
 button:hover { background:#2563eb; }
 button:disabled { background:#374151; cursor:not-allowed; }
 .tag { display:inline-block; padding:2px 8px; border-radius:4px; font-size:0.7rem; font-weight:600; }
@@ -287,7 +287,7 @@ button:disabled { background:#374151; cursor:not-allowed; }
 .result-pnl { font-size:1.4rem; font-weight:700; margin:8px 0; }
 .result-pnl.positive { color:#10b981; }
 .result-pnl.negative { color:#ef4444; }
-.muted { color:#64748b; font-size:0.75rem; }
+.muted { color:var(--muted-1,#8ba1c2); font-size:0.75rem; }
 .cmp-grid { display:grid; grid-template-columns: 1fr 1fr 1fr; gap:12px; margin-top:12px; }
 .cmp-col  { background:#0f172a; border:1px solid #1e293b; border-radius:8px; padding:14px; }
 .cmp-col.delta { border-color:#334155; }
@@ -301,7 +301,7 @@ button:disabled { background:#374151; cursor:not-allowed; }
 .cmp-meta-row.delta-row { color:#cbd5e1; }
 .cmp-delta-up   { color:#10b981; }
 .cmp-delta-down { color:#ef4444; }
-.cmp-delta-zero { color:#64748b; }
+.cmp-delta-zero { color:var(--muted-1,#8ba1c2); }
 .cmp-err { background:rgba(239,68,68,0.10); border-color:rgba(239,68,68,0.35); color:#fca5a5; font-size:0.8rem; }
 @media (max-width: 900px) { .cmp-grid { grid-template-columns: 1fr; } }
 .block-alert { position:fixed; top:0; left:0; right:0; z-index:9999; background:rgba(239,68,68,0.97); color:#fff; padding:14px 20px; box-shadow:0 4px 16px rgba(0,0,0,0.4); font-size:0.9rem; display:flex; justify-content:space-between; align-items:center; gap:16px; animation:slideDown 0.2s ease-out; }
@@ -342,7 +342,7 @@ button:disabled { background:#374151; cursor:not-allowed; }
 .rp-counter { margin-left:auto; color:#94a3b8; font-variant-numeric: tabular-nums; font-size:0.82rem; }
 .rp-bar { margin-top:10px; height:6px; background:#0f172a; border-radius:3px; overflow:hidden; }
 .rp-bar-fill { height:100%; background:linear-gradient(90deg, #38bdf8, #6366f1); transition: width 0.4s ease; }
-.rp-elapsed { margin-top:6px; font-size:0.72rem; color:#64748b; }
+.rp-elapsed { margin-top:6px; font-size:0.72rem; color:var(--muted-1,#8ba1c2); }
 .rp-done .rp-spinner { animation:none; border-top-color:#22c55e; border-color:#22c55e; }
 .rp-cancelled .rp-spinner { animation:none; border-top-color:#ef4444; border-color:#ef4444; }
 @keyframes rp-spin { to { transform: rotate(360deg); } }
@@ -350,7 +350,7 @@ button:disabled { background:#374151; cursor:not-allowed; }
 .copy-btn:hover { background:#14b8a6; }
 .copy-btn.copied { background:#15803d; border-color:#22c55e; color:#fff; }
 pre { background:#0a0f1c; padding:12px; border-radius:6px; overflow:auto; font-size:0.75rem; color:#cbd5e1; }
-.empty { padding:32px; text-align:center; color:#64748b; }
+.empty { padding:32px; text-align:center; color:var(--muted-1,#8ba1c2); }
 .sess-header { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
 .sess-toolbar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
 .sess-input { background:#0a0f1c; color:#e2e8f0; border:1px solid #1e293b; border-radius:6px; padding:6px 10px; font-size:0.8rem; min-width:120px; }
@@ -359,13 +359,13 @@ pre { background:#0a0f1c; padding:12px; border-radius:6px; overflow:auto; font-s
 .pager-btn { background:#0f172a; color:#cbd5e1; border:1px solid #1e293b; padding:4px 10px; border-radius:4px; cursor:pointer; font-size:0.8rem; min-width:32px; }
 .pager-btn:hover:not(:disabled) { background:#1e293b; }
 .pager-btn:disabled { opacity:0.4; cursor:not-allowed; }
-.pager-btn.active { background:#3b82f6; color:#fff; border-color:#3b82f6; }
+.pager-btn.active { background:#2563eb; color:#fff; border-color:#3b82f6; }
 .row-actions { display:inline-flex; gap:4px; }
 .row-btn { background:#0f172a; color:#cbd5e1; border:1px solid #1e293b; padding:4px 8px; border-radius:4px; cursor:pointer; font-size:0.72rem; line-height:1; }
 .row-btn:hover:not(:disabled) { background:#1e293b; color:#fff; }
 .row-btn:disabled { opacity:0.4; cursor:not-allowed; }
 .row-btn.danger:hover:not(:disabled) { background:#7f1d1d; color:#fff; border-color:#b91c1c; }
-.row-btn.primary { background:#3b82f6; color:#fff; border-color:#3b82f6; }
+.row-btn.primary { background:#2563eb; color:#fff; border-color:#3b82f6; }
 .row-btn.primary:hover:not(:disabled) { background:#2563eb; }
 .banner { padding:10px 14px; border-radius:6px; font-size:0.85rem; margin-bottom:16px; }
 #preflight-banner { flex:1; min-width:220px; }
@@ -387,12 +387,12 @@ pre { background:#0a0f1c; padding:12px; border-radius:6px; overflow:auto; font-s
 /* Settings-source-driven theming. The body data-source attribute is set in
    refreshSettingsSourceUi() based on which radio is checked. Snapshot uses
    blue (safe/deterministic); current uses amber (experimental/simulator). */
-body[data-source="snapshot"] #range-run-btn { background:#3b82f6; }
+body[data-source="snapshot"] #range-run-btn { background:#2563eb; }
 body[data-source="snapshot"] #range-run-btn:hover:not(:disabled) { background:#2563eb; }
 body[data-source="snapshot"] .source-chip { background:rgba(59,130,246,0.15); color:#93c5fd; border:1px solid rgba(59,130,246,0.40); }
 
 body[data-source="current"] #range-run-btn { background:#f59e0b; color:#1a1208; }
-body[data-source="current"] #range-run-btn:hover:not(:disabled) { background:#d97706; color:#fff; }
+body[data-source="current"] #range-run-btn:hover:not(:disabled) { background:#b45309; color:#fff; }
 body[data-source="current"] .source-chip { background:rgba(245,158,11,0.15); color:#fbbf24; border:1px solid rgba(245,158,11,0.40); }
 /* Subtle amber accent on the range card when in simulator mode, so the
    "this will replay against current settings" intent is visible at a glance
@@ -402,25 +402,25 @@ body[data-source="current"] #range-card { border-color:rgba(245,158,11,0.30); bo
 .source-chip { display:inline-block; padding:2px 10px; border-radius:999px; font-size:0.7rem; font-weight:600; letter-spacing:0.03em; margin-left:8px; vertical-align:middle; }
 
 /* ── Light-theme overrides (kick in when modalJS sets data-theme="light") ─ */
-:root[data-theme="light"] .sub { color:#64748b !important; }
-:root[data-theme="light"] .muted { color:#94a3b8 !important; }
+:root[data-theme="light"] .sub { color:#4b5769 !important; }
+:root[data-theme="light"] .muted { color:#5c6b7f !important; }
 :root[data-theme="light"] .card { background:#ffffff !important; border-color:#e2e8f0 !important; }
 :root[data-theme="light"] th, :root[data-theme="light"] td { border-bottom-color:#e2e8f0 !important; }
-:root[data-theme="light"] th { color:#64748b !important; }
+:root[data-theme="light"] th { color:#4b5769 !important; }
 :root[data-theme="light"] tbody tr:hover { background:#f8fafc !important; }
 :root[data-theme="light"] pre { background:#f8fafc !important; color:#334155 !important; border:1px solid #e2e8f0; }
 :root[data-theme="light"] .cmp-col { background:#f8fafc !important; border-color:#e2e8f0 !important; }
 :root[data-theme="light"] .cmp-col.delta { border-color:#cbd5e1 !important; }
-:root[data-theme="light"] .cmp-label { color:#64748b !important; }
-:root[data-theme="light"] .cmp-meta { color:#64748b !important; }
+:root[data-theme="light"] .cmp-label { color:#4b5769 !important; }
+:root[data-theme="light"] .cmp-meta { color:#4b5769 !important; }
 :root[data-theme="light"] .cmp-meta-row.delta-row { color:#475569 !important; }
-:root[data-theme="light"] .cmp-pnl.neutral { color:#94a3b8 !important; }
-:root[data-theme="light"] .cmp-delta-zero { color:#94a3b8 !important; }
-:root[data-theme="light"] .range-field label { color:#64748b !important; }
+:root[data-theme="light"] .cmp-pnl.neutral { color:#5c6b7f !important; }
+:root[data-theme="light"] .cmp-delta-zero { color:#5c6b7f !important; }
+:root[data-theme="light"] .range-field label { color:#4b5769 !important; }
 :root[data-theme="light"] .range-field input,
 :root[data-theme="light"] .range-field select { background:#ffffff !important; color:#1e293b !important; border-color:#cbd5e1 !important; }
 :root[data-theme="light"] .range-progress { background:#f8fafc !important; border-color:#e2e8f0 !important; color:#475569 !important; }
-:root[data-theme="light"] .range-table th { color:#64748b !important; }
+:root[data-theme="light"] .range-table th { color:#4b5769 !important; }
 :root[data-theme="light"] .range-table th, :root[data-theme="light"] .range-table td { border-bottom-color:#e2e8f0 !important; }
 :root[data-theme="light"] .range-table tr.totals { background:#f1f5f9 !important; color:#1e293b; }
 :root[data-theme="light"] .range-table tr.totals td { border-top-color:#cbd5e1 !important; }
@@ -428,18 +428,18 @@ body[data-source="current"] #range-card { border-color:rgba(245,158,11,0.30); bo
 :root[data-theme="light"] .rf-reset { background:#f1f5f9 !important; color:#475569 !important; border-color:#cbd5e1 !important; }
 :root[data-theme="light"] .rf-dl { background:#ecfdf5 !important; color:#047857 !important; border-color:#10b981 !important; }
 :root[data-theme="light"] .rf-dl.copied { background:#bbf7d0 !important; color:#065f46 !important; border-color:#10b981 !important; }
-:root[data-theme="light"] .rf-label { color:#64748b !important; }
+:root[data-theme="light"] .rf-label { color:#4b5769 !important; }
 :root[data-theme="light"] .rng-stats { color:#475569 !important; }
 :root[data-theme="light"] .rng-stats strong { color:#1e293b !important; }
-:root[data-theme="light"] .rng-analytics-title { color:#64748b !important; }
+:root[data-theme="light"] .rng-analytics-title { color:#4b5769 !important; }
 :root[data-theme="light"] .rollup-table tbody tr:hover { background:#f1f5f9 !important; }
 :root[data-theme="light"] .rp-block { background:#f8fafc !important; border-color:#e2e8f0 !important; }
 :root[data-theme="light"] .rp-row { color:#1e293b !important; }
-:root[data-theme="light"] .rp-counter { color:#64748b !important; }
+:root[data-theme="light"] .rp-counter { color:#4b5769 !important; }
 :root[data-theme="light"] .rp-bar { background:#e2e8f0 !important; }
 :root[data-theme="light"] .rp-spinner { border-color:#e2e8f0; border-top-color:#0ea5e9; }
-:root[data-theme="light"] .rp-elapsed { color:#94a3b8 !important; }
-:root[data-theme="light"] .empty { color:#94a3b8 !important; }
+:root[data-theme="light"] .rp-elapsed { color:#5c6b7f !important; }
+:root[data-theme="light"] .empty { color:#5c6b7f !important; }
 :root[data-theme="light"] .copy-btn { background:#ecfdf5 !important; color:#047857 !important; border-color:#10b981 !important; }
 :root[data-theme="light"] .copy-btn:hover { background:#a7f3d0 !important; }
 :root[data-theme="light"] .copy-btn.copied { background:#bbf7d0 !important; color:#065f46 !important; border-color:#10b981 !important; }
@@ -448,7 +448,7 @@ body[data-source="current"] #range-card { border-color:rgba(245,158,11,0.30); bo
 :root[data-theme="light"] .mode-toggle label:has(input[value="snapshot"]:checked) { background:#eff6ff !important; border-color:#3b82f6 !important; }
 :root[data-theme="light"] .mode-toggle label:has(input[value="current"]:checked)  { background:#fffbeb !important; border-color:#f59e0b !important; }
 :root[data-theme="light"] .mt-title { color:#1e293b !important; }
-:root[data-theme="light"] .mt-desc  { color:#64748b !important; }
+:root[data-theme="light"] .mt-desc  { color:#4b5769 !important; }
 :root[data-theme="light"] body[data-source="current"] #range-run-btn { color:#1f1300 !important; }
 :root[data-theme="light"] .sess-input { background:#ffffff !important; color:#1e293b !important; border-color:#cbd5e1 !important; }
 :root[data-theme="light"] .pager-btn { background:#f8fafc !important; color:#334155 !important; border-color:#cbd5e1 !important; }
@@ -488,9 +488,9 @@ body[data-source="current"] #range-card { border-color:rgba(245,158,11,0.30); bo
 .replay-chart-legend .lg-k i { width:7px; height:7px; border-radius:2px; display:inline-block; flex:0 0 auto; }
 .replay-chart-legend .lg-v { color:#e2e8f0; font-weight:600; white-space:nowrap; }
 :root[data-theme="light"] .replay-chart-legend { border-left-color:#e2e8f0 !important; color:#475569 !important; }
-:root[data-theme="light"] .replay-chart-legend .lg-time { color:#64748b !important; }
+:root[data-theme="light"] .replay-chart-legend .lg-time { color:#4b5769 !important; }
 :root[data-theme="light"] .replay-chart-legend .lg-v { color:#1e293b !important; }
-:root[data-theme="light"] .trades-table th { color:#64748b !important; }
+:root[data-theme="light"] .trades-table th { color:#4b5769 !important; }
 :root[data-theme="light"] .trades-table th, :root[data-theme="light"] .trades-table td { border-bottom-color:#e2e8f0 !important; }
 :root[data-theme="light"] .trades-table td.reason { color:#475569 !important; }
 </style>
@@ -715,7 +715,7 @@ function drawReplayChart(el, cd) {
   // VWAP + σ bands (EMA9+VWAP / ORB) — solid VWAP line, ±σ bands.
   // EMA9+VWAP matches its TradingView chart (VWAP blue, solid green/red σ bands);
   // ORB keeps its original look (VWAP white, dashed σ bands).
-  const _vwapColor = isEma9Vwap ? '#2962ff' : '#e5e7eb';
+  const _vwapColor = isEma9Vwap ? '#5b8dff' : '#e5e7eb';
   const _bandStyle = isEma9Vwap ? 0 : 2;
   if (Array.isArray(cd.vwap) && cd.vwap.length) {
     const vwapLs = chart.addLineSeries({ color: _vwapColor, lineWidth: 2, priceLineVisible: false, lastValueVisible: false });

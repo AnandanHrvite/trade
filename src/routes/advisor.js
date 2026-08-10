@@ -50,22 +50,22 @@ router.get("/", (req, res) => {
     .main-content{flex:1;margin-left:200px;padding:18px 22px 40px;min-width:0;min-height:100vh;}
     @media(max-width:900px){.main-content{margin-left:0;padding:14px;}}
     .page-title{font-size:1.1rem;font-weight:700;margin-bottom:2px;}
-    .page-sub{font-size:0.72rem;color:#4a6080;margin-bottom:14px;}
+    .page-sub{font-size:0.72rem;color:var(--muted-1,#8ba1c2);margin-bottom:14px;}
     .tbar{display:flex;align-items:center;gap:8px;padding:10px 12px;background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;margin-bottom:14px;flex-wrap:wrap;}
-    .tbar label{font-size:0.58rem;text-transform:uppercase;letter-spacing:1px;color:#3a5070;font-family:'IBM Plex Mono',monospace;}
+    .tbar label{font-size:0.58rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-2,#6d85a8);font-family:'IBM Plex Mono',monospace;}
     .tbar select{background:#04090f;border:0.5px solid #0e1e36;color:#e0eaf8;padding:6px 10px;border-radius:6px;font-family:'IBM Plex Mono',monospace;font-size:0.72rem;outline:none;}
     .tbar select:focus{border-color:#38bdf8;}
     .btn{background:#0c4a6e;border:0.5px solid #1e5a80;color:#7dd3fc;padding:7px 14px;border-radius:6px;font-family:'IBM Plex Mono',monospace;font-size:0.72rem;font-weight:600;cursor:pointer;}
     .btn:hover{background:#0e5a84;}
-    .meta{margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:0.66rem;color:#4a6080;}
+    .meta{margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:0.66rem;color:var(--muted-1,#8ba1c2);}
     .stat-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:16px;}
     @media(max-width:1000px){.stat-grid{grid-template-columns:repeat(2,1fr);}}
     .sc{background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;padding:12px 14px;position:relative;overflow:hidden;}
     .sc::before{content:'';position:absolute;top:0;left:0;width:3px;height:100%;background:var(--accent,#38bdf8);}
-    .sc-label{font-size:0.55rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;margin-bottom:5px;font-family:'IBM Plex Mono',monospace;}
+    .sc-label{font-size:0.55rem;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted-2,#6d85a8);margin-bottom:5px;font-family:'IBM Plex Mono',monospace;}
     .sc-val{font-size:1.05rem;font-weight:700;font-family:'IBM Plex Mono',monospace;}
     .panel{background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;padding:14px 16px;margin-bottom:14px;}
-    .panel h3{font-size:0.62rem;text-transform:uppercase;letter-spacing:1.4px;color:#3a5070;margin-bottom:10px;font-family:'IBM Plex Mono',monospace;}
+    .panel h3{font-size:0.62rem;text-transform:uppercase;letter-spacing:1.4px;color:var(--muted-2,#6d85a8);margin-bottom:10px;font-family:'IBM Plex Mono',monospace;}
     .f{border:0.5px solid #0e1e36;border-left:3px solid var(--sev,#38bdf8);border-radius:8px;padding:12px 14px;margin-bottom:10px;background:#04090f;}
     .f-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;}
     .f-sev{font-family:'IBM Plex Mono',monospace;font-size:0.54rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:2px 7px;border-radius:4px;}
@@ -89,15 +89,15 @@ router.get("/", (req, res) => {
        grows the table (so the wrapper scrolls) when there is not. */
     .tbl-wrap > .tbl{min-width:max-content;}
     .tbl{width:100%;border-collapse:collapse;font-family:'IBM Plex Mono',monospace;font-size:0.72rem;}
-    .tbl th{padding:8px 10px;text-align:right;font-size:0.56rem;text-transform:uppercase;letter-spacing:1px;color:#1e3050;background:#04090f;border-bottom:0.5px solid #0e1e36;}
+    .tbl th{padding:8px 10px;text-align:right;font-size:0.56rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-2,#6d85a8);background:#04090f;border-bottom:0.5px solid #0e1e36;}
     .tbl th:first-child{text-align:left;}
     .tbl td{padding:7px 10px;border-top:0.5px solid #0e1e36;color:#c8d8f0;text-align:right;}
     .tbl td:first-child{text-align:left;}
-    .empty{text-align:center;padding:50px 20px;color:#4a6080;font-size:0.85rem;}
-    .note{font-size:0.68rem;color:#4a6080;line-height:1.6;}
+    .empty{text-align:center;padding:50px 20px;color:var(--muted-1,#8ba1c2);font-size:0.85rem;}
+    .note{font-size:0.68rem;color:var(--muted-1,#8ba1c2);line-height:1.6;}
     /* Shown only when the table really is wider than its scroller — a table cut
        off at the screen edge with no affordance reads as broken, not swipeable. */
-    .scroll-hint{display:none;font-family:'IBM Plex Mono',monospace;font-size:0.6rem;color:#3a5070;margin-top:6px;}
+    .scroll-hint{display:none;font-family:'IBM Plex Mono',monospace;font-size:0.6rem;color:var(--muted-2,#6d85a8);margin-top:6px;}
     .scroll-hint.on{display:block;}
 
     /* ── TOUCH, any orientation ───────────────────────────────────────────────
@@ -148,17 +148,17 @@ router.get("/", (req, res) => {
     :root[data-theme="light"] body{background:#f4f6f9!important;color:#334155!important;}
     :root[data-theme="light"] .main-content{background:#f4f6f9!important;}
     :root[data-theme="light"] .page-title{color:#1e293b!important;}
-    :root[data-theme="light"] .page-sub,:root[data-theme="light"] .sc-label,:root[data-theme="light"] .panel h3,:root[data-theme="light"] .tbar label,:root[data-theme="light"] .meta,:root[data-theme="light"] .note{color:#64748b!important;}
+    :root[data-theme="light"] .page-sub,:root[data-theme="light"] .sc-label,:root[data-theme="light"] .panel h3,:root[data-theme="light"] .tbar label,:root[data-theme="light"] .meta,:root[data-theme="light"] .note{color:#4b5769!important;}
     :root[data-theme="light"] .sc,:root[data-theme="light"] .panel{background:#fff!important;border-color:#e0e4ea!important;box-shadow:0 1px 3px rgba(0,0,0,0.06)!important;}
     :root[data-theme="light"] .tbar{background:#fff!important;border-color:#e0e4ea!important;}
     :root[data-theme="light"] .tbar select{background:#f8fafc!important;border-color:#e0e4ea!important;color:#334155!important;}
     :root[data-theme="light"] .f{background:#f8fafc!important;border-color:#e0e4ea!important;}
     :root[data-theme="light"] .f-title{color:#1e293b!important;}
-    :root[data-theme="light"] .f-detail{color:#64748b!important;}
+    :root[data-theme="light"] .f-detail{color:#4b5769!important;}
     :root[data-theme="light"] .f-sug{color:#334155!important;}
-    :root[data-theme="light"] .tbl th{background:#f1f5f9!important;color:#64748b!important;border-bottom-color:#e0e4ea!important;}
+    :root[data-theme="light"] .tbl th{background:#f1f5f9!important;color:#4b5769!important;border-bottom-color:#e0e4ea!important;}
     :root[data-theme="light"] .tbl td{border-color:#e0e4ea!important;color:#334155!important;}
-    :root[data-theme="light"] .empty{color:#94a3b8!important;}
+    :root[data-theme="light"] .empty{color:#5c6b7f!important;}
   </style>
 </head>
 <body>

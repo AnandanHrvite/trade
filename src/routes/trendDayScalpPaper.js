@@ -1206,7 +1206,7 @@ ${bbRsiCapitalStrip({ starting: startCap, current: startCap + (data.totalPnl || 
 
 <div class="gate-card">
   <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
-    <div style="font-size:0.7rem;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;font-weight:600;">Day Gate — decided once at ${_envStr("TDS_GATE_TIME", "10:15")}, then frozen</div>
+    <div style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;">Day Gate — decided once at ${_envStr("TDS_GATE_TIME", "10:15")}, then frozen</div>
     <div style="font-size:0.85rem;font-weight:600;" id="gate-badge">${gateBadge}</div>
   </div>
   <div id="gate-detail" style="font-size:0.74rem;color:#94a3b8;margin-top:8px;">${g && g.decided ? g.reason : "Most days end here with no trade — that zero is the design goal."}</div>
@@ -1226,10 +1226,10 @@ ${bbRsiStatGrid([
 ${bbRsiCurrentBar({ bar: state.currentBar, resMin: _resMin() })}
 
 <div style="margin-bottom:18px;">
-  <div style="font-size:0.7rem;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;font-weight:600;">NIFTY ${_resMin()}m — VWAP / EMA${cfg.emaPeriod} zone + bracket</div>
+  <div style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;font-weight:600;">NIFTY ${_resMin()}m — VWAP / EMA${cfg.emaPeriod} zone + bracket</div>
   <div id="chart-container" style="background:#0a0f1c;border:1px solid #1a2236;border-radius:12px;overflow:hidden;position:relative;height:420px;">
     <div id="chart" style="width:100%;height:100%;"></div>
-    <div style="position:absolute;top:10px;left:12px;font-size:0.68rem;color:#4a6080;pointer-events:none;z-index:2;">
+    <div style="position:absolute;top:10px;left:12px;font-size:0.68rem;color:var(--muted-1,#8ba1c2);pointer-events:none;z-index:2;">
       <span style="color:#8b5cf6;">── VWAP</span> &nbsp;<span style="color:#3b82f6;">── EMA${cfg.emaPeriod}</span> &nbsp;<span style="color:#f59e0b;">── Stop</span> &nbsp;<span style="color:#10b981;">── Target</span>
     </div>
   </div>
@@ -1273,7 +1273,7 @@ setInterval(tdsRefresh, 4000);
   if (!container) return;
   var chart = LightweightCharts.createChart(container, {
     width: container.clientWidth, height: container.clientHeight,
-    layout:{ background:{type:'solid',color:'#0a0f1c'}, textColor:'#4a6080', fontSize:11, fontFamily:"'IBM Plex Mono', monospace" },
+    layout:{ background:{type:'solid',color:'#0a0f1c'}, textColor:'#8ba1c2', fontSize:11, fontFamily:"'IBM Plex Mono', monospace" },
     grid:{ vertLines:{color:'#111827'}, horzLines:{color:'#111827'} },
     crosshair:{ mode: LightweightCharts.CrosshairMode.Normal },
     rightPriceScale:{ borderColor:'#1a2236' },
@@ -1325,19 +1325,19 @@ setInterval(tdsRefresh, 4000);
 
 function _positionCardHtml(pos, optLtp) {
   if (!pos) {
-    return `<div style="background:#0a1020;border:1px solid #1a2236;border-radius:10px;padding:14px 16px;color:#64748b;font-size:0.78rem;">No open position.</div>`;
+    return `<div style="background:#0a1020;border:1px solid #1a2236;border-radius:10px;padding:14px 16px;color:var(--muted-1,#8ba1c2);font-size:0.78rem;">No open position.</div>`;
   }
   const live = optLtp != null ? ((optLtp - pos.optionEntryLtp) * pos.qty).toFixed(0) : "—";
   return `<div style="background:#0a1020;border:1px solid #1a2236;border-radius:10px;padding:14px 16px;">
-  <div style="font-size:0.7rem;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;font-weight:600;margin-bottom:8px;">Open position</div>
+  <div style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;margin-bottom:8px;">Open position</div>
   <div style="display:flex;gap:20px;flex-wrap:wrap;font-size:0.8rem;color:#e2e8f0;">
-    <div><span style="color:#64748b;">Side</span> ${pos.side}</div>
-    <div><span style="color:#64748b;">Symbol</span> ${pos.symbol}</div>
-    <div><span style="color:#64748b;">Entry</span> ${pos.entrySpot}</div>
-    <div><span style="color:#64748b;">Stop</span> ${pos.slSpot}${pos.beArmed ? " (BE)" : ""}</div>
-    <div><span style="color:#64748b;">Target</span> ${pos.targetSpot}</div>
-    <div><span style="color:#64748b;">Risk</span> ${pos.riskPts}pt</div>
-    <div><span style="color:#64748b;">Live P&L</span> ₹${live}</div>
+    <div><span style="color:var(--muted-1,#8ba1c2);">Side</span> ${pos.side}</div>
+    <div><span style="color:var(--muted-1,#8ba1c2);">Symbol</span> ${pos.symbol}</div>
+    <div><span style="color:var(--muted-1,#8ba1c2);">Entry</span> ${pos.entrySpot}</div>
+    <div><span style="color:var(--muted-1,#8ba1c2);">Stop</span> ${pos.slSpot}${pos.beArmed ? " (BE)" : ""}</div>
+    <div><span style="color:var(--muted-1,#8ba1c2);">Target</span> ${pos.targetSpot}</div>
+    <div><span style="color:var(--muted-1,#8ba1c2);">Risk</span> ${pos.riskPts}pt</div>
+    <div><span style="color:var(--muted-1,#8ba1c2);">Live P&L</span> ₹${live}</div>
   </div>
 </div>`;
 }

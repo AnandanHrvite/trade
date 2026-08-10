@@ -589,11 +589,20 @@ router.get("/", async (req, res) => {
   return _renderResults(res, from, to, trades, stats, meta || { days: 0, skipped: [], gapStats: {} });
 });
 
+
+function _errLightAttr() {
+  return require("../utils/theme").resolveTheme() === "light" ? ' data-theme="light"' : "";
+}
+
 function renderErrorPage(msg, from, to) {
-  return `<!DOCTYPE html><html><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>${faviconLink()}<title>3M Gap Fix Scalp Backtest Error</title>
+  return `<!DOCTYPE html><html${_errLightAttr()}><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>${faviconLink()}<title>3M Gap Fix Scalp Backtest Error</title>
 <style>body{font-family:'IBM Plex Mono',monospace;background:#060810;color:#a0b8d8;padding:40px;text-align:center;}
 h2{color:#ef4444;margin-bottom:12px;}p{margin-bottom:18px;}
-a{color:${ACCENT};text-decoration:none;border:0.5px solid #0e1428;padding:8px 14px;border-radius:6px;}</style>
+a{color:${ACCENT};text-decoration:none;border:0.5px solid #0e1428;padding:8px 14px;border-radius:6px;}
+:root[data-theme="light"] body{background:#f4f6f9;color:#334155;}
+:root[data-theme="light"] h2{color:#b91c1c;}
+:root[data-theme="light"] a{border-color:#e0e4ea;background:#ffffff;}
+@media(max-width:768px){body{padding:24px 14px;}a{min-height:44px;display:inline-flex;align-items:center;justify-content:center;}}</style>
 </head><body><h2>3M Gap Fix Scalp Backtest Failed</h2><p>${escHtml(msg)}</p><p><b>${escHtml(from || "")}</b> → <b>${escHtml(to || "")}</b></p><a href="${ENDPOINT}">← Back</a></body></html>`;
 }
 

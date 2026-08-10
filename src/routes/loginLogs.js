@@ -54,12 +54,24 @@ router.get("/", (req, res) => {
       --border2:  #243048;
       --text:     #c8d8f0;
       --text2:    #e0eaf8;
-      --muted:    #4a6080;
-      --dim:      #3a5070;
-      --accent:   #3b82f6;
-      --green:    #10b981;
-      --red:      #ef4444;
-      --yellow:   #f59e0b;
+      --muted:    #8ba1c2;
+      --dim:      #6d85a8;
+    }
+    /* Light skin — this page is variable-driven, so one block covers it. */
+    :root[data-theme="light"] {
+      --bg:       #f4f6f9;
+      --surface:  #ffffff;
+      --surface2: #f8fafc;
+      --border:   #e0e4ea;
+      --border2:  #cbd5e1;
+      --text:     #1e293b;
+      --muted:    #4b5769;
+      --dim:      #5c6b7f;
+      --text2:    #0f172a;
+      --accent:   #1d4ed8;
+      --green:    #047857;
+      --red:      #b91c1c;
+      --yellow:   #b45309;
     }
     *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
     body { font-family:'IBM Plex Sans',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100vh; overflow-x:hidden; }
@@ -105,7 +117,7 @@ router.get("/", (req, res) => {
     .geo-tag { display:inline-block; font-size:0.52rem; font-weight:700; padding:1px 5px; border-radius:3px; margin-left:4px; vertical-align:middle; }
     .geo-gps { background:rgba(16,185,129,0.15); color:#10b981; border:0.5px solid rgba(16,185,129,0.3); }
     .geo-ip  { background:rgba(245,158,11,0.15); color:#f59e0b; border:0.5px solid rgba(245,158,11,0.3); }
-    .ua { color:#64748b; font-size:0.64rem; max-width:280px; word-break:break-all; line-height:1.5; }
+    .ua { color:var(--muted-1,#8ba1c2); font-size:0.64rem; max-width:280px; word-break:break-all; line-height:1.5; }
     .time-main { color:var(--text2); }
     .time-date { color:var(--dim); font-size:0.6rem; }
     .idx { color:var(--dim); font-weight:600; }

@@ -176,17 +176,17 @@ router.get("/", (req, res) => {
     @media(max-width:900px){.main-content{margin-left:0;
       padding:12px max(12px,env(safe-area-inset-right)) calc(28px + env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));}}
     .page-title{font-size:1.05rem;font-weight:700;color:#e0eaf8;margin-bottom:2px;}
-    .page-sub{font-size:0.7rem;color:#4a6080;margin-bottom:12px;line-height:1.5;}
+    .page-sub{font-size:0.7rem;color:var(--muted-1,#8ba1c2);margin-bottom:12px;line-height:1.5;}
     /* section rule — groups the three card rows so 24 numbers read as three ideas */
     .sect{display:flex;align-items:center;gap:8px;font-family:'IBM Plex Mono',monospace;font-size:0.55rem;
-      text-transform:uppercase;letter-spacing:1.6px;color:#3a5070;margin:0 0 7px;}
+      text-transform:uppercase;letter-spacing:1.6px;color:var(--muted-2,#6d85a8);margin:0 0 7px;}
     .sect::after{content:'';flex:1;height:1px;background:#0e1e36;}
     .tbar{display:flex;align-items:center;gap:8px;padding:10px 12px;background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;margin-bottom:14px;flex-wrap:wrap;}
-    .tbar label{font-size:0.58rem;text-transform:uppercase;letter-spacing:1px;color:#3a5070;font-family:'IBM Plex Mono',monospace;}
+    .tbar label{font-size:0.58rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-2,#6d85a8);font-family:'IBM Plex Mono',monospace;}
     .tbar input,.tbar select{background:#04090f;border:0.5px solid #0e1e36;color:#e0eaf8;padding:6px 10px;border-radius:6px;font-family:'IBM Plex Mono',monospace;font-size:0.72rem;outline:none;}
     .tbar input:focus,.tbar select:focus{border-color:#38bdf8;}
     .seg{display:inline-flex;border:0.5px solid #0e1e36;border-radius:6px;overflow:hidden;}
-    .seg button{background:#04090f;border:none;color:#4a6080;padding:6px 12px;font-family:'IBM Plex Mono',monospace;font-size:0.7rem;cursor:pointer;}
+    .seg button{background:#04090f;border:none;color:var(--muted-1,#8ba1c2);padding:6px 12px;font-family:'IBM Plex Mono',monospace;font-size:0.7rem;cursor:pointer;}
     .seg button.on{background:#0c4a6e;color:#7dd3fc;}
 ${multiSelectCSS()}
     .cr-link{margin-left:auto;background:#0c4a6e;border:0.5px solid #1e5a80;color:#7dd3fc;padding:7px 14px;border-radius:6px;font-family:'IBM Plex Mono',monospace;font-size:0.72rem;font-weight:600;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;}
@@ -198,15 +198,15 @@ ${multiSelectCSS()}
     @media(max-width:700px){.stat-grid{grid-template-columns:repeat(2,1fr);gap:7px;}}
     .sc{background:#07111f;border:0.5px solid #0e1e36;border-radius:9px;padding:10px 12px;position:relative;overflow:hidden;}
     .sc::before{content:'';position:absolute;top:0;left:0;width:3px;height:100%;background:var(--accent,#38bdf8);}
-    .sc-label{font-size:0.52rem;text-transform:uppercase;letter-spacing:1.1px;color:#3a5070;margin-bottom:4px;font-family:'IBM Plex Mono',monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .sc-label{font-size:0.52rem;text-transform:uppercase;letter-spacing:1.1px;color:var(--muted-2,#6d85a8);margin-bottom:4px;font-family:'IBM Plex Mono',monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
     .sc-val{font-size:0.95rem;font-weight:700;font-family:'IBM Plex Mono',monospace;color:#e0eaf8;font-variant-numeric:tabular-nums;line-height:1.25;}
-    .sc-sub{font-size:0.57rem;color:#4a6080;margin-top:2px;line-height:1.35;}
+    .sc-sub{font-size:0.57rem;color:var(--muted-1,#8ba1c2);margin-top:2px;line-height:1.35;}
     .panel{background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;padding:12px 14px;margin-bottom:12px;min-width:0;}
     /* Grid children default to min-width:auto, so a wide table would stretch its
        panel past the viewport and get clipped by body{overflow-x:hidden} instead
        of scrolling inside its own wrapper. min-width:0 is what makes it scroll. */
     .row2 > *,.row3 > *{min-width:0;}
-    .panel h3{font-size:0.6rem;text-transform:uppercase;letter-spacing:1.3px;color:#3a5070;margin-bottom:8px;font-family:'IBM Plex Mono',monospace;}
+    .panel h3{font-size:0.6rem;text-transform:uppercase;letter-spacing:1.3px;color:var(--muted-2,#6d85a8);margin-bottom:8px;font-family:'IBM Plex Mono',monospace;}
     .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
     @media(max-width:1000px){.row2{grid-template-columns:1fr;}}
     .row3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
@@ -223,24 +223,24 @@ ${multiSelectCSS()}
       .panel{padding:11px 12px;margin-bottom:10px;}
       .sc-val{font-size:0.9rem;}
     }
-    .cap{font-family:'IBM Plex Mono',monospace;font-size:0.62rem;color:#4a6080;margin:-4px 0 10px;line-height:1.6;}
+    .cap{font-family:'IBM Plex Mono',monospace;font-size:0.62rem;color:var(--muted-1,#8ba1c2);margin:-4px 0 10px;line-height:1.6;}
     .mini{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:10px;}
     .mini > div{background:#04090f;border:0.5px solid #0e1e36;border-radius:8px;padding:8px 10px;}
-    .mini .k{font-family:'IBM Plex Mono',monospace;font-size:0.54rem;text-transform:uppercase;letter-spacing:1px;color:#3a5070;}
+    .mini .k{font-family:'IBM Plex Mono',monospace;font-size:0.54rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-2,#6d85a8);}
     .mini .v{font-family:'IBM Plex Mono',monospace;font-size:0.85rem;font-weight:700;color:#e0eaf8;margin-top:2px;}
     .hm{width:100%;border-collapse:separate;border-spacing:3px;font-family:'IBM Plex Mono',monospace;font-size:0.6rem;font-variant-numeric:tabular-nums;}
-    .hm th{color:#3a5070;font-weight:600;font-size:0.54rem;text-transform:uppercase;letter-spacing:1px;padding:2px 0;}
+    .hm th{color:var(--muted-2,#6d85a8);font-weight:600;font-size:0.54rem;text-transform:uppercase;letter-spacing:1px;padding:2px 0;}
     .hm td{text-align:center;padding:7px 2px;border-radius:5px;background:#04090f;border:0.5px solid #0e1e36;color:#c8d8f0;white-space:nowrap;min-width:38px;}
     .hm td.void{color:#16243c;}
-    .hm .rowlab{text-align:right;color:#3a5070;background:none;border:none;padding-right:6px;}
+    .hm .rowlab{text-align:right;color:var(--muted-2,#6d85a8);background:none;border:none;padding-right:6px;}
     .sc[title],.mini > div[title],.hm td[title]{cursor:help;}
-    :root[data-theme="light"] .cap{color:#64748b!important;}
+    :root[data-theme="light"] .cap{color:#4b5769!important;}
     :root[data-theme="light"] .mini > div{background:#f8fafc!important;border-color:#e0e4ea!important;color:#334155!important;}
     /* No !important on the heatmap cell background or the mini value colour: an
        author !important beats an inline style, which would flatten the green/red
        the JS writes inline. Higher specificity alone is enough over the base rule. */
     :root[data-theme="light"] .hm td{background:#f8fafc;border-color:#e0e4ea;color:#334155;}
-    :root[data-theme="light"] .mini .k,:root[data-theme="light"] .hm th,:root[data-theme="light"] .hm .rowlab{color:#64748b!important;}
+    :root[data-theme="light"] .mini .k,:root[data-theme="light"] .hm th,:root[data-theme="light"] .hm .rowlab{color:#4b5769!important;}
     :root[data-theme="light"] .mini .v{color:#1e293b;}
     :root[data-theme="light"] .hm td.void{color:#cbd5e1!important;}
     :root[data-theme="light"] .hm .rowlab{background:none!important;border:none!important;}
@@ -249,23 +249,23 @@ ${multiSelectCSS()}
     .tblwrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
     .tblwrap .tbl{min-width:330px;}
     .tbl{width:100%;border-collapse:collapse;font-family:'IBM Plex Mono',monospace;font-size:0.7rem;font-variant-numeric:tabular-nums;}
-    .tbl th{padding:8px 10px;text-align:right;font-size:0.56rem;text-transform:uppercase;letter-spacing:1px;color:#1e3050;background:#04090f;border-bottom:0.5px solid #0e1e36;font-weight:600;}
+    .tbl th{padding:8px 10px;text-align:right;font-size:0.56rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-2,#6d85a8);background:#04090f;border-bottom:0.5px solid #0e1e36;font-weight:600;}
     .tbl th:first-child{text-align:left;}
     .tbl td{padding:7px 10px;border-top:0.5px solid #0e1e36;color:#c8d8f0;text-align:right;}
     .tbl td:first-child{text-align:left;}
     .tbl tr:hover td{background:rgba(56,189,248,0.05);}
-    .pager{display:flex;align-items:center;gap:6px;margin-top:10px;font-family:'IBM Plex Mono',monospace;font-size:0.64rem;color:#4a6080;flex-wrap:wrap;}
+    .pager{display:flex;align-items:center;gap:6px;margin-top:10px;font-family:'IBM Plex Mono',monospace;font-size:0.64rem;color:var(--muted-1,#8ba1c2);flex-wrap:wrap;}
     .pg-info{margin-right:auto;}
     .pg-btn{background:#04090f;border:0.5px solid #0e1e36;color:#7dd3fc;padding:4px 9px;border-radius:5px;font-family:inherit;font-size:0.72rem;line-height:1;cursor:pointer;min-width:30px;min-height:28px;}
     .pg-btn:hover:not(:disabled){background:#0c4a6e;}
-    .pg-btn:disabled{opacity:0.35;cursor:default;color:#3a5070;}
+    .pg-btn:disabled{opacity:0.35;cursor:default;color:var(--muted-2,#6d85a8);}
     .pg-num{padding:0 4px;color:#c8d8f0;}
     .badge-mode{padding:2px 7px;border-radius:4px;font-size:0.58rem;font-weight:700;letter-spacing:0.5px;}
     .badge-EMA_RSI_ST{background:rgba(59,130,246,0.12);color:#3b82f6;border:0.5px solid rgba(59,130,246,0.3);}
     .badge-BB_RSI{background:rgba(245,158,11,0.12);color:#f59e0b;border:0.5px solid rgba(245,158,11,0.3);}
     .badge-PA{background:rgba(168,85,247,0.12);color:#a855f7;border:0.5px solid rgba(168,85,247,0.3);}
     .badge-ORB{background:rgba(16,185,129,0.12);color:#10b981;border:0.5px solid rgba(16,185,129,0.3);}
-    .empty{text-align:center;padding:50px 20px;color:#4a6080;font-size:0.85rem;}
+    .empty{text-align:center;padding:50px 20px;color:var(--muted-1,#8ba1c2);font-size:0.85rem;}
     /* phone: full-width controls, 44px touch targets, no cramped two-up rows */
     @media(max-width:700px){
       .tbar{gap:6px;padding:8px 10px;margin-bottom:10px;}
@@ -282,18 +282,18 @@ ${multiSelectCSS()}
     :root[data-theme="light"] body{background:#f4f6f9!important;color:#334155!important;}
     :root[data-theme="light"] .main-content{background:#f4f6f9!important;}
     :root[data-theme="light"] .page-title{color:#1e293b!important;}
-    :root[data-theme="light"] .page-sub,:root[data-theme="light"] .sc-label,:root[data-theme="light"] .sc-sub,:root[data-theme="light"] .panel h3,:root[data-theme="light"] .tbar label{color:#64748b!important;}
+    :root[data-theme="light"] .page-sub,:root[data-theme="light"] .sc-label,:root[data-theme="light"] .sc-sub,:root[data-theme="light"] .panel h3,:root[data-theme="light"] .tbar label{color:#4b5769!important;}
     :root[data-theme="light"] .sc,:root[data-theme="light"] .panel{background:#fff!important;border-color:#e0e4ea!important;box-shadow:0 1px 3px rgba(0,0,0,0.06)!important;}
     :root[data-theme="light"] .sc-val{color:#1e293b!important;}
     :root[data-theme="light"] .tbar{background:#fff!important;border-color:#e0e4ea!important;}
     :root[data-theme="light"] .tbar input,:root[data-theme="light"] .tbar select,:root[data-theme="light"] .seg button{background:#f8fafc!important;border-color:#e0e4ea!important;color:#334155!important;}
     :root[data-theme="light"] .seg button.on{background:#e0f2fe!important;color:#0369a1!important;}
-    :root[data-theme="light"] .tbl th{background:#f1f5f9!important;color:#64748b!important;border-bottom-color:#e0e4ea!important;}
+    :root[data-theme="light"] .tbl th{background:#f1f5f9!important;color:#4b5769!important;border-bottom-color:#e0e4ea!important;}
     :root[data-theme="light"] .tbl td{border-color:#e0e4ea!important;color:#334155!important;}
-    :root[data-theme="light"] .empty{color:#94a3b8!important;}
-    :root[data-theme="light"] .sect{color:#64748b!important;}
+    :root[data-theme="light"] .empty{color:#5c6b7f!important;}
+    :root[data-theme="light"] .sect{color:#4b5769!important;}
     :root[data-theme="light"] .sect::after{background:#e0e4ea!important;}
-    :root[data-theme="light"] .pager{color:#64748b!important;}
+    :root[data-theme="light"] .pager{color:#4b5769!important;}
     :root[data-theme="light"] .pg-btn{background:#f8fafc!important;border-color:#e0e4ea!important;color:#0369a1!important;}
     :root[data-theme="light"] .pg-btn:hover:not(:disabled){background:#e0f2fe!important;}
     :root[data-theme="light"] .pg-num{color:#1e293b!important;}
@@ -321,7 +321,7 @@ ${multiSelectCSS()}
         <label>To</label><input type="date" id="fTo"/>
       </span>
       ${showConsolidationReport ? `<a href="/consolidation-report" class="cr-link" title="Open the day-by-day consolidated report (with PDF export)">📑 Consolidation Report</a>` : ''}
-      <span id="cntPill" style="margin-left:${showConsolidationReport ? '12px' : 'auto'};font-family:'IBM Plex Mono',monospace;font-size:0.7rem;color:#4a6080;"></span>
+      <span id="cntPill" style="margin-left:${showConsolidationReport ? '12px' : 'auto'};font-family:'IBM Plex Mono',monospace;font-size:0.7rem;color:var(--muted-1,#8ba1c2);"></span>
     </div>
 
     <div id="content"></div>
@@ -914,7 +914,7 @@ function extremesHTML(arr){
     +'<td style="color:'+pc(t.pnl)+'">'+sign(t.pnl)+inr(t.pnl)+'</td></tr>';
   let h='<div class="tblwrap"><table class="tbl"><thead><tr><th>Date</th><th style="text-align:left">Trade</th><th style="text-align:left">Exit</th><th>P&L</th></tr></thead><tbody>';
   for(const t of top) h+=row(t);
-  if(bot.length) h+='<tr><td colspan="4" style="color:#3a5070;text-align:center;font-size:0.6rem;letter-spacing:1px;">WORST</td></tr>';
+  if(bot.length) h+='<tr><td colspan="4" style="color:var(--muted-2,#6d85a8);text-align:center;font-size:0.6rem;letter-spacing:1px;">WORST</td></tr>';
   for(const t of bot) h+=row(t);
   return h+'</tbody></table></div>';
 }

@@ -76,33 +76,33 @@ function historyLightCSS() {
     :root[data-theme="light"] .section-title{color:#475569!important;}
     :root[data-theme="light"] .session-card{background:#fff!important;border-color:#e0e4ea!important;}
     :root[data-theme="light"] .session-head{background:#f8fafc!important;border-bottom-color:#e0e4ea!important;}
-    :root[data-theme="light"] .session-meta{color:#94a3b8!important;}
-    :root[data-theme="light"] .session-wl{color:#64748b!important;}
-    :root[data-theme="light"] .tbl th{color:#64748b!important;background:#f1f5f9!important;border-bottom-color:#e0e4ea!important;}
+    :root[data-theme="light"] .session-meta{color:#5c6b7f!important;}
+    :root[data-theme="light"] .session-wl{color:#4b5769!important;}
+    :root[data-theme="light"] .tbl th{color:#4b5769!important;background:#f1f5f9!important;border-bottom-color:#e0e4ea!important;}
     :root[data-theme="light"] .tbl td{border-color:#e0e4ea!important;color:#334155!important;}
     :root[data-theme="light"] .tbl tr:hover td{background:rgba(59,130,246,0.05)!important;}
-    :root[data-theme="light"] .export-btn{background:#f8fafc!important;border-color:#e0e4ea!important;color:#64748b!important;}
+    :root[data-theme="light"] .export-btn{background:#f8fafc!important;border-color:#e0e4ea!important;color:#4b5769!important;}
     :root[data-theme="light"] .export-btn:hover{border-color:#3b82f6!important;color:#2563eb!important;}
     :root[data-theme="light"] .copy-btn{background:#f8fafc!important;border-color:#e0e4ea!important;color:#2563eb!important;}
     :root[data-theme="light"] .copy-btn:hover{background:#eff6ff!important;border-color:#3b82f6!important;}
     :root[data-theme="light"] .dw-toggle{border-color:#e0e4ea!important;color:#2563eb!important;}
     :root[data-theme="light"] .dw-toggle:hover,:root[data-theme="light"] .dw-toggle.active{background:#eff6ff!important;border-color:#3b82f6!important;}
     :root[data-theme="light"] .ana-card{background:#fff!important;border-color:#e0e4ea!important;}
-    :root[data-theme="light"] .ana-card h3{color:#64748b!important;}
+    :root[data-theme="light"] .ana-card h3{color:#4b5769!important;}
     :root[data-theme="light"] .ana-mini{background:#fff!important;border-color:#e0e4ea!important;}
-    :root[data-theme="light"] .ana-mini h3{color:#64748b!important;}
-    :root[data-theme="light"] .ana-tbl th{color:#64748b!important;border-bottom-color:#e0e4ea!important;background:#f1f5f9!important;}
+    :root[data-theme="light"] .ana-mini h3{color:#4b5769!important;}
+    :root[data-theme="light"] .ana-tbl th{color:#4b5769!important;border-bottom-color:#e0e4ea!important;background:#f1f5f9!important;}
     :root[data-theme="light"] .ana-tbl td{color:#334155!important;border-color:#e0e4ea!important;}
     :root[data-theme="light"] .ana-tbl tr:hover{background:#f8fafc!important;}
-    :root[data-theme="light"] .ana-stat-label{color:#64748b!important;}
+    :root[data-theme="light"] .ana-stat-label{color:#4b5769!important;}
     :root[data-theme="light"] .tbar{background:#fff!important;border-color:#e0e4ea!important;}
-    :root[data-theme="light"] .tbar-label{color:#64748b!important;}
-    :root[data-theme="light"] .tbar-count{color:#94a3b8!important;}
+    :root[data-theme="light"] .tbar-label{color:#4b5769!important;}
+    :root[data-theme="light"] .tbar-count{color:#5c6b7f!important;}
     :root[data-theme="light"] .sc{background:#fff!important;border-color:#e0e4ea!important;}
-    :root[data-theme="light"] .sc-label{color:#64748b!important;}
+    :root[data-theme="light"] .sc-label{color:#4b5769!important;}
     :root[data-theme="light"] .sc-val{color:#1e293b!important;}
-    :root[data-theme="light"] .sc-sub{color:#94a3b8!important;}
-    :root[data-theme="light"] .reset-btn{background:rgba(239,68,68,0.08)!important;color:#dc2626!important;border-color:rgba(239,68,68,0.3)!important;}`;
+    :root[data-theme="light"] .sc-sub{color:#5c6b7f!important;}
+    :root[data-theme="light"] .reset-btn{background:rgba(239,68,68,0.08)!important;color:#b91c1c!important;border-color:rgba(239,68,68,0.3)!important;}`;
 }
 
 // ── CSS (mirrors the BB_RSI history page <style> block) ───────────────────────
@@ -116,46 +116,46 @@ function historyCSS() {
     .session-card{background:#07111f;border:0.5px solid #0e1e36;border-radius:12px;overflow:hidden;margin-bottom:18px;}
     .session-head{padding:16px 20px;display:flex;align-items:center;justify-content:space-between;background:#040c18;border-bottom:0.5px solid #0e1e36;gap:12px;flex-wrap:wrap;cursor:pointer;transition:background 0.15s;}
     .session-head:hover{background:#060e1c;}
-    .session-meta{font-size:0.62rem;text-transform:uppercase;letter-spacing:1px;color:#1e3050;margin-bottom:4px;}
+    .session-meta{font-size:0.62rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-2,#6d85a8);margin-bottom:4px;}
     .session-pnl{font-size:1.5rem;font-weight:800;font-family:'IBM Plex Mono',monospace;text-align:right;}
-    .session-wl{font-size:0.7rem;color:#4a6080;text-align:right;margin-top:2px;}
+    .session-wl{font-size:0.7rem;color:var(--muted-1,#8ba1c2);text-align:right;margin-top:2px;}
     .session-body{display:none;}
     .session-card.open .session-body{display:block;}
     .tbl{width:100%;border-collapse:collapse;font-family:'IBM Plex Mono',monospace;font-size:0.75rem;}
-    .tbl th{padding:8px 14px;text-align:left;font-size:0.58rem;text-transform:uppercase;letter-spacing:1px;color:#1e3050;background:#04090f;border-bottom:0.5px solid #0e1e36;font-weight:600;}
-    .tbl td{padding:8px 14px;border-top:0.5px solid #0e1e36;color:#4a6080;vertical-align:middle;}
+    .tbl th{padding:8px 14px;text-align:left;font-size:0.58rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-2,#6d85a8);background:#04090f;border-bottom:0.5px solid #0e1e36;font-weight:600;}
+    .tbl td{padding:8px 14px;border-top:0.5px solid #0e1e36;color:var(--muted-1,#8ba1c2);vertical-align:middle;}
     .tbl tr:hover td{background:rgba(59,130,246,0.03);}
     .badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.65rem;font-weight:700;}
     .badge-ce{background:rgba(16,185,129,0.12);color:#10b981;border:0.5px solid rgba(16,185,129,0.25);}
     .badge-pe{background:rgba(239,68,68,0.12);color:#ef4444;border:0.5px solid rgba(239,68,68,0.25);}
-    .export-btn{background:#07111f;border:0.5px solid #0e1e36;color:#4a6080;padding:5px 12px;border-radius:6px;font-size:0.68rem;font-weight:600;cursor:pointer;font-family:inherit;transition:all 0.12s;}
+    .export-btn{background:#07111f;border:0.5px solid #0e1e36;color:var(--muted-1,#8ba1c2);padding:5px 12px;border-radius:6px;font-size:0.68rem;font-weight:600;cursor:pointer;font-family:inherit;transition:all 0.12s;}
     .export-btn:hover{border-color:#3b82f6;color:#60a5fa;}
     .reset-btn{background:#1a0508;border:0.5px solid #3b0a0a;color:#ef4444;padding:5px 12px;border-radius:6px;font-size:0.68rem;font-weight:600;cursor:pointer;font-family:inherit;transition:all 0.12s;}
     .reset-btn:hover{background:#2a0810;border-color:#ef4444;}
     .copy-btn{background:#0d1320;border:1px solid #1a2236;color:#4a9cf5;padding:4px 12px;border-radius:6px;font-size:0.68rem;cursor:pointer;font-family:inherit;transition:all 0.15s;white-space:nowrap;}
     .copy-btn:hover{background:#0a1e3d;border-color:#3b82f6;}
-    .copy-btn.copied{background:#064e3b;border-color:#10b981;color:#10b981;}
+    .copy-btn.copied{background:#064e3b;border-color:#10b981;color:#34d399;}
     .dw-toggle{background:none;border:1px solid #1a2236;border-radius:6px;cursor:pointer;padding:4px 8px;color:#4a9cf5;font-size:0.85rem;transition:all 0.15s;}.dw-toggle:hover{border-color:#3b82f6;background:#0a1e3d;}.dw-toggle.active{background:#0a1e3d;border-color:#3b82f6;}
     .ana-panel{margin-bottom:16px;}
     .ana-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;}
     @media(max-width:900px){.ana-row{grid-template-columns:1fr;}}
     .ana-card{background:#08091a;border:0.5px solid #0e1428;border-radius:8px;padding:14px 16px;position:relative;}
-    .ana-card h3{font-size:0.6rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;margin-bottom:10px;font-family:'IBM Plex Mono',monospace;}
+    .ana-card h3{font-size:0.6rem;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted-2,#6d85a8);margin-bottom:10px;font-family:'IBM Plex Mono',monospace;}
     .ana-chart-wrap{position:relative;height:220px;}
     .ana-row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;}
     @media(max-width:900px){.ana-row3{grid-template-columns:1fr;}}
     .ana-mini{background:#08091a;border:0.5px solid #0e1428;border-radius:8px;padding:12px 14px;}
-    .ana-mini h3{font-size:0.58rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;margin-bottom:8px;font-family:'IBM Plex Mono',monospace;}
+    .ana-mini h3{font-size:0.58rem;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted-2,#6d85a8);margin-bottom:8px;font-family:'IBM Plex Mono',monospace;}
     .ana-tbl{width:100%;border-collapse:collapse;}
-    .ana-tbl th{text-align:left;font-size:0.55rem;text-transform:uppercase;letter-spacing:0.8px;color:#1e3050;padding:5px 8px;border-bottom:0.5px solid #0e1428;font-family:'IBM Plex Mono',monospace;}
-    .ana-tbl td{padding:5px 8px;font-size:0.72rem;font-family:'IBM Plex Mono',monospace;color:#4a6080;border-bottom:0.5px solid #060a14;}
+    .ana-tbl th{text-align:left;font-size:0.55rem;text-transform:uppercase;letter-spacing:0.8px;color:var(--muted-2,#6d85a8);padding:5px 8px;border-bottom:0.5px solid #0e1428;font-family:'IBM Plex Mono',monospace;}
+    .ana-tbl td{padding:5px 8px;font-size:0.72rem;font-family:'IBM Plex Mono',monospace;color:var(--muted-1,#8ba1c2);border-bottom:0.5px solid #060a14;}
     .ana-tbl tr:hover{background:#060c1a;}
     .ana-stat{display:flex;align-items:baseline;gap:6px;margin-bottom:6px;}
     .ana-stat-val{font-size:1rem;font-weight:700;font-family:'IBM Plex Mono',monospace;}
-    .ana-stat-label{font-size:0.62rem;color:#3a5070;}
+    .ana-stat-label{font-size:0.62rem;color:var(--muted-2,#6d85a8);}
     .tbar{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#07111f;border:0.5px solid #0e1e36;border-radius:8px;margin-bottom:10px;flex-wrap:wrap;}
-    .tbar-label{font-size:0.6rem;text-transform:uppercase;letter-spacing:1.5px;color:#3a5070;font-weight:700;font-family:'IBM Plex Mono',monospace;}
-    .tbar-count{font-size:0.68rem;color:#4a6080;}
+    .tbar-label{font-size:0.6rem;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted-2,#6d85a8);font-weight:700;font-family:'IBM Plex Mono',monospace;}
+    .tbar-count{font-size:0.68rem;color:var(--muted-1,#8ba1c2);}
     @media print {
       .sidebar, .hamburger, .sidebar-overlay, .top-bar, .export-btn, .reset-btn, .copy-btn, .dw-toggle, .ana-panel, #dayWiseWrap, .tbar { display: none !important; }
       .main-content { margin-left: 0 !important; }
@@ -190,9 +190,9 @@ function dailyFilesSectionHTML() {
       <div id="dailyFilesBody" style="overflow-x:auto;display:none;">
         <table id="dailyFilesTbl" class="tbl" style="width:100%;"><thead><tr>
           <th>Date (IST)</th><th>Skip JSONL</th><th>Trade JSONL</th><th>Actions</th>
-        </tr></thead><tbody id="dailyFilesRows"><tr><td colspan="4" style="text-align:center;color:#4a6080;padding:12px;">Loading…</td></tr></tbody></table>
-        <div id="dfPager" style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap;font-family:'IBM Plex Mono',monospace;font-size:0.66rem;color:#4a6080;">
-          <label style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1px;color:#3a5070;">Rows</label>
+        </tr></thead><tbody id="dailyFilesRows"><tr><td colspan="4" style="text-align:center;color:var(--muted-1,#8ba1c2);padding:12px;">Loading…</td></tr></tbody></table>
+        <div id="dfPager" style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap;font-family:'IBM Plex Mono',monospace;font-size:0.66rem;color:var(--muted-1,#8ba1c2);">
+          <label style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-2,#6d85a8);">Rows</label>
           <select id="dfPageSize" style="background:#04090f;border:0.5px solid #0e1e36;color:#e0eaf8;padding:3px 6px;border-radius:5px;font-family:inherit;font-size:0.66rem;outline:none;cursor:pointer;">
             <option value="5">5</option><option value="10" selected>10</option><option value="25">25</option><option value="50">50</option><option value="0">All</option>
           </select>
@@ -221,16 +221,16 @@ async function loadDailyFiles(){
     var rows = d.rows || [];
     document.getElementById('dailyFilesCnt').textContent = (d.total||0) + ' day' + ((d.total===1)?'':'s');
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#4a6080;padding:12px;">No daily files yet — they\\'ll appear after the next paper session runs.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--muted-1,#8ba1c2);padding:12px;">No daily files yet — they\\'ll appear after the next paper session runs.</td></tr>';
     } else {
       tbody.innerHTML = rows.map(function(r){
-        var sCell = r.skipsSize ? _dfFmtBytes(r.skipsSize) : '<span style="color:#4a6080;">—</span>';
-        var tCell = r.tradesSize ? _dfFmtBytes(r.tradesSize) : '<span style="color:#4a6080;">—</span>';
+        var sCell = r.skipsSize ? _dfFmtBytes(r.skipsSize) : '<span style="color:var(--muted-1,#8ba1c2);">—</span>';
+        var tCell = r.tradesSize ? _dfFmtBytes(r.tradesSize) : '<span style="color:var(--muted-1,#8ba1c2);">—</span>';
         var btns  = '';
         if (r.skipsSize)  btns += '<button class="export-btn" style="margin-right:4px;" onclick="viewJsonl(\\'skips\\',\\''+r.date+'\\')" title="View skip JSONL for '+r.date+'">👁 Skips</button>';
         if (r.tradesSize) btns += '<button class="export-btn" style="margin-right:4px;" onclick="viewJsonl(\\'trades\\',\\''+r.date+'\\')" title="View trade JSONL for '+r.date+'">👁 Trades</button>';
         if (r.tradesSize) btns += '<button class="export-btn" style="background:rgba(16,185,129,0.08);color:#10b981;border-color:rgba(16,185,129,0.3);" onclick="restoreSession(\\''+r.date+'\\')" title="Rebuild session from JSONL — recovers deleted/missing trades">♻ Restore</button>';
-        if (!btns) btns = '<span style="color:#4a6080;">—</span>';
+        if (!btns) btns = '<span style="color:var(--muted-1,#8ba1c2);">—</span>';
         return '<tr><td>'+r.date+'</td><td>'+sCell+'</td><td>'+tCell+'</td><td>'+btns+'</td></tr>';
       }).join('');
     }
@@ -292,7 +292,7 @@ var _JSONL_CURRENT_TEXT = '';
 function _jsonlEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function _renderJsonlTable(text){
   var lines = text.split(/\\r?\\n/).filter(function(l){ return l.trim(); });
-  if (!lines.length) return { html: '<div style="padding:16px;color:#4a6080;text-align:center;">No data</div>', rows: 0, cols: 0 };
+  if (!lines.length) return { html: '<div style="padding:16px;color:var(--muted-1,#8ba1c2);text-align:center;">No data</div>', rows: 0, cols: 0 };
   var rows = [];
   var keys = [];
   var seen = {};
@@ -305,12 +305,12 @@ function _renderJsonlTable(text){
   }
   var html = '<div style="overflow:auto;max-height:72vh;border:1px solid #1a2236;border-radius:8px;"><table class="tbl" style="width:100%;font-size:0.68rem;font-family:\\'IBM Plex Mono\\',monospace;">';
   html += '<thead style="position:sticky;top:0;background:#07111f;z-index:1;"><tr>';
-  html += '<th style="padding:6px 8px;color:#4a6080;">#</th>';
+  html += '<th style="padding:6px 8px;color:var(--muted-1,#8ba1c2);">#</th>';
   for (var j=0; j<keys.length; j++) html += '<th style="padding:6px 8px;color:#4a9cf5;white-space:nowrap;">' + _jsonlEsc(keys[j]) + '</th>';
   html += '</tr></thead><tbody>';
   for (var r=0; r<rows.length; r++){
     html += '<tr>';
-    html += '<td style="padding:4px 8px;color:#3a5070;">' + (r+1) + '</td>';
+    html += '<td style="padding:4px 8px;color:var(--muted-2,#6d85a8);">' + (r+1) + '</td>';
     for (var c=0; c<keys.length; c++){
       var v = rows[r][keys[c]];
       var disp = (v==null ? '' : (typeof v === 'object' ? JSON.stringify(v) : String(v)));
@@ -328,7 +328,7 @@ async function viewJsonl(type, date){
   var meta  = document.getElementById('jsonlm-meta');
   title.textContent = (type === 'skips' ? 'Skip' : 'Trade') + ' JSONL — ' + date;
   meta.textContent = 'Loading…';
-  body.innerHTML = '<div style="padding:24px;color:#4a6080;text-align:center;">Loading…</div>';
+  body.innerHTML = '<div style="padding:24px;color:var(--muted-1,#8ba1c2);text-align:center;">Loading…</div>';
   _JSONL_CURRENT_TEXT = '';
   modal.style.display = 'flex';
   try {
@@ -409,11 +409,11 @@ function jsonlModalHTML() {
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
       <div>
         <span id="jsonlm-title" style="color:#e0eaf8;font-size:0.85rem;font-weight:600;"></span>
-        <span id="jsonlm-meta" style="color:#4a6080;font-size:0.65rem;margin-left:8px;"></span>
+        <span id="jsonlm-meta" style="color:var(--muted-1,#8ba1c2);font-size:0.65rem;margin-left:8px;"></span>
       </div>
       <div style="display:flex;gap:8px;">
         <button class="copy-btn" onclick="copyJsonlViewed(this)" id="jsonlm-copy">📋 Copy</button>
-        <button onclick="document.getElementById('jsonlModal').style.display='none';" style="background:none;border:1px solid #1a2236;color:#4a6080;font-size:0.75rem;cursor:pointer;padding:4px 12px;border-radius:6px;font-family:inherit;" onmouseover="this.style.color='#ef4444';this.style.borderColor='#ef4444'" onmouseout="this.style.color='#4a6080';this.style.borderColor='#1a2236'">Close</button>
+        <button onclick="document.getElementById('jsonlModal').style.display='none';" style="background:none;border:1px solid #1a2236;color:var(--muted-1,#8ba1c2);font-size:0.75rem;cursor:pointer;padding:4px 12px;border-radius:6px;font-family:inherit;" onmouseover="this.style.color='#ef4444';this.style.borderColor='#ef4444'" onmouseout="this.style.color='#8ba1c2';this.style.borderColor='#1a2236'">Close</button>
       </div>
     </div>
     <div id="jsonlm-body" style="flex:1;overflow:auto;"></div>
@@ -429,9 +429,9 @@ function tradeModalHTML(modalLabel) {
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
       <div>
         <span id="histm-badge" style="font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;padding:4px 10px;border-radius:6px;"></span>
-        <span style="font-size:0.65rem;color:#4a6080;margin-left:10px;">${modalLabel} — Trade Details</span>
+        <span style="font-size:0.65rem;color:var(--muted-1,#8ba1c2);margin-left:10px;">${modalLabel} — Trade Details</span>
       </div>
-      <button onclick="document.getElementById('histModal').style.display='none';" style="background:none;border:1px solid #1a2236;color:#4a6080;font-size:1rem;cursor:pointer;padding:4px 10px;border-radius:6px;font-family:inherit;" onmouseover="this.style.color='#ef4444';this.style.borderColor='#ef4444'" onmouseout="this.style.color='#4a6080';this.style.borderColor='#1a2236'">Close</button>
+      <button onclick="document.getElementById('histModal').style.display='none';" style="background:none;border:1px solid #1a2236;color:var(--muted-1,#8ba1c2);font-size:1rem;cursor:pointer;padding:4px 10px;border-radius:6px;font-family:inherit;" onmouseover="this.style.color='#ef4444';this.style.borderColor='#ef4444'" onmouseout="this.style.color='#8ba1c2';this.style.borderColor='#1a2236'">Close</button>
     </div>
     <div id="histm-body"></div>
   </div>
@@ -455,8 +455,8 @@ function dayViewSectionHTML() {
           <tbody id="dayBody"></tbody>
         </table>
       </div>
-      <div id="dwPager" style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap;font-family:'IBM Plex Mono',monospace;font-size:0.66rem;color:#4a6080;">
-        <label style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1px;color:#3a5070;">Rows</label>
+      <div id="dwPager" style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap;font-family:'IBM Plex Mono',monospace;font-size:0.66rem;color:var(--muted-1,#8ba1c2);">
+        <label style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-2,#6d85a8);">Rows</label>
         <select id="dwPageSize" style="background:#04090f;border:0.5px solid #0e1e36;color:#e0eaf8;padding:3px 6px;border-radius:5px;font-family:inherit;font-size:0.66rem;outline:none;cursor:pointer;">
           <option value="5">5</option><option value="10" selected>10</option><option value="25">25</option><option value="50">50</option><option value="0">All</option>
         </select>
@@ -519,9 +519,9 @@ function tradeModalJS() {
 function histFmt(n){ return (n != null && n !== 0 && n !== '') ? '\\u20b9' + Number(n).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}) : '\\u2014'; }
 function histCell(label, val, color, sub){
   return '<div style="background:#060910;border:1px solid #1a2236;border-radius:8px;padding:11px 13px;">'
-    + '<div style="font-size:0.52rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;margin-bottom:5px;">' + label + '</div>'
+    + '<div style="font-size:0.52rem;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted-2,#6d85a8);margin-bottom:5px;">' + label + '</div>'
     + '<div style="font-size:0.9rem;font-weight:700;color:' + (color||'#e0eaf8') + ';font-family:monospace;line-height:1.3;word-break:break-word;">' + (val||'\\u2014') + '</div>'
-    + (sub ? '<div style="font-size:0.62rem;color:#4a6080;margin-top:3px;">' + sub + '</div>' : '')
+    + (sub ? '<div style="font-size:0.62rem;color:var(--muted-1,#8ba1c2);margin-top:3px;">' + sub + '</div>' : '')
     + '</div>';
 }
 function showHistoryTradeModal(sessionIdx, tradeIdx){
@@ -572,7 +572,7 @@ function showHistoryTradeModal(sessionIdx, tradeIdx){
     + histCell('Net PnL', t.pnl != null ? (t.pnl >= 0 ? '+' : '') + histFmt(t.pnl) : '\\u2014', pc, 'After STT + charges')
     + '</div></div>';
   var reasonHtml = '<div style="background:#060910;border:1px solid #1a2236;border-radius:10px;padding:12px 14px;">'
-    + '<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:#3a5070;margin-bottom:6px;font-weight:700;">Exit Reason</div>'
+    + '<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted-2,#6d85a8);margin-bottom:6px;font-weight:700;">Exit Reason</div>'
     + '<div style="font-size:0.82rem;color:#a0b8d0;line-height:1.6;font-family:monospace;word-break:break-word;">' + (t.exitReason || '\\u2014') + '</div>'
     + '</div>';
   document.getElementById('histm-body').innerHTML = contractHtml + entryHtml + exitHtml + reasonHtml;
@@ -736,7 +736,7 @@ function buildDayView(){
       +'<td style="color:'+pc+';font-weight:700;background:'+pbg+';">'+fmtAnaSigned(dy.pnl)+'</td>'
       +'<td style="color:'+cc+';font-weight:700;background:'+cbg+';">'+fmtAnaSigned(dy._cum)+'</td></tr>';
   }
-  document.getElementById('dayBody').innerHTML = rows || '<tr><td colspan="6" style="text-align:center;padding:20px;color:#4a6080;">No data.</td></tr>';
+  document.getElementById('dayBody').innerHTML = rows || '<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--muted-1,#8ba1c2);">No data.</td></tr>';
   document.getElementById('dayCntLabel').textContent = days.length+' days';
 
   var info=document.getElementById('dwPagerInfo');
@@ -931,7 +931,7 @@ function renderAnalytics(){
     var worst=lossTrades.slice().sort(function(a,b){return a.pnl-b.pnl;}).slice(0,10);
     var html='';
     worst.forEach(function(t){ html+='<tr><td style="color:#c8d8f0;">'+spGetDateStr(t)+'</td><td style="color:'+(t.side==='CE'?'#10b981':'#ef4444')+';font-weight:700;">'+(t.side||'\\u2014')+'</td><td style="color:#ef4444;font-weight:700;">'+fmtAna(t.pnl)+'</td><td style="font-size:0.65rem;">'+(t.exitReason||'\\u2014')+'</td></tr>'; });
-    document.getElementById('anaWorstBody').innerHTML=html||'<tr><td colspan="4" style="text-align:center;color:#3a5070;">No losses</td></tr>';
+    document.getElementById('anaWorstBody').innerHTML=html||'<tr><td colspan="4" style="text-align:center;color:var(--muted-2,#6d85a8);">No losses</td></tr>';
   })();
 
   (function(){
@@ -945,7 +945,7 @@ function renderAnalytics(){
       var avgLoss=totalLoss/streak.items.length;
       html+='<tr><td style="color:#c8d8f0;">'+spGetDateStr(streak.items[0].trade)+'</td><td>'+streak.items.length+'</td><td style="color:#ef4444;font-weight:700;">'+fmtAna(totalLoss)+'</td><td style="color:#ef4444;">'+fmtAna(avgLoss)+'</td></tr>';
     });
-    document.getElementById('anaLossStreakBody').innerHTML=html||'<tr><td colspan="4" style="text-align:center;color:#3a5070;">No consecutive loss streaks (2+)</td></tr>';
+    document.getElementById('anaLossStreakBody').innerHTML=html||'<tr><td colspan="4" style="text-align:center;color:var(--muted-2,#6d85a8);">No consecutive loss streaks (2+)</td></tr>';
   })();
 
   (function(){
@@ -983,7 +983,7 @@ function renderAnalytics(){
     days.sort(function(a,b){return dayTrades[a].pnl-dayTrades[b].pnl;});
     var html='';
     days.slice(0,10).forEach(function(d){ var dd=dayTrades[d]; html+='<tr><td style="color:#c8d8f0;">'+d+'</td><td>'+dd.trades.length+'</td><td style="color:#ef4444;font-weight:700;">'+fmtAna(dd.pnl)+'</td><td>'+dd.losses+'</td><td style="color:#ef4444;">'+fmtAna(dd.worstTrade)+'</td></tr>'; });
-    document.getElementById('anaWorstDayBody').innerHTML=html||'<tr><td colspan="5" style="text-align:center;color:#3a5070;">No losing days</td></tr>';
+    document.getElementById('anaWorstDayBody').innerHTML=html||'<tr><td colspan="5" style="text-align:center;color:var(--muted-2,#6d85a8);">No losing days</td></tr>';
   })();
 
   (function(){
@@ -1011,7 +1011,7 @@ function renderAnalytics(){
     var days=Object.keys(dlMap).sort();
     var html='';
     days.forEach(function(d){ var dd=dlMap[d]; var nc=dd.net>=0?'#10b981':'#ef4444'; html+='<tr><td style="color:#c8d8f0;">'+d+'</td><td>'+dd.trades+'</td><td style="color:#ef4444;">'+dd.losses+'</td><td style="color:#ef4444;font-weight:700;">'+(dd.grossLoss<0?'-'+fmtAna(dd.grossLoss):'—')+'</td><td style="color:'+nc+';font-weight:700;">'+fmtAnaSigned(dd.net)+'</td></tr>'; });
-    document.getElementById('anaDayLossBody').innerHTML=html||'<tr><td colspan="5" style="text-align:center;color:#3a5070;">No data</td></tr>';
+    document.getElementById('anaDayLossBody').innerHTML=html||'<tr><td colspan="5" style="text-align:center;color:var(--muted-2,#6d85a8);">No data</td></tr>';
   })();
 
   (function(){
@@ -1019,7 +1019,7 @@ function renderAnalytics(){
     rows.sort(function(a,b){ return (b.ch==null?-1:b.ch)-(a.ch==null?-1:a.ch); });
     var html='';
     rows.forEach(function(r){ var t=r.t; var sc=t.side==='CE'?'#10b981':'#ef4444'; var chTxt=r.ch==null?'—':r.ch; html+='<tr><td style="color:#c8d8f0;">'+spGetDateStr(t)+'</td><td style="color:'+sc+';font-weight:600;">'+(t.side||'—')+'</td><td style="color:#c8d8f0;font-weight:700;">'+chTxt+'</td><td style="color:#ef4444;font-weight:700;">'+fmtAnaSigned(t.pnl)+'</td><td style="color:#7a90b0;font-size:0.65rem;">'+(t.exitReason||'—')+'</td></tr>'; });
-    document.getElementById('anaLossCandleBody').innerHTML=html||'<tr><td colspan="5" style="text-align:center;color:#3a5070;">No losing trades</td></tr>';
+    document.getElementById('anaLossCandleBody').innerHTML=html||'<tr><td colspan="5" style="text-align:center;color:var(--muted-2,#6d85a8);">No losing trades</td></tr>';
   })();
 }
 ${filter ? `
@@ -1089,7 +1089,7 @@ function buildSessionCards(sessions, opts) {
     return `<div style="text-align:center;padding:60px 24px;background:#07111f;border:0.5px solid #0e1e36;border-radius:12px;">
         <div style="font-size:3rem;margin-bottom:16px;">📭</div>
         <div style="font-size:1rem;font-weight:600;color:#e0eaf8;margin-bottom:8px;">No sessions yet</div>
-        <div style="font-size:0.82rem;color:#4a6080;">${emptyLabel}</div>
+        <div style="font-size:0.82rem;color:var(--muted-1,#8ba1c2);">${emptyLabel}</div>
        </div>`;
   }
   return sessions.slice().reverse().map((s, idx) => {
@@ -1136,7 +1136,7 @@ function buildSessionCards(sessions, opts) {
       <div class="session-head" onclick="this.parentElement.classList.toggle('open')">
         <div>
           <div class="session-meta">Session ${sIdx} &middot; ${String(s.date || "").slice(0,10)} &middot; ${s.strategy || "—"}</div>
-          <div style="margin-top:4px;display:flex;gap:10px;font-size:0.7rem;color:#4a6080;">
+          <div style="margin-top:4px;display:flex;gap:10px;font-size:0.7rem;color:var(--muted-1,#8ba1c2);">
             <span class="sc-trade-count">${trades.length} trade${trades.length !== 1 ? "s" : ""}</span>
             <span class="sc-wins" style="color:#10b981;">${sessionWins}W</span>
             <span class="sc-losses" style="color:#ef4444;">${sessionLosses}L</span>
@@ -1163,7 +1163,7 @@ function buildSessionCards(sessions, opts) {
           </tr></thead>
           <tbody>${tradeRows}</tbody>
         </table></div>
-      </div>` : `<div style="padding:14px 20px;color:#4a6080;font-size:0.82rem;">No trades in this session.</div>`}
+      </div>` : `<div style="padding:14px 20px;color:var(--muted-1,#8ba1c2);font-size:0.82rem;">No trades in this session.</div>`}
       </div>
     </div>`;
   }).join("");
@@ -1216,7 +1216,7 @@ function renderHistoryPage(cfg) {
     const groups = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
     const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
     filterSelectHTML = `
-      <label style="display:flex;align-items:center;gap:6px;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#3a5070;font-weight:700;font-family:'IBM Plex Mono',monospace;">
+      <label style="display:flex;align-items:center;gap:6px;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-2,#6d85a8);font-weight:700;font-family:'IBM Plex Mono',monospace;">
         ${esc(filter.label || "Filter")}
         <select id="historyFilter" onchange="applyHistoryFilter(this.value)" style="background:#0d1320;border:1px solid #1a2236;color:#c8d8f0;padding:4px 8px;border-radius:6px;font-size:0.7rem;font-family:'IBM Plex Mono',monospace;cursor:pointer;outline:none;">
           <option value="ALL">All (${allTrades.length})</option>
@@ -1257,7 +1257,7 @@ ${buildSidebar(cfg.sidebarKey, cfg.liveActive)}
       <a href="${cfg.routePrefix}/download/trades.jsonl" class="export-btn" style="text-decoration:none;display:inline-block;" title="Cumulative per-trade log (.txt) — full field capture for offline analysis">⬇ tradeLogs</a>
       <a href="${cfg.routePrefix}/download/skips-all" class="export-btn" style="text-decoration:none;display:inline-block;" title="Cumulative skip log (.txt) — all daily skip files concatenated">⬇ skipLogs</a>
       <button onclick="confirmReset()" class="reset-btn">🗑 Reset</button>
-      <a href="${cfg.routePrefix}/status" style="background:#07111f;border:0.5px solid #0e1e36;color:#4a6080;padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;text-decoration:none;cursor:pointer;">← Status</a>
+      <a href="${cfg.routePrefix}/status" style="background:#07111f;border:0.5px solid #0e1e36;color:var(--muted-1,#8ba1c2);padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;text-decoration:none;cursor:pointer;">← Status</a>
     </div>
   </div>
 

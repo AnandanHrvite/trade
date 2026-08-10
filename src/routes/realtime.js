@@ -163,8 +163,8 @@ ${faviconLink()}
   .top-bar .sub { color:#7d8aa3; font-size:0.78rem; margin-top:2px; }
   .toggle { display:inline-flex; background:#0a1628; border:1px solid #1c2c47; border-radius:8px; padding:3px; }
   .toggle button { background:transparent; border:none; color:#9aa9c2; font-size:0.82rem; font-weight:600; padding:7px 18px; border-radius:6px; cursor:pointer; transition:all 0.15s; letter-spacing:0.5px; }
-  .toggle button.active[data-mode="PAPER"] { background:#3b82f6; color:#fff; }
-  .toggle button.active[data-mode="LIVE"]  { background:#ef4444; color:#fff; }
+  .toggle button.active[data-mode="PAPER"] { background:#2563eb; color:#fff; }
+  .toggle button.active[data-mode="LIVE"]  { background:#dc2626; color:#fff; }
 
   /* Broker investment-pool wallets */
   .wallets { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(260px,100%), 1fr)); gap:14px; margin-bottom:18px; }
@@ -236,7 +236,7 @@ ${faviconLink()}
   .activity { background:#040c18; border:1px solid #15243d; border-radius:6px; padding:6px 8px; font-family:'SF Mono','Menlo','Monaco',monospace; font-size:0.68rem; line-height:1.45; color:#9aa9c2; max-height:110px; overflow:hidden; min-width:0; }
   .activity .ahead { display:flex; justify-content:space-between; align-items:center; color:#7d8aa3; font-size:0.62rem; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px; font-family:inherit; }
   .activity .arow { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .activity .empty { color:#5d6c87; font-style:italic; padding:6px 0; text-align:center; }
+  .activity .empty { color:var(--muted-1,#8ba1c2); font-style:italic; padding:6px 0; text-align:center; }
 
   .stats-row { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:auto; }
   .stat { background:#040c18; border:1px solid #15243d; border-radius:6px; padding:7px 8px; text-align:center; }
@@ -247,14 +247,14 @@ ${faviconLink()}
   .pos-neg { color:#ef4444 !important; }
   .pos-zero { color:#94a3b8 !important; }
 
-  .footer-meta { font-size:0.68rem; color:#5d6c87; display:flex; justify-content:space-between; padding-top:6px; border-top:1px solid #15243d; }
+  .footer-meta { font-size:0.68rem; color:var(--muted-1,#8ba1c2); display:flex; justify-content:space-between; padding-top:6px; border-top:1px solid #15243d; }
 
   .actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:6px; }
   .act-btn { display:inline-flex; align-items:center; justify-content:center; background:#040c18; border:1px solid #1c2c47; color:#cbd5e1; font-size:0.74rem; font-weight:600; padding:8px 10px; border-radius:6px; cursor:pointer; text-align:center; text-decoration:none; transition:all 0.15s; letter-spacing:0.3px; line-height:1.2; font-family:inherit; }
   .act-btn:hover { background:#0e1c33; border-color:#3b82f6; color:#fff; }
   .act-btn.copied { background:rgba(16,185,129,0.18); border-color:#10b981; color:#10b981; }
-  .act-btn-disabled { background:#040c18; border-style:dashed; color:#5d6c87; cursor:default; }
-  .act-btn-disabled:hover { background:#040c18; color:#5d6c87; border-color:#1c2c47; }
+  .act-btn-disabled { background:#040c18; border-style:dashed; color:var(--muted-1,#8ba1c2); cursor:default; }
+  .act-btn-disabled:hover { background:#040c18; color:var(--muted-1,#8ba1c2); border-color:#1c2c47; }
   .card.ema_rsi_st    .act-btn:not(.act-btn-disabled):hover { border-color:#3b82f6; }
   .card.bb_rsi    .act-btn:not(.act-btn-disabled):hover { border-color:#f59e0b; }
   .card.pa       .act-btn:not(.act-btn-disabled):hover { border-color:#a855f7; }
@@ -288,56 +288,64 @@ ${faviconLink()}
 
   /* ── Light-theme overrides ── */
   :root[data-theme="light"] .top-bar h1 { color:#1e293b; }
-  :root[data-theme="light"] .top-bar .sub { color:#64748b; }
+  :root[data-theme="light"] .top-bar .sub { color:#4b5769; }
   :root[data-theme="light"] .toggle { background:#fff !important; border-color:#e0e4ea !important; box-shadow:0 1px 3px rgba(0,0,0,0.06); }
-  :root[data-theme="light"] .toggle button { color:#64748b; }
+  :root[data-theme="light"] .toggle button:not(.active) { color:#4b5769; }
   :root[data-theme="light"] .card { background:#fff !important; border-color:#e0e4ea !important; box-shadow:0 1px 3px rgba(0,0,0,0.06); }
-  :root[data-theme="light"] .card.ema_rsi_st    .card-title { color:#2563eb; }
-  :root[data-theme="light"] .card.bb_rsi    .card-title { color:#d97706; }
-  :root[data-theme="light"] .card.pa       .card-title { color:#9333ea; }
-  :root[data-theme="light"] .card.orb      .card-title { color:#059669; }
-  :root[data-theme="light"] .card.ema9vwap .card-title { color:#0891b2; }
-  :root[data-theme="light"] .card.trendpb  .card-title { color:#db2777; }
+  :root[data-theme="light"] .card.ema_rsi_st    .card-title { color:#1d4ed8; }
+  :root[data-theme="light"] .card.bb_rsi    .card-title { color:#b45309; }
+  :root[data-theme="light"] .card.pa       .card-title { color:#7e22ce; }
+  :root[data-theme="light"] .card.orb      .card-title { color:#047857; }
+  :root[data-theme="light"] .card.ema9vwap .card-title { color:#0e7490; }
+  :root[data-theme="light"] .card.trendpb  .card-title { color:#be185d; }
   :root[data-theme="light"] .card.gaps     .card-title { color:#0369a1; }
   :root[data-theme="light"] .card.tds      .card-title { color:#7e22ce; }
   :root[data-theme="light"] .card.gap3m    .card-title { color:#0369a1; }
   :root[data-theme="light"] .pos-block,
   :root[data-theme="light"] .flat-block { background:#f8fafc !important; border-color:#e0e4ea !important; }
-  :root[data-theme="light"] .flat-block { color:#64748b; }
+  :root[data-theme="light"] .flat-block { color:#4b5769; }
   :root[data-theme="light"] .pos-symbol { color:#475569; }
-  :root[data-theme="light"] .pos-grid .lbl { color:#64748b; }
+  :root[data-theme="light"] .pos-grid .lbl { color:#4b5769; }
   :root[data-theme="light"] .pos-grid .val { color:#1e293b; }
   :root[data-theme="light"] .activity { background:#f8fafc !important; border-color:#e0e4ea !important; color:#475569; }
-  :root[data-theme="light"] .activity .ahead { color:#94a3b8; }
-  :root[data-theme="light"] .activity .empty { color:#94a3b8; }
+  :root[data-theme="light"] .activity .ahead { color:#5c6b7f; }
+  :root[data-theme="light"] .activity .empty { color:#5c6b7f; }
   :root[data-theme="light"] .stat { background:#f8fafc !important; border-color:#e0e4ea !important; }
-  :root[data-theme="light"] .stat .lbl { color:#64748b; }
+  :root[data-theme="light"] .stat .lbl { color:#4b5769; }
   :root[data-theme="light"] .stat .val { color:#1e293b; }
-  :root[data-theme="light"] .footer-meta { color:#94a3b8; border-top-color:#e0e4ea; }
+  :root[data-theme="light"] .footer-meta { color:#5c6b7f; border-top-color:#e0e4ea; }
+  .rollup-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; border-radius:10px; }
+  @media(max-width:768px){
+    /* .rollup sets overflow:hidden for its rounded corners, which outranks the
+       shared table rule and clipped the last three columns. The wrapper scrolls
+       instead, and the table keeps a readable minimum width. */
+    .rollup { min-width:620px; }
+    .rollup th, .rollup td { padding:9px 10px; white-space:nowrap; }
+  }
   :root[data-theme="light"] .rollup { background:#fff !important; border-color:#e0e4ea !important; box-shadow:0 1px 3px rgba(0,0,0,0.06); }
-  :root[data-theme="light"] .rollup th { background:#f1f5f9 !important; color:#64748b !important; border-bottom-color:#e0e4ea !important; }
+  :root[data-theme="light"] .rollup th { background:#f1f5f9 !important; color:#4b5769 !important; border-bottom-color:#e0e4ea !important; }
   :root[data-theme="light"] .rollup td { color:#334155; border-bottom-color:#e0e4ea; }
   :root[data-theme="light"] .rollup tr:last-child td { background:#f8fafc !important; color:#1e293b; }
-  :root[data-theme="light"] .rollup tr.ema_rsi_st    td:first-child { color:#2563eb; }
-  :root[data-theme="light"] .rollup tr.bb_rsi    td:first-child { color:#d97706; }
-  :root[data-theme="light"] .rollup tr.pa       td:first-child { color:#9333ea; }
-  :root[data-theme="light"] .rollup tr.orb      td:first-child { color:#059669; }
-  :root[data-theme="light"] .rollup tr.ema9vwap td:first-child { color:#0891b2; }
-  :root[data-theme="light"] .rollup tr.trendpb  td:first-child { color:#db2777; }
+  :root[data-theme="light"] .rollup tr.ema_rsi_st    td:first-child { color:#1d4ed8; }
+  :root[data-theme="light"] .rollup tr.bb_rsi    td:first-child { color:#b45309; }
+  :root[data-theme="light"] .rollup tr.pa       td:first-child { color:#7e22ce; }
+  :root[data-theme="light"] .rollup tr.orb      td:first-child { color:#047857; }
+  :root[data-theme="light"] .rollup tr.ema9vwap td:first-child { color:#0e7490; }
+  :root[data-theme="light"] .rollup tr.trendpb  td:first-child { color:#be185d; }
   :root[data-theme="light"] .rollup tr.gaps     td:first-child { color:#0369a1; }
   :root[data-theme="light"] .rollup tr.tds      td:first-child { color:#7e22ce; }
   :root[data-theme="light"] .rollup tr.gap3m    td:first-child { color:#0369a1; }
-  :root[data-theme="light"] .pos-zero { color:#64748b !important; }
+  :root[data-theme="light"] .pos-zero { color:#4b5769 !important; }
   :root[data-theme="light"] .pos-pos  { color:#059669 !important; }
   :root[data-theme="light"] .pos-neg  { color:#dc2626 !important; }
   :root[data-theme="light"] .act-btn { background:#f8fafc !important; border-color:#e0e4ea !important; color:#475569; }
   :root[data-theme="light"] .act-btn:hover { background:#fff !important; color:#1e293b; }
   :root[data-theme="light"] .act-btn.copied { background:rgba(16,185,129,0.10) !important; border-color:#10b981 !important; color:#059669; }
-  :root[data-theme="light"] .act-btn-disabled { color:#94a3b8 !important; }
+  :root[data-theme="light"] .act-btn-disabled { color:#5c6b7f !important; }
   :root[data-theme="light"] .wallet { background:#fff !important; border-color:#e0e4ea !important; box-shadow:0 1px 3px rgba(0,0,0,0.06); }
   :root[data-theme="light"] .w-broker { color:#1e293b; }
-  :root[data-theme="light"] .w-sub { color:#94a3b8; }
-  :root[data-theme="light"] .w-meta { color:#64748b; }
+  :root[data-theme="light"] .w-sub { color:#5c6b7f; }
+  :root[data-theme="light"] .w-meta { color:#4b5769; }
 </style>
 </head>
 <body>
@@ -367,6 +375,7 @@ ${sidebar}
 ${cardsHtml}
   </div>
 
+  <div class="rollup-wrap">
   <table class="rollup">
     <thead>
       <tr>
@@ -383,6 +392,7 @@ ${cardsHtml}
       ${rollupRowsHtml}
     </tbody>
   </table>
+  </div>
 </main>
 
 <script>

@@ -1462,7 +1462,7 @@ router.get("/status", (req, res) => {
         <div style="display:flex;align-items:center;gap:10px;">
           <span style="width:10px;height:10px;border-radius:50%;background:#10b981;display:inline-block;animation:pulse 1.5s infinite;"></span>
           <span style="font-size:0.8rem;font-weight:700;color:#10b981;text-transform:uppercase;letter-spacing:1px;">Open Position</span>
-          <span style="font-size:0.72rem;color:#4a6080;">Since ${fmtISTDateTime(pos.entryTime)}</span>
+          <span style="font-size:0.72rem;color:var(--muted-1,#8ba1c2);">Since ${fmtISTDateTime(pos.entryTime)}</span>
         </div>
         <button onclick="spHandleExit(this)"
            style="display:inline-flex;align-items:center;gap:7px;background:#7f1d1d;border:1px solid #ef4444;color:#fca5a5;font-size:0.8rem;font-weight:700;padding:9px 18px;border-radius:8px;cursor:pointer;font-family:inherit;transition:background 0.15s;"
@@ -1483,22 +1483,22 @@ router.get("/status", (req, res) => {
           </div>
           <div style="width:1px;height:44px;background:#134e35;"></div>
           <div>
-            <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Strike</div>
+            <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Strike</div>
             <div style="font-size:1.6rem;font-weight:800;color:#fff;font-family:monospace;">${pos.optionStrike ? pos.optionStrike.toLocaleString("en-IN") : "\u2014"}</div>
           </div>
           <div style="width:1px;height:44px;background:#134e35;"></div>
           <div>
-            <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Expiry</div>
+            <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Expiry</div>
             <div style="font-size:1.1rem;font-weight:700;color:#f59e0b;">${pos.optionExpiry || "\u2014"}</div>
           </div>
           <div style="width:1px;height:44px;background:#134e35;"></div>
           <div>
-            <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Qty / Lots</div>
-            <div style="font-size:1.1rem;font-weight:700;color:#fff;">${pos.qty} <span style="font-size:0.72rem;color:#4a6080;">(${(pos.qty / (instrumentConfig.LOT_SIZE[instrumentConfig.INSTRUMENT] || 65)).toFixed(0)} lot)</span></div>
+            <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Qty / Lots</div>
+            <div style="font-size:1.1rem;font-weight:700;color:#fff;">${pos.qty} <span style="font-size:0.72rem;color:var(--muted-1,#8ba1c2);">(${(pos.qty / (instrumentConfig.LOT_SIZE[instrumentConfig.INSTRUMENT] || 65)).toFixed(0)} lot)</span></div>
           </div>
           <div style="width:1px;height:44px;background:#134e35;flex-shrink:0;"></div>
           <div style="flex:1;min-width:200px;">
-            <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Full Symbol</div>
+            <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Full Symbol</div>
             <div style="font-size:0.82rem;font-weight:600;color:#c8d8f0;font-family:monospace;word-break:break-all;">${pos.symbol}</div>
           </div>
         </div>
@@ -1514,30 +1514,30 @@ router.get("/status", (req, res) => {
             <div id="ajax-opt-entry-ltp" style="font-size:2rem;font-weight:800;color:#60a5fa;font-family:monospace;line-height:1;">
               ${optEntryLtp ? "\u20b9" + optEntryLtp.toFixed(2) : '<span style="font-size:1rem;color:#f59e0b;">Fetching...</span>'}
             </div>
-            <div style="font-size:0.68rem;color:#4a6080;margin-top:4px;">${optEntryLtp ? "captured at entry" : "first REST poll in ~3s"}</div>
+            <div style="font-size:0.68rem;color:var(--muted-1,#8ba1c2);margin-top:4px;">${optEntryLtp ? "captured at entry" : "first REST poll in ~3s"}</div>
           </div>
           <!-- Arrow -->
-          <div style="text-align:center;font-size:1.8rem;color:${optPremiumMove !== null ? (optPremiumMove >= 0 ? "#10b981" : "#ef4444") : "#4a6080"};">\u2192</div>
+          <div style="text-align:center;font-size:1.8rem;color:${optPremiumMove !== null ? (optPremiumMove >= 0 ? "#10b981" : "#ef4444") : "#8ba1c2"};">\u2192</div>
           <!-- Current Premium -->
           <div style="text-align:center;padding:12px;background:${optCurrentLtp && optEntryLtp ? (optCurrentLtp >= optEntryLtp ? "#071a0f" : "#1a0707") : "#0d1320"};border:2px solid ${optCurrentLtp && optEntryLtp ? (optCurrentLtp >= optEntryLtp ? "#10b981" : "#ef4444") : "#4a6080"};border-radius:10px;">
-            <div style="font-size:0.63rem;color:${optCurrentLtp && optEntryLtp ? (optCurrentLtp >= optEntryLtp ? "#10b981" : "#ef4444") : "#4a6080"};text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Current LTP</div>
+            <div style="font-size:0.63rem;color:${optCurrentLtp && optEntryLtp ? (optCurrentLtp >= optEntryLtp ? "#10b981" : "#ef4444") : "#8ba1c2"};text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Current LTP</div>
             <div id="ajax-opt-current-ltp" style="font-size:2rem;font-weight:800;color:${optCurrentLtp && optEntryLtp ? (optCurrentLtp >= optEntryLtp ? "#10b981" : "#ef4444") : "#fff"};font-family:monospace;line-height:1;">
               ${optCurrentLtp ? "\u20b9" + optCurrentLtp.toFixed(2) : "\u23f3"}
             </div>
             <div id="ajax-opt-move" style="font-size:0.72rem;font-weight:700;margin-top:6px;color:${optPremiumMove !== null ? (optPremiumMove >= 0 ? "#10b981" : "#ef4444") : "#f59e0b"};">
               ${optPremiumMove !== null ? (optPremiumMove >= 0 ? "\u25b2 +" : "\u25bc ") + "\u20b9" + Math.abs(optPremiumMove).toFixed(2) + " pts" : "\u23f3 Polling REST feed..."}
             </div>
-            <div id="ajax-opt-pct" style="font-size:1.1rem;font-weight:800;margin-top:4px;color:${optPremiumPct !== null ? (optPremiumPct >= 0 ? "#10b981" : "#ef4444") : "#4a6080"};font-family:monospace;">
+            <div id="ajax-opt-pct" style="font-size:1.1rem;font-weight:800;margin-top:4px;color:${optPremiumPct !== null ? (optPremiumPct >= 0 ? "#10b981" : "#ef4444") : "#8ba1c2"};font-family:monospace;">
               ${optPremiumPct !== null ? (optPremiumPct >= 0 ? "+" : "") + optPremiumPct.toFixed(2) + "%" : "\u2014"}
             </div>
           </div>
           <!-- Option P&L -->
           <div style="text-align:center;padding:12px;background:${optPremiumPnl !== null ? (optPremiumPnl >= 0 ? "#071a0f" : "#1a0707") : "#0d1320"};border:1px solid ${optPremiumPnl !== null ? (optPremiumPnl >= 0 ? "#065f46" : "#7f1d1d") : "#1a2236"};border-radius:10px;">
-            <div style="font-size:0.63rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Unrealised P&L</div>
+            <div style="font-size:0.63rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Unrealised P&L</div>
             <div id="ajax-opt-pnl" style="font-size:1.8rem;font-weight:800;color:${optPremiumPnl !== null ? (optPremiumPnl >= 0 ? "#10b981" : "#ef4444") : "#fff"};font-family:monospace;line-height:1;">
               ${optPremiumPnl !== null ? (optPremiumPnl >= 0 ? "+" : "") + "\u20b9" + optPremiumPnl.toLocaleString("en-IN", {minimumFractionDigits:2, maximumFractionDigits:2}) : "\u2014"}
             </div>
-            <div style="font-size:0.65rem;color:#4a6080;margin-top:4px;">${pos.qty} qty \u00b7 after charges</div>
+            <div style="font-size:0.65rem;color:var(--muted-1,#8ba1c2);margin-top:4px;">${pos.qty} qty \u00b7 after charges</div>
           </div>
         </div>
       </div>
@@ -1545,47 +1545,47 @@ router.get("/status", (req, res) => {
       <!-- Secondary grid: NIFTY spot + SL + Target + Trail -->
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:12px;">
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">NIFTY Spot @ Entry</div>
+          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">NIFTY Spot @ Entry</div>
           <div style="font-size:1.05rem;font-weight:700;color:#c8d8f0;">${inr(pos.entryPrice)}</div>
         </div>
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">NIFTY LTP</div>
+          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">NIFTY LTP</div>
           <div id="ajax-nifty-ltp" style="font-size:1.05rem;font-weight:700;color:#c8d8f0;">${inr(liveClose)}</div>
           <div id="ajax-nifty-move" style="font-size:0.63rem;color:${pointsMoved >= 0 ? "#10b981" : "#ef4444"};margin-top:2px;">${pointsMoved >= 0 ? "\u25b2" : "\u25bc"} ${Math.abs(pointsMoved).toFixed(1)} pts</div>
         </div>
         <div style="background:#1c1400;border:1px solid #78350f;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Stop Loss (Prev Candle)</div>
+          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Stop Loss (Prev Candle)</div>
           <div id="ajax-stop-loss" style="font-size:1.05rem;font-weight:700;color:#f59e0b;">${pos.stopLoss ? inr(pos.stopLoss) : "\u2014"}</div>
         </div>
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Peak P&L</div>
+          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Peak P&L</div>
           <div id="ajax-peak-pnl" style="font-size:1.05rem;font-weight:700;color:${(pos.peakPnl || 0) >= 0 ? "#10b981" : "#ef4444"};">${(pos.peakPnl || 0) >= 0 ? "+" : ""}${inr(pos.peakPnl || 0)}</div>
         </div>
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">SL Trailed</div>
+          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">SL Trailed</div>
           <div id="ajax-sl-trail" style="font-size:1.05rem;font-weight:700;color:#f59e0b;">${pos.stopLoss && pos.initialStopLoss ? (pos.side === "CE" ? "+" : "+") + Math.abs(pos.stopLoss - pos.initialStopLoss).toFixed(2) + " pts" : "0 pts"}</div>
-          <div style="font-size:0.58rem;color:#4a6080;margin-top:2px;">from ${pos.initialStopLoss ? inr(pos.initialStopLoss) : "\u2014"}</div>
+          <div style="font-size:0.58rem;color:var(--muted-1,#8ba1c2);margin-top:2px;">from ${pos.initialStopLoss ? inr(pos.initialStopLoss) : "\u2014"}</div>
         </div>
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:8px 10px;">
-          <div style="font-size:0.55rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:2px;">SL Distance</div>
-          <div id="ajax-sl-dist" style="font-size:0.9rem;font-weight:700;color:${(() => { const d = pos.stopLoss && liveClose ? Math.abs(liveClose - pos.stopLoss) : 0; return d < 20 ? "#ef4444" : d < 40 ? "#f59e0b" : "#10b981"; })()};">${pos.stopLoss && liveClose ? Math.abs(liveClose - pos.stopLoss).toFixed(1) : "0"} <span style="font-size:0.6rem;color:#4a6080;">pts</span></div>
+          <div style="font-size:0.55rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:2px;">SL Distance</div>
+          <div id="ajax-sl-dist" style="font-size:0.9rem;font-weight:700;color:${(() => { const d = pos.stopLoss && liveClose ? Math.abs(liveClose - pos.stopLoss) : 0; return d < 20 ? "#ef4444" : d < 40 ? "#f59e0b" : "#10b981"; })()};">${pos.stopLoss && liveClose ? Math.abs(liveClose - pos.stopLoss).toFixed(1) : "0"} <span style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);">pts</span></div>
         </div>
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:8px 10px;">
-          <div style="font-size:0.55rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:2px;">R:R</div>
+          <div style="font-size:0.55rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:2px;">R:R</div>
           <div id="ajax-rr" style="font-size:0.9rem;font-weight:700;color:${pointsMoved >= 0 ? "#10b981" : "#ef4444"};">${(() => { const risk = pos.initialStopLoss ? Math.abs(pos.entryPrice - pos.initialStopLoss) : 0; return risk > 0 ? (pointsMoved / risk).toFixed(1) + "x" : "\u2014"; })()}</div>
         </div>
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:8px 10px;">
-          <div style="font-size:0.55rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:2px;">Candles Held</div>
-          <div id="ajax-pos-candles" style="font-size:0.9rem;font-weight:700;color:#c8d8f0;">${pos.candlesHeld || 0} <span style="font-size:0.6rem;color:#4a6080;">candles</span></div>
+          <div style="font-size:0.55rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:2px;">Candles Held</div>
+          <div id="ajax-pos-candles" style="font-size:0.9rem;font-weight:700;color:#c8d8f0;">${pos.candlesHeld || 0} <span style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);">candles</span></div>
         </div>
       </div>
       ${pos.reason ? `<div style="padding:10px 14px;background:#071a12;border-radius:8px;font-size:0.73rem;color:#a7f3d0;line-height:1.5;">Entry: ${pos.reason}</div>` : ""}
     </div>` : `
     <div style="background:#0d1320;border:1px solid #1a2236;border-radius:12px;padding:20px 24px;text-align:center;">
-      <div style="font-size:0.9rem;font-weight:600;color:#4a6080;margin-bottom:14px;">FLAT \u2014 Waiting for entry signal</div>
+      <div style="font-size:0.9rem;font-weight:600;color:var(--muted-1,#8ba1c2);margin-bottom:14px;">FLAT \u2014 Waiting for entry signal</div>
       ${state.running ? `<div style="display:flex;gap:10px;justify-content:center;">
         <button onclick="spManualEntry('CE')" style="padding:8px 24px;background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.3);border-radius:8px;font-size:0.85rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">\u25b2 Manual CE</button>
-        <button onclick="spManualEntry('PE')" style="padding:8px 24px;background:rgba(239,68,68,0.15);color:#ef4444;border:1px solid rgba(239,68,68,0.3);border-radius:8px;font-size:0.85rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">\u25bc Manual PE</button>
+        <button onclick="spManualEntry('PE')" style="padding:8px 24px;background:rgba(239,68,68,0.15);color:#f87171;border:1px solid rgba(239,68,68,0.3);border-radius:8px;font-size:0.85rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">\u25bc Manual PE</button>
       </div>` : ''}
     </div>`;
 
@@ -1640,34 +1640,34 @@ body{font-family:'Inter',sans-serif;background:#060810;color:#c0d0e8;min-height:
 /* Top bar */
 .top-bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px;}
 .top-bar-title{font-size:1.15rem;font-weight:700;color:#e0eaf8;}
-.top-bar-meta{font-size:0.68rem;color:#4a6080;margin-top:3px;}
+.top-bar-meta{font-size:0.68rem;color:var(--muted-1,#8ba1c2);margin-top:3px;}
 .top-bar-right{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
-.top-bar-badge{font-size:0.65rem;font-weight:700;padding:4px 10px;border-radius:6px;text-transform:uppercase;letter-spacing:0.8px;display:inline-flex;align-items:center;gap:5px;border:1px solid #1a2236;color:#4a6080;}
-.badge-running{background:#064e3b;color:#10b981;border:1px solid #10b981;}
+.top-bar-badge{font-size:0.65rem;font-weight:700;padding:4px 10px;border-radius:6px;text-transform:uppercase;letter-spacing:0.8px;display:inline-flex;align-items:center;gap:5px;border:1px solid #1a2236;color:var(--muted-1,#8ba1c2);}
+.badge-running{background:#064e3b;color:#34d399;border:1px solid #10b981;}
 .badge-stopped{background:#1c1017;color:#ef4444;border:1px solid #ef4444;}
 
 /* Capital strip */
 .capital-strip{display:flex;background:#0d1320;border:1px solid #1a2236;border-radius:9px;overflow:hidden;margin-bottom:14px;}
 .cap-cell{flex:1;padding:11px 16px;border-right:1px solid #1a2236;}
 .cap-cell:last-child{border-right:none;}
-.cap-label{font-size:0.56rem;text-transform:uppercase;letter-spacing:1.5px;color:#4a6080;margin-bottom:4px;}
+.cap-label{font-size:0.56rem;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted-1,#8ba1c2);margin-bottom:4px;}
 .cap-val{font-size:1rem;font-weight:700;font-family:'IBM Plex Mono',monospace;color:#c8d8f0;}
 
 /* Stat cards */
 .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:9px;margin-bottom:16px;}
 .sc{background:#0d1320;border:1px solid #1a2236;border-radius:8px;padding:12px 14px;position:relative;overflow:hidden;}
-.sc-label{font-size:0.56rem;text-transform:uppercase;letter-spacing:1.2px;color:#4a6080;margin-bottom:5px;}
+.sc-label{font-size:0.56rem;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted-1,#8ba1c2);margin-bottom:5px;}
 .sc-val{font-size:1rem;font-weight:700;font-family:'IBM Plex Mono',monospace;color:#c8d8f0;}
-.sc-sub{font-size:0.6rem;color:#4a6080;margin-top:3px;}
+.sc-sub{font-size:0.6rem;color:var(--muted-1,#8ba1c2);margin-top:3px;}
 
 /* Section title */
-.section-title{font-size:0.58rem;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:#4a6080;margin-bottom:8px;display:flex;align-items:center;gap:8px;}
+.section-title{font-size:0.58rem;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:var(--muted-1,#8ba1c2);margin-bottom:8px;display:flex;align-items:center;gap:8px;}
 .section-title::after{content:'';flex:1;height:0.5px;background:#1a2236;}
 
 /* Copy buttons */
 .copy-btn{background:#0d1320;border:1px solid #1a2236;color:#4a9cf5;padding:4px 12px;border-radius:6px;font-size:0.68rem;cursor:pointer;font-family:inherit;transition:all 0.15s;white-space:nowrap;}
 .copy-btn:hover{background:#0a1e3d;border-color:#3b82f6;}
-.copy-btn.copied{background:#064e3b;border-color:#10b981;color:#10b981;}
+.copy-btn.copied{background:#064e3b;border-color:#10b981;color:#34d399;}
 
 /* Pulse animation */
 @keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.4;}}
@@ -1701,7 +1701,7 @@ ${buildSidebar('paPaper', liveActive, state.running)}
       ? `<button onclick="secretGo('/pa-paper/stop', this)" style="background:#7f1d1d;border:1px solid #ef4444;color:#fca5a5;padding:5px 14px;border-radius:6px;font-size:0.72rem;font-weight:700;cursor:pointer;font-family:inherit;">Stop Session</button>`
       : `<button onclick="secretGo('/pa-paper/start', this)" style="background:#1e40af;border:1px solid #3b82f6;color:#fff;padding:5px 14px;border-radius:6px;font-size:0.72rem;font-weight:700;cursor:pointer;font-family:inherit;">Start Price Action Paper</button>`}
     <a href="/pa-paper/history" style="background:rgba(59,130,246,0.08);border:0.5px solid rgba(59,130,246,0.3);color:#60a5fa;padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;text-decoration:none;font-family:inherit;">📊 History</a>
-    <button onclick="ptHandleReset(this)" style="background:#07111f;border:0.5px solid #0e1e36;color:#4a6080;padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;cursor:pointer;font-family:inherit;">↺ Reset</button>
+    <button onclick="ptHandleReset(this)" style="background:#07111f;border:0.5px solid #0e1e36;color:var(--muted-1,#8ba1c2);padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;cursor:pointer;font-family:inherit;">↺ Reset</button>
   </div>
 </div>
 
@@ -1719,7 +1719,7 @@ ${buildSidebar('paPaper', liveActive, state.running)}
     <div class="cap-label">All-Time PnL</div>
     <div class="cap-val" id="ajax-alltime-pnl" style="color:${data.totalPnl >= 0 ? '#10b981' : '#ef4444'};">${data.totalPnl >= 0 ? '+' : ''}\u20b9${data.totalPnl.toLocaleString("en-IN", {minimumFractionDigits:2,maximumFractionDigits:2})}</div>
   </div>
-  <div class="cap-cell" style="font-size:0.62rem;color:#4a6080;max-width:180px;line-height:1.5;display:flex;align-items:center;">Capital updates when sessions complete. Reset wipes history.</div>
+  <div class="cap-cell" style="font-size:0.62rem;color:var(--muted-1,#8ba1c2);max-width:180px;line-height:1.5;display:flex;align-items:center;">Capital updates when sessions complete. Reset wipes history.</div>
 </div>
 
 <!-- Stat cards -->
@@ -1730,17 +1730,17 @@ ${buildSidebar('paPaper', liveActive, state.running)}
   </div>
   <div class="sc" style="border-top:1.5px solid #6a5090;">
     <div class="sc-label">${state._staleSession ? "Trades (Last Session)" : "Trades Today"}</div>
-    <div class="sc-val"><span id="ajax-trade-count">${state.sessionTrades.length}</span> <span style="font-size:0.75rem;color:#4a6080;">/ ${_PA_MAX_TRADES}</span></div>
-    <div id="ajax-wl" style="font-size:0.7rem;color:#4a6080;margin-top:4px;">${wins}W \u00b7 ${losses}L</div>
+    <div class="sc-val"><span id="ajax-trade-count">${state.sessionTrades.length}</span> <span style="font-size:0.75rem;color:var(--muted-1,#8ba1c2);">/ ${_PA_MAX_TRADES}</span></div>
+    <div id="ajax-wl" style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);margin-top:4px;">${wins}W \u00b7 ${losses}L</div>
   </div>
   <div class="sc" style="border-top:2px solid ${state._slPauseUntil && Date.now() < state._slPauseUntil ? '#ef4444' : '#4a6080'};">
     <div class="sc-label">SL Pause</div>
     <div class="sc-val" id="ajax-sl-pause" style="color:${state._slPauseUntil && Date.now() < state._slPauseUntil ? '#ef4444' : '#10b981'}">${state._slPauseUntil && Date.now() < state._slPauseUntil ? 'PAUSED' : 'OK'}</div>
-    <div id="ajax-sl-pause-sub" style="font-size:0.7rem;margin-top:4px;color:#4a6080;">${_PA_PAUSE_CANDLES} candle cooldown after SL</div>
+    <div id="ajax-sl-pause-sub" style="font-size:0.7rem;margin-top:4px;color:var(--muted-1,#8ba1c2);">${_PA_PAUSE_CANDLES} candle cooldown after SL</div>
   </div>
   <div class="sc" style="border-top:2px solid ${state._dailyLossHit ? '#ef4444' : '#10b981'};">
     <div class="sc-label">Daily Loss Limit</div>
-    <div class="sc-val" id="ajax-daily-loss-val" style="color:${state._dailyLossHit ? '#ef4444' : '#10b981'};">${state._dailyLossHit ? 'HIT' : 'OK'} <span style="font-size:0.65rem;color:#4a6080;">/ -\u20b9${_PA_MAX_LOSS.toLocaleString("en-IN")}</span></div>
+    <div class="sc-val" id="ajax-daily-loss-val" style="color:${state._dailyLossHit ? '#ef4444' : '#10b981'};">${state._dailyLossHit ? 'HIT' : 'OK'} <span style="font-size:0.65rem;color:var(--muted-1,#8ba1c2);">/ -\u20b9${_PA_MAX_LOSS.toLocaleString("en-IN")}</span></div>
     <div id="ajax-daily-loss-status" style="font-size:0.7rem;margin-top:4px;color:${state._dailyLossHit ? '#ef4444' : '#10b981'}">${state._dailyLossHit ? 'KILLED \u2014 no entries' : 'Active'}</div>
   </div>
   <div class="sc" style="border-top:1.5px solid #a07010;">
@@ -1751,7 +1751,7 @@ ${buildSidebar('paPaper', liveActive, state.running)}
   <div class="sc" style="border-top:1.5px solid #2a6080;">
     <div class="sc-label">WebSocket Ticks</div>
     <div class="sc-val" id="ajax-tick-count">${state.tickCount.toLocaleString()}</div>
-    <div style="font-size:0.7rem;color:#4a6080;margin-top:4px;">Last: <span id="ajax-last-tick">${state.lastTickPrice ? inr(state.lastTickPrice) : "\u2014"}</span></div>
+    <div style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);margin-top:4px;">Last: <span id="ajax-last-tick">${state.lastTickPrice ? inr(state.lastTickPrice) : "\u2014"}</span></div>
   </div>
   <div class="sc" style="border-top:1.5px solid #2a4020;">
     <div class="sc-label">Session Start</div>
@@ -1782,8 +1782,8 @@ ${process.env.CHART_ENABLED !== "false" ? `<!-- NIFTY Chart -->
   <div id="sp-sel-banner" style="display:none;align-items:center;gap:10px;background:#0a1e3d;border:1px solid #1d3b6e;border-radius:8px;padding:6px 12px;margin-bottom:8px;font-size:0.72rem;"></div>
   <div id="nifty-chart-container" style="background:#0a0f1c;border:1px solid #1a2236;border-radius:12px;overflow:hidden;position:relative;height:400px;">
     <div id="nifty-chart" style="width:100%;height:100%;"></div>
-    <div style="position:absolute;top:10px;left:12px;font-size:0.68rem;color:#4a6080;pointer-events:none;z-index:2;">
-      <span style="color:#3b82f6;">▲ Entry</span> &nbsp;<span style="color:#10b981;">▼ Win</span> &nbsp;<span style="color:#ef4444;">▼ Loss</span> &nbsp;<span style="color:#64748b;">● Swing H/L</span> &nbsp;<span style="color:#f59e0b;">── SL</span> &nbsp;<span style="color:#3b82f6;">-- Entry</span>
+    <div style="position:absolute;top:10px;left:12px;font-size:0.68rem;color:var(--muted-1,#8ba1c2);pointer-events:none;z-index:2;">
+      <span style="color:#3b82f6;">▲ Entry</span> &nbsp;<span style="color:#10b981;">▼ Win</span> &nbsp;<span style="color:#ef4444;">▼ Loss</span> &nbsp;<span style="color:var(--muted-1,#8ba1c2);">● Swing H/L</span> &nbsp;<span style="color:#f59e0b;">── SL</span> &nbsp;<span style="color:#3b82f6;">-- Entry</span>
     </div>
   </div>
 </div>` : ""}
@@ -1802,24 +1802,24 @@ ${state.sessionTrades.length > 0 ? `
     <select id="spPerPage" onchange="spFilter()" style="background:#0d1320;border:1px solid #1a2236;color:#c8d8f0;padding:4px 8px;border-radius:6px;font-size:0.73rem;">
       <option value="5">5/page</option><option value="10" selected>10/page</option><option value="25">25/page</option><option value="999999">All</option>
     </select>
-    <span id="spCount" style="font-size:0.72rem;color:#4a6080;"></span>
+    <span id="spCount" style="font-size:0.72rem;color:var(--muted-1,#8ba1c2);"></span>
     <button class="copy-btn" onclick="copyTradeLog(this)" style="margin-left:auto;">📋 Copy Trade Log</button>
     <a class="copy-btn" href="/pa-paper/download/trades.jsonl?format=ai" title="Download the full paper-trade log as an AI-friendly Markdown report (summary + field legend + table)" style="margin-left:8px;text-decoration:none;">🤖 AI export</a>
   </div>
   <div style="border:1px solid #1a2236;border-radius:12px;overflow:hidden;overflow-x:auto;">
     <table style="width:100%;border-collapse:collapse;">
       <thead><tr style="background:#0a0f1c;">
-        <th onclick="spSort('side')" style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;cursor:pointer;">Side</th>
-        <th onclick="spSort('entry')" style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;cursor:pointer;">Date</th>
-        <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Entry</th>
-        <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Entry Time</th>
-        <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Exit</th>
-        <th onclick="spSort('exit')" style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;cursor:pointer;">Exit Time</th>
-        <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">SL</th>
-        <th onclick="spSort('pnl')" style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;cursor:pointer;">PnL</th>
-        <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Entry Reason</th>
-        <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Exit Reason</th>
-        <th style="padding:9px 12px;text-align:center;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Action</th>
+        <th onclick="spSort('side')" style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);cursor:pointer;">Side</th>
+        <th onclick="spSort('entry')" style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);cursor:pointer;">Date</th>
+        <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);">Entry</th>
+        <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);">Entry Time</th>
+        <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);">Exit</th>
+        <th onclick="spSort('exit')" style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);cursor:pointer;">Exit Time</th>
+        <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);">SL</th>
+        <th onclick="spSort('pnl')" style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);cursor:pointer;">PnL</th>
+        <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);">Entry Reason</th>
+        <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);">Exit Reason</th>
+        <th style="padding:9px 12px;text-align:center;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);">Action</th>
       </tr></thead>
       <tbody id="spBody" style="font-family:monospace;font-size:0.78rem;"></tbody>
     </table>
@@ -1831,9 +1831,9 @@ ${state.sessionTrades.length > 0 ? `
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
         <div>
           <span id="spm-badge" style="font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;padding:4px 10px;border-radius:6px;"></span>
-          <span style="font-size:0.65rem;color:#4a6080;margin-left:10px;">Price Action Paper \u2014 Full Details</span>
+          <span style="font-size:0.65rem;color:var(--muted-1,#8ba1c2);margin-left:10px;">Price Action Paper \u2014 Full Details</span>
         </div>
-        <button onclick="document.getElementById('spModal').style.display='none';" style="background:none;border:1px solid #1a2236;color:#4a6080;font-size:1rem;cursor:pointer;padding:4px 10px;border-radius:6px;font-family:inherit;" onmouseover="this.style.color='#ef4444';this.style.borderColor='#ef4444'" onmouseout="this.style.color='#4a6080';this.style.borderColor='#1a2236'">Close</button>
+        <button onclick="document.getElementById('spModal').style.display='none';" style="background:none;border:1px solid #1a2236;color:var(--muted-1,#8ba1c2);font-size:1rem;cursor:pointer;padding:4px 10px;border-radius:6px;font-family:inherit;" onmouseover="this.style.color='#ef4444';this.style.borderColor='#ef4444'" onmouseout="this.style.color='#8ba1c2';this.style.borderColor='#1a2236'">Close</button>
       </div>
       <div id="spm-grid"></div>
     </div>
@@ -1841,7 +1841,7 @@ ${state.sessionTrades.length > 0 ? `
 </div>` : `
 <div style="margin-bottom:18px;">
   <div class="section-title">Session Trades</div>
-  <div style="background:#0d1320;border:1px solid #1a2236;border-radius:12px;padding:24px;text-align:center;color:#4a6080;font-size:0.82rem;">No trades yet</div>
+  <div style="background:#0d1320;border:1px solid #1a2236;border-radius:12px;padding:24px;text-align:center;color:var(--muted-1,#8ba1c2);font-size:0.82rem;">No trades yet</div>
 </div>`}
 
 <!-- Activity Log -->
@@ -1865,7 +1865,7 @@ ${state.sessionTrades.length > 0 ? `
       <option value="100">100/page</option>
       <option value="9999">All</option>
     </select>
-    <span id="logCount" style="font-size:0.7rem;color:#4a6080;"></span>
+    <span id="logCount" style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);"></span>
     <button class="copy-btn" onclick="copyActivityLog(this)" style="margin-left:auto;">📋 Copy Log</button>
   </div>
   <div id="logBox" style="background:#0d1320;border:1px solid #1a2236;border-radius:12px;padding:12px 16px;max-height:360px;overflow-y:auto;"></div>
@@ -1899,7 +1899,7 @@ function logRender(){
   var start=(logPg-1)*logPP, slice=logFiltered.slice(start,start+logPP);
   document.getElementById('logCount').textContent = logFiltered.length+' of '+LOG_ALL.length;
   var box=document.getElementById('logBox');
-  if(slice.length===0){ box.innerHTML='<div style="color:#4a6080;font-size:0.78rem;">No entries match.</div>'; document.getElementById('logPag').innerHTML=''; return; }
+  if(slice.length===0){ box.innerHTML='<div style="color:var(--muted-1,#8ba1c2);font-size:0.78rem;">No entries match.</div>'; document.getElementById('logPag').innerHTML=''; return; }
   box.innerHTML = slice.map(function(l){
     var isBuy = l.indexOf('BUY')>=0;
     var isExit = l.indexOf('Exit:')>=0;
@@ -2013,7 +2013,7 @@ function spRender() {
   var body = document.getElementById('spBody');
   if (!body) return;
   if (slice.length === 0) {
-    body.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:20px;color:#4a6080;">No trades match filters.</td></tr>';
+    body.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:20px;color:var(--muted-1,#8ba1c2);">No trades match filters.</td></tr>';
   } else {
     body.innerHTML = slice.map(function(t, i) {
       var sc  = t.side === 'CE' ? '#10b981' : '#ef4444';
@@ -2031,8 +2031,8 @@ function spRender() {
         '<td style="padding:8px 12px;font-size:0.75rem;">' + spFmtTime(t.exit) + '</td>' +
         '<td style="padding:8px 12px;color:#f59e0b;">' + (t.eSl?spFmt(t.eSl):'\\u2014') + '</td>' +
         '<td style="padding:8px 12px;"><div style="font-size:1rem;font-weight:800;color:' + pc + ';">' + (t.pnl!=null?(t.pnl>=0?'+':'')+spFmt(t.pnl):'\\u2014') + '</div></td>' +
-        '<td style="padding:8px 12px;font-size:0.7rem;color:#4a6080;" title="' + (t.entryReason||'') + '">' + (t.entryReason?(t.entryReason.length>25?t.entryReason.slice(0,25)+'\\u2026':t.entryReason):'\\u2014') + '</td>' +
-        '<td style="padding:8px 12px;font-size:0.7rem;color:#4a6080;" title="' + t.reason + '">' + (short||'\\u2014') + '</td>' +
+        '<td style="padding:8px 12px;font-size:0.7rem;color:var(--muted-1,#8ba1c2);" title="' + (t.entryReason||'') + '">' + (t.entryReason?(t.entryReason.length>25?t.entryReason.slice(0,25)+'\\u2026':t.entryReason):'\\u2014') + '</td>' +
+        '<td style="padding:8px 12px;font-size:0.7rem;color:var(--muted-1,#8ba1c2);" title="' + t.reason + '">' + (short||'\\u2014') + '</td>' +
         '<td style="padding:6px 8px;text-align:center;white-space:nowrap;">' +
           '<button data-et="' + (t.entryBarTime||'') + '" data-xt="' + (t.exitBarTime||'') + '" class="sp-chart-btn" style="background:none;border:1px solid #1a2236;border-radius:6px;cursor:pointer;padding:4px 8px;color:#4a9cf5;font-size:0.85rem;margin-right:4px;" title="Focus chart on this trade">\u{1F4C8}</button>' +
           '<button data-idx="' + i + '" class="sp-eye-btn" style="background:none;border:1px solid #1a2236;border-radius:6px;cursor:pointer;padding:4px 8px;color:#4a9cf5;font-size:0.85rem;" title="View full details">View</button>' +
@@ -2093,9 +2093,9 @@ function showSPModal(t){
 
   function cell(label, val, color, sub) {
     return '<div style="background:#060910;border:1px solid #1a2236;border-radius:8px;padding:11px 13px;">'
-      + '<div style="font-size:0.52rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;margin-bottom:5px;">' + label + '</div>'
+      + '<div style="font-size:0.52rem;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted-2,#6d85a8);margin-bottom:5px;">' + label + '</div>'
       + '<div style="font-size:0.9rem;font-weight:700;color:' + (color||'#e0eaf8') + ';font-family:monospace;line-height:1.3;">' + (val||'\\u2014') + '</div>'
-      + (sub ? '<div style="font-size:0.62rem;color:#4a6080;margin-top:3px;">' + sub + '</div>' : '')
+      + (sub ? '<div style="font-size:0.62rem;color:var(--muted-1,#8ba1c2);margin-top:3px;">' + sub + '</div>' : '')
       + '</div>';
   }
 
@@ -2140,7 +2140,7 @@ function showSPModal(t){
     + '</div></div>';
 
   var reasonHtml = '<div style="background:#060910;border:1px solid #1a2236;border-radius:10px;padding:12px 14px;">'
-    + '<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:#3a5070;margin-bottom:6px;font-weight:700;">Exit Reason</div>'
+    + '<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted-2,#6d85a8);margin-bottom:6px;font-weight:700;">Exit Reason</div>'
     + '<div style="font-size:0.82rem;color:#a0b8d0;line-height:1.6;font-family:monospace;">' + (t.reason || '\\u2014') + '</div>'
     + '</div>';
 
@@ -2212,7 +2212,7 @@ async function ptHandleReset(btn) {
   if (!container) return;
   var chart = LightweightCharts.createChart(container, {
     width: container.clientWidth, height: container.clientHeight,
-    layout: { background: { type: 'solid', color: '#0a0f1c' }, textColor: '#4a6080', fontSize: 11, fontFamily: "'IBM Plex Mono', monospace" },
+    layout: { background: { type: 'solid', color: '#0a0f1c' }, textColor: '#8ba1c2', fontSize: 11, fontFamily: "'IBM Plex Mono', monospace" },
     grid: { vertLines: { color: '#111827' }, horzLines: { color: '#111827' } },
     crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
     rightPriceScale: { borderColor: '#1a2236', scaleMargins: { top: 0.1, bottom: 0.05 } },
@@ -2477,7 +2477,7 @@ function spUpdateBanner() {
         var slDistEl = document.getElementById('ajax-sl-dist');
         if (slDistEl && p.stopLoss && ltpNow) {
           var dist = Math.abs(ltpNow - p.stopLoss);
-          slDistEl.innerHTML = dist.toFixed(1) + ' <span style="font-size:0.6rem;color:#4a6080;">pts</span>';
+          slDistEl.innerHTML = dist.toFixed(1) + ' <span style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);">pts</span>';
           slDistEl.style.color = dist < 20 ? '#ef4444' : dist < 40 ? '#f59e0b' : '#10b981';
         }
         // R:R
@@ -2493,7 +2493,7 @@ function spUpdateBanner() {
         }
         // Candles held
         var candPosEl = document.getElementById('ajax-pos-candles');
-        if (candPosEl) candPosEl.innerHTML = (p.candlesHeld || 0) + ' <span style="font-size:0.6rem;color:#4a6080;">candles</span>';
+        if (candPosEl) candPosEl.innerHTML = (p.candlesHeld || 0) + ' <span style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);">candles</span>';
       }
 
       // Trades — reload table if count changed
@@ -2635,7 +2635,7 @@ function renderExtraAnalytics(){
   });
   var body = document.getElementById('anaPatternBody');
   if (body){
-    body.innerHTML = html || '<tr><td colspan="9" style="text-align:center;color:#3a5070;padding:14px;">No pattern data</td></tr>';
+    body.innerHTML = html || '<tr><td colspan="9" style="text-align:center;color:var(--muted-2,#6d85a8);padding:14px;">No pattern data</td></tr>';
     Array.prototype.forEach.call(body.querySelectorAll('tr[data-pat-row]'), function(tr){
       tr.addEventListener('click', function(){
         var g = tr.getAttribute('data-pat-row');
@@ -2905,7 +2905,7 @@ ${buildSidebar('paPaper', false)}
 <div class="main-content">
   <h1 style="font-size:1.4rem;font-weight:800;color:#e2e8f0;margin-bottom:4px;">Simulate — Price Action Paper</h1>
   <p style="font-size:0.82rem;color:#6b7fa0;margin-bottom:8px;">Run your price action strategy against fake ticks — no broker login needed. Works after market hours.</p>
-  <p style="font-size:0.75rem;color:#4a6080;">Resolution: <strong>${PA_RES}-min</strong> candles</p>
+  <p style="font-size:0.75rem;color:var(--muted-1,#8ba1c2);">Resolution: <strong>${PA_RES}-min</strong> candles</p>
 
   <!-- ── Tab switcher ─────────────────────────────────────────────── -->
   <div style="display:flex;gap:0;margin-top:24px;border-bottom:2px solid #1a2236;">

@@ -14,6 +14,7 @@
  */
 
 const crypto = require("crypto");
+const { resolveTheme } = require("./theme");
 
 const jobs = new Map();
 let activeJobId = null;
@@ -104,9 +105,15 @@ function isIdle() {
  * @param {string} basePath - Route base path (e.g. "/ema_rsi_st-backtest")
  * @param {string} title   - Page title prefix
  */
+/** `data-theme="light"` when UI_THEME resolves to light, so these standalone
+ *  pages follow the same setting as every other screen. */
+function _lightAttr() {
+  return resolveTheme() === "light" ? ' data-theme="light"' : "";
+}
+
 function buildProgressPage(jobId, basePath, title) {
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="en"${_lightAttr()}>
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
@@ -122,13 +129,34 @@ function buildProgressPage(jobId, basePath, title) {
     .bar::after{content:'';position:absolute;top:0;left:0;right:0;bottom:0;background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,0.15) 50%,transparent 100%);animation:shimmer 2s infinite;}
     @keyframes shimmer{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
     .pct{font-size:1.8rem;font-weight:700;color:#e0e8f0;margin-bottom:6px;}
-    .detail{color:#4a6080;font-size:0.72rem;margin-bottom:4px;}
-    .elapsed{color:#3a5070;font-size:0.68rem;margin-top:12px;}
+    .detail{color:var(--muted-1,#8ba1c2);font-size:0.72rem;margin-bottom:4px;}
+    .elapsed{color:var(--muted-2,#6d85a8);font-size:0.68rem;margin-top:12px;}
     .warn{background:#1a1800;border:1px solid #3a3000;border-radius:8px;padding:12px 16px;margin-top:20px;font-size:0.72rem;color:#b8a040;line-height:1.5;}
     .err{background:#1a0808;border:1px solid #7f1d1d;border-radius:8px;padding:16px;margin-top:16px;color:#ef4444;font-size:0.8rem;}
     .err a{color:#f87171;text-decoration:underline;}
     .spinner{display:inline-block;width:18px;height:18px;border:2px solid #1a2540;border-top-color:#3b82f6;border-radius:50%;animation:spin 0.8s linear infinite;vertical-align:middle;margin-right:8px;}
     @keyframes spin{to{transform:rotate(360deg)}}
+    /* Light skin — these two interstitials sit outside sharedNav, so they carried
+       neither the light theme nor the phone breakpoint. Both live here. */
+    :root[data-theme="light"] body{background:#f4f6f9;color:#334155;}
+    :root[data-theme="light"] .card{background:#ffffff;border-color:#e0e4ea;box-shadow:0 1px 3px rgba(0,0,0,0.06);}
+    :root[data-theme="light"] h2{color:#1e293b;}
+    :root[data-theme="light"] .phase{color:#4b5769;}
+    :root[data-theme="light"] .elapsed{color:#5c6b7f;}
+    :root[data-theme="light"] .detail{color:#4b5769;}
+    :root[data-theme="light"] .pct{color:#1e293b;}
+    :root[data-theme="light"] .warn{background:#fffbeb;border-color:#fcd34d;color:#b45309;}
+    :root[data-theme="light"] .bar-wrap{background:#f1f5f9;border-color:#e0e4ea;}
+    :root[data-theme="light"] .err{background:#fef2f2;border-color:#fca5a5;color:#b91c1c;}
+    :root[data-theme="light"] .err a{color:#b91c1c;}
+    :root[data-theme="light"] .spinner{border-color:#e0e4ea;}
+    @media(max-width:768px){
+      /* 56px of side padding left ~280px of usable width on a 440px screen. */
+      body{align-items:flex-start;padding:16px 12px;}
+      .card{padding:28px 20px;width:100%;max-width:100%;border-radius:12px;}
+      h2{font-size:1.05rem;}
+      .err a{min-height:44px;display:inline-flex;align-items:center;justify-content:center;}
+    }
   </style>
 </head>
 <body>
@@ -229,7 +257,7 @@ function buildProgressPage(jobId, basePath, title) {
  */
 function buildQueuePage(basePath, title) {
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="en"${_lightAttr()}>
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
@@ -243,7 +271,28 @@ function buildQueuePage(basePath, title) {
     .spinner{display:inline-block;width:18px;height:18px;border:2px solid #1a2540;border-top-color:#f59e0b;border-radius:50%;animation:spin 0.8s linear infinite;vertical-align:middle;margin-right:8px;}
     @keyframes spin{to{transform:rotate(360deg)}}
     .warn{background:#1a1800;border:1px solid #3a3000;border-radius:8px;padding:12px 16px;margin-top:20px;font-size:0.72rem;color:#b8a040;line-height:1.5;}
-    .elapsed{color:#3a5070;font-size:0.68rem;margin-top:12px;}
+    .elapsed{color:var(--muted-2,#6d85a8);font-size:0.68rem;margin-top:12px;}
+    /* Light skin — these two interstitials sit outside sharedNav, so they carried
+       neither the light theme nor the phone breakpoint. Both live here. */
+    :root[data-theme="light"] body{background:#f4f6f9;color:#334155;}
+    :root[data-theme="light"] .card{background:#ffffff;border-color:#e0e4ea;box-shadow:0 1px 3px rgba(0,0,0,0.06);}
+    :root[data-theme="light"] h2{color:#1e293b;}
+    :root[data-theme="light"] .phase{color:#4b5769;}
+    :root[data-theme="light"] .elapsed{color:#5c6b7f;}
+    :root[data-theme="light"] .detail{color:#4b5769;}
+    :root[data-theme="light"] .pct{color:#1e293b;}
+    :root[data-theme="light"] .warn{background:#fffbeb;border-color:#fcd34d;color:#b45309;}
+    :root[data-theme="light"] .bar-wrap{background:#f1f5f9;border-color:#e0e4ea;}
+    :root[data-theme="light"] .err{background:#fef2f2;border-color:#fca5a5;color:#b91c1c;}
+    :root[data-theme="light"] .err a{color:#b91c1c;}
+    :root[data-theme="light"] .spinner{border-color:#e0e4ea;}
+    @media(max-width:768px){
+      /* 56px of side padding left ~280px of usable width on a 440px screen. */
+      body{align-items:flex-start;padding:16px 12px;}
+      .card{padding:28px 20px;width:100%;max-width:100%;border-radius:12px;}
+      h2{font-size:1.05rem;}
+      .err a{min-height:44px;display:inline-flex;align-items:center;justify-content:center;}
+    }
   </style>
 </head>
 <body>

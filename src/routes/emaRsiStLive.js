@@ -2960,7 +2960,7 @@ router.get("/status", (req, res) => {
         <div style="display:flex;align-items:center;gap:10px;">
           <span style="width:10px;height:10px;border-radius:50%;background:#ef4444;display:inline-block;animation:pulse 1.5s infinite;"></span>
           <span style="font-size:0.8rem;font-weight:700;color:#ef4444;text-transform:uppercase;letter-spacing:1px;">⚡ LIVE Position</span>
-          <span style="font-size:0.72rem;color:#4a6080;">Since ${fmtT(pos.entryTime)}</span>
+          <span style="font-size:0.72rem;color:var(--muted-1,#8ba1c2);">Since ${fmtT(pos.entryTime)}</span>
         </div>
         <button onclick="ltHandleExit(this)"
            style="display:inline-flex;align-items:center;gap:7px;background:#7f1d1d;border:1px solid #ef4444;color:#fca5a5;font-size:0.8rem;font-weight:700;padding:9px 18px;border-radius:8px;cursor:pointer;font-family:inherit;transition:background 0.15s;"
@@ -2982,32 +2982,32 @@ router.get("/status", (req, res) => {
           <div style="width:1px;height:44px;background:#134e35;"></div>
           ${isFutures ? `
           <div>
-            <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Direction</div>
+            <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Direction</div>
             <div style="font-size:1.4rem;font-weight:800;color:#fff;">${pos.side === "CE" ? "📈 BUY" : "📉 SELL"}</div>
           </div>` : `
           <div>
-            <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Strike</div>
+            <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Strike</div>
             <div style="font-size:1.6rem;font-weight:800;color:#fff;font-family:monospace;">${pos.optionStrike ? pos.optionStrike.toLocaleString("en-IN") : "—"}</div>
           </div>
           <div style="width:1px;height:44px;background:#134e35;"></div>
           <div>
-            <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Expiry</div>
+            <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Expiry</div>
             <div style="font-size:1.1rem;font-weight:700;color:#f59e0b;">${pos.optionExpiry || "—"}</div>
           </div>`}
           <div style="width:1px;height:44px;background:#134e35;"></div>
           <div>
-            <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Qty / Lots</div>
-            <div style="font-size:1.1rem;font-weight:700;color:#fff;">${pos.qty} <span style="font-size:0.72rem;color:#4a6080;">(${Math.round(pos.qty / 65)} lot)</span></div>
+            <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Qty / Lots</div>
+            <div style="font-size:1.1rem;font-weight:700;color:#fff;">${pos.qty} <span style="font-size:0.72rem;color:var(--muted-1,#8ba1c2);">(${Math.round(pos.qty / 65)} lot)</span></div>
           </div>
           <div style="width:1px;height:44px;background:#134e35;flex-shrink:0;"></div>
           <div style="flex:1;min-width:200px;">
-            <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Full Symbol</div>
+            <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Full Symbol</div>
             <div style="font-size:0.82rem;font-weight:600;color:#c8d8f0;font-family:monospace;word-break:break-all;">${pos.symbol}</div>
           </div>
           ${pos.orderId ? `
           <div style="width:1px;height:44px;background:#134e35;flex-shrink:0;"></div>
           <div>
-            <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Zerodha Order ID</div>
+            <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Zerodha Order ID</div>
             <div style="font-size:0.82rem;font-weight:600;color:#a78bfa;font-family:monospace;">${pos.orderId}</div>
           </div>` : ""}
         </div>
@@ -3023,34 +3023,34 @@ router.get("/status", (req, res) => {
             <div id="ajax-lt-opt-entry-ltp" style="font-size:2rem;font-weight:800;color:#60a5fa;font-family:monospace;line-height:1;">
               ${optEntryLtp ? "₹" + optEntryLtp.toFixed(2) : "<span style='font-size:1rem;color:#f59e0b;'>Fetching...</span>"}
             </div>
-            <div style="font-size:0.68rem;color:#4a6080;margin-top:4px;">
+            <div style="font-size:0.68rem;color:var(--muted-1,#8ba1c2);margin-top:4px;">
               ${optEntryLtp
                 ? `captured at ${fmtT(pos.optionEntryLtpTime || pos.entryTime)}`
                 : `⏳ first REST poll in ~3s<br><span style='color:#c8d8f0;'>NIFTY entry: ${inr(pos.entryPrice)}</span>`}
             </div>
           </div>
 
-          <div style="text-align:center;font-size:1.8rem;color:${optPremiumMove !== null ? (optPremiumMove >= 0 ? "#10b981" : "#ef4444") : "#4a6080"};">→</div>
+          <div style="text-align:center;font-size:1.8rem;color:${optPremiumMove !== null ? (optPremiumMove >= 0 ? "#10b981" : "#ef4444") : "#8ba1c2"};">→</div>
 
           <div style="text-align:center;padding:12px;background:${optCurrentLtp && optEntryLtp ? (optCurrentLtp >= optEntryLtp ? "#071a0f" : "#1a0707") : "#0d1320"};border:2px solid ${optCurrentLtp && optEntryLtp ? (optCurrentLtp >= optEntryLtp ? "#10b981" : "#ef4444") : "#4a6080"};border-radius:10px;">
-            <div style="font-size:0.63rem;color:${optCurrentLtp && optEntryLtp ? (optCurrentLtp >= optEntryLtp ? "#10b981" : "#ef4444") : "#4a6080"};text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Current LTP</div>
+            <div style="font-size:0.63rem;color:${optCurrentLtp && optEntryLtp ? (optCurrentLtp >= optEntryLtp ? "#10b981" : "#ef4444") : "#8ba1c2"};text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Current LTP</div>
             <div id="ajax-lt-opt-current-ltp" style="font-size:2rem;font-weight:800;color:${optCurrentLtp && optEntryLtp ? (optCurrentLtp >= optEntryLtp ? "#10b981" : "#ef4444") : "#fff"};font-family:monospace;line-height:1;">
               ${optCurrentLtp ? "₹" + optCurrentLtp.toFixed(2) : "⏳"}
             </div>
             <div id="ajax-lt-opt-move" style="font-size:0.72rem;font-weight:700;margin-top:6px;color:${optPremiumMove !== null ? (optPremiumMove >= 0 ? "#10b981" : "#ef4444") : "#f59e0b"};">
               ${optPremiumMove !== null ? (optPremiumMove >= 0 ? "▲ +" : "▼ ") + "₹" + Math.abs(optPremiumMove).toFixed(2) + " pts" : optCurrentLtp ? "⏳ Awaiting entry price..." : "⏳ Polling REST feed..."}
             </div>
-            <div id="ajax-lt-opt-pct" style="font-size:1.1rem;font-weight:800;margin-top:4px;color:${optPremiumPct !== null ? (optPremiumPct >= 0 ? "#10b981" : "#ef4444") : "#4a6080"};font-family:monospace;">
+            <div id="ajax-lt-opt-pct" style="font-size:1.1rem;font-weight:800;margin-top:4px;color:${optPremiumPct !== null ? (optPremiumPct >= 0 ? "#10b981" : "#ef4444") : "#8ba1c2"};font-family:monospace;">
               ${optPremiumPct !== null ? (optPremiumPct >= 0 ? "+" : "") + optPremiumPct.toFixed(2) + "%" : "—"}
             </div>
           </div>
 
           <div style="text-align:center;padding:12px;background:${optPremiumPnl !== null ? (optPremiumPnl >= 0 ? "#071a0f" : "#1a0707") : "#0d1320"};border:1px solid ${optPremiumPnl !== null ? (optPremiumPnl >= 0 ? "#065f46" : "#7f1d1d") : "#1a2236"};border-radius:10px;">
-            <div style="font-size:0.63rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Unrealised P&L</div>
+            <div style="font-size:0.63rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Unrealised P&L</div>
             <div id="ajax-lt-opt-pnl" style="font-size:1.8rem;font-weight:800;color:${optPremiumPnl !== null ? (optPremiumPnl >= 0 ? "#10b981" : "#ef4444") : "#fff"};font-family:monospace;line-height:1;">
               ${optPremiumPnl !== null ? (optPremiumPnl >= 0 ? "+" : "") + "₹" + optPremiumPnl.toLocaleString("en-IN", {minimumFractionDigits:2,maximumFractionDigits:2}) : "—"}
             </div>
-            <div style="font-size:0.65rem;color:#4a6080;margin-top:4px;">${pos.qty} qty · after charges</div>
+            <div style="font-size:0.65rem;color:var(--muted-1,#8ba1c2);margin-top:4px;">${pos.qty} qty · after charges</div>
           </div>
 
         </div>
@@ -3059,30 +3059,30 @@ router.get("/status", (req, res) => {
       <!-- Secondary grid -->
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:12px;">
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">NIFTY Spot @ Entry</div>
+          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">NIFTY Spot @ Entry</div>
           <div style="font-size:1.05rem;font-weight:700;color:#c8d8f0;">${inr(pos.entryPrice)}</div>
-          <div style="font-size:0.63rem;color:#4a6080;margin-top:2px;">candle close</div>
+          <div style="font-size:0.63rem;color:var(--muted-1,#8ba1c2);margin-top:2px;">candle close</div>
         </div>
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">NIFTY LTP</div>
+          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">NIFTY LTP</div>
           <div id="ajax-lt-nifty-ltp" style="font-size:1.05rem;font-weight:700;color:#c8d8f0;">${inr(liveClose)}</div>
           <div id="ajax-lt-nifty-move" style="font-size:0.63rem;color:${pointsMoved >= 0 ? "#10b981" : "#ef4444"};margin-top:2px;">${pointsMoved >= 0 ? "▲" : "▼"} ${Math.abs(pointsMoved).toFixed(1)} pts</div>
         </div>
         <div style="background:#1c1400;border:1px solid #78350f;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Stop Loss (prev-candle)</div>
+          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Stop Loss (prev-candle)</div>
           <div id="ajax-lt-stop-loss" style="font-size:1.05rem;font-weight:700;color:#f59e0b;">${pos.stopLoss ? inr(pos.stopLoss) : "—"}</div>
-          <div style="font-size:0.63rem;color:#4a6080;margin-top:2px;">Risk: ${pos.stopLoss ? inr(Math.abs(pos.entryPrice - pos.stopLoss) * pos.qty) : "—"}</div>
+          <div style="font-size:0.63rem;color:var(--muted-1,#8ba1c2);margin-top:2px;">Risk: ${pos.stopLoss ? inr(Math.abs(pos.entryPrice - pos.stopLoss) * pos.qty) : "—"}</div>
         </div>
         <div style="background:#1c0d00;border:1px solid #92400e;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Option SL (${optStopPct}% stop)</div>
+          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Option SL (${optStopPct}% stop)</div>
           <div id="ajax-lt-opt-sl" style="font-size:1.05rem;font-weight:700;color:#f97316;">${optStopPrice ? "₹" + optStopPrice.toFixed(2) : "—"}</div>
-          <div style="font-size:0.63rem;color:#4a6080;margin-top:2px;">${optEntryLtp ? "entry ₹" + optEntryLtp.toFixed(2) + " × " + (100 - optStopPct) + "%" : "awaiting entry LTP"}</div>
+          <div style="font-size:0.63rem;color:var(--muted-1,#8ba1c2);margin-top:2px;">${optEntryLtp ? "entry ₹" + optEntryLtp.toFixed(2) + " × " + (100 - optStopPct) + "%" : "awaiting entry LTP"}</div>
         </div>
         <div id="ajax-trail-card" data-trail="${_trailLbl}" style="background:#071a12;border:1px solid ${trailProfit > 0 ? "#8b5cf6" : "#134e35"};border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Trailing Stop</div>
+          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Trailing Stop</div>
           <div id="ajax-trail-status" style="font-size:0.88rem;font-weight:700;color:${trailProfit > 0 ? "#8b5cf6" : "#f59e0b"};">${_trailLbl}</div>
-          <div id="ajax-trail-best" style="font-size:0.63rem;color:#4a6080;margin-top:2px;">Best: ${pos.bestPrice ? inr(pos.bestPrice) : "—"} (${trailProfit >= 0 ? "+" : ""}${trailProfit.toFixed(1)} pts)</div>
-          <div id="ajax-trail-activate" style="font-size:0.63rem;color:#4a6080;margin-top:2px;">Trail source: ${_trailLbl}${_ctOn ? " · tighter wins" : ""}</div>
+          <div id="ajax-trail-best" style="font-size:0.63rem;color:var(--muted-1,#8ba1c2);margin-top:2px;">Best: ${pos.bestPrice ? inr(pos.bestPrice) : "—"} (${trailProfit >= 0 ? "+" : ""}${trailProfit.toFixed(1)} pts)</div>
+          <div id="ajax-trail-activate" style="font-size:0.63rem;color:var(--muted-1,#8ba1c2);margin-top:2px;">Trail source: ${_trailLbl}${_ctOn ? " · tighter wins" : ""}</div>
         </div>
       </div>
 
@@ -3090,10 +3090,10 @@ router.get("/status", (req, res) => {
     </div>` : `
     <div style="background:#0d1320;border:1px solid ${tradeState._armedSignal ? '#7a5b16' : '#1a2236'};border-radius:12px;padding:20px 24px;text-align:center;">
       <div style="font-size:1.5rem;margin-bottom:8px;">${tradeState._armedSignal ? '🎯' : '📭'}</div>
-      <div id="ajax-flat-banner" style="font-size:0.9rem;font-weight:600;color:${tradeState._armedSignal ? '#f59e0b' : '#4a6080'};margin-bottom:14px;">${tradeState._armedSignal ? `ARMED ${tradeState._armedSignal.side} — waiting for next candle to cross ${tradeState._armedSignal.triggerLevel} (${tradeState._armedSignal.side === 'CE' ? 'above' : 'below'}) to enter` : 'FLAT — Waiting for entry signal'}</div>
+      <div id="ajax-flat-banner" style="font-size:0.9rem;font-weight:600;color:${tradeState._armedSignal ? '#f59e0b' : '#8ba1c2'};margin-bottom:14px;">${tradeState._armedSignal ? `ARMED ${tradeState._armedSignal.side} — waiting for next candle to cross ${tradeState._armedSignal.triggerLevel} (${tradeState._armedSignal.side === 'CE' ? 'above' : 'below'}) to enter` : 'FLAT — Waiting for entry signal'}</div>
       <div style="display:flex;gap:10px;justify-content:center;">
         <button onclick="manualEntry('CE')" style="padding:8px 24px;background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.3);border-radius:8px;font-size:0.85rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">▲ Manual CE</button>
-        <button onclick="manualEntry('PE')" style="padding:8px 24px;background:rgba(239,68,68,0.15);color:#ef4444;border:1px solid rgba(239,68,68,0.3);border-radius:8px;font-size:0.85rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">▼ Manual PE</button>
+        <button onclick="manualEntry('PE')" style="padding:8px 24px;background:rgba(239,68,68,0.15);color:#f87171;border:1px solid rgba(239,68,68,0.3);border-radius:8px;font-size:0.85rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">▼ Manual PE</button>
       </div>
     </div>`;
 
@@ -3161,7 +3161,7 @@ ${buildSidebar('emaRsiStLive', tradeState.running, tradeState.running, {
     <div class="top-bar-right">
       ${tradeState.running ? `<span class="top-bar-badge live-active"><span style="width:5px;height:5px;border-radius:50%;background:#ef4444;display:inline-block;"></span>ACTIVE</span>` : `<span class="top-bar-badge">● STOPPED</span>`}
       ${_vixEnabled ? `<span class="top-bar-badge" style="border-color:${_vix == null ? 'rgba(100,116,139,0.3)' : _vix > _vixMaxEntry ? 'rgba(239,68,68,0.3)' : _vix > _vixStrongOnly ? 'rgba(234,179,8,0.3)' : 'rgba(16,185,129,0.3)'};background:${_vix == null ? 'rgba(100,116,139,0.08)' : _vix > _vixMaxEntry ? 'rgba(239,68,68,0.1)' : _vix > _vixStrongOnly ? 'rgba(234,179,8,0.1)' : 'rgba(16,185,129,0.1)'};color:${_vix == null ? '#94a3b8' : _vix > _vixMaxEntry ? '#ef4444' : _vix > _vixStrongOnly ? '#eab308' : '#10b981'};">🌡️ VIX ${_vix != null ? _vix.toFixed(1) : 'n/a'}${_vix != null ? (_vix > _vixMaxEntry ? ' · BLOCKED' : _vix > _vixStrongOnly ? ' · STRONG ONLY' : ' · NORMAL') : ''}</span>` : ''}
-      <button onclick="ltHandleReset(this)" style="background:#07111f;border:0.5px solid #0e1e36;color:#4a6080;padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;cursor:pointer;font-family:inherit;">↺ Reset</button>
+      <button onclick="ltHandleReset(this)" style="background:#07111f;border:0.5px solid #0e1e36;color:var(--muted-1,#8ba1c2);padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;cursor:pointer;font-family:inherit;">↺ Reset</button>
     </div>
   </div>
   <div class="broker-badges">
@@ -3186,12 +3186,12 @@ ${buildSidebar('emaRsiStLive', tradeState.running, tradeState.running, {
   <div class="stat-grid">
     <div class="sc" style="border-top:2px solid ${tradeState.running ? "#ef4444" : "#4a6080"};">
       <div class="sc-label">Status</div>
-      <div class="sc-val" style="font-size:1rem;color:${tradeState.running ? "#ef4444" : "#4a6080"};">${tradeState.running ? "⚡ RUNNING" : "● STOPPED"}</div>
+      <div class="sc-val" style="font-size:1rem;color:${tradeState.running ? "#ef4444" : "#8ba1c2"};">${tradeState.running ? "⚡ RUNNING" : "● STOPPED"}</div>
     </div>
     <div class="sc" style="border-top:1.5px solid #3b82f6;">
       <div class="sc-label">WebSocket Ticks</div>
       <div class="sc-val" id="ajax-lt-tick-count">${tradeState.tickCount.toLocaleString()}</div>
-      <div style="font-size:0.7rem;color:#4a6080;margin-top:4px;">Last: <span id="ajax-lt-last-tick">${tradeState.lastTickPrice ? inr(tradeState.lastTickPrice) : "—"}</span></div>
+      <div style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);margin-top:4px;">Last: <span id="ajax-lt-last-tick">${tradeState.lastTickPrice ? inr(tradeState.lastTickPrice) : "—"}</span></div>
     </div>
     <div class="sc" style="border-top:1.5px solid #8b5cf6;">
       <div class="sc-label">Candles Loaded</div>
@@ -3212,13 +3212,13 @@ ${buildSidebar('emaRsiStLive', tradeState.running, tradeState.running, {
     </div>
     <div class="sc" style="border-top:1.5px solid #8b5cf6;">
       <div class="sc-label">Trades Today</div>
-      <div class="sc-val"><span id="ajax-lt-trade-count">${tradeState.sessionTrades.length}</span> <span style="font-size:0.75rem;color:#4a6080;">/ ${process.env.MAX_DAILY_TRADES || 20}</span></div>
-      <div id="ajax-lt-wl" style="font-size:0.7rem;color:#4a6080;margin-top:4px;">${tradeState.sessionTrades.filter(t=>t.pnl>0).length}W &middot; ${tradeState.sessionTrades.filter(t=>t.pnl<=0).length}L</div>
+      <div class="sc-val"><span id="ajax-lt-trade-count">${tradeState.sessionTrades.length}</span> <span style="font-size:0.75rem;color:var(--muted-1,#8ba1c2);">/ ${process.env.MAX_DAILY_TRADES || 20}</span></div>
+      <div id="ajax-lt-wl" style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);margin-top:4px;">${tradeState.sessionTrades.filter(t=>t.pnl>0).length}W &middot; ${tradeState.sessionTrades.filter(t=>t.pnl<=0).length}L</div>
     </div>
     <div class="sc" style="border-top:2px solid ${(tradeState._consecutiveLosses||0) >= 2 ? '#ef4444' : '#4a6080'};">
       <div class="sc-label">Loss Streak</div>
       <div class="sc-val" id="ajax-lt-consec-losses" style="color:${_streakLimit() > 0 && (tradeState._consecutiveLosses||0) >= _streakLimit() - 1 ? '#ef4444' : '#fff'}">${tradeState._consecutiveLosses || 0}${_streakLimit() > 0 ? ` / ${_streakLimit()}` : ''}</div>
-      <div id="ajax-lt-cl-status" style="font-size:0.7rem;margin-top:4px;color:${tradeState._pauseUntilTime && Date.now() < tradeState._pauseUntilTime ? '#f59e0b' : '#4a6080'}">${tradeState._pauseUntilTime && Date.now() < tradeState._pauseUntilTime ? '⏸ PAUSED' : _streakLimit() <= 0 ? '➖ breaker OFF' : (tradeState._consecutiveLosses||0) >= _streakLimit() - 1 ? '⚠️ 1 more = pause' : '✅ OK'}</div>
+      <div id="ajax-lt-cl-status" style="font-size:0.7rem;margin-top:4px;color:${tradeState._pauseUntilTime && Date.now() < tradeState._pauseUntilTime ? '#f59e0b' : '#8ba1c2'}">${tradeState._pauseUntilTime && Date.now() < tradeState._pauseUntilTime ? '⏸ PAUSED' : _streakLimit() <= 0 ? '➖ breaker OFF' : (tradeState._consecutiveLosses||0) >= _streakLimit() - 1 ? '⚠️ 1 more = pause' : '✅ OK'}</div>
     </div>
     <div class="sc" style="border-top:2px solid ${tradeState._dailyLossHit ? '#ef4444' : '#10b981'};" id="ajax-lt-sc-dloss">
       <div class="sc-label">Daily Loss Limit</div>
@@ -3253,7 +3253,7 @@ ${buildSidebar('emaRsiStLive', tradeState.running, tradeState.running, {
     <div class="section-title">NIFTY ${getTradeResolution()}-Min Chart</div>
     <div id="nifty-chart-container" style="background:#0a0f1c;border:1px solid #1a2236;border-radius:12px;overflow:hidden;position:relative;height:400px;">
       <div id="nifty-chart" style="width:100%;height:100%;"></div>
-      <div id="chart-legend" style="position:absolute;top:10px;left:12px;font-size:0.68rem;color:#4a6080;pointer-events:none;z-index:2;">
+      <div id="chart-legend" style="position:absolute;top:10px;left:12px;font-size:0.68rem;color:var(--muted-1,#8ba1c2);pointer-events:none;z-index:2;">
         <span style="color:#3b82f6;">▲ Entry</span> &nbsp;
         <span style="color:#10b981;">▼ Win</span> &nbsp;
         <span style="color:#ef4444;">▼ Loss</span> &nbsp;
@@ -3279,24 +3279,24 @@ ${buildSidebar('emaRsiStLive', tradeState.running, tradeState.running, {
       <select id="ltPerPage" onchange="ltFilter()" style="background:#0d1320;border:1px solid #1a2236;color:#c8d8f0;padding:4px 8px;border-radius:6px;font-size:0.73rem;">
         <option value="5">5/page</option><option value="10" selected>10/page</option><option value="25">25/page</option><option value="999999">All</option>
       </select>
-      <span id="ltCount" style="font-size:0.72rem;color:#4a6080;"></span>
+      <span id="ltCount" style="font-size:0.72rem;color:var(--muted-1,#8ba1c2);"></span>
     </div>
     ${tradeState.sessionTrades.length === 0
-      ? `<div style="background:#0d1320;border:1px solid #1a2236;border-radius:12px;padding:16px 24px;color:#4a6080;font-size:0.82rem;">No completed trades this session.</div>`
+      ? `<div style="background:#0d1320;border:1px solid #1a2236;border-radius:12px;padding:16px 24px;color:var(--muted-1,#8ba1c2);font-size:0.82rem;">No completed trades this session.</div>`
       : `<div style="border:1px solid #1a2236;border-radius:12px;overflow:hidden;overflow-x:auto;margin-bottom:10px;">
           <table style="width:100%;border-collapse:collapse;">
             <thead><tr style="background:#0a0f1c;">
-              <th onclick="ltSort('side')"  style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;cursor:pointer;">Side ▲▼</th>
-              <th onclick="ltSort('entry')" style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;cursor:pointer;">Date ▲▼</th>
-              <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Entry</th>
-              <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Entry Time</th>
-              <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Exit</th>
-              <th onclick="ltSort('exit')"  style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;cursor:pointer;">Exit Time ▲▼</th>
-              <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">SL</th>
-              <th onclick="ltSort('pnl')"   style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;cursor:pointer;">PnL ₹ ▲▼</th>
-              <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Entry Reason</th>
-              <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Exit Reason</th>
-              <th style="padding:9px 12px;text-align:center;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Action</th>
+              <th onclick="ltSort('side')"  style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);cursor:pointer;">Side ▲▼</th>
+              <th onclick="ltSort('entry')" style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);cursor:pointer;">Date ▲▼</th>
+              <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);">Entry</th>
+              <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);">Entry Time</th>
+              <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);">Exit</th>
+              <th onclick="ltSort('exit')"  style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);cursor:pointer;">Exit Time ▲▼</th>
+              <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);">SL</th>
+              <th onclick="ltSort('pnl')"   style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);cursor:pointer;">PnL ₹ ▲▼</th>
+              <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);">Entry Reason</th>
+              <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);">Exit Reason</th>
+              <th style="padding:9px 12px;text-align:center;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);">Action</th>
             </tr></thead>
             <tbody id="ltBody" style="font-family:monospace;font-size:0.78rem;"></tbody>
           </table>
@@ -3308,9 +3308,9 @@ ${buildSidebar('emaRsiStLive', tradeState.running, tradeState.running, {
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
               <div>
                 <span id="ltm-badge" style="font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;padding:4px 10px;border-radius:6px;"></span>
-                <span style="font-size:0.65rem;color:#4a6080;margin-left:10px;">🔴 Live Trade — Full Details</span>
+                <span style="font-size:0.65rem;color:var(--muted-1,#8ba1c2);margin-left:10px;">🔴 Live Trade — Full Details</span>
               </div>
-              <button onclick="document.getElementById('ltModal').style.display='none';" style="background:none;border:1px solid #1a2236;color:#4a6080;font-size:1rem;cursor:pointer;padding:4px 10px;border-radius:6px;font-family:inherit;" onmouseover="this.style.color='#ef4444';this.style.borderColor='#ef4444'" onmouseout="this.style.color='#4a6080';this.style.borderColor='#1a2236'">✕ Close</button>
+              <button onclick="document.getElementById('ltModal').style.display='none';" style="background:none;border:1px solid #1a2236;color:var(--muted-1,#8ba1c2);font-size:1rem;cursor:pointer;padding:4px 10px;border-radius:6px;font-family:inherit;" onmouseover="this.style.color='#ef4444';this.style.borderColor='#ef4444'" onmouseout="this.style.color='#8ba1c2';this.style.borderColor='#1a2236'">✕ Close</button>
             </div>
             <div id="ltm-grid"></div>
             <div id="ltm-reason" style="display:none;"></div>
@@ -3378,7 +3378,7 @@ ${buildSidebar('emaRsiStLive', tradeState.running, tradeState.running, {
       // Store slice globally for eye button access
       window._ltSlice = slice;
       el.innerHTML=slice.length===0
-        ?'<tr><td colspan="11" style="text-align:center;padding:20px;color:#4a6080;">No trades match filters.</td></tr>'
+        ?'<tr><td colspan="11" style="text-align:center;padding:20px;color:var(--muted-1,#8ba1c2);">No trades match filters.</td></tr>'
         :slice.map((t,i)=>{
           const sc=t.side==='CE'?'#10b981':'#ef4444';
           const pc=t.pnl==null?'#c8d8f0':t.pnl>=0?'#10b981':'#ef4444';
@@ -3392,8 +3392,8 @@ ${buildSidebar('emaRsiStLive', tradeState.running, tradeState.running, {
             <td style="padding:8px 12px;font-size:0.75rem;">\${ltFmtTime(t.exit)}</td>
             <td style="padding:8px 12px;color:#f59e0b;">\${t.eSl?ltFmt(t.eSl):'\u2014'}</td>
             <td style="padding:8px 12px;"><div style="font-size:1rem;font-weight:800;color:\${pc};">\${t.pnl!=null?(t.pnl>=0?'+':'')+ltFmt(t.pnl):'\u2014'}</div></td>
-            <td style="padding:8px 12px;font-size:0.7rem;color:#4a6080;" title="\${t.entryReason||''}">\${t.entryReason?(t.entryReason.length>25?t.entryReason.slice(0,25)+'\u2026':t.entryReason):'\u2014'}</td>
-            <td style="padding:8px 12px;font-size:0.7rem;color:#4a6080;" title="\${t.reason}">\${short||'\u2014'}</td>
+            <td style="padding:8px 12px;font-size:0.7rem;color:var(--muted-1,#8ba1c2);" title="\${t.entryReason||''}">\${t.entryReason?(t.entryReason.length>25?t.entryReason.slice(0,25)+'\u2026':t.entryReason):'\u2014'}</td>
+            <td style="padding:8px 12px;font-size:0.7rem;color:var(--muted-1,#8ba1c2);" title="\${t.reason}">\${short||'\u2014'}</td>
             <td style="padding:6px 8px;text-align:center;"><button data-idx="\${i}" class="lt-eye-btn" style="background:none;border:1px solid #1a2236;border-radius:6px;cursor:pointer;padding:4px 8px;color:#4a9cf5;font-size:0.85rem;" title="View full details">\uD83D\uDC41</button></td>
           </tr>\`;
         }).join('');
@@ -3433,9 +3433,9 @@ ${buildSidebar('emaRsiStLive', tradeState.running, tradeState.running, {
 
       function cell(label, val, color, sub) {
         return '<div style="background:#060910;border:1px solid #1a2236;border-radius:8px;padding:11px 13px;">'
-          + '<div style="font-size:0.52rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;margin-bottom:5px;">' + label + '</div>'
+          + '<div style="font-size:0.52rem;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted-2,#6d85a8);margin-bottom:5px;">' + label + '</div>'
           + '<div style="font-size:0.9rem;font-weight:700;color:' + (color||'#e0eaf8') + ';font-family:monospace;line-height:1.3;">' + (val||'—') + '</div>'
-          + (sub ? '<div style="font-size:0.62rem;color:#4a6080;margin-top:3px;">' + sub + '</div>' : '')
+          + (sub ? '<div style="font-size:0.62rem;color:var(--muted-1,#8ba1c2);margin-top:3px;">' + sub + '</div>' : '')
           + '</div>';
       }
 
@@ -3481,7 +3481,7 @@ ${buildSidebar('emaRsiStLive', tradeState.running, tradeState.running, {
         + '</div></div>';
 
       const reasonHtml = '<div style="background:#060910;border:1px solid #1a2236;border-radius:10px;padding:12px 14px;">'
-        + '<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:#3a5070;margin-bottom:6px;font-weight:700;">📌 Exit Reason</div>'
+        + '<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted-2,#6d85a8);margin-bottom:6px;font-weight:700;">📌 Exit Reason</div>'
         + '<div style="font-size:0.82rem;color:#a0b8d0;line-height:1.6;font-family:monospace;">' + (t.reason || '—') + '</div>'
         + '</div>';
 
@@ -3490,7 +3490,10 @@ ${buildSidebar('emaRsiStLive', tradeState.running, tradeState.running, {
       const m = document.getElementById('ltModal');
       m.style.display = 'flex';
     }
-    document.getElementById('ltModal').addEventListener('click',function(e){if(e.target===this)this.style.display='none';});
+    // #ltModal is only rendered when the session has trades, so on an empty
+    // session this threw and killed the rest of the script block.
+    var _ltm = document.getElementById('ltModal');
+    if (_ltm) _ltm.addEventListener('click',function(e){if(e.target===this)this.style.display='none';});
     </script>
   </div>
 
@@ -3514,14 +3517,14 @@ ${buildSidebar('emaRsiStLive', tradeState.running, tradeState.running, {
         <option value="100">100/page</option>
         <option value="9999">All</option>
       </select>
-      <span id="logCount" style="font-size:0.7rem;color:#4a6080;"></span>
+      <span id="logCount" style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);"></span>
       <button onclick="copyActivityLog(this)" style="margin-left:auto;background:#0d1320;border:1px solid #1a2236;color:#4a9cf5;padding:4px 12px;border-radius:6px;font-size:0.68rem;cursor:pointer;font-family:inherit;white-space:nowrap;">📋 Copy Log</button>
     </div>
     <div id="logBox" style="background:#0d1320;border:1px solid #1a2236;border-radius:12px;padding:12px 16px;max-height:360px;overflow-y:auto;"></div>
     <div id="logPag" style="display:flex;gap:5px;margin-top:8px;flex-wrap:wrap;"></div>
   </div>
 
-  <p style="font-size:0.72rem;color:#4a6080;margin-top:16px;">🔄 Auto-refreshes every 2 seconds while trading is active</p>
+  <p style="font-size:0.72rem;color:var(--muted-1,#8ba1c2);margin-top:16px;">🔄 Auto-refreshes every 2 seconds while trading is active</p>
 </div>
 
 <script id="lt-log-data" type="application/json">${logsJSON}</script>
@@ -3544,7 +3547,7 @@ function logRender(){
   var start=(logPg-1)*logPP, slice=logFiltered.slice(start,start+logPP);
   document.getElementById('logCount').textContent = logFiltered.length+' of '+LOG_ALL.length;
   var box=document.getElementById('logBox');
-  if(slice.length===0){ box.innerHTML='<div style="color:#4a6080;font-size:0.78rem;">No entries match.</div>'; document.getElementById('logPag').innerHTML=''; return; }
+  if(slice.length===0){ box.innerHTML='<div style="color:var(--muted-1,#8ba1c2);font-size:0.78rem;">No entries match.</div>'; document.getElementById('logPag').innerHTML=''; return; }
   box.innerHTML = slice.map(function(l){
     var c = l.indexOf('❌')>=0?'#ef4444':l.indexOf('✅')>=0?'#10b981':l.indexOf('🚨')>=0||l.indexOf('🛑')>=0?'#f59e0b':l.indexOf('🎯')>=0||l.indexOf('⚡')>=0?'#3b82f6':'#4a6080';
     return '<div style="padding:5px 0;border-bottom:1px solid #1a2236;font-size:0.72rem;font-family:monospace;color:'+c+';line-height:1.4;">'+l+'</div>';
@@ -3698,7 +3701,7 @@ async function manualEntry(side) {
   const chart = LightweightCharts.createChart(container, {
     width:  container.clientWidth,
     height: container.clientHeight,
-    layout: { background: { type: 'solid', color: '#0a0f1c' }, textColor: '#4a6080', fontSize: 11, fontFamily: "'IBM Plex Mono', monospace" },
+    layout: { background: { type: 'solid', color: '#0a0f1c' }, textColor: '#8ba1c2', fontSize: 11, fontFamily: "'IBM Plex Mono', monospace" },
     grid:   { vertLines: { color: '#111827' }, horzLines: { color: '#111827' } },
     crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
     rightPriceScale: { borderColor: '#1a2236', scaleMargins: { top: 0.1, bottom: 0.05 } },
@@ -3867,13 +3870,13 @@ async function manualEntry(side) {
         clEl.textContent = (d.consecutiveLosses || 0) + (clLimit > 0 ? ' / ' + clLimit : '');
         clEl.style.color = clNear ? '#ef4444' : '#fff';
         const card = clEl.closest('.sc');
-        if (card) card.style.borderTopColor = clNear ? '#ef4444' : '#4a6080';
+        if (card) card.style.borderTopColor = clNear ? '#ef4444' : '#8ba1c2';
       }
       const clStatus = document.getElementById('ajax-lt-cl-status');
       if (clStatus) {
         const paused = d.pauseUntilTime && Date.now() < d.pauseUntilTime;
         clStatus.textContent = paused ? '\u23f8 PAUSED' : clLimit <= 0 ? '\u2796 breaker OFF' : clNear ? '\u26a0\ufe0f 1 more = pause' : '\u2705 OK';
-        clStatus.style.color = paused ? '#f59e0b' : '#4a6080';
+        clStatus.style.color = paused ? '#f59e0b' : '#8ba1c2';
       }
 
       // Daily loss kill switch card
@@ -3915,7 +3918,7 @@ async function manualEntry(side) {
           if (fbBox) fbBox.style.borderColor = '#7a5b16';
         } else {
           fbEl.textContent = 'FLAT — Waiting for entry signal';
-          fbEl.style.color = '#4a6080';
+          fbEl.style.color = '#8ba1c2';
           if (fbBox) fbBox.style.borderColor = '#1a2236';
         }
       }

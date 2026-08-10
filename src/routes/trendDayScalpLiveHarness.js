@@ -183,14 +183,14 @@ h1 { font-size:1.3rem; margin:0 0 4px; color:#f1f5f9; }
 .card { background:#111827; border:1px solid #1e293b; border-radius:8px; padding:16px; margin-bottom:16px; }
 .warn { background:#7f1d1d; border:1px solid #991b1b; border-radius:8px; padding:12px 16px; margin-bottom:16px; color:#fee2e2; }
 .warn-soft { background:#78350f; border:1px solid #92400e; border-radius:8px; padding:12px 16px; margin-bottom:16px; color:#fef3c7; }
-button { background:#a855f7; color:#fff; border:0; padding:8px 18px; border-radius:6px; cursor:pointer; font-size:0.85rem; margin-right:8px; }
+button { background:#7e22ce; color:#fff; border:0; padding:8px 18px; border-radius:6px; cursor:pointer; font-size:0.85rem; margin-right:8px; }
 button:hover { background:#9333ea; }
 button.stop { background:#475569; }
 pre { background:#0a0f1c; padding:12px; border-radius:6px; overflow:auto; font-size:0.7rem; color:#cbd5e1; max-height:300px; }
 .row { display:flex; gap:16px; flex-wrap:wrap; }
-.label { font-size:0.7rem; color:#64748b; text-transform:uppercase; letter-spacing:0.05em; }
+.label { font-size:0.7rem; color:var(--muted-1,#8ba1c2); text-transform:uppercase; letter-spacing:0.05em; }
 .val   { font-size:0.95rem; color:#e2e8f0; }
-.section-title { font-size:0.7rem; color:#64748b; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px; font-weight:600; }
+.section-title { font-size:0.7rem; color:var(--muted-1,#8ba1c2); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px; font-weight:600; }
 </style>
 <script src="/vendor/lightweight-charts.standalone.production.js"></script>
 </head>
@@ -240,7 +240,7 @@ ${buildSidebar('trendDayScalpLive', false)}
     <div class="section-title">NIFTY Intraday (VWAP / EMA${scfg.emaPeriod} zone + bracket)</div>
     <div id="nifty-chart-container" style="background:#0a0f1c;border:1px solid #1a2236;border-radius:12px;overflow:hidden;position:relative;height:400px;">
       <div id="nifty-chart" style="width:100%;height:100%;"></div>
-      <div style="position:absolute;top:10px;left:12px;font-size:0.68rem;color:#4a6080;pointer-events:none;z-index:2;">
+      <div style="position:absolute;top:10px;left:12px;font-size:0.68rem;color:var(--muted-1,#8ba1c2);pointer-events:none;z-index:2;">
         <span style="color:#8b5cf6;">── VWAP</span> &nbsp;<span style="color:#3b82f6;">── EMA${scfg.emaPeriod}</span> &nbsp;<span style="color:#f59e0b;">── Stop</span> &nbsp;<span style="color:#10b981;">── Target</span>
       </div>
     </div>
@@ -313,7 +313,7 @@ setInterval(refresh, 3000);
   if (!container) return;
   var chart = LightweightCharts.createChart(container, {
     width: container.clientWidth, height: container.clientHeight,
-    layout:{ background:{type:'solid',color:'#0a0f1c'}, textColor:'#4a6080', fontSize:11, fontFamily:"'IBM Plex Mono', monospace" },
+    layout:{ background:{type:'solid',color:'#0a0f1c'}, textColor:'#8ba1c2', fontSize:11, fontFamily:"'IBM Plex Mono', monospace" },
     grid:{ vertLines:{color:'#111827'}, horzLines:{color:'#111827'} },
     crosshair:{ mode: LightweightCharts.CrosshairMode.Normal },
     rightPriceScale:{ borderColor:'#1a2236' },

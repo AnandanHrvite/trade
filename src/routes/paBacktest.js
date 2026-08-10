@@ -530,7 +530,7 @@ ${buildSidebar('paBacktest', true)}
             Live trading is currently active. Backtest is disabled to prevent Fyers API contention and log pollution during a live session.<br><br>
             Stop the live trade first, then run your backtest.
           </p>
-          <a href="/ema_rsi_st-live/status" style="background:#ef4444;color:#fff;padding:9px 22px;border-radius:8px;text-decoration:none;font-weight:600;font-size:0.85rem;">→ Go to Live Trade</a>
+          <a href="/ema_rsi_st-live/status" style="background:#dc2626;color:#fff;padding:9px 22px;border-radius:8px;text-decoration:none;font-weight:600;font-size:0.85rem;">→ Go to Live Trade</a>
         </div>
       </div>
       </div></div>
@@ -685,12 +685,12 @@ ${modalJS()}
     .sc{background:#08091a;border:0.5px solid #0e1428;border-radius:7px;padding:12px 14px;position:relative;overflow:hidden;}
     .sc::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;}
     .sc.blue::before{background:#3b82f6;}.sc.green::before{background:#10b981;}.sc.red::before{background:#ef4444;}.sc.yellow::before{background:#f59e0b;}.sc.purple::before{background:#8b5cf6;}
-    .sc-label{font-size:0.56rem;text-transform:uppercase;letter-spacing:1.2px;color:#1e3050;margin-bottom:5px;font-family:"IBM Plex Mono",monospace;}
+    .sc-label{font-size:0.56rem;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted-2,#6d85a8);margin-bottom:5px;font-family:"IBM Plex Mono",monospace;}
     .sc-val{font-size:1.05rem;font-weight:700;color:#a0b8d8;font-family:"IBM Plex Mono",monospace;line-height:1.2;}
-    .sc-sub{font-size:0.6rem;color:#4a6080;margin-top:3px;}
+    .sc-sub{font-size:0.6rem;color:var(--muted-1,#8ba1c2);margin-top:3px;}
 
     .run-bar{display:flex;align-items:flex-end;gap:10px;background:#08091a;border:0.5px solid #0e1428;border-radius:8px;padding:11px 14px;margin-bottom:14px;flex-wrap:wrap;}
-    .run-bar label{font-size:0.58rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;display:block;margin-bottom:3px;}
+    .run-bar label{font-size:0.58rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);display:block;margin-bottom:3px;}
     .run-bar input,.run-bar select{background:#fff;border:1px solid #1e3a8a;color:#0f172a;padding:5px 8px;border-radius:5px;font-size:0.75rem;font-family:'IBM Plex Mono',monospace;cursor:pointer;color-scheme:light;}
     .run-btn{background:#1a3a8a;color:#90c0ff;border:1px solid #2a5ac0;padding:6px 14px;border-radius:5px;font-size:0.7rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;white-space:nowrap;}
     .run-btn:hover{background:#2563eb;}
@@ -699,57 +699,57 @@ ${modalJS()}
     .tbar{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
     .tbar input,.tbar select{background:#0d1320;border:1px solid #1a2236;color:#c8d8f0;padding:5px 9px;border-radius:6px;font-size:0.76rem;font-family:inherit;}
     .tbar input:focus,.tbar select:focus{outline:none;border-color:#3b82f6;}
-    .tbar-label{color:#4a6080;font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;}
-    .tbar-count{color:#4a6080;font-size:0.7rem;}
+    .tbar-label{color:var(--muted-1,#8ba1c2);font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;}
+    .tbar-count{color:var(--muted-1,#8ba1c2);font-size:0.7rem;}
 
     .dw-toggle{background:none;border:1px solid #1a2236;border-radius:6px;cursor:pointer;padding:4px 8px;color:#4a9cf5;font-size:0.85rem;transition:all 0.15s;}.dw-toggle:hover{border-color:#3b82f6;background:#0a1e3d;}.dw-toggle.active{background:#0a1e3d;border-color:#3b82f6;}
     .dw-table{width:100%;border-collapse:collapse;}
-    .dw-table thead th{background:#04060e;padding:7px 10px;text-align:left;font-size:0.58rem;text-transform:uppercase;letter-spacing:0.8px;color:#1e3050;white-space:nowrap;font-family:"IBM Plex Mono",monospace;}
+    .dw-table thead th{background:#04060e;padding:7px 10px;text-align:left;font-size:0.58rem;text-transform:uppercase;letter-spacing:0.8px;color:var(--muted-2,#6d85a8);white-space:nowrap;font-family:"IBM Plex Mono",monospace;}
     .dw-table tbody tr{border-top:0.5px solid #080e1a;}
     .dw-table tbody tr:hover{background:#060c1a;}
-    .dw-table tbody td{padding:6px 10px;font-size:0.72rem;font-family:'IBM Plex Mono',monospace;color:#4a6080;}
+    .dw-table tbody td{padding:6px 10px;font-size:0.72rem;font-family:'IBM Plex Mono',monospace;color:var(--muted-1,#8ba1c2);}
     .dw-table tfoot td{padding:8px 10px;font-size:0.72rem;font-family:'IBM Plex Mono',monospace;font-weight:700;border-top:1px solid #1a2236;background:#04060e;}
 
     .tw{border:0.5px solid #0e1428;border-radius:8px;overflow:hidden;margin-bottom:10px;}
     table{width:100%;border-collapse:collapse;}
-    thead th{background:#04060e;padding:7px 10px;text-align:left;font-size:0.58rem;text-transform:uppercase;letter-spacing:0.8px;color:#1e3050;cursor:pointer;user-select:none;white-space:nowrap;font-family:"IBM Plex Mono",monospace;}
+    thead th{background:#04060e;padding:7px 10px;text-align:left;font-size:0.58rem;text-transform:uppercase;letter-spacing:0.8px;color:var(--muted-2,#6d85a8);cursor:pointer;user-select:none;white-space:nowrap;font-family:"IBM Plex Mono",monospace;}
     thead th:hover{color:#c8d8f0;}
     thead th.sorted{color:#3b82f6;}
     tbody tr{border-top:0.5px solid #080e1a;}
     tbody tr:hover{background:#060c1a;}
-    tbody td{padding:6px 10px;font-size:0.72rem;font-family:'IBM Plex Mono',monospace;color:#4a6080;}
+    tbody td{padding:6px 10px;font-size:0.72rem;font-family:'IBM Plex Mono',monospace;color:var(--muted-1,#8ba1c2);}
 
     .pag{display:flex;align-items:center;gap:5px;flex-wrap:wrap;}
     .pag button{background:#0d1320;border:1px solid #1a2236;color:#c8d8f0;padding:4px 9px;border-radius:5px;font-size:0.72rem;cursor:pointer;font-family:inherit;}
     .pag button:hover{border-color:#3b82f6;color:#3b82f6;}
     .pag button.active{background:#0a1e3d;border-color:#3b82f6;color:#3b82f6;font-weight:700;}
     .pag button:disabled{opacity:.3;cursor:default;}
-    .pag-info{font-size:0.7rem;color:#4a6080;padding:0 4px;}
+    .pag-info{font-size:0.7rem;color:var(--muted-1,#8ba1c2);padding:0 4px;}
 
     #tooltip{position:fixed;z-index:9999;background:#1e293b;color:#e2e8f0;border:1px solid #3b82f6;border-radius:7px;padding:8px 12px;font-size:0.72rem;max-width:340px;word-break:break-word;box-shadow:0 8px 24px rgba(0,0,0,.7);pointer-events:none;display:none;line-height:1.5;font-family:sans-serif;}
 
     .copy-btn{background:#0d1320;border:1px solid #1a2236;color:#4a9cf5;padding:4px 12px;border-radius:6px;font-size:0.68rem;cursor:pointer;font-family:inherit;transition:all 0.15s;white-space:nowrap;}
     .copy-btn:hover{background:#0a1e3d;border-color:#3b82f6;}
-    .copy-btn.copied{background:#064e3b;border-color:#10b981;color:#10b981;}
+    .copy-btn.copied{background:#064e3b;border-color:#10b981;color:#34d399;}
 
     /* ── Analytics Panel ── */
     .ana-panel{margin-bottom:16px;}
     .ana-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;}
     @media(max-width:900px){.ana-row{grid-template-columns:1fr;}}
     .ana-card{background:#08091a;border:0.5px solid #0e1428;border-radius:8px;padding:14px 16px;position:relative;}
-    .ana-card h3{font-size:0.6rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;margin-bottom:10px;font-family:'IBM Plex Mono',monospace;}
+    .ana-card h3{font-size:0.6rem;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted-2,#6d85a8);margin-bottom:10px;font-family:'IBM Plex Mono',monospace;}
     .ana-chart-wrap{position:relative;height:220px;}
     .ana-row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;}
     @media(max-width:900px){.ana-row3{grid-template-columns:1fr;}}
     .ana-mini{background:#08091a;border:0.5px solid #0e1428;border-radius:8px;padding:12px 14px;}
-    .ana-mini h3{font-size:0.58rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;margin-bottom:8px;font-family:'IBM Plex Mono',monospace;}
+    .ana-mini h3{font-size:0.58rem;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted-2,#6d85a8);margin-bottom:8px;font-family:'IBM Plex Mono',monospace;}
     .ana-tbl{width:100%;border-collapse:collapse;}
-    .ana-tbl th{text-align:left;font-size:0.55rem;text-transform:uppercase;letter-spacing:0.8px;color:#1e3050;padding:5px 8px;border-bottom:0.5px solid #0e1428;font-family:'IBM Plex Mono',monospace;}
-    .ana-tbl td{padding:5px 8px;font-size:0.72rem;font-family:'IBM Plex Mono',monospace;color:#4a6080;border-bottom:0.5px solid #060a14;}
+    .ana-tbl th{text-align:left;font-size:0.55rem;text-transform:uppercase;letter-spacing:0.8px;color:var(--muted-2,#6d85a8);padding:5px 8px;border-bottom:0.5px solid #0e1428;font-family:'IBM Plex Mono',monospace;}
+    .ana-tbl td{padding:5px 8px;font-size:0.72rem;font-family:'IBM Plex Mono',monospace;color:var(--muted-1,#8ba1c2);border-bottom:0.5px solid #060a14;}
     .ana-tbl tr:hover{background:#060c1a;}
     .ana-stat{display:flex;align-items:baseline;gap:6px;margin-bottom:6px;}
     .ana-stat-val{font-size:1rem;font-weight:700;font-family:'IBM Plex Mono',monospace;}
-    .ana-stat-label{font-size:0.62rem;color:#3a5070;}
+    .ana-stat-label{font-size:0.62rem;color:var(--muted-2,#6d85a8);}
     ${sidebarCSS()}
     ${modalCSS()}
   </style>
@@ -763,11 +763,11 @@ ${buildSidebar('paBacktest', liveActive)}
   <!-- Context breadcrumb bar -->
   <div style="background:#06090e;border-bottom:0.5px solid #0e1428;padding:6px 20px;display:flex;align-items:center;gap:7px;margin:-16px -20px 14px;position:sticky;top:44px;z-index:90;">
     <span style="font-size:0.6rem;font-weight:700;padding:2px 8px;border-radius:3px;background:rgba(245,158,11,0.12);color:#fbbf24;border:0.5px solid rgba(245,158,11,0.25);text-transform:uppercase;letter-spacing:0.5px;font-family:'IBM Plex Mono',monospace;">PRICE ACTION BACKTEST</span>
-    <span style="color:#1e2a40;font-size:10px;">\u203a</span>
+    <span style="color:var(--muted-2,#6d85a8);font-size:10px;">\u203a</span>
     <span style="font-size:0.6rem;font-weight:700;padding:2px 8px;border-radius:3px;background:rgba(16,185,129,0.1);color:#34d399;border:0.5px solid rgba(16,185,129,0.2);text-transform:uppercase;font-family:'IBM Plex Mono',monospace;">${paStrategy.NAME}</span>
-    <span style="color:#1e2a40;font-size:10px;">\u203a</span>
+    <span style="color:var(--muted-2,#6d85a8);font-size:10px;">\u203a</span>
     <span style="font-size:0.6rem;font-weight:700;padding:2px 8px;border-radius:3px;background:rgba(245,158,11,0.1);color:#fbbf24;border:0.5px solid rgba(245,158,11,0.2);font-family:'IBM Plex Mono',monospace;">${from} \u2192 ${to}</span>
-    <span style="margin-left:auto;font-size:0.6rem;color:#1e2a40;font-family:'IBM Plex Mono',monospace;">${resolution}-min \u00b7 ${candles.length.toLocaleString()} candles \u00b7 \u20b9${capital.toLocaleString("en-IN")}</span>
+    <span style="margin-left:auto;font-size:0.6rem;color:var(--muted-2,#6d85a8);font-family:'IBM Plex Mono',monospace;">${resolution}-min \u00b7 ${candles.length.toLocaleString()} candles \u00b7 \u20b9${capital.toLocaleString("en-IN")}</span>
   </div>
 
   <!-- Run Again -->
@@ -775,10 +775,10 @@ ${buildSidebar('paBacktest', liveActive)}
     <div><label>From</label><input type="date" id="f" value="${from}"/></div>
     <div><label>To</label><input type="date" id="t" value="${to}"/></div>
     <input type="hidden" id="r" value="${String(resolution).replace(/\D/g, "") || "5"}"/>
-    <div style="display:flex;align-items:center;gap:5px;"><input type="checkbox" id="splitYears" style="accent-color:#3b82f6;cursor:pointer;" onchange="if(this.checked)document.getElementById('splitMonths').checked=false;"/><label for="splitYears" style="font-size:0.65rem;color:#4a6080;cursor:pointer;white-space:nowrap;">Split by years</label></div>
-    <div style="display:flex;align-items:center;gap:5px;"><input type="checkbox" id="splitMonths" style="accent-color:#f59e0b;cursor:pointer;" onchange="if(this.checked)document.getElementById('splitYears').checked=false;"/><label for="splitMonths" style="font-size:0.65rem;color:#4a6080;cursor:pointer;white-space:nowrap;">Split by months</label></div>
+    <div style="display:flex;align-items:center;gap:5px;"><input type="checkbox" id="splitYears" style="accent-color:#3b82f6;cursor:pointer;" onchange="if(this.checked)document.getElementById('splitMonths').checked=false;"/><label for="splitYears" style="font-size:0.65rem;color:var(--muted-1,#8ba1c2);cursor:pointer;white-space:nowrap;">Split by years</label></div>
+    <div style="display:flex;align-items:center;gap:5px;"><input type="checkbox" id="splitMonths" style="accent-color:#f59e0b;cursor:pointer;" onchange="if(this.checked)document.getElementById('splitYears').checked=false;"/><label for="splitMonths" style="font-size:0.65rem;color:var(--muted-1,#8ba1c2);cursor:pointer;white-space:nowrap;">Split by months</label></div>
     <button class="run-btn" onclick="(function(){var f=document.getElementById('f').value,t=document.getElementById('t').value,r=document.getElementById('r').value;if(!f||!t){showAlert({icon:'\u26a0\ufe0f',title:'Missing Dates',message:'Set both From and To dates'});return;}var base='/pa-backtest';if(document.getElementById('splitYears').checked){var fy=parseInt(f.split('-')[0]),ty=parseInt(t.split('-')[0]);for(var y=fy;y<=ty;y++){var yf=(y===fy)?f:y+'-01-01',yt=(y===ty)?t:y+'-12-31';window.open(base+'?from='+yf+'&to='+yt+'&resolution='+r,'_blank');}}else if(document.getElementById('splitMonths').checked){var fd=new Date(f),td=new Date(t),cm=fd.getFullYear()*12+fd.getMonth(),em=td.getFullYear()*12+td.getMonth();for(var m=cm;m<=em;m++){var yr=Math.floor(m/12),mo=m%12,mf=(m===cm)?f:yr+'-'+String(mo+1).padStart(2,'0')+'-01',last=new Date(yr,mo+1,0),mt=(m===em)?t:yr+'-'+String(mo+1).padStart(2,'0')+'-'+String(last.getDate()).padStart(2,'0');window.open(base+'?from='+mf+'&to='+mt+'&resolution='+r,'_blank');}}else{window.location=base+'?from='+f+'&to='+t+'&resolution='+r;}})()">🔄 Run Again</button>
-    <span style="font-size:0.7rem;color:#4a6080;margin-left:auto;">Strategy: <strong style="color:#f59e0b;">${paStrategy.NAME}</strong></span>
+    <span style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);margin-left:auto;">Strategy: <strong style="color:#f59e0b;">${paStrategy.NAME}</strong></span>
   </div>
   <!-- Quick date presets -->
   <div style="display:flex;gap:6px;margin:-8px 0 6px;flex-wrap:wrap;align-items:center;">
@@ -880,7 +880,7 @@ ${buildSidebar('paBacktest', liveActive)}
       </table>
     </div>
     <div class="pag" style="margin-top:8px;">
-      <label style="font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Rows</label>
+      <label style="font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);">Rows</label>
       <select id="dwPageSize" style="background:#0d1320;border:1px solid #1a2236;color:#c8d8f0;padding:4px 6px;border-radius:5px;font-size:0.7rem;font-family:inherit;cursor:pointer;">
         <option value="5">5</option><option value="10" selected>10</option><option value="25">25</option><option value="50">50</option><option value="0">All</option>
       </select>
@@ -1015,7 +1015,7 @@ ${buildSidebar('paBacktest', liveActive)}
     <span class="tbar-count" id="cntLabel"></span>
     <button class="copy-btn" onclick="copyTradeLog(this)" style="margin-left:auto;">📋 Copy Trade Log</button>
     ${aiExportButton()}
-    <button onclick="doReset()" style="background:#0d1320;border:1px solid #1a2236;color:#4a6080;padding:4px 10px;border-radius:6px;font-size:0.7rem;cursor:pointer;font-family:inherit;">Reset</button>
+    <button onclick="doReset()" style="background:#0d1320;border:1px solid #1a2236;color:var(--muted-1,#8ba1c2);padding:4px 10px;border-radius:6px;font-size:0.7rem;cursor:pointer;font-family:inherit;">Reset</button>
   </div>
 
   <!-- Table -->
@@ -1046,9 +1046,9 @@ ${buildSidebar('paBacktest', liveActive)}
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
         <div>
           <span id="btm-badge" style="font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;padding:4px 10px;border-radius:6px;"></span>
-          <span style="font-size:0.65rem;color:#4a6080;margin-left:10px;">\u26a1 Price Action Backtest — Full Details</span>
+          <span style="font-size:0.65rem;color:var(--muted-1,#8ba1c2);margin-left:10px;">\u26a1 Price Action Backtest — Full Details</span>
         </div>
-        <button onclick="document.getElementById('btModal').style.display='none';" style="background:none;border:1px solid #1a2236;color:#4a6080;font-size:1rem;cursor:pointer;padding:4px 10px;border-radius:6px;font-family:inherit;" onmouseover="this.style.color='#ef4444';this.style.borderColor='#ef4444'" onmouseout="this.style.color='#4a6080';this.style.borderColor='#1a2236'">\u2715 Close</button>
+        <button onclick="document.getElementById('btModal').style.display='none';" style="background:none;border:1px solid #1a2236;color:var(--muted-1,#8ba1c2);font-size:1rem;cursor:pointer;padding:4px 10px;border-radius:6px;font-family:inherit;" onmouseover="this.style.color='#ef4444';this.style.borderColor='#ef4444'" onmouseout="this.style.color='#8ba1c2';this.style.borderColor='#1a2236'">\u2715 Close</button>
       </div>
       <div id="btm-grid"></div>
       <div id="btm-reason" style="display:none;"></div>
@@ -1070,7 +1070,7 @@ function fpts(n, spotPts){
   if(n==null) return '\u2014';
   if(OPT_SIM){
     var r = (n>=0?'+':'-')+'\u20b9'+Math.abs(n).toLocaleString('en-IN',{maximumFractionDigits:0});
-    if(spotPts!=null) r += '<span style="font-size:0.65rem;color:#4a6080;margin-left:4px;">('+( spotPts>=0?'+':'')+spotPts.toFixed(1)+'pt)</span>';
+    if(spotPts!=null) r += '<span style="font-size:0.65rem;color:var(--muted-1,#8ba1c2);margin-left:4px;">('+( spotPts>=0?'+':'')+spotPts.toFixed(1)+'pt)</span>';
     return r;
   }
   return (n>=0?'+':'')+n.toFixed(2)+' pts';
@@ -1122,7 +1122,7 @@ function render(){
   var tbody=document.getElementById('tbody');
   document.getElementById('cntLabel').textContent=filtered.length+' of '+TRADES.length+' trades';
   if(slice.length===0){
-    tbody.innerHTML='<tr><td colspan="11" style="text-align:center;padding:20px;color:#4a6080;">No trades match filters.</td></tr>';
+    tbody.innerHTML='<tr><td colspan="11" style="text-align:center;padding:20px;color:var(--muted-1,#8ba1c2);">No trades match filters.</td></tr>';
     document.getElementById('pagBar').innerHTML='';
     return;
   }
@@ -1144,8 +1144,8 @@ function render(){
       +'<td style="font-size:0.75rem;">'+fmtTime(t.exit)+'</td>'
       +'<td style="color:#f59e0b;">'+(t.sl!=null?fmt(t.sl):'\u2014')+'</td>'
       +'<td style="color:'+pc+';font-weight:700;">'+fpts(t.pnl, t.spotPts)+'</td>'
-      +'<td style="font-size:0.7rem;color:#4a6080;cursor:default;" data-ereason="'+(t.entryReason||'').replace(/"/g,'&quot;')+'">'+ser+'</td>'
-      +'<td style="font-size:0.7rem;color:#4a6080;cursor:default;" data-reason="'+t.reason.replace(/"/g,'&quot;')+'">'+sr+'</td>'
+      +'<td style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);cursor:default;" data-ereason="'+(t.entryReason||'').replace(/"/g,'&quot;')+'">'+ser+'</td>'
+      +'<td style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);cursor:default;" data-reason="'+t.reason.replace(/"/g,'&quot;')+'">'+sr+'</td>'
       +'<td style="text-align:center;padding:6px 8px;"><button data-idx="'+i+'" class="bt-eye-btn" style="background:none;border:1px solid #1a2236;border-radius:6px;cursor:pointer;padding:4px 8px;color:#4a9cf5;font-size:0.85rem;" title="View full details">\ud83d\udc41</button></td>'
       +'</tr>';
   }
@@ -1271,7 +1271,7 @@ function renderDayWise(){
       +'<td style="color:'+cc+';font-weight:700;">'+fpts(parseFloat(d._cum.toFixed(2)), null)+'</td>'
       +'</tr>';
   }
-  document.getElementById('dwBody').innerHTML = html || '<tr><td colspan="6" style="text-align:center;color:#4a6080;padding:18px;">No data</td></tr>';
+  document.getElementById('dwBody').innerHTML = html || '<tr><td colspan="6" style="text-align:center;color:var(--muted-1,#8ba1c2);padding:18px;">No data</td></tr>';
 
   var totalPnl = cumAll;
   var tc = totalPnl >= 0 ? '#10b981' : '#ef4444';
@@ -1819,7 +1819,7 @@ function renderAnalytics(){
         +'<td style="color:#ef4444;">\u20b9'+Math.round(avgLoss).toLocaleString('en-IN')+'</td>'
         +'<td style="color:'+(recText==='Not yet'?'#f59e0b':'#10b981')+';">'+recText+'</td></tr>';
     });
-    if(!html) html='<tr><td colspan="5" style="text-align:center;color:#3a5070;">No consecutive loss streaks (2+)</td></tr>';
+    if(!html) html='<tr><td colspan="5" style="text-align:center;color:var(--muted-2,#6d85a8);">No consecutive loss streaks (2+)</td></tr>';
     document.getElementById('anaLossStreakBody').innerHTML=html;
   })();
 
@@ -1873,7 +1873,7 @@ function renderAnalytics(){
         +'<td>'+dd.losses+'</td>'
         +'<td style="color:#ef4444;">\u20b9'+Math.round(dd.worstTrade).toLocaleString('en-IN')+'</td></tr>';
     });
-    if(!html) html='<tr><td colspan="5" style="text-align:center;color:#3a5070;">No losing days</td></tr>';
+    if(!html) html='<tr><td colspan="5" style="text-align:center;color:var(--muted-2,#6d85a8);">No losing days</td></tr>';
     document.getElementById('anaWorstDayBody').innerHTML=html;
   })();
 
@@ -1884,7 +1884,7 @@ function renderAnalytics(){
     var days=Object.keys(dlMap).sort();
     var html='';
     days.forEach(function(d){ var dd=dlMap[d]; var nc=dd.net>=0?'#10b981':'#ef4444'; html+='<tr><td style="color:#c8d8f0;">'+d+'</td><td>'+dd.trades+'</td><td style="color:#ef4444;">'+dd.losses+'</td><td style="color:#ef4444;font-weight:700;">'+(dd.gross<0?fmtAna(dd.gross):'—')+'</td><td style="color:'+nc+';font-weight:700;">'+fmtAna(dd.net)+'</td></tr>'; });
-    if(!html) html='<tr><td colspan="5" style="text-align:center;color:#3a5070;">No data</td></tr>';
+    if(!html) html='<tr><td colspan="5" style="text-align:center;color:var(--muted-2,#6d85a8);">No data</td></tr>';
     document.getElementById('anaDayLossBody').innerHTML=html;
   })();
 
@@ -1893,7 +1893,7 @@ function renderAnalytics(){
     var rows=lossTrades.slice().sort(function(a,b){return (b.held==null?-1:b.held)-(a.held==null?-1:a.held);});
     var html='';
     rows.forEach(function(t){ var sc=t.side==='CE'?'#10b981':'#ef4444'; var ch=(typeof t.held==='number')?t.held:'—'; html+='<tr><td style="color:#c8d8f0;">'+(t.date||'—')+'</td><td style="color:'+sc+';font-weight:600;">'+(t.side||'—')+'</td><td style="color:#c8d8f0;font-weight:700;">'+ch+'</td><td style="color:#ef4444;font-weight:700;">'+fmtAna(t.pnl)+'</td><td style="color:#7a90b0;font-size:0.65rem;">'+(t.reason||'—')+'</td></tr>'; });
-    if(!html) html='<tr><td colspan="5" style="text-align:center;color:#3a5070;">No losing trades</td></tr>';
+    if(!html) html='<tr><td colspan="5" style="text-align:center;color:var(--muted-2,#6d85a8);">No losing trades</td></tr>';
     document.getElementById('anaLossCandleBody').innerHTML=html;
   })();
 
@@ -1993,9 +1993,9 @@ function showBTModal(t){
 
   function cell(label,val,color,sub){
     return '<div style="background:#060910;border:1px solid #1a2236;border-radius:8px;padding:11px 13px;">'
-      +'<div style="font-size:0.52rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;margin-bottom:5px;">'+label+'</div>'
+      +'<div style="font-size:0.52rem;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted-2,#6d85a8);margin-bottom:5px;">'+label+'</div>'
       +'<div style="font-size:0.9rem;font-weight:700;color:'+(color||'#e0eaf8')+';font-family:monospace;line-height:1.3;">'+(val||'\u2014')+'</div>'
-      +(sub?'<div style="font-size:0.62rem;color:#4a6080;margin-top:3px;">'+sub+'</div>':'')
+      +(sub?'<div style="font-size:0.62rem;color:var(--muted-1,#8ba1c2);margin-top:3px;">'+sub+'</div>':'')
       +'</div>';
   }
 
@@ -2023,7 +2023,7 @@ function showBTModal(t){
     +'</div></div>';
 
   var reasonHtml='<div style="background:#060910;border:1px solid #1a2236;border-radius:10px;padding:12px 14px;">'
-    +'<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:#3a5070;margin-bottom:6px;font-weight:700;">\ud83d\udccc Exit Reason</div>'
+    +'<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted-2,#6d85a8);margin-bottom:6px;font-weight:700;">\ud83d\udccc Exit Reason</div>'
     +'<div style="font-size:0.82rem;color:#a0b8d0;line-height:1.6;font-family:monospace;">'+(t.reason||'\u2014')+'</div>'
     +'</div>';
 

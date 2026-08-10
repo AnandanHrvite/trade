@@ -1321,7 +1321,7 @@ router.get("/", (req, res) => {
       ${sidebarCSS()}
       .auth-box{margin:auto;padding:40px;background:#07111f;border:1px solid #0e1e36;border-radius:12px;text-align:center;max-width:400px;width:90%;}
       .auth-box h2{font-size:1rem;color:#60a5fa;margin-bottom:8px;}
-      .auth-box p{font-size:0.72rem;color:#4a6080;margin-bottom:20px;}
+      .auth-box p{font-size:0.72rem;color:var(--muted-1,#8ba1c2);margin-bottom:20px;}
       .auth-box input{width:100%;padding:10px 14px;background:#0a1528;border:1px solid #1e3a5a;border-radius:8px;color:#c8d8f0;font-family:inherit;font-size:0.85rem;text-align:center;margin-bottom:12px;}
       .auth-box input:focus{outline:none;border-color:#3b82f6;}
       .auth-box button{padding:10px 30px;background:#1e40af;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;font-family:inherit;font-size:0.82rem;}
@@ -1639,8 +1639,8 @@ router.get("/", (req, res) => {
       --border2:  #243048;
       --text:     #c8d8f0;
       --text2:    #e0eaf8;
-      --muted:    #4a6080;
-      --dim:      #3a5070;
+      --muted:    #8ba1c2;
+      --dim:      #6d85a8;
       --accent:   #3b82f6;
       --green:    #10b981;
       --red:      #ef4444;
@@ -1930,7 +1930,7 @@ router.get("/", (req, res) => {
     /* ── Env key tag after effect badge ──────────────────── */
     .env-key-tag {
       font-size: 0.55rem; font-family: 'JetBrains Mono', monospace;
-      color: #4a6080; background: rgba(74,96,128,0.1);
+      color: var(--muted-1,#8ba1c2); background: rgba(74,96,128,0.1);
       border: 1px solid rgba(74,96,128,0.2); border-radius: 3px;
       padding: 1px 6px; margin-left: 6px; vertical-align: middle;
       letter-spacing: 0.3px; user-select: all;
@@ -1967,7 +1967,7 @@ router.get("/", (req, res) => {
     .summary-table .val-num { color: #60a5fa; }
     .summary-table .val-text { color: #a3b8d0; }
     .summary-label { color: #8aa1bd; font-size: 0.75rem; }
-    .summary-key { color: #4a6080; font-size: 0.65rem; }
+    .summary-key { color: var(--muted-1,#8ba1c2); font-size: 0.65rem; }
 
     ${expiryHolidayModalCSS()}
 
@@ -2040,7 +2040,7 @@ router.get("/", (req, res) => {
     .effect-badge {
       display: inline-flex; align-items: center; gap: 4px;
       font-size: 0.58rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
-      color: var(--ec, #4a6080);
+      color: var(--ec, #8ba1c2);
       background: color-mix(in srgb, var(--ec, #4a6080) 8%, transparent);
       border: 1px solid color-mix(in srgb, var(--ec, #4a6080) 25%, transparent);
       padding: 2px 8px; border-radius: 4px; margin-left: 10px;
@@ -3452,7 +3452,7 @@ function showEnvModal(){
       html+='<tr style="border-bottom:1px solid #0e1428;background:'+bg+'"><td style="padding:6px 10px;color:#8aa1bd;white-space:nowrap;">'+k+'</td><td style="padding:6px 10px;color:'+valColor+';word-break:break-all;">'+display+'</td></tr>';
     }
     html+='</table>';
-    html+='<div style="margin-top:12px;color:#4a6080;font-size:0.7rem;">'+keys.length+' keys | Sensitive values hidden</div>';
+    html+='<div style="margin-top:12px;color:var(--muted-1,#8ba1c2);font-size:0.7rem;">'+keys.length+' keys | Sensitive values hidden</div>';
     document.getElementById('envTableWrap').innerHTML=html;
   });
 }
@@ -3476,7 +3476,7 @@ async function showHealthModal() {
   var modal = document.getElementById('healthModal');
   var body  = document.getElementById('healthBody');
   if (!modal || !body) return;
-  body.innerHTML = '<div style="text-align:center;color:#4a6080;padding:20px;">Checking system health...</div>';
+  body.innerHTML = '<div style="text-align:center;color:var(--muted-1,#8ba1c2);padding:20px;">Checking system health...</div>';
   modal.style.display = 'block';
   try {
     var res = await fetch('/health', { cache: 'no-store' });
@@ -3522,7 +3522,7 @@ async function showHealthModal() {
       html += '</tr>';
     }
     html += '</table>';
-    html += '<div style="margin-top:12px;color:#4a6080;font-size:0.68rem;text-align:center;">Last checked: ' + new Date(d.timestamp).toLocaleTimeString('en-IN', {timeZone:'Asia/Kolkata', hour12:false}) + ' IST</div>';
+    html += '<div style="margin-top:12px;color:var(--muted-1,#8ba1c2);font-size:0.68rem;text-align:center;">Last checked: ' + new Date(d.timestamp).toLocaleTimeString('en-IN', {timeZone:'Asia/Kolkata', hour12:false}) + ' IST</div>';
     body.innerHTML = html;
 
     // Live Telegram reachability probe (getMe — sends no chat message). Updates
@@ -3548,7 +3548,7 @@ async function showHealthModal() {
         });
     }
   } catch(e) {
-    body.innerHTML = '<div style="text-align:center;padding:20px;"><div style="font-size:2.5rem;margin-bottom:8px;">❌</div><div style="color:#ef4444;font-weight:700;">Health check failed</div><div style="color:#4a6080;font-size:0.75rem;margin-top:6px;">' + e.message + '</div></div>';
+    body.innerHTML = '<div style="text-align:center;padding:20px;"><div style="font-size:2.5rem;margin-bottom:8px;">❌</div><div style="color:#ef4444;font-weight:700;">Health check failed</div><div style="color:var(--muted-1,#8ba1c2);font-size:0.75rem;margin-top:6px;">' + e.message + '</div></div>';
   }
 }
 
@@ -3699,7 +3699,7 @@ loadSettingsSchedulePills();
       <span id="sectionSummaryTitle" style="font-weight:700;font-size:0.95rem;color:#60a5fa;">Settings Summary</span>
       <div style="display:flex;gap:8px;align-items:center;">
         <button id="summaryCopyBtn" onclick="copySectionSummary()" style="padding:4px 10px;background:rgba(16,185,129,0.12);color:#10b981;border:1px solid rgba(16,185,129,0.25);border-radius:5px;font-size:0.7rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">COPY</button>
-        <button onclick="document.getElementById('sectionSummaryModal').style.display='none'" style="background:none;border:none;color:#4a6080;font-size:1.2rem;cursor:pointer;">&times;</button>
+        <button onclick="document.getElementById('sectionSummaryModal').style.display='none'" style="background:none;border:none;color:var(--muted-1,#8ba1c2);font-size:1.2rem;cursor:pointer;">&times;</button>
       </div>
     </div>
     <div id="sectionSummaryBody" style="padding:12px 16px;max-height:70vh;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#243048 transparent;">
@@ -3715,11 +3715,11 @@ ${expiryHolidayModalHTML()}
       <span style="font-weight:700;font-size:0.95rem;color:#60a5fa;">.env Configuration</span>
       <div style="display:flex;gap:8px;align-items:center;">
         <button id="envCopyBtn" onclick="copyEnvTable()" style="padding:4px 10px;background:rgba(16,185,129,0.12);color:#10b981;border:1px solid rgba(16,185,129,0.25);border-radius:5px;font-size:0.7rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">COPY</button>
-        <button onclick="document.getElementById('envModal').style.display='none'" style="background:none;border:none;color:#4a6080;font-size:1.2rem;cursor:pointer;">&times;</button>
+        <button onclick="document.getElementById('envModal').style.display='none'" style="background:none;border:none;color:var(--muted-1,#8ba1c2);font-size:1.2rem;cursor:pointer;">&times;</button>
       </div>
     </div>
     <div id="envTableWrap" style="padding:16px 20px;max-height:70vh;overflow-y:auto;">
-      <div style="color:#4a6080;font-size:0.8rem;">Loading...</div>
+      <div style="color:var(--muted-1,#8ba1c2);font-size:0.8rem;">Loading...</div>
     </div>
   </div>
 </div>
@@ -3728,7 +3728,7 @@ ${expiryHolidayModalHTML()}
   <div style="max-width:720px;margin:0 auto;background:#0d1117;border:1px solid #1a2640;border-radius:12px;overflow:hidden;">
     <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:#111827;border-bottom:1px solid #1a2640;">
       <span style="font-weight:700;font-size:0.95rem;color:#34d399;">📦 Backup &amp; Restore</span>
-      <button onclick="document.getElementById('backupModal').style.display='none'" style="background:none;border:none;color:#4a6080;font-size:1.2rem;cursor:pointer;">&times;</button>
+      <button onclick="document.getElementById('backupModal').style.display='none'" style="background:none;border:none;color:var(--muted-1,#8ba1c2);font-size:1.2rem;cursor:pointer;">&times;</button>
     </div>
     <div style="padding:18px 20px 20px;max-height:74vh;overflow-y:auto;">
       <div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-bottom:12px;">
@@ -3841,7 +3841,7 @@ pm2 startOrRestart ecosystem.config.js --update-env</pre>
   <div style="max-width:760px;margin:0 auto;background:#0d1117;border:1px solid #1a2640;border-radius:12px;overflow:hidden;">
     <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:#111827;border-bottom:1px solid #1a2640;">
       <span style="font-weight:700;font-size:0.95rem;color:#f59e0b;">📋 Bulk Edit .env <span style="font-size:0.65rem;color:var(--dim);font-weight:500;letter-spacing:0;margin-left:6px;">paste → save → restart</span></span>
-      <button onclick="document.getElementById('bulkModal').style.display='none'" style="background:none;border:none;color:#4a6080;font-size:1.2rem;cursor:pointer;">&times;</button>
+      <button onclick="document.getElementById('bulkModal').style.display='none'" style="background:none;border:none;color:var(--muted-1,#8ba1c2);font-size:1.2rem;cursor:pointer;">&times;</button>
     </div>
     <div class="bulk-section" style="padding:18px 20px 20px;">
       <div class="bulk-hint">
@@ -3867,11 +3867,11 @@ pm2 startOrRestart ecosystem.config.js --update-env</pre>
       <span style="font-weight:700;font-size:0.95rem;color:#10b981;">System Health</span>
       <div style="display:flex;gap:10px;align-items:center;">
         <a href="/monitor" style="padding:4px 10px;background:rgba(168,139,250,0.12);color:#a78bfa;border:1px solid rgba(168,139,250,0.25);border-radius:5px;font-size:0.7rem;font-weight:700;text-decoration:none;font-family:'IBM Plex Mono',monospace;">📈 Open full Monitor →</a>
-        <button onclick="document.getElementById('healthModal').style.display='none'" style="background:none;border:none;color:#4a6080;font-size:1.2rem;cursor:pointer;">&times;</button>
+        <button onclick="document.getElementById('healthModal').style.display='none'" style="background:none;border:none;color:var(--muted-1,#8ba1c2);font-size:1.2rem;cursor:pointer;">&times;</button>
       </div>
     </div>
     <div id="healthBody" style="padding:20px;">
-      <div style="color:#4a6080;font-size:0.8rem;text-align:center;">Checking...</div>
+      <div style="color:var(--muted-1,#8ba1c2);font-size:0.8rem;text-align:center;">Checking...</div>
     </div>
   </div>
 </div>
@@ -3960,7 +3960,7 @@ router.get("/audit", (req, res) => {
   };
 
   const fmtVal = v => {
-    if (v === null || v === undefined) return `<span style="color:#4a6080;">∅</span>`;
+    if (v === null || v === undefined) return `<span style="color:var(--muted-1,#8ba1c2);">∅</span>`;
     const s = String(v);
     if (s.length > 80) return `<span title="${escapeHtml(s)}">${escapeHtml(s.slice(0, 80))}…</span>`;
     return escapeHtml(s);
@@ -3974,7 +3974,7 @@ router.get("/audit", (req, res) => {
       <td style="color:#fca5a5;font-family:'IBM Plex Mono',monospace;">${fmtVal(e.from)}</td>
       <td style="color:#86efac;font-family:'IBM Plex Mono',monospace;">${fmtVal(e.to)}</td>
       <td>${sourceLabel(e.source)}</td>
-      <td style="color:#64748b;font-size:0.7rem;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(e.commit_subject || e.ua || "")}">${escapeHtml(e.commit_subject || e.ua || "")}</td>
+      <td style="color:var(--muted-1,#8ba1c2);font-size:0.7rem;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(e.commit_subject || e.ua || "")}">${escapeHtml(e.commit_subject || e.ua || "")}</td>
     </tr>
   `).join("");
 
@@ -4000,7 +4000,7 @@ ${sidebarCSS()}
 .audit-main{flex:1;padding:24px 32px;overflow-x:auto;}
 .audit-header{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:18px;flex-wrap:wrap;gap:12px;}
 .audit-header h1{font-size:1.05rem;color:#60a5fa;font-weight:600;}
-.audit-header .sub{font-size:0.72rem;color:#4a6080;margin-top:4px;}
+.audit-header .sub{font-size:0.72rem;color:var(--muted-1,#8ba1c2);margin-top:4px;}
 .filter-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
 .filter-bar input,.filter-bar select{padding:6px 10px;background:#0a1528;border:1px solid #1e3a5a;border-radius:6px;color:#c8d8f0;font-family:inherit;font-size:0.74rem;}
 .filter-bar input:focus,.filter-bar select:focus{outline:none;border-color:#3b82f6;}
@@ -4013,7 +4013,7 @@ th{padding:10px 12px;text-align:left;font-size:0.7rem;color:#60a5fa;font-weight:
 td{padding:8px 12px;font-size:0.78rem;border-bottom:1px solid #0e1e36;vertical-align:top;}
 tr:last-child td{border-bottom:none;}
 tr:hover td{background:#0a1528;}
-.empty{text-align:center;padding:40px;color:#4a6080;font-size:0.8rem;}
+.empty{text-align:center;padding:40px;color:var(--muted-1,#8ba1c2);font-size:0.8rem;}
 </style></head><body>
 <div class="app-shell">${buildSidebar('settings', liveActive, false)}
 <div class="audit-main">

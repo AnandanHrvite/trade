@@ -2698,7 +2698,7 @@ function buildSessionTradeRows(trades, inr) {
     // Strike + Expiry
     const strikeStr = t.optionStrike
       ? "<div style=\"font-size:1rem;font-weight:800;color:#fff;\">" + t.optionStrike + "</div>"
-      : "<div style=\"color:#4a6080;\">—</div>";
+      : "<div style=\"color:var(--muted-1,#8ba1c2);\">—</div>";
     const expiryStr = t.optionExpiry
       ? "<div style=\"font-size:0.68rem;color:#f59e0b;margin-top:2px;\">" + t.optionExpiry + "</div>"
       : "";
@@ -2707,9 +2707,9 @@ function buildSessionTradeRows(trades, inr) {
     const entryNifty  = t.spotAtEntry  || t.entryPrice;
     const entryOption = t.optionEntryLtp;
     const entryCell   =
-      "<div style=\"font-size:0.75rem;color:#4a6080;\">NIFTY</div>" +
+      "<div style=\"font-size:0.75rem;color:var(--muted-1,#8ba1c2);\">NIFTY</div>" +
       "<div style=\"font-weight:700;color:#c8d8f0;\">" + inr(entryNifty) + "</div>" +
-      "<div style=\"font-size:0.68rem;color:#4a6080;margin-top:4px;\">Option</div>" +
+      "<div style=\"font-size:0.68rem;color:var(--muted-1,#8ba1c2);margin-top:4px;\">Option</div>" +
       "<div style=\"font-weight:700;color:#60a5fa;\">" + (entryOption ? inr(entryOption) : "—") + "</div>" +
       (t.stopLoss ? "<div style=\"font-size:0.65rem;color:#f59e0b;margin-top:3px;\">SL " + inr(t.stopLoss) + "</div>" : "");
 
@@ -2719,11 +2719,11 @@ function buildSessionTradeRows(trades, inr) {
     const optPtsDiff = (entryOption && exitOption)
       ? parseFloat((exitOption - entryOption).toFixed(2))
       : null;
-    const ptColor    = optPtsDiff === null ? "#4a6080" : optPtsDiff >= 0 ? "#10b981" : "#ef4444";
+    const ptColor    = optPtsDiff === null ? "#8ba1c2" : optPtsDiff >= 0 ? "#10b981" : "#ef4444";
     const exitCell   =
-      "<div style=\"font-size:0.75rem;color:#4a6080;\">NIFTY</div>" +
+      "<div style=\"font-size:0.75rem;color:var(--muted-1,#8ba1c2);\">NIFTY</div>" +
       "<div style=\"font-weight:700;color:#c8d8f0;\">" + inr(exitNifty) + "</div>" +
-      "<div style=\"font-size:0.68rem;color:#4a6080;margin-top:4px;\">Option</div>" +
+      "<div style=\"font-size:0.68rem;color:var(--muted-1,#8ba1c2);margin-top:4px;\">Option</div>" +
       "<div style=\"font-weight:700;color:#60a5fa;\">" + (exitOption ? inr(exitOption) : "—") + "</div>" +
       (optPtsDiff !== null ? "<div style=\"font-size:0.65rem;color:" + ptColor + ";margin-top:2px;\">" +
         (optPtsDiff >= 0 ? "▲ +" : "▼ ") + optPtsDiff.toFixed(2) + " pts</div>" : "");
@@ -2732,7 +2732,7 @@ function buildSessionTradeRows(trades, inr) {
     const pnlCell =
       "<div style=\"font-size:1rem;font-weight:800;color:" + pc + "\">" +
         (t.pnl >= 0 ? "+" : "") + inr(t.pnl) + "</div>" +
-      "<div style=\"font-size:0.65rem;color:#4a6080;margin-top:2px;\">after charges</div>";
+      "<div style=\"font-size:0.65rem;color:var(--muted-1,#8ba1c2);margin-top:2px;\">after charges</div>";
 
     return "<tr style='border-top:1px solid #1a2236;vertical-align:top;'>" +
       "<td style='padding:10px 12px;'>" + sideBadge + "</td>" +
@@ -2742,7 +2742,7 @@ function buildSessionTradeRows(trades, inr) {
       "<td style='padding:10px 12px;'>" + entryCell + "</td>" +
       "<td style='padding:10px 12px;'>" + exitCell  + "</td>" +
       "<td style='padding:10px 12px;'>" + pnlCell   + "</td>" +
-      "<td style='padding:10px 12px;font-size:0.72rem;color:#4a6080;'>" + why + "</td>" +
+      "<td style='padding:10px 12px;font-size:0.72rem;color:var(--muted-1,#8ba1c2);'>" + why + "</td>" +
       "</tr>";
   }).join("");
 }
@@ -3088,7 +3088,7 @@ router.get("/status", (req, res) => {
         <div style="display:flex;align-items:center;gap:10px;">
           <span style="width:10px;height:10px;border-radius:50%;background:#10b981;display:inline-block;animation:pulse 1.5s infinite;"></span>
           <span style="font-size:0.8rem;font-weight:700;color:#10b981;text-transform:uppercase;letter-spacing:1px;">Open Position</span>
-          <span style="font-size:0.72rem;color:#4a6080;">Since ${fmtT(pos.entryTime)}</span>
+          <span style="font-size:0.72rem;color:var(--muted-1,#8ba1c2);">Since ${fmtT(pos.entryTime)}</span>
         </div>
         <button onclick="ptHandleExit(this)"
            style="display:inline-flex;align-items:center;gap:7px;background:#7f1d1d;border:1px solid #ef4444;color:#fca5a5;font-size:0.8rem;font-weight:700;padding:9px 18px;border-radius:8px;cursor:pointer;font-family:inherit;transition:background 0.15s;"
@@ -3109,22 +3109,22 @@ router.get("/status", (req, res) => {
           </div>
           <div style="width:1px;height:44px;background:#134e35;"></div>
           <div>
-            <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Strike</div>
+            <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Strike</div>
             <div style="font-size:1.6rem;font-weight:800;color:#fff;font-family:monospace;">${pos.optionStrike ? pos.optionStrike.toLocaleString("en-IN") : "—"}</div>
           </div>
           <div style="width:1px;height:44px;background:#134e35;"></div>
           <div>
-            <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Expiry</div>
+            <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Expiry</div>
             <div style="font-size:1.1rem;font-weight:700;color:#f59e0b;">${pos.optionExpiry || "—"}</div>
           </div>
           <div style="width:1px;height:44px;background:#134e35;"></div>
           <div>
-            <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Qty / Lots</div>
-            <div style="font-size:1.1rem;font-weight:700;color:#fff;">${pos.qty} <span style="font-size:0.72rem;color:#4a6080;">(${(pos.qty / 65).toFixed(0)} lot)</span></div>
+            <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Qty / Lots</div>
+            <div style="font-size:1.1rem;font-weight:700;color:#fff;">${pos.qty} <span style="font-size:0.72rem;color:var(--muted-1,#8ba1c2);">(${(pos.qty / 65).toFixed(0)} lot)</span></div>
           </div>
           <div style="width:1px;height:44px;background:#134e35;flex-shrink:0;"></div>
           <div style="flex:1;min-width:200px;">
-            <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Full Symbol</div>
+            <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Full Symbol</div>
             <div style="font-size:0.82rem;font-weight:600;color:#c8d8f0;font-family:monospace;word-break:break-all;">${pos.symbol}</div>
           </div>
         </div>
@@ -3141,7 +3141,7 @@ router.get("/status", (req, res) => {
             <div id="ajax-opt-entry-ltp" style="font-size:2rem;font-weight:800;color:#60a5fa;font-family:monospace;line-height:1;">
               ${optEntryLtp ? "₹" + optEntryLtp.toFixed(2) : "<span style='font-size:1rem;color:#f59e0b;'>Fetching...</span>"}
             </div>
-            <div style="font-size:0.68rem;color:#4a6080;margin-top:4px;">
+            <div style="font-size:0.68rem;color:var(--muted-1,#8ba1c2);margin-top:4px;">
               ${optEntryLtp
                 ? `captured at ${fmtT(pos.optionEntryLtpTime || pos.entryTime)}`
                 : `⏳ first REST poll in ~3s<br><span style='color:#c8d8f0;'>NIFTY entry: ${inr(pos.entryPrice)}</span>`}
@@ -3149,31 +3149,31 @@ router.get("/status", (req, res) => {
           </div>
 
           <!-- Arrow -->
-          <div style="text-align:center;font-size:1.8rem;color:${optPremiumMove !== null ? (optPremiumMove >= 0 ? "#10b981" : "#ef4444") : "#4a6080"};">
+          <div style="text-align:center;font-size:1.8rem;color:${optPremiumMove !== null ? (optPremiumMove >= 0 ? "#10b981" : "#ef4444") : "#8ba1c2"};">
             ${optPremiumMove !== null ? (optPremiumMove >= 0 ? "→" : "→") : "→"}
           </div>
 
           <!-- Current Premium -->
           <div style="text-align:center;padding:12px;background:${optCurrentLtp && optEntryLtp ? (optCurrentLtp >= optEntryLtp ? "#071a0f" : "#1a0707") : "#0d1320"};border:2px solid ${optCurrentLtp && optEntryLtp ? (optCurrentLtp >= optEntryLtp ? "#10b981" : "#ef4444") : "#4a6080"};border-radius:10px;">
-            <div style="font-size:0.63rem;color:${optCurrentLtp && optEntryLtp ? (optCurrentLtp >= optEntryLtp ? "#10b981" : "#ef4444") : "#4a6080"};text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Current LTP</div>
+            <div style="font-size:0.63rem;color:${optCurrentLtp && optEntryLtp ? (optCurrentLtp >= optEntryLtp ? "#10b981" : "#ef4444") : "#8ba1c2"};text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Current LTP</div>
             <div id="ajax-opt-current-ltp" style="font-size:2rem;font-weight:800;color:${optCurrentLtp && optEntryLtp ? (optCurrentLtp >= optEntryLtp ? "#10b981" : "#ef4444") : "#fff"};font-family:monospace;line-height:1;">
               ${optCurrentLtp ? "₹" + optCurrentLtp.toFixed(2) : "⏳"}
             </div>
             <div id="ajax-opt-move" style="font-size:0.72rem;font-weight:700;margin-top:6px;color:${optPremiumMove !== null ? (optPremiumMove >= 0 ? "#10b981" : "#ef4444") : "#f59e0b"};">
               ${optPremiumMove !== null ? (optPremiumMove >= 0 ? "▲ +" : "▼ ") + "₹" + Math.abs(optPremiumMove).toFixed(2) + " pts" : optCurrentLtp ? "⏳ Awaiting entry price..." : "⏳ Polling REST feed..."}
             </div>
-            <div id="ajax-opt-pct" style="font-size:1.1rem;font-weight:800;margin-top:4px;color:${optPremiumPct !== null ? (optPremiumPct >= 0 ? "#10b981" : "#ef4444") : "#4a6080"};font-family:monospace;">
+            <div id="ajax-opt-pct" style="font-size:1.1rem;font-weight:800;margin-top:4px;color:${optPremiumPct !== null ? (optPremiumPct >= 0 ? "#10b981" : "#ef4444") : "#8ba1c2"};font-family:monospace;">
               ${optPremiumPct !== null ? (optPremiumPct >= 0 ? "+" : "") + optPremiumPct.toFixed(2) + "%" : "—"}
             </div>
           </div>
 
           <!-- Option P&L -->
           <div style="text-align:center;padding:12px;background:${optPremiumPnl !== null ? (optPremiumPnl >= 0 ? "#071a0f" : "#1a0707") : "#0d1320"};border:1px solid ${optPremiumPnl !== null ? (optPremiumPnl >= 0 ? "#065f46" : "#7f1d1d") : "#1a2236"};border-radius:10px;">
-            <div style="font-size:0.63rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Unrealised P&L</div>
+            <div style="font-size:0.63rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Unrealised P&L</div>
             <div id="ajax-opt-pnl" style="font-size:1.8rem;font-weight:800;color:${optPremiumPnl !== null ? (optPremiumPnl >= 0 ? "#10b981" : "#ef4444") : "#fff"};font-family:monospace;line-height:1;">
               ${optPremiumPnl !== null ? (optPremiumPnl >= 0 ? "+" : "") + "₹" + optPremiumPnl.toLocaleString("en-IN", {minimumFractionDigits:2, maximumFractionDigits:2}) : "—"}
             </div>
-            <div style="font-size:0.65rem;color:#4a6080;margin-top:4px;">${pos.qty} qty · after charges</div>
+            <div style="font-size:0.65rem;color:var(--muted-1,#8ba1c2);margin-top:4px;">${pos.qty} qty · after charges</div>
           </div>
 
         </div>
@@ -3182,30 +3182,30 @@ router.get("/status", (req, res) => {
       <!-- Secondary grid: NIFTY spot + EMA21 SL + Trail -->
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:12px;">
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">NIFTY Spot @ Entry</div>
+          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">NIFTY Spot @ Entry</div>
           <div style="font-size:1.05rem;font-weight:700;color:#c8d8f0;">${inr(pos.entryPrice)}</div>
-          <div style="font-size:0.63rem;color:#4a6080;margin-top:2px;">candle close</div>
+          <div style="font-size:0.63rem;color:var(--muted-1,#8ba1c2);margin-top:2px;">candle close</div>
         </div>
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">NIFTY LTP</div>
+          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">NIFTY LTP</div>
           <div id="ajax-nifty-ltp" style="font-size:1.05rem;font-weight:700;color:#c8d8f0;">${inr(liveClose)}</div>
           <div id="ajax-nifty-move" style="font-size:0.63rem;color:${pointsMoved >= 0 ? "#10b981" : "#ef4444"};margin-top:2px;">${pointsMoved >= 0 ? "▲" : "▼"} ${Math.abs(pointsMoved).toFixed(1)} pts</div>
         </div>
         <div style="background:#1c1400;border:1px solid #78350f;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Stop Loss (prev-candle)</div>
+          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Stop Loss (prev-candle)</div>
           <div id="ajax-stop-loss" style="font-size:1.05rem;font-weight:700;color:#f59e0b;">${pos.stopLoss ? inr(pos.stopLoss) : "—"}</div>
-          <div style="font-size:0.63rem;color:#4a6080;margin-top:2px;">Risk: ${pos.stopLoss ? inr(Math.abs(pos.entryPrice - pos.stopLoss) * pos.qty) : "—"}</div>
+          <div style="font-size:0.63rem;color:var(--muted-1,#8ba1c2);margin-top:2px;">Risk: ${pos.stopLoss ? inr(Math.abs(pos.entryPrice - pos.stopLoss) * pos.qty) : "—"}</div>
         </div>
         <div style="background:#1c0d00;border:1px solid #92400e;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Option SL (${optStopPct})</div>
+          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Option SL (${optStopPct})</div>
           <div id="ajax-opt-sl" style="font-size:1.05rem;font-weight:700;color:#f97316;">${optStopPrice ? "₹" + optStopPrice.toFixed(2) : "—"}</div>
-          <div style="font-size:0.63rem;color:#4a6080;margin-top:2px;">${optEntryLtp ? "entry 20b9" + optEntryLtp.toFixed(2) + " 2212 " + optStopPct : "awaiting entry LTP"}</div>
+          <div style="font-size:0.63rem;color:var(--muted-1,#8ba1c2);margin-top:2px;">${optEntryLtp ? "entry 20b9" + optEntryLtp.toFixed(2) + " 2212 " + optStopPct : "awaiting entry LTP"}</div>
         </div>
         <div id="ajax-trail-card" data-trail="${_trailLbl}" style="background:#071a12;border:1px solid ${trailProfit > 0 ? "#8b5cf6" : "#134e35"};border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Trailing Stop</div>
+          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Trailing Stop</div>
           <div id="ajax-trail-status" style="font-size:0.88rem;font-weight:700;color:${trailProfit > 0 ? "#8b5cf6" : "#f59e0b"};">${_trailLbl}</div>
-          <div id="ajax-trail-best" style="font-size:0.63rem;color:#4a6080;margin-top:2px;">Best: ${pos.bestPrice ? inr(pos.bestPrice) : "—"} (${trailProfit >= 0 ? "+" : ""}${trailProfit.toFixed(1)} pts)</div>
-          <div id="ajax-trail-activate" style="font-size:0.63rem;color:#4a6080;margin-top:2px;">Trail source: ${_trailLbl}${_ctOn ? " · tighter wins" : ""}</div>
+          <div id="ajax-trail-best" style="font-size:0.63rem;color:var(--muted-1,#8ba1c2);margin-top:2px;">Best: ${pos.bestPrice ? inr(pos.bestPrice) : "—"} (${trailProfit >= 0 ? "+" : ""}${trailProfit.toFixed(1)} pts)</div>
+          <div id="ajax-trail-activate" style="font-size:0.63rem;color:var(--muted-1,#8ba1c2);margin-top:2px;">Trail source: ${_trailLbl}${_ctOn ? " · tighter wins" : ""}</div>
         </div>
       </div>
 
@@ -3213,10 +3213,10 @@ router.get("/status", (req, res) => {
     </div>` : `
     <div style="background:#0d1320;border:1px solid ${ptState._armedSignal ? '#7a5b16' : '#1a2236'};border-radius:12px;padding:20px 24px;text-align:center;">
       <div style="font-size:1.5rem;margin-bottom:8px;">${ptState._armedSignal ? '🎯' : '📭'}</div>
-      <div id="ajax-flat-banner" style="font-size:0.9rem;font-weight:600;color:${ptState._armedSignal ? '#f59e0b' : '#4a6080'};margin-bottom:14px;">${ptState._armedSignal ? `ARMED ${ptState._armedSignal.side} — waiting for next candle to cross ${ptState._armedSignal.triggerLevel} (${ptState._armedSignal.side === 'CE' ? 'above' : 'below'}) to enter` : 'FLAT — Waiting for entry signal'}</div>
+      <div id="ajax-flat-banner" style="font-size:0.9rem;font-weight:600;color:${ptState._armedSignal ? '#f59e0b' : '#8ba1c2'};margin-bottom:14px;">${ptState._armedSignal ? `ARMED ${ptState._armedSignal.side} — waiting for next candle to cross ${ptState._armedSignal.triggerLevel} (${ptState._armedSignal.side === 'CE' ? 'above' : 'below'}) to enter` : 'FLAT — Waiting for entry signal'}</div>
       <div style="display:flex;gap:10px;justify-content:center;">
         <button onclick="manualEntry('CE')" style="padding:8px 24px;background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.3);border-radius:8px;font-size:0.85rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">▲ Manual CE</button>
-        <button onclick="manualEntry('PE')" style="padding:8px 24px;background:rgba(239,68,68,0.15);color:#ef4444;border:1px solid rgba(239,68,68,0.3);border-radius:8px;font-size:0.85rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">▼ Manual PE</button>
+        <button onclick="manualEntry('PE')" style="padding:8px 24px;background:rgba(239,68,68,0.15);color:#f87171;border:1px solid rgba(239,68,68,0.3);border-radius:8px;font-size:0.85rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">▼ Manual PE</button>
       </div>
     </div>`;
 
@@ -3253,7 +3253,7 @@ ${modalCSS()}
     .capital-strip{display:flex;background:#090f09;border:0.5px solid #162416;border-radius:9px;overflow:hidden;margin-bottom:14px;}
     .cap-cell{flex:1;padding:11px 16px;border-right:0.5px solid #162416;}
     .cap-cell:last-child{border-right:none;}
-    .cap-label{font-size:0.56rem;text-transform:uppercase;letter-spacing:1.5px;color:#2a3a20;margin-bottom:4px;}
+    .cap-label{font-size:0.56rem;text-transform:uppercase;letter-spacing:1.5px;color:#7f9b5c;margin-bottom:4px;}
     .cap-val{font-size:1rem;font-weight:700;font-family:'IBM Plex Mono',monospace;color:#a0c880;}
     .cap-val.white{color:#c0d8b0;}
     .cap-val.green{color:#7ab850;}
@@ -3262,18 +3262,18 @@ ${modalCSS()}
     .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:9px;margin-bottom:16px;}
     .sc{background:#090f09;border:0.5px solid #162416;border-radius:8px;padding:12px 14px;position:relative;overflow:hidden;}
     .sc::before{content:'';position:absolute;top:0;left:0;right:0;height:1.5px;background:var(--at,#1a3010);}
-    .sc-label{font-size:0.56rem;text-transform:uppercase;letter-spacing:1.2px;color:#2a3a20;margin-bottom:5px;}
+    .sc-label{font-size:0.56rem;text-transform:uppercase;letter-spacing:1.2px;color:#7f9b5c;margin-bottom:5px;}
     .sc-val{font-size:1rem;font-weight:700;font-family:'IBM Plex Mono',monospace;color:#c0d8b0;}
-    .sc-sub{font-size:0.6rem;color:#2a3a20;margin-top:3px;}
+    .sc-sub{font-size:0.6rem;color:#7f9b5c;margin-top:3px;}
 
     /* ── SECTION TITLE ── */
-    .section-title{font-size:0.58rem;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:#2a3a20;margin-bottom:8px;display:flex;align-items:center;gap:8px;}
+    .section-title{font-size:0.58rem;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:#7f9b5c;margin-bottom:8px;display:flex;align-items:center;gap:8px;}
     .section-title::after{content:'';flex:1;height:0.5px;background:#162416;}
 
     /* ── COPY / TOGGLE BUTTONS ── */
     .copy-btn{background:#0d1320;border:1px solid #1a2236;color:#4a9cf5;padding:4px 12px;border-radius:6px;font-size:0.68rem;cursor:pointer;font-family:inherit;transition:all 0.15s;white-space:nowrap;}
     .copy-btn:hover{background:#0a1e3d;border-color:#3b82f6;}
-    .copy-btn.copied{background:#064e3b;border-color:#10b981;color:#10b981;}
+    .copy-btn.copied{background:#064e3b;border-color:#10b981;color:#34d399;}
 
     /* ── POSITION BLOCK ── */
     /* inherits existing inline styles */
@@ -3314,7 +3314,7 @@ ${buildSidebar('ema9vwapPaper', sharedSocketState.getEma9VwapMode()==='EMA9VWAP_
         : '<span class="top-bar-badge">● IDLE</span>'}
       ${_vixEnabled ? `<span class="top-bar-badge" style="border-color:${_vix == null ? 'rgba(100,116,139,0.3)' : _vix > _vixMaxEntry ? 'rgba(239,68,68,0.3)' : _vix > _vixStrongOnly ? 'rgba(234,179,8,0.3)' : 'rgba(16,185,129,0.3)'};background:${_vix == null ? 'rgba(100,116,139,0.08)' : _vix > _vixMaxEntry ? 'rgba(239,68,68,0.1)' : _vix > _vixStrongOnly ? 'rgba(234,179,8,0.1)' : 'rgba(16,185,129,0.1)'};color:${_vix == null ? '#94a3b8' : _vix > _vixMaxEntry ? '#ef4444' : _vix > _vixStrongOnly ? '#eab308' : '#10b981'};">🌡️ VIX ${_vix != null ? _vix.toFixed(1) : 'n/a'}${_vix != null ? (_vix > _vixMaxEntry ? ' · BLOCKED' : _vix > _vixStrongOnly ? ' · STRONG ONLY' : ' · NORMAL') : ''}</span>` : ''}
       <a href="/ema9vwap-paper/history" style="background:rgba(59,130,246,0.08);border:0.5px solid rgba(59,130,246,0.3);color:#60a5fa;padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;text-decoration:none;font-family:inherit;">📊 History</a>
-      <button onclick="ptHandleReset(this)" style="background:#07111f;border:0.5px solid #0e1e36;color:#4a6080;padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;cursor:pointer;font-family:inherit;">↺ Reset</button>
+      <button onclick="ptHandleReset(this)" style="background:#07111f;border:0.5px solid #0e1e36;color:var(--muted-1,#8ba1c2);padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;cursor:pointer;font-family:inherit;">↺ Reset</button>
     </div>
   </div>
 
@@ -3333,7 +3333,7 @@ ${buildSidebar('ema9vwapPaper', sharedSocketState.getEma9VwapMode()==='EMA9VWAP_
       <div class="cap-label">All-Time PnL</div>
       <div class="cap-val" id="ajax-alltime-pnl" style="color:${data.totalPnl >= 0 ? '#7ab850' : '#f87171'};">${data.totalPnl >= 0 ? '+' : ''}₹${data.totalPnl.toLocaleString("en-IN", {minimumFractionDigits:2,maximumFractionDigits:2})}</div>
     </div>
-    <div class="cap-cell" style="font-size:0.62rem;color:#1a2a18;max-width:180px;line-height:1.5;display:flex;align-items:center;">Capital updates when sessions complete. Reset wipes history.</div>
+    <div class="cap-cell" style="font-size:0.62rem;color:#7f9b5c;max-width:180px;line-height:1.5;display:flex;align-items:center;">Capital updates when sessions complete. Reset wipes history.</div>
   </div>
 
   <div class="stat-grid" style="margin-bottom:20px;">
@@ -3343,13 +3343,13 @@ ${buildSidebar('ema9vwapPaper', sharedSocketState.getEma9VwapMode()==='EMA9VWAP_
     </div>
     <div class="sc" style="border-top:1.5px solid #6a5090;">
       <div class="sc-label">${ptState._staleSession ? "Trades (Last Session)" : "Trades Today"}</div>
-      <div class="sc-val"><span id="ajax-trade-count">${ptState.sessionTrades.length}</span> <span style="font-size:0.75rem;color:#4a6080;">/ ${_MAX_DAILY_TRADES}</span></div>
-      <div id="ajax-wl" style="font-size:0.7rem;color:#4a6080;margin-top:4px;">${ptState._sessionWins}W &middot; ${ptState._sessionLosses}L</div>
+      <div class="sc-val"><span id="ajax-trade-count">${ptState.sessionTrades.length}</span> <span style="font-size:0.75rem;color:var(--muted-1,#8ba1c2);">/ ${_MAX_DAILY_TRADES}</span></div>
+      <div id="ajax-wl" style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);margin-top:4px;">${ptState._sessionWins}W &middot; ${ptState._sessionLosses}L</div>
     </div>
     <div class="sc" style="border-top:2px solid ${(ptState._consecutiveLosses||0) >= 2 ? '#ef4444' : '#4a6080'};" id="ajax-sc-cl">
       <div class="sc-label">Loss Streak</div>
       <div class="sc-val" id="ajax-consec-losses" style="color:${_streakLimit() > 0 && (ptState._consecutiveLosses||0) >= _streakLimit() - 1 ? '#ef4444' : '#fff'}">${ptState._consecutiveLosses || 0}${_streakLimit() > 0 ? ` / ${_streakLimit()}` : ''}</div>
-      <div id="ajax-cl-status" style="font-size:0.7rem;margin-top:4px;color:${ptState._pauseUntilTime && Date.now() < ptState._pauseUntilTime ? '#f59e0b' : '#4a6080'}">${ptState._pauseUntilTime && Date.now() < ptState._pauseUntilTime ? '⏸ PAUSED' : _streakLimit() <= 0 ? '➖ breaker OFF' : (ptState._consecutiveLosses||0) >= _streakLimit() - 1 ? '⚠️ 1 more = pause' : '✅ OK'}</div>
+      <div id="ajax-cl-status" style="font-size:0.7rem;margin-top:4px;color:${ptState._pauseUntilTime && Date.now() < ptState._pauseUntilTime ? '#f59e0b' : '#8ba1c2'}">${ptState._pauseUntilTime && Date.now() < ptState._pauseUntilTime ? '⏸ PAUSED' : _streakLimit() <= 0 ? '➖ breaker OFF' : (ptState._consecutiveLosses||0) >= _streakLimit() - 1 ? '⚠️ 1 more = pause' : '✅ OK'}</div>
     </div>
     <div class="sc" style="border-top:2px solid ${ptState._dailyLossHit ? '#ef4444' : '#10b981'};" id="ajax-sc-dloss">
       <div class="sc-label">Daily Loss Limit</div>
@@ -3364,7 +3364,7 @@ ${buildSidebar('ema9vwapPaper', sharedSocketState.getEma9VwapMode()==='EMA9VWAP_
     <div class="sc" style="border-top:1.5px solid #2a6080;">
       <div class="sc-label">WebSocket Ticks</div>
       <div class="sc-val" id="ajax-tick-count">${ptState.tickCount.toLocaleString()}</div>
-      <div style="font-size:0.7rem;color:#4a6080;margin-top:4px;">Last: <span id="ajax-last-tick">${ptState.lastTickPrice ? inr(ptState.lastTickPrice) : "—"}</span></div>
+      <div style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);margin-top:4px;">Last: <span id="ajax-last-tick">${ptState.lastTickPrice ? inr(ptState.lastTickPrice) : "—"}</span></div>
     </div>
     <div class="sc" style="border-top:1.5px solid #2a4020;">
       <div class="sc-label">Session Start</div>
@@ -3373,12 +3373,12 @@ ${buildSidebar('ema9vwapPaper', sharedSocketState.getEma9VwapMode()==='EMA9VWAP_
     <div class="sc" style="border-top:1.5px solid #8a2020;">
       <div class="sc-label">Prev Candle High</div>
       <div class="sc-val" id="ajax-prev-high" style="font-size:1rem;color:#ef4444;">${ptState.prevCandleHigh ? inr(ptState.prevCandleHigh) : "—"}</div>
-      <div style="font-size:0.68rem;color:#4a6080;margin-top:4px;">Last closed candle high</div>
+      <div style="font-size:0.68rem;color:var(--muted-1,#8ba1c2);margin-top:4px;">Last closed candle high</div>
     </div>
     <div class="sc" style="border-top:1.5px solid #5a9030;">
       <div class="sc-label">Prev Candle Low</div>
       <div class="sc-val" id="ajax-prev-low" style="font-size:1rem;color:#10b981;">${ptState.prevCandleLow ? inr(ptState.prevCandleLow) : "—"}</div>
-      <div style="font-size:0.7rem;color:#4a6080;margin-top:4px;">Last closed candle low</div>
+      <div style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);margin-top:4px;">Last closed candle low</div>
     </div>
   </div>
   <div id="ajax-position-section">
@@ -3413,12 +3413,12 @@ ${buildSidebar('ema9vwapPaper', sharedSocketState.getEma9VwapMode()==='EMA9VWAP_
     <div class="section-title">NIFTY ${getTradeResolution()}-Min Chart</div>
     <div id="nifty-chart-container" style="background:#0a0f1c;border:1px solid #1a2236;border-radius:12px;overflow:hidden;position:relative;height:400px;">
       <div id="nifty-chart" style="width:100%;height:100%;"></div>
-      <div id="chart-legend" style="position:absolute;top:10px;left:12px;font-size:0.68rem;color:#4a6080;pointer-events:none;z-index:2;">
+      <div id="chart-legend" style="position:absolute;top:10px;left:12px;font-size:0.68rem;color:var(--muted-1,#8ba1c2);pointer-events:none;z-index:2;">
         <span style="color:#3b82f6;">▲ Entry</span> &nbsp;
         <span style="color:#10b981;">▼ Win</span> &nbsp;
         <span style="color:#ef4444;">▼ Loss</span> &nbsp;
         <span style="color:#e5e7eb;">── EMA9</span> &nbsp;
-        <span style="color:#2962ff;">── VWAP</span> &nbsp;
+        <span style="color:#5b8dff;">── VWAP</span> &nbsp;
         <span style="color:#10b981;">── VWAP+σ</span> &nbsp;
         <span style="color:#ef4444;">── VWAP−σ</span> &nbsp;
         <span style="color:#f59e0b;">── SL</span>
@@ -3439,24 +3439,24 @@ ${buildSidebar('ema9vwapPaper', sharedSocketState.getEma9VwapMode()==='EMA9VWAP_
       <select id="ptPerPage" onchange="ptFilter()" style="background:#0d1320;border:1px solid #1a2236;color:#c8d8f0;padding:4px 8px;border-radius:6px;font-size:0.73rem;">
         <option value="5">5/page</option><option value="10" selected>10/page</option><option value="25">25/page</option><option value="999999">All</option>
       </select>
-      <span id="ptCount" style="font-size:0.72rem;color:#4a6080;"></span>
+      <span id="ptCount" style="font-size:0.72rem;color:var(--muted-1,#8ba1c2);"></span>
       <button class="copy-btn" onclick="copyTradeLog(this)" style="margin-left:auto;">📋 Copy Trade Log</button>
       <a class="copy-btn" href="/ema9vwap-paper/download/trades.jsonl?format=ai" title="Download the full paper-trade log as an AI-friendly Markdown report (summary + field legend + table)" style="margin-left:8px;text-decoration:none;">🤖 AI export</a>
     </div>
     <div style="border:1px solid #1a2236;border-radius:12px;overflow:hidden;overflow-x:auto;">
       <table style="width:100%;border-collapse:collapse;">
         <thead><tr style="background:#0a0f1c;">
-          <th onclick="ptSort('side')"   style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;cursor:pointer;">Side ▲▼</th>
-          <th onclick="ptSort('entry')"  style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;cursor:pointer;">Date ▼</th>
-          <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Entry</th>
-          <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Entry Time</th>
-          <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Exit</th>
-          <th onclick="ptSort('exit')"   style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;cursor:pointer;">Exit Time ▲▼</th>
-          <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">SL</th>
-          <th onclick="ptSort('pnl')"    style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;cursor:pointer;">PnL ₹ ▲▼</th>
-          <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Entry Reason</th>
-          <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Exit Reason</th>
-          <th style="padding:9px 12px;text-align:center;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Action</th>
+          <th onclick="ptSort('side')"   style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);cursor:pointer;">Side ▲▼</th>
+          <th onclick="ptSort('entry')"  style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);cursor:pointer;">Date ▼</th>
+          <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);">Entry</th>
+          <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);">Entry Time</th>
+          <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);">Exit</th>
+          <th onclick="ptSort('exit')"   style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);cursor:pointer;">Exit Time ▲▼</th>
+          <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);">SL</th>
+          <th onclick="ptSort('pnl')"    style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);cursor:pointer;">PnL ₹ ▲▼</th>
+          <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);">Entry Reason</th>
+          <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);">Exit Reason</th>
+          <th style="padding:9px 12px;text-align:center;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);">Action</th>
         <tbody id="ptBody" style="font-family:monospace;font-size:0.78rem;"></tbody>
       </table>
     </div>
@@ -3467,9 +3467,9 @@ ${buildSidebar('ema9vwapPaper', sharedSocketState.getEma9VwapMode()==='EMA9VWAP_
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
           <div>
             <span id="ptm-badge" style="font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;padding:4px 10px;border-radius:6px;"></span>
-            <span style="font-size:0.65rem;color:#4a6080;margin-left:10px;">📋 Paper Trade — Full Details</span>
+            <span style="font-size:0.65rem;color:var(--muted-1,#8ba1c2);margin-left:10px;">📋 Paper Trade — Full Details</span>
           </div>
-          <button onclick="document.getElementById('ptModal').style.display='none';" style="background:none;border:1px solid #1a2236;color:#4a6080;font-size:1rem;cursor:pointer;padding:4px 10px;border-radius:6px;font-family:inherit;" onmouseover="this.style.color='#ef4444';this.style.borderColor='#ef4444'" onmouseout="this.style.color='#4a6080';this.style.borderColor='#1a2236'">✕ Close</button>
+          <button onclick="document.getElementById('ptModal').style.display='none';" style="background:none;border:1px solid #1a2236;color:var(--muted-1,#8ba1c2);font-size:1rem;cursor:pointer;padding:4px 10px;border-radius:6px;font-family:inherit;" onmouseover="this.style.color='#ef4444';this.style.borderColor='#ef4444'" onmouseout="this.style.color='#8ba1c2';this.style.borderColor='#1a2236'">✕ Close</button>
         </div>
         <div id="ptm-grid"></div>
         <div id="ptm-reason" style="display:none;"></div>
@@ -3533,7 +3533,7 @@ ${buildSidebar('ema9vwapPaper', sharedSocketState.getEma9VwapMode()==='EMA9VWAP_
     // Store slice globally for eye button access
     window._ptSlice = slice;
     document.getElementById('ptBody').innerHTML = slice.length === 0
-      ? '<tr><td colspan="11" style="text-align:center;padding:20px;color:#4a6080;">No trades match filters.</td></tr>'
+      ? '<tr><td colspan="11" style="text-align:center;padding:20px;color:var(--muted-1,#8ba1c2);">No trades match filters.</td></tr>'
       : slice.map((t, i) => {
           const sc  = t.side === 'CE' ? '#10b981' : '#ef4444';
           const pc  = t.pnl == null ? '#c8d8f0' : t.pnl >= 0 ? '#10b981' : '#ef4444';
@@ -3551,8 +3551,8 @@ ${buildSidebar('ema9vwapPaper', sharedSocketState.getEma9VwapMode()==='EMA9VWAP_
             <td style="padding:8px 12px;">
               <div style="font-size:1rem;font-weight:800;color:\${pc};">\${t.pnl!=null?(t.pnl>=0?'+':'')+ptFmt(t.pnl):'—'}</div>
             </td>
-            <td style="padding:8px 12px;font-size:0.7rem;color:#4a6080;" title="\${t.entryReason||''}">\${t.entryReason?(t.entryReason.length>25?t.entryReason.slice(0,25)+'\u2026':t.entryReason):'—'}</td>
-            <td style="padding:8px 12px;font-size:0.7rem;color:#4a6080;" title="\${t.reason}">\${short||'—'}</td>
+            <td style="padding:8px 12px;font-size:0.7rem;color:var(--muted-1,#8ba1c2);" title="\${t.entryReason||''}">\${t.entryReason?(t.entryReason.length>25?t.entryReason.slice(0,25)+'\u2026':t.entryReason):'—'}</td>
+            <td style="padding:8px 12px;font-size:0.7rem;color:var(--muted-1,#8ba1c2);" title="\${t.reason}">\${short||'—'}</td>
             <td style="padding:6px 8px;text-align:center;"><button data-idx="\${i}" class="pt-eye-btn" style="background:none;border:1px solid #1a2236;border-radius:6px;cursor:pointer;padding:4px 8px;color:#4a9cf5;font-size:0.85rem;" title="View full details">👁</button></td>
           </tr>\`;
         }).join('');
@@ -3590,9 +3590,9 @@ ${buildSidebar('ema9vwapPaper', sharedSocketState.getEma9VwapMode()==='EMA9VWAP_
 
     function cell(label, val, color, sub) {
       return '<div style="background:#060910;border:1px solid #1a2236;border-radius:8px;padding:11px 13px;">'
-        + '<div style="font-size:0.52rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;margin-bottom:5px;">' + label + '</div>'
+        + '<div style="font-size:0.52rem;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted-2,#6d85a8);margin-bottom:5px;">' + label + '</div>'
         + '<div style="font-size:0.9rem;font-weight:700;color:' + (color||'#e0eaf8') + ';font-family:monospace;line-height:1.3;">' + (val||'—') + '</div>'
-        + (sub ? '<div style="font-size:0.62rem;color:#4a6080;margin-top:3px;">' + sub + '</div>' : '')
+        + (sub ? '<div style="font-size:0.62rem;color:var(--muted-1,#8ba1c2);margin-top:3px;">' + sub + '</div>' : '')
         + '</div>';
     }
 
@@ -3641,7 +3641,7 @@ ${buildSidebar('ema9vwapPaper', sharedSocketState.getEma9VwapMode()==='EMA9VWAP_
 
     // ── Section: Exit Reason ─────────────────────────────────────────────
     const reasonHtml = '<div style="background:#060910;border:1px solid #1a2236;border-radius:10px;padding:12px 14px;">'
-      + '<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:#3a5070;margin-bottom:6px;font-weight:700;">📌 Exit Reason</div>'
+      + '<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted-2,#6d85a8);margin-bottom:6px;font-weight:700;">📌 Exit Reason</div>'
       + '<div style="font-size:0.82rem;color:#a0b8d0;line-height:1.6;font-family:monospace;">' + (t.reason || '—') + '</div>'
       + '</div>';
 
@@ -3693,7 +3693,7 @@ ${buildSidebar('ema9vwapPaper', sharedSocketState.getEma9VwapMode()==='EMA9VWAP_
         <option value="100">100/page</option>
         <option value="9999">All</option>
       </select>
-      <span id="logCount" style="font-size:0.7rem;color:#4a6080;"></span>
+      <span id="logCount" style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);"></span>
       <button class="copy-btn" onclick="copyActivityLog(this)" style="margin-left:auto;">📋 Copy Log</button>
     </div>
     <div id="logBox" style="background:#0d1320;border:1px solid #1a2236;border-radius:12px;padding:12px 16px;max-height:360px;overflow-y:auto;"></div>
@@ -3722,7 +3722,7 @@ function logRender(){
   var start=(logPg-1)*logPP, slice=logFiltered.slice(start,start+logPP);
   document.getElementById('logCount').textContent = logFiltered.length+' of '+LOG_ALL.length;
   var box=document.getElementById('logBox');
-  if(slice.length===0){ box.innerHTML='<div style="color:#4a6080;font-size:0.78rem;">No entries match.</div>'; document.getElementById('logPag').innerHTML=''; return; }
+  if(slice.length===0){ box.innerHTML='<div style="color:var(--muted-1,#8ba1c2);font-size:0.78rem;">No entries match.</div>'; document.getElementById('logPag').innerHTML=''; return; }
   box.innerHTML = slice.map(function(l){
     var c = l.indexOf('❌')>=0?'#ef4444':l.indexOf('✅')>=0?'#10b981':l.indexOf('🚨')>=0?'#f59e0b':'#4a6080';
     return '<div style="padding:5px 0;border-bottom:1px solid #1a2236;font-size:0.72rem;font-family:monospace;color:'+c+';line-height:1.4;">'+l+'</div>';
@@ -3767,7 +3767,7 @@ ${modalJS()}
   const chart = LightweightCharts.createChart(container, {
     width:  container.clientWidth,
     height: container.clientHeight,
-    layout: { background: { type: 'solid', color: '#0a0f1c' }, textColor: '#4a6080', fontSize: 11, fontFamily: "'IBM Plex Mono', monospace" },
+    layout: { background: { type: 'solid', color: '#0a0f1c' }, textColor: '#8ba1c2', fontSize: 11, fontFamily: "'IBM Plex Mono', monospace" },
     grid:   { vertLines: { color: '#111827' }, horzLines: { color: '#111827' } },
     crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
     rightPriceScale: { borderColor: '#1a2236', scaleMargins: { top: 0.1, bottom: 0.05 } },
@@ -3790,7 +3790,7 @@ ${modalJS()}
   // TradingView-matched palette: EMA9 = white (the "EMA 9 close" line), VWAP = blue.
   const ema9Series  = chart.addLineSeries({ color:'#e5e7eb', lineWidth:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'EMA9' });
   // VWAP (solid blue) + σ bands (solid green/red) — matches the TradingView setup.
-  const vwapSeries      = chart.addLineSeries({ color:'#2962ff', lineWidth:2, priceLineVisible:false, lastValueVisible:true,  crosshairMarkerVisible:false, title:'VWAP' });
+  const vwapSeries      = chart.addLineSeries({ color:'#5b8dff', lineWidth:2, priceLineVisible:false, lastValueVisible:true,  crosshairMarkerVisible:false, title:'VWAP' });
   const vwapUpperSeries = chart.addLineSeries({ color:'#10b981', lineWidth:1, lineStyle:0, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'VWAP+σ' });
   const vwapLowerSeries = chart.addLineSeries({ color:'#ef4444', lineWidth:1, lineStyle:0, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'VWAP−σ' });
 
@@ -3987,13 +3987,13 @@ ${modalJS()}
         clEl.textContent = (d.consecutiveLosses || 0) + (clLimit > 0 ? ' / ' + clLimit : '');
         clEl.style.color = clNear ? '#ef4444' : '#fff';
         const card = clEl.closest('.sc');
-        if (card) card.style.borderTopColor = clNear ? '#ef4444' : '#4a6080';
+        if (card) card.style.borderTopColor = clNear ? '#ef4444' : '#8ba1c2';
       }
       const clStatus = document.getElementById('ajax-cl-status');
       if (clStatus) {
         const paused = d.pauseUntilTime && Date.now() < d.pauseUntilTime;
         clStatus.textContent = paused ? '\u23f8 PAUSED' : clLimit <= 0 ? '\u2796 breaker OFF' : clNear ? '\u26a0\ufe0f 1 more = pause' : '\u2705 OK';
-        clStatus.style.color = paused ? '#f59e0b' : '#4a6080';
+        clStatus.style.color = paused ? '#f59e0b' : '#8ba1c2';
       }
 
       // Daily loss kill switch card
@@ -4048,7 +4048,7 @@ ${modalJS()}
           if (fbBox) fbBox.style.borderColor = '#7a5b16';
         } else {
           fbEl.textContent = 'FLAT \u2014 Waiting for entry signal';
-          fbEl.style.color = '#4a6080';
+          fbEl.style.color = '#8ba1c2';
           if (fbBox) fbBox.style.borderColor = '#1a2236';
         }
       }
@@ -4658,7 +4658,7 @@ ${buildSidebar('ema9vwapPaper', false)}
 <div class="main-content">
   <h1 style="font-size:1.4rem;font-weight:800;color:#e2e8f0;margin-bottom:4px;">Simulate — Paper Trade</h1>
   <p style="font-size:0.82rem;color:#6b7fa0;margin-bottom:4px;">Run <strong>${strategy.NAME}</strong> against fake ticks — no broker login needed. Works after market hours.</p>
-  <p style="font-size:0.75rem;color:#4a6080;">Resolution: <strong>${TRADE_RES}-min</strong> candles | Instrument: ${instrumentConfig.INSTRUMENT}</p>
+  <p style="font-size:0.75rem;color:var(--muted-1,#8ba1c2);">Resolution: <strong>${TRADE_RES}-min</strong> candles | Instrument: ${instrumentConfig.INSTRUMENT}</p>
 
   <!-- ── Tab switcher ─────────────────────────────────────────────── -->
   <div style="display:flex;gap:0;margin-top:24px;border-bottom:2px solid #1a2236;">

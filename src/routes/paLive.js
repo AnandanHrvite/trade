@@ -1423,7 +1423,7 @@ router.get("/status", (req, res) => {
         <div style="display:flex;align-items:center;gap:10px;">
           <span style="width:10px;height:10px;border-radius:50%;background:#ef4444;display:inline-block;animation:pulse 1.5s infinite;"></span>
           <span style="font-size:0.8rem;font-weight:700;color:#ef4444;text-transform:uppercase;letter-spacing:1px;">\u26a1 LIVE Position</span>
-          <span style="font-size:0.72rem;color:#4a6080;">Since ${fmtISTDateTime(pos.entryTime)}</span>
+          <span style="font-size:0.72rem;color:var(--muted-1,#8ba1c2);">Since ${fmtISTDateTime(pos.entryTime)}</span>
         </div>
         <button onclick="scHandleExit(this)"
            style="display:inline-flex;align-items:center;gap:7px;background:#7f1d1d;border:1px solid #ef4444;color:#fca5a5;font-size:0.8rem;font-weight:700;padding:9px 18px;border-radius:8px;cursor:pointer;font-family:inherit;transition:background 0.15s;"
@@ -1445,32 +1445,32 @@ router.get("/status", (req, res) => {
           <div style="width:1px;height:44px;background:#134e35;"></div>
           ${isFutures ? `
           <div>
-            <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Direction</div>
+            <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Direction</div>
             <div style="font-size:1.4rem;font-weight:800;color:#fff;">${pos.side === "CE" ? "\uD83D\uDCC8 BUY" : "\uD83D\uDCC9 SELL"}</div>
           </div>` : `
           <div>
-            <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Strike</div>
+            <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Strike</div>
             <div style="font-size:1.6rem;font-weight:800;color:#fff;font-family:monospace;">${pos.optionStrike ? pos.optionStrike.toLocaleString("en-IN") : "\u2014"}</div>
           </div>
           <div style="width:1px;height:44px;background:#134e35;"></div>
           <div>
-            <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Expiry</div>
+            <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Expiry</div>
             <div style="font-size:1.1rem;font-weight:700;color:#f59e0b;">${pos.optionExpiry || "\u2014"}</div>
           </div>`}
           <div style="width:1px;height:44px;background:#134e35;"></div>
           <div>
-            <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Qty / Lots</div>
-            <div style="font-size:1.1rem;font-weight:700;color:#fff;">${pos.qty} <span style="font-size:0.72rem;color:#4a6080;">(${Math.round(pos.qty / (instrumentConfig.LOT_SIZE[instrumentConfig.INSTRUMENT] || 65))} lot)</span></div>
+            <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Qty / Lots</div>
+            <div style="font-size:1.1rem;font-weight:700;color:#fff;">${pos.qty} <span style="font-size:0.72rem;color:var(--muted-1,#8ba1c2);">(${Math.round(pos.qty / (instrumentConfig.LOT_SIZE[instrumentConfig.INSTRUMENT] || 65))} lot)</span></div>
           </div>
           <div style="width:1px;height:44px;background:#134e35;flex-shrink:0;"></div>
           <div style="flex:1;min-width:200px;">
-            <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Full Symbol</div>
+            <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Full Symbol</div>
             <div style="font-size:0.82rem;font-weight:600;color:#c8d8f0;font-family:monospace;word-break:break-all;">${pos.symbol}</div>
           </div>
           ${pos.orderId ? `
           <div style="width:1px;height:44px;background:#134e35;flex-shrink:0;"></div>
           <div>
-            <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Fyers Order ID</div>
+            <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Fyers Order ID</div>
             <div style="font-size:0.82rem;font-weight:600;color:#a78bfa;font-family:monospace;">${pos.orderId}</div>
           </div>` : ""}
         </div>
@@ -1486,34 +1486,34 @@ router.get("/status", (req, res) => {
             <div id="ax-opt-entry-ltp" style="font-size:2rem;font-weight:800;color:#60a5fa;font-family:monospace;line-height:1;">
               ${optEntryLtp ? "\u20b9" + optEntryLtp.toFixed(2) : "<span style='font-size:1rem;color:#f59e0b;'>Fetching...</span>"}
             </div>
-            <div style="font-size:0.68rem;color:#4a6080;margin-top:4px;">
+            <div style="font-size:0.68rem;color:var(--muted-1,#8ba1c2);margin-top:4px;">
               ${optEntryLtp
                 ? `captured at ${fmtISTDateTime(pos.optionEntryLtpTime || pos.entryTime)}`
                 : `\u23f3 first REST poll in ~3s<br><span style='color:#c8d8f0;'>NIFTY entry: ${inr(pos.entryPrice)}</span>`}
             </div>
           </div>
 
-          <div style="text-align:center;font-size:1.8rem;color:${optPremiumMove !== null ? (optPremiumMove >= 0 ? "#10b981" : "#ef4444") : "#4a6080"};">\u2192</div>
+          <div style="text-align:center;font-size:1.8rem;color:${optPremiumMove !== null ? (optPremiumMove >= 0 ? "#10b981" : "#ef4444") : "#8ba1c2"};">\u2192</div>
 
           <div style="text-align:center;padding:12px;background:${optCurrentLtp && optEntryLtp ? (optCurrentLtp >= optEntryLtp ? "#071a0f" : "#1a0707") : "#0d1320"};border:2px solid ${optCurrentLtp && optEntryLtp ? (optCurrentLtp >= optEntryLtp ? "#10b981" : "#ef4444") : "#4a6080"};border-radius:10px;">
-            <div style="font-size:0.63rem;color:${optCurrentLtp && optEntryLtp ? (optCurrentLtp >= optEntryLtp ? "#10b981" : "#ef4444") : "#4a6080"};text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Current LTP</div>
+            <div style="font-size:0.63rem;color:${optCurrentLtp && optEntryLtp ? (optCurrentLtp >= optEntryLtp ? "#10b981" : "#ef4444") : "#8ba1c2"};text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Current LTP</div>
             <div id="ax-opt-current-ltp" style="font-size:2rem;font-weight:800;color:${optCurrentLtp && optEntryLtp ? (optCurrentLtp >= optEntryLtp ? "#10b981" : "#ef4444") : "#fff"};font-family:monospace;line-height:1;">
               ${optCurrentLtp ? "\u20b9" + optCurrentLtp.toFixed(2) : "\u23f3"}
             </div>
             <div id="ax-opt-move" style="font-size:0.72rem;font-weight:700;margin-top:6px;color:${optPremiumMove !== null ? (optPremiumMove >= 0 ? "#10b981" : "#ef4444") : "#f59e0b"};">
               ${optPremiumMove !== null ? (optPremiumMove >= 0 ? "\u25b2 +" : "\u25bc ") + "\u20b9" + Math.abs(optPremiumMove).toFixed(2) + " pts" : optCurrentLtp ? "\u23f3 Awaiting entry price..." : "\u23f3 Polling REST feed..."}
             </div>
-            <div id="ax-opt-pct" style="font-size:1.1rem;font-weight:800;margin-top:4px;color:${optPremiumPct !== null ? (optPremiumPct >= 0 ? "#10b981" : "#ef4444") : "#4a6080"};font-family:monospace;">
+            <div id="ax-opt-pct" style="font-size:1.1rem;font-weight:800;margin-top:4px;color:${optPremiumPct !== null ? (optPremiumPct >= 0 ? "#10b981" : "#ef4444") : "#8ba1c2"};font-family:monospace;">
               ${optPremiumPct !== null ? (optPremiumPct >= 0 ? "+" : "") + optPremiumPct.toFixed(2) + "%" : "\u2014"}
             </div>
           </div>
 
           <div style="text-align:center;padding:12px;background:${optPremiumPnl !== null ? (optPremiumPnl >= 0 ? "#071a0f" : "#1a0707") : "#0d1320"};border:1px solid ${optPremiumPnl !== null ? (optPremiumPnl >= 0 ? "#065f46" : "#7f1d1d") : "#1a2236"};border-radius:10px;">
-            <div style="font-size:0.63rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Unrealised P&L</div>
+            <div style="font-size:0.63rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Unrealised P&L</div>
             <div id="ax-opt-pnl" style="font-size:1.8rem;font-weight:800;color:${optPremiumPnl !== null ? (optPremiumPnl >= 0 ? "#10b981" : "#ef4444") : "#fff"};font-family:monospace;line-height:1;">
               ${optPremiumPnl !== null ? (optPremiumPnl >= 0 ? "+" : "") + "\u20b9" + optPremiumPnl.toLocaleString("en-IN", {minimumFractionDigits:2,maximumFractionDigits:2}) : "\u2014"}
             </div>
-            <div style="font-size:0.65rem;color:#4a6080;margin-top:4px;">${pos.qty} qty \u00b7 after charges</div>
+            <div style="font-size:0.65rem;color:var(--muted-1,#8ba1c2);margin-top:4px;">${pos.qty} qty \u00b7 after charges</div>
           </div>
 
         </div>
@@ -1522,40 +1522,40 @@ router.get("/status", (req, res) => {
       <!-- Secondary grid -->
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:12px;">
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">NIFTY Spot @ Entry</div>
+          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">NIFTY Spot @ Entry</div>
           <div style="font-size:1.05rem;font-weight:700;color:#c8d8f0;">${inr(pos.entryPrice)}</div>
-          <div style="font-size:0.63rem;color:#4a6080;margin-top:2px;">candle close</div>
+          <div style="font-size:0.63rem;color:var(--muted-1,#8ba1c2);margin-top:2px;">candle close</div>
         </div>
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">NIFTY LTP</div>
+          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">NIFTY LTP</div>
           <div id="ax-nifty-ltp" style="font-size:1.05rem;font-weight:700;color:#c8d8f0;">${inr(liveClose)}</div>
           <div id="ax-nifty-move" style="font-size:0.63rem;color:${pointsMoved >= 0 ? "#10b981" : "#ef4444"};margin-top:2px;">${pointsMoved >= 0 ? "\u25b2" : "\u25bc"} ${Math.abs(pointsMoved).toFixed(1)} pts</div>
         </div>
         <div style="background:#1c1400;border:1px solid #78350f;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Stop Loss (Prev Candle)</div>
+          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Stop Loss (Prev Candle)</div>
           <div id="ax-stop-loss" style="font-size:1.05rem;font-weight:700;color:#f59e0b;">${pos.stopLoss ? inr(pos.stopLoss) : "\u2014"}</div>
-          <div style="font-size:0.63rem;color:#4a6080;margin-top:2px;">Risk: ${pos.stopLoss ? inr(Math.abs(pos.entryPrice - pos.stopLoss) * pos.qty) : "\u2014"}</div>
+          <div style="font-size:0.63rem;color:var(--muted-1,#8ba1c2);margin-top:2px;">Risk: ${pos.stopLoss ? inr(Math.abs(pos.entryPrice - pos.stopLoss) * pos.qty) : "\u2014"}</div>
         </div>
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Peak P&L</div>
+          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Peak P&L</div>
           <div id="ax-peak-pnl" style="font-size:1.05rem;font-weight:700;color:${(pos.peakPnl || 0) >= 0 ? "#10b981" : "#ef4444"};">${(pos.peakPnl || 0) >= 0 ? "+" : ""}${inr(pos.peakPnl || 0)}</div>
         </div>
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">SL Trailed</div>
+          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">SL Trailed</div>
           <div id="ax-sl-trail" style="font-size:1.05rem;font-weight:700;color:#f59e0b;">${pos.stopLoss && pos.initialStopLoss ? Math.abs(pos.stopLoss - pos.initialStopLoss).toFixed(2) + " pts" : "0 pts"}</div>
-          <div style="font-size:0.58rem;color:#4a6080;margin-top:2px;">from ${pos.initialStopLoss ? inr(pos.initialStopLoss) : "\u2014"}</div>
+          <div style="font-size:0.58rem;color:var(--muted-1,#8ba1c2);margin-top:2px;">from ${pos.initialStopLoss ? inr(pos.initialStopLoss) : "\u2014"}</div>
         </div>
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:8px 10px;">
-          <div style="font-size:0.55rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:2px;">SL Distance</div>
-          <div id="ax-sl-dist" style="font-size:0.9rem;font-weight:700;color:${(() => { const d = pos.stopLoss && liveClose ? Math.abs(liveClose - pos.stopLoss) : 0; return d < 20 ? "#ef4444" : d < 40 ? "#f59e0b" : "#10b981"; })()};">${pos.stopLoss && liveClose ? Math.abs(liveClose - pos.stopLoss).toFixed(1) : "0"} <span style="font-size:0.6rem;color:#4a6080;">pts</span></div>
+          <div style="font-size:0.55rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:2px;">SL Distance</div>
+          <div id="ax-sl-dist" style="font-size:0.9rem;font-weight:700;color:${(() => { const d = pos.stopLoss && liveClose ? Math.abs(liveClose - pos.stopLoss) : 0; return d < 20 ? "#ef4444" : d < 40 ? "#f59e0b" : "#10b981"; })()};">${pos.stopLoss && liveClose ? Math.abs(liveClose - pos.stopLoss).toFixed(1) : "0"} <span style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);">pts</span></div>
         </div>
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:8px 10px;">
-          <div style="font-size:0.55rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:2px;">R:R</div>
+          <div style="font-size:0.55rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:2px;">R:R</div>
           <div id="ax-rr" style="font-size:0.9rem;font-weight:700;color:${pointsMoved >= 0 ? "#10b981" : "#ef4444"};">${(() => { const risk = pos.initialStopLoss ? Math.abs(pos.entryPrice - pos.initialStopLoss) : 0; return risk > 0 ? (pointsMoved / risk).toFixed(1) + "x" : "\u2014"; })()}</div>
         </div>
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:8px 10px;">
-          <div style="font-size:0.55rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:2px;">Candles Held</div>
-          <div id="ax-pos-candles" style="font-size:0.9rem;font-weight:700;color:#fff;">${pos.candlesHeld || 0} <span style="font-size:0.6rem;color:#4a6080;">candles</span></div>
+          <div style="font-size:0.55rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:2px;">Candles Held</div>
+          <div id="ax-pos-candles" style="font-size:0.9rem;font-weight:700;color:#fff;">${pos.candlesHeld || 0} <span style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);">candles</span></div>
         </div>
       </div>
 
@@ -1563,10 +1563,10 @@ router.get("/status", (req, res) => {
     </div>` : `
     <div style="background:#0d1320;border:1px solid #1a2236;border-radius:12px;padding:20px 24px;text-align:center;">
       <div style="font-size:1.5rem;margin-bottom:8px;">\uD83D\uDCED</div>
-      <div style="font-size:0.9rem;font-weight:600;color:#4a6080;margin-bottom:14px;">FLAT \u2014 Waiting for entry signal</div>
+      <div style="font-size:0.9rem;font-weight:600;color:var(--muted-1,#8ba1c2);margin-bottom:14px;">FLAT \u2014 Waiting for entry signal</div>
       ${state.running ? `<div style="display:flex;gap:10px;justify-content:center;">
         <button onclick="scManualEntry('CE')" style="padding:8px 24px;background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.3);border-radius:8px;font-size:0.85rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">\u25b2 Manual CE</button>
-        <button onclick="scManualEntry('PE')" style="padding:8px 24px;background:rgba(239,68,68,0.15);color:#ef4444;border:1px solid rgba(239,68,68,0.3);border-radius:8px;font-size:0.85rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">\u25bc Manual PE</button>
+        <button onclick="scManualEntry('PE')" style="padding:8px 24px;background:rgba(239,68,68,0.15);color:#f87171;border:1px solid rgba(239,68,68,0.3);border-radius:8px;font-size:0.85rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">\u25bc Manual PE</button>
       </div>` : ''}
     </div>`;
 
@@ -1617,7 +1617,7 @@ body{font-family:'IBM Plex Mono',monospace;background:#040c18;color:#c8d8f0;over
 /* Top bar */
 .top-bar{background:#040c18;border-bottom:1px solid #0e1e36;padding:10px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50;flex-wrap:wrap;gap:8px;}
 .top-bar-title{font-size:0.88rem;font-weight:700;color:#e0eaf8;}
-.top-bar-meta{font-size:0.65rem;color:#2a4060;margin-top:1px;}
+.top-bar-meta{font-size:0.65rem;color:var(--muted-2,#6d85a8);margin-top:1px;}
 .top-bar-right{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
 .top-bar-badge{display:flex;align-items:center;gap:5px;font-size:0.6rem;font-weight:700;padding:3px 9px;border-radius:4px;border:0.5px solid rgba(59,130,246,0.3);background:rgba(59,130,246,0.1);color:#60a5fa;}
 .top-bar-badge.live-active{border-color:rgba(239,68,68,0.3);background:rgba(239,68,68,0.1);color:#ef4444;animation:pulse 1.2s infinite;}
@@ -1634,17 +1634,17 @@ body{font-family:'IBM Plex Mono',monospace;background:#040c18;color:#c8d8f0;over
 .page-status-row{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
 .page-status-dot{width:7px;height:7px;border-radius:50%;background:#2a4060;}
 .page-status-dot.running{background:#ef4444;animation:pulse 1.5s infinite;}
-.page-status-text{font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#2a4060;}
+.page-status-text{font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted-2,#6d85a8);}
 .page-status-text.running{color:#ef4444;}
 
 /* Stat grid */
 .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:10px;margin-bottom:20px;}
 .sc{background:#07111f;border:0.5px solid #0e1e36;border-radius:9px;padding:14px 16px;position:relative;overflow:hidden;}
-.sc-label{font-size:0.58rem;text-transform:uppercase;letter-spacing:1.2px;color:#1e3050;margin-bottom:6px;}
+.sc-label{font-size:0.58rem;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted-2,#6d85a8);margin-bottom:6px;}
 .sc-val{font-size:1.1rem;font-weight:700;color:#e0eaf8;font-family:'IBM Plex Mono',monospace;}
 
 /* Section title */
-.section-title{font-size:0.6rem;font-weight:700;text-transform:uppercase;letter-spacing:1.8px;color:#1e3050;margin-bottom:10px;display:flex;align-items:center;gap:8px;}
+.section-title{font-size:0.6rem;font-weight:700;text-transform:uppercase;letter-spacing:1.8px;color:var(--muted-2,#6d85a8);margin-bottom:10px;display:flex;align-items:center;gap:8px;}
 .section-title::after{content:'';flex:1;height:0.5px;background:#0e1e36;}
 
 /* Action buttons */
@@ -1660,7 +1660,7 @@ body{font-family:'IBM Plex Mono',monospace;background:#040c18;color:#c8d8f0;over
 
 /* Trade table */
 .trade-table{width:100%;border-collapse:collapse;}
-.trade-table th{padding:9px 12px;text-align:left;font-size:0.55rem;text-transform:uppercase;letter-spacing:1px;color:#1e3050;background:#0a0f1c;cursor:pointer;user-select:none;white-space:nowrap;}
+.trade-table th{padding:9px 12px;text-align:left;font-size:0.55rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-2,#6d85a8);background:#0a0f1c;cursor:pointer;user-select:none;white-space:nowrap;}
 .trade-table td{padding:8px 12px;border-top:1px solid #0e1e36;font-size:0.78rem;font-family:'IBM Plex Mono',monospace;vertical-align:top;}
 
 /* Log viewer */
@@ -1704,7 +1704,7 @@ ${buildSidebar('paLive', liveActive, state.running, {
     ${_vixEnabled
       ? `<span class="top-bar-badge" style="border-color:${_vix == null ? 'rgba(100,116,139,0.3)' : _vix.value > _vixMaxEntry ? 'rgba(239,68,68,0.3)' : 'rgba(16,185,129,0.3)'};background:${_vix == null ? 'rgba(100,116,139,0.08)' : _vix.value > _vixMaxEntry ? 'rgba(239,68,68,0.1)' : 'rgba(16,185,129,0.1)'};color:${_vix == null ? '#94a3b8' : _vix.value > _vixMaxEntry ? '#ef4444' : '#10b981'};">\uD83C\uDF21\uFE0F VIX ${_vix != null ? _vix.value.toFixed(1) : 'n/a'}${_vix != null ? (_vix.value > _vixMaxEntry ? ' \u00b7 BLOCKED' : ' \u00b7 OK') : ''}</span>`
       : ''}
-    <button onclick="scHandleReset(this)" style="background:#07111f;border:0.5px solid #0e1e36;color:#4a6080;padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;cursor:pointer;font-family:inherit;">↺ Reset</button>
+    <button onclick="scHandleReset(this)" style="background:#07111f;border:0.5px solid #0e1e36;color:var(--muted-1,#8ba1c2);padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;cursor:pointer;font-family:inherit;">↺ Reset</button>
   </div>
 </div>
 
@@ -1726,7 +1726,7 @@ ${buildSidebar('paLive', liveActive, state.running, {
   <div class="stat-grid">
     <div class="sc" style="border-top:2px solid ${state.running ? "#ef4444" : "#4a6080"};">
       <div class="sc-label">Status</div>
-      <div class="sc-val" style="font-size:1rem;color:${state.running ? "#ef4444" : "#4a6080"};">${state.running ? "\u26a1 RUNNING" : "\u25cf STOPPED"}</div>
+      <div class="sc-val" style="font-size:1rem;color:${state.running ? "#ef4444" : "#8ba1c2"};">${state.running ? "\u26a1 RUNNING" : "\u25cf STOPPED"}</div>
     </div>
     <div class="sc" style="border-top:2px solid ${state.sessionPnl >= 0 ? '#10b981' : '#ef4444'};">
       <div class="sc-label">Session PnL</div>
@@ -1739,7 +1739,7 @@ ${buildSidebar('paLive', liveActive, state.running, {
     <div class="sc" style="border-top:1.5px solid #3b82f6;">
       <div class="sc-label">WebSocket Ticks</div>
       <div class="sc-val" id="ax-tick-count">${state.tickCount.toLocaleString()}</div>
-      <div style="font-size:0.7rem;color:#4a6080;margin-top:4px;">Last: <span id="ax-last-tick">${state.lastTickPrice ? inr(state.lastTickPrice) : '\u2014'}</span></div>
+      <div style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);margin-top:4px;">Last: <span id="ax-last-tick">${state.lastTickPrice ? inr(state.lastTickPrice) : '\u2014'}</span></div>
     </div>
     <div class="sc" style="border-top:1.5px solid #8b5cf6;">
       <div class="sc-label">Candles Loaded</div>
@@ -1748,8 +1748,8 @@ ${buildSidebar('paLive', liveActive, state.running, {
     </div>
     <div class="sc" style="border-top:1.5px solid #8b5cf6;">
       <div class="sc-label">Trades (W/L)</div>
-      <div class="sc-val"><span id="ax-trade-count">${state.sessionTrades.length}</span> <span style="font-size:0.75rem;color:#4a6080;">/ ${_PA_MAX_TRADES}</span></div>
-      <div id="ax-wl" style="font-size:0.7rem;color:#4a6080;margin-top:4px;">${wins}W \u00b7 ${losses}L</div>
+      <div class="sc-val"><span id="ax-trade-count">${state.sessionTrades.length}</span> <span style="font-size:0.75rem;color:var(--muted-1,#8ba1c2);">/ ${_PA_MAX_TRADES}</span></div>
+      <div id="ax-wl" style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);margin-top:4px;">${wins}W \u00b7 ${losses}L</div>
     </div>
     <div class="sc" style="border-top:2px solid ${state._dailyLossHit ? '#ef4444' : '#10b981'};" id="ax-sc-dloss">
       <div class="sc-label">Daily Loss Limit</div>
@@ -1763,7 +1763,7 @@ ${buildSidebar('paLive', liveActive, state.running, {
     <div class="sc" style="border-top:1.5px solid #f59e0b;">
       <div class="sc-label">NIFTY Spot LTP</div>
       <div class="sc-val" id="ax-ltp">${state.lastTickPrice ? inr(state.lastTickPrice) : '\u2014'}</div>
-      <div id="ax-last-tick-time" style="font-size:0.68rem;color:#4a6080;margin-top:4px;">${state.lastTickTime ? new Date(state.lastTickTime).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" }) : ''}</div>
+      <div id="ax-last-tick-time" style="font-size:0.68rem;color:var(--muted-1,#8ba1c2);margin-top:4px;">${state.lastTickTime ? new Date(state.lastTickTime).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" }) : ''}</div>
     </div>
   </div>
 
@@ -1795,7 +1795,7 @@ ${buildSidebar('paLive', liveActive, state.running, {
     <div class="section-title">NIFTY ${PA_RES}-Min Chart</div>
     <div id="nifty-chart-container" style="background:#0a0f1c;border:1px solid #1a2236;border-radius:12px;overflow:hidden;position:relative;height:400px;">
       <div id="nifty-chart" style="width:100%;height:100%;"></div>
-      <div style="position:absolute;top:10px;left:12px;font-size:0.68rem;color:#4a6080;pointer-events:none;z-index:2;">
+      <div style="position:absolute;top:10px;left:12px;font-size:0.68rem;color:var(--muted-1,#8ba1c2);pointer-events:none;z-index:2;">
         <span style="color:#3b82f6;">▲ Entry</span> &nbsp;<span style="color:#10b981;">▼ Win</span> &nbsp;<span style="color:#ef4444;">▼ Loss</span> &nbsp;<span style="color:#f59e0b;">── SL</span> &nbsp;<span style="color:#3b82f6;">-- Entry</span>
       </div>
     </div>
@@ -1814,10 +1814,10 @@ ${buildSidebar('paLive', liveActive, state.running, {
       <select id="scPerPage" onchange="scFilter()" style="background:#0d1320;border:1px solid #1a2236;color:#c8d8f0;padding:4px 8px;border-radius:6px;font-size:0.73rem;">
         <option value="5">5/page</option><option value="10" selected>10/page</option><option value="25">25/page</option><option value="999999">All</option>
       </select>
-      <span id="scCount" style="font-size:0.72rem;color:#4a6080;"></span>
+      <span id="scCount" style="font-size:0.72rem;color:var(--muted-1,#8ba1c2);"></span>
     </div>
     ${state.sessionTrades.length === 0
-      ? `<div style="background:#0d1320;border:1px solid #1a2236;border-radius:12px;padding:16px 24px;color:#4a6080;font-size:0.82rem;">No completed trades this session.</div>`
+      ? `<div style="background:#0d1320;border:1px solid #1a2236;border-radius:12px;padding:16px 24px;color:var(--muted-1,#8ba1c2);font-size:0.82rem;">No completed trades this session.</div>`
       : `<div style="border:1px solid #1a2236;border-radius:12px;overflow:hidden;overflow-x:auto;margin-bottom:10px;">
           <table class="trade-table">
             <thead><tr>
@@ -1843,9 +1843,9 @@ ${buildSidebar('paLive', liveActive, state.running, {
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
               <div>
                 <span id="scm-badge" style="font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;padding:4px 10px;border-radius:6px;"></span>
-                <span style="font-size:0.65rem;color:#4a6080;margin-left:10px;">\uD83D\uDD34 Price Action Live \u2014 Full Details</span>
+                <span style="font-size:0.65rem;color:var(--muted-1,#8ba1c2);margin-left:10px;">\uD83D\uDD34 Price Action Live \u2014 Full Details</span>
               </div>
-              <button onclick="document.getElementById('scModal').style.display='none';" style="background:none;border:1px solid #1a2236;color:#4a6080;font-size:1rem;cursor:pointer;padding:4px 10px;border-radius:6px;font-family:inherit;" onmouseover="this.style.color='#ef4444';this.style.borderColor='#ef4444'" onmouseout="this.style.color='#4a6080';this.style.borderColor='#1a2236'">\u2715 Close</button>
+              <button onclick="document.getElementById('scModal').style.display='none';" style="background:none;border:1px solid #1a2236;color:var(--muted-1,#8ba1c2);font-size:1rem;cursor:pointer;padding:4px 10px;border-radius:6px;font-family:inherit;" onmouseover="this.style.color='#ef4444';this.style.borderColor='#ef4444'" onmouseout="this.style.color='#8ba1c2';this.style.borderColor='#1a2236'">\u2715 Close</button>
             </div>
             <div id="scm-grid"></div>
           </div>
@@ -1876,14 +1876,14 @@ ${buildSidebar('paLive', liveActive, state.running, {
         <option value="100">100/page</option>
         <option value="9999">All</option>
       </select>
-      <span id="logCount" style="font-size:0.7rem;color:#4a6080;"></span>
+      <span id="logCount" style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);"></span>
       <button onclick="copyActivityLog(this)" style="margin-left:auto;background:#0d1320;border:1px solid #1a2236;color:#4a9cf5;padding:4px 12px;border-radius:6px;font-size:0.68rem;cursor:pointer;font-family:inherit;white-space:nowrap;">\uD83D\uDCCB Copy Log</button>
     </div>
     <div id="logBox" style="background:#0d1320;border:1px solid #1a2236;border-radius:12px;padding:12px 16px;max-height:360px;overflow-y:auto;"></div>
     <div id="logPag" style="display:flex;gap:5px;margin-top:8px;flex-wrap:wrap;"></div>
   </div>
 
-  <p style="font-size:0.72rem;color:#2a4060;margin-top:16px;">\uD83D\uDD04 Auto-refreshes every 2 seconds while trading is active</p>
+  <p style="font-size:0.72rem;color:var(--muted-2,#6d85a8);margin-top:16px;">\uD83D\uDD04 Auto-refreshes every 2 seconds while trading is active</p>
 </div><!-- .page -->
 </div><!-- .main-content -->
 </div><!-- .app-shell -->
@@ -2052,7 +2052,7 @@ function scRender(){
   var start=(scPage-1)*scPP,slice=scFiltered.slice(start,start+scPP);
   window._scSlice=slice;
   el.innerHTML=slice.length===0
-    ?'<tr><td colspan="11" style="text-align:center;padding:20px;color:#4a6080;">No trades match filters.</td></tr>'
+    ?'<tr><td colspan="11" style="text-align:center;padding:20px;color:var(--muted-1,#8ba1c2);">No trades match filters.</td></tr>'
     :slice.map(function(t,i){
       var sc=t.side==='CE'?'#10b981':'#ef4444';
       var pc=t.pnl==null?'#c8d8f0':t.pnl>=0?'#10b981':'#ef4444';
@@ -2066,8 +2066,8 @@ function scRender(){
         +'<td style="padding:8px 12px;font-size:0.75rem;">'+scFmtTime(t.exit)+'</td>'
         +'<td style="padding:8px 12px;color:#f59e0b;">'+(t.eSl?INR(t.eSl):'\u2014')+'</td>'
         +'<td style="padding:8px 12px;"><div style="font-size:1rem;font-weight:800;color:'+pc+';">'+(t.pnl!=null?(t.pnl>=0?'+':'')+INR(t.pnl):'\u2014')+'</div></td>'
-        +'<td style="padding:8px 12px;font-size:0.7rem;color:#4a6080;" title="'+(t.entryReason||'')+'">'+(t.entryReason?(t.entryReason.length>25?t.entryReason.slice(0,25)+'\u2026':t.entryReason):'\u2014')+'</td>'
-        +'<td style="padding:8px 12px;font-size:0.7rem;color:#4a6080;" title="'+t.reason+'">'+(short||'\u2014')+'</td>'
+        +'<td style="padding:8px 12px;font-size:0.7rem;color:var(--muted-1,#8ba1c2);" title="'+(t.entryReason||'')+'">'+(t.entryReason?(t.entryReason.length>25?t.entryReason.slice(0,25)+'\u2026':t.entryReason):'\u2014')+'</td>'
+        +'<td style="padding:8px 12px;font-size:0.7rem;color:var(--muted-1,#8ba1c2);" title="'+t.reason+'">'+(short||'\u2014')+'</td>'
         +'<td style="padding:6px 8px;text-align:center;"><button data-idx="'+i+'" class="sc-eye-btn" style="background:none;border:1px solid #1a2236;border-radius:6px;cursor:pointer;padding:4px 8px;color:#4a9cf5;font-size:0.85rem;" title="View full details">\uD83D\uDC41</button></td>'
         +'</tr>';
     }).join('');
@@ -2106,9 +2106,9 @@ function showSCModal(t){
 
   function cell(label,val,color,sub){
     return '<div style="background:#060910;border:1px solid #1a2236;border-radius:8px;padding:11px 13px;">'
-      +'<div style="font-size:0.52rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;margin-bottom:5px;">'+label+'</div>'
+      +'<div style="font-size:0.52rem;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted-2,#6d85a8);margin-bottom:5px;">'+label+'</div>'
       +'<div style="font-size:0.9rem;font-weight:700;color:'+(color||'#e0eaf8')+';font-family:monospace;line-height:1.3;">'+(val||'\u2014')+'</div>'
-      +(sub?'<div style="font-size:0.62rem;color:#4a6080;margin-top:3px;">'+sub+'</div>':'')
+      +(sub?'<div style="font-size:0.62rem;color:var(--muted-1,#8ba1c2);margin-top:3px;">'+sub+'</div>':'')
       +'</div>';
   }
 
@@ -2154,7 +2154,7 @@ function showSCModal(t){
     +'</div></div>';
 
   var reasonHtml='<div style="background:#060910;border:1px solid #1a2236;border-radius:10px;padding:12px 14px;">'
-    +'<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:#3a5070;margin-bottom:6px;font-weight:700;">\uD83D\uDCCC Exit Reason</div>'
+    +'<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted-2,#6d85a8);margin-bottom:6px;font-weight:700;">\uD83D\uDCCC Exit Reason</div>'
     +'<div style="font-size:0.82rem;color:#a0b8d0;line-height:1.6;font-family:monospace;">'+(t.reason||'\u2014')+'</div>'
     +'</div>';
 
@@ -2183,7 +2183,7 @@ function logRender(){
   var start=(logPg-1)*logPP, slice=logFiltered.slice(start,start+logPP);
   document.getElementById('logCount').textContent = logFiltered.length+' of '+LOG_ALL.length;
   var box=document.getElementById('logBox');
-  if(slice.length===0){ box.innerHTML='<div style="color:#4a6080;font-size:0.78rem;">No entries match.</div>'; document.getElementById('logPag').innerHTML=''; return; }
+  if(slice.length===0){ box.innerHTML='<div style="color:var(--muted-1,#8ba1c2);font-size:0.78rem;">No entries match.</div>'; document.getElementById('logPag').innerHTML=''; return; }
   box.innerHTML = slice.map(function(l){
     var c = l.indexOf('\u274c')>=0?'#ef4444':l.indexOf('\u2705')>=0?'#10b981':l.indexOf('\uD83D\uDEA8')>=0||l.indexOf('\uD83D\uDED1')>=0?'#f59e0b':l.indexOf('\uD83C\uDFAF')>=0||l.indexOf('\u26a1')>=0?'#3b82f6':'#4a6080';
     return '<div style="padding:5px 0;border-bottom:1px solid #1a2236;font-size:0.72rem;font-family:monospace;color:'+c+';line-height:1.4;">'+l+'</div>';
@@ -2221,7 +2221,7 @@ logFilter();
   if (!container) return;
   var chart = LightweightCharts.createChart(container, {
     width: container.clientWidth, height: container.clientHeight,
-    layout: { background: { type: 'solid', color: '#0a0f1c' }, textColor: '#4a6080', fontSize: 11, fontFamily: "'IBM Plex Mono', monospace" },
+    layout: { background: { type: 'solid', color: '#0a0f1c' }, textColor: '#8ba1c2', fontSize: 11, fontFamily: "'IBM Plex Mono', monospace" },
     grid: { vertLines: { color: '#111827' }, horzLines: { color: '#111827' } },
     crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
     rightPriceScale: { borderColor: '#1a2236', scaleMargins: { top: 0.1, bottom: 0.05 } },
@@ -2302,7 +2302,7 @@ logFilter();
           upEl.style.color = PNL_COLOR(d.unrealised);
         } else {
           upEl.textContent = '\u2014';
-          upEl.style.color = '#4a6080';
+          upEl.style.color = '#8ba1c2';
         }
       }
 
@@ -2401,7 +2401,7 @@ logFilter();
         var slDistEl = document.getElementById('ax-sl-dist');
         if (slDistEl && p.stopLoss && ltpNow) {
           var dist = Math.abs(ltpNow - p.stopLoss);
-          slDistEl.innerHTML = dist.toFixed(1) + ' <span style="font-size:0.6rem;color:#4a6080;">pts</span>';
+          slDistEl.innerHTML = dist.toFixed(1) + ' <span style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);">pts</span>';
           slDistEl.style.color = dist < 20 ? '#ef4444' : dist < 40 ? '#f59e0b' : '#10b981';
         }
         // R:R
@@ -2417,7 +2417,7 @@ logFilter();
         }
         // Candles held
         var cnHeld = document.getElementById('ax-pos-candles');
-        if (cnHeld) cnHeld.innerHTML = (p.candlesHeld || 0) + ' <span style="font-size:0.6rem;color:#4a6080;">candles</span>';
+        if (cnHeld) cnHeld.innerHTML = (p.candlesHeld || 0) + ' <span style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);">candles</span>';
       }
 
       // Current bar

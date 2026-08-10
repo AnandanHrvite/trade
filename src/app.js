@@ -705,6 +705,15 @@ const OPEN_PATHS = [
   "/gap-fix-3m-paper/status/chart-data",
   "/gap-fix-3m-paper/history",
   "/gap-fix-3m-live/status/data",
+  // GAPS — read-only surfaces. These were the only strategy's pages missing from
+  // this list, so with API_SECRET set every GAPS link in the sidebar landed on a
+  // raw 403 JSON page and the Real-Time tile showed "Endpoint unavailable".
+  "/gaps-paper/status",
+  "/gaps-paper/status/data",
+  "/gaps-paper/status/chart-data",
+  "/gaps-paper/status/daily-chart-data",
+  "/gaps-paper/history",
+  "/gaps-live/status/data",
   "/tracker/status",          // read-only tracker page
   "/tracker/status/data",     // AJAX poll — must be open
   "/tracker/fetch-and-start", // auto-fetch + start (Zerodha read + SAR compute)
@@ -811,6 +820,9 @@ const OPEN_PATHS = [
   "/gap-fix-3m-backtest",
   "/gap-fix-3m-backtest/status",
   "/gap-fix-3m-backtest/idle",
+  "/gaps-backtest",
+  "/gaps-backtest/status",
+  "/gaps-backtest/idle",
   // Live-harness pages (read-only view + status poll). Their /start and /stop are
   // deliberately NOT here — those place (or dry-run log) real broker orders.
   "/ema_rsi_st-live-harness",
@@ -825,6 +837,7 @@ const OPEN_PATHS = [
   "/trend-pb-live",
   "/trend-day-scalp-live",
   "/gap-fix-3m-live",
+  "/gaps-live",
   // Cross-strategy read-only screens reached from the sidebar / top bar.
   "/realtime",            // unified real-time monitor
   "/realtime/capital",    // capital-pool poll — read-only, drives the shortfall alert banner
@@ -1364,7 +1377,7 @@ app.get("/", (req, res) => {
     .card { background:#0d1320; border:1px solid #1a2236; border-radius:12px; overflow:hidden; }
     .card-hdr { display:flex; align-items:center; gap:8px; padding:14px 18px 12px; border-bottom:1px solid #1a2236; }
     .card-hdr-icon { font-size:0.88rem; }
-    .card-hdr-title { font-size:0.62rem; font-weight:700; text-transform:uppercase; letter-spacing:1.8px; color:#4a6080; }
+    .card-hdr-title { font-size:0.62rem; font-weight:700; text-transform:uppercase; letter-spacing:1.8px; color:var(--muted-1,#8ba1c2); }
     .card-body { padding:16px 18px; }
 
     /* ── BROKER CONNECTIONS — redesigned ── */
@@ -1381,7 +1394,7 @@ app.get("/", (req, res) => {
     .broker-card.connected-green { background:#04100a; border-color:#0d3a1e; color:#10b981; }
     .broker-card.connected-blue  { background:#030b18; border-color:#0d2545; color:#3b82f6; }
     .broker-card.error-state     { background:#100408; border-color:#3a0f1c; color:#ef4444; }
-    .broker-card.no-config       { background:#0a0a12; border-color:#1e1e36; color:#4a5878; }
+    .broker-card.no-config       { background:#0a0a12; border-color:#1e1e36; color:var(--muted-1,#8ba1c2); }
 
     .broker-card-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
     .broker-identity { display:flex; align-items:center; gap:10px; }
@@ -1390,7 +1403,7 @@ app.get("/", (req, res) => {
     .broker-logo.zerodha-logo { background:#0e0a28; border:1px solid #1e1550; }
     .broker-name-wrap { }
     .broker-name { font-size:1rem; font-weight:700; color:#e0eaf8; letter-spacing:-0.2px; }
-    .broker-role { font-size:0.62rem; color:#3a5070; margin-top:1px; }
+    .broker-role { font-size:0.62rem; color:var(--muted-2,#6d85a8); margin-top:1px; }
     .broker-status-pill {
       display:inline-flex; align-items:center; gap:5px;
       font-size:0.58rem; font-weight:700; text-transform:uppercase; letter-spacing:1px;
@@ -1399,15 +1412,15 @@ app.get("/", (req, res) => {
     .broker-status-pill.ok-green { background:#071e0f; border-color:#0e4020; color:#34d399; }
     .broker-status-pill.ok-blue  { background:#07112e; border-color:#0e2860; color:#60a5fa; }
     .broker-status-pill.err      { background:#1c0610; border-color:#500e20; color:#f87171; }
-    .broker-status-pill.grey     { background:#0e0e1e; border-color:#2a2a48; color:#4a5878; }
+    .broker-status-pill.grey     { background:#0e0e1e; border-color:#2a2a48; color:var(--muted-1,#8ba1c2); }
     .broker-status-dot { width:5px; height:5px; border-radius:50%; background:currentColor; }
     .broker-status-dot.pulse { animation:pulse 1.5s infinite; }
 
-    .broker-meta { font-size:0.66rem; color:#3a5070; line-height:1.6; margin-bottom:14px; }
+    .broker-meta { font-size:0.66rem; color:var(--muted-2,#6d85a8); line-height:1.6; margin-bottom:14px; }
     .broker-meta .tag {
       display:inline-block; font-size:0.57rem; font-weight:600; text-transform:uppercase;
       letter-spacing:0.8px; padding:1px 6px; border-radius:3px; margin-right:4px;
-      background:#0e1828; border:1px solid #1a2a40; color:#3a5878;
+      background:#0e1828; border:1px solid #1a2a40; color:var(--muted-1,#8ba1c2);
     }
 
     .broker-action { }
@@ -1418,7 +1431,7 @@ app.get("/", (req, res) => {
     .broker-connected-bar.green { background:#071e0f; border:1px solid #0e3018; color:#34d399; }
     .broker-connected-bar.blue  { background:#07112e; border:1px solid #0e2045; color:#60a5fa; }
     .broker-connected-bar .relogin-link {
-      font-size:0.65rem; font-weight:500; color:#2a4060;
+      font-size:0.65rem; font-weight:500; color:var(--muted-2,#6d85a8);
       text-decoration:none; transition:color 0.15s;
     }
     .broker-connected-bar .relogin-link:hover { color:#60a5fa; }
@@ -1432,7 +1445,7 @@ app.get("/", (req, res) => {
     .broker-login-btn.fyers-btn  { background:#0d3a18; border-color:#1a6030; color:#fff; }
     .broker-login-btn.zerodha-btn{ background:#1a4a8a; border-color:#2a6aaa; color:#fff; }
     .broker-no-config {
-      padding:9px 12px; border-radius:8px; font-size:0.7rem; color:#3a4060;
+      padding:9px 12px; border-radius:8px; font-size:0.7rem; color:var(--muted-2,#6d85a8);
       background:#0c0c18; border:1px dashed #252550; text-align:center;
     }
     .broker-no-config code { color:#6070a0; font-family:monospace; }
@@ -1441,11 +1454,11 @@ app.get("/", (req, res) => {
     }
     .broker-expiry-warn.expired  { background:#2d1600; border:1px solid #c05621; color:#f6ad55; }
     .broker-expiry-warn.expiring { background:#2a1600; border:1px solid #744210; color:#fbd38d; }
-    .broker-expiry-warn.valid    { background:#070d14; border:1px solid #1a3050; color:#4a7090; }
+    .broker-expiry-warn.valid    { background:#070d14; border:1px solid #1a3050; color:var(--muted-1,#8ba1c2); }
 
     .broker-divider { margin:14px 0 12px; height:1px; background:#1a2236; }
     .hard-reset-row { display:flex; align-items:center; justify-content:space-between; gap:16px; }
-    .hard-reset-hint { font-size:0.64rem; color:#2a3a52; line-height:1.5; }
+    .hard-reset-hint { font-size:0.64rem; color:var(--muted-2,#6d85a8); line-height:1.5; }
     .hard-reset-btn {
       display:inline-flex; align-items:center; gap:6px;
       background:#150608; border:1px solid #5a1010; color:#f87171;
@@ -1480,7 +1493,7 @@ app.get("/", (req, res) => {
     .brk-name { font-size:0.82rem !important; }
     .brk-wallet { margin-left:auto; display:flex; flex-direction:column; align-items:flex-end; line-height:1.1; flex:0 0 auto; }
     .brk-wallet-remain { font-size:0.92rem; font-weight:800; color:#e0eaf8; font-variant-numeric:tabular-nums; }
-    .brk-wallet-sub { font-size:0.58rem; color:#4a6080; font-variant-numeric:tabular-nums; white-space:nowrap; }
+    .brk-wallet-sub { font-size:0.58rem; color:var(--muted-1,#8ba1c2); font-variant-numeric:tabular-nums; white-space:nowrap; }
     .brk-wallet-sub .pos { color:#34d399; }
     .brk-wallet-sub .neg { color:#f87171; }
     .brk-wallet-sub .zero { color:#7d8aa3; }
@@ -1510,7 +1523,7 @@ app.get("/", (req, res) => {
     .brk-status {
       font-size:0.58rem; font-weight:700; text-transform:uppercase; letter-spacing:1px;
       padding:3px 9px; border-radius:20px; border:1px solid;
-      background:#0e0e1e; border-color:#2a2a48; color:#4a5878;
+      background:#0e0e1e; border-color:#2a2a48; color:var(--muted-1,#8ba1c2);
       /* As a plain flex item this defaulted to flex-shrink:1, so on a narrow
          row the pill box was squeezed while DISCONNECTED — one unbreakable
          word — kept its width and spilled out underneath the login button.
@@ -1525,14 +1538,14 @@ app.get("/", (req, res) => {
       padding:6px 12px; border-radius:6px; white-space:nowrap;
       transition:filter 0.15s;
     }
-    .brk-action.re-login { color:#4a6080; }
+    .brk-action.re-login { color:var(--muted-1,#8ba1c2); }
     .brk-action.re-login:hover { color:#60a5fa; }
     .brk-action.login { color:#fff; border:1px solid; }
     .brk-action.login.fyers   { background:#0d3a18; border-color:#1a6030; }
     .brk-action.login.zerodha { background:#1a4a8a; border-color:#2a6aaa; }
     .brk-action.login:hover { filter:brightness(1.15); }
     .brk-action.muted-hint {
-      font-size:0.66rem; color:#4a5878; font-style:italic;
+      font-size:0.66rem; color:var(--muted-1,#8ba1c2); font-style:italic;
       border:1px dashed #252550; padding:4px 10px; border-radius:6px;
     }
     .brk-expiry {
@@ -1541,7 +1554,7 @@ app.get("/", (req, res) => {
     }
     .brk-expiry.expired  { background:#2d1600; border-color:#c05621; color:#f6ad55; }
     .brk-expiry.expiring { background:#2a1600; border-color:#744210; color:#fbd38d; }
-    .brk-expiry.valid    { background:#070d14; border-color:#1a3050; color:#4a7090; }
+    .brk-expiry.valid    { background:#070d14; border-color:#1a3050; color:var(--muted-1,#8ba1c2); }
 
     /* ── Option expiry quick-edit (mirrors Settings → OPTION_EXPIRY_OVERRIDE /
        OPTION_EXPIRY_TYPE; saves through the same POST /settings/save) ── */
@@ -1553,7 +1566,7 @@ app.get("/", (req, res) => {
     }
     .brk-cfg-label {
       font-size:0.58rem; font-weight:700; text-transform:uppercase; letter-spacing:1px;
-      color:#4a6080; flex:0 0 auto; white-space:nowrap;
+      color:var(--muted-1,#8ba1c2); flex:0 0 auto; white-space:nowrap;
     }
     /* max-width keeps the inputs from stretching across the whole strip when it
        spans the full grid width on laptop/tablet. */
@@ -1618,9 +1631,9 @@ app.get("/", (req, res) => {
     }
     :root[data-theme="light"] .brk-cfg-warn { color:#b45309; }
     :root[data-theme="light"] .brk-cfg { background:#ffffff; border-color:#e0e4ea; }
-    :root[data-theme="light"] .brk-cfg-label { color:#94a3b8; }
+    :root[data-theme="light"] .brk-cfg-label { color:#5c6b7f; }
     :root[data-theme="light"] .brk-cfg-input { color-scheme:light; background:#ffffff; border-color:#e2e8f0; color:#1e293b; }
-    :root[data-theme="light"] .brk-cfg-save { background:#dbeafe; border-color:#93c5fd; color:#2563eb; }
+    :root[data-theme="light"] .brk-cfg-save { background:#dbeafe; border-color:#93c5fd; color:#1d4ed8; }
 
     /* ── Option expiry override RED alert (full-width, prominent) ── */
     .opt-expiry-alert {
@@ -1641,7 +1654,7 @@ app.get("/", (req, res) => {
     .opt-expiry-cta {
       display:inline-flex; align-items:center; gap:4px; flex-shrink:0;
       padding:7px 14px; border-radius:7px;
-      background:#ef4444; color:#fff; text-decoration:none;
+      background:#dc2626; color:#fff; text-decoration:none;
       font-size:0.75rem; font-weight:700; letter-spacing:0.2px;
       border:1px solid #f87171; transition:filter 0.15s, transform 0.08s;
     }
@@ -1694,9 +1707,9 @@ app.get("/", (req, res) => {
       0%,100% { box-shadow:0 0 0 0 rgba(239,68,68,0.55); }
       50%     { box-shadow:0 0 0 6px rgba(239,68,68,0); }
     }
-    :root[data-theme="light"] .util-btn.is-active-paper { background:#dcfce7 !important; border-color:#16a34a !important; color:#15803d !important; }
+    :root[data-theme="light"] .util-btn.is-active-paper { background:#dcfce7 !important; border-color:#166534 !important; color:#15803d !important; }
     :root[data-theme="light"] .util-btn.is-active-live  { background:#fee2e2 !important; border-color:#dc2626 !important; color:#b91c1c !important; }
-    .util-info { font-size:0.68rem; color:#4a6080; margin-left:auto; font-family:'IBM Plex Mono',monospace; }
+    .util-info { font-size:0.68rem; color:var(--muted-1,#8ba1c2); margin-left:auto; font-family:'IBM Plex Mono',monospace; }
 
     /* Mobile */
     @media (max-width:640px) {
@@ -1723,33 +1736,33 @@ app.get("/", (req, res) => {
     :root[data-theme="light"] .brk-row.muted { background:#f8fafc; border-color:#e2e8f0; }
     :root[data-theme="light"] .brk-name { color:#1e293b; }
     :root[data-theme="light"] .brk-wallet-remain { color:#1e293b; }
-    :root[data-theme="light"] .brk-wallet-sub { color:#94a3b8; }
-    :root[data-theme="light"] .brk-status { background:#f1f5f9; border-color:#e2e8f0; color:#94a3b8; }
-    :root[data-theme="light"] .brk-row.ok .brk-status { background:#dcfce7; border-color:#86efac; color:#16a34a; }
-    :root[data-theme="light"] .brk-row.ok.blue .brk-status { background:#dbeafe; border-color:#93c5fd; color:#2563eb; }
-    :root[data-theme="light"] .brk-row.bad .brk-status { background:#fee2e2; border-color:#fca5a5; color:#dc2626; }
+    :root[data-theme="light"] .brk-wallet-sub { color:#5c6b7f; }
+    :root[data-theme="light"] .brk-status { background:#f1f5f9; border-color:#e2e8f0; color:#5c6b7f; }
+    :root[data-theme="light"] .brk-row.ok .brk-status { background:#dcfce7; border-color:#86efac; color:#166534; }
+    :root[data-theme="light"] .brk-row.ok.blue .brk-status { background:#dbeafe; border-color:#93c5fd; color:#1d4ed8; }
+    :root[data-theme="light"] .brk-row.bad .brk-status { background:#fee2e2; border-color:#fca5a5; color:#b91c1c; }
     :root[data-theme="light"] .util-strip { background:#ffffff; border-color:#e0e4ea; }
     :root[data-theme="light"] .util-btn { background:#f8fafc; border-color:#e2e8f0; color:#475569; }
-    :root[data-theme="light"] .util-btn.run-paper { background:#dcfce7; border-color:#86efac; color:#16a34a; }
-    :root[data-theme="light"] .util-btn.run-live  { background:#fee2e2; border-color:#fca5a5; color:#dc2626; }
-    :root[data-theme="light"] .util-info { color:#64748b; }
+    :root[data-theme="light"] .util-btn.run-paper { background:#dcfce7; border-color:#86efac; color:#166534; }
+    :root[data-theme="light"] .util-btn.run-live  { background:#fee2e2; border-color:#fca5a5; color:#b91c1c; }
+    :root[data-theme="light"] .util-info { color:#4b5769; }
     /* Light theme — top-bar pills/buttons + broker expiry pill (shared chrome lacks light variants) */
     :root[data-theme="light"] .top-bar-btn { background:#f8fafc; border-color:#e2e8f0; color:#475569; }
-    :root[data-theme="light"] .top-bar-btn.run-paper { background:#dcfce7; border-color:#86efac; color:#16a34a; }
-    :root[data-theme="light"] .top-bar-btn.run-live { background:#fee2e2; border-color:#fca5a5; color:#dc2626; }
+    :root[data-theme="light"] .top-bar-btn.run-paper { background:#dcfce7; border-color:#86efac; color:#166534; }
+    :root[data-theme="light"] .top-bar-btn.run-live { background:#fee2e2; border-color:#fca5a5; color:#b91c1c; }
     /* Pills that open a popup — the rest of the pills are read-only labels.
        Brightening is invisible on the light theme's near-white pill, so that
        one darkens instead. */
     .top-bar-cache.clickable { cursor:pointer; }
     .top-bar-cache.clickable:hover { filter:brightness(1.25); }
     :root[data-theme="light"] .top-bar-cache.clickable:hover { filter:brightness(0.94); }
-    :root[data-theme="light"] .top-bar-cache { background:#f0fdf4; border-color:#bbf7d0; color:#16a34a; }
-    :root[data-theme="light"] .top-bar-cache.empty { background:#f8fafc; border-color:#e2e8f0; color:#64748b; }
-    :root[data-theme="light"] .top-bar-cache.schedule { background:#ecfeff; border-color:#a5f3fc; color:#0891b2; }
-    :root[data-theme="light"] .top-bar-cache.schedule.empty { background:#f8fafc; border-color:#e2e8f0; color:#64748b; }
-    :root[data-theme="light"] .top-bar-badge { background:#eff6ff; border-color:#bfdbfe; color:#2563eb; }
-    :root[data-theme="light"] .top-bar-badge.live-active { background:#fef2f2; border-color:#fca5a5; color:#dc2626; }
-    :root[data-theme="light"] .top-bar-badge.paper-active { background:#f0fdf4; border-color:#bbf7d0; color:#16a34a; }
+    :root[data-theme="light"] .top-bar-cache { background:#f0fdf4; border-color:#bbf7d0; color:#166534; }
+    :root[data-theme="light"] .top-bar-cache.empty { background:#f8fafc; border-color:#e2e8f0; color:#4b5769; }
+    :root[data-theme="light"] .top-bar-cache.schedule { background:#ecfeff; border-color:#a5f3fc; color:#0e7490; }
+    :root[data-theme="light"] .top-bar-cache.schedule.empty { background:#f8fafc; border-color:#e2e8f0; color:#4b5769; }
+    :root[data-theme="light"] .top-bar-badge { background:#eff6ff; border-color:#bfdbfe; color:#1d4ed8; }
+    :root[data-theme="light"] .top-bar-badge.live-active { background:#fef2f2; border-color:#fca5a5; color:#b91c1c; }
+    :root[data-theme="light"] .top-bar-badge.paper-active { background:#f0fdf4; border-color:#bbf7d0; color:#166534; }
     :root[data-theme="light"] .brk-expiry.valid { background:#f8fafc; border-color:#e2e8f0; color:#475569; }
     :root[data-theme="light"] .brk-expiry.expiring { background:#fffbeb; border-color:#fde68a; color:#b45309; }
     :root[data-theme="light"] .brk-expiry.expired { background:#fef2f2; border-color:#fecaca; color:#c2410c; }
@@ -1787,56 +1800,56 @@ app.get("/", (req, res) => {
     .mm-title { font-size:0.62rem; font-weight:700; text-transform:uppercase; letter-spacing:1.4px; color:#a0b0c8; }
     /* Global Paper/Live source toggle (top-bar) — drives every chart on the dashboard */
     .dash-src-toggle { display:inline-flex; background:#07111f; border:1px solid #1a2236; border-radius:4px; padding:2px; flex-shrink:0; }
-    .dst-btn { background:transparent; border:none; color:#4a6080; font-family:inherit; font-size:0.72rem; font-weight:700; text-transform:uppercase; letter-spacing:1px; padding:6px 18px; border-radius:2px; cursor:pointer; transition:all 0.15s; }
+    .dst-btn { background:transparent; border:none; color:var(--muted-1,#8ba1c2); font-family:inherit; font-size:0.72rem; font-weight:700; text-transform:uppercase; letter-spacing:1px; padding:6px 18px; border-radius:2px; cursor:pointer; transition:all 0.15s; }
     .dst-btn:hover:not(.active) { color:#a0b0c8; }
-    .dst-btn.active { background:#3b82f6; color:#fff; }
-    .dst-btn.active[data-src="live"] { background:#ef4444; color:#fff; }
+    .dst-btn.active { background:#2563eb; color:#fff; }
+    .dst-btn.active[data-src="live"] { background:#dc2626; color:#fff; }
     :root[data-theme="light"] .dash-src-toggle { background:#f1f5f9; border-color:#e0e4ea; }
-    :root[data-theme="light"] .dst-btn { color:#94a3b8; }
+    :root[data-theme="light"] .dst-btn { color:#5c6b7f; }
     :root[data-theme="light"] .dst-btn:hover:not(.active) { color:#475569; }
-    :root[data-theme="light"] .dst-btn.active { background:#3b82f6; color:#fff; }
-    :root[data-theme="light"] .dst-btn.active[data-src="live"] { background:#ef4444; color:#fff; }
+    :root[data-theme="light"] .dst-btn.active { background:#2563eb; color:#fff; }
+    :root[data-theme="light"] .dst-btn.active[data-src="live"] { background:#dc2626; color:#fff; }
     /* Global date-range filter (top-bar) — narrows every chart on the dashboard.
        Same option set as Edge Analytics so the two pages agree on what a range
        means; wraps rather than widening the bar when Custom opens its inputs. */
     .dash-range { display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap; flex-shrink:0; }
-    .dash-range label { font-size:0.58rem; text-transform:uppercase; letter-spacing:1px; color:#3a5070; font-family:'IBM Plex Mono',monospace; }
+    .dash-range label { font-size:0.58rem; text-transform:uppercase; letter-spacing:1px; color:var(--muted-2,#6d85a8); font-family:'IBM Plex Mono',monospace; }
     .dash-range select, .dash-range input { background:#07111f; border:1px solid #1a2236; color:#e0eaf8; padding:5px 8px; border-radius:4px; font-family:'IBM Plex Mono',monospace; font-size:0.7rem; outline:none; max-width:100%; }
     .dash-range select:focus, .dash-range input:focus { border-color:#38bdf8; }
     .dash-range .drg-custom { display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap; }
-    :root[data-theme="light"] .dash-range label { color:#64748b; }
+    :root[data-theme="light"] .dash-range label { color:#4b5769; }
     :root[data-theme="light"] .dash-range select, :root[data-theme="light"] .dash-range input { background:#f8fafc; border-color:#e0e4ea; color:#334155; }
-    .mm-stats { font-size:0.66rem; font-family:'IBM Plex Mono',monospace; color:#4a6080; margin-bottom:4px; }
+    .mm-stats { font-size:0.66rem; font-family:'IBM Plex Mono',monospace; color:var(--muted-1,#8ba1c2); margin-bottom:4px; }
     .mm-stats .pnl-pos { color:#10b981; font-weight:700; }
     .mm-stats .pnl-neg { color:#ef4444; font-weight:700; }
-    .mm-stats .pnl-flat { color:#4a6080; font-weight:700; }
+    .mm-stats .pnl-flat { color:var(--muted-1,#8ba1c2); font-weight:700; }
     .mm-wrap { position:relative; height:100px; }
     /* The lopsided top padding used to push this line past the empty chart box;
        that box now collapses when there is nothing to draw, so the padding is
        even again. */
-    .mm-empty { text-align:center; padding:20px 14px; color:#4a6080; font-size:0.72rem; }
+    .mm-empty { text-align:center; padding:20px 14px; color:var(--muted-1,#8ba1c2); font-size:0.72rem; }
     :root[data-theme="light"] .mm-card { background:#ffffff; border-color:#e0e4ea; }
     :root[data-theme="light"] .mm-hdr { border-bottom-color:#e0e4ea; }
     :root[data-theme="light"] .mm-title { color:#475569; }
-    :root[data-theme="light"] .mm-stats { color:#94a3b8; }
-    :root[data-theme="light"] .mm-empty { color:#94a3b8; }
+    :root[data-theme="light"] .mm-stats { color:#5c6b7f; }
+    :root[data-theme="light"] .mm-empty { color:#5c6b7f; }
 
     /* ── TRADE STATUS PANELS ── */
     .ts-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:0; }
     .ts-cell { padding:12px 16px; border-right:1px solid #1a2236; }
     .ts-cell:last-child { border-right:none; }
-    .ts-label { font-size:0.52rem; font-weight:600; text-transform:uppercase; letter-spacing:1.4px; color:#3a5070; margin-bottom:5px; }
+    .ts-label { font-size:0.52rem; font-weight:600; text-transform:uppercase; letter-spacing:1.4px; color:var(--muted-2,#6d85a8); margin-bottom:5px; }
     .ts-val { font-size:0.95rem; font-weight:700; color:#e0eaf8; }
     .ts-val.pos { color:#4ade80; }
     .ts-val.neg { color:#f87171; }
-    .ts-val.flat { color:#3a5070; }
-    .ts-sub { font-size:0.62rem; color:#3a5070; margin-top:2px; }
+    .ts-val.flat { color:var(--muted-2,#6d85a8); }
+    .ts-sub { font-size:0.62rem; color:var(--muted-2,#6d85a8); margin-top:2px; }
     .ts-pos-bar { margin:10px 18px 0; padding:10px 14px; background:#0a0f14; border:1px solid #1a2a3a; border-radius:8px; display:flex; flex-wrap:wrap; gap:10px 24px; }
-    .ts-pos-item { font-size:0.68rem; color:#3a5878; }
+    .ts-pos-item { font-size:0.68rem; color:var(--muted-1,#8ba1c2); }
     .ts-pos-item strong { color:#a0c0e0; font-weight:600; }
     .ts-pos-item.pnl-pos strong { color:#4ade80; }
     .ts-pos-item.pnl-neg strong { color:#f87171; }
-    .ts-flat-note { font-size:0.72rem; color:#2a3a50; font-style:italic; }
+    .ts-flat-note { font-size:0.72rem; color:var(--muted-2,#6d85a8); font-style:italic; }
     #trade-row, #bb_rsi-row, #pa-row { display:flex; gap:12px; align-items:stretch; width:100%; flex-wrap:nowrap; }
     @media (max-width:900px) { .ts-grid { grid-template-columns:1fr 1fr; } }
 
@@ -1849,48 +1862,48 @@ app.get("/", (req, res) => {
     /* Cards */
     :root[data-theme="light"] .card { background:#ffffff; border-color:#e0e4ea; }
     :root[data-theme="light"] .card-hdr { border-bottom-color:#e0e4ea; }
-    :root[data-theme="light"] .card-hdr-title { color:#64748b; }
+    :root[data-theme="light"] .card-hdr-title { color:#4b5769; }
 
     /* Broker cards */
-    :root[data-theme="light"] .broker-card.connected-green { background:#f0fdf4; border-color:#bbf7d0; color:#16a34a; }
-    :root[data-theme="light"] .broker-card.connected-blue  { background:#eff6ff; border-color:#bfdbfe; color:#2563eb; }
-    :root[data-theme="light"] .broker-card.error-state     { background:#fef2f2; border-color:#fecaca; color:#dc2626; }
-    :root[data-theme="light"] .broker-card.no-config       { background:#f8fafc; border-color:#e2e8f0; color:#94a3b8; }
+    :root[data-theme="light"] .broker-card.connected-green { background:#f0fdf4; border-color:#bbf7d0; color:#166534; }
+    :root[data-theme="light"] .broker-card.connected-blue  { background:#eff6ff; border-color:#bfdbfe; color:#1d4ed8; }
+    :root[data-theme="light"] .broker-card.error-state     { background:#fef2f2; border-color:#fecaca; color:#b91c1c; }
+    :root[data-theme="light"] .broker-card.no-config       { background:#f8fafc; border-color:#e2e8f0; color:#5c6b7f; }
     :root[data-theme="light"] .broker-name { color:#1e293b; }
-    :root[data-theme="light"] .broker-role { color:#94a3b8; }
-    :root[data-theme="light"] .broker-meta { color:#64748b; }
-    :root[data-theme="light"] .broker-meta .tag { background:#f1f5f9; border-color:#e0e4ea; color:#64748b; }
-    :root[data-theme="light"] .broker-status-pill.ok-green { background:#dcfce7; border-color:#86efac; color:#16a34a; }
-    :root[data-theme="light"] .broker-status-pill.ok-blue  { background:#dbeafe; border-color:#93c5fd; color:#2563eb; }
-    :root[data-theme="light"] .broker-status-pill.err      { background:#fee2e2; border-color:#fca5a5; color:#dc2626; }
-    :root[data-theme="light"] .broker-status-pill.grey     { background:#f1f5f9; border-color:#e2e8f0; color:#94a3b8; }
+    :root[data-theme="light"] .broker-role { color:#5c6b7f; }
+    :root[data-theme="light"] .broker-meta { color:#4b5769; }
+    :root[data-theme="light"] .broker-meta .tag { background:#f1f5f9; border-color:#e0e4ea; color:#4b5769; }
+    :root[data-theme="light"] .broker-status-pill.ok-green { background:#dcfce7; border-color:#86efac; color:#166534; }
+    :root[data-theme="light"] .broker-status-pill.ok-blue  { background:#dbeafe; border-color:#93c5fd; color:#1d4ed8; }
+    :root[data-theme="light"] .broker-status-pill.err      { background:#fee2e2; border-color:#fca5a5; color:#b91c1c; }
+    :root[data-theme="light"] .broker-status-pill.grey     { background:#f1f5f9; border-color:#e2e8f0; color:#5c6b7f; }
     :root[data-theme="light"] .broker-logo.fyers-logo  { background:#dcfce7; border-color:#bbf7d0; }
     :root[data-theme="light"] .broker-logo.zerodha-logo { background:#ede9fe; border-color:#c4b5fd; }
-    :root[data-theme="light"] .broker-connected-bar.green { background:#dcfce7; border-color:#86efac; color:#16a34a; }
-    :root[data-theme="light"] .broker-connected-bar.blue  { background:#dbeafe; border-color:#93c5fd; color:#2563eb; }
-    :root[data-theme="light"] .broker-connected-bar .relogin-link { color:#94a3b8; }
+    :root[data-theme="light"] .broker-connected-bar.green { background:#dcfce7; border-color:#86efac; color:#166534; }
+    :root[data-theme="light"] .broker-connected-bar.blue  { background:#dbeafe; border-color:#93c5fd; color:#1d4ed8; }
+    :root[data-theme="light"] .broker-connected-bar .relogin-link { color:#5c6b7f; }
     :root[data-theme="light"] .broker-connected-bar .relogin-link:hover { color:#2563eb; }
     :root[data-theme="light"] .broker-login-btn.fyers-btn  { background:#16a34a; border-color:#15803d; }
     :root[data-theme="light"] .broker-login-btn.zerodha-btn { background:#2563eb; border-color:#1d4ed8; }
-    :root[data-theme="light"] .broker-no-config { background:#f8fafc; border-color:#e2e8f0; color:#94a3b8; }
+    :root[data-theme="light"] .broker-no-config { background:#f8fafc; border-color:#e2e8f0; color:#5c6b7f; }
     :root[data-theme="light"] .broker-no-config code { color:#6366f1; }
     :root[data-theme="light"] .broker-expiry-warn.expired  { background:#fff7ed; border-color:#fdba74; color:#c2410c; }
     :root[data-theme="light"] .broker-expiry-warn.expiring { background:#fffbeb; border-color:#fcd34d; color:#a16207; }
-    :root[data-theme="light"] .broker-expiry-warn.valid    { background:#f8fafc; border-color:#e0e4ea; color:#64748b; }
+    :root[data-theme="light"] .broker-expiry-warn.valid    { background:#f8fafc; border-color:#e0e4ea; color:#4b5769; }
     :root[data-theme="light"] .broker-divider { background:#e0e4ea; }
-    :root[data-theme="light"] .hard-reset-hint { color:#94a3b8; }
-    :root[data-theme="light"] .hard-reset-btn { background:#fef2f2; border-color:#fca5a5; color:#dc2626; }
+    :root[data-theme="light"] .hard-reset-hint { color:#5c6b7f; }
+    :root[data-theme="light"] .hard-reset-btn { background:#fef2f2; border-color:#fca5a5; color:#b91c1c; }
     :root[data-theme="light"] .hard-reset-btn:hover { background:#fee2e2; border-color:#dc2626; }
 
     /* Trade status panels */
     :root[data-theme="light"] .ts-cell { border-right-color:#e0e4ea; }
-    :root[data-theme="light"] .ts-label { color:#64748b; }
+    :root[data-theme="light"] .ts-label { color:#4b5769; }
     :root[data-theme="light"] .ts-val { color:#1e293b; }
-    :root[data-theme="light"] .ts-sub { color:#94a3b8; }
+    :root[data-theme="light"] .ts-sub { color:#5c6b7f; }
     :root[data-theme="light"] .ts-pos-bar { background:#f8fafc; border-color:#e0e4ea; }
-    :root[data-theme="light"] .ts-pos-item { color:#64748b; }
+    :root[data-theme="light"] .ts-pos-item { color:#4b5769; }
     :root[data-theme="light"] .ts-pos-item strong { color:#334155; }
-    :root[data-theme="light"] .ts-flat-note { color:#94a3b8; }
+    :root[data-theme="light"] .ts-flat-note { color:#5c6b7f; }
 
     /* ── CUMULATIVE P&L CHART CARDS (Paper + Live) ── */
     .dash-chart-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
@@ -1898,20 +1911,20 @@ app.get("/", (req, res) => {
     .dash-chart-hdr { display:flex; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap; padding-bottom:6px; border-bottom:1px solid #1a2236; }
     .dash-chart-title { display:flex; align-items:center; gap:8px; font-size:0.66rem; font-weight:700; text-transform:uppercase; letter-spacing:1.4px; color:#a0b0c8; }
     .dash-chart-dot { width:7px; height:7px; border-radius:50%; display:inline-block; }
-    .dash-chart-stats { font-size:0.66rem; font-family:'IBM Plex Mono',monospace; color:#4a6080; }
+    .dash-chart-stats { font-size:0.66rem; font-family:'IBM Plex Mono',monospace; color:var(--muted-1,#8ba1c2); }
     .dash-chart-stats .pnl-pos { color:#10b981; font-weight:700; }
     .dash-chart-stats .pnl-neg { color:#ef4444; font-weight:700; }
-    .dash-chart-stats .pnl-flat { color:#4a6080; font-weight:700; }
+    .dash-chart-stats .pnl-flat { color:var(--muted-1,#8ba1c2); font-weight:700; }
     .dash-chart-link { font-size:0.66rem; color:#60a5fa; text-decoration:none; font-weight:600; padding:3px 9px; border-radius:5px; border:1px solid #1a3a6a; background:#080e1a; transition:filter 0.15s; margin-left:auto; }
     .dash-chart-link:hover { filter:brightness(1.25); }
     .dash-chart-wrap { position:relative; height:clamp(140px, 26vh, 360px); }
-    .dash-chart-empty { text-align:center; padding:28px 20px; color:#4a6080; font-size:0.72rem; }
+    .dash-chart-empty { text-align:center; padding:28px 20px; color:var(--muted-1,#8ba1c2); font-size:0.72rem; }
     @media (max-width:900px) { .dash-chart-grid { grid-template-columns:1fr; } }
     :root[data-theme="light"] .dash-chart-card { background:#ffffff; border-color:#e0e4ea; }
     :root[data-theme="light"] .dash-chart-title { color:#475569; }
-    :root[data-theme="light"] .dash-chart-stats { color:#94a3b8; }
-    :root[data-theme="light"] .dash-chart-link { background:#eff6ff; border-color:#bfdbfe; color:#2563eb; }
-    :root[data-theme="light"] .dash-chart-empty { color:#94a3b8; }
+    :root[data-theme="light"] .dash-chart-stats { color:#5c6b7f; }
+    :root[data-theme="light"] .dash-chart-link { background:#eff6ff; border-color:#bfdbfe; color:#1d4ed8; }
+    :root[data-theme="light"] .dash-chart-empty { color:#5c6b7f; }
 
     /* ── Dashboard Analytics Panel (market-hour aware) ── */
     .dash-analytics { background:#0d1320; border:1px solid #1a2236; border-radius:9px; padding:10px 12px 12px; }
@@ -1920,9 +1933,9 @@ app.get("/", (req, res) => {
     .da-badge { font-size:0.58rem; font-weight:700; padding:2px 8px; border-radius:4px; letter-spacing:0.6px; background:rgba(74,96,128,0.12); color:#a0b0c8; border:1px solid rgba(74,96,128,0.30); }
     .da-badge.live { background:rgba(16,185,129,0.10); color:#10b981; border-color:rgba(16,185,129,0.30); }
     .da-badge.post { background:rgba(59,130,246,0.10); color:#60a5fa; border-color:rgba(59,130,246,0.30); }
-    .da-sub { font-size:0.66rem; color:#4a6080; font-family:'IBM Plex Mono',monospace; margin-left:auto; }
+    .da-sub { font-size:0.66rem; color:var(--muted-1,#8ba1c2); font-family:'IBM Plex Mono',monospace; margin-left:auto; }
     .da-body { display:flex; flex-direction:column; gap:10px; }
-    .da-loading { padding:18px; text-align:center; color:#4a6080; font-size:0.72rem; }
+    .da-loading { padding:18px; text-align:center; color:var(--muted-1,#8ba1c2); font-size:0.72rem; }
     .da-grid { display:grid; gap:8px; }
     .da-grid.cols-1 { grid-template-columns:1fr; }
     .da-grid.cols-2 { grid-template-columns:repeat(2, 1fr); }
@@ -1954,14 +1967,14 @@ app.get("/", (req, res) => {
     .da-kv .v { color:#e0eaf8; font-variant-numeric:tabular-nums; font-family:'IBM Plex Mono',monospace; }
     .da-kv .v.pos { color:#10b981; }
     .da-kv .v.neg { color:#ef4444; }
-    .da-empty { padding:14px 12px; text-align:center; color:#4a6080; font-size:0.72rem; }
+    .da-empty { padding:14px 12px; text-align:center; color:var(--muted-1,#8ba1c2); font-size:0.72rem; }
     :root[data-theme="light"] .dash-analytics { background:#fff; border-color:#e0e4ea; }
     :root[data-theme="light"] .da-tile { background:#f8fafc; border-color:#e0e4ea; }
     :root[data-theme="light"] .da-title { color:#475569; }
-    :root[data-theme="light"] .da-sub { color:#94a3b8; }
-    :root[data-theme="light"] .da-tile-hdr { color:#64748b; }
+    :root[data-theme="light"] .da-sub { color:#5c6b7f; }
+    :root[data-theme="light"] .da-tile-hdr { color:#4b5769; }
     :root[data-theme="light"] .da-kv .v { color:#1e293b; }
-    :root[data-theme="light"] .da-kv .k { color:#64748b; }
+    :root[data-theme="light"] .da-kv .k { color:#4b5769; }
 
     /* ── MOBILE ── */
     @media (max-width:640px) {
@@ -2060,7 +2073,7 @@ ${buildSidebar('dashboard', liveActive)}
     </div>
     <div class="top-bar-right">
       ${anyModeActive ? '' : `
-      <button id="btn-all-harness" class="top-bar-btn" style="border-color:#b45309;color:#b45309;" onclick="startAllHarness(this)" title="Start all Live (Harness) modes in DRY-RUN — runs Paper + logs would-be broker orders (${startAllModes.map((m) => m.label).join(' + ') || 'no strategy enabled'})">🧪 Start All (Harness)</button>
+      <button id="btn-all-harness" class="top-bar-btn" style="border-color:#b45309;color:#f59e0b;" onclick="startAllHarness(this)" title="Start all Live (Harness) modes in DRY-RUN — runs Paper + logs would-be broker orders (${startAllModes.map((m) => m.label).join(' + ') || 'no strategy enabled'})">🧪 Start All (Harness)</button>
       <button id="btn-all-start" class="top-bar-btn run-paper" onclick="startAll(this)" title="Start all paper modes">▶ Start All (Paper)</button>`}
       <!-- The manual "Reset Token" button was removed: token clearing is now
            automatic (4:00 PM + 7:00 AM IST schedulers, and the login routes
@@ -2710,7 +2723,7 @@ function _buildCumSeries(trades){
   return { labels: labels, data: data, total: cum };
 }
 
-var PNL_GREEN = '#10b981', PNL_RED = '#ef4444', PNL_FLAT = '#4a6080';
+var PNL_GREEN = '#10b981', PNL_RED = '#ef4444', PNL_FLAT = '#8ba1c2';
 var PNL_GREEN_FILL = 'rgba(16,185,129,0.14)', PNL_RED_FILL = 'rgba(239,68,68,0.14)', PNL_FLAT_FILL = 'rgba(74,96,128,0.10)';
 function _pnlColor(total){ return total > 0 ? PNL_GREEN : (total < 0 ? PNL_RED : PNL_FLAT); }
 function _pnlFill(total){ return total > 0 ? PNL_GREEN_FILL : (total < 0 ? PNL_RED_FILL : PNL_FLAT_FILL); }

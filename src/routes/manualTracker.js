@@ -291,7 +291,7 @@ router.get("/status", (req, res) => {
   const statusBanner = tracker.status === "sl_hit"
     ? `<div style="background:#1a0505;border:1px solid #ef4444;border-radius:10px;padding:16px 20px;margin-bottom:16px;display:flex;align-items:center;gap:12px;"><span style="font-size:1.5rem;">🚨</span><div><div style="font-size:0.85rem;font-weight:700;color:#ef4444;">SL HIT — Close your position in Zerodha</div><div style="font-size:0.72rem;color:#9a3030;margin-top:3px;">Telegram alert sent.</div></div></div>`
     : tracker.status === "exited"
-    ? `<div style="background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;padding:14px 20px;margin-bottom:16px;"><div style="font-size:0.8rem;color:#4a6080;">Tracker stopped. No active position being monitored.</div></div>`
+    ? `<div style="background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;padding:14px 20px;margin-bottom:16px;"><div style="font-size:0.8rem;color:var(--muted-1,#8ba1c2);">Tracker stopped. No active position being monitored.</div></div>`
     : "";
 
   const logsJSON = JSON.stringify([...tracker.log].reverse().slice(0,200))
@@ -312,14 +312,14 @@ router.get("/status", (req, res) => {
     ${modalCSS()}
     .sc{background:#07111f;border:0.5px solid #0e1e36;border-radius:9px;padding:14px 16px;position:relative;overflow:hidden;}
     .sc::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--accent,#1e3080);}
-    .sc-label{font-size:0.58rem;text-transform:uppercase;letter-spacing:1.2px;color:#1e3050;margin-bottom:6px;}
+    .sc-label{font-size:0.58rem;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted-2,#6d85a8);margin-bottom:6px;}
     .sc-val{font-size:1.1rem;font-weight:700;color:#e0eaf8;font-family:'IBM Plex Mono',monospace;}
-    .sc-sub{font-size:0.62rem;color:#1e3050;margin-top:3px;}
+    .sc-sub{font-size:0.62rem;color:var(--muted-2,#6d85a8);margin-top:3px;}
     .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:20px;}
-    .section-title{font-size:0.6rem;font-weight:700;text-transform:uppercase;letter-spacing:1.8px;color:#1e3050;margin-bottom:10px;display:flex;align-items:center;gap:8px;}
+    .section-title{font-size:0.6rem;font-weight:700;text-transform:uppercase;letter-spacing:1.8px;color:var(--muted-2,#6d85a8);margin-bottom:10px;display:flex;align-items:center;gap:8px;}
     .section-title::after{content:'';flex:1;height:0.5px;background:#0e1e36;}
     .log-box{background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;padding:12px;max-height:300px;overflow-y:auto;}
-    .log-entry{padding:4px 0;border-bottom:0.5px solid #0a1220;font-size:0.72rem;font-family:'IBM Plex Mono',monospace;color:#4a6080;line-height:1.4;}
+    .log-entry{padding:4px 0;border-bottom:0.5px solid #0a1220;font-size:0.72rem;font-family:'IBM Plex Mono',monospace;color:var(--muted-1,#8ba1c2);line-height:1.4;}
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
   </style>
 </head>
@@ -345,14 +345,14 @@ ${buildSidebar("emaRsiStTracker", sharedSocketState.getMode()==="EMA_RSI_ST_LIVE
     ${!pos ? `
     <div style="text-align:center;padding:40px 20px 28px;">
       <div style="font-size:0.85rem;font-weight:600;color:#e0eaf8;margin-bottom:8px;">Take your entry in Zerodha first, then click below.</div>
-      <div style="font-size:0.75rem;color:#4a6080;margin-bottom:28px;max-width:480px;margin-left:auto;margin-right:auto;line-height:1.6;">
+      <div style="font-size:0.75rem;color:var(--muted-1,#8ba1c2);margin-bottom:28px;max-width:480px;margin-left:auto;margin-right:auto;line-height:1.6;">
         Bot will read your open NIFTY position from Zerodha, set the initial Stop Loss to the previous candle's low/high (fixed-points fallback), then trail it automatically — tightening to each completed candle's low/high plus breakeven — the same way as the live trade engine.
       </div>
       <button id="fetch-btn" onclick="handleFetch(this)"
         style="background:#0a1e3d;border:1px solid #3b82f6;color:#60a5fa;padding:14px 32px;border-radius:10px;font-size:0.95rem;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:10px;">
         📥 Fetch from Zerodha &amp; Start Tracking
       </button>
-      <div id="fetch-msg" style="margin-top:14px;font-size:0.78rem;color:#4a6080;min-height:22px;"></div>
+      <div id="fetch-msg" style="margin-top:14px;font-size:0.78rem;color:var(--muted-1,#8ba1c2);min-height:22px;"></div>
     </div>
     ` : `
     <div class="stat-grid">
@@ -398,7 +398,7 @@ ${buildSidebar("emaRsiStTracker", sharedSocketState.getMode()==="EMA_RSI_ST_LIVE
       </div>
     </div>
     <button onclick="handleExit(this)" style="background:#7f1d1d;border:1px solid #ef4444;color:#fca5a5;padding:10px 22px;border-radius:8px;font-size:0.82rem;font-weight:700;cursor:pointer;font-family:inherit;">🛑 Stop Tracking</button>
-    <div style="margin-top:6px;font-size:0.7rem;color:#4a6080;">Stops the bot. Close your actual position in Zerodha separately.</div>
+    <div style="margin-top:6px;font-size:0.7rem;color:var(--muted-1,#8ba1c2);">Stops the bot. Close your actual position in Zerodha separately.</div>
     `}
     <div class="section-title" style="margin-top:20px;">Activity Log</div>
     <div class="log-box" id="log-box"></div>
@@ -412,7 +412,7 @@ ${toastJS()}
 var LOGS=JSON.parse(document.getElementById('init-logs').textContent);
 function renderLogs(logs){
   var box=document.getElementById('log-box'); if(!box) return;
-  if(!logs||!logs.length){box.innerHTML='<div class="log-entry" style="color:#1e3050;">No activity yet.</div>';return;}
+  if(!logs||!logs.length){box.innerHTML='<div class="log-entry" style="color:var(--muted-2,#6d85a8);">No activity yet.</div>';return;}
   box.innerHTML=logs.slice(0,100).map(function(l){
     var c=l.indexOf('🛑')>=0||l.indexOf('❌')>=0?'#ef4444':l.indexOf('✅')>=0||l.indexOf('📈')>=0||l.indexOf('📉')>=0?'#10b981':l.indexOf('📡')>=0||l.indexOf('📥')>=0?'#3b82f6':'#4a6080';
     return '<div class="log-entry" style="color:'+c+';">'+l+'</div>';
@@ -451,7 +451,7 @@ setInterval(poll,1500);
 async function handleFetch(btn){
   if(btn){btn.innerHTML='⏳ Fetching...';btn.disabled=true;}
   var msg=document.getElementById('fetch-msg');
-  if(msg)msg.innerHTML='<span style="color:#4a6080;">Reading Zerodha position + computing initial SL...</span>';
+  if(msg)msg.innerHTML='<span style="color:var(--muted-1,#8ba1c2);">Reading Zerodha position + computing initial SL...</span>';
   try{
     var res=await fetch('/tracker/fetch-and-start');
     var data=await res.json();

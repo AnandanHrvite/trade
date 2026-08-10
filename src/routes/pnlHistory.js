@@ -185,30 +185,30 @@ router.get("/", (req, res) => {
     .main-content{flex:1;margin-left:200px;padding:18px 22px 40px;min-height:100vh;}
     @media(max-width:900px){.main-content{margin-left:0;padding:14px;}}
     .page-title{font-size:1.1rem;font-weight:700;color:#e0eaf8;margin-bottom:2px;}
-    .page-sub{font-size:0.72rem;color:#4a6080;margin-bottom:14px;}
+    .page-sub{font-size:0.72rem;color:var(--muted-1,#8ba1c2);margin-bottom:14px;}
     /* ── Breadcrumb ── */
     .breadcrumb{display:flex;align-items:center;gap:6px;font-size:0.68rem;font-weight:600;margin-bottom:6px;}
-    .bc-link{color:#4a6080;text-decoration:none;padding:2px 6px;border-radius:4px;transition:color 0.15s,background 0.15s;}
+    .bc-link{color:var(--muted-1,#8ba1c2);text-decoration:none;padding:2px 6px;border-radius:4px;transition:color 0.15s,background 0.15s;}
     .bc-link:hover{color:#3b82f6;background:#0f1624;}
-    .bc-sep{color:#3a5070;font-size:0.75rem;}
+    .bc-sep{color:var(--muted-2,#6d85a8);font-size:0.75rem;}
     .bc-current{color:#e0eaf8;padding:2px 6px;}
-    :root[data-theme="light"] .bc-link{color:#64748b;}
+    :root[data-theme="light"] .bc-link{color:#4b5769;}
     :root[data-theme="light"] .bc-link:hover{color:#2563eb;background:#f1f5f9;}
-    :root[data-theme="light"] .bc-sep{color:#94a3b8;}
+    :root[data-theme="light"] .bc-sep{color:#5c6b7f;}
     :root[data-theme="light"] .bc-current{color:#1e293b;}
 
     .stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;}
     @media(max-width:1100px){.stat-grid{grid-template-columns:repeat(2,1fr);}}
     .sc{background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;padding:14px 16px;position:relative;overflow:hidden;}
     .sc::before{content:'';position:absolute;top:0;left:0;width:3px;height:100%;background:var(--accent,#3b82f6);}
-    .sc-label{font-size:0.55rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;margin-bottom:5px;font-family:'IBM Plex Mono',monospace;}
+    .sc-label{font-size:0.55rem;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted-2,#6d85a8);margin-bottom:5px;font-family:'IBM Plex Mono',monospace;}
     .sc-val{font-size:1.25rem;font-weight:700;font-family:'IBM Plex Mono',monospace;color:#e0eaf8;}
-    .sc-sub{font-size:0.6rem;color:#4a6080;margin-top:4px;}
+    .sc-sub{font-size:0.6rem;color:var(--muted-1,#8ba1c2);margin-top:4px;}
     .sc-breakdown{font-size:0.62rem;color:#6b8ab0;margin-top:6px;font-family:'IBM Plex Mono',monospace;line-height:1.5;}
 
     .panel{background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;padding:14px 16px;margin-bottom:14px;}
-    .panel h3{font-size:0.62rem;text-transform:uppercase;letter-spacing:1.4px;color:#3a5070;margin-bottom:10px;font-family:'IBM Plex Mono',monospace;display:flex;align-items:center;gap:8px;}
-    .panel h3 .tag{font-size:0.5rem;padding:2px 7px;border-radius:3px;background:rgba(59,130,246,0.15);color:#3b82f6;border:0.5px solid rgba(59,130,246,0.3);letter-spacing:1px;}
+    .panel h3{font-size:0.62rem;text-transform:uppercase;letter-spacing:1.4px;color:var(--muted-2,#6d85a8);margin-bottom:10px;font-family:'IBM Plex Mono',monospace;display:flex;align-items:center;gap:8px;}
+    .panel h3 .tag{font-size:0.5rem;padding:2px 7px;border-radius:3px;background:rgba(59,130,246,0.15);color:#60a5fa;border:0.5px solid rgba(59,130,246,0.3);letter-spacing:1px;}
     .panel h3 .tag.auto{background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);}
 
     .baseline-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
@@ -216,10 +216,10 @@ router.get("/", (req, res) => {
     .bs-card{background:#04090f;border:0.5px solid #0e1e36;border-radius:8px;padding:14px;}
     .bs-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
     .bs-name{font-size:0.8rem;font-weight:700;color:#e0eaf8;}
-    .bs-name .sub{font-size:0.6rem;color:#4a6080;margin-left:6px;font-weight:400;}
+    .bs-name .sub{font-size:0.6rem;color:var(--muted-1,#8ba1c2);margin-left:6px;font-weight:400;}
     .bs-val{font-size:1.15rem;font-weight:700;font-family:'IBM Plex Mono',monospace;margin-bottom:8px;}
     .bs-notes{font-size:0.65rem;color:#6b8ab0;margin-bottom:8px;min-height:1em;}
-    .bs-updated{font-size:0.55rem;color:#3a5070;margin-bottom:10px;font-family:'IBM Plex Mono',monospace;}
+    .bs-updated{font-size:0.55rem;color:var(--muted-2,#6d85a8);margin-bottom:10px;font-family:'IBM Plex Mono',monospace;}
     .bs-actions{display:flex;gap:8px;}
 
     .btn{background:#0d1320;border:1px solid #1a2236;color:#4a9cf5;padding:6px 12px;border-radius:6px;font-size:0.7rem;cursor:pointer;font-family:inherit;transition:all 0.15s;}
@@ -230,23 +230,23 @@ router.get("/", (req, res) => {
     .btn.warn:hover{background:rgba(239,68,68,0.08);}
 
     .tbl{width:100%;border-collapse:collapse;font-family:'IBM Plex Mono',monospace;font-size:0.72rem;}
-    .tbl th{padding:8px 10px;text-align:left;font-size:0.56rem;text-transform:uppercase;letter-spacing:1px;color:#1e3050;background:#04090f;border-bottom:0.5px solid #0e1e36;font-weight:600;}
+    .tbl th{padding:8px 10px;text-align:left;font-size:0.56rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-2,#6d85a8);background:#04090f;border-bottom:0.5px solid #0e1e36;font-weight:600;}
     .tbl td{padding:7px 10px;border-top:0.5px solid #0e1e36;color:#c8d8f0;vertical-align:middle;}
     .tbl tr:hover td{background:rgba(59,130,246,0.04);}
     .tbl-wrap{overflow-x:auto;border:0.5px solid #0e1e36;border-radius:10px;}
     .tbl td.num,.tbl th.num{text-align:right;font-variant-numeric:tabular-nums;}
     .tbl tfoot td{background:#04090f;font-weight:700;border-top:0.5px solid #0e1e36;}
 
-    .empty{text-align:center;padding:30px 20px;color:#4a6080;font-size:0.75rem;}
-    .note{font-size:0.65rem;color:#4a6080;margin-top:10px;line-height:1.6;}
+    .empty{text-align:center;padding:30px 20px;color:var(--muted-1,#8ba1c2);font-size:0.75rem;}
+    .note{font-size:0.65rem;color:var(--muted-1,#8ba1c2);margin-top:10px;line-height:1.6;}
 
     /* Modal (for edit baseline) */
     .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.65);display:none;align-items:center;justify-content:center;z-index:1000;}
     .modal-backdrop.on{display:flex;}
     .modal-box{background:#07111f;border:1px solid #1a2236;border-radius:10px;padding:20px;width:min(460px,92vw);}
     .modal-title{font-size:0.85rem;font-weight:700;margin-bottom:4px;color:#e0eaf8;}
-    .modal-sub{font-size:0.65rem;color:#4a6080;margin-bottom:14px;}
-    .modal-box label{display:block;font-size:0.55rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;margin:10px 0 4px;font-family:'IBM Plex Mono',monospace;}
+    .modal-sub{font-size:0.65rem;color:var(--muted-1,#8ba1c2);margin-bottom:14px;}
+    .modal-box label{display:block;font-size:0.55rem;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted-2,#6d85a8);margin:10px 0 4px;font-family:'IBM Plex Mono',monospace;}
     .modal-box input{width:100%;background:#04090f;border:0.5px solid #0e1e36;color:#e0eaf8;padding:8px 10px;border-radius:6px;font-family:'IBM Plex Mono',monospace;font-size:0.8rem;outline:none;}
     .modal-box input:focus{border-color:#3b82f6;}
     .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;}
@@ -254,15 +254,15 @@ router.get("/", (req, res) => {
     :root[data-theme="light"] body{background:#f4f6f9!important;color:#334155!important;}
     :root[data-theme="light"] .main-content{background:#f4f6f9!important;}
     :root[data-theme="light"] .page-title{color:#1e293b!important;}
-    :root[data-theme="light"] .page-sub,:root[data-theme="light"] .sc-sub,:root[data-theme="light"] .sc-breakdown,:root[data-theme="light"] .bs-notes,:root[data-theme="light"] .bs-updated,:root[data-theme="light"] .note,:root[data-theme="light"] .empty{color:#64748b!important;}
+    :root[data-theme="light"] .page-sub,:root[data-theme="light"] .sc-sub,:root[data-theme="light"] .sc-breakdown,:root[data-theme="light"] .bs-notes,:root[data-theme="light"] .bs-updated,:root[data-theme="light"] .note,:root[data-theme="light"] .empty{color:#4b5769!important;}
     :root[data-theme="light"] .sc,:root[data-theme="light"] .panel,:root[data-theme="light"] .modal-box{background:#fff!important;border-color:#e0e4ea!important;box-shadow:0 1px 3px rgba(0,0,0,0.06)!important;}
-    :root[data-theme="light"] .sc-label,:root[data-theme="light"] .panel h3,:root[data-theme="light"] .modal-box label{color:#64748b!important;}
+    :root[data-theme="light"] .sc-label,:root[data-theme="light"] .panel h3,:root[data-theme="light"] .modal-box label{color:#4b5769!important;}
     :root[data-theme="light"] .sc-val,:root[data-theme="light"] .bs-name,:root[data-theme="light"] .modal-title{color:#1e293b!important;}
     :root[data-theme="light"] .bs-card{background:#f8fafc!important;border-color:#e0e4ea!important;}
     :root[data-theme="light"] .modal-box input{background:#f8fafc!important;border-color:#e0e4ea!important;color:#334155!important;}
     :root[data-theme="light"] .btn{background:#f8fafc!important;border-color:#e0e4ea!important;color:#2563eb!important;}
     :root[data-theme="light"] .btn:hover{background:#eff6ff!important;border-color:#3b82f6!important;}
-    :root[data-theme="light"] .tbl th{background:#f1f5f9!important;color:#64748b!important;border-bottom-color:#e0e4ea!important;}
+    :root[data-theme="light"] .tbl th{background:#f1f5f9!important;color:#4b5769!important;border-bottom-color:#e0e4ea!important;}
     :root[data-theme="light"] .tbl td{border-color:#e0e4ea!important;color:#334155!important;}
     :root[data-theme="light"] .tbl tfoot td{background:#f1f5f9!important;}
     :root[data-theme="light"] .tbl-wrap{border-color:#e0e4ea!important;}
@@ -479,7 +479,7 @@ function baselineCard(broker, label, bs) {
         <div class="bs-name">${label} <span class="sub">${broker === 'kite' ? 'EMA_RSI_ST live trades here' : 'BB_RSI + PA live trades here'}</span></div>
       </div>
       <div class="bs-val" style="color:${colorOf(pnl)};">${fmtINR(pnl)}</div>
-      <div class="bs-notes">${hasValue ? escapeHtml(bs.notes || '(no notes)') : '<em style="color:#3a5070;">Not set — click Edit to enter your past P&amp;L total</em>'}</div>
+      <div class="bs-notes">${hasValue ? escapeHtml(bs.notes || '(no notes)') : '<em style="color:var(--muted-2,#6d85a8);">Not set — click Edit to enter your past P&amp;L total</em>'}</div>
       <div class="bs-updated">${hasValue ? 'Updated ' + fmtDate(bs.updatedAt) : ''}</div>
       <div class="bs-actions">
         <button class="btn primary" onclick="openEdit('${broker}')">${hasValue ? '✎ Edit' : '＋ Set Baseline'}</button>
@@ -495,7 +495,7 @@ function fmtINR(n) {
 }
 
 function colorOf(n) {
-  if (!n) return "#4a6080";
+  if (!n) return "#8ba1c2";
   return n >= 0 ? "#10b981" : "#ef4444";
 }
 

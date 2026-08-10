@@ -453,7 +453,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       ${statusLabel}
     </div>
     ${bottomBtns}
-    ${process.env.LOGIN_SECRET ? '<a href="/logout" class="sb-nav-item" style="margin-top:6px;font-size:0.62rem;color:#4a5878;justify-content:center;padding:5px;"><span class="sb-nav-icon">🔓</span> Logout</a>' : ''}
+    ${process.env.LOGIN_SECRET ? '<a href="/logout" class="sb-nav-item" style="margin-top:6px;font-size:0.62rem;color:var(--muted-1,#8ba1c2);justify-content:center;padding:5px;"><span class="sb-nav-icon">🔓</span> Logout</a>' : ''}
   </div>
 </nav>
 <div class="deploy-chip" id="deploy-chip" style="display:none;">
@@ -788,6 +788,13 @@ function toggleNavGroup(gid){
   window.addEventListener('resize', sync);
   window.addEventListener('orientationchange', sync);
 })();
+
+// Light-theme runtime. It rides on the sidebar because every page that has a
+// sidebar needs it, while only some of them also emit modalJS() — the five
+// that did not (realtime, advisor, edge-analytics, consolidation-report,
+// trend-pb-backtest) rendered fully dark whatever UI_THEME said. themeJS is
+// self-guarded, so pages that emit both run it once.
+${themeJS()}
 </script>`;
 }
 
@@ -797,6 +804,17 @@ function toggleNavGroup(gid){
  */
 function sidebarCSS() {
   return `
+    /* ── MUTED TEXT TIERS ──
+       The two greys every page uses for labels, sub-values and empty states.
+       They live here as tokens because the light skin cannot re-map a colour
+       that a page hard-codes in its own stylesheet — the runtime hex rewriter
+       only reaches inline style="" attributes. Pages write
+       color:var(--muted-1,#8ba1c2); the fallback keeps the standalone pages
+       (auth, result, the backtest interstitials) correct without this sheet.
+       Both pairs clear 4.5:1 on their own theme's surfaces. */
+    :root{--muted-1:#8ba1c2;--muted-2:#6d85a8;}
+    :root[data-theme="light"]{--muted-1:#4b5769;--muted-2:#5c6b7f;}
+
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
     @keyframes ltpulse{0%,100%{opacity:1}50%{opacity:.25}}
 
@@ -807,46 +825,46 @@ function sidebarCSS() {
     /* Sidebar — keep dark for contrast */
     :root[data-theme="light"] .sidebar { background:#1b2638 !important; border-right-color:#15202f !important; }
     :root[data-theme="light"] .sb-brand { border-bottom-color:#253347; }
-    :root[data-theme="light"] .sb-brand-sub { color:#5a7090; }
+    :root[data-theme="light"] .sb-brand-sub { color:#8ea6c8; }
     :root[data-theme="light"] .sb-section + .sb-section { border-top-color:#253347; }
-    :root[data-theme="light"] .sb-section-header { color:#5a80a8; }
-    :root[data-theme="light"] .sb-nav-item { color:#8aa0c0; }
+    :root[data-theme="light"] .sb-section-header { color:#8ea6c8; }
+    :root[data-theme="light"] .sb-nav-item { color:#b3c6e0; }
     :root[data-theme="light"] .sb-nav-item:hover { color:#c8dcf0; background:rgba(59,130,246,0.08); }
     :root[data-theme="light"] .sb-nav-item.active { color:#ffffff; background:rgba(59,130,246,0.15); }
     :root[data-theme="light"] .sb-divider { background:#253347; }
     :root[data-theme="light"] .sb-bottom { border-top-color:#253347; }
-    :root[data-theme="light"] .sb-status-row { color:#5a7090; }
+    :root[data-theme="light"] .sb-status-row { color:#8ea6c8; }
 
     /* Top bar */
     :root[data-theme="light"] .top-bar { background:#ffffff !important; border-bottom-color:#e0e4ea !important; }
     :root[data-theme="light"] .top-bar-title { color:#1e293b !important; }
-    :root[data-theme="light"] .top-bar-meta { color:#94a3b8 !important; }
+    :root[data-theme="light"] .top-bar-meta { color:#5c6b7f !important; }
     :root[data-theme="light"] .broker-badges { background:#ffffff !important; border-bottom-color:#e0e4ea !important; }
-    :root[data-theme="light"] .broker-badge.ok { background:#eff6ff !important; border-color:#bfdbfe !important; color:#2563eb !important; }
-    :root[data-theme="light"] .broker-badge.err { background:#fef2f2 !important; border-color:#fecaca !important; color:#dc2626 !important; }
+    :root[data-theme="light"] .broker-badge.ok { background:#eff6ff !important; border-color:#bfdbfe !important; color:#1d4ed8 !important; }
+    :root[data-theme="light"] .broker-badge.err { background:#fef2f2 !important; border-color:#fecaca !important; color:#b91c1c !important; }
 
     /* Page body */
     :root[data-theme="light"] .page-status-dot { background:#94a3b8 !important; }
-    :root[data-theme="light"] .page-status-text { color:#94a3b8 !important; }
+    :root[data-theme="light"] .page-status-text { color:#5c6b7f !important; }
     :root[data-theme="light"] .page-title { color:#1e293b !important; }
-    :root[data-theme="light"] .page-subtitle { color:#94a3b8 !important; }
-    :root[data-theme="light"] .page-sub { color:#94a3b8 !important; }
+    :root[data-theme="light"] .page-subtitle { color:#5c6b7f !important; }
+    :root[data-theme="light"] .page-sub { color:#5c6b7f !important; }
 
     /* Stat cards */
     :root[data-theme="light"] .sc { background:#ffffff !important; border-color:#e0e4ea !important; box-shadow:0 1px 3px rgba(0,0,0,0.06) !important; }
     :root[data-theme="light"] .sc::before { background:var(--accent,#93c5fd) !important; }
-    :root[data-theme="light"] .sc-label { color:#64748b !important; }
+    :root[data-theme="light"] .sc-label { color:#4b5769 !important; }
     :root[data-theme="light"] .sc-val { color:#1e293b !important; }
-    :root[data-theme="light"] .sc-sub { color:#94a3b8 !important; }
+    :root[data-theme="light"] .sc-sub { color:#5c6b7f !important; }
 
     /* Section titles */
-    :root[data-theme="light"] .section-title { color:#64748b !important; }
+    :root[data-theme="light"] .section-title { color:#4b5769 !important; }
     :root[data-theme="light"] .section-title::after { background:#e0e4ea !important; }
 
     /* Tables */
-    :root[data-theme="light"] .data-table th { color:#64748b !important; background:#f1f5f9 !important; }
+    :root[data-theme="light"] .data-table th { color:#4b5769 !important; background:#f1f5f9 !important; }
     :root[data-theme="light"] .data-table td { border-top-color:#e0e4ea !important; color:#334155 !important; }
-    :root[data-theme="light"] table th { color:#64748b !important; background:#f1f5f9 !important; }
+    :root[data-theme="light"] table th { color:#4b5769 !important; background:#f1f5f9 !important; }
     :root[data-theme="light"] table td { border-color:#e0e4ea !important; }
     :root[data-theme="light"] table tr { border-color:#e0e4ea !important; }
 
@@ -882,41 +900,41 @@ function sidebarCSS() {
     :root[data-theme="light"] .tbar select { background:#f8fafc !important; border-color:#e0e4ea !important; color:#334155 !important; }
     :root[data-theme="light"] .tw { border-color:#e0e4ea !important; }
     :root[data-theme="light"] .pag button { background:#ffffff !important; border-color:#e0e4ea !important; color:#334155 !important; }
-    :root[data-theme="light"] .pag button.active { background:#eff6ff !important; border-color:#3b82f6 !important; color:#2563eb !important; }
-    :root[data-theme="light"] .pag-info { color:#64748b !important; }
+    :root[data-theme="light"] .pag button.active { background:#eff6ff !important; border-color:#3b82f6 !important; color:#1d4ed8 !important; }
+    :root[data-theme="light"] .pag-info { color:#4b5769 !important; }
     :root[data-theme="light"] .dw-toggle { border-color:#e0e4ea !important; color:#2563eb !important; }
     :root[data-theme="light"] .dw-toggle:hover,
     :root[data-theme="light"] .dw-toggle.active { background:#eff6ff !important; border-color:#3b82f6 !important; }
     :root[data-theme="light"] .copy-btn { background:#ffffff !important; border-color:#e0e4ea !important; color:#2563eb !important; }
     :root[data-theme="light"] .copy-btn:hover { background:#eff6ff !important; border-color:#3b82f6 !important; }
-    :root[data-theme="light"] .copy-btn.copied { background:#dcfce7 !important; border-color:#10b981 !important; color:#059669 !important; }
+    :root[data-theme="light"] .copy-btn.copied { background:#dcfce7 !important; border-color:#10b981 !important; color:#047857 !important; }
     :root[data-theme="light"] #tooltip { background:#1e293b !important; }
 
     /* Analytics cards (bb_rsi/backtest) */
     :root[data-theme="light"] .ana-card { background:#ffffff !important; border-color:#e0e4ea !important; box-shadow:0 1px 3px rgba(0,0,0,0.06) !important; }
-    :root[data-theme="light"] .ana-card h3 { color:#64748b !important; }
+    :root[data-theme="light"] .ana-card h3 { color:#4b5769 !important; }
     :root[data-theme="light"] .ana-mini { background:#ffffff !important; border-color:#e0e4ea !important; box-shadow:0 1px 3px rgba(0,0,0,0.06) !important; }
-    :root[data-theme="light"] .ana-mini h3 { color:#64748b !important; }
-    :root[data-theme="light"] .ana-tbl th { color:#64748b !important; border-bottom-color:#e0e4ea !important; }
+    :root[data-theme="light"] .ana-mini h3 { color:#4b5769 !important; }
+    :root[data-theme="light"] .ana-tbl th { color:#4b5769 !important; border-bottom-color:#e0e4ea !important; }
     :root[data-theme="light"] .ana-tbl td { color:#334155 !important; border-bottom-color:#f1f5f9 !important; }
     :root[data-theme="light"] .ana-tbl tr:hover { background:#f8fafc !important; }
-    :root[data-theme="light"] .ana-stat-label { color:#94a3b8 !important; }
+    :root[data-theme="light"] .ana-stat-label { color:#5c6b7f !important; }
 
     /* Trade/Paper/BB_RSI — capital strip, stat cards, session cards, export btns */
     :root[data-theme="light"] .capital-strip { background:#ffffff !important; border-color:#e0e4ea !important; }
     :root[data-theme="light"] .session-card { background:#ffffff !important; border-color:#e0e4ea !important; }
     :root[data-theme="light"] .session-head { background:#f8fafc !important; border-bottom-color:#e0e4ea !important; }
-    :root[data-theme="light"] .export-btn { background:#f8fafc !important; border-color:#e0e4ea !important; color:#64748b !important; }
-    :root[data-theme="light"] .export-btn:hover { background:#eff6ff !important; border-color:#2563eb !important; color:#2563eb !important; }
-    :root[data-theme="light"] .badge-running { background:#dcfce7 !important; color:#059669 !important; border-color:#10b981 !important; }
+    :root[data-theme="light"] .export-btn { background:#f8fafc !important; border-color:#e0e4ea !important; color:#4b5769 !important; }
+    :root[data-theme="light"] .export-btn:hover { background:#eff6ff !important; border-color:#1d4ed8 !important; color:#2563eb !important; }
+    :root[data-theme="light"] .badge-running { background:#dcfce7 !important; color:#047857 !important; border-color:#10b981 !important; }
     :root[data-theme="light"] .bb_rsi-toast { background:#ffffff !important; box-shadow:0 4px 24px rgba(0,0,0,0.12) !important; }
 
     /* BB_RSI/Trade — broker badges, top bar overrides */
-    :root[data-theme="light"] .broker-badge.ok { background:#eff6ff !important; border-color:#bfdbfe !important; color:#2563eb !important; }
-    :root[data-theme="light"] .broker-badge.err { background:#fef2f2 !important; border-color:#fecaca !important; color:#dc2626 !important; }
+    :root[data-theme="light"] .broker-badge.ok { background:#eff6ff !important; border-color:#bfdbfe !important; color:#1d4ed8 !important; }
+    :root[data-theme="light"] .broker-badge.err { background:#fef2f2 !important; border-color:#fecaca !important; color:#b91c1c !important; }
 
     /* Docs page */
-    :root[data-theme="light"] .tab { background:#f8fafc !important; border-color:#e0e4ea !important; color:#64748b !important; }
+    :root[data-theme="light"] .tab { background:#f8fafc !important; border-color:#e0e4ea !important; color:#4b5769 !important; }
     :root[data-theme="light"] .tab.active { background:#ffffff !important; border-color:#2563eb !important; color:#2563eb !important; }
     :root[data-theme="light"] .doc-card { background:#ffffff !important; border-color:#e0e4ea !important; }
     :root[data-theme="light"] .doc-card h2 { border-bottom-color:#e0e4ea !important; color:#1e293b !important; }
@@ -927,21 +945,21 @@ function sidebarCSS() {
 
     /* Logs page */
     :root[data-theme="light"] .toolbar { background:#ffffff !important; border-bottom-color:#e0e4ea !important; }
-    :root[data-theme="light"] .counter { background:#f1f5f9 !important; border-color:#e0e4ea !important; color:#64748b !important; }
-    :root[data-theme="light"] .badge-live { background:#dcfce7 !important; border-color:#86efac !important; color:#16a34a !important; }
+    :root[data-theme="light"] .counter { background:#f1f5f9 !important; border-color:#e0e4ea !important; color:#4b5769 !important; }
+    :root[data-theme="light"] .badge-live { background:#dcfce7 !important; border-color:#86efac !important; color:#166534 !important; }
     :root[data-theme="light"] .fp[data-level="ALL"]   { background:#f1f5f9 !important; border-color:#e0e4ea !important; color:#334155 !important; }
-    :root[data-theme="light"] .fp[data-level="LOG"]   { background:#eff6ff !important; border-color:#bfdbfe !important; color:#2563eb !important; }
-    :root[data-theme="light"] .fp[data-level="INFO"]  { background:#f0fdf4 !important; border-color:#bbf7d0 !important; color:#059669 !important; }
-    :root[data-theme="light"] .fp[data-level="WARN"]  { background:#fffbeb !important; border-color:#fcd34d !important; color:#d97706 !important; }
-    :root[data-theme="light"] .fp[data-level="ERROR"] { background:#fef2f2 !important; border-color:#fca5a5 !important; color:#dc2626 !important; }
+    :root[data-theme="light"] .fp[data-level="LOG"]   { background:#eff6ff !important; border-color:#bfdbfe !important; color:#1d4ed8 !important; }
+    :root[data-theme="light"] .fp[data-level="INFO"]  { background:#f0fdf4 !important; border-color:#bbf7d0 !important; color:#047857 !important; }
+    :root[data-theme="light"] .fp[data-level="WARN"]  { background:#fffbeb !important; border-color:#fcd34d !important; color:#b45309 !important; }
+    :root[data-theme="light"] .fp[data-level="ERROR"] { background:#fef2f2 !important; border-color:#fca5a5 !important; color:#b91c1c !important; }
     :root[data-theme="light"] #search { background:#f8fafc !important; border-color:#e0e4ea !important; color:#334155 !important; }
-    :root[data-theme="light"] #search::placeholder { color:#94a3b8 !important; }
+    :root[data-theme="light"] #search::placeholder { color:#5c6b7f !important; }
     :root[data-theme="light"] .btn { border-color:#e0e4ea !important; }
-    :root[data-theme="light"] .btn-scroll { background:#ffffff !important; border-color:#e0e4ea !important; color:#64748b !important; }
-    :root[data-theme="light"] .btn-scroll.on { background:#eff6ff !important; border-color:#3b82f6 !important; color:#2563eb !important; }
-    :root[data-theme="light"] .btn-export { background:#eff6ff !important; border-color:#bfdbfe !important; color:#2563eb !important; }
-    :root[data-theme="light"] .btn-exportj { background:#f5f3ff !important; border-color:#c4b5fd !important; color:#7c3aed !important; }
-    :root[data-theme="light"] .btn-clear { background:#fef2f2 !important; border-color:#fca5a5 !important; color:#dc2626 !important; }
+    :root[data-theme="light"] .btn-scroll { background:#ffffff !important; border-color:#e0e4ea !important; color:#4b5769 !important; }
+    :root[data-theme="light"] .btn-scroll.on { background:#eff6ff !important; border-color:#3b82f6 !important; color:#1d4ed8 !important; }
+    :root[data-theme="light"] .btn-export { background:#eff6ff !important; border-color:#bfdbfe !important; color:#1d4ed8 !important; }
+    :root[data-theme="light"] .btn-exportj { background:#f5f3ff !important; border-color:#c4b5fd !important; color:#6d28d9 !important; }
+    :root[data-theme="light"] .btn-clear { background:#fef2f2 !important; border-color:#fca5a5 !important; color:#b91c1c !important; }
     :root[data-theme="light"] .log-wrap { background:#ffffff !important; }
     :root[data-theme="light"] .log-wrap::-webkit-scrollbar-track { background:#f4f6f9 !important; }
     :root[data-theme="light"] .log-wrap::-webkit-scrollbar-thumb { background:#cbd5e1 !important; }
@@ -954,9 +972,9 @@ function sidebarCSS() {
     /* History pages (paperTrade, bbRsiPaper) */
     :root[data-theme="light"] .session-card { background:#ffffff !important; border-color:#e0e4ea !important; }
     :root[data-theme="light"] .session-head { background:#f8fafc !important; border-bottom-color:#e0e4ea !important; }
-    :root[data-theme="light"] .summary-table th { background:#f1f5f9 !important; color:#64748b !important; }
+    :root[data-theme="light"] .summary-table th { background:#f1f5f9 !important; color:#4b5769 !important; }
     :root[data-theme="light"] .summary-table td { border-color:#e0e4ea !important; color:#334155 !important; }
-    :root[data-theme="light"] .holiday-table th { background:#f1f5f9 !important; color:#64748b !important; }
+    :root[data-theme="light"] .holiday-table th { background:#f1f5f9 !important; color:#4b5769 !important; }
     :root[data-theme="light"] .holiday-table td { border-color:#e0e4ea !important; }
 
     /* Manual Tracker page */
@@ -965,37 +983,37 @@ function sidebarCSS() {
     /* Paper Trade pages (green-tinted dark theme) */
     :root[data-theme="light"] .capital-strip { background:#ffffff !important; border-color:#e0e4ea !important; }
     :root[data-theme="light"] .cap-cell { border-right-color:#e0e4ea !important; }
-    :root[data-theme="light"] .cap-label { color:#64748b !important; }
+    :root[data-theme="light"] .cap-label { color:#4b5769 !important; }
     :root[data-theme="light"] .cap-val { color:#1e293b !important; }
     :root[data-theme="light"] .cap-val.white { color:#1e293b !important; }
-    :root[data-theme="light"] .cap-val.green { color:#16a34a !important; }
+    :root[data-theme="light"] .cap-val.green { color:#166534 !important; }
 
     /* Compare page */
     :root[data-theme="light"] .panel { background:#ffffff !important; border-color:#e0e4ea !important; box-shadow:0 1px 3px rgba(0,0,0,0.06) !important; }
     :root[data-theme="light"] .metric { background:#f8fafc !important; border-color:#e0e4ea !important; }
-    :root[data-theme="light"] .metric-label { color:#64748b !important; }
+    :root[data-theme="light"] .metric-label { color:#4b5769 !important; }
     :root[data-theme="light"] .metric-val { color:#1e293b !important; }
-    :root[data-theme="light"] .metric-sub { color:#94a3b8 !important; }
-    :root[data-theme="light"] .subtitle { color:#94a3b8 !important; }
+    :root[data-theme="light"] .metric-sub { color:#5c6b7f !important; }
+    :root[data-theme="light"] .subtitle { color:#5c6b7f !important; }
     :root[data-theme="light"] h1 { color:#1e293b !important; }
     :root[data-theme="light"] .diff-title { color:#1e293b !important; border-bottom-color:#e0e4ea !important; }
-    :root[data-theme="light"] .diff-table th { color:#64748b !important; border-bottom-color:#e0e4ea !important; }
+    :root[data-theme="light"] .diff-table th { color:#4b5769 !important; border-bottom-color:#e0e4ea !important; }
     :root[data-theme="light"] .diff-table td { border-bottom-color:#f1f5f9 !important; color:#334155 !important; }
     :root[data-theme="light"] .diff-table tr:hover { background:#f8fafc !important; }
     :root[data-theme="light"] .diff-table .neutral { color:#334155 !important; }
-    :root[data-theme="light"] .day-table th { color:#64748b !important; border-bottom-color:#e0e4ea !important; }
+    :root[data-theme="light"] .day-table th { color:#4b5769 !important; border-bottom-color:#e0e4ea !important; }
     :root[data-theme="light"] .day-table td { border-bottom-color:#f1f5f9 !important; }
     :root[data-theme="light"] .day-table tr:hover { background:#f8fafc !important; }
     :root[data-theme="light"] .chart-wrap { background:#ffffff !important; border-color:#e0e4ea !important; }
     :root[data-theme="light"] .chart-title { color:#1e293b !important; }
-    :root[data-theme="light"] .no-data { color:#94a3b8 !important; }
+    :root[data-theme="light"] .no-data { color:#5c6b7f !important; }
     :root[data-theme="light"] .tag.paper { background:rgba(59,130,246,0.1) !important; }
     :root[data-theme="light"] .tag.backtest { background:rgba(245,158,11,0.1) !important; }
 
     /* Settings page */
     :root[data-theme="light"] .auth-box { background:#ffffff !important; border-color:#e0e4ea !important; }
     :root[data-theme="light"] .auth-box h2 { color:#2563eb !important; }
-    :root[data-theme="light"] .auth-box p { color:#64748b !important; }
+    :root[data-theme="light"] .auth-box p { color:#4b5769 !important; }
     :root[data-theme="light"] .auth-box input { background:#f8fafc !important; border-color:#e0e4ea !important; color:#334155 !important; }
     :root[data-theme="light"] .auth-box button { background:#2563eb !important; }
     :root[data-theme="light"] .auth-err { color:#dc2626 !important; }
@@ -1005,12 +1023,12 @@ function sidebarCSS() {
     .app-shell{display:flex;min-height:100vh;}
     .sidebar{width:200px;flex-shrink:0;background:#03080e;border-right:1px solid #0e1e36;display:flex;flex-direction:column;position:fixed;top:0;left:0;height:100vh;z-index:100;overflow-y:auto;}
     .sb-brand{padding:20px 16px 16px;border-bottom:1px solid #0e1e36;}
-    .sb-brand-name{font-size:0.72rem;font-weight:700;color:#3b82f6;letter-spacing:0.3px;line-height:1.4;white-space:nowrap;}
-    .sb-brand-sub{font-size:0.6rem;color:#1a3050;letter-spacing:2px;text-transform:uppercase;margin-top:2px;}
+    .sb-brand-name{font-size:0.72rem;font-weight:700;color:#60a5fa;letter-spacing:0.3px;line-height:1.4;white-space:nowrap;}
+    .sb-brand-sub{font-size:0.6rem;color:var(--muted-2,#6d85a8);letter-spacing:2px;text-transform:uppercase;margin-top:2px;}
     .sb-nav{padding:6px 0;flex:1;}
     .sb-section{padding-bottom:4px;}
     .sb-section + .sb-section{border-top:1px solid #0e1e36;padding-top:4px;}
-    .sb-section-header{font-size:0.52rem;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:#1e3a5a;padding:8px 16px 2px;user-select:none;}
+    .sb-section-header{font-size:0.52rem;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:var(--muted-2,#6d85a8);padding:8px 16px 2px;user-select:none;}
     .sb-section-header.sb-collapsible{cursor:pointer;display:flex;align-items:center;justify-content:space-between;padding-right:16px;transition:color 0.15s;}
     .sb-section-header.sb-collapsible:hover{color:#3b82f6;}
     .sb-chevron{font-size:0.7rem;transition:transform 0.2s;display:inline-block;}
@@ -1018,16 +1036,16 @@ function sidebarCSS() {
     .sb-section-header.sb-collapsible.collapsed .sb-chevron{transform:rotate(0deg);}
     .sb-group-items{overflow:hidden;max-height:500px;transition:max-height 0.25s ease-in-out,opacity 0.2s;opacity:1;}
     .sb-group-items.collapsed{max-height:0;opacity:0;padding:0;}
-    .sb-nav-item{display:flex;align-items:center;gap:8px;padding:9px 16px;font-size:0.72rem;color:#2a4060;cursor:pointer;border-left:2px solid transparent;transition:all 0.12s;text-decoration:none;}
+    .sb-nav-item{display:flex;align-items:center;gap:8px;padding:9px 16px;font-size:0.72rem;color:#a8bcd8;cursor:pointer;border-left:2px solid transparent;transition:all 0.12s;text-decoration:none;}
     .sb-nav-item:hover{color:#7aacf0;background:rgba(59,130,246,0.04);}
     .sb-nav-item.active{color:#60a5fa;background:rgba(59,130,246,0.08);border-left-color:#3b82f6;}
-    .sb-nav-item.disabled{color:#1a2a3a;cursor:not-allowed;opacity:0.4;pointer-events:none;}
+    .sb-nav-item.disabled{color:var(--muted-2,#6d85a8);cursor:not-allowed;opacity:0.4;pointer-events:none;}
     .sb-nav-icon{font-size:13px;width:16px;flex-shrink:0;}
     .sb-nav-badge{margin-left:auto;font-size:0.55rem;font-weight:700;padding:1px 5px;border-radius:3px;background:rgba(59,130,246,0.15);color:#60a5fa;border:0.5px solid rgba(59,130,246,0.3);white-space:nowrap;}
-    .sb-nav-badge.live{background:rgba(239,68,68,0.15);color:#ef4444;border-color:rgba(239,68,68,0.3);animation:pulse 1.2s infinite;}
+    .sb-nav-badge.live{background:rgba(239,68,68,0.15);color:#f87171;border-color:rgba(239,68,68,0.3);animation:pulse 1.2s infinite;}
     .sb-divider{height:0.5px;background:#0e1e36;margin:6px 16px;}
     .sb-bottom{padding:14px 16px;border-top:1px solid #0e1e36;}
-    .sb-status-row{display:flex;align-items:center;gap:6px;font-size:0.62rem;color:#1a3050;margin-bottom:10px;}
+    .sb-status-row{display:flex;align-items:center;gap:6px;font-size:0.62rem;color:var(--muted-2,#6d85a8);margin-bottom:10px;}
     .sb-status-dot{width:5px;height:5px;border-radius:50%;background:#3b82f6;animation:pulse 1.3s infinite;}
     .sb-status-dot.stopped{background:#2a4060;animation:none;}
     .deploy-chip{display:none;position:fixed;bottom:16px;right:20px;z-index:9999;align-items:center;gap:6px;padding:6px 14px;border-radius:20px;font-family:'IBM Plex Mono',monospace;font-size:0.65rem;font-weight:600;letter-spacing:0.4px;backdrop-filter:blur(8px);box-shadow:0 2px 12px rgba(0,0,0,0.3);cursor:default;transition:all 0.3s;}
@@ -1067,9 +1085,9 @@ function sidebarCSS() {
     .top-bar-badge.live-active{border-color:rgba(239,68,68,0.3);background:rgba(239,68,68,0.1);color:#ef4444;animation:pulse 1.2s infinite;}
     .top-bar-badge.paper-active{border-color:rgba(16,185,129,0.3);background:rgba(16,185,129,0.1);color:#10b981;animation:pulse 1.2s infinite;}
     .top-bar-cache{display:inline-flex;align-items:center;gap:5px;font-size:0.6rem;font-weight:600;padding:3px 9px;border-radius:4px;border:0.5px solid rgba(16,185,129,0.25);background:rgba(16,185,129,0.07);color:#10b981;font-family:'IBM Plex Mono',monospace;letter-spacing:0.2px;white-space:nowrap;}
-    .top-bar-cache.empty{border-color:rgba(74,96,128,0.3);background:rgba(74,96,128,0.07);color:#4a6080;}
+    .top-bar-cache.empty{border-color:rgba(74,96,128,0.3);background:rgba(74,96,128,0.07);color:var(--muted-1,#8ba1c2);}
     .top-bar-cache.schedule{border-color:rgba(34,211,238,0.25);background:rgba(34,211,238,0.07);color:#22d3ee;}
-    .top-bar-cache.schedule.empty{border-color:rgba(74,96,128,0.3);background:rgba(74,96,128,0.07);color:#4a6080;}
+    .top-bar-cache.schedule.empty{border-color:rgba(74,96,128,0.3);background:rgba(74,96,128,0.07);color:var(--muted-1,#8ba1c2);}
     .top-bar-cache.schedule:empty{display:none;}
     .top-bar-btn{display:inline-flex;align-items:center;gap:5px;font-size:0.65rem;font-weight:700;padding:4px 10px;border-radius:5px;border:1px solid #243049;background:#0f1520;color:#a0b0c8;cursor:pointer;font-family:inherit;letter-spacing:0.2px;transition:filter 0.15s;white-space:nowrap;}
     .top-bar-btn:hover:not(:disabled){filter:brightness(1.25);}
@@ -1088,27 +1106,27 @@ function sidebarCSS() {
     .page-status-dot{width:7px;height:7px;border-radius:50%;background:#2a4060;}
     .page-status-dot.running{background:#3b82f6;animation:pulse 1.5s infinite;}
     .page-status-dot.paper-run{background:#10b981;animation:pulse 1.5s infinite;}
-    .page-status-text{font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#2a4060;}
+    .page-status-text{font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted-2,#6d85a8);}
     .page-status-text.running{color:#60a5fa;}
     .page-status-text.paper-run{color:#10b981;}
     .page-title{font-size:1.4rem;font-weight:700;color:#e0eaf8;letter-spacing:-0.5px;}
-    .page-subtitle{font-size:0.72rem;color:#2a4060;margin-top:4px;}
+    .page-subtitle{font-size:0.72rem;color:var(--muted-2,#6d85a8);margin-top:4px;}
 
     /* ── STAT CARDS ── */
     .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:10px;margin-bottom:20px;}
     .sc{background:#07111f;border:0.5px solid #0e1e36;border-radius:9px;padding:14px 16px;position:relative;overflow:hidden;}
     .sc::before{content:'';position:absolute;top:0;left:0;right:0;height:1.5px;background:var(--accent,#1e3080);}
-    .sc-label{font-size:0.58rem;text-transform:uppercase;letter-spacing:1.2px;color:#1e3050;margin-bottom:6px;}
+    .sc-label{font-size:0.58rem;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted-2,#6d85a8);margin-bottom:6px;}
     .sc-val{font-size:1.1rem;font-weight:700;color:#e0eaf8;}
-    .sc-sub{font-size:0.62rem;color:#1e3050;margin-top:3px;}
+    .sc-sub{font-size:0.62rem;color:var(--muted-2,#6d85a8);margin-top:3px;}
 
     /* ── SECTION TITLES ── */
-    .section-title{font-size:0.6rem;font-weight:700;text-transform:uppercase;letter-spacing:1.8px;color:#1e3050;margin-bottom:10px;display:flex;align-items:center;gap:8px;}
+    .section-title{font-size:0.6rem;font-weight:700;text-transform:uppercase;letter-spacing:1.8px;color:var(--muted-2,#6d85a8);margin-bottom:10px;display:flex;align-items:center;gap:8px;}
     .section-title::after{content:'';flex:1;height:0.5px;background:#0e1e36;}
 
     /* ── TABLE ── */
     .data-table{width:100%;border-collapse:collapse;}
-    .data-table th{padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;background:#0a0f1c;}
+    .data-table th{padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);background:#0a0f1c;}
     .data-table td{padding:8px 12px;border-top:1px solid #1a2236;font-family:monospace;font-size:0.78rem;vertical-align:top;}
 
     /* ── MOBILE (iPhone 15 = 393px logical width) ── */
@@ -1127,7 +1145,12 @@ function sidebarCSS() {
          themselves are unchanged; only the box around them grew, and it still
          ends at x=46 so .top-bar's 48px left padding keeps clearing it. */
       .hamburger{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;cursor:pointer;padding:0;background:none;border:none;position:fixed;top:var(--banner-h,0px);left:2px;min-width:44px;min-height:44px;z-index:300;}
-      .hamburger span{display:block;width:20px;height:2px;background:#4a6080;border-radius:2px;transition:all 0.2s;}
+      .hamburger span{display:block;width:20px;height:2px;background:#8ba1c2;border-radius:2px;transition:all 0.2s;}
+
+      /* The brand block starts at the very top of the drawer, directly under the
+         fixed hamburger, so its first line was printed through the bars. Clear
+         the 46px the button occupies. */
+      .sb-brand{padding-left:52px;}
 
       /* Overlay when sidebar open */
       .sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:150;}
@@ -1204,6 +1227,41 @@ function sidebarCSS() {
          🤖 AI export, ← Edge Analytics). Scoped to the header/toolbar rows so
          links inside body prose keep flowing with the text they sit in. */
       .top-bar a,.page-header a,.page-sub a,.section-title a{min-height:44px;display:inline-flex;align-items:center;}
+      /* Collapsing a drawer group is a tap like any other; the header rendered
+         24px tall. justify-content stays default so the chevron keeps its place
+         at the far right of the row. */
+      .sb-section-header.sb-collapsible{min-height:44px;}
+      /* Pager arrows were 26px wide (44 tall) — a fingertip misses sideways just
+         as easily as vertically. Page rules set an explicit padding-based width,
+         so the floor has to outrank them. */
+      .pager-btn,.pag button,.pager button{min-width:44px !important;}
+      /* The recovery link on an error page is the only control it has. */
+      #err a,.err-box a{min-height:44px;display:inline-flex;align-items:center;}
+
+      /* ── LEGIBILITY FLOOR ──
+         Uppercase micro-labels are set in rem (0.52–0.62rem = 8.3–9.9px). Under
+         ~10px they stop being readable at arm's length on a phone, and letter-
+         spacing makes it worse. Raise just the label tier; values, headings and
+         body text already sit well above the floor.
+         !important for the same reason the input rule above needs it: these
+         sizes are set through multi-class page selectors that outrank a bare
+         class here, and the rule is scoped to the phone breakpoint so desktop
+         keeps its denser type. */
+      .sb-section-header,.sb-brand-sub,.sb-status-row,.sb-nav-badge{font-size:0.68rem !important;}
+      /* Named label classes, then the same tier caught structurally — the app
+         has ~40 page-local variants of "-label"/"-sub"/"-meta"/badge, and
+         listing them one by one leaves a tail that only shows up on the next
+         page someone writes. */
+      .sc-label,.sc-sub,.cap-label,.cap-sub,.section-title,.page-status-text,
+      .top-bar-badge,.top-bar-cache,.top-bar-btn,.export-btn,.reset-btn,
+      .act-btn,.chip,.pill,.tag,.counter,.pag-info,.dw-toggle,
+      label,.lbl,.w-cap,.fp,.log-time,.log-lvl,
+      th,.crumb span,.breadcrumb span,.panel h3,.sc-sub span,.sc-breakdown span,
+      [class*="-label"],[class*="-sub"],[class*="-meta"],[class*="badge"],
+      [class*="-status"],[class*="caret"],[class*="-info"],[class*="-name"],
+      .capital-strip .cap-cell,.brokers span,.yr-now,
+      .sub,.action-title,.chart-title,.proc-title,.sc-breakdown,.run-bar div,
+      #meta,#olderHint{font-size:0.7rem !important;}
 
       /* Long unbreakable tokens (env keys, option symbols, file paths) inside
          inline code have to wrap. Inside <pre> they must NOT — that block keeps
@@ -1383,7 +1441,7 @@ function logViewerHTML(logsJSON, prefix = 'log') {
         <option value="100">100/page</option>
         <option value="9999">All</option>
       </select>
-      <span id="${prefix}Count" style="font-size:0.7rem;color:#4a6080;"></span>
+      <span id="${prefix}Count" style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);"></span>
     </div>
     <div id="${prefix}Box" style="background:#07111f;border:0.5px solid #0e1e36;border-radius:12px;padding:12px 16px;max-height:360px;overflow-y:auto;"></div>
     <div id="${prefix}Pag" style="display:flex;gap:5px;margin-top:8px;flex-wrap:wrap;"></div>
@@ -1409,7 +1467,7 @@ function logViewerHTML(logsJSON, prefix = 'log') {
     var start=(${prefix}Pg-1)*${prefix}PP_val, slice=${prefix}Filtered.slice(start,start+${prefix}PP_val);
     document.getElementById('${prefix}Count').textContent = ${prefix}Filtered.length+' of '+${prefix}_ALL.length;
     var box=document.getElementById('${prefix}Box');
-    if(slice.length===0){ box.innerHTML='<div style="color:#4a6080;font-size:0.78rem;">No entries match.</div>'; document.getElementById('${prefix}Pag').innerHTML=''; return; }
+    if(slice.length===0){ box.innerHTML='<div style="color:var(--muted-1,#8ba1c2);font-size:0.78rem;">No entries match.</div>'; document.getElementById('${prefix}Pag').innerHTML=''; return; }
     box.innerHTML = slice.map(function(l){
       var c = l.indexOf('❌')>=0?'#ef4444':l.indexOf('✅')>=0?'#10b981':l.indexOf('🚨')>=0||l.indexOf('🛑')>=0?'#f59e0b':l.indexOf('🎯')>=0||l.indexOf('⚡')>=0?'#3b82f6':'#4a6080';
       return '<div style="padding:5px 0;border-bottom:1px solid #0e1e36;font-size:0.72rem;font-family:monospace;color:'+c+';line-height:1.4;">'+l+'</div>';
@@ -1436,13 +1494,13 @@ function logViewerHTML(logsJSON, prefix = 'log') {
  */
 function tableEnhancerCSS() {
   return `
-    .enh-bar{display:flex;align-items:center;gap:8px;margin:0 0 6px;flex-wrap:wrap;font-family:'IBM Plex Mono',monospace;font-size:0.64rem;color:#4a6080;}
+    .enh-bar{display:flex;align-items:center;gap:8px;margin:0 0 6px;flex-wrap:wrap;font-family:'IBM Plex Mono',monospace;font-size:0.64rem;color:var(--muted-1,#8ba1c2);}
     .enh-bar .enh-filter{background:#04090f;border:0.5px solid #0e1e36;color:#e0eaf8;padding:4px 9px;border-radius:5px;font-family:inherit;font-size:0.66rem;outline:none;width:200px;}
     .enh-bar .enh-filter:focus{border-color:#3b82f6;}
     .enh-bar select{background:#04090f;border:0.5px solid #0e1e36;color:#e0eaf8;padding:3px 6px;border-radius:5px;font-family:inherit;font-size:0.66rem;outline:none;cursor:pointer;}
-    .enh-bar .enh-info{color:#3a5070;}
-    .enh-bar .enh-label{font-size:0.55rem;text-transform:uppercase;letter-spacing:1px;color:#3a5070;}
-    .enh-pager{display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap;font-family:'IBM Plex Mono',monospace;font-size:0.66rem;color:#4a6080;}
+    .enh-bar .enh-info{color:var(--muted-2,#6d85a8);}
+    .enh-bar .enh-label{font-size:0.55rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-2,#6d85a8);}
+    .enh-pager{display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap;font-family:'IBM Plex Mono',monospace;font-size:0.66rem;color:var(--muted-1,#8ba1c2);}
     .enh-pager .enh-btn{background:#0d1320;border:1px solid #1a2236;color:#4a9cf5;padding:3px 8px;min-width:26px;border-radius:5px;font-family:inherit;font-size:0.66rem;cursor:pointer;}
     .enh-pager .enh-btn:hover:not(:disabled){background:#0a1e3d;border-color:#3b82f6;}
     .enh-pager .enh-btn:disabled{opacity:0.3;cursor:not-allowed;}
@@ -1454,7 +1512,7 @@ function tableEnhancerCSS() {
     :root[data-theme="light"] .enh-bar .enh-filter,
     :root[data-theme="light"] .enh-bar select{background:#fff!important;border-color:#e0e4ea!important;color:#334155!important;}
     :root[data-theme="light"] .enh-bar .enh-info,
-    :root[data-theme="light"] .enh-bar .enh-label{color:#94a3b8!important;}
+    :root[data-theme="light"] .enh-bar .enh-label{color:#5c6b7f!important;}
     :root[data-theme="light"] .enh-pager .enh-btn{background:#fff!important;border-color:#e0e4ea!important;color:#2563eb!important;}
     :root[data-theme="light"] .enh-pager .enh-btn:hover:not(:disabled){background:#eff6ff!important;border-color:#3b82f6!important;}
   `;
@@ -1706,10 +1764,10 @@ function modalCSS() {
     :root[data-theme="light"] .modal-overlay { background:rgba(0,0,0,0.3); }
     :root[data-theme="light"] .modal-box { background:#ffffff; border-color:#e0e4ea; box-shadow:0 8px 40px rgba(0,0,0,0.15); }
     :root[data-theme="light"] .modal-title { color:#1e293b; }
-    :root[data-theme="light"] .modal-msg { color:#64748b; }
+    :root[data-theme="light"] .modal-msg { color:#4b5769; }
     :root[data-theme="light"] .modal-input { background:#f8fafc; border-color:#e0e4ea; color:#1e293b; }
     :root[data-theme="light"] .modal-input:focus { border-color:#3b82f6; }
-    :root[data-theme="light"] .modal-btn-cancel { border-color:#e0e4ea; color:#64748b; }
+    :root[data-theme="light"] .modal-btn-cancel { border-color:#e0e4ea; color:#4b5769; }
     :root[data-theme="light"] .modal-btn-cancel:hover { border-color:#94a3b8; color:#334155; }
   `;
 }
@@ -1718,6 +1776,328 @@ function modalCSS() {
  * JS for the custom modal system + API_SECRET session helper.
  * Include once per page inside <script>.
  */
+/**
+ * Light-theme runtime: sets data-theme, injects the light stylesheet, and
+ * re-maps dark hexes in both rule declarations and inline styles. Self-guarded,
+ * so emitting it more than once on a page is harmless.
+ */
+function themeJS() {
+  return `
+// ── Theme overriding ────────────────────────────────────────────────────────
+// Emitted by BOTH modalJS() and buildSidebar(), so a page gets it whichever of
+// the two it uses. The guard makes the second copy a no-op.
+if (!window.__ltInit) {
+window.__ltInit = true;
+(function(){
+  if ('${resolveTheme()}' !== 'light') return;
+  document.documentElement.setAttribute('data-theme', 'light');
+
+  // ── Force body style immediately ──
+  document.body.style.setProperty('background', '#f4f6f9', 'important');
+  document.body.style.setProperty('color', '#334155', 'important');
+
+  // ── Inject light-theme CSS at END of <head> to guarantee cascade wins ──
+  var _ltStyle = document.createElement('style');
+  _ltStyle.id = 'light-theme-force';
+  _ltStyle.textContent = [
+    'body{background:#f4f6f9!important;color:#334155!important;}',
+    '.main-content{background:#f4f6f9!important;}',
+    '.page{color:#334155!important;}',
+    '.top-bar{background:#fff!important;border-bottom-color:#e0e4ea!important;}',
+    '.top-bar-title{color:#1e293b!important;}',
+    '.top-bar-meta{color:#5c6b7f!important;}',
+    'h1{color:#1e293b!important;}',
+    '.page-title{color:#1e293b!important;}',
+    '.subtitle,.page-subtitle,.page-sub{color:#5c6b7f!important;}',
+    '.sc{background:#fff!important;border-color:#e0e4ea!important;box-shadow:0 1px 3px rgba(0,0,0,.06)!important;}',
+    '.sc-label,.cap-label{color:#4b5769!important;}',
+    '.sc-val{color:#1e293b!important;}',
+    '.sc-sub{color:#5c6b7f!important;}',
+    '.section-title{color:#4b5769!important;}',
+    '.section-title::after{background:#e0e4ea!important;}',
+    'table th{color:#4b5769!important;background:#f1f5f9!important;}',
+    'table td{border-color:#e0e4ea!important;}',
+    'table tr{border-color:#e0e4ea!important;}',
+    'tbody tr:hover{background:#f8fafc!important;}',
+    // Cards & panels
+    '.card,.box,.err-box,.confirm-box,.panel,.chart-wrap,.session-card,.ana-card,.ana-mini,.log-box,.capital-strip{background:#fff!important;border-color:#e0e4ea!important;}',
+    '.metric{background:#f8fafc!important;border-color:#e0e4ea!important;}',
+    '.session-head{background:#f8fafc!important;border-bottom-color:#e0e4ea!important;}',
+    '.run-bar{background:#f8fafc!important;border-color:#e0e4ea!important;}',
+    // Text colors
+    '.panel-title,.chart-title,.diff-title,.session-name{color:#1e293b!important;}',
+    '.metric-label,.cap-label,.proc-title,.stat-label,.chart-title-text,.ana-card h3,.ana-mini h3{color:#4b5769!important;}',
+    '.metric-val,.cap-val,.stat-value,.proc-item .pi-val{color:#1e293b!important;}',
+    '.metric-sub,.cap-sub,.no-data{color:#5c6b7f!important;}',
+    '.cap-val.white{color:#1e293b!important;}',
+    '.cap-val.green{color:#166534!important;}',
+    // Tables (compare, diff, day, history, data)
+    '.diff-table th,.day-table th,.data-table th,.summary-table th,.holiday-table th,.ana-tbl th,.tbl th{color:#4b5769!important;border-bottom-color:#e0e4ea!important;background:#f1f5f9!important;}',
+    '.diff-table td,.day-table td,.data-table td,.summary-table td,.ana-tbl td,.tbl td{border-color:#e0e4ea!important;color:#334155!important;}',
+    '.diff-table .neutral{color:#334155!important;}',
+    '.diff-table tr:hover,.day-table tr:hover,.ana-tbl tr:hover{background:#f8fafc!important;}',
+    // Cap cells
+    '.cap-cell{border-right-color:#e0e4ea!important;}',
+    // Stat cards for monitor
+    '.stat-card,.chart-card,.proc-card{background:#fff!important;border-color:#e0e4ea!important;}',
+    '.stat-sub,.proc-item .pi-label{color:#5c6b7f!important;}',
+    '.bar-track{background:#e2e8f0!important;}',
+    // Logs
+    '.toolbar{background:#fff!important;border-bottom-color:#e0e4ea!important;}',
+    '.log-wrap{background:#fff!important;}',
+    '.log-row{border-bottom-color:#f1f5f9!important;}',
+    '#search{background:#f8fafc!important;border-color:#e0e4ea!important;color:#334155!important;}',
+    // Export/action btns
+    '.export-btn,.copy-btn{background:#f8fafc!important;border-color:#e0e4ea!important;color:#4b5769!important;}',
+    // Broker badges
+    '.broker-badges{background:#fff!important;border-bottom-color:#e0e4ea!important;}',
+    '.broker-badge.ok{background:#eff6ff!important;border-color:#bfdbfe!important;color:#1d4ed8!important;}',
+    '.broker-badge.err{background:#fef2f2!important;border-color:#fecaca!important;color:#b91c1c!important;}',
+    // Accents that were tuned for the dark surface and fail on a light one.
+    // These are class rules, so the inline-style rewriter never sees them.
+    '.card .val,#status-text{color:#1e293b!important;}',
+    '.mode-ema_rsi_st{color:#1d4ed8!important;}',
+    '.mode-bb_rsi{color:#b45309!important;}',
+    '.mode-pa{color:#6d28d9!important;}',
+    '.mode-orb{color:#047857!important;}',
+    '.mode-ema9vwap{color:#0e7490!important;}',
+    '.mode-trend_pb{color:#be185d!important;}',
+    '.mode-gaps{color:#0369a1!important;}',
+    '.mode-trend_day_scalp{color:#6d28d9!important;}',
+    '.mode-gap_fix_3m{color:#0369a1!important;}',
+    '.brk-action,.brk-action.re-login{color:#1d4ed8!important;}',
+    '.brk-wallet-sub .zero,.pnl-flat,.ms-caret,.log-time,.da-empty,.bc-link,.tbar label,.pager label,.run-bar label,#dashRange label{color:#4b5769!important;}',
+    '#da-mode-badge{color:#1d4ed8!important;}',
+    '.rh-meta b,.page-sub a{color:#0369a1!important;}',
+    '.reset-btn{color:#b91c1c!important;}',
+    // Selection
+    '::selection{background:#bfdbfe!important;color:#1e293b!important;}',
+  ].join('\\n');
+  document.head.appendChild(_ltStyle);
+
+  // ── Light-theme inline style rewriter ──────────────────────────────────────
+  // Maps dark hex colors → light equivalents for inline style="" attributes.
+  var bgMap = {
+    '#080c14':'#f4f6f9','#040c18':'#f4f6f9','#030b18':'#f4f6f9',
+    '#0d1320':'#ffffff','#07111f':'#ffffff','#070d18':'#f8fafc',
+    '#0a0f1c':'#f1f5f9','#06101a':'#ffffff','#0a1528':'#f8fafc',
+    '#08091a':'#ffffff','#0d1117':'#ffffff','#090f09':'#ffffff',
+    '#0c0c18':'#f8fafc','#0a0a12':'#f8fafc','#0e0e1e':'#f1f5f9',
+    '#0a0f14':'#f8fafc','#060910':'#f4f6f9','#040c18':'#f4f6f9',
+    '#0a0e18':'#f8fafc','#060c18':'#f4f6f9','#04060e':'#f4f6f9',
+    '#0a1020':'#ffffff','#0a1628':'#ffffff','#0e1c33':'#f1f5f9',
+    '#0c4a6e':'#e0f2fe','#0d1f17':'#f0fdf4','#1e293b':'#f1f5f9',
+    '#0d1a2a':'#f8fafc','#101828':'#f8fafc',
+    '#050d1a':'#f4f6f9','#060810':'#f4f6f9','#060c1a':'#f4f6f9',
+    '#080e1a':'#f8fafc','#0a1220':'#f8fafc','#0a1424':'#f8fafc',
+    '#0a1a2a':'#f8fafc','#0d1726':'#f8fafc','#0f1117':'#ffffff',
+    '#0f172a':'#f8fafc','#111827':'#f8fafc','#04090f':'#f4f6f9',
+    '#06090e':'#f4f6f9','#060a14':'#f4f6f9','#0a120a':'#f4f6f9',
+    '#0d0e00':'#fffbeb','#080700':'#fffbeb','#1a1200':'#fffbeb',
+    '#1c1400':'#fffbeb','#1c0d00':'#fffbeb','#120e00':'#fffbeb',
+    '#1a1a2e':'#f1f5f9','#1a1f2e':'#f1f5f9','#0e1828':'#f1f5f9',
+    '#0e1a28':'#f1f5f9','#0a0c1a':'#f8fafc','#0a0d1a':'#f8fafc','#080a16':'#f1f5f9',
+    // Green-tinted dark backgrounds → light green
+    '#071a12':'#f0fdf4','#04100a':'#f0fdf4','#071e0f':'#f0fdf4',
+    '#072014':'#f0fdf4','#060e06':'#f0fdf4','#0a1f0a':'#f0fdf4',
+    '#0a2a0a':'#f0fdf4','#0a3018':'#dcfce7','#0d3018':'#dcfce7',
+    '#0d3020':'#dcfce7','#0d3a18':'#dcfce7','#06180e':'#dcfce7',
+    '#0d2a14':'#dcfce7','#06100e':'#f0fdf4','#134e35':'#dcfce7',
+    '#064e3b':'#d1fae5','#065f46':'#d1fae5','#166534':'#bbf7d0',
+    // Blue-tinted dark backgrounds → light blue
+    '#07112e':'#eff6ff','#071428':'#eff6ff','#0a1e3d':'#dbeafe',
+    '#0d2040':'#dbeafe','#0e2850':'#dbeafe','#0e2860':'#dbeafe',
+    '#071a3e':'#dbeafe','#1d3b6e':'#dbeafe','#1e40af':'#2563eb',
+    '#0e2045':'#dbeafe',
+    // Red-tinted dark backgrounds → light red
+    '#100408':'#fef2f2','#0a0408':'#fef2f2','#0c0608':'#fef2f2',
+    '#120608':'#fef2f2','#150608':'#fef2f2','#160608':'#fef2f2',
+    '#180508':'#fef2f2','#100508':'#fef2f2','#200708':'#fef2f2',
+    '#200810':'#fef2f2','#1c0610':'#fee2e2','#2d0a0a':'#fee2e2',
+    '#3a0f1c':'#fecaca','#3a1010':'#fecaca','#3a1020':'#fecaca',
+    '#1a0505':'#fef2f2','#1a0508':'#fef2f2','#1a0707':'#fef2f2',
+    '#2a0810':'#fef2f2','#2d1515':'#fee2e2','#3a1a1a':'#fee2e2',
+    '#3b0a0a':'#fee2e2','#1c1017':'#fef2f2',
+    // Orange/yellow dark backgrounds → light amber
+    '#2a1600':'#fffbeb','#2d1600':'#fffbeb','#2d1800':'#fffbeb',
+    '#2d1000':'#fffbeb','#3a2a00':'#fef9c3',
+    // Purple-tinted dark → light purple
+    '#0e0a28':'#f5f3ff','#1e0a3d':'#f5f3ff','#1e1550':'#ede9fe',
+    '#252550':'#ede9fe','#060e20':'#eff6ff','#060e1c':'#eff6ff',
+  };
+
+  var textMap = {
+    '#e0eaf8':'#1e293b','#c8d8f0':'#334155','#c0d8b0':'#1e293b',
+    // The dark skin paints muted text in two tiers (#8ba1c2 normal, #6d85a8 dim);
+    // both map onto light tiers that clear 4.5:1 on #f4f6f9. The pre-ramp hexes
+    // stay listed so a page that still carries an old inline colour is covered.
+    '#8ba1c2':'#5c6b7f','#6d85a8':'#5c6b7f','#7f9b5c':'#4d6b2e',
+    '#4a6080':'#4b5769','#3a5070':'#5c6b7f','#2a4060':'#5c6b7f',
+    '#1e3050':'#5c6b7f','#1a3050':'#5c6b7f','#3a5878':'#4b5769',
+    '#6a8ab0':'#4b5769','#a0c0e0':'#334155','#8aa1bd':'#4b5769',
+    '#2a3a50':'#5c6b7f','#2a3a52':'#5c6b7f',
+    '#3a4060':'#5c6b7f','#4a5878':'#5c6b7f','#2a6080':'#4b5769',
+    '#1e2940':'#4b5769','#1e2a40':'#4b5769','#a0b8d8':'#334155','#2a3c5a':'#4b5769',
+    '#c0d8b0':'#1e293b','#a0c880':'#166534','#2a3a20':'#4b5769','#e2e8f0':'#1e293b',
+    // Bright colors → darker for light bg
+    '#60a5fa':'#1d4ed8','#34d399':'#047857','#f87171':'#b91c1c',
+    '#fbbf24':'#92400e','#a78bfa':'#6d28d9','#4ade80':'#166534',
+    '#818cf8':'#4f46e5','#f6ad55':'#c2410c','#fbd38d':'#b45309',
+    '#f59e0b':'#92400e','#5b8dff':'#1d4ed8','#22d3ee':'#0e7490',
+    '#10b981':'#047857','#ef4444':'#b91c1c','#3b82f6':'#1d4ed8',
+    '#22c55e':'#15803d','#4a9cf5':'#1d4ed8','#7dd3fc':'#0369a1',
+    '#06b6d4':'#0e7490','#0ea5e9':'#0369a1','#38bdf8':'#0369a1',
+    '#a855f7':'#6d28d9','#ec4899':'#be185d','#c084fc':'#7e22ce',
+    '#7d8aa3':'#4b5769','#86efac':'#166534','#93c5fd':'#1d4ed8',
+    '#e5e7eb':'#334155','#cbd5e1':'#475569','#94a3b8':'#5c6b7f',
+    '#6ee7b7':'#047857','#fb923c':'#c2410c','#8b5cf6':'#6d28d9',
+    '#eab308':'#854d0e','#facc15':'#854d0e','#2dd4bf':'#0f766e',
+    '#a3b8d0':'#334155','#93a9c9':'#475569','#6b7fa0':'#4b5769',
+    '#a8bcd8':'#334155','#9333ea':'#7e22ce','#db2777':'#be185d',
+    '#f472b6':'#be185d','#16a34a':'#166534','#9aa9c2':'#4b5769',
+  };
+
+  var borderMap = {
+    '#0e1e36':'#e0e4ea','#1a2236':'#e0e4ea','#1a2a40':'#e0e4ea',
+    '#0e1428':'#e0e4ea','#1a2640':'#e0e4ea','#1e1e36':'#e2e8f0',
+    '#1a3a6a':'#bfdbfe','#1e3a5a':'#cbd5e1','#1e3a5f':'#cbd5e1',
+    '#1a3a8a':'#93c5fd','#162416':'#d1fae5','#0e3018':'#86efac',
+    '#0e4020':'#86efac','#134e35':'#86efac','#0e2850':'#93c5fd',
+    '#0e2860':'#93c5fd','#0e2045':'#93c5fd','#0d2545':'#93c5fd',
+    '#0d3a1e':'#86efac','#500e20':'#fca5a5','#3a0f1c':'#fca5a5',
+    '#3a1020':'#fca5a5','#5a1010':'#fca5a5','#3a0d12':'#fca5a5',
+    '#243048':'#cbd5e1','#253347':'#334155','#2a2a48':'#e2e8f0',
+    '#1a2a18':'#d1fae5','#1a2a3a':'#e0e4ea','#1a4080':'#93c5fd',
+    '#312e0f':'#fcd34d','#2a3446':'#e0e4ea',
+  };
+
+  function rewriteInlineStyles() {
+    var els = document.querySelectorAll('[style]');
+    for (var i = 0; i < els.length; i++) {
+      var s = els[i].getAttribute('style');
+      if (!s) continue;
+      var orig = s;
+      // Replace backgrounds
+      s = s.replace(/background\\s*:\\s*(#[0-9a-fA-F]{6})/gi, function(m, hex) {
+        var l = hex.toLowerCase();
+        return bgMap[l] ? 'background:' + bgMap[l] : m;
+      });
+      // Replace text colors (not border-color)
+      s = s.replace(/(^|[;}\\s])color\\s*:\\s*(#[0-9a-fA-F]{6})/gi, function(m, pre, hex) {
+        var l = hex.toLowerCase();
+        return textMap[l] ? pre + 'color:' + textMap[l] : m;
+      });
+      // Replace border colors
+      s = s.replace(/border[^:]*:\\s*[^;]*?(#[0-9a-fA-F]{6})/gi, function(m, hex) {
+        var l = hex.toLowerCase();
+        return borderMap[l] ? m.replace(hex, borderMap[l]) : m;
+      });
+      if (s !== orig) els[i].setAttribute('style', s);
+
+      // The attribute pass above only sees #rrggbb. Anything the page later set
+      // through el.style.* is serialised by the browser as rgb(...), so it never
+      // matched — that is how a panel kept its dark background while its text
+      // was remapped. _mapDecl reads the parsed value, so it covers both forms.
+      _mapDecl(els[i].style, 'color', textMap);
+      _mapDecl(els[i].style, 'background-color', bgMap);
+      for (var k = 0; k < _SIDES.length; k++) _mapDecl(els[i].style, _SIDES[k], borderMap);
+    }
+  }
+
+  // ── Light-theme stylesheet rewriter ────────────────────────────────────────
+  // The inline pass above only reaches style="" attributes. Every colour a page
+  // sets through its own <style> block — strategy accents, panel badges, card
+  // titles, "no data" text — was invisible to it, so those kept their dark-skin
+  // value on a light background. Walking the CSSOM once at load applies the same
+  // three maps to rule declarations, which is what makes the light theme hold on
+  // pages nobody wrote a :root[data-theme="light"] block for.
+  //
+  // Declarations are set through setProperty with the original priority so an
+  // !important rule stays !important and the cascade is unchanged — only the
+  // colour value moves.
+  var _SIDES = ['border-top-color','border-right-color','border-bottom-color','border-left-color'];
+
+  function _hexOf(v) {
+    var m = /^rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/.exec(v || '');
+    if (!m) return null;
+    function h(n) { n = (+n).toString(16); return n.length < 2 ? '0' + n : n; }
+    return ('#' + h(m[1]) + h(m[2]) + h(m[3])).toLowerCase();
+  }
+
+  function _mapDecl(st, prop, map) {
+    var hex = _hexOf(st.getPropertyValue(prop));
+    if (!hex || !map[hex]) return;
+    st.setProperty(prop, map[hex], st.getPropertyPriority(prop));
+  }
+
+  function _walkRules(rules) {
+    for (var j = 0; j < rules.length; j++) {
+      var r = rules[j];
+      // Since CSS nesting shipped, a plain CSSStyleRule also exposes a (usually
+      // empty) .cssRules list — so this cannot be an if/else against a grouping
+      // rule. Map this rule's own declarations first, then descend into any
+      // children it actually has (@media, @supports, nested blocks).
+      if (r.style && r.selectorText &&
+          // Rules already written for this theme hold the light values —
+          // remapping them would send the colour back the other way.
+          r.selectorText.indexOf('data-theme="light"') < 0 &&
+          // The drawer stays dark in the light skin (see .sidebar above), so its
+          // text must keep the dark-theme values.
+          !/(^|[\s,>+~])(\.sb-|\.sidebar|#main-sidebar)/.test(r.selectorText)) {
+        _mapDecl(r.style, 'color', textMap);
+        _mapDecl(r.style, 'background-color', bgMap);
+        for (var k = 0; k < _SIDES.length; k++) _mapDecl(r.style, _SIDES[k], borderMap);
+      }
+      if (r.cssRules && r.cssRules.length) _walkRules(r.cssRules);
+    }
+  }
+
+  // A sheet is only walked once — re-walking is wasted work, and a second pass
+  // over an already-mapped rule could match a value that is itself a map key.
+  var _ltSeenSheets = [];
+  function rewriteStyleSheets() {
+    var sheets = document.styleSheets;
+    window.__ltSheetsWalked = window.__ltSheetsWalked || 0;
+    for (var i = 0; i < sheets.length; i++) {
+      var sheet = sheets[i];
+      var owner = sheet.ownerNode;
+      if (owner && owner.id === 'light-theme-force') continue;  // already light
+      if (_ltSeenSheets.indexOf(sheet) >= 0) continue;
+      var rules;
+      try { rules = sheet.cssRules; } catch (e) { continue; }   // cross-origin (fonts)
+      if (!rules) continue;
+      _ltSeenSheets.push(sheet);
+      _walkRules(rules);
+      window.__ltSheetsWalked++;
+    }
+  }
+
+  function rewriteAll() { rewriteStyleSheets(); rewriteInlineStyles(); }
+
+  // Sheets can be parsed after this script runs (a <style> further down the
+  // document, or a late <link>), so sweep at each point where the set can have
+  // grown. rewriteStyleSheets skips anything it has already walked.
+  rewriteAll();
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', rewriteAll);
+  }
+  window.addEventListener('load', rewriteAll);
+  // Re-run on dynamic content changes (socket updates, etc.)
+  var _ltObs = new MutationObserver(function(mutations) {
+    var needsRewrite = false;
+    for (var i = 0; i < mutations.length; i++) {
+      if (mutations[i].type === 'childList' && mutations[i].addedNodes.length) {
+        needsRewrite = true; break;
+      }
+    }
+    if (needsRewrite) rewriteInlineStyles();
+  });
+  _ltObs.observe(document.body || document.documentElement, { childList: true, subtree: true });
+})();
+}
+`;
+}
+
 function modalJS() {
   return `
 // ── Modal System ────────────────────────────────────────────────────────────
@@ -1957,197 +2337,7 @@ async function secretGo(url, btn) {
   return true;
 }
 
-// ── Theme overriding ────────────────────────────────────────────────────────
-(function(){
-  if ('${resolveTheme()}' !== 'light') return;
-  document.documentElement.setAttribute('data-theme', 'light');
-
-  // ── Force body style immediately ──
-  document.body.style.setProperty('background', '#f4f6f9', 'important');
-  document.body.style.setProperty('color', '#334155', 'important');
-
-  // ── Inject light-theme CSS at END of <head> to guarantee cascade wins ──
-  var _ltStyle = document.createElement('style');
-  _ltStyle.id = 'light-theme-force';
-  _ltStyle.textContent = [
-    'body{background:#f4f6f9!important;color:#334155!important;}',
-    '.main-content{background:#f4f6f9!important;}',
-    '.page{color:#334155!important;}',
-    '.top-bar{background:#fff!important;border-bottom-color:#e0e4ea!important;}',
-    '.top-bar-title{color:#1e293b!important;}',
-    '.top-bar-meta{color:#94a3b8!important;}',
-    'h1{color:#1e293b!important;}',
-    '.page-title{color:#1e293b!important;}',
-    '.subtitle,.page-subtitle,.page-sub{color:#94a3b8!important;}',
-    '.sc{background:#fff!important;border-color:#e0e4ea!important;box-shadow:0 1px 3px rgba(0,0,0,.06)!important;}',
-    '.sc-label,.cap-label{color:#64748b!important;}',
-    '.sc-val{color:#1e293b!important;}',
-    '.sc-sub{color:#94a3b8!important;}',
-    '.section-title{color:#64748b!important;}',
-    '.section-title::after{background:#e0e4ea!important;}',
-    'table th{color:#64748b!important;background:#f1f5f9!important;}',
-    'table td{border-color:#e0e4ea!important;}',
-    'table tr{border-color:#e0e4ea!important;}',
-    'tbody tr:hover{background:#f8fafc!important;}',
-    // Cards & panels
-    '.card,.box,.err-box,.confirm-box,.panel,.chart-wrap,.session-card,.ana-card,.ana-mini,.log-box,.capital-strip{background:#fff!important;border-color:#e0e4ea!important;}',
-    '.metric{background:#f8fafc!important;border-color:#e0e4ea!important;}',
-    '.session-head{background:#f8fafc!important;border-bottom-color:#e0e4ea!important;}',
-    '.run-bar{background:#f8fafc!important;border-color:#e0e4ea!important;}',
-    // Text colors
-    '.panel-title,.chart-title,.diff-title,.session-name{color:#1e293b!important;}',
-    '.metric-label,.cap-label,.proc-title,.stat-label,.chart-title-text,.ana-card h3,.ana-mini h3{color:#64748b!important;}',
-    '.metric-val,.cap-val,.stat-value,.proc-item .pi-val{color:#1e293b!important;}',
-    '.metric-sub,.cap-sub,.no-data{color:#94a3b8!important;}',
-    '.cap-val.white{color:#1e293b!important;}',
-    '.cap-val.green{color:#16a34a!important;}',
-    // Tables (compare, diff, day, history, data)
-    '.diff-table th,.day-table th,.data-table th,.summary-table th,.holiday-table th,.ana-tbl th,.tbl th{color:#64748b!important;border-bottom-color:#e0e4ea!important;background:#f1f5f9!important;}',
-    '.diff-table td,.day-table td,.data-table td,.summary-table td,.ana-tbl td,.tbl td{border-color:#e0e4ea!important;color:#334155!important;}',
-    '.diff-table .neutral{color:#334155!important;}',
-    '.diff-table tr:hover,.day-table tr:hover,.ana-tbl tr:hover{background:#f8fafc!important;}',
-    // Cap cells
-    '.cap-cell{border-right-color:#e0e4ea!important;}',
-    // Stat cards for monitor
-    '.stat-card,.chart-card,.proc-card{background:#fff!important;border-color:#e0e4ea!important;}',
-    '.stat-sub,.proc-item .pi-label{color:#94a3b8!important;}',
-    '.bar-track{background:#e2e8f0!important;}',
-    // Logs
-    '.toolbar{background:#fff!important;border-bottom-color:#e0e4ea!important;}',
-    '.log-wrap{background:#fff!important;}',
-    '.log-row{border-bottom-color:#f1f5f9!important;}',
-    '#search{background:#f8fafc!important;border-color:#e0e4ea!important;color:#334155!important;}',
-    // Export/action btns
-    '.export-btn,.copy-btn{background:#f8fafc!important;border-color:#e0e4ea!important;color:#64748b!important;}',
-    // Broker badges
-    '.broker-badges{background:#fff!important;border-bottom-color:#e0e4ea!important;}',
-    '.broker-badge.ok{background:#eff6ff!important;border-color:#bfdbfe!important;color:#2563eb!important;}',
-    '.broker-badge.err{background:#fef2f2!important;border-color:#fecaca!important;color:#dc2626!important;}',
-    // Selection
-    '::selection{background:#bfdbfe!important;color:#1e293b!important;}',
-  ].join('\\n');
-  document.head.appendChild(_ltStyle);
-
-  // ── Light-theme inline style rewriter ──────────────────────────────────────
-  // Maps dark hex colors → light equivalents for inline style="" attributes.
-  var bgMap = {
-    '#080c14':'#f4f6f9','#040c18':'#f4f6f9','#030b18':'#f4f6f9',
-    '#0d1320':'#ffffff','#07111f':'#ffffff','#070d18':'#f8fafc',
-    '#0a0f1c':'#f1f5f9','#06101a':'#ffffff','#0a1528':'#f8fafc',
-    '#08091a':'#ffffff','#0d1117':'#ffffff','#090f09':'#ffffff',
-    '#0c0c18':'#f8fafc','#0a0a12':'#f8fafc','#0e0e1e':'#f1f5f9',
-    '#0a0f14':'#f8fafc','#060910':'#f4f6f9','#040c18':'#f4f6f9',
-    '#0a0e18':'#f8fafc','#060c18':'#f4f6f9','#04060e':'#f4f6f9',
-    '#050d1a':'#f4f6f9','#060810':'#f4f6f9','#060c1a':'#f4f6f9',
-    '#080e1a':'#f8fafc','#0a1220':'#f8fafc','#0a1424':'#f8fafc',
-    '#0a1a2a':'#f8fafc','#0d1726':'#f8fafc','#0f1117':'#ffffff',
-    '#0f172a':'#f8fafc','#111827':'#f8fafc','#04090f':'#f4f6f9',
-    '#06090e':'#f4f6f9','#060a14':'#f4f6f9','#0a120a':'#f4f6f9',
-    '#0d0e00':'#fffbeb','#080700':'#fffbeb','#1a1200':'#fffbeb',
-    '#1c1400':'#fffbeb','#1c0d00':'#fffbeb','#120e00':'#fffbeb',
-    '#1a1a2e':'#f1f5f9','#1a1f2e':'#f1f5f9','#0e1828':'#f1f5f9',
-    '#0e1a28':'#f1f5f9','#0a0c1a':'#f8fafc','#0a0d1a':'#f8fafc','#080a16':'#f1f5f9',
-    // Green-tinted dark backgrounds → light green
-    '#071a12':'#f0fdf4','#04100a':'#f0fdf4','#071e0f':'#f0fdf4',
-    '#072014':'#f0fdf4','#060e06':'#f0fdf4','#0a1f0a':'#f0fdf4',
-    '#0a2a0a':'#f0fdf4','#0a3018':'#dcfce7','#0d3018':'#dcfce7',
-    '#0d3020':'#dcfce7','#0d3a18':'#dcfce7','#06180e':'#dcfce7',
-    '#0d2a14':'#dcfce7','#06100e':'#f0fdf4','#134e35':'#dcfce7',
-    '#064e3b':'#d1fae5','#065f46':'#d1fae5','#166534':'#bbf7d0',
-    // Blue-tinted dark backgrounds → light blue
-    '#07112e':'#eff6ff','#071428':'#eff6ff','#0a1e3d':'#dbeafe',
-    '#0d2040':'#dbeafe','#0e2850':'#dbeafe','#0e2860':'#dbeafe',
-    '#071a3e':'#dbeafe','#1d3b6e':'#dbeafe','#1e40af':'#2563eb',
-    '#0e2045':'#dbeafe',
-    // Red-tinted dark backgrounds → light red
-    '#100408':'#fef2f2','#0a0408':'#fef2f2','#0c0608':'#fef2f2',
-    '#120608':'#fef2f2','#150608':'#fef2f2','#160608':'#fef2f2',
-    '#180508':'#fef2f2','#100508':'#fef2f2','#200708':'#fef2f2',
-    '#200810':'#fef2f2','#1c0610':'#fee2e2','#2d0a0a':'#fee2e2',
-    '#3a0f1c':'#fecaca','#3a1010':'#fecaca','#3a1020':'#fecaca',
-    '#1a0505':'#fef2f2','#1a0508':'#fef2f2','#1a0707':'#fef2f2',
-    '#2a0810':'#fef2f2','#2d1515':'#fee2e2','#3a1a1a':'#fee2e2',
-    '#3b0a0a':'#fee2e2','#1c1017':'#fef2f2',
-    // Orange/yellow dark backgrounds → light amber
-    '#2a1600':'#fffbeb','#2d1600':'#fffbeb','#2d1800':'#fffbeb',
-    '#2d1000':'#fffbeb','#3a2a00':'#fef9c3',
-    // Purple-tinted dark → light purple
-    '#0e0a28':'#f5f3ff','#1e0a3d':'#f5f3ff','#1e1550':'#ede9fe',
-    '#252550':'#ede9fe','#060e20':'#eff6ff','#060e1c':'#eff6ff',
-  };
-
-  var textMap = {
-    '#e0eaf8':'#1e293b','#c8d8f0':'#334155','#c0d8b0':'#1e293b',
-    '#4a6080':'#64748b','#3a5070':'#94a3b8','#2a4060':'#94a3b8',
-    '#1e3050':'#94a3b8','#1a3050':'#94a3b8','#3a5878':'#64748b',
-    '#6a8ab0':'#64748b','#a0c0e0':'#334155','#8aa1bd':'#64748b',
-    '#2a3a20':'#64748b','#2a3a50':'#94a3b8','#2a3a52':'#94a3b8',
-    '#3a4060':'#94a3b8','#4a5878':'#94a3b8','#2a6080':'#64748b',
-    '#1e2940':'#64748b','#1e2a40':'#64748b','#a0b8d8':'#334155','#2a3c5a':'#64748b',
-    '#c0d8b0':'#1e293b','#a0c880':'#16a34a','#2a3a20':'#64748b','#e2e8f0':'#1e293b',
-    // Bright colors → darker for light bg
-    '#60a5fa':'#2563eb','#34d399':'#059669','#f87171':'#dc2626',
-    '#fbbf24':'#d97706','#a78bfa':'#7c3aed','#4ade80':'#16a34a',
-    '#818cf8':'#6366f1','#f6ad55':'#ea580c','#fbd38d':'#d97706',
-  };
-
-  var borderMap = {
-    '#0e1e36':'#e0e4ea','#1a2236':'#e0e4ea','#1a2a40':'#e0e4ea',
-    '#0e1428':'#e0e4ea','#1a2640':'#e0e4ea','#1e1e36':'#e2e8f0',
-    '#1a3a6a':'#bfdbfe','#1e3a5a':'#cbd5e1','#1e3a5f':'#cbd5e1',
-    '#1a3a8a':'#93c5fd','#162416':'#d1fae5','#0e3018':'#86efac',
-    '#0e4020':'#86efac','#134e35':'#86efac','#0e2850':'#93c5fd',
-    '#0e2860':'#93c5fd','#0e2045':'#93c5fd','#0d2545':'#93c5fd',
-    '#0d3a1e':'#86efac','#500e20':'#fca5a5','#3a0f1c':'#fca5a5',
-    '#3a1020':'#fca5a5','#5a1010':'#fca5a5','#3a0d12':'#fca5a5',
-    '#243048':'#cbd5e1','#253347':'#334155','#2a2a48':'#e2e8f0',
-    '#1a2a18':'#d1fae5','#1a2a3a':'#e0e4ea','#1a4080':'#93c5fd',
-    '#312e0f':'#fcd34d','#2a3446':'#e0e4ea',
-  };
-
-  function rewriteInlineStyles() {
-    var els = document.querySelectorAll('[style]');
-    for (var i = 0; i < els.length; i++) {
-      var s = els[i].getAttribute('style');
-      if (!s) continue;
-      var orig = s;
-      // Replace backgrounds
-      s = s.replace(/background\s*:\s*(#[0-9a-fA-F]{6})/gi, function(m, hex) {
-        var l = hex.toLowerCase();
-        return bgMap[l] ? 'background:' + bgMap[l] : m;
-      });
-      // Replace text colors (not border-color)
-      s = s.replace(/(^|[;}\s])color\s*:\s*(#[0-9a-fA-F]{6})/gi, function(m, pre, hex) {
-        var l = hex.toLowerCase();
-        return textMap[l] ? pre + 'color:' + textMap[l] : m;
-      });
-      // Replace border colors
-      s = s.replace(/border[^:]*:\s*[^;]*?(#[0-9a-fA-F]{6})/gi, function(m, hex) {
-        var l = hex.toLowerCase();
-        return borderMap[l] ? m.replace(hex, borderMap[l]) : m;
-      });
-      if (s !== orig) els[i].setAttribute('style', s);
-    }
-  }
-
-  // Run after DOM ready + observe dynamic content
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', rewriteInlineStyles);
-  } else {
-    rewriteInlineStyles();
-  }
-  // Re-run on dynamic content changes (socket updates, etc.)
-  var _ltObs = new MutationObserver(function(mutations) {
-    var needsRewrite = false;
-    for (var i = 0; i < mutations.length; i++) {
-      if (mutations[i].type === 'childList' && mutations[i].addedNodes.length) {
-        needsRewrite = true; break;
-      }
-    }
-    if (needsRewrite) rewriteInlineStyles();
-  });
-  _ltObs.observe(document.body || document.documentElement, { childList: true, subtree: true });
-})();
+${themeJS()}
 `;
 }
 
@@ -2164,7 +2354,7 @@ function expiryHolidayModalCSS() {
     .eh-tab-btn {
       background: transparent; border: 1px solid transparent; border-bottom: none;
       border-top-left-radius: 7px; border-top-right-radius: 7px;
-      padding: 7px 14px; cursor: pointer; color: #4a6080;
+      padding: 7px 14px; cursor: pointer; color: var(--muted-1,#8ba1c2);
       font-size: 0.72rem; font-weight: 700; font-family: 'IBM Plex Mono', monospace;
       letter-spacing: 0.4px; transition: all 0.15s; margin-bottom: -1px;
     }
@@ -2178,7 +2368,7 @@ function expiryHolidayModalCSS() {
     .holiday-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
     .holiday-table th {
       text-align: left; padding: 8px 10px; font-size: 0.65rem; text-transform: uppercase;
-      letter-spacing: 1px; color: #4a6080; border-bottom: 1px solid #1a2236;
+      letter-spacing: 1px; color: var(--muted-1,#8ba1c2); border-bottom: 1px solid #1a2236;
     }
     .holiday-table td {
       padding: 7px 10px; border-bottom: 1px solid #1a2236; color: #c8d8f0;
@@ -2189,8 +2379,8 @@ function expiryHolidayModalCSS() {
     .holiday-table .today-holiday { color: #10b981; font-weight: 600; }
     .holiday-table .preponed { color: #f59e0b; }
     .holiday-table .monthly-row td { background: rgba(59,130,246,0.08); }
-    .expiry-legend { display:flex; gap:16px; padding:10px 0 4px; font-size:0.68rem; color:#4a6080; flex-wrap:wrap; }
-    .eh-source-note { padding:0 16px 12px; font-size:0.64rem; color:#4a6080; letter-spacing:0.3px; }
+    .expiry-legend { display:flex; gap:16px; padding:10px 0 4px; font-size:0.68rem; color:var(--muted-1,#8ba1c2); flex-wrap:wrap; }
+    .eh-source-note { padding:0 16px 12px; font-size:0.64rem; color:var(--muted-1,#8ba1c2); letter-spacing:0.3px; }
     /* Year divider — the calendar now runs past 31 Dec into the next year. */
     .holiday-table .year-row td {
       background:rgba(59,130,246,0.05); color:#60a5fa; font-size:0.66rem;
@@ -2225,7 +2415,7 @@ function expiryHolidayModalCSS() {
        TH (and borders), so the cell text, legend and scrollbar have to be
        restated here — without this the dark #c8d8f0 cell colour survives and
        the whole calendar reads as pale blue on white. */
-    :root[data-theme="light"] .eh-tab-btn { color:#64748b; }
+    :root[data-theme="light"] .eh-tab-btn { color:#4b5769; }
     :root[data-theme="light"] .eh-tab-btn:hover { color:#334155; }
     /* The selected tab keeps its dark chip on both themes — that is how this
        popup has always looked. It needs its own light rule purely to win on
@@ -2235,8 +2425,8 @@ function expiryHolidayModalCSS() {
     :root[data-theme="light"] .eh-tab-btn.eh-tab-active { color:#22d3ee; }
     :root[data-theme="light"] .holiday-table td { color:#334155; }
     :root[data-theme="light"] .holiday-table .today-holiday { color:#059669; }
-    :root[data-theme="light"] .expiry-legend { color:#64748b; }
-    :root[data-theme="light"] .eh-source-note { color:#64748b; }
+    :root[data-theme="light"] .expiry-legend { color:#4b5769; }
+    :root[data-theme="light"] .eh-source-note { color:#4b5769; }
     :root[data-theme="light"] .holiday-modal-body { scrollbar-color:#cbd5e1 transparent; }
   `;
 }
@@ -2249,7 +2439,7 @@ function expiryHolidayModalHTML() {
       <span style="font-weight:700;font-size:0.95rem;color:#22d3ee;">📅 NIFTY Expiry &amp; NSE Holidays</span>
       <div style="display:flex;gap:8px;align-items:center;">
         <button id="holiday-refresh-btn" type="button" onclick="refreshHolidays()" title="Force-refresh NSE holidays from upstream API" style="padding:5px 12px;background:rgba(34,211,238,0.12);color:#22d3ee;border:1px solid rgba(34,211,238,0.25);border-radius:5px;font-size:0.72rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.3px;">📅 REFRESH</button>
-        <button class="eh-close" aria-label="Close" onclick="document.getElementById('expiryHolidaysModal').style.display='none'" style="background:none;border:none;color:#4a6080;cursor:pointer;">&times;</button>
+        <button class="eh-close" aria-label="Close" onclick="document.getElementById('expiryHolidaysModal').style.display='none'" style="background:none;border:none;color:var(--muted-1,#8ba1c2);cursor:pointer;">&times;</button>
       </div>
     </div>
     <div style="display:flex;gap:6px;padding:10px 16px 0;border-bottom:1px solid #1a2640;">
@@ -2322,7 +2512,7 @@ function _ehSourceNote(data) {
 async function loadHolidaysTable() {
   var body = document.getElementById('holidayTableBody');
   if (!body) return;
-  body.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#4a6080;padding:20px;">Loading holidays...</td></tr>';
+  body.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--muted-1,#8ba1c2);padding:20px;">Loading holidays...</td></tr>';
   try {
     var res = await fetch('/api/holidays', {cache:'no-store'});
     if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -2333,7 +2523,7 @@ async function loadHolidaysTable() {
       ? data.details.slice()
       : (data.holidays || []).map(function(d) { return { date: d, name: '—' }; });
     if (!data.success || !list.length) {
-      body.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#4a6080;padding:20px;">No holidays found</td></tr>';
+      body.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--muted-1,#8ba1c2);padding:20px;">No holidays found</td></tr>';
       return;
     }
     var todayStr = new Date(new Date().toLocaleString("en-US",{timeZone:"Asia/Kolkata"})).toISOString().split('T')[0];
@@ -2350,7 +2540,7 @@ async function loadHolidaysTable() {
       n++;
       rows += '<tr class="' + cls + '"><td>' + n + '</td><td>' + display + '</td><td>' + dayName + '</td><td>' + name + '</td></tr>';
     });
-    if (!n) rows = '<tr><td colspan="4" style="text-align:center;color:#4a6080;padding:20px;">No upcoming holidays</td></tr>';
+    if (!n) rows = '<tr><td colspan="4" style="text-align:center;color:var(--muted-1,#8ba1c2);padding:20px;">No upcoming holidays</td></tr>';
     body.innerHTML = rows;
   } catch(e) {
     body.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#ef4444;padding:20px;">Failed to load holidays</td></tr>';
@@ -2361,13 +2551,13 @@ async function loadHolidaysTable() {
 async function loadExpiriesTable() {
   var body = document.getElementById('expiryTableBody');
   if (!body) return;
-  body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#4a6080;padding:20px;">Loading expiry dates...</td></tr>';
+  body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted-1,#8ba1c2);padding:20px;">Loading expiry dates...</td></tr>';
   try {
     var res = await fetch('/api/expiry-dates', {cache:'no-store'});
     if (!res.ok) throw new Error('HTTP ' + res.status);
     var data = await res.json();
     if (!data.success || !data.expiries || !data.expiries.length) {
-      body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#4a6080;padding:20px;">No expiry dates found</td></tr>';
+      body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted-1,#8ba1c2);padding:20px;">No expiry dates found</td></tr>';
       return;
     }
     var yearEl = document.getElementById('expiryYearTitle');
@@ -2399,7 +2589,7 @@ async function loadExpiriesTable() {
       n++;
       rows += '<tr class="' + cls + '"><td>' + n + '</td><td>' + display + '</td><td>' + dayName + '</td><td>' + type + '</td><td>' + (e.preponed ? preponedNote : '—') + '</td></tr>';
     });
-    if (!n) rows = '<tr><td colspan="5" style="text-align:center;color:#4a6080;padding:20px;">No upcoming expiry dates</td></tr>';
+    if (!n) rows = '<tr><td colspan="5" style="text-align:center;color:var(--muted-1,#8ba1c2);padding:20px;">No upcoming expiry dates</td></tr>';
     body.innerHTML = rows;
   } catch(e) {
     body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#ef4444;padding:20px;">Failed to load expiry dates</td></tr>';
@@ -2614,7 +2804,7 @@ function multiSelectCSS() {
     .ms{position:relative;display:inline-block;font-family:'IBM Plex Mono',monospace;}
     .ms-btn{display:inline-flex;align-items:center;justify-content:space-between;gap:10px;min-width:150px;background:#04090f;border:0.5px solid #0e1e36;color:#e0eaf8;padding:6px 10px;border-radius:6px;font-family:inherit;font-size:0.72rem;cursor:pointer;}
     .ms-btn:hover,.ms.open .ms-btn{border-color:#38bdf8;}
-    .ms-caret{color:#4a6080;font-size:0.55rem;}
+    .ms-caret{color:var(--muted-1,#8ba1c2);font-size:0.55rem;}
     .ms-menu{display:none;position:absolute;z-index:60;top:calc(100% + 4px);left:0;min-width:200px;max-height:300px;overflow-y:auto;background:#07111f;border:0.5px solid #0e1e36;border-radius:8px;padding:4px;box-shadow:0 10px 28px rgba(0,0,0,0.55);}
     .ms.open .ms-menu{display:block;}
     .ms-opt{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:5px;font-size:0.72rem;color:#c7d6ea;cursor:pointer;white-space:nowrap;}
@@ -2710,4 +2900,4 @@ function msInit(id, onChange){
 `;
 }
 
-module.exports = { STRATEGY_MODES, enabledStrategies, buildSidebar, sidebarCSS, toastJS, aiExportJS, logViewerHTML, faviconLink, modalCSS, modalJS, expiryHolidayModalCSS, expiryHolidayModalHTML, expiryHolidayModalJS, errorPage, tableEnhancerCSS, tableEnhancerJS, dateRangeOptionsHTML, dateRangeJS, multiSelectCSS, multiSelectHTML, multiSelectJS };
+module.exports = { STRATEGY_MODES, enabledStrategies, buildSidebar, sidebarCSS, themeJS, toastJS, aiExportJS, logViewerHTML, faviconLink, modalCSS, modalJS, expiryHolidayModalCSS, expiryHolidayModalHTML, expiryHolidayModalJS, errorPage, tableEnhancerCSS, tableEnhancerJS, dateRangeOptionsHTML, dateRangeJS, multiSelectCSS, multiSelectHTML, multiSelectJS };

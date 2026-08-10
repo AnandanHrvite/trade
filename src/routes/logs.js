@@ -108,7 +108,7 @@ router.get("/", (req, res) => {
     .dot { width:6px; height:6px; border-radius:50%; background:#10b981; animation:blink 1.2s infinite; }
     @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.25} }
 
-    .counter { font-size:0.65rem; color:#3a5070; background:#0a0e18; border:1px solid #1a2236; padding:3px 9px; border-radius:4px; white-space:nowrap; }
+    .counter { font-size:0.65rem; color:var(--muted-2,#6d85a8); background:#0a0e18; border:1px solid #1a2236; padding:3px 9px; border-radius:4px; white-space:nowrap; }
 
     /* Filter pills */
     .filters { display:flex; gap:4px; flex-wrap:wrap; }
@@ -122,10 +122,10 @@ router.get("/", (req, res) => {
 
     #search { background:#0d1320; border:1px solid #1a2236; color:#c8d8f0; padding:4px 10px; border-radius:5px; font-size:0.72rem; font-family:inherit; outline:none; width:200px; }
     #search:focus { border-color:#3b82f6; }
-    #search::placeholder { color:#2a4060; }
+    #search::placeholder { color:var(--muted-2,#6d85a8); }
 
     .btn { font-size:0.7rem; font-weight:600; padding:4px 11px; border-radius:5px; border:1px solid; cursor:pointer; font-family:inherit; text-decoration:none; display:inline-flex; align-items:center; gap:4px; white-space:nowrap; }
-    .btn-scroll  { background:#0d1320; border-color:#1a2236; color:#4a6080; }
+    .btn-scroll  { background:#0d1320; border-color:#1a2236; color:var(--muted-1,#8ba1c2); }
     .btn-scroll.on { border-color:#3b82f6; color:#3b82f6; background:#071428; }
     .btn-export  { background:#071428; border-color:#0e2850; color:#60a5fa; }
     .btn-exportj { background:#060a14; border-color:#0e1a28; color:#818cf8; }
@@ -146,7 +146,7 @@ router.get("/", (req, res) => {
     .log-row[data-level="ERROR"] { background:#0a0408; }
     .log-row[data-level="ERROR"]:hover { background:#100508; }
 
-    .log-time { color:#1e3050; min-width:78px; flex-shrink:0; padding-top:1px; }
+    .log-time { color:var(--muted-2,#6d85a8); min-width:78px; flex-shrink:0; padding-top:1px; }
     .log-lvl  { min-width:46px; flex-shrink:0; font-weight:700; padding:0 6px; padding-top:1px; }
     .log-msg  { color:#c8d8f0; white-space:pre-wrap; word-break:break-all; flex:1; }
 
@@ -155,7 +155,7 @@ router.get("/", (req, res) => {
     .lvl-WARN  { color:#fbbf24; }
     .lvl-ERROR { color:#f87171; }
 
-    .empty-state { text-align:center; padding:80px 24px; color:#1e3050; font-size:0.8rem; }
+    .empty-state { text-align:center; padding:80px 24px; color:var(--muted-2,#6d85a8); font-size:0.8rem; }
 
     /* ── MOBILE — switch from fixed-height flex to normal scroll ── */
     @media (max-width:640px) {
@@ -215,7 +215,7 @@ ${embed ? '' : buildSidebar('logs', liveActive)}
 
 <div id="olderBanner" style="display:none;text-align:center;padding:7px 16px;background:#040c18;border-bottom:1px solid #0e1e36;flex-shrink:0;">
   <button class="btn btn-export" id="olderBtn" onclick="loadOlder()" style="font-size:0.66rem;">⬆ Load older logs</button>
-  <span id="olderHint" style="font-size:0.62rem;color:#2a4060;margin-left:8px;"></span>
+  <span id="olderHint" style="font-size:0.62rem;color:var(--muted-2,#6d85a8);margin-left:8px;"></span>
 </div>
 
 <div class="log-wrap" id="logWrap">

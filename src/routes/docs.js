@@ -100,12 +100,12 @@ router.get("/", (req, res) => {
           <a href="/docs/file/${encodeURIComponent(f.name)}" target="_blank" style="display:flex;align-items:center;gap:10px;flex:1;color:inherit;text-decoration:none;">
             <span class="guide-icon">${f.icon}</span>
             <span style="flex:1">${f.name}</span>
-            <span style="color:#4a6080;font-size:0.72rem;white-space:nowrap">${f.sizeKB} KB &nbsp;·&nbsp; ${f.modified}</span>
+            <span style="color:var(--muted-1,#8ba1c2);font-size:0.72rem;white-space:nowrap">${f.sizeKB} KB &nbsp;·&nbsp; ${f.modified}</span>
           </a>
           <button class="del-btn" onclick="deleteDoc('${f.name.replace(/'/g, "\\'")}')">DELETE</button>
         </div>`
       ).join("\n      ")
-    : '<p style="color:#4a6080;font-size:0.85rem;">No documents found. Place files in the <code>documents/</code> folder.</p>';
+    : '<p style="color:var(--muted-1,#8ba1c2);font-size:0.85rem;">No documents found. Place files in the <code>documents/</code> folder.</p>';
 
   const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
 
@@ -130,17 +130,17 @@ router.get("/", (req, res) => {
 
     /* ── Breadcrumb ── */
     .breadcrumb { display:flex; align-items:center; gap:6px; font-size:0.68rem; font-weight:600; margin-bottom:14px; }
-    .bc-link { color:#4a6080; text-decoration:none; padding:2px 6px; border-radius:4px; transition:color 0.15s, background 0.15s; }
+    .bc-link { color:var(--muted-1,#8ba1c2); text-decoration:none; padding:2px 6px; border-radius:4px; transition:color 0.15s, background 0.15s; }
     .bc-link:hover { color:#3b82f6; background:#0f1624; }
-    .bc-sep { color:#3a5070; font-size:0.75rem; }
+    .bc-sep { color:var(--muted-2,#6d85a8); font-size:0.75rem; }
     .bc-current { color:#e0eaf8; padding:2px 6px; }
-    :root[data-theme="light"] .bc-link { color:#64748b; }
+    :root[data-theme="light"] .bc-link { color:#4b5769; }
     :root[data-theme="light"] .bc-link:hover { color:#2563eb; background:#f1f5f9; }
-    :root[data-theme="light"] .bc-sep { color:#94a3b8; }
+    :root[data-theme="light"] .bc-sep { color:#5c6b7f; }
     :root[data-theme="light"] .bc-current { color:#1e293b; }
 
     .tabs { display:flex; gap:0; margin-bottom:20px; }
-    .tab { padding:10px 22px; background:#0d1117; border:1px solid #1a2640; color:#4a6080; cursor:pointer;
+    .tab { padding:10px 22px; background:#0d1117; border:1px solid #1a2640; color:var(--muted-1,#8ba1c2); cursor:pointer;
            font-size:0.75rem; font-weight:700; text-transform:uppercase; letter-spacing:0.8px;
            font-family:'IBM Plex Mono',monospace; transition:all 0.15s; user-select:none; }
     .tab:first-child { border-radius:8px 0 0 8px; }
@@ -155,7 +155,7 @@ router.get("/", (req, res) => {
                 line-height:1.7; font-size:0.85rem; color:#a3b8d0; }
     .doc-card h1 { font-size:1.3rem; color:#60a5fa; margin:24px 0 8px; font-weight:700; }
     .doc-card h1:first-child { margin-top:0; }
-    .doc-card h2 { font-size:1.05rem; color:#3b82f6; margin:20px 0 6px; padding-bottom:6px;
+    .doc-card h2 { font-size:1.05rem; color:#60a5fa; margin:20px 0 6px; padding-bottom:6px;
                    border-bottom:1px solid #1a2640; font-weight:600; }
     .doc-card h3 { font-size:0.9rem; color:#10b981; margin:14px 0 4px; font-weight:600; }
     .doc-card strong { color:#e5e7eb; }
@@ -166,7 +166,7 @@ router.get("/", (req, res) => {
                     font-family:'IBM Plex Mono',monospace; color:#a3b8d0; }
     .doc-card .md-li { padding-left:18px; position:relative; margin:2px 0; }
     .doc-card .md-li::before { content:"•"; position:absolute; left:4px; color:#3b82f6; }
-    .doc-card .md-tbl { font-family:'IBM Plex Mono',monospace; font-size:0.75rem; color:#6b8aaa; margin:1px 0; }
+    .doc-card .md-tbl { font-family:'IBM Plex Mono',monospace; font-size:0.75rem; color:#93a9c9; margin:1px 0; }
     .doc-card p { margin:6px 0; }
 
     .guide-link { display:flex; align-items:center; gap:10px; padding:12px 16px; background:#111827;
@@ -180,9 +180,9 @@ router.get("/", (req, res) => {
     .guide-link .del-btn:hover { background:rgba(239,68,68,0.15); opacity:1; }
 
     /* ── Light theme overrides ── */
-    :root[data-theme="light"] .guide-link { background:#ffffff !important; border-color:#e0e4ea !important; color:#059669 !important; }
+    :root[data-theme="light"] .guide-link { background:#ffffff !important; border-color:#e0e4ea !important; color:#047857 !important; }
     :root[data-theme="light"] .guide-link:hover { background:#f8fafc !important; border-color:#2563eb !important; color:#2563eb !important; }
-    :root[data-theme="light"] .guide-link span[style*="color:#4a6080"] { color:#94a3b8 !important; }
+    :root[data-theme="light"] .guide-link span[style*="color:var(--muted-1,#8ba1c2)"] { color:#5c6b7f !important; }
 
     /* ── MOBILE ──
        Last in the sheet on purpose: these selectors have the same specificity as
@@ -238,7 +238,7 @@ ${buildSidebar("docs", liveActive)}
       <h1>Documents</h1>
       <p style="margin-bottom:14px;">Files from the <code>documents/</code> folder (${docFiles.length} file${docFiles.length !== 1 ? "s" : ""}):${
         hiddenCount > 0
-          ? ` <span style="color:#4a6080;font-size:0.78rem;">&nbsp;·&nbsp; ${hiddenCount} guide${hiddenCount !== 1 ? "s" : ""} hidden — strategy disabled in Settings</span>`
+          ? ` <span style="color:var(--muted-1,#8ba1c2);font-size:0.78rem;">&nbsp;·&nbsp; ${hiddenCount} guide${hiddenCount !== 1 ? "s" : ""} hidden — strategy disabled in Settings</span>`
           : ""
       }</p>
       ${docListHtml}

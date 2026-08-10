@@ -133,32 +133,32 @@ router.get("/", (req, res) => {
     .main-content{flex:1;margin-left:200px;padding:18px 22px 40px;min-height:100vh;}
     @media(max-width:900px){.main-content{margin-left:0;padding:14px;}}
     .page-title{font-size:1.1rem;font-weight:700;color:#e0eaf8;margin-bottom:2px;}
-    .page-sub{font-size:0.72rem;color:#4a6080;margin-bottom:14px;}
+    .page-sub{font-size:0.72rem;color:var(--muted-1,#8ba1c2);margin-bottom:14px;}
     .stat-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:10px;margin-bottom:16px;}
     @media(max-width:1400px){.stat-grid{grid-template-columns:repeat(4,1fr);}}
     @media(max-width:900px){.stat-grid{grid-template-columns:repeat(3,1fr);}}
     @media(max-width:560px){.stat-grid{grid-template-columns:repeat(2,1fr);}}
     .sc{background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;padding:12px 14px;position:relative;overflow:hidden;}
     .sc::before{content:'';position:absolute;top:0;left:0;width:3px;height:100%;background:var(--accent,#3b82f6);}
-    .sc-label{font-size:0.55rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;margin-bottom:5px;font-family:'IBM Plex Mono',monospace;}
+    .sc-label{font-size:0.55rem;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted-2,#6d85a8);margin-bottom:5px;font-family:'IBM Plex Mono',monospace;}
     .sc-val{font-size:1.15rem;font-weight:700;font-family:'IBM Plex Mono',monospace;color:#e0eaf8;}
-    .sc-sub{font-size:0.6rem;color:#4a6080;margin-top:3px;}
+    .sc-sub{font-size:0.6rem;color:var(--muted-1,#8ba1c2);margin-top:3px;}
 
     .panel{background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;padding:14px 16px;margin-bottom:14px;}
-    .panel h3{font-size:0.62rem;text-transform:uppercase;letter-spacing:1.4px;color:#3a5070;margin-bottom:10px;font-family:'IBM Plex Mono',monospace;}
+    .panel h3{font-size:0.62rem;text-transform:uppercase;letter-spacing:1.4px;color:var(--muted-2,#6d85a8);margin-bottom:10px;font-family:'IBM Plex Mono',monospace;}
 
     .tbar{display:flex;align-items:center;gap:8px;padding:10px 12px;background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;margin-bottom:12px;flex-wrap:wrap;}
-    .tbar label{font-size:0.58rem;text-transform:uppercase;letter-spacing:1px;color:#3a5070;font-family:'IBM Plex Mono',monospace;}
+    .tbar label{font-size:0.58rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-2,#6d85a8);font-family:'IBM Plex Mono',monospace;}
     .tbar input,.tbar select{background:#04090f;border:0.5px solid #0e1e36;color:#e0eaf8;padding:6px 10px;border-radius:6px;font-family:'IBM Plex Mono',monospace;font-size:0.72rem;outline:none;}
     .tbar input:focus,.tbar select:focus{border-color:#3b82f6;}
     .btn{background:#0d1320;border:1px solid #1a2236;color:#4a9cf5;padding:6px 12px;border-radius:6px;font-size:0.7rem;cursor:pointer;font-family:inherit;transition:all 0.15s;}
     .btn:hover{background:#0a1e3d;border-color:#3b82f6;}
-    .btn.copied{background:#064e3b!important;border-color:#10b981!important;color:#10b981!important;}
+    .btn.copied{background:#064e3b!important;border-color:#10b981!important;color:#34d399!important;}
     .btn.warn{border-color:rgba(239,68,68,0.3);color:#ef4444;}
     .btn.warn:hover{background:rgba(239,68,68,0.08);}
 
     .tbl{width:100%;border-collapse:collapse;font-family:'IBM Plex Mono',monospace;font-size:0.72rem;}
-    .tbl th{padding:8px 10px;text-align:left;font-size:0.56rem;text-transform:uppercase;letter-spacing:1px;color:#1e3050;background:#04090f;border-bottom:0.5px solid #0e1e36;font-weight:600;position:sticky;top:0;}
+    .tbl th{padding:8px 10px;text-align:left;font-size:0.56rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-2,#6d85a8);background:#04090f;border-bottom:0.5px solid #0e1e36;font-weight:600;position:sticky;top:0;}
     .tbl th.sortable{cursor:pointer;user-select:none;}
     .tbl th.sortable:hover{color:#4a9cf5;}
     .tbl th.sortable::after{content:'⇅';margin-left:4px;opacity:0.35;font-size:0.7rem;}
@@ -168,16 +168,16 @@ router.get("/", (req, res) => {
     .tbl tr:hover td{background:rgba(59,130,246,0.04);}
     .tbl-wrap{overflow-x:auto;max-height:560px;overflow-y:auto;border:0.5px solid #0e1e36;border-radius:10px;}
 
-    .pager{display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap;font-family:'IBM Plex Mono',monospace;font-size:0.66rem;color:#4a6080;}
-    .pager label{font-size:0.55rem;text-transform:uppercase;letter-spacing:1px;color:#3a5070;}
+    .pager{display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap;font-family:'IBM Plex Mono',monospace;font-size:0.66rem;color:var(--muted-1,#8ba1c2);}
+    .pager label{font-size:0.55rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-2,#6d85a8);}
     .pager select{background:#04090f;border:0.5px solid #0e1e36;color:#e0eaf8;padding:3px 6px;border-radius:5px;font-family:inherit;font-size:0.66rem;outline:none;cursor:pointer;}
     .pager select:focus{border-color:#3b82f6;}
-    .pager-info{margin:0 4px;color:#4a6080;}
+    .pager-info{margin:0 4px;color:var(--muted-1,#8ba1c2);}
     .pager-btn{padding:3px 8px;font-size:0.72rem;line-height:1;min-width:26px;}
     .pager-btn:disabled{opacity:0.35;cursor:not-allowed;}
-    :root[data-theme="light"] .pager label{color:#64748b!important;}
+    :root[data-theme="light"] .pager label{color:#4b5769!important;}
     :root[data-theme="light"] .pager select{background:#f8fafc!important;border-color:#e0e4ea!important;color:#334155!important;}
-    :root[data-theme="light"] .pager,:root[data-theme="light"] .pager-info{color:#64748b!important;}
+    :root[data-theme="light"] .pager,:root[data-theme="light"] .pager-info{color:#4b5769!important;}
     .badge{display:inline-block;padding:2px 7px;border-radius:4px;font-size:0.6rem;font-weight:700;}
     .badge-ce{background:rgba(16,185,129,0.12);color:#10b981;border:0.5px solid rgba(16,185,129,0.25);}
     .badge-pe{background:rgba(239,68,68,0.12);color:#ef4444;border:0.5px solid rgba(239,68,68,0.25);}
@@ -189,26 +189,26 @@ router.get("/", (req, res) => {
     .roll-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}
     @media(max-width:1100px){.roll-grid{grid-template-columns:1fr;}}
     .chart-wrap{position:relative;height:240px;}
-    .empty{text-align:center;padding:40px 20px;color:#4a6080;font-size:0.8rem;}
+    .empty{text-align:center;padding:40px 20px;color:var(--muted-1,#8ba1c2);font-size:0.8rem;}
 
     /* ── Analytics panel (parity with paper-history pages) ───────────────── */
     .ana-panel{margin-bottom:14px;}
     .ana-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;}
     @media(max-width:900px){.ana-row{grid-template-columns:1fr;}}
     .ana-card{background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;padding:12px 14px;position:relative;}
-    .ana-card h3{font-size:0.6rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;margin-bottom:10px;font-family:'IBM Plex Mono',monospace;}
+    .ana-card h3{font-size:0.6rem;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted-2,#6d85a8);margin-bottom:10px;font-family:'IBM Plex Mono',monospace;}
     .ana-chart-wrap{position:relative;height:220px;}
     .ana-row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;}
     @media(max-width:900px){.ana-row3{grid-template-columns:1fr;}}
     .ana-mini{background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;padding:12px 14px;}
-    .ana-mini h3{font-size:0.58rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;margin-bottom:8px;font-family:'IBM Plex Mono',monospace;}
+    .ana-mini h3{font-size:0.58rem;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted-2,#6d85a8);margin-bottom:8px;font-family:'IBM Plex Mono',monospace;}
     .ana-tbl{width:100%;border-collapse:collapse;}
-    .ana-tbl th{text-align:left;font-size:0.55rem;text-transform:uppercase;letter-spacing:0.8px;color:#1e3050;padding:5px 8px;border-bottom:0.5px solid #0e1e36;font-family:'IBM Plex Mono',monospace;}
+    .ana-tbl th{text-align:left;font-size:0.55rem;text-transform:uppercase;letter-spacing:0.8px;color:var(--muted-2,#6d85a8);padding:5px 8px;border-bottom:0.5px solid #0e1e36;font-family:'IBM Plex Mono',monospace;}
     .ana-tbl td{padding:5px 8px;font-size:0.72rem;font-family:'IBM Plex Mono',monospace;color:#c8d8f0;border-bottom:0.5px solid #060d18;}
     .ana-tbl tr:hover td{background:rgba(59,130,246,0.04);}
     .ana-stat{display:flex;align-items:baseline;gap:6px;margin-bottom:6px;}
     .ana-stat-val{font-size:1rem;font-weight:700;font-family:'IBM Plex Mono',monospace;}
-    .ana-stat-label{font-size:0.62rem;color:#3a5070;}
+    .ana-stat-label{font-size:0.62rem;color:var(--muted-2,#6d85a8);}
     .ana-section-title{font-size:0.6rem;text-transform:uppercase;letter-spacing:1.5px;color:#ef4444;font-weight:700;margin:16px 0 12px;padding-top:12px;border-top:0.5px solid #0e1e36;font-family:'IBM Plex Mono',monospace;}
     .ana-section-title.gain{color:#10b981;}
     .ana-section-title.cross{color:#a855f7;}
@@ -217,14 +217,14 @@ router.get("/", (req, res) => {
     .ana-tbl-bar{display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap;}
     .ana-tbl-filter{flex:1;min-width:120px;background:#04090f;border:0.5px solid #0e1e36;color:#e0eaf8;padding:4px 8px;border-radius:5px;font-family:'IBM Plex Mono',monospace;font-size:0.66rem;outline:none;}
     .ana-tbl-filter:focus{border-color:#3b82f6;}
-    .ana-tbl-count{font-size:0.55rem;color:#3a5070;font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:0.6px;}
+    .ana-tbl-count{font-size:0.55rem;color:var(--muted-2,#6d85a8);font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:0.6px;}
     .ana-sortable{cursor:pointer;user-select:none;white-space:nowrap;}
     .ana-sortable::after{content:'⇅';margin-left:3px;opacity:0.35;font-size:0.65rem;}
     .ana-sortable:hover{color:#4a9cf5;}
     .ana-sortable.ana-sorted-asc::after{content:'↑';opacity:1;color:#3b82f6;}
     .ana-sortable.ana-sorted-desc::after{content:'↓';opacity:1;color:#3b82f6;}
-    .ana-tbl-pager{display:flex;align-items:center;gap:5px;margin-top:6px;flex-wrap:wrap;font-family:'IBM Plex Mono',monospace;font-size:0.6rem;color:#3a5070;}
-    .ana-tbl-pager label{font-size:0.55rem;text-transform:uppercase;letter-spacing:0.6px;color:#3a5070;}
+    .ana-tbl-pager{display:flex;align-items:center;gap:5px;margin-top:6px;flex-wrap:wrap;font-family:'IBM Plex Mono',monospace;font-size:0.6rem;color:var(--muted-2,#6d85a8);}
+    .ana-tbl-pager label{font-size:0.55rem;text-transform:uppercase;letter-spacing:0.6px;color:var(--muted-2,#6d85a8);}
     .ana-tbl-pager select{background:#04090f;border:0.5px solid #0e1e36;color:#e0eaf8;padding:2px 5px;border-radius:4px;font-family:inherit;font-size:0.62rem;outline:none;cursor:pointer;}
     .ana-tbl-pager select:focus{border-color:#3b82f6;}
     .ana-tbl-pager-info{margin:0 4px;}
@@ -235,41 +235,41 @@ router.get("/", (req, res) => {
     :root[data-theme="light"] .ana-tbl-filter{background:#f8fafc!important;border-color:#e0e4ea!important;color:#334155!important;}
     :root[data-theme="light"] .ana-tbl-count,
     :root[data-theme="light"] .ana-tbl-pager,
-    :root[data-theme="light"] .ana-tbl-pager label{color:#64748b!important;}
+    :root[data-theme="light"] .ana-tbl-pager label{color:#4b5769!important;}
     :root[data-theme="light"] .ana-tbl-pager select{background:#f8fafc!important;border-color:#e0e4ea!important;color:#334155!important;}
 
     /* Light theme overrides for analytics */
     :root[data-theme="light"] .ana-card,
     :root[data-theme="light"] .ana-mini{background:#fff!important;border-color:#e0e4ea!important;box-shadow:0 1px 3px rgba(0,0,0,0.06)!important;}
     :root[data-theme="light"] .ana-card h3,
-    :root[data-theme="light"] .ana-mini h3{color:#64748b!important;}
-    :root[data-theme="light"] .ana-tbl th{color:#64748b!important;border-bottom-color:#e0e4ea!important;background:#f1f5f9!important;}
+    :root[data-theme="light"] .ana-mini h3{color:#4b5769!important;}
+    :root[data-theme="light"] .ana-tbl th{color:#4b5769!important;border-bottom-color:#e0e4ea!important;background:#f1f5f9!important;}
     :root[data-theme="light"] .ana-tbl td{color:#334155!important;border-color:#e0e4ea!important;}
     :root[data-theme="light"] .ana-tbl tr:hover td{background:rgba(59,130,246,0.05)!important;}
-    :root[data-theme="light"] .ana-stat-label{color:#64748b!important;}
+    :root[data-theme="light"] .ana-stat-label{color:#4b5769!important;}
     :root[data-theme="light"] .ana-section-title{border-color:#e0e4ea!important;}
 
     /* Light theme overrides */
     :root[data-theme="light"] body{background:#f4f6f9!important;color:#334155!important;}
     :root[data-theme="light"] .main-content{background:#f4f6f9!important;}
     :root[data-theme="light"] .page-title{color:#1e293b!important;}
-    :root[data-theme="light"] .page-sub{color:#94a3b8!important;}
+    :root[data-theme="light"] .page-sub{color:#5c6b7f!important;}
     :root[data-theme="light"] .sc{background:#fff!important;border-color:#e0e4ea!important;box-shadow:0 1px 3px rgba(0,0,0,0.06)!important;}
-    :root[data-theme="light"] .sc-label{color:#64748b!important;}
+    :root[data-theme="light"] .sc-label{color:#4b5769!important;}
     :root[data-theme="light"] .sc-val{color:#1e293b!important;}
-    :root[data-theme="light"] .sc-sub{color:#94a3b8!important;}
+    :root[data-theme="light"] .sc-sub{color:#5c6b7f!important;}
     :root[data-theme="light"] .panel{background:#fff!important;border-color:#e0e4ea!important;box-shadow:0 1px 3px rgba(0,0,0,0.06)!important;}
-    :root[data-theme="light"] .panel h3{color:#64748b!important;}
+    :root[data-theme="light"] .panel h3{color:#4b5769!important;}
     :root[data-theme="light"] .tbar{background:#fff!important;border-color:#e0e4ea!important;}
-    :root[data-theme="light"] .tbar label{color:#64748b!important;}
+    :root[data-theme="light"] .tbar label{color:#4b5769!important;}
     :root[data-theme="light"] .tbar input,.tbar select{background:#f8fafc!important;border-color:#e0e4ea!important;color:#334155!important;}
     :root[data-theme="light"] .btn{background:#f8fafc!important;border-color:#e0e4ea!important;color:#2563eb!important;}
     :root[data-theme="light"] .btn:hover{background:#eff6ff!important;border-color:#3b82f6!important;}
-    :root[data-theme="light"] .tbl th{background:#f1f5f9!important;color:#64748b!important;border-bottom-color:#e0e4ea!important;}
+    :root[data-theme="light"] .tbl th{background:#f1f5f9!important;color:#4b5769!important;border-bottom-color:#e0e4ea!important;}
     :root[data-theme="light"] .tbl td{border-color:#e0e4ea!important;color:#334155!important;}
     :root[data-theme="light"] .tbl tr:hover td{background:rgba(59,130,246,0.05)!important;}
     :root[data-theme="light"] .tbl-wrap{border-color:#e0e4ea!important;}
-    :root[data-theme="light"] .empty{color:#94a3b8!important;}
+    :root[data-theme="light"] .empty{color:#5c6b7f!important;}
 
     @media(max-width:768px){
       .stat-grid{grid-template-columns:repeat(2,1fr);}
@@ -352,7 +352,7 @@ router.get("/", (req, res) => {
       <input type="text" id="fSearch" placeholder="symbol / reason…" style="min-width:160px;"/>
       <button class="btn" onclick="applyFilters()">Apply</button>
       <button class="btn" onclick="resetFilters()">Reset</button>
-      <span class="tbar-count" id="fCount" style="margin-left:auto;font-size:0.7rem;color:#4a6080;"></span>
+      <span class="tbar-count" id="fCount" style="margin-left:auto;font-size:0.7rem;color:var(--muted-1,#8ba1c2);"></span>
     </div>
 
     <!-- Bulk copy bar -->
@@ -373,7 +373,7 @@ router.get("/", (req, res) => {
     <div class="panel" id="dayViewPanel" style="display:none;">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
         <h3 style="margin:0;">Day View</h3>
-        <span id="dvCount" style="font-size:0.62rem;color:#4a6080;font-family:'IBM Plex Mono',monospace;"></span>
+        <span id="dvCount" style="font-size:0.62rem;color:var(--muted-1,#8ba1c2);font-family:'IBM Plex Mono',monospace;"></span>
         <button class="btn" onclick="copyDayView(event.target)" style="margin-left:auto;">📋 Copy Day View</button>
       </div>
       <div class="tbl-wrap" style="max-height:420px;">
@@ -823,7 +823,7 @@ function renderRollupTable(id, rows){
   const tb = document.querySelector('#' + id + ' tbody');
   updateSortIndicators(id);
   if (!rows.length){
-    tb.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#4a6080;padding:18px;">No data</td></tr>';
+    tb.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--muted-1,#8ba1c2);padding:18px;">No data</td></tr>';
     _rendered[id] = [];
     updatePagerUI(id, 0, 0, 1, 1);
     return;
@@ -1118,7 +1118,7 @@ function buildDayView(){
   _dvDays = days;
   const tb = document.querySelector('#dayViewTbl tbody');
   if (!days.length){
-    tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#4a6080;padding:18px;">No data</td></tr>';
+    tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--muted-1,#8ba1c2);padding:18px;">No data</td></tr>';
     document.getElementById('dvCount').textContent = '';
     return;
   }
@@ -1128,7 +1128,7 @@ function buildDayView(){
     const pc = pnlColor(dy.pnl), cc = pnlColor(cum);
     const pbg = dy.pnl > 0 ? 'rgba(16,185,129,0.12)' : (dy.pnl < 0 ? 'rgba(239,68,68,0.12)' : 'transparent');
     const cbg = cum    > 0 ? 'rgba(16,185,129,0.12)' : (cum    < 0 ? 'rgba(239,68,68,0.12)' : 'transparent');
-    const modeCell = (n, cls) => n ? \`<span class="badge-mode badge-\${cls}">\${n}</span>\` : '<span style="color:#3a5070;">—</span>';
+    const modeCell = (n, cls) => n ? \`<span class="badge-mode badge-\${cls}">\${n}</span>\` : '<span style="color:var(--muted-2,#6d85a8);">—</span>';
     return \`<tr style="background:\${pnlRowBg(dy.pnl)};">
       <td style="font-weight:600;">\${dy.date}</td>
       <td>\${dy.trades}</td>
@@ -1340,7 +1340,7 @@ function _anaRenderTbl(tbodyId){
   const mini  = wrap.parentElement;
 
   if (!st.rows.length){
-    tb.innerHTML = st.emptyHtml || '<tr><td style="text-align:center;color:#3a5070;">No data</td></tr>';
+    tb.innerHTML = st.emptyHtml || '<tr><td style="text-align:center;color:var(--muted-2,#6d85a8);">No data</td></tr>';
     const bar0 = mini.querySelector('.ana-tbl-bar');
     if (bar0) bar0.querySelector('.ana-tbl-count').textContent = '0 rows';
     const pg0 = mini.querySelector('.ana-tbl-pager');
@@ -1367,7 +1367,7 @@ function _anaRenderTbl(tbodyId){
 
   tb.innerHTML = slice.length
     ? slice.map(r => r.html).join('')
-    : '<tr><td colspan="20" style="text-align:center;color:#3a5070;">No rows match filter</td></tr>';
+    : '<tr><td colspan="20" style="text-align:center;color:var(--muted-2,#6d85a8);">No rows match filter</td></tr>';
 
   table.querySelectorAll('thead th').forEach((th, i) => {
     th.classList.remove('ana-sorted-asc','ana-sorted-desc');
@@ -1442,7 +1442,7 @@ function renderAnalytics(){
   // ── Cross-mode comparison ──
   (function(){
     const modes = ['EMA_RSI_ST','BB_RSI','PA'];
-    const EMPTY = '<tr><td colspan="10" style="text-align:center;color:#3a5070;">No data</td></tr>';
+    const EMPTY = '<tr><td colspan="10" style="text-align:center;color:var(--muted-2,#6d85a8);">No data</td></tr>';
     if (!trades.length){ anaEnhance('anaModeBody', '', EMPTY, {}); return; }
     {
       let html = '';
@@ -1583,7 +1583,7 @@ function renderAnalytics(){
       const pc = dd.p>=0?'#10b981':'#ef4444';
       html += '<tr><td style="font-weight:600;">'+dd.n+'</td><td>'+dd.t+'</td><td style="color:'+(parseFloat(wr)>=55?'#10b981':'#ef4444')+';">'+wr+'%</td><td style="color:'+pc+';font-weight:700;">'+fmtAnaSigned(dd.p)+'</td><td style="color:'+pc+';">'+fmtAnaSigned(Math.round(dd.p/dd.t))+'</td></tr>';
     });
-    anaEnhance('anaDowBody', html, '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No data</td></tr>', {});
+    anaEnhance('anaDowBody', html, '<tr><td colspan="5" style="text-align:center;color:var(--muted-2,#6d85a8);">No data</td></tr>', {});
   })();
 
   // ── Equity Curve (per trade, oldest → newest by entry time) ──
@@ -1682,7 +1682,7 @@ function renderAnalytics(){
         + '<td style="color:'+pc+';">'+fmtAnaSigned(Math.round(d.pnl/d.cnt))+'</td>'
         + '</tr>';
     });
-    anaEnhance('anaEntryBody', html, '<tr><td colspan="8" style="text-align:center;color:#3a5070;">No data</td></tr>', { filter:true, pager:true });
+    anaEnhance('anaEntryBody', html, '<tr><td colspan="8" style="text-align:center;color:var(--muted-2,#6d85a8);">No data</td></tr>', { filter:true, pager:true });
   })();
 
   // ── Exit Reason Breakdown ──
@@ -1704,7 +1704,7 @@ function renderAnalytics(){
         + '<td style="color:'+pc+';font-weight:700;">'+fmtAnaSigned(d.pnl)+'</td>'
         + '<td style="color:'+pc+';">'+fmtAnaSigned(Math.round(d.pnl/d.cnt))+'</td></tr>';
     });
-    anaEnhance('anaExitBody', html, '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No data</td></tr>', { filter:true, pager:true });
+    anaEnhance('anaExitBody', html, '<tr><td colspan="5" style="text-align:center;color:var(--muted-2,#6d85a8);">No data</td></tr>', { filter:true, pager:true });
   })();
 
   // ── Loss Distribution ──
@@ -1756,7 +1756,7 @@ function renderAnalytics(){
     worst.forEach(t => {
       html += '<tr><td>'+(t.date||'—')+'</td><td><span class="badge-mode badge-'+t.mode+'">'+t.mode+'</span></td><td><span class="badge '+(t.side==='CE'?'badge-ce':'badge-pe')+'">'+(t.side||'—')+'</span></td><td style="color:#ef4444;font-weight:700;">'+fmtAnaSigned(t.pnl)+'</td><td style="font-size:0.65rem;max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="'+esc(t.exitReason)+'">'+esc(t.exitReason||'—')+'</td></tr>';
     });
-    anaEnhance('anaWorstBody', html, '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No losing trades</td></tr>', {});
+    anaEnhance('anaWorstBody', html, '<tr><td colspan="5" style="text-align:center;color:var(--muted-2,#6d85a8);">No losing trades</td></tr>', {});
   })();
 
   // ── Consecutive Loss Streaks ──
@@ -1771,7 +1771,7 @@ function renderAnalytics(){
       const avg = total / s.length;
       html += '<tr><td>'+(s[0].t.date||'—')+'</td><td>'+s.length+'</td><td style="color:#ef4444;font-weight:700;">'+fmtAnaSigned(total)+'</td><td style="color:#ef4444;">'+fmtAnaSigned(avg)+'</td></tr>';
     });
-    anaEnhance('anaLossStreakBody', html, '<tr><td colspan="4" style="text-align:center;color:#3a5070;">No loss streaks (2+)</td></tr>', { pager:true });
+    anaEnhance('anaLossStreakBody', html, '<tr><td colspan="4" style="text-align:center;color:var(--muted-2,#6d85a8);">No loss streaks (2+)</td></tr>', { pager:true });
   })();
 
   // ── Worst/Best Trading Days ──
@@ -1782,11 +1782,11 @@ function renderAnalytics(){
     const lossDays = arr.filter(d=>d.pnl<0).sort((a,b)=>a.pnl-b.pnl).slice(0,10);
     let html = '';
     lossDays.forEach(d => { html += '<tr><td>'+d.date+'</td><td>'+d.trades+'</td><td style="color:#ef4444;font-weight:700;">'+fmtAnaSigned(d.pnl)+'</td><td>'+d.losses+'</td><td style="color:#ef4444;">'+fmtAnaSigned(d.worst)+'</td></tr>'; });
-    anaEnhance('anaWorstDayBody', html, '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No losing days</td></tr>', { filter:true, pager:true });
+    anaEnhance('anaWorstDayBody', html, '<tr><td colspan="5" style="text-align:center;color:var(--muted-2,#6d85a8);">No losing days</td></tr>', { filter:true, pager:true });
     const winDays = arr.filter(d=>d.pnl>0).sort((a,b)=>b.pnl-a.pnl).slice(0,10);
     let html2 = '';
     winDays.forEach(d => { html2 += '<tr><td>'+d.date+'</td><td>'+d.trades+'</td><td style="color:#10b981;font-weight:700;">'+fmtAnaSigned(d.pnl)+'</td><td>'+d.wins+'</td><td style="color:#10b981;">'+fmtAnaSigned(d.best)+'</td></tr>'; });
-    anaEnhance('anaBestDayBody', html2, '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No winning days</td></tr>', { filter:true, pager:true });
+    anaEnhance('anaBestDayBody', html2, '<tr><td colspan="5" style="text-align:center;color:var(--muted-2,#6d85a8);">No winning days</td></tr>', { filter:true, pager:true });
   })();
 
   // ── Loss by Exit Reason ──
@@ -1800,7 +1800,7 @@ function renderAnalytics(){
       const pct = ((d.cnt/Math.max(lossTrades.length,1))*100).toFixed(0);
       html += '<tr><td style="max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="'+esc(r)+'">'+esc(r)+'</td><td>'+d.cnt+'</td><td style="color:#ef4444;font-weight:700;">'+fmtAnaSigned(d.pnl)+'</td><td style="color:#ef4444;">'+fmtAnaSigned(Math.round(d.pnl/d.cnt))+'</td><td style="font-weight:600;">'+pct+'%</td></tr>';
     });
-    anaEnhance('anaLossReasonBody', html, '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No losses</td></tr>', {});
+    anaEnhance('anaLossReasonBody', html, '<tr><td colspan="5" style="text-align:center;color:var(--muted-2,#6d85a8);">No losses</td></tr>', {});
   })();
 
   // ── Losing Hours / Winning Hours ──
@@ -1822,8 +1822,8 @@ function renderAnalytics(){
         wh += '<tr><td style="font-weight:600;">'+h+':00</td><td>'+d.wins+' / '+d.total+'</td><td style="color:#10b981;font-weight:700;">'+fmtAnaSigned(d.winPnl)+'</td><td style="color:#10b981;">'+fmtAnaSigned(Math.round(d.winPnl/d.wins))+'</td><td style="color:'+col+';font-weight:700;">'+pct+'%</td></tr>';
       }
     });
-    anaEnhance('anaLossHourBody', lh, '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No data</td></tr>', {});
-    anaEnhance('anaWinHourBody', wh, '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No data</td></tr>', {});
+    anaEnhance('anaLossHourBody', lh, '<tr><td colspan="5" style="text-align:center;color:var(--muted-2,#6d85a8);">No data</td></tr>', {});
+    anaEnhance('anaWinHourBody', wh, '<tr><td colspan="5" style="text-align:center;color:var(--muted-2,#6d85a8);">No data</td></tr>', {});
   })();
 
   // ── Day-wise Loss ──
@@ -1833,7 +1833,7 @@ function renderAnalytics(){
     const days = Array.from(m.keys()).sort();
     let html = '';
     days.forEach(d => { const b=m.get(d); const nc=b.net>=0?'#10b981':'#ef4444'; html += '<tr><td>'+d+'</td><td>'+b.trades+'</td><td style="color:#ef4444;">'+b.losses+'</td><td style="color:#ef4444;font-weight:700;">'+(b.gross<0?fmtAnaSigned(b.gross):'—')+'</td><td style="color:'+nc+';font-weight:700;">'+fmtAnaSigned(b.net)+'</td></tr>'; });
-    anaEnhance('anaDayLossBody', html, '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No data</td></tr>', { pager:true });
+    anaEnhance('anaDayLossBody', html, '<tr><td colspan="5" style="text-align:center;color:var(--muted-2,#6d85a8);">No data</td></tr>', { pager:true });
   })();
 
   // ── Losses by Candles Held ──
@@ -1843,7 +1843,7 @@ function renderAnalytics(){
     const rows = lossTrades.slice().sort((a,b)=>{ const ca=ch(a), cb=ch(b); return (cb==null?-1:cb)-(ca==null?-1:ca); });
     let html = '';
     rows.forEach(t => { const c=ch(t); html += '<tr><td>'+(t.date||'—')+'</td><td><span class="badge-mode badge-'+t.mode+'">'+t.mode+'</span></td><td><span class="badge '+(t.side==='CE'?'badge-ce':'badge-pe')+'">'+(t.side||'—')+'</span></td><td style="color:#c8d8f0;font-weight:700;">'+(c==null?'—':c)+'</td><td style="color:#ef4444;font-weight:700;">'+fmtAnaSigned(t.pnl)+'</td><td style="font-size:0.65rem;max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="'+esc(t.exitReason)+'">'+esc(t.exitReason||'—')+'</td></tr>'; });
-    anaEnhance('anaLossCandleBody', html, '<tr><td colspan="6" style="text-align:center;color:#3a5070;">No losing trades</td></tr>', { pager:true });
+    anaEnhance('anaLossCandleBody', html, '<tr><td colspan="6" style="text-align:center;color:var(--muted-2,#6d85a8);">No losing trades</td></tr>', { pager:true });
   })();
 
   // ── Top 10 Best Trades ──
@@ -1853,7 +1853,7 @@ function renderAnalytics(){
     best.forEach(t => {
       html += '<tr><td>'+(t.date||'—')+'</td><td><span class="badge-mode badge-'+t.mode+'">'+t.mode+'</span></td><td><span class="badge '+(t.side==='CE'?'badge-ce':'badge-pe')+'">'+(t.side||'—')+'</span></td><td style="color:#10b981;font-weight:700;">'+fmtAnaSigned(t.pnl)+'</td><td style="font-size:0.65rem;max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="'+esc(t.exitReason)+'">'+esc(t.exitReason||'—')+'</td></tr>';
     });
-    anaEnhance('anaBestBody', html, '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No winning trades</td></tr>', {});
+    anaEnhance('anaBestBody', html, '<tr><td colspan="5" style="text-align:center;color:var(--muted-2,#6d85a8);">No winning trades</td></tr>', {});
   })();
 
   // ── Cumulative P&L by Mode ──
@@ -1948,7 +1948,7 @@ function renderAnalytics(){
     const durs = trades.map(t => ({ d: _durMin(t), p: t.pnl||0 })).filter(x => x.d != null);
     if (_anaCharts.durDist) _anaCharts.durDist.destroy();
     if (!durs.length){
-      anaEnhance('anaDurBody', '', '<tr><td colspan="6" style="text-align:center;color:#3a5070;">No duration data</td></tr>', {});
+      anaEnhance('anaDurBody', '', '<tr><td colspan="6" style="text-align:center;color:var(--muted-2,#6d85a8);">No duration data</td></tr>', {});
       _anaCharts.durDist = new Chart(document.getElementById('anaDurDist'), { type: 'bar', data: { labels: [], datasets: [{ data: [] }] }, options: baseChartOpts() });
       return;
     }
@@ -1974,7 +1974,7 @@ function renderAnalytics(){
     let html = '';
     buckets.forEach((b,i) => { const d=bins[i]; if (!d.cnt) return; const wr = ((d.wins/d.cnt)*100).toFixed(0); const pc = d.pnl>=0?'#10b981':'#ef4444';
       html += '<tr><td style="font-weight:600;">'+b.lbl+'</td><td>'+d.cnt+'</td><td style="color:#10b981;">'+d.wins+'</td><td style="color:'+(parseFloat(wr)>=55?'#10b981':'#ef4444')+';">'+wr+'%</td><td style="color:'+pc+';font-weight:700;">'+fmtAnaSigned(d.pnl)+'</td><td style="color:'+pc+';">'+fmtAnaSigned(Math.round(d.pnl/d.cnt))+'</td></tr>'; });
-    anaEnhance('anaDurBody', html, '<tr><td colspan="6" style="text-align:center;color:#3a5070;">No duration data</td></tr>', {});
+    anaEnhance('anaDurBody', html, '<tr><td colspan="6" style="text-align:center;color:var(--muted-2,#6d85a8);">No duration data</td></tr>', {});
   })();
 
   // ── NIFTY spot move (points) distribution ──
@@ -2040,7 +2040,7 @@ function renderAnalytics(){
     let html = '';
     rows.forEach(d => { const wr = d.trades ? ((d.wins/d.trades)*100).toFixed(0) : '0'; const pc = d.pnl>=0?'#10b981':'#ef4444';
       html += '<tr><td style="font-weight:600;">'+d.key+'</td><td>'+d.trades+'</td><td style="color:#10b981;">'+d.wins+'</td><td style="color:'+(parseFloat(wr)>=55?'#10b981':'#ef4444')+';">'+wr+'%</td><td style="color:'+pc+';font-weight:700;">'+fmtAnaSigned(d.pnl)+'</td><td style="color:'+pc+';">'+fmtAnaSigned(Math.round(d.pnl/d.trades))+'</td></tr>'; });
-    anaEnhance('anaWeeklyBody', html, '<tr><td colspan="6" style="text-align:center;color:#3a5070;">No data</td></tr>', { filter:true, pager:true });
+    anaEnhance('anaWeeklyBody', html, '<tr><td colspan="6" style="text-align:center;color:var(--muted-2,#6d85a8);">No data</td></tr>', { filter:true, pager:true });
   })();
 
   // ── Drawdown stats ──
@@ -2076,7 +2076,7 @@ function renderAnalytics(){
     let html = '';
     rows.forEach(d => { const wr = d.cnt ? ((d.wins/d.cnt)*100).toFixed(0) : '0'; const pc = d.pnl>=0?'#10b981':'#ef4444';
       html += '<tr><td style="max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="'+esc(d.key)+'">'+esc(d.key)+'</td><td>'+d.cnt+'</td><td style="color:'+(parseFloat(wr)>=55?'#10b981':'#ef4444')+';">'+wr+'%</td><td style="color:'+pc+';font-weight:700;">'+fmtAnaSigned(d.pnl)+'</td></tr>'; });
-    anaEnhance(bodyId, html, '<tr><td colspan="4" style="text-align:center;color:#3a5070;">No data</td></tr>', { filter:true, pager:true });
+    anaEnhance(bodyId, html, '<tr><td colspan="4" style="text-align:center;color:var(--muted-2,#6d85a8);">No data</td></tr>', { filter:true, pager:true });
   }
   _topTable(t => t.symbol, 'anaSymBody');
   _topTable(t => t.optionStrike, 'anaStrikeBody');
@@ -2090,7 +2090,7 @@ function renderAnalytics(){
     let html = '';
     rows.forEach(d => { const wr = d.cnt ? ((d.wins/d.cnt)*100).toFixed(0) : '0'; const pc = d.pnl>=0?'#10b981':'#ef4444';
       html += '<tr><td style="max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="'+esc(d.strat)+'">'+esc(d.strat)+'</td><td><span class="badge-mode badge-'+d.mode+'">'+d.mode+'</span></td><td>'+d.cnt+'</td><td style="color:'+(parseFloat(wr)>=55?'#10b981':'#ef4444')+';">'+wr+'%</td><td style="color:'+pc+';font-weight:700;">'+fmtAnaSigned(d.pnl)+'</td><td style="color:'+pc+';">'+fmtAnaSigned(Math.round(d.pnl/d.cnt))+'</td></tr>'; });
-    anaEnhance('anaStratBody', html, '<tr><td colspan="6" style="text-align:center;color:#3a5070;">No data</td></tr>', { filter:true, pager:true });
+    anaEnhance('anaStratBody', html, '<tr><td colspan="6" style="text-align:center;color:var(--muted-2,#6d85a8);">No data</td></tr>', { filter:true, pager:true });
   })();
 
   // ── Quantity Buckets ──
@@ -2101,7 +2101,7 @@ function renderAnalytics(){
     let html = '';
     rows.forEach(d => { const wr = d.cnt ? ((d.wins/d.cnt)*100).toFixed(0) : '0'; const pc = d.pnl>=0?'#10b981':'#ef4444';
       html += '<tr><td style="font-weight:600;">'+d.q+'</td><td>'+d.cnt+'</td><td style="color:'+(parseFloat(wr)>=55?'#10b981':'#ef4444')+';">'+wr+'%</td><td style="color:'+pc+';font-weight:700;">'+fmtAnaSigned(d.pnl)+'</td><td style="color:'+pc+';">'+fmtAnaSigned(Math.round(d.pnl/d.cnt))+'</td></tr>'; });
-    anaEnhance('anaQtyBody', html, '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No data</td></tr>', {});
+    anaEnhance('anaQtyBody', html, '<tr><td colspan="5" style="text-align:center;color:var(--muted-2,#6d85a8);">No data</td></tr>', {});
   })();
 }
 

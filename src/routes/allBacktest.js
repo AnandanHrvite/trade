@@ -209,12 +209,16 @@ router.get("/", (req, res) => {
   .page{padding:16px 20px 40px;}
 
   .crumb{background:#06090e;border-bottom:0.5px solid #0e1428;padding:6px 20px;display:flex;align-items:center;gap:7px;margin:-16px -20px 14px;position:sticky;top:44px;z-index:90;flex-wrap:wrap;}
+  /* The -20px bleed assumes the page's 20px desktop padding. On mobile
+     .page drops to 12px, so the same margin pushed the bar 8px past each
+     edge and gave the whole document a sideways scroll. */
+  @media(max-width:768px){ .crumb{margin-left:-12px;margin-right:-12px;padding:6px 12px;} }
   .crumb .pill{font-size:0.6rem;font-weight:700;padding:2px 8px;border-radius:3px;text-transform:uppercase;letter-spacing:0.5px;font-family:'IBM Plex Mono',monospace;}
   .crumb .pill-all{background:rgba(99,102,241,0.12);color:#818cf8;border:0.5px solid rgba(99,102,241,0.25);}
   .crumb .pill-range{background:rgba(245,158,11,0.1);color:#fbbf24;border:0.5px solid rgba(245,158,11,0.2);}
 
   .run-bar{display:flex;align-items:flex-end;gap:10px;background:#08091a;border:0.5px solid #0e1428;border-radius:8px;padding:11px 14px;margin-bottom:14px;flex-wrap:wrap;}
-  .run-bar label{font-size:0.58rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;display:block;margin-bottom:3px;}
+  .run-bar label{font-size:0.58rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);display:block;margin-bottom:3px;}
   .run-bar input,.run-bar select{background:#fff;border:1px solid #1e3a8a;color:#0f172a;padding:5px 8px;border-radius:5px;font-size:0.75rem;font-family:'IBM Plex Mono',monospace;cursor:pointer;color-scheme:light;}
   .run-btn{background:#1a3a8a;color:#90c0ff;border:1px solid #2a5ac0;padding:6px 14px;border-radius:5px;font-size:0.7rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;white-space:nowrap;}
   .run-btn:hover{background:#2563eb;color:#fff;}
@@ -229,8 +233,8 @@ router.get("/", (req, res) => {
   .badge{font-size:0.6rem;font-weight:700;padding:2px 8px;border-radius:3px;text-transform:uppercase;letter-spacing:0.5px;font-family:'IBM Plex Mono',monospace;}
   .panel-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
   .meta-range{font-size:0.68rem;color:#6b8db5;font-family:'IBM Plex Mono',monospace;}
-  .meta-dot{color:#1e3050;font-size:0.7rem;}
-  .meta-ago{font-size:0.68rem;color:#4a6080;font-family:'IBM Plex Mono',monospace;}
+  .meta-dot{color:var(--muted-2,#6d85a8);font-size:0.7rem;}
+  .meta-ago{font-size:0.68rem;color:var(--muted-1,#8ba1c2);font-family:'IBM Plex Mono',monospace;}
   .btn-run{background:#0d1320;border:1px solid #1a2540;color:#60a5fa;padding:4px 10px;border-radius:5px;font-size:0.68rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;}
   .btn-run:hover{background:#0a1e3d;border-color:#3b82f6;}
   .btn-run:disabled{opacity:.5;cursor:not-allowed;}
@@ -250,11 +254,11 @@ router.get("/", (req, res) => {
   .sc{background:#0a0b1c;border:0.5px solid #0e1428;border-radius:7px;padding:12px 14px;position:relative;overflow:hidden;}
   .sc::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;}
   .sc.blue::before{background:#3b82f6;}.sc.green::before{background:#10b981;}.sc.red::before{background:#ef4444;}.sc.yellow::before{background:#f59e0b;}.sc.purple::before{background:#8b5cf6;}.sc.orange::before{background:#f97316;}.sc.cyan::before{background:#06b6d4;}
-  .sc-label{font-size:0.56rem;text-transform:uppercase;letter-spacing:1.2px;color:#1e3050;margin-bottom:5px;font-family:"IBM Plex Mono",monospace;}
+  .sc-label{font-size:0.56rem;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted-2,#6d85a8);margin-bottom:5px;font-family:"IBM Plex Mono",monospace;}
   .sc-val{font-size:1.05rem;font-weight:700;color:#a0b8d8;font-family:"IBM Plex Mono",monospace;line-height:1.2;}
-  .sc-sub{font-size:0.6rem;color:#4a6080;margin-top:3px;}
+  .sc-sub{font-size:0.6rem;color:var(--muted-1,#8ba1c2);margin-top:3px;}
 
-  .empty-state{padding:28px 14px;text-align:center;font-size:0.72rem;color:#4a6080;background:#05060f;border:0.5px dashed #1a2540;border-radius:7px;}
+  .empty-state{padding:28px 14px;text-align:center;font-size:0.72rem;color:var(--muted-1,#8ba1c2);background:#05060f;border:0.5px dashed #1a2540;border-radius:7px;}
 
   .progress-line{height:3px;background:#0a0e1a;border-radius:2px;overflow:hidden;margin:6px 0 0;display:none;}
   .progress-line .bar{height:100%;background:linear-gradient(90deg,#3b82f6,#10b981);width:0;transition:width 0.6s ease;}
@@ -262,16 +266,16 @@ router.get("/", (req, res) => {
 
   /* ── Light theme overrides ── */
   :root[data-theme="light"] .crumb{background:#ffffff !important;border-bottom-color:#e0e4ea !important;}
-  :root[data-theme="light"] .crumb > span[style*="color:#1e2a40"]{color:#94a3b8 !important;}
+  :root[data-theme="light"] .crumb > span[style*="color:#1e2a40"]{color:#5c6b7f !important;}
   :root[data-theme="light"] .run-btn{background:#2563eb !important;color:#ffffff !important;border-color:#2563eb !important;}
   :root[data-theme="light"] .run-btn:hover{background:#1d4ed8 !important;color:#ffffff !important;}
-  :root[data-theme="light"] .btn-run{background:#eff6ff !important;border-color:#bfdbfe !important;color:#2563eb !important;}
+  :root[data-theme="light"] .btn-run{background:#eff6ff !important;border-color:#bfdbfe !important;color:#1d4ed8 !important;}
   :root[data-theme="light"] .btn-run:hover{background:#dbeafe !important;border-color:#3b82f6 !important;}
-  :root[data-theme="light"] .empty-state{background:#f8fafc !important;border-color:#cbd5e1 !important;color:#94a3b8 !important;}
-  :root[data-theme="light"] .meta-range{color:#64748b !important;}
-  :root[data-theme="light"] .meta-dot{color:#cbd5e1 !important;}
-  :root[data-theme="light"] .meta-ago{color:#94a3b8 !important;}
-  :root[data-theme="light"] .sc-label{color:#64748b !important;}
+  :root[data-theme="light"] .empty-state{background:#f8fafc !important;border-color:#cbd5e1 !important;color:#5c6b7f !important;}
+  :root[data-theme="light"] .meta-range{color:#4b5769 !important;}
+  :root[data-theme="light"] .meta-dot{color:#64748b !important;}
+  :root[data-theme="light"] .meta-ago{color:#5c6b7f !important;}
+  :root[data-theme="light"] .sc-label{color:#4b5769 !important;}
   :root[data-theme="light"] .progress-line{background:#e2e8f0 !important;}
 
   ${sidebarCSS()}
@@ -286,19 +290,19 @@ ${buildSidebar('allBacktest', liveActive)}
 
   <div class="crumb">
     <span class="pill pill-all">ALL BACKTESTS</span>
-    <span style="color:#1e2a40;font-size:10px;">\u203a</span>
+    <span style="color:var(--muted-2,#6d85a8);font-size:10px;">\u203a</span>
     <span class="pill pill-range" id="crumbRange">${from} \u2192 ${to}</span>
-    <span style="margin-left:auto;font-size:0.6rem;color:#1e2a40;font-family:'IBM Plex Mono',monospace;">Change settings \u00b7 run all 3 strategies \u00b7 compare side-by-side</span>
+    <span style="margin-left:auto;font-size:0.6rem;color:var(--muted-2,#6d85a8);font-family:'IBM Plex Mono',monospace;">Change settings \u00b7 run all 3 strategies \u00b7 compare side-by-side</span>
   </div>
 
   <!-- Settings form -->
   <div class="run-bar">
     <div><label>From</label><input type="date" id="f" value="${from}"/></div>
     <div><label>To</label><input type="date" id="t" value="${to}"/></div>
-<div style="font-size:0.62rem;color:#3a5070;font-family:'IBM Plex Mono',monospace;align-self:center;">Candles: 5-min for all strategies</div>
+<div style="font-size:0.62rem;color:var(--muted-2,#6d85a8);font-family:'IBM Plex Mono',monospace;align-self:center;">Candles: 5-min for all strategies</div>
     <button class="run-btn" id="runAllBtn">\u25b6\u25b6 Run All</button>
     <button class="run-btn" id="cancelBtn" style="background:#3a1a1a;color:#f87171;border-color:#7f1d1d;display:none;">\u2715 Cancel</button>
-    <span id="runAllStatus" style="font-size:0.68rem;color:#4a6080;margin-left:auto;"></span>
+    <span id="runAllStatus" style="font-size:0.68rem;color:var(--muted-1,#8ba1c2);margin-left:auto;"></span>
   </div>
 
   <!-- Quick date presets -->
@@ -325,7 +329,7 @@ ${buildSidebar('allBacktest', liveActive)}
     ${(() => { const cy=new Date().getFullYear(); return Array.from({length:8},(_,i)=>cy-i).map(yr=>`<button class="preset-btn" onclick="setPreset('y${yr}')">${yr}</button>`).join('\n    '); })()}
   </div>
   <div style="display:flex;gap:6px;margin:0 0 14px;flex-wrap:wrap;align-items:center;">
-    <span style="font-size:0.6rem;color:#94a3b8;font-family:'IBM Plex Mono',monospace;">${new Date().getFullYear()}</span>
+    <span class="yr-now" style="font-size:0.6rem;color:#94a3b8;font-family:'IBM Plex Mono',monospace;">${new Date().getFullYear()}</span>
     ${(() => { const mths=['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec']; const labels=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; const curMonth=new Date().getMonth(); return mths.map((k,i) => i<=curMonth ? `<button class="preset-btn" onclick="setPreset('${k}')">${labels[i]}</button>` : `<button class="preset-btn" disabled style="opacity:0.3;cursor:not-allowed">${labels[i]}</button>`).join('\n    '); })()}
   </div>
 

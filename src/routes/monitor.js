@@ -145,45 +145,45 @@ body { font-family:'IBM Plex Sans',sans-serif; background:#080c14; color:#c8d8f0
 @media(max-width:900px){ .main-content{margin-left:0;padding:18px 10px 32px;} }
 
 .page-title { font-size:1.1rem; font-weight:700; color:#e0eaf8; margin-bottom:6px; }
-.page-sub   { font-size:0.72rem; color:#3a5070; margin-bottom:22px; }
+.page-sub   { font-size:0.72rem; color:var(--muted-2,#6d85a8); margin-bottom:22px; }
 
 /* ── Breadcrumb ── */
 .breadcrumb { display:flex; align-items:center; gap:6px; font-size:0.68rem; font-weight:600; margin-bottom:6px; }
-.bc-link { color:#4a6080; text-decoration:none; padding:2px 6px; border-radius:4px; transition:color 0.15s, background 0.15s; }
+.bc-link { color:var(--muted-1,#8ba1c2); text-decoration:none; padding:2px 6px; border-radius:4px; transition:color 0.15s, background 0.15s; }
 .bc-link:hover { color:#3b82f6; background:#0f1624; }
-.bc-sep { color:#3a5070; font-size:0.75rem; }
+.bc-sep { color:var(--muted-2,#6d85a8); font-size:0.75rem; }
 .bc-current { color:#e0eaf8; padding:2px 6px; }
-:root[data-theme="light"] .bc-link { color:#64748b; }
+:root[data-theme="light"] .bc-link { color:#4b5769; }
 :root[data-theme="light"] .bc-link:hover { color:#2563eb; background:#f1f5f9; }
-:root[data-theme="light"] .bc-sep { color:#94a3b8; }
+:root[data-theme="light"] .bc-sep { color:#5c6b7f; }
 :root[data-theme="light"] .bc-current { color:#1e293b; }
 
 /* ── stat cards ── */
 .stat-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; margin-bottom:22px; }
 .stat-card { background:#090f09; border:0.5px solid #162416; border-radius:8px; padding:16px 18px; }
-.stat-label { font-size:0.56rem; color:#2a3a20; text-transform:uppercase; letter-spacing:1.2px; margin-bottom:5px; }
+.stat-label { font-size:0.56rem; color:#7f9b5c; text-transform:uppercase; letter-spacing:1.2px; margin-bottom:5px; }
 .stat-value { font-size:1.35rem; font-weight:700; color:#c0d8b0; font-family:'IBM Plex Mono',monospace; }
-.stat-sub   { font-size:0.6rem; color:#2a3a20; margin-top:3px; }
+.stat-sub   { font-size:0.6rem; color:#7f9b5c; margin-top:3px; }
 
 /* ── chart cards ── */
 .chart-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(400px,100%),1fr)); gap:16px; margin-bottom:22px; }
 @media(max-width:900px){ .chart-grid{grid-template-columns:1fr;} }
 .chart-card { background:#090f09; border:0.5px solid #162416; border-radius:10px; padding:18px 20px; }
-.chart-title { font-size:0.56rem; font-weight:700; color:#2a3a20; text-transform:uppercase; letter-spacing:1.2px; margin-bottom:12px; }
+.chart-title { font-size:0.56rem; font-weight:700; color:#7f9b5c; text-transform:uppercase; letter-spacing:1.2px; margin-bottom:12px; }
 canvas { width:100%!important; height:220px!important; }
 
 /* ── process table ── */
 .proc-card { background:#090f09; border:0.5px solid #162416; border-radius:10px; padding:18px 20px; margin-bottom:22px; }
-.proc-title { font-size:0.56rem; font-weight:700; color:#2a3a20; text-transform:uppercase; letter-spacing:1.2px; margin-bottom:12px; }
+.proc-title { font-size:0.56rem; font-weight:700; color:#7f9b5c; text-transform:uppercase; letter-spacing:1.2px; margin-bottom:12px; }
 .proc-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; }
-.proc-item .pi-label { font-size:0.56rem; color:#2a3a20; text-transform:uppercase; letter-spacing:1.2px; }
+.proc-item .pi-label { font-size:0.56rem; color:#7f9b5c; text-transform:uppercase; letter-spacing:1.2px; }
 .proc-item .pi-val   { font-size:0.9rem; font-weight:600; color:#c0d8b0; font-family:'IBM Plex Mono',monospace; }
 
 /* ── action bar ── */
 .action-bar { background:#090f09; border:0.5px solid #162416; border-radius:10px; padding:14px 18px; margin-bottom:22px; }
-.action-title { font-size:0.56rem; font-weight:700; color:#2a3a20; text-transform:uppercase; letter-spacing:1.2px; margin-bottom:10px; }
+.action-title { font-size:0.56rem; font-weight:700; color:#7f9b5c; text-transform:uppercase; letter-spacing:1.2px; margin-bottom:10px; }
 .action-buttons { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px; }
-.action-note { font-size:0.68rem; color:#2a3a20; font-style:italic; }
+.action-note { font-size:0.68rem; color:#7f9b5c; font-style:italic; }
 .act-btn { font-family:'IBM Plex Mono',monospace; font-size:0.72rem; font-weight:600; padding:7px 14px; border-radius:6px; cursor:pointer; border:0.5px solid transparent; transition:all 0.12s; background:transparent; }
 .act-btn:hover { transform:translateY(-1px); filter:brightness(1.15); }
 .act-btn:active { transform:translateY(0); }
@@ -193,9 +193,9 @@ canvas { width:100%!important; height:220px!important; }
 .act-purple { background:rgba(139,92,246,0.08);  color:#a78bfa; border-color:rgba(139,92,246,0.3); }
 .act-red    { background:rgba(239,68,68,0.08);   color:#f87171; border-color:rgba(239,68,68,0.3); }
 :root[data-theme="light"] .action-bar { background:#ffffff; border-color:#e0e4ea; box-shadow:0 1px 3px rgba(0,0,0,0.06); }
-:root[data-theme="light"] .action-title { color:#64748b; }
-:root[data-theme="light"] .action-note { color:#94a3b8; }
-:root[data-theme="light"] .act-blue   { color:#2563eb; border-color:#bfdbfe; background:#eff6ff; }
+:root[data-theme="light"] .action-title { color:#4b5769; }
+:root[data-theme="light"] .action-note { color:#5c6b7f; }
+:root[data-theme="light"] .act-blue   { color:#1d4ed8; border-color:#bfdbfe; background:#eff6ff; }
 :root[data-theme="light"] .act-amber  { color:#b45309; border-color:#fde68a; background:#fffbeb; }
 :root[data-theme="light"] .act-purple { color:#6d28d9; border-color:#ddd6fe; background:#f5f3ff; }
 :root[data-theme="light"] .act-red    { color:#b91c1c; border-color:#fecaca; background:#fef2f2; }
@@ -211,17 +211,17 @@ canvas { width:100%!important; height:220px!important; }
 :root[data-theme="light"] body { background:#f4f6f9; color:#334155; }
 :root[data-theme="light"] .main-content { background:#f4f6f9; }
 :root[data-theme="light"] .page-title { color:#1e293b; }
-:root[data-theme="light"] .page-sub { color:#94a3b8; }
+:root[data-theme="light"] .page-sub { color:#5c6b7f; }
 :root[data-theme="light"] .stat-card { background:#ffffff; border-color:#e0e4ea; box-shadow:0 1px 3px rgba(0,0,0,0.06); }
-:root[data-theme="light"] .stat-label { color:#64748b; }
+:root[data-theme="light"] .stat-label { color:#4b5769; }
 :root[data-theme="light"] .stat-value { color:#1e293b; }
-:root[data-theme="light"] .stat-sub { color:#94a3b8; }
+:root[data-theme="light"] .stat-sub { color:#5c6b7f; }
 :root[data-theme="light"] .bar-track { background:#e2e8f0; }
 :root[data-theme="light"] .chart-card { background:#ffffff; border-color:#e0e4ea; box-shadow:0 1px 3px rgba(0,0,0,0.06); }
-:root[data-theme="light"] .chart-title { color:#64748b; }
+:root[data-theme="light"] .chart-title { color:#4b5769; }
 :root[data-theme="light"] .proc-card { background:#ffffff; border-color:#e0e4ea; box-shadow:0 1px 3px rgba(0,0,0,0.06); }
-:root[data-theme="light"] .proc-title { color:#64748b; }
-:root[data-theme="light"] .proc-item .pi-label { color:#64748b; }
+:root[data-theme="light"] .proc-title { color:#4b5769; }
+:root[data-theme="light"] .proc-item .pi-label { color:#4b5769; }
 :root[data-theme="light"] .proc-item .pi-val { color:#1e293b; }
 </style>
 </head><body>

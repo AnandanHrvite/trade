@@ -5,6 +5,13 @@ const { ACTIVE } = require("../strategies");
 const sharedSocketState = require("../utils/sharedSocketState");
 
 // ── Shared HTML shell ─────────────────────────────────────────────────────────
+
+/** `data-theme="light"` when UI_THEME resolves to light — this page renders
+ *  outside sharedNav, so it carries its own theme hook. */
+function _resultLightAttr() {
+  return require("../utils/theme").resolveTheme() === "light" ? ' data-theme="light"' : "";
+}
+
 function shell(title, body) {
   const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
   const disabledLink = (label) =>
@@ -15,7 +22,7 @@ function shell(title, body) {
     ? `<span style="display:flex;align-items:center;gap:5px;font-size:0.68rem;font-weight:700;color:#ef4444;background:#2d0a0a;border:1px solid #7f1d1d;padding:3px 10px;border-radius:5px;white-space:nowrap;"><span style="width:6px;height:6px;border-radius:50%;background:#ef4444;display:inline-block;animation:ltpulse 1.2s infinite;"></span>LIVE ACTIVE</span><style>@keyframes ltpulse{0%,100%{opacity:1}50%{opacity:.25}}</style>`
     : "";
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="en"${_resultLightAttr()}>
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
@@ -29,7 +36,7 @@ function shell(title, body) {
       --border:   #1a2236;
       --border2:  #243048;
       --text:     #c8d8f0;
-      --muted:    #4a6080;
+      --muted:    #8ba1c2;
       --accent:   #3b82f6;
       --green:    #10b981;
       --red:      #ef4444;
@@ -57,7 +64,7 @@ function shell(title, body) {
       background: var(--surface);
       position: sticky; top: 0; z-index: 10;
     }
-    nav .brand { font-size: 1rem; font-weight: 700; color: #fff; letter-spacing: -0.3px; white-space: nowrap; }
+    nav .brand { font-size: 1rem; font-weight: 700; color: var(--text); letter-spacing: -0.3px; white-space: nowrap; }
     nav .brand span { color: var(--accent); }
     nav .nav-links { display: flex; gap: 8px; flex-wrap: wrap; }
     nav .nav-links a {
@@ -176,7 +183,10 @@ function shell(title, body) {
     .btn {
       display: inline-block; padding: 10px 20px; border-radius: 8px;
       font-size: 0.83rem; font-weight: 600; text-decoration: none;
-      background: var(--accent); color: #fff; transition: opacity 0.15s;
+      /* Not var(--accent): that blue is tuned to read as a link on the dark
+         surface, and white on it is only 3.68:1. Filled buttons use the darker
+         shade in both themes. */
+      background: #2563eb; color: #fff; transition: opacity 0.15s;
     }
     .btn:hover { opacity: 0.85; }
 
@@ -199,6 +209,23 @@ function shell(title, body) {
       .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
       table { min-width: 560px; }
     }
+
+    /* ── Light skin ── the page is variable-driven, so the theme is one block. */
+    :root[data-theme="light"] {
+      --bg:       #f4f6f9;
+      --surface:  #ffffff;
+      --border:   #e0e4ea;
+      --border2:  #cbd5e1;
+      --text:     #334155;
+      --muted:    #4b5769;
+      --accent:   #1d4ed8;
+      --green:    #047857;
+      --red:      #b91c1c;
+      --yellow:   #b45309;
+      --purple:   #6d28d9;
+    }
+    :root[data-theme="light"] .empty-state h3 { color:#1e293b; }
+    :root[data-theme="light"] nav .nav-links a.active { border-color:#93c5fd; background:#eff6ff; }
   </style>
 </head>
 <body>

@@ -111,7 +111,7 @@ function pageCSS() {
     .page{padding:16px 20px 40px;}
 
     h1{font-size:1.2rem;font-weight:700;color:#e2e8f0;margin-bottom:4px;}
-    .subtitle{font-size:0.72rem;color:#4a6080;margin-bottom:20px;}
+    .subtitle{font-size:0.72rem;color:var(--muted-1,#8ba1c2);margin-bottom:20px;}
 
     .compare-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px;}
     @media(max-width:768px){.compare-grid{grid-template-columns:1fr;}}
@@ -126,15 +126,15 @@ function pageCSS() {
 
     .metric-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
     .metric{background:#0a0c1a;border:0.5px solid #0e1428;border-radius:6px;padding:10px 12px;}
-    .metric-label{font-size:0.52rem;text-transform:uppercase;letter-spacing:1px;color:#2a3c5a;margin-bottom:4px;}
+    .metric-label{font-size:0.52rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-2,#6d85a8);margin-bottom:4px;}
     .metric-val{font-size:0.95rem;font-weight:700;color:#a0b8d8;}
-    .metric-sub{font-size:0.58rem;color:#4a6080;margin-top:2px;}
+    .metric-sub{font-size:0.58rem;color:var(--muted-1,#8ba1c2);margin-top:2px;}
 
     .diff-section{margin-bottom:24px;}
     .diff-title{font-size:0.8rem;font-weight:700;color:#e2e8f0;margin-bottom:12px;padding-bottom:6px;border-bottom:1px solid #0e1428;}
 
     .diff-table{width:100%;border-collapse:collapse;font-size:0.75rem;}
-    .diff-table th{text-align:left;padding:8px 10px;color:#4a6080;font-weight:600;font-size:0.58rem;text-transform:uppercase;letter-spacing:1px;border-bottom:1px solid #0e1428;}
+    .diff-table th{text-align:left;padding:8px 10px;color:var(--muted-1,#8ba1c2);font-weight:600;font-size:0.58rem;text-transform:uppercase;letter-spacing:1px;border-bottom:1px solid #0e1428;}
     .diff-table td{padding:8px 10px;border-bottom:1px solid #080a16;}
     .diff-table tr:hover{background:#0a0d1a;}
     .diff-table .better{color:#10b981;}
@@ -142,11 +142,11 @@ function pageCSS() {
     .diff-table .neutral{color:#a0b8d8;}
 
     .day-table{width:100%;border-collapse:collapse;font-size:0.72rem;margin-top:12px;}
-    .day-table th{text-align:left;padding:7px 8px;color:#4a6080;font-weight:600;font-size:0.55rem;text-transform:uppercase;letter-spacing:1px;border-bottom:1px solid #0e1428;}
+    .day-table th{text-align:left;padding:7px 8px;color:var(--muted-1,#8ba1c2);font-weight:600;font-size:0.55rem;text-transform:uppercase;letter-spacing:1px;border-bottom:1px solid #0e1428;}
     .day-table td{padding:7px 8px;border-bottom:1px solid #080a16;}
     .day-table tr:hover{background:#0a0d1a;}
 
-    .no-data{text-align:center;padding:40px;color:#4a6080;font-size:0.85rem;}
+    .no-data{text-align:center;padding:40px;color:var(--muted-1,#8ba1c2);font-size:0.85rem;}
     .tag{display:inline-block;font-size:0.58rem;font-weight:600;padding:2px 7px;border-radius:4px;margin-left:6px;}
     .tag.paper{background:rgba(59,130,246,0.15);color:#3b82f6;border:1px solid rgba(59,130,246,0.3);}
     .tag.backtest{background:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid rgba(245,158,11,0.3);}
@@ -416,7 +416,7 @@ ${(paperEquity.length > 0 || btEquity.length > 0) ? `
         legend: { labels: { color: '#a0b8d8', font: { family: "'IBM Plex Mono', monospace", size: 11 } } },
         tooltip: {
           backgroundColor: '#0d1320',
-          borderColor: '#1e3050',
+          borderColor: '#6d85a8',
           borderWidth: 1,
           titleColor: '#e2e8f0',
           bodyColor: '#a0b8d8',
