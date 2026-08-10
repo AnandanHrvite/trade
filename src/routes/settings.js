@@ -494,8 +494,11 @@ const SETTINGS_SCHEMA = [
       { key: "LOT_MULTIPLIER", label: "Lot Multiplier", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "Number of lots per trade." },
       { key: "STRIKE_OFFSET_CE", label: "CE Strike Offset", type: "number", min: -200, max: 200, step: 50, effect: EFFECT.INSTANT, desc: "CE strike vs ATM (-50=ITM, 0=ATM, +50=OTM).", default: "0" },
       { key: "STRIKE_OFFSET_PE", label: "PE Strike Offset", type: "number", min: -200, max: 200, step: 50, effect: EFFECT.INSTANT, desc: "PE strike vs ATM (+50=ITM, 0=ATM, -50=OTM).", default: "0" },
-      { key: "OPTION_EXPIRY_OVERRIDE", label: "Option Expiry (manual)", type: "date", effect: EFFECT.INSTANT, desc: "Manually set the option expiry for all strategies (blank = auto)." },
+      { key: "OPTION_EXPIRY_OVERRIDE", label: "Option Expiry (manual)", type: "date", effect: EFFECT.INSTANT, desc: "Option expiry for all strategies. Filled in automatically once the stored one expires; a future date you set is left alone." },
       { key: "OPTION_EXPIRY_TYPE", label: "Expiry Type", type: "select", options: ["weekly", "monthly"], effect: EFFECT.INSTANT, desc: "Weekly or monthly expiry.", default: "weekly" },
+      { key: "EXPIRY_HEALTHCHECK_ENABLED", label: "Expiry Health Check", type: "toggle", effect: EFFECT.SERVER, desc: "Check before the open that the expiry names a contract the broker quotes.", default: "true" },
+      { key: "EXPIRY_HEALTHCHECK_MINS", label: "Expiry Check Interval (min)", type: "number", min: 5, max: 240, step: 5, effect: EFFECT.SERVER, desc: "How often to re-check the expiry (08:00–15:30 IST).", default: "30" },
+      { key: "EXPIRY_AUTO_ROLL_ENABLED", label: "Auto-Roll Expired Expiry", type: "toggle", effect: EFFECT.INSTANT, desc: "When the expiry above is blank or expired, replace it with the next one automatically.", default: "true" },
       { key: "TICK_RECORDER_ENABLED", label: "Tick Recorder (for Replay)", type: "toggle", effect: EFFECT.SESSION, desc: "Record ticks so sessions can be replayed.", default: "true", subheader: "Recording & Replay" },
       { key: "TICK_RECORDER_RETAIN_DAYS", label: "Tick Recordings Retention (days)", type: "number", min: 7, max: 180, step: 1, effect: EFFECT.SERVER, desc: "Delete tick recordings older than this.", default: "30" },
       { key: "OPTION_CHAIN_RECORDER_ENABLED", label: "Day-Wide Option-Chain Recorder", type: "toggle", effect: EFFECT.INSTANT, desc: "Record the option chain for replay.", default: "true" },
@@ -4049,5 +4052,34 @@ tr:hover td{background:#0a1528;}
 </div></div>
 </body></html>`);
 });
+
+/**
+ * Apply a settings change from server-side code rather than the Settings page.
+ *
+ * Deliberately goes through the SAME persistChanges() path an operator's save
+ * uses, so an automatic change is exactly as traceable as a hand-typed one: it
+ * updates process.env (Settings and the Dashboard expiry strip both read from
+ * there, so both reflect it immediately), rewrites .env so it survives a PM2
+ * restart, writes the settings-audit row, and appends the per-mode JSONL
+ * settings snapshot with `note`.
+ *
+ * Currently used only by the expiry-health roll. Hidden keys are refused, and
+ * there is no delete path — automation may set values, never remove them.
+ *
+ * @param {Record<string,string>} updates
+ * @param {string} note  audit/checkpoint note explaining WHY it changed
+ */
+function applyUpdates(updates, note) {
+  const hiddenSet = new Set(HIDDEN_KEYS);
+  const cleaned = {};
+  Object.entries(updates || {}).forEach(([k, v]) => {
+    const key = String(k).trim().toUpperCase().replace(/[^A-Z0-9_]/g, "");
+    if (key && !hiddenSet.has(key)) cleaned[key] = String(v).trim();
+  });
+  if (Object.keys(cleaned).length === 0) return { success: false, error: "No valid updates" };
+  return persistChanges(cleaned, [], note, null);
+}
+
+router.applyUpdates = applyUpdates;
 
 module.exports = router;

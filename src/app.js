@@ -1300,6 +1300,29 @@ app.get("/", (req, res) => {
     }
   }
 
+  // ── Expiry could not be resolved at all ──────────────────────────────────
+  // Raised by the background expiry-health check (utils/expiryHealth.js), which
+  // runs the same resolution an entry runs. It normally repairs a blank/expired
+  // expiry itself; this banner is the case it cannot — nothing the broker quotes
+  // matched, so a human has to pick the contract. Read-only: rendering never
+  // triggers a broker call, so a slow API can't slow the Dashboard down.
+  if (!optionExpiryAlertHtml) {
+    try {
+      const health = require("./utils/expiryHealth").getState();
+      if (health.status === "fail") {
+        optionExpiryAlertHtml =
+          `<div class="opt-expiry-alert">`
+          + `<span class="opt-expiry-icon">🚨</span>`
+          + `<div class="opt-expiry-text">`
+          +   `<div class="opt-expiry-title">Option expiry could not be resolved — entries will be skipped</div>`
+          +   `<div class="opt-expiry-body">Auto-detection found no NIFTY contract the broker will quote${health.reason ? ` (${health.reason})` : ""}. Set <strong>Option Expiry (manual)</strong> for this week.</div>`
+          + `</div>`
+          + `<a href="/settings#OPTION_EXPIRY_OVERRIDE" class="opt-expiry-cta">Set Expiry →</a>`
+          + `</div>`;
+      }
+    } catch (_) { /* health module unavailable — no banner, never a broken page */ }
+  }
+
   // ── Dashboard quick-edit values for the two expiry keys (same keys the
   // Settings page owns — this is a second editor, not a second source). The
   // date is pattern-checked before it reaches a value="" attribute.
@@ -3697,6 +3720,17 @@ server.listen(PORT, HOST, () => {
     require("./utils/spotFeedSupervisor").start();
   } catch (err) {
     console.warn(`   Spot feed keep-up: not started — ${err.message}`);
+  }
+
+  // Expiry health — resolves the option expiry ahead of the open, rolls a blank
+  // or expired OPTION_EXPIRY_OVERRIDE to the newly-resolved date (Settings and
+  // the Dashboard strip both read process.env, so both update), and raises the
+  // Dashboard banner + a Telegram when nothing can be resolved.
+  // Gated by EXPIRY_HEALTHCHECK_ENABLED / EXPIRY_AUTO_ROLL_ENABLED.
+  try {
+    require("./utils/expiryHealth").start();
+  } catch (err) {
+    console.warn(`   Expiry health    : not started — ${err.message}`);
   }
 
   // Warn about DEAD legacy env keys. SWING_* and SCALP_* were renamed to

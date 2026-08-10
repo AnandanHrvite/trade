@@ -478,9 +478,13 @@ function isExpiryOverrideStale(dateStr) {
  *  4. Scan next 21 days for any valid expiry
  *  5. Skip trade if all fail
  *
- * Usage:  const { symbol, expiry, strike, invalid } = await validateAndGetOptionSymbol(spot, side);
+ * Usage:  const { symbol, expiry, expiryDate, strike, invalid } = await validateAndGetOptionSymbol(spot, side);
+ *
+ * `opts.ignoreOverride` resolves what auto-detection WOULD pick, ignoring any
+ * manual override. Only the expiry-health roll uses it — it needs the true
+ * nearest contract in order to replace an override that has expired.
  */
-async function validateAndGetOptionSymbol(spot, side, mode) {
+async function validateAndGetOptionSymbol(spot, side, mode, opts = {}) {
   let strike = calcATMStrike(spot, side);
   // ── ORB, TREND_PB, GAPS, TDS (Trend Day Scalp) and GAP3M (3M Gap Fix Scalp) trade slightly ITM (~delta 0.6): higher delta tracks
   //    the move better and decays slower in % than ATM. Shift the strike ITM by
@@ -500,7 +504,7 @@ async function validateAndGetOptionSymbol(spot, side, mode) {
   // ── Manual expiry override — skip all auto-detection ──────────────────────
   // ONE common expiry for every strategy — all engines are intraday on the same
   // weekly expiry. Blank = auto-detect. There is no per-strategy expiry override.
-  const manualExpiry = (process.env.OPTION_EXPIRY_OVERRIDE || "").trim();
+  const manualExpiry = opts.ignoreOverride ? "" : (process.env.OPTION_EXPIRY_OVERRIDE || "").trim();
   const expiryType   = (process.env.OPTION_EXPIRY_TYPE     || "weekly").trim().toLowerCase();
   if (manualExpiry && manualExpiry.length >= 8) {
     const parts = manualExpiry.split("-");
@@ -543,7 +547,7 @@ async function validateAndGetOptionSymbol(spot, side, mode) {
     }
     const symbol = `NSE:NIFTY${code}${strike}${side}`;
     console.log(`[instrument] ✅ MANUAL EXPIRY (${expiryType}): ${manualExpiry} → ${code} → ${symbol}`);
-    return { symbol, expiry: code, strike, side };
+    return { symbol, expiry: code, expiryDate: manualExpiry, strike, side };
     }
   }
 
@@ -564,7 +568,7 @@ async function validateAndGetOptionSymbol(spot, side, mode) {
     const symbol = `NSE:NIFTY${code}${strike}${side}`;
     if (await isSymbolValidViaQuotes(symbol)) {
       console.log(`[instrument] ✅ ${label} validated: ${code} (${formatDateToYYYYMMDD(eff)}) → ${symbol}`);
-      return { symbol, expiry: code, strike, side };
+      return { symbol, expiry: code, expiryDate: formatDateToYYYYMMDD(eff), strike, side };
     }
     console.warn(`[instrument] ⚠️  ${label} ${code} (${formatDateToYYYYMMDD(eff)}) failed getQuotes validation`);
     return null;
@@ -625,14 +629,14 @@ async function validateAndGetOptionSymbol(spot, side, mode) {
 
     if (await isSymbolValidViaQuotes(testSymbol)) {
       console.warn(`[instrument] ✅ Found valid expiry +${offset}d: ${testSymbol} (${formatDateToYYYYMMDD(tryDate)})`);
-      return { symbol: testSymbol, expiry: expCode, strike, side };
+      return { symbol: testSymbol, expiry: expCode, expiryDate: formatDateToYYYYMMDD(tryDate), strike, side };
     }
   }
 
   // ── Step 6: All failed — skip trade ──
   console.error(`[instrument] ❌ No valid expiry found. Cannot enter trade.`);
   console.error(`[instrument] ❌ Tried: Option Chain, Weekly (next/prev), Monthly, 21-day scan`);
-  return { symbol: weeklySymbol, expiry: weeklyExpiry, strike, side, invalid: true };
+  return { symbol: weeklySymbol, expiry: weeklyExpiry, expiryDate: formatDateToYYYYMMDD(weeklyDate), strike, side, invalid: true };
 }
 
 async function isSymbolValidViaQuotes(symbol, _retried = false) {

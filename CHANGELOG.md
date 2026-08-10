@@ -6,6 +6,16 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Added — The option expiry now keeps itself up to date
+
+Fixing auto-detection removed the reason the expiry had to be typed in each week; this removes the typing. New [utils/expiryHealth.js](src/utils/expiryHealth.js) runs the **same** resolution an entry runs — once at boot and every `EXPIRY_HEALTHCHECK_MINS` (default 30) between 08:00 and 15:30 IST, so the answer is known before the open rather than at the moment a setup is missed.
+
+- **A blank or expired `OPTION_EXPIRY_OVERRIDE` is replaced with the newly-resolved expiry**, along with the matching weekly/monthly type. It is written through the ordinary Settings save path, so `.env`, the settings-audit row and the per-mode JSONL settings snapshot all record the change, and the Settings page and the Dashboard expiry strip both show the new date straight away (both read `process.env`). Off via `EXPIRY_AUTO_ROLL_ENABLED=false`.
+- **A future date set on purpose is never overwritten** — deliberately trading next week's contract stays a decision, not something the bot quietly undoes. Only blank and already-expired values are filled in, using the same staleness predicate the entry guard and the stale-expiry banner use.
+- **When nothing resolves, it changes nothing** and instead raises a Dashboard banner ("Option expiry could not be resolved — entries will be skipped") plus one Telegram, repeated at most once a day while broken and followed by a recovery message. That is the only case left that needs a person.
+- Skipped on weekends and NSE holidays, with no Fyers token, and while a replay is running (replay monkey-patches `getQuotes`). Read-only: its only broker calls are the quote probes the resolver already makes, and rendering the Dashboard never triggers one.
+- `validateAndGetOptionSymbol` gained an `opts.ignoreOverride` flag (used only by the roll, which needs the true nearest contract in order to replace an expired override) and now also returns `expiryDate` alongside the symbol code.
+
 ### Fixed — Auto expiry detection actually works now (no more setting it by hand every week)
 
 Leaving **Option Expiry (manual)** blank was supposed to resolve the nearest tradeable contract on its own. Three defects stacked up so that it rarely did, which is why the expiry had to be typed into Settings each week.
