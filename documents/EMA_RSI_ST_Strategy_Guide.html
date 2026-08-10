@@ -817,7 +817,7 @@
     <div class="env-group-title">Stops &amp; exits</div>
     <table>
       <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
-      <tr><td><code>OPT_STOP_PCT</code></td><td>0.15</td><td>The option-meltdown stop: exit if the option's price falls this fraction below what we paid. <strong>0.15 = 15%</strong> (e.g. a &#8377;200 option, exit at &#8377;170).</td></tr>
+      <tr><td><code>OPT_STOP_PCT</code></td><td>0.15</td><td>The option-meltdown stop: exit if the option's price falls this fraction below what we paid. <strong>0.15 = 15%</strong> &mdash; a &#8377;200 option would exit at &#8377;170. <strong>(Settings page uses 0.25, i.e. 25%, so on a real install that same &#8377;200 option exits at &#8377;150 instead &mdash; a looser stop than this row's raw code default.)</strong></td></tr>
       <tr><td><code>EMA_RSI_ST_BREAKEVEN_ENABLED</code> / <code>_PTS</code></td><td>false / 25</td><td>Optional break-even floor: once a trade is this many points in profit (spot, at candle close), raise the safety line to the entry price so a winner can't turn into a loss. Tighten-only. Off by default.</td></tr>
       <tr><td><code>EMA_RSI_ST_NEG_CANDLE_LIMIT</code></td><td>2</td><td>Cut a trade that's still losing after this many finished candles. Winners are left alone. 0 = off.</td></tr>
       <tr><td><code>EMA_RSI_ST_STOP_LOSS_PTS</code></td><td>0</td><td>Hard "catastrophe" cap in NIFTY points. 0 = off. (Settings page turns it on at 25.)</td></tr>
