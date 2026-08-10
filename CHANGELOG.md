@@ -6,6 +6,20 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — Auto expiry detection actually works now (no more setting it by hand every week)
+
+Leaving **Option Expiry (manual)** blank was supposed to resolve the nearest tradeable contract on its own. Three defects stacked up so that it rarely did, which is why the expiry had to be typed into Settings each week.
+
+- **The Option Chain REST call had never once succeeded.** It asked for `https://api-t1.fyers.in/data/v3/options-chain`, which is not a route — Fyers answers `404 page not found`. The correct path is `/data/options-chain-v3`. Every call threw on parsing the 404 body, so the single most reliable step (Fyers telling us its own live expiries) was dead from day one.
+- **Its catch-block then invented an expiry — and got expiry day wrong.** The fallback re-implemented the next-Tuesday calculation with `if (daysUntil === 0) daysUntil = 7`, so all day on a Tuesday it named *next* week's contract instead of the one expiring that session. Because it returned a non-null answer, the caller treated the step as a success and skipped its own holiday-prepone and `getQuotes` validation. That fallback is deleted: the call now returns `null` on failure and the computed path — which does prepone and validate — takes over.
+- **The last expiry week of every month could only build symbols that do not exist.** Fyers names a month's final expiry with the **monthly** code (`YY`+`MMM`), not the weekly `YY`+`M`+`DD` one. For August 2026 the listed NIFTY option codes are `26811`, `26818` and `26AUG` — there is no `26825`, because 25-Aug *is* the monthly contract. Every auto step formatted dates as weekly codes, so roughly one week in four the whole ladder failed validation and fell through to the 21-day scan, landing on a contract up to two weeks further out — or gave up entirely. A single `expiryCodeFor(date)` helper now decides the format from the date, and holiday-preponed monthly expiries keep the monthly code (31-Mar-2026 is a Tuesday holiday → trades on Mon 30-Mar, still named `26MAR`).
+
+Also fixed by the same helper: `getLastTuesdayOfMonth()` returned a weekly-format code for what is by definition the monthly contract (so the monthly fallback step could never validate); the monthly step now rolls to next month once this month's expiry has passed; `expiryCodeToDate()` understands monthly codes; the Market Context Snapshot that Replay and the option-chain recorder pin their expiry from was inheriting all of the above.
+
+Verified against Fyers' own symbol master (`public.fyers.in/sym_details/NSE_FO.csv`): **4,012 NIFTY option contracts, 18 distinct expiries out to 2031, 0 mismatches** — plus clock-frozen checks for expiry-day rollover at 15:30, monthly-week selection, and holiday prepone.
+
+Setting a manual expiry still works exactly as before and still overrides everything.
+
 ### Fixed — The expiry & holiday calendar now works in any year, not just 2026
 
 The popup was pinned to 2026 in three places and would have degraded quietly on 1 Jan 2027.

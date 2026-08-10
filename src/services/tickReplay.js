@@ -244,8 +244,10 @@ function _resolveReplayExpiryEnv({ marketContext, snapshot, mode }) {
     return { env: _mirror(effOverride, type), source: "explicit-override", date: effOverride, type };
   }
 
-  // Auto-detect → pin the recorded NEAREST expiry (always weekly-format, type
-  // ignored by instrument.js on this path).
+  // Auto-detect → pin the recorded NEAREST expiry as a DATE. The type is pinned
+  // "weekly" only because instrument.js ignores it on this path — the symbol
+  // format is decided from the date itself (a month's last expiry is named with
+  // the monthly code), so a recorded monthly-week date still resolves correctly.
   if (marketContext && marketContext.weeklyExpiry) {
     return { env: _mirror(marketContext.weeklyExpiry, "weekly"), source: "market-context", date: marketContext.weeklyExpiry, type: "weekly" };
   }

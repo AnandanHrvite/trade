@@ -38,31 +38,78 @@ const MONTH_CODE = ["1",  "2",  "3",  "4",  "5",  "6",  "7",  "8",  "9",  "O",  
 
 // ── Auto Expiry calculation ───────────────────────────────────────────────────
 
+const WEEKLY_EXPIRY_DOW = 2;   // Tuesday — NIFTY weekly expiry weekday
+const SESSION_END_MIN   = 930; // 15:30 IST in minutes-from-midnight
+
+/** "Now" as a Date whose local fields read as IST, wherever the process runs. */
+function nowIST() {
+  return new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+}
+
 /**
- * Get last Tuesday of the current month (NIFTY monthly expiry)
+ * The month's last weekly-expiry weekday (last Tuesday) — the scheduled MONTHLY
+ * expiry date, before any holiday prepone.
+ */
+function lastExpiryWeekdayOf(year, month) {
+  const d = new Date(year, month + 1, 0);                        // day 0 of next month = last day of this one
+  d.setDate(d.getDate() - ((d.getDay() - WEEKLY_EXPIRY_DOW + 7) % 7));
+  return d;
+}
+
+/**
+ * Is this expiry date the LAST one of its month (i.e. the monthly contract)?
+ *
+ * True for the scheduled last Tuesday and for a holiday-preponed date inside that
+ * same expiry week — anything falling after the second-to-last Tuesday. The last
+ * Tuesday of a month is always on the 22nd or later, so that cutoff never spills
+ * into the previous month and a plain day-of-month compare is safe.
+ */
+function isMonthlyExpiryDate(date) {
+  const lastTue = lastExpiryWeekdayOf(date.getFullYear(), date.getMonth());
+  return date.getDate() > lastTue.getDate() - 7;
+}
+
+/**
+ * Fyers symbol code for a concrete expiry DATE.
+ *
+ * ⚠️  The last weekly expiry of every month is the MONTHLY contract and Fyers
+ * names it `YY+MMM` (e.g. "26AUG"), NOT the weekly `YY+M+DD` form. Verified
+ * against Fyers' own symbol master (public.fyers.in/sym_details/NSE_FO.csv):
+ * August-2026 NIFTY options list 26811, 26818 and 26AUG — there is no "26825",
+ * because 25-Aug (the last Tuesday) *is* the monthly contract. Formatting that
+ * week as a weekly code builds a symbol that does not exist, which is why every
+ * auto-detection step below asks this helper instead of formatting the date
+ * itself.
+ */
+function expiryCodeFor(date) {
+  if (isMonthlyExpiryDate(date)) return `${String(date.getFullYear()).slice(2)}${MONTHS[date.getMonth()]}`;
+  return dateToExpiryCode(date);
+}
+
+/**
+ * Get last Tuesday of the current month (NIFTY monthly expiry), as a symbol code.
  */
 function getLastTuesdayOfMonth() {
-  const now = new Date();
-  const ist = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-  
-  const year = ist.getFullYear();
-  const month = ist.getMonth();
-  
-  // Get last day of current month
-  const lastDay = new Date(year, month + 1, 0);
-  const lastDayOfWeek = lastDay.getDay();
-  
-  // Find last Tuesday (daysBack=0 when last day IS Tuesday — correct)
-  const daysBack = (lastDayOfWeek - 2 + 7) % 7;
-  
-  const lastTuesday = new Date(lastDay);
-  lastTuesday.setDate(lastDay.getDate() - daysBack);
-  
-  const dd = String(lastTuesday.getDate()).padStart(2, "0");
-  const mCode = MONTH_CODE[lastTuesday.getMonth()];
-  const yy = String(lastTuesday.getFullYear()).slice(2);
-  
-  return `${yy}${mCode}${dd}`;
+  const ist = nowIST();
+  return expiryCodeFor(lastExpiryWeekdayOf(ist.getFullYear(), ist.getMonth()));
+}
+
+/**
+ * The nearest upcoming weekly-expiry DATE (Tuesday). Today counts while its
+ * session is still open; past 15:30 IST it rolls to next Tuesday.
+ *
+ * ⚠️  NOT holiday-adjusted — callers that can `await` prepone it themselves.
+ * This is the single definition of "which week are we trading", so the computed
+ * fallback and the recorded market context can never disagree about it.
+ */
+function getNearestWeeklyExpiryDate() {
+  const ist = nowIST();
+  let days = (WEEKLY_EXPIRY_DOW - ist.getDay() + 7) % 7;
+  if (days === 0 && ist.getHours() * 60 + ist.getMinutes() >= SESSION_END_MIN) days = 7;
+  const expiry = new Date(ist);
+  expiry.setDate(ist.getDate() + days);
+  expiry.setHours(12, 0, 0, 0);   // midday — immune to DST/offset arithmetic
+  return expiry;
 }
 
 /**
@@ -77,33 +124,10 @@ function getLastTuesdayOfMonth() {
  * BankNifty = Wednesday, FinNifty = Tuesday, Nifty = Tuesday.
  */
 function getNearestThursdayExpiry() {
-  const now = new Date();
-  const ist = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-
-  const day = ist.getDay(); // 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
-  // Target day = 2 (Tuesday) for NIFTY weekly expiry
-  const EXPIRY_DAY = 2; // Tuesday
-  let daysUntilExpiry = (EXPIRY_DAY - day + 7) % 7;
-
-  // If today IS Tuesday, check if it's past 3:30 PM → use NEXT Tuesday
-  if (day === EXPIRY_DAY) {
-    const totalMin = ist.getHours() * 60 + ist.getMinutes();
-    if (totalMin >= 930) { // past 3:30 PM = expired, roll to next week
-      daysUntilExpiry = 7;
-    } else {
-      daysUntilExpiry = 0; // today is valid expiry
-    }
-  }
-
-  const expiry = new Date(ist);
-  expiry.setDate(ist.getDate() + daysUntilExpiry);
-
-  const dd    = String(expiry.getDate()).padStart(2, "0");
-  const mCode = MONTH_CODE[expiry.getMonth()]; // e.g. "3" for March
-  const yy    = String(expiry.getFullYear()).slice(2);
-
-  console.log(`[instrument] getNearestThursdayExpiry() computed: ${yy}${mCode}${dd} (${formatDateToYYYYMMDD(expiry)}) - WARNING: NOT holiday-checked`);
-  return `${yy}${mCode}${dd}`; // e.g. "26306" = year26 month3 day06
+  const expiry = getNearestWeeklyExpiryDate();
+  const code   = expiryCodeFor(expiry);
+  console.log(`[instrument] getNearestThursdayExpiry() computed: ${code} (${formatDateToYYYYMMDD(expiry)}) - WARNING: NOT holiday-checked`);
+  return code; // e.g. "26306" = year26 month3 day06, or "26AUG" on monthly-expiry week
 }
 
 /**
@@ -121,21 +145,12 @@ function getNearestThursdayExpiry() {
  * 27-Oct-2026 (Tue) — every one a Tuesday, none a Thursday.
  */
 function getFuturesExpiry() {
-  const now = new Date();
-  const ist = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-
-  // Find last Tuesday of the given month
-  function lastTuesdayOf(year, month) {
-    const lastDay = new Date(year, month + 1, 0); // day 0 of next month = last day of this one
-    const daysBack = (lastDay.getDay() - 2 + 7) % 7; // 2 = Tuesday
-    lastDay.setDate(lastDay.getDate() - daysBack);
-    return lastDay;
-  }
+  const ist = nowIST();
 
   const year  = ist.getFullYear();
   const month = ist.getMonth();
 
-  let expiry = lastTuesdayOf(year, month);
+  let expiry = lastExpiryWeekdayOf(year, month);
 
   // Expiry two days away or nearer → roll to next month
   const diffDays = Math.floor((expiry - ist) / (1000 * 60 * 60 * 24));
@@ -143,7 +158,7 @@ function getFuturesExpiry() {
     // Roll to next month
     const nextMonth = month === 11 ? 0 : month + 1;
     const nextYear  = month === 11 ? year + 1 : year;
-    expiry = lastTuesdayOf(nextYear, nextMonth);
+    expiry = lastExpiryWeekdayOf(nextYear, nextMonth);
   }
 
   const mon = MONTHS[expiry.getMonth()];
@@ -287,31 +302,41 @@ function getProductType() {
 }
 
 /**
- * Convert a Unix timestamp (seconds) OR milliseconds expiry from Fyers
- * into the Fyers weekly option symbol expiry code: {YY}{M}{DD}
- * e.g. 1741113000 → "26303"  (2026-Mar-03)
+ * Convert a Unix timestamp (seconds) OR milliseconds expiry from Fyers into the
+ * expiry Date, read in IST. `ts` arrives as a JSON string from the REST API, so
+ * it is coerced explicitly rather than relied on to compare/multiply correctly.
+ * e.g. "1741113000" → 2026-Mar-03
  */
-function expiryTimestampToCode(ts) {
-  // Handle both seconds and milliseconds
-  const ms = ts > 1e10 ? ts : ts * 1000;
-  const d   = new Date(ms);
-  const ist = new Date(d.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-  const dd    = String(ist.getDate()).padStart(2, "0");
-  const mCode = MONTH_CODE[ist.getMonth()];
-  const yy    = String(ist.getFullYear()).slice(2);
-  return `${yy}${mCode}${dd}`;
+function expiryTimestampToDate(ts) {
+  const n = Number(ts);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const ms = n > 1e10 ? n : n * 1000;   // seconds vs milliseconds
+  const d  = new Date(ms);
+  if (isNaN(d.getTime())) return null;
+  return new Date(d.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
 }
 
 /**
- * Convert expiry code (e.g. "26331") to Date object
- * Format: YYMDD where M is month code (1-9, O, N, D)
+ * Convert expiry code to a Date object.
+ * Weekly  "26331" → 2026-03-31 (YYMDD, M = month code 1-9, O, N, D)
+ * Monthly "26AUG" → that month's scheduled expiry (last Tuesday), before prepone.
  */
 function expiryCodeToDate(code) {
+  const raw = String(code || "").trim().toUpperCase();
+
+  // Monthly form: YY + 3-letter month
+  const monthly = raw.match(/^(\d{2})([A-Z]{3})$/);
+  if (monthly) {
+    const monthIndex = MONTHS.indexOf(monthly[2]);
+    if (monthIndex === -1) throw new Error(`[instrument] Invalid month '${monthly[2]}' in expiry: ${code}`);
+    return lastExpiryWeekdayOf(2000 + parseInt(monthly[1], 10), monthIndex);
+  }
+
   // e.g. "26331" = 2026-03-31
-  const yy = code.substring(0, 2);
-  const mCode = code.substring(2, 3);
-  const dd = code.substring(3, 5);
-  
+  const yy = raw.substring(0, 2);
+  const mCode = raw.substring(2, 3);
+  const dd = raw.substring(3, 5);
+
   const year = 2000 + parseInt(yy);
   const monthIndex = MONTH_CODE.indexOf(mCode);
   if (monthIndex === -1) throw new Error(`[instrument] Invalid month code '${mCode}' in expiry: ${code}`);
@@ -334,12 +359,16 @@ function dateToExpiryCode(date) {
 
 /**
  * Call the Fyers Option Chain REST API directly (bypasses the JS SDK which lacks optionchain()).
- * Returns the nearest expiry as a symbol code string like "26303", or null on failure.
+ * Returns the nearest expiry as a Date (read in IST), or null on any failure —
+ * a null tells the caller to fall through to the computed-expiry path, which
+ * holiday-preponed and getQuotes-validates on its own.
  *
- * Endpoint: GET https://api-t1.fyers.in/data/v3/options-chain
+ * Endpoint: GET https://api-t1.fyers.in/data/options-chain-v3
+ *   (`/data/v3/options-chain` is NOT a route — it answers 404 "page not found",
+ *    which used to make this call fail silently on every single invocation.)
  * Docs: https://myapi.fyers.in/docsv3#tag/Data-Api
  */
-async function getNearestExpiryFromOptionChain() {
+async function getNearestExpiryDateFromOptionChain() {
   try {
     const https   = require("https");
     const appId   = process.env.APP_ID;
@@ -347,7 +376,7 @@ async function getNearestExpiryFromOptionChain() {
     if (!appId || !token) return null;
 
     const authHeader = `${appId}:${token}`;
-    const url = "https://api-t1.fyers.in/data/v3/options-chain?symbol=NSE%3ANIFTY50-INDEX&strikecount=1&timestamp=";
+    const url = "https://api-t1.fyers.in/data/options-chain-v3?symbol=NSE%3ANIFTY50-INDEX&strikecount=1&timestamp=";
 
     const data = await new Promise((resolve, reject) => {
       const req = https.get(url, {
@@ -375,72 +404,63 @@ async function getNearestExpiryFromOptionChain() {
       req.setTimeout(5000, () => { req.destroy(); reject(new Error("timeout")); });
     });
 
-    if (data.s !== "ok" || !data.data) return null;
+    if (data.s !== "ok" || !data.data) {
+      console.warn(`[instrument] Option chain returned s="${data.s}" msg="${data.message || ""}"`);
+      return null;
+    }
 
-    // Response structure: data.data.expiryData = [{expiry: <unix_ts_ms_or_s>, date: "YYYY-MM-DD"}, ...]
-    // Or data.data.options_chain[].expiry
+    // Response structure: data.data.expiryData = [{expiry: "<unix_ts_s>", date: "DD-MM-YYYY"}, ...]
+    // Or data.data.optionsChain[].expiry
     // Or data.data.t (array of timestamps)
     const d = data.data;
 
-    // Format A: expiryData array
-    if (d.expiryData && d.expiryData.length > 0) {
+    // Format A: expiryData array (nearest first)
+    if (Array.isArray(d.expiryData) && d.expiryData.length > 0) {
       const first = d.expiryData[0];
-      if (first.expiry) return expiryTimestampToCode(first.expiry);
-      if (first.date)   return parseDateToCode(first.date);
+      const byTs = first && first.expiry != null ? expiryTimestampToDate(first.expiry) : null;
+      if (byTs) return byTs;
+      const byDate = first && first.date ? parseExpiryDateString(first.date) : null;
+      if (byDate) return byDate;
     }
 
-    // Format B: options_chain items have expiry field
-    if (d.options_chain && d.options_chain.length > 0) {
-      const expiries = [...new Set(d.options_chain.map(o => o.expiry).filter(Boolean))].sort();
-      if (expiries.length > 0) return expiryTimestampToCode(expiries[0]);
+    // Format B: chain items carry an expiry field (both spellings seen in the wild)
+    const chain = d.optionsChain || d.options_chain;
+    if (Array.isArray(chain) && chain.length > 0) {
+      const expiries = [...new Set(chain.map(o => o && o.expiry).filter(Boolean))]
+        .map(Number).filter(Number.isFinite).sort((a, b) => a - b);
+      if (expiries.length > 0) {
+        const dt = expiryTimestampToDate(expiries[0]);
+        if (dt) return dt;
+      }
     }
 
     // Format C: t[] = array of expiry timestamps
-    if (d.t && d.t.length > 0) {
-      return expiryTimestampToCode(d.t[0]);
+    if (Array.isArray(d.t) && d.t.length > 0) {
+      const dt = expiryTimestampToDate(d.t[0]);
+      if (dt) return dt;
     }
 
     console.warn("[instrument] Option chain response has unknown structure:", JSON.stringify(data).slice(0, 300));
     return null;
   } catch (e) {
+    // Deliberately NO computed fallback here. This used to return a
+    // hand-rolled next-Tuesday code, which (a) duplicated — and disagreed with —
+    // getNearestWeeklyExpiryDate(), skipping the current week's expiry on every
+    // Tuesday, and (b) short-circuited the caller's own holiday-prepone +
+    // getQuotes validation because a non-null answer looks like success.
     console.warn("[instrument] Option chain REST call failed:", e.message);
-    // Fallback: Try multiple expiry strategies with holiday checking
-    const today = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-    
-    // Strategy 1: Try next Tuesday (weekly) - check if it's a holiday
-    let nextExpiry = new Date(today);
-    const EXPIRY_DAY = 2; // Tuesday
-    let daysUntil = (EXPIRY_DAY - today.getDay() + 7) % 7;
-    if (daysUntil === 0 && today.getHours() * 60 + today.getMinutes() >= 930) {
-      daysUntil = 7; // past 3:30 PM on Tuesday, roll to next week
-    }
-    if (daysUntil === 0) daysUntil = 7; // same day before expiry -> use next week
-    nextExpiry.setDate(today.getDate() + daysUntil);
-    
-    // Check if computed Tuesday is a holiday - if so, prepone to previous trading day
-    const isHoliday = await isNonTradingDay(nextExpiry);
-    if (isHoliday) {
-      console.warn(`[instrument] Fallback expiry ${formatDateToYYYYMMDD(nextExpiry)} is a holiday, preponing...`);
-      nextExpiry = await getPreviousTradingDay(nextExpiry);
-    }
-    
-    const yy = String(nextExpiry.getFullYear()).slice(-2);
-    const mCode = MONTH_CODE[nextExpiry.getMonth()];
-    const dd = String(nextExpiry.getDate()).padStart(2, '0');
-    const fallbackCode = yy + mCode + dd;
-    console.warn(`[instrument] Using fallback expiry code (weekly): ${fallbackCode} (${formatDateToYYYYMMDD(nextExpiry)})`);
-    return fallbackCode;
+    return null;
   }
 }
 
-function parseDateToCode(dateStr) {
-  // "YYYY-MM-DD" → "YYMDD" in Fyers month-letter format (e.g. "26M06")
-  const parts = dateStr.split("-");
-  const d   = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-  const dd    = String(d.getDate()).padStart(2, "0");
-  const mCode = MONTH_CODE[d.getMonth()];
-  const yy    = String(d.getFullYear()).slice(2);
-  return `${yy}${mCode}${dd}`;
+/** Parse the chain's `date` field — Fyers sends "DD-MM-YYYY"; accept ISO too. */
+function parseExpiryDateString(dateStr) {
+  const parts = String(dateStr || "").trim().split(/[-/]/);
+  if (parts.length !== 3 || parts.some(p => isNaN(parseInt(p, 10)))) return null;
+  const [a, b, c] = parts.map(p => parseInt(p, 10));
+  const [year, month, day] = String(parts[0]).length === 4 ? [a, b, c] : [c, b, a];
+  const d = new Date(year, month - 1, day, 12, 0, 0, 0);
+  return isNaN(d.getTime()) ? null : d;
 }
 
 /**
@@ -535,12 +555,13 @@ async function validateAndGetOptionSymbol(spot, side, mode) {
     let code;
     if (expiryType === "monthly") {
       // Monthly format: YY + 3-letter month → e.g. "26MAR"
-      const monthNames = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
-      const yy = String(d.getFullYear()).slice(2);
-      code = yy + monthNames[d.getMonth()];
+      code = `${String(d.getFullYear()).slice(2)}${MONTHS[d.getMonth()]}`;
     } else {
-      // Weekly format: YY + month_code + DD → e.g. "26330"
-      code = dateToExpiryCode(d);
+      // Weekly format: YY + month_code + DD → e.g. "26330". expiryCodeFor still
+      // upgrades a month's LAST expiry to the monthly code, because that is what
+      // the contract is actually called — picking "weekly" in Settings for e.g.
+      // 25-Aug-2026 must not build the non-existent NIFTY26825 symbol.
+      code = expiryCodeFor(d);
     }
     const symbol = `NSE:NIFTY${code}${strike}${side}`;
     console.log(`[instrument] ✅ MANUAL EXPIRY (${expiryType}): ${manualExpiry} → ${code} → ${symbol}`);
@@ -548,133 +569,77 @@ async function validateAndGetOptionSymbol(spot, side, mode) {
     }
   }
 
+  // Every auto step resolves the same way: take a candidate expiry DATE, prepone
+  // it off a holiday, name it with the code Fyers actually uses for that date
+  // (weekly YYMDD, or monthly YYMMM in the last expiry week of a month), and only
+  // accept it once getQuotes confirms the contract exists. Returns null to fall
+  // through to the next step.
+  const tryExpiryDate = async (date, label) => {
+    if (!date) return null;
+    let eff = date;
+    if (await isNonTradingDay(eff)) {
+      const preponed = await getPreviousTradingDay(eff);
+      console.warn(`[instrument] ⚠️  ${label} ${formatDateToYYYYMMDD(eff)} is a holiday/weekend — preponing to ${formatDateToYYYYMMDD(preponed)}`);
+      eff = preponed;
+    }
+    const code   = expiryCodeFor(eff);
+    const symbol = `NSE:NIFTY${code}${strike}${side}`;
+    if (await isSymbolValidViaQuotes(symbol)) {
+      console.log(`[instrument] ✅ ${label} validated: ${code} (${formatDateToYYYYMMDD(eff)}) → ${symbol}`);
+      return { symbol, expiry: code, strike, side };
+    }
+    console.warn(`[instrument] ⚠️  ${label} ${code} (${formatDateToYYYYMMDD(eff)}) failed getQuotes validation`);
+    return null;
+  };
+
+  const ist = nowIST();
+
   // ── Step 1: Option Chain REST API (most reliable — returns only live expiries) ──
   console.log(`[instrument] Step 1: Calling Option Chain API...`);
-  const chainExpiry = await getNearestExpiryFromOptionChain();
-  console.log(`[instrument] Step 1: Option Chain returned: ${chainExpiry || 'null'}`);
-  if (chainExpiry) {
-    // Validate the Option Chain expiry is not a holiday
-    const chainDate = expiryCodeToDate(chainExpiry);
-    const isChainHoliday = await isNonTradingDay(chainDate);
-    
-    if (isChainHoliday) {
-      console.warn(`[instrument] ⚠️  Option Chain expiry ${chainExpiry} (${formatDateToYYYYMMDD(chainDate)}) is a holiday/weekend`);
-      
-      // Try previous trading day (preponed expiry)
-      const preponedDate = await getPreviousTradingDay(chainDate);
-      const preponedExpiry = dateToExpiryCode(preponedDate);
-      const preponedSymbol = `NSE:NIFTY${preponedExpiry}${strike}${side}`;
-      
-      console.log(`[instrument] 🔄 Trying preponed expiry from Option Chain: ${preponedExpiry} (${formatDateToYYYYMMDD(preponedDate)})`);
-      
-      if (await isSymbolValidViaQuotes(preponedSymbol)) {
-        console.log(`[instrument] ✅ Preponed expiry validated: ${preponedSymbol}`);
-        return { symbol: preponedSymbol, expiry: preponedExpiry, strike, side };
-      }
-      
-      // If preponed validation fails, fall through to Step 2
-      console.warn(`[instrument] ⚠️  Preponed expiry ${preponedExpiry} validation failed, trying computed weekly...`);
-    } else {
-      // Not a holiday, validate the Option Chain expiry via getQuotes
-      const symbol = `NSE:NIFTY${chainExpiry}${strike}${side}`;
-      if (await isSymbolValidViaQuotes(symbol)) {
-        console.log(`[instrument] ✅ Option Chain expiry validated: ${chainExpiry} → ${symbol}`);
-        return { symbol, expiry: chainExpiry, strike, side };
-      } else {
-        console.warn(`[instrument] ⚠️  Option Chain expiry ${chainExpiry} validation failed, trying computed weekly...`);
-      }
-    }
-  }
+  const chainDate = await getNearestExpiryDateFromOptionChain();
+  console.log(`[instrument] Step 1: Option Chain returned: ${chainDate ? formatDateToYYYYMMDD(chainDate) : "null"}`);
+  const fromChain = await tryExpiryDate(chainDate, "Option Chain expiry");
+  if (fromChain) return fromChain;
 
-  // ── Step 2: Computed weekly expiry (next Tuesday) with holiday check ──
-  const weeklyExpiry = getNearestThursdayExpiry();
+  // ── Step 2: Computed weekly expiry (this/next Tuesday) with holiday check ──
+  const weeklyDate   = getNearestWeeklyExpiryDate();
+  const weeklyExpiry = expiryCodeFor(weeklyDate);              // reported if every step fails
   const weeklySymbol = `NSE:NIFTY${weeklyExpiry}${strike}${side}`;
-  
-  // Check if the computed Tuesday is a holiday
-  const weeklyDate = expiryCodeToDate(weeklyExpiry);
-  const isHoliday = await isNonTradingDay(weeklyDate);
-  
-  if (isHoliday) {
-    console.warn(`[instrument] ⚠️  Computed expiry ${weeklyExpiry} (${formatDateToYYYYMMDD(weeklyDate)}) is a holiday/weekend`);
-    
-    // Try previous trading day (preponed expiry - usually Monday)
-    const preponedDate = await getPreviousTradingDay(weeklyDate);
-    const preponedExpiry = dateToExpiryCode(preponedDate);
-    const preponedSymbol = `NSE:NIFTY${preponedExpiry}${strike}${side}`;
-    
-    console.log(`[instrument] 🔄 Trying preponed expiry: ${preponedExpiry} (${formatDateToYYYYMMDD(preponedDate)})`);
-    
-    if (await isSymbolValidViaQuotes(preponedSymbol)) {
-      console.log(`[instrument] ✅ Preponed expiry validated: ${preponedSymbol}`);
-      return { symbol: preponedSymbol, expiry: preponedExpiry, strike, side };
-    } else {
-      console.warn(`[instrument] ⚠️  Preponed expiry ${preponedExpiry} validation failed via getQuotes()`);
-    }
-  } else {
-    // Not a holiday, validate normally
-    if (await isSymbolValidViaQuotes(weeklySymbol)) {
-      console.log(`[instrument] ✅ Weekly expiry validated: ${weeklySymbol}`);
-      return { symbol: weeklySymbol, expiry: weeklyExpiry, strike, side };
-    } else {
-      console.warn(`[instrument] ⚠️  Weekly expiry ${weeklyExpiry} validation failed via getQuotes()`);
-    }
-  }
-  
+  const fromWeekly   = await tryExpiryDate(weeklyDate, "Computed weekly expiry");
+  if (fromWeekly) return fromWeekly;
+
   // ── Step 3: Monthly expiry (last Tuesday of month) + getQuotes() validation ──
+  // Rolls to next month once this month's has passed, so late-month retries do
+  // not re-test a contract that has already expired.
   console.warn(`[instrument] ⚠️  Weekly expiry ${weeklyExpiry} not available, trying monthly...`);
-  const monthlyExpiry = getLastTuesdayOfMonth();
-  const monthlySymbol = `NSE:NIFTY${monthlyExpiry}${strike}${side}`;
-  if (await isSymbolValidViaQuotes(monthlySymbol)) {
-    console.log(`[instrument] ✅ Monthly expiry validated: ${monthlySymbol}`);
-    return { symbol: monthlySymbol, expiry: monthlyExpiry, strike, side };
+  let monthlyDate = lastExpiryWeekdayOf(ist.getFullYear(), ist.getMonth());
+  if (monthlyDate.getDate() < ist.getDate()) {
+    monthlyDate = lastExpiryWeekdayOf(
+      ist.getMonth() === 11 ? ist.getFullYear() + 1 : ist.getFullYear(),
+      ist.getMonth() === 11 ? 0 : ist.getMonth() + 1
+    );
   }
+  const fromMonthly = await tryExpiryDate(monthlyDate, "Monthly expiry");
+  if (fromMonthly) return fromMonthly;
 
   // ── Step 4: Try PREVIOUS week's expiry (current week if next week not available yet) ──
   console.warn(`[instrument] ⚠️  Next week's expiry not available, trying current/previous week...`);
-  const now = new Date();
-  const ist = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-  
-  // Calculate previous Tuesday (7 days back from next Tuesday)
-  const prevTuesday = new Date(ist);
-  const daysToSubtract = (ist.getDay() - 2 + 7) % 7 || 7; // Days since last Tuesday
-  prevTuesday.setDate(ist.getDate() - daysToSubtract);
-  
-  // Check if previous Tuesday is a holiday
-  const isPrevHoliday = await isNonTradingDay(prevTuesday);
-  if (isPrevHoliday) {
-    // Use preponed expiry (Monday)
-    const prevMonday = await getPreviousTradingDay(prevTuesday);
-    const prevExpiry = dateToExpiryCode(prevMonday);
-    const prevSymbol = `NSE:NIFTY${prevExpiry}${strike}${side}`;
-    console.log(`[instrument] 🔄 Trying previous week's preponed expiry: ${prevExpiry} (${formatDateToYYYYMMDD(prevMonday)})`);
-    if (await isSymbolValidViaQuotes(prevSymbol)) {
-      console.log(`[instrument] ✅ Previous week's preponed expiry validated: ${prevSymbol}`);
-      return { symbol: prevSymbol, expiry: prevExpiry, strike, side };
-    }
-  } else {
-    const prevExpiry = dateToExpiryCode(prevTuesday);
-    const prevSymbol = `NSE:NIFTY${prevExpiry}${strike}${side}`;
-    console.log(`[instrument] 🔄 Trying previous week's expiry: ${prevExpiry} (${formatDateToYYYYMMDD(prevTuesday)})`);
-    if (await isSymbolValidViaQuotes(prevSymbol)) {
-      console.log(`[instrument] ✅ Previous week's expiry validated: ${prevSymbol}`);
-      return { symbol: prevSymbol, expiry: prevExpiry, strike, side };
-    }
-  }
+  const prevTuesday = new Date(weeklyDate);
+  prevTuesday.setDate(weeklyDate.getDate() - 7);
+  const fromPrev = await tryExpiryDate(prevTuesday, "Previous week's expiry");
+  if (fromPrev) return fromPrev;
 
   // ── Step 5: Scan next 21 days — check ALL days, skip weekends & holidays ──
   console.warn(`[instrument] ⚠️  Previous week also failed, scanning next 21 days (excluding holidays)...`);
-  
+
   for (let offset = 1; offset <= 21; offset++) {
     const tryDate = new Date(ist);
     tryDate.setDate(ist.getDate() + offset);
-    
+
     // Skip weekends & holidays
     if (await isNonTradingDay(tryDate)) continue;
 
-    const dd    = String(tryDate.getDate()).padStart(2, "0");
-    const mCode = MONTH_CODE[tryDate.getMonth()];
-    const yy    = String(tryDate.getFullYear()).slice(2);
-    const expCode = `${yy}${mCode}${dd}`;
+    const expCode    = expiryCodeFor(tryDate);
     const testSymbol = `NSE:NIFTY${expCode}${strike}${side}`;
 
     if (await isSymbolValidViaQuotes(testSymbol)) {
@@ -776,26 +741,20 @@ async function getMarketContext() {
   // an ok-but-unknown response shape; in that rare case compute next-Tuesday and
   // prepone off a holiday — mirroring validateAndGetOptionSymbol Step 2, so the
   // recorded expiry can't drift from what the strategy trades in a holiday week.
-  let weeklyCode = null;
-  try { weeklyCode = await getNearestExpiryFromOptionChain(); } catch (_) { /* fall back below */ }
-  if (!weeklyCode) {
-    const ist = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-    let d = new Date(ist);
-    let days = (2 - ist.getDay() + 7) % 7;                 // 2 = Tuesday (NIFTY weekly)
-    if (days === 0 && (ist.getHours() * 60 + ist.getMinutes()) >= 930) days = 7;  // past 3:30 PM → next week
-    d.setDate(ist.getDate() + days);
-    try { if (await isNonTradingDay(d)) d = await getPreviousTradingDay(d); } catch (_) { /* keep computed */ }
-    weeklyCode = dateToExpiryCode(d);
-  }
+  let weekly = null;
+  try { weekly = await getNearestExpiryDateFromOptionChain(); } catch (_) { /* fall back below */ }
+  if (!weekly) weekly = getNearestWeeklyExpiryDate();
+  try { if (await isNonTradingDay(weekly)) weekly = await getPreviousTradingDay(weekly); }
+  catch (_) { /* keep computed */ }
+  const weeklyCode = expiryCodeFor(weekly);
+  const weeklyDate = formatDateToYYYYMMDD(weekly);
 
-  let weeklyDate = null;
-  try { weeklyDate = formatDateToYYYYMMDD(expiryCodeToDate(weeklyCode)); }
-  catch (e) { console.warn(`[instrument] getMarketContext: weekly code→date failed for "${weeklyCode}": ${e.message}`); }
-
-  const monthlyCode = getLastTuesdayOfMonth();
-  let monthlyDate = null;
-  try { monthlyDate = formatDateToYYYYMMDD(expiryCodeToDate(monthlyCode)); }
-  catch (e) { console.warn(`[instrument] getMarketContext: monthly code→date failed for "${monthlyCode}": ${e.message}`); }
+  const ist = nowIST();
+  let monthly = lastExpiryWeekdayOf(ist.getFullYear(), ist.getMonth());
+  try { if (await isNonTradingDay(monthly)) monthly = await getPreviousTradingDay(monthly); }
+  catch (_) { /* keep computed */ }
+  const monthlyCode = expiryCodeFor(monthly);
+  const monthlyDate = formatDateToYYYYMMDD(monthly);
 
   return {
     index:            "NSE:NIFTY50-INDEX",
@@ -824,6 +783,8 @@ module.exports = {
   getLiveSpot,
   calcATMStrike,
   getNearestThursdayExpiry,
+  expiryCodeFor,               // date → the Fyers code Fyers really uses (weekly YYMDD / monthly YYMMM)
+  getNearestWeeklyExpiryDate,  // the single definition of "which week are we trading"
   getFuturesExpiry,
   getProductType,
   getMarketContext,            // async — resolve the day's immutable Market Context Snapshot
