@@ -262,6 +262,11 @@ router.get("/", async (req, res) => {
     .res-loss{color:#ef4444;font-weight:700;}
     .res-flat{color:#4a6080;}
     .empty{text-align:center;padding:50px 20px;color:#4a6080;font-size:0.85rem;}
+    /* warning alert — sits at the very top of the report, not buried under the table */
+    .alert-warn{display:flex;align-items:flex-start;gap:10px;background:rgba(245,158,11,0.10);border:0.5px solid rgba(245,158,11,0.45);border-left:3px solid #f59e0b;border-radius:10px;padding:11px 14px;margin-bottom:14px;}
+    .alert-warn .aw-ico{font-size:0.95rem;line-height:1.3;}
+    .alert-warn .aw-title{font-size:0.7rem;font-weight:700;letter-spacing:0.6px;text-transform:uppercase;color:#f59e0b;font-family:'IBM Plex Mono',monospace;}
+    .alert-warn .aw-body{font-size:0.7rem;color:#c8d8f0;font-family:'IBM Plex Mono',monospace;margin-top:3px;line-height:1.6;}
     /* light theme */
     :root[data-theme="light"] body{background:#f4f6f9!important;color:#334155!important;}
     :root[data-theme="light"] .main-content{background:#f4f6f9!important;}
@@ -277,6 +282,9 @@ router.get("/", async (req, res) => {
     :root[data-theme="light"] .tbl tfoot td{background:#f1f5f9!important;color:#1e293b!important;}
     :root[data-theme="light"] .muted{color:#cbd5e1!important;}
     :root[data-theme="light"] .empty{color:#94a3b8!important;}
+    :root[data-theme="light"] .alert-warn{background:#fffbeb!important;border-color:#fcd34d!important;border-left-color:#f59e0b!important;}
+    :root[data-theme="light"] .alert-warn .aw-title{color:#b45309!important;}
+    :root[data-theme="light"] .alert-warn .aw-body{color:#78350f!important;}
     /* ── PRINT / Save-as-PDF ─────────────────────────────────────────── */
     @media print {
       @page { size: A4 landscape; margin: 12mm; }
@@ -285,6 +293,8 @@ router.get("/", async (req, res) => {
       .app-shell{display:block!important;}
       .main-content{margin-left:0!important;padding:0!important;min-height:auto!important;}
       .rpt-head,.sc,.panel{background:#fff!important;border:1px solid #d0d7e2!important;box-shadow:none!important;break-inside:avoid;}
+      .alert-warn{background:#fffbeb!important;border:1px solid #d0d7e2!important;border-left:3px solid #b45309!important;break-inside:avoid;}
+      .alert-warn .aw-title{color:#b45309!important;} .alert-warn .aw-body{color:#333!important;}
       .rh-title{color:#111!important;} .rh-meta,.rh-brand,.page-sub{color:#555!important;}
       .sc-val{color:#111!important;} .sc-label,.sc-sub,.panel h3{color:#555!important;}
       .tbl{font-size:0.6rem;} .tbl th{background:#eef2f7!important;color:#333!important;}
@@ -398,6 +408,18 @@ function render(){
   const gen = new Date().toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'});
   const days = byDay(arr);
 
+  // VIX readings for the shown days — drives both the TOTAL row and the alert below.
+  const vixVals = days.map(g => VIX_BY_DATE[g.date]).filter(v => v != null);
+
+  // Silence is the worst outcome here — if every VIX cell is a dash, say why, and
+  // say it at the top of the page where it can't be scrolled past.
+  const vixWarn = (!vixVals.length && VIX_NOTE)
+    ? '<div class="alert-warn" role="alert"><div class="aw-ico">⚠️</div><div>'
+      + '<div class="aw-title">VIX unavailable</div>'
+      + '<div class="aw-body">' + esc(VIX_NOTE) + ' — the VIX column stays empty until this is fixed.</div>'
+      + '</div></div>'
+    : '';
+
   // Show a column for EVERY strategy enabled in Settings, even one that took no
   // trade in this range — a missing column reads as "that strategy isn't running"
   // when it actually means "it ran and found nothing". Zero-trade days show a dash.
@@ -406,11 +428,16 @@ function render(){
 
   // overall totals
   let tN=0,tW=0,tL=0,tNet=0; const totByMode={};
-  for(const mo of activeModes) totByMode[mo]={n:0,pnl:0};
-  for(const t of arr){ tN++; tNet+=t.pnl; if(t.pnl>0)tW++; else if(t.pnl<0)tL++; if(totByMode[t.mode]){ totByMode[t.mode].n++; totByMode[t.mode].pnl+=t.pnl; } }
+  for(const mo of activeModes) totByMode[mo]={n:0,pnl:0,wins:0,losses:0};
+  for(const t of arr){
+    tN++; tNet+=t.pnl;
+    if(t.pnl>0)tW++; else if(t.pnl<0)tL++;
+    const m=totByMode[t.mode];
+    if(m){ m.n++; m.pnl+=t.pnl; if(t.pnl>0)m.wins++; else if(t.pnl<0)m.losses++; }
+  }
   const tWR = tN?(tW/tN*100):0;
 
-  let head='<div class="rpt-head"><div>'
+  let head=vixWarn+'<div class="rpt-head"><div>'
     +'<div class="rh-title">Consolidated Day Report</div>'
     +'<div class="rh-meta">Book: <b>'+bookLabel+'</b> &nbsp;·&nbsp; Strategy: <b>'+esc(f.mode==='all'?'All':(MODE_LABEL[f.mode]||f.mode))+'</b> &nbsp;·&nbsp; Period: <b>'+esc(f.rangeLabel)+'</b> &nbsp;·&nbsp; Trading days: <b>'+days.length+'</b> &nbsp;·&nbsp; Trades: <b>'+tN+'</b></div>'
     +'</div><div class="rh-brand">ௐ Palani Andawar Thunai ॐ<br>Generated '+esc(gen)+'</div></div>';
@@ -453,22 +480,20 @@ function render(){
   }
 
   // totals footer — VIX averaged across the shown days that have a Fyers reading
-  const vixVals = days.map(g => VIX_BY_DATE[g.date]).filter(v => v != null);
   const avgVix  = vixVals.length ? vixVals.reduce((s,v)=>s+v,0)/vixVals.length : null;
   let foot='<tr><td><b>TOTAL</b></td><td>'+fmtVix(avgVix)+'</td>';
   for(const mo of activeModes){
     const c=totByMode[mo];
     if(!c || !c.n){ foot+='<td class="muted">—</td>'; continue; }
-    foot+='<td><span style="color:'+pc(c.pnl)+'">'+inr2(c.pnl)+'</span><br><span class="cnt">'+c.n+'</span></td>';
+    // Per-strategy totals need the same W/L split the overall TOTAL shows — a bare
+    // trade count hides which strategy actually won its trades.
+    foot+='<td><span style="color:'+pc(c.pnl)+'">'+inr2(c.pnl)+'</span><br><span class="cnt">'+c.n+' · '
+      +'<span style="color:#10b981">'+c.wins+'W</span> / <span style="color:#ef4444">'+c.losses+'L</span></span></td>';
   }
   foot+='<td>'+tN+'</td><td style="color:#10b981">'+tW+'</td><td style="color:#ef4444">'+tL+'</td><td>'+tWR.toFixed(0)+'%</td>'
     +'<td style="color:'+pc(tNet)+'">'+inr2(tNet)+'</td><td class="'+(tNet>=0?'res-profit':'res-loss')+'">'+(tNet>=0?'🟢':'🔴')+'</td></tr>';
 
-  // Silence is the worst outcome here — if every VIX cell is a dash, say why.
-  const vixWarn = (!vixVals.length && VIX_NOTE)
-    ? '<div class="rh-meta" style="margin-top:8px;color:#f59e0b">⚠️ VIX unavailable — '+esc(VIX_NOTE)+'</div>' : '';
-
-  h+='<div class="panel"><h3>Daily Breakdown</h3><div class="tbl-scroll"><table class="tbl"><thead>'+thead+'</thead><tbody>'+body+'</tbody><tfoot>'+foot+'</tfoot></table></div>'+vixWarn+'</div>';
+  h+='<div class="panel"><h3>Daily Breakdown</h3><div class="tbl-scroll"><table class="tbl"><thead>'+thead+'</thead><tbody>'+body+'</tbody><tfoot>'+foot+'</tfoot></table></div></div>';
   C.innerHTML=h;
 }
 
