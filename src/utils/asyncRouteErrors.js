@@ -51,11 +51,18 @@ function isThenable(v) {
  */
 function toError(reason) {
   if (reason instanceof Error) return reason;
-  const err = new Error(
-    reason === undefined || reason === null
-      ? "Async route handler rejected with no error"
-      : String(reason),
-  );
+  let text;
+  if (reason === undefined || reason === null) {
+    text = "Async route handler rejected with no error";
+  } else {
+    // String() is not total: a null-prototype object, or one whose toString /
+    // Symbol.toPrimitive throws, throws here too — inside the rejection handler
+    // that would escape as the very unhandled rejection this module exists to
+    // prevent. Describing it is always better than dying while describing it.
+    try { text = String(reason); }
+    catch (_) { text = `Async route handler rejected with an unprintable ${typeof reason}`; }
+  }
+  const err = new Error(text);
   err.original = reason;
   return err;
 }
