@@ -578,8 +578,18 @@ async function validateAndGetOptionSymbol(spot, side, mode, opts = {}) {
 
   // ── Step 1: Option Chain REST API (most reliable — returns only live expiries) ──
   console.log(`[instrument] Step 1: Calling Option Chain API...`);
-  const chainDate = await getNearestExpiryDateFromOptionChain();
+  let chainDate = await getNearestExpiryDateFromOptionChain();
   console.log(`[instrument] Step 1: Option Chain returned: ${chainDate ? formatDateToYYYYMMDD(chainDate) : "null"}`);
+  // On expiry day the chain keeps listing the contract that expired at 15:30
+  // until Fyers drops it (usually overnight), and getQuotes still answers for it
+  // — so after the close it would validate and be handed back as "the nearest
+  // expiry", naming a contract nothing can be entered on. Discard a date whose
+  // session has already ended and let Step 2's computed weekly (which rolls at
+  // 15:30) name the live one, so an evening resolution is already next week's.
+  if (chainDate && isExpiryOverrideStale(formatDateToYYYYMMDD(chainDate))) {
+    console.warn(`[instrument] ⚠️  Option Chain still lists ${formatDateToYYYYMMDD(chainDate)}, whose session has ended — ignoring it`);
+    chainDate = null;
+  }
   const fromChain = await tryExpiryDate(chainDate, "Option Chain expiry");
   if (fromChain) return fromChain;
 

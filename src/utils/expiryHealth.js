@@ -12,7 +12,11 @@
  * What this does
  * ──────────────
  *   1. On a schedule (and at boot) it runs the SAME resolution a trade runs, so
- *      it can never report "fine" while an entry would be refused.
+ *      it can never report "fine" while an entry would be refused. One extra run
+ *      at 15:40 — after the close, before app.js clears the broker tokens at
+ *      16:00 — rolls the contract that expired at 15:30 the SAME day, so the
+ *      next morning starts on a live expiry. If even that run cannot resolve it,
+ *      a Telegram says so, and setting it by hand is the fallback.
  *   2. If OPTION_EXPIRY_OVERRIDE is blank or has already expired, it writes the
  *      newly-resolved expiry back through the Settings persistence path. The
  *      Settings page, the Dashboard expiry strip and .env all show the new date
@@ -54,6 +58,16 @@ const notify      = require("./notify");
 const WINDOW_OPEN_MIN  = 480;   // 08:00
 const WINDOW_CLOSE_MIN = 930;   // 15:30
 
+// One extra check per day, at a FIXED time just after the close. On expiry day
+// the stored expiry dies at 15:30, and app.js clears both broker tokens at 16:00
+// — after which nothing can be resolved until the next morning's login. 15:40
+// sits in that gap, so the roll to next week's contract happens the same evening
+// instead of waiting for the next day. It is a fixed minute rather than another
+// interval tick because a 30-minute tick could land at 15:35 or 16:05.
+const POST_CLOSE_MIN  = 940;     // 15:40
+const TOKEN_CLEAR_MIN = 960;     // 16:00 — app.js clears both broker tokens here
+const HEARTBEAT_MS    = 60_000;  // scheduler granularity — the checks themselves are rate-limited below
+
 const DEFAULT_INTERVAL_MINS = 30;
 const MIN_INTERVAL_MINS     = 5;
 const BOOT_DELAY_MS         = 30_000;   // let the token and feeds settle first
@@ -61,6 +75,8 @@ const BOOT_DELAY_MS         = 30_000;   // let the token and feeds settle first
 let _timer   = null;
 let _running = false;   // one check at a time — the fallback ladder must not overlap itself
 let _tradingDay = { day: null, allowed: null };
+let _lastCheckAt  = 0;      // rate-limits the in-window checks off the 1-minute heartbeat
+let _postCloseDay = null;   // IST date the 15:40 run already fired for — one per day
 
 // Last verdict, read by the Dashboard. Starts "unknown" so a page load before the
 // first check renders no banner rather than a false alarm.
@@ -197,6 +213,13 @@ function _maybeRoll(auto) {
   // A live, forward-dated override is a deliberate choice — leave it alone.
   if (current && !instrument.isExpiryOverrideStale(current)) return;
   if (current === auto.expiryDate) return;
+  // Never write a date that is itself already past its session close: replacing
+  // one dead contract with another only looks like a fix. Leave the stale value
+  // (and its banner) in place and try again on the next check.
+  if (instrument.isExpiryOverrideStale(auto.expiryDate)) {
+    console.warn(`[expiryHealth] ⚠️  Resolved expiry ${auto.expiryDate} has already expired — not rolling to it`);
+    return;
+  }
 
   // The code decides weekly vs monthly from the date itself; keep the Settings
   // dropdown honest about which one this contract actually is.
@@ -243,6 +266,25 @@ function getState() {
   return { ..._state };
 }
 
+/**
+ * The 15:40 run is the last chance of the day — app.js clears both broker tokens
+ * at 16:00. If the expiry is STILL stale after it, say so once, plainly, so the
+ * operator can set it by hand this evening rather than meet it at tomorrow's open.
+ */
+function _postCloseAlert() {
+  try {
+    const instrument = require("../config/instrument");
+    const current    = (process.env.OPTION_EXPIRY_OVERRIDE || "").trim();
+    if (!current || !instrument.isExpiryOverrideStale(current)) return;
+    console.warn(`[expiryHealth] ⚠️  Post-close roll did not update the expiry — ${current} is still stale`);
+    notify.sendIfMaster(
+      `⚠️ <b>Option expiry could not be rolled</b>\n` +
+      `<b>${current}</b> has expired and auto-detection could not name the next contract.\n` +
+      `Set <b>Option Expiry (manual)</b> in Settings — entries stay blocked until then.`
+    );
+  } catch (_) { /* an alert that throws must not take the scheduler down */ }
+}
+
 /** Start the periodic check. Idempotent. */
 function start() {
   if (_timer || !_enabled()) return;
@@ -251,14 +293,30 @@ function start() {
   // verdict — and rolls an expiry that died while the process was down.
   setTimeout(() => check().catch(() => {}), BOOT_DELAY_MS).unref();
 
+  // A 1-minute heartbeat rather than an interval timer: the in-window checks still
+  // run every EXPIRY_HEALTHCHECK_MINS (rate-limited below), but the post-close roll
+  // has to land on an exact minute, which an interval anchored to boot cannot
+  // promise — a 30-minute tick could fall at 15:35 and then at 16:05, by which
+  // time the token is gone.
   _timer = setInterval(() => {
     const mins = _istMinutes();
+
+    // Post-close roll — once per day, inside the 15:40 → 16:00 token-clear gap.
+    if (mins >= POST_CLOSE_MIN && mins < TOKEN_CLEAR_MIN && _postCloseDay !== _istDay()) {
+      _postCloseDay = _istDay();
+      _lastCheckAt  = Date.now();
+      check().then(_postCloseAlert).catch(() => {});
+      return;
+    }
+
     if (mins < WINDOW_OPEN_MIN || mins > WINDOW_CLOSE_MIN) return;
+    if (Date.now() - _lastCheckAt < _intervalMs()) return;
+    _lastCheckAt = Date.now();
     check().catch(() => {});
-  }, _intervalMs());
+  }, HEARTBEAT_MS);
   _timer.unref();
 
-  console.log(`   Expiry health    : ✅ every ${Math.round(_intervalMs() / 60000)} min, 08:00–15:30 IST` +
+  console.log(`   Expiry health    : ✅ every ${Math.round(_intervalMs() / 60000)} min, 08:00–15:30 IST, plus a 15:40 roll` +
               `${_autoRollEnabled() ? " (auto-roll ON)" : " (auto-roll off)"}`);
 }
 

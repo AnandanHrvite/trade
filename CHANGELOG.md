@@ -6,6 +6,15 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Changed — The expiry now rolls on expiry-day evening, not the next morning
+
+The auto-roll only ran between 08:00 and 15:30 IST, so the contract that died at the 15:30 close sat stale — with every strategy's entries blocked and the Dashboard banner up — until the next morning's first check. Two things stood in the way, and both are fixed:
+
+- [utils/expiryHealth.js](src/utils/expiryHealth.js) now runs once more at **15:40**, in the gap between the close and the 16:00 EOD token clear (after which nothing can be resolved until the next login). It is a fixed minute, not another interval tick, because a 30-minute tick anchored to boot could fall at 15:35 and then at 16:05. The scheduler is now a one-minute heartbeat; the in-window checks still honour `EXPIRY_HEALTHCHECK_MINS`.
+- On expiry day the Fyers option chain keeps listing the contract that expired at 15:30 until it is dropped overnight, and `getQuotes` still answers for it — so [instrument.js](src/config/instrument.js) would have validated the dead contract and returned it as "the nearest expiry", making the roll a no-op. A chain date whose session has already ended is now discarded, and the computed weekly (which rolls at 15:30) names the live contract instead. The roll additionally refuses to write any date that is itself already stale.
+
+If even the 15:40 run cannot name a contract, nothing is changed and one Telegram asks for the expiry to be set by hand — the value stays stale rather than being replaced by another dead one.
+
 ### Changed — Real-Time Monitor shows only the strategies that are actually trading
 
 With ten strategies enabled, the monitor opened as a wall of identical "FLAT — no open position" boxes and the one card that mattered was buried below the fold. A strategy card now appears only when it has an open position, has taken a trade today, or its status endpoint is unreachable (a broken engine must never look like a quiet one). Cards are hidden, not removed, so a card returns on the same 4-second poll as the entry that triggered it. Until the first trade a single line stands in for the grid.
