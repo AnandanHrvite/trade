@@ -495,14 +495,14 @@ function toggleSidebar(){
   if(!sb) return;
   var open=sb.classList.toggle('mobile-open');
   if(ov) ov.classList.toggle('active',open);
-  document.documentElement.classList.toggle('sb-locked',open);
+  document.body.style.overflow=open?'hidden':'';
 }
 function closeSidebar(){
   var sb=document.getElementById('main-sidebar');
   var ov=document.getElementById('sb-overlay');
   if(sb) sb.classList.remove('mobile-open');
   if(ov) ov.classList.remove('active');
-  document.documentElement.classList.remove('sb-locked');
+  document.body.style.overflow='';
 }
 function toggleNavGroup(gid){
   var el=document.getElementById(gid);
@@ -1025,10 +1025,6 @@ function sidebarCSS() {
        from chaining to the page once the drawer hits its top/bottom — without it
        every menu scroll on a phone ends up scrolling the page behind it. */
     .sidebar{width:200px;flex-shrink:0;background:#03080e;border-right:1px solid #0e1e36;display:flex;flex-direction:column;position:fixed;top:0;left:0;height:100vh;z-index:100;overflow-y:auto;overscroll-behavior:contain;}
-    /* Page lock while the mobile drawer is open. Safari on iOS ignores
-       overflow:hidden set on <body> alone — it has to be on <html> too, or the
-       page keeps scrolling behind the drawer. */
-    html.sb-locked,html.sb-locked body{overflow:hidden;}
     .sb-brand{padding:20px 16px 16px;border-bottom:1px solid #0e1e36;}
     .sb-brand-name{font-size:0.72rem;font-weight:700;color:#60a5fa;letter-spacing:0.3px;line-height:1.4;white-space:nowrap;}
     .sb-brand-sub{font-size:0.6rem;color:var(--muted-2,#6d85a8);letter-spacing:2px;text-transform:uppercase;margin-top:2px;}
@@ -1152,6 +1148,11 @@ function sidebarCSS() {
          themselves are unchanged; only the box around them grew, and it still
          ends at x=46 so .top-bar's 48px left padding keeps clearing it. */
       .hamburger{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;cursor:pointer;padding:0;background:none;border:none;position:fixed;top:var(--banner-h,0px);left:2px;min-width:44px;min-height:44px;z-index:300;}
+      /* The button floats above the open drawer's top-left corner, so a flick
+         that starts on it must not pan the page — same reason as the overlay.
+         Scoped to the open state so it stays a normal scroll surface the rest
+         of the time; browsers without :has() just keep the old behaviour. */
+      body:has(.sidebar.mobile-open) .hamburger{touch-action:none;}
       .hamburger span{display:block;width:20px;height:2px;background:#8ba1c2;border-radius:2px;transition:all 0.2s;}
 
       /* The brand block starts at the very top of the drawer, directly under the
