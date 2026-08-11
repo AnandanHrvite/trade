@@ -242,6 +242,21 @@ function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [] } = 
       const seen = allCandles.slice(Math.max(0, gIdx - SIG_WINDOW), gIdx + 1);
       const sig = trendPbStrategy.getSignal(seen, { silent: true, alreadyTraded: false });
 
+      // VIX gate — paper runs it only once a signal exists, so the block count means
+      // the same thing on both sides. No-op unless TREND_PB_VIX_ENABLED=true.
+      // Runs BEFORE the side-selection block below: that block latches `baselineDone`
+      // on the baseline's one and only entry of the day, so blocking after it would
+      // burn the latch and leave the baseline flat for the whole session while the
+      // real strategy simply retried on the next bar — an asymmetry that would make
+      // the "bar to beat" artificially easy.
+      const _hasSignal = baseline
+        ? (sig.trendBias === "UP" || sig.trendBias === "DOWN")
+        : (sig.signal === "BUY_CE" || sig.signal === "BUY_PE");
+      if (_hasSignal
+          && !vixFilter.checkBacktestVix(lookupVix(c.time), sig.signalStrength || "STRONG", { mode: "trend_pb" }).allowed) {
+        continue;
+      }
+
       let side = null, structStop = null, entryReason = null, bias = sig.trendBias;
       if (!baseline) {
         if (sig.signal === "BUY_CE" || sig.signal === "BUY_PE") { side = sig.side; structStop = sig.slSpot; entryReason = sig.reason; }
@@ -253,13 +268,6 @@ function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [] } = 
         baselineDone = true;
       }
       if (!side) continue;
-
-      // VIX gate — paper runs it only once a signal exists, so the block count
-      // means the same thing on both sides. No-op unless TREND_PB_VIX_ENABLED=true.
-      {
-        const _vc = vixFilter.checkBacktestVix(lookupVix(c.time), sig.signalStrength || "STRONG", { mode: "trend_pb" });
-        if (!_vc.allowed) continue;
-      }
 
       let riskPts = Math.abs(c.close - (typeof structStop === "number" ? structStop : (side === "CE" ? c.close - CLAMP_MIN : c.close + CLAMP_MIN)));
       riskPts = Math.min(Math.max(riskPts, CLAMP_MIN), CLAMP_MAX);
