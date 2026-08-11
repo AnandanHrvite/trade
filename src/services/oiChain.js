@@ -50,7 +50,26 @@ const MAX_SAMPLES  = 40;             // per strike|side — ~40 real OI moves is
 const STALE_GAP_MS = 30 * 60_000;    // gap > 30m (overnight / long pause) ⇒ the whole chain is stale
 const STRIKE_STEP  = 50;             // NIFTY
 
-// key = "24500|CE" → { strike, side, samples: [{ ts, oi }] }
+/**
+ * How long after a strike was last SEEN IN A POLL it still counts as part of the
+ * current ladder.
+ *
+ * This matters because the recorder polls a moving window (ATM±N). When spot
+ * drifts, strikes fall out of that window but stay in this map holding their last
+ * OI forever. Without a cutoff, getWalls() would happily report a strike nobody
+ * has polled since the morning as "the wall", and getPcr() would sum stale OI into
+ * a live ratio — a wrong answer that looks completely normal.
+ *
+ * It has to be a SEEN time, not a sample time: samples are de-duplicated by value,
+ * so a strike sitting quietly in the middle of the band legitimately has an old
+ * last sample. Sample age cannot tell "not moving" from "not polled"; lastSeen can.
+ *
+ * 180s = 3× the recorder's maximum configurable interval (60s), so an ordinary
+ * slow cadence never wrongly expires a strike that is still being polled.
+ */
+const FRESH_MS = 180_000;
+
+// key = "24500|CE" → { strike, side, lastSeen, samples: [{ ts, oi }] }
 let _strikes      = new Map();
 let _lastIngestTs = 0;
 let _day          = null;
@@ -58,6 +77,16 @@ let _day          = null;
 function _istDay(ts) {
   const istSec = Math.floor((ts || Date.now()) / 1000) + 19800;
   return Math.floor(istSec / 86400);
+}
+
+/**
+ * Is this strike still in the polled band? Measured against the most recent
+ * ingest rather than wall-clock, so the whole ladder stays readable after the
+ * recorder stops (post-market, token expiry) instead of silently emptying — the
+ * caller sees a complete last-known ladder and decides what it is worth.
+ */
+function _isFresh(rec) {
+  return rec.lastSeen != null && (_lastIngestTs - rec.lastSeen) <= FRESH_MS;
 }
 
 /**
@@ -112,7 +141,12 @@ function ingest(strike, side, oi, ts = Date.now()) {
 
   const key = _key(strike, side);
   let rec = _strikes.get(key);
-  if (!rec) { rec = { strike, side, samples: [] }; _strikes.set(key, rec); }
+  if (!rec) { rec = { strike, side, lastSeen: ts, samples: [] }; _strikes.set(key, rec); }
+
+  // Stamp lastSeen on EVERY call, including the de-duplicated ones below. This is
+  // the only record that the strike is still inside the polled band; the samples
+  // array cannot carry it, because an unchanged value writes no sample.
+  rec.lastSeen = ts;
 
   const last = rec.samples[rec.samples.length - 1];
   if (last && last.oi === oi) return;   // no move — the series tracks changes, not polls
@@ -121,10 +155,15 @@ function ingest(strike, side, oi, ts = Date.now()) {
   if (rec.samples.length > MAX_SAMPLES) rec.samples.splice(0, rec.samples.length - MAX_SAMPLES);
 }
 
-/** Latest OI for a strike/side, or null if never seen this session. */
+/**
+ * Latest OI for a strike/side — null if never seen this session, or if the strike
+ * has dropped out of the polled band (see FRESH_MS). Stale is reported as unknown
+ * rather than as a number, on the same principle as getDeltaOiPct below: a figure
+ * that looks current but is hours old is worse than no figure.
+ */
 function getStrikeOi(strike, side) {
   const rec = _strikes.get(_key(strike, side));
-  if (!rec || !rec.samples.length) return null;
+  if (!rec || !rec.samples.length || !_isFresh(rec)) return null;
   return rec.samples[rec.samples.length - 1].oi;
 }
 
@@ -141,7 +180,7 @@ function getStrikeOi(strike, side) {
  */
 function getDeltaOiPct(strike, side, lookback = 3) {
   const rec = _strikes.get(_key(strike, side));
-  if (!rec || rec.samples.length < lookback + 1) return null;
+  if (!rec || !_isFresh(rec) || rec.samples.length < lookback + 1) return null;
   const latest = rec.samples[rec.samples.length - 1];
   const base   = rec.samples[rec.samples.length - 1 - lookback];
   if (!base || !(base.oi > 0)) return null;
@@ -161,12 +200,17 @@ function getDeltaOiPct(strike, side, lookback = 3) {
  * actually polls (ATM±N). If the true max-OI strike sits outside that band this
  * returns the edge strike and calls it a wall, so `atBandEdge` is set to say so
  * rather than letting a clipped ladder pass as a finding.
+ *
+ * Only CURRENTLY-POLLED strikes are considered. Strikes the band has drifted away
+ * from keep their last OI in the map forever, and on a trending day one of those
+ * could easily out-rank every live strike and be reported as the wall — a stale
+ * answer indistinguishable from a live one.
  */
 function getWalls() {
   let ce = null, pe = null;
   let min = Infinity, max = -Infinity;
   for (const rec of _strikes.values()) {
-    if (!rec.samples.length) continue;
+    if (!rec.samples.length || !_isFresh(rec)) continue;
     const oi = rec.samples[rec.samples.length - 1].oi;
     if (rec.strike < min) min = rec.strike;
     if (rec.strike > max) max = rec.strike;
@@ -184,11 +228,13 @@ function getWalls() {
  * Put-Call Ratio by OI across every strike currently held.
  * Band-limited by construction (ATM±N), so it is NOT the chain-wide PCR quoted on
  * NSE and must not be compared against those levels — only against its own trend.
+ * Currently-polled strikes only, so a drifting band cannot leave stale OI summed
+ * into a live ratio.
  */
 function getPcr() {
   let ceSum = 0, peSum = 0, strikes = 0;
   for (const rec of _strikes.values()) {
-    if (!rec.samples.length) continue;
+    if (!rec.samples.length || !_isFresh(rec)) continue;
     const oi = rec.samples[rec.samples.length - 1].oi;
     if (rec.side === "CE") ceSum += oi; else peSum += oi;
     strikes++;
@@ -201,6 +247,11 @@ function getPcr() {
  * The whole ladder in one object, for the monitor page and (later) a strategy's
  * trade record. `spot` is optional and only used to mark the ATM row.
  *
+ * Only currently-polled strikes appear — the band moves with spot, and a row the
+ * band drifted away from would otherwise render alongside live rows looking every
+ * bit as current. `strikeCount` therefore means "live strikes", which is what the
+ * page's empty-state check needs it to mean.
+ *
  * `lookbacks` are in OI MOVES, matching getDeltaOiPct.
  */
 function snapshot({ spot = null, lookbacks = [1, 3, 6] } = {}) {
@@ -208,7 +259,7 @@ function snapshot({ spot = null, lookbacks = [1, 3, 6] } = {}) {
   const byStrike = new Map();
 
   for (const rec of _strikes.values()) {
-    if (!rec.samples.length) continue;
+    if (!rec.samples.length || !_isFresh(rec)) continue;
     let row = byStrike.get(rec.strike);
     if (!row) { row = { strike: rec.strike, isAtm: rec.strike === atm, CE: null, PE: null }; byStrike.set(rec.strike, row); }
     const deltas = {};
@@ -254,4 +305,5 @@ module.exports = {
   parseOptionSymbol,
   MAX_SAMPLES,
   STRIKE_STEP,
+  FRESH_MS,
 };

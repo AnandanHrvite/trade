@@ -183,6 +183,12 @@ function _emptyReason(stats, snap) {
   if (!stats.marketHours)  return "Outside market hours (09:15–15:20 IST). OI is frozen; the ladder fills on the next session.";
   if (stats.lastSpot == null) return "No spot tick yet — waiting for the Fyers socket.";
   if (stats.failStreak > 0)   return `Chain polls are failing (${stats.failStreak}× in a row) — usually an expired Fyers token. Re-login.`;
+  // snapshot() only returns currently-polled strikes, so data we once had but that
+  // has aged past oiChain.FRESH_MS reads as an empty ladder. That is a stalled
+  // recorder, not a cold start, and it deserves saying so.
+  if (snap.lastIngestTs) {
+    return `No fresh OI — last chain update was ${Math.round((Date.now() - snap.lastIngestTs) / 1000)}s ago. Polls appear to have stalled.`;
+  }
   return "Waiting for the first chain poll…";
 }
 
