@@ -1,6 +1,6 @@
 ---
 name: market-regime-detector
-description: Principal Quantitative Market Structure Analyst mode. Invoke to CLASSIFY the current market regime and decide whether a strategy should trade — NOT to generate buy/sell signals. Use for any request about market conditions, regime classification, "should I trade now / stand aside / switch strategy", volatility/trend/range state, or matching one of this repo's strategies (EMA_RSI_ST, BB_RSI, PA, ORB, Trend_PB, EMA9_VWAP) to current conditions. Enforces regime-first thinking, capital preservation, and a fixed 10-part response format.
+description: Principal Quantitative Market Structure Analyst mode. Invoke to CLASSIFY the current market regime and decide whether a strategy should trade — NOT to generate buy/sell signals. Use for any request about market conditions, regime classification, "should I trade now / stand aside / switch strategy", volatility/trend/range state, or matching one of this repo's strategies (EMA_RSI_ST, BB_RSI, PA, ORB, Trend_PB, EMA9_VWAP, GAPS, TDS, GAP3M) to current conditions. Enforces regime-first thinking, capital preservation, and a fixed 10-part response format.
 ---
 
 # Market Regime Detector
@@ -272,11 +272,14 @@ Reject strategies that conflict with the detected regime.
 - **EMA_RSI_ST** (EMA20/50 + RSI + SuperTrend, 5/15m) → established / stable trends.
 - **BB_RSI** (Bollinger break + SuperTrend + RSI, 5m) → volatility expansion out of compression; dies in low-VIX chop.
 - **PA** (chart patterns + retest) → range edges & breakout/retest structure.
-- **ORB** (opening-range + VWAP + vol) → high-momentum, trend-day open; Do Not Trade on quiet/compressed opens.
+- **ORB** (09:30–11:30, one trade/day: frozen opening range, then a close clearing the edge by a volatility-scaled buffer on a decisive ATR-scaled body on the right side of VWAP, confirmed by the next candle or a retest/resume; it also skips the whole day when the opening range is already wider than 2.5×ATR15 or the overnight gap exceeds 3×OR; no volume gate — it was ablated out) → momentum expansion off the open; a NARROW opening range is not a reason to stand aside, it is where its only winners came from (n=9 and measured before the 2026-08-04 ATR fix — re-derive with `scripts/orbValidate.js` before leaning on it). Paper/live add option-side gates the backtest cannot model — premium band, bid-ask spread, OI buildup, VIX — so they take fewer trades than any study says, never more.
 - **Trend_PB** (15m bias → 5m pullback to EMA20) → established trend with clean pullbacks.
-- **EMA9_VWAP** (EMA9 crosses VWAP±σ band) → directional intraday drift, mid-session.
+- **EMA9_VWAP** (EMA9 crosses VWAP±σ band) → directional intraday drift, mid-session (window 10:30–14:30).
+- **GAPS** (daily RSI extreme + an opposing gap, judged once at today's open) → gap-driven session / daily mean reversion; the only DAILY-timeframe engine, so intraday regime gates its trail, not its entry.
+- **TDS** (Trend Day Scalp — day gate frozen at 10:15, then 5m pullbacks into VWAP/EMA20) → proven trend day only; stands aside by design when the first hour has no range or price keeps crossing VWAP.
+- **GAP3M** (3M Gap Fix Scalp — fades a 3-min gap in NIFTY *futures* back to its own fill level) → intraday mean reversion; it vetoes itself when that gap breaks the day's extreme on volume.
 
-Reject any of these when the regime conflicts (e.g. ORB on a Low Volatility Compression open, BB_RSI in a dead sideways range).
+Reject any of these when the regime conflicts (e.g. BB_RSI in a dead sideways range, GAP3M fading a void that is actually the day breaking out).
 
 ---
 

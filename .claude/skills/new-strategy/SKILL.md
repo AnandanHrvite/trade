@@ -82,11 +82,18 @@ Rules that have bitten this repo:
 ## Phase 2 — The three routes
 
 Copy the structure of the most recently built strategy (currently
-`src/routes/gaps*.js`; before that `trendPb*.js`). Do **not** invent a new shape.
+`src/routes/gapFix3m*.js`; before that `trendDayScalp*.js`). Do **not** invent a
+new shape.
 
 - `src/routes/{name}Paper.js` — **canonical**. Every decision/fill/exit semantic
   lives here. Renders its own HTML, owns `/start /stop /exit /status /status/data
-  /status/chart-data /history /reset /session/:i /download/... /view/...`.
+  /status/chart-data /history /reset /view/... /download/...` plus the two session
+  endpoints the shared history UI (`src/utils/paperHistoryUI.js`) actually calls:
+  `POST /restore-session/:date` and `DELETE /session/:index`. All nine Paper routers
+  register both. Do **not** add `POST /delete-session/:idx` — four older routes still
+  carry it, but it is unreachable from any UI and it mutates `totalPnl` without
+  recomputing `capital` (see the note at `src/routes/orbPaper.js:1840`, where it was
+  deliberately deleted).
 - `src/routes/{name}Backtest.js` — calls the **same** `getSignal`; only re-implements
   paper's exits. Conservative intra-bar ordering: the adverse stop is tested on the
   bar's high/low **before** any favourable exit on the close, and a bar that opened
@@ -112,6 +119,10 @@ Paper-route specifics that have caused real bugs:
   session and would double-count it.
 - Any exit comparison against a level must first check the level is a finite number.
   `spot >= null` is `spot >= 0` → instant exit on the first tick.
+- Right after rehydrating a saved session, call
+  `require("../utils/staleSessionGate").clearStaleSessionOnTradingDay(() => state, "[{MODE}-PAPER]")`
+  — without it a restart before the day's first trade resurrects yesterday's
+  trades and yesterday's chart as today's session.
 
 ---
 
@@ -121,11 +132,22 @@ Every file below needed a change for the last strategy. Work through the list; a
 missed entry means the strategy is invisible or broken on some screen.
 
 **Core**
-- `src/app.js` — 3 route mounts; `START_ALL_ROUTES` row; dashboard card + card count;
-  IDLE badge; the client-side mode arrays; status-data URL map; crash-recovery
-  `load/clear{Name}Position`; graceful-shutdown activeModes + routeMap;
-  **`OPEN_PREFIXES`** ← add `/{mode}-paper/view/` and `/download/` or every day-log
-  link 403s (the monitor links carry no secret).
+- `src/app.js` — 3 route mounts; `START_ALL_ROUTES` row; dashboard card + its
+  accent-dot CSS + a `dashSessionTiles` row (the analytics-panel tile list,
+  serialised to the client as `SESSION_TILES`); `anyModeActive` + IDLE badge; the
+  client-side mode arrays; status-data URL map; crash-recovery
+  `load/clear{Name}Position` + the `_liveActive` key list; graceful-shutdown
+  activeModes + the `hasLive` mode strings + routeMap;
+  **`OPEN_PATHS` *and* `OPEN_PREFIXES`** ← every read-only page (`/{mode}-paper/status`,
+  `/status/data`, `/status/chart-data`, `/history`, `/{mode}-live/status/data`, the
+  three `/{mode}-backtest` paths, the live page) plus the `/{mode}-paper/view/` and
+  `/download/` prefixes. Browser navigations and the dashboard's tile poll carry no
+  secret, so **when `API_SECRET` is set** anything missed returns a raw 403
+  `{"success":false,"error":"Forbidden — missing or wrong secret."}` (`src/app.js:923`;
+  the gate short-circuits with `next()` when `API_SECRET` is unset, `src/app.js:911`).
+  Note `OPEN_PREFIXES` is honoured for **GET/HEAD only**, while `OPEN_PATHS` is
+  method-agnostic. GAPS shipped without its `OPEN_PATHS` block and every GAPS link in
+  the sidebar landed on exactly that.
 - `src/routes/settings.js` — new section, every key, 4 TG toggles, `{MODE}_MODE_ENABLED`,
   4 `UI_SHOW_*`, `MODE_SECTION_TITLES`, `_MODE_KEYS`, `RESET_PAPER_MODES`,
   `SECTION_TO_MASTER`.
@@ -138,8 +160,20 @@ missed entry means the strategy is invisible or broken on some screen.
   Writes are **async** (queued); a read immediately after a save returns nothing.
   Persist the strategy's real exit levels (stop, trail, …).
 - `src/utils/tradeLogger.js` — `{name}` and `{name}-live` in FILE_BY_MODE and
-  DAILY_PREFIX_BY_MODE.
+  DAILY_PREFIX_BY_MODE. The live key must match the harness's `liveLogKey` string
+  **character for character** — nothing normalises hyphens, underscores or case
+  anywhere. On an unknown mode the internal `filePathFor`/`dailyFilePathFor` throw,
+  but `appendTradeLog` catches that itself and only warns
+  (`[tradeLogger] append failed (mode=…): unknown mode "…"`, visible in `/logs` via
+  `logger.js`); it never rethrows, so the harness's `catch (_) {}` never fires. The
+  trade is dropped from both the cumulative and the daily JSONL while the run looks
+  healthy. Both TDS and GAP3M have that slip today (`gap-fix-3m-live` vs
+  `gap_fix_3m-live`, `trend-day-scalp-live` vs `trend_day_scalp-live`).
 - `src/utils/skipLogger.js` — `{name}: "{name}_paper_skips_"`.
+- `src/utils/capitalPool.js` — a `STRATEGIES` row (`{ broker, label, file }`). The
+  paper route calls `check/block/release` with the mode key regardless; an unknown
+  key makes all three silent no-ops, so the strategy never draws on — or shows up
+  in — its broker's paper pool. TDS and GAP3M are both missing this today.
 
 **Cross-cutting**
 - `src/utils/notify.js` — `modeGroup` branch + labels + consolidated-report group.
@@ -147,20 +181,29 @@ missed entry means the strategy is invisible or broken on some screen.
 - `src/utils/tickRecorder.js` — `/^{MODE}_/` settings-snapshot prefix.
 - `src/utils/portfolioRisk.js` — add to `PAPER_MODES`.
 - `src/utils/consolidatedEodReporter.js` — bucket.
-- `src/config/instrument.js` — `EXPIRY_MODE_PREFIXES` and the ITM-steps branch
-  (reads `${MODE}_ITM_STEPS` dynamically).
+- `src/config/instrument.js` — the ITM-steps branch only (it reads
+  `${MODE}_ITM_STEPS` dynamically). There is no per-strategy expiry override any
+  more: one common `OPTION_EXPIRY_*` pair serves every engine, so do **not** add a
+  `{MODE}_OPTION_EXPIRY_*` key — nothing would read it.
 
 **Replay — `src/services/tickReplay.js`** (easy to under-wire, and silently wrong)
-- `MODE_TO_MODULE`, `_MODE_TO_ENV_PREFIX`, `_MODE_TO_CANONICAL_FILE`,
-  `_EXPIRY_PIN_KEYS`, sharedSocketState stub save/install/restore, the preflight
-  `isXxxActive()`, the mode snapshot, `forceClearSharedState`.
+- `MODE_TO_MODULE`, `_MODE_TO_CANONICAL_FILE`, the sharedSocketState stub
+  save/install/restore, the preflight `isXxxActive()`, the mode snapshot,
+  `forceClearSharedState`. Leave `_MODE_TO_ENV_PREFIX` and `_EXPIRY_PIN_KEYS`
+  alone — expiry is common now, and listing a mode there mirrors a
+  `{MODE}_OPTION_EXPIRY_*` key nothing reads, which would let replay honour an
+  override paper ignores.
 - If the strategy reads **daily** candles, confirm the candle stubs pass `D/W/M`
   through to the real fetcher — they only return the intraday warm-up otherwise, and
   the engine would compute a "daily" indicator over 5-min bars.
 
 **Shared screens** — `realtime.js` (row + `hasDayLog` + accent CSS + `BROKER_OF`),
-`consolidation.js`, `consolidationReport.js`, `edgeAnalytics.js`, `tradeLogs.js`,
-`cacheFiles.js`, `allBacktest.js`, `replay.js`, `docs.js`.
+`consolidation.js`, `liveConsolidation.js`, `consolidationReport.js` (paper *and*
+live lists), `edgeAnalytics.js` (same), `tradeLogs.js`, `cacheFiles.js`,
+`allBacktest.js`, `replay.js`, `docs.js`. `liveConsolidation.js`'s `SOURCES` still
+lists only EMA_RSI_ST / BB_RSI / PA — nothing since has been added, so a new
+strategy's live trades are invisible there *and* under the dashboard's Live toggle,
+which reads `/live-consolidation/data`.
 
 **Docs** — `README.md` (routes table, strategy section, env table), `CHANGELOG.md`,
 and a guide in `documents/{NAME}_Strategy_Guide.html` (Phase 5).
@@ -169,13 +212,16 @@ and a guide in `documents/{NAME}_Strategy_Guide.html` (Phase 5).
 
 ## Phase 4 — Verification (do all of it; do not report done without it)
 
-1. `node -c` every changed `.js`.
+1. `node -c` every changed `.js`, then `npm test` — four zero-dependency regression
+   suites, and `configFidelity` asserts directly on `app.js`, `settings.js` and
+   `instrument.js`, all three of which you just edited.
 2. **Offline test harness** in the scratchpad: assert indicator alignment, each entry
    setup, each rejection path, warm-up refusal, every exit branch, configurability of
    each threshold, and the null/NaN guards. Aim for 60+ assertions.
 3. **Boot the app** on a spare port and curl every route, JSON feed and export.
-   `404` on a day file is correct ("route reached, nothing to serve"); `403` means the
-   `OPEN_PREFIXES` entry is missing.
+   `404` on a day file is correct ("route reached, nothing to serve"); `403` means an
+   `OPEN_PATHS` / `OPEN_PREFIXES` entry is missing. Curl with `API_SECRET` set — with
+   no secret configured every path is open and the gap stays invisible.
 4. **Settings are live**: boot twice with different values, or POST
    `/settings/save` with `{updates:{...}}`, and confirm the strategy config **and the
    chart feed** both move. A chart that disagrees with the strategy is a bug.
@@ -185,7 +231,7 @@ and a guide in `documents/{NAME}_Strategy_Guide.html` (Phase 5).
    `${prefix}_KEY` lookups at runtime — grep cannot see them.
 7. **No duplicated logic**: grep the routes for indicator maths and threshold
    comparisons; they belong only in the engine.
-8. Confirm GAPS-style visibility: the strategy appears on `/`, `/realtime`, `/replay`,
+8. Confirm visibility everywhere: the strategy appears on `/`, `/realtime`, `/replay`,
    `/all-backtest`, `/trade-logs`, both consolidations and `/edge-analytics`, and
    disappears from all of them when `{MODE}_MODE_ENABLED=false`.
 
@@ -193,21 +239,24 @@ and a guide in `documents/{NAME}_Strategy_Guide.html` (Phase 5).
 
 ## Phase 5 — The strategy guide
 
-Write `documents/{NAME}_Strategy_Guide.html` following the existing six. The
+Write `documents/{NAME}_Strategy_Guide.html` following the existing nine. The
 `TVChart` kit and the mobile CSS block are **copy-pasted** into each guide, not
 shared — lift them verbatim from the newest guide.
 
 Non-negotiable: **generate the chart data by running the real engine**, then verify
 every number quoted in the prose back against that output. A guide that draws a
 hand-invented trade is worse than no guide. Generate the settings table from the
-Settings schema for the same reason. QA the charts by executing the guide's own
-`<script>` blocks in a node `vm` with `ctx.window = ctx` and asserting valid SVG with
-no `NaN`/`undefined`.
+Settings schema for the same reason. QA the charts with `node tools/qaGuides.js` —
+it runs every guide's own `<script>` blocks in a node `vm` and asserts real SVG plus
+balanced tags — and `node tools/verifyGuideCharts.js`, which checks that every price
+a caption quotes is a value that chart actually draws.
 
-Register in `src/routes/docs.js` twice: `GUIDE_MODE_BY_FILE` (hides it when the
-strategy is disabled) and a `LIVE_CONFIG` entry (fills the `<!--LIVE_STATUS_PANEL-->`
-marker). Include an honest "what's still missing" section — say plainly that it has
-never traded live and that backtest rupees are simulated.
+Register in `src/routes/docs.js` three times: `GUIDE_MODE_BY_FILE` (hides it when the
+strategy is disabled), its own `GUIDE_STATUS` entry (fills the
+`<!--LIVE_STATUS_PANEL-->` marker), and a `{MODE}_MODE_ENABLED` row inside the
+`Application_Setup_Guide.html` `GUIDE_STATUS` entry. Include an honest "what's still
+missing" section — say plainly that it has never traded live and that backtest rupees
+are simulated.
 
 ---
 

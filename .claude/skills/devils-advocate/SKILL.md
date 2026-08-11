@@ -96,7 +96,14 @@ Consider:
 - What if access tokens expire unexpectedly?
 - What if the market opens with a large gap?
 
-(Repo-specific: Fyers/Zerodha token expiry, socketManager single-feed SPOF, `~/trading-data/` persistence, PM2 exit-code-10 config sentinel, positionPersist crash recovery.)
+Repo-specific failure modes to name by default:
+
+- Token expiry is silent, not loud: a stale Fyers token makes `getHistory` return `no_data`, so a backtest reports 0 candles as if the date range were empty — no auth error is ever thrown. Both broker tokens are auto-cleared at 16:00 IST and rejected on the next calendar day.
+- One Fyers socket feeds every strategy (`socketManager` singleton + fan-out), and `spotFeedSupervisor` holds it up 09:15–15:30 IST whether or not a strategy is running (`SPOT_FEED_ALWAYS_ON`) — a dead feed costs the whole day's recording, not one strategy's session.
+- The expiry can change under a running proposal: `expiryHealth.js` rewrites a blank or already-expired `OPTION_EXPIRY_OVERRIDE` through the Settings path on a schedule (`EXPIRY_AUTO_ROLL_ENABLED`, default on).
+- Replay is not automatically reproducible: if a gate was ON for the recorded session but its data was never captured (OI, option bid/ask), the gate fails OPEN in replay and the run only warns — that delta is a recording hole, not a strategy result.
+- Breakers are path-dependent: one divergent fill trips daily-loss / consecutive-loss / cooldown state and changes every later decision, so no replay or backtest delta is per-trade attributable.
+- A restart is neither a clean slate nor a reset: `positionPersist` snapshots all nine engines, but boot reconciliation (`src/app.js`) only RETAINS a snapshot on an empty broker book (flat and a swallowed API error look identical) when real orders were possible — `LIVE_HARNESS_DRY_RUN` off, or some `{STRATEGY}_LIVE_ENABLED=true` — and only for snapshots that actually carry a `.position`; on a default paper-only boot it silently CLEARS them instead. Only EMA_RSI_ST re-arms its daily-loss kill switch from today's realized P&L (`_priorRealizedToday`, live + paper, and in no other route); the other eight do rehydrate today's realized P&L into `sessionPnl` at boot via `rehydrateSessionFromJsonl()`, but their `/start` handler rebuilds state fresh (`sessionPnl: 0`, `_dailyLossHit: false`), so Start hands the day a new loss budget — and the cross-strategy `PORTFOLIO_MAX_DAILY_LOSS` that would cover them is off by default. State lives in `~/trading-data/` outside the repo; PM2 exit code 10 is the "config error — do not restart" sentinel.
 
 ---
 
