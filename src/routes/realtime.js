@@ -333,6 +333,8 @@ ${faviconLink()}
   :root[data-theme="light"] .rollup th { background:#f1f5f9 !important; color:#4b5769 !important; border-bottom-color:#e0e4ea !important; }
   :root[data-theme="light"] .rollup td { color:#334155; border-bottom-color:#e0e4ea; }
   :root[data-theme="light"] .rollup tr:last-child td { background:#f8fafc !important; color:#1e293b; }
+  /* Needs the theme prefix: the plain .rollup td rule above outranks tr.quiet. */
+  :root[data-theme="light"] .rollup tr.quiet td { color:#64748b; }
   :root[data-theme="light"] .rollup tr.ema_rsi_st    td:first-child { color:#1d4ed8; }
   :root[data-theme="light"] .rollup tr.bb_rsi    td:first-child { color:#b45309; }
   :root[data-theme="light"] .rollup tr.pa       td:first-child { color:#7e22ce; }
