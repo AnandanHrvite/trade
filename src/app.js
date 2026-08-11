@@ -1802,8 +1802,11 @@ app.get("/", (req, res) => {
        250px is what a card needs to keep its stats line — "27 trades · 8W/19L ·
        +₹4,910.40" — on one line, so the row simply fits as many cards of at
        least that width as it can and wraps the rest. min(100%,250px) keeps the
-       floor itself from overflowing a viewport narrower than 250px. */
-    .mm-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(min(100%,250px), 1fr)); gap:10px; }
+       floor itself from overflowing a viewport narrower than 250px.
+       auto-FIT (not auto-fill): empty tracks collapse, so four visible cards
+       share the full row instead of hugging the left with dead space to the
+       right where the disabled strategies' tracks would have been. */
+    .mm-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%,250px), 1fr)); gap:10px; }
     /* Grid items default to min-width:auto, which can force a track wider than
        its share and overflow the (clipped) page. Let them shrink so the grids
        always reflow to the available width. */
