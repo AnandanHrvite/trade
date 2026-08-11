@@ -1024,7 +1024,7 @@ function sidebarCSS() {
     /* overscroll-behavior:contain keeps a flick that started inside the drawer
        from chaining to the page once the drawer hits its top/bottom — without it
        every menu scroll on a phone ends up scrolling the page behind it. */
-    .sidebar{width:200px;flex-shrink:0;background:#03080e;border-right:1px solid #0e1e36;display:flex;flex-direction:column;position:fixed;top:0;left:0;height:100vh;z-index:100;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;}
+    .sidebar{width:200px;flex-shrink:0;background:#03080e;border-right:1px solid #0e1e36;display:flex;flex-direction:column;position:fixed;top:0;left:0;height:100vh;z-index:100;overflow-y:auto;overscroll-behavior:contain;}
     /* Page lock while the mobile drawer is open. Safari on iOS ignores
        overflow:hidden set on <body> alone — it has to be on <html> too, or the
        page keeps scrolling behind the drawer. */
