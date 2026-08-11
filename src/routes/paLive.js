@@ -1,7 +1,10 @@
 /**
  * PRICE ACTION LIVE TRADE — /pa-live
  * ─────────────────────────────────────────────────────────────────────────────
- * Uses LIVE market data (Fyers WebSocket) and places REAL orders via Fyers.
+ * Uses LIVE market data (Fyers WebSocket) and places REAL orders via Fyers —
+ * but ONLY when all three gates agree (src/utils/liveDryRun.js): the global
+ * LIVE_HARNESS_DRY_RUN off, PA_LIVE_ENABLED on, PA_LIVE_DRY_RUN not set. Any
+ * other combination runs the engine end-to-end against simulated order IDs.
  * Runs on 5-min candles with the price action strategy.
  * Can run IN PARALLEL with /trade (live Zerodha) or /ema_rsi_st-paper.
  *
@@ -1801,7 +1804,7 @@ ${buildSidebar('paLive', liveActive, state.running, {
     ${state.running
       ? '<span class="top-bar-badge live-active"><span style="width:5px;height:5px;border-radius:50%;background:#ef4444;display:inline-block;"></span> PRICE ACTION LIVE</span>'
       : '<span class="top-bar-badge">\u25cf STOPPED</span>'}
-    ${isDryRun()
+    ${_orderIsDryRun()
       ? '<span class="top-bar-badge" style="border-color:rgba(245,158,11,0.35);background:rgba(245,158,11,0.1);color:#f59e0b;">\ud83e\uddea DRY-RUN \u00b7 no real orders</span>'
       : '<span class="top-bar-badge" style="border-color:rgba(239,68,68,0.45);background:rgba(239,68,68,0.14);color:#ef4444;">\ud83d\udd34 REAL ORDERS \u00b7 live money</span>'}
     ${_vixEnabled

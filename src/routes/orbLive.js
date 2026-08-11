@@ -10,12 +10,17 @@
  * simulating a fill.
  *
  * SAFETY PATTERN:
- *   1. `ORB_LIVE_ENABLED=true`  must be set in Settings → live routes can start.
+ *   1. `ORB_LIVE_ENABLED=true`  must be set in Settings → live routes can start,
+ *      and it is also layer 2 of the order gate (see src/utils/liveDryRun.js).
  *   2. `LIVE_HARNESS_DRY_RUN=true` (default) → broker calls are LOGGED only,
  *      no real orders. Flip to false once you have proof paper-decisions are
- *      good, then live orders fire.
+ *      good, then live orders fire. `ORB_LIVE_DRY_RUN=true` holds ORB back on
+ *      its own even when the global switch is off.
  *   3. `placeMarketOrder` is guarded by the existing circuit-breaker +
  *      cautious-retry layer (src/services/fyersBroker.js).
+ *   4. With `HARD_SL_ENABLED=true` a real entry also leaves an SL-M resting at
+ *      the exchange, so a crash mid-position is not an unprotected position.
+ *      It trails with the stop and is cancelled before any square-off.
  *
  * Endpoints:
  *   /orb-live/start     → enable; subscribes socket; places real orders on entry

@@ -386,8 +386,9 @@ function verifyOrderFill(orderId, label) {
 let _orderInFlight     = false;
 let _squareOffInFlight = false;
 
-// DRY-RUN: when the global LIVE_HARNESS_DRY_RUN is on (or BB_RSI_LIVE_DRY_RUN
-// override is on), log the Fyers call that WOULD be made and place no real order.
+// DRY-RUN: unless the global LIVE_HARNESS_DRY_RUN is off AND BB_RSI_LIVE_ENABLED
+// is on AND the BB_RSI_LIVE_DRY_RUN override is off, log the Fyers call that
+// WOULD be made and place no real order. All three layers live in liveDryRun.
 function isDryRun() { return liveDryRun.isDryRun("BB_RSI"); }
 // A trade must EXIT the way it ENTERED. isDryRun() reads env on every call, so
 // flipping the kill-switch while a position is open would simulate the exit of a
@@ -2043,7 +2044,7 @@ ${buildSidebar('bbRsiLive', liveActive, state.running, {
     ${state.running
       ? '<span class="top-bar-badge live-active"><span style="width:5px;height:5px;border-radius:50%;background:#ef4444;display:inline-block;"></span> BB_RSI LIVE</span>'
       : '<span class="top-bar-badge">\u25cf STOPPED</span>'}
-    ${isDryRun()
+    ${_orderIsDryRun()
       ? '<span class="top-bar-badge" style="border-color:rgba(245,158,11,0.35);background:rgba(245,158,11,0.1);color:#f59e0b;">\ud83e\uddea DRY-RUN \u00b7 no real orders</span>'
       : '<span class="top-bar-badge" style="border-color:rgba(239,68,68,0.45);background:rgba(239,68,68,0.14);color:#ef4444;">\ud83d\udd34 REAL ORDERS \u00b7 live money</span>'}
     ${_vixEnabled

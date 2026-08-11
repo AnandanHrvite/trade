@@ -706,7 +706,8 @@ let _squareOffInFlight = false; // prevent concurrent EXIT calls (multiple SL ti
 // EMA_RSI_ST the same dry-run safety net the Fyers strategies (PA/ORB) have:
 // the engine's position / hard-SL / trail bookkeeping runs end-to-end against
 // virtual order IDs so decisions can be validated before flipping to real money.
-// Flip OFF (LIVE_HARNESS_DRY_RUN=false) only after decisions match paper.
+// Flip OFF (LIVE_HARNESS_DRY_RUN=false) only after decisions match paper — and
+// note that alone is not enough: EMA_RSI_ST_LIVE_ENABLED must also be true.
 // Per-strategy override EMA_RSI_ST_LIVE_DRY_RUN can hold EMA_RSI_ST in dry-run even when
 // the global flag is off (lets ORB/etc. go real while EMA_RSI_ST stays simulated).
 function isDryRun() {
