@@ -273,6 +273,9 @@ function getState() {
  */
 function _postCloseAlert() {
   try {
+    // A "fail" verdict has already gone out through _maybeNotify with the same
+    // instruction — one message per problem, not two.
+    if (_state.status === "fail") return;
     const instrument = require("../config/instrument");
     const current    = (process.env.OPTION_EXPIRY_OVERRIDE || "").trim();
     if (!current || !instrument.isExpiryOverrideStale(current)) return;
@@ -303,9 +306,16 @@ function start() {
 
     // Post-close roll — once per day, inside the 15:40 → 16:00 token-clear gap.
     if (mins >= POST_CLOSE_MIN && mins < TOKEN_CLEAR_MIN && _postCloseDay !== _istDay()) {
+      // A check still in flight would make check() a no-op and the alert below
+      // read pre-roll state; leave the day's slot unclaimed and retry next minute.
+      if (_running) return;
       _postCloseDay = _istDay();
       _lastCheckAt  = Date.now();
-      check().then(_postCloseAlert).catch(() => {});
+      // Gated on the trading day so a weekend never reports "could not roll"
+      // when nothing was attempted — check() skips those days on its own.
+      _isTradingDay()
+        .then((ok) => (ok ? check().then(_postCloseAlert) : null))
+        .catch(() => {});
       return;
     }
 
