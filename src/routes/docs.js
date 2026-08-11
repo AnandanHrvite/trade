@@ -405,14 +405,14 @@ const GUIDE_STATUS = {
   ] }] },
   "BB_RSI_Strategy_Guide.html": { title: "BB_RSI — Live Configuration", groups: [{ rows: [
     { type: "bool", label: "BB_RSI Mode (sidebar + Settings section)", key: "BB_RSI_MODE_ENABLED", def: "true" },
-    { type: "live", label: "Live Orders (Fyers)", enableKey: "BB_RSI_ENABLED", dryKey: "BB_RSI_LIVE_DRY_RUN" },
+    { type: "live", label: "Live Orders (Fyers)", enableKey: "BB_RSI_LIVE_ENABLED", dryKey: "BB_RSI_LIVE_DRY_RUN" },
     { type: "bool", label: "VIX Filter", key: "BB_RSI_VIX_ENABLED", def: "false" },
     { type: "bool", label: "ADX Trend Filter", key: "BB_RSI_ADX_ENABLED", def: "false" },
     { type: "bool", label: "Expiry-Day-Only", key: "BB_RSI_EXPIRY_DAY_ONLY", def: "false" },
   ] }] },
   "Price_Action_Strategy_Guide.html": { title: "Price Action — Live Configuration", groups: [{ rows: [
     { type: "bool", label: "PA Mode (sidebar + Settings section)", key: "PA_MODE_ENABLED", def: "true" },
-    { type: "live", label: "Live Orders (Fyers)", enableKey: "PA_ENABLED", dryKey: "PA_LIVE_DRY_RUN" },
+    { type: "live", label: "Live Orders (Fyers)", enableKey: "PA_LIVE_ENABLED", dryKey: "PA_LIVE_DRY_RUN" },
     { type: "bool", label: "VIX Filter", key: "PA_VIX_ENABLED", def: "false" },
     { type: "bool", label: "Expiry-Day-Only", key: "PA_EXPIRY_DAY_ONLY", def: "false" },
   ] }] },

@@ -712,6 +712,16 @@ let _squareOffInFlight = false; // prevent concurrent EXIT calls (multiple SL ti
 function isDryRun() {
   return liveDryRun.isDryRun("EMA_RSI_ST");
 }
+
+// A trade must EXIT the way it ENTERED. isDryRun() reads env on every call, so
+// flipping the kill-switch while a position is open would simulate the exit of a
+// REAL position and strand it at the broker. Once a position exists, the stamp
+// taken at entry wins; only a flat book consults the env again.
+function _orderIsDryRun() {
+  const pos = tradeState.position;
+  if (pos && typeof pos.dryRun === "boolean") return pos.dryRun;
+  return isDryRun();
+}
 let _dryRunSeq = 0;
 function _simOrder(prefix) {
   return { success: true, orderId: `DRYRUN-${prefix}-${Date.now()}-${++_dryRunSeq}`, dryRun: true };
@@ -727,7 +737,7 @@ async function placeMarketOrder(fyersSymbol, side, qty) {
   log(`📤 [LIVE] Placing ${sideLabel} ${qty} × ${fyersSymbol} via Zerodha...`);
   try {
     let result;
-    if (isDryRun()) {
+    if (_orderIsDryRun()) {
       result = _simOrder("ENTRY");
       log(`🧪 [DRY-RUN] No real order placed (LIVE_HARNESS_DRY_RUN=true) — would ${sideLabel} ${qty} × ${fyersSymbol} via Zerodha | virtual OrderID: ${result.orderId}`);
     } else {
@@ -759,7 +769,7 @@ async function placeMarketOrder(fyersSymbol, side, qty) {
  */
 function verifyOrderFill(orderId, label) {
   if (!orderId) return;
-  if (isDryRun()) return; // no real order to verify in dry-run
+  if (String(orderId).startsWith("DRYRUN-")) return; // simulated id — nothing to verify
   setTimeout(async () => {
     try {
       const orders = await zerodha.getOrders();
@@ -833,7 +843,7 @@ async function placeHardSL() {
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       let result;
-      if (isDryRun()) {
+      if (_orderIsDryRun()) {
         result = _simOrder("SLM");
         log(`🧪 [DRY-RUN] No real order placed — would place Hard SL-M SELL ${qty} × ${pos.symbol} @ trigger ₹${triggerPrice} | virtual OrderID: ${result.orderId}`);
       } else {
@@ -871,7 +881,7 @@ async function updateHardSL(newSpotSL) {
 
   try {
     let result;
-    if (isDryRun()) {
+    if (_orderIsDryRun()) {
       log(`🧪 [DRY-RUN] No real modify — would move Hard SL trigger → ₹${newTrigger} (spotSL=₹${newSpotSL}, order ${_hardSLOrderId})`);
       result = { success: true, dryRun: true };
     } else {
@@ -896,7 +906,7 @@ async function cancelHardSL() {
   _hardSLOrderId = null;
   try {
     let result;
-    if (isDryRun()) {
+    if (String(orderId).startsWith("DRYRUN-")) {
       log(`🧪 [DRY-RUN] No real cancel — would cancel Hard SL-M order ${orderId}`);
       result = { success: true, dryRun: true };
     } else {
@@ -1672,6 +1682,8 @@ async function onCandleClose(candle) {
         secsToMFE:         0,
         secsToMAE:         0,
         orderId:           result.orderId || null,
+        // How this position was ENTERED — every order for it must match (see _orderIsDryRun).
+        dryRun:            !!result.dryRun,
         entryBarTime:      tradeState.currentBar ? tradeState.currentBar.time : null,
         entryPrevMid,
         // Option metadata (null for futures)
@@ -2077,6 +2089,8 @@ function onSpotTick(tick) {
           secsToMFE:         0,
           secsToMAE:         0,
           orderId:           result.orderId || null,
+          // How this position was ENTERED — every order for it must match (see _orderIsDryRun).
+          dryRun:            !!result.dryRun,
           entryBarTime:      tradeState.currentBar ? tradeState.currentBar.time : null,
           entryPrevMid,
           optionExpiry:      optDetails?.expiry     || expiry || null,
@@ -2712,6 +2726,8 @@ router.post("/manualEntry", async (req, res) => {
       entryTimeMs: Date.now(),
       secsToMFE: 0, secsToMAE: 0,
       orderId: result.orderId || null,
+      // How this position was ENTERED — every order for it must match (see _orderIsDryRun).
+      dryRun: !!result.dryRun,
       entryBarTime: tradeState.currentBar ? tradeState.currentBar.time : null,
       entryPrevMid: null,
       optionExpiry: optDetails?.expiry || null,

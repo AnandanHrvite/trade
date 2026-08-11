@@ -274,6 +274,15 @@ async function placeBbRsiHardSL() {
   const triggerPrice = Math.max(0.5, parseFloat((optionLtp - premDrop).toFixed(1)));
   const qty = pos.qty || getLotQty();
 
+  // DRY-RUN: the entry BUY is simulated, so a REAL resting SL-M here would be a
+  // sell order against a position we do not hold — a naked short the moment it
+  // triggers. Simulate the SL-M exactly like the entry.
+  if (_orderIsDryRun()) {
+    _bbRsiHardSLOrderId = _simOrder("SLM").orderId;
+    log(`🧪 [BB_RSI HARD SL DRY-RUN] No real order placed — would place SL-M SELL ${qty} × ${pos.symbol} @ trigger ₹${triggerPrice} | virtual OrderID: ${_bbRsiHardSLOrderId}`);
+    return;
+  }
+
   log(`🛡️ [BB_RSI HARD SL] Placing SL-M SELL ${qty} × ${pos.symbol} @ trigger ₹${triggerPrice}`);
   try {
     const result = await fyersBroker.placeSLMOrder(pos.symbol, -1, qty, triggerPrice);
@@ -281,10 +290,15 @@ async function placeBbRsiHardSL() {
       _bbRsiHardSLOrderId = result.orderId;
       log(`✅ [BB_RSI HARD SL] SL-M placed — OrderID: ${result.orderId} | trigger=₹${triggerPrice}`);
     } else {
-      log(`⚠️ [BB_RSI HARD SL] SL-M placement failed: ${JSON.stringify(result.raw)}`);
+      // A silently-failed hard SL leaves a REAL position with no exchange-level
+      // protection — the in-process stop is all that remains, and that dies with
+      // the process. Alert loudly, as emaRsiStLive already does.
+      log(`🚨 [BB_RSI HARD SL] SL-M placement FAILED — position has NO exchange-level SL: ${JSON.stringify(result.raw)}`);
+      sendTelegram(`🚨 BB_RSI HARD SL FAILED — ${pos.symbol} × ${qty} is UNPROTECTED at the exchange!`).catch(() => {});
     }
   } catch (err) {
-    log(`❌ [BB_RSI HARD SL] Exception: ${err.message}`);
+    log(`🚨 [BB_RSI HARD SL] Exception — position has NO exchange-level SL: ${err.message}`);
+    sendTelegram(`🚨 BB_RSI HARD SL FAILED — ${pos.symbol} × ${qty} is UNPROTECTED at the exchange! (${err.message})`).catch(() => {});
   }
 }
 
@@ -296,6 +310,11 @@ async function updateBbRsiHardSL(newSpotSL) {
   const delta = parseFloat(process.env.HARD_SL_DELTA || "0.5");
   const spotGap = Math.abs(state.lastTickPrice - newSpotSL);
   const newTrigger = Math.max(0.5, parseFloat((optionLtp - spotGap * delta).toFixed(1)));
+
+  if (_orderIsDryRun()) {
+    log(`🧪 [BB_RSI HARD SL DRY-RUN] No real modify — would move trigger → ₹${newTrigger} (order ${_bbRsiHardSLOrderId})`);
+    return;
+  }
 
   try {
     const result = await fyersBroker.modifySLMOrder(_bbRsiHardSLOrderId, newTrigger);
@@ -313,6 +332,13 @@ async function cancelBbRsiHardSL() {
   if (!_bbRsiHardSLOrderId) return;
   const orderId = _bbRsiHardSLOrderId;
   _bbRsiHardSLOrderId = null;
+  // Simulated SL-M ids don't exist at the broker — cancelling one would be a
+  // guaranteed API error on every exit. Also covers the id-was-simulated case
+  // after a mid-session toggle flip.
+  if (String(orderId).startsWith("DRYRUN-")) {
+    log(`🧪 [BB_RSI HARD SL DRY-RUN] No real cancel — would cancel SL-M order ${orderId}`);
+    return;
+  }
   try {
     const result = await fyersBroker.cancelOrder(orderId);
     if (result.success) {
@@ -363,7 +389,21 @@ let _squareOffInFlight = false;
 // DRY-RUN: when the global LIVE_HARNESS_DRY_RUN is on (or BB_RSI_LIVE_DRY_RUN
 // override is on), log the Fyers call that WOULD be made and place no real order.
 function isDryRun() { return liveDryRun.isDryRun("BB_RSI"); }
+// A trade must EXIT the way it ENTERED. isDryRun() reads env on every call, so
+// flipping the kill-switch while a position is open would simulate the exit of a
+// REAL position and strand it at the broker. Once a position exists, the stamp
+// taken at entry wins; only a flat book consults the env again.
+function _orderIsDryRun() {
+  const pos = state.position;
+  if (pos && typeof pos.dryRun === "boolean") return pos.dryRun;
+  return isDryRun();
+}
 let _bbRsiDryRunSeq = 0;
+function _simOrder(prefix) {
+  return { success: true, orderId: `DRYRUN-BB_RSI-${prefix}-${Date.now()}-${++_bbRsiDryRunSeq}`, dryRun: true };
+}
+// Label for Telegram/notify so a simulated fill can never read as a real one.
+function _modeLabel() { return _orderIsDryRun() ? "BB_RSI-LIVE (DRY-RUN)" : "BB_RSI-LIVE"; }
 
 async function placeOrder(fyersSymbol, side, qty) {
   if (_orderInFlight) {
@@ -372,7 +412,7 @@ async function placeOrder(fyersSymbol, side, qty) {
   }
   _orderInFlight = true;
   const sideLabel = side === 1 ? "BUY" : "SELL";
-  if (isDryRun()) {
+  if (_orderIsDryRun()) {
     const orderId = `DRYRUN-BB_RSI-${Date.now()}-${++_bbRsiDryRunSeq}`;
     log(`🧪 [BB_RSI-LIVE DRY-RUN] No real order placed — would ${sideLabel} ${qty} × ${fyersSymbol} via Fyers | virtual OrderID: ${orderId}`);
     setTimeout(() => { _orderInFlight = false; }, 5000);
@@ -417,6 +457,10 @@ async function squareOff(exitPrice, reason) {
 
   log(`🔄 [BB_RSI-LIVE] Square off: ${reason}`);
 
+  // Captured while the position still exists: notifyExit fires after it is
+  // cleared, and _modeLabel would then fall back to the live env value.
+  const _exitModeLabel = _modeLabel();
+
   // Cancel Hard SL-M order before placing market exit (prevents double-exit)
   await cancelBbRsiHardSL();
 
@@ -437,6 +481,11 @@ async function squareOff(exitPrice, reason) {
     if (result && result.reason !== "duplicate_guard") {
       log(`🚨 [BB_RSI-LIVE] EXIT ORDER FAILED after ${MAX_EXIT_RETRIES} attempts — MANUAL INTERVENTION REQUIRED!`);
       sendTelegram(`🚨 BB_RSI EXIT FAILED: ${symbol} ${side} × ${qty} — ${reason}. Check Fyers dashboard IMMEDIATELY!`).catch(() => {});
+      // The position stays open but its exchange stop was cancelled above — put
+      // it back, otherwise a failed exit silently strips the only protection
+      // that survives this process dying. (duplicate_guard is skipped: another
+      // square-off is already in flight and owns the SL.)
+      await placeBbRsiHardSL();
     }
     _squareOffInFlight = false;
     return;
@@ -581,7 +630,7 @@ async function squareOff(exitPrice, reason) {
   _squareOffInFlight = false;
 
   notifyExit({
-    mode: "BB_RSI-LIVE",
+    mode: _exitModeLabel,
     side, symbol,
     spotAtEntry: spotAtEntry || entryPrice,
     spotAtExit: exitPrice,
@@ -1073,6 +1122,8 @@ async function resolveAndEnter(side, spot, result) {
       optionExpiry:     optionInfo.expiry || null,
       optionType:       side,
       orderId:          orderResult.orderId || null,
+      // How this position was ENTERED — every order for it must match (see _orderIsDryRun).
+      dryRun:           !!orderResult.dryRun,
 
       optionEntryLtp:   null,
       optionCurrentLtp: null,
@@ -1114,7 +1165,7 @@ async function resolveAndEnter(side, spot, result) {
     log(`📝 [BB_RSI-LIVE] BUY ${qty} × ${symbol} @ ₹${spot} | SL: ₹${clampedSL} | ${result.reason}`);
 
     notifyEntry({
-      mode: "BB_RSI-LIVE",
+      mode: _modeLabel(),
       side, symbol, spotAtEntry: spot,
       optionEntryLtp: null,
       stopLoss: result.stopLoss, qty, reason: result.reason,
@@ -1357,7 +1408,7 @@ router.get("/start", async (req, res) => {
   log(`🟢 [BB_RSI-LIVE] Session started — ${BB_RSI_RES}-min candles | Fyers orders`);
 
   notifyStarted({
-    mode: "BB_RSI-LIVE",
+    mode: _modeLabel(),
     text: [
       `⚡ BB_RSI LIVE — STARTED`,
       ``,
@@ -1420,7 +1471,7 @@ async function stopSession() {
   log("🔴 [BB_RSI-LIVE] Session stopped");
 
   notifyDayReport({
-    mode: "BB_RSI-LIVE",
+    mode: _modeLabel(),
     sessionTrades: state.sessionTrades,
     sessionPnl:    state.sessionPnl,
     sessionStart:  state.sessionStart,
@@ -1992,6 +2043,9 @@ ${buildSidebar('bbRsiLive', liveActive, state.running, {
     ${state.running
       ? '<span class="top-bar-badge live-active"><span style="width:5px;height:5px;border-radius:50%;background:#ef4444;display:inline-block;"></span> BB_RSI LIVE</span>'
       : '<span class="top-bar-badge">\u25cf STOPPED</span>'}
+    ${isDryRun()
+      ? '<span class="top-bar-badge" style="border-color:rgba(245,158,11,0.35);background:rgba(245,158,11,0.1);color:#f59e0b;">\ud83e\uddea DRY-RUN \u00b7 no real orders</span>'
+      : '<span class="top-bar-badge" style="border-color:rgba(239,68,68,0.45);background:rgba(239,68,68,0.14);color:#ef4444;">\ud83d\udd34 REAL ORDERS \u00b7 live money</span>'}
     ${_vixEnabled
       ? `<span class="top-bar-badge" style="border-color:${_vix == null ? 'rgba(100,116,139,0.3)' : _vix.value > _vixMaxEntry ? 'rgba(239,68,68,0.3)' : 'rgba(16,185,129,0.3)'};background:${_vix == null ? 'rgba(100,116,139,0.08)' : _vix.value > _vixMaxEntry ? 'rgba(239,68,68,0.1)' : 'rgba(16,185,129,0.1)'};color:${_vix == null ? '#94a3b8' : _vix.value > _vixMaxEntry ? '#ef4444' : '#10b981'};">\uD83C\uDF21\uFE0F VIX ${_vix != null ? _vix.value.toFixed(1) : 'n/a'}${_vix != null ? (_vix.value > _vixMaxEntry ? ' \u00b7 BLOCKED' : ' \u00b7 OK') : ''}</span>`
       : ''}

@@ -121,6 +121,16 @@ function isDryRun() {
   return liveDryRun.isDryRun("ORB");
 }
 
+// A trade must EXIT the way it ENTERED. isDryRun() reads env on every call, so
+// flipping the kill-switch while a position is open would simulate the exit of a
+// REAL position and strand it at the broker. Once a position exists, the stamp
+// taken at entry wins; only a flat book consults the env again.
+function _orderIsDryRun() {
+  const pos = state.position;
+  if (pos && typeof pos.dryRun === "boolean") return pos.dryRun;
+  return isDryRun();
+}
+
 // Recursive setTimeout (not setInterval) so the replay harness accelerates it —
 // mirrors orbPaper. 3s cadence in live; keeps state.optionLtp fresh in replay.
 const OPTION_POLL_MS = 3000;
@@ -222,7 +232,8 @@ async function _placeLiveBuyImpl(side, sigSnapshot) {
 
   // ── BROKER CALL ──────────────────────────────────────────────────────────
   let entryOrderId = null;
-  if (isDryRun()) {
+  const _entryDryRun = isDryRun();   // decided ONCE, then stamped on the position
+  if (_entryDryRun) {
     log(`🟡 [ORB-LIVE DRY-RUN] WOULD place BUY ${side} ${qty} × ${optInfo.symbol} @ market (ref ₹${optionEntryLtp})`);
     entryOrderId = `dryrun:${Date.now()}`;
   } else {
@@ -273,6 +284,8 @@ async function _placeLiveBuyImpl(side, sigSnapshot) {
     // Seconds from entry to the favourable peak / adverse trough.
     secsToMFE: 0, secsToMAE: 0,
     entryReason: sigSnapshot.reason, entryOrderId,
+    // How this position was ENTERED — every order for it must match (see _orderIsDryRun).
+    dryRun: _entryDryRun,
   };
   state.position = pos;
   // Crash-recovery snapshot. ORB LIVE places real Fyers orders, so a restart while
@@ -287,10 +300,17 @@ async function _placeLiveBuyImpl(side, sigSnapshot) {
   state.tradesTaken++;
   startOptionPolling();
 
+  // Exchange-resident stop. ORB was the only engine placing real orders with NO
+  // broker-side SL — every stop lived in this process, so a crash / restart /
+  // network partition while long left the position completely unprotected.
+  // Un-awaited: the entry is already filled and the in-process stop is live, so
+  // the SL-M must never delay tick handling. Failure is alerted, not fatal.
+  placeOrbHardSL().catch((e) => log(`❌ [ORB HARD SL] ${e.message}`));
+
   log(`   risk: ${_stop.note}`);
 
   notifyEntry({
-    mode: isDryRun() ? "ORB-LIVE (DRY-RUN)" : "ORB-LIVE",
+    mode: _orderIsDryRun() ? "ORB-LIVE (DRY-RUN)" : "ORB-LIVE",
     side, symbol: optInfo.symbol,
     spotAtEntry: spot, optionEntryLtp,
     qty, stopLoss: pos.slSpot,
@@ -308,6 +328,133 @@ async function _placeLiveBuyImpl(side, sigSnapshot) {
       reason: pos.entryReason,
     });
   } catch (_) {}
+}
+
+// ── Hard SL — exchange-resident SL-M (Fyers) ────────────────────────────────
+// ORB was the only live engine with NO broker-side stop: every exit rule ran in
+// this process, so a crash, restart, PM2 reload or network partition while long
+// left a real position with nothing protecting it. This is the same disaster
+// backstop PA / BB_RSI / EMA_RSI_ST already place, gated by the shared
+// HARD_SL_ENABLED toggle. The spot stop is converted to a premium trigger:
+//     trigger = optionLtp − |spot − slSpot| × HARD_SL_DELTA
+// The precise stop stays in _checkExits and always fires first; this only
+// catches the case where the process is no longer alive to fire it. Every
+// failure path leaves the PREVIOUS (wider) trigger resting — a too-wide stop is
+// survivable, a too-tight one exits a good trade for no reason.
+let _orbHardSLOrderId = null;
+let _orbHardSLPending = null;   // in-flight placement — cancel must await it
+let _orbHardSLTrigger = null;
+
+function isOrbHardSLEnabled() {
+  return process.env.HARD_SL_ENABLED === "true" && instrumentConfig.INSTRUMENT !== "NIFTY_FUTURES";
+}
+
+// Premium trigger for a given spot stop, using the current spot as the reference.
+function _orbSLTrigger(optionLtp, spotRef, slSpot) {
+  const delta = parseFloat(process.env.HARD_SL_DELTA || "0.5");
+  return Math.max(0.5, parseFloat((optionLtp - Math.abs(spotRef - slSpot) * delta).toFixed(1)));
+}
+
+async function placeOrbHardSL() {
+  if (!isOrbHardSLEnabled()) return;
+  const pos = state.position;
+  if (!pos) return;
+  const optionLtp = state.optionLtp || pos.optionEntryLtp;
+  if (!(optionLtp > 0) || pos.slSpot == null) return;
+
+  const trigger = _orbSLTrigger(optionLtp, pos.entrySpot, pos.slSpot);
+  // A trigger at or above the current premium would fire instantly on placement.
+  if (!(trigger > 0) || trigger >= optionLtp) {
+    log(`⚠️ [ORB HARD SL] Skipped — trigger ₹${trigger} is not below premium ₹${optionLtp}`);
+    return;
+  }
+  // Only reachable if a previous trade's SL-M was never cancelled (a failed exit
+  // re-arms one on the orphan). Overwriting the id would hide it forever, so name
+  // it in the log while it is still cancellable by hand.
+  if (_orbHardSLOrderId) {
+    log(`🚨 [ORB HARD SL] SL-M ${_orbHardSLOrderId} is still tracked from an earlier position — it will no longer be tracked. Cancel it on the Fyers dashboard if it is still resting.`);
+  }
+
+  if (_orderIsDryRun()) {
+    _orbHardSLOrderId = `DRYRUN-ORB-SLM-${Date.now()}`;
+    _orbHardSLTrigger = trigger;
+    log(`🧪 [ORB HARD SL DRY-RUN] No real order placed — would place SL-M SELL ${pos.qty} × ${pos.symbol} @ trigger ₹${trigger} | virtual OrderID: ${_orbHardSLOrderId}`);
+    return;
+  }
+
+  const placement = (async () => {
+    try {
+      const result = await fyersBroker.placeSLMOrder(pos.symbol, -1, pos.qty, trigger, { isFutures: false });
+      if (result && result.success) {
+        _orbHardSLOrderId = result.orderId;
+        _orbHardSLTrigger = trigger;
+        log(`🛡️ [ORB HARD SL] SL-M placed — OrderID: ${result.orderId} | trigger=₹${trigger}`);
+      } else {
+        log(`🚨 [ORB HARD SL] SL-M placement FAILED — position has NO exchange-level SL: ${JSON.stringify(result && result.raw)}`);
+        sendTelegram(`🚨 ORB HARD SL FAILED — ${pos.symbol} × ${pos.qty} is UNPROTECTED at the exchange!`).catch(() => {});
+      }
+    } catch (err) {
+      log(`🚨 [ORB HARD SL] Exception — position has NO exchange-level SL: ${err.message}`);
+      sendTelegram(`🚨 ORB HARD SL FAILED — ${pos.symbol} × ${pos.qty} is UNPROTECTED at the exchange! (${err.message})`).catch(() => {});
+    }
+  })();
+  _orbHardSLPending = placement;
+  try { await placement; } finally { if (_orbHardSLPending === placement) _orbHardSLPending = null; }
+}
+
+// Re-price the resting SL-M after the stop trails (breakeven → EMA trail).
+async function updateOrbHardSL() {
+  if (!isOrbHardSLEnabled() || !_orbHardSLOrderId) return;
+  const pos = state.position;
+  if (!pos) return;
+  const optionLtp = state.optionLtp || pos.optionEntryLtp;
+  if (!(optionLtp > 0) || pos.slSpot == null) return;
+
+  const spotRef = state.lastTickPrice || pos.entrySpot;
+  const trigger = _orbSLTrigger(optionLtp, spotRef, pos.slSpot);
+  if (!(trigger > 0) || trigger >= optionLtp) return;               // would fire on arrival
+  if (_orbHardSLTrigger != null && Math.abs(trigger - _orbHardSLTrigger) < 0.5) return;  // pointless modify
+
+  if (_orderIsDryRun()) {
+    _orbHardSLTrigger = trigger;
+    log(`🧪 [ORB HARD SL DRY-RUN] No real modify — would move trigger → ₹${trigger} (order ${_orbHardSLOrderId})`);
+    return;
+  }
+
+  try {
+    const result = await fyersBroker.modifySLMOrder(_orbHardSLOrderId, trigger);
+    if (result && result.success) {
+      _orbHardSLTrigger = trigger;
+      log(`🔄 [ORB HARD SL] Trigger moved → ₹${trigger}`);
+    } else {
+      log(`⚠️ [ORB HARD SL] Modify failed (old trigger ₹${_orbHardSLTrigger} still resting): ${JSON.stringify(result && result.raw)}`);
+    }
+  } catch (err) {
+    log(`⚠️ [ORB HARD SL] Modify exception (old trigger ₹${_orbHardSLTrigger} still resting): ${err.message}`);
+  }
+}
+
+async function cancelOrbHardSL() {
+  // Race: an exit can fire while the placement is still in flight. Await it
+  // first — otherwise the placement resolves AFTER our square-off SELL and
+  // orphans a live SL-M on a position we no longer hold, which later fires and
+  // opens a naked short. Mirrors liveHarness._cancelExchangeSL.
+  if (_orbHardSLPending) { try { await _orbHardSLPending; } catch (_) { /* nothing to cancel */ } }
+  if (!_orbHardSLOrderId) return;
+  const orderId = _orbHardSLOrderId;
+  _orbHardSLOrderId = null;
+  _orbHardSLTrigger = null;
+  if (String(orderId).startsWith("DRYRUN-")) {
+    log(`🧪 [ORB HARD SL DRY-RUN] No real cancel — would cancel SL-M order ${orderId}`);
+    return;
+  }
+  try {
+    const result = await fyersBroker.cancelOrder(orderId);
+    if (result && result.success) log(`🗑️ [ORB HARD SL] Cancelled SL-M order ${orderId}`);
+    else log(`⚠️ [ORB HARD SL] Cancel failed — VERIFY on the Fyers dashboard that SL-M ${orderId} is not still resting: ${JSON.stringify(result && result.raw)}`);
+  } catch (err) {
+    log(`⚠️ [ORB HARD SL] Cancel exception — VERIFY on the Fyers dashboard that SL-M ${orderId} is not still resting: ${err.message}`);
+  }
 }
 
 // ── Live SELL / SQUARE-OFF ─────────────────────────────────────────────────
@@ -333,8 +480,12 @@ async function _placeLiveSellImpl(reason) {
   const exitSpot   = state.lastTickPrice || pos.entrySpot;
   const qty = pos.qty;
 
+  // Cancel the resting SL-M BEFORE the market SELL. If it fired while our SELL
+  // was in flight we would sell the same lot twice — a naked short.
+  await cancelOrbHardSL();
+
   let exitOrderId = null;
-  if (isDryRun()) {
+  if (_orderIsDryRun()) {
     log(`🟡 [ORB-LIVE DRY-RUN] WOULD place SELL ${qty} × ${pos.symbol} @ market (ref ₹${exitOptLtp}) — reason: ${reason}`);
     exitOrderId = `dryrun:${Date.now()}`;
   } else {
@@ -350,6 +501,14 @@ async function _placeLiveSellImpl(reason) {
     } catch (e) {
       log(`❌ [ORB-LIVE] SELL order threw: ${e.message}`);
       sendTelegram(`🚨 ORB EXIT THREW: ${pos.symbol} ${pos.side} × ${qty} — ${e.message}. Check Fyers dashboard IMMEDIATELY!`).catch(() => {});
+    }
+    // The exit failed but we already cancelled the exchange stop, and the code
+    // below drops the position record regardless — that would leave a REAL,
+    // untracked long with no protection at all. Put the SL-M back before the
+    // record goes away, so the orphan at least still has a stop resting.
+    if (!exitOrderId) {
+      await placeOrbHardSL().catch(() => {});
+      log(`⚠️ [ORB-LIVE] Exit unconfirmed — exchange SL-M re-armed on the orphaned position. Verify on the Fyers dashboard.`);
     }
   }
 
@@ -386,7 +545,7 @@ async function _placeLiveSellImpl(reason) {
     secsToMFE: pos.secsToMFE || 0, secsToMAE: pos.secsToMAE || 0,
     durationMs: Date.now() - pos.entryTimeMs, charges,
     entryOrderId: pos.entryOrderId, exitOrderId,
-    isLive: !isDryRun(), isDryRun: isDryRun(),
+    isLive: !_orderIsDryRun(), isDryRun: _orderIsDryRun(),
     isFutures: false,   // ORB is single-leg option buying — matches orbPaper's record
     instrument: "NIFTY_OPTIONS",
   };
@@ -394,7 +553,7 @@ async function _placeLiveSellImpl(reason) {
   tradeLogger.appendTradeLog("orb", Object.assign({ _live: true }, trade));
 
   notifyExit({
-    mode: isDryRun() ? "ORB-LIVE (DRY-RUN)" : "ORB-LIVE",
+    mode: _orderIsDryRun() ? "ORB-LIVE (DRY-RUN)" : "ORB-LIVE",
     side: pos.side, symbol: pos.symbol,
     spotAtEntry: pos.entrySpot, spotAtExit: exitSpot,
     optionEntryLtp: pos.optionEntryLtp, optionExitLtp: exitOptLtp,
@@ -433,6 +592,7 @@ async function _managePositionOnClose(bar) {
   const pos = state.position;
   if (!pos) return;
 
+  const _slBefore = pos.slSpot;
   const d = orbExits.evaluateCloseExits(pos, bar, state.candles);
 
   if (d.breakevenArmed) {
@@ -441,6 +601,10 @@ async function _managePositionOnClose(bar) {
     log(`🔒 Breakeven armed — SL → entry ${pos.slSpot} (favourable ${d.favPts.toFixed(1)}pt ≥ ${d.bePts}pt)`);
   }
   if (d.exit) return placeLiveSell(d.reason);
+
+  // The stop trailed (breakeven / EMA trail) — move the resting SL-M with it so
+  // the exchange backstop tracks the real stop instead of the entry stop.
+  if (pos.slSpot !== _slBefore) await updateOrbHardSL();
 }
 
 // ── In-position tick management: rupee cap → premium stop → hard SL ──────────

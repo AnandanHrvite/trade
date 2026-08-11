@@ -433,7 +433,8 @@ Full spec: [BB_RSI.md](BB_RSI.md).
 | Key | Default | Notes |
 |-----|---------|-------|
 | `BB_RSI_MODE_ENABLED` | `true` | Show/hide bb_rsi menus in sidebar (also hides BB_RSI section in Settings) |
-| `BB_RSI_ENABLED` | `false` | Must be `true` for Fyers bb_rsi orders |
+| `BB_RSI_ENABLED` | `false` | Master enable for the BB_RSI engine (required to start BB_RSI Live) |
+| `BB_RSI_LIVE_ENABLED` | `false` | Must be `true` AND `LIVE_HARNESS_DRY_RUN=false` for real Fyers BB_RSI orders. Without it BB_RSI Live runs fully but every broker call is simulated |
 | `BB_RSI_BB_PERIOD` / `BB_RSI_BB_STDDEV` | `20` / `1` | Bollinger inputs (std-dev **1** — tighter than the charting default of 2) |
 | `BB_RSI_RSI_CE_THRESHOLD` | `70` | Take CE entry only when RSI is above this |
 | `BB_RSI_RSI_PE_THRESHOLD` | `40` | Take PE entry only when RSI is below this |
@@ -465,7 +466,8 @@ Full spec: [BB_RSI.md](BB_RSI.md).
 | Key | Default | Notes |
 |-----|---------|-------|
 | `PA_MODE_ENABLED` | `true` | Show/hide PA menus in sidebar (also hides PA section in Settings) |
-| `PA_ENABLED` | `false` | Must be `true` (+ `LIVE_HARNESS_DRY_RUN=false`) for Fyers PA live orders |
+| `PA_ENABLED` | `false` | Master enable for the PA engine (required to start PA Live) |
+| `PA_LIVE_ENABLED` | `false` | Must be `true` AND `LIVE_HARNESS_DRY_RUN=false` for real Fyers PA orders. Without it PA Live runs fully but every broker call is simulated |
 | `PA_ENTRY_START` / `PA_ENTRY_END` | `09:20` / `14:30` | Entry window (IST) |
 | `PA_PATTERN_DOUBLE_BOTTOM` | `true` | Toggle Double Bottom (W) → CE |
 | `PA_PATTERN_DOUBLE_TOP` | `true` | Toggle Double Top (M) → PE |
@@ -810,7 +812,7 @@ Blocks directional entries that fight the prevailing Open-Interest buildup: read
 | `GAP_THRESHOLD_PTS` | `50` | Live engines skip the first candle when overnight gap exceeds this |
 | `LTP_STALE_THRESHOLD_SEC` | `15` | Warn in logs when option LTP has no update for this many seconds |
 | `LTP_STALE_FALLBACK_SEC` | `5` | Live engines fall back to candle close when option LTP is older than this |
-| `HARD_SL_ENABLED` | `false` | Place an SL-M order at the exchange on every entry (options only) — protects against bot crash/disconnect |
+| `HARD_SL_ENABLED` | `false` | Place an SL-M order at the exchange on every entry (options only) — protects against bot crash/disconnect. Applies to the native live engines: EMA_RSI_ST, BB_RSI, PA and **ORB**. The trigger trails with the stop and is cancelled before any normal square-off; if a square-off fails, it is re-armed so the still-open position keeps its protection. In dry-run it is simulated, never placed. (Harness-run strategies use `HARNESS_EXCHANGE_SL_ENABLED` instead.) |
 | `HARD_SL_DELTA` | `0.5` | Delta used when converting spot SL → option premium trigger |
 
 ### Tick Recorder / Replay / Live Harness
@@ -833,7 +835,7 @@ Blocks directional entries that fight the prevailing Open-Interest buildup: read
 | `BACKUP_TG_ENABLED` | `false` | Send a Telegram message when each day's snapshot is ready (or if it fails). Includes the Google Drive upload result when Drive is connected. |
 | `GDRIVE_FOLDER_NAME` | `Trading Bot Backups` | Drive folder the snapshots are uploaded into (created on first upload). Only used once Google Drive is connected from Settings → Backup & Restore. |
 | `GDRIVE_RETAIN` | `30` | Keep the newest N uploads in that Drive folder; older ones are deleted after each successful push. |
-| `LIVE_HARNESS_DRY_RUN` | `true` | **Global** kill-switch. When ON, all live order paths (PA/ORB harness routes **and EMA_RSI_ST Live**) log the broker call that *would* have been made but place no real order. When OFF, each strategy goes real **unless** its own `{STRATEGY}_LIVE_DRY_RUN` override is on. Switch OFF only after verifying decisions match paper. |
+| `LIVE_HARNESS_DRY_RUN` | `true` | **Global** kill-switch, layer 1 of 3. When ON, *every* live order path (native `*Live` routes and every harness route) logs the broker call that *would* have been made and places no real order. Turning it OFF is not enough on its own: a strategy also needs its own `{STRATEGY}_LIVE_ENABLED=true` (layer 2) and must not have `{STRATEGY}_LIVE_DRY_RUN=true` (layer 3). All three are enforced in one place — [src/utils/liveDryRun.js](src/utils/liveDryRun.js) — so no live path can be armed by accident. Switch OFF only after verifying decisions match paper. |
 | `HARNESS_EXCHANGE_SL_ENABLED` | `false` | **EXPERIMENTAL.** When on, each harness-live entry also leaves a resting **SL-M disaster stop** at the exchange, so a hard crash mid-position still has some protection (the primary stop is always the in-process per-tick stop). It's cancelled before any normal square-off. Places REAL resting orders — validate on a dry-run session first. Fails safe (skips the SL on any missing data / bad trigger). |
 | `HARNESS_SL_PCT` | `0.5` | Disaster-stop distance as a fraction of entry premium: SL-M trigger = entryPremium × (1 − this). E.g. entry ₹120, `0.5` → trigger ₹60. Only used when `HARNESS_EXCHANGE_SL_ENABLED=true`. |
 | `HARNESS_BROKER_TIMEOUT_MS` | `8000` | Timeout (ms) on every harness broker call (BUY/SELL/getPositions). A hung socket can't wedge an entry/exit forever; a timed-out **write** is surfaced (not retried, order may be live) so you verify manually. Min 1500. |
@@ -841,7 +843,7 @@ Blocks directional entries that fight the prevailing Open-Interest buildup: read
 | `EMA_RSI_ST_LIVE_DRY_RUN` | `false` | Per-strategy override — keeps EMA_RSI_ST in dry-run even when `LIVE_HARNESS_DRY_RUN=false`. Lets you take other strategies live while EMA_RSI_ST stays simulated (and vice-versa). |
 | `ORB_LIVE_DRY_RUN` | `false` | Per-strategy override — keeps ORB in dry-run even when the global flag is off. |
 | `PA_LIVE_DRY_RUN` | `false` | Per-strategy override — keeps the PA live harness in dry-run even when the global flag is off. |
-| `BB_RSI_LIVE_DRY_RUN` | `false` | Per-strategy override — keeps BB_RSI in dry-run even when the global flag is off. BB_RSI Live has no master-enable gate, so this (with the global flag) is its primary safety switch. |
+| `BB_RSI_LIVE_DRY_RUN` | `false` | Per-strategy override — keeps BB_RSI in dry-run even when the global flag and `BB_RSI_LIVE_ENABLED` are both set for real orders. |
 | `TREND_PB_LIVE_DRY_RUN` | `false` | Per-strategy override — keeps the Trend Pullback live harness in dry-run even when the global flag is off. |
 | `BACKTEST_OPTION_SIM` | `true` | Legacy bar-based backtest only — Replay uses recorded option ticks |
 | `BACKTEST_DELTA` / `BACKTEST_THETA_DAY` / `BACKTEST_SLIPPAGE_PTS` | `0.5` / `12` / `0` | Bar-based backtest inputs |

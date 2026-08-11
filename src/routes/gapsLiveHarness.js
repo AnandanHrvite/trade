@@ -105,7 +105,7 @@ router.get("/start", async (req, res) => {
 
   // Live-order gate — real orders require GAPS_LIVE_ENABLED=true. Enforced ONLY
   // for real orders; dry-run runs are unaffected. Default-off.
-  if (!dryRun && String(process.env.GAPS_LIVE_ENABLED || "false").toLowerCase() !== "true") {
+  if (!liveDryRun.isDryRun() && String(process.env.GAPS_LIVE_ENABLED || "false").toLowerCase() !== "true") {
     return res.status(403).json({ success: false, error: "Live trading disabled. Set GAPS_LIVE_ENABLED=true to place real orders." });
   }
 

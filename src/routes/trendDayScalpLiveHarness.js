@@ -103,7 +103,7 @@ router.get("/start", async (req, res) => {
 
   const dryRun = liveDryRun.isDryRun("TDS");
 
-  if (!dryRun && String(process.env.TDS_LIVE_ENABLED || "false").toLowerCase() !== "true") {
+  if (!liveDryRun.isDryRun() && String(process.env.TDS_LIVE_ENABLED || "false").toLowerCase() !== "true") {
     return res.status(403).json({ success: false, error: "Live trading disabled. Set TDS_LIVE_ENABLED=true to place real orders." });
   }
 

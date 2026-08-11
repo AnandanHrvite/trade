@@ -6,6 +6,20 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — Live order safety: one gate for every engine, and an SL with every entry
+
+A review of every path that can reach a broker found four ways real orders could be placed, or left unprotected, without anyone intending it.
+
+- **`/pa-live` ignored the kill-switch entirely.** It called Fyers directly with no dry-run check anywhere in the file, and its `/start` only required `PA_ENABLED`. Opening that page placed real money orders while `LIVE_HARNESS_DRY_RUN=true` said nothing could. Every broker call in PA Live now goes through the same gate as the other engines.
+- **The gate itself is now one function.** [liveDryRun.js](src/utils/liveDryRun.js) enforces all three layers — the global `LIVE_HARNESS_DRY_RUN`, the per-strategy `{STRATEGY}_LIVE_ENABLED`, and the `{STRATEGY}_LIVE_DRY_RUN` hold-back — so turning the global switch off can no longer arm a strategy that was never explicitly enabled. `PA_LIVE_ENABLED` and `BB_RSI_LIVE_ENABLED` did not exist before; both are now real keys with Settings toggles.
+- **PA and BB_RSI placed a REAL exchange stop while in dry-run.** The entry BUY was simulated but the hard SL-M was sent to Fyers unconditionally — a sell order against a position that did not exist, i.e. a naked short the moment it triggered. Both are now simulated with the entry.
+- **ORB Live had no exchange stop at all.** Every ORB exit rule lived in the process, so a crash, restart or PM2 reload mid-position left a real position with nothing protecting it. ORB now places the same `HARD_SL_ENABLED` SL-M as the other engines, trails it as the stop moves, and cancels it before any square-off.
+- **A trade can no longer exit differently from how it entered.** The dry-run decision is stamped on the position at entry and every later order for that position follows the stamp. Flipping the kill-switch mid-trade previously made the *exit* simulated on a position entered with real money, stranding it at the broker.
+- **A failed square-off no longer strips the stop.** The exchange SL is cancelled before the exit sells, so a rejected exit used to leave the position open with its protection already gone. It is now re-armed, and a hard-SL that fails to place raises a Telegram alert instead of failing silently.
+- `HARNESS_EXCHANGE_SL_ENABLED` / `HARNESS_SL_PCT` are now exposed in Settings — the harness strategies (Trend PB, GAPS, EMA9+VWAP, TDS, Gap-Fix 3m) place no exchange stop by default, which was true but invisible.
+
+PA Live and BB_RSI Live now show a DRY-RUN / REAL-ORDERS badge, and their Telegram messages say which one produced the fill. No entry, exit or stop *rule* changed — only whether an order is real, and whether a stop is resting behind it.
+
 ### Fixed — Backtest and Live now decide the same way Paper does
 
 Paper is the canonical engine, but an audit of all nine strategies across Paper / Live / Backtest / Replay found the Backtest and Live paths quietly missing rules Paper had been applying. Replay was never affected — it loads the Paper route itself and feeds it recorded ticks, as do the six harness-driven Live modes, so those match Paper by construction. The gaps were all in the four native Live routes and the standalone Backtests:

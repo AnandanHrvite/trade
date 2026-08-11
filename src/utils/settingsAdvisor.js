@@ -43,8 +43,9 @@ const MIN_BUCKET = 5;
 /**
  * Per-strategy Settings keys a finding can point at. Every key here exists in
  * routes/settings.js — findings name real keys so the user can search for them
- * in the Settings page. BB_RSI and PA have no *_LIVE_ENABLED key (their live
- * engines are native routes, not the harness), hence no `live` entry.
+ * in the Settings page. Every strategy now has a *_LIVE_ENABLED key — it is the
+ * second gate every live engine (native route or harness) checks before placing
+ * a real order.
  *
  * `lossStreak` and `slPause` are deliberately separate: a streak brake counts
  * LOSSES and stops/skips the day, while *_SL_PAUSE_CANDLES is a cool-off measured
@@ -62,11 +63,12 @@ const MODE_KEYS = {
     entryStart: "BB_RSI_ENTRY_START", entryEnd: "BB_RSI_ENTRY_END",
     maxDailyLoss: "BB_RSI_MAX_DAILY_LOSS", maxDailyTrades: "BB_RSI_MAX_DAILY_TRADES",
     slPause: "BB_RSI_SL_PAUSE_CANDLES", stopLoss: "BB_RSI_STOP_LOSS_PTS",
+    live: "BB_RSI_LIVE_ENABLED",
   },
   PA: {
     entryStart: "PA_ENTRY_START", entryEnd: "PA_ENTRY_END",
     maxDailyLoss: "PA_MAX_DAILY_LOSS", maxDailyTrades: "PA_MAX_DAILY_TRADES",
-    slPause: "PA_SL_PAUSE_CANDLES",
+    slPause: "PA_SL_PAUSE_CANDLES", live: "PA_LIVE_ENABLED",
   },
   ORB: {
     entryEnd: "ORB_ENTRY_END", forcedExit: "ORB_FORCED_EXIT",

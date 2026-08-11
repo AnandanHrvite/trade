@@ -99,7 +99,7 @@ router.get("/start", async (req, res) => {
 
   // Live-order gate (the documented double-gate): real orders require EMA9VWAP_LIVE_ENABLED=true.
   // Enforced ONLY for real orders — dry-run runs are unaffected. Default-off.
-  if (!dryRun && (process.env.EMA9VWAP_LIVE_ENABLED || "false").toLowerCase() !== "true") {
+  if (!liveDryRun.isDryRun() && (process.env.EMA9VWAP_LIVE_ENABLED || "false").toLowerCase() !== "true") {
     return res.status(403).json({ success: false, error: "Live trading disabled. Set EMA9VWAP_LIVE_ENABLED=true to place real orders." });
   }
 

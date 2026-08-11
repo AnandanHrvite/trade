@@ -105,7 +105,7 @@ router.get("/start", async (req, res) => {
 
   // Live-order gate — real orders require TREND_PB_LIVE_ENABLED=true. Enforced
   // ONLY for real orders; dry-run runs are unaffected. Default-off.
-  if (!dryRun && (process.env.TREND_PB_LIVE_ENABLED || "false").toLowerCase() !== "true") {
+  if (!liveDryRun.isDryRun() && (process.env.TREND_PB_LIVE_ENABLED || "false").toLowerCase() !== "true") {
     return res.status(403).json({ success: false, error: "Live trading disabled. Set TREND_PB_LIVE_ENABLED=true to place real orders." });
   }
 

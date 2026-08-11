@@ -105,7 +105,7 @@ router.get("/start", async (req, res) => {
 
   const dryRun = liveDryRun.isDryRun("GAP3M");
 
-  if (!dryRun && String(process.env.GAP3M_LIVE_ENABLED || "false").toLowerCase() !== "true") {
+  if (!liveDryRun.isDryRun() && String(process.env.GAP3M_LIVE_ENABLED || "false").toLowerCase() !== "true") {
     return res.status(403).json({ success: false, error: "Live trading disabled. Set GAP3M_LIVE_ENABLED=true to place real orders." });
   }
 

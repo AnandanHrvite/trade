@@ -103,7 +103,7 @@ router.get("/start", async (req, res) => {
   // Live-order gate (the documented double-gate): real orders require PA_LIVE_ENABLED=true.
   // Enforced ONLY for real orders — dry-run runs are unaffected. Default-off, matching the
   // legacy /pa-live route.
-  if (!dryRun && (process.env.PA_LIVE_ENABLED || "false").toLowerCase() !== "true") {
+  if (!liveDryRun.isDryRun() && (process.env.PA_LIVE_ENABLED || "false").toLowerCase() !== "true") {
     return res.status(403).json({ success: false, error: "Live trading disabled. Set PA_LIVE_ENABLED=true to place real orders." });
   }
 

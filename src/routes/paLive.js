@@ -33,7 +33,9 @@ const { isTradingAllowed } = require("../utils/nseHolidays");
 const { reverseSlice: _reverseSlice, mapTradesReversed: _mapTradesReversed, fastISTTime: _fastISTTime, formatISTTimestamp, fmtISTDateTime, getISTMinutes: _getISTMinutesReal, getBucketStart: _getBucketStartRaw, parseTimeToMinutes, sleep } = require("../utils/tradeUtils");
 const vixFilter = require("../services/vixFilter");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
+const oiFilter = require("../services/oiFilter");   // paper-canonical: live must apply the same OI gate
 const fyers = require("../config/fyers");
+const liveDryRun = require("../utils/liveDryRun");   // triple-gate: global kill-switch + PA_LIVE_ENABLED + PA override
 const tradeGuards = require("../utils/tradeGuards");
 const { notifyEntry, notifyExit, notifyStarted, notifySignal, notifyDayReport, sendTelegram, canSend, isConfigured } = require("../utils/notify");
 const { awaitExit } = require("../utils/boundedExit");   // bound the wait on a broker square-off
@@ -261,6 +263,15 @@ async function placePAHardSL() {
   const triggerPrice = Math.max(0.5, parseFloat((optionLtp - premDrop).toFixed(1)));
   const qty = pos.qty || getLotQty();
 
+  // DRY-RUN: the entry BUY is simulated, so a REAL resting SL-M here would be a
+  // sell order against a position we do not hold — a naked short the moment it
+  // triggers. Simulate the SL-M exactly like the entry.
+  if (_orderIsDryRun()) {
+    _paHardSLOrderId = _simOrder("SLM").orderId;
+    log(`🧪 [PA HARD SL DRY-RUN] No real order placed — would place SL-M SELL ${qty} × ${pos.symbol} @ trigger ₹${triggerPrice} | virtual OrderID: ${_paHardSLOrderId}`);
+    return;
+  }
+
   log(`🛡️ [PA HARD SL] Placing SL-M SELL ${qty} × ${pos.symbol} @ trigger ₹${triggerPrice}`);
   try {
     const result = await fyersBroker.placeSLMOrder(pos.symbol, -1, qty, triggerPrice);
@@ -268,10 +279,15 @@ async function placePAHardSL() {
       _paHardSLOrderId = result.orderId;
       log(`✅ [PA HARD SL] SL-M placed — OrderID: ${result.orderId} | trigger=₹${triggerPrice}`);
     } else {
-      log(`⚠️ [PA HARD SL] SL-M placement failed: ${JSON.stringify(result.raw)}`);
+      // A silently-failed hard SL leaves a REAL position with no exchange-level
+      // protection — the in-process stop is all that remains, and that dies with
+      // the process. Alert loudly, as emaRsiStLive already does.
+      log(`🚨 [PA HARD SL] SL-M placement FAILED — position has NO exchange-level SL: ${JSON.stringify(result.raw)}`);
+      sendTelegram(`🚨 PA HARD SL FAILED — ${pos.symbol} × ${qty} is UNPROTECTED at the exchange!`).catch(() => {});
     }
   } catch (err) {
-    log(`❌ [PA HARD SL] Exception: ${err.message}`);
+    log(`🚨 [PA HARD SL] Exception — position has NO exchange-level SL: ${err.message}`);
+    sendTelegram(`🚨 PA HARD SL FAILED — ${pos.symbol} × ${qty} is UNPROTECTED at the exchange! (${err.message})`).catch(() => {});
   }
 }
 
@@ -283,6 +299,11 @@ async function updatePAHardSL(newSpotSL) {
   const delta = parseFloat(process.env.HARD_SL_DELTA || "0.5");
   const spotGap = Math.abs(state.lastTickPrice - newSpotSL);
   const newTrigger = Math.max(0.5, parseFloat((optionLtp - spotGap * delta).toFixed(1)));
+
+  if (_orderIsDryRun()) {
+    log(`🧪 [PA HARD SL DRY-RUN] No real modify — would move trigger → ₹${newTrigger} (order ${_paHardSLOrderId})`);
+    return;
+  }
 
   try {
     const result = await fyersBroker.modifySLMOrder(_paHardSLOrderId, newTrigger);
@@ -300,6 +321,13 @@ async function cancelPAHardSL() {
   if (!_paHardSLOrderId) return;
   const orderId = _paHardSLOrderId;
   _paHardSLOrderId = null;
+  // Simulated SL-M ids don't exist at the broker — cancelling one would be a
+  // guaranteed API error on every exit. Also covers the id-was-simulated case
+  // after a mid-session toggle flip.
+  if (String(orderId).startsWith("DRYRUN-")) {
+    log(`🧪 [PA HARD SL DRY-RUN] No real cancel — would cancel SL-M order ${orderId}`);
+    return;
+  }
   try {
     const result = await fyersBroker.cancelOrder(orderId);
     if (result.success) {
@@ -347,6 +375,27 @@ function verifyOrderFill(orderId, label) {
 let _orderInFlight     = false;
 let _squareOffInFlight = false;
 
+// DRY-RUN: this route used to call Fyers unconditionally — it honoured NEITHER
+// the global LIVE_HARNESS_DRY_RUN kill-switch NOR PA_LIVE_ENABLED, so simply
+// opening /pa-live/start placed real money orders. Now every broker call in this
+// file goes through the same triple gate as every other live engine.
+function isDryRun() { return liveDryRun.isDryRun("PA"); }
+// A trade must EXIT the way it ENTERED. isDryRun() reads env on every call, so
+// flipping the kill-switch while a position is open would simulate the exit of a
+// REAL position and strand it at the broker. Once a position exists, the stamp
+// taken at entry wins; only a flat book consults the env again.
+function _orderIsDryRun() {
+  const pos = state.position;
+  if (pos && typeof pos.dryRun === "boolean") return pos.dryRun;
+  return isDryRun();
+}
+let _paDryRunSeq = 0;
+function _simOrder(prefix) {
+  return { success: true, orderId: `DRYRUN-PA-${prefix}-${Date.now()}-${++_paDryRunSeq}`, dryRun: true };
+}
+// Label for Telegram/notify so a simulated fill can never read as a real one.
+function _modeLabel() { return _orderIsDryRun() ? "PA-LIVE (DRY-RUN)" : "PA-LIVE"; }
+
 async function placeOrder(fyersSymbol, side, qty) {
   if (_orderInFlight) {
     log(`⚠️ [PA-LIVE] Order in flight — skipping duplicate`);
@@ -354,6 +403,12 @@ async function placeOrder(fyersSymbol, side, qty) {
   }
   _orderInFlight = true;
   const sideLabel = side === 1 ? "BUY" : "SELL";
+  if (_orderIsDryRun()) {
+    const sim = _simOrder("ORD");
+    log(`🧪 [PA-LIVE DRY-RUN] No real order placed — would ${sideLabel} ${qty} × ${fyersSymbol} via Fyers | virtual OrderID: ${sim.orderId}`);
+    setTimeout(() => { _orderInFlight = false; }, 5000);
+    return sim;
+  }
   log(`📤 [PA-LIVE] Placing ${sideLabel} ${qty} × ${fyersSymbol} via Fyers...`);
   try {
     const result = await fyersBroker.placeMarketOrder(
@@ -387,11 +442,15 @@ async function squareOff(exitPrice, reason) {
 
   const { symbol, qty, side, entryPrice, entryTime, spotAtEntry,
           optionEntryLtp, optionCurrentLtp,
-          signalStrength, vixAtEntry, entryHourIST, entryMinuteIST } = state.position;
+          signalStrength, vixAtEntry, oiAtEntry, oiRegime, entryHourIST, entryMinuteIST } = state.position;
   const isFutures = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
   const exitOrderSide = (isFutures && side === "PE") ? 1 : -1;
 
   log(`🔄 [PA-LIVE] Square off: ${reason}`);
+
+  // Captured while the position still exists: notifyExit fires after it is
+  // cleared, and _modeLabel would then fall back to the live env value.
+  const _exitModeLabel = _modeLabel();
 
   // Cancel Hard SL-M order before placing market exit (prevents double-exit)
   await cancelPAHardSL();
@@ -413,6 +472,11 @@ async function squareOff(exitPrice, reason) {
     if (result && result.reason !== "duplicate_guard") {
       log(`🚨 [PA-LIVE] EXIT ORDER FAILED after ${MAX_EXIT_RETRIES} attempts — MANUAL INTERVENTION REQUIRED!`);
       sendTelegram(`🚨 PA EXIT FAILED: ${symbol} ${side} × ${qty} — ${reason}. Check Fyers dashboard IMMEDIATELY!`).catch(() => {});
+      // The position stays open but its exchange stop was cancelled above — put
+      // it back, otherwise a failed exit silently strips the only protection
+      // that survives this process dying. (duplicate_guard is skipped: another
+      // square-off is already in flight and owns the SL.)
+      await placePAHardSL();
     }
     _squareOffInFlight = false;
     return;
@@ -456,6 +520,8 @@ async function squareOff(exitPrice, reason) {
     // Data-collection fields (captured at entry)
     signalStrength: signalStrength   || null,
     vixAtEntry:     vixAtEntry       != null ? vixAtEntry       : null,
+    oiAtEntry:      oiAtEntry        != null ? oiAtEntry        : null,
+    oiRegime:       oiRegime         || null,
     entryHourIST:   entryHourIST     != null ? entryHourIST     : null,
     entryMinuteIST: entryMinuteIST   != null ? entryMinuteIST   : null,
     // Entry-context diagnostics + excursion + exit VIX for post-window analysis.
@@ -514,7 +580,7 @@ async function squareOff(exitPrice, reason) {
   _squareOffInFlight = false;
 
   notifyExit({
-    mode: "PA-LIVE",
+    mode: _exitModeLabel,
     side, symbol,
     spotAtEntry: spotAtEntry || entryPrice,
     spotAtExit: exitPrice,
@@ -666,6 +732,16 @@ function onTick(tick) {
 async function onCandleClose(bar) {
   if (!state.running) return;
 
+  // Sample futures OI each candle close (no-op unless an OI filter is enabled)
+  // so the buildup series stays filled even on no-signal / in-position candles.
+  // Mirrors paPaper — without it the gate below would read an empty series.
+  // Deliberately NOT awaited: paper documents a position-identity race that the
+  // await introduces (onCandleClose is fire-and-forget from onTick, so the rest of
+  // this function would resume after a getQuotes round-trip and could act on a
+  // position opened in the meantime). The gate's own checkLiveOi() re-samples
+  // before deciding, so the decision is identical either way.
+  oiFilter.recordOiSample(bar && bar.close).catch(() => { /* sampling is best-effort */ });
+
   if (state.position) {
     state.position.candlesHeld = (state.position.candlesHeld || 0) + 1;
 
@@ -756,6 +832,24 @@ async function onCandleClose(bar) {
     }
   }
 
+  // OI + price buildup gate — block entries fighting a confirmed buildup; tag the
+  // entry reason with the regime so every trade records its OI context. Paper is
+  // canonical and has always run this gate; live was missing it, so live could take
+  // an entry paper had already skipped.
+  const _oiSide = result.signal === "BUY_CE" ? "CE" : "PE";
+  if (oiFilter.getOiEnabled("pa")) {
+    const _oi = await oiFilter.checkLiveOi(_oiSide, bar.close, { mode: "pa" });
+    if (!_oi.allowed) {
+      log(`⏭️ [PA-LIVE] SKIP: ${_oi.reason}`);
+      skipLogger.appendSkipLog("pa", {
+        gate: "oi", reason: _oi.reason || null, spot: bar.close, side: _oiSide,
+        oi: _oi.oi ?? null, deltaOi: _oi.deltaOi ?? null, regime: _oi.regime ?? null,
+      });
+      return;
+    }
+    if (_oi.regime) result.reason = `${result.reason} | ${_oi.reason}`;
+  }
+
   const side = result.signal === "BUY_CE" ? "CE" : "PE";
   const spot = bar.close;
 
@@ -816,6 +910,8 @@ async function resolveAndEnter(side, spot, result) {
     const _entryHourIST   = Math.floor(_entryIstMin / 60);
     const _entryMinuteIST = _entryIstMin % 60;
     const _vixAtEntry     = getCachedVix();
+    const _oiAtEntry      = oiFilter.getCachedOi();
+    const _oiRegime       = oiFilter.getCachedRegime();
 
     state.position = {
       side,
@@ -846,6 +942,8 @@ async function resolveAndEnter(side, spot, result) {
       optionExpiry:     optionInfo.expiry || null,
       optionType:       side,
       orderId:          orderResult.orderId || null,
+      // How this position was ENTERED — every order for it must match (see _orderIsDryRun).
+      dryRun:           !!orderResult.dryRun,
 
       optionEntryLtp:   null,
       optionCurrentLtp: null,
@@ -854,6 +952,8 @@ async function resolveAndEnter(side, spot, result) {
       // Data-collection fields — surfaced on the trade record at exit
       signalStrength:   result.signalStrength || null,
       vixAtEntry:       _vixAtEntry,
+      oiAtEntry:        _oiAtEntry,
+      oiRegime:         _oiRegime,
       entryHourIST:     _entryHourIST,
       entryMinuteIST:   _entryMinuteIST,
       // Entry-context diagnostics — already computed by getSignal(), captured for analysis.
@@ -875,7 +975,7 @@ async function resolveAndEnter(side, spot, result) {
     log(`📝 [PA-LIVE] BUY ${qty} × ${symbol} @ ₹${spot} | SL: ₹${structuralSL} | ${result.reason}`);
 
     notifyEntry({
-      mode: "PA-LIVE",
+      mode: _modeLabel(),
       side, symbol, spotAtEntry: spot,
       optionEntryLtp: null,
       stopLoss: result.stopLoss, qty, reason: result.reason,
@@ -1119,7 +1219,7 @@ router.get("/start", async (req, res) => {
   log(`🟢 [PA-LIVE] Session started — ${PA_RES}-min candles | Fyers orders`);
 
   notifyStarted({
-    mode: "PA-LIVE",
+    mode: _modeLabel(),
     text: [
       `⚡ PRICE ACTION LIVE — STARTED`,
       ``,
@@ -1180,7 +1280,7 @@ async function stopSession() {
   log("🔴 [PA-LIVE] Session stopped");
 
   notifyDayReport({
-    mode: "PA-LIVE",
+    mode: _modeLabel(),
     sessionTrades: state.sessionTrades,
     sessionPnl:    state.sessionPnl,
     sessionStart:  state.sessionStart,
@@ -1701,6 +1801,9 @@ ${buildSidebar('paLive', liveActive, state.running, {
     ${state.running
       ? '<span class="top-bar-badge live-active"><span style="width:5px;height:5px;border-radius:50%;background:#ef4444;display:inline-block;"></span> PRICE ACTION LIVE</span>'
       : '<span class="top-bar-badge">\u25cf STOPPED</span>'}
+    ${isDryRun()
+      ? '<span class="top-bar-badge" style="border-color:rgba(245,158,11,0.35);background:rgba(245,158,11,0.1);color:#f59e0b;">\ud83e\uddea DRY-RUN \u00b7 no real orders</span>'
+      : '<span class="top-bar-badge" style="border-color:rgba(239,68,68,0.45);background:rgba(239,68,68,0.14);color:#ef4444;">\ud83d\udd34 REAL ORDERS \u00b7 live money</span>'}
     ${_vixEnabled
       ? `<span class="top-bar-badge" style="border-color:${_vix == null ? 'rgba(100,116,139,0.3)' : _vix.value > _vixMaxEntry ? 'rgba(239,68,68,0.3)' : 'rgba(16,185,129,0.3)'};background:${_vix == null ? 'rgba(100,116,139,0.08)' : _vix.value > _vixMaxEntry ? 'rgba(239,68,68,0.1)' : 'rgba(16,185,129,0.1)'};color:${_vix == null ? '#94a3b8' : _vix.value > _vixMaxEntry ? '#ef4444' : '#10b981'};">\uD83C\uDF21\uFE0F VIX ${_vix != null ? _vix.value.toFixed(1) : 'n/a'}${_vix != null ? (_vix.value > _vixMaxEntry ? ' \u00b7 BLOCKED' : ' \u00b7 OK') : ''}</span>`
       : ''}
