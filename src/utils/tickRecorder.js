@@ -278,7 +278,7 @@ const _lastChainOi = new Map();
 let _chainOiDay = null;
 
 /**
- * Record ONE strike's option OI (e.g. "NSE:NIFTY25807245 00CE" → 6,214,275).
+ * Record ONE strike's option OI (e.g. "NSE:NIFTY2580724500CE" → 6,214,275).
  *
  * Written to `chain_oi.jsonl`, NOT `oi.jsonl`. Keep it that way: tickReplay maps
  * oi.jsonl into a single futures-OI timeline and discards the symbol, so a strike

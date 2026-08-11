@@ -33,8 +33,7 @@
  *
  * THE OBSERVATION LOG
  * ───────────────────
- * Three things are logged — never traded — so a session leaves behind a
- * reviewable list instead of a vague impression:
+ * Two opposite readings are logged — never traded:
  *
  *   DEFEND  price pressing a max-OI wall whose OI is still RISING.
  *           Writers are holding the line → the fade candidate.
@@ -42,9 +41,14 @@
  *           Writers are running → the ANTI-signal. Stand aside; this is the
  *           setup that turns a fade into a trend loss, and it is logged so the
  *           two can be told apart in review rather than lumped together.
- *   RANGE   whether spot is contained between the two walls, and how wide that
- *           band is. A fade only makes sense inside a band wide enough to pay
- *           for the round trip — this is the regime gate, recorded per poll.
+ *
+ * The wall band (its width, and whether spot sits inside it) is the regime gate
+ * and rides on every /data response rather than the log — a fade only makes
+ * sense inside a band wide enough to pay for the round trip.
+ *
+ * NOTE: the log is built in the /data handler, so it only accumulates WHILE THE
+ * PAGE IS OPEN. It is a convenience for watching live, not the archive — the
+ * archive is chain_oi.jsonl, which the recorder writes regardless.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -67,10 +71,17 @@ const WALL_BUILD_PCT = 2;    // wall OI still adding over 3 moves → defended
 const WALL_SHED_PCT  = -2;   // wall OI shedding over 3 moves → breaking, stand aside
 
 // Rolling observation log, newest first. Bounded — this page can be left open all
-// day and must not grow without limit.
+// day and must not grow without limit. Also dropped on the IST day rollover:
+// entries carry only an HH:MM:SS label, so yesterday's rows sitting at the top of
+// today's log would read as today's and quietly corrupt a review.
 const MAX_CANDIDATES = 200;
 const _candidates = [];
 let _lastFingerprint = "";
+let _candidateDay = null;
+
+function _istDayNum(ts) {
+  return Math.floor((Math.floor((ts || Date.now()) / 1000) + 19800) / 86400);
+}
 
 function _istHhMm(ts) {
   const istSec = Math.floor((ts || Date.now()) / 1000) + 19800;
@@ -111,6 +122,10 @@ function _rangeState(snap) {
 function _collectCandidates(snap) {
   if (!snap || !(snap.spot > 0) || !snap.rows.length) return;
   const now = Date.now();
+
+  const day = _istDayNum(now);
+  if (_candidateDay !== day) { _candidates.length = 0; _lastFingerprint = ""; _candidateDay = day; }
+
   const rowAt = (strike) => snap.rows.find((r) => r.strike === strike) || null;
   const found = [];
   const range = _rangeState(snap);
@@ -132,8 +147,11 @@ function _collectCandidates(snap) {
         note: `${at}, wall ΔOI +${d.toFixed(1)}% — writers defending${band}${edge}` +
               (range.inBand === false ? " ⚠ spot outside wall band" : "") });
     } else if (d <= WALL_SHED_PCT) {
+      // `side` here is the BREAK DIRECTION, not something to buy — a shedding wall
+      // is a reason to stand aside, and the note says so first so the coloured chip
+      // can't be read as a signal on its own.
       found.push({ kind: "BREAK", side: fadeSide === "CE" ? "PE" : "CE", strike: wall.strike,
-        note: `${at}, wall ΔOI ${d.toFixed(1)}% — writers running, do NOT fade${band}${edge}` });
+        note: `do NOT fade — ${at}, wall ΔOI ${d.toFixed(1)}%, writers running (break direction, not an entry)${band}${edge}` });
     }
   };
 

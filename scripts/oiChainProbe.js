@@ -131,7 +131,7 @@ async function probeOptionChainRest() {
         res.on("error", reject);
         res.on("end", () => {
           try { resolve(JSON.parse(body.trim().replace(/^﻿/, ""))); }
-          catch (e) { reject(new Error(`unparseable body: ${body.slice(0, 160)}`)); }
+          catch (_) { reject(new Error(`unparseable body: ${body.slice(0, 160)}`)); }
         });
       });
       req.on("error", reject);
