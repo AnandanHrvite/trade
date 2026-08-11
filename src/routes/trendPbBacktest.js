@@ -27,6 +27,7 @@ const router  = express.Router();
 const { EMA, ATR } = require("technicalindicators");
 const trendPbStrategy = require("../strategies/trend_pb");
 const { fetchCandlesCachedBT } = require("../services/backtestEngine");
+const vixFilter = require("../services/vixFilter");
 const { buildSidebar, sidebarCSS, faviconLink } = require("../utils/sharedNav");
 const sharedSocketState = require("../utils/sharedSocketState");
 const { getCharges } = require("../utils/charges");
@@ -72,9 +73,13 @@ function _atrAtLast(window, period) {
  * Run the backtest. `baseline=true` swaps the entry rule for the naive
  * bias-at-window-open engine but keeps the identical exit machinery + costs.
  */
-function runTrendPbBacktest(allCandles, { baseline = false } = {}) {
+function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [] } = {}) {
   if (!allCandles || !allCandles.length) return [];
   allCandles = allCandles.slice().sort((a, b) => a.time - b.time);
+
+  // Daily VIX series → same gate paper runs before every entry (no-op unless
+  // TREND_PB_VIX_ENABLED=true, which checkBacktestVix decides for itself).
+  const lookupVix = vixFilter.buildVixLookup(vixCandles || []);
 
   const DELTA        = parseFloat(process.env.BACKTEST_DELTA || "0.55");
   const THETA_DAY    = parseFloat(process.env.BACKTEST_THETA_DAY || "8");
@@ -96,6 +101,11 @@ function runTrendPbBacktest(allCandles, { baseline = false } = {}) {
   const PREM_STOP_PCT= parseFloat(process.env.TREND_PB_PREMIUM_STOP_PCT || "35");
   const MAX_TRADE_LOSS = parseFloat(process.env.TREND_PB_MAX_TRADE_LOSS || "0");
   const MAX_TRADES   = parseInt(process.env.TREND_PB_MAX_DAILY_TRADES || "3", 10);
+  // Session circuit breakers — paper checks both before every entry (onCandleClose);
+  // the backtest used to model neither, so a bad day kept trading past the point
+  // paper would have stood down for the rest of the session.
+  const MAX_DAILY_LOSS   = parseFloat(process.env.TREND_PB_MAX_DAILY_LOSS || "5000");
+  const LOSS_STREAK_SKIP = parseInt(process.env.TREND_PB_LOSS_STREAK_SKIP || "3", 10);
   const FORCED_EXIT_MIN = _parseMin("TREND_PB_FORCED_EXIT", "15:15");
   const ENTRY_START_MIN = _parseMin("TREND_PB_ENTRY_START", "09:45");
   const ENTRY_END_MIN   = _parseMin("TREND_PB_ENTRY_END",   "14:30");
@@ -111,6 +121,10 @@ function runTrendPbBacktest(allCandles, { baseline = false } = {}) {
 
   const trades = [];
   let globalBase = 0;
+  // Per-day session state feeding the circuit breakers above. Reset each day, the
+  // same way paper's in-memory session state starts fresh every morning.
+  let _dayPnl = 0;
+  let _consecLosses = 0;
 
   // δ+θ premium sim + spread/slippage haircut both ways. Returns pnl (₹) + exit premium.
   function priceExit(pos, exitSpot, exitTime) {
@@ -126,6 +140,8 @@ function runTrendPbBacktest(allCandles, { baseline = false } = {}) {
 
   function closeAndPush(pos, exitSpot, exitTime, reason) {
     const p = priceExit(pos, exitSpot, exitTime);
+    _dayPnl += p.pnl;
+    _consecLosses = p.pnl < 0 ? _consecLosses + 1 : 0;
     trades.push({
       side: pos.side,
       entry: entryTsStr(pos.entryTime), exit: entryTsStr(exitTime),
@@ -143,6 +159,8 @@ function runTrendPbBacktest(allCandles, { baseline = false } = {}) {
     let position = null;
     let tradesTaken = 0;
     let baselineDone = false;
+    _dayPnl = 0;
+    _consecLosses = 0;
 
     for (let i = 0; i < dayCandles.length; i++) {
       const c = dayCandles[i];
@@ -212,7 +230,12 @@ function runTrendPbBacktest(allCandles, { baseline = false } = {}) {
       }
 
       // ── Flat → look for an entry ──
+      // Session breakers first, in paper's order (max trades → daily loss → loss
+      // streak). Paper's portfolio-wide cap is cross-strategy live state and has no
+      // meaning in a single-strategy backtest, so it is the one gate not mirrored.
       if (tradesTaken >= MAX_TRADES) continue;
+      if (_dayPnl <= -MAX_DAILY_LOSS) continue;
+      if (LOSS_STREAK_SKIP > 0 && _consecLosses >= LOSS_STREAK_SKIP) continue;
       if (istMin < ENTRY_START_MIN || istMin >= ENTRY_END_MIN) continue;
       const seen = allCandles.slice(Math.max(0, gIdx - SIG_WINDOW), gIdx + 1);
       const sig = trendPbStrategy.getSignal(seen, { silent: true, alreadyTraded: false });
@@ -228,6 +251,13 @@ function runTrendPbBacktest(allCandles, { baseline = false } = {}) {
         baselineDone = true;
       }
       if (!side) continue;
+
+      // VIX gate — paper runs it only once a signal exists, so the block count
+      // means the same thing on both sides. No-op unless TREND_PB_VIX_ENABLED=true.
+      {
+        const _vc = vixFilter.checkBacktestVix(lookupVix(c.time), sig.signalStrength || "STRONG", { mode: "trend_pb" });
+        if (!_vc.allowed) continue;
+      }
 
       let riskPts = Math.abs(c.close - (typeof structStop === "number" ? structStop : (side === "CE" ? c.close - CLAMP_MIN : c.close + CLAMP_MIN)));
       riskPts = Math.min(Math.max(riskPts, CLAMP_MIN), CLAMP_MAX);
@@ -326,15 +356,25 @@ router.get("/", async (req, res) => {
           backtestJobs.failJob(id, msg);
           return;
         }
+        // Daily VIX for the entry gate. Only fetched when the gate is on; a failed
+        // fetch leaves it empty and checkBacktestVix applies VIX_FAIL_MODE, exactly
+        // as paper does when the live VIX read fails.
+        const vixCandles = vixFilter.getVixEnabled("trend_pb")
+          ? await fetchCandlesCachedBT(vixFilter.VIX_SYMBOL, "D", from, to, false).catch((e) => {
+              console.warn(`[trend-pb-backtest] VIX candle fetch failed: ${e.message}`);
+              return [];
+            })
+          : [];
+
         backtestJobs.updateProgress(id, { phase: `Running Trend Pullback backtest (${candles.length.toLocaleString()} candles)…`, pct: 5 });
-        const trades = runTrendPbBacktest(candles, { baseline: false });
+        const trades = runTrendPbBacktest(candles, { baseline: false, vixCandles });
         const stats = computeBacktestStats(trades);
         stats.optionSim = true;
         stats.delta = parseFloat(process.env.BACKTEST_DELTA || "0.55");
         stats.thetaPerDay = parseFloat(process.env.BACKTEST_THETA_DAY || "8");
 
         backtestJobs.updateProgress(id, { phase: "Running dumb baseline + walk-forward…", pct: 90 });
-        const baselineTrades = runTrendPbBacktest(candles, { baseline: true });
+        const baselineTrades = runTrendPbBacktest(candles, { baseline: true, vixCandles });
         const baselineStats = computeBacktestStats(baselineTrades);
         const wf = walkForward(trades, {});
 

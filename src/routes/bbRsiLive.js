@@ -36,6 +36,7 @@ const { reverseSlice: _reverseSlice, mapTradesReversed: _mapTradesReversed, fast
 const vixFilter = require("../services/vixFilter");
 const liveDryRun = require("../utils/liveDryRun");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
+const oiFilter = require("../services/oiFilter");   // paper-canonical: live must apply the same OI gate
 const fyers = require("../config/fyers");
 const tradeGuards = require("../utils/tradeGuards");
 const { notifyEntry, notifyExit, notifyStarted, notifySignal, notifyDayReport, sendTelegram, canSend, isConfigured } = require("../utils/notify");
@@ -410,7 +411,7 @@ async function squareOff(exitPrice, reason) {
 
   const { symbol, qty, side, entryPrice, entryTime, spotAtEntry,
           optionEntryLtp, optionCurrentLtp,
-          signalStrength, vixAtEntry, entryHourIST, entryMinuteIST } = state.position;
+          signalStrength, vixAtEntry, oiAtEntry, oiRegime, entryHourIST, entryMinuteIST } = state.position;
   const isFutures = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
   const exitOrderSide = (isFutures && side === "PE") ? 1 : -1;
 
@@ -483,6 +484,8 @@ async function squareOff(exitPrice, reason) {
     // Data-collection fields (captured at entry)
     signalStrength: signalStrength   || null,
     vixAtEntry:     vixAtEntry       != null ? vixAtEntry       : null,
+    oiAtEntry:      oiAtEntry        != null ? oiAtEntry        : null,
+    oiRegime:       oiRegime         || null,
     entryHourIST:   entryHourIST     != null ? entryHourIST     : null,
     entryMinuteIST: entryMinuteIST   != null ? entryMinuteIST   : null,
     // Entry-context + MFE for post-window analysis.
@@ -814,6 +817,15 @@ async function onCandleClose(bar) {
   // confirmation window (the candle that just closed) has passed without a cross.
   if (state._armedSignal && state._armedSignal.armedBarTime !== bar.time) state._armedSignal = null;
 
+  // Sample futures OI each candle close (no-op unless an OI filter is enabled)
+  // so the buildup series stays filled even on no-signal / in-position candles.
+  // Mirrors bbRsiPaper — without it the gate below would read an empty series.
+  // Deliberately NOT awaited: this route enters intra-bar from onTick, so adding an
+  // await here would let bar N's candle-close rules resume against a position
+  // opened in bar N+1. The gate's own checkLiveOi() re-samples before deciding, so
+  // the decision is identical either way.
+  oiFilter.recordOiSample(bar && bar.close).catch(() => { /* sampling is best-effort */ });
+
   if (state.position) {
     state.position.candlesHeld = (state.position.candlesHeld || 0) + 1;
 
@@ -918,6 +930,23 @@ async function onCandleClose(bar) {
     }
   }
 
+  // OI + price buildup gate — block entries fighting a confirmed buildup; tag the
+  // entry reason with the regime so every trade records its OI context. Paper is
+  // canonical and has always run this gate; live was missing it, so live could take
+  // an entry paper had already skipped.
+  if (oiFilter.getOiEnabled("bb_rsi")) {
+    const _oi = await oiFilter.checkLiveOi(_signalSide, bar.close, { mode: "bb_rsi" });
+    if (!_oi.allowed) {
+      log(`⏭️ [BB_RSI-LIVE] SKIP: ${_oi.reason}`);
+      skipLogger.appendSkipLog("bb_rsi", {
+        gate: "oi", reason: _oi.reason || null, spot: bar.close, side: _signalSide,
+        oi: _oi.oi ?? null, deltaOi: _oi.deltaOi ?? null, regime: _oi.regime ?? null,
+      });
+      return;
+    }
+    if (_oi.regime) result.reason = `${result.reason} | ${_oi.reason}`;
+  }
+
   const side = _signalSide;
   const spot = bar.close;
 
@@ -1005,6 +1034,8 @@ async function resolveAndEnter(side, spot, result) {
     const _entryHourIST   = Math.floor(_entryIstMin / 60);
     const _entryMinuteIST = _entryIstMin % 60;
     const _vixAtEntry     = getCachedVix();
+    const _oiAtEntry      = oiFilter.getCachedOi();
+    const _oiRegime       = oiFilter.getCachedRegime();
     const _signalStrength = deriveBbRsiStrength(result);
 
     // Initial rupee risk (used by break-even snap + trail price-stop math).
@@ -1050,6 +1081,8 @@ async function resolveAndEnter(side, spot, result) {
       // Data-collection fields — surfaced on the trade record at exit
       signalStrength:   _signalStrength,
       vixAtEntry:       _vixAtEntry,
+      oiAtEntry:        _oiAtEntry,
+      oiRegime:         _oiRegime,
       entryHourIST:     _entryHourIST,
       entryMinuteIST:   _entryMinuteIST,
       // Entry-context snapshot for post-window analysis (BB distance, RSI, 15-min trend).

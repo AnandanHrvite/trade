@@ -178,11 +178,13 @@ function runTrendDayScalpBacktest(intraday) {
         if (istMin >= FORCED_EXIT_MIN) {
           close(c.open, c.time, `EOD square-off (${process.env.TDS_FORCED_EXIT || "15:10"} IST)`, false);
         } else {
-          const slOk = typeof pos.slSpot === "number" && Number.isFinite(pos.slSpot);
-          const tgOk = typeof pos.targetSpot === "number" && Number.isFinite(pos.targetSpot);
           const isCE = pos.side === "CE";
-          const stopTouched = slOk && (isCE ? c.low <= pos.slSpot : c.high >= pos.slSpot);
-          const tgtTouched  = tgOk && (isCE ? c.high >= pos.targetSpot : c.low <= pos.targetSpot);
+          // Same comparison paper runs per tick (tdsStrategy.stopHit / targetHit),
+          // fed the bar's adverse / favourable extreme instead of a tick price —
+          // bar-vs-tick sampling is the only difference, the rule is the engine's.
+          // The helpers also own the "level must be a real number" guard.
+          const stopTouched = tdsStrategy.stopHit(pos.side, isCE ? c.low : c.high, pos.slSpot);
+          const tgtTouched  = tdsStrategy.targetHit(pos.side, isCE ? c.high : c.low, pos.targetSpot);
 
           if (stopTouched) {
             // Worse-of open/level fill; a gap through the stop fills at the open.

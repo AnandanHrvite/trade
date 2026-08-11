@@ -101,6 +101,32 @@ function runGapsBacktest(intraday, daily) {
   const skipped = [];
   let days = 0;
 
+  // ── Risk gates, mirrored from gapsPaper's entry block ────────────────────────
+  // Of paper's four gates only the WEEKLY cap can bind here. `tradesTaken`,
+  // `sessionPnl` and `consecutiveLosses` all live in paper's session state, which
+  // _freshState() rebuilds on every /start — i.e. they reset each morning — and
+  // both engines take at most one trade per day (paper's GAPS_MAX_DAILY_TRADES
+  // defaults to 1; the backtest structurally has a single entry bar per day), so a
+  // same-day trade count / loss / streak can never reach its threshold. The weekly
+  // cap is the one gate that reads ACROSS days, so it is the one modelled.
+  // Paper's portfolio-wide cap is cross-strategy live state with no backtest meaning.
+  const MAX_WEEKLY_LOSS = parseFloat(process.env.GAPS_MAX_WEEKLY_LOSS || "0");
+  const _pnlByDate = new Map();   // 'YYYY-MM-DD' → realised ₹ booked that day
+
+  /** ISO-week-to-date realised P&L (Mon → this day), same window as paper's weeklyPnl(). */
+  function _weekToDatePnl(dayTs) {
+    const d = new Date((dayTs + 19800) * 1000);
+    const dow = d.getUTCDay();                       // 0=Sun … 6=Sat
+    const backToMon = dow === 0 ? 6 : dow - 1;
+    let total = 0;
+    for (let i = backToMon; i >= 0; i--) {
+      const prev = new Date(d.getTime() - i * 86400000);
+      const ds = `${prev.getUTCFullYear()}-${String(prev.getUTCMonth() + 1).padStart(2, "0")}-${String(prev.getUTCDate()).padStart(2, "0")}`;
+      total += _pnlByDate.get(ds) || 0;
+    }
+    return parseFloat(total.toFixed(2));
+  }
+
   for (const [, dayCandles] of byDay) {
     if (!dayCandles.length) continue;
     days++;
@@ -112,6 +138,14 @@ function runGapsBacktest(intraday, daily) {
       return m >= ENTRY_START_MIN && m < ENTRY_END_MIN;
     });
     if (!entryBar) { skipped.push({ date: istDateOf(dayTs), reason: "no candle inside the entry window" }); continue; }
+
+    if (MAX_WEEKLY_LOSS > 0) {
+      const _wk = _weekToDatePnl(dayTs);
+      if (_wk <= -MAX_WEEKLY_LOSS) {
+        skipped.push({ date: istDateOf(dayTs), reason: `Weekly loss cap hit (week P&L ₹${_wk} ≤ -₹${MAX_WEEKLY_LOSS})` });
+        continue;
+      }
+    }
 
     const snap = gapsStrategy.getPrevDaySnapshot(sortedDaily, dayTs, cfg);
     if (!snap.ok) { skipped.push({ date: istDateOf(dayTs), reason: snap.reason }); continue; }
@@ -156,6 +190,8 @@ function runGapsBacktest(intraday, daily) {
     }
     function close(exitSpot, exitTime, reason) {
       const p = priceExit(exitSpot, exitTime);
+      const _dk = gapsStrategy._istDateStr(dayTs);
+      _pnlByDate.set(_dk, parseFloat(((_pnlByDate.get(_dk) || 0) + p.pnl).toFixed(2)));
       trades.push({
         side: pos.side,
         entry: entryTsStr(pos.entryTime), exit: entryTsStr(exitTime),

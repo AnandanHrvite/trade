@@ -303,6 +303,17 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
         }
       }
 
+      // 3b. BB re-entry on CLOSE — paper runs a SECOND, UNARMED re-entry check in
+      //     onCandleClose (bbRsiStrategy.bbReentryExit), independent of the arming
+      //     guard above: a breakout that never extends ARM_PTS past the band but
+      //     CLOSES back inside it is still a failed breakout and paper exits it at
+      //     the bar close. Without this the backtest kept holding trades paper had
+      //     already closed. Runs before the trend flip, exactly as paper orders it.
+      if (!exitReason && window.length >= 15 && bbRsiStrategy.bbReentryExit(window, position.side)) {
+        exitPrice  = candle.close;
+        exitReason = "BB re-entry";
+      }
+
       // 4. Trend flip — exit on SuperTrend reversal signal
       if (!exitReason && bbRsiStrategy.isTrendFlip(window, position.side)) {
         exitReason = "SuperTrend flip";

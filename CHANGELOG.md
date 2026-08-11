@@ -6,6 +6,20 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — Backtest and Live now decide the same way Paper does
+
+Paper is the canonical engine, but an audit of all nine strategies across Paper / Live / Backtest / Replay found the Backtest and Live paths quietly missing rules Paper had been applying. Replay was never affected — it loads the Paper route itself and feeds it recorded ticks, as do the six harness-driven Live modes, so those match Paper by construction. The gaps were all in the four native Live routes and the standalone Backtests:
+
+- **BB_RSI backtest** skipped the candle-close BB re-entry exit. Paper and Live run two: the armed intra-bar band touch *and* an unarmed check at the bar close. A breakout that never extended `BB_RSI_BB_REENTRY_ARM_PTS` past the band but closed back inside it was exited on Paper and held in the backtest.
+- **ORB backtest** modelled neither `ORB_MAX_DAILY_LOSS` nor the risk throttle (consecutive losing days / weekly loss), which is ON by default — so it traded through streaks and whole weeks Paper had already shut down. Both are now applied, the throttle via the same `orbRiskState.evaluate` the live path calls. The `ORB_VIX_ENABLED` gate is applied too.
+- **Trend_PB backtest** modelled only the daily trade cap. It now also applies `TREND_PB_MAX_DAILY_LOSS`, `TREND_PB_LOSS_STREAK_SKIP` and the VIX gate.
+- **Gaps backtest** now applies the `GAPS_MAX_WEEKLY_LOSS` cap over the same ISO week Paper reads from the JSONL logs.
+- **EMA_RSI_ST backtest** judged its negative-candle stop on raw spot points while Paper judges it on option premium. A trade flat on spot but bleeding theta was red for Paper and not for the backtest, so the backtest held losers Paper had cut. It now uses the same delta+theta premium model, and mirrors the legacy `EMA_RSI_ST_SL_MODE=candle` time-stop.
+- **PA, BB_RSI and EMA_RSI_ST live** never applied the OI + price-buildup entry gate their Paper routes have always run, so Live could open a trade Paper had skipped. All three now run it (EMA_RSI_ST on both its candle-close and intra-candle entry paths) and record `oiAtEntry` / `oiRegime` on the trade. The per-candle OI sample is fire-and-forget, so no new await enters the candle-close path.
+- **Trend_Day_Scalp and Gap_Fix_3M backtests** now call the engine's shared `stopHit` / `targetHit` instead of re-implementing the same comparison inline.
+
+Only Backtest and Live changed — no Paper decision, fill or exit logic was touched. The portfolio-wide cap and the bid-ask spread guard remain Paper/Live-only: both read cross-strategy live state that has no meaning in a backtest.
+
 ### Fixed — Unticking a strategy in the Strategy dropdown did nothing
 
 The Strategy picker on the Consolidation Report and Edge Analytics is a checkbox list whose contract was "no boxes ticked means no filter". That made the two ends of the list indistinguishable: unticking the master "All strategies" box unticked every strategy, the widget read that as "nothing selected", and a guard promptly re-ticked all of them — so the click visibly bounced back. Unticking the last remaining strategy did the same. The master box also stayed ticked next to a partial selection, which said "all strategies" while two were showing.

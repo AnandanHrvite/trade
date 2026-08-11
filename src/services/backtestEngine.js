@@ -600,12 +600,36 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         }
       }
 
+      // Paper measures "red" in OPTION PREMIUM points (curOpt − entryOpt), not spot
+      // points, for both rules below. There is no option chain here, so use the same
+      // δ+θ premium model the P&L sim uses: a trade that is flat on spot but bleeding
+      // theta reads as red here exactly as paper sees it. Without this the backtest
+      // held losers paper had already cut.
+      // THETA_PER_DAY / CANDLES_PER_DAY is premium POINTS per candle here — the same
+      // units the booked P&L below uses (netPremiumPts = premiumMovePts − thetaDecay,
+      // multiplied by LOT_SIZE only at the end), so no lot-size conversion.
+      const _spotPnlPts = (candle.close - position.entryPrice) * (position.side === "CE" ? 1 : -1);
+      const _premPnlPts = OPTION_SIM
+        ? (_spotPnlPts * DELTA) - ((THETA_PER_DAY / CANDLES_PER_DAY) * (position.candlesHeld ?? 1))
+        : _spotPnlPts;
+
+      // Rule 1c-2: legacy time-stop — only when EMA_RSI_ST_SL_MODE=candle (default
+      // "ema" leaves the EMA21 trail owning the SL, so this is inert at defaults).
+      // Paper runs it immediately before the negative-candle stop; mirrored here so
+      // flipping SL_MODE does not silently change what the backtest reports.
+      if (!exitReason && (process.env.EMA_RSI_ST_SL_MODE || "ema").toLowerCase() === "candle") {
+        const _tsReason = tradeGuards.checkTimeStop(position.candlesHeld, _premPnlPts);
+        if (_tsReason) {
+          exitReason = _tsReason;
+          exitPrice  = candle.close;
+        }
+      }
+
       // Rule 1d: Negative-candle stop — if the trade is still in the RED at this
       // candle close after N candles held, square off (asymmetric loss-cut; winners
-      // keep riding the EMA trail above). "Negative" ≈ spot close against entry.
+      // keep riding the EMA trail above).
       if (!exitReason && _EMA_RSI_ST_NEG_CANDLE_LIMIT > 0 && (position.candlesHeld || 0) >= _EMA_RSI_ST_NEG_CANDLE_LIMIT) {
-        const _closePnlPts = (candle.close - position.entryPrice) * (position.side === "CE" ? 1 : -1);
-        if (_closePnlPts < 0) {
+        if (_premPnlPts < 0) {
           exitReason = `Negative ${_EMA_RSI_ST_NEG_CANDLE_LIMIT}-candle stop`;
           exitPrice  = candle.close;
         }

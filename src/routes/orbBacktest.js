@@ -19,7 +19,9 @@ const router  = express.Router();
 const orbStrategy = require("../strategies/orb_breakout");
 const orbExits    = require("../strategies/orbExits");
 const orbStopRisk = require("../utils/orbStopRisk");
+const orbRiskState = require("../utils/orbRiskState");
 const { fetchCandlesCachedBT } = require("../services/backtestEngine");
+const vixFilter = require("../services/vixFilter");
 const { faviconLink } = require("../utils/sharedNav");
 const { getCharges } = require("../utils/charges");
 const { renderBacktestResults, computeBacktestStats } = require("../utils/backtestUI");
@@ -91,11 +93,15 @@ function istHHMMSS(unixSec) {
 }
 function entryTsStr(unixSec) { return `${istDateOf(unixSec)}, ${istHHMMSS(unixSec)}`; }
 
-function runOrbBacktest(allCandles, expirySet) {
+function runOrbBacktest(allCandles, expirySet, vixCandles = []) {
   if (!allCandles || !allCandles.length) return [];
   // Ascending time order is required so the flat array aligns with the per-day
   // grouping below (globalBase bookkeeping) for the multi-day signal window.
   allCandles = allCandles.slice().sort((a, b) => a.time - b.time);
+
+  // Daily VIX series for the entry gate paper runs once a signal exists. No-op
+  // unless ORB_VIX_ENABLED=true — checkBacktestVix decides that for itself.
+  const lookupVix = vixFilter.buildVixLookup(vixCandles || []);
 
   const EXPIRY_ONLY = (process.env.ORB_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true";
   const DELTA      = parseFloat(process.env.BACKTEST_DELTA || "0.55");
@@ -144,6 +150,36 @@ function runOrbBacktest(allCandles, expirySet) {
 
   const trades = [];
 
+  // ── Session + cross-day risk state, mirroring orbPaper's entry gates ──────────
+  // Paper runs, in order: max trades → daily-loss kill → portfolio cap → risk
+  // throttle (consecutive losing DAYS / weekly loss, ON by default via
+  // ORB_RISK_THROTTLE_ENABLED) → expiry filter → signal → VIX. The backtest only
+  // modelled max trades and the expiry filter, so it kept trading through streaks
+  // and weeks that paper had already shut down. The portfolio cap is the one gate
+  // still unmodelled — it is cross-strategy live state with no backtest meaning.
+  const MAX_DAILY_LOSS = parseFloat(process.env.ORB_MAX_DAILY_LOSS || "3000");
+  const _pnlByIso = new Map();     // 'YYYY-MM-DD' → realised ₹ booked that day
+  let _dayIso = null;              // IST date of the day currently being walked
+  let _dayPnl = 0;                 // that day's running realised ₹ (paper: sessionPnl)
+
+  /**
+   * Paper's risk breaker, replayed off the backtest's own day ledger instead of
+   * the ~/trading-data state file. Same pure `evaluate` the live path calls, so
+   * the streak / weekly-stop rules cannot drift between the two.
+   */
+  function _riskThrottled() {
+    if ((process.env.ORB_RISK_THROTTLE_ENABLED || "true").toLowerCase() !== "true") return false;
+    return orbRiskState.evaluate(
+      Array.from(_pnlByIso, ([date, pnl]) => ({ date, pnl })),
+      _dayIso,
+      _dayPnl,
+      {
+        streakSkip: parseInt(process.env.ORB_LOSS_STREAK_SKIP || "4", 10),
+        weeklyLoss: parseFloat(process.env.ORB_MAX_WEEKLY_LOSS || "9000"),
+      },
+    ).block;
+  }
+
   // Global index of the first candle of the current day within `allCandles`.
   // Advanced by dayCandles.length on EVERY outer iteration (including skipped
   // days) so allCandles[globalBase + i] === dayCandles[i] stays true.
@@ -155,6 +191,9 @@ function runOrbBacktest(allCandles, expirySet) {
     let position = null;
     let tradesTaken = 0;
     const maxTrades = parseInt(process.env.ORB_MAX_DAILY_TRADES || "1", 10);
+    // New session — paper's state resets every morning on /start.
+    _dayIso = _dateStr;
+    _dayPnl = 0;
 
     for (let i = 0; i < dayCandles.length; i++) {
       const c = dayCandles[i];
@@ -248,7 +287,8 @@ function runOrbBacktest(allCandles, expirySet) {
       }
 
       // Flat → eval ORB signal
-      if (!position && tradesTaken < maxTrades && istMin < ENTRY_END_MIN) {
+      if (!position && tradesTaken < maxTrades && istMin < ENTRY_END_MIN
+          && _dayPnl > -MAX_DAILY_LOSS && !_riskThrottled()) {
         // Open the position at candle `oc` from signal `s`. Initial hard SL comes
         // from the STRATEGY (s.slSpot = wider of the candle extreme and
         // ORB_SL_ATR_MULT × ATR5) so the backtest matches paper/live exactly.
@@ -300,7 +340,10 @@ function runOrbBacktest(allCandles, expirySet) {
         // The engine owns confirmation AND the retest/resume fallback internally,
         // so the backtest just polls it each candle and buys whatever it returns.
         const sig = orbStrategy.getSignal(seen, { silent: true, alreadyTraded: false });
-        if ((sig.signal === "BUY_CE" || sig.signal === "BUY_PE") && _premOk) _open(sig, c);
+        // VIX gate — paper runs it only AFTER a signal exists, so keep that order.
+        const _vixOk = sig.signal === "NONE" || !sig.side
+          || vixFilter.checkBacktestVix(lookupVix(c.time), sig.signalStrength, { mode: "orb" }).allowed;
+        if ((sig.signal === "BUY_CE" || sig.signal === "BUY_PE") && _premOk && _vixOk) _open(sig, c);
       }
     }
     if (position) {
@@ -326,6 +369,9 @@ function runOrbBacktest(allCandles, expirySet) {
     pos.exitReason = reason;
     pos.pnl = pnl;
     pos.heldCandles = Math.round(candlesHeld);
+    // Feed the session + cross-day risk gates (paper: sessionPnl + orbRiskState).
+    _dayPnl = parseFloat((_dayPnl + pnl).toFixed(2));
+    if (_dayIso) _pnlByIso.set(_dayIso, parseFloat(((_pnlByIso.get(_dayIso) || 0) + pnl).toFixed(2)));
   }
 
   function buildTradeRecord(p) {
@@ -452,8 +498,18 @@ router.get("/", async (req, res) => {
           console.log(`📅 ORB expiry-only: ${expirySet.size}/${uniqueDates.size} trading days qualified`);
         }
 
+        // Daily VIX for the entry gate. Only fetched when the gate is on; a failed
+        // fetch leaves it empty and checkBacktestVix applies VIX_FAIL_MODE, exactly
+        // as paper behaves when the live VIX read fails.
+        const vixCandles = vixFilter.getVixEnabled("orb")
+          ? await fetchCandlesCachedBT(vixFilter.VIX_SYMBOL, "D", from, to, false).catch((e) => {
+              console.warn(`[orb-backtest] VIX candle fetch failed: ${e.message}`);
+              return [];
+            })
+          : [];
+
         backtestJobs.updateProgress(id, { phase: `Running ORB backtest (${candles.length.toLocaleString()} candles)…`, pct: 5 });
-        const trades = runOrbBacktest(candles, expirySet);
+        const trades = runOrbBacktest(candles, expirySet, vixCandles);
         const stats = computeBacktestStats(trades);
         // P&L is computed in ₹ (premium × LOT_SIZE − charges). Mark the result
         // so /all-backtest renders it as ₹ instead of "pts".

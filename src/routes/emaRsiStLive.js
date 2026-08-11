@@ -34,6 +34,7 @@ const { getSymbol, getLotQty, getProductType, calcATMStrike, getNearestThursdayE
 const { isTradingAllowed } = require("../utils/nseHolidays");
 const vixFilter = require("../services/vixFilter");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
+const oiFilter = require("../services/oiFilter");   // paper-canonical: live must apply the same OI gate
 const { getCharges } = require("../utils/charges");
 const { saveTradePosition, clearTradePosition } = require("../utils/positionPersist");
 const { logNearMiss } = require("../utils/nearMissLog");
@@ -999,7 +1000,7 @@ async function squareOff(exitPrice, reason) {
   const { symbol, qty, side, entryPrice, optionEntryLtp, entryTime,
           stopLoss, optionExpiry, optionStrike, optionType, spotAtEntry,
           optionCurrentLtp: posOptLtp,
-          signalStrength, vixAtEntry, entryHourIST, entryMinuteIST } = tradeState.position;
+          signalStrength, vixAtEntry, oiAtEntry, oiRegime, entryHourIST, entryMinuteIST } = tradeState.position;
   const INSTR = instrumentConfig.INSTRUMENT; // top-level constant
   const isFutures = INSTR === "NIFTY_FUTURES";
 
@@ -1083,6 +1084,8 @@ async function squareOff(exitPrice, reason) {
     // Data-collection fields (captured at entry)
     signalStrength: signalStrength   || null,
     vixAtEntry:     vixAtEntry       != null ? vixAtEntry       : null,
+    oiAtEntry:      oiAtEntry        != null ? oiAtEntry        : null,
+    oiRegime:       oiRegime         || null,
     entryHourIST:   entryHourIST     != null ? entryHourIST     : null,
     entryMinuteIST: entryMinuteIST   != null ? entryMinuteIST   : null,
     // Entry-context diagnostics + excursion + exit VIX for post-window analysis.
@@ -1229,6 +1232,15 @@ async function onCandleClose(candle) {
   // so this array is already well past the floor and this line only stops it
   // growing; it does not trim the pre-loaded depth.
   if (tradeState.candles.length > tradeGuards.INDICATOR_HISTORY_CANDLES) tradeState.candles.shift();
+
+  // Sample futures OI each candle close (no-op unless an OI filter is enabled) so
+  // the buildup series stays filled even on no-signal / in-position candles — the
+  // intra-candle gate below reads that series and cannot fetch. Mirrors
+  // emaRsiStPaper, but deliberately NOT awaited: paper documents the position-
+  // identity race the await introduces (this route enters intra-bar from onTick, so
+  // bar N's candle-close rules would resume against a bar N+1 position). The
+  // candle-close gate's own checkLiveOi() re-samples before deciding.
+  oiFilter.recordOiSample(candle.close).catch(() => { /* sampling is best-effort */ });
 
   const strategy = getActiveStrategy();
   const { signal, reason, stopLoss, signalStrength: _ccStrength, ...indicators } = strategy.getSignal(tradeState.candles);
@@ -1489,6 +1501,24 @@ async function onCandleClose(candle) {
       });
       return;
     }
+    // ── OI + price buildup gate — block entries fighting a confirmed buildup ───
+    // Paper is canonical and has always run this gate at exactly this point; live
+    // was missing it, so live could take an entry paper had already skipped.
+    let _oiTag = ""; // appended to the entry reason so the trade records its OI context
+    if (oiFilter.getOiEnabled("ema_rsi_st")) {
+      const _oiSide = signal === "BUY_CE" ? "CE" : "PE";
+      const _oi = await oiFilter.checkLiveOi(_oiSide, candle.close, { mode: "ema_rsi_st" });
+      if (!_oi.allowed) {
+        log(`📊 [LIVE] OI BLOCK — ${_oi.reason} | Signal: ${signal}`);
+        skipLogger.appendSkipLog("ema_rsi_st", {
+          gate: "oi", reason: _oi.reason || null, spot: candle.close, signal,
+          side: _oiSide, oi: _oi.oi ?? null, deltaOi: _oi.deltaOi ?? null, regime: _oi.regime ?? null,
+          path: "candle-close",
+        });
+        return;
+      }
+      if (_oi.regime) _oiTag = ` | ${_oi.reason}`;
+    }
     const side = signal === "BUY_CE" ? "CE" : "PE";
     const INSTR = instrumentConfig.INSTRUMENT; // top-level constant
 
@@ -1620,6 +1650,8 @@ async function onCandleClose(candle) {
       const _entryHourIST    = Math.floor(_entryIstMin / 60);
       const _entryMinuteIST  = _entryIstMin % 60;
       const _vixAtEntry      = getCachedVix();
+      const _oiAtEntry       = oiFilter.getCachedOi();
+      const _oiRegime        = oiFilter.getCachedRegime();
 
       tradeState.position = {
         side,
@@ -1628,7 +1660,7 @@ async function onCandleClose(candle) {
         entryPrice:        candle.close,
         spotAtEntry:       candle.close,
         entryTime:         istNow(),
-        reason,
+        reason:            reason + _oiTag,
         stopLoss:          stopLoss || null,
         initialStopLoss:   stopLoss || null,
         bestPrice:         null,
@@ -1653,6 +1685,8 @@ async function onCandleClose(candle) {
         // Data-collection fields — surfaced on the trade record at exit
         signalStrength:    "STRONG",
         vixAtEntry:        _vixAtEntry,
+        oiAtEntry:         _oiAtEntry,
+        oiRegime:          _oiRegime,
         entryHourIST:      _entryHourIST,
         entryMinuteIST:    _entryMinuteIST,
         // Entry-context diagnostics — already computed by getSignal(), captured for analysis.
@@ -1859,6 +1893,31 @@ function onSpotTick(tick) {
       } else {
       const side = signal === "BUY_CE" ? "CE" : "PE";
 
+      // ── OI buildup filter (intra): synchronous cached check — no fetch in the tick
+      //    handler; relies on the per-candle background recordOiSample to keep fresh.
+      //    Mirrors emaRsiStPaper's intra-candle gate, which live was missing. ──
+      let _oiTagIntra = "";
+      let _oiIntraBlocked = false;
+      if (oiFilter.getOiEnabled("ema_rsi_st")) {
+        const _oiIntra = oiFilter.checkCachedOi(side, { mode: "ema_rsi_st" });
+        if (!_oiIntra.allowed) {
+          _oiIntraBlocked = true;
+          if (!tradeState._oiBlockLoggedCandle || tradeState._oiBlockLoggedCandle !== _currentBarTime) {
+            tradeState._oiBlockLoggedCandle = _currentBarTime;
+            log(`📊 [LIVE] OI BLOCK (intra) — ${_oiIntra.reason} | Signal: ${signal}`);
+            skipLogger.appendSkipLog("ema_rsi_st", {
+              gate: "oi", reason: _oiIntra.reason || null, spot: ltp, side,
+              oi: _oiIntra.oi ?? null, deltaOi: _oiIntra.deltaOi ?? null, regime: _oiIntra.regime ?? null,
+              signal, path: "intra-candle",
+            });
+          }
+        } else if (_oiIntra.regime) {
+          _oiTagIntra = ` | ${_oiIntra.reason}`;
+        }
+      }
+      if (_oiIntraBlocked) {
+        // blocked — fall through without entering, same as paper
+      } else
       // ── Same-side SL cooldown: block re-entry on a side that recently hit SL ──
       if (tradeState._slPauseUntilBySide && tradeState._slPauseUntilBySide[side] > Date.now()) {
         const _curBarTime = tradeState.currentBar ? tradeState.currentBar.time : 0;
@@ -1996,6 +2055,8 @@ function onSpotTick(tick) {
         const _entryHourISTIntra   = Math.floor(_entryIstMinIntra / 60);
         const _entryMinuteISTIntra = _entryIstMinIntra % 60;
         const _vixAtEntryIntra     = _vixIntraVal != null ? _vixIntraVal : getCachedVix();
+        const _oiAtEntryIntra      = oiFilter.getCachedOi();
+        const _oiRegimeIntra       = oiFilter.getCachedRegime();
 
         tradeState.position = {
           side,
@@ -2004,7 +2065,7 @@ function onSpotTick(tick) {
           entryPrice:        ltp,
           spotAtEntry:       ltp,
           entryTime:         istNow(),
-          reason,
+          reason:            reason + _oiTagIntra,
           stopLoss:          stopLoss || null,
           initialStopLoss:   stopLoss || null,
           bestPrice:         null,
@@ -2027,6 +2088,8 @@ function onSpotTick(tick) {
           // Data-collection fields — surfaced on the trade record at exit
           signalStrength:    "STRONG",
           vixAtEntry:        _vixAtEntryIntra,
+          oiAtEntry:         _oiAtEntryIntra,
+          oiRegime:          _oiRegimeIntra,
           entryHourIST:      _entryHourISTIntra,
           entryMinuteIST:    _entryMinuteISTIntra,
           // Entry-context diagnostics — already computed by getSignal(), captured for analysis.

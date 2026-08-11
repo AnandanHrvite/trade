@@ -295,11 +295,13 @@ function runGapFix3mBacktest(intraday) {
         if (istMin >= FORCED_EXIT_MIN) {
           close(c.open, c.time, `EOD square-off (${process.env.GAP3M_FORCED_EXIT || "15:15"} IST) — gap never filled`, false);
         } else {
-          const slOk = Number.isFinite(pos.slSpot);
-          const tgOk = Number.isFinite(pos.targetSpot);
           const isCE = pos.side === "CE";
-          const stopTouched = slOk && (isCE ? c.low <= pos.slSpot : c.high >= pos.slSpot);
-          const tgtTouched  = tgOk && (isCE ? c.high >= pos.targetSpot : c.low <= pos.targetSpot);
+          // Same comparison paper runs per tick (gapStrategy.stopHit / targetHit),
+          // fed the bar's adverse / favourable extreme instead of a tick price —
+          // bar-vs-tick sampling is the only difference, the rule is the engine's.
+          // The helpers also own the "level must be a real number" guard.
+          const stopTouched = gapStrategy.stopHit(pos.side, isCE ? c.low : c.high, pos.slSpot);
+          const tgtTouched  = gapStrategy.targetHit(pos.side, isCE ? c.high : c.low, pos.targetSpot);
 
           if (stopTouched) {
             // Worse-of open/level fill; a gap through the stop fills at the open.
