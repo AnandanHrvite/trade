@@ -812,6 +812,7 @@ function verifyOrderFill(orderId, label) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 let _hardSLOrderId = null;  // Zerodha order ID of the active SL-M order
+let _hardSLSymbol  = null;  // contract it belongs to (stacking guard — see placeHardSL)
 
 function isHardSLEnabled() {
   return process.env.HARD_SL_ENABLED === "true" && instrumentConfig.INSTRUMENT !== "NIFTY_FUTURES";
@@ -840,6 +841,19 @@ async function placeHardSL() {
 
   log(`🛡️ [HARD SL] Placing SL-M SELL ${qty} × ${pos.symbol} @ trigger ₹${triggerPrice} (opt LTP=₹${optionLtp}, spotSL=₹${pos.stopLoss}, Δ=${delta})`);
 
+  // Never stack two SL-Ms on the SAME lot. A failed cancel keeps the id (see
+  // cancelHardSL), and a second stop on that contract means both can fire — the
+  // lot is sold twice and we are naked short. A lingering id for a DIFFERENT
+  // contract is an orphan from an earlier trade: this position still needs its
+  // own stop, so place it and make the orphan impossible to miss.
+  if (_hardSLOrderId) {
+    if (_hardSLSymbol === pos.symbol) {
+      log(`⚠️ [HARD SL] Not placing a second SL-M — ${_hardSLOrderId} may still be resting on ${pos.symbol}.`);
+      return;
+    }
+    log(`🚨 [HARD SL] SL-M ${_hardSLOrderId} on ${_hardSLSymbol} was never confirmed cancelled and is no longer tracked — cancel it on the Zerodha dashboard.`);
+  }
+
   const MAX_RETRIES = 3;
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
@@ -852,6 +866,7 @@ async function placeHardSL() {
       }
       if (result.success) {
         _hardSLOrderId = result.orderId;
+        _hardSLSymbol  = pos.symbol;
         if (!result.dryRun) log(`✅ [HARD SL] SL-M placed — OrderID: ${result.orderId} | trigger=₹${triggerPrice}`);
         return;
       } else {
@@ -862,7 +877,7 @@ async function placeHardSL() {
     }
     if (attempt < MAX_RETRIES) await new Promise(r => setTimeout(r, 1000));
   }
-  _hardSLOrderId = null;
+  _hardSLOrderId = null; _hardSLSymbol = null;
   log(`🚨 [HARD SL] All ${MAX_RETRIES} attempts failed — position has NO exchange-level SL protection!`);
   sendTelegram(`🚨 HARD SL FAILED after ${MAX_RETRIES} retries — position UNPROTECTED!`).catch(() => {});
 }
@@ -904,7 +919,9 @@ async function updateHardSL(newSpotSL) {
 async function cancelHardSL() {
   if (!_hardSLOrderId) return;
   const orderId = _hardSLOrderId;
-  _hardSLOrderId = null;
+  // Cleared only once the broker CONFIRMS. Clearing up front would let a re-arm
+  // place a second SL-M while the first is still live on the same lot.
+  const _clear = () => { _hardSLOrderId = null; _hardSLSymbol = null; };
   try {
     let result;
     if (String(orderId).startsWith("DRYRUN-")) {
@@ -913,13 +930,14 @@ async function cancelHardSL() {
     } else {
       result = await zerodha.cancelOrder(orderId);
     }
-    if (result.success && !result.dryRun) {
-      log(`🗑️ [HARD SL] Cancelled SL-M order ${orderId}`);
-    } else if (!result.success) {
-      log(`⚠️ [HARD SL] Cancel failed for ${orderId}: ${JSON.stringify(result.raw)}`);
+    if (result.success) {
+      _clear();
+      if (!result.dryRun) log(`🗑️ [HARD SL] Cancelled SL-M order ${orderId}`);
+    } else {
+      log(`⚠️ [HARD SL] Cancel FAILED — keeping the id so a retry can cancel it. VERIFY SL-M ${orderId} is not still resting: ${JSON.stringify(result.raw)}`);
     }
   } catch (err) {
-    log(`❌ [HARD SL] Cancel exception: ${err.message}`);
+    log(`⚠️ [HARD SL] Cancel EXCEPTION — keeping the id so a retry can cancel it. VERIFY SL-M ${orderId} is not still resting: ${err.message}`);
   }
 }
 
@@ -1208,7 +1226,18 @@ async function squareOff(exitPrice, reason) {
   tradeState.optionSymbol = null;
   tradeState.position     = null;
   clearTradePosition();  // remove persisted state — position is closed
-  _hardSLOrderId = null; // clear Hard SL tracking (already cancelled before exit)
+  // "already cancelled before exit" only holds if the broker CONFIRMED it. When
+  // it did not, the id survives — and that SL-M could still be resting on a
+  // position we have now closed, selling a lot we do not hold. Retry, then shout.
+  if (_hardSLOrderId) {
+    await cancelHardSL();
+    if (_hardSLOrderId) {
+      const _orphanSL = _hardSLOrderId;
+      _hardSLOrderId = null; _hardSLSymbol = null;
+      log(`🚨 [HARD SL] SL-M ${_orphanSL} could NOT be cancelled and the position is now closed — cancel it on the Zerodha dashboard NOW or it will short you.`);
+      sendTelegram(`🚨 EMA_RSI_ST — SL-M ${_orphanSL} may still be resting after the position closed. Cancel it on Zerodha NOW.`).catch(() => {});
+    }
+  }
   _squareOffInFlight      = false; // release only AFTER position is cleared
 
   // Opposite-side (flip) cooldown — block opposite-side entry for N candles.

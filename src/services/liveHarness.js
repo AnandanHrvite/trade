@@ -178,7 +178,9 @@ async function _placeOrder({ broker, symbol, qty, sideAction, isFutures, tag }) 
 // A percent-of-premium SL-M left resting at the exchange, so a hard crash while
 // in a live position still has SOME protection. This is a DISASTER backstop, NOT
 // the precise spot stop (paper's stop is a spot level, not an option trigger):
-//   trigger = entryPremium × (1 − HARNESS_SL_PCT)
+//   trigger = premiumAtPlacement × (1 − HARNESS_SL_PCT)
+// (that is the entry premium on the normal path, and the current premium when it
+// is re-armed after a failed exit)
 // EXPERIMENTAL — places REAL resting orders. Validate on a dry-run session before
 // enabling with HARNESS_EXCHANGE_SL_ENABLED=true. Everything here fails SAFE: any
 // missing data / bad trigger / broker error skips the SL (never places a bad one)
@@ -294,6 +296,23 @@ async function _cancelExchangeSL(cfg, realRec) {
   } catch (e) {
     console.warn(`[HARNESS][${cfg.mode}] exchange-SL cancel failed (${realRec.slOrderId}): ${e.message}`);
   }
+}
+
+// Put the exchange stop back after a failed exit — those paths deliberately keep
+// the position record, so it must not be left unprotected.
+//
+// If slOrderId is STILL set, the cancel above did not confirm: the old SL-M may
+// still be resting on this exact lot, and adding a second one means both can
+// fire → the lot is sold twice → naked short. Leave it alone and say so.
+async function _rearmExchangeSL(cfg, realRec) {
+  if (!realRec) return;
+  if (realRec.slOrderId) {
+    console.warn(`[HARNESS][${cfg.mode}] exchange-SL NOT re-armed — ${realRec.slOrderId} may still be resting (cancel unconfirmed). Verify on the broker dashboard.`);
+    return;
+  }
+  const placement = _maybePlaceExchangeSL(cfg, realRec);
+  _slPending.set(cfg.mode, placement);
+  try { await placement; } finally { if (_slPending.get(cfg.mode) === placement) _slPending.delete(cfg.mode); }
 }
 
 // ── Order hooks (registered into notify; Telegram is emitted by notify itself) ─
@@ -459,8 +478,7 @@ function _makeExitHook(cfg) {
         try { notify.sendIfMaster(`🚨 ${cfg.mode} LIVE SELL ERROR — MANUAL ACTION REQUIRED\n${p.symbol}: ${err.message}\nPaper closed but the broker exit errored/timed out — verify/square off manually NOW.`); } catch (_) {}
         // We keep the record because we may still hold it — so put the exchange
         // stop back too, otherwise the retained position has no protection left.
-        _slPending.set(cfg.mode, _maybePlaceExchangeSL(cfg, real));
-        try { await _slPending.get(cfg.mode); } finally { _slPending.delete(cfg.mode); }
+        await _rearmExchangeSL(cfg, real);
         return;
       }
 
@@ -483,8 +501,7 @@ function _makeExitHook(cfg) {
         console.error(`🚨 [HARNESS LIVE][${cfg.mode}] SELL FAILED — paper closed virtual position but broker rejected. Symbol=${p.symbol} — MANUAL ACTION REQUIRED.`);
         try { notify.sendIfMaster(`🚨 ${cfg.mode} LIVE SELL REJECTED — MANUAL ACTION REQUIRED\nPaper closed but the broker still holds the position — square off ${p.symbol} manually NOW.\n${JSON.stringify(result && result.raw).slice(0, 200)}`); } catch (_) {}
         // Same as the exception path: the record is kept, so the stop must be too.
-        _slPending.set(cfg.mode, _maybePlaceExchangeSL(cfg, real));
-        try { await _slPending.get(cfg.mode); } finally { _slPending.delete(cfg.mode); }
+        await _rearmExchangeSL(cfg, real);
       }
     } finally {
       _exiting.delete(cfg.mode);

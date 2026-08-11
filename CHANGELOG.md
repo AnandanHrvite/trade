@@ -20,6 +20,8 @@ A review of every path that can reach a broker found four ways real orders could
 
 The same cancel-then-failed-exit gap existed in EMA_RSI_ST Live and in the shared harness (which explicitly keeps the position record on a rejected exit, but had already cancelled its stop) — both re-arm now, and the harness clears a cancelled SL id only when the cancel actually succeeded, so a dead id can no longer read as protection. The hard-SL trigger is also priced off the current spot instead of the entry spot: the premium in the formula is always the current one, so the entry-spot pairing was only correct while spot had not moved, and was materially too loose on a re-arm.
 
+Re-arming exposed a sharper version of the same class of bug: all four engines cleared the SL order id *before* the broker confirmed the cancel. A failed cancel followed by a re-arm would leave **two** SL-Ms resting on the same lot — both firing sells it twice, which is the naked short this work exists to prevent. The id is now cleared only on a confirmed cancel; an engine refuses to place a second stop on a contract that may already have one (and shouts about an orphan left on a different contract); and a position that closes with an unconfirmed id retries the cancel, then Telegrams so it can be killed by hand.
+
 PA Live and BB_RSI Live now show a DRY-RUN / REAL-ORDERS badge, and their Telegram messages say which one produced the fill. No entry, exit or stop *rule* changed — only whether an order is real, and whether a stop is resting behind it.
 
 ### Fixed — Backtest and Live now decide the same way Paper does

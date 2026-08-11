@@ -347,6 +347,7 @@ async function _placeLiveBuyImpl(side, sigSnapshot) {
 // failure path leaves the PREVIOUS (wider) trigger resting — a too-wide stop is
 // survivable, a too-tight one exits a good trade for no reason.
 let _orbHardSLOrderId = null;
+let _orbHardSLSymbol  = null;   // contract the resting SL-M belongs to (stacking guard)
 let _orbHardSLPending = null;   // in-flight placement — cancel must await it
 let _orbHardSLTrigger = null;
 
@@ -373,15 +374,22 @@ async function placeOrbHardSL() {
     log(`⚠️ [ORB HARD SL] Skipped — trigger ₹${trigger} is not below premium ₹${optionLtp}`);
     return;
   }
-  // Only reachable if a previous trade's SL-M was never cancelled (a failed exit
-  // re-arms one on the orphan). Overwriting the id would hide it forever, so name
-  // it in the log while it is still cancellable by hand.
+  // Never stack two SL-Ms on the SAME lot. A failed cancel keeps the id (below),
+  // and a second stop on that contract means both can fire — the lot is sold
+  // twice and we are naked short. A lingering id for a DIFFERENT contract is an
+  // orphan from an earlier trade: this position still needs its own stop, so
+  // place it and make the orphan impossible to miss.
   if (_orbHardSLOrderId) {
-    log(`🚨 [ORB HARD SL] SL-M ${_orbHardSLOrderId} is still tracked from an earlier position — it will no longer be tracked. Cancel it on the Fyers dashboard if it is still resting.`);
+    if (_orbHardSLSymbol === pos.symbol) {
+      log(`⚠️ [ORB HARD SL] Not placing a second SL-M — ${_orbHardSLOrderId} may still be resting on ${pos.symbol}.`);
+      return;
+    }
+    log(`🚨 [ORB HARD SL] SL-M ${_orbHardSLOrderId} on ${_orbHardSLSymbol} was never confirmed cancelled and is no longer tracked — cancel it on the Fyers dashboard.`);
   }
 
   if (_orderIsDryRun()) {
     _orbHardSLOrderId = `DRYRUN-ORB-SLM-${Date.now()}`;
+    _orbHardSLSymbol  = pos.symbol;
     _orbHardSLTrigger = trigger;
     log(`🧪 [ORB HARD SL DRY-RUN] No real order placed — would place SL-M SELL ${pos.qty} × ${pos.symbol} @ trigger ₹${trigger} | virtual OrderID: ${_orbHardSLOrderId}`);
     return;
@@ -392,6 +400,7 @@ async function placeOrbHardSL() {
       const result = await fyersBroker.placeSLMOrder(pos.symbol, -1, pos.qty, trigger, { isFutures: false });
       if (result && result.success) {
         _orbHardSLOrderId = result.orderId;
+        _orbHardSLSymbol  = pos.symbol;
         _orbHardSLTrigger = trigger;
         log(`🛡️ [ORB HARD SL] SL-M placed — OrderID: ${result.orderId} | trigger=₹${trigger}`);
       } else {
@@ -447,18 +456,20 @@ async function cancelOrbHardSL() {
   if (_orbHardSLPending) { try { await _orbHardSLPending; } catch (_) { /* nothing to cancel */ } }
   if (!_orbHardSLOrderId) return;
   const orderId = _orbHardSLOrderId;
-  _orbHardSLOrderId = null;
-  _orbHardSLTrigger = null;
+  // Cleared only once the broker CONFIRMS. Clearing up front would let the
+  // re-arm place a second SL-M while the first is still live on the same lot.
+  const _clear = () => { _orbHardSLOrderId = null; _orbHardSLSymbol = null; _orbHardSLTrigger = null; };
   if (String(orderId).startsWith("DRYRUN-")) {
+    _clear();
     log(`🧪 [ORB HARD SL DRY-RUN] No real cancel — would cancel SL-M order ${orderId}`);
     return;
   }
   try {
     const result = await fyersBroker.cancelOrder(orderId);
-    if (result && result.success) log(`🗑️ [ORB HARD SL] Cancelled SL-M order ${orderId}`);
-    else log(`⚠️ [ORB HARD SL] Cancel failed — VERIFY on the Fyers dashboard that SL-M ${orderId} is not still resting: ${JSON.stringify(result && result.raw)}`);
+    if (result && result.success) { _clear(); log(`🗑️ [ORB HARD SL] Cancelled SL-M order ${orderId}`); }
+    else log(`⚠️ [ORB HARD SL] Cancel FAILED — keeping the id so a retry can cancel it. VERIFY SL-M ${orderId} is not still resting: ${JSON.stringify(result && result.raw)}`);
   } catch (err) {
-    log(`⚠️ [ORB HARD SL] Cancel exception — VERIFY on the Fyers dashboard that SL-M ${orderId} is not still resting: ${err.message}`);
+    log(`⚠️ [ORB HARD SL] Cancel EXCEPTION — keeping the id so a retry can cancel it. VERIFY SL-M ${orderId} is not still resting: ${err.message}`);
   }
 }
 
@@ -582,6 +593,20 @@ async function _placeLiveSellImpl(reason) {
       spotExit: exitSpot, optionExit: exitOptLtp, pnl, reason,
     });
   } catch (_) {}
+
+  // A cancel that never confirmed leaves an SL-M possibly resting on a position
+  // we have now CLOSED — it would sell a lot we do not hold. Retry once, then
+  // make it impossible to miss. (Skipped when the exit itself failed: that path
+  // deliberately re-arms the stop for the position it could not close.)
+  if (exitOrderId && _orbHardSLOrderId) {
+    await cancelOrbHardSL();
+    if (_orbHardSLOrderId) {
+      const _orphanSL = _orbHardSLOrderId;
+      _orbHardSLOrderId = null; _orbHardSLSymbol = null; _orbHardSLTrigger = null;
+      log(`🚨 [ORB HARD SL] SL-M ${_orphanSL} could NOT be cancelled and the position is now closed — cancel it on the Fyers dashboard NOW or it will short you.`);
+      sendTelegram(`🚨 ORB — SL-M ${_orphanSL} may still be resting after the position closed. Cancel it on Fyers NOW.`).catch(() => {});
+    }
+  }
 
   state.position = null;
   try { clearOrbPosition(); } catch (_) {}   // position is closed — drop the snapshot

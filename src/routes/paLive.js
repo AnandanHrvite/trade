@@ -249,6 +249,7 @@ function stopOptionPolling() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 let _paHardSLOrderId = null;
+let _paHardSLSymbol  = null;   // contract the resting SL-M belongs to (see the stacking guard below)
 
 function isPAHardSLEnabled() {
   return process.env.HARD_SL_ENABLED === "true" && instrumentConfig.INSTRUMENT !== "NIFTY_FUTURES";
@@ -266,11 +267,25 @@ async function placePAHardSL() {
   const triggerPrice = Math.max(0.5, parseFloat((optionLtp - premDrop).toFixed(1)));
   const qty = pos.qty || getLotQty();
 
+  // Never stack two SL-Ms on the SAME lot. A failed cancel keeps the id (below),
+  // and a second stop on that contract means both can fire — the lot is sold
+  // twice and we are naked short. A lingering id for a DIFFERENT contract is an
+  // orphan from an earlier trade: this position still needs its own stop, so
+  // place it and make the orphan impossible to miss.
+  if (_paHardSLOrderId) {
+    if (_paHardSLSymbol === pos.symbol) {
+      log(`⚠️ [PA HARD SL] Not placing a second SL-M — ${_paHardSLOrderId} may still be resting on ${pos.symbol}.`);
+      return;
+    }
+    log(`🚨 [PA HARD SL] SL-M ${_paHardSLOrderId} on ${_paHardSLSymbol} was never confirmed cancelled and is no longer tracked — cancel it on the Fyers dashboard.`);
+  }
+
   // DRY-RUN: the entry BUY is simulated, so a REAL resting SL-M here would be a
   // sell order against a position we do not hold — a naked short the moment it
   // triggers. Simulate the SL-M exactly like the entry.
   if (_orderIsDryRun()) {
     _paHardSLOrderId = _simOrder("SLM").orderId;
+    _paHardSLSymbol  = pos.symbol;
     log(`🧪 [PA HARD SL DRY-RUN] No real order placed — would place SL-M SELL ${qty} × ${pos.symbol} @ trigger ₹${triggerPrice} | virtual OrderID: ${_paHardSLOrderId}`);
     return;
   }
@@ -280,6 +295,7 @@ async function placePAHardSL() {
     const result = await fyersBroker.placeSLMOrder(pos.symbol, -1, qty, triggerPrice);
     if (result.success) {
       _paHardSLOrderId = result.orderId;
+      _paHardSLSymbol  = pos.symbol;
       log(`✅ [PA HARD SL] SL-M placed — OrderID: ${result.orderId} | trigger=₹${triggerPrice}`);
     } else {
       // A silently-failed hard SL leaves a REAL position with no exchange-level
@@ -323,23 +339,27 @@ async function updatePAHardSL(newSpotSL) {
 async function cancelPAHardSL() {
   if (!_paHardSLOrderId) return;
   const orderId = _paHardSLOrderId;
-  _paHardSLOrderId = null;
+  // The id is cleared only once the broker CONFIRMS the cancel. Clearing it up
+  // front would let a re-arm place a second SL-M while the first is still live.
+  const _clear = () => { _paHardSLOrderId = null; _paHardSLSymbol = null; };
   // Simulated SL-M ids don't exist at the broker — cancelling one would be a
   // guaranteed API error on every exit. Also covers the id-was-simulated case
   // after a mid-session toggle flip.
   if (String(orderId).startsWith("DRYRUN-")) {
+    _clear();
     log(`🧪 [PA HARD SL DRY-RUN] No real cancel — would cancel SL-M order ${orderId}`);
     return;
   }
   try {
     const result = await fyersBroker.cancelOrder(orderId);
     if (result.success) {
+      _clear();
       log(`🗑️ [PA HARD SL] Cancelled SL-M order ${orderId}`);
     } else {
-      log(`⚠️ [PA HARD SL] Cancel failed: ${JSON.stringify(result.raw)}`);
+      log(`⚠️ [PA HARD SL] Cancel FAILED — keeping the id so a retry can cancel it. VERIFY SL-M ${orderId} is not still resting: ${JSON.stringify(result.raw)}`);
     }
   } catch (err) {
-    log(`❌ [PA HARD SL] Cancel exception: ${err.message}`);
+    log(`⚠️ [PA HARD SL] Cancel EXCEPTION — keeping the id so a retry can cancel it. VERIFY SL-M ${orderId} is not still resting: ${err.message}`);
   }
 }
 
@@ -558,7 +578,18 @@ async function squareOff(exitPrice, reason) {
   state.optionLtp    = null;
   state.optionLtpUpdatedAt = null;
   state._ltpStaleLogged = false;
-  _paHardSLOrderId = null;  // clear Hard SL tracking
+  // The cancel before the exit may not have confirmed. The position is CLOSED
+  // now, so an SL-M still resting would sell a lot we no longer hold — a naked
+  // short. Try once more, then make it impossible to miss.
+  if (_paHardSLOrderId) {
+    await cancelPAHardSL();
+    if (_paHardSLOrderId) {
+      const _orphanSL = _paHardSLOrderId;
+      _paHardSLOrderId = null; _paHardSLSymbol = null;
+      log(`🚨 [PA HARD SL] SL-M ${_orphanSL} could NOT be cancelled and the position is now closed — cancel it on the Fyers dashboard NOW or it will short you.`);
+      sendTelegram(`🚨 PA — SL-M ${_orphanSL} may still be resting after the position closed. Cancel it on Fyers NOW.`).catch(() => {});
+    }
+  }
   clearPAPosition();  // remove persisted state — position is closed
 
   if (reason.includes("SL")) {
