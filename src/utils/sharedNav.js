@@ -101,6 +101,9 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const showLiveHist    = (process.env.UI_SHOW_LIVE_HISTORY  || 'true').toLowerCase()  === 'true';
   const showEdgeAnalytics = (process.env.UI_SHOW_EDGE_ANALYTICS || 'true').toLowerCase() === 'true';
   const showAdvisor       = (process.env.UI_SHOW_ADVISOR || 'true').toLowerCase() === 'true';
+  // Read-only research page for per-strike OI. Default OFF — it is a data-collection
+  // instrument for an unbuilt strategy, not part of the daily trading flow.
+  const showOiMonitor     = (process.env.UI_SHOW_OI_MONITOR || 'false').toLowerCase() === 'true';
 
   // ── Per-strategy submenu toggles ──
   const showEmaRsiStBacktest = (process.env.UI_SHOW_EMA_RSI_ST_BACKTEST || 'true').toLowerCase() === 'true';
@@ -267,6 +270,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     ...(showLiveHist    ? [{ key: 'liveConsolidation', href: '/live-consolidation', icon: '🔴', label: 'Live Traded History' }] : []),
     ...(showEdgeAnalytics ? [{ key: 'edgeAnalytics',   href: '/edge-analytics',     icon: '📈', label: 'Edge Analytics' }] : []),
     ...(showAdvisor       ? [{ key: 'advisor',         href: '/advisor',            icon: '🧭', label: 'Settings Advisor' }] : []),
+    ...(showOiMonitor     ? [{ key: 'oi-monitor',      href: '/oi-monitor',         icon: '🧱', label: 'OI Monitor' }] : []),
   ];
 
   const sections = [

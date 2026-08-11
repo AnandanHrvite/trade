@@ -10,6 +10,10 @@
  *   options — every option LTP REST poll (per-strategy) + entry-time bid/ask
  *   vix     — every VIX REST fetch (live cache fills only, not cache hits)
  *   oi      — every NIFTY-futures OI sample (only while an OI filter is on)
+ *   chain_oi — PER-STRIKE option OI across the ATM±N chain (optionChainRecorder).
+ *             Deliberately a SEPARATE stream from `oi`: replay maps oi.jsonl to a
+ *             single futures timeline and drops the symbol, so strike rows landing
+ *             there would silently corrupt the futures-OI gate for every strategy.
  *   sessions — start/stop events with full settings + warm-up snapshot
  *   market  — ONE immutable Market Context Snapshot per day (expiry, lot, strike
  *             interval, tokens, meta). Strategy-independent; replay's source of
@@ -21,6 +25,7 @@
  *   data/ticks/YYYY-MM-DD/options.jsonl
  *   data/ticks/YYYY-MM-DD/vix.jsonl
  *   data/ticks/YYYY-MM-DD/oi.jsonl
+ *   data/ticks/YYYY-MM-DD/chain_oi.jsonl
  *   data/ticks/YYYY-MM-DD/sessions.jsonl
  *   data/ticks/YYYY-MM-DD/market.jsonl
  *
@@ -62,6 +67,7 @@ const buffers = {
   options:  [],
   vix:      [],
   oi:       [],
+  chainOi:  [],
   sessions: [],
 };
 
@@ -180,6 +186,7 @@ function flushAll() {
   _drainBufferTo("options",  buffers.options);
   _drainBufferTo("vix",      buffers.vix);
   _drainBufferTo("oi",       buffers.oi);
+  _drainBufferTo("chain_oi", buffers.chainOi);
   _drainBufferTo("sessions", buffers.sessions);
 }
 
@@ -188,6 +195,7 @@ function flushAllSync() {
   _drainBufferToSync("options",  buffers.options);
   _drainBufferToSync("vix",      buffers.vix);
   _drainBufferToSync("oi",       buffers.oi);
+  _drainBufferToSync("chain_oi", buffers.chainOi);
   _drainBufferToSync("sessions", buffers.sessions);
 }
 
@@ -261,6 +269,43 @@ function recordOi(symbol, oi) {
   if (!_initialized) _init();
   if (buffers.oi.length >= MAX_BUFFER_RECORDS) return;
   buffers.oi.push({ t: Date.now(), s: symbol, oi });
+}
+
+// Last written OI per option symbol, so an unchanged value is not re-recorded.
+// Reset on IST day rollover so every day's file opens with a baseline row for
+// each strike (a replay of day N must not depend on day N-1's buffer state).
+const _lastChainOi = new Map();
+let _chainOiDay = null;
+
+/**
+ * Record ONE strike's option OI (e.g. "NSE:NIFTY25807245 00CE" → 6,214,275).
+ *
+ * Written to `chain_oi.jsonl`, NOT `oi.jsonl`. Keep it that way: tickReplay maps
+ * oi.jsonl into a single futures-OI timeline and discards the symbol, so a strike
+ * row landing there would be served as futures OI to the buildup gate and quietly
+ * change replay decisions for EMA_RSI_ST / BB_RSI / PA / ORB / TREND_PB.
+ *
+ * De-duplicated by value. The chain is polled every few seconds but OI updates far
+ * more slowly, so writing every poll would emit ~95k rows/day of which the vast
+ * majority are byte-identical repeats. Replay reads this stream with an
+ * at-or-before lookup, so dropping repeats is lossless — it only removes rows that
+ * restate the previous one.
+ *
+ *   symbol — full option symbol, e.g. "NSE:NIFTY2580724500CE"
+ *   oi     — open interest from the REST quote
+ */
+function recordChainOi(symbol, oi) {
+  if (!ENABLED || oi == null || !(oi > 0) || !symbol) return;
+  if (!_initialized) _init();
+
+  const now = Date.now();
+  const day = istDateString(now);
+  if (day !== _chainOiDay) { _lastChainOi.clear(); _chainOiDay = day; }
+  if (_lastChainOi.get(symbol) === oi) return;   // unchanged — nothing to say
+
+  if (buffers.chainOi.length >= MAX_BUFFER_RECORDS) return;
+  _lastChainOi.set(symbol, oi);
+  buffers.chainOi.push({ t: now, s: symbol, oi });
 }
 
 /**
@@ -448,6 +493,7 @@ function getStats() {
       options:  buffers.options.length,
       vix:      buffers.vix.length,
       oi:       buffers.oi.length,
+      chainOi:  buffers.chainOi.length,
       sessions: buffers.sessions.length,
     },
   };
@@ -459,6 +505,7 @@ module.exports = {
   recordOptionQuote,
   recordVix,
   recordOi,
+  recordChainOi,
   recordSessionStart,
   recordSessionStop,
   recordMarketContext,

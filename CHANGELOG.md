@@ -6,6 +6,20 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Added — Per-strike Open Interest is now recorded, and there's a page to watch it
+
+Every strategy here is a trend or breakout strategy, so the **sideways day** is the gap: on a range day they either sit flat or bleed on whipsaws. Per-strike Open Interest is the one input that speaks to a range, because in a range the levels aren't drawn by price — they're set by *where the writers are*. Every indicator in this repo (EMA, BB, VWAP, SuperTrend, ATR) is derived from price and so adds no new information; OI does.
+
+The platform had never had that number. The only OI anywhere was a single scalar — NIFTY *futures* OI, behind the `OI_FILTER_*` buildup gate. Meanwhile `optionChainRecorder` was already fetching the ATM±N CE/PE chain every few seconds and **throwing the `oi` field on every option row away**.
+
+- [utils/optionChainRecorder.js](src/utils/optionChainRecorder.js) now keeps it. **No extra API calls** — same quotes, one more field read. New key `OPTION_CHAIN_RECORD_OI` (default `true`, in Settings → Recording & Replay) turns just the OI layer off without losing the LTP/bid-ask chain replay depends on.
+- [utils/tickRecorder.js](src/utils/tickRecorder.js) writes it to a **new** `chain_oi.jsonl` stream — deliberately *not* `oi.jsonl`. Replay maps `oi.jsonl` into one futures timeline and discards the symbol, so a strike row landing there would be served to the buildup gate as futures OI and quietly change replay decisions for every strategy. [services/tickReplay.js](src/services/tickReplay.js) now also filters that timeline to `*FUT` as a backstop, and stubs the new writer during a run like the others. Rows are de-duplicated by value, so the file records real OI moves rather than ~95k near-identical rows a day.
+- [services/oiChain.js](src/services/oiChain.js) keeps the live ladder in memory: per-strike ΔOI, the CE/PE walls, band PCR. It draws no conclusions — no signal, no allow/block.
+- New read-only page **`/oi-monitor`** ([routes/oiMonitor.js](src/routes/oiMonitor.js)): the ladder, both walls, the wall band width and whether spot sits inside it. An observation log records — but never trades — `DEFEND` (price pressing a wall whose OI is still *rising* → writers holding → range-fade candidate) and its opposite `BREAK` (wall OI *falling* → writers running → stand aside). Gated by `UI_SHOW_OI_MONITOR`, default **off**.
+- New probe `scripts/oiChainProbe.js` answers the two questions this all rests on, with real numbers: does Fyers return OI on an option quote at all, and how often does it actually change? Run it intraday before trusting any of the above.
+
+Nothing here trades. Fyers has no historical-OI API, so a strike-OI strategy **cannot be backtested** — recording forward is the only way to research one, and a day recorded with this off is gone for good. The engine comes after enough sessions exist to judge it on.
+
 ### Changed — ORB: one weak poke past the opening range no longer kills the whole day
 
 ORB picked the first 5-min close beyond the opening range as *the* breakout of the day, and only then asked whether that candle was decisive. If it wasn't, the session was over. On 2026-08-11 a 7.8pt body at 09:50 (the filter wanted 19.1pt) locked ORB out of a day that went on to fall ~135 points from the opening-range high.

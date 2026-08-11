@@ -729,6 +729,7 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     tr_recordOptionQuote:  tickRecorder.recordOptionQuote,
     tr_recordVix:          tickRecorder.recordVix,
     tr_recordOi:           tickRecorder.recordOi,
+    tr_recordChainOi:      tickRecorder.recordChainOi,
     tr_recordSessionStart: tickRecorder.recordSessionStart,
     tr_recordSessionStop:  tickRecorder.recordSessionStop,
     // The archive is read-only during a replay. recordMarketContext is only
@@ -959,6 +960,7 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     tickRecorder.recordOptionQuote  = () => {};
     tickRecorder.recordVix          = () => {};
     tickRecorder.recordOi           = () => {};
+    tickRecorder.recordChainOi      = () => {};
     tickRecorder.recordSessionStart = () => {};
     tickRecorder.recordSessionStop  = () => {};
     tickRecorder.recordMarketContext = () => false;
@@ -1213,6 +1215,7 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     tickRecorder.recordOptionQuote  = orig.tr_recordOptionQuote;
     tickRecorder.recordVix          = orig.tr_recordVix;
     tickRecorder.recordOi           = orig.tr_recordOi;
+    tickRecorder.recordChainOi      = orig.tr_recordChainOi;
     tickRecorder.recordSessionStart = orig.tr_recordSessionStart;
     tickRecorder.recordSessionStop  = orig.tr_recordSessionStop;
     tickRecorder.recordMarketContext = orig.tr_recordMarketContext;
@@ -1457,7 +1460,15 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
 
     const optionTimeline = _buildOptionTimeline(data.optionTicks);
     const vixTimeline    = data.vixTicks.map(v => ({ t: v.t, l: v.v })); // unify field name
-    const oiTimeline     = (data.oiTicks || []).map(o => ({ t: o.t, oi: o.oi }));
+    // FUTURES OI only. This timeline is served for any *FUT symbol with the
+    // symbol discarded, so a non-futures row reaching it would be handed to the
+    // oiFilter buildup gate as futures OI and silently change replay decisions
+    // for every strategy. Per-strike option OI lives in its own stream
+    // (chain_oi.jsonl) precisely so it can never land here; this filter is the
+    // belt-and-braces in case anything else ever writes to oi.jsonl.
+    const oiTimeline     = (data.oiTicks || [])
+      .filter(o => !o.s || String(o.s).endsWith("FUT"))
+      .map(o => ({ t: o.t, oi: o.oi }));
 
     // Reproducibility guard (snapshot mode only): warn — don't fail — when a
     // live-data gate was active for the recorded session but its data was never

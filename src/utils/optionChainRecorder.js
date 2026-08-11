@@ -24,6 +24,13 @@
  * reads (options.jsonl / vix.jsonl / oi.jsonl via tickRecorder). No replay-reader
  * change is needed — this is purely additive density + coverage.
  *
+ * It also captures PER-STRIKE option OI off those same quotes (chain_oi.jsonl +
+ * the in-memory oiChain series). That data has never existed in this repo — the
+ * only OI anywhere else is the single futures scalar — and Fyers offers no
+ * historical-OI API, so recording forward from today is the ONLY way a strike-OI
+ * strategy can ever be researched. Zero extra API cost: the quotes are already
+ * being fetched, the OI field was simply being discarded.
+ *
  * Design invariants
  * ─────────────────
  *   - PURE OBSERVER. Never places an order, never mutates strategy state. It only
@@ -41,6 +48,11 @@
  *   OPTION_CHAIN_RECORDER_ENABLED     default "true"  — own on/off (read live)
  *   OPTION_CHAIN_RECORD_INTERVAL_SEC  default 5   (clamped 2–60)
  *   OPTION_CHAIN_RECORD_STRIKES       default 5   (clamped 1–15) → ATM±N per side
+ *   OPTION_CHAIN_RECORD_OI            default "true"  — also capture PER-STRIKE OI
+ *                                     from the same quotes (chain_oi.jsonl + the
+ *                                     in-memory oiChain series). Costs no extra
+ *                                     API call; set false to drop the OI layer
+ *                                     without losing the LTP/bid-ask chain.
  * Also gated by the master TICK_RECORDER_ENABLED (writers no-op when off).
  * ─────────────────────────────────────────────────────────────────────────────
  */
@@ -49,6 +61,7 @@ const fyers         = require("../config/fyers");
 const instrument    = require("../config/instrument");
 const tickRecorder  = require("./tickRecorder");
 const socketManager = require("./socketManager");
+const oiChain       = require("../services/oiChain");
 
 const CALLBACK_ID   = "option-chain-recorder";
 const VIX_SYMBOL    = "NSE:INDIAVIX-INDEX";
@@ -73,6 +86,13 @@ function _masterEnabled() {
   try { return tickRecorder.getStats().enabled !== false; } catch (_) { return true; }
 }
 function _enabled() { return _ownEnabled() && _masterEnabled(); }
+/**
+ * Per-strike OI capture. Separate from _ownEnabled() so the OI layer can be shut
+ * off without losing the LTP/bid-ask chain that replay already depends on.
+ */
+function _oiEnabled() {
+  return (process.env.OPTION_CHAIN_RECORD_OI || "true").toLowerCase() !== "false";
+}
 
 function _intervalMs() {
   let s = parseInt(process.env.OPTION_CHAIN_RECORD_INTERVAL_SEC || "5", 10);
@@ -144,11 +164,19 @@ async function _poll() {
     const atm = instrument.calcATMStrike(_lastSpot);   // pure ATM (no side offset)
     const n   = _strikeSpan();
     const symbols = [];
+    // symbol → {strike, side}. We know both here because we just built the symbol
+    // from them; carrying them forward is the only reliable way to get the strike
+    // back out. A WEEKLY expiry code is all digits ("25807") and runs straight
+    // into the strike, so re-parsing the symbol later cannot tell them apart.
+    const optMeta = new Map();
     for (let k = -n; k <= n; k++) {
       const strike = atm + k * STRIKE_STEP;
       if (strike <= 0) continue;
-      symbols.push(`NSE:NIFTY${expiryCode}${strike}CE`);
-      symbols.push(`NSE:NIFTY${expiryCode}${strike}PE`);
+      const ce = `NSE:NIFTY${expiryCode}${strike}CE`;
+      const pe = `NSE:NIFTY${expiryCode}${strike}PE`;
+      symbols.push(ce, pe);
+      optMeta.set(ce, { strike, side: "CE" });
+      optMeta.set(pe, { strike, side: "PE" });
     }
     symbols.push(VIX_SYMBOL);
     let futSym = null;
@@ -177,6 +205,18 @@ async function _poll() {
           const bid = Number(v.bid || v.bid_price || 0);
           const ask = Number(v.ask || v.ask_price || 0);
           if (lp > 0) tickRecorder.recordOptionQuote(sym, lp, bid, ask, "chain");
+          // PER-STRIKE OI. The quote is already in hand, so this costs one field
+          // read — no extra API call, no extra latency. Goes to chain_oi.jsonl
+          // (never oi.jsonl — see recordChainOi) and to the in-memory oiChain
+          // series that /oi-monitor and any future OI strategy read from.
+          if (_oiEnabled()) {
+            const oi   = Number(v.oi ?? v.open_interest ?? v.openInterest ?? 0);
+            const meta = optMeta.get(sym);
+            if (oi > 0 && meta) {
+              tickRecorder.recordChainOi(sym, oi);
+              try { oiChain.ingest(meta.strike, meta.side, oi); } catch (_) {}
+            }
+          }
         }
       }
     }
@@ -232,6 +272,8 @@ function getStats() {
     running:     _running,
     enabled:     _enabled(),
     ownEnabled:  _ownEnabled(),
+    oiEnabled:   _oiEnabled(),
+    marketHours: _isMarketHours(),
     lastSpot:    _lastSpot,
     expiryCode:  _expiry.code,
     intervalSec: _intervalMs() / 1000,

@@ -872,6 +872,8 @@ const OPEN_PATHS = [
   // Its one caller uses secretFetch.
   "/consolidation",       // read-only cross-mode trade history + analytics
   "/consolidation/data",
+  "/oi-monitor",          // read-only per-strike OI ladder — no position, no order
+  "/oi-monitor/data",
   "/health",              // health check — must be open for uptime monitors / PM2 probes
   "/deploy/webhook",      // GitHub Actions webhook — must be open for GitHub to reach it
   "/deploy/status",       // deploy status poll — read-only
@@ -1036,6 +1038,7 @@ app.use("/live-consolidation",  require("./routes/liveConsolidation")); // ← u
 app.use("/edge-analytics",      require("./routes/edgeAnalytics"));     // ← edge metrics (WR/expectancy/PF/drawdown/by-hour) over recorded trades
 app.use("/consolidation-report", require("./routes/consolidationReport")); // ← printable consolidated report (paper+live, week/month/range filters, Save-as-PDF)
 app.use("/advisor",             require("./routes/advisor"));           // ← offline settings advisor over the recorded trade book (read-only)
+app.use("/oi-monitor",          require("./routes/oiMonitor"));         // ← live per-strike OI ladder + wall/PCR readout (read-only research page)
 app.use("/realtime",            require("./routes/realtime"));          // ← unified real-time monitor (PAPER/LIVE toggle, all 3 strategies)
 app.use("/replay",              require("./routes/replay"));            // ← deterministic tick-replay backtest (PAPER = REPLAY = LIVE)
 app.use("/all-backtest",   require("./routes/allBacktest"));    // ← unified backtest dashboard (all 3 strategies, stats only)
