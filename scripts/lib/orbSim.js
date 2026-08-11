@@ -138,4 +138,4 @@ function simulate(candles) {
   return { trades, sessions: DAYS.length };
 }
 
-module.exports = { simulate, stats, costModel, r2, DAY, MIN, DATE };
+module.exports = { simulate, stats, costModel, r2 };
