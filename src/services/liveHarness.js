@@ -287,6 +287,10 @@ async function _cancelExchangeSL(cfg, realRec) {
   try {
     await _brokerFor(cfg).cancelOrder(realRec.slOrderId);
     _logEvent({ mode: cfg.mode, event: "EXCHANGE_SL_CANCELLED", slOrderId: realRec.slOrderId });
+    // Cleared only on success: if the cancel failed the order may still be
+    // resting, and keeping the id is what lets a later exit try again.
+    realRec.slOrderId = null;
+    _persistRealPositions();
   } catch (e) {
     console.warn(`[HARNESS][${cfg.mode}] exchange-SL cancel failed (${realRec.slOrderId}): ${e.message}`);
   }
@@ -453,6 +457,10 @@ function _makeExitHook(cfg) {
         _logEvent({ mode: cfg.mode, event: "REAL_EXIT_EXCEPTION", symbol: p.symbol, error: err.message });
         console.error(`🚨 [HARNESS LIVE][${cfg.mode}] SELL exception: ${err.message}`);
         try { notify.sendIfMaster(`🚨 ${cfg.mode} LIVE SELL ERROR — MANUAL ACTION REQUIRED\n${p.symbol}: ${err.message}\nPaper closed but the broker exit errored/timed out — verify/square off manually NOW.`); } catch (_) {}
+        // We keep the record because we may still hold it — so put the exchange
+        // stop back too, otherwise the retained position has no protection left.
+        _slPending.set(cfg.mode, _maybePlaceExchangeSL(cfg, real));
+        try { await _slPending.get(cfg.mode); } finally { _slPending.delete(cfg.mode); }
         return;
       }
 
@@ -474,6 +482,9 @@ function _makeExitHook(cfg) {
         _logEvent({ mode: cfg.mode, event: "REAL_EXIT_FAIL", symbol: p.symbol, raw: result && result.raw });
         console.error(`🚨 [HARNESS LIVE][${cfg.mode}] SELL FAILED — paper closed virtual position but broker rejected. Symbol=${p.symbol} — MANUAL ACTION REQUIRED.`);
         try { notify.sendIfMaster(`🚨 ${cfg.mode} LIVE SELL REJECTED — MANUAL ACTION REQUIRED\nPaper closed but the broker still holds the position — square off ${p.symbol} manually NOW.\n${JSON.stringify(result && result.raw).slice(0, 200)}`); } catch (_) {}
+        // Same as the exception path: the record is kept, so the stop must be too.
+        _slPending.set(cfg.mode, _maybePlaceExchangeSL(cfg, real));
+        try { await _slPending.get(cfg.mode); } finally { _slPending.delete(cfg.mode); }
       }
     } finally {
       _exiting.delete(cfg.mode);

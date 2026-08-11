@@ -828,7 +828,7 @@ async function placeHardSL() {
   if (!optionLtp || !pos.stopLoss) return;
 
   const delta    = parseFloat(process.env.HARD_SL_DELTA || "0.5");
-  const spotGap  = Math.abs(pos.spotAtEntry - pos.stopLoss);
+  const spotGap  = Math.abs((tradeState.lastTickPrice || pos.spotAtEntry) - pos.stopLoss);
   const premDrop = spotGap * delta;
   // SL-M trigger: option premium that corresponds to spot hitting the SL
   const triggerPrice = Math.max(0.5, parseFloat((optionLtp - premDrop).toFixed(1)));
@@ -1037,6 +1037,11 @@ async function squareOff(exitPrice, reason) {
     } else {
       log(`🚨 [LIVE] EXIT ORDER FAILED — position kept open for retry | ${JSON.stringify(result.raw)}`);
       log(`🚨 [LIVE] CHECK ZERODHA DASHBOARD — manual square-off may be required!`);
+      // The position stays open but its exchange stop was cancelled above — put
+      // it back, otherwise a failed exit silently strips the only protection
+      // that survives this process dying. (duplicate_guard is skipped: another
+      // square-off is already in flight and owns the SL.)
+      await placeHardSL();
     }
     _squareOffInFlight = false;
     return;

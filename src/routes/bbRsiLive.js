@@ -269,7 +269,7 @@ async function placeBbRsiHardSL() {
   if (!optionLtp || !pos.stopLoss) return;
 
   const delta    = parseFloat(process.env.HARD_SL_DELTA || "0.5");
-  const spotGap  = Math.abs(pos.spotAtEntry - pos.stopLoss);
+  const spotGap  = Math.abs((state.lastTickPrice || pos.spotAtEntry) - pos.stopLoss);
   const premDrop = spotGap * delta;
   const triggerPrice = Math.max(0.5, parseFloat((optionLtp - premDrop).toFixed(1)));
   const qty = pos.qty || getLotQty();

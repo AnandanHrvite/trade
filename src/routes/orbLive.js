@@ -367,7 +367,7 @@ async function placeOrbHardSL() {
   const optionLtp = state.optionLtp || pos.optionEntryLtp;
   if (!(optionLtp > 0) || pos.slSpot == null) return;
 
-  const trigger = _orbSLTrigger(optionLtp, pos.entrySpot, pos.slSpot);
+  const trigger = _orbSLTrigger(optionLtp, state.lastTickPrice || pos.entrySpot, pos.slSpot);
   // A trigger at or above the current premium would fire instantly on placement.
   if (!(trigger > 0) || trigger >= optionLtp) {
     log(`⚠️ [ORB HARD SL] Skipped — trigger ₹${trigger} is not below premium ₹${optionLtp}`);
@@ -513,7 +513,11 @@ async function _placeLiveSellImpl(reason) {
     // record goes away, so the orphan at least still has a stop resting.
     if (!exitOrderId) {
       await placeOrbHardSL().catch(() => {});
-      log(`⚠️ [ORB-LIVE] Exit unconfirmed — exchange SL-M re-armed on the orphaned position. Verify on the Fyers dashboard.`);
+      // placeOrbHardSL no-ops when HARD_SL_ENABLED is off or the trigger is
+      // unusable, so report what actually happened rather than assuming.
+      log(_orbHardSLOrderId
+        ? `⚠️ [ORB-LIVE] Exit unconfirmed — exchange SL-M re-armed on the orphaned position. Verify on the Fyers dashboard.`
+        : `🚨 [ORB-LIVE] Exit unconfirmed AND no exchange SL could be placed — the position may be open and UNPROTECTED. Square off manually NOW.`);
     }
   }
 

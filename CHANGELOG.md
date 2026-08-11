@@ -18,6 +18,8 @@ A review of every path that can reach a broker found four ways real orders could
 - **A failed square-off no longer strips the stop.** The exchange SL is cancelled before the exit sells, so a rejected exit used to leave the position open with its protection already gone. It is now re-armed, and a hard-SL that fails to place raises a Telegram alert instead of failing silently.
 - `HARNESS_EXCHANGE_SL_ENABLED` / `HARNESS_SL_PCT` are now exposed in Settings — the harness strategies (Trend PB, GAPS, EMA9+VWAP, TDS, Gap-Fix 3m) place no exchange stop by default, which was true but invisible.
 
+The same cancel-then-failed-exit gap existed in EMA_RSI_ST Live and in the shared harness (which explicitly keeps the position record on a rejected exit, but had already cancelled its stop) — both re-arm now, and the harness clears a cancelled SL id only when the cancel actually succeeded, so a dead id can no longer read as protection. The hard-SL trigger is also priced off the current spot instead of the entry spot: the premium in the formula is always the current one, so the entry-spot pairing was only correct while spot had not moved, and was materially too loose on a re-arm.
+
 PA Live and BB_RSI Live now show a DRY-RUN / REAL-ORDERS badge, and their Telegram messages say which one produced the fill. No entry, exit or stop *rule* changed — only whether an order is real, and whether a stop is resting behind it.
 
 ### Fixed — Backtest and Live now decide the same way Paper does
