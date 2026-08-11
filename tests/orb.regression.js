@@ -385,7 +385,10 @@ const ENTRIES  = ALL_SIGS.filter(x => x.sig.signal !== "NONE");
     // so the ordering invariant is: the intrabar hard-SL check must appear before it.
     const targets = [
       ["../src/routes/orbBacktest.js", /Hard SL hit/],
-      ["../scripts/orbValidate.js",    /isHardSlHit/],
+      // The offline day loop moved out of orbValidate into scripts/lib/orbSim.js
+      // (2026-08-11) so orbValidate and orbSweep share one simulation. The
+      // invariant did not move — it just lives in the file that now runs it.
+      ["../scripts/lib/orbSim.js",     /isHardSlHit/],
     ];
     for (const [rel, slRe] of targets) {
       // Strip comments first — this is an assertion about the order of EXECUTION,
@@ -411,19 +414,31 @@ const ENTRIES  = ALL_SIGS.filter(x => x.sig.signal !== "NONE");
       [/ORB_TRAIL_EMA/,             "the EMA trend-trail period"],
       [/ORB_PREMIUM_STOP_PCT/,      "the premium disaster stop"],
     ];
-    const CONSUMERS = ["../src/routes/orbPaper.js", "../src/routes/orbLive.js", "../scripts/orbValidate.js"];
-    for (const rel of CONSUMERS) {
-      const src = fs.readFileSync(path.join(__dirname, rel), "utf-8");
-      // Strip comments and HTML/template display strings — a route may still NAME a
-      // key when it renders it; what it may not do is READ it to make a decision.
-      const code = src.replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
+    const CONSUMERS = ["../src/routes/orbPaper.js", "../src/routes/orbLive.js", "../scripts/lib/orbSim.js"];
+    // These drive the simulation instead of owning one, so they must delegate to
+    // scripts/lib/orbSim.js rather than require orbExits themselves — but they are
+    // held to the same no-private-copy rule (2026-08-11).
+    const DELEGATES = ["../scripts/orbValidate.js", "../scripts/orbSweep.js"];
+    const noPrivateCopy = (rel, code) => {
       for (const [re, what] of OWNED) {
         const reads = new RegExp(`process\\.env\\.${re.source.replace(/[/\\]/g, "")}`);
         assert.ok(!reads.test(code),
           `${rel} reads ${what} directly — that rule belongs to src/strategies/orbExits.js. Four copies is how paper, live, backtest and orbValidate silently drifted apart.`);
       }
+    };
+    for (const rel of CONSUMERS) {
+      const src = fs.readFileSync(path.join(__dirname, rel), "utf-8");
+      // Strip comments and HTML/template display strings — a route may still NAME a
+      // key when it renders it; what it may not do is READ it to make a decision.
+      noPrivateCopy(rel, src.replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, ""));
       assert.ok(/require\(.*orbExits.*\)/.test(src),
         `${rel} does not require the shared exit engine`);
+    }
+    for (const rel of DELEGATES) {
+      const src = fs.readFileSync(path.join(__dirname, rel), "utf-8");
+      noPrivateCopy(rel, src.replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, ""));
+      assert.ok(/require\(.*lib\/orbSim.*\)/.test(src),
+        `${rel} does not drive scripts/lib/orbSim.js — it has grown a second day loop, which is how the published numbers stop describing the shipped strategy`);
     }
   });
 

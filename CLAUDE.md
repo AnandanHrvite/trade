@@ -12,7 +12,7 @@ node -c src/app.js     # syntax check (already allow-listed)
 pm2 startOrRestart ecosystem.config.js --update-env   # production reload
 ```
 
-There is no test runner, lint task, or build step. `node -c` is the fastest correctness gate before pushing. Pushes to `main` auto-deploy to EC2 via [.github/workflows/deployCodeToEc2.yml](.github/workflows/deployCodeToEc2.yml) — the workflow pins Node 16 (Amazon Linux 2 / GLIBC 2.17) and uses `pm2 startOrRestart ecosystem.config.js --update-env` so [ecosystem.config.js](ecosystem.config.js) changes take effect. PM2 treats exit code **10** as a "do not restart" config-error sentinel — used by [src/app.js](src/app.js) to break crash loops on missing certs / malformed env.
+There is no lint task or build step. `node -c` is the fastest syntax gate, but **`npm test` is the real one** — four regression suites (`tests/*.regression.js`, also `npm run test:orb` / `test:parity` / `test:config`) that assert engine invariants and paper/live/backtest parity, several of them by reading source files. Run it before pushing: a pure refactor that moves code between files can break them without breaking behaviour. Pushes to `main` auto-deploy to EC2 via [.github/workflows/deployCodeToEc2.yml](.github/workflows/deployCodeToEc2.yml) — the workflow pins Node 16 (Amazon Linux 2 / GLIBC 2.17) and uses `pm2 startOrRestart ecosystem.config.js --update-env` so [ecosystem.config.js](ecosystem.config.js) changes take effect. PM2 treats exit code **10** as a "do not restart" config-error sentinel — used by [src/app.js](src/app.js) to break crash loops on missing certs / malformed env.
 
 ## Big-picture architecture
 
