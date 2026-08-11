@@ -6,6 +6,14 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Added — `scripts/orbSweep.js`: compare ORB configs with a forced out-of-sample split
+
+Two full backtest runs (2025: 122 trades, −₹51,420, PF 0.52 · 2026 Jan–Jul: 59 trades, −₹32,268, PF 0.38) say ORB is not profitable at its shipped settings. The one pattern that held in **both** years is opening-range width: OR ≤ 70pt was +₹10.6k / −₹3.4k, OR > 70pt was −₹62k / −₹28.9k at ~14% win. Rules that looked better than that (`OR ≤ 60pt`, "skip plain entries") won big on 2025 and collapsed on 2026 — curve-fitting.
+
+So the tuning loop now has a harness that makes that failure visible: `orbSweep` runs a short list of named hypotheses through the same simulation `orbValidate` publishes and prints each on TRAIN and TEST separately, refusing to declare a winner that has fewer than 30 test trades. The shared day loop, cost model and stats moved to `scripts/lib/orbSim.js` so the two scripts can never measure different things; `orbValidate`'s output is unchanged.
+
+New key `ORB_OR_MAX_PTS` (absolute OR-width cap in points, default `0` = off, in Settings → ORB) exists for the one lever with cross-year support. It ships **off**: on this evidence it turns a large loss into a scratch, which is not an edge.
+
 ### Added — Per-strike Open Interest is now recorded, and there's a page to watch it
 
 Every strategy here is a trend or breakout strategy, so the **sideways day** is the gap: on a range day they either sit flat or bleed on whipsaws. Per-strike Open Interest is the one input that speaks to a range, because in a range the levels aren't drawn by price — they're set by *where the writers are*. Every indicator in this repo (EMA, BB, VWAP, SuperTrend, ATR) is derived from price and so adds no new information; OI does.

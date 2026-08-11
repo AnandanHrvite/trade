@@ -555,6 +555,23 @@ function getSignal(candles, opts) {
     }
   } else { tr.skip("OR vs ATR15", "ATR15 not seeded — fail-open"); }
 
+  // ── 4b. Day sanity: an ABSOLUTE cap on the opening range, in points.
+  //       OFF by default (0). Added 2026-08-11 because OR width is the only cut
+  //       that separated winners from losers in BOTH 2025 (n=122) and 2026 (n=59)
+  //       paper/backtest samples, and it did so on raw points, not on the ATR
+  //       ratio gate 4 already applies:
+  //         2025: OR<=70pt +10.6k / 58 trades   vs  OR>70pt -62k / 64 trades
+  //         2026: OR<=70pt -3.4k / 19 trades    vs  OR>70pt -28.9k / 40 trades
+  //       So it turns a big loser into roughly break-even — it is NOT a proven
+  //       edge, which is exactly why it ships disabled. Measure with
+  //       scripts/orbSweep.js on a long range before turning it on.
+  const orMaxPts = parseFloat(process.env.ORB_OR_MAX_PTS || "0");
+  if (orMaxPts > 0) {
+    if (!tr.check("OR max pts", rangePts <= orMaxPts, `${rangePts}pt, max ${orMaxPts}pt`)) {
+      return done(Object.assign(sig, { reason: `OR ${rangePts}pt > ${orMaxPts}pt cap — too wide to trade, skip day` }));
+    }
+  } else { tr.skip("OR max pts", "disabled"); }
+
   // ── 5. Day sanity: an overnight shock far larger than the day's own range is
   //       news, not structure. Fails OPEN when the prior close is unknown. ────
   const gapPts = _computeGap(candles, day);

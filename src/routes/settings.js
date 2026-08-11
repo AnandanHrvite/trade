@@ -189,6 +189,7 @@ const SETTINGS_SCHEMA = [
       { key: "ORB_RANGE_END", label: "OR Window End", type: "time", effect: EFFECT.SESSION, desc: "Opening-range end time (IST).", default: "09:30" },
       { key: "ORB_ENTRY_END", label: "Latest Entry Time", type: "time", effect: EFFECT.SESSION, desc: "No new entries after this time (IST).", default: "11:30" },
       { key: "ORB_OR_ATR_MAX", label: "Day Filter — Max OR ÷ ATR(15m)", type: "number", min: 1, max: 5, step: 0.1, effect: EFFECT.INSTANT, desc: "Skip the day if the opening range is too wide.", default: "2.5" },
+      { key: "ORB_OR_MAX_PTS", label: "Day Filter — Max OR Width (pts, 0 = off)", type: "number", min: 0, max: 300, step: 5, effect: EFFECT.INSTANT, desc: "Skip the day when the opening range is wider than this many points. Measure with scripts/orbSweep.js before enabling.", default: "0" },
       { key: "ORB_GAP_OR_MULT", label: "Day Filter — Max Gap ÷ OR", type: "number", min: 1, max: 6, step: 0.5, effect: EFFECT.INSTANT, desc: "Skip the day on an oversized overnight gap.", default: "3.0" },
       { key: "ORB_BODY_ATR_MULT", label: "Breakout — Min Body ÷ ATR(5m)", type: "number", min: 0.2, max: 1.5, step: 0.1, effect: EFFECT.INSTANT, desc: "Breakout candle must be at least this decisive.", default: "0.6" },
       { key: "ORB_BREAKOUT_RESCAN", label: "Breakout — Skip Weak Poke, Keep Hunting", type: "toggle", effect: EFFECT.INSTANT, desc: "OFF = the first close beyond the range is final, even if it fails the body filter (old behaviour).", default: "true" },
