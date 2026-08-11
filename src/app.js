@@ -1308,7 +1308,20 @@ app.get("/", (req, res) => {
     if (value && isExpiryOverrideStale(value)) {
       const fmt = (d) => new Date(`${d}T00:00:00+05:30`)
         .toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" });
-      optionExpiryAlertHtml =
+      // While the post-close roll is still retrying (15:40 → 16:45 IST) the expiry
+      // is being repaired, so "entries are blocked — go fix it" is noise. Say what
+      // is happening instead; the red banner returns if every attempt fails.
+      let rollPending = false;
+      try { rollPending = require("./utils/expiryHealth").isRollPending(); } catch (_) {}
+      optionExpiryAlertHtml = rollPending
+        ? `<div class="opt-expiry-alert rolling">`
+          + `<span class="opt-expiry-icon">🔄</span>`
+          + `<div class="opt-expiry-text">`
+          +   `<div class="opt-expiry-title">Option expiry expired — updating it automatically</div>`
+          +   `<div class="opt-expiry-body"><strong>${fmt(value)}</strong> has ended. The next contract is being resolved now, with retries until 16:45 IST. Nothing to do unless this is still here after that.</div>`
+          + `</div>`
+          + `</div>`
+        :
         `<div class="opt-expiry-alert">`
         + `<span class="opt-expiry-icon">🚨</span>`
         + `<div class="opt-expiry-text">`
@@ -1646,6 +1659,16 @@ app.get("/", (req, res) => {
       margin-bottom:0;
     }
     @keyframes pulse-red { 0%,100%{box-shadow:0 0 0 1px rgba(239,68,68,0.15), 0 4px 14px rgba(239,68,68,0.18);} 50%{box-shadow:0 0 0 1px rgba(239,68,68,0.35), 0 6px 22px rgba(239,68,68,0.32);} }
+    /* Roll in progress — the same strip in amber, without the alarm: the expiry
+       is expired but being repaired, so it reports rather than demands. */
+    .opt-expiry-alert.rolling {
+      background:linear-gradient(90deg,#2a1a05 0%,#1c1206 100%);
+      border-color:#f59e0b; color:#fde68a;
+      box-shadow:0 0 0 1px rgba(245,158,11,0.15), 0 4px 14px rgba(245,158,11,0.18);
+      animation:none;
+    }
+    .opt-expiry-alert.rolling .opt-expiry-title { color:#fcd34d; }
+    .opt-expiry-alert.rolling .opt-expiry-body  { color:#fde68a; }
     .opt-expiry-icon { font-size:1.4rem; flex-shrink:0; }
     .opt-expiry-text { flex:1; min-width:0; }
     .opt-expiry-title { font-size:0.78rem; font-weight:700; color:#fca5a5; letter-spacing:0.3px; margin-bottom:2px; }
@@ -3628,18 +3651,42 @@ function scheduleEODTokenClear() {
 
   console.log(`🕒 EOD token clear scheduled in ${Math.round(msUntil / 60000)} min (at 4:00 PM IST)`);
 
-  setTimeout(() => {
-    try {
-      console.log("🔴 [EOD] 4:00 PM IST — auto-clearing Fyers & Zerodha tokens...");
-      clearFyersToken();
-      zerodha.clearZerodhaToken();
-      console.log("✅ [EOD] Both tokens cleared. Fresh login required tomorrow morning.");
-    } catch (err) {
-      console.error(`❌ [EOD] Token clear failed: ${err.message}`);
-    } finally {
-      scheduleEODTokenClear(); // always re-schedule for tomorrow's 4:00 PM
+  setTimeout(() => runEODTokenClear(Date.now() + EOD_CLEAR_HOLD_MAX_MS), msUntil);
+}
+
+// The expiry auto-roll retries until 16:45 IST, and every one of those attempts
+// needs the Fyers token this function destroys — clearing at 16:00 while the
+// ladder is still running would guarantee the retries fail. So the clear waits
+// while a roll is pending, re-asking each minute, up to a hard deadline: a
+// wedged check must never leave a token alive all night.
+const EOD_CLEAR_HOLD_MAX_MS = 55 * 60 * 1000;   // 16:00 → 16:55 at the latest
+let _eodClearHoldLogged = false;
+
+function runEODTokenClear(deadline) {
+  let pending = false;
+  try { pending = require("./utils/expiryHealth").isRollPending(); }
+  catch (_) { pending = false; }   // health module unavailable → clear as before
+
+  if (pending && Date.now() < deadline) {
+    if (!_eodClearHoldLogged) {
+      console.log("⏸️  [EOD] Token clear held — the option expiry roll is still retrying (until 16:45 IST)");
+      _eodClearHoldLogged = true;
     }
-  }, msUntil);
+    setTimeout(() => runEODTokenClear(deadline), 60_000);
+    return;   // NOT rescheduled for tomorrow yet — this run has not finished
+  }
+
+  try {
+    console.log("🔴 [EOD] Auto-clearing Fyers & Zerodha tokens...");
+    clearFyersToken();
+    zerodha.clearZerodhaToken();
+    console.log("✅ [EOD] Both tokens cleared. Fresh login required tomorrow morning.");
+  } catch (err) {
+    console.error(`❌ [EOD] Token clear failed: ${err.message}`);
+  } finally {
+    _eodClearHoldLogged = false;
+    scheduleEODTokenClear(); // always re-schedule for tomorrow's 4:00 PM
+  }
 }
 
 scheduleEODTokenClear();

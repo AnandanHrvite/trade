@@ -12,11 +12,12 @@
  * What this does
  * ──────────────
  *   1. On a schedule (and at boot) it runs the SAME resolution a trade runs, so
- *      it can never report "fine" while an entry would be refused. One extra run
- *      at 15:40 — after the close, before app.js clears the broker tokens at
- *      16:00 — rolls the contract that expired at 15:30 the SAME day, so the
- *      next morning starts on a live expiry. If even that run cannot resolve it,
- *      a Telegram says so, and setting it by hand is the fallback.
+ *      it can never report "fine" while an entry would be refused. On expiry day
+ *      the contract dies at the 15:30 close and is replaced the SAME evening by
+ *      the post-close ladder: 15:40, then 16:15 / 16:30 / 16:45 if it keeps
+ *      failing. app.js holds its 16:00 token clear while that ladder runs, since
+ *      every attempt needs the token. Only when all four fail does the Dashboard
+ *      ask for the expiry to be typed in by hand.
  *   2. If OPTION_EXPIRY_OVERRIDE is blank or has already expired, it writes the
  *      newly-resolved expiry back through the Settings persistence path. The
  *      Settings page, the Dashboard expiry strip and .env all show the new date
@@ -58,15 +59,25 @@ const notify      = require("./notify");
 const WINDOW_OPEN_MIN  = 480;   // 08:00
 const WINDOW_CLOSE_MIN = 930;   // 15:30
 
-// One extra check per day, at a FIXED time just after the close. On expiry day
-// the stored expiry dies at 15:30, and app.js clears both broker tokens at 16:00
-// — after which nothing can be resolved until the next morning's login. 15:40
-// sits in that gap, so the roll to next week's contract happens the same evening
-// instead of waiting for the next day. It is a fixed minute rather than another
-// interval tick because a 30-minute tick could land at 15:35 or 16:05.
-const POST_CLOSE_MIN  = 940;     // 15:40
-const TOKEN_CLEAR_MIN = 960;     // 16:00 — app.js clears both broker tokens here
-const HEARTBEAT_MS    = 60_000;  // scheduler granularity — the checks themselves are rate-limited below
+// ── The post-close roll ladder ───────────────────────────────────────────────
+// The stored expiry dies at the 15:30 close, and until it is replaced every
+// strategy refuses entries. app.js clears both broker tokens at 16:00, after
+// which nothing can be resolved until the next morning's login — so the whole
+// repair has to happen in the evening, on fixed minutes (a 30-minute interval
+// tick anchored to boot could land at 15:35 and then at 16:05).
+//
+//   15:40  first attempt — the usual case, done before the token clear
+//   16:15 / 16:30 / 16:45  three retries, for a broker that answered badly once
+//
+// While the ladder is still running app.js HOLDS the token clear (see
+// isRollPending) — clearing the token mid-ladder would guarantee the retries
+// fail. Only when all four attempts have failed does the Dashboard raise the
+// "set it by hand" alert; before that the banner says the roll is in progress,
+// because a red "entries are blocked" banner over a repair already under way is
+// noise, not information.
+const POST_CLOSE_ATTEMPT_MINS = [940, 975, 990, 1005];   // 15:40, 16:15, 16:30, 16:45
+const LADDER_END_MIN = POST_CLOSE_ATTEMPT_MINS[POST_CLOSE_ATTEMPT_MINS.length - 1] + 10;   // 16:55
+const HEARTBEAT_MS   = 60_000;  // scheduler granularity — the checks themselves are rate-limited below
 
 const DEFAULT_INTERVAL_MINS = 30;
 const MIN_INTERVAL_MINS     = 5;
@@ -76,7 +87,11 @@ let _timer   = null;
 let _running = false;   // one check at a time — the fallback ladder must not overlap itself
 let _tradingDay = { day: null, allowed: null };
 let _lastCheckAt  = 0;      // rate-limits the in-window checks off the 1-minute heartbeat
-let _postCloseDay = null;   // IST date the 15:40 run already fired for — one per day
+
+// Today's post-close ladder. `done` = the expiry is current again (or there was
+// nothing to repair); `exhausted` = all four attempts ran and it is still stale,
+// which is the only state that asks the operator to step in.
+let _postClose = { day: null, attempts: 0, done: false, exhausted: false };
 
 // Last verdict, read by the Dashboard. Starts "unknown" so a page load before the
 // first check renders no banner rather than a false alarm.
@@ -266,26 +281,87 @@ function getState() {
   return { ..._state };
 }
 
-/**
- * The 15:40 run is the last chance of the day — app.js clears both broker tokens
- * at 16:00. If the expiry is STILL stale after it, say so once, plainly, so the
- * operator can set it by hand this evening rather than meet it at tomorrow's open.
- */
-function _postCloseAlert() {
+/** Is the stored expiry still one that cannot be traded? */
+function _overrideStale() {
   try {
-    // A "fail" verdict has already gone out through _maybeNotify with the same
-    // instruction — one message per problem, not two.
-    if (_state.status === "fail") return;
     const instrument = require("../config/instrument");
     const current    = (process.env.OPTION_EXPIRY_OVERRIDE || "").trim();
-    if (!current || !instrument.isExpiryOverrideStale(current)) return;
-    console.warn(`[expiryHealth] ⚠️  Post-close roll did not update the expiry — ${current} is still stale`);
-    notify.sendIfMaster(
-      `⚠️ <b>Option expiry could not be rolled</b>\n` +
-      `<b>${current}</b> has expired and auto-detection could not name the next contract.\n` +
-      `Set <b>Option Expiry (manual)</b> in Settings — entries stay blocked until then.`
-    );
-  } catch (_) { /* an alert that throws must not take the scheduler down */ }
+    return Boolean(current) && instrument.isExpiryOverrideStale(current);
+  } catch (_) {
+    return false;   // cannot tell → never claim a problem we have not proven
+  }
+}
+
+/** Reset the ladder when the IST date turns over. */
+function _postCloseForDay() {
+  const day = _istDay();
+  if (_postClose.day !== day) _postClose = { day, attempts: 0, done: false, exhausted: false };
+  return _postClose;
+}
+
+/**
+ * Is the post-close roll still working? app.js asks this before clearing the
+ * broker tokens at 16:00 — the retries need the token that clear would destroy,
+ * so the clear waits for the ladder to finish (it has its own hard deadline, so
+ * a wedged check can never postpone it indefinitely).
+ */
+function isRollPending() {
+  if (!_enabled() || !_autoRollEnabled()) return false;
+  const pc = _postCloseForDay();
+  if (pc.done || pc.exhausted) return false;
+  const mins = _istMinutes();
+  // Only from the first attempt until just past the last one, and only if there
+  // is actually something to repair.
+  if (mins < POST_CLOSE_ATTEMPT_MINS[0]) return false;
+  if (mins > LADDER_END_MIN) return false;
+  return _overrideStale();
+}
+
+/** Has today's ladder run out of attempts with the expiry still stale? */
+function isRollExhausted() {
+  const pc = _postCloseForDay();
+  return Boolean(pc.exhausted) && _overrideStale();
+}
+
+/**
+ * One rung of the ladder: run the same check an entry runs (which rolls the
+ * expiry as a side effect), then decide whether the day is finished, needs
+ * another attempt, or has run out of them.
+ */
+async function _runPostCloseAttempt(attemptNo) {
+  if (!(await _isTradingDay())) {
+    _postClose.done = true;   // nothing expires on a holiday — nothing to repair
+    return;
+  }
+
+  console.log(`[expiryHealth] 🔁 Post-close expiry roll — attempt ${attemptNo}/${POST_CLOSE_ATTEMPT_MINS.length}`);
+  await check();
+
+  if (!_overrideStale()) {
+    _postClose.done = true;
+    console.log(`[expiryHealth] ✅ Post-close roll complete — expiry is current again`);
+    return;
+  }
+
+  if (attemptNo < POST_CLOSE_ATTEMPT_MINS.length) {
+    console.warn(`[expiryHealth] ⚠️  Expiry still stale after attempt ${attemptNo} — retrying at ` +
+                 `${_fmtIstMinute(POST_CLOSE_ATTEMPT_MINS[attemptNo])} IST`);
+    return;
+  }
+
+  // Out of attempts — this is the case that needs a person.
+  _postClose.exhausted = true;
+  const current = (process.env.OPTION_EXPIRY_OVERRIDE || "").trim();
+  console.error(`[expiryHealth] ❌ All ${POST_CLOSE_ATTEMPT_MINS.length} post-close attempts failed — ${current} is still stale`);
+  notify.sendIfMaster(
+    `⚠️ <b>Option expiry could not be rolled</b>\n` +
+    `<b>${current}</b> has expired and ${POST_CLOSE_ATTEMPT_MINS.length} attempts could not name the next contract.\n` +
+    `Set <b>Option Expiry (manual)</b> in Settings — entries stay blocked until then.`
+  );
+}
+
+function _fmtIstMinute(mins) {
+  return `${String(Math.floor(mins / 60)).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`;
 }
 
 /** Start the periodic check. Idempotent. */
@@ -307,18 +383,23 @@ function start() {
   _timer = setInterval(() => {
     const mins = _istMinutes();
 
-    // Post-close roll — once per day, inside the 15:40 → 16:00 token-clear gap.
-    if (mins >= POST_CLOSE_MIN && mins < TOKEN_CLEAR_MIN && _postCloseDay !== _istDay()) {
-      // A check still in flight would make check() a no-op and the alert below
-      // read pre-roll state; leave the day's slot unclaimed and retry next minute.
+    // Post-close ladder — 15:40, then 16:15 / 16:30 / 16:45 while it keeps failing.
+    // Bounded at both ends: a process that boots at 21:00 must not fire all four
+    // rungs a minute apart (its own boot check already attempts the roll).
+    const pc = _postCloseForDay();
+    if (!pc.done && !pc.exhausted && pc.attempts < POST_CLOSE_ATTEMPT_MINS.length &&
+        mins >= POST_CLOSE_ATTEMPT_MINS[pc.attempts] && mins <= LADDER_END_MIN) {
+      // Most days the expiry is still live at 15:40 — nothing to repair, and no
+      // reason to spend a broker probe finding that out.
+      if (!_overrideStale()) { pc.done = true; return; }
+      // A check still in flight would make check() a no-op and the verdict below
+      // read pre-roll state; leave this rung unclaimed and retry next minute.
       if (_running) return;
-      _postCloseDay = _istDay();
+      pc.attempts  += 1;
       _lastCheckAt  = Date.now();
-      // Gated on the trading day so a weekend never reports "could not roll"
-      // when nothing was attempted — check() skips those days on its own.
-      _isTradingDay()
-        .then((ok) => (ok ? check().then(_postCloseAlert) : null))
-        .catch(() => {});
+      _runPostCloseAttempt(pc.attempts).catch((err) => {
+        console.warn(`[expiryHealth] ⚠️  Post-close attempt failed: ${err.message}`);
+      });
       return;
     }
 
@@ -329,7 +410,8 @@ function start() {
   }, HEARTBEAT_MS);
   _timer.unref();
 
-  console.log(`   Expiry health    : ✅ every ${Math.round(_intervalMs() / 60000)} min, 08:00–15:30 IST, plus a 15:40 roll` +
+  console.log(`   Expiry health    : ✅ every ${Math.round(_intervalMs() / 60000)} min, 08:00–15:30 IST, ` +
+              `post-close roll ${POST_CLOSE_ATTEMPT_MINS.map(_fmtIstMinute).join("/")}` +
               `${_autoRollEnabled() ? " (auto-roll ON)" : " (auto-roll off)"}`);
 }
 
@@ -337,4 +419,4 @@ function stop() {
   if (_timer) { clearInterval(_timer); _timer = null; }
 }
 
-module.exports = { start, stop, check, getState };
+module.exports = { start, stop, check, getState, isRollPending, isRollExhausted };
