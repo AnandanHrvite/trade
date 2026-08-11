@@ -264,6 +264,12 @@ function _maybeNotify() {
   const day = _istDay();
   if (_notified.status === _state.status && _notified.day === day) return;
 
+  // A failed rung of the post-close ladder is not news yet — the retries are
+  // still coming, and the ladder sends exactly one message if they all fail.
+  // Nothing is recorded in _notified either, so a failure that outlives the
+  // ladder still reports itself on the next check.
+  if (_state.status === "fail" && isRollPending()) return;
+
   if (_state.status === "fail") {
     notify.sendIfMaster(
       `🚨 <b>Option expiry could not be resolved</b>\n` +
@@ -315,12 +321,6 @@ function isRollPending() {
   if (mins < POST_CLOSE_ATTEMPT_MINS[0]) return false;
   if (mins > LADDER_END_MIN) return false;
   return _overrideStale();
-}
-
-/** Has today's ladder run out of attempts with the expiry still stale? */
-function isRollExhausted() {
-  const pc = _postCloseForDay();
-  return Boolean(pc.exhausted) && _overrideStale();
 }
 
 /**
@@ -419,4 +419,4 @@ function stop() {
   if (_timer) { clearInterval(_timer); _timer = null; }
 }
 
-module.exports = { start, stop, check, getState, isRollPending, isRollExhausted };
+module.exports = { start, stop, check, getState, isRollPending };
