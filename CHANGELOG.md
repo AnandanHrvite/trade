@@ -6,6 +6,14 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Changed — ORB: one weak poke past the opening range no longer kills the whole day
+
+ORB picked the first 5-min close beyond the opening range as *the* breakout of the day, and only then asked whether that candle was decisive. If it wasn't, the session was over. On 2026-08-11 a 7.8pt body at 09:50 (the filter wanted 19.1pt) locked ORB out of a day that went on to fall ~135 points from the opening-range high.
+
+The scan now skips a candidate that fails the colour / body / VWAP test and keeps looking for the first close that clears the edge *and* is decisive — including one on the opposite side. Everything downstream (confirmation candle, retest window, one trade per day) is unchanged, and selection stays deterministic and repaint-free because each candidate is judged on the frozen ATR(5m) and the VWAP up to its own close.
+
+New key `ORB_BREAKOUT_RESCAN` (default `true`, in Settings → ORB). Set it `false` to restore the old first-close-is-final behaviour.
+
 ### Changed — The expiry now rolls on expiry-day evening, not the next morning
 
 The auto-roll only ran between 08:00 and 15:30 IST, so the contract that died at the 15:30 close sat stale — with every strategy's entries blocked and the Dashboard banner up — until the next morning's first check. Two things stood in the way, and both are fixed:

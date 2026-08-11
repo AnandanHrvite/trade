@@ -29,7 +29,9 @@
  *   1. Build the opening range 09:15–09:30 and FREEZE it (never recalculated).
  *   2. Day sanity: OR ≤ ORB_OR_ATR_MAX × ATR(15m), and |gap| ≤ ORB_GAP_OR_MULT × OR.
  *   3. Hunt the first 5-min CLOSE that clears the OR edge by a volatility-scaled
- *      buffer. That is the ONE committed breakout of the day.
+ *      buffer AND is decisive (step 4). That is the ONE committed breakout of the
+ *      day. A close that clears the edge but is not decisive is skipped and the
+ *      hunt continues — see ORB_BREAKOUT_RESCAN (2026-08-11).
  *   4. The breakout candle must be decisive: correct colour, body ≥
  *      ORB_BODY_ATR_MULT × ATR(5m), and closing on the right side of session VWAP.
  *   5. NEVER buy the breakout candle. The NEXT candle must extend the move
@@ -320,6 +322,57 @@ function _extends(c, brk, side, orh, orl) {
 }
 
 /**
+ * Is candle `i` a usable breakout bar for `side`? — correct colour, decisive body
+ * (>= ORB_BODY_ATR_MULT x ATR5) and closing on the right side of session VWAP.
+ *
+ * Pulled out of the main flow so the breakout SCAN can apply it per candidate
+ * (see ORB_BREAKOUT_RESCAN in getSignal). Every input is historical at index `i`
+ * — the frozen ATR5 and the VWAP up to that bar — so a candle's verdict never
+ * changes as the day goes on. No repaint.
+ *
+ * `minBody` null means ATR5 was not seeded; the body test then fails open, exactly
+ * as the inline version did.
+ */
+function _breakoutQuality(candles, i, side, minBody) {
+  const c = candles[i];
+  const vwap = computeVwap(candles.slice(0, i + 1));
+  const range = c.high - c.low;
+  const body  = Math.abs(c.close - c.open);
+  const colourOk = side === "CE" ? c.close > c.open : c.close < c.open;
+  const bodyOk   = minBody == null || body >= minBody;
+  const vwapOk   = _vwapSideOk(c, side, vwap);
+  return {
+    ok: colourOk && bodyOk && vwapOk,
+    colourOk, bodyOk, vwapOk, vwap, body, minBody,
+    bodyPct: range > 0 ? _r2(body / range) : null,
+  };
+}
+
+/**
+ * Plain-English reason for a candle that cleared the edge but failed quality.
+ *
+ * Under rescan the session is NOT over — later candles are still eligible — so the
+ * wording says "still hunting" rather than the old "no trade today". With rescan
+ * off the first poke is final and the original wording is kept verbatim, because
+ * the skip log and the dashboards read it.
+ */
+function _rejectReason(rej, cfg, rescan) {
+  const { side, q } = rej;
+  const tail = rescan ? "— hunting for a decisive one" : "— not decisive, no trade today";
+  if (!q.colourOk) {
+    return rescan
+      ? `Breakout candle is not ${side === "CE" ? "green" : "red"} — hunting for a decisive one`
+      : `Breakout candle is not ${side === "CE" ? "green" : "red"} — no trade today`;
+  }
+  if (!q.bodyOk) {
+    return `Breakout candle body ${q.body.toFixed(1)}pt < ${q.minBody.toFixed(1)}pt (${cfg.bodyAtrMult}×ATR5) ${tail}`;
+  }
+  return rescan
+    ? `Breakout close on the wrong side of VWAP ${q.vwap} — hunting for a decisive one`
+    : `Breakout close on the wrong side of VWAP ${q.vwap} — no trade today`;
+}
+
+/**
  * Per-candle decision tracer (STEP 12 instrumentation).
  *
  * The trace ALWAYS rides back on the signal as `sig.gates`, so the skip log can
@@ -504,58 +557,70 @@ function getSignal(candles, opts) {
     }
   } else { tr.skip("gap sanity", gapPts == null ? "prior close unknown — fail-open" : "disabled"); }
 
-  // ── 6. The committed breakout: first in-window CLOSE beyond the edge ───────
+  // ── 6. The committed breakout: first in-window CLOSE beyond the edge that is
+  //       also a decisive bar on the right side of VWAP ───────────────────────
   const buffer = _r2(Math.max(BUFFER_OR_MULT * rangePts, atr5 != null ? BUFFER_ATR_MULT * atr5 : 0, 1));
-  let b = -1, side = null;
+  const minBody = atr5 != null ? cfg.bodyAtrMult * atr5 : null;
+
+  // 2026-08-11: the scan used to STOP at the first close beyond the edge and then
+  // judge that candle's quality. One indecisive bar therefore killed the entire
+  // session — on 2026-08-11 a 7.8pt body at 09:50 (threshold 19.1pt) locked ORB out
+  // of a day that went on to fall ~135pt from the ORH. Rescanning keeps hunting for
+  // the first breakout bar that is ALSO decisive, so the day survives a weak poke.
+  // Selection stays deterministic and repaint-free: every candidate is judged on
+  // data available at its own close (frozen ATR5, VWAP up to that bar).
+  // ORB_BREAKOUT_RESCAN=false restores the old first-close-is-final behaviour.
+  const rescan = (process.env.ORB_BREAKOUT_RESCAN || "true").toLowerCase() === "true";
+
+  let b = -1, side = null, q = null, rejected = null;
   for (let i = 0; i < candles.length; i++) {
     const c = candles[i];
     if (_istDay(c.time) !== day) continue;
     const m = _istMins(c.time);
     if (m < cfg.orEnd || m >= cfg.entryEnd) continue;
-    if (c.close > or.high + buffer) { b = i; side = "CE"; break; }
-    if (c.close < or.low  - buffer) { b = i; side = "PE"; break; }
+    let s = null;
+    if (c.close > or.high + buffer) s = "CE";
+    else if (c.close < or.low - buffer) s = "PE";
+    if (!s) continue;
+    const cand = _breakoutQuality(candles, i, s, minBody);
+    if (cand.ok) { b = i; side = s; q = cand; break; }
+    rejected = { idx: i, side: s, q: cand };
+    if (!rescan) break;
   }
+
   if (!tr.check("breakout", b >= 0, b >= 0
         ? `${side} — close ${candles[b].close} cleared the edge by ≥${buffer}pt`
         : `close ${last.close} still inside [${_r2(or.low - buffer)}, ${_r2(or.high + buffer)}] (buffer ${buffer}pt)`)) {
+    // Nothing qualified. If a candle DID clear the edge but was not decisive, report
+    // that instead of "no breakout" — it is the real reason, and under rescan the day
+    // is still alive, so the wording must not claim the session is over.
+    if (rejected) return done(Object.assign(sig, { reason: _rejectReason(rejected, cfg, rescan) }));
     return done(Object.assign(sig, { reason: `No breakout yet — close ${last.close} within [${_r2(or.low - buffer)}, ${_r2(or.high + buffer)}]` }));
   }
   sig.side = side;
   const brk = candles[b];
 
-  if (lastIdx === b) {
-    tr.info("confirmation", "this IS the breakout candle — never bought; waiting for the next close");
-    return done(Object.assign(sig, { reason: `Breakout ${side} candle formed (close ${brk.close}) — waiting for the next candle to confirm` }));
-  }
+  // ── 7. Breakout-candle quality (already verified by the scan above) ────────
+  if (q.vwap == null) _warnNoVolumeOnce(silent);
+  sig.vwap    = q.vwap;
+  sig.bodyPct = q.bodyPct;
+  const brkBody = q.body;
 
-  // ── 7. Breakout-candle quality: decisive bar, right side of VWAP ───────────
-  const vwapAtBrk = computeVwap(candles.slice(0, b + 1));
-  if (vwapAtBrk == null) _warnNoVolumeOnce(silent);
-  sig.vwap = vwapAtBrk;
-
-  const brkRange = brk.high - brk.low;
-  const brkBody  = Math.abs(brk.close - brk.open);
-  sig.bodyPct = brkRange > 0 ? _r2(brkBody / brkRange) : null;
-
-  if (!tr.check("candle colour", side === "CE" ? brk.close > brk.open : brk.close < brk.open,
-                `${side} needs a ${side === "CE" ? "green" : "red"} breakout bar`)) {
-    return done(Object.assign(sig, { reason: `Breakout candle is not ${side === "CE" ? "green" : "red"} — no trade today` }));
-  }
-  if (atr5 != null) {
-    const minBody = cfg.bodyAtrMult * atr5;
-    if (!tr.check("decisive body", brkBody >= minBody, `body ${brkBody.toFixed(1)}pt vs ${minBody.toFixed(1)}pt (${cfg.bodyAtrMult}×ATR5)`)) {
-      return done(Object.assign(sig, { reason: `Breakout candle body ${brkBody.toFixed(1)}pt < ${minBody.toFixed(1)}pt (${cfg.bodyAtrMult}×ATR5) — not decisive, no trade today` }));
-    }
-  } else { tr.skip("decisive body", "ATR5 not seeded — fail-open"); }
-  if (!tr.check("VWAP side", _vwapSideOk(brk, side, vwapAtBrk), `close ${brk.close} vs VWAP ${vwapAtBrk}`)) {
-    return done(Object.assign(sig, { reason: `Breakout close ${brk.close} on the wrong side of VWAP ${vwapAtBrk} — no trade today` }));
-  }
+  tr.check("candle colour", true, `${side === "CE" ? "green" : "red"} breakout bar`);
+  if (minBody != null) tr.check("decisive body", true, `body ${brkBody.toFixed(1)}pt vs ${minBody.toFixed(1)}pt (${cfg.bodyAtrMult}×ATR5)`);
+  else tr.skip("decisive body", "ATR5 not seeded — fail-open");
+  tr.check("VWAP side", true, `close ${brk.close} vs VWAP ${q.vwap}`);
   // vwapAligned records a gate that genuinely ran and passed, just above.
   // wickPass used to be hard-coded true here — but the wick filter was DELETED in the
   // 2026-07-26 rebuild (see the ablation note in the header), so every trade record
   // and every AI export has been carrying `wickPass: true` for a filter that does not
   // exist. Left null: no filter ran, so there is no verdict to report.
   sig.vwapAligned = true;
+
+  if (lastIdx === b) {
+    tr.info("confirmation", "this IS the breakout candle — never bought; waiting for the next close");
+    return done(Object.assign(sig, { reason: `Breakout ${side} candle formed (close ${brk.close}) — waiting for the next candle to confirm` }));
+  }
 
   // ── 8. Entry construction. The strategy OWNS the stop — routes execute it. ──
   const _fire = (why, tag) => {

@@ -124,8 +124,9 @@ See [BB_RSI.md](BB_RSI.md) for the authoritative spec. Summary:
 - **Entry pipeline** — the 09:15–09:30 opening range is **frozen** at 09:30 and never recomputed. A trade requires all of the following, in order:
   1. **Day sanity — OR size**: skip the day when OR width > `ORB_OR_ATR_MAX=2.5 × ATR(15m)` (the open already ran). There is deliberately **no minimum**: the two best trades in the study came from the two *narrowest* opening ranges, so a floor points the wrong way. Fails open until ATR15 is seeded.
   2. **Day sanity — gap**: skip when `|today open − prior close| > ORB_GAP_OR_MULT=3 × OR width` (news, not structure). Fails open when the prior close isn't in the window.
-  3. **Committed breakout**: the **first** 5-min *close* to clear the OR edge by `max(0.15×OR, 0.3×ATR5, 1pt)` is the one breakout of the day — no second attempt. The buffer multipliers are now constants, not env keys.
+  3. **Committed breakout**: the **first** 5-min *close* to clear the OR edge by `max(0.15×OR, 0.3×ATR5, 1pt)` **and pass step 4** is the one breakout of the day — no second attempt after that. The buffer multipliers are now constants, not env keys.
   4. **Decisive breakout candle**: correct colour, body ≥ `ORB_BODY_ATR_MULT=0.6 × ATR(5m)`, and closing on the right side of session VWAP. This is **the load-bearing filter** — removing it took the worst trade from 0 to −80pt and profit factor from ∞ to 3.3.
+     - **2026-08-11 — a weak poke no longer kills the day** (`ORB_BREAKOUT_RESCAN=true`). The scan used to stop at the first close beyond the edge and *then* judge it, so one indecisive bar ended the session: on 2026-08-11 a 7.8pt body at 09:50 (threshold 19.1pt) locked ORB out of a day that fell ~135pt from the ORH. The scan now skips a candidate that fails colour / body / VWAP and keeps hunting for the first bar that clears the edge *and* is decisive — including one on the other side. Selection stays deterministic and repaint-free (each candidate is judged on the frozen ATR5 and the VWAP up to its own close). Set the key `false` to restore first-close-is-final.
   5. **Confirmation — never buy the breakout candle.** The *next* candle must extend the move (higher-high **and** higher-close beyond the edge, still the right side of VWAP).
   6. **Retest / resume fallback** (`ORB_RETEST_MAX_WAIT=6`, `0` disables): if the confirmation candle hesitates, stay armed for up to N candles and take a trend-resume or a retest-and-hold of the edge. A close back through the box cancels the day. A trend that never retests **still enters** — the retest can never veto it.
   7. **Option filter**: slightly-ITM strike (`ORB_ITM_STEPS=1`, CE lower / PE higher; `0` = ATM), LTP inside `[ORB_PREMIUM_MIN, ORB_PREMIUM_MAX]`, bid-ask spread ≤ `ORB_MAX_SPREAD_PTS`. Live/paper only — the backtest has no option chain.
@@ -510,6 +511,7 @@ Full spec: [BB_RSI.md](BB_RSI.md).
 | `ORB_OR_ATR_MAX` | `2.5` | Skip the day when OR width > this × `ATR(15m)`. No minimum by design — see the strategy section |
 | `ORB_GAP_OR_MULT` | `3.0` | Skip when `\|gap\| > this × OR width` (`0` = off) |
 | `ORB_BODY_ATR_MULT` | `0.6` | Breakout candle body ≥ this × `ATR(5m)`. The load-bearing entry filter |
+| `ORB_BREAKOUT_RESCAN` | `true` | Skip a close that clears the OR edge but fails the body/colour/VWAP test and keep hunting for a decisive one. `false` = the first close beyond the edge is final (pre-2026-08-11 behaviour) |
 | `ORB_RETEST_MAX_WAIT` | `6` | Candles to stay armed for a retest/resume after a hesitating confirmation (`0` = confirmed entries only) |
 | `ORB_DEBUG_TRACE` | `false` | Print the full per-candle entry funnel (PASS/FAIL/SKIP per gate + decision) to the logs |
 | **— exits —** | | |

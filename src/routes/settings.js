@@ -191,6 +191,7 @@ const SETTINGS_SCHEMA = [
       { key: "ORB_OR_ATR_MAX", label: "Day Filter — Max OR ÷ ATR(15m)", type: "number", min: 1, max: 5, step: 0.1, effect: EFFECT.INSTANT, desc: "Skip the day if the opening range is too wide.", default: "2.5" },
       { key: "ORB_GAP_OR_MULT", label: "Day Filter — Max Gap ÷ OR", type: "number", min: 1, max: 6, step: 0.5, effect: EFFECT.INSTANT, desc: "Skip the day on an oversized overnight gap.", default: "3.0" },
       { key: "ORB_BODY_ATR_MULT", label: "Breakout — Min Body ÷ ATR(5m)", type: "number", min: 0.2, max: 1.5, step: 0.1, effect: EFFECT.INSTANT, desc: "Breakout candle must be at least this decisive.", default: "0.6" },
+      { key: "ORB_BREAKOUT_RESCAN", label: "Breakout — Skip Weak Poke, Keep Hunting", type: "toggle", effect: EFFECT.INSTANT, desc: "OFF = the first close beyond the range is final, even if it fails the body filter (old behaviour).", default: "true" },
       { key: "ORB_RETEST_MAX_WAIT", label: "Retest / Resume Window (candles)", type: "number", min: 0, max: 12, step: 1, effect: EFFECT.INSTANT, desc: "Candles to wait for a retest or resume (0 = off).", default: "6" },
 
       // ── Exits (all owned by src/strategies/orbExits.js — one engine for
