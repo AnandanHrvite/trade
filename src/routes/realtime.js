@@ -125,7 +125,7 @@ function renderPage({ liveActive, sidebarKey = "realtime", autoFlipBack = false 
   }).join('\n');
 
   const cardsHtml = strategies.map(s => `
-    <div class="card ${s.accentClass}" id="card-${s.key}">
+    <div class="card ${s.accentClass}" id="card-${s.key}" hidden>
       <div class="card-header">
         <div class="card-title">${s.label}</div>
         <div class="badge stop" id="badge-${s.key}">—</div>
@@ -188,8 +188,10 @@ ${faviconLink()}
   .cap-alert-list .t { color:#9a8a55; }
 
   .cols { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(280px,100%), 1fr)); gap:14px; margin-bottom:18px; }
+  .cards-empty { background:#0a1628; border:1px dashed #1c2c47; border-radius:10px; padding:22px 16px; margin-bottom:18px; text-align:center; color:#7d8aa3; font-size:0.85rem; }
 
   .card { background:#0a1628; border:1px solid #1c2c47; border-top-width:3px; border-radius:10px; padding:14px 16px; min-height:280px; display:flex; flex-direction:column; gap:10px; min-width:0; }
+  .card[hidden] { display:none; }   /* display:flex above would beat the UA [hidden] rule */
   .card.ema_rsi_st    { border-top-color:#3b82f6; }
   .card.bb_rsi    { border-top-color:#f59e0b; }
   .card.pa       { border-top-color:#a855f7; }
@@ -292,6 +294,7 @@ ${faviconLink()}
   :root[data-theme="light"] .toggle { background:#fff !important; border-color:#e0e4ea !important; box-shadow:0 1px 3px rgba(0,0,0,0.06); }
   :root[data-theme="light"] .toggle button:not(.active) { color:#4b5769; }
   :root[data-theme="light"] .card { background:#fff !important; border-color:#e0e4ea !important; box-shadow:0 1px 3px rgba(0,0,0,0.06); }
+  :root[data-theme="light"] .cards-empty { background:#fff; border-color:#d7dce4; color:#4b5769; }
   :root[data-theme="light"] .card.ema_rsi_st    .card-title { color:#1d4ed8; }
   :root[data-theme="light"] .card.bb_rsi    .card-title { color:#b45309; }
   :root[data-theme="light"] .card.pa       .card-title { color:#7e22ce; }
@@ -374,6 +377,11 @@ ${sidebar}
   <div class="cols">
 ${cardsHtml}
   </div>
+  <!-- Cards are hidden until a strategy actually has something to watch (open
+       position, a trade today, or a dead endpoint). With ten strategies the wall
+       of identical FLAT boxes buried the one card that mattered. The rollup
+       table below still lists every strategy. -->
+  <div class="cards-empty" id="cards-empty" hidden>No strategy has taken a trade yet — cards appear here on the first entry.</div>
 
   <div class="rollup-wrap">
   <table class="rollup">
@@ -522,6 +530,9 @@ function renderColumn(strategy, d) {
     bodyEl.innerHTML = '<div class="flat-block">Endpoint unavailable</div>';
     statsEl.innerHTML = '';
     metaEl.innerHTML = '<span>—</span><span>—</span>';
+    // A dead endpoint stays on screen — hiding it would look like a quiet
+    // strategy instead of a broken one.
+    showCard(strategy, true);
     return;
   }
 
@@ -544,6 +555,27 @@ function renderColumn(strategy, d) {
   const ltp = d.lastTickPrice ? fmtNum(d.lastTickPrice) : '—';
   const tickTime = d.lastTickTime || '';
   metaEl.innerHTML = \`<span>LTP \${ltp}\${tickTime ? ' · ' + tickTime : ''}</span><span>\${d.tickCount ?? 0} ticks</span>\`;
+
+  // Worth a card only once there is something to watch: money at risk now, or a
+  // trade already taken today. Everything else lives in the rollup table.
+  showCard(strategy, !!pos || todayTrades(d) > 0);
+}
+
+// Cards are hidden, not removed, so the poll can bring one back the moment its
+// strategy enters — and the copy/open buttons keep their handlers throughout.
+function showCard(strategy, visible) {
+  const card = document.getElementById('card-' + strategy);
+  if (card) card.hidden = !visible;
+}
+
+function renderCardsEmpty() {
+  const box = document.getElementById('cards-empty');
+  if (!box) return;
+  const anyVisible = STRATEGY_KEYS.some(k => {
+    const card = document.getElementById('card-' + k);
+    return card && !card.hidden;
+  });
+  box.hidden = anyVisible;
 }
 
 function renderRollup(all) {
@@ -674,6 +706,7 @@ async function poll() {
   const capital = results.pop();
   const all = {};
   STRATEGY_KEYS.forEach((k, i) => { all[k] = results[i]; renderColumn(k, results[i]); });
+  renderCardsEmpty();
   renderRollup(all);
   renderPools(capital);
   renderCapitalAlert(capital);
