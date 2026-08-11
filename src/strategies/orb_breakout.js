@@ -332,20 +332,28 @@ function _extends(c, brk, side, orh, orl) {
  *
  * `minBody` null means ATR5 was not seeded; the body test then fails open, exactly
  * as the inline version did.
+ *
+ * VWAP is computed LAZILY — only for a candle that already passed colour and body.
+ * The scan can now inspect every in-window candidate instead of just one, and the
+ * bar-based harnesses (orbBacktest, scripts/orbValidate) call getSignal once per
+ * candle over years of history; an eager cumulative VWAP per candidate would be
+ * the most expensive thing in that loop for a value the cheap tests usually make
+ * irrelevant. `vwap` is therefore null on a colour/body rejection — no verdict,
+ * because none was needed.
  */
 function _breakoutQuality(candles, i, side, minBody) {
   const c = candles[i];
-  const vwap = computeVwap(candles.slice(0, i + 1));
   const range = c.high - c.low;
   const body  = Math.abs(c.close - c.open);
   const colourOk = side === "CE" ? c.close > c.open : c.close < c.open;
   const bodyOk   = minBody == null || body >= minBody;
-  const vwapOk   = _vwapSideOk(c, side, vwap);
-  return {
-    ok: colourOk && bodyOk && vwapOk,
-    colourOk, bodyOk, vwapOk, vwap, body, minBody,
-    bodyPct: range > 0 ? _r2(body / range) : null,
-  };
+  const bodyPct  = range > 0 ? _r2(body / range) : null;
+  if (!colourOk || !bodyOk) {
+    return { ok: false, colourOk, bodyOk, vwapOk: null, vwap: null, body, minBody, bodyPct };
+  }
+  const vwap = computeVwap(candles.slice(0, i + 1));
+  const vwapOk = _vwapSideOk(c, side, vwap);
+  return { ok: vwapOk, colourOk, bodyOk, vwapOk, vwap, body, minBody, bodyPct };
 }
 
 /**
@@ -368,8 +376,8 @@ function _rejectReason(rej, cfg, rescan) {
     return `Breakout candle body ${q.body.toFixed(1)}pt < ${q.minBody.toFixed(1)}pt (${cfg.bodyAtrMult}×ATR5) ${tail}`;
   }
   return rescan
-    ? `Breakout close on the wrong side of VWAP ${q.vwap} — hunting for a decisive one`
-    : `Breakout close on the wrong side of VWAP ${q.vwap} — no trade today`;
+    ? `Breakout close ${rej.close} on the wrong side of VWAP ${q.vwap} — hunting for a decisive one`
+    : `Breakout close ${rej.close} on the wrong side of VWAP ${q.vwap} — no trade today`;
 }
 
 /**
@@ -584,19 +592,39 @@ function getSignal(candles, opts) {
     if (!s) continue;
     const cand = _breakoutQuality(candles, i, s, minBody);
     if (cand.ok) { b = i; side = s; q = cand; break; }
-    rejected = { idx: i, side: s, q: cand };
+    rejected = { idx: i, side: s, close: c.close, q: cand };
     if (!rescan) break;
   }
 
-  if (!tr.check("breakout", b >= 0, b >= 0
-        ? `${side} — close ${candles[b].close} cleared the edge by ≥${buffer}pt`
-        : `close ${last.close} still inside [${_r2(or.low - buffer)}, ${_r2(or.high + buffer)}] (buffer ${buffer}pt)`)) {
-    // Nothing qualified. If a candle DID clear the edge but was not decisive, report
-    // that instead of "no breakout" — it is the real reason, and under rescan the day
-    // is still alive, so the wording must not claim the session is over.
-    if (rejected) return done(Object.assign(sig, { reason: _rejectReason(rejected, cfg, rescan) }));
+  if (b < 0) {
+    // Nothing qualified. If a candle DID clear the edge but was not decisive, the
+    // funnel must still show WHICH quality gate rejected it — the compact
+    // `breakout:P,candle colour:P,decisive body:F` trail is how "why is ORB not
+    // trading?" gets answered from the skip log — and the reason must not claim the
+    // session is over while rescan keeps it alive. `rejected` holds the LATEST poke,
+    // which is the one an operator is asking about.
+    if (rejected) {
+      const rq = rejected.q, rc = candles[rejected.idx];
+      sig.bodyPct = rq.bodyPct;
+      sig.vwap    = rq.vwap;   // null unless colour+body passed — see _breakoutQuality
+      tr.check("breakout", true, `${rejected.side} — close ${rc.close} cleared the edge by ≥${buffer}pt`);
+      // Gates are reported up to the first failure only, matching the old
+      // short-circuit trail exactly.
+      if (tr.check("candle colour", rq.colourOk, `${rejected.side} needs a ${rejected.side === "CE" ? "green" : "red"} breakout bar`)) {
+        let bodyPassed = true;
+        if (minBody == null) tr.skip("decisive body", "ATR5 not seeded — fail-open");
+        else bodyPassed = tr.check("decisive body", rq.bodyOk, `body ${rq.body.toFixed(1)}pt vs ${minBody.toFixed(1)}pt (${cfg.bodyAtrMult}×ATR5)`);
+        if (bodyPassed) {
+          if (rq.vwap == null) _warnNoVolumeOnce(silent);
+          tr.check("VWAP side", rq.vwapOk, `close ${rc.close} vs VWAP ${rq.vwap}`);
+        }
+      }
+      return done(Object.assign(sig, { reason: _rejectReason(rejected, cfg, rescan) }));
+    }
+    tr.check("breakout", false, `close ${last.close} still inside [${_r2(or.low - buffer)}, ${_r2(or.high + buffer)}] (buffer ${buffer}pt)`);
     return done(Object.assign(sig, { reason: `No breakout yet — close ${last.close} within [${_r2(or.low - buffer)}, ${_r2(or.high + buffer)}]` }));
   }
+  tr.check("breakout", true, `${side} — close ${candles[b].close} cleared the edge by ≥${buffer}pt`);
   sig.side = side;
   const brk = candles[b];
 
