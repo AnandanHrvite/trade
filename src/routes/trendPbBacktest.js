@@ -141,7 +141,9 @@ function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [] } = 
   function closeAndPush(pos, exitSpot, exitTime, reason) {
     const p = priceExit(pos, exitSpot, exitTime);
     _dayPnl += p.pnl;
-    _consecLosses = p.pnl < 0 ? _consecLosses + 1 : 0;
+    // Paper's exact three-way rule: a loss increments, a WIN resets, and an exactly
+    // flat trade leaves the counter alone (trendPbPaper: `if (pnl<0) ++; else if (pnl>0) =0`).
+    if (p.pnl < 0) _consecLosses++; else if (p.pnl > 0) _consecLosses = 0;
     trades.push({
       side: pos.side,
       entry: entryTsStr(pos.entryTime), exit: entryTsStr(exitTime),

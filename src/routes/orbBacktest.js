@@ -186,14 +186,21 @@ function runOrbBacktest(allCandles, expirySet, vixCandles = []) {
   let globalBase = 0;
   for (const [_dateStr, dayCandles] of byDate) {
     const _dayLen = dayCandles.length;
+    // New session — paper's state resets every morning on /start. Seeded BEFORE
+    // the skip guards below because orbPaper records a day even when it never
+    // traded: `recordDay(..., sessionPnl)` runs on every /stop, so a no-trade or
+    // gated-out day lands in the ledger as 0. `evaluate` breaks its losing streak
+    // on the first non-negative day, so omitting quiet days here would let a
+    // streak run across them and sit the backtest out far longer than paper —
+    // exactly the deadlock orbPaper's own comment says the 0 is there to prevent.
+    _dayIso = _dateStr;
+    _dayPnl = 0;
+    if (!_pnlByIso.has(_dateStr)) _pnlByIso.set(_dateStr, 0);
     if (dayCandles.length < 5) { globalBase += _dayLen; continue; }
     if (EXPIRY_ONLY && expirySet && !expirySet.has(_dateStr)) { globalBase += _dayLen; continue; }
     let position = null;
     let tradesTaken = 0;
     const maxTrades = parseInt(process.env.ORB_MAX_DAILY_TRADES || "1", 10);
-    // New session — paper's state resets every morning on /start.
-    _dayIso = _dateStr;
-    _dayPnl = 0;
 
     for (let i = 0; i < dayCandles.length; i++) {
       const c = dayCandles[i];
