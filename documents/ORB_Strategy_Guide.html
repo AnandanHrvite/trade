@@ -446,7 +446,7 @@
     <div class="gate-num">5</div>
     <div class="gate-content">
       <div class="gate-name">A real break, not a toe over the line</div>
-      <div class="gate-desc">The first 5-min candle to <em>close</em> clearly past the box edge (past a small cushion) is the day's <strong>one and only</strong> breakout. Nothing later can replace it.</div>
+      <div class="gate-desc">The first 5-min candle to <em>close</em> clearly past the box edge (past a small cushion) <em>and</em> pass the decisiveness checks in step 6 is the day's <strong>one and only</strong> breakout. Nothing after it can replace it.</div>
       <div class="gate-rule">close beyond the edge by max(0.15&times;box, 0.30&times;ATR5, 1pt)</div>
     </div>
   </div>
@@ -455,7 +455,7 @@
     <div class="gate-num">6</div>
     <div class="gate-content">
       <div class="gate-name">Was that breakout candle decisive?</div>
-      <div class="gate-desc">Three checks on the breakout candle itself: right colour (green for CE, red for PE), a solid body (not a tiny doji), and closing on the correct side of the fair-value line. If any fails, <strong>the whole day is over</strong> &mdash; we don't look for another breakout.</div>
+      <div class="gate-desc">Three checks on the breakout candle itself: right colour (green for CE, red for PE), a solid body (not a tiny doji), and closing on the correct side of the fair-value line. If any fails, that candle is <strong>not</strong> the breakout &mdash; we ignore it and keep watching for a later close past the edge that <em>is</em> decisive (either side of the box). Before 11 Aug 2026 a failed check ended the whole day; one 7.8-point poke that morning cost a session that then fell 135 points. Set <code>ORB_BREAKOUT_RESCAN</code> to <code>false</code> for the old behaviour.</div>
       <div class="gate-rule">right colour &middot; body &ge; 0.6&times;ATR5 &middot; CE above VWAP, PE below VWAP</div>
     </div>
   </div>
@@ -833,6 +833,7 @@
       <tr><td><code>ORB_OR_ATR_MAX</code></td><td><code>2.5</code></td><td>Skip the day when the box is wider than this &times; the normal 15-min move. There is <strong>no minimum</strong> by design.</td></tr>
       <tr><td><code>ORB_GAP_OR_MULT</code></td><td><code>3.0</code></td><td>Skip if the open gap is bigger than this &times; the box height (<code>0</code> = ignore gaps).</td></tr>
       <tr><td><code>ORB_BODY_ATR_MULT</code></td><td><code>0.6</code></td><td>How big the breakout candle's body must be, vs the normal 5-min move. The load-bearing entry filter &mdash; but see Section 10 before tuning it.</td></tr>
+      <tr><td><code>ORB_BREAKOUT_RESCAN</code></td><td><code>true</code></td><td>Ignore a close past the box edge that fails the decisiveness checks and keep watching for a better one. <code>false</code> = the first close past the edge is final, pass or fail (behaviour before 11 Aug 2026).</td></tr>
       <tr><td><code>ORB_RETEST_MAX_WAIT</code></td><td><code>6</code></td><td>Candles to stay armed for a resume/retest after a hesitating confirmation. <code>0</code> = confirmed entries only.</td></tr>
       <tr><td><code>ORB_DEBUG_TRACE</code></td><td><code>false</code></td><td>Print the whole per-candle checklist to the logs. Verbose &mdash; turn it back off.</td></tr>
     </tbody>
