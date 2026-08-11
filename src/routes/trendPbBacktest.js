@@ -249,6 +249,11 @@ function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [] } = 
       // burn the latch and leave the baseline flat for the whole session while the
       // real strategy simply retried on the next bar — an asymmetry that would make
       // the "bar to beat" artificially easy.
+      // The `|| "STRONG"` only ever applies to the BASELINE: the engine sets
+      // signalStrength="STRONG" on its single BUY return, so the real path always
+      // has it, while the baseline fires off trendBias alone and leaves it null.
+      // Passing null there would let `checkBacktestVix`'s STRONG_ONLY tier block the
+      // baseline in regimes the real strategy trades — the same asymmetry again.
       const _hasSignal = baseline
         ? (sig.trendBias === "UP" || sig.trendBias === "DOWN")
         : (sig.signal === "BUY_CE" || sig.signal === "BUY_PE");
