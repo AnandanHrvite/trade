@@ -367,7 +367,7 @@ function weekday(dateStr){ if(!dateStr) return null; const d=new Date(dateStr+'T
 // top bar always resolve a given range to the same two dates.
 function currentFilter(){
   const book = document.querySelector('#segBook button.on').dataset.book;
-  const modes = msValues('fMode');           // [] = every strategy, i.e. no filter
+  const modes = msValues('fMode');           // ticked strategies; [] = none ticked
   const range = document.getElementById('fRange').value;
   const r = drRange(range, document.getElementById('fFrom').value, document.getElementById('fTo').value);
   return {book,modes,from:r.from,to:r.to};
@@ -375,7 +375,7 @@ function currentFilter(){
 function applyFilter(f){
   return ALL.filter(t=>{
     if(t.book!==f.book) return false;
-    if(f.modes.length && f.modes.indexOf(t.mode)===-1) return false;
+    if(f.modes.indexOf(t.mode)===-1) return false;
     if(f.from && t.date < f.from) return false;
     if(f.to   && t.date > f.to)   return false;
     return true;

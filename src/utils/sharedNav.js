@@ -2810,9 +2810,10 @@ function drRange(key, customFrom, customTo){
  * checkbox list. Same three-part shape as the date-range helper (CSS / HTML /
  * JS) so a page picks it up with three interpolations and one msInit() call.
  *
- * Contract: msValues(id) → array of checked values, and [] when everything is
- * ticked. Empty means "no filter", so a caller can keep its existing
- * "all strategies" code path untouched.
+ * Contract: msValues(id) → the checked values verbatim — every value when all
+ * are ticked, [] when none are. Callers filter with indexOf, so unticking is
+ * always honoured: unticking the last box shows nothing rather than silently
+ * snapping back to everything, which read as a broken checkbox.
  */
 function multiSelectCSS() {
   return `
@@ -2860,30 +2861,27 @@ function multiSelectJS() {
 // ── Shared checkbox multi-select (sharedNav.multiSelectJS) ───────────────────
 function _msBoxes(root){ return root.querySelectorAll('.ms-menu input[type=checkbox]:not(.ms-all)'); }
 
-// [] when everything is ticked — callers read that as "no filter".
+// The checked values as they stand — no "all means empty" trick, so a caller
+// can tell "everything ticked" apart from "nothing ticked".
 function msValues(id){
   var root=document.getElementById(id); if(!root) return [];
   var boxes=_msBoxes(root), out=[];
   for(var i=0;i<boxes.length;i++) if(boxes[i].checked) out.push(boxes[i].value);
-  return out.length===boxes.length ? [] : out;
-}
-
-// Unticking the last box would leave a blank page, which reads as "no data"
-// rather than "no filter" — so an empty selection snaps back to everything.
-function _msNormalise(root){
-  var boxes=_msBoxes(root), any=false;
-  for(var i=0;i<boxes.length;i++) if(boxes[i].checked){ any=true; break; }
-  if(!any) for(var j=0;j<boxes.length;j++) boxes[j].checked=true;
+  return out;
 }
 
 function _msPaint(root){
   var boxes=_msBoxes(root), sel=[];
   for(var i=0;i<boxes.length;i++) if(boxes[i].checked) sel.push(boxes[i].parentNode.textContent.trim());
   var all=root.querySelector('.ms-all');
-  if(all) all.checked = sel.length===boxes.length;
+  // Partial selection shows the dash, not a tick — a ticked "All" next to two
+  // ticked boxes is what made unticking look like it had done nothing.
+  if(all){ all.checked = sel.length===boxes.length; all.indeterminate = sel.length>0 && sel.length<boxes.length; }
   var allLabel=root.getAttribute('data-all-label')||'All';
   root.querySelector('.ms-text').textContent =
-    (sel.length===boxes.length) ? allLabel : (sel.length<=2 ? sel.join(', ') : sel.length+' selected');
+    (sel.length===boxes.length) ? allLabel
+    : (sel.length===0) ? 'None'
+    : (sel.length<=2 ? sel.join(', ') : sel.length+' selected');
 }
 
 function msInit(id, onChange){
@@ -2898,14 +2896,16 @@ function msInit(id, onChange){
   // not cost three trips through the dropdown.
   root.querySelector('.ms-menu').addEventListener('click', function(e){ e.stopPropagation(); });
   var all=root.querySelector('.ms-all');
+  // Clicking a dashed "All" clears the dash and ticks it, so a partial
+  // selection widens back to everything — untick then clears everything.
   if(all) all.addEventListener('change', function(){
     var boxes=_msBoxes(root);
     for(var i=0;i<boxes.length;i++) boxes[i].checked = all.checked;
-    _msNormalise(root); _msPaint(root); if(onChange) onChange();
+    _msPaint(root); if(onChange) onChange();
   });
   var boxes=_msBoxes(root);
   for(var i=0;i<boxes.length;i++) boxes[i].addEventListener('change', function(){
-    _msNormalise(root); _msPaint(root); if(onChange) onChange();
+    _msPaint(root); if(onChange) onChange();
   });
   document.addEventListener('click', function(){
     root.classList.remove('open'); btn.setAttribute('aria-expanded','false');

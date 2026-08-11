@@ -6,6 +6,12 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — Unticking a strategy in the Strategy dropdown did nothing
+
+The Strategy picker on the Consolidation Report and Edge Analytics is a checkbox list whose contract was "no boxes ticked means no filter". That made the two ends of the list indistinguishable: unticking the master "All strategies" box unticked every strategy, the widget read that as "nothing selected", and a guard promptly re-ticked all of them — so the click visibly bounced back. Unticking the last remaining strategy did the same. The master box also stayed ticked next to a partial selection, which said "all strategies" while two were showing.
+
+`msValues()` now returns the ticked values as they stand, and the pages filter on that list directly, so unticking always sticks: clearing everything shows the existing "No trades for this filter" panel rather than silently reverting to the full set. A partial selection paints the master box with the standard dash instead of a tick, and the button label reads `None` when nothing is ticked.
+
 ### Fixed — Scrolling the menu on a phone scrolled the page behind it
 
 The drawer is taller than a phone screen, so reaching the lower entries means scrolling inside it — but the flick moved the page underneath instead. The drawer set no `overscroll-behavior`, so once its own scroll hit the top or bottom the gesture chained straight through to the document, and the dimmed overlay beside it was a plain element that panned the page like any other. Both now refuse the gesture: the drawer contains its overscroll, and the overlay takes `touch-action:none`. The hamburger is pinned the same way *while the drawer is open* — it floats above the drawer's top-left corner at `z-index:300`, so it was the one remaining surface a downward flick could start on and still scroll the page; scoping it with `:has()` leaves it a normal scroll surface when the menu is closed.

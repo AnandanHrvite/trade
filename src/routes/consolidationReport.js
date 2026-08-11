@@ -374,7 +374,7 @@ function rangeLabelFor(range, from, to){
 
 function currentFilter(){
   const book = document.querySelector('#segBook button.on').dataset.book;
-  const modes = msValues('fMode');           // [] = every strategy, i.e. no filter
+  const modes = msValues('fMode');           // ticked strategies; [] = none ticked
   const range = document.getElementById('fRange').value;
   const r = drRange(range, document.getElementById('fFrom').value, document.getElementById('fTo').value);
   return {book,modes,from:r.from,to:r.to,rangeLabel:rangeLabelFor(range,r.from,r.to)};
@@ -382,7 +382,7 @@ function currentFilter(){
 function applyFilter(f){
   return ALL.filter(t=>{
     if(f.book!=='all' && t.book!==f.book) return false;
-    if(f.modes.length && f.modes.indexOf(t.mode)===-1) return false;
+    if(f.modes.indexOf(t.mode)===-1) return false;
     if(f.from && t.date < f.from) return false;
     if(f.to   && t.date > f.to)   return false;
     return true;
@@ -430,7 +430,7 @@ function render(){
   // when it actually means "it ran and found nothing". Zero-trade days show a dash.
   // With a subset ticked, only those columns are meaningful — MODES order is kept
   // so the columns don't reshuffle as boxes are ticked.
-  const activeModes = f.modes.length ? MODES.filter(m => f.modes.indexOf(m)>=0) : MODES;
+  const activeModes = MODES.filter(m => f.modes.indexOf(m)>=0);
 
   // overall totals
   let tN=0,tW=0,tL=0,tNet=0,tWP=0,tLP=0; const totByMode={};
@@ -446,7 +446,7 @@ function render(){
 
   let head=vixWarn+'<div class="rpt-head"><div>'
     +'<div class="rh-title">Consolidated Day Report</div>'
-    +'<div class="rh-meta">Book: <b>'+bookLabel+'</b> &nbsp;·&nbsp; Strategy: <b>'+esc(f.modes.length ? f.modes.map(m=>MODE_LABEL[m]||m).join(', ') : 'All')+'</b> &nbsp;·&nbsp; Period: <b>'+esc(f.rangeLabel)+'</b> &nbsp;·&nbsp; Trading days: <b>'+days.length+'</b> &nbsp;·&nbsp; Trades: <b>'+tN+'</b></div>'
+    +'<div class="rh-meta">Book: <b>'+bookLabel+'</b> &nbsp;·&nbsp; Strategy: <b>'+esc(f.modes.length===MODES.length ? 'All' : (f.modes.length ? f.modes.map(m=>MODE_LABEL[m]||m).join(', ') : 'None'))+'</b> &nbsp;·&nbsp; Period: <b>'+esc(f.rangeLabel)+'</b> &nbsp;·&nbsp; Trading days: <b>'+days.length+'</b> &nbsp;·&nbsp; Trades: <b>'+tN+'</b></div>'
     +'</div><div class="rh-brand">ௐ Palani Andawar Thunai ॐ<br>Generated '+esc(gen)+'</div></div>';
 
   if(!days.length){ C.innerHTML=head+'<div class="empty">No trades for this filter. Try widening the range or switching Book.</div>'; return; }
