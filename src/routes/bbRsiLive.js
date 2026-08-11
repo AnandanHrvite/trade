@@ -1910,13 +1910,6 @@ body{font-family:'IBM Plex Mono',monospace;background:#040c18;color:#c8d8f0;over
 .start-btn{background:#1e40af;color:#fff;border:1px solid #2563eb;}.start-btn:hover{background:#2563eb;}
 .stop-btn{background:#7f1d1d;color:#fca5a5;border:1px solid #ef4444;}.stop-btn:hover{background:#991b1b;}
 .exit-btn{background:#78350f;color:#fde68a;border:1px solid #f59e0b;}.exit-btn:hover{background:#92400e;}
-/* .start-btn's navy maps to a solid blue in the light skin, but the maroon and
-   brown of its two siblings have no entry — they stayed dark-theme fills next
-   to a light-theme button. Paint them solid so all three read as one set. */
-:root[data-theme="light"] .stop-btn{background:#dc2626 !important;color:#ffffff !important;border-color:#dc2626 !important;}
-:root[data-theme="light"] .stop-btn:hover{background:#b91c1c !important;}
-:root[data-theme="light"] .exit-btn{background:#b45309 !important;color:#ffffff !important;border-color:#b45309 !important;}
-:root[data-theme="light"] .exit-btn:hover{background:#92400e !important;}
 .real-warn{display:inline-flex;align-items:center;gap:4px;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);color:#ef4444;font-size:0.6rem;font-weight:700;padding:3px 9px;border-radius:5px;letter-spacing:0.8px;animation:pulse 2s infinite;}
 
 /* Animations */
