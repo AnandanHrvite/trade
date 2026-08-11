@@ -6,6 +6,12 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — Scrolling the menu on a phone scrolled the page behind it
+
+The drawer is taller than a phone screen, so reaching the lower entries means scrolling inside it — but the flick moved the page underneath instead. The drawer set no `overscroll-behavior`, so once its own scroll hit the top or bottom the gesture chained straight through to the document, and the dimmed overlay beside it was a plain element that panned the page like any other. Both now refuse the gesture: the drawer contains its overscroll, and the overlay takes `touch-action:none`. The hamburger is pinned the same way *while the drawer is open* — it floats above the drawer's top-left corner at `z-index:300`, so it was the one remaining surface a downward flick could start on and still scroll the page; scoping it with `:has()` leaves it a normal scroll surface when the menu is closed.
+
+The obvious companion fix — putting the open-drawer scroll lock on `<html>` as well as `<body>`, since iOS Safari ignores it on `<body>` alone — turned out to cost more than it bought and was reverted: with the root's overflow hidden the sticky top bar has no scroll container, so opening the menu on a page scrolled down 800px threw the bar 792px off-screen. Measured against three variants, only the `<body>`-only lock keeps sticky intact, and it is redundant anyway now that the drawer, the overlay and the hamburger cover the whole viewport — a grid sweep at 25px spacing finds no point that can still reach the page beneath.
+
 ### Fixed — The light theme now actually reaches the whole app, and every screen fits a phone
 
 An audit drove headless Chrome over all 69 screens at 440×956 (iPhone 17 Pro Max) and 390×844, in both themes, measuring text/background contrast, horizontal overflow, tap-target size and font size. It started at 130+ failures and ends at zero.
