@@ -120,7 +120,11 @@ function _rangeState(snap) {
  * observation forty times while one setup persists.
  */
 function _collectCandidates(snap) {
-  if (!snap || !(snap.spot > 0) || !snap.rows.length) return;
+  // Losing sight of the ladder ends the current observation: the recorder has
+  // stalled or every strike aged out, so whatever we see when data returns is a
+  // NEW sighting, not a continuation. Without clearing the fingerprint here, a
+  // wall still defended after a gap would be silently swallowed as a duplicate.
+  if (!snap || !(snap.spot > 0) || !snap.rows.length) { _lastFingerprint = ""; return; }
   const now = Date.now();
 
   const day = _istDayNum(now);
