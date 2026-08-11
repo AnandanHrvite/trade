@@ -556,15 +556,17 @@ function getSignal(candles, opts) {
   } else { tr.skip("OR vs ATR15", "ATR15 not seeded — fail-open"); }
 
   // ── 4b. Day sanity: an ABSOLUTE cap on the opening range, in points.
-  //       OFF by default (0). Added 2026-08-11 because OR width is the only cut
-  //       that separated winners from losers in BOTH 2025 (n=122) and 2026 (n=59)
-  //       paper/backtest samples, and it did so on raw points, not on the ATR
-  //       ratio gate 4 already applies:
+  //       OFF by default (0), and the evidence says LEAVE IT OFF.
+  //
+  //       Added 2026-08-11 because OR width looked like the one cut that separated
+  //       winners from losers in both the 2025 (n=122) and 2026 (n=59) samples:
   //         2025: OR<=70pt +10.6k / 58 trades   vs  OR>70pt -62k / 64 trades
   //         2026: OR<=70pt -3.4k / 19 trades    vs  OR>70pt -28.9k / 40 trades
-  //       So it turns a big loser into roughly break-even — it is NOT a proven
-  //       edge, which is exactly why it ships disabled. Measure with
-  //       scripts/orbSweep.js on a long range before turning it on.
+  //       Adding 2024 the same day KILLED it. On 148 trades that year the cap is
+  //       WORSE than no cap: OR<=70pt = -53.6k at PF 0.24 vs OR>70pt -41.7k at PF
+  //       0.35. Two years agreeing and the third reversing is what a fitted rule
+  //       looks like, not an edge. The key stays only so the next person can
+  //       re-measure it with scripts/orbSweep.js instead of re-deriving it.
   const orMaxPts = parseFloat(process.env.ORB_OR_MAX_PTS || "0");
   if (orMaxPts > 0) {
     if (!tr.check("OR max pts", rangePts <= orMaxPts, `${rangePts}pt, max ${orMaxPts}pt`)) {

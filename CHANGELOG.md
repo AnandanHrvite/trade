@@ -12,7 +12,13 @@ Two full backtest runs (2025: 122 trades, −₹51,420, PF 0.52 · 2026 Jan–Ju
 
 So the tuning loop now has a harness that makes that failure visible: `orbSweep` runs a short list of named hypotheses through the same simulation `orbValidate` publishes and prints each on TRAIN and TEST separately, refusing to declare a winner that has fewer than 30 test trades. The shared day loop, cost model and stats moved to `scripts/lib/orbSim.js` so the two scripts can never measure different things; `orbValidate`'s output is unchanged.
 
-New key `ORB_OR_MAX_PTS` (absolute OR-width cap in points, default `0` = off, in Settings → ORB) exists for the one lever with cross-year support. It ships **off**: on this evidence it turns a large loss into a scratch, which is not an edge.
+New key `ORB_OR_MAX_PTS` (absolute OR-width cap in points, default `0` = off, in Settings → ORB) exists for that hypothesis. It ships **off** — and the 2024 data then falsified it outright (below).
+
+### Verdict — ORB does not work, on 329 trades over 2.5 years
+
+The full `2024-01-01 → 2026-08-11` backtest: **329 trades, 20.7% win rate, net −₹1,78,963, profit factor 0.39, max drawdown −₹1,79,110, Sharpe −5.44** — with every year negative on its own (2024 −₹95,275 · 2025 −₹51,420 · 2026 Jan–Jul −₹32,268). That is well past the ~147 trades the strategy's own sample-size note demands, so it is a conclusion rather than a small-sample wobble.
+
+The opening-range-width filter that survived 2025 and 2026 **reversed on 2024**: there the ≤70pt bucket is worse than the wide one (PF 0.24 vs 0.35). Two years agreeing and the third disagreeing is a fitted rule, so nothing was enabled. README and the engine comment now carry the falsification so the idea is not re-derived later.
 
 ### Added — Per-strike Open Interest is now recorded, and there's a page to watch it
 
