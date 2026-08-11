@@ -159,6 +159,10 @@ router.get("/", (req, res) => {
     :root[data-theme="light"] .tbl th{background:#f1f5f9!important;color:#4b5769!important;border-bottom-color:#e0e4ea!important;}
     :root[data-theme="light"] .tbl td{border-color:#e0e4ea!important;color:#334155!important;}
     :root[data-theme="light"] .empty{color:#5c6b7f!important;}
+    /* Same sky-chip pair as Edge Analytics' .cr-link: the resting fill maps but
+       the hover (#0e5a84) has no entry, so it went dark on hover. */
+    :root[data-theme="light"] .btn{background:#0369a1!important;border-color:#0369a1!important;color:#ffffff!important;}
+    :root[data-theme="light"] .btn:hover{background:#075985!important;}
   </style>
 </head>
 <body>

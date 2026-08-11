@@ -280,6 +280,10 @@ ${multiSelectCSS()}
     :root[data-theme="light"] .tbar{background:#fff!important;border-color:#e0e4ea!important;}
     :root[data-theme="light"] .tbar input,:root[data-theme="light"] .tbar select,:root[data-theme="light"] .seg button{background:#f8fafc!important;border-color:#e0e4ea!important;color:#334155!important;}
     :root[data-theme="light"] .seg button.on{background:#e0f2fe!important;color:#0369a1!important;}
+    /* Same sky-chip pair as Edge Analytics' .cr-link: the resting fill maps but
+       the hover (#0e5a84) has no entry, so it went dark on hover. */
+    :root[data-theme="light"] .pdf-btn{background:#0369a1!important;border-color:#0369a1!important;color:#ffffff!important;}
+    :root[data-theme="light"] .pdf-btn:hover{background:#075985!important;}
     :root[data-theme="light"] .tbl th{background:#f1f5f9!important;color:#4b5769!important;border-bottom-color:#e0e4ea!important;}
     :root[data-theme="light"] .tbl td{border-color:#e0e4ea!important;color:#334155!important;}
     :root[data-theme="light"] .tbl tfoot td{background:#f1f5f9!important;color:#1e293b!important;}

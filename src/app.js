@@ -1885,6 +1885,14 @@ app.get("/", (req, res) => {
     :root[data-theme="light"] .broker-connected-bar .relogin-link:hover { color:#2563eb; }
     :root[data-theme="light"] .broker-login-btn.fyers-btn  { background:#166534; border-color:#14532d; }
     :root[data-theme="light"] .broker-login-btn.zerodha-btn { background:#2563eb; border-color:#1d4ed8; }
+    /* The broker-strip twins of the two buttons above. Their fills are class
+       rules, so the light skin's hex rewriter reaches the Fyers green but has
+       no entry for the Zerodha navy — it stayed dark while themeJS's
+       .brk-action rule pulled the label to #1d4ed8, leaving dark-on-dark.
+       Painting both as solid brand buttons matches .broker-login-btn and needs
+       !important + this specificity to outrank that .brk-action rule. */
+    :root[data-theme="light"] .brk-action.login.fyers   { background:#166534 !important; border-color:#14532d !important; color:#ffffff !important; }
+    :root[data-theme="light"] .brk-action.login.zerodha { background:#2563eb !important; border-color:#1d4ed8 !important; color:#ffffff !important; }
     :root[data-theme="light"] .broker-no-config { background:#f8fafc; border-color:#e2e8f0; color:#5c6b7f; }
     :root[data-theme="light"] .broker-no-config code { color:#6366f1; }
     :root[data-theme="light"] .broker-expiry-warn.expired  { background:#fff7ed; border-color:#fdba74; color:#c2410c; }

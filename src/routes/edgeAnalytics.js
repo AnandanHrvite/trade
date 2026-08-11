@@ -297,6 +297,11 @@ ${multiSelectCSS()}
     :root[data-theme="light"] .pg-btn{background:#f8fafc!important;border-color:#e0e4ea!important;color:#0369a1!important;}
     :root[data-theme="light"] .pg-btn:hover:not(:disabled){background:#e0f2fe!important;}
     :root[data-theme="light"] .pg-num{color:#1e293b!important;}
+    /* The rewriter has an entry for the resting fill (#0c4a6e) but none for the
+       hover (#0e5a84), so hovering turned the button dark under already-lightened
+       text. Paint both states here so it reads as a solid button either way. */
+    :root[data-theme="light"] .cr-link{background:#0369a1!important;border-color:#0369a1!important;color:#ffffff!important;}
+    :root[data-theme="light"] .cr-link:hover{background:#075985!important;}
   </style>
 </head>
 <body>

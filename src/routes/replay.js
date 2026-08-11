@@ -449,7 +449,10 @@ body[data-source="current"] #range-card { border-color:rgba(245,158,11,0.30); bo
 :root[data-theme="light"] .mode-toggle label:has(input[value="current"]:checked)  { background:#fffbeb !important; border-color:#f59e0b !important; }
 :root[data-theme="light"] .mt-title { color:#1e293b !important; }
 :root[data-theme="light"] .mt-desc  { color:#4b5769 !important; }
-:root[data-theme="light"] body[data-source="current"] #range-run-btn { color:#1f1300 !important; }
+/* Amber (simulator) run button. Only the resting state gets the dark label —
+   the hover fill darkens to #b45309, where the dark-theme rule already switches
+   to white, and forcing #1f1300 across both states dropped it to 3.6:1. */
+:root[data-theme="light"] body[data-source="current"] #range-run-btn:not(:hover) { color:#1f1300 !important; }
 :root[data-theme="light"] .sess-input { background:#ffffff !important; color:#1e293b !important; border-color:#cbd5e1 !important; }
 :root[data-theme="light"] .pager-btn { background:#f8fafc !important; color:#334155 !important; border-color:#cbd5e1 !important; }
 :root[data-theme="light"] .pager-btn:hover:not(:disabled) { background:#e2e8f0 !important; }
