@@ -495,14 +495,14 @@ function toggleSidebar(){
   if(!sb) return;
   var open=sb.classList.toggle('mobile-open');
   if(ov) ov.classList.toggle('active',open);
-  document.body.style.overflow=open?'hidden':'';
+  document.documentElement.classList.toggle('sb-locked',open);
 }
 function closeSidebar(){
   var sb=document.getElementById('main-sidebar');
   var ov=document.getElementById('sb-overlay');
   if(sb) sb.classList.remove('mobile-open');
   if(ov) ov.classList.remove('active');
-  document.body.style.overflow='';
+  document.documentElement.classList.remove('sb-locked');
 }
 function toggleNavGroup(gid){
   var el=document.getElementById(gid);
@@ -1021,7 +1021,14 @@ function sidebarCSS() {
 
     /* ── SIDEBAR ── */
     .app-shell{display:flex;min-height:100vh;}
-    .sidebar{width:200px;flex-shrink:0;background:#03080e;border-right:1px solid #0e1e36;display:flex;flex-direction:column;position:fixed;top:0;left:0;height:100vh;z-index:100;overflow-y:auto;}
+    /* overscroll-behavior:contain keeps a flick that started inside the drawer
+       from chaining to the page once the drawer hits its top/bottom — without it
+       every menu scroll on a phone ends up scrolling the page behind it. */
+    .sidebar{width:200px;flex-shrink:0;background:#03080e;border-right:1px solid #0e1e36;display:flex;flex-direction:column;position:fixed;top:0;left:0;height:100vh;z-index:100;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;}
+    /* Page lock while the mobile drawer is open. Safari on iOS ignores
+       overflow:hidden set on <body> alone — it has to be on <html> too, or the
+       page keeps scrolling behind the drawer. */
+    html.sb-locked,html.sb-locked body{overflow:hidden;}
     .sb-brand{padding:20px 16px 16px;border-bottom:1px solid #0e1e36;}
     .sb-brand-name{font-size:0.72rem;font-weight:700;color:#60a5fa;letter-spacing:0.3px;line-height:1.4;white-space:nowrap;}
     .sb-brand-sub{font-size:0.6rem;color:var(--muted-2,#6d85a8);letter-spacing:2px;text-transform:uppercase;margin-top:2px;}
@@ -1152,8 +1159,10 @@ function sidebarCSS() {
          the 46px the button occupies. */
       .sb-brand{padding-left:52px;}
 
-      /* Overlay when sidebar open */
-      .sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:150;}
+      /* Overlay when sidebar open. touch-action:none — a drag on the dimmed
+         strip beside the drawer must dismiss-or-nothing, never scroll the page
+         underneath it. */
+      .sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:150;touch-action:none;}
       .sidebar-overlay.active{display:block;}
 
       /* Top bar: compress + let badges/buttons wrap onto a second line */
