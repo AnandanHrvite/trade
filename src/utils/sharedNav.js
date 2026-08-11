@@ -2399,14 +2399,18 @@ function expiryHolidayModalCSS() {
     }
     .expiry-legend span { display:flex; align-items:center; gap:4px; }
     .expiry-dot { width:8px; height:8px; border-radius:50%; display:inline-block; }
+    /* Two nested scroll containers: this list inside the .eh-modal backdrop.
+       Without contain, flicking the list past its end scrolled the backdrop,
+       and the backdrop past its end scrolled the page behind the popup. */
     .holiday-modal-body {
       max-height: 420px; overflow-y: auto; margin-top: 10px;
       scrollbar-width: thin; scrollbar-color: #243048 transparent;
+      overscroll-behavior: contain;
     }
     /* Backdrop padding lives here rather than inline so the phone rule below can
        reclaim it — 40px/20px leaves a 353px-wide card on a 393px iPhone, which
        wraps "28 Jul 2026" onto two lines. */
-    .eh-modal { padding: 40px 20px; }
+    .eh-modal { padding: 40px 20px; overscroll-behavior: contain; }
     .eh-close { font-size: 1.2rem; }
     @media (max-width:640px) {
       .eh-modal { padding: 14px 6px; }
