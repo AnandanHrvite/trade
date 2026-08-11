@@ -294,7 +294,10 @@ function start() {
 
   // One check shortly after boot whatever the hour, so a restart shows a current
   // verdict — and rolls an expiry that died while the process was down.
-  setTimeout(() => check().catch(() => {}), BOOT_DELAY_MS).unref();
+  setTimeout(() => {
+    _lastCheckAt = Date.now();   // the heartbeat must not immediately repeat it
+    check().catch(() => {});
+  }, BOOT_DELAY_MS).unref();
 
   // A 1-minute heartbeat rather than an interval timer: the in-window checks still
   // run every EXPIRY_HEALTHCHECK_MINS (rate-limited below), but the post-close roll
