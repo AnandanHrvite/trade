@@ -20,9 +20,10 @@
  * Design notes
  * ─────────────
  *   • Order placement is NOT idempotent at Indian brokers. A retry after a
- *     timeout-mid-flight can double-fill. Therefore writes only retry when the
- *     underlying SDK call threw a network-level error (ETIMEDOUT/ECONNRESET/
- *     ENOTFOUND/etc.) BEFORE getting any response.
+ *     timeout-mid-flight can double-fill. Therefore writes only retry on a
+ *     connect-phase error (ECONNREFUSED/ENOTFOUND/EAI_AGAIN/EHOSTUNREACH/
+ *     ENETUNREACH) — never ETIMEDOUT/ECONNRESET, which can fire after the
+ *     order was accepted. See CONNECT_PHASE_CODES / isConnectPhaseError below.
  *   • Reads (getOrders / getPositions / getFunds) are safe to retry liberally.
  *   • The breaker is shared across all calls for that broker so one outage
  *     short-circuits every code path (orders, SLs, queries) until recovery.
