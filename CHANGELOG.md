@@ -8,7 +8,9 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ### Changed — Real-Time Monitor shows only the strategies that are actually trading
 
-With ten strategies enabled, the monitor opened as a wall of identical "FLAT — no open position" boxes and the one card that mattered was buried below the fold. A strategy card now appears only when it has an open position, has taken a trade today, or its status endpoint is unreachable (a broken engine must never look like a quiet one). Cards are hidden, not removed, so a card returns on the same 4-second poll as the entry that triggered it. Until the first trade a single line stands in for the grid, and the rollup table below still lists every enabled strategy with its status and P&L.
+With ten strategies enabled, the monitor opened as a wall of identical "FLAT — no open position" boxes and the one card that mattered was buried below the fold. A strategy card now appears only when it has an open position, has taken a trade today, or its status endpoint is unreachable (a broken engine must never look like a quiet one). Cards are hidden, not removed, so a card returns on the same 4-second poll as the entry that triggered it. Until the first trade a single line stands in for the grid.
+
+The rollup table below follows the same rule — a strategy gets a row once it has a position or a trade, and one quiet line reports how many are running with nothing yet. Only the *row* is dropped: every strategy's numbers still go into TOTAL, so the bottom line always speaks for the whole book.
 
 ### Fixed — Live order safety: one gate for every engine, and an SL with every entry
 

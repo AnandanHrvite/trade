@@ -142,9 +142,12 @@ function renderPage({ liveActive, sidebarKey = "realtime", autoFlipBack = false 
       </div>
     </div>`).join('\n');
 
-  const rollupRowsHtml = strategies.map(s =>
-    `<tr class="${s.accentClass}" data-key="${s.key}"><td>${s.label}</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>`
-  ).join('\n      ') + `\n      <tr class="total"><td>TOTAL</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>`;
+  // Rows arrive with the first poll (≤4s), which is also what decides which
+  // strategies have earned one — pre-rendering all of them would flash a full
+  // table that then collapses.
+  const rollupRowsHtml =
+    `<tr class="quiet"><td colspan="7">Loading…</td></tr>\n      `
+    + `<tr class="total"><td>TOTAL</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -284,6 +287,7 @@ ${faviconLink()}
   .rollup tr.tds      td:first-child { color:#c084fc; }
   .rollup tr.gap3m    td:first-child { color:#7dd3fc; }
   .rollup tr.total    td:first-child { color:#e0eaf8; }
+  .rollup tr.quiet td { color:#7d8aa3; font-weight:400; font-size:0.8rem; text-align:left; }
 
   .pulse { display:inline-block; width:7px; height:7px; border-radius:50%; background:#10b981; margin-left:6px; animation:pulse 1.5s ease-in-out infinite; vertical-align:middle; }
   @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
@@ -581,6 +585,7 @@ function renderCardsEmpty() {
 function renderRollup(all) {
   let totalOpen = 0, totalClosed = 0, totalTrades = 0, totalW = 0, totalL = 0;
   let anyRunning = false, anyData = false;
+  let rows = 0, quiet = 0;   // rows drawn vs strategies hidden for having nothing yet
 
   const tbody = document.getElementById('rollup-body');
   let html = '';
@@ -605,6 +610,11 @@ function renderRollup(all) {
     totalTrades += +trades || 0;
     totalW += +w || 0;
     totalL += +l || 0;
+    // Same rule as the cards above: a strategy earns a row once it has money at
+    // risk or a trade today. It is only the row that is dropped — its numbers
+    // are already in the totals, so TOTAL still speaks for every strategy.
+    if (!d.position && !(trades > 0)) { quiet++; continue; }
+    rows++;
     html += \`<tr class="\${accent}" data-key="\${key}">
       <td>\${label}</td>
       <td>\${d.running ? 'RUNNING' : 'STOPPED'}</td>
@@ -614,6 +624,10 @@ function renderRollup(all) {
       <td>\${w} / \${l}</td>
       <td class="\${cls(dayTotal)}">\${fmtINR(dayTotal)}</td>
     </tr>\`;
+  }
+  // A lone TOTAL row reads like a broken table — say why it is alone.
+  if (!rows && quiet) {
+    html += \`<tr class="quiet"><td colspan="7">\${quiet} \${quiet === 1 ? 'strategy is' : 'strategies are'} running with no trade yet today</td></tr>\`;
   }
   const grandDayTotal = totalOpen + totalClosed;
   html += \`<tr class="total">
