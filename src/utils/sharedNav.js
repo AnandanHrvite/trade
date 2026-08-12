@@ -1028,8 +1028,19 @@ function sidebarCSS() {
     /* overscroll-behavior:contain keeps a flick that started inside the drawer
        from chaining to the page once the drawer hits its top/bottom — without it
        every menu scroll on a phone ends up scrolling the page behind it. */
-    .sidebar{width:200px;flex-shrink:0;background:#03080e;border-right:1px solid #0e1e36;display:flex;flex-direction:column;position:fixed;top:0;left:0;height:100vh;z-index:100;overflow-y:auto;overscroll-behavior:contain;}
-    .sb-brand{padding:20px 16px 16px;border-bottom:1px solid #0e1e36;}
+    /* height:100dvh (dynamic viewport) is what makes the bottom of the drawer
+       reachable on a phone. With plain 100vh the browser measures the viewport
+       as if the URL bar were hidden, so the drawer is ~100px taller than the
+       screen actually shows — scrolling it to the end still leaves the last
+       rows (SYSTEM → Settings, and the status/action block) under the browser
+       chrome, unreachable. 100vh stays first as the fallback for old browsers.
+       touch-action:pan-y guarantees a finger drag scrolls the drawer instead of
+       being interpreted as a page pan. */
+    .sidebar{width:200px;flex-shrink:0;background:#03080e;border-right:1px solid #0e1e36;display:flex;flex-direction:column;position:fixed;top:0;left:0;height:100vh;height:100dvh;z-index:100;overflow-y:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y;overscroll-behavior:contain;}
+    /* Both ends are fixed chrome around the scrolling nav — without flex-shrink:0
+       they compress once the item list overflows, and the bottom block is where
+       Settings' neighbours (status + action buttons) live. */
+    .sb-brand{padding:20px 16px 16px;border-bottom:1px solid #0e1e36;flex-shrink:0;}
     .sb-brand-name{font-size:0.72rem;font-weight:700;color:#60a5fa;letter-spacing:0.3px;line-height:1.4;white-space:nowrap;}
     .sb-brand-sub{font-size:0.6rem;color:var(--muted-2,#6d85a8);letter-spacing:2px;text-transform:uppercase;margin-top:2px;}
     .sb-nav{padding:6px 0;flex:1;}
@@ -1051,7 +1062,10 @@ function sidebarCSS() {
     .sb-nav-badge{margin-left:auto;font-size:0.55rem;font-weight:700;padding:1px 5px;border-radius:3px;background:rgba(59,130,246,0.15);color:#60a5fa;border:0.5px solid rgba(59,130,246,0.3);white-space:nowrap;}
     .sb-nav-badge.live{background:rgba(239,68,68,0.15);color:#f87171;border-color:rgba(239,68,68,0.3);animation:pulse 1.2s infinite;}
     .sb-divider{height:0.5px;background:#0e1e36;margin:6px 16px;}
-    .sb-bottom{padding:14px 16px;border-top:1px solid #0e1e36;}
+    .sb-bottom{padding:14px 16px;border-top:1px solid #0e1e36;flex-shrink:0;}
+    /* Clears the iOS home-indicator bar so the last row is not half-covered.
+       Separate declaration so browsers without env() keep the 14px above. */
+    .sb-bottom{padding-bottom:calc(14px + env(safe-area-inset-bottom,0px));}
     .sb-status-row{display:flex;align-items:center;gap:6px;font-size:0.62rem;color:var(--muted-2,#6d85a8);margin-bottom:10px;}
     .sb-status-dot{width:5px;height:5px;border-radius:50%;background:#3b82f6;animation:pulse 1.3s infinite;}
     .sb-status-dot.stopped{background:#2a4060;animation:none;}
@@ -1293,7 +1307,7 @@ function sidebarCSS() {
          so these four rules are inert the rest of the time. */
       body{padding-top:var(--banner-h,0px);}
       .top-bar{top:var(--banner-h,0px);}
-      .sidebar{top:var(--banner-h,0px);height:calc(100vh - var(--banner-h,0px));}
+      .sidebar{top:var(--banner-h,0px);height:calc(100vh - var(--banner-h,0px));height:calc(100dvh - var(--banner-h,0px));}
 
       /* The parenthetical hint costs the banner a whole extra line at 393px and
          repeats what the link already says. */
