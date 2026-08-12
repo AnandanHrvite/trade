@@ -6,6 +6,12 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — the mobile menu drawer could not be scrolled to its end, hiding Settings
+
+The sidebar was sized `height:100vh`. On a phone browser `100vh` is measured with the URL bar hidden, so the drawer was roughly 100px taller than the screen actually shows — scrolling it all the way down still left its last rows (SYSTEM → **Settings**, plus the status/action block) under the browser chrome, with no way to reach them. It now uses `100dvh` (the dynamic viewport), with `100vh` kept as the fallback for older browsers, so the drawer ends exactly where the visible screen ends.
+
+Alongside it: `touch-action:pan-y` on the drawer so a finger drag is always read as a scroll, `flex-shrink:0` on the brand and bottom blocks so they stop being squashed once the item list overflows, and `env(safe-area-inset-bottom)` padding so the last row clears the iOS home indicator. CSS only — no navigation, route or engine behaviour changed.
+
 ### Added — `scripts/orbSweep.js`: compare ORB configs with a forced out-of-sample split
 
 Two full backtest runs (2025: 122 trades, −₹51,420, PF 0.52 · 2026 Jan–Jul: 59 trades, −₹32,268, PF 0.38) say ORB is not profitable at its shipped settings. The one pattern that held in **both** years is opening-range width: OR ≤ 70pt was +₹10.6k / −₹3.4k, OR > 70pt was −₹62k / −₹28.9k at ~14% win. Rules that looked better than that (`OR ≤ 60pt`, "skip plain entries") won big on 2025 and collapsed on 2026 — curve-fitting.
