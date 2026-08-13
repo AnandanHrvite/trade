@@ -157,7 +157,13 @@ const DESCRIPTION = "Opening Range Breakout — 15-min OR, next-candle confirmat
 // exposing them only invited drift between engines. Change them here, with a
 // measurement, or not at all.
 const ATR_PERIOD      = 14;    // ATR lookback for both the 5-min and 15-min yardsticks
-const BUFFER_OR_MULT  = 0.15;  // breakout buffer, as a fraction of the opening range
+const BUFFER_OR_DFLT  = 0.15;  // breakout buffer, as a fraction of the opening range
+                               // 2026-08-13: promoted to the env key ORB_BUFFER_OR_MULT.
+                               // It was deliberately a constant, on the grounds that it is
+                               // structural rather than a dial — but it is one of only two
+                               // levers that decide whether a breakout is SEEN at all, and
+                               // "ORB never enters" could not be measured against it while
+                               // it was unreachable. Default unchanged, so behaviour is too.
 const BUFFER_ATR_MULT = 0.30;  // ...or of ATR(5m), whichever is larger
 const RETEST_TOL_PCT  = 0.10;  // retest tolerance, as a fraction of the OR
 const RETEST_TOL_MIN  = 5;     // ...with this floor in points
@@ -373,7 +379,7 @@ function _rejectReason(rej, cfg, rescan) {
       : `Breakout candle is not ${side === "CE" ? "green" : "red"} — no trade today`;
   }
   if (!q.bodyOk) {
-    return `Breakout candle body ${q.body.toFixed(1)}pt < ${q.minBody.toFixed(1)}pt (${cfg.bodyAtrMult}×ATR5) ${tail}`;
+    return `Breakout candle body ${q.body.toFixed(1)}pt < ${q.minBody.toFixed(1)}pt (${cfg.bodyLabel}) ${tail}`;
   }
   return rescan
     ? `Breakout close ${rej.close} on the wrong side of VWAP ${q.vwap} — hunting for a decisive one`
@@ -488,6 +494,8 @@ function getSignal(candles, opts) {
     orAtrMax:     parseFloat(process.env.ORB_OR_ATR_MAX      || "2.5"),
     gapOrMult:    parseFloat(process.env.ORB_GAP_OR_MULT     || "3.0"),
     bodyAtrMult:  parseFloat(process.env.ORB_BODY_ATR_MULT   || "0.6"),
+    bodyOrCap:    parseFloat(process.env.ORB_BODY_OR_CAP     || "0"),
+    bufferOrMult: parseFloat(process.env.ORB_BUFFER_OR_MULT  || String(BUFFER_OR_DFLT)),
     slAtrMult:    parseFloat(process.env.ORB_SL_ATR_MULT     || "1.5"),
     retestWindow: parseInt  (process.env.ORB_RETEST_MAX_WAIT || "6", 10),
   };
@@ -586,8 +594,32 @@ function getSignal(candles, opts) {
 
   // ── 6. The committed breakout: first in-window CLOSE beyond the edge that is
   //       also a decisive bar on the right side of VWAP ───────────────────────
-  const buffer = _r2(Math.max(BUFFER_OR_MULT * rangePts, atr5 != null ? BUFFER_ATR_MULT * atr5 : 0, 1));
-  const minBody = atr5 != null ? cfg.bodyAtrMult * atr5 : null;
+  const buffer = _r2(Math.max(cfg.bufferOrMult * rangePts, atr5 != null ? BUFFER_ATR_MULT * atr5 : 0, 1));
+
+  // Decisiveness threshold, optionally CAPPED as a share of today's opening range.
+  //
+  // WHY THE CAP EXISTS (2026-08-13). ATR5 is frozen from the PREVIOUS days' bars,
+  // while the opening range is today's. When yesterday was violent and today opens
+  // quiet the two disagree badly, and the gate asks a single 5-min candle to cover
+  // an implausible share of the whole range. Measured on 2026-08-06: threshold
+  // 22.2pt against an opening range of 38.95pt — one candle had to be 57% of the
+  // range, so no breakout could ever qualify and the session was dead on arrival.
+  // For contrast the same 0.6 constant asked ~17% of the range on the Mar–Apr 2026
+  // sample it was chosen on. The gate did not change; the regime did.
+  //
+  // ORB_BODY_OR_CAP=0 (default) keeps the pure ATR rule, i.e. no behaviour change.
+  // A value like 0.25 means "never demand more than a quarter of the opening range".
+  // It is a CEILING, never a floor: it can only ever let more breakouts through, so
+  // an unseeded ATR5 still fails open exactly as before.
+  let minBody = atr5 != null ? cfg.bodyAtrMult * atr5 : null;
+  let bodyCapped = false;
+  if (minBody != null && cfg.bodyOrCap > 0) {
+    const cap = cfg.bodyOrCap * rangePts;
+    if (cap < minBody) { minBody = cap; bodyCapped = true; }
+  }
+  // One label, used by every message that quotes the threshold, so the skip log and
+  // the trace can never claim "×ATR5" on a candle the OR cap actually judged.
+  cfg.bodyLabel = bodyCapped ? `${cfg.bodyOrCap}×OR cap` : `${cfg.bodyAtrMult}×ATR5`;
 
   // 2026-08-11: the scan used to STOP at the first close beyond the edge and then
   // judge that candle's quality. One indecisive bar therefore killed the entire
@@ -632,7 +664,7 @@ function getSignal(candles, opts) {
       if (tr.check("candle colour", rq.colourOk, `${rejected.side} needs a ${rejected.side === "CE" ? "green" : "red"} breakout bar`)) {
         let bodyPassed = true;
         if (minBody == null) tr.skip("decisive body", "ATR5 not seeded — fail-open");
-        else bodyPassed = tr.check("decisive body", rq.bodyOk, `body ${rq.body.toFixed(1)}pt vs ${minBody.toFixed(1)}pt (${cfg.bodyAtrMult}×ATR5)`);
+        else bodyPassed = tr.check("decisive body", rq.bodyOk, `body ${rq.body.toFixed(1)}pt vs ${minBody.toFixed(1)}pt (${cfg.bodyLabel})`);
         if (bodyPassed) {
           if (rq.vwap == null) _warnNoVolumeOnce(silent);
           tr.check("VWAP side", rq.vwapOk, `close ${rc.close} vs VWAP ${rq.vwap}`);
@@ -654,7 +686,7 @@ function getSignal(candles, opts) {
   const brkBody = q.body;
 
   tr.check("candle colour", true, `${side === "CE" ? "green" : "red"} breakout bar`);
-  if (minBody != null) tr.check("decisive body", true, `body ${brkBody.toFixed(1)}pt vs ${minBody.toFixed(1)}pt (${cfg.bodyAtrMult}×ATR5)`);
+  if (minBody != null) tr.check("decisive body", true, `body ${brkBody.toFixed(1)}pt vs ${minBody.toFixed(1)}pt (${cfg.bodyLabel})`);
   else tr.skip("decisive body", "ATR5 not seeded — fail-open");
   tr.check("VWAP side", true, `close ${brk.close} vs VWAP ${q.vwap}`);
   // vwapAligned records a gate that genuinely ran and passed, just above.

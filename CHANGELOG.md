@@ -6,6 +6,16 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Added — ORB can stop demanding a breakout candle bigger than the whole opening range
+
+ORB's decisiveness filter asks the breakout candle for a body of `0.6 × ATR(5m)`, but that ATR is frozen from the **previous** days while the opening range is today's. When a violent session is followed by a quiet open the two disagree badly: on **6 Aug 2026** it wanted a **22.2pt** body against a **38.95pt** opening range — 57% of the entire range in one 5-min candle — so the day could not produce an entry no matter what price did. On the Mar–Apr 2026 sample the same constant only asked ~17% of the range. The filter never changed; the regime did.
+
+**`ORB_BODY_OR_CAP`** (default `0` = off, Settings → ORB → *Breakout — Cap Min Body at × OR*) caps that requirement at a share of today's range. `0.25` means "never ask for more than a quarter of the opening range". It is a ceiling, so it can only ever let **more** breakouts through, and an unseeded ATR still fails open exactly as before. The skip log and `ORB_DEBUG_TRACE` now name whichever rule set the threshold (`0.25×OR cap` vs `0.6×ATR5`) instead of always claiming the ATR one.
+
+**`ORB_BUFFER_OR_MULT`** (default `0.15`, unchanged) exposes the breakout buffer that was previously a hard-coded constant, so the "why doesn't ORB enter" question could be measured against it. The measurement says leave it alone: `0.10` and `0.05` bought one or two extra trades and took profit factor from 0.93 to 0.64 and 0.59 — a smaller buffer just buys fake breakouts.
+
+Both default to the current behaviour, so nothing changes until a value is set.
+
 ### Fixed — Trade Logs is usable on a phone
 
 On a 440 px screen the Trade Files, Skip Logs and Checkpoints tables were wider than the viewport (the audit table by a lot), so their View / Download / AI / Delete / Restore buttons sat outside the screen behind the table's own sideways scroll — a scroll that is nearly impossible to find with a thumb. Below 640 px each row is now drawn as a card: the column header is reprinted next to every value (from a new `data-label`), and the action buttons sit on their own full-width line with 44 px hit areas. Nothing needs horizontal scrolling any more.
