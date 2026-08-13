@@ -69,6 +69,7 @@ const STRATEGIES = {
   orb:        { broker: "fyers",   label: "ORB",        file: "orb_paper_trades.json"        },
   trend_pb:   { broker: "fyers",   label: "TREND_PB",   file: "trend_pb_paper_trades.json"   },
   gaps:       { broker: "fyers",   label: "GAPS",       file: "gaps_paper_trades.json"       },
+  oi_wall_fade: { broker: "fyers", label: "OI_WALL_FADE", file: "oi_wall_fade_paper_trades.json" },
 };
 
 const BROKER_ENV = { zerodha: "ZERODHA_INV_AMOUNT", fyers: "FYERS_INV_AMOUNT" };

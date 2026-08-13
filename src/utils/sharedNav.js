@@ -26,6 +26,7 @@ const STRATEGY_MODES = [
   { mode: 'GAPS',       label: 'GAPS',         envKey: 'GAPS_MODE_ENABLED'       },
   { mode: 'TDS',        label: 'Trend Day Scalp', envKey: 'TDS_MODE_ENABLED'     },
   { mode: 'GAP3M',      label: '3M Gap Fix Scalp', envKey: 'GAP3M_MODE_ENABLED'  },
+  { mode: 'OIWF',       label: 'OI Wall Fade', envKey: 'OIWF_MODE_ENABLED'       },
 ];
 
 // Strategies currently enabled in Settings (default ON, same as the sidebar).
@@ -46,6 +47,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   let _gapsMode = null;
   let _trendDayScalpMode = null;
   let _gapFix3mMode = null;
+  let _oiWallFadeMode = null;
   let _anyTradeActive = false;
   try {
     const sss = require('./sharedSocketState');
@@ -58,6 +60,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     _gapsMode = sss.getGapsMode ? sss.getGapsMode() : null;
     _trendDayScalpMode = sss.getTrendDayScalpMode ? sss.getTrendDayScalpMode() : null;
     _gapFix3mMode = sss.getGapFix3mMode ? sss.getGapFix3mMode() : null;
+    _oiWallFadeMode = sss.getOiWallFadeMode ? sss.getOiWallFadeMode() : null;
     _anyTradeActive = sss.isAnyActive ? sss.isAnyActive() : false;
   } catch (_) {}
 
@@ -87,6 +90,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const gapsModeOn     = (process.env.GAPS_MODE_ENABLED     || 'true').toLowerCase() === 'true';
   const tdsModeOn      = (process.env.TDS_MODE_ENABLED      || 'true').toLowerCase() === 'true';
   const gap3mModeOn    = (process.env.GAP3M_MODE_ENABLED    || 'true').toLowerCase() === 'true';
+  const oiwfModeOn     = (process.env.OIWF_MODE_ENABLED     || 'true').toLowerCase() === 'true';
 
   // ── Per-module menu-visibility toggles (managed from Settings page) ──
   const showSim      = (process.env.UI_SHOW_SIMULATE || 'false').toLowerCase() === 'true';
@@ -147,6 +151,10 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const showGap3mPaper        = (process.env.UI_SHOW_GAP3M_PAPER           || 'true').toLowerCase()  === 'true';
   const showGap3mLive         = (process.env.UI_SHOW_GAP3M_LIVE            || 'true').toLowerCase()  === 'true';
   const showGap3mHistory      = (process.env.UI_SHOW_GAP3M_HISTORY         || 'true').toLowerCase()  === 'true';
+  // OI Wall Fade — never traded and NOT backtestable (no historical per-strike OI), so there is no Backtest entry.
+  const showOiwfPaper         = (process.env.UI_SHOW_OIWF_PAPER            || 'true').toLowerCase()  === 'true';
+  const showOiwfLive          = (process.env.UI_SHOW_OIWF_LIVE             || 'true').toLowerCase()  === 'true';
+  const showOiwfHistory       = (process.env.UI_SHOW_OIWF_HISTORY          || 'true').toLowerCase()  === 'true';
 
   // ── System submenu toggles (Settings is always shown) ──
   const showTradeLogs  = (process.env.UI_SHOW_TRADE_LOGS  || 'true').toLowerCase() === 'true';
@@ -161,6 +169,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const gapsKeys    = ['gapsBacktest', 'gapsPaper', 'gapsLive', 'gapsHistory'];
   const tdsKeys     = ['trendDayScalpBacktest', 'trendDayScalpPaper', 'trendDayScalpLive', 'trendDayScalpHistory'];
   const gap3mKeys   = ['gapFix3mBacktest', 'gapFix3mPaper', 'gapFix3mLive', 'gapFix3mHistory'];
+  const oiwfKeys    = ['oiWallFadePaper', 'oiWallFadeLive', 'oiWallFadeHistory'];
 
   const isTradingOpen  = tradingKeys.includes(activePage);
   const isBbRsiOpen    = bbRsiKeys.includes(activePage);
@@ -171,6 +180,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const isGapsOpen     = gapsKeys.includes(activePage);
   const isTdsOpen      = tdsKeys.includes(activePage);
   const isGap3mOpen    = gap3mKeys.includes(activePage);
+  const isOiwfOpen     = oiwfKeys.includes(activePage);
 
   // When a strategy's PAPER session is running, hide its Live / Live (Harness)
   // entries — paper and live are mutually exclusive per strategy, so the live
@@ -184,6 +194,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const gapsPaperRunning     = _gapsMode     === 'GAPS_PAPER';
   const tdsPaperRunning      = _trendDayScalpMode === 'TREND_DAY_SCALP_PAPER';
   const gap3mPaperRunning    = _gapFix3mMode === 'GAP_FIX_3M_PAPER';
+  const oiwfPaperRunning     = _oiWallFadeMode === 'OI_WALL_FADE_PAPER';
 
   // Build a ema_rsi_st items list with per-feature toggle
   const emaRsiStItems = [
@@ -261,6 +272,14 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     ...(showGap3mHistory  ? [{ key: 'gapFix3mHistory',  href: '/gap-fix-3m-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 
+  // No Backtest entry: Fyers exposes no historical per-strike OI, so this
+  // strategy cannot be simulated over past sessions and never will be.
+  const oiwfItems = [
+    ...(showOiwfPaper   ? [{ key: 'oiWallFadePaper',   href: '/oi-wall-fade-paper/status', icon: '🧱', label: 'Paper'   }] : []),
+    ...(showOiwfLive && !oiwfPaperRunning ? [{ key: 'oiWallFadeLive', href: '/oi-wall-fade-live', icon: '📡', label: 'Live' }] : []),
+    ...(showOiwfHistory ? [{ key: 'oiWallFadeHistory', href: '/oi-wall-fade-paper/history', icon: '📜', label: 'History' }] : []),
+  ];
+
   // ── Grouped navigation sections (collapsible) ──
   const topLevelItems = [
     ...(showDashboard   ? [{ key: 'dashboard',         href: '/',                   icon: '⌂',  label: 'Dashboard' }] : []),
@@ -322,6 +341,11 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       header: '3M GAP FIX SCALP', collapsible: true, collapsed: !isGap3mOpen,
       groupId: 'nav-gap-fix-3m',
       items: gap3mItems,
+    }] : []),
+    ...(oiwfModeOn ? [{
+      header: 'OI WALL FADE', collapsible: true, collapsed: !isOiwfOpen,
+      groupId: 'nav-oi-wall-fade',
+      items: oiwfItems,
     }] : []),
     {
       header: 'SYSTEM', collapsible: false,
@@ -407,9 +431,17 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
       : '';
 
+    const oiwfLiveBadge = p.key === 'oiWallFadeLive' && _oiWallFadeMode === 'OI_WALL_FADE_LIVE'
+      ? `<span class="sb-nav-badge live">LIVE</span>`
+      : '';
+
+    const oiwfPaperBadge = p.key === 'oiWallFadePaper' && _oiWallFadeMode === 'OI_WALL_FADE_PAPER'
+      ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
+      : '';
+
     return `<a href="${p.href}" class="sb-nav-item${isActive ? ' active' : ''}">
       <span class="sb-nav-icon">${p.icon}</span> ${p.label}
-      ${liveBadge}${runningBadge}${bbRsiLiveBadge}${bbRsiPaperBadge}${paLiveBadge}${paPaperBadge}${orbLiveBadge}${orbPaperBadge}${gapsLiveBadge}${gapsPaperBadge}${tdsLiveBadge}${tdsPaperBadge}${gap3mLiveBadge}${gap3mPaperBadge}
+      ${liveBadge}${runningBadge}${bbRsiLiveBadge}${bbRsiPaperBadge}${paLiveBadge}${paPaperBadge}${orbLiveBadge}${orbPaperBadge}${gapsLiveBadge}${gapsPaperBadge}${tdsLiveBadge}${tdsPaperBadge}${gap3mLiveBadge}${gap3mPaperBadge}${oiwfLiveBadge}${oiwfPaperBadge}
     </a>`;
   }
 

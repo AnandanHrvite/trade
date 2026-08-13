@@ -31,6 +31,7 @@ const GUIDE_MODE_BY_FILE = {
   "gaps_strategy_guide.html":          "GAPS",
   "trend_day_scalp_strategy_guide.html": "TDS",
   "3m_gap_fix_scalp_strategy_guide.html": "GAP3M",
+  "oi_wall_fade_strategy_guide.html": "OIWF",
 };
 
 /**
@@ -445,6 +446,12 @@ const GUIDE_STATUS = {
     { type: "bool", label: "3M Gap Fix Scalp Paper Trading", key: "GAP3M_PAPER_ENABLED", def: "true" },
     { type: "live", label: "Live Orders (Fyers, via paper harness)", enableKey: "GAP3M_LIVE_ENABLED", dryKey: "GAP3M_LIVE_DRY_RUN" },
   ] }] },
+  "OI_WALL_FADE_Strategy_Guide.html": { title: "OI Wall Fade — Live Configuration", groups: [{ rows: [
+    { type: "bool", label: "OI Wall Fade Mode (sidebar + Settings section)", key: "OIWF_MODE_ENABLED", def: "true" },
+    { type: "bool", label: "OI Wall Fade Paper Trading", key: "OIWF_PAPER_ENABLED", def: "true" },
+    { type: "live", label: "Live Orders (Fyers, via paper harness)", enableKey: "OIWF_LIVE_ENABLED", dryKey: "OIWF_LIVE_DRY_RUN" },
+    { type: "bool", label: "Per-strike OI capture (this strategy reads nothing else)", key: "OPTION_CHAIN_RECORD_OI", def: "true" },
+  ] }] },
   "Application_Setup_Guide.html": { title: "System — Live Configuration", groups: [
     { heading: "Global gates", rows: [
       { type: "globaldry", label: "Live Harness DRY-RUN (global kill-switch)", key: "LIVE_HARNESS_DRY_RUN" },
@@ -463,6 +470,7 @@ const GUIDE_STATUS = {
       { type: "bool", label: "GAPS Mode", key: "GAPS_MODE_ENABLED", def: "true" },
       { type: "bool", label: "Trend Day Scalp Mode", key: "TDS_MODE_ENABLED", def: "true" },
       { type: "bool", label: "3M Gap Fix Scalp Mode", key: "GAP3M_MODE_ENABLED", def: "true" },
+      { type: "bool", label: "OI Wall Fade Mode", key: "OIWF_MODE_ENABLED", def: "true" },
     ] },
   ] },
 };

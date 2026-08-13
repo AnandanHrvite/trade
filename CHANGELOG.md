@@ -6,6 +6,22 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Added — OI WALL FADE: the first strategy here that does not read price
+
+Every other engine in this repo is a trend or breakout engine, so the **sideways day** is the gap they all share. Per-strike Open Interest is the one input that speaks to a range, because in a range the levels are not drawn by price — they are set by *where the writers are*. [services/oiChain.js](src/services/oiChain.js) has been keeping that ladder since 11 Aug (walls, per-strike ΔOI, band PCR) and drawing no conclusions from it; this is the engine that draws one.
+
+The rule, in four facts. The highest-OI CE strike is the resistance wall and the highest-OI PE strike is the support wall; they must be ≥`OIWF_MIN_BAND_PTS=150` apart and the candle must close **inside** them. The just-closed 5-min NIFTY 50 candle must have reached within `OIWF_WALL_NEAR_PTS=30` of one of them. That wall's own ΔOI over the last `OIWF_OI_LOOKBACK=3` **OI moves** must be ≥`OIWF_WALL_BUILD_PCT=2`% — writers still adding, still defending. And the same candle must close back on the safe side of the wall. Then: CE wall → **BUY_PE**, PE wall → **BUY_CE**, target the **mid-band**, stop `OIWF_SL_BUFFER_PTS=25` past the wall. Both levels are frozen into the setup, because the walls themselves move during the day.
+
+The opposite OI reading is not a weaker version of the same trade, it is the **anti-signal**: a wall shedding ≥`OIWF_WALL_SHED_PCT=2`% means the writers are buying back and leaving, which is exactly when a range fade turns into a trend loss. The engine stands aside and says so. An **unknown** ΔOI is likewise a refusal and never a zero — zero reads as "steady", a tradeable claim there would be no evidence for. `OIWF_MAX_OI_SPAN_SEC=1800` throws away a Δ that took longer than half an hour to accumulate, because the lookback counts OI *moves* rather than clock time and three moves on a dead afternoon can span the whole session.
+
+Nothing trails, nothing books partially, and — deliberately — **nothing exits on OI**: a wall that starts shedding mid-trade does not close the position, it only gets written onto the trade record so the question can be answered from data later. The engine refuses to start at all when `OPTION_CHAIN_RECORDER_ENABLED` or `OPTION_CHAIN_RECORD_OI` is off, rather than sitting mute all day looking healthy.
+
+**There is no backtest and there cannot be one.** Fyers publishes no historical per-strike OI, so this is the only strategy here with no simulated track record — the sidebar has no Backtest entry and there is no `OIWF_BT_*` key. Worse, `/replay` reproduces the candles but **not** the walls: `chain_oi.jsonl` is recorded but [tickReplay.js](src/services/tickReplay.js) has no timeline for it, so every wall reading comes back UNKNOWN and the engine refuses. The safe failure, but it means the usual "diff Paper against Replay before touching a live gate" check does not exist here, which raises the bar for going live rather than lowering it. Full OI context — which wall, its OI, its ΔOI and how long that Δ took, both walls, the band, the band PCR — is written onto every trade record and skip-log line instead.
+
+Wired in the usual places: `/oi-wall-fade-paper` (canonical) and `/oi-wall-fade-live` (harness, triple-gated dry-run), a Settings section, the sidebar, the Real-Time monitor, both consolidations, Edge Analytics, Trade Logs, `/replay`'s mode list, `positionPersist` crash recovery, `capitalPool`, `portfolioRisk` and Telegram. Guide: [documents/OI_WALL_FADE_Strategy_Guide.html](documents/OI_WALL_FADE_Strategy_Guide.html).
+
+**Never traded.** Zero paper sessions, zero live orders, and every threshold is a round number rather than a fitted one — there is nothing to fit them to. The question this exists to answer is whether a wall whose OI is rising actually holds price, and the answer may be no.
+
 ### Added — the ORB backtest can price its trades as futures instead of options
 
 Set `INSTRUMENT=NIFTY_FUTURES` and `/orb-backtest` runs the identical signal and exit logic but books P&L in index points × lot size with futures charges — no delta, no theta, no option bid-ask. The page says so in its notes line.

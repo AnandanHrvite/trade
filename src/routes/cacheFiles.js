@@ -69,6 +69,7 @@ const STRATEGY_BADGE = {
   gaps:     { label: "GAPS", cls: "mode-gaps" },
   trend_day_scalp: { label: "TREND DAY SCALP", cls: "mode-trend_day_scalp" },
   gap_fix_3m: { label: "3M GAP FIX SCALP", cls: "mode-gap_fix_3m" },
+  oi_wall_fade: { label: "OI WALL FADE", cls: "mode-oi_wall_fade" },
 };
 
 // Cache: abs path → { mtimeMs, meta } so we don't re-parse a file every list call.
@@ -90,7 +91,7 @@ function _istDateFromMs(ms) {
 function detectMeta(group, rel, abs, mtimeMs) {
   if (!group.tagged) return { strat: null, date: null };
   // Filename-encoded modes (replay / replay_sim outputs) — no per-file date.
-  const nameMatch = path.basename(rel).match(/^(ema_rsi_st|bb_rsi|pa|orb|trend_pb|gaps|trend_day_scalp|gap_fix_3m)\b/i);
+  const nameMatch = path.basename(rel).match(/^(ema_rsi_st|bb_rsi|pa|orb|trend_pb|gaps|trend_day_scalp|gap_fix_3m|oi_wall_fade)\b/i);
   if (nameMatch) return { strat: nameMatch[1].toLowerCase(), date: null };
   // Hash-named replay-cache JSON: read embedded mode/date, with an mtime cache.
   const cached = _tagCache.get(abs);
@@ -408,6 +409,7 @@ router.get("/", (req, res) => {
     .mode-gaps { color:#0ea5e9; }
     .mode-trend_day_scalp { color:#a855f7; }
     .mode-gap_fix_3m { color:#38bdf8; }
+    .mode-oi_wall_fade { color:#f472b6; }
     .mode-sim      { color:#ec4899; }
     .mode-desc { font-size:0.66rem; color:var(--muted-1,#8ba1c2); margin:6px 14px 0; font-style:italic; }
     .mode-meta { font-size:0.68rem; color:var(--muted-1,#8ba1c2); }
@@ -544,6 +546,7 @@ ${embed ? '' : buildSidebar('cacheFiles', liveActive)}
     gaps:     { label: 'GAPS', cls: 'mode-gaps' },
     trend_day_scalp: { label: 'TREND DAY SCALP', cls: 'mode-trend_day_scalp' },
     gap_fix_3m: { label: '3M GAP FIX SCALP', cls: 'mode-gap_fix_3m' },
+    oi_wall_fade: { label: 'OI WALL FADE', cls: 'mode-oi_wall_fade' },
   };
   function badgeHtml(strat) {
     var b = STRAT_BADGE[strat];

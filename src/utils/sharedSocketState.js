@@ -42,6 +42,9 @@ let trendDayScalpMode = null;
 // 3M Gap Fix Scalp mode: "GAP_FIX_3M_PAPER" | "GAP_FIX_3M_LIVE" | null
 let gapFix3mMode = null;
 
+// OI Wall Fade mode: "OI_WALL_FADE_PAPER" | "OI_WALL_FADE_LIVE" | null
+let oiWallFadeMode = null;
+
 // ── Primary mode (15-min) ─────────────────────────────────────────────────
 
 function setActive(mode) {
@@ -204,13 +207,32 @@ function getGapFix3mMode() {
   return gapFix3mMode;
 }
 
+// ── OI Wall Fade mode (per-strike OI wall fade) ─────────────────────────────
+
+function setOiWallFadeActive(mode) {
+  oiWallFadeMode = mode;
+}
+
+function clearOiWallFade() {
+  oiWallFadeMode = null;
+}
+
+function isOiWallFadeActive() {
+  return oiWallFadeMode !== null;
+}
+
+function getOiWallFadeMode() {
+  return oiWallFadeMode;
+}
+
 // ── Combined queries ──────────────────────────────────────────────────────
 
 /** Any mode using the socket? */
 function isAnyActive() {
   return primaryMode !== null || bbRsiMode !== null || paMode !== null ||
          orbMode !== null || ema9vwapMode !== null || trendPbMode !== null ||
-         gapsMode !== null || trendDayScalpMode !== null || gapFix3mMode !== null;
+         gapsMode !== null || trendDayScalpMode !== null || gapFix3mMode !== null ||
+         oiWallFadeMode !== null;
 }
 
 /** Can the given mode start? Returns { allowed, reason } */
@@ -288,6 +310,14 @@ function canStart(mode) {
       if (gapFix3mMode === "GAP_FIX_3M_PAPER") return { allowed: false, reason: "3M Gap Fix Scalp Paper is running — stop it first" };
       if (gapFix3mMode === "GAP_FIX_3M_LIVE")  return { allowed: false, reason: "3M Gap Fix Scalp Live is already running" };
       return { allowed: true };
+    case "OI_WALL_FADE_PAPER":
+      if (oiWallFadeMode === "OI_WALL_FADE_LIVE")  return { allowed: false, reason: "OI Wall Fade Live is running — stop it first" };
+      if (oiWallFadeMode === "OI_WALL_FADE_PAPER") return { allowed: false, reason: "OI Wall Fade Paper is already running" };
+      return { allowed: true };
+    case "OI_WALL_FADE_LIVE":
+      if (oiWallFadeMode === "OI_WALL_FADE_PAPER") return { allowed: false, reason: "OI Wall Fade Paper is running — stop it first" };
+      if (oiWallFadeMode === "OI_WALL_FADE_LIVE")  return { allowed: false, reason: "OI Wall Fade Live is already running" };
+      return { allowed: true };
     default:
       return { allowed: false, reason: "Unknown mode: " + mode };
   }
@@ -312,6 +342,8 @@ module.exports = {
   setTrendDayScalpActive, clearTrendDayScalp, isTrendDayScalpActive, getTrendDayScalpMode,
   // 3M Gap Fix Scalp
   setGapFix3mActive, clearGapFix3m, isGapFix3mActive, getGapFix3mMode,
+  // OI_WALL_FADE
+  setOiWallFadeActive, clearOiWallFade, isOiWallFadeActive, getOiWallFadeMode,
   // Combined
   isAnyActive, canStart,
 };

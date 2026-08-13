@@ -54,6 +54,9 @@ All four strategies run **in parallel** on the same WebSocket — different cand
 | **3M Gap Fix Scalp Paper** | Fades a 3-min NIFTY **FUTURES** gap back to its fill level unless the next candle breaks the day high/low on volume | 3-min (futures) | Simulated | `/gap-fix-3m-paper` |
 | **3M Gap Fix Scalp Backtest** | Same engine over a date range, front-month contract rolled like the live path | 3-min historical (futures) | Historical | `/gap-fix-3m-backtest` |
 | **3M Gap Fix Scalp Live (Harness)** | Runs Live by wrapping Paper (Fyers orders, triple-gated dry-run) | 3-min (futures) | Fyers (PAPER-wrapped) | `/gap-fix-3m-live` |
+| **OI Wall Fade Paper** | Fades the highest-OI CE/PE strike while that strike's own OI is still **rising** (single-leg slightly-ITM CE/PE) | 5-min + live OI ladder | Simulated | `/oi-wall-fade-paper` |
+| **OI Wall Fade Live (Harness)** | Runs Live by wrapping Paper (Fyers orders, triple-gated dry-run) | 5-min + live OI ladder | Fyers (PAPER-wrapped) | `/oi-wall-fade-live` |
+| **OI Monitor** | Read-only per-strike OI ladder, walls, band PCR — no position, no order | live OI ladder | — | `/oi-monitor` |
 | **Replay** | Re-runs a recorded paper session through the paper `onTick()` | Recorded ticks | Recorded | `/replay` |
 | **All Backtest** | Unified backtest dashboard (per-strategy stats) | Per-strategy | Historical | `/all-backtest` |
 | **Manual Tracker** | — (trails SL only) | 15-min | Zerodha | `/tracker` |
@@ -292,6 +295,29 @@ See [BB_RSI.md](BB_RSI.md) for the authoritative spec. Summary:
 - **Backtest** (`/gap-fix-3m-backtest`, [src/routes/gapFix3mBacktest.js](src/routes/gapFix3mBacktest.js)): drives the **same** `getSignal` and re-implements only paper's exits (paper canonical). There is no continuous futures series, so the range is split into **front-month contract blocks** using the identical roll rule the live path uses (roll two days before the last **Tuesday** — NIFTY futures expire on the last Tuesday of their month, verified against Fyers' symbol master) and each block is fetched from its own symbol — bars from two contracts are never adjacent inside a session, so a roll can never be mistaken for a gap.
 - **How far back it can go is limited by Fyers, not by this code.** A NIFTY futures contract is **delisted once it expires**, and Fyers then answers `Invalid symbol provided` for that symbol — there is no history for a month that has already passed. Each contract block is therefore fetched **independently**: what Fyers still serves is used, what it refuses is recorded and reported as **partial coverage** on the results page (those sessions are absent, not flat). **Refused and empty are kept apart on purpose** — a *refused* block means Fyers rejected the symbol and can never serve it, while an *empty* block means the call succeeded and returned nothing, which is normally a window with no trading days but is **also what an expired token looks like** (Fyers answers `no_data`, not an auth error). So an all-empty run points at the token, never at delisting, and an empty block does not raise the partial-coverage warning though it is still disclosed. If every contract in the range was genuinely refused the run fails with a message naming them and offering the current contract's own window. That window is also the **default range** — the repo-standard 90 days would always open on a dead contract. **Conservative intra-bar ordering**: the stop is tested on the bar's high/low **before** the target, so a bar touching both books the LOSS; a bar that opened beyond a level fills at the **open**. Option P&L is δ+θ simulated seeded at `GAP3M_BT_SEED_PREMIUM=240` plus `GAP3M_BT_SLIPPAGE_PTS=1.5`pt each way.
 
+### Strategy 10: OI WALL FADE — fade the option wall the writers are still defending (single-leg slightly-ITM CE/PE, Fyers)
+
+**Never traded, and — uniquely here — it can never be backtested.** Zero paper sessions, zero live orders, and no simulated history either: Fyers publishes no *historical* per-strike Open Interest, so there is nothing to run a backtest against and there never will be. Forward-recorded paper sessions are the only evidence about this idea that can ever exist. Every threshold below is a round number, not a fitted value.
+
+**Why an OI strategy at all.** Every other engine here is a trend or breakout engine, so the **sideways day** is the gap they share — on a range day they sit flat or bleed on whipsaws. Per-strike OI is the one input that speaks to a range, because in a range the levels are not drawn by price; they are set by **where the writers are**. Every indicator in this repo (EMA, BB, VWAP, SuperTrend, ATR, RSI) is arithmetic on the same candles and therefore adds no new information. OI is a count of open *positions* published by the exchange, and it does. `optionChainRecorder` was already fetching the ATM±N chain for prices and discarding the `oi` field on every row; [oiChain.js](src/services/oiChain.js) is where it now lands, at **no extra API cost**.
+
+- **Band** — the highest-OI CE strike is the resistance wall, the highest-OI PE strike is the support wall. They must be ≥ `OIWF_MIN_BAND_PTS=150` apart and the candle must **close** inside them. The target is the **mid**-band, so a narrower band cannot pay for the round trip and no tuning fixes that.
+- **Pressed** — the just-closed 5-min NIFTY 50 candle must have reached within `OIWF_WALL_NEAR_PTS=30` of a wall (its **high** for the CE wall, its **low** for the PE wall). A wick straight through the wall still counts; that is the setup, not a disqualification.
+- **Defended** — that wall's own ΔOI over the last `OIWF_OI_LOOKBACK=3` **OI moves** must be ≥ `OIWF_WALL_BUILD_PCT=2`%. The opposite reading (≤ −`OIWF_WALL_SHED_PCT=2`%) is the **anti-signal**: writers are covering, the wall is giving way, stand aside. An **unknown** ΔOI is a refusal, never a zero — zero reads as "steady", which is a tradeable claim there would be no evidence for.
+- **Lookback is in OI MOVES, not minutes.** The recorder polls far faster than OI updates, so `oiChain` only appends a sample when the value actually changes. That makes a Δ comparable across a fast morning and a dead afternoon, at the cost of covering variable wall-clock — hence `OIWF_MAX_OI_SPAN_SEC=1800`, which discards a Δ that took longer than that to accumulate.
+- **Rejected** — the same candle must close back on the safe side of the wall: red and below a CE wall, green and above a PE wall. A closed bar from the Fyers history endpoint, so the price half of the decision is exactly reproducible.
+- **Direction**: CE wall (resistance) → fade DOWN → **BUY_PE**. PE wall (support) → fade UP → **BUY_CE**.
+- **Target** = the mid-band `(ceStrike + peStrike) / 2`. **Stop** = `OIWF_SL_BUFFER_PTS=25` beyond the faded wall's strike. Both are LEVELS, both **frozen into the setup at entry** — the walls move during the day, and a target that tracked them could drift 80 points away from the band the trade was opened on.
+- **The geometry to understand before tuning anything.** Target + stop is a fixed span, and where the rejection candle closes decides how it is split. Run on one band with only that close changed, the engine returns R:R from **4.0** (shallow rejection, stop close behind) down to **0.4** (deep rejection into the middle, stop far away). `OIWF_MIN_TARGET_PTS` is the lever and ships **off**.
+- **Exits**: wall broken (price stop) → mid-band reached → EOD `OIWF_FORCED_EXIT=15:15`. That is all. **No trail, no breakeven jump, no partial booking, no time stop, no premium stop — and NO OI-based exit.** A wall that starts shedding mid-trade does *not* close the position; its ΔOI at exit is written onto the trade record so the question can be answered from data later, but it does not act.
+- **Two guards ship OFF on purpose**: `OIWF_MIN_TARGET_PTS` and `OIWF_REQUIRE_INNER_WALL`, both `0`/`false`.
+- **Day-level breakers**: `OIWF_MAX_DAILY_TRADES=3`, `OIWF_MAX_DAILY_LOSSES=2` stop-outs, `OIWF_MAX_DAILY_LOSS=3000`, `OIWF_DAILY_PROFIT_LOCK=0` (off), `OIWF_MAX_WEEKLY_LOSS=0` (off), plus the shared portfolio-wide cap.
+- **It refuses to start without an OI feed.** With `OPTION_CHAIN_RECORDER_ENABLED` or `OPTION_CHAIN_RECORD_OI` off the ladder stays empty and this engine has no input at all, so `/oi-wall-fade-paper/start` returns an error naming the setting rather than sitting mute all day looking healthy.
+- **How the data arrives.** Closed 5-min **NIFTY 50 index** bars come from the Fyers history endpoint, refreshed once per bar `OIWF_HISTORY_LAG_MS=5000` after it closes. The live index price the two exit levels are tested against comes from the **shared tick socket**, so exits resolve per tick. The option premium is polled every `OIWF_OPT_POLL_MS=2000` for P&L display only — no exit rule reads it.
+- **LIVE = PAPER** (`/oi-wall-fade-live`, [src/routes/oiWallFadeLiveHarness.js](src/routes/oiWallFadeLiveHarness.js)): wraps the Paper engine with the shared harness. **Triple-gated to dry-run**: real orders require `OIWF_LIVE_ENABLED=true` AND `LIVE_HARNESS_DRY_RUN=false` AND `OIWF_LIVE_DRY_RUN` not-true, plus an authenticated Fyers session. An open position is crash-recovered via `positionPersist` (`.active_oi_wall_fade_position.json`) and reconciled against the broker book on boot; the wall context is persisted alongside the levels because the ladder itself is in-memory and starts empty after a restart.
+- **⚠️ Replay reproduces the candles but NOT the walls.** `chain_oi.jsonl` is recorded, but [tickReplay.js](src/services/tickReplay.js) has no timeline for it, so on a replay every wall reading comes back UNKNOWN and the engine refuses rather than fading blind. That is the safe failure, not a silent one — but it means the usual "diff Paper against Replay before touching a live gate" check is **not available** for this strategy, which raises the bar for going live rather than lowering it. Full OI context is written onto every trade record and skip-log line instead.
+- **The core claim is untested**: does a wall whose OI is rising actually hold price, and how far does a rejection off one travel? The read-only [/oi-monitor](src/routes/oiMonitor.js) page and these paper sessions exist to answer exactly that, and the answer may be no.
+
 
 ## Quick Start (EC2)
 
@@ -343,6 +369,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   gaps_paper_trades.json          # GAPS paper sessions
   trend_day_scalp_paper_trades.json # Trend Day Scalp paper sessions
   gap_fix_3m_paper_trades.json    # 3M Gap Fix Scalp paper sessions
+  oi_wall_fade_paper_trades.json  # OI Wall Fade paper sessions
   historical_pnl.json             # One-time P&L baselines per broker (Kite / Fyers)
   nse_holidays.json               # Last good NSE holiday fetch, keyed by year — keeps 2027+ working if NSE blocks the box
   .active_ema_rsi_st_position.json     # Crash recovery — EMA_RSI_ST position
@@ -354,6 +381,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   .active_gaps_position.json      # Crash recovery — GAPS position
   .active_trend_day_scalp_position.json # Crash recovery — Trend Day Scalp position
   .active_gap_fix_3m_position.json # Crash recovery — 3M Gap Fix Scalp position
+  .active_oi_wall_fade_position.json # Crash recovery — OI Wall Fade position
   .harness_events.json            # Live-harness event log (DRY-RUN/real order events), survives restart
   ema_rsi_st_paper_trades_log.jsonl    # Crash-safe per-trade JSONL audit (cumulative)
   bb_rsi_paper_trades_log.jsonl
@@ -768,6 +796,43 @@ Trend-continuation option-buyer: 15m trend bias (swing structure + EMA20>EMA50 +
 | `GAP3M_BT_SEED_PREMIUM` | `240` | Assumed entry premium for the backtest (₹) |
 | `UI_SHOW_GAP3M_BACKTEST` / `_PAPER` / `_LIVE` / `_HISTORY` | `true` | Sidebar sub-menu visibility |
 | `TG_GAP3M_STARTED` / `_ENTRY` / `_EXIT` / `_DAYREPORT` | `true` | Telegram alerts for this strategy |
+
+### OI Wall Fade Mode (per-strike Open Interest wall fade, Fyers)
+
+**No backtest exists and none can.** Fyers publishes no historical per-strike OI, so there is no `OIWF_BT_*` key and no `/oi-wall-fade-backtest` route.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OIWF_MODE_ENABLED` | `true` | Master toggle — sidebar group + Settings section |
+| `OIWF_PAPER_ENABLED` | `true` | Allow `/oi-wall-fade-paper/start` |
+| `OIWF_LIVE_ENABLED` | `false` | Gates real Fyers orders on `/oi-wall-fade-live/start` |
+| `OIWF_LIVE_DRY_RUN` | `false` | Per-strategy dry-run override — keeps it simulated even when live is on |
+| `OIWF_RESOLUTION` | `5` | Timeframe of the NIFTY 50 candle whose close must reject off the wall (min) |
+| `OIWF_MIN_BAND_PTS` | `150` | The two walls must be at least this far apart. The target is the **mid**-band, so 150 offers ~75pt — below that the spread plus theta eats the move |
+| `OIWF_WALL_NEAR_PTS` | `30` | The candle's high (CE wall) or low (PE wall) must reach within this of the wall strike |
+| `OIWF_OI_LOOKBACK` | `3` | ΔOI lookback in **real OI moves**, not polls or minutes ([oiChain.js](src/services/oiChain.js) samples only on a value change) |
+| `OIWF_WALL_BUILD_PCT` | `2` | Wall ΔOI ≥ +this = **DEFEND**, writers holding. The entry condition |
+| `OIWF_WALL_SHED_PCT` | `2` | Wall ΔOI ≤ −this = **BREAK**, writers running. Stand aside — the anti-signal |
+| `OIWF_MAX_OI_SPAN_SEC` | `1800` | Reject a ΔOI that took longer than this to accumulate (0 = off). A Δ measured in moves spans variable wall-clock; "+2% since 10:00" is not a claim about now |
+| `OIWF_ENTRY_START` | `09:45` | No entries before this (IST). Late on purpose — the ΔOI test needs several real OI moves to exist |
+| `OIWF_ENTRY_END` | `14:45` | No new entries after this (IST) |
+| `OIWF_FORCED_EXIT` | `15:15` | Hard EOD square-off (IST) |
+| `OIWF_SL_BUFFER_PTS` | `25` | Stop sits this far past the faded wall's strike. Past the wall the thesis is wrong |
+| `OIWF_MIN_TARGET_PTS` | `0` | **Off by default.** Skip when the mid-band is nearer than this to the entry |
+| `OIWF_REQUIRE_INNER_WALL` | `false` | **Off by default.** Refuse when a wall sits on the edge of the polled ATM±N window (the true max-OI strike may be outside it). Reported on the trade either way |
+| `OIWF_LOT_MULTIPLIER` | `0` | Lots per trade (0 = inherit global `LOT_MULTIPLIER`; clamped by `MAX_LOT_MULTIPLIER`) |
+| `OIWF_ITM_STEPS` | `1` | Strikes in-the-money to buy (0 = ATM). 1 step ≈ delta 0.6 |
+| `OIWF_MAX_DAILY_TRADES` | `3` | Max entries per day |
+| `OIWF_MAX_DAILY_LOSSES` | `2` | Day ends after this many stop-outs (0 = off). A stop-out here means a wall broke — evidence the day is trending, not ranging |
+| `OIWF_MAX_DAILY_LOSS` | `3000` | Stop trading after this much loss (0 = off) |
+| `OIWF_DAILY_PROFIT_LOCK` | `0` | Stop for the day once this much is banked (0 = off, the default) |
+| `OIWF_MAX_WEEKLY_LOSS` | `0` | Rolling Mon→today cap read from the per-day JSONL logs (0 = off) |
+| `OIWF_OPT_POLL_MS` | `2000` | Option-premium poll while a position is open. **P&L display only** — every exit level is tested on the shared index tick feed |
+| `OIWF_HISTORY_LAG_MS` | `5000` | How long after a bar closes before the Fyers history endpoint is asked for it |
+| `UI_SHOW_OIWF_PAPER` / `_LIVE` / `_HISTORY` | `true` | Sidebar sub-menu visibility (no Backtest entry — there is no backtest) |
+| `TG_OIWF_STARTED` / `_ENTRY` / `_EXIT` / `_DAYREPORT` | `true` | Telegram alerts for this strategy |
+
+It also depends on two keys owned by the recorder: `OPTION_CHAIN_RECORDER_ENABLED` and `OPTION_CHAIN_RECORD_OI` (both default `true`). With either off the ladder stays empty, and `/oi-wall-fade-paper/start` **refuses** rather than sitting mute all day.
 
 ### Paper Investment Pools (per broker)
 Paper capital is pooled per broker, not per strategy. Each strategy's running capital = its broker pool + that strategy's all-time paper P&L. The Real-Time Monitor (dashboard) carries a wallet ribbon per broker — headline **free to trade**, with *Invested / P&L* and *In use / Pool* beneath — and it stays up during a running session, since that is when free cash matters. It is hidden under the LIVE toggle: the pool is paper money and has no live-margin equivalent.

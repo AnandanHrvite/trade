@@ -231,6 +231,7 @@ const STRATEGY_OPTIONS = [
   { mode: "gaps-paper", label: "GAPS Paper", envKey: "UI_SHOW_GAPS_PAPER", modeKey: "GAPS_MODE_ENABLED" },
   { mode: "trend-day-scalp-paper", label: "Trend Day Scalp Paper", envKey: "UI_SHOW_TDS_PAPER", modeKey: "TDS_MODE_ENABLED" },
   { mode: "gap-fix-3m-paper", label: "3M Gap Fix Scalp Paper", envKey: "UI_SHOW_GAP3M_PAPER", modeKey: "GAP3M_MODE_ENABLED" },
+  { mode: "oi-wall-fade-paper", label: "OI Wall Fade Paper", envKey: "UI_SHOW_OIWF_PAPER", modeKey: "OIWF_MODE_ENABLED" },
 ];
 
 function _renderStrategyOptions() {
@@ -280,6 +281,7 @@ button:disabled { background:#374151; cursor:not-allowed; }
 .tag.gaps     { background:rgba(14,165,233,0.15);  color:#38bdf8; }
 .tag.tds      { background:rgba(168,85,247,0.15);  color:#c084fc; }
 .tag.gap3m    { background:rgba(56,189,248,0.15);  color:#7dd3fc; }
+.tag.oiwf     { background:rgba(244,114,182,0.15); color:#f9a8d4; }
 .tag.trendpb  { background:rgba(236,72,153,0.15);  color:#f9a8d4; }
 .tag-incomplete { display:inline-block; padding:2px 8px; border-radius:4px; font-size:0.65rem; font-weight:600; background:rgba(245,158,11,0.15); color:#fbbf24; border:1px solid rgba(245,158,11,0.35); margin-left:4px; }
 .row-incomplete td { opacity:0.65; }
@@ -617,6 +619,7 @@ function modeTag(mode) {
   if (mode.startsWith('ema9vwap')) return 'ema9vwap';
   if (mode.startsWith('trend-pb')) return 'trendpb';
   if (mode.startsWith('gap-fix-3m')) return 'gap3m';
+  if (mode.startsWith('oi-wall-fade')) return 'oiwf';
   if (mode.startsWith('trend-day-scalp')) return 'tds';
   if (mode.startsWith('gaps'))     return 'gaps';
   return 'pa';
@@ -1659,6 +1662,7 @@ function _modeLabel(mode) {
        : mode === 'trend-pb-paper' ? 'Trend Pullback Paper'
        : mode === 'gaps-paper' ? 'GAPS Paper'
        : mode === 'gap-fix-3m-paper' ? '3M Gap Fix Scalp Paper'
+       : mode === 'oi-wall-fade-paper' ? 'OI Wall Fade Paper'
        : mode === 'trend-day-scalp-paper' ? 'Trend Day Scalp Paper'
        : mode;
 }
@@ -2548,7 +2552,7 @@ ${contractNoteClientJS()}
 var _CN_RANGE_ROWS = [], _CN_RANGE_CTX = null;
 var _CN_SINGLE_TRADES = null, _CN_SINGLE_LABEL = '';
 function _cnModeLabel(m){
-  return m==='all'?'All Strategies':m==='ema_rsi_st-paper'?'EMA_RSI_ST Paper':m==='bb_rsi-paper'?'BB_RSI Paper':m==='pa-paper'?'PA Paper':m==='orb-paper'?'ORB Paper':m==='ema9vwap-paper'?'EMA9+VWAP Paper':m==='trend-pb-paper'?'Trend Pullback Paper':m==='gaps-paper'?'GAPS Paper':m==='trend-day-scalp-paper'?'Trend Day Scalp Paper':m==='gap-fix-3m-paper'?'3M Gap Fix Scalp Paper':(m||'Replay');
+  return m==='all'?'All Strategies':m==='ema_rsi_st-paper'?'EMA_RSI_ST Paper':m==='bb_rsi-paper'?'BB_RSI Paper':m==='pa-paper'?'PA Paper':m==='orb-paper'?'ORB Paper':m==='ema9vwap-paper'?'EMA9+VWAP Paper':m==='trend-pb-paper'?'Trend Pullback Paper':m==='gaps-paper'?'GAPS Paper':m==='trend-day-scalp-paper'?'Trend Day Scalp Paper':m==='gap-fix-3m-paper'?'3M Gap Fix Scalp Paper':m==='oi-wall-fade-paper'?'OI Wall Fade Paper':(m||'Replay');
 }
 function openReplayReportAll(){
   var trades=[]; for(var i=0;i<_CN_RANGE_ROWS.length;i++){ var r=_CN_RANGE_ROWS[i]; if(r&&r.sim&&r.sim.ok&&r.sim.sessionTrades) trades=trades.concat(r.sim.sessionTrades); }

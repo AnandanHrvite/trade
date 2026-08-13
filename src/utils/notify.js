@@ -12,14 +12,14 @@
  *
  * Toggle hierarchy:
  *   TG_ENABLED                                  — master gate; if false, nothing sends
- *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|GAPS|TDS|GAP3M}_STARTED    — session-start alerts (per mode)
- *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|GAPS|TDS|GAP3M}_ENTRY      — trade entry alerts (per mode)
- *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|GAPS|TDS|GAP3M}_EXIT       — trade exit alerts (per mode)
+ *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|GAPS|TDS|GAP3M|OIWF}_STARTED    — session-start alerts (per mode)
+ *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|GAPS|TDS|GAP3M|OIWF}_ENTRY      — trade entry alerts (per mode)
+ *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|GAPS|TDS|GAP3M|OIWF}_EXIT       — trade exit alerts (per mode)
  *   TG_{EMA_RSI_ST|BB_RSI|PA|EMA9VWAP}_SIGNALS                 — candle-close skip/signal alerts (these modes only)
- *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|GAPS|TDS|GAP3M}_DAYREPORT  — per-mode day report on session stop
+ *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|GAPS|TDS|GAP3M|OIWF}_DAYREPORT  — per-mode day report on session stop
  *   TG_DAYREPORT_CONSOLIDATED                   — one combined day report at market close
  *
- *   (ORB, TREND_PB, GAPS, TDS and GAP3M emit no SIGNAL alerts, so they have no _SIGNALS toggle.)
+ *   (ORB, TREND_PB, GAPS, TDS, GAP3M and OIWF emit no SIGNAL alerts, so they have no _SIGNALS toggle.)
  *
  * If TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID are missing, all functions silently
  * do nothing — no errors.
@@ -106,6 +106,9 @@ function modeGroup(mode) {
   // prefix (GAP3M_MODE_ENABLED, TG_GAP3M_ENTRY, …) — an env var may not start
   // with a digit, which is why the group is not literally "3M_GAP_FIX_SCALP".
   if (m === "GAP3M" || m.startsWith("GAP-FIX-3M") || m.startsWith("GAP_FIX_3M")) return "GAP3M";
+  // OI Wall Fade. Group key OIWF so every env key stays on the OIWF_ prefix
+  // (OIWF_MODE_ENABLED, TG_OIWF_ENTRY, …) while the mode tag stays readable.
+  if (m === "OIWF" || m.startsWith("OI-WALL-FADE") || m.startsWith("OI_WALL_FADE")) return "OIWF";
   return "EMA_RSI_ST";
 }
 
@@ -618,7 +621,7 @@ function notifyConsolidatedDayReport({ byMode }) {
   if (!canSend("TG_DAYREPORT_CONSOLIDATED")) return false;
 
   // Only include strategies that are currently enabled in Settings.
-  const groups = ["EMA_RSI_ST", "BB_RSI", "PA", "ORB", "EMA9VWAP", "TREND_PB", "GAPS", "TDS", "GAP3M"].filter(isModeEnabled);
+  const groups = ["EMA_RSI_ST", "BB_RSI", "PA", "ORB", "EMA9VWAP", "TREND_PB", "GAPS", "TDS", "GAP3M", "OIWF"].filter(isModeEnabled);
   let totalTrades = 0, totalPnl = 0, totalWins = 0, totalLosses = 0;
   const rows = [];
 
