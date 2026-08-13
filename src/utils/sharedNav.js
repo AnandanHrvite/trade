@@ -2933,4 +2933,77 @@ function msInit(id, onChange){
 `;
 }
 
-module.exports = { STRATEGY_MODES, enabledStrategies, buildSidebar, sidebarCSS, themeJS, toastJS, aiExportJS, logViewerHTML, faviconLink, modalCSS, modalJS, expiryHolidayModalCSS, expiryHolidayModalHTML, expiryHolidayModalJS, errorPage, tableEnhancerCSS, tableEnhancerJS, dateRangeOptionsHTML, dateRangeJS, multiSelectCSS, multiSelectHTML, multiSelectJS };
+/* ── Clear Cache button — shared by every backtest page ─────────────────────
+ * A backtest that quietly reused stale cached candles had no in-app fix. This
+ * button wipes both historical-candle disk caches so the next run re-downloads
+ * from Fyers. Nothing else is touched: no trades, no settings, no tick
+ * recordings — the caches self-heal, the only cost is a slower next run.
+ *
+ * Usage: drop clearCacheButtonHTML() into the run-bar and clearCacheJS() into a
+ * page script that also has modalJS() (it uses showConfirm / showAlert /
+ * secretFetch). Binding is by class, not id, so a page that renders more than
+ * one run-bar still works.
+ *
+ * The <style> ships with the markup so a page needs one insertion, not two. A
+ * style element is display:none by default, so it adds no box to the flex row,
+ * and repeating it on a two-run-bar page just re-declares identical rules.
+ */
+function clearCacheButtonHTML() {
+  return `<style>
+  .clear-cache-btn{background:#2a1a10;color:#fbbf24;border:1px solid #7c4a03;padding:6px 14px;border-radius:5px;font-size:0.7rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;white-space:nowrap;}
+  .clear-cache-btn:hover{background:#78350f;color:#fff;}
+  .clear-cache-btn:disabled{opacity:.5;cursor:not-allowed;}
+  :root[data-theme="light"] .clear-cache-btn{background:#fffbeb;color:#b45309;border-color:#fcd34d;}
+  :root[data-theme="light"] .clear-cache-btn:hover{background:#fef3c7;color:#78350f;}
+  </style><button type="button" class="clear-cache-btn" title="Delete the cached historical candles — the next run re-downloads them from Fyers">🧹 Clear Cache</button>`;
+}
+
+function clearCacheJS() {
+  return `
+// ── Clear Cache ────────────────────────────────────────────────────────────
+// Wipes the cached historical candles so the next run pulls fresh data from
+// Fyers. Whether a backtest is currently running is decided by the server (409)
+// — every backtest page shares one job manager.
+document.querySelectorAll('.clear-cache-btn').forEach(function(btn){
+  btn.addEventListener('click', async function(){
+    var ok = await showConfirm({
+      icon:'\\ud83e\\uddf9',
+      title:'Clear backtest cache?',
+      message:'Deletes the cached historical candles (backtest_cache + candle_cache).\\nNo trades or settings are touched \\u2014 the next run just re-downloads from Fyers, which takes longer.',
+      confirmText:'Clear cache',
+      confirmClass:'modal-btn-danger'
+    });
+    if(!ok) return;
+
+    var label = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Clearing\\u2026';
+    try {
+      var r = await secretFetch('/cache-files/clear-candles', { method:'POST' });
+      if(!r) return;                                 // secret prompt cancelled
+      var d = null;
+      try { d = await r.json(); } catch(_){}
+      if(r.ok && d && d.success){
+        await showAlert({ icon:'\\u2705', title:'Cache cleared',
+          message:'Removed ' + d.total + ' file(s) \\u2014 ' + d.backtest + ' backtest, ' + d.candle + ' candle.\\nThe next run re-downloads candles from Fyers.',
+          btnClass:'modal-btn-success' });
+      } else if(r.status === 409){
+        await showAlert({ icon:'\\u23f3', title:'Backtest running',
+          message:'Wait for the running backtest to finish, then clear the cache.',
+          btnClass:'modal-btn-primary' });
+      } else {
+        await showAlert({ icon:'\\u26a0\\ufe0f', title:'Clear failed',
+          message:(d && d.error) || ('HTTP ' + r.status),
+          btnClass:'modal-btn-danger' });
+      }
+    } catch(e) {
+      await showAlert({ icon:'\\u26a0\\ufe0f', title:'Network error',
+        message:(e && e.message) || 'Request failed', btnClass:'modal-btn-danger' });
+    } finally {
+      btn.disabled = false; btn.textContent = label;
+    }
+  });
+});
+`;
+}
+
+module.exports = { STRATEGY_MODES, enabledStrategies, buildSidebar, sidebarCSS, themeJS, toastJS, aiExportJS, logViewerHTML, faviconLink, modalCSS, modalJS, expiryHolidayModalCSS, expiryHolidayModalHTML, expiryHolidayModalJS, errorPage, tableEnhancerCSS, tableEnhancerJS, dateRangeOptionsHTML, dateRangeJS, multiSelectCSS, multiSelectHTML, multiSelectJS, clearCacheButtonHTML, clearCacheJS };

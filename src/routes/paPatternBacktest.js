@@ -24,7 +24,7 @@ const { VIX_SYMBOL } = vixFilter;
 const { isExpiryDate } = require("../utils/nseHolidays");
 const { saveResult, loadResult } = require("../utils/resultStore");
 const sharedSocketState = require("../utils/sharedSocketState");
-const { buildSidebar, sidebarCSS, modalCSS, modalJS } = require("../utils/sharedNav");
+const { buildSidebar, sidebarCSS, modalCSS, modalJS, clearCacheButtonHTML, clearCacheJS } = require("../utils/sharedNav");
 const backtestJobs = require("../utils/backtestJobManager");
 
 const PATTERNS = [
@@ -416,6 +416,7 @@ ${buildSidebar('paPatternBacktest', liveActive)}
       </select>
     </div>
     <button class="run-btn" id="runAllBtn">▶▶ Run All Patterns</button>
+    ${clearCacheButtonHTML()}
     <button class="run-btn" id="copyAllBtn" style="background:#0f3a26;color:#34d399;border-color:#1f7a4d;">📋 Copy All Trades</button>
     <button class="run-btn" id="cancelBtn" style="background:#3a1a1a;color:#f87171;border-color:#7f1d1d;display:none;">✕ Cancel</button>
     <span id="runAllStatus" style="font-size:0.68rem;color:var(--muted-1,#8ba1c2);margin-left:auto;"></span>
@@ -752,6 +753,7 @@ document.querySelectorAll('[data-run]').forEach(function(btn){
 });
 
 ${modalJS()}
+${clearCacheJS()}
 </script>
 </body>
 </html>`);

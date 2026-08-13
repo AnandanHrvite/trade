@@ -6,11 +6,11 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
-### Added — Clear Cache button on the Backtest page
+### Added — Clear Cache button on every backtest page
 
-The Backtest dashboard (`/all-backtest`) now has a **🧹 Clear Cache** button next to Run All. It deletes the cached historical candles in `~/trading-data/backtest_cache` and `candle_cache`, so the next run pulls fresh data from Fyers instead of replaying whatever was on disk. Trades, settings and tick recordings are untouched — the caches self-heal, the only cost is a slower next run.
+Every backtest page — the `/all-backtest` dashboard and each per-strategy page (ORB, GAPS, Trend_PB, TDS, 3M Gap Fix, BB_RSI, EMA_RSI_ST, EMA9+VWAP, PA and PA-pattern) — now shows a **🧹 Clear Cache** button next to its Run button. It deletes the cached historical candles in `~/trading-data/backtest_cache` and `candle_cache`, so the next run pulls fresh data from Fyers instead of replaying whatever was on disk. Trades, settings and tick recordings are untouched — the caches self-heal, the only cost is a slower next run.
 
-It asks for confirmation, needs `API_SECRET` (it is a write operation, deliberately outside the open-path list), and returns `409` while a backtest is running rather than deleting files that job is mid-read.
+The button and its handler are one shared pair in `sharedNav.js` (`clearCacheButtonHTML()` / `clearCacheJS()`), bound by class so a page with two run-bars still works, and they call `POST /cache-files/clear-candles` — the cache router being the natural home for a cache-wide wipe. It asks for confirmation, needs `API_SECRET` (a write operation, deliberately outside the open-path list), and returns `409` while a backtest is running rather than deleting files that job is mid-read.
 
 ### Changed — ORB now ships the simplified ruleset
 

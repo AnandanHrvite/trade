@@ -17,7 +17,7 @@ const bbRsiStrategy    = require("../strategies/bb_rsi");
 const { aiExportButton, aiExportScriptTag } = require("../utils/backtestAiExport");
 const { saveResult }   = require("../utils/resultStore");
 const sharedSocketState = require("../utils/sharedSocketState");
-const { buildSidebar, sidebarCSS, modalCSS, modalJS } = require("../utils/sharedNav");
+const { buildSidebar, sidebarCSS, modalCSS, modalJS, clearCacheButtonHTML, clearCacheJS } = require("../utils/sharedNav");
 const vixFilter = require("../services/vixFilter");
 const { VIX_SYMBOL } = vixFilter;
 const instrumentConfig = require("../config/instrument");
@@ -674,6 +674,7 @@ ${buildSidebar('bbRsiBacktest', true)}
       </div></div>
 <script>
 ${modalJS()}
+${clearCacheJS()}
 </script>
 </body></html>`);
   }
@@ -918,6 +919,7 @@ ${buildSidebar('bbRsiBacktest', liveActive)}
     <div style="display:flex;align-items:center;gap:5px;"><input type="checkbox" id="splitYears" style="accent-color:#3b82f6;cursor:pointer;" onchange="if(this.checked)document.getElementById('splitMonths').checked=false;"/><label for="splitYears" style="font-size:0.65rem;color:var(--muted-1,#8ba1c2);cursor:pointer;white-space:nowrap;">Split by years</label></div>
     <div style="display:flex;align-items:center;gap:5px;"><input type="checkbox" id="splitMonths" style="accent-color:#f59e0b;cursor:pointer;" onchange="if(this.checked)document.getElementById('splitYears').checked=false;"/><label for="splitMonths" style="font-size:0.65rem;color:var(--muted-1,#8ba1c2);cursor:pointer;white-space:nowrap;">Split by months</label></div>
     <button class="run-btn" onclick="(function(){var f=document.getElementById('f').value,t=document.getElementById('t').value,r=document.getElementById('r').value;if(!f||!t){showAlert({icon:'\u26a0\ufe0f',title:'Missing Dates',message:'Set both From and To dates'});return;}var base='/bb_rsi-backtest';if(document.getElementById('splitYears').checked){var fy=parseInt(f.split('-')[0]),ty=parseInt(t.split('-')[0]);for(var y=fy;y<=ty;y++){var yf=(y===fy)?f:y+'-01-01',yt=(y===ty)?t:y+'-12-31';window.open(base+'?from='+yf+'&to='+yt+'&resolution='+r,'_blank');}}else if(document.getElementById('splitMonths').checked){var fd=new Date(f),td=new Date(t),cm=fd.getFullYear()*12+fd.getMonth(),em=td.getFullYear()*12+td.getMonth();for(var m=cm;m<=em;m++){var yr=Math.floor(m/12),mo=m%12,mf=(m===cm)?f:yr+'-'+String(mo+1).padStart(2,'0')+'-01',last=new Date(yr,mo+1,0),mt=(m===em)?t:yr+'-'+String(mo+1).padStart(2,'0')+'-'+String(last.getDate()).padStart(2,'0');window.open(base+'?from='+mf+'&to='+mt+'&resolution='+r,'_blank');}}else{window.location=base+'?from='+f+'&to='+t+'&resolution='+r;}})()">🔄 Run Again</button>
+    ${clearCacheButtonHTML()}
     <span style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);margin-left:auto;">Strategy: <strong style="color:#f59e0b;">${bbRsiStrategy.NAME}</strong></span>
   </div>
   <!-- Quick date presets -->
@@ -1200,6 +1202,7 @@ ${aiExportScriptTag({ mode: "BB_RSI", strategyName: bbRsiStrategy.NAME, from, to
 ${tradesTruncated ? `<div style="background:#1a1800;border:1px solid #3a3000;border-radius:8px;padding:10px 16px;margin:0 0 12px;font-size:0.72rem;color:#b8a040;text-align:center;">Showing latest ${MAX_EMBEDDED_TRADES.toLocaleString()} of ${tradesData.length.toLocaleString()} trades for browser performance. Summary stats reflect ALL trades.</div>` : ''}
 <script>
 ${modalJS()}
+${clearCacheJS()}
 var TRADES = JSON.parse(document.getElementById('trades-data').textContent);
 var filtered = TRADES.slice();
 var sortCol = 'entry', sortDir = -1, pg = 1, pp = 10;

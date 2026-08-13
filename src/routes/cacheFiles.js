@@ -21,6 +21,7 @@
  *   GET  /cache-files/download-all?group=     → stream group as .tar.gz
  *   POST /cache-files/delete?group=&path=     → delete one file (API_SECRET-protected)
  *   POST /cache-files/delete-all?group=       → delete every file in a group (protected)
+ *   POST /cache-files/clear-candles           → wipe both candle caches (protected)
  */
 
 const express = require("express");
@@ -30,6 +31,9 @@ const path    = require("path");
 const os      = require("os");
 const { spawn } = require("child_process");
 const sharedSocketState = require("../utils/sharedSocketState");
+const backtestCache = require("../utils/backtestCache");
+const candleCache   = require("../utils/candleCache");
+const backtestJobs  = require("../utils/backtestJobManager");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS, toastJS } = require("../utils/sharedNav");
 
 const HOME      = os.homedir();
@@ -329,6 +333,34 @@ router.post("/delete-all", (req, res) => {
   }
   console.log(`[cache-files] delete-all group=${key}${tagFilter ? ` tag=${tagFilter}` : ""} removed=${deleted.length} failed=${failed.length}`);
   res.json({ success: failed.length === 0, group: key, tag: tagFilter || null, deleted, failed });
+});
+
+// ── POST /cache-files/clear-candles — wipe both historical-candle caches ────
+// The one-click version of "delete-all" on the two candle groups, called by the
+// 🧹 Clear Cache button every backtest page shows. Write op: it is not in
+// app.js OPEN_PATHS, so it needs API_SECRET. Refused while a backtest is
+// running, because that job is reading the very files we would delete.
+router.post("/clear-candles", (_req, res) => {
+  if (!backtestJobs.isIdle()) {
+    return res.status(409).json({
+      success: false,
+      error: "A backtest is running. Wait for it to finish before clearing the cache.",
+    });
+  }
+  try {
+    // Size is read before the wipe and covers backtest_cache only — candleCache
+    // exposes no directory-level stats. Logged, not reported, so the UI never
+    // claims a total it did not measure.
+    const backtestMB = backtestCache.getCacheStats().sizeMB;
+    const backtest   = backtestCache.clearAllCache();
+    const candle     = candleCache.clearAllCache();
+    _tagCache.clear();
+    console.log(`[cache-files] 🧹 candle caches cleared → backtest_cache:${backtest} file(s) (~${backtestMB} MB) candle_cache:${candle} file(s)`);
+    res.json({ success: true, backtest, candle, total: backtest + candle });
+  } catch (err) {
+    console.log(`[cache-files] ❌ candle-cache clear failed: ${err.message}`);
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // ── GET /cache-files — UI page ──────────────────────────────────────────────

@@ -24,7 +24,7 @@
  *   }));
  */
 
-const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("./sharedNav");
+const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS, clearCacheButtonHTML, clearCacheJS } = require("./sharedNav");
 const sharedSocketState = require("./sharedSocketState");
 const { resolveTheme } = require("./theme");
 const { aiExportButton, aiExportScriptTag } = require("./backtestAiExport");
@@ -246,6 +246,7 @@ ${buildSidebar(activePage, liveActive)}
   <div style="display:flex;align-items:center;gap:5px;"><input type="checkbox" id="splitYears" style="accent-color:${accent};cursor:pointer;" onchange="if(this.checked)document.getElementById('splitMonths').checked=false;"/><label for="splitYears" style="font-size:0.65rem;color:var(--muted-1,#8ba1c2);cursor:pointer;white-space:nowrap;">Split by years</label></div>
   <div style="display:flex;align-items:center;gap:5px;"><input type="checkbox" id="splitMonths" style="accent-color:#f59e0b;cursor:pointer;" onchange="if(this.checked)document.getElementById('splitYears').checked=false;"/><label for="splitMonths" style="font-size:0.65rem;color:var(--muted-1,#8ba1c2);cursor:pointer;white-space:nowrap;">Split by months</label></div>
   <button class="run-btn" id="runBtn">🔄 Run Again</button>
+  ${clearCacheButtonHTML()}
   <span style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);margin-left:auto;">Strategy: <strong style="color:${accent};">${strategyName}</strong></span>
 </div>
 
@@ -379,6 +380,7 @@ ${extraStats.length ? `<div class="stat-grid">${extraStats.map(e => `<div class=
 ${aiExportScriptTag({ mode, strategyName, from, to, optionSim: !!(s && s.optionSim), fullCount: trades.length, extraCols: extraTradeColumns.map(c => ({ key: c.key, label: c.label })) })}
 <script>
 ${modalJS()}
+${clearCacheJS()}
 var ACCENT = '${accent}';
 var ENDPOINT = '${endpoint}';
 var EXTRA_COLS = ${extraKeys};
