@@ -881,6 +881,8 @@ router.get("/start", async (req, res) => {
   scheduleAutoStop();
   log(`🟢 [ORB-PAPER] Session started — ${RES_MIN}-min candles, OR=${OR_BARS} bars (${RES_MIN * OR_BARS}-min)`);
 
+  const _reentryMax = Math.max(0, parseInt(process.env.ORB_REENTRY_AFTER_SL || "0", 10) || 0);
+
   notifyStarted({
     mode: "ORB-PAPER",
     text: [
@@ -891,7 +893,11 @@ router.get("/start", async (req, res) => {
       ``,
       `Strategy  : ${orbStrategy.NAME}`,
       `OR window : ${process.env.ORB_RANGE_START || "09:15"} → ${process.env.ORB_RANGE_END || "09:30"} IST`,
-      `Entry     : after OR locks, max ${process.env.ORB_MAX_DAILY_TRADES || "1"} trade/day`,
+      // Reports the rule that will actually run today, not the one that used to.
+      // ORB_ENTRY_START can now hold the hunt past the OR lock, and a stop-out can
+      // buy extra attempts — a summary that omitted either would misdescribe the
+      // session it is announcing.
+      `Entry     : from ${process.env.ORB_ENTRY_START || process.env.ORB_RANGE_END || "09:30"} IST, max ${process.env.ORB_MAX_DAILY_TRADES || "1"} trade/day${_reentryMax > 0 ? ` (+${_reentryMax} after a stop-out)` : ""}`,
       `Square-off: ${process.env.ORB_FORCED_EXIT || "15:15"} IST`,
       _expiryBlocked ? `\n⚠️ Expiry-only mode: entries blocked (not expiry day)` : null,
     ].filter(Boolean).join("\n"),
