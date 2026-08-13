@@ -579,6 +579,21 @@ function _checkExits(spotPrice) {
 
 // ── Candle close handler ────────────────────────────────────────────────────
 
+/**
+ * This session's exits, oldest first, in the shape orbStrategy.reentryPlan() wants.
+ *
+ * Read straight off state.sessionTrades rather than kept as a second counter, so it
+ * survives the JSONL rehydrate after a PM2 restart for free — `exitBarTime` (the
+ * 5-min bucket the exit fell in, unix seconds) and `exitReason` are both persisted
+ * fields. A trade whose exitBarTime is missing contributes its reason but no re-arm
+ * time, which degrades to "no re-entry" rather than to a wrongly-timed one.
+ */
+function _todaysExits() {
+  return (state.sessionTrades || [])
+    .filter(t => t && t.exitReason)
+    .map(t => ({ reason: t.exitReason, atUnixSec: Number(t.exitBarTime) || 0 }));
+}
+
 async function onCandleClose(bar) {
   // Sample futures OI each candle close (no-op unless an OI filter is enabled) so
   // the buildup series stays filled even on no-signal candles.
@@ -596,7 +611,13 @@ async function onCandleClose(bar) {
   // A single ORB stop (~₹1.5k) already exceeds ORB_MAX_DAILY_LOSS, so leaving the
   // loss gate first made it re-fire on every remaining candle and spam the skip
   // log (200+ "daily_loss" rows/day) without ever changing an outcome.
-  const maxTrades = parseInt(process.env.ORB_MAX_DAILY_TRADES || "1", 10);
+  // Re-entry after a stop-out (ORB_REENTRY_AFTER_SL, ships off) can extend the day's
+  // budget and re-arm the breakout hunt past the stop candle. The STRATEGY owns that
+  // decision — live and backtest call the same helper, so the three cannot drift.
+  // A restored PREVIOUS-day session is excluded: those exits are not today's, and
+  // letting them mint a re-entry budget would hand today a trade off stale state.
+  const plan = orbStrategy.reentryPlan(state._staleSession ? [] : _todaysExits(), parseInt(process.env.ORB_MAX_DAILY_TRADES || "1", 10));
+  const maxTrades = plan.maxTrades;
   if (state.tradesTaken >= maxTrades) return; // expected, not a skip
 
   // Daily-loss kill — only bites while trade budget remains (maxTrades > 1).
@@ -630,7 +651,10 @@ async function onCandleClose(bar) {
   }
 
   // Evaluate ORB signal
-  const sig = orbStrategy.getSignal(state.candles, { alreadyTraded: state.tradesTaken >= maxTrades });
+  const sig = orbStrategy.getSignal(state.candles, {
+    alreadyTraded: state.tradesTaken >= maxTrades,
+    rearmAfterTime: plan.rearmAfterTime,
+  });
   if (sig.signal === "NONE" || !sig.side) {
     // Only log when the signal actually evaluated (range formed) — pre-range
     // candles produce "waiting for OR" noise.
@@ -1144,7 +1168,10 @@ router.get("/status", (req, res) => {
   // "NORMAL" right up to the block level and never showed the amber STRONG-ONLY
   // band the setting configures. Same source as the gate.
   const _vixStrongOnly = vixFilter.getVixStrongOnly("orb");
-  const _maxTrades = parseInt(process.env.ORB_MAX_DAILY_TRADES || "1", 10);
+  // The EFFECTIVE budget, so the "n / N" badge matches the gate that actually runs:
+  // a stop-out with ORB_REENTRY_AFTER_SL on raises N, and showing "1 / 1" on a day
+  // that can still take a second trade would be the dashboard lying about the rule.
+  const _maxTrades = orbStrategy.reentryPlan(state._staleSession ? [] : _todaysExits(), parseInt(process.env.ORB_MAX_DAILY_TRADES || "1", 10)).maxTrades;
   const _maxLoss   = parseFloat(process.env.ORB_MAX_DAILY_LOSS || "3000");
   const _forcedExit = process.env.ORB_FORCED_EXIT || "15:15";
   const _orStart = process.env.ORB_RANGE_START || "09:15";

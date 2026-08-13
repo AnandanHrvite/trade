@@ -64,10 +64,19 @@ function simulate(candles) {
   const trades = [];
   for (const d of DAYS) {
     const dayC = candles.filter(c => DAY(c.time) === d);
+    // Re-entry after a stop-out (ORB_REENTRY_AFTER_SL, ships off). Same shared helper
+    // paper/live/backtest use, so a sweep of this key measures the shipped rule rather
+    // than a fifth hand-written copy of it. Empty ⇒ plan is a no-op and the day still
+    // stops at its first trade, exactly as before.
+    const dayExits = [];
+    const baseMax = parseInt(process.env.ORB_MAX_DAILY_TRADES || "1", 10);
+    let taken = 0;
     for (let j = 0; j < dayC.length; j++) {
+      const plan = orb.reentryPlan(dayExits, baseMax);
+      if (taken >= plan.maxTrades) break;
       const gi = IDX.get(dayC[j].time);
       const win = candles.slice(Math.max(0, gi - 199), gi + 1);
-      const sig = orb.getSignal(win, { silent: true, alreadyTraded: false });
+      const sig = orb.getSignal(win, { silent: true, alreadyTraded: false, rearmAfterTime: plan.rearmAfterTime });
       if (sig.signal === "NONE") continue;
 
       const bar = dayC[j], side = sig.side, entry = bar.close;
@@ -92,11 +101,16 @@ function simulate(candles) {
         orh: sig.orh, orl: sig.orl, rangePts: sig.rangePts,
         breakevenArmed: false, emaArmed: false, lastEma: null,
       };
-      let exit = null, why = null, mae = 0, mfe = 0;
-      for (const c of dayC.slice(j + 1)) {
+      // `exitReason` carries the FULL reason string (not just the short `why` code)
+      // because orb.reentryPlan classifies re-entry eligibility off it via
+      // orbExits.isStopOutExit — the same strings paper and the backtest emit.
+      let exit = null, why = null, mae = 0, mfe = 0, exitIdx = dayC.length - 1, exitReason = null;
+      for (let k = j + 1; k < dayC.length; k++) {
+        const c = dayC[k];
+        exitIdx = k;
         // EOD squares off at the first tick at/after ORB_FORCED_EXIT — this bar's
         // OPEN, not the close of the last bar before it.
-        if (MIN(c.time) >= EOD) { exit = c.open; why = "EOD"; break; }
+        if (MIN(c.time) >= EOD) { exit = c.open; why = "EOD"; exitReason = "EOD square-off"; break; }
 
         const fav = side === "CE" ? c.high - entry : entry - c.low;
         const adv = side === "CE" ? entry - c.low : c.high - entry;
@@ -105,7 +119,9 @@ function simulate(candles) {
         // 1. intrabar hard SL (gap-through fills at the open, as in paper/backtest)
         if (orbExits.isHardSlHit(side, side === "CE" ? c.low : c.high, pos.slSpot)) {
           exit = side === "CE" ? Math.min(pos.slSpot, c.open) : Math.max(pos.slSpot, c.open);
-          why = pos.breakevenArmed ? "BE" : "SL"; break;
+          why = pos.breakevenArmed ? "BE" : "SL";
+          exitReason = `Hard SL hit (${pos.slSpot})`;
+          break;
         }
         // 2-4. close: opposite candle → breakeven → EMA trail, from the shared engine.
         //      The EMA window is the same multi-day slice getSignal received, so the
@@ -115,10 +131,15 @@ function simulate(candles) {
         if (dec.exit) {
           exit = c.close;
           why = /EMA/.test(dec.reason) ? "trail" : "opp";
+          exitReason = dec.reason;
           break;
         }
       }
-      if (exit == null) { const rest = dayC.slice(j + 1); exit = (rest[rest.length - 1] || bar).close; why = "EOD"; }
+      if (exit == null) {
+        const rest = dayC.slice(j + 1);
+        exit = (rest[rest.length - 1] || bar).close;
+        why = "EOD"; exitReason = "EOD (end of day candles)";
+      }
 
       const pts = r2(side === "CE" ? exit - entry : entry - exit);
       // atr5 comes from the SIGNAL, not a second hand-rolled ATR — a local
@@ -132,7 +153,13 @@ function simulate(candles) {
         orAtr: sig.atr15 ? r2(sig.rangePts / sig.atr15) : null,
         clamped: st.clamped,
       });
-      break;
+      taken++;
+      dayExits.push({ reason: exitReason, atUnixSec: dayC[exitIdx].time });
+      // Resume the hunt from the EXIT bar. With re-entry off the plan check at the
+      // top of the loop breaks out immediately, so this is the old `break` — with it
+      // on, the engine's re-arm makes every bar up to and including the exit invisible
+      // and only a genuinely fresh breakout can open the next trade.
+      j = exitIdx;
     }
   }
   return { trades, sessions: DAYS.length };

@@ -263,6 +263,28 @@ function evaluateCloseExits(pos, bar, candles) {
 }
 
 /**
+ * Was this exit a STOP-OUT (the trade was proved wrong) rather than a trend exit?
+ *
+ * The single owner of that classification, because ORB's re-entry rule turns on it
+ * (see orb_breakout.reentryPlan) and paper/live/backtest each hold their own exit
+ * reason strings. A hand-written regex in three routes is exactly how this repo
+ * ended up with four copies of the exit rules in the first place.
+ *
+ * TRUE for the three ways a position is forced out against us — the hard spot stop
+ * (including one already lifted to breakeven), the per-trade rupee cap and the
+ * premium disaster stop. FALSE for the EMA trend-trail, the strong-opposite-candle
+ * exit, EOD square-off and any manual close: those mean the MOVE ended, not that
+ * the breakout failed, so there is nothing to re-enter.
+ *
+ * Matching is on the reason PREFIX, which every emitter (orbExits itself,
+ * orbBacktest's back-solved fills, scripts/lib/orbSim) writes verbatim.
+ */
+function isStopOutExit(reason) {
+  if (!reason || typeof reason !== "string") return false;
+  return /^\s*(hard sl hit|max trade loss|premium disaster stop)/i.test(reason);
+}
+
+/**
  * Has the option premium gone stale? Warn-only across this repo — every other
  * strategy logs it and leaves the exit rules untouched (see emaRsiStPaper: "Warn
  * only — the exit rules are unchanged"), and ORB was the one engine missing the
@@ -302,6 +324,7 @@ module.exports = {
   evaluateTickExits,
   evaluateCloseExits,
   isLtpStale,
+  isStopOutExit,
   isMaxTradeLossHit,
   isPremiumStopHit,
   isHardSlHit,

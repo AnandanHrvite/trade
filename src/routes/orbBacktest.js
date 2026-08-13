@@ -211,7 +211,18 @@ function runOrbBacktest(allCandles, expirySet, vixCandles = []) {
     if (EXPIRY_ONLY && expirySet && !expirySet.has(_dateStr)) { globalBase += _dayLen; continue; }
     let position = null;
     let tradesTaken = 0;
-    const maxTrades = parseInt(process.env.ORB_MAX_DAILY_TRADES || "1", 10);
+    const baseMaxTrades = parseInt(process.env.ORB_MAX_DAILY_TRADES || "1", 10);
+    // Today's exits, oldest first, feeding orbStrategy.reentryPlan() — the same
+    // helper paper and live call, so a re-entry fires here on exactly the days it
+    // would fire there. Empty until the first exit, so the plan is a no-op by default.
+    const dayExits = [];
+    // Book a closed position: record the trade AND the exit the re-entry rule reads.
+    // Every exit path in this day loop goes through here so none can be forgotten —
+    // closePos() itself lives outside the loop and cannot see `dayExits`.
+    const _book = (pos) => {
+      dayExits.push({ reason: pos.exitReason, atUnixSec: pos.exitTime });
+      trades.push(buildTradeRecord(pos));
+    };
 
     for (let i = 0; i < dayCandles.length; i++) {
       const c = dayCandles[i];
@@ -226,8 +237,7 @@ function runOrbBacktest(allCandles, expirySet, vixCandles = []) {
       // live engine never gets.
       if (position && istMin >= FORCED_EXIT_MIN) {
         closePos(position, c.open, c.time, `EOD square-off (${process.env.ORB_FORCED_EXIT || "15:15"})`);
-        trades.push(buildTradeRecord(position));
-        position = null; continue;
+        _book(position); position = null; continue;
       }
 
       // ── In-position management ────────────────────────────────────────────
@@ -269,7 +279,7 @@ function runOrbBacktest(allCandles, expirySet, vixCandles = []) {
             if (position.side === "CE") _fill = Math.min(_fill, c.open <= _fill ? c.open : _fill);
             else                        _fill = Math.max(_fill, c.open >= _fill ? c.open : _fill);
             closePos(position, _fill, c.time, (_hitPrem && !_hitLoss) ? `Premium disaster stop (−${PREM_STOP_PCT}%)` : `Max trade loss (₹${MAX_TRADE_LOSS})`);
-            trades.push(buildTradeRecord(position)); position = null; continue;
+            _book(position); position = null; continue;
           }
         }
         // ── 2. INTRABAR: hard SL breach against this candle's extreme ─────────
@@ -282,7 +292,7 @@ function runOrbBacktest(allCandles, expirySet, vixCandles = []) {
             ? (c.open < position.slSpot ? c.open : position.slSpot)
             : (c.open > position.slSpot ? c.open : position.slSpot);
           closePos(position, _fill, c.time, `Hard SL hit (${position.slSpot})`);
-          trades.push(buildTradeRecord(position)); position = null; continue;
+          _book(position); position = null; continue;
         }
         // ── 3–5. CANDLE CLOSE: opposite candle → breakeven → EMA trend-trail ──
         //    One call into the SHARED exit engine (src/strategies/orbExits.js), the
@@ -300,11 +310,15 @@ function runOrbBacktest(allCandles, expirySet, vixCandles = []) {
         const _d = orbExits.evaluateCloseExits(position, c, _emaSeen);
         if (_d.exit) {
           closePos(position, c.close, c.time, _d.reason);
-          trades.push(buildTradeRecord(position)); position = null; continue;
+          _book(position); position = null; continue;
         }
       }
 
-      // Flat → eval ORB signal
+      // Flat → eval ORB signal. The re-entry plan is recomputed per candle because
+      // `dayExits` grows as the day goes on; it is a no-op (budget unchanged, no
+      // re-arm) until a stop-out has actually happened and ORB_REENTRY_AFTER_SL > 0.
+      const plan = orbStrategy.reentryPlan(dayExits, baseMaxTrades);
+      const maxTrades = plan.maxTrades;
       if (!position && tradesTaken < maxTrades && istMin < ENTRY_END_MIN
           && _dayPnl > -MAX_DAILY_LOSS && !_riskThrottled()) {
         // Open the position at candle `oc` from signal `s`. Initial hard SL comes
@@ -357,7 +371,7 @@ function runOrbBacktest(allCandles, expirySet, vixCandles = []) {
 
         // The engine owns confirmation AND the retest/resume fallback internally,
         // so the backtest just polls it each candle and buys whatever it returns.
-        const sig = orbStrategy.getSignal(seen, { silent: true, alreadyTraded: false });
+        const sig = orbStrategy.getSignal(seen, { silent: true, alreadyTraded: false, rearmAfterTime: plan.rearmAfterTime });
         // VIX gate — paper runs it only AFTER a signal exists, so keep that order.
         const _vixOk = sig.signal === "NONE" || !sig.side
           || vixFilter.checkBacktestVix(lookupVix(c.time), sig.signalStrength, { mode: "orb" }).allowed;

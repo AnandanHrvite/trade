@@ -52,6 +52,17 @@
  * Mar-Apr 2026 cache this simplified set takes 30 trades vs 15 and nets -10,340 INR
  * vs +3,227. That sample decides nothing; the 2021-2026 run does.
  *
+ * ── 2026-08-13: TWO NEW LEVERS, BOTH SHIPPING OFF ──────────────────────────
+ *   ORB_ENTRY_START      the mirror of ORB_ENTRY_END — no breakout candle is even
+ *                        looked at before it. Defaults to the OR freeze, so the
+ *                        window is unchanged. It exists because the owner asked to
+ *                        skip 09:35-type entries; BE WARNED that on the 17-trade
+ *                        Jul-Aug 2026 export the split runs the WRONG way — entries
+ *                        before 09:50 net -2,372 INR over 9 trades while entries
+ *                        after net -4,213 over 8, and a delay deletes the two best
+ *                        trades of the sample. Measure it, do not assume it.
+ *   ORB_REENTRY_AFTER_SL extra attempts allowed after a STOP-OUT (see reentryPlan).
+ *
  * ── THE PIPELINE ────────────────────────────────────────────────────────────
  *   1. Build the opening range 09:15–09:30 and FREEZE it (never recalculated).
  *   2. Day sanity: OR ≤ ORB_OR_ATR_MAX × ATR(15m), and |gap| ≤ ORB_GAP_OR_MULT × OR.
@@ -178,6 +189,9 @@ const { ATR, RSI } = require("technicalindicators");
 // Repo convention: SuperTrend is not in `technicalindicators`, so every strategy
 // that needs it uses this one shared implementation rather than a private copy.
 const { computeSuperTrend } = require("../utils/supertrend");
+// Exit classification for the re-entry rule. One-way dependency (entry reads the
+// exit engine's verdict); orbExits requires nothing from here, so there is no cycle.
+const { isStopOutExit } = require("./orbExits");
 
 const NAME        = "ORB_15MIN";
 const DESCRIPTION = "Opening Range Breakout — 15-min OR, next-candle confirmation, slightly-ITM CE/PE buying";
@@ -548,6 +562,57 @@ function summarizeGates(sig) {
   return sig.gates.map(g => `${g.gate}:${code[g.status] || "?"}`).join(",");
 }
 
+/**
+ * RE-ENTRY AFTER A STOP-OUT (2026-08-13, owner request).
+ *
+ * ORB commits to ONE breakout per day. When that breakout is stopped out on noise
+ * and the real move starts twenty minutes later, the day is over regardless — the
+ * engine keeps re-finding the SAME committed breakout candle and refuses ("already
+ * confirmed"), so raising ORB_MAX_DAILY_TRADES on its own could never produce a
+ * second entry. Two owner-supplied cases:
+ *
+ *   2026-08-03  CE entry 10:15, stop 24563.85 (the breakout bar's low, 24pt away).
+ *               Wicked it at 10:35 and turned; the day traded higher into 12:35.
+ *   2026-07-29  CE entry 09:40, stopped 09:55, broke out again minutes later.
+ *
+ * THE RULE: after a stop-out, the breakout hunt RE-ARMS and ignores every candle up
+ * to and including the one the stop was hit on. The next close beyond the same
+ * frozen opening-range edge becomes a fresh breakout candle and the ordinary
+ * confirmation / retest machinery runs again from scratch. Excluding the stop-out
+ * candle itself is what makes the two cases above enter at 10:45 and 10:05 rather
+ * than immediately re-buying the bar that just stopped us.
+ *
+ * ONLY a stop-out re-arms. An EMA-trail or opposite-candle exit means the MOVE is
+ * over, not that the breakout was wrong, so there is nothing to try again.
+ *
+ * SHIPS OFF (ORB_REENTRY_AFTER_SL=0). With it at 0 this function returns the caller's
+ * budget unchanged and a null re-arm, so the engine behaves exactly as before.
+ *
+ * @param {Array<{reason:string, atUnixSec:number}>} exits  today's exits, oldest first
+ * @param {number} maxTrades  ORB_MAX_DAILY_TRADES
+ * @returns {{maxTrades:number, rearmAfterTime:number|null, reentries:number}}
+ */
+function reentryPlan(exits, maxTrades) {
+  const base = { maxTrades, rearmAfterTime: null, reentries: 0 };
+  const allowed = parseInt(process.env.ORB_REENTRY_AFTER_SL || "0", 10);
+  if (!Number.isFinite(allowed) || allowed <= 0) return base;
+  if (!Array.isArray(exits) || exits.length === 0) return base;
+
+  // Each stop-out buys one extra attempt, capped at `allowed`. A trail/EOD exit
+  // buys nothing, so a day cannot chain attempts off exits that were not failures.
+  const stops = exits.filter(e => e && isStopOutExit(e.reason)).length;
+  const reentries = Math.min(stops, allowed);
+  if (reentries <= 0) return base;
+
+  // Re-arm only when the MOST RECENT exit was itself a stop-out: if the last trade
+  // ended on the trail, the day's move has run and we are not hunting it again.
+  const last = exits[exits.length - 1];
+  const rearm = (isStopOutExit(last.reason) && typeof last.atUnixSec === "number" && last.atUnixSec > 0)
+    ? last.atUnixSec
+    : null;
+  return { maxTrades: maxTrades + reentries, rearmAfterTime: rearm, reentries };
+}
+
 function _blank() {
   return {
     signal: "NONE", side: null, reason: "",
@@ -567,11 +632,18 @@ function _blank() {
  *        MUST include prior-day history (the routes preload ~7 days) so ATR(5m) and
  *        ATR(15m) are seeded before the open. The opening range and VWAP are
  *        day-scoped internally, so prior days never leak into today's range.
- * @param {{silent?:boolean, alreadyTraded?:boolean}} [opts]
+ * @param {{silent?:boolean, alreadyTraded?:boolean, rearmAfterTime?:number}} [opts]
+ *        rearmAfterTime — unix seconds of the last STOP-OUT exit. Every candle at or
+ *        before it is invisible to the breakout hunt, so the day can commit to a
+ *        fresh breakout after a failed one. Supply it from reentryPlan(), never by
+ *        hand: that helper owns which exits qualify. Null/absent = no re-arm.
  */
 function getSignal(candles, opts) {
   const silent = !!(opts && opts.silent);
   const alreadyTraded = !!(opts && opts.alreadyTraded);
+  const rearmAfter = (opts && typeof opts.rearmAfterTime === "number" && opts.rearmAfterTime > 0)
+    ? opts.rearmAfterTime
+    : null;
   const sig = _blank();
 
   // The tracer is created BEFORE the warm-up guard so that `sig.gates` is present
@@ -590,6 +662,9 @@ function getSignal(candles, opts) {
     entryEnd:     _parseMins("ORB_ENTRY_END", "11:30"),
     orStart:      _parseMins("ORB_RANGE_START", "09:15"),
     orEnd:        _parseMins("ORB_RANGE_END", "09:30"),
+    // The mirror of ORB_ENTRY_END: no breakout candle is even LOOKED AT before this.
+    // Defaults to the OR freeze, so out of the box the window is unchanged.
+    entryStart:   _parseMins("ORB_ENTRY_START", process.env.ORB_RANGE_END || "09:30"),
     orAtrMax:     parseFloat(process.env.ORB_OR_ATR_MAX      || "0"),
     gapOrMult:    parseFloat(process.env.ORB_GAP_OR_MULT     || "0"),
     bodyAtrMult:  parseFloat(process.env.ORB_BODY_ATR_MULT   || "0"),
@@ -611,18 +686,27 @@ function getSignal(candles, opts) {
     retestWindow: parseInt  (process.env.ORB_RETEST_MAX_WAIT || "6", 10),
   };
 
+  // A start earlier than the OR freeze is meaningless — the range does not exist
+  // yet — so the freeze is a hard floor rather than a misconfiguration to honour.
+  if (cfg.entryStart < cfg.orEnd) cfg.entryStart = cfg.orEnd;
+
   const last    = candles[candles.length - 1];
   const lastIdx = candles.length - 1;
   const lastIst = _istMins(last.time);
   const day     = _istDay(last.time);
 
+  const _startLabel = cfg.entryStart === cfg.orEnd
+    ? (process.env.ORB_RANGE_END || "09:30")
+    : (process.env.ORB_ENTRY_START || "");
 
   // ── 1. Session window ─────────────────────────────────────────────────────
-  if (!tr.check("time window", lastIst >= cfg.orEnd && lastIst < cfg.entryEnd,
-                `${process.env.ORB_RANGE_END || "09:30"}–${process.env.ORB_ENTRY_END || "11:30"} IST`)) {
+  if (!tr.check("time window", lastIst >= cfg.entryStart && lastIst < cfg.entryEnd,
+                `${_startLabel}–${process.env.ORB_ENTRY_END || "11:30"} IST`)) {
     return done(Object.assign(sig, {
-      reason: lastIst < cfg.orEnd
-        ? `Building opening range (waiting for ${process.env.ORB_RANGE_END || "09:30"} IST)`
+      reason: lastIst < cfg.entryStart
+        ? (lastIst < cfg.orEnd
+            ? `Building opening range (waiting for ${process.env.ORB_RANGE_END || "09:30"} IST)`
+            : `Before ${_startLabel} IST — ORB is not hunting breakouts yet`)
         : `Past ${process.env.ORB_ENTRY_END || "11:30"} IST — no new ORB entries (breakout is stale)`,
     }));
   }
@@ -742,12 +826,21 @@ function getSignal(candles, opts) {
   // ORB_BREAKOUT_RESCAN=false restores the old first-close-is-final behaviour.
   const rescan = (process.env.ORB_BREAKOUT_RESCAN || "true").toLowerCase() === "true";
 
+  // A stop-out RE-ARMS the hunt: every candle up to and including the one the stop
+  // was hit on is invisible, so the day commits to a genuinely fresh breakout rather
+  // than re-buying the bar that just stopped us out. See reentryPlan() for which
+  // exits qualify and why the stop candle itself is excluded.
+  if (rearmAfter != null) {
+    tr.info("re-entry", `re-armed — ignoring breakouts at or before ${new Date(rearmAfter * 1000).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false })}`);
+  }
+
   let b = -1, side = null, q = null, rejected = null;
   for (let i = 0; i < candles.length; i++) {
     const c = candles[i];
     if (_istDay(c.time) !== day) continue;
+    if (rearmAfter != null && c.time <= rearmAfter) continue;
     const m = _istMins(c.time);
-    if (m < cfg.orEnd || m >= cfg.entryEnd) continue;
+    if (m < cfg.entryStart || m >= cfg.entryEnd) continue;
     let s = null;
     if (c.close > or.high + buffer) s = "CE";
     else if (c.close < or.low - buffer) s = "PE";
@@ -817,7 +910,11 @@ function getSignal(candles, opts) {
   }
 
   // ── 8. Entry construction. The strategy OWNS the stop — routes execute it. ──
-  const _fire = (why, tag) => {
+  // Tagged so a re-entry is identifiable in the trade log and the AI export without
+  // having to reconstruct the day's sequence.
+  const rearmTag = rearmAfter != null ? " [re-entry]" : "";
+  const _fire = (why, pathTag) => {
+    const tag = `${rearmTag}${pathTag}`;
     // Momentum gate. Inside _fire on purpose: confirmation, resume and retest all
     // funnel through here, so the rule cannot be bypassed by one of the three paths.
     const rsiChk = _rsiGate(candles, side, cfg);
@@ -895,7 +992,10 @@ function getSignal(candles, opts) {
 
   if (confPass) {
     if (lastIdx === b + 1) return _fire("confirmation candle extended the move", "");
-    return done(Object.assign(sig, { reason: `Breakout already confirmed at candle #${b + 1} — one trade per day, no second attempt` }));
+    // Entry is ALWAYS the confirmation candle's close; we never buy in late. This is
+    // not the trade-budget rule (that is the `trade budget` gate above) — it is why a
+    // re-entry needs a genuinely NEW breakout candle rather than this same one.
+    return done(Object.assign(sig, { reason: `Breakout already confirmed at candle #${b + 1} — entry is that candle's close only, no late entry` }));
   }
 
   // ── 10. Fallback: stay armed for a trend-resume or a retest-and-hold ───────
@@ -931,4 +1031,4 @@ function getSignal(candles, opts) {
   return done(Object.assign(sig, { reason: `Waiting for a retest or resume of ${side === "CE" ? "ORH" : "ORL"} (candle ${lastIdx - b}/${cfg.retestWindow + 1})` }));
 }
 
-module.exports = { NAME, DESCRIPTION, getSignal, computeOpeningRange, computeVwap, summarizeGates, TARGET_OR_MULT };
+module.exports = { NAME, DESCRIPTION, getSignal, computeOpeningRange, computeVwap, summarizeGates, reentryPlan, TARGET_OR_MULT };

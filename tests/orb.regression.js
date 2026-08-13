@@ -192,6 +192,111 @@ const ENTRIES  = ALL_SIGS.filter(x => x.sig.signal !== "NONE");
     }
   });
 
+  // ── Re-entry after a stop-out (ORB_REENTRY_AFTER_SL) ──────────────────────
+  // Guards the two halves separately: the BUDGET helper (which exits qualify) and
+  // the ENGINE's re-arm (that a re-entry needs a genuinely fresh breakout candle).
+
+  check("reentryPlan is a no-op while ORB_REENTRY_AFTER_SL is off", () => {
+    const prev = process.env.ORB_REENTRY_AFTER_SL;
+    delete process.env.ORB_REENTRY_AFTER_SL;
+    try {
+      const p = S.reentryPlan([{ reason: "Hard SL hit (24500)", atUnixSec: 1000 }], 1);
+      assert.strictEqual(p.maxTrades, 1, "budget grew with the key off");
+      assert.strictEqual(p.rearmAfterTime, null, "re-armed with the key off");
+    } finally { if (prev === undefined) delete process.env.ORB_REENTRY_AFTER_SL; else process.env.ORB_REENTRY_AFTER_SL = prev; }
+  });
+
+  check("only a STOP-OUT buys a re-entry — a trail/EOD exit never does", () => {
+    const prev = process.env.ORB_REENTRY_AFTER_SL;
+    process.env.ORB_REENTRY_AFTER_SL = "1";
+    try {
+      for (const reason of ["Hard SL hit (24500)", "Max trade loss (₹1500)", "Premium disaster stop (−35%)"]) {
+        const p = S.reentryPlan([{ reason, atUnixSec: 1000 }], 1);
+        assert.strictEqual(p.maxTrades, 2, `stop-out "${reason}" did not extend the budget`);
+        assert.strictEqual(p.rearmAfterTime, 1000, `stop-out "${reason}" did not re-arm`);
+      }
+      for (const reason of ["Closed below EMA20 (24437.55 < 24437.87)", "EOD square-off (15:15)", "Strong opposite candle (red body 30pt ≥ 20pt, closed below ORH)"]) {
+        const p = S.reentryPlan([{ reason, atUnixSec: 1000 }], 1);
+        assert.strictEqual(p.maxTrades, 1, `non-stop exit "${reason}" extended the budget`);
+        assert.strictEqual(p.rearmAfterTime, null, `non-stop exit "${reason}" re-armed`);
+      }
+    } finally { if (prev === undefined) delete process.env.ORB_REENTRY_AFTER_SL; else process.env.ORB_REENTRY_AFTER_SL = prev; }
+  });
+
+  check("re-entries are capped, and a trail exit AFTER a stop stops the re-arm", () => {
+    const prev = process.env.ORB_REENTRY_AFTER_SL;
+    process.env.ORB_REENTRY_AFTER_SL = "1";
+    try {
+      const two = S.reentryPlan([
+        { reason: "Hard SL hit (24500)", atUnixSec: 1000 },
+        { reason: "Hard SL hit (24480)", atUnixSec: 2000 },
+      ], 1);
+      assert.strictEqual(two.maxTrades, 2, "two stop-outs bought more than the cap allows");
+      const trailed = S.reentryPlan([
+        { reason: "Hard SL hit (24500)", atUnixSec: 1000 },
+        { reason: "Closed below EMA20 (1 < 2)", atUnixSec: 2000 },
+      ], 1);
+      assert.strictEqual(trailed.rearmAfterTime, null, "re-armed after the move had already ended on the trail");
+    } finally { if (prev === undefined) delete process.env.ORB_REENTRY_AFTER_SL; else process.env.ORB_REENTRY_AFTER_SL = prev; }
+  });
+
+  check("rearmAfterTime makes every candle up to the stop invisible to the hunt", () => {
+    // For each real entry, re-run the SAME bar with the hunt re-armed past that bar.
+    // The breakout that produced it is then out of scope, so the engine must either
+    // find a genuinely later breakout or return NONE — it may never re-report the
+    // same entry, which is what "re-buying the bar that just stopped us" would be.
+    let checked = 0;
+    for (const { bar, sig } of ENTRIES) {
+      const gi = IDX.get(bar.time);
+      const win = CANDLES.slice(Math.max(0, gi - 199), gi + 1);
+      const re = S.getSignal(win, { silent: true, alreadyTraded: false, rearmAfterTime: bar.time });
+      assert.strictEqual(re.signal, "NONE", `re-entered on the very bar the stop was hit (${MIN(bar.time)} min IST)`);
+      assert.notStrictEqual(re.reason, sig.reason, "re-armed run reproduced the original entry reason");
+      checked++;
+    }
+    assert.ok(checked > 0, "no entries in the fixture to test the re-arm against");
+  });
+
+  check("ORB_ENTRY_START defaults to the OR freeze — no behaviour change", () => {
+    const prev = process.env.ORB_ENTRY_START;
+    delete process.env.ORB_ENTRY_START;
+    try {
+      for (const { bar, sig } of ALL_SIGS) {
+        const gi = IDX.get(bar.time);
+        const again = S.getSignal(CANDLES.slice(Math.max(0, gi - 199), gi + 1), { silent: true, alreadyTraded: false });
+        assert.strictEqual(again.signal, sig.signal, "unset ORB_ENTRY_START changed a signal");
+      }
+    } finally { if (prev === undefined) delete process.env.ORB_ENTRY_START; else process.env.ORB_ENTRY_START = prev; }
+  });
+
+  check("ORB_ENTRY_START blocks every entry before it", () => {
+    const prev = process.env.ORB_ENTRY_START;
+    process.env.ORB_ENTRY_START = "10:30";   // 630 min IST
+    try {
+      for (const d of DAYS) {
+        for (const c of CANDLES.filter(x => DAY(x.time) === d)) {
+          const gi = IDX.get(c.time);
+          const sig = S.getSignal(CANDLES.slice(Math.max(0, gi - 199), gi + 1), { silent: true, alreadyTraded: false });
+          if (sig.signal !== "NONE") assert.ok(MIN(c.time) >= 630, `entered at ${MIN(c.time)} min IST, before ORB_ENTRY_START`);
+        }
+      }
+    } finally { if (prev === undefined) delete process.env.ORB_ENTRY_START; else process.env.ORB_ENTRY_START = prev; }
+  });
+
+  check("ORB_ENTRY_START earlier than the OR freeze is clamped, not honoured", () => {
+    const prev = process.env.ORB_ENTRY_START;
+    process.env.ORB_ENTRY_START = "09:00";   // before ORB_RANGE_END — the OR does not exist yet
+    try {
+      for (const d of DAYS) {
+        for (const c of CANDLES.filter(x => DAY(x.time) === d)) {
+          const gi = IDX.get(c.time);
+          const sig = S.getSignal(CANDLES.slice(Math.max(0, gi - 199), gi + 1), { silent: true, alreadyTraded: false });
+          if (sig.signal !== "NONE") assert.ok(MIN(c.time) >= 570, `entered at ${MIN(c.time)} min IST, before the opening range froze`);
+        }
+      }
+    } finally { if (prev === undefined) delete process.env.ORB_ENTRY_START; else process.env.ORB_ENTRY_START = prev; }
+  });
+
   check("the opening range is FROZEN — same ORH/ORL all day, never repainted", () => {
     for (const d of DAYS) {
       const dayBars = CANDLES.filter(x => DAY(x.time) === d && MIN(x.time) >= 570);

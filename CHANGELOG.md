@@ -6,6 +6,15 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Added — ORB: a second chance after a stop-out, and an entry-start clock
+
+Two levers from a review of the 17-trade Jul–Aug 2026 ORB export. **Both ship OFF, so nothing changes until you turn them on.**
+
+- **`ORB_REENTRY_AFTER_SL`** (default `0`) — extra attempts allowed after the breakout is *stopped out*, on top of `ORB_MAX_DAILY_TRADES`. This could not be done with the trade-count knob alone: the engine kept re-finding the day's one committed breakout candle and refused to enter late, so raising `ORB_MAX_DAILY_TRADES` produced no second entry at all. Now a stop-out **re-arms** the hunt — every candle up to and including the stop bar becomes invisible, so only a genuinely fresh close beyond the same frozen range edge can re-enter, with the ordinary confirmation/retest rules and a stop anchored to the *new* breakout bar. Re-entries are tagged `[re-entry]` in the entry reason. Only a stop-out qualifies (hard SL, rupee cap, premium stop); an EMA-trail, opposite-candle or EOD exit never re-arms, because those mean the move ended rather than the breakout being wrong. The two motivating sessions: 2026-08-03 (stopped 10:35 on a 24pt stop, the day then traded higher into 12:35) re-enters ~10:45, and 2026-07-29 (stopped 09:55) at ~10:05.
+- **`ORB_ENTRY_START`** (default `09:30`, i.e. the opening-range freeze — no behaviour change) — the mirror of `ORB_ENTRY_END`: no breakout candle is even looked at before it. Added to test "skip the 09:35 entries", but **the sample argues against it**: entries before 09:50 net −₹2,372 over 9 trades while entries after net −₹4,213 over 8, and a delay deletes both of the sample's best trades. Sweep it before trusting it.
+
+The rule has one owner — `orb_breakout.reentryPlan()` for the budget and re-arm, `orbExits.isStopOutExit()` for which exits qualify — and paper, live, the backtest route and `scripts/lib/orbSim` all call it, so the modes cannot drift and `scripts/orbSweep.js` measures the shipped rule. Also corrects a stale README claim that `ORB_SL_ATR_MULT` is inert: that was true only while `ORB_MAX_TRADE_LOSS` clamped the stop, and the cap now ships at `0`. ORB suite 44/44.
+
 ### Added — OI WALL FADE: the first strategy here that does not read price
 
 Every other engine in this repo is a trend or breakout engine, so the **sideways day** is the gap they all share. Per-strike Open Interest is the one input that speaks to a range, because in a range the levels are not drawn by price — they are set by *where the writers are*. [services/oiChain.js](src/services/oiChain.js) has been keeping that ladder since 11 Aug (walls, per-strike ΔOI, band PCR) and drawing no conclusions from it; this is the engine that draws one.

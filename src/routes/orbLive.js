@@ -661,6 +661,16 @@ function _checkExits(spotPrice) {
   if (d.exit) return placeLiveSell(d.reason);
 }
 
+/**
+ * This session's exits, oldest first, for orbStrategy.reentryPlan(). Mirrors
+ * orbPaper._todaysExits() — paper is canonical, so the shape is copied, not invented.
+ */
+function _todaysExits() {
+  return (state.sessionTrades || [])
+    .filter(t => t && t.exitReason)
+    .map(t => ({ reason: t.exitReason, atUnixSec: Number(t.exitBarTime) || 0 }));
+}
+
 async function onCandleClose(bar) {
   // Sample futures OI each candle close (no-op unless an OI filter is enabled) so
   // the buildup series stays filled — mirrors orbPaper (paper is canonical).
@@ -674,7 +684,10 @@ async function onCandleClose(bar) {
   // single ORB stop (~₹1.5k) already exceeds ORB_MAX_DAILY_LOSS, so leaving the loss
   // gate first made it re-fire on every remaining candle and spam the skip log
   // (200+ "daily_loss" rows/day) without ever changing an outcome.
-  const maxTrades = parseInt(process.env.ORB_MAX_DAILY_TRADES || "1", 10);
+  // Re-entry after a stop-out — same shared helper paper and the backtest call, so
+  // the three modes cannot drift on when a second attempt is allowed. Ships off.
+  const plan = orbStrategy.reentryPlan(_todaysExits(), parseInt(process.env.ORB_MAX_DAILY_TRADES || "1", 10));
+  const maxTrades = plan.maxTrades;
   if (state.tradesTaken >= maxTrades) return; // expected, not a skip
 
   // Daily-loss kill — only bites while trade budget remains (maxTrades > 1).
@@ -707,7 +720,10 @@ async function onCandleClose(bar) {
     return;
   }
 
-  const sig = orbStrategy.getSignal(state.candles, { alreadyTraded: state.tradesTaken >= maxTrades });
+  const sig = orbStrategy.getSignal(state.candles, {
+    alreadyTraded: state.tradesTaken >= maxTrades,
+    rearmAfterTime: plan.rearmAfterTime,
+  });
   if (sig.signal === "NONE" || !sig.side) {
     if (sig.orh != null && sig.orl != null) skipLogger.appendSkipLog("orb", { gate: "signal_none", reason: sig.reason, spot: _spot, orh: sig.orh, orl: sig.orl, rangePts: sig.rangePts, funnel: orbStrategy.summarizeGates(sig), _live: true });
     return;
@@ -1062,7 +1078,8 @@ router.get("/status", (req, res) => {
   // Same source as the gate — see the note in orbPaper: hard-coding Infinity here
   // hid the ORB_VIX_STRONG_ONLY band the operator had configured.
   const _vixStrongOnly = vixFilter.getVixStrongOnly("orb");
-  const _maxTrades = parseInt(process.env.ORB_MAX_DAILY_TRADES || "1", 10);
+  // Effective budget, matching the gate — see the note in orbPaper.
+  const _maxTrades = orbStrategy.reentryPlan(_todaysExits(), parseInt(process.env.ORB_MAX_DAILY_TRADES || "1", 10)).maxTrades;
   const _maxLoss   = parseFloat(process.env.ORB_MAX_DAILY_LOSS || "3000");
   const _forcedExit = process.env.ORB_FORCED_EXIT || "15:15";
   const _orStart = process.env.ORB_RANGE_START || "09:15";
