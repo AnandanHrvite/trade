@@ -1291,7 +1291,10 @@ table.ladder td.wall{color:#f59e0b;font-weight:600;}
 <script src="/vendor/lightweight-charts.standalone.production.js"></script>
 </head><body>
 ${buildSidebar('oiWallFadePaper', liveActive)}
-<div class="main">
+<!-- main-content, NOT main: no stylesheet in this app defines a bare .main rule,
+     so that class leaves the page sitting underneath the 200px sidebar and
+     overflowing to the right. bbRsiStyleCSS owns the margin-left and the 900px
+     breakpoint that drops it to 0. --><div class="main-content">
 ${bbRsiTopBar({
   title: "🧱 OI Wall Fade — Paper",
   metaLine: `NIFTY 50 ${cfg.resolutionMins}m · fade the wall the writers are still defending (ΔOI ≥+${cfg.wallBuildPct}%) · target the mid-band · stop ${cfg.slBufferPts}pt beyond the wall`,
