@@ -122,6 +122,19 @@ router.get("/list", (req, res) => {
   res.json({ success: true, modes: out });
 });
 
+// ── GET /trade-logs/counts — file count per mode, trades + skips ────────────
+// Cheap: directory listings only, no JSONL parsing. Powers the strategy chip
+// bar + tab badges so the UI can render one strategy at a time yet still show
+// every strategy's size without fetching all of them.
+router.get("/counts", (_req, res) => {
+  const files = {}, skips = {};
+  for (const mode of MODES) {
+    try { files[mode] = tradeLogger.listDailyDates(mode).length; } catch (_) { files[mode] = 0; }
+    try { skips[mode] = skipLogger.listDates(mode).length; }      catch (_) { skips[mode] = 0; }
+  }
+  res.json({ success: true, files, skips });
+});
+
 // ── GET /trade-logs/view — parsed JSONL for one file ────────────────────────
 // Legacy (no ?page)  → { success, mode, date, count, trades: [all] }
 // Paged (?page=...)  → { success, mode, date, page, pageSize, total, count, trades: [slice] }
@@ -590,6 +603,18 @@ router.get("/", (req, res) => {
     .mode-trend_day_scalp { color:#a855f7; }
     .mode-gap_fix_3m { color:#38bdf8; }
     .mode-meta { font-size:0.68rem; color:var(--muted-1,#8ba1c2); }
+
+    /* Strategy chip bar — shows ONE strategy's table at a time so the page
+       stops being a 9-section scroll. Sticky so switching never needs a scroll
+       back up. Horizontally scrollable on phones. */
+    .mode-chips { position:sticky; top:var(--chips-top,0px); z-index:20; display:flex; gap:7px; align-items:center; margin-bottom:12px; padding:8px 0; background:#080c14; overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:thin; }
+    .mode-chip { flex:0 0 auto; display:inline-flex; align-items:center; gap:6px; min-height:34px; padding:6px 12px; font-size:0.68rem; font-weight:600; letter-spacing:0.4px; text-transform:uppercase; background:#0a1018; border:1px solid #1a2236; border-radius:999px; color:var(--muted-1,#8ba1c2); cursor:pointer; font-family:inherit; white-space:nowrap; }
+    .mode-chip:hover { border-color:#2a3f5f; }
+    .mode-chip.active { background:#0e1a2e; border-color:#2d5b96; color:#dbeafe; }
+    .mode-chip .chip-n { font-family:'IBM Plex Mono',monospace; font-size:0.62rem; padding:1px 6px; border-radius:999px; background:#0a1528; border:1px solid #1e3a5a; color:#94a3b8; }
+    .mode-chip.active .chip-n { background:#123055; color:#bfdbfe; }
+    .mode-chip.empty-mode { opacity:0.45; }
+
     table { width:100%; border-collapse:collapse; font-size:0.72rem; }
     th, td { padding:8px 12px; text-align:left; border-bottom:1px solid #121a2a; }
     th { background:#0a0e18; color:var(--muted-1,#8ba1c2); font-weight:600; text-transform:uppercase; letter-spacing:0.5px; font-size:0.62rem; }
@@ -637,6 +662,7 @@ router.get("/", (req, res) => {
       html, body { height:auto; }
       body { display:block; height:auto; overflow-x:hidden; }
       .page { padding:14px; }
+      .mode-chip { min-height:44px; padding:8px 14px; } /* thumb-sized hit area on phones */
       table { font-size:0.66rem; }
       th, td { padding:6px 8px; }
     }
@@ -674,6 +700,11 @@ router.get("/", (req, res) => {
     :root[data-theme="light"] .mode-section { background:#fff; border-color:#e0e4ea; }
     :root[data-theme="light"] .mode-head { background:#f8fafc; border-bottom-color:#e0e4ea; }
     :root[data-theme="light"] .mode-meta { color:#5c6b7f; }
+    :root[data-theme="light"] .mode-chips { background:#f4f6f9; }
+    :root[data-theme="light"] .mode-chip { background:#fff; border-color:#e0e4ea; color:#4b5769; }
+    :root[data-theme="light"] .mode-chip.active { background:#e8f1ff; border-color:#93c5fd; color:#1d4ed8; }
+    :root[data-theme="light"] .mode-chip .chip-n { background:#f1f5f9; border-color:#e0e4ea; color:#5c6b7f; }
+    :root[data-theme="light"] .mode-chip.active .chip-n { background:#dbeafe; color:#1d4ed8; }
     :root[data-theme="light"] th { background:#f1f5f9; color:#4b5769; }
     :root[data-theme="light"] th, :root[data-theme="light"] td { border-bottom-color:#e0e4ea; }
     :root[data-theme="light"] tr:hover td { background:#f8fafc; }
@@ -744,6 +775,7 @@ ${buildSidebar('tradeLogs', liveActive)}
       <a class="btn btn-download btn-download-all" href="/trade-logs/download-everything?format=ai" onclick="return onDownloadEverything(event, 'ai')"
          title="Same data as an AI-friendly Markdown report: summary stats, a field legend, the settings that produced the trades, then per-strategy tables. Paste straight into an AI for analysis.">🤖 AI format</a>
     </div>
+    <div class="mode-chips" id="filesChips"></div>
     <div id="filesArea">Loading…</div>
   </div>
 
@@ -756,6 +788,7 @@ ${buildSidebar('tradeLogs', liveActive)}
       <a class="btn btn-download btn-download-all" href="/trade-logs/skips/download-everything?format=ai"
          title="Same skips as an AI-friendly Markdown report: per-gate counts, a field legend, then the rejections grouped by strategy. Paste into an AI to see why trades were blocked.">🤖 AI format</a>
     </div>
+    <div class="mode-chips" id="skipsChips"></div>
     <div id="skipsArea">Click the tab to load…</div>
   </div>
 
@@ -986,6 +1019,93 @@ ${buildSidebar('tradeLogs', liveActive)}
   var _filesTotals = { ema_rsi_st:0, bb_rsi:0, pa:0, orb:0, ema9vwap:0, trend_pb:0, gaps:0, trend_day_scalp:0, gap_fix_3m:0 };
   var _skipsTotals = { ema_rsi_st:0, bb_rsi:0, pa:0, orb:0, ema9vwap:0, trend_pb:0, gaps:0, trend_day_scalp:0, gap_fix_3m:0 };
 
+  // ── Strategy focus ────────────────────────────────────────────────────
+  // The Files/Skips tabs used to stack every enabled strategy's table on one
+  // page (9 sections × N rows = an endless scroll). We now show ONE strategy at
+  // a time, picked from a sticky chip bar; 'all' restores the old stacked view.
+  // Selection is per-tab and persisted so a reload lands where you left off.
+  function loadSel(k, dflt) {
+    try { var v = localStorage.getItem(k); if (v) return v; } catch (_) {}
+    return dflt;
+  }
+  var _defaultMode = (function(){ var e = enabledModes(); return e.length ? e[0].key : 'all'; })();
+  var _sel = {
+    files: loadSel('tradeLogs_filesMode', _defaultMode),
+    skips: loadSel('tradeLogs_skipsMode', _defaultMode),
+  };
+  // File counts per mode for every strategy (cheap dir listing), so the chips and
+  // the tab badges stay accurate even though we only fetch the selected strategy.
+  var _counts = { files: {}, skips: {} };
+
+  // Modes whose sections the given tab should render right now.
+  function visibleModes(kind) {
+    var modes = enabledModes();
+    if (_sel[kind] === 'all') return modes;
+    var hit = modes.filter(function(m){ return m.key === _sel[kind]; });
+    if (hit.length) return hit;
+    _sel[kind] = modes[0].key; // stored mode was disabled since last visit → fall back
+    return modes.slice(0, 1);
+  }
+
+  function sumCounts(kind) {
+    var s = 0;
+    enabledModes().forEach(function(m){ s += (_counts[kind][m.key] || 0); });
+    return s;
+  }
+
+  // Pull per-mode file counts once, then paint chips + both tab badges.
+  function loadCounts() {
+    return fetch('/trade-logs/counts', { cache: 'no-store' })
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if (!d || !d.success) return;
+        _counts.files = d.files || {};
+        _counts.skips = d.skips || {};
+        renderChips('files');
+        renderChips('skips');
+        var fb = document.getElementById('filesBadge'); if (fb) fb.textContent = sumCounts('files');
+        var sb = document.getElementById('skipsBadge'); if (sb) sb.textContent = sumCounts('skips');
+      })
+      .catch(function(){ /* chips just render without counts */ });
+  }
+
+  function renderChips(kind) {
+    var el = document.getElementById(kind + 'Chips');
+    if (!el) return;
+    var modes = enabledModes();
+    var sel = _sel[kind];
+    var html = modes.map(function(m){
+      var n = _counts[kind][m.key];
+      var cls = 'mode-chip' + (sel === m.key ? ' active' : '') + (n === 0 ? ' empty-mode' : '');
+      return '<button class="' + cls + '" onclick="selectMode(\\'' + kind + '\\',\\'' + m.key + '\\')" title="Show only ' + m.label + '">' +
+        '<span class="' + m.cls + '">' + m.label + '</span>' +
+        (n === undefined ? '' : '<span class="chip-n">' + n + '</span>') +
+      '</button>';
+    }).join('');
+    html += '<button class="mode-chip' + (sel === 'all' ? ' active' : '') + '" onclick="selectMode(\\'' + kind + '\\',\\'all\\')" title="Stack every strategy on one page (long scroll)">All' +
+      '<span class="chip-n">' + sumCounts(kind) + '</span></button>';
+    el.innerHTML = html;
+  }
+
+  // The chip bar sticks directly under the (already sticky) top bar. Its height
+  // changes with the theme/banner and wraps on phones, so measure it instead of
+  // hard-coding an offset that would let the chips hide behind it.
+  function syncChipsOffset() {
+    var tb = document.querySelector('.top-bar');
+    if (!tb) return;
+    var banner = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--banner-h')) || 0;
+    document.documentElement.style.setProperty('--chips-top', (banner + tb.offsetHeight) + 'px');
+  }
+  window.addEventListener('resize', syncChipsOffset);
+
+  function selectMode(kind, key) {
+    if (_sel[kind] === key) return;
+    _sel[kind] = key;
+    try { localStorage.setItem('tradeLogs_' + kind + 'Mode', key); } catch (_) {}
+    renderChips(kind);
+    if (kind === 'files') loadFiles(); else loadSkips();
+  }
+
   function fmtSize(n) {
     if (n < 1024) return n + ' B';
     if (n < 1024*1024) return (n/1024).toFixed(1) + ' KB';
@@ -1099,21 +1219,18 @@ ${buildSidebar('tradeLogs', liveActive)}
 
   // ── FILES tab ───────────────────────────────────────────────────────
   function loadFiles() {
-    var modes = enabledModes();
-    if (modes.length === 0) {
+    if (enabledModes().length === 0) {
       document.getElementById('filesArea').innerHTML = '<div class="empty">No strategies enabled.</div>';
       document.getElementById('filesBadge').textContent = '0';
       return;
     }
+    var modes = visibleModes('files'); // may self-heal _sel before the chips paint
+    renderChips('files');
     // Build empty shells so each section can populate independently.
     document.getElementById('filesArea').innerHTML = modes.map(function(m){
       return '<div class="mode-section" id="filesSection-' + m.key + '"><div class="mode-head"><div class="mode-name ' + m.cls + '">' + m.label + '</div><div class="mode-meta">loading…</div></div></div>';
     }).join('');
-    Promise.all(modes.map(function(m){ return loadFileSection(m.key); })).then(function(){
-      var sum = 0;
-      modes.forEach(function(m){ sum += (_filesTotals[m.key] || 0); });
-      document.getElementById('filesBadge').textContent = sum;
-    });
+    return Promise.all(modes.map(function(m){ return loadFileSection(m.key); }));
   }
 
   function loadFileSection(modeKey) {
@@ -1130,10 +1247,10 @@ ${buildSidebar('tradeLogs', liveActive)}
         _filesPage[modeKey] = d.page || 1;
         var m = MODE_LIST.find(function(x){ return x.key === modeKey; });
         document.getElementById('filesSection-' + modeKey).innerHTML = renderFileSectionHTML(m, d);
-        // Recompute the badge from cached per-mode totals (works after prev/next too).
-        var sum = 0;
-        enabledModes().forEach(function(em){ sum += (_filesTotals[em.key] || 0); });
-        document.getElementById('filesBadge').textContent = sum;
+        // Keep the chip count for this mode honest after a delete/refresh.
+        if (_counts.files[modeKey] !== d.total) { _counts.files[modeKey] = d.total; renderChips('files'); }
+        var fb = document.getElementById('filesBadge');
+        if (fb) fb.textContent = sumCounts('files');
       })
       .catch(function(){
         document.getElementById('filesSection-' + modeKey).innerHTML = '<div class="empty">Cannot reach server.</div>';
@@ -1284,20 +1401,17 @@ ${buildSidebar('tradeLogs', liveActive)}
 
   // ── SKIPS tab ───────────────────────────────────────────────────────
   function loadSkips() {
-    var modes = enabledModes();
-    if (modes.length === 0) {
+    if (enabledModes().length === 0) {
       document.getElementById('skipsArea').innerHTML = '<div class="empty">No strategies enabled.</div>';
       document.getElementById('skipsBadge').textContent = '0';
       return;
     }
+    var modes = visibleModes('skips');
+    renderChips('skips');
     document.getElementById('skipsArea').innerHTML = modes.map(function(m){
       return '<div class="mode-section" id="skipsSection-' + m.key + '"><div class="mode-head"><div class="mode-name ' + m.cls + '">' + m.label + '</div><div class="mode-meta">loading…</div></div></div>';
     }).join('');
-    Promise.all(modes.map(function(m){ return loadSkipSection(m.key); })).then(function(){
-      var sum = 0;
-      modes.forEach(function(m){ sum += (_skipsTotals[m.key] || 0); });
-      document.getElementById('skipsBadge').textContent = sum;
-    });
+    return Promise.all(modes.map(function(m){ return loadSkipSection(m.key); }));
   }
 
   function loadSkipSection(modeKey) {
@@ -1314,9 +1428,9 @@ ${buildSidebar('tradeLogs', liveActive)}
         _skipsPage[modeKey] = d.page || 1;
         var m = MODE_LIST.find(function(x){ return x.key === modeKey; });
         document.getElementById('skipsSection-' + modeKey).innerHTML = renderSkipSectionHTML(m, d);
-        var sum = 0;
-        enabledModes().forEach(function(em){ sum += (_skipsTotals[em.key] || 0); });
-        document.getElementById('skipsBadge').textContent = sum;
+        if (_counts.skips[modeKey] !== d.total) { _counts.skips[modeKey] = d.total; renderChips('skips'); }
+        var sb = document.getElementById('skipsBadge');
+        if (sb) sb.textContent = sumCounts('skips');
       })
       .catch(function(){
         document.getElementById('skipsSection-' + modeKey).innerHTML = '<div class="empty">Cannot reach server.</div>';
@@ -1553,6 +1667,8 @@ ${buildSidebar('tradeLogs', liveActive)}
   }
 
   initPageSizeSelector();
+  syncChipsOffset();
+  loadCounts();
   loadFiles();
 </script>
 
