@@ -531,7 +531,7 @@ Full spec: [BB_RSI.md](BB_RSI.md).
 | `ORB_TRAIL_ARM_PTS` | `0` (at once) | The EMA trail may not exit until the trade is this many points in profit — until then only the hard stop and the ₹ cap are live. ORB enters on the confirmation candle's **close**, by which point price is extended, so the next candle often pulls straight back through an EMA still sitting under the entry; across the 2025 (n=123) and 2026 (n=60) exports that is where the long tail of −₹200…−₹1,200 scratch exits comes from. **A hypothesis, not a finding** — it must clear TRAIN *and* TEST in `scripts/orbSweep.js` before the default moves |
 | `ORB_TRAIL_CONFIRM_CLOSES` | `1` | Closes in a row on the wrong side of the EMA before the trail exits. `1` = the shipped rule; `2` survives one noise candle at the cost of a bar of give-back |
 | `ORB_OPP_CANDLE_EXIT` / `ORB_OPP_CANDLE_BODY_MULT` | `false` / `0.3` | Exit on a strong opposite candle (body ≥ mult×OR, closing back inside the box) |
-| `ORB_MAX_TRADE_LOSS` | `1500` | Per-trade unrealised-₹ loss cap (`0` = off) |
+| `ORB_MAX_TRADE_LOSS` | `0` (off) | Per-trade unrealised-₹ loss cap. **Ships off**: when set it clamps the placed stop (see `orbStopRisk.js`) and is tighter than the strategy's own level on nearly every trade, so it — not the breakout candle — becomes the real stop. Day-level risk is `ORB_MAX_DAILY_LOSS` |
 | `ORB_PREMIUM_STOP_PCT` | `35` | Exit if option premium collapses ≥ this % from entry (IV-crush/vega backstop) |
 | **— option selection —** | | |
 | `ORB_ITM_STEPS` | `1` | Strikes ITM (×50) for ~delta 0.6 (CE lower / PE higher). `0` = ATM |
@@ -540,7 +540,7 @@ Full spec: [BB_RSI.md](BB_RSI.md).
 | `ORB_MAX_SPREAD_PTS` | `2` | Skip when ask−bid exceeds this (falls back to `MAX_BID_ASK_SPREAD_PTS`; fails open with no depth) |
 | **— risk / regime —** | | |
 | `ORB_MAX_DAILY_TRADES` | `1` | Textbook 1/day — raise only if you accept the chop |
-| `ORB_MAX_DAILY_LOSS` | `3000` | ORB kill-switch (INR), checked only when flat |
+| `ORB_MAX_DAILY_LOSS` | `3000` | ORB kill-switch (INR). Blocks NEW entries once the day is down this much; it cannot close a position that is already open, and with `ORB_MAX_DAILY_TRADES=1` the budget is already spent, so it only bites once you allow more than one trade a day |
 | `ORB_RISK_THROTTLE_ENABLED` | `true` | Portfolio breaker: sit out on a weekly-loss stop / losing streak (`~/trading-data/orb_risk_state.json`, paper + live tracked separately) |
 | `ORB_MAX_WEEKLY_LOSS` | `9000` | Stop entries for the rest of the ISO-week once week realised P&L ≤ −this (₹; `0` = off) |
 | `ORB_LOSS_STREAK_SKIP` | `4` | Sit out the next day after this many consecutive losing days (one-day cool-off; `0` = off) |

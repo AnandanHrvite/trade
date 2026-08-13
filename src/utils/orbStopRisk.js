@@ -55,7 +55,7 @@ function resolveInitialStop({ side, entrySpot, strategyStop, qty, fallbackStop }
   const raw = Number.isFinite(strategyStop) ? strategyStop
             : (Number.isFinite(fallbackStop) ? fallbackStop : entrySpot);
 
-  const maxTradeLoss = parseFloat(process.env.ORB_MAX_TRADE_LOSS || "1500");
+  const maxTradeLoss = parseFloat(process.env.ORB_MAX_TRADE_LOSS || "0");
   const rawPts = Math.abs(entrySpot - raw);
 
   // No budget configured (0 = off) → the strategy stop stands as-is.

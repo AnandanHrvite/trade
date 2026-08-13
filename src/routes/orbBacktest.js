@@ -53,7 +53,7 @@ function _paperOnlyGates() {
   // Every default here MUST mirror the route's own read (orbPaper/orbLive
   // _simulateBuyInner). Hard-coding "80" for the premium floor advertised a band the
   // engine never used — the real fallback is 120.
-  if (on("ORB_PREMIUM_GATE_ENABLED", "true")) g.push(`option-premium band ₹${process.env.ORB_PREMIUM_MIN || "120"}–₹${process.env.ORB_PREMIUM_MAX || "400"}`);
+  if (on("ORB_PREMIUM_GATE_ENABLED", "false")) g.push(`option-premium band ₹${process.env.ORB_PREMIUM_MIN || "120"}–₹${process.env.ORB_PREMIUM_MAX || "400"}`);
   // The spread gate has no on/off switch — paper/live call tradeGuards.checkSpread()
   // unconditionally — so it is ALWAYS active and must always be disclosed. Two ways
   // the old `parseFloat(ORB_MAX_SPREAD_PTS || "0") > 0` test fell silent on a LIVE
@@ -116,9 +116,9 @@ function runOrbBacktest(allCandles, expirySet, vixCandles = []) {
   // Breakeven / EMA-trail / opposite-candle thresholds are NOT read here any more —
   // they belong to the shared exit engine (src/strategies/orbExits.js), which reads
   // them fresh per call so a Settings change takes effect without a restart.
-  const MAX_TRADE_LOSS = parseFloat(process.env.ORB_MAX_TRADE_LOSS || "1500");
+  const MAX_TRADE_LOSS = parseFloat(process.env.ORB_MAX_TRADE_LOSS || "0");
   const PREM_STOP_PCT  = parseFloat(process.env.ORB_PREMIUM_STOP_PCT || "35");     // premium disaster backstop
-  const PREM_GATE_ON = (process.env.ORB_PREMIUM_GATE_ENABLED || "true").toLowerCase() === "true";
+  const PREM_GATE_ON = (process.env.ORB_PREMIUM_GATE_ENABLED || "false").toLowerCase() === "true";
   const PREM_MIN     = parseFloat(process.env.ORB_PREMIUM_MIN || "120");           // widened for slightly-ITM
   const PREM_MAX     = parseFloat(process.env.ORB_PREMIUM_MAX || "400");
   // Signal engine (orb_breakout.getSignal) needs prior-day history to seed its

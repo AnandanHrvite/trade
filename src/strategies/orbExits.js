@@ -60,7 +60,7 @@ const _envOn = (key, dflt) => (process.env[key] || dflt).toLowerCase() === "true
 // ── Tunables, read fresh on every call ──────────────────────────────────────
 // Settings writes to process.env at runtime, so caching these would pin a value
 // until the next restart and make the Settings page lie.
-function maxTradeLossINR()   { return _envNum("ORB_MAX_TRADE_LOSS", "1500"); }
+function maxTradeLossINR()   { return _envNum("ORB_MAX_TRADE_LOSS", "0"); }
 function premiumStopPct()    { return _envNum("ORB_PREMIUM_STOP_PCT", "35"); }
 function trailEmaPeriod()    { return Math.max(2, parseInt(process.env.ORB_TRAIL_EMA || "9", 10)); }
 function oppositeExitOn()    { return _envOn("ORB_OPP_CANDLE_EXIT", "false"); }

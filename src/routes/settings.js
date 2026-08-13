@@ -212,7 +212,7 @@ const SETTINGS_SCHEMA = [
       { key: "ORB_TRAIL_CONFIRM_CLOSES", label: "Exit — Closes Needed to Break the Trail", type: "number", min: 1, max: 3, step: 1, effect: EFFECT.INSTANT, desc: "How many closes in a row on the wrong side of the EMA before exiting. 1 = today's rule. 2 rides out one noise candle but gives back a bar when the move is really over.", default: "1" },
       { key: "ORB_OPP_CANDLE_EXIT", label: "Exit — Strong Opposite Candle", type: "toggle", effect: EFFECT.INSTANT, desc: "Exit on a strong reversal candle.", default: "false" },
       { key: "ORB_OPP_CANDLE_BODY_MULT", label: "Opposite-Candle Body × Range", type: "number", min: 0.1, max: 1, step: 0.05, effect: EFFECT.INSTANT, desc: "Reversal candle body vs range width to trigger the exit.", default: "0.3" },
-      { key: "ORB_MAX_TRADE_LOSS", label: "Exit — Max Loss per Trade (₹)", type: "number", min: 0, max: 10000, step: 250, effect: EFFECT.INSTANT, desc: "Max loss on one trade (₹, 0 = off).", default: "1500" },
+      { key: "ORB_MAX_TRADE_LOSS", label: "Exit — Max Loss per Trade (₹, 0 = off)", type: "number", min: 0, max: 10000, step: 250, effect: EFFECT.INSTANT, desc: "Ships OFF so the structural stop is the real stop. When set it clamps the placed SL, which is tighter than the strategy's own level on most trades — use Max Daily Loss for risk control instead.", default: "0" },
       { key: "ORB_PREMIUM_STOP_PCT", label: "Exit — Premium Disaster Stop (%)", type: "number", min: 0, max: 80, step: 5, effect: EFFECT.INSTANT, desc: "Exit if the option premium drops this % (0 = off).", default: "35" },
       { key: "ORB_FORCED_EXIT", label: "Forced Square-Off", type: "time", effect: EFFECT.SESSION, desc: "Hard end-of-day exit time (IST).", default: "15:15" },
 
@@ -226,7 +226,7 @@ const SETTINGS_SCHEMA = [
 
       // ── Risk / regime ────────────────────────────────────────────────
       { key: "ORB_MAX_DAILY_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 3, step: 1, effect: EFFECT.SESSION, desc: "Max entries per day.", default: "1", subheader: "Risk & Regime" },
-      { key: "ORB_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 20000, step: 500, effect: EFFECT.SESSION, desc: "Stop trading after this much loss.", default: "3000" },
+      { key: "ORB_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 0, max: 20000, step: 500, effect: EFFECT.SESSION, desc: "Stop taking NEW entries once the day is down this much. It cannot close a trade that is already open, and with Max Trades/Day = 1 the budget is spent anyway — raise Max Trades/Day for it to bite.", default: "3000" },
       { key: "ORB_RISK_THROTTLE_ENABLED", label: "Risk Breaker (weekly loss / losing streak)", type: "toggle", effect: EFFECT.INSTANT, desc: "Pause after a bad week or a losing streak.", default: "true" },
       { key: "ORB_MAX_WEEKLY_LOSS", label: "Max Weekly Loss (₹)", type: "number", min: 0, max: 60000, step: 500, effect: EFFECT.INSTANT, desc: "Stop for the week after this much loss (0 = off).", default: "9000" },
       { key: "ORB_LOSS_STREAK_SKIP", label: "Skip After N Losing Days", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.INSTANT, desc: "Skip a day after this many losing days (0 = off).", default: "4" },
