@@ -2962,8 +2962,9 @@ function clearCacheJS() {
   return `
 // ── Clear Cache ────────────────────────────────────────────────────────────
 // Wipes the cached historical candles so the next run pulls fresh data from
-// Fyers. Whether a backtest is currently running is decided by the server (409)
-// — every backtest page shares one job manager.
+// Fyers. The server has the final say on whether a backtest is running (409) —
+// every backtest page shares one job manager — with a page-local RUN_STATE
+// check in front of it for the gaps a single job's status cannot cover.
 document.querySelectorAll('.clear-cache-btn').forEach(function(btn){
   btn.addEventListener('click', async function(){
     // A page that drives its own run loop (the /all-backtest dashboard) exposes
