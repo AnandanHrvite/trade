@@ -25,6 +25,33 @@
  * every ablation figure quoted in this header predates the fix. Re-derive them with
  * scripts/orbValidate.js before treating any of them as measured.
  *
+ * ── 2026-08-13: DEFAULTS ARE NOW THE SIMPLIFIED RULESET ────────────────────
+ * The owner asked for the gate stack to be removed rather than merely switchable,
+ * so the SHIPPED DEFAULTS below are no longer the 2026-07-26 rebuild's. What runs
+ * out of the box now is exactly this:
+ *
+ *   1. Opening range 09:15-09:30, frozen.
+ *   2. ANY 5-min candle that CLOSES beyond the edge is the breakout — no buffer
+ *      (ORB_BUFFER_* = 0), no ATR body test (ORB_BODY_ATR_MULT = 0), no VWAP side
+ *      test (ORB_VWAP_FILTER_ENABLED = false), no day-sanity gates
+ *      (ORB_OR_ATR_MAX = 0, ORB_GAP_OR_MULT = 0).
+ *   3. The NEXT candle must simply CLOSE beyond that candle's close
+ *      (ORB_CONFIRM_MODE = close). Entry is that close.
+ *   4. Initial stop = the BREAKOUT candle's low/high (ORB_SL_SOURCE = breakout,
+ *      ORB_SL_ATR_MULT = 0). NOTE: ORB_MAX_TRADE_LOSS still clamps it to 1,500 INR
+ *      (~38 spot pts) and does so on most trades — set that to 0 to let the
+ *      structural stop actually be the stop.
+ *   5. Exit = EMA9 close-trail, ONE close through it (ORB_TRAIL_EMA = 9,
+ *      ORB_TRAIL_CONFIRM_CLOSES = 1, ORB_TRAIL_ARM_PTS = 0). No breakeven, no
+ *      opposite-candle exit, no premium band.
+ *
+ * Every gate described in the rest of this header still EXISTS and is one env key
+ * away; it simply ships off. The ablation numbers below were measured with them ON
+ * and are kept because they are the evidence for what each one was worth. Measured
+ * so far: the VWAP test changed 0 of 36 trades (worthless), and on the 39-session
+ * Mar-Apr 2026 cache this simplified set takes 30 trades vs 15 and nets -10,340 INR
+ * vs +3,227. That sample decides nothing; the 2021-2026 run does.
+ *
  * ── THE PIPELINE ────────────────────────────────────────────────────────────
  *   1. Build the opening range 09:15–09:30 and FREEZE it (never recalculated).
  *   2. Day sanity: OR ≤ ORB_OR_ATR_MAX × ATR(15m), and |gap| ≤ ORB_GAP_OR_MULT × OR.
@@ -157,14 +184,14 @@ const DESCRIPTION = "Opening Range Breakout — 15-min OR, next-candle confirmat
 // exposing them only invited drift between engines. Change them here, with a
 // measurement, or not at all.
 const ATR_PERIOD      = 14;    // ATR lookback for both the 5-min and 15-min yardsticks
-const BUFFER_OR_DFLT  = 0.15;  // breakout buffer, as a fraction of the opening range
+const BUFFER_OR_DFLT  = 0;  // breakout buffer, as a fraction of the opening range
                                // 2026-08-13: promoted to the env key ORB_BUFFER_OR_MULT.
                                // It was deliberately a constant, on the grounds that it is
                                // structural rather than a dial — but it is one of only two
                                // levers that decide whether a breakout is SEEN at all, and
                                // "ORB never enters" could not be measured against it while
                                // it was unreachable. Default unchanged, so behaviour is too.
-const BUFFER_ATR_DFLT = 0.30;  // ...or of ATR(5m), whichever is larger (ORB_BUFFER_ATR_MULT)
+const BUFFER_ATR_DFLT = 0;  // ...or of ATR(5m), whichever is larger (ORB_BUFFER_ATR_MULT)
 const RETEST_TOL_PCT  = 0.10;  // retest tolerance, as a fraction of the OR
 const RETEST_TOL_MIN  = 5;     // ...with this floor in points
 const TARGET_OR_MULT  = 1.5;   // informational target only — there is no target exit.
@@ -322,7 +349,7 @@ function _vwapSideOk(c, side, vwap, on) {
   return side === "CE" ? c.close > vwap : c.close < vwap;
 }
 function _vwapFilterOn() {
-  return (process.env.ORB_VWAP_FILTER_ENABLED || "true").toLowerCase() === "true";
+  return (process.env.ORB_VWAP_FILTER_ENABLED || "false").toLowerCase() === "true";
 }
 
 // Does `c` extend the breakout beyond the edge? (higher-high AND higher-close)
@@ -506,17 +533,17 @@ function getSignal(candles, opts) {
     entryEnd:     _parseMins("ORB_ENTRY_END", "11:30"),
     orStart:      _parseMins("ORB_RANGE_START", "09:15"),
     orEnd:        _parseMins("ORB_RANGE_END", "09:30"),
-    orAtrMax:     parseFloat(process.env.ORB_OR_ATR_MAX      || "2.5"),
-    gapOrMult:    parseFloat(process.env.ORB_GAP_OR_MULT     || "3.0"),
-    bodyAtrMult:  parseFloat(process.env.ORB_BODY_ATR_MULT   || "0.6"),
+    orAtrMax:     parseFloat(process.env.ORB_OR_ATR_MAX      || "0"),
+    gapOrMult:    parseFloat(process.env.ORB_GAP_OR_MULT     || "0"),
+    bodyAtrMult:  parseFloat(process.env.ORB_BODY_ATR_MULT   || "0"),
     bodyOrCap:    parseFloat(process.env.ORB_BODY_OR_CAP     || "0"),
     bufferOrMult: parseFloat(process.env.ORB_BUFFER_OR_MULT  || String(BUFFER_OR_DFLT)),
     bufferAtrMult:parseFloat(process.env.ORB_BUFFER_ATR_MULT || String(BUFFER_ATR_DFLT)),
-    bufferMinPts: parseFloat(process.env.ORB_BUFFER_MIN_PTS  || "1"),
-    confirmMode:  (process.env.ORB_CONFIRM_MODE || "extend").toLowerCase(),
-    slSource:     (process.env.ORB_SL_SOURCE    || "entry").toLowerCase(),
+    bufferMinPts: parseFloat(process.env.ORB_BUFFER_MIN_PTS  || "0"),
+    confirmMode:  (process.env.ORB_CONFIRM_MODE || "close").toLowerCase(),
+    slSource:     (process.env.ORB_SL_SOURCE    || "breakout").toLowerCase(),
     vwapOn:       _vwapFilterOn(),
-    slAtrMult:    parseFloat(process.env.ORB_SL_ATR_MULT     || "1.5"),
+    slAtrMult:    parseFloat(process.env.ORB_SL_ATR_MULT     || "0"),
     retestWindow: parseInt  (process.env.ORB_RETEST_MAX_WAIT || "6", 10),
   };
 
@@ -576,12 +603,12 @@ function getSignal(candles, opts) {
 
   // ── 4. Day sanity: an opening range far wider than normal means the move has
   //       already happened. Fails OPEN when ATR(15m) is not yet seeded. ───────
-  if (atr15 != null && atr15 > 0) {
+  if (cfg.orAtrMax > 0 && atr15 != null && atr15 > 0) {
     const ratio = rangePts / atr15;
     if (!tr.check("OR vs ATR15", ratio <= cfg.orAtrMax, `${rangePts}pt = ${ratio.toFixed(2)}×ATR15, max ${cfg.orAtrMax}`)) {
       return done(Object.assign(sig, { reason: `OR ${rangePts}pt = ${ratio.toFixed(2)}×ATR15 > ${cfg.orAtrMax} — open already ran, skip day` }));
     }
-  } else { tr.skip("OR vs ATR15", "ATR15 not seeded — fail-open"); }
+  } else { tr.skip("OR vs ATR15", cfg.orAtrMax > 0 ? "ATR15 not seeded — fail-open" : "disabled"); }
 
   // ── 4b. Day sanity: an ABSOLUTE cap on the opening range, in points.
   //       OFF by default (0), and the evidence says LEAVE IT OFF.
@@ -737,7 +764,20 @@ function getSignal(candles, opts) {
     //                invalidates the breakout; it also gives a stop that does not
     //                shrink just because the entry candle happened to be small.
     const slBar = cfg.slSource === "breakout" ? brk : last;
-    const structural = side === "CE" ? slBar.low : slBar.high;
+    let structural = side === "CE" ? slBar.low : slBar.high;
+
+    // A breakout-anchored stop can land on the WRONG SIDE of the entry, which would
+    // be an instantly-stopped-out trade rather than a stop at all. It happens on the
+    // retest/resume path: the breakout candle can sit entirely clear of the range
+    // (e.g. ORH 140, breakout bar low 175) and the entry then comes several candles
+    // later at a pullback close of 150 — below the bar the stop is anchored to.
+    // Reproduced: CE entry 150 with SL 175. Fall back to the entry candle's own
+    // extreme, and to the opposite range edge if even that is not strictly beyond
+    // the entry (a close that IS the candle's low/high). The ATR floor below cannot
+    // catch this on its own, because ORB_SL_ATR_MULT=0 disables it.
+    const wrongSide = (v) => (side === "CE" ? v >= entrySpot : v <= entrySpot);
+    if (wrongSide(structural)) structural = side === "CE" ? last.low : last.high;
+    if (wrongSide(structural)) structural = side === "CE" ? or.low : or.high;
     const atrStop = atr5 != null && cfg.slAtrMult > 0
       ? (side === "CE" ? entrySpot - cfg.slAtrMult * atr5 : entrySpot + cfg.slAtrMult * atr5)
       : structural;

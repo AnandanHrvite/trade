@@ -6,6 +6,16 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Changed — ORB now ships the simplified ruleset
+
+The gate stack is gone from the defaults rather than merely switchable. Out of the box ORB is: mark the 09:15–09:30 range; **any** 5-min candle that CLOSES past the edge is the breakout (no buffer, no ATR body test, no VWAP test, no day-sanity gates); the **next** candle only has to CLOSE beyond that candle's close; entry is that close; the initial stop is the **breakout candle's low/high**; and the trade is trailed on **EMA9**, exiting on one close through it. No breakeven, no opposite-candle exit, no premium band.
+
+Every removed gate still exists and is one env key away — only the defaults moved, and Settings and the README were re-synced so the UI no longer shows values the engine does not use. **One caveat**: `ORB_MAX_TRADE_LOSS` still clamps the structural stop to ₹1,500 (~38 spot points) and does so on most trades, so the rupee cap rather than the breakout candle is usually the stop that fires — set it to `0` if the structural stop should be the real one.
+
+### Fixed — a breakout-anchored stop could sit on the wrong side of the entry
+
+With the stop anchored on the breakout candle and the ATR floor disabled — both now defaults — the retest/resume path could enter *below* the bar the stop hangs off, producing a CE entry at 150 with a stop at 175: not a stop at all, but an instant loss. The ATR floor used to hide this and cannot when its multiplier is `0`. The stop now falls back to the entry candle's own extreme, and then to the opposite range edge, whenever the anchor is not strictly beyond the entry.
+
 ### Added — every ORB entry gate can now be switched off, so each one can be priced
 
 "Do we actually need the ATR body test, the VWAP test and the premium band?" was unanswerable, because three of those gates were hard-coded. They are now configuration, all defaulting to exactly today's behaviour: **`ORB_VWAP_FILTER_ENABLED`**, **`ORB_BUFFER_ATR_MULT`** and **`ORB_BUFFER_MIN_PTS`** (the other two thirds of the breakout buffer), **`ORB_CONFIRM_MODE`** (`extend` = a higher high *and* a higher close beyond the edge, or `close` = simply closing beyond the breakout candle's close) and **`ORB_SL_SOURCE`** (anchor the initial stop on the entry candle or on the first candle that closed past the range edge).

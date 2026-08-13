@@ -314,7 +314,7 @@ async function _simulateBuyInner(side, sigSnapshot, spot) {
   // Band widened for slightly-ITM premiums (higher intrinsic than ATM).
   const premMin = parseFloat(process.env.ORB_PREMIUM_MIN || "120");
   const premMax = parseFloat(process.env.ORB_PREMIUM_MAX || "400");
-  const premGateOn = (process.env.ORB_PREMIUM_GATE_ENABLED || "true").toLowerCase() === "true";
+  const premGateOn = (process.env.ORB_PREMIUM_GATE_ENABLED || "false").toLowerCase() === "true";
   if (premGateOn && (optionEntryLtp < premMin || optionEntryLtp > premMax)) {
     log(`⏸️ [ORB-PAPER] Premium gate: ${optInfo.symbol} LTP ₹${optionEntryLtp} outside [${premMin}, ${premMax}] — entry skipped`);
     skipLogger.appendSkipLog("orb", { gate: "premium_range", reason: `LTP ₹${optionEntryLtp} outside [${premMin}, ${premMax}]`, symbol: optInfo.symbol, side, spot, optLtp: optionEntryLtp });

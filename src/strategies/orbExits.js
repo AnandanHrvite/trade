@@ -62,8 +62,8 @@ const _envOn = (key, dflt) => (process.env[key] || dflt).toLowerCase() === "true
 // until the next restart and make the Settings page lie.
 function maxTradeLossINR()   { return _envNum("ORB_MAX_TRADE_LOSS", "1500"); }
 function premiumStopPct()    { return _envNum("ORB_PREMIUM_STOP_PCT", "35"); }
-function trailEmaPeriod()    { return Math.max(2, parseInt(process.env.ORB_TRAIL_EMA || "20", 10)); }
-function oppositeExitOn()    { return _envOn("ORB_OPP_CANDLE_EXIT", "true"); }
+function trailEmaPeriod()    { return Math.max(2, parseInt(process.env.ORB_TRAIL_EMA || "9", 10)); }
+function oppositeExitOn()    { return _envOn("ORB_OPP_CANDLE_EXIT", "false"); }
 
 /**
  * How far in profit the trade must be before the EMA trail is allowed to ARM.
@@ -96,8 +96,8 @@ function trailConfirmCloses(){ const v = parseInt(process.env.ORB_TRAIL_CONFIRM_
  * a wide-range day gets more room before the stop tightens to entry.
  */
 function breakevenTriggerPts(rangePts) {
-  const mult  = _envNum("ORB_BREAKEVEN_OR_MULT", "0.5");
-  const fixed = _envNum("ORB_BREAKEVEN_PTS", "20");
+  const mult  = _envNum("ORB_BREAKEVEN_OR_MULT", "0");
+  const fixed = _envNum("ORB_BREAKEVEN_PTS", "0");
   return (mult > 0 && rangePts) ? Math.max(fixed, Math.round(mult * rangePts)) : fixed;
 }
 

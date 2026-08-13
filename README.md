@@ -510,27 +510,27 @@ Full spec: [BB_RSI.md](BB_RSI.md).
 | `ORB_ENTRY_END` | `11:30` | Stale-breakout cutoff — no new entries past this |
 | `ORB_FORCED_EXIT` | `15:15` | Hard EOD square-off |
 | **— entry (the whole signal surface) —** | | |
-| `ORB_OR_ATR_MAX` | `2.5` | Skip the day when OR width > this × `ATR(15m)`. No minimum by design — see the strategy section |
+| `ORB_OR_ATR_MAX` | `0` (off) | Skip the day when OR width > this × `ATR(15m)`. No minimum by design — see the strategy section |
 | `ORB_OR_MAX_PTS` | `0` (off) | Absolute cap on opening-range width in points. **Leave it off** — it looked like the one real filter on the 2025 + 2026 samples and then reversed on 2024 (see the strategy section). Kept only so the idea can be re-measured with `scripts/orbSweep.js` rather than re-derived |
-| `ORB_GAP_OR_MULT` | `3.0` | Skip when `\|gap\| > this × OR width` (`0` = off) |
-| `ORB_BODY_ATR_MULT` | `0.6` | Breakout candle body ≥ this × `ATR(5m)`. The load-bearing entry filter |
+| `ORB_GAP_OR_MULT` | `0` (off) | Skip when `\|gap\| > this × OR width` (`0` = off) |
+| `ORB_BODY_ATR_MULT` | `0` (off) | Breakout candle body ≥ this × `ATR(5m)`. The load-bearing entry filter |
 | `ORB_BODY_OR_CAP` | `0` (off) | Ceiling on that body requirement as a share of **today's** opening range. `ATR(5m)` is frozen from the *previous* days, so after a violent day it can demand a body larger than today's entire range — on 2026-08-06 it wanted 22.2pt against a 38.95pt opening range (57% of it in one 5-min candle) and the session could not produce an entry. `0.25` = never ask for more than a quarter of the range. It is a ceiling, so it can only ever let **more** breakouts through, and an unseeded `ATR(5m)` still fails open |
-| `ORB_BUFFER_OR_MULT` | `0.15` | How far beyond the OR edge a close must be, as a share of the range (the larger of this and `0.30 × ATR(5m)`, floor 1pt). **Leave it alone** — dropping it to `0.10` / `0.05` on the Mar–Apr 2026 sample bought 1–2 extra trades and took PF from 0.93 to 0.64 / 0.59; a smaller buffer just buys fake breakouts |
-| `ORB_BUFFER_ATR_MULT` | `0.3` | The other half of the buffer: the close must clear the edge by the larger of `ORB_BUFFER_OR_MULT × OR` and this × `ATR(5m)`, with `ORB_BUFFER_MIN_PTS` as the floor. Set all three to `0` for a plain "any close past the line" break |
-| `ORB_BUFFER_MIN_PTS` | `1` | Absolute floor on that buffer, in points |
-| `ORB_VWAP_FILTER_ENABLED` | `true` | Require the breakout (and confirmation) close on the correct side of session VWAP. **Measured worthless on this strategy**: on the Mar–Apr 2026 sample it removed 0 of 36 breakouts in three separate tests — a close past the range edge before noon is essentially always on the right side of VWAP. Off skips the VWAP maths entirely |
-| `ORB_CONFIRM_MODE` | `extend` | `extend` = the next candle needs a higher high **and** a higher close beyond the edge. `close` = it only needs to CLOSE beyond the breakout candle's close (the plain continuation rule) |
-| `ORB_SL_SOURCE` | `entry` | Which candle's extreme anchors the initial stop: `entry` (the candle bought on) or `breakout` (the first candle that closed past the edge) |
+| `ORB_BUFFER_OR_MULT` | `0` (off) | How far beyond the OR edge a close must be, as a share of the range (the larger of this and `0.30 × ATR(5m)`, floor 1pt). **Leave it alone** — dropping it to `0.10` / `0.05` on the Mar–Apr 2026 sample bought 1–2 extra trades and took PF from 0.93 to 0.64 / 0.59; a smaller buffer just buys fake breakouts |
+| `ORB_BUFFER_ATR_MULT` | `0` (off) | The other half of the buffer: the close must clear the edge by the larger of `ORB_BUFFER_OR_MULT × OR` and this × `ATR(5m)`, with `ORB_BUFFER_MIN_PTS` as the floor. Set all three to `0` for a plain "any close past the line" break |
+| `ORB_BUFFER_MIN_PTS` | `0` | Absolute floor on that buffer, in points |
+| `ORB_VWAP_FILTER_ENABLED` | `false` | Require the breakout (and confirmation) close on the correct side of session VWAP. **Measured worthless on this strategy**: on the Mar–Apr 2026 sample it removed 0 of 36 breakouts in three separate tests — a close past the range edge before noon is essentially always on the right side of VWAP. Off skips the VWAP maths entirely |
+| `ORB_CONFIRM_MODE` | `close` | `extend` = the next candle needs a higher high **and** a higher close beyond the edge. `close` = it only needs to CLOSE beyond the breakout candle's close (the plain continuation rule) |
+| `ORB_SL_SOURCE` | `breakout` | Which candle's extreme anchors the initial stop: `entry` (the candle bought on) or `breakout` (the first candle that closed past the edge) |
 | `ORB_BREAKOUT_RESCAN` | `true` | Skip a close that clears the OR edge but fails the body/colour/VWAP test and keep hunting for a decisive one. `false` = the first close beyond the edge is final (pre-2026-08-11 behaviour) |
 | `ORB_RETEST_MAX_WAIT` | `6` | Candles to stay armed for a retest/resume after a hesitating confirmation (`0` = confirmed entries only) |
 | `ORB_DEBUG_TRACE` | `false` | Print the full per-candle entry funnel (PASS/FAIL/SKIP per gate + decision) to the logs |
 | **— exits —** | | |
-| `ORB_SL_ATR_MULT` | `1.5` | Initial hard SL = wider of the entry candle's extreme and this × `ATR(5m)`. Owned by the strategy (`sig.slSpot`); paper/live/backtest all consume it |
-| `ORB_BREAKEVEN_PTS` / `ORB_BREAKEVEN_OR_MULT` | `20` / `0.5` | Lift SL to entry once `max(fixed, mult×OR)` pts in profit (`0` mult = fixed only) |
-| `ORB_TRAIL_EMA` | `20` | Exit only when a candle closes back across this EMA of 5-min closes |
+| `ORB_SL_ATR_MULT` | `0` (off) | Initial hard SL = wider of the entry candle's extreme and this × `ATR(5m)`. Owned by the strategy (`sig.slSpot`); paper/live/backtest all consume it |
+| `ORB_BREAKEVEN_PTS` / `ORB_BREAKEVEN_OR_MULT` | `0` / `0` (off) | Lift SL to entry once `max(fixed, mult×OR)` pts in profit (`0` mult = fixed only) |
+| `ORB_TRAIL_EMA` | `9` | Exit only when a candle closes back across this EMA of 5-min closes |
 | `ORB_TRAIL_ARM_PTS` | `0` (at once) | The EMA trail may not exit until the trade is this many points in profit — until then only the hard stop and the ₹ cap are live. ORB enters on the confirmation candle's **close**, by which point price is extended, so the next candle often pulls straight back through an EMA still sitting under the entry; across the 2025 (n=123) and 2026 (n=60) exports that is where the long tail of −₹200…−₹1,200 scratch exits comes from. **A hypothesis, not a finding** — it must clear TRAIN *and* TEST in `scripts/orbSweep.js` before the default moves |
 | `ORB_TRAIL_CONFIRM_CLOSES` | `1` | Closes in a row on the wrong side of the EMA before the trail exits. `1` = the shipped rule; `2` survives one noise candle at the cost of a bar of give-back |
-| `ORB_OPP_CANDLE_EXIT` / `ORB_OPP_CANDLE_BODY_MULT` | `true` / `0.3` | Exit on a strong opposite candle (body ≥ mult×OR, closing back inside the box) |
+| `ORB_OPP_CANDLE_EXIT` / `ORB_OPP_CANDLE_BODY_MULT` | `false` / `0.3` | Exit on a strong opposite candle (body ≥ mult×OR, closing back inside the box) |
 | `ORB_MAX_TRADE_LOSS` | `1500` | Per-trade unrealised-₹ loss cap (`0` = off) |
 | `ORB_PREMIUM_STOP_PCT` | `35` | Exit if option premium collapses ≥ this % from entry (IV-crush/vega backstop) |
 | **— option selection —** | | |
