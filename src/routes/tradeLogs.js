@@ -661,10 +661,56 @@ router.get("/", (req, res) => {
     @media (max-width:640px) {
       html, body { height:auto; }
       body { display:block; height:auto; overflow-x:hidden; }
-      .page { padding:14px; }
+      .page { padding:14px 12px 70px; }
+
       .mode-chip { min-height:44px; padding:8px 14px; } /* thumb-sized hit area on phones */
-      table { font-size:0.66rem; }
-      th, td { padding:6px 8px; }
+
+      /* Data tables → one card per row. At 440px the files table needed 523px
+         and the audit table far more, so the actions sat outside the screen
+         behind the table's own horizontal scroll. Cards need no sideways
+         scroll at all: the <th> text is re-printed per cell from data-label. */
+      table.log-table, table.log-table tbody, table.log-table tr, table.log-table td { display:block; width:100%; }
+      table.log-table { overflow:visible; padding:8px; }
+      table.log-table thead { display:none; }
+      table.log-table tr { margin:0 0 10px; background:#0d1320; border:1px solid #1a2236; border-radius:8px; overflow:hidden; }
+      table.log-table tr:last-child { margin-bottom:0; }
+      table.log-table td { display:flex; align-items:center; justify-content:space-between; gap:12px;
+                           padding:9px 12px; text-align:right; border-bottom:1px solid #121a2a; word-break:break-word; }
+      table.log-table td:last-child { border-bottom:0; }
+      table.log-table td[data-label]::before { content:attr(data-label); flex:0 0 auto; text-align:left;
+                                               font-size:0.6rem; font-weight:600; text-transform:uppercase; letter-spacing:0.5px;
+                                               color:var(--muted-1,#8ba1c2); }
+      table.log-table tr:hover td { background:transparent; } /* hover paint is noise on touch */
+      table.log-table td.cell-actions { justify-content:flex-end; flex-wrap:wrap; background:#0a1018; }
+      table.log-table .actions { flex-wrap:wrap; justify-content:flex-end; gap:6px; }
+      table.log-table .btn { min-height:44px; padding:8px 12px; font-size:0.7rem; }
+      .empty { padding:14px 12px; }
+
+      /* Section header stacks; its button row already wraps. */
+      .mode-head { flex-direction:column; align-items:stretch; gap:8px; }
+      .mode-head > div:last-child { justify-content:flex-start; }
+
+      /* Toolbars / filters: full-width controls beat a squeezed single line. */
+      .files-toolbar { gap:8px; }
+      .files-toolbar .btn-download-all { flex:1 1 100%; justify-content:center; min-height:44px; }
+      .dl-range-lbl { flex:1 1 calc(50% - 4px); }
+      .dl-range-inp { flex:1; min-height:40px; }
+      .filt-bar input[type="text"], .filt-bar select { flex:1 1 100%; min-height:40px; }
+      .tab { padding:9px 10px; font-size:0.7rem; min-height:44px; display:inline-flex; align-items:center; }
+      .page-size-ctrl { padding-bottom:8px; }
+      .pager-btns button { min-height:40px; padding:6px 14px; }
+
+      /* Modal: full-bleed sheet, and let the page behind it do the scrolling
+         instead of a 70vh box inside a 100vh overlay. */
+      .tv-overlay { padding:12px 8px 32px; align-items:flex-start; }
+      .tv-head { padding:12px 14px; }
+      .tv-body { padding:10px 12px 16px; max-height:none; }
+      .tv-close { min-width:44px; min-height:44px; }
+      .embed-frame { height:calc(100vh - 260px); min-height:360px; }
+
+      :root[data-theme="light"] table.log-table tr { background:#fff; border-color:#e0e4ea; }
+      :root[data-theme="light"] table.log-table td { border-bottom-color:#eef2f7; }
+      :root[data-theme="light"] table.log-table td.cell-actions { background:#f8fafc; }
     }
     /* The five tabs need 546px on one line, and .main-content clips instead of
        scrolling below sharedNav's 768px breakpoint — so Login Logs, Server Logs
@@ -672,6 +718,11 @@ router.get("/", (req, res) => {
        at any scroll position. Not cramped: gone. */
     @media (max-width:768px) {
       .tabs { flex-wrap:wrap; }
+      /* Chips: the sideways scroller hid half the strategies behind a swipe
+         nobody finds, and sticky spent viewport height on a phone. Wrap them
+         instead — every strategy is one tap away and the bar scrolls off with
+         the page. */
+      .mode-chips { position:static; flex-wrap:wrap; overflow-x:visible; padding:2px 0 10px; }
       /* .files-toolbar is justify-content:flex-end with no wrap, so once its
          four controls stopped fitting the overflow went off the LEFT edge —
          the From/To date pickers ended up at x=-171, clipped and unreachable. */
@@ -1281,17 +1332,17 @@ ${buildSidebar('tradeLogs', liveActive)}
     var totalTrades = rows.reduce(function(s,r){ return s + (r.trades || 0); }, 0);
     var bodyHtml = rows.length === 0
       ? '<div class="empty">No JSONL files yet for ' + m.label + '.</div>'
-      : '<table><thead><tr><th>IST Date</th><th>Trades</th><th>Size</th><th>Modified (IST)</th><th></th></tr></thead><tbody>' +
+      : '<table class="log-table"><thead><tr><th>IST Date</th><th>Trades</th><th>Size</th><th>Modified (IST)</th><th></th></tr></thead><tbody>' +
         rows.map(function(r){
           var ckBadge = r.checkpoints > 0
             ? '<span class="badge-ck" title="' + r.checkpoints + ' checkpoint marker(s) in this file">🔖 ' + r.checkpoints + '</span>'
             : '';
           return '<tr>' +
-            '<td class="num">' + escHtml(r.date) + ckBadge + '</td>' +
-            '<td class="num">' + r.trades + '</td>' +
-            '<td class="num">' + fmtSize(r.size) + '</td>' +
-            '<td class="num">' + fmtMtime(r.mtimeMs) + '</td>' +
-            '<td><div class="actions">' +
+            '<td class="num" data-label="IST Date">' + escHtml(r.date) + ckBadge + '</td>' +
+            '<td class="num" data-label="Trades">' + r.trades + '</td>' +
+            '<td class="num" data-label="Size">' + fmtSize(r.size) + '</td>' +
+            '<td class="num" data-label="Modified">' + fmtMtime(r.mtimeMs) + '</td>' +
+            '<td class="cell-actions"><div class="actions">' +
               '<button class="btn btn-view"     onclick="viewFile(\\''+m.key+'\\',\\''+r.date+'\\')">👁 View</button>' +
               '<a       class="btn btn-download" href="/trade-logs/download?mode='+m.key+'&date='+encodeURIComponent(r.date)+'">⬇ Download</a>' +
               '<a       class="btn btn-download" href="/trade-logs/download?mode='+m.key+'&date='+encodeURIComponent(r.date)+'&format=ai" title="AI-friendly Markdown report">🤖 AI</a>' +
@@ -1461,19 +1512,19 @@ ${buildSidebar('tradeLogs', liveActive)}
     var totalSkips = rows.reduce(function(s,r){ return s + (r.total || 0); }, 0);
     var bodyHtml = rows.length === 0
       ? '<div class="empty">No skip files yet for ' + m.label + '.</div>'
-      : '<table><thead><tr><th>IST Date</th><th>Skips</th><th>Top Reasons</th><th>Size</th><th>Modified (IST)</th><th></th></tr></thead><tbody>' +
+      : '<table class="log-table"><thead><tr><th>IST Date</th><th>Skips</th><th>Top Reasons</th><th>Size</th><th>Modified (IST)</th><th></th></tr></thead><tbody>' +
         rows.map(function(r){
           var gates = Object.keys(r.byGate || {}).map(function(g){ return [g, r.byGate[g]]; });
           gates.sort(function(a,b){ return b[1] - a[1]; });
           var top = gates.slice(0, 3).map(function(g){ return '<span title="' + escHtml(g[0]) + '" style="display:inline-block;margin-right:6px;font-size:0.62rem;color:#94a3b8;"><span style="color:#fbbf24;">' + g[1] + '</span> ' + escHtml(g[0]) + '</span>'; }).join('');
           if (gates.length > 3) top += '<span style="font-size:0.62rem;color:var(--muted-1,#8ba1c2);">+' + (gates.length - 3) + ' more</span>';
           return '<tr>' +
-            '<td class="num">' + escHtml(r.date) + '</td>' +
-            '<td class="num">' + r.total + '</td>' +
-            '<td>' + (top || '<span style="color:var(--muted-1,#8ba1c2);">—</span>') + '</td>' +
-            '<td class="num">' + fmtSize(r.size) + '</td>' +
-            '<td class="num">' + fmtMtime(r.mtimeMs) + '</td>' +
-            '<td><div class="actions">' +
+            '<td class="num" data-label="IST Date">' + escHtml(r.date) + '</td>' +
+            '<td class="num" data-label="Skips">' + r.total + '</td>' +
+            '<td data-label="Top Reasons">' + (top || '<span style="color:var(--muted-1,#8ba1c2);">—</span>') + '</td>' +
+            '<td class="num" data-label="Size">' + fmtSize(r.size) + '</td>' +
+            '<td class="num" data-label="Modified">' + fmtMtime(r.mtimeMs) + '</td>' +
+            '<td class="cell-actions"><div class="actions">' +
               '<button class="btn btn-view"     onclick="viewSkipFile(\\''+m.key+'\\',\\''+r.date+'\\')">👁 View</button>' +
               '<a       class="btn btn-download" href="/trade-logs/skips/download?mode='+m.key+'&date='+encodeURIComponent(r.date)+'">⬇ Download</a>' +
               '<a       class="btn btn-download" href="/trade-logs/skips/download?mode='+m.key+'&date='+encodeURIComponent(r.date)+'&format=ai" title="AI-friendly Markdown report">🤖 AI</a>' +
@@ -1591,7 +1642,7 @@ ${buildSidebar('tradeLogs', liveActive)}
           if (s.length > 60) return '<span title="' + escHtml(s) + '">' + escHtml(s.slice(0, 60)) + '…</span>';
           return escHtml(s);
         };
-        var html = '<table><thead><tr>' +
+        var html = '<table class="log-table"><thead><tr>' +
           '<th>When (IST)</th><th>Action</th><th>Key</th><th>From</th><th>To</th><th>Source</th><th>Note</th><th></th>' +
           '</tr></thead><tbody>' +
           entries.map(function(e){
@@ -1604,14 +1655,14 @@ ${buildSidebar('tradeLogs', liveActive)}
               note: e.note || '', action: e.action || ''
             }))));
             return '<tr class="audit-row' + (hasNote ? ' has-note' : '') + '">' +
-              '<td class="num" style="white-space:nowrap;">' + escHtml(fmtTs(e.ts)) + '</td>' +
-              '<td><span class="act-' + (e.action || '') + '" style="font-weight:700;text-transform:uppercase;font-size:0.62rem;">' + escHtml(e.action || '') + '</span></td>' +
-              '<td style="font-weight:600;color:#e2e8f0;">' + escHtml(e.key || '') + '</td>' +
-              '<td class="from-val">' + fmtVal(e.from) + '</td>' +
-              '<td class="to-val">'   + fmtVal(e.to)   + '</td>' +
-              '<td style="color:var(--muted-1,#8ba1c2);font-size:0.66rem;">' + escHtml(e.source || '') + '</td>' +
-              '<td>' + (hasNote ? '<span class="audit-note">📝 ' + escHtml(e.note) + '</span>' : '<span style="color:var(--muted-2,#6d85a8);">—</span>') + '</td>' +
-              '<td><button class="btn btn-restore" title="Revert this key to its previous value" onclick="restoreAudit(\\'' + entB64 + '\\')">↩ Restore</button></td>' +
+              '<td class="num" data-label="When" style="white-space:nowrap;">' + escHtml(fmtTs(e.ts)) + '</td>' +
+              '<td data-label="Action"><span class="act-' + (e.action || '') + '" style="font-weight:700;text-transform:uppercase;font-size:0.62rem;">' + escHtml(e.action || '') + '</span></td>' +
+              '<td data-label="Key" style="font-weight:600;color:#e2e8f0;">' + escHtml(e.key || '') + '</td>' +
+              '<td class="from-val" data-label="From">' + fmtVal(e.from) + '</td>' +
+              '<td class="to-val" data-label="To">'   + fmtVal(e.to)   + '</td>' +
+              '<td data-label="Source" style="color:var(--muted-1,#8ba1c2);font-size:0.66rem;">' + escHtml(e.source || '') + '</td>' +
+              '<td data-label="Note">' + (hasNote ? '<span class="audit-note">📝 ' + escHtml(e.note) + '</span>' : '<span style="color:var(--muted-2,#6d85a8);">—</span>') + '</td>' +
+              '<td class="cell-actions"><button class="btn btn-restore" title="Revert this key to its previous value" onclick="restoreAudit(\\'' + entB64 + '\\')">↩ Restore</button></td>' +
             '</tr>';
           }).join('') +
           '</tbody></table>' +

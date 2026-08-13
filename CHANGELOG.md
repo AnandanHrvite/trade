@@ -6,6 +6,12 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — Trade Logs is usable on a phone
+
+On a 440 px screen the Trade Files, Skip Logs and Checkpoints tables were wider than the viewport (the audit table by a lot), so their View / Download / AI / Delete / Restore buttons sat outside the screen behind the table's own sideways scroll — a scroll that is nearly impossible to find with a thumb. Below 640 px each row is now drawn as a card: the column header is reprinted next to every value (from a new `data-label`), and the action buttons sit on their own full-width line with 44 px hit areas. Nothing needs horizontal scrolling any more.
+
+The strategy chip bar also stopped being a sideways scroller below 768 px — it wraps, so every strategy is one tap away — and it is no longer sticky there, which gives the list back the screen height it was eating. Section headers stack, the From/To date pickers share a row, and the trade-view modal is a full-bleed sheet instead of a 70 vh box. Desktop layout is unchanged.
+
 ### Added — server logs are kept for 7 days, with a day picker on the Logs page
 
 Server logs lived only in a 5 000-entry in-memory ring, so every PM2 restart or deploy wiped them and yesterday was never available. Every console entry is now also written to `~/trading-data/server_logs/YYYY-MM-DD.jsonl` — one file per IST day, kept for `SERVER_LOG_RETAIN_DAYS` (default **7** = today + the last 6 days), pruned hourly.
