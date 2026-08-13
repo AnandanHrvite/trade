@@ -527,7 +527,7 @@ Full spec: [BB_RSI.md](BB_RSI.md).
 | **— exits —** | | |
 | `ORB_SL_ATR_MULT` | `0` (off) | Initial hard SL = wider of the entry candle's extreme and this × `ATR(5m)`. Owned by the strategy (`sig.slSpot`); paper/live/backtest all consume it |
 | `ORB_BREAKEVEN_PTS` / `ORB_BREAKEVEN_OR_MULT` | `0` / `0` (off) | Lift SL to entry once `max(fixed, mult×OR)` pts in profit (`0` mult = fixed only) |
-| `ORB_TRAIL_EMA` | `9` | Exit only when a candle closes back across this EMA of 5-min closes |
+| `ORB_TRAIL_EMA` | `20` | Exit only when a candle closes back across this EMA of 5-min closes |
 | `ORB_TRAIL_ARM_PTS` | `0` (at once) | The EMA trail may not exit until the trade is this many points in profit — until then only the hard stop and the ₹ cap are live. ORB enters on the confirmation candle's **close**, by which point price is extended, so the next candle often pulls straight back through an EMA still sitting under the entry; across the 2025 (n=123) and 2026 (n=60) exports that is where the long tail of −₹200…−₹1,200 scratch exits comes from. **A hypothesis, not a finding** — it must clear TRAIN *and* TEST in `scripts/orbSweep.js` before the default moves |
 | `ORB_TRAIL_CONFIRM_CLOSES` | `1` | Closes in a row on the wrong side of the EMA before the trail exits. `1` = the shipped rule; `2` survives one noise candle at the cost of a bar of give-back |
 | `ORB_OPP_CANDLE_EXIT` / `ORB_OPP_CANDLE_BODY_MULT` | `false` / `0.3` | Exit on a strong opposite candle (body ≥ mult×OR, closing back inside the box) |

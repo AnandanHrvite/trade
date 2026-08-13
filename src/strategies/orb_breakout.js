@@ -41,7 +41,7 @@
  *      ORB_SL_ATR_MULT = 0). NOTE: ORB_MAX_TRADE_LOSS still clamps it to 1,500 INR
  *      (~38 spot pts) and does so on most trades — set that to 0 to let the
  *      structural stop actually be the stop.
- *   5. Exit = EMA9 close-trail, ONE close through it (ORB_TRAIL_EMA = 9,
+ *   5. Exit = EMA9 close-trail, ONE close through it (ORB_TRAIL_EMA = 20,
  *      ORB_TRAIL_CONFIRM_CLOSES = 1, ORB_TRAIL_ARM_PTS = 0). No breakeven, no
  *      opposite-candle exit, no premium band.
  *
