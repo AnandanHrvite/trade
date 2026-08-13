@@ -364,6 +364,7 @@
     <tbody>
       <tr><td><code>ORB_RANGE_START</code></td><td><code>09:15</code></td><td>When the box starts (market open).</td></tr>
       <tr><td><code>ORB_RANGE_END</code></td><td><code>09:30</code></td><td>When the box locks. After this, the top and bottom are fixed.</td></tr>
+      <tr><td><code>ORB_ENTRY_START</code></td><td><code>09:30</code></td><td>Earliest we even look at a breakout. Defaults to the moment the opening range locks, so out of the box it changes nothing. Raise it to skip the very first candles after the open &mdash; but measure first: on the Jul&ndash;Aug 2026 sample the early trades lost <em>less</em> than the late ones.</td></tr>
       <tr><td><code>ORB_ENTRY_END</code></td><td><code>11:30</code></td><td>Latest we'll take a new trade. A breakout after this is "too late" &mdash; the day is half over.</td></tr>
       <tr><td><code>ORB_FORCED_EXIT</code></td><td><code>15:15</code></td><td>If we're still holding anything at this time, sell it &mdash; win or lose. We never carry overnight.</td></tr>
       <tr><td><code>ORB_EXPIRY_DAY_ONLY</code></td><td><code>false</code></td><td>If turned on, only trade on weekly-expiry day (Tuesday).</td></tr>
@@ -855,6 +856,7 @@
     <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
     <tbody>
       <tr><td><code>ORB_RANGE_START</code> / <code>ORB_RANGE_END</code></td><td><code>09:15</code> / <code>09:30</code></td><td>When the box starts and locks.</td></tr>
+      <tr><td><code>ORB_ENTRY_START</code></td><td><code>09:30</code></td><td>Earliest a breakout candle is considered (defaults to the opening-range lock).</td></tr>
       <tr><td><code>ORB_ENTRY_END</code></td><td><code>11:30</code></td><td>Latest a new trade may start.</td></tr>
       <tr><td><code>ORB_FORCED_EXIT</code></td><td><code>15:15</code></td><td>Sell everything by this time.</td></tr>
     </tbody>
@@ -916,7 +918,8 @@
   <table>
     <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
     <tbody>
-      <tr><td><code>ORB_MAX_DAILY_TRADES</code></td><td><code>1</code></td><td>Trades allowed per day.</td></tr>
+      <tr><td><code>ORB_MAX_DAILY_TRADES</code></td><td><code>1</code></td><td>Trades allowed per day. <strong>Raising this alone will not give you a second trade</strong> &mdash; the engine sticks with the day's one committed breakout candle and will not enter late. Use <code>ORB_REENTRY_AFTER_SL</code> for a real second attempt.</td></tr>
+      <tr><td><code>ORB_REENTRY_AFTER_SL</code></td><td><code>0</code></td><td>Extra tries allowed after the breakout is <em>stopped out</em>. The hunt restarts past the stop candle, so only a fresh break of the same range edge can re-enter. A trailing-stop or end-of-day exit never re-tries &mdash; that means the move finished, not that the breakout was wrong. Ships off; measure it before leaving it on.</td></tr>
       <tr><td><code>ORB_MAX_DAILY_LOSS</code></td><td><code>3000</code></td><td>Stop new trades once the day's loss hits this (&#8377;).</td></tr>
       <tr><td><code>ORB_RISK_THROTTLE_ENABLED</code></td><td><code>true</code></td><td>Turn on the weekly / losing-streak brakes.</td></tr>
       <tr><td><code>ORB_MAX_WEEKLY_LOSS</code></td><td><code>9000</code></td><td>Sit out the rest of the week after losing this much (&#8377;).</td></tr>
