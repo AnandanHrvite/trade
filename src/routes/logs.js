@@ -3,14 +3,20 @@
  * ────────────────────────────────────────────────────────────
  * GET  /logs           → Full log viewer UI page
  * GET  /logs/stream    → SSE endpoint (live log feed)
- * GET  /logs/export    → Download all logs as .txt
- * GET  /logs/export-json → Download all logs as .json
+ * GET  /logs/dates     → Archived days available on disk (7-day retention)
+ * GET  /logs/day       → Paginated read of one archived day
+ * GET  /logs/export    → Download logs as .txt   (?date= for an archived day)
+ * GET  /logs/export-json → Download logs as .json (?date= for an archived day)
  * POST /logs/clear     → Clear in-memory log store
+ *
+ * Today = the in-memory ring (live tail). Past days are served from the JSONL
+ * archive written by services/logArchive.js.
  */
 
 const express  = require("express");
 const router   = express.Router();
 const { logStore, logEvents } = require("../services/logger");
+const logArchive = require("../services/logArchive");
 const sharedSocketState = require("../utils/sharedSocketState");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
 
@@ -50,23 +56,66 @@ router.get("/data", (req, res) => {
   res.json({ total, from, limit, logs: slice, hasMore });
 });
 
+// ── Archived days on disk ─────────────────────────────────────────────────────
+// Returns today (live, always present) + every retained past day, newest first.
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+// Today is listed too: the in-memory ring only holds the last 5 000 entries
+// since the last restart, while today's file holds the whole day.
+router.get("/dates", (req, res) => {
+  const today = logArchive.istDateString();
+  if (logArchive.ENABLED) logArchive.flush(true);
+  const days  = logArchive.listDates().map(d => ({ ...d, isToday: d.date === today }));
+  res.json({
+    today,
+    retainDays: logArchive.RETAIN_DAYS,
+    enabled:    logArchive.ENABLED,
+    days,
+  });
+});
+
+// ── Paginated read of one archived day (same shape as /logs/data) ─────────────
+router.get("/day", (req, res) => {
+  const date = String(req.query.date || "");
+  if (!DATE_RE.test(date)) return res.status(400).json({ error: "date must be YYYY-MM-DD" });
+
+  // Today's tail is still buffered in memory — flush so the archive is current.
+  if (date === logArchive.istDateString()) logArchive.flush(true);
+
+  const entries = logArchive.readDay(date);
+  const total   = entries.length;
+  const limit   = Math.min(parseInt(req.query.limit || "100", 10), 500);
+  const from    = Math.max(0, parseInt(req.query.from || "0", 10));
+  const logs    = from < total ? entries.slice(from, from + limit) : [];
+
+  res.json({ date, total, from, limit, logs, hasMore: (from + limit) < total });
+});
+
+// Resolve the entry set an export should serve: an archived day, or memory.
+function exportEntries(dateRaw) {
+  const date = String(dateRaw || "");
+  if (!DATE_RE.test(date)) return { entries: logStore, label: new Date().toISOString().slice(0, 10) };
+  if (date === logArchive.istDateString()) logArchive.flush(true);
+  return { entries: logArchive.readDay(date), label: date };
+}
+
 // ── Export as plain text ──────────────────────────────────────────────────────
 router.get("/export", (req, res) => {
-  const lines = logStore
-    .map(e => `[${e.date} ${e.time}] [${e.level.padEnd(5)}] ${e.msg}`)
+  const { entries, label } = exportEntries(req.query.date);
+  const lines = entries
+    .map(e => `[${e.date} ${e.time}] [${String(e.level).padEnd(5)}] ${e.msg}`)
     .join("\n");
-  const filename = `trading-bot-logs-${new Date().toISOString().slice(0, 10)}.txt`;
-  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.setHeader("Content-Disposition", `attachment; filename="trading-bot-logs-${label}.txt"`);
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
   res.send(lines || "No logs yet.");
 });
 
 // ── Export as JSON ────────────────────────────────────────────────────────────
 router.get("/export-json", (req, res) => {
-  const filename = `trading-bot-logs-${new Date().toISOString().slice(0, 10)}.json`;
-  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  const { entries, label } = exportEntries(req.query.date);
+  res.setHeader("Content-Disposition", `attachment; filename="trading-bot-logs-${label}.json"`);
   res.setHeader("Content-Type", "application/json");
-  res.json(logStore);
+  res.json(entries);
 });
 
 // ── Clear log store ───────────────────────────────────────────────────────────
@@ -120,6 +169,13 @@ router.get("/", (req, res) => {
     .fp[data-level="ERROR"] { background:#200708; border-color:#401018; color:#f87171; }
     .fp.off { opacity:0.28; }
 
+    /* Day picker — today (live) + the retained past days */
+    #daySel { background:#0d1320; border:1px solid #1a2236; color:#c8d8f0; padding:3px 8px; border-radius:5px;
+              font-size:0.68rem; font-family:inherit; outline:none; cursor:pointer; max-width:190px; }
+    #daySel:focus { border-color:#3b82f6; }
+    .badge-live.archived { color:#fbbf24; background:#1a1200; border-color:#403000; }
+    .badge-live.archived .dot { background:#fbbf24; animation:none; }
+
     #search { background:#0d1320; border:1px solid #1a2236; color:#c8d8f0; padding:4px 10px; border-radius:5px; font-size:0.72rem; font-family:inherit; outline:none; width:200px; }
     #search:focus { border-color:#3b82f6; }
     #search::placeholder { color:var(--muted-2,#6d85a8); }
@@ -166,6 +222,7 @@ router.get("/", (req, res) => {
       .nav-links a { font-size:0.7rem; padding:5px 8px; }
       .toolbar { padding:6px 10px; }
       #search { width:100%; }
+      #daySel { flex:1; min-width:150px; max-width:none; }
       .tb-right { width:100%; justify-content:flex-start; }
       .log-wrap { overflow-y:auto; height:70vh; min-height:400px; }
       .log-row { padding:2px 8px; }
@@ -194,7 +251,10 @@ ${embed ? '' : buildSidebar('logs', liveActive)}
 
 <div class="toolbar" style="display:flex;align-items:center;gap:8px;padding:8px 16px;background:#040c18;border-bottom:1px solid #0e1e36;flex-shrink:0;flex-wrap:wrap;">
   <div class="tb-left" style="display:flex;align-items:center;gap:8px;flex:1;flex-wrap:wrap;">
-    <span class="badge-live"><span class="dot"></span>LIVE</span>
+    <span class="badge-live" id="liveBadge"><span class="dot"></span>LIVE</span>
+    <select id="daySel" onchange="switchDay(this.value)" title="Pick a day (last 7 days kept on disk)">
+      <option value="">📅 Today (live)</option>
+    </select>
     <span class="counter" id="count">0 entries</span>
     <div class="filters">
       <span class="fp" data-level="ALL"   onclick="setFilter(this)">ALL</span>
@@ -207,9 +267,9 @@ ${embed ? '' : buildSidebar('logs', liveActive)}
   </div>
   <div class="tb-right" style="display:flex;align-items:center;gap:6px;flex-shrink:0;flex-wrap:wrap;">
     <button class="btn btn-scroll on" id="scrollBtn" onclick="toggleScroll()">📌 Auto-scroll</button>
-    <a href="/logs/export"       class="btn btn-export">⬇ TXT</a>
-    <a href="/logs/export-json"  class="btn btn-exportj">⬇ JSON</a>
-    <button class="btn btn-clear" onclick="clearLogs()">🗑 Clear</button>
+    <a href="/logs/export"       class="btn btn-export"  id="expTxt">⬇ TXT</a>
+    <a href="/logs/export-json"  class="btn btn-exportj" id="expJson">⬇ JSON</a>
+    <button class="btn btn-clear" id="clearBtn" onclick="clearLogs()">🗑 Clear</button>
   </div>
 </div>
 
@@ -240,20 +300,103 @@ ${embed ? '' : buildSidebar('logs', liveActive)}
   var firstPoll    = true;
   var loadingOlder = false;
 
+  // Day view: "" = today (in-memory live tail), "YYYY-MM-DD" = archived file
+  var viewDate    = "";
+  var pollStarted = false;
+
   var wrap      = document.getElementById("logWrap");
   var emptyEl   = document.getElementById("emptyState");
   var countEl   = document.getElementById("count");
   var scrollBtn = document.getElementById("scrollBtn");
 
+  // ── Day picker ──────────────────────────────────────────────────────────────
+  function pageUrl(from, limit) {
+    return viewDate
+      ? "/logs/day?date=" + encodeURIComponent(viewDate) + "&from=" + from + "&limit=" + limit
+      : "/logs/data?from=" + from + "&limit=" + limit;
+  }
+
+  function loadDays() {
+    fetch("/logs/dates", { cache: "no-store" })
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(d) {
+        if (!d || !d.days) return;
+        var sel = document.getElementById("daySel");
+        d.days.forEach(function(x) {
+          var o = document.createElement("option");
+          o.value = x.date;
+          var size = Math.max(1, Math.round(x.bytes / 1024)) + " KB";
+          // Today's file also holds what the in-memory view lost on a restart.
+          o.textContent = "📅 " + x.date + (x.isToday ? " (today, full file)" : "") + " · " + size;
+          sel.appendChild(o);
+        });
+      })
+      .catch(function() {});
+  }
+
+  function switchDay(date) {
+    viewDate = date || "";
+    resetView();
+    var badge = document.getElementById("liveBadge");
+    badge.classList.toggle("archived", !!viewDate);
+    badge.lastChild.textContent = viewDate ? "ARCHIVE" : "LIVE";
+    var q = viewDate ? "?date=" + encodeURIComponent(viewDate) : "";
+    document.getElementById("expTxt").href  = "/logs/export" + q;
+    document.getElementById("expJson").href = "/logs/export-json" + q;
+    document.getElementById("clearBtn").style.display = viewDate ? "none" : "";
+    if (viewDate) loadArchive(); else init();
+  }
+
+  function resetView() {
+    wrap.innerHTML   = '<div class="empty-state" id="emptyState"><div class="icon">⏳</div>Loading…</div>';
+    emptyEl          = document.getElementById("emptyState");
+    totalAll         = 0;
+    totalVisible     = 0;
+    oldestFrom       = 0;
+    updateCount();
+    updateOlderBanner(0);
+  }
+
+  // ── Archived day: newest PAGE rows from the file, no polling ────────────────
+  function loadArchive() {
+    var pinned = viewDate;
+    fetch(pageUrl(0, 1), { cache: "no-store" })
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(d) {
+        if (pinned !== viewDate) return;           // user switched again mid-flight
+        var total = (d && d.total) || 0;
+        if (!total) {
+          if (emptyEl) emptyEl.innerHTML = '<div class="icon">📋</div>No logs archived for ' + pinned + '.';
+          return;
+        }
+        var startFrom = Math.max(0, total - PAGE);
+        oldestFrom = startFrom;
+        return fetch(pageUrl(startFrom, PAGE), { cache: "no-store" })
+          .then(function(r) { return r.json(); })
+          .then(function(d2) {
+            if (pinned !== viewDate) return;
+            if (emptyEl) { emptyEl.remove(); emptyEl = null; }
+            d2.logs.forEach(function(e) { addRow(e, false); });
+            updateOlderBanner(startFrom);
+            wrap.scrollTop = wrap.scrollHeight;
+          });
+      })
+      .catch(function() {
+        if (pinned === viewDate && emptyEl) emptyEl.innerHTML = '<div class="icon">⚠️</div>Could not load ' + pinned + '.';
+      });
+  }
+
   // ── Initial load: fetch latest PAGE rows, then poll for new ones every 2s ───
   // Server sends only 100 rows at a time. Older rows loaded on demand via
   // "Load older logs" button. This keeps initial DOM render near-instant.
   function init() {
+    if (viewDate) return;                 // an archived day is on screen
     var total = 0;
     // Step 1: find total count first
     fetch("/logs/data?from=0&limit=1", { cache: "no-store" })
       .then(function(r) { return r.ok ? r.json() : null; })
       .then(function(d) {
+        if (viewDate) return;
         if (!d) { startPoll(0); return; }
         total = d.total || 0;
         // Start from newest PAGE rows
@@ -270,6 +413,7 @@ ${embed ? '' : buildSidebar('logs', liveActive)}
         return fetch("/logs/data?from=" + startFrom + "&limit=" + PAGE, { cache: "no-store" })
           .then(function(r) { return r.json(); })
           .then(function(d2) {
+            if (viewDate) return;
             if (emptyEl) { emptyEl.remove(); emptyEl = null; }
             d2.logs.forEach(function(e) { addRow(e, false); }); // append to bottom
             liveFrom = d2.total;
@@ -280,18 +424,25 @@ ${embed ? '' : buildSidebar('logs', liveActive)}
           });
       })
       .catch(function() {
+        if (viewDate) return;
         if (emptyEl) emptyEl.innerHTML = '<div class="icon">⚠️</div>Cannot reach server — retrying...';
         setTimeout(init, 4000);
       });
   }
 
   // ── Live poll: only fetches NEW rows since liveFrom ─────────────────────────
+  // One poll loop for the page's lifetime — it idles while an archived day is
+  // shown, so switching back to Today resumes the tail without a second loop.
   function startPoll(from) {
     liveFrom = from;
+    if (pollStarted) return;
+    pollStarted = true;
     function poll() {
+      if (viewDate) { setTimeout(poll, 2000); return; }
       fetch("/logs/data?from=" + liveFrom + "&limit=" + PAGE, { cache: "no-store" })
         .then(function(r) { return r.ok ? r.json() : null; })
         .then(function(d) {
+          if (viewDate) { setTimeout(poll, 2000); return; }
           if (d && d.logs && d.logs.length > 0) {
             if (emptyEl) { emptyEl.remove(); emptyEl = null; }
             d.logs.forEach(function(e) { addRow(e, true); }); // true = live (auto-scroll)
@@ -312,7 +463,7 @@ ${embed ? '' : buildSidebar('logs', liveActive)}
     if (btn) { btn.textContent = "⏳ Loading..."; btn.disabled = true; }
 
     var fetchFrom = Math.max(0, oldestFrom - PAGE);
-    fetch("/logs/data?from=" + fetchFrom + "&limit=" + (oldestFrom - fetchFrom), { cache: "no-store" })
+    fetch(pageUrl(fetchFrom, oldestFrom - fetchFrom), { cache: "no-store" })
       .then(function(r) { return r.json(); })
       .then(function(d) {
         var scrollH = wrap.scrollHeight;
@@ -351,6 +502,7 @@ ${embed ? '' : buildSidebar('logs', liveActive)}
     }
   }
 
+  loadDays();
   init();
 
   // ── Build a row DOM element (shared by addRow and loadOlder prepend) ─────────

@@ -15,6 +15,7 @@
  *   trading-data/.fyers_token    trading-data/.zerodha_token — daily OAuth tokens
  *   trading-data/.google_drive.json                          — Drive credentials
  *   trading-data/_backups        — the snapshot store itself (no self-nesting)
+ *   trading-data/server_logs     — console-log archive (self-pruning, diagnostics only)
  *
  * Secrets (.env + certs/) are NOT in a snapshot and never will be — snapshots go
  * to Google Drive, and broker keys / the TLS private key must not be pushed
@@ -57,6 +58,7 @@ const TAR_EXCLUDES = [
   "trading-data/.fyers_token",
   "trading-data/.zerodha_token",
   "trading-data/.google_drive.json",   // Drive client secret + refresh token — never ship it inside a backup
+  "trading-data/server_logs",          // console-log archive: diagnostics, self-pruning, would bloat the Drive push
 ];
 
 function isEnabled() {

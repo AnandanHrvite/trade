@@ -370,6 +370,8 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   backtest_cache/                 # Cached historical candles (90-day auto-prune)
   candle_cache/                   # Live candle cache (60-day trim)
   reports/                        # Daily trade reports
+  server_logs/YYYY-MM-DD.jsonl    # Server (console) logs, one file per IST day — survives PM2 restarts
+                                  # (gated by SERVER_LOG_ARCHIVE_ENABLED; retention SERVER_LOG_RETAIN_DAYS)
 ```
 
 > Boot-time orphan-position reconciliation now covers **all seven** engines — EMA_RSI_ST, BB_RSI, PA, EMA9+VWAP, ORB, Trend Pullback and GAPS each persist an `.active_*_position.json` snapshot via `positionPersist.js` and are reconciled against broker state on restart. On boot the snapshot is only cleared when the broker book is **provably readable**; an empty/unauthenticated book (expired token or a swallowed API error returning `[]`/`{}`) is treated as "cannot verify" — the snapshot is retained and the user warned to re-check, rather than masking a real orphan. Unverified snapshots are only retained when real orders are possible (harness not dry-run, or a native `*_LIVE_ENABLED`); paper-only boots clear stale snapshots silently.
@@ -832,6 +834,9 @@ Blocks directional entries that fight the prevailing Open-Interest buildup: read
 | `OPTION_SOCKET_FRESH_MS` | `4000` | How old a streamed premium may be before the engine falls back to a REST poll for it (clamped 500–60000). Lower = more REST calls, fresher guarantee. |
 | `OPTION_SOCKET_LEASE_MS` | `15000` | A contract is unsubscribed this long after the last engine stops asking for it (clamped 5000–120000). Must stay above the slowest engine's poll interval (3 s) so an ordinary slow poll never drops a live subscription. |
 | `OPTION_SOCKET_RECORD_MS` | `1000` | Minimum gap between recorded samples per streamed contract (clamped 100–10000). Keeps `options.jsonl` at replay-useful density instead of one row per tick. |
+| `SERVER_LOG_ARCHIVE_ENABLED` | `true` | Mirror every console entry to `~/trading-data/server_logs/YYYY-MM-DD.jsonl` (write-behind, 2 s batched — no sync I/O on the tick path). Without it the Server Logs tab only ever shows the last 5 000 lines since the current PM2 process started. |
+| `SERVER_LOG_RETAIN_DAYS` | `7` | Days of server logs kept on disk, today included (7 → today + the last 6 days). The Logs page's day picker lists exactly these files; older files are deleted hourly. |
+| `SERVER_LOG_MAX_MB` | `200` | Per-day size cap for a server-log file. Once hit, that day stops archiving (the live in-memory view is unaffected) — a runaway log loop can't fill the disk. |
 | `SETTINGS_AUDIT_MAX_ENTRIES` | `500` | Keep only the newest this-many rows of `settings-audit.jsonl` (the Trade Logs → Checkpoints & Settings Changes tab), whatever their age; extra rows are pruned on every save. Replaces the old day-based `SETTINGS_AUDIT_RETAIN_DAYS` |
 | `BACKUP_ENABLED` | `true` | Cut a daily self-contained `.tar.gz` snapshot of `~/trading-data` + `data/ticks` (caches & OAuth tokens excluded) into `~/trading-data/_backups/`. Download it from Settings → Backup & Restore; a banner nags on every page until the day's copy is downloaded (or pushed to Google Drive — an off-site copy counts as safe and clears the nag). Pure observer — zero impact on trading. |
 | `BACKUP_HOUR_IST` | `16` | Hour of day (IST) the daily snapshot is cut (after market close). Timer armed at boot — restart to re-arm a changed hour. |

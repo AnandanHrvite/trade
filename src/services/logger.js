@@ -9,6 +9,10 @@
  */
 
 const EventEmitter = require("events");
+// Write-behind disk archive (one JSONL per IST day, 7-day retention). Required
+// here — not from app.js — so it captures every entry from the first console
+// call. logArchive never calls console.*, so there is no recursion.
+const logArchive = require("./logArchive");
 
 const MAX_LOGS  = 5000; // rolling buffer — prevents unbounded memory growth on long sessions
 const logStore  = [];
@@ -74,6 +78,8 @@ function capture(level, args) {
   // Trim in batches of 500 to amortize the O(n) splice cost (instead of every single overflow)
   if (logStore.length > MAX_LOGS + 500) logStore.splice(0, logStore.length - MAX_LOGS);
 
+  try { logArchive.append(entry); } catch (_) { /* archive must never break logging */ }
+
   logEvents.emit("log", entry);
   return entry;
 }
@@ -86,4 +92,4 @@ function capture(level, args) {
   };
 });
 
-module.exports = { logStore, logEvents };
+module.exports = { logStore, logEvents, logArchive };

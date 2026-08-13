@@ -6,6 +6,14 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Added — server logs are kept for 7 days, with a day picker on the Logs page
+
+Server logs lived only in a 5 000-entry in-memory ring, so every PM2 restart or deploy wiped them and yesterday was never available. Every console entry is now also written to `~/trading-data/server_logs/YYYY-MM-DD.jsonl` — one file per IST day, kept for `SERVER_LOG_RETAIN_DAYS` (default **7** = today + the last 6 days), pruned hourly.
+
+The Logs page (and the **Server Logs** tab inside Trade Logs) gained a day dropdown: **Today (live)** keeps the live tail exactly as before, and picking any listed date loads that day's file — same paging, filters, search and TXT/JSON export, which now take a `?date=` (`GET /logs/dates`, `GET /logs/day`). Today's own file is listed too, so after a restart you can still read the part of today the memory view lost.
+
+Writes are batched (2 s / 500 entries) and appended asynchronously, so `console.log` on the tick path never does sync I/O; a per-day `SERVER_LOG_MAX_MB` cap (200 MB) stops a runaway log loop from filling the disk, and the whole archive can be turned off with `SERVER_LOG_ARCHIVE_ENABLED=false`. No trading behaviour changed.
+
 ### Changed — Trade Logs shows one strategy at a time instead of nine stacked tables
 
 The **Trade Files** and **Skip Logs** tabs rendered every enabled strategy's file table on the same page, one under the other. With nine strategies live, reaching the last one meant scrolling past eight full tables, and every page load fired nine list requests.
