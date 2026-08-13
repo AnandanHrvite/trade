@@ -277,8 +277,10 @@ function clearAllCache() {
     const files = fs.readdirSync(CACHE_DIR).filter(f => f.endsWith(".json"));
     let removed = 0;
     for (const f of files) {
+      // Per-file, so one undeletable entry does not discard the count of the
+      // files that were removed — the caller reports that number to the user.
       try { fs.unlinkSync(path.join(CACHE_DIR, f)); removed += 1; }
-      catch (e) { if (e.code !== "ENOENT") throw e; }
+      catch (_) { /* already gone or locked — either way the cache self-heals */ }
     }
     return removed;
   } catch (_) {
