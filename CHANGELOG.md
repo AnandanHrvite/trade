@@ -6,6 +6,12 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Changed — Trade Logs shows one strategy at a time instead of nine stacked tables
+
+The **Trade Files** and **Skip Logs** tabs rendered every enabled strategy's file table on the same page, one under the other. With nine strategies live, reaching the last one meant scrolling past eight full tables, and every page load fired nine list requests.
+
+Both tabs now carry a sticky **strategy chip bar** — one chip per strategy with its file count, plus an **All** chip that restores the old stacked view. Only the selected strategy's table is fetched and drawn, so the page is one table deep and the chips stay in reach while you scroll. The pick is per-tab and remembered across reloads. The chip counts and the tab badges come from a new `GET /trade-logs/counts` (directory listings only — no JSONL parsing), so every strategy's size is still visible without loading it.
+
 ### Changed — settings-change history is now capped by row count, not by age
 
 The **Trade Logs → Checkpoints & Settings Changes** tab kept only the last 3 days (`SETTINGS_AUDIT_RETAIN_DAYS`), so anything you changed earlier in the month was deleted from `settings-audit.jsonl` and could never be looked up again. Retention is now the newest **500 rows** regardless of age (`SETTINGS_AUDIT_MAX_ENTRIES=500`), which bounds the file the same way without throwing away history you still want. Rows already pruned by the old day-based rule are gone and cannot be recovered.

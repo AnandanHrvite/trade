@@ -1015,10 +1015,6 @@ ${buildSidebar('tradeLogs', liveActive)}
   var _auditPage  = 1;
   var _view = { mode:null, date:null, kind:null, page:1, total:0, pageSize:25 }; // modal state
 
-  // Section totals cached so the badge survives prev/next clicks without refetching all modes.
-  var _filesTotals = { ema_rsi_st:0, bb_rsi:0, pa:0, orb:0, ema9vwap:0, trend_pb:0, gaps:0, trend_day_scalp:0, gap_fix_3m:0 };
-  var _skipsTotals = { ema_rsi_st:0, bb_rsi:0, pa:0, orb:0, ema9vwap:0, trend_pb:0, gaps:0, trend_day_scalp:0, gap_fix_3m:0 };
-
   // ── Strategy focus ────────────────────────────────────────────────────
   // The Files/Skips tabs used to stack every enabled strategy's table on one
   // page (9 sections × N rows = an endless scroll). We now show ONE strategy at
@@ -1243,12 +1239,12 @@ ${buildSidebar('tradeLogs', liveActive)}
           document.getElementById('filesSection-' + modeKey).innerHTML = '<div class="empty">Failed to load.</div>';
           return;
         }
-        _filesTotals[modeKey] = d.total || 0;
         _filesPage[modeKey] = d.page || 1;
         var m = MODE_LIST.find(function(x){ return x.key === modeKey; });
         document.getElementById('filesSection-' + modeKey).innerHTML = renderFileSectionHTML(m, d);
         // Keep the chip count for this mode honest after a delete/refresh.
-        if (_counts.files[modeKey] !== d.total) { _counts.files[modeKey] = d.total; renderChips('files'); }
+        var nFiles = d.total || 0;
+        if (_counts.files[modeKey] !== nFiles) { _counts.files[modeKey] = nFiles; renderChips('files'); }
         var fb = document.getElementById('filesBadge');
         if (fb) fb.textContent = sumCounts('files');
       })
@@ -1424,11 +1420,11 @@ ${buildSidebar('tradeLogs', liveActive)}
           document.getElementById('skipsSection-' + modeKey).innerHTML = '<div class="empty">Failed to load.</div>';
           return;
         }
-        _skipsTotals[modeKey] = d.total || 0;
         _skipsPage[modeKey] = d.page || 1;
         var m = MODE_LIST.find(function(x){ return x.key === modeKey; });
         document.getElementById('skipsSection-' + modeKey).innerHTML = renderSkipSectionHTML(m, d);
-        if (_counts.skips[modeKey] !== d.total) { _counts.skips[modeKey] = d.total; renderChips('skips'); }
+        var nSkips = d.total || 0;
+        if (_counts.skips[modeKey] !== nSkips) { _counts.skips[modeKey] = nSkips; renderChips('skips'); }
         var sb = document.getElementById('skipsBadge');
         if (sb) sb.textContent = sumCounts('skips');
       })
