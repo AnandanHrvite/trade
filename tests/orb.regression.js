@@ -297,6 +297,22 @@ const ENTRIES  = ALL_SIGS.filter(x => x.sig.signal !== "NONE");
     } finally { if (prev === undefined) delete process.env.ORB_ENTRY_START; else process.env.ORB_ENTRY_START = prev; }
   });
 
+  check("a garbage ORB_ENTRY_START degrades to the shipped rule, not to a dead session", () => {
+    // A non-time value must not leave entryStart = NaN, which would make every window
+    // comparison false and silently stop ORB trading for the whole day.
+    const prev = process.env.ORB_ENTRY_START;
+    process.env.ORB_ENTRY_START = "not-a-time";
+    try {
+      let entries = 0;
+      for (const { bar } of ALL_SIGS) {
+        const gi = IDX.get(bar.time);
+        const sig = S.getSignal(CANDLES.slice(Math.max(0, gi - 199), gi + 1), { silent: true, alreadyTraded: false });
+        if (sig.signal !== "NONE") entries++;
+      }
+      assert.strictEqual(entries, ENTRIES.length, "a garbage entry-start changed the number of entries");
+    } finally { if (prev === undefined) delete process.env.ORB_ENTRY_START; else process.env.ORB_ENTRY_START = prev; }
+  });
+
   check("the opening range is FROZEN — same ORH/ORL all day, never repainted", () => {
     for (const d of DAYS) {
       const dayBars = CANDLES.filter(x => DAY(x.time) === d && MIN(x.time) >= 570);

@@ -688,7 +688,11 @@ function getSignal(candles, opts) {
 
   // A start earlier than the OR freeze is meaningless — the range does not exist
   // yet — so the freeze is a hard floor rather than a misconfiguration to honour.
-  if (cfg.entryStart < cfg.orEnd) cfg.entryStart = cfg.orEnd;
+  // NaN-safe for the same reason orbExits.trailArmPts() is: a hand-edited .env with
+  // a non-time value would otherwise leave entryStart = NaN, every `lastIst >= NaN`
+  // comparison false, and ORB silently refusing to trade for the whole session with
+  // nothing in the log to explain it. A bad value degrades to the shipped rule.
+  if (!Number.isFinite(cfg.entryStart) || cfg.entryStart < cfg.orEnd) cfg.entryStart = cfg.orEnd;
 
   const last    = candles[candles.length - 1];
   const lastIdx = candles.length - 1;
