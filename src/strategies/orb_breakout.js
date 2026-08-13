@@ -174,7 +174,10 @@
  *           reconcile it with the per-trade rupee budget before placing it.
  */
 
-const { ATR } = require("technicalindicators");
+const { ATR, RSI } = require("technicalindicators");
+// Repo convention: SuperTrend is not in `technicalindicators`, so every strategy
+// that needs it uses this one shared implementation rather than a private copy.
+const { computeSuperTrend } = require("../utils/supertrend");
 
 const NAME        = "ORB_15MIN";
 const DESCRIPTION = "Opening Range Breakout — 15-min OR, next-candle confirmation, slightly-ITM CE/PE buying";
@@ -343,6 +346,60 @@ function _computeGap(candles, day) {
 }
 
 // `on=false` disables the VWAP side test entirely (ORB_VWAP_FILTER_ENABLED).
+/**
+ * RSI(14) momentum gate on the ENTRY candle (2026-08-13, owner request).
+ *
+ * CE needs RSI >= ORB_RSI_CE_MIN, PE needs RSI <= ORB_RSI_PE_MAX. Defaults 51 / 49,
+ * i.e. "momentum is at least leaning the way we are buying" rather than a
+ * traditional overbought/oversold band.
+ *
+ * Read on the candle being bought, not the breakout candle: that is the bar whose
+ * close becomes the entry, so it is the only one whose momentum is knowable at the
+ * moment the order goes in. Computed on the same multi-day close series the EMA
+ * trail uses, so it is seeded before the open.
+ *
+ * `ORB_RSI_ENABLED=false` turns it off. Fails OPEN when the series is too short to
+ * seed RSI — a missing indicator is not evidence against the trade, and every other
+ * warm-up path in this engine behaves the same way.
+ */
+function _rsiGate(candles, side, cfg) {
+  if (!cfg.rsiOn) return { ok: true, rsi: null, note: "disabled" };
+  const closes = candles.map(c => c && c.close).filter(v => typeof v === "number");
+  if (closes.length < cfg.rsiPeriod + 1) return { ok: true, rsi: null, note: "not seeded — fail-open" };
+  const arr = RSI.calculate({ period: cfg.rsiPeriod, values: closes });
+  const rsi = arr && arr.length ? _r2(arr[arr.length - 1]) : null;
+  if (rsi == null) return { ok: true, rsi: null, note: "not seeded — fail-open" };
+  const ok = side === "CE" ? rsi >= cfg.rsiCeMin : rsi <= cfg.rsiPeMax;
+  return {
+    ok, rsi,
+    note: side === "CE" ? `RSI ${rsi} vs min ${cfg.rsiCeMin}` : `RSI ${rsi} vs max ${cfg.rsiPeMax}`,
+  };
+}
+
+/**
+ * SuperTrend(10, 3) direction gate on the ENTRY candle (2026-08-13, owner request).
+ *
+ * CE needs the line BELOW price (trend = +1), PE needs it ABOVE (trend = -1) — i.e.
+ * the trade may not be taken against the prevailing SuperTrend. Same reasoning as
+ * the RSI gate: read on the bar being bought, on the multi-day series, and fails
+ * OPEN during warm-up rather than blocking on a missing indicator.
+ */
+function _superTrendGate(candles, side, cfg) {
+  if (!cfg.stOn) return { ok: true, trend: null, value: null, note: "disabled" };
+  const st = computeSuperTrend(candles, cfg.stPeriod, cfg.stMult);
+  const lastSt = st && st.length ? st[st.length - 1] : null;
+  if (!lastSt || lastSt.trend == null) {
+    return { ok: true, trend: null, value: null, note: "not seeded — fail-open" };
+  }
+  const want = side === "CE" ? 1 : -1;
+  return {
+    ok: lastSt.trend === want,
+    trend: lastSt.trend,
+    value: lastSt.value != null ? _r2(lastSt.value) : null,
+    note: `SuperTrend(${cfg.stPeriod},${cfg.stMult}) is ${lastSt.trend === 1 ? "bullish" : "bearish"}, ${side} needs ${side === "CE" ? "bullish" : "bearish"}`,
+  };
+}
+
 function _vwapSideOk(c, side, vwap, on) {
   if (on === false) return true;
   if (vwap == null) return true;
@@ -497,7 +554,7 @@ function _blank() {
     orh: null, orl: null, rangePts: null,
     entrySpot: null, slSpot: null, targetSpot: null, signalStrength: null,
     vwap: null, atr5: null, atr15: null, gapPts: null, bodyPct: null,
-    confirmed: null, gates: null,
+    confirmed: null, gates: null, rsi: null, superTrend: null, superTrendDir: null,
     // Retained as nulls purely so historical trade records keep a stable shape.
     vwapAligned: null, volRatio: null, volPass: null, wickRatio: null, wickPass: null,
   };
@@ -543,6 +600,13 @@ function getSignal(candles, opts) {
     confirmMode:  (process.env.ORB_CONFIRM_MODE || "close").toLowerCase(),
     slSource:     (process.env.ORB_SL_SOURCE    || "breakout").toLowerCase(),
     vwapOn:       _vwapFilterOn(),
+    rsiOn:        (process.env.ORB_RSI_ENABLED || "true").toLowerCase() === "true",
+    rsiPeriod:    Math.max(2, parseInt(process.env.ORB_RSI_PERIOD || "14", 10)),
+    rsiCeMin:     parseFloat(process.env.ORB_RSI_CE_MIN || "51"),
+    rsiPeMax:     parseFloat(process.env.ORB_RSI_PE_MAX || "49"),
+    stOn:         (process.env.ORB_ST_ENABLED || "true").toLowerCase() === "true",
+    stPeriod:     Math.max(2, parseInt(process.env.ORB_ST_PERIOD || "10", 10)),
+    stMult:       parseFloat(process.env.ORB_ST_MULT || "3"),
     slAtrMult:    parseFloat(process.env.ORB_SL_ATR_MULT     || "0"),
     retestWindow: parseInt  (process.env.ORB_RETEST_MAX_WAIT || "6", 10),
   };
@@ -754,6 +818,25 @@ function getSignal(candles, opts) {
 
   // ── 8. Entry construction. The strategy OWNS the stop — routes execute it. ──
   const _fire = (why, tag) => {
+    // Momentum gate. Inside _fire on purpose: confirmation, resume and retest all
+    // funnel through here, so the rule cannot be bypassed by one of the three paths.
+    const rsiChk = _rsiGate(candles, side, cfg);
+    sig.rsi = rsiChk.rsi;
+    if (!tr.check("RSI", rsiChk.ok, rsiChk.note)) {
+      return done(Object.assign(sig, {
+        reason: `RSI gate blocked ${side}: ${rsiChk.note}`,
+      }));
+    }
+
+    const stChk = _superTrendGate(candles, side, cfg);
+    sig.superTrend = stChk.value;
+    sig.superTrendDir = stChk.trend;
+    if (!tr.check("SuperTrend", stChk.ok, stChk.note)) {
+      return done(Object.assign(sig, {
+        reason: `SuperTrend gate blocked ${side}: ${stChk.note}`,
+      }));
+    }
+
     const entrySpot = last.close;
     // Wider of the structural extreme and the ATR floor. See the header note.
     //

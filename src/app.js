@@ -3844,7 +3844,8 @@ server.listen(PORT, HOST, () => {
   // rule that IS live (ORB_TRAIL_ENABLED does not gate the EMA trail;
   // ORB_ATR_PERIOD is a hard-coded constant in orb_breakout.js — note
   // ORB_BUFFER_OR_MULT, ORB_BUFFER_ATR_MULT and ORB_VWAP_FILTER_ENABLED all became
-  // LIVE on 2026-08-13 and are therefore NOT in this list; ORB_TARGET_RANGE_MULT became the exported TARGET_OR_MULT).
+  // LIVE on 2026-08-13 — as did ORB_RSI_ENABLED / ORB_RSI_PERIOD / ORB_RSI_CE_MIN /
+  // ORB_RSI_PE_MAX — and are therefore NOT in this list; ORB_TARGET_RANGE_MULT became the exported TARGET_OR_MULT).
   // README's ORB section carries a one-key-per-line bulk-delete block.
   try {
     const RETIRED_ORB_KEYS = [
@@ -3854,7 +3855,7 @@ server.listen(PORT, HOST, () => {
       "ORB_MAX_GAP_PTS", "ORB_MAX_RANGE_PTS", "ORB_MAX_WICK_RATIO", "ORB_MIN_BODY", "ORB_MIN_RANGE_PTS",
       "ORB_OR_ATR_MIN", "ORB_PAPER_CAPITAL", "ORB_PREMIUM_LOCKIN_FLOOR_PCT", "ORB_PREMIUM_LOCKIN_PCT",
       "ORB_PRIORDAY_LEVEL_FILTER", "ORB_RETEST_ENABLED", "ORB_RETEST_MODE", "ORB_RETEST_TOL_MIN",
-      "ORB_RETEST_TOL_PCT", "ORB_RSI_CE_MIN", "ORB_RSI_PERIOD", "ORB_RSI_PE_MAX", "ORB_SL_CANDLES",
+      "ORB_RETEST_TOL_PCT", "ORB_SL_CANDLES",
       "ORB_STOP_PCT", "ORB_STRONG_BODY", "ORB_SWEET_MAX", "ORB_SWEET_MIN", "ORB_TARGET_PCT",
       "ORB_TARGET_RANGE_MULT", "ORB_TRAIL_ARM_PCT", "ORB_TRAIL_ENABLED", "ORB_TRAIL_LOCK_PCT",
       "ORB_TREND_EMA_FAST", "ORB_TREND_EMA_SLOW", "ORB_VOL_FILTER_ENABLED", "ORB_VOL_LOOKBACK",

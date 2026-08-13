@@ -6,6 +6,14 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Added — RSI and SuperTrend entry gates for ORB
+
+Two momentum checks now sit on the ORB entry, each with its own toggle and its own Settings fields. **RSI(14)**: a CE needs RSI at or above `ORB_RSI_CE_MIN` (51), a PE at or below `ORB_RSI_PE_MAX` (49). **SuperTrend(10, 3)**: a CE is only taken while SuperTrend is bullish (line below price) and a PE only while it is bearish. Both are read on the **entry candle** — the only bar whose momentum is known at the moment the order goes in — and both fail open during warm-up, so a missing indicator never blocks a trade. They are enforced inside the single entry-construction path, so the confirmation, trend-resume and retest routes all obey them.
+
+Turn either off with `ORB_RSI_ENABLED=false` / `ORB_ST_ENABLED=false`; period, multiplier and both thresholds are editable in Settings. Every trade record now carries the RSI and SuperTrend values that admitted it.
+
+`ORB_RSI_PERIOD`, `ORB_RSI_CE_MIN` and `ORB_RSI_PE_MAX` were on the retired-key list the README tells you to bulk-delete from `.env`; all three are live again and were removed from that list (41 dead ORB keys now, not 44).
+
 ### Added — Clear Cache button on every backtest page
 
 Every backtest page — the `/all-backtest` dashboard and each per-strategy page (ORB, GAPS, Trend_PB, TDS, 3M Gap Fix, BB_RSI, EMA_RSI_ST, EMA9+VWAP, PA and PA-pattern) — now shows a **🧹 Clear Cache** button next to its Run button. It deletes the cached historical candles in `~/trading-data/backtest_cache` and `candle_cache`, so the next run pulls fresh data from Fyers instead of replaying whatever was on disk. Trades, settings and tick recordings are untouched — the caches self-heal, the only cost is a slower next run.

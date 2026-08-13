@@ -521,6 +521,12 @@ Full spec: [BB_RSI.md](BB_RSI.md).
 | `ORB_VWAP_FILTER_ENABLED` | `false` | Require the breakout (and confirmation) close on the correct side of session VWAP. **Measured worthless on this strategy**: on the Mar–Apr 2026 sample it removed 0 of 36 breakouts in three separate tests — a close past the range edge before noon is essentially always on the right side of VWAP. Off skips the VWAP maths entirely |
 | `ORB_CONFIRM_MODE` | `close` | `extend` = the next candle needs a higher high **and** a higher close beyond the edge. `close` = it only needs to CLOSE beyond the breakout candle's close (the plain continuation rule) |
 | `ORB_SL_SOURCE` | `breakout` | Which candle's extreme anchors the initial stop: `entry` (the candle bought on) or `breakout` (the first candle that closed past the edge) |
+| `ORB_RSI_ENABLED` | `true` | RSI momentum gate on the **entry** candle: CE needs RSI ≥ `ORB_RSI_CE_MIN`, PE needs RSI ≤ `ORB_RSI_PE_MAX`. Read on the bar being bought (the only one whose momentum is knowable when the order goes in), on the same multi-day close series the EMA trail uses. Fails **open** when RSI is not yet seeded |
+| `ORB_RSI_PERIOD` | `14` | RSI lookback |
+| `ORB_RSI_CE_MIN` | `51` | CE entries need RSI at or above this |
+| `ORB_RSI_PE_MAX` | `49` | PE entries need RSI at or below this |
+| `ORB_ST_ENABLED` | `true` | SuperTrend direction gate on the **entry** candle: CE only when SuperTrend is bullish (line below price), PE only when bearish. Uses the shared `utils/supertrend.js`. Fails **open** during warm-up |
+| `ORB_ST_PERIOD` / `ORB_ST_MULT` | `10` / `3` | SuperTrend ATR period and multiplier |
 | `ORB_BREAKOUT_RESCAN` | `true` | Skip a close that clears the OR edge but fails the body/colour/VWAP test and keep hunting for a decisive one. `false` = the first close beyond the edge is final (pre-2026-08-11 behaviour) |
 | `ORB_RETEST_MAX_WAIT` | `6` | Candles to stay armed for a retest/resume after a hesitating confirmation (`0` = confirmed entries only) |
 | `ORB_DEBUG_TRACE` | `false` | Print the full per-candle entry funnel (PASS/FAIL/SKIP per gate + decision) to the logs |
@@ -552,7 +558,7 @@ Full spec: [BB_RSI.md](BB_RSI.md).
 | `ORB_BT_SEED_PREMIUM` / `ORB_BT_SLIPPAGE_PTS` | `240` / `1.5` | Backtest only (both in Settings): entry-premium proxy for the δ+θ sim, and the per-side spread/slippage haircut |
 | `ORB_SIG_WINDOW` | `260` | Backtest only, **code-only** (no Settings field, same as `TREND_PB_SIG_WINDOW`): trailing 5-min bars fed to `getSignal` + the EMA trail so ATR(5m)/ATR(15m)/EMA20 are seeded. Harness plumbing sized to the indicators, not a tuning dial |
 
-> **Retired ORB keys — safe to delete from `.env` (2026-08-04).** The 2026-07-26 rebuild collapsed ORB to one engine and deleted the V1/V2/V3 filters outright (RSI, ADX, EMA20/50, wick %, volume, close-position, sweet-spot, prior-day levels, fixed point ranges, the old retest gate and the old %-based stop/target/trail). Their env keys were never cleaned up, so a deployed `.env` can still carry **44 ORB keys that no code reads**. They are inert — but they are also captured by `tickRecorder.snapshotSettings()` (`/^ORB_/`), so every replay recording and every daily-JSONL settings block advertises filters that do not exist, and anyone reading `.env` reasonably concludes ORB still has an RSI gate. **The app warns about them at boot** (`⚠️ Dead ORB keys : N pre-rebuild ORB_* key(s) …`, an exact-key list in `app.js` — a prefix rule can't be used here because the live keys share the `ORB_` prefix). To clear them, paste this into **Settings → 📋 BULK EDIT** (a leading `-` deletes a key), on the EC2 box as well as locally:
+> **Retired ORB keys — safe to delete from `.env` (2026-08-04).** The 2026-07-26 rebuild collapsed ORB to one engine and deleted the V1/V2/V3 filters outright (RSI, ADX, EMA20/50, wick %, volume, close-position, sweet-spot, prior-day levels, fixed point ranges, the old retest gate and the old %-based stop/target/trail). Their env keys were never cleaned up, so a deployed `.env` can still carry **41 ORB keys that no code reads**. They are inert — but they are also captured by `tickRecorder.snapshotSettings()` (`/^ORB_/`), so every replay recording and every daily-JSONL settings block advertises filters that do not exist, and anyone reading `.env` reasonably concludes ORB still has an RSI gate. **The app warns about them at boot** (`⚠️ Dead ORB keys : N pre-rebuild ORB_* key(s) …`, an exact-key list in `app.js` — a prefix rule can't be used here because the live keys share the `ORB_` prefix). To clear them, paste this into **Settings → 📋 BULK EDIT** (a leading `-` deletes a key), on the EC2 box as well as locally:
 >
 > **One key per line** — the bulk parser reads `-KEY` line-by-line, so several on one line collapse into a single junk key:
 >
@@ -581,9 +587,6 @@ Full spec: [BB_RSI.md](BB_RSI.md).
 > -ORB_RETEST_MODE
 > -ORB_RETEST_TOL_MIN
 > -ORB_RETEST_TOL_PCT
-> -ORB_RSI_CE_MIN
-> -ORB_RSI_PERIOD
-> -ORB_RSI_PE_MAX
 > -ORB_SL_CANDLES
 > -ORB_STOP_PCT
 > -ORB_STRONG_BODY
@@ -603,7 +606,7 @@ Full spec: [BB_RSI.md](BB_RSI.md).
 > -ORB_WICK_PCT_MAX
 > ```
 >
-> Note the traps in that list: `ORB_TRAIL_ENABLED=true` reads as if it gates `ORB_TRAIL_EMA` (it does not — the EMA trail is unconditional); `ORB_ATR_PERIOD` reads as if it sets the ATR lookback (that is the hard-coded `ATR_PERIOD = 14` in `orb_breakout.js`); `ORB_BUFFER_OR_MULT`, `ORB_BUFFER_ATR_MULT` and `ORB_VWAP_FILTER_ENABLED` all became **live** keys on 2026-08-13 and must NOT be deleted; and `ORB_TARGET_RANGE_MULT` used to move the target line on **manual entries only**, which is why it became the exported `TARGET_OR_MULT` constant instead. Deleting all 44 changes no behaviour — verify with `node scripts/orbValidate.js` before and after if you want the proof.
+> Note the traps in that list: `ORB_TRAIL_ENABLED=true` reads as if it gates `ORB_TRAIL_EMA` (it does not — the EMA trail is unconditional); `ORB_ATR_PERIOD` reads as if it sets the ATR lookback (that is the hard-coded `ATR_PERIOD = 14` in `orb_breakout.js`); `ORB_BUFFER_OR_MULT`, `ORB_BUFFER_ATR_MULT` and `ORB_VWAP_FILTER_ENABLED` all became **live** keys on 2026-08-13 and must NOT be deleted; and `ORB_TARGET_RANGE_MULT` used to move the target line on **manual entries only**, which is why it became the exported `TARGET_OR_MULT` constant instead. Deleting all 41 changes no behaviour — verify with `node scripts/orbValidate.js` before and after if you want the proof.
 
 ### EMA9 + VWAP Mode (EMA9 vs VWAP ±σ band, Zerodha)
 | Key | Default | Notes |
