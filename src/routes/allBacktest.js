@@ -70,11 +70,14 @@ router.post("/clear-cache", (_req, res) => {
     });
   }
   try {
-    const before  = backtestCache.getCacheStats();
-    const backtest = backtestCache.clearAllCache();
-    const candle   = candleCache.clearAllCache();
-    console.log(`[all-backtest] 🧹 cache cleared → backtest_cache:${backtest} candle_cache:${candle} (~${before.sizeMB} MB)`);
-    res.json({ success: true, backtest, candle, total: backtest + candle, freedMB: before.sizeMB });
+    // Size is read before the wipe and covers backtest_cache only — candleCache
+    // exposes no directory-level stats. Logged, not reported, so the UI never
+    // claims a total it did not measure.
+    const backtestMB = backtestCache.getCacheStats().sizeMB;
+    const backtest   = backtestCache.clearAllCache();
+    const candle     = candleCache.clearAllCache();
+    console.log(`[all-backtest] 🧹 cache cleared → backtest_cache:${backtest} file(s) (~${backtestMB} MB) candle_cache:${candle} file(s)`);
+    res.json({ success: true, backtest, candle, total: backtest + candle });
   } catch (err) {
     console.log(`[all-backtest] ❌ cache clear failed: ${err.message}`);
     res.status(500).json({ success: false, error: err.message });
