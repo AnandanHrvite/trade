@@ -672,6 +672,8 @@ const OPEN_PATHS = [
   "/logs",              // log viewer — read-only
   "/logs/stream",       // SSE stream — read-only
   "/logs/data",         // polling endpoint — read-only
+  "/logs/dates",        // archived days on disk — read-only
+  "/logs/day",          // one archived day, paginated — read-only
   "/logs/export",       // export txt
   "/logs/export-json",  // export json
   "/ema_rsi_st-live/status",          // read-only status page

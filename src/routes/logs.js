@@ -60,6 +60,12 @@ router.get("/data", (req, res) => {
 // Returns today (live, always present) + every retained past day, newest first.
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+function clampNum(raw, def, min, max) {
+  const n = parseInt(raw, 10);
+  if (!Number.isFinite(n)) return def;
+  return Math.min(max, Math.max(min, n));
+}
+
 // Today is listed too: the in-memory ring only holds the last 5 000 entries
 // since the last restart, while today's file holds the whole day.
 router.get("/dates", (req, res) => {
@@ -84,8 +90,10 @@ router.get("/day", (req, res) => {
 
   const entries = logArchive.readDay(date);
   const total   = entries.length;
-  const limit   = Math.min(parseInt(req.query.limit || "100", 10), 500);
-  const from    = Math.max(0, parseInt(req.query.from || "0", 10));
+  // Non-numeric query params must fall back to the defaults, not NaN — NaN
+  // bounds make slice() return an empty page and the viewer look empty.
+  const limit   = clampNum(req.query.limit, 100, 1, 500);
+  const from    = Math.max(0, clampNum(req.query.from, 0, 0, Number.MAX_SAFE_INTEGER));
   const logs    = from < total ? entries.slice(from, from + limit) : [];
 
   res.json({ date, total, from, limit, logs, hasMore: (from + limit) < total });
