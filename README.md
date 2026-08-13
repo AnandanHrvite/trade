@@ -557,6 +557,7 @@ Full spec: [BB_RSI.md](BB_RSI.md).
 | `ORB_VIX_MAX_ENTRY` / `ORB_VIX_STRONG_ONLY` | `22` / `18` | Per-mode VIX thresholds |
 | `ORB_OI_ENABLED` | `false` | Apply the OI-buildup filter to ORB entries (needs the master OI switch on). **Note:** many deployed `.env` files set this to `true` — check Settings for the running value |
 | **— backtest sim —** | | |
+| `INSTRUMENT=NIFTY_FUTURES` | *(global key)* | Switches the ORB **backtest** to futures P&L — index points × lot, futures charges, no δ/θ, premium disaster stop skipped (it has no meaning without a premium). Exists to separate "the breakout has no edge" from "buying premium eats the edge": the option sim costs ~₹420 a round trip on trades averaging −₹300. Option mode is the default and unchanged |
 | `ORB_BT_SEED_PREMIUM` / `ORB_BT_SLIPPAGE_PTS` | `240` / `1.5` | Backtest only (both in Settings): entry-premium proxy for the δ+θ sim, and the per-side spread/slippage haircut |
 | `ORB_SIG_WINDOW` | `260` | Backtest only, **code-only** (no Settings field, same as `TREND_PB_SIG_WINDOW`): trailing 5-min bars fed to `getSignal` + the EMA trail so ATR(5m)/ATR(15m)/EMA20 are seeded. Harness plumbing sized to the indicators, not a tuning dial |
 
