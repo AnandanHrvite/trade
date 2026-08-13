@@ -6,6 +6,10 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Changed — settings-change history is now capped by row count, not by age
+
+The **Trade Logs → Checkpoints & Settings Changes** tab kept only the last 3 days (`SETTINGS_AUDIT_RETAIN_DAYS`), so anything you changed earlier in the month was deleted from `settings-audit.jsonl` and could never be looked up again. Retention is now the newest **500 rows** regardless of age (`SETTINGS_AUDIT_MAX_ENTRIES=500`), which bounds the file the same way without throwing away history you still want. Rows already pruned by the old day-based rule are gone and cannot be recovered.
+
 ### Fixed — the mobile menu drawer could not be scrolled to its end, hiding Settings
 
 The sidebar was sized `height:100vh`. On a phone browser `100vh` is measured with the URL bar hidden, so the drawer was roughly 100px taller than the screen actually shows — scrolling it all the way down still left its last rows (SYSTEM → **Settings**, plus the status/action block) under the browser chrome, with no way to reach them. It now uses `100dvh` (the dynamic viewport), with `100vh` kept as the fallback for older browsers, so the drawer ends exactly where the visible screen ends.

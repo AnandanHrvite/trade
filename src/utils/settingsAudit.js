@@ -20,31 +20,35 @@ const os   = require("os");
 const AUDIT_DIR  = path.join(os.homedir(), "trading-data");
 const AUDIT_FILE = path.join(AUDIT_DIR, "settings-audit.jsonl");
 
-// Retention: only the last few days of settings changes are kept; older entries
-// are pruned from the file (on every append) and never returned by readAuditLog.
-const RETENTION_DAYS = Number(process.env.SETTINGS_AUDIT_RETAIN_DAYS || 3);
+// Retention: keep the newest N entries regardless of age. Age-based retention
+// used to drop everything older than a few days, which wiped the history a user
+// still wanted; a row cap bounds the file without depending on how long ago a
+// change happened. Pruning runs on every append.
+const DEFAULT_MAX_ENTRIES = 500;
+function maxEntries() {
+  const n = Number(process.env.SETTINGS_AUDIT_MAX_ENTRIES);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_MAX_ENTRIES;
+}
 
 try { fs.mkdirSync(AUDIT_DIR, { recursive: true }); } catch (_) {}
 
-function retentionCutoff() {
-  return new Date(Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
-}
-
-// Rewrite the audit file dropping any entry older than the retention cutoff.
+// Rewrite the audit file keeping only the newest `maxEntries()` lines.
 function pruneOldEntries() {
+  const cap = maxEntries();
   let raw = "";
   try { raw = fs.readFileSync(AUDIT_FILE, "utf-8"); }
   catch (err) { if (err.code !== "ENOENT") console.warn("[settingsAudit] prune read failed:", err.message); return; }
 
-  const cutoff = retentionCutoff();
   const kept = [];
   let dropped = 0;
   for (const line of raw.split("\n")) {
     if (!line.trim()) continue;
-    let obj;
-    try { obj = JSON.parse(line); } catch (_) { continue; } // drop malformed
-    if (obj.ts && obj.ts < cutoff) { dropped++; continue; }
+    try { JSON.parse(line); } catch (_) { dropped++; continue; } // drop malformed
     kept.push(line);
+  }
+  if (kept.length > cap) {
+    dropped += kept.length - cap;
+    kept.splice(0, kept.length - cap); // file is append-order, so oldest are first
   }
   if (dropped === 0) return;
   try {
@@ -105,10 +109,9 @@ function readAuditLog(opts = {}) {
     if (!line.trim()) continue;
     try { all.push(JSON.parse(line)); } catch (_) { /* skip malformed */ }
   }
-  // Never surface entries older than the retention window, even if the file
-  // still holds them (e.g. before the next append triggers a prune).
-  const cutoff = retentionCutoff();
-  let filtered = all.filter(e => !e.ts || e.ts >= cutoff);
+  // Cap at the same row limit the file is pruned to, so a file that has grown
+  // past the cap between prunes still reads back the newest N.
+  let filtered = all.slice(-maxEntries());
   if (since)  filtered = filtered.filter(e => e.ts >= since);
   if (key)    filtered = filtered.filter(e => e.key === key || e.key.includes(key));
   if (action) filtered = filtered.filter(e => e.action === action);
