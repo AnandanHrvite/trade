@@ -1087,10 +1087,13 @@ ${buildSidebar('tradeLogs', liveActive)}
   // bar's rendered bottom rather than adding up its height + --banner-h: only the
   // mobile stylesheet offsets the top bar by the banner, and a banner can appear
   // after load, so any computed guess drifts and hides the chips behind the bar.
+  var _chipsTop = -1;
   function syncChipsOffset() {
     var tb = document.querySelector('.top-bar');
     if (!tb) return;
     var bottom = Math.max(0, tb.getBoundingClientRect().bottom);
+    if (bottom === _chipsTop) return; // no-op writes would churn the observers below
+    _chipsTop = bottom;
     document.documentElement.style.setProperty('--chips-top', bottom + 'px');
   }
   window.addEventListener('resize', syncChipsOffset);
@@ -1103,6 +1106,15 @@ ${buildSidebar('tradeLogs', liveActive)}
     ['.top-bar', '#socket-broken-banner', '#telegram-broken-banner', '#backup-nag-banner']
       .forEach(function(sel){ var el = document.querySelector(sel); if (el) _ro.observe(el); });
   }
+  // A banner opening on mobile shifts the top bar via body padding, which is a
+  // move rather than a resize — and sharedNav publishes --banner-h from its own
+  // observer, so ours can fire first and measure the old position. Re-measuring
+  // once per frame while scrolling makes that self-correct either way.
+  var _chipsRaf = 0;
+  window.addEventListener('scroll', function(){
+    if (_chipsRaf) return;
+    _chipsRaf = requestAnimationFrame(function(){ _chipsRaf = 0; syncChipsOffset(); });
+  }, { passive: true });
 
   function selectMode(kind, key) {
     if (_sel[kind] === key) return;
