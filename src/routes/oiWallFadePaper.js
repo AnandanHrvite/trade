@@ -252,7 +252,11 @@ function rehydrateSessionFromJsonl() {
     state._staleSession = stale;
     state.sessionTrades = trades;
     state.tradesTaken   = trades.length;
-    state.stopOuts = trades.filter(t => /Stop hit|wall (broke|taken out)/i.test(String(t.exitReason || ""))).length;
+    // Must match the exit reason _checkExits actually writes — "CE wall 24800
+    // broke — stop 24825 hit (…)". A pattern that misses it silently rearms the
+    // OIWF_MAX_DAILY_LOSSES breaker after a restart, so a day that had already
+    // spent its stop-outs would be allowed to take them again.
+    state.stopOuts = trades.filter(t => /wall \S+ broke|stop \S+ hit/i.test(String(t.exitReason || ""))).length;
     state.sessionPnl = parseFloat(trades.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0).toFixed(2));
     if (!state.sessionStart) state.sessionStart = trades[0].entryTime || trades[0].loggedAt || null;
     console.log(`♻️ [OIWF-PAPER] Restart recovery — loaded ${trades.length} trade(s) from ${source} (PnL ₹${state.sessionPnl}, ${state.stopOuts} stop-out(s))`);
@@ -827,7 +831,18 @@ async function evaluateEntry() {
     // actually at a wall, which is where the OI reading starts to matter.
     if (!sig.warmup && sig.pressed) {
       skipLogger.appendSkipLog(MODE_KEY, {
-        gate: sig.breakAway ? "wall_shedding" : (sig.defend === false ? "wall_not_defended" : (sig.rejected === false ? "no_rejection" : "band")),
+        // The two OI refusals must be distinguishable from a price refusal in
+        // the log, because they are the whole point of collecting it: an
+        // UNKNOWN Δ (no samples yet / strike out of the polled band) and a
+        // STALE Δ are both "we would not read the wall", not "the wall said no".
+        // Both leave defend and breakAway null, so neither can be inferred from
+        // those flags alone.
+        gate: sig.wallDeltaPct == null ? "oi_unknown"
+            : sig.breakAway            ? "wall_shedding"
+            : sig.defend === false     ? "wall_not_defended"
+            : sig.defend == null       ? "oi_stale"
+            : sig.rejected === false   ? "no_rejection"
+            : "band",
         reason: sig.skipReason || sig.reason,
         spot: state.lastTickPrice,
         wallStrike: sig.wallStrike, wallSide: sig.wallSide, wallOi: sig.wallOi,
