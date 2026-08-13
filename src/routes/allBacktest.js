@@ -7,14 +7,18 @@
  * manager is 1-at-a-time), then reads the saved summaries.
  *
  * Routes:
- *   GET /all-backtest              → dashboard page (renders last saved stats)
- *   GET /all-backtest/stats?key=…  → JSON summary for one strategy
+ *   GET  /all-backtest              → dashboard page (renders last saved stats)
+ *   GET  /all-backtest/stats?key=…  → JSON summary for one strategy
+ *   POST /all-backtest/clear-cache  → wipe the two candle disk caches (protected)
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
 const express = require("express");
 const router  = express.Router();
 const { loadResult } = require("../utils/resultStore");
+const backtestCache = require("../utils/backtestCache");
+const candleCache   = require("../utils/candleCache");
+const backtestJobs  = require("../utils/backtestJobManager");
 const { buildSidebar, sidebarCSS, modalCSS, modalJS } = require("../utils/sharedNav");
 const { ACTIVE } = require("../strategies");
 const bbRsiStrategy = require("../strategies/bb_rsi");
@@ -51,6 +55,30 @@ router.get("/stats", (req, res) => {
     params:  r.params  || null,
     savedAt: r.savedAt || null,
   });
+});
+
+// ── POST /clear-cache — wipe both historical-candle disk caches ──────────────
+// Write op: deliberately NOT in app.js OPEN_PATHS, so it needs API_SECRET.
+// Nothing is lost — the caches self-heal; the next run just re-downloads from
+// Fyers. Refused while a backtest is running, because that job is reading the
+// very files we would delete.
+router.post("/clear-cache", (_req, res) => {
+  if (!backtestJobs.isIdle()) {
+    return res.status(409).json({
+      success: false,
+      error: "A backtest is running. Wait for it to finish before clearing the cache.",
+    });
+  }
+  try {
+    const before  = backtestCache.getCacheStats();
+    const backtest = backtestCache.clearAllCache();
+    const candle   = candleCache.clearAllCache();
+    console.log(`[all-backtest] 🧹 cache cleared → backtest_cache:${backtest} candle_cache:${candle} (~${before.sizeMB} MB)`);
+    res.json({ success: true, backtest, candle, total: backtest + candle, freedMB: before.sizeMB });
+  } catch (err) {
+    console.log(`[all-backtest] ❌ cache clear failed: ${err.message}`);
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // ── Formatting helpers (mirror the individual backtest pages) ────────────────
@@ -223,6 +251,9 @@ router.get("/", (req, res) => {
   .run-btn{background:#1a3a8a;color:#90c0ff;border:1px solid #2a5ac0;padding:6px 14px;border-radius:5px;font-size:0.7rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;white-space:nowrap;}
   .run-btn:hover{background:#2563eb;color:#fff;}
   .run-btn:disabled{opacity:.5;cursor:not-allowed;}
+  .clear-btn{background:#2a1a10;color:#fbbf24;border:1px solid #7c4a03;padding:6px 14px;border-radius:5px;font-size:0.7rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;white-space:nowrap;}
+  .clear-btn:hover{background:#78350f;color:#fff;}
+  .clear-btn:disabled{opacity:.5;cursor:not-allowed;}
   .preset-btn{font-size:0.65rem;padding:3px 10px;border-radius:4px;background:rgba(59,130,246,0.08);color:#60a5fa;border:0.5px solid rgba(59,130,246,0.2);cursor:pointer;font-family:"IBM Plex Mono",monospace;transition:all 0.15s;}
   .preset-btn:hover{background:rgba(59,130,246,0.18);}
 
@@ -269,6 +300,8 @@ router.get("/", (req, res) => {
   :root[data-theme="light"] .crumb > span[style*="color:#1e2a40"]{color:#5c6b7f !important;}
   :root[data-theme="light"] .run-btn{background:#2563eb !important;color:#ffffff !important;border-color:#2563eb !important;}
   :root[data-theme="light"] .run-btn:hover{background:#1d4ed8 !important;color:#ffffff !important;}
+  :root[data-theme="light"] .clear-btn{background:#fffbeb !important;color:#b45309 !important;border-color:#fcd34d !important;}
+  :root[data-theme="light"] .clear-btn:hover{background:#fef3c7 !important;color:#78350f !important;}
   :root[data-theme="light"] .btn-run{background:#eff6ff !important;border-color:#bfdbfe !important;color:#1d4ed8 !important;}
   :root[data-theme="light"] .btn-run:hover{background:#dbeafe !important;border-color:#3b82f6 !important;}
   :root[data-theme="light"] .empty-state{background:#f8fafc !important;border-color:#cbd5e1 !important;color:#5c6b7f !important;}
@@ -302,6 +335,7 @@ ${buildSidebar('allBacktest', liveActive)}
 <div style="font-size:0.62rem;color:var(--muted-2,#6d85a8);font-family:'IBM Plex Mono',monospace;align-self:center;">Candles: 5-min for all strategies</div>
     <button class="run-btn" id="runAllBtn">\u25b6\u25b6 Run All</button>
     <button class="run-btn" id="cancelBtn" style="background:#3a1a1a;color:#f87171;border-color:#7f1d1d;display:none;">\u2715 Cancel</button>
+    <button class="clear-btn" id="clearCacheBtn" title="Delete cached historical candles \u2014 next run re-downloads from Fyers">\ud83e\uddf9 Clear Cache</button>
     <span id="runAllStatus" style="font-size:0.68rem;color:var(--muted-1,#8ba1c2);margin-left:auto;"></span>
   </div>
 
@@ -583,6 +617,50 @@ document.getElementById('runAllBtn').addEventListener('click', function(){
 document.getElementById('cancelBtn').addEventListener('click', function(){
   RUN_STATE.cancel = true;
   document.getElementById('runAllStatus').textContent = 'Cancelling\u2026 (current run finishes in background)';
+});
+
+// ── Clear Cache ──────────────────────────────────────────────────────────────
+// Wipes the cached historical candles so the next run pulls fresh data from
+// Fyers. Safe but slow-making, so it is confirmed once and blocked mid-run.
+document.getElementById('clearCacheBtn').addEventListener('click', async function(){
+  var btn = this;
+  if(RUN_STATE.active){
+    await showAlert({ icon:'\\u23f3', title:'Backtest running',
+      message:'Wait for the running backtest to finish, then clear the cache.',
+      btnClass:'modal-btn-primary' });
+    return;
+  }
+  var ok = await showConfirm({
+    icon:'\\ud83e\\uddf9',
+    title:'Clear backtest cache?',
+    message:'Deletes the cached historical candles (backtest_cache + candle_cache).\\nNo trades or settings are touched \\u2014 the next run just re-downloads from Fyers, which takes longer.',
+    confirmText:'Clear cache',
+    confirmClass:'modal-btn-danger'
+  });
+  if(!ok) return;
+
+  var label = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Clearing\\u2026';
+  try {
+    var r = await secretFetch('/all-backtest/clear-cache', { method:'POST' });
+    if(!r) return;                                   // secret prompt cancelled
+    var d = null;
+    try { d = await r.json(); } catch(_){}
+    if(r.ok && d && d.success){
+      await showAlert({ icon:'\\u2705', title:'Cache cleared',
+        message:'Removed ' + d.total + ' file(s) \\u2014 ' + d.backtest + ' backtest, ' + d.candle + ' candle.\\nThe next run re-downloads candles from Fyers.',
+        btnClass:'modal-btn-success' });
+    } else {
+      await showAlert({ icon:'\\u26a0\\ufe0f', title:'Clear failed',
+        message:(d && d.error) || ('HTTP ' + r.status),
+        btnClass:'modal-btn-danger' });
+    }
+  } catch(e) {
+    await showAlert({ icon:'\\u26a0\\ufe0f', title:'Network error',
+      message:(e && e.message) || 'Request failed', btnClass:'modal-btn-danger' });
+  } finally {
+    btn.disabled = false; btn.textContent = label;
+  }
 });
 
 // ── Individual panel Run buttons ─────────────────────────────────────────────

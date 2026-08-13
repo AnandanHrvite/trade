@@ -6,6 +6,12 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Added — Clear Cache button on the Backtest page
+
+The Backtest dashboard (`/all-backtest`) now has a **🧹 Clear Cache** button next to Run All. It deletes the cached historical candles in `~/trading-data/backtest_cache` and `candle_cache`, so the next run pulls fresh data from Fyers instead of replaying whatever was on disk. Trades, settings and tick recordings are untouched — the caches self-heal, the only cost is a slower next run.
+
+It asks for confirmation, needs `API_SECRET` (it is a write operation, deliberately outside the open-path list), and returns `409` while a backtest is running rather than deleting files that job is mid-read.
+
 ### Changed — ORB now ships the simplified ruleset
 
 The gate stack is gone from the defaults rather than merely switchable. Out of the box ORB is: mark the 09:15–09:30 range; **any** 5-min candle that CLOSES past the edge is the breakout (no buffer, no ATR body test, no VWAP test, no day-sanity gates); the **next** candle only has to CLOSE beyond that candle's close; entry is that close; the initial stop is the **breakout candle's low/high**; and the trade is trailed on **EMA9**, exiting on one close through it. No breakeven, no opposite-candle exit, no premium band.

@@ -266,4 +266,24 @@ function clearCache(symbol, resolution) {
   return false;
 }
 
-module.exports = { fetchCandlesCached, getCacheInfo, clearCache, CACHE_DIR };
+/**
+ * Force-clear every cached series (all symbols / resolutions).
+ * Mirrors backtestCache.clearAllCache() — returns how many files were removed.
+ * Safe at any time: the cache self-heals, the next fetch just re-downloads.
+ */
+function clearAllCache() {
+  try {
+    ensureCacheDir();
+    const files = fs.readdirSync(CACHE_DIR).filter(f => f.endsWith(".json"));
+    let removed = 0;
+    for (const f of files) {
+      try { fs.unlinkSync(path.join(CACHE_DIR, f)); removed += 1; }
+      catch (e) { if (e.code !== "ENOENT") throw e; }
+    }
+    return removed;
+  } catch (_) {
+    return 0;
+  }
+}
+
+module.exports = { fetchCandlesCached, getCacheInfo, clearCache, clearAllCache, CACHE_DIR };
