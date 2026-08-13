@@ -6,6 +6,18 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Added — two ORB exit dials aimed at the trail, where the losses actually are
+
+The 2025 (123 trades, 23% win, −₹52,388) and 2026 (60 trades, 20% win, −₹33,042) backtests say the same thing: at ORB's average win-to-loss ratio it needs roughly a **40% win rate to break even** and it makes 20%. Gross profit is three trades — 11 Mar +₹7,311, 29 Apr +₹3,998, 8 Jan +₹3,472, about three-quarters of everything won in 2026 — while the losses are a long tail of −₹200 to −₹1,200 **EMA-trail** exits, each of which also pays ~₹420 in spread and theta. ORB enters on the confirmation candle's *close*, by which point price is already extended, so the very next candle often pulls straight back through a 20-EMA still sitting under the entry.
+
+**`ORB_TRAIL_ARM_PTS`** (default `0` = unchanged) stops the trail from exiting until the trade is that many points in profit; the hard stop and the ₹1,500 cap still apply throughout. **`ORB_TRAIL_CONFIRM_CLOSES`** (default `1` = unchanged) requires N closes in a row on the wrong side of the EMA before exiting, so a single noise candle no longer ends the trade.
+
+Both ship **off**, because both are hypotheses. `scripts/orbSweep.js` gained the variants to judge them (`trail arms at +15/+25/+40pt`, `trail needs 2 closes`, and combinations with EMA34), and it forces a TRAIN/TEST split — no default moves until one wins on data it has never seen:
+
+```
+node scripts/orbSweep.js --from 2024-01-01 --to 2026-08-13 --split 2026-01-01
+```
+
 ### Added — ORB can stop demanding a breakout candle bigger than the whole opening range
 
 ORB's decisiveness filter asks the breakout candle for a body of `0.6 × ATR(5m)`, but that ATR is frozen from the **previous** days while the opening range is today's. When a violent session is followed by a quiet open the two disagree badly: on **6 Aug 2026** it wanted a **22.2pt** body against a **38.95pt** opening range — 57% of the entire range in one 5-min candle — so the day could not produce an entry no matter what price did. On the Mar–Apr 2026 sample the same constant only asked ~17% of the range. The filter never changed; the regime did.

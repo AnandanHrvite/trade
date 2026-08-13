@@ -60,6 +60,20 @@ const VARIANTS = [
   { name: "trail EMA34",             env: { ORB_TRAIL_EMA: "34" } },
   { name: "max trade loss 2500",     env: { ORB_MAX_TRADE_LOSS: "2500" } },
   { name: "no opposite-candle exit", env: { ORB_OPP_CANDLE_EXIT: "false" } },
+  // ── Exits, 2026-08-13. On the 2025 (n=123) and 2026 (n=60) exports the trail is
+  //    where the bleed lives: a long tail of −₹200…−₹1,200 EMA exits, each also
+  //    paying ~₹420 of spread + theta, against 3 outsized winners that carry the
+  //    whole gross profit. ORB needs a ~40% win rate to break even at its avg
+  //    win/loss and gets 20%, so the question is whether the trail is cutting
+  //    trades that would have become winners, or correctly killing dead ones.
+  //    These separate the two. TEST decides — see the header.
+  { name: "trail arms at +15pt",     env: { ORB_TRAIL_ARM_PTS: "15" } },
+  { name: "trail arms at +25pt",     env: { ORB_TRAIL_ARM_PTS: "25" } },
+  { name: "trail arms at +40pt",     env: { ORB_TRAIL_ARM_PTS: "40" } },
+  { name: "trail needs 2 closes",    env: { ORB_TRAIL_CONFIRM_CLOSES: "2" } },
+  { name: "arm +25pt + 2 closes",    env: { ORB_TRAIL_ARM_PTS: "25", ORB_TRAIL_CONFIRM_CLOSES: "2" } },
+  { name: "arm +25pt + EMA34",       env: { ORB_TRAIL_ARM_PTS: "25", ORB_TRAIL_EMA: "34" } },
+  { name: "arm +25 + 2cl + EMA34",   env: { ORB_TRAIL_ARM_PTS: "25", ORB_TRAIL_CONFIRM_CLOSES: "2", ORB_TRAIL_EMA: "34" } },
   // The combination worth knowing about, if the parts hold on TEST.
   { name: "OR cap 70 + EMA34",       env: { ORB_OR_MAX_PTS: "70", ORB_TRAIL_EMA: "34" } },
 ];

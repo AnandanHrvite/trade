@@ -66,6 +66,29 @@ function trailEmaPeriod()    { return Math.max(2, parseInt(process.env.ORB_TRAIL
 function oppositeExitOn()    { return _envOn("ORB_OPP_CANDLE_EXIT", "true"); }
 
 /**
+ * How far in profit the trade must be before the EMA trail is allowed to ARM.
+ * `0` (default) = arm on the first close on the correct side, i.e. today's rule.
+ *
+ * WHY IT EXISTS (2026-08-13). ORB enters on the confirmation candle's close, by
+ * which point price is already extended, so the very next candle often pulls back
+ * through a 20-EMA that is still sitting right under the entry. Across 2025+2026
+ * the EMA trail is where most of the small bleeds land — a long tail of −₹200 to
+ * −₹1,200 scratches, each of which also pays ~₹420 in spread + theta. Delaying the
+ * arm leaves only the hard stop / rupee cap in charge until the trade has actually
+ * gone somewhere. This is a HYPOTHESIS, not a finding: it must clear TRAIN *and*
+ * TEST in scripts/orbSweep.js before the default moves off 0.
+ */
+function trailArmPts()       { return _envNum("ORB_TRAIL_ARM_PTS", "0"); }
+
+/**
+ * Consecutive closes on the wrong side of the EMA needed to exit. `1` (default) is
+ * today's rule — the first close through the trail ends the trade. `2` rides out a
+ * single noise candle at the cost of giving back one more bar when the move is
+ * genuinely over.
+ */
+function trailConfirmCloses(){ return Math.max(1, parseInt(process.env.ORB_TRAIL_CONFIRM_CLOSES || "1", 10)); }
+
+/**
  * Adaptive breakeven trigger: max(fixed pts, ORB_BREAKEVEN_OR_MULT × OR width), so
  * a wide-range day gets more room before the stop tightens to entry.
  */
@@ -212,12 +235,24 @@ function evaluateCloseExits(pos, bar, candles) {
   const ema = computeEma(candles, emaPeriod);
   if (ema != null) {
     pos.lastEma = _r2(ema);
-    if (pos.side === "CE") {
-      if (close >= ema) pos.emaArmed = true;
-      else if (pos.emaArmed) return { exit: true, reason: `Closed below EMA${emaPeriod} (${close} < ${pos.lastEma})`, breakevenArmed: armedNow, favPts, bePts };
-    } else {
-      if (close <= ema) pos.emaArmed = true;
-      else if (pos.emaArmed) return { exit: true, reason: `Closed above EMA${emaPeriod} (${close} > ${pos.lastEma})`, breakevenArmed: armedNow, favPts, bePts };
+    const onSide = pos.side === "CE" ? close >= ema : close <= ema;
+    if (onSide) {
+      // Arm only once the trade is far enough in profit. At the default 0pt this is
+      // "arm on the first close on the right side", exactly as before.
+      const armPts = trailArmPts();
+      if (armPts <= 0 || favPts >= armPts) pos.emaArmed = true;
+      pos.emaBreaks = 0;
+    } else if (pos.emaArmed) {
+      // `emaBreaks` is intentionally not part of the crash-recovery snapshot: after a
+      // restart it resets to 0, so a reloaded position needs a fresh run of closes
+      // through the trail. That errs towards holding, never towards a phantom exit.
+      pos.emaBreaks = (pos.emaBreaks || 0) + 1;
+      const need = trailConfirmCloses();
+      if (pos.emaBreaks >= need) {
+        const side = pos.side === "CE" ? "below" : "above";
+        const runs = need > 1 ? ` ${pos.emaBreaks} closes running` : "";
+        return { exit: true, reason: `Closed ${side} EMA${emaPeriod}${runs} (${close} ${pos.side === "CE" ? "<" : ">"} ${pos.lastEma})`, breakevenArmed: armedNow, favPts, bePts };
+      }
     }
   }
 
