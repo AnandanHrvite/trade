@@ -6,6 +6,14 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Added — the ORB backtest can price its trades as futures instead of options
+
+Set `INSTRUMENT=NIFTY_FUTURES` and `/orb-backtest` runs the identical signal and exit logic but books P&L in index points × lot size with futures charges — no delta, no theta, no option bid-ask. The page says so in its notes line.
+
+This exists to answer one question the option simulation cannot: across 821 backtested trades the option wrapper costs roughly ₹420 per round trip while the average trade is about −₹300, so it was impossible to tell whether the breakout logic is worthless or merely buried under the cost of buying premium. Every ORB exit rule is spot-based (hard stop, EMA trail, opposite candle, EOD) except the premium disaster stop, which has no meaning without a premium and is skipped in this mode — so the two runs compare trade-for-trade.
+
+Option mode is unchanged and remains the default.
+
 ### Added — Cancel button on every backtest progress page
 
 A long backtest could only be escaped by closing the tab, which left the job running and the single backtest slot occupied. The shared progress page ([backtestJobManager.js](src/utils/backtestJobManager.js) builds it for all ten backtests) now has a **Cancel Backtest** button. It calls the one new endpoint `POST /backtest/cancel?jobId=…`, which marks the job cancelled and releases the queue slot right away, so a queued tab starts instead of waiting. The page then shows a "Cancelled" card with *Run again* / *Backtest dashboard*, and drops `?jobId=` from the URL so a refresh starts fresh.

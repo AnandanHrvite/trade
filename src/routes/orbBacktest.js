@@ -116,6 +116,17 @@ function runOrbBacktest(allCandles, expirySet, vixCandles = []) {
   // Breakeven / EMA-trail / opposite-candle thresholds are NOT read here any more —
   // they belong to the shared exit engine (src/strategies/orbExits.js), which reads
   // them fresh per call so a Settings change takes effect without a restart.
+  // FUTURES MODE (2026-08-13). The option simulation below charges every trade a
+  // 0.55 delta, theta decay and a premium-wide bid-ask. Across 821 backtested trades
+  // that friction is ~₹420 per round trip on a strategy whose average trade is
+  // −₹300, so "is the breakout itself worthless, or is it the option wrapper?" was
+  // unanswerable. INSTRUMENT=NIFTY_FUTURES prices the SAME trades in spot points:
+  // no delta, no theta, futures charges, slippage in index points.
+  //
+  // Every exit rule in ORB is spot-based (hard SL, EMA trail, opposite candle, EOD)
+  // EXCEPT the premium disaster stop, which has no meaning without a premium and is
+  // therefore skipped here. So the two runs are directly comparable trade-for-trade.
+  const IS_FUT = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
   const MAX_TRADE_LOSS = parseFloat(process.env.ORB_MAX_TRADE_LOSS || "0");
   const PREM_STOP_PCT  = parseFloat(process.env.ORB_PREMIUM_STOP_PCT || "35");     // premium disaster backstop
   const PREM_GATE_ON = (process.env.ORB_PREMIUM_GATE_ENABLED || "false").toLowerCase() === "true";
@@ -239,7 +250,7 @@ function runOrbBacktest(allCandles, expirySet, vixCandles = []) {
         //    cap exists to enforce (observed: a −₹2,052 fill on a ₹1,500 cap, 37%
         //    over). Gap-through stays honest: if the bar OPENED past the level, fill
         //    at the open.
-        if (MAX_TRADE_LOSS > 0 || PREM_STOP_PCT > 0) {
+        if (!IS_FUT && (MAX_TRADE_LOSS > 0 || PREM_STOP_PCT > 0)) {
           const _adverse  = position.side === "CE" ? c.low : c.high;
           const _spotMove = position.side === "CE" ? (_adverse - position.entrySpot) : (position.entrySpot - _adverse);
           const _curPrem  = Math.max(0.05, position.optionEntryLtp + _spotMove * DELTA);
@@ -365,6 +376,24 @@ function runOrbBacktest(allCandles, expirySet, vixCandles = []) {
     const candlesHeld = ((exitTime - pos.entryTime) / 60) / 5;
     const thetaCost = (THETA_DAY * candlesHeld) / 78;
     const spotMove = pos.side === "CE" ? (exitSpot - pos.entrySpot) : (pos.entrySpot - exitSpot);
+
+    if (IS_FUT) {
+      // Index points, both ways, with the same per-side slippage the option run pays
+      // (ORB_BT_SLIPPAGE_PTS, read here as INDEX points rather than premium points).
+      const netPts  = spotMove - 2 * SLIPPAGE_PREM;
+      const charges = getCharges({ broker: "fyers", isFutures: true, entryPremium: pos.entrySpot, exitPremium: exitSpot, qty: LOT_SIZE });
+      const fpnl = parseFloat((netPts * LOT_SIZE - charges).toFixed(2));
+      pos.exitTime = exitTime;
+      pos.exitSpot = exitSpot;
+      pos.optionExitLtp = null;      // no option leg in this mode
+      pos.exitReason = reason;
+      pos.pnl = fpnl;
+      pos.heldCandles = Math.round(candlesHeld);
+      _dayPnl = parseFloat((_dayPnl + fpnl).toFixed(2));
+      if (_dayIso) _pnlByIso.set(_dayIso, parseFloat(((_pnlByIso.get(_dayIso) || 0) + fpnl).toFixed(2)));
+      return;
+    }
+
     // Buy high / sell low: haircut the exit premium by slippage on BOTH legs so
     // fills aren't frictionless (was overstating every ORB trade's P&L).
     const exitPrem = Math.max(0.05, pos.optionEntryLtp + spotMove * DELTA - thetaCost / LOT_SIZE - 2 * SLIPPAGE_PREM);
@@ -439,7 +468,7 @@ function _renderOrbResults(res, from, to, trades, stats) {
       { label: "STRONG Signals", value: trades.filter(t => t.strength === "STRONG").length },
       { label: "Avg Held Candles", value: trades.length ? Math.round(trades.reduce((a, t) => a + (t.held || 0), 0) / trades.length) : "—" },
     ],
-    notes: `Premium approximated via δ + θ from historical 5-min candles (no live option chain) — treat ₹ as directional only; slightly-ITM entry seeded at ₹${process.env.ORB_BT_SEED_PREMIUM || "240"}. Entry: 09:15–09:30 opening range, day sanity (OR ≤ ${process.env.ORB_OR_ATR_MAX || "2.5"}×ATR15${parseFloat(process.env.ORB_OR_MAX_PTS || "0") > 0 ? ` and ≤ ${process.env.ORB_OR_MAX_PTS}pt` : ""}, gap ≤ ${process.env.ORB_GAP_OR_MULT || "3"}×OR), first close beyond OR ± buffer whose body is ≥ ${process.env.ORB_BODY_ATR_MULT || "0.6"}×ATR5${parseFloat(process.env.ORB_BODY_OR_CAP || "0") > 0 ? ` (capped at ${process.env.ORB_BODY_OR_CAP}×OR)` : ""} on the right side of VWAP (a close that clears the edge but is not decisive is skipped and the hunt continues unless ORB_BREAKOUT_RESCAN=false), then ONE confirmation candle (or a retest/resume within ${process.env.ORB_RETEST_MAX_WAIT || "6"} candles); one trade/day, cut-off ${process.env.ORB_ENTRY_END || "11:30"} IST. Exits: initial SL = wider of the entry-candle extreme and ${process.env.ORB_SL_ATR_MULT || "1.5"}×ATR5 → breakeven at +${process.env.ORB_BREAKEVEN_PTS || "20"}pt → EMA${process.env.ORB_TRAIL_EMA || "20"} close-trail → ₹${process.env.ORB_MAX_TRADE_LOSS || "1500"} / −${process.env.ORB_PREMIUM_STOP_PCT || "35"}% caps → ${process.env.ORB_FORCED_EXIT || "15:15"} EOD. ${_paperOnlyGatesNote()}`,
+    notes: `${instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? "FUTURES MODE — P&L is index points × lot, futures charges, no δ/θ (the premium disaster stop is skipped; it has no meaning without a premium). " : ""}Premium approximated via δ + θ from historical 5-min candles (no live option chain) — treat ₹ as directional only; slightly-ITM entry seeded at ₹${process.env.ORB_BT_SEED_PREMIUM || "240"}. Entry: 09:15–09:30 opening range, day sanity (OR ≤ ${process.env.ORB_OR_ATR_MAX || "2.5"}×ATR15${parseFloat(process.env.ORB_OR_MAX_PTS || "0") > 0 ? ` and ≤ ${process.env.ORB_OR_MAX_PTS}pt` : ""}, gap ≤ ${process.env.ORB_GAP_OR_MULT || "3"}×OR), first close beyond OR ± buffer whose body is ≥ ${process.env.ORB_BODY_ATR_MULT || "0.6"}×ATR5${parseFloat(process.env.ORB_BODY_OR_CAP || "0") > 0 ? ` (capped at ${process.env.ORB_BODY_OR_CAP}×OR)` : ""} on the right side of VWAP (a close that clears the edge but is not decisive is skipped and the hunt continues unless ORB_BREAKOUT_RESCAN=false), then ONE confirmation candle (or a retest/resume within ${process.env.ORB_RETEST_MAX_WAIT || "6"} candles); one trade/day, cut-off ${process.env.ORB_ENTRY_END || "11:30"} IST. Exits: initial SL = wider of the entry-candle extreme and ${process.env.ORB_SL_ATR_MULT || "1.5"}×ATR5 → breakeven at +${process.env.ORB_BREAKEVEN_PTS || "20"}pt → EMA${process.env.ORB_TRAIL_EMA || "20"} close-trail → ₹${process.env.ORB_MAX_TRADE_LOSS || "1500"} / −${process.env.ORB_PREMIUM_STOP_PCT || "35"}% caps → ${process.env.ORB_FORCED_EXIT || "15:15"} EOD. ${_paperOnlyGatesNote()}`,
   });
   res.send(html);
 }
