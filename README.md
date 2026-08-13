@@ -65,6 +65,8 @@ All four strategies run **in parallel** on the same WebSocket — different cand
 
 Within each strategy, Live ⊥ Paper (mutual exclusion). Across strategies, every combination is allowed — EMA_RSI_ST, BB_RSI, PA, ORB can run together (paper or live) on the same Fyers socket via [sharedSocketState](src/utils/sharedSocketState.js). Backtests run in a background queue (one at a time) and never block live/paper modes.
 
+Every backtest's progress page carries a **Cancel Backtest** button (`POST /backtest/cancel?jobId=…`, API_SECRET-protected — the page prompts once per browser session). Cancelling frees the queue slot immediately so a queued tab starts, and the cancelled run's results are discarded. It takes effect at the run's next progress tick, so a strategy whose candle loop reports no progress (ORB) stops only after the fetch phase.
+
 The dashboard has **Start-All Paper** and **Start-All Live** buttons that start every enabled mode in sequence with a single click; the two are **mutually locked** (one disables the other and pulses while active) so you never accidentally double-run paper + live across modes. Start-all failures surface in a modal instead of silently reloading.
 
 ### Dashboard Layout

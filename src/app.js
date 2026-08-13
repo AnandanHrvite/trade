@@ -1047,6 +1047,18 @@ app.use("/replay",              require("./routes/replay"));            // ← d
 app.use("/all-backtest",   require("./routes/allBacktest"));    // ← unified backtest dashboard (all 3 strategies, stats only)
 app.use("/pnl-history",    require("./routes/pnlHistory"));    // ← manual year-wise P&L (Kite + Fyers) + live bot overlay
 
+// Cancel button on the shared backtest progress page. One endpoint for every
+// strategy — the page is built by backtestJobManager, so the job id is all the
+// server needs; no per-route /cancel. A write op, so it stays out of OPEN_PATHS.
+app.post("/backtest/cancel", (req, res) => {
+  const id = req.query.jobId;
+  if (!id) return res.status(400).json({ success: false, error: "jobId required" });
+  const ok = require("./utils/backtestJobManager").cancelJob(String(id));
+  if (!ok) return res.status(409).json({ success: false, error: "Job is not running." });
+  console.log(`🛑 Backtest job ${id} cancelled by user`);
+  res.json({ success: true });
+});
+
 // ── Holiday Management API ────────────────────────────────────────────────────
 const {
   refreshHolidayCache, getNSEHolidayDetails, getHolidaySource, getExpiryCalendar,

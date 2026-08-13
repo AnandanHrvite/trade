@@ -50,16 +50,57 @@ function createJob(type) {
   return { id, existing: false };
 }
 
+/** Thrown out of updateProgress() once a job has been cancelled — see cancelJob(). */
+class BacktestCancelledError extends Error {
+  constructor() {
+    super("Backtest cancelled by user");
+    this.name = "BacktestCancelledError";
+    this.cancelled = true;
+  }
+}
+
+/**
+ * Report progress — and abort the run if the user pressed Cancel.
+ *
+ * Every backtest route funnels its progress through here (fetch-phase callback +
+ * per-candle engine callback), and every one of them wraps the whole job body in
+ * try/catch → failJob. So throwing here is the one hook that unwinds *any*
+ * strategy's job without each engine having to poll a cancel flag. Cancellation
+ * therefore takes effect at the next progress tick — engines that compute
+ * synchronously with no progress callback (e.g. ORB) run to completion, but
+ * their result is discarded by the completeJob() guard below.
+ */
 function updateProgress(id, progress) {
   const job = jobs.get(id);
-  if (job && job.status === "running") {
+  if (!job) return;
+  if (job.status === "cancelled") throw new BacktestCancelledError();
+  if (job.status === "running") {
     job.progress = { ...job.progress, ...progress };
   }
 }
 
+/**
+ * Mark a running job cancelled and free the slot so a queued tab can start.
+ * Returns false if the job is unknown or already finished.
+ */
+function cancelJob(id) {
+  const job = jobs.get(id);
+  if (!job || job.status !== "running") return false;
+  job.status = "cancelled";
+  job.error = "Backtest cancelled by user.";
+  job.progress = { ...job.progress, phase: "Cancelled" };
+  job.completedAt = Date.now();
+  if (activeJobId === id) activeJobId = null;
+  // Keep the record briefly so the page's in-flight poll sees "cancelled", then
+  // drop it — a later hit on the stale ?jobId= URL then just starts a fresh run.
+  const t = setTimeout(() => { const j = jobs.get(id); if (j && j.status === "cancelled") jobs.delete(id); }, 30_000);
+  if (t.unref) t.unref();
+  return true;
+}
+
 function completeJob(id, result) {
   const job = jobs.get(id);
-  if (job) {
+  if (job && job.status !== "cancelled") {
     job.status = "done";
     job.result = result;
     job.progress = { phase: "Done", pct: 100 };
@@ -73,7 +114,9 @@ function completeJob(id, result) {
 
 function failJob(id, error) {
   const job = jobs.get(id);
-  if (job) {
+  // A cancelled job unwinds through its route's catch → failJob. Keep the
+  // "cancelled" status; the run didn't fail, the user stopped it.
+  if (job && job.status !== "cancelled") {
     job.status = "error";
     job.error = typeof error === "string" ? error : (error.message || String(error));
     job.progress = { ...job.progress, phase: "Failed" };
@@ -136,6 +179,12 @@ function buildProgressPage(jobId, basePath, title) {
     .err a{color:#f87171;text-decoration:underline;}
     .spinner{display:inline-block;width:18px;height:18px;border:2px solid #1a2540;border-top-color:#3b82f6;border-radius:50%;animation:spin 0.8s linear infinite;vertical-align:middle;margin-right:8px;}
     @keyframes spin{to{transform:rotate(360deg)}}
+    .actions{margin-top:18px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;}
+    .btn{font-family:inherit;font-size:0.78rem;padding:10px 20px;min-height:40px;border-radius:8px;cursor:pointer;background:#1a0f14;border:1px solid #7f1d1d;color:#f87171;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;}
+    .btn:hover{background:#2a1218;}
+    .btn:disabled{opacity:0.5;cursor:default;}
+    .btn.neutral{background:#0f1626;border-color:#1a2540;color:#8ba1c2;}
+    .btn.neutral:hover{background:#16203a;}
     /* Light skin — these two interstitials sit outside sharedNav, so they carried
        neither the light theme nor the phone breakpoint. Both live here. */
     :root[data-theme="light"] body{background:#f4f6f9;color:#334155;}
@@ -150,24 +199,32 @@ function buildProgressPage(jobId, basePath, title) {
     :root[data-theme="light"] .err{background:#fef2f2;border-color:#fca5a5;color:#b91c1c;}
     :root[data-theme="light"] .err a{color:#b91c1c;}
     :root[data-theme="light"] .spinner{border-color:#e0e4ea;}
+    :root[data-theme="light"] .btn{background:#fef2f2;border-color:#fca5a5;color:#b91c1c;}
+    :root[data-theme="light"] .btn:hover{background:#fee2e2;}
+    :root[data-theme="light"] .btn.neutral{background:#f1f5f9;border-color:#e0e4ea;color:#475569;}
+    :root[data-theme="light"] .btn.neutral:hover{background:#e2e8f0;}
     @media(max-width:768px){
       /* 56px of side padding left ~280px of usable width on a 440px screen. */
       body{align-items:flex-start;padding:16px 12px;}
       .card{padding:28px 20px;width:100%;max-width:100%;border-radius:12px;}
       h2{font-size:1.05rem;}
       .err a{min-height:44px;display:inline-flex;align-items:center;justify-content:center;}
+      .btn{min-height:44px;flex:1 1 140px;}
     }
   </style>
 </head>
 <body>
   <div class="card">
-    <h2><span class="spinner"></span> Backtest Running</h2>
+    <h2 id="head"><span class="spinner"></span> Backtest Running</h2>
     <div class="phase" id="phase">Initializing…</div>
     <div class="pct" id="pct">0%</div>
     <div class="bar-wrap"><div class="bar" id="bar" style="width:0%"></div></div>
     <div class="detail" id="detail"></div>
     <div class="elapsed" id="elapsed">Elapsed: 0s</div>
-    <div class="warn">
+    <div class="actions" id="actions">
+      <button class="btn" id="cancelBtn" type="button">✖ Cancel Backtest</button>
+    </div>
+    <div class="warn" id="warn">
       ⏳ Large backtests (3+ years) may take a few minutes.<br>
       This page auto-updates — <b>do not close it</b>. Server stays responsive.
     </div>
@@ -178,6 +235,58 @@ function buildProgressPage(jobId, basePath, title) {
     const JOB_ID = "${jobId}";
     const BASE   = "${basePath}";
     const started = Date.now();
+    let cancelled = false;   // set once the server confirms — stops the poll loop
+
+    // ── Cancel ────────────────────────────────────────────────────────────────
+    // POST /backtest/cancel is a write route, so it sits behind API_SECRET. This
+    // page is standalone (no sharedNav), so it carries its own minimal version of
+    // secretFetch: reuse the session's stored secret, prompt only on a 403.
+    async function cancelFetch() {
+      const url = "/backtest/cancel?jobId=" + encodeURIComponent(JOB_ID);
+      let secret = sessionStorage.getItem("__api_secret") || "";
+      let res = await fetch(url, { method: "POST", headers: secret ? { "x-api-secret": secret } : {} });
+      if (res.status === 403) {
+        sessionStorage.removeItem("__api_secret");
+        secret = window.prompt(secret ? "Wrong API secret — try again:" : "API_SECRET required to cancel:");
+        if (secret === null) return null;         // user backed out — keep running
+        sessionStorage.setItem("__api_secret", secret);
+        res = await fetch(url, { method: "POST", headers: { "x-api-secret": secret } });
+      }
+      return res;
+    }
+
+    function showCancelled() {
+      cancelled = true;
+      document.getElementById("head").innerHTML = "🛑 Backtest Cancelled";
+      document.getElementById("phase").textContent = "Stopped. No results were saved.";
+      document.getElementById("warn").style.display = "none";
+      // Drop ?jobId= so a refresh (or Back) starts a fresh run instead of
+      // re-opening the cancelled job.
+      const clean = new URL(window.location.href);
+      clean.searchParams.delete("jobId");
+      history.replaceState(null, "", clean.toString());
+      document.getElementById("actions").innerHTML =
+        '<a class="btn neutral" href="' + clean.toString() + '">↻ Run again</a>' +
+        '<a class="btn neutral" href="/all-backtest">← Backtest dashboard</a>';
+    }
+
+    document.getElementById("cancelBtn").addEventListener("click", async function () {
+      const btn = this;
+      btn.disabled = true;
+      btn.textContent = "Cancelling…";
+      try {
+        const res = await cancelFetch();
+        if (!res) { btn.disabled = false; btn.textContent = "✖ Cancel Backtest"; return; }
+        if (res.ok) { showCancelled(); return; }
+        btn.disabled = false;
+        btn.textContent = "✖ Cancel Backtest";
+        document.getElementById("err").style.display = "block";
+        document.getElementById("err").textContent = "❌ Could not cancel (HTTP " + res.status + ").";
+      } catch (e) {
+        btn.disabled = false;
+        btn.textContent = "✖ Cancel Backtest";
+      }
+    });
 
     // Preserve original query params (from, to, resolution) when redirecting
     function buildRedirectURL(extra) {
@@ -194,9 +303,13 @@ function buildProgressPage(jobId, basePath, title) {
     }
 
     async function poll() {
+      if (cancelled) return;
       try {
         const r = await fetch(BASE + "/status?jobId=" + JOB_ID);
         const d = await r.json();
+        if (cancelled) return;
+
+        if (d.status === "cancelled") { showCancelled(); return; }
 
         if (d.status === "done") {
           document.getElementById("phase").textContent = "Complete! Loading results…";
@@ -347,6 +460,8 @@ module.exports = {
   updateProgress,
   completeJob,
   failJob,
+  cancelJob,
+  BacktestCancelledError,
   getJob,
   getActiveJob,
   isIdle,

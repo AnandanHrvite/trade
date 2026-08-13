@@ -6,6 +6,12 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Added — Cancel button on every backtest progress page
+
+A long backtest could only be escaped by closing the tab, which left the job running and the single backtest slot occupied. The shared progress page ([backtestJobManager.js](src/utils/backtestJobManager.js) builds it for all ten backtests) now has a **Cancel Backtest** button. It calls the one new endpoint `POST /backtest/cancel?jobId=…`, which marks the job cancelled and releases the queue slot right away, so a queued tab starts instead of waiting. The page then shows a "Cancelled" card with *Run again* / *Backtest dashboard*, and drops `?jobId=` from the URL so a refresh starts fresh.
+
+The running job unwinds through `updateProgress()`, which throws once the job is cancelled — that is the one place every strategy's fetch and candle loop already reports through, so no engine needed a cancel flag of its own. A late `completeJob()` / `failJob()` on a cancelled job is ignored, so nothing part-finished is saved. Cancellation lands at the next progress tick: strategies whose candle loop reports progress (EMA_RSI_ST, BB_RSI, PA, EMA9+VWAP) stop mid-run, while ORB's synchronous loop finishes and its result is thrown away. The endpoint is a write op, so it requires `API_SECRET` — the standalone page prompts for it once per browser session.
+
 ### Added — RSI and SuperTrend entry gates for ORB
 
 Two momentum checks now sit on the ORB entry, each with its own toggle and its own Settings fields. **RSI(14)**: a CE needs RSI at or above `ORB_RSI_CE_MIN` (51), a PE at or below `ORB_RSI_PE_MAX` (49). **SuperTrend(10, 3)**: a CE is only taken while SuperTrend is bullish (line below price) and a PE only while it is bearish. Both are read on the **entry candle** — the only bar whose momentum is known at the moment the order goes in — and both fail open during warm-up, so a missing indicator never blocks a trade. They are enforced inside the single entry-construction path, so the confirmation, trend-resume and retest routes all obey them.
