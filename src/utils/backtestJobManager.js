@@ -325,6 +325,8 @@ function buildProgressPage(jobId, basePath, title) {
           document.getElementById("err").innerHTML = "❌ " + (d.error || "Unknown error") +
             '<br><br><a href="' + BASE + '">← Try again</a>';
           document.querySelector(".spinner").style.display = "none";
+          // Nothing left to cancel — the button would only 409 over this message.
+          document.getElementById("actions").style.display = "none";
           return;
         }
 
