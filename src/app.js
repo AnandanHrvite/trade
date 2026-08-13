@@ -3841,13 +3841,14 @@ server.listen(PORT, HOST, () => {
   // /^ORB_/, so every replay recording and every daily-JSONL settings block
   // advertises filters that do not exist — and several read as if they configure a
   // rule that IS live (ORB_TRAIL_ENABLED does not gate the EMA trail;
-  // ORB_ATR_PERIOD / ORB_BUFFER_*_MULT are hard-coded constants in
-  // orb_breakout.js; ORB_TARGET_RANGE_MULT became the exported TARGET_OR_MULT).
+  // ORB_ATR_PERIOD and ORB_BUFFER_ATR_MULT are hard-coded constants in
+  // orb_breakout.js — note ORB_BUFFER_OR_MULT became LIVE on 2026-08-13 and is
+  // therefore NOT in this list; ORB_TARGET_RANGE_MULT became the exported TARGET_OR_MULT).
   // README's ORB section carries a one-key-per-line bulk-delete block.
   try {
     const RETIRED_ORB_KEYS = [
       "ORB_ADX_MIN", "ORB_ADX_PERIOD", "ORB_ATR_PERIOD", "ORB_BODY_PCT_MIN",
-      "ORB_BREAKOUT_BUFFER_MIN", "ORB_BREAKOUT_BUFFER_PCT", "ORB_BUFFER_ATR_MULT", "ORB_BUFFER_OR_MULT",
+      "ORB_BREAKOUT_BUFFER_MIN", "ORB_BREAKOUT_BUFFER_PCT", "ORB_BUFFER_ATR_MULT",
       "ORB_CLOSE_POS_PCT", "ORB_CONFIRM_ENABLED", "ORB_ENTRY_V2_ENABLED", "ORB_ENTRY_V3_ENABLED",
       "ORB_MAX_GAP_PTS", "ORB_MAX_RANGE_PTS", "ORB_MAX_WICK_RATIO", "ORB_MIN_BODY", "ORB_MIN_RANGE_PTS",
       "ORB_OR_ATR_MIN", "ORB_PAPER_CAPITAL", "ORB_PREMIUM_LOCKIN_FLOOR_PCT", "ORB_PREMIUM_LOCKIN_PCT",
