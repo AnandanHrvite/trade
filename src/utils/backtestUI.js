@@ -607,10 +607,13 @@ function toggleDayWise(){ dwVisible=!dwVisible; document.getElementById('dayWise
 function renderDayWise(){
   var dayMap={};
   filtered.forEach(function(t){ var d=(t.entry||'').split(',')[0].trim(); if(!dayMap[d]) dayMap[d]={date:d,ts:t.entryTs,trades:0,wins:0,losses:0,pnl:0}; dayMap[d].trades++; if(t.pnl>0) dayMap[d].wins++; else if(t.pnl<0) dayMap[d].losses++; dayMap[d].pnl+=(t.pnl||0); });
+  // Cumulative P&L is a running total, so it is built oldest→newest; the rows
+  // are then reversed so the latest day is on top like the trade table.
   var days=Object.values(dayMap).sort(function(a,b){ return a.ts-b.ts; });
   var cum=0;
+  days.forEach(function(d){ cum+=d.pnl; d._cum=cum; });
   var rows='';
-  days.forEach(function(d){ cum+=d.pnl; var pc=d.pnl>=0?'#10b981':'#ef4444'; var cc=cum>=0?'#10b981':'#ef4444'; rows+='<tr><td>'+d.date+'</td><td>'+d.trades+'</td><td style="color:#10b981;">'+d.wins+'</td><td style="color:#ef4444;">'+d.losses+'</td><td style="color:'+pc+';font-weight:700;">'+fpts(d.pnl)+'</td><td style="color:'+cc+';font-weight:700;">'+fpts(cum)+'</td></tr>'; });
+  days.slice().reverse().forEach(function(d){ var pc=d.pnl>=0?'#10b981':'#ef4444'; var cc=d._cum>=0?'#10b981':'#ef4444'; rows+='<tr><td>'+d.date+'</td><td>'+d.trades+'</td><td style="color:#10b981;">'+d.wins+'</td><td style="color:#ef4444;">'+d.losses+'</td><td style="color:'+pc+';font-weight:700;">'+fpts(d.pnl)+'</td><td style="color:'+cc+';font-weight:700;">'+fpts(d._cum)+'</td></tr>'; });
   document.getElementById('dwBody').innerHTML = rows || '<tr><td colspan="6" style="text-align:center;color:var(--muted-1,#8ba1c2);padding:18px;">No days in this range</td></tr>';
 }
 
@@ -618,7 +621,10 @@ function renderDayWise(){
 var anaVisible=false, anaCharts={};
 function toggleAnalytics(){ anaVisible=!anaVisible; document.getElementById('anaWrap').style.display=anaVisible?'block':'none'; document.getElementById('anaToggle').classList.toggle('active',anaVisible); if(anaVisible) renderAnalytics(); }
 function renderAnalytics(){
-  var trades=filtered.slice();
+  // Chronological, whatever the table is sorted by — the equity curve, the
+  // drawdown series and the win/loss streaks are all order-dependent, so they
+  // must not follow a Date-descending or a PnL-sorted table.
+  var trades=filtered.slice().sort(function(a,b){ return a.entryTs - b.entryTs; });
   if(!trades.length){ Object.keys(anaCharts).forEach(function(k){ if(anaCharts[k]) anaCharts[k].destroy(); anaCharts[k]=null; }); document.getElementById('anaStreaks').innerHTML='<div class="ana-stat-label">No trades</div>'; document.getElementById('anaExitBody').innerHTML=''; document.getElementById('anaDowBody').innerHTML=''; return; }
   var _gc='#0e1428', _tc='#3a5070';
   // Equity
@@ -672,7 +678,11 @@ function renderAnalytics(){
   document.getElementById('anaDowBody').innerHTML = [1,2,3,4,5].map(function(d){ var x=dow[d]; if(!x) return '<tr><td>'+dowNames[d]+'</td><td>0</td><td>—</td><td>—</td></tr>'; var wr=((x.wins/x.cnt)*100).toFixed(0); var pc=x.pnl>=0?'#10b981':'#ef4444'; return '<tr><td>'+dowNames[d]+'</td><td>'+x.cnt+'</td><td>'+wr+'%</td><td style="color:'+pc+';font-weight:700;">'+fmtAna(x.pnl)+'</td></tr>'; }).join('');
 }
 
-doSort('entry');
+// Newest trade first. doSort2() sorts with the defaults already declared
+// (entry, descending); calling doSort('entry') here would see sortCol already
+// set to 'entry' and *flip* the direction, which is what used to land the page
+// on oldest-first with a ▲ header that disagreed with the markup.
+doSort2();
 </script>
 </body>
 </html>`;

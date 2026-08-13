@@ -806,6 +806,9 @@ function buildDayView(){
   var days=Object.values(dayMap).sort(function(a,b){ return a.date<b.date?-1:a.date>b.date?1:0; });
   var cumAll=0;
   for(var k=0;k<days.length;k++){ cumAll+=days[k].pnl; days[k]._cum=cumAll; }
+  // Cumulative is a running total, so it is built oldest→newest; the rows are
+  // then flipped so the latest day is page 1, matching the trade table.
+  days.reverse();
   window._dayData=days;
 
   var totalPages = dwPageSize === 0 ? 1 : Math.max(1, Math.ceil(days.length / dwPageSize));
@@ -858,10 +861,10 @@ function buildDayView(){
 function copyDayView(btn){
   var days=window._dayData||[];
   var lines=['Date\\tTrades\\tWins\\tLosses\\tPnL\\tCumulative PnL'];
-  var cumPnl=0;
+  // _cum is precomputed chronologically — read it rather than re-accumulating,
+  // which would be wrong now that the rows are held newest-first.
   days.forEach(function(dy){
-    cumPnl+=dy.pnl;
-    lines.push(dy.date+'\\t'+dy.trades+'\\t'+dy.wins+'\\t'+dy.losses+'\\t'+(dy.pnl!=null?dy.pnl.toFixed(2):'—')+'\\t'+cumPnl.toFixed(2));
+    lines.push(dy.date+'\\t'+dy.trades+'\\t'+dy.wins+'\\t'+dy.losses+'\\t'+(dy.pnl!=null?dy.pnl.toFixed(2):'—')+'\\t'+(dy._cum!=null?dy._cum.toFixed(2):'—'));
   });
   doCopy(lines.join('\\n'),btn,'Day View');
 }

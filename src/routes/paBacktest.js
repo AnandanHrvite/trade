@@ -1253,6 +1253,9 @@ function renderDayWise(){
   days.sort(function(a,b){ return a.ts - b.ts; });
   var cumAll = 0;
   for(var k=0;k<days.length;k++){ cumAll += days[k].pnl; days[k]._cum = cumAll; }
+  // Cumulative is a running total, so it is built oldest→newest; the rows are
+  // then flipped so the latest day is page 1, matching the trade table.
+  days.reverse();
   dwDays = days;
 
   var totalPages = dwPageSize === 0 ? 1 : Math.max(1, Math.ceil(days.length / dwPageSize));
