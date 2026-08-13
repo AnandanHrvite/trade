@@ -1083,16 +1083,26 @@ ${buildSidebar('tradeLogs', liveActive)}
     el.innerHTML = html;
   }
 
-  // The chip bar sticks directly under the (already sticky) top bar. Its height
-  // changes with the theme/banner and wraps on phones, so measure it instead of
-  // hard-coding an offset that would let the chips hide behind it.
+  // The chip bar sticks directly under the (already sticky) top bar. Measure the
+  // bar's rendered bottom rather than adding up its height + --banner-h: only the
+  // mobile stylesheet offsets the top bar by the banner, and a banner can appear
+  // after load, so any computed guess drifts and hides the chips behind the bar.
   function syncChipsOffset() {
     var tb = document.querySelector('.top-bar');
     if (!tb) return;
-    var banner = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--banner-h')) || 0;
-    document.documentElement.style.setProperty('--chips-top', (banner + tb.offsetHeight) + 'px');
+    var bottom = Math.max(0, tb.getBoundingClientRect().bottom);
+    document.documentElement.style.setProperty('--chips-top', bottom + 'px');
   }
   window.addEventListener('resize', syncChipsOffset);
+  window.addEventListener('orientationchange', syncChipsOffset);
+  // The top bar wrapping, or one of sharedNav's fixed banners opening/closing,
+  // both move that bottom edge. Watch exactly those instead of the whole body,
+  // so this doesn't re-measure on every table render.
+  if (window.ResizeObserver) {
+    var _ro = new ResizeObserver(syncChipsOffset);
+    ['.top-bar', '#socket-broken-banner', '#telegram-broken-banner', '#backup-nag-banner']
+      .forEach(function(sel){ var el = document.querySelector(sel); if (el) _ro.observe(el); });
+  }
 
   function selectMode(kind, key) {
     if (_sel[kind] === key) return;
