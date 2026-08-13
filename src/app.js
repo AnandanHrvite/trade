@@ -762,7 +762,8 @@ const OPEN_PATHS = [
   "/cache-files/view",      // JSON: text content of one file (capped)
   "/cache-files/download",  // download one raw cache file
   "/cache-files/download-all", // download a whole group as .tar.gz
-  // NOTE: POST /cache-files/delete and POST /cache-files/delete-all are intentionally protected (write ops)
+  // NOTE: POST /cache-files/delete, /delete-all and /clear-candles (the backtest
+  // pages' Clear Cache button) are intentionally protected (write ops)
   // BB_RSI mode (read-only status/data)
   "/bb_rsi-live/status",
   "/bb_rsi-live/status/data",

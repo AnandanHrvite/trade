@@ -2966,6 +2966,15 @@ function clearCacheJS() {
 // — every backtest page shares one job manager.
 document.querySelectorAll('.clear-cache-btn').forEach(function(btn){
   btn.addEventListener('click', async function(){
+    // A page that drives its own run loop (the /all-backtest dashboard) exposes
+    // RUN_STATE. Between two strategies in a Run All the server is momentarily
+    // idle, so its 409 would not catch a click that slows the rest of the run.
+    if(typeof RUN_STATE !== 'undefined' && RUN_STATE && RUN_STATE.active){
+      await showAlert({ icon:'\\u23f3', title:'Backtest running',
+        message:'Wait for the running backtest to finish, then clear the cache.',
+        btnClass:'modal-btn-primary' });
+      return;
+    }
     var ok = await showConfirm({
       icon:'\\ud83e\\uddf9',
       title:'Clear backtest cache?',
