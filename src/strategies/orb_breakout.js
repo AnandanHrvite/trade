@@ -164,7 +164,7 @@ const BUFFER_OR_DFLT  = 0.15;  // breakout buffer, as a fraction of the opening 
                                // levers that decide whether a breakout is SEEN at all, and
                                // "ORB never enters" could not be measured against it while
                                // it was unreachable. Default unchanged, so behaviour is too.
-const BUFFER_ATR_MULT = 0.30;  // ...or of ATR(5m), whichever is larger
+const BUFFER_ATR_DFLT = 0.30;  // ...or of ATR(5m), whichever is larger (ORB_BUFFER_ATR_MULT)
 const RETEST_TOL_PCT  = 0.10;  // retest tolerance, as a fraction of the OR
 const RETEST_TOL_MIN  = 5;     // ...with this floor in points
 const TARGET_OR_MULT  = 1.5;   // informational target only — there is no target exit.
@@ -315,13 +315,25 @@ function _computeGap(candles, day) {
   return (todayOpen == null || prevClose == null) ? null : _r2(todayOpen - prevClose);
 }
 
-function _vwapSideOk(c, side, vwap) {
+// `on=false` disables the VWAP side test entirely (ORB_VWAP_FILTER_ENABLED).
+function _vwapSideOk(c, side, vwap, on) {
+  if (on === false) return true;
   if (vwap == null) return true;
   return side === "CE" ? c.close > vwap : c.close < vwap;
 }
+function _vwapFilterOn() {
+  return (process.env.ORB_VWAP_FILTER_ENABLED || "true").toLowerCase() === "true";
+}
 
 // Does `c` extend the breakout beyond the edge? (higher-high AND higher-close)
-function _extends(c, brk, side, orh, orl) {
+// mode "extend" (default) — the strict original: back beyond the OR edge, a higher
+//   high AND a higher close than the breakout candle.
+// mode "close"  — the plain continuation rule: the candle simply CLOSES beyond the
+//   breakout candle's close. No new extreme required, no OR-edge re-test.
+function _extends(c, brk, side, orh, orl, mode) {
+  if (mode === "close") {
+    return side === "CE" ? c.close > brk.close : c.close < brk.close;
+  }
   return side === "CE"
     ? (c.close > orh && c.high > brk.high && c.close > brk.close)
     : (c.close < orl && c.low  < brk.low  && c.close < brk.close);
@@ -356,6 +368,9 @@ function _breakoutQuality(candles, i, side, minBody) {
   const bodyPct  = range > 0 ? _r2(body / range) : null;
   if (!colourOk || !bodyOk) {
     return { ok: false, colourOk, bodyOk, vwapOk: null, vwap: null, body, minBody, bodyPct };
+  }
+  if (!_vwapFilterOn()) {
+    return { ok: true, colourOk, bodyOk, vwapOk: null, vwap: null, body, minBody, bodyPct };
   }
   const vwap = computeVwap(candles.slice(0, i + 1));
   const vwapOk = _vwapSideOk(c, side, vwap);
@@ -496,6 +511,11 @@ function getSignal(candles, opts) {
     bodyAtrMult:  parseFloat(process.env.ORB_BODY_ATR_MULT   || "0.6"),
     bodyOrCap:    parseFloat(process.env.ORB_BODY_OR_CAP     || "0"),
     bufferOrMult: parseFloat(process.env.ORB_BUFFER_OR_MULT  || String(BUFFER_OR_DFLT)),
+    bufferAtrMult:parseFloat(process.env.ORB_BUFFER_ATR_MULT || String(BUFFER_ATR_DFLT)),
+    bufferMinPts: parseFloat(process.env.ORB_BUFFER_MIN_PTS  || "1"),
+    confirmMode:  (process.env.ORB_CONFIRM_MODE || "extend").toLowerCase(),
+    slSource:     (process.env.ORB_SL_SOURCE    || "entry").toLowerCase(),
+    vwapOn:       _vwapFilterOn(),
     slAtrMult:    parseFloat(process.env.ORB_SL_ATR_MULT     || "1.5"),
     retestWindow: parseInt  (process.env.ORB_RETEST_MAX_WAIT || "6", 10),
   };
@@ -594,7 +614,7 @@ function getSignal(candles, opts) {
 
   // ── 6. The committed breakout: first in-window CLOSE beyond the edge that is
   //       also a decisive bar on the right side of VWAP ───────────────────────
-  const buffer = _r2(Math.max(cfg.bufferOrMult * rangePts, atr5 != null ? BUFFER_ATR_MULT * atr5 : 0, 1));
+  const buffer = _r2(Math.max(cfg.bufferOrMult * rangePts, atr5 != null ? cfg.bufferAtrMult * atr5 : 0, cfg.bufferMinPts));
 
   // Decisiveness threshold, optionally CAPPED as a share of today's opening range.
   //
@@ -666,8 +686,11 @@ function getSignal(candles, opts) {
         if (minBody == null) tr.skip("decisive body", "ATR5 not seeded — fail-open");
         else bodyPassed = tr.check("decisive body", rq.bodyOk, `body ${rq.body.toFixed(1)}pt vs ${minBody.toFixed(1)}pt (${cfg.bodyLabel})`);
         if (bodyPassed) {
-          if (rq.vwap == null) _warnNoVolumeOnce(silent);
-          tr.check("VWAP side", rq.vwapOk, `close ${rc.close} vs VWAP ${rq.vwap}`);
+          if (!cfg.vwapOn) tr.skip("VWAP side", "ORB_VWAP_FILTER_ENABLED=false");
+          else {
+            if (rq.vwap == null) _warnNoVolumeOnce(silent);
+            tr.check("VWAP side", rq.vwapOk, `close ${rc.close} vs VWAP ${rq.vwap}`);
+          }
         }
       }
       return done(Object.assign(sig, { reason: _rejectReason(rejected, cfg, rescan) }));
@@ -688,13 +711,14 @@ function getSignal(candles, opts) {
   tr.check("candle colour", true, `${side === "CE" ? "green" : "red"} breakout bar`);
   if (minBody != null) tr.check("decisive body", true, `body ${brkBody.toFixed(1)}pt vs ${minBody.toFixed(1)}pt (${cfg.bodyLabel})`);
   else tr.skip("decisive body", "ATR5 not seeded — fail-open");
-  tr.check("VWAP side", true, `close ${brk.close} vs VWAP ${q.vwap}`);
+  if (cfg.vwapOn) tr.check("VWAP side", true, `close ${brk.close} vs VWAP ${q.vwap}`);
+  else tr.skip("VWAP side", "ORB_VWAP_FILTER_ENABLED=false");
   // vwapAligned records a gate that genuinely ran and passed, just above.
   // wickPass used to be hard-coded true here — but the wick filter was DELETED in the
   // 2026-07-26 rebuild (see the ablation note in the header), so every trade record
   // and every AI export has been carrying `wickPass: true` for a filter that does not
   // exist. Left null: no filter ran, so there is no verdict to report.
-  sig.vwapAligned = true;
+  sig.vwapAligned = cfg.vwapOn ? true : null;
 
   if (lastIdx === b) {
     tr.info("confirmation", "this IS the breakout candle — never bought; waiting for the next close");
@@ -705,8 +729,16 @@ function getSignal(candles, opts) {
   const _fire = (why, tag) => {
     const entrySpot = last.close;
     // Wider of the structural extreme and the ATR floor. See the header note.
-    const structural = side === "CE" ? last.low : last.high;
-    const atrStop = atr5 != null
+    //
+    // ORB_SL_SOURCE picks WHICH candle's extreme is "structural":
+    //   "entry"    (default) — the candle we are entering on, i.e. today's rule.
+    //   "breakout" — the FIRST candle that closed past the range edge. That is the
+    //                bar the move is built on, so its extreme is the level that
+    //                invalidates the breakout; it also gives a stop that does not
+    //                shrink just because the entry candle happened to be small.
+    const slBar = cfg.slSource === "breakout" ? brk : last;
+    const structural = side === "CE" ? slBar.low : slBar.high;
+    const atrStop = atr5 != null && cfg.slAtrMult > 0
       ? (side === "CE" ? entrySpot - cfg.slAtrMult * atr5 : entrySpot + cfg.slAtrMult * atr5)
       : structural;
     const slSpot = side === "CE" ? Math.min(structural, atrStop) : Math.max(structural, atrStop);
@@ -724,16 +756,19 @@ function getSignal(candles, opts) {
       targetSpot: _r2(targetSpot),
       signalStrength: "STRONG",
       confirmed: true,
-      reason: `ORB ${side}${tag}: breakout close ${brk.close} beyond ${side === "CE" ? `ORH ${or.high}` : `ORL ${or.low}`} + buffer ${buffer}pt (body ${_r2(brkBody)}pt), ${why}; SL ${_r2(slSpot)} = wider of candle extreme / ${cfg.slAtrMult}×ATR5${gapPts != null ? `, gap ${gapPts}pt` : ""}`,
+      reason: `ORB ${side}${tag}: breakout close ${brk.close} beyond ${side === "CE" ? `ORH ${or.high}` : `ORL ${or.low}`} + buffer ${buffer}pt (body ${_r2(brkBody)}pt), ${why}; SL ${_r2(slSpot)} = wider of ${cfg.slSource === "breakout" ? "breakout" : "entry"}-candle extreme / ${cfg.slAtrMult}×ATR5${gapPts != null ? `, gap ${gapPts}pt` : ""}`,
     }));
   };
 
   // ── 9. Primary path: the candle AFTER the breakout must extend the move ────
   const conf = candles[b + 1];
-  const confPass = _extends(conf, brk, side, or.high, or.low) && _vwapSideOk(conf, side, computeVwap(candles.slice(0, b + 2)));
-  tr.check("confirmation", confPass, side === "CE"
-    ? `need close>${or.high}, HH>${brk.high}, HC>${brk.close} — got close ${conf.close} / high ${conf.high}`
-    : `need close<${or.low}, LL<${brk.low}, LC<${brk.close} — got close ${conf.close} / low ${conf.low}`);
+  const confPass = _extends(conf, brk, side, or.high, or.low, cfg.confirmMode) &&
+                   _vwapSideOk(conf, side, cfg.vwapOn ? computeVwap(candles.slice(0, b + 2)) : null, cfg.vwapOn);
+  tr.check("confirmation", confPass, cfg.confirmMode === "close"
+    ? `need close${side === "CE" ? ">" : "<"}${brk.close} — got ${conf.close}`
+    : side === "CE"
+      ? `need close>${or.high}, HH>${brk.high}, HC>${brk.close} — got close ${conf.close} / high ${conf.high}`
+      : `need close<${or.low}, LL<${brk.low}, LC<${brk.close} — got close ${conf.close} / low ${conf.low}`);
 
   if (confPass) {
     if (lastIdx === b + 1) return _fire("confirmation candle extended the move", "");
@@ -756,15 +791,15 @@ function getSignal(candles, opts) {
     return done(Object.assign(sig, { reason: "Retest window expired — no trade today" }));
   }
 
-  const vwapNow = computeVwap(candles);
-  if (_extends(last, brk, side, or.high, or.low) && _vwapSideOk(last, side, vwapNow)) {
+  const vwapNow = cfg.vwapOn ? computeVwap(candles) : null;
+  if (_extends(last, brk, side, or.high, or.low, cfg.confirmMode) && _vwapSideOk(last, side, vwapNow, cfg.vwapOn)) {
     tr.check("retest window", true, "trend resumed with a fresh extension beyond the edge");
     return _fire("trend resumed with a fresh extension beyond the edge", " [resume]");
   }
   const tol = Math.max(RETEST_TOL_MIN, RETEST_TOL_PCT * rangePts);
   const held = side === "CE"
-    ? (last.low  <= or.high + tol && last.close > or.high && _vwapSideOk(last, side, vwapNow))
-    : (last.high >= or.low  - tol && last.close < or.low  && _vwapSideOk(last, side, vwapNow));
+    ? (last.low  <= or.high + tol && last.close > or.high && _vwapSideOk(last, side, vwapNow, cfg.vwapOn))
+    : (last.high >= or.low  - tol && last.close < or.low  && _vwapSideOk(last, side, vwapNow, cfg.vwapOn));
   if (held) {
     tr.check("retest window", true, `retested ${side === "CE" ? "ORH" : "ORL"} within ${_r2(tol)}pt and held`);
     return _fire(`retested ${side === "CE" ? "ORH" : "ORL"} within ${_r2(tol)}pt and held`, " [retest]");

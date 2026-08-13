@@ -6,6 +6,14 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Added — every ORB entry gate can now be switched off, so each one can be priced
+
+"Do we actually need the ATR body test, the VWAP test and the premium band?" was unanswerable, because three of those gates were hard-coded. They are now configuration, all defaulting to exactly today's behaviour: **`ORB_VWAP_FILTER_ENABLED`**, **`ORB_BUFFER_ATR_MULT`** and **`ORB_BUFFER_MIN_PTS`** (the other two thirds of the breakout buffer), **`ORB_CONFIRM_MODE`** (`extend` = a higher high *and* a higher close beyond the edge, or `close` = simply closing beyond the breakout candle's close) and **`ORB_SL_SOURCE`** (anchor the initial stop on the entry candle or on the first candle that closed past the range edge).
+
+One answer is already in: **the VWAP filter does nothing.** Switching it off changed 0 of 36 trades on the Mar–Apr 2026 sample, the third independent test to reach that result — a close beyond the opening range before noon is essentially always on the correct side of session VWAP. The premium band cannot be judged from a backtest at all: there is no option chain in historical spot candles, so it only ever removes trades in paper and live.
+
+`ORB_BUFFER_ATR_MULT` and `ORB_VWAP_FILTER_ENABLED` were on the retired-key list that the README tells you to bulk-delete from `.env`. Both are live again, so both were removed from that list and from the delete block (44 dead ORB keys now, not 46) — pasting the old block would have silently changed the strategy.
+
 ### Added — two ORB exit dials aimed at the trail, where the losses actually are
 
 The 2025 (123 trades, 23% win, −₹52,388) and 2026 (60 trades, 20% win, −₹33,042) backtests say the same thing: at ORB's average win-to-loss ratio it needs roughly a **40% win rate to break even** and it makes 20%. Gross profit is three trades — 11 Mar +₹7,311, 29 Apr +₹3,998, 8 Jan +₹3,472, about three-quarters of everything won in 2026 — while the losses are a long tail of −₹200 to −₹1,200 **EMA-trail** exits, each of which also pays ~₹420 in spread and theta. ORB enters on the confirmation candle's *close*, by which point price is already extended, so the very next candle often pulls straight back through a 20-EMA still sitting under the entry.
