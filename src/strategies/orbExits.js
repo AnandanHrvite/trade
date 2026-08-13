@@ -78,7 +78,10 @@ function oppositeExitOn()    { return _envOn("ORB_OPP_CANDLE_EXIT", "true"); }
  * gone somewhere. This is a HYPOTHESIS, not a finding: it must clear TRAIN *and*
  * TEST in scripts/orbSweep.js before the default moves off 0.
  */
-function trailArmPts()       { return _envNum("ORB_TRAIL_ARM_PTS", "0"); }
+// NaN-safe on purpose: both of these fail towards "the trail never exits at all"
+// if a hand-edited .env carries a non-numeric value, which would silently leave a
+// live position with only the hard stop. A bad value degrades to the shipped rule.
+function trailArmPts()       { const v = _envNum("ORB_TRAIL_ARM_PTS", "0"); return Number.isFinite(v) && v > 0 ? v : 0; }
 
 /**
  * Consecutive closes on the wrong side of the EMA needed to exit. `1` (default) is
@@ -86,7 +89,7 @@ function trailArmPts()       { return _envNum("ORB_TRAIL_ARM_PTS", "0"); }
  * single noise candle at the cost of giving back one more bar when the move is
  * genuinely over.
  */
-function trailConfirmCloses(){ return Math.max(1, parseInt(process.env.ORB_TRAIL_CONFIRM_CLOSES || "1", 10)); }
+function trailConfirmCloses(){ const v = parseInt(process.env.ORB_TRAIL_CONFIRM_CLOSES || "1", 10); return Number.isFinite(v) && v > 1 ? v : 1; }
 
 /**
  * Adaptive breakeven trigger: max(fixed pts, ORB_BREAKEVEN_OR_MULT × OR width), so
