@@ -82,11 +82,18 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
   const OPTION_SIM  = isFutures ? false : (process.env.BACKTEST_OPTION_SIM !== "false");
   const DELTA       = isFutures ? 1.0 : parseFloat(process.env.BACKTEST_DELTA || "0.55");
   const THETA_DAY   = isFutures ? 0   : parseFloat(process.env.BACKTEST_THETA_DAY || "10");
-  const BB_RSI_RES   = bbRsiStrategy.resolutionMin();
-  // Candles per 6.5-hour (390-min) day for theta — derived from the ACTUAL bar spacing,
-  // not BB_RSI_RES, so it stays correct even if the run's ?resolution= differs from the env.
-  const _btResMins  = candles.length >= 2 ? Math.max(1, Math.round((candles[1].time - candles[0].time) / 60)) : BB_RSI_RES;
-  const CANDLES_PER_DAY = Math.max(1, Math.round(390 / _btResMins));
+  // Candle size for this RUN, derived from the ACTUAL bar spacing rather than from the
+  // config, because the two legitimately differ: an explicit ?resolution= wins over the
+  // env, and /all-backtest sends a fixed 5 to every panel. Taking the configured value
+  // here is silently destructive — confirmCandle.isNextBar tests bar gaps for EXACT
+  // equality, so a configured 3 against 5-min bars never matches and the confirmation
+  // candle (on by default) blocks every entry, i.e. a 0-trade run with no error. The
+  // SL pause window has the same units problem, just less visibly. Config is only the
+  // fallback for a run too short to measure.
+  const BB_RSI_RES  = candles.length >= 2
+    ? Math.max(1, Math.round((candles[1].time - candles[0].time) / 60))
+    : bbRsiStrategy.resolutionMin();
+  const CANDLES_PER_DAY = Math.max(1, Math.round(390 / BB_RSI_RES));  // theta, per 6.5-hour day
 
   // BB_RSI config
   const BB_RSI_MAX_TRADES    = parseInt(process.env.BB_RSI_MAX_DAILY_TRADES || "30", 10);
