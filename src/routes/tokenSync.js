@@ -23,8 +23,8 @@
  * This page never places an order and never touches trade state. It sits behind
  * the app-wide LOGIN_SECRET gate like every other page, and only the page shell
  * is in app.js OPEN_PATHS: /tokens hands out a live broker credential, so it is
- * gated by API_SECRET like a write, as are /pull, /apply and /restart. The raw
- * token is masked until an explicit click.
+ * gated by API_SECRET like a write, as are /pull, /apply, /reset and /restart.
+ * The raw token is masked until an explicit click.
  */
 
 const express = require("express");
