@@ -109,7 +109,7 @@ function int(key, fb, min) {
 // the global rather than to NaN, which would poison every bucket boundary.
 // It lives in the engine, not in the three routes, so Paper / Live / Backtest
 // cannot drift onto different candle sizes.
-var RESOLUTION_CHOICES = [3, 5];
+const RESOLUTION_CHOICES = [3, 5];
 function resolutionMin() {
   var raw = String(cfg("BB_RSI_RESOLUTION", "global")).trim();
   var v = /^\d+$/.test(raw) ? parseInt(raw, 10) : NaN;
