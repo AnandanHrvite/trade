@@ -109,6 +109,19 @@ function int(key, fb, min) {
   return (min != null && v < min) ? min : v;
 }
 
+// ── Direction: fade the band, or trade the break ─────────────────────────────
+// Same signal bars either way — only the side flips. Unrecognised values fall back to
+// "fade" so a typo cannot silently invert every live entry; the fallback is the shipped
+// V8 behaviour, i.e. an untouched .env is unaffected by this key existing.
+// Read live from process.env (never cached) so a Settings save reaches Paper and
+// Backtest without a restart, exactly like every other key in this engine.
+const DIRECTION_CHOICES = ["fade", "breakout"];
+function direction() {
+  const raw = String(cfg("BB_RSI_DIRECTION", "fade")).trim().toLowerCase();
+  return DIRECTION_CHOICES.indexOf(raw) !== -1 ? raw : "fade";
+}
+function isBreakout() { return direction() === "breakout"; }
+
 // ── Candle timeframe ─────────────────────────────────────────────────────────
 // BB_RSI may run on its own candle size instead of the global TRADE_RESOLUTION.
 // This is a fade of a stretched band, so 3-min and 5-min are genuinely different
@@ -124,19 +137,6 @@ function int(key, fb, min) {
 // the global rather than to NaN, which would poison every bucket boundary.
 // It lives in the engine, not in the three routes, so Paper / Live / Backtest
 // cannot drift onto different candle sizes.
-// ── Direction: fade the band, or trade the break ─────────────────────────────
-// Same signal bars either way — only the side flips. Unrecognised values fall back to
-// "fade" so a typo cannot silently invert every live entry; the fallback is the shipped
-// V8 behaviour, i.e. an untouched .env is unaffected by this key existing.
-// Read live from process.env (never cached) so a Settings save reaches Paper and
-// Backtest without a restart, exactly like every other key in this engine.
-const DIRECTION_CHOICES = ["fade", "breakout"];
-function direction() {
-  const raw = String(cfg("BB_RSI_DIRECTION", "fade")).trim().toLowerCase();
-  return DIRECTION_CHOICES.indexOf(raw) !== -1 ? raw : "fade";
-}
-function isBreakout() { return direction() === "breakout"; }
-
 const RESOLUTION_CHOICES = [3, 5];
 function resolutionMin() {
   var raw = String(cfg("BB_RSI_RESOLUTION", "global")).trim();
