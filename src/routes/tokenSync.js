@@ -22,8 +22,8 @@
  * This page never places an order and never touches trade state. It sits behind
  * the app-wide LOGIN_SECRET gate like every other page, and only the page shell
  * is in app.js OPEN_PATHS: /tokens hands out a live broker credential, so it is
- * gated by API_SECRET like a write, as are /apply and /restart. The raw token is
- * masked until an explicit click.
+ * gated by API_SECRET like a write, as are /pull, /apply and /restart. The raw
+ * token is masked until an explicit click.
  */
 
 const express = require("express");
@@ -136,6 +136,14 @@ function looksLikeToken(token) {
   return !!token && token.length >= 20 && !/\s/.test(token);
 }
 
+// An abort this module asked for, marked so the socket 'error' handler reports
+// the reason we gave rather than re-wrapping it as a connection failure.
+function ourError(msg) {
+  const e = new Error(msg);
+  e.tokenSyncOwn = true;
+  return e;
+}
+
 // GET <LIVE>/token-sync/tokens as this machine. Callback style (no promise lib in
 // this repo's route layer) with a single-shot guard: a socket error after a
 // timeout must not settle twice.
@@ -174,7 +182,10 @@ function fetchLiveTokens(cb) {
   }, (res) => {
     let body = "";
     res.setEncoding("utf-8");
-    res.on("data", (c) => { body += c; if (body.length > 200000) req.destroy(new Error("Response too large")); });
+    // An unhandled 'error' on a stream takes the whole process down, and this one
+    // runs inside the trading app. A response cut short is just a failed pull.
+    res.on("error", (e) => finish(new Error(`LIVE closed the connection: ${e.message}`)));
+    res.on("data", (c) => { body += c; if (body.length > 200000) req.destroy(ourError("LIVE sent far more than a token — is that URL the trading app?")); });
     res.on("end", () => {
       const code = res.statusCode;
       if (code === 401) return finish(new Error("LIVE rejected the login — check the Token Sync login password."));
@@ -188,9 +199,13 @@ function fetchLiveTokens(cb) {
     });
   });
 
-  req.on("timeout", () => req.destroy(new Error(`LIVE did not answer within ${PULL_TIMEOUT_MS / 1000}s.`)));
+  // req.destroy(err) surfaces as an 'error' event, so an abort we asked for and a
+  // socket failure arrive down the same path. Tag ours to keep its own wording
+  // instead of "Could not reach LIVE: LIVE did not answer within 12s."
+  req.on("timeout", () => req.destroy(ourError(`LIVE did not answer within ${PULL_TIMEOUT_MS / 1000}s.`)));
   req.on("error", (e) => finish(new Error(
-    e.code === "ECONNREFUSED"        ? `Could not reach LIVE at ${u.origin} — is it running and the port open?`
+    e.tokenSyncOwn                   ? e.message
+    : e.code === "ECONNREFUSED"      ? `Could not reach LIVE at ${u.origin} — is it running and the port open?`
     : e.code === "ENOTFOUND"         ? `Unknown host: ${u.hostname}`
     : /self.signed|CERT_/i.test(e.code || e.message) ? "LIVE's certificate was rejected — turn on 'Allow LIVE self-signed cert'."
     : `Could not reach LIVE: ${e.message}`
@@ -395,7 +410,7 @@ ${buildSidebar('tokenSync', liveActive)}
     </div>
     <div class="card-body">
       <div class="row">
-        <div class="foot" id="pullHelp">
+        <div class="foot">
           This machine asks LIVE for today's Fyers + Zerodha tokens and applies them here — no copying.
           Set the LIVE address and secrets in <b>Settings → Server &amp; Broker</b>.
         </div>
@@ -568,21 +583,23 @@ ${buildSidebar('tokenSync', liveActive)}
     try {
       var res = await secretFetch('/token-sync/pull', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ broker: 'both' })
+        body: JSON.stringify({ broker: 'both' }),
+        // Longer than the server's own 12s pull timeout, so a slow LIVE comes
+        // back as its named reason instead of a bare client abort.
+        timeoutMs: 20000
       });
       if (!res) return;                       // secret prompt cancelled
       var d = await res.json();
       if (!d.success) return showToast(d.error || 'Pull failed', '#f87171');
       SNAP = d.snapshot;
-      var msg = 'Pulled from LIVE: ' + d.applied.join(' + ').toUpperCase();
+      var msg = 'Pulled from LIVE: ' + (d.applied || []).join(' + ').toUpperCase();
       if (d.skipped && d.skipped.length) msg += ' · no token on LIVE for ' + d.skipped.join(', ').toUpperCase();
       // A token LIVE saved on an earlier day is expired for both machines — the
-      // pull "worked" but backtests will still come back empty, so flag it.
-      if (d.stale && d.stale.length) {
-        showToast(d.stale.join(', ').toUpperCase() + ' token is STALE on LIVE — re-login there', '#fbbf24');
-      } else {
-        showToast(msg, '#34d399');
-      }
+      // pull "worked" but backtests will still come back empty, so say both: what
+      // was applied, and that it needs a re-login on LIVE to be worth anything.
+      var stale = (d.stale && d.stale.length) ? d.stale.join(', ').toUpperCase() : '';
+      if (stale) msg += ' — but ' + stale + ' is STALE, re-login on LIVE';
+      showToast(msg, stale ? '#fbbf24' : '#34d399');
     } catch (e) {
       showToast('Pull failed: ' + e.message, '#f87171');
     } finally {
