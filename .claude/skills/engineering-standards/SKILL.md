@@ -7,25 +7,7 @@ description: Non-negotiable engineering standards for this trading repo (coding,
 
 This document defines the mandatory engineering standards that every AI specialist must follow.
 
-It applies to:
-
-- system-orchestrator
-- nodejs-architect
-- strategy-architect
-- quant-trading-architect
-- quant-research
-- risk-manager
-- trade-execution-engineer
-- market-regime-detector
-- testing-engine
-- senior-code-reviewer
-- performance-optimizer
-- devils-advocate
-- trading-journal
-- strategy-documenter
-- new-strategy
-- trading-ui-architect
-- trading-terminal-designer
+It applies to every skill in this workspace, without exception.
 
 If a recommendation conflicts with these standards, these standards take precedence.
 
