@@ -7,8 +7,15 @@
  * from a laptop. So: copy the token on LIVE, paste it locally, and backtest /
  * analytics work on the local machine.
  *
- *   GET  /token-sync            → page (COPY block + PASTE block)
+ * The copy/paste dance is the manual fallback. The one-click path is PULL: this
+ * machine calls the LIVE server's own /token-sync/tokens with the credentials in
+ * TOKEN_SYNC_LIVE_* and applies whatever comes back. The direction is always
+ * local → LIVE → local; LIVE can never push, because a laptop has no address the
+ * server can reach.
+ *
+ *   GET  /token-sync            → page (COPY block + PULL/PASTE block)
  *   GET  /token-sync/tokens     → { fyers:{...}, zerodha:{...} } incl. raw token
+ *   POST /token-sync/pull       → { broker? } → fetch from LIVE + apply here
  *   POST /token-sync/apply      → { broker, token } → write to disk + apply live
  *   POST /token-sync/restart    → graceful exit (PM2 / nodemon bring it back)
  *
@@ -24,6 +31,10 @@ const router  = express.Router();
 const fs      = require("fs");
 const os      = require("os");
 const path    = require("path");
+const http    = require("http");
+const https   = require("https");
+const crypto  = require("crypto");
+const { URL } = require("url");
 
 const { buildSidebar, sidebarCSS, faviconLink, toastJS, modalCSS, modalJS } = require("../utils/sharedNav");
 const sharedSocketState = require("../utils/sharedSocketState");
@@ -31,6 +42,12 @@ const sharedSocketState = require("../utils/sharedSocketState");
 const HOME            = os.homedir();
 const FYERS_TOKEN_F   = path.join(HOME, "trading-data", ".fyers_token");
 const ZERODHA_TOKEN_F = path.join(HOME, "trading-data", ".zerodha_token");
+
+// Must match LOGIN_COOKIE in app.js — app.js is the entry point, so requiring it
+// from a router it mounts would be circular. If that name ever changes, change it
+// here too or the pull below authenticates against nothing.
+const LOGIN_COOKIE   = "__trade_login";
+const PULL_TIMEOUT_MS = 12000;
 
 function todayIST() {
   return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
@@ -71,13 +88,114 @@ function readTokenFile(file, envKey) {
   return out;
 }
 
+// Where the LIVE server lives, and which credentials to present to it. Read live
+// from process.env (a Settings save mutates it in-process) — never frozen here.
+// The secrets fall back to this machine's own, which is the common case: the same
+// .env is used on both boxes. Nothing in here is ever sent to the browser except
+// `url`, which is not a credential.
+function liveSyncConfig() {
+  const url = String(process.env.TOKEN_SYNC_LIVE_URL || "").trim().replace(/\/+$/, "");
+  return {
+    url,
+    loginSecret: process.env.TOKEN_SYNC_LIVE_LOGIN_SECRET || process.env.LOGIN_SECRET || "",
+    apiSecret:   process.env.TOKEN_SYNC_LIVE_API_SECRET   || process.env.API_SECRET   || "",
+    // LIVE serves a self-signed cert (certs/cert.pem, CN = the EC2 IP), so strict
+    // verification always fails there. Default-on, but left switchable for anyone
+    // who puts a real certificate in front of it.
+    allowSelfSigned: (process.env.TOKEN_SYNC_ALLOW_SELF_SIGNED || "true").toLowerCase() === "true",
+  };
+}
+
 function snapshot() {
+  const live = liveSyncConfig();
   return {
     host: os.hostname(),
     todayIST: todayIST(),
     fyers:   readTokenFile(FYERS_TOKEN_F,   "ACCESS_TOKEN"),
     zerodha: readTokenFile(ZERODHA_TOKEN_F, "ZERODHA_ACCESS_TOKEN"),
+    live:    { configured: !!live.url, url: live.url },
   };
+}
+
+// Apply a token exactly the way the brokers' own save paths do: env + disk +
+// (Zerodha) a seeded Kite client, so backtests work without a restart. Shared by
+// the paste route and the pull route — one write path, not two.
+function applyBrokerToken(broker, token) {
+  if (broker === "fyers") {
+    // fyers.setAccessToken is wrapped in config/fyers.js — sets process.env
+    // ACCESS_TOKEN and persists to ~/trading-data/.fyers_token.
+    require("../config/fyers").setAccessToken(token);
+  } else {
+    // zerodhaBroker.setAccessToken sets env, seeds the Kite client and marks
+    // the disk token validated (otherwise the loader ignores it on boot).
+    require("../services/zerodhaBroker").setAccessToken(token);
+  }
+}
+
+function looksLikeToken(token) {
+  return !!token && token.length >= 20 && !/\s/.test(token);
+}
+
+// GET <LIVE>/token-sync/tokens as this machine. Callback style (no promise lib in
+// this repo's route layer) with a single-shot guard: a socket error after a
+// timeout must not settle twice.
+function fetchLiveTokens(cb) {
+  const cfg = liveSyncConfig();
+  let done = false;
+  const finish = (err, data) => { if (!done) { done = true; cb(err, data); } };
+
+  if (!cfg.url) {
+    return finish(new Error("No LIVE server URL — set it in Settings → Server & Broker (Token Sync)."));
+  }
+  let u;
+  try { u = new URL(cfg.url + "/token-sync/tokens"); }
+  catch (_) { return finish(new Error(`LIVE server URL is not a valid URL: ${cfg.url}`)); }
+  if (u.protocol !== "https:" && u.protocol !== "http:") {
+    return finish(new Error("LIVE server URL must start with https:// or http://"));
+  }
+
+  const headers = { Accept: "application/json" };
+  // The login gate compares against sha256(LOGIN_SECRET) — the same value the
+  // browser holds in its cookie after a successful login.
+  if (cfg.loginSecret) {
+    headers.Cookie = `${LOGIN_COOKIE}=${crypto.createHash("sha256").update(cfg.loginSecret).digest("hex")}`;
+  }
+  if (cfg.apiSecret) headers["x-api-secret"] = cfg.apiSecret;
+
+  const lib = u.protocol === "https:" ? https : http;
+  const req = lib.request({
+    hostname: u.hostname,
+    port:     u.port || (u.protocol === "https:" ? 443 : 80),
+    path:     u.pathname + u.search,
+    method:   "GET",
+    headers,
+    timeout:  PULL_TIMEOUT_MS,
+    ...(u.protocol === "https:" ? { rejectUnauthorized: !cfg.allowSelfSigned } : {}),
+  }, (res) => {
+    let body = "";
+    res.setEncoding("utf-8");
+    res.on("data", (c) => { body += c; if (body.length > 200000) req.destroy(new Error("Response too large")); });
+    res.on("end", () => {
+      const code = res.statusCode;
+      if (code === 401) return finish(new Error("LIVE rejected the login — check the Token Sync login password."));
+      if (code === 403) return finish(new Error("LIVE rejected the app secret — check the Token Sync app secret."));
+      if (code === 302 || code === 301) return finish(new Error("LIVE redirected to its login page — the login password is wrong."));
+      if (code !== 200) return finish(new Error(`LIVE answered HTTP ${code}.`));
+      let d;
+      try { d = JSON.parse(body); } catch (_) { return finish(new Error("LIVE did not answer with JSON — is that URL the trading app?")); }
+      if (!d || !d.fyers || !d.zerodha) return finish(new Error("LIVE answered without any token data."));
+      finish(null, d);
+    });
+  });
+
+  req.on("timeout", () => req.destroy(new Error(`LIVE did not answer within ${PULL_TIMEOUT_MS / 1000}s.`)));
+  req.on("error", (e) => finish(new Error(
+    e.code === "ECONNREFUSED"        ? `Could not reach LIVE at ${u.origin} — is it running and the port open?`
+    : e.code === "ENOTFOUND"         ? `Unknown host: ${u.hostname}`
+    : /self.signed|CERT_/i.test(e.code || e.message) ? "LIVE's certificate was rejected — turn on 'Allow LIVE self-signed cert'."
+    : `Could not reach LIVE: ${e.message}`
+  )));
+  req.end();
 }
 
 // ── GET /token-sync/tokens ───────────────────────────────────────────────────
@@ -94,26 +212,63 @@ router.post("/apply", (req, res) => {
   if (broker !== "fyers" && broker !== "zerodha") {
     return res.status(400).json({ success: false, error: "broker must be 'fyers' or 'zerodha'." });
   }
-  if (!token || token.length < 20 || /\s/.test(token)) {
+  if (!looksLikeToken(token)) {
     return res.status(400).json({ success: false, error: "That does not look like a token (paste the full value, no spaces)." });
   }
 
   try {
-    if (broker === "fyers") {
-      // fyers.setAccessToken is wrapped in config/fyers.js — sets process.env
-      // ACCESS_TOKEN and persists to ~/trading-data/.fyers_token.
-      require("../config/fyers").setAccessToken(token);
-    } else {
-      // zerodhaBroker.setAccessToken sets env, seeds the Kite client and marks
-      // the disk token validated (otherwise the loader ignores it on boot).
-      require("../services/zerodhaBroker").setAccessToken(token);
-    }
+    applyBrokerToken(broker, token);
     console.log(`🔑 [tokenSync] ${broker.toUpperCase()} token applied from the Token Sync page.`);
     res.json({ success: true, broker, snapshot: snapshot() });
   } catch (err) {
     console.warn(`⚠️  [tokenSync] apply failed for ${broker}: ${err.message}`);
     res.status(500).json({ success: false, error: err.message });
   }
+});
+
+// ── POST /token-sync/pull — one click: ask LIVE for its tokens, apply them ───
+// The whole copy/paste flow in one request. `broker` is optional: omitted (or
+// "both") pulls Fyers and Zerodha together. A broker LIVE has no token for is
+// skipped, not failed — a laptop that only backtests never needs Zerodha.
+router.post("/pull", (req, res) => {
+  const want = String((req.body && req.body.broker) || "both").toLowerCase();
+  if (!["fyers", "zerodha", "both"].includes(want)) {
+    return res.status(400).json({ success: false, error: "broker must be 'fyers', 'zerodha' or 'both'." });
+  }
+
+  fetchLiveTokens((err, live) => {
+    if (err) {
+      console.warn(`⚠️  [tokenSync] pull from LIVE failed: ${err.message}`);
+      return res.status(502).json({ success: false, error: err.message });
+    }
+
+    const brokers = want === "both" ? ["fyers", "zerodha"] : [want];
+    const applied = [], skipped = [], stale = [];
+
+    for (const broker of brokers) {
+      const d = live[broker] || {};
+      if (!d.present || !looksLikeToken(String(d.token || "").trim())) {
+        skipped.push(broker);
+        continue;
+      }
+      try {
+        applyBrokerToken(broker, String(d.token).trim());
+        applied.push(broker);
+        // Stamped with LIVE's date, so a stale one is stale here too — say so
+        // rather than let a backtest fail later with an unexplained no_data.
+        if (d.stale) stale.push(broker);
+        console.log(`🔑 [tokenSync] ${broker.toUpperCase()} token pulled from LIVE (${liveSyncConfig().url}).`);
+      } catch (e) {
+        console.warn(`⚠️  [tokenSync] pulled ${broker} token but could not apply it: ${e.message}`);
+        return res.status(500).json({ success: false, error: `Pulled ${broker} but could not apply it: ${e.message}` });
+      }
+    }
+
+    if (!applied.length) {
+      return res.status(404).json({ success: false, error: "LIVE has no usable token right now — log in to the broker there first." });
+    }
+    res.json({ success: true, applied, skipped, stale, snapshot: snapshot() });
+  });
 });
 
 // ── POST /token-sync/restart — graceful exit; PM2 / nodemon restart it ───────
@@ -161,6 +316,7 @@ router.get("/", (req, res) => {
     .card-head { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:11px 16px; background:#0d1320; border-bottom:1px solid #1a2236; flex-wrap:wrap; }
     .card-title { font-size:0.78rem; font-weight:700; letter-spacing:0.5px; text-transform:uppercase; color:#60a5fa; }
     .card-title.paste { color:#fbbf24; }
+    .card-title.pull { color:#a5b4fc; }
     .card-note { font-size:0.66rem; color:var(--muted-1,#8ba1c2); }
     .card-body { padding:14px 16px; }
     .row { padding:12px 0; border-bottom:1px solid #121a2a; }
@@ -182,6 +338,7 @@ router.get("/", (req, res) => {
     .btn-copy   { background:#071428; border-color:#0e2850; color:#60a5fa; }
     .btn-reveal { background:#060a14; border-color:#0e1a28; color:#818cf8; }
     .btn-apply  { background:#05170f; border-color:#0e3a28; color:#34d399; }
+    .btn-pull   { background:#0a1226; border-color:#26386e; color:#a5b4fc; font-weight:700; }
     .btn-restart{ background:#180508; border-color:#401018; color:#f87171; }
     .btn:hover:not(:disabled) { filter:brightness(1.25); }
     .btn:disabled { opacity:0.4; cursor:not-allowed; }
@@ -206,6 +363,7 @@ router.get("/", (req, res) => {
     :root[data-theme="light"] .btn-copy   { background:#eff6ff; border-color:#bfdbfe; color:#1e40af; }
     :root[data-theme="light"] .btn-reveal { background:#eef2ff; border-color:#c7d2fe; color:#4338ca; }
     :root[data-theme="light"] .btn-apply  { background:#ecfdf5; border-color:#a7f3d0; color:#047857; }
+    :root[data-theme="light"] .btn-pull   { background:#eef2ff; border-color:#c7d2fe; color:#3730a3; }
     :root[data-theme="light"] .btn-restart{ background:#fef2f2; border-color:#fecaca; color:#b91c1c; }
   </style>
 </head>
@@ -217,16 +375,33 @@ ${buildSidebar('tokenSync', liveActive)}
 <div class="top-bar">
   <div>
     <div class="top-bar-title">🔑 Token Sync</div>
-    <div class="top-bar-meta">Copy the day's broker token from LIVE → paste it on your local machine</div>
+    <div class="top-bar-meta">Pull the day's broker token from LIVE in one click — or copy/paste it by hand</div>
   </div>
 </div>
 
 <div class="page">
   <div class="sub">
     Broker login can only be completed on the LIVE server (the OAuth redirect URL is registered to it).
-    The data APIs work from anywhere, so for <b>backtest &amp; analytics on your laptop</b>: open this page
-    on LIVE, copy the token, then open this page locally and paste it. Nothing here places an order.
+    The data APIs work from anywhere, so for <b>backtest &amp; analytics on your laptop</b> the token has to
+    come across. Easiest: hit <b>Pull from LIVE</b> below. The copy/paste blocks under it still work by hand
+    for when this machine cannot reach LIVE. Nothing here places an order.
     <br/>This machine: <code id="hostName">…</code> · today (IST) <code id="todayIst">…</code>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title pull">⚡ One click — pull from LIVE</div>
+      <div class="card-note" id="pullTarget">…</div>
+    </div>
+    <div class="card-body">
+      <div class="row">
+        <div class="foot" id="pullHelp">
+          This machine asks LIVE for today's Fyers + Zerodha tokens and applies them here — no copying.
+          Set the LIVE address and secrets in <b>Settings → Server &amp; Broker</b>.
+        </div>
+        <div class="btn-row"><button class="btn btn-pull" id="pullBtn" onclick="pullFromLive()">⇩ Pull tokens from LIVE</button></div>
+      </div>
+    </div>
   </div>
 
   <div class="card">
@@ -270,7 +445,7 @@ ${buildSidebar('tokenSync', liveActive)}
 <script>
   ${modalJS()}
   ${toastJS()}
-  var SNAP = null, REVEALED = {}, _timer = null;
+  var SNAP = null, REVEALED = {}, _timer = null, _pulling = false;
 
   function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
   function mask(t){ return t.length <= 14 ? '•'.repeat(t.length) : t.slice(0,6) + '•'.repeat(18) + t.slice(-4); }
@@ -310,6 +485,18 @@ ${buildSidebar('tokenSync', liveActive)}
     document.getElementById('todayIst').textContent = SNAP.todayIST;
     document.getElementById('copyArea').innerHTML =
       rowHTML('fyers', 'FYERS', 'fy', SNAP.fyers) + rowHTML('zerodha', 'ZERODHA', 'zd', SNAP.zerodha);
+    renderPull();
+  }
+
+  // The button is only useful when a LIVE address is configured — say which one,
+  // and disable it (rather than let it fail) when there is none.
+  function renderPull(){
+    var live = (SNAP && SNAP.live) || { configured:false, url:'' };
+    var btn  = document.getElementById('pullBtn');
+    document.getElementById('pullTarget').textContent = live.configured ? live.url : 'no LIVE address set';
+    if (_pulling) return;                      // mid-pull: leave the button as-is
+    btn.disabled = !live.configured;
+    btn.textContent = live.configured ? '⇩ Pull tokens from LIVE' : '⇩ Set the LIVE address in Settings';
   }
 
   // The token poll needs the API_SECRET too — it returns a live broker
@@ -369,6 +556,39 @@ ${buildSidebar('tokenSync', liveActive)}
       SNAP = d.snapshot; render();
       showToast(broker.toUpperCase() + ' token applied', '#34d399');
     } catch (e) { showToast('Apply failed: ' + e.message, '#f87171'); }
+  }
+
+  // One click = /token-sync/pull: the server fetches LIVE's tokens and applies
+  // them here. Guarded against a double-click, because a second pull mid-flight
+  // would apply the same token twice for no reason.
+  async function pullFromLive(){
+    if (_pulling) return;
+    var btn = document.getElementById('pullBtn');
+    _pulling = true; btn.disabled = true; btn.textContent = '⏳ Pulling from LIVE…';
+    try {
+      var res = await secretFetch('/token-sync/pull', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ broker: 'both' })
+      });
+      if (!res) return;                       // secret prompt cancelled
+      var d = await res.json();
+      if (!d.success) return showToast(d.error || 'Pull failed', '#f87171');
+      SNAP = d.snapshot;
+      var msg = 'Pulled from LIVE: ' + d.applied.join(' + ').toUpperCase();
+      if (d.skipped && d.skipped.length) msg += ' · no token on LIVE for ' + d.skipped.join(', ').toUpperCase();
+      // A token LIVE saved on an earlier day is expired for both machines — the
+      // pull "worked" but backtests will still come back empty, so flag it.
+      if (d.stale && d.stale.length) {
+        showToast(d.stale.join(', ').toUpperCase() + ' token is STALE on LIVE — re-login there', '#fbbf24');
+      } else {
+        showToast(msg, '#34d399');
+      }
+    } catch (e) {
+      showToast('Pull failed: ' + e.message, '#f87171');
+    } finally {
+      _pulling = false;
+      if (SNAP) render(); else { btn.disabled = false; btn.textContent = '⇩ Pull tokens from LIVE'; }
+    }
   }
 
   async function restartApp(){

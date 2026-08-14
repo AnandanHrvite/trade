@@ -6,6 +6,14 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Added — Token Sync: one button pulls the LIVE token onto the laptop (`POST /token-sync/pull`)
+
+The copy/paste flow works but reads backwards: you open the page on LIVE, reveal a token, copy it, switch machines, paste it. **⇩ Pull tokens from LIVE** collapses that into one click on the local machine — it calls the LIVE server's own `/token-sync/tokens` with the credentials in `TOKEN_SYNC_LIVE_*`, then applies Fyers and Zerodha through the same write path a paste uses (disk + in-process client, no restart). The direction is always local → LIVE → local: LIVE cannot push, because a laptop behind a home router has no address the server can dial.
+
+**Settings → Server & Broker → Token Sync** holds the four keys. `TOKEN_SYNC_LIVE_URL` is the LIVE address and is blank by default, which leaves the button disabled and labelled *Set the LIVE address in Settings* rather than failing on click — and it must stay blank on the LIVE server itself. `TOKEN_SYNC_LIVE_LOGIN_SECRET` and `TOKEN_SYNC_LIVE_API_SECRET` are blank too, meaning *reuse this machine's own*, which is right whenever both boxes run the same `.env`. `TOKEN_SYNC_ALLOW_SELF_SIGNED` defaults on because LIVE serves `certs/cert.pem`, a self-signed certificate that strict verification will always reject; it is a switch rather than a hardcode so a real certificate can turn it off.
+
+Failures name the fix instead of the error: a 401 says the login password is wrong, a 403 says the app secret is, `ECONNREFUSED` names the origin it could not reach, and a rejected certificate points at the toggle. A broker LIVE holds no token for is skipped rather than failing the whole pull — a laptop that only backtests never needs Zerodha — and a token LIVE saved on an earlier day is still applied but reported **stale**, because otherwise it resurfaces as an unexplained empty backtest. The request carries a 12-second timeout and a capped response read, the button is single-shot while in flight, and `/token-sync/pull` stays out of `OPEN_PATHS` like the other writes, so it needs `API_SECRET`. The manual copy/paste blocks are untouched and remain the fallback when the laptop cannot reach LIVE at all.
+
 ### Added — Token Sync page: run backtests & analytics from a laptop (`/token-sync`)
 
 A broker login can only be completed on the LIVE server, because the Fyers/Zerodha OAuth redirect URL is registered against that host — a login started from `localhost` never comes back. The *data* APIs carry no such restriction: a token issued on LIVE authenticates a historical-candle call made from anywhere. That is the whole gap this page closes, so a laptop can run backtests, replay and analytics off the day's token without the machine ever needing to place an order.

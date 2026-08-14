@@ -766,9 +766,9 @@ const OPEN_PATHS = [
   // Token Sync — only the page shell is open, because a browser navigation
   // cannot carry the x-api-secret header. /token-sync/tokens hands out a live
   // broker credential, so it is gated like a write even though it is a GET;
-  // /token-sync/apply and /token-sync/restart stay out of this list too. The
-  // page fetches all three through secretFetch.
-  "/token-sync",            // token copy/paste page shell (renders no token)
+  // /token-sync/apply, /token-sync/pull and /token-sync/restart stay out of this
+  // list too. The page fetches all four through secretFetch.
+  "/token-sync",            // token pull/copy/paste page shell (renders no token)
   "/cache-files",           // cache / generated-file browser (read-only)
   "/cache-files/groups",    // JSON: per-group file count + size
   "/cache-files/list",      // JSON: paged files for one group

@@ -632,6 +632,15 @@ const SETTINGS_SCHEMA = [
       { key: "APP_ID", label: "Fyers App ID", type: "text", effect: EFFECT.SERVER },
       { key: "REDIRECT_URL", label: "Fyers Redirect URL", type: "text", effect: EFFECT.SERVER },
       { key: "ZERODHA_API_KEY", label: "Zerodha API Key", type: "text", effect: EFFECT.SERVER },
+
+      // ── Token Sync — the /token-sync "Pull from LIVE" button ────────────────
+      // Only used on a laptop: it calls the LIVE server's own /token-sync/tokens
+      // and applies what comes back. Blank secrets mean "use this machine's own",
+      // which is right whenever both boxes share the same .env.
+      { key: "TOKEN_SYNC_LIVE_URL",          label: "Token Sync: LIVE Server URL",       type: "text",     effect: EFFECT.INSTANT, desc: "Address of the LIVE server the Token Sync page pulls tokens from, e.g. https://43.205.26.92:3000 (blank = pull button off).", default: "", subheader: "Token Sync (pull from LIVE)" },
+      { key: "TOKEN_SYNC_LIVE_LOGIN_SECRET", label: "Token Sync: LIVE Login Password",   type: "password", effect: EFFECT.INSTANT, desc: "Login password of the LIVE server (blank = use this machine's Login Password)." },
+      { key: "TOKEN_SYNC_LIVE_API_SECRET",   label: "Token Sync: LIVE App Secret",       type: "password", effect: EFFECT.INSTANT, desc: "App secret of the LIVE server (blank = use this machine's App Secret)." },
+      { key: "TOKEN_SYNC_ALLOW_SELF_SIGNED", label: "Token Sync: Allow Self-Signed Cert", type: "toggle",  effect: EFFECT.INSTANT, desc: "LIVE serves its own certificate, so keep this on unless a real certificate is installed there.", default: "true" },
     ],
   },
   {
