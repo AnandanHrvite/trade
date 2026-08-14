@@ -869,7 +869,7 @@ async function onCandleClose(bar) {
     // has run BB_RSI_TRAIL_ARM_PTS in favour this is the initial stop; after, the trail
     // takes over with its own count. Each is independently toggleable in Settings.
     {
-      const _opp = bbRsiStrategy.oppositeCandleExit(window, state.position.side, state.position.mfeSpotPts || 0);
+      const _opp = bbRsiStrategy.oppositeCandleExit(window, state.position.side, state.position.mfeSpotPts || 0, state.position.candlesHeld || 0);
       if (_opp.hit) {
         state.position.slSource = _opp.armed ? "Opposite-candle trail" : "Opposite-candle SL";
         simulateSell(bar.close, _opp.reason, bar.close);

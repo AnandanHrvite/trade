@@ -248,9 +248,9 @@ function getSignal(candles, opts) {
   // ── Chop guard 1: band width ──────────────────────────────────────────────
   // A band collapsed to noise width has no "stretch" to fade — every touch is just the
   // tape breathing, and each fade pays the spread for nothing.
+  // (the width itself is already on base.bbWidth, which is what the skip log records)
   var bandWidth = bb.upper - bb.lower;
-  base.bandWidthOk = !(BW_ENABLED && BW_MIN > 0 && bandWidth < BW_MIN);
-  if (!base.bandWidthOk) {
+  if (BW_ENABLED && BW_MIN > 0 && bandWidth < BW_MIN) {
     base.reason = "No setup (band too narrow — " + bandWidth.toFixed(0) + "pts < " + BW_MIN + ")";
     return base;
   }
@@ -460,8 +460,16 @@ function countOppositeCandles(candles, side) {
 // what arms the per-side cooldown in every route; the trail's deliberately does not —
 // a trail exit banks a profit and must not pause the side.
 //   mfeSpotPts — best favourable spot points seen this trade
+//   barsHeld   — candles CLOSED since entry (the routes' position.candlesHeld). Only
+//                those can count against the trade: without the cap the streak reaches
+//                back through the entry candle and the signal candle before it — on a
+//                CE fade both are typically RED, being the tail of the sell-off being
+//                faded — so a 2-candle stop would fire on the FIRST close after entry
+//                and kill a trade that never got a single bar to work. Pass a
+//                non-finite value only in unit tests that are exercising the streak
+//                logic itself.
 // Returns { hit, reason, count, need, armed }.
-function oppositeCandleExit(candles, side, mfeSpotPts) {
+function oppositeCandleExit(candles, side, mfeSpotPts, barsHeld) {
   var slOn    = cfgOn("BB_RSI_OPP_CANDLE_SL_ENABLED", "true");
   var slCount = parseInt(cfg("BB_RSI_OPP_CANDLE_SL_COUNT", "2"), 10) || 2;
   var trOn    = cfgOn("BB_RSI_OPP_CANDLE_TRAIL_ENABLED", "true");
@@ -469,7 +477,8 @@ function oppositeCandleExit(candles, side, mfeSpotPts) {
   var armPts  = parseFloat(cfg("BB_RSI_TRAIL_ARM_PTS", "10"));
 
   var armed = trOn && (mfeSpotPts || 0) >= armPts;
-  var count = countOppositeCandles(candles, side);
+  var held  = Number.isFinite(barsHeld) ? Math.max(0, barsHeld) : Infinity;
+  var count = Math.min(countOppositeCandles(candles, side), held);
 
   if (armed) {
     if (count >= trCount) {

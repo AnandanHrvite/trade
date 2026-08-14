@@ -102,6 +102,8 @@ In the order each engine evaluates them:
    | **Stop** | before the trade has run `BB_RSI_TRAIL_ARM_PTS(10)` in favour | `BB_RSI_OPP_CANDLE_SL_ENABLED` (on) / `BB_RSI_OPP_CANDLE_SL_COUNT(2)` |
    | **Trail** | after it has | `BB_RSI_OPP_CANDLE_TRAIL_ENABLED` (on) / `BB_RSI_OPP_CANDLE_TRAIL_COUNT(2)` |
 
+   The streak only counts candles that closed **after entry** (capped at the position's `candlesHeld`). Without that cap it would reach back through the entry candle and the signal candle before it — on a CE fade both are typically red, being the tail of the sell-off being faded — and a 2-candle stop would fire on the very first close after entry, killing a trade that never got a single bar to work.
+
    The two are **independently toggleable**. Turn the trail off and the initial stop stays live for the whole trade; turn the stop off and nothing fires until the trail arms (the hard stop still applies either way). The stop's exit reason contains `"SL"`, which is what arms the per-side cooldown in every route; the trail's deliberately does **not** — a trail exit banks a profit and must not pause the side.
 5. **EOD square-off** at `TRADE_STOP_TIME(15:30)` IST (with an earlier backup just before).
 6. **Daily kill-switch / max trades** — see risk guards.

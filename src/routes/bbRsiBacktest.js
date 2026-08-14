@@ -237,7 +237,12 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
       // ──────────────────────────────────────────────────────────────────────
       // EXIT: 1. Hard stop  2. Profit lock  3. Middle-band target
       //       4. Two-opposite-candle stop/trail  5. EOD
-      // Same order paper runs them in (bbRsiPaper.onTick then onCandleClose).
+      // Paper evaluates the target FIRST (per tick, before the hard stop); this loop
+      // deliberately puts the protective stops first because a single bar carries no
+      // tick order — when a bar's range spans both the stop and the mean, assuming the
+      // stop hit first is the conservative read, and a backtest that guessed the
+      // profitable way round would flatter the strategy. Same trade-off the pre-V8
+      // loop made with its band-touch exit.
       // ──────────────────────────────────────────────────────────────────────
 
       const _favClosePts = (candle.close - position.entryPrice) * (position.side === "CE" ? 1 : -1);
@@ -293,7 +298,7 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
       //    paper does. The stop's reason contains "SL" so it arms the per-side cooldown
       //    below; the trail's deliberately does not.
       if (!exitReason) {
-        const _opp = bbRsiStrategy.oppositeCandleExit(window, position.side, position.mfeSpotPts || 0);
+        const _opp = bbRsiStrategy.oppositeCandleExit(window, position.side, position.mfeSpotPts || 0, position.candlesHeld || 0);
         if (_opp.hit) {
           position.slSource = _opp.armed ? "Opposite-candle trail" : "Opposite-candle SL";
           exitPrice  = candle.close;
