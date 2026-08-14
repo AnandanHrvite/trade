@@ -6,6 +6,14 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — a backtest no longer asks Fyers for dates that have not happened yet
+
+Switching BB_RSI to 3-min made every backtest of the current month fail at 4% with the single phrase **"Invalid input"**. Nothing about the strategy was wrong; the candle fetch was.
+
+`fetchCandlesSmartCache` widens a request to WHOLE calendar months so it can key its disk cache by month — so a "1 → 14 Aug" run goes out as "1 → 31 Aug". A single request starting in the past survives that, because Fyers simply truncates at today. But `fetchCandles` then splits the range into chunks no wider than the per-resolution limit, and at sub-5-min that limit is 30 days — so a 31-day month produces a **second chunk covering 31 Aug alone, a date entirely in the future**, which Fyers rejects and which fails the whole run. At 5-min the limit is 100 days, one chunk covers the month, and the bug stayed invisible. `fetchCandles` now clamps the end of the range to today (IST). Candles after today do not exist, and the month cache already refuses to store any month that touches today, so nothing partial is cached as if it were complete. A range lying entirely in the future now returns no candles and the normal "Too few candles" message instead of a raw API error.
+
+**And the error says what went wrong now.** On an HTTP error the Fyers SDK rejects with its raw body — a plain object whose `.message` is the bare word "Invalid input", with the parameter it actually objected to hidden in `.data`. Every backtest route did `failJob(err.message)` and showed those two useless words. `fetchChunk` now converts the rejection into a real message naming the symbol, resolution and the derived date range — which matters because that range is month-widened and chunked, so it never appears on the page the request came from. The formatter that already existed for this in the 3-min gap backtest moved to `src/utils/fyersErr.js` and is shared rather than copied.
+
 ### Added — BB_RSI can run on its own candle size again (3-min or 5-min)
 
 Candle timeframe went global on 2026-08-07 (`TRADE_RESOLUTION`, one dropdown for every strategy) to stop four near-identical settings silently disagreeing. That is still the right default, but it made one thing impossible: testing BB_RSI on 3-min without dragging EMA_RSI_ST, PA and EMA9+VWAP onto 3-min with it. Since V8 fades a stretched band, the timeframe is not a cosmetic choice — 3-min reaches the band more often and reverts sooner, so 3-min and 5-min are effectively two different strategies.

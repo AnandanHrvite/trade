@@ -41,6 +41,7 @@ const gapStrategy = require("../strategies/gap_fix_3m");
 // strategy's servable window is about one contract anyway, so a disk cache keyed
 // by month would buy almost nothing.
 const { fetchCandles } = require("../services/backtestEngine");
+const { fyersErrText } = require("../utils/fyersErr");
 const { faviconLink } = require("../utils/sharedNav");
 const { getCharges } = require("../utils/charges");
 const { renderBacktestResults, computeBacktestStats } = require("../utils/backtestUI");
@@ -376,28 +377,6 @@ router.get("/idle", (req, res) => {
 /** Total contract blocks a run attempted, however each one turned out. */
 function blocksTotal(meta) {
   return (meta.served || []).length + (meta.rejected || []).length + (meta.empty || []).length;
-}
-
-/**
- * Readable text for whatever the Fyers SDK threw.
- *
- * On an HTTP error the SDK rejects with the raw Fyers body — a PLAIN OBJECT
- * ({s, code, message, data}), not an Error. Reading only `.message` off it
- * reduces every parameter complaint to the bare word "Invalid input" and throws
- * away `data`, which is the one field that says WHICH parameter Fyers disliked
- * (e.g. {range_to: "Date range cannot exceed 366 days…"}). Keep the whole thing.
- */
-function fyersErrText(err) {
-  if (err && typeof err === "object" && !(err instanceof Error)) {
-    const bits = [err.message || err.s || "error"];
-    if (err.code != null) bits.push(`code ${err.code}`);
-    if (err.data && typeof err.data === "object") {
-      const detail = Object.entries(err.data).map(([k, v]) => `${k}: ${v}`).join("; ");
-      if (detail) bits.push(detail);
-    } else if (err.data) bits.push(String(err.data));
-    return bits.join(" — ");
-  }
-  return String((err && err.message) || err);
 }
 
 /** Escape text that came from an external API before it lands in the notes HTML. */

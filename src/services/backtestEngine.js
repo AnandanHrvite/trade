@@ -1,6 +1,7 @@
 require("dotenv").config();
 const fyers = require("../config/fyers");
-const { toDateString } = require("../utils/time");
+const { toDateString, today: todayIST } = require("../utils/time");
+const { fyersErrText } = require("../utils/fyersErr");
 
 const vixFilter = require("./vixFilter");
 const { buildVixLookup, checkBacktestVix, VIX_SYMBOL } = vixFilter;
@@ -30,7 +31,18 @@ function quantize(val, decimals) { const f = 10 ** decimals; return Math.round(v
 async function fetchChunk(symbol, resolution, from, to) {
   const params = { symbol, resolution: String(resolution), date_format: "1", range_from: from, range_to: to, cont_flag: "1" };
   console.log(`   📦 Fetching chunk: ${from} → ${to}`);
-  const response = await fyers.getHistory(params);
+  let response;
+  try {
+    response = await fyers.getHistory(params);
+  } catch (err) {
+    // The SDK rejects with Fyers' raw body, a plain object whose `.message` is the
+    // useless bare word "Invalid input" — the parameter it actually objected to is
+    // in `.data`. Left unconverted, that object reaches failJob(err.message) and the
+    // user sees two words with no way to act on them. Say what was asked for too:
+    // the range here is derived (month-widened, then chunked), so it is not visible
+    // from the page the request came from.
+    throw new Error(`Fyers history ${symbol} ${resolution} ${from}→${to}: ${fyersErrText(err)}`);
+  }
   if (response.s === "no_data" || (!response.candles || response.candles.length === 0)) return [];
   if (response.s !== "ok") throw new Error(`Fyers API error: ${JSON.stringify(response)}`);
   return response.candles.map(([time, open, high, low, close, volume]) => ({ time, open, high, low, close, volume }));
@@ -42,7 +54,18 @@ async function fetchCandles(symbol, resolution, from, to) {
   const seen = new Set();
   const unique = [];
   let cursor = new Date(from);
-  const endDate = new Date(to);
+  // Never ask for a range that has not happened yet. Callers routinely pass a `to`
+  // in the future without meaning to: fetchCandlesSmartCache widens the request to
+  // WHOLE calendar months for its cache keys, so a "1 → 14 Aug" backtest goes out
+  // as 1 → 31 Aug. A single chunk starting in the past survives that — Fyers just
+  // truncates at today — but the chunking below splits the tail into a request that
+  // lies ENTIRELY in the future, and Fyers rejects the whole run over it. That only
+  // bites at sub-5-min resolutions, where maxDays is 30 and a 31-day month therefore
+  // needs a second chunk, which is why it surfaced the moment BB_RSI moved to 3-min.
+  // Clamping costs nothing: candles after today do not exist, and the month cache
+  // already refuses to store any month that touches today, so no partial month is
+  // ever persisted as if it were complete.
+  const endDate = new Date(Math.min(new Date(to).getTime(), new Date(todayIST()).getTime()));
   while (cursor <= endDate) {
     const chunkEnd = new Date(cursor);
     chunkEnd.setDate(chunkEnd.getDate() + maxDays - 1);
