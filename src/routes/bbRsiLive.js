@@ -2035,7 +2035,7 @@ ${buildSidebar('bbRsiLive', liveActive, state.running, {
 <div class="top-bar">
   <div>
     <div class="top-bar-title">BB_RSI Live Trade</div>
-    <div class="top-bar-meta">${bbRsiStrategy.NAME} \u00b7 ${BB_RSI_RES}-min candles \u00b7 Target: BB middle \u00b7 SL: 2 opposite candles \u00b7 ${state.running ? "Auto-refreshes 2s" : "Not refreshing"}</div>
+    <div class="top-bar-meta">${bbRsiStrategy.NAME} \u00b7 ${BB_RSI_RES}-min candles \u00b7 ${bbRsiStrategy.direction() === "breakout" ? "Break entry \u00b7 No fixed target" : "Fade entry \u00b7 Target: BB middle"} \u00b7 SL: 2 opposite candles \u00b7 ${state.running ? "Auto-refreshes 2s" : "Not refreshing"}</div>
   </div>
   <div class="top-bar-right">
     ${state.running

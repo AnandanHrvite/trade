@@ -109,14 +109,15 @@ const SETTINGS_SCHEMA = [
       { key: "BB_RSI_ENTRY_START", label: "Entry Start Time", type: "time", effect: EFFECT.SESSION, desc: "Earliest entry time (IST).", default: "09:21" },
       { key: "BB_RSI_ENTRY_END", label: "Entry End Time", type: "time", effect: EFFECT.SESSION, desc: "No new entries after this time (IST).", default: "14:30" },
       // ── Bollinger Bands ──
-      { key: "BB_RSI_BB_PERIOD", label: "BB Period", type: "number", min: 10, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Bollinger Band period.", default: "30", subheader: "Entry Signal (mean reversion)" },
+      { key: "BB_RSI_DIRECTION", label: "Trade Direction", type: "select", options: [{ value: "fade", label: "Fade the band (mean reversion)" }, { value: "breakout", label: "Trade the break (momentum)" }], effect: EFFECT.SESSION, desc: "Which way the SAME signal bars are traded. Fade = buy CE below the lower band (V8, the default). Breakout = buy CE ABOVE the upper band instead. Every filter, stop and trail below is shared, so this is a clean A/B. Breakout skips the BB-middle target — the mean is behind the entry, so it would exit on the entry bar — and leaves the stop, trail and EOD as the only exits. Leave the divergence filter OFF in breakout mode: it is an exhaustion tell.", default: "fade", subheader: "Entry Signal" },
+      { key: "BB_RSI_BB_PERIOD", label: "BB Period", type: "number", min: 10, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Bollinger Band period.", default: "30" },
       { key: "BB_RSI_BB_STDDEV", label: "BB Std Dev", type: "number", min: 0.5, max: 3.0, step: 0.1, effect: EFFECT.SESSION, desc: "Bollinger Band standard deviation.", default: "2" },
       // ── RSI — note the direction: this engine FADES the extreme, so CE wants a LOW
       //    RSI (oversold) and PE a HIGH one. Ranges span 5–95 for both because the two
       //    thresholds swapped ends of the scale when V8 inverted the entry side.
       { key: "BB_RSI_RSI_PERIOD", label: "RSI Period", type: "number", min: 7, max: 21, step: 1, effect: EFFECT.SESSION, desc: "RSI period.", default: "14" },
-      { key: "BB_RSI_RSI_CE_THRESHOLD", label: "RSI CE Entry (≤)", type: "number", min: 5, max: 95, step: 1, effect: EFFECT.SESSION, desc: "CE fades an oversold drop — needs RSI at or below this.", default: "25" },
-      { key: "BB_RSI_RSI_PE_THRESHOLD", label: "RSI PE Entry (≥)", type: "number", min: 5, max: 95, step: 1, effect: EFFECT.SESSION, desc: "PE fades an overbought rip — needs RSI at or above this.", default: "75" },
+      { key: "BB_RSI_RSI_CE_THRESHOLD", label: "RSI Oversold (≤)", type: "number", min: 5, max: 95, step: 1, effect: EFFECT.SESSION, desc: "The lower-band trigger needs RSI at or below this. Fade buys CE on it; breakout buys PE.", default: "25" },
+      { key: "BB_RSI_RSI_PE_THRESHOLD", label: "RSI Overbought (≥)", type: "number", min: 5, max: 95, step: 1, effect: EFFECT.SESSION, desc: "The upper-band trigger needs RSI at or above this. Fade buys PE on it; breakout buys CE.", default: "75" },
       { key: "BB_RSI_RSI_TURNING", label: "RSI Turning Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Also require RSI to have already turned back (CE: rising, PE: falling).", default: "false" },
       { key: "BB_RSI_CONFIRM_CANDLE_ENABLED", label: "Confirmation Candle (cross & close)", type: "toggle", effect: EFFECT.INSTANT, desc: "Wait for a second candle to confirm entry.", default: "true" },
       { key: "BB_RSI_CONFIRM_ON_CLOSE", label: "Confirm on candle close", type: "toggle", effect: EFFECT.INSTANT, desc: "Confirmation candle must CLOSE past the signal close (off = enter intra-bar on first cross).", default: "true" },
@@ -127,14 +128,14 @@ const SETTINGS_SCHEMA = [
       { key: "BB_RSI_RSI_RANGE_ENABLED", label: "RSI-Range Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Skip entries when RSI has been pinned mid-range (dead tape).", default: "true" },
       { key: "BB_RSI_RSI_RANGE_LOOKBACK", label: "RSI Range Lookback (candles)", type: "number", min: 5, max: 60, step: 1, effect: EFFECT.SESSION, desc: "How many candles before the signal bar to measure RSI travel over.", default: "20" },
       { key: "BB_RSI_RSI_RANGE_MIN", label: "Min RSI Range", type: "number", min: 0, max: 80, step: 1, effect: EFFECT.SESSION, desc: "Max minus min RSI over the lookback must be at least this.", default: "30" },
-      { key: "BB_RSI_ADX_ENABLED", label: "ADX Ceiling Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Skip entries when the trend is too strong to fade.", default: "false" },
+      { key: "BB_RSI_ADX_ENABLED", label: "ADX Ceiling Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Skip entries when the trend is too strong to fade. Stays a CEILING in breakout mode too, where it is the wrong sense — leave it off there.", default: "false" },
       { key: "BB_RSI_ADX_MAX", label: "ADX Max (trend ceiling)", type: "number", min: 0, max: 60, step: 1, effect: EFFECT.SESSION, desc: "Block entries once ADX(14) reaches this (higher = more permissive).", default: "30" },
       // ── Divergence (optional confirmation that the extreme is exhausted) ──
       { key: "BB_RSI_DIVERGENCE_ENABLED", label: "Divergence Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Require price/RSI divergence: CE = lower low with a higher RSI low, PE = higher high with a lower RSI high.", default: "false", subheader: "Divergence" },
       { key: "BB_RSI_DIV_LOOKBACK", label: "Divergence Lookback (candles)", type: "number", min: 5, max: 60, step: 1, effect: EFFECT.SESSION, desc: "How far back to hunt for the prior swing to compare against.", default: "20" },
       { key: "BB_RSI_DIV_PIVOT_BARS", label: "Divergence Pivot Bars", type: "number", min: 1, max: 6, step: 1, effect: EFFECT.SESSION, desc: "Bars either side needed to confirm a swing pivot (higher = stricter, slower).", default: "2" },
       // ── Exits ──
-      { key: "BB_RSI_TARGET_MIDDLE_BAND", label: "Target the BB Middle Band", type: "toggle", effect: EFFECT.SESSION, desc: "Take profit when price reverts to the mean (the middle band).", default: "true", subheader: "Exits" },
+      { key: "BB_RSI_TARGET_MIDDLE_BAND", label: "Target the BB Middle Band", type: "toggle", effect: EFFECT.SESSION, desc: "Take profit when price reverts to the mean (the middle band). Ignored in breakout mode — the mean is behind the entry there.", default: "true", subheader: "Exits" },
       { key: "BB_RSI_OPP_CANDLE_SL_ENABLED", label: "Opposite-Candle Stop", type: "toggle", effect: EFFECT.SESSION, desc: "Exit after N consecutive candles closing against the trade.", default: "true" },
       { key: "BB_RSI_OPP_CANDLE_SL_COUNT", label: "Opposite Candles → Stop", type: "number", min: 1, max: 6, step: 1, effect: EFFECT.SESSION, desc: "How many consecutive opposite candles trigger the stop.", default: "2" },
       { key: "BB_RSI_OPP_CANDLE_TRAIL_ENABLED", label: "Opposite-Candle Trail", type: "toggle", effect: EFFECT.SESSION, desc: "Once in profit, take over from the stop with its own opposite-candle count.", default: "true" },
@@ -1009,6 +1010,7 @@ const SESSION_RESTART_KEYS = new Set([
   "TRADE_ENTRY_START", "TRADE_ENTRY_END",
   "BB_RSI_ENTRY_START", "BB_RSI_ENTRY_END", "BB_RSI_RESOLUTION",
   // BB_RSI settings — need session restart
+  "BB_RSI_DIRECTION",
   "BB_RSI_BB_PERIOD", "BB_RSI_BB_STDDEV",
   "BB_RSI_RSI_PERIOD", "BB_RSI_RSI_CE_THRESHOLD",
   "BB_RSI_RSI_PE_THRESHOLD", "BB_RSI_RSI_TURNING",

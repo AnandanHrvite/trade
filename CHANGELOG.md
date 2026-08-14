@@ -6,6 +6,18 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Added — BB_RSI can trade the band break instead of fading it (`BB_RSI_DIRECTION`)
+
+The V8 fade backtests badly: 2018-01-01 → 2026-08-14 gives 510 trades, 34% win rate, profit factor 0.50, net −₹130,762 — and with an average win (₹758) roughly equal to the average loss (₹786), break-even needs about 51%. The obvious question is whether the same signals are worth taking the *other* way round, and that could not be answered without re-running an engine V8 had deleted.
+
+**Settings → BB_RSI → `BB_RSI_DIRECTION`** — `fade` (default, unchanged) or `breakout`. The entry triggers are identical in both: a close beyond a band with RSI at the matching extreme. Only the side flips — under `breakout`, a close **above** the upper band buys **CE** (the V7 mapping) instead of PE. Every chop guard, the signal-candle stop line, the opposite-candle stop and trail, the hard stop, the cooldowns and the slippage model are shared, so the two directions are a controlled A/B over one backtest range rather than two different engines being compared.
+
+Two rules necessarily move with the direction. The **middle-band target is skipped** in `breakout` mode whatever `BB_RSI_TARGET_MIDDLE_BAND` says: a CE opened above the upper band is already above the mean, so honouring the target would close the trade on its own entry bar. That leaves the opposite-candle stop/trail, the hard stop and EOD as the exits. And **STRONG** flips to mean RSI further *with* the break rather than further into the extreme, which matters only when `BB_RSI_VIX_STRONG_ONLY` is active.
+
+Three settings stay fade-shaped and are documented as such: `BB_RSI_DIVERGENCE_ENABLED` (an exhaustion tell — requiring it in breakout mode would keep only the breakouts already failing) and `BB_RSI_ADX_ENABLED` (still a *ceiling*, so it blocks exactly the strong trends a breakout wants) should both stay off there, and `BB_RSI_MAX_ENTRY_SL_PTS` rejects far more entries in breakout mode because the stop line is the signal candle's far end — a CE long stops under the breakout bar's low, not just below its close.
+
+Nothing changes for an existing `.env`: the key is absent by default, and any unrecognised value falls back to `fade`, so a typo cannot silently invert live entries. Paper, Live and Backtest all read it from the one engine, so the three cannot drift onto opposite sides.
+
 ### Fixed — every backtest page shows dates as DD/MM/YYYY
 
 The main trade log was already right; the Analytics tables underneath were not. The "Day-wise Loss" and "Losses by Candles Held" tables on BB_RSI, PA, EMA_RSI_ST and EMA9+VWAP read a `date` field the trade objects never carried, so every row showed `?` or a dash. They now take the date from the trade's entry timestamp.

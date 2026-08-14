@@ -31,6 +31,21 @@ The whole risk in this design is the market that keeps going. Two things address
 
 ## 3. Entry — evaluated at candle close
 
+### Direction (`BB_RSI_DIRECTION`, default **`fade`**)
+
+The two triggers below fire on the same candles whichever direction is set; only the side bought changes.
+
+| | `fade` (default) | `breakout` |
+|---|---|---|
+| Close ≤ BB lower + RSI oversold | **CE** | **PE** |
+| Close ≥ BB upper + RSI overbought | **PE** | **CE** |
+| Middle-band target | on (§5) | **skipped** — the mean sits behind the entry, so honouring it would exit on the entry bar |
+| `signalStrength()` STRONG | RSI further **into** the extreme | RSI further **with** the break |
+
+`breakout` restores the V7 side mapping while keeping every V8 filter, stop and trail identical, which is the point: fade-vs-break becomes a controlled A/B over one backtest range instead of a comparison of two different engines. Anything other than `fade`/`breakout` (a typo, a blank) falls back to `fade`, so a bad value cannot silently invert live entries.
+
+Two filters are direction-sensitive and should stay **off** in `breakout` mode: the **divergence** filter (§3c) is an exhaustion tell, so requiring it keeps only the breakouts that are already failing; the **ADX ceiling** (§3b) stays a ceiling and therefore blocks exactly the strong trends a breakout wants. `BB_RSI_MAX_ENTRY_SL_PTS` also bites much harder in `breakout` mode — the stop line is the signal candle's *far* end there (a CE long stops under the breakout bar's low) rather than its near end.
+
 **CE (long call) — fades a drop:**
 - Candle **closes at/below the BB lower band** — `close ≤ BB.lower`
 - `RSI ≤ BB_RSI_RSI_CE_THRESHOLD(25)` — oversold

@@ -166,9 +166,10 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
 
   console.log("\n══════════════════════════════════════════════");
   console.log(`🔍 BB_RSI BACKTEST — ${bbRsiStrategy.NAME}`);
-  console.log(`   Candles: ${candles.length} | BB fade + RSI extreme entry (mean reversion)`);
+  const _isBreak = bbRsiStrategy.direction() === "breakout";
+  console.log(`   Candles: ${candles.length} | ${_isBreak ? "BB BREAK + RSI extreme entry (momentum)" : "BB fade + RSI extreme entry (mean reversion)"}`);
   console.log(`   MaxTrades: ${BB_RSI_MAX_TRADES}/day | MaxLoss: ₹${BB_RSI_MAX_LOSS}/day`);
-  console.log(`   Exit: hard stop + profit lock + BB middle target + 2-opposite-candle SL/trail | Slippage: ${SLIPPAGE_PTS}pts`);
+  console.log(`   Exit: hard stop + profit lock${_isBreak ? "" : " + BB middle target"} + 2-opposite-candle SL/trail | Slippage: ${SLIPPAGE_PTS}pts`);
   console.log(`   Days with data: ${sortedDates.length}`);
   console.log("══════════════════════════════════════════════");
 

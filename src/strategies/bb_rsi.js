@@ -10,6 +10,21 @@
  *   CE (fade a drop): close ≤ BB lower  AND RSI ≤ BB_RSI_RSI_CE_THRESHOLD (default 25)
  *   PE (fade a rip):  close ≥ BB upper  AND RSI ≥ BB_RSI_RSI_PE_THRESHOLD (default 75)
  *
+ *   BB_RSI_DIRECTION (default "fade") picks which way those two triggers are traded:
+ *     • fade     — as above. The V8 mean-reversion engine, unchanged.
+ *     • breakout — the SAME two signal bars, opposite side: a close above the upper
+ *       band buys CE, a close below the lower band buys PE (the V7 side mapping).
+ *       Everything else — the chop guards, the signal-candle stop line, the
+ *       opposite-candle stop/trail, the hard stop — is identical, which is the point:
+ *       it makes fade-vs-break a controlled A/B over one backtest range rather than a
+ *       comparison of two different engines. Two rules necessarily change with it:
+ *       the middle-band target is skipped (the mean sits BEHIND a breakout entry, so
+ *       targeting it would exit on the entry bar), and "STRONG" flips to mean RSI
+ *       further WITH the break instead of further into the extreme.
+ *       The divergence filter below is a mean-reversion tell — it argues the move is
+ *       exhausted — so leave it off in breakout mode; requiring it would keep only the
+ *       breakouts that are already failing.
+ *
  *   Chop guards — the failure mode the operator described: a sideways tape pins price to
  *   a band that has collapsed to noise width, the fade signal repeats every few candles
  *   and each one bleeds.
@@ -109,6 +124,19 @@ function int(key, fb, min) {
 // the global rather than to NaN, which would poison every bucket boundary.
 // It lives in the engine, not in the three routes, so Paper / Live / Backtest
 // cannot drift onto different candle sizes.
+// ── Direction: fade the band, or trade the break ─────────────────────────────
+// Same signal bars either way — only the side flips. Unrecognised values fall back to
+// "fade" so a typo cannot silently invert every live entry; the fallback is the shipped
+// V8 behaviour, i.e. an untouched .env is unaffected by this key existing.
+// Read live from process.env (never cached) so a Settings save reaches Paper and
+// Backtest without a restart, exactly like every other key in this engine.
+const DIRECTION_CHOICES = ["fade", "breakout"];
+function direction() {
+  const raw = String(cfg("BB_RSI_DIRECTION", "fade")).trim().toLowerCase();
+  return DIRECTION_CHOICES.indexOf(raw) !== -1 ? raw : "fade";
+}
+function isBreakout() { return direction() === "breakout"; }
+
 const RESOLUTION_CHOICES = [3, 5];
 function resolutionMin() {
   var raw = String(cfg("BB_RSI_RESOLUTION", "global")).trim();
@@ -342,21 +370,29 @@ function getSignal(candles, opts) {
     return base;
   }
 
-  // ── ENTRY CONDITIONS (V8: mean reversion) ─────────────────────────────────
-  //   CE = fade a drop: price stretched BELOW the lower band with RSI oversold.
-  //   PE = fade a rip:  price stretched ABOVE the upper band with RSI overbought.
-  var ceStretch = sc.close <= bb.lower;
-  var peStretch = sc.close >= bb.upper;
+  // ── ENTRY CONDITIONS ──────────────────────────────────────────────────────
+  // The two triggers are the same in both directions; only the side they buy differs.
+  //   stretched DOWN: close BELOW the lower band with RSI oversold   → fade CE / break PE
+  //   stretched UP:   close ABOVE the upper band with RSI overbought → fade PE / break CE
+  var BREAKOUT  = isBreakout();
+  var ceStretch = sc.close <= bb.lower;   // stretched down
+  var peStretch = sc.close >= bb.upper;   // stretched up
+  var _dnSide   = BREAKOUT ? "PE" : "CE"; // side taken on a downward stretch
+  var _upSide   = BREAKOUT ? "CE" : "PE"; // side taken on an upward stretch
 
   // ── Near-miss filter audit (additive-only logging; does NOT affect signal) ──
-  var _ceAuditChecks = [
+  // Keyed by the side that WOULD be entered, so the near-miss log still reads as
+  // "how close was the CE entry" whichever direction is configured.
+  var _dnAuditChecks = [
     { name: "below BB lower", ok: ceStretch,      detail: "close=" + sc.close + " vs BB_L=" + bb.lower.toFixed(1) },
     { name: "RSI oversold",   ok: rsi <= RSI_CE,  detail: "RSI=" + rsi.toFixed(1) + " vs ≤" + RSI_CE },
   ];
-  var _peAuditChecks = [
+  var _upAuditChecks = [
     { name: "above BB upper", ok: peStretch,      detail: "close=" + sc.close + " vs BB_U=" + bb.upper.toFixed(1) },
     { name: "RSI overbought", ok: rsi >= RSI_PE,  detail: "RSI=" + rsi.toFixed(1) + " vs ≥" + RSI_PE },
   ];
+  var _ceAuditChecks = BREAKOUT ? _upAuditChecks : _dnAuditChecks;
+  var _peAuditChecks = BREAKOUT ? _dnAuditChecks : _upAuditChecks;
   function _auditSide(checks) {
     var passed = [], failed = [];
     for (var i = 0; i < checks.length; i++) {
@@ -368,7 +404,10 @@ function getSignal(candles, opts) {
   base.filterAudit = { ce: _auditSide(_ceAuditChecks), pe: _auditSide(_peAuditChecks) };
 
   // Shared tail for both sides: RSI-turning, divergence, stop distance, then emit.
-  function _emit(side) {
+  //   side      — the option side being bought
+  //   stretchUp — which band was breached (true = closed above the upper band). Kept
+  //               separate from `side` because the two are only coupled in fade mode.
+  function _emit(side, stretchUp) {
     var isCE = side === "CE";
 
     if (RSI_TURNING) {
@@ -381,7 +420,11 @@ function getSignal(candles, opts) {
 
     var div = null;
     if (DIV_ENABLED) {
-      div = _findDivergence(candles, rsiArr, rsiOffset, side, DIV_LOOKBACK, DIV_PIVOT_BARS);
+      // Measured against the STRETCH, not the side: divergence is a statement about the
+      // extreme just printed (a lower low the RSI did not confirm), which is the same
+      // question whichever way that extreme is then traded. In fade mode the two are
+      // the same value, so this is behaviour-identical there.
+      div = _findDivergence(candles, rsiArr, rsiOffset, stretchUp ? "PE" : "CE", DIV_LOOKBACK, DIV_PIVOT_BARS);
       if (!div) {
         base.reason = side + " blocked: no confirmed pivot within " + DIV_LOOKBACK + " bars to measure divergence against";
         return base;
@@ -403,52 +446,55 @@ function getSignal(candles, opts) {
       return base;
     }
 
-    var band  = isCE ? bb.lower : bb.upper;
-    var _tag  = isCE ? "below BB lower(" + band.toFixed(0) + ")" : "above BB upper(" + band.toFixed(0) + ")";
+    var band  = stretchUp ? bb.upper : bb.lower;
+    var _tag  = stretchUp ? "above BB upper(" + band.toFixed(0) + ")" : "below BB lower(" + band.toFixed(0) + ")";
     var _divTag = div && div.ok ? " + divergence(" + div.barsBack + " bars)" : "";
+    // A breakout entry has no fixed target — the mean is behind it, so the stop, the
+    // trail and EOD are the only ways out.
+    var _target = BREAKOUT ? null : parseFloat(bb.middle.toFixed(2));
+    var _tgtTag = BREAKOUT ? " | no fixed target (stop/trail exit)"
+                           : " | target BB mid(" + bb.middle.toFixed(0) + ")";
     if (!silent) {
-      console.log("[BB_RSI " + _ist + "] " + side + " FADE: close(" + sc.close + ") " + _tag
-        + " + RSI=" + rsi.toFixed(1) + _divTag + " | target=BB mid(" + bb.middle.toFixed(1) + ") SL line=" + slLine.toFixed(2) + " [" + slPts.toFixed(1) + "pts]");
+      console.log("[BB_RSI " + _ist + "] " + side + (BREAKOUT ? " BREAK" : " FADE") + ": close(" + sc.close + ") " + _tag
+        + " + RSI=" + rsi.toFixed(1) + _divTag + _tgtTag + " SL line=" + slLine.toFixed(2) + " [" + slPts.toFixed(1) + "pts]");
     }
     return Object.assign({}, base, {
       signal: isCE ? "BUY_CE" : "BUY_PE",
       signalStrength: "BB_RSI",
       stopLoss: parseFloat(slLine.toFixed(2)),
       slSource: "Signal candle",
-      target: parseFloat(bb.middle.toFixed(2)),
+      target: _target,
       slPts: slPts,
-      reason: side + " fade: " + _tag + " + RSI=" + rsi.toFixed(0) + _divTag
-            + " | target BB mid(" + bb.middle.toFixed(0) + ") | SL line=" + slLine.toFixed(2) + " [" + slPts.toFixed(1) + "pts]",
+      reason: side + (BREAKOUT ? " break: " : " fade: ") + _tag + " + RSI=" + rsi.toFixed(0) + _divTag
+            + _tgtTag + " | SL line=" + slLine.toFixed(2) + " [" + slPts.toFixed(1) + "pts]",
     });
   }
 
-  if (ceStretch && rsi <= RSI_CE) return _emit("CE");
-  if (peStretch && rsi >= RSI_PE) return _emit("PE");
+  if (ceStretch && rsi <= RSI_CE) return _emit(_dnSide, false);
+  if (peStretch && rsi >= RSI_PE) return _emit(_upSide, true);
 
   // No signal — build descriptive reason showing which leg failed
   var parts = [];
-  if (ceStretch && !(rsi <= RSI_CE)) parts.push("CE stretched below band but RSI=" + rsi.toFixed(0) + ">" + RSI_CE);
-  if (peStretch && !(rsi >= RSI_PE)) parts.push("PE stretched above band but RSI=" + rsi.toFixed(0) + "<" + RSI_PE);
+  if (ceStretch && !(rsi <= RSI_CE)) parts.push(_dnSide + " stretched below band but RSI=" + rsi.toFixed(0) + ">" + RSI_CE);
+  if (peStretch && !(rsi >= RSI_PE)) parts.push(_upSide + " stretched above band but RSI=" + rsi.toFixed(0) + "<" + RSI_PE);
 
   base.reason = parts.length > 0 ? "No setup (" + parts.join("; ") + ")" : "No setup";
   return base;
 }
 
 // ── Signal strength (drives BB_RSI_VIX_STRONG_ONLY) ─────────────────────────
-// STRONG when RSI is clearly PAST its threshold by 5 — i.e. deeper into the extreme
-// being faded. Inverted vs V7, where "past the threshold" meant further with the trend.
-// Shared by paper/live/backtest so the three cannot drift apart.
+// STRONG when RSI is clearly PAST its threshold by 5 — deeper into the extreme. Which
+// threshold that is depends on the direction: a fade CE comes off an OVERSOLD stretch,
+// a breakout CE off an OVERBOUGHT one, so the two modes read opposite ends of the scale
+// for the same side. Shared by paper/live/backtest so the three cannot drift apart.
 function signalStrength(result) {
   var rsi = result && typeof result.rsi === "number" ? result.rsi : null;
   if (rsi === null) return "MARGINAL";
-  if (result.signal === "BUY_CE") {
-    var ce = num("BB_RSI_RSI_CE_THRESHOLD", "25");
-    return rsi <= ce - 5 ? "STRONG" : "MARGINAL";
-  }
-  if (result.signal === "BUY_PE") {
-    var pe = num("BB_RSI_RSI_PE_THRESHOLD", "75");
-    return rsi >= pe + 5 ? "STRONG" : "MARGINAL";
-  }
+  var oversold   = rsi <= num("BB_RSI_RSI_CE_THRESHOLD", "25") - 5;
+  var overbought = rsi >= num("BB_RSI_RSI_PE_THRESHOLD", "75") + 5;
+  var brk = isBreakout();
+  if (result.signal === "BUY_CE") return (brk ? overbought : oversold)   ? "STRONG" : "MARGINAL";
+  if (result.signal === "BUY_PE") return (brk ? oversold   : overbought) ? "STRONG" : "MARGINAL";
   return "MARGINAL";
 }
 
@@ -488,6 +534,11 @@ function hardStop(favPts) {
 //   price  — current spot
 // Returns { hit, level }.
 function middleBandTarget(middle, side, price) {
+  // Breakout entries are ALREADY past the mean — a CE opened above the upper band is
+  // above the middle from its first tick, so honouring this target would close every
+  // trade on its entry bar. The direction gate comes before the toggle deliberately:
+  // it is not an operator preference, it is arithmetic.
+  if (isBreakout()) return { hit: false, level: null };
   if (!cfgOn("BB_RSI_TARGET_MIDDLE_BAND", "true")) return { hit: false, level: null };
   if (middle == null || price == null) return { hit: false, level: null };
   // CE entered BELOW the lower band → reverting up to the middle. PE entered above → down.
@@ -569,7 +620,7 @@ function bbLevels(candles) {
 function reset() { _indicatorCache = { key: null, bb: null, rsiArr: null, adx: null }; }
 
 module.exports = {
-  NAME, DESCRIPTION, getSignal, signalStrength, resolutionMin,
+  NAME, DESCRIPTION, getSignal, signalStrength, resolutionMin, direction,
   profitLock, hardStop, middleBandTarget, countOppositeCandles, oppositeCandleExit,
   bbLevels, reset,
 };
