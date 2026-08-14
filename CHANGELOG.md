@@ -6,6 +6,18 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Added — BB_RSI can run on its own candle size again (3-min or 5-min)
+
+Candle timeframe went global on 2026-08-07 (`TRADE_RESOLUTION`, one dropdown for every strategy) to stop four near-identical settings silently disagreeing. That is still the right default, but it made one thing impossible: testing BB_RSI on 3-min without dragging EMA_RSI_ST, PA and EMA9+VWAP onto 3-min with it. Since V8 fades a stretched band, the timeframe is not a cosmetic choice — 3-min reaches the band more often and reverts sooner, so 3-min and 5-min are effectively two different strategies.
+
+**Settings → BB_RSI → `BB_RSI_RESOLUTION`** — `global` (default) / `3` / `5`. `global` follows `TRADE_RESOLUTION`, so an untouched `.env` behaves exactly as before; nothing changes unless you pick a value. Applies to Live, Paper and Backtest together — the value is resolved once in `src/strategies/bb_rsi.js`, so the three modes cannot drift onto different candle sizes the way the old per-strategy keys allowed. Needs a session stop+start (the Live route caches it at module load).
+
+Only 3 and 5 are offered: the band and RSI defaults are tuned around intraday bars, and 15-min leaves a mean-reversion engine too few candles inside the 09:21–14:30 entry window to reach the middle band. Anything unrecognised — a typo, or a `15` left over from a global-resolution experiment — falls back to `TRADE_RESOLUTION` rather than to `NaN`, which would poison every candle-bucket boundary.
+
+Two things it deliberately does **not** change: the unified `/all-backtest` dashboard still runs every panel at a fixed 5-min (unchanged, pre-existing — use `/bb_rsi-backtest` for a 3-min run), and no other strategy gets a per-strategy key back.
+
+**Not validated at 3-min.** No paper session, backtest or replay has been run on 3-min V8. Collect clean sessions before comparing it to 5-min — and note that a 3-min switch also shortens every candle-counted rule in proportion (SL pause, opposite-candle stop/trail, confirmation candle), which is a real behaviour change, not just a chart change.
+
 ### Changed — BB_RSI is now a MEAN-REVERSION engine (V8). It fades the band it used to buy.
 
 This is a direction flip, not a tuning pass. V7 bought the **break**: CE when a candle closed *above* the upper Bollinger band, confirmed by SuperTrend and a high RSI. V8 buys the **snap-back**: **CE when a candle closes at or below the LOWER band with RSI ≤ 25**, **PE when it closes at or above the UPPER band with RSI ≥ 75**. Every entry the old engine would have taken, the new one takes on the opposite side.

@@ -50,7 +50,7 @@ const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
 const CALLBACK_ID = "BB_RSI_LIVE";
 
 // ── Module-level config ─────────────────────────────────────────────────────
-const BB_RSI_RES            = parseInt(process.env.TRADE_RESOLUTION || "5", 10);
+const BB_RSI_RES            = bbRsiStrategy.resolutionMin();
 const _BB_RSI_MAX_TRADES    = parseInt(process.env.BB_RSI_MAX_DAILY_TRADES || "30", 10);
 const _BB_RSI_MAX_LOSS      = parseFloat(process.env.BB_RSI_MAX_DAILY_LOSS || "2000");
 const _BB_RSI_PAUSE_CANDLES = parseInt(process.env.BB_RSI_SL_PAUSE_CANDLES || "2", 10);

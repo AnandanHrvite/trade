@@ -62,7 +62,7 @@ let _STOP_MINS;
 let _ENTRY_STOP_MINS;
 let _BB_RSI_START_MINS;
 function _refreshConfig() {
-  BB_RSI_RES                    = parseInt(process.env.TRADE_RESOLUTION || "5", 10);
+  BB_RSI_RES                    = bbRsiStrategy.resolutionMin();
   _BB_RSI_MAX_TRADES            = parseInt(process.env.BB_RSI_MAX_DAILY_TRADES || "30", 10);
   _BB_RSI_MAX_LOSS              = parseFloat(process.env.BB_RSI_MAX_DAILY_LOSS || "2000");
   _BB_RSI_PAUSE_CANDLES         = parseInt(process.env.BB_RSI_SL_PAUSE_CANDLES || "2", 10);

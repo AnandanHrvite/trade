@@ -94,6 +94,29 @@ function int(key, fb, min) {
   return (min != null && v < min) ? min : v;
 }
 
+// ── Candle timeframe ─────────────────────────────────────────────────────────
+// BB_RSI may run on its own candle size instead of the global TRADE_RESOLUTION.
+// This is a fade of a stretched band, so 3-min and 5-min are genuinely different
+// strategies — 3-min reaches the band more often and reverts sooner — and the
+// operator needs to be able to run one without dragging every other strategy
+// with it. Only 3 and 5 are offered: the RSI/band defaults are tuned around
+// intraday bars, and 15-min gives a mean-reversion engine too few bars to work
+// with inside the 09:21–14:30 window.
+//
+// "global" (the default) follows TRADE_RESOLUTION, so an untouched .env behaves
+// exactly as it did before this key existed. Anything unrecognised — a typo, a
+// stale 15 left over from a global-resolution experiment — also falls back to
+// the global rather than to NaN, which would poison every bucket boundary.
+// It lives in the engine, not in the three routes, so Paper / Live / Backtest
+// cannot drift onto different candle sizes.
+var RESOLUTION_CHOICES = [3, 5];
+function resolutionMin() {
+  var raw = String(cfg("BB_RSI_RESOLUTION", "global")).trim();
+  var v = /^\d+$/.test(raw) ? parseInt(raw, 10) : NaN;
+  if (RESOLUTION_CHOICES.indexOf(v) !== -1) return v;
+  return int("TRADE_RESOLUTION", "5", 1);
+}
+
 // ── Trading window ───────────────────────────────────────────────────────────
 // "HH:MM" → minutes past midnight, or null if it is not a real time of day.
 function _hhmm(s) {
@@ -546,7 +569,7 @@ function bbLevels(candles) {
 function reset() { _indicatorCache = { key: null, bb: null, rsiArr: null, adx: null }; }
 
 module.exports = {
-  NAME, DESCRIPTION, getSignal, signalStrength,
+  NAME, DESCRIPTION, getSignal, signalStrength, resolutionMin,
   profitLock, hardStop, middleBandTarget, countOppositeCandles, oppositeCandleExit,
   bbLevels, reset,
 };

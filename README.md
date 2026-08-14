@@ -417,7 +417,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 
 | Key | Default | Notes |
 |-----|---------|-------|
-| `TRADE_RESOLUTION` | `5` | **Global candle size in minutes** — `3`, `5`, or `15`. One setting for **every** strategy (EMA_RSI_ST / BB_RSI / PA / EMA9+VWAP); lives in the Settings **Instrument & Backtest** section. The old per-strategy keys (`BB_RSI_RESOLUTION`, `PA_RESOLUTION`, `EMA9VWAP_RESOLUTION`) are removed and ignored. |
+| `TRADE_RESOLUTION` | `5` | **Global candle size in minutes** — `3`, `5`, or `15`. The default for **every** strategy (EMA_RSI_ST / BB_RSI / PA / EMA9+VWAP); lives in the Settings **Instrument & Backtest** section. `PA_RESOLUTION` and `EMA9VWAP_RESOLUTION` are removed and ignored; **`BB_RSI_RESOLUTION` is back** as an opt-in BB_RSI-only override (see the BB_RSI table) and defaults to `global`, i.e. this key. |
 | `MAX_DAILY_LOSS` | `5000` | Daily kill-switch in INR (per-strategy) |
 | `PORTFOLIO_MAX_DAILY_LOSS` | `0` (off) | **Portfolio-wide** daily loss cap in INR across ALL strategies (sums today's realized paper P&L via the per-day JSONL logs). When the book's combined loss reaches this, every strategy stops taking new entries for the day. Fail-safe (only blocks, never places orders). `0`/unset = disabled. |
 | `MAX_DAILY_TRADES` | `20` | Daily entry cap — anti-overtrade on chop days. *(Settings UI seeds a tighter `5`.)* |
@@ -470,6 +470,7 @@ Full spec: [BB_RSI.md](BB_RSI.md).
 | `BB_RSI_MODE_ENABLED` | `true` | Show/hide bb_rsi menus in sidebar (also hides BB_RSI section in Settings) |
 | `BB_RSI_ENABLED` | `false` | Master enable for the BB_RSI engine (required to start BB_RSI Live) |
 | `BB_RSI_LIVE_ENABLED` | `false` | Must be `true` AND `LIVE_HARNESS_DRY_RUN=false` for real Fyers BB_RSI orders. Without it BB_RSI Live runs fully but every broker call is simulated |
+| `BB_RSI_RESOLUTION` | `global` | **BB_RSI-only candle size** — `3`, `5`, or `global` (follow `TRADE_RESOLUTION`). Lets this strategy run on 3-min while every other strategy stays on the global value. Applies to Live, Paper and Backtest together (resolved once in `src/strategies/bb_rsi.js`, so the three modes can't drift). Only 3 and 5 are offered — the band/RSI defaults are tuned for intraday bars, and 15-min leaves a mean-reversion engine too few bars inside the 09:21–14:30 window. Anything else (a typo, a stale `15`) falls back to `TRADE_RESOLUTION`. Needs a session stop+start. **The unified `/all-backtest` dashboard still runs every panel at 5-min** — use `/bb_rsi-backtest` to backtest at 3-min |
 | `BB_RSI_BB_PERIOD` / `BB_RSI_BB_STDDEV` | `30` / `2` | Bollinger inputs (charting-standard 30 / 2) |
 | `BB_RSI_RSI_CE_THRESHOLD` | `25` | CE **fades a drop** — take it only when RSI is at or **below** this (oversold). Note the direction flipped in V8; a V7 value of 70 here will never trade |
 | `BB_RSI_RSI_PE_THRESHOLD` | `75` | PE **fades a rip** — take it only when RSI is at or **above** this (overbought). Direction flipped in V8 |

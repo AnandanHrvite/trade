@@ -105,6 +105,7 @@ const SETTINGS_SCHEMA = [
       { key: "BB_RSI_VIX_ENABLED", label: "VIX Filter (BB_RSI)", type: "toggle", effect: EFFECT.INSTANT, desc: "Block entries when VIX is high.", default: "false" },
       { key: "BB_RSI_VIX_MAX_ENTRY", label: "BB_RSI VIX Max Entry", type: "number", min: 10, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "Block entries above this VIX.", default: "20" },
       { key: "BB_RSI_VIX_STRONG_ONLY", label: "BB_RSI VIX Strong Only", type: "number", min: 8, max: 30, step: 1, effect: EFFECT.INSTANT, desc: "Above this VIX, allow only strong signals.", default: "16" },
+      { key: "BB_RSI_RESOLUTION", label: "Candle Resolution (BB_RSI only)", type: "select", options: [{ value: "global", label: "Global (follow Instrument & Backtest)" }, { value: "3", label: "3 min" }, { value: "5", label: "5 min" }], effect: EFFECT.SESSION, desc: "Candle timeframe for BB_RSI alone, so you can test 3-min here without moving every other strategy. Also shortens every candle-counted rule below (SL pause, opposite-candle stop/trail, confirmation candle) in proportion.", default: "global" },
       { key: "BB_RSI_ENTRY_START", label: "Entry Start Time", type: "time", effect: EFFECT.SESSION, desc: "Earliest entry time (IST).", default: "09:21" },
       { key: "BB_RSI_ENTRY_END", label: "Entry End Time", type: "time", effect: EFFECT.SESSION, desc: "No new entries after this time (IST).", default: "14:30" },
       // ── Bollinger Bands ──
@@ -1006,7 +1007,7 @@ const SESSION_RESTART_KEYS = new Set([
   "EMA_RSI_ST_EOD_EXIT_TIME", "EMA_RSI_ST_LIVE_DRY_RUN",
   "TRADE_RESOLUTION", "TRADE_START_TIME", "TRADE_STOP_TIME",
   "TRADE_ENTRY_START", "TRADE_ENTRY_END",
-  "BB_RSI_ENTRY_START", "BB_RSI_ENTRY_END",
+  "BB_RSI_ENTRY_START", "BB_RSI_ENTRY_END", "BB_RSI_RESOLUTION",
   // BB_RSI settings — need session restart
   "BB_RSI_BB_PERIOD", "BB_RSI_BB_STDDEV",
   "BB_RSI_RSI_PERIOD", "BB_RSI_RSI_CE_THRESHOLD",
