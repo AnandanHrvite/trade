@@ -12,9 +12,11 @@
  *   POST /token-sync/apply      → { broker, token } → write to disk + apply live
  *   POST /token-sync/restart    → graceful exit (PM2 / nodemon bring it back)
  *
- * This page never places an order and never touches trade state. It is behind
- * the app-wide LOGIN_SECRET gate like every other page — the raw token is only
- * revealed on an explicit click.
+ * This page never places an order and never touches trade state. It sits behind
+ * the app-wide LOGIN_SECRET gate like every other page, and only the page shell
+ * is in app.js OPEN_PATHS: /tokens hands out a live broker credential, so it is
+ * gated by API_SECRET like a write, as are /apply and /restart. The raw token is
+ * masked until an explicit click.
  */
 
 const express = require("express");
@@ -268,7 +270,7 @@ ${buildSidebar('tokenSync', liveActive)}
 <script>
   ${modalJS()}
   ${toastJS()}
-  var SNAP = null, REVEALED = {};
+  var SNAP = null, REVEALED = {}, _timer = null;
 
   function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
   function mask(t){ return t.length <= 14 ? '•'.repeat(t.length) : t.slice(0,6) + '•'.repeat(18) + t.slice(-4); }
@@ -310,18 +312,24 @@ ${buildSidebar('tokenSync', liveActive)}
       rowHTML('fyers', 'FYERS', 'fy', SNAP.fyers) + rowHTML('zerodha', 'ZERODHA', 'zd', SNAP.zerodha);
   }
 
-  function load(){
-    fetch('/token-sync/tokens').then(function(r){ return r.json(); })
-      .then(function(d){
-        // A 401 (login expired) answers with { success:false } — keep the last
-        // good view instead of rendering "undefined" over it.
-        if (!d || !d.fyers || !d.zerodha) {
-          return showToast(d && d.error ? d.error : 'Could not read tokens', '#f87171');
-        }
-        SNAP = d; render();
-      })
-      .catch(function(e){ document.getElementById('copyArea').textContent = 'Failed to load: ' + e.message; });
+  // The token poll needs the API_SECRET too — it returns a live broker
+  // credential, so it is gated like a write. secretFetch prompts once per
+  // browser session; cancelling stops the auto-refresh instead of re-prompting
+  // every minute.
+  async function load(){
+    try {
+      var res = await secretFetch('/token-sync/tokens');
+      if (!res) { stopAutoRefresh(); document.getElementById('copyArea').textContent = 'Locked — reload the page to enter the API secret.'; return; }
+      var d = await res.json();
+      // A 401 (login expired) answers with { success:false } — keep the last
+      // good view instead of rendering "undefined" over it.
+      if (!d || !d.fyers || !d.zerodha) {
+        return showToast(d && d.error ? d.error : 'Could not read tokens', '#f87171');
+      }
+      SNAP = d; render();
+    } catch (e) { document.getElementById('copyArea').textContent = 'Failed to load: ' + e.message; }
   }
+  function stopAutoRefresh(){ if (_timer) { clearInterval(_timer); _timer = null; } }
 
   function toggleReveal(k){ REVEALED[k] = !REVEALED[k]; render(); }
 
@@ -381,7 +389,7 @@ ${buildSidebar('tokenSync', liveActive)}
   }
 
   load();
-  setInterval(load, 60000);
+  _timer = setInterval(load, 60000);
 </script>
 </body>
 </html>`);

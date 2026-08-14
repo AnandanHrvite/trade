@@ -763,11 +763,12 @@ const OPEN_PATHS = [
   "/trade-logs/skips/download", // download raw skip JSONL
   "/trade-logs/skips/download-all", // concat-download all daily skip JSONLs per mode
   // NOTE: POST /trade-logs/delete and POST /trade-logs/skips/delete are intentionally protected (write ops)
-  // Token Sync — the page is a plain navigation and the token poll feeds it, so
-  // both stay open (LOGIN_SECRET still guards them). /token-sync/apply and
-  // /token-sync/restart are writes and deliberately stay OUT of this list.
-  "/token-sync",            // token copy/paste page (read-only view)
-  "/token-sync/tokens",     // JSON: this instance's broker tokens
+  // Token Sync — only the page shell is open, because a browser navigation
+  // cannot carry the x-api-secret header. /token-sync/tokens hands out a live
+  // broker credential, so it is gated like a write even though it is a GET;
+  // /token-sync/apply and /token-sync/restart stay out of this list too. The
+  // page fetches all three through secretFetch.
+  "/token-sync",            // token copy/paste page shell (renders no token)
   "/cache-files",           // cache / generated-file browser (read-only)
   "/cache-files/groups",    // JSON: per-group file count + size
   "/cache-files/list",      // JSON: paged files for one group
