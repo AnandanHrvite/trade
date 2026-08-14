@@ -74,15 +74,24 @@ function cfgOn(key, fb) { return String(cfg(key, fb)).toLowerCase() === "true"; 
 // LIVE_EXIT_WAIT_MS falls back rather than removing its ceiling, and EMA9_VWAP's HH:MM
 // window falls back rather than collapsing to midnight — so the same rule applies here.
 // An explicit 0 still parses cleanly, so every documented "0 = off" opt-out keeps working.
-function num(key, fb) {
+//
+// The optional `min` is a FLOOR for the structural inputs — periods, lookbacks and
+// candle counts — where a 0 expresses no intent and produces nonsense rather than
+// "off" (those have their own toggles). Without it BB_PERIOD=0 throws straight out of
+// BollingerBands.calculate, and an opposite-candle COUNT of 0 makes `count >= 0`
+// always true, i.e. exit on the first candle close of every trade. Thresholds and
+// point values deliberately take NO floor: 0 is a documented opt-out for those.
+function num(key, fb, min) {
   var raw = String(cfg(key, fb)).trim();
   var v = /^[+-]?(?:\d+\.?\d*|\.\d+)$/.test(raw) ? parseFloat(raw) : NaN;
-  return Number.isFinite(v) ? v : parseFloat(fb);
+  if (!Number.isFinite(v)) v = parseFloat(fb);
+  return (min != null && v < min) ? min : v;
 }
-function int(key, fb) {
+function int(key, fb, min) {
   var raw = String(cfg(key, fb)).trim();
   var v = /^[+-]?\d+$/.test(raw) ? parseInt(raw, 10) : NaN;
-  return Number.isFinite(v) ? v : parseInt(fb, 10);
+  if (!Number.isFinite(v)) v = parseInt(fb, 10);
+  return (min != null && v < min) ? min : v;
 }
 
 // ── Trading window ───────────────────────────────────────────────────────────
@@ -188,9 +197,9 @@ function getSignal(candles, opts) {
   opts = opts || {};
   var silent = opts.silent === true;
 
-  var BB_PERIOD   = int("BB_RSI_BB_PERIOD", "30");
-  var BB_STDDEV   = num("BB_RSI_BB_STDDEV", "2");
-  var RSI_PERIOD  = int("BB_RSI_RSI_PERIOD", "14");
+  var BB_PERIOD   = int("BB_RSI_BB_PERIOD", "30", 2);
+  var BB_STDDEV   = num("BB_RSI_BB_STDDEV", "2", 0.1);
+  var RSI_PERIOD  = int("BB_RSI_RSI_PERIOD", "14", 2);
   var RSI_CE      = num("BB_RSI_RSI_CE_THRESHOLD", "25"); // CE needs RSI AT OR BELOW this
   var RSI_PE      = num("BB_RSI_RSI_PE_THRESHOLD", "75"); // PE needs RSI AT OR ABOVE this
   var RSI_TURNING = cfgOn("BB_RSI_RSI_TURNING", "false");             // require RSI to have already turned back
@@ -204,8 +213,8 @@ function getSignal(candles, opts) {
   var RR_LOOKBACK = int("BB_RSI_RSI_RANGE_LOOKBACK", "20");
   var RR_MIN      = num("BB_RSI_RSI_RANGE_MIN", "30");
   var DIV_ENABLED = cfgOn("BB_RSI_DIVERGENCE_ENABLED", "false");
-  var DIV_LOOKBACK  = int("BB_RSI_DIV_LOOKBACK", "20");
-  var DIV_PIVOT_BARS = int("BB_RSI_DIV_PIVOT_BARS", "2");
+  var DIV_LOOKBACK  = int("BB_RSI_DIV_LOOKBACK", "20", 1);
+  var DIV_PIVOT_BARS = int("BB_RSI_DIV_PIVOT_BARS", "2", 1);
 
   var base = {
     signal: "NONE", reason: "", stopLoss: null, target: null,
@@ -501,9 +510,9 @@ function countOppositeCandles(candles, side) {
 // Returns { hit, reason, count, need, armed }.
 function oppositeCandleExit(candles, side, mfeSpotPts, barsHeld) {
   var slOn    = cfgOn("BB_RSI_OPP_CANDLE_SL_ENABLED", "true");
-  var slCount = int("BB_RSI_OPP_CANDLE_SL_COUNT", "2");
+  var slCount = int("BB_RSI_OPP_CANDLE_SL_COUNT", "2", 1);
   var trOn    = cfgOn("BB_RSI_OPP_CANDLE_TRAIL_ENABLED", "true");
-  var trCount = int("BB_RSI_OPP_CANDLE_TRAIL_COUNT", "2");
+  var trCount = int("BB_RSI_OPP_CANDLE_TRAIL_COUNT", "2", 1);
   var armPts  = num("BB_RSI_TRAIL_ARM_PTS", "10");
 
   var armed = trOn && (mfeSpotPts || 0) >= armPts;
@@ -526,8 +535,8 @@ function oppositeCandleExit(candles, side, mfeSpotPts, barsHeld) {
 // entry uses. Exposed so the routes can run the middle-band target intra-candle
 // (per-tick spot vs the mean) instead of only on candle close. null if insufficient data.
 function bbLevels(candles) {
-  var BB_PERIOD = int("BB_RSI_BB_PERIOD", "30");
-  var BB_STDDEV = num("BB_RSI_BB_STDDEV", "2");
+  var BB_PERIOD = int("BB_RSI_BB_PERIOD", "30", 2);
+  var BB_STDDEV = num("BB_RSI_BB_STDDEV", "2", 0.1);
   var closes = candles.map(function(c) { return c.close; });
   var bbArr = BollingerBands.calculate({ period: BB_PERIOD, stdDev: BB_STDDEV, values: closes });
   if (bbArr.length < 1) return null;

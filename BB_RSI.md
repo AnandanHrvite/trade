@@ -115,7 +115,7 @@ There is **no** break-even snap, no percentage spot-trail, no time-stop, and no 
 
 Every numeric setting the engine reads is parsed **strictly**: a value that is not a clean number falls back to the **documented default**, never to `NaN` and never to a half-parsed number. This matters more here than it looks. A `NaN` threshold makes every comparison against it false, which switches a chop guard **off** rather than on, and a bare `parseFloat("5o")` hands back `5` when you meant `50` — both silent, both in the dangerous direction. The entry window behaves the same way: a malformed `HH:MM` (or an impossible one like `25:00`) falls back to `09:21`/`14:30` rather than collapsing to a `NaN` bound, which would remove the window and trade the whole session.
 
-An explicit `0` still parses cleanly, so every documented "`0` = off" opt-out keeps working exactly as before.
+An explicit `0` still parses cleanly, so every documented "`0` = off" opt-out keeps working exactly as before. The structural inputs — BB/RSI periods, the divergence lookback and pivot bars, and the two candle **counts** — carry a floor instead, because `0` expresses no intent there and produces nonsense rather than "off" (each has its own toggle for that). Unfloored, `BB_RSI_BB_PERIOD=0` throws straight out of the Bollinger calculation, and an opposite-candle count of `0` makes the comparison always true, i.e. exit on the first candle close of every trade.
 
 This follows two rulings the repo has already made: `boundedExit`'s `LIVE_EXIT_WAIT_MS` falls back rather than removing its ceiling, and EMA9+VWAP's window falls back rather than collapsing to midnight.
 
