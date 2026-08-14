@@ -90,9 +90,21 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
   // candle (on by default) blocks every entry, i.e. a 0-trade run with no error. The
   // SL pause window has the same units problem, just less visibly. Config is only the
   // fallback for a run too short to measure.
-  const BB_RSI_RES  = candles.length >= 2
-    ? Math.max(1, Math.round((candles[1].time - candles[0].time) / 60))
-    : bbRsiStrategy.resolutionMin();
+  // Measured as the SMALLEST gap in the opening stretch, not the first gap alone: the
+  // first pair straddles an overnight break whenever the range's first day carries a
+  // single candle, and that used to cost only a skewed theta divisor. Now that this
+  // number also gates entries, the same accident would read ~1080 min and take the run
+  // to zero trades — so the one reading that cannot be an overnight jump is the one to
+  // trust. Intraday bars are uniformly spaced; every larger gap is a session boundary.
+  const _measuredRes = (function () {
+    let min = Infinity;
+    for (let i = 1; i < candles.length && i <= 50; i++) {
+      const gap = candles[i].time - candles[i - 1].time;
+      if (gap > 0 && gap < min) min = gap;
+    }
+    return Number.isFinite(min) ? Math.max(1, Math.round(min / 60)) : null;
+  })();
+  const BB_RSI_RES = _measuredRes || bbRsiStrategy.resolutionMin();
   const CANDLES_PER_DAY = Math.max(1, Math.round(390 / BB_RSI_RES));  // theta, per 6.5-hour day
 
   // BB_RSI config
