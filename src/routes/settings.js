@@ -108,12 +108,13 @@ const SETTINGS_SCHEMA = [
       { key: "BB_RSI_RESOLUTION", label: "Candle Resolution (BB_RSI only)", type: "select", options: [{ value: "global", label: "Global (follow Instrument & Backtest)" }, { value: "3", label: "3 min" }, { value: "5", label: "5 min" }], effect: EFFECT.SESSION, desc: "Candle timeframe for BB_RSI alone, so you can test 3-min here without moving every other strategy. Also shortens every candle-counted rule below (SL pause, opposite-candle stop/trail, confirmation candle) in proportion.", default: "global" },
       { key: "BB_RSI_ENTRY_START", label: "Entry Start Time", type: "time", effect: EFFECT.SESSION, desc: "Earliest entry time (IST).", default: "09:21" },
       { key: "BB_RSI_ENTRY_END", label: "Entry End Time", type: "time", effect: EFFECT.SESSION, desc: "No new entries after this time (IST).", default: "14:30" },
-      // ── Bollinger Bands ──
+      // ── Direction, then the Bollinger inputs the triggers are built from ──
       { key: "BB_RSI_DIRECTION", label: "Trade Direction", type: "select", options: [{ value: "fade", label: "Fade the band (mean reversion)" }, { value: "breakout", label: "Trade the break (momentum)" }], effect: EFFECT.SESSION, desc: "Which way the SAME signal bars are traded. Fade = buy CE below the lower band (V8, the default). Breakout = buy CE ABOVE the upper band instead. Every filter, stop and trail below is shared, so this is a clean A/B. Breakout skips the BB-middle target — the mean is behind the entry, so it would exit on the entry bar — and leaves the stop, trail and EOD as the only exits. Leave the divergence filter OFF in breakout mode: it is an exhaustion tell.", default: "fade", subheader: "Entry Signal" },
       { key: "BB_RSI_BB_PERIOD", label: "BB Period", type: "number", min: 10, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Bollinger Band period.", default: "30" },
       { key: "BB_RSI_BB_STDDEV", label: "BB Std Dev", type: "number", min: 0.5, max: 3.0, step: 0.1, effect: EFFECT.SESSION, desc: "Bollinger Band standard deviation.", default: "2" },
-      // ── RSI — note the direction: this engine FADES the extreme, so CE wants a LOW
-      //    RSI (oversold) and PE a HIGH one. Ranges span 5–95 for both because the two
+      // ── RSI — the two thresholds name the EXTREME, not the option side, because
+      //    which side each one buys now depends on BB_RSI_DIRECTION (fade: oversold
+      //    → CE; breakout: oversold → PE). Ranges span 5–95 for both because the
       //    thresholds swapped ends of the scale when V8 inverted the entry side.
       { key: "BB_RSI_RSI_PERIOD", label: "RSI Period", type: "number", min: 7, max: 21, step: 1, effect: EFFECT.SESSION, desc: "RSI period.", default: "14" },
       { key: "BB_RSI_RSI_CE_THRESHOLD", label: "RSI Oversold (≤)", type: "number", min: 5, max: 95, step: 1, effect: EFFECT.SESSION, desc: "The lower-band trigger needs RSI at or below this. Fade buys CE on it; breakout buys PE.", default: "25" },
