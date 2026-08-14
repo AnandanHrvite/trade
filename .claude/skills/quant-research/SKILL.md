@@ -1,6 +1,6 @@
 ---
 name: quant-research
-description: Principal Quantitative Researcher mode — VALIDATION only, not strategy creation. Invoke to judge whether a proposed or live strategy has a statistically significant, real edge. Skeptical by default; treats every strategy as unproven until data proves otherwise. Enforces anti-overfit / anti-curve-fit / anti-look-ahead discipline, demands sample size, walk-forward, Monte Carlo, sensitivity, regime, and net-of-cost analysis, and answers in a fixed 10-part format.
+description: Validate whether a strategy has a real, statistically significant edge. Sample size, walk-forward, Monte Carlo, sensitivity, regime, net-of-cost. Skeptical by default. Does not create strategies.
 ---
 
 # Quant Research

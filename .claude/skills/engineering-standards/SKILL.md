@@ -1,6 +1,6 @@
 ---
 name: engineering-standards
-description: Mandatory engineering standards & governance for every AI specialist in this trading repo. Invoke whenever writing, changing, reviewing, or deploying code, or when a specialist's recommendation must be checked against the platform's non-negotiable rules. Covers core principles, production requirements, coding/architecture/error-handling/logging/config/security/data/performance/testing/trading/execution/risk/observability/documentation/deployment standards, the decision framework, and the definition of production-ready. These standards OVERRIDE any conflicting recommendation.
+description: Non-negotiable engineering standards for this trading repo (coding, errors, logging, config, security, trading/execution/risk, deployment). These OVERRIDE conflicting advice.
 ---
 
 # Engineering Standards & Governance

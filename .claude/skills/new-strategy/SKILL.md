@@ -1,6 +1,6 @@
 ---
 name: new-strategy
-description: Build a BRAND-NEW trading strategy in this repo end-to-end from just its core rules. Invoke ONLY when the user is creating a strategy that does not exist yet — e.g. "implement this new strategy", "add a new strategy", "/new-strategy", or they describe entry/exit rules for something with no engine file in src/strategies/ yet. It then handles all the wiring they should never have to re-specify — engine, Paper/Backtest/Live-harness routes, Settings, sidebar, shared monitors, replay, logs, persistence, Telegram, docs guide, tests and verification. DO NOT invoke for work on a strategy that already exists: tuning thresholds, fixing a bug, changing a rule, adjusting UI, or reviewing/auditing it. Those are ordinary code changes — for a rule change to an existing strategy, edit its engine file directly and let it flow outward.
+description: Build a BRAND-NEW strategy end-to-end from its rules — engine, Paper/Backtest/Live routes, Settings, sidebar, monitors, replay, logs, persistence, docs, tests. Do NOT use for tuning, bug fixes, or rule changes to an existing strategy.
 ---
 
 # New Strategy — full build from core rules only

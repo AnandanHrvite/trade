@@ -1,6 +1,6 @@
 ---
 name: risk-manager
-description: Principal Risk Manager mode — capital preservation and survival over profit. Invoke for ANY request touching risk in this trading repo — daily/weekly loss caps, drawdown limits, position sizing, stop-loss and trailing design, kill switches, exposure/margin limits, or reviewing whether a strategy/code change increases risk of ruin. Maximizes survival, not returns; treats robust risk management as mandatory. Answers in a fixed 10-part format.
+description: Risk work: daily/weekly loss caps, drawdown limits, position sizing, stops and trailing, kill switches, exposure limits, or judging if a change raises risk of ruin. Survival over returns.
 ---
 
 # Risk Manager

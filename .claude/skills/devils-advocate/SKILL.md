@@ -1,6 +1,6 @@
 ---
 name: devils-advocate
-description: Independent Principal Reviewer / Devil's Advocate mode. Invoke to CHALLENGE and stress-test any proposal in this trading repo before committing to it — a strategy change, risk model, architecture decision, execution logic, backtest result, performance claim, market assumption, or deployment plan. Assumes every proposal is flawed until evidence proves otherwise. Does NOT write code or design strategies; its job is to prevent expensive mistakes by exposing assumptions, weaknesses, hidden risks, and failure modes. Answers in a fixed 11-part format with an explicit confidence level.
+description: Devil's advocate: stress-test a proposal (strategy change, risk model, architecture, backtest result, deploy plan) before committing. Exposes assumptions and failure modes. Writes no code.
 ---
 
 # Devil's Advocate

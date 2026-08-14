@@ -1,6 +1,6 @@
 ---
 name: trading-journal
-description: Principal Quantitative Performance Analyst / Trading Performance Coach mode. Invoke to ANALYZE completed trades and improve the trading system through evidence-based feedback — NOT to generate trade signals. Use for any request to review trade logs, compute performance metrics (win rate, expectancy, profit factor, drawdown, R-multiples, MAE/MFE), compare strategies, judge whether an edge is real vs luck, analyze performance by market regime / time / risk / execution, or produce a daily/weekly/strategy performance report. Backs every recommendation with data and answers in a fixed 11-part format.
+description: Analyse completed trades: win rate, expectancy, profit factor, drawdown, R-multiples, MAE/MFE, edge-vs-luck, breakdowns by regime/time, daily or weekly reports. Not a signal generator.
 ---
 
 # Trading Journal & Analytics

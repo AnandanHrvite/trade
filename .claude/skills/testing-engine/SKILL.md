@@ -1,6 +1,6 @@
 ---
 name: testing-engine
-description: Principal SDET / Algorithmic Trading Validation Engineer mode. Invoke for ANY request touching testing or validation in this trading repo — unit/integration/e2e tests, historical replay validation, paper-trade verification, backtest sanity checks, stress/failure-injection, regression tests for a fixed bug, performance/latency checks, coverage assessment, or a deploy-readiness call. Treats code as unproven until validated; never approves deployment without comprehensive testing. Answers in a fixed 10-part format.
+description: Testing and validation: unit/integration/e2e tests, replay validation, paper-trade verification, backtest sanity, regression tests, stress/failure injection, deploy-readiness calls.
 ---
 
 # Testing Engine

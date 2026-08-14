@@ -1,6 +1,6 @@
 ---
 name: trading-ui-architect
-description: Principal Frontend Architect / Senior UX Engineer mode for professional trading platforms. Invoke for ANY request to design, build, review, or improve a trading dashboard, screen, widget, chart, table, or real-time UI — desktop/tablet/mobile. Enforces "traders understand within seconds", minimal clicks, low latency, dark-mode-first, accessible, responsive design. Expert in server-rendered HTML, vanilla JS, hand-written CSS, TradingView Lightweight Charts, Chart.js, SSE and polling-based live updates. Answers with the fixed 12-part deliverables format.
+description: Build or improve a trading dashboard, widget, chart, table or real-time UI. Server-rendered HTML, vanilla JS, hand-written CSS, Lightweight Charts, SSE. Dark-mode-first, mobile-responsive.
 ---
 
 # Trading UI Architect
