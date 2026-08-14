@@ -2618,6 +2618,11 @@ function _prettyEndpoint(url){
   return ENDPOINT_LABELS[url] || url;
 }
 
+// True from the first /start until the whole roster has been attempted AND the
+// result has been shown. Read by pollSessionActiveSwap(), which must not
+// navigate away mid-run — see the comment there.
+var _startAllBusy = false;
+
 async function _startAll(endpoints){
   var results = { successes: [], failures: [] };
   for (var i = 0; i < endpoints.length; i++){
@@ -2679,13 +2684,24 @@ async function _noModesEnabled(endpoints, what){
   return true;
 }
 
+// Single entry point for the three Start-All buttons, so the busy flag can
+// never be left set (or skipped) by one of them drifting from the others.
+async function _runStartAll(btn, origText, label, endpoints){
+  _startAllBusy = true;
+  try {
+    var result = await _startAll(endpoints);
+    await _handleStartAllResult(btn, origText, label, result);
+  } finally {
+    _startAllBusy = false;
+  }
+}
+
 async function startAllPaper(btn){
   if (await _noModesEnabled(PAPER_ENDPOINTS, 'Paper')) return;
   var modeList = ALL_MODE_LABELS.join(' + ');
   var orig = btn.textContent;
   btn.disabled = true; btn.textContent = '⏳ Starting paper: ' + modeList + '...';
-  var result = await _startAll(PAPER_ENDPOINTS);
-  await _handleStartAllResult(btn, orig, 'All Paper', result);
+  await _runStartAll(btn, orig, 'All Paper', PAPER_ENDPOINTS);
 }
 
 async function startAllLive(btn){
@@ -2698,8 +2714,7 @@ async function startAllLive(btn){
   if(!ok) return;
   var orig = btn.textContent;
   btn.disabled = true; btn.textContent = '⏳ Starting all live trades...';
-  var result = await _startAll(LIVE_ENDPOINTS);
-  await _handleStartAllResult(btn, orig, 'All Live', result);
+  await _runStartAll(btn, orig, 'All Live', LIVE_ENDPOINTS);
 }
 
 async function startAllHarness(btn){
@@ -2713,8 +2728,7 @@ async function startAllHarness(btn){
   if(!ok) return;
   var orig = btn.textContent;
   btn.disabled = true; btn.textContent = '⏳ Starting harness: ' + modeList + '...';
-  var result = await _startAll(HARNESS_ENDPOINTS);
-  await _handleStartAllResult(btn, orig, 'All Harness', result);
+  await _runStartAll(btn, orig, 'All Harness', HARNESS_ENDPOINTS);
 }
 
 // Single Start-All button follows the top-bar PAPER/LIVE toggle.
@@ -3474,7 +3488,13 @@ setInterval(checkTradingStatus, 60000); // Check every minute
 /* setInterval(pollDashboardStatus, 4000); — disabled (no realtime data on dashboard) */
 
 // Auto-swap to Real-Time view as soon as a session starts (UI_SHOW_REALTIME).
+// Suspended while a Start-All run is in flight: that loop fires one /start per
+// strategy SEQUENTIALLY from this page, and the first strategy to come up would
+// otherwise trip this poll within 10s and navigate the page away — cancelling
+// every /start still queued behind it, with no error shown. That is the
+// "I pressed Start All but only the first few strategies started" bug.
 async function pollSessionActiveSwap(){
+  if (_startAllBusy) return;
   try {
     var r = await fetch('/api/session-active', { cache:'no-store' });
     if (!r.ok) return;
