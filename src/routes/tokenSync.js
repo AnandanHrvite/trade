@@ -17,6 +17,7 @@
  *   GET  /token-sync/tokens     → { fyers:{...}, zerodha:{...} } incl. raw token
  *   POST /token-sync/pull       → { broker? } → fetch from LIVE + apply here
  *   POST /token-sync/apply      → { broker, token } → write to disk + apply live
+ *   POST /token-sync/reset      → { broker? } → forget the tokens held here
  *   POST /token-sync/restart    → graceful exit (PM2 / nodemon bring it back)
  *
  * This page never places an order and never touches trade state. It sits behind
@@ -286,6 +287,37 @@ router.post("/pull", (req, res) => {
   });
 });
 
+// ── POST /token-sync/reset — forget the tokens held on THIS machine ──────────
+// The undo for a pull or a paste: deletes ~/trading-data/.fyers_token /
+// .zerodha_token and drops them from process.env, so the next pull starts from a
+// clean slate instead of leaving a half-stale credential behind. Refused while an
+// engine is running — pulling a live feed's token out from under it is exactly
+// the kind of surprise this app should not allow.
+router.post("/reset", (req, res) => {
+  const want = String((req.body && req.body.broker) || "both").toLowerCase();
+  if (!["fyers", "zerodha", "both"].includes(want)) {
+    return res.status(400).json({ success: false, error: "broker must be 'fyers', 'zerodha' or 'both'." });
+  }
+  if (sharedSocketState.isAnyActive()) {
+    return res.status(409).json({ success: false, error: "An engine is running — stop it before clearing tokens." });
+  }
+
+  const brokers = want === "both" ? ["fyers", "zerodha"] : [want];
+  const cleared = [];
+  try {
+    for (const broker of brokers) {
+      if (broker === "fyers") require("../config/fyers").clearFyersToken();
+      else                    require("../services/zerodhaBroker").clearZerodhaToken();
+      cleared.push(broker);
+    }
+  } catch (err) {
+    console.warn(`⚠️  [tokenSync] reset failed: ${err.message}`);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+  console.log(`🧹 [tokenSync] cleared on this machine: ${cleared.join(", ").toUpperCase()}.`);
+  res.json({ success: true, cleared, snapshot: snapshot() });
+});
+
 // ── POST /token-sync/restart — graceful exit; PM2 / nodemon restart it ───────
 // Refused while any engine holds the socket, so a restart can never orphan a
 // running paper/live session. A plain `node src/app.js` will simply stop.
@@ -354,6 +386,7 @@ router.get("/", (req, res) => {
     .btn-reveal { background:#060a14; border-color:#0e1a28; color:#818cf8; }
     .btn-apply  { background:#05170f; border-color:#0e3a28; color:#34d399; }
     .btn-pull   { background:#0a1226; border-color:#26386e; color:#a5b4fc; font-weight:700; }
+    .btn-reset  { background:#140a05; border-color:#3a2410; color:#fbbf24; }
     .btn-restart{ background:#180508; border-color:#401018; color:#f87171; }
     .btn:hover:not(:disabled) { filter:brightness(1.25); }
     .btn:disabled { opacity:0.4; cursor:not-allowed; }
@@ -379,6 +412,7 @@ router.get("/", (req, res) => {
     :root[data-theme="light"] .btn-reveal { background:#eef2ff; border-color:#c7d2fe; color:#4338ca; }
     :root[data-theme="light"] .btn-apply  { background:#ecfdf5; border-color:#a7f3d0; color:#047857; }
     :root[data-theme="light"] .btn-pull   { background:#eef2ff; border-color:#c7d2fe; color:#3730a3; }
+    :root[data-theme="light"] .btn-reset  { background:#fffbeb; border-color:#fde68a; color:#92400e; }
     :root[data-theme="light"] .btn-restart{ background:#fef2f2; border-color:#fecaca; color:#b91c1c; }
   </style>
 </head>
@@ -413,8 +447,12 @@ ${buildSidebar('tokenSync', liveActive)}
         <div class="foot">
           This machine asks LIVE for today's Fyers + Zerodha tokens and applies them here — no copying.
           Set the LIVE address and secrets in <b>Settings → Server &amp; Broker</b>.
+          <br/><b>Clear tokens here</b> forgets whatever this machine is holding, so the next pull starts clean.
         </div>
-        <div class="btn-row"><button class="btn btn-pull" id="pullBtn" onclick="pullFromLive()">⇩ Pull tokens from LIVE</button></div>
+        <div class="btn-row">
+          <button class="btn btn-pull" id="pullBtn" onclick="pullFromLive()">⇩ Pull tokens from LIVE</button>
+          <button class="btn btn-reset" onclick="resetTokens()">🧹 Clear tokens here</button>
+        </div>
       </div>
     </div>
   </div>
@@ -606,6 +644,30 @@ ${buildSidebar('tokenSync', liveActive)}
       _pulling = false;
       if (SNAP) render(); else { btn.disabled = false; btn.textContent = '⇩ Pull tokens from LIVE'; }
     }
+  }
+
+  // Undo for a bad pull/paste: forget both tokens on this machine. Confirmed,
+  // because on the LIVE box it would log the brokers out until the next login.
+  async function resetTokens(){
+    var ok = await showConfirm({
+      icon: '🧹',
+      title: 'Clear the tokens on this machine?',
+      message: 'Deletes the saved Fyers + Zerodha tokens here.\\nThe LIVE server is not touched — pull again any time.',
+      confirmText: 'Clear',
+      confirmClass: 'modal-btn-danger'
+    });
+    if (!ok) return;
+    try {
+      var res = await secretFetch('/token-sync/reset', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ broker: 'both' })
+      });
+      if (!res) return;                       // secret prompt cancelled
+      var d = await res.json();
+      if (!d.success) return showToast(d.error || 'Clear failed', '#f87171');
+      SNAP = d.snapshot; render();
+      showToast('Cleared on this machine: ' + d.cleared.join(' + ').toUpperCase(), '#fbbf24');
+    } catch (e) { showToast('Clear failed: ' + e.message, '#f87171'); }
   }
 
   async function restartApp(){
