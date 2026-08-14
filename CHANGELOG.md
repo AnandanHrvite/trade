@@ -6,6 +6,12 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Added — the backtest progress page now shows a live log
+
+A long run showed one line of phase text and a bar that can sit on the same percentage for a minute, so there was no way to tell a working run from a stuck one. The progress page — shared by every strategy's backtest — now carries a scrolling **Live log**: one timestamped line per phase change, per 10% of progress, and at least one every 15s so silence itself is visible.
+
+Nothing new runs to produce it. The engines already report progress once per 100 candles; the job manager just keeps the interesting ticks in a 40-line in-memory ring (no disk, no extra timers), and it rides along on the `/status` poll the page was already making — about 3 KB per poll, which is what a t3.micro can spare. The page appends only lines it has not seen (each carries a line number) instead of re-rendering the box, and trims its own DOM to 40 rows.
+
 ### Fixed — a backtest no longer asks Fyers for dates that have not happened yet
 
 Switching BB_RSI to 3-min made every backtest of the current month fail at 4% with the single phrase **"Invalid input"**. Nothing about the strategy was wrong; the candle fetch was.

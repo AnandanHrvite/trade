@@ -33,11 +33,16 @@ function createJob(type) {
     id,
     type,
     status: "running",
-    progress: { phase: "Starting…", pct: 0, current: 0, total: 0 },
+    progress: { phase: "Starting…", pct: 0, current: 0, total: 0, log: [{ i: 0, t: 0, m: "Backtest job started" }] },
     result: null,
     error: null,
     startedAt: Date.now(),
     completedAt: null,
+    // Log throttle state — see _appendLog().
+    _logPhase: "Backtest job started",
+    _logPct: 0,
+    _logAt: Date.now(),
+    _logSeq: 0,
   });
   activeJobId = id;
 
@@ -76,7 +81,55 @@ function updateProgress(id, progress) {
   if (job.status === "cancelled") throw new BacktestCancelledError();
   if (job.status === "running") {
     job.progress = { ...job.progress, ...progress };
+    _appendLog(job);
   }
+}
+
+/**
+ * Live log ring — last N lines only. Kept small on purpose: the whole ring rides
+ * along on every 1.5s /status poll, and the box this runs on is a t3.micro.
+ * 40 short lines ≈ 3 KB per poll.
+ */
+const MAX_LOG_LINES = 40;
+
+/**
+ * Turn the progress stream into a human-readable "still alive" log.
+ *
+ * The engines already throttle their progress callback (one tick per 100 candles),
+ * and this only *keeps* a line when the phase text changes, the percentage moves
+ * 10 points, or 15s pass with no line — so a multi-year run produces a few dozen
+ * lines total. Cost per tick is two comparisons; nothing is written to disk.
+ */
+function _appendLog(job) {
+  const p = job.progress || {};
+  const phase = p.phase || "";
+  if (!phase) return;
+  const pct = Number(p.pct) || 0;
+  const now = Date.now();
+
+  const phaseChanged = phase !== job._logPhase;
+  const pctJumped    = pct >= (job._logPct || 0) + 10;
+  const wentQuiet    = now - (job._logAt || 0) >= 15_000;
+  if (!phaseChanged && !pctJumped && !wentQuiet) return;
+
+  let line = phase;
+  if (p.current > 0 && p.total > 0) {
+    line += ` — ${pct}% (candle ${Number(p.current).toLocaleString()} / ${Number(p.total).toLocaleString()})`;
+  } else if (pct > 0) {
+    line += ` — ${pct}%`;
+  }
+
+  const log = Array.isArray(p.log) ? p.log : [];
+  // `i` is a monotonic line number: the page appends only lines it hasn't seen,
+  // so trimming the ring never makes it re-render or skip anything.
+  job._logSeq = (job._logSeq || 0) + 1;
+  log.push({ i: job._logSeq, t: now - job.startedAt, m: line });
+  if (log.length > MAX_LOG_LINES) log.splice(0, log.length - MAX_LOG_LINES);
+  job.progress.log = log;
+
+  job._logPhase = phase;
+  job._logPct   = pct;
+  job._logAt    = now;
 }
 
 /**
@@ -103,7 +156,10 @@ function completeJob(id, result) {
   if (job && job.status !== "cancelled") {
     job.status = "done";
     job.result = result;
-    job.progress = { phase: "Done", pct: 100 };
+    const log = Array.isArray(job.progress && job.progress.log) ? job.progress.log : [];
+    job._logSeq = (job._logSeq || 0) + 1;
+    log.push({ i: job._logSeq, t: Date.now() - job.startedAt, m: "Done — building results page" });
+    job.progress = { phase: "Done", pct: 100, log };
     job.completedAt = Date.now();
     if (activeJobId === id) activeJobId = null;
     // Cleanup old jobs to prevent memory leak (each job holds full trade array)
@@ -175,6 +231,11 @@ function buildProgressPage(jobId, basePath, title) {
     .detail{color:var(--muted-1,#8ba1c2);font-size:0.72rem;margin-bottom:4px;}
     .elapsed{color:var(--muted-2,#6d85a8);font-size:0.68rem;margin-top:12px;}
     .warn{background:#1a1800;border:1px solid #3a3000;border-radius:8px;padding:12px 16px;margin-top:20px;font-size:0.72rem;color:#b8a040;line-height:1.5;}
+    .logwrap{margin-top:20px;text-align:left;}
+    .loghead{font-size:0.65rem;color:var(--muted-2,#6d85a8);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;}
+    .log{background:#080c16;border:1px solid #1a2540;border-radius:8px;padding:10px 12px;max-height:190px;overflow-y:auto;font-size:0.68rem;line-height:1.6;}
+    .log div{color:#8ba1c2;word-break:break-word;}
+    .log .ts{color:#4a627f;margin-right:8px;white-space:pre;}
     .err{background:#1a0808;border:1px solid #7f1d1d;border-radius:8px;padding:16px;margin-top:16px;color:#ef4444;font-size:0.8rem;}
     .err a{color:#f87171;text-decoration:underline;}
     .spinner{display:inline-block;width:18px;height:18px;border:2px solid #1a2540;border-top-color:#3b82f6;border-radius:50%;animation:spin 0.8s linear infinite;vertical-align:middle;margin-right:8px;}
@@ -203,6 +264,9 @@ function buildProgressPage(jobId, basePath, title) {
     :root[data-theme="light"] .btn:hover{background:#fee2e2;}
     :root[data-theme="light"] .btn.neutral{background:#f1f5f9;border-color:#e0e4ea;color:#475569;}
     :root[data-theme="light"] .btn.neutral:hover{background:#e2e8f0;}
+    :root[data-theme="light"] .log{background:#f8fafc;border-color:#e0e4ea;}
+    :root[data-theme="light"] .log div{color:#475569;}
+    :root[data-theme="light"] .log .ts{color:#94a3b8;}
     @media(max-width:768px){
       /* 56px of side padding left ~280px of usable width on a 440px screen. */
       body{align-items:flex-start;padding:16px 12px;}
@@ -210,6 +274,8 @@ function buildProgressPage(jobId, basePath, title) {
       h2{font-size:1.05rem;}
       .err a{min-height:44px;display:inline-flex;align-items:center;justify-content:center;}
       .btn{min-height:44px;flex:1 1 140px;}
+      /* Log gets less room on a phone so the bar + Cancel stay above the fold. */
+      .log{max-height:140px;font-size:0.64rem;-webkit-overflow-scrolling:touch;}
     }
   </style>
 </head>
@@ -223,6 +289,10 @@ function buildProgressPage(jobId, basePath, title) {
     <div class="elapsed" id="elapsed">Elapsed: 0s</div>
     <div class="actions" id="actions">
       <button class="btn" id="cancelBtn" type="button">✖ Cancel Backtest</button>
+    </div>
+    <div class="logwrap">
+      <div class="loghead">Live log</div>
+      <div class="log" id="log"></div>
     </div>
     <div class="warn" id="warn">
       ⏳ Large backtests (3+ years) may take a few minutes.<br>
@@ -302,12 +372,40 @@ function buildProgressPage(jobId, basePath, title) {
       return m + "m " + (s % 60) + "s";
     }
 
+    // ── Live log ──────────────────────────────────────────────────────────────
+    // The server sends the last 40 lines each poll; each carries a monotonic line
+    // number, so we only append what's new instead of re-rendering the box.
+    let lastLine = -1;
+    const logEl = document.getElementById("log");
+    function renderLog(lines) {
+      if (!lines || !lines.length) return;
+      const stick = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 24;
+      let added = false;
+      for (const ln of lines) {
+        const i = (typeof ln.i === "number") ? ln.i : 0;
+        if (i <= lastLine) continue;
+        lastLine = i;
+        const row = document.createElement("div");
+        const ts = document.createElement("span");
+        ts.className = "ts";
+        ts.textContent = fmtTime(ln.t || 0).padStart(6, " ");
+        row.appendChild(ts);
+        row.appendChild(document.createTextNode(ln.m || ""));
+        logEl.appendChild(row);
+        added = true;
+      }
+      // Trim the DOM the same way the server trims the ring — long runs stay cheap.
+      while (logEl.childElementCount > 40) logEl.removeChild(logEl.firstChild);
+      if (added && stick) logEl.scrollTop = logEl.scrollHeight;
+    }
+
     async function poll() {
       if (cancelled) return;
       try {
         const r = await fetch(BASE + "/status?jobId=" + JOB_ID);
         const d = await r.json();
         if (cancelled) return;
+        renderLog((d.progress || {}).log);
 
         if (d.status === "cancelled") { showCancelled(); return; }
 
