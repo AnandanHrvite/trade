@@ -48,8 +48,11 @@ function isNextBar(barTimeSec, armedBarTimeSec, resMinutes) {
 // Toggle: when ON, the confirmation is evaluated at the NEXT candle's CLOSE — that
 // candle must CLOSE beyond the signal candle's close — instead of entering intra-bar
 // on the first poke past the trigger. A poke that closes back the other way is not a
-// reversal, and BB_RSI V8 is a fade: entering on the first tick up from an oversold
-// extreme is exactly how a fade catches a falling knife. Default ON.
+// reversal, and with BB_RSI_DIRECTION=fade (the default) entering on the first tick up
+// from an oversold extreme is exactly how a fade catches a falling knife. Default ON.
+// The trigger level is the signal candle's close and the required direction is the
+// position's own, so the same test reads correctly under BB_RSI_DIRECTION=breakout —
+// there it demands the break extend rather than close back inside.
 //
 // Replaced BB_RSI_CONFIRM_OUTSIDE_BAND on 2026-08-14. That key additionally required
 // the confirmation candle to close OUTSIDE the band, which only made sense while the

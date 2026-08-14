@@ -1,7 +1,8 @@
 /**
  * BB_RSI BACKTEST — /bb_rsi-backtest
  * ─────────────────────────────────────────────────────────────────────────────
- * Backtests the bb_rsi strategy (BB fade + RSI extreme — mean reversion) on 3/5-min candles.
+ * Backtests the bb_rsi strategy on 3/5-min candles — BB band + RSI extreme, traded either
+ * way round per BB_RSI_DIRECTION (fade = mean reversion, the default; breakout = momentum).
  * Uses Fyers historical API for candle data. Completely independent from
  * the main backtest route.
  *
@@ -295,7 +296,8 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
         }
       }
 
-      // 3. MIDDLE-BAND TARGET — the objective of the fade. The per-tick paper logic
+      // 3. MIDDLE-BAND TARGET — the objective of the fade (the engine returns no hit
+      //    at all under BB_RSI_DIRECTION=breakout). The per-tick paper logic
       //    exits the instant spot reaches the mean, so use the bar's FAVOURABLE extreme
       //    (CE→high, PE→low) against the band fixed at the bar's start (prior completed
       //    candles) and exit AT the middle line — the per-bar proxy for the per-tick
