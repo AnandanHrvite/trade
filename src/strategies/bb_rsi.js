@@ -65,11 +65,41 @@ const DESCRIPTION = "BB fade + RSI extreme";
 function cfg(key, fb) { return process.env[key] !== undefined ? process.env[key] : fb; }
 function cfgOn(key, fb) { return String(cfg(key, fb)).toLowerCase() === "true"; }
 
+// ── Strict numeric config reads ──────────────────────────────────────────────
+// A malformed value falls back to the DOCUMENTED DEFAULT — never to NaN, and never to
+// a half-parsed number. Both of those failure modes are silent and both are dangerous
+// here: a NaN threshold makes every comparison against it false, which switches a chop
+// guard OFF rather than on, and bare parseFloat("5o") hands back 5 when the operator
+// meant 50. This repo has already ruled that class of bug out twice — boundedExit's
+// LIVE_EXIT_WAIT_MS falls back rather than removing its ceiling, and EMA9_VWAP's HH:MM
+// window falls back rather than collapsing to midnight — so the same rule applies here.
+// An explicit 0 still parses cleanly, so every documented "0 = off" opt-out keeps working.
+function num(key, fb) {
+  var raw = String(cfg(key, fb)).trim();
+  var v = /^[+-]?(?:\d+\.?\d*|\.\d+)$/.test(raw) ? parseFloat(raw) : NaN;
+  return Number.isFinite(v) ? v : parseFloat(fb);
+}
+function int(key, fb) {
+  var raw = String(cfg(key, fb)).trim();
+  var v = /^[+-]?\d+$/.test(raw) ? parseInt(raw, 10) : NaN;
+  return Number.isFinite(v) ? v : parseInt(fb, 10);
+}
+
 // ── Trading window ───────────────────────────────────────────────────────────
+// "HH:MM" → minutes past midnight, or null if it is not a real time of day.
+function _hhmm(s) {
+  var m = /^\s*(\d{1,2}):(\d{2})\s*$/.exec(String(s == null ? "" : s));
+  if (!m) return null;
+  var h = parseInt(m[1], 10), mi = parseInt(m[2], 10);
+  if (h > 23 || mi > 59) return null;
+  return h * 60 + mi;
+}
+// A malformed window must fall back to the documented default, never to NaN: a NaN
+// bound makes BOTH window comparisons false, which silently removes the entry window
+// altogether and trades the entire session.
 function _parseMins(envKey, fallback) {
-  var v = process.env[envKey] || fallback;
-  var parts = v.split(":");
-  return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+  var v = _hhmm(process.env[envKey]);
+  return v == null ? _hhmm(fallback) : v;
 }
 function _fmtTime(mins) {
   var h = Math.floor(mins / 60), m = mins % 60;
@@ -158,24 +188,24 @@ function getSignal(candles, opts) {
   opts = opts || {};
   var silent = opts.silent === true;
 
-  var BB_PERIOD   = parseInt(cfg("BB_RSI_BB_PERIOD", "30"), 10);
-  var BB_STDDEV   = parseFloat(cfg("BB_RSI_BB_STDDEV", "2"));
-  var RSI_PERIOD  = parseInt(cfg("BB_RSI_RSI_PERIOD", "14"), 10);
-  var RSI_CE      = parseFloat(cfg("BB_RSI_RSI_CE_THRESHOLD", "25")); // CE needs RSI AT OR BELOW this
-  var RSI_PE      = parseFloat(cfg("BB_RSI_RSI_PE_THRESHOLD", "75")); // PE needs RSI AT OR ABOVE this
+  var BB_PERIOD   = int("BB_RSI_BB_PERIOD", "30");
+  var BB_STDDEV   = num("BB_RSI_BB_STDDEV", "2");
+  var RSI_PERIOD  = int("BB_RSI_RSI_PERIOD", "14");
+  var RSI_CE      = num("BB_RSI_RSI_CE_THRESHOLD", "25"); // CE needs RSI AT OR BELOW this
+  var RSI_PE      = num("BB_RSI_RSI_PE_THRESHOLD", "75"); // PE needs RSI AT OR ABOVE this
   var RSI_TURNING = cfgOn("BB_RSI_RSI_TURNING", "false");             // require RSI to have already turned back
-  var MAX_ENTRY_SL_PTS = parseFloat(cfg("BB_RSI_MAX_ENTRY_SL_PTS", "50")); // signal-candle extreme distance cap (0 = off)
+  var MAX_ENTRY_SL_PTS = num("BB_RSI_MAX_ENTRY_SL_PTS", "50"); // signal-candle extreme distance cap (0 = off)
   var ADX_ENABLED = cfgOn("BB_RSI_ADX_ENABLED", "false");
-  var ADX_MAX     = parseFloat(cfg("BB_RSI_ADX_MAX", "30"));          // block when the trend is too strong to fade
+  var ADX_MAX     = num("BB_RSI_ADX_MAX", "30");          // block when the trend is too strong to fade
 
   var BW_ENABLED  = cfgOn("BB_RSI_BAND_WIDTH_ENABLED", "true");
-  var BW_MIN      = parseFloat(cfg("BB_RSI_MIN_BAND_WIDTH_PTS", "50"));
+  var BW_MIN      = num("BB_RSI_MIN_BAND_WIDTH_PTS", "50");
   var RR_ENABLED  = cfgOn("BB_RSI_RSI_RANGE_ENABLED", "true");
-  var RR_LOOKBACK = parseInt(cfg("BB_RSI_RSI_RANGE_LOOKBACK", "20"), 10);
-  var RR_MIN      = parseFloat(cfg("BB_RSI_RSI_RANGE_MIN", "30"));
+  var RR_LOOKBACK = int("BB_RSI_RSI_RANGE_LOOKBACK", "20");
+  var RR_MIN      = num("BB_RSI_RSI_RANGE_MIN", "30");
   var DIV_ENABLED = cfgOn("BB_RSI_DIVERGENCE_ENABLED", "false");
-  var DIV_LOOKBACK  = parseInt(cfg("BB_RSI_DIV_LOOKBACK", "20"), 10);
-  var DIV_PIVOT_BARS = parseInt(cfg("BB_RSI_DIV_PIVOT_BARS", "2"), 10);
+  var DIV_LOOKBACK  = int("BB_RSI_DIV_LOOKBACK", "20");
+  var DIV_PIVOT_BARS = int("BB_RSI_DIV_PIVOT_BARS", "2");
 
   var base = {
     signal: "NONE", reason: "", stopLoss: null, target: null,
@@ -380,11 +410,11 @@ function signalStrength(result) {
   var rsi = result && typeof result.rsi === "number" ? result.rsi : null;
   if (rsi === null) return "MARGINAL";
   if (result.signal === "BUY_CE") {
-    var ce = parseFloat(cfg("BB_RSI_RSI_CE_THRESHOLD", "25"));
+    var ce = num("BB_RSI_RSI_CE_THRESHOLD", "25");
     return rsi <= ce - 5 ? "STRONG" : "MARGINAL";
   }
   if (result.signal === "BUY_PE") {
-    var pe = parseFloat(cfg("BB_RSI_RSI_PE_THRESHOLD", "75"));
+    var pe = num("BB_RSI_RSI_PE_THRESHOLD", "75");
     return rsi >= pe + 5 ? "STRONG" : "MARGINAL";
   }
   return "MARGINAL";
@@ -399,8 +429,8 @@ function signalStrength(result) {
 // before the mean is reached would cut the trade short of its whole objective.
 // Returns { hit, floor }.
 function profitLock(favPts, peakFavPts) {
-  var trigger = parseFloat(cfg("BB_RSI_PROFIT_LOCK_TRIGGER_PTS", "0"));
-  var pct     = parseFloat(cfg("BB_RSI_PROFIT_LOCK_PCT", "50"));
+  var trigger = num("BB_RSI_PROFIT_LOCK_TRIGGER_PTS", "0");
+  var pct     = num("BB_RSI_PROFIT_LOCK_PCT", "50");
   if (trigger <= 0 || peakFavPts == null || peakFavPts < trigger) return { hit: false, floor: null };
   var floor = parseFloat(((pct / 100) * peakFavPts).toFixed(2));
   return { hit: favPts <= floor, floor: floor };
@@ -413,7 +443,7 @@ function profitLock(favPts, peakFavPts) {
 //   favPts — current favourable spot points (CE = price−entry, PE = entry−price)
 // Returns { hit, stop }.
 function hardStop(favPts) {
-  var stop = parseFloat(cfg("BB_RSI_STOP_LOSS_PTS", "30"));
+  var stop = num("BB_RSI_STOP_LOSS_PTS", "30");
   if (stop <= 0 || favPts == null) return { hit: false, stop: null };
   return { hit: favPts <= -stop, stop: stop };
 }
@@ -471,10 +501,10 @@ function countOppositeCandles(candles, side) {
 // Returns { hit, reason, count, need, armed }.
 function oppositeCandleExit(candles, side, mfeSpotPts, barsHeld) {
   var slOn    = cfgOn("BB_RSI_OPP_CANDLE_SL_ENABLED", "true");
-  var slCount = parseInt(cfg("BB_RSI_OPP_CANDLE_SL_COUNT", "2"), 10) || 2;
+  var slCount = int("BB_RSI_OPP_CANDLE_SL_COUNT", "2");
   var trOn    = cfgOn("BB_RSI_OPP_CANDLE_TRAIL_ENABLED", "true");
-  var trCount = parseInt(cfg("BB_RSI_OPP_CANDLE_TRAIL_COUNT", "2"), 10) || 2;
-  var armPts  = parseFloat(cfg("BB_RSI_TRAIL_ARM_PTS", "10"));
+  var trCount = int("BB_RSI_OPP_CANDLE_TRAIL_COUNT", "2");
+  var armPts  = num("BB_RSI_TRAIL_ARM_PTS", "10");
 
   var armed = trOn && (mfeSpotPts || 0) >= armPts;
   var held  = Number.isFinite(barsHeld) ? Math.max(0, barsHeld) : Infinity;
@@ -496,8 +526,8 @@ function oppositeCandleExit(candles, side, mfeSpotPts, barsHeld) {
 // entry uses. Exposed so the routes can run the middle-band target intra-candle
 // (per-tick spot vs the mean) instead of only on candle close. null if insufficient data.
 function bbLevels(candles) {
-  var BB_PERIOD = parseInt(cfg("BB_RSI_BB_PERIOD", "30"), 10);
-  var BB_STDDEV = parseFloat(cfg("BB_RSI_BB_STDDEV", "2"));
+  var BB_PERIOD = int("BB_RSI_BB_PERIOD", "30");
+  var BB_STDDEV = num("BB_RSI_BB_STDDEV", "2");
   var closes = candles.map(function(c) { return c.close; });
   var bbArr = BollingerBands.calculate({ period: BB_PERIOD, stdDev: BB_STDDEV, values: closes });
   if (bbArr.length < 1) return null;

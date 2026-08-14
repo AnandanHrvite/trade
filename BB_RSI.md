@@ -111,6 +111,14 @@ In the order each engine evaluates them:
 
 There is **no** break-even snap, no percentage spot-trail, no time-stop, and no BB re-entry exit — closing back inside the band is now the trade's *goal*, not a failure.
 
+## 5a. Malformed config
+
+Every numeric setting the engine reads is parsed **strictly**: a value that is not a clean number falls back to the **documented default**, never to `NaN` and never to a half-parsed number. This matters more here than it looks. A `NaN` threshold makes every comparison against it false, which switches a chop guard **off** rather than on, and a bare `parseFloat("5o")` hands back `5` when you meant `50` — both silent, both in the dangerous direction. The entry window behaves the same way: a malformed `HH:MM` (or an impossible one like `25:00`) falls back to `09:21`/`14:30` rather than collapsing to a `NaN` bound, which would remove the window and trade the whole session.
+
+An explicit `0` still parses cleanly, so every documented "`0` = off" opt-out keeps working exactly as before.
+
+This follows two rulings the repo has already made: `boundedExit`'s `LIVE_EXIT_WAIT_MS` falls back rather than removing its ceiling, and EMA9+VWAP's window falls back rather than collapsing to midnight.
+
 ## 6. Same-side cooldown
 
 After an **SL hit** on a side, new entries on **that side** are blocked for `BB_RSI_SL_PAUSE_CANDLES(3)` candles (`BB_RSI_PER_SIDE_PAUSE` on = per-side; off = global). Each consecutive SL after the 2nd adds `BB_RSI_CONSEC_SL_EXTRA_PAUSE(2)` extra candles.
