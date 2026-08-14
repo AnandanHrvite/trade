@@ -23,7 +23,7 @@ const fs      = require("fs");
 const os      = require("os");
 const path    = require("path");
 
-const { buildSidebar, sidebarCSS, faviconLink, toastJS } = require("../utils/sharedNav");
+const { buildSidebar, sidebarCSS, faviconLink, toastJS, modalCSS, modalJS } = require("../utils/sharedNav");
 const sharedSocketState = require("../utils/sharedSocketState");
 
 const HOME            = os.homedir();
@@ -118,9 +118,16 @@ router.post("/apply", (req, res) => {
 // Refused while any engine holds the socket, so a restart can never orphan a
 // running paper/live session. A plain `node src/app.js` will simply stop.
 router.post("/restart", (req, res) => {
-  const mode = sharedSocketState.getMode();
-  if (mode) {
-    return res.status(409).json({ success: false, error: `${mode} is running — stop it before restarting.` });
+  // isAnyActive() — not getMode(), which only knows about EMA_RSI_ST. Every
+  // engine holds its own slot, so a BB_RSI / PA / ORB session must block too.
+  if (sharedSocketState.isAnyActive()) {
+    const running = [
+      sharedSocketState.getMode(), sharedSocketState.getBbRsiMode(), sharedSocketState.getPAMode(),
+      sharedSocketState.getOrbMode(), sharedSocketState.getEma9VwapMode(), sharedSocketState.getTrendPbMode(),
+      sharedSocketState.getGapsMode(), sharedSocketState.getTrendDayScalpMode(),
+      sharedSocketState.getGapFix3mMode(), sharedSocketState.getOiWallFadeMode(),
+    ].filter(Boolean).join(", ");
+    return res.status(409).json({ success: false, error: `${running} running — stop it before restarting.` });
   }
   console.log("♻️  [tokenSync] restart requested from the Token Sync page.");
   res.json({ success: true, message: "Restarting… reload this page in a few seconds." });
@@ -144,6 +151,7 @@ router.get("/", (req, res) => {
     html, body { height:100%; }
     body { font-family:'IBM Plex Sans',sans-serif; background:#080c14; color:#c8d8f0; }
     ${sidebarCSS()}
+    ${modalCSS()}
     .page { padding:22px 28px 80px; max-width:1000px; }
     .sub { font-size:0.72rem; color:var(--muted-1,#8ba1c2); margin-bottom:18px; line-height:1.6; }
     .sub code { background:#0d1320; padding:1px 5px; border-radius:3px; color:#94a3b8; }
@@ -258,6 +266,7 @@ ${buildSidebar('tokenSync', liveActive)}
 </div></div>
 
 <script>
+  ${modalJS()}
   ${toastJS()}
   var SNAP = null, REVEALED = {};
 
@@ -271,9 +280,13 @@ ${buildSidebar('tokenSync', liveActive)}
   }
 
   function rowHTML(key, label, cls, d){
-    var pill = !d.present ? '<span class="pill bad">NOT SET</span>'
-             : d.stale    ? '<span class="pill warn">STALE — RE-LOGIN ON LIVE</span>'
-                          : '<span class="pill ok">VALID TODAY</span>';
+    // A token read from process.env (no disk file) carries no save date, so its
+    // age is genuinely unknown — say so instead of claiming it is valid today.
+    var unknownAge = d.present && !d.savedAt && !d.savedDate;
+    var pill = !d.present  ? '<span class="pill bad">NOT SET</span>'
+             : d.stale     ? '<span class="pill warn">STALE — RE-LOGIN ON LIVE</span>'
+             : unknownAge  ? '<span class="pill warn">AGE UNKNOWN</span>'
+                           : '<span class="pill ok">VALID TODAY</span>';
     var meta = !d.present ? 'No token on this instance.'
              : 'saved ' + esc(d.savedDate || '—') + ' · ' + ago(d.savedAt) + ' · from ' + esc(d.source);
     var body = d.present
@@ -299,7 +312,14 @@ ${buildSidebar('tokenSync', liveActive)}
 
   function load(){
     fetch('/token-sync/tokens').then(function(r){ return r.json(); })
-      .then(function(d){ SNAP = d; render(); })
+      .then(function(d){
+        // A 401 (login expired) answers with { success:false } — keep the last
+        // good view instead of rendering "undefined" over it.
+        if (!d || !d.fyers || !d.zerodha) {
+          return showToast(d && d.error ? d.error : 'Could not read tokens', '#f87171');
+        }
+        SNAP = d; render();
+      })
       .catch(function(e){ document.getElementById('copyArea').textContent = 'Failed to load: ' + e.message; });
   }
 
@@ -322,27 +342,42 @@ ${buildSidebar('tokenSync', liveActive)}
     document.body.removeChild(ta);
   }
 
-  function applyToken(broker){
+  // Both writes go through secretFetch — /token-sync/apply and /restart are
+  // deliberately outside app.js OPEN_PATHS, so they need the API_SECRET header
+  // when one is configured (secretFetch prompts once per browser session).
+  async function applyToken(broker){
     var el = document.getElementById(broker === 'fyers' ? 'fyPaste' : 'zdPaste');
     var token = (el.value || '').trim();
     if (!token) return showToast('Paste a token first', '#f87171');
-    fetch('/token-sync/apply', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ broker: broker, token: token })
-    }).then(function(r){ return r.json(); }).then(function(d){
+    try {
+      var res = await secretFetch('/token-sync/apply', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ broker: broker, token: token })
+      });
+      if (!res) return;                       // secret prompt cancelled
+      var d = await res.json();
       if (!d.success) return showToast(d.error || 'Apply failed', '#f87171');
       el.value = '';
       SNAP = d.snapshot; render();
       showToast(broker.toUpperCase() + ' token applied', '#34d399');
-    }).catch(function(e){ showToast('Apply failed: ' + e.message, '#f87171'); });
+    } catch (e) { showToast('Apply failed: ' + e.message, '#f87171'); }
   }
 
-  function restartApp(){
-    if (!confirm('Restart the app now? Only do this if it runs under PM2 or nodemon.')) return;
-    fetch('/token-sync/restart', { method: 'POST' })
-      .then(function(r){ return r.json(); }).then(function(d){
-        showToast(d.success ? d.message : (d.error || 'Restart failed'), d.success ? '#fbbf24' : '#f87171');
-      }).catch(function(){ showToast('Restarting…', '#fbbf24'); });
+  async function restartApp(){
+    var ok = await showConfirm({
+      icon: '♻',
+      title: 'Restart the app?',
+      message: 'Only do this if the app runs under PM2 or nodemon.\\nA plain "npm start" will stop instead of coming back.',
+      confirmText: 'Restart',
+      confirmClass: 'modal-btn-danger'
+    });
+    if (!ok) return;
+    try {
+      var res = await secretFetch('/token-sync/restart', { method: 'POST' });
+      if (!res) return;                       // secret prompt cancelled
+      var d = await res.json();
+      showToast(d.success ? d.message : (d.error || 'Restart failed'), d.success ? '#fbbf24' : '#f87171');
+    } catch (e) { showToast('Restarting…', '#fbbf24'); }   // socket dies as the process exits
   }
 
   load();
