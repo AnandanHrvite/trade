@@ -1081,6 +1081,9 @@ function fpts(n, spotPts){
   return (n>=0?'+':'')+n.toFixed(2)+' pts';
 }
 function fmtDate(dt){ if(!dt) return '\u2014'; var p=dt.split(', '); var d=(p[0]||'').split('/'); if(d.length===3) return d[0].padStart(2,'0')+'/'+d[1].padStart(2,'0')+'/'+d[2]; return p[0]||'\u2014'; }
+// DD/MM/YYYY for a trade row. Trades carry no date field \u2014 the date lives in
+// the "DD/MM/YYYY, HH:MM:SS" entry string.
+function tradeDate(t){ return fmtDate((t&&t.entry)||''); }
 function fmtTime(dt){ if(!dt) return '\u2014'; var p=dt.split(', '); return p[1]||'\u2014'; }
 
 function doFilter(){
@@ -1888,8 +1891,8 @@ function renderAnalytics(){
   // ── Day-wise Loss ──
   (function(){
     var dlMap={};
-    trades.forEach(function(t){ var d=t.date||'?'; if(!dlMap[d])dlMap[d]={trades:0,losses:0,gross:0,net:0}; dlMap[d].trades++; dlMap[d].net+=(t.pnl||0); if(t.pnl<0){dlMap[d].losses++;dlMap[d].gross+=t.pnl;} });
-    var days=Object.keys(dlMap).sort();
+    trades.forEach(function(t){ var d=tradeDate(t); if(!dlMap[d])dlMap[d]={trades:0,losses:0,gross:0,net:0,ts:t.entryTs||0}; dlMap[d].trades++; dlMap[d].net+=(t.pnl||0); if(t.pnl<0){dlMap[d].losses++;dlMap[d].gross+=t.pnl;} });
+    var days=Object.keys(dlMap).sort(function(a,b){ return dlMap[a].ts-dlMap[b].ts; });
     var html='';
     days.forEach(function(d){ var dd=dlMap[d]; var nc=dd.net>=0?'#10b981':'#ef4444'; html+='<tr><td style="color:#c8d8f0;">'+d+'</td><td>'+dd.trades+'</td><td style="color:#ef4444;">'+dd.losses+'</td><td style="color:#ef4444;font-weight:700;">'+(dd.gross<0?fmtAna(dd.gross):'—')+'</td><td style="color:'+nc+';font-weight:700;">'+fmtAna(dd.net)+'</td></tr>'; });
     if(!html) html='<tr><td colspan="5" style="text-align:center;color:var(--muted-2,#6d85a8);">No data</td></tr>';
@@ -1900,7 +1903,7 @@ function renderAnalytics(){
   (function(){
     var rows=lossTrades.slice().sort(function(a,b){return (b.held==null?-1:b.held)-(a.held==null?-1:a.held);});
     var html='';
-    rows.forEach(function(t){ var sc=t.side==='CE'?'#10b981':'#ef4444'; var ch=(typeof t.held==='number')?t.held:'—'; html+='<tr><td style="color:#c8d8f0;">'+(t.date||'—')+'</td><td style="color:'+sc+';font-weight:600;">'+(t.side||'—')+'</td><td style="color:#c8d8f0;font-weight:700;">'+ch+'</td><td style="color:#ef4444;font-weight:700;">'+fmtAna(t.pnl)+'</td><td style="color:#7a90b0;font-size:0.65rem;">'+(t.reason||'—')+'</td></tr>'; });
+    rows.forEach(function(t){ var sc=t.side==='CE'?'#10b981':'#ef4444'; var ch=(typeof t.held==='number')?t.held:'—'; html+='<tr><td style="color:#c8d8f0;">'+tradeDate(t)+'</td><td style="color:'+sc+';font-weight:600;">'+(t.side||'—')+'</td><td style="color:#c8d8f0;font-weight:700;">'+ch+'</td><td style="color:#ef4444;font-weight:700;">'+fmtAna(t.pnl)+'</td><td style="color:#7a90b0;font-size:0.65rem;">'+(t.reason||'—')+'</td></tr>'; });
     if(!html) html='<tr><td colspan="5" style="text-align:center;color:var(--muted-2,#6d85a8);">No losing trades</td></tr>';
     document.getElementById('anaLossCandleBody').innerHTML=html;
   })();

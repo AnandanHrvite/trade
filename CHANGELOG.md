@@ -6,6 +6,12 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — every backtest page shows dates as DD/MM/YYYY
+
+The main trade log was already right; the Analytics tables underneath were not. The "Day-wise Loss" and "Losses by Candles Held" tables on BB_RSI, PA, EMA_RSI_ST and EMA9+VWAP read a `date` field the trade objects never carried, so every row showed `?` or a dash. They now take the date from the trade's entry timestamp.
+
+EMA_RSI_ST and EMA9+VWAP had two more: their Analytics dates came from `toLocaleDateString`, which drops leading zeros (`8/7/2026` instead of `08/07/2026`), and their Day P&L table split the entry string on a space, leaving a trailing comma (`08/07/2026,`). Both are fixed, and the day rows on all four pages now sort on the timestamp rather than the DD/MM/YYYY text — string order put every 08/xx ahead of every 23/xx, which made the cumulative P&L column meaningless.
+
 ### Added — the backtest progress page now shows a live log
 
 A long run showed one line of phase text and a bar that can sit on the same percentage for a minute, so there was no way to tell a working run from a stuck one. The progress page — shared by every strategy's backtest — now carries a scrolling **Live log**: one timestamped line per phase change, per 10% of progress, and at least one every 15s so silence itself is visible.

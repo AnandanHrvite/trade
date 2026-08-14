@@ -791,15 +791,18 @@ var dwPage = 1, dwPageSize = 10;
 function buildDayView(){
   var dayMap={};
   TRADES.forEach(function(t){
-    var d=t.entry?(t.entry.split(' ')[0]||'Unknown'):'Unknown';
-    if(!dayMap[d]) dayMap[d]={date:d,trades:0,wins:0,losses:0,pnl:0};
+    // entry is "DD/MM/YYYY, HH:MM:SS" — splitting on the comma keeps the date clean.
+    var d=t.entry?(t.entry.split(',')[0].trim()||'Unknown'):'Unknown';
+    if(!dayMap[d]) dayMap[d]={date:d,ts:t.entryTs||0,trades:0,wins:0,losses:0,pnl:0};
     dayMap[d].trades++;
     if(t.pnl!=null){
       dayMap[d].pnl+=t.pnl;
       if(t.pnl>=0) dayMap[d].wins++; else dayMap[d].losses++;
     }
   });
-  var days=Object.values(dayMap).sort(function(a,b){ return a.date<b.date?-1:a.date>b.date?1:0; });
+  // Sort on the timestamp, not the DD/MM/YYYY string — string order would put
+  // every 08/xx before every 23/xx and make the cumulative column nonsense.
+  var days=Object.values(dayMap).sort(function(a,b){ return a.ts-b.ts; });
   var cumAll=0;
   for(var k=0;k<days.length;k++){ cumAll+=days[k].pnl; days[k]._cum=cumAll; }
   // Cumulative is a running total, so it is built oldest→newest; the rows are
@@ -906,7 +909,8 @@ function fmtAna(v){ return OPT_SIM ? (v<0?'-':'')+'\\u20b9'+Math.round(Math.abs(
 function fmtAnaShort(v){ return OPT_SIM ? '\\u20b9'+Math.round(v/1000)+'k' : Math.round(v)+' pts'; }
 // Helper: get IST Date object from entryTs (unix seconds)
 function tsToIST(ts){ return ts ? new Date(ts * 1000) : null; }
-function tsFmtDate(ts){ var d=tsToIST(ts); if(!d) return 'Unknown'; return d.toLocaleDateString('en-IN',{timeZone:'Asia/Kolkata'}); }
+// Always DD/MM/YYYY, zero-padded — toLocaleDateString drops the leading zeros.
+function tsFmtDate(ts){ if(!ts) return 'Unknown'; var d=new Date((ts+19800)*1000); return String(d.getUTCDate()).padStart(2,'0')+'/'+String(d.getUTCMonth()+1).padStart(2,'0')+'/'+d.getUTCFullYear(); }
 function tsFmtMonth(ts){ var d=tsToIST(ts); if(!d) return '2025-01'; var m=new Intl.DateTimeFormat('en-CA',{year:'numeric',month:'2-digit',timeZone:'Asia/Kolkata'}).format(d); return m; }
 function tsHour(ts){ var d=tsToIST(ts); if(!d) return 9; return parseInt(new Intl.DateTimeFormat('en-GB',{hour:'2-digit',hour12:false,timeZone:'Asia/Kolkata'}).format(d)); }
 function tsDow(ts){ var d=tsToIST(ts); if(!d) return 1; var s=new Intl.DateTimeFormat('en-US',{weekday:'short',timeZone:'Asia/Kolkata'}).format(d); var map={Sun:0,Mon:1,Tue:2,Wed:3,Thu:4,Fri:5,Sat:6}; return map[s]!=null?map[s]:1; }
@@ -1423,8 +1427,8 @@ function renderAnalytics(){
   // ── Day-wise Loss ──
   (function(){
     var dlMap={};
-    trades.forEach(function(t){ var d=t.date||'?'; if(!dlMap[d])dlMap[d]={trades:0,losses:0,gross:0,net:0}; dlMap[d].trades++; dlMap[d].net+=(t.pnl||0); if(t.pnl<0){dlMap[d].losses++;dlMap[d].gross+=t.pnl;} });
-    var days=Object.keys(dlMap).sort();
+    trades.forEach(function(t){ var d=tsFmtDate(t.entryTs); if(!dlMap[d])dlMap[d]={trades:0,losses:0,gross:0,net:0,ts:t.entryTs||0}; dlMap[d].trades++; dlMap[d].net+=(t.pnl||0); if(t.pnl<0){dlMap[d].losses++;dlMap[d].gross+=t.pnl;} });
+    var days=Object.keys(dlMap).sort(function(a,b){ return dlMap[a].ts-dlMap[b].ts; });
     var html='';
     days.forEach(function(d){ var dd=dlMap[d]; var nc=dd.net>=0?'#10b981':'#ef4444'; html+='<tr><td style="color:#c8d8f0;">'+d+'</td><td>'+dd.trades+'</td><td style="color:#ef4444;">'+dd.losses+'</td><td style="color:#ef4444;font-weight:700;">'+(dd.gross<0?fmtAna(dd.gross):'\\u2014')+'</td><td style="color:'+nc+';font-weight:700;">'+fmtAna(dd.net)+'</td></tr>'; });
     if(!html) html='<tr><td colspan="5" style="text-align:center;color:var(--muted-2,#6d85a8);">No data</td></tr>';
@@ -1435,7 +1439,7 @@ function renderAnalytics(){
   (function(){
     var rows=lossTrades.slice().sort(function(a,b){return (b.held==null?-1:b.held)-(a.held==null?-1:a.held);});
     var html='';
-    rows.forEach(function(t){ var sc=t.side==='CE'?'#10b981':'#ef4444'; var ch=(typeof t.held==='number')?t.held:'\\u2014'; html+='<tr><td style="color:#c8d8f0;">'+(t.date||'\\u2014')+'</td><td style="color:'+sc+';font-weight:600;">'+(t.side||'\\u2014')+'</td><td style="color:#c8d8f0;font-weight:700;">'+ch+'</td><td style="color:#ef4444;font-weight:700;">'+fmtAna(t.pnl)+'</td><td style="color:#7a90b0;font-size:0.65rem;">'+(t.reason||'\\u2014')+'</td></tr>'; });
+    rows.forEach(function(t){ var sc=t.side==='CE'?'#10b981':'#ef4444'; var ch=(typeof t.held==='number')?t.held:'\\u2014'; html+='<tr><td style="color:#c8d8f0;">'+tsFmtDate(t.entryTs)+'</td><td style="color:'+sc+';font-weight:600;">'+(t.side||'\\u2014')+'</td><td style="color:#c8d8f0;font-weight:700;">'+ch+'</td><td style="color:#ef4444;font-weight:700;">'+fmtAna(t.pnl)+'</td><td style="color:#7a90b0;font-size:0.65rem;">'+(t.reason||'\\u2014')+'</td></tr>'; });
     if(!html) html='<tr><td colspan="5" style="text-align:center;color:var(--muted-2,#6d85a8);">No losing trades</td></tr>';
     document.getElementById('anaLossCandleBody').innerHTML=html;
   })();
