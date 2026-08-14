@@ -2,7 +2,7 @@
  * BB_RSI LIVE TRADE — /bb_rsi
  * ─────────────────────────────────────────────────────────────────────────────
  * Uses LIVE market data (Fyers WebSocket) and places REAL orders via Fyers.
- * Runs on 3/5-min candles with the bb_rsi BB+SuperTrend+RSI strategy.
+ * Runs on 3/5-min candles with the bb_rsi BB mean-reversion + RSI strategy.
  * Can run IN PARALLEL with /trade (live Zerodha) or /ema_rsi_st-paper.
  *
  * DATA LAYER  → Fyers (WebSocket ticks — shared with main)
@@ -55,8 +55,9 @@ const _BB_RSI_MAX_TRADES    = parseInt(process.env.BB_RSI_MAX_DAILY_TRADES || "3
 const _BB_RSI_MAX_LOSS      = parseFloat(process.env.BB_RSI_MAX_DAILY_LOSS || "2000");
 const _BB_RSI_PAUSE_CANDLES = parseInt(process.env.BB_RSI_SL_PAUSE_CANDLES || "2", 10);
 // Note: BB_RSI has no option-premium stop. The shared OPT_STOP_PCT belongs to
-// EMA_RSI_ST; BB_RSI exits on BB re-entry / hard stop / profit lock / trend flip
-// only (see src/strategies/bb_rsi.js), so it is deliberately not read here.
+// EMA_RSI_ST; BB_RSI exits on the BB middle-band target / the two-opposite-candle
+// stop or trail / the hard stop / the profit lock only (see src/strategies/bb_rsi.js),
+// so it is deliberately not read here.
 // Per-side SL pause — when true, an SL on CE only pauses CE entries (PE still allowed)
 const _BB_RSI_PER_SIDE_PAUSE = (process.env.BB_RSI_PER_SIDE_PAUSE || "true") === "true";
 
@@ -697,8 +698,8 @@ function onTick(tick) {
   const tickMs   = Date.now();
   const bucketMs = getBucketStart(tickMs);
 
-  // Skip pre-market/pre-open candles (build only from 09:15 NSE open) so
-  // SuperTrend matches Kite — the 09:00 pre-open auction bar pollutes it.
+  // Skip pre-market/pre-open candles (build only from 09:15 NSE open) so the
+  // indicators match Kite — the 09:00 pre-open auction bar pollutes them.
   if (isPreMarketBucket(bucketMs)) return;
 
   if (!state.currentBar || state.barStartTime !== bucketMs) {
@@ -1088,7 +1089,8 @@ async function resolveAndEnter(side, spot, result) {
       return;
     }
 
-    // Initial SL = SuperTrend value from the strategy (no clamp).
+    // Initial SL line = the signal candle's own extreme (from the strategy). Recorded
+    // and displayed for sizing; the live stop is the two-opposite-candle rule.
     const clampedSL = result.stopLoss;
 
     // Data-collection metadata — frozen at entry so the trade record is self-describing for offline analysis.
@@ -2033,7 +2035,7 @@ ${buildSidebar('bbRsiLive', liveActive, state.running, {
 <div class="top-bar">
   <div>
     <div class="top-bar-title">BB_RSI Live Trade</div>
-    <div class="top-bar-meta">${bbRsiStrategy.NAME} \u00b7 ${BB_RSI_RES}-min candles \u00b7 SL: SuperTrend flip exit + Profit lock \u00b7 ${state.running ? "Auto-refreshes 2s" : "Not refreshing"}</div>
+    <div class="top-bar-meta">${bbRsiStrategy.NAME} \u00b7 ${BB_RSI_RES}-min candles \u00b7 Target: BB middle \u00b7 SL: 2 opposite candles \u00b7 ${state.running ? "Auto-refreshes 2s" : "Not refreshing"}</div>
   </div>
   <div class="top-bar-right">
     ${state.running

@@ -1,7 +1,7 @@
 /**
  * BB_RSI BACKTEST — /bb_rsi-backtest
  * ─────────────────────────────────────────────────────────────────────────────
- * Backtests the bb_rsi strategy (BB break + SuperTrend + RSI) on 3/5-min candles.
+ * Backtests the bb_rsi strategy (BB fade + RSI extreme — mean reversion) on 3/5-min candles.
  * Uses Fyers historical API for candle data. Completely independent from
  * the main backtest route.
  *
@@ -490,7 +490,7 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
     }
 
     const entryPrice = parseFloat((candle.close + SLIPPAGE_PTS * (side === "CE" ? 1 : -1)).toFixed(2));
-    // Initial SL = SuperTrend value from the strategy (no clamp).
+    // Initial SL line = the signal candle's own extreme (recorded for sizing only).
     const sl = result.stopLoss;
     // Initial rupee risk (recorded for analysis; no longer drives exits).
     const _initRiskBT = OPTION_SIM

@@ -2,7 +2,7 @@
  * BB_RSI PAPER TRADE — /bb_rsi-paper
  * ─────────────────────────────────────────────────────────────────────────────
  * Uses LIVE market data (Fyers WebSocket) but SIMULATES orders locally.
- * Runs on 3/5-min candles with the bb_rsi BB+SuperTrend+RSI strategy.
+ * Runs on 3/5-min candles with the bb_rsi BB mean-reversion + RSI strategy.
  * Can run IN PARALLEL with /trade (live) or /ema_rsi_st-paper (paper).
  *
  * Routes:
@@ -659,8 +659,8 @@ function onTick(tick) {
   const tickMs    = simNow();
   const bucketMs  = getBucketStart(tickMs);
 
-  // Skip pre-market/pre-open candles (build only from 09:15 NSE open) so
-  // SuperTrend matches Kite — the 09:00 pre-open auction bar pollutes it.
+  // Skip pre-market/pre-open candles (build only from 09:15 NSE open) so the
+  // indicators match Kite — the 09:00 pre-open auction bar pollutes them.
   if (isPreMarketBucket(bucketMs)) return;
 
   if (!state.currentBar || state.barStartTime !== bucketMs) {
@@ -778,9 +778,10 @@ function onTick(tick) {
       }
     }
 
-    // 2. PROFIT LOCK — the per-tick upside exit. Once peak favourable spot move ≥
+    // 2. PROFIT LOCK — optional per-tick upside cap. Once peak favourable spot move ≥
     //    BB_RSI_PROFIT_LOCK_TRIGGER_PTS, exit when it gives back below BB_RSI_PROFIT_LOCK_PCT%
-    //    of peak (ratchets). Points-based; SuperTrend flip (candle close) handles bigger runners.
+    //    of peak (ratchets). Off by default in V8 — the middle-band target and the
+    //    two-candle trail are the intended upside exits.
     {
       const _lock = bbRsiStrategy.profitLock(_favPts, pos.mfeSpotPts || 0);
       if (_lock.hit) {
@@ -858,7 +859,7 @@ async function onCandleClose(bar) {
   // so the buildup series stays filled even on no-signal / in-position candles.
   if (!state._simMode) await oiFilter.recordOiSample(bar.close);
 
-  // Count candles held + SuperTrend-based exit checks
+  // Count candles held + the candle-close exit check
   if (state.position) {
     state.position.candlesHeld = (state.position.candlesHeld || 0) + 1;
 
@@ -1881,7 +1882,7 @@ ${buildSidebar('bbRsiPaper', liveActive, state.running)}
 <div class="top-bar">
   <div>
     <div class="top-bar-title">BB_RSI Paper Trade</div>
-    <div class="top-bar-meta">Strategy: ${bbRsiStrategy.NAME} \u00b7 ${BB_RSI_RES}-min candles \u00b7 SL: SuperTrend flip exit + Profit lock \u00b7 ${state.running ? 'Auto-refreshes every 2s' : 'Stopped'}</div>
+    <div class="top-bar-meta">Strategy: ${bbRsiStrategy.NAME} \u00b7 ${BB_RSI_RES}-min candles \u00b7 Target: BB middle \u00b7 SL: 2 opposite candles \u00b7 ${state.running ? 'Auto-refreshes every 2s' : 'Stopped'}</div>
   </div>
   <div class="top-bar-right">
     ${state.running
