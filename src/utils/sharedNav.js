@@ -158,6 +158,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
 
   // ── System submenu toggles (Settings is always shown) ──
   const showTradeLogs  = (process.env.UI_SHOW_TRADE_LOGS  || 'true').toLowerCase() === 'true';
+  const showTokenSync  = (process.env.UI_SHOW_TOKEN_SYNC  || 'true').toLowerCase() === 'true';
 
   // Determine which collapsible group the active page belongs to
   const tradingKeys = ['emaRsiStBacktest', 'emaRsiStPaper', 'emaRsiStSim', 'emaRsiStHistory', 'emaRsiStCompare', 'emaRsiStTracker', 'emaRsiStLive', 'emaRsiStLiveHarness'];
@@ -352,6 +353,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       items: [
         ...(showTradeLogs  ? [{ key: 'tradeLogs',  href: '/trade-logs',  icon: '🗂', label: 'Logs' }] : []),
         // Login Logs, Server Logs (📜 LOGS) and Cache Files now live as tabs inside the Logs (/trade-logs) page.
+        ...(showTokenSync  ? [{ key: 'tokenSync',  href: '/token-sync',  icon: '🔑', label: 'Token Sync' }] : []),
         { key: 'settings',   href: '/settings',    icon: '⚙',  label: 'Settings'   },
       ]
     },

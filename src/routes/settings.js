@@ -837,6 +837,7 @@ const SETTINGS_SCHEMA = [
       { key: "UI_SHOW_LOGS",       label: "Logs → Server Logs tab", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Server Logs tab.", default: "true", subheader: "System sub-menus" },
       { key: "UI_SHOW_TRADE_LOGS", label: "System → Logs", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Logs under the System group.", default: "true" },
       { key: "UI_SHOW_CACHE_FILES", label: "Logs → Cache Files tab", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Cache Files tab.", default: "true" },
+      { key: "UI_SHOW_TOKEN_SYNC", label: "System → Token Sync", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Token Sync under the System group — copy the day's broker token from LIVE and paste it on a local machine so backtests/analytics can run there.", default: "true" },
     ],
   },
   {

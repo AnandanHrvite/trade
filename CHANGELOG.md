@@ -6,6 +6,16 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Added — Token Sync page: run backtests & analytics from a laptop (`/token-sync`)
+
+A broker login can only be completed on the LIVE server, because the Fyers/Zerodha OAuth redirect URL is registered against that host — a login started from `localhost` never comes back. The *data* APIs carry no such restriction: a token issued on LIVE authenticates a historical-candle call made from anywhere. That is the whole gap this page closes, so a laptop can run backtests, replay and analytics off the day's token without the machine ever needing to place an order.
+
+**System → Token Sync** has two blocks. The first shows the Fyers and Zerodha tokens this instance is holding — masked until 👁 Reveal, with a ⧉ Copy button and a badge that reads *valid today* or *stale — re-login on LIVE* (day tokens are stamped with their IST save date, so a token carried over from yesterday is called out rather than silently failing later inside a backtest). The second takes a pasted token and applies it: it writes `~/trading-data/.fyers_token` / `.zerodha_token` in the same shape the brokers' own save paths use — stamped with today's IST date, and marked validated for Zerodha so the loader accepts it — then seeds the in-process client, so a backtest works immediately with no restart.
+
+A **♻ Restart app** button covers the case where `.env` also changed. It is refused while any engine holds the shared socket, so a restart can never orphan a running paper or live session, and the page says plainly that under a plain `npm start` the process will stop rather than come back (PM2 and nodemon restart it).
+
+The page places no orders and touches no trade state; it sits behind the same `LOGIN_SECRET` gate as every other page, and the raw token is only rendered on an explicit click. Gated by `UI_SHOW_TOKEN_SYNC` (default on) in Settings → Menu Visibility.
+
 ### Added — BB_RSI can trade the band break instead of fading it (`BB_RSI_DIRECTION`)
 
 The V8 fade backtests badly: 2018-01-01 → 2026-08-14 gives 510 trades, 34% win rate, profit factor 0.50, net −₹130,762 — and with an average win (₹758) roughly equal to the average loss (₹786), break-even needs about 51%. The obvious question is whether the same signals are worth taking the *other* way round, and that could not be answered without re-running an engine V8 had deleted.

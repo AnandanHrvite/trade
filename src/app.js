@@ -1000,6 +1000,7 @@ app.use("/logs",       require("./routes/logs"));       // ← live log viewer
 app.use("/trade-logs", require("./routes/tradeLogs"));  // ← per-trade JSONL viewer + settings checkpoints
 app.use("/cache-files", require("./routes/cacheFiles")); // ← cache / generated-file browser (caches, ticks, replay outputs)
 app.use("/sync",        require("./routes/sync"));       // ← EC2→local data sync (download tar.gz)
+app.use("/token-sync",  require("./routes/tokenSync"));  // ← copy broker token from LIVE → paste on a laptop
 app.use("/backup",      require("./routes/backup"));     // ← daily downloadable data snapshots (Settings card + nag banner)
 app.use("/settings",    require("./routes/settings"));   // ← settings UI
 app.use("/docs",        require("./routes/docs"));       // ← docs viewer
