@@ -108,31 +108,43 @@ const SETTINGS_SCHEMA = [
       { key: "BB_RSI_ENTRY_START", label: "Entry Start Time", type: "time", effect: EFFECT.SESSION, desc: "Earliest entry time (IST).", default: "09:21" },
       { key: "BB_RSI_ENTRY_END", label: "Entry End Time", type: "time", effect: EFFECT.SESSION, desc: "No new entries after this time (IST).", default: "14:30" },
       // ── Bollinger Bands ──
-      { key: "BB_RSI_BB_PERIOD", label: "BB Period", type: "number", min: 10, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Bollinger Band period.", default: "20", subheader: "Entry Signal" },
-      { key: "BB_RSI_BB_STDDEV", label: "BB Std Dev", type: "number", min: 0.5, max: 3.0, step: 0.1, effect: EFFECT.SESSION, desc: "Bollinger Band standard deviation.", default: "1" },
-      // ── RSI ──
+      { key: "BB_RSI_BB_PERIOD", label: "BB Period", type: "number", min: 10, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Bollinger Band period.", default: "30", subheader: "Entry Signal (mean reversion)" },
+      { key: "BB_RSI_BB_STDDEV", label: "BB Std Dev", type: "number", min: 0.5, max: 3.0, step: 0.1, effect: EFFECT.SESSION, desc: "Bollinger Band standard deviation.", default: "2" },
+      // ── RSI — note the direction: this engine FADES the extreme, so CE wants a LOW
+      //    RSI (oversold) and PE a HIGH one. Ranges span 5–95 for both because the two
+      //    thresholds swapped ends of the scale when V8 inverted the entry side.
       { key: "BB_RSI_RSI_PERIOD", label: "RSI Period", type: "number", min: 7, max: 21, step: 1, effect: EFFECT.SESSION, desc: "RSI period.", default: "14" },
-      { key: "BB_RSI_RSI_CE_THRESHOLD", label: "RSI CE Entry (>)", type: "number", min: 50, max: 90, step: 1, effect: EFFECT.SESSION, desc: "CE needs RSI above this.", default: "70" },
-      { key: "BB_RSI_RSI_PE_THRESHOLD", label: "RSI PE Entry (<)", type: "number", min: 10, max: 50, step: 1, effect: EFFECT.SESSION, desc: "PE needs RSI below this.", default: "40" },
-      { key: "BB_RSI_RSI_TURNING", label: "RSI Turning Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Require RSI momentum to confirm direction.", default: "false" },
+      { key: "BB_RSI_RSI_CE_THRESHOLD", label: "RSI CE Entry (≤)", type: "number", min: 5, max: 95, step: 1, effect: EFFECT.SESSION, desc: "CE fades an oversold drop — needs RSI at or below this.", default: "25" },
+      { key: "BB_RSI_RSI_PE_THRESHOLD", label: "RSI PE Entry (≥)", type: "number", min: 5, max: 95, step: 1, effect: EFFECT.SESSION, desc: "PE fades an overbought rip — needs RSI at or above this.", default: "75" },
+      { key: "BB_RSI_RSI_TURNING", label: "RSI Turning Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Also require RSI to have already turned back (CE: rising, PE: falling).", default: "false" },
       { key: "BB_RSI_CONFIRM_CANDLE_ENABLED", label: "Confirmation Candle (cross & close)", type: "toggle", effect: EFFECT.INSTANT, desc: "Wait for a second candle to confirm entry.", default: "true" },
-      { key: "BB_RSI_CONFIRM_OUTSIDE_BAND", label: "Confirmation must close outside band", type: "toggle", effect: EFFECT.INSTANT, desc: "Confirmation candle must close outside the band.", default: "true" },
-      // ── SuperTrend (directional confirmation + initial SL value + flip exit) ──
-      { key: "BB_RSI_MAX_ENTRY_SL_PTS", label: "Max Entry SL (pts)", type: "number", min: 0, max: 200, step: 5, effect: EFFECT.SESSION, desc: "Skip entries with a stop farther than this (0 = off).", default: "50" },
-      { key: "BB_RSI_SUPERTREND_PERIOD", label: "SuperTrend ATR Period", type: "number", min: 5, max: 30, step: 1, effect: EFFECT.SESSION, desc: "SuperTrend ATR period.", default: "10" },
-      { key: "BB_RSI_SUPERTREND_MULT", label: "SuperTrend Multiplier", type: "number", min: 1, max: 6, step: 0.5, effect: EFFECT.SESSION, desc: "SuperTrend band width multiplier.", default: "3" },
-      // ── ADX trend filter (sit out choppy/ranging sessions) ──
-      { key: "BB_RSI_ADX_ENABLED", label: "ADX Trend Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Only trade when the market is trending.", default: "false" },
-      { key: "BB_RSI_ADX_MIN", label: "ADX Min (trend floor)", type: "number", min: 0, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Minimum ADX to allow entries.", default: "20" },
-      // ── Profit lock (bank small bb_rsi profits) + hard stop (catastrophic loss cap) ──
-      { key: "BB_RSI_PROFIT_LOCK_TRIGGER_PTS", label: "Profit Lock Trigger (pts)", type: "number", min: 0, max: 300, step: 5, effect: EFFECT.SESSION, desc: "Arm the profit lock after this many points gained (0 = off).", default: "25", subheader: "Exits" },
-      { key: "BB_RSI_PROFIT_LOCK_PCT", label: "Profit Lock % of Peak", type: "number", min: 10, max: 95, step: 5, effect: EFFECT.SESSION, desc: "Exit if profit falls below this % of its peak.", default: "50" },
-      { key: "BB_RSI_STOP_LOSS_PTS", label: "Stop Loss (pts)", type: "number", min: 0, max: 200, step: 5, effect: EFFECT.SESSION, desc: "Max loss per trade in points (0 = off).", default: "30" },
-      { key: "BB_RSI_BB_REENTRY_EXIT", label: "BB Re-Entry Exit", type: "toggle", effect: EFFECT.SESSION, desc: "Exit when price crosses back through the band.", default: "true" },
-      { key: "BB_RSI_BB_REENTRY_ARM_PTS", label: "BB Re-Entry Arm (pts)", type: "number", min: 0, max: 100, step: 1, effect: EFFECT.SESSION, desc: "Arm the band-reentry exit after this many points past the band.", default: "10" },
+      { key: "BB_RSI_CONFIRM_ON_CLOSE", label: "Confirm on candle close", type: "toggle", effect: EFFECT.INSTANT, desc: "Confirmation candle must CLOSE past the signal close (off = enter intra-bar on first cross).", default: "true" },
+      { key: "BB_RSI_MAX_ENTRY_SL_PTS", label: "Max Entry SL (pts)", type: "number", min: 0, max: 200, step: 5, effect: EFFECT.SESSION, desc: "Skip entries whose signal candle is wider than this from close (0 = off).", default: "50" },
+      // ── Chop guards — the sideways tape where every band touch is noise ──
+      { key: "BB_RSI_BAND_WIDTH_ENABLED", label: "Band-Width Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Skip entries when the Bollinger band is too narrow to be a real stretch.", default: "true", subheader: "Chop Guards" },
+      { key: "BB_RSI_MIN_BAND_WIDTH_PTS", label: "Min Band Width (pts)", type: "number", min: 0, max: 300, step: 5, effect: EFFECT.SESSION, desc: "Upper minus lower band must be at least this many points.", default: "50" },
+      { key: "BB_RSI_RSI_RANGE_ENABLED", label: "RSI-Range Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Skip entries when RSI has been pinned mid-range (dead tape).", default: "true" },
+      { key: "BB_RSI_RSI_RANGE_LOOKBACK", label: "RSI Range Lookback (candles)", type: "number", min: 5, max: 60, step: 1, effect: EFFECT.SESSION, desc: "How many candles before the signal bar to measure RSI travel over.", default: "20" },
+      { key: "BB_RSI_RSI_RANGE_MIN", label: "Min RSI Range", type: "number", min: 0, max: 80, step: 1, effect: EFFECT.SESSION, desc: "Max minus min RSI over the lookback must be at least this.", default: "30" },
+      { key: "BB_RSI_ADX_ENABLED", label: "ADX Ceiling Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Skip entries when the trend is too strong to fade.", default: "false" },
+      { key: "BB_RSI_ADX_MAX", label: "ADX Max (trend ceiling)", type: "number", min: 0, max: 60, step: 1, effect: EFFECT.SESSION, desc: "Block entries once ADX(14) reaches this (higher = more permissive).", default: "30" },
+      // ── Divergence (optional confirmation that the extreme is exhausted) ──
+      { key: "BB_RSI_DIVERGENCE_ENABLED", label: "Divergence Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Require price/RSI divergence: CE = lower low with a higher RSI low, PE = higher high with a lower RSI high.", default: "false", subheader: "Divergence" },
+      { key: "BB_RSI_DIV_LOOKBACK", label: "Divergence Lookback (candles)", type: "number", min: 5, max: 60, step: 1, effect: EFFECT.SESSION, desc: "How far back to hunt for the prior swing to compare against.", default: "20" },
+      { key: "BB_RSI_DIV_PIVOT_BARS", label: "Divergence Pivot Bars", type: "number", min: 1, max: 6, step: 1, effect: EFFECT.SESSION, desc: "Bars either side needed to confirm a swing pivot (higher = stricter, slower).", default: "2" },
+      // ── Exits ──
+      { key: "BB_RSI_TARGET_MIDDLE_BAND", label: "Target the BB Middle Band", type: "toggle", effect: EFFECT.SESSION, desc: "Take profit when price reverts to the mean (the middle band).", default: "true", subheader: "Exits" },
+      { key: "BB_RSI_OPP_CANDLE_SL_ENABLED", label: "Opposite-Candle Stop", type: "toggle", effect: EFFECT.SESSION, desc: "Exit after N consecutive candles closing against the trade.", default: "true" },
+      { key: "BB_RSI_OPP_CANDLE_SL_COUNT", label: "Opposite Candles → Stop", type: "number", min: 1, max: 6, step: 1, effect: EFFECT.SESSION, desc: "How many consecutive opposite candles trigger the stop.", default: "2" },
+      { key: "BB_RSI_OPP_CANDLE_TRAIL_ENABLED", label: "Opposite-Candle Trail", type: "toggle", effect: EFFECT.SESSION, desc: "Once in profit, take over from the stop with its own opposite-candle count.", default: "true" },
+      { key: "BB_RSI_OPP_CANDLE_TRAIL_COUNT", label: "Opposite Candles → Trail", type: "number", min: 1, max: 6, step: 1, effect: EFFECT.SESSION, desc: "How many consecutive opposite candles trigger the trail exit.", default: "2" },
+      { key: "BB_RSI_TRAIL_ARM_PTS", label: "Trail Arm (pts)", type: "number", min: 0, max: 200, step: 5, effect: EFFECT.SESSION, desc: "Favourable spot points before the trail takes over from the stop (0 = immediately).", default: "10" },
+      { key: "BB_RSI_PROFIT_LOCK_TRIGGER_PTS", label: "Profit Lock Trigger (pts)", type: "number", min: 0, max: 300, step: 5, effect: EFFECT.SESSION, desc: "Optional extra upside cap — arm after this many points gained (0 = off).", default: "0" },
+      { key: "BB_RSI_PROFIT_LOCK_PCT", label: "Profit Lock % of Peak", type: "number", min: 10, max: 95, step: 5, effect: EFFECT.SESSION, desc: "Once armed, exit if profit falls below this % of its peak.", default: "50" },
+      { key: "BB_RSI_STOP_LOSS_PTS", label: "Hard Stop (pts)", type: "number", min: 0, max: 200, step: 5, effect: EFFECT.SESSION, desc: "Per-tick catastrophic cap under the candle stop, which only fires on a close (0 = off).", default: "30" },
       // ── Risk management ──
-      // SL & exits are SuperTrend-driven: initial SL = SuperTrend value at entry (no clamp); exit on
-      // candle-close SuperTrend flip; the profit lock (above) is the only hard intra-tick exit.
+      // The live stop is the two-opposite-candle rule above; the SL line recorded at
+      // entry is the signal candle's own extreme, kept for sizing and display only.
       { key: "BB_RSI_SLIPPAGE_PTS", label: "Slippage (pts)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.SESSION, desc: "Simulated slippage per side, in points.", default: "1.5", subheader: "Risk & Pauses" },
       { key: "BB_RSI_MAX_DAILY_TRADES", label: "Max Daily Trades", type: "number", min: 5, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Max entries per day.", default: "30" },
       { key: "BB_RSI_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 20000, step: 500, effect: EFFECT.SESSION, desc: "Stop trading after this much loss.", default: "4000" },
@@ -984,7 +996,7 @@ const IMMEDIATE_KEYS = new Set([
   "EMA_RSI_ST_SUPERTREND_PERIOD", "EMA_RSI_ST_SUPERTREND_MULT",
   "EMA_RSI_ST_STOP_LOSS_PTS", "EMA_RSI_ST_MAX_CONSEC_LOSSES", "EMA_RSI_ST_NEG_CANDLE_LIMIT",
   // Confirmation-candle gates — read live from process.env on every candle/tick
-  "EMA_RSI_ST_CONFIRM_CANDLE_ENABLED", "BB_RSI_CONFIRM_CANDLE_ENABLED", "BB_RSI_CONFIRM_OUTSIDE_BAND",
+  "EMA_RSI_ST_CONFIRM_CANDLE_ENABLED", "BB_RSI_CONFIRM_CANDLE_ENABLED", "BB_RSI_CONFIRM_ON_CLOSE",
 ]);
 
 // These are cached as const at module load — need session stop+start
@@ -1000,9 +1012,14 @@ const SESSION_RESTART_KEYS = new Set([
   "BB_RSI_RSI_PERIOD", "BB_RSI_RSI_CE_THRESHOLD",
   "BB_RSI_RSI_PE_THRESHOLD", "BB_RSI_RSI_TURNING",
   "BB_RSI_MAX_ENTRY_SL_PTS",
-  "BB_RSI_SUPERTREND_PERIOD", "BB_RSI_SUPERTREND_MULT",
-  "BB_RSI_ADX_ENABLED", "BB_RSI_ADX_MIN",
-  "BB_RSI_PROFIT_LOCK_TRIGGER_PTS", "BB_RSI_PROFIT_LOCK_PCT", "BB_RSI_STOP_LOSS_PTS", "BB_RSI_BB_REENTRY_EXIT", "BB_RSI_BB_REENTRY_ARM_PTS",
+  "BB_RSI_BAND_WIDTH_ENABLED", "BB_RSI_MIN_BAND_WIDTH_PTS",
+  "BB_RSI_RSI_RANGE_ENABLED", "BB_RSI_RSI_RANGE_LOOKBACK", "BB_RSI_RSI_RANGE_MIN",
+  "BB_RSI_ADX_ENABLED", "BB_RSI_ADX_MAX",
+  "BB_RSI_DIVERGENCE_ENABLED", "BB_RSI_DIV_LOOKBACK", "BB_RSI_DIV_PIVOT_BARS",
+  "BB_RSI_TARGET_MIDDLE_BAND",
+  "BB_RSI_OPP_CANDLE_SL_ENABLED", "BB_RSI_OPP_CANDLE_SL_COUNT",
+  "BB_RSI_OPP_CANDLE_TRAIL_ENABLED", "BB_RSI_OPP_CANDLE_TRAIL_COUNT", "BB_RSI_TRAIL_ARM_PTS",
+  "BB_RSI_PROFIT_LOCK_TRIGGER_PTS", "BB_RSI_PROFIT_LOCK_PCT", "BB_RSI_STOP_LOSS_PTS",
   "BB_RSI_MAX_DAILY_TRADES", "BB_RSI_MAX_DAILY_LOSS",
   "BB_RSI_SL_PAUSE_CANDLES", "BB_RSI_CONSEC_SL_EXTRA_PAUSE", "BB_RSI_PER_SIDE_PAUSE",
   "BB_RSI_SLIPPAGE_PTS",

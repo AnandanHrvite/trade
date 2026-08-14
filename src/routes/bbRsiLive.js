@@ -22,7 +22,6 @@ const fs      = require("fs");
 const path    = require("path");
 const bbRsiStrategy    = require("../strategies/bb_rsi");
 const { BollingerBands, RSI, ADX } = require("technicalindicators");
-const { computeSuperTrend } = require("../utils/supertrend");
 const fyersBroker      = require("../services/fyersBroker");
 const instrumentConfig = require("../config/instrument");
 const { getSymbol, getLotQty, validateAndGetOptionSymbol } = instrumentConfig;
@@ -564,18 +563,17 @@ async function squareOff(exitPrice, reason) {
     bbMiddleAtEntry: state.position ? (state.position.bbMiddleAtEntry != null ? state.position.bbMiddleAtEntry : null) : null,
     rsiAtEntry:      state.position ? (state.position.rsiAtEntry      != null ? state.position.rsiAtEntry      : null) : null,
     ptsFromBB:       state.position ? (state.position.ptsFromBB       != null ? state.position.ptsFromBB       : null) : null,
-    // Trend/strength indicators at entry + exit snapshot (all indicators logged).
+    // Entry context + exit snapshot (all indicators logged).
     adxAtEntry:        state.position ? (state.position.adxAtEntry        != null ? state.position.adxAtEntry        : null) : null,
-    supertrendAtEntry: state.position ? (state.position.supertrendAtEntry != null ? state.position.supertrendAtEntry : null) : null,
-    stTrendAtEntry:    state.position ? (state.position.stTrendAtEntry    || null) : null,
-    trendSource:       state.position ? (state.position.trendSource       || null) : null,
+    bandWidthAtEntry:  state.position ? (state.position.bandWidthAtEntry  != null ? state.position.bandWidthAtEntry  : null) : null,
+    rsiRangeAtEntry:   state.position ? (state.position.rsiRangeAtEntry   != null ? state.position.rsiRangeAtEntry   : null) : null,
+    divergenceAtEntry: state.position ? (state.position.divergenceAtEntry || null) : null,
     rsiAtExit:        _exitInd.rsi        != null ? _exitInd.rsi        : null,
     bbUpperAtExit:    _exitInd.bbUpper    != null ? _exitInd.bbUpper    : null,
     bbMiddleAtExit:   _exitInd.bbMiddle   != null ? _exitInd.bbMiddle   : null,
     bbLowerAtExit:    _exitInd.bbLower    != null ? _exitInd.bbLower    : null,
     adxAtExit:        _exitInd.adx        != null ? _exitInd.adx        : null,
-    supertrendAtExit: _exitInd.supertrend != null ? _exitInd.supertrend : null,
-    stTrendAtExit:    _exitInd.stTrend    || null,
+    bandWidthAtExit:  _exitInd.bbWidth    != null ? _exitInd.bbWidth    : null,
     bestOptionLtp:   state.position ? (state.position.bestOptionLtp || null) : null,   // peak option premium during trade
     mfeSpotPts:      state.position ? (state.position.mfeSpotPts || 0) : 0,
     mfePnl:          state.position ? (state.position.mfePnl     || 0) : 0,
@@ -774,14 +772,11 @@ function onTick(tick) {
     // Peak option premium (long CE/PE both profit on premium rise) — observer-only, for the UI/log.
     if (state.optionLtp && state.optionLtp > (pos.bestOptionLtp || 0)) pos.bestOptionLtp = parseFloat(state.optionLtp.toFixed(2));
 
-    // 0. BB BAND TOUCH — primary structural stop. Mirrors bbRsiPaper (the canonical
-    //    route): exit the instant spot crosses back through the band (PE: above the
-    //    lower band, CE: below the upper band), per-tick rather than at candle close,
-    //    so a one-candle V-reversal exits at the band line instead of the bar close.
-    //    ARMING GUARD (mirrors paper): only arm once the breakout has extended
-    //    ≥ BB_RSI_BB_REENTRY_ARM_PTS past the band, so a fresh entry sitting right at
-    //    the band isn't stopped by an immediate noise wick before it can work.
-    if ((process.env.BB_RSI_BB_REENTRY_EXIT || "true") === "true" && state.candles.length >= 15) {
+    // 0. MIDDLE-BAND TARGET — the objective of a mean-reversion trade. Mirrors
+    //    bbRsiPaper (the canonical route): price stretched away from the mean and we
+    //    are paid when it returns to it, so the middle band IS the take-profit. Runs
+    //    per-tick rather than at candle close so the touch is banked at the line.
+    if (state.candles.length >= 15) {
       // Invalidate on the last CLOSED candle's time, NOT candles.length: once the
       // array hits its 200 cap (push+shift), length is pinned at 200 forever, so a
       // length-keyed cache would freeze the band from ~14:20 IST to session end. Mirrors
@@ -789,27 +784,22 @@ function onTick(tick) {
       const _bbKey = state.candles.length ? state.candles[state.candles.length - 1].time : 0;
       if (!state._bbTickCache || state._bbTickCache.key !== _bbKey) {
         const _lv = bbRsiStrategy.bbLevels(state.candles);
-        state._bbTickCache = { key: _bbKey, upper: _lv ? _lv.upper : null, lower: _lv ? _lv.lower : null };
+        state._bbTickCache = { key: _bbKey, upper: _lv ? _lv.upper : null, middle: _lv ? _lv.middle : null, lower: _lv ? _lv.lower : null };
       }
-      const _bb = state._bbTickCache;
-      const _band = pos.side === "CE" ? _bb.upper : _bb.lower;
-      if (_band != null) {
-        const _pen = pos.side === "CE" ? (price - _band) : (_band - price);
-        if (_pen > (pos._bbMaxPen || 0)) pos._bbMaxPen = _pen;
-        const _armPts = parseFloat(process.env.BB_RSI_BB_REENTRY_ARM_PTS || "10");
-        const _armed = (pos._bbMaxPen || 0) >= _armPts;
-        const _reentered = pos.side === "CE" ? (price < _band) : (price > _band);
-        if (_armed && _reentered) {
-          pos.slSource = "BB re-entry";
-          squareOff(price, "BB re-entry").catch(e => console.error(`🚨 [BB_RSI] squareOff error: ${e.message}`));
-          return;
-        }
+      const _tgt = bbRsiStrategy.middleBandTarget(state._bbTickCache.middle, pos.side, price);
+      if (_tgt.hit) {
+        // Fill at the observed tick, not at the band line: this is a market exit the
+        // instant the mean is reached, not a resting limit order at it.
+        pos.slSource = "BB middle target";
+        squareOff(price, `BB middle target (${_tgt.level})`).catch(e => console.error(`🚨 [BB_RSI] squareOff error: ${e.message}`));
+        return;
       }
     }
 
     // 1. HARD STOP — catastrophic loss cap (wide). Exit once the trade moves
-    //    BB_RSI_STOP_LOSS_PTS against entry. Only clips the deep adverse excursions
-    //    on failed fades; the normal small scalps never reach it. Arms SL cooldown.
+    //    BB_RSI_STOP_LOSS_PTS against entry. Backstop under the two-opposite-candle
+    //    stop, which can only fire on a candle close — a single violent bar against a
+    //    fade travels a long way before that close arrives. Arms SL cooldown.
     {
       const _hs = bbRsiStrategy.hardStop(_favPts);
       if (_hs.hit) {
@@ -819,9 +809,10 @@ function onTick(tick) {
       }
     }
 
-    // 2. PROFIT LOCK — the per-tick upside exit. Once peak favourable spot move ≥
+    // 2. PROFIT LOCK — optional per-tick upside cap. Once peak favourable spot move ≥
     //    BB_RSI_PROFIT_LOCK_TRIGGER_PTS, exit when it gives back below BB_RSI_PROFIT_LOCK_PCT%
-    //    of peak (ratchets). Points-based; SuperTrend flip (candle close) handles bigger runners.
+    //    of peak (ratchets). Off by default in V8 — the middle-band target and the
+    //    two-candle trail are the intended upside exits.
     {
       const _lock = bbRsiStrategy.profitLock(_favPts, pos.mfeSpotPts || 0);
       if (_lock.hit) {
@@ -842,11 +833,12 @@ function onTick(tick) {
   // While flat, if a prior candle armed a signal, enter the instant THIS (the
   // immediately-next) candle crosses that signal candle's close. All entry gates
   // were already cleared at arm time (onCandleClose), so no re-check here.
-  // When BB_RSI_CONFIRM_OUTSIDE_BAND is ON, confirmation is evaluated at the NEXT
+  // When BB_RSI_CONFIRM_ON_CLOSE is ON, confirmation is evaluated at the NEXT
   // candle's CLOSE (in onCandleClose), not intra-bar — so this per-tick path is
-  // skipped (an intra-bar poke that closes back inside the band must not enter).
+  // skipped (a poke that closes back the other way is not a reversal, and this
+  // engine is fading an extreme).
   if (!state.position && !state._entryInFlight && state._armedSignal && confirmCandle.enabled("BB_RSI")
-      && !confirmCandle.outsideBandEnabled("BB_RSI")) {
+      && !confirmCandle.onCloseEnabled("BB_RSI")) {
     const _a = state._armedSignal;
     if (state.currentBar && confirmCandle.isNextBar(state.currentBar.time, _a.armedBarTime, BB_RSI_RES)
         && confirmCandle.crossed(_a.side, price, _a.triggerLevel)
@@ -872,26 +864,23 @@ function onTick(tick) {
 async function onCandleClose(bar) {
   if (!state.running) return;
 
-  // ── Confirmation candle with band guard (BB_RSI_CONFIRM_OUTSIDE_BAND) ─────────
+  // ── Confirmation candle on close (BB_RSI_CONFIRM_ON_CLOSE) ────────────────────
   // When ON, confirmation fires at THIS candle's CLOSE (not intra-bar): the just-
-  // closed bar must have CLOSED beyond the signal candle's close AND closed outside
-  // the band, so the entry candle is genuinely outside the band. Entry at this close.
+  // closed bar must have CLOSED beyond the signal candle's close — a real reversal
+  // bar, not an intra-bar poke that closed back the other way. Entry at this close.
   // Runs before the expiry line below (which clears the cross-window-old arm).
   if (!state.position && state._armedSignal && confirmCandle.enabled("BB_RSI")
-      && confirmCandle.outsideBandEnabled("BB_RSI") && isMarketHours()) {
+      && confirmCandle.onCloseEnabled("BB_RSI") && isMarketHours()) {
     const _a = state._armedSignal;
     if (confirmCandle.isNextBar(bar.time, _a.armedBarTime, BB_RSI_RES)
         && confirmCandle.crossed(_a.side, bar.close, _a.triggerLevel)) {
-      const _bb = bbRsiStrategy.bbLevels(state.candles);
-      if (_bb && confirmCandle.beyondBand(_a.side, bar.close, _bb.upper, _bb.lower)) {
-        state._armedSignal = null; // consume
-        const _r = Object.assign({}, _a.result, { reason: `${_a.result.reason} | CONFIRM ${_a.side} close ${bar.close} beyond band` });
-        log(`⚡ [BB_RSI-LIVE] Confirmation close ₹${bar.close} beyond band (signal close ${_a.triggerLevel}) — entering ${_a.side}`);
-        await resolveAndEnter(_a.side, bar.close, _r);
-        return;
-      }
+      state._armedSignal = null; // consume
+      const _r = Object.assign({}, _a.result, { reason: `${_a.result.reason} | CONFIRM ${_a.side} close ${bar.close}` });
+      log(`⚡ [BB_RSI-LIVE] Confirmation close ₹${bar.close} (signal close ${_a.triggerLevel}) — entering ${_a.side}`);
+      await resolveAndEnter(_a.side, bar.close, _r);
+      return;
     }
-    // crossed-but-closed-inside, or no cross → fall through to expiry + re-evaluation
+    // no cross → fall through to expiry + re-evaluation
   }
 
   // Confirmation candle (cross & close): expire an armed signal once its
@@ -913,17 +902,16 @@ async function onCandleClose(bar) {
 
     const window = [...state.candles];
 
-    // BB re-entry → failed breakout: price closed back inside the band, exit now
-    if (window.length >= 15 && bbRsiStrategy.bbReentryExit(window, state.position.side)) {
-      squareOff(bar.close, "BB re-entry").catch(e => console.error(`🚨 [BB_RSI] squareOff error: ${e.message}`));
-      return;
-    }
-
-    // Trend flip → exit on SuperTrend reversal signal (trend exit; profit lock
-    // handles giveback per-tick)
-    if (window.length >= 15 && bbRsiStrategy.isTrendFlip(window, state.position.side)) {
-      squareOff(bar.close, "SuperTrend flip").catch(e => console.error(`🚨 [BB_RSI] squareOff error: ${e.message}`));
-      return;
+    // Two-opposite-candle stop / trail — the only candle-close exit (mirrors paper).
+    // Before the trade has run BB_RSI_TRAIL_ARM_PTS in favour this is the initial stop;
+    // after, the trail takes over with its own count. Independently toggleable.
+    {
+      const _opp = bbRsiStrategy.oppositeCandleExit(window, state.position.side, state.position.mfeSpotPts || 0);
+      if (_opp.hit) {
+        state.position.slSource = _opp.armed ? "Opposite-candle trail" : "Opposite-candle SL";
+        squareOff(bar.close, _opp.reason).catch(e => console.error(`🚨 [BB_RSI] squareOff error: ${e.message}`));
+        return;
+      }
     }
 
     return;
@@ -963,7 +951,7 @@ async function onCandleClose(bar) {
   });
   if (result.signal === "NONE") {
     const lastBar = window[window.length - 1];
-    log(`⏭️ [BB_RSI-LIVE] SKIP: ${result.reason} | Close=${lastBar.close} BB=[${result.bbLower||'?'},${result.bbUpper||'?'}] RSI=${result.rsi||'?'} ST=${result.supertrend||'?'}`);
+    log(`⏭️ [BB_RSI-LIVE] SKIP: ${result.reason} | Close=${lastBar.close} BB=[${result.bbLower||'?'},${result.bbUpper||'?'}] width=${result.bbWidth||'?'} RSI=${result.rsi||'?'}`);
     logNearMiss(result.filterAudit, "BB_RSI-LIVE", log);
     skipLogger.appendSkipLog("bb_rsi", {
       gate: "strategy",
@@ -972,7 +960,8 @@ async function onCandleClose(bar) {
       bbLower: result.bbLower ?? null,
       bbUpper: result.bbUpper ?? null,
       rsi: result.rsi ?? null,
-      supertrend: result.supertrend ?? null,
+      bbWidth: result.bbWidth ?? null,
+      rsiRange: result.rsiRange ?? null,
       audit: result.filterAudit || null,
     });
     const _barIST = new Date(lastBar.time * 1000).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" });
@@ -1045,20 +1034,12 @@ async function onCandleClose(bar) {
   resolveAndEnter(side, spot, result);
 }
 
-// Derive signal strength for bb_rsi: STRONG if RSI is clearly beyond its threshold (by +5),
-// else MARGINAL. Used to gate on BB_RSI_VIX_STRONG_ONLY in elevated-VIX regimes.
+// Signal strength for bb_rsi (gates BB_RSI_VIX_STRONG_ONLY in elevated-VIX regimes).
+// Delegated to the engine so paper, live and backtest cannot drift apart on it — the
+// comparison inverted with the V8 mean-reversion flip, and three hand-kept copies of an
+// inverted threshold is precisely how one surface ends up rating the opposite way.
 function deriveBbRsiStrength(result) {
-  const rsi = typeof result.rsi === "number" ? result.rsi : null;
-  if (rsi === null) return "MARGINAL";
-  if (result.signal === "BUY_CE") {
-    const thr = parseFloat(process.env.BB_RSI_RSI_CE_THRESHOLD || "55");
-    return rsi >= thr + 5 ? "STRONG" : "MARGINAL";
-  }
-  if (result.signal === "BUY_PE") {
-    const thr = parseFloat(process.env.BB_RSI_RSI_PE_THRESHOLD || "45");
-    return rsi <= thr - 5 ? "STRONG" : "MARGINAL";
-  }
-  return "MARGINAL";
+  return bbRsiStrategy.signalStrength(result);
 }
 
 async function resolveAndEnter(side, spot, result) {
@@ -1124,11 +1105,13 @@ async function resolveAndEnter(side, spot, result) {
     const _DELTA_INIT = parseFloat(process.env.BACKTEST_DELTA || "0.55");
     const _initialRiskRupees = Math.abs(spot - clampedSL) * _DELTA_INIT * qty;
 
-    // Distance from triggering BB band — positive = "extended beyond band".
+    // Distance past the triggering BB band — positive = "stretched further beyond the
+    // band", i.e. a deeper extreme to fade. SIDES ARE INVERTED vs the V7 breakout
+    // engine: CE triggers below the LOWER band, PE above the UPPER (mirrors paper).
     let _ptsFromBB = null;
-    if (side === "PE" && result.bbLower != null) {
+    if (side === "CE" && result.bbLower != null) {
       _ptsFromBB = parseFloat((result.bbLower - spot).toFixed(2));
-    } else if (side === "CE" && result.bbUpper != null) {
+    } else if (side === "PE" && result.bbUpper != null) {
       _ptsFromBB = parseFloat((spot - result.bbUpper).toFixed(2));
     }
 
@@ -1143,7 +1126,7 @@ async function resolveAndEnter(side, spot, result) {
       reason:           result.reason,
       stopLoss:         clampedSL,
       initialStopLoss:  clampedSL,
-      slSource:         result.slSource || "SUPERTREND",
+      slSource:         result.slSource || "Signal candle",
       target:           result.target,
       bestPrice:        null,
       bestOptionLtp:    null,   // peak (highest) option premium reached during trade — observer-only
@@ -1174,11 +1157,11 @@ async function resolveAndEnter(side, spot, result) {
       bbMiddleAtEntry:  result.bbMiddle != null ? result.bbMiddle : null,
       rsiAtEntry:       result.rsi      != null ? result.rsi      : null,
       ptsFromBB:        _ptsFromBB,
-      // Trend/strength indicators at entry — captured for the trade log.
-      adxAtEntry:        result.adx        != null ? result.adx        : null,
-      supertrendAtEntry: result.supertrend != null ? result.supertrend : null,
-      stTrendAtEntry:    result.stTrend    || null,
-      trendSource:       result.trendSource|| null,
+      // Entry context — captured for the trade log.
+      adxAtEntry:        result.adx       != null ? result.adx       : null,
+      bandWidthAtEntry:  result.bbWidth   != null ? result.bbWidth   : null,
+      rsiRangeAtEntry:   result.rsiRange  != null ? result.rsiRange  : null,
+      divergenceAtEntry: result.divergence || null,
       // MFE/MAE — updated per-tick, captures best favourable + worst adverse excursion.
       mfeSpotPts:       0,
       mfePnl:           0,
@@ -1538,22 +1521,16 @@ router.post("/manualEntry", async (req, res) => {
   const spot = state.lastTickPrice || (state.currentBar ? state.currentBar.close : null);
   if (!spot) return res.status(400).json({ success: false, error: "No market data yet." });
 
-  // SL = SuperTrend value at entry (no clamp) — matches strategy logic.
+  // SL line = the last closed candle's extreme — matches the strategy, which seeds the
+  // stop from the signal candle's own low (CE) / high (PE).
   const candles = state.candles || [];
-  let slSrcLbl = "SuperTrend";
+  let slSrcLbl = "Signal candle";
   let sl = null;
-  if (candles.length >= 3) {
-    try {
-      const _st = computeSuperTrend(candles, parseInt(process.env.BB_RSI_SUPERTREND_PERIOD || "10", 10), parseFloat(process.env.BB_RSI_SUPERTREND_MULT || "3"));
-      const _last = _st.length ? _st[_st.length - 1] : null;
-      if (_last && _last.value != null) sl = parseFloat(_last.value.toFixed(2));
-    } catch (_) { /* fall back below */ }
-  }
+  const lastClosed = candles.length ? candles[candles.length - 1] : null;
+  if (lastClosed) sl = parseFloat((side === "CE" ? lastClosed.low : lastClosed.high).toFixed(2));
   if (sl == null) {
-    // SuperTrend unavailable — fall back to previous candle low/high.
-    const prevCandle = candles.length >= 2 ? candles[candles.length - 2] : null;
-    sl = prevCandle ? (side === "CE" ? prevCandle.low : prevCandle.high) : (side === "CE" ? spot - 10 : spot + 10);
-    slSrcLbl = "Prev Candle";
+    sl = side === "CE" ? spot - 10 : spot + 10;
+    slSrcLbl = "Fallback";
   }
 
   log(`🖐️ [BB_RSI-LIVE] MANUAL ENTRY ${side} @ spot ₹${spot} | SL: ₹${sl} (${slSrcLbl})`);
@@ -1569,8 +1546,8 @@ router.get("/status/chart-data", (req, res) => {
     if (state.currentBar) candles.push({ time: state.currentBar.time, open: state.currentBar.open, high: state.currentBar.high, low: state.currentBar.low, close: state.currentBar.close });
 
     // BB overlay (same params as the strategy) — aligned with candles
-    const BB_PERIOD = parseInt(process.env.BB_RSI_BB_PERIOD || "20", 10);
-    const BB_STDDEV = parseFloat(process.env.BB_RSI_BB_STDDEV || "1");
+    const BB_PERIOD = parseInt(process.env.BB_RSI_BB_PERIOD || "30", 10);
+    const BB_STDDEV = parseFloat(process.env.BB_RSI_BB_STDDEV || "2");
     let bbUpper = [], bbMiddle = [], bbLower = [];
     if (candles.length >= BB_PERIOD) {
       const closes = candles.map(c => c.close);
@@ -1595,19 +1572,6 @@ router.get("/status/chart-data", (req, res) => {
       } catch (_) { /* ignore */ }
     }
 
-    // Trend overlay — SuperTrend line (the sole trend source).
-    let supertrend = [];
-    {
-      const ST_PERIOD = parseInt(process.env.BB_RSI_SUPERTREND_PERIOD || "10", 10);
-      const ST_MULT   = parseFloat(process.env.BB_RSI_SUPERTREND_MULT || "3");
-      try {
-        const stArr = computeSuperTrend(candles, ST_PERIOD, ST_MULT);
-        for (let i = 0; i < stArr.length; i++) {
-          if (stArr[i] && stArr[i].value != null) supertrend.push({ time: candles[i].time, value: stArr[i].value, trend: stArr[i].trend });
-        }
-      } catch (_) { /* ignore */ }
-    }
-
     // ADX(14) overlay — trend-strength subplot
     let adxSeries = [];
     if (candles.length >= 28) {
@@ -1628,11 +1592,11 @@ router.get("/status/chart-data", (req, res) => {
     const armedTrigger = state._armedSignal ? state._armedSignal.triggerLevel : null;
     const armedSide    = state._armedSignal ? state._armedSignal.side : null;
     return res.json({ candles, markers, stopLoss, entryPrice, armedTrigger, armedSide, bbUpper, bbMiddle, bbLower,
-      supertrend, adx: adxSeries, trendSource: "SUPERTREND",
-      adxMin: parseFloat(process.env.BB_RSI_ADX_MIN || "20"),
+      adx: adxSeries,
+      adxMax: parseFloat(process.env.BB_RSI_ADX_MAX || "30"),
       rsi: rsiSeries,
-      rsiCeMin: parseFloat(process.env.BB_RSI_RSI_CE_THRESHOLD || "62"),
-      rsiPeMax: parseFloat(process.env.BB_RSI_RSI_PE_THRESHOLD || "42") });
+      rsiCeMax: parseFloat(process.env.BB_RSI_RSI_CE_THRESHOLD || "25"),
+      rsiPeMin: parseFloat(process.env.BB_RSI_RSI_PE_THRESHOLD || "75") });
   } catch (err) { return res.status(500).json({ error: err.message }); }
 });
 
@@ -2610,23 +2574,22 @@ logFilter();
   var bbU = chart.addLineSeries({ color:'rgba(74,156,245,0.7)', lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
   var bbM = chart.addLineSeries({ color:'rgba(148,163,184,0.55)', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
   var bbL = chart.addLineSeries({ color:'rgba(74,156,245,0.7)', lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
-  // SuperTrend line — per-point colour: GREEN bullish / RED bearish.
-  var stS  = chart.addLineSeries({ color:'#22c55e', lineWidth:2, priceLineVisible:false, lastValueVisible:true, crosshairMarkerVisible:false, title:'ST' });
-  var _stColor = function(p){ return { time:p.time, value:p.value, color: (p.trend === -1 ? '#ef4444' : '#22c55e') }; };
   var rsiS = chart.addLineSeries({ color:'#22d3ee', lineWidth:1, priceScaleId:'rsi', priceLineVisible:false, lastValueVisible:true, crosshairMarkerVisible:false, title:'RSI' });
   try { chart.priceScale('rsi').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } }); } catch(_) {}
   var adxS = chart.addLineSeries({ color:'#e879f9', lineWidth:1, priceScaleId:'adx', priceLineVisible:false, lastValueVisible:true, crosshairMarkerVisible:false, title:'ADX' });
   try { chart.priceScale('adx').applyOptions({ scaleMargins: { top: 0.66, bottom: 0.20 } }); } catch(_) {}
   var _adxLine = null;
-  function drawAdxLevel(adxMin) {
+  function drawAdxLevel(adxMax) {
     if (_adxLine) { try { adxS.removePriceLine(_adxLine); } catch(_){} _adxLine = null; }
-    if (adxMin != null) _adxLine = adxS.createPriceLine({ price: adxMin, color:'#a855f7', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'ADX min' });
+    if (adxMax != null) _adxLine = adxS.createPriceLine({ price: adxMax, color:'#a855f7', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'ADX max' });
   }
   var _rsiLines = [];
-  function drawRsiLevels(ceMin, peMax) {
+  // CE fades an oversold extreme (RSI at or BELOW its threshold), PE an overbought one
+  // (at or ABOVE) — so the CE line sits low on the pane and the PE line high.
+  function drawRsiLevels(ceMax, peMin) {
     _rsiLines.forEach(function(l){ try { rsiS.removePriceLine(l); } catch(_){} }); _rsiLines = [];
-    if (ceMin != null) _rsiLines.push(rsiS.createPriceLine({ price: ceMin, color:'#10b981', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'CE' }));
-    if (peMax != null) _rsiLines.push(rsiS.createPriceLine({ price: peMax, color:'#ef4444', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'PE' }));
+    if (ceMax != null) _rsiLines.push(rsiS.createPriceLine({ price: ceMax, color:'#10b981', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'CE' }));
+    if (peMin != null) _rsiLines.push(rsiS.createPriceLine({ price: peMin, color:'#ef4444', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'PE' }));
   }
   var slLine = null, entryLine = null, _lcc = 0, armedLine = null;
   function fetchChart() {
@@ -2647,9 +2610,8 @@ logFilter();
       _lcc = d.candles.length;
       if (d.bbUpper && d.bbUpper.length) { bbU.setData(d.bbUpper); bbM.setData(d.bbMiddle || []); bbL.setData(d.bbLower || []); }
       else { bbU.setData([]); bbM.setData([]); bbL.setData([]); }
-      if (d.supertrend && d.supertrend.length) stS.setData(d.supertrend.map(_stColor)); else stS.setData([]);
-      if (d.adx && d.adx.length) { adxS.setData(d.adx); drawAdxLevel(d.adxMin); } else adxS.setData([]);
-      if (d.rsi && d.rsi.length) { rsiS.setData(d.rsi); drawRsiLevels(d.rsiCeMin, d.rsiPeMax); } else rsiS.setData([]);
+      if (d.adx && d.adx.length) { adxS.setData(d.adx); drawAdxLevel(d.adxMax); } else adxS.setData([]);
+      if (d.rsi && d.rsi.length) { rsiS.setData(d.rsi); drawRsiLevels(d.rsiCeMax, d.rsiPeMin); } else rsiS.setData([]);
       if (d.markers && d.markers.length) { var s = d.markers.slice().sort(function(a,b){return a.time-b.time;}); cs.setMarkers(s); } else { cs.setMarkers([]); }
       if (slLine) { cs.removePriceLine(slLine); slLine = null; }
       if (d.stopLoss) { slLine = cs.createPriceLine({ price:d.stopLoss, color:'#f59e0b', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'SL' }); }

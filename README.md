@@ -28,9 +28,9 @@ All four strategies run **in parallel** on the same WebSocket — different cand
 | **EMA_RSI_ST Live** | EMA 20/50 (+9 opt) + RSI + SuperTrend | 3 / 5 / 15-min via `TRADE_RESOLUTION` | Zerodha | `/ema_rsi_st-live` |
 | **EMA_RSI_ST Paper** | EMA 20/50 (+9 opt) + RSI + SuperTrend | 3 / 5 / 15-min via `TRADE_RESOLUTION` | Simulated | `/ema_rsi_st-paper` |
 | **EMA_RSI_ST Backtest** | EMA 20/50 (+9 opt) + RSI + SuperTrend | 3 / 5 / 15-min via `TRADE_RESOLUTION` | Historical | `/ema_rsi_st-backtest` |
-| **BB_RSI Live** | BB + SuperTrend + RSI (V7) | 3 / 5-min | Fyers | `/bb_rsi-live` |
-| **BB_RSI Paper** | BB + SuperTrend + RSI (V7) | 3 / 5-min | Simulated | `/bb_rsi-paper` |
-| **BB_RSI Backtest** | BB + SuperTrend + RSI (V7) | 3 / 5-min | Historical | `/bb_rsi-backtest` |
+| **BB_RSI Live** | BB mean reversion + RSI (V8) | 3 / 5-min | Fyers | `/bb_rsi-live` |
+| **BB_RSI Paper** | BB mean reversion + RSI (V8) | 3 / 5-min | Simulated | `/bb_rsi-paper` |
+| **BB_RSI Backtest** | BB mean reversion + RSI (V8) | 3 / 5-min | Historical | `/bb_rsi-backtest` |
 | **PA Live (legacy)** | Price Action Patterns | 5-min | Fyers | `/pa-live` |
 | **PA Live (Harness)** | Price Action Patterns | 5-min | Fyers (PAPER-wrapped) | `/pa-live-harness` |
 | **PA Paper** | Price Action Patterns | 5-min | Simulated | `/pa-paper` |
@@ -98,17 +98,19 @@ The dashboard has **Start-All Paper** and **Start-All Live** buttons that start 
 - **Chart**: EMA20 (gold) + EMA50 (blue) lines, SuperTrend line (green bullish / red bearish), RSI subplot. EMA values + trend source are recorded per trade in the JSON + daily JSONL (`ema9AtEntry`/`ema20AtEntry`/`ema50AtEntry` + `*AtExit`; `ema9*` populated only when the triple-stack is ON).
 - **Resolution-agnostic**: same rules on 3 / 5 / 15-min — set `TRADE_RESOLUTION` in `.env` (or via Settings).
 
-### Strategy 2: BB_RSI — BB + SuperTrend + RSI V7 (3 / 5-min)
+### Strategy 2: BB_RSI — Bollinger Band mean reversion + RSI V8 (3 / 5-min)
 See [BB_RSI.md](BB_RSI.md) for the authoritative spec. Summary:
-- **Entry (at candle close, all required)** — **CE**: close ≥ BB upper **and** SuperTrend bullish (line below close) **and** RSI > `BB_RSI_RSI_CE_THRESHOLD(70)`. **PE**: close ≤ BB lower **and** SuperTrend bearish (line above close) **and** RSI < `BB_RSI_RSI_PE_THRESHOLD(40)`. Just the two RSI keys — no overbought/oversold caps. **Trend source** is SuperTrend(10,3) — it drives the directional confirm, the entry SL line **and** the flip exit (period/multiplier via `BB_RSI_SUPERTREND_PERIOD` / `BB_RSI_SUPERTREND_MULT`). **Far-line filter**: skip if the SuperTrend line is more than `BB_RSI_MAX_ENTRY_SL_PTS(50)` pts from close (avoids uncapped-risk entries). **ADX trend filter** (optional, `BB_RSI_ADX_ENABLED`): block all entries when ADX(14) < `BB_RSI_ADX_MIN(20)` — sits out choppy/ranging sessions where the strategy bleeds.
-- **Confirmation candle** (`BB_RSI_CONFIRM_CANDLE_ENABLED`, default on): the bar meeting the entry rules is the *signal candle*; entry does **not** fire on its close. The **immediately-next** candle must cross the signal candle's close (CE above / PE below) — entry then fires intra-bar on the cross. Off = legacy entry at the signal candle's close.
-- **Confirmation must close outside band** (`BB_RSI_CONFIRM_OUTSIDE_BAND`, default on; needs confirmation candle on): the confirmation candle must **close** beyond the signal candle's close **and** close **outside the Bollinger band** — entry then fires at that close. An intra-bar poke past the trigger can close back *inside* the band (a failed breakout), which leaves the entry candle sitting visibly inside the band; requiring a close beyond the band makes every entry candle genuinely outside it. Off = enter intra-bar on the first cross of the signal candle's close (legacy).
-- **Guards**: optional `BB_RSI_RSI_TURNING`, independent VIX filter.
-- **Indicators**: Bollinger Bands `20 / 1` (std-dev **1**), RSI(14), SuperTrend `10 / 3`.
-- **Initial SL** = SuperTrend value at entry (no clamp). Used for risk sizing + display; it is **not** an intra-tick stop and does not trail.
-- **Exit** (per-tick, **spot points**): **Profit lock** — once peak favourable spot move ≥ `BB_RSI_PROFIT_LOCK_TRIGGER_PTS(25)`, exit when it gives back below `BB_RSI_PROFIT_LOCK_PCT(50)`% of peak (ratchets up: peak 100pts → lock 50pts); the upside exit. → **Hard stop** — exit if the trade moves ≥ `BB_RSI_STOP_LOSS_PTS(30)` against entry; a **wide** catastrophic loss cap that only clips deep adverse excursions on failed fades (the shown SuperTrend SL is display/sizing only). Both points-based so they work even on spot-proxy sessions. → **BB re-entry** (per-tick): exit the instant spot crosses back through the band (failed breakout), at the band line — not the bar close (`BB_RSI_BB_REENTRY_EXIT`, default on); armed only once the breakout has extended ≥ `BB_RSI_BB_REENTRY_ARM_PTS(10)` past the band, so a fresh entry sitting right at the band isn't knocked out by an immediate noise wick → **trend flip** on candle close (SuperTrend flip) handles trend runners → bid-ask spread guard → EOD. No break-even-to-entry snap, no SuperTrend/prev-candle SL trail, no % spot-trail, no time-stop.
+- **Entry (at candle close)** — a **mean-reversion fade**, the exact inverse of the V7 breakout it replaced. **CE**: close ≤ BB **lower** band **and** RSI ≤ `BB_RSI_RSI_CE_THRESHOLD(25)` (oversold). **PE**: close ≥ BB **upper** band **and** RSI ≥ `BB_RSI_RSI_PE_THRESHOLD(75)` (overbought). No SuperTrend — a trend filter agrees with the breakout and so vetoes every fade. **Signal-candle filter**: skip when the signal candle's close-to-extreme distance exceeds `BB_RSI_MAX_ENTRY_SL_PTS(50)` pts (avoids uncapped-risk entries).
+- **Chop guards** — the sideways tape is what kills a fade, so three gates refuse it. **Band width** (`BB_RSI_BAND_WIDTH_ENABLED`, on): require upper−lower ≥ `BB_RSI_MIN_BAND_WIDTH_PTS(50)`; a band collapsed to noise width has no stretch to fade. **RSI range** (`BB_RSI_RSI_RANGE_ENABLED`, on): over `BB_RSI_RSI_RANGE_LOOKBACK(20)` candles **ending at the bar before the signal**, require max−min RSI ≥ `BB_RSI_RSI_RANGE_MIN(30)` — the signal bar is excluded on purpose, or its own spike would satisfy the test. **ADX ceiling** (`BB_RSI_ADX_ENABLED`, off): block when ADX(14) ≥ `BB_RSI_ADX_MAX(30)` — note this is **inverted** vs V7's ADX floor, because a fade is run over by a strong trend.
+- **Divergence** (`BB_RSI_DIVERGENCE_ENABLED`, default **off**): require price to print a new extreme that RSI does not confirm — CE = lower low on a **higher** RSI low, PE = higher high on a **lower** RSI high. Pivots need `BB_RSI_DIV_PIVOT_BARS(2)` bars either side and are searched within `BB_RSI_DIV_LOOKBACK(20)`. No pivot in range = blocked (fails closed).
+- **Confirmation candle** (`BB_RSI_CONFIRM_CANDLE_ENABLED`, default on): the bar meeting the entry rules is the *signal candle*; entry does **not** fire on its close. The **immediately-next** candle must cross the signal candle's close (CE above / PE below — the direction of the expected reversal).
+- **Confirm on close** (`BB_RSI_CONFIRM_ON_CLOSE`, default on; needs confirmation candle on): that next candle must **CLOSE** past the signal close, and entry fires at the close. Off = enter intra-bar on the first cross. On is the safer default for a fade: a poke up from an oversold extreme that closes back down is a falling knife, not a reversal. *(Replaces `BB_RSI_CONFIRM_OUTSIDE_BAND`, which required the confirmation candle to close **outside** the band — a breakout-only idea that would veto every valid mean-reversion confirmation.)*
+- **Guards**: optional `BB_RSI_RSI_TURNING` (require RSI to have already turned back), independent VIX filter.
+- **Indicators**: Bollinger Bands `30 / 2`, RSI(14), ADX(14). No SuperTrend.
+- **Initial SL line** = the signal candle's own extreme (CE → its low, PE → its high). Used for risk sizing + display; it is **not** an intra-tick stop and does not trail.
+- **Exit**: **Middle-band target** (`BB_RSI_TARGET_MIDDLE_BAND`, default on) — per-tick, exit when price reaches the BB middle band; the mean is what the trade is reverting *to*, so it is the objective. → **Two-opposite-candle stop/trail** on candle close, the primary risk rule: an "opposite" candle is one whose **body** closed against the position (CE hurt by a red body, PE by green; a doji breaks the streak). Before the trade has run `BB_RSI_TRAIL_ARM_PTS(10)` in favour this is the **stop** (`BB_RSI_OPP_CANDLE_SL_ENABLED` / `_COUNT(2)`); after, the **trail** takes over with its own count (`BB_RSI_OPP_CANDLE_TRAIL_ENABLED` / `_COUNT(2)`). The two toggle independently — turn the trail off and the stop stays live all trade; turn the stop off and nothing fires until the trail arms. The stop pauses its side, the trail does not. → **Hard stop** `BB_RSI_STOP_LOSS_PTS(30)`, a real per-tick backstop because the candle rule can only fire on a close → optional **profit lock** (`BB_RSI_PROFIT_LOCK_TRIGGER_PTS`, default **0** = off; it would cut the trade short of the mean) → bid-ask spread guard → EOD. No BB re-entry exit (back inside the band is now the goal), no SuperTrend flip, no break-even snap, no % spot-trail, no time-stop.
 - **Per-side SL pause** (`BB_RSI_PER_SIDE_PAUSE`): an SL on CE only pauses CE entries; PE remains free, plus `BB_RSI_CONSEC_SL_EXTRA_PAUSE` extra candles per consecutive SL.
-- **Per-trade context logging** (additive): each trade record captures BB / RSI / trend context at entry and **MFE / MAE** (max-favorable + max-adverse excursion in pts and ₹) over the life of the trade, **`secsToMFE` / `secsToMAE`** (seconds from entry to that peak / trough — distinguishes early-peak-then-giveback from slow-grind, for trail tuning), plus **`vixAtExit`** — feeds the active paper-trade data-collection schema. This enrichment is now uniform across all 4 strategies (paper + live): each logs the signal diagnostics it computes at entry (EMA_RSI_ST: EMA20/50/21 + RSI + SuperTrend; BB_RSI: BB bands / RSI / SuperTrend; PA: pattern/trend/SR; ORB: OR width, VWAP side, body-vs-ATR, gate funnel) so post-window analysis can correlate behaviour with market conditions. Timing fields use each engine's replay-safe tick clock so replayed sessions reproduce identical values
+- **Per-trade context logging** (additive): each trade record captures BB / RSI / trend context at entry and **MFE / MAE** (max-favorable + max-adverse excursion in pts and ₹) over the life of the trade, **`secsToMFE` / `secsToMAE`** (seconds from entry to that peak / trough — distinguishes early-peak-then-giveback from slow-grind, for trail tuning), plus **`vixAtExit`** — feeds the active paper-trade data-collection schema. This enrichment is now uniform across all 4 strategies (paper + live): each logs the signal diagnostics it computes at entry (EMA_RSI_ST: EMA20/50/21 + RSI + SuperTrend; BB_RSI: BB bands / RSI / ADX + band width, RSI range and divergence detail; PA: pattern/trend/SR; ORB: OR width, VWAP side, body-vs-ATR, gate funnel) so post-window analysis can correlate behaviour with market conditions. Timing fields use each engine's replay-safe tick clock so replayed sessions reproduce identical values
 
 ### Strategy 3: Price Action — Chart-Pattern Breakouts (5-min)
 - **Patterns (the only four entry logics, all default ON)**:
@@ -468,22 +470,33 @@ Full spec: [BB_RSI.md](BB_RSI.md).
 | `BB_RSI_MODE_ENABLED` | `true` | Show/hide bb_rsi menus in sidebar (also hides BB_RSI section in Settings) |
 | `BB_RSI_ENABLED` | `false` | Master enable for the BB_RSI engine (required to start BB_RSI Live) |
 | `BB_RSI_LIVE_ENABLED` | `false` | Must be `true` AND `LIVE_HARNESS_DRY_RUN=false` for real Fyers BB_RSI orders. Without it BB_RSI Live runs fully but every broker call is simulated |
-| `BB_RSI_BB_PERIOD` / `BB_RSI_BB_STDDEV` | `20` / `1` | Bollinger inputs (std-dev **1** — tighter than the charting default of 2) |
-| `BB_RSI_RSI_CE_THRESHOLD` | `70` | Take CE entry only when RSI is above this |
-| `BB_RSI_RSI_PE_THRESHOLD` | `40` | Take PE entry only when RSI is below this |
-| `BB_RSI_RSI_TURNING` | `false` | Require RSI momentum to confirm direction (CE: RSI not falling; PE: not rising) |
-| `BB_RSI_CONFIRM_CANDLE_ENABLED` | `true` | **Confirmation candle (cross & close).** `true` (default): a fully-closed candle must meet all entry rules (the *signal candle*), then the **immediately-next** candle must cross that signal candle's close (CE above / PE below) — entry fires **intra-bar** on the cross. `false`: legacy — enter at the signal candle's close. Filters one-candle false breakouts. A/B via `/replay`. |
-| `BB_RSI_CONFIRM_OUTSIDE_BAND` | `true` | **Confirmation must close outside band** (needs `BB_RSI_CONFIRM_CANDLE_ENABLED=true`). `true` (default): the confirmation candle must **close** beyond the signal candle's close **and** outside the band (CE above upper / PE below lower) — entry fires at that **close**, not intra-bar. Blocks intra-bar pokes that close back inside the band (failed breakouts that otherwise leave the entry candle visibly inside the band). `false`: legacy — enter intra-bar on the first cross of the signal candle's close. A/B via `/replay`. |
-| `BB_RSI_SUPERTREND_PERIOD` / `BB_RSI_SUPERTREND_MULT` | `10` / `3` | **SuperTrend(10,3)** — the sole trend source: directional entry confirmation, initial SL value **and** the candle-close trend-flip exit. |
-| `BB_RSI_MAX_ENTRY_SL_PTS` | `50` | Skip entries where the SuperTrend line is more than this many pts from close (avoids uncapped risk). `0` = off |
-| `BB_RSI_ADX_ENABLED` | `false` | Trend filter — block all entries when ADX(14) is below the floor (sit out chop). |
-| `BB_RSI_ADX_MIN` | `20` | Minimum ADX(14) to allow entries when the trend filter is on (higher = stricter). |
-| `BB_RSI_PROFIT_LOCK_TRIGGER_PTS` | `25` | Arm the profit lock once the favourable spot move (points) hits this. Points-based. `0` disables. |
+| `BB_RSI_BB_PERIOD` / `BB_RSI_BB_STDDEV` | `30` / `2` | Bollinger inputs (charting-standard 30 / 2) |
+| `BB_RSI_RSI_CE_THRESHOLD` | `25` | CE **fades a drop** — take it only when RSI is at or **below** this (oversold). Note the direction flipped in V8; a V7 value of 70 here will never trade |
+| `BB_RSI_RSI_PE_THRESHOLD` | `75` | PE **fades a rip** — take it only when RSI is at or **above** this (overbought). Direction flipped in V8 |
+| `BB_RSI_RSI_TURNING` | `false` | Also require RSI to have already turned back (CE: RSI rising vs the prior bar; PE: falling) |
+| `BB_RSI_CONFIRM_CANDLE_ENABLED` | `true` | **Confirmation candle (cross & close).** `true` (default): a fully-closed candle must meet all entry rules (the *signal candle*), then the **immediately-next** candle must cross that signal candle's close (CE above / PE below — the direction of the expected reversal). Whether that cross is judged intra-bar or at the close is set by `BB_RSI_CONFIRM_ON_CLOSE` below. `false`: enter at the signal candle's close. Filters the one-candle false reversal. A/B via `/replay`. |
+| `BB_RSI_CONFIRM_ON_CLOSE` | `true` | **Confirm on candle close** (needs `BB_RSI_CONFIRM_CANDLE_ENABLED=true`). `true` (default): the confirmation candle must **CLOSE** past the signal candle's close — entry fires at that close. `false`: enter intra-bar on the first cross. For a fade, `true` is safer: a poke up from an oversold extreme that closes back down is a falling knife, not a reversal. Replaces the retired `BB_RSI_CONFIRM_OUTSIDE_BAND`. A/B via `/replay`. |
+| `BB_RSI_BAND_WIDTH_ENABLED` | `true` | **Chop guard** — skip entries when the band is too narrow to be a real stretch |
+| `BB_RSI_MIN_BAND_WIDTH_PTS` | `50` | Upper minus lower band must be at least this many NIFTY points |
+| `BB_RSI_RSI_RANGE_ENABLED` | `true` | **Chop guard** — skip entries when RSI has been pinned mid-range (dead tape) |
+| `BB_RSI_RSI_RANGE_LOOKBACK` | `20` | Candles **before the signal bar** to measure RSI travel over (the signal bar is excluded so its own spike cannot satisfy the test) |
+| `BB_RSI_RSI_RANGE_MIN` | `30` | Max minus min RSI over that lookback must be at least this |
+| `BB_RSI_DIVERGENCE_ENABLED` | `false` | Require price/RSI divergence: CE = lower low on a higher RSI low, PE = higher high on a lower RSI high. No pivot in range = blocked (fails closed) |
+| `BB_RSI_DIV_LOOKBACK` | `20` | How far back to hunt for the prior swing pivot |
+| `BB_RSI_DIV_PIVOT_BARS` | `2` | Bars either side needed to confirm a pivot (higher = stricter, slower) |
+| `BB_RSI_MAX_ENTRY_SL_PTS` | `50` | Skip entries whose signal candle sits more than this many pts from its close (avoids uncapped risk). `0` = off |
+| `BB_RSI_ADX_ENABLED` | `false` | Trend **ceiling** — block all entries when ADX(14) reaches the max (too strong a trend to fade). |
+| `BB_RSI_ADX_MAX` | `30` | Maximum ADX(14) that still allows entries when the ceiling is on (higher = more permissive). **Replaces `BB_RSI_ADX_MIN` — the gate inverted in V8.** |
+| `BB_RSI_PROFIT_LOCK_TRIGGER_PTS` | `0` | Optional extra upside cap — arm the profit lock once the favourable spot move (points) hits this. **Off by default in V8**: it fires before the mean is reached and cuts the trade short of its objective. |
 | `BB_RSI_PROFIT_LOCK_PCT` | `50` | Once armed, exit when the favourable move falls below this % of peak (ratchets up) — the per-tick upside exit |
-| `BB_RSI_STOP_LOSS_PTS` | `30` | Catastrophic loss cap — exit if the trade moves this many spot points against entry. Wide (only clips deep failed-fade excursions). Points-based. `0` disables. |
-| `BB_RSI_BB_REENTRY_EXIT` | `true` | Exit the instant spot crosses back through the Bollinger Band (failed breakout) — per-tick, at the band line, not the bar close |
-| `BB_RSI_BB_REENTRY_ARM_PTS` | `10` | Only arm the BB re-entry exit once the breakout has extended this many points past the band (avoids stopping a fresh entry on an immediate noise wick). `0` = arm immediately |
-| `BB_RSI_SLIPPAGE_PTS` | `0` | Simulated slippage on entry & SL exit (pts against you) |
+| `BB_RSI_STOP_LOSS_PTS` | `30` | Per-tick hard stop — exit if the trade moves this many spot points against entry. A real backstop: the two-opposite-candle stop can only fire on a candle **close**, and one violent bar travels a long way first. `0` disables. |
+| `BB_RSI_TARGET_MIDDLE_BAND` | `true` | **Take profit at the mean** — per-tick exit when price reaches the BB middle band. The objective of a mean-reversion trade |
+| `BB_RSI_OPP_CANDLE_SL_ENABLED` | `true` | **Two-opposite-candle stop** — exit after N consecutive candles whose *body* closed against the trade (CE hurt by red, PE by green; a doji breaks the streak). Arms the per-side cooldown |
+| `BB_RSI_OPP_CANDLE_SL_COUNT` | `2` | How many consecutive opposite candles trigger that stop |
+| `BB_RSI_OPP_CANDLE_TRAIL_ENABLED` | `true` | **Two-opposite-candle trail** — the same rule, taking over once the trade is in profit. Independent of the stop toggle; does **not** pause the side |
+| `BB_RSI_OPP_CANDLE_TRAIL_COUNT` | `2` | How many consecutive opposite candles trigger the trail exit |
+| `BB_RSI_TRAIL_ARM_PTS` | `10` | Favourable spot points before the trail takes over from the stop (`0` = immediately) |
+| `BB_RSI_SLIPPAGE_PTS` | `0` | Simulated slippage on entry & exit (pts against you) |
 | `BB_RSI_MAX_DAILY_TRADES` | `30` | Daily bb_rsi cap |
 | `BB_RSI_MAX_DAILY_LOSS` | `4000` | BB_RSI kill-switch in INR |
 | `BB_RSI_VIX_ENABLED` | `false` | Independent VIX filter for bb_rsi |
@@ -1027,7 +1040,7 @@ Blocks directional entries that fight the prevailing Open-Interest buildup: read
 ### BB_RSI
 | URL | Description |
 |-----|-------------|
-| `/bb_rsi-backtest` | BB_RSI backtest (3/5-min BB+SuperTrend+RSI V7) |
+| `/bb_rsi-backtest` | BB_RSI backtest (3/5-min BB mean reversion + RSI V8) |
 | `/bb_rsi-paper/status` | BB_RSI paper trade + NIFTY chart with BB overlay |
 | `/bb_rsi-paper/history` | Past bb_rsi sessions (per-session delete + view modal) |
 | `/bb_rsi-paper/simulate` | BB_RSI simulator |
@@ -1147,7 +1160,7 @@ src/
   app.js                              # Express server, dashboard, route registration, Start-All
   strategies/
     strategy1_sar_ema_rsi.js          # EMA_RSI_ST strategy (EMA 20/50 (+9 opt) + RSI + SuperTrend) — 5-min default; 15-min via TRADE_RESOLUTION=15
-    bb_rsi.js                   # BB_RSI 3/5-min V7 (BB break + SuperTrend side + RSI)
+    bb_rsi.js                   # BB_RSI 3/5-min V8 (BB fade + RSI extreme — mean reversion)
     price_action.js                   # Price action 5-min strategy (patterns + S/R + RSI caps + BE trigger)
     orb_breakout.js                   # ORB strategy (15-min opening range; CE/PE single-leg breakout buys)
     index.js                          # Active-strategy registry (currently exposes EMA_RSI_ST; ORB invoked by its own route)

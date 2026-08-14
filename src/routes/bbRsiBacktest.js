@@ -26,19 +26,10 @@ const { isExpiryDate } = require("../utils/nseHolidays");
 const { getCharges } = require("../utils/charges");
 const confirmCandle = require("../utils/confirmCandle");
 
-// Derive signal strength for bb_rsi: STRONG if RSI is clearly beyond threshold (+5), else MARGINAL.
+// Signal strength for bb_rsi — delegated to the engine so paper, live and backtest
+// cannot drift apart on it (the comparison inverted with the V8 mean-reversion flip).
 function _deriveBbRsiStrength(result) {
-  const rsi = typeof result.rsi === "number" ? result.rsi : null;
-  if (rsi === null) return "MARGINAL";
-  if (result.signal === "BUY_CE") {
-    const thr = parseFloat(process.env.BB_RSI_RSI_CE_THRESHOLD || "55");
-    return rsi >= thr + 5 ? "STRONG" : "MARGINAL";
-  }
-  if (result.signal === "BUY_PE") {
-    const thr = parseFloat(process.env.BB_RSI_RSI_PE_THRESHOLD || "45");
-    return rsi <= thr - 5 ? "STRONG" : "MARGINAL";
-  }
-  return "MARGINAL";
+  return bbRsiStrategy.signalStrength(result);
 }
 const backtestJobs = require("../utils/backtestJobManager");
 
@@ -156,9 +147,9 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
 
   console.log("\n══════════════════════════════════════════════");
   console.log(`🔍 BB_RSI BACKTEST — ${bbRsiStrategy.NAME}`);
-  console.log(`   Candles: ${candles.length} | trailing SL | BB+SuperTrend+RSI entry`);
+  console.log(`   Candles: ${candles.length} | BB fade + RSI extreme entry (mean reversion)`);
   console.log(`   MaxTrades: ${BB_RSI_MAX_TRADES}/day | MaxLoss: ₹${BB_RSI_MAX_LOSS}/day`);
-  console.log(`   Exit: profit lock + hard stop + BB re-entry + SuperTrend flip | Slippage: ${SLIPPAGE_PTS}pts`);
+  console.log(`   Exit: hard stop + profit lock + BB middle target + 2-opposite-candle SL/trail | Slippage: ${SLIPPAGE_PTS}pts`);
   console.log(`   Days with data: ${sortedDates.length}`);
   console.log("══════════════════════════════════════════════");
 
@@ -244,7 +235,9 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
       if (!position.mfeSpotPts || _favPeakPts > position.mfeSpotPts) position.mfeSpotPts = _favPeakPts;
 
       // ──────────────────────────────────────────────────────────────────────
-      // EXIT: 1. Hard stop  2. Profit lock  3. BB re-entry  4. SuperTrend flip  5. EOD
+      // EXIT: 1. Hard stop  2. Profit lock  3. Middle-band target
+      //       4. Two-opposite-candle stop/trail  5. EOD
+      // Same order paper runs them in (bbRsiPaper.onTick then onCandleClose).
       // ──────────────────────────────────────────────────────────────────────
 
       const _favClosePts = (candle.close - position.entryPrice) * (position.side === "CE" ? 1 : -1);
@@ -277,46 +270,35 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
         }
       }
 
-      // 3. BB band touch — failed breakout. The per-tick paper logic exits the instant
-      //    spot crosses back THROUGH the band, so use the bar's adverse extreme
-      //    (PE→high, CE→low) against the band fixed at the bar's start (prior completed
-      //    candles) and exit AT the band line — the per-bar proxy for the per-tick band
-      //    stop (cf. the hard stop above, which likewise exits at its level).
-      //    ARMING GUARD (mirrors paper): only arm once the breakout has extended
-      //    ≥ BB_RSI_BB_REENTRY_ARM_PTS past the band. Track max favourable penetration
-      //    via the bar's favourable extreme (PE→low, CE→high) so a fresh entry sitting
-      //    right at the band isn't stopped by an immediate noise wick.
-      if (!exitReason && (process.env.BB_RSI_BB_REENTRY_EXIT || "true") === "true") {
+      // 3. MIDDLE-BAND TARGET — the objective of the fade. The per-tick paper logic
+      //    exits the instant spot reaches the mean, so use the bar's FAVOURABLE extreme
+      //    (CE→high, PE→low) against the band fixed at the bar's start (prior completed
+      //    candles) and exit AT the middle line — the per-bar proxy for the per-tick
+      //    check (cf. the hard stop above, which likewise exits at its level).
+      if (!exitReason) {
         const _bb = bbRsiStrategy.bbLevels(window.slice(0, -1));
         if (_bb) {
-          const _band = position.side === "PE" ? _bb.lower : _bb.upper;
-          const _penBar = position.side === "PE" ? (_band - candle.low) : (candle.high - _band);
-          if (_penBar > (position._bbMaxPen || 0)) position._bbMaxPen = _penBar;
-          const _armPts = parseFloat(process.env.BB_RSI_BB_REENTRY_ARM_PTS || "10");
-          if ((position._bbMaxPen || 0) >= _armPts) {
-            if (position.side === "PE" && candle.high > _band) {
-              exitPrice = parseFloat(_band.toFixed(2)); exitReason = "BB re-entry";
-            } else if (position.side === "CE" && candle.low < _band) {
-              exitPrice = parseFloat(_band.toFixed(2)); exitReason = "BB re-entry";
-            }
+          const _favExtreme = position.side === "CE" ? candle.high : candle.low;
+          const _tgt = bbRsiStrategy.middleBandTarget(_bb.middle, position.side, _favExtreme);
+          if (_tgt.hit) {
+            exitPrice  = _tgt.level;
+            exitReason = `BB middle target (${_tgt.level})`;
           }
         }
       }
 
-      // 3b. BB re-entry on CLOSE — paper runs a SECOND, UNARMED re-entry check in
-      //     onCandleClose (bbRsiStrategy.bbReentryExit), independent of the arming
-      //     guard above: a breakout that never extends ARM_PTS past the band but
-      //     CLOSES back inside it is still a failed breakout and paper exits it at
-      //     the bar close. Without this the backtest kept holding trades paper had
-      //     already closed. Runs before the trend flip, exactly as paper orders it.
-      if (!exitReason && window.length >= 15 && bbRsiStrategy.bbReentryExit(window, position.side)) {
-        exitPrice  = candle.close;
-        exitReason = "BB re-entry";
-      }
-
-      // 4. Trend flip — exit on SuperTrend reversal signal
-      if (!exitReason && bbRsiStrategy.isTrendFlip(window, position.side)) {
-        exitReason = "SuperTrend flip";
+      // 4. TWO-OPPOSITE-CANDLE stop / trail — paper's only candle-close exit. Before
+      //    the trade has run BB_RSI_TRAIL_ARM_PTS in favour this is the initial stop;
+      //    after, the trail takes over with its own count. Exits at the bar close, as
+      //    paper does. The stop's reason contains "SL" so it arms the per-side cooldown
+      //    below; the trail's deliberately does not.
+      if (!exitReason) {
+        const _opp = bbRsiStrategy.oppositeCandleExit(window, position.side, position.mfeSpotPts || 0);
+        if (_opp.hit) {
+          position.slSource = _opp.armed ? "Opposite-candle trail" : "Opposite-candle SL";
+          exitPrice  = candle.close;
+          exitReason = _opp.reason;
+        }
       }
 
       // 5. EOD
@@ -353,7 +335,7 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
           exitTs:       candle.time,
           stopLoss:     position.stopLoss,
           initialStopLoss: position.initialStopLoss,
-          target:       null,
+          target:       position.target != null ? position.target : null,
           pnl,
           spotPnlPts:   parseFloat(spotPnlPts.toFixed(2)),
           candlesHeld:  position.candlesHeld,
@@ -410,27 +392,23 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
     const _confirmBbRsi = confirmCandle.enabled("BB_RSI");
 
     // ── Confirmation candle: fill an armed signal on THIS (immediately-next)
-    //    candle. With BB_RSI_CONFIRM_OUTSIDE_BAND on (default) it must CLOSE beyond
-    //    the signal close AND outside the band (entry at the close); off = legacy
-    //    intra-bar cross proxy (barCrossFill). Valid for exactly one candle. ──
+    //    candle. With BB_RSI_CONFIRM_ON_CLOSE on (default) it must CLOSE beyond the
+    //    signal close (entry at that close); off = intra-bar cross proxy
+    //    (barCrossFill). Valid for exactly one candle. ──
     if (_confirmBbRsi && _armed) {
       const _a = _armed;
       _armed = null; // armed signal is good for exactly one candle — consume it
       if (confirmCandle.isNextBar(candle.time, _a.armedBarTime, BB_RSI_RES)
           && candle.time >= _slPauseUntilBySide[_a.side]) {
         // Two confirmation modes (must match paper):
-        //  • OUTSIDE_BAND ON  → confirm at this candle's CLOSE: it must have closed
-        //    beyond the signal close AND outside the band; entry at the close.
-        //  • OUTSIDE_BAND OFF → legacy intra-bar cross proxy (barCrossFill); entry
-        //    at the cross fill.
+        //  • ON_CLOSE ON  → confirm at this candle's CLOSE: it must have closed beyond
+        //    the signal close; entry at the close.
+        //  • ON_CLOSE OFF → intra-bar cross proxy (barCrossFill); entry at the cross fill.
         let _fill = null, _confTag = null;
-        if (confirmCandle.outsideBandEnabled("BB_RSI")) {
+        if (confirmCandle.onCloseEnabled("BB_RSI")) {
           if (confirmCandle.crossed(_a.side, candle.close, _a.triggerLevel)) {
-            const _bb = bbRsiStrategy.bbLevels(window); // window ends at THIS candle
-            if (_bb && confirmCandle.beyondBand(_a.side, candle.close, _bb.upper, _bb.lower)) {
-              _fill = candle.close;
-              _confTag = `CONFIRM ${_a.side} close ${candle.close} beyond band`;
-            }
+            _fill = candle.close;
+            _confTag = `CONFIRM ${_a.side} close ${candle.close}`;
           }
         } else {
           _fill = confirmCandle.barCrossFill(_a.side, candle, _a.triggerLevel);
@@ -449,9 +427,9 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
             entryTs:         candle.time,
             stopLoss:        sl,
             initialStopLoss: sl,
-            slSource:        _a.result.slSource || "SUPERTREND",
+            slSource:        _a.result.slSource || "Signal candle",
             entryReason:     `${_a.result.reason || side + " signal"} | ${_confTag}`,
-            target:          null,
+            target:          _a.result.target != null ? _a.result.target : null,
             candlesHeld:     0,
             peakPnl:         0,
             initialRiskRupees: _initRiskBT,
@@ -485,7 +463,7 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
       // Log first rejection per day for debugging
       if (!position && _dailyTradeCount === 0 && candleMin >= _btStartMin && candleMin < _btEndMin) {
         if (!_loggedReason || _loggedReason !== candleDate) {
-          console.log(`  [${candleDate} ${toIST(candle.time).split(' ')[1] || ''}] Skip: ${result.reason} | RSI=${result.rsi} BB=${result.bbMiddle}-${result.bbUpper} ST=${result.supertrend}`);
+          console.log(`  [${candleDate} ${toIST(candle.time).split(" ")[1] || ""}] Skip: ${result.reason} | RSI=${result.rsi} BB=[${result.bbLower}-${result.bbUpper}] width=${result.bbWidth}`);
           _loggedReason = candleDate;
         }
       }
@@ -519,9 +497,9 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
       entryTs:         candle.time,
       stopLoss:        sl,
       initialStopLoss: sl,
-      slSource:        result.slSource || "SUPERTREND",
+      slSource:        result.slSource || "Signal candle",
       entryReason:     result.reason || `${side} signal`,
-      target:          null,
+      target:          result.target != null ? result.target : null,
       candlesHeld:     0,
       peakPnl:         0,
       initialRiskRupees: _initRiskBT,
@@ -1713,11 +1691,11 @@ function renderAnalytics(){
   var reasonMap={};
   trades.forEach(function(t){
     var r = t.reason;
-    // Normalize V6 exit reasons.
+    // Normalize V8 exit reasons.
     if(r.indexOf('Profit lock')===0) r='Profit lock';
     else if(r.indexOf('SL')===0) r='Stop loss';
-    else if(r.indexOf('BB re-entry')===0) r='BB re-entry';
-    else if(r.indexOf('SuperTrend flip')===0) r='SuperTrend flip';
+    else if(r.indexOf('Trail')===0) r='Trail (opposite candles)';
+    else if(r.indexOf('BB middle target')===0) r='BB middle target';
     else if(r.indexOf('EOD')===0) r='EOD square-off';
     if(!reasonMap[r]) reasonMap[r]={cnt:0,pnl:0};
     reasonMap[r].cnt++;
@@ -2048,8 +2026,8 @@ function renderAnalytics(){
       var r=t.reason;
       if(r.indexOf('Profit lock')===0) r='Profit lock';
       else if(r.indexOf('SL')===0) r='Stop loss';
-      else if(r.indexOf('BB re-entry')===0) r='BB re-entry';
-      else if(r.indexOf('SuperTrend flip')===0) r='SuperTrend flip';
+      else if(r.indexOf('Trail')===0) r='Trail (opposite candles)';
+      else if(r.indexOf('BB middle target')===0) r='BB middle target';
       else if(r.indexOf('EOD')===0) r='EOD square-off';
       if(!lrMap[r]) lrMap[r]={cnt:0,pnl:0};
       lrMap[r].cnt++;

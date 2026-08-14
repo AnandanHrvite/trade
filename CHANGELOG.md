@@ -6,6 +6,34 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Changed — BB_RSI is now a MEAN-REVERSION engine (V8). It fades the band it used to buy.
+
+This is a direction flip, not a tuning pass. V7 bought the **break**: CE when a candle closed *above* the upper Bollinger band, confirmed by SuperTrend and a high RSI. V8 buys the **snap-back**: **CE when a candle closes at or below the LOWER band with RSI ≤ 25**, **PE when it closes at or above the UPPER band with RSI ≥ 75**. Every entry the old engine would have taken, the new one takes on the opposite side.
+
+**Migrate your `.env` before starting a session.** The key names did not change but two of them swapped ends of the scale, so a V7 config carried over unedited produces an engine that essentially never trades:
+
+| Key | V7 | V8 | Note |
+|-----|----|----|------|
+| `BB_RSI_RSI_CE_THRESHOLD` | `70` (RSI **above**) | `25` (RSI **at or below**) | CE now fades an oversold drop |
+| `BB_RSI_RSI_PE_THRESHOLD` | `40` (RSI **below**) | `75` (RSI **at or above**) | PE now fades an overbought rip |
+| `BB_RSI_BB_PERIOD` / `_STDDEV` | `20` / `1` | `30` / `2` | charting-standard band |
+
+The Settings sliders for both RSI keys used to be capped at `50–90` and `10–50`; they now span `5–95`, or the new values could not be entered at all.
+
+**SuperTrend is gone from BB_RSI entirely** — the decision, the chart line, the `BB_RSI_SUPERTREND_PERIOD` / `_MULT` settings, and the `supertrendAtEntry` / `stTrendAtEntry` / `trendSource` fields on the trade record. A trend filter agrees with a breakout by construction, so leaving it in would have vetoed every fade. The same reasoning retires the **BB re-entry exit** (`BB_RSI_BB_REENTRY_EXIT` / `_ARM_PTS`): price closing back inside the band was V7's failed-breakout signal and is V8's *objective*.
+
+**New exits.** The **middle band is the target** (`BB_RSI_TARGET_MIDDLE_BAND`, on) — the mean is what price is reverting to, checked per tick. The primary risk rule is the **two-opposite-candle stop**: exit after N consecutive candles whose *body* closed against the position (CE hurt by a red body, PE by green; a doji is indecision, not a move against you, so it **breaks** the streak). Once the trade has run `BB_RSI_TRAIL_ARM_PTS(10)` in favour, an independently-toggleable **trail** with its own count takes over. The stop's reason contains `"SL"` so it arms the per-side cooldown; the trail's deliberately does not, because a trail exit banks a profit and must not pause the side. `BB_RSI_STOP_LOSS_PTS` stays as a genuine per-tick backstop — the candle rule can only fire on a *close*, and one violent bar against a fade travels a long way before that close arrives. The profit lock now defaults to **0 (off)**: it fires before the mean is reached and would cut the trade short of its whole objective.
+
+**New chop guards, because the sideways day is what kills a fade.** A flat tape pins price to a band collapsed to noise width, and the signal then repeats every few candles and bleeds each time. **Band width** (`BB_RSI_BAND_WIDTH_ENABLED`, on) requires upper−lower ≥ `BB_RSI_MIN_BAND_WIDTH_PTS(50)`. **RSI range** (`BB_RSI_RSI_RANGE_ENABLED`, on) requires max−min RSI ≥ `BB_RSI_RSI_RANGE_MIN(30)` over `BB_RSI_RSI_RANGE_LOOKBACK(20)` candles **ending at the bar before the signal** — the signal bar is excluded on purpose, since its own spike to 75/25 is exactly the excursion being measured and would make the test self-satisfying. The ADX gate survives but **inverted**: `BB_RSI_ADX_MIN` → **`BB_RSI_ADX_MAX(30)`**, blocking when the trend is too strong to fade rather than too weak to break out. Renamed rather than re-pointed so the two can never be confused.
+
+**Optional divergence filter** (`BB_RSI_DIVERGENCE_ENABLED`, default **off**): require price to print a new extreme that RSI does not confirm — CE = a lower low on a *higher* RSI low, PE = a higher high on a *lower* RSI high. Pivots need `BB_RSI_DIV_PIVOT_BARS(2)` bars either side and are searched within `BB_RSI_DIV_LOOKBACK(20)`; the newer comparison point is the signal bar itself, because waiting for a second confirmed pivot would put the entry several candles after the extreme being faded. If no pivot exists in range the gate **fails closed** — an unprovable filter must not wave the trade through.
+
+`BB_RSI_CONFIRM_OUTSIDE_BAND` becomes **`BB_RSI_CONFIRM_ON_CLOSE`** (still default on). The old key additionally demanded the confirmation candle close *outside* the band, which was a breakout-only idea; a mean-reversion entry wants price coming back *toward* the band, so the old test would have vetoed every valid confirmation. What remains is the part worth keeping: the confirmation candle must **CLOSE** past the signal candle's close rather than merely poking through intra-bar — for a fade, a poke up from an oversold extreme that closes back down is a falling knife, not a reversal.
+
+`signalStrength()` moved into the engine and the three routes now call it. It had three hand-maintained copies, and the comparison it makes just inverted; that is exactly the shape of drift where one surface ends up rating signals the opposite way from the other two. Trade records now carry `bandWidthAtEntry`, `rsiRangeAtEntry` and the full `divergenceAtEntry` detail, and the skip log carries `bbWidth` / `rsiRange`, so a session that took no trades can be read back as *which guard was binding*.
+
+**Not validated.** V8 has an engine-level suite covering entry direction, every guard, the divergence gate in both directions and both stop/trail phases — but it has never traded. No paper session, backtest or replay has run against it, and `BB_RSI_MIN_BAND_WIDTH_PTS(50)` / `BB_RSI_RSI_RANGE_MIN(30)` were reasoned from NIFTY 5-min scale, not measured. Collect clean post-rebuild sessions before tuning, and keep `LIVE_HARNESS_DRY_RUN=true` until Paper and Live agree on a recorded session via `/replay`.
+
 ### Added — ORB: a second chance after a stop-out, and an entry-start clock
 
 Two levers from a review of the 17-trade Jul–Aug 2026 ORB export. **Both ship OFF, so nothing changes until you turn them on.**

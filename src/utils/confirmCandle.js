@@ -5,14 +5,14 @@
  *
  * The rule (what the user asked for):
  *   1. SIGNAL candle  — a FULLY CLOSED candle that met ALL the strategy's normal
- *      entry rules (EMA/RSI/SuperTrend for EMA_RSI_ST, BB/SuperTrend|PSAR/RSI for BB_RSI).
+ *      entry rules (EMA/RSI/SuperTrend for EMA_RSI_ST, BB fade + RSI extreme for BB_RSI).
  *      Its CLOSE becomes the trigger level. We do NOT enter on this candle.
  *   2. CONFIRMATION   — during the IMMEDIATELY-NEXT candle, price must CROSS the
  *      signal candle's close (CE: strictly above, PE: strictly below). The trade
  *      enters intra-bar at the crossing price (not at candle close).
- *      BB_RSI only: with BB_RSI_CONFIRM_OUTSIDE_BAND on (default), confirmation is
- *      instead evaluated at that candle's CLOSE — it must close beyond the signal
- *      close AND outside the band, and entry fires at the close (see outsideBandEnabled).
+ *      BB_RSI only: with BB_RSI_CONFIRM_ON_CLOSE on (default), confirmation is
+ *      instead evaluated at that candle's CLOSE — it must CLOSE beyond the signal
+ *      close — and entry fires at that close (see onCloseEnabled).
  *   3. If the next candle never confirms, the armed signal expires. If that next
  *      candle is itself a fresh signal candle, it re-arms (rolling) for the candle
  *      after it.
@@ -44,25 +44,19 @@ function isNextBar(barTimeSec, armedBarTimeSec, resMinutes) {
   return barTimeSec === armedBarTimeSec + resMinutes * 60;
 }
 
-// ── "Confirmation must close outside the band" guard (BB_RSI only) ──────────
+// ── "Confirm on close" guard (BB_RSI only) ──────────────────────────────────
 // Toggle: when ON, the confirmation is evaluated at the NEXT candle's CLOSE — that
-// candle must CLOSE beyond the signal candle's close (the cross) AND close outside
-// the band — instead of entering intra-bar on the first poke past the trigger. An
-// intra-bar poke can close back inside the band (a failed breakout), leaving the
-// entry candle visibly inside the band; requiring a close beyond the band makes
-// every entry candle genuinely outside it. Default ON. Per-strategy prefix (only
-// BB_RSI has Bollinger Bands; EMA_RSI_ST never calls this).
-function outsideBandEnabled(prefix) {
-  return (process.env[prefix + "_CONFIRM_OUTSIDE_BAND"] || "true").toLowerCase() === "true";
-}
-
-// Is `price` (the confirmation candle's close) beyond the band in the signal
-// direction? Each engine passes the band at the confirmation candle's close so the
-// comparison stays identical across surfaces. Returns false if the band edge is missing.
-function beyondBand(side, price, bbUpper, bbLower) {
-  var ce = side === "CE" || side === "BUY_CE";
-  if (ce) return bbUpper != null && price > bbUpper;
-  return bbLower != null && price < bbLower;
+// candle must CLOSE beyond the signal candle's close — instead of entering intra-bar
+// on the first poke past the trigger. A poke that closes back the other way is not a
+// reversal, and BB_RSI V8 is a fade: entering on the first tick up from an oversold
+// extreme is exactly how a fade catches a falling knife. Default ON.
+//
+// Replaced BB_RSI_CONFIRM_OUTSIDE_BAND on 2026-08-14. That key additionally required
+// the confirmation candle to close OUTSIDE the band, which only made sense while the
+// engine bought breakouts — a mean-reversion entry wants price coming BACK toward the
+// band, so the old test would have vetoed every valid confirmation.
+function onCloseEnabled(prefix) {
+  return (process.env[prefix + "_CONFIRM_ON_CLOSE"] || "true").toLowerCase() === "true";
 }
 
 // Backtest candle-granularity proxy for the intra-bar cross. Returns the spot the
@@ -79,4 +73,4 @@ function barCrossFill(side, candle, triggerLevel) {
   return null;
 }
 
-module.exports = { enabled, crossed, isNextBar, barCrossFill, outsideBandEnabled, beyondBand };
+module.exports = { enabled, crossed, isNextBar, barCrossFill, onCloseEnabled };

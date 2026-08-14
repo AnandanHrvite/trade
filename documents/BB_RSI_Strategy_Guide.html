@@ -350,6 +350,21 @@
   <div class="tags">Bollinger Bands (20 / 1) &bull; SuperTrend (10 / 3) &bull; RSI (70 for Calls, 40 for Puts) &bull; VIX filter &bull; Profit lock &bull; Wide hard stop &bull; Band re-entry &bull; Trend-flip exit</div>
 </div>
 
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- OUT-OF-DATE BANNER — V8 flipped the strategy on 2026-08-14              -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="card card-red">
+  <h4 class="red">⚠️ This guide describes the RETIRED V7 engine — the strategy now does the OPPOSITE</h4>
+  <p><strong>On 2026-08-14 BB_RSI was rebuilt as V8, a mean-reversion engine.</strong> Everything below describes V7, which bought the <em>breakout</em>. V8 <em>fades</em> it. The two are mirror images, so on any given signal the live engine now buys the opposite side from what this page says:</p>
+  <ul>
+    <li><strong>Calls (CE)</strong> — V7 bought when price closed <em>above</em> the upper band with RSI above 70. <strong>V8 buys when price closes at or BELOW the LOWER band with RSI at or below 25</strong>, betting the drop is overdone.</li>
+    <li><strong>Puts (PE)</strong> — V7 bought below the lower band with RSI under 40. <strong>V8 buys at or ABOVE the UPPER band with RSI at or above 75.</strong></li>
+    <li><strong>SuperTrend no longer exists</strong> in this strategy, and neither does the band-re-entry or trend-flip exit. The <strong>middle band is now the profit target</strong>, and the stop is <strong>two consecutive candles closing against the trade</strong> (with a separately-switchable trail of the same shape once the trade is in profit).</li>
+    <li>New filters refuse the sideways market: a <strong>minimum band width</strong>, a <strong>minimum recent RSI range</strong>, and an optional <strong>divergence</strong> requirement.</li>
+  </ul>
+  <p style="margin-bottom:0;">Until this guide is rewritten, read <strong>BB_RSI.md</strong> in the repo root — that is the current, accurate spec. The sections below are kept only as a record of what the engine used to do.</p>
+</div>
+
 <!--LIVE_STATUS_PANEL-->
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
