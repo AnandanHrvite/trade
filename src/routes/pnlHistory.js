@@ -428,51 +428,6 @@ router.get("/", (req, res) => {
       </div>
     </div>
 
-    <!-- Live bot P&L by FY (auto) -->
-    <div class="panel">
-      <h3>Live Bot P&amp;L by Financial Year <span class="tag auto">AUTO</span></h3>
-      ${fyRows.length === 0 ? `<div class="empty">No live bot trades recorded yet. Numbers will appear here automatically as live trades close.</div>` : `
-      <div class="tbl-wrap">
-        <table class="tbl enh-table-full">
-          <thead>
-            <tr>
-              <th>Financial Year</th>
-              <th class="num">EMA_RSI_ST (Kite)</th>
-              <th class="num">BB_RSI (Fyers)</th>
-              <th class="num">PA (Fyers)</th>
-              <th class="num">Kite Sub</th>
-              <th class="num">Fyers Sub</th>
-              <th class="num">FY Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${fyRows.map(r => `
-              <tr>
-                <td style="font-weight:600;">FY ${r.fy}${r.fy === currentFy ? ' <span style="color:#10b981;font-size:0.55rem;">(current)</span>' : ''}</td>
-                <td class="num" style="color:${colorOf(r.kite_swing)};">${r.kite_swing ? fmtINR(r.kite_swing) : '—'}</td>
-                <td class="num" style="color:${colorOf(r.fyers_scalp)};">${r.fyers_scalp ? fmtINR(r.fyers_scalp) : '—'}</td>
-                <td class="num" style="color:${colorOf(r.fyers_pa)};">${r.fyers_pa ? fmtINR(r.fyers_pa) : '—'}</td>
-                <td class="num" style="color:${colorOf(r.kite_total)};">${fmtINR(r.kite_total)}</td>
-                <td class="num" style="color:${colorOf(r.fyers_total)};">${fmtINR(r.fyers_total)}</td>
-                <td class="num" style="color:${colorOf(r.total)};font-weight:700;">${fmtINR(r.total)}</td>
-              </tr>`).join('')}
-          </tbody>
-          <tfoot>
-            <tr>
-              <td>All FYs</td>
-              <td class="num" style="color:${colorOf(sumCol(fyRows, 'kite_swing'))};">${fmtINR(sumCol(fyRows, 'kite_swing'))}</td>
-              <td class="num" style="color:${colorOf(sumCol(fyRows, 'fyers_scalp'))};">${fmtINR(sumCol(fyRows, 'fyers_scalp'))}</td>
-              <td class="num" style="color:${colorOf(sumCol(fyRows, 'fyers_pa'))};">${fmtINR(sumCol(fyRows, 'fyers_pa'))}</td>
-              <td class="num" style="color:${colorOf(liveTotals.kite)};">${fmtINR(liveTotals.kite)}</td>
-              <td class="num" style="color:${colorOf(liveTotals.fyers)};">${fmtINR(liveTotals.fyers)}</td>
-              <td class="num" style="color:${colorOf(liveTotals.grand)};">${fmtINR(liveTotals.grand)}</td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>`}
-      <div class="note">Source files: <code>live_trades.json</code> (EMA_RSI_ST/Kite), <code>bb_rsi_live_trades.json</code> (BB_RSI/Fyers), <code>pa_live_trades.json</code> (PA/Fyers). India FY = April–March.</div>
-    </div>
-
     <!-- Manual trading analytics — Kite / Fyers tabs -->
     <div class="panel">
       <h3>Manual Trading Analytics <span class="tag">MISTAKE ANALYSIS</span></h3>
@@ -885,10 +840,6 @@ function fmtINR(n) {
 function colorOf(n) {
   if (!n) return "#8ba1c2";
   return n >= 0 ? "#10b981" : "#ef4444";
-}
-
-function sumCol(rows, key) {
-  return rows.reduce((a, r) => a + (r[key] || 0), 0);
 }
 
 function fmtDate(iso) {
