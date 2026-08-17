@@ -266,7 +266,9 @@ function evaluateCloseExits(pos, bar, candles) {
     const hist = (Array.isArray(candles) ? candles : []).filter(c =>
       c && typeof c.time === "number" && typeof bar.time === "number" &&
       c.time < bar.time && _day(c.time) === barDay);
-    const win = hist.slice(-(n - 1)).concat([bar]);
+    // n === 1 means "this candle only". Guarded because slice(-0) is slice(0), i.e.
+    // the WHOLE session — which would silently make the tightest setting the loosest.
+    const win = (n > 1 ? hist.slice(-(n - 1)) : []).concat([bar]);
 
     let ext = pos.side === "CE" ? Infinity : -Infinity;
     for (const c of win) {
