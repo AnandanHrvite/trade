@@ -734,7 +734,9 @@ async function importCsv(input, broker){
   if (files.length === 0) return;
   // Sequential, not Promise.all — the server does read-modify-write on one
   // JSON file per request, so parallel imports would race and drop rows.
-  let totalImported = 0, totalUpdated = 0, lastError = null, cancelled = false;
+  // Each file's outcome is recorded independently, then summarized once at
+  // the end — no accumulated flags to get the combinations of wrong.
+  const results = []; // { file, imported, updated, error, cancelled }
   for (const file of files) {
     const text = await file.text();
     try {
@@ -744,27 +746,35 @@ async function importCsv(input, broker){
         body: JSON.stringify({ csv: text, filename: file.name, broker }),
       });
       // secretFetch returns null only when the user cancels the API-secret
-      // prompt — stop asking for remaining files, but still report whatever
-      // already succeeded instead of silently dropping it.
-      if (!r) { cancelled = true; break; }
+      // prompt — stop asking for remaining files, but keep whatever earlier
+      // files already reported instead of discarding it.
+      if (!r) { results.push({ file: file.name, cancelled: true }); break; }
       const j = await r.json();
-      if (!j.success) { lastError = (file.name + ': ' + (j.error || 'Import failed')); continue; }
-      totalImported += j.imported;
-      totalUpdated += j.updated;
-    } catch (err) { lastError = (file.name + ': Network error: ' + err.message); }
+      if (!j.success) results.push({ file: file.name, error: j.error || 'Import failed' });
+      else results.push({ file: file.name, imported: j.imported, updated: j.updated });
+    } catch (err) {
+      results.push({ file: file.name, error: 'Network error: ' + err.message });
+    }
   }
-  if (cancelled && !lastError && totalImported === 0 && totalUpdated === 0) {
-    // Nothing to report — user cancelled before any file went through, and
-    // no earlier file in the batch had failed either.
-  } else if (lastError && totalImported === 0 && totalUpdated === 0) {
-    toast(lastError + (cancelled ? ' (import stopped — API secret prompt cancelled)' : ''), 'error');
-  } else {
-    let msg = 'Imported ' + totalImported + ' new fill(s), ' + totalUpdated + ' updated.';
-    if (cancelled) msg += ' (stopped — API secret prompt cancelled)';
-    if (lastError) msg += ' (' + lastError + ')';
-    toast(msg, (lastError || cancelled) ? 'error' : undefined);
-    setTimeout(() => location.reload(), 800);
+
+  const totalImported = results.reduce((a, r) => a + (r.imported || 0), 0);
+  const totalUpdated = results.reduce((a, r) => a + (r.updated || 0), 0);
+  const errors = results.filter((r) => r.error).map((r) => r.file + ': ' + r.error);
+  const wasCancelled = results.some((r) => r.cancelled);
+  const didAnything = totalImported > 0 || totalUpdated > 0;
+
+  if (!didAnything && errors.length === 0) {
+    // Only reachable when the batch was cancelled before any file's request
+    // completed — nothing happened yet, nothing to say.
+    input.value = '';
+    return;
   }
+
+  let msg = didAnything ? ('Imported ' + totalImported + ' new fill(s), ' + totalUpdated + ' updated.') : 'Import failed.';
+  if (errors.length > 0) msg += ' (' + errors.join('; ') + ')';
+  if (wasCancelled) msg += ' (stopped — API secret prompt cancelled)';
+  toast(msg, (errors.length > 0 || wasCancelled) ? 'error' : undefined);
+  setTimeout(() => location.reload(), 800);
   input.value = '';
 }
 
