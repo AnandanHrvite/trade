@@ -87,6 +87,13 @@ function classifySegment(row) {
 // by looking for one containing "Name" + "Side" (rather than assuming a
 // fixed row count, since Fyers has changed the metadata block before) and
 // map its columns onto the same internal row shape Kite rows produce.
+// NOTE: deliberately NOT mapping "OMS order ID" -> trade_id. Unlike Kite's
+// trade_id (unique per fill), Fyers's OMS order ID is shared across multiple
+// fill legs of the same order (e.g. a large order split into two legs by
+// exchange freeze-quantity rules) — using it as the dedup key would collapse
+// distinct fills into one and silently drop real trades. Leaving trade_id
+// unset makes dedupKey() fall back to its composite key instead, which
+// includes qty/price/executedAt and so keys each leg separately.
 const FYERS_HEADER_MAP = {
   name: "symbol",
   "date_&_time": "trade_date",
@@ -94,7 +101,6 @@ const FYERS_HEADER_MAP = {
   qty: "quantity",
   traded_price: "price",
   "exchange_order_id": "order_id",
-  "oms_order_id": "trade_id",
 };
 
 function findHeaderRowIndex(lines) {
@@ -216,12 +222,28 @@ function importCsv(csvText, sourceFile = "upload.csv", broker = "kite") {
   }
 
   const store = loadStore();
-  const indexByKey = new Map(store.fills.map((f, i) => [dedupKey(f), i]));
+  // Build the existing-fill lookup with the SAME seq-per-base-key counting
+  // the import loop below uses, walking store.fills in array (= original
+  // import) order — otherwise a fill that was stored under `${base}_1`
+  // (a same-priced split-leg duplicate) has no way to be found again on
+  // re-import, and would append as a fresh duplicate instead of updating.
+  const indexByKey = new Map();
+  const existingSeqByBaseKey = new Map();
+  store.fills.forEach((f, i) => {
+    const baseKey = dedupKey(f);
+    const seq = existingSeqByBaseKey.get(baseKey) || 0;
+    existingSeqByBaseKey.set(baseKey, seq + 1);
+    indexByKey.set(dedupKey(f, seq), i);
+  });
 
   let imported = 0, updated = 0;
+  const seqByBaseKey = new Map(); // occurrence count within THIS import, per base key
   for (const row of rows) {
     const fill = normalizeCsvRow(row, sourceFile, broker);
-    const key = dedupKey(fill);
+    const baseKey = dedupKey(fill);
+    const seq = seqByBaseKey.get(baseKey) || 0;
+    seqByBaseKey.set(baseKey, seq + 1);
+    const key = dedupKey(fill, seq);
     const existingIdx = indexByKey.get(key);
     if (existingIdx !== undefined) {
       store.fills[existingIdx] = fill;
@@ -238,10 +260,18 @@ function importCsv(csvText, sourceFile = "upload.csv", broker = "kite") {
   return { imported, updated, total: store.fills.length };
 }
 
-function dedupKey(fill) {
+// `seq` disambiguates rows that are otherwise byte-identical (same symbol/
+// side/qty/price/timestamp/orderId) — e.g. Fyers splits one order into two
+// same-priced legs when exchange freeze-quantity rules apply, and the
+// tradebook export carries no per-fill ID to tell them apart. Passing the
+// occurrence-count-so-far (not a random suffix) keeps the key stable across
+// re-imports of the identical file, so re-import still updates in place
+// instead of appending a fresh duplicate each time.
+function dedupKey(fill, seq = 0) {
   const b = fill.broker || "kite";
   if (fill.tradeId) return `${b}_tid_${fill.tradeId}`;
-  return `${b}_k_${fill.symbol}_${fill.side}_${fill.qty}_${fill.price}_${fill.executedAt}`;
+  const base = `${b}_k_${fill.symbol}_${fill.side}_${fill.qty}_${fill.price}_${fill.executedAt}_${fill.orderId || ""}`;
+  return seq > 0 ? `${base}_${seq}` : base;
 }
 
 // ── Kite live sync (today's fills, going forward only) ─────────────────────
