@@ -234,18 +234,18 @@ function buildRoundTrips(fills) {
   // Grouped by [broker, symbol] pairs, not a joined string key — a CSV-imported
   // symbol containing the literal join separator would otherwise split back
   // into the wrong pieces and silently corrupt the displayed symbol name.
-  const byKey = new Map();
+  const byBroker = new Map();
   for (const f of fills) {
     if (!f.tradeDate || !f.symbol) continue;
     const broker = f.broker || "kite";
-    if (!byKey.has(broker)) byKey.set(broker, new Map());
-    const bySymbol = byKey.get(broker);
+    if (!byBroker.has(broker)) byBroker.set(broker, new Map());
+    const bySymbol = byBroker.get(broker);
     if (!bySymbol.has(f.symbol)) bySymbol.set(f.symbol, []);
     bySymbol.get(f.symbol).push(f);
   }
 
   const trips = [];
-  for (const [broker, bySymbol] of byKey.entries()) {
+  for (const [broker, bySymbol] of byBroker.entries()) {
     for (const [symbol, list] of bySymbol.entries()) {
       list.sort((a, b) => new Date(a.executedAt || a.tradeDate) - new Date(b.executedAt || b.tradeDate));
       const longQueue = [];  // open buy lots (for long trips, closed by sells)
