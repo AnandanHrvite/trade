@@ -76,22 +76,84 @@ function classifySegment(row) {
   return "equity";
 }
 
-// ── CSV import (Kite Console tradebook export) ──────────────────────────────
-// Columns per Kite Console export: symbol, isin, trade_date, exchange, segment,
+// ── CSV import (Kite Console / Fyers tradebook export) ──────────────────────
+// Kite Console columns: symbol, isin, trade_date, exchange, segment,
 // series, trade_type, auction, quantity, price, trade_id, order_id, order_execution_time
+//
+// Fyers "Tradebook report" export is a different shape: 6 metadata rows
+// ("Report Title", "Date Range", ...) then a blank line, THEN the real
+// header: Name, Date & time, Side, Product type, Qty, Traded price, Total
+// value, Segment, Exchange order ID, OMS order ID. We find that header row
+// by looking for one containing "Name" + "Side" (rather than assuming a
+// fixed row count, since Fyers has changed the metadata block before) and
+// map its columns onto the same internal row shape Kite rows produce.
+const FYERS_HEADER_MAP = {
+  name: "symbol",
+  "date_&_time": "trade_date",
+  side: "trade_type",
+  qty: "quantity",
+  traded_price: "price",
+  "exchange_order_id": "order_id",
+  "oms_order_id": "trade_id",
+};
+
+function findHeaderRowIndex(lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const cells = splitCsvLine(lines[i]).map((c) => c.trim().toLowerCase());
+    if (cells.includes("symbol") && cells.includes("trade_type")) return i;
+    if (cells.includes("name") && cells.includes("side")) return i;
+  }
+  return 0;
+}
+
 function parseCsv(text) {
   const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
   if (lines.length < 2) return [];
-  const headers = splitCsvLine(lines[0]).map((h) => h.trim().toLowerCase().replace(/\s+/g, "_"));
+  const headerIdx = findHeaderRowIndex(lines);
+  const rawHeaders = splitCsvLine(lines[headerIdx]).map((h) => h.trim().toLowerCase().replace(/\s+/g, "_"));
+  const isFyers = rawHeaders.includes("name") && rawHeaders.includes("side");
+  const headers = isFyers ? rawHeaders.map((h) => FYERS_HEADER_MAP[h] || h) : rawHeaders;
   const rows = [];
-  for (let i = 1; i < lines.length; i++) {
+  for (let i = headerIdx + 1; i < lines.length; i++) {
     const cells = splitCsvLine(lines[i]);
     if (cells.length < 2) continue;
     const row = {};
     headers.forEach((h, idx) => { row[h] = (cells[idx] || "").trim(); });
+    if (isFyers) normalizeFyersRow(row);
     rows.push(row);
   }
   return rows;
+}
+
+// Fyers-specific field cleanup so the row matches Kite's conventions before
+// it hits normalizeCsvRow(): "20 Mar 2026, 02:06:41 PM" trade_date, a
+// "16,165.50"-style thousands separator on price/qty, and order IDs wrapped
+// in an Excel-safe ="..." formula string.
+function normalizeFyersRow(row) {
+  if (row.quantity) row.quantity = row.quantity.replace(/,/g, "");
+  if (row.price) row.price = row.price.replace(/,/g, "");
+  if (row.order_id) row.order_id = row.order_id.replace(/^="?|"?$/g, "");
+  if (row.trade_id) row.trade_id = row.trade_id.replace(/^="?|"?$/g, "");
+  // "20 Mar 2026, 02:06:41 PM" -> ISO "2026-03-20T14:06:41" so downstream
+  // FIFO sort (new Date(...)) and .slice(0, 10) date-prefix reads (which
+  // assume Kite's ISO-ish trade_date) both work the same as for Kite rows.
+  if (row.trade_date) {
+    const m = row.trade_date.match(/^(\d{1,2}) (\w{3}) (\d{4}),\s*(\d{1,2}):(\d{2}):(\d{2})\s*(AM|PM)$/i);
+    if (m) {
+      const [, d, mon, y, hh, mm, ss, ap] = m;
+      const months = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+      let h = Number(hh) % 12;
+      if (ap.toUpperCase() === "PM") h += 12;
+      const dt = new Date(Number(y), months[mon.toLowerCase()], Number(d), h, Number(mm), Number(ss));
+      if (!isNaN(dt)) row.trade_date = dt.toISOString().slice(0, 19);
+    }
+  }
+  // Fyers tradebook has no exchange column; "Segment" is "Derivatives" or
+  // "Capital Market" — map onto the exchange/segment pair classifySegment()
+  // already understands from Kite (NFO+FO vs NSE+EQ).
+  const fyersSeg = String(row.segment || "").toUpperCase();
+  if (fyersSeg.includes("DERIVATIVE")) { row.exchange = "NFO"; row.segment = "FO"; }
+  else { row.exchange = "NSE"; row.segment = "EQ"; }
 }
 
 // Minimal CSV line splitter handling quoted fields with embedded commas.
