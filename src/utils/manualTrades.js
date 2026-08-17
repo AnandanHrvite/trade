@@ -139,7 +139,6 @@ function normalizeFyersRow(row) {
   if (row.quantity) row.quantity = row.quantity.replace(/,/g, "");
   if (row.price) row.price = row.price.replace(/,/g, "");
   if (row.order_id) row.order_id = row.order_id.replace(/^="?|"?$/g, "");
-  if (row.trade_id) row.trade_id = row.trade_id.replace(/^="?|"?$/g, "");
   // "20 Mar 2026, 02:06:41 PM" -> ISO "2026-03-20T14:06:41" so downstream
   // FIFO sort (new Date(...)) and .slice(0, 10) date-prefix reads (which
   // assume Kite's ISO-ish trade_date) both work the same as for Kite rows.
