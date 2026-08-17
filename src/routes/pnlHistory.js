@@ -734,7 +734,7 @@ async function importCsv(input, broker){
   if (files.length === 0) return;
   // Sequential, not Promise.all — the server does read-modify-write on one
   // JSON file per request, so parallel imports would race and drop rows.
-  let totalImported = 0, totalUpdated = 0, lastError = null;
+  let totalImported = 0, totalUpdated = 0, lastError = null, cancelled = false;
   for (const file of files) {
     const text = await file.text();
     try {
@@ -743,19 +743,25 @@ async function importCsv(input, broker){
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ csv: text, filename: file.name, broker }),
       });
-      if (!r) return;
+      // secretFetch returns null only when the user cancels the API-secret
+      // prompt — stop asking for remaining files, but still report whatever
+      // already succeeded instead of silently dropping it.
+      if (!r) { cancelled = true; break; }
       const j = await r.json();
       if (!j.success) { lastError = (file.name + ': ' + (j.error || 'Import failed')); continue; }
       totalImported += j.imported;
       totalUpdated += j.updated;
     } catch (err) { lastError = (file.name + ': Network error: ' + err.message); }
   }
-  if (lastError && totalImported === 0 && totalUpdated === 0) {
+  if (cancelled && totalImported === 0 && totalUpdated === 0) {
+    // Nothing to report — user cancelled before any file went through.
+  } else if (lastError && totalImported === 0 && totalUpdated === 0) {
     toast(lastError, 'error');
   } else {
     let msg = 'Imported ' + totalImported + ' new fill(s), ' + totalUpdated + ' updated.';
+    if (cancelled) msg += ' (stopped — API secret prompt cancelled)';
     if (lastError) msg += ' (' + lastError + ')';
-    toast(msg, lastError ? 'error' : undefined);
+    toast(msg, (lastError || cancelled) ? 'error' : undefined);
     setTimeout(() => location.reload(), 800);
   }
   input.value = '';
