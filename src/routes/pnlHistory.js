@@ -70,13 +70,13 @@ function saveBaselines(baselines) {
   fs.writeFileSync(DATA_FILE, JSON.stringify({ baselines }, null, 2), "utf-8");
 }
 
-// JSON.stringify does not escape "</script" — a CSV-imported symbol containing
-// that literal sequence would close the embedding <script> tag early and let
-// the rest of its content execute as markup/script. manualRoundTrips embeds
-// user-uploaded CSV content (symbol strings), so it's the one JSON blob on
-// this page that isn't purely server-authored — escape the slash so the
-// sequence can never match a real tag boundary, same value, same JSON.parse
-// result, just not renderable as a tag close.
+// JSON.stringify does not escape "</script" — a symbol from an imported CSV,
+// or free-text baseline notes, containing that literal sequence would close
+// the embedding <script> tag early and let the rest of its content execute as
+// markup/script. Used for every JSON blob embedded into this page's <script>
+// block that carries user-entered text (MANUAL_TRIPS, BASELINES) — escapes the
+// slash so the sequence can never match a real tag boundary; same value, same
+// JSON.parse result, just not renderable as a tag close.
 function jsonForScript(obj) {
   return JSON.stringify(obj).replace(/<\/(script)/gi, "<\\/$1");
 }
