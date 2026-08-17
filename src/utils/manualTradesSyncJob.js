@@ -10,7 +10,7 @@
  * Fires at 15:35 IST — after the 15:32 consolidated EOD report and comfortably
  * after the 15:30 square-off window, so the day's fills are final.
  *
- * Gated by MANUAL_TRADES_AUTO_SYNC_ENABLED (Settings → Menu Visibility). When
+ * Gated by MANUAL_TRADES_AUTO_SYNC_ENABLED (Settings → Server & Broker). When
  * off, the user still has the "Sync Now" button and CSV import on /pnl-history.
  *
  * Restart-safe / catch-up: idempotent per day via a persisted "last synced

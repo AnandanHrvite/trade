@@ -515,7 +515,7 @@ router.get("/", (req, res) => {
           <span class="spacer"></span>
           <span class="btn file-btn">📄 Import Tradebook CSV<input type="file" accept=".csv" onchange="importCsv(this,'fyers')"/></span>
         </div>
-        <div class="note" style="margin-top:-6px;">Fyers has no live-sync route wired here (the user's manual trading happens on Kite) — CSV import — import support can be added the same way as Kite's if needed. No live sync for Fyers manual trades.</div>
+        <div class="note" style="margin-top:-6px;">Fyers has no live-sync route wired here (the user's manual trading happens on Kite) — import a tradebook CSV to see analytics. Live sync can be added the same way as Kite's if needed.</div>
         <div id="analytics-fyers"></div>
       </div>
     </div>
@@ -577,6 +577,11 @@ function fmtR(n){
   return sign + '₹' + Math.abs(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 function colR(n){ return !n ? '#8ba1c2' : (n >= 0 ? '#10b981' : '#ef4444'); }
+// Symbols/segments come from user-uploaded CSV content and are rendered via
+// innerHTML below — escape before interpolating, same as any other untrusted string.
+function escH(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
 
 function filteredTrips(broker){
   const seg = SEG_STATE[broker];
@@ -638,7 +643,7 @@ function findMistakes(trips){
     const big = losses.filter(t => Math.abs(t.pnl) > avgLoss * 3);
     if (big.length > 0) {
       mistakes.push({ title: '⚠ Oversized losers', warn: false,
-        detail: big.length + ' trade(s) lost more than 3x your average loss (avg ' + fmtR(-avgLoss) + '). Biggest: ' + fmtR(Math.min(...big.map(t => t.pnl))) + ' on ' + big.sort((a,b)=>a.pnl-b.pnl)[0].symbol + '. No stop-loss discipline, or a stop that was moved.' });
+        detail: big.length + ' trade(s) lost more than 3x your average loss (avg ' + fmtR(-avgLoss) + '). Biggest: ' + fmtR(Math.min(...big.map(t => t.pnl))) + ' on ' + escH(big.sort((a,b)=>a.pnl-b.pnl)[0].symbol) + '. No stop-loss discipline, or a stop that was moved.' });
     }
   }
 
@@ -650,7 +655,7 @@ function findMistakes(trips){
     const overtradeDays = Object.entries(byDay).filter(([,c]) => c >= avgPerDay * 2 && c >= 4);
     if (overtradeDays.length > 0) {
       mistakes.push({ title: '⚠ Overtrading days', warn: true,
-        detail: overtradeDays.length + ' day(s) had 2x+ your normal trade count (avg ' + avgPerDay.toFixed(1) + '/day). Worst: ' + overtradeDays.sort((a,b)=>b[1]-a[1])[0][1] + ' trades on ' + overtradeDays.sort((a,b)=>b[1]-a[1])[0][0] + '.' });
+        detail: overtradeDays.length + ' day(s) had 2x+ your normal trade count (avg ' + avgPerDay.toFixed(1) + '/day). Worst: ' + overtradeDays.sort((a,b)=>b[1]-a[1])[0][1] + ' trades on ' + escH(overtradeDays.sort((a,b)=>b[1]-a[1])[0][0]) + '.' });
     }
   }
 
@@ -700,10 +705,10 @@ function renderBroker(broker){
   const worst = [...trips].sort((a,b) => a.pnl - b.pnl).slice(0, 5);
   const best = [...trips].sort((a,b) => b.pnl - a.pnl).slice(0, 5);
   html += '<h3 style="margin:14px 0 8px;">Biggest Losers</h3><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Date</th><th>Symbol</th><th>Segment</th><th class="num">Qty</th><th class="num">P&L</th></tr></thead><tbody>'
-    + worst.map(t => '<tr><td>' + t.exitDate + '</td><td>' + t.symbol + '</td><td>' + t.segment + '</td><td class="num">' + t.qty + '</td><td class="num" style="color:' + colR(t.pnl) + ';">' + fmtR(t.pnl) + '</td></tr>').join('')
+    + worst.map(t => '<tr><td>' + escH(t.exitDate) + '</td><td>' + escH(t.symbol) + '</td><td>' + escH(t.segment) + '</td><td class="num">' + escH(t.qty) + '</td><td class="num" style="color:' + colR(t.pnl) + ';">' + fmtR(t.pnl) + '</td></tr>').join('')
     + '</tbody></table></div>';
   html += '<h3 style="margin:14px 0 8px;">Biggest Winners</h3><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Date</th><th>Symbol</th><th>Segment</th><th class="num">Qty</th><th class="num">P&L</th></tr></thead><tbody>'
-    + best.map(t => '<tr><td>' + t.exitDate + '</td><td>' + t.symbol + '</td><td>' + t.segment + '</td><td class="num">' + t.qty + '</td><td class="num" style="color:' + colR(t.pnl) + ';">' + fmtR(t.pnl) + '</td></tr>').join('')
+    + best.map(t => '<tr><td>' + escH(t.exitDate) + '</td><td>' + escH(t.symbol) + '</td><td>' + escH(t.segment) + '</td><td class="num">' + escH(t.qty) + '</td><td class="num" style="color:' + colR(t.pnl) + ';">' + fmtR(t.pnl) + '</td></tr>').join('')
     + '</tbody></table></div>';
 
   el.innerHTML = html;

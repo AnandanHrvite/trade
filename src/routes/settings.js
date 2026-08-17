@@ -644,6 +644,8 @@ const SETTINGS_SCHEMA = [
       { key: "TOKEN_SYNC_LIVE_LOGIN_SECRET", label: "Token Sync: LIVE Login Password",   type: "password", effect: EFFECT.INSTANT, desc: "Login password of the LIVE server (blank = use this machine's Login Password)." },
       { key: "TOKEN_SYNC_LIVE_API_SECRET",   label: "Token Sync: LIVE App Secret",       type: "password", effect: EFFECT.INSTANT, desc: "App secret of the LIVE server (blank = use this machine's App Secret)." },
       { key: "TOKEN_SYNC_ALLOW_SELF_SIGNED", label: "Token Sync: Allow Self-Signed Cert", type: "toggle",  effect: EFFECT.INSTANT, desc: "LIVE serves its own certificate, so keep this on unless a real certificate is installed there.", default: "true" },
+
+      { key: "MANUAL_TRADES_AUTO_SYNC_ENABLED", label: "Manual Trades Auto-Sync (Kite)", type: "toggle", effect: EFFECT.SESSION, desc: "Daily 15:35 IST auto-pull of today's manual Kite fills into P&L History → Manual Trading Analytics. Kite has no historical-trade API, so this only ever captures today going forward — past trades still need a one-time Console CSV import.", default: "true", subheader: "Manual Trades" },
     ],
   },
   {
@@ -772,7 +774,6 @@ const SETTINGS_SCHEMA = [
       { key: "UI_SHOW_ADVISOR",        label: "Show Settings Advisor",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Settings Advisor menu.", default: "true" },
       { key: "UI_SHOW_OI_MONITOR",     label: "Show OI Monitor",           type: "toggle", effect: EFFECT.INSTANT, desc: "Show the OI Monitor menu — read-only per-strike Open Interest ladder, walls and PCR. Research page: places no orders.", default: "false" },
       { key: "UI_SHOW_CONSOLIDATION_REPORT", label: "Show Consolidation Report button", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Consolidation Report button.", default: "true" },
-      { key: "MANUAL_TRADES_AUTO_SYNC_ENABLED", label: "Manual Trades Auto-Sync (Kite)", type: "toggle", effect: EFFECT.SESSION, desc: "Daily 15:35 IST auto-pull of today's manual Kite fills into P&L History → Manual Trading Analytics. Kite has no historical-trade API, so this only ever captures today going forward — past trades still need a one-time Console CSV import.", default: "true" },
       { key: "EMA_RSI_ST_MODE_ENABLED",     label: "EMA_RSI_ST Mode",                type: "toggle", effect: EFFECT.INSTANT, desc: "Show the EMA_RSI_ST menu and settings.", default: "true", subheader: "Strategy master toggles" },
       { key: "BB_RSI_MODE_ENABLED",     label: "BB_RSI Mode",                type: "toggle", effect: EFFECT.INSTANT, desc: "Show the BB_RSI menu and settings.", default: "true" },
       { key: "PA_MODE_ENABLED",        label: "Price Action Mode",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Price Action menu and settings.", default: "true" },
