@@ -370,6 +370,18 @@ async function getFunds() {
   } catch (err) { console.error("Zerodha getFunds error:", err.message); return null; }
 }
 
+// Kite's /trades — today's executed fills only (order book is transient,
+// lives one day server-side). Used to auto-sync manual trades going forward;
+// past history has no API and must come from a Console tradebook CSV export.
+async function getTrades() {
+  if (!isAuthenticated()) return [];
+  try {
+    return await guardedCall("zerodha", () =>
+      withRetry(() => getKite().getTrades(), { attempts: safetyConfig().retryReadAttempts, baseMs: safetyConfig().retryBaseMs, label: "zerodha.getTrades" }),
+    );
+  } catch (err) { console.error("Zerodha getTrades error:", err.message); return []; }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 module.exports = {
@@ -377,6 +389,6 @@ module.exports = {
   isAuthenticated, logout, clearZerodhaToken,
   convertSymbol, placeMarketOrder,
   placeSLMOrder, modifySLMOrder, cancelOrder,
-  getOrders, getPositions, getFunds,
+  getOrders, getPositions, getFunds, getTrades,
   breakerStatus,
 };

@@ -1,7 +1,8 @@
 /**
  * PNL HISTORY — /pnl-history
  * ─────────────────────────────────────────────────────────────────────────────
- * Consolidated realised P&L across Kite (Zerodha) + Fyers.
+ * Consolidated realised P&L across Kite (Zerodha) + Fyers, plus a manual-trade
+ * mistake-analysis panel for the user's own (non-bot) trading on each broker.
  *
  *   past pnl         = one-time user entry per broker (baseline, not FY-split)
  *                      stored in ~/trading-data/historical_pnl.json
@@ -9,9 +10,20 @@
  *                      (EMA_RSI_ST live → Kite; bb_rsi live + PA live → Fyers),
  *                      grouped by Indian financial year (Apr–Mar)
  *   grand total      = past baseline + live bot pnl, per broker and overall
+ *   manual trades    = the user's own hand-placed trades (equity + F&O), fed by
+ *                      ~/trading-data/manual_trades.json (see utils/manualTrades.js).
+ *                      Kite has no historical order/trade API — /orders and
+ *                      /trades are today-only ("the order history ... only
+ *                      lives for a day in the system", per Kite Connect docs,
+ *                      and Kite MCP has the identical limit) — so past manual
+ *                      trades come from a one-time Kite Console tradebook CSV
+ *                      import; going forward, a daily auto-sync (or the Sync
+ *                      Now button) pulls today's fills automatically.
+ *                      Fyers manual trades: import-only for now (no sync route
+ *                      wired here — the user's manual trading is on Kite).
  *
  * User sets the past baseline once per broker; it never changes unless edited.
- * Everything else updates automatically as live trades close.
+ * Everything else updates automatically as live trades close / manual trades sync.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -21,6 +33,7 @@ const fs = require("fs");
 const path = require("path");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS, tableEnhancerCSS, tableEnhancerJS } = require("../utils/sharedNav");
 const { resolveTheme } = require("../utils/theme");
+const manualTrades = require("../utils/manualTrades");
 
 const _HOME = require("os").homedir();
 const DATA_DIR = path.join(_HOME, "trading-data");
@@ -135,11 +148,60 @@ router.get("/data", (req, res) => {
   });
 });
 
+// ── Manual trades (Kite/Fyers hand-placed trading — mistake analysis) ──────
+
+// CSV text is posted as a JSON string body (not multipart) — the client reads
+// the file locally via FileReader, no new upload middleware needed.
+router.post("/manual/import", (req, res) => {
+  const { csv, filename, broker } = req.body || {};
+  if (!csv || typeof csv !== "string") {
+    return res.status(400).json({ success: false, error: "No CSV content received." });
+  }
+  if (!["kite", "fyers"].includes(broker)) {
+    return res.status(400).json({ success: false, error: "Invalid broker" });
+  }
+  try {
+    const result = manualTrades.importCsv(csv, (filename || "upload.csv").toString().slice(0, 120), broker);
+    if (result.error) return res.status(400).json({ success: false, error: result.error });
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Manual "pull today's fills now" — same code path the daily auto-sync job uses.
+router.post("/manual/sync", async (req, res) => {
+  try {
+    const result = await manualTrades.syncFromKite();
+    if (result.error) return res.status(400).json({ success: false, error: result.error });
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.get("/manual/data", (req, res) => {
+  try {
+    const store = manualTrades.loadStore();
+    const roundTrips = manualTrades.buildRoundTrips(store.fills);
+    res.json({ success: true, meta: store.meta, fillCount: store.fills.length, roundTrips });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // ── Dashboard ────────────────────────────────────────────────────────────────
 
 router.get("/", (req, res) => {
   const baselines = loadBaselines();
   const liveTrades = loadLiveTrades();
+  const manualStore = manualTrades.loadStore();
+  const manualRoundTrips = manualTrades.buildRoundTrips(manualStore.fills);
+  // This page's manual-trading UI only surfaces Kite (the user's own manual
+  // trading happens on Zerodha) — Fyers manual entries, if any get imported
+  // later, are still stored and included in the JSON blob for the client.
+  const zerodhaBroker = require("../services/zerodhaBroker");
+  const kiteConnected = zerodhaBroker.isAuthenticated();
 
   // Group live trades by FY + broker + mode
   const byFy = new Map(); // fy -> { fy, kite_swing, fyers_scalp, fyers_pa, kite_total, fyers_total, total }
@@ -239,6 +301,44 @@ router.get("/", (req, res) => {
 
     .empty{text-align:center;padding:30px 20px;color:var(--muted-1,#8ba1c2);font-size:0.75rem;}
     .note{font-size:0.65rem;color:var(--muted-1,#8ba1c2);margin-top:10px;line-height:1.6;}
+
+    /* ── Broker tabs (manual-trade analytics) ── */
+    .broker-tabs{display:flex;gap:6px;margin-bottom:14px;border-bottom:0.5px solid #0e1e36;}
+    .broker-tab{background:none;border:none;color:var(--muted-1,#8ba1c2);padding:9px 16px;font-size:0.75rem;font-weight:600;font-family:inherit;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:color 0.15s,border-color 0.15s;}
+    .broker-tab:hover{color:#c8d8f0;}
+    .broker-tab.active{color:#3b82f6;border-bottom-color:#3b82f6;}
+    .broker-panel{display:none;}
+    .broker-panel.active{display:block;}
+
+    .toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:14px;}
+    .toolbar select,.toolbar input[type=file]{background:#04090f;border:0.5px solid #0e1e36;color:#e0eaf8;padding:6px 10px;border-radius:6px;font-family:'IBM Plex Mono',monospace;font-size:0.7rem;}
+    .toolbar .spacer{flex:1;}
+    .file-btn{position:relative;overflow:hidden;display:inline-block;}
+    .file-btn input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;}
+
+    .seg-toggle{display:flex;background:#04090f;border:0.5px solid #0e1e36;border-radius:6px;overflow:hidden;}
+    .seg-toggle button{background:none;border:none;color:var(--muted-1,#8ba1c2);padding:6px 12px;font-size:0.68rem;font-weight:600;font-family:inherit;cursor:pointer;}
+    .seg-toggle button.active{background:rgba(59,130,246,0.15);color:#3b82f6;}
+
+    .metric-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:14px;}
+    @media(max-width:1100px){.metric-grid{grid-template-columns:repeat(3,1fr);}}
+    @media(max-width:560px){.metric-grid{grid-template-columns:repeat(2,1fr);}}
+    .mc{background:#04090f;border:0.5px solid #0e1e36;border-radius:8px;padding:10px 12px;}
+    .mc-label{font-size:0.52rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-2,#6d85a8);margin-bottom:4px;font-family:'IBM Plex Mono',monospace;}
+    .mc-val{font-size:1rem;font-weight:700;font-family:'IBM Plex Mono',monospace;color:#e0eaf8;}
+
+    .mistake-card{background:#04090f;border:0.5px solid #0e1e36;border-left:3px solid #ef4444;border-radius:8px;padding:12px 14px;margin-bottom:8px;}
+    .mistake-card.warn{border-left-color:#f59e0b;}
+    .mistake-title{font-size:0.78rem;font-weight:700;color:#e0eaf8;margin-bottom:3px;}
+    .mistake-detail{font-size:0.68rem;color:var(--muted-1,#8ba1c2);line-height:1.5;}
+
+    :root[data-theme="light"] .broker-tabs{border-bottom-color:#e0e4ea!important;}
+    :root[data-theme="light"] .broker-tab{color:#4b5769!important;}
+    :root[data-theme="light"] .broker-tab.active{color:#2563eb!important;border-bottom-color:#2563eb!important;}
+    :root[data-theme="light"] .toolbar select,:root[data-theme="light"] .seg-toggle,:root[data-theme="light"] .mc{background:#f8fafc!important;border-color:#e0e4ea!important;}
+    :root[data-theme="light"] .mc-val{color:#1e293b!important;}
+    :root[data-theme="light"] .mistake-card{background:#f8fafc!important;border-color:#e0e4ea!important;border-left-color:#ef4444!important;}
+    :root[data-theme="light"] .mistake-title{color:#1e293b!important;}
 
     /* Modal (for edit baseline) */
     .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.65);display:none;align-items:center;justify-content:center;z-index:1000;}
@@ -372,6 +472,54 @@ router.get("/", (req, res) => {
       <div class="note">Source files: <code>live_trades.json</code> (EMA_RSI_ST/Kite), <code>bb_rsi_live_trades.json</code> (BB_RSI/Fyers), <code>pa_live_trades.json</code> (PA/Fyers). India FY = April–March.</div>
     </div>
 
+    <!-- Manual trading analytics — Kite / Fyers tabs -->
+    <div class="panel">
+      <h3>Manual Trading Analytics <span class="tag">MISTAKE ANALYSIS</span></h3>
+      <div class="broker-tabs">
+        <button class="broker-tab active" onclick="switchBrokerTab('kite')">Kite (Zerodha)</button>
+        <button class="broker-tab" onclick="switchBrokerTab('fyers')">Fyers</button>
+      </div>
+
+      <div id="tab-kite" class="broker-panel active">
+        <div class="toolbar">
+          <span class="seg-toggle" id="segToggle-kite">
+            <button class="active" data-seg="all" onclick="setSeg('kite','all')">All</button>
+            <button data-seg="equity" onclick="setSeg('kite','equity')">Equity</button>
+            <button data-seg="options" onclick="setSeg('kite','options')">Options</button>
+            <button data-seg="futures" onclick="setSeg('kite','futures')">Futures</button>
+          </span>
+          <select id="yearSel-kite" onchange="renderBroker('kite')"><option value="all">All Years</option></select>
+          <select id="monthSel-kite" onchange="renderBroker('kite')"><option value="all">All Months</option></select>
+          <span class="spacer"></span>
+          <span class="btn file-btn">📄 Import Tradebook CSV<input type="file" accept=".csv" onchange="importCsv(this,'kite')"/></span>
+          <button class="btn primary" onclick="syncNow()">${kiteConnected ? '⟳ Sync Now' : '⚠ Login to Sync'}</button>
+        </div>
+        <div class="note" id="syncNote-kite" style="margin-top:-6px;">
+          ${manualStore.meta.lastSyncedTradeDate ? 'Last synced: ' + fmtDate(manualStore.meta.lastSyncedTradeDate) : 'Never synced.'}
+          Past history has no live API — import your Kite Console → Reports → Tradebook CSV once; going forward, today's fills auto-sync daily after close (or click Sync Now).
+        </div>
+
+        <div id="analytics-kite"></div>
+      </div>
+
+      <div id="tab-fyers" class="broker-panel">
+        <div class="toolbar">
+          <span class="seg-toggle" id="segToggle-fyers">
+            <button class="active" data-seg="all" onclick="setSeg('fyers','all')">All</button>
+            <button data-seg="equity" onclick="setSeg('fyers','equity')">Equity</button>
+            <button data-seg="options" onclick="setSeg('fyers','options')">Options</button>
+            <button data-seg="futures" onclick="setSeg('fyers','futures')">Futures</button>
+          </span>
+          <select id="yearSel-fyers" onchange="renderBroker('fyers')"><option value="all">All Years</option></select>
+          <select id="monthSel-fyers" onchange="renderBroker('fyers')"><option value="all">All Months</option></select>
+          <span class="spacer"></span>
+          <span class="btn file-btn">📄 Import Tradebook CSV<input type="file" accept=".csv" onchange="importCsv(this,'fyers')"/></span>
+        </div>
+        <div class="note" style="margin-top:-6px;">Fyers has no live-sync route wired here (the user's manual trading happens on Kite) — CSV import — import support can be added the same way as Kite's if needed. No live sync for Fyers manual trades.</div>
+        <div id="analytics-fyers"></div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -395,6 +543,210 @@ router.get("/", (req, res) => {
 ${modalJS()}
 const BASELINES = ${JSON.stringify(baselines)};
 let currentBroker = null;
+
+// ── Manual trading analytics (Kite / Fyers tabs) ────────────────────────────
+const MANUAL_TRIPS = ${JSON.stringify(manualRoundTrips)};
+const SEG_STATE = { kite: 'all', fyers: 'all' };
+
+function switchBrokerTab(broker){
+  document.querySelectorAll('.broker-tab').forEach(b => b.classList.remove('active'));
+  document.querySelector('.broker-tab[onclick*="' + broker + '"]').classList.add('active');
+  document.querySelectorAll('.broker-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('tab-' + broker).classList.add('active');
+}
+
+function setSeg(broker, seg){
+  SEG_STATE[broker] = seg;
+  document.querySelectorAll('#segToggle-' + broker + ' button').forEach(b => b.classList.toggle('active', b.dataset.seg === seg));
+  renderBroker(broker);
+}
+
+function populateYearMonth(broker){
+  const trips = MANUAL_TRIPS.filter(t => t.broker === broker);
+  const years = Array.from(new Set(trips.map(t => (t.exitDate || '').slice(0,4)).filter(Boolean))).sort().reverse();
+  const yearSel = document.getElementById('yearSel-' + broker);
+  years.forEach(y => { const o = document.createElement('option'); o.value = y; o.textContent = y; yearSel.appendChild(o); });
+  const monthSel = document.getElementById('monthSel-' + broker);
+  const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  MONTHS.forEach((m,i) => { const o = document.createElement('option'); o.value = String(i+1).padStart(2,'0'); o.textContent = m; monthSel.appendChild(o); });
+}
+
+function fmtR(n){
+  if (typeof n !== 'number' || !isFinite(n)) return '—';
+  const sign = n < 0 ? '-' : '';
+  return sign + '₹' + Math.abs(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function colR(n){ return !n ? '#8ba1c2' : (n >= 0 ? '#10b981' : '#ef4444'); }
+
+function filteredTrips(broker){
+  const seg = SEG_STATE[broker];
+  const year = document.getElementById('yearSel-' + broker).value;
+  const month = document.getElementById('monthSel-' + broker).value;
+  return MANUAL_TRIPS.filter(t => {
+    if (t.broker !== broker) return false;
+    if (seg !== 'all' && t.segment !== seg) return false;
+    const d = t.exitDate || '';
+    if (year !== 'all' && d.slice(0,4) !== year) return false;
+    if (month !== 'all' && d.slice(5,7) !== month) return false;
+    return true;
+  });
+}
+
+function computeMetrics(trips){
+  const n = trips.length;
+  if (n === 0) return null;
+  const wins = trips.filter(t => t.pnl > 0);
+  const losses = trips.filter(t => t.pnl < 0);
+  const net = trips.reduce((a,t) => a + t.pnl, 0);
+  const grossWin = wins.reduce((a,t) => a + t.pnl, 0);
+  const grossLoss = Math.abs(losses.reduce((a,t) => a + t.pnl, 0));
+  const winRate = (wins.length / n) * 100;
+  const avgWin = wins.length ? grossWin / wins.length : 0;
+  const avgLoss = losses.length ? grossLoss / losses.length : 0;
+  const expectancy = net / n;
+  const profitFactor = grossLoss > 0 ? grossWin / grossLoss : (grossWin > 0 ? Infinity : 0);
+  let maxDD = 0, peak = 0, running = 0;
+  trips.forEach(t => { running += t.pnl; if (running > peak) peak = running; maxDD = Math.min(maxDD, running - peak); });
+  return { n, winRate, net, avgWin, avgLoss, expectancy, profitFactor, maxDD, wins: wins.length, losses: losses.length };
+}
+
+// "Mistakes" — pattern flags a manual trader can actually act on:
+//   1. Revenge trading: another trade in the SAME symbol within 15 min of a loss.
+//   2. Oversized losers: any single loss > 3x the average loss.
+//   3. Overtrading days: a day with 2x+ the average daily trade count.
+//   4. Cutting winners short vs riding losers: avg loss bigger than avg win despite winning >50% of trades.
+function findMistakes(trips){
+  const mistakes = [];
+  if (trips.length === 0) return mistakes;
+  const sorted = [...trips].sort((a,b) => new Date(a.exitAt) - new Date(b.exitAt));
+
+  let revengeCount = 0;
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = sorted[i-1], cur = sorted[i];
+    if (prev.pnl >= 0) continue;
+    const gapMin = (new Date(cur.entryAt) - new Date(prev.exitAt)) / 60000;
+    if (cur.symbol === prev.symbol && gapMin >= 0 && gapMin <= 15) revengeCount++;
+  }
+  if (revengeCount > 0) {
+    mistakes.push({ title: '⚠ Revenge trading detected', warn: false,
+      detail: revengeCount + ' trade(s) re-entered the same symbol within 15 minutes of a loss. Re-entering fast after a loss usually means the entry wasn\\'t re-evaluated — it was emotional.' });
+  }
+
+  const losses = trips.filter(t => t.pnl < 0);
+  if (losses.length > 0) {
+    const avgLoss = Math.abs(losses.reduce((a,t) => a + t.pnl, 0) / losses.length);
+    const big = losses.filter(t => Math.abs(t.pnl) > avgLoss * 3);
+    if (big.length > 0) {
+      mistakes.push({ title: '⚠ Oversized losers', warn: false,
+        detail: big.length + ' trade(s) lost more than 3x your average loss (avg ' + fmtR(-avgLoss) + '). Biggest: ' + fmtR(Math.min(...big.map(t => t.pnl))) + ' on ' + big.sort((a,b)=>a.pnl-b.pnl)[0].symbol + '. No stop-loss discipline, or a stop that was moved.' });
+    }
+  }
+
+  const byDay = {};
+  trips.forEach(t => { const d = t.exitDate; byDay[d] = (byDay[d] || 0) + 1; });
+  const dayCounts = Object.values(byDay);
+  if (dayCounts.length > 0) {
+    const avgPerDay = dayCounts.reduce((a,b) => a+b, 0) / dayCounts.length;
+    const overtradeDays = Object.entries(byDay).filter(([,c]) => c >= avgPerDay * 2 && c >= 4);
+    if (overtradeDays.length > 0) {
+      mistakes.push({ title: '⚠ Overtrading days', warn: true,
+        detail: overtradeDays.length + ' day(s) had 2x+ your normal trade count (avg ' + avgPerDay.toFixed(1) + '/day). Worst: ' + overtradeDays.sort((a,b)=>b[1]-a[1])[0][1] + ' trades on ' + overtradeDays.sort((a,b)=>b[1]-a[1])[0][0] + '.' });
+    }
+  }
+
+  const m = computeMetrics(trips);
+  if (m && m.wins > m.losses && m.avgLoss > m.avgWin) {
+    mistakes.push({ title: '⚠ Cutting winners short, letting losers run', warn: true,
+      detail: 'You win ' + m.winRate.toFixed(0) + '% of trades, but avg loss (' + fmtR(-m.avgLoss) + ') is bigger than avg win (' + fmtR(m.avgWin) + '). Classic "small profit, big loss" pattern — exits are the leak, not entries.' });
+  }
+
+  if (m && m.profitFactor < 1 && m.n >= 5) {
+    mistakes.push({ title: '⚠ Net losing over this period', warn: false,
+      detail: 'Profit factor ' + m.profitFactor.toFixed(2) + ' (need >1.0 to be profitable). Gross loss exceeds gross win across ' + m.n + ' trades.' });
+  }
+
+  return mistakes;
+}
+
+function renderBroker(broker){
+  const trips = filteredTrips(broker);
+  const el = document.getElementById('analytics-' + broker);
+  if (trips.length === 0) {
+    el.innerHTML = '<div class="empty">No manual trades for this filter yet.' + (broker === 'kite' ? ' Import your Kite Console tradebook CSV or click Sync Now above.' : ' Import a Fyers tradebook CSV above.') + '</div>';
+    return;
+  }
+  const m = computeMetrics(trips);
+  const mistakes = findMistakes(trips);
+
+  let html = '<div class="metric-grid">'
+    + metricCard('Net P&L', fmtR(m.net), colR(m.net))
+    + metricCard('Win Rate', m.winRate.toFixed(1) + '%', '#e0eaf8')
+    + metricCard('Trades', String(m.n), '#e0eaf8')
+    + metricCard('Avg Win', fmtR(m.avgWin), '#10b981')
+    + metricCard('Avg Loss', fmtR(-m.avgLoss), '#ef4444')
+    + metricCard('Profit Factor', isFinite(m.profitFactor) ? m.profitFactor.toFixed(2) : '∞', colR(m.profitFactor - 1))
+    + metricCard('Expectancy/Trade', fmtR(m.expectancy), colR(m.expectancy))
+    + metricCard('Max Drawdown', fmtR(m.maxDD), '#ef4444')
+    + metricCard('Wins / Losses', m.wins + ' / ' + m.losses, '#e0eaf8')
+    + '</div>';
+
+  html += '<h3 style="margin:14px 0 8px;">Mistakes Found</h3>';
+  if (mistakes.length === 0) {
+    html += '<div class="empty">No obvious mistake patterns in this filter — nice.</div>';
+  } else {
+    html += mistakes.map(mk => '<div class="mistake-card' + (mk.warn ? ' warn' : '') + '"><div class="mistake-title">' + mk.title + '</div><div class="mistake-detail">' + mk.detail + '</div></div>').join('');
+  }
+
+  const worst = [...trips].sort((a,b) => a.pnl - b.pnl).slice(0, 5);
+  const best = [...trips].sort((a,b) => b.pnl - a.pnl).slice(0, 5);
+  html += '<h3 style="margin:14px 0 8px;">Biggest Losers</h3><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Date</th><th>Symbol</th><th>Segment</th><th class="num">Qty</th><th class="num">P&L</th></tr></thead><tbody>'
+    + worst.map(t => '<tr><td>' + t.exitDate + '</td><td>' + t.symbol + '</td><td>' + t.segment + '</td><td class="num">' + t.qty + '</td><td class="num" style="color:' + colR(t.pnl) + ';">' + fmtR(t.pnl) + '</td></tr>').join('')
+    + '</tbody></table></div>';
+  html += '<h3 style="margin:14px 0 8px;">Biggest Winners</h3><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Date</th><th>Symbol</th><th>Segment</th><th class="num">Qty</th><th class="num">P&L</th></tr></thead><tbody>'
+    + best.map(t => '<tr><td>' + t.exitDate + '</td><td>' + t.symbol + '</td><td>' + t.segment + '</td><td class="num">' + t.qty + '</td><td class="num" style="color:' + colR(t.pnl) + ';">' + fmtR(t.pnl) + '</td></tr>').join('')
+    + '</tbody></table></div>';
+
+  el.innerHTML = html;
+}
+
+function metricCard(label, val, color){
+  return '<div class="mc"><div class="mc-label">' + label + '</div><div class="mc-val" style="color:' + color + ';">' + val + '</div></div>';
+}
+
+async function importCsv(input, broker){
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const text = await file.text();
+  try {
+    const r = await secretFetch('/pnl-history/manual/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ csv: text, filename: file.name, broker }),
+    });
+    if (!r) return;
+    const j = await r.json();
+    if (!j.success) { toast(j.error || 'Import failed', 'error'); return; }
+    toast('Imported ' + j.imported + ' new fill(s), ' + j.skipped + ' already had.');
+    setTimeout(() => location.reload(), 800);
+  } catch (err) { toast('Network error: ' + err.message, 'error'); }
+  input.value = '';
+}
+
+async function syncNow(){
+  try {
+    const r = await secretFetch('/pnl-history/manual/sync', { method: 'POST' });
+    if (!r) return;
+    const j = await r.json();
+    if (!j.success) { toast(j.error || 'Sync failed', 'error'); return; }
+    toast('Synced ' + j.imported + " new fill(s) from today's trades.");
+    setTimeout(() => location.reload(), 800);
+  } catch (err) { toast('Network error: ' + err.message, 'error'); }
+}
+
+populateYearMonth('kite');
+populateYearMonth('fyers');
+renderBroker('kite');
+renderBroker('fyers');
 
 function toast(msg, type){
   const t = document.createElement('div');

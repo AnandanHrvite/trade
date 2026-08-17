@@ -6,6 +6,12 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Added — P&L History: Manual Trading Analytics for hand-placed Kite/Fyers trades
+
+`/pnl-history` now has a **Manual Trading Analytics** panel below the existing broker/FY summary — Kite and Fyers tabs, each with an Equity/Options/Futures segment toggle, Year/Month filters, core metrics (win rate, expectancy, profit factor, avg win/loss, max drawdown), biggest winners/losers, and a mistake-pattern scan: revenge trading (re-entering the same symbol within 15 min of a loss), oversized losers (>3x the average loss), overtrading days (2x+ the normal daily trade count), and cutting winners short vs letting losers run.
+
+Kite Connect has no historical order/trade endpoint — `/orders` and `/trades` are transient, today-only ("the order history ... only lives for a day in the system," confirmed against the official docs; Kite MCP has the identical limit) — so past manual trades are seeded via a one-time **Kite Console → Reports → Tradebook CSV import** button. Going forward, today's fills **auto-sync daily at 15:35 IST** (`MANUAL_TRADES_AUTO_SYNC_ENABLED`, default on, same self-rescheduling-timer pattern as the consolidated EOD reporter) or on-demand via **Sync Now**. Fills are FIFO-matched into round-trips per symbol in `utils/manualTrades.js`; segment classification trusts the CSV's `segment`/`exchange` column first — symbol-suffix matching alone is unsafe (equity names like RELIANCE end in the letters "CE" and would misclassify as a Call Option). Data lives at `~/trading-data/manual_trades.json`, independent of the bot's own strategy trade logs. Added `zerodhaBroker.getTrades()` to fetch today's fills.
+
 ### Added — ORB: a swing-shaped initial stop and a candle-by-candle trail (`ORB_SL_SOURCE=lookback`, `ORB_CANDLE_TRAIL_ENABLED`)
 
 Two ORB stop dials, both defaulting to today's exact behaviour, both from an owner review of a live PE trade whose 31-point initial stop sat on the breakout candle's high.

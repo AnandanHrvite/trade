@@ -47,6 +47,7 @@ const loginLogStore = require("./utils/loginLogStore");
 const fyersBroker   = require("./services/fyersBroker");
 const { sendTelegram, sendTelegramSync, getTelegramHealth, isConfigured: telegramConfigured } = require("./utils/notify");
 const consolidatedEodReporter = require("./utils/consolidatedEodReporter");
+const manualTradesSyncJob = require("./utils/manualTradesSyncJob");
 const { loadTradePosition, clearTradePosition, loadBbRsiPosition, clearBbRsiPosition, loadPAPosition, clearPAPosition, loadEma9VwapPosition, clearEma9VwapPosition, loadOrbPosition, clearOrbPosition, loadTrendPbPosition, clearTrendPbPosition, loadGapsPosition, clearGapsPosition, loadTrendDayScalpPosition, clearTrendDayScalpPosition, loadGapFix3mPosition, clearGapFix3mPosition, loadOiWallFadePosition, clearOiWallFadePosition } = require("./utils/positionPersist");
 const app = express();
 app.use(compression());
@@ -873,6 +874,7 @@ const OPEN_PATHS = [
   "/live-consolidation/data",
   "/pnl-history",         // manual year-wise P&L — the baseline POSTs stay protected
   "/pnl-history/data",
+  "/pnl-history/manual/data", // manual-trade analytics read — import/sync POSTs stay protected
   "/compare/trading",
   "/compare/bb_rsi",
   "/docs",                // guide viewer — file/pdf reads are covered by OPEN_PREFIXES
@@ -3965,6 +3967,9 @@ server.listen(PORT, HOST, () => {
 
   // ── Schedule consolidated end-of-day report at 15:30 IST daily ─────────────
   consolidatedEodReporter.start();
+
+  // ── Daily auto-sync of manual Kite trades at 15:35 IST (gated, default off) ─
+  manualTradesSyncJob.start();
 
   // ── Daily downloadable data backup snapshot ────────────────────────────────
   try { require("./utils/backupManager").start(); }
