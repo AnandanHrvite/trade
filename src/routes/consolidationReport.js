@@ -496,11 +496,9 @@ function render(){
     const c=totByMode[mo];
     if(!c || !c.n){ foot+='<td class="muted">—</td>'; continue; }
     // Per-strategy totals need the same W/L split the overall TOTAL shows — a bare
-    // trade count hides which strategy actually won its trades. The rupee split under
-    // it is what the net alone hides: a small net can be a big win cancelling a big loss.
+    // trade count hides which strategy actually won its trades.
     foot+='<td><span style="color:'+pc(c.pnl)+'">'+inr2(c.pnl)+'</span><br><span class="cnt">'+c.n+' · '
-      +'<span style="color:#10b981">'+c.wins+'W</span> / <span style="color:#ef4444">'+c.losses+'L</span></span>'
-      +'<br><span class="cnt"><span style="color:#10b981">'+inr(c.winPnl)+'</span> / <span style="color:#ef4444">'+inr(c.lossPnl)+'</span></span></td>';
+      +'<span style="color:#10b981">'+c.wins+'W</span> / <span style="color:#ef4444">'+c.losses+'L</span></span></td>';
   }
   // The colour lives on an inner span: the light-theme .cnt rule is !important,
   // so a colour set on .cnt itself would be greyed out in light mode.
