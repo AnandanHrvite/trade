@@ -70,13 +70,13 @@ function saveBaselines(baselines) {
   fs.writeFileSync(DATA_FILE, JSON.stringify({ baselines }, null, 2), "utf-8");
 }
 
-// JSON.stringify does not escape "</script" — a symbol from an imported CSV,
-// or free-text baseline notes, containing that literal sequence would close
-// the embedding <script> tag early and let the rest of its content execute as
-// markup/script. Used for every JSON blob embedded into this page's <script>
-// block that carries user-entered text (MANUAL_TRIPS, BASELINES) — escapes the
-// slash so the sequence can never match a real tag boundary; same value, same
-// JSON.parse result, just not renderable as a tag close.
+// JSON.stringify does not escape "</script" — a symbol from an imported CSV
+// containing that literal sequence would close the embedding <script> tag
+// early and let the rest of its content execute as markup/script. Used for
+// every JSON blob embedded into this page's <script> block that carries
+// user-entered text (MANUAL_TRIPS) — escapes the slash so the sequence can
+// never match a real tag boundary; same value, same JSON.parse result, just
+// not renderable as a tag close.
 function jsonForScript(obj) {
   return JSON.stringify(obj).replace(/<\/(script)/gi, "<\\/$1");
 }
@@ -284,17 +284,6 @@ router.get("/", (req, res) => {
     .panel h3 .tag{font-size:0.5rem;padding:2px 7px;border-radius:3px;background:rgba(59,130,246,0.15);color:#60a5fa;border:0.5px solid rgba(59,130,246,0.3);letter-spacing:1px;}
     .panel h3 .tag.auto{background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);}
 
-    .baseline-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
-    @media(max-width:780px){.baseline-grid{grid-template-columns:1fr;}}
-    .bs-card{background:#04090f;border:0.5px solid #0e1e36;border-radius:8px;padding:14px;}
-    .bs-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
-    .bs-name{font-size:0.8rem;font-weight:700;color:#e0eaf8;}
-    .bs-name .sub{font-size:0.6rem;color:var(--muted-1,#8ba1c2);margin-left:6px;font-weight:400;}
-    .bs-val{font-size:1.15rem;font-weight:700;font-family:'IBM Plex Mono',monospace;margin-bottom:8px;}
-    .bs-notes{font-size:0.65rem;color:#6b8ab0;margin-bottom:8px;min-height:1em;}
-    .bs-updated{font-size:0.55rem;color:var(--muted-2,#6d85a8);margin-bottom:10px;font-family:'IBM Plex Mono',monospace;}
-    .bs-actions{display:flex;gap:8px;}
-
     .btn{background:#0d1320;border:1px solid #1a2236;color:#4a9cf5;padding:6px 12px;border-radius:6px;font-size:0.7rem;cursor:pointer;font-family:inherit;transition:all 0.15s;}
     .btn:hover{background:#0a1e3d;border-color:#3b82f6;}
     .btn.primary{background:rgba(59,130,246,0.12);border-color:#3b82f6;color:#3b82f6;}
@@ -351,26 +340,13 @@ router.get("/", (req, res) => {
     :root[data-theme="light"] .mistake-card{background:#f8fafc!important;border-color:#e0e4ea!important;border-left-color:#ef4444!important;}
     :root[data-theme="light"] .mistake-title{color:#1e293b!important;}
 
-    /* Modal (for edit baseline) */
-    .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.65);display:none;align-items:center;justify-content:center;z-index:1000;}
-    .modal-backdrop.on{display:flex;}
-    .modal-box{background:#07111f;border:1px solid #1a2236;border-radius:10px;padding:20px;width:min(460px,92vw);}
-    .modal-title{font-size:0.85rem;font-weight:700;margin-bottom:4px;color:#e0eaf8;}
-    .modal-sub{font-size:0.65rem;color:var(--muted-1,#8ba1c2);margin-bottom:14px;}
-    .modal-box label{display:block;font-size:0.55rem;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted-2,#6d85a8);margin:10px 0 4px;font-family:'IBM Plex Mono',monospace;}
-    .modal-box input{width:100%;background:#04090f;border:0.5px solid #0e1e36;color:#e0eaf8;padding:8px 10px;border-radius:6px;font-family:'IBM Plex Mono',monospace;font-size:0.8rem;outline:none;}
-    .modal-box input:focus{border-color:#3b82f6;}
-    .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;}
-
     :root[data-theme="light"] body{background:#f4f6f9!important;color:#334155!important;}
     :root[data-theme="light"] .main-content{background:#f4f6f9!important;}
     :root[data-theme="light"] .page-title{color:#1e293b!important;}
-    :root[data-theme="light"] .page-sub,:root[data-theme="light"] .sc-sub,:root[data-theme="light"] .sc-breakdown,:root[data-theme="light"] .bs-notes,:root[data-theme="light"] .bs-updated,:root[data-theme="light"] .note,:root[data-theme="light"] .empty{color:#4b5769!important;}
-    :root[data-theme="light"] .sc,:root[data-theme="light"] .panel,:root[data-theme="light"] .modal-box{background:#fff!important;border-color:#e0e4ea!important;box-shadow:0 1px 3px rgba(0,0,0,0.06)!important;}
-    :root[data-theme="light"] .sc-label,:root[data-theme="light"] .panel h3,:root[data-theme="light"] .modal-box label{color:#4b5769!important;}
-    :root[data-theme="light"] .sc-val,:root[data-theme="light"] .bs-name,:root[data-theme="light"] .modal-title{color:#1e293b!important;}
-    :root[data-theme="light"] .bs-card{background:#f8fafc!important;border-color:#e0e4ea!important;}
-    :root[data-theme="light"] .modal-box input{background:#f8fafc!important;border-color:#e0e4ea!important;color:#334155!important;}
+    :root[data-theme="light"] .page-sub,:root[data-theme="light"] .sc-sub,:root[data-theme="light"] .sc-breakdown,:root[data-theme="light"] .note,:root[data-theme="light"] .empty{color:#4b5769!important;}
+    :root[data-theme="light"] .sc,:root[data-theme="light"] .panel{background:#fff!important;border-color:#e0e4ea!important;box-shadow:0 1px 3px rgba(0,0,0,0.06)!important;}
+    :root[data-theme="light"] .sc-label,:root[data-theme="light"] .panel h3{color:#4b5769!important;}
+    :root[data-theme="light"] .sc-val{color:#1e293b!important;}
     :root[data-theme="light"] .btn{background:#f8fafc!important;border-color:#e0e4ea!important;color:#2563eb!important;}
     :root[data-theme="light"] .btn:hover{background:#eff6ff!important;border-color:#3b82f6!important;}
     :root[data-theme="light"] .tbl th{background:#f1f5f9!important;color:#4b5769!important;border-bottom-color:#e0e4ea!important;}
@@ -479,26 +455,8 @@ router.get("/", (req, res) => {
   </div>
 </div>
 
-<!-- Edit baseline modal -->
-<div id="editModal" class="modal-backdrop" onclick="if(event.target===this)closeModal()">
-  <div class="modal-box">
-    <div class="modal-title">Edit <span id="mBrokerName"></span> Baseline</div>
-    <div class="modal-sub">Total realised P&amp;L across all prior years (Equity + F&amp;O). From your broker Console → Reports → P&amp;L.</div>
-    <label>Net P&amp;L (₹)</label>
-    <input type="number" id="mPnl" step="0.01" placeholder="e.g. 125000 or -80000"/>
-    <label>Notes (optional)</label>
-    <input type="text" id="mNotes" maxlength="300" placeholder="e.g. Through FY 2024-25, ITR filed"/>
-    <div class="modal-actions">
-      <button class="btn" onclick="closeModal()">Cancel</button>
-      <button class="btn primary" onclick="saveBaseline()">Save</button>
-    </div>
-  </div>
-</div>
-
 <script>
 ${modalJS()}
-const BASELINES = ${jsonForScript(baselines)};
-let currentBroker = null;
 
 // ── Manual trading analytics (Kite / Fyers tabs) ────────────────────────────
 const MANUAL_TRIPS = ${jsonForScript(manualRoundTrips)};
@@ -747,62 +705,6 @@ function toast(msg, type){
   setTimeout(() => t.remove(), 2800);
 }
 
-function openEdit(broker){
-  currentBroker = broker;
-  const b = BASELINES[broker] || { pnl: 0, notes: '' };
-  document.getElementById('mBrokerName').textContent = broker === 'kite' ? 'Kite (Zerodha)' : 'Fyers';
-  document.getElementById('mPnl').value = b.pnl || '';
-  document.getElementById('mNotes').value = b.notes || '';
-  document.getElementById('editModal').classList.add('on');
-  setTimeout(() => document.getElementById('mPnl').focus(), 50);
-}
-function closeModal(){ document.getElementById('editModal').classList.remove('on'); currentBroker = null; }
-
-async function saveBaseline(){
-  if (!currentBroker) return;
-  const pnl = document.getElementById('mPnl').value;
-  const notes = document.getElementById('mNotes').value;
-  if (pnl === '' || !Number.isFinite(Number(pnl))) { toast('Enter a valid number', 'error'); return; }
-  try {
-    const r = await secretFetch('/pnl-history/baseline/' + currentBroker, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pnl: Number(pnl), notes }),
-    });
-    if (!r) return;
-    const j = await r.json();
-    if (!j.success) { toast(j.error || 'Failed', 'error'); return; }
-    toast('Baseline saved');
-    setTimeout(() => location.reload(), 500);
-  } catch (err) { toast('Network error: ' + err.message, 'error'); }
-}
-
-async function resetBaseline(broker){
-  const label = broker === 'kite' ? 'Kite' : 'Fyers';
-  const ok = await showDoubleConfirm({
-    icon: '⚠️',
-    title: 'Reset baseline',
-    message: 'Reset ' + label + ' baseline to ₹0?\\nThis cannot be undone.',
-    confirmText: 'Reset',
-    confirmClass: 'modal-btn-danger',
-    subject: label + ' baseline',
-    secondConfirmText: 'Yes, reset'
-  });
-  if (!ok) return;
-  try {
-    const r = await secretFetch('/pnl-history/baseline/' + broker + '/reset', { method: 'POST' });
-    if (!r) return;
-    const j = await r.json();
-    if (!j.success) { toast(j.error || 'Failed', 'error'); return; }
-    toast('Baseline reset');
-    setTimeout(() => location.reload(), 500);
-  } catch (err) { toast('Network error: ' + err.message, 'error'); }
-}
-
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') closeModal();
-  if (e.key === 'Enter' && document.getElementById('editModal').classList.contains('on')) saveBaseline();
-});
 ${tableEnhancerJS()}
 </script>
 </body>
@@ -812,24 +714,6 @@ ${tableEnhancerJS()}
 });
 
 // ── Template helpers ─────────────────────────────────────────────────────────
-
-function baselineCard(broker, label, bs) {
-  const pnl = Number(bs.pnl) || 0;
-  const hasValue = bs.updatedAt != null;
-  return `
-    <div class="bs-card">
-      <div class="bs-head">
-        <div class="bs-name">${label} <span class="sub">${broker === 'kite' ? 'EMA_RSI_ST live trades here' : 'BB_RSI + PA live trades here'}</span></div>
-      </div>
-      <div class="bs-val" style="color:${colorOf(pnl)};">${fmtINR(pnl)}</div>
-      <div class="bs-notes">${hasValue ? escapeHtml(bs.notes || '(no notes)') : '<em style="color:var(--muted-2,#6d85a8);">Not set — click Edit to enter your past P&amp;L total</em>'}</div>
-      <div class="bs-updated">${hasValue ? 'Updated ' + fmtDate(bs.updatedAt) : ''}</div>
-      <div class="bs-actions">
-        <button class="btn primary" onclick="openEdit('${broker}')">${hasValue ? '✎ Edit' : '＋ Set Baseline'}</button>
-        ${hasValue ? `<button class="btn warn" onclick="resetBaseline('${broker}')">Reset</button>` : ''}
-      </div>
-    </div>`;
-}
 
 function fmtINR(n) {
   if (typeof n !== "number" || !Number.isFinite(n)) return "—";
@@ -855,15 +739,6 @@ function fmtDate(iso) {
     const mi = String(ist.getUTCMinutes()).padStart(2, "0");
     return `${dd}/${mm}/${yyyy} ${hh}:${mi}`;
   } catch (_) { return "—"; }
-}
-
-function escapeHtml(s) {
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }
 
 module.exports = router;
