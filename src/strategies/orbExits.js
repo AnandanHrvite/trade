@@ -214,8 +214,9 @@ function evaluateTickExits(pos, { spotPrice, optionLtp }) {
  *      arm, a fresh entry taken below a stale/gap-day EMA would be stopped out on its
  *      very first candle.
  *
- * Mutates `pos.slSpot` / `pos.breakevenArmed` / `pos.emaArmed` / `pos.lastEma`. `breakevenArmed` in the result is true ONLY on the candle that arms
- * it, and `trailMoved` only on a candle that actually moved the stop, so callers can
+ * Mutates `pos.slSpot` / `pos.breakevenArmed` / `pos.emaArmed` / `pos.lastEma`.
+ * `breakevenArmed` in the result is true ONLY on the candle that arms it, and
+ * `trailMoved` only on a candle that actually moved the stop, so callers can
  * log it and re-snapshot for crash recovery exactly once. `favPts` / `bePts` ride
  * along so the routes can keep logging the numbers that justified the arm — those
  * are how a breakeven exit is diagnosed after the fact.
