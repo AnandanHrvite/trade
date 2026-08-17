@@ -9,6 +9,32 @@
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/strategy-notes-reminder.js\""
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "if": "Bash(git commit *)",
+        "hooks": [
+          {
+            "type": "agent",
+            "model": "haiku",
+            "prompt": "Verify the git commit being made. Extract the commit message from $ARGUMENTS and check: (1) is it following conventional commits format, (2) does it accurately describe the changes, (3) are there any obvious issues? Report briefly: PASS if clean, or FLAG: [issue] if problems found.",
+            "statusMessage": "Verifying commit with Haiku...",
+            "timeout": 30
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "if": "Bash(git push *)",
+        "hooks": [
+          {
+            "type": "agent",
+            "model": "haiku",
+            "prompt": "Review the git push operation from $ARGUMENTS. Check: (1) is it pushing to an expected branch/remote, (2) are there any risky flags like --force, (3) is the timing appropriate (check if it's within market hours 09:00-15:30 IST for this trading repo). Report: PASS if safe, or WARN: [concern] if issues detected.",
+            "statusMessage": "Validating push with Haiku...",
+            "timeout": 30
+          }
+        ]
       }
     ]
   }
