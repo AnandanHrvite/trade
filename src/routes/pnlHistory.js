@@ -753,10 +753,11 @@ async function importCsv(input, broker){
       totalUpdated += j.updated;
     } catch (err) { lastError = (file.name + ': Network error: ' + err.message); }
   }
-  if (cancelled && totalImported === 0 && totalUpdated === 0) {
-    // Nothing to report — user cancelled before any file went through.
+  if (cancelled && !lastError && totalImported === 0 && totalUpdated === 0) {
+    // Nothing to report — user cancelled before any file went through, and
+    // no earlier file in the batch had failed either.
   } else if (lastError && totalImported === 0 && totalUpdated === 0) {
-    toast(lastError, 'error');
+    toast(lastError + (cancelled ? ' (import stopped — API secret prompt cancelled)' : ''), 'error');
   } else {
     let msg = 'Imported ' + totalImported + ' new fill(s), ' + totalUpdated + ' updated.';
     if (cancelled) msg += ' (stopped — API secret prompt cancelled)';
