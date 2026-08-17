@@ -738,8 +738,8 @@ async function importCsv(input, broker){
   // the end — no accumulated flags to get the combinations of wrong.
   const results = []; // { file, imported, updated, error, cancelled }
   for (const file of files) {
-    const text = await file.text();
     try {
+      const text = await file.text(); // can reject (e.g. NotReadableError) if the file becomes unreadable mid-batch
       const r = await secretFetch('/pnl-history/manual/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -753,7 +753,7 @@ async function importCsv(input, broker){
       if (!j.success) results.push({ file: file.name, error: j.error || 'Import failed' });
       else results.push({ file: file.name, imported: j.imported, updated: j.updated });
     } catch (err) {
-      results.push({ file: file.name, error: 'Network error: ' + err.message });
+      results.push({ file: file.name, error: err.message });
     }
   }
 
