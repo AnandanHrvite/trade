@@ -651,6 +651,16 @@ function renderRollup(all) {
   tbody.innerHTML = html;
 }
 
+// IST weekday, 09:15–15:30 — same window the trading engines run in.
+function isMarketRunning() {
+  const local = new Date();
+  const now = new Date(Date.now() + (330 - local.getTimezoneOffset()) * 60000);
+  const day = now.getDay();
+  if (day === 0 || day === 6) return false;
+  const mins = now.getHours() * 60 + now.getMinutes();
+  return mins >= 9 * 60 + 15 && mins <= 15 * 60 + 30;
+}
+
 // Broker wallets, straight from the capital pool — one source, so the ribbon
 // cannot disagree with the alert banner below it. Summing the per-strategy
 // /status/data totals (the old way) missed both the money open positions are
@@ -661,7 +671,7 @@ function renderPools(d) {
   // ribbon has nothing honest to say in LIVE mode. Hide it rather than show
   // paper rupees under a LIVE heading.
   const box = document.getElementById('wallets');
-  if (box) box.style.display = (mode === 'LIVE') ? 'none' : '';
+  if (box) box.style.display = (mode === 'LIVE' || isMarketRunning()) ? 'none' : '';
   const pools = (d && d.pools) || null;
   if (!pools) return;   // failed poll — keep the last good numbers on screen
   const set = (id, text, klass) => {
