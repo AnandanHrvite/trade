@@ -136,37 +136,44 @@ function normalizeCsvRow(row, sourceFile, broker) {
   };
 }
 
-/** Import a Kite Console (or Fyers) tradebook CSV. Dedups by tradeId (or a
+/** Import a Kite Console (or Fyers) tradebook CSV. Matches by tradeId (or a
  *  stable composite key when trade_id is absent) so re-importing the same
- *  file, or an overlapping date range across two exports, is a no-op for
- *  existing rows. `broker` scopes dedup/analytics per broker tab. */
+ *  file, or an overlapping date range across two exports, REPLACES the
+ *  existing row in place instead of piling up a duplicate — the latest
+ *  import always wins for a given fill. `broker` scopes matching/analytics
+ *  per broker tab. */
 function importCsv(csvText, sourceFile = "upload.csv", broker = "kite") {
   const rows = parseCsv(csvText);
-  if (rows.length === 0) return { imported: 0, skipped: 0, total: 0, error: "No data rows found in CSV." };
+  if (rows.length === 0) return { imported: 0, updated: 0, total: 0, error: "No data rows found in CSV." };
 
   const required = ["symbol", "trade_date", "trade_type", "quantity", "price"];
   const headers = Object.keys(rows[0]);
   const missing = required.filter((r) => !headers.includes(r));
   if (missing.length > 0) {
-    return { imported: 0, skipped: 0, total: 0, error: `CSV missing expected column(s): ${missing.join(", ")}. Export from Kite Console → Reports → Tradebook.` };
+    return { imported: 0, updated: 0, total: 0, error: `CSV missing expected column(s): ${missing.join(", ")}. Export from Kite Console → Reports → Tradebook.` };
   }
 
   const store = loadStore();
-  const existingKeys = new Set(store.fills.map((f) => dedupKey(f)));
+  const indexByKey = new Map(store.fills.map((f, i) => [dedupKey(f), i]));
 
-  let imported = 0, skipped = 0;
+  let imported = 0, updated = 0;
   for (const row of rows) {
     const fill = normalizeCsvRow(row, sourceFile, broker);
     const key = dedupKey(fill);
-    if (existingKeys.has(key)) { skipped++; continue; }
-    existingKeys.add(key);
-    store.fills.push(fill);
-    imported++;
+    const existingIdx = indexByKey.get(key);
+    if (existingIdx !== undefined) {
+      store.fills[existingIdx] = fill;
+      updated++;
+    } else {
+      indexByKey.set(key, store.fills.length);
+      store.fills.push(fill);
+      imported++;
+    }
   }
 
   if (!store.meta.importedFiles.includes(sourceFile)) store.meta.importedFiles.push(sourceFile);
   saveStore(store);
-  return { imported, skipped, total: store.fills.length };
+  return { imported, updated, total: store.fills.length };
 }
 
 function dedupKey(fill) {

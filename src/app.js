@@ -51,7 +51,7 @@ const manualTradesSyncJob = require("./utils/manualTradesSyncJob");
 const { loadTradePosition, clearTradePosition, loadBbRsiPosition, clearBbRsiPosition, loadPAPosition, clearPAPosition, loadEma9VwapPosition, clearEma9VwapPosition, loadOrbPosition, clearOrbPosition, loadTrendPbPosition, clearTrendPbPosition, loadGapsPosition, clearGapsPosition, loadTrendDayScalpPosition, clearTrendDayScalpPosition, loadGapFix3mPosition, clearGapFix3mPosition, loadOiWallFadePosition, clearOiWallFadePosition } = require("./utils/positionPersist");
 const app = express();
 app.use(compression());
-app.use(express.json());
+app.use(express.json({ limit: "25mb" })); // tradebook CSV imports (pnlHistory.js) can be several MB of JSON-wrapped text
 
 // ── Vendored front-end libraries ────────────────────────────────────────────
 // Self-host the Lightweight Charts library (used by every strategy's chart)

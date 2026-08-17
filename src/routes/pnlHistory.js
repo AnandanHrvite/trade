@@ -502,7 +502,7 @@ router.get("/", (req, res) => {
           <select id="yearSel-kite" onchange="renderBroker('kite')"><option value="all">All Years</option></select>
           <select id="monthSel-kite" onchange="renderBroker('kite')"><option value="all">All Months</option></select>
           <span class="spacer"></span>
-          <span class="btn file-btn">📄 Import Tradebook CSV<input type="file" accept=".csv" onchange="importCsv(this,'kite')"/></span>
+          <span class="btn file-btn">📄 Import Tradebook CSV<input type="file" accept=".csv" multiple onchange="importCsv(this,'kite')"/></span>
           <button class="btn primary" onclick="syncNow()">${kiteConnected ? '⟳ Sync Now' : '⚠ Login to Sync'}</button>
         </div>
         <div class="note" id="syncNote-kite" style="margin-top:-6px;">
@@ -524,7 +524,7 @@ router.get("/", (req, res) => {
           <select id="yearSel-fyers" onchange="renderBroker('fyers')"><option value="all">All Years</option></select>
           <select id="monthSel-fyers" onchange="renderBroker('fyers')"><option value="all">All Months</option></select>
           <span class="spacer"></span>
-          <span class="btn file-btn">📄 Import Tradebook CSV<input type="file" accept=".csv" onchange="importCsv(this,'fyers')"/></span>
+          <span class="btn file-btn">📄 Import Tradebook CSV<input type="file" accept=".csv" multiple onchange="importCsv(this,'fyers')"/></span>
         </div>
         <div class="note" style="margin-top:-6px;">Fyers has no live-sync route wired here (the user's manual trading happens on Kite) — import a tradebook CSV to see analytics. Live sync can be added the same way as Kite's if needed.</div>
         <div id="analytics-fyers"></div>
@@ -730,21 +730,34 @@ function metricCard(label, val, color){
 }
 
 async function importCsv(input, broker){
-  const file = input.files && input.files[0];
-  if (!file) return;
-  const text = await file.text();
-  try {
-    const r = await secretFetch('/pnl-history/manual/import', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ csv: text, filename: file.name, broker }),
-    });
-    if (!r) return;
-    const j = await r.json();
-    if (!j.success) { toast(j.error || 'Import failed', 'error'); return; }
-    toast('Imported ' + j.imported + ' new fill(s), ' + j.skipped + ' already had.');
+  const files = input.files ? Array.from(input.files) : [];
+  if (files.length === 0) return;
+  // Sequential, not Promise.all — the server does read-modify-write on one
+  // JSON file per request, so parallel imports would race and drop rows.
+  let totalImported = 0, totalUpdated = 0, lastError = null;
+  for (const file of files) {
+    const text = await file.text();
+    try {
+      const r = await secretFetch('/pnl-history/manual/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ csv: text, filename: file.name, broker }),
+      });
+      if (!r) return;
+      const j = await r.json();
+      if (!j.success) { lastError = (file.name + ': ' + (j.error || 'Import failed')); continue; }
+      totalImported += j.imported;
+      totalUpdated += j.updated;
+    } catch (err) { lastError = (file.name + ': Network error: ' + err.message); }
+  }
+  if (lastError && totalImported === 0 && totalUpdated === 0) {
+    toast(lastError, 'error');
+  } else {
+    let msg = 'Imported ' + totalImported + ' new fill(s), ' + totalUpdated + ' updated.';
+    if (lastError) msg += ' (' + lastError + ')';
+    toast(msg, lastError ? 'error' : undefined);
     setTimeout(() => location.reload(), 800);
-  } catch (err) { toast('Network error: ' + err.message, 'error'); }
+  }
   input.value = '';
 }
 
