@@ -231,44 +231,50 @@ async function syncFromKite() {
 // buy/sell fills per symbol into round-trips. This mirrors how any broker P&L
 // report derives realised trades from an execution log.
 function buildRoundTrips(fills) {
+  // Grouped by [broker, symbol] pairs, not a joined string key — a CSV-imported
+  // symbol containing the literal join separator would otherwise split back
+  // into the wrong pieces and silently corrupt the displayed symbol name.
   const byKey = new Map();
   for (const f of fills) {
     if (!f.tradeDate || !f.symbol) continue;
-    const k = `${f.broker || "kite"}::${f.symbol}`;
-    if (!byKey.has(k)) byKey.set(k, []);
-    byKey.get(k).push(f);
+    const broker = f.broker || "kite";
+    if (!byKey.has(broker)) byKey.set(broker, new Map());
+    const bySymbol = byKey.get(broker);
+    if (!bySymbol.has(f.symbol)) bySymbol.set(f.symbol, []);
+    bySymbol.get(f.symbol).push(f);
   }
 
   const trips = [];
-  for (const [key, list] of byKey.entries()) {
-    const [broker, symbol] = key.split("::");
-    list.sort((a, b) => new Date(a.executedAt || a.tradeDate) - new Date(b.executedAt || b.tradeDate));
-    const longQueue = [];  // open buy lots (for long trips, closed by sells)
-    const shortQueue = []; // open sell lots (for short trips, closed by buys)
+  for (const [broker, bySymbol] of byKey.entries()) {
+    for (const [symbol, list] of bySymbol.entries()) {
+      list.sort((a, b) => new Date(a.executedAt || a.tradeDate) - new Date(b.executedAt || b.tradeDate));
+      const longQueue = [];  // open buy lots (for long trips, closed by sells)
+      const shortQueue = []; // open sell lots (for short trips, closed by buys)
 
-    for (const f of list) {
-      let remaining = f.qty;
-      if (f.side === "buy") {
-        // First close any open shorts (FIFO), then whatever's left opens a long lot.
-        while (remaining > 0 && shortQueue.length > 0) {
-          const lot = shortQueue[0];
-          const matched = Math.min(remaining, lot.qty);
-          trips.push(makeTrip(symbol, broker, f.segment, lot, f, matched, "short"));
-          lot.qty -= matched;
-          remaining -= matched;
-          if (lot.qty <= 0) shortQueue.shift();
+      for (const f of list) {
+        let remaining = f.qty;
+        if (f.side === "buy") {
+          // First close any open shorts (FIFO), then whatever's left opens a long lot.
+          while (remaining > 0 && shortQueue.length > 0) {
+            const lot = shortQueue[0];
+            const matched = Math.min(remaining, lot.qty);
+            trips.push(makeTrip(symbol, broker, f.segment, lot, f, matched, "short"));
+            lot.qty -= matched;
+            remaining -= matched;
+            if (lot.qty <= 0) shortQueue.shift();
+          }
+          if (remaining > 0) longQueue.push({ ...f, qty: remaining });
+        } else {
+          while (remaining > 0 && longQueue.length > 0) {
+            const lot = longQueue[0];
+            const matched = Math.min(remaining, lot.qty);
+            trips.push(makeTrip(symbol, broker, f.segment, lot, f, matched, "long"));
+            lot.qty -= matched;
+            remaining -= matched;
+            if (lot.qty <= 0) longQueue.shift();
+          }
+          if (remaining > 0) shortQueue.push({ ...f, qty: remaining });
         }
-        if (remaining > 0) longQueue.push({ ...f, qty: remaining });
-      } else {
-        while (remaining > 0 && longQueue.length > 0) {
-          const lot = longQueue[0];
-          const matched = Math.min(remaining, lot.qty);
-          trips.push(makeTrip(symbol, broker, f.segment, lot, f, matched, "long"));
-          lot.qty -= matched;
-          remaining -= matched;
-          if (lot.qty <= 0) longQueue.shift();
-        }
-        if (remaining > 0) shortQueue.push({ ...f, qty: remaining });
       }
     }
   }
