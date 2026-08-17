@@ -428,16 +428,6 @@ router.get("/", (req, res) => {
       </div>
     </div>
 
-    <!-- Baselines (one-time entry per broker) -->
-    <div class="panel">
-      <h3>Past P&amp;L Baseline <span class="tag">ONE-TIME</span></h3>
-      <div class="baseline-grid">
-        ${baselineCard('kite',  'Kite (Zerodha)',  baselines.kite)}
-        ${baselineCard('fyers', 'Fyers',           baselines.fyers)}
-      </div>
-      <div class="note">Enter the total realised P&amp;L from your broker's Console / Reports (cumulative across all prior years, Equity + F&amp;O combined). Set it once and leave it — live bot trades add on top automatically.</div>
-    </div>
-
     <!-- Live bot P&L by FY (auto) -->
     <div class="panel">
       <h3>Live Bot P&amp;L by Financial Year <span class="tag auto">AUTO</span></h3>
