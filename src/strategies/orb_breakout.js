@@ -674,6 +674,10 @@ function getSignal(candles, opts) {
     bufferMinPts: parseFloat(process.env.ORB_BUFFER_MIN_PTS  || "0"),
     confirmMode:  (process.env.ORB_CONFIRM_MODE || "close").toLowerCase(),
     slSource:     (process.env.ORB_SL_SOURCE    || "breakout").toLowerCase(),
+    // Only read by slSource = "lookback": how many candles, counting BACK from and
+    // including the entry candle, the stop must clear. 2 = the entry candle and the
+    // one before it, which is the shape a discretionary trader draws by hand.
+    slLookback:   Math.max(1, parseInt(process.env.ORB_SL_LOOKBACK_CANDLES || "2", 10) || 1),
     vwapOn:       _vwapFilterOn(),
     rsiOn:        (process.env.ORB_RSI_ENABLED || "true").toLowerCase() === "true",
     rsiPeriod:    Math.max(2, parseInt(process.env.ORB_RSI_PERIOD || "14", 10)),
@@ -947,8 +951,28 @@ function getSignal(candles, opts) {
     //                bar the move is built on, so its extreme is the level that
     //                invalidates the breakout; it also gives a stop that does not
     //                shrink just because the entry candle happened to be small.
-    const slBar = cfg.slSource === "breakout" ? brk : last;
-    let structural = side === "CE" ? slBar.low : slBar.high;
+    //   "lookback" — the extreme of the LAST ORB_SL_LOOKBACK_CANDLES candles ending
+    //                at the entry candle (default 2 = entry candle + the one before
+    //                it). "breakout" anchors to a bar that may be many candles back,
+    //                which on a resume/retest entry produces a stop far wider than
+    //                the swing being traded; "entry" anchors to a single bar that
+    //                can be tiny. This is the middle ground and it is what a
+    //                discretionary trader draws: clear the recent swing, nothing more.
+    //                Window never crosses into the previous day.
+    let structural;
+    if (cfg.slSource === "lookback") {
+      const from = Math.max(0, lastIdx - (cfg.slLookback - 1));
+      let ext = side === "CE" ? last.low : last.high;
+      for (let i = lastIdx; i >= from; i--) {
+        const c = candles[i];
+        if (!c || _istDay(c.time) !== day) break;   // same session only
+        ext = side === "CE" ? Math.min(ext, c.low) : Math.max(ext, c.high);
+      }
+      structural = ext;
+    } else {
+      const slBar = cfg.slSource === "breakout" ? brk : last;
+      structural = side === "CE" ? slBar.low : slBar.high;
+    }
 
     // A breakout-anchored stop can land on the WRONG SIDE of the entry, which would
     // be an instantly-stopped-out trade rather than a stop at all. It happens on the
@@ -980,7 +1004,7 @@ function getSignal(candles, opts) {
       targetSpot: _r2(targetSpot),
       signalStrength: "STRONG",
       confirmed: true,
-      reason: `ORB ${side}${tag}: breakout close ${brk.close} beyond ${side === "CE" ? `ORH ${or.high}` : `ORL ${or.low}`} + buffer ${buffer}pt (body ${_r2(brkBody)}pt), ${why}; SL ${_r2(slSpot)} = wider of ${cfg.slSource === "breakout" ? "breakout" : "entry"}-candle extreme / ${cfg.slAtrMult}×ATR5${gapPts != null ? `, gap ${gapPts}pt` : ""}`,
+      reason: `ORB ${side}${tag}: breakout close ${brk.close} beyond ${side === "CE" ? `ORH ${or.high}` : `ORL ${or.low}`} + buffer ${buffer}pt (body ${_r2(brkBody)}pt), ${why}; SL ${_r2(slSpot)} = wider of ${cfg.slSource === "lookback" ? `last-${cfg.slLookback}-candle` : cfg.slSource === "breakout" ? "breakout-candle" : "entry-candle"} extreme / ${cfg.slAtrMult}×ATR5${gapPts != null ? `, gap ${gapPts}pt` : ""}`,
     }));
   };
 

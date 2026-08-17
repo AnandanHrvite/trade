@@ -92,6 +92,23 @@ function trailArmPts()       { const v = _envNum("ORB_TRAIL_ARM_PTS", "0"); retu
 function trailConfirmCloses(){ const v = parseInt(process.env.ORB_TRAIL_CONFIRM_CLOSES || "1", 10); return Number.isFinite(v) && v > 1 ? v : 1; }
 
 /**
+ * CANDLE TRAIL (2026-08-17, ships OFF).
+ *
+ * Ratchets the hard stop up behind price, one candle at a time: on every close that
+ * is in profit, the stop moves to the extreme of the last N completed candles (the
+ * same shape ORB_SL_SOURCE=lookback gives the initial stop, so the stop keeps the
+ * geometry it started with). It only ever TIGHTENS — a pullback candle whose low is
+ * further away leaves the stop where it is.
+ *
+ * It does not replace the EMA trail; both run, and whichever ends the trade first
+ * wins. The EMA trail exits on a CLOSE through the line — this exits intrabar via
+ * the shared hard-SL check, so it gives back less on a sharp reversal and more on
+ * a noisy one. UNPROVEN: measure with scripts/orbSweep.js before trusting it.
+ */
+function candleTrailOn()     { return _envOn("ORB_CANDLE_TRAIL_ENABLED", "false"); }
+function candleTrailBars()   { const v = parseInt(process.env.ORB_CANDLE_TRAIL_CANDLES || "2", 10); return Number.isFinite(v) && v > 0 ? v : 1; }
+
+/**
  * Adaptive breakeven trigger: max(fixed pts, ORB_BREAKEVEN_OR_MULT × OR width), so
  * a wide-range day gets more room before the stop tightens to entry.
  */
@@ -190,23 +207,25 @@ function evaluateTickExits(pos, { spotPrice, optionLtp }) {
  * Candle-close management, in paper's order:
  *   1. strong opposite reversal candle → exit now
  *   2. breakeven — lift the hard SL to entry once far enough in profit (never loosens)
+ *  2b. candle trail — ratchet the hard SL behind the last N candles while in profit
+ *      (ORB_CANDLE_TRAIL_ENABLED, ships off; never loosens)
  *   3. EMA trend-trail — exit only when a candle CLOSES back across the EMA, and only
  *      after price has first closed on the correct side of it (emaArmed). Without the
  *      arm, a fresh entry taken below a stale/gap-day EMA would be stopped out on its
  *      very first candle.
  *
- * Mutates `pos.slSpot` / `pos.breakevenArmed` / `pos.emaArmed` / `pos.lastEma`.
- * `breakevenArmed` in the result is true ONLY on the candle that arms it, so callers
- * can log it and re-snapshot for crash recovery exactly once. `favPts` / `bePts` ride
+ * Mutates `pos.slSpot` / `pos.breakevenArmed` / `pos.emaArmed` / `pos.lastEma`. `breakevenArmed` in the result is true ONLY on the candle that arms
+ * it, and `trailMoved` only on a candle that actually moved the stop, so callers can
+ * log it and re-snapshot for crash recovery exactly once. `favPts` / `bePts` ride
  * along so the routes can keep logging the numbers that justified the arm — those
  * are how a breakeven exit is diagnosed after the fact.
  *
- * @param {Array} candles  close series for the EMA trail (route state or day slice)
+ * @param {Array} candles  the bar series (OHLC) — EMA trail + candle trail read it
  * @returns {{exit:boolean, reason:string|null, breakevenArmed:boolean,
- *            favPts:number|null, bePts:number|null}}
+ *            trailMoved:boolean, favPts:number|null, bePts:number|null}}
  */
 function evaluateCloseExits(pos, bar, candles) {
-  const none = { exit: false, reason: null, breakevenArmed: false, favPts: null, bePts: null };
+  const none = { exit: false, reason: null, breakevenArmed: false, trailMoved: false, favPts: null, bePts: null };
   if (!pos || !bar || typeof bar.close !== "number") return none;
   const close = bar.close;
 
@@ -215,10 +234,10 @@ function evaluateCloseExits(pos, bar, candles) {
   const bodyPts   = Math.abs(bar.close - bar.open);
   if (oppositeExitOn() && oppThresh > 0 && bodyPts >= oppThresh) {
     if (pos.side === "CE" && bar.close < bar.open && bar.close < pos.orh) {
-      return { exit: true, reason: `Strong opposite candle (red body ${bodyPts.toFixed(1)}pt ≥ ${oppThresh.toFixed(1)}pt, closed below ORH)`, breakevenArmed: false, favPts: null, bePts: null };
+      return { exit: true, reason: `Strong opposite candle (red body ${bodyPts.toFixed(1)}pt ≥ ${oppThresh.toFixed(1)}pt, closed below ORH)`, breakevenArmed: false, trailMoved: false, favPts: null, bePts: null };
     }
     if (pos.side === "PE" && bar.close > bar.open && bar.close > pos.orl) {
-      return { exit: true, reason: `Strong opposite candle (green body ${bodyPts.toFixed(1)}pt ≥ ${oppThresh.toFixed(1)}pt, closed above ORL)`, breakevenArmed: false, favPts: null, bePts: null };
+      return { exit: true, reason: `Strong opposite candle (green body ${bodyPts.toFixed(1)}pt ≥ ${oppThresh.toFixed(1)}pt, closed above ORL)`, breakevenArmed: false, trailMoved: false, favPts: null, bePts: null };
     }
   }
 
@@ -231,6 +250,38 @@ function evaluateCloseExits(pos, bar, candles) {
     if (pos.side === "PE" && pos.entrySpot < pos.slSpot) pos.slSpot = _r2(pos.entrySpot);
     pos.breakevenArmed = true;
     armedNow = true;
+  }
+
+  // 2b. Candle trail — ratchet the stop behind the last N closed candles, but only
+  //     once this close is in profit. Tighten-only: a wider pullback candle can
+  //     never push the stop back out. See candleTrailOn() for why it ships off.
+  let trailMoved = false;
+  if (candleTrailOn() && favPts > 0) {
+    const n     = candleTrailBars();
+    const _day  = (t) => Math.floor((t + 19800) / 86400);
+    const barDay = typeof bar.time === "number" ? _day(bar.time) : null;
+    // Built from `candles` + `bar` rather than assuming the harness has already
+    // pushed the closing bar into the series — paper does, a future one may not.
+    // Same session only: yesterday's low is not a stop.
+    const hist = (Array.isArray(candles) ? candles : []).filter(c =>
+      c && typeof c.time === "number" && typeof bar.time === "number" &&
+      c.time < bar.time && _day(c.time) === barDay);
+    const win = hist.slice(-(n - 1)).concat([bar]);
+
+    let ext = pos.side === "CE" ? Infinity : -Infinity;
+    for (const c of win) {
+      const v = pos.side === "CE" ? c.low : c.high;
+      if (typeof v !== "number") continue;
+      ext = pos.side === "CE" ? Math.min(ext, v) : Math.max(ext, v);
+    }
+    // `tighter` keeps the ratchet one-way; `clear` refuses a stop sitting AT the
+    // close, which the very next tick would trigger.
+    const tighter = pos.side === "CE" ? ext > pos.slSpot : ext < pos.slSpot;
+    const clear   = pos.side === "CE" ? ext < close      : ext > close;
+    if (Number.isFinite(ext) && tighter && clear) {
+      pos.slSpot = _r2(ext);
+      trailMoved = true;
+    }
   }
 
   // 3. EMA trend-trail
@@ -254,12 +305,12 @@ function evaluateCloseExits(pos, bar, candles) {
       if (pos.emaBreaks >= need) {
         const side = pos.side === "CE" ? "below" : "above";
         const runs = need > 1 ? ` ${pos.emaBreaks} closes running` : "";
-        return { exit: true, reason: `Closed ${side} EMA${emaPeriod}${runs} (${close} ${pos.side === "CE" ? "<" : ">"} ${pos.lastEma})`, breakevenArmed: armedNow, favPts, bePts };
+        return { exit: true, reason: `Closed ${side} EMA${emaPeriod}${runs} (${close} ${pos.side === "CE" ? "<" : ">"} ${pos.lastEma})`, breakevenArmed: armedNow, trailMoved, favPts, bePts };
       }
     }
   }
 
-  return { exit: false, reason: null, breakevenArmed: armedNow, favPts, bePts };
+  return { exit: false, reason: null, breakevenArmed: armedNow, trailMoved, favPts, bePts };
 }
 
 /**

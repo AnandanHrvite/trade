@@ -634,6 +634,10 @@ async function _managePositionOnClose(bar) {
     try { saveOrbPosition(pos, { sessionPnl: state.sessionPnl || 0 }); } catch (_) {}
     log(`🔒 Breakeven armed — SL → entry ${pos.slSpot} (favourable ${d.favPts.toFixed(1)}pt ≥ ${d.bePts}pt)`);
   }
+  if (d.trailMoved) {
+    try { saveOrbPosition(pos, { sessionPnl: state.sessionPnl || 0 }); } catch (_) {}
+    log(`🪜 Candle trail — SL → ${pos.slSpot} (behind the last candles, favourable ${d.favPts.toFixed(1)}pt)`);
+  }
   if (d.exit) return placeLiveSell(d.reason);
 
   // The stop trailed (breakeven / EMA trail) — move the resting SL-M with it so

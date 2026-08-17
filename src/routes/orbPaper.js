@@ -551,6 +551,11 @@ function _managePositionOnClose(bar) {
     try { require("../utils/positionPersist").saveOrbPosition(pos, { sessionPnl: state.sessionPnl }); } catch (_) {}
     log(`🔒 [ORB-PAPER] Breakeven armed — SL → entry ${pos.slSpot} (favourable ${d.favPts.toFixed(1)}pt ≥ ${d.bePts}pt)`);
   }
+  if (d.trailMoved) {
+    // Same reason as breakeven: crash recovery must see the RATCHETED stop.
+    try { require("../utils/positionPersist").saveOrbPosition(pos, { sessionPnl: state.sessionPnl }); } catch (_) {}
+    log(`🪜 [ORB-PAPER] Candle trail — SL → ${pos.slSpot} (behind the last candles, favourable ${d.favPts.toFixed(1)}pt)`);
+  }
   if (d.exit) simulateSell(d.reason);
 }
 

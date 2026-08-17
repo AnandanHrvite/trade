@@ -6,6 +6,16 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Added — ORB: a swing-shaped initial stop and a candle-by-candle trail (`ORB_SL_SOURCE=lookback`, `ORB_CANDLE_TRAIL_ENABLED`)
+
+Two ORB stop dials, both defaulting to today's exact behaviour, both from an owner review of a live PE trade whose 31-point initial stop sat on the breakout candle's high.
+
+**`ORB_SL_SOURCE=lookback`** anchors the initial stop to the extreme of the last `ORB_SL_LOOKBACK_CANDLES` candles ending at the entry candle — `2` means the entry candle **and the one before it**, which is the level a discretionary trader draws by hand. `entry` anchors to a single bar that can be tiny; `breakout` anchors to a bar that a resume/retest entry can leave several candles behind. Note that on a plain ORB entry — confirmation candle immediately after the breakout candle — `lookback` at `2` and `breakout` pick the **same** two candles and therefore usually the same level; `1` is the tighter setting and equals `entry`. The window never crosses into the previous session, and the existing wrong-side-of-entry fallbacks still apply on top.
+
+**`ORB_CANDLE_TRAIL_ENABLED`** ratchets the hard stop behind price once a candle closes in profit: the stop moves to the extreme of the last `ORB_CANDLE_TRAIL_CANDLES=2` candles and steps up candle by candle from there. It only ever tightens — a wider pullback candle leaves it alone — and it refuses a level sitting *at* the close, which the next tick would trigger. It does not replace the EMA trail: both run, and whichever ends the trade first wins. The difference that matters is **when** they fire — the EMA trail waits for a close through the line, while this moves the hard stop, so it exits intrabar through the shared tick-level check. That gives back less on a sharp reversal and stops out more often on a noisy one, which is exactly why it ships **off**: it is a hypothesis, and `scripts/orbSweep.js` is where it has to earn the default.
+
+Both live in the places that already own those decisions — the initial stop in `orb_breakout.js` (`sig.slSpot`), the trail in `orbExits.evaluateCloseExits()` — so Paper, Live, Backtest and `scripts/orbValidate.js` inherit them together and cannot drift. Paper and Live log the ratchet and re-snapshot for crash recovery on each step, exactly as they already do for breakeven; Live also moves the resting SL-M order with it, through the existing "the stop trailed" path.
+
 ### Added — Token Sync: one button pulls the LIVE token onto the laptop (`POST /token-sync/pull`)
 
 The copy/paste flow works but reads backwards: you open the page on LIVE, reveal a token, copy it, switch machines, paste it. **⇩ Pull tokens from LIVE** collapses that into one click on the local machine — it calls the LIVE server's own `/token-sync/tokens` with the credentials in `TOKEN_SYNC_LIVE_*`, then applies Fyers and Zerodha through the same write path a paste uses (disk + in-process client, no restart). The direction is always local → LIVE → local: LIVE cannot push, because a laptop behind a home router has no address the server can dial.
