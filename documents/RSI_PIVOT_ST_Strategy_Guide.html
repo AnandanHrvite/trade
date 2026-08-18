@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RSI Pivot ST — Strategy Guide</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0 18px 80px;
+    background: #0d1117; color: #c9d1d9;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.65; font-size: 16px;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; }
+  header.hero {
+    margin: 0 -18px 8px; padding: 40px 26px 30px;
+    background: linear-gradient(135deg, #161b22 0%, #241320 100%);
+    border-bottom: 3px solid #f472b6;
+  }
+  header.hero .kicker { color: #f472b6; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; font-size: 0.72rem; }
+  header.hero h1 { margin: 6px 0 8px; font-size: 2rem; color: #f0f6fc; }
+  header.hero p { margin: 0; color: #8b949e; max-width: 640px; }
+  h2 { color: #f0f6fc; font-size: 1.35rem; margin: 38px 0 12px; padding-bottom: 8px; border-bottom: 1px solid #21262d; }
+  h3 { color: #58a6ff; font-size: 1.05rem; margin: 24px 0 8px; }
+  code { background: rgba(110,118,129,0.18); color: #f9a8d4; padding: 1.5px 6px; border-radius: 4px; font-size: 0.85em; font-family: 'SF Mono', ui-monospace, Menlo, monospace; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 18px 22px; margin: 14px 0; }
+  .card.accent { border-left: 4px solid #f472b6; }
+  .card.warn { border-left: 4px solid #d29922; background: #1c1a12; }
+  .card.bad  { border-left: 4px solid #f85149; background: #1c1214; }
+  ul, ol { padding-left: 22px; }
+  li { margin: 5px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.88rem; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #21262d; vertical-align: top; }
+  th { color: #8b949e; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.6px; }
+  td code { white-space: nowrap; }
+  .flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 14px 0; }
+  .flow .step { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 8px 14px; font-size: 0.85rem; }
+  .flow .arrow { color: #f472b6; font-weight: 700; }
+  .pill { display: inline-block; background: rgba(244,114,182,0.15); color: #f472b6; border: 1px solid rgba(244,114,182,0.35); border-radius: 20px; padding: 2px 12px; font-size: 0.78rem; font-weight: 600; }
+  .muted { color: #6e7681; font-size: 0.85rem; }
+  a { color: #58a6ff; }
+  .num { font-family: 'SF Mono', ui-monospace, Menlo, monospace; color: #f0f6fc; }
+  /* TradingView-style chart wrapper */
+  .tv-chart { margin: 16px 0 6px; border: 1px solid #30363d; border-radius: 10px; overflow: hidden; background: #0d1626; }
+  .tv-chart .tv-svg { width: 100%; height: auto; display: block; }
+  .tv-cap { color: #8b949e; font-size: 0.82rem; margin: 0 0 16px; padding-left: 4px; }
+  .tv-cap b { color: #c9d1d9; }
+  .tv-empty { color: #6e7681; padding: 40px; text-align: center; font-size: 0.9rem; }
+
+/* ── MOBILE (shared block — keep in sync across all guides) ── */
+  @media (max-width: 768px) {
+    /* The setting tables are three columns of prose. A table cannot lay out
+       narrower than its min-content width, so at 393px they ran up to 259px past
+       the right edge and the browser zoomed the whole guide out to fit. Each one
+       now scrolls inside its own box and the page keeps the phone's width. */
+    table { display: block; width: 100%; max-width: 100%; overflow-x: auto;
+            -webkit-overflow-scrolling: touch; }
+    /* Long env keys wrap; fenced blocks keep their formatting and scroll. */
+    code { overflow-wrap: anywhere; word-break: break-word; }
+    pre { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    pre code { overflow-wrap: normal; word-break: normal; }
+    img, svg, canvas { max-width: 100%; }
+    .tv-chart { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    /* .cols is a two-up flex row with no wrap — the second card was pushed off
+       screen rather than dropping under the first. */
+    .cols { flex-direction: column; }
+    .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+    [style*="grid-template-columns"] { grid-template-columns: 1fr !important; }
+    /* Contents links are the guide's only navigation, and they were 18-31px.
+       The three guides each mark theirs up differently: nav.toc (ORB, EMA9VWAP,
+       Setup), a nav.no-print link bar (Price Action) and a two-column card list
+       (BB_RSI, EMA_RSI_ST, Trend Pullback). */
+    nav.toc a, .toc a, nav.no-print .container a,
+    .card li a { min-height: 44px; display: inline-flex; align-items: center; }
+    /* A two-column contents list leaves ~170px per column at 393px. */
+    ul[style*="columns"], ol[style*="columns"] { columns: 1 !important; -webkit-columns: 1 !important; }
+    .hero { padding-left: 16px; padding-right: 16px; }
+    .hero h1 { font-size: 1.7rem; }
+    .section { padding: 20px 14px; }
+  }
+/* ── END MOBILE ── */</style></head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <div class="kicker">Strategy 11 · Fyers data · Zerodha orders · Plain-English edition</div>
+  <h1>RSI Pivot ST</h1>
+  <p>Two lines are drawn on the chart before the market even opens, and they never move again. This strategy waits all day for a five-minute candle to push through one of them while the momentum reading agrees — and then it buys an option and holds it until a stop catches up.</p>
+  <p class="muted" style="margin-top:10px;">Updated 2026-08-18 &nbsp;·&nbsp; plain-English edition &nbsp;·&nbsp; every chart below was produced by running the real engine</p>
+</header>
+
+<!--LIVE_STATUS_PANEL-->
+
+<div class="card bad">
+  <strong>Read this first: this strategy has never traded.</strong> Not one paper session, not one live order, and no backtest has been run against it either. Every number in the rules is either your own stated rule or a repo convention — <em>nothing</em> here has been fitted to data, because there is no data. The charts below are the real engine run on <em>constructed</em> candles, for illustration only. They show you what the rule does; they say nothing about whether the rule makes money.
+</div>
+
+<div class="card">
+  <strong>What's inside</strong>
+  <ol style="margin:10px 0 0; columns:2; column-gap:30px;">
+    <li><a href="#idea">The idea in one minute</a></li>
+    <li><a href="#pivots">Step 1 — The two lines, drawn before the open</a></li>
+    <li><a href="#entry">Step 2 — The entry needs both halves</a></li>
+    <li><a href="#strike">Step 3 — Which option gets bought</a></li>
+    <li><a href="#stops">Step 4 — The stops, and why CE and PE differ</a></li>
+    <li><a href="#ce">A CE trade, start to finish</a></li>
+    <li><a href="#pe">A PE trade, start to finish</a></li>
+    <li><a href="#refuse">The trades it refuses</a></li>
+    <li><a href="#risk">Safety limits</a></li>
+    <li><a href="#modes">Paper, Live, Backtest &amp; Replay</a></li>
+    <li><a href="#config">All the settings, explained</a></li>
+    <li><a href="#missing">What's still missing / not validated</a></li>
+  </ol>
+</div>
+
+<h2 id="idea">1. The idea in one minute</h2>
+
+<p>Floor traders have used the same three-number arithmetic for decades. Take yesterday's high, low and close, average them, and you get the <b>pivot point</b> — a rough centre of gravity for today. Reflect yesterday's low across it and you get <b>R1</b>, a resistance line above. Reflect yesterday's high across it and you get <b>S1</b>, a support line below.</p>
+
+<p>Those two lines are the strategy's entire map of the day, and the reason they are useful is precisely that they are <em>boring</em>: they are computed once, from bars that have already finished, and they do not move. Every other line this app draws — an EMA, a Bollinger band, a VWAP — shifts under your feet as the session runs. R1 and S1 do not.</p>
+
+<p>The idea is then simple. If price is strong enough to push <em>through</em> R1 and close there, and the momentum reading agrees that it is genuinely strong, buy a Call. If it is weak enough to break down through S1 and close there with momentum agreeing, buy a Put. There is no profit target — you hold until a stop trails into you, or until the day ends.</p>
+
+<div class="flow">
+  <div class="step">Yesterday's H / L / C</div><div class="arrow">→</div>
+  <div class="step">PP, R1, S1 (frozen)</div><div class="arrow">→</div>
+  <div class="step">5-min candle crosses &amp; closes beyond</div><div class="arrow">→</div>
+  <div class="step">RSI agrees</div><div class="arrow">→</div>
+  <div class="step">buy the option</div><div class="arrow">→</div>
+  <div class="step">hold until a stop</div>
+</div>
+
+<h2 id="pivots">2. Step 1 — The two lines, drawn before the open</h2>
+
+<div class="card accent">
+  <strong>The arithmetic, with the numbers this guide uses throughout.</strong> Yesterday (17 Aug 2026 in the examples) NIFTY made a high of <span class="num">24520</span>, a low of <span class="num">24290</span>, and closed at <span class="num">24455</span>. So:
+  <ul style="margin:10px 0 0;">
+    <li><b>PP</b> = (24520 + 24290 + 24455) &divide; 3 = <span class="num">24421.67</span></li>
+    <li><b>R1</b> = 2 &times; 24421.67 &minus; 24290 = <span class="num">24553.33</span> &nbsp;&larr; the Call trigger</li>
+    <li><b>S1</b> = 2 &times; 24421.67 &minus; 24520 = <span class="num">24323.33</span> &nbsp;&larr; the Put trigger</li>
+  </ul>
+  <p style="margin:10px 0 0;">R2 and S2 come out of the same formula and are drawn on the chart for context, but nothing trades off them.</p>
+</div>
+
+<div class="card warn">
+  <strong>The bar that feeds this must be YESTERDAY, not today.</strong> A daily candle that is still forming would make R1 and S1 drift all session, and then no replay and no backtest could ever reproduce an entry. The engine walks backwards through the daily series to the newest completed bar strictly <em>before</em> the day being traded, which is also what lets a backtest step through history without peeking at the day it is trading. If there is no usable prior daily bar, the answer is "cannot trade" — never zero.
+</div>
+
+<h2 id="entry">3. Step 2 — The entry needs both halves</h2>
+
+<p>An entry is only ever decided on a <b>closed</b> five-minute candle, and both tests must pass on that <em>same</em> candle. Reading the RSI on the very bar that does the crossing is deliberate: it removes any lag between the two halves of the rule.</p>
+
+<table>
+  <tr><th>Side</th><th>Momentum half</th><th>Level half</th></tr>
+  <tr><td><b>CE</b> (Call)</td><td>RSI(14) <b>above 70</b> on the signal candle</td><td>The candle <b>crosses and closes</b> above R1 — the previous close sat at or below R1, this one closes above</td></tr>
+  <tr><td><b>PE</b> (Put)</td><td>RSI(14) <b>below 40</b> on the signal candle</td><td>The candle crosses and closes below S1 — the previous close sat at or above S1, this one closes below</td></tr>
+</table>
+
+<div class="card accent">
+  <strong>"Crosses" is doing real work in that sentence.</strong> A candle that is <em>already</em> sitting above R1 and closes higher still is not a cross. Taking it would be chasing a move that already happened — the level was breached some candles ago and you would be paying a worse price for the same idea. The engine requires the transition itself: below-or-at, then above.
+</div>
+
+<h2 id="strike">4. Step 3 — Which option gets bought</h2>
+
+<p>The strike is chosen from the signal candle's closing price, as a percentage of spot, in the direction the setting picks. The default is <b>OTM at 1%</b>.</p>
+
+<table>
+  <tr><th>Mode</th><th>What it does</th><th>Worked example at spot 24566</th></tr>
+  <tr><td><code>OTM</code> <span class="pill">default</span></td><td>1% <em>away</em> from the money — CE above spot, PE below</td><td>1% of 24566 = 245.66 pts &rarr; 5 strikes of 50 &rarr; CE strike <b>24800</b></td></tr>
+  <tr><td><code>ITM</code></td><td>1% <em>into</em> the money — the mirror</td><td>CE strike would be 24300</td></tr>
+  <tr><td><code>ATM</code></td><td>Nearest strike to spot; the percentage is ignored</td><td>24550</td></tr>
+</table>
+
+<p>The raw distance is rounded to the nearest 50-point NIFTY strike. If the percentage is so small that it rounds to <b>zero</b> steps, the engine falls back to ATM rather than inventing a strike that does not exist.</p>
+
+<h2 id="stops">5. Step 4 — The stops, and why CE and PE differ</h2>
+
+<div class="card bad">
+  <strong>The two sides are stopped differently, and that is the rule — not a bug and not an oversight.</strong> If you are reading this later and thinking of "balancing" the two sides, don't. It is written this way on purpose, and it is stated identically in the engine header, in the paper route header and here.
+</div>
+
+<h3>CE — two stops, both live, whichever fires first</h3>
+<ul>
+  <li><b>SuperTrend(10, 2)</b> on the five-minute <em>spot</em> chart. It is both the initial stop and the trail. It only ever moves in the trade's favour — a SuperTrend that ticks down mid-trade is ignored, because a trail that can loosen is not a trail. And if the line <b>flips bearish</b>, that flip is itself an exit: the reason for being long has gone.</li>
+  <li><b>A 25% premium floor.</b> The option's own price is watched, and the exit sits 25% below the <em>highest</em> premium the trade has seen. Buy at &#8377;180 and the floor starts at &#8377;135; if the premium runs to &#8377;240 the floor ratchets up to &#8377;180, which is your entry price. It never comes back down.</li>
+</ul>
+
+<h3>PE — one stop only</h3>
+<ul>
+  <li><b>The 25% premium floor, and nothing else.</b> There is no SuperTrend on the Put side.</li>
+</ul>
+
+<div class="card warn">
+  <strong>A CE with no valid stop is refused, not entered.</strong> If the SuperTrend is still warming up, or has flipped bearish, or already sits at or above the entry close — meaning the trade would be stopped out on its very first tick — the engine declines the setup and says so in the skip log. It will not open a position it cannot protect.
+</div>
+
+<h3>What is NOT here</h3>
+<p>There is <b>no profit target at all</b>, on either side. The trade runs until a stop trails into it or the 15:15 square-off. And deliberately absent, so nobody adds them back in later "helpfully": no VIX gate, no Open Interest filter, no ADX, no volume test, no EMA, no VWAP, no ATR sizing, no multi-timeframe bias, no extra confirmation candle, no breakeven jump, no partial booking, no re-entry after a stop, no expiry-day rule.</p>
+
+<h2 id="ce">6. A CE trade, start to finish</h2>
+
+<p>This is the real engine, fed the candles you see, with every setting left at its default. Nothing below was placed by hand.</p>
+
+<div class="tv-chart" id="rps-ce"></div>
+<p class="tv-cap"><b>The Call side.</b> Price grinds down all morning, turns, and at <b>11:15</b> a candle opens at 24549 and closes at <b>24566</b> — the first close above R1 at 24553, with the previous candle having closed at 24549, just below it. RSI on that same bar is <b>87.27</b>, comfortably past 70, so both halves pass and the engine buys the <span class="num">24800</span> CE (OTM, 5 strikes out). The initial stop is the SuperTrend line at <b>24509.95</b>, 56 points below entry. Over the next seven candles the trail ratchets up 24525 &rarr; 24538 &rarr; 24548 &rarr; 24556 &rarr; 24562 &rarr; 24565 &rarr; <b>24570.49</b>, and there it sticks. The rally stalls near 24618, rolls over, and at <b>12:05</b> the candle's low of 24569 reaches the trail — <b>EXIT 24570.49</b>, +4 spot points. A trade that looked like a clean 50-point winner at its best gave nearly all of it back, because there is no target and no breakeven rule to bank anything on the way.</p>
+
+<div class="card">
+  <strong>Read the lower panel.</strong> The RSI sub-chart shows the momentum half of the rule doing its job: RSI only clears 70 at 10:45, several candles <em>before</em> the level is broken. Being above 70 is not itself a signal — the cross is. That is why the strategy is quiet for most of a session even on a strongly trending day.
+</div>
+
+<h2 id="pe">7. A PE trade, start to finish</h2>
+
+<p>The Put side uses a different prior day — high <span class="num">24640</span>, low <span class="num">24410</span>, close <span class="num">24470</span> — which puts S1 at <span class="num">24373.33</span>.</p>
+
+<div class="tv-chart" id="rps-pe"></div>
+<p class="tv-cap"><b>The Put side, and the premium stop alone.</b> Price chops sideways in a narrow drift for two hours, then rolls. At <b>11:10</b> the candle opens at 24382 — the previous close, sitting just above S1 at 24373 — and closes at <b>24356</b>, below it. RSI on that bar is <b>19.3</b>, far under 40, so the engine buys the <span class="num">24100</span> PE (OTM, 5 strikes out). <b>No spot stop is set at all</b>: the Put side has no SuperTrend, so the only protection is the 25% premium floor. Price falls another 78 points to 24278 by 11:40 before turning; then it climbs back, and the exit is decided entirely by the option's own price rather than by any line on this chart. The dashed line marks 24278, the low that set the trade's best premium.</p>
+
+<div class="card accent">
+  <strong>The premium floor, step by step on that trade.</strong> Assume the 24100 PE was bought at &#8377;120 with a delta around 0.45 — a plausible simulation, not a recorded quote:
+  <table style="margin-top:10px;">
+    <tr><th>Time</th><th>Spot</th><th>Premium</th><th>Best so far</th><th>Floor (25% under best)</th></tr>
+    <tr><td>11:10 entry</td><td>24356</td><td>&#8377;120.00</td><td>&#8377;120.00</td><td>&#8377;90.00</td></tr>
+    <tr><td>11:30</td><td>24292</td><td>&#8377;148.80</td><td>&#8377;148.80</td><td>&#8377;111.60</td></tr>
+    <tr><td>11:40</td><td>24278</td><td>&#8377;155.10</td><td>&#8377;155.10</td><td><b>&#8377;116.32</b></td></tr>
+    <tr><td>12:00</td><td>24334</td><td>&#8377;129.90</td><td>&#8377;155.10</td><td>&#8377;116.32</td></tr>
+    <tr><td>12:10 <b>exit</b></td><td>24372</td><td><b>&#8377;112.80</b></td><td>&#8377;155.10</td><td>&#8377;116.32</td></tr>
+  </table>
+  <p style="margin:10px 0 0;">The premium peaks at &#8377;155.10, which pins the floor at &#8377;116.32. It never moves down again. At 12:10 the premium prints &#8377;112.80, under the floor, and the trade is closed — a small loss on an entry that was 78 points in profit at its best. That is the cost of a 25% giveback rule with no target.</p>
+</div>
+
+<h2 id="refuse">8. The trades it refuses</h2>
+
+<p>Most of what an engine does is decline. Here is the most common refusal, again from the real engine.</p>
+
+<div class="tv-chart" id="rps-skip"></div>
+<p class="tv-cap"><b>The level broke, and it still did not trade.</b> Price saws in a tight range just under R1 for two hours, then at <b>11:15</b> a single big candle opens at 24500 and closes at <b>24560</b>, decisively above R1 at 24553. The level half of the rule passes. But the sideways grind kept RSI pinned in the 40s, and that one candle only lifts it to <b>64.96</b> — short of 70 — so the engine refuses and logs exactly why: <em>"Closed above R1 24553.33 (24500 &rarr; 24560) but RSI 64.96 is not above 70."</em> A breakout out of a range with no momentum behind it is precisely the breakout that fails.</p>
+
+<div class="card">
+  <strong>The other refusals, and what each one is protecting you from.</strong>
+  <ul style="margin:10px 0 0;">
+    <li><b>RSI is past 70 but there is no fresh cross</b> — price is already above R1. Entering here is chasing.</li>
+    <li><b>No prior daily bar</b> — there is no R1 or S1 to trade, so there is no trade. Never treated as zero.</li>
+    <li><b>CE setup, SuperTrend not bullish</b> — no initial stop can be placed, so the entry is declined rather than opened unprotected.</li>
+    <li><b>CE setup, SuperTrend at or above entry</b> — the trade would stop out on its first tick.</li>
+    <li><b>Outside 09:30–15:00</b>, or the daily trade budget is spent.</li>
+    <li><b>A candle with unusable OHLC</b>, or a series that turns out to carry one bar per day rather than intraday bars — the engine refuses to decide rather than compute nonsense.</li>
+  </ul>
+  <p style="margin:10px 0 0;">Every refusal names <em>which half</em> failed. A skip log that only says "no signal" teaches nothing.</p>
+</div>
+
+<h2 id="risk">9. Safety limits</h2>
+
+<div class="card">
+  <ul style="margin:0;">
+    <li><b>Max 5 trades a day.</b> The pivot levels are fixed all day, so only a handful of genuine crosses can honestly occur — a higher number would mean the rule is firing on noise.</li>
+    <li><b>Max &#8377;5,000 loss in a day</b>, then the day is over.</li>
+    <li><b>Weekly loss cap is off by default</b> (<code>0</code>). It reads the per-day log files, so it survives a restart.</li>
+    <li><b>Entries only between 09:30 and 15:00.</b> The first candles of the day are noisy and often break a pivot for no reason; late entries have no room to work out. The bar's <em>close</em> time is what is gated, so the 14:55 bar — closing at 15:00 — is still legal.</li>
+    <li><b>Everything is squared off at 15:15.</b> Nothing is carried overnight, ever.</li>
+    <li>The shared portfolio-wide cap applies on top of all of this.</li>
+  </ul>
+</div>
+
+<h2 id="modes">10. Paper, Live, Backtest &amp; Replay</h2>
+
+<div class="card">
+  <p style="margin:0 0 8px;"><b>Paper</b> (<code>/rsi-pivot-st-paper</code>) is the canonical surface. Every decision, fill and exit rule lives there; the other two modes follow it, never the reverse.</p>
+  <p style="margin:0 0 8px;"><b>Live</b> (<code>/rsi-pivot-st-live</code>) does not re-implement anything — it <em>wraps</em> Paper and forwards its decisions to the broker, so Live equals Paper by construction. It is <b>triple-gated to dry-run</b>: a real order needs <code>RSI_PIVOT_ST_LIVE_ENABLED=true</code> <em>and</em> <code>LIVE_HARNESS_DRY_RUN=false</code> <em>and</em> <code>RSI_PIVOT_ST_LIVE_DRY_RUN</code> not-true, plus a logged-in broker. By default nothing places a real order.</p>
+  <p style="margin:0 0 8px;"><b>Two brokers.</b> The candles and quotes come from <b>Fyers</b>, as everywhere in this app, but the orders go to <b>Zerodha</b> — the same split EMA_RSI_ST uses. That is why starting Live checks both logins.</p>
+  <p style="margin:0;"><b>Crash recovery.</b> An open position is snapshotted to <code>.active_rsi_pivot_st_position.json</code> and reconciled against the broker's book on the next boot. Both stops are recomputed from values the route already persists, so a recovered position resumes on exactly the same numbers.</p>
+</div>
+
+<div class="card warn">
+  <strong>What the backtest can and cannot tell you.</strong> It drives the <em>same</em> signal engine, so the entries are honest, and it is conservative about intra-bar order: the adverse stop is tested on the bar's high/low <em>before</em> anything favourable, so a bar that touched both books the loss; a bar that opened beyond a level fills at the open, never at the better level; and the SuperTrend trail advances only on a bar close, matching Paper. It also fetches a separate daily series padded a week before the range, so the very first session still has a yesterday to compute R1/S1 from.
+  <p style="margin:10px 0 0;"><b>But the rupees are simulated.</b> There is no historical option chain, so the premium is modelled from delta and theta seeded at &#8377;180, and the 25% floor is applied to <em>that model</em> rather than to a real quote. Since the premium stop is the <em>only</em> stop on the PE side, PE results in particular should be read as directional, not as a P&amp;L you could have collected.</p>
+</div>
+
+<h2 id="config">11. All the settings, explained</h2>
+
+<p class="muted">Every key below appears in <b>Settings &rarr; RSI_PIVOT_ST Strategy</b>. Defaults are the ones the Settings schema ships.</p>
+
+<h3>Mode &amp; Live</h3>
+<table>
+  <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>RSI_PIVOT_ST_MODE_ENABLED</code></td><td><code>true</code></td><td>Show the RSI Pivot ST menu and settings section.</td></tr>
+  <tr><td><code>RSI_PIVOT_ST_PAPER_ENABLED</code></td><td><code>true</code></td><td>Allow new paper sessions to start.</td></tr>
+  <tr><td><code>RSI_PIVOT_ST_LIVE_ENABLED</code></td><td><code>false</code></td><td>Enable live orders via Zerodha. Never traded — paper-validate first.</td></tr>
+  <tr><td><code>RSI_PIVOT_ST_LIVE_DRY_RUN</code></td><td><code>false</code></td><td>Keep it simulated even when live is on — the broker call is logged but no real order is sent.</td></tr>
+</table>
+
+<h3>Signal — the RSI and the pivot cross</h3>
+<table>
+  <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>RSI_PIVOT_ST_RESOLUTION</code></td><td><code>5</code></td><td>Which candle decides. Entries are only taken on a closed candle of this size — 5-min is the rule as written.</td></tr>
+  <tr><td><code>RSI_PIVOT_ST_RSI_PERIOD</code></td><td><code>14</code></td><td>How many candles the RSI is measured over. 14 is standard and what the rule assumes.</td></tr>
+  <tr><td><code>RSI_PIVOT_ST_RSI_CE_MIN</code></td><td><code>70</code></td><td>A Call is only bought when RSI on the signal candle is above this. Raise it for fewer, stronger buys.</td></tr>
+  <tr><td><code>RSI_PIVOT_ST_RSI_PE_MAX</code></td><td><code>40</code></td><td>A Put is only bought when RSI on the signal candle is below this. Lower it for fewer, stronger sells.</td></tr>
+  <tr><td><code>RSI_PIVOT_ST_PIVOT_BUFFER_PTS</code></td><td><code>0</code></td><td>How far past R1 (or S1) the candle must close before it counts as a break. 0 = just beyond is enough. Raise it to ignore candles that only tickle the line.</td></tr>
+</table>
+
+<h3>Session window</h3>
+<table>
+  <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>RSI_PIVOT_ST_SESSION_START</code></td><td><code>09:15</code></td><td>When the strategy starts watching candles for the day (IST).</td></tr>
+  <tr><td><code>RSI_PIVOT_ST_ENTRY_START</code></td><td><code>09:30</code></td><td>No entries before this (IST). The first candles are noisy and often break a pivot for no reason.</td></tr>
+  <tr><td><code>RSI_PIVOT_ST_ENTRY_END</code></td><td><code>15:00</code></td><td>No new entries after this (IST) — too late for a fresh trade to work out.</td></tr>
+  <tr><td><code>RSI_PIVOT_ST_EXIT_TIME</code></td><td><code>15:15</code></td><td>Everything still open is closed at this time (IST). Nothing is carried overnight.</td></tr>
+</table>
+
+<h3>Strike</h3>
+<table>
+  <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>RSI_PIVOT_ST_STRIKE_MODE</code></td><td><code>OTM</code></td><td>Which strike to buy. ATM = nearest to spot. OTM = 1% of spot away from the money (cheaper, needs a bigger move). ITM = 1% into the money (costlier, moves more with spot).</td></tr>
+  <tr><td><code>RSI_PIVOT_ST_STRIKE_PCT</code></td><td><code>1</code></td><td>How far from spot the ITM/OTM strike sits, as a percentage. 1% of a 24000 NIFTY is 240 points, rounded to the nearest 50-point strike. Ignored when the mode is ATM.</td></tr>
+</table>
+
+<h3>Stops</h3>
+<table>
+  <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>RSI_PIVOT_ST_ST_PERIOD</code></td><td><code>10</code></td><td>ATR length behind the SuperTrend line used as the CE stop. Longer = a slower, looser trail.</td></tr>
+  <tr><td><code>RSI_PIVOT_ST_ST_MULT</code></td><td><code>2</code></td><td>How many ATRs below price the SuperTrend line sits. Smaller = a tighter stop that gets hit more often; larger = more room and bigger losses.</td></tr>
+  <tr><td><code>RSI_PIVOT_ST_ST_CE_ENABLED</code></td><td><code>true</code></td><td>Use the SuperTrend line as the CE stop and trail, on top of the premium stop. <b>This affects CE only</b> — PE is stopped by the premium rule alone, by design. Turning it off leaves CE with only the premium stop and also removes the "SuperTrend must be bullish" entry check.</td></tr>
+  <tr><td><code>RSI_PIVOT_ST_PREMIUM_SL_PCT</code></td><td><code>25</code></td><td>Exit when the option price falls this far below its best price so far. 25 means: bought at 100, exit at 75; if it runs to 140, the exit rises to 105. Applies to <b>both</b> CE and PE.</td></tr>
+</table>
+
+<h3>Sizing &amp; day breakers</h3>
+<table>
+  <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>RSI_PIVOT_ST_LOT_MULTIPLIER</code></td><td><code>0</code></td><td>Lots per trade. 0 = use the global <code>LOT_MULTIPLIER</code>, which is the default.</td></tr>
+  <tr><td><code>RSI_PIVOT_ST_MAX_TRADES</code></td><td><code>5</code></td><td>Max entries per day. The pivot levels are fixed all day, so a handful of crosses is all this rule can honestly produce.</td></tr>
+  <tr><td><code>RSI_PIVOT_ST_MAX_DAILY_LOSS</code></td><td><code>5000</code></td><td>Stop trading for the day after this much loss (0 = off).</td></tr>
+  <tr><td><code>RSI_PIVOT_ST_MAX_WEEKLY_LOSS</code></td><td><code>0</code></td><td>Stop for the rest of the week after this much loss across Mon–today (0 = off). Read from the day files, so it survives a restart.</td></tr>
+</table>
+
+<h3>Data plumbing</h3>
+<table>
+  <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>RSI_PIVOT_ST_POLL_MS</code></td><td><code>2000</code></td><td>How often the option price is re-read while a trade is open. This is what the 25% premium stop is measured against, so a slower poll means a later exit.</td></tr>
+  <tr><td><code>RSI_PIVOT_ST_HISTORY_LAG_MS</code></td><td><code>5000</code></td><td>How long to wait after a candle closes before asking Fyers for it. Asking too early often returns the bar one short, which would delay every decision by a whole candle.</td></tr>
+</table>
+
+<h3>Backtest</h3>
+<table>
+  <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>RSI_PIVOT_ST_BT_SLIPPAGE_PTS</code></td><td><code>2</code></td><td>Backtest cost per side, in points. Without this, option-buying backtests always flatter.</td></tr>
+  <tr><td><code>RSI_PIVOT_ST_BT_SEED_PREMIUM</code></td><td><code>180</code></td><td>Starting option price the backtest assumes, since there is no historical option chain. The 25% stop is measured against this simulated premium, so it is the weakest number in any backtest result.</td></tr>
+</table>
+
+<h3>Menu &amp; alerts</h3>
+<table>
+  <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>UI_SHOW_RSI_PIVOT_ST_BACKTEST</code> / <code>_PAPER</code> / <code>_LIVE</code> / <code>_HISTORY</code></td><td><code>true</code></td><td>Sidebar sub-menu visibility, one per page.</td></tr>
+  <tr><td><code>TG_RSI_PIVOT_ST_STARTED</code> / <code>_ENTRY</code> / <code>_EXIT</code> / <code>_DAYREPORT</code></td><td><code>true</code></td><td>Telegram alerts: session start, every entry, every exit, and a day summary on stop.</td></tr>
+</table>
+
+<h2 id="missing">12. What's still missing / not validated</h2>
+
+<div class="card bad">
+  <strong>Be honest with yourself about what you are looking at.</strong>
+  <ul style="margin:10px 0 0;">
+    <li><b>It has never traded. Not once.</b> Zero paper sessions, zero live orders. There is no win rate, no profit factor, no drawdown figure, because there are no trades.</li>
+    <li><b>No threshold here has been fitted or backtested.</b> RSI 70 and 40, SuperTrend 10 and 2, the 25% floor, 1% OTM, 5 trades a day — every one is either your stated rule or a round number borrowed from the rest of this repo. None of them earned its value from data.</li>
+    <li><b>Backtest rupees are simulated, not observed.</b> There is no historical option chain, so the premium is a delta-plus-theta model seeded at &#8377;180. The premium stop is the weakest part of that simulation — and on the PE side it is the <em>only</em> stop, so a PE backtest is essentially a test of the model rather than of the market.</li>
+    <li><b>The core claim is untested.</b> Does a five-minute close through yesterday's R1, with RSI above 70, actually lead anywhere? Nobody here knows. The charts in this guide demonstrate the mechanics on constructed candles; they are not evidence.</li>
+    <li><b>The CE example above is a warning, not a showcase.</b> It reached roughly +50 points and exited at +4, because there is no target and no breakeven rule. Whether that giveback is acceptable is exactly the kind of question only real sessions can answer.</li>
+    <li><b>What to do next.</b> Run paper sessions with the tick recorder on. Diff them against <code>/replay</code> to confirm Paper and Live agree on a recorded day. Only then consider touching a live gate — and even then, remember trades produced before any bug fix were produced by different code.</li>
+  </ul>
+</div>
+
+<p class="muted" style="margin-top:30px;">Engine: <code>src/strategies/rsi_pivot_st.js</code> &nbsp;·&nbsp; canonical route: <code>src/routes/rsiPivotStPaper.js</code> &nbsp;·&nbsp; every chart on this page was rendered from output of that engine.</p>
+
+
+<script>
+/* ============================================================================
+ * TVChart v3 — dependency-free TradingView-style candlestick renderer.
+ * v2 features: OHLC header, subtitle, bottom time axis, last-price tag/line.
+ * v3 adds:   hlines (labelled price levels), shades (vertical highlight spans),
+ *            pane (RSI / volume / line sub-panel under the price chart).
+ * Pure buildSVG(spec) -> string (no DOM), never throws on bad data.
+ * Backward-compatible with every v1/v2 spec.
+ * ==========================================================================*/
+(function (global) {
+  "use strict";
+  function isNum(x) { return typeof x === "number" && isFinite(x); }
+  function esc(s) { return String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+  function fmt(v) { return isNum(v) ? v.toFixed(2).replace(/\.00$/,"") : "—"; }
+
+  function priceRange(spec) {
+    var lo = Infinity, hi = -Infinity;
+    function eat(v){ if(isNum(v)){ if(v>hi)hi=v; if(v<lo)lo=v; } }
+    (spec.candles||[]).forEach(function(c){ eat(c[1]); eat(c[2]); });
+    (spec.overlays||[]).forEach(function(o){ (o.data||[]).forEach(eat); });
+    (spec.bands||[]).forEach(function(b){ (b.upper||[]).forEach(eat); (b.lower||[]).forEach(eat); (b.mid||[]).forEach(eat); });
+    (spec.markers||[]).forEach(function(m){ if(isNum(m.price)) eat(m.price); });
+    (spec.hlines||[]).forEach(function(h){ eat(h.price); });
+    (spec.zones||[]).forEach(function(z){ eat(z.top); eat(z.bottom); });
+    if(!isFinite(lo)||!isFinite(hi)){ lo=0; hi=1; }
+    if(lo===hi){ lo-=1; hi+=1; }
+    var pad=(hi-lo)*0.10; return { lo:lo-pad, hi:hi+pad };
+  }
+
+  // Build a path that starts a fresh subpath after every gap. Indicator series
+  // are null until they have enough history (EMA/BB/RSI warm-up), and a path
+  // that opens with "L" is invalid — that used to drop the whole line.
+  function linePath(data, X, Y) {
+    var d = "", pen = false;
+    for (var i=0;i<data.length;i++){
+      if(!isNum(data[i])){ pen = false; continue; }
+      d += (pen ? "L" : "M") + X(i) + " " + Y(data[i]) + " "; pen = true;
+    }
+    return d;
+  }
+
+  function buildSVG(spec) {
+    spec = spec||{};
+    var candles = spec.candles||[]; var n = candles.length;
+    if(!n) return '<div class="tv-empty">chart data unavailable</div>';
+
+    var pane = null;
+    if (spec.pane && spec.pane.data && spec.pane.data.length) pane = spec.pane;
+    var paneH  = pane ? (isNum(pane.height) ? pane.height : 92) : 0;
+    var paneGap = pane ? 12 : 0;
+
+    var W=880, padL=6, padR=74, padT=52, padB=40, plotH=348;
+    var H = padT + plotH + paneGap + paneH + padB;
+    var rng=priceRange(spec); var plotW=W-padL-padR;
+    var slot=plotW/n; var cw=Math.max(2,Math.min(20,slot*0.66)); var wickW=Math.max(0.8,cw*0.12);
+    var up="#26a69a",down="#ef5350",grid="#1b2636",axis="#5a7499",txt="#e8eef8",mut="#8b98ac";
+    var plotBot = padT+plotH;
+    var paneTop = plotBot+paneGap, paneBot = paneTop+paneH;
+    var axisBot = pane ? paneBot : plotBot;
+    function X(i){ return padL+slot*(i+0.5); }
+    function Y(p){ return padT+(rng.hi-p)/(rng.hi-rng.lo)*plotH; }
+    var out=[];
+    out.push('<svg viewBox="0 0 '+W+' '+H+'" class="tv-svg" role="img" aria-label="'+esc(spec.title||"price chart")+'" preserveAspectRatio="xMidYMid meet">');
+    out.push('<rect x="0" y="0" width="'+W+'" height="'+H+'" fill="#0d1421"/>');
+
+    // horizontal price grid + right-side labels
+    for(var g=0;g<=4;g++){ var gp=rng.hi-(rng.hi-rng.lo)*(g/4); var gy=Y(gp);
+      out.push('<line x1="'+padL+'" y1="'+gy+'" x2="'+(W-padR)+'" y2="'+gy+'" stroke="'+grid+'" stroke-width="1"/>');
+      out.push('<text x="'+(W-padR+6)+'" y="'+(gy+3.5)+'" fill="'+axis+'" font-size="10.5" font-family="monospace">'+gp.toFixed(0)+'</text>'); }
+
+    // vertical time grid + bottom axis labels (every ~1/7 of the candles)
+    var times = spec.times || [];
+    var step = Math.max(1, Math.round(n/7));
+    for(var t=0;t<n;t+=step){ var tx=X(t);
+      out.push('<line x1="'+tx+'" y1="'+padT+'" x2="'+tx+'" y2="'+axisBot+'" stroke="'+grid+'" stroke-width="0.7" opacity="0.5"/>');
+      if(times[t]) out.push('<text x="'+tx+'" y="'+(axisBot+15)+'" fill="'+axis+'" font-size="10" text-anchor="middle" font-family="system-ui">'+esc(times[t])+'</text>'); }
+
+    // vertical highlight spans (e.g. "position held", "no-trade window")
+    (spec.shades||[]).forEach(function(s){ if(!isNum(s.from)||!isNum(s.to)) return;
+      var sx=X(s.from)-slot/2, sw=Math.max(1,X(s.to)-X(s.from)+slot);
+      out.push('<rect x="'+sx+'" y="'+padT+'" width="'+sw+'" height="'+plotH+'" fill="'+(s.color||"rgba(96,165,250,0.07)")+'"/>');
+      if(s.label){ var sly = s.labelBottom ? (padT+plotH-7) : (padT+13);
+        out.push('<text x="'+(sx+sw/2)+'" y="'+sly+'" fill="'+(s.text||"#7c93b5")+'" font-size="10" text-anchor="middle" font-family="system-ui">'+esc(s.label)+'</text>'); } });
+
+    // zones (e.g. ORB opening-range box)
+    (spec.zones||[]).forEach(function(z){ if(!isNum(z.from)||!isNum(z.to)) return;
+      var zx=X(z.from)-cw/2, zw=X(z.to)-X(z.from)+cw; var zTop=Y(isNum(z.top)?z.top:rng.hi), zBot=Y(isNum(z.bottom)?z.bottom:rng.lo);
+      out.push('<rect x="'+zx+'" y="'+zTop+'" width="'+zw+'" height="'+(zBot-zTop)+'" fill="'+(z.color||"rgba(96,165,250,0.10)")+'" stroke="'+(z.stroke||"rgba(96,165,250,0.5)")+'" stroke-dasharray="4 3" stroke-width="1"/>');
+      if(z.label) out.push('<text x="'+(zx+4)+'" y="'+(zTop-4)+'" fill="'+(z.stroke||"#60a5fa")+'" font-size="10.5" font-weight="600">'+esc(z.label)+'</text>'); });
+
+    // band envelopes (VWAP band / Bollinger)
+    (spec.bands||[]).forEach(function(b){ var u=b.upper||[], l=b.lower||[];
+      if(u.length&&l.length){ var pts=[]; for(var i=0;i<u.length;i++) if(isNum(u[i])) pts.push(X(i)+","+Y(u[i]));
+        for(var j=l.length-1;j>=0;j--) if(isNum(l[j])) pts.push(X(j)+","+Y(l[j]));
+        out.push('<polygon points="'+pts.join(" ")+'" fill="'+(b.fill||"rgba(120,144,200,0.08)")+'"/>');
+        [u,l].forEach(function(line){
+          out.push('<path d="'+linePath(line,X,Y)+'" fill="none" stroke="'+(b.color||"#a78bfa")+'" stroke-width="1.3" opacity="0.85"/>'); }); }
+      if(b.mid){
+        out.push('<path d="'+linePath(b.mid,X,Y)+'" fill="none" stroke="'+(b.color||"#a78bfa")+'" stroke-width="1" stroke-dasharray="2 3" opacity="0.7"/>'); } });
+
+    // labelled horizontal price levels (stop / target / neckline / OR high-low)
+    (spec.hlines||[]).forEach(function(hl){ if(!isNum(hl.price)) return;
+      var hy=Y(hl.price), hc=hl.color||"#fbbf24";
+      out.push('<line x1="'+padL+'" y1="'+hy+'" x2="'+(W-padR)+'" y2="'+hy+'" stroke="'+hc+'" stroke-width="'+(hl.width||1.2)+'" '+(hl.solid?"":'stroke-dasharray="6 4" ')+'opacity="0.9"/>');
+      out.push('<rect x="'+(W-padR)+'" y="'+(hy-8)+'" width="'+padR+'" height="16" fill="'+hc+'" opacity="0.92"/>');
+      out.push('<text x="'+(W-padR+5)+'" y="'+(hy+3.5)+'" fill="#0d1421" font-size="10" font-weight="700" font-family="monospace">'+hl.price.toFixed(0)+'</text>');
+      if(hl.label){ var lw=hl.label.length*5.9+10;
+        // labelAt (0..1) slides the tag along the line so it can dodge markers
+        var lx1=padL+3+(isNum(hl.labelAt)?hl.labelAt:0)*(W-padR-padL-lw-6);
+        lx1=Math.max(padL+3,Math.min(lx1,W-padR-lw-3));
+        out.push('<rect x="'+lx1+'" y="'+(hy-15)+'" width="'+lw+'" height="14" rx="3" fill="'+hc+'" opacity="0.92"/>');
+        out.push('<text x="'+(lx1+5)+'" y="'+(hy-4.5)+'" fill="#0d1421" font-size="9.8" font-weight="700" font-family="system-ui">'+esc(hl.label)+'</text>'); } });
+
+    // candlesticks
+    candles.forEach(function(c,i){ if(!c||!isNum(c[0])||!isNum(c[3])) return;
+      var o=c[0],h=c[1],lw=c[2],cl=c[3]; var col=cl>=o?up:down, cx=X(i);
+      if(isNum(h)&&isNum(lw)) out.push('<rect x="'+(cx-wickW/2)+'" y="'+Y(h)+'" width="'+wickW+'" height="'+Math.max(0.5,Y(lw)-Y(h))+'" fill="'+col+'"/>');
+      var yo=Y(o),yc=Y(cl),top=Math.min(yo,yc),bh=Math.max(1,Math.abs(yc-yo));
+      out.push('<rect x="'+(cx-cw/2)+'" y="'+top+'" width="'+cw+'" height="'+bh+'" fill="'+col+'"/>'); });
+
+    // overlay indicator lines (EMA / VWAP / MAs)
+    (spec.overlays||[]).forEach(function(ov){
+      out.push('<path d="'+linePath(ov.data||[],X,Y)+'" fill="none" stroke="'+(ov.color||"#fbbf24")+'" stroke-width="'+(ov.width||1.6)+'" '+(ov.dash?'stroke-dasharray="5 3" ':"")+'opacity="0.95"/>'); });
+
+    // last-price dashed line + right-axis tag (TradingView style)
+    if(spec.lastPriceTag !== false){ var last=candles[n-1]; if(last&&isNum(last[3])){ var lp=last[3], ly=Y(lp);
+      var lcol=(isNum(last[0])&&lp>=last[0])?up:down;
+      out.push('<line x1="'+padL+'" y1="'+ly+'" x2="'+(W-padR)+'" y2="'+ly+'" stroke="'+lcol+'" stroke-width="0.8" stroke-dasharray="2 2" opacity="0.7"/>');
+      out.push('<rect x="'+(W-padR)+'" y="'+(ly-8)+'" width="'+padR+'" height="16" fill="'+lcol+'"/>');
+      out.push('<text x="'+(W-padR+6)+'" y="'+(ly+3.5)+'" fill="#0d1421" font-size="10.5" font-weight="700" font-family="monospace">'+lp.toFixed(2)+'</text>'); } }
+
+    // markers (buy / exit / dot)
+    (spec.markers||[]).forEach(function(m){ if(!isNum(m.i)) return; var mx=X(m.i);
+      var my=isNum(m.price)?Y(m.price):(m.type==="buy"?plotBot-14:padT+14);
+      var isBuy=m.type==="buy", isExit=m.type==="exit"; var col=m.color||(isBuy?"#26a69a":isExit?"#ef5350":"#fbbf24");
+      if(isBuy||isExit){ var ay=isBuy?my+18:my-18, tri=isBuy?(mx-6)+","+ay+" "+(mx+6)+","+ay+" "+mx+","+(ay-10):(mx-6)+","+ay+" "+(mx+6)+","+ay+" "+mx+","+(ay+10);
+        out.push('<polygon points="'+tri+'" fill="'+col+'"/>'); }
+      else out.push('<circle cx="'+mx+'" cy="'+my+'" r="3.5" fill="'+col+'" stroke="#0d1421" stroke-width="1"/>');
+      if(m.text){ var lblY=isBuy?my+34:(isExit?my-26:my-10); var tw=m.text.length*6.2+10;
+        var lx0=Math.max(padL+1,Math.min(mx-tw/2,W-padR-tw-1));
+        out.push('<rect x="'+lx0+'" y="'+(lblY-11)+'" width="'+tw+'" height="15" rx="3" fill="'+col+'" opacity="0.94"/>');
+        out.push('<text x="'+(lx0+tw/2)+'" y="'+lblY+'" fill="#0d1421" font-size="10.5" font-weight="700" text-anchor="middle" font-family="system-ui">'+esc(m.text)+'</text>'); } });
+
+    // ── sub-panel: RSI / volume / any line series ─────────────────────────
+    if(pane){
+      var pd=pane.data||[], pType=pane.type||"line";
+      var plo=Infinity, phi=-Infinity;
+      pd.forEach(function(v){ if(isNum(v)){ if(v>phi)phi=v; if(v<plo)plo=v; } });
+      if(pType==="rsi"){ plo=0; phi=100; }
+      if(pType==="volume"){ plo=0; }
+      if(isNum(pane.min)) plo=pane.min;
+      if(isNum(pane.max)) phi=pane.max;
+      if(!isFinite(plo)||!isFinite(phi)){ plo=0; phi=1; }
+      if(plo===phi){ plo-=1; phi+=1; }
+      var pPad=(pType==="rsi"||pType==="volume")?0:(phi-plo)*0.12;
+      var pLo=plo-pPad, pHi=phi+pPad;
+      function PY(v){ return paneTop+(pHi-v)/(pHi-pLo)*paneH; }
+      out.push('<rect x="'+padL+'" y="'+paneTop+'" width="'+(W-padR-padL)+'" height="'+paneH+'" fill="#0b111c"/>');
+      out.push('<line x1="'+padL+'" y1="'+paneTop+'" x2="'+(W-padR)+'" y2="'+paneTop+'" stroke="'+grid+'" stroke-width="1"/>');
+
+      // guide levels inside the pane (e.g. RSI 70 / 40)
+      (pane.levels||[]).forEach(function(lv){ var v=isNum(lv)?lv:lv.value; if(!isNum(v)) return;
+        var c=(lv&&lv.color)||"#3f5570", ly2=PY(v);
+        out.push('<line x1="'+padL+'" y1="'+ly2+'" x2="'+(W-padR)+'" y2="'+ly2+'" stroke="'+c+'" stroke-width="1" stroke-dasharray="4 3" opacity="0.8"/>');
+        out.push('<text x="'+(W-padR+6)+'" y="'+(ly2+3.5)+'" fill="'+c+'" font-size="10" font-family="monospace">'+v+'</text>'); });
+
+      if(pType==="volume"){
+        var bw=Math.max(1.5,slot*0.6);
+        pd.forEach(function(v,i){ if(!isNum(v)) return; var c2=candles[i];
+          var col2=(c2&&isNum(c2[0])&&isNum(c2[3])&&c2[3]>=c2[0])?"rgba(38,166,154,0.55)":"rgba(239,83,80,0.55)";
+          if(pane.colors&&pane.colors[i]) col2=pane.colors[i];
+          var by=PY(v); out.push('<rect x="'+(X(i)-bw/2)+'" y="'+by+'" width="'+bw+'" height="'+Math.max(0.5,paneBot-by)+'" fill="'+col2+'"/>'); });
+      } else {
+        out.push('<path d="'+linePath(pd,X,PY)+'" fill="none" stroke="'+(pane.color||"#c084fc")+'" stroke-width="1.6"/>');
+      }
+      (pane.markers||[]).forEach(function(m){ if(!isNum(m.i)||!isNum(m.value)) return;
+        out.push('<circle cx="'+X(m.i)+'" cy="'+PY(m.value)+'" r="3.2" fill="'+(m.color||"#fbbf24")+'" stroke="#0b111c" stroke-width="1"/>'); });
+      if(pane.label) out.push('<text x="'+(padL+5)+'" y="'+(paneTop+13)+'" fill="'+mut+'" font-size="10.5" font-weight="600" font-family="system-ui">'+esc(pane.label)+'</text>');
+    }
+
+    // header: title, subtitle, and OHLC readout (TradingView top-left)
+    out.push('<text x="'+padL+'" y="17" fill="'+txt+'" font-size="13" font-weight="700" font-family="system-ui">'+esc(spec.title||"")+'</text>');
+    if(spec.subtitle) out.push('<text x="'+padL+'" y="32" fill="'+mut+'" font-size="10.5" font-family="system-ui">'+esc(spec.subtitle)+'</text>');
+    if(spec.ohlc !== false){ var f=candles[n-1]; if(f){ var oc=(isNum(f[0])&&isNum(f[3])&&f[3]>=f[0])?up:down;
+      var parts=[["O",f[0]],["H",f[1]],["L",f[2]],["C",f[3]]], hy2=spec.subtitle?46:32;
+      var lx=padL;
+      parts.forEach(function(p){ out.push('<text x="'+lx+'" y="'+hy2+'" font-size="10.5" font-family="monospace" fill="'+mut+'">'+p[0]+'</text>');
+        lx+=11; out.push('<text x="'+lx+'" y="'+hy2+'" font-size="10.5" font-family="monospace" fill="'+oc+'">'+fmt(p[1])+'</text>'); lx+=(fmt(p[1]).length*6.4)+10; }); } }
+
+    // legend (bottom-left, above time axis)
+    var lgx=padL, lgy=H-4;
+    (spec.legend||[]).forEach(function(lg){ out.push('<rect x="'+lgx+'" y="'+(lgy-8)+'" width="14" height="3" rx="1.5" fill="'+(lg.color||"#fbbf24")+'"/>');
+      out.push('<text x="'+(lgx+18)+'" y="'+(lgy-4)+'" fill="'+axis+'" font-size="10" font-family="system-ui">'+esc(lg.label)+'</text>');
+      lgx+=22+lg.label.length*6.1; });
+
+    out.push("</svg>"); return out.join("");
+  }
+
+  var TVChart = { buildSVG: buildSVG, render: function(elId, spec){ try { var el=document.getElementById(elId); if(!el) return; el.innerHTML=buildSVG(spec); } catch(e){} } };
+  global.TVChart = TVChart;
+})(window);
+</script>
+<script>
+(function(){ if(typeof TVChart==="undefined") return;
+
+/* Every array below is verbatim output of src/strategies/rsi_pivot_st.js run on
+ * these candles — the pivots from computePivots(), the SuperTrend from
+ * computeSuperTrendSeries(), the RSI from computeRsi(), and the entry/exit from
+ * getSignal() + superTrendStop()/premiumStop(). Nothing is hand-placed. */
+
+TVChart.render("rps-ce", {
+  "title": "NIFTY 50 · a candle crosses and closes above R1, with RSI already past 70",
+  "subtitle": "5m · pivots frozen from 2026-08-17 (H 24520 / L 24290 / C 24455) · CE is stopped by SuperTrend(10,2) AND a 25% premium floor",
+  "times": ["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55","12:00","12:05","12:10"],
+  "candles": [[24415,24421,24403,24408],[24408,24414,24394,24399],[24399,24405,24386,24391],[24391,24397,24381,24386],[24386,24392,24375,24380],[24380,24386,24372,24377],[24377,24389,24372,24383],[24383,24389,24374,24379],[24379,24385,24369,24374],[24374,24380,24366,24371],[24371,24382,24366,24376],[24376,24388,24371,24382],[24382,24396,24377,24390],[24390,24405,24385,24399],[24399,24415,24394,24409],[24409,24426,24404,24420],[24420,24438,24415,24432],[24432,24451,24427,24445],[24445,24465,24440,24459],[24459,24480,24454,24474],[24474,24496,24469,24490],[24490,24512,24485,24506],[24506,24534,24501,24528],[24528,24555,24523,24549],[24549,24572,24544,24566],[24566,24586,24561,24580],[24580,24597,24575,24591],[24591,24605,24586,24599],[24599,24610,24594,24604],[24604,24613,24599,24607],[24607,24619,24598,24612],[24612,24625,24603,24618],[24618,24625,24601,24610],[24610,24617,24587,24596],[24596,24603,24569,24578],[24578,24585,24543,24552]],
+  "overlays": [
+    {"name":"SuperTrend(10,2)","color":"#3f5570","width":1,"data":[null,null,null,null,null,null,null,null,null,null,24341.2,24346.58,24353.07,24360.91,24369.62,24379.21,24389.69,24401.07,24413.36,24426.58,24440.72,24455.5,24472.2,24491.83,24509.95,24525.25,24538.18,24548.66,24556.64,24562.38,24565.04,24570.49,24570.49,24570.49,24570.49,24615.43]},
+    {"name":"the stop actually in force (ratcheted)","color":"#ef5350","width":2,"data":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,24509.95,24525.25,24538.18,24548.66,24556.64,24562.38,24565.04,24570.49,24570.49,24570.49,24570.49,null]}
+  ],
+  "hlines": [
+    {"price":24553.33,"color":"#f59e0b","label":"R1 24553.33 — the Call trigger, fixed all day","labelAt":0.03},
+    {"price":24421.67,"color":"#3f5570","label":"PP 24421.67","labelAt":0.03},
+    {"price":24323.33,"color":"#3f5570","label":"S1 24323.33 — not reached today","labelAt":0.03}
+  ],
+  "shades": [{"from":24,"to":34,"color":"rgba(38,166,154,0.06)","label":"holding the 24800 CE","labelBottom":true}],
+  "markers": [
+    {"i":24,"type":"buy","price":24566,"text":"BUY CE 24566 · RSI 87.27"},
+    {"i":34,"type":"exit","price":24570.49,"text":"EXIT 24570.49 — trail hit"}
+  ],
+  "legend": [
+    {"color":"#f59e0b","label":"R1 24553.33 (frozen from yesterday)"},
+    {"color":"#ef5350","label":"SuperTrend stop, ratcheted 24509.95 → 24570.49"},
+    {"color":"#26a69a","label":"entry 24566, exit 24570.49 — +4 spot points"}
+  ],
+  "pane": {"type":"line","label":"RSI(14) — 70 and 40 are the two thresholds","color":"#a78bfa","height":92,"min":0,"max":100,
+    "levels":[{"value":70,"color":"#26a69a"},{"value":40,"color":"#ef5350"}],
+    "data":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,50.57,56.5,61.87,66.67,70.91,74.64,77.89,80.58,83.54,85.77,87.27,88.36,89.15,89.69,90.03,90.24,90.59,91,85.56,76.91,67.45,56.63]}
+});
+
+TVChart.render("rps-pe", {
+  "title": "NIFTY 50 · a candle crosses and closes below S1, with RSI already under 40",
+  "subtitle": "5m · pivots frozen from a prior day of H 24640 / L 24410 / C 24470 · the PE side has NO SuperTrend — the 25% premium floor is the only stop",
+  "times": ["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55","12:00","12:05","12:10"],
+  "candles": [[24460,24465,24449,24455],[24455,24460,24442,24448],[24448,24460,24442,24455],[24455,24460,24441,24447],[24447,24457,24441,24452],[24452,24457,24438,24444],[24444,24455,24438,24450],[24450,24455,24436,24442],[24442,24453,24436,24448],[24448,24453,24434,24440],[24440,24451,24434,24446],[24446,24451,24432,24438],[24438,24449,24432,24444],[24444,24449,24430,24436],[24436,24447,24430,24442],[24442,24447,24428,24434],[24434,24445,24428,24440],[24440,24445,24424,24430],[24430,24435,24419,24425],[24425,24430,24412,24418],[24418,24423,24402,24408],[24408,24413,24390,24396],[24396,24401,24376,24382],[24382,24387,24350,24356],[24356,24361,24332,24338],[24338,24343,24314,24320],[24320,24325,24299,24305],[24305,24310,24286,24292],[24292,24297,24278,24284],[24284,24289,24272,24278],[24278,24291,24272,24286],[24286,24303,24280,24298],[24298,24321,24292,24316],[24316,24339,24310,24334],[24334,24357,24328,24352],[24352,24377,24346,24372]],
+  "hlines": [
+    {"price":24373.33,"color":"#f59e0b","label":"S1 24373.33 — the Put trigger, fixed all day","labelAt":0.03},
+    {"price":24506.67,"color":"#3f5570","label":"PP 24506.67","labelAt":0.03},
+    {"price":24278,"color":"#26a69a","label":"24278 — the low that set the best premium (₹155.10)","labelAt":0.42}
+  ],
+  "shades": [{"from":23,"to":35,"color":"rgba(239,83,80,0.06)","label":"holding the 24100 PE","labelBottom":true}],
+  "markers": [
+    {"i":23,"type":"exit","price":24356,"text":"BUY PE 24356 · RSI 19.3"},
+    {"i":29,"type":"dot","color":"#26a69a","price":24278,"text":"best premium ₹155.10 → floor ₹116.32"},
+    {"i":35,"type":"buy","price":24372,"text":"EXIT — premium ₹112.80 under the floor"}
+  ],
+  "legend": [
+    {"color":"#f59e0b","label":"S1 24373.33 (frozen from yesterday)"},
+    {"color":"#26a69a","label":"no spot stop exists on this side — only the premium floor"},
+    {"color":"#ef5350","label":"entry 24356, exit 24372"}
+  ],
+  "pane": {"type":"line","label":"RSI(14) — 70 and 40 are the two thresholds","color":"#a78bfa","height":92,"min":0,"max":100,
+    "levels":[{"value":70,"color":"#26a69a"},{"value":40,"color":"#ef5350"}],
+    "data":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,43.3,39.77,43.49,39.15,37.15,34.5,31.08,27.55,24.12,19.3,16.8,14.74,13.28,12.16,11.51,11.04,16,22.94,32.01,39.66,46.18,52.35]}
+});
+
+TVChart.render("rps-skip", {
+  "title": "The level broke and the engine still refused",
+  "subtitle": "5m · the same R1 24553.33 — a two-hour range kept RSI in the 40s, so one big candle cannot rescue the momentum half",
+  "times": ["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15"],
+  "candles": [[24494,24506,24488,24500],[24500,24506,24480,24486],[24486,24504,24480,24498],[24498,24504,24478,24484],[24484,24502,24478,24496],[24496,24502,24476,24482],[24482,24500,24476,24494],[24494,24500,24474,24480],[24480,24498,24474,24492],[24492,24498,24472,24478],[24478,24496,24472,24490],[24490,24496,24470,24476],[24476,24494,24470,24488],[24488,24494,24468,24474],[24474,24492,24468,24486],[24486,24492,24466,24472],[24472,24490,24466,24484],[24484,24490,24464,24470],[24470,24488,24464,24482],[24482,24488,24462,24468],[24468,24486,24462,24480],[24480,24486,24460,24466],[24466,24484,24460,24478],[24478,24506,24472,24500],[24500,24566,24494,24560]],
+  "hlines": [
+    {"price":24553.33,"color":"#f59e0b","label":"R1 24553.33","labelAt":0.03},
+    {"price":24421.67,"color":"#3f5570","label":"PP 24421.67 — below this whole range","labelAt":0.03}
+  ],
+  "markers": [
+    {"i":24,"type":"dot","color":"#f85149","price":24560,"text":"closed 24560 above R1 — but RSI only 64.96, SKIPPED"}
+  ],
+  "legend": [
+    {"color":"#f59e0b","label":"R1 24553.33 — broken on the close"},
+    {"color":"#f85149","label":"RSI 64.96, short of 70 — no trade taken"}
+  ],
+  "pane": {"type":"line","label":"RSI(14) — 70 and 40 are the two thresholds","color":"#a78bfa","height":92,"min":0,"max":100,
+    "levels":[{"value":70,"color":"#26a69a"},{"value":40,"color":"#ef5350"}],
+    "data":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,46.15,42.62,46.41,42.86,46.63,43.06,46.82,43.23,46.98,53.09,64.96]}
+});
+
+})();
+</script>
+
+</div>
+</body>
+</html>

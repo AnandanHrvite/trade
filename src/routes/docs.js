@@ -32,6 +32,7 @@ const GUIDE_MODE_BY_FILE = {
   "trend_day_scalp_strategy_guide.html": "TDS",
   "3m_gap_fix_scalp_strategy_guide.html": "GAP3M",
   "oi_wall_fade_strategy_guide.html": "OIWF",
+  "rsi_pivot_st_strategy_guide.html": "RSI_PIVOT_ST",
 };
 
 /**
@@ -452,6 +453,12 @@ const GUIDE_STATUS = {
     { type: "live", label: "Live Orders (Fyers, via paper harness)", enableKey: "OIWF_LIVE_ENABLED", dryKey: "OIWF_LIVE_DRY_RUN" },
     { type: "bool", label: "Per-strike OI capture (this strategy reads nothing else)", key: "OPTION_CHAIN_RECORD_OI", def: "true" },
   ] }] },
+  "RSI_PIVOT_ST_Strategy_Guide.html": { title: "RSI Pivot ST — Live Configuration", groups: [{ rows: [
+    { type: "bool", label: "RSI Pivot ST Mode (sidebar + Settings section)", key: "RSI_PIVOT_ST_MODE_ENABLED", def: "true" },
+    { type: "bool", label: "RSI Pivot ST Paper Trading", key: "RSI_PIVOT_ST_PAPER_ENABLED", def: "true" },
+    { type: "live", label: "Live Orders (Zerodha, via paper harness)", enableKey: "RSI_PIVOT_ST_LIVE_ENABLED", dryKey: "RSI_PIVOT_ST_LIVE_DRY_RUN" },
+    { type: "bool", label: "SuperTrend Stop on CE (PE is premium-floor-only by design)", key: "RSI_PIVOT_ST_ST_CE_ENABLED", def: "true" },
+  ] }] },
   "Application_Setup_Guide.html": { title: "System — Live Configuration", groups: [
     { heading: "Global gates", rows: [
       { type: "globaldry", label: "Live Harness DRY-RUN (global kill-switch)", key: "LIVE_HARNESS_DRY_RUN" },
@@ -471,6 +478,7 @@ const GUIDE_STATUS = {
       { type: "bool", label: "Trend Day Scalp Mode", key: "TDS_MODE_ENABLED", def: "true" },
       { type: "bool", label: "3M Gap Fix Scalp Mode", key: "GAP3M_MODE_ENABLED", def: "true" },
       { type: "bool", label: "OI Wall Fade Mode", key: "OIWF_MODE_ENABLED", def: "true" },
+      { type: "bool", label: "RSI Pivot ST Mode", key: "RSI_PIVOT_ST_MODE_ENABLED", def: "true" },
     ] },
   ] },
 };

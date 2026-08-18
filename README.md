@@ -57,6 +57,9 @@ All four strategies run **in parallel** on the same WebSocket — different cand
 | **OI Wall Fade Paper** | Fades the highest-OI CE/PE strike while that strike's own OI is still **rising** (single-leg slightly-ITM CE/PE) | 5-min + live OI ladder | Simulated | `/oi-wall-fade-paper` |
 | **OI Wall Fade Live (Harness)** | Runs Live by wrapping Paper (Fyers orders, triple-gated dry-run) | 5-min + live OI ladder | Fyers (PAPER-wrapped) | `/oi-wall-fade-live` |
 | **OI Monitor** | Read-only per-strike OI ladder, walls, band PCR — no position, no order | live OI ladder | — | `/oi-monitor` |
+| **RSI Pivot ST Paper** | RSI(14) extreme + a candle crossing and closing beyond yesterday's Standard Pivot R1/S1 (single-leg OTM CE/PE) | 5-min | Simulated | `/rsi-pivot-st-paper` |
+| **RSI Pivot ST Backtest** | Same engine over a date range (conservative intra-bar ordering, δ+θ premium sim) | 5-min historical | Historical | `/rsi-pivot-st-backtest` |
+| **RSI Pivot ST Live (Harness)** | Runs Live by wrapping Paper (Zerodha orders, triple-gated dry-run) | 5-min | Zerodha (PAPER-wrapped) | `/rsi-pivot-st-live` |
 | **Replay** | Re-runs a recorded paper session through the paper `onTick()` | Recorded ticks | Recorded | `/replay` |
 | **All Backtest** | Unified backtest dashboard (per-strategy stats) | Per-strategy | Historical | `/all-backtest` |
 | **Manual Tracker** | — (trails SL only) | 15-min | Zerodha | `/tracker` |
@@ -322,6 +325,30 @@ See [BB_RSI.md](BB_RSI.md) for the authoritative spec. Summary:
 - **⚠️ Replay reproduces the candles but NOT the walls.** `chain_oi.jsonl` is recorded, but [tickReplay.js](src/services/tickReplay.js) has no timeline for it, so on a replay every wall reading comes back UNKNOWN and the engine refuses rather than fading blind. That is the safe failure, not a silent one — but it means the usual "diff Paper against Replay before touching a live gate" check is **not available** for this strategy, which raises the bar for going live rather than lowering it. Full OI context is written onto every trade record and skip-log line instead.
 - **The core claim is untested**: does a wall whose OI is rising actually hold price, and how far does a rejection off one travel? The read-only [/oi-monitor](src/routes/oiMonitor.js) page and these paper sessions exist to answer exactly that, and the answer may be no.
 
+### Strategy 11: RSI PIVOT ST — RSI extreme + a Standard Pivot R1/S1 break, SuperTrend-stopped (single-leg OTM CE/PE, Zerodha)
+
+**Never traded, and no backtest has been run against it.** Zero paper sessions, zero live orders. Every threshold below is the user's stated rule or a repo convention, not a fitted value. Collect clean paper days and diff them against `/replay` before touching any live gate.
+
+Two levels decide the whole day, and they are fixed before the open. Yesterday's completed **daily** high/low/close give today's classic floor-trader pivots — `PP = (H+L+C)/3`, `R1 = 2·PP − L`, `S1 = 2·PP − H` — and they do **not** move intraday. Only the candles move through them. `R2`/`S2` are computed for the chart and for context; only R1 and S1 are traded.
+
+- **Entry** is evaluated on a **closed** 5-min NIFTY 50 index candle, and both halves are required on that *same* bar — one bar, one decision, no lag between the two tests:
+  - **CE** — `RSI(14) > RSI_PIVOT_ST_RSI_CE_MIN=70` **AND** the candle **crosses and closes** above R1: the previous close sat at or below R1 and this one closes above it. A candle already sitting above R1 is **not** a cross — entering there is chasing a move that already happened.
+  - **PE** — `RSI(14) < RSI_PIVOT_ST_RSI_PE_MAX=40` **AND** the candle crosses and closes below S1.
+  - `RSI_PIVOT_ST_PIVOT_BUFFER_PTS=0` means the close simply has to be beyond the level; raise it to ignore candles that only tickle the line.
+- **Strike** — `RSI_PIVOT_ST_STRIKE_MODE=OTM` at `RSI_PIVOT_ST_STRIKE_PCT=1`% of spot. `OTM` shifts *away* from the money (CE above spot, PE below), `ITM` mirrors it, `ATM` ignores the percentage. The raw distance is rounded to the nearest 50-point NIFTY strike, and a percentage that rounds to **zero** steps falls back to ATM rather than inventing a strike.
+- **The two stops are deliberately ASYMMETRIC. This is the stated rule, not an oversight — do not "balance" it.**
+  - **CE — two stops, both live, whichever triggers first wins.** (a) `SuperTrend(RSI_PIVOT_ST_ST_PERIOD=10, RSI_PIVOT_ST_ST_MULT=2)` on the 5-min **spot** chart, used as both the initial SL and the trail; it only ever moves in the trade's favour (a SuperTrend that ticks down mid-trade is ignored — a trail that can loosen is not a trail), and a **flip to bearish is itself an exit**. (b) a premium floor at `RSI_PIVOT_ST_PREMIUM_SL_PCT=25`% below the trade's **high-water** premium, so the floor ratchets up with the position.
+  - **PE — one stop: the 25% premium floor only. No SuperTrend.**
+  - A CE setup whose SuperTrend is not bullish, or whose SuperTrend already sits at or above the entry close, is **refused** rather than entered with no stop.
+- **No profit target at all**, on either side. The trade runs until a stop trails into it or `RSI_PIVOT_ST_EXIT_TIME=15:15` squares it off. **No breakeven jump, no partial booking, no time stop, no re-entry after a stop.**
+- **Deliberately absent** (do not "helpfully" add them): VIX gate, OI filter, ADX, volume test, EMA, VWAP, ATR sizing, multi-timeframe bias, extra confirmation candle, expiry-day rule, quality score.
+- **Determinism.** Every value the *decision* reads comes from closed 5-min OHLC and the previous day's completed daily bar — never a live tick, never a live spot. The premium stop is the one exception by necessity, because it reads the option LTP; it reads it only for the **exit**, never the entry, and those ticks are recorded so Replay reproduces them.
+- **Day-level breakers**: `RSI_PIVOT_ST_MAX_TRADES=5`, `RSI_PIVOT_ST_MAX_DAILY_LOSS=5000`, `RSI_PIVOT_ST_MAX_WEEKLY_LOSS=0` (off), plus the shared portfolio-wide cap. Entries only between `RSI_PIVOT_ST_ENTRY_START=09:30` and `RSI_PIVOT_ST_ENTRY_END=15:00`; the bar's **close** time gates the window, not its start, so the 14:55 bar is still legal.
+- **How the data arrives.** Closed 5-min index bars and the daily bars behind the pivots both come from the Fyers **history** endpoint — the same one the backtest and replay read, which is what makes the modes agree — refreshed once per bar `RSI_PIVOT_ST_HISTORY_LAG_MS=5000` after it closes. The daily series is fetched once at session start and **frozen**. The option LTP the premium stop is measured against is polled every `RSI_PIVOT_ST_POLL_MS=2000`, so **that** exit resolves at ~2-second granularity, not per tick.
+- **Data from Fyers, orders to Zerodha**, exactly like EMA_RSI_ST — which is why `/rsi-pivot-st-live/start` checks both.
+- **LIVE = PAPER** (`/rsi-pivot-st-live`, [src/routes/rsiPivotStLiveHarness.js](src/routes/rsiPivotStLiveHarness.js)): wraps the Paper engine with the shared harness. **Triple-gated to dry-run**: real orders require `RSI_PIVOT_ST_LIVE_ENABLED=true` AND `LIVE_HARNESS_DRY_RUN=false` AND `RSI_PIVOT_ST_LIVE_DRY_RUN` not-true, plus an authenticated Zerodha session.
+- **Backtest** (`/rsi-pivot-st-backtest`, [src/routes/rsiPivotStBacktest.js](src/routes/rsiPivotStBacktest.js)): drives the **same** `getSignal` and re-implements only paper's exits (paper is canonical). Two series are fetched — intraday 5-min bars for every decision, and a separate **daily** series, requested from a week *before* the range so the first session still has a yesterday to compute R1/S1 from. **Conservative intra-bar ordering**: the adverse stop is tested on the bar's high/low *before* anything favourable, so a bar touching both books the loss; a bar that opened beyond a level fills at the **open**; entry is the signal bar's close; the SuperTrend trail advances only on a bar **close**, matching paper. **The premium stop is the weakest number in any backtest result** — there is no historical option chain, so the premium is δ+θ simulated seeded at `RSI_PIVOT_ST_BT_SEED_PREMIUM=180` and the 25% floor is applied to *that*, plus `RSI_PIVOT_ST_BT_SLIPPAGE_PTS=2`pt each way.
+
 
 ## Quick Start (EC2)
 
@@ -374,6 +401,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   trend_day_scalp_paper_trades.json # Trend Day Scalp paper sessions
   gap_fix_3m_paper_trades.json    # 3M Gap Fix Scalp paper sessions
   oi_wall_fade_paper_trades.json  # OI Wall Fade paper sessions
+  rsi_pivot_st_paper_trades.json  # RSI Pivot ST paper sessions
   historical_pnl.json             # One-time P&L baselines per broker (Kite / Fyers)
   nse_holidays.json               # Last good NSE holiday fetch, keyed by year — keeps 2027+ working if NSE blocks the box
   .active_ema_rsi_st_position.json     # Crash recovery — EMA_RSI_ST position
@@ -386,6 +414,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   .active_trend_day_scalp_position.json # Crash recovery — Trend Day Scalp position
   .active_gap_fix_3m_position.json # Crash recovery — 3M Gap Fix Scalp position
   .active_oi_wall_fade_position.json # Crash recovery — OI Wall Fade position
+  .active_rsi_pivot_st_position.json # Crash recovery — RSI Pivot ST position
   .harness_events.json            # Live-harness event log (DRY-RUN/real order events), survives restart
   ema_rsi_st_paper_trades_log.jsonl    # Crash-safe per-trade JSONL audit (cumulative)
   bb_rsi_paper_trades_log.jsonl
@@ -856,6 +885,42 @@ Trend-continuation option-buyer: 15m trend bias (swing structure + EMA20>EMA50 +
 
 It also depends on two keys owned by the recorder: `OPTION_CHAIN_RECORDER_ENABLED` and `OPTION_CHAIN_RECORD_OI` (both default `true`). With either off the ladder stays empty, and `/oi-wall-fade-paper/start` **refuses** rather than sitting mute all day.
 
+### RSI Pivot ST Mode (RSI + Standard Pivot R1/S1 + SuperTrend, Zerodha)
+
+Data comes from Fyers; the **orders go to Zerodha**, like EMA_RSI_ST.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `RSI_PIVOT_ST_MODE_ENABLED` | `true` | Master toggle — sidebar group + Settings section |
+| `RSI_PIVOT_ST_PAPER_ENABLED` | `true` | Allow `/rsi-pivot-st-paper/start` |
+| `RSI_PIVOT_ST_LIVE_ENABLED` | `false` | Gates real Zerodha orders on `/rsi-pivot-st-live/start`. **Never traded — paper-validate first** |
+| `RSI_PIVOT_ST_LIVE_DRY_RUN` | `false` | Per-strategy dry-run override — keeps it simulated even when live is on |
+| `RSI_PIVOT_ST_RESOLUTION` | `5` | Candle timeframe (min) whose **close** decides. 5 is the rule as written |
+| `RSI_PIVOT_ST_RSI_PERIOD` | `14` | RSI length, read on the same closed candle that does the crossing |
+| `RSI_PIVOT_ST_RSI_CE_MIN` | `70` | A CE needs RSI **above** this on the signal candle. Raise it for fewer, stronger buys |
+| `RSI_PIVOT_ST_RSI_PE_MAX` | `40` | A PE needs RSI **below** this on the signal candle. Lower it for fewer, stronger sells |
+| `RSI_PIVOT_ST_PIVOT_BUFFER_PTS` | `0` | How far past R1 / S1 the close must sit to count as a break. `0` = just beyond is enough |
+| `RSI_PIVOT_ST_SESSION_START` | `09:15` | When the strategy starts watching candles for the day (IST) |
+| `RSI_PIVOT_ST_ENTRY_START` | `09:30` | No entries before this (IST) — the first candles often break a pivot for no reason |
+| `RSI_PIVOT_ST_ENTRY_END` | `15:00` | No new entries after this (IST). The bar's **close** time is what is gated |
+| `RSI_PIVOT_ST_EXIT_TIME` | `15:15` | Hard EOD square-off (IST). Nothing is carried overnight |
+| `RSI_PIVOT_ST_STRIKE_MODE` | `OTM` | `ATM` (nearest to spot, the % is ignored), `OTM` (away from the money), `ITM` (into the money) |
+| `RSI_PIVOT_ST_STRIKE_PCT` | `1` | How far from spot the ITM/OTM strike sits, as a % of spot, rounded to the nearest 50-point strike. A % that rounds to 0 steps falls back to ATM |
+| `RSI_PIVOT_ST_ST_PERIOD` | `10` | SuperTrend ATR length behind the **CE** stop. Longer = a slower, looser trail |
+| `RSI_PIVOT_ST_ST_MULT` | `2` | How many ATRs below price the SuperTrend line sits. Smaller = tighter stop, hit more often |
+| `RSI_PIVOT_ST_ST_CE_ENABLED` | `true` | Use SuperTrend as the CE stop and trail, on top of the premium floor. **CE only — PE is stopped by the premium rule alone, by design.** Turning it off also removes the "SuperTrend must be bullish" entry check |
+| `RSI_PIVOT_ST_PREMIUM_SL_PCT` | `25` | Exit when the option price falls this far below its **high-water** price. Bought at 100 → exit at 75; runs to 140 → the exit rises to 105. **Applies to BOTH CE and PE** |
+| `RSI_PIVOT_ST_LOT_MULTIPLIER` | `0` | Lots per trade (0 = inherit global `LOT_MULTIPLIER`; clamped by `MAX_LOT_MULTIPLIER`) |
+| `RSI_PIVOT_ST_MAX_TRADES` | `5` | Max entries per day. The pivots are fixed all day, so only a handful of crosses can honestly occur |
+| `RSI_PIVOT_ST_MAX_DAILY_LOSS` | `5000` | Stop trading for the day after this much loss (0 = off) |
+| `RSI_PIVOT_ST_MAX_WEEKLY_LOSS` | `0` | Rolling Mon→today cap read from the per-day JSONL logs (0 = off) |
+| `RSI_PIVOT_ST_POLL_MS` | `2000` | Option-quote poll while a position is open. This is what the 25% premium stop is measured against, so a slower poll means a later exit |
+| `RSI_PIVOT_ST_HISTORY_LAG_MS` | `5000` | How long after a bar closes before the Fyers history endpoint is asked for it |
+| `RSI_PIVOT_ST_BT_SLIPPAGE_PTS` | `2` | Backtest spread/slippage haircut, in points, **each way** |
+| `RSI_PIVOT_ST_BT_SEED_PREMIUM` | `180` | Backtest seed option price. There is no historical option chain, and the 25% stop is measured against this simulated premium — **the weakest number in any backtest result** |
+| `UI_SHOW_RSI_PIVOT_ST_BACKTEST` / `_PAPER` / `_LIVE` / `_HISTORY` | `true` | Sidebar sub-menu visibility |
+| `TG_RSI_PIVOT_ST_STARTED` / `_ENTRY` / `_EXIT` / `_DAYREPORT` | `true` | Telegram alerts for this strategy |
+
 ### Paper Investment Pools (per broker)
 Paper capital is pooled per broker, not per strategy. Each strategy's running capital = its broker pool + that strategy's all-time paper P&L. The Real-Time Monitor (dashboard) carries a wallet ribbon per broker — headline **free to trade**, with *Invested / P&L* and *In use / Pool* beneath — and it stays up during a running session, since that is when free cash matters. It is hidden under the LIVE toggle: the pool is paper money and has no live-margin equivalent.
 
@@ -1103,6 +1168,14 @@ Blocks directional entries that fight the prevailing Open-Interest buildup: read
 | `/gap-fix-3m-paper/status` | Paper trade — NIFTY FUTURES chart with the gap band, day high/low and bracket, plus the index chart |
 | `/gap-fix-3m-paper/history` | Sessions (per-session delete + view modal) |
 | `/gap-fix-3m-live` | Live via the paper-wrapping harness (Fyers orders; gated by `GAP3M_LIVE_ENABLED` + `LIVE_HARNESS_DRY_RUN` + `GAP3M_LIVE_DRY_RUN`) |
+
+### RSI Pivot ST
+| URL | Description |
+|-----|-------------|
+| `/rsi-pivot-st-backtest` | RSI Pivot ST date-range backtest (5-min index bars + a padded daily series for the pivots; δ+θ premium sim) |
+| `/rsi-pivot-st-paper/status` | Paper trade — NIFTY chart with the frozen PP / R1 / S1 levels and the SuperTrend line |
+| `/rsi-pivot-st-paper/history` | Sessions (per-session delete + view modal) |
+| `/rsi-pivot-st-live` | Live via the paper-wrapping harness (**Zerodha** orders; gated by `RSI_PIVOT_ST_LIVE_ENABLED` + `LIVE_HARNESS_DRY_RUN` + `RSI_PIVOT_ST_LIVE_DRY_RUN`) |
 
 ### Analytics & Tools
 | URL | Description |
