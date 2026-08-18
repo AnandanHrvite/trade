@@ -45,6 +45,9 @@ let gapFix3mMode = null;
 // OI Wall Fade mode: "OI_WALL_FADE_PAPER" | "OI_WALL_FADE_LIVE" | null
 let oiWallFadeMode = null;
 
+// RSI Pivot SuperTrend mode: "RSI_PIVOT_ST_PAPER" | "RSI_PIVOT_ST_LIVE" | null
+let rsiPivotStMode = null;
+
 // ── Primary mode (15-min) ─────────────────────────────────────────────────
 
 function setActive(mode) {
@@ -225,6 +228,24 @@ function getOiWallFadeMode() {
   return oiWallFadeMode;
 }
 
+// ── RSI Pivot SuperTrend mode ───────────────────────────────────────────────
+
+function setRsiPivotStActive(mode) {
+  rsiPivotStMode = mode;
+}
+
+function clearRsiPivotSt() {
+  rsiPivotStMode = null;
+}
+
+function isRsiPivotStActive() {
+  return rsiPivotStMode !== null;
+}
+
+function getRsiPivotStMode() {
+  return rsiPivotStMode;
+}
+
 // ── Combined queries ──────────────────────────────────────────────────────
 
 /** Any mode using the socket? */
@@ -232,7 +253,7 @@ function isAnyActive() {
   return primaryMode !== null || bbRsiMode !== null || paMode !== null ||
          orbMode !== null || ema9vwapMode !== null || trendPbMode !== null ||
          gapsMode !== null || trendDayScalpMode !== null || gapFix3mMode !== null ||
-         oiWallFadeMode !== null;
+         oiWallFadeMode !== null || rsiPivotStMode !== null;
 }
 
 /** Can the given mode start? Returns { allowed, reason } */
@@ -318,6 +339,14 @@ function canStart(mode) {
       if (oiWallFadeMode === "OI_WALL_FADE_PAPER") return { allowed: false, reason: "OI Wall Fade Paper is running — stop it first" };
       if (oiWallFadeMode === "OI_WALL_FADE_LIVE")  return { allowed: false, reason: "OI Wall Fade Live is already running" };
       return { allowed: true };
+    case "RSI_PIVOT_ST_PAPER":
+      if (rsiPivotStMode === "RSI_PIVOT_ST_LIVE")  return { allowed: false, reason: "RSI Pivot ST Live is running — stop it first" };
+      if (rsiPivotStMode === "RSI_PIVOT_ST_PAPER") return { allowed: false, reason: "RSI Pivot ST Paper is already running" };
+      return { allowed: true };
+    case "RSI_PIVOT_ST_LIVE":
+      if (rsiPivotStMode === "RSI_PIVOT_ST_PAPER") return { allowed: false, reason: "RSI Pivot ST Paper is running — stop it first" };
+      if (rsiPivotStMode === "RSI_PIVOT_ST_LIVE")  return { allowed: false, reason: "RSI Pivot ST Live is already running" };
+      return { allowed: true };
     default:
       return { allowed: false, reason: "Unknown mode: " + mode };
   }
@@ -344,6 +373,8 @@ module.exports = {
   setGapFix3mActive, clearGapFix3m, isGapFix3mActive, getGapFix3mMode,
   // OI_WALL_FADE
   setOiWallFadeActive, clearOiWallFade, isOiWallFadeActive, getOiWallFadeMode,
+  // RSI Pivot SuperTrend
+  setRsiPivotStActive, clearRsiPivotSt, isRsiPivotStActive, getRsiPivotStMode,
   // Combined
   isAnyActive, canStart,
 };

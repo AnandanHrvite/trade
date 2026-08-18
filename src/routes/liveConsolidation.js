@@ -25,6 +25,7 @@ const SOURCES = [
   { mode: "EMA_RSI_ST", file: path.join(DATA_DIR, "ema_rsi_st_live_trades.json"),       color: "#3b82f6" },
   { mode: "BB_RSI", file: path.join(DATA_DIR, "bb_rsi_live_trades.json"), color: "#f59e0b" },
   { mode: "PA",    file: path.join(DATA_DIR, "pa_live_trades.json"),    color: "#a855f7" },
+  { mode: "RSI_PIVOT_ST", file: path.join(DATA_DIR, "rsi_pivot_st_live_trades.json"), color: "#facc15" },
 ];
 
 function safeRead(p) {
@@ -189,6 +190,7 @@ router.get("/", (req, res) => {
     .badge-EMA_RSI_ST{background:rgba(59,130,246,0.12);color:#3b82f6;border:0.5px solid rgba(59,130,246,0.3);}
     .badge-BB_RSI{background:rgba(245,158,11,0.12);color:#f59e0b;border:0.5px solid rgba(245,158,11,0.3);}
     .badge-PA{background:rgba(168,85,247,0.12);color:#a855f7;border:0.5px solid rgba(168,85,247,0.3);}
+    .badge-RSI_PIVOT_ST{background:rgba(250,204,21,0.12);color:#facc15;border:0.5px solid rgba(250,204,21,0.3);}
 
     .roll-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}
     @media(max-width:1100px){.roll-grid{grid-template-columns:1fr;}}
@@ -272,6 +274,7 @@ router.get("/", (req, res) => {
         <option value="EMA_RSI_ST">EMA_RSI_ST</option>
         <option value="BB_RSI">BB_RSI</option>
         <option value="PA">Price Action</option>
+        <option value="RSI_PIVOT_ST">RSI PIVOT ST</option>
       </select>
       <label>Side</label>
       <select id="fSide">

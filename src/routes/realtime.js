@@ -35,6 +35,7 @@ const STRATEGY_DEFS = [
   { key:'TDS',      label:'TREND DAY SCALP', accentClass:'tds',   accent:'#a855f7', paperPrefix:'/trend-day-scalp-paper', livePrefix:'/trend-day-scalp-live', hasDayLog:true, modeFlag:'TDS_MODE_ENABLED' },
   { key:'GAP3M',    label:'3M GAP FIX',      accentClass:'gap3m', accent:'#38bdf8', paperPrefix:'/gap-fix-3m-paper',      livePrefix:'/gap-fix-3m-live',      hasDayLog:true, modeFlag:'GAP3M_MODE_ENABLED' },
   { key:'OIWF',     label:'OI WALL FADE',    accentClass:'oiwf',  accent:'#f472b6', paperPrefix:'/oi-wall-fade-paper',    livePrefix:'/oi-wall-fade-live',    hasDayLog:true, modeFlag:'OIWF_MODE_ENABLED' },
+  { key:'RSI_PIVOT_ST', label:'RSI PIVOT ST', accentClass:'rsipivotst', accent:'#facc15', paperPrefix:'/rsi-pivot-st-paper', livePrefix:'/rsi-pivot-st-live', hasDayLog:true, modeFlag:'RSI_PIVOT_ST_MODE_ENABLED' },
 ];
 
 function enabledStrategies() {
@@ -43,7 +44,7 @@ function enabledStrategies() {
 
 // Broker investment pools: each strategy's paper P&L draws from one shared pool.
 // EMA_RSI_ST trades through Zerodha; BB_RSI/PA/ORB through Fyers.
-const BROKER_OF = { EMA_RSI_ST:'ZERODHA', BB_RSI:'FYERS', PA:'FYERS', ORB:'FYERS', EMA9VWAP:'ZERODHA', TREND_PB:'FYERS', GAPS:'FYERS', TDS:'FYERS', GAP3M:'FYERS', OIWF:'FYERS' };
+const BROKER_OF = { EMA_RSI_ST:'ZERODHA', BB_RSI:'FYERS', PA:'FYERS', ORB:'FYERS', EMA9VWAP:'ZERODHA', TREND_PB:'FYERS', GAPS:'FYERS', TDS:'FYERS', GAP3M:'FYERS', OIWF:'FYERS', RSI_PIVOT_ST:'ZERODHA' };
 function brokerPools(strategies) {
   const z = parseFloat(process.env.ZERODHA_INV_AMOUNT || '100000');
   const f = parseFloat(process.env.FYERS_INV_AMOUNT   || '100000');
@@ -206,6 +207,7 @@ ${faviconLink()}
   .card.tds      { border-top-color:#a855f7; }
   .card.gap3m    { border-top-color:#38bdf8; }
   .card.oiwf     { border-top-color:#f472b6; }
+  .card.rsipivotst { border-top-color:#facc15; }
 
   .card-header { display:flex; align-items:center; justify-content:space-between; }
   .card-title { font-size:1rem; font-weight:600; letter-spacing:0.5px; }
@@ -219,6 +221,7 @@ ${faviconLink()}
   .card.tds      .card-title { color:#c084fc; }
   .card.gap3m    .card-title { color:#7dd3fc; }
   .card.oiwf     .card-title { color:#f9a8d4; }
+  .card.rsipivotst .card-title { color:#fde047; }
 
   .badge { font-size:0.66rem; padding:3px 8px; border-radius:4px; border:1px solid; font-weight:600; letter-spacing:0.4px; }
   .badge.run  { background:rgba(16,185,129,0.12); color:#10b981; border-color:rgba(16,185,129,0.35); }
@@ -273,6 +276,7 @@ ${faviconLink()}
   .card.tds      .act-btn:not(.act-btn-disabled):hover { border-color:#a855f7; }
   .card.gap3m    .act-btn:not(.act-btn-disabled):hover { border-color:#38bdf8; }
   .card.oiwf     .act-btn:not(.act-btn-disabled):hover { border-color:#f472b6; }
+  .card.rsipivotst .act-btn:not(.act-btn-disabled):hover { border-color:#facc15; }
 
   /* Rollup table */
   .rollup { width:100%; border-collapse:collapse; background:#0a1628; border:1px solid #1c2c47; border-radius:10px; overflow:hidden; }
@@ -291,6 +295,7 @@ ${faviconLink()}
   .rollup tr.tds      td:first-child { color:#c084fc; }
   .rollup tr.gap3m    td:first-child { color:#7dd3fc; }
   .rollup tr.oiwf     td:first-child { color:#f9a8d4; }
+  .rollup tr.rsipivotst td:first-child { color:#fde047; }
   .rollup tr.total    td:first-child { color:#e0eaf8; }
   .rollup tr.quiet td { color:#7d8aa3; font-weight:400; font-size:0.8rem; text-align:left; }
 
@@ -314,6 +319,7 @@ ${faviconLink()}
   :root[data-theme="light"] .card.tds      .card-title { color:#7e22ce; }
   :root[data-theme="light"] .card.gap3m    .card-title { color:#0369a1; }
   :root[data-theme="light"] .card.oiwf     .card-title { color:#be185d; }
+  :root[data-theme="light"] .card.rsipivotst .card-title { color:#a16207; }
   :root[data-theme="light"] .pos-block,
   :root[data-theme="light"] .flat-block { background:#f8fafc !important; border-color:#e0e4ea !important; }
   :root[data-theme="light"] .flat-block { color:#4b5769; }
@@ -351,6 +357,7 @@ ${faviconLink()}
   :root[data-theme="light"] .rollup tr.tds      td:first-child { color:#7e22ce; }
   :root[data-theme="light"] .rollup tr.gap3m    td:first-child { color:#0369a1; }
   :root[data-theme="light"] .rollup tr.oiwf     td:first-child { color:#be185d; }
+  :root[data-theme="light"] .rollup tr.rsipivotst td:first-child { color:#a16207; }
   :root[data-theme="light"] .pos-zero { color:#4b5769 !important; }
   :root[data-theme="light"] .pos-pos  { color:#059669 !important; }
   :root[data-theme="light"] .pos-neg  { color:#dc2626 !important; }

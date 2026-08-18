@@ -12,14 +12,14 @@
  *
  * Toggle hierarchy:
  *   TG_ENABLED                                  — master gate; if false, nothing sends
- *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|GAPS|TDS|GAP3M|OIWF}_STARTED    — session-start alerts (per mode)
- *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|GAPS|TDS|GAP3M|OIWF}_ENTRY      — trade entry alerts (per mode)
- *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|GAPS|TDS|GAP3M|OIWF}_EXIT       — trade exit alerts (per mode)
+ *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|GAPS|TDS|GAP3M|OIWF|RSI_PIVOT_ST}_STARTED    — session-start alerts (per mode)
+ *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|GAPS|TDS|GAP3M|OIWF|RSI_PIVOT_ST}_ENTRY      — trade entry alerts (per mode)
+ *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|GAPS|TDS|GAP3M|OIWF|RSI_PIVOT_ST}_EXIT       — trade exit alerts (per mode)
  *   TG_{EMA_RSI_ST|BB_RSI|PA|EMA9VWAP}_SIGNALS                 — candle-close skip/signal alerts (these modes only)
- *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|GAPS|TDS|GAP3M|OIWF}_DAYREPORT  — per-mode day report on session stop
+ *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|GAPS|TDS|GAP3M|OIWF|RSI_PIVOT_ST}_DAYREPORT  — per-mode day report on session stop
  *   TG_DAYREPORT_CONSOLIDATED                   — one combined day report at market close
  *
- *   (ORB, TREND_PB, GAPS, TDS, GAP3M and OIWF emit no SIGNAL alerts, so they have no _SIGNALS toggle.)
+ *   (ORB, TREND_PB, GAPS, TDS, GAP3M, OIWF and RSI_PIVOT_ST emit no SIGNAL alerts, so they have no _SIGNALS toggle.)
  *
  * If TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID are missing, all functions silently
  * do nothing — no errors.
@@ -109,6 +109,7 @@ function modeGroup(mode) {
   // OI Wall Fade. Group key OIWF so every env key stays on the OIWF_ prefix
   // (OIWF_MODE_ENABLED, TG_OIWF_ENTRY, …) while the mode tag stays readable.
   if (m === "OIWF" || m.startsWith("OI-WALL-FADE") || m.startsWith("OI_WALL_FADE")) return "OIWF";
+  if (m === "RSI_PIVOT_ST" || m.startsWith("RSI_PIVOT_ST-") || m.startsWith("RSI_PIVOT_ST_")) return "RSI_PIVOT_ST";
   return "EMA_RSI_ST";
 }
 
@@ -383,6 +384,8 @@ function modeLabel(mode) {
   if (m.startsWith("TREND-DAY-SCALP-LIVE"))  return "🔴 TREND DAY SCALP LIVE" + m.slice("TREND-DAY-SCALP-LIVE".length);
   if (m.startsWith("GAP-FIX-3M-PAPER")) return "🕳 3M GAP FIX PAPER" + m.slice("GAP-FIX-3M-PAPER".length);
   if (m.startsWith("GAP-FIX-3M-LIVE"))  return "🔴 3M GAP FIX LIVE" + m.slice("GAP-FIX-3M-LIVE".length);
+  if (m.startsWith("RSI_PIVOT_ST-PAPER")) return "🎯 RSI PIVOT ST PAPER" + m.slice("RSI_PIVOT_ST-PAPER".length);
+  if (m.startsWith("RSI_PIVOT_ST-LIVE"))  return "⚡ RSI PIVOT ST LIVE" + m.slice("RSI_PIVOT_ST-LIVE".length);
   return m;
 }
 
@@ -621,7 +624,7 @@ function notifyConsolidatedDayReport({ byMode }) {
   if (!canSend("TG_DAYREPORT_CONSOLIDATED")) return false;
 
   // Only include strategies that are currently enabled in Settings.
-  const groups = ["EMA_RSI_ST", "BB_RSI", "PA", "ORB", "EMA9VWAP", "TREND_PB", "GAPS", "TDS", "GAP3M", "OIWF"].filter(isModeEnabled);
+  const groups = ["EMA_RSI_ST", "BB_RSI", "PA", "ORB", "EMA9VWAP", "TREND_PB", "GAPS", "TDS", "GAP3M", "OIWF", "RSI_PIVOT_ST"].filter(isModeEnabled);
   let totalTrades = 0, totalPnl = 0, totalWins = 0, totalLosses = 0;
   const rows = [];
 

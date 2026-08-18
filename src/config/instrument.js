@@ -483,16 +483,26 @@ function isExpiryOverrideStale(dateStr) {
  * `opts.ignoreOverride` resolves what auto-detection WOULD pick, ignoring any
  * manual override. Only the expiry-health roll uses it — it needs the true
  * nearest contract in order to replace an override that has expired.
+ *
+ * `opts.strikeOverride` supplies an already-chosen strike, skipping BOTH the ATM
+ * calculation and the ITM-steps branch below. RSI_PIVOT_ST uses it because that
+ * strategy sizes its strike as a PERCENTAGE of spot (ATM/ITM/OTM by 1%) rather
+ * than in fixed 50-point steps, so its strike cannot be expressed as an
+ * {MODE}_ITM_STEPS count. Only a finite positive number is honoured — anything
+ * else falls through to the normal path rather than building a symbol around a
+ * NaN strike.
  */
 async function validateAndGetOptionSymbol(spot, side, mode, opts = {}) {
-  let strike = calcATMStrike(spot, side);
+  const _override = opts.strikeOverride;
+  const _hasOverride = typeof _override === "number" && Number.isFinite(_override) && _override > 0;
+  let strike = _hasOverride ? _override : calcATMStrike(spot, side);
   // ── ORB, TREND_PB, GAPS, TDS (Trend Day Scalp), GAP3M (3M Gap Fix Scalp) and
   //    OIWF (OI Wall Fade) trade slightly ITM (~delta 0.6): higher delta tracks
   //    the move better and decays slower in % than ATM. Shift the strike ITM by
   //    {MODE}_ITM_STEPS × 50 (CE → lower strike, PE → higher strike). Default 1 step.
   //    Set {MODE}_ITM_STEPS=0 to fall back to ATM. ─────────────────────────────
   const _itmMode = String(mode || "").toUpperCase();
-  if (_itmMode === "ORB" || _itmMode === "TREND_PB" || _itmMode === "GAPS" || _itmMode === "TDS" || _itmMode === "GAP3M" || _itmMode === "OIWF") {
+  if (!_hasOverride && (_itmMode === "ORB" || _itmMode === "TREND_PB" || _itmMode === "GAPS" || _itmMode === "TDS" || _itmMode === "GAP3M" || _itmMode === "OIWF")) {
     const itmSteps = parseInt(process.env[`${_itmMode}_ITM_STEPS`] || "1", 10);
     if (itmSteps > 0 && (side === "CE" || side === "PE")) {
       const shifted = side === "CE" ? strike - itmSteps * 50 : strike + itmSteps * 50;

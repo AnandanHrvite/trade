@@ -502,6 +502,55 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
+    section: "RSI_PIVOT_ST STRATEGY (RSI + Standard Pivot R1/S1 + SuperTrend) — Zerodha",
+    icon: "\u{1F4D0}",
+    nav: "RSI PIVOT ST",
+    group: "Strategies",
+    fields: [
+      // ── Enable / live gating ──
+      { key: "RSI_PIVOT_ST_PAPER_ENABLED", label: "RSI Pivot ST Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new RSI Pivot ST paper sessions.", default: "true", subheader: "Mode & Live" },
+      { key: "RSI_PIVOT_ST_LIVE_ENABLED", label: "RSI Pivot ST Live Orders (gates /rsi-pivot-st-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Zerodha. NEVER traded — paper-validate first.", default: "false" },
+      { key: "RSI_PIVOT_ST_LIVE_DRY_RUN", label: "RSI Pivot ST Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep it simulated even when live is on — the broker call is logged but no real order is sent.", default: "false" },
+
+      // ── The entry rule ──
+      { key: "RSI_PIVOT_ST_RESOLUTION", label: "Candle Timeframe (min)", type: "select", options: ["1", "3", "5", "15"], effect: EFFECT.SESSION, desc: "Which candle decides. Entries are taken only on a CLOSED candle of this size — 5-min is the rule as written.", default: "5", subheader: "Signal (RSI + Pivot cross)" },
+      { key: "RSI_PIVOT_ST_RSI_PERIOD", label: "RSI Period", type: "number", min: 2, max: 100, step: 1, effect: EFFECT.SESSION, desc: "How many candles the RSI is measured over. 14 is the standard setting and what the rule assumes.", default: "14" },
+      { key: "RSI_PIVOT_ST_RSI_CE_MIN", label: "CE needs RSI above", type: "number", min: 0, max: 100, step: 1, effect: EFFECT.SESSION, desc: "A CE (call) is only bought when RSI on the signal candle is above this — momentum must already be strong. Raise it for fewer, stronger buys.", default: "70" },
+      { key: "RSI_PIVOT_ST_RSI_PE_MAX", label: "PE needs RSI below", type: "number", min: 0, max: 100, step: 1, effect: EFFECT.SESSION, desc: "A PE (put) is only bought when RSI on the signal candle is below this — selling must already be strong. Lower it for fewer, stronger sells.", default: "40" },
+      { key: "RSI_PIVOT_ST_PIVOT_BUFFER_PTS", label: "Pivot Buffer (pts)", type: "number", min: 0, max: 200, step: 1, effect: EFFECT.SESSION, desc: "How far past R1 (or S1) the candle must close before it counts as a break. 0 = a close just beyond the level is enough. Raise it to ignore candles that only tickle the line.", default: "0" },
+
+      // ── Window ──
+      { key: "RSI_PIVOT_ST_SESSION_START", label: "Session Start", type: "time", effect: EFFECT.SESSION, desc: "When the strategy starts watching candles for the day (IST).", default: "09:15", subheader: "Session window" },
+      { key: "RSI_PIVOT_ST_ENTRY_START", label: "Entry Window Start", type: "time", effect: EFFECT.SESSION, desc: "No entries before this (IST). The first candles of the day are noisy and often break a pivot for no reason.", default: "09:30" },
+      { key: "RSI_PIVOT_ST_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No new entries after this time (IST) — too late in the day for a fresh trade to work out.", default: "15:00" },
+      { key: "RSI_PIVOT_ST_EXIT_TIME", label: "Forced Exit (EOD square-off)", type: "time", effect: EFFECT.SESSION, desc: "Everything still open is closed at this time (IST). Nothing is carried overnight.", default: "15:15" },
+
+      // ── Strike ──
+      { key: "RSI_PIVOT_ST_STRIKE_MODE", label: "Which Strike to Buy", type: "select", options: ["ATM", "ITM", "OTM"], effect: EFFECT.SESSION, desc: "Which strike to buy. ATM = nearest to spot. OTM = 1% of spot away from the money (cheaper, needs a bigger move). ITM = 1% into the money (costlier, moves more with spot).", default: "OTM", subheader: "Strike" },
+      { key: "RSI_PIVOT_ST_STRIKE_PCT", label: "Strike Distance (% of spot)", type: "number", min: 0, max: 20, step: 0.25, effect: EFFECT.SESSION, desc: "How far from spot the ITM/OTM strike sits, as a percentage. 1% of a 24000 NIFTY is 240 points, rounded to the nearest 50-point strike. Ignored when the mode is ATM.", default: "1" },
+
+      // ── Stops. Deliberately asymmetric — see the CE toggle's note. ──
+      { key: "RSI_PIVOT_ST_ST_PERIOD", label: "SuperTrend Period", type: "number", min: 2, max: 100, step: 1, effect: EFFECT.SESSION, desc: "ATR length behind the SuperTrend line used as the CE stop. Longer = a slower, looser trail.", default: "10", subheader: "Stops" },
+      { key: "RSI_PIVOT_ST_ST_MULT", label: "SuperTrend Multiplier", type: "number", min: 0.1, max: 10, step: 0.1, effect: EFFECT.SESSION, desc: "How many ATRs below price the SuperTrend line sits. Smaller = a tighter stop that gets hit more often; larger = more room and bigger losses.", default: "2" },
+      { key: "RSI_PIVOT_ST_ST_CE_ENABLED", label: "SuperTrend Stop on CE", type: "toggle", effect: EFFECT.SESSION, desc: "Use the SuperTrend line as the CE stop and trail, on top of the premium stop. This affects CE ONLY — PE is stopped by the premium rule alone, by design. Turning it off leaves CE with only the premium stop and also removes the \"SuperTrend must be bullish\" entry check.", default: "true" },
+      { key: "RSI_PIVOT_ST_PREMIUM_SL_PCT", label: "Premium Stop (% of option price)", type: "number", min: 1, max: 90, step: 1, effect: EFFECT.SESSION, desc: "Exit when the option price falls this far below its best price so far. 25 means: bought at 100, exit at 75; if it runs to 140, the exit rises to 105. Applies to BOTH CE and PE.", default: "25" },
+
+      // ── Sizing & day-level breakers ──
+      { key: "RSI_PIVOT_ST_LOT_MULTIPLIER", label: "Lot Multiplier (RSI Pivot ST only)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.INSTANT, desc: "Lots per trade. 0 = use the global LOT_MULTIPLIER, which is the default.", default: "0", subheader: "Sizing & Day Breakers" },
+      { key: "RSI_PIVOT_ST_MAX_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Max entries per day. The pivot levels are fixed all day, so a handful of crosses is all this rule can honestly produce.", default: "5" },
+      { key: "RSI_PIVOT_ST_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 0, max: 50000, step: 250, effect: EFFECT.SESSION, desc: "Stop trading for the day after this much loss (0 = off).", default: "5000" },
+      { key: "RSI_PIVOT_ST_MAX_WEEKLY_LOSS", label: "Max Weekly Loss (₹)", type: "number", min: 0, max: 200000, step: 500, effect: EFFECT.SESSION, desc: "Stop trading for the rest of the week after this much loss across Mon–today (0 = off). Read from the day files, so it survives a restart.", default: "0" },
+
+      // ── Data plumbing ──
+      { key: "RSI_PIVOT_ST_POLL_MS", label: "Option Quote Poll (ms)", type: "number", min: 500, max: 30000, step: 500, effect: EFFECT.SESSION, desc: "How often the option price is re-read while a trade is open. This is what the 25% premium stop is measured against, so a slower poll means a later exit.", default: "2000", subheader: "Data plumbing" },
+      { key: "RSI_PIVOT_ST_HISTORY_LAG_MS", label: "History Fetch Lag (ms)", type: "number", min: 0, max: 60000, step: 500, effect: EFFECT.SESSION, desc: "How long to wait after a candle closes before asking Fyers for it. Asking too early often returns the bar one short, which would delay every decision by a whole candle.", default: "5000" },
+
+      // ── Backtest ──
+      { key: "RSI_PIVOT_ST_BT_SLIPPAGE_PTS", label: "Backtest Spread/Slippage Haircut (pts each way)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.BACKTEST, desc: "Backtest cost per side, in points. Without this, option-buying backtests always flatter.", default: "2", subheader: "Backtest" },
+      { key: "RSI_PIVOT_ST_BT_SEED_PREMIUM", label: "Backtest Seed Premium (₹)", type: "number", min: 20, max: 1000, step: 10, effect: EFFECT.BACKTEST, desc: "Starting option price the backtest assumes, since there is no historical option chain. The 25% stop is measured against this simulated premium, so it is the weakest number in any backtest result.", default: "180" },
+    ],
+  },
+  {
     section: "GAPS STRATEGY — Fyers",
     icon: "🕳",
     nav: "GAPS",
@@ -679,6 +728,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_TDS_STARTED", label: "Trend Day Scalp — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a Trend Day Scalp session starts.", default: "true" },
       { key: "TG_GAP3M_STARTED", label: "3M Gap Fix Scalp — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a 3M Gap Fix Scalp session starts.", default: "true" },
       { key: "TG_OIWF_STARTED", label: "OI Wall Fade — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an OI Wall Fade session starts.", default: "true" },
+      { key: "TG_RSI_PIVOT_ST_STARTED", label: "RSI Pivot ST — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an RSI Pivot ST session starts.", default: "true" },
 
       { key: "TG_EMA_RSI_ST_ENTRY", label: "EMA_RSI_ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST entry.", default: "true", subheader: "Trade Entry" },
       { key: "TG_BB_RSI_ENTRY", label: "BB_RSI — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BB_RSI entry.", default: "true" },
@@ -690,6 +740,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_TDS_ENTRY", label: "Trend Day Scalp — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Trend Day Scalp entry.", default: "true" },
       { key: "TG_GAP3M_ENTRY", label: "3M Gap Fix Scalp — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every 3M Gap Fix Scalp entry.", default: "true" },
       { key: "TG_OIWF_ENTRY", label: "OI Wall Fade — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every OI Wall Fade entry.", default: "true" },
+      { key: "TG_RSI_PIVOT_ST_ENTRY", label: "RSI Pivot ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every RSI Pivot ST entry.", default: "true" },
 
       { key: "TG_EMA_RSI_ST_EXIT", label: "EMA_RSI_ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST exit.", default: "true", subheader: "Trade Exit" },
       { key: "TG_BB_RSI_EXIT", label: "BB_RSI — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BB_RSI exit.", default: "true" },
@@ -701,6 +752,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_TDS_EXIT", label: "Trend Day Scalp — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Trend Day Scalp exit.", default: "true" },
       { key: "TG_GAP3M_EXIT", label: "3M Gap Fix Scalp — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every 3M Gap Fix Scalp exit.", default: "true" },
       { key: "TG_OIWF_EXIT", label: "OI Wall Fade — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every OI Wall Fade exit.", default: "true" },
+      { key: "TG_RSI_PIVOT_ST_EXIT", label: "RSI Pivot ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every RSI Pivot ST exit.", default: "true" },
 
       { key: "TG_EMA_RSI_ST_SIGNALS", label: "EMA_RSI_ST — Signal/Skip Alerts", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert why a trade was or wasn't taken.", default: "true", subheader: "Signal / Skip" },
       { key: "TG_BB_RSI_SIGNALS", label: "BB_RSI — Signal/Skip Alerts", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert why a trade was or wasn't taken.", default: "false" },
@@ -717,6 +769,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_TDS_DAYREPORT", label: "Trend Day Scalp — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a Trend Day Scalp day summary on stop.", default: "true" },
       { key: "TG_GAP3M_DAYREPORT", label: "3M Gap Fix Scalp — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a 3M Gap Fix Scalp day summary on stop.", default: "true" },
       { key: "TG_OIWF_DAYREPORT", label: "OI Wall Fade — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send an OI Wall Fade day summary on stop.", default: "true" },
+      { key: "TG_RSI_PIVOT_ST_DAYREPORT", label: "RSI Pivot ST — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send an RSI Pivot ST day summary on stop.", default: "true" },
 
       { key: "TG_DAYREPORT_CONSOLIDATED", label: "Consolidated Day Report (Market Close)", type: "toggle", effect: EFFECT.INSTANT, desc: "Send one combined end-of-day summary at 15:30 IST.", default: "true" },
     ],
@@ -784,6 +837,7 @@ const SETTINGS_SCHEMA = [
       { key: "TDS_MODE_ENABLED",       label: "Trend Day Scalp Mode",      type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Trend Day Scalp menu and settings.", default: "true" },
       { key: "GAP3M_MODE_ENABLED",     label: "3M Gap Fix Scalp Mode",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show the 3M Gap Fix Scalp menu and settings.", default: "true" },
       { key: "OIWF_MODE_ENABLED",      label: "OI Wall Fade Mode",       type: "toggle", effect: EFFECT.INSTANT, desc: "Show the OI Wall Fade menu and settings.", default: "true" },
+      { key: "RSI_PIVOT_ST_MODE_ENABLED", label: "RSI Pivot ST Mode",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show the RSI Pivot ST menu and settings.", default: "true" },
       { key: "UI_SHOW_SIMULATE",       label: "Show Simulate Menu",        type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Simulate sub-menu.", default: "false", subheader: "Shared sub-menus (all strategies)" },
       { key: "UI_SHOW_COMPARE",        label: "Show Compare Menu",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Compare sub-menu.", default: "false" },
       { key: "UI_SHOW_TRACKER",        label: "Show Tracker Menu (EMA_RSI_ST only)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Tracker sub-menu (EMA_RSI_ST).", default: "false" },
@@ -846,6 +900,12 @@ const SETTINGS_SCHEMA = [
       { key: "UI_SHOW_OIWF_PAPER",     label: "OI Wall Fade → Paper",        type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under OI Wall Fade. There is no Backtest entry — Fyers exposes no historical per-strike OI, so this strategy cannot be simulated over past sessions.", default: "true", subheader: "OI Wall Fade sub-menus" },
       { key: "UI_SHOW_OIWF_LIVE",      label: "OI Wall Fade → Live",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live under OI Wall Fade.", default: "true" },
       { key: "UI_SHOW_OIWF_HISTORY",   label: "OI Wall Fade → History",      type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under OI Wall Fade.", default: "true" },
+
+      // ── RSI Pivot ST submenu ──
+      { key: "UI_SHOW_RSI_PIVOT_ST_BACKTEST", label: "RSI Pivot ST → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under RSI Pivot ST.", default: "true", subheader: "RSI Pivot ST sub-menus" },
+      { key: "UI_SHOW_RSI_PIVOT_ST_PAPER",    label: "RSI Pivot ST → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under RSI Pivot ST.", default: "true" },
+      { key: "UI_SHOW_RSI_PIVOT_ST_LIVE",     label: "RSI Pivot ST → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live under RSI Pivot ST.", default: "true" },
+      { key: "UI_SHOW_RSI_PIVOT_ST_HISTORY",  label: "RSI Pivot ST → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under RSI Pivot ST.", default: "true" },
 
       // ── System submenu (Settings is always shown) ──
       { key: "UI_SHOW_LOGS",       label: "Logs → Server Logs tab", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Server Logs tab.", default: "true", subheader: "System sub-menus" },
@@ -912,6 +972,7 @@ const MODE_SECTION_TITLES = {
   trend_day_scalp: "TREND DAY SCALP STRATEGY — Fyers",
   gap_fix_3m: "3M GAP FIX SCALP STRATEGY — Fyers (NIFTY FUTURES)",
   oi_wall_fade: "OI WALL FADE STRATEGY — Fyers (per-strike Open Interest)",
+  rsi_pivot_st: "RSI_PIVOT_ST STRATEGY (RSI + Standard Pivot R1/S1 + SuperTrend) — Zerodha",
 };
 const SNAPSHOT_COMMON_SECTION_TITLES = new Set([
   "Instrument & Backtest",
@@ -919,7 +980,7 @@ const SNAPSHOT_COMMON_SECTION_TITLES = new Set([
   "OPEN-INTEREST FILTER (OI + Price Buildup)",
 ]);
 
-const _MODE_KEYS = { ema_rsi_st: new Set(), bb_rsi: new Set(), pa: new Set(), orb: new Set(), ema9vwap: new Set(), trend_pb: new Set(), gaps: new Set(), trend_day_scalp: new Set(), gap_fix_3m: new Set(), oi_wall_fade: new Set() };
+const _MODE_KEYS = { ema_rsi_st: new Set(), bb_rsi: new Set(), pa: new Set(), orb: new Set(), ema9vwap: new Set(), trend_pb: new Set(), gaps: new Set(), trend_day_scalp: new Set(), gap_fix_3m: new Set(), oi_wall_fade: new Set(), rsi_pivot_st: new Set() };
 const _KEY_TO_MODES = new Map();
 (function buildModeKeyIndex() {
   const commonKeys = [];
@@ -1348,7 +1409,7 @@ router.post("/restart", (req, res) => {
 // cache & logs always clear fully. The aggregate paper JSON + capital restore is
 // handled client-side via the per-strategy /reset endpoints (full paper wipe only).
 // Auto-gated by the app.js x-api-secret middleware (not in OPEN_PATHS).
-const RESET_PAPER_MODES = ["ema_rsi_st", "bb_rsi", "pa", "orb", "ema9vwap", "trend_pb", "gaps", "trend_day_scalp", "gap_fix_3m", "oi_wall_fade"];
+const RESET_PAPER_MODES = ["ema_rsi_st", "bb_rsi", "pa", "orb", "ema9vwap", "trend_pb", "gaps", "trend_day_scalp", "gap_fix_3m", "oi_wall_fade", "rsi_pivot_st"];
 const _RESET_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 router.post("/reset-data", (req, res) => {
@@ -1662,6 +1723,7 @@ router.get("/", (req, res) => {
   const tdsModeOn      = (envData["TDS_MODE_ENABLED"]      ?? process.env.TDS_MODE_ENABLED      ?? "true").toLowerCase() === "true";
   const gap3mModeOn    = (envData["GAP3M_MODE_ENABLED"]    ?? process.env.GAP3M_MODE_ENABLED    ?? "true").toLowerCase() === "true";
   const oiwfModeOn     = (envData["OIWF_MODE_ENABLED"]     ?? process.env.OIWF_MODE_ENABLED     ?? "true").toLowerCase() === "true";
+  const rsiPivotStModeOn = (envData["RSI_PIVOT_ST_MODE_ENABLED"] ?? process.env.RSI_PIVOT_ST_MODE_ENABLED ?? "true").toLowerCase() === "true";
   // Server Logs (📜 LOGS) and Cache Files buttons moved into the Logs (/trade-logs) page as tabs —
   // UI_SHOW_LOGS / UI_SHOW_CACHE_FILES now gate those tabs there, not top-bar buttons here.
   // (bbRsiModeOn already computed above for isFieldFrozen)
@@ -1676,6 +1738,7 @@ router.get("/", (req, res) => {
     "TREND DAY SCALP STRATEGY — Fyers":                             tdsModeOn,
     "3M GAP FIX SCALP STRATEGY — Fyers (NIFTY FUTURES)":            gap3mModeOn,
     "OI WALL FADE STRATEGY — Fyers (per-strike Open Interest)":     oiwfModeOn,
+    "RSI_PIVOT_ST STRATEGY (RSI + Standard Pivot R1/S1 + SuperTrend) — Zerodha": rsiPivotStModeOn,
   };
 
   // Rail entries are collected while the sections render so the index and the

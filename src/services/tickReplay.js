@@ -609,6 +609,7 @@ const _MODE_TO_CANONICAL_FILE = {
   "trend-day-scalp-paper": "trend_day_scalp_paper_trades.json",
   "gap-fix-3m-paper":      "gap_fix_3m_paper_trades.json",
   "oi-wall-fade-paper":    "oi_wall_fade_paper_trades.json",
+  "rsi-pivot-st-paper":    "rsi_pivot_st_paper_trades.json",
 };
 function _lookupCanonicalSession(mode, sessionStartTs) {
   const fname = _MODE_TO_CANONICAL_FILE[mode];
@@ -783,6 +784,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     ss_clearGapFix3m:          sharedSocketState.clearGapFix3m,
     ss_setOiWallFadeActive:    sharedSocketState.setOiWallFadeActive,
     ss_clearOiWallFade:        sharedSocketState.clearOiWallFade,
+    ss_setRsiPivotStActive:    sharedSocketState.setRsiPivotStActive,
+    ss_clearRsiPivotSt:        sharedSocketState.clearRsiPivotSt,
     // fs originals — paper /stop calls saveSession() → savePaperData() which
     // writes the canonical {strategy}_paper_trades.json via fs.writeFileSync
     // + fs.renameSync directly (NOT via tradeLogger.appendTradeLog, which we
@@ -1023,6 +1026,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     sharedSocketState.clearGapFix3m          = () => {};
     sharedSocketState.setOiWallFadeActive    = () => {};
     sharedSocketState.clearOiWallFade        = () => {};
+    sharedSocketState.setRsiPivotStActive    = () => {};
+    sharedSocketState.clearRsiPivotSt        = () => {};
 
     // fs: a replay must never mutate the user's canonical state. Rather than
     // enumerate filenames (the old *_paper_trades.json regex missed the per-day
@@ -1250,6 +1255,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     sharedSocketState.clearGapFix3m          = orig.ss_clearGapFix3m;
     sharedSocketState.setOiWallFadeActive    = orig.ss_setOiWallFadeActive;
     sharedSocketState.clearOiWallFade        = orig.ss_clearOiWallFade;
+    sharedSocketState.setRsiPivotStActive    = orig.ss_setRsiPivotStActive;
+    sharedSocketState.clearRsiPivotSt        = orig.ss_clearRsiPivotSt;
     fs.writeFileSync     = orig.fs_writeFileSync;
     fs.appendFileSync    = orig.fs_appendFileSync;
     fs.unlinkSync        = orig.fs_unlinkSync;
@@ -1320,6 +1327,7 @@ const MODE_TO_MODULE = {
   "trend-day-scalp-paper": "../routes/trendDayScalpPaper",
   "gap-fix-3m-paper":      "../routes/gapFix3mPaper",
   "oi-wall-fade-paper":    "../routes/oiWallFadePaper",
+  "rsi-pivot-st-paper":    "../routes/rsiPivotStPaper",
   // Live modes are NOT supported for replay (they place real orders). If a
   // live session was recorded, replay it as the matching paper mode.
 };
@@ -1872,6 +1880,7 @@ function replayPreflight() {
   if (sharedSocketState.isTrendDayScalpActive && sharedSocketState.isTrendDayScalpActive()) activeModes.push(sharedSocketState.getTrendDayScalpMode() || "trend_day_scalp");
   if (sharedSocketState.isGapFix3mActive && sharedSocketState.isGapFix3mActive()) activeModes.push(sharedSocketState.getGapFix3mMode() || "gap_fix_3m");
   if (sharedSocketState.isOiWallFadeActive && sharedSocketState.isOiWallFadeActive()) activeModes.push(sharedSocketState.getOiWallFadeMode() || "oi_wall_fade");
+  if (sharedSocketState.isRsiPivotStActive && sharedSocketState.isRsiPivotStActive()) activeModes.push(sharedSocketState.getRsiPivotStMode() || "rsi_pivot_st");
   if (activeModes.length > 0) {
     return {
       ok: false,
@@ -1933,6 +1942,7 @@ function forceClearSharedState() {
     trend_day_scalp: sharedSocketState.getTrendDayScalpMode ? sharedSocketState.getTrendDayScalpMode() : null,
     gap_fix_3m: sharedSocketState.getGapFix3mMode ? sharedSocketState.getGapFix3mMode() : null,
     oi_wall_fade: sharedSocketState.getOiWallFadeMode ? sharedSocketState.getOiWallFadeMode() : null,
+    rsi_pivot_st: sharedSocketState.getRsiPivotStMode ? sharedSocketState.getRsiPivotStMode() : null,
     replayInProgress: _replayInProgress,
   };
   sharedSocketState.clear();
@@ -1948,6 +1958,7 @@ function forceClearSharedState() {
   if (sharedSocketState.clearTrendDayScalp) sharedSocketState.clearTrendDayScalp();
   if (sharedSocketState.clearGapFix3m) sharedSocketState.clearGapFix3m();
   if (sharedSocketState.clearOiWallFade) sharedSocketState.clearOiWallFade();
+  if (sharedSocketState.clearRsiPivotSt) sharedSocketState.clearRsiPivotSt();
   _replayInProgress = false;
   return { ok: true, cleared: before };
 }

@@ -27,6 +27,7 @@ const STRATEGY_MODES = [
   { mode: 'TDS',        label: 'Trend Day Scalp', envKey: 'TDS_MODE_ENABLED'     },
   { mode: 'GAP3M',      label: '3M Gap Fix Scalp', envKey: 'GAP3M_MODE_ENABLED'  },
   { mode: 'OIWF',       label: 'OI Wall Fade', envKey: 'OIWF_MODE_ENABLED'       },
+  { mode: 'RSI_PIVOT_ST', label: 'RSI Pivot ST', envKey: 'RSI_PIVOT_ST_MODE_ENABLED' },
 ];
 
 // Strategies currently enabled in Settings (default ON, same as the sidebar).
@@ -48,6 +49,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   let _trendDayScalpMode = null;
   let _gapFix3mMode = null;
   let _oiWallFadeMode = null;
+  let _rsiPivotStMode = null;
   let _anyTradeActive = false;
   try {
     const sss = require('./sharedSocketState');
@@ -61,6 +63,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     _trendDayScalpMode = sss.getTrendDayScalpMode ? sss.getTrendDayScalpMode() : null;
     _gapFix3mMode = sss.getGapFix3mMode ? sss.getGapFix3mMode() : null;
     _oiWallFadeMode = sss.getOiWallFadeMode ? sss.getOiWallFadeMode() : null;
+    _rsiPivotStMode = sss.getRsiPivotStMode ? sss.getRsiPivotStMode() : null;
     _anyTradeActive = sss.isAnyActive ? sss.isAnyActive() : false;
   } catch (_) {}
 
@@ -91,6 +94,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const tdsModeOn      = (process.env.TDS_MODE_ENABLED      || 'true').toLowerCase() === 'true';
   const gap3mModeOn    = (process.env.GAP3M_MODE_ENABLED    || 'true').toLowerCase() === 'true';
   const oiwfModeOn     = (process.env.OIWF_MODE_ENABLED     || 'true').toLowerCase() === 'true';
+  const rsiPivotStModeOn = (process.env.RSI_PIVOT_ST_MODE_ENABLED || 'true').toLowerCase() === 'true';
 
   // ── Per-module menu-visibility toggles (managed from Settings page) ──
   const showSim      = (process.env.UI_SHOW_SIMULATE || 'false').toLowerCase() === 'true';
@@ -155,6 +159,11 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const showOiwfPaper         = (process.env.UI_SHOW_OIWF_PAPER            || 'true').toLowerCase()  === 'true';
   const showOiwfLive          = (process.env.UI_SHOW_OIWF_LIVE             || 'true').toLowerCase()  === 'true';
   const showOiwfHistory       = (process.env.UI_SHOW_OIWF_HISTORY          || 'true').toLowerCase()  === 'true';
+  // RSI Pivot ST — never traded; ships visible but its Live page is triple-gated to dry-run.
+  const showRsiPivotStBacktest = (process.env.UI_SHOW_RSI_PIVOT_ST_BACKTEST || 'true').toLowerCase()  === 'true';
+  const showRsiPivotStPaper    = (process.env.UI_SHOW_RSI_PIVOT_ST_PAPER    || 'true').toLowerCase()  === 'true';
+  const showRsiPivotStLive     = (process.env.UI_SHOW_RSI_PIVOT_ST_LIVE     || 'true').toLowerCase()  === 'true';
+  const showRsiPivotStHistory  = (process.env.UI_SHOW_RSI_PIVOT_ST_HISTORY  || 'true').toLowerCase()  === 'true';
 
   // ── System submenu toggles (Settings is always shown) ──
   const showTradeLogs  = (process.env.UI_SHOW_TRADE_LOGS  || 'true').toLowerCase() === 'true';
@@ -171,6 +180,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const tdsKeys     = ['trendDayScalpBacktest', 'trendDayScalpPaper', 'trendDayScalpLive', 'trendDayScalpHistory'];
   const gap3mKeys   = ['gapFix3mBacktest', 'gapFix3mPaper', 'gapFix3mLive', 'gapFix3mHistory'];
   const oiwfKeys    = ['oiWallFadePaper', 'oiWallFadeLive', 'oiWallFadeHistory'];
+  const rsiPivotStKeys = ['rsiPivotStBacktest', 'rsiPivotStPaper', 'rsiPivotStLive', 'rsiPivotStHistory'];
 
   const isTradingOpen  = tradingKeys.includes(activePage);
   const isBbRsiOpen    = bbRsiKeys.includes(activePage);
@@ -182,6 +192,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const isTdsOpen      = tdsKeys.includes(activePage);
   const isGap3mOpen    = gap3mKeys.includes(activePage);
   const isOiwfOpen     = oiwfKeys.includes(activePage);
+  const isRsiPivotStOpen = rsiPivotStKeys.includes(activePage);
 
   // When a strategy's PAPER session is running, hide its Live / Live (Harness)
   // entries — paper and live are mutually exclusive per strategy, so the live
@@ -196,6 +207,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const tdsPaperRunning      = _trendDayScalpMode === 'TREND_DAY_SCALP_PAPER';
   const gap3mPaperRunning    = _gapFix3mMode === 'GAP_FIX_3M_PAPER';
   const oiwfPaperRunning     = _oiWallFadeMode === 'OI_WALL_FADE_PAPER';
+  const rsiPivotStPaperRunning = _rsiPivotStMode === 'RSI_PIVOT_ST_PAPER';
 
   // Build a ema_rsi_st items list with per-feature toggle
   const emaRsiStItems = [
@@ -281,6 +293,13 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     ...(showOiwfHistory ? [{ key: 'oiWallFadeHistory', href: '/oi-wall-fade-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 
+  const rsiPivotStItems = [
+    ...(showRsiPivotStBacktest ? [{ key: 'rsiPivotStBacktest', href: '/rsi-pivot-st-backtest',     icon: '🔍', label: 'Backtest' }] : []),
+    ...(showRsiPivotStPaper    ? [{ key: 'rsiPivotStPaper',    href: '/rsi-pivot-st-paper/status', icon: '🎯', label: 'Paper'    }] : []),
+    ...(showRsiPivotStLive && !rsiPivotStPaperRunning ? [{ key: 'rsiPivotStLive', href: '/rsi-pivot-st-live', icon: '📡', label: 'Live' }] : []),
+    ...(showRsiPivotStHistory  ? [{ key: 'rsiPivotStHistory',  href: '/rsi-pivot-st-paper/history', icon: '📜', label: 'History' }] : []),
+  ];
+
   // ── Grouped navigation sections (collapsible) ──
   const topLevelItems = [
     ...(showDashboard   ? [{ key: 'dashboard',         href: '/',                   icon: '⌂',  label: 'Dashboard' }] : []),
@@ -347,6 +366,11 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       header: 'OI WALL FADE', collapsible: true, collapsed: !isOiwfOpen,
       groupId: 'nav-oi-wall-fade',
       items: oiwfItems,
+    }] : []),
+    ...(rsiPivotStModeOn ? [{
+      header: 'RSI PIVOT ST', collapsible: true, collapsed: !isRsiPivotStOpen,
+      groupId: 'nav-rsi-pivot-st',
+      items: rsiPivotStItems,
     }] : []),
     {
       header: 'SYSTEM', collapsible: false,
@@ -441,9 +465,17 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
       : '';
 
+    const rsiPivotStLiveBadge = p.key === 'rsiPivotStLive' && _rsiPivotStMode === 'RSI_PIVOT_ST_LIVE'
+      ? `<span class="sb-nav-badge live">LIVE</span>`
+      : '';
+
+    const rsiPivotStPaperBadge = p.key === 'rsiPivotStPaper' && _rsiPivotStMode === 'RSI_PIVOT_ST_PAPER'
+      ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
+      : '';
+
     return `<a href="${p.href}" class="sb-nav-item${isActive ? ' active' : ''}">
       <span class="sb-nav-icon">${p.icon}</span> ${p.label}
-      ${liveBadge}${runningBadge}${bbRsiLiveBadge}${bbRsiPaperBadge}${paLiveBadge}${paPaperBadge}${orbLiveBadge}${orbPaperBadge}${gapsLiveBadge}${gapsPaperBadge}${tdsLiveBadge}${tdsPaperBadge}${gap3mLiveBadge}${gap3mPaperBadge}${oiwfLiveBadge}${oiwfPaperBadge}
+      ${liveBadge}${runningBadge}${bbRsiLiveBadge}${bbRsiPaperBadge}${paLiveBadge}${paPaperBadge}${orbLiveBadge}${orbPaperBadge}${gapsLiveBadge}${gapsPaperBadge}${tdsLiveBadge}${tdsPaperBadge}${gap3mLiveBadge}${gap3mPaperBadge}${oiwfLiveBadge}${oiwfPaperBadge}${rsiPivotStLiveBadge}${rsiPivotStPaperBadge}
     </a>`;
   }
 
@@ -1927,6 +1959,7 @@ window.__ltInit = true;
     '.mode-gaps{color:#0369a1!important;}',
     '.mode-trend_day_scalp{color:#6d28d9!important;}',
     '.mode-gap_fix_3m{color:#0369a1!important;}',
+    '.mode-rsi_pivot_st{color:#c2410c!important;}',
     '.brk-action,.brk-action.re-login{color:#1d4ed8!important;}',
     '.brk-wallet-sub .zero,.pnl-flat,.ms-caret,.log-time,.da-empty,.bc-link,.tbar label,.pager label,.run-bar label,#dashRange label{color:#4b5769!important;}',
     '#da-mode-badge{color:#1d4ed8!important;}',

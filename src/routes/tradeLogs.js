@@ -45,7 +45,7 @@ function sendAiSkipMarkdown(res, records, baseName, meta) {
   res.send(md);
 }
 
-const MODES = ["ema_rsi_st", "bb_rsi", "pa", "orb", "ema9vwap", "trend_pb", "gaps", "trend_day_scalp", "gap_fix_3m", "oi_wall_fade"];
+const MODES = ["ema_rsi_st", "bb_rsi", "pa", "orb", "ema9vwap", "trend_pb", "gaps", "trend_day_scalp", "gap_fix_3m", "oi_wall_fade", "rsi_pivot_st"];
 
 function validMode(m) { return MODES.includes(m); }
 function validDate(d) { return typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d); }
@@ -544,6 +544,7 @@ function enabledModesFromEnv() {
     trend_day_scalp: on(process.env.TDS_MODE_ENABLED),
     gap_fix_3m: on(process.env.GAP3M_MODE_ENABLED),
     oi_wall_fade: on(process.env.OIWF_MODE_ENABLED),
+    rsi_pivot_st: on(process.env.RSI_PIVOT_ST_MODE_ENABLED),
   };
 }
 
@@ -604,6 +605,7 @@ router.get("/", (req, res) => {
     .mode-trend_day_scalp { color:#a855f7; }
     .mode-gap_fix_3m { color:#38bdf8; }
     .mode-oi_wall_fade { color:#f472b6; }
+    .mode-rsi_pivot_st { color:#facc15; }
     .mode-meta { font-size:0.68rem; color:var(--muted-1,#8ba1c2); }
 
     /* Strategy chip bar — shows ONE strategy's table at a time so the page
@@ -1051,6 +1053,7 @@ ${buildSidebar('tradeLogs', liveActive)}
     { key: 'trend_day_scalp', label: 'TREND DAY SCALP', cls: 'mode-trend_day_scalp' },
     { key: 'gap_fix_3m', label: '3M GAP FIX SCALP', cls: 'mode-gap_fix_3m' },
     { key: 'oi_wall_fade', label: 'OI WALL FADE', cls: 'mode-oi_wall_fade' },
+    { key: 'rsi_pivot_st', label: 'RSI PIVOT ST', cls: 'mode-rsi_pivot_st' },
   ];
   function enabledModes() { return MODE_LIST.filter(function(m){ return ENABLED_MODES[m.key] !== false; }); }
 
@@ -1064,8 +1067,8 @@ ${buildSidebar('tradeLogs', liveActive)}
   })();
 
   // Per-section page state.
-  var _filesPage  = { ema_rsi_st:1, bb_rsi:1, pa:1, orb:1, ema9vwap:1, trend_pb:1, gaps:1, trend_day_scalp:1, gap_fix_3m:1, oi_wall_fade:1 };
-  var _skipsPage  = { ema_rsi_st:1, bb_rsi:1, pa:1, orb:1, ema9vwap:1, trend_pb:1, gaps:1, trend_day_scalp:1, gap_fix_3m:1, oi_wall_fade:1 };
+  var _filesPage  = { ema_rsi_st:1, bb_rsi:1, pa:1, orb:1, ema9vwap:1, trend_pb:1, gaps:1, trend_day_scalp:1, gap_fix_3m:1, oi_wall_fade:1, rsi_pivot_st:1 };
+  var _skipsPage  = { ema_rsi_st:1, bb_rsi:1, pa:1, orb:1, ema9vwap:1, trend_pb:1, gaps:1, trend_day_scalp:1, gap_fix_3m:1, oi_wall_fade:1, rsi_pivot_st:1 };
   var _auditPage  = 1;
   var _view = { mode:null, date:null, kind:null, page:1, total:0, pageSize:25 }; // modal state
 

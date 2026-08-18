@@ -752,6 +752,76 @@ function clearOiWallFadePosition() {
   console.log("[PERSIST] OI_WALL_FADE position file cleared.");
 }
 
+// ── RSI_PIVOT_ST (RSI + pivot breakout + SuperTrend stop, Zerodha) ──────────
+// The stop is a FROZEN price at entry (SuperTrend level + premium floor), so a
+// crash-recovered position can be reconstructed exactly: there is no trail
+// state and no breakeven flag to lose.
+
+const RSI_PIVOT_ST_POS_FILE = path.join(DATA_DIR, ".active_rsi_pivot_st_position.json");
+
+function saveRsiPivotStPosition(position, sessionMeta) {
+  try {
+    if (!position) { _persistAtomic(RSI_PIVOT_ST_POS_FILE, null); return; }
+    const data = {
+      position: {
+        side:            position.side,
+        symbol:          position.symbol,
+        qty:             position.qty,
+        entryPrice:      position.entryPrice,
+        spotAtEntry:     position.spotAtEntry || position.entrySpot,
+        stopLoss:        position.stopLoss || position.slSpot,
+        initialStopLoss: position.initialStopLoss || position.initialSlSpot,
+        target:          position.targetSpot,
+        slPts:           position.slPts,
+        targetPts:       position.targetPts,
+        rr:              position.rr,
+        signalStrength:  position.signalStrength,
+        crossedLevel:    position.crossedLevel,
+        pp:              position.pp,
+        r1:              position.r1,
+        s1:              position.s1,
+        entryUnixSec:    position.entryUnixSec,
+        entryTime:       position.entryTime,
+        orderId:         position.orderId,
+        optionEntryLtp:  position.optionEntryLtp,
+        optionStrike:    position.optionStrike,
+        optionExpiry:    position.optionExpiry,
+        optionType:      position.optionType || position.side,
+      },
+      sessionMeta: sessionMeta || {},
+      savedAt: Date.now(),
+      savedDate: new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
+    };
+    _persistAtomic(RSI_PIVOT_ST_POS_FILE, JSON.stringify(data, null, 2));
+    console.log(`💾 [PERSIST] RSI_PIVOT_ST position saved: ${position.side} ${position.symbol} @ ₹${position.entryPrice}`);
+  } catch (err) {
+    console.warn(`⚠️ [PERSIST] Could not save RSI_PIVOT_ST position: ${err.message}`);
+  }
+}
+
+function loadRsiPivotStPosition() {
+  try {
+    if (!fs.existsSync(RSI_PIVOT_ST_POS_FILE)) return null;
+    const data = JSON.parse(fs.readFileSync(RSI_PIVOT_ST_POS_FILE, "utf-8"));
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    if (data.savedDate && data.savedDate !== today) {
+      console.log(`[PERSIST] Stale RSI_PIVOT_ST position from ${data.savedDate} — discarding.`);
+      fs.unlinkSync(RSI_PIVOT_ST_POS_FILE);
+      return null;
+    }
+    if (data.position) console.log(`[PERSIST] RSI_PIVOT_ST position loaded: ${data.position.side} ${data.position.symbol} @ ₹${data.position.entryPrice}`);
+    return data;
+  } catch (err) {
+    console.warn(`[PERSIST] Could not load RSI_PIVOT_ST position: ${err.message}`);
+    return null;
+  }
+}
+
+function clearRsiPivotStPosition() {
+  _persistAtomic(RSI_PIVOT_ST_POS_FILE, null);
+  console.log("[PERSIST] RSI_PIVOT_ST position file cleared.");
+}
+
 module.exports = {
   saveTradePosition, loadTradePosition, clearTradePosition,
   saveBbRsiPosition, loadBbRsiPosition, clearBbRsiPosition,
@@ -763,4 +833,5 @@ module.exports = {
   saveTrendDayScalpPosition, loadTrendDayScalpPosition, clearTrendDayScalpPosition,
   saveGapFix3mPosition, loadGapFix3mPosition, clearGapFix3mPosition,
   saveOiWallFadePosition, loadOiWallFadePosition, clearOiWallFadePosition,
+  saveRsiPivotStPosition, loadRsiPivotStPosition, clearRsiPivotStPosition,
 };
