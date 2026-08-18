@@ -146,6 +146,11 @@ const STRIKE_MODES = ["ATM", "ITM", "OTM"];
 // all (PE never carries the SuperTrend). Callers must warn, not substitute.
 const PREMIUM_STOP_SIDES = ["BOTH", "CE", "PE", "NONE"];
 
+// Which sides carry the SuperTrend stop. CE is the historical default — the
+// strategy was written with the SuperTrend on the CE side alone. "PE"/"BOTH"
+// mirror it: the line sits ABOVE price and a flip to BULLISH is the PE's exit.
+const ST_SIDES = ["BOTH", "CE", "PE", "NONE"];
+
 /** NIFTY strikes are struck every 50 points. Not configurable anywhere in this repo. */
 const STRIKE_STEP = 50;
 
@@ -156,6 +161,11 @@ const STRIKE_STEP = 50;
 function getConfig() {
   const rawStrike = String(process.env.RSI_PIVOT_ST_STRIKE_MODE || "OTM").trim().toUpperCase();
   const rawPremSides = String(process.env.RSI_PIVOT_ST_PREMIUM_SL_SIDES || "BOTH").trim().toUpperCase();
+  // SuperTrend sides. The new selector wins; when it is absent we fall back to
+  // the legacy CE on/off flag so an old .env is not silently re-enabled.
+  const rawStSides = String(process.env.RSI_PIVOT_ST_ST_SIDES || "").trim().toUpperCase();
+  const legacyCeOff = String(process.env.RSI_PIVOT_ST_ST_CE_ENABLED || "true").toLowerCase() !== "true";
+  const stSides = ST_SIDES.includes(rawStSides) ? rawStSides : (legacyCeOff ? "NONE" : "CE");
   return {
     resolutionMins:  _intEnv("RSI_PIVOT_ST_RESOLUTION", 5, 1, 60),
     sessionStartMin: _parseHHMM(process.env.RSI_PIVOT_ST_SESSION_START, 9 * 60 + 15),
@@ -177,7 +187,15 @@ function getConfig() {
     // SuperTrend — CE stop only. 10/2 is the user's stated setting.
     stPeriod:        _intEnv("RSI_PIVOT_ST_ST_PERIOD", 10, 2, 100),
     stMultiplier:    _numEnv("RSI_PIVOT_ST_ST_MULT", 2, 0.1, 10),
-    stCeEnabled:     String(process.env.RSI_PIVOT_ST_ST_CE_ENABLED || "true").toLowerCase() === "true",
+    // Which sides carry the SuperTrend stop: BOTH / CE (default, the original
+    // rule) / PE / NONE. Legacy RSI_PIVOT_ST_ST_CE_ENABLED=false still means
+    // "no SuperTrend on CE" when the newer key is not set, so an existing .env
+    // keeps behaving as it did.
+    stSides:         stSides,
+    // Derived, kept so older readers (and every existing `cfg.stCeEnabled`
+    // call site) keep working without knowing about the selector.
+    stCeEnabled:     stSides === "BOTH" || stSides === "CE",
+    stPeEnabled:     stSides === "BOTH" || stSides === "PE",
 
     // The 25% premium stop — initial AND trailing. Which SIDES carry it is a
     // toggle: BOTH (default) / CE / PE / NONE. A side left out simply has no
@@ -357,43 +375,65 @@ function premiumStopApplies(side, cfg) {
 }
 
 /**
- * Does `side` end up with NO stop of any kind? True only for a PE with the
- * premium floor switched off — PE never carries the SuperTrend, so such a trade
- * can only be closed by the EOD square-off. Routes use this to warn.
+ * Does `side` end up with NO stop of any kind — neither the premium floor nor
+ * the SuperTrend? Such a trade can only be closed by the EOD square-off, so
+ * every route warns about it rather than substituting a stop of its own.
  */
 function isStoplessSide(side, cfg) {
   cfg = cfg || getConfig();
   if (premiumStopApplies(side, cfg)) return false;
-  return !(side === "CE" && cfg.stCeEnabled);
+  return !stApplies(side, cfg);
 }
 
 /**
- * The SuperTrend stop for a CE trade, as a SPOT level, ratcheted.
+ * Does the SuperTrend stop apply to `side`? The single place the
+ * BOTH/CE/PE/NONE selector is interpreted.
+ */
+function stApplies(side, cfg) {
+  cfg = cfg || getConfig();
+  const sides = cfg.stSides;
+  if (sides === "NONE") return false;
+  if (sides === "BOTH") return true;
+  return sides === side;
+}
+
+/**
+ * The SuperTrend stop as a SPOT level, ratcheted. Mirrored per side:
  *
- * Only ever returned when the line sits BELOW price (trend = 1, i.e. it is
- * acting as support). A bearish SuperTrend cannot be a long's stop — the route
- * treats that as "the trend flipped", which is itself the exit.
+ *   CE (a long on spot) — the line must sit BELOW price (trend = 1, acting as
+ *     support). A flip to bearish is not a stop level, it IS the exit, and the
+ *     level only ever ratchets UP.
+ *   PE (a short on spot) — the exact mirror: the line must sit ABOVE price
+ *     (trend = −1, acting as resistance), a flip to BULLISH is the exit, and
+ *     the level only ever ratchets DOWN.
  *
- * `prevStop` is the stop already in force: the returned level never moves DOWN,
+ * `prevStop` is the stop already in force; the returned level never loosens,
  * because a trail that can loosen is not a trail.
  *
  * @returns {{ stop, trend, flipped } | null}
  */
 function superTrendStop(side, stSeries, prevStop, cfg) {
   cfg = cfg || getConfig();
-  if (side !== "CE" || !cfg.stCeEnabled) return null;
+  if (side !== "CE" && side !== "PE") return null;
+  if (!stApplies(side, cfg)) return null;
   if (!Array.isArray(stSeries) || stSeries.length === 0) return null;
 
   const last = stSeries[stSeries.length - 1];
   if (!last || !_num(last.value) || last.trend == null) return null;
 
-  if (last.trend !== 1) {
-    // Line is above price — the trend has flipped against the long.
+  // The trend that KEEPS this trade alive: bullish for a CE, bearish for a PE.
+  const wantTrend = side === "CE" ? 1 : -1;
+
+  if (last.trend !== wantTrend) {
+    // The line has crossed to the wrong side of price — the trade's premise is gone.
     return { stop: _num(prevStop) ? prevStop : null, trend: last.trend, flipped: true };
   }
   const raw = last.value;
-  const stop = _num(prevStop) ? Math.max(prevStop, raw) : raw;
-  return { stop: _r2(stop), trend: 1, flipped: false };
+  // CE ratchets up (Math.max), PE ratchets down (Math.min). Same rule, mirrored.
+  const stop = _num(prevStop)
+    ? (side === "CE" ? Math.max(prevStop, raw) : Math.min(prevStop, raw))
+    : raw;
+  return { stop: _r2(stop), trend: wantTrend, flipped: false };
 }
 
 /**
@@ -574,26 +614,38 @@ function getSignal(candles, opts) {
   base.strikeMode = strikeInfo.mode;
   base.strikeSteps = strikeInfo.steps;
 
-  // ── The SPOT stop. CE only: SuperTrend. PE has no spot stop by design. ───
-  if (side === "CE" && cfg.stCeEnabled) {
+  // ── The SPOT stop: SuperTrend, on whichever sides ST_SIDES covers. ───────
+  // Mirrored for PE — the line must sit ABOVE the entry rather than below it,
+  // and "not bearish" is the refusal instead of "not bullish". A setup whose
+  // SuperTrend is on the wrong side of price, or already through the entry, is
+  // REFUSED rather than entered with no stop (unchanged rule, now per side).
+  if (stApplies(side, cfg)) {
+    const isCE = side === "CE";
     const stSeries = computeSuperTrendSeries(candles, cfg);
-    const st = superTrendStop("CE", stSeries, null, cfg);
+    const st = superTrendStop(side, stSeries, null, cfg);
     base.superTrend = st && _num(st.stop) ? _r2(st.stop) : null;
     base.superTrendTrend = st ? st.trend : null;
 
+    const wantWord  = isCE ? "bullish" : "bearish";
+    const wrongSide = isCE ? "line sits above price" : "line sits below price";
+    const level     = isCE ? ceLevel : peLevel;
+
     if (!st || st.flipped || !_num(st.stop)) {
       base.skipReason = base.reason =
-        `CE setup at R1 ${ceLevel} with RSI ${base.rsi}, but SuperTrend(${cfg.stPeriod},${cfg.stMultiplier}) is not bullish ` +
-        `(${st && st.trend === -1 ? "line sits above price" : "still warming up"}) — no initial stop, refusing to enter`;
+        `${side} setup at ${isCE ? "R1" : "S1"} ${level} with RSI ${base.rsi}, but SuperTrend(${cfg.stPeriod},${cfg.stMultiplier}) is not ${wantWord} ` +
+        `(${st && st.trend != null ? wrongSide : "still warming up"}) — no initial stop, refusing to enter`;
       return base;
     }
-    if (st.stop >= entry) {
+    // CE is stopped BELOW the entry, PE ABOVE it. Either way, a stop already on
+    // the wrong side of the fill would be hit on the trade's first tick.
+    const throughEntry = isCE ? st.stop >= entry : st.stop <= entry;
+    if (throughEntry) {
       base.skipReason = base.reason =
-        `CE setup valid but SuperTrend ${_r2(st.stop)} is at or above the entry ${entry} — the trade would be stopped on its first tick`;
+        `${side} setup valid but SuperTrend ${_r2(st.stop)} is at or ${isCE ? "above" : "below"} the entry ${entry} — the trade would be stopped on its first tick`;
       return base;
     }
     base.slSpot = _r2(st.stop);
-    base.slPts = _r2(entry - st.stop);
+    base.slPts = _r2(Math.abs(entry - st.stop));
   }
 
   base.signal = side === "CE" ? "BUY_CE" : "BUY_PE";
@@ -603,10 +655,10 @@ function getSignal(candles, opts) {
   // record never claims a floor the trade does not actually carry.
   const hasPrem = premiumStopApplies(side, cfg);
   const stopParts = [];
-  if (side === "CE" && _num(base.slSpot)) stopParts.push(`SuperTrend ${base.slSpot} (${base.slPts}pt)`);
+  if (_num(base.slSpot)) stopParts.push(`SuperTrend ${base.slSpot} (${base.slPts}pt)`);
   if (hasPrem) stopParts.push(`${cfg.premiumStopPct}% premium floor`);
   const stopText = stopParts.length
-    ? `SL = ${stopParts.join(" + ")}${side === "PE" && stopParts.length === 1 ? " only (no SuperTrend on PE by rule)" : ""}`
+    ? `SL = ${stopParts.join(" + ")}`
     : `SL = NONE — no SuperTrend on ${side} and the premium stop is OFF for this side; EOD square-off is the only exit`;
   base.reason =
     `RSI_PIVOT_ST ${side}: RSI ${base.rsi} ${side === "CE" ? `> ${cfg.rsiCeMin}` : `< ${cfg.rsiPeMax}`} and the candle crossed ` +
@@ -625,6 +677,7 @@ module.exports = {
   DESCRIPTION,
   STRIKE_MODES,
   PREMIUM_STOP_SIDES,
+  ST_SIDES,
   STRIKE_STEP,
   getConfig,
   computePivots,
@@ -634,6 +687,7 @@ module.exports = {
   premiumStop,
   premiumStopHit,
   premiumStopApplies,
+  stApplies,
   isStoplessSide,
   superTrendStop,
   stopHit,

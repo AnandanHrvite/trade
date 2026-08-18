@@ -85,7 +85,7 @@ function _cfg() { return rsiPivotStrategy.getConfig(); }
 function _sideStopText(side, cfg) {
   cfg = cfg || _cfg();
   const bits = [];
-  if (side === "CE" && cfg.stCeEnabled) bits.push(`SuperTrend(${cfg.stPeriod},${cfg.stMultiplier})`);
+  if (rsiPivotStrategy.stApplies(side, cfg)) bits.push(`SuperTrend(${cfg.stPeriod},${cfg.stMultiplier})`);
   if (rsiPivotStrategy.premiumStopApplies(side, cfg)) bits.push(`${cfg.premiumStopPct}% premium floor`);
   return bits.length ? bits.join(" + ") : "NONE — EOD square-off only";
 }
@@ -518,11 +518,11 @@ async function simulateBuy(side, sig) {
   // The SPOT stop is CE-only. It came from the engine off closed bars; it is a
   // LEVEL and is not re-anchored to the fill.
   let slSpot = null;
-  if (side === "CE" && cfg.stCeEnabled) {
+  if (rsiPivotStrategy.stApplies(side, cfg)) {
     slSpot = sig.slSpot;
     if (!Number.isFinite(slSpot)) {
-      log(`🚫 [RSI_PIVOT_ST-PAPER] Entry ABORTED — CE needs a SuperTrend stop and it is unusable (${slSpot})`);
-      skipLogger.appendSkipLog(MODE_KEY, { gate: "levels_uncomputable", reason: `CE SuperTrend stop ${slSpot} unusable`, side, spot });
+      log(`🚫 [RSI_PIVOT_ST-PAPER] Entry ABORTED — ${side} needs a SuperTrend stop and it is unusable (${slSpot})`);
+      skipLogger.appendSkipLog(MODE_KEY, { gate: "levels_uncomputable", reason: `${side} SuperTrend stop ${slSpot} unusable`, side, spot });
       return;
     }
     if (rsiPivotStrategy.stopHit(side, spot, slSpot)) {
@@ -759,22 +759,26 @@ function _closeDay(reason) {
  */
 function _trailSuperTrend() {
   const pos = state.position;
-  if (!pos || pos.side !== "CE") return;
+  if (!pos) return;
   const cfg = _cfg();
-  if (!cfg.stCeEnabled) return;
+  if (!rsiPivotStrategy.stApplies(pos.side, cfg)) return;
 
+  const isCE = pos.side === "CE";
   const series = rsiPivotStrategy.computeSuperTrendSeries(state.candles, cfg);
-  const st = rsiPivotStrategy.superTrendStop("CE", series, pos.slSpot, cfg);
+  const st = rsiPivotStrategy.superTrendStop(pos.side, series, pos.slSpot, cfg);
   if (!st) return;
 
   if (st.flipped) {
-    simulateSell(`SuperTrend flipped bearish — the CE's trend premise is gone (spot ${state.lastTickPrice})`, { isStopOut: true });
+    simulateSell(`SuperTrend flipped ${isCE ? "bearish" : "bullish"} — the ${pos.side}'s trend premise is gone (spot ${state.lastTickPrice})`, { isStopOut: true });
     return;
   }
-  if (Number.isFinite(st.stop) && (!Number.isFinite(pos.slSpot) || st.stop > pos.slSpot)) {
+  // The stop only ever TIGHTENS: up for a CE, down for a PE.
+  const tighter = Number.isFinite(st.stop) &&
+    (!Number.isFinite(pos.slSpot) || (isCE ? st.stop > pos.slSpot : st.stop < pos.slSpot));
+  if (tighter) {
     const prev = pos.slSpot;
     pos.slSpot = st.stop;
-    log(`🔒 [RSI_PIVOT_ST-PAPER] CE SuperTrend trail ${prev} → ${st.stop}`);
+    log(`🔒 [RSI_PIVOT_ST-PAPER] ${pos.side} SuperTrend trail ${prev} → ${st.stop}`);
     try { require("../utils/positionPersist").saveRsiPivotStPosition(pos, { sessionPnl: state.sessionPnl }); } catch (_) {}
   }
 }
@@ -830,13 +834,15 @@ function _checkExits() {
     return;
   }
 
-  // 2. SuperTrend — CE only. The level is trailed on candle close; here it is
-  //    only TESTED, against the live spot.
-  if (pos.side === "CE" && Number.isFinite(pos.slSpot) && typeof spot === "number" && Number.isFinite(spot)) {
-    if (rsiPivotStrategy.stopHit("CE", spot, pos.slSpot)) {
-      const trailing = pos.slSpot > pos.initialSlSpot;
+  // 2. SuperTrend — whichever sides ST_SIDES covers. The level is trailed on
+  //    candle close; here it is only TESTED, against the live spot.
+  if (Number.isFinite(pos.slSpot) && typeof spot === "number" && Number.isFinite(spot)) {
+    if (rsiPivotStrategy.stopHit(pos.side, spot, pos.slSpot)) {
+      // "Trailing" = the stop has TIGHTENED from where it started: up for a CE,
+      // down for a PE.
+      const trailing = pos.side === "CE" ? pos.slSpot > pos.initialSlSpot : pos.slSpot < pos.initialSlSpot;
       simulateSell(
-        `SuperTrend ${trailing ? "trailing " : ""}stop hit — spot ${spot} at or below ${pos.slSpot}` +
+        `SuperTrend ${trailing ? "trailing " : ""}stop hit — spot ${spot} at or ${pos.side === "CE" ? "below" : "above"} ${pos.slSpot}` +
         (trailing ? ` (initial ${pos.initialSlSpot})` : ""),
         { isStopOut: true }
       );
@@ -1279,6 +1285,7 @@ router.get("/status/data", (req, res) => {
       pivotBufferPts: cfg.pivotBufferPts,
       strikeMode: cfg.strikeMode, strikePct: cfg.strikePct,
       stPeriod: cfg.stPeriod, stMultiplier: cfg.stMultiplier, stCeEnabled: cfg.stCeEnabled,
+      stSides: cfg.stSides,
       premiumStopPct: cfg.premiumStopPct,
       premiumStopSides: cfg.premiumStopSides,
       entryStart: _envStr("RSI_PIVOT_ST_ENTRY_START", "09:30"),
@@ -1424,7 +1431,7 @@ function _positionCardHtml(pos, optLtp) {
        <span class="${pnl >= 0 ? "pos" : "neg"}">(${pnl >= 0 ? "+" : ""}${pnl})</span></div>
   <div>Trigger: RSI ${pos.signalRsi} · crossed ${pos.side === "CE" ? "R1" : "S1"} ${pos.crossedLevel}</div>
   <div>Strike ${pos.optionStrike} (${pos.strikeMode}${pos.strikeDistancePts ? `, ${pos.strikeDistancePts}pt` : ""})</div>
-  <div>Stops: ${pos.side === "CE" && pos.slSpot != null ? `SuperTrend ${pos.slSpot} · ` : ""}${
+  <div>Stops: ${pos.slSpot != null ? `SuperTrend ${pos.slSpot} · ` : ""}${
     Number.isFinite(pos.premiumFloor)
       ? `premium floor ₹${pos.premiumFloor} (peak ₹${pos.peakPremium})`
       : `<b style="color:#f85149;">no premium floor on ${pos.side}</b> (peak ₹${pos.peakPremium})`

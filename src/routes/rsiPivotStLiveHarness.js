@@ -230,7 +230,7 @@ ${buildSidebar('rsiPivotStLive', false)}
       </div>
       <div style="flex:2;min-width:220px;">
         <div class="label">Rules</div>
-        <div class="val" style="font-size:0.8rem;">NIFTY ${scfg.resolutionMins}m. Yesterday's H/L/C fixes today's Standard Pivots. A candle that CROSSES and CLOSES above R1 with RSI&gt;${scfg.rsiCeMin} buys a CE; below S1 with RSI&lt;${scfg.rsiPeMax} buys a PE. Strike = ${scfg.strikeMode} at ${scfg.strikePct}% of spot. CE is stopped by SuperTrend(${scfg.stPeriod},${scfg.stMultiplier})${scfg.stCeEnabled ? "" : " <b>[OFF]</b>"}, which PE never carries; the ${scfg.premiumStopPct}% premium floor applies to <b>${scfg.premiumStopSides}</b>. No profit target.${["CE","PE"].filter(x => rsiPivotStrategy.isStoplessSide(x, scfg)).map(x => ` <b style="color:#f85149;">⚠️ ${x} trades currently have NO stop — only the EOD square-off can close them.</b>`).join("")}</div>
+        <div class="val" style="font-size:0.8rem;">NIFTY ${scfg.resolutionMins}m. Yesterday's H/L/C fixes today's Standard Pivots. A candle that CROSSES and CLOSES above R1 with RSI&gt;${scfg.rsiCeMin} buys a CE; below S1 with RSI&lt;${scfg.rsiPeMax} buys a PE. Strike = ${scfg.strikeMode} at ${scfg.strikePct}% of spot. SuperTrend(${scfg.stPeriod},${scfg.stMultiplier}) stops <b>${scfg.stSides}</b>; the ${scfg.premiumStopPct}% premium floor applies to <b>${scfg.premiumStopSides}</b>. No profit target.${["CE","PE"].filter(x => rsiPivotStrategy.isStoplessSide(x, scfg)).map(x => ` <b style="color:#f85149;">⚠️ ${x} trades currently have NO stop — only the EOD square-off can close them.</b>`).join("")}</div>
       </div>
     </div>
     <div style="margin-top:16px;">

@@ -464,7 +464,7 @@ const GUIDE_STATUS = {
     { type: "bool", label: "RSI Pivot ST Mode (sidebar + Settings section)", key: "RSI_PIVOT_ST_MODE_ENABLED", def: "true" },
     { type: "bool", label: "RSI Pivot ST Paper Trading", key: "RSI_PIVOT_ST_PAPER_ENABLED", def: "true" },
     { type: "live", label: "Live Orders (Zerodha, via paper harness)", enableKey: "RSI_PIVOT_ST_LIVE_ENABLED", dryKey: "RSI_PIVOT_ST_LIVE_DRY_RUN" },
-    { type: "bool", label: "SuperTrend Stop on CE (PE never carries one, by design)", key: "RSI_PIVOT_ST_ST_CE_ENABLED", def: "true" },
+    { type: "value", label: "SuperTrend Stop applies to", key: "RSI_PIVOT_ST_ST_SIDES", def: "CE", warnOn: ["NONE"] },
     { type: "value", label: "Premium Stop applies to (CE-only / NONE leaves PE with NO stop)", key: "RSI_PIVOT_ST_PREMIUM_SL_SIDES", def: "BOTH", warnOn: ["CE", "NONE"] },
   ] }] },
   "Application_Setup_Guide.html": { title: "System — Live Configuration", groups: [
