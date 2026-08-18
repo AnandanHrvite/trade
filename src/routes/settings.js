@@ -541,11 +541,6 @@ const SETTINGS_SCHEMA = [
       { key: "RSI_PIVOT_ST_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 0, max: 50000, step: 250, effect: EFFECT.SESSION, desc: "Stop trading for the day after this much loss (0 = off).", default: "5000" },
       { key: "RSI_PIVOT_ST_MAX_WEEKLY_LOSS", label: "Max Weekly Loss (₹)", type: "number", min: 0, max: 200000, step: 500, effect: EFFECT.SESSION, desc: "Stop trading for the rest of the week after this much loss across Mon–today (0 = off). Read from the day files, so it survives a restart.", default: "0" },
 
-      // ── Data plumbing ──
-      { key: "RSI_PIVOT_ST_POLL_MS", label: "Option Quote Poll (ms)", type: "number", min: 500, max: 30000, step: 500, effect: EFFECT.SESSION, desc: "How often the option price is re-read while a trade is open. This is what the 25% premium stop is measured against, so a slower poll means a later exit.", default: "2000", subheader: "Data plumbing" },
-      { key: "RSI_PIVOT_ST_HISTORY_LAG_MS", label: "History Fetch Lag (ms)", type: "number", min: 0, max: 60000, step: 500, effect: EFFECT.SESSION, desc: "How long to wait after a candle closes before asking Fyers for it. Asking too early often returns the bar one short, which would delay every decision by a whole candle.", default: "5000" },
-
-      // ── Backtest ──
       { key: "RSI_PIVOT_ST_BT_SLIPPAGE_PTS", label: "Backtest Spread/Slippage Haircut (pts each way)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.BACKTEST, desc: "Backtest cost per side, in points. Without this, option-buying backtests always flatter.", default: "2", subheader: "Backtest" },
       { key: "RSI_PIVOT_ST_BT_SEED_PREMIUM", label: "Backtest Seed Premium (₹)", type: "number", min: 20, max: 1000, step: 10, effect: EFFECT.BACKTEST, desc: "Starting option price the backtest assumes, since there is no historical option chain. The 25% stop is measured against this simulated premium, so it is the weakest number in any backtest result.", default: "180" },
     ],
@@ -1550,7 +1545,7 @@ router.get("/", (req, res) => {
   function renderField(f) {
     const val = envData[f.key] ?? process.env[f.key] ?? f.default ?? "";
     const eff = f.effect || EFFECT.INSTANT;
-    const effBadge = `<span class="effect-badge" style="--ec:${eff.color}" title="${eff.tip}"><span class="effect-icon">${eff.icon}</span>${eff.label}<span class="info-i">i</span></span><span class="env-key-tag">${f.key}</span>`;
+    const effBadge = `<span class="effect-badge" style="--ec:${eff.color}" data-tip="${esc(eff.tip)}"><span class="effect-icon">${eff.icon}</span>${eff.label}<span class="info-i">i</span></span><span class="env-key-tag">${f.key}</span>`;
     const descText = f.desc || "";
     const descHtml = descText ? `<div class="field-desc">${descText}</div>` : "";
     const frozen = isFieldFrozen(f.key);
@@ -2238,7 +2233,7 @@ router.get("/", (req, res) => {
       margin-left: 2px;
     }
     .effect-badge:hover::after {
-      content: attr(title); position: absolute; bottom: calc(100% + 6px); left: 50%;
+      content: attr(data-tip); position: absolute; bottom: calc(100% + 6px); left: 50%;
       transform: translateX(-50%); white-space: nowrap;
       background: #1a2236; color: var(--text); border: 1px solid var(--border2);
       padding: 6px 12px; border-radius: 6px; font-size: 0.7rem; font-weight: 500;
