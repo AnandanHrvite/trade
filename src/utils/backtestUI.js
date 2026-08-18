@@ -536,19 +536,23 @@ function render(){
   Array.from(tbody.querySelectorAll('.bt-eye-btn')).forEach(function(btn){
     btn.addEventListener('click',function(){ showBTModal(window._btSlice[parseInt(this.getAttribute('data-idx'))]); });
   });
-  Array.from(tbody.querySelectorAll('td[data-reason],td[data-ereason]')).forEach(function(td){
-    var reasonOf=function(){ return (td.getAttribute('data-reason')||td.getAttribute('data-ereason')||'').trim(); };
-    var showTip=function(e){
-      var v=reasonOf(); var tip=document.getElementById('tooltip');
-      if(!v){ tip.style.display='none'; tip.textContent=''; return; }
-      tip.textContent=v; tip.style.display='block'; moveTip(e);
-    };
-    td.addEventListener('mouseenter',showTip);
-    td.addEventListener('mouseleave',function(){ var tip=document.getElementById('tooltip'); tip.style.display='none'; tip.textContent=''; });
-    td.addEventListener('mousemove',showTip);
-  });
   renderPag();
 }
+function hideTip(){ var tip=document.getElementById('tooltip'); if(!tip) return; tip.style.display='none'; tip.textContent=''; }
+// One delegated handler for the whole document: a per-cell mouseenter/mouseleave
+// pair can be stranded (row re-rendered or scrolled out from under the cursor,
+// tab switched) and leaves an empty dark box floating over the table.
+document.addEventListener('mousemove',function(e){
+  var tip=document.getElementById('tooltip'); if(!tip) return;
+  var td=e.target&&e.target.closest?e.target.closest('td[data-reason],td[data-ereason]'):null;
+  if(!td){ hideTip(); return; }
+  var v=(td.getAttribute('data-reason')||td.getAttribute('data-ereason')||'').trim();
+  if(!v){ hideTip(); return; }
+  tip.textContent=v; tip.style.display='block'; moveTip(e);
+});
+document.addEventListener('mouseleave',hideTip);
+window.addEventListener('scroll',hideTip,true);
+window.addEventListener('blur',hideTip);
 function moveTip(e){ var tip=document.getElementById('tooltip'); var x=e.clientX+14, y=e.clientY+14; if(x+360>window.innerWidth) x=e.clientX-360; if(y+80>window.innerHeight) y=e.clientY-60; tip.style.left=x+'px'; tip.style.top=y+'px'; }
 function renderPag(){
   var total=Math.ceil(filtered.length/pp);
