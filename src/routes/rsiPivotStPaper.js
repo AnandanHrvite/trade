@@ -76,6 +76,19 @@ const PT_FILE  = path.join(DATA_DIR, "rsi_pivot_st_paper_trades.json");
 
 // ── Config readers (Settings mutates process.env live — never cache) ──────────
 function _cfg() { return rsiPivotStrategy.getConfig(); }
+/**
+ * One-line description of the stops a given side actually carries, honouring
+ * both the CE SuperTrend toggle and the premium-stop side toggle. Used by the
+ * boot banner, /status and the harness so no screen can claim a stop the trade
+ * does not have.
+ */
+function _sideStopText(side, cfg) {
+  cfg = cfg || _cfg();
+  const bits = [];
+  if (side === "CE" && cfg.stCeEnabled) bits.push(`SuperTrend(${cfg.stPeriod},${cfg.stMultiplier})`);
+  if (rsiPivotStrategy.premiumStopApplies(side, cfg)) bits.push(`${cfg.premiumStopPct}% premium floor`);
+  return bits.length ? bits.join(" + ") : "NONE — EOD square-off only";
+}
 function _resMin() { return _cfg().resolutionMins; }
 function _parseMins(envKey, fallback) {
   return rsiPivotStrategy._parseHHMM(process.env[envKey], rsiPivotStrategy._parseHHMM(fallback, 0));
@@ -490,10 +503,13 @@ async function simulateBuy(side, sig) {
   }
 
   const cfg = _cfg();
-  // The PREMIUM floor applies to both sides and is anchored to the ACTUAL fill,
-  // not to the signal — 25% of a premium the trade never paid is not the rule.
-  const premiumFloor = rsiPivotStrategy.premiumStop(optionEntryLtp, null, cfg);
-  if (!Number.isFinite(premiumFloor)) {
+  // The PREMIUM floor is anchored to the ACTUAL fill, not to the signal — 25%
+  // of a premium the trade never paid is not the rule. Which sides carry it is
+  // the RSI_PIVOT_ST_PREMIUM_SL_SIDES toggle; a side left out gets a null floor
+  // and is NOT aborted, because "no premium stop" is a valid configuration.
+  const premiumApplies = rsiPivotStrategy.premiumStopApplies(side, cfg);
+  const premiumFloor = rsiPivotStrategy.premiumStop(optionEntryLtp, null, cfg, side);
+  if (premiumApplies && !Number.isFinite(premiumFloor)) {
     log(`🚫 [RSI_PIVOT_ST-PAPER] Entry ABORTED — premium floor not computable from entry LTP ${optionEntryLtp}`);
     skipLogger.appendSkipLog(MODE_KEY, { gate: "levels_uncomputable", reason: `premium floor unusable from ltp ${optionEntryLtp}`, side, spot });
     return;
@@ -543,9 +559,11 @@ async function simulateBuy(side, sig) {
     // Dual stops
     slSpot,                       // CE only — SuperTrend, trailed. null for PE.
     initialSlSpot:  slSpot,
-    premiumFloor,                 // BOTH sides — 25% below high-water premium
+    premiumFloor,                 // 25% below high-water premium; null when this side is excluded
     initialPremiumFloor: premiumFloor,
     premiumStopPct: cfg.premiumStopPct,
+    premiumStopSides: cfg.premiumStopSides,
+    premiumStopApplies: premiumApplies,
     slPts,
     riskPts:        slPts,
     // Signal context (kept on the trade record for analytics / reports)
@@ -575,7 +593,15 @@ async function simulateBuy(side, sig) {
   log(`🟢 [RSI_PIVOT_ST-PAPER] BUY_${side} ${optInfo.symbol} qty=${qty} @ spot=${spot} optLtp=₹${optionEntryLtp}`);
   log(`   ├─ Trigger: RSI ${sig.rsi} · crossed ${side === "CE" ? "R1" : "S1"} ${sig.crossedLevel} (pivots from ${pos.pivotFrom})`);
   log(`   ├─ Strike: ${optInfo.strike} (${strikeInfo.mode}${strikeInfo.steps ? `, ${strikeInfo.distancePts}pt from spot` : ""})`);
-  log(`   └─ SL: ${side === "CE" ? `SuperTrend ${slSpot} (${slPts}pt) + ` : ""}premium floor ₹${premiumFloor} (${cfg.premiumStopPct}% of ₹${optionEntryLtp}) · EOD ${_envStr("RSI_PIVOT_ST_EXIT_TIME", "15:15")}`);
+  const _slBits = [];
+  if (Number.isFinite(slSpot)) _slBits.push(`SuperTrend ${slSpot} (${slPts}pt)`);
+  if (Number.isFinite(premiumFloor)) _slBits.push(`premium floor ₹${premiumFloor} (${cfg.premiumStopPct}% of ₹${optionEntryLtp})`);
+  log(`   └─ SL: ${_slBits.length ? _slBits.join(" + ") : "NONE"} · EOD ${_envStr("RSI_PIVOT_ST_EXIT_TIME", "15:15")}`);
+  if (rsiPivotStrategy.isStoplessSide(side, cfg)) {
+    log(`⚠️ [RSI_PIVOT_ST-PAPER] THIS ${side} TRADE HAS NO STOP. The premium stop is OFF for ${side} ` +
+        `(RSI_PIVOT_ST_PREMIUM_SL_SIDES=${cfg.premiumStopSides})${side === "PE" ? " and PE never carries a SuperTrend" : ""} — ` +
+        `the ONLY exit is the ${_envStr("RSI_PIVOT_ST_EXIT_TIME", "15:15")} square-off. The full premium is at risk.`);
+  }
 
   notifyEntry({
     mode: "RSI_PIVOT_ST-PAPER",
@@ -774,7 +800,7 @@ function _checkExits() {
   // High-water premium drives the trailing floor.
   if (optLtp > pos.peakPremium) {
     pos.peakPremium = optLtp;
-    const trailed = rsiPivotStrategy.premiumStop(pos.optionEntryLtp, pos.peakPremium, _cfg());
+    const trailed = rsiPivotStrategy.premiumStop(pos.optionEntryLtp, pos.peakPremium, _cfg(), pos.side);
     if (Number.isFinite(trailed) && trailed > pos.premiumFloor) {
       const prev = pos.premiumFloor;
       pos.premiumFloor = trailed;
@@ -1047,7 +1073,13 @@ router.get("/start", async (req, res) => {
   const cfg = _cfg();
   log(`🟢 [RSI_PIVOT_ST-PAPER] Session started — ${rsiPivotStrategy.NAME}`);
   log(`⚙️ [RSI_PIVOT_ST-PAPER] NIFTY @ ${cfg.resolutionMins}m · CE: RSI>${cfg.rsiCeMin} + cross/close above R1 · PE: RSI<${cfg.rsiPeMax} + cross/close below S1${cfg.pivotBufferPts ? ` (±${cfg.pivotBufferPts}pt buffer)` : ""}`);
-  log(`⚙️ [RSI_PIVOT_ST-PAPER] Strike ${cfg.strikeMode} @ ${cfg.strikePct}% of spot · CE SL SuperTrend(${cfg.stPeriod},${cfg.stMultiplier})${cfg.stCeEnabled ? "" : " [OFF]"} + ${cfg.premiumStopPct}% premium floor · PE SL ${cfg.premiumStopPct}% premium floor only`);
+  log(`⚙️ [RSI_PIVOT_ST-PAPER] Strike ${cfg.strikeMode} @ ${cfg.strikePct}% of spot · CE SL ${_sideStopText("CE", cfg)} · PE SL ${_sideStopText("PE", cfg)}`);
+  for (const _s of ["CE", "PE"]) {
+    if (rsiPivotStrategy.isStoplessSide(_s, cfg)) {
+      log(`⚠️ [RSI_PIVOT_ST-PAPER] ${_s} TRADES WILL HAVE NO STOP (RSI_PIVOT_ST_PREMIUM_SL_SIDES=${cfg.premiumStopSides})` +
+          `${_s === "PE" ? " and PE never carries a SuperTrend" : ""} — such a trade can only exit at the EOD square-off.`);
+    }
+  }
   log(`⚙️ [RSI_PIVOT_ST-PAPER] Entries ${_envStr("RSI_PIVOT_ST_ENTRY_START", "09:30")}–${_envStr("RSI_PIVOT_ST_ENTRY_END", "15:00")} · max ${_maxDailyTrades()}/day · loss cap ₹${_maxDailyLoss()} · EOD ${_envStr("RSI_PIVOT_ST_EXIT_TIME", "15:15")} · qty ${rsiPivotLotQty()}`);
 
   await preloadHistory();
@@ -1096,7 +1128,7 @@ router.get("/start", async (req, res) => {
         : `Levels    : ⚠️ NOT AVAILABLE — no previous daily candle, no trades possible today`,
       `Setup     : CE = RSI>${cfg.rsiCeMin} + close above R1 · PE = RSI<${cfg.rsiPeMax} + close below S1`,
       `Strike    : ${cfg.strikeMode} @ ${cfg.strikePct}% of spot`,
-      `Stops     : CE SuperTrend(${cfg.stPeriod},${cfg.stMultiplier}) + ${cfg.premiumStopPct}% premium · PE ${cfg.premiumStopPct}% premium only`,
+      `Stops     : CE ${_sideStopText("CE", cfg)} · PE ${_sideStopText("PE", cfg)}`,
       `Max trades: ${_maxDailyTrades()}/day · loss cap ₹${_maxDailyLoss()}`,
       `Square-off: ${_envStr("RSI_PIVOT_ST_EXIT_TIME", "15:15")} IST`,
     ].filter(Boolean).join("\n"),
@@ -1248,6 +1280,7 @@ router.get("/status/data", (req, res) => {
       strikeMode: cfg.strikeMode, strikePct: cfg.strikePct,
       stPeriod: cfg.stPeriod, stMultiplier: cfg.stMultiplier, stCeEnabled: cfg.stCeEnabled,
       premiumStopPct: cfg.premiumStopPct,
+      premiumStopSides: cfg.premiumStopSides,
       entryStart: _envStr("RSI_PIVOT_ST_ENTRY_START", "09:30"),
       entryEnd: _envStr("RSI_PIVOT_ST_ENTRY_END", "15:00"),
       forcedExit: _envStr("RSI_PIVOT_ST_EXIT_TIME", "15:15"),
@@ -1256,6 +1289,8 @@ router.get("/status/data", (req, res) => {
       side: pos.side, symbol: pos.symbol, entrySpot: pos.entrySpot, optionEntryLtp: pos.optionEntryLtp,
       slSpot: pos.slSpot, premiumFloor: pos.premiumFloor, initialPremiumFloor: pos.initialPremiumFloor,
       premiumStopPct: pos.premiumStopPct,
+      premiumStopSides: pos.premiumStopSides,
+      premiumStopApplies: pos.premiumStopApplies,
       riskPts: pos.riskPts,
       signalRsi: pos.signalRsi, crossedLevel: pos.crossedLevel,
       strikeMode: pos.strikeMode, strikeDistancePts: pos.strikeDistancePts,
@@ -1389,7 +1424,11 @@ function _positionCardHtml(pos, optLtp) {
        <span class="${pnl >= 0 ? "pos" : "neg"}">(${pnl >= 0 ? "+" : ""}${pnl})</span></div>
   <div>Trigger: RSI ${pos.signalRsi} · crossed ${pos.side === "CE" ? "R1" : "S1"} ${pos.crossedLevel}</div>
   <div>Strike ${pos.optionStrike} (${pos.strikeMode}${pos.strikeDistancePts ? `, ${pos.strikeDistancePts}pt` : ""})</div>
-  <div>Stops: ${pos.side === "CE" && pos.slSpot != null ? `SuperTrend ${pos.slSpot} · ` : ""}premium floor ₹${pos.premiumFloor} (peak ₹${pos.peakPremium})</div>`;
+  <div>Stops: ${pos.side === "CE" && pos.slSpot != null ? `SuperTrend ${pos.slSpot} · ` : ""}${
+    Number.isFinite(pos.premiumFloor)
+      ? `premium floor ₹${pos.premiumFloor} (peak ₹${pos.peakPremium})`
+      : `<b style="color:#f85149;">no premium floor on ${pos.side}</b> (peak ₹${pos.peakPremium})`
+  }${pos.slSpot == null && !Number.isFinite(pos.premiumFloor) ? ` — <b style="color:#f85149;">NO STOP, EOD square-off only</b>` : ""}</div>`;
 }
 
 // ── History + exports ────────────────────────────────────────────────────────

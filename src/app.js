@@ -4110,7 +4110,9 @@ async function reconcileOrphanedPositions() {
     if (savedRsiPivotSt && savedRsiPivotSt.position) {
       const p = savedRsiPivotSt.position;
       const msg = `🚨 [STARTUP] Persisted RSI_PIVOT_ST position found (crash recovery)!\n` +
-        `  ${p.side} ${p.symbol}: entry=₹${p.optionEntryLtp} SL=${p.slSpot != null ? p.slSpot : "premium-floor only"} floor=₹${p.premiumFloor} qty=${p.qty}\n` +
+        `  ${p.side} ${p.symbol}: entry=₹${p.optionEntryLtp} SL=${p.stopLoss != null ? p.stopLoss : "no SuperTrend stop"} ` +
+        `floor=${p.premiumFloor != null ? `₹${p.premiumFloor}` : "NONE (premium stop off for this side)"} qty=${p.qty}\n` +
+        (p.stopLoss == null && p.premiumFloor == null ? `  ⚠️ THIS POSITION HAS NO STOP AT ALL — only the EOD square-off can close it.\n` : "") +
         `  Saved at: ${new Date(savedRsiPivotSt.savedAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}\n` +
         `Bot was tracking this before crash. Orders go to ZERODHA — check the Zerodha dashboard!`;
       console.warn(msg);

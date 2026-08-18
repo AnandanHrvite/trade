@@ -177,7 +177,7 @@ function runRsiPivotStBacktest(intraday, daily) {
         rsi: pos.rsi, pp: pos.pp, r1: pos.r1, s1: pos.s1,
         crossedLevel: pos.crossedLevel, pivotFrom: pos.pivotFrom,
         strike: pos.strike, strikeMode: pos.strikeMode,
-        premiumFloor: parseFloat(pos.premiumFloor.toFixed(2)),
+        premiumFloor: Number.isFinite(pos.premiumFloor) ? parseFloat(pos.premiumFloor.toFixed(2)) : null,
         pnl: p.pnl, reason, entryReason: pos.entryReason,
         strength: "STRONG",
         eOpt: pos.optionEntryLtp, xOpt: p.exitPrem, held: p.held,
@@ -203,7 +203,9 @@ function runRsiPivotStBacktest(intraday, daily) {
           //    first too, and it is the only stop a PE carries.
           const adverse = isCE ? c.low : c.high;
           const worstPrem = premiumAt(adverse, c.time);
-          if (worstPrem <= pos.premiumFloor) {
+          // Explicit isFinite: a side with the premium stop switched off carries
+          // a null floor, and `worstPrem <= null` would silently mean "<= 0".
+          if (Number.isFinite(pos.premiumFloor) && worstPrem <= pos.premiumFloor) {
             // Convert the floor back into the spot that produced it, so the fill
             // is the level rather than the bar's extreme — unless the bar OPENED
             // already through it, in which case the open is the honest fill.
@@ -236,7 +238,7 @@ function runRsiPivotStBacktest(intraday, daily) {
         const closePrem = premiumAt(c.close, c.time);
         if (closePrem > pos.peakPremium) {
           pos.peakPremium = closePrem;
-          const trailed = rsiPivotStrategy.premiumStop(pos.optionEntryLtp, pos.peakPremium, cfg);
+          const trailed = rsiPivotStrategy.premiumStop(pos.optionEntryLtp, pos.peakPremium, cfg, pos.side);
           if (Number.isFinite(trailed) && trailed > pos.premiumFloor) pos.premiumFloor = trailed;
         }
         // SuperTrend ratchet / flip — CE only.
@@ -273,7 +275,9 @@ function runRsiPivotStBacktest(intraday, daily) {
         sawSetup = true;
 
         const entryPrem = SEED_PREMIUM;
-        const floor = rsiPivotStrategy.premiumStop(entryPrem, null, cfg);
+        // null when the premium stop is switched off for this side — the exit
+        // block below skips the floor test entirely in that case.
+        const floor = rsiPivotStrategy.premiumStop(entryPrem, null, cfg, sig.side);
         pos = {
           side: sig.side,
           entryTime: c.time,
@@ -351,7 +355,7 @@ function _renderResults(res, from, to, trades, stats, meta) {
       { label: "Skipped — CE without SuperTrend", value: gs.noSuperTrend },
       { label: "Trade frequency", value: meta.days ? `${((trades.length / meta.days) * 100).toFixed(1)}% of sessions` : "—" },
     ],
-    notes: `<b>Chart:</b> NIFTY 50 INDEX ${cfg.resolutionMins}-min for every decision, plus a DAILY series (padded a week before the range) for the pivots. <b>Levels:</b> Standard/floor pivots from the PREVIOUS day's high/low/close — PP=(H+L+C)/3, R1=2·PP−L, S1=2·PP−H. They are fixed for the whole session and the engine picks each day's own yesterday, so no run can read the session it is trading. <b>Setup:</b> CE = RSI(${cfg.rsiPeriod}) &gt; ${cfg.rsiCeMin} AND a candle that CROSSES and CLOSES above R1 (the previous close must have been at or below it — a bar already above R1 is not a cross); PE = RSI &lt; ${cfg.rsiPeMax} AND a cross-and-close below S1${cfg.pivotBufferPts ? `, with a ${cfg.pivotBufferPts}pt buffer` : ""}. <b>Strike:</b> ${cfg.strikeMode} at ${cfg.strikePct}% of spot, rounded to the nearest 50. <b>Stops (deliberately asymmetric — this is the stated rule):</b> a CE carries BOTH a SuperTrend(${cfg.stPeriod},${cfg.stMultiplier}) trail${cfg.stCeEnabled ? "" : " <b>[currently OFF]</b>"} AND a ${cfg.premiumStopPct}% premium floor; a PE carries the premium floor ALONE. Both trail and neither ever loosens. There is <b>no profit target</b> — the trade runs until a stop trails into it or ${rsiPivotStrategy._fmtMins(cfg.exitTime)} forces it out. Max ${cfg.maxDailyTrades} trades/day, day ends on a ₹${cfg.maxDailyLoss} loss. <b>Intra-bar ordering is conservative:</b> the premium floor is tested against the bar's adverse extreme and the SuperTrend against the bar's low, both BEFORE any trail advances, and a bar that opened beyond a level fills at the open. <b>The premium stop is the weakest part of this simulation</b> — there is no historical option chain, so premium is δ+θ simulated (BACKTEST_DELTA ${process.env.BACKTEST_DELTA || "0.55"}, θ ₹${process.env.BACKTEST_THETA_DAY || "8"}/day) seeded at ₹${process.env.RSI_PIVOT_ST_BT_SEED_PREMIUM || "180"}, and the 25% floor is measured against that simulated number rather than a real quote, PLUS ${process.env.RSI_PIVOT_ST_BT_SLIPPAGE_PTS || "2"}pt slippage EACH way. Treat ₹ as directional, not exact. <b>This strategy has NEVER traded live or on paper, and no threshold in it has been fitted or validated.</b>`,
+    notes: `<b>Chart:</b> NIFTY 50 INDEX ${cfg.resolutionMins}-min for every decision, plus a DAILY series (padded a week before the range) for the pivots. <b>Levels:</b> Standard/floor pivots from the PREVIOUS day's high/low/close — PP=(H+L+C)/3, R1=2·PP−L, S1=2·PP−H. They are fixed for the whole session and the engine picks each day's own yesterday, so no run can read the session it is trading. <b>Setup:</b> CE = RSI(${cfg.rsiPeriod}) &gt; ${cfg.rsiCeMin} AND a candle that CROSSES and CLOSES above R1 (the previous close must have been at or below it — a bar already above R1 is not a cross); PE = RSI &lt; ${cfg.rsiPeMax} AND a cross-and-close below S1${cfg.pivotBufferPts ? `, with a ${cfg.pivotBufferPts}pt buffer` : ""}. <b>Strike:</b> ${cfg.strikeMode} at ${cfg.strikePct}% of spot, rounded to the nearest 50. <b>Stops (deliberately asymmetric — this is the stated rule):</b> a CE carries a SuperTrend(${cfg.stPeriod},${cfg.stMultiplier}) trail${cfg.stCeEnabled ? "" : " <b>[currently OFF]</b>"}, which a PE never carries, plus a ${cfg.premiumStopPct}% premium floor on whichever sides <code>RSI_PIVOT_ST_PREMIUM_SL_SIDES</code> covers — currently <b>${cfg.premiumStopSides}</b>${["CE","PE"].filter(s => rsiPivotStrategy.isStoplessSide(s, cfg)).map(s => ` <b>[${s} therefore has NO stop and can only exit at EOD]</b>`).join("")}. Both trail and neither ever loosens. There is <b>no profit target</b> — the trade runs until a stop trails into it or ${rsiPivotStrategy._fmtMins(cfg.exitTime)} forces it out. Max ${cfg.maxDailyTrades} trades/day, day ends on a ₹${cfg.maxDailyLoss} loss. <b>Intra-bar ordering is conservative:</b> the premium floor is tested against the bar's adverse extreme and the SuperTrend against the bar's low, both BEFORE any trail advances, and a bar that opened beyond a level fills at the open. <b>The premium stop is the weakest part of this simulation</b> — there is no historical option chain, so premium is δ+θ simulated (BACKTEST_DELTA ${process.env.BACKTEST_DELTA || "0.55"}, θ ₹${process.env.BACKTEST_THETA_DAY || "8"}/day) seeded at ₹${process.env.RSI_PIVOT_ST_BT_SEED_PREMIUM || "180"}, and the 25% floor is measured against that simulated number rather than a real quote, PLUS ${process.env.RSI_PIVOT_ST_BT_SLIPPAGE_PTS || "2"}pt slippage EACH way. Treat ₹ as directional, not exact. <b>This strategy has NEVER traded live or on paper, and no threshold in it has been fitted or validated.</b>`,
   });
   res.send(html);
 }

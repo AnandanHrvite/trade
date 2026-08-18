@@ -6,6 +6,14 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Added — RSI_PIVOT_ST: the premium stop can now be limited to one side (`RSI_PIVOT_ST_PREMIUM_SL_SIDES`)
+
+The 25% premium floor used to apply to CE and PE unconditionally. It is now a four-way choice — `BOTH` (the default, so nothing changes unless you change it), `CE`, `PE` or `NONE` — settable from **Settings → RSI Pivot ST → Stops**.
+
+**Read this before switching it off for PE.** A PE in this strategy carries *no other stop*: the SuperTrend is CE-only by design. Excluding PE therefore leaves every PE trade completely unstopped, with the `RSI_PIVOT_ST_EXIT_TIME` square-off as its only exit and the full premium at risk. The same applies to CE if `RSI_PIVOT_ST_ST_CE_ENABLED` is off as well. The engine still takes those trades — the toggle does what it says — but it refuses to be quiet about it: the paper route warns at start-up *and* on every such entry, the live-harness page prints a red banner, the backtest notes name the affected side, and the crash-recovery alert flags a recovered position that has no stop at all.
+
+Mechanically the floor is now computed per side and is `null` when the side is excluded, which every existing `Number.isFinite` guard already reads as "no floor"; the backtest's floor test was made an explicit `isFinite` check so a null floor can never be compared as `<= 0`. Crash-recovery snapshots now also persist `premiumFloor` / `initialPremiumFloor` / `peakPremium` (they previously did not, so a recovered position printed `floor=undefined` and would have resumed on a re-derived floor rather than the ratcheted one).
+
 ### Added — RSI_PIVOT_ST: a new strategy that trades yesterday's pivot levels with today's RSI (`/rsi-pivot-st-paper`, `/rsi-pivot-st-backtest`, `/rsi-pivot-st-live`)
 
 The eleventh strategy, and the first here built on **Standard (floor) pivots**. Two levels decide the whole day and both are fixed before the open: yesterday's completed daily high/low/close give `PP = (H+L+C)/3`, `R1 = 2·PP − L` and `S1 = 2·PP − H`. They do not move intraday — only the candles move through them, which is what makes the entry exactly reproducible in Replay and in the backtest.

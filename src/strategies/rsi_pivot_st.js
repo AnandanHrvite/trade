@@ -141,6 +141,11 @@ function _okBar(c) {
 
 const STRIKE_MODES = ["ATM", "ITM", "OTM"];
 
+// Which sides the premium stop applies to. "NONE" is a real, supported choice:
+// it removes the floor entirely, which on PE leaves the trade with no stop at
+// all (PE never carries the SuperTrend). Callers must warn, not substitute.
+const PREMIUM_STOP_SIDES = ["BOTH", "CE", "PE", "NONE"];
+
 /** NIFTY strikes are struck every 50 points. Not configurable anywhere in this repo. */
 const STRIKE_STEP = 50;
 
@@ -150,6 +155,7 @@ const STRIKE_STEP = 50;
  */
 function getConfig() {
   const rawStrike = String(process.env.RSI_PIVOT_ST_STRIKE_MODE || "OTM").trim().toUpperCase();
+  const rawPremSides = String(process.env.RSI_PIVOT_ST_PREMIUM_SL_SIDES || "BOTH").trim().toUpperCase();
   return {
     resolutionMins:  _intEnv("RSI_PIVOT_ST_RESOLUTION", 5, 1, 60),
     sessionStartMin: _parseHHMM(process.env.RSI_PIVOT_ST_SESSION_START, 9 * 60 + 15),
@@ -173,8 +179,14 @@ function getConfig() {
     stMultiplier:    _numEnv("RSI_PIVOT_ST_ST_MULT", 2, 0.1, 10),
     stCeEnabled:     String(process.env.RSI_PIVOT_ST_ST_CE_ENABLED || "true").toLowerCase() === "true",
 
-    // The 25% premium stop — both sides, initial AND trailing.
+    // The 25% premium stop — initial AND trailing. Which SIDES carry it is a
+    // toggle: BOTH (default) / CE / PE / NONE. A side left out simply has no
+    // premium floor; on PE, where the SuperTrend never applies, that means the
+    // trade has NO stop at all and runs to the EOD square-off. That is allowed
+    // on purpose, and the routes warn loudly about it rather than silently
+    // inventing a substitute stop.
     premiumStopPct:  _numEnv("RSI_PIVOT_ST_PREMIUM_SL_PCT", 25, 1, 90),
+    premiumStopSides: PREMIUM_STOP_SIDES.includes(rawPremSides) ? rawPremSides : "BOTH",
 
     // Session risk. Route-level, but read here so one config describes the mode.
     maxDailyTrades:  _intEnv("RSI_PIVOT_ST_MAX_TRADES", 5, 1, 50),
@@ -303,7 +315,17 @@ function strikeForSide(spot, side, cfg) {
 
 // ── stops ────────────────────────────────────────────────────────────────────
 /**
- * The 25% premium stop, as an option-LTP level. Applies to BOTH sides.
+ * The 25% premium stop, as an option-LTP level.
+ *
+ * Which sides carry it is configurable (`RSI_PIVOT_ST_PREMIUM_SL_SIDES`):
+ * BOTH (default) / CE / PE / NONE. When `side` is given and it is not covered,
+ * this returns null — the same value it returns for an unusable entry LTP — so
+ * every existing `Number.isFinite` guard at the call sites disables the floor
+ * without any of them needing to know about the toggle.
+ *
+ * `side` is OPTIONAL for backwards compatibility: called without it (the old
+ * two/three-arg form) the level is computed unconditionally, because a caller
+ * that does not say which side it is asking about cannot be filtered.
  *
  * Initial  = entryLtp × (1 − pct/100)
  * Trailing = the SAME percentage below the highest premium the trade has seen,
@@ -311,13 +333,38 @@ function strikeForSide(spot, side, cfg) {
  *            down. `highLtp` is the caller's high-water mark, which the route
  *            persists, so crash recovery resumes on the same floor.
  *
- * @returns {number|null} the LTP at or below which the trade must exit.
+ * @returns {number|null} the LTP at or below which the trade must exit, or null
+ *          when this side does not carry a premium stop.
  */
-function premiumStop(entryLtp, highLtp, cfg) {
+function premiumStop(entryLtp, highLtp, cfg, side) {
   cfg = cfg || getConfig();
+  if (side != null && !premiumStopApplies(side, cfg)) return null;
   if (!_num(entryLtp) || entryLtp <= 0) return null;
   const anchor = _num(highLtp) && highLtp > entryLtp ? highLtp : entryLtp;
   return _r2(anchor * (1 - cfg.premiumStopPct / 100));
+}
+
+/**
+ * Does the premium stop apply to `side`? The single place the BOTH/CE/PE/NONE
+ * toggle is interpreted — routes ask this rather than comparing the string.
+ */
+function premiumStopApplies(side, cfg) {
+  cfg = cfg || getConfig();
+  const sides = cfg.premiumStopSides;
+  if (sides === "NONE") return false;
+  if (sides === "BOTH") return true;
+  return sides === side;
+}
+
+/**
+ * Does `side` end up with NO stop of any kind? True only for a PE with the
+ * premium floor switched off — PE never carries the SuperTrend, so such a trade
+ * can only be closed by the EOD square-off. Routes use this to warn.
+ */
+function isStoplessSide(side, cfg) {
+  cfg = cfg || getConfig();
+  if (premiumStopApplies(side, cfg)) return false;
+  return !(side === "CE" && cfg.stCeEnabled);
 }
 
 /**
@@ -552,9 +599,15 @@ function getSignal(candles, opts) {
   base.signal = side === "CE" ? "BUY_CE" : "BUY_PE";
   base.signalStrength = "STRONG";
 
-  const stopText = side === "CE"
-    ? `SL = SuperTrend ${base.slSpot} (${base.slPts}pt) + ${cfg.premiumStopPct}% premium floor`
-    : `SL = ${cfg.premiumStopPct}% premium floor only (no SuperTrend on PE by rule)`;
+  // Stop description — reflects the premium-stop side toggle, so the trade
+  // record never claims a floor the trade does not actually carry.
+  const hasPrem = premiumStopApplies(side, cfg);
+  const stopParts = [];
+  if (side === "CE" && _num(base.slSpot)) stopParts.push(`SuperTrend ${base.slSpot} (${base.slPts}pt)`);
+  if (hasPrem) stopParts.push(`${cfg.premiumStopPct}% premium floor`);
+  const stopText = stopParts.length
+    ? `SL = ${stopParts.join(" + ")}${side === "PE" && stopParts.length === 1 ? " only (no SuperTrend on PE by rule)" : ""}`
+    : `SL = NONE — no SuperTrend on ${side} and the premium stop is OFF for this side; EOD square-off is the only exit`;
   base.reason =
     `RSI_PIVOT_ST ${side}: RSI ${base.rsi} ${side === "CE" ? `> ${cfg.rsiCeMin}` : `< ${cfg.rsiPeMax}`} and the candle crossed ` +
     `and closed ${side === "CE" ? "above R1" : "below S1"} ${base.crossedLevel} (${_r2(prevBar.close)} → ${entry}, pivots from ${pivots.from}) | ` +
@@ -571,6 +624,7 @@ module.exports = {
   NAME,
   DESCRIPTION,
   STRIKE_MODES,
+  PREMIUM_STOP_SIDES,
   STRIKE_STEP,
   getConfig,
   computePivots,
@@ -579,6 +633,8 @@ module.exports = {
   strikeForSide,
   premiumStop,
   premiumStopHit,
+  premiumStopApplies,
+  isStoplessSide,
   superTrendStop,
   stopHit,
   getSignal,

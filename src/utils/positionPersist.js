@@ -787,6 +787,16 @@ function saveRsiPivotStPosition(position, sessionMeta) {
         optionStrike:    position.optionStrike,
         optionExpiry:    position.optionExpiry,
         optionType:      position.optionType || position.side,
+        // The premium floor is the second (and on PE the only) stop, and it
+        // RATCHETS — recovery must resume on the floor already reached, not
+        // re-derive it from the entry. null is meaningful: it records that this
+        // side does not carry a premium stop at all.
+        premiumFloor:        position.premiumFloor != null ? position.premiumFloor : null,
+        initialPremiumFloor: position.initialPremiumFloor != null ? position.initialPremiumFloor : null,
+        peakPremium:         position.peakPremium,
+        premiumStopPct:      position.premiumStopPct,
+        premiumStopSides:    position.premiumStopSides,
+        premiumStopApplies:  position.premiumStopApplies,
       },
       sessionMeta: sessionMeta || {},
       savedAt: Date.now(),

@@ -375,6 +375,13 @@ function liveOrdersBadge(enableKey, dryKey) {
 
 function rowBadge(row) {
   if (row.type === "live")     return liveOrdersBadge(row.enableKey, row.dryKey);
+  // A multi-choice setting: show the CHOICE, not an on/off. `warnOn` lists the
+  // values that deserve a red badge rather than a neutral one.
+  if (row.type === "value") {
+    const v = String(process.env[row.key] || row.def || "").trim().toUpperCase() || "—";
+    const warn = (row.warnOn || []).map(x => String(x).toUpperCase()).includes(v);
+    return statusBadge(v, warn ? "live" : "on");
+  }
   if (row.type === "globaldry") return envIsOn(row.key, "true")
     ? statusBadge("DRY-RUN (safe)", "dry")
     : statusBadge("LIVE ARMED", "live");
@@ -457,7 +464,8 @@ const GUIDE_STATUS = {
     { type: "bool", label: "RSI Pivot ST Mode (sidebar + Settings section)", key: "RSI_PIVOT_ST_MODE_ENABLED", def: "true" },
     { type: "bool", label: "RSI Pivot ST Paper Trading", key: "RSI_PIVOT_ST_PAPER_ENABLED", def: "true" },
     { type: "live", label: "Live Orders (Zerodha, via paper harness)", enableKey: "RSI_PIVOT_ST_LIVE_ENABLED", dryKey: "RSI_PIVOT_ST_LIVE_DRY_RUN" },
-    { type: "bool", label: "SuperTrend Stop on CE (PE is premium-floor-only by design)", key: "RSI_PIVOT_ST_ST_CE_ENABLED", def: "true" },
+    { type: "bool", label: "SuperTrend Stop on CE (PE never carries one, by design)", key: "RSI_PIVOT_ST_ST_CE_ENABLED", def: "true" },
+    { type: "value", label: "Premium Stop applies to (CE-only / NONE leaves PE with NO stop)", key: "RSI_PIVOT_ST_PREMIUM_SL_SIDES", def: "BOTH", warnOn: ["CE", "NONE"] },
   ] }] },
   "Application_Setup_Guide.html": { title: "System — Live Configuration", groups: [
     { heading: "Global gates", rows: [
