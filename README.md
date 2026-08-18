@@ -914,8 +914,8 @@ Data comes from Fyers; the **orders go to Zerodha**, like EMA_RSI_ST.
 | `RSI_PIVOT_ST_MAX_TRADES` | `5` | Max entries per day. The pivots are fixed all day, so only a handful of crosses can honestly occur |
 | `RSI_PIVOT_ST_MAX_DAILY_LOSS` | `5000` | Stop trading for the day after this much loss (0 = off) |
 | `RSI_PIVOT_ST_MAX_WEEKLY_LOSS` | `0` | Rolling Mon→today cap read from the per-day JSONL logs (0 = off) |
-| `RSI_PIVOT_ST_POLL_MS` | `2000` | Option-quote poll while a position is open. This is what the 25% premium stop is measured against, so a slower poll means a later exit |
-| `RSI_PIVOT_ST_HISTORY_LAG_MS` | `5000` | How long after a bar closes before the Fyers history endpoint is asked for it |
+| `RSI_PIVOT_ST_POLL_MS` | `2000` | Option-quote poll while a position is open. This is what the 25% premium stop is measured against, so a slower poll means a later exit. **Not shown in Settings** — `.env` only |
+| `RSI_PIVOT_ST_HISTORY_LAG_MS` | `5000` | How long after a bar closes before the Fyers history endpoint is asked for it. **Not shown in Settings** — `.env` only |
 | `RSI_PIVOT_ST_BT_SLIPPAGE_PTS` | `2` | Backtest spread/slippage haircut, in points, **each way** |
 | `RSI_PIVOT_ST_BT_SEED_PREMIUM` | `180` | Backtest seed option price. There is no historical option chain, and the 25% stop is measured against this simulated premium — **the weakest number in any backtest result** |
 | `UI_SHOW_RSI_PIVOT_ST_BACKTEST` / `_PAPER` / `_LIVE` / `_HISTORY` | `true` | Sidebar sub-menu visibility |
