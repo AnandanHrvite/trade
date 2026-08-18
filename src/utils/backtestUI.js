@@ -537,9 +537,15 @@ function render(){
     btn.addEventListener('click',function(){ showBTModal(window._btSlice[parseInt(this.getAttribute('data-idx'))]); });
   });
   Array.from(tbody.querySelectorAll('td[data-reason],td[data-ereason]')).forEach(function(td){
-    td.addEventListener('mouseenter',function(e){ var v=(td.getAttribute('data-reason')||td.getAttribute('data-ereason')||'').trim(); if(!v) return; var tip=document.getElementById('tooltip'); tip.textContent=v; tip.style.display='block'; moveTip(e); });
+    var reasonOf=function(){ return (td.getAttribute('data-reason')||td.getAttribute('data-ereason')||'').trim(); };
+    var showTip=function(e){
+      var v=reasonOf(); var tip=document.getElementById('tooltip');
+      if(!v){ tip.style.display='none'; tip.textContent=''; return; }
+      tip.textContent=v; tip.style.display='block'; moveTip(e);
+    };
+    td.addEventListener('mouseenter',showTip);
     td.addEventListener('mouseleave',function(){ var tip=document.getElementById('tooltip'); tip.style.display='none'; tip.textContent=''; });
-    td.addEventListener('mousemove',moveTip);
+    td.addEventListener('mousemove',showTip);
   });
   renderPag();
 }
