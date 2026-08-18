@@ -21,17 +21,17 @@ const _HOME = require("os").homedir();
 const DATA_DIR = path.join(_HOME, "trading-data");
 
 const SOURCES = [
-  { mode: "EMA_RSI_ST",    file: path.join(DATA_DIR, "ema_rsi_st_paper_trades.json"),          color: "#3b82f6" },
-  { mode: "BB_RSI",    file: path.join(DATA_DIR, "bb_rsi_paper_trades.json"),    color: "#f59e0b" },
-  { mode: "PA",       file: path.join(DATA_DIR, "pa_paper_trades.json"),       color: "#a855f7" },
-  { mode: "ORB",      file: path.join(DATA_DIR, "orb_paper_trades.json"),      color: "#10b981" },
-  { mode: "EMA9VWAP", file: path.join(DATA_DIR, "ema9vwap_paper_trades.json"), color: "#06b6d4" },
-  { mode: "TREND_PB", file: path.join(DATA_DIR, "trend_pb_paper_trades.json"), color: "#ec4899" },
-  { mode: "GAPS",     file: path.join(DATA_DIR, "gaps_paper_trades.json"),     color: "#0ea5e9" },
-  { mode: "TDS",      file: path.join(DATA_DIR, "trend_day_scalp_paper_trades.json"), color: "#a855f7" },
-  { mode: "GAP3M",    file: path.join(DATA_DIR, "gap_fix_3m_paper_trades.json"), color: "#38bdf8" },
-  { mode: "OIWF",     file: path.join(DATA_DIR, "oi_wall_fade_paper_trades.json"), color: "#f472b6" },
-  { mode: "RSI_PIVOT_ST", file: path.join(DATA_DIR, "rsi_pivot_st_paper_trades.json"), color: "#facc15" },
+  { mode: "EMA_RSI_ST",    file: path.join(DATA_DIR, "ema_rsi_st_paper_trades.json"),          label: "EMA_RSI_ST", color: "#3b82f6" },
+  { mode: "BB_RSI",    file: path.join(DATA_DIR, "bb_rsi_paper_trades.json"),    label: "BB_RSI", color: "#f59e0b" },
+  { mode: "PA",       file: path.join(DATA_DIR, "pa_paper_trades.json"),       label: "Price Action", color: "#a855f7" },
+  { mode: "ORB",      file: path.join(DATA_DIR, "orb_paper_trades.json"),      label: "ORB", color: "#10b981" },
+  { mode: "EMA9VWAP", file: path.join(DATA_DIR, "ema9vwap_paper_trades.json"), label: "EMA9+VWAP", color: "#06b6d4" },
+  { mode: "TREND_PB", file: path.join(DATA_DIR, "trend_pb_paper_trades.json"), label: "TREND PB", color: "#ec4899" },
+  { mode: "GAPS",     file: path.join(DATA_DIR, "gaps_paper_trades.json"),     label: "GAPS", color: "#0ea5e9" },
+  { mode: "TDS",      file: path.join(DATA_DIR, "trend_day_scalp_paper_trades.json"), label: "TREND DAY SCALP", color: "#a855f7" },
+  { mode: "GAP3M",    file: path.join(DATA_DIR, "gap_fix_3m_paper_trades.json"), label: "3M GAP FIX SCALP", color: "#38bdf8" },
+  { mode: "OIWF",     file: path.join(DATA_DIR, "oi_wall_fade_paper_trades.json"), label: "OI WALL FADE", color: "#f472b6" },
+  { mode: "RSI_PIVOT_ST", file: path.join(DATA_DIR, "rsi_pivot_st_paper_trades.json"), label: "RSI PIVOT ST", color: "#facc15" },
 ];
 
 function safeRead(p) {
@@ -330,17 +330,7 @@ router.get("/", (req, res) => {
       <label>Mode</label>
       <select id="fMode">
         <option value="">All</option>
-        <option value="EMA_RSI_ST">EMA_RSI_ST</option>
-        <option value="BB_RSI">BB_RSI</option>
-        <option value="PA">Price Action</option>
-        <option value="ORB">ORB</option>
-        <option value="EMA9VWAP">EMA9+VWAP</option>
-        <option value="TREND_PB">TREND PB</option>
-        <option value="GAPS">GAPS</option>
-        <option value="TDS">TREND DAY SCALP</option>
-        <option value="GAP3M">3M GAP FIX SCALP</option>
-        <option value="OIWF">OI WALL FADE</option>
-        <option value="RSI_PIVOT_ST">RSI PIVOT ST</option>
+        ${SOURCES.filter(src => _modeEnabled(src.mode)).map(src => `<option value="${src.mode}">${src.label}</option>`).join("\n        ")}
       </select>
       <label>Side</label>
       <select id="fSide">

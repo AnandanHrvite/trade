@@ -101,12 +101,14 @@
   <strong>What's inside</strong>
   <ol style="margin:10px 0 0; columns:2; column-gap:30px;">
     <li><a href="#idea">The idea in one minute</a></li>
+    <li><a href="#glossary">Words you'll see</a></li>
     <li><a href="#pivots">Step 1 — The two lines, drawn before the open</a></li>
     <li><a href="#entry">Step 2 — The entry needs both halves</a></li>
     <li><a href="#strike">Step 3 — Which option gets bought</a></li>
     <li><a href="#stops">Step 4 — The stops, and why CE and PE differ</a></li>
     <li><a href="#ce">A CE trade, start to finish</a></li>
     <li><a href="#pe">A PE trade, start to finish</a></li>
+    <li><a href="#money">The money, with real numbers</a></li>
     <li><a href="#refuse">The trades it refuses</a></li>
     <li><a href="#risk">Safety limits</a></li>
     <li><a href="#modes">Paper, Live, Backtest &amp; Replay</a></li>
@@ -132,7 +134,28 @@
   <div class="step">hold until a stop</div>
 </div>
 
-<h2 id="pivots">2. Step 1 — The two lines, drawn before the open</h2>
+<h2 id="glossary">2. Words you&#39;ll see</h2>
+
+<div class="card">
+  <ul style="margin:0;">
+    <li><b>Standard (floor) pivot</b> &mdash; three prices worked out from <em>yesterday&#39;s</em> high, low and close. They do not move once the day starts.</li>
+    <li><b>PP</b> &mdash; the middle line, <code>(High + Low + Close) &divide; 3</code>. The day&#39;s rough centre of gravity. Nothing is traded on it here; it is drawn for context.</li>
+    <li><b>R1</b> &mdash; the first line <em>above</em> PP, <code>2&nbsp;&times;&nbsp;PP &minus; Low</code>. This is the CE trigger.</li>
+    <li><b>S1</b> &mdash; the first line <em>below</em> PP, <code>2&nbsp;&times;&nbsp;PP &minus; High</code>. This is the PE trigger.</li>
+    <li><b>Cross and close</b> &mdash; the candle before must have finished on one side of the line and this candle must finish on the other. A candle that merely poked through and came back has not crossed, and neither has one that was already past the line.</li>
+    <li><b>RSI</b> &mdash; a 0&ndash;100 momentum reading. High means price has been rising hard, low means falling hard. Here it is the second opinion that has to agree with the break.</li>
+    <li><b>SuperTrend</b> &mdash; a line that sits below price in an uptrend and flips above it in a downtrend. When it is below, it doubles as a stop that only ever moves up.</li>
+    <li><b>Premium</b> &mdash; what the option itself costs, in rupees. Not the NIFTY level.</li>
+    <li><b>Premium floor</b> &mdash; an exit price set 25% below the best premium the trade has seen. It rises with the trade and never falls.</li>
+    <li><b>OTM / ITM</b> &mdash; a strike above spot for a CE (out of the money, cheaper) or below it (in the money, dearer and moves more closely with spot). PE is the mirror.</li>
+  </ul>
+</div>
+
+<div class="card warn">
+  <strong>Both halves, on the same candle.</strong> The RSI reading and the cross must happen on the <em>same closed</em> 5-minute candle. RSI going high an hour before the break does not count, and neither does a break on a candle whose RSI has already faded. This is the single most common way to misread the rule.
+</div>
+
+<h2 id="pivots">3. Step 1 — The two lines, drawn before the open</h2>
 
 <div class="card accent">
   <strong>The arithmetic, with the numbers this guide uses throughout.</strong> Yesterday (17 Aug 2026 in the examples) NIFTY made a high of <span class="num">24520</span>, a low of <span class="num">24290</span>, and closed at <span class="num">24455</span>. So:
@@ -148,7 +171,7 @@
   <strong>The bar that feeds this must be YESTERDAY, not today.</strong> A daily candle that is still forming would make R1 and S1 drift all session, and then no replay and no backtest could ever reproduce an entry. The engine walks backwards through the daily series to the newest completed bar strictly <em>before</em> the day being traded, which is also what lets a backtest step through history without peeking at the day it is trading. If there is no usable prior daily bar, the answer is "cannot trade" — never zero.
 </div>
 
-<h2 id="entry">3. Step 2 — The entry needs both halves</h2>
+<h2 id="entry">4. Step 2 — The entry needs both halves</h2>
 
 <p>An entry is only ever decided on a <b>closed</b> five-minute candle, and both tests must pass on that <em>same</em> candle. Reading the RSI on the very bar that does the crossing is deliberate: it removes any lag between the two halves of the rule.</p>
 
@@ -162,7 +185,7 @@
   <strong>"Crosses" is doing real work in that sentence.</strong> A candle that is <em>already</em> sitting above R1 and closes higher still is not a cross. Taking it would be chasing a move that already happened — the level was breached some candles ago and you would be paying a worse price for the same idea. The engine requires the transition itself: below-or-at, then above.
 </div>
 
-<h2 id="strike">4. Step 3 — Which option gets bought</h2>
+<h2 id="strike">5. Step 3 — Which option gets bought</h2>
 
 <p>The strike is chosen from the signal candle's closing price, as a percentage of spot, in the direction the setting picks. The default is <b>OTM at 1%</b>.</p>
 
@@ -175,7 +198,7 @@
 
 <p>The raw distance is rounded to the nearest 50-point NIFTY strike. If the percentage is so small that it rounds to <b>zero</b> steps, the engine falls back to ATM rather than inventing a strike that does not exist.</p>
 
-<h2 id="stops">5. Step 4 — The stops, and why CE and PE differ</h2>
+<h2 id="stops">6. Step 4 — The stops, and why CE and PE differ</h2>
 
 <div class="card bad">
   <strong>The two sides are stopped differently, and that is the rule — not a bug and not an oversight.</strong> If you are reading this later and thinking of "balancing" the two sides, don't. It is written this way on purpose, and it is stated identically in the engine header, in the paper route header and here.
@@ -199,7 +222,7 @@
 <h3>What is NOT here</h3>
 <p>There is <b>no profit target at all</b>, on either side. The trade runs until a stop trails into it or the 15:15 square-off. And deliberately absent, so nobody adds them back in later "helpfully": no VIX gate, no Open Interest filter, no ADX, no volume test, no EMA, no VWAP, no ATR sizing, no multi-timeframe bias, no extra confirmation candle, no breakeven jump, no partial booking, no re-entry after a stop, no expiry-day rule.</p>
 
-<h2 id="ce">6. A CE trade, start to finish</h2>
+<h2 id="ce">7. A CE trade, start to finish</h2>
 
 <p>This is the real engine, fed the candles you see, with every setting left at its default. Nothing below was placed by hand.</p>
 
@@ -210,7 +233,7 @@
   <strong>Read the lower panel.</strong> The RSI sub-chart shows the momentum half of the rule doing its job: RSI only clears 70 at 10:45, several candles <em>before</em> the level is broken. Being above 70 is not itself a signal — the cross is. That is why the strategy is quiet for most of a session even on a strongly trending day.
 </div>
 
-<h2 id="pe">7. A PE trade, start to finish</h2>
+<h2 id="pe">8. A PE trade, start to finish</h2>
 
 <p>The Put side uses a different prior day — high <span class="num">24640</span>, low <span class="num">24410</span>, close <span class="num">24470</span> — which puts S1 at <span class="num">24373.33</span>.</p>
 
@@ -230,7 +253,29 @@
   <p style="margin:10px 0 0;">The premium peaks at &#8377;155.10, which pins the floor at &#8377;116.32. It never moves down again. At 12:10 the premium prints &#8377;112.80, under the floor, and the trade is closed — a small loss on an entry that was 78 points in profit at its best. That is the cost of a 25% giveback rule with no target.</p>
 </div>
 
-<h2 id="refuse">8. The trades it refuses</h2>
+<h2 id="money">9. The money, with real numbers</h2>
+
+<p>One lot of NIFTY is <b>65</b> contracts, so every &#8377;1 of premium movement is &#8377;65 in your account. The numbers below use this repo&#39;s own <code>charges.js</code> on Zerodha rates, and the same &#8377;120 entry premium the PE walk-through uses.</p>
+
+<div class="card">
+  <table>
+    <thead><tr><th>Scenario</th><th>Premium</th><th>Gross</th><th>Charges</th><th>Net</th></tr></thead>
+    <tbody>
+      <tr><td>Stopped at the opening floor (25% down)</td><td>&#8377;120 &rarr; &#8377;90</td><td>&minus;&#8377;1,950</td><td>&#8377;64</td><td style="color:#f85149;font-weight:600;">&minus;&#8377;2,014</td></tr>
+      <tr><td>Ran to &#8377;155.10, then the trail caught it</td><td>&#8377;120 &rarr; &#8377;116.32</td><td>&minus;&#8377;239</td><td>&#8377;68</td><td style="color:#f85149;font-weight:600;">&minus;&#8377;307</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="card warn">
+  <strong>Read the second row again &mdash; it is the whole problem with a 25% trail.</strong> That trade went <em>up</em> 29% and still came back a small loss. The floor sits a quarter below the peak, so the peak has to clear about <b>&#8377;160</b> (a third above entry) before the floor even reaches your entry price. Anything that runs less than that and then turns is a losing trade, however right the direction was.
+  <br><br>
+  This is arithmetic, not a prediction: at a 25% give-back, <b>the strategy needs big winners, not frequent ones.</b> If paper trading shows lots of trades that go your way and still lose, the trail width is the first thing to look at &mdash; not the entry rule.
+</div>
+
+<p>The stop distance in <em>NIFTY points</em> depends on the strike. A 1% OTM option moves roughly 35&ndash;45 paise per NIFTY point early in the day, so a &#8377;30 premium loss is very roughly a 70&ndash;85 point adverse move in spot &mdash; but that ratio drifts all day with time decay, and it is exactly the conversion a backtest cannot do honestly without a real option chain.</p>
+
+<h2 id="refuse">10. The trades it refuses</h2>
 
 <p>Most of what an engine does is decline. Here is the most common refusal, again from the real engine.</p>
 
@@ -250,7 +295,7 @@
   <p style="margin:10px 0 0;">Every refusal names <em>which half</em> failed. A skip log that only says "no signal" teaches nothing.</p>
 </div>
 
-<h2 id="risk">9. Safety limits</h2>
+<h2 id="risk">11. Safety limits</h2>
 
 <div class="card">
   <ul style="margin:0;">
@@ -263,7 +308,7 @@
   </ul>
 </div>
 
-<h2 id="modes">10. Paper, Live, Backtest &amp; Replay</h2>
+<h2 id="modes">12. Paper, Live, Backtest &amp; Replay</h2>
 
 <div class="card">
   <p style="margin:0 0 8px;"><b>Paper</b> (<code>/rsi-pivot-st-paper</code>) is the canonical surface. Every decision, fill and exit rule lives there; the other two modes follow it, never the reverse.</p>
@@ -277,7 +322,7 @@
   <p style="margin:10px 0 0;"><b>But the rupees are simulated.</b> There is no historical option chain, so the premium is modelled from delta and theta seeded at &#8377;180, and the 25% floor is applied to <em>that model</em> rather than to a real quote. Since the premium stop is the <em>only</em> stop on the PE side, PE results in particular should be read as directional, not as a P&amp;L you could have collected.</p>
 </div>
 
-<h2 id="config">11. All the settings, explained</h2>
+<h2 id="config">13. All the settings, explained</h2>
 
 <p class="muted">Every key below appears in <b>Settings &rarr; RSI_PIVOT_ST Strategy</b>. Defaults are the ones the Settings schema ships.</p>
 
@@ -355,7 +400,7 @@
   <tr><td><code>TG_RSI_PIVOT_ST_STARTED</code> / <code>_ENTRY</code> / <code>_EXIT</code> / <code>_DAYREPORT</code></td><td><code>true</code></td><td>Telegram alerts: session start, every entry, every exit, and a day summary on stop.</td></tr>
 </table>
 
-<h2 id="missing">12. What's still missing / not validated</h2>
+<h2 id="missing">14. What's still missing / not validated</h2>
 
 <div class="card bad">
   <strong>Be honest with yourself about what you are looking at.</strong>
