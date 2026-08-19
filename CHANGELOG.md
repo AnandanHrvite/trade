@@ -6,6 +6,18 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — Sidebar: the footer pill said STOPPED while strategies were trading
+
+The status pill at the bottom of the sidebar is global chrome, but it was rendered from `buildSidebar`'s per-page `isRunning` argument, which most pages never pass. So every page that does not own a strategy session — Real-Time Monitor, Dashboard, Logs, Settings, Trade Logs, Edge Analytics, the history and backtest pages — hard-coded the pill to a grey **STOPPED** dot, even with seven paper sessions live and reporting RUNNING in the table right next to it.
+
+The pill now reads `isRunning || sharedSocketState.isAnyActive()`, so any live paper/live session lights it on every page. Pages that own a session still pass `isRunning`, so their own Start/Stop keeps flipping the pill in the same response rather than waiting on shared state.
+
+It remains a server-render, not a live feed: starting a session from another tab shows on the next page load.
+
+### Fixed — RSI Pivot ST Paper: sidebar rendered with the wrong arguments
+
+`/rsi-pivot-st-paper/status` called `buildSidebar("rsi_pivot_st", "/rsi-pivot-st-paper/status")` — a nav key matching no menu entry, and a URL string landing in the `liveActive` slot where a boolean belongs. The page never highlighted its own **Paper** item in the sidebar and read as live-active. It now passes `("rsiPivotStPaper", liveActive, state.running)`.
+
 ### Added — Dashboard: Start All now verifies each strategy and confirms it in a popup
 
 Start All (Paper / Live / Harness) used to reload the page silently when every `/start` returned 200, and only opened a modal when one of them failed. A 200 from `/start` is not proof the engine came up, so a strategy that was accepted and then never ran — mutual-exclusion lock held by the other mode, expired broker token, a refused socket — looked identical to a clean start.

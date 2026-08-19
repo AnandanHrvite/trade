@@ -71,6 +71,12 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   // live session anyway (it blocks on running modes), so keep the menu clean.
   const _hideReplayLive = _anyTradeActive;
 
+  // The footer pill is global chrome, not per-page state: while any strategy
+  // session is live it must read RUNNING whatever page you are on (Dashboard,
+  // Logs, Settings... none of which pass isRunning). Pages that own a session
+  // still pass it, so their own Start/Stop flips the pill in the same response.
+  const sessionRunning = isRunning || _anyTradeActive;
+
   const {
     showStopBtn  = false,
     showStartBtn = false,
@@ -81,7 +87,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     stopLabel    = '■ Stop Trading',
     startLabel   = '▶ Start Trading',
     exitLabel    = '🚪 Exit Trade',
-    statusLabel  = isRunning ? 'RUNNING' : 'STOPPED',
+    statusLabel  = sessionRunning ? 'RUNNING' : 'STOPPED',
   } = opts;
 
   const emaRsiStModeOn    = (process.env.EMA_RSI_ST_MODE_ENABLED    || 'true').toLowerCase() === 'true';
@@ -519,7 +525,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   </div>
   <div class="sb-bottom">
     <div class="sb-status-row">
-      <span class="sb-status-dot ${isRunning ? '' : 'stopped'}"></span>
+      <span class="sb-status-dot ${sessionRunning ? '' : 'stopped'}"></span>
       ${statusLabel}
     </div>
     ${bottomBtns}

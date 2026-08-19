@@ -1338,7 +1338,7 @@ ${bbRsiStyleCSS()}
 #chart{height:420px}#rsiChart{height:130px;margin-top:6px}
 @media(max-width:600px){#chart{height:300px}#rsiChart{height:100px}.pv-chip{min-width:calc(50% - 4px)}}
 </style></head><body>
-${buildSidebar("rsi_pivot_st", "/rsi-pivot-st-paper/status")}
+${buildSidebar("rsiPivotStPaper", liveActive, state.running)}
 <div class="main">
 ${bbRsiTopBar({
   title: "RSI Pivot ST — Paper",
