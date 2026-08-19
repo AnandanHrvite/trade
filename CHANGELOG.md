@@ -6,6 +6,14 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Added — Dashboard: Start All now verifies each strategy and confirms it in a popup
+
+Start All (Paper / Live / Harness) used to reload the page silently when every `/start` returned 200, and only opened a modal when one of them failed. A 200 from `/start` is not proof the engine came up, so a strategy that was accepted and then never ran — mutual-exclusion lock held by the other mode, expired broker token, a refused socket — looked identical to a clean start.
+
+After the roster has been attempted the dashboard now polls each mode's own `/status/data` and reads the same `running` flag the Start-All button state polls, retrying up to 4 times 800 ms apart and re-polling only the modes not yet up. The result is always shown: one row per strategy, named as it is in the sidebar (`BB_RSI Paper`, `EMA9+VWAP Live (Harness)`, …), each marked **OK** or **FAILED** — a failed row carries the `/start` error where there was one, otherwise the reason the status probe gave, otherwise "started but not running". The title reads `All Paper — 5/5 Running`.
+
+Pressing OK reloads the dashboard as before, so the badges pick up whatever came up. The one exception is a run where nothing started: there is no state change to show, so the page stays put and the reasons stay on screen.
+
 ### Added — RSI_PIVOT_ST: the SuperTrend stop is now selectable per side (`RSI_PIVOT_ST_ST_SIDES`)
 
 The SuperTrend stop was CE-only and on/off. It is now the same four-way choice as the premium stop — `BOTH` / `CE` / `PE` / `NONE` — under **Settings → RSI Pivot ST → Stops**. The default is `CE`, the original rule, so nothing changes unless you change it, and a legacy `RSI_PIVOT_ST_ST_CE_ENABLED=false` in an existing `.env` is still read as `NONE` rather than being silently re-enabled.

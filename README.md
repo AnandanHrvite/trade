@@ -73,7 +73,9 @@ Within each strategy, Live ⊥ Paper (mutual exclusion). Across strategies, ever
 
 Every backtest's progress page carries a **Cancel Backtest** button (`POST /backtest/cancel?jobId=…`, API_SECRET-protected — the page prompts once per browser session). Cancelling frees the queue slot immediately so a queued tab starts, and the cancelled run's results are discarded. It takes effect at the run's next progress tick, so a strategy whose candle loop reports no progress (ORB) stops only after the fetch phase.
 
-The dashboard has **Start-All Paper** and **Start-All Live** buttons that start every enabled mode in sequence with a single click; the two are **mutually locked** (one disables the other and pulses while active) so you never accidentally double-run paper + live across modes. Start-all failures surface in a modal instead of silently reloading.
+The dashboard has **Start-All Paper** and **Start-All Live** buttons that start every enabled mode in sequence with a single click; the two are **mutually locked** (one disables the other and pulses while active) so you never accidentally double-run paper + live across modes.
+
+Every Start-All run ends in a **confirmation modal that lists each strategy by name with an OK / FAILED verdict**. The verdict is not the HTTP status of `/start` — after the roster has been attempted the page polls each mode's own `/status/data` and reports its `running` flag, retrying up to 4 times (800 ms apart) for the ones not yet up, so a route that returned 200 but whose engine never came up (mutual-exclusion lock, expired broker token, refused socket) is shown as FAILED with the reason. The page reloads when you press OK, unless nothing started at all — then it stays put so the reasons remain readable.
 
 ### Dashboard Layout
 

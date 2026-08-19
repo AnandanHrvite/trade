@@ -2686,29 +2686,139 @@ async function _startAll(endpoints){
   return results;
 }
 
-async function _handleStartAllResult(btn, origText, label, result){
-  if (result.failures.length === 0){
-    location.reload();
-    return;
+// ── Post-start verification ────────────────────────────────────────────────
+// HTTP 200 from /start only means the route ACCEPTED the request — it is not
+// proof the engine actually came up (mutual-exclusion lock held by the other
+// mode, expired broker token, socket refused, an engine that starts and then
+// stops itself). So once the whole roster has been attempted we poll each
+// mode's own /status/data and report its \`running\` flag — the same field the
+// Start-All button state polls. Engines that need a tick or a broker
+// round-trip before flipping the flag get a few retries; only the
+// not-yet-running ones are re-polled, so one slow starter does not hold up the
+// confirmation for the rest.
+var VERIFY_ATTEMPTS = 4;
+var VERIFY_GAP_MS   = 800;
+
+// Every wired start route ends in \`/start\` and exposes \`/status/data\` on the
+// same router — the same derivation the server uses to build ALL_BTN_POLL.
+function _statusUrlFor(startEndpoint){
+  return startEndpoint.replace('/start', '/status/data');
+}
+
+function _sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
+
+// The two route families answer with different fields, so "is it up?" is not a
+// single flag. Paper and pure-Live routes report \`running\`. Harness routes
+// report \`installed\` — and the seven paper-wrapping ones ALSO merge the paper
+// engine's \`running\` into the same payload, while the four native ones
+// (EMA_RSI_ST / BB_RSI / PA / ORB) report \`installed\` alone. Reading only
+// \`running\` would therefore mark every native harness FAILED, and reading only
+// \`installed\` would pass a wrapping harness whose paper engine never started.
+// So: use whichever fields the payload actually carries, and require both when
+// both are there.
+function _isUp(d){
+  if (!d || typeof d !== 'object') return false;
+  var hasInstalled = Object.prototype.hasOwnProperty.call(d, 'installed');
+  var hasRunning   = Object.prototype.hasOwnProperty.call(d, 'running');
+  if (hasInstalled && hasRunning) return !!(d.installed && d.running);
+  if (hasInstalled) return !!d.installed;
+  return !!d.running;
+}
+
+// Names the specific half that is down, so a wrapping harness that installed
+// but whose engine never started does not read as a blanket failure.
+function _whyDown(d){
+  if (!d || typeof d !== 'object') return 'no status returned';
+  if (Object.prototype.hasOwnProperty.call(d, 'installed') && !d.installed) return 'harness not installed';
+  if (Object.prototype.hasOwnProperty.call(d, 'installed')) return 'harness installed but engine not running';
+  return 'engine not running';
+}
+
+async function _pollRunning(endpoint){
+  try {
+    var r = await fetch(_statusUrlFor(endpoint), { cache:'no-store' });
+    if (!r.ok) return { running:false, error:'status check failed (HTTP ' + r.status + ')' };
+    var d = await r.json();
+    return _isUp(d) ? { running:true } : { running:false, error:_whyDown(d) };
+  } catch(e){
+    return { running:false, error:'status check unreachable' };
   }
-  var lines = result.failures.map(function(f){
-    return '• <strong>' + _escHtml(_prettyEndpoint(f.endpoint)) + '</strong>: ' + _escHtml(f.error);
-  }).join('<br>');
-  var succeeded = result.successes.length;
-  var total = succeeded + result.failures.length;
-  var header = succeeded > 0
-    ? ('Started ' + succeeded + '/' + total + '. The following could not start:')
-    : ('None could start — ' + result.failures.length + '/' + total + ' failed:');
+}
+
+async function _verifyAllRunning(endpoints){
+  var verdict = {};
+  var pending = endpoints.slice();
+  for (var attempt = 0; attempt < VERIFY_ATTEMPTS && pending.length; attempt++){
+    if (attempt) await _sleep(VERIFY_GAP_MS);
+    var checked = await Promise.all(pending.map(_pollRunning));
+    var stillPending = [];
+    for (var i = 0; i < pending.length; i++){
+      verdict[pending[i]] = checked[i];
+      if (!checked[i].running) stillPending.push(pending[i]);
+    }
+    pending = stillPending;
+  }
+  return verdict;
+}
+
+function _startAllRow(name, ok, why){
+  var tint   = ok ? 'rgba(22,163,74,0.10)' : 'rgba(239,68,68,0.10)';
+  var edge   = ok ? 'rgba(22,163,74,0.35)' : 'rgba(239,68,68,0.35)';
+  var colour = ok ? '#16a34a' : '#ef4444';
+  return '<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;margin-bottom:5px;'
+       + 'border-radius:7px;background:' + tint + ';border:1px solid ' + edge + ';">'
+       + '<span style="font-size:0.85rem;">' + (ok ? '✅' : '❌') + '</span>'
+       + '<span style="flex:1;min-width:0;text-align:left;">' + _escHtml(name)
+       + (ok ? '' : '<br><span style="font-size:0.68rem;opacity:0.85;">' + _escHtml(why) + '</span>')
+       + '</span>'
+       + '<span style="font-weight:700;color:' + colour + ';letter-spacing:0.04em;">'
+       + (ok ? 'OK' : 'FAILED') + '</span>'
+       + '</div>';
+}
+
+// Always shown after a Start All. Previously an all-success run just reloaded
+// the page silently, which left no confirmation that every strategy was really
+// up; now every attempted mode is listed by name with its verified state.
+async function _handleStartAllResult(btn, origText, label, endpoints, result){
+  var failByEndpoint = {};
+  result.failures.forEach(function(f){ failByEndpoint[f.endpoint] = f; });
+
+  var verdict = await _verifyAllRunning(endpoints);
+
+  var okCount = 0;
+  var rows = endpoints.map(function(ep){
+    var v = verdict[ep] || { running:false };
+    if (v.running){ okCount++; return _startAllRow(_prettyEndpoint(ep), true, ''); }
+    // Prefer the /start error — it says WHY. Fall back to the status probe.
+    var why = (failByEndpoint[ep] && failByEndpoint[ep].error)
+           || v.error
+           || 'started but not running';
+    return _startAllRow(_prettyEndpoint(ep), false, why);
+  }).join('');
+
+  var total  = endpoints.length;
+  var allOk  = okCount === total;
+  var header = allOk
+    ? ('All ' + total + ' running — verified.')
+    : (okCount + ' of ' + total + ' running. See the failures below.');
+
   await showAlert({
-    icon: succeeded > 0 ? '⚠️' : '❌',
-    title: 'Start ' + label + ' — Issues',
-    message: '<div style="text-align:left;">' + header + '<br><br>' + lines + '</div>',
+    icon: allOk ? '✅' : (okCount > 0 ? '⚠️' : '❌'),
+    title: label + ' — ' + okCount + '/' + total + ' Running',
+    message: '<div style="text-align:left;">'
+           + '<div style="margin-bottom:10px;">' + header + '</div>'
+           + '<div style="max-height:min(46vh,340px);overflow-y:auto;">' + rows + '</div>'
+           + '</div>',
     btnText: 'OK',
     btnClass: 'modal-btn-primary',
   });
+
   btn.disabled = false;
   btn.textContent = origText;
-  if (succeeded > 0) location.reload();
+  // Reload so the dashboard badges/buttons pick up whatever did come up. With
+  // nothing running there is no state change to show — leave the page put so
+  // the user can act on the reasons they just read.
+  if (okCount > 0) location.reload();
 }
 
 // Guard for an empty roster: every strategy disabled in Settings (or, for Live,
@@ -2731,7 +2841,7 @@ async function _runStartAll(btn, origText, label, endpoints){
   _startAllBusy = true;
   try {
     var result = await _startAll(endpoints);
-    await _handleStartAllResult(btn, origText, label, result);
+    await _handleStartAllResult(btn, origText, label, endpoints, result);
   } finally {
     _startAllBusy = false;
   }
