@@ -6,6 +6,22 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Changed — Docs (`/docs`) rebuilt: real markdown rendering, a contents rail, and a searchable file list
+
+The README and CHANGELOG tabs were rendered by a chain of regex `.replace()` calls over the whole file, so the inline rules also ran **inside** fenced code: the README's ASCII architecture diagram came back with `<br>` tags threaded through it, all 690 pipe-table rows printed as bare monospace lines, every bullet was a `<div>`, and each `[text](path)` link showed as literal markdown. The page is now a documentation page rather than a text dump.
+
+**New renderer** — [src/utils/markdown.js](src/utils/markdown.js), a small CommonMark subset parsed **block-first**, so no inline rule can reach into a code fence:
+
+- Fenced code copied out verbatim, with a language badge and its own horizontal scroll — the diagram renders as drawn.
+- Pipe tables become real `<table>`s (alignment row honoured) inside a scroll box, so a 5-column table never widens the page.
+- Nested bullet/numbered lists, blockquotes, thematic breaks, headings with stable anchor ids.
+- `http(s)` links open in a new tab; a repo path such as `src/utils/socketManager.js` renders as a tooltip-bearing reference instead — this server serves no source files, so linking one would hand the reader a 404.
+- Everything is escaped at emit time, and unrecognised input degrades to a paragraph — these files are hand-edited, so the renderer must never throw.
+
+**Page** — sticky tab bar with per-tab counts (arrow-key navigable, `role="tablist"`, `aria-selected`); an **On this page** contents rail with scroll-spy highlighting (README lists sections + sub-sections, the 3,000-line CHANGELOG lists releases only); **Documents** is now a filterable, sortable list (name / newest / largest) with a type chip, size, date and per-row **Open** / **Delete**; deep links (`#readme`, `#changelog`, `#documents`, or any heading id) open the tab that owns the target; plus Print, back-to-top, and an empty state.
+
+**Responsive & theme** — verified by re-rendering the real route at 390 / 820 / 1440px: no horizontal overflow at phone width (tables and code scroll in their own box), 40px touch targets, the breadcrumb clears the hamburger, and the contents rail collapses into a `<details>` below 1180px. The shell is now `.main-content` — it was a bare `.main`, a class no stylesheet in this app defines. Colours resolve through one token set, so the light skin needs no `!important` overrides.
+
 ### Added — Swing Scanner: screen stocks with your own strategies, and buy them positionally (`/swing-scanner`)
 
 A new page that answers a question the platform could not: *"my strategies fire on NIFTY intraday — which STOCKS are set up right now, on a swing timeframe?"*
