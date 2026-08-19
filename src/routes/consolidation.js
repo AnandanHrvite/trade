@@ -133,7 +133,7 @@ router.get("/", (req, res) => {
     ${sidebarCSS()}
     ${modalCSS()}
     .main-content{flex:1;margin-left:200px;padding:18px 22px 40px;min-height:100vh;}
-    @media(max-width:900px){.main-content{margin-left:0;padding:14px;}}
+    @media(max-width:768px){.main-content{margin-left:0;padding:14px;}}
     .page-title{font-size:1.1rem;font-weight:700;color:#e0eaf8;margin-bottom:2px;}
     .page-sub{font-size:0.72rem;color:var(--muted-1,#8ba1c2);margin-bottom:14px;}
     .stat-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:10px;margin-bottom:16px;}

@@ -18,6 +18,14 @@ It remains a server-render, not a live feed: starting a session from another tab
 
 `/rsi-pivot-st-paper/status` called `buildSidebar("rsi_pivot_st", "/rsi-pivot-st-paper/status")` — a nav key matching no menu entry, and a URL string landing in the `liveActive` slot where a boolean belongs. The page never highlighted its own **Paper** item in the sidebar and read as live-active. It now passes `("rsiPivotStPaper", liveActive, state.running)`.
 
+### Fixed — Every page overlapped the sidebar between 769px and 900px wide
+
+The sidebar is `width:200px` and only leaves the flow at `max-width:768px`, where `sharedNav` swaps it for the hamburger. But almost every page cleared it with its own `@media(max-width:900px){.main-content{margin-left:0}}`. So across the whole 769–900px band — iPad Air/Pro in portrait, a half-screen desktop window, a scaled-down laptop — the margin was already zero while the 200px sidebar was still painted on top: the same overlap as the `.main` bug below, triggered by width instead of a wrong class. Every such rule now fires at 768px, matching the breakpoint that actually moves the sidebar.
+
+The clearing margin was wrong in the other direction too, and never equal to the sidebar's 200px: 220px on the paper pages and the Dashboard shell (a 20px dead gutter), 260px on the eleven harness pages and Replay (60px), and **160px on Docs — 40px narrower than the sidebar, so that page had content sitting behind the nav at every width**. All normalised to 200px.
+
+18 breakpoints and 21 margins across 29 files; no other CSS touched.
+
 ### Fixed — Four pages rendered their content underneath the sidebar
 
 `rsiPivotStPaper`, `trendDayScalpPaper`, `gapFix3mPaper` and `oiMonitor` wrapped their body in `<div class="main">`. No stylesheet in this app defines a bare `.main` rule — the shell class is `.main-content`, and it is the one that carries the `margin-left` clearing the fixed sidebar. So all four pages started at x=0 with the sidebar painted on top of them: the page title, the top-bar buttons and the left edge of every chart and table sat behind the nav. Renamed to `.main-content` on all four.

@@ -1952,7 +1952,7 @@ ${modalCSS()}
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'IBM Plex Mono',monospace;background:#040c18;color:#c8d8f0;overflow-x:hidden;}
 .main-content{margin-left:200px;flex:1;display:flex;flex-direction:column;min-height:100vh;}
-@media(max-width:900px){.main-content{margin-left:0;}}
+@media(max-width:768px){.main-content{margin-left:0;}}
 
 /* Top bar */
 .top-bar{background:#040c18;border-bottom:1px solid #0e1e36;padding:10px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50;flex-wrap:wrap;gap:8px;}

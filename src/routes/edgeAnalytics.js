@@ -177,7 +177,7 @@ router.get("/", (req, res) => {
     /* Padding uses env() so the notch/home-indicator never clips a card in
        landscape on an iPhone; max() keeps the desktop value on every other device. */
     .main-content{flex:1;margin-left:200px;padding:16px 20px 40px;min-width:0;min-height:100vh;}
-    @media(max-width:900px){.main-content{margin-left:0;
+    @media(max-width:768px){.main-content{margin-left:0;
       padding:12px max(12px,env(safe-area-inset-right)) calc(28px + env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));}}
     .page-title{font-size:1.05rem;font-weight:700;color:#e0eaf8;margin-bottom:2px;}
     .page-sub{font-size:0.7rem;color:var(--muted-1,#8ba1c2);margin-bottom:12px;line-height:1.5;}

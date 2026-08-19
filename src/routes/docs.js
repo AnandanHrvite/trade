@@ -127,7 +127,7 @@ router.get("/", (req, res) => {
     ${sidebarCSS()}
     ${modalCSS()}
 
-    .main { margin-left:160px; padding:20px 28px; min-height:100vh; }
+    .main { margin-left:200px; padding:20px 28px; min-height:100vh; }
     @media(max-width:768px){ .main{margin-left:0;padding:12px;} }
 
     /* ── Breadcrumb ── */

@@ -21,8 +21,8 @@ function bbRsiStyleCSS() {
   return `
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Inter',sans-serif;background:#060810;color:#c0d0e8;min-height:100vh;display:flex;flex-direction:column;}
-.main-content{flex:1;padding:28px 32px;margin-left:220px;}
-@media(max-width:900px){.main-content{margin-left:0;padding:16px;}}
+.main-content{flex:1;padding:28px 32px;margin-left:200px;}
+@media(max-width:768px){.main-content{margin-left:0;padding:16px;}}
 
 /* Top bar */
 .top-bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px;}

@@ -4675,8 +4675,8 @@ router.get("/simulate", (req, res) => {
 ${sidebarCSS()}
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'IBM Plex Sans',sans-serif;background:#060810;color:#a0b8d8;min-height:100vh;}
-.main-content{margin-left:220px;padding:32px 40px;}
-@media(max-width:900px){.main-content{margin-left:0;padding:20px;}}
+.main-content{margin-left:200px;padding:32px 40px;}
+@media(max-width:768px){.main-content{margin-left:0;padding:20px;}}
 .sim-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(280px,100%),1fr));gap:16px;margin-top:20px;}
 .config-row{display:flex;gap:16px;align-items:center;margin-top:24px;flex-wrap:wrap;}
 .config-label{font-size:0.78rem;color:#6b7fa0;}

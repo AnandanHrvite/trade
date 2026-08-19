@@ -2775,8 +2775,8 @@ function errorPage(title, message, linkHref, linkText, sidebarKey) {
 <style>
 ${sidebarCSS()}
 *{box-sizing:border-box;margin:0;padding:0;}body{font-family:'IBM Plex Sans',sans-serif;background:#060810;color:#a0b8d8;min-height:100vh;display:flex;flex-direction:column;}
-.main-content{flex:1;padding:40px 32px;margin-left:220px;display:flex;align-items:center;justify-content:center;}
-@media(max-width:900px){.main-content{margin-left:0;}}
+.main-content{flex:1;padding:40px 32px;margin-left:200px;display:flex;align-items:center;justify-content:center;}
+@media(max-width:768px){.main-content{margin-left:0;}}
 .err-box{background:#0d1320;border:1px solid #7f1d1d;border-radius:14px;padding:40px 48px;max-width:480px;text-align:center;}
 .err-icon{font-size:2.5rem;margin-bottom:16px;}
 .err-title{color:#ef4444;margin-bottom:12px;font-size:1.1rem;font-weight:700;}

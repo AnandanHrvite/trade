@@ -138,7 +138,7 @@ ${faviconLink()}
 body{font-family:'IBM Plex Mono',monospace;background:#060810;color:#a0b8d8;min-height:100vh;}
 .page{padding:16px 20px 40px;}
 .main-content{flex:1;margin-left:200px;}
-@media(max-width:900px){.main-content{margin-left:0;}}
+@media(max-width:768px){.main-content{margin-left:0;}}
 .stat-grid,.stat-grid-2{display:grid;grid-template-columns:repeat(7,1fr);gap:10px;margin-bottom:16px;}
 @media(max-width:900px){.stat-grid,.stat-grid-2{grid-template-columns:repeat(3,1fr);}}
 @media(max-width:640px){.stat-grid,.stat-grid-2{grid-template-columns:1fr 1fr;}}

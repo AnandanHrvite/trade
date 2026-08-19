@@ -142,7 +142,7 @@ body { font-family:'IBM Plex Sans',sans-serif; background:#080c14; color:#c8d8f0
 
 /* ── page layout ── */
 .main-content { margin-left:200px; padding:28px 32px 40px; min-height:100vh; background:#080c14; }
-@media(max-width:900px){ .main-content{margin-left:0;padding:18px 10px 32px;} }
+@media(max-width:768px){ .main-content{margin-left:0;padding:18px 10px 32px;} }
 
 .page-title { font-size:1.1rem; font-weight:700; color:#e0eaf8; margin-bottom:6px; }
 .page-sub   { font-size:0.72rem; color:var(--muted-2,#6d85a8); margin-bottom:22px; }
