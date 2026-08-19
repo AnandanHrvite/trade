@@ -71,7 +71,10 @@ router.get("/", async (req, res) => {
     return res.status(503).send(`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/>
       <meta name="viewport" content="width=device-width,initial-scale=1"/>
       <title>Backtest blocked — Live trade active</title>
-      <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:'IBM Plex Mono',monospace;background:#060810;color:#a0b8d8;min-height:100vh;display:flex;flex-direction:column;}</style>
+      <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:'IBM Plex Mono',monospace;background:#060810;color:#a0b8d8;min-height:100vh;display:flex;flex-direction:column;}
+      ${sidebarCSS()}
+      ${modalCSS()}
+      </style>
       </head><body>
 <div class="app-shell">
 ${buildSidebar('ema9vwapBacktest', true)}

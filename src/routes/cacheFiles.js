@@ -491,7 +491,7 @@ router.get("/", (req, res) => {
 <body>
 ${embed ? '<style>.main-content{margin-left:0 !important;} .top-bar{display:none !important;}</style>' : ''}
 <div class="app-shell">
-${embed ? '' : buildSidebar('cacheFiles', liveActive)}
+${embed ? '' : buildSidebar('tradeLogs', liveActive)}
 <div class="main-content">
 
 <div class="top-bar">

@@ -18,6 +18,14 @@ It remains a server-render, not a live feed: starting a session from another tab
 
 `/rsi-pivot-st-paper/status` called `buildSidebar("rsi_pivot_st", "/rsi-pivot-st-paper/status")` — a nav key matching no menu entry, and a URL string landing in the `liveActive` slot where a boolean belongs. The page never highlighted its own **Paper** item in the sidebar and read as live-active. It now passes `("rsiPivotStPaper", liveActive, state.running)`.
 
+### Fixed — The two "Backtest blocked" pages rendered their sidebar unstyled
+
+`/ema_rsi_st-backtest` and `/ema9vwap-backtest` return a 503 "Backtest blocked — Live trade active" page while a live session holds the mutex. That page called `buildSidebar(...)` but its `<style>` block held only a body reset — no `sidebarCSS()`, no `modalCSS()` — so the entire nav dumped onto the page as an unstyled bullet list above the message, with no fixed positioning and no sidebar clearance. The BB_RSI and PA equivalents always included both. Added them.
+
+### Fixed — Server Logs / Login Logs / Cache Files highlighted nothing in the sidebar
+
+Those three pages are tabs inside `/trade-logs` now, but they still render standalone, and each passed its own nav key (`logs`, `loginLogs`, `cacheFiles`) — none of which is a menu entry any more, so the sidebar showed no active item. All three now pass `tradeLogs`, the section they belong to.
+
 ### Fixed — Every page overlapped the sidebar between 769px and 900px wide
 
 The sidebar is `width:200px` and only leaves the flow at `max-width:768px`, where `sharedNav` swaps it for the hamburger. But almost every page cleared it with its own `@media(max-width:900px){.main-content{margin-left:0}}`. So across the whole 769–900px band — iPad Air/Pro in portrait, a half-screen desktop window, a scaled-down laptop — the margin was already zero while the 200px sidebar was still painted on top: the same overlap as the `.main` bug below, triggered by width instead of a wrong class. Every such rule now fires at 768px, matching the breakpoint that actually moves the sidebar.
