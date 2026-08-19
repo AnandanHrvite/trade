@@ -72,10 +72,18 @@ router.get("/dates", (req, res) => {
   const today = logArchive.istDateString();
   if (logArchive.ENABLED) logArchive.flush(true);
   const days  = logArchive.listDates().map(d => ({ ...d, isToday: d.date === today }));
+  // Entry count in today's file. The live view can only show what THIS process
+  // logged since boot, so when the file holds more, the earlier part of today is
+  // on disk only — a restart is the usual cause. The client compares this with
+  // the in-memory total and offers the full file instead of silently showing a
+  // truncated day.
+  let todayEntries = 0;
+  try { if (logArchive.ENABLED) todayEntries = logArchive.readDay(today).length; } catch (_) {}
   res.json({
     today,
     retainDays: logArchive.RETAIN_DAYS,
     enabled:    logArchive.ENABLED,
+    todayEntries,
     days,
   });
 });
@@ -286,6 +294,11 @@ ${embed ? '' : buildSidebar('logs', liveActive)}
   <span id="olderHint" style="font-size:0.62rem;color:var(--muted-2,#6d85a8);margin-left:8px;"></span>
 </div>
 
+<div id="restartBanner" style="display:none;text-align:center;padding:7px 16px;background:#1a1200;border-bottom:1px solid #403000;flex-shrink:0;">
+  <span style="font-size:0.66rem;color:#fbbf24;">⚠️ <b id="restartGapCount">0</b> earlier entries from today are on disk but not in this live view — the in-memory log only holds what the app logged since it last started.</span>
+  <button class="btn btn-export" onclick="showTodayFullFile()" style="font-size:0.66rem;margin-left:8px;">📅 Show today's full file</button>
+</div>
+
 <div class="log-wrap" id="logWrap">
   <div class="empty-state" id="emptyState">
     <div class="icon">⏳</div>
@@ -311,6 +324,10 @@ ${embed ? '' : buildSidebar('logs', liveActive)}
   // Day view: "" = today (in-memory live tail), "YYYY-MM-DD" = archived file
   var viewDate    = "";
   var pollStarted = false;
+  // Restart-gap tracking: today's on-disk entry count vs what this process holds.
+  var todayArchiveCount = 0;
+  var todayDate         = "";
+  var liveTotal         = 0;
 
   var wrap      = document.getElementById("logWrap");
   var emptyEl   = document.getElementById("emptyState");
@@ -329,6 +346,9 @@ ${embed ? '' : buildSidebar('logs', liveActive)}
       .then(function(r) { return r.ok ? r.json() : null; })
       .then(function(d) {
         if (!d || !d.days) return;
+        todayDate         = d.today || "";
+        todayArchiveCount = d.todayEntries || 0;
+        maybeShowRestartGap();
         var sel = document.getElementById("daySel");
         d.days.forEach(function(x) {
           var o = document.createElement("option");
@@ -352,6 +372,7 @@ ${embed ? '' : buildSidebar('logs', liveActive)}
     document.getElementById("expTxt").href  = "/logs/export" + q;
     document.getElementById("expJson").href = "/logs/export-json" + q;
     document.getElementById("clearBtn").style.display = viewDate ? "none" : "";
+    maybeShowRestartGap();
     if (viewDate) loadArchive(); else init();
   }
 
@@ -407,6 +428,8 @@ ${embed ? '' : buildSidebar('logs', liveActive)}
         if (viewDate) return;
         if (!d) { startPoll(0); return; }
         total = d.total || 0;
+        liveTotal = total;
+        maybeShowRestartGap();
         // Start from newest PAGE rows
         var startFrom = Math.max(0, total - PAGE);
         oldestFrom = startFrom; // oldest chunk we've loaded
@@ -494,6 +517,28 @@ ${embed ? '' : buildSidebar('logs', liveActive)}
         loadingOlder = false;
       })
       .catch(function() { loadingOlder = false; });
+  }
+
+  // Shown only on the live view, and only when today's archive holds entries this
+  // process never saw. Without it a restart makes the morning look like it never
+  // happened — which is exactly when the log matters most.
+  function maybeShowRestartGap() {
+    var banner = document.getElementById("restartBanner");
+    if (!banner) return;
+    var gap = todayArchiveCount - liveTotal;
+    if (!viewDate && todayDate && gap > 0) {
+      document.getElementById("restartGapCount").textContent = gap.toLocaleString("en-IN");
+      banner.style.display = "block";
+    } else {
+      banner.style.display = "none";
+    }
+  }
+
+  function showTodayFullFile() {
+    if (!todayDate) return;
+    var sel = document.getElementById("daySel");
+    if (sel) sel.value = todayDate;
+    switchDay(todayDate);
   }
 
   function updateOlderBanner(fromIdx) {

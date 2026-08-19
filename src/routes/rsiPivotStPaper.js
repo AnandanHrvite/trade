@@ -1374,7 +1374,7 @@ ${bbRsiCurrentBar(pos ? _positionCardHtml(pos, state.optionLtp) : null, state.da
 <div id="chart"></div><div id="rsiChart"></div>
 ${bbRsiActivityLog(state.log)}
 </div>
-${modalJS()}
+<script>${modalJS()}</script>
 <script>
 const chart = LightweightCharts.createChart(document.getElementById('chart'), {
   layout:{background:{color:'#0b1220'},textColor:'#94a3b8'},

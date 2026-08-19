@@ -317,7 +317,7 @@ ${buildSidebar('oi-monitor', liveActive)}
     <div class="cand" id="cands"><div class="empty">nothing yet</div></div>
   </div>
 </div>
-${modalJS()}
+<script>${modalJS()}</script>
 <script>
   var LB = ${JSON.stringify(LOOKBACKS)};
   function nfmt(v){ return v==null ? '—' : Number(v).toLocaleString('en-IN'); }
