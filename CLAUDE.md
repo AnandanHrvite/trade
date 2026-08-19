@@ -78,8 +78,17 @@ JSONL day files include settings snapshots written by [settings.js](src/routes/s
 - **Commit freely, push only when asked**: make the change and commit without asking, then say it is committed and unpushed. **Do not `git push` unless the user explicitly says to** — a push to `main` auto-deploys to EC2 and restarts PM2, so the deploy moment is the user's call. Stage *only* task files. See `feedback_autonomous_push.md`.
 - **Never bypass a guard.** The `.githooks` pre-push blocks weekday pushes between 09:00 and 15:30 IST (weekends and other hours are free); if it rejects a push, report the block and stop. `ALLOW_PUSH=1` is the user's own escape hatch, not a tool for getting a task finished. Likewise **never** `--force` push, `--no-verify`, amend an already-pushed commit, or bundle unrelated WIP into a commit.
 - **Tuning is OPEN (deadline lifted 2026-05-27).** The paper-data-collection no-tuning window was ended early by the user; strategy tuning and bug fixes are now in scope for all strategies. The per-strategy notes in `project_{bb_rsi,pa,swing}_post_window_observations.md` are still useful context (hypotheses + daily P&L track) — read them before tuning, but they are no longer a freeze. Caveat: trades generated *before* a bug fix were produced by buggy code — don't tune thresholds on pre-fix data; collect clean post-fix sessions first.
-- **README.md is the user-facing spec** for env vars, routes, and per-strategy behaviour. Keep it in sync when adding env keys or routes.
-- **CHANGELOG.md** is hand-maintained; add an entry for user-visible changes.
+- **Docs are cheap by default — do not write prose about your own change.** This is a solo repo; the
+  commit log is the changelog (1,346 of 1,377 commits already use `type(scope):`). Concretely:
+  - **CHANGELOG.md** — do **not** add an entry unless the user asks. Kept for history only. Put the
+    explanation in the commit message instead, where it costs one line and never rots.
+  - **README.md** — orientation only (what strategies, modes, and routes exist). Do not document env
+    keys here; `docs/ENV.md` is generated. Touch README only when a strategy, mode, or route is
+    added or removed.
+  - **docs/ENV.md** is generated — never hand-edit. After adding or removing an env key run
+    `npm run docs:env`; `npm run docs:check` fails if it is stale.
+  - Reporting a change to the user: a few lines on what changed and why. No summary documents, no
+    migration guides, no recap files unless asked.
 - **Live order placement is double-gated**: a strategy's `*_LIVE_ENABLED` toggle plus the global `LIVE_HARNESS_DRY_RUN`. When `LIVE_HARNESS_DRY_RUN=true` (default) the live engines log the broker call they would have made but place no real order. Flip the harness OFF only after the strategy's Paper and Live decisions match on a recorded session via `/replay`.
 - **Tick recorder is the source of truth for Replay** — `TICK_RECORDER_ENABLED` must stay on for any session you want to replay deterministically. The recorder is a pure observer; treat it as additive-logging-only when touching its files.
 - Indicators: use the `technicalindicators` package consistently (EMA/RSI/ADX/SAR/BB) — don't hand-roll new ones.

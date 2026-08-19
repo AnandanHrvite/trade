@@ -6,6 +6,8 @@
   "scripts": {
     "start": "node src/app.js",
     "dev": "nodemon src/app.js",
+    "docs:env": "node scripts/genEnvDocs.js",
+    "docs:check": "node scripts/genEnvDocs.js --check",
     "test": "node tests/ema9vwap.regression.js && node tests/orb.regression.js && node tests/liveParity.regression.js && node tests/configFidelity.regression.js && node tests/swingScanner.regression.js",
     "test:orb": "node tests/orb.regression.js",
     "test:parity": "node tests/liveParity.regression.js",
