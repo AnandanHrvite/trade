@@ -18,6 +18,21 @@ It remains a server-render, not a live feed: starting a session from another tab
 
 `/rsi-pivot-st-paper/status` called `buildSidebar("rsi_pivot_st", "/rsi-pivot-st-paper/status")` — a nav key matching no menu entry, and a URL string landing in the `liveActive` slot where a boolean belongs. The page never highlighted its own **Paper** item in the sidebar and read as live-active. It now passes `("rsiPivotStPaper", liveActive, state.running)`.
 
+### Fixed — Four pages rendered their content underneath the sidebar
+
+`rsiPivotStPaper`, `trendDayScalpPaper`, `gapFix3mPaper` and `oiMonitor` wrapped their body in `<div class="main">`. No stylesheet in this app defines a bare `.main` rule — the shell class is `.main-content`, and it is the one that carries the `margin-left` clearing the fixed sidebar. So all four pages started at x=0 with the sidebar painted on top of them: the page title, the top-bar buttons and the left edge of every chart and table sat behind the nav. Renamed to `.main-content` on all four.
+
+### Fixed — RSI Pivot ST Paper: charts never resized, and History rendered empty
+
+Two separate breaks on `/rsi-pivot-st-paper`:
+
+- Both Lightweight Charts instances were created without any resize handling, so the canvas kept its first-paint width forever — a phone rotate, or the 900px breakpoint dropping the sidebar margin, left the chart overflowing or short of the panel. Added a `fitCharts()` bound to `resize`/`orientationchange` plus a `ResizeObserver` on `.main-content` (the sidebar toggle resizes the shell without firing a window resize). Chart heights and the pivot chips now step down at 900px and 640px to match the shell's own breakpoints.
+- `/rsi-pivot-st-paper/history` called `renderHistoryPage` with `navKey`/`navPath`/`basePath`/`data`/`startCapital` — not one of which is in that helper's contract (`routePrefix`/`sidebarKey`/`sessions`/`startCap`/…). The page rendered with no title, no sidebar highlight, zero sessions and a NaN capital regardless of how many trades were on disk. Passing the documented keys.
+
+### Fixed — OI Monitor: the strike ladder was clipped instead of scrollable
+
+The 9-column nowrap ladder sits in a `min-width:0` flex item under `body{overflow-x:hidden}`, so on a narrow screen the right-hand PE columns were cut off with no way to reach them. Wrapped it in an `overflow-x:auto` container and added a 640px tier for the stat strip and observation rows.
+
 ### Added — Dashboard: Start All now verifies each strategy and confirms it in a popup
 
 Start All (Paper / Live / Harness) used to reload the page silently when every `/start` returned 200, and only opened a modal when one of them failed. A 200 from `/start` is not proof the engine came up, so a strategy that was accepted and then never ran — mutual-exclusion lock held by the other mode, expired broker token, a refused socket — looked identical to a clean start.

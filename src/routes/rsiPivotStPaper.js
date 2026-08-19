@@ -1334,12 +1334,17 @@ ${bbRsiStyleCSS()}
 .pv-chip b{display:block;font-size:15px;margin-top:2px}
 .pv-r1 b{color:#f87171}.pv-pp b{color:#94a3b8}.pv-s1 b{color:#4ade80}
 .pv-warn{background:#3f1d1d;border:1px solid #7f1d1d;color:#fca5a5;padding:10px 12px;border-radius:8px;margin:10px 0;font-size:13px}
-#chart,#rsiChart{width:100%;border-radius:8px;overflow:hidden}
+#chart,#rsiChart{width:100%;max-width:100%;border-radius:8px;overflow:hidden}
 #chart{height:420px}#rsiChart{height:130px;margin-top:6px}
-@media(max-width:600px){#chart{height:300px}#rsiChart{height:100px}.pv-chip{min-width:calc(50% - 4px)}}
+/* Breakpoints track the shell's own (sidebarCSS/bbRsiStyleCSS collapse at 900
+   and go single-column at 640) so the chart never straddles two layouts. */
+@media(max-width:900px){#chart{height:340px}#rsiChart{height:110px}}
+@media(max-width:640px){#chart{height:260px}#rsiChart{height:92px}
+  .pv-levels{gap:6px}.pv-chip{flex:1 1 calc(50% - 3px);min-width:0;padding:7px 10px;font-size:11px}
+  .pv-chip b{font-size:14px}.pv-warn{font-size:12px}}
 </style></head><body>
 ${buildSidebar("rsiPivotStPaper", liveActive, state.running)}
-<div class="main">
+<div class="main-content">
 ${bbRsiTopBar({
   title: "RSI Pivot ST — Paper",
   subtitle: `RSI + Standard Pivot R1/S1 · SuperTrend(${cfg.stPeriod},${cfg.stMultiplier}) on CE · ${cfg.premiumStopPct}% premium floor both sides`,
@@ -1394,6 +1399,24 @@ const rsiSeries = rsiChart.addLineSeries({color:'#38bdf8',lineWidth:2,priceLineV
 chart.timeScale().subscribeVisibleLogicalRangeChange(r=>{ if(r) rsiChart.timeScale().setVisibleLogicalRange(r); });
 rsiChart.timeScale().subscribeVisibleLogicalRangeChange(r=>{ if(r) chart.timeScale().setVisibleLogicalRange(r); });
 
+// Lightweight Charts fixes its canvas width at construction, so without this the
+// chart keeps its first-paint width forever — on a phone rotate, or when the
+// 900px breakpoint drops the sidebar's margin, it overflows or leaves a gutter.
+// Both the window event and the ResizeObserver are needed: the sidebar toggle
+// resizes .main-content with no window resize firing.
+function fitCharts(){
+  const c = document.getElementById('chart'), rs = document.getElementById('rsiChart');
+  if (c && c.clientWidth)  chart.applyOptions({ width: c.clientWidth });
+  if (rs && rs.clientWidth) rsiChart.applyOptions({ width: rs.clientWidth });
+}
+window.addEventListener('resize', fitCharts);
+window.addEventListener('orientationchange', fitCharts);
+if (window.ResizeObserver) {
+  const shell = document.querySelector('.main-content');
+  if (shell) new ResizeObserver(fitCharts).observe(shell);
+}
+fitCharts();
+
 let levelLines = [];
 async function refresh(){
   try{
@@ -1441,15 +1464,20 @@ function _positionCardHtml(pos, optLtp) {
 // ── History + exports ────────────────────────────────────────────────────────
 router.get("/history", (req, res) => {
   const data = loadData();
+  // renderHistoryPage's contract is routePrefix/sidebarKey/sessions/startCap —
+  // passing any other key names renders a titleless page with zero sessions.
   res.send(renderHistoryPage({
-    navKey: "rsi_pivot_st",
-    navPath: "/rsi-pivot-st-paper/history",
-    title: "RSI Pivot ST — Paper History",
-    basePath: "/rsi-pivot-st-paper",
-    modeKey: MODE_KEY,
-    data,
-    startCapital: parseFloat(process.env.ZERODHA_INV_AMOUNT || process.env.FYERS_INV_AMOUNT || "100000"),
-    page: parseInt(req.query.page || "1", 10),
+    routePrefix: "/rsi-pivot-st-paper",
+    sidebarKey: "rsiPivotStHistory",
+    pageTitle: "🎯 RSI Pivot ST Paper Trade History",
+    pageDocTitle: "RSI Pivot ST Paper — History",
+    modalLabel: "RSI Pivot ST Paper",
+    liveActive: sharedSocketState.getRsiPivotStMode() === "RSI_PIVOT_ST_LIVE",
+    sessions: data.sessions || [],
+    capital: data.capital,
+    totalPnl: data.totalPnl,
+    startCap: parseFloat(process.env.ZERODHA_INV_AMOUNT || process.env.FYERS_INV_AMOUNT || "100000"),
+    emptyLabel: "Start RSI Pivot ST paper trading to record your first session.",
   }));
 });
 

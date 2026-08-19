@@ -279,11 +279,23 @@ router.get("/", (req, res) => {
     .tag.PE { background:#062014; border:1px solid #0e4020; color:#34d399; }
     .cand .n { color:#8ba1c2; }
     .empty { padding:16px; color:#4a5b75; font-size:0.72rem; text-align:center; }
+
+    /* .main-content is a min-width:0 flex item under body{overflow-x:hidden}, so a
+       9-column nowrap ladder would be clipped, not scrollable — the right-hand PE
+       columns become unreachable on a narrow screen without this wrapper. */
+    .tscroll { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    .tscroll table { min-width:620px; }
+    @media (max-width:640px) {
+      .wrap { padding:12px 12px 40px; }
+      .strip { gap:7px; }
+      .stat { min-width:calc(50% - 4px); flex:1 1 calc(50% - 4px); padding:8px 11px; }
+      .cand .row { flex-wrap:wrap; gap:6px; }
+    }
   </style>
 </head>
 <body>
 ${buildSidebar('oi-monitor', liveActive)}
-<div class="main">
+<div class="main-content">
   <div class="wrap">
     <h1>OI Monitor <span class="dim" style="font-size:0.7rem;font-weight:400;">read-only</span></h1>
     <div class="sub">
@@ -302,7 +314,7 @@ ${buildSidebar('oi-monitor', liveActive)}
     <div class="strip" id="strip"></div>
 
     <div class="sect">Strike ladder</div>
-    <table>
+    <div class="tscroll"><table>
       <thead>
         <tr>
           <th class="l">CE OI</th><th>Δ1</th><th>Δ3</th><th>Δ6</th>
@@ -311,7 +323,7 @@ ${buildSidebar('oi-monitor', liveActive)}
         </tr>
       </thead>
       <tbody id="ladder"><tr><td colspan="9" class="empty">loading…</td></tr></tbody>
-    </table>
+    </table></div>
 
     <div class="sect">Observations <span class="dim" style="text-transform:none;letter-spacing:0;font-weight:400;">— logged, never traded</span></div>
     <div class="cand" id="cands"><div class="empty">nothing yet</div></div>

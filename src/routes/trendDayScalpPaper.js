@@ -1192,7 +1192,7 @@ router.get("/status", (req, res) => {
 <script src="/vendor/lightweight-charts.standalone.production.js"></script>
 </head><body>
 ${buildSidebar('trendDayScalpPaper', liveActive)}
-<div class="main">
+<div class="main-content">
 ${bbRsiTopBar({
   title: "⚡ Trend Day Scalp — Paper",
   metaLine: `Day gate ${_envStr("TDS_GATE_TIME", "10:15")} → pullback into VWAP/EMA${cfg.emaPeriod} → fixed ${cfg.targetR}R · SL ${cfg.minSlPts}-${cfg.maxSlPts}pt · max ${_maxDailyTrades()}/day`,

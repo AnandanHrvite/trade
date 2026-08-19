@@ -1271,7 +1271,7 @@ router.get("/status", (req, res) => {
 <script src="/vendor/lightweight-charts.standalone.production.js"></script>
 </head><body>
 ${buildSidebar('gapFix3mPaper', liveActive)}
-<div class="main">
+<div class="main-content">
 ${bbRsiTopBar({
   title: "🕳 3M Gap Fix Scalp — Paper",
   metaLine: `NIFTY FUTURES ${cfg.resolutionMins}m · gap ≥${cfg.minGapPts}pt faded to its fill level · SL = the day's high/low · a volume break of the extreme is skipped`,
