@@ -243,6 +243,120 @@ async function placeMarketOrder(fyersSymbol, side, qty, orderTag = "ALGO_LIVE", 
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// EQUITY — positional (CNC) delivery orders, used by the Swing Scanner
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Place a MARKET order in the NSE cash segment as a DELIVERY (CNC) position.
+ *
+ * Deliberately NOT routed through convertSymbol(). That helper is built for
+ * option/future symbols and, handed a Fyers equity symbol, returns the
+ * tradingsymbol "RELIANCE-EQ" — the "-EQ" suffix is a Fyers convention that
+ * does not exist at Kite, and the order is rejected. This takes the plain NSE
+ * tradingsymbol ("RELIANCE") and nothing else, so the wrong form cannot be
+ * built by accident. Use stockUniverse.zerodhaSymbol() to produce it.
+ *
+ * variety:
+ *   "regular"  market is open — fills immediately at the touch
+ *   "amo"      market is shut — Kite holds it and releases it into the next
+ *              trading day's pre-open. This is what makes an evening click
+ *              turn into tomorrow morning's fill.
+ *
+ * product is always CNC: this is a positional trade meant to be HELD, and MIS
+ * would be auto-squared-off by the broker at 15:20 the same day — silently
+ * turning a swing entry into an intraday round trip.
+ *
+ * @param {string} tradingsymbol  plain NSE symbol, e.g. "RELIANCE"
+ * @param {number} qty            whole shares, > 0
+ * @param {object} opts           { variety, transactionType, tag }
+ * @returns {{ success, orderId, raw, request }}
+ */
+async function placeEquityOrder(tradingsymbol, qty, { variety = "regular", transactionType = "BUY", tag = "SWING_SCAN" } = {}) {
+  if (!isAuthenticated()) {
+    throw new Error("Zerodha not authenticated. Complete Zerodha login first.");
+  }
+  const sym = String(tradingsymbol || "").trim().toUpperCase();
+  if (!sym) {
+    return { success: false, orderId: null, raw: { error: "Missing trading symbol" }, request: null };
+  }
+  // A malformed quantity must never reach the exchange. Fractional shares do
+  // not exist in the NSE cash segment, and NaN would be sent through as-is.
+  if (!Number.isInteger(qty) || qty <= 0) {
+    return { success: false, orderId: null, raw: { error: `Invalid qty: ${qty}` }, request: null };
+  }
+  if (variety !== "regular" && variety !== "amo") {
+    return { success: false, orderId: null, raw: { error: `Invalid variety: ${variety}` }, request: null };
+  }
+  if (transactionType !== "BUY" && transactionType !== "SELL") {
+    return { success: false, orderId: null, raw: { error: `Invalid transaction type: ${transactionType}` }, request: null };
+  }
+
+  const kite = getKite();
+  const orderParams = {
+    exchange:         kite.EXCHANGE_NSE,
+    tradingsymbol:    sym,
+    transaction_type: transactionType === "BUY" ? kite.TRANSACTION_TYPE_BUY : kite.TRANSACTION_TYPE_SELL,
+    quantity:         qty,
+    product:          kite.PRODUCT_CNC,
+    order_type:       kite.ORDER_TYPE_MARKET,
+    validity:         kite.VALIDITY_DAY,
+    tag:              String(tag || "SWING_SCAN").substring(0, 20),
+  };
+
+  console.log(`[ZerodhaBroker] placeEquityOrder: ${transactionType} ${qty} × ${sym} (NSE, CNC, MARKET, ${variety})`);
+  try {
+    // NOT retried on a broker-side rejection — see withCautiousRetry: only a
+    // request that never reached Kite is retried, because a retried order that
+    // DID arrive becomes a duplicate position.
+    const response = await guardedCall("zerodha", () =>
+      withCautiousRetry(() => kite.placeOrder(variety, orderParams), {
+        attempts: 2, baseMs: 200, label: "zerodha.placeEquityOrder",
+      }),
+    );
+    if (response && response.order_id) {
+      console.log(`[ZerodhaBroker] Equity order SUCCESS — ${transactionType} ${qty} × ${sym} | OrderID: ${response.order_id} | ${variety}/CNC`);
+      return { success: true, orderId: response.order_id, raw: response, request: Object.assign({ variety }, orderParams) };
+    }
+    console.warn(`[ZerodhaBroker] Equity order FAILED — ${transactionType} ${qty} × ${sym} | ${JSON.stringify(response).slice(0, 200)}`);
+    return { success: false, orderId: null, raw: response || { error: "Kite returned no order_id" }, request: Object.assign({ variety }, orderParams) };
+  } catch (err) {
+    console.error(`[ZerodhaBroker] Equity order EXCEPTION — ${transactionType} ${qty} × ${sym}: ${err.message}`);
+    return { success: false, orderId: null, raw: { error: err.message || String(err) }, request: Object.assign({ variety }, orderParams) };
+  }
+}
+
+/**
+ * Last traded price for NSE cash symbols. Returns a { SYMBOL: price } map that
+ * contains ONLY the symbols Kite actually answered for — a missing symbol is
+ * absent rather than 0, so a caller can never multiply a quantity by a fake
+ * zero and show the user a ₹0 order value.
+ *
+ * @param {string[]} tradingsymbols plain NSE symbols, e.g. ["RELIANCE"]
+ */
+async function getEquityLTP(tradingsymbols) {
+  if (!isAuthenticated()) return {};
+  const syms = (tradingsymbols || []).map(s => String(s).trim().toUpperCase()).filter(Boolean);
+  if (!syms.length) return {};
+  try {
+    const keys = syms.map(s => `NSE:${s}`);
+    const res = await guardedCall("zerodha", () =>
+      withRetry(() => getKite().getLTP(keys), {
+        attempts: safetyConfig().retryReadAttempts, baseMs: safetyConfig().retryBaseMs, label: "zerodha.getLTP",
+      }),
+    );
+    const out = {};
+    for (const [key, val] of Object.entries(res || {})) {
+      const price = val && Number(val.last_price);
+      if (Number.isFinite(price) && price > 0) out[key.replace(/^NSE:/, "")] = price;
+    }
+    return out;
+  } catch (err) {
+    console.error(`Zerodha getLTP error: ${err.message}`);
+    return {};
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Hard SL — SL-M (Stop Loss Market) orders for exchange-level protection
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -388,6 +502,7 @@ module.exports = {
   getLoginUrl, generateAccessToken, setAccessToken,
   isAuthenticated, logout, clearZerodhaToken,
   convertSymbol, placeMarketOrder,
+  placeEquityOrder, getEquityLTP,
   placeSLMOrder, modifySLMOrder, cancelOrder,
   getOrders, getPositions, getFunds, getTrades,
   breakerStatus,

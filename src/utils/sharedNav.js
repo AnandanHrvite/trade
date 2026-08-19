@@ -118,6 +118,10 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   // Read-only research page for per-strike OI. Default OFF — it is a data-collection
   // instrument for an unbuilt strategy, not part of the daily trading flow.
   const showOiMonitor     = (process.env.UI_SHOW_OI_MONITOR || 'false').toLowerCase() === 'true';
+  // Swing Scanner — stock screen + manual positional entry. Default OFF: it is
+  // the one page in this app that can place a REAL order with no dry-run gate,
+  // so it should appear because someone switched it on, not by default.
+  const showSwingScanner  = (process.env.UI_SHOW_SWING_SCANNER || 'false').toLowerCase() === 'true';
 
   // ── Per-strategy submenu toggles ──
   const showEmaRsiStBacktest = (process.env.UI_SHOW_EMA_RSI_ST_BACKTEST || 'true').toLowerCase() === 'true';
@@ -316,6 +320,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     ...(showEdgeAnalytics ? [{ key: 'edgeAnalytics',   href: '/edge-analytics',     icon: '📈', label: 'Edge Analytics' }] : []),
     ...(showAdvisor       ? [{ key: 'advisor',         href: '/advisor',            icon: '🧭', label: 'Settings Advisor' }] : []),
     ...(showOiMonitor     ? [{ key: 'oi-monitor',      href: '/oi-monitor',         icon: '🧱', label: 'OI Monitor' }] : []),
+    ...(showSwingScanner  ? [{ key: 'swingScanner',     href: '/swing-scanner',      icon: '📈', label: 'Swing Scanner' }] : []),
   ];
 
   const sections = [

@@ -6,6 +6,42 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Added — Swing Scanner: screen stocks with your own strategies, and buy them positionally (`/swing-scanner`)
+
+A new page that answers a question the platform could not: *"my strategies fire on NIFTY intraday — which STOCKS are set up right now, on a swing timeframe?"*
+
+Pick one of your **active** strategies, a timeframe, and a stock universe; press Search. Every stock is run through that strategy's own `getSignal` — the same function paper, live and backtest call — and the ones that fire come back ranked. Each long row has a **Buy** button that places a real Zerodha NSE delivery order.
+
+**Dropdowns**
+- **Strategy** — reads `{STRATEGY}_MODE_ENABLED` live, so it follows Settings without a restart. Four strategies qualify: **EMA_RSI_ST**, **BB_RSI**, **Price Action**, **RSI Pivot ST**. The others are excluded because their rule is not a function of the candle series alone — ORB needs a session opening range, GAPS a previous-day gap, EMA9+VWAP / Trend Day Scalp / Trend Pullback a session-anchored VWAP, 3M Gap Fix a 3-minute intraday bar, OI Wall Fade per-strike option OI. None of those are defined on a stock's 4-hour chart, and forcing them would invent signals their authors never specified.
+- **Timeframe** — 5m / 15m / 30m / 1h / 4h / 1w, **local to this page**. It does not read or write `TRADE_RESOLUTION` and no running engine sees it. Timeframes a strategy cannot support are shown disabled with the reason (RSI Pivot ST has no weekly: its levels are previous-*day* pivots).
+- **Stocks** — NIFTY 50 / NIFTY 100 / F&O (~228), overridable and extendable via `~/trading-data/swing_scanner_universe.json`.
+
+**4h and 1w bars are built here, not fetched.** 4h groups 1-hour bars in fours from each session's open (NSE's 6h15m day is not a whole number of 4h bars, so the anchor is a convention — this one matches a chart). Weekly groups daily bars Monday→Friday and **drops the current, still-forming week**, because a partial weekly bar makes every indicator on it flip and un-flip mid-week.
+
+**Point thresholds are rescaled to each stock** (`SWING_SCANNER_SCALE_THRESHOLDS`, default on). Values like `BB_RSI_MIN_BAND_WIDTH_PTS=50` or `PA_MIN_SL_PTS=8` are calibrated for NIFTY at ~24,000. Applied raw to a ₹150 share a 50-point band width is a third of the share price and *nothing ever signals*; on a ₹40,000 share an 8-point stop is 0.02%. Both failures are silent — an empty list, or a junk one. Each such value is now re-expressed as the same percentage of the stock's own price. Your Settings value stays the source of truth; only its unit changes. Set the toggle off to feed raw values through.
+
+**Ranking** is a published 0–100 score with its four parts visible on hover: liquidity (bar turnover), risk (is the strategy's own stop a sane distance), trend (price vs its 20-bar mean, in the trade's direction) and volume (last bar vs its 20-bar average). Rows with no signal can never outrank rows that fired. Sort on any column; filter by side, price band, score, stop % and volume ratio.
+
+**Orders** are real — Zerodha, NSE cash, **CNC** delivery, **MARKET**. Outside market hours they go out as an **AMO** and Zerodha releases them into the next session's open (Kite's ~15:30–15:45 AMO refusal window is warned about up front rather than discovered as a rejection). CNC is not configurable: MIS would be auto-squared-off at 15:20 and silently turn a swing entry into an intraday round trip. Guards, in place of a dry-run gate:
+- the popup states the exact order and needs a **second** confirmation click;
+- `API_SECRET` is required on the POST — the page alone is not enough;
+- `SWING_SCANNER_MAX_ORDER_VALUE` (default ₹10,00,000) refuses an over-sized order. A typo guard, not a permission gate;
+- the server **ignores the browser's price**, re-fetching the LTP and re-deriving regular-vs-AMO at order time, so a stale tab cannot order off a moved number;
+- every attempt — placed, rejected or refused — is appended to `~/trading-data/trades/swing_scanner_orders_YYYY-MM-DD.jsonl` *before* the user is told anything.
+
+**The scanner is not an engine.** No position, no session, no socket; not wired into `sharedSocketState`, `positionPersist` or `capitalPool`. It never opens a trade on its own and never closes one. The stop in a row is the strategy's suggestion and is **not** placed at the exchange — anything bought here is yours to manage. The page says so, and so does the confirmation dialog.
+
+New: [src/routes/swingScanner.js](src/routes/swingScanner.js), [src/services/swingScanner.js](src/services/swingScanner.js), [src/services/swingStrategyAdapters.js](src/services/swingStrategyAdapters.js), [src/utils/stockUniverse.js](src/utils/stockUniverse.js), [tests/swingScanner.regression.js](tests/swingScanner.regression.js) (51 assertions, wired into `npm test` and `npm run test:scanner`). Gated by `UI_SHOW_SWING_SCANNER`, default **off**.
+
+### Added — `zerodhaBroker.placeEquityOrder()` / `getEquityLTP()`
+
+Cash-segment order placement, which the platform had never needed: everything before this traded options or futures. `placeEquityOrder` takes a **plain** NSE tradingsymbol and deliberately does **not** go through `convertSymbol()` — that helper is built for option/future symbols and, handed a Fyers equity symbol, returns `"RELIANCE-EQ"`, a spelling that does not exist at Kite and is rejected at order time. Product is fixed to CNC; variety is `regular` or `amo`; a non-integer or non-positive quantity is refused before the request is built. `getEquityLTP` returns only the symbols Kite actually quoted, so a caller can never multiply a quantity by a fake zero.
+
+### Fixed — a Fyers error response was classified as "no data"
+
+In the scanner's history path an error body (`{s:"error", …}`) carries no `candles` key, so an emptiness check placed before the error check swallowed it and reported the symbol as delisted. The failure that actually happens is an **expired Fyers token**, and it fails every symbol at once — which would have produced 228 rows all blaming the stocks and nothing pointing at the login. Errors are now classified first, and a scan where most symbols fail identically reports that once, as a connection problem, instead of as N separate skips.
+
 ### Added — EMA_RSI_ST: the EMA21 exit can now be "cross & close" instead of "touch" (`EMA_RSI_ST_EMA_EXIT_MODE`)
 
 The EMA21 line ended a trade the moment a candle *reached* it: the exit test was `candle.low <= EMA21 <= candle.high`, and EMA21 was simultaneously the stop enforced tick-by-tick in `onTick`. A single wick into the line was enough — either as an `EMA touch-back exit` at the candle close, or, earlier, as a `Trail SL hit` while the bar was still forming.

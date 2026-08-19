@@ -904,6 +904,17 @@ const OPEN_PATHS = [
   "/consolidation/data",
   "/oi-monitor",          // read-only per-strike OI ladder — no position, no order
   "/oi-monitor/data",
+  // Swing Scanner reads. /swing-scanner/order is deliberately NOT here — it
+  // places a real Zerodha order and requires API_SECRET like every other write.
+  // /scan and /scan/cancel are GETs that start and stop a read-only scan job;
+  // cancel is open because its only effect is to stop work the same open
+  // endpoint could have started.
+  "/swing-scanner",
+  "/swing-scanner/meta",
+  "/swing-scanner/scan",
+  "/swing-scanner/scan/status",
+  "/swing-scanner/scan/cancel",
+  "/swing-scanner/quote",
   "/health",              // health check — must be open for uptime monitors / PM2 probes
   "/deploy/webhook",      // GitHub Actions webhook — must be open for GitHub to reach it
   "/deploy/status",       // deploy status poll — read-only
@@ -1079,6 +1090,7 @@ app.use("/edge-analytics",      require("./routes/edgeAnalytics"));     // ← e
 app.use("/consolidation-report", require("./routes/consolidationReport")); // ← printable consolidated report (paper+live, week/month/range filters, Save-as-PDF)
 app.use("/advisor",             require("./routes/advisor"));           // ← offline settings advisor over the recorded trade book (read-only)
 app.use("/oi-monitor",          require("./routes/oiMonitor"));         // ← live per-strike OI ladder + wall/PCR readout (read-only research page)
+app.use("/swing-scanner",       require("./routes/swingScanner"));      // ← stock swing screen over the active strategies + manual Zerodha CNC entry
 app.use("/realtime",            require("./routes/realtime"));          // ← unified real-time monitor (PAPER/LIVE toggle, all 3 strategies)
 app.use("/replay",              require("./routes/replay"));            // ← deterministic tick-replay backtest (PAPER = REPLAY = LIVE)
 app.use("/all-backtest",   require("./routes/allBacktest"));    // ← unified backtest dashboard (all 3 strategies, stats only)
