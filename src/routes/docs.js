@@ -409,6 +409,7 @@ const GUIDE_STATUS = {
     { type: "live", label: "Live Orders (Zerodha)", enableKey: "EMA_RSI_ST_LIVE_ENABLED", dryKey: "EMA_RSI_ST_LIVE_DRY_RUN" },
     { type: "bool", label: "VIX Filter", key: "VIX_FILTER_ENABLED", def: "true" },
     { type: "bool", label: "Candle Trail", key: "EMA_RSI_ST_CANDLE_TRAIL_ENABLED", def: "false" },
+    { type: "value", label: "EMA21 Exit Rule (touch / cross &amp; close)", key: "EMA_RSI_ST_EMA_EXIT_MODE", def: "touch" },
     { type: "bool", label: "Opposite-Side Cooldown", key: "EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_ENABLED", def: "true" },
     { type: "bool", label: "Expiry-Day-Only", key: "TRADE_EXPIRY_DAY_ONLY", def: "false" },
   ] }] },

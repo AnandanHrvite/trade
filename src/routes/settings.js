@@ -87,6 +87,7 @@ const SETTINGS_SCHEMA = [
       { key: "EMA_RSI_ST_STOP_LOSS_PTS", label: "Stop Loss (pts)", type: "number", min: 0, max: 200, step: 5, effect: EFFECT.INSTANT, desc: "Max loss per trade in points (0 = off).", default: "25" },
       { key: "EMA_RSI_ST_MAX_CONSEC_LOSSES", label: "Chop Guard (consec losses)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.INSTANT, desc: "Stop for the day after this many losses in a row (0 = off).", default: "0" },
       { key: "EMA_RSI_ST_NEG_CANDLE_LIMIT", label: "Negative-Candle Stop (candles)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.INSTANT, desc: "Exit if still losing after this many candles (0 = off).", default: "2" },
+      { key: "EMA_RSI_ST_EMA_EXIT_MODE", label: "EMA21 Exit — Touch or Cross &amp; Close", type: "select", options: [{ value: "touch", label: "Touch (legacy — a wick reaching EMA21 exits)" }, { value: "close", label: "Cross &amp; close (only a close beyond EMA21 exits)" }], effect: EFFECT.INSTANT, desc: "How the EMA21 line ends a trade. Touch = today's rule: the candle only has to REACH EMA21, and EMA21 is also the tick-by-tick stop, so a single wick closes the trade. Cross &amp; close = wicks through the line are held and the trade exits only when a candle CLOSES beyond EMA21 (CE on a close below it, PE on a close above). In cross &amp; close mode EMA21 stops being the tick stop — otherwise the first wick would stop you out anyway — so keep the Candle Trail on (or a points Stop Loss) to hold the hard stop.", default: "touch" },
       { key: "EMA_RSI_ST_CANDLE_TRAIL_ENABLED", label: "Candle Trail", type: "toggle", effect: EFFECT.INSTANT, desc: "Add a candle-based trailing stop.", default: "true" },
       { key: "EMA_RSI_ST_CANDLE_TRAIL_BARS", label: "Candle Trail (candles)", type: "number", min: 1, max: 5, step: 1, effect: EFFECT.INSTANT, desc: "Candles looked back for the trailing stop.", default: "3" },
       { key: "EMA_RSI_ST_SL_PAUSE_CANDLES", label: "Same-Side SL Cooldown (candles)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Pause the same side this many candles after a stop (0 = off).", default: "2" },
@@ -1068,7 +1069,7 @@ const IMMEDIATE_KEYS = new Set([
   "RSI_CE_MIN", "RSI_CE_MAX", "RSI_PE_MAX", "RSI_PE_MIN",
   "EMA_RSI_ST_EMA_FAST", "EMA_RSI_ST_EMA_SLOW", "EMA_RSI_ST_EMA_TRIPLE_STACK_ENABLED", "EMA_RSI_ST_EMA_FASTEST",
   "EMA_RSI_ST_CLOSE_BEYOND_EMA_ENABLED",
-  "EMA_RSI_ST_CANDLE_TRAIL_ENABLED", "EMA_RSI_ST_CANDLE_TRAIL_BARS",
+  "EMA_RSI_ST_CANDLE_TRAIL_ENABLED", "EMA_RSI_ST_CANDLE_TRAIL_BARS", "EMA_RSI_ST_EMA_EXIT_MODE",
   "EMA_RSI_ST_SUPERTREND_PERIOD", "EMA_RSI_ST_SUPERTREND_MULT",
   "EMA_RSI_ST_STOP_LOSS_PTS", "EMA_RSI_ST_MAX_CONSEC_LOSSES", "EMA_RSI_ST_NEG_CANDLE_LIMIT",
   // Confirmation-candle gates — read live from process.env on every candle/tick

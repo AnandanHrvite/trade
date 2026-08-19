@@ -1378,19 +1378,33 @@ async function onCandleClose(candle) {
   // The 50% rule reference must not roll forward as new candles close.
 
   // ── Trailing stop (EMA21 base + optional candle-trail overlay) ──────────────
-  // Base SL source updated at each candle close (tighten-only): current EMA21 —
-  // a candle range touching back EMA21 is an explicit exit.
+  // EMA_RSI_ST_EMA_EXIT_MODE decides how the EMA21 line ends a trade:
+  //   "touch" (default, legacy) — the base SL source updated at each candle close
+  //     (tighten-only) is the current EMA21, AND a candle whose RANGE merely reaches
+  //     back to EMA21 is an explicit exit. A wick is enough, in both places.
+  //   "close" (cross & close)  — EMA21 becomes a candle-CLOSE rule only: exit when the
+  //     candle CLOSES the wrong side of it (CE below / PE above), so a wick through the
+  //     line is held. EMA21 then does NOT seed the stop either: pos.stopLoss is enforced
+  //     tick-by-tick in onTick, so a stop parked on EMA21 would close the trade on the
+  //     first wick that touches it and the mode would be indistinguishable from "touch".
+  //     The hard stop in this mode is the candle trail (keep it ON) / the initial SL /
+  //     EMA_RSI_ST_STOP_LOSS_PTS / the option-premium stop.
   // When EMA_RSI_ST_CANDLE_TRAIL_ENABLED, an N-bar low (CE) / high (PE) trail is computed
   // and the stop is set to whichever of (EMA21, candle-trail level) is TIGHTER —
   // i.e. closer to price (higher for CE, lower for PE). Tighten-only either way.
   // pos.stopLoss is then enforced intra-candle in onTick.
-  if (_ownsClose) {   // trail/touch-back belong to THIS bar's position only
+  if (_ownsClose) {   // trail/EMA exit belong to THIS bar's position only
     const pos     = ptState.position;
     let _newSL    = null;
     let _flipExit = false;
     let _trailTag = "";
-    if (indicators.ema21 != null) { _newSL = indicators.ema21; _trailTag = "EMA21"; }
-    if (indicators.ema21 != null && candle.low <= indicators.ema21 && candle.high >= indicators.ema21) _flipExit = true;
+    const _emaExitClose = (process.env.EMA_RSI_ST_EMA_EXIT_MODE || "touch").toLowerCase() === "close";
+    if (indicators.ema21 != null && !_emaExitClose) { _newSL = indicators.ema21; _trailTag = "EMA21"; }
+    if (indicators.ema21 != null) {
+      _flipExit = _emaExitClose
+        ? (pos.side === "CE" ? candle.close < indicators.ema21 : candle.close > indicators.ema21)
+        : (candle.low <= indicators.ema21 && candle.high >= indicators.ema21);
+    }
     // Candle-trail overlay: N-bar low (CE) / high (PE) — keep the tighter of EMA21 vs candle.
     const _ctOn   = (process.env.EMA_RSI_ST_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true";
     const _ctBars = Math.max(1, parseInt(process.env.EMA_RSI_ST_CANDLE_TRAIL_BARS || "3", 10));
@@ -1406,10 +1420,10 @@ async function onCandleClose(candle) {
     if (_newSL != null) {
       if (pos.side === "CE" && (pos.stopLoss == null || _newSL > pos.stopLoss)) {
         const _o = pos.stopLoss; pos.stopLoss = parseFloat(_newSL.toFixed(2));
-        log(`📐 [PAPER] EMA21 trail CE: ₹${_o} → ₹${pos.stopLoss} (${_trailTag})`);
+        log(`📐 [PAPER] SL trail CE: ₹${_o} → ₹${pos.stopLoss} (${_trailTag})`);
       } else if (pos.side === "PE" && (pos.stopLoss == null || _newSL < pos.stopLoss)) {
         const _o = pos.stopLoss; pos.stopLoss = parseFloat(_newSL.toFixed(2));
-        log(`📐 [PAPER] EMA21 trail PE: ₹${_o} → ₹${pos.stopLoss} (${_trailTag})`);
+        log(`📐 [PAPER] SL trail PE: ₹${_o} → ₹${pos.stopLoss} (${_trailTag})`);
       }
     }
     // ── Breakeven floor (default OFF) ─────────────────────────────────────────
@@ -1432,14 +1446,15 @@ async function onCandleClose(candle) {
       }
     }
     if (_flipExit) {
-      // Skip the touch-back on the entry bar (the entry condition trivially
-      // satisfies a touch — would cause an instant exit on the entry candle).
+      // Skip the EMA exit on the entry bar (the entry condition trivially satisfies
+      // it — would cause an instant exit on the entry candle). Applies to both modes.
+      const _emaExitReason = _emaExitClose ? "EMA close-through exit" : "EMA touch-back exit";
       const _isEntryBar = pos.entryBarTime && candle.time === pos.entryBarTime;
       if (_isEntryBar) {
-        log(`⏭️ [PAPER] EMA touch-back on entry bar — skipping flip exit`);
+        log(`⏭️ [PAPER] ${_emaExitReason} on entry bar — skipping flip exit`);
       } else {
-        log(`🔁 [PAPER] EMA touch-back exit — ${pos.side} @ candle close ₹${candle.close}`);
-        simulateSell(candle.close, "EMA touch-back exit", candle.close);
+        log(`🔁 [PAPER] ${_emaExitReason} — ${pos.side} @ candle close ₹${candle.close} vs EMA21 ₹${indicators.ema21}`);
+        simulateSell(candle.close, _emaExitReason, candle.close);
       }
     }
   }
@@ -2345,7 +2360,7 @@ router.get("/start", async (req, res) => {
     const _peGate  = (process.env.EMA_RSI_ST_CLOSE_BEYOND_EMA_ENABLED||"true").toLowerCase()==="true" ? ` + C<${_baseEmaLbl}` : "";
     log(`   Entry       : CE = ${_emaUp} + RSI ${process.env.RSI_CE_MIN||52}-${process.env.RSI_CE_MAX||80} + ST GREEN${_ceGate} | PE = ${_emaDn} + RSI ${process.env.RSI_PE_MIN||20}-${process.env.RSI_PE_MAX||48} + ST RED${_peGate} (intra-candle)`);
   }
-  log(`   Stop/exit   : EMA21 trail${(process.env.EMA_RSI_ST_CANDLE_TRAIL_ENABLED||"false").toLowerCase()==="true" ? ` + ${Math.max(1,parseInt(process.env.EMA_RSI_ST_CANDLE_TRAIL_BARS||"3",10))}-bar candle trail (tighter wins)` : ""} | option stop ${(parseFloat(process.env.OPT_STOP_PCT||"0.15")*100).toFixed(0)}% | opposite signal | exit-before-close ${process.env.EMA_RSI_ST_EOD_EXIT_TIME||"15:15"} | EOD ${process.env.TRADE_STOP_TIME||"15:30"}`);
+  log(`   Stop/exit   : ${(process.env.EMA_RSI_ST_EMA_EXIT_MODE||"touch").toLowerCase()==="close" ? "EMA21 cross-and-close exit (candle close only — EMA21 is NOT the tick stop)" : "EMA21 trail + touch-back"}${(process.env.EMA_RSI_ST_CANDLE_TRAIL_ENABLED||"false").toLowerCase()==="true" ? ` + ${Math.max(1,parseInt(process.env.EMA_RSI_ST_CANDLE_TRAIL_BARS||"3",10))}-bar candle trail (tighter wins)` : ""} | option stop ${(parseFloat(process.env.OPT_STOP_PCT||"0.15")*100).toFixed(0)}% | opposite signal | exit-before-close ${process.env.EMA_RSI_ST_EOD_EXIT_TIME||"15:15"} | EOD ${process.env.TRADE_STOP_TIME||"15:30"}`);
   log(`   Risk guards : MaxDailyLoss=₹${process.env.MAX_DAILY_LOSS||5000} | MaxTrades=${process.env.MAX_DAILY_TRADES||6} | same-side SL cooldown ${process.env.EMA_RSI_ST_SL_PAUSE_CANDLES||3} candles | VIX ${(process.env.VIX_FILTER_ENABLED==="true")?("≤"+(process.env.VIX_MAX_ENTRY||20)):"off"}`);
   log(`════════════════════════════════════════════════════════════════════\n`);
 
@@ -3065,8 +3080,11 @@ router.get("/status", (req, res) => {
         ? pos.bestPrice - pos.entryPrice
         : pos.entryPrice - pos.bestPrice)).toFixed(2))
     : 0;
-  // Trailing-stop label: EMA21 base SL + optional candle-trail overlay
-  const _slModeLbl  = "EMA21";
+  // Trailing-stop label: EMA21 base SL + optional candle-trail overlay. With
+  // EMA_RSI_ST_EMA_EXIT_MODE=close the EMA is a candle-close exit, not the SL base.
+  const _slModeLbl  = (process.env.EMA_RSI_ST_EMA_EXIT_MODE || "touch").toLowerCase() === "close"
+    ? "EMA21 (close-only)"
+    : "EMA21";
   const _ctOn       = (process.env.EMA_RSI_ST_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true";
   const _ctBars     = Math.max(1, parseInt(process.env.EMA_RSI_ST_CANDLE_TRAIL_BARS || "3", 10));
   const _trailLbl   = pos ? (_slModeLbl + (_ctOn ? ` + ${_ctBars}-bar ${pos.side === "CE" ? "low" : "high"}` : "")) : _slModeLbl;

@@ -6,6 +6,19 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Added — EMA_RSI_ST: the EMA21 exit can now be "cross & close" instead of "touch" (`EMA_RSI_ST_EMA_EXIT_MODE`)
+
+The EMA21 line ended a trade the moment a candle *reached* it: the exit test was `candle.low <= EMA21 <= candle.high`, and EMA21 was simultaneously the stop enforced tick-by-tick in `onTick`. A single wick into the line was enough — either as an `EMA touch-back exit` at the candle close, or, earlier, as a `Trail SL hit` while the bar was still forming.
+
+New Settings field (**EMA_RSI_ST → Exits & Cooldowns → EMA21 Exit — Touch or Cross & Close**), env key `EMA_RSI_ST_EMA_EXIT_MODE`:
+
+- `touch` (**default — unchanged behaviour**): range-touch exit, EMA21 also trails the stop.
+- `close` (**cross & close**): wicks through the line are held; the exit fires only when a candle **closes** beyond EMA21 — CE on a close below it, PE on a close above — logged and recorded as `EMA close-through exit`.
+
+In `close` mode EMA21 is deliberately no longer used as the trailed stop. `pos.stopLoss` is enforced per tick, so a stop parked on EMA21 would still be taken out by the first wick that touched it and the two modes would be indistinguishable. The hard stop in that mode is the N-bar candle trail (`EMA_RSI_ST_CANDLE_TRAIL_ENABLED` — keep it on), the initial prev-candle SL, `EMA_RSI_ST_STOP_LOSS_PTS` and the `OPT_STOP_PCT` premium stop; the negative-candle stop and opposite-signal/EOD exits are untouched. The entry-bar skip applies in both modes.
+
+Wired identically in paper (canonical), the standalone live route and `backtestEngine` — including the backtest's prior-candle trail base, which is skipped in `close` mode for the same reason. The trail log line is now `SL trail CE/PE` rather than `EMA21 trail CE/PE`, since in `close` mode the level shown comes from the candle trail; the `/status` trail label reads `EMA21 (close-only)`.
+
 ### Fixed — Sidebar: the footer pill said STOPPED while strategies were trading
 
 The status pill at the bottom of the sidebar is global chrome, but it was rendered from `buildSidebar`'s per-page `isRunning` argument, which most pages never pass. So every page that does not own a strategy session — Real-Time Monitor, Dashboard, Logs, Settings, Trade Logs, Edge Analytics, the history and backtest pages — hard-coded the pill to a grey **STOPPED** dot, even with seven paper sessions live and reporting RUNNING in the table right next to it.

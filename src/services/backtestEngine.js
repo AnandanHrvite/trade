@@ -148,8 +148,10 @@ function getISTHHMM(unixSec) {
  *            Entry price = candle.close (candle-granularity proxy for live intra-candle entry).
  *   STOP   : initial SL = previous completed candle low (CE) / high (PE), from getSignal.
  *            Trails EMA21, tighten-only. When EMA_RSI_ST_CANDLE_TRAIL_ENABLED, an N-bar low/high
- *            candle trail is layered on and the tighter of the two wins.
- *   EXIT   : trail SL hit · EMA21 touch-back · option-premium stop (OPT_STOP_PCT,
+ *            candle trail is layered on and the tighter of the two wins. With
+ *            EMA_RSI_ST_EMA_EXIT_MODE=close the EMA21 line is a candle-close exit only and
+ *            stops being the trailed SL (the candle trail / pts cap own the stop instead).
+ *   EXIT   : trail SL hit · EMA21 touch-back (or cross-and-close) · option-premium stop (OPT_STOP_PCT,
  *            approximated via an adverse spot move in backtest) · opposite signal · EOD.
  *   RISK   : same-side SL cooldown (EMA_RSI_ST_SL_PAUSE_CANDLES), VIX gate, MAX_DAILY_LOSS,
  *            3-consecutive-loss pause.
@@ -218,7 +220,8 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
   // ── EMA_RSI_ST (redefined): exit/stop model ───────────────────────────────────
   //   Initial SL  : previous completed candle's low (CE) / high (PE) — from getSignal.
   //   Trail       : EMA21, tighten-only; optional N-bar candle-trail overlay
-  //                 (EMA_RSI_ST_CANDLE_TRAIL_*) — tighter wins.
+  //                 (EMA_RSI_ST_CANDLE_TRAIL_*) — tighter wins. EMA_RSI_ST_EMA_EXIT_MODE=close
+  //                 takes EMA21 out of the trail and leaves it a candle-close exit.
   //   Option stop : exit if the (simulated) option premium drops OPT_STOP_PCT from entry.
   //   Same-side cooldown: after an SL hit on a side, block that side for N candles.
   const EMA_RSI_ST_SL_PAUSE_CANDLES = parseInt(process.env.EMA_RSI_ST_SL_PAUSE_CANDLES || "3", 10);
@@ -231,6 +234,13 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
   // Chop guard: halt new entries for the rest of the day after N consecutive losing
   // trades (any win resets the streak). Mirrors paper/live. 0 = off.
   const _EMA_RSI_ST_MAX_CONSEC_LOSSES = parseInt(process.env.EMA_RSI_ST_MAX_CONSEC_LOSSES || "0", 10);
+  // EMA21 exit mode (EMA_RSI_ST_EMA_EXIT_MODE) — mirrors emaRsiStPaper exactly.
+  // "touch" (default): the candle range reaching EMA21 is an exit AND EMA21 is the
+  // trailed stop. "close" (cross & close): exit only on a candle CLOSING the wrong side
+  // of EMA21 (CE below / PE above), and EMA21 no longer seeds the stop — paper drops it
+  // there too, because a stop sitting on EMA21 is hit by the first wick and would make
+  // the two modes identical. The stop is then the candle trail / initial SL / pts cap.
+  const _EMA_RSI_ST_EMA_EXIT_CLOSE = (process.env.EMA_RSI_ST_EMA_EXIT_MODE || "touch").toLowerCase() === "close";
   // Opposite-side (flip) cooldown — block opposite-side entry for N candles after non-flip exit.
   const OPP_COOLDOWN_ENABLED   = (process.env.EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_ENABLED || "true").toLowerCase() === "true";
   const OPP_COOLDOWN_CANDLES   = parseInt(process.env.EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_CANDLES || "3", 10);
@@ -254,7 +264,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
   console.log("\n══════════════════════════════════════════════");
   console.log(`🔍 BACKTEST — ${strategy.NAME}`);
   console.log(`   Entry : signal from strategy at candle close`);
-  console.log(`   Exit  : trail SL + EMA21 touch-back + opposite signal + EOD/day`);
+  console.log(`   Exit  : trail SL + ${_EMA_RSI_ST_EMA_EXIT_CLOSE ? "EMA21 cross-and-close" : "EMA21 touch-back"} + opposite signal + EOD/day`);
   console.log(`   Charges : dynamic (STT + exchange + GST + stamp + ₹40 brok) — see Settings`);
   console.log(`   PnL mode : ${OPTION_SIM ? `OPTION SIM (delta=${DELTA}, theta=₹${THETA_PER_DAY}/day, lot=${LOT_SIZE})` : "RAW INDEX POINTS (set BACKTEST_OPTION_SIM=true to enable)"}`);
   console.log(`   VIX filter : ${vixFilter.VIX_ENABLED ? `ON (max=${vixFilter.VIX_MAX_ENTRY}, strong-only=${vixFilter.VIX_STRONG_ONLY}) | ${vixCandles ? vixCandles.length + " VIX candles loaded" : "NO VIX DATA — filter bypassed"}` : "OFF"}`);
@@ -279,7 +289,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
     ? Math.round((candles[1].time - candles[0].time) / 60)
     : 15;
   console.log(`   Resolution: ${candleResolutionMins}-min candles | Total candles: ${candles.length} | Seed window: 30`);
-  console.log(`   EMA_RSI_ST(redefined): EMA+RSI+SuperTrend | EMA21 trail${(process.env.EMA_RSI_ST_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true" ? ` + ${Math.max(1, parseInt(process.env.EMA_RSI_ST_CANDLE_TRAIL_BARS || "3", 10))}-bar candle trail (tighter wins)` : ""} | optStop ${(OPT_STOP_PCT*100).toFixed(0)}% | same-side cooldown ${EMA_RSI_ST_SL_PAUSE_CANDLES} candles`);
+  console.log(`   EMA_RSI_ST(redefined): EMA+RSI+SuperTrend | ${_EMA_RSI_ST_EMA_EXIT_CLOSE ? "EMA21 cross-and-close exit (not the tick stop)" : "EMA21 trail + touch-back"}${(process.env.EMA_RSI_ST_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true" ? ` + ${Math.max(1, parseInt(process.env.EMA_RSI_ST_CANDLE_TRAIL_BARS || "3", 10))}-bar candle trail (tighter wins)` : ""} | optStop ${(OPT_STOP_PCT*100).toFixed(0)}% | same-side cooldown ${EMA_RSI_ST_SL_PAUSE_CANDLES} candles`);
 
   // 50%-rule exit pause: retained for non-EMA_RSI_ST strategies that use this engine.
   // Stored as unix seconds (candle.time units). Reset per day in the loop.
@@ -427,12 +437,14 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
     // back EMA21 is an explicit exit. When EMA_RSI_ST_CANDLE_TRAIL_ENABLED, an N-bar low (CE)
     // / high (PE) trail is layered on and the TIGHTER of the two wins. The window ends at
     // the prior bar (i-1) to mirror paper's "SL from prior bars enforced on this bar" timing.
-    // The touch-back exit is wired below in the EXIT CHECK block.
+    // The EMA exit itself is wired below in the EXIT CHECK block.
     if (position) {
       let trailRef = null;
       // Use the PRIOR candle's EMA21 (armed at the last close), not this candle's —
       // mirrors paper's "SL from prior bars enforced on this bar" timing (no look-ahead).
-      if (_prevEma21 != null) trailRef = _prevEma21;
+      // Skipped entirely in cross-and-close mode: paper does not put the stop on EMA21
+      // there, so neither may this engine (it would re-introduce the wick stop-out).
+      if (_prevEma21 != null && !_EMA_RSI_ST_EMA_EXIT_CLOSE) trailRef = _prevEma21;
       // Candle-trail overlay: N-bar low (CE) / high (PE), keep the tighter of EMA21 vs candle.
       const _ctOn   = (process.env.EMA_RSI_ST_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true";
       const _ctBars = Math.max(1, parseInt(process.env.EMA_RSI_ST_CANDLE_TRAIL_BARS || "3", 10));
@@ -448,12 +460,12 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
       if (trailRef != null) {
         if (position.side === "CE") {
           if (position.stopLoss == null || trailRef > position.stopLoss) {
-            if (_verbose && trailRef !== position.stopLoss) console.log(`  📐 TRAIL CE (EMA21) → ${trailRef} (was ${position.stopLoss})`);
+            if (_verbose && trailRef !== position.stopLoss) console.log(`  📐 TRAIL CE → ${trailRef} (was ${position.stopLoss})`);
             position.stopLoss = quantize(trailRef, 2);
           }
         } else {
           if (position.stopLoss == null || trailRef < position.stopLoss) {
-            if (_verbose && trailRef !== position.stopLoss) console.log(`  📐 TRAIL PE (EMA21) → ${trailRef} (was ${position.stopLoss})`);
+            if (_verbose && trailRef !== position.stopLoss) console.log(`  📐 TRAIL PE → ${trailRef} (was ${position.stopLoss})`);
             position.stopLoss = quantize(trailRef, 2);
           }
         }
@@ -614,11 +626,15 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         _openAtCandleClose = true;
       }
 
-      // Rule 1c: EMA21 touch-back exit — paper skips this on the entry bar
-      // (the entry condition trivially satisfies a touch), so we do too.
+      // Rule 1c: EMA21 exit — touch-back, or cross-and-close when
+      // EMA_RSI_ST_EMA_EXIT_MODE=close. Paper skips it on the entry bar (the entry
+      // condition trivially satisfies it) in both modes, so we do too.
       if (!exitReason && !entryBar && _sig.ema21 != null) {
-        if (candle.low <= _sig.ema21 && candle.high >= _sig.ema21) {
-          exitReason = "EMA touch-back exit";
+        const _emaHit = _EMA_RSI_ST_EMA_EXIT_CLOSE
+          ? (position.side === "CE" ? candle.close < _sig.ema21 : candle.close > _sig.ema21)
+          : (candle.low <= _sig.ema21 && candle.high >= _sig.ema21);
+        if (_emaHit) {
+          exitReason = _EMA_RSI_ST_EMA_EXIT_CLOSE ? "EMA close-through exit" : "EMA touch-back exit";
           exitPrice  = candle.close;
         }
       }
