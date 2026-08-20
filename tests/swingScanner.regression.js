@@ -431,6 +431,117 @@ check("one bad symbol never ends the scan", async () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+section("GROUP 6 — the broker's rate limit");
+
+// The scan caches candles on disk, so a symbol that succeeded in an earlier test
+// (or an earlier RUN of this file) is served without touching the history hook
+// at all — which would quietly turn any assertion about fetching into a no-op.
+function clearCache(sym) {
+  try {
+    for (const name of fs.readdirSync(scanner.CACHE_DIR)) {
+      if (name.includes(sym)) fs.unlinkSync(path.join(scanner.CACHE_DIR, name));
+    }
+  } catch (_) {}
+}
+
+// Fyers meters history per app (~10/sec, ~200/min). A 228-symbol F&O scan fired
+// the lot in 0.7s, was rate-limited on 183 of them, and dropped every one — the
+// page showed "183 of 228 symbols failed the same way — [object Object]",
+// because the SDK rejects with a raw body whose String() is exactly that.
+
+check("a rate-limited symbol is retried, not dropped", async () => {
+  clearCache("BUSYCO");
+  let hits = 0;
+  scanner._setHistoryFn(async (params) => {
+    if (params.symbol.includes("BUSYCO") && ++hits <= 2) {
+      throw { s: "error", code: -300, message: "request limit reached" };   // raw SDK body
+    }
+    return HISTORY_CASES.ok();
+  });
+  await withUniverse(["BUSYCO"], async () => {
+    const job = await runScan({ strategy: "EMA_RSI_ST", timeframe: "60", universe: "REGRESSION" });
+    assert.strictEqual(job.status, "done");
+    assert.ok(hits >= 3, `must have retried, called ${hits} time(s)`);
+    assert.strictEqual(job.skipped.length, 0, `symbol was dropped: ${JSON.stringify(job.skipped)}`);
+    assert.strictEqual(job.rows.length, 1, "the symbol must survive into the results");
+  });
+});
+
+check("a retry that keeps failing reports WHY, never '[object Object]'", async () => {
+  clearCache("BUSYCO");
+  scanner._setHistoryFn(async () => {
+    throw { s: "error", code: -300, message: "request limit reached" };
+  });
+  await withUniverse(["BUSYCO"], async () => {
+    const job = await runScan({ strategy: "EMA_RSI_ST", timeframe: "60", universe: "REGRESSION" });
+    const skip = job.skipped.find(s => s.symbol === "BUSYCO");
+    assert.ok(skip, "the exhausted symbol must be reported");
+    assert.ok(!/\[object Object\]/.test(skip.reason), `unreadable reason: ${skip.reason}`);
+    assert.ok(/request limit/i.test(skip.reason), skip.reason);
+    assert.ok(/code -300/.test(skip.reason), `the broker code carries the detail: ${skip.reason}`);
+  });
+});
+
+check("an error the retry cannot fix is not retried", async () => {
+  let hits = 0;
+  scanner._setHistoryFn(async () => { hits++; return HISTORY_CASES.authErr(); });
+  await withUniverse(["BADAUTH"], async () => {
+    await runScan({ strategy: "EMA_RSI_ST", timeframe: "60", universe: "REGRESSION" });
+    assert.strictEqual(hits, 1, `an expired token must fail fast, called ${hits} times`);
+  });
+});
+
+check("the pacer holds the per-second cap however many workers are pulling", async () => {
+  // Pacing is bypassed while a fixture history fn is installed — a stub is not a
+  // broker and does not need protecting — so drop the stub to exercise it.
+  scanner._resetHistoryFn();
+  scanner._resetRateLimiter();
+  const had = { rps: process.env.SWING_SCANNER_RPS, rpm: process.env.SWING_SCANNER_RPM };
+  process.env.SWING_SCANNER_RPS = "3";
+  process.env.SWING_SCANNER_RPM = "2000";
+  try {
+    const t0 = Date.now();
+    await Promise.all(Array.from({ length: 7 }, () => scanner._acquireSlot()));
+    const took = Date.now() - t0;
+    // 7 slots at 3/sec cannot clear inside two seconds; without the gate they
+    // all booked instantly, which is the burst Fyers rejected.
+    assert.ok(took >= 1800, `7 calls at 3/sec took ${took}ms — the cap is not holding`);
+    assert.ok(took < 4000, `and must not over-wait: ${took}ms`);
+  } finally {
+    if (had.rps === undefined) delete process.env.SWING_SCANNER_RPS; else process.env.SWING_SCANNER_RPS = had.rps;
+    if (had.rpm === undefined) delete process.env.SWING_SCANNER_RPM; else process.env.SWING_SCANNER_RPM = had.rpm;
+    scanner._resetRateLimiter();
+    stubHistory(() => "ok");
+  }
+});
+
+check("a throttled universe is not blamed on the login", async () => {
+  clearCache("BUSY");
+  scanner._setHistoryFn(async () => { throw { s: "error", code: -300, message: "request limit reached" }; });
+  await withUniverse(["BUSY1", "BUSY2", "BUSY3", "BUSY4"], async () => {
+    const job = await runScan({ strategy: "EMA_RSI_ST", timeframe: "60", universe: "REGRESSION" });
+    assert.ok(job.systemic, "a whole-universe throttle must be summarised");
+    assert.ok(/throttl/i.test(job.systemic.hint), `hint must name the throttle: ${job.systemic.hint}`);
+    assert.ok(!/login/i.test(job.systemic.hint), `and must not send the user to the login: ${job.systemic.hint}`);
+  });
+});
+
+check("an expired token still IS blamed on the login", async () => {
+  stubHistory(() => "authErr");
+  await withUniverse(["A1", "A2", "A3", "A4"], async () => {
+    const job = await runScan({ strategy: "EMA_RSI_ST", timeframe: "60", universe: "REGRESSION" });
+    assert.ok(/login|authenticat/i.test(job.systemic.hint), job.systemic.hint);
+  });
+});
+
+check("both caps are settable from Settings", () => {
+  const settings = read("src/routes/settings.js");
+  for (const key of ["SWING_SCANNER_RPS", "SWING_SCANNER_RPM"]) {
+    assert.ok(settings.includes(`"${key}"`), `${key} is missing from the Settings schema`);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 section("Scan jobs");
 
 check("an unsupported strategy/timeframe pair is refused up front", async () => {

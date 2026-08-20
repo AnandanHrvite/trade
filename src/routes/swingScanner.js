@@ -771,7 +771,7 @@ function onResults(){
 
   if (JOB.systemic) {
     showWarn('<b>' + JOB.systemic.count + ' of ' + JOB.systemic.total + ' symbols failed the same way</b> \\u2014 '
-      + esc(JOB.systemic.reason) + '<br>That is a connection problem, not a stock problem. Check the Fyers login.', true);
+      + esc(JOB.systemic.reason) + '<br>' + esc(JOB.systemic.hint || 'That is a connection problem, not a stock problem. Check the Fyers login.'), true);
   }
 
   document.getElementById('filt').className = 'filt on';
