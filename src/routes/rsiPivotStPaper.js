@@ -1190,8 +1190,10 @@ router.get("/status/chart-data", (req, res) => {
   try {
     const cfg = _cfg();
     const candles = state.candles.map(c => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close }));
+    let formingShown = false;
     if (state.formingBar && (!candles.length || state.formingBar.time > candles[candles.length - 1].time)) {
       candles.push({ time: state.formingBar.time, open: state.formingBar.open, high: state.formingBar.high, low: state.formingBar.low, close: state.formingBar.close });
+      formingShown = true;
     }
 
     // SuperTrend line, aligned 1:1 with the closed candles so the chart plots the
@@ -1203,16 +1205,34 @@ router.get("/status/chart-data", (req, res) => {
       if (v && typeof v.value === "number") superTrend.push({ time: state.candles[i].time, value: v.value });
     }
 
+    // The RSI pane spans the WHOLE session, with the warm-up bars emitted as
+    // whitespace points ({time} and no value). Two panes whose series cover
+    // different time ranges fight each other when their x-axes are synced —
+    // whichever is shorter drags the other in — and the candles lose their
+    // first bars. Whitespace keeps the coverage identical and simply starts the
+    // line where RSI becomes computable.
     const rsiOut = rsiPivotStrategy.computeRsi(state.candles, cfg.rsiPeriod);
     const rsiLine = [];
-    for (let j = 0; j < rsiOut.values.length; j++) {
-      const c = state.candles[j + rsiOut.offset];
-      if (c) rsiLine.push({ time: c.time, value: parseFloat(rsiOut.values[j].toFixed(2)) });
+    let rsiPoints = 0;
+    for (let j = 0; j < state.candles.length; j++) {
+      const c = state.candles[j];
+      const v = rsiOut.values[j - rsiOut.offset];
+      if (typeof v === "number" && Number.isFinite(v)) {
+        rsiLine.push({ time: c.time, value: parseFloat(v.toFixed(2)) });
+        rsiPoints++;
+      } else {
+        rsiLine.push({ time: c.time });
+      }
     }
+    // The candle series carries the still-forming bar; RSI does not compute on a
+    // partial bar, but the pane must still span it or the synced x-axes differ
+    // by one bar and each keeps nudging the other.
+    if (formingShown) rsiLine.push({ time: state.formingBar.time });
 
     const markers = [];
     for (const t of state.sessionTrades) {
-      if (t.entryBarTime) markers.push({ time: t.entryBarTime, position: t.side === "CE" ? "belowBar" : "aboveBar", color: t.side === "CE" ? "#10b981" : "#ef4444", shape: t.side === "CE" ? "arrowUp" : "arrowDown", text: `${t.side} ${t.entryPrice}` });
+      const _entryTxt = t.entryPrice != null ? t.entryPrice : (t.spotAtEntry != null ? t.spotAtEntry : "");
+      if (t.entryBarTime) markers.push({ time: t.entryBarTime, position: t.side === "CE" ? "belowBar" : "aboveBar", color: t.side === "CE" ? "#10b981" : "#ef4444", shape: t.side === "CE" ? "arrowUp" : "arrowDown", text: `${t.side} ${_entryTxt}`.trim() });
       if (t.exitBarTime)  markers.push({ time: t.exitBarTime,  position: t.side === "CE" ? "aboveBar" : "belowBar", color: (t.pnl || 0) >= 0 ? "#10b981" : "#ef4444", shape: "circle", text: `${(t.pnl || 0) >= 0 ? "+" : ""}${Math.round(t.pnl || 0)}` });
     }
 
@@ -1220,6 +1240,9 @@ router.get("/status/chart-data", (req, res) => {
     const p = state.pivots;
     res.json({
       candles, markers, superTrend, rsi: rsiLine,
+      // Whitespace points count toward rsi.length, so the warm-up overlay needs
+      // the count of REAL values to know whether the line has anything to draw.
+      rsiPoints,
       pp: p ? p.pp : null,
       r1: p ? p.r1 : null,
       s1: p ? p.s1 : null,
@@ -1279,6 +1302,9 @@ router.get("/status/data", (req, res) => {
     stopOuts: state.stopOuts,
     maxDailyTrades: _maxDailyTrades(), maxDailyLoss: _maxDailyLoss(),
     lastSkipReason: s && s.signal === "NONE" ? (s.skipReason || s.reason) : null,
+    // Live "why nothing was taken", recomputed rather than read from the last
+    // candle-close verdict — see _entryDiagnosis.
+    entryCheck: _entryDiagnosis(),
     cfg: {
       resMin: cfg.resolutionMins,
       rsiPeriod: cfg.rsiPeriod, rsiCeMin: cfg.rsiCeMin, rsiPeMax: cfg.rsiPeMax,
@@ -1310,156 +1336,564 @@ router.get("/status/data", (req, res) => {
   });
 });
 
+/**
+ * The entry rule re-run purely for DISPLAY — never for a decision.
+ *
+ * evaluateEntry() only runs on a closed bar, and it stores its verdict in
+ * state.lastSignal. A screen that renders that field shows a verdict up to five
+ * minutes stale, and shows nothing at all before the first bar closes. Since
+ * getSignal() is pure over closed bars, recomputing it here is free and lets
+ * every screen answer "why has nothing been taken" at the moment it is asked.
+ */
+function _entryDiagnosis() {
+  const cfg     = _cfg();
+  const minBars = rsiPivotStrategy.minBarsFor(cfg);
+  const bars    = state.candles.length;
+  const out = {
+    minBars, bars,
+    warmup:   bars < minBars,
+    barsLeft: Math.max(0, minBars - bars),
+    readyAt:  null,
+    signal:   "NONE",
+    side:     null,
+    rsi:      state.lastRsi,
+    reason:   null,
+  };
+
+  // A warm-up counted in bars is not something a user can wait for; the clock
+  // time of the bar that finally makes the engine eligible is.
+  if (out.warmup && bars) {
+    const last = state.candles[bars - 1];
+    out.readyAt = rsiPivotStrategy._fmtMins(
+      rsiPivotStrategy._utcSecToIstMins(last.time) + cfg.resolutionMins * (out.barsLeft + 1)
+    );
+  }
+
+  try {
+    const sig = rsiPivotStrategy.getSignal(state.candles, { cfg, pivots: state.pivots, silent: true });
+    out.signal = sig.signal;
+    out.side   = sig.side || null;
+    out.reason = sig.signal === "NONE" ? (sig.skipReason || sig.reason) : (sig.reason || `${sig.side} setup`);
+    if (sig.rsi != null) out.rsi = sig.rsi;
+  } catch (e) {
+    out.reason = `Entry check could not run: ${e.message}`;
+  }
+  return out;
+}
+
+/**
+ * Escape engine text before it is interpolated into the page. Skip reasons carry
+ * "<" and ">" from the threshold comparisons, and a "<" that lands next to a
+ * letter is parsed as a tag opener that swallows the rest of the layout.
+ */
+function _escHtml(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/** Colour + heading for the entry-check panel, so page and AJAX agree. */
+function _diagStyle(diag, running) {
+  if (!running)      return { color: "#8ba1c2", bg: "#0d1320", border: "#1a2236", head: "Session stopped" };
+  if (diag.warmup)   return { color: "#f59e0b", bg: "#1c1400", border: "#78350f", head: "Warming up" };
+  if (diag.signal !== "NONE") return { color: "#10b981", bg: "#071a12", border: "#134e35", head: `${diag.side} setup` };
+  return { color: "#8ba1c2", bg: "#0d1320", border: "#1a2236", head: "No setup" };
+}
+
 router.get("/status", (req, res) => {
   const liveActive = sharedSocketState.getRsiPivotStMode() === "RSI_PIVOT_ST_LIVE";
-  const data = loadData();
-  const pos  = state.position;
-  const cfg  = _cfg();
+  const data   = loadData();
+  const pos    = state.position;
+  const cfg    = _cfg();
+  const p      = state.pivots;
+  const resMin = cfg.resolutionMins;
 
-  const wins   = state.sessionTrades.filter(t => t.pnl > 0).length;
-  const losses = state.sessionTrades.filter(t => t.pnl < 0).length;
-  const startCap = parseFloat(process.env.ZERODHA_INV_AMOUNT || process.env.FYERS_INV_AMOUNT || "100000");
-  const p = state.pivots;
+  const wins    = state.sessionTrades.filter(t => t.pnl > 0).length;
+  const losses  = state.sessionTrades.filter(t => t.pnl < 0).length;
+  const winRate = state.sessionTrades.length ? ((wins / state.sessionTrades.length) * 100).toFixed(1) : null;
+  const best    = state.sessionTrades.length ? Math.max(...state.sessionTrades.map(t => t.pnl || 0)) : null;
+  const worst   = state.sessionTrades.length ? Math.min(...state.sessionTrades.map(t => t.pnl || 0)) : null;
 
-  const html = `<!DOCTYPE html><html><head>
+  const startCap  = parseFloat(process.env.ZERODHA_INV_AMOUNT || process.env.FYERS_INV_AMOUNT || "100000");
+  const maxTrades = _maxDailyTrades();
+  const maxLoss   = _maxDailyLoss();
+  const dailyLossHit = maxLoss > 0 && state.sessionPnl <= -maxLoss;
+
+  const diag  = _entryDiagnosis();
+  const dStyle = _diagStyle(diag, state.running);
+
+  const pnlColor = (n) => (n || 0) >= 0 ? "#10b981" : "#ef4444";
+  const money = (n) => (n >= 0 ? "+" : "") + "₹" + Math.abs(n).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  let livePnl = null;
+  if (pos && state.optionLtp != null) {
+    livePnl = parseFloat(((state.optionLtp - pos.optionEntryLtp) * (pos.qty || rsiPivotLotQty())).toFixed(2));
+  }
+
+  const stText = state.lastSuperTrend && state.lastSuperTrend.value != null
+    ? `${state.lastSuperTrend.value} ${state.lastSuperTrend.trend === 1 ? "▲" : "▼"}` : "—";
+  const stColor = state.lastSuperTrend && state.lastSuperTrend.trend === 1 ? "#10b981"
+    : state.lastSuperTrend && state.lastSuperTrend.trend === -1 ? "#ef4444" : "#c8d8f0";
+
+  const statCards = [
+    { label: "Session PnL", accent: pnlColor(state.sessionPnl),
+      value: `<span id="ajax-session-pnl" style="color:${pnlColor(state.sessionPnl)};">${money(state.sessionPnl || 0)}</span>` },
+    { label: "Trades Today", accent: "#6a5090",
+      value: `<span id="ajax-trade-count">${state.tradesTaken || 0}</span> <span style="font-size:0.75rem;color:var(--muted-1,#8ba1c2);">/ ${maxTrades}</span>`,
+      sub: `<span id="ajax-wl">${wins}W · ${losses}L</span>` },
+    { label: "Live PnL", accent: "#3b82f6",
+      value: `<span id="ajax-live-pnl" style="color:${livePnl == null ? "#c8d8f0" : pnlColor(livePnl)};">${livePnl == null ? "—" : money(livePnl)}</span>`,
+      sub: `<span id="ajax-live-pnl-sub">${pos ? "unrealised" : "no open position"}</span>` },
+    { label: `RSI(${cfg.rsiPeriod})`, accent: "#38bdf8",
+      value: `<span id="ajax-rsi">${state.lastRsi != null ? state.lastRsi : "—"}</span>`,
+      sub: `<span style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);">CE needs &gt;${cfg.rsiCeMin} · PE needs &lt;${cfg.rsiPeMax}</span>` },
+    { label: `SuperTrend(${cfg.stPeriod},${cfg.stMultiplier})`, accent: "#a78bfa",
+      value: `<span id="ajax-st" style="color:${stColor};">${stText}</span>`,
+      sub: `<span style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);">stops ${cfg.stSides === "NONE" ? "no side" : cfg.stSides}</span>` },
+    { label: "Warm-up", accent: diag.warmup ? "#f59e0b" : "#10b981",
+      value: `<span id="ajax-warmup" style="color:${diag.warmup ? "#f59e0b" : "#10b981"};">${diag.bars} / ${diag.minBars}</span>`,
+      sub: `<span id="ajax-warmup-sub" style="font-size:0.6rem;color:${diag.warmup ? "#f59e0b" : "#10b981"};">${diag.warmup ? (diag.readyAt ? `eligible from ${diag.readyAt}` : "waiting for bars") : "closed bars — ready"}</span>` },
+    { label: "Win Rate", accent: "#a07010",
+      value: `<span id="ajax-wr">${winRate != null ? winRate + "%" : "—"}</span>`,
+      sub: `<span id="ajax-wr-sub" style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);">best ${best == null ? "—" : best.toFixed(0)} / worst ${worst == null ? "—" : worst.toFixed(0)}</span>` },
+    { label: "Daily Loss Limit", accent: dailyLossHit ? "#ef4444" : "#10b981",
+      value: `<span id="ajax-daily-loss-val" style="color:${dailyLossHit ? "#ef4444" : "#10b981"};">${dailyLossHit ? "HIT" : "OK"} <span style="font-size:0.65rem;color:var(--muted-1,#8ba1c2);">/ -₹${maxLoss.toLocaleString("en-IN")}</span></span>`,
+      sub: `<span id="ajax-daily-loss-sub" style="color:${dailyLossHit ? "#ef4444" : "#10b981"};">${dailyLossHit ? "KILLED — no entries" : "Active"}</span>` },
+    { label: "WebSocket Ticks", accent: "#2a6080",
+      value: `<span id="ajax-tick-count">${(state.tickCount || 0).toLocaleString()}</span>`,
+      sub: `Last: <span id="ajax-last-tick">${state.lastTickPrice ? "₹" + state.lastTickPrice.toLocaleString("en-IN") : "—"}</span>` },
+    { label: "Session Start", accent: "#2a4020",
+      value: `<span style="font-size:0.85rem;color:#c8d8f0;">${state.sessionStart || "—"}</span>` },
+  ];
+
+  const posHtml = pos ? (() => {
+    const liveOpt    = state.optionLtp;
+    const optMove    = liveOpt != null ? (liveOpt - pos.optionEntryLtp) : null;
+    const optMovePct = (liveOpt != null && pos.optionEntryLtp) ? (optMove / pos.optionEntryLtp) * 100 : null;
+    const spotMove   = state.lastTickPrice != null ? (state.lastTickPrice - pos.entrySpot) * (pos.side === "CE" ? 1 : -1) : null;
+    const stopless   = rsiPivotStrategy.isStoplessSide(pos.side, cfg);
+    return `
+    <div style="background:#0a1f0a;border:1px solid #065f46;border-radius:12px;padding:20px 24px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="width:10px;height:10px;border-radius:50%;background:#10b981;display:inline-block;"></span>
+          <span style="font-size:0.8rem;font-weight:700;color:#10b981;text-transform:uppercase;letter-spacing:1px;">Open Position</span>
+          <span style="font-size:0.72rem;color:var(--muted-1,#8ba1c2);">Since ${pos.entryTime || "—"}</span>
+        </div>
+        <button onclick="rpsHandleExit(this)" style="display:inline-flex;align-items:center;gap:7px;background:#7f1d1d;border:1px solid #ef4444;color:#fca5a5;font-size:0.8rem;font-weight:700;padding:9px 18px;border-radius:8px;cursor:pointer;font-family:inherit;">Exit Trade Now</button>
+      </div>
+      ${stopless ? `<div style="background:#2a0a0a;border:1px solid #ef4444;color:#fca5a5;border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:0.78rem;line-height:1.5;">
+        <b>THIS ${pos.side} TRADE HAS NO STOP.</b> The premium floor is off for ${pos.side}${pos.side === "PE" ? " and PE never carries a SuperTrend" : ""} — the only exit is the ${_envStr("RSI_PIVOT_ST_EXIT_TIME", "15:15")} square-off. The full premium is at risk.
+      </div>` : ""}
+      <div style="background:#071a12;border:1px solid #134e35;border-radius:10px;padding:14px 18px;margin-bottom:16px;">
+        <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:2.2rem;font-weight:900;color:${pos.side === "CE" ? "#10b981" : "#ef4444"};">${pos.side}</span>
+            <div>
+              <div style="font-size:0.72rem;color:${pos.side === "CE" ? "#10b981" : "#ef4444"};">${pos.side === "CE" ? "CALL · closed above R1" : "PUT · closed below S1"}</div>
+              <span style="font-size:0.65rem;font-weight:700;color:#94a3b8;">RSI ${pos.signalRsi ?? "—"} · crossed ${pos.side === "CE" ? "R1" : "S1"} ${pos.crossedLevel ?? "—"}</span>
+            </div>
+          </div>
+          <div style="width:1px;height:44px;background:#134e35;"></div>
+          <div><div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Strike</div><div style="font-size:1.6rem;font-weight:800;color:#fff;font-family:monospace;">${pos.optionStrike ? pos.optionStrike.toLocaleString("en-IN") : "—"}</div><div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);">${pos.strikeMode || ""}${pos.strikeDistancePts ? ` · ${pos.strikeDistancePts}pt` : ""}</div></div>
+          <div style="width:1px;height:44px;background:#134e35;"></div>
+          <div><div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Expiry</div><div style="font-size:1.1rem;font-weight:700;color:#f59e0b;">${pos.optionExpiry || "—"}</div></div>
+          <div style="width:1px;height:44px;background:#134e35;"></div>
+          <div><div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Qty</div><div style="font-size:1.1rem;font-weight:700;color:#fff;">${pos.qty}</div></div>
+          <div style="width:1px;height:44px;background:#134e35;flex-shrink:0;"></div>
+          <div style="flex:1;min-width:200px;"><div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Full Symbol</div><div style="font-size:0.82rem;font-weight:600;color:#c8d8f0;font-family:monospace;word-break:break-all;">${pos.symbol}</div></div>
+        </div>
+      </div>
+      <div style="background:#0a0f24;border:2px solid #3b82f6;border-radius:12px;padding:18px 20px;margin-bottom:14px;">
+        <div style="font-size:0.68rem;font-weight:700;color:#3b82f6;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:14px;">Option Premium (${pos.side})</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px;align-items:center;">
+          <div style="text-align:center;padding:12px;background:#071a3e;border:1px solid #1e3a5f;border-radius:10px;">
+            <div style="font-size:0.63rem;color:#60a5fa;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Entry Price</div>
+            <div id="ajax-opt-entry-ltp" style="font-size:2rem;font-weight:800;color:#60a5fa;font-family:monospace;line-height:1;">₹${pos.optionEntryLtp ? pos.optionEntryLtp.toFixed(2) : "—"}</div>
+          </div>
+          <div style="text-align:center;font-size:1.8rem;color:${optMove != null ? (optMove >= 0 ? "#10b981" : "#ef4444") : "#8ba1c2"};">→</div>
+          <div style="text-align:center;padding:12px;background:${liveOpt != null ? (liveOpt >= pos.optionEntryLtp ? "#071a0f" : "#1a0707") : "#0d1320"};border:2px solid ${liveOpt != null ? (liveOpt >= pos.optionEntryLtp ? "#10b981" : "#ef4444") : "#4a6080"};border-radius:10px;">
+            <div style="font-size:0.63rem;color:${liveOpt != null ? (liveOpt >= pos.optionEntryLtp ? "#10b981" : "#ef4444") : "#8ba1c2"};text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Current LTP</div>
+            <div id="ajax-opt-current-ltp" style="font-size:2rem;font-weight:800;color:${liveOpt != null ? (liveOpt >= pos.optionEntryLtp ? "#10b981" : "#ef4444") : "#fff"};font-family:monospace;line-height:1;">${liveOpt != null ? "₹" + liveOpt.toFixed(2) : "⏳"}</div>
+            <div id="ajax-opt-move" style="font-size:0.72rem;font-weight:700;margin-top:6px;color:${optMove != null ? (optMove >= 0 ? "#10b981" : "#ef4444") : "#f59e0b"};">${optMove != null ? (optMove >= 0 ? "▲ +" : "▼ ") + "₹" + Math.abs(optMove).toFixed(2) : "⏳ Polling..."}</div>
+            <div id="ajax-opt-pct" style="font-size:1.1rem;font-weight:800;margin-top:4px;color:${optMovePct != null ? (optMovePct >= 0 ? "#10b981" : "#ef4444") : "#8ba1c2"};font-family:monospace;">${optMovePct != null ? (optMovePct >= 0 ? "+" : "") + optMovePct.toFixed(2) + "%" : "—"}</div>
+          </div>
+          <div style="text-align:center;padding:12px;background:${livePnl != null ? (livePnl >= 0 ? "#071a0f" : "#1a0707") : "#0d1320"};border:1px solid ${livePnl != null ? (livePnl >= 0 ? "#065f46" : "#7f1d1d") : "#1a2236"};border-radius:10px;">
+            <div style="font-size:0.63rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Unrealised P&amp;L</div>
+            <div id="ajax-opt-pnl" style="font-size:1.8rem;font-weight:800;color:${livePnl != null ? (livePnl >= 0 ? "#10b981" : "#ef4444") : "#fff"};font-family:monospace;line-height:1;">${livePnl != null ? money(livePnl) : "—"}</div>
+            <div style="font-size:0.65rem;color:var(--muted-1,#8ba1c2);margin-top:4px;">${pos.qty} qty</div>
+          </div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;">
+        <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;"><div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">NIFTY @ Entry</div><div style="font-size:1.05rem;font-weight:700;color:#c8d8f0;">₹${pos.entrySpot ? pos.entrySpot.toFixed(2) : "—"}</div></div>
+        <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;"><div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">NIFTY LTP</div><div id="ajax-nifty-ltp" style="font-size:1.05rem;font-weight:700;color:#c8d8f0;">${state.lastTickPrice ? "₹" + state.lastTickPrice.toFixed(2) : "—"}</div><div id="ajax-nifty-move" style="font-size:0.63rem;color:${spotMove != null && spotMove >= 0 ? "#10b981" : "#ef4444"};margin-top:2px;">${spotMove != null ? (spotMove >= 0 ? "▲" : "▼") + " " + Math.abs(spotMove).toFixed(1) + " pts" : "—"}</div></div>
+        <div style="background:#1c1400;border:1px solid #78350f;border-radius:8px;padding:12px 14px;"><div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">SuperTrend Stop</div><div id="ajax-sl-spot" style="font-size:1.05rem;font-weight:700;color:#f59e0b;">${pos.slSpot != null ? "₹" + pos.slSpot.toFixed(2) : "not on " + pos.side}</div><div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);">${pos.riskPts != null ? pos.riskPts.toFixed(1) + "pt risk" : ""}</div></div>
+        <div style="background:#10131c;border:1px solid #1e2940;border-radius:8px;padding:12px 14px;"><div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Premium Floor (${pos.premiumStopPct}%)</div><div id="ajax-prem-floor" style="font-size:1.05rem;font-weight:700;color:${Number.isFinite(pos.premiumFloor) ? "#c8d8f0" : "#ef4444"};">${Number.isFinite(pos.premiumFloor) ? "₹" + pos.premiumFloor.toFixed(2) : "OFF on " + pos.side}</div></div>
+        <div style="background:#0a1f12;border:1px solid #0d4030;border-radius:8px;padding:12px 14px;"><div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Peak Premium</div><div id="ajax-peak-prem" style="font-size:1.05rem;font-weight:700;color:#10b981;">${pos.peakPremium ? "₹" + pos.peakPremium.toFixed(2) : "—"}</div></div>
+        <div style="background:#0a1f12;border:1px solid #0d4030;border-radius:8px;padding:12px 14px;"><div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Pivots From</div><div style="font-size:0.95rem;font-weight:700;color:#c8d8f0;">${pos.pivotFrom || "—"}</div></div>
+      </div>
+      ${pos.entryReason ? `<div style="padding:10px 14px;background:#071a12;border-radius:8px;font-size:0.73rem;color:#a7f3d0;line-height:1.5;margin-top:12px;">Entry: ${_escHtml(pos.entryReason)}</div>` : ""}
+    </div>`;
+  })() : `
+    <div style="background:#0d1320;border:1px solid #1a2236;border-radius:12px;padding:20px 24px;text-align:center;">
+      <div style="font-size:0.9rem;font-weight:600;color:var(--muted-1,#8ba1c2);">FLAT — ${state.dayClosed ? _escHtml(state.dayClosedReason) : state.running ? "waiting for a pivot cross" : "session stopped"}</div>
+    </div>`;
+
+  const allLogs   = [...state.log].reverse();
+  const logsJSON  = JSON.stringify(allLogs).replace(/<\/script>/gi, "<\\/script>").replace(/`/g, "\\u0060").replace(/\$/g, "\\u0024");
+  const tradesJSON = JSON.stringify(state.sessionTrades).replace(/<\/script>/gi, "<\\/script>").replace(/`/g, "\\u0060").replace(/\$/g, "\\u0024");
+
+  res.setHeader("Content-Type", "text/html");
+  res.send(`<!DOCTYPE html>
+<html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>RSI Pivot ST Paper</title>${faviconLink()}
-<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+${faviconLink()}
+<title>RSI Pivot ST Paper — ${rsiPivotStrategy.NAME}</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet"/>
+<script src="/vendor/lightweight-charts.standalone.production.js"></script>
 <style>
 ${sidebarCSS()}
 ${modalCSS()}
 ${bbRsiStyleCSS()}
-.pv-levels{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
-.pv-chip{background:#0f172a;border:1px solid #1e293b;border-radius:8px;padding:8px 12px;font-size:12px;min-width:96px}
-.pv-chip b{display:block;font-size:15px;margin-top:2px}
-.pv-r1 b{color:#f87171}.pv-pp b{color:#94a3b8}.pv-s1 b{color:#4ade80}
-.pv-warn{background:#3f1d1d;border:1px solid #7f1d1d;color:#fca5a5;padding:10px 12px;border-radius:8px;margin:10px 0;font-size:13px}
-#chart,#rsiChart{width:100%;max-width:100%;border-radius:8px;overflow:hidden}
-#chart{height:420px}#rsiChart{height:130px;margin-top:6px}
-/* Breakpoints track the shell's own (sidebarCSS/bbRsiStyleCSS collapse at 900
-   and go single-column at 640) so the chart never straddles two layouts. */
-@media(max-width:900px){#chart{height:340px}#rsiChart{height:110px}}
-@media(max-width:640px){#chart{height:260px}#rsiChart{height:92px}
-  .pv-levels{gap:6px}.pv-chip{flex:1 1 calc(50% - 3px);min-width:0;padding:7px 10px;font-size:11px}
-  .pv-chip b{font-size:14px}.pv-warn{font-size:12px}}
-</style></head><body>
-${buildSidebar("rsiPivotStPaper", liveActive, state.running)}
+.pv-levels{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:18px}
+.pv-chip{background:#0d1320;border:1px solid #1a2236;border-radius:10px;padding:11px 14px}
+.pv-chip .pv-k{font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px}
+.pv-chip b{display:block;font-size:1.15rem;margin-top:4px;font-family:'IBM Plex Mono',monospace}
+.pv-r1{border-color:#7f1d1d}.pv-r1 b{color:#f87171}
+.pv-pp{border-color:#334155}.pv-pp b{color:#94a3b8}
+.pv-s1{border-color:#14532d}.pv-s1 b{color:#4ade80}
+.pv-warn{background:#3f1d1d;border:1px solid #7f1d1d;color:#fca5a5;padding:12px 14px;border-radius:10px;margin-bottom:18px;font-size:0.8rem;line-height:1.5}
+</style></head>
+<body>
+<div class="app-shell">
+${buildSidebar("rsiPivotStPaper", liveActive, state.running, {
+  showStartBtn: !state.running, startBtnJs: `secretGo('/rsi-pivot-st-paper/start', this)`, startLabel: "▶ Start RSI Pivot ST",
+  showStopBtn:  state.running,  stopBtnJs:  `secretGo('/rsi-pivot-st-paper/stop', this)`,  stopLabel:  "■ Stop RSI Pivot ST",
+  showExitBtn:  state.running && !!pos, exitBtnJs: `rpsHandleExit(this)`, exitLabel: "🚪 Exit Trade",
+})}
 <div class="main-content">
+
 ${bbRsiTopBar({
   title: "RSI Pivot ST — Paper",
-  subtitle: `RSI + Standard Pivot R1/S1 · SuperTrend(${cfg.stPeriod},${cfg.stMultiplier}) on CE · ${cfg.premiumStopPct}% premium floor both sides`,
+  metaLine: `${rsiPivotStrategy.NAME} · ${resMin}-min · CE ${_sideStopText("CE", cfg)} · PE ${_sideStopText("PE", cfg)} · Entry ${_envStr("RSI_PIVOT_ST_ENTRY_START", "09:30")}–${_envStr("RSI_PIVOT_ST_ENTRY_END", "15:00")} · Square-off ${_envStr("RSI_PIVOT_ST_EXIT_TIME", "15:15")} IST · ${state.running ? "Auto-refreshes every 2s" : "Stopped"}`,
   running: state.running,
-  liveActive,
-  startHref: "/rsi-pivot-st-paper/start",
-  stopHref:  "/rsi-pivot-st-paper/stop",
-  exitHref:  pos ? "/rsi-pivot-st-paper/exit" : null,
+  primaryAction: { label: "Start RSI Pivot ST Paper", href: "/rsi-pivot-st-paper/start" },
+  stopAction:    { label: "Stop Session",             href: "/rsi-pivot-st-paper/stop"  },
   historyHref: "/rsi-pivot-st-paper/history",
 })}
-${bbRsiCapitalStrip({ capital: data.capital, startCapital: startCap, totalPnl: data.totalPnl, sessionPnl: state.sessionPnl })}
 
+${bbRsiCapitalStrip({ starting: startCap, current: data.capital, allTime: data.totalPnl, startingThreshold: startCap })}
+
+<div class="section-title">Today's Pivots — frozen before the open</div>
 ${p ? `<div class="pv-levels">
-  <div class="pv-chip pv-r1">R1 (CE trigger)<b>${p.r1}</b></div>
-  <div class="pv-chip pv-pp">PP<b>${p.pp}</b></div>
-  <div class="pv-chip pv-s1">S1 (PE trigger)<b>${p.s1}</b></div>
-  <div class="pv-chip">From<b style="font-size:13px">${p.from}</b></div>
-  <div class="pv-chip">Prev range<b style="font-size:13px">${p.range}pt</b></div>
-</div>` : `<div class="pv-warn">⚠️ Pivot levels not available — no previous daily candle was returned, so R1/S1 cannot be computed and no trade can be taken. An expired Fyers token returns no data rather than an auth error.</div>`}
+  <div class="pv-chip pv-r1"><div class="pv-k">R1 · CE trigger</div><b>${p.r1}</b></div>
+  <div class="pv-chip pv-pp"><div class="pv-k">PP</div><b>${p.pp}</b></div>
+  <div class="pv-chip pv-s1"><div class="pv-k">S1 · PE trigger</div><b>${p.s1}</b></div>
+  <div class="pv-chip"><div class="pv-k">From</div><b style="font-size:0.9rem;">${p.from}</b></div>
+  <div class="pv-chip"><div class="pv-k">Prev range</div><b style="font-size:0.9rem;">${p.range}pt</b></div>
+</div>` : `<div class="pv-warn">⚠️ Pivot levels not available — no previous daily candle was returned, so R1/S1 cannot be computed and no trade can be taken today. An expired Fyers token returns no data rather than an auth error.</div>`}
 
-${bbRsiStatGrid([
-  { label: "Trades", value: state.tradesTaken },
-  { label: "Wins / Losses", value: `${wins} / ${losses}` },
-  { label: "Session P&L", value: inr(state.sessionPnl), cls: state.sessionPnl >= 0 ? "pos" : "neg" },
-  { label: "RSI", value: state.lastRsi != null ? state.lastRsi : "—" },
-  { label: "SuperTrend", value: state.lastSuperTrend && state.lastSuperTrend.value != null ? `${state.lastSuperTrend.value} ${state.lastSuperTrend.trend === 1 ? "▲" : "▼"}` : "—" },
-  { label: "Ticks", value: state.tickCount },
-])}
-
-${bbRsiCurrentBar(pos ? _positionCardHtml(pos, state.optionLtp) : null, state.dayClosed ? state.dayClosedReason : null)}
-
-<div id="chart"></div><div id="rsiChart"></div>
-${bbRsiActivityLog(state.log)}
+<div class="section-title">Entry Check</div>
+<div id="ajax-decision" style="background:${dStyle.bg};border:1px solid ${dStyle.border};border-radius:12px;padding:14px 18px;margin-bottom:18px;">
+  <div id="ajax-decision-head" style="font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:${dStyle.color};margin-bottom:6px;">${dStyle.head}</div>
+  <div id="ajax-decision-body" style="font-size:0.83rem;color:#c8d8f0;line-height:1.55;">${_escHtml(diag.reason) || "—"}</div>
 </div>
+
+${bbRsiStatGrid(statCards)}
+
+${bbRsiCurrentBar({ bar: state.formingBar, resMin })}
+
+<div id="ajax-position-section" style="margin-bottom:18px;">
+${posHtml}
+</div>
+
+${process.env.CHART_ENABLED !== "false" ? `
+<div style="margin-bottom:18px;">
+  <div class="section-title">NIFTY ${resMin}-Min Chart — R1 / PP / S1 + SuperTrend</div>
+  <div style="background:#0a0f1c;border:1px solid #1a2236;border-radius:12px;overflow:hidden;position:relative;height:400px;">
+    <div id="nifty-chart" style="width:100%;height:100%;"></div>
+    <div style="position:absolute;top:10px;left:12px;font-size:0.68rem;color:var(--muted-1,#8ba1c2);pointer-events:none;z-index:2;">
+      <span style="color:#f87171;">── R1</span> &nbsp;<span style="color:#64748b;">── PP</span> &nbsp;<span style="color:#4ade80;">── S1</span> &nbsp;<span style="color:#a78bfa;">── SuperTrend</span> &nbsp;<span style="color:#38bdf8;">── Entry</span> &nbsp;<span style="color:#fbbf24;">── SL</span>
+    </div>
+  </div>
+</div>
+
+<div style="margin-bottom:18px;">
+  <div class="section-title">RSI(${cfg.rsiPeriod}) — CE needs &gt; ${cfg.rsiCeMin}, PE needs &lt; ${cfg.rsiPeMax}</div>
+  <div style="background:#0a0f1c;border:1px solid #1a2236;border-radius:12px;overflow:hidden;position:relative;height:150px;">
+    <div id="rsi-chart" style="width:100%;height:100%;"></div>
+    <div id="rsi-warmup" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:0 20px;font-size:0.78rem;color:#f59e0b;background:rgba(10,15,28,0.92);z-index:3;">
+      RSI(${cfg.rsiPeriod}) needs ${cfg.rsiPeriod + 1} closed ${resMin}-min bars — ${diag.bars} so far${diag.readyAt ? `, first value at ${diag.readyAt} IST` : ""}
+    </div>
+  </div>
+</div>` : ""}
+
+<div style="margin-bottom:18px;">
+  <div class="section-title">Session Trades <span id="rps-trades-hint" style="color:var(--muted-1,#8ba1c2);font-weight:400;letter-spacing:0.5px;text-transform:none;margin-left:8px;">${state.sessionTrades.length} trades</span><a href="/rsi-pivot-st-paper/download/trades.jsonl" title="Download the full paper-trade log" style="float:right;font-weight:400;font-size:0.72rem;letter-spacing:0.5px;text-transform:none;color:#4a9cf5;text-decoration:none;">⬇ trades.jsonl</a></div>
+  <div id="rps-trades-box" style="background:#0d1320;border:1px solid #1a2236;border-radius:12px;overflow:hidden;overflow-x:auto;"></div>
+</div>
+
+${bbRsiActivityLog({ logsJSON })}
+
+</div><!-- /main-content -->
+</div><!-- /app-shell -->
+
 <script>${modalJS()}</script>
 <script>
-const chart = LightweightCharts.createChart(document.getElementById('chart'), {
-  layout:{background:{color:'#0b1220'},textColor:'#94a3b8'},
-  grid:{vertLines:{color:'#111c30'},horzLines:{color:'#111c30'}},
-  timeScale:{timeVisible:true,secondsVisible:false,borderColor:'#1e293b'},
-  rightPriceScale:{borderColor:'#1e293b'},
-});
-const candleSeries = chart.addCandlestickSeries({upColor:'#10b981',downColor:'#ef4444',borderVisible:false,wickUpColor:'#10b981',wickDownColor:'#ef4444'});
-const stSeries = chart.addLineSeries({color:'#a78bfa',lineWidth:2,priceLineVisible:false,lastValueVisible:false});
-const rsiChart = LightweightCharts.createChart(document.getElementById('rsiChart'), {
-  layout:{background:{color:'#0b1220'},textColor:'#94a3b8'},
-  grid:{vertLines:{color:'#111c30'},horzLines:{color:'#111c30'}},
-  timeScale:{timeVisible:true,secondsVisible:false,borderColor:'#1e293b'},
-  rightPriceScale:{borderColor:'#1e293b'},
-});
-const rsiSeries = rsiChart.addLineSeries({color:'#38bdf8',lineWidth:2,priceLineVisible:false});
-chart.timeScale().subscribeVisibleLogicalRangeChange(r=>{ if(r) rsiChart.timeScale().setVisibleLogicalRange(r); });
-rsiChart.timeScale().subscribeVisibleLogicalRangeChange(r=>{ if(r) chart.timeScale().setVisibleLogicalRange(r); });
-
-// Lightweight Charts fixes its canvas width at construction, so without this the
-// chart keeps its first-paint width forever — on a phone rotate, or when the
-// 900px breakpoint drops the sidebar's margin, it overflows or leaves a gutter.
-// Both the window event and the ResizeObserver are needed: the sidebar toggle
-// resizes .main-content with no window resize firing.
-function fitCharts(){
-  const c = document.getElementById('chart'), rs = document.getElementById('rsiChart');
-  if (c && c.clientWidth)  chart.applyOptions({ width: c.clientWidth });
-  if (rs && rs.clientWidth) rsiChart.applyOptions({ width: rs.clientWidth });
+async function rpsHandleExit(btn) {
+  var ok = await showConfirm({ icon:'🚪', title:'Exit position', message:'Exit the open RSI Pivot ST position now?', confirmText:'Exit', confirmClass:'modal-btn-danger' });
+  if (!ok) return;
+  var orig = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Exiting...';
+  secretFetch('/rsi-pivot-st-paper/exit').then(function(r){
+    if (!r) { btn.disabled = false; btn.textContent = orig; return; }
+    location.reload();
+  }).catch(function(){ location.reload(); });
 }
-window.addEventListener('resize', fitCharts);
-window.addEventListener('orientationchange', fitCharts);
-if (window.ResizeObserver) {
-  const shell = document.querySelector('.main-content');
-  if (shell) new ResizeObserver(fitCharts).observe(shell);
-}
-fitCharts();
-
-let levelLines = [];
-async function refresh(){
-  try{
-    const r = await fetch('/rsi-pivot-st-paper/status/chart-data');
-    const d = await r.json();
-    if(d.error) return;
-    candleSeries.setData(d.candles||[]);
-    stSeries.setData(d.superTrend||[]);
-    rsiSeries.setData(d.rsi||[]);
-    if(d.markers) candleSeries.setMarkers(d.markers);
-    for(const l of levelLines){ try{candleSeries.removePriceLine(l);}catch(_){} }
-    levelLines = [];
-    const mk=(price,color,title)=>{ if(typeof price==='number'&&isFinite(price)) levelLines.push(candleSeries.createPriceLine({price,color,lineWidth:1,lineStyle:2,axisLabelVisible:true,title})); };
-    mk(d.r1,'#f87171','R1');
-    mk(d.pp,'#64748b','PP');
-    mk(d.s1,'#4ade80','S1');
-    mk(d.entryPrice,'#38bdf8','Entry');
-    mk(d.stopLoss,'#fbbf24','SL');
-  }catch(_){}
-}
-refresh(); setInterval(refresh, 5000);
-setInterval(()=>{ fetch('/rsi-pivot-st-paper/status/data').then(r=>r.json()).then(d=>{ if(d.running!==undefined) {} }).catch(()=>{}); }, 15000);
-setTimeout(()=>location.reload(), 60000);
 </script>
-</body></html>`;
-  res.send(html);
-});
 
-function _positionCardHtml(pos, optLtp) {
-  const live = optLtp != null ? optLtp : pos.optionEntryLtp;
-  const pnl = parseFloat(((live - pos.optionEntryLtp) * pos.qty).toFixed(2));
-  return `
-  <div><b>${pos.side}</b> ${pos.symbol} · qty ${pos.qty}</div>
-  <div>Entry spot ${pos.entrySpot} · premium ₹${pos.optionEntryLtp} → ₹${live}
-       <span class="${pnl >= 0 ? "pos" : "neg"}">(${pnl >= 0 ? "+" : ""}${pnl})</span></div>
-  <div>Trigger: RSI ${pos.signalRsi} · crossed ${pos.side === "CE" ? "R1" : "S1"} ${pos.crossedLevel}</div>
-  <div>Strike ${pos.optionStrike} (${pos.strikeMode}${pos.strikeDistancePts ? `, ${pos.strikeDistancePts}pt` : ""})</div>
-  <div>Stops: ${pos.slSpot != null ? `SuperTrend ${pos.slSpot} · ` : ""}${
-    Number.isFinite(pos.premiumFloor)
-      ? `premium floor ₹${pos.premiumFloor} (peak ₹${pos.peakPremium})`
-      : `<b style="color:#f85149;">no premium floor on ${pos.side}</b> (peak ₹${pos.peakPremium})`
-  }${pos.slSpot == null && !Number.isFinite(pos.premiumFloor) ? ` — <b style="color:#f85149;">NO STOP, EOD square-off only</b>` : ""}</div>`;
-}
+<script>
+(function(){
+  if (typeof LightweightCharts === 'undefined') return;
+  var container = document.getElementById('nifty-chart');
+  var rsiBox    = document.getElementById('rsi-chart');
+  if (!container || !rsiBox) return;
+  var baseOpts = {
+    layout:{ background:{type:'solid',color:'#0a0f1c'}, textColor:'#8ba1c2', fontSize:11, fontFamily:"'IBM Plex Mono', monospace" },
+    grid:{ vertLines:{color:'#111827'}, horzLines:{color:'#111827'} },
+    // Both panes must reserve the SAME price-scale width or their shared x-axis
+    // is offset by however much '78.00' is narrower than '24,280.00'.
+    rightPriceScale:{ borderColor:'#1a2236', minimumWidth:74 },
+    timeScale:{ borderColor:'#1a2236', timeVisible:true, secondsVisible:false,
+      tickMarkFormatter:function(t){ var d=new Date((t+19800)*1000); return ('0'+d.getUTCHours()).slice(-2)+':'+('0'+d.getUTCMinutes()).slice(-2); } },
+  };
+  var chart = LightweightCharts.createChart(container, Object.assign({ width: container.clientWidth, height: container.clientHeight }, baseOpts));
+  var cs = chart.addCandlestickSeries({ upColor:'#10b981', downColor:'#ef4444', borderUpColor:'#10b981', borderDownColor:'#ef4444', wickUpColor:'#10b981', wickDownColor:'#ef4444' });
+  var stS = chart.addLineSeries({ color:'#a78bfa', lineWidth:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
+
+  var rsiChart = LightweightCharts.createChart(rsiBox, Object.assign({ width: rsiBox.clientWidth, height: rsiBox.clientHeight }, baseOpts));
+  var rsiS = rsiChart.addLineSeries({ color:'#38bdf8', lineWidth:2, priceLineVisible:false });
+  var rsiGuides = [];
+
+  // The two panes share one x-axis: scrolling one without the other turns the
+  // RSI reading under a candle into a lie. Sync by TIME, not by logical index —
+  // the RSI series starts rsiPeriod bars after the candles, so index 0 means a
+  // different bar on each chart and an index sync slides them apart.
+  // Sync stays OFF until RSI has at least one real value: a series that is all
+  // whitespace has no range of its own, so syncing into it and letting it answer
+  // back collapses the candle pane to a couple of bars.
+  var syncing = false, rsiReady = false;
+  function syncTo(target){
+    return function(r){
+      if (!r || syncing || !rsiReady) return;
+      syncing = true;
+      try { target.timeScale().setVisibleRange({ from: r.from, to: r.to }); } catch (_) {}
+      syncing = false;
+    };
+  }
+  chart.timeScale().subscribeVisibleTimeRangeChange(syncTo(rsiChart));
+  rsiChart.timeScale().subscribeVisibleTimeRangeChange(syncTo(chart));
+
+  var lines = [], guidesDone = false, fitted = false;
+  async function fetchChart(){
+    try {
+      var r = await fetch('/rsi-pivot-st-paper/status/chart-data', { cache:'no-store' });
+      var d = await r.json();
+      if (d.error) return;
+      cs.setData(d.candles || []);
+      stS.setData(d.superTrend || []);
+      rsiS.setData(d.rsi || []);
+      if (d.markers) cs.setMarkers(d.markers.slice().sort(function(a,b){ return a.time-b.time; }));
+
+      if (!fitted && d.candles && d.candles.length) { fitted = true; chart.timeScale().fitContent(); }
+
+      // The first poll that carries real RSI values is when the panes can be
+      // aligned; fitContent does not notify the subscriber, so push once here.
+      if (!rsiReady && d.rsiPoints) {
+        rsiReady = true;
+        try {
+          var vr = chart.timeScale().getVisibleRange();
+          if (vr) rsiChart.timeScale().setVisibleRange(vr);
+        } catch (_) {}
+      }
+
+      var warm = document.getElementById('rsi-warmup');
+      if (warm) warm.style.display = d.rsiPoints ? 'none' : 'flex';
+
+      if (!guidesDone && d.rsiPoints) {
+        guidesDone = true;
+        rsiGuides.push(rsiS.createPriceLine({ price:d.rsiCeMin, color:'#f87171', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'CE' }));
+        rsiGuides.push(rsiS.createPriceLine({ price:d.rsiPeMax, color:'#4ade80', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'PE' }));
+      }
+
+      for (var i=0;i<lines.length;i++){ try{ cs.removePriceLine(lines[i]); }catch(_){} }
+      lines = [];
+      var mk = function(price, color, title){
+        if (typeof price === 'number' && isFinite(price)) {
+          lines.push(cs.createPriceLine({ price:price, color:color, lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:title }));
+        }
+      };
+      mk(d.r1, '#f87171', 'R1');
+      mk(d.pp, '#64748b', 'PP');
+      mk(d.s1, '#4ade80', 'S1');
+      mk(d.entryPrice, '#38bdf8', 'Entry');
+      mk(d.stopLoss, '#fbbf24', 'SL');
+    } catch (e) {}
+  }
+  fetchChart();
+  if (${state.running}) setInterval(fetchChart, 5000);
+  window.addEventListener('resize', function(){
+    chart.applyOptions({ width: container.clientWidth });
+    rsiChart.applyOptions({ width: rsiBox.clientWidth });
+  });
+  // The sidebar collapse resizes .main-content without firing a window resize,
+  // so the canvas would keep its first-paint width until the next reload.
+  if (window.ResizeObserver) {
+    var shell = document.querySelector('.main-content');
+    if (shell) new ResizeObserver(function(){
+      chart.applyOptions({ width: container.clientWidth });
+      rsiChart.applyOptions({ width: rsiBox.clientWidth });
+    }).observe(shell);
+  }
+})();
+</script>
+
+<script>
+(function(){
+  var INR = function(n){ return typeof n==='number' ? '₹'+n.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}) : '—'; };
+  var SIGNED = function(n){ return (n>=0?'+':'-') + '₹' + Math.abs(n).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+  var PNL_COLOR = function(n){ return (n||0)>=0 ? '#10b981' : '#ef4444'; };
+  var _hadPosition = ${pos ? "true" : "false"};
+  var _tradeCount  = ${state.sessionTrades.length};
+  var _logCount    = ${state.log.length};
+  var _running     = ${state.running};
+  var _startCap    = ${startCap};
+  var _interval    = null;
+
+  function setText(id, val){ var el=document.getElementById(id); if(el && el.textContent !== String(val)) el.textContent = String(val); }
+
+  function renderTrades(trades){
+    var box  = document.getElementById('rps-trades-box');
+    var hint = document.getElementById('rps-trades-hint');
+    if (hint) hint.textContent = trades.length + ' trade' + (trades.length===1?'':'s');
+    if (!box) return;
+    if (!trades.length) {
+      box.style.cssText = 'background:#0d1320;border:1px solid #1a2236;border-radius:12px;padding:24px;text-align:center;color:var(--muted-1,#8ba1c2);font-size:0.82rem;';
+      box.innerHTML = 'No trades yet';
+      return;
+    }
+    box.style.cssText = 'background:#0d1320;border:1px solid #1a2236;border-radius:12px;overflow:hidden;overflow-x:auto;';
+    var rows = trades.slice().reverse().map(function(t){
+      var pc = t.pnl == null ? '#c8d8f0' : t.pnl >= 0 ? '#10b981' : '#ef4444';
+      var sc = t.side === 'CE' ? '#10b981' : '#ef4444';
+      return '<tr style="border-top:1px solid #1a2236;">' +
+        '<td style="padding:8px 12px;font-size:0.7rem;color:#94a3b8;">' + (t.entryTime||'') + '</td>' +
+        '<td style="padding:8px 12px;font-size:0.7rem;color:#94a3b8;">' + (t.exitTime||'') + '</td>' +
+        '<td style="padding:8px 12px;color:' + sc + ';font-weight:800;">' + (t.side||'—') + '</td>' +
+        '<td style="padding:8px 12px;">' + (t.optionStrike||'—') + '</td>' +
+        '<td style="padding:8px 12px;">' + (t.signalRsi!=null?t.signalRsi:'—') + '</td>' +
+        '<td style="padding:8px 12px;">' + (t.crossedLevel!=null?t.crossedLevel:'—') + '</td>' +
+        '<td style="padding:8px 12px;font-weight:700;">' + (t.spotAtEntry!=null?t.spotAtEntry:'—') + '</td>' +
+        '<td style="padding:8px 12px;font-weight:700;">' + (t.spotAtExit!=null?t.spotAtExit:'—') + '</td>' +
+        '<td style="padding:8px 12px;color:#60a5fa;">' + (t.optionEntryLtp!=null?'₹'+t.optionEntryLtp:'—') + '</td>' +
+        '<td style="padding:8px 12px;color:#60a5fa;">' + (t.optionExitLtp!=null?'₹'+t.optionExitLtp:'—') + '</td>' +
+        '<td style="padding:8px 12px;font-weight:800;color:' + pc + ';">' + (t.pnl!=null?SIGNED(t.pnl):'—') + '</td>' +
+        '<td style="padding:8px 12px;font-size:0.65rem;color:var(--muted-1,#8ba1c2);">' + (t.exitReason||'') + '</td>' +
+      '</tr>';
+    }).join('');
+    box.innerHTML = '<table style="width:100%;border-collapse:collapse;font-family:monospace;font-size:0.78rem;">' +
+      '<thead><tr style="background:#0a0f1c;">' +
+        ['Entry Time','Exit Time','Side','Strike','RSI','Crossed','E.Spot','X.Spot','E.Opt','X.Opt','PnL','Exit Reason'].map(function(h){
+          return '<th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-1,#8ba1c2);white-space:nowrap;">'+h+'</th>';
+        }).join('') +
+      '</tr></thead><tbody>' + rows + '</tbody></table>';
+  }
+
+  async function fetchAndUpdate(){
+    try {
+      var r = await fetch('/rsi-pivot-st-paper/status/data', { cache:'no-store' });
+      if (!r.ok) return;
+      var d = await r.json();
+
+      var pnlEl = document.getElementById('ajax-session-pnl');
+      if (pnlEl) { pnlEl.textContent = SIGNED(d.sessionPnl||0); pnlEl.style.color = PNL_COLOR(d.sessionPnl); var card = pnlEl.closest('.sc'); if (card) card.style.borderTopColor = PNL_COLOR(d.sessionPnl); }
+      setText('ajax-trade-count', d.tradesTaken || 0);
+      setText('ajax-wl', (d.wins||0) + 'W · ' + (d.losses||0) + 'L');
+      var liveEl = document.getElementById('ajax-live-pnl');
+      if (liveEl) { if (d.livePnl != null) { liveEl.textContent = SIGNED(d.livePnl); liveEl.style.color = PNL_COLOR(d.livePnl); } else { liveEl.textContent = '—'; liveEl.style.color = '#c8d8f0'; } }
+      setText('ajax-live-pnl-sub', d.position ? 'unrealised' : 'no open position');
+      setText('ajax-rsi', d.rsi != null ? d.rsi : '—');
+      var stEl = document.getElementById('ajax-st');
+      if (stEl) { stEl.textContent = d.superTrend != null ? (d.superTrend + ' ' + (d.superTrendTrend === 1 ? '▲' : '▼')) : '—'; stEl.style.color = d.superTrendTrend === 1 ? '#10b981' : d.superTrendTrend === -1 ? '#ef4444' : '#c8d8f0'; }
+      setText('ajax-wr', d.winRate != null ? d.winRate + '%' : '—');
+      setText('ajax-wr-sub', 'best ' + (d.bestTrade==null?'—':Math.round(d.bestTrade)) + ' / worst ' + (d.worstTrade==null?'—':Math.round(d.worstTrade)));
+
+      if (d.entryCheck) {
+        var w = d.entryCheck;
+        var wEl = document.getElementById('ajax-warmup');
+        if (wEl) { wEl.textContent = w.bars + ' / ' + w.minBars; wEl.style.color = w.warmup ? '#f59e0b' : '#10b981'; }
+        var wSub = document.getElementById('ajax-warmup-sub');
+        if (wSub) { wSub.textContent = w.warmup ? (w.readyAt ? 'eligible from ' + w.readyAt : 'waiting for bars') : 'closed bars — ready'; wSub.style.color = w.warmup ? '#f59e0b' : '#10b981'; }
+        var head = document.getElementById('ajax-decision-head');
+        var body = document.getElementById('ajax-decision-body');
+        var wrap = document.getElementById('ajax-decision');
+        if (head && body && wrap) {
+          var st = !d.running ? {c:'#8ba1c2',bg:'#0d1320',bd:'#1a2236',h:'Session stopped'}
+                 : w.warmup ? {c:'#f59e0b',bg:'#1c1400',bd:'#78350f',h:'Warming up'}
+                 : w.signal !== 'NONE' ? {c:'#10b981',bg:'#071a12',bd:'#134e35',h:(w.side||'') + ' setup'}
+                 : {c:'#8ba1c2',bg:'#0d1320',bd:'#1a2236',h:'No setup'};
+          head.textContent = st.h; head.style.color = st.c;
+          body.textContent = w.reason || '—';
+          wrap.style.background = st.bg; wrap.style.borderColor = st.bd;
+        }
+      }
+
+      var dlossHit = d.maxDailyLoss > 0 && (d.sessionPnl || 0) <= -d.maxDailyLoss;
+      var dlEl = document.getElementById('ajax-daily-loss-val'); if (dlEl) { dlEl.style.color = dlossHit ? '#ef4444' : '#10b981'; }
+      var dlSub = document.getElementById('ajax-daily-loss-sub'); if (dlSub) { dlSub.textContent = dlossHit ? 'KILLED — no entries' : 'Active'; dlSub.style.color = dlossHit ? '#ef4444' : '#10b981'; }
+      setText('ajax-tick-count', (d.tickCount || 0).toLocaleString());
+      setText('ajax-last-tick', d.lastTickPrice ? INR(d.lastTickPrice) : '—');
+
+      var capEl = document.getElementById('ajax-current-capital'); if (capEl) { capEl.textContent = INR(d.capital); capEl.style.color = d.capital >= _startCap ? '#10b981' : '#ef4444'; }
+      var atpEl = document.getElementById('ajax-alltime-pnl'); if (atpEl) { atpEl.textContent = SIGNED(d.totalPnl||0); atpEl.style.color = PNL_COLOR(d.totalPnl); }
+
+      if (d.currentBar) { ['open','high','low','close'].forEach(function(k){ var el = document.getElementById('ajax-bar-' + k); if (el) el.textContent = INR(d.currentBar[k]); }); }
+
+      // Opening or closing a position rewrites a whole server-rendered block —
+      // cheaper and less error-prone to reload than to rebuild it in the client.
+      var hasPos = !!d.position;
+      if (hasPos !== _hadPosition) { _hadPosition = hasPos; window.location.reload(); return; }
+      if (d.position) {
+        var p = d.position, cur = p.currentOptLtp;
+        var move = cur != null ? (cur - p.optionEntryLtp) : null;
+        var movePct = (cur != null && p.optionEntryLtp) ? (move / p.optionEntryLtp * 100) : null;
+        var curEl = document.getElementById('ajax-opt-current-ltp'); if (curEl && cur != null) { curEl.textContent = '₹' + cur.toFixed(2); curEl.style.color = cur >= p.optionEntryLtp ? '#10b981' : '#ef4444'; }
+        var movEl = document.getElementById('ajax-opt-move'); if (movEl && move != null) { movEl.textContent = (move >= 0 ? '▲ +' : '▼ ') + '₹' + Math.abs(move).toFixed(2); movEl.style.color = move >= 0 ? '#10b981' : '#ef4444'; }
+        var pctEl = document.getElementById('ajax-opt-pct'); if (pctEl && movePct != null) { pctEl.textContent = (movePct >= 0 ? '+' : '') + movePct.toFixed(2) + '%'; pctEl.style.color = movePct >= 0 ? '#10b981' : '#ef4444'; }
+        var oPnl = document.getElementById('ajax-opt-pnl'); if (oPnl && d.livePnl != null) { oPnl.textContent = SIGNED(d.livePnl); oPnl.style.color = PNL_COLOR(d.livePnl); }
+        var ltpEl = document.getElementById('ajax-nifty-ltp'); if (ltpEl && d.lastTickPrice != null) ltpEl.textContent = INR(d.lastTickPrice);
+        var movSub = document.getElementById('ajax-nifty-move');
+        if (movSub && d.lastTickPrice != null && p.entrySpot) { var sm = (d.lastTickPrice - p.entrySpot) * (p.side === 'CE' ? 1 : -1); movSub.textContent = (sm >= 0 ? '▲' : '▼') + ' ' + Math.abs(sm).toFixed(1) + ' pts'; movSub.style.color = sm >= 0 ? '#10b981' : '#ef4444'; }
+        var slEl = document.getElementById('ajax-sl-spot'); if (slEl && p.slSpot != null) slEl.textContent = '₹' + p.slSpot.toFixed(2);
+        var pfEl = document.getElementById('ajax-prem-floor'); if (pfEl && p.premiumFloor != null) pfEl.textContent = '₹' + p.premiumFloor.toFixed(2);
+        var pkEl = document.getElementById('ajax-peak-prem'); if (pkEl && p.peakPremium != null) pkEl.textContent = '₹' + p.peakPremium.toFixed(2);
+      }
+
+      if ((d.sessionTrades || []).length !== _tradeCount) { _tradeCount = (d.sessionTrades || []).length; renderTrades(d.sessionTrades || []); }
+      if ((d.log || []).length !== _logCount) { _logCount = (d.log || []).length; LOG_ALL.length = 0; (d.log || []).slice().reverse().forEach(function(l){ LOG_ALL.push(l); }); if (typeof logFilter === 'function') logFilter(); }
+      if (_running && !d.running) { _running = false; if (_interval) { clearInterval(_interval); _interval = null; } setTimeout(function(){ window.location.reload(); }, 1500); }
+    } catch (e) { console.warn('[rsi-pivot-st-paper] refresh:', e.message); }
+  }
+
+  renderTrades(${tradesJSON});
+  if (${state.running}) { _interval = setInterval(fetchAndUpdate, 2000); fetchAndUpdate(); }
+  document.addEventListener('visibilitychange', function(){ if (document.visibilityState === 'visible' && ${state.running}) { fetchAndUpdate(); if (!_interval) _interval = setInterval(fetchAndUpdate, 2000); } });
+  window.addEventListener('focus', function(){ if (${state.running}) fetchAndUpdate(); });
+})();
+</script>
+</body></html>`);
+});
 
 // ── History + exports ────────────────────────────────────────────────────────
 router.get("/history", (req, res) => {
@@ -1481,20 +1915,38 @@ router.get("/history", (req, res) => {
   }));
 });
 
+// The History page pages this itself: it expects { rows, total, page, ... } where
+// each row is { date, skipsSize, tradesSize }. dailyFilesPaginate takes the ROWS
+// and the query — handing it the mode key returns an empty list every time.
 router.get("/download/daily-files", (req, res) => {
   try {
-    const files = dailyFilesPaginate(MODE_KEY, parseInt(req.query.page || "1", 10));
-    res.json(files);
+    const skips  = skipLogger.listDates(MODE_KEY);
+    const trades = tradeLogger.listDailyDates(MODE_KEY);
+    const byDate = new Map();
+    for (const s of skips) byDate.set(s.date, { date: s.date, skipsSize: s.size, tradesSize: 0 });
+    for (const t of trades) {
+      const row = byDate.get(t.date) || { date: t.date, skipsSize: 0, tradesSize: 0 };
+      row.tradesSize = t.size;
+      byDate.set(t.date, row);
+    }
+    const rows = Array.from(byDate.values()).sort((a, b) => b.date.localeCompare(a.date));
+    res.json(dailyFilesPaginate(rows, req.query));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 router.get("/download/skips-all", (req, res) => {
-  try {
-    const out = skipLogger.readAllSkips(MODE_KEY);
-    res.setHeader("Content-Type", "application/x-ndjson");
-    res.setHeader("Content-Disposition", `attachment; filename="rsi_pivot_st_skips_all.jsonl"`);
-    res.send(out.map(o => JSON.stringify(o)).join("\n"));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="rsi_pivot_st_paper_skips_all_${today}.txt"`);
+  const dates = skipLogger.listDates(MODE_KEY).map(d => d.date).sort();
+  let body = "";
+  for (const d of dates) {
+    try {
+      const f = skipLogger.filePathFor(MODE_KEY, d);
+      if (fs.existsSync(f)) body += fs.readFileSync(f, "utf8");
+    } catch (_) {}
+  }
+  res.send(body);
 });
 
 router.get("/download/skips/:date", (req, res) => {
@@ -1517,18 +1969,28 @@ router.get("/download/trades/:date", (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+const _RPS_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+// Served as raw JSONL, not as a JSON array: the History page reads these with
+// response.text() and pastes the lines straight into the copy buffer.
 router.get("/view/skips/:date", (req, res) => {
-  try {
-    const rows = skipLogger.readDailySkips(MODE_KEY, req.params.date);
-    res.json(rows || []);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  const date = req.params.date;
+  if (!_RPS_DATE_RE.test(date)) return res.status(400).send("bad date");
+  const f = skipLogger.filePathFor(MODE_KEY, date);
+  if (!fs.existsSync(f)) return res.status(404).send("not found");
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.setHeader("Content-Disposition", "inline");
+  res.sendFile(f);
 });
 
 router.get("/view/trades/:date", (req, res) => {
-  try {
-    const rows = tradeLogger.readDailyTrades(MODE_KEY, req.params.date);
-    res.json(rows || []);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  const date = req.params.date;
+  if (!_RPS_DATE_RE.test(date)) return res.status(400).send("bad date");
+  const f = tradeLogger.dailyFilePathFor(MODE_KEY, date);
+  if (!fs.existsSync(f)) return res.status(404).send("not found");
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.setHeader("Content-Disposition", "inline");
+  res.sendFile(f);
 });
 
 router.delete("/session/:index", (req, res) => {

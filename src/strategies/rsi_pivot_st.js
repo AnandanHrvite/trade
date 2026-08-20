@@ -479,6 +479,20 @@ function _baseSignal(cfg) {
 }
 
 /**
+ * How many CLOSED bars getSignal needs before it will decide anything. RSI needs
+ * period+1 closes, SuperTrend needs stPeriod+1, and the cross test needs a
+ * previous bar; the largest wins, with a small margin.
+ *
+ * Exported because the paper page shows the warm-up countdown: a screen that
+ * re-derives this formula drifts the moment the periods become configurable,
+ * and a "waiting" badge that disagrees with the engine is worse than none.
+ */
+function minBarsFor(cfg) {
+  const c = cfg || getConfig();
+  return Math.max(c.rsiPeriod + 2, c.stPeriod + 2, 20);
+}
+
+/**
  * getSignal(candles, opts)
  *
  * @param {Array} candles ascending 5-min IST NIFTY SPOT bars. The LAST element
@@ -494,9 +508,7 @@ function getSignal(candles, opts) {
   const cfg = o.cfg || getConfig();
   const base = _baseSignal(cfg);
 
-  // Warm-up: RSI needs period+1 closes, SuperTrend needs stPeriod+1, and the
-  // cross test needs a previous bar. Take the largest and add a small margin.
-  const minBars = Math.max(cfg.rsiPeriod + 2, cfg.stPeriod + 2, 20);
+  const minBars = minBarsFor(cfg);
   if (!Array.isArray(candles) || candles.length < minBars) {
     base.warmup = true;
     base.skipReason = base.reason =
@@ -692,6 +704,7 @@ module.exports = {
   superTrendStop,
   stopHit,
   getSignal,
+  minBarsFor,
   // shared time helpers (routes must not re-derive IST arithmetic)
   _istDayOf,
   _istDateStr,
