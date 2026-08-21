@@ -728,6 +728,11 @@ function toggleNavGroup(gid){
     } else if(d.reason === 'down'){
       var sec = Math.round((d.downForMs || 0) / 1000);
       msg = '⚠️ Broker socket disconnected for ' + sec + 's during market hours — feed is silent. Check connectivity / re-login.';
+    } else if(d.reason === 'flapping'){
+      var mins = d.flapSince ? Math.round((Date.now() - d.flapSince) / 60000) : 0;
+      msg = '🚨 Broker feed UNSTABLE — connected and dropped ' + (d.flapCount || 0) + '× in a row'
+          + (mins ? ' over ~' + mins + ' min' : '')
+          + '. Strategies are getting NO live ticks. Still retrying — if it persists, re-login.';
     } else {
       msg = '⚠️ Broker socket issue detected.';
     }

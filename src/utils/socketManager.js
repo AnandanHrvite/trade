@@ -55,6 +55,20 @@ const AUTH_FAIL_LIMIT      = 3;
 // a feed the strategies are getting nothing from — unambiguous, and far above
 // any plausible one-off oddity.
 const UNATTRIBUTED_BAIL    = 50;
+// ── Connection flapping ──────────────────────────────────────────────────────
+// A socket that connects and is dropped again seconds later is NOT healthy, but
+// every individual cycle looks fine: `close` resets nothing, `connect` clears
+// _lastDownAt, so the "down for >60s" broken-state never trips and the retry
+// loop spins silently forever (observed: 330 cycles in one session, no alert).
+// A connection that never survives this long is counted as a flap.
+const FLAP_UPTIME_MS       = 10_000;
+// Consecutive flaps before the feed is declared unhealthy: surfaced on
+// /auth/socket-health (dashboard banner) and pushed once to Telegram.
+// Retries deliberately CONTINUE — the session must never stop on its own.
+const FLAP_ALERT_AFTER     = 5;
+// Re-alert cadence while a flap storm is still going, so a feed that stays
+// broken for hours keeps reminding rather than alerting once and going quiet.
+const FLAP_REALERT_MS      = 15 * 60_000;
 // How long a just-unsubscribed option symbol stays known-not-spot. Removing a
 // symbol from _extraSymbols is instant, but the wire keeps delivering whatever
 // it had already queued — and a tick matching neither the extras set nor the
@@ -129,6 +143,11 @@ class SocketManager {
     // symbol → expiry ms. Symbols we have unsubscribed but whose queued ticks
     // may still arrive; they must never be mistaken for the spot instrument.
     this._tombstones         = new Map();
+    // ── Flap tracking (see FLAP_* constants) ──────────────────────────────
+    this._flapCount     = 0;      // consecutive sub-FLAP_UPTIME_MS connections
+    this._flapping      = false;  // sticky while the storm lasts; cleared by a stable connect
+    this._flapSince     = null;   // when the current storm started
+    this._flapAlertedAt = 0;      // last Telegram push, for FLAP_REALERT_MS cadence
   }
 
   // ── Public API ──────────────────────────────────────────────────────────────
@@ -175,6 +194,12 @@ class SocketManager {
     this._lastErrorCode = null;
     this._lastErrorMsg  = null;
     this._lastDownAt    = Date.now();
+    // A new session must not inherit the previous one's flap storm, or the
+    // banner would stay red until the counter happened to be cleared.
+    this._flapCount     = 0;
+    this._flapping      = false;
+    this._flapSince     = null;
+    this._flapAlertedAt = 0;
     this._connect();
     this._startWatchdog();
   }
@@ -295,8 +320,12 @@ class SocketManager {
     const inMarket  = this._isMarketHours();
     const longDown  = running && inMarket && this._lastDownAt && downForMs > 60_000;
     let reason = null;
-    if (this._authFailed) reason = "auth-failed";
-    else if (longDown)    reason = "down";
+    if (this._authFailed)     reason = "auth-failed";
+    else if (longDown)        reason = "down";
+    // Flapping is its own broken-state: the socket keeps *connecting*, so the
+    // "down for >60s" test above never fires, yet no tick ever reaches a
+    // strategy. Without this the dashboard showed green through 330 drops.
+    else if (this._flapping)  reason = "flapping";
     return {
       running,
       authFailed:    this._authFailed,
@@ -311,6 +340,9 @@ class SocketManager {
       optionSymbols:      this._extraSymbols.size,
       symbolAttribution:  this._spotTickSymbol,
       unattributedTicks:  this._unattributedCount,
+      flapping:           this._flapping,
+      flapCount:          this._flapCount,
+      flapSince:          this._flapSince,
     };
   }
 
@@ -565,6 +597,11 @@ class SocketManager {
     skt.on('message', (msg) => {
       if (this._stopped) return;
       this._lastTickAt = Date.now();
+      // Ticks flowing on a connection that has outlived the flap window is the
+      // strongest possible "the feed is fine again" signal.
+      if (this._flapping && this._connectedAt && Date.now() - this._connectedAt > FLAP_UPTIME_MS) {
+        this._clearFlap();
+      }
       // Real ticks arriving means auth is fine — clear any partial auth-fail count.
       if (this._authFailCount > 0) this._authFailCount = 0;
       const ticks = Array.isArray(msg) ? msg : [msg];
@@ -607,8 +644,13 @@ class SocketManager {
       // Only reset retryCount if connection was stable for at least 10 seconds.
       // This prevents infinite 2s loops when the server immediately rejects.
       const uptime = this._connectedAt ? Date.now() - this._connectedAt : 0;
-      if (uptime > 10_000) {
+      if (uptime > FLAP_UPTIME_MS) {
         this._retryCount = 0;
+        // A connection that lasted counts as recovery: end any flap storm.
+        this._clearFlap();
+      } else {
+        // Connected, then dropped within seconds — a flap, not a recovery.
+        this._noteFlap(uptime);
       }
       // NOTE: Do NOT set this._skt = null here — we need it for the reconnect.
       // Don't reconnect if auth has been declared dead — _scheduleReconnect would
@@ -625,6 +667,58 @@ class SocketManager {
       this._log(`❌ [SOCKET] connect() threw: ${e.message}`);
       this._scheduleReconnect();
     }
+  }
+
+  /**
+   * A connection came up and died inside FLAP_UPTIME_MS. Retries continue
+   * regardless — this only decides when to make the failure VISIBLE, which the
+   * old code never did: every cycle looked like a normal reconnect, so a feed
+   * that never carried a single tick still reported healthy.
+   */
+  _noteFlap(uptimeMs) {
+    this._flapCount += 1;
+    if (!this._flapSince) this._flapSince = Date.now();
+    if (this._flapCount < FLAP_ALERT_AFTER) return;
+
+    const first = !this._flapping;
+    this._flapping = true;
+
+    const due = first || (Date.now() - this._flapAlertedAt) > FLAP_REALERT_MS;
+    if (!due) return;
+    this._flapAlertedAt = Date.now();
+
+    const mins = Math.round((Date.now() - this._flapSince) / 60000);
+    const detail = this._lastErrorMsg ? ` Last error: ${this._lastErrorMsg}` : "";
+    this._log(`🚨 [SOCKET] Feed unstable — ${this._flapCount} drops within ${(uptimeMs / 1000).toFixed(1)}s of connecting. Strategies are receiving NO ticks. Still retrying.${detail}`);
+    // Telegram is best-effort: a notification failure must never take the
+    // trading session down with it.
+    try {
+      require('./notify').sendIfMaster(
+        `🚨 Fyers feed unstable\n\n` +
+        `Socket connected and dropped ${this._flapCount}× in a row` +
+        (mins ? ` over ~${mins} min` : '') + `.\n` +
+        `Strategies are getting NO live ticks.\n` +
+        (this._lastErrorMsg ? `Last error: ${this._lastErrorMsg}\n` : '') +
+        `\nThe bot keeps retrying — no session was stopped.\n` +
+        `If this persists, re-login at /auth/login.`
+      );
+    } catch (e) {
+      this._log(`⚠️  [SOCKET] Flap alert notify failed: ${e.message}`);
+    }
+  }
+
+  /** A connection proved stable — end the storm and re-arm the alert. */
+  _clearFlap() {
+    if (this._flapping) {
+      this._log('✅ [SOCKET] Feed recovered — ticks flowing again.');
+      try {
+        require('./notify').sendIfMaster('✅ Fyers feed recovered — live ticks are flowing again.');
+      } catch (_) {}
+    }
+    this._flapCount     = 0;
+    this._flapping      = false;
+    this._flapSince     = null;
+    this._flapAlertedAt = 0;
   }
 
   _scheduleReconnect() {
