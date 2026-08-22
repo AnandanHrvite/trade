@@ -182,42 +182,6 @@ body::after{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
 .dot{width:6px;height:6px;border-radius:50%;background:var(--ok);display:inline-block;
   margin-right:7px;vertical-align:middle;animation:pulse 2.4s ease-out infinite;}
 @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(34,197,94,.45)}70%{box-shadow:0 0 0 7px rgba(34,197,94,0)}100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}}
-/* Deities — hand-drawn inline SVG (Vinayagar + Murugan's vel), decorative only.
-   Everything is clamp()-sized so the shrine scales with the viewport instead of
-   needing a breakpoint per phone size. */
-.deities{display:flex;align-items:flex-start;justify-content:center;
-  gap:clamp(18px,7vw,34px);margin-bottom:clamp(14px,3.4vw,20px);}
-.deity{display:flex;flex-direction:column;align-items:center;gap:clamp(6px,1.6vw,9px);
-  flex:0 1 auto;min-width:0;}
-/* Halo: layered rings + a soft outward glow read as devotional without any raster art. */
-.deity-art{position:relative;width:clamp(60px,19vw,80px);aspect-ratio:1;border-radius:50%;
-  display:grid;place-items:center;
-  background:
-    radial-gradient(circle at 50% 30%,rgba(253,230,138,.30),rgba(251,191,36,.12) 46%,rgba(249,115,22,.06) 70%,transparent 78%),
-    conic-gradient(from 210deg,rgba(251,191,36,.30),rgba(249,115,22,.16),rgba(253,230,138,.34),rgba(251,191,36,.30));
-  border:1px solid rgba(251,191,36,.42);
-  box-shadow:0 0 0 1px rgba(253,230,138,.12) inset,0 0 22px rgba(251,191,36,.20),0 8px 22px rgba(0,0,0,.36);}
-/* Rotating aura ring — the "divine light" cue. Removed under reduced-motion. */
-.deity-art::before{content:'';position:absolute;inset:-5px;border-radius:50%;pointer-events:none;
-  background:conic-gradient(from 0deg,transparent 0deg,rgba(253,230,138,.42) 55deg,transparent 120deg,transparent 360deg);
-  -webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 3px),#000 calc(100% - 3px));
-          mask:radial-gradient(farthest-side,transparent calc(100% - 3px),#000 calc(100% - 3px));
-  animation:aura 9s linear infinite;opacity:.85;}
-@keyframes aura{to{transform:rotate(360deg)}}
-.deity-art svg{width:70%;height:70%;display:block;position:relative;z-index:1;
-  filter:drop-shadow(0 1px 4px rgba(249,115,22,.45));}
-.deity-name{font-family:'IBM Plex Mono',ui-monospace,monospace;
-  font-size:clamp(.5rem,2.1vw,.58rem);font-weight:600;
-  letter-spacing:.13em;text-transform:uppercase;color:#d9a441;white-space:nowrap;}
-:root[data-theme="light"] .deity-name{color:#a16207;}
-/* Tamil invocation under the shrine */
-.blessing{display:flex;align-items:center;justify-content:center;gap:9px;
-  margin-bottom:clamp(16px,3.6vw,22px);}
-.blessing::before,.blessing::after{content:'';height:1px;flex:1 1 0;max-width:52px;
-  background:linear-gradient(90deg,transparent,rgba(251,191,36,.42),transparent);}
-.blessing span{font-size:clamp(.6rem,2.4vw,.7rem);font-weight:500;color:#d9a441;
-  letter-spacing:.05em;white-space:nowrap;}
-:root[data-theme="light"] .blessing span{color:#a16207;}
 .brand{display:flex;flex-direction:column;align-items:center;text-align:center;margin-bottom:24px;}
 .mark{width:56px;height:56px;border-radius:16px;display:grid;place-items:center;margin-bottom:14px;
   background:linear-gradient(145deg,rgba(59,130,246,.22),rgba(34,211,238,.08));
@@ -279,9 +243,6 @@ body::after{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
 /* Short viewports (landscape phones) — top-align so the card can scroll */
 @media (max-height:660px){
   body{align-items:flex-start;}
-  .deities{gap:20px;margin-bottom:10px;}
-  .deity-art{width:clamp(48px,13vw,58px);}
-  .blessing{margin-bottom:14px;}
   .brand{margin-bottom:18px;}
   .mark{width:46px;height:46px;border-radius:13px;margin-bottom:11px;}
   .mark svg{width:24px;height:24px;}
@@ -294,96 +255,6 @@ body::after{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
 <div class="shell">
 <div class="card">
 <div class="stat"><span><span class="dot"></span>System online</span><span id="clock">--:--:--&nbsp;IST</span></div>
-<div class="deities">
-<div class="deity">
-<div class="deity-art">
-<svg viewBox="0 0 64 64" fill="none" aria-hidden="true" role="img" aria-label="Vinayagar">
-<defs>
-<linearGradient id="gdA" x1="14" y1="60" x2="52" y2="4">
-<stop stop-color="#ea580c"/><stop offset=".45" stop-color="#f59e0b"/><stop offset="1" stop-color="#fde68a"/>
-</linearGradient>
-<linearGradient id="gdAs" x1="32" y1="4" x2="32" y2="60">
-<stop stop-color="#fde68a" stop-opacity=".38"/><stop offset="1" stop-color="#ea580c" stop-opacity=".14"/>
-</linearGradient>
-</defs>
-<g stroke="url(#gdA)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-<!-- lotus seat -->
-<path d="M32 57.5c-6.6 0-12-1.9-12-4.2 0-2.3 5.4-4.2 12-4.2s12 1.9 12 4.2c0 2.3-5.4 4.2-12 4.2Z" fill="url(#gdAs)"/>
-<path d="M20.6 52.4c-2.6-1.5-4.6-2.9-5.6-4.6 3 .1 5.6.9 7.8 2.4M43.4 52.4c2.6-1.5 4.6-2.9 5.6-4.6-3 .1-5.6.9-7.8 2.4"/>
-<!-- torso -->
-<path d="M23.4 49.4c-.6-4.4 1.2-8.2 4.6-10.2h8c3.4 2 5.2 5.8 4.6 10.2" fill="url(#gdAs)"/>
-<!-- arms in blessing / abhaya mudra -->
-<path d="M24.6 41.6c-3.4.9-5.6 3-6.4 6.2M39.4 41.6c3.4.9 5.6 3 6.4 6.2"/>
-<!-- crown with jewel -->
-<path d="M32 4.2c2.6 2.6 4 5.1 4.2 7.6h-8.4c.2-2.5 1.6-5 4.2-7.6Z" fill="url(#gdAs)"/>
-<path d="M26.4 11.8h11.2l-1.2 3.4H27.6l-1.2-3.4Z" fill="url(#gdAs)"/>
-<!-- head -->
-<path d="M32 15.2c-7.4 0-13 5.4-13 12.2 0 5.2 3 9.4 7.6 11.2h10.8C42 36.8 45 32.6 45 27.4c0-6.8-5.6-12.2-13-12.2Z" fill="url(#gdAs)"/>
-<!-- ears (fan-shaped, layered) -->
-<path d="M19.4 21.6c-4.4-1.2-8 1-8.6 5.4-.6 4.6 2.4 8.4 7.4 9.4" fill="url(#gdAs)"/>
-<path d="M17.8 25.4c-2.2.2-3.6 1.6-3.8 3.8" stroke-width="1.3" opacity=".9"/>
-<path d="M44.6 21.6c4.4-1.2 8 1 8.6 5.4.6 4.6-2.4 8.4-7.4 9.4" fill="url(#gdAs)"/>
-<path d="M46.2 25.4c2.2.2 3.6 1.6 3.8 3.8" stroke-width="1.3" opacity=".9"/>
-<!-- third eye + tilak -->
-<path d="M32 19.4v2.6" stroke-width="1.6"/>
-<!-- eyes -->
-<circle cx="26.6" cy="25.4" r="1.35" fill="url(#gdA)" stroke="none"/>
-<circle cx="37.4" cy="25.4" r="1.35" fill="url(#gdA)" stroke="none"/>
-<!-- brows -->
-<path d="M23.8 22.4c1.6-1.1 3.4-1.2 5.2-.4M40.2 22.4c-1.6-1.1-3.4-1.2-5.2-.4" stroke-width="1.4" opacity=".9"/>
-<!-- trunk, curling to its left -->
-<path d="M32 27.4c0 3.8.2 7.2-.4 10.4-.7 3.8-3.1 6.2-6.2 6.2-2.8 0-4.8-1.8-4.8-4.2 0-2 1.5-3.4 3.3-3.4 1.4 0 2.4.8 2.6 2" stroke-width="2.1"/>
-<!-- tusks -->
-<path d="M27 31.6c-1.4 1.5-2 3.1-1.8 4.9M37 31.6c1.4 1.5 2 3.1 1.8 4.9"/>
-<!-- modak in hand -->
-<path d="M45.8 47.8c1.6-.5 2.6-1.6 2.6-3.1" stroke-width="1.4" opacity=".85"/>
-</g>
-</svg>
-</div>
-<div class="deity-name">Vinayagar</div>
-</div>
-<div class="deity">
-<div class="deity-art">
-<svg viewBox="0 0 64 64" fill="none" aria-hidden="true" role="img" aria-label="Murugan Vel">
-<defs>
-<linearGradient id="gdB" x1="14" y1="60" x2="52" y2="4">
-<stop stop-color="#ea580c"/><stop offset=".45" stop-color="#f59e0b"/><stop offset="1" stop-color="#fde68a"/>
-</linearGradient>
-<linearGradient id="gdBs" x1="32" y1="2" x2="32" y2="46">
-<stop stop-color="#fde68a" stop-opacity=".55"/><stop offset="1" stop-color="#ea580c" stop-opacity=".16"/>
-</linearGradient>
-</defs>
-<g stroke="url(#gdB)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-<!-- central blade -->
-<path d="M32 2.5c5 6.4 7.6 12 7.6 16.6 0 4.6-3.2 7.8-7.6 7.8s-7.6-3.2-7.6-7.8C24.4 14.5 27 8.9 32 2.5Z" fill="url(#gdBs)"/>
-<!-- sacred ash bands -->
-<path d="M28.4 15.2h7.2M28.4 18.4h7.2" stroke-width="1.4" opacity=".9"/>
-<!-- side barbs, flame-like -->
-<path d="M24.9 20.6c-3.8-1.2-6.6-3.8-8.4-7.8 4 .6 7.2 2.4 9.4 5.2Z" fill="url(#gdBs)"/>
-<path d="M39.1 20.6c3.8-1.2 6.6-3.8 8.4-7.8-4 .6-7.2 2.4-9.4 5.2Z" fill="url(#gdBs)"/>
-<!-- ferrule / collar -->
-<path d="M27.6 28.6h8.8M28.8 31.8h6.4"/>
-<!-- shaft: solid gold, not the diagonal gradient (a vertical line samples its
-     dim midpoint and disappears against the dark card) -->
-<path d="M32 31.8V54" stroke="#f5b942" stroke-width="2.8"/>
-<!-- grip binding -->
-<path d="M29.6 38.5h4.8M29.6 42.5h4.8" stroke="#fde68a" stroke-width="1.5" opacity=".9"/>
-<!-- pommel -->
-<path d="M28.8 54.4h6.4" stroke="#f5b942" stroke-width="2.4"/>
-<!-- peacock feathers (Murugan's vahana), one either side of the shaft -->
-<path d="M32 45.5c-4.2 1.4-7.4 4-9.6 7.8" stroke="#f5b942" stroke-width="1.4" opacity=".85"/>
-<path d="M22.4 53.3c-.4-2.2.2-4.2 1.8-5.8M22.4 53.3c2.2.2 4-.6 5.4-2.2" stroke="#f5b942" stroke-width="1.2" opacity=".7"/>
-<circle cx="22.4" cy="53.3" r="1.7" fill="#fde68a" stroke="none" opacity=".9"/>
-<path d="M32 45.5c4.2 1.4 7.4 4 9.6 7.8" stroke="#f5b942" stroke-width="1.4" opacity=".85"/>
-<path d="M41.6 53.3c.4-2.2-.2-4.2-1.8-5.8M41.6 53.3c-2.2.2-4-.6-5.4-2.2" stroke="#f5b942" stroke-width="1.2" opacity=".7"/>
-<circle cx="41.6" cy="53.3" r="1.7" fill="#fde68a" stroke="none" opacity=".9"/>
-</g>
-</svg>
-</div>
-<div class="deity-name">Murugan</div>
-</div>
-</div>
-<div class="blessing"><span>வாழ்க வளமுடன் · ஓம் முருகா</span></div>
 <div class="brand">
 <div class="mark">
 <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
