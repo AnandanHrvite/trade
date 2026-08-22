@@ -2827,12 +2827,13 @@ router.get("/status/chart-data", async (req, res) => {
     const EMA_FAST    = parseInt(process.env.EMA_RSI_ST_EMA_FAST || "20", 10) || 20;
     const EMA_SLOW    = parseInt(process.env.EMA_RSI_ST_EMA_SLOW || "50", 10) || 50;
     const EMA_FASTEST = parseInt(process.env.EMA_RSI_ST_EMA_FASTEST || "9", 10) || 9;
-    let ema9Series = [], ema20Series = [], ema50Series = [];
-    const _emaLine = (period) => {
+    let ema9Series = [], ema20Series = [], ema50Series = [], ema21Series = [];
+    const _emaLine = (period, values) => {
       const out = [];
+      const vals = values || candles.map(c => c.close);
       if (candles.length >= period) {
         try {
-          const arr = EMA.calculate({ period, values: candles.map(c => c.close) });
+          const arr = EMA.calculate({ period, values: vals });
           const off = candles.length - arr.length;
           for (let i = 0; i < arr.length; i++) out.push({ time: candles[i + off].time, value: parseFloat(arr[i].toFixed(2)) });
         } catch (_) { /* ignore */ }
@@ -2842,6 +2843,8 @@ router.get("/status/chart-data", async (req, res) => {
     ema9Series  = _emaLine(EMA_FASTEST);
     ema20Series = _emaLine(EMA_FAST);
     ema50Series = _emaLine(EMA_SLOW);
+    // EMA21 is the exit/trail line — same OHLC4 source as strategy1_sar_ema_rsi.js.
+    ema21Series = _emaLine(21, candles.map(c => (c.open + c.high + c.low + c.close) / 4));
 
     // RSI(14) overlay (closes) — drawn on its own bottom scale by the chart
     let rsiSeries = [];
@@ -2910,7 +2913,7 @@ router.get("/status/chart-data", async (req, res) => {
     return res.json({ candles, markers, stopLoss, entryPrice,
       armedTrigger: ptState._armedSignal ? ptState._armedSignal.triggerLevel : null,
       armedSide:    ptState._armedSignal ? ptState._armedSignal.side : null,
-      ema9: ema9Series, ema20: ema20Series, ema50: ema50Series,
+      ema9: ema9Series, ema20: ema20Series, ema50: ema50Series, ema21: ema21Series,
       supertrend, trendSource: "SUPERTREND", rsi: rsiSeries,
       emaFast: EMA_FAST, emaSlow: EMA_SLOW, emaFastest: EMA_FASTEST,
       tripleStack: (process.env.EMA_RSI_ST_EMA_TRIPLE_STACK_ENABLED || "false").toLowerCase() === "true",
@@ -3459,6 +3462,7 @@ ${buildSidebar('emaRsiStPaper', sharedSocketState.getMode()==='EMA_RSI_ST_LIVE',
         <span style="color:#a855f7;">── EMA9</span> &nbsp;
         <span style="color:#fbbf24;">── EMA20</span> &nbsp;
         <span style="color:#3b82f6;">── EMA50</span> &nbsp;
+        <span style="color:#f472b6;">╌╌ EMA21 (exit)</span> &nbsp;
         <span style="color:#22c55e;">──</span><span style="color:#ef4444;">──</span> ST &nbsp;
         <span style="color:#22d3ee;">── RSI</span> &nbsp;
         <span style="color:#f59e0b;">── SL</span>
@@ -3829,6 +3833,7 @@ ${modalJS()}
   const ema9Series  = chart.addLineSeries({ color:'#a855f7', lineWidth:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'EMA9' });
   const ema20Series = chart.addLineSeries({ color:'#fbbf24', lineWidth:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'EMA20' });
   const ema50Series = chart.addLineSeries({ color:'#3b82f6', lineWidth:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'EMA50' });
+  const ema21Series = chart.addLineSeries({ color:'#f472b6', lineWidth:2, lineStyle:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'EMA21 (exit)' });
   // SuperTrend line (solid) — per-point colour: GREEN when bullish (line below price), RED when bearish.
   const stSeries   = chart.addLineSeries({ color:'#22c55e', lineWidth:2, priceLineVisible:false, lastValueVisible:true, crosshairMarkerVisible:false, title:'ST' });
   // Colour each SuperTrend point by its trend (1=up→green, -1=down→red). Falls back to green if trend missing.
@@ -3878,7 +3883,7 @@ ${modalJS()}
         for (var _i=d.candles.length-1;_i>=0;_i--){ if(Math.floor((d.candles[_i].time+19800)/86400)===_dk) _cut=d.candles[_i].time; else break; }
         var _k=function(a){ return Array.isArray(a)?a.filter(function(x){return x.time>=_cut;}):a; };
         d.candles=_k(d.candles);
-        ['ema9','ema20','ema50','supertrend','rsi','bbUpper','bbMiddle','bbLower','orhLine','orlLine','vwap','markers'].forEach(function(kk){ if(d[kk]) d[kk]=_k(d[kk]); });
+        ['ema9','ema20','ema50','ema21','supertrend','rsi','bbUpper','bbMiddle','bbLower','orhLine','orlLine','vwap','markers'].forEach(function(kk){ if(d[kk]) d[kk]=_k(d[kk]); });
       })();
 
       _internalUpdate = true;
@@ -3898,6 +3903,7 @@ ${modalJS()}
       if (d.ema9  && d.ema9.length)  ema9Series.setData(d.ema9);   else ema9Series.setData([]);
       if (d.ema20 && d.ema20.length) ema20Series.setData(d.ema20); else ema20Series.setData([]);
       if (d.ema50 && d.ema50.length) ema50Series.setData(d.ema50); else ema50Series.setData([]);
+      if (d.ema21 && d.ema21.length) ema21Series.setData(d.ema21); else ema21Series.setData([]);
       if (d.supertrend && d.supertrend.length) stSeries.setData(d.supertrend.map(_stColor)); else stSeries.setData([]);
       if (d.rsi   && d.rsi.length) { rsiSeries.setData(d.rsi); drawRsiLevels(d.rsiCeMin, d.rsiPeMax); } else rsiSeries.setData([]);
 

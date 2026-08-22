@@ -120,7 +120,9 @@ function requestCancel() {
 //     both caches' freshness checks compare against a future timestamp and never
 //     expire. Any result cached while a VIX/OI gate was enabled was computed off
 //     live data and must be recomputed.
-const REPLAY_CACHE_VERSION = 10;
+// v11: EMA_RSI_ST chartData now carries the EMA21 exit/trail line (OHLC4) — results
+//      unchanged, but invalidate so re-runs regenerate the chart with EMA21 drawn.
+const REPLAY_CACHE_VERSION = 11;
 
 function _replayCacheDir() {
   return path.join(ROOT_DIR, "_replay_cache");

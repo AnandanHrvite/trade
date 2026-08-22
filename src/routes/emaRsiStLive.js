@@ -2834,17 +2834,19 @@ router.get("/status/chart-data", (req, res) => {
     const EMA_FAST    = parseInt(process.env.EMA_RSI_ST_EMA_FAST || "20", 10) || 20;
     const EMA_SLOW    = parseInt(process.env.EMA_RSI_ST_EMA_SLOW || "50", 10) || 50;
     const EMA_FASTEST = parseInt(process.env.EMA_RSI_ST_EMA_FASTEST || "9", 10) || 9;
-    let ema9 = [], ema20 = [], ema50 = [], supertrend = [], rsi = [];
+    let ema9 = [], ema20 = [], ema50 = [], ema21 = [], supertrend = [], rsi = [];
     try {
-      const _emaLine = (period) => {
+      const _emaLine = (period, values) => {
         if (candles.length < period) return [];
-        const arr = EMA.calculate({ period, values: candles.map(c => c.close) });
+        const arr = EMA.calculate({ period, values: values || candles.map(c => c.close) });
         const off = candles.length - arr.length;
         return arr.map((v, i) => ({ time: candles[i + off].time, value: parseFloat(v.toFixed(2)) }));
       };
       ema9  = _emaLine(EMA_FASTEST);
       ema20 = _emaLine(EMA_FAST);
       ema50 = _emaLine(EMA_SLOW);
+      // EMA21 is the exit/trail line — same OHLC4 source as strategy1_sar_ema_rsi.js.
+      ema21 = _emaLine(21, candles.map(c => (c.open + c.high + c.low + c.close) / 4));
       // Trend overlay — SuperTrend line (the only directional source).
       {
         const { computeSuperTrend } = require("../utils/supertrend");
@@ -2865,7 +2867,7 @@ router.get("/status/chart-data", (req, res) => {
     return res.json({ candles, markers, stopLoss, entryPrice,
       armedTrigger: tradeState._armedSignal ? tradeState._armedSignal.triggerLevel : null,
       armedSide:    tradeState._armedSignal ? tradeState._armedSignal.side : null,
-      ema9, ema20, ema50, supertrend,
+      ema9, ema20, ema50, ema21, supertrend,
       trendSource: "SUPERTREND", rsi, emaFast: EMA_FAST, emaSlow: EMA_SLOW, emaFastest: EMA_FASTEST,
       tripleStack: (process.env.EMA_RSI_ST_EMA_TRIPLE_STACK_ENABLED || "false").toLowerCase() === "true",
       rsiCeMin: parseFloat(process.env.RSI_CE_MIN || "52"), rsiPeMax: parseFloat(process.env.RSI_PE_MAX || "48") });
@@ -3389,6 +3391,7 @@ ${buildSidebar('emaRsiStLive', tradeState.running, tradeState.running, {
         <span style="color:#a855f7;">── EMA9</span> &nbsp;
         <span style="color:#fbbf24;">── EMA20</span> &nbsp;
         <span style="color:#3b82f6;">── EMA50</span> &nbsp;
+        <span style="color:#f472b6;">╌╌ EMA21 (exit)</span> &nbsp;
         <span style="color:#22c55e;">──</span><span style="color:#ef4444;">──</span> ST &nbsp;
         <span style="color:#22d3ee;">── RSI</span> &nbsp;
         <span style="color:#f59e0b;">── SL</span>
@@ -3852,6 +3855,7 @@ async function manualEntry(side) {
   const ema9Series  = chart.addLineSeries({ color:'#a855f7', lineWidth:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'EMA9' });
   const ema20Series = chart.addLineSeries({ color:'#fbbf24', lineWidth:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'EMA20' });
   const ema50Series = chart.addLineSeries({ color:'#3b82f6', lineWidth:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'EMA50' });
+  const ema21Series = chart.addLineSeries({ color:'#f472b6', lineWidth:2, lineStyle:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'EMA21 (exit)' });
   // SuperTrend line (solid) — per-point colour: GREEN when bullish (line below price), RED when bearish.
   const stSeries   = chart.addLineSeries({ color:'#22c55e', lineWidth:2, priceLineVisible:false, lastValueVisible:true, crosshairMarkerVisible:false, title:'ST' });
   const _stColor = function(p){ return { time:p.time, value:p.value, color: (p.trend === -1 ? '#ef4444' : '#22c55e') }; };
@@ -3902,6 +3906,7 @@ async function manualEntry(side) {
       ema9Series.setData((d.ema9 && d.ema9.length) ? d.ema9 : []);
       ema20Series.setData((d.ema20 && d.ema20.length) ? d.ema20 : []);
       ema50Series.setData((d.ema50 && d.ema50.length) ? d.ema50 : []);
+      ema21Series.setData((d.ema21 && d.ema21.length) ? d.ema21 : []);
       stSeries.setData((d.supertrend && d.supertrend.length) ? d.supertrend.map(_stColor) : []);
       if (d.rsi && d.rsi.length) { rsiSeries.setData(d.rsi); drawRsiLevels(d.rsiCeMin, d.rsiPeMax); } else rsiSeries.setData([]);
 
