@@ -770,6 +770,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_RSI_PIVOT_ST_DAYREPORT", label: "RSI Pivot ST — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send an RSI Pivot ST day summary on stop.", default: "true" },
 
       { key: "TG_DAYREPORT_CONSOLIDATED", label: "Consolidated Day Report (Market Close)", type: "toggle", effect: EFFECT.INSTANT, desc: "Send one combined end-of-day summary at 15:30 IST.", default: "true" },
+      { key: "TG_EOD_CHARTS", label: "EOD Chart Images (Market Close)", type: "toggle", effect: EFFECT.INSTANT, desc: "At 15:34 IST send one chart image per strategy that took an entry today, with its entry/exit markers. Strategies that did not trade send nothing.", default: "true" },
     ],
   },
   {
@@ -1093,7 +1094,7 @@ const IMMEDIATE_KEYS = new Set([
   "TG_EMA_RSI_ST_EXIT",    "TG_BB_RSI_EXIT",    "TG_PA_EXIT",
   "TG_EMA_RSI_ST_SIGNALS", "TG_BB_RSI_SIGNALS", "TG_PA_SIGNALS",
   "TG_EMA_RSI_ST_DAYREPORT", "TG_BB_RSI_DAYREPORT", "TG_PA_DAYREPORT",
-  "TG_DAYREPORT_CONSOLIDATED",
+  "TG_DAYREPORT_CONSOLIDATED", "TG_EOD_CHARTS",
   "NIFTY_SPOT_FALLBACK", "CACHE_MAX_DAYS",
   "BB_RSI_ENABLED", "BB_RSI_MODE_ENABLED", "BB_RSI_VIX_ENABLED", "BB_RSI_EXPIRY_DAY_ONLY",
   "API_SECRET", "LOGIN_SECRET", "LOGIN_OTP_MOBILE", "UI_THEME",

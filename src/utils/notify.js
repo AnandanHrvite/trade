@@ -18,6 +18,7 @@
  *   TG_{EMA_RSI_ST|BB_RSI|PA|EMA9VWAP}_SIGNALS                 — candle-close skip/signal alerts (these modes only)
  *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|GAPS|TDS|GAP3M|OIWF|RSI_PIVOT_ST}_DAYREPORT  — per-mode day report on session stop
  *   TG_DAYREPORT_CONSOLIDATED                   — one combined day report at market close
+ *   TG_EOD_CHARTS                               — per-strategy chart images at market close
  *
  *   (ORB, TREND_PB, GAPS, TDS, GAP3M, OIWF and RSI_PIVOT_ST emit no SIGNAL alerts, so they have no _SIGNALS toggle.)
  *
@@ -77,6 +78,10 @@ function getTelegramHealth() {
 // refused/DNS failures, not on a silent drop. 8s is well above Telegram's
 // normal sub-second response.
 const TG_REQUEST_TIMEOUT_MS = 8000;
+
+// Photo uploads carry ~15 KB of PNG instead of a few hundred bytes of JSON, so
+// they get a longer ceiling than a text send before we treat the link as dead.
+const PHOTO_REQUEST_TIMEOUT_MS = 20000;
 
 function isOff(v) {
   return v === "false" || v === "0";
@@ -613,6 +618,94 @@ function notifyDayReport({ mode, sessionTrades, sessionPnl, sessionStart, sessio
 }
 
 /**
+ * sendTelegramPhoto(pngBuffer, caption) — upload an image to the chat.
+ *
+ * Telegram's sendPhoto takes multipart/form-data, which we build by hand rather
+ * than pull in a form-data package. Same failure contract as sendTelegram():
+ * never rejects, never throws, records health on the way through.
+ *
+ * The caption is plain text (no parse_mode) — captions are short status lines,
+ * and skipping MarkdownV2 means a stray "." or "-" in a strategy name can't
+ * bounce the whole upload with a 400.
+ *
+ * Does NOT check any toggle — the caller gates.
+ */
+function sendTelegramPhoto(png, caption) {
+  if (!isConfigured()) return Promise.resolve(false);
+  if (!Buffer.isBuffer(png) || png.length === 0) return Promise.resolve(false);
+
+  try {
+    const token  = process.env.TELEGRAM_BOT_TOKEN;
+    const chatId = process.env.TELEGRAM_CHAT_ID;
+    // Boundary must not occur in the payload. A fixed literal plus the buffer
+    // length is enough here: PNG bytes containing this exact ASCII run would be
+    // an astronomical coincidence, and a collision only breaks one image.
+    const boundary = `----NodeTradeBoundary${png.length}x${Buffer.byteLength(String(chatId))}`;
+
+    const part = (name, value) =>
+      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`);
+
+    const chunks = [part("chat_id", chatId)];
+    // Telegram rejects a caption over 1024 chars with a 400 — trim rather than lose the image.
+    if (caption) chunks.push(part("caption", String(caption).slice(0, 1000)));
+    chunks.push(Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="photo"; filename="chart.png"\r\n` +
+      `Content-Type: image/png\r\n\r\n`));
+    chunks.push(png);
+    chunks.push(Buffer.from(`\r\n--${boundary}--\r\n`));
+    const body = Buffer.concat(chunks);
+
+    const options = {
+      hostname: "api.telegram.org",
+      path:     `/bot${token}/sendPhoto`,
+      method:   "POST",
+      // Uploads are far heavier than a text send, so they get their own, longer
+      // ceiling — a ~15 KB PNG on a slow EC2 uplink can outlast the 8 s text budget.
+      timeout:  PHOTO_REQUEST_TIMEOUT_MS,
+      headers: {
+        "Content-Type":   `multipart/form-data; boundary=${boundary}`,
+        "Content-Length": body.length,
+      },
+    };
+
+    return new Promise((resolve) => {
+      let settled = false;
+      const done = (ok) => { if (!settled) { settled = true; resolve(!!ok); } };
+
+      const req = https.request(options, (res) => {
+        if (res.statusCode !== 200) {
+          let raw = "";
+          res.on("data", d => { raw += d; });
+          res.on("end",  () => {
+            const detail = raw.slice(0, 200);
+            console.error(`[NOTIFY] Telegram photo error ${res.statusCode}: ${detail}`);
+            _recordTgError(`HTTP ${res.statusCode}: ${detail}`, res.statusCode);
+            done(false);
+          });
+          res.on("error", () => done(false));
+        } else {
+          res.resume();
+          res.on("end", () => { _recordTgOk(); done(true); });
+          res.on("error", () => done(false));
+        }
+      });
+      req.on("timeout", () => { req.destroy(new Error(`photo upload timed out after ${PHOTO_REQUEST_TIMEOUT_MS}ms`)); });
+      req.on("error", (e) => {
+        console.error(`[NOTIFY] Telegram photo send failed: ${e.message}`);
+        _recordTgError(e.message);
+        done(false);
+      });
+      req.write(body);
+      req.end();
+    });
+  } catch (e) {
+    console.error(`[NOTIFY] Telegram photo send threw: ${e.message}`);
+    _recordTgError(e.message);
+    return Promise.resolve(false);
+  }
+}
+
+/**
  * notifyConsolidatedDayReport({ byMode: { EMA_RSI_ST, BB_RSI, PA, ORB, EMA9VWAP, TREND_PB, GAPS } })
  * Fires once at market close (15:30 IST). Gated by TG_DAYREPORT_CONSOLIDATED.
  * Each byMode entry: { trades, wins, losses, pnl }
@@ -669,6 +762,7 @@ module.exports = {
   getTelegramHealth,
   pingTelegram,
   sendTelegram,
+  sendTelegramPhoto,
   sendTelegramSync,
   sendIfMaster,
   canSend,

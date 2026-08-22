@@ -4123,6 +4123,10 @@ server.listen(PORT, HOST, () => {
   // ── Schedule consolidated end-of-day report at 15:30 IST daily ─────────────
   consolidatedEodReporter.start();
 
+  // ── Per-strategy EOD chart images at 15:34 IST (only strategies that traded) ─
+  try { require("./utils/eodChartReporter").start(); }
+  catch (err) { console.warn(`[EOD-CHART] scheduler start failed: ${err.message}`); }
+
   // ── Daily auto-sync of manual Kite trades at 15:35 IST (gated, default off) ─
   manualTradesSyncJob.start();
 
