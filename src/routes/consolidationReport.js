@@ -267,9 +267,6 @@ ${multiSelectCSS()}
     .badge-GAP3M{background:rgba(56,189,248,0.12);color:#38bdf8;}
     .badge-OIWF{background:rgba(244,114,182,0.12);color:#f472b6;}
     .badge-RSI_PIVOT_ST{background:rgba(250,204,21,0.12);color:#facc15;}
-    .res-profit{color:#10b981;font-weight:700;}
-    .res-loss{color:#ef4444;font-weight:700;}
-    .res-flat{color:var(--muted-1,#8ba1c2);}
     .empty{text-align:center;padding:50px 20px;color:var(--muted-1,#8ba1c2);font-size:0.85rem;}
     /* warning alert — sits at the very top of the report, not buried under the table */
     .alert-warn{display:flex;align-items:flex-start;gap:10px;background:rgba(245,158,11,0.10);border:0.5px solid rgba(245,158,11,0.45);border-left:3px solid #f59e0b;border-radius:10px;padding:11px 14px;margin-bottom:14px;}
@@ -473,7 +470,7 @@ function render(){
   // the daily table
   let thead='<tr><th>Date</th><th>VIX</th>';
   for(const mo of activeModes) thead+='<th>'+esc(MODE_LABEL[mo])+'</th>';
-  thead+='<th>Trades</th><th>W</th><th>L</th><th>Win%</th><th>Net P&amp;L</th><th>Result</th></tr>';
+  thead+='<th>Trades</th><th>Net P&amp;L</th></tr>';
 
   let body='';
   for(const g of days){
@@ -485,10 +482,10 @@ function render(){
       row+='<td><span style="color:'+pc(c.pnl)+'">'+inr2(c.pnl)+'</span><br><span class="cnt">'+c.n+' trade'+(c.n>1?'s':'')+'</span></td>';
     }
     const wr=g.n?(g.wins/g.n*100):0;
-    const rc = g.net>0?'res-profit':(g.net<0?'res-loss':'res-flat');
-    const rl = g.net>0?'🟢 PROFIT':(g.net<0?'🔴 LOSS':'— FLAT');
-    row+='<td>'+g.n+'</td><td style="color:#10b981">'+g.wins+'</td><td style="color:#ef4444">'+g.losses+'</td><td>'+wr.toFixed(0)+'%</td>'
-      +'<td style="color:'+pc(g.net)+';font-weight:700">'+inr2(g.net)+'</td><td class="'+rc+'">'+rl+'</td>';
+    // Trades column carries the whole W/L/Win% story; the P&L colour alone says
+    // profit-or-loss, so the separate Result column is redundant.
+    row+='<td>'+g.n+' - <span style="color:#10b981">'+g.wins+'W</span> <span style="color:#ef4444">'+g.losses+'L</span> '+wr.toFixed(0)+'%</td>'
+      +'<td style="color:'+pc(g.net)+';font-weight:700">'+inr2(g.net)+'</td>';
     body+='<tr>'+row+'</tr>';
   }
 
@@ -505,10 +502,9 @@ function render(){
   }
   // The colour lives on an inner span: the light-theme .cnt rule is !important,
   // so a colour set on .cnt itself would be greyed out in light mode.
-  foot+='<td>'+tN+'</td>'
-    +'<td style="color:#10b981">'+tW+'<br><span class="cnt"><span style="color:#10b981">'+inr(tWP)+'</span></span></td>'
-    +'<td style="color:#ef4444">'+tL+'<br><span class="cnt"><span style="color:#ef4444">'+inr(tLP)+'</span></span></td><td>'+tWR.toFixed(0)+'%</td>'
-    +'<td style="color:'+pc(tNet)+'">'+inr2(tNet)+'</td><td class="'+(tNet>=0?'res-profit':'res-loss')+'">'+(tNet>=0?'🟢':'🔴')+'</td></tr>';
+  foot+='<td><b>'+tN+'</b> - <span style="color:#10b981">'+tW+'W</span> <span style="color:#ef4444">'+tL+'L</span> '+tWR.toFixed(0)+'%'
+    +'<br><span class="cnt"><span style="color:#10b981">'+inr(tWP)+'</span> / <span style="color:#ef4444">'+inr(tLP)+'</span></span></td>'
+    +'<td style="color:'+pc(tNet)+';font-weight:700">'+inr2(tNet)+'</td></tr>';
 
   h+='<div class="panel"><h3>Daily Breakdown</h3><div class="tbl-scroll"><table class="tbl"><thead>'+thead+'</thead><tbody>'+body+'</tbody><tfoot>'+foot+'</tfoot></table></div></div>';
   C.innerHTML=h;
