@@ -485,7 +485,7 @@ function render(){
     // Trades column carries the whole W/L/Win% story; the P&L colour alone says
     // profit-or-loss, so the separate Result column is redundant.
     row+='<td>'+g.n+' - <span style="color:#10b981">'+g.wins+'W</span> <span style="color:#ef4444">'+g.losses+'L</span> '+wr.toFixed(0)+'%</td>'
-      +'<td style="color:'+pc(g.net)+';font-weight:700">'+inr2(g.net)+'</td>';
+      +'<td style="font-weight:700"><span style="color:'+pc(g.net)+'">'+inr2(g.net)+'</span></td>';
     body+='<tr>'+row+'</tr>';
   }
 
@@ -504,7 +504,7 @@ function render(){
   // so a colour set on .cnt itself would be greyed out in light mode.
   foot+='<td><b>'+tN+'</b> - <span style="color:#10b981">'+tW+'W</span> <span style="color:#ef4444">'+tL+'L</span> '+tWR.toFixed(0)+'%'
     +'<br><span class="cnt"><span style="color:#10b981">'+inr(tWP)+'</span> / <span style="color:#ef4444">'+inr(tLP)+'</span></span></td>'
-    +'<td style="color:'+pc(tNet)+';font-weight:700">'+inr2(tNet)+'</td></tr>';
+    +'<td style="font-weight:700"><span style="color:'+pc(tNet)+'">'+inr2(tNet)+'</span></td></tr>';
 
   h+='<div class="panel"><h3>Daily Breakdown</h3><div class="tbl-scroll"><table class="tbl"><thead>'+thead+'</thead><tbody>'+body+'</tbody><tfoot>'+foot+'</tfoot></table></div></div>';
   C.innerHTML=h;
