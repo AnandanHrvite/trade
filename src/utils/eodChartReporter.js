@@ -1,10 +1,15 @@
 /**
  * eodChartReporter.js — end-of-day chart images to Telegram
  * ─────────────────────────────────────────────────────────────────────────────
- * After market close, sends ONE chart image per strategy that actually took an
- * entry today: the day's candles with the same entry/exit markers the paper page
+ * After market close, sends ONE chart image per strategy that actually booked a
+ * trade today: the day's candles with the same entry/exit markers the paper page
  * draws. Strategies that sat flat send nothing — a picture of an empty session
  * is noise.
+ *
+ * "Traded" is decided by the persisted paper-trade files (the same loadAllTrades()
+ * the 15:32 text report counts), never by the drawn markers — PA draws swing and
+ * pivot circles on a flat session, and several strategies draw a PE entry above
+ * the bar and an exit as a circle, so markers cannot identify a real trade.
  *
  * How the data is obtained
  * ────────────────────────
@@ -30,6 +35,7 @@ const path = require("path");
 const { sendTelegramPhoto, canSend, isModeEnabled } = require("./notify");
 const { renderChartPng } = require("./chartPng");
 const { isNonTradingDay } = require("./nseHolidays");
+const { loadAllTrades } = require("../routes/consolidation");
 
 const DATA_DIR   = path.join(require("os").homedir(), "trading-data");
 const STATE_FILE = path.join(DATA_DIR, ".eod_charts_state.json");
@@ -153,11 +159,47 @@ function pickOverlay(payload, field) {
 }
 
 /**
- * Build the chart for one strategy. Returns { png, caption } or null when the
- * strategy is disabled, took no entry today, or has no drawable candles.
+ * How many trades each strategy actually booked today, by mode key.
+ *
+ * Read from the persisted paper-trade files via the Consolidation page's
+ * loadAllTrades() — the exact source the 15:32 text report counts from, so the
+ * two EOD messages can never disagree about who traded.
+ *
+ * Markers are NOT a usable substitute: PA decorates its chart with swing-point
+ * and pattern-pivot circles, and several strategies draw a PE entry `aboveBar`
+ * and an exit as a `circle`, so neither marker position nor shape identifies a
+ * real trade.
  */
-async function buildStrategyChart(cfg, istDate) {
+function todaysTradeCounts(istDate) {
+  const counts = new Map();
+  try {
+    for (const t of loadAllTrades()) {
+      if (!t || t.date !== istDate) continue;
+      const c = counts.get(t.mode) || { entries: 0, exits: 0 };
+      c.entries++;
+      if (t.exitTime || Number.isFinite(t.exitPrice)) c.exits++;
+      counts.set(t.mode, c);
+    }
+  } catch (err) {
+    // A failed read must not silently mute every chart, so surface it loudly.
+    console.warn(`[EOD-CHART] could not read today's trades: ${err.message}`);
+  }
+  return counts;
+}
+
+/**
+ * Build the chart for one strategy. Returns { png, caption } or null when the
+ * strategy is disabled, took no trade today, or has no drawable candles.
+ *
+ * `counts` is the booked-trade tally from todaysTradeCounts().
+ */
+async function buildStrategyChart(cfg, istDate, counts) {
   if (!isModeEnabled(cfg.group)) return null;
+
+  // The whole point of the feature: only strategies that actually traded.
+  // Checked before doing any chart work so a flat strategy costs nothing.
+  const tally = counts.get(cfg.group);
+  if (!tally || tally.entries === 0) return null;
 
   let router;
   try {
@@ -179,23 +221,18 @@ async function buildStrategyChart(cfg, istDate) {
   const candles = Array.isArray(payload.candles) ? payload.candles : [];
   const markers = Array.isArray(payload.markers) ? payload.markers : [];
 
-  // The whole point of the feature: only strategies that actually traded.
-  // An entry marker sits below the bar; an exit above. Requiring an entry means
-  // a session that only ever printed candles stays silent.
-  const entries = markers.filter(m => m && m.position !== "aboveBar");
-  if (entries.length === 0) return null;
-  if (candles.length < 2)   return null;
+  if (candles.length < 2) return null;
 
-  // Caption numbers come from the exit markers' own labels being unavailable as
-  // data, so we report what we can see structurally: entries and completed exits.
-  const exits = markers.length - entries.length;
+  // Caption numbers come from the booked trades, not the drawn markers.
+  const entries = tally.entries;
+  const exits   = tally.exits;
   const caption =
     `${cfg.label} — Paper ${istDate}\n` +
-    `${entries.length} ${entries.length === 1 ? "entry" : "entries"}, ${exits} ${exits === 1 ? "exit" : "exits"}`;
+    `${entries} ${entries === 1 ? "entry" : "entries"}, ${exits} ${exits === 1 ? "exit" : "exits"}`;
 
   const png = renderChartPng({
     title:    `${cfg.label} - Paper`,
-    subtitle: `${istDate}  |  ${entries.length} entries  |  ${exits} exits`,
+    subtitle: `${istDate}  |  ${entries} entries  |  ${exits} exits`,
     candles,
     markers,
     overlay:  pickOverlay(payload, cfg.overlay),
@@ -211,6 +248,7 @@ async function sendEodCharts() {
   if (!canSend("TG_EOD_CHARTS")) return 0;
 
   const istDate = istDateStr();
+  const counts  = todaysTradeCounts(istDate);
   let sent = 0;
 
   // Sequential, not parallel: eleven concurrent uploads would hit Telegram's
@@ -218,7 +256,7 @@ async function sendEodCharts() {
   for (const cfg of STRATEGIES) {
     let built = null;
     try {
-      built = await buildStrategyChart(cfg, istDate);
+      built = await buildStrategyChart(cfg, istDate, counts);
     } catch (err) {
       console.warn(`[EOD-CHART] ${cfg.label}: chart build failed — ${err.message}`);
       continue;
@@ -235,7 +273,7 @@ async function sendEodCharts() {
   }
 
   if (sent > 0) console.log(`[EOD-CHART] sent ${sent} chart image(s) for ${istDate}.`);
-  else          console.log(`[EOD-CHART] no strategy took an entry on ${istDate} — nothing sent.`);
+  else          console.log(`[EOD-CHART] no strategy traded on ${istDate} — nothing sent.`);
   return sent;
 }
 
