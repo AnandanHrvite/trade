@@ -30,6 +30,7 @@ const FILE_BY_MODE = {
   gap_fix_3m: "gap_fix_3m_paper_trades_log.jsonl",
   oi_wall_fade: "oi_wall_fade_paper_trades_log.jsonl",
   rsi_pivot_st: "rsi_pivot_st_paper_trades_log.jsonl",
+  simple930: "simple930_paper_trades_log.jsonl",
   // Live-harness log keys. The harnesses install with liveLogKey "{mode}-live"
   // (liveHarness.js calls appendTradeLog(cfg.liveLogKey, …)); without these entries
   // filePathFor() threw "unknown mode" and every live trade was silently dropped.
@@ -44,6 +45,7 @@ const FILE_BY_MODE = {
   "gap_fix_3m-live": "gap_fix_3m_live_trades_log.jsonl",
   "oi_wall_fade-live": "oi_wall_fade_live_trades_log.jsonl",
   "rsi_pivot_st-live": "rsi_pivot_st_live_trades_log.jsonl",
+  "simple930-live": "simple930_live_trades_log.jsonl",
 };
 
 const DAILY_PREFIX_BY_MODE = {
@@ -58,6 +60,7 @@ const DAILY_PREFIX_BY_MODE = {
   gap_fix_3m: "gap_fix_3m_paper_trades_",
   oi_wall_fade: "oi_wall_fade_paper_trades_",
   rsi_pivot_st: "rsi_pivot_st_paper_trades_",
+  simple930: "simple930_paper_trades_",
   "ema_rsi_st-live":    "ema_rsi_st_live_trades_",
   "bb_rsi-live":    "bb_rsi_live_trades_",
   "pa-live":       "pa_live_trades_",
@@ -69,6 +72,7 @@ const DAILY_PREFIX_BY_MODE = {
   "gap_fix_3m-live": "gap_fix_3m_live_trades_",
   "oi_wall_fade-live": "oi_wall_fade_live_trades_",
   "rsi_pivot_st-live": "rsi_pivot_st_live_trades_",
+  "simple930-live": "simple930_live_trades_",
 };
 
 // One-time dir ensure at module load — keeps the hot-path append sync-free.

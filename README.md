@@ -1,6 +1,6 @@
 # Palani Andawar Trading Bot
 
-NIFTY options algorithmic trading bot with **11 independent strategies** (EMA_RSI_ST, BB_RSI, Price Action, ORB, EMA9+VWAP, Trend Pullback, GAPS, Trend Day Scalp, 3M Gap Fix Scalp, OI Wall Fade, RSI Pivot ST), dual-broker architecture (Fyers + Zerodha), background backtesting, paper trading, deterministic **tick-replay** of recorded sessions, after-hours simulation, live NIFTY candlestick charts, consolidated cross-mode analytics (paper + live), per-module dashboard P&L cards, **unified real-time monitor** (one screen for all strategies with a PAPER/LIVE toggle), crash-safe JSONL trade audit, near-miss filter audit, Telegram alerts, and a full web dashboard.
+NIFTY options algorithmic trading bot with **12 independent strategies** (EMA_RSI_ST, BB_RSI, Price Action, ORB, EMA9+VWAP, Trend Pullback, GAPS, Trend Day Scalp, 3M Gap Fix Scalp, OI Wall Fade, RSI Pivot ST, SIMPLE_9:30), dual-broker architecture (Fyers + Zerodha), background backtesting, paper trading, deterministic **tick-replay** of recorded sessions, after-hours simulation, live NIFTY candlestick charts, consolidated cross-mode analytics (paper + live), per-module dashboard P&L cards, **unified real-time monitor** (one screen for all strategies with a PAPER/LIVE toggle), crash-safe JSONL trade audit, near-miss filter audit, Telegram alerts, and a full web dashboard.
 
 ## Architecture
 
@@ -61,6 +61,9 @@ All four strategies run **in parallel** on the same WebSocket — different cand
 | **RSI Pivot ST Paper** | RSI(14) extreme + a candle crossing and closing beyond yesterday's Standard Pivot R1/S1 (single-leg OTM CE/PE) | 5-min | Simulated | `/rsi-pivot-st-paper` |
 | **RSI Pivot ST Backtest** | Same engine over a date range (conservative intra-bar ordering, δ+θ premium sim) | 5-min historical | Historical | `/rsi-pivot-st-backtest` |
 | **RSI Pivot ST Live (Harness)** | Runs Live by wrapping Paper (Zerodha orders, triple-gated dry-run) | 5-min | Zerodha (PAPER-wrapped) | `/rsi-pivot-st-live` |
+| **SIMPLE_9:30 Paper** | At 09:25 picks the ITM strike nearest ₹180 on each side; buys whichever clears ₹180 by 09:35, 20pt trailing stop, 09:45 sideways exit | 1-sec option premium poll | Simulated | `/simple930-paper` |
+| **SIMPLE_9:30 Backtest** | Same engine over a date range on **real** 1-min option premium candles (no delta/theta model) | 1-min historical (option premium) | Historical | `/simple930-backtest` |
+| **SIMPLE_9:30 Live (Harness)** | Runs Live by wrapping Paper (Zerodha orders, triple-gated dry-run) | 1-sec option premium poll | Zerodha (PAPER-wrapped) | `/simple930-live` |
 | **Replay** | Re-runs a recorded paper session through the paper `onTick()` | Recorded ticks | Recorded | `/replay` |
 | **All Backtest** | Unified backtest dashboard (per-strategy stats) | Per-strategy | Historical | `/all-backtest` |
 | **Manual Tracker** | — (trails SL only) | 15-min | Zerodha | `/tracker` |
@@ -354,6 +357,25 @@ Two levels decide the whole day, and they are fixed before the open. Yesterday's
 - **Backtest** (`/rsi-pivot-st-backtest`, [src/routes/rsiPivotStBacktest.js](src/routes/rsiPivotStBacktest.js)): drives the **same** `getSignal` and re-implements only paper's exits (paper is canonical). Two series are fetched — intraday 5-min bars for every decision, and a separate **daily** series, requested from a week *before* the range so the first session still has a yesterday to compute R1/S1 from. **Conservative intra-bar ordering**: the adverse stop is tested on the bar's high/low *before* anything favourable, so a bar touching both books the loss; a bar that opened beyond a level fills at the **open**; entry is the signal bar's close; the SuperTrend trail advances only on a bar **close**, matching paper. **The premium stop is the weakest number in any backtest result** — there is no historical option chain, so the premium is δ+θ simulated seeded at `RSI_PIVOT_ST_BT_SEED_PREMIUM=180` and the 25% floor is applied to *that*, plus `RSI_PIVOT_ST_BT_SLIPPAGE_PTS=2`pt each way.
 
 
+### SIMPLE_9:30 — the ₹180 option-premium breakout (`src/strategies/simple930.js`)
+
+**Never traded, and never validated.** Zero paper sessions, zero live orders. ₹180, ₹220/₹160 and the 20-point stop are the operator's own numbers, not fitted ones. Collect clean paper days and diff one against `/replay` before touching a live gate.
+
+- **Every decision is an OPTION PREMIUM.** The NIFTY index is read for exactly one thing — the ATM strike sampled once at 09:25 — and for nothing else. There is no spot-chart rule anywhere in the engine.
+- **09:25 SELECTION** (`SIMPLE930_SELECTION_TIME`): quote the ladder — the ATM strike plus `SIMPLE930_SCAN_ITM_STRIKES=8` strikes in-the-money per side (CE walks *down*, PE walks *up*), optionally `SIMPLE930_SCAN_OTM_STRIKES=0` the other way — and keep the ONE strike per side trading nearest `SIMPLE930_TRIGGER_PREMIUM=180`. That pair is the watchlist and it is **frozen for the day**: a watchlist that drifted with spot could never be reproduced by replay. A rung that comes back without a price is reported **missing**, never treated as ₹0.
+- **ENTRY** between `SIMPLE930_ENTRY_START=09:25` and `SIMPLE930_ENTRY_END=09:35`: the first watchlist leg to trade **strictly above** ₹180 is bought at market. Exactly ₹180 is not a break. Both legs above on the same quote → the one further through the level (an arbitrary "CE first" would bias every such morning to calls). `SIMPLE930_SUSTAIN_POLLS=1` means enter on the first quote above, which is the rule as written.
+- **STOP** = `SIMPLE930_SL_PTS=20` below the **ACTUAL FILL**, not below the trigger — filled at 181 → stop 161, filled at 186 → 166, so a slipped fill never buys itself a wider stop. It then trails `SIMPLE930_TRAIL_PTS=20` behind the highest premium seen since entry, ratcheting **up only** and never below the initial stop.
+- **09:45 SIDEWAYS EXIT** (`SIMPLE930_SIDEWAYS_CHECK`): a trade still open and still inside `SIMPLE930_BAND_DOWN_OFFSET=20` / `SIMPLE930_BAND_UP_OFFSET=40` either side of the trigger (₹160–₹220 at the defaults) is closed at market, profit or loss. A trade that *did* touch either edge is left alone and runs on the trail to `SIMPLE930_FORCED_EXIT=15:15`. **Honest caveat**: with a 20-point stop the ₹160 edge is unreachable — the stop fires first — so only the ₹220 edge does real work until `SIMPLE930_SL_PTS` is widened.
+- **One trade a day** (`SIMPLE930_MAX_DAILY_TRADES=1`). Once it exits, the day is over; the other leg cannot trigger later.
+- **Two guards ship OFF on purpose**: `SIMPLE930_MAX_PREMIUM_DIST` and `SIMPLE930_MIN_PREMIUM` both default to `0`. Out of the box the engine does exactly what the rules say — including watching a ₹260 contract on a fresh weekly where the whole ITM ladder sits above the trigger and "breaking ₹180" is meaningless. `MAX_PREMIUM_DIST` exists for that day; it is a lever, not a default.
+- **Deliberately absent**: no VIX gate, no OI filter, no ADX/RSI/EMA/VWAP/ATR/SuperTrend, no spot confirmation, no multi-timeframe bias, no confirmation candle, no breakeven jump, no partial booking, no re-entry, no expiry-day rule, and **no `{MODE}_ITM_STEPS` key** — the ₹180 premium *is* the strike rule, so an ITM-steps setting would be a second, contradictory selector.
+- **How the data arrives.** Both watchlist premiums are fetched in ONE `fyers.getQuotes` call every `SIMPLE930_POLL_MS=1000`, and every quote — the whole 09:25 ladder included — is written to the tick archive. That is what makes Paper ≡ Live ≡ Replay: replay serves those same recorded premiums back at the replay clock, so even the 09:25 pick is reproducible. A premium the poll has not refreshed for `SIMPLE930_LTP_STALE_MS=15000` is refused as entry evidence rather than filled on. **Exits therefore resolve at ~1-second granularity, not per tick.**
+- **Data from Fyers, orders to Zerodha**, like EMA_RSI_ST and RSI Pivot ST — which is why `/simple930-live/start` checks both.
+- **LIVE = PAPER** (`/simple930-live`, [src/routes/simple930LiveHarness.js](src/routes/simple930LiveHarness.js)): wraps the Paper engine with the shared harness. **Triple-gated to dry-run**: real orders require `SIMPLE930_LIVE_ENABLED=true` AND `LIVE_HARNESS_DRY_RUN=false` AND `SIMPLE930_LIVE_DRY_RUN` not-true, plus an authenticated Zerodha session. An open position is crash-recovered via `positionPersist` (`.active_simple930_position.json`) — and unlike the frozen-level strategies it persists the **live trail state** (peak, trough, current stop, trail count, whether the box was broken), because without those a restart would wind the stop back to its initial value and re-arm an already-settled 09:45 check.
+- **Backtest** (`/simple930-backtest`, [src/routes/simple930Backtest.js](src/routes/simple930Backtest.js)): drives the **same** engine and re-implements only paper's exits. Uniquely in this repo it uses **real 1-minute option premium candles** — there is no δ+θ model, because on a strategy defined entirely on premium that would be simulating the strategy itself. **Conservative intra-bar ordering**: a bar whose high crosses the trigger fills at `max(open, trigger)`; the adverse stop is tested on the bar **low** before the trail is lifted from the bar **high**; a bar that opened beyond the stop fills at the **open**; the entry bar is tested like any other. `SIMPLE930_BT_SLIPPAGE_PTS=1.5` is charged **each way** and Zerodha statutory charges are applied. **How far back it can go is limited by Fyers, not by this code**: a NIFTY weekly option is *delisted the moment it expires*, so in practice only the current expiry week can be fetched. Sessions that cannot be fetched are reported as **"no option data"** per day rather than counted as flat, and `/simple930-backtest/day-log?jobId=…` returns the full per-session audit.
+- **Guide**: [documents/SIMPLE930_Strategy_Guide.html](documents/SIMPLE930_Strategy_Guide.html); chart data regenerated with `node tools/genSimple930GuideData.js`. **Tests**: `npm run test:simple930`.
+
+
 ## Quick Start (EC2)
 
 ```bash
@@ -406,6 +428,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   gap_fix_3m_paper_trades.json    # 3M Gap Fix Scalp paper sessions
   oi_wall_fade_paper_trades.json  # OI Wall Fade paper sessions
   rsi_pivot_st_paper_trades.json  # RSI Pivot ST paper sessions
+  simple930_paper_trades.json     # SIMPLE_9:30 paper sessions
   historical_pnl.json             # One-time P&L baselines per broker (Kite / Fyers)
   nse_holidays.json               # Last good NSE holiday fetch, keyed by year — keeps 2027+ working if NSE blocks the box
   .active_ema_rsi_st_position.json     # Crash recovery — EMA_RSI_ST position
@@ -419,6 +442,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   .active_gap_fix_3m_position.json # Crash recovery — 3M Gap Fix Scalp position
   .active_oi_wall_fade_position.json # Crash recovery — OI Wall Fade position
   .active_rsi_pivot_st_position.json # Crash recovery — RSI Pivot ST position
+  .active_simple930_position.json # Crash recovery — SIMPLE_9:30 position (carries the live trail state)
   .harness_events.json            # Live-harness event log (DRY-RUN/real order events), survives restart
   ema_rsi_st_paper_trades_log.jsonl    # Crash-safe per-trade JSONL audit (cumulative)
   bb_rsi_paper_trades_log.jsonl
@@ -538,6 +562,14 @@ log, so each session's trades carry the exact config that produced them.
 | `/rsi-pivot-st-paper/status` | Paper trade — NIFTY chart with the frozen PP / R1 / S1 levels and the SuperTrend line |
 | `/rsi-pivot-st-paper/history` | Sessions (per-session delete + view modal) |
 | `/rsi-pivot-st-live` | Live via the paper-wrapping harness (**Zerodha** orders; gated by `RSI_PIVOT_ST_LIVE_ENABLED` + `LIVE_HARNESS_DRY_RUN` + `RSI_PIVOT_ST_LIVE_DRY_RUN`) |
+
+### SIMPLE_9:30
+| URL | Description |
+|-----|-------------|
+| `/simple930-backtest` | SIMPLE_9:30 date-range backtest on **real** 1-min option premium candles. Only reaches back as far as the currently listed weekly contracts — a delisted weekly cannot be fetched at all, and those sessions are reported as "no option data" rather than counted as flat. `/simple930-backtest/day-log?jobId=…` returns the full per-session audit. |
+| `/simple930-paper/status` | Paper trade — the 09:25 ladder table, both watchlist legs, a premium chart per leg with the ₹180 trigger / ₹160–₹220 box / stop drawn on it, and a structured decision trail |
+| `/simple930-paper/history` | Sessions (per-session delete + view modal) |
+| `/simple930-live` | Live via the paper-wrapping harness (**Zerodha** orders; gated by `SIMPLE930_LIVE_ENABLED` + `LIVE_HARNESS_DRY_RUN` + `SIMPLE930_LIVE_DRY_RUN`) |
 
 ### Analytics & Tools
 | URL | Description |

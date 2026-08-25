@@ -66,6 +66,9 @@ const STRATEGIES = [
   { group: "GAP3M",        label: "3M Gap Fix Scalp",  module: "../routes/gapFix3mPaper" },
   { group: "OIWF",         label: "OI Wall Fade",      module: "../routes/oiWallFadePaper" },
   { group: "RSI_PIVOT_ST", label: "RSI Pivot ST",      module: "../routes/rsiPivotStPaper" },
+  // SIMPLE_9:30 draws the OPTION PREMIUM of the leg it held, not a spot chart —
+  // that is the only chart any of its rules read.
+  { group: "SIMPLE930",    label: "SIMPLE 9:30",       module: "../routes/simple930Paper" },
 ];
 
 function istNow() {

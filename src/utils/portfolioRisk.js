@@ -22,7 +22,7 @@ const tradeLogger = require("./tradeLogger");
 
 // Paper modes = the canonical decision layer. Summing these gives the book's
 // realized P&L for the day regardless of which surface (paper/harness-live) ran.
-const PAPER_MODES = ["ema_rsi_st", "bb_rsi", "pa", "orb", "ema9vwap", "trend_pb", "gaps", "trend_day_scalp", "gap_fix_3m", "oi_wall_fade", "rsi_pivot_st"];
+const PAPER_MODES = ["ema_rsi_st", "bb_rsi", "pa", "orb", "ema9vwap", "trend_pb", "gaps", "trend_day_scalp", "gap_fix_3m", "oi_wall_fade", "rsi_pivot_st", "simple930"];
 
 // Pull a realized P&L number out of a logged record. Trade exits carry `pnl`;
 // harness EXIT events carry `paperPnl`. Snapshot / checkpoint lines carry

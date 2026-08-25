@@ -28,6 +28,7 @@ const STRATEGY_MODES = [
   { mode: 'GAP3M',      label: '3M Gap Fix Scalp', envKey: 'GAP3M_MODE_ENABLED'  },
   { mode: 'OIWF',       label: 'OI Wall Fade', envKey: 'OIWF_MODE_ENABLED'       },
   { mode: 'RSI_PIVOT_ST', label: 'RSI Pivot ST', envKey: 'RSI_PIVOT_ST_MODE_ENABLED' },
+  { mode: 'SIMPLE930', label: 'SIMPLE_9:30', envKey: 'SIMPLE930_MODE_ENABLED' },
 ];
 
 // Strategies currently enabled in Settings (default ON, same as the sidebar).
@@ -50,6 +51,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   let _gapFix3mMode = null;
   let _oiWallFadeMode = null;
   let _rsiPivotStMode = null;
+  let _simple930Mode = null;
   let _anyTradeActive = false;
   try {
     const sss = require('./sharedSocketState');
@@ -64,6 +66,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     _gapFix3mMode = sss.getGapFix3mMode ? sss.getGapFix3mMode() : null;
     _oiWallFadeMode = sss.getOiWallFadeMode ? sss.getOiWallFadeMode() : null;
     _rsiPivotStMode = sss.getRsiPivotStMode ? sss.getRsiPivotStMode() : null;
+    _simple930Mode = sss.getSimple930Mode ? sss.getSimple930Mode() : null;
     _anyTradeActive = sss.isAnyActive ? sss.isAnyActive() : false;
   } catch (_) {}
 
@@ -101,6 +104,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const gap3mModeOn    = (process.env.GAP3M_MODE_ENABLED    || 'true').toLowerCase() === 'true';
   const oiwfModeOn     = (process.env.OIWF_MODE_ENABLED     || 'true').toLowerCase() === 'true';
   const rsiPivotStModeOn = (process.env.RSI_PIVOT_ST_MODE_ENABLED || 'true').toLowerCase() === 'true';
+  const simple930ModeOn = (process.env.SIMPLE930_MODE_ENABLED || 'true').toLowerCase() === 'true';
 
   // ── Per-module menu-visibility toggles (managed from Settings page) ──
   const showSim      = (process.env.UI_SHOW_SIMULATE || 'false').toLowerCase() === 'true';
@@ -174,6 +178,11 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const showRsiPivotStPaper    = (process.env.UI_SHOW_RSI_PIVOT_ST_PAPER    || 'true').toLowerCase()  === 'true';
   const showRsiPivotStLive     = (process.env.UI_SHOW_RSI_PIVOT_ST_LIVE     || 'true').toLowerCase()  === 'true';
   const showRsiPivotStHistory  = (process.env.UI_SHOW_RSI_PIVOT_ST_HISTORY  || 'true').toLowerCase()  === 'true';
+  // SIMPLE_9:30 — never traded; ships visible but its Live page is triple-gated to dry-run.
+  const showSimple930Backtest = (process.env.UI_SHOW_SIMPLE930_BACKTEST    || 'true').toLowerCase()  === 'true';
+  const showSimple930Paper    = (process.env.UI_SHOW_SIMPLE930_PAPER       || 'true').toLowerCase()  === 'true';
+  const showSimple930Live     = (process.env.UI_SHOW_SIMPLE930_LIVE        || 'true').toLowerCase()  === 'true';
+  const showSimple930History  = (process.env.UI_SHOW_SIMPLE930_HISTORY     || 'true').toLowerCase()  === 'true';
 
   // ── System submenu toggles (Settings is always shown) ──
   const showTradeLogs  = (process.env.UI_SHOW_TRADE_LOGS  || 'true').toLowerCase() === 'true';
@@ -191,6 +200,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const gap3mKeys   = ['gapFix3mBacktest', 'gapFix3mPaper', 'gapFix3mLive', 'gapFix3mHistory'];
   const oiwfKeys    = ['oiWallFadePaper', 'oiWallFadeLive', 'oiWallFadeHistory'];
   const rsiPivotStKeys = ['rsiPivotStBacktest', 'rsiPivotStPaper', 'rsiPivotStLive', 'rsiPivotStHistory'];
+  const simple930Keys = ['simple930Backtest', 'simple930Paper', 'simple930Live', 'simple930History'];
 
   const isTradingOpen  = tradingKeys.includes(activePage);
   const isBbRsiOpen    = bbRsiKeys.includes(activePage);
@@ -203,6 +213,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const isGap3mOpen    = gap3mKeys.includes(activePage);
   const isOiwfOpen     = oiwfKeys.includes(activePage);
   const isRsiPivotStOpen = rsiPivotStKeys.includes(activePage);
+  const isSimple930Open = simple930Keys.includes(activePage);
 
   // When a strategy's PAPER session is running, hide its Live / Live (Harness)
   // entries — paper and live are mutually exclusive per strategy, so the live
@@ -218,6 +229,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const gap3mPaperRunning    = _gapFix3mMode === 'GAP_FIX_3M_PAPER';
   const oiwfPaperRunning     = _oiWallFadeMode === 'OI_WALL_FADE_PAPER';
   const rsiPivotStPaperRunning = _rsiPivotStMode === 'RSI_PIVOT_ST_PAPER';
+  const simple930PaperRunning = _simple930Mode === 'SIMPLE930_PAPER';
 
   // Build a ema_rsi_st items list with per-feature toggle
   const emaRsiStItems = [
@@ -310,6 +322,13 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     ...(showRsiPivotStHistory  ? [{ key: 'rsiPivotStHistory',  href: '/rsi-pivot-st-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 
+  const simple930Items = [
+    ...(showSimple930Backtest ? [{ key: 'simple930Backtest', href: '/simple930-backtest',     icon: '🔍', label: 'Backtest' }] : []),
+    ...(showSimple930Paper    ? [{ key: 'simple930Paper',    href: '/simple930-paper/status', icon: '🎯', label: 'Paper'    }] : []),
+    ...(showSimple930Live && !simple930PaperRunning ? [{ key: 'simple930Live', href: '/simple930-live', icon: '📡', label: 'Live' }] : []),
+    ...(showSimple930History  ? [{ key: 'simple930History',  href: '/simple930-paper/history', icon: '📜', label: 'History' }] : []),
+  ];
+
   // ── Grouped navigation sections (collapsible) ──
   const topLevelItems = [
     ...(showDashboard   ? [{ key: 'dashboard',         href: '/',                   icon: '⌂',  label: 'Dashboard' }] : []),
@@ -382,6 +401,11 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       header: 'RSI PIVOT ST', collapsible: true, collapsed: !isRsiPivotStOpen,
       groupId: 'nav-rsi-pivot-st',
       items: rsiPivotStItems,
+    }] : []),
+    ...(simple930ModeOn ? [{
+      header: 'SIMPLE 9:30', collapsible: true, collapsed: !isSimple930Open,
+      groupId: 'nav-simple930',
+      items: simple930Items,
     }] : []),
     {
       header: 'SYSTEM', collapsible: false,
@@ -484,9 +508,17 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
       : '';
 
+    const simple930LiveBadge = p.key === 'simple930Live' && _simple930Mode === 'SIMPLE930_LIVE'
+      ? `<span class="sb-nav-badge live">LIVE</span>`
+      : '';
+
+    const simple930PaperBadge = p.key === 'simple930Paper' && _simple930Mode === 'SIMPLE930_PAPER'
+      ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
+      : '';
+
     return `<a href="${p.href}" class="sb-nav-item${isActive ? ' active' : ''}">
       <span class="sb-nav-icon">${p.icon}</span> ${p.label}
-      ${liveBadge}${runningBadge}${bbRsiLiveBadge}${bbRsiPaperBadge}${paLiveBadge}${paPaperBadge}${orbLiveBadge}${orbPaperBadge}${gapsLiveBadge}${gapsPaperBadge}${tdsLiveBadge}${tdsPaperBadge}${gap3mLiveBadge}${gap3mPaperBadge}${oiwfLiveBadge}${oiwfPaperBadge}${rsiPivotStLiveBadge}${rsiPivotStPaperBadge}
+      ${liveBadge}${runningBadge}${bbRsiLiveBadge}${bbRsiPaperBadge}${paLiveBadge}${paPaperBadge}${orbLiveBadge}${orbPaperBadge}${gapsLiveBadge}${gapsPaperBadge}${tdsLiveBadge}${tdsPaperBadge}${gap3mLiveBadge}${gap3mPaperBadge}${oiwfLiveBadge}${oiwfPaperBadge}${rsiPivotStLiveBadge}${rsiPivotStPaperBadge}${simple930LiveBadge}${simple930PaperBadge}
     </a>`;
   }
 

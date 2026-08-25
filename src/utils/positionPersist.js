@@ -832,6 +832,93 @@ function clearRsiPivotStPosition() {
   console.log("[PERSIST] RSI_PIVOT_ST position file cleared.");
 }
 
+// ── SIMPLE_9:30 (09:25 ITM pick, premium-trigger entry, Zerodha) ────────────
+// Unlike gap_fix_3m, whose two exit levels are frozen prices, this strategy DOES
+// carry live trail state: `stop` ratchets up behind `peak` on every new premium
+// high, and the sideways band decides at 09:45 whether the trade is left alone
+// or closed. The frozen entry levels alone are therefore NOT enough — the trail
+// fields (peak / trough / trailMoves / stop) and the band fields (bandUp /
+// bandDown / expanded / expandedAt) are what make a crash-recovered position
+// reconstructable: without them a restart would wind the stop back to
+// initialStop and re-arm a sideways check that has already fired.
+// entryPrice / optionEntryLtp are OPTION PREMIUMS — the premium is the traded
+// price every level of this strategy is measured on.
+
+const SIMPLE930_POS_FILE = path.join(DATA_DIR, ".active_simple930_position.json");
+
+function saveSimple930Position(position, sessionMeta) {
+  try {
+    if (!position) { _persistAtomic(SIMPLE930_POS_FILE, null); return; }
+    const data = {
+      position: {
+        side:            position.side,
+        symbol:          position.symbol,
+        optionStrike:    position.optionStrike,
+        optionExpiry:    position.optionExpiry,
+        optionType:      position.optionType || position.side,
+        qty:             position.qty,
+        optionEntryLtp:  position.optionEntryLtp,
+        entryPrice:      position.entryPrice,
+        spotAtEntry:     position.spotAtEntry,
+        indexAtEntry:    position.indexAtEntry,
+        atmAtSelection:  position.atmAtSelection,
+        selectionLtp:    position.selectionLtp,
+        trigger:         position.trigger,
+        stop:            position.stop,
+        stopLoss:        position.stopLoss,
+        initialStop:     position.initialStop,
+        initialStopLoss: position.initialStopLoss,
+        slPts:           position.slPts,
+        trailPts:        position.trailPts,
+        trailEnabled:    position.trailEnabled,
+        trailMoves:      position.trailMoves,
+        bandUp:          position.bandUp,
+        bandDown:        position.bandDown,
+        expanded:        position.expanded,
+        expandedAt:      position.expandedAt,
+        peak:            position.peak,
+        trough:          position.trough,
+        entryTime:       position.entryTime,
+        entryMin:        position.entryMin,
+        entryTimeMs:     position.entryTimeMs,
+        entryUnixSec:    position.entryUnixSec,
+        entryBarTime:    position.entryBarTime,
+        entryReason:     position.entryReason,
+      },
+      sessionMeta: sessionMeta || {},
+      savedAt: Date.now(),
+      savedDate: new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
+    };
+    _persistAtomic(SIMPLE930_POS_FILE, JSON.stringify(data, null, 2));
+    console.log(`💾 [PERSIST] SIMPLE_9:30 position saved: ${position.side} ${position.symbol} @ ₹${position.entryPrice}`);
+  } catch (err) {
+    console.warn(`⚠️ [PERSIST] Could not save SIMPLE_9:30 position: ${err.message}`);
+  }
+}
+
+function loadSimple930Position() {
+  try {
+    if (!fs.existsSync(SIMPLE930_POS_FILE)) return null;
+    const data = JSON.parse(fs.readFileSync(SIMPLE930_POS_FILE, "utf-8"));
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    if (data.savedDate && data.savedDate !== today) {
+      console.log(`[PERSIST] Stale SIMPLE_9:30 position from ${data.savedDate} — discarding.`);
+      fs.unlinkSync(SIMPLE930_POS_FILE);
+      return null;
+    }
+    if (data.position) console.log(`[PERSIST] SIMPLE_9:30 position loaded: ${data.position.side} ${data.position.symbol} @ ₹${data.position.entryPrice}`);
+    return data;
+  } catch (err) {
+    console.warn(`[PERSIST] Could not load SIMPLE_9:30 position: ${err.message}`);
+    return null;
+  }
+}
+
+function clearSimple930Position() {
+  _persistAtomic(SIMPLE930_POS_FILE, null);
+  console.log("[PERSIST] SIMPLE_9:30 position file cleared.");
+}
+
 module.exports = {
   saveTradePosition, loadTradePosition, clearTradePosition,
   saveBbRsiPosition, loadBbRsiPosition, clearBbRsiPosition,
@@ -844,4 +931,5 @@ module.exports = {
   saveGapFix3mPosition, loadGapFix3mPosition, clearGapFix3mPosition,
   saveOiWallFadePosition, loadOiWallFadePosition, clearOiWallFadePosition,
   saveRsiPivotStPosition, loadRsiPivotStPosition, clearRsiPivotStPosition,
+  saveSimple930Position, loadSimple930Position, clearSimple930Position,
 };

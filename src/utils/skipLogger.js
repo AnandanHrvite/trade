@@ -45,6 +45,7 @@ const FILE_PREFIX_BY_MODE = {
   gap_fix_3m: "gap_fix_3m_paper_skips_",
   oi_wall_fade: "oi_wall_fade_paper_skips_",
   rsi_pivot_st: "rsi_pivot_st_paper_skips_",
+  simple930: "simple930_paper_skips_",
 };
 
 try { fs.mkdirSync(SKIPS_DIR, { recursive: true }); } catch (_) {}

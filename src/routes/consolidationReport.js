@@ -120,6 +120,7 @@ const PAPER_SOURCES = [
   { mode: "GAP3M",      file: "gap_fix_3m_paper_trades.json" },
   { mode: "OIWF",       file: "oi_wall_fade_paper_trades.json" },
   { mode: "RSI_PIVOT_ST", file: "rsi_pivot_st_paper_trades.json" },
+  { mode: "SIMPLE930", file: "simple930_paper_trades.json" },
 ];
 const LIVE_SOURCES = [
   { mode: "EMA_RSI_ST", file: "ema_rsi_st_live_trades.json" },
@@ -133,6 +134,7 @@ const LIVE_SOURCES = [
   { mode: "GAP3M",      file: "gap_fix_3m_live_trades.json" },
   { mode: "OIWF",       file: "oi_wall_fade_live_trades.json" },
   { mode: "RSI_PIVOT_ST", file: "rsi_pivot_st_live_trades.json" },
+  { mode: "SIMPLE930", file: "simple930_live_trades.json" },
 ];
 
 function safeRead(p) {
@@ -267,6 +269,7 @@ ${multiSelectCSS()}
     .badge-GAP3M{background:rgba(56,189,248,0.12);color:#38bdf8;}
     .badge-OIWF{background:rgba(244,114,182,0.12);color:#f472b6;}
     .badge-RSI_PIVOT_ST{background:rgba(250,204,21,0.12);color:#facc15;}
+    .badge-SIMPLE930{background:rgba(251,146,60,0.12);color:#fb923c;}
     .empty{text-align:center;padding:50px 20px;color:var(--muted-1,#8ba1c2);font-size:0.85rem;}
     /* warning alert — sits at the very top of the report, not buried under the table */
     .alert-warn{display:flex;align-items:flex-start;gap:10px;background:rgba(245,158,11,0.10);border:0.5px solid rgba(245,158,11,0.45);border-left:3px solid #f59e0b;border-radius:10px;padding:11px 14px;margin-bottom:14px;}

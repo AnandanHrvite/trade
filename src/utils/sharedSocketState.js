@@ -48,6 +48,9 @@ let oiWallFadeMode = null;
 // RSI Pivot SuperTrend mode: "RSI_PIVOT_ST_PAPER" | "RSI_PIVOT_ST_LIVE" | null
 let rsiPivotStMode = null;
 
+// SIMPLE_9:30 mode: "SIMPLE930_PAPER" | "SIMPLE930_LIVE" | null
+let simple930Mode = null;
+
 // ── Primary mode (15-min) ─────────────────────────────────────────────────
 
 function setActive(mode) {
@@ -246,6 +249,24 @@ function getRsiPivotStMode() {
   return rsiPivotStMode;
 }
 
+// ── SIMPLE_9:30 mode (9:30 option-premium trigger) ──────────────────────────
+
+function setSimple930Active(mode) {
+  simple930Mode = mode;
+}
+
+function clearSimple930() {
+  simple930Mode = null;
+}
+
+function isSimple930Active() {
+  return simple930Mode !== null;
+}
+
+function getSimple930Mode() {
+  return simple930Mode;
+}
+
 // ── Combined queries ──────────────────────────────────────────────────────
 
 /** Any mode using the socket? */
@@ -253,7 +274,7 @@ function isAnyActive() {
   return primaryMode !== null || bbRsiMode !== null || paMode !== null ||
          orbMode !== null || ema9vwapMode !== null || trendPbMode !== null ||
          gapsMode !== null || trendDayScalpMode !== null || gapFix3mMode !== null ||
-         oiWallFadeMode !== null || rsiPivotStMode !== null;
+         oiWallFadeMode !== null || rsiPivotStMode !== null || simple930Mode !== null;
 }
 
 /** Can the given mode start? Returns { allowed, reason } */
@@ -347,6 +368,14 @@ function canStart(mode) {
       if (rsiPivotStMode === "RSI_PIVOT_ST_PAPER") return { allowed: false, reason: "RSI Pivot ST Paper is running — stop it first" };
       if (rsiPivotStMode === "RSI_PIVOT_ST_LIVE")  return { allowed: false, reason: "RSI Pivot ST Live is already running" };
       return { allowed: true };
+    case "SIMPLE930_PAPER":
+      if (simple930Mode === "SIMPLE930_LIVE")  return { allowed: false, reason: "SIMPLE_9:30 Live is running — stop it first" };
+      if (simple930Mode === "SIMPLE930_PAPER") return { allowed: false, reason: "SIMPLE_9:30 Paper is already running" };
+      return { allowed: true };
+    case "SIMPLE930_LIVE":
+      if (simple930Mode === "SIMPLE930_PAPER") return { allowed: false, reason: "SIMPLE_9:30 Paper is running — stop it first" };
+      if (simple930Mode === "SIMPLE930_LIVE")  return { allowed: false, reason: "SIMPLE_9:30 Live is already running" };
+      return { allowed: true };
     default:
       return { allowed: false, reason: "Unknown mode: " + mode };
   }
@@ -375,6 +404,8 @@ module.exports = {
   setOiWallFadeActive, clearOiWallFade, isOiWallFadeActive, getOiWallFadeMode,
   // RSI Pivot SuperTrend
   setRsiPivotStActive, clearRsiPivotSt, isRsiPivotStActive, getRsiPivotStMode,
+  // SIMPLE_9:30
+  setSimple930Active, clearSimple930, isSimple930Active, getSimple930Mode,
   // Combined
   isAnyActive, canStart,
 };

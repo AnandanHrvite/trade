@@ -26,6 +26,7 @@ const SOURCES = [
   { mode: "BB_RSI", file: path.join(DATA_DIR, "bb_rsi_live_trades.json"), label: "BB_RSI", color: "#f59e0b" },
   { mode: "PA",    file: path.join(DATA_DIR, "pa_live_trades.json"),    label: "Price Action", color: "#a855f7" },
   { mode: "RSI_PIVOT_ST", file: path.join(DATA_DIR, "rsi_pivot_st_live_trades.json"), label: "RSI PIVOT ST", color: "#facc15" },
+  { mode: "SIMPLE930", file: path.join(DATA_DIR, "simple930_live_trades.json"), label: "SIMPLE_9:30", color: "#fb923c" },
 ];
 
 function safeRead(p) {
@@ -191,6 +192,7 @@ router.get("/", (req, res) => {
     .badge-BB_RSI{background:rgba(245,158,11,0.12);color:#f59e0b;border:0.5px solid rgba(245,158,11,0.3);}
     .badge-PA{background:rgba(168,85,247,0.12);color:#a855f7;border:0.5px solid rgba(168,85,247,0.3);}
     .badge-RSI_PIVOT_ST{background:rgba(250,204,21,0.12);color:#facc15;border:0.5px solid rgba(250,204,21,0.3);}
+    .badge-SIMPLE930{background:rgba(251,146,60,0.12);color:#fb923c;border:0.5px solid rgba(251,146,60,0.3);}
 
     .roll-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}
     @media(max-width:1100px){.roll-grid{grid-template-columns:1fr;}}

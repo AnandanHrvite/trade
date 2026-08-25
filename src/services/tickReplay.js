@@ -200,6 +200,10 @@ const _MODE_TO_ENV_PREFIX = {
   // reproduces its CANDLES but NOT its OI ladder: oiChain is live in-memory
   // state and chain_oi.jsonl has no replay timeline, so every wall reading will
   // come back UNKNOWN and the engine will refuse rather than fade blind.
+  // simple930-paper is ABSENT for the same reason once more: it passes mode
+  // "SIMPLE930" to instrument.validateAndGetOptionSymbol only to reach the
+  // strikeOverride path (it picks its own strike off the premium ladder), and
+  // expiry still comes from the COMMON OPTION_EXPIRY_* keys.
   // bb_rsi-paper / pa-paper: NO mode arg → common OPTION_EXPIRY_* only (prefix null).
 };
 
@@ -619,6 +623,7 @@ const _MODE_TO_CANONICAL_FILE = {
   "gap-fix-3m-paper":      "gap_fix_3m_paper_trades.json",
   "oi-wall-fade-paper":    "oi_wall_fade_paper_trades.json",
   "rsi-pivot-st-paper":    "rsi_pivot_st_paper_trades.json",
+  "simple930-paper":       "simple930_paper_trades.json",
 };
 function _lookupCanonicalSession(mode, sessionStartTs) {
   const fname = _MODE_TO_CANONICAL_FILE[mode];
@@ -795,6 +800,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     ss_clearOiWallFade:        sharedSocketState.clearOiWallFade,
     ss_setRsiPivotStActive:    sharedSocketState.setRsiPivotStActive,
     ss_clearRsiPivotSt:        sharedSocketState.clearRsiPivotSt,
+    ss_setSimple930Active:     sharedSocketState.setSimple930Active,
+    ss_clearSimple930:         sharedSocketState.clearSimple930,
     // fs originals — paper /stop calls saveSession() → savePaperData() which
     // writes the canonical {strategy}_paper_trades.json via fs.writeFileSync
     // + fs.renameSync directly (NOT via tradeLogger.appendTradeLog, which we
@@ -1075,36 +1082,56 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     socketManager.isRunning = () => callbacks.length > 0;
     socketManager.stop = () => { callbacks.length = 0; };
 
-    // fyers.getQuotes: serve recorded option LTP / VIX based on replayNow
+    // fyers.getQuotes: serve recorded option LTP / VIX / OI based on replayNow.
+    //
+    // MULTI-SYMBOL, because the real API is. A chain-scanning strategy now
+    // depends on it: SIMPLE_9:30 quotes its whole 09:25 ITM ladder (~18 symbols)
+    // in ONE call to pick the strike nearest ₹180, then polls both watchlist
+    // legs together. The old stub resolved symbols[0] and answered for that one
+    // symbol, so under replay that strategy saw a single premium and could never
+    // reproduce a session. This also fixes gap-fix-3m, whose paper route already
+    // sent [futSym, optSym] and only ever got the FUT row back — its option
+    // premium row was dropped on the floor.
+    //
+    // Every row carries BOTH `n` (the symbol) and `v` (the values), which is
+    // what Fyers returns and what the multi-symbol readers attribute on
+    // (simple930Paper.attributeQuotes / gapFix3mPaper.attributeQuotes drop any
+    // row they cannot identify). The added `n` is invisible to the single-symbol
+    // callers that read r.d[0].v.lp. A symbol with no recorded data is simply
+    // omitted from `d`; when NOTHING resolves the response is the same
+    // { s: "no_data", d: [] } as before.
     fyers.getQuotes = async function (symbols) {
-      const sym = Array.isArray(symbols) ? symbols[0] : symbols;
-      if (!sym) return { s: "no_data", d: [] };
+      const list = Array.isArray(symbols) ? symbols : (symbols ? [symbols] : []);
+      const rows = [];
+      for (const sym of list) {
+        if (!sym) continue;
 
-      // VIX path
-      if (sym === "NSE:INDIAVIX-INDEX") {
-        const v = _lookupAtOrBefore(vixTimeline, replayNow);
-        if (!v) return { s: "no_data", d: [] };
-        return { s: "ok", d: [{ v: { lp: v.l != null ? v.l : v.v } }] };
+        // VIX path
+        if (sym === "NSE:INDIAVIX-INDEX") {
+          const v = _lookupAtOrBefore(vixTimeline, replayNow);
+          if (v) rows.push({ n: sym, v: { lp: v.l != null ? v.l : v.v } });
+          continue;
+        }
+
+        // OI path: NIFTY-futures OI for the oiFilter gate. Match any *FUT symbol
+        // (the futures contract symbol can differ between record/replay time) and
+        // serve the recorded OI at-or-before the replay clock. Empty timeline
+        // (pre-OI-capture sessions) → no row → oiFilter fails open, unchanged.
+        if (sym.endsWith("FUT")) {
+          const o = _lookupAtOrBefore(oiTimeline, replayNow);
+          if (o) rows.push({ n: sym, v: { oi: o.oi } });
+          continue;
+        }
+
+        // Option path: ±2s window to absorb paper's option-poll network latency
+        // (200-500ms typical; first poll after entry lands strictly AFTER replayNow).
+        // bid/ask are present only on spread-guard quotes (LTP-only polls and
+        // pre-capture recordings omit them → spread guard fails open, unchanged).
+        const v = _lookupNearest(optionTimeline.get(sym), replayNow, 2000);
+        if (v) rows.push({ n: sym, v: { lp: v.l, bid: v.b, ask: v.a } });
       }
-
-      // OI path: NIFTY-futures OI for the oiFilter gate. Match any *FUT symbol
-      // (the futures contract symbol can differ between record/replay time) and
-      // serve the recorded OI at-or-before the replay clock. Empty timeline
-      // (pre-OI-capture sessions) → no_data → oiFilter fails open, unchanged.
-      if (sym.endsWith("FUT")) {
-        const o = _lookupAtOrBefore(oiTimeline, replayNow);
-        if (!o) return { s: "no_data", d: [] };
-        return { s: "ok", d: [{ v: { oi: o.oi } }] };
-      }
-
-      // Option path: ±2s window to absorb paper's option-poll network latency
-      // (200-500ms typical; first poll after entry lands strictly AFTER replayNow).
-      // bid/ask are present only on spread-guard quotes (LTP-only polls and
-      // pre-capture recordings omit them → spread guard fails open, unchanged).
-      const arr = optionTimeline.get(sym);
-      const v = _lookupNearest(arr, replayNow, 2000);
-      if (!v) return { s: "no_data", d: [] };
-      return { s: "ok", d: [{ v: { lp: v.l, bid: v.b, ask: v.a } }] };
+      if (rows.length === 0) return { s: "no_data", d: [] };
+      return { s: "ok", d: rows };
     };
 
     // fyers.getHistory + backtestEngine.fetchCandles + candleCache.fetchCandlesCached:
@@ -1230,6 +1257,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     sharedSocketState.clearOiWallFade        = () => {};
     sharedSocketState.setRsiPivotStActive    = () => {};
     sharedSocketState.clearRsiPivotSt        = () => {};
+    sharedSocketState.setSimple930Active     = () => {};
+    sharedSocketState.clearSimple930         = () => {};
 
     // fs: a replay must never mutate the user's canonical state. Rather than
     // enumerate filenames (the old *_paper_trades.json regex missed the per-day
@@ -1461,6 +1490,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     sharedSocketState.clearOiWallFade        = orig.ss_clearOiWallFade;
     sharedSocketState.setRsiPivotStActive    = orig.ss_setRsiPivotStActive;
     sharedSocketState.clearRsiPivotSt        = orig.ss_clearRsiPivotSt;
+    sharedSocketState.setSimple930Active     = orig.ss_setSimple930Active;
+    sharedSocketState.clearSimple930         = orig.ss_clearSimple930;
     fs.writeFileSync     = orig.fs_writeFileSync;
     fs.appendFileSync    = orig.fs_appendFileSync;
     fs.unlinkSync        = orig.fs_unlinkSync;
@@ -1536,6 +1567,7 @@ const MODE_TO_MODULE = {
   "gap-fix-3m-paper":      "../routes/gapFix3mPaper",
   "oi-wall-fade-paper":    "../routes/oiWallFadePaper",
   "rsi-pivot-st-paper":    "../routes/rsiPivotStPaper",
+  "simple930-paper":       "../routes/simple930Paper",
   // Live modes are NOT supported for replay (they place real orders). If a
   // live session was recorded, replay it as the matching paper mode.
 };
@@ -2106,6 +2138,7 @@ function replayPreflight() {
   if (sharedSocketState.isGapFix3mActive && sharedSocketState.isGapFix3mActive()) activeModes.push(sharedSocketState.getGapFix3mMode() || "gap_fix_3m");
   if (sharedSocketState.isOiWallFadeActive && sharedSocketState.isOiWallFadeActive()) activeModes.push(sharedSocketState.getOiWallFadeMode() || "oi_wall_fade");
   if (sharedSocketState.isRsiPivotStActive && sharedSocketState.isRsiPivotStActive()) activeModes.push(sharedSocketState.getRsiPivotStMode() || "rsi_pivot_st");
+  if (sharedSocketState.isSimple930Active && sharedSocketState.isSimple930Active()) activeModes.push(sharedSocketState.getSimple930Mode() || "simple930");
   if (activeModes.length > 0) {
     return {
       ok: false,
@@ -2168,6 +2201,7 @@ function forceClearSharedState() {
     gap_fix_3m: sharedSocketState.getGapFix3mMode ? sharedSocketState.getGapFix3mMode() : null,
     oi_wall_fade: sharedSocketState.getOiWallFadeMode ? sharedSocketState.getOiWallFadeMode() : null,
     rsi_pivot_st: sharedSocketState.getRsiPivotStMode ? sharedSocketState.getRsiPivotStMode() : null,
+    simple930: sharedSocketState.getSimple930Mode ? sharedSocketState.getSimple930Mode() : null,
     replayInProgress: _replayInProgress,
   };
   sharedSocketState.clear();
@@ -2184,6 +2218,7 @@ function forceClearSharedState() {
   if (sharedSocketState.clearGapFix3m) sharedSocketState.clearGapFix3m();
   if (sharedSocketState.clearOiWallFade) sharedSocketState.clearOiWallFade();
   if (sharedSocketState.clearRsiPivotSt) sharedSocketState.clearRsiPivotSt();
+  if (sharedSocketState.clearSimple930) sharedSocketState.clearSimple930();
   _replayInProgress = false;
   return { ok: true, cleared: before };
 }

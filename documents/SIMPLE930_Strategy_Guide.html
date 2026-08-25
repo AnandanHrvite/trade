@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SIMPLE_9:30 — Strategy Guide</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0 18px 80px;
+    background: #0d1117; color: #c9d1d9;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.65; font-size: 16px;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; }
+  header.hero {
+    margin: 0 -18px 8px; padding: 40px 26px 30px;
+    background: linear-gradient(135deg, #161b22 0%, #101d24 100%);
+    border-bottom: 3px solid #f59e0b;
+  }
+  header.hero .kicker { color: #f59e0b; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; font-size: 0.72rem; }
+  header.hero h1 { margin: 6px 0 8px; font-size: 2rem; color: #f0f6fc; }
+  header.hero p { margin: 0; color: #8b949e; max-width: 640px; }
+  h2 { color: #f0f6fc; font-size: 1.35rem; margin: 38px 0 12px; padding-bottom: 8px; border-bottom: 1px solid #21262d; }
+  h3 { color: #58a6ff; font-size: 1.05rem; margin: 24px 0 8px; }
+  code { background: rgba(110,118,129,0.18); color: #7dd3fc; padding: 1.5px 6px; border-radius: 4px; font-size: 0.85em; font-family: 'SF Mono', ui-monospace, Menlo, monospace; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 18px 22px; margin: 14px 0; }
+  .card.accent { border-left: 4px solid #0ea5e9; }
+  .card.warn { border-left: 4px solid #d29922; background: #1c1a12; }
+  .card.bad  { border-left: 4px solid #f85149; background: #1c1214; }
+  ul, ol { padding-left: 22px; }
+  li { margin: 5px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.88rem; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #21262d; vertical-align: top; }
+  th { color: #8b949e; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.6px; }
+  td code { white-space: nowrap; }
+  .flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 14px 0; }
+  .flow .step { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 8px 14px; font-size: 0.85rem; }
+  .flow .arrow { color: #0ea5e9; font-weight: 700; }
+  .pill { display: inline-block; background: rgba(14,165,233,0.15); color: #0ea5e9; border: 1px solid rgba(14,165,233,0.35); border-radius: 20px; padding: 2px 12px; font-size: 0.78rem; font-weight: 600; }
+  .muted { color: #6e7681; font-size: 0.85rem; }
+  a { color: #58a6ff; }
+  .num { font-family: 'SF Mono', ui-monospace, Menlo, monospace; color: #f0f6fc; }
+  /* TradingView-style chart wrapper */
+  .tv-chart { margin: 16px 0 6px; border: 1px solid #30363d; border-radius: 10px; overflow: hidden; background: #0d1626; }
+  .tv-chart .tv-svg { width: 100%; height: auto; display: block; }
+  .tv-cap { color: #8b949e; font-size: 0.82rem; margin: 0 0 16px; padding-left: 4px; }
+  .tv-cap b { color: #c9d1d9; }
+  .tv-empty { color: #6e7681; padding: 40px; text-align: center; font-size: 0.9rem; }
+
+/* ── MOBILE (shared block — keep in sync across all guides) ── */
+  @media (max-width: 768px) {
+    /* The setting tables are three columns of prose. A table cannot lay out
+       narrower than its min-content width, so at 393px they ran up to 259px past
+       the right edge and the browser zoomed the whole guide out to fit. Each one
+       now scrolls inside its own box and the page keeps the phone's width. */
+    table { display: block; width: 100%; max-width: 100%; overflow-x: auto;
+            -webkit-overflow-scrolling: touch; }
+    /* Long env keys wrap; fenced blocks keep their formatting and scroll. */
+    code { overflow-wrap: anywhere; word-break: break-word; }
+    pre { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    pre code { overflow-wrap: normal; word-break: normal; }
+    img, svg, canvas { max-width: 100%; }
+    .tv-chart { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    /* .cols is a two-up flex row with no wrap — the second card was pushed off
+       screen rather than dropping under the first. */
+    .cols { flex-direction: column; }
+    .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+    [style*="grid-template-columns"] { grid-template-columns: 1fr !important; }
+    /* Contents links are the guide's only navigation, and they were 18-31px.
+       The three guides each mark theirs up differently: nav.toc (ORB, EMA9VWAP,
+       Setup), a nav.no-print link bar (Price Action) and a two-column card list
+       (BB_RSI, EMA_RSI_ST, Trend Pullback). */
+    nav.toc a, .toc a, nav.no-print .container a,
+    .card li a { min-height: 44px; display: inline-flex; align-items: center; }
+    /* A two-column contents list leaves ~170px per column at 393px. */
+    ul[style*="columns"], ol[style*="columns"] { columns: 1 !important; -webkit-columns: 1 !important; }
+    .hero { padding-left: 16px; padding-right: 16px; }
+    .hero h1 { font-size: 1.7rem; }
+    .section { padding: 20px 14px; }
+  }
+/* ── END MOBILE ── */</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <div class="kicker">Strategy 12 · Zerodha orders · Fyers data · NIFTY OPTIONS · Plain-English edition</div>
+  <h1>SIMPLE_9:30</h1>
+  <p>Every other strategy in this app reads the NIFTY chart and then buys an option. This one never looks at the NIFTY chart at all. At 09:25 it finds the two option contracts trading closest to <b>₹180</b> — one Call, one Put — and then simply waits to see which of them trades above ₹180 first. That one gets bought. One trade, one day.</p>
+  <p class="muted" style="margin-top:10px;">Updated 2026-08-26 &nbsp;·&nbsp; plain-English edition &nbsp;·&nbsp; every number below is produced by running the live engine (<code>node tools/genSimple930GuideData.js</code>)</p>
+</header>
+
+<!--LIVE_STATUS_PANEL-->
+
+<div class="card bad">
+  <strong>Read this first: this strategy has never traded.</strong> Not one paper session, not one live order. Every figure in this guide comes from the real engine reading <em>constructed</em> premium candles — realistic in shape, but not a market. There is no win rate here, because none has been measured. Collect clean paper sessions and diff one against <code>/replay</code> before you touch a live gate.
+</div>
+
+<div class="card">
+  <strong>What's inside</strong>
+  <ol style="margin:10px 0 0; columns:2; column-gap:30px;">
+    <li><a href="#idea">The idea in one minute</a></li>
+    <li><a href="#premium">Why the premium chart, not the NIFTY chart</a></li>
+    <li><a href="#glossary">Words you'll see</a></li>
+    <li><a href="#pick">Step 1 — 09:25, building the watchlist</a></li>
+    <li><a href="#entry">Step 2 — the ₹180 break</a></li>
+    <li><a href="#stop">Step 3 — the 20-point stop that follows</a></li>
+    <li><a href="#box">Step 4 — the 09:45 rule</a></li>
+    <li><a href="#nothing">The day it does nothing</a></li>
+    <li><a href="#money">The money, with real numbers</a></li>
+    <li><a href="#risk">Safety limits</a></li>
+    <li><a href="#modes">Paper, Live, Backtest &amp; Replay</a></li>
+    <li><a href="#config">All the settings, explained</a></li>
+    <li><a href="#missing">What's still missing</a></li>
+  </ol>
+</div>
+
+<h2 id="idea">1. The idea in one minute</h2>
+
+<p>An option contract that costs about ₹180 is a particular kind of animal. It is deep enough in-the-money that it moves nearly point-for-point with NIFTY, but cheap enough that ₹180 is a level a real morning move can push through. The whole strategy is built on that one number.</p>
+
+<div class="card accent">
+  <p style="margin:0 0 8px;"><b>09:25</b> — quote every in-the-money strike on both sides. Keep the ONE Call and the ONE Put trading nearest ₹180. That pair is the day's watchlist, and it never changes again.</p>
+  <p style="margin:0 0 8px;"><b>09:25 → 09:35</b> — watch both premiums. The first one to trade <em>above</em> ₹180 is bought at market, immediately. It might be the Call, it might be the Put. If neither gets there by 09:35, the day is over before it started.</p>
+  <p style="margin:0 0 8px;"><b>The stop</b> — 20 points below whatever you actually paid, and it follows the highest premium seen since entry by the same 20 points. It only ever moves up.</p>
+  <p style="margin:0;"><b>09:45</b> — if the trade has spent those minutes shuffling between ₹160 and ₹220 without ever leaving that box, close it. Profit or loss, it does not matter: a move that has not happened in fifteen minutes is not going to.</p>
+</div>
+
+<p>That is the entire strategy. There is no RSI, no moving average, no VWAP, no VIX gate, no open-interest filter, no confirmation candle. It reads two numbers — the premium of one Call and the premium of one Put — and a clock.</p>
+
+<h2 id="premium">2. Why the premium chart, not the NIFTY chart</h2>
+
+<p>Most option strategies decide on the index and then translate that decision into a contract. This one decides on the contract directly, and that is a deliberate difference rather than a shortcut.</p>
+
+<p>A ₹180 in-the-money option is mostly <em>intrinsic</em> value — the part that is simply "how far past the strike is NIFTY". So a 20-point move in the premium is very nearly a 20-point move in NIFTY. But not exactly: the remaining time value expands when the market gets nervous and drains as the day wears on. The premium therefore carries something the index chart cannot show you — what the market is willing to <em>pay</em> for that move right now.</p>
+
+<div class="card warn">
+  <strong>The practical consequence.</strong> The two watchlist legs are not mirror images. On a quiet morning NIFTY can drift 30 points up and neither leg reaches ₹180, because the Call's gain is eaten by decay while the Put falls. That is not a bug in the rule — it is the rule refusing a move the option market did not price as a move.
+</div>
+
+<h2 id="glossary">3. Words you'll see</h2>
+
+<table>
+<tr><th>Word</th><th>What it means here</th></tr>
+<tr><td><b>Premium</b></td><td>The price of the option contract itself, in rupees. Every level in this strategy — ₹180, ₹220, ₹160, the stop — is a premium, never a NIFTY level.</td></tr>
+<tr><td><b>ATM strike</b></td><td>NIFTY rounded to the nearest 50. If NIFTY is 24 362 the ATM strike is 24 350.</td></tr>
+<tr><td><b>ITM (in-the-money)</b></td><td>A Call is ITM when its strike is <em>below</em> NIFTY; a Put is ITM when its strike is <em>above</em> NIFTY. ITM contracts cost more and move more closely with the index.</td></tr>
+<tr><td><b>The ladder</b></td><td>The list of strikes quoted at 09:25 — the ATM strike plus eight steps in-the-money on each side, 50 points apart.</td></tr>
+<tr><td><b>The trigger</b></td><td>₹180. The premium the 09:25 search aims at, and the level a leg must trade above to be bought. One number, two jobs.</td></tr>
+<tr><td><b>The box</b></td><td>₹160 to ₹220. A trade still inside it at 09:45 is closed.</td></tr>
+<tr><td><b>Trailing stop</b></td><td>A stop that follows the best price the trade has seen. It moves up; it never moves down.</td></tr>
+</table>
+
+<h2 id="pick">4. Step 1 — 09:25, building the watchlist</h2>
+
+<p>At 09:25 the engine takes one reading of NIFTY, rounds it to the ATM strike, and asks Fyers for a quote on every rung of the ladder — the ATM contract and eight strikes in-the-money on each side. Then it keeps exactly one strike per side: the one whose premium is closest to ₹180.</p>
+
+<p>Here is a real run of the selection code, with NIFTY at 24 362 → ATM 24 350:</p>
+
+<table>
+<tr><th>Side</th><th>Strike</th><th></th><th>Premium at 09:25</th><th>Distance from ₹180</th><th></th></tr>
+<tr><td>CE</td><td class="num">24250</td><td>ITM</td><td class="num">₹178.00</td><td class="num">₹2.00</td><td><b style="color:#10b981;">← watched</b></td></tr>
+<tr><td>PE</td><td class="num">24450</td><td>ITM</td><td class="num">₹172.00</td><td class="num">₹8.00</td><td><b style="color:#10b981;">← watched</b></td></tr>
+<tr><td>CE</td><td class="num">24300</td><td>ITM</td><td class="num">₹152.80</td><td class="num">₹27.20</td><td></td></tr>
+<tr><td>PE</td><td class="num">24500</td><td>ITM</td><td class="num">₹208.40</td><td class="num">₹28.40</td><td></td></tr>
+<tr><td>CE</td><td class="num">24200</td><td>ITM</td><td class="num">₹219.60</td><td class="num">₹39.60</td><td></td></tr>
+<tr><td>PE</td><td class="num">24400</td><td>ITM</td><td class="num">₹139.50</td><td class="num">₹40.50</td><td></td></tr>
+<tr><td>CE</td><td class="num">24350</td><td>ATM</td><td class="num">₹121.40</td><td class="num">₹58.60</td><td></td></tr>
+<tr><td>PE</td><td class="num">24350</td><td>ATM</td><td class="num">₹108.90</td><td class="num">₹71.10</td><td></td></tr>
+<tr><td>CE</td><td class="num">24150</td><td>ITM</td><td class="num">₹262.10</td><td class="num">₹82.10</td><td></td></tr>
+<tr><td>PE</td><td class="num">24550</td><td>ITM</td><td class="num">₹249.70</td><td class="num">₹69.70</td><td></td></tr>
+</table>
+
+<p>The Paper page shows exactly this table, live, so you can always see what the engine had to choose from — including any rung that came back without a price.</p>
+
+<div class="card">
+  <strong>Three details that matter more than they look.</strong>
+  <ul style="margin:8px 0 0;">
+    <li><b>It happens once.</b> The watchlist is frozen at 09:25 and never re-picked. A watchlist that drifted with NIFTY would be a different strategy — and could never be reproduced by <code>/replay</code>.</li>
+    <li><b>A missing quote is reported, never assumed.</b> If a rung comes back empty it is listed as missing rather than treated as ₹0 — which would otherwise win the "closest to ₹180" contest outright by being 180 away in the wrong direction.</li>
+    <li><b>Ties are broken toward the money.</b> Two strikes exactly the same distance from ₹180 → the one nearer the ATM wins. Cheaper, and more of it moves.</li>
+  </ul>
+</div>
+
+<h2 id="entry">5. Step 2 — the ₹180 break</h2>
+
+<p>From the moment the watchlist exists until 09:35, both premiums are polled about once a second. The first one to print <em>above</em> ₹180 is bought at market. Exactly ₹180 is not a break — the level has to be cleared.</p>
+
+<div class="tv-chart" id="s930-trend"></div>
+
+<p>In the run above the Call cleared the level at <b>09:30</b> at <b>₹180.90</b>, and the position opened there with a stop at <b>₹160.90</b> — twenty points below what was actually paid, not twenty points below ₹180. That distinction matters on a fast morning: if the fill had come at ₹186 the stop would sit at ₹166, so a slipped fill never quietly buys itself a wider stop.</p>
+
+<div class="card warn">
+  <strong>If both legs are above ₹180 on the same reading</strong> — which happens on a violently indecisive open — the engine takes the one further through the level. It has travelled more, and an arbitrary "Calls first" rule would bias every such morning to one side.
+</div>
+
+<h2 id="stop">6. Step 3 — the 20-point stop that follows</h2>
+
+<p>The stop starts twenty points under the fill and then follows the highest premium the trade has seen, still twenty points behind. It ratchets: it goes up, never down, and never back below where it started.</p>
+
+<p>The first four steps of the trade above, straight out of the engine:</p>
+
+<table>
+<tr><th>Time</th><th>Best premium so far</th><th>Stop moves</th></tr>
+<tr><td>09:30</td><td class="num">₹180.90 (the fill)</td><td class="num">₹160.90 — the initial stop</td></tr>
+<tr><td>09:31</td><td class="num">₹183.58</td><td class="num">₹160.90 → ₹163.58</td></tr>
+<tr><td>09:32</td><td class="num">₹186.27</td><td class="num">₹163.58 → ₹166.27</td></tr>
+<tr><td>09:33</td><td class="num">₹188.95</td><td class="num">₹166.27 → ₹168.95</td></tr>
+<tr><td>09:34</td><td class="num">₹191.63</td><td class="num">₹168.95 → ₹171.63</td></tr>
+</table>
+
+<p>It carried on like that for <b>25</b> lifts in all, and the trade ended when the premium finally came back to the trail at <b>10:18</b>. Peak ₹241, stop ₹221, exit ₹220.31 — <b>+39.41 points</b>.</p>
+
+<div class="card">
+  <strong>Why the trail is not optional here.</strong> With a 20-point stop and no target, the only two ways out are the stop and the clock. Without a trail, a trade that ran to ₹241 and came back to ₹181 would exit at breakeven after being ₹60 in front. The trail is what turns "the move happened" into money.
+</div>
+
+<h2 id="box">7. Step 4 — the 09:45 rule</h2>
+
+<p>At 09:45 the engine asks one question about a trade that is still open: <em>has the premium been outside ₹160–₹220 at any point since entry?</em> If yes, nothing happens — the trade has proved it is going somewhere, and the trail owns it from here to the 15:15 square-off. If no, it is closed at market on the spot, whatever the P&amp;L.</p>
+
+<div class="tv-chart" id="s930-sideways"></div>
+
+<p>That run bought at <b>₹181.40</b> at 09:31 and spent the next fourteen minutes between ₹176 and ₹191. It never came near ₹220 and never near ₹160, so at 09:45 it was closed at <b>₹181.25</b>: fifteen paise below the fill, <b>−₹90.68</b> after charges. The rule did precisely what it exists to do — it declined to keep paying decay on a trade that was not moving.</p>
+
+<p>The trade in section 5 shows the other branch. It cleared ₹220 at <b>09:43</b>, two minutes before the deadline, and the 09:45 check simply did not apply to it. It went on to make ₹2,870.</p>
+
+<div class="card warn">
+  <strong>An honest note about the lower edge.</strong> The rule says "not above ₹220 <em>or below</em> ₹160". With a 20-point stop the lower edge can never actually be the thing that saves a trade — a fill at ₹181 stops out at ₹161, which is a rupee above the box floor. The ₹160 edge only becomes live if you widen <code>SIMPLE930_SL_PTS</code> past the box offset. It is implemented faithfully all the same.
+</div>
+
+<h2 id="nothing">8. The day it does nothing</h2>
+
+<p>This will be the commonest outcome, and it is worth looking at rather than skipping. Both legs were picked normally; neither ever cleared ₹180.</p>
+
+<div class="tv-chart" id="s930-notrade"></div>
+
+<p>The Call's best print in the window was <b>₹178.95</b> and the Put's was <b>₹176.68</b>. At 09:36 the engine closed the day, wrote the reason to the skip log, and stopped. No trade, no charges, nothing at risk.</p>
+
+<div class="card accent">
+  <strong>Read the skip log, not just the trade log.</strong> A run of no-trade days is the signal that ₹180 is the wrong number for the current regime — the ladder may be sitting at ₹240 on a fresh weekly, or at ₹90 on expiry day. The Paper page's decision trail and <code>~/trading-data/skips/simple930_paper_skips_*.jsonl</code> both record the peak each leg reached, so the question "how close did it get?" always has an answer.
+</div>
+
+<h2 id="money">9. The money, with real numbers</h2>
+
+<p>One lot of NIFTY is 75 units on this install (<code>NIFTY_LOT_SIZE</code>), so one premium point is ₹75. The round trip on Zerodha, computed by this repo's own charges model on a ₹181 contract, is <b>₹79.39</b> — about <b>1.06 premium points</b>. Add the 1.5 points a side the backtest charges for slippage and the trade has to find roughly <b>4 points</b> before it is worth anything at all.</p>
+
+<table>
+<tr><th>Run</th><th>Fill</th><th>Exit</th><th>Points</th><th>Gross</th><th>Charges</th><th>Net</th></tr>
+<tr><td>The trend day (section 5)</td><td class="num">₹180.90</td><td class="num">₹220.31 (trail)</td><td class="num">+39.41</td><td class="num">₹2,955.75</td><td class="num">₹85.04</td><td class="num" style="color:#10b981;">+₹2,870.71</td></tr>
+<tr><td>The sideways day (section 7)</td><td class="num">₹181.40</td><td class="num">₹181.25 (09:45)</td><td class="num">−0.15</td><td class="num">−₹11.25</td><td class="num">₹79.43</td><td class="num" style="color:#f85149;">−₹90.68</td></tr>
+<tr><td>A clean stop-out</td><td class="num">₹181.00</td><td class="num">₹161.00 (stop)</td><td class="num">−20.00</td><td class="num">−₹1,500.00</td><td class="num">₹76.51</td><td class="num" style="color:#f85149;">−₹1,576.51</td></tr>
+</table>
+
+<p>The shape of the thing is therefore: lose ₹1,576.51 when you are wrong, lose about ₹90 when nothing happens, and make whatever the morning gives you when you are right. That third number is the entire edge, and it is the one number nobody has measured yet.</p>
+
+<div class="card warn">
+  <strong>The arithmetic that has to work.</strong> With a fixed 20-point risk, this strategy needs its winners to average more than 20 points for every loser it takes. The sideways rule exists to make that possible — it converts most "nothing happened" days from a full 20-point stop into a ₹90 fee. Whether it succeeds is exactly what paper collection has to find out.
+</div>
+
+<h2 id="risk">10. Safety limits</h2>
+
+<table>
+<tr><th>Limit</th><th>Default</th><th>What it does</th></tr>
+<tr><td><code>SIMPLE930_MAX_DAILY_TRADES</code></td><td class="num">1</td><td>One trade a day. Once it exits, the day is finished — the other leg cannot trigger later.</td></tr>
+<tr><td><code>SIMPLE930_MAX_DAILY_LOSS</code></td><td class="num">0 (off)</td><td>Redundant at one trade a day; raise it only if you raise the trade count.</td></tr>
+<tr><td><code>SIMPLE930_LTP_STALE_MS</code></td><td class="num">15000</td><td>A premium the poll has not refreshed for 15 seconds is not evidence. An entry on a stale quote is refused rather than filled.</td></tr>
+<tr><td><code>SIMPLE930_FORCED_EXIT</code></td><td class="num">15:15</td><td>Hard square-off. Nothing is carried overnight, ever.</td></tr>
+<tr><td>Triple live gate</td><td class="num">all off</td><td>A real order needs <code>SIMPLE930_LIVE_ENABLED=true</code> AND <code>LIVE_HARNESS_DRY_RUN=false</code> AND <code>SIMPLE930_LIVE_DRY_RUN</code> not true.</td></tr>
+</table>
+
+<p>Beyond that, the entry is refused outright — no position is opened at all — if the stop cannot be computed, if the premium falls back to or below ₹180 between the trigger and the fill, or if the expiry cannot be resolved. A trade with no stop is worse than a missed trade.</p>
+
+<h2 id="modes">11. Paper, Live, Backtest &amp; Replay</h2>
+
+<table>
+<tr><th>Mode</th><th>Where</th><th>What it does</th></tr>
+<tr><td><b>Paper</b></td><td><code>/simple930-paper/status</code></td><td>The canonical engine. Live Fyers premiums, simulated orders. Shows the 09:25 ladder, both watchlist legs, both premium charts and a decision trail of every choice made.</td></tr>
+<tr><td><b>Live</b></td><td><code>/simple930-live</code></td><td>The same paper code with a harness attached that turns its entry and exit into real <b>Zerodha</b> orders. Live cannot disagree with paper, because it <em>is</em> paper.</td></tr>
+<tr><td><b>Backtest</b></td><td><code>/simple930-backtest</code></td><td>Real 1-minute option premium candles from Fyers — no delta model, no theta model. See the caveat below.</td></tr>
+<tr><td><b>Replay</b></td><td><code>/replay</code></td><td>Re-runs a recorded session tick by tick against the paper engine. Every premium the strategy reads is written to the tick archive, including the whole 09:25 ladder, so the watchlist itself is reproducible.</td></tr>
+</table>
+
+<div class="card warn">
+  <strong>The backtest can only reach back as far as the listed contracts.</strong> A NIFTY weekly option is delisted the moment it expires and Fyers then refuses the symbol outright, so last month's premiums cannot be fetched at any price. In practice that means the current expiry week. The results page says so per session — an unfetchable day is reported as "no option data", never quietly counted as a day with no trade.
+</div>
+
+<p>Two small, deliberate differences between the backtest and paper, both documented in the backtest's own header: paper fills at the first premium it <em>observes</em> above ₹180 (₹180.90 in the run above), while the backtest fills a 1-minute bar that crosses the level at the level itself and then charges slippage on top; and paper checks its exits about once a second, while the backtest checks once a bar. Expect fills to differ by a point or two in either direction.</p>
+
+<h2 id="config">12. All the settings, explained</h2>
+
+<h3>The 09:25 pick</h3>
+<table>
+<tr><th>Setting</th><th>Default</th><th>What it changes</th></tr>
+<tr><td><code>SIMPLE930_SELECTION_TIME</code></td><td class="num">09:25</td><td>When the ladder is quoted and the watchlist frozen.</td></tr>
+<tr><td><code>SIMPLE930_TRIGGER_PREMIUM</code></td><td class="num">180</td><td>The premium the strike search aims at <em>and</em> the level a leg must clear. The box moves with it.</td></tr>
+<tr><td><code>SIMPLE930_SCAN_ITM_STRIKES</code></td><td class="num">8</td><td>How deep in-the-money the ladder goes, per side. 8 × 50 = 400 points, which covers a ₹180 contract from a fresh weekly to expiry day.</td></tr>
+<tr><td><code>SIMPLE930_SCAN_OTM_STRIKES</code></td><td class="num">0</td><td>0 is the rule as written. Raise it when the whole ITM ladder sits above ₹180 — which happens on a fresh weekly where even the ATM contract is dearer than the trigger.</td></tr>
+</table>
+
+<h3>Entry window</h3>
+<table>
+<tr><th>Setting</th><th>Default</th><th>What it changes</th></tr>
+<tr><td><code>SIMPLE930_ENTRY_START</code></td><td class="num">09:25</td><td>Entries are allowed the moment the watchlist exists. Set it to 09:30 if you want the level tested rather than met.</td></tr>
+<tr><td><code>SIMPLE930_ENTRY_END</code></td><td class="num">09:35</td><td>After this, no entry today.</td></tr>
+<tr><td><code>SIMPLE930_SUSTAIN_POLLS</code></td><td class="num">1</td><td>1 means enter on the first quote above the trigger — the rule as written. Higher demands N consecutive quotes above it, which trades a worse fill for fewer single-tick fakes.</td></tr>
+</table>
+
+<h3>Risk</h3>
+<table>
+<tr><th>Setting</th><th>Default</th><th>What it changes</th></tr>
+<tr><td><code>SIMPLE930_SL_PTS</code></td><td class="num">20</td><td>Stop distance below the ACTUAL fill, not below the trigger.</td></tr>
+<tr><td><code>SIMPLE930_TRAIL_ENABLED</code></td><td class="num">true</td><td>Turn it off and the stop stays where it started all day.</td></tr>
+<tr><td><code>SIMPLE930_TRAIL_PTS</code></td><td class="num">20</td><td>How far behind the peak the trail sits.</td></tr>
+<tr><td><code>SIMPLE930_SIDEWAYS_CHECK</code></td><td class="num">09:45</td><td>When the box is judged.</td></tr>
+<tr><td><code>SIMPLE930_BAND_UP_OFFSET</code></td><td class="num">40</td><td>Box top = trigger + this. ₹220 at the defaults.</td></tr>
+<tr><td><code>SIMPLE930_BAND_DOWN_OFFSET</code></td><td class="num">20</td><td>Box floor = trigger − this. ₹160 at the defaults — and unreachable while the stop is 20 points wide.</td></tr>
+<tr><td><code>SIMPLE930_FORCED_EXIT</code></td><td class="num">15:15</td><td>Hard square-off.</td></tr>
+</table>
+
+<h3>Optional guards — all off by default</h3>
+<table>
+<tr><th>Setting</th><th>Default</th><th>What it changes</th></tr>
+<tr><td><code>SIMPLE930_MAX_PREMIUM_DIST</code></td><td class="num">0 (off)</td><td>When set, a side whose nearest strike is further than this from ₹180 is not watched at all. Guards against the day where the closest contract is ₹260 and "breaking ₹180" already happened last week.</td></tr>
+<tr><td><code>SIMPLE930_MIN_PREMIUM</code></td><td class="num">0 (off)</td><td>Ignore ladder rungs cheaper than this.</td></tr>
+</table>
+
+<h3>Sizing, plumbing and backtest</h3>
+<table>
+<tr><th>Setting</th><th>Default</th><th>What it changes</th></tr>
+<tr><td><code>SIMPLE930_LOT_MULTIPLIER</code></td><td class="num">0</td><td>0 = use the global <code>LOT_MULTIPLIER</code>.</td></tr>
+<tr><td><code>SIMPLE930_MAX_DAILY_TRADES</code></td><td class="num">1</td><td>The rule is one trade a day.</td></tr>
+<tr><td><code>SIMPLE930_MAX_DAILY_LOSS</code></td><td class="num">0 (off)</td><td>Stop for the day after this much loss.</td></tr>
+<tr><td><code>SIMPLE930_POLL_MS</code></td><td class="num">1000</td><td>How often both premiums are fetched. This is the granularity the trigger and every exit are checked at.</td></tr>
+<tr><td><code>SIMPLE930_LTP_STALE_MS</code></td><td class="num">15000</td><td>How old a premium may be before an entry is refused.</td></tr>
+<tr><td><code>SIMPLE930_BT_SLIPPAGE_PTS</code></td><td class="num">1.5</td><td>Backtest cost per side, in premium points.</td></tr>
+</table>
+
+<h3>Visibility &amp; alerts</h3>
+<table>
+<tr><th>Setting</th><th>Default</th><th>What it changes</th></tr>
+<tr><td><code>SIMPLE930_MODE_ENABLED</code></td><td class="num">true</td><td>Show the menu group and the Settings section.</td></tr>
+<tr><td><code>SIMPLE930_PAPER_ENABLED</code></td><td class="num">true</td><td>Allow new paper sessions.</td></tr>
+<tr><td><code>SIMPLE930_LIVE_ENABLED</code></td><td class="num">false</td><td>Gate on real Zerodha orders.</td></tr>
+<tr><td><code>SIMPLE930_LIVE_DRY_RUN</code></td><td class="num">false</td><td>Hold this one strategy simulated even when the global switch is off.</td></tr>
+<tr><td><code>TG_SIMPLE930_STARTED / _ENTRY / _EXIT / _DAYREPORT</code></td><td class="num">true</td><td>Telegram alerts.</td></tr>
+<tr><td><code>UI_SHOW_SIMPLE930_BACKTEST / _PAPER / _LIVE / _HISTORY</code></td><td class="num">true</td><td>Which sub-menu items appear.</td></tr>
+</table>
+
+<h2 id="missing">13. What's still missing</h2>
+
+<div class="card bad">
+  <ul style="margin:0;">
+    <li><b>It has never traded.</b> Zero paper sessions, zero live orders. Every number in this guide comes from the engine reading constructed candles, not from a market.</li>
+    <li><b>₹180 has not been validated against anything.</b> It is the operator's number, not a fitted one. Nobody has measured how often a ₹180 ITM contract clears ₹180 in the first ten minutes, nor what it does afterwards.</li>
+    <li><b>Nor has 09:45.</b> The fifteen-minute box is a judgement about how quickly a real opening move declares itself. It might be cutting winners short; it might not be cutting losers fast enough. There is no data either way.</li>
+    <li><b>Backtest history is measured in days, not years.</b> Weekly options are delisted at expiry, so the usable range is roughly the current expiry week. Whatever this strategy is judged on will mostly have to be forward-collected paper sessions.</li>
+    <li><b>The Fyers token was expired when this was built.</b> No real premium series could be pulled, so the guide's candles are constructed. The decisions on them are real; the prices are not.</li>
+    <li><b>The strike search assumes the ladder reaches ₹180.</b> On a fresh weekly the whole ITM ladder can sit above the trigger, and the engine will then watch the closest thing it has — possibly a ₹260 contract for which "breaking ₹180" is meaningless. <code>SIMPLE930_MAX_PREMIUM_DIST</code> exists for exactly that day and ships OFF, because the rule as written does not mention it.</li>
+    <li><b>Exits are checked about once a second, not tick by tick.</b> The backtest and replay check them once per bar. Expect fills to differ.</li>
+  </ul>
+</div>
+
+<p class="muted" style="margin-top:30px;">Engine: <code>src/strategies/simple930.js</code> · Paper: <code>src/routes/simple930Paper.js</code> · Backtest: <code>src/routes/simple930Backtest.js</code> · Live harness: <code>src/routes/simple930LiveHarness.js</code> · Chart data: <code>tools/genSimple930GuideData.js</code> · Tests: <code>npm run test:simple930</code>. The rules exist only in the engine file; every other file calls into it.</p>
+
+</div><!-- /wrap -->
+
+<script>
+/* ============================================================================
+ * TVChart v3 — dependency-free TradingView-style candlestick renderer.
+ * v2 features: OHLC header, subtitle, bottom time axis, last-price tag/line.
+ * v3 adds:   hlines (labelled price levels), shades (vertical highlight spans),
+ *            pane (RSI / volume / line sub-panel under the price chart).
+ * Pure buildSVG(spec) -> string (no DOM), never throws on bad data.
+ * Backward-compatible with every v1/v2 spec.
+ * ==========================================================================*/
+(function (global) {
+  "use strict";
+  function isNum(x) { return typeof x === "number" && isFinite(x); }
+  function esc(s) { return String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+  function fmt(v) { return isNum(v) ? v.toFixed(2).replace(/\.00$/,"") : "—"; }
+
+  function priceRange(spec) {
+    var lo = Infinity, hi = -Infinity;
+    function eat(v){ if(isNum(v)){ if(v>hi)hi=v; if(v<lo)lo=v; } }
+    (spec.candles||[]).forEach(function(c){ eat(c[1]); eat(c[2]); });
+    (spec.overlays||[]).forEach(function(o){ (o.data||[]).forEach(eat); });
+    (spec.bands||[]).forEach(function(b){ (b.upper||[]).forEach(eat); (b.lower||[]).forEach(eat); (b.mid||[]).forEach(eat); });
+    (spec.markers||[]).forEach(function(m){ if(isNum(m.price)) eat(m.price); });
+    (spec.hlines||[]).forEach(function(h){ eat(h.price); });
+    (spec.zones||[]).forEach(function(z){ eat(z.top); eat(z.bottom); });
+    if(!isFinite(lo)||!isFinite(hi)){ lo=0; hi=1; }
+    if(lo===hi){ lo-=1; hi+=1; }
+    var pad=(hi-lo)*0.10; return { lo:lo-pad, hi:hi+pad };
+  }
+
+  // Build a path that starts a fresh subpath after every gap. Indicator series
+  // are null until they have enough history (EMA/BB/RSI warm-up), and a path
+  // that opens with "L" is invalid — that used to drop the whole line.
+  function linePath(data, X, Y) {
+    var d = "", pen = false;
+    for (var i=0;i<data.length;i++){
+      if(!isNum(data[i])){ pen = false; continue; }
+      d += (pen ? "L" : "M") + X(i) + " " + Y(data[i]) + " "; pen = true;
+    }
+    return d;
+  }
+
+  function buildSVG(spec) {
+    spec = spec||{};
+    var candles = spec.candles||[]; var n = candles.length;
+    if(!n) return '<div class="tv-empty">chart data unavailable</div>';
+
+    var pane = null;
+    if (spec.pane && spec.pane.data && spec.pane.data.length) pane = spec.pane;
+    var paneH  = pane ? (isNum(pane.height) ? pane.height : 92) : 0;
+    var paneGap = pane ? 12 : 0;
+
+    var W=880, padL=6, padR=74, padT=52, padB=40, plotH=348;
+    var H = padT + plotH + paneGap + paneH + padB;
+    var rng=priceRange(spec); var plotW=W-padL-padR;
+    var slot=plotW/n; var cw=Math.max(2,Math.min(20,slot*0.66)); var wickW=Math.max(0.8,cw*0.12);
+    var up="#26a69a",down="#ef5350",grid="#1b2636",axis="#5a7499",txt="#e8eef8",mut="#8b98ac";
+    var plotBot = padT+plotH;
+    var paneTop = plotBot+paneGap, paneBot = paneTop+paneH;
+    var axisBot = pane ? paneBot : plotBot;
+    function X(i){ return padL+slot*(i+0.5); }
+    function Y(p){ return padT+(rng.hi-p)/(rng.hi-rng.lo)*plotH; }
+    var out=[];
+    out.push('<svg viewBox="0 0 '+W+' '+H+'" class="tv-svg" role="img" aria-label="'+esc(spec.title||"price chart")+'" preserveAspectRatio="xMidYMid meet">');
+    out.push('<rect x="0" y="0" width="'+W+'" height="'+H+'" fill="#0d1421"/>');
+
+    // horizontal price grid + right-side labels
+    for(var g=0;g<=4;g++){ var gp=rng.hi-(rng.hi-rng.lo)*(g/4); var gy=Y(gp);
+      out.push('<line x1="'+padL+'" y1="'+gy+'" x2="'+(W-padR)+'" y2="'+gy+'" stroke="'+grid+'" stroke-width="1"/>');
+      out.push('<text x="'+(W-padR+6)+'" y="'+(gy+3.5)+'" fill="'+axis+'" font-size="10.5" font-family="monospace">'+gp.toFixed(0)+'</text>'); }
+
+    // vertical time grid + bottom axis labels (every ~1/7 of the candles)
+    var times = spec.times || [];
+    var step = Math.max(1, Math.round(n/7));
+    for(var t=0;t<n;t+=step){ var tx=X(t);
+      out.push('<line x1="'+tx+'" y1="'+padT+'" x2="'+tx+'" y2="'+axisBot+'" stroke="'+grid+'" stroke-width="0.7" opacity="0.5"/>');
+      if(times[t]) out.push('<text x="'+tx+'" y="'+(axisBot+15)+'" fill="'+axis+'" font-size="10" text-anchor="middle" font-family="system-ui">'+esc(times[t])+'</text>'); }
+
+    // vertical highlight spans (e.g. "position held", "no-trade window")
+    (spec.shades||[]).forEach(function(s){ if(!isNum(s.from)||!isNum(s.to)) return;
+      var sx=X(s.from)-slot/2, sw=Math.max(1,X(s.to)-X(s.from)+slot);
+      out.push('<rect x="'+sx+'" y="'+padT+'" width="'+sw+'" height="'+plotH+'" fill="'+(s.color||"rgba(96,165,250,0.07)")+'"/>');
+      if(s.label){ var sly = s.labelBottom ? (padT+plotH-7) : (padT+13);
+        out.push('<text x="'+(sx+sw/2)+'" y="'+sly+'" fill="'+(s.text||"#7c93b5")+'" font-size="10" text-anchor="middle" font-family="system-ui">'+esc(s.label)+'</text>'); } });
+
+    // zones (e.g. ORB opening-range box)
+    (spec.zones||[]).forEach(function(z){ if(!isNum(z.from)||!isNum(z.to)) return;
+      var zx=X(z.from)-cw/2, zw=X(z.to)-X(z.from)+cw; var zTop=Y(isNum(z.top)?z.top:rng.hi), zBot=Y(isNum(z.bottom)?z.bottom:rng.lo);
+      out.push('<rect x="'+zx+'" y="'+zTop+'" width="'+zw+'" height="'+(zBot-zTop)+'" fill="'+(z.color||"rgba(96,165,250,0.10)")+'" stroke="'+(z.stroke||"rgba(96,165,250,0.5)")+'" stroke-dasharray="4 3" stroke-width="1"/>');
+      if(z.label) out.push('<text x="'+(zx+4)+'" y="'+(zTop-4)+'" fill="'+(z.stroke||"#60a5fa")+'" font-size="10.5" font-weight="600">'+esc(z.label)+'</text>'); });
+
+    // band envelopes (VWAP band / Bollinger)
+    (spec.bands||[]).forEach(function(b){ var u=b.upper||[], l=b.lower||[];
+      if(u.length&&l.length){ var pts=[]; for(var i=0;i<u.length;i++) if(isNum(u[i])) pts.push(X(i)+","+Y(u[i]));
+        for(var j=l.length-1;j>=0;j--) if(isNum(l[j])) pts.push(X(j)+","+Y(l[j]));
+        out.push('<polygon points="'+pts.join(" ")+'" fill="'+(b.fill||"rgba(120,144,200,0.08)")+'"/>');
+        [u,l].forEach(function(line){
+          out.push('<path d="'+linePath(line,X,Y)+'" fill="none" stroke="'+(b.color||"#a78bfa")+'" stroke-width="1.3" opacity="0.85"/>'); }); }
+      if(b.mid){
+        out.push('<path d="'+linePath(b.mid,X,Y)+'" fill="none" stroke="'+(b.color||"#a78bfa")+'" stroke-width="1" stroke-dasharray="2 3" opacity="0.7"/>'); } });
+
+    // labelled horizontal price levels (stop / target / neckline / OR high-low)
+    (spec.hlines||[]).forEach(function(hl){ if(!isNum(hl.price)) return;
+      var hy=Y(hl.price), hc=hl.color||"#fbbf24";
+      out.push('<line x1="'+padL+'" y1="'+hy+'" x2="'+(W-padR)+'" y2="'+hy+'" stroke="'+hc+'" stroke-width="'+(hl.width||1.2)+'" '+(hl.solid?"":'stroke-dasharray="6 4" ')+'opacity="0.9"/>');
+      out.push('<rect x="'+(W-padR)+'" y="'+(hy-8)+'" width="'+padR+'" height="16" fill="'+hc+'" opacity="0.92"/>');
+      out.push('<text x="'+(W-padR+5)+'" y="'+(hy+3.5)+'" fill="#0d1421" font-size="10" font-weight="700" font-family="monospace">'+hl.price.toFixed(0)+'</text>');
+      if(hl.label){ var lw=hl.label.length*5.9+10;
+        // labelAt (0..1) slides the tag along the line so it can dodge markers
+        var lx1=padL+3+(isNum(hl.labelAt)?hl.labelAt:0)*(W-padR-padL-lw-6);
+        lx1=Math.max(padL+3,Math.min(lx1,W-padR-lw-3));
+        out.push('<rect x="'+lx1+'" y="'+(hy-15)+'" width="'+lw+'" height="14" rx="3" fill="'+hc+'" opacity="0.92"/>');
+        out.push('<text x="'+(lx1+5)+'" y="'+(hy-4.5)+'" fill="#0d1421" font-size="9.8" font-weight="700" font-family="system-ui">'+esc(hl.label)+'</text>'); } });
+
+    // candlesticks
+    candles.forEach(function(c,i){ if(!c||!isNum(c[0])||!isNum(c[3])) return;
+      var o=c[0],h=c[1],lw=c[2],cl=c[3]; var col=cl>=o?up:down, cx=X(i);
+      if(isNum(h)&&isNum(lw)) out.push('<rect x="'+(cx-wickW/2)+'" y="'+Y(h)+'" width="'+wickW+'" height="'+Math.max(0.5,Y(lw)-Y(h))+'" fill="'+col+'"/>');
+      var yo=Y(o),yc=Y(cl),top=Math.min(yo,yc),bh=Math.max(1,Math.abs(yc-yo));
+      out.push('<rect x="'+(cx-cw/2)+'" y="'+top+'" width="'+cw+'" height="'+bh+'" fill="'+col+'"/>'); });
+
+    // overlay indicator lines (EMA / VWAP / MAs)
+    (spec.overlays||[]).forEach(function(ov){
+      out.push('<path d="'+linePath(ov.data||[],X,Y)+'" fill="none" stroke="'+(ov.color||"#fbbf24")+'" stroke-width="'+(ov.width||1.6)+'" '+(ov.dash?'stroke-dasharray="5 3" ':"")+'opacity="0.95"/>'); });
+
+    // last-price dashed line + right-axis tag (TradingView style)
+    if(spec.lastPriceTag !== false){ var last=candles[n-1]; if(last&&isNum(last[3])){ var lp=last[3], ly=Y(lp);
+      var lcol=(isNum(last[0])&&lp>=last[0])?up:down;
+      out.push('<line x1="'+padL+'" y1="'+ly+'" x2="'+(W-padR)+'" y2="'+ly+'" stroke="'+lcol+'" stroke-width="0.8" stroke-dasharray="2 2" opacity="0.7"/>');
+      out.push('<rect x="'+(W-padR)+'" y="'+(ly-8)+'" width="'+padR+'" height="16" fill="'+lcol+'"/>');
+      out.push('<text x="'+(W-padR+6)+'" y="'+(ly+3.5)+'" fill="#0d1421" font-size="10.5" font-weight="700" font-family="monospace">'+lp.toFixed(2)+'</text>'); } }
+
+    // markers (buy / exit / dot)
+    (spec.markers||[]).forEach(function(m){ if(!isNum(m.i)) return; var mx=X(m.i);
+      var my=isNum(m.price)?Y(m.price):(m.type==="buy"?plotBot-14:padT+14);
+      var isBuy=m.type==="buy", isExit=m.type==="exit"; var col=m.color||(isBuy?"#26a69a":isExit?"#ef5350":"#fbbf24");
+      if(isBuy||isExit){ var ay=isBuy?my+18:my-18, tri=isBuy?(mx-6)+","+ay+" "+(mx+6)+","+ay+" "+mx+","+(ay-10):(mx-6)+","+ay+" "+(mx+6)+","+ay+" "+mx+","+(ay+10);
+        out.push('<polygon points="'+tri+'" fill="'+col+'"/>'); }
+      else out.push('<circle cx="'+mx+'" cy="'+my+'" r="3.5" fill="'+col+'" stroke="#0d1421" stroke-width="1"/>');
+      if(m.text){ var lblY=isBuy?my+34:(isExit?my-26:my-10); var tw=m.text.length*6.2+10;
+        var lx0=Math.max(padL+1,Math.min(mx-tw/2,W-padR-tw-1));
+        out.push('<rect x="'+lx0+'" y="'+(lblY-11)+'" width="'+tw+'" height="15" rx="3" fill="'+col+'" opacity="0.94"/>');
+        out.push('<text x="'+(lx0+tw/2)+'" y="'+lblY+'" fill="#0d1421" font-size="10.5" font-weight="700" text-anchor="middle" font-family="system-ui">'+esc(m.text)+'</text>'); } });
+
+    // ── sub-panel: RSI / volume / any line series ─────────────────────────
+    if(pane){
+      var pd=pane.data||[], pType=pane.type||"line";
+      var plo=Infinity, phi=-Infinity;
+      pd.forEach(function(v){ if(isNum(v)){ if(v>phi)phi=v; if(v<plo)plo=v; } });
+      if(pType==="rsi"){ plo=0; phi=100; }
+      if(pType==="volume"){ plo=0; }
+      if(isNum(pane.min)) plo=pane.min;
+      if(isNum(pane.max)) phi=pane.max;
+      if(!isFinite(plo)||!isFinite(phi)){ plo=0; phi=1; }
+      if(plo===phi){ plo-=1; phi+=1; }
+      var pPad=(pType==="rsi"||pType==="volume")?0:(phi-plo)*0.12;
+      var pLo=plo-pPad, pHi=phi+pPad;
+      function PY(v){ return paneTop+(pHi-v)/(pHi-pLo)*paneH; }
+      out.push('<rect x="'+padL+'" y="'+paneTop+'" width="'+(W-padR-padL)+'" height="'+paneH+'" fill="#0b111c"/>');
+      out.push('<line x1="'+padL+'" y1="'+paneTop+'" x2="'+(W-padR)+'" y2="'+paneTop+'" stroke="'+grid+'" stroke-width="1"/>');
+
+      // guide levels inside the pane (e.g. RSI 70 / 40)
+      (pane.levels||[]).forEach(function(lv){ var v=isNum(lv)?lv:lv.value; if(!isNum(v)) return;
+        var c=(lv&&lv.color)||"#3f5570", ly2=PY(v);
+        out.push('<line x1="'+padL+'" y1="'+ly2+'" x2="'+(W-padR)+'" y2="'+ly2+'" stroke="'+c+'" stroke-width="1" stroke-dasharray="4 3" opacity="0.8"/>');
+        out.push('<text x="'+(W-padR+6)+'" y="'+(ly2+3.5)+'" fill="'+c+'" font-size="10" font-family="monospace">'+v+'</text>'); });
+
+      if(pType==="volume"){
+        var bw=Math.max(1.5,slot*0.6);
+        pd.forEach(function(v,i){ if(!isNum(v)) return; var c2=candles[i];
+          var col2=(c2&&isNum(c2[0])&&isNum(c2[3])&&c2[3]>=c2[0])?"rgba(38,166,154,0.55)":"rgba(239,83,80,0.55)";
+          if(pane.colors&&pane.colors[i]) col2=pane.colors[i];
+          var by=PY(v); out.push('<rect x="'+(X(i)-bw/2)+'" y="'+by+'" width="'+bw+'" height="'+Math.max(0.5,paneBot-by)+'" fill="'+col2+'"/>'); });
+      } else {
+        out.push('<path d="'+linePath(pd,X,PY)+'" fill="none" stroke="'+(pane.color||"#c084fc")+'" stroke-width="1.6"/>');
+      }
+      (pane.markers||[]).forEach(function(m){ if(!isNum(m.i)||!isNum(m.value)) return;
+        out.push('<circle cx="'+X(m.i)+'" cy="'+PY(m.value)+'" r="3.2" fill="'+(m.color||"#fbbf24")+'" stroke="#0b111c" stroke-width="1"/>'); });
+      if(pane.label) out.push('<text x="'+(padL+5)+'" y="'+(paneTop+13)+'" fill="'+mut+'" font-size="10.5" font-weight="600" font-family="system-ui">'+esc(pane.label)+'</text>');
+    }
+
+    // header: title, subtitle, and OHLC readout (TradingView top-left)
+    out.push('<text x="'+padL+'" y="17" fill="'+txt+'" font-size="13" font-weight="700" font-family="system-ui">'+esc(spec.title||"")+'</text>');
+    if(spec.subtitle) out.push('<text x="'+padL+'" y="32" fill="'+mut+'" font-size="10.5" font-family="system-ui">'+esc(spec.subtitle)+'</text>');
+    if(spec.ohlc !== false){ var f=candles[n-1]; if(f){ var oc=(isNum(f[0])&&isNum(f[3])&&f[3]>=f[0])?up:down;
+      var parts=[["O",f[0]],["H",f[1]],["L",f[2]],["C",f[3]]], hy2=spec.subtitle?46:32;
+      var lx=padL;
+      parts.forEach(function(p){ out.push('<text x="'+lx+'" y="'+hy2+'" font-size="10.5" font-family="monospace" fill="'+mut+'">'+p[0]+'</text>');
+        lx+=11; out.push('<text x="'+lx+'" y="'+hy2+'" font-size="10.5" font-family="monospace" fill="'+oc+'">'+fmt(p[1])+'</text>'); lx+=(fmt(p[1]).length*6.4)+10; }); } }
+
+    // legend (bottom-left, above time axis)
+    var lgx=padL, lgy=H-4;
+    (spec.legend||[]).forEach(function(lg){ out.push('<rect x="'+lgx+'" y="'+(lgy-8)+'" width="14" height="3" rx="1.5" fill="'+(lg.color||"#fbbf24")+'"/>');
+      out.push('<text x="'+(lgx+18)+'" y="'+(lgy-4)+'" fill="'+axis+'" font-size="10" font-family="system-ui">'+esc(lg.label)+'</text>');
+      lgx+=22+lg.label.length*6.1; });
+
+    out.push("</svg>"); return out.join("");
+  }
+
+  var TVChart = { buildSVG: buildSVG, render: function(elId, spec){ try { var el=document.getElementById(elId); if(!el) return; el.innerHTML=buildSVG(spec); } catch(e){} } };
+  global.TVChart = TVChart;
+})(window);
+</script>
+<script>
+(function(){ if(typeof TVChart==="undefined") return;
+  TVChart.render("s930-trend", {"title": "NIFTY 24250 CE — the trade the rule describes", "subtitle": "1-min OPTION PREMIUM · the only chart a rule reads · picked at 09:25 for trading nearest ₹180", "times": ["09:25", "09:26", "09:27", "09:28", "09:29", "09:30", "09:31", "09:32", "09:33", "09:34", "09:35", "09:36", "09:37", "09:38", "09:39", "09:40", "09:41", "09:42", "09:43", "09:44", "09:45", "09:46", "09:47", "09:48", "09:49", "09:50", "09:51", "09:52", "09:53", "09:54", "09:55", "09:56", "09:57", "09:58", "09:59", "10:00", "10:01", "10:02", "10:03", "10:04", "10:05", "10:06", "10:07", "10:08", "10:09", "10:10", "10:11", "10:12", "10:13", "10:14", "10:15", "10:16", "10:17", "10:18", "10:19", "10:20", "10:21", "10:22", "10:23", "10:24", "10:25"], "candles": [[178, 179.14, 177.09, 177.63], [177.63, 178.16, 176.11, 177.25], [177.25, 177.9, 175.84, 176.88], [176.88, 177.63, 175.58, 176.5], [176.5, 179.57, 175.69, 178.7], [178.7, 181.88, 178, 180.9], [180.9, 184.67, 180.31, 183.58], [183.58, 186.75, 182.38, 186.27], [186.27, 189.54, 185.18, 188.95], [188.95, 192.33, 187.97, 191.63], [191.63, 195.13, 190.77, 194.32], [194.32, 197.92, 193.56, 197], [197, 201.41, 196.35, 200.38], [200.38, 204.89, 199.84, 203.75], [203.75, 207.66, 202.61, 207.13], [207.13, 211.15, 206.09, 210.5], [210.5, 214.63, 209.58, 213.88], [213.88, 218.12, 213.06, 217.25], [217.25, 221.6, 216.55, 220.63], [220.63, 225.09, 220.03, 224], [224, 226.18, 222.8, 225.7], [225.7, 227.99, 224.61, 227.4], [227.4, 229.8, 226.42, 229.1], [229.1, 231.61, 228.23, 230.8], [230.8, 233.42, 230.04, 232.5], [232.5, 235.23, 231.85, 234.2], [234.2, 237.04, 233.66, 235.9], [235.9, 238.14, 234.76, 237.6], [237.6, 239.95, 236.57, 239.3], [239.3, 241.76, 238.38, 241], [241, 241.87, 239.77, 240.58], [240.58, 241.56, 239.47, 240.17], [240.17, 241.26, 239.16, 239.75], [239.75, 240.23, 238.13, 239.33], [239.33, 239.92, 237.83, 238.92], [238.92, 239.62, 237.52, 238.5], [238.5, 239.31, 237.22, 238.08], [238.08, 239.01, 236.91, 237.67], [237.67, 238.7, 236.6, 237.25], [237.25, 238.39, 236.3, 236.83], [236.83, 237.37, 235.27, 236.42], [236.42, 237.06, 234.97, 236], [236, 236.76, 233.77, 234.69], [234.69, 235.56, 232.57, 233.38], [233.38, 234.36, 231.38, 232.08], [232.08, 233.17, 230.18, 230.77], [230.77, 231.25, 228.26, 229.46], [229.46, 230.05, 227.06, 228.15], [228.15, 228.86, 225.87, 226.85], [226.85, 227.66, 224.67, 225.54], [225.54, 226.46, 223.47, 224.23], [224.23, 225.26, 222.28, 222.92], [222.92, 224.07, 221.08, 221.62], [221.62, 222.15, 219.16, 220.31], [220.31, 220.95, 217.97, 219], [219, 219.76, 218.08, 219], [219, 219.87, 218.19, 219], [219, 219.98, 218.3, 219], [219, 220.09, 218.41, 219], [219, 219.48, 217.8, 219], [219, 219.59, 217.91, 219]], "hlines": [{"price": 180, "color": "#38bdf8", "label": "trigger — buy above ₹180", "labelAt": 0.04}, {"price": 220, "color": "#a855f7", "label": "box top ₹220 — clear this and 09:45 is off", "labelAt": 0.46}, {"price": 160, "color": "#a855f7", "label": "box floor ₹160", "labelAt": 0.04}, {"price": 160, "color": "#ef5350", "label": "initial stop ₹160 (20pt off the fill)", "labelAt": 0.72}], "markers": [{"i": 5, "type": "buy", "price": 180, "text": "BUY CE 24250 @ ₹180"}, {"i": 52, "type": "exit", "price": 221.87, "text": "TRAIL @ ₹221.87 · ₹3055.01"}], "legend": [{"color": "#38bdf8", "label": "₹180 trigger"}, {"color": "#a855f7", "label": "the 09:45 box ₹160–₹220"}, {"color": "#ef5350", "label": "stop, then a 20pt trail"}]});
+  TVChart.render("s930-sideways", {"title": "NIFTY 24250 CE — the 09:45 rule closing a trade that went nowhere", "subtitle": "1-min OPTION PREMIUM · never traded ₹220, never traded ₹160 — so it is closed at 09:45, whatever the P&L", "times": ["09:25", "09:26", "09:27", "09:28", "09:29", "09:30", "09:31", "09:32", "09:33", "09:34", "09:35", "09:36", "09:37", "09:38", "09:39", "09:40", "09:41", "09:42", "09:43", "09:44", "09:45", "09:46", "09:47", "09:48", "09:49", "09:50", "09:51", "09:52", "09:53"], "candles": [[178, 178.95, 177.15, 177.6], [177.6, 178.05, 176.25, 177.2], [177.2, 177.74, 175.94, 176.8], [176.8, 177.43, 175.63, 176.4], [176.4, 177.12, 175.32, 176], [176, 179.52, 175.42, 178.7], [178.7, 182.31, 178.21, 181.4], [181.4, 184.2, 180.4, 183.8], [183.8, 186.69, 182.89, 186.2], [186.2, 189.18, 185.38, 188.6], [188.6, 191.68, 187.88, 191], [191, 191.77, 186.62, 187.25], [187.25, 188.11, 182.96, 183.5], [183.5, 184.45, 179.3, 179.75], [179.75, 180.2, 175.05, 176], [176, 180.54, 175.14, 180], [180, 184.63, 179.23, 184], [184, 188.72, 183.32, 188], [188, 188.82, 185.17, 185.75], [185.75, 186.66, 183.01, 183.5], [183.5, 183.9, 180.25, 181.25], [181.25, 181.74, 178.09, 179], [179, 181.33, 178.18, 180.75], [180.75, 183.18, 180.03, 182.5], [182.5, 185.02, 181.87, 184.25], [184.25, 186.86, 183.71, 186], [186, 186.95, 184.93, 185.38], [185.38, 185.82, 183.8, 184.75], [184.75, 185.29, 183.26, 184.13]], "hlines": [{"price": 180, "color": "#38bdf8", "label": "trigger — buy above ₹180", "labelAt": 0.04}, {"price": 220, "color": "#a855f7", "label": "box top ₹220 — clear this and 09:45 is off", "labelAt": 0.46}, {"price": 160, "color": "#a855f7", "label": "box floor ₹160", "labelAt": 0.04}, {"price": 160, "color": "#ef5350", "label": "initial stop ₹160 (20pt off the fill)", "labelAt": 0.72}], "markers": [{"i": 6, "type": "buy", "price": 180, "text": "BUY CE 24250 @ ₹180"}, {"i": 20, "type": "exit", "price": 183.5, "text": "SIDEWAYS @ ₹183.5 · ₹182.78"}], "legend": [{"color": "#38bdf8", "label": "₹180 trigger"}, {"color": "#a855f7", "label": "the 09:45 box ₹160–₹220"}, {"color": "#ef5350", "label": "stop, then a 20pt trail"}]});
+  TVChart.render("s930-notrade", {"title": "Neither leg clears ₹180 — and the day is simply left alone", "subtitle": "1-min OPTION PREMIUM · both watchlist legs stayed under the trigger through 09:35", "times": ["09:25", "09:26", "09:27", "09:28", "09:29", "09:30", "09:31", "09:32", "09:33", "09:34", "09:35", "09:36", "09:37", "09:38", "09:39", "09:40", "09:41", "09:42", "09:43", "09:44", "09:45", "09:46", "09:47", "09:48", "09:49", "09:50", "09:51", "09:52", "09:53", "09:54", "09:55", "09:56", "09:57", "09:58", "09:59", "10:00", "10:01", "10:02", "10:03", "10:04", "10:05"], "candles": [[178, 178.95, 177.05, 177.5], [177.5, 177.95, 176.05, 177], [177, 177.54, 175.64, 176.5], [176.5, 177.13, 175.23, 176], [176, 176.72, 174.82, 175.5], [175.5, 176.32, 174.42, 175], [175, 175.91, 174.01, 174.5], [174.5, 174.9, 173, 174], [174, 175.36, 173.09, 174.87], [174.87, 176.32, 174.05, 175.73], [175.73, 177.28, 175.01, 176.6], [176.6, 178.24, 175.97, 177.47], [177.47, 179.19, 176.93, 178.33], [178.33, 180.15, 177.89, 179.2], [179.2, 179.65, 177.1, 178.05], [178.05, 178.59, 176.04, 176.9], [176.9, 177.53, 174.98, 175.75], [175.75, 176.47, 173.92, 174.6], [174.6, 175.42, 172.87, 173.45], [173.45, 174.36, 171.81, 172.3], [172.3, 172.7, 170.15, 171.15], [171.15, 171.64, 169.09, 170], [170, 170.58, 168.96, 169.78], [169.78, 170.45, 168.83, 169.56], [169.56, 170.32, 168.7, 169.33], [169.33, 170.19, 168.57, 169.11], [169.11, 170.06, 168.44, 168.89], [168.89, 169.34, 167.71, 168.67], [168.67, 169.21, 167.58, 168.44], [168.44, 169.08, 167.45, 168.22], [168.22, 168.95, 167.32, 168], [168, 168.82, 167.19, 167.78], [167.78, 168.69, 167.06, 167.56], [167.56, 167.96, 166.33, 167.33], [167.33, 167.83, 166.2, 167.11], [167.11, 167.7, 166.07, 166.89], [166.89, 167.57, 165.94, 166.67], [166.67, 167.44, 165.81, 166.44], [166.44, 167.31, 165.68, 166.22], [166.22, 167.18, 165.55, 166], [166, 166.45, 165.04, 165.99]], "hlines": [{"price": 180, "color": "#38bdf8", "label": "trigger — buy above ₹180", "labelAt": 0.04}, {"price": 220, "color": "#a855f7", "label": "box top ₹220 — clear this and 09:45 is off", "labelAt": 0.46}, {"price": 160, "color": "#a855f7", "label": "box floor ₹160", "labelAt": 0.04}], "markers": [{"i": 13, "type": "dot", "color": "#fbbf24", "price": 180.15, "text": "best it managed: ₹180.15 — never above ₹180"}], "legend": [{"color": "#38bdf8", "label": "₹180 trigger"}, {"color": "#a855f7", "label": "the 09:45 box ₹160–₹220"}, {"color": "#ef5350", "label": "no entry — nothing to stop"}]});
+})();
+</script>
+</body>
+</html>

@@ -34,6 +34,7 @@ const GUIDE_MODE_BY_FILE = {
   "3m_gap_fix_scalp_strategy_guide.html": "GAP3M",
   "oi_wall_fade_strategy_guide.html": "OIWF",
   "rsi_pivot_st_strategy_guide.html": "RSI_PIVOT_ST",
+  "simple930_strategy_guide.html":    "SIMPLE930",
 };
 
 /**
@@ -870,6 +871,14 @@ const GUIDE_STATUS = {
     { type: "value", label: "SuperTrend Stop applies to", key: "RSI_PIVOT_ST_ST_SIDES", def: "CE", warnOn: ["NONE"] },
     { type: "value", label: "Premium Stop applies to (CE-only / NONE leaves PE with NO stop)", key: "RSI_PIVOT_ST_PREMIUM_SL_SIDES", def: "BOTH", warnOn: ["CE", "NONE"] },
   ] }] },
+  "SIMPLE930_Strategy_Guide.html": { title: "SIMPLE_9:30 — Live Configuration", groups: [{ rows: [
+    { type: "bool", label: "SIMPLE_9:30 Mode (sidebar + Settings section)", key: "SIMPLE930_MODE_ENABLED", def: "true" },
+    { type: "bool", label: "SIMPLE_9:30 Paper Trading", key: "SIMPLE930_PAPER_ENABLED", def: "true" },
+    { type: "live", label: "Live Orders (Zerodha, via paper harness)", enableKey: "SIMPLE930_LIVE_ENABLED", dryKey: "SIMPLE930_LIVE_DRY_RUN" },
+    { type: "value", label: "Breakout premium (also the strike the 09:25 search aims at)", key: "SIMPLE930_TRIGGER_PREMIUM", def: "180" },
+    { type: "bool", label: "Trailing Stop", key: "SIMPLE930_TRAIL_ENABLED", def: "true" },
+    { type: "value", label: "Stop distance off the fill (points)", key: "SIMPLE930_SL_PTS", def: "20" },
+  ] }] },
   "Application_Setup_Guide.html": { title: "System — Live Configuration", groups: [
     { heading: "Global gates", rows: [
       { type: "globaldry", label: "Live Harness DRY-RUN (global kill-switch)", key: "LIVE_HARNESS_DRY_RUN" },
@@ -890,6 +899,7 @@ const GUIDE_STATUS = {
       { type: "bool", label: "3M Gap Fix Scalp Mode", key: "GAP3M_MODE_ENABLED", def: "true" },
       { type: "bool", label: "OI Wall Fade Mode", key: "OIWF_MODE_ENABLED", def: "true" },
       { type: "bool", label: "RSI Pivot ST Mode", key: "RSI_PIVOT_ST_MODE_ENABLED", def: "true" },
+      { type: "bool", label: "SIMPLE_9:30 Mode", key: "SIMPLE930_MODE_ENABLED", def: "true" },
     ] },
   ] },
 };

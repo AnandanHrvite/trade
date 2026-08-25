@@ -45,7 +45,7 @@ function sendAiSkipMarkdown(res, records, baseName, meta) {
   res.send(md);
 }
 
-const MODES = ["ema_rsi_st", "bb_rsi", "pa", "orb", "ema9vwap", "trend_pb", "gaps", "trend_day_scalp", "gap_fix_3m", "oi_wall_fade", "rsi_pivot_st"];
+const MODES = ["ema_rsi_st", "bb_rsi", "pa", "orb", "ema9vwap", "trend_pb", "gaps", "trend_day_scalp", "gap_fix_3m", "oi_wall_fade", "rsi_pivot_st", "simple930", "simple930-live"];
 
 function validMode(m) { return MODES.includes(m); }
 function validDate(d) { return typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d); }
@@ -545,6 +545,8 @@ function enabledModesFromEnv() {
     gap_fix_3m: on(process.env.GAP3M_MODE_ENABLED),
     oi_wall_fade: on(process.env.OIWF_MODE_ENABLED),
     rsi_pivot_st: on(process.env.RSI_PIVOT_ST_MODE_ENABLED),
+    simple930: on(process.env.SIMPLE930_MODE_ENABLED),
+    "simple930-live": on(process.env.SIMPLE930_MODE_ENABLED),
   };
 }
 
@@ -606,6 +608,8 @@ router.get("/", (req, res) => {
     .mode-gap_fix_3m { color:#38bdf8; }
     .mode-oi_wall_fade { color:#f472b6; }
     .mode-rsi_pivot_st { color:#facc15; }
+    .mode-simple930 { color:#fb923c; }
+    .mode-simple930-live { color:#fdba74; }
     .mode-meta { font-size:0.68rem; color:var(--muted-1,#8ba1c2); }
 
     /* Strategy chip bar — shows ONE strategy's table at a time so the page
@@ -1054,6 +1058,8 @@ ${buildSidebar('tradeLogs', liveActive)}
     { key: 'gap_fix_3m', label: '3M GAP FIX SCALP', cls: 'mode-gap_fix_3m' },
     { key: 'oi_wall_fade', label: 'OI WALL FADE', cls: 'mode-oi_wall_fade' },
     { key: 'rsi_pivot_st', label: 'RSI PIVOT ST', cls: 'mode-rsi_pivot_st' },
+    { key: 'simple930', label: 'SIMPLE_9:30', cls: 'mode-simple930' },
+    { key: 'simple930-live', label: 'SIMPLE_9:30 LIVE', cls: 'mode-simple930-live' },
   ];
   function enabledModes() { return MODE_LIST.filter(function(m){ return ENABLED_MODES[m.key] !== false; }); }
 
@@ -1067,8 +1073,8 @@ ${buildSidebar('tradeLogs', liveActive)}
   })();
 
   // Per-section page state.
-  var _filesPage  = { ema_rsi_st:1, bb_rsi:1, pa:1, orb:1, ema9vwap:1, trend_pb:1, gaps:1, trend_day_scalp:1, gap_fix_3m:1, oi_wall_fade:1, rsi_pivot_st:1 };
-  var _skipsPage  = { ema_rsi_st:1, bb_rsi:1, pa:1, orb:1, ema9vwap:1, trend_pb:1, gaps:1, trend_day_scalp:1, gap_fix_3m:1, oi_wall_fade:1, rsi_pivot_st:1 };
+  var _filesPage  = { ema_rsi_st:1, bb_rsi:1, pa:1, orb:1, ema9vwap:1, trend_pb:1, gaps:1, trend_day_scalp:1, gap_fix_3m:1, oi_wall_fade:1, rsi_pivot_st:1, simple930:1, 'simple930-live':1 };
+  var _skipsPage  = { ema_rsi_st:1, bb_rsi:1, pa:1, orb:1, ema9vwap:1, trend_pb:1, gaps:1, trend_day_scalp:1, gap_fix_3m:1, oi_wall_fade:1, rsi_pivot_st:1, simple930:1, 'simple930-live':1 };
   var _auditPage  = 1;
   var _view = { mode:null, date:null, kind:null, page:1, total:0, pageSize:25 }; // modal state
 

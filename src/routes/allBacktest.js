@@ -25,6 +25,7 @@ const gapsStrategy    = require("../strategies/gaps");
 const tdsStrategy     = require("../strategies/trend_day_scalp");
 const gap3mStrategy   = require("../strategies/gap_fix_3m");
 const rsiPivotStStrategy = require("../strategies/rsi_pivot_st");
+const simple930Strategy  = require("../strategies/simple930");
 const sharedSocketState = require("../utils/sharedSocketState");
 
 const EMA_RSI_ST_KEY = ACTIVE;
@@ -36,6 +37,7 @@ const GAPS_KEY     = "GAPS_BACKTEST";
 const TDS_KEY      = "TREND_DAY_SCALP_BACKTEST";
 const GAP3M_KEY    = "GAP_FIX_3M_BACKTEST";
 const RSI_PIVOT_ST_KEY = "RSI_PIVOT_ST_BACKTEST";
+const SIMPLE930_KEY    = "SIMPLE930_BACKTEST";
 
 function _modeOn(envKey) {
   return (process.env[envKey] || "true").toLowerCase() === "true";
@@ -148,6 +150,7 @@ router.get("/", (req, res) => {
   const tdsOn      = _modeOn("TDS_MODE_ENABLED");
   const gap3mOn    = _modeOn("GAP3M_MODE_ENABLED");
   const rsiPivotStOn = _modeOn("RSI_PIVOT_ST_MODE_ENABLED");
+  const simple930On  = _modeOn("SIMPLE930_MODE_ENABLED");
 
   const emaRsiStResult    = emaRsiStOn    ? loadResult(EMA_RSI_ST_KEY)    : null;
   const bbRsiResult    = bbRsiOn    ? loadResult(BB_RSI_KEY)    : null;
@@ -158,6 +161,7 @@ router.get("/", (req, res) => {
   const tdsResult      = tdsOn      ? loadResult(TDS_KEY)      : null;
   const gap3mResult    = gap3mOn    ? loadResult(GAP3M_KEY)    : null;
   const rsiPivotStResult = rsiPivotStOn ? loadResult(RSI_PIVOT_ST_KEY) : null;
+  const simple930Result  = simple930On  ? loadResult(SIMPLE930_KEY)  : null;
 
   const emaRsiStPanel = emaRsiStOn ? renderPanel(
     "EMA_RSI_ST", { bg: "rgba(59,130,246,0.12)", fg: "#60a5fa", border: "rgba(59,130,246,0.25)" },
@@ -202,6 +206,11 @@ router.get("/", (req, res) => {
     "RSI PIVOT ST", { bg: "rgba(250,204,21,0.12)", fg: "#facc15", border: "rgba(250,204,21,0.25)" },
     rsiPivotStStrategy && rsiPivotStStrategy.NAME ? rsiPivotStStrategy.NAME : "RSI_PIVOT_ST",
     RSI_PIVOT_ST_KEY, "/rsi-pivot-st-backtest", rsiPivotStResult
+  ) : "";
+  const simple930Panel = simple930On ? renderPanel(
+    "SIMPLE_9:30", { bg: "rgba(251,146,60,0.12)", fg: "#fb923c", border: "rgba(251,146,60,0.25)" },
+    simple930Strategy && simple930Strategy.NAME ? simple930Strategy.NAME : "SIMPLE_9:30",
+    SIMPLE930_KEY, "/simple930-backtest", simple930Result
   ) : "";
 
   res.setHeader("Content-Type", "text/html");
@@ -352,6 +361,7 @@ ${buildSidebar('allBacktest', liveActive)}
   ${tdsPanel}
   ${gap3mPanel}
   ${rsiPivotStPanel}
+  ${simple930Panel}
   ${(!emaRsiStOn && !bbRsiOn && !paOn && !orbOn && !trendPbOn && !gapsOn && !tdsOn && !gap3mOn && !rsiPivotStOn) ? `
   <div style="background:#08091a;border:0.5px solid #0e1428;border-radius:10px;padding:24px;text-align:center;color:#94a3b8;font-size:0.78rem;">
     No strategies enabled. Toggle one on in <a href="/settings" style="color:#60a5fa;">Settings → Strategy Modes</a>.
