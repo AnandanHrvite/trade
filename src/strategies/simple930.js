@@ -84,7 +84,8 @@
  *   evaluateTrigger(legs, cfg, sustain)      -> { fire, leg, ltp, reason, … }
  *   computeInitialStop(fillLtp, cfg)         -> stop as a DISTANCE off the fill
  *   computeTrailStop(peak, initialStop, cfg) -> ratcheting trail
- *   isExpanded(peak, trough, cfg)            -> did it leave the 160–220 box?
+ *   isExpanded(peak, trough, cfg, pos?)      -> did it leave the 160–220 box?
+ *                                             (an open position keeps its own box)
  *   exitCheck(pos, ltp, nowMin, cfg)         -> the ONLY exit decision
  */
 
@@ -185,8 +186,6 @@ function getConfig() {
     triggerPremium: trigger,
     bandUp:         _r2(trigger + _numEnv("SIMPLE930_BAND_UP_OFFSET",   40, 0, 2000)),
     bandDown:       _r2(trigger - _numEnv("SIMPLE930_BAND_DOWN_OFFSET", 20, 0, 2000)),
-    bandUpOffset:   _numEnv("SIMPLE930_BAND_UP_OFFSET",   40, 0, 2000),
-    bandDownOffset: _numEnv("SIMPLE930_BAND_DOWN_OFFSET", 20, 0, 2000),
 
     // ── The ladder quoted at 09:25 ──
     // ITM depth per side. 8 × 50 = 400 points, which covers a ₹180 premium from
@@ -416,10 +415,18 @@ function computeTrailStop(peakLtp, initialStop, cfg) {
  * Touching an edge counts as leaving it — the rule says "not going ABOVE 220 or
  * BELOW 160", and a trade that printed exactly 220 has done what was asked.
  */
-function isExpanded(peak, trough, cfg) {
+function isExpanded(peak, trough, cfg, pos) {
   cfg = cfg || getConfig();
-  if (_px(peak) && peak >= cfg.bandUp) return true;
-  if (_px(trough) && trough <= cfg.bandDown) return true;
+  // A live position carries the box it was OPENED under. Config is read live —
+  // that is what makes a Settings save apply without a restart — but re-pricing
+  // a trade that is already running is a different thing: widening the box at
+  // 09:40 would RE-ARM the 09:45 exit on a trade that had already left it and
+  // close a winner the rule had released. Frozen levels win while a trade is on;
+  // the live config governs the next one.
+  const up   = pos && _num(pos.bandUp)   ? pos.bandUp   : cfg.bandUp;
+  const down = pos && _num(pos.bandDown) ? pos.bandDown : cfg.bandDown;
+  if (_px(peak) && peak >= up) return true;
+  if (_px(trough) && trough <= down) return true;
   return false;
 }
 
@@ -468,11 +475,13 @@ function exitCheck(pos, ltp, nowMin, cfg) {
   // Out of the box the windows cannot overlap (09:35 vs 09:45); both are
   // settable, so the guard is real rather than theoretical.
   const _openedBeforeCheck = !_num(pos.entryMin) || pos.entryMin < cfg.sidewaysMin;
-  if (_num(nowMin) && nowMin >= cfg.sidewaysMin && _openedBeforeCheck && !isExpanded(pos.peak, pos.trough, cfg)) {
+  if (_num(nowMin) && nowMin >= cfg.sidewaysMin && _openedBeforeCheck && !isExpanded(pos.peak, pos.trough, cfg, pos)) {
+    const _up   = _num(pos.bandUp)   ? pos.bandUp   : cfg.bandUp;
+    const _down = _num(pos.bandDown) ? pos.bandDown : cfg.bandDown;
     return {
       exit: true,
       kind: "SIDEWAYS",
-      reason: `Sideways exit at ${_fmtMins(cfg.sidewaysMin)} — premium never left ₹${cfg.bandDown}–₹${cfg.bandUp} ` +
+      reason: `Sideways exit at ${_fmtMins(cfg.sidewaysMin)} — premium never left ₹${_down}–₹${_up} ` +
               `(ranged ₹${_r2(pos.trough)}–₹${_r2(pos.peak)}), closing at ₹${_r2(ltp)} whatever the P&L`,
     };
   }

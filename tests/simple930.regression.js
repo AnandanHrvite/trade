@@ -366,6 +366,24 @@ check("a position opened AT/AFTER the check time is not closed by the box", () =
   const early = POS({ peak: 181, trough: 181, entryMin: 9 * 60 + 31 });
   assert.strictEqual(S.exitCheck(early, 181, 9 * 60 + 51, c).kind, "SIDEWAYS");
 });
+check("a Settings save cannot re-arm the 09:45 exit on an OPEN trade", () => {
+  // The trade below already cleared a 220 box. Widening the box to 260 mid-trade
+  // must not drag it back inside and close a winner the rule had released.
+  const wide = freshEnv({ SIMPLE930_BAND_UP_OFFSET: "80" });   // box top now 260
+  const pos = POS({ peak: 225, trough: 178, bandUp: 220, bandDown: 160, entryMin: 9 * 60 + 30, stop: 205 });
+  assert.strictEqual(S.isExpanded(pos.peak, pos.trough, wide, pos), true, "the frozen box was ignored");
+  assert.strictEqual(S.exitCheck(pos, 215, 9 * 60 + 46, wide).exit, false);
+  // ...while a position carrying no frozen box still follows the live config
+  const unfrozen = POS({ peak: 225, trough: 178, entryMin: 9 * 60 + 30, stop: 205 });
+  assert.strictEqual(S.isExpanded(unfrozen.peak, unfrozen.trough, wide), false);
+});
+check("the frozen box is quoted in the exit reason, not the live one", () => {
+  const wide = freshEnv({ SIMPLE930_BAND_UP_OFFSET: "80" });
+  const pos = POS({ peak: 190, trough: 178, bandUp: 220, bandDown: 160, entryMin: 9 * 60 + 30 });
+  const v = S.exitCheck(pos, 185, 9 * 60 + 46, wide);
+  assert.strictEqual(v.kind, "SIDEWAYS");
+  assert.ok(/₹160–₹220/.test(v.reason), `reason quotes the live box, not the trade's: ${v.reason}`);
+});
 check("a position with no entryMin keeps the old box behaviour", () => {
   const v = S.exitCheck(POS({ peak: 210, trough: 170 }), 205, 9 * 60 + 45, freshEnv());
   assert.strictEqual(v.kind, "SIDEWAYS");
@@ -618,12 +636,29 @@ check("whichever leg is further through the level is the one bought", () => {
   const { trade } = BT.simulateDay(mkDay({ ladder: [mkLeg("CE", 24250, ce), mkLeg("PE", 24450, pe)] }), c, QTY);
   assert.strictEqual(trade.side, "PE");
 });
-check("only ONE trade a day is ever produced, even on a whipsaw", () => {
+check("a whipsaw session still yields exactly one trade, and it is the FIRST break", () => {
+  // simulateDay structurally returns one trade, so the assertion worth making is
+  // that it is the first break of the window and not a later, better-looking one.
   const c = freshEnv(NOSLIP);
   const ce = [flat(SEL, 178)];
   for (let m = SEL + 1; m <= END; m++) ce.push(bar(m, 181, 190, 155, 181));
-  const r = BT.simulateDay(mkDay({ ladder: [mkLeg("CE", 24250, ce)] }), c, QTY);
-  assert.ok(r.trade && !Array.isArray(r.trade));
+  const { trade } = BT.simulateDay(mkDay({ ladder: [mkLeg("CE", 24250, ce)] }), c, QTY);
+  assert.ok(trade);
+  assert.strictEqual(trade.entry.split(", ")[1], "09:26:00", "did not take the first bar that broke the level");
+});
+check("the ONE-trade-a-day cap survives a /stop then /start inside the window", () => {
+  // /start calls _freshState(), which zeroes tradesTaken, and the JSONL
+  // rehydrate only runs at module load — so without a day guard the operator
+  // gets a second trade on a strategy whose whole rule is one.
+  const src = decomment(read("routes/simple930Paper.js"));
+  assert.ok(/_dayGuard/.test(src), "no same-day trade guard — a restart re-arms the day");
+  assert.ok(/state\.tradesTaken\s*=\s*_dayGuard\.tradesTaken/.test(src), "/start does not restore the day's spent budget");
+  assert.ok(/state\.dayClosed\s*=\s*_dayGuard\.dayClosed/.test(src), "/start does not restore a closed day");
+  // and the guard must NOT be read back from disk, or a same-day replay would
+  // close the day at once and produce zero trades.
+  const guard = src.slice(src.indexOf("let _dayGuard"), src.indexOf("let state = _freshState()"));
+  assert.ok(!/readDailyTrades/.test(guard), "the day guard reads the day file — that would break a same-day replay");
+  assert.ok(/state\.tradesTaken >= _maxDailyTrades\(\)/.test(src), "the entry path does not enforce the cap");
 });
 check("no option data is reported as UNFETCHABLE, not as a flat day", () => {
   const { trade, audit } = BT.simulateDay(mkDay({ ladder: [mkLeg("CE", 24250, [])] }), freshEnv(), QTY);
@@ -742,6 +777,46 @@ check("the paper route persists and clears its position snapshot", () => {
   const src = decomment(read("routes/simple930Paper.js"));
   assert.ok(/saveSimple930Position/.test(src));
   assert.ok(/clearSimple930Position/.test(src));
+});
+check("a 09:25 ladder that quoted NOTHING retries instead of killing the day", () => {
+  // A thrown quote error already retried; a { s:"no_data" } response — an expired
+  // token, a hiccup — used to freeze an empty watchlist for the whole session.
+  const src = decomment(read("routes/simple930Paper.js"));
+  const sel = src.slice(src.indexOf("async function runSelection"), src.indexOf("const ENTRY_RETRY_MS"));
+  assert.ok(/quoted === 0/.test(sel), "an all-empty ladder is still treated as a decision");
+  // It must bail BEFORE the "neither side produced a usable strike" close — that
+  // close is a real decision about quoted prices, and an empty ladder has none.
+  // (The earlier close, for an unresolvable expiry, IS a decision and stays.)
+  const zeroIdx = sel.indexOf("quoted === 0");
+  const strikeCloseIdx = sel.indexOf("Neither side produced a usable strike");
+  assert.ok(zeroIdx > -1, "no empty-ladder guard");
+  assert.ok(strikeCloseIdx > zeroIdx, "the empty-ladder retry runs after the day is already closed");
+  assert.ok(!/state\.selection = sel/.test(sel.slice(0, zeroIdx)), "the selection is frozen before the emptiness check");
+});
+check("the backtest reuses the engine's IST helpers rather than its own copy", () => {
+  // The engine header forbids routes re-deriving IST arithmetic; two copies that
+  // agree today are two that can drift tomorrow.
+  const src = decomment(read("routes/simple930Backtest.js"));
+  assert.ok(/_istMins\s*=\s*strategy\._utcSecToIstMins/.test(src));
+  assert.ok(/_istDayStr\s*=\s*strategy\._istDateStr/.test(src));
+  assert.ok(!/function _istMins/.test(src), "the backtest still defines its own IST minute helper");
+});
+check("the backtest DISCLOSES that it cannot model SUSTAIN_POLLS", () => {
+  // "N consecutive quotes above the trigger" has no meaning on a 1-min bar, so
+  // the backtest over-counts entries when it is set. Silence would be the bug.
+  const src = read("routes/simple930Backtest.js");
+  assert.ok(/SUSTAIN_POLLS is set to/.test(src), "the results page never mentions the divergence");
+  assert.ok(/cfg\.sustainPolls > 1/.test(src), "the disclosure is not conditional on the setting");
+});
+check("every config field getConfig() returns is actually read somewhere", () => {
+  const cfg = S.getConfig();
+  const hay = ["strategies/simple930.js", "routes/simple930Paper.js",
+               "routes/simple930Backtest.js", "routes/simple930LiveHarness.js",
+               "../tools/genSimple930GuideData.js"]
+    .map(f => { try { return f.startsWith("../") ? fs.readFileSync(path.join(__dirname, f.slice(3)), "utf-8") : read(f); } catch (_) { return ""; } })
+    .join("\n");
+  const dead = Object.keys(cfg).filter(k => !new RegExp(`\\.${k}\\b`).test(hay));
+  assert.deepStrictEqual(dead, [], `getConfig() returns fields nothing reads: ${dead.join(", ")}`);
 });
 check("the stale-premium skip row is throttled, not written once a poll", () => {
   // At a 1s poll a dead quote feed would otherwise bury the day's real skips

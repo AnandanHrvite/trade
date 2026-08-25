@@ -136,6 +136,35 @@ function saveData(d) {
 }
 
 // ── State ────────────────────────────────────────────────────────────────────
+/**
+ * The day's trade budget, kept OUTSIDE `state` on purpose.
+ *
+ * `/start` calls _freshState(), which zeroes tradesTaken — so a /stop → /start
+ * inside the entry window handed the day a second trade, and the operator's rule
+ * is ONE. rehydrateSessionFromJsonl() only runs at module load, so it cannot
+ * close that hole either.
+ *
+ * Module-level, and deliberately NOT read back from the day's JSONL: tickReplay
+ * drops this route from require.cache immediately BEFORE it requires it
+ * (services/tickReplay.js, "Load the route module AFTER patches are installed"),
+ * so every replay run starts with a clean guard. Reading the file instead would
+ * make a replay of a day that already traded close the day at once and produce
+ * zero trades — killing the paper-vs-replay diff that gates the live switch.
+ */
+let _dayGuard = { day: null, tradesTaken: 0, dayClosed: false, dayClosedReason: null };
+
+function _todayIst() { return tradeLogger.istDateString(Date.now()); }
+
+/** Fold the running session's day-level counters back into the guard. */
+function _syncDayGuard() {
+  _dayGuard = {
+    day:             _todayIst(),
+    tradesTaken:     state.tradesTaken,
+    dayClosed:       state.dayClosed,
+    dayClosedReason: state.dayClosedReason,
+  };
+}
+
 let state = _freshState();
 function _freshState() {
   return {
@@ -403,6 +432,16 @@ async function runSelection() {
       return { ...c, symbol: sym, ltp: q ? q.ltp : null };
     });
 
+    const quoted = rungs.filter(r => strategy._px(r.ltp)).length;
+    if (quoted === 0) {
+      // NOT a decision — an absence of data. A thrown quote error already
+      // retried; a { s: "no_data" } response (an expired token, a hiccup) used
+      // to freeze an empty watchlist for the whole day instead. Leave the
+      // selection unmade so the 5s retry runs; the entry window closes it.
+      log(`⚠️ ${LOG_TAG} 09:25 ladder came back with no prices at all (${rungs.length} rungs asked) — retrying, window closes ${strategy._fmtMins(cfg.entryEndMin)}`);
+      return;
+    }
+
     const picked = strategy.selectWatchlist(rungs, atm, cfg);
     const sel = {
       atTime:     istNow(),
@@ -415,7 +454,7 @@ async function runSelection() {
       ce:         picked.ce,
       pe:         picked.pe,
       candidates: picked.candidates,
-      quoted:     rungs.filter(r => strategy._px(r.ltp)).length,
+      quoted,
       ladderSize: rungs.length,
       notes:      picked.notes,
       late:       nowMin > cfg.selectionMin + 1,
@@ -658,6 +697,7 @@ async function simulateBuy(side, leg, verdict, cfg) {
   state.optionLtp = fillLtp;
   state.optionLtpUpdatedAt = Date.now();
   state.tradesTaken++;
+  _syncDayGuard();
 
   log(`🟢 ${LOG_TAG} BUY ${side} ${leg.symbol} qty=${qty} @ ₹${pos.optionEntryLtp}`);
   log(`   ├─ Trigger: ${pos.entryReason}`);
@@ -804,6 +844,7 @@ function _closeDay(reason) {
   if (state.dayClosed) return;
   state.dayClosed = true;
   state.dayClosedReason = reason;
+  _syncDayGuard();
   log(`⏸️ ${LOG_TAG} ${reason} — no more entries today`);
   decide("DAY", reason, { sessionPnl: state.sessionPnl, tradesTaken: state.tradesTaken });
   skipLogger.appendSkipLog(MODE_KEY, { gate: "day_closed", reason, sessionPnl: state.sessionPnl });
@@ -1010,6 +1051,16 @@ router.get("/start", async (req, res) => {
   state.running = true;
   state.sessionStart = new Date().toISOString();
   state._sessionId = `simple930-paper:${Date.now()}`;
+
+  // Carry today's already-spent trade budget across a restart of the session.
+  // Without this a /stop → /start inside the entry window buys a second time on
+  // a strategy whose whole rule is one trade a day.
+  if (_dayGuard.day === _todayIst() && (_dayGuard.tradesTaken > 0 || _dayGuard.dayClosed)) {
+    state.tradesTaken     = _dayGuard.tradesTaken;
+    state.dayClosed       = _dayGuard.dayClosed;
+    state.dayClosedReason = _dayGuard.dayClosedReason;
+    log(`♻️ ${LOG_TAG} Same-day restart — carrying forward ${state.tradesTaken} trade(s)${state.dayClosed ? ` · day already closed: ${state.dayClosedReason}` : ""}`);
+  }
 
   sharedSocketState.setSimple930Active("SIMPLE930_PAPER");
 

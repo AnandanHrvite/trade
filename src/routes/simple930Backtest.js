@@ -74,11 +74,12 @@ const RES         = "1";                 // 1-minute bars — the finest Fyers s
 const WEEKLY_EXPIRY_DOW = 2;             // Tuesday (NSE moved NIFTY weeklies off Thursday)
 
 // ── time helpers ─────────────────────────────────────────────────────────────
-function _istMins(unixSec) { return Math.floor((unixSec + 19800) / 60) % 1440; }
-function _istDayStr(unixSec) {
-  const d = new Date((unixSec + 19800) * 1000);
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
-}
+// IST arithmetic comes from the engine, not from a second copy here: the engine
+// header is explicit that routes must not re-derive it, and two implementations
+// that agree today are two that can drift tomorrow.
+const _istMins   = strategy._utcSecToIstMins;
+const _istDayStr = strategy._istDateStr;
+
 function _ddmmyyyy(unixSec) {
   const d = new Date((unixSec + 19800) * 1000);
   return `${String(d.getUTCDate()).padStart(2, "0")}/${String(d.getUTCMonth() + 1).padStart(2, "0")}/${d.getUTCFullYear()}`;
@@ -579,6 +580,10 @@ function _renderResults(res, from, to, trades, stats, meta) {
       `<b>Entry:</b> the first watchlist leg whose 1-min bar trades above ₹${cfg.triggerPremium} between ${strategy._fmtMins(cfg.entryStartMin)} and ${strategy._fmtMins(cfg.entryEndMin)}, filled at max(bar open, ₹${cfg.triggerPremium}). ` +
       `<b>Exits:</b> ${cfg.slPts}pt stop off the fill${cfg.trailEnabled ? `, trailing ${cfg.trailPts}pt behind the peak` : " (trail OFF)"}; at ${strategy._fmtMins(cfg.sidewaysMin)} a trade still inside ₹${cfg.bandDown}–₹${cfg.bandUp} is closed; EOD ${strategy._fmtMins(cfg.forcedExitMin)}. ` +
       `<b>Intra-bar ordering is conservative:</b> the stop is tested on the bar low BEFORE the trail is lifted from the bar high, a bar that opened beyond the stop fills at the open, and the entry bar is tested like any other. ` +
+      (cfg.sustainPolls > 1
+        ? `<b style="color:#f59e0b;">⚠ SIMPLE930_SUSTAIN_POLLS is set to ${cfg.sustainPolls}, and this page cannot model it</b> — "N consecutive quotes above the trigger" has no meaning on a 1-minute bar, so the backtest fills on the first bar that crosses and will report MORE entries than paper would take. `
+        : "") +
+      `<b>The stop fill is the backtest's one systematic flattery:</b> it books exactly the stop level, while paper books the tick that breached it. The slippage haircut offsets part of that, not all of it. ` +
       `Slippage of ${_slippagePts()}pt is charged EACH way and Zerodha statutory charges are applied on ${meta.qty} qty. ` +
       `<b>A NIFTY weekly option is delisted at expiry</b>, so sessions older than the listed contracts cannot be fetched at all — they show as "no option data", not as flat days. ` +
       `<b>This strategy has NEVER traded live or on paper. Nothing here is validated.</b>${dayNote}`,
