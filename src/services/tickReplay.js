@@ -924,17 +924,18 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
    *  exact union of N 1-min buckets — no drift. */
   function _rollUpSpotBars(resMin) {
     const bars = Array.from(_base1m.values()).sort((a, b) => a.time - b.time);
-    if (resMin <= 1) return bars;
+    if (resMin <= 1) return bars.map(b => Object.assign({ _children: 1 }, b));
     const out = new Map();
     for (const b of bars) {
       const sec = Math.floor(getBucketStart(b.time * 1000, resMin) / 1000);
       const agg = out.get(sec);
       if (!agg) {
-        out.set(sec, { time: sec, open: b.open, high: b.high, low: b.low, close: b.close, volume: 0 });
+        out.set(sec, { time: sec, open: b.open, high: b.high, low: b.low, close: b.close, volume: 0, _children: 1 });
       } else {
         if (b.high > agg.high) agg.high = b.high;
         if (b.low  < agg.low)  agg.low  = b.low;
         agg.close = b.close;
+        agg._children++;
       }
     }
     return Array.from(out.values()).sort((a, b) => a.time - b.time);
@@ -980,12 +981,22 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     // entry window opens. Same principle as withholding the forming bar.
     const closed = _rollUpSpotBars(resMin)
       .filter(b => b.time > lastWarm && b.time < nowBucketSec);
-    const extra   = closed.filter(b => b.time * 1000 >= _firstTickT);
+    // A bucket is only usable if the tick stream covers it END TO END:
+    //   · starts at/after the first recorded tick (leading edge, above), and
+    //   · every one of its resMin 1-min sub-buckets produced a bar.
+    // The recorder does not sample — socketManager hands it every spot tick —
+    // so a minute with NO ticks is a genuine feed gap, not quiet trade. A
+    // socket flap (this repo has a history of them) would otherwise yield a
+    // bucket built from a fraction of its minutes and served as complete, whose
+    // fabricated high/low can trip a breakout test the real bar never would.
+    // Limitation: this catches gaps of a full minute or more. Sub-minute jitter
+    // is neither detectable this way nor material.
+    const extra = closed.filter(b => b.time * 1000 >= _firstTickT && b._children >= resMin);
     if (!_warnedPartial && extra.length !== closed.length) {
       _warnedPartial = true;
-      console.warn(`⚠️ [replay] session starts mid-bucket — dropped ${closed.length - extra.length} partial ${resMin}-min bar(s) the tick stream does not cover from the start; the strategy sees a gap there rather than an invented bar.`);
+      console.warn(`⚠️ [replay] dropped ${closed.length - extra.length} partial ${resMin}-min bar(s) — the recorded tick stream does not cover them end to end (session started mid-bucket, or the feed gapped). The strategy sees a gap there rather than an invented bar; a delta vs the live session on those bars is a recording hole, not a strategy result.`);
     }
-    return warm.concat(extra);
+    return extra.length ? warm.concat(extra.map(({ _children, ...b }) => b)) : warm;
   }
 
   function install() {
