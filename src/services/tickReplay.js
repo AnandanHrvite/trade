@@ -46,6 +46,9 @@ const crypto   = require("crypto");
 
 const tickRecorder = require("../utils/tickRecorder");
 const { ROOT_DIR } = tickRecorder._internals;
+// Same bucket math the live candle builders use, so replay-built bars land on
+// exactly the grid the strategies expect.
+const { getBucketStart, isPreMarketBucket } = require("../utils/tradeUtils");
 
 // The real wall clock, captured at load. The harness overrides global Date.now()
 // for the duration of a run, so anything measuring REAL elapsed time (durations,
@@ -122,7 +125,11 @@ function requestCancel() {
 //     live data and must be recomputed.
 // v11: EMA_RSI_ST chartData now carries the EMA21 exit/trail line (OHLC4) — results
 //      unchanged, but invalidate so re-runs regenerate the chart with EMA21 drawn.
-const REPLAY_CACHE_VERSION = 11;
+// v12: history-polled strategies (RSI_PIVOT_ST, OI_WALL_FADE) were served a frozen
+//      session-start warm-up, so onCandleClose never fired and they replayed 0
+//      trades on every date. The harness now grows the spot series from the pumped
+//      ticks — every cached result for those modes is wrong and must be recomputed.
+const REPLAY_CACHE_VERSION = 12;
 
 function _replayCacheDir() {
   return path.join(ROOT_DIR, "_replay_cache");
@@ -866,7 +873,110 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
   let replayNow = 0;
   function setNow(t) { replayNow = t; }
 
+  // ── Tick-driven spot candle series ────────────────────────────────────────
+  // Most paper engines close their own bars off the tick feed (bbRsiPaper's
+  // bucket rollover → onCandleClose), so the recorded spot stream alone is
+  // enough to reproduce them. RSI_PIVOT_ST and OI_WALL_FADE do NOT: their
+  // onTick drives no decision at all, and every entry comes from a polled
+  // history fetch — _maybeRefreshHistory → _fetchSpotToday → fetchCandles →
+  // _mergeBars → onCandleClose. Handing those routes the frozen session-start
+  // warm-up (the old stub below) meant every poll returned bars they had
+  // ALREADY merged, `fresh` was always empty, onCandleClose never fired and the
+  // replay booked zero trades on every date — silently, since the run itself
+  // completed fine.
+  //
+  // So aggregate the pumped ticks into 1-min base bars and roll them up to
+  // whatever resolution the route asks for. The series then GROWS as the day
+  // replays, exactly as the live REST fetch did.
+  //
+  // Fidelity note: these bars are built from the recorded WebSocket ticks, not
+  // from the exchange bars Fyers' REST returns, so OHLC can differ by a tick at
+  // the edges. That is a far smaller divergence than "no bars at all", but it
+  // does mean a history-polled strategy is not guaranteed to replay to a
+  // ±0.00 delta the way a tick-built one is.
+  const _base1m = new Map(); // bucketSec(1-min) → { time, open, high, low, close, volume }
+
+  function _feedSpotBar(tick) {
+    const price = tick && tick.ltp;
+    if (!(typeof price === "number" && Number.isFinite(price) && price > 0)) return;
+    if (!(typeof tick.t === "number" && tick.t > 0)) return;
+    const bucketMs = getBucketStart(tick.t, 1);
+    // Skip the pre-open auction exactly as the live candle builders do
+    // (tradeUtils.isPreMarketBucket) — otherwise replay would invent a wild
+    // 09:00-09:08 bar that no charting platform, and no live session, ever saw.
+    if (isPreMarketBucket(bucketMs)) return;
+    const sec = Math.floor(bucketMs / 1000);
+    const bar = _base1m.get(sec);
+    if (!bar) {
+      _base1m.set(sec, { time: sec, open: price, high: price, low: price, close: price, volume: 0 });
+    } else {
+      if (price > bar.high) bar.high = price;
+      if (price < bar.low)  bar.low  = price;
+      bar.close = price;
+    }
+  }
+
+  /** Roll the 1-min base bars up to `resMin`. Bucket math is epoch-aligned
+   *  integer division (tradeUtils.getBucketStart), so an N-min bucket is an
+   *  exact union of N 1-min buckets — no drift. */
+  function _rollUpSpotBars(resMin) {
+    const bars = Array.from(_base1m.values()).sort((a, b) => a.time - b.time);
+    if (resMin <= 1) return bars;
+    const out = new Map();
+    for (const b of bars) {
+      const sec = Math.floor(getBucketStart(b.time * 1000, resMin) / 1000);
+      const agg = out.get(sec);
+      if (!agg) {
+        out.set(sec, { time: sec, open: b.open, high: b.high, low: b.low, close: b.close, volume: 0 });
+      } else {
+        if (b.high > agg.high) agg.high = b.high;
+        if (b.low  < agg.low)  agg.low  = b.low;
+        agg.close = b.close;
+      }
+    }
+    return Array.from(out.values()).sort((a, b) => a.time - b.time);
+  }
+
+  /** True when the requested range still includes the recorded day. A genuine
+   *  back-dated intraday range (`to` before the recording) must not be handed
+   *  the replayed day's bars. Unknown/absent bounds → treat as "covers". */
+  function _rangeCoversRecordedDay(to) {
+    if (!recordedDateStr) return true;
+    if (to == null || to === "") return true;
+    return String(to) >= recordedDateStr;
+  }
+
+  /**
+   * The spot series a history fetch should see at the current replay clock:
+   * the recorded warm-up, EXTENDED with tick-derived bars for every bucket
+   * after it. The warm-up is never rewritten — it is real exchange data, and
+   * appending strictly after its last bar also avoids splicing two different
+   * bar grids together if a route ever asks at a resolution the warm-up was
+   * not fetched at.
+   */
+  function _replaySpotSeries(res, to) {
+    const warm = (warmupCandles || []).slice();
+    const resMin = parseInt(res, 10);
+    if (!Number.isFinite(resMin) || resMin <= 0) return warm;
+    if (_base1m.size === 0) return warm;
+    if (!_rangeCoversRecordedDay(to)) return warm;
+    const lastWarm = warm.length ? warm[warm.length - 1].time : 0;
+    // Only bars that have CLOSED as of the replay clock. Fyers' REST does
+    // include today's still-forming bar and both polled routes filter it out
+    // themselves, but a half-formed bar is never something the strategy is
+    // entitled to act on — so it is not offered here.
+    const nowBucketSec = Math.floor(getBucketStart(replayNow, resMin) / 1000);
+    const extra = _rollUpSpotBars(resMin)
+      .filter(b => b.time > lastWarm && b.time < nowBucketSec);
+    return warm.concat(extra);
+  }
+
   function install() {
+    // Drop any bars a previous run left behind — the harness object is per-run,
+    // but resetting here keeps install/uninstall symmetrical and makes a
+    // re-install on the same harness safe.
+    _base1m.clear();
+
     // socketManager: capture callbacks, do not open a real WS
     socketManager.start = function (symbol, onTick, onLog) {
       if (typeof onTick === "function") callbacks.push({ id: "__primary__", onTick, onLog });
@@ -934,20 +1044,20 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     if (!syntheticWarmup) {
       fyers.getHistory = async function (params) {
         if (_isBarResDaily(params && params.resolution)) return orig.fyers_getHistory(params);
-        // Wrap warmup candles into Fyers history response shape:
+        // Wrap the series into Fyers history response shape:
         //   { s:"ok", candles: [[ts, open, high, low, close, vol], ...] }
-        const rows = (warmupCandles || []).map(c =>
+        const rows = _replaySpotSeries(params && params.resolution, null).map(c =>
           [c.time, c.open, c.high, c.low, c.close, c.volume || 0]
         );
         return { s: "ok", candles: rows };
       };
       backtestEngine.fetchCandles = async function (sym, res, from, to) {
         if (_isBarResDaily(res)) return orig.bt_fetchCandles(sym, res, from, to);
-        return (warmupCandles || []).slice();
+        return _replaySpotSeries(res, to);
       };
       candleCache.fetchCandlesCached = async function (sym, res, from, to, rawFetcher) {
         if (_isBarResDaily(res)) return orig.cc_fetchCandlesCached(sym, res, from, to, rawFetcher);
-        return (warmupCandles || []).slice();
+        return _replaySpotSeries(res, to);
       };
     }
 
@@ -1206,6 +1316,7 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
   function uninstall() {
     // Defensive: never leave the Date constructor shim installed past a run.
     try { disableDateShim(); } catch (_) {}
+    _base1m.clear();
     socketManager.start             = orig.sm_start;
     socketManager.addCallback       = orig.sm_addCallback;
     socketManager.removeCallback    = orig.sm_removeCallback;
@@ -1293,6 +1404,10 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
 
   function pumpTick(tick) {
     setNow(tick.t);
+    // Fold the tick into the spot bar series BEFORE dispatching it. A polled
+    // route's next history fetch fires on the event-loop yield right after this
+    // callback returns, so the bar must already be there.
+    _feedSpotBar(tick);
     // CRITICAL: also advance the wall clock to the tick's timestamp.
     // Strategy entry gates (`isMarketHours()` in emaRsiStPaper/paPaper/bbRsiPaper)
     // call `Date.now()` directly and reject every entry as "outside market
