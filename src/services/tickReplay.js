@@ -895,6 +895,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
   // does mean a history-polled strategy is not guaranteed to replay to a
   // ±0.00 delta the way a tick-built one is.
   const _base1m = new Map(); // bucketSec(1-min) → { time, open, high, low, close, volume }
+  let _firstTickT = null;    // ms of the earliest tick folded in — the completeness bound
+  let _warnedPartial = false;
 
   function _feedSpotBar(tick) {
     const price = tick && tick.ltp;
@@ -905,6 +907,7 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     // (tradeUtils.isPreMarketBucket) — otherwise replay would invent a wild
     // 09:00-09:08 bar that no charting platform, and no live session, ever saw.
     if (isPreMarketBucket(bucketMs)) return;
+    if (_firstTickT === null || tick.t < _firstTickT) _firstTickT = tick.t;
     const sec = Math.floor(bucketMs / 1000);
     const bar = _base1m.get(sec);
     if (!bar) {
@@ -966,8 +969,22 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     // themselves, but a half-formed bar is never something the strategy is
     // entitled to act on — so it is not offered here.
     const nowBucketSec = Math.floor(getBucketStart(replayNow, resMin) / 1000);
-    const extra = _rollUpSpotBars(resMin)
+    // …and only buckets the tick stream covers from their very START. The pump
+    // is bounded to [sessionStart, sessionStop], so when a session was started
+    // mid-bucket (09:26:10, say) the 09:25 bucket has no ticks for its first 70
+    // seconds. Rolling it up anyway would hand the strategy a bar whose open is
+    // the 09:26:10 price and whose high/low miss that window — a bar that never
+    // existed, which _mergeBars would then treat as fresh and fire
+    // onCandleClose on. Dropping it leaves a one-bar gap at the session start
+    // instead, which is honest and (for both polled routes) sits before the
+    // entry window opens. Same principle as withholding the forming bar.
+    const closed = _rollUpSpotBars(resMin)
       .filter(b => b.time > lastWarm && b.time < nowBucketSec);
+    const extra   = closed.filter(b => b.time * 1000 >= _firstTickT);
+    if (!_warnedPartial && extra.length !== closed.length) {
+      _warnedPartial = true;
+      console.warn(`⚠️ [replay] session starts mid-bucket — dropped ${closed.length - extra.length} partial ${resMin}-min bar(s) the tick stream does not cover from the start; the strategy sees a gap there rather than an invented bar.`);
+    }
     return warm.concat(extra);
   }
 
@@ -976,6 +993,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     // but resetting here keeps install/uninstall symmetrical and makes a
     // re-install on the same harness safe.
     _base1m.clear();
+    _firstTickT = null;
+    _warnedPartial = false;
 
     // socketManager: capture callbacks, do not open a real WS
     socketManager.start = function (symbol, onTick, onLog) {
@@ -1317,6 +1336,7 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     // Defensive: never leave the Date constructor shim installed past a run.
     try { disableDateShim(); } catch (_) {}
     _base1m.clear();
+    _firstTickT = null;
     socketManager.start             = orig.sm_start;
     socketManager.addCallback       = orig.sm_addCallback;
     socketManager.removeCallback    = orig.sm_removeCallback;
