@@ -896,7 +896,7 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
   // ±0.00 delta the way a tick-built one is.
   const _base1m = new Map(); // bucketSec(1-min) → { time, open, high, low, close, volume }
   let _firstTickT = null;    // ms of the earliest tick folded in — the completeness bound
-  let _warnedPartial = false;
+  let _droppedWarned = 0;    // partial bars already reported, so later gaps aren't silent
 
   function _feedSpotBar(tick) {
     const price = tick && tick.ltp;
@@ -992,9 +992,14 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     // Limitation: this catches gaps of a full minute or more. Sub-minute jitter
     // is neither detectable this way nor material.
     const extra = closed.filter(b => b.time * 1000 >= _firstTickT && b._children >= resMin);
-    if (!_warnedPartial && extra.length !== closed.length) {
-      _warnedPartial = true;
-      console.warn(`⚠️ [replay] dropped ${closed.length - extra.length} partial ${resMin}-min bar(s) — the recorded tick stream does not cover them end to end (session started mid-bucket, or the feed gapped). The strategy sees a gap there rather than an invented bar; a delta vs the live session on those bars is a recording hole, not a strategy result.`);
+    // `closed` only grows as the replay clock advances, so the drop count is
+    // monotonic — re-warn whenever it rises rather than once per run, or a feed
+    // gap later in the day would be silent (which is the whole failure mode
+    // this harness keeps falling into).
+    const dropped = closed.length - extra.length;
+    if (dropped > _droppedWarned) {
+      _droppedWarned = dropped;
+      console.warn(`⚠️ [replay] dropped ${dropped} partial ${resMin}-min bar(s) so far — the recorded tick stream does not cover them end to end (session started mid-bucket, or the feed gapped). The strategy sees a gap there rather than an invented bar; a delta vs the live session on those bars is a recording hole, not a strategy result.`);
     }
     return extra.length ? warm.concat(extra.map(({ _children, ...b }) => b)) : warm;
   }
@@ -1005,7 +1010,7 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     // re-install on the same harness safe.
     _base1m.clear();
     _firstTickT = null;
-    _warnedPartial = false;
+    _droppedWarned = 0;
 
     // socketManager: capture callbacks, do not open a real WS
     socketManager.start = function (symbol, onTick, onLog) {
