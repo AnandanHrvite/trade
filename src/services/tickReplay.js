@@ -1734,7 +1734,21 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
       startResp = await _invokeRoute(routeMod, "GET", "/start", {});
     } finally {
       if (synthesize) harness.disableDateShim();
-      harness.clearWallClock();
+      // Do NOT restore the real clock here. A paper route's polling loop is a
+      // setTimeout the harness collapses to fire ASAP, so it lands in the window
+      // between /start returning and the first pumped tick — while the spot file
+      // stream is still being opened. On the real clock that poll runs "today":
+      // for a history-polled route (rsiPivotSt / oiWallFade) an empty fetch there
+      // — and the recorded warm-up IS empty whenever the session was started
+      // before its first bar closed — calls _noteHistoryFailure, which stamps
+      //   state._histNextTryMs = Date.now() + backoff   ← REAL now, e.g. 22:50
+      // Every later check runs on the REWOUND replay clock (09:20), which is
+      // hours earlier, so `Date.now() < _histNextTryMs` holds for the entire run:
+      // the history refresh never fires again, no bar ever closes, and the replay
+      // books 0 trades while reporting success. Keep the clock pinned to the
+      // session start; pumpTick takes over from the first tick, and the /stop
+      // block below re-pins and then clears it.
+      harness.setWallClock(data.sessionStart.t);
     }
     if (startResp.status >= 400 && startResp.status !== 302) {
       throw new Error(`Route /start returned ${startResp.status}: ${JSON.stringify(startResp.body).slice(0, 200)}`);
