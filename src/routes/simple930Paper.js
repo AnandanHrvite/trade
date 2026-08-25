@@ -551,6 +551,9 @@ async function evaluateEntry() {
 
 async function simulateBuy(side, leg, verdict, cfg) {
   cfg = cfg || strategy.getConfig();
+  // The session this fill belongs to. The re-quote below is the ONLY await in
+  // the entry path, and /stop (or the 15:30 auto-stop) can land inside it.
+  const sessionId = state._sessionId;
 
   // Re-quote the leg we are about to buy so the fill is the freshest price
   // available, not the one that happened to trip the trigger a poll ago.
@@ -566,6 +569,16 @@ async function simulateBuy(side, leg, verdict, cfg) {
     }
   } catch (e) {
     log(`⚠️ ${LOG_TAG} Entry re-quote failed (${e.message}) — filling on the triggering quote ₹${fillLtp}`);
+  }
+
+  // The session must still be the one that decided to buy. A /stop or an
+  // auto-stop that landed during the re-quote has already run its square-off and
+  // torn down the poll chain, so committing the position now would leave a real
+  // broker order with nothing left to trail it, stop it or square it off.
+  if (!state.running || state._sessionId !== sessionId) {
+    log(`🚫 ${LOG_TAG} Session ended while the ${side} fill was in flight — entry abandoned, no order placed`);
+    skipLogger.appendSkipLog(MODE_KEY, { gate: "session_ended", side, reason: "session stopped mid-fill", symbol: leg.symbol });
+    return;
   }
 
   if (!strategy._px(fillLtp)) {

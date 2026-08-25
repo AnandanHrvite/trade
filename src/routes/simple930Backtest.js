@@ -212,7 +212,10 @@ function simulateDay(day, cfg, qty) {
       const leg = legs[side];
       if (!leg) continue;
       const b = barAtMinute(leg.bars, m);
-      if (!b || !strategy._px(b.high)) continue;
+      // Both ends are needed: the HIGH decides whether the level broke, the OPEN
+      // prices the fill. A bar with no usable open would fill at NaN, and a NaN
+      // fill computes NO stop at all — an entry with the risk switched off.
+      if (!b || !strategy._px(b.high) || !strategy._px(b.open)) continue;
       if (!(b.high > cfg.triggerPremium)) continue;
       // The trigger level on an intrabar cross; the open when the bar started
       // above it. Never better than either.
@@ -261,26 +264,34 @@ function simulateDay(day, cfg, qty) {
 
   for (const b of bars) {
     const m = _istMins(b.time);
+    // The price an open-filled exit books. On the ENTRY bar the open printed
+    // BEFORE the fill — it is not a price this trade could ever have exited at —
+    // so the fill itself stands in for it, and the gap-through test below is left
+    // to the bar LOW (which fills at the stop, the honest worst case). `_px` is
+    // then what keeps a null open out of every comparison: `null <= stop` is
+    // `0 <= stop`, which would square the trade off at ₹0.
+    const openPx  = b.time === entryBar.time ? fill.px : b.open;
+    const hasOpen = strategy._px(openPx);
 
     // a. EOD
-    if (m >= cfg.forcedExitMin) {
-      exitPx = b.open; exitKind = "EOD";
-      exitReason = `EOD square-off (${strategy._fmtMins(cfg.forcedExitMin)} IST) — premium ₹${strategy._r2(b.open)}`;
+    if (hasOpen && m >= cfg.forcedExitMin) {
+      exitPx = openPx; exitKind = "EOD";
+      exitReason = `EOD square-off (${strategy._fmtMins(cfg.forcedExitMin)} IST) — premium ₹${strategy._r2(openPx)}`;
       exitTime = b.time; break;
     }
     // b. gapped through the stop
-    if (strategy._num(stop) && b.open <= stop) {
-      exitPx = b.open; exitKind = trailMoves ? "TRAIL" : "STOP";
-      exitReason = `${trailMoves ? "Trailing stop" : "Stop"} gapped through — the bar opened at ₹${strategy._r2(b.open)}, below the ₹${strategy._r2(stop)} stop`;
+    if (hasOpen && strategy._num(stop) && openPx <= stop) {
+      exitPx = openPx; exitKind = trailMoves ? "TRAIL" : "STOP";
+      exitReason = `${trailMoves ? "Trailing stop" : "Stop"} gapped through — the bar opened at ₹${strategy._r2(openPx)}, below the ₹${strategy._r2(stop)} stop`;
       exitTime = b.time; break;
     }
     // c. the 09:45 box, judged on everything BEFORE this bar. Mirrors the
     //    engine's guard: a position opened at or after the check was never given
     //    its fifteen minutes, so the box does not apply to it. Out of the box
     //    the windows cannot overlap; both are settable.
-    if (m >= cfg.sidewaysMin && entryMin < cfg.sidewaysMin && !expanded) {
-      exitPx = b.open; exitKind = "SIDEWAYS";
-      exitReason = `Sideways exit at ${strategy._fmtMins(cfg.sidewaysMin)} — premium never left ₹${cfg.bandDown}–₹${cfg.bandUp} (ranged ₹${strategy._r2(trough)}–₹${strategy._r2(peak)}), closed at ₹${strategy._r2(b.open)}`;
+    if (hasOpen && m >= cfg.sidewaysMin && entryMin < cfg.sidewaysMin && !expanded) {
+      exitPx = openPx; exitKind = "SIDEWAYS";
+      exitReason = `Sideways exit at ${strategy._fmtMins(cfg.sidewaysMin)} — premium never left ₹${cfg.bandDown}–₹${cfg.bandUp} (ranged ₹${strategy._r2(trough)}–₹${strategy._r2(peak)}), closed at ₹${strategy._r2(openPx)}`;
       exitTime = b.time; break;
     }
     // d. the adverse extreme, BEFORE the favourable one
@@ -301,8 +312,12 @@ function simulateDay(day, cfg, qty) {
   if (exitPx == null) {
     // The series ran out before any exit fired — the contract stopped printing.
     const last = bars.length ? bars[bars.length - 1] : entryBar;
-    exitPx = last.close; exitKind = "DATA_END";
-    exitReason = `Option series ended at ${_hhmmss(last.time)} before any exit fired — closed on the last printed premium ₹${strategy._r2(last.close)}`;
+    // A last bar with no usable close prices the exit at the fill rather than at
+    // NaN or ₹0 — one unreadable candle must not book a total loss, nor poison
+    // every aggregate on the results page.
+    const lastPx = strategy._px(last.close) ? last.close : entryPx;
+    exitPx = lastPx; exitKind = "DATA_END";
+    exitReason = `Option series ended at ${_hhmmss(last.time)} before any exit fired — closed on the last printed premium ₹${strategy._r2(lastPx)}`;
     exitTime = last.time;
   }
 
@@ -426,7 +441,9 @@ async function runJob(id, from, to) {
     const spotBars = spotByDay.get(dateStr);
     if (!spotBars || !spotBars.length) { plans.push({ dateStr, spotBars: null, skip: "no index candles (market holiday, or outside the served window)" }); continue; }
     const selBar = barAtMinute(spotBars, cfg.selectionMin);
-    if (!selBar) { plans.push({ dateStr, spotBars, skip: `no index bar at ${strategy._fmtMins(cfg.selectionMin)}` }); continue; }
+    // No usable open ⇒ no spot ⇒ no ATM. Naming rungs off a NaN strike would ask
+    // Fyers for contracts that do not exist and burn the whole run on refusals.
+    if (!selBar || !strategy._px(selBar.open)) { plans.push({ dateStr, spotBars, skip: `no usable index bar at ${strategy._fmtMins(cfg.selectionMin)}` }); continue; }
     const exp = await weeklyExpiryOnOrAfter(dateStr);
     if (!exp) { plans.push({ dateStr, spotBars, skip: "could not resolve the weekly expiry" }); continue; }
     const atm = instrumentConfig.calcATMStrike(selBar.open);

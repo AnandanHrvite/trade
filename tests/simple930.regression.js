@@ -529,6 +529,51 @@ check("the entry bar's own low can stop the trade out — no free ride", () => {
   assert.strictEqual(trade.exitKind, "STOP");
   assert.strictEqual(trade.xPrice, 160);
 });
+check("the entry bar's OPEN printed BEFORE the fill and can never be the exit price", () => {
+  // 09:26 opens at 150, rallies through the trigger (the fill at 180) and holds
+  // 200 all day. The open is a PRE-ENTRY print: booking it as a "gapped through
+  // the stop" fill exits at a price this trade could never have got. The honest
+  // worst case is the bar's own low taking out the ₹160 stop.
+  const c = freshEnv(NOSLIP);
+  const ce = [flat(SEL, 178)];
+  for (let m = SEL + 1; m <= END; m++) ce.push(m === SEL + 1 ? bar(m, 150, 190, 148, 185) : flat(m, 200));
+  const { trade } = BT.simulateDay(mkDay({ ladder: [mkLeg("CE", 24250, ce)] }), c, QTY);
+  assert.strictEqual(trade.ePrice, 180);
+  assert.strictEqual(trade.sl, 160);
+  assert.strictEqual(trade.exitKind, "STOP");
+  assert.strictEqual(trade.xPrice, 160, "exited at the entry bar's open — a price that printed before the fill");
+});
+check("a bar with no usable OPEN cannot fill an entry — a NaN fill computes no stop", () => {
+  const c = freshEnv(NOSLIP);
+  const ce = [flat(SEL, 178)];
+  for (let m = SEL + 1; m <= END; m++) {
+    ce.push(m === SEL + 1 ? { time: DAY_EPOCH + m * 60, high: 190, low: 170, close: 185 } : flat(m, 150));
+  }
+  const { trade, audit } = BT.simulateDay(mkDay({ ladder: [mkLeg("CE", 24250, ce)] }), c, QTY);
+  assert.strictEqual(trade, null, "filled off a bar with no open");
+  assert.strictEqual(audit.outcome, "no_trigger");
+});
+check("a null or zero OPEN mid-trade decides nothing (the `open <= stop` trap)", () => {
+  for (const badOpen of [null, 0]) {
+    const c = freshEnv(NOSLIP);
+    const ce = [flat(SEL, 178)];
+    for (let m = SEL + 1; m <= END; m++) {
+      if (m === SEL + 1)      ce.push(flat(m, 181));
+      else if (m === SEL + 3) ce.push({ time: DAY_EPOCH + m * 60, open: badOpen, high: badOpen, low: badOpen, close: badOpen });
+      else                    ce.push(flat(m, 200));
+    }
+    const { trade } = BT.simulateDay(mkDay({ ladder: [mkLeg("CE", 24250, ce)] }), c, QTY);
+    assert.strictEqual(trade.exitKind, "SIDEWAYS", `open=${badOpen} invented an exit`);
+    assert.strictEqual(trade.xPrice, 200, `open=${badOpen} priced the exit at ₹${trade.xPrice}`);
+  }
+});
+check("a 09:25 index bar with no usable open is refused, not rounded to a NaN strike", () => {
+  const { trade, audit } = BT.simulateDay(
+    mkDay({ spotBars: [{ time: DAY_EPOCH + SEL * 60, open: null, high: null, low: null, close: null }] }),
+    freshEnv(NOSLIP), QTY);
+  assert.strictEqual(trade, null);
+  assert.ok(/no usable open|ATM strike cannot be derived/.test(audit.note), `unhelpful note: ${audit.note}`);
+});
 check("the backtest mirrors the guard: a late entry is not boxed out at once", () => {
   const c = freshEnv({ ...NOSLIP, SIMPLE930_ENTRY_START: "09:50", SIMPLE930_ENTRY_END: "10:00" });
   const ce = [flat(SEL, 178)];
@@ -715,6 +760,19 @@ check("every entry guard is synchronous — no await before the position is clai
   const guards = fn.indexOf("state._entryInFlight = true");
   assert.ok(guards > -1, "no in-flight latch found");
   assert.ok(firstAwait === -1 || guards < firstAwait, "an await runs before the in-flight latch is set — concurrent polls could double-enter");
+});
+check("a session that ended DURING the fill cannot still open the position", () => {
+  // The entry re-quote is the only await in the buy path, and /stop (or the
+  // 15:30 auto-stop) can land inside it. Committing afterwards leaves a real
+  // broker order with no poll chain left to trail it, stop it or square it off.
+  const src = decomment(read("routes/simple930Paper.js"));
+  const fn  = src.slice(src.indexOf("async function simulateBuy"), src.indexOf("function simulateSell"));
+  const firstAwait = fn.indexOf("await");
+  const guard      = fn.search(/state\._sessionId\s*!==|!state\.running/);
+  const claim      = fn.indexOf("state.position = pos");
+  assert.ok(firstAwait > -1 && claim > -1, "simulateBuy no longer awaits / claims a position");
+  assert.ok(guard > -1, "no session re-check after the fill's await — a /stop mid-fill would orphan the order");
+  assert.ok(guard > firstAwait && guard < claim, "the session re-check must sit between the re-quote and the position claim");
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
