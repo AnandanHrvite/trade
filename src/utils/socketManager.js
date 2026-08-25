@@ -36,6 +36,7 @@ const { fyersDataSocket } = require('fyers-api-v3');
 const { notifyAuthError } = require('./notify');
 const { clearFyersToken } = require('../config/fyers');
 const tickRecorder         = require('./tickRecorder');
+const sharedSocketState    = require('./sharedSocketState');
 // Lazy-loaded to avoid a require-cycle (marketContext → instrument → fyers) at
 // this module's load time, which is very early in app boot.
 let _marketContextMod = null;
@@ -325,7 +326,9 @@ class SocketManager {
     // Flapping is its own broken-state: the socket keeps *connecting*, so the
     // "down for >60s" test above never fires, yet no tick ever reaches a
     // strategy. Without this the dashboard showed green through 330 drops.
-    else if (this._flapping)  reason = "flapping";
+    // Gated on `running`: a released feed has not gone unstable, and the banner's
+    // "strategies are getting NO live ticks" is meaningless with none attached.
+    else if (running && this._flapping) reason = "flapping";
     return {
       running,
       authFailed:    this._authFailed,
@@ -367,6 +370,11 @@ class SocketManager {
     this._extrasDisabled = false; // a new session gets a fresh chance
     this._extrasEverUsed = false;
     this._unattributedStreak = 0;
+    // Silently — a released feed has not "recovered". start() resets these for
+    // the next session, but nothing did on the way out, so a storm that ended
+    // with the close stayed latched in getHealth() and kept the dashboard banner
+    // red all evening, its "over ~N min" counting up until the next open.
+    this._clearFlap(true);
     this._clearRetry();
     this._clearWatchdog();
     this._detachListeners();
@@ -707,9 +715,13 @@ class SocketManager {
     }
   }
 
-  /** A connection proved stable — end the storm and re-arm the alert. */
-  _clearFlap() {
-    if (this._flapping) {
+  /**
+   * A connection proved stable — end the storm and re-arm the alert. `silent`
+   * suppresses the announcement for stop(), which clears the same state without
+   * anything having actually recovered.
+   */
+  _clearFlap(silent) {
+    if (this._flapping && !silent) {
       this._log('✅ [SOCKET] Feed recovered — ticks flowing again.');
       try {
         require('./notify').sendIfMaster('✅ Fyers feed recovered — live ticks are flowing again.');
@@ -724,6 +736,18 @@ class SocketManager {
   _scheduleReconnect() {
     if (this._stopped) return;
     if (this._authFailed) return;  // hard-stop on permanent auth failure
+    // Market closed and no strategy attached: there is nothing to reconnect FOR,
+    // and Fyers drops the idle socket seconds after accepting it — so the loop
+    // manufactures flaps all evening instead of recovering anything. This is the
+    // same gate spotFeedSupervisor uses to decide it may release the feed, so a
+    // live square-off running past the close (or a manual after-hours session)
+    // still retries exactly as before. The supervisor stops a feed left sitting
+    // here within seconds; if it is disabled, the watchdog reconnects at 09:15.
+    if (!this._isMarketHours() && !sharedSocketState.isAnyActive()) {
+      this._clearRetry();
+      this._log('💤 [SOCKET] Market closed and no strategy attached — not reconnecting.');
+      return;
+    }
     this._clearRetry();
     const delay = Math.min(BASE_BACKOFF * Math.pow(2, this._retryCount), MAX_BACKOFF);
     this._retryCount++;
@@ -773,7 +797,11 @@ class SocketManager {
     // Fast IST: UTC+5:30 = +19800 seconds (avoids expensive toLocaleString/ICU)
     const istSec = Math.floor(Date.now() / 1000) + 19800;
     const total  = Math.floor(istSec / 60) % 1440;
-    return total >= 555 && total < 920;
+    // 09:15–15:30, matching spotFeedSupervisor's OPEN_MIN/CLOSE_MIN. The close
+    // was 15:20, which left the last ten minutes of every session unwatchdogged:
+    // a feed dying at 15:21 was neither reconnected nor reported, and those are
+    // exactly the ticks the closing candle is built from.
+    return total >= 555 && total < 930;
   }
 }
 
