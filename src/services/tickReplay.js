@@ -701,7 +701,7 @@ function _lookupCanonicalSession(mode, sessionStartTs) {
  * The harness exposes `pumpTick(tick)` for the engine to fan ticks through
  * the captured callbacks.
  */
-function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles, recordedDateStr = null, outputSubdir = "_replay_trades", outputSuffix = "replay", syntheticWarmup = false }) {
+function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles, recordedDateStr = null, recordedPivots = null, outputSubdir = "_replay_trades", outputSuffix = "replay", syntheticWarmup = false }) {
   const socketManager     = require("../utils/socketManager");
   const fyers             = require("../config/fyers");
   const notify            = require("../utils/notify");
@@ -1004,6 +1004,55 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     return extra.length ? warm.concat(extra.map(({ _children, ...b }) => b)) : warm;
   }
 
+  // ── Recorded pivots → the prior daily bar ─────────────────────────────────
+  // Daily bars are the ONE input replay still fetches live (a closed daily bar
+  // is immutable, so re-fetching it is normally safe). But "safe" assumes the
+  // fetch WORKS: RSI_PIVOT_ST derives R1/S1 from yesterday's daily bar, and with
+  // an expired Fyers token that fetch returns no data rather than an auth error.
+  // getSignal then refuses every bar with "Previous day's high/low/close
+  // unavailable — no R1/S1 levels", and the replay books 0 trades against a full
+  // candle series — indistinguishable from a strategy that simply found no setup.
+  //
+  // recordSessionStart persists meta.pivots, so the levels the live session
+  // actually used are IN the recording. computePivots is invertible —
+  //   pp = (h+l+c)/3,  r1 = 2pp - l,  s1 = 2pp - h
+  // ⇒ l = 2pp - r1,  h = 2pp - s1,  c = 3pp - h - l
+  // so one bar reproduces them exactly. Used only as a FALLBACK, only for the
+  // spot index, so a working token still wins and other strategies' daily reads
+  // (GAPS' daily EMA/RSI, yesterday's close) are untouched.
+  const _isSpotIndex = (sym) => String(sym || "").toUpperCase().includes("NIFTY50-INDEX");
+  let _warnedPivotFallback = false;
+
+  function _recordedDailyBar() {
+    const p = recordedPivots;
+    if (!p) return null;
+    const pp = Number(p.pp), r1 = Number(p.r1), s1 = Number(p.s1);
+    const dayKey = Number(p.fromDayKey);
+    if (![pp, r1, s1].every(Number.isFinite) || !Number.isFinite(dayKey)) return null;
+    const low   = 2 * pp - r1;
+    const high  = 2 * pp - s1;
+    const close = 3 * pp - high - low;
+    if (!(high >= low) || !Number.isFinite(close)) return null;
+    // Noon IST on the recorded source day, so _istDayOf lands on fromDayKey.
+    // open is unknowable from pivots and unused by computePivots — set to close.
+    return { time: dayKey * 86400 - 19800 + 43200, open: close, high, low, close, volume: 0 };
+  }
+
+  /** Real daily fetch, falling back to the recorded pivots when it comes back dry. */
+  async function _dailyWithFallback(sym, fetchReal) {
+    let real = null;
+    try { real = await fetchReal(); } catch (_) { real = null; }
+    if (Array.isArray(real) && real.length) return real;
+    if (!_isSpotIndex(sym)) return real;
+    const bar = _recordedDailyBar();
+    if (!bar) return real;
+    if (!_warnedPivotFallback) {
+      _warnedPivotFallback = true;
+      console.warn(`⚠️ [replay] live daily fetch returned nothing (expired Fyers token?) — rebuilding yesterday's bar from the recorded pivots (PP ${recordedPivots.pp} · R1 ${recordedPivots.r1} · S1 ${recordedPivots.s1}, from ${recordedPivots.from}). Levels match the recorded session exactly.`);
+    }
+    return [bar];
+  }
+
   function install() {
     // Drop any bars a previous run left behind — the harness object is per-run,
     // but resetting here keeps install/uninstall symmetrical and makes a
@@ -1078,7 +1127,13 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     const _isBarResDaily = (res) => ["D", "W", "M"].includes(String(res || "").toUpperCase());
     if (!syntheticWarmup) {
       fyers.getHistory = async function (params) {
-        if (_isBarResDaily(params && params.resolution)) return orig.fyers_getHistory(params);
+        if (_isBarResDaily(params && params.resolution)) {
+          const real = await orig.fyers_getHistory(params);
+          if (real && real.s === "ok" && Array.isArray(real.candles) && real.candles.length) return real;
+          const bar = _isSpotIndex(params && params.symbol) ? _recordedDailyBar() : null;
+          if (!bar) return real;
+          return { s: "ok", candles: [[bar.time, bar.open, bar.high, bar.low, bar.close, 0]] };
+        }
         // Wrap the series into Fyers history response shape:
         //   { s:"ok", candles: [[ts, open, high, low, close, vol], ...] }
         const rows = _replaySpotSeries(params && params.resolution, null).map(c =>
@@ -1087,11 +1142,11 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
         return { s: "ok", candles: rows };
       };
       backtestEngine.fetchCandles = async function (sym, res, from, to) {
-        if (_isBarResDaily(res)) return orig.bt_fetchCandles(sym, res, from, to);
+        if (_isBarResDaily(res)) return _dailyWithFallback(sym, () => orig.bt_fetchCandles(sym, res, from, to));
         return _replaySpotSeries(res, to);
       };
       candleCache.fetchCandlesCached = async function (sym, res, from, to, rawFetcher) {
-        if (_isBarResDaily(res)) return orig.cc_fetchCandlesCached(sym, res, from, to, rawFetcher);
+        if (_isBarResDaily(res)) return _dailyWithFallback(sym, () => orig.cc_fetchCandlesCached(sym, res, from, to, rawFetcher));
         return _replaySpotSeries(res, to);
       };
     }
@@ -1701,6 +1756,9 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     harness = _createHarness({
       optionTimeline, vixTimeline, oiTimeline, warmupCandles,
       recordedDateStr: date,
+      // Levels the recorded session actually traded — the fallback when the live
+      // daily fetch comes back dry (see _dailyWithFallback).
+      recordedPivots: (data.sessionStart.meta && data.sessionStart.meta.pivots) || null,
       outputSubdir: useCurrentSettings ? "_replay_trades_sim" : "_replay_trades",
       outputSuffix: useCurrentSettings ? "sim" : "replay",
       // Synthetic day sessions have no recorded warm-up → let /start fetch real
