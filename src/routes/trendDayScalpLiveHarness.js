@@ -119,7 +119,7 @@ router.get("/start", async (req, res) => {
       broker:     "fyers",
       dryRun,
       isFutures:  process.env.INSTRUMENT === "NIFTY_FUTURES",
-      liveLogKey: "trend-day-scalp-live",
+      liveLogKey: "trend_day_scalp-live",
     });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });

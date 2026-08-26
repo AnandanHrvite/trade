@@ -121,7 +121,7 @@ router.get("/start", async (req, res) => {
       broker:     "fyers",
       dryRun,
       isFutures:  process.env.INSTRUMENT === "NIFTY_FUTURES",
-      liveLogKey: "gap-fix-3m-live",
+      liveLogKey: "gap_fix_3m-live",
     });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
