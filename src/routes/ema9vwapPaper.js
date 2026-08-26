@@ -4219,7 +4219,7 @@ router.get("/history", (req, res) => {
   res.send(renderHistoryPage({
     routePrefix: "/ema9vwap-paper",
     sidebarKey: "ema9vwapHistory",
-    pageTitle: "📊 EMA9+VWAP Paper Trade History",
+    pageTitle: "〽️ EMA9+VWAP Paper Trade History",
     pageDocTitle: "EMA9+VWAP Paper — History",
     modalLabel: "EMA9+VWAP Paper",
     liveActive,

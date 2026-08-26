@@ -1273,7 +1273,7 @@ router.get("/status", (req, res) => {
 ${buildSidebar('gapFix3mPaper', liveActive)}
 <div class="main-content">
 ${bbRsiTopBar({
-  title: "🕳 3M Gap Fix Scalp — Paper",
+  title: "🩹 3M Gap Fix Scalp — Paper",
   metaLine: `NIFTY FUTURES ${cfg.resolutionMins}m · gap ≥${cfg.minGapPts}pt faded to its fill level · SL = the day's high/low · a volume break of the extreme is skipped`,
   running: state.running,
   primaryAction: { href: "/gap-fix-3m-paper/start", label: "▶ Start", color: "#0369a1" },
@@ -1442,7 +1442,7 @@ router.get("/history", (req, res) => {
   res.send(renderHistoryPage({
     routePrefix: "/gap-fix-3m-paper",
     sidebarKey: "gapFix3mHistory",
-    pageTitle: "🕳 3M Gap Fix Scalp Paper Trade History",
+    pageTitle: "🩹 3M Gap Fix Scalp Paper Trade History",
     pageDocTitle: "3M Gap Fix Scalp Paper — History",
     modalLabel: "3M Gap Fix Scalp Paper",
     liveActive,

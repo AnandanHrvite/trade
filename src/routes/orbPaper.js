@@ -1746,7 +1746,7 @@ router.get("/history", (req, res) => {
   res.send(renderHistoryPage({
     routePrefix: "/orb-paper",
     sidebarKey: "orbHistory",
-    pageTitle: "🎯 ORB Paper Trade History",
+    pageTitle: "🌅 ORB Paper Trade History",
     pageDocTitle: "ORB Paper — History",
     modalLabel: "ORB Paper",
     liveActive,

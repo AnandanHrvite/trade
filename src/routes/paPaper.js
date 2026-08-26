@@ -2651,7 +2651,7 @@ function renderExtraAnalytics(){
   res.send(renderHistoryPage({
     routePrefix: "/pa-paper",
     sidebarKey: "paHistory",
-    pageTitle: "⚡ Price Action Paper Trade History",
+    pageTitle: "📐 Price Action Paper Trade History",
     pageDocTitle: "Price Action Paper — History",
     modalLabel: "Price Action Paper",
     liveActive,

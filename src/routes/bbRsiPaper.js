@@ -2809,7 +2809,7 @@ router.get("/history", (req, res) => {
   res.send(renderHistoryPage({
     routePrefix: "/bb_rsi-paper",
     sidebarKey: "bbRsiHistory",
-    pageTitle: "⚡ BB_RSI Paper Trade History",
+    pageTitle: "🎢 BB_RSI Paper Trade History",
     pageDocTitle: "BB_RSI Paper — History",
     modalLabel: "BB_RSI Paper",
     liveActive,

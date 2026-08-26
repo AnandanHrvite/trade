@@ -4277,7 +4277,7 @@ router.get("/history", (req, res) => {
   res.send(renderHistoryPage({
     routePrefix: "/ema_rsi_st-paper",
     sidebarKey: "emaRsiStHistory",
-    pageTitle: "📊 EMA_RSI_ST Paper Trade History",
+    pageTitle: "📉 EMA_RSI_ST Paper Trade History",
     pageDocTitle: "EMA_RSI_ST Paper — History",
     modalLabel: "EMA_RSI_ST Paper",
     liveActive,

@@ -236,30 +236,30 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     ...(showEmaRsiStBacktest ? [{ key: 'emaRsiStBacktest', href: '/ema_rsi_st-backtest',       icon: '🔍', label: 'Backtest' }] : []),
     ...(showEmaRsiStPaper    ? [{ key: 'emaRsiStPaper',    href: '/ema_rsi_st-paper/status',   icon: '📋', label: 'Paper'    }] : []),
     ...(showSim      ? [{ key: 'emaRsiStSim',     href: '/ema_rsi_st-paper/simulate', icon: '🎮', label: 'Simulate' }] : []),
-    ...(showCompare  ? [{ key: 'emaRsiStCompare', href: '/compare/trading',      icon: '⚖',  label: 'Compare'  }] : []),
+    ...(showCompare  ? [{ key: 'emaRsiStCompare', href: '/compare/trading',      icon: '⚖️',  label: 'Compare'  }] : []),
     ...(showTracker  ? [{ key: 'emaRsiStTracker', href: '/tracker/status',       icon: '🎯', label: 'Tracker'  }] : []),
-    ...(showEmaRsiStLive && !emaRsiStPaperRunning ? [{ key: 'emaRsiStLive',     href: '/ema_rsi_st-live/status',    icon: '●',  label: 'Live'     }] : []),
+    ...(showEmaRsiStLive && !emaRsiStPaperRunning ? [{ key: 'emaRsiStLive',     href: '/ema_rsi_st-live/status',    icon: '📡',  label: 'Live'     }] : []),
     ...(showEmaRsiStLiveHarness && !emaRsiStPaperRunning ? [{ key: 'emaRsiStLiveHarness', href: '/ema_rsi_st-live-harness', icon: '🔧', label: 'Live (Harness)' }] : []),
   ];
 
   const bbRsiItems = [
-    ...(showBbRsiBacktest ? [{ key: 'bbRsiBacktest', href: '/bb_rsi-backtest',     icon: '⚡', label: 'Backtest' }] : []),
-    ...(showBbRsiPaper    ? [{ key: 'bbRsiPaper',    href: '/bb_rsi-paper/status', icon: '⚡', label: 'Paper'    }] : []),
+    ...(showBbRsiBacktest ? [{ key: 'bbRsiBacktest', href: '/bb_rsi-backtest',     icon: '🔍', label: 'Backtest' }] : []),
+    ...(showBbRsiPaper    ? [{ key: 'bbRsiPaper',    href: '/bb_rsi-paper/status', icon: '📋', label: 'Paper'    }] : []),
     ...(showSim     ? [{ key: 'bbRsiSim',     href: '/bb_rsi-paper/simulate', icon: '🎮', label: 'Simulate' }] : []),
-    ...(showCompare ? [{ key: 'bbRsiCompare', href: '/compare/bb_rsi',     icon: '⚖',  label: 'Compare'  }] : []),
-    ...(showBbRsiLive && !bbRsiPaperRunning ? [{ key: 'bbRsiLive',     href: '/bb_rsi-live/status',  icon: '⚡', label: 'Live'     }] : []),
+    ...(showCompare ? [{ key: 'bbRsiCompare', href: '/compare/bb_rsi',     icon: '⚖️',  label: 'Compare'  }] : []),
+    ...(showBbRsiLive && !bbRsiPaperRunning ? [{ key: 'bbRsiLive',     href: '/bb_rsi-live/status',  icon: '📡', label: 'Live'     }] : []),
     ...(showBbRsiLiveHarness && !bbRsiPaperRunning ? [{ key: 'bbRsiLiveHarness', href: '/bb_rsi-live-harness', icon: '🔧', label: 'Live (Harness)' }] : []),
   ];
 
   const paItems = [
-    ...(showPaBacktest        ? [{ key: 'paBacktest',        href: '/pa-backtest',         icon: '📐', label: 'Backtest' }] : []),
-    ...(showPaPatternBacktest ? [{ key: 'paPatternBacktest', href: '/pa-pattern-backtest', icon: '△',  label: 'Pattern Test' }] : []),
-    ...(showPaPaper           ? [{ key: 'paPaper',           href: '/pa-paper/status',     icon: '📐', label: 'Paper'    }] : []),
+    ...(showPaBacktest        ? [{ key: 'paBacktest',        href: '/pa-backtest',         icon: '🔍', label: 'Backtest' }] : []),
+    ...(showPaPatternBacktest ? [{ key: 'paPatternBacktest', href: '/pa-pattern-backtest', icon: '🧩',  label: 'Pattern Test' }] : []),
+    ...(showPaPaper           ? [{ key: 'paPaper',           href: '/pa-paper/status',     icon: '📋', label: 'Paper'    }] : []),
     ...(showSim     ? [{ key: 'paSim',     href: '/pa-paper/simulate',   icon: '🎮', label: 'Simulate' }] : []),
     // No PA Compare entry: compare.js only implements /trading (EMA_RSI_ST) and
     // /bb_rsi. The old '/compare/priceaction' link had no route behind it, so with
     // UI_SHOW_COMPARE=true it was a dead menu item.
-    ...(showPaLive && !paPaperRunning ? [{ key: 'paLive',            href: '/pa-live/status',      icon: '📐', label: 'Live'     }] : []),
+    ...(showPaLive && !paPaperRunning ? [{ key: 'paLive',            href: '/pa-live/status',      icon: '📡', label: 'Live'     }] : []),
     ...(showPaLiveHarness && !paPaperRunning ? [{ key: 'paLiveHarness',     href: '/pa-live-harness',     icon: '🔧', label: 'Live (Harness)' }] : []),
   ];
 
@@ -275,34 +275,34 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     ...(showEma9vwapBacktest ? [{ key: 'ema9vwapBacktest', href: '/ema9vwap-backtest',     icon: '🔍', label: 'Backtest' }] : []),
     ...(showEma9vwapPaper    ? [{ key: 'ema9vwapPaper',    href: '/ema9vwap-paper/status', icon: '📋', label: 'Paper'    }] : []),
     ...(showSim         ? [{ key: 'ema9vwapSim',     href: '/ema9vwap-paper/simulate', icon: '🎮', label: 'Simulate' }] : []),
-    ...(showEma9vwapLive && !ema9vwapPaperRunning ? [{ key: 'ema9vwapLive', href: '/ema9vwap-live', icon: '●', label: 'Live' }] : []),
+    ...(showEma9vwapLive && !ema9vwapPaperRunning ? [{ key: 'ema9vwapLive', href: '/ema9vwap-live', icon: '📡', label: 'Live' }] : []),
     ...(showEma9vwapHistory  ? [{ key: 'ema9vwapHistory',  href: '/ema9vwap-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 
   const trendPbItems = [
     ...(showTrendPbBacktest ? [{ key: 'trendPbBacktest', href: '/trend-pb-backtest',      icon: '🔍', label: 'Backtest' }] : []),
-    ...(showTrendPbPaper    ? [{ key: 'trendPbPaper',    href: '/trend-pb-paper/status',  icon: '📈', label: 'Paper'   }] : []),
+    ...(showTrendPbPaper    ? [{ key: 'trendPbPaper',    href: '/trend-pb-paper/status',  icon: '📋', label: 'Paper'   }] : []),
     ...(showTrendPbLive && !trendPbPaperRunning ? [{ key: 'trendPbLive', href: '/trend-pb-live', icon: '📡', label: 'Live' }] : []),
     ...(showTrendPbHistory  ? [{ key: 'trendPbHistory',  href: '/trend-pb-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 
   const gapsItems = [
     ...(showGapsBacktest ? [{ key: 'gapsBacktest', href: '/gaps-backtest',      icon: '🔍', label: 'Backtest' }] : []),
-    ...(showGapsPaper    ? [{ key: 'gapsPaper',    href: '/gaps-paper/status',  icon: '🕳', label: 'Paper'   }] : []),
+    ...(showGapsPaper    ? [{ key: 'gapsPaper',    href: '/gaps-paper/status',  icon: '📋', label: 'Paper'   }] : []),
     ...(showGapsLive && !gapsPaperRunning ? [{ key: 'gapsLive', href: '/gaps-live', icon: '📡', label: 'Live' }] : []),
     ...(showGapsHistory  ? [{ key: 'gapsHistory',  href: '/gaps-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 
   const tdsItems = [
     ...(showTdsBacktest ? [{ key: 'trendDayScalpBacktest', href: '/trend-day-scalp-backtest',     icon: '🔍', label: 'Backtest' }] : []),
-    ...(showTdsPaper    ? [{ key: 'trendDayScalpPaper',    href: '/trend-day-scalp-paper/status', icon: '⚡', label: 'Paper'    }] : []),
+    ...(showTdsPaper    ? [{ key: 'trendDayScalpPaper',    href: '/trend-day-scalp-paper/status', icon: '📋', label: 'Paper'    }] : []),
     ...(showTdsLive && !tdsPaperRunning ? [{ key: 'trendDayScalpLive', href: '/trend-day-scalp-live', icon: '📡', label: 'Live' }] : []),
     ...(showTdsHistory  ? [{ key: 'trendDayScalpHistory',  href: '/trend-day-scalp-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 
   const gap3mItems = [
     ...(showGap3mBacktest ? [{ key: 'gapFix3mBacktest', href: '/gap-fix-3m-backtest',     icon: '🔍', label: 'Backtest' }] : []),
-    ...(showGap3mPaper    ? [{ key: 'gapFix3mPaper',    href: '/gap-fix-3m-paper/status', icon: '🕳', label: 'Paper'    }] : []),
+    ...(showGap3mPaper    ? [{ key: 'gapFix3mPaper',    href: '/gap-fix-3m-paper/status', icon: '📋', label: 'Paper'    }] : []),
     ...(showGap3mLive && !gap3mPaperRunning ? [{ key: 'gapFix3mLive', href: '/gap-fix-3m-live', icon: '📡', label: 'Live' }] : []),
     ...(showGap3mHistory  ? [{ key: 'gapFix3mHistory',  href: '/gap-fix-3m-paper/history', icon: '📜', label: 'History' }] : []),
   ];
@@ -310,36 +310,36 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   // No Backtest entry: Fyers exposes no historical per-strike OI, so this
   // strategy cannot be simulated over past sessions and never will be.
   const oiwfItems = [
-    ...(showOiwfPaper   ? [{ key: 'oiWallFadePaper',   href: '/oi-wall-fade-paper/status', icon: '🧱', label: 'Paper'   }] : []),
+    ...(showOiwfPaper   ? [{ key: 'oiWallFadePaper',   href: '/oi-wall-fade-paper/status', icon: '📋', label: 'Paper'   }] : []),
     ...(showOiwfLive && !oiwfPaperRunning ? [{ key: 'oiWallFadeLive', href: '/oi-wall-fade-live', icon: '📡', label: 'Live' }] : []),
     ...(showOiwfHistory ? [{ key: 'oiWallFadeHistory', href: '/oi-wall-fade-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 
   const rsiPivotStItems = [
     ...(showRsiPivotStBacktest ? [{ key: 'rsiPivotStBacktest', href: '/rsi-pivot-st-backtest',     icon: '🔍', label: 'Backtest' }] : []),
-    ...(showRsiPivotStPaper    ? [{ key: 'rsiPivotStPaper',    href: '/rsi-pivot-st-paper/status', icon: '🎯', label: 'Paper'    }] : []),
+    ...(showRsiPivotStPaper    ? [{ key: 'rsiPivotStPaper',    href: '/rsi-pivot-st-paper/status', icon: '📋', label: 'Paper'    }] : []),
     ...(showRsiPivotStLive && !rsiPivotStPaperRunning ? [{ key: 'rsiPivotStLive', href: '/rsi-pivot-st-live', icon: '📡', label: 'Live' }] : []),
     ...(showRsiPivotStHistory  ? [{ key: 'rsiPivotStHistory',  href: '/rsi-pivot-st-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 
   const simple930Items = [
     ...(showSimple930Backtest ? [{ key: 'simple930Backtest', href: '/simple930-backtest',     icon: '🔍', label: 'Backtest' }] : []),
-    ...(showSimple930Paper    ? [{ key: 'simple930Paper',    href: '/simple930-paper/status', icon: '🎯', label: 'Paper'    }] : []),
+    ...(showSimple930Paper    ? [{ key: 'simple930Paper',    href: '/simple930-paper/status', icon: '📋', label: 'Paper'    }] : []),
     ...(showSimple930Live && !simple930PaperRunning ? [{ key: 'simple930Live', href: '/simple930-live', icon: '📡', label: 'Live' }] : []),
     ...(showSimple930History  ? [{ key: 'simple930History',  href: '/simple930-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 
   // ── Grouped navigation sections (collapsible) ──
   const topLevelItems = [
-    ...(showDashboard   ? [{ key: 'dashboard',         href: '/',                   icon: '⌂',  label: 'Dashboard' }] : []),
-    ...(showAllBacktest ? [{ key: 'allBacktest',       href: '/all-backtest',       icon: '⏺',  label: 'Backtest' }] : []),
-    ...(showReplay      ? [{ key: 'replay',            href: '/replay',             icon: '📼', label: 'Replay' }] : []),
-    ...(showPaperHist   ? [{ key: 'consolidation',     href: '/consolidation',      icon: '🧾', label: 'Paper Traded History' }] : []),
-    ...(showLiveHist    ? [{ key: 'liveConsolidation', href: '/live-consolidation', icon: '🔴', label: 'Live Traded History' }] : []),
-    ...(showEdgeAnalytics ? [{ key: 'edgeAnalytics',   href: '/edge-analytics',     icon: '📈', label: 'Edge Analytics' }] : []),
-    ...(showAdvisor       ? [{ key: 'advisor',         href: '/advisor',            icon: '🧭', label: 'Settings Advisor' }] : []),
+    ...(showDashboard   ? [{ key: 'dashboard',         href: '/',                   icon: '🏠',  label: 'Dashboard' }] : []),
+    ...(showAllBacktest ? [{ key: 'allBacktest',       href: '/all-backtest',       icon: '🧪',  label: 'Backtest' }] : []),
+    ...(showReplay      ? [{ key: 'replay',            href: '/replay',             icon: '⏪', label: 'Replay' }] : []),
+    ...(showPaperHist   ? [{ key: 'consolidation',     href: '/consolidation',      icon: '📒', label: 'Paper Traded History' }] : []),
+    ...(showLiveHist    ? [{ key: 'liveConsolidation', href: '/live-consolidation', icon: '📕', label: 'Live Traded History' }] : []),
+    ...(showEdgeAnalytics ? [{ key: 'edgeAnalytics',   href: '/edge-analytics',     icon: '📊', label: 'Edge Analytics' }] : []),
+    ...(showAdvisor       ? [{ key: 'advisor',         href: '/advisor',            icon: '🧠', label: 'Settings Advisor' }] : []),
     ...(showOiMonitor     ? [{ key: 'oi-monitor',      href: '/oi-monitor',         icon: '🧱', label: 'OI Monitor' }] : []),
-    ...(showSwingScanner  ? [{ key: 'swingScanner',     href: '/swing-scanner',      icon: '📈', label: 'Swing Scanner' }] : []),
+    ...(showSwingScanner  ? [{ key: 'swingScanner',     href: '/swing-scanner',      icon: '🔭', label: 'Swing Scanner' }] : []),
   ];
 
   const sections = [
@@ -410,10 +410,10 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     {
       header: 'SYSTEM', collapsible: false,
       items: [
-        ...(showTradeLogs  ? [{ key: 'tradeLogs',  href: '/trade-logs',  icon: '🗂', label: 'Logs' }] : []),
+        ...(showTradeLogs  ? [{ key: 'tradeLogs',  href: '/trade-logs',  icon: '📄', label: 'Logs' }] : []),
         // Login Logs, Server Logs (📜 LOGS) and Cache Files now live as tabs inside the Logs (/trade-logs) page.
         ...(showTokenSync  ? [{ key: 'tokenSync',  href: '/token-sync',  icon: '🔑', label: 'Token Sync' }] : []),
-        { key: 'settings',   href: '/settings',    icon: '⚙',  label: 'Settings'   },
+        { key: 'settings',   href: '/settings',    icon: '⚙️',  label: 'Settings'   },
       ]
     },
   ];

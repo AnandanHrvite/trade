@@ -1440,7 +1440,7 @@ router.get("/status", (req, res) => {
 ${buildSidebar('simple930Paper', liveActive)}
 <div class="main-content">
 ${bbRsiTopBar({
-  title: "🎯 SIMPLE_9:30 — Paper",
+  title: "⏰ SIMPLE_9:30 — Paper",
   metaLine: `${strategy.describePlan(cfg)} · orders → Zerodha`,
   running: state.running,
   primaryAction: { href: "/simple930-paper/start", label: "▶ Start", color: "#0369a1" },
@@ -1707,7 +1707,7 @@ router.get("/history", (req, res) => {
   res.send(renderHistoryPage({
     routePrefix: "/simple930-paper",
     sidebarKey: "simple930History",
-    pageTitle: "🎯 SIMPLE_9:30 Paper Trade History",
+    pageTitle: "⏰ SIMPLE_9:30 Paper Trade History",
     pageDocTitle: "SIMPLE_9:30 Paper — History",
     modalLabel: "SIMPLE_9:30 Paper",
     liveActive,

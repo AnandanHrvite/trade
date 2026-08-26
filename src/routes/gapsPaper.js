@@ -1717,7 +1717,7 @@ router.get("/history", (req, res) => {
   res.send(renderHistoryPage({
     routePrefix: "/gaps-paper",
     sidebarKey: "gapsHistory",
-    pageTitle: "🕳 GAPS Paper Trade History",
+    pageTitle: "🕳️ GAPS Paper Trade History",
     pageDocTitle: "GAPS Paper — History",
     modalLabel: "GAPS Paper",
     liveActive,
