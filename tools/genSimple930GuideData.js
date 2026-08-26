@@ -317,7 +317,25 @@ if (process.argv.includes("--json")) {
       if (st.pnl !== undefined) console.log(`             ${st.pts >= 0 ? "+" : ""}${st.pts} pts × ${QTY} = ₹${st.gross} gross · charges ₹${st.charges} · NET ₹${st.pnl}`);
     }
     if (pos && !pos.exit) console.log(`   (still open at the end of the constructed series)`);
+    // Counted separately because the EXIT step is also kind TRAIL — the guide
+    // quotes the number of LIFTS, and conflating the two overstates it by one.
+    const lifts = steps.filter(x => x.kind === "TRAIL" && /stop lifted/.test(x.text)).length;
+    if (lifts) console.log(`   → ${lifts} trail LIFT(s) (the exit is a separate TRAIL step and is NOT one of them)`);
     console.log("");
+  }
+
+  // The guide's third money row is a clean stop-out. It is not one of the three
+  // sessions above (none of them stops out cleanly), so compute it here rather
+  // than let the guide quote a number nothing produced.
+  {
+    const cfg = S.getConfig();
+    const fill = 181;
+    const stop = S.computeInitialStop(fill, cfg);
+    const ch   = getCharges({ broker: "zerodha", isFutures: false, entryPremium: fill, exitPremium: stop, qty: QTY });
+    const pts  = r2(stop - fill);
+    console.log(`── clean stop-out (rule arithmetic, not one of the sessions above) ──`);
+    console.log(`   fill ₹${fill} → stop ₹${stop}  (${cfg.slPts}pt)`);
+    console.log(`   ${pts} pts × ${QTY} = ₹${r2(pts * QTY)} gross · charges ₹${r2(ch)} · NET ₹${r2(pts * QTY - ch)}\n`);
   }
 
   // The cost floor the guide quotes, straight from the repo's own charges model.
