@@ -737,6 +737,7 @@ async function simulateBuy(side, leg, verdict, cfg) {
   notifyEntry({
     mode: MODE_TAG,
     side, symbol: leg.symbol,
+    strike: leg.strike, expiry: pos.optionExpiry,
     spotAtEntry: state.lastTickPrice, optionEntryLtp: pos.optionEntryLtp,
     qty, stopLoss: stop, target: null,
     entryTime: pos.entryTime,

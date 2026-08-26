@@ -492,7 +492,11 @@ function notifyEntry(p) {
     `Stop Loss      : ${inr(p.stopLoss)}`,
     `Qty / Lots     : ${p.qty || "—"}`,
     ``,
-    `Reason : ${p.reason || "—"}`,
+    // `entryReason` is what every strategy actually passes (nine of them do);
+    // only this line ever read `reason`, so every entry alert in the app has
+    // been printing "Reason : —" while the exit alert — which reads
+    // entryReason — printed the real thing.
+    `Reason : ${p.reason || p.entryReason || "—"}`,
   ].filter(l => l !== undefined && l !== null);
 
   sendTelegram(lines.join("\n"));
