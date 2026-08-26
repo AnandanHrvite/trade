@@ -393,6 +393,8 @@ function modeLabel(mode) {
   if (m.startsWith("TREND-DAY-SCALP-LIVE"))  return "🔴 TREND DAY SCALP LIVE" + m.slice("TREND-DAY-SCALP-LIVE".length);
   if (m.startsWith("GAP-FIX-3M-PAPER")) return "🕳 3M GAP FIX PAPER" + m.slice("GAP-FIX-3M-PAPER".length);
   if (m.startsWith("GAP-FIX-3M-LIVE"))  return "🔴 3M GAP FIX LIVE" + m.slice("GAP-FIX-3M-LIVE".length);
+  if (m.startsWith("SIMPLE930-PAPER")) return "🎯 SIMPLE 9:30 PAPER" + m.slice("SIMPLE930-PAPER".length);
+  if (m.startsWith("SIMPLE930-LIVE"))  return "🔴 SIMPLE 9:30 LIVE" + m.slice("SIMPLE930-LIVE".length);
   if (m.startsWith("RSI_PIVOT_ST-PAPER")) return "🎯 RSI PIVOT ST PAPER" + m.slice("RSI_PIVOT_ST-PAPER".length);
   if (m.startsWith("RSI_PIVOT_ST-LIVE"))  return "⚡ RSI PIVOT ST LIVE" + m.slice("RSI_PIVOT_ST-LIVE".length);
   return m;

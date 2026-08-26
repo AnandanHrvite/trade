@@ -362,7 +362,7 @@ ${buildSidebar('allBacktest', liveActive)}
   ${gap3mPanel}
   ${rsiPivotStPanel}
   ${simple930Panel}
-  ${(!emaRsiStOn && !bbRsiOn && !paOn && !orbOn && !trendPbOn && !gapsOn && !tdsOn && !gap3mOn && !rsiPivotStOn) ? `
+  ${(!emaRsiStOn && !bbRsiOn && !paOn && !orbOn && !trendPbOn && !gapsOn && !tdsOn && !gap3mOn && !rsiPivotStOn && !simple930On) ? `
   <div style="background:#08091a;border:0.5px solid #0e1428;border-radius:10px;padding:24px;text-align:center;color:#94a3b8;font-size:0.78rem;">
     No strategies enabled. Toggle one on in <a href="/settings" style="color:#60a5fa;">Settings → Strategy Modes</a>.
   </div>` : ""}

@@ -28,9 +28,10 @@
  * harness and replay — no rule is re-implemented in this file).
  *
  * Uses LIVE data but SIMULATES orders locally.
- * Endpoints: /start /stop /exit /status /status/data /status/chart-data
- *            /history /reset /session/:i /restore-session/:date
- *            /download/... /view/...
+ * Endpoints: GET  /start /stop /exit /status /status/data /status/chart-data
+ *                 /history /reset /download/... /view/...
+ *            POST /restore-session/:date
+ *            DELETE /session/:index
  */
 
 const express = require("express");
@@ -51,7 +52,7 @@ const { isTradingAllowed } = require("../utils/nseHolidays");
 const tradeLogger = require("../utils/tradeLogger");
 const aiExport    = require("../utils/aiExport");
 const fyers       = require("../config/fyers");
-const { notifyEntry, notifyExit, notifyStarted, notifyDayReport } = require("../utils/notify");
+const { notifyEntry, notifyExit, notifyStarted, notifyDayReport, sendIfMaster } = require("../utils/notify");
 const { getCharges } = require("../utils/charges");
 const { getISTMinutes, getBucketStart } = require("../utils/tradeUtils");
 const skipLogger  = require("../utils/skipLogger");
@@ -211,6 +212,8 @@ function _freshState() {
     _staleSession:  false,
     _staleSkipLoggedMs: null,
     _quoteFailLoggedMs: null,
+    _staleQuoteAlertMs: null,
+    quoteStale:     false,
   };
 }
 
@@ -280,6 +283,14 @@ function rehydrateSessionFromJsonl() {
   }
 }
 rehydrateSessionFromJsonl();
+// Seed the day guard from what the rehydrate just found. Without this the guard
+// only survived a /stop → /start; a PROCESS restart — which is what every deploy
+// does, `pm2 startOrRestart` — reset it to null and handed the day a second
+// trade. /start ignores the guard during a replay (see there), so seeding it
+// here cannot close a replayed day.
+// `_staleSession` means the rehydrate fell back to the LAST saved session because
+// today's day file was empty — yesterday's trades must not spend today's budget.
+if (state.tradesTaken > 0 && !state._staleSession) _syncDayGuard();
 require("../utils/staleSessionGate").clearStaleSessionOnTradingDay(() => state, LOG_TAG);
 
 /**
@@ -536,6 +547,15 @@ async function evaluateEntry() {
   const nowMin = getISTMinutes();
   if (!strategy.inEntryWindow(nowMin, cfg)) return;
   if (state.tradesTaken >= _maxDailyTrades()) return;
+  // The sustain counters are kept BEFORE the retry backoff returns. They mean
+  // "consecutive quotes above the trigger", and a leg that dipped below during
+  // the backoff has broken that run — freezing the counter through the pause
+  // would let it fire a poll early. Only matters when SUSTAIN_POLLS > 1.
+  const _cfgTrig = cfg.triggerPremium;
+  for (const side of ["CE", "PE"]) {
+    const w = state.watch[side];
+    if (!(w && strategy._px(w.ltp) && w.ltp > _cfgTrig)) state.sustain[side] = 0;
+  }
   if (state._lastEntryAttemptMs && Date.now() - state._lastEntryAttemptMs < ENTRY_RETRY_MS) return;
 
   const legs = { ce: state.watch.CE, pe: state.watch.PE };
@@ -730,6 +750,11 @@ function simulateSell(reason, opts) {
   const o   = opts || {};
   const pos = state.position;
   const exitLtp = strategy._px(state.optionLtp) ? state.optionLtp : pos.optionEntryLtp;
+  // Whether the price this exit was booked at was actually current. A stale exit
+  // still sends the real order in LIVE — it is the RECORD that would otherwise
+  // be fiction, so the trade carries the age it was priced at.
+  const exitAgeSec  = state.optionLtpUpdatedAt ? Math.round((Date.now() - state.optionLtpUpdatedAt) / 1000) : null;
+  const exitStale   = strategy._num(exitAgeSec) && exitAgeSec * 1000 > _ltpStaleMs();
   const qty     = pos.qty;
   const charges = getCharges({ broker: "zerodha", isFutures: false, entryPremium: pos.optionEntryLtp, exitPremium: exitLtp, qty });
   const pnl     = parseFloat(((exitLtp - pos.optionEntryLtp) * qty - charges).toFixed(2));
@@ -791,11 +816,14 @@ function simulateSell(reason, opts) {
     isFutures:       false,
     instrument:      "NIFTY_OPTIONS",
     broker:          "zerodha",
+    exitLtpAgeSec:   exitAgeSec,
+    exitPriceStale:  exitStale,
   };
   state.sessionTrades.push(trade);
   tradeLogger.appendTradeLog(MODE_KEY, trade);
 
   log(`🔴 ${LOG_TAG} EXIT ${pos.side} ${pos.symbol} @ ₹${trade.optionExitLtp} | PnL=₹${pnl} (${reason})`);
+  if (exitStale) log(`   ⚠️ Booked on a ${exitAgeSec}s-OLD premium — this P&L is NOT a real fill. In live the broker filled at the market price, not this one.`);
   log(`   └─ Ranged ₹${pos.trough}–₹${pos.peak} · ${pos.trailMoves} trail move(s) · held ${Math.round(trade.durationMs / 1000)}s · charges ₹${charges}`);
 
   decide("EXIT", `${o.kind || "EXIT"} ${pos.side} ${pos.optionStrike} @ ₹${trade.optionExitLtp} — ₹${pnl}`, {
@@ -866,6 +894,30 @@ function _checkExits() {
   if (!strategy._px(ltp)) return;
   const cfg = strategy.getConfig();
 
+  // ── Stale-premium watchdog ──
+  // Every exit below is measured against the LAST polled premium, so when the
+  // quote feed dies with a position open the stop simply never fires: the frozen
+  // number never breaches it while the real premium collapses. Entry already
+  // refuses a stale quote; an exit cannot refuse — in LIVE the square-off order
+  // still has to go out, and it will fill at the real price whatever this engine
+  // believes. So the exits keep running and the operator gets told, loudly and
+  // repeatedly, that the number driving them is old.
+  const ltpAge = state.optionLtpUpdatedAt ? Date.now() - state.optionLtpUpdatedAt : null;
+  state.quoteStale = strategy._num(ltpAge) && ltpAge > _ltpStaleMs();
+  if (state.quoteStale) {
+    if (!state._staleQuoteAlertMs || Date.now() - state._staleQuoteAlertMs > 60000) {
+      state._staleQuoteAlertMs = Date.now();
+      const secs = Math.round(ltpAge / 1000);
+      log(`🚨 ${LOG_TAG} ${pos.symbol} premium is ${secs}s STALE — the stop cannot fire on a frozen price. Check the Fyers feed; square off manually if this persists.`);
+      decide("SKIP", `Premium feed stale for ${secs}s — exits are running on an old price`, { symbol: pos.symbol, ageSec: secs, lastPremium: ltp, stop: pos.stop });
+      try {
+        sendIfMaster(`🚨 SIMPLE_9:30 — premium feed STALE\n${pos.symbol} last priced ₹${ltp}, ${secs}s ago.\nThe ${cfg.slPts}pt stop at ₹${pos.stop} CANNOT fire while the price is frozen.\nCheck the Fyers feed and square off manually if it does not recover.`);
+      } catch (_) {}
+    }
+  } else {
+    state._staleQuoteAlertMs = null;
+  }
+
   if (ltp > pos.peak)   pos.peak = strategy._r2(ltp);
   if (ltp < pos.trough) pos.trough = strategy._r2(ltp);
   pos.peakPremium = pos.peak;
@@ -879,7 +931,11 @@ function _checkExits() {
 
   // Band expansion — announced once, because it is what saves the trade from
   // the 09:45 exit and the operator should be able to see the exact moment.
-  if (!pos.expanded && strategy.isExpanded(pos.peak, pos.trough, cfg)) {
+  // `pos` is passed so this reads the SAME box exitCheck reads — the one the
+  // trade opened under. Without it a Settings change mid-trade made the page and
+  // the decision trail announce "the band broke" while the engine still closed
+  // the trade at 09:45.
+  if (!pos.expanded && strategy.isExpanded(pos.peak, pos.trough, cfg, pos)) {
     pos.expanded = true;
     pos.expandedAt = istNow();
     const edge = pos.peak >= cfg.bandUp ? `above ₹${cfg.bandUp}` : `below ₹${cfg.bandDown}`;
@@ -1052,10 +1108,17 @@ router.get("/start", async (req, res) => {
   state.sessionStart = new Date().toISOString();
   state._sessionId = `simple930-paper:${Date.now()}`;
 
-  // Carry today's already-spent trade budget across a restart of the session.
-  // Without this a /stop → /start inside the entry window buys a second time on
-  // a strategy whose whole rule is one trade a day.
-  if (_dayGuard.day === _todayIst() && (_dayGuard.tradesTaken > 0 || _dayGuard.dayClosed)) {
+  // Carry today's already-spent trade budget across a restart — of the session
+  // OR of the whole process. Without this a /stop → /start, or any deploy, buys
+  // a second time on a strategy whose whole rule is one trade a day.
+  //
+  // A replay must ignore it: the guard is seeded at module load from the day
+  // file, and replaying a day that already traded would otherwise close the day
+  // at once and book zero trades — killing the paper-vs-replay diff that gates
+  // the live switch. Lazy require, and a failure means "not replaying".
+  let _replaying = false;
+  try { _replaying = require("../services/tickReplay").isReplayInProgress(); } catch (_) {}
+  if (!_replaying && _dayGuard.day === _todayIst() && (_dayGuard.tradesTaken > 0 || _dayGuard.dayClosed)) {
     state.tradesTaken     = _dayGuard.tradesTaken;
     state.dayClosed       = _dayGuard.dayClosed;
     state.dayClosedReason = _dayGuard.dayClosedReason;
@@ -1274,7 +1337,7 @@ router.get("/status/data", (req, res) => {
     decisions: state.decisions.slice(-120),
     tickCount: state.tickCount, lastTickPrice: state.lastTickPrice,
     sessionStart: state.sessionStart,
-    optionLtp: state.optionLtp, optionLtpAgeSec: optAge,
+    optionLtp: state.optionLtp, optionLtpAgeSec: optAge, quoteStale: !!state.quoteStale,
     wins, losses, winRate, bestTrade, worstTrade, cumPnl, livePnl,
     weeklyPnl: weeklyPnl(),
     nowIstMins: getISTMinutes(),
@@ -1509,7 +1572,12 @@ function renderPos(d) {
   var p = d.position;
   if (!p) { el.innerHTML = '<div class="s930-card" style="margin-bottom:0;color:#8ba1c2;font-size:0.78rem;">No open position.</div>'; return; }
   var live = (p.currentOptLtp != null) ? ((p.currentOptLtp - p.optionEntryLtp) * p.qty) : null;
-  el.innerHTML = '<div class="s930-card" style="margin-bottom:0;border-color:#f59e0b;">' +
+  var staleWarn = d.quoteStale
+    ? '<div style="background:#7f1d1d;border:1px solid #ef4444;border-radius:6px;padding:8px 10px;margin-bottom:8px;color:#fecaca;font-size:0.72rem;">' +
+      '\u{1F6A8} Premium feed STALE (' + (d.optionLtpAgeSec != null ? d.optionLtpAgeSec + 's old' : 'unknown age') +
+      ') \u2014 the stop cannot fire on a frozen price. Check the Fyers feed; square off manually if it does not recover.</div>'
+    : '';
+  el.innerHTML = '<div class="s930-card" style="margin-bottom:0;border-color:' + (d.quoteStale ? '#ef4444' : '#f59e0b') + ';">' + staleWarn +
     '<div class="s930-hdr"><span>Open position — ' + esc(p.side) + ' ' + p.optionStrike + '</span>' +
       '<span style="text-transform:none;letter-spacing:0;color:' + (live >= 0 ? '#10b981' : '#ef4444') + ';">' +
       (live != null ? '₹' + Math.round(live).toLocaleString('en-IN') : '—') + '</span></div>' +

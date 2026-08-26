@@ -286,8 +286,22 @@ check("the stop is a DISTANCE off the FILL — the rule's own 181 → 161", () =
   assert.strictEqual(S.computeInitialStop(186, c), 166);
   assert.strictEqual(S.computeInitialStop(220, c), 200);
 });
-check("the stop can never be a negative price", () => {
-  assert.strictEqual(S.computeInitialStop(12, freshEnv()), 0);
+check("a stop that would land at or below ZERO refuses the trade", () => {
+  // Clamping to 0 was worse than useless: `_num(0)` is true so the entry guard
+  // passed, and `ltp <= 0` can never be true for a live premium — the position
+  // rode with its risk switched off and only 15:15 could close it. Reachable
+  // whenever SL_PTS is at or above TRIGGER_PREMIUM.
+  assert.strictEqual(S.computeInitialStop(12, freshEnv()), null, "a 12-20 stop must refuse, not clamp to 0");
+  assert.strictEqual(S.computeInitialStop(20, freshEnv()), null, "exactly zero is not a stop");
+  assert.strictEqual(S.computeInitialStop(20.5, freshEnv()), 0.5, "a positive stop is still returned");
+  const tiny = freshEnv({ SIMPLE930_TRIGGER_PREMIUM: "10", SIMPLE930_SL_PTS: "20" });
+  assert.strictEqual(S.computeInitialStop(11, tiny), null);
+});
+check("the sideways box floor can never go negative", () => {
+  // "premium never left ₹-10–₹50" printed in a real exit reason.
+  const c = freshEnv({ SIMPLE930_TRIGGER_PREMIUM: "10", SIMPLE930_BAND_DOWN_OFFSET: "20" });
+  assert.strictEqual(c.bandDown, 0);
+  assert.ok(c.bandDown >= 0);
 });
 check("an unusable fill yields NO stop, so the caller must refuse the trade", () => {
   const c = freshEnv();
@@ -801,6 +815,26 @@ check("the backtest reuses the engine's IST helpers rather than its own copy", (
   assert.ok(/_istDayStr\s*=\s*strategy\._istDateStr/.test(src));
   assert.ok(!/function _istMins/.test(src), "the backtest still defines its own IST minute helper");
 });
+check("the backtest DISCLOSES that it takes at most one trade a session", () => {
+  // simulateDay returns one trade unconditionally, so raising MAX_DAILY_TRADES
+  // makes it report FEWER entries than paper without saying so.
+  const src = read("routes/simple930Backtest.js");
+  assert.ok(/MAX_DAILY_TRADES is set to/.test(src), "the results page never mentions the divergence");
+});
+check("the backtest's recorded peak/trough include the bar it exited on", () => {
+  // The three open-priced exit branches break before folding their bar in, so
+  // the extremes stopped one bar short — paper folds the exiting tick in.
+  const c = freshEnv(NOSLIP);
+  const ce = [flat(SEL, 178)];
+  for (let m = SEL + 1; m <= END; m++) {
+    if (m === SEL + 1) ce.push(flat(m, 181));
+    else if (m === SEL + 2) ce.push(bar(m, 140, 145, 138, 142));   // gaps through the stop
+    else ce.push(flat(m, 142));
+  }
+  const { trade } = BT.simulateDay(mkDay({ ladder: [mkLeg("CE", 24250, ce)] }), c, QTY);
+  assert.strictEqual(trade.xPrice, 140);
+  assert.ok(trade.trough <= 140, `trough ${trade.trough} excludes the exit price 140`);
+});
 check("the backtest DISCLOSES that it cannot model SUSTAIN_POLLS", () => {
   // "N consecutive quotes above the trigger" has no meaning on a 1-min bar, so
   // the backtest over-counts entries when it is set. Silence would be the bug.
@@ -817,6 +851,48 @@ check("every config field getConfig() returns is actually read somewhere", () =>
     .join("\n");
   const dead = Object.keys(cfg).filter(k => !new RegExp(`\\.${k}\\b`).test(hay));
   assert.deepStrictEqual(dead, [], `getConfig() returns fields nothing reads: ${dead.join(", ")}`);
+});
+check("_checkExits judges the box the SAME way exitCheck does", () => {
+  // The exit froze the box to the trade; the flag did not. A Settings change
+  // mid-trade made the page, the decision trail and the crash snapshot all say
+  // "the band broke" while the engine still closed the trade at 09:45.
+  const src = decomment(read("routes/simple930Paper.js"));
+  assert.ok(/isExpanded\(pos\.peak, pos\.trough, cfg, pos\)/.test(src),
+    "_checkExits calls isExpanded without the position — the flag and the exit can disagree");
+  // and prove the two forms really do differ, so the assertion above is not cosmetic
+  const wide = freshEnv({ SIMPLE930_BAND_UP_OFFSET: "10" });
+  const pos = { peak: 200, trough: 178, bandUp: 220, bandDown: 160 };
+  assert.strictEqual(S.isExpanded(pos.peak, pos.trough, wide), true);
+  assert.strictEqual(S.isExpanded(pos.peak, pos.trough, wide, pos), false);
+});
+check("the day budget is seeded at MODULE LOAD, not only on /stop then /start", () => {
+  // /start zeroes tradesTaken, and every deploy restarts the process — so a
+  // guard that only survived a session restart let a PM2 reload at 09:29 buy a
+  // second time.
+  const src = decomment(read("routes/simple930Paper.js"));
+  const load = src.slice(src.indexOf("rehydrateSessionFromJsonl();"), src.indexOf("function weeklyPnl"));
+  assert.ok(/_syncDayGuard\(\)/.test(load), "the guard is never seeded from the module-load rehydrate");
+  assert.ok(/!state\._staleSession/.test(load), "a rehydrated PREVIOUS-day session would spend today's budget");
+  // ...and a replay must ignore it, or replaying a day that traded books nothing
+  assert.ok(/isReplayInProgress/.test(src), "/start does not exempt a replay from the day guard");
+});
+check("a stale premium raises an alarm and marks the exit it prices", () => {
+  // Entry refuses a stale quote; an exit cannot — in LIVE the square-off order
+  // still goes out and fills at the real price. So the exits keep running, the
+  // operator is told, and the RECORD says the price was old.
+  const src = decomment(read("routes/simple930Paper.js"));
+  assert.ok(/quoteStale/.test(src), "no stale-premium watchdog on the exit path");
+  assert.ok(/sendIfMaster/.test(src), "a stale feed raises no alert");
+  assert.ok(/exitPriceStale/.test(src), "a stale-priced exit is not marked on the trade record");
+  assert.ok(/_staleQuoteAlertMs/.test(src), "the stale alert is not throttled");
+});
+check("sustain counters reset BEFORE the entry-retry backoff returns", () => {
+  const src = decomment(read("routes/simple930Paper.js"));
+  const fn = src.slice(src.indexOf("async function evaluateEntry"), src.indexOf("async function simulateBuy"));
+  const reset = fn.indexOf("state.sustain[side] = 0");
+  const backoff = fn.indexOf("ENTRY_RETRY_MS) return");
+  assert.ok(reset > -1 && backoff > -1, "could not locate both");
+  assert.ok(reset < backoff, "a leg dipping below the trigger during the backoff keeps its streak");
 });
 check("the stale-premium skip row is throttled, not written once a poll", () => {
   // At a 1s poll a dead quote feed would otherwise bury the day's real skips

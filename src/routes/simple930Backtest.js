@@ -322,6 +322,16 @@ function simulateDay(day, cfg, qty) {
     exitTime = last.time;
   }
 
+  // The three open-priced exit branches break BEFORE folding their bar into
+  // peak/trough, so the recorded extremes would stop one bar short of the exit —
+  // paper folds the exiting tick in. No decision reads these (the box was
+  // already judged), but MAE/MFE and bestOptionLtp/worstOptionLtp in the exports
+  // are read by the analytics screens, so record what actually happened.
+  if (strategy._px(exitPx)) {
+    if (exitPx > peak)   peak = strategy._r2(exitPx);
+    if (exitPx < trough) trough = strategy._r2(exitPx);
+  }
+
   const exitFilled = strategy._r2(Math.max(0, exitPx - slip));   // slippage given up on a sell
   const charges = getCharges({ broker: "zerodha", isFutures: false, entryPremium: entryPx, exitPremium: exitFilled, qty });
   const pnl = parseFloat(((exitFilled - entryPx) * qty - charges).toFixed(2));
@@ -582,6 +592,9 @@ function _renderResults(res, from, to, trades, stats, meta) {
       `<b>Intra-bar ordering is conservative:</b> the stop is tested on the bar low BEFORE the trail is lifted from the bar high, a bar that opened beyond the stop fills at the open, and the entry bar is tested like any other. ` +
       (cfg.sustainPolls > 1
         ? `<b style="color:#f59e0b;">⚠ SIMPLE930_SUSTAIN_POLLS is set to ${cfg.sustainPolls}, and this page cannot model it</b> — "N consecutive quotes above the trigger" has no meaning on a 1-minute bar, so the backtest fills on the first bar that crosses and will report MORE entries than paper would take. `
+        : "") +
+      (Number(process.env.SIMPLE930_MAX_DAILY_TRADES || "1") > 1
+        ? `<b style="color:#f59e0b;">⚠ SIMPLE930_MAX_DAILY_TRADES is set to ${process.env.SIMPLE930_MAX_DAILY_TRADES}, and this page takes at most ONE trade a session regardless</b> — it will report FEWER entries than paper would take. `
         : "") +
       `<b>The stop fill is the backtest's one systematic flattery:</b> it books exactly the stop level, while paper books the tick that breached it. The slippage haircut offsets part of that, not all of it. ` +
       `Slippage of ${_slippagePts()}pt is charged EACH way and Zerodha statutory charges are applied on ${meta.qty} qty. ` +

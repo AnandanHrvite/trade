@@ -2008,6 +2008,8 @@ window.__ltInit = true;
     '.mode-trend_day_scalp{color:#6d28d9!important;}',
     '.mode-gap_fix_3m{color:#0369a1!important;}',
     '.mode-rsi_pivot_st{color:#c2410c!important;}',
+    '.mode-simple930{color:#c2410c!important;}',
+    '.mode-simple930-live{color:#c2410c!important;}',
     '.brk-action,.brk-action.re-login{color:#1d4ed8!important;}',
     '.brk-wallet-sub .zero,.pnl-flat,.ms-caret,.log-time,.da-empty,.bc-link,.tbar label,.pager label,.run-bar label,#dashRange label{color:#4b5769!important;}',
     '#da-mode-badge{color:#1d4ed8!important;}',

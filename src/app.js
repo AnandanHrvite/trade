@@ -1921,7 +1921,7 @@ app.get("/", (req, res) => {
     .mm-card.gaps     .mm-dot { background:#0ea5e9; }
     .mm-card.tds      .mm-dot { background:#a855f7; }
     .mm-card.gap3m    .mm-dot { background:#38bdf8; }
-    .mm-card.simple930 .mm-dot { background:#f59e0b; }
+    .mm-card.simple930 .mm-dot { background:#fb923c; }
     .mm-card.rsipivotst .mm-dot { background:#c2410c; }
     .mm-card.oiwf     .mm-dot { background:#f472b6; }
     .mm-title { font-size:0.62rem; font-weight:700; text-transform:uppercase; letter-spacing:1.4px; color:#a0b0c8; }

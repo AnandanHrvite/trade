@@ -82,7 +82,9 @@
  *   selectWatchlist(quotes, atm, cfg)        -> { ce, pe, candidates, notes }
  *   bandLevels(cfg)                          -> { up, down }
  *   evaluateTrigger(legs, cfg, sustain)      -> { fire, leg, ltp, reason, … }
- *   computeInitialStop(fillLtp, cfg)         -> stop as a DISTANCE off the fill
+ *   computeInitialStop(fillLtp, cfg)         -> stop as a DISTANCE off the fill,
+ *                                             or null when it would land at/below
+ *                                             zero (the caller must then refuse)
  *   computeTrailStop(peak, initialStop, cfg) -> ratcheting trail
  *   isExpanded(peak, trough, cfg, pos?)      -> did it leave the 160–220 box?
  *                                             (an open position keeps its own box)
@@ -185,7 +187,10 @@ function getConfig() {
     // in the rule they are the same ₹180. Two keys could silently disagree.
     triggerPremium: trigger,
     bandUp:         _r2(trigger + _numEnv("SIMPLE930_BAND_UP_OFFSET",   40, 0, 2000)),
-    bandDown:       _r2(trigger - _numEnv("SIMPLE930_BAND_DOWN_OFFSET", 20, 0, 2000)),
+    // Clamped at 0: a premium cannot trade below zero, so a negative floor is
+    // not a level, it is a number that can never be touched — and it printed as
+    // "₹-10" in the exit reason.
+    bandDown:       _r2(Math.max(0, trigger - _numEnv("SIMPLE930_BAND_DOWN_OFFSET", 20, 0, 2000))),
 
     // ── The ladder quoted at 09:25 ──
     // ITM depth per side. 8 × 50 = 400 points, which covers a ₹180 premium from
@@ -389,7 +394,14 @@ function evaluateTrigger(legs, cfg, sustain) {
 function computeInitialStop(fillLtp, cfg) {
   cfg = cfg || getConfig();
   if (!_px(fillLtp)) return null;
-  return _r2(Math.max(0, fillLtp - cfg.slPts));
+  const stop = _r2(fillLtp - cfg.slPts);
+  // A stop at or below zero is NOT a stop: `ltp <= 0` can never be true for a
+  // live premium, so the position would ride with its risk switched off and only
+  // the EOD square-off could close it. Returning null makes the caller refuse the
+  // trade — "refuse rather than enter without one". Reachable whenever
+  // SIMPLE930_SL_PTS is set at or above SIMPLE930_TRIGGER_PREMIUM.
+  if (stop <= 0) return null;
+  return stop;
 }
 
 /**

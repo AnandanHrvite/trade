@@ -239,9 +239,33 @@ function chartSpec(name) {
     markers.push({ i: idxOf(trade.entryTs), type: "buy",  price: trade.ePrice, text: `BUY ${trade.side} ${trade.strike} @ ₹${trade.ePrice}` });
     markers.push({ i: idxOf(trade.exitTs),  type: "exit", price: trade.xPrice, text: `${trade.exitKind} @ ₹${trade.xPrice} · ₹${trade.pnl}` });
   } else {
+    // The chart runs past 09:35 so the reader can see what happened next — so the
+    // "best it managed" marker MUST be scoped to the entry window. Taking the
+    // whole slice's high produced the self-contradicting caption
+    // "best it managed: ₹180.15 — never above ₹180" off a 09:38 bar.
+    const minOf = (b) => Math.round((b.time - EPOCH) / 60);
+    const inWin = slice.filter(b => minOf(b) >= cfg.entryStartMin && minOf(b) <= cfg.entryEndMin);
     let hiIdx = 0;
-    slice.forEach((b, i) => { if (b.high > slice[hiIdx].high) hiIdx = i; });
-    markers.push({ i: hiIdx, type: "dot", color: "#fbbf24", price: slice[hiIdx].high, text: `best it managed: ₹${r2(slice[hiIdx].high)} — never above ₹${cfg.triggerPremium}` });
+    if (inWin.length) {
+      let best = inWin[0];
+      for (const b of inWin) if (b.high > best.high) best = b;
+      hiIdx = slice.indexOf(best);
+    } else {
+      slice.forEach((b, i) => { if (b.high > slice[hiIdx].high) hiIdx = i; });
+    }
+    markers.push({
+      i: hiIdx, type: "dot", color: "#fbbf24", price: slice[hiIdx].high,
+      text: `best it managed by ${hhmm(cfg.entryEndMin)}: ₹${r2(slice[hiIdx].high)} — never above ₹${cfg.triggerPremium}`,
+    });
+    // If it DID clear the level after the window shut, say so — that is the more
+    // interesting lesson, and without it the chart looks like the engine missed a break.
+    const late = slice.find(b => minOf(b) > cfg.entryEndMin && b.high > cfg.triggerPremium);
+    if (late) {
+      markers.push({
+        i: slice.indexOf(late), type: "dot", color: "#f85149", price: late.high,
+        text: `cleared ₹${cfg.triggerPremium} at ${hhmm(minOf(late))} — ${minOf(late) - cfg.entryEndMin} min too late, the window shut at ${hhmm(cfg.entryEndMin)}`,
+      });
+    }
   }
 
   const hlines = [
