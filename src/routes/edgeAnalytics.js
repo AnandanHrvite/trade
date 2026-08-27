@@ -150,6 +150,23 @@ function loadAllTrades() {
   return trades;
 }
 
+// Server-side twin of the client's entryHour(): istNow() writes "DD/MM/YYYY, HH:MM:SS"
+// (IST), older records "HH:MM, DD/MM/YYYY" — both carry exactly one clock field, so the
+// first HH:MM is the entry time. An ISO "…T…Z" stamp is UTC, so shift +5:30 first.
+// Kept in step with the client copy: the picker must list the same buckets the chart bins.
+function _entryHourIST(v) {
+  const str = String(v == null ? "" : v);
+  if (/^\d{4}-\d{2}-\d{2}T/.test(str)) {
+    const d = new Date(str);
+    if (isNaN(d)) return null;
+    return new Date(d.getTime() + 19800000).getUTCHours();
+  }
+  const m = str.match(/(\d{1,2}):(\d{2})/);
+  if (!m) return null;
+  const h = +m[1], mi = +m[2];
+  return (h >= 0 && h <= 23 && mi >= 0 && mi <= 59) ? h : null;
+}
+
 router.get("/", (req, res) => {
   // Only analyse strategies that are enabled in Settings — a disabled strategy is
   // hidden from the sidebar, so it must not appear in the Strategy dropdown, the
@@ -159,6 +176,32 @@ router.get("/", (req, res) => {
   const enabledSet = new Set(enabled.map(s => s.mode));
   const trades     = loadAllTrades().filter(t => enabledSet.has(t.mode));
   const modePicker = multiSelectHTML('fMode', enabled.map(s => ({ value: s.mode, label: s.label })), 'All');
+
+  // Exit-reason and entry-hour pickers are built from the data, not a hard-coded
+  // list: every engine words its exit reasons differently, and a fixed list would
+  // silently drop a new one. Reasons are ordered worst-net-first so the exits that
+  // bleed the most are the first thing you can tick.
+  const _reasonNet = new Map();
+  for (const t of trades) {
+    const k = t.exitReason || "\u2014";
+    _reasonNet.set(k, (_reasonNet.get(k) || 0) + (Number(t.pnl) || 0));
+  }
+  const reasonPicker = multiSelectHTML('fReason',
+    [..._reasonNet.entries()].sort((a, b) => a[1] - b[1])
+      .map(([k]) => ({ value: k, label: k.length > 30 ? k.slice(0, 30) + "\u2026" : k })),
+    'All');
+
+  // Entry hour: IST hour parsed the same way the client's entryHour() does, so the
+  // picker lists exactly the buckets the hour chart can show.
+  const _hours = new Set();
+  for (const t of trades) {
+    const h = _entryHourIST(t.entryTime);
+    if (h !== null) _hours.add(h);
+  }
+  const hourPicker = multiSelectHTML('fHour',
+    [..._hours].sort((a, b) => a - b)
+      .map(h => ({ value: String(h), label: String(h).padStart(2, '0') + ':00' })),
+    'All');
 
   const theme = resolveTheme();
   const showConsolidationReport = (process.env.UI_SHOW_CONSOLIDATION_REPORT || "true").toLowerCase() === "true";
@@ -191,6 +234,8 @@ router.get("/", (req, res) => {
     .tbar label{font-size:0.58rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-2,#6d85a8);font-family:'IBM Plex Mono',monospace;}
     .tbar input,.tbar select{background:#04090f;border:0.5px solid #0e1e36;color:#e0eaf8;padding:6px 10px;border-radius:6px;font-family:'IBM Plex Mono',monospace;font-size:0.72rem;outline:none;}
     .tbar input:focus,.tbar select:focus{border-color:#38bdf8;}
+    .rst{background:#04090f;border:0.5px solid #0e1e36;color:#8ba1c2;padding:6px 12px;border-radius:6px;font-family:'IBM Plex Mono',monospace;font-size:0.7rem;cursor:pointer;min-height:30px;}
+    .rst:hover{border-color:#38bdf8;color:#e0eaf8;}
     .seg{display:inline-flex;border:0.5px solid #0e1e36;border-radius:6px;overflow:hidden;}
     .seg button{background:#04090f;border:none;color:var(--muted-1,#8ba1c2);padding:6px 12px;font-family:'IBM Plex Mono',monospace;font-size:0.7rem;cursor:pointer;}
     .seg button.on{background:#0c4a6e;color:#7dd3fc;}
@@ -276,7 +321,13 @@ ${multiSelectCSS()}
     @media(max-width:700px){
       .tbar{gap:6px;padding:8px 10px;margin-bottom:10px;}
       .tbar select,.tbar input{flex:1 1 120px;min-width:0;padding:8px 10px;}
-      .seg button{padding:8px 14px;}
+      /* 44px touch targets and full-width rows — the six controls must stack, not
+         squeeze into unreadable two-up columns at ~440px. */
+      .seg{flex:1 1 100%;}
+      .seg button{padding:10px 14px;min-height:44px;flex:1;}
+      .tbar .ms{flex:1 1 100%;}
+      .tbar .ms-btn{width:100%;min-height:44px;}
+      .rst{flex:1 1 100%;min-height:44px;padding:10px 14px;}
       .cr-link{margin-left:0;width:100%;justify-content:center;padding:9px 14px;}
       #cntPill{margin-left:0!important;}
       .tbl{font-size:0.66rem;}
@@ -292,7 +343,7 @@ ${multiSelectCSS()}
     :root[data-theme="light"] .sc,:root[data-theme="light"] .panel{background:#fff!important;border-color:#e0e4ea!important;box-shadow:0 1px 3px rgba(0,0,0,0.06)!important;}
     :root[data-theme="light"] .sc-val{color:#1e293b!important;}
     :root[data-theme="light"] .tbar{background:#fff!important;border-color:#e0e4ea!important;}
-    :root[data-theme="light"] .tbar input,:root[data-theme="light"] .tbar select,:root[data-theme="light"] .seg button{background:#f8fafc!important;border-color:#e0e4ea!important;color:#334155!important;}
+    :root[data-theme="light"] .tbar input,:root[data-theme="light"] .tbar select,:root[data-theme="light"] .seg button,:root[data-theme="light"] .rst{background:#f8fafc!important;border-color:#e0e4ea!important;color:#334155!important;}
     :root[data-theme="light"] .seg button.on{background:#e0f2fe!important;color:#0369a1!important;}
     :root[data-theme="light"] .tbl th{background:#f1f5f9!important;color:#4b5769!important;border-bottom-color:#e0e4ea!important;}
     :root[data-theme="light"] .tbl td{border-color:#e0e4ea!important;color:#334155!important;}
@@ -331,6 +382,23 @@ ${multiSelectCSS()}
         <label>From</label><input type="date" id="fFrom"/>
         <label>To</label><input type="date" id="fTo"/>
       </span>
+      <label>Outcome</label>
+      <div class="seg" id="segOutcome">
+        <button data-outcome="all" class="on">All</button>
+        <button data-outcome="loss">Losers</button>
+        <button data-outcome="win">Winners</button>
+      </div>
+      <label>Side</label>
+      <div class="seg" id="segSide">
+        <button data-side="all" class="on">All</button>
+        <button data-side="CE">CE</button>
+        <button data-side="PE">PE</button>
+      </div>
+      <label>Exit</label>
+      ${reasonPicker}
+      <label>Hour</label>
+      ${hourPicker}
+      <button type="button" id="btnReset" class="rst" title="Clear every filter back to All">Reset</button>
       ${showConsolidationReport ? `<a href="/consolidation-report" class="cr-link" title="Open the day-by-day consolidated report (with PDF export)">📑 Consolidation Report</a>` : ''}
       <span id="cntPill" style="margin-left:${showConsolidationReport ? '12px' : 'auto'};font-family:'IBM Plex Mono',monospace;font-size:0.7rem;color:var(--muted-1,#8ba1c2);"></span>
     </div>
@@ -343,6 +411,9 @@ ${multiSelectCSS()}
 ${dateRangeJS()}
 ${multiSelectJS()}
 const ALL = ${JSON.stringify(trades)};
+// Every hour bucket the picker offers. Used to tell "all ticked" (no hour
+// narrowing, keep undated trades) from a real hour selection.
+const HOUR_OPTS = ${JSON.stringify([...new Set(trades.map(t => _entryHourIST(t.entryTime)).filter(h => h !== null))].sort((a, b) => a - b).map(String))};
 
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function inr(n){ const v=Math.round(n); return (v<0?'-':'')+'₹'+Math.abs(v).toLocaleString('en-IN'); }
@@ -376,7 +447,11 @@ function currentFilter(){
   const modes = msValues('fMode');           // ticked strategies; [] = none ticked
   const range = document.getElementById('fRange').value;
   const r = drRange(range, document.getElementById('fFrom').value, document.getElementById('fTo').value);
-  return {book,modes,from:r.from,to:r.to};
+  const outcome = document.querySelector('#segOutcome button.on').dataset.outcome;
+  const side    = document.querySelector('#segSide button.on').dataset.side;
+  const reasons = msValues('fReason');
+  const hours   = msValues('fHour');
+  return {book,modes,from:r.from,to:r.to,outcome,side,reasons,hours};
 }
 function applyFilter(f){
   return ALL.filter(t=>{
@@ -384,6 +459,18 @@ function applyFilter(f){
     if(f.modes.indexOf(t.mode)===-1) return false;
     if(f.from && t.date < f.from) return false;
     if(f.to   && t.date > f.to)   return false;
+    // Scratch (exactly 0) is neither a win nor a loss — it is excluded by both
+    // cuts on purpose, so "Losers" is real bleed and never flat trades.
+    if(f.outcome==='loss' && !(t.pnl<0)) return false;
+    if(f.outcome==='win'  && !(t.pnl>0)) return false;
+    if(f.side!=='all' && t.side!==f.side) return false;
+    if(f.reasons.indexOf(t.exitReason||'\u2014')===-1) return false;
+    // Undated/unparseable entry times have no hour bucket; drop them only when the
+    // hour picker is actually narrowed, so the default view still counts them.
+    if(f.hours.length!==HOUR_OPTS.length){
+      const h=entryHour(t.entryTime);
+      if(h===null || f.hours.indexOf(String(h))===-1) return false;
+    }
     return true;
   });
 }
@@ -1190,6 +1277,35 @@ document.querySelectorAll('#segBook button').forEach(b=>b.addEventListener('clic
   b.classList.add('on'); render();
 }));
 msInit('fMode', render);
+msInit('fReason', render);
+msInit('fHour', render);
+// Outcome + Side are single-choice segmented controls: same paint-and-render
+// pattern as the Book toggle above.
+[['#segOutcome','outcome'],['#segSide','side']].forEach(([sel])=>{
+  document.querySelectorAll(sel+' button').forEach(b=>b.addEventListener('click',()=>{
+    document.querySelectorAll(sel+' button').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on'); render();
+  }));
+});
+// Reset clears only the cuts this page added — Book, Strategy and Range are left
+// exactly as the user set them, so Reset never silently changes which book you
+// are looking at. Re-ticking the boxes locally (rather than adding a setter to
+// sharedNav) keeps the shared multi-select untouched for every other page.
+function _msTickAll(id){
+  const root=document.getElementById(id); if(!root) return;
+  root.querySelectorAll('.ms-menu input[type=checkbox]').forEach(b=>{
+    b.checked=true; b.indeterminate=false;
+  });
+  const txt=root.querySelector('.ms-text');
+  if(txt) txt.textContent = root.getAttribute('data-all-label')||'All';
+}
+document.getElementById('btnReset').addEventListener('click',()=>{
+  document.querySelectorAll('#segOutcome button').forEach(x=>x.classList.toggle('on', x.dataset.outcome==='all'));
+  document.querySelectorAll('#segSide button').forEach(x=>x.classList.toggle('on', x.dataset.side==='all'));
+  _msTickAll('fReason');
+  _msTickAll('fHour');
+  render();
+});
 document.getElementById('fRange').addEventListener('change',()=>{
   const range = document.getElementById('fRange').value;
   document.getElementById('customWrap').style.display = range==='custom'?'inline':'none';
