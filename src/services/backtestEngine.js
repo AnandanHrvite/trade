@@ -43,8 +43,16 @@ async function fetchChunk(symbol, resolution, from, to) {
     // from the page the request came from.
     throw new Error(`Fyers history ${symbol} ${resolution} ${from}→${to}: ${fyersErrText(err)}`);
   }
+  // Order matters. A real failure — an expired token comes back as
+  // {s:"error", code:-16, message:"Could not authenticate the user"} — carries no
+  // `candles` key, so the emptiness test below used to swallow it and hand the
+  // caller a bare [] that is indistinguishable from a genuine quiet window. Every
+  // engine then reported "no data" and retried forever against a dead token. Let
+  // anything that is not an explicit no_data / ok surface as the error it is.
+  if (response.s !== "ok" && response.s !== "no_data") {
+    throw new Error(`Fyers history ${symbol} ${resolution} ${from}→${to}: ${fyersErrText(response)}`);
+  }
   if (response.s === "no_data" || (!response.candles || response.candles.length === 0)) return [];
-  if (response.s !== "ok") throw new Error(`Fyers API error: ${JSON.stringify(response)}`);
   return response.candles.map(([time, open, high, low, close, volume]) => ({ time, open, high, low, close, volume }));
 }
 

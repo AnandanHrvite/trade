@@ -396,8 +396,9 @@ async function _maybeRefreshFutHistory() {
       state._histNextTryMs = null;
       _mergeFuturesBars(bars);
     } else {
-      // An EXPIRED Fyers token returns no data rather than an auth error, so
-      // "empty" and "broken" look identical here — both are treated as a failure.
+      // A genuinely empty window. Real failures — an expired token included —
+      // arrive as a throw and are handled in the catch below, so reaching here
+      // means Fyers answered "ok"/"no_data" with nothing in it.
       _noteHistoryFailure(null);
     }
   } catch (e) {
@@ -422,7 +423,7 @@ function _noteHistoryFailure(why) {
   const backoffMs = Math.min(_resMin() * 60_000, 5000 * Math.min(state._histFailures, 12));
   state._histNextTryMs = Date.now() + backoffMs;
   if (state._histFailures === 3 || state._histFailures % 20 === 0) {
-    log(`⚠️ [GAP3M-PAPER] Futures history unavailable ${state._histFailures}× ${why ? `(${why}) ` : ""}— an expired Fyers token returns NO DATA rather than an auth error. Re-login if this persists. Retrying in ${Math.round(backoffMs / 1000)}s.`);
+    log(`⚠️ [GAP3M-PAPER] Futures history unavailable ${state._histFailures}× ${why ? `(${why}) ` : ""}Retrying in ${Math.round(backoffMs / 1000)}s.`);
   }
 }
 
@@ -992,7 +993,7 @@ async function preloadHistory() {
         log(`⚠️ [GAP3M-PAPER] None of the futures candles carry volume. The break test cannot be proved, so every break of the day extreme will be treated as REAL and skipped.`);
       }
     } else {
-      log(`📊 [GAP3M-PAPER] No futures history for ${state.futSymbol} yet — an expired Fyers token returns no data rather than an auth error.`);
+      log(`📊 [GAP3M-PAPER] No futures history for ${state.futSymbol} yet — Fyers returned an empty series for today.`);
     }
   } catch (e) {
     log(`⚠️ [GAP3M-PAPER] Futures preload failed: ${e.message}`);

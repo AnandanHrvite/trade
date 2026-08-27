@@ -343,8 +343,9 @@ async function _maybeRefreshHistory() {
       state._histNextTryMs = null;
       _mergeBars(bars);
     } else {
-      // An EXPIRED Fyers token returns no data rather than an auth error, so
-      // "empty" and "broken" look identical here — both are treated as a failure.
+      // A genuinely empty window. Real failures — an expired token included —
+      // arrive as a throw and are handled in the catch below, so reaching here
+      // means Fyers answered "ok"/"no_data" with nothing in it.
       _noteHistoryFailure(null);
     }
   } catch (e) {
@@ -366,7 +367,7 @@ function _noteHistoryFailure(why) {
   const backoffMs = Math.min(_resMin() * 60_000, 5000 * Math.min(state._histFailures, 12));
   state._histNextTryMs = Date.now() + backoffMs;
   if (state._histFailures === 3 || state._histFailures % 20 === 0) {
-    log(`⚠️ [RSI_PIVOT_ST-PAPER] Spot history unavailable ${state._histFailures}× ${why ? `(${why}) ` : ""}— an expired Fyers token returns NO DATA rather than an auth error. Re-login if this persists. Retrying in ${Math.round(backoffMs / 1000)}s.`);
+    log(`⚠️ [RSI_PIVOT_ST-PAPER] Spot history unavailable ${state._histFailures}× ${why ? `(${why}) ` : ""}Retrying in ${Math.round(backoffMs / 1000)}s.`);
   }
 }
 
@@ -1007,7 +1008,7 @@ async function preloadHistory() {
     if (state.pivots) {
       log(`📐 [RSI_PIVOT_ST-PAPER] Pivots FROZEN for today from ${state.pivots.from}: R1 ${state.pivots.r1} · PP ${state.pivots.pp} · S1 ${state.pivots.s1} (prev range ${state.pivots.range}pt)`);
     } else {
-      log(`❌ [RSI_PIVOT_ST-PAPER] No previous daily candle — R1/S1 cannot be computed, so NO trade can be taken today. An expired Fyers token returns no data rather than an auth error.`);
+      log(`❌ [RSI_PIVOT_ST-PAPER] No previous daily candle — R1/S1 cannot be computed, so NO trade can be taken today.`);
     }
   } catch (e) {
     log(`❌ [RSI_PIVOT_ST-PAPER] Pivot fetch failed: ${e.message} — no levels, no trades today`);
@@ -1027,7 +1028,7 @@ async function preloadHistory() {
       _refreshIndicatorReadouts();
       log(`📊 [RSI_PIVOT_ST-PAPER] Preloaded ${state.candles.length} closed ${resMin}-min NIFTY candles — RSI ${state.lastRsi != null ? state.lastRsi : "n/a"}`);
     } else {
-      log(`📊 [RSI_PIVOT_ST-PAPER] No spot history yet — an expired Fyers token returns no data rather than an auth error.`);
+      log(`📊 [RSI_PIVOT_ST-PAPER] No spot history yet — Fyers returned an empty series for today.`);
     }
   } catch (e) {
     log(`⚠️ [RSI_PIVOT_ST-PAPER] Spot preload failed: ${e.message}`);
@@ -1592,7 +1593,7 @@ ${p ? `<div class="pv-levels">
   <div class="pv-chip pv-s1"><div class="pv-k">S1 · PE trigger</div><b>${p.s1}</b></div>
   <div class="pv-chip"><div class="pv-k">From</div><b style="font-size:0.9rem;">${p.from}</b></div>
   <div class="pv-chip"><div class="pv-k">Prev range</div><b style="font-size:0.9rem;">${p.range}pt</b></div>
-</div>` : `<div class="pv-warn">⚠️ Pivot levels not available — no previous daily candle was returned, so R1/S1 cannot be computed and no trade can be taken today. An expired Fyers token returns no data rather than an auth error.</div>`}
+</div>` : `<div class="pv-warn">⚠️ Pivot levels not available — no previous daily candle was returned, so R1/S1 cannot be computed and no trade can be taken today. Check the activity log for the reason.</div>`}
 
 <div class="section-title">Entry Check</div>
 <div id="ajax-decision" style="background:${dStyle.bg};border:1px solid ${dStyle.border};border-radius:12px;padding:14px 18px;margin-bottom:18px;">

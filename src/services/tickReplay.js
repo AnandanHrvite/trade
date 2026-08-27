@@ -1014,8 +1014,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
   // ── Recorded pivots → the prior daily bar ─────────────────────────────────
   // Daily bars are the ONE input replay still fetches live (a closed daily bar
   // is immutable, so re-fetching it is normally safe). But "safe" assumes the
-  // fetch WORKS: RSI_PIVOT_ST derives R1/S1 from yesterday's daily bar, and with
-  // an expired Fyers token that fetch returns no data rather than an auth error.
+  // fetch WORKS: RSI_PIVOT_ST derives R1/S1 from yesterday's daily bar, and a
+  // fetch that comes back empty leaves those levels unset.
   // getSignal then refuses every bar with "Previous day's high/low/close
   // unavailable — no R1/S1 levels", and the replay books 0 trades against a full
   // candle series — indistinguishable from a strategy that simply found no setup.

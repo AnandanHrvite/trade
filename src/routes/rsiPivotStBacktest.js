@@ -409,7 +409,7 @@ router.get("/", async (req, res) => {
           return;
         }
         if (!Array.isArray(daily) || daily.length < 2) {
-          backtestJobs.failJob(id, `No usable daily candles for ${_shiftDate(from, -10)} → ${to}. Standard pivots are computed from the PREVIOUS day's high/low/close, so without a daily series this strategy cannot produce a single trade. An expired Fyers token returns no data rather than an auth error.`);
+          backtestJobs.failJob(id, `No usable daily candles for ${_shiftDate(from, -10)} → ${to}. Standard pivots are computed from the PREVIOUS day's high/low/close, so without a daily series this strategy cannot produce a single trade.`);
           return;
         }
 

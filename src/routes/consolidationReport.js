@@ -66,10 +66,10 @@ async function loadVixByDate(fromDate, toDate) {
     console.warn(`[ConsolidationReport] ${note}`);
   }
 
-  // backtestEngine.fetchChunk() returns [] for BOTH "no_data" and an API/auth error
-  // (its empty-candles check runs before the s!=="ok" throw), so an expired Fyers
-  // token is indistinguishable from a genuine no-data range — the column just went
-  // blank with nothing in the logs. Probe the raw response once to say which it was.
+  // Reaching here means the fetch neither threw nor returned rows. fetchChunk now
+  // throws on any status that is not ok/no_data (an expired token included), so
+  // that case lands in the catch above with a real message; what is left is a
+  // genuine ok/no_data-with-nothing-in-it. Probe once to say which of the two.
   if (!Object.keys(map).length && !note) {
     try {
       const raw = await fyers.getHistory({
