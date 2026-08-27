@@ -693,6 +693,10 @@ async function simulateBuy(side, leg, verdict, cfg) {
     slPts:         cfg.slPts,
     trailPts:      cfg.trailPts,
     trailEnabled:  cfg.trailEnabled,
+    // The trail is parked until the premium touches the box top — frozen on the
+    // position so a mid-trade Settings change cannot re-arm or dis-arm it.
+    trailArmAtBandUp: cfg.trailArmAtBandUp,
+    trailArmed:    false,
     trailMoves:    0,
     bandUp:        band.up,
     bandDown:      band.down,
@@ -721,7 +725,7 @@ async function simulateBuy(side, leg, verdict, cfg) {
 
   log(`🟢 ${LOG_TAG} BUY ${side} ${leg.symbol} qty=${qty} @ ₹${pos.optionEntryLtp}`);
   log(`   ├─ Trigger: ${pos.entryReason}`);
-  log(`   ├─ SL ₹${stop} (${cfg.slPts}pt off the fill)${cfg.trailEnabled ? ` · trailing ${cfg.trailPts}pt behind the peak` : " · NO trail"}`);
+  log(`   ├─ SL ₹${stop} (${cfg.slPts}pt off the fill) · ${strategy.describeTrail(cfg, pos)}`);
   log(`   └─ ${strategy._fmtMins(cfg.sidewaysMin)} check: must trade ≥₹${band.up} or ≤₹${band.down} or the trade is closed · EOD ${strategy._fmtMins(cfg.forcedExitMin)}`);
 
   decide("ENTRY", `BUY ${side} ${leg.strike} @ ₹${pos.optionEntryLtp} — SL ₹${stop}`, {
@@ -945,8 +949,19 @@ function _checkExits() {
     try { require("../utils/positionPersist").saveSimple930Position(pos, { sessionPnl: state.sessionPnl }); } catch (_) {}
   }
 
-  // Trail — ratchet only, never below the initial stop.
-  const newStop = strategy.computeTrailStop(pos.peak, pos.initialStop, cfg);
+  // Trail — ratchet only, never below the initial stop, and DISARMED until the
+  // premium has touched the top of the box. `pos` is passed so the arming level
+  // is the band the trade OPENED under, the same one isExpanded reads above.
+  const newStop = strategy.computeTrailStop(pos.peak, pos.initialStop, cfg, pos);
+  // The arming moment is worth one line: it is the point the risk on the trade
+  // changes hands from the flat stop to the trail, and without it the log jumps
+  // straight from "SL ₹165" to a burst of trail moves with nothing explaining why.
+  if (!pos.trailArmed && strategy.isTrailArmed(pos.peak, cfg, pos)) {
+    pos.trailArmed = true;
+    const at = strategy._num(pos.bandUp) ? pos.bandUp : cfg.bandUp;
+    log(`🔓 ${LOG_TAG} Trail ARMED — premium touched ₹${at} (peak ₹${pos.peak}); the ${cfg.trailPts}pt trail now owns the stop`);
+    decide("TRAIL", `Trail armed at ₹${at}`, { armedAt: at, peak: pos.peak, trailPts: cfg.trailPts, armed: true });
+  }
   if (strategy._num(newStop) && newStop > pos.stop) {
     const prev = pos.stop;
     pos.stop = newStop;
@@ -1192,7 +1207,7 @@ router.get("/start", async (req, res) => {
       `Strategy  : ${strategy.NAME}`,
       `Select    : ${strategy._fmtMins(cfg.selectionMin)} — the strike nearest ₹${cfg.triggerPremium} on each side`,
       `Entry     : first watchlist leg above ₹${cfg.triggerPremium}, ${strategy._fmtMins(cfg.entryStartMin)}–${strategy._fmtMins(cfg.entryEndMin)}`,
-      `Risk      : ${cfg.slPts}pt stop off the fill${cfg.trailEnabled ? `, trailing ${cfg.trailPts}pt` : " (no trail)"}`,
+      `Risk      : ${cfg.slPts}pt stop off the fill, ${strategy.describeTrail(cfg)}`,
       `Sideways  : close at ${strategy._fmtMins(cfg.sidewaysMin)} if still inside ₹${cfg.bandDown}–₹${cfg.bandUp}`,
       `Square-off: ${strategy._fmtMins(cfg.forcedExitMin)} IST · orders → Zerodha`,
     ].join("\n"),
@@ -1380,6 +1395,12 @@ router.get("/status/data", (req, res) => {
       qty: pos.qty, entryTime: pos.entryTime,
       heldSec: Math.round((Date.now() - pos.entryTimeMs) / 1000),
       riskPts: pos.slPts,
+      // The trail is disarmed until the peak touches the box top. The panel
+      // says which of the two stops is actually in force, because "Stop ₹165"
+      // alone does not tell the operator whether it can still move.
+      trailArmed: strategy.isTrailArmed(pos.peak, cfg, pos),
+      trailArmAt: cfg.trailArmAtBandUp ? pos.bandUp : null,
+      trailPts: cfg.trailPts, trailEnabled: cfg.trailEnabled,
     } : null,
     totalPnl: data.totalPnl, capital: data.capital,
   });
@@ -1434,6 +1455,37 @@ router.get("/status", (req, res) => {
 .chart-box{background:#0a0f1c;border:1px solid #1a2236;border-radius:12px;overflow:hidden;position:relative;}
 .charts{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
 @media(max-width:900px){ .charts{grid-template-columns:1fr;} }
+
+/* The day as five plain-English steps. Each lights up as the day reaches it,
+   so the page answers "what is it doing right now" without the operator having
+   to read config numbers off a row and hold the clock in their head. */
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;}
+.step{background:#070d1a;border:1px solid #16203a;border-radius:9px;padding:11px 12px;position:relative;}
+.step-t{font-size:0.62rem;color:#64748b;text-transform:uppercase;letter-spacing:0.06em;font-weight:600;font-variant-numeric:tabular-nums;}
+.step-h{font-size:0.8rem;color:#e2e8f0;font-weight:600;margin:3px 0 5px;line-height:1.25;}
+.step-d{font-size:0.7rem;color:#8ba1c2;line-height:1.45;}
+.step-s{font-size:0.62rem;margin-top:8px;text-transform:uppercase;letter-spacing:0.05em;font-weight:600;color:#475569;}
+.step.now{border-color:#38bdf8;box-shadow:0 0 0 1px rgba(56,189,248,0.25) inset;}
+.step.now .step-s{color:#38bdf8;}
+.step.done{border-color:#14532d;}
+.step.done .step-s{color:#10b981;}
+.step.miss{border-color:#3f2d10;}
+.step.miss .step-s{color:#f59e0b;}
+
+/* The two-stop story: which stop is actually in force right now. */
+.stopbar{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;}
+@media(max-width:520px){ .stopbar{grid-template-columns:1fr;} }
+.stopcell{background:#070d1a;border:1px solid #16203a;border-radius:8px;padding:9px 11px;}
+.stopcell.live{border-color:#f59e0b;box-shadow:0 0 0 1px rgba(245,158,11,0.25) inset;}
+.stopcell .sc-k{font-size:0.6rem;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;font-weight:600;}
+.stopcell .sc-v{font-size:1.05rem;color:#e2e8f0;font-weight:600;margin-top:3px;font-variant-numeric:tabular-nums;}
+.stopcell .sc-d{font-size:0.66rem;color:#8ba1c2;margin-top:4px;line-height:1.4;}
+.armbar{height:5px;background:#101b30;border-radius:99px;overflow:hidden;margin-top:6px;}
+.armbar > i{display:block;height:100%;background:#38bdf8;border-radius:99px;transition:width .3s;}
+@media(max-width:560px){
+  .s930-card{padding:12px 12px;}
+  .step-h{font-size:0.78rem;}
+}
 </style>
 <script src="/vendor/lightweight-charts.standalone.production.js"></script>
 </head><body>
@@ -1451,18 +1503,44 @@ ${bbRsiTopBar({
 ${bbRsiCapitalStrip({ starting: startCap, current: startCap + (data.totalPnl || 0), allTime: data.totalPnl || 0 })}
 
 <div class="s930-card">
-  <div class="s930-hdr"><span>The day's plan</span><span id="s930-clock" style="color:#94a3b8;text-transform:none;letter-spacing:0;">—</span></div>
-  <div class="s930-row">
-    <div><span class="k">Select</span>${strategy._fmtMins(cfg.selectionMin)}</div>
-    <div><span class="k">Entry window</span>${strategy._fmtMins(cfg.entryStartMin)} – ${strategy._fmtMins(cfg.entryEndMin)}</div>
-    <div><span class="k">Trigger</span>₹${cfg.triggerPremium}</div>
-    <div><span class="k">Stop</span>${cfg.slPts}pt off the fill</div>
-    <div><span class="k">Trail</span>${cfg.trailEnabled ? `${cfg.trailPts}pt` : "OFF"}</div>
-    <div><span class="k">Sideways box</span>₹${cfg.bandDown} – ₹${cfg.bandUp} @ ${strategy._fmtMins(cfg.sidewaysMin)}</div>
-    <div><span class="k">EOD</span>${strategy._fmtMins(cfg.forcedExitMin)}</div>
-    <div><span class="k">Qty</span>${simpleLotQty()}</div>
+  <div class="s930-hdr"><span>The day, step by step</span><span id="s930-clock" style="color:#94a3b8;text-transform:none;letter-spacing:0;">—</span></div>
+  <div class="steps" id="s930-steps">
+    <div class="step" data-step="select">
+      <div class="step-t">${strategy._fmtMins(cfg.selectionMin)}</div>
+      <div class="step-h">Pick the two strikes</div>
+      <div class="step-d">Quote the ladder, keep the CE and the PE closest to ₹${cfg.triggerPremium}.</div>
+      <div class="step-s" id="step-s-select">waiting</div>
+    </div>
+    <div class="step" data-step="entry">
+      <div class="step-t">${strategy._fmtMins(cfg.entryStartMin)} – ${strategy._fmtMins(cfg.entryEndMin)}</div>
+      <div class="step-h">Buy the first leg over ₹${cfg.triggerPremium}</div>
+      <div class="step-d">CE or PE — whichever crosses first. Nothing crosses, no trade today.</div>
+      <div class="step-s" id="step-s-entry">waiting</div>
+    </div>
+    <div class="step" data-step="risk">
+      <div class="step-t">on fill</div>
+      <div class="step-h">Stop ${cfg.slPts}pt under the fill</div>
+      <div class="step-d">${cfg.trailEnabled
+        ? (cfg.trailArmAtBandUp
+            ? `It does not move until the premium touches ₹${cfg.bandUp}. Only then does a ${cfg.trailPts}pt trail take over.`
+            : `A ${cfg.trailPts}pt trail follows the peak from the fill.`)
+        : "Fixed for the whole trade — no trail."}</div>
+      <div class="step-s" id="step-s-risk">waiting</div>
+    </div>
+    <div class="step" data-step="box">
+      <div class="step-t">${strategy._fmtMins(cfg.sidewaysMin)}</div>
+      <div class="step-h">Going nowhere? Close it</div>
+      <div class="step-d">Still stuck between ₹${cfg.bandDown} and ₹${cfg.bandUp} at ${strategy._fmtMins(cfg.sidewaysMin)} — out, win or lose.</div>
+      <div class="step-s" id="step-s-box">waiting</div>
+    </div>
+    <div class="step" data-step="eod">
+      <div class="step-t">${strategy._fmtMins(cfg.forcedExitMin)}</div>
+      <div class="step-h">Square off</div>
+      <div class="step-d">Anything still open is closed at market. ${simpleLotQty()} qty · orders → Zerodha.</div>
+      <div class="step-s" id="step-s-eod">waiting</div>
+    </div>
   </div>
-  <div id="s930-day" style="font-size:0.72rem;color:#f59e0b;margin-top:8px;">${state.dayClosed ? `⏸️ ${state.dayClosedReason}` : ""}</div>
+  <div id="s930-day" style="font-size:0.72rem;color:#f59e0b;margin-top:12px;">${state.dayClosed ? `⏸️ ${state.dayClosedReason}` : ""}</div>
 </div>
 
 <div class="s930-card">
@@ -1578,19 +1656,95 @@ function renderPos(d) {
       '\u{1F6A8} Premium feed STALE (' + (d.optionLtpAgeSec != null ? d.optionLtpAgeSec + 's old' : 'unknown age') +
       ') \u2014 the stop cannot fire on a frozen price. Check the Fyers feed; square off manually if it does not recover.</div>'
     : '';
+
+  // Which stop is in force. Before the trail arms the flat stop is the ONLY
+  // risk, and saying so plainly is the whole point — the old panel showed one
+  // "Stop" number and left the operator guessing whether it could still move.
+  var armed   = !!p.trailArmed;
+  var armAt   = p.trailArmAt;
+  var trailOn = p.trailEnabled !== false;
+  var pct = 0;
+  if (armAt && p.optionEntryLtp != null && armAt > p.optionEntryLtp) {
+    pct = Math.max(0, Math.min(100, ((p.peak - p.optionEntryLtp) / (armAt - p.optionEntryLtp)) * 100));
+  } else if (armed) { pct = 100; }
+
+  // "In force" means THIS is the stop that would fire right now. With the trail
+  // off, or before it arms, that is always the fixed stop.
+  var fixedLive = !trailOn || !armed;
+  var fixedCell = '<div class="stopcell' + (fixedLive ? ' live' : '') + '">' +
+    '<div class="sc-k">Fixed stop' + (fixedLive ? ' \u2014 in force' : '') + '</div>' +
+    '<div class="sc-v">\u20b9' + p.initialStop + '</div>' +
+    '<div class="sc-d">' + p.riskPts + 'pt under the \u20b9' + p.optionEntryLtp + ' fill.' +
+      (!trailOn ? ' It runs the whole trade.'
+                : armed ? ' Superseded by the trail.' : ' This is the only stop right now.') + '</div></div>';
+
+  var trailCell;
+  if (!trailOn) {
+    trailCell = '<div class="stopcell"><div class="sc-k">Trail</div><div class="sc-v">OFF</div>' +
+      '<div class="sc-d">The fixed stop runs the whole trade.</div></div>';
+  } else if (armed) {
+    trailCell = '<div class="stopcell live"><div class="sc-k">Trail \u2014 in force</div>' +
+      '<div class="sc-v">\u20b9' + p.stop + '</div>' +
+      '<div class="sc-d">' + p.trailPts + 'pt under the \u20b9' + p.peak + ' peak \u00b7 moved ' + p.trailMoves + '\u00d7. It only ratchets up.</div></div>';
+  } else {
+    trailCell = '<div class="stopcell"><div class="sc-k">Trail \u2014 not armed</div>' +
+      '<div class="sc-v">\u20b9' + (armAt != null ? armAt : '\u2014') + ' to arm</div>' +
+      '<div class="sc-d">Peak \u20b9' + p.peak + '. The trail stays parked until the premium touches \u20b9' + armAt + '.' +
+      '<div class="armbar"><i style="width:' + pct.toFixed(0) + '%"></i></div></div></div>';
+  }
+
+  var boxLine = p.expanded
+    ? 'Broken \u2014 the ' + d.cfg.sideways + ' exit no longer applies; the stop runs the trade.'
+    : 'Still inside \u2014 if it is still here at ' + d.cfg.sideways + ', the trade is closed.';
+
   el.innerHTML = '<div class="s930-card" style="margin-bottom:0;border-color:' + (d.quoteStale ? '#ef4444' : '#f59e0b') + ';">' + staleWarn +
-    '<div class="s930-hdr"><span>Open position — ' + esc(p.side) + ' ' + p.optionStrike + '</span>' +
-      '<span style="text-transform:none;letter-spacing:0;color:' + (live >= 0 ? '#10b981' : '#ef4444') + ';">' +
-      (live != null ? '₹' + Math.round(live).toLocaleString('en-IN') : '—') + '</span></div>' +
+    '<div class="s930-hdr"><span>Holding ' + esc(p.side) + ' ' + p.optionStrike + ' \u00b7 ' + p.qty + ' qty \u00b7 ' + p.heldSec + 's</span>' +
+      '<span style="text-transform:none;letter-spacing:0;font-size:1rem;font-weight:600;color:' + (live >= 0 ? '#10b981' : '#ef4444') + ';">' +
+      (live != null ? (live >= 0 ? '+' : '\u2212') + '\u20b9' + Math.abs(Math.round(live)).toLocaleString('en-IN') : '\u2014') + '</span></div>' +
     '<div class="s930-row">' +
-      '<div><span class="k">Entry</span>₹' + p.optionEntryLtp + '</div>' +
-      '<div><span class="k">Now</span>₹' + (p.currentOptLtp != null ? Number(p.currentOptLtp).toFixed(2) : '—') + '</div>' +
-      '<div><span class="k">Stop</span>₹' + p.stop + (p.trailMoves ? ' (trailed ×' + p.trailMoves + ')' : ' (initial)') + '</div>' +
-      '<div><span class="k">Peak / trough</span>₹' + p.peak + ' / ₹' + p.trough + '</div>' +
-      '<div><span class="k">Box ₹' + p.bandDown + '–₹' + p.bandUp + '</span>' + (p.expanded ? 'BROKEN — trade runs on the trail' : 'still inside → exits at ' + d.cfg.sideways) + '</div>' +
-      '<div><span class="k">Qty</span>' + p.qty + '</div>' +
-      '<div><span class="k">Held</span>' + p.heldSec + 's</div>' +
-    '</div></div>';
+      '<div><span class="k">Bought at</span>\u20b9' + p.optionEntryLtp + '</div>' +
+      '<div><span class="k">Now</span>\u20b9' + (p.currentOptLtp != null ? Number(p.currentOptLtp).toFixed(2) : '\u2014') + '</div>' +
+      '<div><span class="k">Best / worst</span>\u20b9' + p.peak + ' / \u20b9' + p.trough + '</div>' +
+    '</div>' +
+    '<div class="stopbar">' + fixedCell + trailCell + '</div>' +
+    '<div class="sc-d" style="margin-top:9px;font-size:0.7rem;color:#8ba1c2;">' +
+      '<b style="color:#cbd5e1;">Box \u20b9' + p.bandDown + '\u2013\u20b9' + p.bandUp + ':</b> ' + boxLine + '</div>' +
+    '</div>';
+}
+
+/**
+ * Light up the step the day is actually on. Purely a read of what the status
+ * payload already reports — no new state, so it cannot disagree with the engine.
+ */
+function renderSteps(d) {
+  function set(k, cls, txt) {
+    var el = document.querySelector('.step[data-step="' + k + '"]');
+    if (el) el.className = 'step' + (cls ? ' ' + cls : '');
+    var s = document.getElementById('step-s-' + k);
+    if (s) s.textContent = txt;
+  }
+  var p = d.position, sel = d.selection, done = d.dayClosed;
+
+  if (sel)                    set('select', 'done', 'picked ' + (d.ce ? d.ce.strike : '?') + ' / ' + (d.pe ? d.pe.strike : '?'));
+  else if (d.selectionPending) set('select', 'now', 'waiting for ' + d.cfg.selectionTime);
+  else                        set('select', '', 'not run');
+
+  if (p)                      set('entry', 'done', 'bought ' + p.side + ' ' + p.optionStrike);
+  else if (d.tradesTaken)     set('entry', 'done', 'done for today');
+  else if (done)              set('entry', 'miss', 'nothing crossed');
+  else if (sel)               set('entry', 'now', 'watching both legs');
+  else                        set('entry', '', 'waiting');
+
+  if (p) {
+    set('risk', 'now', p.trailArmed ? 'trail in force \u20b9' + p.stop : 'fixed stop \u20b9' + p.initialStop);
+  } else if (d.tradesTaken)   set('risk', 'done', 'closed');
+  else                        set('risk', '', 'waiting');
+
+  if (p)                      set('box', p.expanded ? 'done' : 'now', p.expanded ? 'broken \u2014 exit dropped' : 'still inside');
+  else if (d.tradesTaken)     set('box', 'done', 'closed');
+  else                        set('box', '', 'waiting');
+
+  set('eod', p ? 'now' : (d.tradesTaken || done ? 'done' : ''), p ? 'open \u2014 due ' + d.cfg.forcedExit : (d.tradesTaken || done ? 'flat' : 'waiting'));
 }
 async function s930Refresh() {
   try {
@@ -1615,7 +1769,7 @@ async function s930Refresh() {
     if (dayEl) dayEl.textContent = d.dayClosed ? '⏸️ ' + d.dayClosedReason : '';
     var ck = document.getElementById('s930-clock');
     if (ck) ck.textContent = (d.inEntryWindow ? 'ENTRY WINDOW OPEN' : 'entry window closed') + ' · NIFTY ' + (d.lastTickPrice != null ? d.lastTickPrice : '—') + ' · ' + d.tickCount + ' ticks';
-    renderLadder(d); renderDecisions(d); renderPos(d);
+    renderLadder(d); renderDecisions(d); renderPos(d); renderSteps(d);
   } catch (e) {}
 }
 s930Refresh();
@@ -1689,14 +1843,25 @@ function _positionCardHtml(pos, optLtp) {
     return `<div class="s930-card" style="margin-bottom:0;color:var(--muted-1,#8ba1c2);font-size:0.78rem;">No open position.</div>`;
   }
   const live = strategy._px(optLtp) ? ((optLtp - pos.optionEntryLtp) * pos.qty).toFixed(0) : "—";
+  // First paint only — renderPos() replaces this on the next poll. It carries
+  // the same two-stop wording so the card does not change its story a second
+  // after load.
+  const cfg   = strategy.getConfig();
+  const armed = strategy.isTrailArmed(pos.peak, cfg, pos);
+  const armAt = cfg.trailArmAtBandUp ? pos.bandUp : null;
+  const trailLine = !cfg.trailEnabled
+    ? "Trail OFF — the fixed stop runs the whole trade."
+    : armed
+      ? `Trail in force at ₹${pos.stop} — ${cfg.trailPts}pt under the ₹${pos.peak} peak (moved ${pos.trailMoves}×).`
+      : `Trail not armed — it stays parked until the premium touches ₹${armAt}. Peak so far ₹${pos.peak}.`;
   return `<div class="s930-card" style="margin-bottom:0;border-color:#f59e0b;">
-  <div class="s930-hdr"><span>Open position — ${pos.side} ${pos.optionStrike}</span><span style="text-transform:none;letter-spacing:0;">₹${live}</span></div>
+  <div class="s930-hdr"><span>Holding ${pos.side} ${pos.optionStrike} · ${pos.qty} qty</span><span style="text-transform:none;letter-spacing:0;">₹${live}</span></div>
   <div class="s930-row">
-    <div><span class="k">Entry</span>₹${pos.optionEntryLtp}</div>
-    <div><span class="k">Stop</span>₹${pos.stop}</div>
-    <div><span class="k">Peak / trough</span>₹${pos.peak} / ₹${pos.trough}</div>
-    <div><span class="k">Qty</span>${pos.qty}</div>
+    <div><span class="k">Bought at</span>₹${pos.optionEntryLtp}</div>
+    <div><span class="k">Fixed stop</span>₹${pos.initialStop}${armed ? "" : " (in force)"}</div>
+    <div><span class="k">Best / worst</span>₹${pos.peak} / ₹${pos.trough}</div>
   </div>
+  <div class="sc-d" style="margin-top:9px;font-size:0.7rem;color:#8ba1c2;">${trailLine}</div>
 </div>`;
 }
 

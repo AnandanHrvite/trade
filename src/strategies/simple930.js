@@ -25,10 +25,23 @@
  *     has broken yet.
  *
  *  3. STOP + TRAIL.  The stop is a DISTANCE of 20 points from the ACTUAL FILL,
- *     not a fixed price level: filled at 181 → stop 161. It then trails the
- *     highest premium seen since entry by the same 20 points and only ever
- *     ratchets UP — 190 → 170, 200 → 180, 220 → 200. It never moves down and
- *     never falls below the initial stop.
+ *     not a fixed price level: filled at 181 → stop 161.
+ *
+ *     The trail does NOT start there. It stays DISARMED — the flat 20-point
+ *     stop is the only risk — until the premium has actually touched the top
+ *     of the box (₹215 at the defaults, `bandUp`). Only then does it begin
+ *     trailing the highest premium seen by 20 points, ratcheting UP only —
+ *     220 → 200, 240 → 220 — never moving down and never falling below the
+ *     initial stop.
+ *
+ *     Why arm it late: a trail that is live from the first tick converts the
+ *     20-point stop into a much tighter one the moment the premium ticks up a
+ *     rupee or two. A fill at 185.05 that peaked at 191.85 — noise, six points,
+ *     nowhere near the box top — trailed its stop up to 171.85 and was closed
+ *     for a loss while the real 165.05 stop had never been touched. The trade
+ *     was stopped out by its own trail on a move that meant nothing. Arming at
+ *     the box top means the trail only ever protects a move the rule itself
+ *     calls significant, which is the same ₹215 line the 09:45 box already uses.
  *
  *  4. 09:45 SIDEWAYS EXIT.  If the trade is still open at 09:45 and the premium
  *     has spent those minutes oscillating — never trading at/above ₹220 and
@@ -85,7 +98,8 @@
  *   computeInitialStop(fillLtp, cfg)         -> stop as a DISTANCE off the fill,
  *                                             or null when it would land at/below
  *                                             zero (the caller must then refuse)
- *   computeTrailStop(peak, initialStop, cfg) -> ratcheting trail
+ *   computeTrailStop(peak, initialStop, cfg, pos) -> ratcheting trail (armed at bandUp)
+ *   isTrailArmed(peak, cfg, pos)             -> has the peak reached the box top?
  *   isExpanded(peak, trough, cfg, pos?)      -> did it leave the 160–220 box?
  *                                             (an open position keeps its own box)
  *   exitCheck(pos, ltp, nowMin, cfg)         -> the ONLY exit decision
@@ -205,6 +219,12 @@ function getConfig() {
     slPts:          _numEnv("SIMPLE930_SL_PTS",    20, 0.5, 500),
     trailPts:       _numEnv("SIMPLE930_TRAIL_PTS", 20, 0.5, 500),
     trailEnabled:   _boolEnv("SIMPLE930_TRAIL_ENABLED", true),
+    // The trail is DISARMED until the premium has touched the top of the box.
+    // Without this the trail tightens the 20-point stop on the first rupee of
+    // noise — see the header. Turn it off to get the old arm-on-entry trail
+    // back; the arming level itself is always `bandUp`, never a separate key,
+    // so it cannot silently disagree with the box the 09:45 exit reads.
+    trailArmAtBandUp: _boolEnv("SIMPLE930_TRAIL_ARM_AT_BAND_UP", true),
 
     // ── Guards that default to OFF (see the header) ──
     maxPremiumDist: _numEnv("SIMPLE930_MAX_PREMIUM_DIST", 0, 0, 5000),
@@ -405,17 +425,51 @@ function computeInitialStop(fillLtp, cfg) {
 }
 
 /**
+ * Is the trail allowed to move yet?
+ *
+ * With `trailArmAtBandUp` on (the default) the trail stays disarmed until the
+ * premium has traded at or above the top of the box — the same `bandUp` level
+ * the 09:45 sideways exit reads, and taken from the POSITION when one is passed
+ * so a mid-trade Settings change cannot re-arm or dis-arm a running trade.
+ * Touching the level counts, exactly as it does in `isExpanded`.
+ */
+function describeTrail(cfg, pos) {
+  cfg = cfg || getConfig();
+  if (!cfg.trailEnabled) return "no trail";
+  const up = pos && _num(pos.bandUp) ? pos.bandUp : cfg.bandUp;
+  const armMode = pos && typeof pos.trailArmAtBandUp === "boolean"
+    ? pos.trailArmAtBandUp : cfg.trailArmAtBandUp;
+  if (!armMode || !_num(up)) return `trailing ${cfg.trailPts}pt from entry`;
+  return `trailing ${cfg.trailPts}pt, armed only once the premium touches ₹${up}`;
+}
+
+function isTrailArmed(peakLtp, cfg, pos) {
+  cfg = cfg || getConfig();
+  // The position's own setting wins while it is running — same reason isExpanded
+  // reads the frozen band: flipping this mid-trade would hand a live trade a
+  // different stop than the one it was opened under.
+  const armMode = pos && typeof pos.trailArmAtBandUp === "boolean"
+    ? pos.trailArmAtBandUp : cfg.trailArmAtBandUp;
+  if (!armMode) return true;
+  const up = pos && _num(pos.bandUp) ? pos.bandUp : cfg.bandUp;
+  if (!_num(up)) return true;
+  return _px(peakLtp) && peakLtp >= up;
+}
+
+/**
  * The trailing stop: `trailPts` under the highest premium seen since entry,
  * ratcheting UP only and never below the initial stop.
  *
- * Returns the initial stop unchanged when the trail is off, when the peak is
+ * Returns the initial stop unchanged when the trail is off, when the trail has
+ * not ARMED yet (the peak has not reached the top of the box), when the peak is
  * unusable, or whenever the trail has not yet climbed past it — so the caller
  * can assign the result unconditionally.
  */
-function computeTrailStop(peakLtp, initialStop, cfg) {
+function computeTrailStop(peakLtp, initialStop, cfg, pos) {
   cfg = cfg || getConfig();
   const floor = _num(initialStop) ? initialStop : null;
   if (!cfg.trailEnabled || !_px(peakLtp)) return floor;
+  if (!isTrailArmed(peakLtp, cfg, pos)) return floor;
   const trail = _r2(Math.max(0, peakLtp - cfg.trailPts));
   if (floor == null) return trail;
   return trail > floor ? trail : floor;
@@ -523,7 +577,7 @@ function describePlan(cfg) {
   cfg = cfg || getConfig();
   return `select @ ${_fmtMins(cfg.selectionMin)} the strike nearest ₹${cfg.triggerPremium} per side · ` +
          `enter the first leg above ₹${cfg.triggerPremium} between ${_fmtMins(cfg.entryStartMin)} and ${_fmtMins(cfg.entryEndMin)} · ` +
-         `SL ${cfg.slPts}pt off the fill, ${cfg.trailEnabled ? `trailing ${cfg.trailPts}pt` : "NO trail"} · ` +
+         `SL ${cfg.slPts}pt off the fill, ${describeTrail(cfg)} · ` +
          `exit at ${_fmtMins(cfg.sidewaysMin)} if still inside ₹${cfg.bandDown}–₹${cfg.bandUp} · ` +
          `EOD ${_fmtMins(cfg.forcedExitMin)}`;
 }
@@ -540,6 +594,8 @@ module.exports = {
   evaluateTrigger,
   computeInitialStop,
   computeTrailStop,
+  isTrailArmed,
+  describeTrail,
   isExpanded,
   exitCheck,
   inEntryWindow,

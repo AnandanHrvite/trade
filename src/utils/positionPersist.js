@@ -837,10 +837,11 @@ function clearRsiPivotStPosition() {
 // carry live trail state: `stop` ratchets up behind `peak` on every new premium
 // high, and the sideways band decides at 09:45 whether the trade is left alone
 // or closed. The frozen entry levels alone are therefore NOT enough — the trail
-// fields (peak / trough / trailMoves / stop) and the band fields (bandUp /
-// bandDown / expanded / expandedAt) are what make a crash-recovered position
-// reconstructable: without them a restart would wind the stop back to
-// initialStop and re-arm a sideways check that has already fired.
+// fields (peak / trough / trailMoves / stop / trailArmed / trailArmAtBandUp)
+// and the band fields (bandUp / bandDown / expanded / expandedAt) are what make
+// a crash-recovered position reconstructable: without them a restart would wind
+// the stop back to initialStop and re-arm a sideways check that has already
+// fired.
 // entryPrice / optionEntryLtp are OPTION PREMIUMS — the premium is the traded
 // price every level of this strategy is measured on.
 
@@ -871,6 +872,12 @@ function saveSimple930Position(position, sessionMeta) {
         slPts:           position.slPts,
         trailPts:        position.trailPts,
         trailEnabled:    position.trailEnabled,
+        // The trail is parked until the premium touches bandUp. Both fields are
+        // frozen on the position, so both must survive the restart — otherwise a
+        // recovered trade re-reads live config and can arm (or dis-arm) itself
+        // on a rule the trade was never opened under.
+        trailArmAtBandUp: position.trailArmAtBandUp,
+        trailArmed:      position.trailArmed,
         trailMoves:      position.trailMoves,
         bandUp:          position.bandUp,
         bandDown:        position.bandDown,

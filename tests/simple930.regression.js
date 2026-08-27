@@ -309,12 +309,27 @@ check("an unusable fill yields NO stop, so the caller must refuse the trade", ()
   assert.strictEqual(S.computeInitialStop(0, c), null);
   assert.strictEqual(S.computeInitialStop(NaN, c), null);
 });
-check("the trail follows the peak — the rule's own 190 / 200 / 220 walk", () => {
-  const c = freshEnv();
-  const init = S.computeInitialStop(181, c);
-  assert.strictEqual(S.computeTrailStop(190, init, c), 170);
-  assert.strictEqual(S.computeTrailStop(200, init, c), 180);
+check("the trail stays PARKED until the peak reaches the top of the box", () => {
+  const c = freshEnv();                        // trigger 180 → bandUp 220
+  const init = S.computeInitialStop(181, c);   // 161
+  // 190 and 200 are real gains, but neither has touched 220 — the flat stop is
+  // still the only risk on the trade.
+  assert.strictEqual(S.isTrailArmed(190, c), false);
+  assert.strictEqual(S.computeTrailStop(190, init, c), 161);
+  assert.strictEqual(S.computeTrailStop(200, init, c), 161);
+  // 220 touches the box top: the trail arms and takes over from there.
+  assert.strictEqual(S.isTrailArmed(220, c), true);
   assert.strictEqual(S.computeTrailStop(220, init, c), 200);
+  assert.strictEqual(S.computeTrailStop(240, init, c), 220);
+});
+check("the live regression: a 6-point wobble must NOT tighten the stop", () => {
+  // The 2026-08-27 session — filled 185.05, peaked 191.85, and the arm-on-entry
+  // trail walked the stop up to 171.85 and closed it for a loss while the real
+  // 165.05 stop had never been touched.
+  const c = freshEnv();
+  const init = S.computeInitialStop(185.05, c);
+  assert.strictEqual(init, 165.05);
+  assert.strictEqual(S.computeTrailStop(191.85, init, c), 165.05);
 });
 check("the trail RATCHETS — it never drops back below the initial stop", () => {
   const c = freshEnv();
@@ -322,11 +337,29 @@ check("the trail RATCHETS — it never drops back below the initial stop", () =>
   assert.strictEqual(S.computeTrailStop(181, init, c), 161);
   assert.strictEqual(S.computeTrailStop(170, init, c), 161);
 });
+check("arming reads the POSITION's frozen band, not a mid-trade config change", () => {
+  const c = freshEnv();                        // cfg.bandUp = 220
+  const init = S.computeInitialStop(181, c);
+  // A trade opened under a 200 box arms at 200 even though config now says 220.
+  const pos = { bandUp: 200, bandDown: 160, trailArmAtBandUp: true };
+  assert.strictEqual(S.isTrailArmed(205, c, pos), true);
+  assert.strictEqual(S.computeTrailStop(205, init, c, pos), 185);
+  // And a trade opened with arming OFF keeps trailing from the fill.
+  const legacy = { bandUp: 220, bandDown: 160, trailArmAtBandUp: false };
+  assert.strictEqual(S.computeTrailStop(190, init, c, legacy), 170);
+});
+check("arming can be switched off to restore the arm-on-entry trail", () => {
+  const c = freshEnv({ SIMPLE930_TRAIL_ARM_AT_BAND_UP: "false" });
+  const init = S.computeInitialStop(181, c);
+  assert.strictEqual(S.isTrailArmed(190, c), true);
+  assert.strictEqual(S.computeTrailStop(190, init, c), 170);
+});
 check("with the trail off the stop stays exactly where it started", () => {
   assert.strictEqual(S.computeTrailStop(400, 161, freshEnv({ SIMPLE930_TRAIL_ENABLED: "false" })), 161);
 });
-check("a separate trail distance is honoured", () => {
-  assert.strictEqual(S.computeTrailStop(200, 161, freshEnv({ SIMPLE930_TRAIL_PTS: "10" })), 190);
+check("a separate trail distance is honoured once armed", () => {
+  // 220 touches the default box top, so the trail is armed; 10pt behind → 210.
+  assert.strictEqual(S.computeTrailStop(220, 161, freshEnv({ SIMPLE930_TRAIL_PTS: "10" })), 210);
 });
 
 // ═══════════════════════════════════════════════════════════════════════════

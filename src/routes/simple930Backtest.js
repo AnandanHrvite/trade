@@ -306,6 +306,9 @@ function simulateDay(day, cfg, qty) {
     // e. the favourable extreme, then ratchet
     if (strategy._px(b.high) && b.high > peak) peak = strategy._r2(b.high);
     if (strategy.isExpanded(peak, trough, cfg)) expanded = true;
+    // Disarmed until `peak` reaches the box top — same helper paper uses. No
+    // `pos` override here because a backtest has no mid-run Settings change:
+    // cfg.bandUp IS the band every trade in the run opened under.
     const next = strategy.computeTrailStop(peak, initStop, cfg);
     if (strategy._num(next) && next > stop) { stop = next; trailMoves++; }
   }
@@ -437,7 +440,7 @@ async function runJob(id, from, to) {
   try {
     spotAll = await fetchCandles(SPOT_SYMBOL, RES, days[0], days[days.length - 1]);
   } catch (err) {
-    backtestJobs.failJob(id, `NIFTY index history failed: ${fyersErrText(err)}. An expired Fyers token returns no data rather than an auth error — log in again and retry.`);
+    backtestJobs.failJob(id, `NIFTY index history failed: ${fyersErrText(err)}`);
     return;
   }
   const spotByDay = byDay(spotAll);
@@ -496,7 +499,7 @@ async function runJob(id, from, to) {
     backtestJobs.failJob(id,
       allDelisted
         ? `Not one option contract in ${from} → ${to} is still listed — a NIFTY weekly option is DELISTED the moment it expires, so its premium history can never be fetched again. This strategy can only be backtested over contracts that still exist. Try ${ENDPOINT}?from=${win.from}&to=${win.to}.`
-        : `Fyers served no option candles for ${from} → ${to}. First reason given: ${(refused[0] || {}).error || "unknown"}. "Could not authenticate the user" means the Fyers session needs re-login; an expired token returns no data rather than an auth error.`);
+        : `Fyers served no option candles for ${from} → ${to}. First reason given: ${(refused[0] || {}).error || "unknown"}. "Could not authenticate the user" means the Fyers session needs re-login.`);
     return;
   }
 
