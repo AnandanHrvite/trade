@@ -668,6 +668,83 @@ function loadGapFix3mPosition() {
   }
 }
 
+// ── HA_SCALP (15-min Heikin Ashi trend scalp, NIFTY 50 spot, Zerodha) ───────
+// The stop is a FROZEN raw price level and there is no target and no trail, so
+// a crash-recovered position can be reconstructed exactly — there is no
+// ratchet state to lose. The Heikin Ashi context is stored alongside so the
+// recovery log can say WHICH candle opened the trade.
+
+const HA_SCALP_POS_FILE = path.join(DATA_DIR, ".active_ha_scalp_position.json");
+
+function saveHaScalpPosition(position, sessionMeta) {
+  try {
+    if (!position) { _persistAtomic(HA_SCALP_POS_FILE, null); return; }
+    const data = {
+      position: {
+        side:            position.side,
+        symbol:          position.symbol,
+        qty:             position.qty,
+        entryPrice:      position.entryPrice,
+        spotAtEntry:     position.spotAtEntry || position.entrySpot,
+        stopLoss:        position.stopLoss || position.slSpot,
+        initialStopLoss: position.initialStopLoss || position.initialSlSpot,
+        target:          null,   // HA_SCALP has no target, by design
+        slPts:           position.slPts,
+        trend:           position.trend,
+        ma:              position.ma,
+        maType:          position.maType,
+        haOpen:          position.haOpen,
+        haHigh:          position.haHigh,
+        haLow:           position.haLow,
+        haClose:         position.haClose,
+        bodyPct:         position.bodyPct,
+        upperWickPct:    position.upperWickPct,
+        lowerWickPct:    position.lowerWickPct,
+        signalRawHigh:   position.signalRawHigh,
+        signalRawLow:    position.signalRawLow,
+        signalBarTime:   position.signalBarTime,
+        entryUnixSec:    position.entryUnixSec,
+        entryTime:       position.entryTime,
+        orderId:         position.orderId,
+        optionEntryLtp:  position.optionEntryLtp,
+        optionStrike:    position.optionStrike,
+        optionExpiry:    position.optionExpiry,
+        optionType:      position.optionType || position.side,
+      },
+      sessionMeta: sessionMeta || {},
+      savedAt: Date.now(),
+      savedDate: new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
+    };
+    _persistAtomic(HA_SCALP_POS_FILE, JSON.stringify(data, null, 2));
+    console.log(`💾 [PERSIST] HA_SCALP position saved: ${position.side} ${position.symbol} @ ₹${position.entryPrice}`);
+  } catch (err) {
+    console.warn(`⚠️ [PERSIST] Could not save HA_SCALP position: ${err.message}`);
+  }
+}
+
+function loadHaScalpPosition() {
+  try {
+    if (!fs.existsSync(HA_SCALP_POS_FILE)) return null;
+    const data = JSON.parse(fs.readFileSync(HA_SCALP_POS_FILE, "utf-8"));
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    if (data.savedDate && data.savedDate !== today) {
+      console.log(`[PERSIST] Stale HA_SCALP position from ${data.savedDate} — discarding.`);
+      fs.unlinkSync(HA_SCALP_POS_FILE);
+      return null;
+    }
+    if (data.position) console.log(`[PERSIST] HA_SCALP position loaded: ${data.position.side} ${data.position.symbol} @ ₹${data.position.entryPrice}`);
+    return data;
+  } catch (err) {
+    console.warn(`[PERSIST] Could not load HA_SCALP position: ${err.message}`);
+    return null;
+  }
+}
+
+function clearHaScalpPosition() {
+  _persistAtomic(HA_SCALP_POS_FILE, null);
+  console.log("[PERSIST] HA_SCALP position file cleared.");
+}
+
 function clearGapFix3mPosition() {
   _persistAtomic(GAP3M_POS_FILE, null);
   console.log("[PERSIST] 3M_GAP_FIX_SCALP position file cleared.");
@@ -936,6 +1013,7 @@ module.exports = {
   saveGapsPosition, loadGapsPosition, clearGapsPosition,
   saveTrendDayScalpPosition, loadTrendDayScalpPosition, clearTrendDayScalpPosition,
   saveGapFix3mPosition, loadGapFix3mPosition, clearGapFix3mPosition,
+  saveHaScalpPosition, loadHaScalpPosition, clearHaScalpPosition,
   saveOiWallFadePosition, loadOiWallFadePosition, clearOiWallFadePosition,
   saveRsiPivotStPosition, loadRsiPivotStPosition, clearRsiPivotStPosition,
   saveSimple930Position, loadSimple930Position, clearSimple930Position,

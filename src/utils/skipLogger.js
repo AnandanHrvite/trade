@@ -43,6 +43,7 @@ const FILE_PREFIX_BY_MODE = {
   gaps:     "gaps_paper_skips_",
   trend_day_scalp: "trend_day_scalp_paper_skips_",
   gap_fix_3m: "gap_fix_3m_paper_skips_",
+  ha_scalp: "ha_scalp_paper_skips_",
   oi_wall_fade: "oi_wall_fade_paper_skips_",
   rsi_pivot_st: "rsi_pivot_st_paper_skips_",
   simple930: "simple930_paper_skips_",

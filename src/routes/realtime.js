@@ -34,6 +34,7 @@ const STRATEGY_DEFS = [
   { key:'GAPS',     label:'GAPS',         accentClass:'gaps',     accent:'#0ea5e9', paperPrefix:'/gaps-paper',     livePrefix:'/gaps-live',     hasDayLog:true,  modeFlag:'GAPS_MODE_ENABLED' },
   { key:'TDS',      label:'TREND DAY SCALP', accentClass:'tds',   accent:'#a855f7', paperPrefix:'/trend-day-scalp-paper', livePrefix:'/trend-day-scalp-live', hasDayLog:true, modeFlag:'TDS_MODE_ENABLED' },
   { key:'GAP3M',    label:'3M GAP FIX',      accentClass:'gap3m', accent:'#38bdf8', paperPrefix:'/gap-fix-3m-paper',      livePrefix:'/gap-fix-3m-live',      hasDayLog:true, modeFlag:'GAP3M_MODE_ENABLED' },
+  { key:'HA_SCALP', label:'HA SCALP',        accentClass:'hascalp', accent:'#f97316', paperPrefix:'/ha-scalp-paper',      livePrefix:'/ha-scalp-live',        hasDayLog:true, modeFlag:'HA_SCALP_MODE_ENABLED' },
   { key:'OIWF',     label:'OI WALL FADE',    accentClass:'oiwf',  accent:'#f472b6', paperPrefix:'/oi-wall-fade-paper',    livePrefix:'/oi-wall-fade-live',    hasDayLog:true, modeFlag:'OIWF_MODE_ENABLED' },
   { key:'RSI_PIVOT_ST', label:'RSI PIVOT ST', accentClass:'rsipivotst', accent:'#facc15', paperPrefix:'/rsi-pivot-st-paper', livePrefix:'/rsi-pivot-st-live', hasDayLog:true, modeFlag:'RSI_PIVOT_ST_MODE_ENABLED' },
   { key:'SIMPLE930', label:'SIMPLE_9:30', accentClass:'simple930', accent:'#fb923c', paperPrefix:'/simple930-paper', livePrefix:'/simple930-live', hasDayLog:true, modeFlag:'SIMPLE930_MODE_ENABLED' },
@@ -45,7 +46,7 @@ function enabledStrategies() {
 
 // Broker investment pools: each strategy's paper P&L draws from one shared pool.
 // EMA_RSI_ST trades through Zerodha; BB_RSI/PA/ORB through Fyers.
-const BROKER_OF = { EMA_RSI_ST:'ZERODHA', BB_RSI:'FYERS', PA:'FYERS', ORB:'FYERS', EMA9VWAP:'ZERODHA', TREND_PB:'FYERS', GAPS:'FYERS', TDS:'FYERS', GAP3M:'FYERS', OIWF:'FYERS', RSI_PIVOT_ST:'ZERODHA', SIMPLE930:'ZERODHA' };
+const BROKER_OF = { EMA_RSI_ST:'ZERODHA', BB_RSI:'FYERS', PA:'FYERS', ORB:'FYERS', EMA9VWAP:'ZERODHA', TREND_PB:'FYERS', GAPS:'FYERS', TDS:'FYERS', GAP3M:'FYERS', HA_SCALP:'ZERODHA', OIWF:'FYERS', RSI_PIVOT_ST:'ZERODHA', SIMPLE930:'ZERODHA' };
 function brokerPools(strategies) {
   const z = parseFloat(process.env.ZERODHA_INV_AMOUNT || '100000');
   const f = parseFloat(process.env.FYERS_INV_AMOUNT   || '100000');
@@ -207,6 +208,7 @@ ${faviconLink()}
   .card.gaps     { border-top-color:#0ea5e9; }
   .card.tds      { border-top-color:#a855f7; }
   .card.gap3m    { border-top-color:#38bdf8; }
+.card.hascalp  { border-top-color:#f97316; }
   .card.oiwf     { border-top-color:#f472b6; }
   .card.rsipivotst { border-top-color:#facc15; }
   .card.simple930 { border-top-color:#fb923c; }
@@ -222,6 +224,7 @@ ${faviconLink()}
   .card.gaps     .card-title { color:#38bdf8; }
   .card.tds      .card-title { color:#c084fc; }
   .card.gap3m    .card-title { color:#7dd3fc; }
+.card.hascalp  .card-title { color:#fdba74; }
   .card.oiwf     .card-title { color:#f9a8d4; }
   .card.rsipivotst .card-title { color:#fde047; }
   .card.simple930 .card-title { color:#fdba74; }
@@ -278,6 +281,7 @@ ${faviconLink()}
   .card.gaps     .act-btn:not(.act-btn-disabled):hover { border-color:#0ea5e9; }
   .card.tds      .act-btn:not(.act-btn-disabled):hover { border-color:#a855f7; }
   .card.gap3m    .act-btn:not(.act-btn-disabled):hover { border-color:#38bdf8; }
+.card.hascalp  .act-btn:not(.act-btn-disabled):hover { border-color:#f97316; }
   .card.oiwf     .act-btn:not(.act-btn-disabled):hover { border-color:#f472b6; }
   .card.rsipivotst .act-btn:not(.act-btn-disabled):hover { border-color:#facc15; }
   .card.simple930 .act-btn:not(.act-btn-disabled):hover { border-color:#fb923c; }
@@ -298,6 +302,7 @@ ${faviconLink()}
   .rollup tr.gaps     td:first-child { color:#38bdf8; }
   .rollup tr.tds      td:first-child { color:#c084fc; }
   .rollup tr.gap3m    td:first-child { color:#7dd3fc; }
+.rollup tr.hascalp  td:first-child { color:#fdba74; }
   .rollup tr.oiwf     td:first-child { color:#f9a8d4; }
   .rollup tr.rsipivotst td:first-child { color:#fde047; }
   .rollup tr.simple930 td:first-child { color:#fdba74; }
@@ -323,6 +328,7 @@ ${faviconLink()}
   :root[data-theme="light"] .card.gaps     .card-title { color:#0369a1; }
   :root[data-theme="light"] .card.tds      .card-title { color:#7e22ce; }
   :root[data-theme="light"] .card.gap3m    .card-title { color:#0369a1; }
+:root[data-theme="light"] .card.hascalp  .card-title { color:#c2410c; }
   :root[data-theme="light"] .card.oiwf     .card-title { color:#be185d; }
   :root[data-theme="light"] .card.rsipivotst .card-title { color:#a16207; }
   :root[data-theme="light"] .card.simple930 .card-title { color:#c2410c; }
@@ -362,6 +368,7 @@ ${faviconLink()}
   :root[data-theme="light"] .rollup tr.gaps     td:first-child { color:#0369a1; }
   :root[data-theme="light"] .rollup tr.tds      td:first-child { color:#7e22ce; }
   :root[data-theme="light"] .rollup tr.gap3m    td:first-child { color:#0369a1; }
+:root[data-theme="light"] .rollup tr.hascalp  td:first-child { color:#c2410c; }
   :root[data-theme="light"] .rollup tr.oiwf     td:first-child { color:#be185d; }
   :root[data-theme="light"] .rollup tr.rsipivotst td:first-child { color:#a16207; }
   :root[data-theme="light"] .rollup tr.simple930 td:first-child { color:#c2410c; }

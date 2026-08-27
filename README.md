@@ -1,6 +1,6 @@
 # Palani Andawar Trading Bot
 
-NIFTY options algorithmic trading bot with **12 independent strategies** (EMA_RSI_ST, BB_RSI, Price Action, ORB, EMA9+VWAP, Trend Pullback, GAPS, Trend Day Scalp, 3M Gap Fix Scalp, OI Wall Fade, RSI Pivot ST, SIMPLE_9:30), dual-broker architecture (Fyers + Zerodha), background backtesting, paper trading, deterministic **tick-replay** of recorded sessions, after-hours simulation, live NIFTY candlestick charts, consolidated cross-mode analytics (paper + live), per-module dashboard P&L cards, **unified real-time monitor** (one screen for all strategies with a PAPER/LIVE toggle), crash-safe JSONL trade audit, near-miss filter audit, Telegram alerts, and a full web dashboard.
+NIFTY options algorithmic trading bot with **13 independent strategies** (EMA_RSI_ST, BB_RSI, Price Action, ORB, EMA9+VWAP, Trend Pullback, GAPS, Trend Day Scalp, 3M Gap Fix Scalp, HA Scalp, OI Wall Fade, RSI Pivot ST, SIMPLE_9:30), dual-broker architecture (Fyers + Zerodha), background backtesting, paper trading, deterministic **tick-replay** of recorded sessions, after-hours simulation, live NIFTY candlestick charts, consolidated cross-mode analytics (paper + live), per-module dashboard P&L cards, **unified real-time monitor** (one screen for all strategies with a PAPER/LIVE toggle), crash-safe JSONL trade audit, near-miss filter audit, Telegram alerts, and a full web dashboard.
 
 ## Architecture
 
@@ -54,6 +54,9 @@ All four strategies run **in parallel** on the same WebSocket — different cand
 | **3M Gap Fix Scalp Paper** | Fades a 3-min NIFTY **FUTURES** gap back to its fill level unless the next candle breaks the day high/low on volume | 3-min (futures) | Simulated | `/gap-fix-3m-paper` |
 | **3M Gap Fix Scalp Backtest** | Same engine over a date range, front-month contract rolled like the live path | 3-min historical (futures) | Historical | `/gap-fix-3m-backtest` |
 | **3M Gap Fix Scalp Live (Harness)** | Runs Live by wrapping Paper (Fyers orders, triple-gated dry-run) | 3-min (futures) | Fyers (PAPER-wrapped) | `/gap-fix-3m-live` |
+| **HA Scalp Paper** | A no-wick **Heikin Ashi** candle in the direction of the 50 MA, stopped at that candle's own raw high/low | 15-min (HA) | Simulated | `/ha-scalp-paper` |
+| **HA Scalp Backtest** | Same engine over a date range (conservative intra-bar ordering) | 15-min historical | Historical | `/ha-scalp-backtest` |
+| **HA Scalp Live (Harness)** | Runs Live by wrapping Paper (Zerodha orders, triple-gated dry-run) | 15-min (HA) | Zerodha (PAPER-wrapped) | `/ha-scalp-live` |
 | **OI Wall Fade Paper** | Fades the highest-OI CE/PE strike while that strike's own OI is still **rising** (single-leg slightly-ITM CE/PE) | 5-min + live OI ladder | Simulated | `/oi-wall-fade-paper` |
 | **OI Wall Fade Live (Harness)** | Runs Live by wrapping Paper (Fyers orders, triple-gated dry-run) | 5-min + live OI ladder | Fyers (PAPER-wrapped) | `/oi-wall-fade-live` |
 | **OI Monitor** | Read-only per-strike OI ladder, walls, band PCR — no position, no order | live OI ladder | — | `/oi-monitor` |
@@ -308,7 +311,24 @@ See [BB_RSI.md](BB_RSI.md) for the authoritative spec. Summary:
 - **Backtest** (`/gap-fix-3m-backtest`, [src/routes/gapFix3mBacktest.js](src/routes/gapFix3mBacktest.js)): drives the **same** `getSignal` and re-implements only paper's exits (paper canonical). There is no continuous futures series, so the range is split into **front-month contract blocks** using the identical roll rule the live path uses (roll two days before the last **Tuesday** — NIFTY futures expire on the last Tuesday of their month, verified against Fyers' symbol master) and each block is fetched from its own symbol — bars from two contracts are never adjacent inside a session, so a roll can never be mistaken for a gap.
 - **How far back it can go is limited by Fyers, not by this code.** A NIFTY futures contract is **delisted once it expires**, and Fyers then answers `Invalid symbol provided` for that symbol — there is no history for a month that has already passed. Each contract block is therefore fetched **independently**: what Fyers still serves is used, what it refuses is recorded and reported as **partial coverage** on the results page (those sessions are absent, not flat). **Refused and empty are kept apart on purpose** — a *refused* block means Fyers rejected the symbol and can never serve it, while an *empty* block means the call succeeded and returned nothing, which is normally a window with no trading days but is **also what an expired token looks like** (Fyers answers `no_data`, not an auth error). So an all-empty run points at the token, never at delisting, and an empty block does not raise the partial-coverage warning though it is still disclosed. If every contract in the range was genuinely refused the run fails with a message naming them and offering the current contract's own window. That window is also the **default range** — the repo-standard 90 days would always open on a dead contract. **Conservative intra-bar ordering**: the stop is tested on the bar's high/low **before** the target, so a bar touching both books the LOSS; a bar that opened beyond a level fills at the **open**. Option P&L is δ+θ simulated seeded at `GAP3M_BT_SEED_PREMIUM=240` plus `GAP3M_BT_SLIPPAGE_PTS=1.5`pt each way.
 
-### Strategy 10: OI WALL FADE — fade the option wall the writers are still defending (single-leg slightly-ITM CE/PE, Fyers)
+### Strategy 10: HA SCALP — a no-wick Heikin Ashi candle in the direction of the 50 MA (single-leg slightly-ITM CE/PE, Zerodha)
+
+**Never traded.** Zero paper sessions, zero live orders. Every threshold below is the rule as specified or a round number, not a fitted value.
+
+- **Chart**: **Heikin Ashi** candles built from 15-min NIFTY 50 **spot** bars. `haClose=(o+h+l+c)/4`, `haOpen=(prev haOpen + prev haClose)/2`, `haHigh=max(high,haOpen,haClose)`, `haLow=min(low,haOpen,haClose)`. The chain runs **continuously across days** (`HA_SCALP_HA_CONTINUOUS=true`), which is what TradingView draws — the platform the rules were read off. No decision is taken until `HA_SCALP_HA_WARMUP_BARS=20` bars are behind it, because early HA colours are seed artefacts.
+- **Trend gate (hard, directional)**: the `HA_SCALP_MA_PERIOD=50` SMA of **raw** closes. Raw close **above** it → **CE only**; **below** → **PE only**. A perfect bullish candle under a falling MA is *not* a trade — the engine says so in the skip reason rather than silently passing.
+- **Entry**: a **"no wick" strength candle** in the trend's own direction — bullish HA with **no bottom wick** for a CE, bearish HA with **no top wick** for a PE. `HA_SCALP_MAX_WICK_PCT=0` means **exactly** wick-free (the wick is measured as a share of the candle's range, so it means the same on a 20pt and a 200pt bar). Body must be ≥ `HA_SCALP_MIN_BODY_PTS=5`. A doji never enters. **Fill is the next candle's open.**
+- **Stop**: the **signal candle's own RAW low (CE) / RAW high (PE)** — a frozen level, never trailed. Decisions read the Heikin Ashi candle; **prices read the raw candle**, because an HA price is an average of four numbers and nothing ever traded there.
+- **There is NO target.** The trade ends on the stop, a **doji** (body ≤ `HA_SCALP_DOJI_BODY_PCT=20`% of range), a **weak or opposite-colour** candle (body < `HA_SCALP_WEAK_BODY_PCT=40`%), or the `HA_SCALP_FORCED_EXIT=15:15` square-off.
+- **Deliberately absent**: no auto-drawn trend line (the 50 MA is the sole trend test — a drawn line depends on which swing points you pick and is not reproducible), no VIX/OI/ADX/RSI/ATR/volume filter, no target, no trail, no breakeven, no partials.
+- **Day-level breakers**: `HA_SCALP_MAX_DAILY_TRADES=3`, `HA_SCALP_MAX_DAILY_LOSSES=2` stop-outs, `HA_SCALP_MAX_DAILY_LOSS=3000`, `HA_SCALP_DAILY_PROFIT_LOCK=0` (off), `HA_SCALP_MAX_WEEKLY_LOSS=0` (off), plus the shared portfolio-wide cap.
+- **Option**: slightly-ITM (`HA_SCALP_ITM_STEPS=1`, ~delta 0.6). Sizing via `HA_SCALP_LOT_MULTIPLIER` (0 = inherit the global `LOT_MULTIPLIER`; clamped by `MAX_LOT_MULTIPLIER`).
+- **How the data arrives.** Closed 15-min spot bars come from the Fyers **history** endpoint, refreshed once per bar `HA_SCALP_HISTORY_LAG_MS=5000` after it closes — the same endpoint the backtest and replay read, which is what makes the four modes agree. On start it preloads `HA_SCALP_WARMUP_DAYS=15` calendar days, because the 50 MA plus the HA chain need ~51 bars and a session is only 25. The **stop is checked on every spot tick** from the shared socket; only the option premium is polled (`HA_SCALP_POLL_MS=2000`).
+- **Known risk, measured on real data**: across 6 months of real NIFTY 15-min bars the engine produced 358 signals, and the median stop was 23 spot points — but **23% of stops were under 10 points** (minimum 0.2pt), which is noise-level on a 15-min chart. `HA_SCALP_MAX_SL_PTS` (default `0` = off) exists to reject wide stops, but nothing filters *too-tight* ones; that is the first thing to watch in paper trading.
+- **LIVE = PAPER** (`/ha-scalp-live`, [src/routes/haScalpLiveHarness.js](src/routes/haScalpLiveHarness.js)): wraps the Paper engine with the shared harness. **Triple-gated to dry-run**: real orders require `HA_SCALP_LIVE_ENABLED=true` AND `LIVE_HARNESS_DRY_RUN=false` AND `HA_SCALP_LIVE_DRY_RUN` not-true, plus an authenticated **Zerodha** session (Fyers still supplies the candles and premiums). An open position is crash-recovered via `positionPersist` (`.active_ha_scalp_position.json`) and reconciled against the Zerodha book on boot.
+- **Backtest** (`/ha-scalp-backtest`, [src/routes/haScalpBacktest.js](src/routes/haScalpBacktest.js)): drives the **same** `getSignal` and re-implements only paper's exits (paper canonical). Warm-up days are prepended to the fetch so the first requested day can trade, but never produce trades themselves. **Conservative intra-bar ordering**: the stop is tested on the bar's high/low **before** any close-based exit, so a bar touching both books the LOSS; a bar that opened beyond the stop fills at the **open**. Option P&L is simulated, seeded at `HA_SCALP_BT_SEED_PREMIUM=240` plus `HA_SCALP_BT_SLIPPAGE_PTS=1.5`pt each way.
+
+### Strategy 11: OI WALL FADE — fade the option wall the writers are still defending (single-leg slightly-ITM CE/PE, Fyers)
 
 **Never traded, and — uniquely here — it can never be backtested.** Zero paper sessions, zero live orders, and no simulated history either: Fyers publishes no *historical* per-strike Open Interest, so there is nothing to run a backtest against and there never will be. Forward-recorded paper sessions are the only evidence about this idea that can ever exist. Every threshold below is a round number, not a fitted value.
 
@@ -331,7 +351,7 @@ See [BB_RSI.md](BB_RSI.md) for the authoritative spec. Summary:
 - **⚠️ Replay reproduces the candles but NOT the walls.** `chain_oi.jsonl` is recorded, but [tickReplay.js](src/services/tickReplay.js) has no timeline for it, so on a replay every wall reading comes back UNKNOWN and the engine refuses rather than fading blind. That is the safe failure, not a silent one — but it means the usual "diff Paper against Replay before touching a live gate" check is **not available** for this strategy, which raises the bar for going live rather than lowering it. Full OI context is written onto every trade record and skip-log line instead.
 - **The core claim is untested**: does a wall whose OI is rising actually hold price, and how far does a rejection off one travel? The read-only [/oi-monitor](src/routes/oiMonitor.js) page and these paper sessions exist to answer exactly that, and the answer may be no.
 
-### Strategy 11: RSI PIVOT ST — RSI extreme + a Standard Pivot R1/S1 break, SuperTrend-stopped (single-leg OTM CE/PE, Zerodha)
+### Strategy 12: RSI PIVOT ST — RSI extreme + a Standard Pivot R1/S1 break, SuperTrend-stopped (single-leg OTM CE/PE, Zerodha)
 
 **Never traded, and no backtest has been run against it.** Zero paper sessions, zero live orders. Every threshold below is the user's stated rule or a repo convention, not a fitted value. Collect clean paper days and diff them against `/replay` before touching any live gate.
 
@@ -426,6 +446,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   gaps_paper_trades.json          # GAPS paper sessions
   trend_day_scalp_paper_trades.json # Trend Day Scalp paper sessions
   gap_fix_3m_paper_trades.json    # 3M Gap Fix Scalp paper sessions
+  ha_scalp_paper_trades.json      # HA Scalp paper sessions
   oi_wall_fade_paper_trades.json  # OI Wall Fade paper sessions
   rsi_pivot_st_paper_trades.json  # RSI Pivot ST paper sessions
   simple930_paper_trades.json     # SIMPLE_9:30 paper sessions
@@ -440,6 +461,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   .active_gaps_position.json      # Crash recovery — GAPS position
   .active_trend_day_scalp_position.json # Crash recovery — Trend Day Scalp position
   .active_gap_fix_3m_position.json # Crash recovery — 3M Gap Fix Scalp position
+  .active_ha_scalp_position.json  # Crash recovery — HA Scalp position
   .active_oi_wall_fade_position.json # Crash recovery — OI Wall Fade position
   .active_rsi_pivot_st_position.json # Crash recovery — RSI Pivot ST position
   .active_simple930_position.json # Crash recovery — SIMPLE_9:30 position (carries the live trail state)
@@ -554,6 +576,14 @@ log, so each session's trades carry the exact config that produced them.
 | `/gap-fix-3m-paper/status` | Paper trade — NIFTY FUTURES chart with the gap band, day high/low and bracket, plus the index chart |
 | `/gap-fix-3m-paper/history` | Sessions (per-session delete + view modal) |
 | `/gap-fix-3m-live` | Live via the paper-wrapping harness (Fyers orders; gated by `GAP3M_LIVE_ENABLED` + `LIVE_HARNESS_DRY_RUN` + `GAP3M_LIVE_DRY_RUN`) |
+
+### HA Scalp
+| URL | Description |
+|-----|-------------|
+| `/ha-scalp-backtest` | HA Scalp date-range backtest (15-min Heikin Ashi, next-candle-open fills) |
+| `/ha-scalp-paper/status` | Paper trade — Heikin Ashi chart with the 50 MA and the stop, plus the raw candle chart |
+| `/ha-scalp-paper/history` | Sessions (per-session delete + view modal) |
+| `/ha-scalp-live` | Live via the paper-wrapping harness (Zerodha orders; gated by `HA_SCALP_LIVE_ENABLED` + `LIVE_HARNESS_DRY_RUN` + `HA_SCALP_LIVE_DRY_RUN`) |
 
 ### RSI Pivot ST
 | URL | Description |

@@ -27,6 +27,7 @@ const SOURCES = [
   { mode: "PA",    file: path.join(DATA_DIR, "pa_live_trades.json"),    label: "Price Action", color: "#a855f7" },
   { mode: "RSI_PIVOT_ST", file: path.join(DATA_DIR, "rsi_pivot_st_live_trades.json"), label: "RSI PIVOT ST", color: "#facc15" },
   { mode: "SIMPLE930", file: path.join(DATA_DIR, "simple930_live_trades.json"), label: "SIMPLE_9:30", color: "#fb923c" },
+  { mode: "HA_SCALP", file: path.join(DATA_DIR, "ha_scalp_live_trades.json"), label: "HA SCALP", color: "#f97316" },
 ];
 
 function safeRead(p) {

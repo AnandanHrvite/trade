@@ -24,6 +24,7 @@ const trendPbStrategy = require("../strategies/trend_pb");
 const gapsStrategy    = require("../strategies/gaps");
 const tdsStrategy     = require("../strategies/trend_day_scalp");
 const gap3mStrategy   = require("../strategies/gap_fix_3m");
+const haScalpStrategy = require("../strategies/ha_scalp");
 const rsiPivotStStrategy = require("../strategies/rsi_pivot_st");
 const simple930Strategy  = require("../strategies/simple930");
 const sharedSocketState = require("../utils/sharedSocketState");
@@ -36,6 +37,7 @@ const TREND_PB_KEY = "TREND_PB_BACKTEST";
 const GAPS_KEY     = "GAPS_BACKTEST";
 const TDS_KEY      = "TREND_DAY_SCALP_BACKTEST";
 const GAP3M_KEY    = "GAP_FIX_3M_BACKTEST";
+const HA_SCALP_KEY = "HA_SCALP_BACKTEST";
 const RSI_PIVOT_ST_KEY = "RSI_PIVOT_ST_BACKTEST";
 const SIMPLE930_KEY    = "SIMPLE930_BACKTEST";
 
@@ -149,6 +151,7 @@ router.get("/", (req, res) => {
   const gapsOn     = _modeOn("GAPS_MODE_ENABLED");
   const tdsOn      = _modeOn("TDS_MODE_ENABLED");
   const gap3mOn    = _modeOn("GAP3M_MODE_ENABLED");
+  const haScalpOn  = _modeOn("HA_SCALP_MODE_ENABLED");
   const rsiPivotStOn = _modeOn("RSI_PIVOT_ST_MODE_ENABLED");
   const simple930On  = _modeOn("SIMPLE930_MODE_ENABLED");
 
@@ -160,6 +163,7 @@ router.get("/", (req, res) => {
   const gapsResult     = gapsOn     ? loadResult(GAPS_KEY)     : null;
   const tdsResult      = tdsOn      ? loadResult(TDS_KEY)      : null;
   const gap3mResult    = gap3mOn    ? loadResult(GAP3M_KEY)    : null;
+  const haScalpResult  = haScalpOn  ? loadResult(HA_SCALP_KEY)  : null;
   const rsiPivotStResult = rsiPivotStOn ? loadResult(RSI_PIVOT_ST_KEY) : null;
   const simple930Result  = simple930On  ? loadResult(SIMPLE930_KEY)  : null;
 
@@ -201,6 +205,12 @@ router.get("/", (req, res) => {
     "3M GAP FIX SCALP", { bg: "rgba(56,189,248,0.12)", fg: "#7dd3fc", border: "rgba(56,189,248,0.25)" },
     gap3mStrategy && gap3mStrategy.NAME ? gap3mStrategy.NAME : "3M_GAP_FIX_SCALP",
     GAP3M_KEY, "/gap-fix-3m-backtest", gap3mResult
+  ) : "";
+
+  const haScalpPanel = haScalpOn ? renderPanel(
+    "HA SCALP", { bg: "rgba(249,115,22,0.12)", fg: "#fdba74", border: "rgba(249,115,22,0.25)" },
+    haScalpStrategy && haScalpStrategy.NAME ? haScalpStrategy.NAME : "HA_SCALP",
+    HA_SCALP_KEY, "/ha-scalp-backtest", haScalpResult
   ) : "";
   const rsiPivotStPanel = rsiPivotStOn ? renderPanel(
     "RSI PIVOT ST", { bg: "rgba(250,204,21,0.12)", fg: "#facc15", border: "rgba(250,204,21,0.25)" },
@@ -360,9 +370,10 @@ ${buildSidebar('allBacktest', liveActive)}
   ${gapsPanel}
   ${tdsPanel}
   ${gap3mPanel}
+        ${haScalpPanel}
   ${rsiPivotStPanel}
   ${simple930Panel}
-  ${(!emaRsiStOn && !bbRsiOn && !paOn && !orbOn && !trendPbOn && !gapsOn && !tdsOn && !gap3mOn && !rsiPivotStOn && !simple930On) ? `
+  ${(!emaRsiStOn && !bbRsiOn && !paOn && !orbOn && !trendPbOn && !gapsOn && !tdsOn && !gap3mOn && !haScalpOn && !rsiPivotStOn && !simple930On) ? `
   <div style="background:#08091a;border:0.5px solid #0e1428;border-radius:10px;padding:24px;text-align:center;color:#94a3b8;font-size:0.78rem;">
     No strategies enabled. Toggle one on in <a href="/settings" style="color:#60a5fa;">Settings → Strategy Modes</a>.
   </div>` : ""}

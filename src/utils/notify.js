@@ -111,6 +111,9 @@ function modeGroup(mode) {
   // prefix (GAP3M_MODE_ENABLED, TG_GAP3M_ENTRY, …) — an env var may not start
   // with a digit, which is why the group is not literally "3M_GAP_FIX_SCALP".
   if (m === "GAP3M" || m.startsWith("GAP-FIX-3M") || m.startsWith("GAP_FIX_3M")) return "GAP3M";
+  // HA Scalp. Group key HA_SCALP so every env key stays on the HA_SCALP_ prefix
+  // (HA_SCALP_MODE_ENABLED, TG_HA_SCALP_ENTRY, …).
+  if (m === "HA_SCALP" || m.startsWith("HA-SCALP") || m.startsWith("HA_SCALP")) return "HA_SCALP";
   // OI Wall Fade. Group key OIWF so every env key stays on the OIWF_ prefix
   // (OIWF_MODE_ENABLED, TG_OIWF_ENTRY, …) while the mode tag stays readable.
   if (m === "OIWF" || m.startsWith("OI-WALL-FADE") || m.startsWith("OI_WALL_FADE")) return "OIWF";
@@ -391,6 +394,8 @@ function modeLabel(mode) {
   if (m.startsWith("GAPS-LIVE"))       return "⚡ GAPS LIVE" + m.slice("GAPS-LIVE".length);
   if (m.startsWith("TREND-DAY-SCALP-PAPER")) return "⚡ TREND DAY SCALP PAPER" + m.slice("TREND-DAY-SCALP-PAPER".length);
   if (m.startsWith("TREND-DAY-SCALP-LIVE"))  return "🔴 TREND DAY SCALP LIVE" + m.slice("TREND-DAY-SCALP-LIVE".length);
+  if (m.startsWith("HA-SCALP-PAPER")) return "🕯 HA SCALP PAPER" + m.slice("HA-SCALP-PAPER".length);
+  if (m.startsWith("HA-SCALP-LIVE"))  return "🔴 HA SCALP LIVE" + m.slice("HA-SCALP-LIVE".length);
   if (m.startsWith("GAP-FIX-3M-PAPER")) return "🕳 3M GAP FIX PAPER" + m.slice("GAP-FIX-3M-PAPER".length);
   if (m.startsWith("GAP-FIX-3M-LIVE"))  return "🔴 3M GAP FIX LIVE" + m.slice("GAP-FIX-3M-LIVE".length);
   if (m.startsWith("SIMPLE930-PAPER")) return "🎯 SIMPLE 9:30 PAPER" + m.slice("SIMPLE930-PAPER".length);
@@ -727,7 +732,7 @@ function notifyConsolidatedDayReport({ byMode }) {
   if (!canSend("TG_DAYREPORT_CONSOLIDATED")) return false;
 
   // Only include strategies that are currently enabled in Settings.
-  const groups = ["EMA_RSI_ST", "BB_RSI", "PA", "ORB", "EMA9VWAP", "TREND_PB", "GAPS", "TDS", "GAP3M", "OIWF", "RSI_PIVOT_ST", "SIMPLE930"].filter(isModeEnabled);
+  const groups = ["EMA_RSI_ST", "BB_RSI", "PA", "ORB", "EMA9VWAP", "TREND_PB", "GAPS", "TDS", "GAP3M", "OIWF", "RSI_PIVOT_ST", "SIMPLE930", "HA_SCALP"].filter(isModeEnabled);
   let totalTrades = 0, totalPnl = 0, totalWins = 0, totalLosses = 0;
   const rows = [];
 

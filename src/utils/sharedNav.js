@@ -26,6 +26,7 @@ const STRATEGY_MODES = [
   { mode: 'GAPS',       label: 'GAPS',         envKey: 'GAPS_MODE_ENABLED'       },
   { mode: 'TDS',        label: 'Trend Day Scalp', envKey: 'TDS_MODE_ENABLED'     },
   { mode: 'GAP3M',      label: '3M Gap Fix Scalp', envKey: 'GAP3M_MODE_ENABLED'  },
+  { mode: 'HA_SCALP',   label: 'HA Scalp', envKey: 'HA_SCALP_MODE_ENABLED'         },
   { mode: 'OIWF',       label: 'OI Wall Fade', envKey: 'OIWF_MODE_ENABLED'       },
   { mode: 'RSI_PIVOT_ST', label: 'RSI Pivot ST', envKey: 'RSI_PIVOT_ST_MODE_ENABLED' },
   { mode: 'SIMPLE930', label: 'SIMPLE_9:30', envKey: 'SIMPLE930_MODE_ENABLED' },
@@ -49,6 +50,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   let _gapsMode = null;
   let _trendDayScalpMode = null;
   let _gapFix3mMode = null;
+  let _haScalpMode = null;
   let _oiWallFadeMode = null;
   let _rsiPivotStMode = null;
   let _simple930Mode = null;
@@ -64,6 +66,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     _gapsMode = sss.getGapsMode ? sss.getGapsMode() : null;
     _trendDayScalpMode = sss.getTrendDayScalpMode ? sss.getTrendDayScalpMode() : null;
     _gapFix3mMode = sss.getGapFix3mMode ? sss.getGapFix3mMode() : null;
+    _haScalpMode = sss.getHaScalpMode ? sss.getHaScalpMode() : null;
     _oiWallFadeMode = sss.getOiWallFadeMode ? sss.getOiWallFadeMode() : null;
     _rsiPivotStMode = sss.getRsiPivotStMode ? sss.getRsiPivotStMode() : null;
     _simple930Mode = sss.getSimple930Mode ? sss.getSimple930Mode() : null;
@@ -102,6 +105,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const gapsModeOn     = (process.env.GAPS_MODE_ENABLED     || 'true').toLowerCase() === 'true';
   const tdsModeOn      = (process.env.TDS_MODE_ENABLED      || 'true').toLowerCase() === 'true';
   const gap3mModeOn    = (process.env.GAP3M_MODE_ENABLED    || 'true').toLowerCase() === 'true';
+  const haScalpModeOn  = (process.env.HA_SCALP_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const oiwfModeOn     = (process.env.OIWF_MODE_ENABLED     || 'true').toLowerCase() === 'true';
   const rsiPivotStModeOn = (process.env.RSI_PIVOT_ST_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const simple930ModeOn = (process.env.SIMPLE930_MODE_ENABLED || 'true').toLowerCase() === 'true';
@@ -169,6 +173,11 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const showGap3mPaper        = (process.env.UI_SHOW_GAP3M_PAPER           || 'true').toLowerCase()  === 'true';
   const showGap3mLive         = (process.env.UI_SHOW_GAP3M_LIVE            || 'true').toLowerCase()  === 'true';
   const showGap3mHistory      = (process.env.UI_SHOW_GAP3M_HISTORY         || 'true').toLowerCase()  === 'true';
+  // HA Scalp — never traded; ships visible but its Live page is triple-gated to dry-run.
+  const showHaScalpBacktest   = (process.env.UI_SHOW_HA_SCALP_BACKTEST      || 'true').toLowerCase()  === 'true';
+  const showHaScalpPaper      = (process.env.UI_SHOW_HA_SCALP_PAPER         || 'true').toLowerCase()  === 'true';
+  const showHaScalpLive       = (process.env.UI_SHOW_HA_SCALP_LIVE          || 'true').toLowerCase()  === 'true';
+  const showHaScalpHistory    = (process.env.UI_SHOW_HA_SCALP_HISTORY       || 'true').toLowerCase()  === 'true';
   // OI Wall Fade — never traded and NOT backtestable (no historical per-strike OI), so there is no Backtest entry.
   const showOiwfPaper         = (process.env.UI_SHOW_OIWF_PAPER            || 'true').toLowerCase()  === 'true';
   const showOiwfLive          = (process.env.UI_SHOW_OIWF_LIVE             || 'true').toLowerCase()  === 'true';
@@ -198,6 +207,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const gapsKeys    = ['gapsBacktest', 'gapsPaper', 'gapsLive', 'gapsHistory'];
   const tdsKeys     = ['trendDayScalpBacktest', 'trendDayScalpPaper', 'trendDayScalpLive', 'trendDayScalpHistory'];
   const gap3mKeys   = ['gapFix3mBacktest', 'gapFix3mPaper', 'gapFix3mLive', 'gapFix3mHistory'];
+  const haScalpKeys = ['haScalpBacktest', 'haScalpPaper', 'haScalpLive', 'haScalpHistory'];
   const oiwfKeys    = ['oiWallFadePaper', 'oiWallFadeLive', 'oiWallFadeHistory'];
   const rsiPivotStKeys = ['rsiPivotStBacktest', 'rsiPivotStPaper', 'rsiPivotStLive', 'rsiPivotStHistory'];
   const simple930Keys = ['simple930Backtest', 'simple930Paper', 'simple930Live', 'simple930History'];
@@ -211,6 +221,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const isGapsOpen     = gapsKeys.includes(activePage);
   const isTdsOpen      = tdsKeys.includes(activePage);
   const isGap3mOpen    = gap3mKeys.includes(activePage);
+  const isHaScalpOpen  = haScalpKeys.includes(activePage);
   const isOiwfOpen     = oiwfKeys.includes(activePage);
   const isRsiPivotStOpen = rsiPivotStKeys.includes(activePage);
   const isSimple930Open = simple930Keys.includes(activePage);
@@ -227,6 +238,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const gapsPaperRunning     = _gapsMode     === 'GAPS_PAPER';
   const tdsPaperRunning      = _trendDayScalpMode === 'TREND_DAY_SCALP_PAPER';
   const gap3mPaperRunning    = _gapFix3mMode === 'GAP_FIX_3M_PAPER';
+  const haScalpPaperRunning  = _haScalpMode === 'HA_SCALP_PAPER';
   const oiwfPaperRunning     = _oiWallFadeMode === 'OI_WALL_FADE_PAPER';
   const rsiPivotStPaperRunning = _rsiPivotStMode === 'RSI_PIVOT_ST_PAPER';
   const simple930PaperRunning = _simple930Mode === 'SIMPLE930_PAPER';
@@ -305,6 +317,13 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     ...(showGap3mPaper    ? [{ key: 'gapFix3mPaper',    href: '/gap-fix-3m-paper/status', icon: '📋', label: 'Paper'    }] : []),
     ...(showGap3mLive && !gap3mPaperRunning ? [{ key: 'gapFix3mLive', href: '/gap-fix-3m-live', icon: '📡', label: 'Live' }] : []),
     ...(showGap3mHistory  ? [{ key: 'gapFix3mHistory',  href: '/gap-fix-3m-paper/history', icon: '📜', label: 'History' }] : []),
+  ];
+
+  const haScalpItems = [
+    ...(showHaScalpBacktest ? [{ key: 'haScalpBacktest', href: '/ha-scalp-backtest',     icon: '🔍', label: 'Backtest' }] : []),
+    ...(showHaScalpPaper    ? [{ key: 'haScalpPaper',    href: '/ha-scalp-paper/status', icon: '📋', label: 'Paper'    }] : []),
+    ...(showHaScalpLive && !haScalpPaperRunning ? [{ key: 'haScalpLive', href: '/ha-scalp-live', icon: '📡', label: 'Live' }] : []),
+    ...(showHaScalpHistory  ? [{ key: 'haScalpHistory',  href: '/ha-scalp-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 
   // No Backtest entry: Fyers exposes no historical per-strike OI, so this
@@ -391,6 +410,11 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       header: '3M GAP FIX SCALP', collapsible: true, collapsed: !isGap3mOpen,
       groupId: 'nav-gap-fix-3m',
       items: gap3mItems,
+    }] : []),
+    ...(haScalpModeOn ? [{
+      header: 'HA SCALP', collapsible: true, collapsed: !isHaScalpOpen,
+      groupId: 'nav-ha-scalp',
+      items: haScalpItems,
     }] : []),
     ...(oiwfModeOn ? [{
       header: 'OI WALL FADE', collapsible: true, collapsed: !isOiwfOpen,
@@ -492,6 +516,14 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
       : '';
 
+    const haScalpLiveBadge = p.key === 'haScalpLive' && _haScalpMode === 'HA_SCALP_LIVE'
+      ? `<span class="sb-nav-badge live">LIVE</span>`
+      : '';
+
+    const haScalpPaperBadge = p.key === 'haScalpPaper' && _haScalpMode === 'HA_SCALP_PAPER'
+      ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
+      : '';
+
     const oiwfLiveBadge = p.key === 'oiWallFadeLive' && _oiWallFadeMode === 'OI_WALL_FADE_LIVE'
       ? `<span class="sb-nav-badge live">LIVE</span>`
       : '';
@@ -518,7 +550,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
 
     return `<a href="${p.href}" class="sb-nav-item${isActive ? ' active' : ''}">
       <span class="sb-nav-icon">${p.icon}</span> ${p.label}
-      ${liveBadge}${runningBadge}${bbRsiLiveBadge}${bbRsiPaperBadge}${paLiveBadge}${paPaperBadge}${orbLiveBadge}${orbPaperBadge}${gapsLiveBadge}${gapsPaperBadge}${tdsLiveBadge}${tdsPaperBadge}${gap3mLiveBadge}${gap3mPaperBadge}${oiwfLiveBadge}${oiwfPaperBadge}${rsiPivotStLiveBadge}${rsiPivotStPaperBadge}${simple930LiveBadge}${simple930PaperBadge}
+      ${liveBadge}${runningBadge}${bbRsiLiveBadge}${bbRsiPaperBadge}${paLiveBadge}${paPaperBadge}${orbLiveBadge}${orbPaperBadge}${gapsLiveBadge}${gapsPaperBadge}${tdsLiveBadge}${tdsPaperBadge}${gap3mLiveBadge}${gap3mPaperBadge}${haScalpLiveBadge}${haScalpPaperBadge}${oiwfLiveBadge}${oiwfPaperBadge}${rsiPivotStLiveBadge}${rsiPivotStPaperBadge}${simple930LiveBadge}${simple930PaperBadge}
     </a>`;
   }
 
@@ -2007,6 +2039,7 @@ window.__ltInit = true;
     '.mode-gaps{color:#0369a1!important;}',
     '.mode-trend_day_scalp{color:#6d28d9!important;}',
     '.mode-gap_fix_3m{color:#0369a1!important;}',
+    '.mode-ha_scalp{color:#c2410c!important;}',
     '.mode-rsi_pivot_st{color:#c2410c!important;}',
     '.mode-simple930{color:#c2410c!important;}',
     '.mode-simple930-live{color:#c2410c!important;}',

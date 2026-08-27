@@ -457,6 +457,65 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
+    section: "HA SCALP STRATEGY (Heikin Ashi 15m) — Zerodha",
+    icon: "\u{1F56F}",
+    nav: "HA SCALP",
+    group: "Strategies",
+    fields: [
+      // ── Enable / live gating ──
+      { key: "HA_SCALP_PAPER_ENABLED", label: "HA Scalp Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new HA Scalp paper sessions.", default: "true", subheader: "Mode & Live" },
+      { key: "HA_SCALP_LIVE_ENABLED", label: "HA Scalp Live Orders (gates /ha-scalp-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Zerodha. NEVER traded — paper-validate first.", default: "false" },
+      { key: "HA_SCALP_LIVE_DRY_RUN", label: "HA Scalp Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep it simulated even when live is on.", default: "false" },
+
+      // ── The chart ──
+      { key: "HA_SCALP_RESOLUTION", label: "Candle Timeframe (min)", type: "select", options: ["3", "5", "10", "15", "30", "60"], effect: EFFECT.SESSION, desc: "The chart the rules were read off. 15 minutes is the strategy as specified — the repo-wide 5-min default does not apply here.", default: "15", subheader: "The chart (Heikin Ashi, NIFTY 50 spot)" },
+      { key: "HA_SCALP_HA_CONTINUOUS", label: "Continuous Heikin Ashi Chain Across Days", type: "toggle", effect: EFFECT.SESSION, desc: "ON = the HA candle carries over the overnight gap, which is what TradingView draws. OFF reseeds each day and the charts would then disagree with the platform the rules came from.", default: "true" },
+      { key: "HA_SCALP_HA_WARMUP_BARS", label: "Heikin Ashi Warm-up (bars)", type: "number", min: 1, max: 500, step: 1, effect: EFFECT.SESSION, desc: "No decision until this many bars are behind us. haOpen is a running average, so the first few candle colours are seed artefacts rather than signal.", default: "20" },
+      { key: "HA_SCALP_WARMUP_DAYS", label: "History Preload (calendar days)", type: "number", min: 3, max: 120, step: 1, effect: EFFECT.SESSION, desc: "How far back to fetch on start so the MA and the HA chain are established. At 25 bars a session, 15 calendar days is comfortably more than the ~51 bars needed, even across holidays.", default: "15" },
+
+      // ── The trend gate ──
+      { key: "HA_SCALP_MA_PERIOD", label: "Trend MA Period", type: "number", min: 2, max: 400, step: 1, effect: EFFECT.SESSION, desc: "The moving average that decides the side. Above it, CE only; below it, PE only. Computed on RAW closes, like the platform default.", default: "50", subheader: "The trend gate (hard directional filter)" },
+      { key: "HA_SCALP_MA_TYPE", label: "Trend MA Type", type: "select", options: ["sma", "ema"], effect: EFFECT.SESSION, desc: "Simple or exponential. The rules were read off a plain 50 MA.", default: "sma" },
+
+      // ── The entry candle ──
+      { key: "HA_SCALP_MAX_WICK_PCT", label: "\"No Wick\" Tolerance (% of candle range)", type: "number", min: 0, max: 100, step: 1, effect: EFFECT.SESSION, desc: "How much wick still counts as none, as a share of the candle's own range. 0 = exactly wick-free, which is the rule as specified and is deliberately strict — expect few trades. Raising it to 5–10 loosens the entry.", default: "0", subheader: "The entry candle" },
+      { key: "HA_SCALP_MIN_BODY_PTS", label: "Minimum Candle Body (pts)", type: "number", min: 0, max: 200, step: 1, effect: EFFECT.SESSION, desc: "A body smaller than this is not a strength candle. Without it, a flat candle satisfies \"no wick\" trivially.", default: "5" },
+
+      // ── Exits ──
+      { key: "HA_SCALP_EXIT_ON_DOJI", label: "Exit on a Doji Candle", type: "toggle", effect: EFFECT.SESSION, desc: "A doji warns of a trend reversal — close the trade. Colour is irrelevant: a doji ends the trend question either way.", default: "true", subheader: "Exits (there is NO target and NO trail)" },
+      { key: "HA_SCALP_DOJI_BODY_PCT", label: "Doji Body (% of range or less)", type: "number", min: 0, max: 100, step: 1, effect: EFFECT.SESSION, desc: "A candle whose body is this small a share of its range counts as a doji.", default: "20" },
+      { key: "HA_SCALP_EXIT_ON_WEAK", label: "Exit on a Weak or Opposite Candle", type: "toggle", effect: EFFECT.SESSION, desc: "The trend is fading — close the trade. Covers both an opposite-coloured candle and a same-coloured one whose body has shrunk.", default: "true" },
+      { key: "HA_SCALP_WEAK_BODY_PCT", label: "Weak Body (% of range)", type: "number", min: 0, max: 100, step: 1, effect: EFFECT.SESSION, desc: "A same-direction candle with a body below this share of its range is weak. Must sit above the doji threshold to mean anything separate.", default: "40" },
+
+      // ── Window ──
+      { key: "HA_SCALP_SESSION_START", label: "Session Start", type: "time", effect: EFFECT.SESSION, desc: "Where the session's bars start being counted (IST).", default: "09:15", subheader: "Session window" },
+      { key: "HA_SCALP_ENTRY_START", label: "Entry Window Start", type: "time", effect: EFFECT.SESSION, desc: "No entries before this (IST).", default: "09:30" },
+      { key: "HA_SCALP_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No new entries after this time (IST).", default: "15:00" },
+      { key: "HA_SCALP_FORCED_EXIT", label: "Forced Exit (EOD square-off)", type: "time", effect: EFFECT.SESSION, desc: "Hard square-off time (IST). A trade no candle rule has closed is closed here.", default: "15:15" },
+
+      // ── Risk ──
+      { key: "HA_SCALP_SL_BUFFER_PTS", label: "Stop Buffer Beyond the Candle Extreme (pts)", type: "number", min: 0, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Stop sits this far past the signal candle's raw high/low, so a one-tick poke does not take it out. 0 = exactly on the candle's extreme, as the rule states.", default: "0", subheader: "Risk" },
+      { key: "HA_SCALP_MAX_SL_PTS", label: "Max Stop Distance (pts, 0 = off)", type: "number", min: 0, max: 500, step: 5, effect: EFFECT.SESSION, desc: "Skip the setup when the signal candle's extreme is further away than this. OFF by default: the rule says that candle IS the stop, however wide.", default: "0" },
+
+      // ── Sizing & day-level breakers ──
+      { key: "HA_SCALP_LOT_MULTIPLIER", label: "Lot Multiplier (HA Scalp only)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.INSTANT, desc: "Lots per trade. 0 = use the global LOT_MULTIPLIER, which is the default (1 lot).", default: "0", subheader: "Sizing & Day Breakers" },
+      { key: "HA_SCALP_ITM_STEPS", label: "ITM Steps (strikes in-the-money)", type: "number", min: 0, max: 3, step: 1, effect: EFFECT.INSTANT, desc: "Strikes in-the-money to buy (0 = ATM). 1 step ≈ delta 0.6.", default: "1" },
+      { key: "HA_SCALP_MAX_DAILY_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 20, step: 1, effect: EFFECT.SESSION, desc: "Max entries per day.", default: "3" },
+      { key: "HA_SCALP_MAX_DAILY_LOSSES", label: "Stop-outs That End the Day", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Day ends after this many stop-outs (0 = off).", default: "2" },
+      { key: "HA_SCALP_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 0, max: 50000, step: 250, effect: EFFECT.SESSION, desc: "Stop trading after this much loss (0 = off).", default: "3000" },
+      { key: "HA_SCALP_DAILY_PROFIT_LOCK", label: "Daily Profit Lock (₹)", type: "number", min: 0, max: 50000, step: 250, effect: EFFECT.SESSION, desc: "Stop for the day once this much is banked (0 = off, the default).", default: "0" },
+      { key: "HA_SCALP_MAX_WEEKLY_LOSS", label: "Max Weekly Loss (₹)", type: "number", min: 0, max: 200000, step: 1000, effect: EFFECT.SESSION, desc: "Stop for the week after this much loss (0 = off).", default: "0" },
+
+      // ── Data plumbing ──
+      { key: "HA_SCALP_POLL_MS", label: "Option Premium Poll (ms)", type: "number", min: 500, max: 30000, step: 500, effect: EFFECT.SESSION, desc: "How often the option premium is refreshed while a trade is open. Spot comes from the shared tick socket, so nothing else is polled.", default: "2000", subheader: "Data plumbing" },
+      { key: "HA_SCALP_HISTORY_LAG_MS", label: "Bar-Close History Lag (ms)", type: "number", min: 0, max: 60000, step: 500, effect: EFFECT.SESSION, desc: "How long after a bar closes before the Fyers history endpoint is asked for it. Too short and the bar is not published yet, which delays every decision by a whole candle.", default: "5000" },
+
+      // ── Backtest ──
+      { key: "HA_SCALP_BT_SLIPPAGE_PTS", label: "Backtest Spread/Slippage Haircut (pts each way)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.BACKTEST, desc: "Backtest cost per side, in points. Without this, option-buying backtests always flatter.", default: "1.5", subheader: "Backtest" },
+      { key: "HA_SCALP_BT_SEED_PREMIUM", label: "Backtest Seed Premium (₹)", type: "number", min: 50, max: 800, step: 10, effect: EFFECT.BACKTEST, desc: "Assumed entry premium for the backtest (₹).", default: "240" },
+    ],
+  },
+  {
     section: "SIMPLE_9:30 STRATEGY (option-premium breakout) — Zerodha",
     icon: "\u{1F3AF}",
     nav: "SIMPLE 9:30",
@@ -774,6 +833,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_GAPS_STARTED", label: "GAPS — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a GAPS session starts.", default: "true" },
       { key: "TG_TDS_STARTED", label: "Trend Day Scalp — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a Trend Day Scalp session starts.", default: "true" },
       { key: "TG_GAP3M_STARTED", label: "3M Gap Fix Scalp — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a 3M Gap Fix Scalp session starts.", default: "true" },
+      { key: "TG_HA_SCALP_STARTED", label: "HA Scalp — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an HA Scalp session starts.", default: "true" },
       { key: "TG_SIMPLE930_STARTED", label: "SIMPLE_9:30 — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a SIMPLE_9:30 session starts.", default: "true" },
       { key: "TG_OIWF_STARTED", label: "OI Wall Fade — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an OI Wall Fade session starts.", default: "true" },
       { key: "TG_RSI_PIVOT_ST_STARTED", label: "RSI Pivot ST — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an RSI Pivot ST session starts.", default: "true" },
@@ -787,6 +847,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_GAPS_ENTRY", label: "GAPS — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every GAPS entry.", default: "true" },
       { key: "TG_TDS_ENTRY", label: "Trend Day Scalp — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Trend Day Scalp entry.", default: "true" },
       { key: "TG_GAP3M_ENTRY", label: "3M Gap Fix Scalp — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every 3M Gap Fix Scalp entry.", default: "true" },
+      { key: "TG_HA_SCALP_ENTRY", label: "HA Scalp — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on HA Scalp entries.", default: "true" },
       { key: "TG_SIMPLE930_ENTRY", label: "SIMPLE_9:30 — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every SIMPLE_9:30 entry.", default: "true" },
       { key: "TG_OIWF_ENTRY", label: "OI Wall Fade — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every OI Wall Fade entry.", default: "true" },
       { key: "TG_RSI_PIVOT_ST_ENTRY", label: "RSI Pivot ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every RSI Pivot ST entry.", default: "true" },
@@ -800,6 +861,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_GAPS_EXIT", label: "GAPS — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every GAPS exit.", default: "true" },
       { key: "TG_TDS_EXIT", label: "Trend Day Scalp — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Trend Day Scalp exit.", default: "true" },
       { key: "TG_GAP3M_EXIT", label: "3M Gap Fix Scalp — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every 3M Gap Fix Scalp exit.", default: "true" },
+      { key: "TG_HA_SCALP_EXIT", label: "HA Scalp — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on HA Scalp exits.", default: "true" },
       { key: "TG_SIMPLE930_EXIT", label: "SIMPLE_9:30 — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every SIMPLE_9:30 exit.", default: "true" },
       { key: "TG_OIWF_EXIT", label: "OI Wall Fade — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every OI Wall Fade exit.", default: "true" },
       { key: "TG_RSI_PIVOT_ST_EXIT", label: "RSI Pivot ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every RSI Pivot ST exit.", default: "true" },
@@ -818,6 +880,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_GAPS_DAYREPORT", label: "GAPS — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a GAPS day summary on stop.", default: "true" },
       { key: "TG_TDS_DAYREPORT", label: "Trend Day Scalp — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a Trend Day Scalp day summary on stop.", default: "true" },
       { key: "TG_GAP3M_DAYREPORT", label: "3M Gap Fix Scalp — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a 3M Gap Fix Scalp day summary on stop.", default: "true" },
+      { key: "TG_HA_SCALP_DAYREPORT", label: "HA Scalp — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send the HA Scalp day report when the session stops.", default: "true" },
       { key: "TG_SIMPLE930_DAYREPORT", label: "SIMPLE_9:30 — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a SIMPLE_9:30 day summary on stop.", default: "true" },
       { key: "TG_OIWF_DAYREPORT", label: "OI Wall Fade — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send an OI Wall Fade day summary on stop.", default: "true" },
       { key: "TG_RSI_PIVOT_ST_DAYREPORT", label: "RSI Pivot ST — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send an RSI Pivot ST day summary on stop.", default: "true" },
@@ -921,6 +984,7 @@ const SETTINGS_SCHEMA = [
       { key: "GAPS_MODE_ENABLED",      label: "GAPS Mode",                 type: "toggle", effect: EFFECT.INSTANT, desc: "Show the GAPS menu and settings.", default: "true" },
       { key: "TDS_MODE_ENABLED",       label: "Trend Day Scalp Mode",      type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Trend Day Scalp menu and settings.", default: "true" },
       { key: "GAP3M_MODE_ENABLED",     label: "3M Gap Fix Scalp Mode",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show the 3M Gap Fix Scalp menu and settings.", default: "true" },
+      { key: "HA_SCALP_MODE_ENABLED",  label: "HA Scalp Mode",             type: "toggle", effect: EFFECT.INSTANT, desc: "Show the HA Scalp menu and settings.", default: "true" },
       { key: "SIMPLE930_MODE_ENABLED", label: "SIMPLE_9:30 Mode",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show the SIMPLE_9:30 menu and settings.", default: "true" },
       { key: "OIWF_MODE_ENABLED",      label: "OI Wall Fade Mode",       type: "toggle", effect: EFFECT.INSTANT, desc: "Show the OI Wall Fade menu and settings.", default: "true" },
       { key: "RSI_PIVOT_ST_MODE_ENABLED", label: "RSI Pivot ST Mode",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show the RSI Pivot ST menu and settings.", default: "true" },
@@ -983,6 +1047,12 @@ const SETTINGS_SCHEMA = [
       { key: "UI_SHOW_GAP3M_PAPER",    label: "3M Gap Fix Scalp → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under 3M Gap Fix Scalp.", default: "true" },
       { key: "UI_SHOW_GAP3M_LIVE",     label: "3M Gap Fix Scalp → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live under 3M Gap Fix Scalp.", default: "true" },
       { key: "UI_SHOW_GAP3M_HISTORY",  label: "3M Gap Fix Scalp → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under 3M Gap Fix Scalp.", default: "true" },
+
+      // ── HA Scalp submenu ──
+      { key: "UI_SHOW_HA_SCALP_BACKTEST", label: "HA Scalp → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under HA Scalp.", default: "true", subheader: "HA Scalp sub-menus" },
+      { key: "UI_SHOW_HA_SCALP_PAPER",    label: "HA Scalp → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under HA Scalp.", default: "true" },
+      { key: "UI_SHOW_HA_SCALP_LIVE",     label: "HA Scalp → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live under HA Scalp.", default: "true" },
+      { key: "UI_SHOW_HA_SCALP_HISTORY",  label: "HA Scalp → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under HA Scalp.", default: "true" },
 
       // ── SIMPLE_9:30 submenu ──
       { key: "UI_SHOW_SIMPLE930_BACKTEST", label: "SIMPLE_9:30 → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under SIMPLE_9:30.", default: "true", subheader: "SIMPLE_9:30 sub-menus" },
@@ -1064,6 +1134,7 @@ const MODE_SECTION_TITLES = {
   gaps:     "GAPS STRATEGY — Fyers",
   trend_day_scalp: "TREND DAY SCALP STRATEGY — Fyers",
   gap_fix_3m: "3M GAP FIX SCALP STRATEGY — Fyers (NIFTY FUTURES)",
+  ha_scalp: "HA SCALP STRATEGY (Heikin Ashi 15m) — Zerodha",
   simple930: "SIMPLE_9:30 STRATEGY (option-premium breakout) — Zerodha",
   oi_wall_fade: "OI WALL FADE STRATEGY — Fyers (per-strike Open Interest)",
   rsi_pivot_st: "RSI_PIVOT_ST STRATEGY (RSI + Standard Pivot R1/S1 + SuperTrend) — Zerodha",
@@ -1074,7 +1145,7 @@ const SNAPSHOT_COMMON_SECTION_TITLES = new Set([
   "OPEN-INTEREST FILTER (OI + Price Buildup)",
 ]);
 
-const _MODE_KEYS = { ema_rsi_st: new Set(), bb_rsi: new Set(), pa: new Set(), orb: new Set(), ema9vwap: new Set(), trend_pb: new Set(), gaps: new Set(), trend_day_scalp: new Set(), gap_fix_3m: new Set(), simple930: new Set(), oi_wall_fade: new Set(), rsi_pivot_st: new Set() };
+const _MODE_KEYS = { ema_rsi_st: new Set(), bb_rsi: new Set(), pa: new Set(), orb: new Set(), ema9vwap: new Set(), trend_pb: new Set(), gaps: new Set(), trend_day_scalp: new Set(), gap_fix_3m: new Set(), ha_scalp: new Set(), simple930: new Set(), oi_wall_fade: new Set(), rsi_pivot_st: new Set() };
 const _KEY_TO_MODES = new Map();
 (function buildModeKeyIndex() {
   const commonKeys = [];
@@ -1503,7 +1574,7 @@ router.post("/restart", (req, res) => {
 // cache & logs always clear fully. The aggregate paper JSON + capital restore is
 // handled client-side via the per-strategy /reset endpoints (full paper wipe only).
 // Auto-gated by the app.js x-api-secret middleware (not in OPEN_PATHS).
-const RESET_PAPER_MODES = ["ema_rsi_st", "bb_rsi", "pa", "orb", "ema9vwap", "trend_pb", "gaps", "trend_day_scalp", "gap_fix_3m", "simple930", "oi_wall_fade", "rsi_pivot_st"];
+const RESET_PAPER_MODES = ["ema_rsi_st", "bb_rsi", "pa", "orb", "ema9vwap", "trend_pb", "gaps", "trend_day_scalp", "gap_fix_3m", "ha_scalp", "simple930", "oi_wall_fade", "rsi_pivot_st"];
 const _RESET_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 router.post("/reset-data", (req, res) => {
@@ -1816,6 +1887,7 @@ router.get("/", (req, res) => {
   const gapsModeOn     = (envData["GAPS_MODE_ENABLED"]     ?? process.env.GAPS_MODE_ENABLED     ?? "true").toLowerCase() === "true";
   const tdsModeOn      = (envData["TDS_MODE_ENABLED"]      ?? process.env.TDS_MODE_ENABLED      ?? "true").toLowerCase() === "true";
   const gap3mModeOn    = (envData["GAP3M_MODE_ENABLED"]    ?? process.env.GAP3M_MODE_ENABLED    ?? "true").toLowerCase() === "true";
+  const haScalpModeOn  = (envData["HA_SCALP_MODE_ENABLED"] ?? process.env.HA_SCALP_MODE_ENABLED ?? "true").toLowerCase() === "true";
   const simple930ModeOn = (envData["SIMPLE930_MODE_ENABLED"] ?? process.env.SIMPLE930_MODE_ENABLED ?? "true").toLowerCase() === "true";
   const oiwfModeOn     = (envData["OIWF_MODE_ENABLED"]     ?? process.env.OIWF_MODE_ENABLED     ?? "true").toLowerCase() === "true";
   const rsiPivotStModeOn = (envData["RSI_PIVOT_ST_MODE_ENABLED"] ?? process.env.RSI_PIVOT_ST_MODE_ENABLED ?? "true").toLowerCase() === "true";
@@ -1832,6 +1904,7 @@ router.get("/", (req, res) => {
     "GAPS STRATEGY — Fyers":                                        gapsModeOn,
     "TREND DAY SCALP STRATEGY — Fyers":                             tdsModeOn,
     "3M GAP FIX SCALP STRATEGY — Fyers (NIFTY FUTURES)":            gap3mModeOn,
+    "HA SCALP STRATEGY (Heikin Ashi 15m) — Zerodha":                haScalpModeOn,
     "SIMPLE_9:30 STRATEGY (option-premium breakout) — Zerodha":     simple930ModeOn,
     "OI WALL FADE STRATEGY — Fyers (per-strike Open Interest)":     oiwfModeOn,
     "RSI_PIVOT_ST STRATEGY (RSI + Standard Pivot R1/S1 + SuperTrend) — Zerodha": rsiPivotStModeOn,

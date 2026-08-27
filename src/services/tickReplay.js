@@ -621,6 +621,7 @@ const _MODE_TO_CANONICAL_FILE = {
   "gaps-paper":     "gaps_paper_trades.json",
   "trend-day-scalp-paper": "trend_day_scalp_paper_trades.json",
   "gap-fix-3m-paper":      "gap_fix_3m_paper_trades.json",
+  "ha-scalp-paper":        "ha_scalp_paper_trades.json",
   "oi-wall-fade-paper":    "oi_wall_fade_paper_trades.json",
   "rsi-pivot-st-paper":    "rsi_pivot_st_paper_trades.json",
   "simple930-paper":       "simple930_paper_trades.json",
@@ -796,6 +797,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     ss_clearTrendDayScalp:     sharedSocketState.clearTrendDayScalp,
     ss_setGapFix3mActive:      sharedSocketState.setGapFix3mActive,
     ss_clearGapFix3m:          sharedSocketState.clearGapFix3m,
+    ss_setHaScalpActive:       sharedSocketState.setHaScalpActive,
+    ss_clearHaScalp:           sharedSocketState.clearHaScalp,
     ss_setOiWallFadeActive:    sharedSocketState.setOiWallFadeActive,
     ss_clearOiWallFade:        sharedSocketState.clearOiWallFade,
     ss_setRsiPivotStActive:    sharedSocketState.setRsiPivotStActive,
@@ -1253,6 +1256,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     sharedSocketState.clearTrendDayScalp     = () => {};
     sharedSocketState.setGapFix3mActive      = () => {};
     sharedSocketState.clearGapFix3m          = () => {};
+    sharedSocketState.setHaScalpActive       = () => {};
+    sharedSocketState.clearHaScalp           = () => {};
     sharedSocketState.setOiWallFadeActive    = () => {};
     sharedSocketState.clearOiWallFade        = () => {};
     sharedSocketState.setRsiPivotStActive    = () => {};
@@ -1486,6 +1491,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     sharedSocketState.clearTrendDayScalp     = orig.ss_clearTrendDayScalp;
     sharedSocketState.setGapFix3mActive      = orig.ss_setGapFix3mActive;
     sharedSocketState.clearGapFix3m          = orig.ss_clearGapFix3m;
+    sharedSocketState.setHaScalpActive       = orig.ss_setHaScalpActive;
+    sharedSocketState.clearHaScalp           = orig.ss_clearHaScalp;
     sharedSocketState.setOiWallFadeActive    = orig.ss_setOiWallFadeActive;
     sharedSocketState.clearOiWallFade        = orig.ss_clearOiWallFade;
     sharedSocketState.setRsiPivotStActive    = orig.ss_setRsiPivotStActive;
@@ -1565,6 +1572,7 @@ const MODE_TO_MODULE = {
   "gaps-paper":     "../routes/gapsPaper",
   "trend-day-scalp-paper": "../routes/trendDayScalpPaper",
   "gap-fix-3m-paper":      "../routes/gapFix3mPaper",
+  "ha-scalp-paper":        "../routes/haScalpPaper",
   "oi-wall-fade-paper":    "../routes/oiWallFadePaper",
   "rsi-pivot-st-paper":    "../routes/rsiPivotStPaper",
   "simple930-paper":       "../routes/simple930Paper",
@@ -2136,6 +2144,7 @@ function replayPreflight() {
   if (sharedSocketState.isGapsActive())     activeModes.push(sharedSocketState.getGapsMode() || "gaps");
   if (sharedSocketState.isTrendDayScalpActive && sharedSocketState.isTrendDayScalpActive()) activeModes.push(sharedSocketState.getTrendDayScalpMode() || "trend_day_scalp");
   if (sharedSocketState.isGapFix3mActive && sharedSocketState.isGapFix3mActive()) activeModes.push(sharedSocketState.getGapFix3mMode() || "gap_fix_3m");
+  if (sharedSocketState.isHaScalpActive && sharedSocketState.isHaScalpActive()) activeModes.push(sharedSocketState.getHaScalpMode() || "ha_scalp");
   if (sharedSocketState.isOiWallFadeActive && sharedSocketState.isOiWallFadeActive()) activeModes.push(sharedSocketState.getOiWallFadeMode() || "oi_wall_fade");
   if (sharedSocketState.isRsiPivotStActive && sharedSocketState.isRsiPivotStActive()) activeModes.push(sharedSocketState.getRsiPivotStMode() || "rsi_pivot_st");
   if (sharedSocketState.isSimple930Active && sharedSocketState.isSimple930Active()) activeModes.push(sharedSocketState.getSimple930Mode() || "simple930");
@@ -2199,6 +2208,7 @@ function forceClearSharedState() {
     gaps:     sharedSocketState.getGapsMode(),
     trend_day_scalp: sharedSocketState.getTrendDayScalpMode ? sharedSocketState.getTrendDayScalpMode() : null,
     gap_fix_3m: sharedSocketState.getGapFix3mMode ? sharedSocketState.getGapFix3mMode() : null,
+    ha_scalp: sharedSocketState.getHaScalpMode ? sharedSocketState.getHaScalpMode() : null,
     oi_wall_fade: sharedSocketState.getOiWallFadeMode ? sharedSocketState.getOiWallFadeMode() : null,
     rsi_pivot_st: sharedSocketState.getRsiPivotStMode ? sharedSocketState.getRsiPivotStMode() : null,
     simple930: sharedSocketState.getSimple930Mode ? sharedSocketState.getSimple930Mode() : null,
@@ -2216,6 +2226,7 @@ function forceClearSharedState() {
   sharedSocketState.clearGaps();
   if (sharedSocketState.clearTrendDayScalp) sharedSocketState.clearTrendDayScalp();
   if (sharedSocketState.clearGapFix3m) sharedSocketState.clearGapFix3m();
+  if (sharedSocketState.clearHaScalp) sharedSocketState.clearHaScalp();
   if (sharedSocketState.clearOiWallFade) sharedSocketState.clearOiWallFade();
   if (sharedSocketState.clearRsiPivotSt) sharedSocketState.clearRsiPivotSt();
   if (sharedSocketState.clearSimple930) sharedSocketState.clearSimple930();

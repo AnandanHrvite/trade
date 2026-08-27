@@ -72,6 +72,7 @@ const STRATEGIES = {
   oi_wall_fade: { broker: "fyers", label: "OI_WALL_FADE", file: "oi_wall_fade_paper_trades.json" },
   rsi_pivot_st: { broker: "zerodha", label: "RSI_PIVOT_ST", file: "rsi_pivot_st_paper_trades.json" },
   simple930: { broker: "zerodha", label: "SIMPLE_9:30", file: "simple930_paper_trades.json" },
+  ha_scalp:  { broker: "zerodha", label: "HA_SCALP",    file: "ha_scalp_paper_trades.json"  },
 };
 
 const BROKER_ENV = { zerodha: "ZERODHA_INV_AMOUNT", fyers: "FYERS_INV_AMOUNT" };
