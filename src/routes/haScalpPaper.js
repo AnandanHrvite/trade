@@ -184,10 +184,7 @@ function _freshState() {
     formingBar:     null,   // display-only: the bar being built from live ticks
     tickCount:      0,
     lastTickTime:   null,
-    lastTickPrice:  null,   // NIFTY 50 INDEX
-    lastTickPrice:   null,   // NIFTY SPOT — what every exit is measured against
-    lastTickTime:      null,
-    spotSymbol:      null,
+    lastTickPrice:  null,   // NIFTY 50 INDEX spot — what the stop is measured against
     position:       null,
     optionLtp:      null,
     optionLtpUpdatedAt: null,
