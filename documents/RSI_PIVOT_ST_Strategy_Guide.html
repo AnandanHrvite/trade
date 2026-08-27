@@ -210,13 +210,18 @@
   <li><b>A 25% premium floor.</b> The option's own price is watched, and the exit sits 25% below the <em>highest</em> premium the trade has seen. Buy at &#8377;180 and the floor starts at &#8377;135; if the premium runs to &#8377;240 the floor ratchets up to &#8377;180, which is your entry price. It never comes back down.</li>
 </ul>
 
-<h3>PE — one stop only</h3>
+<h3>PE &mdash; one stop only, by default</h3>
 <ul>
-  <li><b>The 25% premium floor, and nothing else.</b> There is no SuperTrend on the Put side.</li>
+  <li><b>The 25% premium floor, and nothing else.</b> Out of the box the SuperTrend is applied to CE only (<code>RSI_PIVOT_ST_ST_SIDES=CE</code>), so a Put is held by the premium floor alone.</li>
+  <li>This is a <em>setting</em>, not a law of the engine. <code>RSI_PIVOT_ST_ST_SIDES</code> accepts <code>BOTH</code>, <code>CE</code>, <code>PE</code> or <code>NONE</code>; on PE the line is the exact mirror &mdash; it must sit above price to enter, and a flip to bullish is the exit.</li>
 </ul>
 
 <div class="card warn">
-  <strong>A CE with no valid stop is refused, not entered.</strong> If the SuperTrend is still warming up, or has flipped bearish, or already sits at or above the entry close — meaning the trade would be stopped out on its very first tick — the engine declines the setup and says so in the skip log. It will not open a position it cannot protect.
+  <strong>You can configure a trade with no stop at all.</strong> <code>RSI_PIVOT_ST_PREMIUM_SL_SIDES</code> (default <code>BOTH</code>) can switch the premium floor off for a side. If that side also has no SuperTrend &mdash; a PE with the defaults, or any side under <code>ST_SIDES=NONE</code> &mdash; the position has <b>no stop of any kind</b> and can only be closed by the 15:15 square-off, with the full premium at risk. The engine does not quietly substitute a stop: it logs <code>THIS TRADE HAS NO STOP</code> on entry and keeps going. Only turn the floor off for a side that still carries the SuperTrend.</div>
+
+<div class="card warn">
+  <strong>A side that expects a SuperTrend stop is refused without one.</strong> On any side <code>RSI_PIVOT_ST_ST_SIDES</code> covers &mdash; CE at the defaults &mdash; if the SuperTrend is still warming up, has flipped the wrong way, or already sits through the entry close (so the trade would be stopped on its very first tick), the engine declines the setup and says so in the skip log.
+  <br><br>Note the limit of this rule: it only fires where the SuperTrend applies. A side configured with neither the SuperTrend nor the premium floor is <em>not</em> refused &mdash; it is entered unprotected and logged as such. See the warning above.
 </div>
 
 <h3>What is NOT here</h3>
@@ -367,6 +372,8 @@
   <tr><td><code>RSI_PIVOT_ST_ST_PERIOD</code></td><td><code>10</code></td><td>ATR length behind the SuperTrend line used as the CE stop. Longer = a slower, looser trail.</td></tr>
   <tr><td><code>RSI_PIVOT_ST_ST_MULT</code></td><td><code>2</code></td><td>How many ATRs below price the SuperTrend line sits. Smaller = a tighter stop that gets hit more often; larger = more room and bigger losses.</td></tr>
   <tr><td><code>RSI_PIVOT_ST_ST_CE_ENABLED</code></td><td><code>true</code></td><td>Use the SuperTrend line as the CE stop and trail, on top of the premium stop. <b>This affects CE only</b> — PE is stopped by the premium rule alone, by design. Turning it off leaves CE with only the premium stop and also removes the "SuperTrend must be bullish" entry check.</td></tr>
+<tr><td><code>RSI_PIVOT_ST_ST_SIDES</code></td><td><code>CE</code></td><td>Which sides carry the SuperTrend stop and trail: <code>BOTH</code>, <code>CE</code>, <code>PE</code> or <code>NONE</code>. This is the current selector; it overrides the legacy <code>ST_CE_ENABLED</code> flag above, which is only consulted when this key is absent.</td></tr>
+<tr><td><code>RSI_PIVOT_ST_PREMIUM_SL_SIDES</code></td><td><code>BOTH</code></td><td>Which sides carry the premium floor: <code>BOTH</code>, <code>CE</code>, <code>PE</code> or <code>NONE</code>. Turning it off for a side that has no SuperTrend leaves that trade with <b>no stop at all</b> &mdash; see the warning above.</td></tr>
   <tr><td><code>RSI_PIVOT_ST_PREMIUM_SL_PCT</code></td><td><code>25</code></td><td>Exit when the option price falls this far below its best price so far. 25 means: bought at 100, exit at 75; if it runs to 140, the exit rises to 105. Applies to <b>both</b> CE and PE.</td></tr>
 </table>
 

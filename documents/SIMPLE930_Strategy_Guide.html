@@ -124,7 +124,7 @@
 <div class="card accent">
   <p style="margin:0 0 8px;"><b>09:25</b> — quote every in-the-money strike on both sides. Keep the ONE Call and the ONE Put trading nearest ₹180. That pair is the day's watchlist, and it never changes again.</p>
   <p style="margin:0 0 8px;"><b>09:25 → 09:35</b> — watch both premiums. The first one to trade <em>above</em> ₹180 is bought at market, immediately. It might be the Call, it might be the Put. If neither gets there by 09:35, the day is over before it started.</p>
-  <p style="margin:0 0 8px;"><b>The stop</b> — 20 points below whatever you actually paid, and it follows the highest premium seen since entry by the same 20 points. It only ever moves up.</p>
+  <p style="margin:0 0 8px;"><b>The stop</b> — a flat 20 points below whatever you actually paid. It only starts following the premium once the trade has proved itself by touching the top of the box (₹220); until then the flat stop is the only risk. It only ever moves up.</p>
   <p style="margin:0;"><b>09:45</b> — if the trade has spent those minutes shuffling between ₹160 and ₹220 without ever leaving that box, close it. Profit or loss, it does not matter: a move that has not happened in fifteen minutes is not going to.</p>
 </div>
 
@@ -196,22 +196,26 @@
   <strong>If both legs are above ₹180 on the same reading</strong> — which happens on a violently indecisive open — the engine takes the one further through the level. It has travelled more, and an arbitrary "Calls first" rule would bias every such morning to one side.
 </div>
 
-<h2 id="stop">6. Step 3 — the 20-point stop that follows</h2>
+<h2 id="stop">6. Step 3 — the 20-point stop, and when it starts to follow</h2>
 
-<p>The stop starts twenty points under the fill and then follows the highest premium the trade has seen, still twenty points behind. It ratchets: it goes up, never down, and never back below where it started.</p>
+<p>The stop starts twenty points under the fill and simply sits there. It does <b>not</b> follow the premium straight away — the trail stays <b>disarmed</b> until the premium actually touches the top of the 09:45 box (₹220 at the defaults, the same <code>bandUp</code> level the sideways exit reads).</p>
 
-<p>The first four steps of the trade above, straight out of the engine:</p>
+<p>This matters. An earlier build armed the trail at entry, so a fill at ₹185 that wobbled up six points ratcheted its stop 17 times and closed the trade for a loss the real ₹165 stop never came near — the trade was stopped out by its own trail. Now a trade that has not reached ₹220 can only leave by the flat stop or the clock.</p>
+
+<p>Once armed, it ratchets: twenty points behind the highest premium seen, up only, never back below where it started. Set <code>SIMPLE930_TRAIL_ARM_AT_BAND_UP=false</code> to restore the old arm-at-entry behaviour.</p>
+
+<p>The trade in section 5 ran to ₹241, so it did arm. Here is the moment it crossed ₹220 and the trail took over:</p>
 
 <table>
 <tr><th>Time</th><th>Best premium so far</th><th>Stop moves</th></tr>
 <tr><td>09:30</td><td class="num">₹180.90 (the fill)</td><td class="num">₹160.90 — the initial stop</td></tr>
-<tr><td>09:31</td><td class="num">₹183.58</td><td class="num">₹160.90 → ₹163.58</td></tr>
-<tr><td>09:32</td><td class="num">₹186.27</td><td class="num">₹163.58 → ₹166.27</td></tr>
-<tr><td>09:33</td><td class="num">₹188.95</td><td class="num">₹166.27 → ₹168.95</td></tr>
-<tr><td>09:34</td><td class="num">₹191.63</td><td class="num">₹168.95 → ₹171.63</td></tr>
+<tr><td>09:31</td><td class="num">₹183.58</td><td class="num">₹160.90 — trail disarmed</td></tr>
+<tr><td>09:34</td><td class="num">₹191.63</td><td class="num">₹160.90 — trail disarmed</td></tr>
+<tr><td>09:52</td><td class="num">₹220.00</td><td class="num">₹160.90 → ₹200.00 — <b>trail arms</b></td></tr>
+<tr><td>09:53</td><td class="num">₹222.40</td><td class="num">₹200.00 → ₹202.40</td></tr>
 </table>
 
-<p>It carried on like that for <b>24</b> lifts in all, and the trade ended when the premium finally came back to the trail at <b>10:18</b>. Peak ₹241, stop ₹221, exit ₹220.31 — <b>+39.41 points</b>.</p>
+<p>Everything before ₹220 is protected by the flat ₹160.90 stop alone — the wobble up to ₹191.63 moves nothing. Once armed, the trail ratchets with each new high, and the trade ended when the premium came back to it at <b>10:18</b>. Peak ₹241, stop ₹221, exit ₹220.31 — <b>+39.41 points</b>.</p>
 
 <div class="card">
   <strong>Why the trail is not optional here.</strong> With a 20-point stop and no target, the only two ways out are the stop and the clock. Without a trail, a trade that ran to ₹241 and came back to ₹181 would exit at breakeven after being ₹60 in front. The trail is what turns "the move happened" into money.
@@ -223,7 +227,7 @@
 
 <div class="tv-chart" id="s930-sideways"></div>
 
-<p>That run bought at <b>₹181.40</b> at 09:31 and spent the next fourteen minutes between ₹176 and ₹191. It never came near ₹220 and never near ₹160, so at 09:45 it was closed at <b>₹181.25</b>: fifteen paise below the fill, <b>−₹90.68</b> after charges. The rule did precisely what it exists to do — it declined to keep paying decay on a trade that was not moving.</p>
+<p>That run bought at <b>₹181.40</b> at 09:31 and spent the next fourteen minutes between ₹176 and ₹191. It never came near ₹220 and never near ₹160, so at 09:45 it was closed at <b>₹181.25</b>: fifteen paise below the fill, <b>−₹89.18</b> after charges. The rule did precisely what it exists to do — it declined to keep paying decay on a trade that was not moving.</p>
 
 <p>The trade in section 5 shows the other branch. It cleared ₹220 at <b>09:43</b>, two minutes before the deadline, and the 09:45 check simply did not apply to it. It went on to make ₹2,870.</p>
 
@@ -247,16 +251,16 @@
 
 <h2 id="money">9. The money, with real numbers</h2>
 
-<p>One lot of NIFTY is 75 units on this install (<code>NIFTY_LOT_SIZE</code>), so one premium point is ₹75. The round trip on Zerodha, computed by this repo's own charges model on a ₹181 contract, is <b>₹79.39</b> — about <b>1.06 premium points</b>. Add the 1.5 points a side the backtest charges for slippage and the trade has to find roughly <b>4 points</b> before it is worth anything at all.</p>
+<p>One lot of NIFTY is 65 units on this install (<code>NIFTY_LOT_SIZE</code>), so one premium point is ₹65. The round trip on Zerodha, computed by this repo's own charges model on a ₹181 contract, is <b>₹79.39</b> — about <b>1.06 premium points</b>. Add the 1.5 points a side the backtest charges for slippage and the trade has to find roughly <b>4 points</b> before it is worth anything at all.</p>
 
 <table>
 <tr><th>Run</th><th>Fill</th><th>Exit</th><th>Points</th><th>Gross</th><th>Charges</th><th>Net</th></tr>
-<tr><td>The trend day (section 5)</td><td class="num">₹180.90</td><td class="num">₹220.31 (trail)</td><td class="num">+39.41</td><td class="num">₹2,955.75</td><td class="num">₹85.04</td><td class="num" style="color:#10b981;">+₹2,870.71</td></tr>
-<tr><td>The sideways day (section 7)</td><td class="num">₹181.40</td><td class="num">₹181.25 (09:45)</td><td class="num">−0.15</td><td class="num">−₹11.25</td><td class="num">₹79.43</td><td class="num" style="color:#f85149;">−₹90.68</td></tr>
-<tr><td>A clean stop-out</td><td class="num">₹181.00</td><td class="num">₹161.00 (stop)</td><td class="num">−20.00</td><td class="num">−₹1,500.00</td><td class="num">₹76.51</td><td class="num" style="color:#f85149;">−₹1,576.51</td></tr>
+<tr><td>The trend day (section 5)</td><td class="num">₹180.90</td><td class="num">₹220.31 (trail)</td><td class="num">+39.41</td><td class="num">₹2,561.65</td><td class="num">₹85.04</td><td class="num" style="color:#10b981;">+₹2,476.61</td></tr>
+<tr><td>The sideways day (section 7)</td><td class="num">₹181.40</td><td class="num">₹181.25 (09:45)</td><td class="num">−0.15</td><td class="num">−₹9.75</td><td class="num">₹79.43</td><td class="num" style="color:#f85149;">−₹89.18</td></tr>
+<tr><td>A clean stop-out</td><td class="num">₹181.00</td><td class="num">₹161.00 (stop)</td><td class="num">−20.00</td><td class="num">−₹1,300.00</td><td class="num">₹76.51</td><td class="num" style="color:#f85149;">−₹1,376.51</td></tr>
 </table>
 
-<p>The shape of the thing is therefore: lose ₹1,576.51 when you are wrong, lose about ₹90 when nothing happens, and make whatever the morning gives you when you are right. That third number is the entire edge, and it is the one number nobody has measured yet.</p>
+<p>The shape of the thing is therefore: lose ₹1,376.51 when you are wrong, lose about ₹90 when nothing happens, and make whatever the morning gives you when you are right. That third number is the entire edge, and it is the one number nobody has measured yet.</p>
 
 <div class="card warn">
   <strong>The arithmetic that has to work.</strong> With a fixed 20-point risk, this strategy needs its winners to average more than 20 points for every loser it takes. The sideways rule exists to make that possible — it converts most "nothing happened" days from a full 20-point stop into a ₹90 fee. Whether it succeeds is exactly what paper collection has to find out.
@@ -316,6 +320,7 @@
 <tr><td><code>SIMPLE930_SL_PTS</code></td><td class="num">20</td><td>Stop distance below the ACTUAL fill, not below the trigger.</td></tr>
 <tr><td><code>SIMPLE930_TRAIL_ENABLED</code></td><td class="num">true</td><td>Turn it off and the stop stays where it started all day.</td></tr>
 <tr><td><code>SIMPLE930_TRAIL_PTS</code></td><td class="num">20</td><td>How far behind the peak the trail sits.</td></tr>
+<tr><td><code>SIMPLE930_TRAIL_ARM_AT_BAND_UP</code></td><td class="num">true</td><td>Keeps the trail disarmed until the premium touches the top of the box (₹220). Set false to arm it at entry, the old behaviour.</td></tr>
 <tr><td><code>SIMPLE930_SIDEWAYS_CHECK</code></td><td class="num">09:45</td><td>When the box is judged.</td></tr>
 <tr><td><code>SIMPLE930_BAND_UP_OFFSET</code></td><td class="num">40</td><td>Box top = trigger + this. ₹220 at the defaults.</td></tr>
 <tr><td><code>SIMPLE930_BAND_DOWN_OFFSET</code></td><td class="num">20</td><td>Box floor = trigger − this. ₹160 at the defaults — and unreachable while the stop is 20 points wide.</td></tr>

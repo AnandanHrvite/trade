@@ -172,7 +172,7 @@
     <div><b style="color:#94a3b8;">Shaded column</b> = the stretch of time we were actually holding the option.</div>
     <div><b style="color:#7890c8;">Coloured lines</b> are the strategy's tools. The small legend under each chart names them.</div>
   </div>
-  <div style="font-size:0.8rem; color:#7d8ba0; margin-top:9px;"><b style="color:#a9b6c9;">A word on "points".</b> Every price on these charts is the <b>index level itself</b> &mdash; not rupees, and not the price of the option you buy. So "+30 points" means the index moved 30 points our way. As a rough rule of thumb the option we buy gains a little over <b>half a point</b> for each point the index moves, and one lot is about 75 units &mdash; so a 30-point index move is roughly &#8377;1,200 on one lot before costs.</div>
+  <div style="font-size:0.8rem; color:#7d8ba0; margin-top:9px;"><b style="color:#a9b6c9;">A word on "points".</b> Every price on these charts is the <b>index level itself</b> &mdash; not rupees, and not the price of the option you buy. So "+30 points" means the index moved 30 points our way. As a rough rule of thumb the option we buy gains a little over <b>half a point</b> for each point the index moves, and one lot is about 65 units &mdash; so a 30-point index move is roughly &#8377;1,050 on one lot before costs.</div>
 </div>
 
 <div class="chart-box"><div id="tds-gate"></div></div>
@@ -266,7 +266,7 @@
 <tr><td>Daily profit lock</td><td>₹3,000</td><td>Once ahead by this much, the day ends. Handing profit back is what destroys a steady curve.</td></tr>
 <tr><td>No new entries after</td><td>14:00</td><td>Late entries have no room left to reach the target.</td></tr>
 <tr><td>Everything flat by</td><td>15:10</td><td>Nothing is carried overnight.</td></tr>
-<tr><td>Portfolio cap</td><td>shared</td><td>Respects <code>PORTFOLIO_MAX_DAILY_LOSS</code> across every strategy, if you set it.</td></tr>
+<tr><td>Portfolio cap</td><td>shared</td><td>Respects <code>PORTFOLIO_MAX_DAILY_LOSS</code> across every strategy, if you set it. Like the weekly cap (<code>TDS_MAX_WEEKLY_LOSS</code>), breaching it <b>closes the day</b> &mdash; it does not merely skip the one entry being evaluated.</td></tr>
 </table>
 
 <h2 id="modes">10. Paper, Live, Backtest &amp; Replay</h2>

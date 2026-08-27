@@ -330,7 +330,7 @@ td.pe { color: var(--red); }
         <div><b style="color:#94a3b8;">Shaded column</b> = the stretch of time we were actually holding the option.</div>
         <div><b style="color:#7890c8;">Coloured lines</b> are the strategy's tools. The small legend under each chart names them.</div>
       </div>
-      <div style="font-size:0.8rem; color:#7d8ba0; margin-top:9px;"><b style="color:#a9b6c9;">A word on "points".</b> Every price on these charts is the <b>index level itself</b> &mdash; not rupees, and not the price of the option you buy. So "+30 points" means the index moved 30 points our way. As a rough rule of thumb the option we buy gains a little over <b>half a point</b> for each point the index moves, and one lot is about 75 units &mdash; so a 30-point index move is roughly &#8377;1,200 on one lot before costs.</div>
+      <div style="font-size:0.8rem; color:#7d8ba0; margin-top:9px;"><b style="color:#a9b6c9;">A word on "points".</b> Every price on these charts is the <b>index level itself</b> &mdash; not rupees, and not the price of the option you buy. So "+30 points" means the index moved 30 points our way. As a rough rule of thumb the option we buy gains a little over <b>half a point</b> for each point the index moves, and one lot is about 65 units &mdash; so a 30-point index move is roughly &#8377;1,050 on one lot before costs.</div>
     </div>
 
     <div class="tv-chart mt-3" id="pa-session"></div>
@@ -1004,7 +1004,7 @@ td.pe { color: var(--red); }
 
 13:20  A candle finally CLOSES below the trailed stop → SELL.
        The CE is now worth ₹175.  Profit = ₹60 per unit; on one lot
-       (75 units) that's about ₹4,500 before charges.  Win banked.</pre>
+       (65 units) that's about ₹3,900 before charges.  Win banked.</pre>
     </div>
 
     <div class="tip-box">
@@ -1181,8 +1181,8 @@ td.pe { color: var(--red); }
     </div>
 
     <div class="tip-box mt-2">
-      <div class="tip-title">Heads-up: Price Action is currently switched OFF on this machine</div>
-      <p class="fs-sm">The running config has <code>PA_MODE_ENABLED=false</code> and <code>PA_ENABLED=false</code>, so PA is hidden from the menus and takes no trades &mdash; in practice <em>or</em> live. Everything in this guide still describes the engine accurately; it simply isn't running. Turn <code>PA_MODE_ENABLED</code> on in Settings to bring it back.</p>
+      <div class="tip-title">Heads-up: Price Action is visible, but placing no live orders</div>
+      <p class="fs-sm">The running config has <code>PA_MODE_ENABLED=true</code>, so PA <em>is</em> shown in the menus and its paper engine can trade. <code>PA_ENABLED=false</code> keeps it out of live order placement, so nothing reaches the broker. Turn <code>PA_ENABLED</code> on in Settings — and clear the global dry-run harness — before it can place a real order.</p>
     </div>
 
     <div class="card mt-2" style="border-top:3px solid var(--yellow, #fbbf24);">

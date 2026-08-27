@@ -29,7 +29,7 @@
  *
  *     The trail does NOT start there. It stays DISARMED — the flat 20-point
  *     stop is the only risk — until the premium has actually touched the top
- *     of the box (₹215 at the defaults, `bandUp`). Only then does it begin
+ *     of the box (₹220 at the defaults, `bandUp`). Only then does it begin
  *     trailing the highest premium seen by 20 points, ratcheting UP only —
  *     220 → 200, 240 → 220 — never moving down and never falling below the
  *     initial stop.
@@ -41,7 +41,7 @@
  *     for a loss while the real 165.05 stop had never been touched. The trade
  *     was stopped out by its own trail on a move that meant nothing. Arming at
  *     the box top means the trail only ever protects a move the rule itself
- *     calls significant, which is the same ₹215 line the 09:45 box already uses.
+ *     calls significant, which is the same ₹220 line the 09:45 box already uses.
  *
  *  4. 09:45 SIDEWAYS EXIT.  If the trade is still open at 09:45 and the premium
  *     has spent those minutes oscillating — never trading at/above ₹220 and
