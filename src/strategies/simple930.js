@@ -108,7 +108,8 @@
 const NAME = "SIMPLE_9:30";
 const DESCRIPTION =
   "SIMPLE_9:30 — at 09:25 the ITM strike trading nearest ₹180 is picked on each side; the first of the two to " +
-  "clear ₹180 by 09:35 is bought with a 20-point trailing stop, and a trade still boxed inside 160–220 at 09:45 is closed";
+  "clear ₹180 by 09:35 is bought with a 20-point stop that only starts trailing once the premium touches the " +
+  "top of the 160–220 box, and a trade still boxed inside that range at 09:45 is closed";
 
 // The NSE NIFTY option ladder is struck every 50 points. Not configurable:
 // a different step would build symbols that do not exist.

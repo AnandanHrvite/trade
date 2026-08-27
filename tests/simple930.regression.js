@@ -348,6 +348,39 @@ check("arming reads the POSITION's frozen band, not a mid-trade config change", 
   const legacy = { bandUp: 220, bandDown: 160, trailArmAtBandUp: false };
   assert.strictEqual(S.computeTrailStop(190, init, c, legacy), 170);
 });
+check("the trail arms on EXACTLY the condition that releases the 09:45 exit", () => {
+  // Both read `peak >= bandUp`, so the two rules can never disagree: a trade
+  // whose trail is live has always escaped the box, and a trade still on the
+  // flat stop is always still subject to the sideways exit. If these ever drift
+  // apart a trade could run on a trail it was never meant to have, or be closed
+  // at 09:45 with a trail already tightening under it.
+  const c = freshEnv();
+  for (const peak of [180, 190, 200, 214, 215, 219, 220, 221, 260]) {
+    const armed    = S.isTrailArmed(peak, c);
+    const expanded = S.isExpanded(peak, peak, c);   // trough = peak: only the top edge can fire
+    assert.strictEqual(armed, expanded,
+      `peak ${peak}: trail armed=${armed} but expanded=${expanded}`);
+  }
+});
+check("a trade still on the flat stop is the one the 09:45 exit closes", () => {
+  // The 2026-08-27 session, carried through to its real conclusion: peak 191.85
+  // never reached the 215 box top, so the trail stayed parked AND the sideways
+  // exit still owned the trade at 09:45.
+  const c = freshEnv({ SIMPLE930_BAND_UP_OFFSET: "35" });   // bandUp 215
+  const pos = {
+    optionEntryLtp: 185.05, initialStop: 165.05, stop: 165.05,
+    peak: 191.85, trough: 171.75, bandUp: 215, bandDown: 160,
+    entryMin: 9 * 60 + 25, trailArmAtBandUp: true,
+  };
+  assert.strictEqual(S.isTrailArmed(pos.peak, c, pos), false);
+  assert.strictEqual(S.computeTrailStop(pos.peak, pos.initialStop, c, pos), 165.05);
+  // 171.75 is the tick that closed the real trade. It is now well clear.
+  assert.strictEqual(S.exitCheck(pos, 171.75, 9 * 60 + 28, c).exit, false);
+  // At 09:45, still boxed, the sideways rule closes it — as the rule intends.
+  const v = S.exitCheck(pos, 171.75, 9 * 60 + 45, c);
+  assert.strictEqual(v.exit, true);
+  assert.strictEqual(v.kind, "SIDEWAYS");
+});
 check("arming can be switched off to restore the arm-on-entry trail", () => {
   const c = freshEnv({ SIMPLE930_TRAIL_ARM_AT_BAND_UP: "false" });
   const init = S.computeInitialStop(181, c);

@@ -8,9 +8,11 @@
  * The day in one paragraph: at 09:25 the ITM ladder is quoted on both sides and
  * the ONE strike per side trading nearest ₹180 becomes the watchlist. From then
  * until 09:35 both premiums are polled; the first to trade above ₹180 is bought
- * at market with a 20-point stop off the ACTUAL FILL, trailing the peak premium
- * by the same 20 points. At 09:45 a trade that never touched ₹220 or ₹160 is
- * closed regardless of P&L. One trade per day. EOD square-off 15:15.
+ * at market with a 20-point stop off the ACTUAL FILL. That stop does NOT trail
+ * straight away: it sits flat until the premium touches the top of the box, and
+ * only then starts trailing the peak by the same 20 points — otherwise the first
+ * rupee of noise tightens a 20-point stop into a much smaller one. At 09:45 a
+ * trade that never touched ₹220 or ₹160 is closed regardless of P&L. One trade per day. EOD square-off 15:15.
  *
  * ONE INSTRUMENT DRIVES EVERY DECISION: the OPTION PREMIUM, polled through
  * fyers.getQuotes every SIMPLE930_POLL_MS and recorded to the tick archive on
@@ -1485,6 +1487,9 @@ router.get("/status", (req, res) => {
 @media(max-width:560px){
   .s930-card{padding:12px 12px;}
   .step-h{font-size:0.78rem;}
+  /* At ~440px two 190px columns technically fit but leave the copy squeezed to
+     a few words a line. One step per row is what actually reads on the phone. */
+  .steps{grid-template-columns:1fr;}
 }
 </style>
 <script src="/vendor/lightweight-charts.standalone.production.js"></script>

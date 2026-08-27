@@ -218,7 +218,11 @@ ${buildSidebar('simple930Live', false)}
     <div class="plan">
       <b>${strategy._fmtMins(s.selectionMin)}</b> — quote the ITM ladder, keep the strike nearest <b>₹${s.triggerPremium}</b> on each side.<br>
       <b>${strategy._fmtMins(s.entryStartMin)} – ${strategy._fmtMins(s.entryEndMin)}</b> — buy the first of the two above <b>₹${s.triggerPremium}</b>.<br>
-      Stop <b>${s.slPts}pt</b> off the fill${s.trailEnabled ? `, trailing <b>${s.trailPts}pt</b> behind the peak` : " (no trail)"}.<br>
+      Stop <b>${s.slPts}pt</b> off the fill${!s.trailEnabled
+        ? " (no trail)"
+        : s.trailArmAtBandUp
+          ? `. The trail stays parked until the premium touches <b>₹${s.bandUp}</b>; only then does a <b>${s.trailPts}pt</b> trail take over`
+          : `, trailing <b>${s.trailPts}pt</b> behind the peak from the fill`}.<br>
       <b>${strategy._fmtMins(s.sidewaysMin)}</b> — close the trade if it never left <b>₹${s.bandDown}–₹${s.bandUp}</b>.<br>
       <b>${strategy._fmtMins(s.forcedExitMin)}</b> — square off whatever is left.
     </div>

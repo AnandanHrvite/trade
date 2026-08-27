@@ -61,7 +61,7 @@ All four strategies run **in parallel** on the same WebSocket — different cand
 | **RSI Pivot ST Paper** | RSI(14) extreme + a candle crossing and closing beyond yesterday's Standard Pivot R1/S1 (single-leg OTM CE/PE) | 5-min | Simulated | `/rsi-pivot-st-paper` |
 | **RSI Pivot ST Backtest** | Same engine over a date range (conservative intra-bar ordering, δ+θ premium sim) | 5-min historical | Historical | `/rsi-pivot-st-backtest` |
 | **RSI Pivot ST Live (Harness)** | Runs Live by wrapping Paper (Zerodha orders, triple-gated dry-run) | 5-min | Zerodha (PAPER-wrapped) | `/rsi-pivot-st-live` |
-| **SIMPLE_9:30 Paper** | At 09:25 picks the ITM strike nearest ₹180 on each side; buys whichever clears ₹180 by 09:35, 20pt trailing stop, 09:45 sideways exit | 1-sec option premium poll | Simulated | `/simple930-paper` |
+| **SIMPLE_9:30 Paper** | At 09:25 picks the ITM strike nearest ₹180 on each side; buys whichever clears ₹180 by 09:35, 20pt stop that trails only after the premium touches the box top, 09:45 sideways exit | 1-sec option premium poll | Simulated | `/simple930-paper` |
 | **SIMPLE_9:30 Backtest** | Same engine over a date range on **real** 1-min option premium candles (no delta/theta model) | 1-min historical (option premium) | Historical | `/simple930-backtest` |
 | **SIMPLE_9:30 Live (Harness)** | Runs Live by wrapping Paper (Zerodha orders, triple-gated dry-run) | 1-sec option premium poll | Zerodha (PAPER-wrapped) | `/simple930-live` |
 | **Replay** | Re-runs a recorded paper session through the paper `onTick()` | Recorded ticks | Recorded | `/replay` |
