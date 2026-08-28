@@ -46,6 +46,8 @@ const { notifyEntry, notifyExit, notifyStarted, notifyDayReport } = require("../
 const { getCharges } = require("../utils/charges");
 const { fmtISTDateTime, getISTMinutes, getBucketStart } = require("../utils/tradeUtils");
 const skipLogger = require("../utils/skipLogger");
+const { RSI } = require("technicalindicators");
+const { computeSuperTrend } = require("../utils/supertrend");
 const tradeGuards = require("../utils/tradeGuards");
 const orbRiskState = require("../utils/orbRiskState");
 const orbStopRisk  = require("../utils/orbStopRisk");
@@ -1082,7 +1084,45 @@ router.get("/status/chart-data", async (req, res) => {
     const entryPrice = state.position && state.position.entrySpot  != null ? state.position.entrySpot  : null;
     const target     = state.position && state.position.targetSpot != null ? state.position.targetSpot : null;
 
-    return res.json({ candles, markers, stopLoss, entryPrice, target, orhLine, orlLine });
+    // ── RSI + SuperTrend overlays ──────────────────────────────────────────
+    // Computed on the SAME series the entry gates read (warm-up history included,
+    // forming bar appended) so what the chart draws is what _rsiGate /
+    // _superTrendGate saw. Both are display-only; no decision path reads them.
+    // Each is emitted 1:1 with `candles`, and the client trims to today.
+    let rsi = [], superTrend = [];
+    try {
+      const rsiPeriod = Math.max(2, parseInt(process.env.ORB_RSI_PERIOD || "14", 10));
+      const closes = candles.map(c => c.close);
+      if (closes.length >= rsiPeriod + 1) {
+        const arr = RSI.calculate({ period: rsiPeriod, values: closes });
+        // RSI.calculate returns (n - period) values; arr[k] aligns to candle k+period.
+        const off = candles.length - arr.length;
+        for (let k = 0; k < arr.length; k++) {
+          if (arr[k] != null) rsi.push({ time: candles[off + k].time, value: parseFloat(arr[k].toFixed(2)) });
+        }
+      }
+    } catch (_) {}
+    try {
+      const stPeriod = Math.max(2, parseInt(process.env.ORB_ST_PERIOD || "10", 10));
+      const stMult   = parseFloat(process.env.ORB_ST_MULT || "3");
+      const st = computeSuperTrend(candles, stPeriod, stMult);
+      for (let i = 0; i < st.length; i++) {
+        if (st[i] && st[i].value != null) {
+          superTrend.push({ time: candles[i].time, value: parseFloat(st[i].value.toFixed(2)), trend: st[i].trend });
+        }
+      }
+    } catch (_) {}
+
+    // The gate thresholds, so the client can draw the RSI bands without
+    // duplicating the defaults.
+    const gateCfg = {
+      rsiOn:    (process.env.ORB_RSI_ENABLED || "true").toLowerCase() === "true",
+      rsiCeMin: parseFloat(process.env.ORB_RSI_CE_MIN || "51"),
+      rsiPeMax: parseFloat(process.env.ORB_RSI_PE_MAX || "49"),
+      stOn:     (process.env.ORB_ST_ENABLED || "true").toLowerCase() === "true",
+    };
+
+    return res.json({ candles, markers, stopLoss, entryPrice, target, orhLine, orlLine, rsi, superTrend, gateCfg });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
@@ -1441,8 +1481,15 @@ ${process.env.CHART_ENABLED !== "false" ? `<!-- NIFTY Chart -->
   <div class="section-title">NIFTY ${RES_MIN}-Min Chart (Opening Range overlay)</div>
   <div id="nifty-chart-container" style="background:#0a0f1c;border:1px solid #1a2236;border-radius:12px;overflow:hidden;position:relative;height:400px;">
     <div id="nifty-chart" style="width:100%;height:100%;"></div>
-    <div style="position:absolute;top:10px;left:12px;font-size:0.68rem;color:var(--muted-1,#8ba1c2);pointer-events:none;z-index:2;">
-      <span style="color:#10b981;">── ORH</span> &nbsp;<span style="color:#ef4444;">── ORL</span> &nbsp;<span style="color:#3b82f6;">▲ Entry</span> &nbsp;<span style="color:#f59e0b;">── SL</span> &nbsp;<span style="color:#10b981;">── Target</span>
+    <div style="position:absolute;top:10px;left:12px;font-size:0.68rem;color:var(--muted-1,#8ba1c2);pointer-events:none;z-index:2;line-height:1.6;">
+      <div><span style="color:#10b981;">── ORH</span> &nbsp;<span style="color:#ef4444;">── ORL</span> &nbsp;<span style="color:#3b82f6;">▲ Entry</span> &nbsp;<span style="color:#f59e0b;">── SL</span> &nbsp;<span style="color:#10b981;">── Target</span></div>
+      <div><span style="color:#a855f7;">── SuperTrend</span> <span id="orbp-st-now" style="color:#8ba1c2;"></span></div>
+    </div>
+  </div>
+  <div id="orbp-rsi-container" style="background:#0a0f1c;border:1px solid #1a2236;border-top:none;border-radius:0 0 12px 12px;overflow:hidden;position:relative;height:130px;margin-top:-12px;">
+    <div id="orbp-rsi-chart" style="width:100%;height:100%;"></div>
+    <div style="position:absolute;top:8px;left:12px;font-size:0.68rem;color:var(--muted-1,#8ba1c2);pointer-events:none;z-index:2;">
+      <span style="color:#eab308;">── RSI</span> <span id="orbp-rsi-now" style="color:#8ba1c2;"></span>
     </div>
   </div>
 </div>` : ""}
@@ -1504,7 +1551,41 @@ async function orbpManualEntry(side) {
   var cs = chart.addCandlestickSeries({ upColor:'#10b981', downColor:'#ef4444', borderUpColor:'#10b981', borderDownColor:'#ef4444', wickUpColor:'#10b981', wickDownColor:'#ef4444' });
   var orhS = chart.addLineSeries({ color:'#10b981', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
   var orlS = chart.addLineSeries({ color:'#ef4444', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
+  // SuperTrend rides on the price scale. Drawn as TWO series — bullish and bearish
+  // legs — because a single line coloured by trend is not possible in Lightweight
+  // Charts; each leg carries whitespace (null) where the other is active, so the
+  // line breaks at the flip instead of drawing a diagonal across it.
+  var stUpS = chart.addLineSeries({ color:'#10b981', lineWidth:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
+  var stDnS = chart.addLineSeries({ color:'#ef4444', lineWidth:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
   var entryLine = null, slLine = null, tgtLine = null, _zoomed = false;
+
+  // ── RSI pane — its own chart, time scale kept in lockstep with the price chart
+  var rsiContainer = document.getElementById('orbp-rsi-chart');
+  var rsiChart = null, rsiS = null;
+  if (rsiContainer) {
+    rsiChart = LightweightCharts.createChart(rsiContainer, {
+      width: rsiContainer.clientWidth, height: rsiContainer.clientHeight,
+      layout:{ background:{type:'solid',color:'#0a0f1c'}, textColor:'#8ba1c2', fontSize:11, fontFamily:"'IBM Plex Mono', monospace" },
+      grid:{ vertLines:{color:'#111827'}, horzLines:{color:'#111827'} },
+      crosshair:{ mode: LightweightCharts.CrosshairMode.Normal },
+      rightPriceScale:{ borderColor:'#1a2236', scaleMargins:{ top:0.1, bottom:0.1 } },
+      timeScale:{ borderColor:'#1a2236', timeVisible:true, secondsVisible:false,
+        tickMarkFormatter:function(t){ var d=new Date(t*1000); return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2); }
+      },
+    });
+    rsiS = rsiChart.addLineSeries({ color:'#eab308', lineWidth:2, priceLineVisible:false, lastValueVisible:true, crosshairMarkerVisible:true });
+    // Guard against the two charts bouncing the range back at each other forever.
+    var _syncing = false;
+    chart.timeScale().subscribeVisibleLogicalRangeChange(function(r){
+      if (_syncing || !r || !rsiChart) return;
+      _syncing = true; try { rsiChart.timeScale().setVisibleLogicalRange(r); } catch(_){} _syncing = false;
+    });
+    rsiChart.timeScale().subscribeVisibleLogicalRangeChange(function(r){
+      if (_syncing || !r) return;
+      _syncing = true; try { chart.timeScale().setVisibleLogicalRange(r); } catch(_){} _syncing = false;
+    });
+  }
+  var _rsiBands = false;
   async function fetchChart(){
     try {
       var r = await fetch('/orb-paper/status/chart-data', { cache:'no-store' });
@@ -1516,7 +1597,7 @@ async function orbpManualEntry(side) {
         for (var _i=d.candles.length-1;_i>=0;_i--){ if(Math.floor((d.candles[_i].time+19800)/86400)===_dk) _cut=d.candles[_i].time; else break; }
         var _k=function(a){ return Array.isArray(a)?a.filter(function(x){return x.time>=_cut;}):a; };
         d.candles=_k(d.candles);
-        ['ema21','sar','rsi','bbUpper','bbMiddle','bbLower','orhLine','orlLine','vwap','markers'].forEach(function(kk){ if(d[kk]) d[kk]=_k(d[kk]); });
+        ['ema21','sar','rsi','superTrend','bbUpper','bbMiddle','bbLower','orhLine','orlLine','vwap','markers'].forEach(function(kk){ if(d[kk]) d[kk]=_k(d[kk]); });
       })(); }
       if (d.candles && d.candles.length) {
         cs.setData(d.candles);
@@ -1538,6 +1619,52 @@ async function orbpManualEntry(side) {
       }
       orhS.setData(d.orhLine || []);
       orlS.setData(d.orlLine || []);
+
+      // SuperTrend — split into bullish/bearish legs, whitespace elsewhere so the
+      // line breaks cleanly at each flip rather than joining across it.
+      var stArr = d.superTrend || [];
+      var stUp = [], stDn = [];
+      for (var si = 0; si < stArr.length; si++) {
+        var p_ = stArr[si];
+        stUp.push(p_.trend === 1  ? { time:p_.time, value:p_.value } : { time:p_.time });
+        stDn.push(p_.trend === -1 ? { time:p_.time, value:p_.value } : { time:p_.time });
+      }
+      stUpS.setData(stUp);
+      stDnS.setData(stDn);
+      var stEl = document.getElementById('orbp-st-now');
+      if (stEl) {
+        var stLast = stArr.length ? stArr[stArr.length - 1] : null;
+        if (!stLast) stEl.textContent = '';
+        else if (d.gateCfg && d.gateCfg.stOn === false) stEl.innerHTML = '<span style="color:#64748b;">' + stLast.value + ' (gate off)</span>';
+        else stEl.innerHTML = stLast.trend === 1
+          ? '<span style="color:#10b981;">' + stLast.value + ' · bullish → CE allowed</span>'
+          : '<span style="color:#ef4444;">' + stLast.value + ' · bearish → PE allowed</span>';
+      }
+
+      // RSI pane + the two gate thresholds.
+      if (rsiS) {
+        rsiS.setData(d.rsi || []);
+        if (!_rsiBands && d.gateCfg) {
+          _rsiBands = true;
+          try {
+            rsiS.createPriceLine({ price:d.gateCfg.rsiCeMin, color:'#10b981', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'CE min' });
+            rsiS.createPriceLine({ price:d.gateCfg.rsiPeMax, color:'#ef4444', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'PE max' });
+          } catch(_) {}
+        }
+        var rEl = document.getElementById('orbp-rsi-now');
+        if (rEl) {
+          var rLast = (d.rsi && d.rsi.length) ? d.rsi[d.rsi.length - 1].value : null;
+          if (rLast == null) rEl.textContent = '';
+          else if (d.gateCfg && d.gateCfg.rsiOn === false) rEl.innerHTML = '<span style="color:#64748b;">' + rLast + ' (gate off)</span>';
+          else {
+            var ceOk = rLast >= d.gateCfg.rsiCeMin, peOk = rLast <= d.gateCfg.rsiPeMax;
+            var msg = ceOk ? '<span style="color:#10b981;">' + rLast + ' · CE allowed</span>'
+                    : peOk ? '<span style="color:#ef4444;">' + rLast + ' · PE allowed</span>'
+                    : '<span style="color:#f59e0b;">' + rLast + ' · in dead zone (' + d.gateCfg.rsiPeMax + '\u2013' + d.gateCfg.rsiCeMin + ') \u2014 both blocked</span>';
+            rEl.innerHTML = msg;
+          }
+        }
+      }
       if (d.markers && d.markers.length) cs.setMarkers(d.markers.slice().sort(function(a,b){return a.time-b.time;}));
       if (entryLine) { cs.removePriceLine(entryLine); entryLine = null; }
       if (slLine)    { cs.removePriceLine(slLine);    slLine = null; }
@@ -1549,7 +1676,10 @@ async function orbpManualEntry(side) {
   }
   fetchChart();
   if (${state.running}) setInterval(fetchChart, 4000);
-  window.addEventListener('resize', function(){ chart.applyOptions({ width: container.clientWidth }); });
+  window.addEventListener('resize', function(){
+    chart.applyOptions({ width: container.clientWidth });
+    if (rsiChart && rsiContainer) rsiChart.applyOptions({ width: rsiContainer.clientWidth });
+  });
 })();
 </script>
 
