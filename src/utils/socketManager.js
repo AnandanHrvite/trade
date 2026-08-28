@@ -101,6 +101,11 @@ class SocketManager {
     this._stopped        = true;
     this._retryCount     = 0;
     this._retryTimer     = null;
+    // Bumped on every _connect(). Handlers capture the value current when they
+    // were attached and ignore events carrying an older one, so the `close` the
+    // SDK emits for the connection we just tore down cannot be mistaken for the
+    // new one dying and trigger a reconnect of its own.
+    this._connGen        = 0;
     this._watchdog       = null;
     this._lastTickAt     = null;   // ANY tick — spot or option (health display)
     // Last tick actually delivered to the strategies. The watchdog reconnects on
@@ -546,12 +551,32 @@ class SocketManager {
   _connect() {
     if (this._stopped) return;
 
+    // A pending retry timer is now redundant: we are connecting right here. Left
+    // armed, it fires mid-attempt and starts a second reconnect loop racing this
+    // one — which is exactly how the watchdog calling _connect() during a pending
+    // retry produced a permanent connect/drop cycle.
+    this._clearRetry();
+
+    // Every attempt gets its own generation. Events from earlier attempts —
+    // notably the `close` that _closeConnection() below provokes — are dropped.
+    const gen = ++this._connGen;
+
     // Remove stale listeners before re-attaching (prevents duplicate handlers on reconnect)
     this._detachListeners();
     this._closeConnection();
 
     const token = `${process.env.APP_ID}:${process.env.ACCESS_TOKEN}`;
     this._log(`📡 [SOCKET] Connecting... symbol: ${this._symbol}`);
+
+    // A storm means every attempt on the CURRENT object died on arrival. Reusing
+    // it forever is what turns a transient failure into an all-day outage, so
+    // once flapping is established drop the reference and let the acquisition
+    // below rebuild (or re-getInstance) with a freshly read token.
+    if (this._flapping && this._skt) {
+      this._log('♻️  [SOCKET] Feed unstable — rebuilding the SDK instance');
+      try { this._skt.close(); } catch (_) {}
+      this._skt = null;
+    }
 
     // Acquire SDK instance:
     // - First connect this session → create via `new`
@@ -580,6 +605,7 @@ class SocketManager {
     // reconnects on spot silence. Killing the process mid-session is not.
     skt.on('connect', () => {
       try {
+        if (gen !== this._connGen) return;  // superseded attempt
         if (this._stopped) { this._detachListeners(); this._closeConnection(); return; }
         this._connectedAt = Date.now();
         this._lastTickAt  = Date.now();
@@ -603,6 +629,7 @@ class SocketManager {
     });
 
     skt.on('message', (msg) => {
+      if (gen !== this._connGen) return;  // superseded attempt
       if (this._stopped) return;
       this._lastTickAt = Date.now();
       // Ticks flowing on a connection that has outlived the flap window is the
@@ -622,6 +649,7 @@ class SocketManager {
     });
 
     skt.on('error', (err) => {
+      if (gen !== this._connGen) return;  // superseded attempt
       this._log(`❌ [SOCKET] Error: ${JSON.stringify(err)}`);
       // Track last error for /socket-health surface.
       try {
@@ -647,6 +675,7 @@ class SocketManager {
     });
 
     skt.on('close', () => {
+      if (gen !== this._connGen) return;  // superseded attempt — not this connection dying
       this._log('🔴 [SOCKET] Disconnected unexpectedly');
       this._lastDownAt = Date.now();
       // Only reset retryCount if connection was stable for at least 10 seconds.
@@ -773,6 +802,10 @@ class SocketManager {
         if (this._stopped) { this._clearWatchdog(); return; }
         if (this._authFailed) return;  // don't try to reconnect on dead auth
         if (!this._isMarketHours()) return;
+        // A reconnect is already scheduled — the backoff owns recovery from here.
+        // Barging in with our own _connect() is what let two reconnect loops run
+        // against one socket and kept the feed down for a whole session.
+        if (this._retryTimer) return;
         // SPOT silence, not "any traffic" silence: option ticks alone must never
         // convince this that the feed the strategies actually run on is alive.
         const silence = this._lastSpotTickAt ? Date.now() - this._lastSpotTickAt : Infinity;
