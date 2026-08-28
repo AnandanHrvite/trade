@@ -99,6 +99,13 @@ function renderPage({ liveActive, sidebarKey = "realtime", autoFlipBack = false 
   const accentsJson     = JSON.stringify(Object.fromEntries(strategies.map(s => [s.key, s.accentClass])));
   const dayLogPrefixes  = JSON.stringify(Object.fromEntries(strategies.filter(s => s.hasDayLog).map(s => [s.key, s.paperPrefix])));
   const strategyOrder   = JSON.stringify(strategies.map(s => s.key));
+  // Stop-all hits BOTH prefixes for every strategy, regardless of which source
+  // the PAPER/LIVE toggle is showing — "stop everything" has to mean everything,
+  // or a live harness keeps trading because the page happened to be on PAPER.
+  const stopUrlsJson    = JSON.stringify(strategies.map(s => ([
+    { key: s.key, mode: 'PAPER', url: s.paperPrefix + '/stop' },
+    { key: s.key, mode: 'LIVE',  url: s.livePrefix  + '/stop' },
+  ])).flat());
 
   const pools           = brokerPools(strategies);
   const poolsJson       = JSON.stringify(pools);
@@ -172,6 +179,19 @@ ${faviconLink()}
   .toggle button { background:transparent; border:none; color:#9aa9c2; font-size:0.82rem; font-weight:600; padding:7px 18px; border-radius:6px; cursor:pointer; transition:all 0.15s; letter-spacing:0.5px; }
   .toggle button.active[data-mode="PAPER"] { background:#2563eb; color:#fff; }
   .toggle button.active[data-mode="LIVE"]  { background:#dc2626; color:#fff; }
+
+  /* Stop All — the panic button. Kept visually distinct from the PAPER/LIVE
+     toggle so it can never be hit while aiming for a mode switch. */
+  .top-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .stop-all { background:#7f1d1d; border:1px solid #b91c1c; color:#fee2e2; font-size:0.82rem; font-weight:700; letter-spacing:0.4px; padding:0 16px; min-height:44px; border-radius:8px; cursor:pointer; transition:all 0.15s; }
+  .stop-all:hover:not(:disabled) { background:#b91c1c; color:#fff; }
+  .stop-all:disabled { opacity:0.6; cursor:default; }
+  .stop-all.armed { background:#dc2626; color:#fff; border-color:#ef4444; }
+  .stop-all-note { background:#2a0f0f; border:1px solid #7f1d1d; border-left:4px solid #dc2626; border-radius:10px; padding:10px 14px; margin-bottom:14px; font-size:0.78rem; color:#fca5a5; line-height:1.6; }
+  :root[data-theme="light"] .stop-all { background:#fef2f2 !important; border-color:#dc2626 !important; color:#b91c1c; }
+  :root[data-theme="light"] .stop-all:hover:not(:disabled) { background:#dc2626 !important; color:#fff; }
+  :root[data-theme="light"] .stop-all.armed { background:#dc2626 !important; color:#fff; }
+  :root[data-theme="light"] .stop-all-note { background:#fef2f2 !important; border-color:#fecaca !important; color:#b91c1c; }
 
   /* Broker investment-pool wallets */
   .wallets { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(260px,100%), 1fr)); gap:14px; margin-bottom:18px; }
@@ -393,11 +413,15 @@ ${sidebar}
       <h1>📡 Real-Time Monitor</h1>
       <div class="sub">Live view of all enabled strategies — polls every 4s <span id="pulse" class="pulse"></span></div>
     </div>
-    ${!sessionActive ? `<div class="toggle" id="mode-toggle">
-      <button data-mode="PAPER" class="active">PAPER</button>
-      <button data-mode="LIVE">LIVE</button>
-    </div>` : ''}
+    <div class="top-actions">
+      ${!sessionActive ? `<div class="toggle" id="mode-toggle">
+        <button data-mode="PAPER" class="active">PAPER</button>
+        <button data-mode="LIVE">LIVE</button>
+      </div>` : ''}
+      <button type="button" class="stop-all" id="stop-all">🛑 Stop All</button>
+    </div>
   </div>
+  <div class="stop-all-note" id="stop-all-note" hidden></div>
 
   <!-- Capital shortfall alert — filled by /realtime/capital. Trades are never
        stopped when the pool runs dry; this is how you find out that it did. -->
@@ -445,6 +469,7 @@ const STRATEGY_LABELS  = ${labelsJson};
 const STRATEGY_ACCENTS = ${accentsJson};
 const JSONL_PREFIX     = ${dayLogPrefixes};
 const WALLET_POOLS     = ${poolsJson};
+const STOP_URLS        = ${stopUrlsJson};
 let mode = 'PAPER';
 let timer = null;
 
@@ -776,6 +801,84 @@ document.querySelectorAll('#mode-toggle button').forEach(b => {
     poll();
   });
 });
+
+// ── Stop All ────────────────────────────────────────────────────────────────
+// Fans out GET /stop across every enabled strategy, PAPER and LIVE both. Each
+// engine's own /stop is reused verbatim, so an open position is squared off by
+// exactly the same code path the per-strategy Stop button uses.
+//
+// Two clicks: the first arms, the second fires. This squares off real money in
+// LIVE — a stray click on a phone must not be able to flatten the book.
+let stopArmed = false;
+let stopArmTimer = null;
+
+function disarmStopAll() {
+  stopArmed = false;
+  if (stopArmTimer) { clearTimeout(stopArmTimer); stopArmTimer = null; }
+  const btn = document.getElementById('stop-all');
+  if (btn) { btn.classList.remove('armed'); btn.textContent = '🛑 Stop All'; }
+}
+
+function stopNote(html) {
+  const box = document.getElementById('stop-all-note');
+  if (!box) return;
+  box.innerHTML = html;
+  box.hidden = !html;
+}
+
+async function stopAll() {
+  const btn = document.getElementById('stop-all');
+  if (!btn) return;
+
+  if (!stopArmed) {
+    stopArmed = true;
+    btn.classList.add('armed');
+    btn.textContent = '🛑 Click again to confirm';
+    stopNote('This stops <b>every</b> strategy in <b>both</b> PAPER and LIVE, and squares off any open position. Click Stop All again within 6s to confirm.');
+    stopArmTimer = setTimeout(() => { disarmStopAll(); stopNote(''); }, 6000);
+    return;
+  }
+
+  if (stopArmTimer) { clearTimeout(stopArmTimer); stopArmTimer = null; }
+  stopArmed = false;
+  btn.classList.remove('armed');
+  btn.disabled = true;
+  btn.textContent = 'Stopping…';
+  stopNote('Stopping ' + STOP_URLS.length + ' engines…');
+
+  // Sequential, not parallel: several /stop handlers place a real square-off
+  // order, and firing 26 broker round-trips at once is how you get rate-limited
+  // mid-flatten. The whole sweep is well under a second when nothing is running.
+  const stopped = [], failed = [];
+  for (const t of STOP_URLS) {
+    try {
+      const r = await fetch(t.url, { cache:'no-store', redirect:'follow' });
+      // 400 = "not running" / "harness not installed" for the harness routes.
+      // That is the normal answer for an idle engine, not a failure.
+      if (r.ok) stopped.push(t);
+      else if (r.status !== 400) failed.push({ ...t, status: r.status });
+    } catch (e) {
+      failed.push({ ...t, status: 0 });
+    }
+  }
+
+  const name = t => STRATEGY_LABELS[t.key] + ' ' + t.mode;
+  let msg = '<b>Stop All finished.</b> ';
+  msg += stopped.length
+    ? 'Stopped: ' + stopped.map(name).join(', ') + '. '
+    : 'Nothing was running. ';
+  if (failed.length) {
+    msg += '<b>Could not stop:</b> ' + failed.map(t => name(t) + ' (http ' + t.status + ')').join(', ')
+         + ' — open that strategy\\'s page and stop it there.';
+  }
+  stopNote(msg);
+
+  btn.disabled = false;
+  btn.textContent = '🛑 Stop All';
+  poll();
+}
+
+document.getElementById('stop-all')?.addEventListener('click', stopAll);
 
 async function fetchText(url) {
   try {
