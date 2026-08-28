@@ -154,6 +154,7 @@ class SocketManager {
     this._flapping      = false;  // sticky while the storm lasts; cleared by a stable connect
     this._flapSince     = null;   // when the current storm started
     this._flapAlertedAt = 0;      // last Telegram push, for FLAP_REALERT_MS cadence
+    this._rebuiltThisFlap = false; // one SDK rebuild per storm, not per retry
   }
 
   // ── Public API ──────────────────────────────────────────────────────────────
@@ -205,6 +206,7 @@ class SocketManager {
     this._flapCount     = 0;
     this._flapping      = false;
     this._flapSince     = null;
+    this._rebuiltThisFlap = false;
     this._flapAlertedAt = 0;
     this._connect();
     this._startWatchdog();
@@ -384,6 +386,11 @@ class SocketManager {
     this._clearWatchdog();
     this._detachListeners();
     this._closeConnection();
+    // Retire the generation too. _detachListeners() swallows a throw, so a
+    // handler can outlive teardown; without this it would still match _connGen
+    // and could schedule a reconnect (or clear the token on a stale -15) for a
+    // session that is over.
+    this._connGen += 1;
     // Null the instance ONLY here so the next session can create a fresh one.
     this._skt = null;
     this._log('🔴 [SOCKET] Stopped');
@@ -557,9 +564,17 @@ class SocketManager {
     // retry produced a permanent connect/drop cycle.
     this._clearRetry();
 
-    // Every attempt gets its own generation. Events from earlier attempts —
-    // notably the `close` that _closeConnection() below provokes — are dropped.
+    // Every attempt gets its own generation, so a handler that outlives its
+    // attempt (removeAllListeners() swallows a throw) cannot act on stale events.
     const gen = ++this._connGen;
+
+    // Generation alone is NOT enough for `close`. _closeConnection() below makes
+    // the SDK emit a close asynchronously, by which point the new handlers are
+    // already attached and carry the CURRENT generation — so that teardown close
+    // reads as "the new connection just died" and schedules a reconnect, which
+    // tears down and closes again. That is the loop that ran 567 times on
+    // 2026-08-28. A close only counts if THIS attempt actually reached connect.
+    let opened = false;
 
     // Remove stale listeners before re-attaching (prevents duplicate handlers on reconnect)
     this._detachListeners();
@@ -572,7 +587,11 @@ class SocketManager {
     // it forever is what turns a transient failure into an all-day outage, so
     // once flapping is established drop the reference and let the acquisition
     // below rebuild (or re-getInstance) with a freshly read token.
-    if (this._flapping && this._skt) {
+    // Once per storm, not once per retry: a rebuild every 15s for the rest of
+    // the session is churn, not recovery. _clearFlap() re-arms it, so a later
+    // storm gets its own single rebuild.
+    if (this._flapping && this._skt && !this._rebuiltThisFlap) {
+      this._rebuiltThisFlap = true;
       this._log('♻️  [SOCKET] Feed unstable — rebuilding the SDK instance');
       try { this._skt.close(); } catch (_) {}
       this._skt = null;
@@ -607,6 +626,7 @@ class SocketManager {
       try {
         if (gen !== this._connGen) return;  // superseded attempt
         if (this._stopped) { this._detachListeners(); this._closeConnection(); return; }
+        opened = true;   // a close from here on is a real disconnect
         this._connectedAt = Date.now();
         this._lastTickAt  = Date.now();
         this._lastSpotTickAt = Date.now();
@@ -676,6 +696,9 @@ class SocketManager {
 
     skt.on('close', () => {
       if (gen !== this._connGen) return;  // superseded attempt — not this connection dying
+      // The close provoked by our own teardown, arriving on handlers attached
+      // after it was requested. Ignoring it is what stops the runaway loop.
+      if (!opened) return;
       this._log('🔴 [SOCKET] Disconnected unexpectedly');
       this._lastDownAt = Date.now();
       // Only reset retryCount if connection was stable for at least 10 seconds.
@@ -758,6 +781,7 @@ class SocketManager {
     }
     this._flapCount     = 0;
     this._flapping      = false;
+    this._rebuiltThisFlap = false;
     this._flapSince     = null;
     this._flapAlertedAt = 0;
   }
@@ -813,7 +837,8 @@ class SocketManager {
           this._log(`⚠️  [SOCKET] Watchdog: no spot tick for ${Math.round(silence / 1000)}s — reconnecting`);
           this._lastTickAt     = Date.now();
           this._lastSpotTickAt = Date.now();
-          this._clearRetry();
+          // No _clearRetry() needed: we only get here with no timer pending,
+          // and _connect() clears one anyway.
           this._connect();
         }
       } catch (err) {
