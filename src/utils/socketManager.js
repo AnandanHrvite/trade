@@ -101,10 +101,12 @@ class SocketManager {
     this._stopped        = true;
     this._retryCount     = 0;
     this._retryTimer     = null;
-    // Bumped on every _connect(). Handlers capture the value current when they
-    // were attached and ignore events carrying an older one, so the `close` the
-    // SDK emits for the connection we just tore down cannot be mistaken for the
-    // new one dying and trigger a reconnect of its own.
+    // Bumped on every _connect() and retired by stop(). Handlers capture the
+    // value current when they were attached and ignore events carrying an older
+    // one, so a listener that outlived its attempt cannot act on stale events.
+    // (The teardown-close loop is handled separately, inside _connect() — the
+    // generation cannot catch that one, because the echo lands on handlers that
+    // were attached after the close was requested and so match the current value.)
     this._connGen        = 0;
     this._watchdog       = null;
     this._lastTickAt     = null;   // ANY tick — spot or option (health display)
@@ -154,7 +156,6 @@ class SocketManager {
     this._flapping      = false;  // sticky while the storm lasts; cleared by a stable connect
     this._flapSince     = null;   // when the current storm started
     this._flapAlertedAt = 0;      // last Telegram push, for FLAP_REALERT_MS cadence
-    this._rebuiltThisFlap = false; // one SDK rebuild per storm, not per retry
   }
 
   // ── Public API ──────────────────────────────────────────────────────────────
@@ -206,7 +207,6 @@ class SocketManager {
     this._flapCount     = 0;
     this._flapping      = false;
     this._flapSince     = null;
-    this._rebuiltThisFlap = false;
     this._flapAlertedAt = 0;
     this._connect();
     this._startWatchdog();
@@ -585,19 +585,11 @@ class SocketManager {
     const token = `${process.env.APP_ID}:${process.env.ACCESS_TOKEN}`;
     this._log(`📡 [SOCKET] Connecting... symbol: ${this._symbol}`);
 
-    // A storm means every attempt on the CURRENT object died on arrival. Reusing
-    // it forever is what turns a transient failure into an all-day outage, so
-    // once flapping is established drop the reference and let the acquisition
-    // below rebuild (or re-getInstance) with a freshly read token.
-    // Once per storm, not once per retry: a rebuild every 15s for the rest of
-    // the session is churn, not recovery. _clearFlap() re-arms it, so a later
-    // storm gets its own single rebuild.
-    if (this._flapping && this._skt && !this._rebuiltThisFlap) {
-      this._rebuiltThisFlap = true;
-      this._log('♻️  [SOCKET] Feed unstable — rebuilding the SDK instance');
-      try { this._skt.close(); } catch (_) {}
-      this._skt = null;
-    }
+    // NOTE: there is deliberately no "rebuild the SDK on a flap storm" step here.
+    // The Fyers SDK is a hard singleton (see the header): `new` throws once an
+    // instance exists, so the fallback path hands back the SAME object. Nulling
+    // the reference would therefore close a working socket and get the identical
+    // instance in return — strictly worse than leaving it alone.
 
     // Acquire SDK instance:
     // - First connect this session → create via `new`
@@ -787,7 +779,6 @@ class SocketManager {
     }
     this._flapCount     = 0;
     this._flapping      = false;
-    this._rebuiltThisFlap = false;
     this._flapSince     = null;
     this._flapAlertedAt = 0;
   }
