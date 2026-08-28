@@ -71,17 +71,17 @@ Each stage must pass before advancing.
 
 # Repo Ground Truth
 
-Nine strategy engines live in src/strategies/, each with its own Paper, Backtest and Live route: EMA_RSI_ST, BB_RSI, PA, ORB, EMA9_VWAP, TREND_PB, GAPS, TDS (Trend Day Scalp), GAP3M (3M Gap Fix Scalp).
+Thirteen strategy engines live in src/strategies/, each with its own Paper, Backtest and Live route: EMA_RSI_ST, BB_RSI, PA, ORB, EMA9_VWAP, TREND_PB, GAPS, TDS (Trend Day Scalp), GAP3M (3M Gap Fix Scalp), HA_SCALP, OIWF (OI Wall Fade), RSI_PIVOT_ST, SIMPLE930.
 
-Their mode keys — used for trade-log filenames, skip logs and every cross-strategy screen — are ema_rsi_st, bb_rsi, pa, orb, ema9vwap, trend_pb, gaps, trend_day_scalp, gap_fix_3m.
+Their mode keys — used for trade-log filenames, skip logs and every cross-strategy screen — are ema_rsi_st, bb_rsi, pa, orb, ema9vwap, trend_pb, gaps, trend_day_scalp, gap_fix_3m, ha_scalp, oi_wall_fade, rsi_pivot_st, simple930. The `isDryRun()` live keys are the same set uppercased EXCEPT four short forms: TDS, GAP3M, OIWF and EMA9VWAP.
 
 Paper is canonical. When Backtest or Live disagrees with Paper, the defect is in Backtest or Live. Never edit paper to make a test pass.
 
-Only four strategies have a hand-written standalone live route that can drift from paper: emaRsiStLive.js, bbRsiLive.js, paLive.js, orbLive.js. The other five live modes run through a *LiveHarness.js that executes the paper route itself, so they are parity-by-construction and have no second copy of the logic to test.
+Only four strategies have a hand-written standalone live route that can drift from paper: emaRsiStLive.js, bbRsiLive.js, paLive.js, orbLive.js. Those four ALSO have a harness route, so all thirteen strategies have a *LiveHarness.js. A harness route executes the paper route itself, so it is parity-by-construction and has no second copy of the logic to test — liveParity.regression.js therefore only has the four standalone routes to police.
 
-There is no database and no Redis. All state is JSON/JSONL files on disk. Most of it lives under ~/trading-data/, but the repo's own data/ directory holds runtime state too: recorded ticks in data/ticks, plus data/backtest_results.json — every strategy's last backtest with full trade arrays, written by all ten backtest routes and read by result.js, allBacktest.js and compare.js — and data/login_attempts.json. backtest_results.json is the artifact a validation run inspects or resets, and backupManager archives only trading-data/ and data/ticks, so neither repo-root store is in the backup set. Test persistence as files — atomic tmp-to-rename writes, partial writes, stale day-stamps — not as a DB.
+There is no database and no Redis. All state is JSON/JSONL files on disk. Most of it lives under ~/trading-data/, but the repo's own data/ directory holds runtime state too: recorded ticks in data/ticks, plus data/backtest_results.json — every strategy's last backtest with full trade arrays, written by all fourteen backtest routes (thirteen strategies plus paPatternBacktest.js) and read by result.js, allBacktest.js and compare.js — and data/login_attempts.json. backtest_results.json is the artifact a validation run inspects or resets, and backupManager archives only trading-data/ and data/ticks, so neither repo-root store is in the backup set. Test persistence as files — atomic tmp-to-rename writes, partial writes, stale day-stamps — not as a DB.
 
-TDS and GAP3M have never traded, paper or live; their own engine headers say so. ORB's header puts P(true edge <= 0) at roughly 37% on 9 trades, and removing its single best trade turns the result negative. Never report an unvalidated strategy as deployment-ready.
+Most of these engines have thin or no trade history — several have never traded at all, and their engine headers say so. ORB's header puts P(true edge <= 0) at roughly 37% on 9 trades, and removing its single best trade turns the result negative. Read the engine header for the strategy in front of you rather than trusting a number quoted here; never report an unvalidated strategy as deployment-ready.
 
 ---
 
@@ -89,17 +89,23 @@ TDS and GAP3M have never traded, paper or live; their own engine headers say so.
 
 There is no lint task and no build step, but there IS a test runner. Check what already exists before proposing to build it.
 
-npm test runs four zero-dependency regression suites in tests/, built on node's built-in assert, exiting non-zero on failure. All four pass today:
+npm test runs SIX zero-dependency regression suites in tests/, built on node's built-in assert, exiting non-zero on failure. Do not quote a count from memory — read package.json, since the chain grows with each strategy:
 
-ema9vwap.regression.js — 28 assertions
+ema9vwap.regression.js
 
-orb.regression.js — 37 assertions
+orb.regression.js
 
-liveParity.regression.js — 25 assertions; pure source analysis asserting each standalone *Live.js still mirrors its paper counterpart
+liveParity.regression.js — pure source analysis asserting each standalone *Live.js still mirrors its paper counterpart
 
-configFidelity.regression.js — 20 assertions; asserts the value the operator configures is the value the engine acts on
+configFidelity.regression.js — asserts the value the operator configures is the value the engine acts on, reading app.js / settings.js / instrument.js directly
 
-Targeted runs: npm run test:orb, npm run test:parity, npm run test:config.
+swingScanner.regression.js — with swingScanner.fixtures.js alongside it
+
+simple930.regression.js
+
+Targeted runs: npm run test:orb, test:parity, test:config, test:scanner, test:simple930.
+
+Several suites assert by READING SOURCE FILES, so a pure refactor that only moves code between files can fail them without changing any behaviour. That is the suite working, not a false alarm — update the assertion to the new location.
 
 node -c src/app.js is the fastest syntax gate and is already allow-listed.
 
@@ -113,13 +119,15 @@ scripts/tdsEdgeTest.js — real-versus-random entry permutation test for TREND_D
 
 scripts/optionFeedTest.js — guards the socket-multiplexed option feed
 
+scripts/orbSweep.js — ORB parameter sweep; scripts/oiChainProbe.js — option-chain/OI probe; scripts/seedSettingsAudit.js — seeds the settings audit log
+
 src/utils/walkForward.js splits a backtest's trades into rolling out-of-sample folds and flags thin folds as non-evidence. It is wired into exactly one place today — the Trend Pullback backtest, which also runs a dumb baseline the strategy must beat. Reuse it rather than reinventing fold logic.
 
 /replay is the deterministic historical replay this repo already has: it re-runs a recorded session through the SAME paper onTick() handlers, in Snapshot mode (session-start settings, reproducible) or Current-settings mode (live process.env). Do not propose building a second one.
 
 Every backtest already applies a spread/slippage haircut each way, default 1.5 premium points, and nets P&L through utils/charges.js. A backtest result quoted gross is a bug, not a finding.
 
-tools/ is a separate QA kit for the documents/*.html strategy guides, not for engine code.
+tools/ is a separate QA kit for the documents/*.html strategy guides, not for engine code: qaGuides.js (runs each guide's own <script> in a node vm and asserts real SVG), verifyGuideCharts.js (every price a caption quotes must be a value that chart actually draws), plus alignGuidePrices.js and the chart-data generators. Run both QA tools BEFORE and AFTER your changes — some guides already fail, and you need to tell your failures from the repo's.
 
 ---
 

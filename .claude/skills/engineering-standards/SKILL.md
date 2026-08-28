@@ -65,7 +65,7 @@ CommonJS JavaScript — this repo has no TypeScript, no ESLint, no Prettier and 
 
 Syntax and APIs that run on Node 16 — the EC2 deploy pins Node 16 (Amazon Linux 2 / GLIBC 2.17).
 
-`node -c <changed file>` as the fastest first check before pushing (CLAUDE.md: `node -c src/app.js  # syntax check (already allow-listed)`). It is a per-file syntax parse only — it does NOT follow `require()`, so `node -c src/app.js` will not catch a syntax error in any of the routers or services it loads. Run it on each file you actually changed. It is not a correctness gate on its own: `npm test` runs the four regression suites in tests/ (ema9vwap, orb, liveParity, configFidelity) and is the real gate — see Testing Standards below. Note CLAUDE.md line 15's "There is no test runner" is stale; package.json has defined a `test` script since the suites landed.
+`node -c <changed file>` as the fastest first check before pushing (CLAUDE.md: `node -c src/app.js  # syntax check (already allow-listed)`). It is a per-file syntax parse only — it does NOT follow `require()`, so `node -c src/app.js` will not catch a syntax error in any of the routers or services it loads. Run it on each file you actually changed. It is not a correctness gate on its own: `npm test` is the real gate — see Testing Standards below.
 
 Meaningful naming
 
@@ -99,27 +99,17 @@ Global mutable state
 
 # Architecture Standards
 
-Prefer:
+This is a single Express process of CommonJS modules, not a layered enterprise app. Do not restructure it toward Clean Architecture, hexagonal ports/adapters or DDD — that advice does not fit and the regression suites read source files by path.
 
-Clean Architecture
+The shape that IS mandatory here:
 
-SOLID
+Strategy rules live in exactly ONE place — `src/strategies/{name}.js`. Paper, Backtest, Live and Replay all call the same `getSignal()`. No route may re-implement a rule or an indicator.
 
-Hexagonal Architecture
+Paper is canonical. When Backtest or Live disagrees with Paper, fix Backtest or Live.
 
-Domain-driven boundaries
+Shared concerns already have an owner — reuse it, never re-implement: socketManager (the one Fyers socket), brokerSafety (retry + circuit breaker), tradeGuards, vixFilter, oiFilter, positionPersist, tradeLogger, capitalPool, portfolioRisk, charges, liveDryRun, notify, sharedNav.
 
-Event-driven communication where appropriate
-
-Loose coupling
-
-High cohesion
-
-Explicit dependencies
-
-Clear module ownership
-
-Avoid circular dependencies.
+Avoid circular dependencies and module-load-time state.
 
 ---
 
@@ -203,21 +193,11 @@ Never hardcode production credentials.
 
 # Security Standards
 
-Always:
+Validate inputs and sanitize anything interpolated into a route's HTML template literal — every page here is a hand-built string, so an unescaped value is an XSS hole.
 
-Validate inputs.
+Secrets live in `.env` only. Never log or echo `API_SECRET`, `LOGIN_SECRET`, `ACCESS_TOKEN`, broker keys or the contents of `.fyers_token` / `.zerodha_token`.
 
-Sanitize outputs.
-
-Store secrets securely.
-
-Use least privilege.
-
-Rotate credentials.
-
-Review dependency vulnerabilities.
-
-Protect against common OWASP risks.
+Two independent gates guard the app, and they fail differently: `LOGIN_SECRET` returns **401** until the `__trade_login` cookie is sent, `API_SECRET` returns **403** on any path missing from `OPEN_PATHS` / `OPEN_PREFIXES`. When neither is set every path is open, so an access-control gap stays invisible in local testing — test with both set.
 
 ---
 
@@ -263,9 +243,9 @@ Optimize only after measuring.
 
 Every production change must be gated by:
 
-`node -c <changed file>` — the syntax check
+`node -c <changed file>` — the syntax check, run on each file you actually changed. It does NOT follow `require()`.
 
-`npm test` — four zero-dependency regression suites in tests/ (ema9vwap, orb, liveParity, configFidelity), built on node's built-in assert and exiting non-zero on failure
+`npm test` — the zero-dependency regression suites in tests/, built on node's built-in assert and exiting non-zero on failure. Read package.json for the current list; the chain grows with each strategy. Several suites assert by reading source files, so a pure refactor that moves code between files can fail them without changing behaviour — fix the assertion, don't skip the suite.
 
 A recorded-session /replay run when decision, fill or exit logic changed
 
@@ -371,23 +351,17 @@ There is no metrics backend — do not assume Prometheus, Grafana or an APM.
 
 # Documentation Standards
 
-Every significant feature should include:
+Docs are CHEAP here by default — this is a solo repo and the commit log is the changelog. Do not write prose about your own change.
 
-Purpose
+Do NOT add a CHANGELOG.md entry unless asked. Put the explanation in the commit message.
 
-Architecture
+README.md is orientation only (what strategies, modes and routes exist). Touch it only when one is added or removed. Do not document env keys there.
 
-Dependencies
+docs/ENV.md is GENERATED — never hand-edit. Run `npm run docs:env` after adding or removing an env key; `npm run docs:check` fails if it is stale.
 
-Configuration
+Reporting back to the user is a few lines on what changed and why. No summary documents, no migration guides, no recap files unless asked.
 
-Failure modes
-
-Recovery procedures
-
-Operational considerations
-
-Future improvement ideas
+The exception is a NEW strategy, which does earn a `documents/{NAME}_Strategy_Guide.html` — and every number in it must be re-derived from real engine output.
 
 ---
 

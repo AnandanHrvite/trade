@@ -123,7 +123,7 @@ Delete what the new strategy does not use rather than leaving it inert.
   lives here. Renders its own HTML, owns `/start /stop /exit /status /status/data
   /status/chart-data /history /reset /view/... /download/...` plus the two session
   endpoints the shared history UI (`src/utils/paperHistoryUI.js`) actually calls:
-  `POST /restore-session/:date` and `DELETE /session/:index`. All nine Paper routers
+  `POST /restore-session/:date` and `DELETE /session/:index`. All thirteen Paper routers
   register both. Do **not** add `POST /delete-session/:idx` — four older routes still
   carry it, but it is unreachable from any UI and it mutates `totalPnl` without
   recomputing `capital` (see the note at `src/routes/orbPaper.js:1840`, where it was
@@ -134,7 +134,10 @@ Delete what the new strategy does not use rather than leaving it inert.
   beyond the stop fills at the open, never the better level. Apply a slippage haircut
   both ways (`{MODE}_BT_SLIPPAGE_PTS`) — without it, backtests of option *buying*
   always flatter.
-- `src/routes/{name}LiveHarness.js` — wraps Paper via
+- `src/routes/{name}LiveHarness.js` — every strategy gets one; the four oldest
+  (EMA_RSI_ST, BB_RSI, PA, ORB) also keep a legacy hand-written `*Live.js`, but a new
+  strategy must NOT get one — a second copy of the logic is exactly what drifts from
+  paper. Wraps Paper via
   `require("../services/liveHarness").installHarness({ mode, modeTag, broker,
   liveLogKey })`, so **Live ≡ Paper by construction**. Triple-gate real orders:
   `{MODE}_LIVE_ENABLED=true` AND `LIVE_HARNESS_DRY_RUN=false` AND
@@ -201,10 +204,10 @@ missed entry means the strategy is invisible or broken on some screen.
   (`[tradeLogger] append failed (mode=…): unknown mode "…"`, visible in `/logs` via
   `logger.js`); it never rethrows, so the harness's `catch (_) {}` never fires. The
   trade is dropped from both the cumulative and the daily JSONL while the run looks
-  healthy. TDS and GAP3M both have that slip today (`gap-fix-3m-live` vs
-  `gap_fix_3m-live`, `trend-day-scalp-live` vs `trend_day_scalp-live`); HA_SCALP
-  does not — copy its pairing (`liveLogKey: "ha_scalp-live"` against the identical
-  `tradeLogger` key) and grep both files to confirm before you move on.
+  healthy. All thirteen pair correctly today (TDS and GAP3M were fixed) — copy
+  HA_SCALP's pattern (`liveLogKey: "ha_scalp-live"` against the identical
+  `tradeLogger` key, with the `// MUST match tradeLogger's key character for
+  character` comment) and grep both files to confirm before you move on.
 - `src/utils/skipLogger.js` — `{name}: "{name}_paper_skips_"`.
 - **Broker: follow what the USER said, not what the template did.** The row in
   `capitalPool.js`, `BROKER_OF` in `realtime.js`, the harness's broker + auth
@@ -215,8 +218,8 @@ missed entry means the strategy is invisible or broken on some screen.
 - `src/utils/capitalPool.js` — a `STRATEGIES` row (`{ broker, label, file }`). The
   paper route calls `check/block/release` with the mode key regardless; an unknown
   key makes all three silent no-ops, so the strategy never draws on — or shows up
-  in — its broker's paper pool. TDS and GAP3M are both missing this today; HA_SCALP
-  has it, so copy that row.
+  in — its broker's paper pool. `trend_day_scalp` and `gap_fix_3m` are still missing
+  their rows today; HA_SCALP has one, so copy that row.
 
 **Cross-cutting**
 - `src/utils/notify.js` — `modeGroup` branch + labels + consolidated-report group.

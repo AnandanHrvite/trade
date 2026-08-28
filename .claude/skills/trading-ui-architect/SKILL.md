@@ -389,39 +389,17 @@ No flashy animations.
 
 ---
 
-# Component Standards
-
-Reusable
-
-Strongly typed
-
-Small
-
-Testable
-
-Composable
-
-Documented
-
-Accessible
-
-Responsive
-
----
-
 # Error Handling
 
-Loading skeletons
+There are no components and no error boundaries here — a page is one template literal and a `fetch()` poll. What that means in practice:
 
-Error boundaries
+Every poll needs a `try/catch` that leaves the last good values on screen. A failed `/status/data` must not blank the page — a dashboard that goes empty during a live position is worse than a stale one.
 
-Retry actions
+Show an explicit empty state ("no trades yet") distinct from an error state ("could not load"). A zero and a failure look identical otherwise, and on a trading screen that difference matters.
 
-Offline state
+Server-side, a route that throws returns a 500 HTML page into a `fetch()` expecting JSON. Guard the render and return a shaped error the client can display.
 
-Empty state
-
-Graceful degradation
+A blank chart is usually an expired Fyers token (history returns 0 candles), not a UI bug. Say so on the page rather than rendering nothing.
 
 ---
 
@@ -467,47 +445,27 @@ Critical
 
 # UX Rules
 
-Maximum 3 clicks to any feature.
+Never require scrolling to see critical information — an open position, its P&L and the kill switch stay visible.
 
-Never require scrolling to see critical information.
+Confirmation before anything destructive: resetting a paper book, deleting a session, flipping a live gate. These are irreversible against real trade history.
 
-Important metrics should always remain visible.
-
-Confirmation before destructive actions.
-
-Autosave settings.
-
-Undo when possible.
+Make live-versus-paper unmistakable at a glance. A page that could be showing real money must say so loudly; the cost of confusing the two is a real order.
 
 ---
 
-# Deliverables
+# Before You Report Done
 
-Always provide:
+Mobile is a hard requirement, not a nice-to-have: the user checks this on an **iPhone 17 Pro Max, ~440px portrait**. No horizontal page scroll, wide tables scroll inside their own container, 44px hit areas, safe-area insets, and a viewport meta tag on any new page.
 
-1. Screen Architecture
+Both themes: `UI_THEME` is `dark|light|auto` and is resolved server-side, so check the page in light as well as dark.
 
-2. Component Hierarchy
+A new page is not done until its sidebar entry exists in `sharedNav.js` behind a `UI_SHOW_*` toggle AND that toggle is registered in `src/routes/settings.js`. No menu item ships without a Settings toggle.
 
-3. Responsive Layout
+If `API_SECRET` is set, add every read-only path to `OPEN_PATHS` / `OPEN_PREFIXES` in `app.js` — browser navigations and dashboard polls carry no secret, so a missed entry returns a raw 403. Note `OPEN_PREFIXES` is GET/HEAD only. Test with the secret SET; with none configured every path is open and the gap stays invisible.
 
-4. Wireframe (ASCII)
+Restart the server after editing `settings.js` or a route — a page showing nothing is usually a stale process, not a wiring bug. The app serves HTTPS with a self-signed cert, so curl with `-k https://…`; `http://` returns a bare `000`. 401 is the `LOGIN_SECRET` cookie gate, 403 is the `API_SECRET` gate — only 403 means a missing `OPEN_PATHS` entry.
 
-5. User Flow
-
-6. Component Breakdown
-
-7. State Management
-
-8. API Integration
-
-9. WebSocket Events
-
-10. Performance Considerations
-
-11. Accessibility Review
-
-12. Future Improvements
+Keep answers short and plain-English. Skip the formal deliverables list unless the request is a genuine design review.
 
 ---
 
