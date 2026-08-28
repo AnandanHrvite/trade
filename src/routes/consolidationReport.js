@@ -274,6 +274,17 @@ ${multiSelectCSS()}
     .badge-RSI_PIVOT_ST{background:rgba(250,204,21,0.12);color:#facc15;}
     .badge-SIMPLE930{background:rgba(251,146,60,0.12);color:#fb923c;}
     .empty{text-align:center;padding:50px 20px;color:var(--muted-1,#8ba1c2);font-size:0.85rem;}
+    /* Skip column — tick a day to drop it from the cards + TOTAL row. The choice
+       is per-browser (localStorage), never written back to any trade file. */
+    .tbl th.skip-col,.tbl td.skip-col{text-align:center;width:1%;padding-left:8px;padding-right:8px;}
+    .tbl td.skip-col input{width:16px;height:16px;accent-color:#38bdf8;cursor:pointer;margin:0;vertical-align:middle;}
+    /* 44px touch target on phones without growing the row visually */
+    .tbl td.skip-col label{display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:28px;cursor:pointer;}
+    .tbl tr.skipped td{opacity:0.38;text-decoration:line-through;}
+    .tbl tr.skipped td.skip-col{opacity:1;text-decoration:none;}
+    .skip-note{font-size:0.56rem;color:var(--muted-1,#8ba1c2);font-family:'IBM Plex Mono',monospace;margin-top:8px;}
+    .skip-note button{background:none;border:0.5px solid #17324f;color:var(--muted-1,#8ba1c2);border-radius:5px;padding:3px 8px;font-family:inherit;font-size:0.56rem;cursor:pointer;margin-left:8px;min-height:26px;}
+    .skip-note button:hover{color:#38bdf8;border-color:#38bdf8;}
     /* warning alert — sits at the very top of the report, not buried under the table */
     .alert-warn{display:flex;align-items:flex-start;gap:10px;background:rgba(245,158,11,0.10);border:0.5px solid rgba(245,158,11,0.45);border-left:3px solid #f59e0b;border-radius:10px;padding:11px 14px;margin-bottom:14px;}
     .alert-warn .aw-ico{font-size:0.95rem;line-height:1.3;}
@@ -298,6 +309,9 @@ ${multiSelectCSS()}
     :root[data-theme="light"] .tbl tfoot td{background:#f1f5f9!important;color:#1e293b!important;}
     :root[data-theme="light"] .muted{color:#cbd5e1!important;}
     :root[data-theme="light"] .empty{color:#5c6b7f!important;}
+    :root[data-theme="light"] .skip-note{color:#4b5769!important;}
+    :root[data-theme="light"] .skip-note button{border-color:#e0e4ea!important;color:#4b5769!important;}
+    :root[data-theme="light"] .skip-note button:hover{color:#0369a1!important;border-color:#0369a1!important;}
     :root[data-theme="light"] .alert-warn{background:#fffbeb!important;border-color:#fcd34d!important;border-left-color:#f59e0b!important;}
     :root[data-theme="light"] .alert-warn .aw-title{color:#b45309!important;}
     :root[data-theme="light"] .alert-warn .aw-body{color:#78350f!important;}
@@ -318,6 +332,10 @@ ${multiSelectCSS()}
       .tbl tfoot td{background:#eef2f7!important;color:#111!important;}
       .tbl-scroll{overflow:visible!important;}
       .tbl tr{break-inside:avoid;}
+      /* A printed report shows the numbers it totals: skipped days and the
+         tick-boxes that excluded them are both left off the page. */
+      .skip-col,.skip-note{display:none!important;}
+      .tbl tr.skipped{display:none!important;}
       thead{display:table-header-group;}
     }
   </style>
@@ -368,6 +386,18 @@ function fmtVix(n){ return (n==null)?'<span class="muted">—</span>':n.toFixed(
 
 // 'YYYY-MM-DD' → "Tue, 14 Jul 2026"  (matches the Telegram day-report header)
 function prettyDate(s){ const d=new Date(s+'T12:00:00'); if(isNaN(d)) return s; return d.toLocaleDateString('en-IN',{weekday:'short',day:'2-digit',month:'short',year:'numeric'}); }
+
+// ── Skipped days ────────────────────────────────────────────────────
+// A day can be excluded from the report without touching any trade file: the
+// tick lives only in this browser's localStorage, keyed by date, and every
+// aggregate below (cards, TOTAL row, per-strategy totals, avg VIX) is computed
+// from the un-skipped days only. Wiped by "Clear skipped".
+const SKIP_KEY='consolReport.skipDays';
+let SKIP=new Set();
+try{ const raw=localStorage.getItem(SKIP_KEY); if(raw) SKIP=new Set(JSON.parse(raw)||[]); }catch(_){}
+function saveSkip(){ try{ localStorage.setItem(SKIP_KEY, JSON.stringify([...SKIP])); }catch(_){} }
+function toggleSkip(d, on){ if(on) SKIP.add(d); else SKIP.delete(d); saveSkip(); render(); }
+function clearSkip(){ SKIP.clear(); saveSkip(); render(); }
 
 // Range bounds come from sharedNav's drRange() — the same resolver the Dashboard
 // and Edge Analytics use, so "This month" means one thing across the whole app.
@@ -422,8 +452,14 @@ function render(){
   const gen = new Date().toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'});
   const days = byDay(arr);
 
-  // VIX readings for the shown days — drives both the TOTAL row and the alert below.
-  const vixVals = days.map(g => VIX_BY_DATE[g.date]).filter(v => v != null);
+  // Skipped days stay visible in the table (struck through) but count for nothing:
+  // every aggregate from here on is built from kept / keptArr, not the full set.
+  const kept    = days.filter(g => !SKIP.has(g.date));
+  const keptArr = arr.filter(t => !SKIP.has(t.date));
+  const nSkipped = days.length - kept.length;
+
+  // VIX readings for the kept days — drives both the TOTAL row and the alert below.
+  const vixVals = kept.map(g => VIX_BY_DATE[g.date]).filter(v => v != null);
 
   // Silence is the worst outcome here — if every VIX cell is a dash, say why, and
   // say it at the top of the page where it can't be scrolled past.
@@ -444,7 +480,7 @@ function render(){
   // overall totals
   let tN=0,tW=0,tL=0,tNet=0,tWP=0,tLP=0; const totByMode={};
   for(const mo of activeModes) totByMode[mo]={n:0,pnl:0,wins:0,losses:0,winPnl:0,lossPnl:0};
-  for(const t of arr){
+  for(const t of keptArr){
     tN++; tNet+=t.pnl;
     if(t.pnl>0){ tW++; tWP+=t.pnl; } else if(t.pnl<0){ tL++; tLP+=t.pnl; }
     const m=totByMode[t.mode];
@@ -455,33 +491,38 @@ function render(){
 
   let head=vixWarn+'<div class="rpt-head"><div>'
     +'<div class="rh-title">Consolidated Day Report</div>'
-    +'<div class="rh-meta">Book: <b>'+bookLabel+'</b> &nbsp;·&nbsp; Strategy: <b>'+esc(f.modes.length===MODES.length ? 'All' : (f.modes.length ? f.modes.map(m=>MODE_LABEL[m]||m).join(', ') : 'None'))+'</b> &nbsp;·&nbsp; Period: <b>'+esc(f.rangeLabel)+'</b> &nbsp;·&nbsp; Trading days: <b>'+days.length+'</b> &nbsp;·&nbsp; Trades: <b>'+tN+'</b></div>'
+    +'<div class="rh-meta">Book: <b>'+bookLabel+'</b> &nbsp;·&nbsp; Strategy: <b>'+esc(f.modes.length===MODES.length ? 'All' : (f.modes.length ? f.modes.map(m=>MODE_LABEL[m]||m).join(', ') : 'None'))+'</b> &nbsp;·&nbsp; Period: <b>'+esc(f.rangeLabel)+'</b> &nbsp;·&nbsp; Trading days: <b>'+kept.length+'</b> &nbsp;·&nbsp; Trades: <b>'+tN+'</b>'
+    // A total that silently omits days would be misread as the full period.
+    +(nSkipped ? ' &nbsp;·&nbsp; <b style="color:#f59e0b">'+nSkipped+' day'+(nSkipped>1?'s':'')+' skipped</b>' : '')+'</div>'
     +'</div><div class="rh-brand">ௐ Palani Andawar Thunai ॐ<br>Generated '+esc(gen)+'</div></div>';
 
   if(!days.length){ C.innerHTML=head+'<div class="empty">No trades for this filter. Try widening the range or switching Book.</div>'; return; }
 
   // summary cards (mirror the Telegram totals block)
   const cards=[
-    {l:'Total Trades',v:tN,sub:days.length+' trading days',a:'#38bdf8'},
+    {l:'Total Trades',v:tN,sub:kept.length+' trading day'+(kept.length===1?'':'s')+(nSkipped?' · '+nSkipped+' skipped':''),a:'#38bdf8'},
     {l:'Wins',v:tW,sub:'',a:'#10b981'},
     {l:'Losses',v:tL,sub:'',a:'#ef4444'},
     {l:'Win Rate',v:tWR.toFixed(1)+'%',sub:'',a:tWR>=50?'#10b981':'#f59e0b'},
     {l:'Net P&L',v:inr(tNet),sub:tNet>=0?'🟢 PROFIT':'🔴 LOSS',a:pc(tNet)},
-    {l:'Avg / Day',v:inr(days.length?tNet/days.length:0),sub:'per trading day',a:pc(tNet)},
+    {l:'Avg / Day',v:inr(kept.length?tNet/kept.length:0),sub:'per trading day',a:pc(tNet)},
   ];
   let h=head+'<div class="stat-grid">';
   for(const c of cards) h+='<div class="sc" style="--accent:'+c.a+'"><div class="sc-label">'+c.l+'</div><div class="sc-val" style="color:'+c.a+'">'+c.v+'</div><div class="sc-sub">'+c.sub+'</div></div>';
   h+='</div>';
 
   // the daily table
-  let thead='<tr><th>Date</th><th>VIX</th>';
+  let thead='<tr><th class="skip-col" title="Tick a day to leave it out of the totals">Skip</th><th>Date</th><th>VIX</th>';
   for(const mo of activeModes) thead+='<th>'+esc(MODE_LABEL[mo])+'</th>';
   thead+='<th>Trades</th><th>Net P&amp;L</th></tr>';
 
   let body='';
   for(const g of days){
     const dayVix = (VIX_BY_DATE[g.date]!=null) ? VIX_BY_DATE[g.date] : null;
-    let row='<td>'+esc(prettyDate(g.date))+'</td><td>'+fmtVix(dayVix)+'</td>';
+    const off = SKIP.has(g.date);
+    let row='<td class="skip-col"><label><input type="checkbox" data-skip="'+esc(g.date)+'"'+(off?' checked':'')
+      +' aria-label="Skip '+esc(prettyDate(g.date))+'"/></label></td>'
+      +'<td>'+esc(prettyDate(g.date))+'</td><td>'+fmtVix(dayVix)+'</td>';
     for(const mo of activeModes){
       const c=g.modes[mo];
       if(!c || !c.n){ row+='<td class="muted">—</td>'; continue; }
@@ -492,12 +533,12 @@ function render(){
     // profit-or-loss, so the separate Result column is redundant.
     row+='<td>'+g.n+' - <span style="color:#10b981">'+g.wins+'W</span> <span style="color:#ef4444">'+g.losses+'L</span> '+wr.toFixed(0)+'%</td>'
       +'<td style="font-weight:700"><span style="color:'+pc(g.net)+'">'+inr2(g.net)+'</span></td>';
-    body+='<tr>'+row+'</tr>';
+    body+='<tr'+(off?' class="skipped"':'')+'>'+row+'</tr>';
   }
 
   // totals footer — VIX averaged across the shown days that have a Fyers reading
   const avgVix  = vixVals.length ? vixVals.reduce((s,v)=>s+v,0)/vixVals.length : null;
-  let foot='<tr><td><b>TOTAL</b></td><td>'+fmtVix(avgVix)+'</td>';
+  let foot='<tr><td class="skip-col"></td><td><b>TOTAL</b></td><td>'+fmtVix(avgVix)+'</td>';
   for(const mo of activeModes){
     const c=totByMode[mo];
     if(!c || !c.n){ foot+='<td class="muted">—</td>'; continue; }
@@ -512,8 +553,15 @@ function render(){
     +'<br><span class="cnt"><span style="color:#10b981">'+inr(tWP)+'</span> / <span style="color:#ef4444">'+inr(tLP)+'</span></span></td>'
     +'<td style="font-weight:700"><span style="color:'+pc(tNet)+'">'+inr2(tNet)+'</span></td></tr>';
 
-  h+='<div class="panel"><h3>Daily Breakdown</h3><div class="tbl-scroll"><table class="tbl"><thead>'+thead+'</thead><tbody>'+body+'</tbody><tfoot>'+foot+'</tfoot></table></div></div>';
+  h+='<div class="panel"><h3>Daily Breakdown</h3><div class="tbl-scroll"><table class="tbl"><thead>'+thead+'</thead><tbody>'+body+'</tbody><tfoot>'+foot+'</tfoot></table></div>'
+    +'<div class="skip-note">Tick <b>Skip</b> to leave a day out of the cards and the TOTAL row — the trade files are not touched, and the choice stays in this browser.'
+    +(nSkipped?'<button type="button" id="clearSkip">Clear '+nSkipped+' skipped</button>':'')+'</div></div>';
   C.innerHTML=h;
+
+  // Re-bound on every render because render() replaces the whole table.
+  C.querySelectorAll('input[data-skip]').forEach(cb=>cb.addEventListener('change',()=>toggleSkip(cb.dataset.skip, cb.checked)));
+  const cs=document.getElementById('clearSkip');
+  if(cs) cs.addEventListener('click',clearSkip);
 }
 
 // wire controls
