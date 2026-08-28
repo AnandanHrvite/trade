@@ -19,7 +19,10 @@
 const express = require("express");
 const router  = express.Router();
 const sharedSocketState = require("../utils/sharedSocketState");
-const { buildSidebar, sidebarCSS, faviconLink } = require("../utils/sharedNav");
+// modalCSS/modalJS carry secretFetch + the API-secret prompt: /stop requires
+// API_SECRET (only the read-only /status/data paths are in app.js OPEN_PATHS),
+// so Stop All would 403 on every engine without them.
+const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
 const { resolveTheme } = require("../utils/theme");
 
 // hasDayLog: only strategies that expose /download/{trades,skips}/:date show
@@ -173,6 +176,7 @@ ${faviconLink()}
 <script>(function(){ if ('${resolveTheme()}' === 'light') document.documentElement.setAttribute('data-theme', 'light'); })();</script>
 <style>
   ${sidebarCSS()}
+  ${modalCSS()}
   body { margin:0; background:#040c18; color:#e0eaf8; font-family:'Segoe UI',-apple-system,sans-serif; }
   .main-content { padding:20px 24px; }
   .top-bar { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:16px; flex-wrap:wrap; }
@@ -465,6 +469,7 @@ ${cardsHtml}
 </main>
 
 <script>
+${modalJS()}
 const STRATEGY_KEYS    = ${strategyOrder};
 const ENDPOINTS        = ${endpointsJson};
 const STATUS_PAGES     = ${statusPagesJson};
@@ -882,7 +887,10 @@ async function stopAll() {
   const stopped = [], failed = [];
   for (const t of live) {
     try {
-      const r = await fetch(t.url, { cache:'no-store', redirect:'follow' });
+      // secretFetch, not fetch: /stop requires API_SECRET. It prompts once and
+      // remembers for the session, and returns null if the prompt is cancelled.
+      const r = await secretFetch(t.url, { cache:'no-store', redirect:'follow' });
+      if (!r) { failed.push({ ...t, status: 403 }); continue; }
       // 400 = "not running" / "harness not installed" for the harness routes —
       // it raced us to idle, which is the outcome we wanted anyway.
       if (r.ok || r.status === 400) stopped.push(t);
