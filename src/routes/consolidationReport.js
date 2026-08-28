@@ -6,8 +6,8 @@
  * then Total / Wins / Losses / Win rate / Net P&L) but for every day at once, in a
  * table you can filter (Book + the shared sharedNav date range) and export to PDF.
  *
- * Reached via the "📑 Consolidation Report" button on the Edge Analytics page — it
- * is NOT a separate sidebar menu item. Read-only: loads the same per-strategy session
+ * A sidebar menu item; the "📈 Edge Analytics" button in its toolbar crosses over to
+ * the deeper metrics page. Read-only: loads the same per-strategy session
  * files that /consolidation (paper) + /live-consolidation (live) use, flattens them,
  * embeds the trade array, and computes everything client-side so filters recompute
  * instantly with no server round-trip.
@@ -16,7 +16,8 @@
  * stylesheet (sidebar / toolbar / buttons hidden, white page, page-break-safe table).
  * No external PDF library — the browser's native print-to-PDF is used.
  *
- * Gated by UI_SHOW_CONSOLIDATION_REPORT (Settings → Menu Visibility). No new data
+ * Gated by UI_SHOW_EDGE_ANALYTICS (Settings → Menu Visibility); the Edge Analytics
+ * button by UI_SHOW_EDGE_ANALYTICS_BUTTON. No new data
  * is written.
  */
 const express = require("express");
@@ -196,6 +197,7 @@ router.get("/", async (req, res) => {
   const enabledSet  = new Set(enabled.map(s => s.mode));
   const trades      = loadAllTrades().filter(t => enabledSet.has(t.mode));
   const theme = resolveTheme();
+  const showEdgeAnalytics = (process.env.UI_SHOW_EDGE_ANALYTICS_BUTTON || "true").toLowerCase() === "true";
 
   // Daily VIX from Fyers across the full recorded span (oldest trade → today, IST),
   // so any day the client filters to has a value. Embedded and looked up client-side.
@@ -221,6 +223,10 @@ router.get("/", async (req, res) => {
     ${sidebarCSS()}
     .main-content{flex:1;margin-left:200px;padding:18px 22px 40px;min-width:0;min-height:100vh;}
     @media(max-width:768px){.main-content{margin-left:0;padding:14px;}}
+    @media(max-width:560px){
+      .ea-link{margin-left:0;width:100%;justify-content:center;padding:9px 14px;}
+      .pdf-btn{margin-left:0!important;width:100%;justify-content:center;padding:9px 14px;}
+    }
     .page-title{font-size:1.1rem;font-weight:700;color:#e0eaf8;margin-bottom:2px;}
     .page-sub{font-size:0.72rem;color:var(--muted-1,#8ba1c2);margin-bottom:14px;}
     .page-sub a{color:#7dd3fc;text-decoration:none;}
@@ -234,6 +240,8 @@ router.get("/", async (req, res) => {
 ${multiSelectCSS()}
     .pdf-btn{margin-left:auto;background:#0c4a6e;border:0.5px solid #1e5a80;color:#7dd3fc;padding:7px 14px;border-radius:6px;font-family:'IBM Plex Mono',monospace;font-size:0.72rem;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px;}
     .pdf-btn:hover{background:#0e5a84;}
+    .ea-link{margin-left:auto;background:#0c4a6e;border:0.5px solid #1e5a80;color:#7dd3fc;padding:7px 14px;border-radius:6px;font-family:'IBM Plex Mono',monospace;font-size:0.72rem;font-weight:600;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;}
+    .ea-link:hover{background:#0e5a84;}
     .rpt-head{background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;padding:14px 16px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;}
     .rpt-head .rh-title{font-size:1rem;font-weight:700;color:#e0eaf8;}
     .rpt-head .rh-meta{font-family:'IBM Plex Mono',monospace;font-size:0.66rem;color:var(--muted-1,#8ba1c2);margin-top:4px;line-height:1.7;}
@@ -304,6 +312,8 @@ ${multiSelectCSS()}
        the hover (#0e5a84) has no entry, so it went dark on hover. */
     :root[data-theme="light"] .pdf-btn{background:#0369a1!important;border-color:#0369a1!important;color:#ffffff!important;}
     :root[data-theme="light"] .pdf-btn:hover{background:#075985!important;}
+    :root[data-theme="light"] .ea-link{background:#0369a1!important;border-color:#0369a1!important;color:#ffffff!important;}
+    :root[data-theme="light"] .ea-link:hover{background:#075985!important;}
     :root[data-theme="light"] .tbl th{background:#f1f5f9!important;color:#4b5769!important;border-bottom-color:#e0e4ea!important;}
     :root[data-theme="light"] .tbl td{border-color:#e0e4ea!important;color:#334155!important;}
     :root[data-theme="light"] .tbl tfoot td{background:#f1f5f9!important;color:#1e293b!important;}
@@ -319,7 +329,7 @@ ${multiSelectCSS()}
     @media print {
       @page { size: A4 landscape; margin: 12mm; }
       body{background:#fff!important;color:#111!important;overflow:visible!important;}
-      .sidebar,.hamburger,.sidebar-overlay,.deploy-chip,#socket-broken-banner,#telegram-broken-banner,#backup-nag-banner,.tbar,.pdf-btn,.page-sub a{display:none!important;}
+      .sidebar,.hamburger,.sidebar-overlay,.deploy-chip,#socket-broken-banner,#telegram-broken-banner,#backup-nag-banner,.tbar,.pdf-btn,.ea-link,.page-sub a{display:none!important;}
       .app-shell{display:block!important;}
       .main-content{margin-left:0!important;padding:0!important;min-height:auto!important;}
       .rpt-head,.sc,.panel{background:#fff!important;border:1px solid #d0d7e2!important;box-shadow:none!important;break-inside:avoid;}
@@ -345,7 +355,7 @@ ${multiSelectCSS()}
   ${buildSidebar('consolidationReport', false)}
   <div class="main-content">
     <h1 class="page-title">📑 Consolidation Report</h1>
-    <p class="page-sub">Day-by-day consolidated report of every recorded trade — per-strategy P&amp;L, wins/losses and net for each day. <a href="/edge-analytics">← Edge Analytics</a></p>
+    <p class="page-sub">Day-by-day consolidated report of every recorded trade — per-strategy P&amp;L, wins/losses and net for each day.</p>
 
     <div class="tbar">
       <label>Book</label>
@@ -362,7 +372,8 @@ ${multiSelectCSS()}
         <label>From</label><input type="date" id="fFrom"/>
         <label>To</label><input type="date" id="fTo"/>
       </span>
-      <button class="pdf-btn" onclick="window.print()">🖨 Save as PDF</button>
+      ${showEdgeAnalytics ? `<a href="/edge-analytics" class="ea-link" title="Open Edge Analytics — win rate, expectancy, profit factor, drawdown">📈 Edge Analytics</a>` : ''}
+      <button class="pdf-btn"${showEdgeAnalytics ? ' style="margin-left:8px;"' : ''} onclick="window.print()">🖨 Save as PDF</button>
     </div>
 
     <div id="content"></div>

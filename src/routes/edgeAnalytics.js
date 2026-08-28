@@ -206,7 +206,6 @@ router.get("/", (req, res) => {
     'All');
 
   const theme = resolveTheme();
-  const showConsolidationReport = (process.env.UI_SHOW_CONSOLIDATION_REPORT || "true").toLowerCase() === "true";
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -368,7 +367,7 @@ ${multiSelectCSS()}
   ${buildSidebar('edgeAnalytics', false)}
   <div class="main-content">
     <h1 class="page-title">📈 Edge Analytics</h1>
-    <p class="page-sub">Win rate · expectancy · profit factor · Sharpe · system quality · drawdown · MFE/MAE · Monte Carlo — computed from your recorded trades.</p>
+    <p class="page-sub">Win rate · expectancy · profit factor · Sharpe · system quality · drawdown · MFE/MAE · Monte Carlo — computed from your recorded trades. <a href="/consolidation-report">← Consolidation Report</a></p>
 
     <div class="tbar">
       <label>Book</label>
@@ -401,8 +400,7 @@ ${multiSelectCSS()}
       <label>Hour</label>
       ${hourPicker}
       <button type="button" id="btnReset" class="rst" title="Clear every filter back to All">Reset</button>
-      ${showConsolidationReport ? `<a href="/consolidation-report" class="cr-link" title="Open the day-by-day consolidated report (with PDF export)">📑 Consolidation Report</a>` : ''}
-      <span id="cntPill" style="margin-left:${showConsolidationReport ? '12px' : 'auto'};font-family:'IBM Plex Mono',monospace;font-size:0.7rem;color:var(--muted-1,#8ba1c2);"></span>
+      <span id="cntPill" style="margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:0.7rem;color:var(--muted-1,#8ba1c2);"></span>
     </div>
 
     <div id="content"></div>

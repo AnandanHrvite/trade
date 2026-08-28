@@ -287,9 +287,9 @@ The engine falls back to one value; a status panel or log banner prints another.
 | `UI_SHOW_BB_RSI_PAPER` | toggle | `true` | Show Paper under BB_RSI. |
 | `UI_SHOW_CACHE_FILES` | toggle | `true` | Show the Cache Files tab. |
 | `UI_SHOW_COMPARE` | toggle | `false` | Show the Compare sub-menu. |
-| `UI_SHOW_CONSOLIDATION_REPORT` | toggle | `true` | Show the Consolidation Report button. |
 | `UI_SHOW_DASHBOARD` | toggle | `false` | Show the Dashboard menu. |
-| `UI_SHOW_EDGE_ANALYTICS` | toggle | `true` | Show the Edge Analytics menu. |
+| `UI_SHOW_EDGE_ANALYTICS` | toggle | `true` | Show the Consolidation Report menu. |
+| `UI_SHOW_EDGE_ANALYTICS_BUTTON` | toggle | `true` | Show the Edge Analytics button on the Consolidation Report page. |
 | `UI_SHOW_EMA_RSI_ST_BACKTEST` | toggle | `true` | Show Backtest under EMA_RSI_ST. |
 | `UI_SHOW_EMA_RSI_ST_LIVE` | toggle | `true` | Show Live under EMA_RSI_ST. |
 | `UI_SHOW_EMA_RSI_ST_LIVE_HARNESS` | toggle | `false` | Show Live (Harness) under EMA_RSI_ST. |

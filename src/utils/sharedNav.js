@@ -355,7 +355,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     ...(showReplay      ? [{ key: 'replay',            href: '/replay',             icon: '⏪', label: 'Replay' }] : []),
     ...(showPaperHist   ? [{ key: 'consolidation',     href: '/consolidation',      icon: '📒', label: 'Paper Traded History' }] : []),
     ...(showLiveHist    ? [{ key: 'liveConsolidation', href: '/live-consolidation', icon: '📕', label: 'Live Traded History' }] : []),
-    ...(showEdgeAnalytics ? [{ key: 'edgeAnalytics',   href: '/edge-analytics',     icon: '📊', label: 'Edge Analytics' }] : []),
+    ...(showEdgeAnalytics ? [{ key: 'consolidationReport', href: '/consolidation-report', icon: '📑', label: 'Consolidation Report' }] : []),
     ...(showAdvisor       ? [{ key: 'advisor',         href: '/advisor',            icon: '🧠', label: 'Settings Advisor' }] : []),
     ...(showOiMonitor     ? [{ key: 'oi-monitor',      href: '/oi-monitor',         icon: '🧱', label: 'OI Monitor' }] : []),
     ...(showSwingScanner  ? [{ key: 'swingScanner',     href: '/swing-scanner',      icon: '🔭', label: 'Swing Scanner' }] : []),
