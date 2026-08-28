@@ -573,8 +573,10 @@ class SocketManager {
     // already attached and carry the CURRENT generation — so that teardown close
     // reads as "the new connection just died" and schedules a reconnect, which
     // tears down and closes again. That is the loop that ran 567 times on
-    // 2026-08-28. A close only counts if THIS attempt actually reached connect.
+    // 2026-08-28. So the first pre-connect close of each attempt is treated as
+    // that echo and swallowed; anything after it is a real disconnect.
     let opened = false;
+    let teardownEchoSeen = false;
 
     // Remove stale listeners before re-attaching (prevents duplicate handlers on reconnect)
     this._detachListeners();
@@ -696,9 +698,13 @@ class SocketManager {
 
     skt.on('close', () => {
       if (gen !== this._connGen) return;  // superseded attempt — not this connection dying
-      // The close provoked by our own teardown, arriving on handlers attached
-      // after it was requested. Ignoring it is what stops the runaway loop.
-      if (!opened) return;
+      // The close provoked by our own teardown, landing on handlers attached
+      // after it was requested. Swallow it ONCE — it is an echo of the close we
+      // asked for, not this attempt dying. Ignoring every pre-connect close
+      // instead would strand a genuinely refused handshake with no reconnect
+      // scheduled (the watchdog is market-hours only, so pre-market would sit
+      // dead), which is why this is a one-shot and not a blanket `if (!opened)`.
+      if (!opened && !teardownEchoSeen) { teardownEchoSeen = true; return; }
       this._log('🔴 [SOCKET] Disconnected unexpectedly');
       this._lastDownAt = Date.now();
       // Only reset retryCount if connection was stable for at least 10 seconds.
