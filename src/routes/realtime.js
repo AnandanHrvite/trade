@@ -102,9 +102,12 @@ function renderPage({ liveActive, sidebarKey = "realtime", autoFlipBack = false 
   // Stop-all hits BOTH prefixes for every strategy, regardless of which source
   // the PAPER/LIVE toggle is showing — "stop everything" has to mean everything,
   // or a live harness keeps trading because the page happened to be on PAPER.
+  // statusUrl is probed first so the report can name what was ACTUALLY running:
+  // most paper /stop handlers redirect unconditionally (their stopSession() is a
+  // no-op when idle), so the HTTP response alone cannot tell running from idle.
   const stopUrlsJson    = JSON.stringify(strategies.map(s => ([
-    { key: s.key, mode: 'PAPER', url: s.paperPrefix + '/stop' },
-    { key: s.key, mode: 'LIVE',  url: s.livePrefix  + '/stop' },
+    { key: s.key, mode: 'PAPER', url: s.paperPrefix + '/stop', statusUrl: s.paperPrefix + '/status/data' },
+    { key: s.key, mode: 'LIVE',  url: s.livePrefix  + '/stop', statusUrl: s.livePrefix  + '/status/data' },
   ])).flat());
 
   const pools           = brokerPools(strategies);
@@ -844,19 +847,46 @@ async function stopAll() {
   btn.classList.remove('armed');
   btn.disabled = true;
   btn.textContent = 'Stopping…';
-  stopNote('Stopping ' + STOP_URLS.length + ' engines…');
+  stopNote('Checking which engines are running…');
+
+  // Which engines are actually up? Probed in parallel — these are cheap reads,
+  // and the answer decides both what gets stopped and what the report may claim.
+  // An unreachable status endpoint is treated as "might be running": better to
+  // send a harmless stop to an idle engine than to skip a live one.
+  const live = [];
+  await Promise.all(STOP_URLS.map(async t => {
+    try {
+      const r = await fetch(t.statusUrl, { cache:'no-store' });
+      if (!r.ok) { live.push(t); return; }          // can't tell → stop it anyway
+      const d = await r.json();
+      if (!d) { live.push(t); return; }
+      // The harness LIVE routes spread the underlying paper engine's status, so
+      // their "running" is true whenever PAPER is running — even with no harness
+      // installed. "installed" is the only field that means LIVE is armed; the
+      // paper entry already covers the paper session itself.
+      if (typeof d.installed === 'boolean') { if (d.installed) live.push(t); return; }
+      if (d.running) live.push(t);
+    } catch (e) { live.push(t); }
+  }));
+
+  if (!live.length) {
+    stopNote('<b>Nothing to stop</b> — no strategy is running in PAPER or LIVE.');
+    btn.disabled = false;
+    btn.textContent = '🛑 Stop All';
+    return;
+  }
 
   // Sequential, not parallel: several /stop handlers place a real square-off
-  // order, and firing 26 broker round-trips at once is how you get rate-limited
-  // mid-flatten. The whole sweep is well under a second when nothing is running.
+  // order, and firing them all at once is how you get rate-limited mid-flatten.
+  stopNote('Stopping ' + live.length + ' engine' + (live.length === 1 ? '' : 's') + '…');
   const stopped = [], failed = [];
-  for (const t of STOP_URLS) {
+  for (const t of live) {
     try {
       const r = await fetch(t.url, { cache:'no-store', redirect:'follow' });
-      // 400 = "not running" / "harness not installed" for the harness routes.
-      // That is the normal answer for an idle engine, not a failure.
-      if (r.ok) stopped.push(t);
-      else if (r.status !== 400) failed.push({ ...t, status: r.status });
+      // 400 = "not running" / "harness not installed" for the harness routes —
+      // it raced us to idle, which is the outcome we wanted anyway.
+      if (r.ok || r.status === 400) stopped.push(t);
+      else failed.push({ ...t, status: r.status });
     } catch (e) {
       failed.push({ ...t, status: 0 });
     }
@@ -864,9 +894,7 @@ async function stopAll() {
 
   const name = t => STRATEGY_LABELS[t.key] + ' ' + t.mode;
   let msg = '<b>Stop All finished.</b> ';
-  msg += stopped.length
-    ? 'Stopped: ' + stopped.map(name).join(', ') + '. '
-    : 'Nothing was running. ';
+  if (stopped.length) msg += 'Stopped: ' + stopped.map(name).join(', ') + '. ';
   if (failed.length) {
     msg += '<b>Could not stop:</b> ' + failed.map(t => name(t) + ' (http ' + t.status + ')').join(', ')
          + ' — open that strategy\\'s page and stop it there.';
