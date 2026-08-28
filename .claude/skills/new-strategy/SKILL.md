@@ -35,6 +35,17 @@ Ambiguities that have actually caused rework here:
 | **If nothing hits, when do we exit?** | Almost always "square off at forced-exit time", but confirm. |
 | **Strike selection** — ATM, ITM n steps? | Defaults to `{MODE}_ITM_STEPS`. |
 | **Anything the user explicitly said to leave OUT?** | Record it in the engine header comment so nobody "helpfully" adds it later. |
+| **A rule that needs a human eye — "draw a trend line", "connect the swings", "look for a pattern".** | Not reproducible: two people pick different pivots, so Paper and Replay can never agree. Offer a mechanical stand-in (an MA, a fixed lookback) as the DEFAULT option and say plainly why. HA_SCALP asked this and the user chose the 50 MA outright. |
+| **A tolerance the market almost never satisfies exactly** — "no wick", "flat top", "equal highs". | "Exactly zero" and "within 10%" are different strategies. Ask with a real frequency estimate attached, and make the tolerance an env key either way. |
+| **Which price does the entry fill at?** "Enter on the next candle" — its open, or its close? | Open and close are minutes and often tens of points apart. Also decide it ONCE for all four modes: Paper/Live fill at the first tick after the signal bar closes, Backtest at the next bar's open — those are the same market moment, so say so in the engine header. |
+
+**Derived candles (Heikin Ashi, Renko, range bars) need one extra decision each.**
+If the user's chart is not raw OHLC, pin (a) whether the series runs continuously
+across the overnight gap or reseeds daily — TradingView runs it continuously, which
+is what the user's screenshots show; and (b) that **decisions read the derived
+candle while prices read the RAW candle**. A Heikin Ashi close is an average of four
+numbers and nothing ever traded there, so filling or stopping at one invents a price.
+State both in the engine header.
 
 If the user later corrects a rule, change the **engine** and let it flow outward —
 never patch the routes to compensate.
@@ -72,6 +83,12 @@ Rules that have bitten this repo:
   `Number(null) === 0` and `Number("") === 0`, so coercion silently invents a price.
 - **`_istDayOf(unixSec) = Math.floor((unixSec + 19800) / 86400)`** for IST day
   arithmetic. Copy it; don't re-derive.
+- **Say how many bars the engine refuses below, and make the routes honour it.**
+  A 50-period MA on 15-min bars needs 51 bars, but a session is only 25 — so the
+  paper route must preload *days*, not today, and the backtest must fetch a runway
+  *before* the requested start that never itself produces a trade. Expose it
+  (`{MODE}_WARMUP_DAYS`) rather than hard-coding. A strategy whose indicator is
+  shorter than one session hides this bug completely.
 - Indicator index alignment for the `technicalindicators` package:
   `EMA(p)` over N values → N−p+1 outputs, `out[i] ↔ values[i+p-1]`.
   `RSI(L)` over M values → M−L outputs, `out[j] ↔ values[j+L]`.
@@ -82,8 +99,25 @@ Rules that have bitten this repo:
 ## Phase 2 — The three routes
 
 Copy the structure of the most recently built strategy (currently
-`src/routes/gapFix3m*.js`; before that `trendDayScalp*.js`). Do **not** invent a
-new shape.
+`src/routes/haScalp*.js`; before that `gapFix3m*.js`). Do **not** invent a new shape.
+
+**If you copy a route and rename its identifiers, budget real time for the second
+half of the job.** A bulk find-and-replace gets the names right and the *semantics*
+wrong, and the leftovers compile silently. On HA_SCALP the rename produced:
+`const NIFTY_INDEX_SYMBOL` colliding with a renamed `futSymbol()` function (caught by
+`node -c`), a self-assignment `NIFTY_INDEX_SYMBOL = NIFTY_INDEX_SYMBOL`, and
+`lastTickPrice`/`lastTickTime` **declared twice in the same object literal** — legal
+JS, no warning, the later one silently wins. After any rename, run:
+
+```
+node -c <file>                       # collisions and self-assignments
+node -e 'require("./<file>")'        # load-time errors node -c cannot see
+```
+plus a duplicate-key scan of every object literal, and a check that each declared
+state field is actually read somewhere. Then re-read the file for *stale semantics*:
+a futures strategy's quote-poll, day-high/low bookkeeping, second chart and
+`isFutures: true` are all wrong for a spot strategy but survive a rename untouched.
+Delete what the new strategy does not use rather than leaving it inert.
 
 - `src/routes/{name}Paper.js` — **canonical**. Every decision/fill/exit semantic
   lives here. Renders its own HTML, owns `/start /stop /exit /status /status/data
@@ -167,13 +201,22 @@ missed entry means the strategy is invisible or broken on some screen.
   (`[tradeLogger] append failed (mode=…): unknown mode "…"`, visible in `/logs` via
   `logger.js`); it never rethrows, so the harness's `catch (_) {}` never fires. The
   trade is dropped from both the cumulative and the daily JSONL while the run looks
-  healthy. Both TDS and GAP3M have that slip today (`gap-fix-3m-live` vs
-  `gap_fix_3m-live`, `trend-day-scalp-live` vs `trend_day_scalp-live`).
+  healthy. TDS and GAP3M both have that slip today (`gap-fix-3m-live` vs
+  `gap_fix_3m-live`, `trend-day-scalp-live` vs `trend_day_scalp-live`); HA_SCALP
+  does not — copy its pairing (`liveLogKey: "ha_scalp-live"` against the identical
+  `tradeLogger` key) and grep both files to confirm before you move on.
 - `src/utils/skipLogger.js` — `{name}: "{name}_paper_skips_"`.
+- **Broker: follow what the USER said, not what the template did.** The row in
+  `capitalPool.js`, `BROKER_OF` in `realtime.js`, the harness's broker + auth
+  pre-check, and the crash-recovery reconcile group in `app.js` must all name the
+  same broker. HA_SCALP is Zerodha copied from a Fyers template, so its snapshot
+  belongs in the Zerodha `_zSnaps` list — put it in the Fyers one and a restart
+  reconciles it against a book that can never contain it.
 - `src/utils/capitalPool.js` — a `STRATEGIES` row (`{ broker, label, file }`). The
   paper route calls `check/block/release` with the mode key regardless; an unknown
   key makes all three silent no-ops, so the strategy never draws on — or shows up
-  in — its broker's paper pool. TDS and GAP3M are both missing this today.
+  in — its broker's paper pool. TDS and GAP3M are both missing this today; HA_SCALP
+  has it, so copy that row.
 
 **Cross-cutting**
 - `src/utils/notify.js` — `modeGroup` branch + labels + consolidated-report group.
@@ -200,10 +243,10 @@ missed entry means the strategy is invisible or broken on some screen.
 **Shared screens** — `realtime.js` (row + `hasDayLog` + accent CSS + `BROKER_OF`),
 `consolidation.js`, `liveConsolidation.js`, `consolidationReport.js` (paper *and*
 live lists), `edgeAnalytics.js` (same), `tradeLogs.js`, `cacheFiles.js`,
-`allBacktest.js`, `replay.js`, `docs.js`. `liveConsolidation.js`'s `SOURCES` still
-lists only EMA_RSI_ST / BB_RSI / PA — nothing since has been added, so a new
-strategy's live trades are invisible there *and* under the dashboard's Live toggle,
-which reads `/live-consolidation/data`.
+`allBacktest.js`, `replay.js`, `docs.js`. `liveConsolidation.js`'s `SOURCES` is the
+one most often skipped — a strategy missing from it has invisible live trades there
+*and* under the dashboard's Live toggle, which reads `/live-consolidation/data`.
+Most older strategies are still absent from it; add yours.
 
 **Docs** — `README.md` (routes table, strategy section, env table), `CHANGELOG.md`,
 and a guide in `documents/{NAME}_Strategy_Guide.html` (Phase 5).
@@ -222,16 +265,43 @@ and a guide in `documents/{NAME}_Strategy_Guide.html` (Phase 5).
    `404` on a day file is correct ("route reached, nothing to serve"); `403` means an
    `OPEN_PATHS` / `OPEN_PREFIXES` entry is missing. Curl with `API_SECRET` set — with
    no secret configured every path is open and the gap stays invisible.
-4. **Settings are live**: boot twice with different values, or POST
+   Three things that will waste a cycle if you do not know them:
+   - the app serves **HTTPS** with a self-signed cert — use `curl -k https://…`, not
+     `http://`, or every response is a bare `000`;
+   - when `LOGIN_SECRET` is set, everything (including `/`) returns **401** until you
+     send the cookie: `__trade_login=sha256(LOGIN_SECRET)`. 401 is the login gate;
+     403 is the `API_SECRET` gate. Do not confuse them — only 403 means a missing
+     `OPEN_PATHS` entry;
+   - guides are served at `/docs/file/<Name>.html`, **not** `/docs/<Name>.html`, and
+     the wrong URL 403s for every guide in the repo, not just yours.
+   Also restart the server after editing `settings.js` or a route — a page that still
+   shows nothing is usually a stale process, not a wiring bug.
+4. **Run the engine over REAL cached candles**, not only synthetic fixtures. The repo
+   has months of them at `~/trading-data/backtest_cache/NSE_NIFTY50-INDEX_5_*.json`;
+   aggregate 5-min to your timeframe on IST boundaries
+   (`bucket = floor((t+19800)/900)*900-19800` for 15-min). Walk the engine bar by bar
+   exactly as the paper route does and assert the invariants that unit tests cannot:
+   the derived candles obey their own definition, **no signal ever fires against the
+   trend gate**, and every entry reaches an exit. Then drive the real backtest runner
+   over the same bars — it needs no broker token — and check no trade carries a level
+   the strategy does not have, no warm-up bar produced a trade, and each stop sits on
+   the correct side of its entry. This is also the only honest way to learn the trade
+   frequency and the stop-size distribution before the user paper-trades.
+   **Report what it says even when unflattering** — a 25% win rate or a 0.2-point
+   stop is the finding, not a bug to hide.
+5. **A blocked broker token is not a failed build.** An expired Fyers token makes
+   every history fetch return 0 candles and every start refuse with an auth error.
+   That is the gate working. Verify everything else offline and say so plainly.
+6. **Settings are live**: boot twice with different values, or POST
    `/settings/save` with `{updates:{...}}`, and confirm the strategy config **and the
    chart feed** both move. A chart that disagrees with the strategy is a bug.
-5. **Three-way default check**: code `|| "default"` vs the Settings schema vs the
+7. **Three-way default check**: code `|| "default"` vs the Settings schema vs the
    README table. All three must agree, and no key may be missing from Settings.
-6. **No dead settings**: every Settings key is read somewhere. Check dynamic
+8. **No dead settings**: every Settings key is read somewhere. Check dynamic
    `${prefix}_KEY` lookups at runtime — grep cannot see them.
-7. **No duplicated logic**: grep the routes for indicator maths and threshold
+9. **No duplicated logic**: grep the routes for indicator maths and threshold
    comparisons; they belong only in the engine.
-8. Confirm visibility everywhere: the strategy appears on `/`, `/realtime`, `/replay`,
+10. Confirm visibility everywhere: the strategy appears on `/`, `/realtime`, `/replay`,
    `/all-backtest`, `/trade-logs`, both consolidations and `/edge-analytics`, and
    disappears from all of them when `{MODE}_MODE_ENABLED=false`.
 
@@ -239,7 +309,7 @@ and a guide in `documents/{NAME}_Strategy_Guide.html` (Phase 5).
 
 ## Phase 5 — The strategy guide
 
-Write `documents/{NAME}_Strategy_Guide.html` following the existing nine. The
+Write `documents/{NAME}_Strategy_Guide.html` following the existing ones. The
 `TVChart` kit and the mobile CSS block are **copy-pasted** into each guide, not
 shared — lift them verbatim from the newest guide.
 
@@ -251,12 +321,39 @@ it runs every guide's own `<script>` blocks in a node `vm` and asserts real SVG 
 balanced tags — and `node tools/verifyGuideCharts.js`, which checks that every price
 a caption quotes is a value that chart actually draws.
 
+**`verifyGuideCharts.js` only checks prices that sit on a chart. It cannot check a
+count, a percentage or a ratio — and those are exactly what gets invented.** On
+HA_SCALP the first draft of the guide quoted a close and a day-end that appear
+nowhere on the chart they caption (caught by the tool) *and* two refusal counts of
+"189" and "118" where the engine's real answer was 227 for both (caught only by
+re-running the engine). Both had been reported as verified. So: **re-derive every
+non-price number yourself from engine output before committing the guide**, and run
+both QA tools *before and after* your changes so you can tell your failures from the
+repo's pre-existing ones (3M_GAP_FIX_SCALP, BB_RSI and TREND_DAY_SCALP already fail).
+
 Register in `src/routes/docs.js` three times: `GUIDE_MODE_BY_FILE` (hides it when the
 strategy is disabled), its own `GUIDE_STATUS` entry (fills the
 `<!--LIVE_STATUS_PANEL-->` marker), and a `{MODE}_MODE_ENABLED` row inside the
 `Application_Setup_Guide.html` `GUIDE_STATUS` entry. Include an honest "what's still
 missing" section — say plainly that it has never traded live and that backtest rupees
 are simulated.
+
+---
+
+## Delegating parts of this build
+
+Routes and the guide are big enough to hand to sub-agents, and doing so is usually
+right. Two rules, both learned the hard way here:
+
+- **Give the agent the semantics, not just the rename.** A prompt that says "adapt
+  gapFix3mBacktest" produces a file with the old strategy's concepts still in it.
+  Spell out what the new strategy does *not* have (no target, no volume, one
+  instrument) and what must not be reproduced — the `tradeLogger` live-key mismatch
+  below is a real bug in two shipped strategies that a copy would inherit silently.
+- **Verify the agent's output yourself; do not take its report at face value.** The
+  HA_SCALP guide agent reported that every figure checked out and it "had to correct
+  nothing". Two fabricated numbers survived that report and were only found by
+  re-running the engine. Re-run the gates, re-derive the numbers, read the diff.
 
 ---
 
@@ -268,4 +365,15 @@ is **not market-validated** — clean paper sessions plus a `/replay` comparison
 come before any live gate is touched.
 
 State clearly if the Fyers token is expired: every historical fetch returns 0 candles
-and every chart renders blank, which looks like a code bug and is not one.
+and every chart renders blank, which looks like a code bug and is not one. If the
+user plans to paper-trade the next session, **lead with that** — it is the one thing
+that will stop them.
+
+Also surface, in one line each and without softening:
+- **what the real-data run measured** — trade frequency, stop-size distribution, exit
+  mix. If the numbers are poor, say so; they are the finding.
+- **any risk the rules themselves create.** HA_SCALP's stop is the signal candle's
+  own extreme, which on real data was under 10 points 23% of the time — noise-level,
+  and the main driver of its 54% stop-out rate. Implement the rule as given, then
+  name the risk and point at the lever (here `{MODE}_MIN_BODY_PTS`, since a bigger
+  body forces a wider stop). Do not quietly invent a floor the user did not ask for.
