@@ -819,6 +819,7 @@ document.querySelectorAll('#mode-toggle button').forEach(b => {
 // LIVE — a stray click on a phone must not be able to flatten the book.
 let stopArmed = false;
 let stopArmTimer = null;
+let stopBusy = false;   // a sweep is in flight — btn.disabled alone does not stop a key-repeat
 
 function disarmStopAll() {
   stopArmed = false;
@@ -837,6 +838,7 @@ function stopNote(html) {
 async function stopAll() {
   const btn = document.getElementById('stop-all');
   if (!btn) return;
+  if (stopBusy) return;   // never start a second sweep over a running one
 
   if (!stopArmed) {
     stopArmed = true;
@@ -849,10 +851,12 @@ async function stopAll() {
 
   if (stopArmTimer) { clearTimeout(stopArmTimer); stopArmTimer = null; }
   stopArmed = false;
+  stopBusy = true;
   btn.classList.remove('armed');
   btn.disabled = true;
   btn.textContent = 'Stopping…';
   stopNote('Checking which engines are running…');
+  try {
 
   // Which engines are actually up? Probed in parallel — these are cheap reads,
   // and the answer decides both what gets stopped and what the report may claim.
@@ -876,8 +880,6 @@ async function stopAll() {
 
   if (!live.length) {
     stopNote('<b>Nothing to stop</b> — no strategy is running in PAPER or LIVE.');
-    btn.disabled = false;
-    btn.textContent = '🛑 Stop All';
     return;
   }
 
@@ -908,10 +910,15 @@ async function stopAll() {
          + ' — open that strategy\\'s page and stop it there.';
   }
   stopNote(msg);
-
-  btn.disabled = false;
-  btn.textContent = '🛑 Stop All';
   poll();
+
+  } finally {
+    // Always release, even if something above threw — otherwise the button
+    // stays greyed out and the only way back is a page reload.
+    stopBusy = false;
+    btn.disabled = false;
+    btn.textContent = '🛑 Stop All';
+  }
 }
 
 document.getElementById('stop-all')?.addEventListener('click', stopAll);
