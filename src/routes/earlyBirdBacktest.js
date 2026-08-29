@@ -114,6 +114,8 @@ const { faviconLink, buildSidebar, sidebarCSS, modalCSS, modalJS,
 const { saveResult } = require("../utils/resultStore");
 const { aiExportButton, aiExportScriptTag } = require("../utils/backtestAiExport");
 const backtestJobs = require("../utils/backtestJobManager");
+const instrumentConfig = require("../config/instrument");
+const { getCharges } = require("../utils/charges");
 
 const ACCENT     = "#22d3ee";
 const ENDPOINT   = "/early-bird-backtest";
@@ -211,6 +213,115 @@ function rateLimits() {
  * point of the ceiling is that a backtest must never be the thing that restarts
  * the bot.
  */
+/**
+ * OPTION-LEG SIMULATION MODEL.
+ *
+ * Every EarlyBird level — entry trigger, stop, 1:2 target — is a NIFTY SPOT
+ * level (see buildNiftyOptionSetup in the engine: "EVERY LEVEL IS A SPOT
+ * LEVEL"). So the option leg's *decisions* need no premium data at all; the
+ * spot walk is identical to the stock walk. Only the P&L conversion needs the
+ * premium, and that is exactly the delta/theta model backtestEngine.js has used
+ * for EMA_RSI_ST / BB_RSI / PA / EMA9VWAP since it was written:
+ *
+ *   premiumMovePts = spotMovePts × DELTA
+ *   thetaDecayPts  = (THETA_PER_DAY / candlesPerDay) × candlesHeld
+ *   pnl            = (premiumMovePts − thetaDecayPts) × qty − charges
+ *
+ * It reads the SAME env keys as every other backtest (BACKTEST_OPTION_SIM /
+ * BACKTEST_DELTA / BACKTEST_THETA_DAY), so tuning one tunes them all and no new
+ * key is introduced. With the sim off, P&L falls back to raw spot points × qty.
+ *
+ * This is a model, not a replay of real premiums — it cannot capture an IV
+ * crush or a strike-specific skew, and it is labelled as a simulation on the
+ * page. The alternative (reporting NO TRADE for the whole mode) told the user
+ * nothing at all.
+ */
+function optionSimCfg() {
+  const on    = process.env.BACKTEST_OPTION_SIM !== "false";   // on by default
+  const delta = parseFloat(process.env.BACKTEST_DELTA    || "0.55");
+  const theta = parseFloat(process.env.BACKTEST_THETA_DAY || "10");
+  return {
+    on,
+    delta: Number.isFinite(delta) && delta > 0 ? delta : 0.55,
+    thetaPerDay: Number.isFinite(theta) && theta >= 0 ? theta : 10,
+  };
+}
+
+/** Contracts per option trade — mirrors earlyBirdPaper's _optionQty exactly. */
+function optionQty(cfg) {
+  const lots = (cfg && cfg.optionLots) || earlyBird.getConfig().optionLots;
+  const base = instrumentConfig.getLotQty();
+  return Math.max(1, lots * base);
+}
+
+/**
+ * Book one option trade. The SPOT move is what the strategy actually decided on;
+ * the premium move is modelled from it. Slippage is already in entryFill/exitFill
+ * (both applied in the adverse direction by the caller, as on the stock leg).
+ */
+function _bookOptionTrade(pos, exitFill, exitType, exitReason, exitTime, heldBars,
+                          os, qty, OPT, cfg, dayStr) {
+  const spotPts = _r2(earlyBird.computePnl(pos.side, pos.entryFill, exitFill, 1));
+
+  let gross, charges, pnlMode;
+  if (OPT.on) {
+    // Premium points, not spot points. A bought PE gains as spot falls, which is
+    // exactly what computePnl already encodes in spotPts for a SHORT.
+    const candlesPerDay  = Math.max(1, Math.round(390 / cfg.resolutionMins));
+    const premiumMovePts = spotPts * OPT.delta;
+    const thetaPts       = _r2((OPT.thetaPerDay / candlesPerDay) * heldBars);
+    const netPremiumPts  = _r2(premiumMovePts - thetaPts);
+    gross = _r2(netPremiumPts * qty);
+    // Charges need a premium level to bill against. The real entry premium is
+    // unknown (no premium history), so estimate an ATM premium and move it by
+    // the modelled amount — the same approach backtestEngine.js takes.
+    const estEntry = 200;
+    const estExit  = Math.max(0.05, _r2(estEntry + netPremiumPts));
+    charges = _r2(getCharges({ isFutures: false, entryPremium: estEntry, exitPremium: estExit, qty, broker: "fyers" }));
+    pnlMode = `opt_sim (spot ${spotPts}pt × δ${OPT.delta} = ${_r2(premiumMovePts)}pt − θ${thetaPts}pt) × ${qty}`;
+  } else {
+    gross   = _r2(spotPts * qty);
+    charges = _r2(getCharges({ isFutures: false, entryPremium: 200, exitPremium: 200, qty, broker: "fyers" }));
+    pnlMode = `raw spot points × ${qty} (BACKTEST_OPTION_SIM=false)`;
+  }
+  const net = _r2(gross - charges);
+
+  console.log(`${LOG} ${dayStr} ${istHHMMSS(exitTime)} EXIT  OPTION ${os.optionSide} @ spot ` +
+    `${_r2(exitFill)} → ${exitType} | ${exitReason} | ${pnlMode} | gross ₹${gross} − charges ₹${charges} = ₹${net}`);
+
+  return {
+    symbol: `NIFTY ${os.optionSide}`,
+    isOption: true,
+    side: pos.side,
+    entry: stampStr(pos.entryTime),
+    exit:  stampStr(exitTime),
+    entryTs: pos.entryTime,
+    exitTs:  exitTime,
+    ePrice: pos.entryFill,
+    xPrice: _r2(exitFill),
+    entryLevel: pos.entryLevel,
+    sl: os.stop,
+    target: os.target,
+    riskPts: os.riskPts,
+    rewardPts: os.rewardPts,
+    slBasis: os.slBasis,
+    bigCandle: os.bigCandle,
+    gapPct: null,
+    prevClose: null,
+    qty,
+    exitType,
+    reason: exitReason,
+    entryReason: os.reason,
+    grossPnl: gross,
+    charges,
+    pnl: net,
+    held: heldBars,
+    spotPts,
+    pnlMode,
+    strength: "STRONG",
+  };
+}
+
 function maxSymbolDays() {
   const v = parseInt(process.env.EARLYBIRD_BT_MAX_SYMBOL_DAYS, 10);
   return Number.isFinite(v) && v >= 100 ? v : 60000;
@@ -557,22 +668,22 @@ function runEarlyBirdBacktest(data, onProgress) {
   const cfg  = earlyBird.getConfig();
   const SLIP = slippagePts();
 
-  // ── THIS BACKTEST COVERS THE STOCK LEG ONLY ─────────────────────────────
-  // EARLYBIRD_TRADE_MODE can also trade a NIFTY OPTION leg, but simulating a
-  // bought option needs historical PREMIUM candles per strike, which Fyers
-  // delists at expiry — the same limitation SIMPLE930's backtest documents.
-  // Rather than invent premiums from a delta/theta model (which would be
-  // simulating the strategy rather than testing it), the option leg is simply
-  // not backtested. Say so out loud: in "option" mode every day reports
-  // NO TRADE, and a silent wall of no-trade days would otherwise read as
-  // "the strategy never fires".
+  // ── BOTH LEGS ARE BACKTESTED ────────────────────────────────────────────
+  // Every EarlyBird level is a NIFTY SPOT level, on both legs, so the option
+  // leg's decisions need no premium history — only its P&L conversion does, via
+  // the same delta/theta model the other four strategies use. See optionSimCfg.
+  const OPT = optionSimCfg();
+  const optQty = optionQty(cfg);
+  if (earlyBird.tradesOption(cfg)) {
+    console.log(`${LOG} EARLYBIRD_TRADE_MODE="${cfg.tradeMode}" — NIFTY option leg is simulated: ` +
+      (OPT.on
+        ? `delta=${OPT.delta}, theta=₹${OPT.thetaPerDay}/day, qty=${optQty}. All levels are SPOT levels; ` +
+          `only the P&L conversion is modelled.`
+        : `BACKTEST_OPTION_SIM=false — reporting RAW SPOT POINTS × ${optQty}, no delta/theta.`));
+  }
   if (!earlyBird.tradesStock(cfg)) {
-    console.warn(`${LOG} EARLYBIRD_TRADE_MODE="${cfg.tradeMode}" trades no stock leg — ` +
-      `this backtest simulates the STOCK leg only, so it will report NO TRADE for every day. ` +
-      `Set the mode to "stock" or "both" to backtest, and paper-trade the option leg instead.`);
-  } else if (earlyBird.tradesOption(cfg)) {
-    console.log(`${LOG} EARLYBIRD_TRADE_MODE="both" — the NIFTY option leg is NOT included ` +
-      `in these results (no historical option premiums); stock-leg figures only.`);
+    console.log(`${LOG} EARLYBIRD_TRADE_MODE="${cfg.tradeMode}" trades no stock leg — ` +
+      `stock scanning is skipped and only the NIFTY option leg is simulated.`);
   }
 
   const trades   = [];
@@ -583,6 +694,9 @@ function runEarlyBirdBacktest(data, onProgress) {
   const funnel = {
     daysSeen: 0, tradeableDays: 0, noSignalDays: 0,
     scanned: 0, confirmed: 0, taken: 0, triggered: 0, untriggered: 0,
+    // Option leg — counted separately so the stock funnel keeps meaning what it
+    // meant before, and "0 stocks confirmed" never hides an option trade.
+    optTaken: 0, optTriggered: 0, optUntriggered: 0,
   };
   const exitTypes = { SL: 0, TARGET: 0, EOD: 0 };
   const sides     = { LONG: 0, SHORT: 0 };
@@ -652,11 +766,90 @@ function runEarlyBirdBacktest(data, onProgress) {
       candidates: [], rejectedTop: (plan.rejected || []).slice(0, 5),
     };
 
+    // ── OPTION LEG. Walked on the SAME NIFTY spot bars, with the SAME engine
+    //    calls as a stock, before the stock-leg gate below — in option-only mode
+    //    plan.tradeable is always false and this is the only leg there is.
+    let dayOptPnl = 0, dayOptTrades = 0;
+    if (plan.optionTradeable && plan.optionSetup && plan.optionSetup.ok) {
+      const os = plan.optionSetup;
+      row.optionSetup = {
+        side: os.side, optionSide: os.optionSide, entry: os.entry, stop: os.stop,
+        target: os.target, riskPts: os.riskPts, slBasis: os.slBasis, triggered: false,
+      };
+      funnel.optTaken++;
+      console.log(`${LOG} ${dayStr}:   OPTION SETUP ${os.reason}`);
+
+      // The option setup carries its own qty for the P&L conversion. Levels are
+      // NIFTY spot, so the walk is byte-for-byte the stock walk.
+      const optSetup = Object.assign({}, os, { qty: optQty, symbol: `NIFTY ${os.optionSide}` });
+      let opos = null, odone = false;
+
+      for (const bar of niftyBars) {
+        if (odone) break;
+        if (!_num(bar.time)) continue;
+        const barCloseMins = istMinutes(bar.time) + cfg.resolutionMins;
+        if (barCloseMins <= cfg.entryStartMin) continue;
+
+        if (!opos) {
+          if (barCloseMins > cfg.entryEndMin) { odone = true; break; }
+          if (earlyBird.isEntryTriggeredOnBar(optSetup, bar)) {
+            const fill = os.side === "LONG" ? os.entry + SLIP : os.entry - SLIP;
+            opos = {
+              side: os.side, stop: os.stop, target: os.target,
+              entryLevel: os.entry, entryFill: _r2(fill), entryTime: bar.time,
+            };
+            row.optionSetup.triggered = true;
+            funnel.optTriggered++;
+            console.log(`${LOG} ${dayStr} ${istHHMMSS(bar.time)} ENTER OPTION ${os.optionSide} @ spot ` +
+              `${_r2(fill)} (level ${os.entry}) | SL ${os.stop} (${os.slBasis}) | TGT ${os.target} | qty ${optQty}`);
+          }
+        }
+
+        if (opos) {
+          const ex = earlyBird.checkExitOnBar(opos, bar, { cfg });
+          if (ex && ex.exit && _num(ex.price)) {
+            const exitFill = opos.side === "LONG" ? ex.price - SLIP : ex.price + SLIP;
+            const heldBars = Math.max(1, Math.round((bar.time - opos.entryTime) / 60 / cfg.resolutionMins) + 1);
+            const t = _bookOptionTrade(opos, exitFill, ex.exitType, ex.reason, bar.time, heldBars,
+              os, optQty, OPT, cfg, dayStr);
+            trades.push(t);
+            exitTypes[t.exitType] = (exitTypes[t.exitType] || 0) + 1;
+            sides[t.side] = (sides[t.side] || 0) + 1;
+            dayOptPnl += t.pnl; dayOptTrades++;
+            opos = null; odone = true;
+            break;
+          }
+        }
+      }
+
+      // Open at the end of the day's bars — square off on the last close, same
+      // as the stock leg does.
+      if (opos) {
+        const last = niftyBars[niftyBars.length - 1];
+        if (last && _num(last.close)) {
+          const exitFill = opos.side === "LONG" ? last.close - SLIP : last.close + SLIP;
+          const heldBars = Math.max(1, Math.round((last.time - opos.entryTime) / 60 / cfg.resolutionMins) + 1);
+          const t = _bookOptionTrade(opos, exitFill, "EOD",
+            "EOD — last candle of the session, no forced-exit bar printed",
+            last.time, heldBars, os, optQty, OPT, cfg, dayStr);
+          trades.push(t);
+          exitTypes.EOD = (exitTypes.EOD || 0) + 1;
+          sides[t.side] = (sides[t.side] || 0) + 1;
+          dayOptPnl += t.pnl; dayOptTrades++;
+        }
+      }
+      if (!row.optionSetup.triggered) funnel.optUntriggered++;
+    }
+
     if (!plan.tradeable) {
+      row.pnl    = _r2(dayOptPnl);
+      row.trades = dayOptTrades;
       dayRows.push(row);
-      noTrade.push({ date: dayDMY, reason: plan.reason || plan.skipReason || "plan not tradeable" });
-      funnel.noSignalDays++;
-      console.log(`${LOG} ${dayStr}: NO TRADE — ${plan.reason || plan.skipReason}` +
+      if (!dayOptTrades) {
+        noTrade.push({ date: dayDMY, reason: plan.reason || plan.skipReason || "plan not tradeable" });
+        funnel.noSignalDays++;
+      }
+      console.log(`${LOG} ${dayStr}: ${dayOptTrades ? `option-only day — ${dayOptTrades} trade(s), ₹${_r2(dayOptPnl)}` : `NO TRADE — ${plan.reason || plan.skipReason}`}` +
         (nc ? ` | NIFTY 09:15 O ${nc.open} H ${nc.high} L ${nc.low} C ${nc.close}` : ""));
       if (onProgress) onProgress(di + 1, dayKeys.length);
       continue;
@@ -889,8 +1082,10 @@ function runEarlyBirdBacktest(data, onProgress) {
       }
     }
 
-    row.pnl = _r2(dayPnl);
-    row.trades = dayTrades;
+    // "both" mode: the option leg already ran above, so its P&L and trade count
+    // must be added here — not overwritten.
+    row.pnl = _r2(dayPnl + dayOptPnl);
+    row.trades = dayTrades + dayOptTrades;
     dayRows.push(row);
 
     console.log(`${LOG} ${dayStr}: DAY DONE — ${row.taken} taken, ${row.triggered} triggered, ` +
@@ -1264,22 +1459,23 @@ function num(v, dp) {
  */
 function tradeModeNoticeHTML() {
   const cfg = earlyBird.getConfig();
-  if (!earlyBird.tradesStock(cfg)) {
-    return `<div class="notes warn">
-<b>Mode is "${escHtml(cfg.tradeMode)}" — expect 0 trades here.</b> This page backtests the <b>stock leg only</b>.
-Switch the mode to <b>stock</b> or <b>both</b> for results.
-<details><summary>Why the option leg isn't backtested</summary>It needs historical premium candles per strike,
-which Fyers delists at expiry. Modelling them from delta/theta would simulate the strategy rather than test
-it — so paper-trade the option leg instead.</details>
+  if (!earlyBird.tradesOption(cfg)) return "";   // stock-only: nothing to explain
+  const OPT = optionSimCfg();
+  const legs = earlyBird.tradesStock(cfg) ? "stock leg and the NIFTY option leg" : "NIFTY option leg only";
+  return `<div class="notes warn">
+<b>Mode is "${escHtml(cfg.tradeMode)}" — this run covers the ${legs}.</b>
+Every option level (entry, stop, 1:${cfg.targetRR} target) is a <b>NIFTY SPOT</b> level, so the decisions need no
+premium history. Only the rupee conversion is modelled:
+${OPT.on
+  ? `premium move = spot move × δ<b>${OPT.delta}</b>, minus θ<b>₹${OPT.thetaPerDay}</b>/day, × ${optionQty(cfg)} qty.`
+  : `<b>BACKTEST_OPTION_SIM is off</b> — raw spot points × ${optionQty(cfg)} qty, no delta or theta.`}
+<details><summary>What this model can and cannot tell you</summary>
+It uses the same <code>BACKTEST_OPTION_SIM</code> / <code>BACKTEST_DELTA</code> / <code>BACKTEST_THETA_DAY</code>
+keys as every other backtest here, so the option figures are comparable across strategies. It cannot capture an
+IV crush, a strike-specific skew, or a real bid-ask at your strike — a fixed delta is a straight-line stand-in for
+a curve. Treat the <b>spot points</b> column as the measured result and the rupee column as an estimate.
+</details>
 </div>`;
-  }
-  if (earlyBird.tradesOption(cfg)) {
-    return `<div class="notes warn">
-<b>Mode is "both" — the NIFTY option leg is NOT in these figures.</b> Everything below is stock-leg only;
-the option leg's P&amp;L is additional.
-</div>`;
-  }
-  return "";
 }
 
 // ── Date-range presets ───────────────────────────────────────────────────────
@@ -1430,7 +1626,9 @@ same direction, gapped names beyond ${cfg.maxGapPct}% of the previous daily clos
 ${cfg.maxConcurrent} tightest-stop confirmations become pending stop orders. Entry ${cfg.entryBufferPts} away from the candle
 edge, stop the other edge (or the <b>body edge</b> when the wick risk exceeds ${cfg.maxSlPts}), target 1:${cfg.targetRR}.
 No new entries after <b>${earlyBird._fmtMins(cfg.entryEndMin)}</b>; everything still open squares off at <b>${earlyBird._fmtMins(cfg.forcedExitMin)}</b>.
-Flat <b>${cfg.qty} shares</b> per stock. No options, no strike, no expiry anywhere on this page.
+Flat <b>${cfg.qty} shares</b> per stock.
+${earlyBird.tradesOption(cfg) ? `The <b>NIFTY option leg</b> is also simulated (no stock confirmation needed):
+its entry, stop and target are NIFTY spot levels, converted to rupees with the shared delta/theta model.` : ""}
 <br/><br/>
 <b>Speed:</b> a run fetches <b>two history series per symbol</b> (${cfg.resolutionMins}-min + daily) for the whole range, once.
 On a cold cache the full F&amp;O universe (~220 names) is ~440 Fyers calls, paced under the API's rate
@@ -1526,6 +1724,7 @@ function renderTradeTable(trades) {
 <td class="m" style="font-size:0.62rem;">${escHtml(t.slBasis || "")}</td>
 <td class="m">${num(t.gapPct)}%</td>
 <td class="m">${t.qty}</td>
+<td class="${t.spotPts > 0 ? "g" : t.spotPts < 0 ? "r" : "m"}">${t.spotPts == null ? "—" : num(t.spotPts)}</td>
 <td class="m">${fmtMoney(t.grossPnl)}</td>
 <td class="m">${fmtMoney(t.charges)}</td>
 ${pnlCell(t.pnl)}
@@ -1538,7 +1737,7 @@ ${pnlCell(t.pnl)}
 <th>Symbol</th><th>Side</th><th>Entry time</th><th>Exit time</th>
 <th>Level</th><th>Fill</th><th>SL</th><th>Target</th><th>Exit</th><th>Type</th>
 <th>Risk</th><th>SL basis</th><th>Gap</th><th>Qty</th>
-<th>Gross</th><th>Charges</th><th>Net</th><th>Bars</th><th>Exit reason</th>
+<th>Spot pts</th><th>Gross</th><th>Charges</th><th>Net</th><th>Bars</th><th>Exit reason</th>
 </tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
@@ -1639,6 +1838,7 @@ function tradeToolbarHTML(trades) {
 <th>SL basis</th>
 <th class="sortable" onclick="ebSort('gapPct')"     id="ebh-gapPct">Gap<span class="arw"></span></th>
 <th>Qty</th>
+<th class="sortable" onclick="ebSort('spotPts')"    id="ebh-spotPts">Spot pts<span class="arw"></span></th>
 <th class="sortable" onclick="ebSort('grossPnl')"   id="ebh-grossPnl">Gross<span class="arw"></span></th>
 <th class="sortable" onclick="ebSort('charges')"    id="ebh-charges">Charges<span class="arw"></span></th>
 <th class="sortable" onclick="ebSort('pnl')"        id="ebh-pnl">Net<span class="arw"></span></th>
@@ -1757,6 +1957,7 @@ function ebRender(){
       +'<td class="m" style="font-size:0.62rem;">'+ebEsc(t.slBasis||'')+'</td>'
       +'<td class="m">'+ebNum(t.gapPct)+'%</td>'
       +'<td class="m">'+ebEsc(t.qty)+'</td>'
+      +'<td class="'+(t.spotPts>0?'g':t.spotPts<0?'r':'m')+'">'+(t.spotPts==null?'—':ebNum(t.spotPts))+'</td>'
       +'<td class="m">'+ebMoney(t.grossPnl)+'</td>'
       +'<td class="m">'+ebMoney(t.charges)+'</td>'
       +'<td class="'+pc+'" style="font-weight:700;">'+ebMoney(t.pnl)+'</td>'
@@ -2185,6 +2386,7 @@ GST ${escHtml(process.env.EARLYBIRD_CHG_GST_PCT || "18")}%, stamp ${escHtml(proc
   <div class="sc"><div class="sc-label">Stocks scanned</div><div class="sc-val">${f.scanned.toLocaleString()}</div><div class="sc-sub">symbol-days examined</div></div>
   <div class="sc"><div class="sc-label">Confirmed</div><div class="sc-val">${f.confirmed.toLocaleString()}</div><div class="sc-sub">matched NIFTY's shape + direction</div></div>
   <div class="sc"><div class="sc-label">Taken</div><div class="sc-val">${f.taken}</div><div class="sc-sub">capped at ${cfg.maxConcurrent}/day, tightest risk first</div></div>
+  ${earlyBird.tradesOption(cfg) ? `<div class="sc"><div class="sc-label">Option days</div><div class="sc-val">${f.optTaken || 0}</div><div class="sc-sub">${f.optTriggered || 0} triggered · ${f.optUntriggered || 0} never</div></div>` : ""}
   <div class="sc"><div class="sc-label">Triggered</div><div class="sc-val g">${f.triggered}</div><div class="sc-sub">${trigRate}% of taken setups filled</div></div>
   <div class="sc"><div class="sc-label">NEVER triggered</div><div class="sc-val r">${f.untriggered}</div><div class="sc-sub">pending order untouched all session</div></div>
   <div class="sc"><div class="sc-label">NIFTY verdicts</div><div class="sc-val" style="font-size:0.72rem;">${escHtml(verdictMix)}</div><div class="sc-sub">index candle outcome mix</div></div>

@@ -11,7 +11,7 @@ These keys are given **different fallbacks at different engine call sites**. Wit
 
 | Key | Defaults seen | Files |
 |---|---|---|
-| `BACKTEST_THETA_DAY` | `8`×10, `10`×4 | `src/routes/bbRsiBacktest.js`, `src/routes/haScalpBacktest.js`, `src/routes/orbBacktest.js`, `src/routes/paBacktest.js`, `src/routes/rsiPivotStBacktest.js`, `src/routes/trendDayScalpBacktest.js`, `src/routes/trendPbBacktest.js`, `src/services/backtestEngine.js`, `src/services/ema9vwapBacktestEngine.js` |
+| `BACKTEST_THETA_DAY` | `8`×10, `10`×5 | `src/routes/bbRsiBacktest.js`, `src/routes/earlyBirdBacktest.js`, `src/routes/haScalpBacktest.js`, `src/routes/orbBacktest.js`, `src/routes/paBacktest.js`, `src/routes/rsiPivotStBacktest.js`, `src/routes/trendDayScalpBacktest.js`, `src/routes/trendPbBacktest.js`, `src/services/backtestEngine.js`, `src/services/ema9vwapBacktestEngine.js` |
 | `BB_RSI_ENABLED` | `(any but true)`×2, `false`×1 | `src/app.js`, `src/routes/bbRsiLive.js` |
 | `EMA_RSI_ST_LIVE_ENABLED` | `false`×5, `(any but true)`×1 | `src/app.js`, `src/routes/auth.js`, `src/routes/emaRsiStLive.js`, `src/routes/emaRsiStLiveHarness.js` |
 | `INSTRUMENT` | `(not NIFTY_FUTURES)`×7, `NIFTY_OPTIONS`×1 | `src/config/instrument.js`, `src/routes/bbRsiLiveHarness.js`, `src/routes/ema9vwapLiveHarness.js`, `src/routes/emaRsiStLiveHarness.js`, `src/routes/orbLiveHarness.js`, `src/routes/paLiveHarness.js`, `src/routes/trendDayScalpLiveHarness.js`, `src/routes/trendPbLiveHarness.js` |
@@ -228,7 +228,7 @@ The engine falls back to one value; a status panel or log banner prints another.
 | `BACKTEST_DELTA` | number | `0.55` | Option delta for premium simulation. |
 | `BACKTEST_OPTION_SIM` | toggle | `true` | Simulate option P&L in the legacy backtest. |
 | `BACKTEST_SLIPPAGE_PTS` | number | `1.5` | Simulated slippage per side, in points. |
-| `BACKTEST_THETA_DAY` | number | `8` ⚠️ also `10`×4 | Daily theta decay in rupees. |
+| `BACKTEST_THETA_DAY` | number | `8` ⚠️ also `10`×5 | Daily theta decay in rupees. |
 | `BB_RSI_LIVE_ENABLED` | toggle | `false` | Second gate for BB_RSI Live. Off = BB_RSI stays simulated even with the global switch off. |
 | `CHART_ENABLED` | toggle | `true` | Show the candlestick chart on status pages. |
 | `EXPIRY_AUTO_ROLL_ENABLED` | toggle | `true` | When the expiry above is blank or expired, replace it with the next one automatically. |
