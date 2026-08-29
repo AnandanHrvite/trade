@@ -836,17 +836,28 @@ function saveEarlyBirdPositions(positions, sessionMeta, pendingSetups) {
   try {
     const list = Array.isArray(positions) ? positions.filter(Boolean) : [];
     const pend = Array.isArray(pendingSetups) ? pendingSetups.filter(Boolean) : [];
-    if (!list.length && !pend.length) { _persistAtomic(EARLY_BIRD_POS_FILE, null); return; }
+    // The OPTION leg (EARLYBIRD_TRADE_MODE=option|both) lives in sessionMeta,
+    // NOT in the two arrays above — those are normalised to cash-equity levels
+    // by _ebLevels, which would strip an option's strike, expiry and premium.
+    // So "nothing to save" has to account for it: in option-ONLY mode both
+    // arrays are legitimately empty while a real position is open, and deleting
+    // the file there would lose the only snapshot of it.
+    const meta = sessionMeta || {};
+    const hasOption = !!(meta.optionPosition || meta.optionPending);
+    if (!list.length && !pend.length && !hasOption) { _persistAtomic(EARLY_BIRD_POS_FILE, null); return; }
     const data = {
       positions:   list.map(_ebLevels),
       pendingSetups: pend.map(_ebLevels),
-      sessionMeta: sessionMeta || {},
+      sessionMeta: meta,
       savedAt:     Date.now(),
       savedDate:   new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
     };
     _persistAtomic(EARLY_BIRD_POS_FILE, JSON.stringify(data, null, 2));
+    const optNote = meta.optionPosition
+      ? ` — OPTION ${meta.optionPosition.side} ${meta.optionPosition.qty}×${meta.optionPosition.symbol}@₹${meta.optionPosition.optionEntryLtp}`
+      : meta.optionPending ? " — 1 pending OPTION setup" : "";
     console.log(`💾 [PERSIST] EARLY_BIRD saved: ${list.length} open position(s), ${pend.length} pending setup(s)` +
-      (list.length ? ` — ${list.map(p => `${p.side} ${p.qty}×${p.symbol}@₹${p.entryPrice}`).join(", ")}` : ""));
+      (list.length ? ` — ${list.map(p => `${p.side} ${p.qty}×${p.symbol}@₹${p.entryPrice}`).join(", ")}` : "") + optNote);
   } catch (err) {
     console.warn(`⚠️ [PERSIST] Could not save EARLY_BIRD positions: ${err.message}`);
   }

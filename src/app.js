@@ -4346,8 +4346,16 @@ async function reconcileOrphanedPositions() {
         // readable; otherwise retain + warn so a real orphan isn't masked.
         const _fReadable = Array.isArray(fPos.netPositions) && fPos.netPositions.length > 0;
         // EarlyBird's snapshot carries an ARRAY, so it is counted differently.
+        // Its OPTION leg (EARLYBIRD_TRADE_MODE=option|both) lives in sessionMeta
+        // instead of that array, so in option-ONLY mode `positions` is legitimately
+        // empty while a real position is open — counting only the array there would
+        // clear the one snapshot proving the orphan.
+        const _ebHasPos = !!(savedEarlyBird && (
+          (Array.isArray(savedEarlyBird.positions) && savedEarlyBird.positions.length) ||
+          (savedEarlyBird.sessionMeta && savedEarlyBird.sessionMeta.optionPosition)
+        ));
         const _fSnaps = [savedBbRsi, savedPA, savedOrb, savedTrendPb, savedTds].filter(x => x && x.position).length +
-          ((savedEarlyBird && Array.isArray(savedEarlyBird.positions) && savedEarlyBird.positions.length) ? 1 : 0);
+          (_ebHasPos ? 1 : 0);
         if (_liveActive && _fSnaps > 0 && !_fReadable) {
           const msg = `⚠️ [STARTUP] Fyers book came back EMPTY — can't tell flat from an API error. Retaining ${_fSnaps} crash snapshot(s) UNVERIFIED (re-checking next boot). Check Fyers dashboard.`;
           console.warn(msg); sendTelegram(msg);

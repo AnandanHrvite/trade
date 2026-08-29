@@ -169,7 +169,12 @@ router.get("/start", async (req, res) => {
       modeTag:    MODE_TAG,          // the paper route's mode field in notify payloads
       broker:     "fyers",           // orders AND data both come from Fyers here
       dryRun,
-      isFutures:  false,             // cash equity, INTRADAY product — never futures
+      // isFutures:false → productType "INTRADAY", which is correct for BOTH legs:
+      // cash equity and bought NIFTY options both trade INTRADAY (only futures
+      // want MARGIN). The paper route passes the full Fyers option symbol on an
+      // option entry, so the same broker call serves both. NOTE: the option leg
+      // has never been exercised against a live broker — keep it dry-run.
+      isFutures:  false,
       liveLogKey: "early_bird-live", // MUST match tradeLogger's key character for character
     });
   } catch (err) {
