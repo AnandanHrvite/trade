@@ -1058,7 +1058,7 @@ function sidebarCSS() {
     :root[data-theme="light"] .copy-btn { background:#ffffff !important; border-color:#e0e4ea !important; color:#2563eb !important; }
     :root[data-theme="light"] .copy-btn:hover { background:#eff6ff !important; border-color:#3b82f6 !important; }
     :root[data-theme="light"] .copy-btn.copied { background:#dcfce7 !important; border-color:#10b981 !important; color:#047857 !important; }
-    :root[data-theme="light"] #tooltip { background:#1e293b !important; }
+    :root[data-theme="light"] #tooltip { background:#1e293b !important; color:#e2e8f0 !important; }
 
     /* Analytics cards (bb_rsi/backtest) */
     :root[data-theme="light"] .ana-card { background:#ffffff !important; border-color:#e0e4ea !important; box-shadow:0 1px 3px rgba(0,0,0,0.06) !important; }
