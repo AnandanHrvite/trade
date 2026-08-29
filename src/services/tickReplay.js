@@ -125,7 +125,7 @@ function requestCancel() {
 //     live data and must be recomputed.
 // v11: EMA_RSI_ST chartData now carries the EMA21 exit/trail line (OHLC4) — results
 //      unchanged, but invalidate so re-runs regenerate the chart with EMA21 drawn.
-// v12: history-polled strategies (RSI_PIVOT_ST, OI_WALL_FADE) were served a frozen
+// v12: history-polled strategies (RSI_PIVOT_ST) were served a frozen
 //      session-start warm-up, so onCandleClose never fired and they replayed 0
 //      trades on every date. The harness now grows the spot series from the pumped
 //      ticks — every cached result for those modes is wrong and must be recomputed.
@@ -195,16 +195,6 @@ const _MODE_TO_ENV_PREFIX = {
   // gap-fix-3m-paper is ABSENT for the same reason as trend-day-scalp-paper: it
   // passes mode "GAP3M" only to select the ITM-steps branch, and expiry still
   // comes from the COMMON OPTION_EXPIRY_* keys.
-  // oi-wall-fade-paper is ABSENT for the same reason again ("OIWF" is an
-  // ITM-steps selector only). Note separately that a replay of that mode
-  // reproduces its CANDLES but NOT its OI ladder: oiChain is live in-memory
-  // state and chain_oi.jsonl has no replay timeline, so every wall reading will
-  // come back UNKNOWN and the engine will refuse rather than fade blind.
-  // simple930-paper is ABSENT for the same reason once more: it passes mode
-  // "SIMPLE930" to instrument.validateAndGetOptionSymbol only to reach the
-  // strikeOverride path (it picks its own strike off the premium ladder), and
-  // expiry still comes from the COMMON OPTION_EXPIRY_* keys.
-  // bb_rsi-paper / pa-paper: NO mode arg → common OPTION_EXPIRY_* only (prefix null).
 };
 
 // ── Market-context expiry resolution (the mismatch fix) ──────────────────────
@@ -622,7 +612,6 @@ const _MODE_TO_CANONICAL_FILE = {
   "trend-day-scalp-paper": "trend_day_scalp_paper_trades.json",
   "gap-fix-3m-paper":      "gap_fix_3m_paper_trades.json",
   "ha-scalp-paper":        "ha_scalp_paper_trades.json",
-  "oi-wall-fade-paper":    "oi_wall_fade_paper_trades.json",
   "rsi-pivot-st-paper":    "rsi_pivot_st_paper_trades.json",
   "simple930-paper":       "simple930_paper_trades.json",
 };
@@ -799,8 +788,6 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     ss_clearGapFix3m:          sharedSocketState.clearGapFix3m,
     ss_setHaScalpActive:       sharedSocketState.setHaScalpActive,
     ss_clearHaScalp:           sharedSocketState.clearHaScalp,
-    ss_setOiWallFadeActive:    sharedSocketState.setOiWallFadeActive,
-    ss_clearOiWallFade:        sharedSocketState.clearOiWallFade,
     ss_setRsiPivotStActive:    sharedSocketState.setRsiPivotStActive,
     ss_clearRsiPivotSt:        sharedSocketState.clearRsiPivotSt,
     ss_setSimple930Active:     sharedSocketState.setSimple930Active,
@@ -886,7 +873,7 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
   // ── Tick-driven spot candle series ────────────────────────────────────────
   // Most paper engines close their own bars off the tick feed (bbRsiPaper's
   // bucket rollover → onCandleClose), so the recorded spot stream alone is
-  // enough to reproduce them. RSI_PIVOT_ST and OI_WALL_FADE do NOT: their
+  // enough to reproduce them. RSI_PIVOT_ST does NOT: its
   // onTick drives no decision at all, and every entry comes from a polled
   // history fetch — _maybeRefreshHistory → _fetchSpotToday → fetchCandles →
   // _mergeBars → onCandleClose. Handing those routes the frozen session-start
@@ -1258,8 +1245,6 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     sharedSocketState.clearGapFix3m          = () => {};
     sharedSocketState.setHaScalpActive       = () => {};
     sharedSocketState.clearHaScalp           = () => {};
-    sharedSocketState.setOiWallFadeActive    = () => {};
-    sharedSocketState.clearOiWallFade        = () => {};
     sharedSocketState.setRsiPivotStActive    = () => {};
     sharedSocketState.clearRsiPivotSt        = () => {};
     sharedSocketState.setSimple930Active     = () => {};
@@ -1493,8 +1478,6 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     sharedSocketState.clearGapFix3m          = orig.ss_clearGapFix3m;
     sharedSocketState.setHaScalpActive       = orig.ss_setHaScalpActive;
     sharedSocketState.clearHaScalp           = orig.ss_clearHaScalp;
-    sharedSocketState.setOiWallFadeActive    = orig.ss_setOiWallFadeActive;
-    sharedSocketState.clearOiWallFade        = orig.ss_clearOiWallFade;
     sharedSocketState.setRsiPivotStActive    = orig.ss_setRsiPivotStActive;
     sharedSocketState.clearRsiPivotSt        = orig.ss_clearRsiPivotSt;
     sharedSocketState.setSimple930Active     = orig.ss_setSimple930Active;
@@ -1573,7 +1556,6 @@ const MODE_TO_MODULE = {
   "trend-day-scalp-paper": "../routes/trendDayScalpPaper",
   "gap-fix-3m-paper":      "../routes/gapFix3mPaper",
   "ha-scalp-paper":        "../routes/haScalpPaper",
-  "oi-wall-fade-paper":    "../routes/oiWallFadePaper",
   "rsi-pivot-st-paper":    "../routes/rsiPivotStPaper",
   "simple930-paper":       "../routes/simple930Paper",
   // Live modes are NOT supported for replay (they place real orders). If a
@@ -1836,7 +1818,7 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
       // setTimeout the harness collapses to fire ASAP, so it lands in the window
       // between /start returning and the first pumped tick — while the spot file
       // stream is still being opened. On the real clock that poll runs "today":
-      // for a history-polled route (rsiPivotSt / oiWallFade) an empty fetch there
+      // for a history-polled route (rsiPivotSt) an empty fetch there
       // — and the recorded warm-up IS empty whenever the session was started
       // before its first bar closed — calls _noteHistoryFailure, which stamps
       //   state._histNextTryMs = Date.now() + backoff   ← REAL now, e.g. 22:50
@@ -2145,7 +2127,6 @@ function replayPreflight() {
   if (sharedSocketState.isTrendDayScalpActive && sharedSocketState.isTrendDayScalpActive()) activeModes.push(sharedSocketState.getTrendDayScalpMode() || "trend_day_scalp");
   if (sharedSocketState.isGapFix3mActive && sharedSocketState.isGapFix3mActive()) activeModes.push(sharedSocketState.getGapFix3mMode() || "gap_fix_3m");
   if (sharedSocketState.isHaScalpActive && sharedSocketState.isHaScalpActive()) activeModes.push(sharedSocketState.getHaScalpMode() || "ha_scalp");
-  if (sharedSocketState.isOiWallFadeActive && sharedSocketState.isOiWallFadeActive()) activeModes.push(sharedSocketState.getOiWallFadeMode() || "oi_wall_fade");
   if (sharedSocketState.isRsiPivotStActive && sharedSocketState.isRsiPivotStActive()) activeModes.push(sharedSocketState.getRsiPivotStMode() || "rsi_pivot_st");
   if (sharedSocketState.isSimple930Active && sharedSocketState.isSimple930Active()) activeModes.push(sharedSocketState.getSimple930Mode() || "simple930");
   if (activeModes.length > 0) {
@@ -2209,7 +2190,6 @@ function forceClearSharedState() {
     trend_day_scalp: sharedSocketState.getTrendDayScalpMode ? sharedSocketState.getTrendDayScalpMode() : null,
     gap_fix_3m: sharedSocketState.getGapFix3mMode ? sharedSocketState.getGapFix3mMode() : null,
     ha_scalp: sharedSocketState.getHaScalpMode ? sharedSocketState.getHaScalpMode() : null,
-    oi_wall_fade: sharedSocketState.getOiWallFadeMode ? sharedSocketState.getOiWallFadeMode() : null,
     rsi_pivot_st: sharedSocketState.getRsiPivotStMode ? sharedSocketState.getRsiPivotStMode() : null,
     simple930: sharedSocketState.getSimple930Mode ? sharedSocketState.getSimple930Mode() : null,
     replayInProgress: _replayInProgress,
@@ -2227,7 +2207,6 @@ function forceClearSharedState() {
   if (sharedSocketState.clearTrendDayScalp) sharedSocketState.clearTrendDayScalp();
   if (sharedSocketState.clearGapFix3m) sharedSocketState.clearGapFix3m();
   if (sharedSocketState.clearHaScalp) sharedSocketState.clearHaScalp();
-  if (sharedSocketState.clearOiWallFade) sharedSocketState.clearOiWallFade();
   if (sharedSocketState.clearRsiPivotSt) sharedSocketState.clearRsiPivotSt();
   if (sharedSocketState.clearSimple930) sharedSocketState.clearSimple930();
   _replayInProgress = false;

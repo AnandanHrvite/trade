@@ -45,7 +45,7 @@ Use statistics rather than intuition.
 
 # Data Sources In This Repo
 
-Thirteen strategies produce trades: ema_rsi_st, bb_rsi, pa, orb, ema9vwap, trend_pb, gaps, trend_day_scalp, gap_fix_3m, ha_scalp, oi_wall_fade, rsi_pivot_st, simple930. Analyse all thirteen unless the request narrows it.
+Twelve strategies produce trades: ema_rsi_st, bb_rsi, pa, orb, ema9vwap, trend_pb, gaps, trend_day_scalp, gap_fix_3m, ha_scalp, rsi_pivot_st, simple930. Analyse all twelve unless the request narrows it.
 
 Session summaries live in ~/trading-data/{mode}_paper_trades.json and {mode}_live_trades.json.
 

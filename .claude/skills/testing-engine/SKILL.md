@@ -71,9 +71,9 @@ Each stage must pass before advancing.
 
 # Repo Ground Truth
 
-Thirteen strategy engines live in src/strategies/, each with its own Paper, Backtest and Live route: EMA_RSI_ST, BB_RSI, PA, ORB, EMA9_VWAP, TREND_PB, GAPS, TDS (Trend Day Scalp), GAP3M (3M Gap Fix Scalp), HA_SCALP, OIWF (OI Wall Fade), RSI_PIVOT_ST, SIMPLE930.
+Twelve strategy engines live in src/strategies/, each with its own Paper, Backtest and Live route: EMA_RSI_ST, BB_RSI, PA, ORB, EMA9_VWAP, TREND_PB, GAPS, TDS (Trend Day Scalp), GAP3M (3M Gap Fix Scalp), HA_SCALP, RSI_PIVOT_ST, SIMPLE930.
 
-Their mode keys — used for trade-log filenames, skip logs and every cross-strategy screen — are ema_rsi_st, bb_rsi, pa, orb, ema9vwap, trend_pb, gaps, trend_day_scalp, gap_fix_3m, ha_scalp, oi_wall_fade, rsi_pivot_st, simple930. The `isDryRun()` live keys are the same set uppercased EXCEPT four short forms: TDS, GAP3M, OIWF and EMA9VWAP.
+Their mode keys — used for trade-log filenames, skip logs and every cross-strategy screen — are ema_rsi_st, bb_rsi, pa, orb, ema9vwap, trend_pb, gaps, trend_day_scalp, gap_fix_3m, ha_scalp, rsi_pivot_st, simple930. The `isDryRun()` live keys are the same set uppercased EXCEPT three short forms: TDS, GAP3M and EMA9VWAP.
 
 Paper is canonical. When Backtest or Live disagrees with Paper, the defect is in Backtest or Live. Never edit paper to make a test pass.
 

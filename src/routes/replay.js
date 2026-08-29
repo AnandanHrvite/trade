@@ -232,7 +232,6 @@ const STRATEGY_OPTIONS = [
   { mode: "trend-day-scalp-paper", label: "Trend Day Scalp Paper", envKey: "UI_SHOW_TDS_PAPER", modeKey: "TDS_MODE_ENABLED" },
   { mode: "gap-fix-3m-paper", label: "3M Gap Fix Scalp Paper", envKey: "UI_SHOW_GAP3M_PAPER", modeKey: "GAP3M_MODE_ENABLED" },
   { mode: "ha-scalp-paper", label: "HA Scalp Paper", envKey: "UI_SHOW_HA_SCALP_PAPER", modeKey: "HA_SCALP_MODE_ENABLED" },
-  { mode: "oi-wall-fade-paper", label: "OI Wall Fade Paper", envKey: "UI_SHOW_OIWF_PAPER", modeKey: "OIWF_MODE_ENABLED" },
   { mode: "rsi-pivot-st-paper", label: "RSI Pivot ST Paper", envKey: "UI_SHOW_RSI_PIVOT_ST_PAPER", modeKey: "RSI_PIVOT_ST_MODE_ENABLED" },
   { mode: "simple930-paper", label: "SIMPLE_9:30 Paper", envKey: "UI_SHOW_SIMPLE930_PAPER", modeKey: "SIMPLE930_MODE_ENABLED" },
 ];
@@ -285,7 +284,6 @@ button:disabled { background:#374151; cursor:not-allowed; }
 .tag.tds      { background:rgba(168,85,247,0.15);  color:#c084fc; }
 .tag.gap3m    { background:rgba(56,189,248,0.15);  color:#7dd3fc; }
 .tag.hascalp  { background:rgba(249,115,22,0.15);  color:#fdba74; }
-.tag.oiwf     { background:rgba(244,114,182,0.15); color:#f9a8d4; }
 .tag.rsipivotst { background:rgba(250,204,21,0.15); color:#fde047; }
 .tag.simple930 { background:rgba(251,146,60,0.15); color:#fdba74; }
 .tag.trendpb  { background:rgba(236,72,153,0.15);  color:#f9a8d4; }
@@ -626,7 +624,6 @@ function modeTag(mode) {
   if (mode.startsWith('trend-pb')) return 'trendpb';
   if (mode.startsWith('gap-fix-3m')) return 'gap3m';
   if (mode.startsWith('ha-scalp')) return 'hascalp';
-  if (mode.startsWith('oi-wall-fade')) return 'oiwf';
   if (mode.startsWith('rsi-pivot-st')) return 'rsipivotst';
   if (mode.startsWith('simple930')) return 'simple930';
   if (mode.startsWith('trend-day-scalp')) return 'tds';
@@ -1672,7 +1669,6 @@ function _modeLabel(mode) {
        : mode === 'gaps-paper' ? 'GAPS Paper'
        : mode === 'ha-scalp-paper' ? 'HA Scalp Paper'
        : mode === 'gap-fix-3m-paper' ? '3M Gap Fix Scalp Paper'
-       : mode === 'oi-wall-fade-paper' ? 'OI Wall Fade Paper'
        : mode === 'trend-day-scalp-paper' ? 'Trend Day Scalp Paper'
        : mode === 'rsi-pivot-st-paper' ? 'RSI Pivot ST Paper'
        : mode === 'simple930-paper' ? 'SIMPLE_9:30 Paper'
@@ -2564,7 +2560,7 @@ ${contractNoteClientJS()}
 var _CN_RANGE_ROWS = [], _CN_RANGE_CTX = null;
 var _CN_SINGLE_TRADES = null, _CN_SINGLE_LABEL = '';
 function _cnModeLabel(m){
-  return m==='all'?'All Strategies':m==='ema_rsi_st-paper'?'EMA_RSI_ST Paper':m==='bb_rsi-paper'?'BB_RSI Paper':m==='pa-paper'?'PA Paper':m==='orb-paper'?'ORB Paper':m==='ema9vwap-paper'?'EMA9+VWAP Paper':m==='trend-pb-paper'?'Trend Pullback Paper':m==='gaps-paper'?'GAPS Paper':m==='trend-day-scalp-paper'?'Trend Day Scalp Paper':m==='ha-scalp-paper'?'HA Scalp Paper':m==='gap-fix-3m-paper'?'3M Gap Fix Scalp Paper':m==='oi-wall-fade-paper'?'OI Wall Fade Paper':m==='rsi-pivot-st-paper'?'RSI Pivot ST Paper':m==='simple930-paper'?'SIMPLE_9:30 Paper':(m||'Replay');
+  return m==='all'?'All Strategies':m==='ema_rsi_st-paper'?'EMA_RSI_ST Paper':m==='bb_rsi-paper'?'BB_RSI Paper':m==='pa-paper'?'PA Paper':m==='orb-paper'?'ORB Paper':m==='ema9vwap-paper'?'EMA9+VWAP Paper':m==='trend-pb-paper'?'Trend Pullback Paper':m==='gaps-paper'?'GAPS Paper':m==='trend-day-scalp-paper'?'Trend Day Scalp Paper':m==='ha-scalp-paper'?'HA Scalp Paper':m==='gap-fix-3m-paper'?'3M Gap Fix Scalp Paper':m==='rsi-pivot-st-paper'?'RSI Pivot ST Paper':m==='simple930-paper'?'SIMPLE_9:30 Paper':(m||'Replay');
 }
 function openReplayReportAll(){
   var trades=[]; for(var i=0;i<_CN_RANGE_ROWS.length;i++){ var r=_CN_RANGE_ROWS[i]; if(r&&r.sim&&r.sim.ok&&r.sim.sessionTrades) trades=trades.concat(r.sim.sessionTrades); }

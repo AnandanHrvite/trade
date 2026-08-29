@@ -30,7 +30,6 @@
  *   TDS       same (session VWAP + day gate)
  *   GAP3M     hardwired to 3-minute intraday bars
  *   TREND_PB  session VWAP + a hardcoded 5m→15m derivation, no window bypass
- *   OIWF      needs per-strike option open interest — stocks have none here
  *
  * TWO ASSUMPTIONS THAT HAD TO BE NEUTRALISED
  * ──────────────────────────────────────────

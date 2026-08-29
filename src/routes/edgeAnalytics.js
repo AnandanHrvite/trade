@@ -50,7 +50,6 @@ const PAPER_SOURCES = [
   { mode: "TDS",      file: "trend_day_scalp_paper_trades.json" },
   { mode: "GAP3M",    file: "gap_fix_3m_paper_trades.json" },
   { mode: "HA_SCALP", file: "ha_scalp_paper_trades.json" },
-  { mode: "OIWF",     file: "oi_wall_fade_paper_trades.json" },
   { mode: "RSI_PIVOT_ST", file: "rsi_pivot_st_paper_trades.json" },
   { mode: "SIMPLE930", file: "simple930_paper_trades.json" },
 ];
@@ -65,7 +64,6 @@ const LIVE_SOURCES = [
   { mode: "TDS",      file: "trend_day_scalp_live_trades.json" },
   { mode: "GAP3M",    file: "gap_fix_3m_live_trades.json" },
   { mode: "HA_SCALP", file: "ha_scalp_live_trades.json" },
-  { mode: "OIWF",     file: "oi_wall_fade_live_trades.json" },
   { mode: "RSI_PIVOT_ST", file: "rsi_pivot_st_live_trades.json" },
   { mode: "SIMPLE930", file: "simple930_live_trades.json" },
 ];

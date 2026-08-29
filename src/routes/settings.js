@@ -566,52 +566,6 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
-    section: "OI WALL FADE STRATEGY — Fyers (per-strike Open Interest)",
-    icon: "\u{1F9F1}",
-    nav: "OI WALL FADE",
-    group: "Strategies",
-    fields: [
-      // ── Enable / live gating ──
-      { key: "OIWF_PAPER_ENABLED", label: "OI Wall Fade Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new OI Wall Fade paper sessions. Needs the option chain recorder AND per-strike OI capture on — without a ladder this strategy has no input at all.", default: "true", subheader: "Mode & Live" },
-      { key: "OIWF_LIVE_ENABLED", label: "OI Wall Fade Live Orders (gates /oi-wall-fade-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Fyers. NEVER traded, and it can never be backtested — paper-validate first.", default: "false" },
-      { key: "OIWF_LIVE_DRY_RUN", label: "OI Wall Fade Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep it simulated even when live is on.", default: "false" },
-
-      // ── The band ──
-      { key: "OIWF_RESOLUTION", label: "Candle Timeframe (min)", type: "select", options: ["1", "2", "3", "5", "10", "15"], effect: EFFECT.SESSION, desc: "Timeframe of the NIFTY 50 candle whose close must reject off the wall.", default: "5", subheader: "The wall band" },
-      { key: "OIWF_MIN_BAND_PTS", label: "Minimum Wall Band Width (pts)", type: "number", min: 0, max: 1000, step: 10, effect: EFFECT.SESSION, desc: "The CE and PE walls must be at least this far apart. The target is the MID-band, so a 150pt band offers ~75pt — below that a fade cannot pay for the option spread plus the theta burnt waiting.", default: "150" },
-      { key: "OIWF_WALL_NEAR_PTS", label: "How Close Counts as Pressing (pts)", type: "number", min: 1, max: 200, step: 5, effect: EFFECT.SESSION, desc: "The candle's high (CE wall) or low (PE wall) must reach within this many points of the wall strike.", default: "30" },
-
-      // ── The OI test ──
-      { key: "OIWF_OI_LOOKBACK", label: "\u0394OI Lookback (OI moves)", type: "number", min: 1, max: 20, step: 1, effect: EFFECT.SESSION, desc: "Measured in real OI MOVES, not polls or minutes — the recorder polls far faster than OI updates, so 3 here means 3 genuine changes.", default: "3", subheader: "Is the wall defended?" },
-      { key: "OIWF_WALL_BUILD_PCT", label: "Wall Building (\u0394OI % \u2265)", type: "number", min: 0, max: 100, step: 0.5, effect: EFFECT.SESSION, desc: "Writers are holding the line when the wall's own OI is still adding by at least this much. This is the entry condition.", default: "2" },
-      { key: "OIWF_WALL_SHED_PCT", label: "Wall Shedding (\u0394OI % \u2264 minus this)", type: "number", min: 0, max: 100, step: 0.5, effect: EFFECT.SESSION, desc: "The ANTI-signal: writers are running and the wall is giving way. Stand aside — this is the reading that turns a fade into a trend loss.", default: "2" },
-      { key: "OIWF_MAX_OI_SPAN_SEC", label: "Max Age of the \u0394OI Reading (sec, 0 = off)", type: "number", min: 0, max: 21600, step: 300, effect: EFFECT.SESSION, desc: "A \u0394 measured in OI moves covers a variable amount of wall-clock. On a quiet afternoon 3 moves can span hours, and \"writers added 2% since 10:00\" is not the claim this strategy wants to trade.", default: "1800" },
-
-      // ── Window ──
-      { key: "OIWF_ENTRY_START", label: "Entry Window Start", type: "time", effect: EFFECT.SESSION, desc: "No entries before this (IST). Late on purpose: the \u0394OI test needs several real OI moves to exist first.", default: "09:45", subheader: "Session window" },
-      { key: "OIWF_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No new entries after this time (IST).", default: "14:45" },
-      { key: "OIWF_FORCED_EXIT", label: "Forced Exit (EOD square-off)", type: "time", effect: EFFECT.SESSION, desc: "Hard square-off time (IST). A fade that never reached the mid-band is closed here.", default: "15:15" },
-
-      // ── Risk ──
-      { key: "OIWF_SL_BUFFER_PTS", label: "Stop Distance Beyond the Wall (pts)", type: "number", min: 0, max: 200, step: 5, effect: EFFECT.SESSION, desc: "The stop sits this far past the wall strike being faded. Past the wall the thesis is simply wrong.", default: "25", subheader: "Risk" },
-      { key: "OIWF_MIN_TARGET_PTS", label: "Minimum Target Distance (pts, 0 = off)", type: "number", min: 0, max: 500, step: 5, effect: EFFECT.SESSION, desc: "Skip when the mid-band is closer than this to the entry. OFF by default: the rule says the mid-band is the target, however near.", default: "0" },
-      { key: "OIWF_REQUIRE_INNER_WALL", label: "Require Both Walls Inside the Polled Band", type: "toggle", effect: EFFECT.SESSION, desc: "The recorder only polls ATM\u00b1N strikes, so a wall sitting on the edge of that window may not be the real max-OI strike. OFF by default — it is reported on every trade either way.", default: "false" },
-
-      // ── Sizing & day-level breakers ──
-      { key: "OIWF_LOT_MULTIPLIER", label: "Lot Multiplier (OI Wall Fade only)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.INSTANT, desc: "Lots per trade. 0 = use the global LOT_MULTIPLIER, which is the default.", default: "0", subheader: "Sizing & Day Breakers" },
-      { key: "OIWF_ITM_STEPS", label: "ITM Steps (strikes in-the-money)", type: "number", min: 0, max: 3, step: 1, effect: EFFECT.INSTANT, desc: "Strikes in-the-money to buy (0 = ATM). 1 step \u2248 delta 0.6.", default: "1" },
-      { key: "OIWF_MAX_DAILY_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 20, step: 1, effect: EFFECT.SESSION, desc: "Max entries per day.", default: "3" },
-      { key: "OIWF_MAX_DAILY_LOSSES", label: "Stop-outs That End the Day", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Day ends after this many stop-outs (0 = off). A stop-out here means a wall broke, which is evidence the day is trending rather than ranging.", default: "2" },
-      { key: "OIWF_MAX_DAILY_LOSS", label: "Max Daily Loss (\u20b9)", type: "number", min: 0, max: 50000, step: 250, effect: EFFECT.SESSION, desc: "Stop trading after this much loss (0 = off).", default: "3000" },
-      { key: "OIWF_DAILY_PROFIT_LOCK", label: "Daily Profit Lock (\u20b9)", type: "number", min: 0, max: 50000, step: 250, effect: EFFECT.SESSION, desc: "Stop for the day once this much is banked (0 = off, the default).", default: "0" },
-      { key: "OIWF_MAX_WEEKLY_LOSS", label: "Max Weekly Loss (\u20b9)", type: "number", min: 0, max: 200000, step: 1000, effect: EFFECT.SESSION, desc: "Stop for the week after this much loss (0 = off).", default: "0" },
-
-      // ── Data plumbing ──
-      { key: "OIWF_OPT_POLL_MS", label: "Option Quote Poll (ms)", type: "number", min: 500, max: 30000, step: 500, effect: EFFECT.SESSION, desc: "How often the option premium is fetched while a position is open. P&L only — every exit level is tested on the index tick feed, not on this.", default: "2000", subheader: "Data plumbing" },
-      { key: "OIWF_HISTORY_LAG_MS", label: "Bar-Close History Lag (ms)", type: "number", min: 0, max: 60000, step: 500, effect: EFFECT.SESSION, desc: "How long after a bar closes before the Fyers history endpoint is asked for it. Too short and the bar is not published yet, which delays every decision by a whole candle.", default: "5000" },
-    ],
-  },
-  {
     section: "RSI_PIVOT_ST STRATEGY (RSI + Standard Pivot R1/S1 + SuperTrend) — Zerodha",
     icon: "\u{1F4D0}",
     nav: "RSI PIVOT ST",
@@ -836,7 +790,6 @@ const SETTINGS_SCHEMA = [
       { key: "TG_GAP3M_STARTED", label: "3M Gap Fix Scalp — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a 3M Gap Fix Scalp session starts.", default: "true" },
       { key: "TG_HA_SCALP_STARTED", label: "HA Scalp — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an HA Scalp session starts.", default: "true" },
       { key: "TG_SIMPLE930_STARTED", label: "SIMPLE_9:30 — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a SIMPLE_9:30 session starts.", default: "true" },
-      { key: "TG_OIWF_STARTED", label: "OI Wall Fade — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an OI Wall Fade session starts.", default: "true" },
       { key: "TG_RSI_PIVOT_ST_STARTED", label: "RSI Pivot ST — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an RSI Pivot ST session starts.", default: "true" },
 
       { key: "TG_EMA_RSI_ST_ENTRY", label: "EMA_RSI_ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST entry.", default: "true", subheader: "Trade Entry" },
@@ -850,7 +803,6 @@ const SETTINGS_SCHEMA = [
       { key: "TG_GAP3M_ENTRY", label: "3M Gap Fix Scalp — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every 3M Gap Fix Scalp entry.", default: "true" },
       { key: "TG_HA_SCALP_ENTRY", label: "HA Scalp — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on HA Scalp entries.", default: "true" },
       { key: "TG_SIMPLE930_ENTRY", label: "SIMPLE_9:30 — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every SIMPLE_9:30 entry.", default: "true" },
-      { key: "TG_OIWF_ENTRY", label: "OI Wall Fade — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every OI Wall Fade entry.", default: "true" },
       { key: "TG_RSI_PIVOT_ST_ENTRY", label: "RSI Pivot ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every RSI Pivot ST entry.", default: "true" },
 
       { key: "TG_EMA_RSI_ST_EXIT", label: "EMA_RSI_ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST exit.", default: "true", subheader: "Trade Exit" },
@@ -864,7 +816,6 @@ const SETTINGS_SCHEMA = [
       { key: "TG_GAP3M_EXIT", label: "3M Gap Fix Scalp — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every 3M Gap Fix Scalp exit.", default: "true" },
       { key: "TG_HA_SCALP_EXIT", label: "HA Scalp — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on HA Scalp exits.", default: "true" },
       { key: "TG_SIMPLE930_EXIT", label: "SIMPLE_9:30 — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every SIMPLE_9:30 exit.", default: "true" },
-      { key: "TG_OIWF_EXIT", label: "OI Wall Fade — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every OI Wall Fade exit.", default: "true" },
       { key: "TG_RSI_PIVOT_ST_EXIT", label: "RSI Pivot ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every RSI Pivot ST exit.", default: "true" },
 
       { key: "TG_EMA_RSI_ST_SIGNALS", label: "EMA_RSI_ST — Signal/Skip Alerts", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert why a trade was or wasn't taken.", default: "true", subheader: "Signal / Skip" },
@@ -883,7 +834,6 @@ const SETTINGS_SCHEMA = [
       { key: "TG_GAP3M_DAYREPORT", label: "3M Gap Fix Scalp — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a 3M Gap Fix Scalp day summary on stop.", default: "true" },
       { key: "TG_HA_SCALP_DAYREPORT", label: "HA Scalp — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send the HA Scalp day report when the session stops.", default: "true" },
       { key: "TG_SIMPLE930_DAYREPORT", label: "SIMPLE_9:30 — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a SIMPLE_9:30 day summary on stop.", default: "true" },
-      { key: "TG_OIWF_DAYREPORT", label: "OI Wall Fade — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send an OI Wall Fade day summary on stop.", default: "true" },
       { key: "TG_RSI_PIVOT_ST_DAYREPORT", label: "RSI Pivot ST — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send an RSI Pivot ST day summary on stop.", default: "true" },
 
       { key: "TG_DAYREPORT_CONSOLIDATED", label: "Consolidated Day Report (Market Close)", type: "toggle", effect: EFFECT.INSTANT, desc: "Send one combined end-of-day summary at 15:30 IST.", default: "true" },
@@ -987,7 +937,6 @@ const SETTINGS_SCHEMA = [
       { key: "GAP3M_MODE_ENABLED",     label: "3M Gap Fix Scalp Mode",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show the 3M Gap Fix Scalp menu and settings.", default: "true" },
       { key: "HA_SCALP_MODE_ENABLED",  label: "HA Scalp Mode",             type: "toggle", effect: EFFECT.INSTANT, desc: "Show the HA Scalp menu and settings.", default: "true" },
       { key: "SIMPLE930_MODE_ENABLED", label: "SIMPLE_9:30 Mode",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show the SIMPLE_9:30 menu and settings.", default: "true" },
-      { key: "OIWF_MODE_ENABLED",      label: "OI Wall Fade Mode",       type: "toggle", effect: EFFECT.INSTANT, desc: "Show the OI Wall Fade menu and settings.", default: "true" },
       { key: "RSI_PIVOT_ST_MODE_ENABLED", label: "RSI Pivot ST Mode",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show the RSI Pivot ST menu and settings.", default: "true" },
       { key: "UI_SHOW_SIMULATE",       label: "Show Simulate Menu",        type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Simulate sub-menu.", default: "false", subheader: "Shared sub-menus (all strategies)" },
       { key: "UI_SHOW_COMPARE",        label: "Show Compare Menu",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Compare sub-menu.", default: "false" },
@@ -1061,9 +1010,6 @@ const SETTINGS_SCHEMA = [
       { key: "UI_SHOW_SIMPLE930_LIVE",     label: "SIMPLE_9:30 → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live under SIMPLE_9:30.", default: "true" },
       { key: "UI_SHOW_SIMPLE930_HISTORY",  label: "SIMPLE_9:30 → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under SIMPLE_9:30.", default: "true" },
 
-      { key: "UI_SHOW_OIWF_PAPER",     label: "OI Wall Fade → Paper",        type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under OI Wall Fade. There is no Backtest entry — Fyers exposes no historical per-strike OI, so this strategy cannot be simulated over past sessions.", default: "true", subheader: "OI Wall Fade sub-menus" },
-      { key: "UI_SHOW_OIWF_LIVE",      label: "OI Wall Fade → Live",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live under OI Wall Fade.", default: "true" },
-      { key: "UI_SHOW_OIWF_HISTORY",   label: "OI Wall Fade → History",      type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under OI Wall Fade.", default: "true" },
 
       // ── RSI Pivot ST submenu ──
       { key: "UI_SHOW_RSI_PIVOT_ST_BACKTEST", label: "RSI Pivot ST → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under RSI Pivot ST.", default: "true", subheader: "RSI Pivot ST sub-menus" },
@@ -1137,7 +1083,6 @@ const MODE_SECTION_TITLES = {
   gap_fix_3m: "3M GAP FIX SCALP STRATEGY — Fyers (NIFTY FUTURES)",
   ha_scalp: "HA SCALP STRATEGY (Heikin Ashi 15m) — Zerodha",
   simple930: "SIMPLE_9:30 STRATEGY (option-premium breakout) — Zerodha",
-  oi_wall_fade: "OI WALL FADE STRATEGY — Fyers (per-strike Open Interest)",
   rsi_pivot_st: "RSI_PIVOT_ST STRATEGY (RSI + Standard Pivot R1/S1 + SuperTrend) — Zerodha",
 };
 const SNAPSHOT_COMMON_SECTION_TITLES = new Set([
@@ -1146,7 +1091,7 @@ const SNAPSHOT_COMMON_SECTION_TITLES = new Set([
   "OPEN-INTEREST FILTER (OI + Price Buildup)",
 ]);
 
-const _MODE_KEYS = { ema_rsi_st: new Set(), bb_rsi: new Set(), pa: new Set(), orb: new Set(), ema9vwap: new Set(), trend_pb: new Set(), gaps: new Set(), trend_day_scalp: new Set(), gap_fix_3m: new Set(), ha_scalp: new Set(), simple930: new Set(), oi_wall_fade: new Set(), rsi_pivot_st: new Set() };
+const _MODE_KEYS = { ema_rsi_st: new Set(), bb_rsi: new Set(), pa: new Set(), orb: new Set(), ema9vwap: new Set(), trend_pb: new Set(), gaps: new Set(), trend_day_scalp: new Set(), gap_fix_3m: new Set(), ha_scalp: new Set(), simple930: new Set(), rsi_pivot_st: new Set() };
 const _KEY_TO_MODES = new Map();
 (function buildModeKeyIndex() {
   const commonKeys = [];
@@ -1576,7 +1521,7 @@ router.post("/restart", (req, res) => {
 // cache & logs always clear fully. The aggregate paper JSON + capital restore is
 // handled client-side via the per-strategy /reset endpoints (full paper wipe only).
 // Auto-gated by the app.js x-api-secret middleware (not in OPEN_PATHS).
-const RESET_PAPER_MODES = ["ema_rsi_st", "bb_rsi", "pa", "orb", "ema9vwap", "trend_pb", "gaps", "trend_day_scalp", "gap_fix_3m", "ha_scalp", "simple930", "oi_wall_fade", "rsi_pivot_st"];
+const RESET_PAPER_MODES = ["ema_rsi_st", "bb_rsi", "pa", "orb", "ema9vwap", "trend_pb", "gaps", "trend_day_scalp", "gap_fix_3m", "ha_scalp", "simple930", "rsi_pivot_st"];
 const _RESET_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 router.post("/reset-data", (req, res) => {
@@ -1891,7 +1836,6 @@ router.get("/", (req, res) => {
   const gap3mModeOn    = (envData["GAP3M_MODE_ENABLED"]    ?? process.env.GAP3M_MODE_ENABLED    ?? "true").toLowerCase() === "true";
   const haScalpModeOn  = (envData["HA_SCALP_MODE_ENABLED"] ?? process.env.HA_SCALP_MODE_ENABLED ?? "true").toLowerCase() === "true";
   const simple930ModeOn = (envData["SIMPLE930_MODE_ENABLED"] ?? process.env.SIMPLE930_MODE_ENABLED ?? "true").toLowerCase() === "true";
-  const oiwfModeOn     = (envData["OIWF_MODE_ENABLED"]     ?? process.env.OIWF_MODE_ENABLED     ?? "true").toLowerCase() === "true";
   const rsiPivotStModeOn = (envData["RSI_PIVOT_ST_MODE_ENABLED"] ?? process.env.RSI_PIVOT_ST_MODE_ENABLED ?? "true").toLowerCase() === "true";
   // Server Logs (📜 LOGS) and Cache Files buttons moved into the Logs (/trade-logs) page as tabs —
   // UI_SHOW_LOGS / UI_SHOW_CACHE_FILES now gate those tabs there, not top-bar buttons here.
@@ -1908,7 +1852,6 @@ router.get("/", (req, res) => {
     "3M GAP FIX SCALP STRATEGY — Fyers (NIFTY FUTURES)":            gap3mModeOn,
     "HA SCALP STRATEGY (Heikin Ashi 15m) — Zerodha":                haScalpModeOn,
     "SIMPLE_9:30 STRATEGY (option-premium breakout) — Zerodha":     simple930ModeOn,
-    "OI WALL FADE STRATEGY — Fyers (per-strike Open Interest)":     oiwfModeOn,
     "RSI_PIVOT_ST STRATEGY (RSI + Standard Pivot R1/S1 + SuperTrend) — Zerodha": rsiPivotStModeOn,
   };
 

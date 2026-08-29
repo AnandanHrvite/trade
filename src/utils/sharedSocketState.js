@@ -45,8 +45,6 @@ let gapFix3mMode = null;
 // HA Scalp mode: "HA_SCALP_PAPER" | "HA_SCALP_LIVE" | null
 let haScalpMode = null;
 
-// OI Wall Fade mode: "OI_WALL_FADE_PAPER" | "OI_WALL_FADE_LIVE" | null
-let oiWallFadeMode = null;
 
 // RSI Pivot SuperTrend mode: "RSI_PIVOT_ST_PAPER" | "RSI_PIVOT_ST_LIVE" | null
 let rsiPivotStMode = null;
@@ -234,23 +232,6 @@ function getHaScalpMode() {
   return haScalpMode;
 }
 
-// ── OI Wall Fade mode (per-strike OI wall fade) ─────────────────────────────
-
-function setOiWallFadeActive(mode) {
-  oiWallFadeMode = mode;
-}
-
-function clearOiWallFade() {
-  oiWallFadeMode = null;
-}
-
-function isOiWallFadeActive() {
-  return oiWallFadeMode !== null;
-}
-
-function getOiWallFadeMode() {
-  return oiWallFadeMode;
-}
 
 // ── RSI Pivot SuperTrend mode ───────────────────────────────────────────────
 
@@ -296,7 +277,7 @@ function isAnyActive() {
          orbMode !== null || ema9vwapMode !== null || trendPbMode !== null ||
          gapsMode !== null || trendDayScalpMode !== null || gapFix3mMode !== null ||
          haScalpMode !== null ||
-         oiWallFadeMode !== null || rsiPivotStMode !== null || simple930Mode !== null;
+         rsiPivotStMode !== null || simple930Mode !== null;
 }
 
 /** Can the given mode start? Returns { allowed, reason } */
@@ -382,14 +363,6 @@ function canStart(mode) {
       if (haScalpMode === "HA_SCALP_PAPER") return { allowed: false, reason: "HA Scalp Paper is running — stop it first" };
       if (haScalpMode === "HA_SCALP_LIVE")  return { allowed: false, reason: "HA Scalp Live is already running" };
       return { allowed: true };
-    case "OI_WALL_FADE_PAPER":
-      if (oiWallFadeMode === "OI_WALL_FADE_LIVE")  return { allowed: false, reason: "OI Wall Fade Live is running — stop it first" };
-      if (oiWallFadeMode === "OI_WALL_FADE_PAPER") return { allowed: false, reason: "OI Wall Fade Paper is already running" };
-      return { allowed: true };
-    case "OI_WALL_FADE_LIVE":
-      if (oiWallFadeMode === "OI_WALL_FADE_PAPER") return { allowed: false, reason: "OI Wall Fade Paper is running — stop it first" };
-      if (oiWallFadeMode === "OI_WALL_FADE_LIVE")  return { allowed: false, reason: "OI Wall Fade Live is already running" };
-      return { allowed: true };
     case "RSI_PIVOT_ST_PAPER":
       if (rsiPivotStMode === "RSI_PIVOT_ST_LIVE")  return { allowed: false, reason: "RSI Pivot ST Live is running — stop it first" };
       if (rsiPivotStMode === "RSI_PIVOT_ST_PAPER") return { allowed: false, reason: "RSI Pivot ST Paper is already running" };
@@ -432,8 +405,6 @@ module.exports = {
   setGapFix3mActive, clearGapFix3m, isGapFix3mActive, getGapFix3mMode,
   // HA Scalp
   setHaScalpActive, clearHaScalp, isHaScalpActive, getHaScalpMode,
-  // OI_WALL_FADE
-  setOiWallFadeActive, clearOiWallFade, isOiWallFadeActive, getOiWallFadeMode,
   // RSI Pivot SuperTrend
   setRsiPivotStActive, clearRsiPivotSt, isRsiPivotStActive, getRsiPivotStMode,
   // SIMPLE_9:30

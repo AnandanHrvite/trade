@@ -27,7 +27,6 @@ const STRATEGY_MODES = [
   { mode: 'TDS',        label: 'Trend Day Scalp', envKey: 'TDS_MODE_ENABLED'     },
   { mode: 'GAP3M',      label: '3M Gap Fix Scalp', envKey: 'GAP3M_MODE_ENABLED'  },
   { mode: 'HA_SCALP',   label: 'HA Scalp', envKey: 'HA_SCALP_MODE_ENABLED'         },
-  { mode: 'OIWF',       label: 'OI Wall Fade', envKey: 'OIWF_MODE_ENABLED'       },
   { mode: 'RSI_PIVOT_ST', label: 'RSI Pivot ST', envKey: 'RSI_PIVOT_ST_MODE_ENABLED' },
   { mode: 'SIMPLE930', label: 'SIMPLE_9:30', envKey: 'SIMPLE930_MODE_ENABLED' },
 ];
@@ -51,7 +50,6 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   let _trendDayScalpMode = null;
   let _gapFix3mMode = null;
   let _haScalpMode = null;
-  let _oiWallFadeMode = null;
   let _rsiPivotStMode = null;
   let _simple930Mode = null;
   let _anyTradeActive = false;
@@ -67,7 +65,6 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     _trendDayScalpMode = sss.getTrendDayScalpMode ? sss.getTrendDayScalpMode() : null;
     _gapFix3mMode = sss.getGapFix3mMode ? sss.getGapFix3mMode() : null;
     _haScalpMode = sss.getHaScalpMode ? sss.getHaScalpMode() : null;
-    _oiWallFadeMode = sss.getOiWallFadeMode ? sss.getOiWallFadeMode() : null;
     _rsiPivotStMode = sss.getRsiPivotStMode ? sss.getRsiPivotStMode() : null;
     _simple930Mode = sss.getSimple930Mode ? sss.getSimple930Mode() : null;
     _anyTradeActive = sss.isAnyActive ? sss.isAnyActive() : false;
@@ -106,7 +103,6 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const tdsModeOn      = (process.env.TDS_MODE_ENABLED      || 'true').toLowerCase() === 'true';
   const gap3mModeOn    = (process.env.GAP3M_MODE_ENABLED    || 'true').toLowerCase() === 'true';
   const haScalpModeOn  = (process.env.HA_SCALP_MODE_ENABLED || 'true').toLowerCase() === 'true';
-  const oiwfModeOn     = (process.env.OIWF_MODE_ENABLED     || 'true').toLowerCase() === 'true';
   const rsiPivotStModeOn = (process.env.RSI_PIVOT_ST_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const simple930ModeOn = (process.env.SIMPLE930_MODE_ENABLED || 'true').toLowerCase() === 'true';
 
@@ -178,10 +174,6 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const showHaScalpPaper      = (process.env.UI_SHOW_HA_SCALP_PAPER         || 'true').toLowerCase()  === 'true';
   const showHaScalpLive       = (process.env.UI_SHOW_HA_SCALP_LIVE          || 'true').toLowerCase()  === 'true';
   const showHaScalpHistory    = (process.env.UI_SHOW_HA_SCALP_HISTORY       || 'true').toLowerCase()  === 'true';
-  // OI Wall Fade — never traded and NOT backtestable (no historical per-strike OI), so there is no Backtest entry.
-  const showOiwfPaper         = (process.env.UI_SHOW_OIWF_PAPER            || 'true').toLowerCase()  === 'true';
-  const showOiwfLive          = (process.env.UI_SHOW_OIWF_LIVE             || 'true').toLowerCase()  === 'true';
-  const showOiwfHistory       = (process.env.UI_SHOW_OIWF_HISTORY          || 'true').toLowerCase()  === 'true';
   // RSI Pivot ST — never traded; ships visible but its Live page is triple-gated to dry-run.
   const showRsiPivotStBacktest = (process.env.UI_SHOW_RSI_PIVOT_ST_BACKTEST || 'true').toLowerCase()  === 'true';
   const showRsiPivotStPaper    = (process.env.UI_SHOW_RSI_PIVOT_ST_PAPER    || 'true').toLowerCase()  === 'true';
@@ -208,7 +200,6 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const tdsKeys     = ['trendDayScalpBacktest', 'trendDayScalpPaper', 'trendDayScalpLive', 'trendDayScalpHistory'];
   const gap3mKeys   = ['gapFix3mBacktest', 'gapFix3mPaper', 'gapFix3mLive', 'gapFix3mHistory'];
   const haScalpKeys = ['haScalpBacktest', 'haScalpPaper', 'haScalpLive', 'haScalpHistory'];
-  const oiwfKeys    = ['oiWallFadePaper', 'oiWallFadeLive', 'oiWallFadeHistory'];
   const rsiPivotStKeys = ['rsiPivotStBacktest', 'rsiPivotStPaper', 'rsiPivotStLive', 'rsiPivotStHistory'];
   const simple930Keys = ['simple930Backtest', 'simple930Paper', 'simple930Live', 'simple930History'];
 
@@ -222,7 +213,6 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const isTdsOpen      = tdsKeys.includes(activePage);
   const isGap3mOpen    = gap3mKeys.includes(activePage);
   const isHaScalpOpen  = haScalpKeys.includes(activePage);
-  const isOiwfOpen     = oiwfKeys.includes(activePage);
   const isRsiPivotStOpen = rsiPivotStKeys.includes(activePage);
   const isSimple930Open = simple930Keys.includes(activePage);
 
@@ -239,7 +229,6 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const tdsPaperRunning      = _trendDayScalpMode === 'TREND_DAY_SCALP_PAPER';
   const gap3mPaperRunning    = _gapFix3mMode === 'GAP_FIX_3M_PAPER';
   const haScalpPaperRunning  = _haScalpMode === 'HA_SCALP_PAPER';
-  const oiwfPaperRunning     = _oiWallFadeMode === 'OI_WALL_FADE_PAPER';
   const rsiPivotStPaperRunning = _rsiPivotStMode === 'RSI_PIVOT_ST_PAPER';
   const simple930PaperRunning = _simple930Mode === 'SIMPLE930_PAPER';
 
@@ -328,11 +317,6 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
 
   // No Backtest entry: Fyers exposes no historical per-strike OI, so this
   // strategy cannot be simulated over past sessions and never will be.
-  const oiwfItems = [
-    ...(showOiwfPaper   ? [{ key: 'oiWallFadePaper',   href: '/oi-wall-fade-paper/status', icon: '📋', label: 'Paper'   }] : []),
-    ...(showOiwfLive && !oiwfPaperRunning ? [{ key: 'oiWallFadeLive', href: '/oi-wall-fade-live', icon: '📡', label: 'Live' }] : []),
-    ...(showOiwfHistory ? [{ key: 'oiWallFadeHistory', href: '/oi-wall-fade-paper/history', icon: '📜', label: 'History' }] : []),
-  ];
 
   const rsiPivotStItems = [
     ...(showRsiPivotStBacktest ? [{ key: 'rsiPivotStBacktest', href: '/rsi-pivot-st-backtest',     icon: '🔍', label: 'Backtest' }] : []),
@@ -415,11 +399,6 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       header: 'HA SCALP', collapsible: true, collapsed: !isHaScalpOpen,
       groupId: 'nav-ha-scalp',
       items: haScalpItems,
-    }] : []),
-    ...(oiwfModeOn ? [{
-      header: 'OI WALL FADE', collapsible: true, collapsed: !isOiwfOpen,
-      groupId: 'nav-oi-wall-fade',
-      items: oiwfItems,
     }] : []),
     ...(rsiPivotStModeOn ? [{
       header: 'RSI PIVOT ST', collapsible: true, collapsed: !isRsiPivotStOpen,
@@ -524,13 +503,6 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
       : '';
 
-    const oiwfLiveBadge = p.key === 'oiWallFadeLive' && _oiWallFadeMode === 'OI_WALL_FADE_LIVE'
-      ? `<span class="sb-nav-badge live">LIVE</span>`
-      : '';
-
-    const oiwfPaperBadge = p.key === 'oiWallFadePaper' && _oiWallFadeMode === 'OI_WALL_FADE_PAPER'
-      ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
-      : '';
 
     const rsiPivotStLiveBadge = p.key === 'rsiPivotStLive' && _rsiPivotStMode === 'RSI_PIVOT_ST_LIVE'
       ? `<span class="sb-nav-badge live">LIVE</span>`
@@ -550,7 +522,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
 
     return `<a href="${p.href}" class="sb-nav-item${isActive ? ' active' : ''}">
       <span class="sb-nav-icon">${p.icon}</span> ${p.label}
-      ${liveBadge}${runningBadge}${bbRsiLiveBadge}${bbRsiPaperBadge}${paLiveBadge}${paPaperBadge}${orbLiveBadge}${orbPaperBadge}${gapsLiveBadge}${gapsPaperBadge}${tdsLiveBadge}${tdsPaperBadge}${gap3mLiveBadge}${gap3mPaperBadge}${haScalpLiveBadge}${haScalpPaperBadge}${oiwfLiveBadge}${oiwfPaperBadge}${rsiPivotStLiveBadge}${rsiPivotStPaperBadge}${simple930LiveBadge}${simple930PaperBadge}
+      ${liveBadge}${runningBadge}${bbRsiLiveBadge}${bbRsiPaperBadge}${paLiveBadge}${paPaperBadge}${orbLiveBadge}${orbPaperBadge}${gapsLiveBadge}${gapsPaperBadge}${tdsLiveBadge}${tdsPaperBadge}${gap3mLiveBadge}${gap3mPaperBadge}${haScalpLiveBadge}${haScalpPaperBadge}${rsiPivotStLiveBadge}${rsiPivotStPaperBadge}${simple930LiveBadge}${simple930PaperBadge}
     </a>`;
   }
 

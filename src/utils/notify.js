@@ -12,15 +12,15 @@
  *
  * Toggle hierarchy:
  *   TG_ENABLED                                  — master gate; if false, nothing sends
- *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|GAPS|TDS|GAP3M|OIWF|RSI_PIVOT_ST|SIMPLE930}_STARTED    — session-start alerts (per mode)
- *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|GAPS|TDS|GAP3M|OIWF|RSI_PIVOT_ST|SIMPLE930}_ENTRY      — trade entry alerts (per mode)
- *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|GAPS|TDS|GAP3M|OIWF|RSI_PIVOT_ST|SIMPLE930}_EXIT       — trade exit alerts (per mode)
+ *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|GAPS|TDS|GAP3M|RSI_PIVOT_ST|SIMPLE930}_STARTED    — session-start alerts (per mode)
+ *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|GAPS|TDS|GAP3M|RSI_PIVOT_ST|SIMPLE930}_ENTRY      — trade entry alerts (per mode)
+ *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|GAPS|TDS|GAP3M|RSI_PIVOT_ST|SIMPLE930}_EXIT       — trade exit alerts (per mode)
  *   TG_{EMA_RSI_ST|BB_RSI|PA|EMA9VWAP}_SIGNALS                 — candle-close skip/signal alerts (these modes only)
- *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|GAPS|TDS|GAP3M|OIWF|RSI_PIVOT_ST|SIMPLE930}_DAYREPORT  — per-mode day report on session stop
+ *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|GAPS|TDS|GAP3M|RSI_PIVOT_ST|SIMPLE930}_DAYREPORT  — per-mode day report on session stop
  *   TG_DAYREPORT_CONSOLIDATED                   — one combined day report at market close
  *   TG_EOD_CHARTS                               — per-strategy chart images at market close
  *
- *   (ORB, TREND_PB, GAPS, TDS, GAP3M, OIWF, RSI_PIVOT_ST and SIMPLE930 emit no SIGNAL alerts, so they have no _SIGNALS toggle.)
+ *   (ORB, TREND_PB, GAPS, TDS, GAP3M, RSI_PIVOT_ST and SIMPLE930 emit no SIGNAL alerts, so they have no _SIGNALS toggle.)
  *
  * If TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID are missing, all functions silently
  * do nothing — no errors.
@@ -114,9 +114,6 @@ function modeGroup(mode) {
   // HA Scalp. Group key HA_SCALP so every env key stays on the HA_SCALP_ prefix
   // (HA_SCALP_MODE_ENABLED, TG_HA_SCALP_ENTRY, …).
   if (m === "HA_SCALP" || m.startsWith("HA-SCALP") || m.startsWith("HA_SCALP")) return "HA_SCALP";
-  // OI Wall Fade. Group key OIWF so every env key stays on the OIWF_ prefix
-  // (OIWF_MODE_ENABLED, TG_OIWF_ENTRY, …) while the mode tag stays readable.
-  if (m === "OIWF" || m.startsWith("OI-WALL-FADE") || m.startsWith("OI_WALL_FADE")) return "OIWF";
   if (m === "RSI_PIVOT_ST" || m.startsWith("RSI_PIVOT_ST-") || m.startsWith("RSI_PIVOT_ST_")) return "RSI_PIVOT_ST";
   // SIMPLE_9:30. Group key SIMPLE930 so every env key stays on the SIMPLE930_
   // prefix (SIMPLE930_MODE_ENABLED, TG_SIMPLE930_ENTRY, …) — an env var may not
@@ -732,7 +729,7 @@ function notifyConsolidatedDayReport({ byMode }) {
   if (!canSend("TG_DAYREPORT_CONSOLIDATED")) return false;
 
   // Only include strategies that are currently enabled in Settings.
-  const groups = ["EMA_RSI_ST", "BB_RSI", "PA", "ORB", "EMA9VWAP", "TREND_PB", "GAPS", "TDS", "GAP3M", "OIWF", "RSI_PIVOT_ST", "SIMPLE930", "HA_SCALP"].filter(isModeEnabled);
+  const groups = ["EMA_RSI_ST", "BB_RSI", "PA", "ORB", "EMA9VWAP", "TREND_PB", "GAPS", "TDS", "GAP3M", "RSI_PIVOT_ST", "SIMPLE930", "HA_SCALP"].filter(isModeEnabled);
   let totalTrades = 0, totalPnl = 0, totalWins = 0, totalLosses = 0;
   const rows = [];
 

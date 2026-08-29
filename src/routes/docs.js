@@ -33,7 +33,6 @@ const GUIDE_MODE_BY_FILE = {
   "trend_day_scalp_strategy_guide.html": "TDS",
   "3m_gap_fix_scalp_strategy_guide.html": "GAP3M",
   "ha_scalp_strategy_guide.html": "HA_SCALP",
-  "oi_wall_fade_strategy_guide.html": "OIWF",
   "rsi_pivot_st_strategy_guide.html": "RSI_PIVOT_ST",
   "simple930_strategy_guide.html":    "SIMPLE930",
 };
@@ -864,12 +863,6 @@ const GUIDE_STATUS = {
     { type: "bool", label: "3M Gap Fix Scalp Paper Trading", key: "GAP3M_PAPER_ENABLED", def: "true" },
     { type: "live", label: "Live Orders (Fyers, via paper harness)", enableKey: "GAP3M_LIVE_ENABLED", dryKey: "GAP3M_LIVE_DRY_RUN" },
   ] }] },
-  "OI_WALL_FADE_Strategy_Guide.html": { title: "OI Wall Fade — Live Configuration", groups: [{ rows: [
-    { type: "bool", label: "OI Wall Fade Mode (sidebar + Settings section)", key: "OIWF_MODE_ENABLED", def: "true" },
-    { type: "bool", label: "OI Wall Fade Paper Trading", key: "OIWF_PAPER_ENABLED", def: "true" },
-    { type: "live", label: "Live Orders (Fyers, via paper harness)", enableKey: "OIWF_LIVE_ENABLED", dryKey: "OIWF_LIVE_DRY_RUN" },
-    { type: "bool", label: "Per-strike OI capture (this strategy reads nothing else)", key: "OPTION_CHAIN_RECORD_OI", def: "true" },
-  ] }] },
   "RSI_PIVOT_ST_Strategy_Guide.html": { title: "RSI Pivot ST — Live Configuration", groups: [{ rows: [
     { type: "bool", label: "RSI Pivot ST Mode (sidebar + Settings section)", key: "RSI_PIVOT_ST_MODE_ENABLED", def: "true" },
     { type: "bool", label: "RSI Pivot ST Paper Trading", key: "RSI_PIVOT_ST_PAPER_ENABLED", def: "true" },
@@ -904,7 +897,6 @@ const GUIDE_STATUS = {
       { type: "bool", label: "Trend Day Scalp Mode", key: "TDS_MODE_ENABLED", def: "true" },
       { type: "bool", label: "3M Gap Fix Scalp Mode", key: "GAP3M_MODE_ENABLED", def: "true" },
       { type: "bool", label: "HA Scalp Mode", key: "HA_SCALP_MODE_ENABLED", def: "true" },
-      { type: "bool", label: "OI Wall Fade Mode", key: "OIWF_MODE_ENABLED", def: "true" },
       { type: "bool", label: "RSI Pivot ST Mode", key: "RSI_PIVOT_ST_MODE_ENABLED", def: "true" },
       { type: "bool", label: "SIMPLE_9:30 Mode", key: "SIMPLE930_MODE_ENABLED", def: "true" },
     ] },

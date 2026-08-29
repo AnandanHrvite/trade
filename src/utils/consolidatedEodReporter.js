@@ -72,7 +72,6 @@ function collectTodayStats(istDate) {
     TREND_DAY_SCALP: { trades: 0, wins: 0, losses: 0, pnl: 0 },
     GAP3M:           { trades: 0, wins: 0, losses: 0, pnl: 0 },
     HA_SCALP:        { trades: 0, wins: 0, losses: 0, pnl: 0 },
-    OIWF:            { trades: 0, wins: 0, losses: 0, pnl: 0 },
     RSI_PIVOT_ST:    { trades: 0, wins: 0, losses: 0, pnl: 0 },
     SIMPLE930:       { trades: 0, wins: 0, losses: 0, pnl: 0 },
   };

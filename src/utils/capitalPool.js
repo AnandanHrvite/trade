@@ -69,7 +69,6 @@ const STRATEGIES = {
   orb:        { broker: "fyers",   label: "ORB",        file: "orb_paper_trades.json"        },
   trend_pb:   { broker: "fyers",   label: "TREND_PB",   file: "trend_pb_paper_trades.json"   },
   gaps:       { broker: "fyers",   label: "GAPS",       file: "gaps_paper_trades.json"       },
-  oi_wall_fade: { broker: "fyers", label: "OI_WALL_FADE", file: "oi_wall_fade_paper_trades.json" },
   rsi_pivot_st: { broker: "zerodha", label: "RSI_PIVOT_ST", file: "rsi_pivot_st_paper_trades.json" },
   simple930: { broker: "zerodha", label: "SIMPLE_9:30", file: "simple930_paper_trades.json" },
   ha_scalp:  { broker: "zerodha", label: "HA_SCALP",    file: "ha_scalp_paper_trades.json"  },

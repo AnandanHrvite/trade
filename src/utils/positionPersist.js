@@ -750,84 +750,6 @@ function clearGapFix3mPosition() {
   console.log("[PERSIST] 3M_GAP_FIX_SCALP position file cleared.");
 }
 
-// ── OI_WALL_FADE (per-strike OI wall fade, Fyers) ───────────────────────────
-// Both exit levels are FROZEN prices, so a crash-recovered position can be
-// reconstructed exactly: there is no trail state and no breakeven flag to lose.
-// The wall context is persisted alongside them because the LADDER IS NOT
-// RECOVERABLE — oiChain is in-memory and starts empty after a restart, so
-// without these fields a recovered position could not even say what it was
-// fading. No exit reads them; they exist so the reconciliation Telegram and the
-// trade record can.
-
-const OIWF_POS_FILE = path.join(DATA_DIR, ".active_oi_wall_fade_position.json");
-
-function saveOiWallFadePosition(position, sessionMeta) {
-  try {
-    if (!position) { _persistAtomic(OIWF_POS_FILE, null); return; }
-    const data = {
-      position: {
-        side:            position.side,
-        symbol:          position.symbol,
-        qty:             position.qty,
-        entryPrice:      position.entryPrice,
-        spotAtEntry:     position.spotAtEntry || position.entrySpot,
-        stopLoss:        position.stopLoss || position.slSpot,
-        initialStopLoss: position.initialStopLoss || position.initialSlSpot,
-        target:          position.targetSpot,
-        slPts:           position.slPts,
-        targetPts:       position.targetPts,
-        rr:              position.rr,
-        wallStrike:      position.wallStrike,
-        wallSide:        position.wallSide,
-        wallOi:          position.wallOi,
-        wallDeltaPct:    position.wallDeltaPct,
-        ceWallStrike:    position.ceWallStrike,
-        peWallStrike:    position.peWallStrike,
-        bandLo:          position.bandLo,
-        bandHi:          position.bandHi,
-        bandMid:         position.bandMid,
-        bandPts:         position.bandPts,
-        entryUnixSec:    position.entryUnixSec,
-        entryTime:       position.entryTime,
-        orderId:         position.orderId,
-        optionEntryLtp:  position.optionEntryLtp,
-        optionStrike:    position.optionStrike,
-        optionExpiry:    position.optionExpiry,
-        optionType:      position.optionType || position.side,
-      },
-      sessionMeta: sessionMeta || {},
-      savedAt: Date.now(),
-      savedDate: new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
-    };
-    _persistAtomic(OIWF_POS_FILE, JSON.stringify(data, null, 2));
-    console.log(`💾 [PERSIST] OI_WALL_FADE position saved: ${position.side} ${position.symbol} @ ₹${position.entryPrice}`);
-  } catch (err) {
-    console.warn(`⚠️ [PERSIST] Could not save OI_WALL_FADE position: ${err.message}`);
-  }
-}
-
-function loadOiWallFadePosition() {
-  try {
-    if (!fs.existsSync(OIWF_POS_FILE)) return null;
-    const data = JSON.parse(fs.readFileSync(OIWF_POS_FILE, "utf-8"));
-    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-    if (data.savedDate && data.savedDate !== today) {
-      console.log(`[PERSIST] Stale OI_WALL_FADE position from ${data.savedDate} — discarding.`);
-      fs.unlinkSync(OIWF_POS_FILE);
-      return null;
-    }
-    if (data.position) console.log(`[PERSIST] OI_WALL_FADE position loaded: ${data.position.side} ${data.position.symbol} @ ₹${data.position.entryPrice}`);
-    return data;
-  } catch (err) {
-    console.warn(`[PERSIST] Could not load OI_WALL_FADE position: ${err.message}`);
-    return null;
-  }
-}
-
-function clearOiWallFadePosition() {
-  _persistAtomic(OIWF_POS_FILE, null);
-  console.log("[PERSIST] OI_WALL_FADE position file cleared.");
-}
 
 // ── RSI_PIVOT_ST (RSI + pivot breakout + SuperTrend stop, Zerodha) ──────────
 // The stop is a FROZEN price at entry (SuperTrend level + premium floor), so a
@@ -1014,7 +936,6 @@ module.exports = {
   saveTrendDayScalpPosition, loadTrendDayScalpPosition, clearTrendDayScalpPosition,
   saveGapFix3mPosition, loadGapFix3mPosition, clearGapFix3mPosition,
   saveHaScalpPosition, loadHaScalpPosition, clearHaScalpPosition,
-  saveOiWallFadePosition, loadOiWallFadePosition, clearOiWallFadePosition,
   saveRsiPivotStPosition, loadRsiPivotStPosition, clearRsiPivotStPosition,
   saveSimple930Position, loadSimple930Position, clearSimple930Position,
 };
