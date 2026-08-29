@@ -475,12 +475,14 @@ function render(){
       + '</div></div>'
     : '';
 
-  // Show a column for EVERY strategy enabled in Settings, even one that took no
-  // trade in this range — a missing column reads as "that strategy isn't running"
-  // when it actually means "it ran and found nothing". Zero-trade days show a dash.
-  // With a subset ticked, only those columns are meaningful — MODES order is kept
-  // so the columns don't reshuffle as boxes are ticked.
-  const activeModes = MODES.filter(m => f.modes.indexOf(m)>=0);
+  // Only show a column for a strategy that actually traded in this range — an
+  // all-dashes column is dead width, and on a phone it pushes the real numbers
+  // off screen. MODES order is kept so columns don't reshuffle as boxes are ticked.
+  // Note this counts ALL days in range, skipped ones included, so ticking Skip
+  // doesn't make columns appear/disappear under the user mid-read.
+  const traded = {};
+  for(const t of arr) traded[t.mode] = true;
+  const activeModes = MODES.filter(m => f.modes.indexOf(m)>=0 && traded[m]);
 
   // overall totals
   let tN=0,tW=0,tL=0,tNet=0,tWP=0,tLP=0; const totByMode={};
