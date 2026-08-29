@@ -128,6 +128,11 @@ function _applyInitialSLCap(stopLoss, entrySpot, side, lastCandle, beforeTime, e
   return {
     stopLoss: fix.stopLoss,
     capLog:   fix.repaired ? `🛡️ [LIVE] Initial SL corrected — ${fix.reason}` : null,
+    // getSignal() bakes "SL=prevLow <level>" into the reason string before the
+    // mode is applied; true when the armed stop is NOT that level, so the caller
+    // can name the level actually used.
+    slOverridden: fix.stopLoss != null && stopLoss != null
+      && Math.abs(fix.stopLoss - stopLoss) >= 0.01,
     // M1: a stop was seeded but NO protective structure exists anywhere in
     // history. Never open a REAL position we cannot protect — the caller aborts.
     unprotected: _seedSL != null && fix.stopLoss == null,
@@ -1728,7 +1733,9 @@ async function onCandleClose(candle) {
         entryPrice:        candle.close,
         spotAtEntry:       candle.close,
         entryTime:         istNow(),
-        reason:            reason + _oiTag,
+        reason:            _slCapResult.slOverridden
+          ? `${reason}${_oiTag} | SL=EMA21 ${stopLoss}`
+          : reason + _oiTag,
         stopLoss:          stopLoss || null,
         initialStopLoss:   stopLoss || null,
         bestPrice:         null,
@@ -2135,7 +2142,9 @@ function onSpotTick(tick) {
           entryPrice:        ltp,
           spotAtEntry:       ltp,
           entryTime:         istNow(),
-          reason:            reason + _oiTagIntra,
+          reason:            _slCapResultIntra.slOverridden
+            ? `${reason}${_oiTagIntra} | SL=EMA21 ${stopLoss}`
+            : reason + _oiTagIntra,
           stopLoss:          stopLoss || null,
           initialStopLoss:   stopLoss || null,
           bestPrice:         null,

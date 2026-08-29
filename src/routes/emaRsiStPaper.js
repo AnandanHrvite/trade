@@ -927,7 +927,13 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
     entryPrice:        price,          // NIFTY spot at candle close
     spotAtEntry:       _entrySpot,
     entryTime:         istNow(),
-    reason,
+    // getSignal() bakes "SL=prevLow <level>" into `reason` before the initial-SL
+    // mode is applied, so under mode "ema21" that label names a level the trade
+    // never used. Append the level actually armed; the prev-candle level stays
+    // visible as the structural reference.
+    reason: (_seedSL != null && _initialSL != null && Math.abs(_initialSL - _seedSL) >= 0.01)
+      ? `${reason} | SL=EMA21 ${_initialSL}`
+      : reason,
     stopLoss:          _initialSL,
     initialStopLoss:   _initialSL,
     entryPrevMid:      entryPrevMid,   // mid of candle BEFORE entry (retained for trade-record continuity)

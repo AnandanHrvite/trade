@@ -19,6 +19,16 @@ const tradeGuards   = require("../utils/tradeGuards");
 // low/high; "ema21" seeds the stop on the same EMA21 line the trail rides, but
 // only when that level is protective for the side. runBacktest() is the
 // EMA_RSI_ST backtest only, so reading the key here scopes to that strategy.
+// getSignal() bakes "SL=prevLow <level>" into the reason string before the mode
+// is applied, so under mode "ema21" that label names a level the trade never
+// used. Append the level actually armed rather than rewriting the strategy's own
+// text — the prev-candle level stays visible as the structural reference.
+function _emaRsiStSLLabel(reason, seededSL, actualSL) {
+  if (actualSL == null || seededSL == null) return reason;
+  if (Math.abs(actualSL - seededSL) < 0.01) return reason;
+  return `${reason} | SL=EMA21 ${actualSL}`;
+}
+
 function _emaRsiStSeedSL(seededSL, entryPrice, side, ema21) {
   if (seededSL == null) return null;
   const mode = (process.env.EMA_RSI_ST_INITIAL_SL_MODE || "prev_candle").toLowerCase();
@@ -974,11 +984,12 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
             // backtest free of look-ahead into the still-forming entry bar. The
             // remainder IS the strategy's own 200-candle window — the search
             // bound is that history, not a separate constant.
+            const _seedConfirm = _a.signalSL != null ? quantize(_a.signalSL, 2) : null;
             const _slFixConfirm = tradeGuards.resolveProtectiveStop({
               side:       _a.side,
               entryPrice,
               stopLoss:   _emaRsiStSeedSL(
-                _a.signalSL != null ? quantize(_a.signalSL, 2) : null,
+                _seedConfirm,
                 entryPrice, _a.side, _a.ema21 != null ? _a.ema21 : null),
               candles:    window,
               // `beforeTime` (not a manual slice) excludes THIS confirmation
@@ -998,7 +1009,9 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
               side:            _a.side,
               entryPrice,
               entryTime:       candle.time,
-              entryReason:     `${_a.reason} | CONFIRM ${_a.side} x-over @${_a.triggerLevel}`,
+              entryReason:     _emaRsiStSLLabel(
+                `${_a.reason} | CONFIRM ${_a.side} x-over @${_a.triggerLevel}`,
+                _seedConfirm, initSL),
               stopLoss:        initSL,
               initialStopLoss: initSL,
               bestPrice:       null,
@@ -1063,11 +1076,12 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         // Protective-stop correction — same shared helper as paper/live. Here the
         // signal candle IS this candle and `window` already ends with it, matching
         // emaRsiStPaper's candle-close entry path exactly.
+        const _seedClose = signalSL != null ? quantize(signalSL, 2) : null;
         const _slFixClose = tradeGuards.resolveProtectiveStop({
           side,
           entryPrice,
           stopLoss: _emaRsiStSeedSL(
-            signalSL != null ? quantize(signalSL, 2) : null,
+            _seedClose,
             entryPrice, side, _sig.ema21 != null ? _sig.ema21 : null),
           candles:  window,
           // Entry is at THIS candle's close, so it is fully closed structure and
@@ -1086,7 +1100,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
           side,
           entryPrice,
           entryTime:       candle.time,
-          entryReason:     reason,
+          entryReason:     _emaRsiStSLLabel(reason, _seedClose, initSL),
           stopLoss:        initSL,
           initialStopLoss: initSL,
           bestPrice:       null,
