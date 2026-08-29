@@ -241,8 +241,23 @@ function getConfig() {
 
     // Universe
     universe:         String(process.env.EARLYBIRD_UNIVERSE || "FNO").trim().toUpperCase(),
+
+    // WHAT WE TRADE. See the TRADE MODE block in the header.
+    //   "stock"  — cash equity in the confirming F&O stocks (the original rules)
+    //   "option" — ONE NIFTY CE/PE off NIFTY's own candle, no stock confirmation
+    //   "both"   — run both at once, independently
+    tradeMode:        _tradeMode(),
+    optionLots:       _intEnv(process.env.EARLYBIRD_OPTION_LOTS, 1, 1, 50),
   };
 }
+
+const TRADE_MODES = ["stock", "option", "both"];
+function _tradeMode() {
+  const raw = String(process.env.EARLYBIRD_TRADE_MODE || "stock").trim().toLowerCase();
+  return TRADE_MODES.includes(raw) ? raw : "stock";
+}
+function tradesStock(cfg) { const m = (cfg || getConfig()).tradeMode; return m === "stock" || m === "both"; }
+function tradesOption(cfg) { const m = (cfg || getConfig()).tradeMode; return m === "option" || m === "both"; }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // classifyCandle — the ONE shape test, used for NIFTY and for every stock.
@@ -536,6 +551,93 @@ function evaluateStock(input, opts) {
   return out;
 }
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// buildNiftyOptionSetup — the OPTION side of the strategy.
+//
+// Deliberately simpler than the stock side, because the user's rule for it is
+// simpler: NO STOCK CONFIRMATION AT ALL. If NIFTY's own opening candle is a
+// signal candle, that is the whole entry condition. A bullish candle buys a CE,
+// a bearish one buys a PE, and the breakout level, stop and target are read off
+// NIFTY's own candle exactly as a stock's are read off its own.
+//
+// The 2% gap rule does NOT apply here either — it is a rule about a *stock*
+// opening away from its previous close, and we are not selecting a stock.
+//
+// EVERY LEVEL IS A SPOT LEVEL. The entry trigger, the stop and the 1:2 target
+// are all NIFTY index points, tested against spot — never against the option
+// premium. That is what makes the option leg comparable to the stock leg and
+// what keeps Paper ≡ Backtest ≡ Replay: an option's premium depends on IV and
+// theta, so a premium-based stop would not reproduce.
+// ─────────────────────────────────────────────────────────────────────────────
+function buildNiftyOptionSetup(niftyCandles, opts) {
+  const o = opts || {};
+  const cfg = o.cfg || getConfig();
+
+  const out = {
+    ok: false, side: null, optionSide: null, reason: "", skipReason: "",
+    candle: null, detail: null,
+    entry: null, stop: null, target: null,
+    riskPts: null, rewardPts: null, bigCandle: false, slBasis: null,
+    lots: cfg.optionLots, signalBarTime: null,
+  };
+
+  const nifty = getNiftySignal(niftyCandles, { cfg, istDay: o.istDay });
+  out.candle = nifty.candle;
+  out.detail = nifty.detail;
+  out.signalBarTime = nifty.signalBarTime;
+  if (!nifty.signal) {
+    out.skipReason = out.reason = nifty.reason;
+    return out;
+  }
+
+  const first = firstCandleOfDay(niftyCandles, { cfg, istDay: o.istDay });
+  if (!first) {
+    out.skipReason = out.reason = "no opening NIFTY candle";
+    return out;
+  }
+
+  const side = nifty.side;                       // LONG | SHORT
+  const buf = cfg.entryBufferPts;
+  const bodyTop    = Math.max(first.open, first.close);
+  const bodyBottom = Math.min(first.open, first.close);
+
+  let entry, stop;
+  if (side === "LONG") { entry = first.high + buf; stop = first.low  - buf; }
+  else                 { entry = first.low  - buf; stop = first.high + buf; }
+
+  // Same big-candle rule as the stock side — it can only ever tighten.
+  let riskPts = Math.abs(entry - stop);
+  out.slBasis = "wick";
+  if (cfg.maxSlPts > 0 && riskPts > cfg.maxSlPts) {
+    const bodyStop = side === "LONG" ? bodyBottom - buf : bodyTop + buf;
+    const bodyRisk = Math.abs(entry - bodyStop);
+    if (bodyRisk > 0 && bodyRisk < riskPts) {
+      stop = bodyStop; riskPts = bodyRisk;
+      out.bigCandle = true; out.slBasis = "body edge (big candle)";
+    }
+  }
+  if (!(riskPts > 0)) {
+    out.skipReason = out.reason = "computed risk is zero — refusing to build a setup";
+    return out;
+  }
+
+  const rewardPts = riskPts * cfg.targetRR;
+  out.side       = side;
+  out.optionSide = side === "LONG" ? "CE" : "PE";
+  out.entry      = _r2(entry);
+  out.stop       = _r2(stop);
+  out.target     = _r2(side === "LONG" ? entry + rewardPts : entry - rewardPts);
+  out.riskPts    = _r2(riskPts);
+  out.rewardPts  = _r2(rewardPts);
+  out.ok         = true;
+  out.reason =
+    `NIFTY ${out.optionSide} — ${nifty.detail ? nifty.detail.shape : "signal candle"}, ` +
+    `entry ${out.entry}, SL ${out.stop} (${out.slBasis}), target ${out.target} ` +
+    `@ 1:${cfg.targetRR} | risk ${out.riskPts}pt reward ${out.rewardPts}pt (spot levels)`;
+  return out;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // buildDayPlan — the whole 09:30 decision in one call.
 //
@@ -551,6 +653,8 @@ function buildDayPlan(niftyCandles, stocks, opts) {
   const plan = {
     tradeable: false, side: null, reason: "", skipReason: "",
     nifty: null, candidates: [], rejected: [], confirmingCount: 0,
+    // Option leg (see TRADE MODE). null when the mode does not trade options.
+    optionSetup: null, optionTradeable: false, tradeMode: cfg.tradeMode,
     scanned: Array.isArray(stocks) ? stocks.length : 0,
     cfg: {
       qty: cfg.qty, targetRR: cfg.targetRR, maxConcurrent: cfg.maxConcurrent,
@@ -567,6 +671,24 @@ function buildDayPlan(niftyCandles, stocks, opts) {
   }
   plan.side = nifty.side;
 
+  // ── OPTION LEG. Independent of the stock leg: it needs no confirmation, so
+  //    it is built whenever NIFTY itself gave a signal. ──────────────────────
+  if (tradesOption(cfg)) {
+    plan.optionSetup = buildNiftyOptionSetup(niftyCandles, { cfg, istDay: o.istDay });
+    if (plan.optionSetup.ok) plan.optionTradeable = true;
+  }
+
+  // In option-ONLY mode there is no stock leg at all — do not scan, and do not
+  // let the confirmation gate below decide the day.
+  if (!tradesStock(cfg)) {
+    plan.tradeable = false;               // no STOCK trades
+    plan.reason = plan.optionTradeable
+      ? `${nifty.reason} | option-only mode: ${plan.optionSetup.reason}`
+      : `${nifty.reason} | option-only mode: ${plan.optionSetup ? plan.optionSetup.reason : "no option setup"}`;
+    if (!plan.optionTradeable) plan.skipReason = plan.reason;
+    return plan;
+  }
+
   const list = Array.isArray(stocks) ? stocks : [];
   for (const s of list) {
     const ev = evaluateStock(s, { cfg, side: nifty.side, istDay: o.istDay });
@@ -577,6 +699,8 @@ function buildDayPlan(niftyCandles, stocks, opts) {
   plan.confirmingCount = plan.candidates.length;
 
   if (plan.confirmingCount < cfg.minConfirmingStocks) {
+    // NOTE: this closes the STOCK leg only. In "both" mode the option leg above
+    // has already been built and stays tradeable — it never needed confirmation.
     plan.skipReason = plan.reason =
       `NIFTY is ${nifty.direction} but only ${plan.confirmingCount} stock(s) made a ` +
       `matching opening candle — need ${cfg.minConfirmingStocks}`;
@@ -716,6 +840,10 @@ module.exports = {
   getNiftySignal,
   evaluateStock,
   buildDayPlan,
+  buildNiftyOptionSetup,
+  tradesStock,
+  tradesOption,
+  TRADE_MODES,
   checkExitOnTick,
   checkExitOnBar,
   isEntryTriggered,
