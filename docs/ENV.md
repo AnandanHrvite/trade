@@ -108,6 +108,7 @@ The engine falls back to one value; a status panel or log banner prints another.
 | `EARLYBIRD_MIN_CONFIRMING_STOCKS` | number | — | How many stocks must print the same-direction opening candle as NIFTY before the day is tradeable. 1 = the rule as specified. Raising it turns this into a market-breadth gate. |
 | `EARLYBIRD_MIN_RANGE_PTS` | number | — | Ignore an opening candle whose whole range is smaller than this. OFF by default — the rules do not ask for it. |
 | `EARLYBIRD_OPTION_LOTS` | number | — | Lots per NIFTY option trade. Only used when the mode trades options; the stock leg uses EARLYBIRD_QTY shares instead. |
+| `EARLYBIRD_OPTION_LTP_RETRY_MS` | number | — | After a failed option-premium fetch, how long before the entry is retried. Stops a dead or unquoted contract from hammering the quote API on every tick while the entry window is open. |
 | `EARLYBIRD_PAPER_ENABLED` | toggle | `true` | Allow new EarlyBird paper sessions. |
 | `EARLYBIRD_POLL_MS` | number | — | How often the shortlisted stocks' prices are refreshed while setups are pending or positions are open. |
 | `EARLYBIRD_QTY` | number | — | Shares per position. This is CASH EQUITY, not options — there are no lots. |
@@ -605,7 +606,6 @@ The engine falls back to one value; a status panel or log banner prints another.
 | `ACCESS_TOKEN` | text | _(secret — set in `.env`)_ | _used in 20 files_ |
 | `BACKTEST_DEBUG` | toggle | `false` | _used in 1 file_ |
 | `BREAKEVEN_PTS` | number | `25` | _used in 1 file_ |
-| `EARLYBIRD_OPTION_LTP_RETRY_MS` | text | — | _used in 1 file_ |
 | `EARLYBIRD_X` | text | — | _used in 2 files_ |
 | `EMA_RSI_ST_BREAKEVEN_ENABLED` | text | `false` | _used in 3 files_ |
 | `EMA_RSI_ST_BREAKEVEN_PTS` | number | `25` | _used in 3 files_ |
@@ -653,4 +653,4 @@ The engine falls back to one value; a status panel or log banner prints another.
 
 ---
 
-_61 of 507 keys have no Settings description — they are listed above with their call-site count instead. Add them to `SETTINGS_SCHEMA` to give them a description here._
+_60 of 507 keys have no Settings description — they are listed above with their call-site count instead. Add them to `SETTINGS_SCHEMA` to give them a description here._
