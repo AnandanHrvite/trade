@@ -539,6 +539,24 @@ function runEarlyBirdBacktest(data, onProgress) {
   const cfg  = earlyBird.getConfig();
   const SLIP = slippagePts();
 
+  // ── THIS BACKTEST COVERS THE STOCK LEG ONLY ─────────────────────────────
+  // EARLYBIRD_TRADE_MODE can also trade a NIFTY OPTION leg, but simulating a
+  // bought option needs historical PREMIUM candles per strike, which Fyers
+  // delists at expiry — the same limitation SIMPLE930's backtest documents.
+  // Rather than invent premiums from a delta/theta model (which would be
+  // simulating the strategy rather than testing it), the option leg is simply
+  // not backtested. Say so out loud: in "option" mode every day reports
+  // NO TRADE, and a silent wall of no-trade days would otherwise read as
+  // "the strategy never fires".
+  if (!earlyBird.tradesStock(cfg)) {
+    console.warn(`${LOG} EARLYBIRD_TRADE_MODE="${cfg.tradeMode}" trades no stock leg — ` +
+      `this backtest simulates the STOCK leg only, so it will report NO TRADE for every day. ` +
+      `Set the mode to "stock" or "both" to backtest, and paper-trade the option leg instead.`);
+  } else if (earlyBird.tradesOption(cfg)) {
+    console.log(`${LOG} EARLYBIRD_TRADE_MODE="both" — the NIFTY option leg is NOT included ` +
+      `in these results (no historical option premiums); stock-leg figures only.`);
+  }
+
   const trades   = [];
   const dayRows  = [];
   const noTrade  = [];

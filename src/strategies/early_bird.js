@@ -1,21 +1,45 @@
 /**
- * EARLYBIRD — first-15-minute signal candle, NIFTY-confirmed, traded in CASH EQUITY
+ * EARLYBIRD — first-15-minute signal candle; trades CASH EQUITY, a NIFTY OPTION, or both
  * ═════════════════════════════════════════════════════════════════════════════
  * This is the ONLY place EarlyBird's rules exist. Paper, Backtest, Live and
  * Replay all call into this file; no route re-implements any of it.
  *
- * ── WHAT MAKES THIS STRATEGY DIFFERENT FROM EVERY OTHER ONE IN THIS REPO ────
- * Every other engine here buys a single NIFTY OPTION. EarlyBird does not.
- * It trades the CASH EQUITY of F&O stocks, 100 qty per position, INTRADAY
- * product type, and it can hold several positions at once. Consequences that
- * are load-bearing and must not be "tidied away" by someone copying a template:
+ * ── TRADE MODE — what the strategy actually buys (EARLYBIRD_TRADE_MODE) ─────
+ * One key selects between two LEGS that share the same signal candle but are
+ * otherwise independent:
  *
- *   • There is no strike, no expiry, no option LTP, no ITM_STEPS. A helpful
- *     edit that reintroduces `fetchOptionLtp` here is a bug, not an upgrade.
- *   • P&L is (exit − entry) × qty for a LONG, and (entry − exit) × qty for a
- *     SHORT. A short here is a real intraday short sale in the cash segment.
- *   • NIFTY itself is NEVER traded. The index is a FILTER — it decides whether
- *     the day is a buy day or a sell day, and nothing more.
+ *   "stock"  (DEFAULT) — the original rules. NIFTY's opening candle sets the
+ *            day's side; a stock must CONFIRM with the same-shape candle in the
+ *            same direction; we then trade THAT STOCK'S CASH EQUITY off its own
+ *            breakout level, up to EARLYBIRD_MAX_CONCURRENT names at once.
+ *   "option" — NIFTY ONLY. If NIFTY's own opening candle is a signal candle we
+ *            buy ONE NIFTY CE (bullish) or PE (bearish) off NIFTY's own level.
+ *            **NO STOCK IS SCANNED, CONFIRMED OR TRADED** — the confirmation
+ *            rule is a stock-selection rule, and in this mode no stock is being
+ *            selected. buildDayPlan() therefore skips the stock scan entirely.
+ *   "both"   — both legs run at once, independently. The option leg fires even
+ *            when zero stocks confirm, because it never needed confirmation.
+ *
+ * The two legs share the SAME level maths — entry buffer, the big-candle
+ * body-edge stop, and the 1:2 target — so they are directly comparable.
+ *
+ * Consequences that are load-bearing and must not be "tidied away":
+ *
+ *   • THE STOCK LEG has no strike, no expiry and no option LTP. Its P&L is
+ *     (exit − entry) × qty for a LONG and (entry − exit) × qty for a SHORT;
+ *     a SHORT there is a real intraday short sale in the cash segment.
+ *   • THE OPTION LEG is a BOUGHT option, so its P&L is on the PREMIUM:
+ *     (exitLtp − entryLtp) × qty for BOTH sides. A bought PE profits when spot
+ *     FALLS because its premium rises — do NOT run it through computePnl(),
+ *     which is the direction-signed cash-equity formula.
+ *   • EVERY LEVEL IN BOTH LEGS IS A SPOT LEVEL. The option leg's trigger, stop
+ *     and target are NIFTY index points tested against spot, never against the
+ *     premium: premium moves with IV and theta, so a premium-based stop could
+ *     not be reproduced from recorded data and would break Paper ≡ Replay.
+ *   • The 2% gap rule applies to the STOCK leg only — it is a rule about a
+ *     stock opening away from its previous close.
+ *   • NIFTY is traded ONLY as the option leg. In "stock" mode the index remains
+ *     a pure FILTER and is never traded.
  *
  * ── THE DAY, IN SIX RULES ───────────────────────────────────────────────────
  *
@@ -141,9 +165,10 @@
  *     life of the trade.
  *   • No partial exits / scaling out.
  *   • No re-entry. One attempt per stock per day; if it stops out, that stock
- *     is done for the day.
- *   • No position sizing by risk — a flat EARLYBIRD_QTY (default 100) per
- *     stock, exactly as specified.
+ *     is done for the day. The option leg likewise trades once per day.
+ *   • No position sizing by risk — a flat EARLYBIRD_QTY (default 100) shares
+ *     per stock, exactly as specified, and a flat EARLYBIRD_OPTION_LOTS
+ *     (default 1) for the option leg.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -242,7 +267,7 @@ function getConfig() {
     // Universe
     universe:         String(process.env.EARLYBIRD_UNIVERSE || "FNO").trim().toUpperCase(),
 
-    // WHAT WE TRADE. See the TRADE MODE block in the header.
+    // WHAT WE TRADE. See the TRADE MODE block at the top of this file.
     //   "stock"  — cash equity in the confirming F&O stocks (the original rules)
     //   "option" — ONE NIFTY CE/PE off NIFTY's own candle, no stock confirmation
     //   "both"   — run both at once, independently
