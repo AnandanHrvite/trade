@@ -4,8 +4,8 @@
  * WHY THIS EXISTS
  *
  * Every strategy used to ask Fyers "what is my option worth?" over REST on its
- * own timer — BB_RSI/PA every 500ms, EMA_RSI_ST/EMA9_VWAP every 1s, GAP_FIX_3M
- * every 2s, the rest every 3s. With five strategies holding positions at once
+ * own timer — BB_RSI/PA every 500ms, EMA_RSI_ST/EMA9_VWAP every 1s,
+ * the rest every 3s. With five strategies holding positions at once
  * that is ~340 requests/minute against a ~200/minute data-API budget, and the
  * price a stop-loss reads can be up to 3 seconds old.
  *

@@ -152,7 +152,6 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const showTdsPaper          = (process.env.UI_SHOW_TDS_PAPER             || 'true').toLowerCase()  === 'true';
   const showTdsLive           = (process.env.UI_SHOW_TDS_LIVE              || 'true').toLowerCase()  === 'true';
   const showTdsHistory        = (process.env.UI_SHOW_TDS_HISTORY           || 'true').toLowerCase()  === 'true';
-  // 3M Gap Fix Scalp — never traded; ships visible but its Live page is triple-gated to dry-run.
   // HA Scalp — never traded; ships visible but its Live page is triple-gated to dry-run.
   const showHaScalpBacktest   = (process.env.UI_SHOW_HA_SCALP_BACKTEST      || 'true').toLowerCase()  === 'true';
   const showHaScalpPaper      = (process.env.UI_SHOW_HA_SCALP_PAPER         || 'true').toLowerCase()  === 'true';
