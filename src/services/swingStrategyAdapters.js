@@ -25,10 +25,8 @@
  * defined:
  *
  *   ORB       needs a session opening range — undefined on a weekly bar
- *   GAPS      needs a prev-day gap vs today's open — a daily-only construct
  *   EMA9_VWAP needs session-anchored VWAP — undefined outside one trading day
  *   TDS       same (session VWAP + day gate)
- *   GAP3M     hardwired to 3-minute intraday bars
  *   TREND_PB  session VWAP + a hardcoded 5m→15m derivation, no window bypass
  *
  * TWO ASSUMPTIONS THAT HAD TO BE NEUTRALISED

@@ -45,7 +45,7 @@ function sendAiSkipMarkdown(res, records, baseName, meta) {
   res.send(md);
 }
 
-const MODES = ["ema_rsi_st", "bb_rsi", "pa", "orb", "ema9vwap", "trend_pb", "gaps", "trend_day_scalp", "gap_fix_3m", "ha_scalp", "rsi_pivot_st", "simple930", "simple930-live"];
+const MODES = ["ema_rsi_st", "bb_rsi", "pa", "orb", "ema9vwap", "trend_pb", "trend_day_scalp", "ha_scalp", "rsi_pivot_st", "simple930", "simple930-live"];
 
 function validMode(m) { return MODES.includes(m); }
 function validDate(d) { return typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d); }
@@ -540,9 +540,7 @@ function enabledModesFromEnv() {
     orb:      on(process.env.ORB_MODE_ENABLED),
     ema9vwap: on(process.env.EMA9VWAP_MODE_ENABLED),
     trend_pb: on(process.env.TREND_PB_MODE_ENABLED),
-    gaps:     on(process.env.GAPS_MODE_ENABLED),
     trend_day_scalp: on(process.env.TDS_MODE_ENABLED),
-    gap_fix_3m: on(process.env.GAP3M_MODE_ENABLED),
   ha_scalp: on(process.env.HA_SCALP_MODE_ENABLED),
     rsi_pivot_st: on(process.env.RSI_PIVOT_ST_MODE_ENABLED),
     simple930: on(process.env.SIMPLE930_MODE_ENABLED),
@@ -603,9 +601,7 @@ router.get("/", (req, res) => {
     .mode-orb      { color:#10b981; }
     .mode-ema9vwap { color:#06b6d4; }
     .mode-trend_pb { color:#ec4899; }
-    .mode-gaps { color:#0ea5e9; }
     .mode-trend_day_scalp { color:#a855f7; }
-    .mode-gap_fix_3m { color:#38bdf8; }
 .mode-ha_scalp { color:#f97316; }
     .mode-rsi_pivot_st { color:#facc15; }
     .mode-simple930 { color:#fb923c; }
@@ -1053,9 +1049,7 @@ ${buildSidebar('tradeLogs', liveActive)}
     { key: 'orb',      label: 'ORB',          cls: 'mode-orb' },
     { key: 'ema9vwap', label: 'EMA9+VWAP',    cls: 'mode-ema9vwap' },
     { key: 'trend_pb', label: 'TREND PB',     cls: 'mode-trend_pb' },
-    { key: 'gaps',     label: 'GAPS',         cls: 'mode-gaps' },
     { key: 'trend_day_scalp', label: 'TREND DAY SCALP', cls: 'mode-trend_day_scalp' },
-    { key: 'gap_fix_3m', label: '3M GAP FIX SCALP', cls: 'mode-gap_fix_3m' },
       { key: 'ha_scalp', label: 'HA SCALP', cls: 'mode-ha_scalp' },
     { key: 'rsi_pivot_st', label: 'RSI PIVOT ST', cls: 'mode-rsi_pivot_st' },
     { key: 'simple930', label: 'SIMPLE_9:30', cls: 'mode-simple930' },
@@ -1073,8 +1067,8 @@ ${buildSidebar('tradeLogs', liveActive)}
   })();
 
   // Per-section page state.
-  var _filesPage  = { ema_rsi_st:1, bb_rsi:1, pa:1, orb:1, ema9vwap:1, trend_pb:1, gaps:1, trend_day_scalp:1, gap_fix_3m:1, ha_scalp:1, rsi_pivot_st:1, simple930:1, 'simple930-live':1 };
-  var _skipsPage  = { ema_rsi_st:1, bb_rsi:1, pa:1, orb:1, ema9vwap:1, trend_pb:1, gaps:1, trend_day_scalp:1, gap_fix_3m:1, ha_scalp:1, rsi_pivot_st:1, simple930:1, 'simple930-live':1 };
+  var _filesPage  = { ema_rsi_st:1, bb_rsi:1, pa:1, orb:1, ema9vwap:1, trend_pb:1, trend_day_scalp:1, ha_scalp:1, rsi_pivot_st:1, simple930:1, 'simple930-live':1 };
+  var _skipsPage  = { ema_rsi_st:1, bb_rsi:1, pa:1, orb:1, ema9vwap:1, trend_pb:1, trend_day_scalp:1, ha_scalp:1, rsi_pivot_st:1, simple930:1, 'simple930-live':1 };
   var _auditPage  = 1;
   var _view = { mode:null, date:null, kind:null, page:1, total:0, pageSize:25 }; // modal state
 

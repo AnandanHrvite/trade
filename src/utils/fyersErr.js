@@ -7,7 +7,7 @@
  * away `data`, which is the one field that says WHICH parameter Fyers disliked
  * (e.g. {range_to: "Date range cannot exceed 366 days…"}). Keep the whole thing.
  *
- * Lived in gapFix3mBacktest.js until a BB_RSI 3-min backtest failed with nothing
+ * Lived in a strategy backtest until a BB_RSI 3-min backtest failed with nothing
  * on screen but "Invalid input" — the same swallowed detail, in a route that had
  * no copy of this. It is shared now so no caller has to rediscover it.
  */

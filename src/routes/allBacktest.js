@@ -21,9 +21,7 @@ const bbRsiStrategy = require("../strategies/bb_rsi");
 const paStrategy    = require("../strategies/price_action");
 const orbStrategy   = require("../strategies/orb_breakout");
 const trendPbStrategy = require("../strategies/trend_pb");
-const gapsStrategy    = require("../strategies/gaps");
 const tdsStrategy     = require("../strategies/trend_day_scalp");
-const gap3mStrategy   = require("../strategies/gap_fix_3m");
 const haScalpStrategy = require("../strategies/ha_scalp");
 const rsiPivotStStrategy = require("../strategies/rsi_pivot_st");
 const simple930Strategy  = require("../strategies/simple930");
@@ -34,9 +32,7 @@ const BB_RSI_KEY = "BB_RSI_BACKTEST";
 const PA_KEY    = "PA_BACKTEST";
 const ORB_KEY   = "ORB_BACKTEST";
 const TREND_PB_KEY = "TREND_PB_BACKTEST";
-const GAPS_KEY     = "GAPS_BACKTEST";
 const TDS_KEY      = "TREND_DAY_SCALP_BACKTEST";
-const GAP3M_KEY    = "GAP_FIX_3M_BACKTEST";
 const HA_SCALP_KEY = "HA_SCALP_BACKTEST";
 const RSI_PIVOT_ST_KEY = "RSI_PIVOT_ST_BACKTEST";
 const SIMPLE930_KEY    = "SIMPLE930_BACKTEST";
@@ -148,9 +144,7 @@ router.get("/", (req, res) => {
   const paOn       = _modeOn("PA_MODE_ENABLED");
   const orbOn      = _modeOn("ORB_MODE_ENABLED");
   const trendPbOn  = _modeOn("TREND_PB_MODE_ENABLED");
-  const gapsOn     = _modeOn("GAPS_MODE_ENABLED");
   const tdsOn      = _modeOn("TDS_MODE_ENABLED");
-  const gap3mOn    = _modeOn("GAP3M_MODE_ENABLED");
   const haScalpOn  = _modeOn("HA_SCALP_MODE_ENABLED");
   const rsiPivotStOn = _modeOn("RSI_PIVOT_ST_MODE_ENABLED");
   const simple930On  = _modeOn("SIMPLE930_MODE_ENABLED");
@@ -160,9 +154,7 @@ router.get("/", (req, res) => {
   const paResult       = paOn       ? loadResult(PA_KEY)       : null;
   const orbResult      = orbOn      ? loadResult(ORB_KEY)      : null;
   const trendPbResult  = trendPbOn  ? loadResult(TREND_PB_KEY) : null;
-  const gapsResult     = gapsOn     ? loadResult(GAPS_KEY)     : null;
   const tdsResult      = tdsOn      ? loadResult(TDS_KEY)      : null;
-  const gap3mResult    = gap3mOn    ? loadResult(GAP3M_KEY)    : null;
   const haScalpResult  = haScalpOn  ? loadResult(HA_SCALP_KEY)  : null;
   const rsiPivotStResult = rsiPivotStOn ? loadResult(RSI_PIVOT_ST_KEY) : null;
   const simple930Result  = simple930On  ? loadResult(SIMPLE930_KEY)  : null;
@@ -191,20 +183,10 @@ router.get("/", (req, res) => {
     trendPbStrategy && trendPbStrategy.NAME ? trendPbStrategy.NAME : "TREND_PULLBACK",
     TREND_PB_KEY, "/trend-pb-backtest", trendPbResult
   ) : "";
-  const gapsPanel = gapsOn ? renderPanel(
-    "GAPS", { bg: "rgba(14,165,233,0.12)", fg: "#38bdf8", border: "rgba(14,165,233,0.25)" },
-    gapsStrategy && gapsStrategy.NAME ? gapsStrategy.NAME : "GAPS",
-    GAPS_KEY, "/gaps-backtest", gapsResult
-  ) : "";
   const tdsPanel = tdsOn ? renderPanel(
     "TREND DAY SCALP", { bg: "rgba(168,85,247,0.12)", fg: "#c084fc", border: "rgba(168,85,247,0.25)" },
     tdsStrategy && tdsStrategy.NAME ? tdsStrategy.NAME : "TREND_DAY_SCALP",
     TDS_KEY, "/trend-day-scalp-backtest", tdsResult
-  ) : "";
-  const gap3mPanel = gap3mOn ? renderPanel(
-    "3M GAP FIX SCALP", { bg: "rgba(56,189,248,0.12)", fg: "#7dd3fc", border: "rgba(56,189,248,0.25)" },
-    gap3mStrategy && gap3mStrategy.NAME ? gap3mStrategy.NAME : "3M_GAP_FIX_SCALP",
-    GAP3M_KEY, "/gap-fix-3m-backtest", gap3mResult
   ) : "";
 
   const haScalpPanel = haScalpOn ? renderPanel(
@@ -367,13 +349,11 @@ ${buildSidebar('allBacktest', liveActive)}
   ${paPanel}
   ${orbPanel}
   ${trendPbPanel}
-  ${gapsPanel}
   ${tdsPanel}
-  ${gap3mPanel}
         ${haScalpPanel}
   ${rsiPivotStPanel}
   ${simple930Panel}
-  ${(!emaRsiStOn && !bbRsiOn && !paOn && !orbOn && !trendPbOn && !gapsOn && !tdsOn && !gap3mOn && !haScalpOn && !rsiPivotStOn && !simple930On) ? `
+  ${(!emaRsiStOn && !bbRsiOn && !paOn && !orbOn && !trendPbOn && !tdsOn && !haScalpOn && !rsiPivotStOn && !simple930On) ? `
   <div style="background:#08091a;border:0.5px solid #0e1428;border-radius:10px;padding:24px;text-align:center;color:#94a3b8;font-size:0.78rem;">
     No strategies enabled. Toggle one on in <a href="/settings" style="color:#60a5fa;">Settings → Strategy Modes</a>.
   </div>` : ""}

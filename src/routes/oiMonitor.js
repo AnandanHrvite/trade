@@ -7,7 +7,7 @@
  * WHY THIS PAGE EXISTS
  * ────────────────────
  * The gap in this platform is the SIDEWAYS DAY. Every engine here — EMA_RSI_ST,
- * BB_RSI, PA, ORB, Trend_PB, EMA9_VWAP, TDS, GAP3M — is a trend or breakout
+ * BB_RSI, PA, ORB, Trend_PB, EMA9_VWAP, TDS — is a trend or breakout
  * strategy, and on a range day they either sit flat or bleed on whipsaws. Adding
  * a ninth momentum strategy would just add correlated risk.
  *

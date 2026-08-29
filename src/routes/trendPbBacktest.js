@@ -95,6 +95,7 @@ function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [] } = 
   const TRAIL_MULT   = parseFloat(process.env.TREND_PB_TRAIL_ATR_MULT || "2.5");
   const ATR_PERIOD   = parseInt(process.env.TREND_PB_ATR_PERIOD || "14", 10);
   const TRAIL_EMA    = Math.max(2, parseInt(process.env.TREND_PB_TRAIL_EMA || "20", 10));
+  const EMA_EXIT_ON  = (process.env.TREND_PB_EMA_EXIT_ENABLED || "true").toLowerCase() === "true";
   const EMA5_PERIOD  = parseInt(process.env.TREND_PB_EMA5_PERIOD || "20", 10);
   const TS_CANDLES   = parseInt(process.env.TREND_PB_TIME_STOP_CANDLES || "6", 10);
   const TS_FLAT      = parseFloat(process.env.TREND_PB_TIME_STOP_FLAT_PTS || "12");
@@ -218,10 +219,10 @@ function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [] } = 
         if (ema5 != null) {
           if (pos.side === "CE") {
             if (c.close >= ema5) pos.emaArmed = true;
-            else if (pos.emaArmed) { closeAndPush(pos, c.close, c.time, `Closed below EMA${TRAIL_EMA}(5m) — trend failed`); position = null; continue; }
+            else if (pos.emaArmed && EMA_EXIT_ON) { closeAndPush(pos, c.close, c.time, `Closed below EMA${TRAIL_EMA}(5m) — trend failed`); position = null; continue; }
           } else {
             if (c.close <= ema5) pos.emaArmed = true;
-            else if (pos.emaArmed) { closeAndPush(pos, c.close, c.time, `Closed above EMA${TRAIL_EMA}(5m) — trend failed`); position = null; continue; }
+            else if (pos.emaArmed && EMA_EXIT_ON) { closeAndPush(pos, c.close, c.time, `Closed above EMA${TRAIL_EMA}(5m) — trend failed`); position = null; continue; }
           }
         }
         // time-stop (theta bleed while flat)

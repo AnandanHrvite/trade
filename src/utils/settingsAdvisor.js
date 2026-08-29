@@ -4,7 +4,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * WHY a rules engine instead of an LLM: every input here is numeric (P&L, exit
  * reason, entry hour, streak length). A deterministic rule that says "the 09:00
- * hour lost ₹4,200 over 11 trades → raise GAPS_ENTRY_START" is reproducible,
+ * hour lost ₹4,200 over 11 trades → raise PA_ENTRY_START" is reproducible,
  * auditable, free, and cannot hallucinate a setting key that doesn't exist.
  *
  * WHAT it reads: exactly the trade set /edge-analytics renders — the same
@@ -86,12 +86,6 @@ const MODE_KEYS = {
     forcedExit: "TREND_PB_FORCED_EXIT", timeStop: "TREND_PB_TIME_STOP_CANDLES",
     maxDailyLoss: "TREND_PB_MAX_DAILY_LOSS", maxDailyTrades: "TREND_PB_MAX_DAILY_TRADES",
     lossStreak: "TREND_PB_LOSS_STREAK_SKIP", live: "TREND_PB_LIVE_ENABLED",
-  },
-  GAPS: {
-    entryStart: "GAPS_ENTRY_START", entryEnd: "GAPS_ENTRY_END",
-    forcedExit: "GAPS_FORCED_EXIT",
-    maxDailyLoss: "GAPS_MAX_DAILY_LOSS", maxDailyTrades: "GAPS_MAX_DAILY_TRADES",
-    lossStreak: "GAPS_LOSS_STREAK_SKIP", live: "GAPS_LIVE_ENABLED",
   },
 };
 

@@ -35,9 +35,7 @@ const START_ALL_ROUTES = {
   ORB:        { paper: '/orb-paper/start',        live: '/orb-live/start',        harness: '/orb-live-harness/start'        },
   EMA9VWAP:   { paper: '/ema9vwap-paper/start',   live: null,                     harness: '/ema9vwap-live/start'           },
   TREND_PB:   { paper: '/trend-pb-paper/start',   live: null,                     harness: '/trend-pb-live/start'           },
-  GAPS:       { paper: '/gaps-paper/start',       live: null,                     harness: '/gaps-live/start'               },
   TDS:        { paper: '/trend-day-scalp-paper/start', live: null,               harness: '/trend-day-scalp-live/start'    },
-  GAP3M:      { paper: '/gap-fix-3m-paper/start', live: null,                    harness: '/gap-fix-3m-live/start'         },
   HA_SCALP:   { paper: '/ha-scalp-paper/start', live: null,                      harness: '/ha-scalp-live/start'           },
   SIMPLE930:  { paper: '/simple930-paper/start', live: null,                     harness: '/simple930-live/start'          },
   RSI_PIVOT_ST: { paper: '/rsi-pivot-st-paper/start', live: null,                harness: '/rsi-pivot-st-live/start'       },
@@ -50,7 +48,7 @@ const fyersBroker   = require("./services/fyersBroker");
 const { sendTelegram, sendTelegramSync, getTelegramHealth, isConfigured: telegramConfigured } = require("./utils/notify");
 const consolidatedEodReporter = require("./utils/consolidatedEodReporter");
 const manualTradesSyncJob = require("./utils/manualTradesSyncJob");
-const { loadTradePosition, clearTradePosition, loadBbRsiPosition, clearBbRsiPosition, loadPAPosition, clearPAPosition, loadEma9VwapPosition, clearEma9VwapPosition, loadOrbPosition, clearOrbPosition, loadTrendPbPosition, clearTrendPbPosition, loadGapsPosition, clearGapsPosition, loadTrendDayScalpPosition, clearTrendDayScalpPosition, loadGapFix3mPosition, clearGapFix3mPosition, loadHaScalpPosition, clearHaScalpPosition, loadRsiPivotStPosition, clearRsiPivotStPosition, loadSimple930Position, clearSimple930Position } = require("./utils/positionPersist");
+const { loadTradePosition, clearTradePosition, loadBbRsiPosition, clearBbRsiPosition, loadPAPosition, clearPAPosition, loadEma9VwapPosition, clearEma9VwapPosition, loadOrbPosition, clearOrbPosition, loadTrendPbPosition, clearTrendPbPosition, loadTrendDayScalpPosition, clearTrendDayScalpPosition, loadHaScalpPosition, clearHaScalpPosition, loadRsiPivotStPosition, clearRsiPivotStPosition, loadSimple930Position, clearSimple930Position } = require("./utils/positionPersist");
 const app = express();
 app.use(compression());
 app.use(express.json({ limit: "25mb" })); // tradebook CSV imports (pnlHistory.js) can be several MB of JSON-wrapped text
@@ -705,12 +703,6 @@ const OPEN_PATHS = [
   "/trend-day-scalp-paper/status/chart-data",
   "/trend-day-scalp-paper/history",
   "/trend-day-scalp-live/status/data",
-  // 3M Gap Fix Scalp — same reason: the dashboard tile polls status/data unsecured.
-  "/gap-fix-3m-paper/status",
-  "/gap-fix-3m-paper/status/data",
-  "/gap-fix-3m-paper/status/chart-data",
-  "/gap-fix-3m-paper/history",
-  "/gap-fix-3m-live/status/data",
   // HA Scalp — same reason: the dashboard tile polls status/data unsecured.
   "/ha-scalp-paper/status",
   "/ha-scalp-paper/status/data",
@@ -729,15 +721,6 @@ const OPEN_PATHS = [
   "/rsi-pivot-st-paper/status/chart-data",
   "/rsi-pivot-st-paper/history",
   "/rsi-pivot-st-live/status/data",
-  // GAPS — read-only surfaces. These were the only strategy's pages missing from
-  // this list, so with API_SECRET set every GAPS link in the sidebar landed on a
-  // raw 403 JSON page and the Real-Time tile showed "Endpoint unavailable".
-  "/gaps-paper/status",
-  "/gaps-paper/status/data",
-  "/gaps-paper/status/chart-data",
-  "/gaps-paper/status/daily-chart-data",
-  "/gaps-paper/history",
-  "/gaps-live/status/data",
   "/tracker/status",          // read-only tracker page
   "/tracker/status/data",     // AJAX poll — must be open
   "/tracker/fetch-and-start", // auto-fetch + start (Zerodha read + SAR compute)
@@ -848,9 +831,6 @@ const OPEN_PATHS = [
   "/trend-day-scalp-backtest",
   "/trend-day-scalp-backtest/status",
   "/trend-day-scalp-backtest/idle",
-  "/gap-fix-3m-backtest",
-  "/gap-fix-3m-backtest/status",
-  "/gap-fix-3m-backtest/idle",
   "/ha-scalp-backtest",
   "/ha-scalp-backtest/status",
   "/ha-scalp-backtest/idle",
@@ -862,9 +842,6 @@ const OPEN_PATHS = [
   "/rsi-pivot-st-backtest",
   "/rsi-pivot-st-backtest/status",
   "/rsi-pivot-st-backtest/idle",
-  "/gaps-backtest",
-  "/gaps-backtest/status",
-  "/gaps-backtest/idle",
   // Live-harness pages (read-only view + status poll). Their /start and /stop are
   // deliberately NOT here — those place (or dry-run log) real broker orders.
   "/ema_rsi_st-live-harness",
@@ -878,11 +855,9 @@ const OPEN_PATHS = [
   "/ema9vwap-live",
   "/trend-pb-live",
   "/trend-day-scalp-live",
-  "/gap-fix-3m-live",
   "/ha-scalp-live",
   "/simple930-live",
   "/rsi-pivot-st-live",
-  "/gaps-live",
   // Cross-strategy read-only screens reached from the sidebar / top bar.
   "/realtime",            // unified real-time monitor
   "/realtime/capital",    // capital-pool poll — read-only, drives the shortfall alert banner
@@ -959,12 +934,8 @@ const OPEN_PREFIXES = [
   "/ema9vwap-paper/download/",
   "/trend-pb-paper/view/",
   "/trend-pb-paper/download/",
-  "/gaps-paper/view/",
-  "/gaps-paper/download/",
   "/trend-day-scalp-paper/view/",
   "/trend-day-scalp-paper/download/",
-  "/gap-fix-3m-paper/view/",
-  "/gap-fix-3m-paper/download/",
   "/ha-scalp-paper/view/",
   "/ha-scalp-paper/download/",
   "/simple930-paper/view/",
@@ -1082,20 +1053,12 @@ app.use("/ema9vwap-live",     require("./routes/ema9vwapLiveHarness")); // ← E
 app.use("/trend-pb-paper",    require("./routes/trendPbPaper"));        // ← Trend Pullback paper trade (Phase A)
 app.use("/trend-pb-backtest", require("./routes/trendPbBacktest"));     // ← Trend Pullback backtest — walk-forward + dumb-baseline (Phase B)
 app.use("/trend-pb-live",     require("./routes/trendPbLiveHarness"));  // ← Trend Pullback LIVE via PAPER + harness (Fyers orders, triple-gated dry-run) (Phase C)
-// ── GAPS routes (daily extreme-RSI gap fade; intraday stop/target, Fyers) ───
-app.use("/gaps-paper",        require("./routes/gapsPaper"));           // ← GAPS paper trade (canonical engine)
-app.use("/gaps-backtest",     require("./routes/gapsBacktest"));        // ← GAPS date-range backtest (same signal engine)
-app.use("/gaps-live",         require("./routes/gapsLiveHarness"));     // ← GAPS LIVE via PAPER + harness (Fyers orders, triple-gated dry-run)
 
 // ── TREND_DAY_SCALP routes (10:15 day gate → VWAP/EMA pullback scalp, Fyers) ─
 app.use("/trend-day-scalp-paper",    require("./routes/trendDayScalpPaper"));       // ← canonical engine
 app.use("/trend-day-scalp-backtest", require("./routes/trendDayScalpBacktest"));    // ← same signal engine, paper's exits
 app.use("/trend-day-scalp-live",     require("./routes/trendDayScalpLiveHarness")); // ← LIVE via PAPER + harness (triple-gated dry-run)
 
-// ── 3M_GAP_FIX_SCALP routes (3-min NIFTY FUTURES gap fade, Fyers) ────────────
-app.use("/gap-fix-3m-paper",    require("./routes/gapFix3mPaper"));           // ← canonical engine
-app.use("/gap-fix-3m-backtest", require("./routes/gapFix3mBacktest"));        // ← same signal engine, paper's exits
-app.use("/gap-fix-3m-live",     require("./routes/gapFix3mLiveHarness"));     // ← LIVE via PAPER + harness (triple-gated dry-run)
 
 // ── HA_SCALP routes (15-min Heikin Ashi trend scalp on NIFTY 50 spot, Zerodha) ─
 app.use("/ha-scalp-paper",      require("./routes/haScalpPaper"));            // ← canonical engine
@@ -1245,12 +1208,8 @@ app.get("/", (req, res) => {
   const ema9vwapModeOn = (process.env.EMA9VWAP_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const trendPbMode    = sharedSocketState.getTrendPbMode ? sharedSocketState.getTrendPbMode() : null;
   const trendPbModeOn  = (process.env.TREND_PB_MODE_ENABLED || 'true').toLowerCase() === 'true';
-  const gapsMode       = sharedSocketState.getGapsMode ? sharedSocketState.getGapsMode() : null;
-  const gapsModeOn     = (process.env.GAPS_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const tdsMode        = sharedSocketState.getTrendDayScalpMode ? sharedSocketState.getTrendDayScalpMode() : null;
   const tdsModeOn      = (process.env.TDS_MODE_ENABLED || 'true').toLowerCase() === 'true';
-  const gap3mMode      = sharedSocketState.getGapFix3mMode ? sharedSocketState.getGapFix3mMode() : null;
-  const gap3mModeOn    = (process.env.GAP3M_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const haScalpMode    = sharedSocketState.getHaScalpMode ? sharedSocketState.getHaScalpMode() : null;
   const haScalpModeOn  = (process.env.HA_SCALP_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const simple930Mode    = sharedSocketState.getSimple930Mode ? sharedSocketState.getSimple930Mode() : null;
@@ -1271,9 +1230,7 @@ app.get("/", (req, res) => {
     || (orbModeOn && orbMode)
     || (ema9vwapModeOn && ema9vwapMode)
     || (trendPbModeOn && trendPbMode)
-    || (gapsModeOn && gapsMode)
     || (tdsModeOn && tdsMode)
-    || (gap3mModeOn && gap3mMode)
     || (haScalpModeOn && haScalpMode)
     || (simple930ModeOn && simple930Mode)
     || (rsiPivotStModeOn && rsiPivotStMode);
@@ -1297,9 +1254,7 @@ app.get("/", (req, res) => {
     { key: 'ORB',      cls: 'orb',      label: 'ORB',          on: orbModeOn },
     { key: 'EMA9VWAP', cls: 'ema9vwap', label: 'EMA9+VWAP',    on: ema9vwapModeOn },
     { key: 'TREND_PB', cls: 'trendpb',  label: 'TREND PB',     on: trendPbModeOn },
-    { key: 'GAPS',     cls: 'gaps',     label: 'GAPS',         on: gapsModeOn },
     { key: 'TDS',      cls: 'tds',      label: 'TREND DAY SCALP', on: tdsModeOn },
-    { key: 'GAP3M',    cls: 'gap3m',    label: '3M GAP FIX',   on: gap3mModeOn },
     { key: 'HA_SCALP', cls: 'hascalp',  label: 'HA SCALP',     on: haScalpModeOn },
     { key: 'SIMPLE930', cls: 'simple930', label: 'SIMPLE_9:30', on: simple930ModeOn },
     { key: 'RSI_PIVOT_ST', cls: 'rsipivotst', label: 'RSI PIVOT ST', on: rsiPivotStModeOn },
@@ -1925,9 +1880,7 @@ app.get("/", (req, res) => {
     .mm-card.orb      .mm-dot { background:#10b981; }
     .mm-card.ema9vwap .mm-dot { background:#06b6d4; }
     .mm-card.trendpb  .mm-dot { background:#ec4899; }
-    .mm-card.gaps     .mm-dot { background:#0ea5e9; }
     .mm-card.tds      .mm-dot { background:#a855f7; }
-    .mm-card.gap3m    .mm-dot { background:#38bdf8; }
     .mm-card.hascalp  .mm-dot { background:#f97316; }
     .mm-card.simple930 .mm-dot { background:#fb923c; }
     .mm-card.rsipivotst .mm-dot { background:#c2410c; }
@@ -2232,7 +2185,7 @@ ${buildSidebar('dashboard', liveActive)}
       ${paModeOn && paMode === 'PA_LIVE' ? '<span class="top-bar-badge live-active" style="border-color:#a78bfa;"><span style="width:5px;height:5px;border-radius:50%;background:#a78bfa;display:inline-block;"></span>PA LIVE</span>' : ''}
       ${orbModeOn && orbMode === 'ORB_PAPER' ? '<span class="top-bar-badge live-active" style="border-color:#10b981;"><span style="width:5px;height:5px;border-radius:50%;background:#10b981;display:inline-block;"></span>ORB PAPER</span>' : ''}
       ${anyModeActive && !specificBadgeShown ? '<span class="top-bar-badge live-active" style="border-color:#22c55e;"><span style="width:5px;height:5px;border-radius:50%;background:#22c55e;display:inline-block;"></span>TRADE ACTIVE</span>' : ''}
-      ${!liveActive && (!bbRsiModeOn || !bbRsiMode) && (!paModeOn || !paMode) && (!orbModeOn || !orbMode) && (!ema9vwapModeOn || !ema9vwapMode) && (!trendPbModeOn || !trendPbMode) && (!gapsModeOn || !gapsMode) && (!tdsModeOn || !tdsMode) && (!gap3mModeOn || !gap3mMode) && (!haScalpModeOn || !haScalpMode) && (!simple930ModeOn || !simple930Mode) && (!rsiPivotStModeOn || !rsiPivotStMode) ? '<span class="top-bar-badge">● IDLE</span>' : ''}
+      ${!liveActive && (!bbRsiModeOn || !bbRsiMode) && (!paModeOn || !paMode) && (!orbModeOn || !orbMode) && (!ema9vwapModeOn || !ema9vwapMode) && (!trendPbModeOn || !trendPbMode) && (!tdsModeOn || !tdsMode) && (!haScalpModeOn || !haScalpMode) && (!simple930ModeOn || !simple930Mode) && (!rsiPivotStModeOn || !rsiPivotStMode) ? '<span class="top-bar-badge">● IDLE</span>' : ''}
     </div>
   </div>
 
@@ -2355,17 +2308,6 @@ ${buildSidebar('dashboard', liveActive)}
       <div class="mm-empty" id="mm-empty-TREND_PB" style="display:none;">No paper trades yet</div>
     </div>
     ` : ''}
-    ${gapsModeOn ? `
-    <div class="mm-card gaps" data-mode="GAPS">
-      <div class="mm-hdr">
-        <span class="mm-dot"></span>
-        <span class="mm-title">GAPS</span>
-      </div>
-      <div class="mm-stats" id="mm-stats-GAPS">—</div>
-      <div class="mm-wrap"><canvas id="mmChart-GAPS"></canvas></div>
-      <div class="mm-empty" id="mm-empty-GAPS" style="display:none;">No paper trades yet</div>
-    </div>
-    ` : ''}
     ${tdsModeOn ? `
     <div class="mm-card tds" data-mode="TDS">
       <div class="mm-hdr">
@@ -2375,17 +2317,6 @@ ${buildSidebar('dashboard', liveActive)}
       <div class="mm-stats" id="mm-stats-TDS">—</div>
       <div class="mm-wrap"><canvas id="mmChart-TDS"></canvas></div>
       <div class="mm-empty" id="mm-empty-TDS" style="display:none;">No paper trades yet</div>
-    </div>
-    ` : ''}
-    ${gap3mModeOn ? `
-    <div class="mm-card gap3m" data-mode="GAP3M">
-      <div class="mm-hdr">
-        <span class="mm-dot"></span>
-        <span class="mm-title">3M GAP FIX</span>
-      </div>
-      <div class="mm-stats" id="mm-stats-GAP3M">—</div>
-      <div class="mm-wrap"><canvas id="mmChart-GAP3M"></canvas></div>
-      <div class="mm-empty" id="mm-empty-GAP3M" style="display:none;">No paper trades yet</div>
     </div>
     ` : ''}
     ${haScalpModeOn ? `
@@ -3174,10 +3105,10 @@ document.addEventListener('click', function(e){
   if (!src || _dashSrc === src) return;
   _dashSrc = src;
   _dcToggle = src;
-  ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB','GAPS','TDS','GAP3M','HA_SCALP','SIMPLE930','RSI_PIVOT_ST'].forEach(function(m){ _mmToggle[m] = src; });
+  ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB','TDS','HA_SCALP','SIMPLE930','RSI_PIVOT_ST'].forEach(function(m){ _mmToggle[m] = src; });
   document.querySelectorAll('#dashSrcToggle .dst-btn').forEach(function(b){ b.classList.toggle('active', b === btn); });
   _renderDashTotal();
-  ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB','GAPS','TDS','GAP3M','HA_SCALP','SIMPLE930','RSI_PIVOT_ST'].forEach(_renderModuleChart);
+  ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB','TDS','HA_SCALP','SIMPLE930','RSI_PIVOT_ST'].forEach(_renderModuleChart);
   _applyAllBtnState(_allBtnState.paperOn, _allBtnState.liveOn);
 });
 
@@ -3189,7 +3120,7 @@ document.addEventListener('click', function(e){
   function refreshRange(){
     _readDashRange();
     _renderDashTotal();
-    ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB','GAPS','TDS','GAP3M','HA_SCALP','SIMPLE930','RSI_PIVOT_ST'].forEach(_renderModuleChart);
+    ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB','TDS','HA_SCALP','SIMPLE930','RSI_PIVOT_ST'].forEach(_renderModuleChart);
     _renderBrokerWallets();
   }
   function syncCustomVisibility(){
@@ -3221,7 +3152,7 @@ loadDashCumCharts();
 // ── Per-Module P&L Charts (top-bar Paper/Live toggle + Range filter) ─────────
 var _mmData = { paper: null, live: null };
 var _mmCharts = {};
-var _mmToggle = { EMA_RSI_ST: 'paper', BB_RSI: 'paper', PA: 'paper', ORB: 'paper', EMA9VWAP: 'paper', TREND_PB: 'paper', GAPS: 'paper', TDS: 'paper', GAP3M: 'paper', HA_SCALP: 'paper', SIMPLE930: 'paper', RSI_PIVOT_ST: 'paper' };
+var _mmToggle = { EMA_RSI_ST: 'paper', BB_RSI: 'paper', PA: 'paper', ORB: 'paper', EMA9VWAP: 'paper', TREND_PB: 'paper', TDS: 'paper', HA_SCALP: 'paper', SIMPLE930: 'paper', RSI_PIVOT_ST: 'paper' };
 
 // A strategy with no trades in the selected source+range has nothing to show,
 // so its whole card is hidden rather than kept as a "0 trades" placeholder.
@@ -3296,7 +3227,7 @@ async function loadModuleCharts(){
     var r2 = await fetch('/live-consolidation/data', { cache: 'no-store' });
     if (r2.ok){ var d2 = await r2.json(); _mmData.live = (d2 && d2.trades) || []; }
   } catch(_){ _mmData.live = []; }
-  ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB','GAPS','TDS','GAP3M','HA_SCALP','SIMPLE930','RSI_PIVOT_ST'].forEach(_renderModuleChart);
+  ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB','TDS','HA_SCALP','SIMPLE930','RSI_PIVOT_ST'].forEach(_renderModuleChart);
   _renderBrokerWallets();
 }
 
@@ -3416,7 +3347,7 @@ setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily 
   var LIVE_URLS = {
     EMA_RSI_ST:'/ema_rsi_st-paper/status/data', BB_RSI:'/bb_rsi-paper/status/data',
     PA:'/pa-paper/status/data', ORB:'/orb-paper/status/data', EMA9VWAP:'/ema9vwap-paper/status/data',
-    TREND_PB:'/trend-pb-paper/status/data', GAPS:'/gaps-paper/status/data', TDS:'/trend-day-scalp-paper/status/data', GAP3M:'/gap-fix-3m-paper/status/data', HA_SCALP:'/ha-scalp-paper/status/data', SIMPLE930:'/simple930-paper/status/data',
+    TREND_PB:'/trend-pb-paper/status/data', TDS:'/trend-day-scalp-paper/status/data', HA_SCALP:'/ha-scalp-paper/status/data', SIMPLE930:'/simple930-paper/status/data',
     RSI_PIVOT_ST:'/rsi-pivot-st-paper/status/data'
   };
 
@@ -4240,17 +4171,6 @@ async function reconcileOrphanedPositions() {
       sendTelegram(msg);
     }
 
-    const savedGaps = loadGapsPosition();
-    if (savedGaps && savedGaps.position) {
-      const p = savedGaps.position;
-      const msg = `🚨 [STARTUP] Persisted GAPS position found (crash recovery)!\n` +
-        `  ${p.side} ${p.symbol}: entry=₹${p.entryPrice} SL=₹${p.stopLoss} qty=${p.qty}\n` +
-        `  Saved at: ${new Date(savedGaps.savedAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}\n` +
-        `Bot was tracking this before crash. Check Fyers dashboard!`;
-      console.warn(msg);
-      sendTelegram(msg);
-    }
-
     const savedTds = loadTrendDayScalpPosition();
     if (savedTds && savedTds.position) {
       const p = savedTds.position;
@@ -4269,17 +4189,6 @@ async function reconcileOrphanedPositions() {
         `  ${p.side} ${p.symbol}: entry=₹${p.entryPrice} SL=₹${p.stopLoss} qty=${p.qty}\n` +
         `  Saved at: ${new Date(savedHaScalp.savedAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}\n` +
         `Bot was tracking this before crash. Check your broker dashboard!`;
-      console.warn(msg);
-      sendTelegram(msg);
-    }
-
-    const savedGap3m = loadGapFix3mPosition();
-    if (savedGap3m && savedGap3m.position) {
-      const p = savedGap3m.position;
-      const msg = `🚨 [STARTUP] Persisted 3M_GAP_FIX_SCALP position found (crash recovery)!\n` +
-        `  ${p.side} ${p.symbol}: entry=₹${p.entryPrice} SL=₹${p.stopLoss} TGT=₹${p.target} qty=${p.qty}\n` +
-        `  Saved at: ${new Date(savedGap3m.savedAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}\n` +
-        `Bot was tracking this before crash. Check Fyers dashboard!`;
       console.warn(msg);
       sendTelegram(msg);
     }
@@ -4325,7 +4234,7 @@ async function reconcileOrphanedPositions() {
     // book is always safe — skip the guard to avoid a spurious every-boot warning.
     const _liveActive =
       (process.env.LIVE_HARNESS_DRY_RUN || "true").toLowerCase() !== "true" ||
-      ["EMA_RSI_ST", "BB_RSI", "PA", "ORB", "EMA9VWAP", "TREND_PB", "GAPS", "TDS", "GAP3M", "HA_SCALP", "SIMPLE930", "RSI_PIVOT_ST"].some(
+      ["EMA_RSI_ST", "BB_RSI", "PA", "ORB", "EMA9VWAP", "TREND_PB", "TDS", "HA_SCALP", "SIMPLE930", "RSI_PIVOT_ST"].some(
         (s) => (process.env[`${s}_LIVE_ENABLED`] || "").toLowerCase() === "true",
       );
 
@@ -4382,20 +4291,18 @@ async function reconcileOrphanedPositions() {
         // that also returns []). Only clear snapshots when the book was provably
         // readable; otherwise retain + warn so a real orphan isn't masked.
         const _fReadable = Array.isArray(fPos.netPositions) && fPos.netPositions.length > 0;
-        const _fSnaps = [savedBbRsi, savedPA, savedOrb, savedTrendPb, savedGaps, savedTds, savedGap3m].filter(x => x && x.position).length;
+        const _fSnaps = [savedBbRsi, savedPA, savedOrb, savedTrendPb, savedTds].filter(x => x && x.position).length;
         if (_liveActive && _fSnaps > 0 && !_fReadable) {
           const msg = `⚠️ [STARTUP] Fyers book came back EMPTY — can't tell flat from an API error. Retaining ${_fSnaps} crash snapshot(s) UNVERIFIED (re-checking next boot). Check Fyers dashboard.`;
           console.warn(msg); sendTelegram(msg);
         } else {
           console.log("✅ [STARTUP] Fyers: no orphaned positions.");
-          // BB_RSI + PA + ORB + Trend_PB + GAPS + TREND_DAY_SCALP + 3M_GAP_FIX_SCALP all trade on Fyers; broker-flat means any stale snapshot is safe to clear.
+          // BB_RSI + PA + ORB + Trend_PB + TREND_DAY_SCALP all trade on Fyers; broker-flat means any stale snapshot is safe to clear.
           if (savedBbRsi)   clearBbRsiPosition();  // broker confirms no position — safe to clear
           if (savedPA)      clearPAPosition();
           if (savedOrb)     clearOrbPosition();
           if (savedTrendPb) clearTrendPbPosition();
-          if (savedGaps)    clearGapsPosition();
           if (savedTds)     clearTrendDayScalpPosition();
-          if (savedGap3m)   clearGapFix3mPosition();
         }
       }
     }
@@ -4423,9 +4330,7 @@ async function gracefulShutdown(signal) {
     if (sharedSocketState.getOrbMode &&      sharedSocketState.getOrbMode())      activeModes.push(sharedSocketState.getOrbMode());
     if (sharedSocketState.getEma9VwapMode && sharedSocketState.getEma9VwapMode()) activeModes.push(sharedSocketState.getEma9VwapMode());
     if (sharedSocketState.getTrendPbMode &&  sharedSocketState.getTrendPbMode())  activeModes.push(sharedSocketState.getTrendPbMode());
-    if (sharedSocketState.getGapsMode &&     sharedSocketState.getGapsMode())     activeModes.push(sharedSocketState.getGapsMode());
     if (sharedSocketState.getTrendDayScalpMode && sharedSocketState.getTrendDayScalpMode()) activeModes.push(sharedSocketState.getTrendDayScalpMode());
-    if (sharedSocketState.getGapFix3mMode && sharedSocketState.getGapFix3mMode()) activeModes.push(sharedSocketState.getGapFix3mMode());
     if (sharedSocketState.getHaScalpMode && sharedSocketState.getHaScalpMode()) activeModes.push(sharedSocketState.getHaScalpMode());
     if (sharedSocketState.getSimple930Mode && sharedSocketState.getSimple930Mode()) activeModes.push(sharedSocketState.getSimple930Mode());
     if (sharedSocketState.getRsiPivotStMode && sharedSocketState.getRsiPivotStMode()) activeModes.push(sharedSocketState.getRsiPivotStMode());
@@ -4447,7 +4352,7 @@ async function gracefulShutdown(signal) {
     const hasLive = _harnessLive || activeModes.some(m =>
       m === "EMA_RSI_ST_LIVE" || m === "BB_RSI_LIVE" || m === "PA_LIVE" ||
       m === "ORB_LIVE" || m === "EMA9VWAP_LIVE" || m === "TREND_PB_LIVE" ||
-      m === "GAPS_LIVE" || m === "TREND_DAY_SCALP_LIVE" || m === "GAP_FIX_3M_LIVE" || m === "HA_SCALP_LIVE" ||
+      m === "TREND_DAY_SCALP_LIVE" || m === "HA_SCALP_LIVE" ||
       m === "SIMPLE930_LIVE" ||
       m === "RSI_PIVOT_ST_LIVE");
     console.warn(`⚠️ [SHUTDOWN] Active modes: ${modeList}${_harnessLive ? " (harness LIVE)" : ""} — stopping sessions...`);
@@ -4465,9 +4370,7 @@ async function gracefulShutdown(signal) {
       "ORB_LIVE":       require("./routes/orbLive"),
       "EMA9VWAP_PAPER": require("./routes/ema9vwapPaper"),
       "TREND_PB_PAPER": require("./routes/trendPbPaper"),
-      "GAPS_PAPER":     require("./routes/gapsPaper"),
       "TREND_DAY_SCALP_PAPER": require("./routes/trendDayScalpPaper"),
-      "GAP_FIX_3M_PAPER":      require("./routes/gapFix3mPaper"),
       "HA_SCALP_PAPER":        require("./routes/haScalpPaper"),
       "SIMPLE930_PAPER":       require("./routes/simple930Paper"),
       "RSI_PIVOT_ST_PAPER":    require("./routes/rsiPivotStPaper"),

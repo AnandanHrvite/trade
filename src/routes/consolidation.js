@@ -27,9 +27,7 @@ const SOURCES = [
   { mode: "ORB",      file: path.join(DATA_DIR, "orb_paper_trades.json"),      label: "ORB", color: "#10b981" },
   { mode: "EMA9VWAP", file: path.join(DATA_DIR, "ema9vwap_paper_trades.json"), label: "EMA9+VWAP", color: "#06b6d4" },
   { mode: "TREND_PB", file: path.join(DATA_DIR, "trend_pb_paper_trades.json"), label: "TREND PB", color: "#ec4899" },
-  { mode: "GAPS",     file: path.join(DATA_DIR, "gaps_paper_trades.json"),     label: "GAPS", color: "#0ea5e9" },
   { mode: "TDS",      file: path.join(DATA_DIR, "trend_day_scalp_paper_trades.json"), label: "TREND DAY SCALP", color: "#a855f7" },
-  { mode: "GAP3M",    file: path.join(DATA_DIR, "gap_fix_3m_paper_trades.json"), label: "3M GAP FIX SCALP", color: "#38bdf8" },
   { mode: "HA_SCALP", file: path.join(DATA_DIR, "ha_scalp_paper_trades.json"), label: "HA SCALP", color: "#f97316" },
   { mode: "RSI_PIVOT_ST", file: path.join(DATA_DIR, "rsi_pivot_st_paper_trades.json"), label: "RSI PIVOT ST", color: "#facc15" },
   { mode: "SIMPLE930", file: path.join(DATA_DIR, "simple930_paper_trades.json"), label: "SIMPLE_9:30", color: "#fb923c" },
@@ -1201,7 +1199,7 @@ function wireTableControls(){
 // ── Analytics Panel ─────────────────────────────────────────────────────────
 let _anaVisible = false;
 const _anaCharts = {};
-const _MODE_COLOR = { EMA_RSI_ST: '#3b82f6', BB_RSI: '#f59e0b', PA: '#a855f7', ORB: '#10b981', EMA9VWAP: '#06b6d4', TREND_PB: '#ec4899', GAPS: '#0ea5e9', TDS: '#c084fc', GAP3M: '#38bdf8', HA_SCALP: '#f97316', RSI_PIVOT_ST: '#facc15', SIMPLE930: '#fb923c' };
+const _MODE_COLOR = { EMA_RSI_ST: '#3b82f6', BB_RSI: '#f59e0b', PA: '#a855f7', ORB: '#10b981', EMA9VWAP: '#06b6d4', TREND_PB: '#ec4899', TDS: '#c084fc', HA_SCALP: '#f97316', RSI_PIVOT_ST: '#facc15', SIMPLE930: '#fb923c' };
 
 function fmtAna(v){ return '₹' + Math.round(Math.abs(v||0)).toLocaleString('en-IN'); }
 function fmtAnaSigned(v){ const n = v||0; return (n>=0?'+':'-') + '₹' + Math.round(Math.abs(n)).toLocaleString('en-IN'); }

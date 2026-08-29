@@ -164,7 +164,6 @@ const _EXPIRY_PIN_KEYS = [
   "ORB_OPTION_EXPIRY_OVERRIDE",      "ORB_OPTION_EXPIRY_TYPE",
   "EMA9VWAP_OPTION_EXPIRY_OVERRIDE", "EMA9VWAP_OPTION_EXPIRY_TYPE",
   "TREND_PB_OPTION_EXPIRY_OVERRIDE", "TREND_PB_OPTION_EXPIRY_TYPE",
-  "GAPS_OPTION_EXPIRY_OVERRIDE",     "GAPS_OPTION_EXPIRY_TYPE",
 ];
 function _pinnedExpirySettings(snapshot) {
   const snap = snapshot || {};
@@ -185,16 +184,12 @@ const _MODE_TO_ENV_PREFIX = {
   "orb-paper":        "ORB",          // (…, 'ORB')
   "ema9vwap-paper":   "EMA9VWAP",     // (…, 'ema9vwap')
   "trend-pb-paper":   "TREND_PB",     // (…, 'TREND_PB')
-  "gaps-paper":       "GAPS",         // (…, 'GAPS')
   // trend-day-scalp-paper is deliberately ABSENT. It passes mode "TDS" to
   // validateAndGetOptionSymbol, but that mode arg only selects the ITM-steps
   // branch — instrument.js resolves expiry from the COMMON OPTION_EXPIRY_*
   // keys only ("There is no per-strategy expiry override"). Listing it here
   // would mirror a TDS_OPTION_EXPIRY_* key nothing reads, and a hand-set one
   // would be honoured by replay while paper ignored it.
-  // gap-fix-3m-paper is ABSENT for the same reason as trend-day-scalp-paper: it
-  // passes mode "GAP3M" only to select the ITM-steps branch, and expiry still
-  // comes from the COMMON OPTION_EXPIRY_* keys.
 };
 
 // ── Market-context expiry resolution (the mismatch fix) ──────────────────────
@@ -608,9 +603,7 @@ const _MODE_TO_CANONICAL_FILE = {
   "orb-paper":      "orb_paper_trades.json",
   "ema9vwap-paper": "ema9vwap_paper_trades.json",
   "trend-pb-paper": "trend_pb_paper_trades.json",
-  "gaps-paper":     "gaps_paper_trades.json",
   "trend-day-scalp-paper": "trend_day_scalp_paper_trades.json",
-  "gap-fix-3m-paper":      "gap_fix_3m_paper_trades.json",
   "ha-scalp-paper":        "ha_scalp_paper_trades.json",
   "rsi-pivot-st-paper":    "rsi_pivot_st_paper_trades.json",
   "simple930-paper":       "simple930_paper_trades.json",
@@ -780,12 +773,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     ss_clearEma9Vwap:     sharedSocketState.clearEma9Vwap,
     ss_setTrendPbActive:  sharedSocketState.setTrendPbActive,
     ss_clearTrendPb:      sharedSocketState.clearTrendPb,
-    ss_setGapsActive:     sharedSocketState.setGapsActive,
-    ss_clearGaps:         sharedSocketState.clearGaps,
     ss_setTrendDayScalpActive: sharedSocketState.setTrendDayScalpActive,
     ss_clearTrendDayScalp:     sharedSocketState.clearTrendDayScalp,
-    ss_setGapFix3mActive:      sharedSocketState.setGapFix3mActive,
-    ss_clearGapFix3m:          sharedSocketState.clearGapFix3m,
     ss_setHaScalpActive:       sharedSocketState.setHaScalpActive,
     ss_clearHaScalp:           sharedSocketState.clearHaScalp,
     ss_setRsiPivotStActive:    sharedSocketState.setRsiPivotStActive,
@@ -1016,7 +1005,7 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
   // ⇒ l = 2pp - r1,  h = 2pp - s1,  c = 3pp - h - l
   // so one bar reproduces them exactly. Used only as a FALLBACK, only for the
   // spot index, so a working token still wins and other strategies' daily reads
-  // (GAPS' daily EMA/RSI, yesterday's close) are untouched.
+  // (daily EMA/RSI, yesterday's close) are untouched.
   const _isSpotIndex = (sym) => String(sym || "").toUpperCase().includes("NIFTY50-INDEX");
   let _warnedPivotFallback = false;
 
@@ -1079,13 +1068,10 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     // in ONE call to pick the strike nearest ₹180, then polls both watchlist
     // legs together. The old stub resolved symbols[0] and answered for that one
     // symbol, so under replay that strategy saw a single premium and could never
-    // reproduce a session. This also fixes gap-fix-3m, whose paper route already
-    // sent [futSym, optSym] and only ever got the FUT row back — its option
-    // premium row was dropped on the floor.
     //
     // Every row carries BOTH `n` (the symbol) and `v` (the values), which is
     // what Fyers returns and what the multi-symbol readers attribute on
-    // (simple930Paper.attributeQuotes / gapFix3mPaper.attributeQuotes drop any
+    // (simple930Paper.attributeQuotes drops any
     // row they cannot identify). The added `n` is invisible to the single-symbol
     // callers that read r.d[0].v.lp. A symbol with no recorded data is simply
     // omitted from `d`; when NOTHING resolves the response is the same
@@ -1134,7 +1120,7 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     // /start fetches real historical warm-up as of the (overridden) replay clock.
     // The recorded day's option/vix/oi/spot ticks still come purely from disk.
     // The recorded warm-up is an INTRADAY series (the session's own resolution).
-    // A strategy that asks for DAILY/WEEKLY/MONTHLY bars — GAPS reads a daily
+    // A strategy that asks for DAILY/WEEKLY/MONTHLY bars — e.g. one reading a daily
     // EMA/RSI and yesterday's daily close — must never be handed those intraday
     // bars: it would compute its indicators over 5-min candles and call one of
     // them "yesterday's close", silently producing decisions that bear no
@@ -1237,12 +1223,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     sharedSocketState.clearEma9Vwap     = () => {};
     sharedSocketState.setTrendPbActive  = () => {};
     sharedSocketState.clearTrendPb      = () => {};
-    sharedSocketState.setGapsActive     = () => {};
-    sharedSocketState.clearGaps         = () => {};
     sharedSocketState.setTrendDayScalpActive = () => {};
     sharedSocketState.clearTrendDayScalp     = () => {};
-    sharedSocketState.setGapFix3mActive      = () => {};
-    sharedSocketState.clearGapFix3m          = () => {};
     sharedSocketState.setHaScalpActive       = () => {};
     sharedSocketState.clearHaScalp           = () => {};
     sharedSocketState.setRsiPivotStActive    = () => {};
@@ -1470,12 +1452,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     sharedSocketState.clearEma9Vwap     = orig.ss_clearEma9Vwap;
     sharedSocketState.setTrendPbActive  = orig.ss_setTrendPbActive;
     sharedSocketState.clearTrendPb      = orig.ss_clearTrendPb;
-    sharedSocketState.setGapsActive     = orig.ss_setGapsActive;
-    sharedSocketState.clearGaps         = orig.ss_clearGaps;
     sharedSocketState.setTrendDayScalpActive = orig.ss_setTrendDayScalpActive;
     sharedSocketState.clearTrendDayScalp     = orig.ss_clearTrendDayScalp;
-    sharedSocketState.setGapFix3mActive      = orig.ss_setGapFix3mActive;
-    sharedSocketState.clearGapFix3m          = orig.ss_clearGapFix3m;
     sharedSocketState.setHaScalpActive       = orig.ss_setHaScalpActive;
     sharedSocketState.clearHaScalp           = orig.ss_clearHaScalp;
     sharedSocketState.setRsiPivotStActive    = orig.ss_setRsiPivotStActive;
@@ -1552,9 +1530,7 @@ const MODE_TO_MODULE = {
   "orb-paper":      "../routes/orbPaper",
   "ema9vwap-paper": "../routes/ema9vwapPaper",
   "trend-pb-paper": "../routes/trendPbPaper",
-  "gaps-paper":     "../routes/gapsPaper",
   "trend-day-scalp-paper": "../routes/trendDayScalpPaper",
-  "gap-fix-3m-paper":      "../routes/gapFix3mPaper",
   "ha-scalp-paper":        "../routes/haScalpPaper",
   "rsi-pivot-st-paper":    "../routes/rsiPivotStPaper",
   "simple930-paper":       "../routes/simple930Paper",
@@ -2123,9 +2099,7 @@ function replayPreflight() {
   // against (silenced trades, and the /stop mutex clear killing the shared socket).
   if (sharedSocketState.isEma9VwapActive()) activeModes.push(sharedSocketState.getEma9VwapMode() || "ema9vwap");
   if (sharedSocketState.isTrendPbActive())  activeModes.push(sharedSocketState.getTrendPbMode() || "trend_pb");
-  if (sharedSocketState.isGapsActive())     activeModes.push(sharedSocketState.getGapsMode() || "gaps");
   if (sharedSocketState.isTrendDayScalpActive && sharedSocketState.isTrendDayScalpActive()) activeModes.push(sharedSocketState.getTrendDayScalpMode() || "trend_day_scalp");
-  if (sharedSocketState.isGapFix3mActive && sharedSocketState.isGapFix3mActive()) activeModes.push(sharedSocketState.getGapFix3mMode() || "gap_fix_3m");
   if (sharedSocketState.isHaScalpActive && sharedSocketState.isHaScalpActive()) activeModes.push(sharedSocketState.getHaScalpMode() || "ha_scalp");
   if (sharedSocketState.isRsiPivotStActive && sharedSocketState.isRsiPivotStActive()) activeModes.push(sharedSocketState.getRsiPivotStMode() || "rsi_pivot_st");
   if (sharedSocketState.isSimple930Active && sharedSocketState.isSimple930Active()) activeModes.push(sharedSocketState.getSimple930Mode() || "simple930");
@@ -2186,9 +2160,7 @@ function forceClearSharedState() {
     orb:      sharedSocketState.getOrbMode(),
     ema9vwap: sharedSocketState.getEma9VwapMode(),
     trend_pb: sharedSocketState.getTrendPbMode(),
-    gaps:     sharedSocketState.getGapsMode(),
     trend_day_scalp: sharedSocketState.getTrendDayScalpMode ? sharedSocketState.getTrendDayScalpMode() : null,
-    gap_fix_3m: sharedSocketState.getGapFix3mMode ? sharedSocketState.getGapFix3mMode() : null,
     ha_scalp: sharedSocketState.getHaScalpMode ? sharedSocketState.getHaScalpMode() : null,
     rsi_pivot_st: sharedSocketState.getRsiPivotStMode ? sharedSocketState.getRsiPivotStMode() : null,
     simple930: sharedSocketState.getSimple930Mode ? sharedSocketState.getSimple930Mode() : null,
@@ -2203,9 +2175,7 @@ function forceClearSharedState() {
   // / TREND_PB flag — the strategy stayed unstartable until a full PM2 restart.
   sharedSocketState.clearEma9Vwap();
   sharedSocketState.clearTrendPb();
-  sharedSocketState.clearGaps();
   if (sharedSocketState.clearTrendDayScalp) sharedSocketState.clearTrendDayScalp();
-  if (sharedSocketState.clearGapFix3m) sharedSocketState.clearGapFix3m();
   if (sharedSocketState.clearHaScalp) sharedSocketState.clearHaScalp();
   if (sharedSocketState.clearRsiPivotSt) sharedSocketState.clearRsiPivotSt();
   if (sharedSocketState.clearSimple930) sharedSocketState.clearSimple930();

@@ -120,7 +120,7 @@ async function fetchCandles(symbol, resolution, from, to) {
   //
   // INTRADAY ONLY. Fyers stamps a 1D/1W/1M bar at 00:00 IST, which is outside the
   // session window, so applying this to a daily series silently deleted EVERY bar
-  // and every caller got an empty array (GAPS daily context, prev-day OHLC in
+  // and every caller got an empty array (daily context, prev-day OHLC in
   // BB_RSI/PA paper, the VIX daily lookup in backtests). A daily bar has no
   // pre-open/post-close print to strip in the first place.
   const _isIntraday = /^\d+$/.test(String(resolution));

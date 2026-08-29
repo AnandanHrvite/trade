@@ -33,14 +33,10 @@ let ema9vwapMode = null;
 // Trend Pullback mode: "TREND_PB_PAPER" | "TREND_PB_LIVE" | null
 let trendPbMode = null;
 
-// GAPS mode: "GAPS_PAPER" | "GAPS_LIVE" | null
-let gapsMode = null;
 
 // Trend Day Scalp mode: "TREND_DAY_SCALP_PAPER" | "TREND_DAY_SCALP_LIVE" | null
 let trendDayScalpMode = null;
 
-// 3M Gap Fix Scalp mode: "GAP_FIX_3M_PAPER" | "GAP_FIX_3M_LIVE" | null
-let gapFix3mMode = null;
 
 // HA Scalp mode: "HA_SCALP_PAPER" | "HA_SCALP_LIVE" | null
 let haScalpMode = null;
@@ -160,24 +156,6 @@ function getTrendPbMode() {
   return trendPbMode;
 }
 
-// ── GAPS mode (daily signal, intraday exits — secondary socket callback) ──
-
-function setGapsActive(mode) {
-  gapsMode = mode;
-}
-
-function clearGaps() {
-  gapsMode = null;
-}
-
-function isGapsActive() {
-  return gapsMode !== null;
-}
-
-function getGapsMode() {
-  return gapsMode;
-}
-
 // ── Trend Day Scalp mode (5-min, day-gated) ─────────────────────────────────
 
 function setTrendDayScalpActive(mode) {
@@ -194,24 +172,6 @@ function isTrendDayScalpActive() {
 
 function getTrendDayScalpMode() {
   return trendDayScalpMode;
-}
-
-// ── 3M Gap Fix Scalp mode (3-min futures gap fade) ──────────────────────────
-
-function setGapFix3mActive(mode) {
-  gapFix3mMode = mode;
-}
-
-function clearGapFix3m() {
-  gapFix3mMode = null;
-}
-
-function isGapFix3mActive() {
-  return gapFix3mMode !== null;
-}
-
-function getGapFix3mMode() {
-  return gapFix3mMode;
 }
 
 // ── HA Scalp mode (15-min Heikin Ashi trend scalp) ──────────────────────────
@@ -275,7 +235,7 @@ function getSimple930Mode() {
 function isAnyActive() {
   return primaryMode !== null || bbRsiMode !== null || paMode !== null ||
          orbMode !== null || ema9vwapMode !== null || trendPbMode !== null ||
-         gapsMode !== null || trendDayScalpMode !== null || gapFix3mMode !== null ||
+         trendDayScalpMode !== null ||
          haScalpMode !== null ||
          rsiPivotStMode !== null || simple930Mode !== null;
 }
@@ -331,14 +291,6 @@ function canStart(mode) {
       if (trendPbMode === "TREND_PB_PAPER") return { allowed: false, reason: "Trend Pullback Paper is running — stop it first" };
       if (trendPbMode === "TREND_PB_LIVE")  return { allowed: false, reason: "Trend Pullback Live is already running" };
       return { allowed: true };
-    case "GAPS_PAPER":
-      if (gapsMode === "GAPS_LIVE")  return { allowed: false, reason: "GAPS Live is running — stop it first" };
-      if (gapsMode === "GAPS_PAPER") return { allowed: false, reason: "GAPS Paper is already running" };
-      return { allowed: true };
-    case "GAPS_LIVE":
-      if (gapsMode === "GAPS_PAPER") return { allowed: false, reason: "GAPS Paper is running — stop it first" };
-      if (gapsMode === "GAPS_LIVE")  return { allowed: false, reason: "GAPS Live is already running" };
-      return { allowed: true };
     case "TREND_DAY_SCALP_PAPER":
       if (trendDayScalpMode === "TREND_DAY_SCALP_LIVE")  return { allowed: false, reason: "Trend Day Scalp Live is running — stop it first" };
       if (trendDayScalpMode === "TREND_DAY_SCALP_PAPER") return { allowed: false, reason: "Trend Day Scalp Paper is already running" };
@@ -346,14 +298,6 @@ function canStart(mode) {
     case "TREND_DAY_SCALP_LIVE":
       if (trendDayScalpMode === "TREND_DAY_SCALP_PAPER") return { allowed: false, reason: "Trend Day Scalp Paper is running — stop it first" };
       if (trendDayScalpMode === "TREND_DAY_SCALP_LIVE")  return { allowed: false, reason: "Trend Day Scalp Live is already running" };
-      return { allowed: true };
-    case "GAP_FIX_3M_PAPER":
-      if (gapFix3mMode === "GAP_FIX_3M_LIVE")  return { allowed: false, reason: "3M Gap Fix Scalp Live is running — stop it first" };
-      if (gapFix3mMode === "GAP_FIX_3M_PAPER") return { allowed: false, reason: "3M Gap Fix Scalp Paper is already running" };
-      return { allowed: true };
-    case "GAP_FIX_3M_LIVE":
-      if (gapFix3mMode === "GAP_FIX_3M_PAPER") return { allowed: false, reason: "3M Gap Fix Scalp Paper is running — stop it first" };
-      if (gapFix3mMode === "GAP_FIX_3M_LIVE")  return { allowed: false, reason: "3M Gap Fix Scalp Live is already running" };
       return { allowed: true };
     case "HA_SCALP_PAPER":
       if (haScalpMode === "HA_SCALP_LIVE")  return { allowed: false, reason: "HA Scalp Live is running — stop it first" };
@@ -397,12 +341,8 @@ module.exports = {
   setEma9VwapActive, clearEma9Vwap, isEma9VwapActive, getEma9VwapMode,
   // Trend Pullback
   setTrendPbActive, clearTrendPb, isTrendPbActive, getTrendPbMode,
-  // GAPS
-  setGapsActive, clearGaps, isGapsActive, getGapsMode,
   // Trend Day Scalp
   setTrendDayScalpActive, clearTrendDayScalp, isTrendDayScalpActive, getTrendDayScalpMode,
-  // 3M Gap Fix Scalp
-  setGapFix3mActive, clearGapFix3m, isGapFix3mActive, getGapFix3mMode,
   // HA Scalp
   setHaScalpActive, clearHaScalp, isHaScalpActive, getHaScalpMode,
   // RSI Pivot SuperTrend

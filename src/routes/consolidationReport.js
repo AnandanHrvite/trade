@@ -116,9 +116,7 @@ const PAPER_SOURCES = [
   { mode: "ORB",        file: "orb_paper_trades.json" },
   { mode: "EMA9VWAP",   file: "ema9vwap_paper_trades.json" },
   { mode: "TREND_PB",   file: "trend_pb_paper_trades.json" },
-  { mode: "GAPS",       file: "gaps_paper_trades.json" },
   { mode: "TDS",        file: "trend_day_scalp_paper_trades.json" },
-  { mode: "GAP3M",      file: "gap_fix_3m_paper_trades.json" },
   { mode: "HA_SCALP",   file: "ha_scalp_paper_trades.json" },
   { mode: "RSI_PIVOT_ST", file: "rsi_pivot_st_paper_trades.json" },
   { mode: "SIMPLE930", file: "simple930_paper_trades.json" },
@@ -130,9 +128,7 @@ const LIVE_SOURCES = [
   { mode: "ORB",        file: "orb_live_trades.json" },
   { mode: "EMA9VWAP",   file: "ema9vwap_live_trades.json" },
   { mode: "TREND_PB",   file: "trend_pb_live_trades.json" },
-  { mode: "GAPS",       file: "gaps_live_trades.json" },
   { mode: "TDS",        file: "trend_day_scalp_live_trades.json" },
-  { mode: "GAP3M",      file: "gap_fix_3m_live_trades.json" },
   { mode: "HA_SCALP",   file: "ha_scalp_live_trades.json" },
   { mode: "RSI_PIVOT_ST", file: "rsi_pivot_st_live_trades.json" },
   { mode: "SIMPLE930", file: "simple930_live_trades.json" },
@@ -272,9 +268,7 @@ ${multiSelectCSS()}
     .badge-ORB{background:rgba(16,185,129,0.12);color:#10b981;}
     .badge-EMA9VWAP{background:rgba(6,182,212,0.12);color:#06b6d4;}
     .badge-TREND_PB{background:rgba(236,72,153,0.12);color:#ec4899;}
-    .badge-GAPS{background:rgba(14,165,233,0.12);color:#0ea5e9;}
     .badge-TDS{background:rgba(168,85,247,0.12);color:#a855f7;}
-    .badge-GAP3M{background:rgba(56,189,248,0.12);color:#38bdf8;}
 .badge-HA_SCALP{background:rgba(249,115,22,0.12);color:#f97316;}
     .badge-RSI_PIVOT_ST{background:rgba(250,204,21,0.12);color:#facc15;}
     .badge-SIMPLE930{background:rgba(251,146,60,0.12);color:#fb923c;}

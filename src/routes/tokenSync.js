@@ -328,8 +328,8 @@ router.post("/restart", (req, res) => {
     const running = [
       sharedSocketState.getMode(), sharedSocketState.getBbRsiMode(), sharedSocketState.getPAMode(),
       sharedSocketState.getOrbMode(), sharedSocketState.getEma9VwapMode(), sharedSocketState.getTrendPbMode(),
-      sharedSocketState.getGapsMode(), sharedSocketState.getTrendDayScalpMode(),
-      sharedSocketState.getGapFix3mMode(),
+      sharedSocketState.getTrendDayScalpMode(),
+      
       // Without these two the refusal is correct (isAnyActive knows them) but
       // anonymous: the roster came back empty and the operator was told
       // " running — stop it before restarting."

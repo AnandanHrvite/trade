@@ -51,7 +51,7 @@ const REPORT_MIN  = 34;
  * `label`  — human title drawn on the image.
  * `module` — paper router module path; its /status/chart-data is what we call.
  * `overlay`— optional field name in the chart-data payload to draw as a line
- *            (e.g. GAPS/TREND_PB expose a VWAP series). Omitted where the page
+ *            (e.g. TREND_PB exposes a VWAP series). Omitted where the page
  *            has no single obvious primary line.
  */
 const STRATEGIES = [
@@ -61,9 +61,7 @@ const STRATEGIES = [
   { group: "ORB",          label: "ORB",               module: "../routes/orbPaper" },
   { group: "EMA9VWAP",     label: "EMA9 VWAP",         module: "../routes/ema9vwapPaper" },
   { group: "TREND_PB",     label: "Trend Pullback",    module: "../routes/trendPbPaper",     overlay: "vwapLine" },
-  { group: "GAPS",         label: "GAPS",              module: "../routes/gapsPaper" },
   { group: "TDS",          label: "Trend Day Scalp",   module: "../routes/trendDayScalpPaper" },
-  { group: "GAP3M",        label: "3M Gap Fix Scalp",  module: "../routes/gapFix3mPaper" },
   { group: "RSI_PIVOT_ST", label: "RSI Pivot ST",      module: "../routes/rsiPivotStPaper" },
   // SIMPLE_9:30 draws the OPTION PREMIUM of the leg it held, not a spot chart —
   // that is the only chart any of its rules read.

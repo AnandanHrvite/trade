@@ -12,15 +12,15 @@
  *
  * Toggle hierarchy:
  *   TG_ENABLED                                  — master gate; if false, nothing sends
- *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|GAPS|TDS|GAP3M|RSI_PIVOT_ST|SIMPLE930}_STARTED    — session-start alerts (per mode)
- *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|GAPS|TDS|GAP3M|RSI_PIVOT_ST|SIMPLE930}_ENTRY      — trade entry alerts (per mode)
- *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|GAPS|TDS|GAP3M|RSI_PIVOT_ST|SIMPLE930}_EXIT       — trade exit alerts (per mode)
+ *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|TDS|RSI_PIVOT_ST|SIMPLE930}_STARTED    — session-start alerts (per mode)
+ *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|TDS|RSI_PIVOT_ST|SIMPLE930}_ENTRY      — trade entry alerts (per mode)
+ *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|TDS|RSI_PIVOT_ST|SIMPLE930}_EXIT       — trade exit alerts (per mode)
  *   TG_{EMA_RSI_ST|BB_RSI|PA|EMA9VWAP}_SIGNALS                 — candle-close skip/signal alerts (these modes only)
- *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|GAPS|TDS|GAP3M|RSI_PIVOT_ST|SIMPLE930}_DAYREPORT  — per-mode day report on session stop
+ *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|TDS|RSI_PIVOT_ST|SIMPLE930}_DAYREPORT  — per-mode day report on session stop
  *   TG_DAYREPORT_CONSOLIDATED                   — one combined day report at market close
  *   TG_EOD_CHARTS                               — per-strategy chart images at market close
  *
- *   (ORB, TREND_PB, GAPS, TDS, GAP3M, RSI_PIVOT_ST and SIMPLE930 emit no SIGNAL alerts, so they have no _SIGNALS toggle.)
+ *   (ORB, TREND_PB, TDS, RSI_PIVOT_ST and SIMPLE930 emit no SIGNAL alerts, so they have no _SIGNALS toggle.)
  *
  * If TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID are missing, all functions silently
  * do nothing — no errors.
@@ -103,14 +103,9 @@ function modeGroup(mode) {
   if (m === "ORB"      || m.startsWith("ORB-")      || m.startsWith("ORB_"))      return "ORB";
   if (m === "EMA9VWAP" || m.startsWith("EMA9VWAP-") || m.startsWith("EMA9VWAP_")) return "EMA9VWAP";
   if (m === "TREND_PB" || m.startsWith("TREND_PB-") || m.startsWith("TREND_PB_")) return "TREND_PB";
-  if (m === "GAPS"     || m.startsWith("GAPS-")     || m.startsWith("GAPS_"))     return "GAPS";
   // Trend Day Scalp. The group key is TDS so every env key stays on the TDS_
   // prefix (TDS_MODE_ENABLED, TG_TDS_ENTRY, …) while the mode tag stays readable.
   if (m === "TDS" || m.startsWith("TREND-DAY-SCALP") || m.startsWith("TREND_DAY_SCALP")) return "TDS";
-  // 3M Gap Fix Scalp. Group key GAP3M so every env key stays on the GAP3M_
-  // prefix (GAP3M_MODE_ENABLED, TG_GAP3M_ENTRY, …) — an env var may not start
-  // with a digit, which is why the group is not literally "3M_GAP_FIX_SCALP".
-  if (m === "GAP3M" || m.startsWith("GAP-FIX-3M") || m.startsWith("GAP_FIX_3M")) return "GAP3M";
   // HA Scalp. Group key HA_SCALP so every env key stays on the HA_SCALP_ prefix
   // (HA_SCALP_MODE_ENABLED, TG_HA_SCALP_ENTRY, …).
   if (m === "HA_SCALP" || m.startsWith("HA-SCALP") || m.startsWith("HA_SCALP")) return "HA_SCALP";
@@ -387,14 +382,10 @@ function modeLabel(mode) {
   if (m.startsWith("EMA9VWAP-LIVE"))   return "⚡ EMA9+VWAP LIVE" + m.slice("EMA9VWAP-LIVE".length);
   if (m.startsWith("TREND_PB-PAPER"))  return "📈 TREND PB PAPER" + m.slice("TREND_PB-PAPER".length);
   if (m.startsWith("TREND_PB-LIVE"))   return "⚡ TREND PB LIVE" + m.slice("TREND_PB-LIVE".length);
-  if (m.startsWith("GAPS-PAPER"))      return "🕳 GAPS PAPER" + m.slice("GAPS-PAPER".length);
-  if (m.startsWith("GAPS-LIVE"))       return "⚡ GAPS LIVE" + m.slice("GAPS-LIVE".length);
   if (m.startsWith("TREND-DAY-SCALP-PAPER")) return "⚡ TREND DAY SCALP PAPER" + m.slice("TREND-DAY-SCALP-PAPER".length);
   if (m.startsWith("TREND-DAY-SCALP-LIVE"))  return "🔴 TREND DAY SCALP LIVE" + m.slice("TREND-DAY-SCALP-LIVE".length);
   if (m.startsWith("HA-SCALP-PAPER")) return "🕯 HA SCALP PAPER" + m.slice("HA-SCALP-PAPER".length);
   if (m.startsWith("HA-SCALP-LIVE"))  return "🔴 HA SCALP LIVE" + m.slice("HA-SCALP-LIVE".length);
-  if (m.startsWith("GAP-FIX-3M-PAPER")) return "🕳 3M GAP FIX PAPER" + m.slice("GAP-FIX-3M-PAPER".length);
-  if (m.startsWith("GAP-FIX-3M-LIVE"))  return "🔴 3M GAP FIX LIVE" + m.slice("GAP-FIX-3M-LIVE".length);
   if (m.startsWith("SIMPLE930-PAPER")) return "🎯 SIMPLE 9:30 PAPER" + m.slice("SIMPLE930-PAPER".length);
   if (m.startsWith("SIMPLE930-LIVE"))  return "🔴 SIMPLE 9:30 LIVE" + m.slice("SIMPLE930-LIVE".length);
   if (m.startsWith("RSI_PIVOT_ST-PAPER")) return "🎯 RSI PIVOT ST PAPER" + m.slice("RSI_PIVOT_ST-PAPER".length);
@@ -718,7 +709,7 @@ function sendTelegramPhoto(png, caption) {
 }
 
 /**
- * notifyConsolidatedDayReport({ byMode: { EMA_RSI_ST, BB_RSI, PA, ORB, EMA9VWAP, TREND_PB, GAPS } })
+ * notifyConsolidatedDayReport({ byMode: { EMA_RSI_ST, BB_RSI, PA, ORB, EMA9VWAP, TREND_PB } })
  * Fires once at market close (15:30 IST). Gated by TG_DAYREPORT_CONSOLIDATED.
  * Each byMode entry: { trades, wins, losses, pnl }
  * Returns true if a message was dispatched, false if gated off — the EOD
@@ -729,7 +720,7 @@ function notifyConsolidatedDayReport({ byMode }) {
   if (!canSend("TG_DAYREPORT_CONSOLIDATED")) return false;
 
   // Only include strategies that are currently enabled in Settings.
-  const groups = ["EMA_RSI_ST", "BB_RSI", "PA", "ORB", "EMA9VWAP", "TREND_PB", "GAPS", "TDS", "GAP3M", "RSI_PIVOT_ST", "SIMPLE930", "HA_SCALP"].filter(isModeEnabled);
+  const groups = ["EMA_RSI_ST", "BB_RSI", "PA", "ORB", "EMA9VWAP", "TREND_PB", "TDS", "RSI_PIVOT_ST", "SIMPLE930", "HA_SCALP"].filter(isModeEnabled);
   let totalTrades = 0, totalPnl = 0, totalWins = 0, totalLosses = 0;
   const rows = [];
 

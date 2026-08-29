@@ -23,9 +23,7 @@ const STRATEGY_MODES = [
   { mode: 'ORB',        label: 'ORB',          envKey: 'ORB_MODE_ENABLED'        },
   { mode: 'EMA9VWAP',   label: 'EMA9+VWAP',    envKey: 'EMA9VWAP_MODE_ENABLED'   },
   { mode: 'TREND_PB',   label: 'Trend_PB',     envKey: 'TREND_PB_MODE_ENABLED'   },
-  { mode: 'GAPS',       label: 'GAPS',         envKey: 'GAPS_MODE_ENABLED'       },
   { mode: 'TDS',        label: 'Trend Day Scalp', envKey: 'TDS_MODE_ENABLED'     },
-  { mode: 'GAP3M',      label: '3M Gap Fix Scalp', envKey: 'GAP3M_MODE_ENABLED'  },
   { mode: 'HA_SCALP',   label: 'HA Scalp', envKey: 'HA_SCALP_MODE_ENABLED'         },
   { mode: 'RSI_PIVOT_ST', label: 'RSI Pivot ST', envKey: 'RSI_PIVOT_ST_MODE_ENABLED' },
   { mode: 'SIMPLE930', label: 'SIMPLE_9:30', envKey: 'SIMPLE930_MODE_ENABLED' },
@@ -46,9 +44,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   let _orbMode = null;
   let _ema9vwapMode = null;
   let _trendPbMode = null;
-  let _gapsMode = null;
   let _trendDayScalpMode = null;
-  let _gapFix3mMode = null;
   let _haScalpMode = null;
   let _rsiPivotStMode = null;
   let _simple930Mode = null;
@@ -61,9 +57,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     _orbMode = sss.getOrbMode ? sss.getOrbMode() : null;
     _ema9vwapMode = sss.getEma9VwapMode ? sss.getEma9VwapMode() : null;
     _trendPbMode = sss.getTrendPbMode ? sss.getTrendPbMode() : null;
-    _gapsMode = sss.getGapsMode ? sss.getGapsMode() : null;
     _trendDayScalpMode = sss.getTrendDayScalpMode ? sss.getTrendDayScalpMode() : null;
-    _gapFix3mMode = sss.getGapFix3mMode ? sss.getGapFix3mMode() : null;
     _haScalpMode = sss.getHaScalpMode ? sss.getHaScalpMode() : null;
     _rsiPivotStMode = sss.getRsiPivotStMode ? sss.getRsiPivotStMode() : null;
     _simple930Mode = sss.getSimple930Mode ? sss.getSimple930Mode() : null;
@@ -99,9 +93,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const orbModeOn      = (process.env.ORB_MODE_ENABLED      || 'true').toLowerCase() === 'true';
   const ema9vwapModeOn = (process.env.EMA9VWAP_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const trendPbModeOn  = (process.env.TREND_PB_MODE_ENABLED || 'true').toLowerCase() === 'true';
-  const gapsModeOn     = (process.env.GAPS_MODE_ENABLED     || 'true').toLowerCase() === 'true';
   const tdsModeOn      = (process.env.TDS_MODE_ENABLED      || 'true').toLowerCase() === 'true';
-  const gap3mModeOn    = (process.env.GAP3M_MODE_ENABLED    || 'true').toLowerCase() === 'true';
   const haScalpModeOn  = (process.env.HA_SCALP_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const rsiPivotStModeOn = (process.env.RSI_PIVOT_ST_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const simple930ModeOn = (process.env.SIMPLE930_MODE_ENABLED || 'true').toLowerCase() === 'true';
@@ -155,20 +147,12 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const showTrendPbPaper       = (process.env.UI_SHOW_TREND_PB_PAPER        || 'true').toLowerCase()  === 'true';
   const showTrendPbLive        = (process.env.UI_SHOW_TREND_PB_LIVE         || 'true').toLowerCase()  === 'true';
   const showTrendPbHistory     = (process.env.UI_SHOW_TREND_PB_HISTORY      || 'true').toLowerCase()  === 'true';
-  const showGapsBacktest      = (process.env.UI_SHOW_GAPS_BACKTEST         || 'true').toLowerCase()  === 'true';
-  const showGapsPaper         = (process.env.UI_SHOW_GAPS_PAPER            || 'true').toLowerCase()  === 'true';
-  const showGapsLive          = (process.env.UI_SHOW_GAPS_LIVE             || 'true').toLowerCase()  === 'true';
-  const showGapsHistory       = (process.env.UI_SHOW_GAPS_HISTORY          || 'true').toLowerCase()  === 'true';
   // Trend Day Scalp — never traded; ships visible but its Live page is triple-gated to dry-run.
   const showTdsBacktest       = (process.env.UI_SHOW_TDS_BACKTEST          || 'true').toLowerCase()  === 'true';
   const showTdsPaper          = (process.env.UI_SHOW_TDS_PAPER             || 'true').toLowerCase()  === 'true';
   const showTdsLive           = (process.env.UI_SHOW_TDS_LIVE              || 'true').toLowerCase()  === 'true';
   const showTdsHistory        = (process.env.UI_SHOW_TDS_HISTORY           || 'true').toLowerCase()  === 'true';
   // 3M Gap Fix Scalp — never traded; ships visible but its Live page is triple-gated to dry-run.
-  const showGap3mBacktest     = (process.env.UI_SHOW_GAP3M_BACKTEST        || 'true').toLowerCase()  === 'true';
-  const showGap3mPaper        = (process.env.UI_SHOW_GAP3M_PAPER           || 'true').toLowerCase()  === 'true';
-  const showGap3mLive         = (process.env.UI_SHOW_GAP3M_LIVE            || 'true').toLowerCase()  === 'true';
-  const showGap3mHistory      = (process.env.UI_SHOW_GAP3M_HISTORY         || 'true').toLowerCase()  === 'true';
   // HA Scalp — never traded; ships visible but its Live page is triple-gated to dry-run.
   const showHaScalpBacktest   = (process.env.UI_SHOW_HA_SCALP_BACKTEST      || 'true').toLowerCase()  === 'true';
   const showHaScalpPaper      = (process.env.UI_SHOW_HA_SCALP_PAPER         || 'true').toLowerCase()  === 'true';
@@ -196,9 +180,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const orbKeys     = ['orbBacktest', 'orbPaper', 'orbLive', 'orbLiveHarness', 'orbHistory'];
   const ema9vwapKeys = ['ema9vwapBacktest', 'ema9vwapPaper', 'ema9vwapSim', 'ema9vwapLive', 'ema9vwapHistory'];
   const trendPbKeys = ['trendPbBacktest', 'trendPbPaper', 'trendPbLive', 'trendPbLiveHarness', 'trendPbHistory'];
-  const gapsKeys    = ['gapsBacktest', 'gapsPaper', 'gapsLive', 'gapsHistory'];
   const tdsKeys     = ['trendDayScalpBacktest', 'trendDayScalpPaper', 'trendDayScalpLive', 'trendDayScalpHistory'];
-  const gap3mKeys   = ['gapFix3mBacktest', 'gapFix3mPaper', 'gapFix3mLive', 'gapFix3mHistory'];
   const haScalpKeys = ['haScalpBacktest', 'haScalpPaper', 'haScalpLive', 'haScalpHistory'];
   const rsiPivotStKeys = ['rsiPivotStBacktest', 'rsiPivotStPaper', 'rsiPivotStLive', 'rsiPivotStHistory'];
   const simple930Keys = ['simple930Backtest', 'simple930Paper', 'simple930Live', 'simple930History'];
@@ -209,9 +191,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const isOrbOpen      = orbKeys.includes(activePage);
   const isEma9vwapOpen = ema9vwapKeys.includes(activePage);
   const isTrendPbOpen  = trendPbKeys.includes(activePage);
-  const isGapsOpen     = gapsKeys.includes(activePage);
   const isTdsOpen      = tdsKeys.includes(activePage);
-  const isGap3mOpen    = gap3mKeys.includes(activePage);
   const isHaScalpOpen  = haScalpKeys.includes(activePage);
   const isRsiPivotStOpen = rsiPivotStKeys.includes(activePage);
   const isSimple930Open = simple930Keys.includes(activePage);
@@ -225,9 +205,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const orbPaperRunning      = _orbMode      === 'ORB_PAPER';
   const ema9vwapPaperRunning = _ema9vwapMode === 'EMA9VWAP_PAPER';
   const trendPbPaperRunning  = _trendPbMode  === 'TREND_PB_PAPER';
-  const gapsPaperRunning     = _gapsMode     === 'GAPS_PAPER';
   const tdsPaperRunning      = _trendDayScalpMode === 'TREND_DAY_SCALP_PAPER';
-  const gap3mPaperRunning    = _gapFix3mMode === 'GAP_FIX_3M_PAPER';
   const haScalpPaperRunning  = _haScalpMode === 'HA_SCALP_PAPER';
   const rsiPivotStPaperRunning = _rsiPivotStMode === 'RSI_PIVOT_ST_PAPER';
   const simple930PaperRunning = _simple930Mode === 'SIMPLE930_PAPER';
@@ -287,25 +265,11 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     ...(showTrendPbHistory  ? [{ key: 'trendPbHistory',  href: '/trend-pb-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 
-  const gapsItems = [
-    ...(showGapsBacktest ? [{ key: 'gapsBacktest', href: '/gaps-backtest',      icon: '🔍', label: 'Backtest' }] : []),
-    ...(showGapsPaper    ? [{ key: 'gapsPaper',    href: '/gaps-paper/status',  icon: '📋', label: 'Paper'   }] : []),
-    ...(showGapsLive && !gapsPaperRunning ? [{ key: 'gapsLive', href: '/gaps-live', icon: '📡', label: 'Live' }] : []),
-    ...(showGapsHistory  ? [{ key: 'gapsHistory',  href: '/gaps-paper/history', icon: '📜', label: 'History' }] : []),
-  ];
-
   const tdsItems = [
     ...(showTdsBacktest ? [{ key: 'trendDayScalpBacktest', href: '/trend-day-scalp-backtest',     icon: '🔍', label: 'Backtest' }] : []),
     ...(showTdsPaper    ? [{ key: 'trendDayScalpPaper',    href: '/trend-day-scalp-paper/status', icon: '📋', label: 'Paper'    }] : []),
     ...(showTdsLive && !tdsPaperRunning ? [{ key: 'trendDayScalpLive', href: '/trend-day-scalp-live', icon: '📡', label: 'Live' }] : []),
     ...(showTdsHistory  ? [{ key: 'trendDayScalpHistory',  href: '/trend-day-scalp-paper/history', icon: '📜', label: 'History' }] : []),
-  ];
-
-  const gap3mItems = [
-    ...(showGap3mBacktest ? [{ key: 'gapFix3mBacktest', href: '/gap-fix-3m-backtest',     icon: '🔍', label: 'Backtest' }] : []),
-    ...(showGap3mPaper    ? [{ key: 'gapFix3mPaper',    href: '/gap-fix-3m-paper/status', icon: '📋', label: 'Paper'    }] : []),
-    ...(showGap3mLive && !gap3mPaperRunning ? [{ key: 'gapFix3mLive', href: '/gap-fix-3m-live', icon: '📡', label: 'Live' }] : []),
-    ...(showGap3mHistory  ? [{ key: 'gapFix3mHistory',  href: '/gap-fix-3m-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 
   const haScalpItems = [
@@ -380,20 +344,10 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       groupId: 'nav-trend-pb',
       items: trendPbItems,
     }] : []),
-    ...(gapsModeOn ? [{
-      header: 'GAPS', collapsible: true, collapsed: !isGapsOpen,
-      groupId: 'nav-gaps',
-      items: gapsItems,
-    }] : []),
     ...(tdsModeOn ? [{
       header: 'TREND DAY SCALP', collapsible: true, collapsed: !isTdsOpen,
       groupId: 'nav-trend-day-scalp',
       items: tdsItems,
-    }] : []),
-    ...(gap3mModeOn ? [{
-      header: '3M GAP FIX SCALP', collapsible: true, collapsed: !isGap3mOpen,
-      groupId: 'nav-gap-fix-3m',
-      items: gap3mItems,
     }] : []),
     ...(haScalpModeOn ? [{
       header: 'HA SCALP', collapsible: true, collapsed: !isHaScalpOpen,
@@ -471,27 +425,11 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
       : '';
 
-    const gapsLiveBadge = p.key === 'gapsLive' && _gapsMode === 'GAPS_LIVE'
-      ? `<span class="sb-nav-badge live">LIVE</span>`
-      : '';
-
-    const gapsPaperBadge = p.key === 'gapsPaper' && _gapsMode === 'GAPS_PAPER'
-      ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
-      : '';
-
     const tdsLiveBadge = p.key === 'trendDayScalpLive' && _trendDayScalpMode === 'TREND_DAY_SCALP_LIVE'
       ? `<span class="sb-nav-badge live">LIVE</span>`
       : '';
 
     const tdsPaperBadge = p.key === 'trendDayScalpPaper' && _trendDayScalpMode === 'TREND_DAY_SCALP_PAPER'
-      ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
-      : '';
-
-    const gap3mLiveBadge = p.key === 'gapFix3mLive' && _gapFix3mMode === 'GAP_FIX_3M_LIVE'
-      ? `<span class="sb-nav-badge live">LIVE</span>`
-      : '';
-
-    const gap3mPaperBadge = p.key === 'gapFix3mPaper' && _gapFix3mMode === 'GAP_FIX_3M_PAPER'
       ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
       : '';
 
@@ -522,7 +460,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
 
     return `<a href="${p.href}" class="sb-nav-item${isActive ? ' active' : ''}">
       <span class="sb-nav-icon">${p.icon}</span> ${p.label}
-      ${liveBadge}${runningBadge}${bbRsiLiveBadge}${bbRsiPaperBadge}${paLiveBadge}${paPaperBadge}${orbLiveBadge}${orbPaperBadge}${gapsLiveBadge}${gapsPaperBadge}${tdsLiveBadge}${tdsPaperBadge}${gap3mLiveBadge}${gap3mPaperBadge}${haScalpLiveBadge}${haScalpPaperBadge}${rsiPivotStLiveBadge}${rsiPivotStPaperBadge}${simple930LiveBadge}${simple930PaperBadge}
+      ${liveBadge}${runningBadge}${bbRsiLiveBadge}${bbRsiPaperBadge}${paLiveBadge}${paPaperBadge}${orbLiveBadge}${orbPaperBadge}${tdsLiveBadge}${tdsPaperBadge}${haScalpLiveBadge}${haScalpPaperBadge}${rsiPivotStLiveBadge}${rsiPivotStPaperBadge}${simple930LiveBadge}${simple930PaperBadge}
     </a>`;
   }
 
@@ -2008,9 +1946,7 @@ window.__ltInit = true;
     '.mode-orb{color:#047857!important;}',
     '.mode-ema9vwap{color:#0e7490!important;}',
     '.mode-trend_pb{color:#be185d!important;}',
-    '.mode-gaps{color:#0369a1!important;}',
     '.mode-trend_day_scalp{color:#6d28d9!important;}',
-    '.mode-gap_fix_3m{color:#0369a1!important;}',
     '.mode-ha_scalp{color:#c2410c!important;}',
     '.mode-rsi_pivot_st{color:#c2410c!important;}',
     '.mode-simple930{color:#c2410c!important;}',

@@ -236,7 +236,7 @@ test("a sustained run of unattributable ticks restores the spot feed", () => {
   // With no extras subscribed the next tick re-probes and flows through again.
   socketManager._routeTick({ symbol: "Nifty 50", ltp: 24100 });
   assert.ok(spotSeen.includes(24100), "the spot feed must be flowing again after the bail-out");
-  assert.strictEqual(optionFeed.track("gaps-paper", OPT, () => {}), false,
+  assert.strictEqual(optionFeed.track("orb-paper", OPT, () => {}), false,
     "engines must be told to stay on REST");
 });
 
@@ -339,7 +339,7 @@ test("track subscribes and streams pushes to the owner", () => {
   resetManager();
   socketManager._routeTick(spotTick(24000));
   const seen = [];
-  assert.strictEqual(optionFeed.track("gaps-paper", OPT, (ltp, at) => seen.push([ltp, at])), true);
+  assert.strictEqual(optionFeed.track("orb-paper", OPT, (ltp, at) => seen.push([ltp, at])), true);
   socketManager._routeTick(optTick(OPT, 182));
   assert.strictEqual(seen.length, 1);
   assert.strictEqual(seen[0][0], 182);
@@ -349,7 +349,7 @@ test("track subscribes and streams pushes to the owner", () => {
 test("getFresh serves a recent price and refuses a stale one", () => {
   resetManager();
   socketManager._routeTick(spotTick(24000));
-  optionFeed.track("gaps-paper", OPT, () => {});
+  optionFeed.track("orb-paper", OPT, () => {});
   socketManager._routeTick(optTick(OPT, 182));
 
   const fresh = optionFeed.getFresh(OPT, 5000);
@@ -418,7 +418,7 @@ test("the kill-switch makes every call a no-op", () => {
   socketManager._routeTick(spotTick(24000));
   process.env.OPTION_SOCKET_FEED_ENABLED = "false";
   try {
-    assert.strictEqual(optionFeed.track("gaps-paper", OPT, () => {}), false);
+    assert.strictEqual(optionFeed.track("orb-paper", OPT, () => {}), false);
     assert.strictEqual(optionFeed.getFresh(OPT, 5000), null);
     assert.deepStrictEqual(socketManager.getExtraSymbols(), []);
   } finally {
@@ -440,7 +440,7 @@ test("a throwing owner callback cannot break the feed", () => {
 test("zero and negative premiums are ignored", () => {
   resetManager();
   socketManager._routeTick(spotTick(24000));
-  optionFeed.track("gaps-paper", OPT, () => {});
+  optionFeed.track("orb-paper", OPT, () => {});
   socketManager._routeTick(optTick(OPT, 150));
   socketManager._routeTick({ symbol: OPT, ltp: 0 });
   socketManager._routeTick({ symbol: OPT, ltp: -5 });

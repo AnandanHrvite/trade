@@ -496,13 +496,13 @@ async function validateAndGetOptionSymbol(spot, side, mode, opts = {}) {
   const _override = opts.strikeOverride;
   const _hasOverride = typeof _override === "number" && Number.isFinite(_override) && _override > 0;
   let strike = _hasOverride ? _override : calcATMStrike(spot, side);
-  // ── ORB, TREND_PB, GAPS, TDS (Trend Day Scalp), GAP3M (3M Gap Fix Scalp),
+  // ── ORB, TREND_PB, TDS (Trend Day Scalp),
   //    HA_SCALP trades slightly ITM (~delta 0.6): higher delta tracks
   //    the move better and decays slower in % than ATM. Shift the strike ITM by
   //    {MODE}_ITM_STEPS × 50 (CE → lower strike, PE → higher strike). Default 1 step.
   //    Set {MODE}_ITM_STEPS=0 to fall back to ATM. ─────────────────────────────
   const _itmMode = String(mode || "").toUpperCase();
-  if (!_hasOverride && (_itmMode === "ORB" || _itmMode === "TREND_PB" || _itmMode === "GAPS" || _itmMode === "TDS" || _itmMode === "GAP3M" || _itmMode === "HA_SCALP")) {
+  if (!_hasOverride && (_itmMode === "ORB" || _itmMode === "TREND_PB" || _itmMode === "TDS" || _itmMode === "HA_SCALP")) {
     const itmSteps = parseInt(process.env[`${_itmMode}_ITM_STEPS`] || "1", 10);
     if (itmSteps > 0 && (side === "CE" || side === "PE")) {
       const shifted = side === "CE" ? strike - itmSteps * 50 : strike + itmSteps * 50;

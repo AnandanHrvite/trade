@@ -516,16 +516,17 @@ function _managePositionOnClose(bar) {
   // 3. EMA20(5m)-close trend-failure — exit only on a CLOSE back across the EMA,
   //    and only after price first closed on the correct side (emaArmed) so a fresh
   //    entry below a stale EMA isn't stopped on its first candle.
+  const emaExitOn = (process.env.TREND_PB_EMA_EXIT_ENABLED || "true").toLowerCase() === "true";
   const emaPeriod = Math.max(2, parseInt(process.env.TREND_PB_TRAIL_EMA || "20", 10));
   const ema = _computeEma(state.candles, emaPeriod);
   if (ema != null) {
     pos.lastEma = Math.round(ema * 100) / 100;
     if (pos.side === "CE") {
       if (close >= ema) pos.emaArmed = true;
-      else if (pos.emaArmed) return simulateSell(`Closed below EMA${emaPeriod}(5m) (${close} < ${pos.lastEma}) — trend failed`);
+      else if (pos.emaArmed && emaExitOn) return simulateSell(`Closed below EMA${emaPeriod}(5m) (${close} < ${pos.lastEma}) — trend failed`);
     } else {
       if (close <= ema) pos.emaArmed = true;
-      else if (pos.emaArmed) return simulateSell(`Closed above EMA${emaPeriod}(5m) (${close} > ${pos.lastEma}) — trend failed`);
+      else if (pos.emaArmed && emaExitOn) return simulateSell(`Closed above EMA${emaPeriod}(5m) (${close} > ${pos.lastEma}) — trend failed`);
     }
   }
 

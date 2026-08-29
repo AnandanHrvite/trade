@@ -170,7 +170,7 @@ function sweep() {
  * symbols is handled implicitly: the old one loses its last holder and the
  * sweeper unsubscribes it.
  *
- * @param {string}   ownerId  stable per-engine id, e.g. "gaps-paper"
+ * @param {string}   ownerId  stable per-engine id, e.g. "orb-paper"
  * @param {string}   symbol   full Fyers option symbol
  * @param {Function} onLtp    (ltp, at) => void — called on every streamed tick
  * @returns {boolean} true when the symbol is (or just became) socket-backed

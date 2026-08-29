@@ -66,9 +66,7 @@ const STRATEGY_BADGE = {
   pa:       { label: "PA",       cls: "mode-pa" },
   orb:      { label: "ORB",      cls: "mode-orb" },
   trend_pb: { label: "TREND PB", cls: "mode-trend_pb" },
-  gaps:     { label: "GAPS", cls: "mode-gaps" },
   trend_day_scalp: { label: "TREND DAY SCALP", cls: "mode-trend_day_scalp" },
-  gap_fix_3m: { label: "3M GAP FIX SCALP", cls: "mode-gap_fix_3m" },
   ha_scalp: { label: "HA SCALP", cls: "mode-ha_scalp" },
   rsi_pivot_st: { label: "RSI PIVOT ST", cls: "mode-rsi_pivot_st" },
   simple930: { label: "SIMPLE_9:30", cls: "mode-simple930" },
@@ -93,7 +91,7 @@ function _istDateFromMs(ms) {
 function detectMeta(group, rel, abs, mtimeMs) {
   if (!group.tagged) return { strat: null, date: null };
   // Filename-encoded modes (replay / replay_sim outputs) — no per-file date.
-  const nameMatch = path.basename(rel).match(/^(ema_rsi_st|bb_rsi|pa|orb|trend_pb|gaps|trend_day_scalp|gap_fix_3m|ha_scalp|rsi_pivot_st|simple930)\b/i);
+  const nameMatch = path.basename(rel).match(/^(ema_rsi_st|bb_rsi|pa|orb|trend_pb|trend_day_scalp|ha_scalp|rsi_pivot_st|simple930)\b/i);
   if (nameMatch) return { strat: nameMatch[1].toLowerCase(), date: null };
   // Hash-named replay-cache JSON: read embedded mode/date, with an mtime cache.
   const cached = _tagCache.get(abs);
@@ -408,9 +406,7 @@ router.get("/", (req, res) => {
     .mode-pa       { color:#a78bfa; }
     .mode-orb      { color:#10b981; }
     .mode-trend_pb { color:#f472b6; }
-    .mode-gaps { color:#0ea5e9; }
     .mode-trend_day_scalp { color:#a855f7; }
-    .mode-gap_fix_3m { color:#38bdf8; }
 .mode-ha_scalp { color:#f97316; }
     .mode-rsi_pivot_st { color:#facc15; }
     .mode-simple930 { color:#fb923c; }
@@ -547,9 +543,7 @@ ${embed ? '' : buildSidebar('tradeLogs', liveActive)}
     pa:       { label: 'PA',       cls: 'mode-pa' },
     orb:      { label: 'ORB',      cls: 'mode-orb' },
     trend_pb: { label: 'TREND PB', cls: 'mode-trend_pb' },
-    gaps:     { label: 'GAPS', cls: 'mode-gaps' },
     trend_day_scalp: { label: 'TREND DAY SCALP', cls: 'mode-trend_day_scalp' },
-    gap_fix_3m: { label: '3M GAP FIX SCALP', cls: 'mode-gap_fix_3m' },
     ha_scalp: { label: 'HA SCALP', cls: 'mode-ha_scalp' },
     rsi_pivot_st: { label: 'RSI PIVOT ST', cls: 'mode-rsi_pivot_st' },
     simple930: { label: 'SIMPLE_9:30', cls: 'mode-simple930' },
