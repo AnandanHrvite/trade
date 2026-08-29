@@ -70,6 +70,7 @@ const STRATEGY_BADGE = {
   ha_scalp: { label: "HA SCALP", cls: "mode-ha_scalp" },
   rsi_pivot_st: { label: "RSI PIVOT ST", cls: "mode-rsi_pivot_st" },
   simple930: { label: "SIMPLE_9:30", cls: "mode-simple930" },
+  early_bird: { label: "EARLYBIRD", cls: "mode-early_bird" },
 };
 
 // Cache: abs path → { mtimeMs, meta } so we don't re-parse a file every list call.
@@ -91,7 +92,7 @@ function _istDateFromMs(ms) {
 function detectMeta(group, rel, abs, mtimeMs) {
   if (!group.tagged) return { strat: null, date: null };
   // Filename-encoded modes (replay / replay_sim outputs) — no per-file date.
-  const nameMatch = path.basename(rel).match(/^(ema_rsi_st|bb_rsi|pa|orb|trend_pb|trend_day_scalp|ha_scalp|rsi_pivot_st|simple930)\b/i);
+  const nameMatch = path.basename(rel).match(/^(ema_rsi_st|bb_rsi|pa|orb|trend_pb|trend_day_scalp|ha_scalp|rsi_pivot_st|simple930|early_bird)\b/i);
   if (nameMatch) return { strat: nameMatch[1].toLowerCase(), date: null };
   // Hash-named replay-cache JSON: read embedded mode/date, with an mtime cache.
   const cached = _tagCache.get(abs);
@@ -410,6 +411,7 @@ router.get("/", (req, res) => {
 .mode-ha_scalp { color:#f97316; }
     .mode-rsi_pivot_st { color:#facc15; }
     .mode-simple930 { color:#fb923c; }
+    .mode-early_bird { color:#14b8a6; }
     .mode-sim      { color:#ec4899; }
     .mode-desc { font-size:0.66rem; color:var(--muted-1,#8ba1c2); margin:6px 14px 0; font-style:italic; }
     .mode-meta { font-size:0.68rem; color:var(--muted-1,#8ba1c2); }
@@ -547,6 +549,7 @@ ${embed ? '' : buildSidebar('tradeLogs', liveActive)}
     ha_scalp: { label: 'HA SCALP', cls: 'mode-ha_scalp' },
     rsi_pivot_st: { label: 'RSI PIVOT ST', cls: 'mode-rsi_pivot_st' },
     simple930: { label: 'SIMPLE_9:30', cls: 'mode-simple930' },
+    early_bird: { label: 'EARLYBIRD', cls: 'mode-early_bird' },
   };
   function badgeHtml(strat) {
     var b = STRAT_BADGE[strat];

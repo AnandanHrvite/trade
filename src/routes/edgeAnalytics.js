@@ -50,6 +50,8 @@ const PAPER_SOURCES = [
   { mode: "HA_SCALP", file: "ha_scalp_paper_trades.json" },
   { mode: "RSI_PIVOT_ST", file: "rsi_pivot_st_paper_trades.json" },
   { mode: "SIMPLE930", file: "simple930_paper_trades.json" },
+  // EarlyBird: cash equity, sides are LONG/SHORT rather than CE/PE.
+  { mode: "EARLYBIRD", file: "early_bird_paper_trades.json" },
 ];
 const LIVE_SOURCES = [
   { mode: "EMA_RSI_ST",    file: "ema_rsi_st_live_trades.json" },
@@ -62,6 +64,7 @@ const LIVE_SOURCES = [
   { mode: "HA_SCALP", file: "ha_scalp_live_trades.json" },
   { mode: "RSI_PIVOT_ST", file: "rsi_pivot_st_live_trades.json" },
   { mode: "SIMPLE930", file: "simple930_live_trades.json" },
+  { mode: "EARLYBIRD", file: "early_bird_live_trades.json" },
 ];
 
 function safeRead(p) {
@@ -90,7 +93,9 @@ function loadBook(sources, book) {
         // engine did not record it (ORB), so every strategy can be compared.
         let pts = round(t.pnlPoints, 2);
         if (pts === null && num(t.entryPrice) !== null && num(t.exitPrice) !== null) {
-          pts = round((num(t.exitPrice) - num(t.entryPrice)) * (side === "PE" ? -1 : 1), 2);
+          // PE gains as the underlying falls; a cash-equity SHORT is a real short
+          // sale, so it too earns on the way down — both invert the subtraction.
+          pts = round((num(t.exitPrice) - num(t.entryPrice)) * (side === "PE" || side === "SHORT" ? -1 : 1), 2);
         }
         const durMs = num(t.durationMs);
         out.push({
@@ -198,6 +203,16 @@ router.get("/", (req, res) => {
     [..._hours].sort((a, b) => a - b)
       .map(h => ({ value: String(h), label: String(h).padStart(2, '0') + ':00' })),
     'All');
+
+  // Side buttons come from the data too. CE/PE are always offered so the segment
+  // never collapses on an empty book, but LONG/SHORT only appear once a
+  // cash-equity strategy (EarlyBird) has actually recorded a trade — otherwise
+  // an options-only install grows two buttons that can never match a row.
+  const _sides = new Set(trades.map(t => t.side).filter(Boolean));
+  const sideButtons = ['CE', 'PE']
+    .concat(['LONG', 'SHORT'].filter(x => _sides.has(x)))
+    .map(x => `<button data-side="${x}">${x}</button>`)
+    .join('\n        ');
 
   const theme = resolveTheme();
   const html = `<!DOCTYPE html>
@@ -311,6 +326,7 @@ ${multiSelectCSS()}
     .badge-BB_RSI{background:rgba(245,158,11,0.12);color:#f59e0b;border:0.5px solid rgba(245,158,11,0.3);}
     .badge-PA{background:rgba(168,85,247,0.12);color:#a855f7;border:0.5px solid rgba(168,85,247,0.3);}
     .badge-ORB{background:rgba(16,185,129,0.12);color:#10b981;border:0.5px solid rgba(16,185,129,0.3);}
+    .badge-EARLYBIRD{background:rgba(20,184,166,0.12);color:#14b8a6;border:0.5px solid rgba(20,184,166,0.3);}
     .empty{text-align:center;padding:50px 20px;color:var(--muted-1,#8ba1c2);font-size:0.85rem;}
     /* phone: full-width controls, 44px touch targets, no cramped two-up rows */
     @media(max-width:700px){
@@ -386,8 +402,7 @@ ${multiSelectCSS()}
       <label>Side</label>
       <div class="seg" id="segSide">
         <button data-side="all" class="on">All</button>
-        <button data-side="CE">CE</button>
-        <button data-side="PE">PE</button>
+        ${sideButtons}
       </div>
       <label>Exit</label>
       ${reasonPicker}

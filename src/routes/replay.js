@@ -232,6 +232,8 @@ const STRATEGY_OPTIONS = [
   { mode: "ha-scalp-paper", label: "HA Scalp Paper", envKey: "UI_SHOW_HA_SCALP_PAPER", modeKey: "HA_SCALP_MODE_ENABLED" },
   { mode: "rsi-pivot-st-paper", label: "RSI Pivot ST Paper", envKey: "UI_SHOW_RSI_PIVOT_ST_PAPER", modeKey: "RSI_PIVOT_ST_MODE_ENABLED" },
   { mode: "simple930-paper", label: "SIMPLE_9:30 Paper", envKey: "UI_SHOW_SIMPLE930_PAPER", modeKey: "SIMPLE930_MODE_ENABLED" },
+  // The mode string MUST match tickReplay MODE_TO_MODULE: "early-bird-paper".
+  { mode: "early-bird-paper", label: "EarlyBird Paper", envKey: "UI_SHOW_EARLYBIRD_PAPER", modeKey: "EARLYBIRD_MODE_ENABLED" },
 ];
 
 function _renderStrategyOptions() {
@@ -283,6 +285,7 @@ button:disabled { background:#374151; cursor:not-allowed; }
 .tag.rsipivotst { background:rgba(250,204,21,0.15); color:#fde047; }
 .tag.simple930 { background:rgba(251,146,60,0.15); color:#fdba74; }
 .tag.trendpb  { background:rgba(236,72,153,0.15);  color:#f9a8d4; }
+.tag.earlybird { background:rgba(20,184,166,0.15); color:#5eead4; }
 .tag-incomplete { display:inline-block; padding:2px 8px; border-radius:4px; font-size:0.65rem; font-weight:600; background:rgba(245,158,11,0.15); color:#fbbf24; border:1px solid rgba(245,158,11,0.35); margin-left:4px; }
 .row-incomplete td { opacity:0.65; }
 .row-incomplete td:last-child { opacity:1; } /* keep actions readable */
@@ -619,6 +622,7 @@ function modeTag(mode) {
   if (mode.startsWith('ema9vwap')) return 'ema9vwap';
   if (mode.startsWith('trend-pb')) return 'trendpb';
   if (mode.startsWith('ha-scalp')) return 'hascalp';
+  if (mode.startsWith('early-bird')) return 'earlybird';
   if (mode.startsWith('rsi-pivot-st')) return 'rsipivotst';
   if (mode.startsWith('simple930')) return 'simple930';
   if (mode.startsWith('trend-day-scalp')) return 'tds';
@@ -1664,6 +1668,7 @@ function _modeLabel(mode) {
        : mode === 'trend-day-scalp-paper' ? 'Trend Day Scalp Paper'
        : mode === 'rsi-pivot-st-paper' ? 'RSI Pivot ST Paper'
        : mode === 'simple930-paper' ? 'SIMPLE_9:30 Paper'
+       : mode === 'early-bird-paper' ? 'EarlyBird Paper'
        : mode;
 }
 
@@ -2552,7 +2557,7 @@ ${contractNoteClientJS()}
 var _CN_RANGE_ROWS = [], _CN_RANGE_CTX = null;
 var _CN_SINGLE_TRADES = null, _CN_SINGLE_LABEL = '';
 function _cnModeLabel(m){
-  return m==='all'?'All Strategies':m==='ema_rsi_st-paper'?'EMA_RSI_ST Paper':m==='bb_rsi-paper'?'BB_RSI Paper':m==='pa-paper'?'PA Paper':m==='orb-paper'?'ORB Paper':m==='ema9vwap-paper'?'EMA9+VWAP Paper':m==='trend-pb-paper'?'Trend Pullback Paper':m==='trend-day-scalp-paper'?'Trend Day Scalp Paper':m==='ha-scalp-paper'?'HA Scalp Paper':m==='rsi-pivot-st-paper'?'RSI Pivot ST Paper':m==='simple930-paper'?'SIMPLE_9:30 Paper':(m||'Replay');
+  return m==='all'?'All Strategies':m==='ema_rsi_st-paper'?'EMA_RSI_ST Paper':m==='bb_rsi-paper'?'BB_RSI Paper':m==='pa-paper'?'PA Paper':m==='orb-paper'?'ORB Paper':m==='ema9vwap-paper'?'EMA9+VWAP Paper':m==='trend-pb-paper'?'Trend Pullback Paper':m==='trend-day-scalp-paper'?'Trend Day Scalp Paper':m==='ha-scalp-paper'?'HA Scalp Paper':m==='rsi-pivot-st-paper'?'RSI Pivot ST Paper':m==='simple930-paper'?'SIMPLE_9:30 Paper':m==='early-bird-paper'?'EarlyBird Paper':(m||'Replay');
 }
 function openReplayReportAll(){
   var trades=[]; for(var i=0;i<_CN_RANGE_ROWS.length;i++){ var r=_CN_RANGE_ROWS[i]; if(r&&r.sim&&r.sim.ok&&r.sim.sessionTrades) trades=trades.concat(r.sim.sessionTrades); }

@@ -38,6 +38,10 @@ const STRATEGY_DEFS = [
   { key:'HA_SCALP', label:'HA SCALP',        accentClass:'hascalp', accent:'#f97316', paperPrefix:'/ha-scalp-paper',      livePrefix:'/ha-scalp-live',        hasDayLog:true, modeFlag:'HA_SCALP_MODE_ENABLED' },
   { key:'RSI_PIVOT_ST', label:'RSI PIVOT ST', accentClass:'rsipivotst', accent:'#facc15', paperPrefix:'/rsi-pivot-st-paper', livePrefix:'/rsi-pivot-st-live', hasDayLog:true, modeFlag:'RSI_PIVOT_ST_MODE_ENABLED' },
   { key:'SIMPLE930', label:'SIMPLE_9:30', accentClass:'simple930', accent:'#fb923c', paperPrefix:'/simple930-paper', livePrefix:'/simple930-live', hasDayLog:true, modeFlag:'SIMPLE930_MODE_ENABLED' },
+  // EarlyBird trades CASH EQUITY of several stocks at once — its /status/data
+  // returns `positions[]`, not a single `position`, so renderColumn below
+  // draws an aggregate block for it instead of the option-shaped one.
+  { key:'EARLYBIRD', label:'EarlyBird', accentClass:'earlybird', accent:'#14b8a6', paperPrefix:'/early-bird-paper', livePrefix:'/early-bird-live', hasDayLog:true, modeFlag:'EARLYBIRD_MODE_ENABLED' },
 ];
 
 function enabledStrategies() {
@@ -46,7 +50,7 @@ function enabledStrategies() {
 
 // Broker investment pools: each strategy's paper P&L draws from one shared pool.
 // EMA_RSI_ST trades through Zerodha; BB_RSI/PA/ORB through Fyers.
-const BROKER_OF = { EMA_RSI_ST:'ZERODHA', BB_RSI:'FYERS', PA:'FYERS', ORB:'FYERS', EMA9VWAP:'ZERODHA', TREND_PB:'FYERS', TDS:'FYERS', HA_SCALP:'ZERODHA', RSI_PIVOT_ST:'ZERODHA', SIMPLE930:'ZERODHA' };
+const BROKER_OF = { EMA_RSI_ST:'ZERODHA', BB_RSI:'FYERS', PA:'FYERS', ORB:'FYERS', EMA9VWAP:'ZERODHA', TREND_PB:'FYERS', TDS:'FYERS', HA_SCALP:'ZERODHA', RSI_PIVOT_ST:'ZERODHA', SIMPLE930:'ZERODHA', EARLYBIRD:'FYERS' };
 function brokerPools(strategies) {
   const z = parseFloat(process.env.ZERODHA_INV_AMOUNT || '100000');
   const f = parseFloat(process.env.FYERS_INV_AMOUNT   || '100000');
@@ -233,6 +237,7 @@ ${faviconLink()}
 .card.hascalp  { border-top-color:#f97316; }
   .card.rsipivotst { border-top-color:#facc15; }
   .card.simple930 { border-top-color:#fb923c; }
+  .card.earlybird { border-top-color:#14b8a6; }
 
   .card-header { display:flex; align-items:center; justify-content:space-between; }
   .card-title { font-size:1rem; font-weight:600; letter-spacing:0.5px; }
@@ -246,6 +251,7 @@ ${faviconLink()}
 .card.hascalp  .card-title { color:#fdba74; }
   .card.rsipivotst .card-title { color:#fde047; }
   .card.simple930 .card-title { color:#fdba74; }
+  .card.earlybird .card-title { color:#5eead4; }
 
   .badge { font-size:0.66rem; padding:3px 8px; border-radius:4px; border:1px solid; font-weight:600; letter-spacing:0.4px; }
   .badge.run  { background:rgba(16,185,129,0.12); color:#10b981; border-color:rgba(16,185,129,0.35); }
@@ -258,6 +264,19 @@ ${faviconLink()}
   .pos-side.PE { background:rgba(239,68,68,0.18);  color:#ef4444; }
   .pos-symbol { font-size:0.78rem; color:#cbd5e1; word-break:break-all; }
   .pos-symbol-line { display:block; }
+  /* EarlyBird aggregate block — several cash-equity positions in one card. */
+  .eb-head { margin-bottom:2px; }
+  .eb-list { margin-top:8px; display:flex; flex-direction:column; gap:5px; }
+  .eb-row { display:grid; grid-template-columns:auto minmax(0,1fr) auto auto auto auto; gap:8px; align-items:center; font-size:0.74rem; color:#cbd5e1; font-variant-numeric:tabular-nums; }
+  .eb-sym { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .eb-qty, .eb-px, .eb-pts, .eb-pnl { white-space:nowrap; text-align:right; }
+  .eb-pnl { font-weight:600; }
+  @media(max-width:768px){
+    .eb-row { grid-template-columns:auto minmax(0,1fr) auto; row-gap:2px; }
+    .eb-px { grid-column:2 / 4; text-align:left; color:#7d8aa3; }
+  }
+  :root[data-theme="light"] .eb-row { color:#475569; }
+  :root[data-theme="light"] .eb-px { color:#5c6b7f; }
 
   .pnl-big { font-size:1.5rem; font-weight:700; line-height:1.1; margin-top:4px; }
   .pnl-big .pct { font-size:0.78rem; font-weight:500; color:#94a3b8; margin-left:6px; }
@@ -300,6 +319,7 @@ ${faviconLink()}
 .card.hascalp  .act-btn:not(.act-btn-disabled):hover { border-color:#f97316; }
   .card.rsipivotst .act-btn:not(.act-btn-disabled):hover { border-color:#facc15; }
   .card.simple930 .act-btn:not(.act-btn-disabled):hover { border-color:#fb923c; }
+  .card.earlybird .act-btn:not(.act-btn-disabled):hover { border-color:#14b8a6; }
 
   /* Rollup table */
   .rollup { width:100%; border-collapse:collapse; background:#0a1628; border:1px solid #1c2c47; border-radius:10px; overflow:hidden; }
@@ -318,6 +338,7 @@ ${faviconLink()}
 .rollup tr.hascalp  td:first-child { color:#fdba74; }
   .rollup tr.rsipivotst td:first-child { color:#fde047; }
   .rollup tr.simple930 td:first-child { color:#fdba74; }
+  .rollup tr.earlybird td:first-child { color:#5eead4; }
   .rollup tr.total    td:first-child { color:#e0eaf8; }
   .rollup tr.quiet td { color:#7d8aa3; font-weight:400; font-size:0.8rem; text-align:left; }
 
@@ -341,6 +362,7 @@ ${faviconLink()}
 :root[data-theme="light"] .card.hascalp  .card-title { color:#c2410c; }
   :root[data-theme="light"] .card.rsipivotst .card-title { color:#a16207; }
   :root[data-theme="light"] .card.simple930 .card-title { color:#c2410c; }
+  :root[data-theme="light"] .card.earlybird .card-title { color:#0f766e; }
   :root[data-theme="light"] .pos-block,
   :root[data-theme="light"] .flat-block { background:#f8fafc !important; border-color:#e0e4ea !important; }
   :root[data-theme="light"] .flat-block { color:#4b5769; }
@@ -378,6 +400,7 @@ ${faviconLink()}
 :root[data-theme="light"] .rollup tr.hascalp  td:first-child { color:#c2410c; }
   :root[data-theme="light"] .rollup tr.rsipivotst td:first-child { color:#a16207; }
   :root[data-theme="light"] .rollup tr.simple930 td:first-child { color:#c2410c; }
+  :root[data-theme="light"] .rollup tr.earlybird td:first-child { color:#0f766e; }
   :root[data-theme="light"] .pos-zero { color:#4b5769 !important; }
   :root[data-theme="light"] .pos-pos  { color:#059669 !important; }
   :root[data-theme="light"] .pos-neg  { color:#dc2626 !important; }
@@ -477,12 +500,14 @@ const fmtINR = n => {
 const fmtNum = n => (n === null || n === undefined || isNaN(n)) ? '—' : Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 });
 const cls = n => (n === null || n === undefined || isNaN(n) || +n === 0) ? 'pos-zero' : (+n > 0 ? 'pos-pos' : 'pos-neg');
 
-// EMA_RSI_ST uses unrealisedPnl, BB_RSI/PA use unrealised, ORB uses livePnl.
+// EMA_RSI_ST uses unrealisedPnl, BB_RSI/PA use unrealised, ORB uses livePnl,
+// EarlyBird uses openPnl (already summed across its several open positions).
 function openPnl(d) {
   if (!d) return 0;
   const v = (d.unrealisedPnl !== undefined ? d.unrealisedPnl
           : d.unrealised   !== undefined ? d.unrealised
           : d.livePnl      !== undefined ? d.livePnl
+          : d.openPnl      !== undefined ? d.openPnl
           : 0);
   return v == null ? 0 : v;
 }
@@ -563,6 +588,55 @@ function renderPositionStandard(d, pos) {
     </div>\`;
 }
 
+// EarlyBird holds MANY cash-equity positions at once, so it cannot use the
+// option-shaped single-position block above (no strike, no expiry, no premium,
+// and qty is a SHARE COUNT rather than lots). It gets an aggregate header —
+// how many are open and the combined unrealised P&L — followed by one compact
+// line per stock. A SHORT is a real intraday short sale, so its points moved is
+// (entry − live) rather than (live − entry).
+function renderPositionsEarlyBird(d, list) {
+  const total = openPnl(d);
+  let rows = '';
+  for (const p of list) {
+    if (!p) continue;
+    const side = p.side === 'LONG' || p.side === 'SHORT' ? p.side : '';
+    const entry = typeof p.entryPrice === 'number' && Number.isFinite(p.entryPrice) ? p.entryPrice : null;
+    const ltp = typeof p.ltp === 'number' && Number.isFinite(p.ltp) ? p.ltp : null;
+    const qty = typeof p.qty === 'number' && Number.isFinite(p.qty) ? p.qty : null;
+    const mult = side === 'LONG' ? 1 : (side === 'SHORT' ? -1 : 0);
+    const pts = typeof p.pointsMoved === 'number' && Number.isFinite(p.pointsMoved)
+      ? p.pointsMoved
+      : (entry !== null && ltp !== null && mult ? (ltp - entry) * mult : null);
+    const upnl = typeof p.livePnl === 'number' && Number.isFinite(p.livePnl)
+      ? p.livePnl
+      : (pts !== null && qty !== null ? pts * qty : null);
+    rows += \`<div class="eb-row">
+      <span class="pos-side \${side === 'LONG' ? 'CE' : (side === 'SHORT' ? 'PE' : '')}">\${side || '—'}</span>
+      <span class="eb-sym">\${escapeHtml(p.symbol || '—')}</span>
+      <span class="eb-qty">\${qty !== null ? qty + ' sh' : '—'}</span>
+      <span class="eb-px">\${fmtNum(entry)} → \${fmtNum(ltp)}</span>
+      <span class="eb-pts \${cls(pts)}">\${fmtNum(pts)}</span>
+      <span class="eb-pnl \${cls(upnl)}">\${upnl === null ? '—' : fmtINR(upnl)}</span>
+    </div>\`;
+  }
+  return \`
+    <div class="pos-block">
+      <div class="eb-head">
+        <span class="pos-symbol">\${list.length} open position\${list.length === 1 ? '' : 's'} · cash equity</span>
+      </div>
+      <div class="pnl-big \${cls(total)}">\${fmtINR(total)}</div>
+      <div class="eb-list">\${rows}</div>
+    </div>\`;
+}
+
+// EarlyBird reports positions[]; everything else reports a single position.
+// Returned as an array either way so renderColumn has one code path.
+function openPositionsOf(d) {
+  if (!d) return [];
+  if (Array.isArray(d.positions)) return d.positions.filter(Boolean);
+  return d.position ? [d.position] : [];
+}
+
 function renderColumn(strategy, d) {
   const badgeEl = document.getElementById('badge-' + strategy);
   const bodyEl  = document.getElementById('body-' + strategy);
@@ -585,9 +659,14 @@ function renderColumn(strategy, d) {
   badgeEl.className = 'badge ' + (d.running ? 'run' : 'stop');
   badgeEl.textContent = d.running ? 'RUNNING' : 'STOPPED';
 
-  const pos = d.position;
-  if (pos) {
-    bodyEl.innerHTML = renderPositionStandard(d, pos);
+  const openList = openPositionsOf(d);
+  if (Array.isArray(d.positions)) {
+    // Multi-position strategy (EarlyBird): aggregate block, never a single row.
+    bodyEl.innerHTML = openList.length
+      ? renderPositionsEarlyBird(d, openList)
+      : \`<div class="flat-block">FLAT — no open positions</div>\`;
+  } else if (openList.length) {
+    bodyEl.innerHTML = renderPositionStandard(d, openList[0]);
   } else {
     bodyEl.innerHTML = \`<div class="flat-block">FLAT — no open position</div>\`;
   }
@@ -604,7 +683,7 @@ function renderColumn(strategy, d) {
 
   // Worth a card only once there is something to watch: money at risk now, or a
   // trade already taken today. Everything else lives in the rollup table.
-  showCard(strategy, !!pos || todayTrades(d) > 0);
+  showCard(strategy, openList.length > 0 || todayTrades(d) > 0);
 }
 
 // Cards are hidden, not removed, so the poll can bring one back the moment its

@@ -31,6 +31,8 @@ const SOURCES = [
   { mode: "HA_SCALP", file: path.join(DATA_DIR, "ha_scalp_paper_trades.json"), label: "HA SCALP", color: "#f97316" },
   { mode: "RSI_PIVOT_ST", file: path.join(DATA_DIR, "rsi_pivot_st_paper_trades.json"), label: "RSI PIVOT ST", color: "#facc15" },
   { mode: "SIMPLE930", file: path.join(DATA_DIR, "simple930_paper_trades.json"), label: "SIMPLE_9:30", color: "#fb923c" },
+  // EarlyBird is cash equity (share counts, real intraday shorts), not options.
+  { mode: "EARLYBIRD", file: path.join(DATA_DIR, "early_bird_paper_trades.json"), label: "EarlyBird", color: "#14b8a6" },
 ];
 
 function safeRead(p) {
@@ -1199,7 +1201,7 @@ function wireTableControls(){
 // ── Analytics Panel ─────────────────────────────────────────────────────────
 let _anaVisible = false;
 const _anaCharts = {};
-const _MODE_COLOR = { EMA_RSI_ST: '#3b82f6', BB_RSI: '#f59e0b', PA: '#a855f7', ORB: '#10b981', EMA9VWAP: '#06b6d4', TREND_PB: '#ec4899', TDS: '#c084fc', HA_SCALP: '#f97316', RSI_PIVOT_ST: '#facc15', SIMPLE930: '#fb923c' };
+const _MODE_COLOR = { EMA_RSI_ST: '#3b82f6', BB_RSI: '#f59e0b', PA: '#a855f7', ORB: '#10b981', EMA9VWAP: '#06b6d4', TREND_PB: '#ec4899', TDS: '#c084fc', HA_SCALP: '#f97316', RSI_PIVOT_ST: '#facc15', SIMPLE930: '#fb923c', EARLYBIRD: '#14b8a6' };
 
 function fmtAna(v){ return '₹' + Math.round(Math.abs(v||0)).toLocaleString('en-IN'); }
 function fmtAnaSigned(v){ const n = v||0; return (n>=0?'+':'-') + '₹' + Math.round(Math.abs(n)).toLocaleString('en-IN'); }

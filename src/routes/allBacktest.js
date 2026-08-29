@@ -25,6 +25,7 @@ const tdsStrategy     = require("../strategies/trend_day_scalp");
 const haScalpStrategy = require("../strategies/ha_scalp");
 const rsiPivotStStrategy = require("../strategies/rsi_pivot_st");
 const simple930Strategy  = require("../strategies/simple930");
+const earlyBirdStrategy  = require("../strategies/early_bird");
 const sharedSocketState = require("../utils/sharedSocketState");
 
 const EMA_RSI_ST_KEY = ACTIVE;
@@ -36,6 +37,8 @@ const TDS_KEY      = "TREND_DAY_SCALP_BACKTEST";
 const HA_SCALP_KEY = "HA_SCALP_BACKTEST";
 const RSI_PIVOT_ST_KEY = "RSI_PIVOT_ST_BACKTEST";
 const SIMPLE930_KEY    = "SIMPLE930_BACKTEST";
+// MUST match the RESULT_KEY earlyBirdBacktest.js saves under.
+const EARLYBIRD_KEY    = "EARLY_BIRD_BACKTEST";
 
 function _modeOn(envKey) {
   return (process.env[envKey] || "true").toLowerCase() === "true";
@@ -148,6 +151,7 @@ router.get("/", (req, res) => {
   const haScalpOn  = _modeOn("HA_SCALP_MODE_ENABLED");
   const rsiPivotStOn = _modeOn("RSI_PIVOT_ST_MODE_ENABLED");
   const simple930On  = _modeOn("SIMPLE930_MODE_ENABLED");
+  const earlyBirdOn  = _modeOn("EARLYBIRD_MODE_ENABLED");
 
   const emaRsiStResult    = emaRsiStOn    ? loadResult(EMA_RSI_ST_KEY)    : null;
   const bbRsiResult    = bbRsiOn    ? loadResult(BB_RSI_KEY)    : null;
@@ -158,6 +162,7 @@ router.get("/", (req, res) => {
   const haScalpResult  = haScalpOn  ? loadResult(HA_SCALP_KEY)  : null;
   const rsiPivotStResult = rsiPivotStOn ? loadResult(RSI_PIVOT_ST_KEY) : null;
   const simple930Result  = simple930On  ? loadResult(SIMPLE930_KEY)  : null;
+  const earlyBirdResult  = earlyBirdOn  ? loadResult(EARLYBIRD_KEY)  : null;
 
   const emaRsiStPanel = emaRsiStOn ? renderPanel(
     "EMA_RSI_ST", { bg: "rgba(59,130,246,0.12)", fg: "#60a5fa", border: "rgba(59,130,246,0.25)" },
@@ -203,6 +208,14 @@ router.get("/", (req, res) => {
     "SIMPLE_9:30", { bg: "rgba(251,146,60,0.12)", fg: "#fb923c", border: "rgba(251,146,60,0.25)" },
     simple930Strategy && simple930Strategy.NAME ? simple930Strategy.NAME : "SIMPLE_9:30",
     SIMPLE930_KEY, "/simple930-backtest", simple930Result
+  ) : "";
+  // EarlyBird backtests CASH EQUITY across many stocks, so its summary is
+  // already in rupees — renderPanel's "Raw NIFTY index pts" sub-label only shows
+  // when summary.optionSim is false, which the engine sets accordingly.
+  const earlyBirdPanel = earlyBirdOn ? renderPanel(
+    "EarlyBird", { bg: "rgba(20,184,166,0.12)", fg: "#14b8a6", border: "rgba(20,184,166,0.25)" },
+    earlyBirdStrategy && earlyBirdStrategy.NAME ? earlyBirdStrategy.NAME : "EARLY_BIRD",
+    EARLYBIRD_KEY, "/early-bird-backtest", earlyBirdResult
   ) : "";
 
   res.setHeader("Content-Type", "text/html");
@@ -353,7 +366,8 @@ ${buildSidebar('allBacktest', liveActive)}
         ${haScalpPanel}
   ${rsiPivotStPanel}
   ${simple930Panel}
-  ${(!emaRsiStOn && !bbRsiOn && !paOn && !orbOn && !trendPbOn && !tdsOn && !haScalpOn && !rsiPivotStOn && !simple930On) ? `
+  ${earlyBirdPanel}
+  ${(!emaRsiStOn && !bbRsiOn && !paOn && !orbOn && !trendPbOn && !tdsOn && !haScalpOn && !rsiPivotStOn && !simple930On && !earlyBirdOn) ? `
   <div style="background:#08091a;border:0.5px solid #0e1428;border-radius:10px;padding:24px;text-align:center;color:#94a3b8;font-size:0.78rem;">
     No strategies enabled. Toggle one on in <a href="/settings" style="color:#60a5fa;">Settings → Strategy Modes</a>.
   </div>` : ""}

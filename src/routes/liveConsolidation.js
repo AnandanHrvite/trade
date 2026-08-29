@@ -28,6 +28,8 @@ const SOURCES = [
   { mode: "RSI_PIVOT_ST", file: path.join(DATA_DIR, "rsi_pivot_st_live_trades.json"), label: "RSI PIVOT ST", color: "#facc15" },
   { mode: "SIMPLE930", file: path.join(DATA_DIR, "simple930_live_trades.json"), label: "SIMPLE_9:30", color: "#fb923c" },
   { mode: "HA_SCALP", file: path.join(DATA_DIR, "ha_scalp_live_trades.json"), label: "HA SCALP", color: "#f97316" },
+  // EarlyBird is cash equity: side is LONG/SHORT, qty is a share count.
+  { mode: "EARLYBIRD", file: path.join(DATA_DIR, "early_bird_live_trades.json"), label: "EarlyBird", color: "#14b8a6" },
 ];
 
 function safeRead(p) {
@@ -194,6 +196,8 @@ router.get("/", (req, res) => {
     .badge-PA{background:rgba(168,85,247,0.12);color:#a855f7;border:0.5px solid rgba(168,85,247,0.3);}
     .badge-RSI_PIVOT_ST{background:rgba(250,204,21,0.12);color:#facc15;border:0.5px solid rgba(250,204,21,0.3);}
     .badge-SIMPLE930{background:rgba(251,146,60,0.12);color:#fb923c;border:0.5px solid rgba(251,146,60,0.3);}
+    .badge-HA_SCALP{background:rgba(249,115,22,0.12);color:#f97316;border:0.5px solid rgba(249,115,22,0.3);}
+    .badge-EARLYBIRD{background:rgba(20,184,166,0.12);color:#14b8a6;border:0.5px solid rgba(20,184,166,0.3);}
 
     .roll-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}
     @media(max-width:1100px){.roll-grid{grid-template-columns:1fr;}}
@@ -669,7 +673,7 @@ function renderTradesTable(rows){
       <td>\${startNo + i + 1}</td>
       <td><span class="badge-mode badge-\${t.mode}">\${t.mode}</span></td>
       <td>\${fmtDateTime(t.date)}</td>
-      <td><span class="badge \${t.side === 'CE' ? 'badge-ce' : 'badge-pe'}">\${t.side || '—'}</span></td>
+      <td><span class="badge \${sideBadgeCls(t.side)}">\${t.side || '—'}</span></td>
       <td style="max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="\${esc(t.symbol)}">\${esc(t.symbol) || '—'}</td>
       <td>\${t.qty || '—'}</td>
       <td>\${fmtINR(t.entryPrice)}</td>
@@ -681,6 +685,13 @@ function renderTradesTable(rows){
       <td><button class="btn" onclick="copyOne(\${i})">📋</button></td>
     </tr>\`).join('');
   updatePagerUI('tradesTbl', sorted.length, pg.slice.length, pg.page, pg.totalPages);
+}
+
+// CE and LONG are the bullish sides, PE and SHORT the bearish ones. EarlyBird
+// trades cash equity, so its rows carry LONG/SHORT and would otherwise all
+// paint as the red PE badge.
+function sideBadgeCls(side){
+  return (side === 'CE' || side === 'LONG') ? 'badge-ce' : 'badge-pe';
 }
 
 function esc(s){

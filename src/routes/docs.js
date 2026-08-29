@@ -33,6 +33,7 @@ const GUIDE_MODE_BY_FILE = {
   "ha_scalp_strategy_guide.html": "HA_SCALP",
   "rsi_pivot_st_strategy_guide.html": "RSI_PIVOT_ST",
   "simple930_strategy_guide.html":    "SIMPLE930",
+  "earlybird_strategy_guide.html":    "EARLYBIRD",
 };
 
 /**
@@ -865,6 +866,14 @@ const GUIDE_STATUS = {
     { type: "bool", label: "Trailing Stop", key: "SIMPLE930_TRAIL_ENABLED", def: "true" },
     { type: "value", label: "Stop distance off the fill (points)", key: "SIMPLE930_SL_PTS", def: "20" },
   ] }] },
+  "EarlyBird_Strategy_Guide.html": { title: "EarlyBird — Live Configuration", groups: [{ rows: [
+    { type: "bool", label: "EarlyBird Mode (sidebar + Settings section)", key: "EARLYBIRD_MODE_ENABLED", def: "true" },
+    { type: "bool", label: "EarlyBird Paper Trading", key: "EARLYBIRD_PAPER_ENABLED", def: "true" },
+    { type: "live", label: "Live Orders (Fyers, CASH EQUITY, via paper harness)", enableKey: "EARLYBIRD_LIVE_ENABLED", dryKey: "EARLYBIRD_LIVE_DRY_RUN" },
+    { type: "value", label: "Quantity per stock (SHARES, not lots)", key: "EARLYBIRD_QTY", def: "100" },
+    { type: "value", label: "Max positions held at once", key: "EARLYBIRD_MAX_CONCURRENT", def: "5" },
+    { type: "value", label: "Forced square-off (IST)", key: "EARLYBIRD_FORCED_EXIT", def: "13:00" },
+  ] }] },
   "Application_Setup_Guide.html": { title: "System — Live Configuration", groups: [
     { heading: "Global gates", rows: [
       { type: "globaldry", label: "Live Harness DRY-RUN (global kill-switch)", key: "LIVE_HARNESS_DRY_RUN" },
@@ -884,6 +893,7 @@ const GUIDE_STATUS = {
       { type: "bool", label: "HA Scalp Mode", key: "HA_SCALP_MODE_ENABLED", def: "true" },
       { type: "bool", label: "RSI Pivot ST Mode", key: "RSI_PIVOT_ST_MODE_ENABLED", def: "true" },
       { type: "bool", label: "SIMPLE_9:30 Mode", key: "SIMPLE930_MODE_ENABLED", def: "true" },
+      { type: "bool", label: "EarlyBird Mode", key: "EARLYBIRD_MODE_ENABLED", def: "true" },
     ] },
   ] },
 };
