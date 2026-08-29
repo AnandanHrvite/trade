@@ -106,11 +106,22 @@ function _setOppositeCooldown(exitedSide, reason) {
 // `beforeTime` is the time of the bar that was still FORMING when the entry was
 // decided — captured by the caller BEFORE any await so a candle closing during
 // the order round-trip cannot change which structure the stop is derived from.
-function _applyInitialSLCap(stopLoss, entrySpot, side, lastCandle, beforeTime) {
+// EMA_RSI_ST_INITIAL_SL_MODE mirrors emaRsiStPaper.simulateBuy():
+//   "prev_candle" (default) — the seeded prev-candle low/high, as above.
+//   "ema21"       — seed on the same EMA21 line the trail rides, when that
+//                   level is protective for the side. Paper is canonical; this
+//                   block is a straight copy so live cannot drift from it.
+function _applyInitialSLCap(stopLoss, entrySpot, side, lastCandle, beforeTime, ema21AtEntry) {
+  let _seedSL = stopLoss != null ? stopLoss : null;
+  const _initSlMode = (process.env.EMA_RSI_ST_INITIAL_SL_MODE || "prev_candle").toLowerCase();
+  if (_initSlMode === "ema21" && _seedSL != null && ema21AtEntry != null) {
+    const _protective = side === "CE" ? ema21AtEntry < entrySpot : ema21AtEntry > entrySpot;
+    if (_protective) _seedSL = Math.round(ema21AtEntry * 100) / 100;
+  }
   const fix = tradeGuards.resolveProtectiveStop({
     side,
     entryPrice: entrySpot,
-    stopLoss:   stopLoss != null ? stopLoss : null,
+    stopLoss:   _seedSL,
     candles:    tradeState.candles,
     beforeTime,
   });
@@ -119,7 +130,7 @@ function _applyInitialSLCap(stopLoss, entrySpot, side, lastCandle, beforeTime) {
     capLog:   fix.repaired ? `🛡️ [LIVE] Initial SL corrected — ${fix.reason}` : null,
     // M1: a stop was seeded but NO protective structure exists anywhere in
     // history. Never open a REAL position we cannot protect — the caller aborts.
-    unprotected: stopLoss != null && fix.stopLoss == null,
+    unprotected: _seedSL != null && fix.stopLoss == null,
     reason:   fix.reason,
   };
 }
@@ -1688,7 +1699,7 @@ async function onCandleClose(candle) {
       // Initial SL = the prev-candle low/high from getSignal, used as-is (no-op cap).
       // Entry fires at THIS candle's close, so it is fully closed structure; the
       // bar still forming is the next one.
-      const _slCapResult = _applyInitialSLCap(stopLoss, candle.close, side, _ccLastCandle, candle.time + TRADE_RES * 60);
+      const _slCapResult = _applyInitialSLCap(stopLoss, candle.close, side, _ccLastCandle, candle.time + TRADE_RES * 60, indicators.ema21);
       if (_slCapResult.unprotected) {
         log(`🚫 [LIVE] Entry aborted — ${_slCapResult.reason}`);
         skipLogger.appendSkipLog("ema_rsi_st", {
@@ -2095,7 +2106,7 @@ function onSpotTick(tick) {
 
         // ── HYBRID INITIAL SL CAP ─────────────────────────────────────────
         // _currentBarTime was captured synchronously before the order round-trip.
-        const _slCapResultIntra = _applyInitialSLCap(stopLoss, ltp, side, _intraLastCandle, _currentBarTime);
+        const _slCapResultIntra = _applyInitialSLCap(stopLoss, ltp, side, _intraLastCandle, _currentBarTime, indicators.ema21);
         if (_slCapResultIntra.unprotected) {
           log(`🚫 [LIVE] Entry aborted — ${_slCapResultIntra.reason}`);
           skipLogger.appendSkipLog("ema_rsi_st", {

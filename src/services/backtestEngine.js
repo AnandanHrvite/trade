@@ -13,6 +13,20 @@ const { fetchCandlesWithCache, fetchCandlesSmartCache } = require("../utils/back
 const confirmCandle = require("../utils/confirmCandle");
 const tradeGuards   = require("../utils/tradeGuards");
 
+// EMA_RSI_ST_INITIAL_SL_MODE — mirrors emaRsiStPaper.simulateBuy() / emaRsiStLive
+// ._applyInitialSLCap(). Paper is canonical; this is a straight copy so the three
+// engines cannot drift. "prev_candle" (default) keeps the seeded prev-candle
+// low/high; "ema21" seeds the stop on the same EMA21 line the trail rides, but
+// only when that level is protective for the side. runBacktest() is the
+// EMA_RSI_ST backtest only, so reading the key here scopes to that strategy.
+function _emaRsiStSeedSL(seededSL, entryPrice, side, ema21) {
+  if (seededSL == null) return null;
+  const mode = (process.env.EMA_RSI_ST_INITIAL_SL_MODE || "prev_candle").toLowerCase();
+  if (mode !== "ema21" || ema21 == null) return seededSL;
+  const protective = side === "CE" ? ema21 < entryPrice : ema21 > entryPrice;
+  return protective ? quantize(ema21, 2) : seededSL;
+}
+
 
 function maxDaysForResolution(resolution) {
   // Fyers rejects a day/week/month request wider than 366 days with
@@ -890,6 +904,10 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
       _pendingArm = {
         side: _sigSide, armedBarTime: candle.time, triggerLevel: candle.close,
         signalSL, reason, strength: signalStrength || "STRONG",
+        // Signal-candle EMA21 — the seed EMA_RSI_ST_INITIAL_SL_MODE="ema21" uses
+        // on the fill. Paper stamps ema21AtEntry from the signal bar's
+        // indicators, so carrying it on the arm keeps the two identical.
+        ema21: _sig.ema21 != null ? _sig.ema21 : null,
       };
       if (_verbose) console.log(`  🎯 ARM ${_sigSide} @ close ${candle.close} [${toIST(candle.time)}] — await next-candle cross`);
     }
@@ -959,7 +977,9 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
             const _slFixConfirm = tradeGuards.resolveProtectiveStop({
               side:       _a.side,
               entryPrice,
-              stopLoss:   _a.signalSL != null ? quantize(_a.signalSL, 2) : null,
+              stopLoss:   _emaRsiStSeedSL(
+                _a.signalSL != null ? quantize(_a.signalSL, 2) : null,
+                entryPrice, _a.side, _a.ema21 != null ? _a.ema21 : null),
               candles:    window,
               // `beforeTime` (not a manual slice) excludes THIS confirmation
               // candle, so the resolver sees the signal candle and older — the
@@ -1046,7 +1066,9 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         const _slFixClose = tradeGuards.resolveProtectiveStop({
           side,
           entryPrice,
-          stopLoss: signalSL != null ? quantize(signalSL, 2) : null,
+          stopLoss: _emaRsiStSeedSL(
+            signalSL != null ? quantize(signalSL, 2) : null,
+            entryPrice, side, _sig.ema21 != null ? _sig.ema21 : null),
           candles:  window,
           // Entry is at THIS candle's close, so it is fully closed structure and
           // must be visible; the next bar is the one still forming.

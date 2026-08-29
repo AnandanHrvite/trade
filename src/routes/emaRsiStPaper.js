@@ -852,11 +852,31 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
     ? entryMeta.slBeforeTime
     : (ptState.currentBar ? ptState.currentBar.time : null);
 
+  // ── Initial-SL mode (EMA_RSI_ST_INITIAL_SL_MODE) ───────────────────────────
+  // "prev_candle" (default) — seed the stop from the previous candle low/high,
+  //   as passed in by getSignal. Structure-based, but often only a few points
+  //   from the fill, so ordinary noise stops the trade out within seconds.
+  // "ema21" — seed the stop on the SAME EMA21 line the trail already rides, so
+  //   entry protection and trail protection are one line. Only applied when the
+  //   EMA21 level is genuinely protective (below entry for CE / above for PE);
+  //   otherwise the prev-candle seed is kept and resolveProtectiveStop below
+  //   does its usual repair. EMA21 replaces the seed outright (it may be wider
+  //   than the prev-candle level — that extra room is the point of the mode).
+  let _seedSL = stopLoss != null ? stopLoss : null;
+  const _initSlMode = (process.env.EMA_RSI_ST_INITIAL_SL_MODE || "prev_candle").toLowerCase();
+  if (_initSlMode === "ema21" && _seedSL != null) {
+    const _e21 = entryMeta.ema21AtEntry;
+    if (_e21 != null) {
+      const _protective = side === "CE" ? _e21 < price : _e21 > price;
+      if (_protective) _seedSL = Math.round(_e21 * 100) / 100;
+    }
+  }
+
   let _capLog = null;
   const _slFix = tradeGuards.resolveProtectiveStop({
     side,
     entryPrice: price,
-    stopLoss:   stopLoss != null ? stopLoss : null,
+    stopLoss:   _seedSL,
     candles:    ptState.candles,
     beforeTime: _slBeforeTime,
   });
