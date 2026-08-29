@@ -713,6 +713,7 @@ function computePnl(side, entry, exit, qty) {
 }
 
 module.exports = {
+  NAME: "EARLYBIRD",
   getConfig,
   classifyCandle,
   firstCandleOfDay,
