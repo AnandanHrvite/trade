@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EarlyBird — Strategy Guide</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0 18px 80px;
+    background: #0d1117; color: #c9d1d9;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.65; font-size: 16px;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; }
+  header.hero {
+    margin: 0 -18px 8px; padding: 40px 26px 30px;
+    background: linear-gradient(135deg, #161b22 0%, #101d24 100%);
+    border-bottom: 3px solid #0ea5e9;
+  }
+  header.hero .kicker { color: #0ea5e9; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; font-size: 0.72rem; }
+  header.hero h1 { margin: 6px 0 8px; font-size: 2rem; color: #f0f6fc; }
+  header.hero p { margin: 0; color: #8b949e; max-width: 640px; }
+  h2 { color: #f0f6fc; font-size: 1.35rem; margin: 38px 0 12px; padding-bottom: 8px; border-bottom: 1px solid #21262d; }
+  h3 { color: #58a6ff; font-size: 1.05rem; margin: 24px 0 8px; }
+  code { background: rgba(110,118,129,0.18); color: #7dd3fc; padding: 1.5px 6px; border-radius: 4px; font-size: 0.85em; font-family: 'SF Mono', ui-monospace, Menlo, monospace; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 18px 22px; margin: 14px 0; }
+  .card.accent { border-left: 4px solid #0ea5e9; }
+  .card.warn { border-left: 4px solid #d29922; background: #1c1a12; }
+  .card.bad  { border-left: 4px solid #f85149; background: #1c1214; }
+  ul, ol { padding-left: 22px; }
+  li { margin: 5px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.88rem; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #21262d; vertical-align: top; }
+  th { color: #8b949e; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.6px; }
+  td code { white-space: nowrap; }
+  .flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 14px 0; }
+  .flow .step { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 8px 14px; font-size: 0.85rem; }
+  .flow .arrow { color: #0ea5e9; font-weight: 700; }
+  .pill { display: inline-block; background: rgba(14,165,233,0.15); color: #0ea5e9; border: 1px solid rgba(14,165,233,0.35); border-radius: 20px; padding: 2px 12px; font-size: 0.78rem; font-weight: 600; }
+  .muted { color: #6e7681; font-size: 0.85rem; }
+  a { color: #58a6ff; }
+  .num { font-family: 'SF Mono', ui-monospace, Menlo, monospace; color: #f0f6fc; }
+  /* TradingView-style chart wrapper */
+  .tv-chart { margin: 16px 0 6px; border: 1px solid #30363d; border-radius: 10px; overflow: hidden; background: #0d1626; }
+  .tv-chart .tv-svg { width: 100%; height: auto; display: block; }
+  .tv-cap { color: #8b949e; font-size: 0.82rem; margin: 0 0 16px; padding-left: 4px; }
+  .tv-cap b { color: #c9d1d9; }
+  .tv-empty { color: #6e7681; padding: 40px; text-align: center; font-size: 0.9rem; }
+
+/* ── MOBILE (shared block — keep in sync across all guides) ── */
+  @media (max-width: 768px) {
+    /* The setting tables are three columns of prose. A table cannot lay out
+       narrower than its min-content width, so at 393px they ran up to 259px past
+       the right edge and the browser zoomed the whole guide out to fit. Each one
+       now scrolls inside its own box and the page keeps the phone's width. */
+    table { display: block; width: 100%; max-width: 100%; overflow-x: auto;
+            -webkit-overflow-scrolling: touch; }
+    /* Long env keys wrap; fenced blocks keep their formatting and scroll. */
+    code { overflow-wrap: anywhere; word-break: break-word; }
+    pre { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    pre code { overflow-wrap: normal; word-break: normal; }
+    img, svg, canvas { max-width: 100%; }
+    .tv-chart { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    /* .cols is a two-up flex row with no wrap — the second card was pushed off
+       screen rather than dropping under the first. */
+    .cols { flex-direction: column; }
+    .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+    [style*="grid-template-columns"] { grid-template-columns: 1fr !important; }
+    /* Contents links are the guide's only navigation, and they were 18-31px.
+       The three guides each mark theirs up differently: nav.toc (ORB, EMA9VWAP,
+       Setup), a nav.no-print link bar (Price Action) and a two-column card list
+       (BB_RSI, EMA_RSI_ST, Trend Pullback). */
+    nav.toc a, .toc a, nav.no-print .container a,
+    .card li a { min-height: 44px; display: inline-flex; align-items: center; }
+    /* A two-column contents list leaves ~170px per column at 393px. */
+    ul[style*="columns"], ol[style*="columns"] { columns: 1 !important; -webkit-columns: 1 !important; }
+    .hero { padding-left: 16px; padding-right: 16px; }
+    .hero h1 { font-size: 1.7rem; }
+    .section { padding: 20px 14px; }
+  }
+/* ── END MOBILE ── */</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <div class="kicker">Strategy 14 · Fyers · CASH EQUITY on F&amp;O stocks · Plain-English edition</div>
+  <h1>EarlyBird</h1>
+  <p>Every strategy in this repo buys a NIFTY option. This one does not. EarlyBird reads the market's <b>first fifteen minutes</b>, decides from NIFTY alone whether today is a buying day or a selling day, and then buys — or short-sells — the <em>actual shares</em> of F&amp;O stocks that opened the same way. The decision is made at 09:30 and the rest of the day only executes it.</p>
+  <p class="muted" style="margin-top:10px;">Updated 2026-08-30 &nbsp;·&nbsp; plain-English edition &nbsp;·&nbsp; every chart and every number below was produced by running the real engine over real cached NIFTY data</p>
+</header>
+
+<!--LIVE_STATUS_PANEL-->
+
+<div class="card bad">
+  <strong>Read this first: this strategy has never traded — not once.</strong> No live order, no paper session, zero trades in existence. Everything measured in this guide comes from running <code>src/strategies/early_bird.js</code> over <b>2,118 cached NIFTY sessions</b>. And there is a second, larger caveat that you must carry through the whole document: <b>there is no cached per-stock data in this repo and the Fyers token is expired</b>, so no stock could be fetched. Every "trade" figure below uses <b>NIFTY itself standing in as if it were a stock</b>. The index's opening candle does not behave like a single stock's opening candle, so those figures show that the <em>machinery</em> works end-to-end — they are <b>not</b> this strategy's expected profit or loss.
+</div>
+
+<div class="card">
+  <strong>What's inside</strong>
+  <ol style="margin:10px 0 0; columns:2; column-gap:30px;">
+    <li><a href="#idea">The idea in one minute</a></li>
+    <li><a href="#different">Why this one is unlike the others</a></li>
+    <li><a href="#glossary">Words you'll see</a></li>
+    <li><a href="#shape">Step 1 — The signal candle</a></li>
+    <li><a href="#nifty">Step 2 — NIFTY picks the side</a></li>
+    <li><a href="#stocks">Step 3 — The stocks must agree</a></li>
+    <li><a href="#gap">Step 4 — The 2% gap rule</a></li>
+    <li><a href="#levels">Step 5 — Entry, stop and target</a></li>
+    <li><a href="#big">Step 6 — The big-candle stop</a></li>
+    <li><a href="#exit">Step 7 — How the day ends</a></li>
+    <li><a href="#reject">The days it refuses</a></li>
+    <li><a href="#measured">What 2,118 real sessions say</a></li>
+    <li><a href="#absent">What is deliberately not here</a></li>
+    <li><a href="#risk">Safety limits</a></li>
+    <li><a href="#modes">Paper, Live, Backtest &amp; Replay</a></li>
+    <li><a href="#config">All the settings, explained</a></li>
+    <li><a href="#missing">What's still missing</a></li>
+  </ol>
+</div>
+
+<h2 id="idea">1. The idea in one minute</h2>
+
+<p>The first fifteen minutes of the trading day are the loudest fifteen minutes. Overnight news, foreign markets, and every order that queued up while the exchange was shut all land at once. By 09:30 that fight has produced a single candle, and EarlyBird's whole belief is that this one candle tells you which side won — and that whoever won the opening usually keeps pushing for the next few hours.</p>
+
+<p>So the strategy asks three questions at 09:30 and then stops asking questions:</p>
+
+<div class="flow">
+  <span class="step">Did NIFTY print a one-sided opening candle?</span><span class="arrow">→</span>
+  <span class="step">Which stocks opened the same way?</span><span class="arrow">→</span>
+  <span class="step">Place a pending order just past each one's candle</span><span class="arrow">→</span>
+  <span class="step">Stop just past the other end</span><span class="arrow">→</span>
+  <span class="step">Everything closed by 1 pm</span>
+</div>
+
+<p>If NIFTY's opening candle is a strong <b>green</b> one, today is a <b>buy</b> day and the strategy only buys. If it is a strong <b>red</b> one, today is a <b>short</b> day and the strategy only short-sells. If the candle is indecisive — a small body, or a long wick showing the other side pushed back hard — there is <b>no trading at all that day</b>. That happens more than half the time.</p>
+
+<div class="card accent">
+  <strong>One candle, one decision, one time.</strong> The engine reads exactly <b>one bar per symbol per day</b> — the 09:15&ndash;09:30 fifteen-minute candle — and never re-evaluates it. That is what "EarlyBird" means. There is no second look at 11:00 and no re-entry if a stock stops out.
+</div>
+
+<h2 id="different">2. Why this one is unlike every other strategy here</h2>
+
+<p>This matters enough to spell out, because almost every habit you have from the other guides is wrong here.</p>
+
+<table>
+<tr><th></th><th>Every other strategy</th><th>EarlyBird</th></tr>
+<tr><td><b>What is bought</b></td><td>One NIFTY option (a Call or a Put)</td><td>The <b>actual shares</b> of an F&amp;O stock</td></tr>
+<tr><td><b>Strike / expiry</b></td><td>Chosen every trade</td><td><b>None.</b> There is no strike, no expiry, no premium and no lot size</td></tr>
+<tr><td><b>Size</b></td><td>Lots (75 shares to a NIFTY lot)</td><td>A flat <b>100 shares</b> per stock (<code>EARLYBIRD_QTY</code>)</td></tr>
+<tr><td><b>A bearish signal</b></td><td>Buy a Put — you still pay money and go long an option</td><td><b>A real intraday short sale.</b> You are selling shares you do not own and buying them back before the close</td></tr>
+<tr><td><b>Positions at once</b></td><td>One</td><td>Up to <b>five</b> different stocks (<code>EARLYBIRD_MAX_CONCURRENT</code>)</td></tr>
+<tr><td><b>Is NIFTY traded?</b></td><td>Yes, it is the instrument</td><td><b>Never.</b> NIFTY only picks the side; not one rupee is ever put into the index</td></tr>
+<tr><td><b>Profit maths</b></td><td>Premium out minus premium in</td><td>(exit &minus; entry) &times; 100 for a buy; (entry &minus; exit) &times; 100 for a short</td></tr>
+</table>
+
+<div class="card warn">
+  <strong>The size warning that comes with cash equity.</strong> An option costs you the premium and no more. One hundred shares of a &#8377;3,000 stock is a <b>&#8377;300,000 position</b>, and five of those at once is one and a half million rupees of exposure. The strategy's rupee risk per stock is small — 100 shares times a stop of a few rupees — but the <em>capital and margin</em> required is not, and a short sale carries the extra obligation of having to buy the shares back. Read <a href="#risk">Safety limits</a> before turning anything on.
+</div>
+
+<h2 id="glossary">3. Words you'll see</h2>
+
+<table>
+<tr><th>Word</th><th>What it means here</th></tr>
+<tr><td><b>Signal candle</b></td><td>The day's first 15-minute candle, 09:15&ndash;09:30. Every level in the trade is read off it.</td></tr>
+<tr><td><b>Body</b></td><td>The distance from open to close — the solid part of the candle.</td></tr>
+<tr><td><b>Range</b></td><td>The full height, high to low, wick tip to wick tip.</td></tr>
+<tr><td><b>Opposing wick</b></td><td>The wick that argues <em>against</em> the candle's direction. On a green candle that is the <b>upper</b> wick (sellers pushed back); on a red candle the <b>lower</b> wick (buyers pushed back).</td></tr>
+<tr><td><b>Favourable wick</b></td><td>The wick pointing the other way. It is allowed to be long — a long lower wick on a green candle means buyers rejected lower prices, which is a good thing.</td></tr>
+<tr><td><b>Pending stop order</b></td><td>An order that sits with the exchange doing nothing until price trades <em>through</em> a level, then becomes a market order. This is how every EarlyBird entry works.</td></tr>
+<tr><td><b>Gap</b></td><td>How far a stock's opening price is from where it closed yesterday, in percent.</td></tr>
+<tr><td><b>1:2</b></td><td>Reward-to-risk. If the stop is &#8377;20 away, the target is &#8377;40 away.</td></tr>
+<tr><td><b>Confirming stock</b></td><td>A stock whose own opening candle passes the same shape test, in the same direction as NIFTY.</td></tr>
+</table>
+
+<h2 id="shape">4. Step 1 — What counts as a signal candle</h2>
+
+<p>The original strategy describes three drawings for a bullish opening candle: a full green body with no wicks at all; a green candle with a long lower wick and no upper wick; and a green candle with a small upper wick and a long lower wick. The bearish versions are the mirror images.</p>
+
+<p>All three drawings share exactly one property, and the engine implements <b>that property</b> rather than the three pictures: <em>the wick pointing against the move is small, and the body is real.</em> Two numbers say it:</p>
+
+<pre><code>GREEN candle (close &gt; open)
+  upper wick (high - close)  &le;  30% of the candle's range   &larr; EARLYBIRD_MAX_OPPOSING_WICK_PCT
+  body       (close - open)  &ge;  40% of the candle's range   &larr; EARLYBIRD_MIN_BODY_PCT
+
+RED candle (close &lt; open)
+  lower wick (open - low)    &le;  30% of the range
+  body       (open - close)  &ge;  40% of the range</code></pre>
+
+<p>Wicks are measured as a <b>percentage of the candle's own range</b>, never in rupees. That is what lets the identical rule work on a 60-point NIFTY bar and on a &#8377;900 stock bar — "30% of the range" means the same thing on both.</p>
+
+<div class="card warn">
+  <strong>Why not "no wick at all", as drawing 1 shows?</strong> Because on real 15-minute data a literally wickless index candle is close to nonexistent. A rule that fires twice a year cannot be measured, tuned, or trusted. 30% and 40% is the engine's reading of "mostly one-directional", which is the thing all three drawings actually have in common. Both numbers are settings you can tighten toward zero if you want the strict picture.
+</div>
+
+<p>Here is a real one. NIFTY's 09:15 candle on 28 March 2024 opened at 22163.60, ran to 22224.60 and closed at 22217.70 — a 61.00-point range with a 54.10-point body, so the body is <b>88.7%</b> of the range and the upper wick is only <b>11.3%</b>. Both tests pass comfortably.</p>
+
+<div class="tv-chart" id="eb-nifty-signal"></div>
+<p class="tv-cap"><b>A signal candle — 28 March 2024.</b> The first bar of the day is green, almost all body, with a 6.90-point upper wick. The engine labels it <em>BULLISH, small opposing wick (drawing 3)</em>, and everything for the rest of the day follows from it. Note that the market kept climbing to 22516 by mid-afternoon — but this strategy stops looking at 09:30.</p>
+
+<h2 id="nifty">5. Step 2 — NIFTY picks the side, and only the side</h2>
+
+<p>The very same shape test is applied to NIFTY's opening candle first. The answer is one of three things:</p>
+
+<ul>
+  <li><b>Green and it passes</b> → today is a <b>BUY day</b>. The strategy may only buy stocks.</li>
+  <li><b>Red and it passes</b> → today is a <b>SHORT day</b>. The strategy may only short-sell stocks.</li>
+  <li><b>It fails</b> → <b>no trading today.</b> The scan does not even run.</li>
+</ul>
+
+<p>That is the entire role of the index. NIFTY is a switch with three positions, and no money ever goes into it.</p>
+
+<h2 id="stocks">6. Step 3 — At least one stock has to agree</h2>
+
+<p>Having a direction is not enough. At 09:30 the engine fetches the opening 15-minute candle for every symbol in the chosen universe — <code>EARLYBIRD_UNIVERSE</code>, default <b>FNO</b>, roughly 220 names — and runs the identical shape test on each one. A stock is a <b>candidate</b> only if its own candle passes <em>and</em> points the <em>same way</em> as NIFTY. A green stock on a short day is discarded, however pretty its candle.</p>
+
+<p>By default, <b>one</b> confirming stock is enough (<code>EARLYBIRD_MIN_CONFIRMING_STOCKS</code>). The original rule is simply "the stock has to make a similar pattern to NIFTY", so a single name that qualifies is reason enough to trade that name. Raising this number turns the setting into a market-breadth gate: "don't trade unless at least 20 stocks opened this way".</p>
+
+<p>If more stocks confirm than <code>EARLYBIRD_MAX_CONCURRENT</code> allows (default 5), the engine sorts them by <b>tightest stop first</b> and takes the top five. With a fixed 100-share size, the tightest stop is simply the smallest rupee loss, and the cap has to choose somehow.</p>
+
+<h2 id="gap">7. Step 4 — The 2% gap rule</h2>
+
+<p>A stock that opened far away from yesterday's close is reacting to its own news, not to the market's mood, and its opening candle means something different. So any stock whose 09:15 <b>open</b> is more than <code>EARLYBIRD_MAX_GAP_PCT</code> (default <b>2%</b>) away from the <b>previous day's closing price</b>, in either direction, is dropped before its shape is even examined.</p>
+
+<div class="card accent">
+  <strong>An unknown previous close is a refusal, not a pass.</strong> If the engine cannot fetch yesterday's close for a symbol, that symbol is dropped — it does not assume there was no gap. "We don't know the gap" is not the same as "there is no gap", and treating them the same is how a strategy quietly starts trading the exact stocks it was written to avoid.
+</div>
+
+<h2 id="levels">8. Step 5 — Entry, stop and target</h2>
+
+<p>Every level is read off the <em>stock's own</em> signal candle — not NIFTY's — and every level is <b>frozen at 09:30</b>. Nothing moves for the rest of the day.</p>
+
+<pre><code>BUY day (LONG)
+  entry  = signal candle HIGH + &#8377;5      &larr; EARLYBIRD_ENTRY_BUFFER_PTS
+  stop   = signal candle LOW  - &#8377;5
+  risk   = entry - stop
+  target = entry + risk &times; 2             &larr; EARLYBIRD_TARGET_RR
+
+SHORT day (SHORT)
+  entry  = signal candle LOW  - &#8377;5
+  stop   = signal candle HIGH + &#8377;5
+  risk   = stop - entry
+  target = entry - risk &times; 2</code></pre>
+
+<p>The &#8377;5 buffer is the "a little above the breakout candle" from the original rules, and it is applied to <b>both</b> ends — past the extreme you are entering on, and past the extreme you are wrong at.</p>
+
+<p>The entry is a <b>pending stop order</b>. Nothing is bought at 09:30. The order sits there and fills the first time price trades through the level, and it fills <b>at the level</b> — not at whatever price a tick happened to print. That last detail is what keeps the backtest honest: a 40-rupee jump through the level would otherwise hand the simulation a fill the real market never offered.</p>
+
+<p>Here is that day in full. Entry 22229.60 (the 22224.60 high plus 5), stop 22158.60 (the 22163.60 low minus 5), so the risk is <b>71.00</b> points and the target is 22229.60 + 142.00 = <b>22371.60</b>.</p>
+
+<div class="tv-chart" id="eb-long-trade"></div>
+<p class="tv-cap"><b>A complete LONG — 28 March 2024.</b> The pending order filled on the very next bar at 22229.60. The stop at 22158.60 was never approached. The target 22371.60 was reached on the 11:15 bar, which ran to 22373.50 — a 142.00-point gain, exactly 2R. <b>NIFTY is standing in for a stock here</b>, because no per-stock candles are cached in this repo; the mechanics are the strategy's, the instrument is not.</p>
+
+<p>And here is the other kind of day. On 6 June 2025 NIFTY's opening candle was red and passed the test (body 48.0%, lower wick 15.5%), making it a short day. The short entry was 24718.25, the stop 24768.35, risk <b>50.10</b>.</p>
+
+<div class="tv-chart" id="eb-stop-trade"></div>
+<p class="tv-cap"><b>A complete SHORT that lost — 6 June 2025.</b> Filled at 24718.25 on the 09:30 bar. Two bars later, at 10:00, price ran to 24817.10 and took out the stop at 24768.35. That is exactly &minus;1R, and the market then climbed to 25029.50 by 11:45 — the stop did its job. The target 24618.05 was never in sight. Again, <b>NIFTY standing in for a stock</b>.</p>
+
+<h2 id="big">9. Step 6 — The big-candle stop</h2>
+
+<p>Sometimes the opening candle is enormous. A stop placed at its far wick would be so wide that a single trade risks far more than intended, and the 1:2 target would sit somewhere price will not reach before lunch. The original rules cover this with a note: <em>if the breakout candle is too big, ignore the wick.</em></p>
+
+<p>The engine's version: if the wick-to-wick risk exceeds <code>EARLYBIRD_MAX_SL_PTS</code> (default <b>&#8377;60</b>), the stop moves off the wick and onto the candle's <b>body edge</b> instead.</p>
+
+<pre><code>LONG   stop = min(open, close) - &#8377;5      &larr; the bottom of the body, not the low
+SHORT  stop = max(open, close) + &#8377;5      &larr; the top of the body, not the high</code></pre>
+
+<div class="card accent">
+  <strong>It can only ever tighten.</strong> The body is always inside the wick, so this rule never widens a stop — and the engine additionally refuses to apply it if the body edge somehow came out no tighter. It is also applied <b>before</b> the target is computed, so a body-edge stop produces a correspondingly nearer target. The 1:2 is honoured against the risk actually taken, not against the risk you avoided.
+</div>
+
+<p>A real example, 29 January 2025. NIFTY opened at 23026.75, spiked to 23050.05, fell to 22978.35 and closed at 22987.70 — a red candle that passes (body 54.5%, lower wick 13.0%), so a short day. The wick stop would be 23050.05 + 5 = <b>23055.05</b>, which against the entry at 22973.35 is a risk of <b>81.70</b> — over the &#8377;60 limit. So the stop moves to the body top, 23026.75 + 5 = <b>23031.75</b>, cutting the risk to <b>58.40</b>.</p>
+
+<div class="tv-chart" id="eb-big-candle"></div>
+<p class="tv-cap"><b>The big-candle rule, and an order that never filled — 29 January 2025.</b> Two things happen on this chart. First, the wick stop (81.70 risk) is rejected in favour of the body-edge stop (58.40). Second, the trade never happened at all: the short entry sat at 22973.35 and the lowest price in the entry window was 22976.50, on the 09:30 bar. Price then went straight up and the pending order was cancelled unfilled at 10:45. <b>NIFTY standing in for a stock.</b></p>
+
+<p>That "never filled" outcome is not rare and it is not a failure — it is the pending order doing its job. On the proxy measurement below, <b>18.9%</b> of confirmed setups never triggered at all.</p>
+
+<h2 id="exit">10. Step 7 — How a position ends</h2>
+
+<p>There are exactly three ways out. No trailing stop, no breakeven shift, no partial exits.</p>
+
+<table>
+<tr><th>Exit</th><th>When</th><th>Where it fills</th></tr>
+<tr><td><b>Target</b></td><td>Price reaches the 1:2 level</td><td>At the target level</td></tr>
+<tr><td><b>Stop</b></td><td>Price reaches the stop level</td><td>At the stop level — unless the bar <em>opened</em> beyond it, in which case at the open, because the better price was never available</td></tr>
+<tr><td><b>1 pm</b></td><td><code>EARLYBIRD_FORCED_EXIT</code>, default <b>13:00</b></td><td>At the market, whatever it is</td></tr>
+</table>
+
+<p>Two time rules bracket the day. No <b>new</b> entry is taken after <code>EARLYBIRD_ENTRY_END</code> (default <b>10:45</b>) — a pending order not triggered by then is cancelled. And everything still open is squared off at 13:00, win or lose.</p>
+
+<div class="card warn">
+  <strong>When one bar could have done both.</strong> A single 15-minute bar can contain both the stop and the target. The bar cannot tell you which came first, so the backtest takes the <b>stop</b> — always. Assuming the good one arrived first is exactly how a backtest flatters itself. Same reasoning for a bar that opens beyond the stop: it fills at the open, never at the better level.
+</div>
+
+<h2 id="reject">11. The days it refuses</h2>
+
+<p>More than half of all sessions produce no trade at all, and the reason is almost always one of two things. Both are worth seeing, because they are what the strategy is <em>for</em> — the whole premise is that an indecisive opening tells you nothing.</p>
+
+<p><b>The body is too small.</b> On 6 January 2025 NIFTY's opening candle had a 73.55-point range — a big, busy fifteen minutes — but it opened at 24045.80 and closed at 24036.15, a body of just 9.65 points, or <b>13.1%</b> of the range. Price went everywhere and finished nowhere.</p>
+
+<div class="tv-chart" id="eb-reject-body"></div>
+<p class="tv-cap"><b>Refused for a small body — 6 January 2025.</b> The engine's own words: <em>body 13.12% of range &lt; required 40%</em>. And it was right to refuse in a useful way — the market then fell all day, so a naive red-candle reading would have been directionally lucky here, but on a candle that genuinely showed no conviction at 09:30.</p>
+
+<p><b>The opposing wick is too long.</b> On 14 January 2025 the opening candle was green and its body was 40.7% — enough on its own. But it had run to 23227.20 and closed at 23193.10, leaving a <b>34.10-point upper wick, 51.0% of the range</b>. Buyers pushed, sellers pushed back harder, and by the close of the candle most of the gain was gone.</p>
+
+<div class="tv-chart" id="eb-reject-wick"></div>
+<p class="tv-cap"><b>Refused for a long opposing wick — 14 January 2025.</b> The engine's words: <em>upper wick 51.01% of range &gt; allowed 30% — sellers pushed back too hard</em>. This is the test doing exactly what it is for: a candle that looks green in a list of closes but was a fight in reality.</p>
+
+<h2 id="measured">12. What 2,118 real sessions say</h2>
+
+<div class="card bad">
+  <strong>Read the caveat before the numbers.</strong> Section A below is <b>solid</b>: it is the real NIFTY rule applied to real cached NIFTY candles, and it says exactly how often this strategy would even switch on. Section B is <b>a proxy</b>: with no cached stock candles and an expired Fyers token, NIFTY was fed to the engine as though it were a stock, so the full lifecycle could be walked end to end. Section B tells you the machinery works. It does <b>not</b> tell you what the strategy earns, because a single stock's opening candle is a different animal from the index's.
+</div>
+
+<h3>A. How often does the day even qualify? (real, NIFTY, 2,118 sessions)</h3>
+
+<p>Every cached NIFTY 5-minute candle in <code>~/trading-data/backtest_cache/</code> was aggregated to 15-minute bars on IST boundaries and the engine's own <code>getNiftySignal()</code> was called on each day's 09:15 bar.</p>
+
+<table>
+<tr><th>Outcome</th><th>Sessions</th><th>Share</th></tr>
+<tr><td><b>BUY day</b> (green candle passes)</td><td class="num">447</td><td class="num">21.1%</td></tr>
+<tr><td><b>SHORT day</b> (red candle passes)</td><td class="num">543</td><td class="num">25.6%</td></tr>
+<tr><td><b>No signal</b> — no trading at all</td><td class="num">1,128</td><td class="num">53.3%</td></tr>
+<tr><td colspan="3" class="muted">2,118 sessions that had an 09:15 candle</td></tr>
+</table>
+
+<p>So the strategy stands aside on <b>just over half of all days</b>. That is by design, and it is the single most important operational fact about it: a strategy that trades 46.7% of days is a strategy you will spend most mornings watching do nothing.</p>
+
+<p>The 1,128 refusals break down like this — and note how lopsided it is:</p>
+
+<table>
+<tr><th>Why the day was refused</th><th>Sessions</th><th>Share of refusals</th></tr>
+<tr><td>Body smaller than 40% of range</td><td class="num">858</td><td class="num">76.1%</td></tr>
+<tr><td>Lower wick over 30% (a red candle buyers fought)</td><td class="num">182</td><td class="num">16.1%</td></tr>
+<tr><td>Upper wick over 30% (a green candle sellers fought)</td><td class="num">85</td><td class="num">7.5%</td></tr>
+<tr><td>Doji — open and close identical</td><td class="num">3</td><td class="num">0.3%</td></tr>
+</table>
+
+<div class="card accent">
+  <strong>The body test is doing three-quarters of the filtering.</strong> If you ever want to make this strategy trade more often or less often, <code>EARLYBIRD_MIN_BODY_PCT</code> is the lever with by far the most leverage — it is responsible for 858 of the 1,128 refusals on its own. The wick limit rejects only 267.
+</div>
+
+<h3>B. The full lifecycle — with NIFTY standing in for a stock</h3>
+
+<p>Same 2,118 sessions, but now the engine's <code>evaluateStock()</code>, <code>isEntryTriggeredOnBar()</code> and <code>checkExitOnBar()</code> were walked over NIFTY itself as if it were an F&amp;O name, using the previous session's last 15-minute close as the "previous daily close" for the gap rule.</p>
+
+<table>
+<tr><th>Stage</th><th>Count</th><th>Share</th></tr>
+<tr><td>Days with a NIFTY direction</td><td class="num">990</td><td class="num">—</td></tr>
+<tr><td>Dropped by the 2% gap rule</td><td class="num">21</td><td class="num">—</td></tr>
+<tr><td>Dropped — no previous close available (first session in the cache)</td><td class="num">1</td><td class="num">—</td></tr>
+<tr><td><b>Setups built</b></td><td class="num">968</td><td class="num">100%</td></tr>
+<tr><td>Pending order <b>triggered</b></td><td class="num">785</td><td class="num">81.1%</td></tr>
+<tr><td>Pending order <b>never triggered</b> — cancelled at 10:45</td><td class="num">183</td><td class="num">18.9%</td></tr>
+</table>
+
+<p>Of the 785 that actually became positions:</p>
+
+<table>
+<tr><th>How it ended</th><th>Trades</th><th>Share</th></tr>
+<tr><td><b>Target</b> — the full 1:2</td><td class="num">52</td><td class="num">6.6%</td></tr>
+<tr><td><b>Stop</b></td><td class="num">239</td><td class="num">30.4%</td></tr>
+<tr><td><b>1 pm forced exit</b></td><td class="num">494</td><td class="num">62.9%</td></tr>
+</table>
+
+<table>
+<tr><th>Measure</th><th>Value</th><th>What it means</th></tr>
+<tr><td>Win rate</td><td class="num">50.2%</td><td>394 of 785 ended above the entry price</td></tr>
+<tr><td>Average R per trade</td><td class="num">+0.026R</td><td>Barely above zero. Positive, but not by an amount that survives costs with any confidence</td></tr>
+<tr><td>Break-even win rate at 1:2</td><td class="num">33.3%</td><td>The bar a pure 1:2 system must clear</td></tr>
+<tr><td>Big-candle rule fired</td><td class="num">66.7%</td><td>646 of 968 setups — expected, see below</td></tr>
+</table>
+
+<div class="card warn">
+  <strong>Why the big-candle rule fires two times in three here — and why that is a proxy artefact.</strong> <code>EARLYBIRD_MAX_SL_PTS</code> is <b>&#8377;60</b>. On NIFTY, sitting at 22,000&ndash;25,000, a 60-point opening range is ordinary, so the rule fires constantly. On an actual &#8377;900 stock, a &#8377;60 opening range is enormous and the rule would fire rarely. <b>Do not read 66.7% as the rate you would see in production</b> — it is a direct consequence of pointing the engine at an index whose price is 25 times a typical stock's.
+</div>
+
+<h3>C. The 1 pm exit is cutting most trades short</h3>
+
+<p>Look again at the exit mix: <b>62.9%</b> of proxy trades ended because the clock struck 13:00, not because the strategy was right or wrong. Only 6.6% reached the 1:2 target. That is the shape of a system whose target is further away than its holding time allows.</p>
+
+<p>Re-running the identical proxy with only <code>EARLYBIRD_FORCED_EXIT</code> changed from 13:00 to 15:30, and nothing else touched:</p>
+
+<table>
+<tr><th>Forced exit</th><th>Target</th><th>Stop</th><th>Forced</th><th>Win rate</th><th>Avg R</th></tr>
+<tr><td><b>13:00</b> (the rule)</td><td class="num">6.6%</td><td class="num">30.4%</td><td class="num">62.9%</td><td class="num">50.2%</td><td class="num">+0.026R</td></tr>
+<tr><td><b>15:30</b> (test only)</td><td class="num">15.2%</td><td class="num">40.9%</td><td class="num">43.9%</td><td class="num">45.6%</td><td class="num">+0.082R</td></tr>
+</table>
+
+<p>Holding to the close roughly <b>tripled</b> proxy expectancy (0.082 &divide; 0.026 = <b>3.3&times;</b>) — while <em>lowering</em> the win rate from 50.2% to 45.6%, because more trades got the time to reach their stop as well as their target. More losers, bigger winners, better net.</p>
+
+<div class="card accent">
+  <strong>This is an observation, not a recommendation.</strong> The 1 pm square-off is the user's stated rule and the engine's default, and it stays that way. It is also measured on <b>the proxy</b>, so the 3.3&times; is not a number to bank on. What this section is for is naming <code>EARLYBIRD_FORCED_EXIT</code> as the highest-leverage tunable in the whole strategy, and pointing out that it should be tested on <em>real stock data</em> once a Fyers token is available — not changed on the strength of an index proxy.
+</div>
+
+<h2 id="absent">13. What is deliberately not here</h2>
+
+<p>Most strategies in this repo accumulate filters. EarlyBird has none, on purpose — the original rules did not ask for them, and adding them would be inventing a different strategy. None of the following exists anywhere in the engine:</p>
+
+<table>
+<tr><th>Not implemented</th><th>Why not</th></tr>
+<tr><td>VIX gate</td><td>Not in the rules. Every other strategy here has one; this one does not.</td></tr>
+<tr><td>Open-interest gate</td><td>Not in the rules — and this is cash equity, where option OI is not the relevant signal anyway.</td></tr>
+<tr><td>RSI, ADX, moving averages, ATR</td><td>Not in the rules. There is not one indicator calculation in the engine.</td></tr>
+<tr><td>Volume filter</td><td>Not in the rules.</td></tr>
+<tr><td>Confirmation candle</td><td>The pending stop order <em>is</em> the confirmation — price has to trade through the level.</td></tr>
+<tr><td>Multi-timeframe check</td><td>One bar per symbol per day is the whole design.</td></tr>
+<tr><td>Trailing stop / breakeven shift</td><td>The stop is frozen for the life of the trade.</td></tr>
+<tr><td>Partial exits / scaling out</td><td>Not asked for, and partials would change the risk profile entirely.</td></tr>
+<tr><td>Re-entry</td><td>One attempt per stock per day. A stock that stops out is done.</td></tr>
+<tr><td>Risk-based position sizing</td><td>A flat 100 shares, exactly as specified — not "shares such that risk is &#8377;X".</td></tr>
+</table>
+
+<h2 id="risk">14. Safety limits</h2>
+
+<p>The strategy rules themselves have no risk management beyond the per-trade stop, so the day-breakers are separate settings layered on top. All of them are checked before a new entry.</p>
+
+<table>
+<tr><th>Setting</th><th>Default</th><th>What it stops</th></tr>
+<tr><td><code>EARLYBIRD_MAX_CONCURRENT</code></td><td class="num">5</td><td>How many stocks may be held at once. Five &times; 100 shares of a mid-priced name is a large capital commitment.</td></tr>
+<tr><td><code>EARLYBIRD_MAX_DAILY_TRADES</code></td><td class="num">5</td><td>Total entries per day across all stocks.</td></tr>
+<tr><td><code>EARLYBIRD_MAX_DAILY_LOSSES</code></td><td class="num">3</td><td>Day ends after this many stop-outs.</td></tr>
+<tr><td><code>EARLYBIRD_MAX_DAILY_LOSS</code></td><td class="num">&#8377;5,000</td><td>Day ends after this much loss.</td></tr>
+<tr><td><code>EARLYBIRD_DAILY_PROFIT_LOCK</code></td><td class="num">0 (off)</td><td>Optionally stop once a profit target for the day is banked.</td></tr>
+<tr><td><code>EARLYBIRD_MAX_WEEKLY_LOSS</code></td><td class="num">0 (off)</td><td>Optionally stop for the whole week.</td></tr>
+</table>
+
+<div class="card warn">
+  <strong>The stop is the only per-trade protection, and it is a level, not a guarantee.</strong> There is no trailing stop and no breakeven move. If a stock gaps through the stop on the next print, the fill is at that print. The engine models this honestly — a bar that opens beyond the stop fills at the open — but honest modelling of a bad fill is still a bad fill.
+</div>
+
+<h2 id="modes">15. Paper, Live, Backtest &amp; Replay</h2>
+
+<p>All four modes call the same file, <code>src/strategies/early_bird.js</code>. Not one threshold comparison lives in a route. What differs between them is only where prices come from.</p>
+
+<table>
+<tr><th>Mode</th><th>Route</th><th>Prices</th><th>Orders</th></tr>
+<tr><td><b>Paper</b></td><td><code>/early-bird-paper</code></td><td>Fyers REST <b>quote poll</b> of the shortlist, every 2s</td><td>Simulated</td></tr>
+<tr><td><b>Live</b></td><td><code>/early-bird-live</code></td><td>Same quote poll</td><td>Real Fyers cash-equity orders — <b>double-gated</b></td></tr>
+<tr><td><b>Backtest</b></td><td><code>/early-bird-backtest</code></td><td>Cached / fetched 15-minute bars</td><td>Simulated</td></tr>
+<tr><td><b>Replay</b></td><td><code>/replay</code></td><td>Recorded ticks</td><td>Simulated</td></tr>
+</table>
+
+<h3>Why a quote poll instead of the shared socket</h3>
+
+<p>Every other strategy here rides the shared Fyers WebSocket, which carries NIFTY spot and the option strikes in play. EarlyBird cannot: it needs prices for up to five arbitrary <em>equity</em> symbols chosen fresh each morning, and pushing equity symbols through the shared index feed would change a connection that six other engines depend on.</p>
+
+<p>So after 09:30 the engine polls REST quotes for the <b>shortlist only</b> — the handful of names with a pending order or an open position — in batches of <code>EARLYBIRD_QUOTE_CHUNK</code> (20) every <code>EARLYBIRD_POLL_MS</code> (2,000 ms). A quote older than <code>EARLYBIRD_QUOTE_STALE_SEC</code> (30s) stops being used for exit decisions and the failure is shown on the status page, so a position is never managed off a frozen price.</p>
+
+<h3>The 09:30 scan</h3>
+
+<p>Once per day, and only once, the engine fetches the opening candle and the previous daily close for every symbol in the universe. Two API calls per symbol, roughly 220 symbols, rate-limited to <code>EARLYBIRD_SCAN_RPS</code> (8/second) and <code>EARLYBIRD_SCAN_RPM</code> (180/minute), <code>EARLYBIRD_SCAN_CONCURRENCY</code> (4) at a time. A full scan takes about two minutes — comfortably inside the entry window that closes at 10:45.</p>
+
+<div class="card warn">
+  <strong>Why the rate limits are not optional.</strong> Fyers answers an over-fast history request with <em>no data</em> — which is indistinguishable from a delisted stock. An over-fast scan does not error; it quietly reports most of the universe as having no opening candle, and the day looks like it had no confirming stocks. If a scan comes back near-empty, suspect the rate limit before you suspect the market.
+</div>
+
+<h3>Live is double-gated</h3>
+
+<p>A real order requires both <code>EARLYBIRD_LIVE_ENABLED</code> and the global <code>LIVE_HARNESS_DRY_RUN</code> being off, and <code>EARLYBIRD_LIVE_DRY_RUN</code> can keep it simulated regardless. All three ship in the safe position. <b>This strategy has never placed an order of any kind</b>, so the correct sequence is: paper sessions first, then a <code>/replay</code> diff showing paper and live decisions match on a recorded session, and only then the harness.</p>
+
+<h3>The cost model — a known gap, stated plainly</h3>
+
+<p><code>src/utils/charges.js</code> has exactly two paths, options and futures. It has <b>no cash-equity-intraday path</b>. Equity intraday charges are structurally different — STT is 0.025% on the sell side only versus the far higher options rate, and the exchange transaction charge is an order of magnitude smaller — so reusing the options path would be wrong by a large factor in both directions.</p>
+
+<p>Both routes therefore compute equity charges <b>locally</b>, from their own settings: <code>EARLYBIRD_STT_PCT</code>, <code>EARLYBIRD_TXN_PCT</code>, <code>EARLYBIRD_SEBI_PCT</code>, <code>EARLYBIRD_STAMP_PCT</code> and <code>EARLYBIRD_BROKERAGE_PER_ORDER</code> in Paper; the parallel <code>EARLYBIRD_CHG_*</code> keys in Backtest. If <code>charges.js</code> ever grows an equity path, both local implementations should be deleted in favour of it.</p>
+
+<p>Backtest additionally applies <code>EARLYBIRD_BT_SLIPPAGE_PTS</code> (default &#8377;0.05) to <b>both</b> the entry and the exit — five paise a side, one tick on a liquid F&amp;O cash name. That is deliberately a floor, not a claim. Raise it to find out whether an edge survives a wider touch.</p>
+
+<h2 id="config">16. All the settings, explained</h2>
+
+<p>All 51 keys, taken straight from the Settings schema in <code>src/routes/settings.js</code> — labels, defaults and descriptions are the ones the Settings page itself shows, not retyped. <b>Effect</b> says when a change takes hold: <em>Instant</em> applies immediately, <em>Session</em> at the next session start, <em>Backtest</em> on the next backtest run.</p>
+
+<h3>Mode &amp; Live</h3>
+<table>
+<tr><th>Setting</th><th>Default</th><th>Effect</th><th>What it does</th></tr>
+<tr><td><code>EARLYBIRD_PAPER_ENABLED</code><br><span class="muted">EarlyBird Paper Trading</span></td><td class="num">true</td><td>Instant</td><td>Allow new EarlyBird paper sessions.</td></tr>
+<tr><td><code>EARLYBIRD_LIVE_ENABLED</code><br><span class="muted">EarlyBird Live Orders (gates /early-bird-live/start)</span></td><td class="num">false</td><td>Instant</td><td>Enable live CASH EQUITY orders via Fyers. NEVER traded — paper-validate first, then diff a recorded session in /replay.</td></tr>
+<tr><td><code>EARLYBIRD_LIVE_DRY_RUN</code><br><span class="muted">EarlyBird Live DRY-RUN override</span></td><td class="num">false</td><td>Session</td><td>Keep it simulated even when live is on.</td></tr>
+</table>
+
+<h3>The signal candle (the day's first bar)</h3>
+<table>
+<tr><th>Setting</th><th>Default</th><th>Effect</th><th>What it does</th></tr>
+<tr><td><code>EARLYBIRD_RESOLUTION</code><br><span class="muted">Candle Timeframe (min)</span></td><td class="num">15</td><td>Session</td><td>The chart the rules were read off. 15 minutes is the strategy as specified — the day's FIRST candle is the signal candle.</td></tr>
+<tr><td><code>EARLYBIRD_MAX_OPPOSING_WICK_PCT</code><br><span class="muted">Max Opposing Wick (% of candle range)</span></td><td class="num">30</td><td>Session</td><td>The wick that argues AGAINST the move — the upper wick on a green candle, the lower wick on a red one. This one number covers all three drawings: a full-body candle, a long favourable wick, and a small opposing wick. Lower = stricter.</td></tr>
+<tr><td><code>EARLYBIRD_MIN_BODY_PCT</code><br><span class="muted">Minimum Body (% of candle range)</span></td><td class="num">40</td><td>Session</td><td>The body must be a real body, as a share of the candle's own range. Stops a tiny-bodied candle with two long wicks counting as a strength candle.</td></tr>
+<tr><td><code>EARLYBIRD_MIN_RANGE_PTS</code><br><span class="muted">Minimum Candle Range (0 = off)</span></td><td class="num">0</td><td>Session</td><td>Ignore an opening candle whose whole range is smaller than this. OFF by default — the rules do not ask for it.</td></tr>
+</table>
+
+<h3>Confirmation (NIFTY must agree with the stock)</h3>
+<table>
+<tr><th>Setting</th><th>Default</th><th>Effect</th><th>What it does</th></tr>
+<tr><td><code>EARLYBIRD_UNIVERSE</code><br><span class="muted">Stock Universe</span></td><td class="num">FNO</td><td>Session</td><td>Which list of stocks is scanned at 09:30. FNO (~220 names) is the list from the strategy's own stock-selection slides.</td></tr>
+<tr><td><code>EARLYBIRD_MIN_CONFIRMING_STOCKS</code><br><span class="muted">Stocks That Must Confirm</span></td><td class="num">1</td><td>Session</td><td>How many stocks must print the same-direction opening candle as NIFTY before the day is tradeable. 1 = the rule as specified. Raising it turns this into a market-breadth gate.</td></tr>
+<tr><td><code>EARLYBIRD_MAX_GAP_PCT</code><br><span class="muted">Max Opening Gap (%)</span></td><td class="num">2</td><td>Session</td><td>Skip a stock that opened more than this far from the previous day's close, in either direction. This is the \"don't trade a stock which opened about 2% than the previous day\" rule.</td></tr>
+</table>
+
+<h3>Entry, stop and target</h3>
+<table>
+<tr><th>Setting</th><th>Default</th><th>Effect</th><th>What it does</th></tr>
+<tr><td><code>EARLYBIRD_ENTRY_BUFFER_PTS</code><br><span class="muted">Entry / Stop Buffer (₹)</span></td><td class="num">5</td><td>Session</td><td>How far past the signal candle the pending order and the stop sit — \"a little above the breakout candle\". Applied to BOTH ends: entry beyond the extreme, stop beyond the other extreme.</td></tr>
+<tr><td><code>EARLYBIRD_TARGET_RR</code><br><span class="muted">Target Reward:Risk</span></td><td class="num">2</td><td>Session</td><td>Book profit at this multiple of the actual risk. 2 = the 1:2 in the rules; set 1 for the 1:1 the rules also allow.</td></tr>
+<tr><td><code>EARLYBIRD_MAX_SL_PTS</code><br><span class="muted">Big-Candle Threshold (₹, 0 = off)</span></td><td class="num">60</td><td>Session</td><td>When the wick-to-wick risk is wider than this, the stop moves off the wick and onto the candle's BODY edge (open/close) instead — the \"if the breakout candle is too big, ignore the wick\" rule. It can only ever tighten the stop.</td></tr>
+</table>
+
+<h3>Session window</h3>
+<table>
+<tr><th>Setting</th><th>Default</th><th>Effect</th><th>What it does</th></tr>
+<tr><td><code>EARLYBIRD_SESSION_START</code><br><span class="muted">Session Start</span></td><td class="num">09:15</td><td>Session</td><td>Where the day's first candle begins (IST). This is the signal candle.</td></tr>
+<tr><td><code>EARLYBIRD_ENTRY_START</code><br><span class="muted">Entry Window Start</span></td><td class="num">09:30</td><td>Session</td><td>No entries before this (IST) — the signal candle has just closed.</td></tr>
+<tr><td><code>EARLYBIRD_ENTRY_END</code><br><span class="muted">Entry Window End</span></td><td class="num">10:45</td><td>Session</td><td>No new entries after this time (IST). The rule is 10:45; a pending order not triggered by then is cancelled.</td></tr>
+<tr><td><code>EARLYBIRD_FORCED_EXIT</code><br><span class="muted">Forced Exit (square-off)</span></td><td class="num">13:00</td><td>Session</td><td>Hard square-off (IST). The rule is \"exit at 1 pm\" — anything still open closes at market here.</td></tr>
+</table>
+
+<h3>Sizing &amp; Day Breakers</h3>
+<table>
+<tr><th>Setting</th><th>Default</th><th>Effect</th><th>What it does</th></tr>
+<tr><td><code>EARLYBIRD_QTY</code><br><span class="muted">Quantity per Stock (shares)</span></td><td class="num">100</td><td>Instant</td><td>Shares per position. This is CASH EQUITY, not options — there are no lots.</td></tr>
+<tr><td><code>EARLYBIRD_MAX_CONCURRENT</code><br><span class="muted">Max Positions At Once</span></td><td class="num">5</td><td>Session</td><td>How many stocks may be held simultaneously. When more confirm than this, the tightest-stop names are taken first.</td></tr>
+<tr><td><code>EARLYBIRD_MAX_DAILY_TRADES</code><br><span class="muted">Max Trades/Day</span></td><td class="num">5</td><td>Session</td><td>Max entries per day across all stocks.</td></tr>
+<tr><td><code>EARLYBIRD_MAX_DAILY_LOSSES</code><br><span class="muted">Stop-outs That End the Day</span></td><td class="num">3</td><td>Session</td><td>Day ends after this many stop-outs (0 = off).</td></tr>
+<tr><td><code>EARLYBIRD_MAX_DAILY_LOSS</code><br><span class="muted">Max Daily Loss (₹)</span></td><td class="num">5000</td><td>Session</td><td>Stop trading after this much loss (0 = off). Note 100 shares of a ₹3,000 stock is a ₹300,000 position — size this deliberately.</td></tr>
+<tr><td><code>EARLYBIRD_DAILY_PROFIT_LOCK</code><br><span class="muted">Daily Profit Lock (₹)</span></td><td class="num">0</td><td>Session</td><td>Stop for the day once this much is banked (0 = off, the default).</td></tr>
+<tr><td><code>EARLYBIRD_MAX_WEEKLY_LOSS</code><br><span class="muted">Max Weekly Loss (₹)</span></td><td class="num">0</td><td>Session</td><td>Stop for the week after this much loss (0 = off).</td></tr>
+</table>
+
+<h3>Data plumbing</h3>
+<table>
+<tr><th>Setting</th><th>Default</th><th>Effect</th><th>What it does</th></tr>
+<tr><td><code>EARLYBIRD_POLL_MS</code><br><span class="muted">Stock Quote Poll (ms)</span></td><td class="num">2000</td><td>Session</td><td>How often the shortlisted stocks' prices are refreshed while setups are pending or positions are open.</td></tr>
+<tr><td><code>EARLYBIRD_HISTORY_LAG_MS</code><br><span class="muted">Bar-Close History Lag (ms)</span></td><td class="num">5000</td><td>Session</td><td>How long after 09:30 before the history endpoint is asked for the opening candle. Too short and the bar is not published yet, which would lose the whole day.</td></tr>
+<tr><td><code>EARLYBIRD_WARMUP_DAYS</code><br><span class="muted">History Preload (calendar days)</span></td><td class="num">7</td><td>Session</td><td>How far back to fetch. Only the previous daily close is strictly needed (for the gap rule), so this is small by design.</td></tr>
+<tr><td><code>EARLYBIRD_SCAN_CONCURRENCY</code><br><span class="muted">Scan Concurrency (symbols at once)</span></td><td class="num">4</td><td>Session</td><td>How many symbols are fetched in parallel during the 09:30 scan. Each one issues two calls (intraday + daily), so the real number in flight is double this.</td></tr>
+<tr><td><code>EARLYBIRD_SCAN_RPS</code><br><span class="muted">Scan Rate Limit (per second)</span></td><td class="num">8</td><td>Session</td><td>Fyers meters history calls per second. Exceeding it makes Fyers answer 'no data' — indistinguishable from a delisted stock — so an over-fast scan silently reports most of the universe as having no candle. A full ~220-name scan takes about 2 minutes at this rate, well inside the entry window.</td></tr>
+<tr><td><code>EARLYBIRD_SCAN_RPM</code><br><span class="muted">Scan Rate Limit (per minute)</span></td><td class="num">180</td><td>Session</td><td>The second Fyers history window. Both this and the per-second cap are honoured.</td></tr>
+<tr><td><code>EARLYBIRD_QUOTE_CHUNK</code><br><span class="muted">Quote Poll Batch Size (symbols)</span></td><td class="num">20</td><td>Session</td><td>How many shortlisted symbols are requested per quote call. EarlyBird polls REST quotes for its shortlist rather than pushing equity symbols through the shared NIFTY socket.</td></tr>
+<tr><td><code>EARLYBIRD_QUOTE_STALE_SEC</code><br><span class="muted">Quote Staleness Limit (sec)</span></td><td class="num">30</td><td>Session</td><td>A price older than this stops being used for exit decisions, and the failure is surfaced on the status page. Stops a position being managed off a frozen quote.</td></tr>
+</table>
+
+<h3>Paper cost model (equity intraday)</h3>
+<table>
+<tr><th>Setting</th><th>Default</th><th>Effect</th><th>What it does</th></tr>
+<tr><td><code>EARLYBIRD_BROKERAGE_PER_ORDER</code><br><span class="muted">Brokerage Cap (₹ per order)</span></td><td class="num">20</td><td>Session</td><td>Per-leg brokerage cap used when costing a paper trade. The discount-broker standard is ₹20 or 0.03%, whichever is lower.</td></tr>
+<tr><td><code>EARLYBIRD_STT_PCT</code><br><span class="muted">STT — Sell Side (%)</span></td><td class="num">0.025</td><td>Session</td><td>Securities Transaction Tax on the SELL leg. Equity intraday is 0.025%, far below the options rate.</td></tr>
+<tr><td><code>EARLYBIRD_TXN_PCT</code><br><span class="muted">Exchange Txn Charge (%)</span></td><td class="num">0.00297</td><td>Session</td><td>NSE equity transaction charge on total turnover.</td></tr>
+<tr><td><code>EARLYBIRD_SEBI_PCT</code><br><span class="muted">SEBI Turnover Fee (%)</span></td><td class="num">0.0001</td><td>Session</td><td>SEBI fee as a percentage of turnover (₹10 per crore).</td></tr>
+<tr><td><code>EARLYBIRD_STAMP_PCT</code><br><span class="muted">Stamp Duty — Buy Side (%)</span></td><td class="num">0.003</td><td>Session</td><td>Stamp duty on the BUY leg only.</td></tr>
+</table>
+
+<h3>Backtest</h3>
+<table>
+<tr><th>Setting</th><th>Default</th><th>Effect</th><th>What it does</th></tr>
+<tr><td><code>EARLYBIRD_BT_SLIPPAGE_PTS</code><br><span class="muted">Backtest Slippage Haircut (₹ each way)</span></td><td class="num">0.05</td><td>Backtest</td><td>Backtest cost per side, in rupees of stock price. Applied to both entry and exit. Without it a breakout backtest always flatters.</td></tr>
+<tr><td><code>EARLYBIRD_BT_CONCURRENCY</code><br><span class="muted">Backtest Fetch Concurrency</span></td><td class="num">4</td><td>Backtest</td><td>How many symbols' history are fetched in parallel during a backtest. Higher is faster but risks Fyers rate limits.</td></tr>
+<tr><td><code>EARLYBIRD_BT_RPS</code><br><span class="muted">Backtest Fetch Rate (per second)</span></td><td class="num">8</td><td>Backtest</td><td>Fyers meters history requests per second. Lower this if a wide-range run starts failing.</td></tr>
+<tr><td><code>EARLYBIRD_BT_RPM</code><br><span class="muted">Backtest Fetch Rate (per minute)</span></td><td class="num">180</td><td>Backtest</td><td>The second Fyers history window. Both this and the per-second cap are honoured.</td></tr>
+<tr><td><code>EARLYBIRD_BT_CACHE_DAYS</code><br><span class="muted">Backtest Cache Retention (days)</span></td><td class="num">30</td><td>Backtest</td><td>How long a cached history file survives before it is re-fetched.</td></tr>
+<tr><td><code>EARLYBIRD_BT_DAILY_LOOKBACK_DAYS</code><br><span class="muted">Backtest prevClose Lookback (days)</span></td><td class="num">10</td><td>Backtest</td><td>How far back the daily series is pulled so every simulated day has a previous close for the gap rule, even after a long holiday.</td></tr>
+</table>
+
+<h3>Backtest cost model (equity intraday)</h3>
+<table>
+<tr><th>Setting</th><th>Default</th><th>Effect</th><th>What it does</th></tr>
+<tr><td><code>EARLYBIRD_CHG_STT_PCT</code><br><span class="muted">STT — Sell Side (% of turnover)</span></td><td class="num">0.025</td><td>Backtest</td><td>Securities Transaction Tax on the SELL leg of an equity-intraday trade. NSE rate is 0.025%.</td></tr>
+<tr><td><code>EARLYBIRD_CHG_EXCHANGE_PCT</code><br><span class="muted">Exchange Txn Charge (% of turnover)</span></td><td class="num">0.00297</td><td>Backtest</td><td>NSE equity transaction charge on total turnover. Much smaller than the options rate — this is why option charges cannot be reused here.</td></tr>
+<tr><td><code>EARLYBIRD_CHG_BROKERAGE_PCT</code><br><span class="muted">Brokerage (% per leg)</span></td><td class="num">0.03</td><td>Backtest</td><td>Percentage brokerage per leg, before the cap below.</td></tr>
+<tr><td><code>EARLYBIRD_CHG_BROKERAGE_CAP</code><br><span class="muted">Brokerage Cap (₹ per leg)</span></td><td class="num">20</td><td>Backtest</td><td>Maximum brokerage per leg. The discount-broker standard is ₹20.</td></tr>
+<tr><td><code>EARLYBIRD_CHG_GST_PCT</code><br><span class="muted">GST (%)</span></td><td class="num">18</td><td>Backtest</td><td>GST charged on brokerage + exchange + SEBI fees.</td></tr>
+<tr><td><code>EARLYBIRD_CHG_STAMP_PCT</code><br><span class="muted">Stamp Duty — Buy Side (%)</span></td><td class="num">0.003</td><td>Backtest</td><td>Stamp duty on the BUY leg of an equity-intraday trade.</td></tr>
+<tr><td><code>EARLYBIRD_CHG_SEBI_PER_CRORE</code><br><span class="muted">SEBI Fee (₹ per crore)</span></td><td class="num">10</td><td>Backtest</td><td>SEBI turnover fee, in rupees per crore of turnover.</td></tr>
+<tr><td><code>EARLYBIRD_MODE_ENABLED</code><br><span class="muted">EarlyBird Mode</span></td><td class="num">true</td><td>Instant</td><td>Show the EarlyBird menu and settings.</td></tr>
+</table>
+
+<h2 id="missing">17. What's still missing</h2>
+
+<p>An honest list of everything this guide could not establish. None of these are hypothetical concerns — each one is a specific thing that is untested or unmeasured today.</p>
+
+<div class="card bad">
+  <strong>1. It has never traded. At all.</strong> Not one live order, not one paper session, no trade records anywhere on disk. Every number in this guide is a simulation of the rules over historical candles. The strategy is code that has never met a market.
+</div>
+
+<div class="card bad">
+  <strong>2. There is no real stock data behind any lifecycle figure.</strong> This is the big one. The repo caches NIFTY candles only, and the Fyers token is expired, so no stock's opening candle could be fetched — not one. Every trade statistic in Section 12B (the 81.1% trigger rate, the 6.6%/30.4%/62.9% exit mix, the 50.2% win rate, the +0.026R) was produced by feeding <b>NIFTY to the engine as though it were a stock</b>. The index is an average of fifty names; it gaps less, trends more smoothly and has a completely different opening-candle character from any single stock. Those figures demonstrate the machinery runs end to end. They are <b>not</b> the strategy's expected performance and should never be quoted as such.
+</div>
+
+<div class="card warn">
+  <strong>3. Every rupee figure is simulated.</strong> There is no live fill, no live slippage, no live rejection, no real short-sale borrow. The backtest applies a &#8377;0.05-per-side slippage floor, which is one tick on a liquid name and deliberately optimistic for anything less liquid.
+</div>
+
+<div class="card warn">
+  <strong>4. The 1 pm exit truncates most trades — measured, unresolved.</strong> 62.9% of proxy trades ended at the bell rather than at a stop or target, and only 6.6% reached the 1:2. Moving the exit to 15:30 on the same proxy roughly tripled expectancy (+0.026R to +0.082R). <b>That is presented as an observation, not a recommendation.</b> 13:00 is the user's rule and remains the default; the finding is measured on the proxy, so it needs re-testing on real stock data before anyone touches <code>EARLYBIRD_FORCED_EXIT</code>.
+</div>
+
+<div class="card warn">
+  <strong>5. <code>charges.js</code> has no equity-intraday path.</strong> It handles options and futures only. Both EarlyBird routes therefore compute equity charges locally, from their own <code>EARLYBIRD_*_PCT</code> / <code>EARLYBIRD_CHG_*</code> settings. That is two implementations of the same arithmetic that can drift apart, and neither has been reconciled against a real Fyers contract note.
+</div>
+
+<div class="card warn">
+  <strong>6. The 220-symbol scan has never run against a live token.</strong> The rate limiting, the two-calls-per-symbol pattern, the ~2-minute completion time and the retry behaviour are all reasoned and coded but never exercised at full scale on a working Fyers session. The failure mode is specifically unpleasant: Fyers answers an over-fast request with "no data", which looks exactly like a delisted stock, so a mis-tuned scan reports an empty universe rather than an error.
+</div>
+
+<div class="card warn">
+  <strong>7. Several operational unknowns that only live trading answers.</strong> Whether a cash-equity short is actually permitted and marginable on the account for every F&amp;O name; whether five simultaneous positions fit the available capital; whether the quote poll keeps up when five names are moving at once; and whether a pending stop order placed at 09:30 behaves at the broker the way the engine assumes.
+</div>
+
+<h3>The order these should be resolved in</h3>
+
+<ol>
+  <li><b>Refresh the Fyers token</b> — nothing else on this list can move until stock candles can be fetched.</li>
+  <li><b>Re-run the backtest on real F&amp;O stocks</b>, and replace every Section 12B figure with a real one. Expect them to differ substantially.</li>
+  <li><b>Run paper sessions</b> and watch the 09:30 scan complete at full universe size.</li>
+  <li><b>Diff paper against live-dry-run in <code>/replay</code></b> on a recorded session; they must agree before the harness is touched.</li>
+  <li><b>Only then</b> revisit <code>EARLYBIRD_FORCED_EXIT</code> and the other tunables, on real data.</li>
+</ol>
+
+<p class="muted" style="margin-top:30px;">Every chart on this page was produced by running <code>src/strategies/early_bird.js</code> over cached NIFTY 5-minute candles from <code>~/trading-data/backtest_cache/</code>, aggregated to 15-minute bars on IST boundaries. Every settings default is read from the schema in <code>src/routes/settings.js</code>. Where NIFTY stands in for a stock, the caption says so.</p>
+
+</div>
+
+<script>
+/* ============================================================================
+ * TVChart v3 — dependency-free TradingView-style candlestick renderer.
+ * v2 features: OHLC header, subtitle, bottom time axis, last-price tag/line.
+ * v3 adds:   hlines (labelled price levels), shades (vertical highlight spans),
+ *            pane (RSI / volume / line sub-panel under the price chart).
+ * Pure buildSVG(spec) -> string (no DOM), never throws on bad data.
+ * Backward-compatible with every v1/v2 spec.
+ * ==========================================================================*/
+(function (global) {
+  "use strict";
+  function isNum(x) { return typeof x === "number" && isFinite(x); }
+  function esc(s) { return String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+  function fmt(v) { return isNum(v) ? v.toFixed(2).replace(/\.00$/,"") : "—"; }
+
+  function priceRange(spec) {
+    var lo = Infinity, hi = -Infinity;
+    function eat(v){ if(isNum(v)){ if(v>hi)hi=v; if(v<lo)lo=v; } }
+    (spec.candles||[]).forEach(function(c){ eat(c[1]); eat(c[2]); });
+    (spec.overlays||[]).forEach(function(o){ (o.data||[]).forEach(eat); });
+    (spec.bands||[]).forEach(function(b){ (b.upper||[]).forEach(eat); (b.lower||[]).forEach(eat); (b.mid||[]).forEach(eat); });
+    (spec.markers||[]).forEach(function(m){ if(isNum(m.price)) eat(m.price); });
+    (spec.hlines||[]).forEach(function(h){ eat(h.price); });
+    (spec.zones||[]).forEach(function(z){ eat(z.top); eat(z.bottom); });
+    if(!isFinite(lo)||!isFinite(hi)){ lo=0; hi=1; }
+    if(lo===hi){ lo-=1; hi+=1; }
+    var pad=(hi-lo)*0.10; return { lo:lo-pad, hi:hi+pad };
+  }
+
+  // Build a path that starts a fresh subpath after every gap. Indicator series
+  // are null until they have enough history (EMA/BB/RSI warm-up), and a path
+  // that opens with "L" is invalid — that used to drop the whole line.
+  function linePath(data, X, Y) {
+    var d = "", pen = false;
+    for (var i=0;i<data.length;i++){
+      if(!isNum(data[i])){ pen = false; continue; }
+      d += (pen ? "L" : "M") + X(i) + " " + Y(data[i]) + " "; pen = true;
+    }
+    return d;
+  }
+
+  function buildSVG(spec) {
+    spec = spec||{};
+    var candles = spec.candles||[]; var n = candles.length;
+    if(!n) return '<div class="tv-empty">chart data unavailable</div>';
+
+    var pane = null;
+    if (spec.pane && spec.pane.data && spec.pane.data.length) pane = spec.pane;
+    var paneH  = pane ? (isNum(pane.height) ? pane.height : 92) : 0;
+    var paneGap = pane ? 12 : 0;
+
+    var W=880, padL=6, padR=74, padT=52, padB=40, plotH=348;
+    var H = padT + plotH + paneGap + paneH + padB;
+    var rng=priceRange(spec); var plotW=W-padL-padR;
+    var slot=plotW/n; var cw=Math.max(2,Math.min(20,slot*0.66)); var wickW=Math.max(0.8,cw*0.12);
+    var up="#26a69a",down="#ef5350",grid="#1b2636",axis="#5a7499",txt="#e8eef8",mut="#8b98ac";
+    var plotBot = padT+plotH;
+    var paneTop = plotBot+paneGap, paneBot = paneTop+paneH;
+    var axisBot = pane ? paneBot : plotBot;
+    function X(i){ return padL+slot*(i+0.5); }
+    function Y(p){ return padT+(rng.hi-p)/(rng.hi-rng.lo)*plotH; }
+    var out=[];
+    out.push('<svg viewBox="0 0 '+W+' '+H+'" class="tv-svg" role="img" aria-label="'+esc(spec.title||"price chart")+'" preserveAspectRatio="xMidYMid meet">');
+    out.push('<rect x="0" y="0" width="'+W+'" height="'+H+'" fill="#0d1421"/>');
+
+    // horizontal price grid + right-side labels
+    for(var g=0;g<=4;g++){ var gp=rng.hi-(rng.hi-rng.lo)*(g/4); var gy=Y(gp);
+      out.push('<line x1="'+padL+'" y1="'+gy+'" x2="'+(W-padR)+'" y2="'+gy+'" stroke="'+grid+'" stroke-width="1"/>');
+      out.push('<text x="'+(W-padR+6)+'" y="'+(gy+3.5)+'" fill="'+axis+'" font-size="10.5" font-family="monospace">'+gp.toFixed(0)+'</text>'); }
+
+    // vertical time grid + bottom axis labels (every ~1/7 of the candles)
+    var times = spec.times || [];
+    var step = Math.max(1, Math.round(n/7));
+    for(var t=0;t<n;t+=step){ var tx=X(t);
+      out.push('<line x1="'+tx+'" y1="'+padT+'" x2="'+tx+'" y2="'+axisBot+'" stroke="'+grid+'" stroke-width="0.7" opacity="0.5"/>');
+      if(times[t]) out.push('<text x="'+tx+'" y="'+(axisBot+15)+'" fill="'+axis+'" font-size="10" text-anchor="middle" font-family="system-ui">'+esc(times[t])+'</text>'); }
+
+    // vertical highlight spans (e.g. "position held", "no-trade window")
+    (spec.shades||[]).forEach(function(s){ if(!isNum(s.from)||!isNum(s.to)) return;
+      var sx=X(s.from)-slot/2, sw=Math.max(1,X(s.to)-X(s.from)+slot);
+      out.push('<rect x="'+sx+'" y="'+padT+'" width="'+sw+'" height="'+plotH+'" fill="'+(s.color||"rgba(96,165,250,0.07)")+'"/>');
+      if(s.label){ var sly = s.labelBottom ? (padT+plotH-7) : (padT+13);
+        out.push('<text x="'+(sx+sw/2)+'" y="'+sly+'" fill="'+(s.text||"#7c93b5")+'" font-size="10" text-anchor="middle" font-family="system-ui">'+esc(s.label)+'</text>'); } });
+
+    // zones (e.g. ORB opening-range box)
+    (spec.zones||[]).forEach(function(z){ if(!isNum(z.from)||!isNum(z.to)) return;
+      var zx=X(z.from)-cw/2, zw=X(z.to)-X(z.from)+cw; var zTop=Y(isNum(z.top)?z.top:rng.hi), zBot=Y(isNum(z.bottom)?z.bottom:rng.lo);
+      out.push('<rect x="'+zx+'" y="'+zTop+'" width="'+zw+'" height="'+(zBot-zTop)+'" fill="'+(z.color||"rgba(96,165,250,0.10)")+'" stroke="'+(z.stroke||"rgba(96,165,250,0.5)")+'" stroke-dasharray="4 3" stroke-width="1"/>');
+      if(z.label) out.push('<text x="'+(zx+4)+'" y="'+(zTop-4)+'" fill="'+(z.stroke||"#60a5fa")+'" font-size="10.5" font-weight="600">'+esc(z.label)+'</text>'); });
+
+    // band envelopes (VWAP band / Bollinger)
+    (spec.bands||[]).forEach(function(b){ var u=b.upper||[], l=b.lower||[];
+      if(u.length&&l.length){ var pts=[]; for(var i=0;i<u.length;i++) if(isNum(u[i])) pts.push(X(i)+","+Y(u[i]));
+        for(var j=l.length-1;j>=0;j--) if(isNum(l[j])) pts.push(X(j)+","+Y(l[j]));
+        out.push('<polygon points="'+pts.join(" ")+'" fill="'+(b.fill||"rgba(120,144,200,0.08)")+'"/>');
+        [u,l].forEach(function(line){
+          out.push('<path d="'+linePath(line,X,Y)+'" fill="none" stroke="'+(b.color||"#a78bfa")+'" stroke-width="1.3" opacity="0.85"/>'); }); }
+      if(b.mid){
+        out.push('<path d="'+linePath(b.mid,X,Y)+'" fill="none" stroke="'+(b.color||"#a78bfa")+'" stroke-width="1" stroke-dasharray="2 3" opacity="0.7"/>'); } });
+
+    // labelled horizontal price levels (stop / target / neckline / OR high-low)
+    (spec.hlines||[]).forEach(function(hl){ if(!isNum(hl.price)) return;
+      var hy=Y(hl.price), hc=hl.color||"#fbbf24";
+      out.push('<line x1="'+padL+'" y1="'+hy+'" x2="'+(W-padR)+'" y2="'+hy+'" stroke="'+hc+'" stroke-width="'+(hl.width||1.2)+'" '+(hl.solid?"":'stroke-dasharray="6 4" ')+'opacity="0.9"/>');
+      out.push('<rect x="'+(W-padR)+'" y="'+(hy-8)+'" width="'+padR+'" height="16" fill="'+hc+'" opacity="0.92"/>');
+      out.push('<text x="'+(W-padR+5)+'" y="'+(hy+3.5)+'" fill="#0d1421" font-size="10" font-weight="700" font-family="monospace">'+hl.price.toFixed(0)+'</text>');
+      if(hl.label){ var lw=hl.label.length*5.9+10;
+        // labelAt (0..1) slides the tag along the line so it can dodge markers
+        var lx1=padL+3+(isNum(hl.labelAt)?hl.labelAt:0)*(W-padR-padL-lw-6);
+        lx1=Math.max(padL+3,Math.min(lx1,W-padR-lw-3));
+        out.push('<rect x="'+lx1+'" y="'+(hy-15)+'" width="'+lw+'" height="14" rx="3" fill="'+hc+'" opacity="0.92"/>');
+        out.push('<text x="'+(lx1+5)+'" y="'+(hy-4.5)+'" fill="#0d1421" font-size="9.8" font-weight="700" font-family="system-ui">'+esc(hl.label)+'</text>'); } });
+
+    // candlesticks
+    candles.forEach(function(c,i){ if(!c||!isNum(c[0])||!isNum(c[3])) return;
+      var o=c[0],h=c[1],lw=c[2],cl=c[3]; var col=cl>=o?up:down, cx=X(i);
+      if(isNum(h)&&isNum(lw)) out.push('<rect x="'+(cx-wickW/2)+'" y="'+Y(h)+'" width="'+wickW+'" height="'+Math.max(0.5,Y(lw)-Y(h))+'" fill="'+col+'"/>');
+      var yo=Y(o),yc=Y(cl),top=Math.min(yo,yc),bh=Math.max(1,Math.abs(yc-yo));
+      out.push('<rect x="'+(cx-cw/2)+'" y="'+top+'" width="'+cw+'" height="'+bh+'" fill="'+col+'"/>'); });
+
+    // overlay indicator lines (EMA / VWAP / MAs)
+    (spec.overlays||[]).forEach(function(ov){
+      out.push('<path d="'+linePath(ov.data||[],X,Y)+'" fill="none" stroke="'+(ov.color||"#fbbf24")+'" stroke-width="'+(ov.width||1.6)+'" '+(ov.dash?'stroke-dasharray="5 3" ':"")+'opacity="0.95"/>'); });
+
+    // last-price dashed line + right-axis tag (TradingView style)
+    if(spec.lastPriceTag !== false){ var last=candles[n-1]; if(last&&isNum(last[3])){ var lp=last[3], ly=Y(lp);
+      var lcol=(isNum(last[0])&&lp>=last[0])?up:down;
+      out.push('<line x1="'+padL+'" y1="'+ly+'" x2="'+(W-padR)+'" y2="'+ly+'" stroke="'+lcol+'" stroke-width="0.8" stroke-dasharray="2 2" opacity="0.7"/>');
+      out.push('<rect x="'+(W-padR)+'" y="'+(ly-8)+'" width="'+padR+'" height="16" fill="'+lcol+'"/>');
+      out.push('<text x="'+(W-padR+6)+'" y="'+(ly+3.5)+'" fill="#0d1421" font-size="10.5" font-weight="700" font-family="monospace">'+lp.toFixed(2)+'</text>'); } }
+
+    // markers (buy / exit / dot)
+    (spec.markers||[]).forEach(function(m){ if(!isNum(m.i)) return; var mx=X(m.i);
+      var my=isNum(m.price)?Y(m.price):(m.type==="buy"?plotBot-14:padT+14);
+      var isBuy=m.type==="buy", isExit=m.type==="exit"; var col=m.color||(isBuy?"#26a69a":isExit?"#ef5350":"#fbbf24");
+      if(isBuy||isExit){ var ay=isBuy?my+18:my-18, tri=isBuy?(mx-6)+","+ay+" "+(mx+6)+","+ay+" "+mx+","+(ay-10):(mx-6)+","+ay+" "+(mx+6)+","+ay+" "+mx+","+(ay+10);
+        out.push('<polygon points="'+tri+'" fill="'+col+'"/>'); }
+      else out.push('<circle cx="'+mx+'" cy="'+my+'" r="3.5" fill="'+col+'" stroke="#0d1421" stroke-width="1"/>');
+      if(m.text){ var lblY=isBuy?my+34:(isExit?my-26:my-10); var tw=m.text.length*6.2+10;
+        var lx0=Math.max(padL+1,Math.min(mx-tw/2,W-padR-tw-1));
+        out.push('<rect x="'+lx0+'" y="'+(lblY-11)+'" width="'+tw+'" height="15" rx="3" fill="'+col+'" opacity="0.94"/>');
+        out.push('<text x="'+(lx0+tw/2)+'" y="'+lblY+'" fill="#0d1421" font-size="10.5" font-weight="700" text-anchor="middle" font-family="system-ui">'+esc(m.text)+'</text>'); } });
+
+    // ── sub-panel: RSI / volume / any line series ─────────────────────────
+    if(pane){
+      var pd=pane.data||[], pType=pane.type||"line";
+      var plo=Infinity, phi=-Infinity;
+      pd.forEach(function(v){ if(isNum(v)){ if(v>phi)phi=v; if(v<plo)plo=v; } });
+      if(pType==="rsi"){ plo=0; phi=100; }
+      if(pType==="volume"){ plo=0; }
+      if(isNum(pane.min)) plo=pane.min;
+      if(isNum(pane.max)) phi=pane.max;
+      if(!isFinite(plo)||!isFinite(phi)){ plo=0; phi=1; }
+      if(plo===phi){ plo-=1; phi+=1; }
+      var pPad=(pType==="rsi"||pType==="volume")?0:(phi-plo)*0.12;
+      var pLo=plo-pPad, pHi=phi+pPad;
+      function PY(v){ return paneTop+(pHi-v)/(pHi-pLo)*paneH; }
+      out.push('<rect x="'+padL+'" y="'+paneTop+'" width="'+(W-padR-padL)+'" height="'+paneH+'" fill="#0b111c"/>');
+      out.push('<line x1="'+padL+'" y1="'+paneTop+'" x2="'+(W-padR)+'" y2="'+paneTop+'" stroke="'+grid+'" stroke-width="1"/>');
+
+      // guide levels inside the pane (e.g. RSI 70 / 40)
+      (pane.levels||[]).forEach(function(lv){ var v=isNum(lv)?lv:lv.value; if(!isNum(v)) return;
+        var c=(lv&&lv.color)||"#3f5570", ly2=PY(v);
+        out.push('<line x1="'+padL+'" y1="'+ly2+'" x2="'+(W-padR)+'" y2="'+ly2+'" stroke="'+c+'" stroke-width="1" stroke-dasharray="4 3" opacity="0.8"/>');
+        out.push('<text x="'+(W-padR+6)+'" y="'+(ly2+3.5)+'" fill="'+c+'" font-size="10" font-family="monospace">'+v+'</text>'); });
+
+      if(pType==="volume"){
+        var bw=Math.max(1.5,slot*0.6);
+        pd.forEach(function(v,i){ if(!isNum(v)) return; var c2=candles[i];
+          var col2=(c2&&isNum(c2[0])&&isNum(c2[3])&&c2[3]>=c2[0])?"rgba(38,166,154,0.55)":"rgba(239,83,80,0.55)";
+          if(pane.colors&&pane.colors[i]) col2=pane.colors[i];
+          var by=PY(v); out.push('<rect x="'+(X(i)-bw/2)+'" y="'+by+'" width="'+bw+'" height="'+Math.max(0.5,paneBot-by)+'" fill="'+col2+'"/>'); });
+      } else {
+        out.push('<path d="'+linePath(pd,X,PY)+'" fill="none" stroke="'+(pane.color||"#c084fc")+'" stroke-width="1.6"/>');
+      }
+      (pane.markers||[]).forEach(function(m){ if(!isNum(m.i)||!isNum(m.value)) return;
+        out.push('<circle cx="'+X(m.i)+'" cy="'+PY(m.value)+'" r="3.2" fill="'+(m.color||"#fbbf24")+'" stroke="#0b111c" stroke-width="1"/>'); });
+      if(pane.label) out.push('<text x="'+(padL+5)+'" y="'+(paneTop+13)+'" fill="'+mut+'" font-size="10.5" font-weight="600" font-family="system-ui">'+esc(pane.label)+'</text>');
+    }
+
+    // header: title, subtitle, and OHLC readout (TradingView top-left)
+    out.push('<text x="'+padL+'" y="17" fill="'+txt+'" font-size="13" font-weight="700" font-family="system-ui">'+esc(spec.title||"")+'</text>');
+    if(spec.subtitle) out.push('<text x="'+padL+'" y="32" fill="'+mut+'" font-size="10.5" font-family="system-ui">'+esc(spec.subtitle)+'</text>');
+    if(spec.ohlc !== false){ var f=candles[n-1]; if(f){ var oc=(isNum(f[0])&&isNum(f[3])&&f[3]>=f[0])?up:down;
+      var parts=[["O",f[0]],["H",f[1]],["L",f[2]],["C",f[3]]], hy2=spec.subtitle?46:32;
+      var lx=padL;
+      parts.forEach(function(p){ out.push('<text x="'+lx+'" y="'+hy2+'" font-size="10.5" font-family="monospace" fill="'+mut+'">'+p[0]+'</text>');
+        lx+=11; out.push('<text x="'+lx+'" y="'+hy2+'" font-size="10.5" font-family="monospace" fill="'+oc+'">'+fmt(p[1])+'</text>'); lx+=(fmt(p[1]).length*6.4)+10; }); } }
+
+    // legend (bottom-left, above time axis)
+    var lgx=padL, lgy=H-4;
+    (spec.legend||[]).forEach(function(lg){ out.push('<rect x="'+lgx+'" y="'+(lgy-8)+'" width="14" height="3" rx="1.5" fill="'+(lg.color||"#fbbf24")+'"/>');
+      out.push('<text x="'+(lgx+18)+'" y="'+(lgy-4)+'" fill="'+axis+'" font-size="10" font-family="system-ui">'+esc(lg.label)+'</text>');
+      lgx+=22+lg.label.length*6.1; });
+
+    out.push("</svg>"); return out.join("");
+  }
+
+  var TVChart = { buildSVG: buildSVG, render: function(elId, spec){ try { var el=document.getElementById(elId); if(!el) return; el.innerHTML=buildSVG(spec); } catch(e){} } };
+  global.TVChart = TVChart;
+})(window);
+</script>
+<script>
+(function(){ if(typeof TVChart==="undefined") return;
+  TVChart.render("eb-nifty-signal", {"times":["09:15","09:30","09:45","10:00","10:15","10:30","10:45","11:00","11:15","11:30","11:45","12:00","12:15","12:30","12:45","13:00","13:15","13:30","13:45","14:00","14:15","14:30","14:45","15:00","15:15"],"candles":[[22163.6,22224.6,22163.6,22217.7],[22217.4,22263.55,22205.55,22257.9],[22258.7,22316.8,22252.05,22299.5],[22300.6,22317.5,22293.05,22306.25],[22306.05,22326.3,22281.85,22285.35],[22286.75,22368.4,22278.5,22355.5],[22354.7,22364.95,22342.2,22346.45],[22346.25,22370.85,22345.55,22367.3],[22366.85,22373.5,22344.4,22369.2],[22369.05,22370.7,22352.35,22359.3],[22359.9,22370.35,22321.05,22330.75],[22332.85,22345.45,22325.65,22334.2],[22334.15,22364.7,22327.5,22353.85],[22355.7,22424.35,22350.75,22414.25],[22413.65,22434.85,22400.3,22403.8],[22405.15,22418.75,22397.85,22408.65],[22409.8,22426.45,22406.45,22413],[22412.3,22429.85,22405.95,22416.4],[22416.35,22444.5,22413.55,22432.75],[22433.3,22474.75,22426.2,22467.95],[22468.05,22496.7,22460.15,22487.25],[22486.95,22516,22472.4,22503.2],[22499.5,22503.45,22416.05,22419.95],[22420.3,22420.3,22264.95,22268.9],[22270.2,22343.7,22264.65,22343.1]],"title":"NIFTY 50 — the signal candle","subtitle":"15m · 28 Mar 2024 · the 09:15 bar decides the whole day","markers":[{"i":0,"type":"dot","color":"#0ea5e9","price":22217.7,"text":"09:15 GREEN · body 88.7% · upper wick 11.3% -> BUY day"}],"shades":[{"from":0,"to":0,"color":"rgba(14,165,233,0.14)","label":"signal candle","text":"#7dd3fc"}],"lastPriceTag":false});
+  TVChart.render("eb-long-trade", {"times":["09:15","09:30","09:45","10:00","10:15","10:30","10:45","11:00","11:15","11:30","11:45","12:00","12:15","12:30","12:45","13:00","13:15","13:30","13:45","14:00","14:15","14:30","14:45","15:00","15:15"],"candles":[[22163.6,22224.6,22163.6,22217.7],[22217.4,22263.55,22205.55,22257.9],[22258.7,22316.8,22252.05,22299.5],[22300.6,22317.5,22293.05,22306.25],[22306.05,22326.3,22281.85,22285.35],[22286.75,22368.4,22278.5,22355.5],[22354.7,22364.95,22342.2,22346.45],[22346.25,22370.85,22345.55,22367.3],[22366.85,22373.5,22344.4,22369.2],[22369.05,22370.7,22352.35,22359.3],[22359.9,22370.35,22321.05,22330.75],[22332.85,22345.45,22325.65,22334.2],[22334.15,22364.7,22327.5,22353.85],[22355.7,22424.35,22350.75,22414.25],[22413.65,22434.85,22400.3,22403.8],[22405.15,22418.75,22397.85,22408.65],[22409.8,22426.45,22406.45,22413],[22412.3,22429.85,22405.95,22416.4],[22416.35,22444.5,22413.55,22432.75],[22433.3,22474.75,22426.2,22467.95],[22468.05,22496.7,22460.15,22487.25],[22486.95,22516,22472.4,22503.2],[22499.5,22503.45,22416.05,22419.95],[22420.3,22420.3,22264.95,22268.9],[22270.2,22343.7,22264.65,22343.1]],"title":"NIFTY 50 (standing in for a stock) — a LONG that reached target","subtitle":"15m · 28 Mar 2024 · entry 22229.60 · stop 22158.60 · target 22371.60","hlines":[{"price":22229.6,"color":"#0ea5e9","label":"entry 22229.60 (high + 5)","solid":true,"labelAt":0.02},{"price":22158.6,"color":"#f85149","label":"stop 22158.60 (low - 5)","labelAt":0.02},{"price":22371.6,"color":"#26a69a","label":"target 22371.60 (1:2 of 71.00)","labelAt":0.55}],"markers":[{"i":1,"type":"buy","price":22229.6,"text":"FILL 22229.60"},{"i":8,"type":"exit","price":22371.6,"text":"TARGET 22371.60"}],"shades":[{"from":1,"to":8,"color":"rgba(38,166,154,0.07)","label":"position held","text":"#5eead4"}],"legend":[{"color":"#0ea5e9","label":"entry = signal high 22224.60 + 5"},{"color":"#f85149","label":"stop = signal low 22163.60 - 5 -> risk 71.00"},{"color":"#26a69a","label":"target = entry + 2 x 71.00"}],"lastPriceTag":false});
+  TVChart.render("eb-stop-trade", {"times":["09:15","09:30","09:45","10:00","10:15","10:30","10:45","11:00","11:15","11:30","11:45","12:00","12:15","12:30","12:45","13:00","13:15","13:30","13:45","14:00","14:15","14:30","14:45","15:00","15:15"],"candles":[[24748.7,24763.35,24723.25,24729.45],[24728.75,24732.15,24685.4,24687.35],[24687.55,24714.5,24681.05,24712.3],[24713.25,24817.1,24671.45,24750.6],[24750.25,24834.6,24735.75,24831.55],[24832.4,24925.95,24829.05,24912.5],[24912.55,24947.85,24909.4,24942.4],[24942.15,24983.9,24942.15,24983.05],[24982.65,24993.25,24960.55,24969.9],[24970.25,25008.25,24969.9,25006.35],[25006.6,25029.5,24993.4,25025.8],[25026.85,25028.4,24996.6,24998.85],[24998.55,24999.55,24967.05,24984.1],[24984.6,24994.85,24966,24981.1],[24981.7,24990.25,24977.6,24982.75],[24982.95,24991.05,24968,24969.05],[24969.45,24981.1,24965.15,24973.9],[24973.3,24997.7,24962.35,24981.75],[24982.15,24994.25,24972.2,24990.25],[24990.7,24994.5,24975.15,24990],[24989.7,25021.75,24989.4,25017],[25017.6,25018.25,24986.25,24988.45],[24988.85,25004.75,24983.2,24998.4],[24999.6,25013.4,24994.3,25002.1],[25001.5,25010.05,24992.65,25000.3]],"title":"NIFTY 50 (standing in for a stock) — a SHORT that stopped out","subtitle":"15m · 6 Jun 2025 · entry 24718.25 · stop 24768.35 · target 24618.05","hlines":[{"price":24718.25,"color":"#0ea5e9","label":"entry 24718.25 (low - 5)","solid":true,"labelAt":0.02},{"price":24768.35,"color":"#f85149","label":"stop 24768.35 (high + 5)","labelAt":0.02},{"price":24618.05,"color":"#26a69a","label":"target 24618.05 — never reached","labelAt":0.5}],"markers":[{"i":1,"type":"exit","price":24718.25,"text":"FILL 24718.25"},{"i":3,"type":"buy","price":24768.35,"text":"STOP 24768.35"}],"shades":[{"from":1,"to":3,"color":"rgba(248,81,73,0.08)","label":"position held","text":"#fca5a5"}],"legend":[{"color":"#0ea5e9","label":"short entry = signal low 24723.25 - 5"},{"color":"#f85149","label":"stop = signal high 24763.35 + 5 -> risk 50.10"},{"color":"#26a69a","label":"target 1:2 = 24618.05, never touched"}],"lastPriceTag":false});
+  TVChart.render("eb-big-candle", {"times":["09:15","09:30","09:45","10:00","10:15","10:30","10:45","11:00","11:15","11:30","11:45","12:00","12:15","12:30","12:45","13:00","13:15","13:30","13:45","14:00","14:15","14:30","14:45","15:00","15:15"],"candles":[[23026.75,23050.05,22978.35,22987.7],[22988,23069.85,22976.5,23040.45],[23041.55,23056.7,23023.7,23056.7],[23056.45,23097.3,23047.3,23067.15],[23067.55,23106.05,23053.8,23095.25],[23094.55,23106.45,23071.15,23074.1],[23073.7,23125.85,23068.25,23122.85],[23122.75,23123.95,23074.75,23085.4],[23084.75,23090.85,22984.15,23066.45],[23066.8,23126.6,23066.8,23092.7],[23093.3,23128.15,23092.15,23112.7],[23111.5,23128.8,23098.05,23120.95],[23121.1,23168.5,23116,23135.9],[23135.55,23149.9,23112.65,23133.25],[23133.05,23146.2,23116.3,23122.35],[23122.4,23131.4,23086.55,23112.8],[23113.05,23166.85,23109.9,23162.95],[23163.15,23167.75,23136.75,23147.6],[23148.95,23169.8,23143,23158.3],[23158.1,23181.35,23148.95,23174.05],[23174.55,23180.8,23126.3,23142.7],[23142.8,23146.55,23115.1,23144.85],[23145.3,23149.65,23130.9,23138.8],[23140.65,23164.05,23132.15,23159.35],[23160.3,23183.35,23153.85,23176.2]],"title":"NIFTY 50 — the big-candle stop, and an order that never filled","subtitle":"15m · 29 Jan 2025 · wick risk 81.70 > 60 -> stop moves to the body edge","hlines":[{"price":22973.35,"color":"#0ea5e9","label":"entry 22973.35 (low - 5) — never touched","solid":true,"labelAt":0.02},{"price":23031.75,"color":"#26a69a","label":"stop 23031.75 = body top 23026.75 + 5 (risk 58.40)","labelAt":0.3},{"price":23055.05,"color":"#f85149","label":"wick stop 23055.05 would have been risk 81.70","labelAt":0.02}],"markers":[{"i":0,"type":"dot","color":"#fbbf24","price":22987.7,"text":"09:15 RED · body 54.5% · lower wick 13.0%"}],"shades":[{"from":1,"to":5,"color":"rgba(96,165,250,0.07)","label":"entry window to 10:45 — price never came down","text":"#93c5fd"}],"legend":[{"color":"#f85149","label":"the wick stop the rule refused (81.70 > 60)"},{"color":"#26a69a","label":"the body-edge stop it used instead (58.40)"},{"color":"#0ea5e9","label":"entry level — the low never traded 22973.35"}],"lastPriceTag":false});
+  TVChart.render("eb-reject-body", {"times":["09:15","09:30","09:45","10:00","10:15","10:30","10:45","11:00","11:15","11:30","11:45","12:00","12:15","12:30","12:45","13:00","13:15","13:30","13:45","14:00","14:15","14:30","14:45","15:00","15:15"],"candles":[[24045.8,24089.95,24016.4,24036.15],[24035.65,24071.5,23947.75,23948.35],[23947.55,23967.65,23911.45,23942],[23942.25,24030.4,23942.25,24025.7],[24024,24054.3,23966.75,23966.95],[23966.9,23966.9,23880.15,23882.95],[23882.4,23882.9,23820,23831.5],[23831.05,23837.4,23726.6,23745.1],[23744.3,23786.55,23716.8,23782.35],[23782.75,23800.35,23708.85,23708.85],[23708.45,23709.15,23601.5,23608.15],[23609.9,23727.6,23609.9,23719.8],[23719.35,23731,23679.05,23679.05],[23679.2,23768.75,23679.2,23740.5],[23740.65,23770.45,23727.65,23769.55],[23768.15,23779.15,23704.35,23714.7],[23714.6,23714.6,23661.9,23669.7],[23672.1,23676.65,23619.15,23648.75],[23648.9,23661.15,23602.6,23632.2],[23633.75,23665.95,23620.4,23623.85],[23624.4,23660.2,23613.05,23614.65],[23615.15,23620.35,23551.9,23573.3],[23574.7,23644.05,23572.35,23643.05],[23644.2,23653.8,23580.85,23585.6],[23587.15,23636.95,23580.15,23629.6]],"title":"NIFTY 50 — refused: the body is too small","subtitle":"15m · 6 Jan 2025 · body 13.1% of range, needs 40% -> no signal, no trades all day","markers":[{"i":0,"type":"dot","color":"#f85149","price":24036.15,"text":"09:15 range 73.55 but body only 9.65 (13.1%)"}],"shades":[{"from":0,"to":0,"color":"rgba(248,81,73,0.16)","label":"refused","text":"#fca5a5"}],"lastPriceTag":false});
+  TVChart.render("eb-reject-wick", {"times":["09:15","09:30","09:45","10:00","10:15","10:30","10:45","11:00","11:15","11:30","11:45","12:00","12:15","12:30","12:45","13:00","13:15","13:30","13:45","14:00","14:15","14:30","14:45","15:00","15:15"],"candles":[[23165.9,23227.2,23160.35,23193.1],[23192.5,23204.85,23150.05,23173.45],[23172.85,23206.7,23149.65,23179.9],[23179.6,23182.9,23139.4,23156.2],[23155.75,23160,23134.15,23156.45],[23157.5,23186.05,23152.5,23185.5],[23185.4,23216.45,23182.25,23214.85],[23216.15,23264.95,23213.85,23260.05],[23260.3,23261.35,23227.7,23229.55],[23230.1,23232.1,23192.8,23198.55],[23196.15,23201.05,23175.25,23196.3],[23196.7,23197.35,23169.7,23181.1],[23180.55,23184.15,23155.1,23172.4],[23172.25,23189.3,23159.8,23181.9],[23181.6,23199.3,23158.75,23160.9],[23160.7,23168.8,23144.1,23168.2],[23168.4,23174.1,23154.2,23167.8],[23167.2,23169.5,23151.5,23158.45],[23157.95,23161.2,23145.05,23157.65],[23158,23184.85,23148.5,23182.45],[23182.15,23198.95,23179.85,23183.1],[23183.8,23187.8,23161.65,23175.55],[23174.5,23183.3,23164.6,23170.1],[23169.85,23176.65,23151.9,23173.25],[23172.9,23223.05,23168.95,23206.85]],"title":"NIFTY 50 — refused: the opposing wick is too long","subtitle":"15m · 14 Jan 2025 · green candle, body 40.7% (passes) but upper wick 51.0% (limit 30%)","markers":[{"i":0,"type":"dot","color":"#f85149","price":23193.1,"text":"09:15 GREEN but sellers pushed it back 34.10 from the high"}],"shades":[{"from":0,"to":0,"color":"rgba(248,81,73,0.16)","label":"refused","text":"#fca5a5"}],"lastPriceTag":false});
+})();
+</script>
+</body>
+</html>
