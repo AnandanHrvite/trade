@@ -109,7 +109,8 @@ const earlyBird = require("../strategies/early_bird");
 const fyers     = require("../config/fyers");
 const universe  = require("../utils/stockUniverse");
 const { fyersErrText } = require("../utils/fyersErr");
-const { faviconLink, buildSidebar } = require("../utils/sharedNav");
+const { faviconLink, buildSidebar, sidebarCSS, modalCSS, modalJS,
+        clearCacheButtonHTML, clearCacheJS } = require("../utils/sharedNav");
 const { saveResult } = require("../utils/resultStore");
 const backtestJobs = require("../utils/backtestJobManager");
 
@@ -196,6 +197,22 @@ function rateLimits() {
     rps: Number.isFinite(rps) && rps >= 1 ? Math.min(rps, 50)   : 8,
     rpm: Number.isFinite(rpm) && rpm >= 1 ? Math.min(rpm, 2000) : 180,
   };
+}
+
+/**
+ * Memory ceiling for one run, in symbol-days (symbols × trading days).
+ *
+ * 60000 symbol-days is ~186 MB of candles — about ONE YEAR of the full ~220-name
+ * FNO universe, or ~5 years of NIFTY50. The process gets a 900 MB heap and
+ * shares it with any live/paper session, so this deliberately spends only about
+ * a fifth of the budget on raw candles: peak RSS is higher than the candle
+ * arrays alone (trade records, per-day rows, and GC headroom on top), and the
+ * point of the ceiling is that a backtest must never be the thing that restarts
+ * the bot.
+ */
+function maxSymbolDays() {
+  const v = parseInt(process.env.EARLYBIRD_BT_MAX_SYMBOL_DAYS, 10);
+  return Number.isFinite(v) && v >= 100 ? v : 60000;
 }
 
 /** Days a cache file survives. */
@@ -1052,8 +1069,12 @@ const PAGE_CSS = `
 :root{--bg:#060810;--panel:#0b1020;--border:#131a30;--text:#a0b8d8;--head:#e2e8f0;--muted:#6d85a8;--accent:${ACCENT};--green:#10b981;--red:#ef4444;}
 :root[data-theme="light"]{--bg:#f4f6f9;--panel:#ffffff;--border:#e2e6ee;--text:#334155;--head:#0f172a;--muted:#64748b;}
 *{box-sizing:border-box;}
+/* sidebarCSS() owns the shell geometry (.app-shell flex, .sidebar fixed 200px,
+   .main-content margin-left:200px and its 768px collapse). Everything below
+   only paints — no margin-left, no display, no flex on .main-content — so the
+   shared sidebar rules stay in force instead of being silently overridden. */
 body{margin:0;font-family:'IBM Plex Mono',ui-monospace,monospace;background:var(--bg);color:var(--text);font-size:0.78rem;}
-.main-content{padding:18px 22px 60px;}
+.main-content{padding:18px 22px calc(60px + env(safe-area-inset-bottom));}
 h1{color:var(--head);font-size:1.05rem;margin:0 0 4px;}
 h2{color:var(--head);font-size:0.82rem;margin:22px 0 8px;letter-spacing:0.04em;text-transform:uppercase;}
 .sub{color:var(--muted);font-size:0.7rem;margin:0 0 16px;}
@@ -1065,6 +1086,15 @@ form{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;}
 label{display:block;font-size:0.65rem;color:var(--muted);margin-bottom:4px;letter-spacing:0.05em;text-transform:uppercase;}
 input,select{background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px 10px;font-family:inherit;font-size:0.76rem;min-height:44px;}
 button{background:var(--accent);border:0;color:#04121a;font-weight:700;border-radius:6px;padding:10px 20px;font-family:inherit;font-size:0.78rem;cursor:pointer;min-height:44px;}
+/* Cancel — only visible while a job is in flight. */
+.cancel-btn{background:#3a1a1a;color:#f87171;border:1px solid #7f1d1d;}
+/* Date presets. min-height 44px is the tap-target floor, NOT decoration: these
+   are the densest controls on the page and the ones most often hit on a phone. */
+.preset-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 8px;}
+.preset-row-label{font-size:0.58rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;min-width:52px;}
+.preset-btn{font-size:0.65rem;padding:3px 12px;min-height:44px;border-radius:6px;background:rgba(59,130,246,0.08);color:#60a5fa;border:1px solid rgba(59,130,246,0.25);cursor:pointer;font-family:inherit;font-weight:600;transition:background 0.15s;}
+.preset-btn:hover:not([disabled]){background:rgba(59,130,246,0.2);}
+.preset-btn[disabled]{opacity:0.3;cursor:not-allowed;}
 .stat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;}
 .sc{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:10px 12px;}
 .sc-label{font-size:0.6rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;}
@@ -1088,18 +1118,44 @@ details[open] summary{border-radius:8px 8px 0 0;}
 .pill-target{background:rgba(16,185,129,0.15);color:var(--green);}
 .pill-eod{background:rgba(148,163,184,0.15);color:var(--muted);}
 .pill-none{background:rgba(148,163,184,0.12);color:var(--muted);}
-@media(max-width:768px){.main-content{padding:14px 12px 60px;margin-left:0;}}
+/* CSV downloads. Real buttons rather than inline text links: at 440px a bare
+   <a> inside a <p> is a ~14px-tall tap target, well under the 44px floor. */
+.dl-row{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px;}
+.dl-link{display:inline-flex;align-items:center;min-height:44px;padding:0 16px;border-radius:6px;background:var(--panel);border:1px solid var(--border);color:var(--accent);text-decoration:none;font-size:0.72rem;font-weight:600;}
+.dl-link:hover{border-color:var(--accent);}
+/* ── MOBILE ────────────────────────────────────────────────────────────────
+   Target is the user's iPhone 17 Pro Max, ~440px portrait. Two rules matter:
+   the PAGE never scrolls sideways, and every wide table scrolls inside its own
+   .tbl-scroll box. margin-left is deliberately NOT set here — sidebarCSS()'s
+   own 768px block already zeroes it and adds overflow-x:clip; repeating it here
+   only creates a second source of truth for the same geometry. */
+@media(max-width:768px){
+  /* The hamburger buildSidebar() renders is fixed at the top-left of the
+     viewport, so the first line of content has to clear it or it prints under
+     the bars. 46px is the button's own box. */
+  .main-content{padding:14px 12px calc(60px + env(safe-area-inset-bottom));}
+  h1{padding-left:46px;min-height:44px;display:flex;align-items:center;}
+}
 @media(max-width:640px){
-  html,body{max-width:100%;overflow-x:hidden;}
   body{padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right);}
   .main-content{padding-left:10px;padding-right:10px;}
   .stat-grid{grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:8px;}
   .sc-val{font-size:0.92rem;}
-  table{min-width:640px;}
+  /* min-width forces the table WIDER than the phone — that is the point. It
+     overflows inside .tbl-scroll, which scrolls, instead of stretching the page. */
+  .tbl-scroll table{min-width:640px;}
   form{flex-direction:column;align-items:stretch;}
   form>div{width:100%;}
-  input,select,button{width:100%;}
+  form input,form select,form button{width:100%;}
+  .preset-row{gap:5px;}
+  .preset-row-label{width:100%;min-width:0;margin-bottom:-2px;}
+  .preset-btn{flex:1 1 auto;min-width:64px;padding:3px 8px;}
   .notes{font-size:0.66rem;}
+  .det-body{padding:8px 6px;}
+  /* Long free-text cells must wrap rather than push the table wider still. */
+  td[style*="white-space:normal"]{min-width:180px;}
+  .dl-row{flex-direction:column;}
+  .dl-link{width:100%;justify-content:center;}
 }`;
 
 function _lightAttr() {
@@ -1112,8 +1168,10 @@ function pageShell(title, body, activePage) {
   try { sidebar = buildSidebar(activePage || "earlyBirdBacktest"); } catch (_) { sidebar = ""; }
   return `<!DOCTYPE html><html${_lightAttr()}><head><meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
-${faviconLink()}<title>${escHtml(title)}</title><style>${PAGE_CSS}</style></head>
-<body>${sidebar}<div class="main-content">${body}</div></body></html>`;
+${faviconLink()}<title>${escHtml(title)}</title>
+<style>${sidebarCSS()}${modalCSS()}${PAGE_CSS}</style></head>
+<body><div class="app-shell">${sidebar}<div class="main-content">${body}</div></div>
+<script>${modalJS()}</script></body></html>`;
 }
 
 function fmtMoney(v) {
@@ -1136,6 +1194,162 @@ function num(v, dp) {
   return _num(v) ? v.toFixed(dp == null ? 2 : dp) : "—";
 }
 
+/**
+ * The STOCK-LEG-ONLY banner, in the page rather than only in the console.
+ *
+ * runEarlyBirdBacktest() already console.warn()s this, but a user who set
+ * EARLYBIRD_TRADE_MODE=option and never opens /logs sees only a wall of
+ * "NO TRADE" days and reasonably concludes the strategy never fires. Same text,
+ * same two cases, rendered where the result is actually read.
+ *
+ * Returns "" in plain "stock" mode — there is nothing missing to warn about.
+ */
+function tradeModeNoticeHTML() {
+  const cfg = earlyBird.getConfig();
+  if (!earlyBird.tradesStock(cfg)) {
+    return `<div class="notes warn">
+<b>EARLYBIRD_TRADE_MODE = "${escHtml(cfg.tradeMode)}" — this backtest will report NO TRADE for every day.</b>
+This page simulates the <b>STOCK leg only</b>, and the current mode trades no stock leg. Simulating the
+NIFTY option leg needs historical <b>premium</b> candles per strike, which Fyers delists at expiry, and
+inventing them from a delta/theta model would be simulating the strategy rather than testing it — so the
+option leg is deliberately not backtested. Set the mode to <b>stock</b> or <b>both</b> to get results here,
+and paper-trade the option leg instead.
+</div>`;
+  }
+  if (earlyBird.tradesOption(cfg)) {
+    return `<div class="notes warn">
+<b>EARLYBIRD_TRADE_MODE = "both" — the NIFTY option leg is NOT included in these figures.</b>
+There are no historical option premiums to simulate it against, so everything below is
+<b>stock-leg only</b>. The live/paper option leg's P&amp;L is additional to what this page reports.
+</div>`;
+  }
+  return "";
+}
+
+// ── Date-range presets ───────────────────────────────────────────────────────
+// setPreset() is COPIED VERBATIM from src/routes/allBacktest.js so the two pages
+// cannot drift on what "last week" or "Mar" means. The only edits are the three
+// element ids at the bottom (this page's form has no crumb bar to update).
+const PRESET_ROWS_HTML = `
+<div class="preset-row">
+  <span class="preset-row-label">Recent</span>
+  <button type="button" class="preset-btn" onclick="setPreset('thisWeek')">This week</button>
+  <button type="button" class="preset-btn" onclick="setPreset('lastWeek')">Last week</button>
+  <button type="button" class="preset-btn" onclick="setPreset('thisMonth')">This month</button>
+  <button type="button" class="preset-btn" onclick="setPreset('lastMonth')">Last month</button>
+  <button type="button" class="preset-btn" onclick="setPreset('last3')">Last 3 months</button>
+  <button type="button" class="preset-btn" onclick="setPreset('last6')">Last 6 months</button>
+  <button type="button" class="preset-btn" onclick="setPreset('thisYear')">This year</button>
+  <button type="button" class="preset-btn" onclick="setPreset('lastYear')">Last year</button>
+</div>
+<div class="preset-row">
+  <span class="preset-row-label">Multi-yr</span>
+  <button type="button" class="preset-btn" onclick="setPreset('last2y')">Last 2 yr</button>
+  <button type="button" class="preset-btn" onclick="setPreset('last3y')">Last 3 yr</button>
+  <button type="button" class="preset-btn" onclick="setPreset('last4y')">Last 4 yr</button>
+  <button type="button" class="preset-btn" onclick="setPreset('last5y')">Last 5 yr</button>
+  <button type="button" class="preset-btn" onclick="setPreset('last6y')">Last 6 yr</button>
+  <button type="button" class="preset-btn" onclick="setPreset('last7y')">Last 7 yr</button>
+  <button type="button" class="preset-btn" onclick="setPreset('last8y')">Last 8 yr</button>
+</div>`;
+
+/** Per-year and per-month rows. Built per request — the year list moves. */
+function presetYearMonthRowsHTML() {
+  const cy = new Date().getFullYear();
+  const years = Array.from({ length: 8 }, (_, i) => cy - i)
+    .map(yr => `<button type="button" class="preset-btn" onclick="setPreset('y${yr}')">${yr}</button>`)
+    .join("");
+  const keys   = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+  const labels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const curMonth = new Date().getMonth();
+  // A future month of the current year has no data — disabled, not hidden, so
+  // the row keeps a stable 12-button shape.
+  const months = keys.map((k, i) => i <= curMonth
+    ? `<button type="button" class="preset-btn" onclick="setPreset('${k}')">${labels[i]}</button>`
+    : `<button type="button" class="preset-btn" disabled>${labels[i]}</button>`).join("");
+  return `
+<div class="preset-row"><span class="preset-row-label">Year</span>${years}</div>
+<div class="preset-row"><span class="preset-row-label">${cy}</span>${months}</div>`;
+}
+
+/**
+ * VERBATIM from allBacktest.js setPreset(), except the final three lines: this
+ * form's inputs are #eb-from / #eb-to and there is no #crumbRange to update.
+ * Do not "tidy" it — matching allBacktest exactly is the point.
+ */
+const PRESET_JS = `
+function setPreset(p){
+  var d=new Date(),y=d.getFullYear(),m=d.getMonth(),day=d.getDay();
+  function fmt(dt){var yy=dt.getFullYear(),mm=String(dt.getMonth()+1).padStart(2,'0'),dd=String(dt.getDate()).padStart(2,'0');return yy+'-'+mm+'-'+dd;}
+  var today=fmt(d);
+  var monday=new Date(d); monday.setDate(d.getDate()-(day===0?6:day-1));
+  var lastWeekMon=new Date(monday); lastWeekMon.setDate(lastWeekMon.getDate()-7);
+  var lastWeekFri=new Date(lastWeekMon); lastWeekFri.setDate(lastWeekFri.getDate()+4);
+  var fromVal, toVal;
+  var monthMap={jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
+  if(monthMap.hasOwnProperty(p)){
+    var mi=monthMap[p];
+    fromVal=fmt(new Date(y,mi,1));
+    toVal=(mi<m)?fmt(new Date(y,mi+1,0)):(mi===m?today:fmt(new Date(y,mi+1,0)));
+  } else if(/^y\\d{4}$/.test(p)){
+    var yr=parseInt(p.slice(1));
+    fromVal=yr+'-01-01';
+    toVal=(yr===y)?today:(yr+'-12-31');
+  } else {
+    var presets={
+      thisWeek: [fmt(monday), today],
+      lastWeek: [fmt(lastWeekMon), fmt(lastWeekFri)],
+      thisMonth: [fmt(new Date(y,m,1)), today],
+      lastMonth: [fmt(new Date(y,m-1,1)), fmt(new Date(y,m,0))],
+      last3: [fmt(new Date(y,m-2,1)), today],
+      last6: [fmt(new Date(y,m-5,1)), today],
+      thisYear: [fmt(new Date(y,0,1)), today],
+      lastYear: [fmt(new Date(y-1,0,1)), fmt(new Date(y-1,11,31))],
+      last2y: [fmt(new Date(y-2,0,1)), today],
+      last3y: [fmt(new Date(y-3,0,1)), today],
+      last4y: [fmt(new Date(y-4,0,1)), today],
+      last5y: [fmt(new Date(y-5,0,1)), today],
+      last6y: [fmt(new Date(y-6,0,1)), today],
+      last7y: [fmt(new Date(y-7,0,1)), today],
+      last8y: [fmt(new Date(y-8,0,1)), today]
+    };
+    if(!presets[p]) return;
+    fromVal=presets[p][0]; toVal=presets[p][1];
+  }
+  document.getElementById('eb-from').value=fromVal;
+  document.getElementById('eb-to').value=toVal;
+  var rl=document.getElementById('eb-range-label');
+  if(rl) rl.textContent=fromVal+' \\u2192 '+toVal;
+}`;
+
+/**
+ * Submit/Cancel wiring. The run itself is a background JOB — the GET navigates
+ * to a progress page owned by backtestJobManager — so "Cancel" here can only
+ * mean "I have not navigated yet, put the form back". It is shown ONLY between
+ * submit and navigation, which is exactly the window in which it can act; once
+ * the browser has left the page the progress page owns the run. It is therefore
+ * NOT wired to any job-abort endpoint, and it does not pretend to be.
+ */
+const FORM_JS = `
+(function(){
+  var form=document.getElementById('eb-form');
+  var run=document.getElementById('eb-run');
+  var cancel=document.getElementById('eb-cancel');
+  if(!form||!run||!cancel) return;
+  form.addEventListener('submit',function(){
+    run.disabled=true;
+    run.textContent='Running\\u2026';
+    cancel.style.display='';
+  });
+  cancel.addEventListener('click',function(){
+    // The navigation is already in flight; stopping it is the browser's job.
+    try{ window.stop(); }catch(e){}
+    run.disabled=false;
+    run.textContent='Run Backtest';
+    cancel.style.display='none';
+  });
+})();`;
+
 // ── The form ────────────────────────────────────────────────────────────────
 function renderForm(from, to, universeKey) {
   const cfg = earlyBird.getConfig();
@@ -1151,6 +1365,7 @@ function renderForm(from, to, universeKey) {
 <h1>EarlyBird Backtest</h1>
 <p class="sub">First-15-minute signal candle · NIFTY-confirmed · traded in <b>CASH EQUITY</b> on F&amp;O stocks</p>
 
+${tradeModeNoticeHTML()}
 <div class="notes">
 <b>What this simulates:</b> NIFTY's ${earlyBird._fmtMins(cfg.sessionStartMin)} ${cfg.resolutionMins}-minute candle decides the day's direction
 (<b>NIFTY is never traded</b>). Every universe stock's own ${earlyBird._fmtMins(cfg.sessionStartMin)} candle is tested for the same shape in the
@@ -1170,13 +1385,23 @@ limits — expect <b>several minutes</b>. Every series is cached on disk under
 </div>
 
 <div class="panel">
-<form method="GET" action="${ENDPOINT}">
+<form method="GET" action="${ENDPOINT}" id="eb-form">
   <div><label for="eb-from">From</label><input id="eb-from" type="date" name="from" value="${escHtml(from)}" required/></div>
   <div><label for="eb-to">To</label><input id="eb-to" type="date" name="to" value="${escHtml(to)}" required/></div>
   <div><label for="eb-uni">Universe</label><select id="eb-uni" name="universe">${opts}</select></div>
-  <div><button type="submit">Run Backtest</button></div>
+  <div><button type="submit" id="eb-run">Run Backtest</button></div>
+  <div><button type="button" id="eb-cancel" class="cancel-btn" style="display:none;">✕ Cancel</button></div>
+  <div>${clearCacheButtonHTML()}</div>
 </form>
-</div>`;
+
+<p class="sub" style="margin:14px 0 6px;">Selected range: <b id="eb-range-label">${escHtml(from)} → ${escHtml(to)}</b></p>
+${PRESET_ROWS_HTML}
+${presetYearMonthRowsHTML()}
+</div>
+
+<script>${PRESET_JS}
+${FORM_JS}
+${clearCacheJS()}</script>`;
   return pageShell("EarlyBird — Backtest", body, "earlyBirdBacktest");
 }
 
@@ -1291,6 +1516,7 @@ ${pnlCell(s.pnl)}<td class="m">${s.triggered}</td><td class="${s.untriggered ? "
 <p class="sub">${escHtml(universeKey)} universe · ${f.daysSeen} session(s) · cash equity, ${cfg.qty} shares/stock ·
 <a href="${ENDPOINT}" style="color:var(--accent);">← new run</a></p>
 
+${tradeModeNoticeHTML()}
 <div class="notes">
 <b>Direction:</b> NIFTY's ${earlyBird._fmtMins(cfg.sessionStartMin)} ${cfg.resolutionMins}-min candle only — NIFTY itself is never traded.
 <b>Shape test:</b> body ≥ ${cfg.minBodyPct}% of range, opposing wick ≤ ${cfg.maxOpposingWickPct}%, applied identically to the index and to every stock.
@@ -1357,11 +1583,10 @@ ${renderBreakdown("Breakdown by side", sideRows, ["Side", "Trades", "Wins", "Win
 ${result.noTrade.map(d => `<tr><td>${escHtml(d.date)}</td><td class="m" style="white-space:normal;">${escHtml(d.reason)}</td></tr>`).join("") || `<tr><td colspan="2" class="m">Every session was tradeable.</td></tr>`}
 </tbody></table></div></div></details>
 
-<p class="sub" style="margin-top:18px;">
-<a href="${ENDPOINT}/csv?jobId=${escHtml(meta.jobId || "")}" style="color:var(--accent);">⤓ Download trades CSV</a>
-&nbsp;·&nbsp;
-<a href="${ENDPOINT}/days.csv?jobId=${escHtml(meta.jobId || "")}" style="color:var(--accent);">⤓ Download per-day funnel CSV</a>
-</p>`;
+<div class="dl-row">
+<a class="dl-link" href="${ENDPOINT}/csv?jobId=${escHtml(meta.jobId || "")}">⤓ Download trades CSV</a>
+<a class="dl-link" href="${ENDPOINT}/days.csv?jobId=${escHtml(meta.jobId || "")}">⤓ Download per-day funnel CSV</a>
+</div>`;
 
   return pageShell(`EarlyBird Backtest — ${from} → ${to}`, body, "earlyBirdBacktest");
 }
@@ -1467,6 +1692,43 @@ router.get("/", async (req, res) => {
   }
   if (from > to) {
     return res.status(400).send(renderErrorPage("'From' is after 'To'.", from, to));
+  }
+
+  // ── MEMORY CEILING — this refusal protects the LIVE TRADING PROCESS ────────
+  // assembleData holds every symbol's candles in memory at once (one Map per
+  // symbol, keyed by day), because the day loop needs random access across all
+  // of them. That is fine for a month and fatal for a decade:
+  //
+  //     symbols × trading-days × ~25 bars/day × ~130 bytes
+  //     220 names ×   1 month  ≈   14 MB      ← the default, comfortable
+  //     220 names ×   1 year   ≈  170 MB
+  //     220 names ×   3 years  ≈  510 MB      ← already half the budget
+  //     220 names × 8.5 years  ≈ 1450 MB      ← impossible here
+  //
+  // ecosystem.config.js runs this process on a t3.micro with
+  // --max-old-space-size=900 and max_memory_restart 940M. Blowing that does not
+  // just fail the backtest: PM2 restarts the WHOLE BOT, killing any live or
+  // paper session running at the time. So an over-large request is REFUSED up
+  // front with the arithmetic shown, rather than being started and OOM-killed
+  // half way through. EARLYBIRD_BT_MAX_SYMBOL_DAYS raises the ceiling for
+  // anyone running on a bigger box.
+  const _estDays = Math.max(1, Math.round((Date.parse(to + "T00:00:00Z") - Date.parse(from + "T00:00:00Z")) / 86400000) + 1);
+  const _estTradingDays = Math.max(1, Math.round(_estDays * (250 / 365)));
+  const _symbolsForEstimate = universe.getUniverse(universeKey).length || 1;
+  const _symbolDays = _symbolsForEstimate * _estTradingDays;
+  const _maxSymbolDays = maxSymbolDays();
+  if (_symbolDays > _maxSymbolDays) {
+    const _estMb = Math.round((_symbolDays * 25 * 130) / 1048576);
+    const _maxDaysForUniverse = Math.max(1, Math.floor(_maxSymbolDays / _symbolsForEstimate));
+    return res.status(400).send(renderErrorPage(
+      `That range is too large to hold in memory. ${_symbolsForEstimate} symbols × ~${_estTradingDays} trading days ` +
+      `≈ ${_estMb} MB of candles, and this process is capped at 900 MB heap (t3.micro) — exceeding it would make ` +
+      `PM2 restart the whole bot and kill any running paper or live session. ` +
+      `With the "${universeKey}" universe (${_symbolsForEstimate} symbols) the safe limit is about ` +
+      `${_maxDaysForUniverse} trading days (~${Math.max(1, Math.round(_maxDaysForUniverse / 21))} months). ` +
+      `Either shorten the range, pick a smaller universe (NIFTY50 is ~4× lighter than FNO), or raise ` +
+      `EARLYBIRD_BT_MAX_SYMBOL_DAYS if you are running on a larger machine.`,
+      from, to));
   }
 
   const jobId = typeof req.query.jobId === "string" ? req.query.jobId : "";

@@ -2433,9 +2433,26 @@ router.get("/status", (req, res) => {
 .eb-optgrid .b{background:#0d1320;border:1px solid #241a3a;border-radius:7px;padding:7px 9px;}
 .eb-optgrid .b .k{display:block;color:var(--muted-1,#8ba1c2);font-size:0.62rem;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:3px;}
 .eb-optgrid .b .v{color:#e2e8f0;font-size:0.84rem;font-weight:600;}
+/* The home-indicator strip at the bottom of a notched iPhone overlaps the last
+   ~34px of the viewport. bbRsiStyleCSS()'s .main-content padding is a plain
+   pixel value, so the final card sits under it — this adds the inset on top of
+   whatever that padding already is, at every width (the strip is there in
+   landscape too). env() is 0 on hardware without an inset, so it costs nothing
+   elsewhere. Set here rather than in bbRsiStyleUI.js: that file is shared with
+   BB_RSI's pages and this is an EarlyBird-scoped fix. */
+.main-content{padding-bottom:calc(40px + env(safe-area-inset-bottom));}
+/* Belt-and-braces against a sideways page pan: the shared .main-content already
+   carries overflow-x:clip under 768px, and every wide table is inside an
+   .eb-tblwrap, but a single unwrapped wide element would still drag the whole
+   page. min-width:0 lets the flex child actually shrink to the viewport. */
+.main-content{min-width:0;max-width:100%;}
 /* Mobile — iPhone 17 Pro Max portrait is ~440px. The page body never scrolls
    sideways; wide tables scroll inside their own box. Controls stay ≥44px tall. */
 @media (max-width: 640px) {
+  /* bbRsiStyleCSS()'s own 640px rule sets padding:14px 12px 40px. Keep that
+     12px gutter and ADD the landscape notch inset on top of it — writing the
+     inset alone here would drop the gutter to 0 in portrait, where env() is 0. */
+  .main-content{padding-left:calc(12px + env(safe-area-inset-left));padding-right:calc(12px + env(safe-area-inset-right));}
   .eb-card{padding:12px;border-radius:9px;}
   .eb-row{gap:8px 14px;font-size:0.74rem;}
   .eb-tbl{font-size:0.68rem;min-width:560px;}
