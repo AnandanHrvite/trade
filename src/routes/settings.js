@@ -513,9 +513,34 @@ const SETTINGS_SCHEMA = [
       { key: "EARLYBIRD_HISTORY_LAG_MS", label: "Bar-Close History Lag (ms)", type: "number", min: 0, max: 60000, step: 500, effect: EFFECT.SESSION, desc: "How long after 09:30 before the history endpoint is asked for the opening candle. Too short and the bar is not published yet, which would lose the whole day.", default: "5000" },
       { key: "EARLYBIRD_WARMUP_DAYS", label: "History Preload (calendar days)", type: "number", min: 2, max: 120, step: 1, effect: EFFECT.SESSION, desc: "How far back to fetch. Only the previous daily close is strictly needed (for the gap rule), so this is small by design.", default: "7" },
       { key: "EARLYBIRD_SCAN_CONCURRENCY", label: "Scan Concurrency (symbols at once)", type: "number", min: 1, max: 30, step: 1, effect: EFFECT.SESSION, desc: "How many symbols are fetched in parallel during the 09:30 scan. Higher is faster but risks Fyers rate limits.", default: "8" },
+      { key: "EARLYBIRD_QUOTE_CHUNK", label: "Quote Poll Batch Size (symbols)", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "How many shortlisted symbols are requested per quote call. EarlyBird polls REST quotes for its shortlist rather than pushing equity symbols through the shared NIFTY socket.", default: "20" },
+      { key: "EARLYBIRD_QUOTE_STALE_SEC", label: "Quote Staleness Limit (sec)", type: "number", min: 5, max: 600, step: 5, effect: EFFECT.SESSION, desc: "A price older than this stops being used for exit decisions, and the failure is surfaced on the status page. Stops a position being managed off a frozen quote.", default: "30" },
+
+      // ── Paper P&L cost model (equity intraday) ──
+      { key: "EARLYBIRD_BROKERAGE_PER_ORDER", label: "Brokerage Cap (₹ per order)", type: "number", min: 0, max: 500, step: 1, effect: EFFECT.SESSION, desc: "Per-leg brokerage cap used when costing a paper trade. The discount-broker standard is ₹20 or 0.03%, whichever is lower.", default: "20", subheader: "Paper cost model (equity intraday)" },
+      { key: "EARLYBIRD_STT_PCT", label: "STT — Sell Side (%)", type: "number", min: 0, max: 1, step: 0.001, effect: EFFECT.SESSION, desc: "Securities Transaction Tax on the SELL leg. Equity intraday is 0.025%, far below the options rate.", default: "0.025" },
+      { key: "EARLYBIRD_TXN_PCT", label: "Exchange Txn Charge (%)", type: "number", min: 0, max: 1, step: 0.00001, effect: EFFECT.SESSION, desc: "NSE equity transaction charge on total turnover.", default: "0.00297" },
+      { key: "EARLYBIRD_SEBI_PCT", label: "SEBI Turnover Fee (%)", type: "number", min: 0, max: 1, step: 0.0001, effect: EFFECT.SESSION, desc: "SEBI fee as a percentage of turnover (₹10 per crore).", default: "0.0001" },
+      { key: "EARLYBIRD_STAMP_PCT", label: "Stamp Duty — Buy Side (%)", type: "number", min: 0, max: 1, step: 0.001, effect: EFFECT.SESSION, desc: "Stamp duty on the BUY leg only.", default: "0.003" },
 
       // ── Backtest ──
       { key: "EARLYBIRD_BT_SLIPPAGE_PTS", label: "Backtest Slippage Haircut (₹ each way)", type: "number", min: 0, max: 20, step: 0.05, effect: EFFECT.BACKTEST, desc: "Backtest cost per side, in rupees of stock price. Applied to both entry and exit. Without it a breakout backtest always flatters.", default: "0.05", subheader: "Backtest" },
+      { key: "EARLYBIRD_BT_CONCURRENCY", label: "Backtest Fetch Concurrency", type: "number", min: 1, max: 16, step: 1, effect: EFFECT.BACKTEST, desc: "How many symbols' history are fetched in parallel during a backtest. Higher is faster but risks Fyers rate limits.", default: "4" },
+      { key: "EARLYBIRD_BT_RPS", label: "Backtest Fetch Rate (per second)", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.BACKTEST, desc: "Fyers meters history requests per second. Lower this if a wide-range run starts failing.", default: "8" },
+      { key: "EARLYBIRD_BT_RPM", label: "Backtest Fetch Rate (per minute)", type: "number", min: 1, max: 2000, step: 10, effect: EFFECT.BACKTEST, desc: "The second Fyers history window. Both this and the per-second cap are honoured.", default: "180" },
+      { key: "EARLYBIRD_BT_CACHE_DAYS", label: "Backtest Cache Retention (days)", type: "number", min: 1, max: 365, step: 1, effect: EFFECT.BACKTEST, desc: "How long a cached history file survives before it is re-fetched.", default: "30" },
+      { key: "EARLYBIRD_BT_DAILY_LOOKBACK_DAYS", label: "Backtest prevClose Lookback (days)", type: "number", min: 1, max: 60, step: 1, effect: EFFECT.BACKTEST, desc: "How far back the daily series is pulled so every simulated day has a previous close for the gap rule, even after a long holiday.", default: "10" },
+
+      // ── Equity-intraday cost model ──
+      // charges.js has only an options and a futures path, so these rates are
+      // applied locally by the backtest. See that file's header for why.
+      { key: "EARLYBIRD_CHG_STT_PCT", label: "STT — Sell Side (% of turnover)", type: "number", min: 0, max: 1, step: 0.001, effect: EFFECT.BACKTEST, desc: "Securities Transaction Tax on the SELL leg of an equity-intraday trade. NSE rate is 0.025%.", default: "0.025", subheader: "Backtest cost model (equity intraday)" },
+      { key: "EARLYBIRD_CHG_EXCHANGE_PCT", label: "Exchange Txn Charge (% of turnover)", type: "number", min: 0, max: 1, step: 0.00001, effect: EFFECT.BACKTEST, desc: "NSE equity transaction charge on total turnover. Much smaller than the options rate — this is why option charges cannot be reused here.", default: "0.00297" },
+      { key: "EARLYBIRD_CHG_BROKERAGE_PCT", label: "Brokerage (% per leg)", type: "number", min: 0, max: 5, step: 0.01, effect: EFFECT.BACKTEST, desc: "Percentage brokerage per leg, before the cap below.", default: "0.03" },
+      { key: "EARLYBIRD_CHG_BROKERAGE_CAP", label: "Brokerage Cap (₹ per leg)", type: "number", min: 0, max: 500, step: 1, effect: EFFECT.BACKTEST, desc: "Maximum brokerage per leg. The discount-broker standard is ₹20.", default: "20" },
+      { key: "EARLYBIRD_CHG_GST_PCT", label: "GST (%)", type: "number", min: 0, max: 50, step: 1, effect: EFFECT.BACKTEST, desc: "GST charged on brokerage + exchange + SEBI fees.", default: "18" },
+      { key: "EARLYBIRD_CHG_STAMP_PCT", label: "Stamp Duty — Buy Side (%)", type: "number", min: 0, max: 1, step: 0.001, effect: EFFECT.BACKTEST, desc: "Stamp duty on the BUY leg of an equity-intraday trade.", default: "0.003" },
+      { key: "EARLYBIRD_CHG_SEBI_PER_CRORE", label: "SEBI Fee (₹ per crore)", type: "number", min: 0, max: 1000, step: 1, effect: EFFECT.BACKTEST, desc: "SEBI turnover fee, in rupees per crore of turnover.", default: "10" },
     ],
   },
   {
