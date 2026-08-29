@@ -112,6 +112,7 @@ const { fyersErrText } = require("../utils/fyersErr");
 const { faviconLink, buildSidebar, sidebarCSS, modalCSS, modalJS,
         clearCacheButtonHTML, clearCacheJS } = require("../utils/sharedNav");
 const { saveResult } = require("../utils/resultStore");
+const { aiExportButton, aiExportScriptTag } = require("../utils/backtestAiExport");
 const backtestJobs = require("../utils/backtestJobManager");
 
 const ACCENT     = "#22d3ee";
@@ -1081,6 +1082,14 @@ h2{color:var(--head);font-size:0.82rem;margin:22px 0 8px;letter-spacing:0.04em;t
 .panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:14px;}
 .notes{background:rgba(34,211,238,0.06);border:1px solid rgba(34,211,238,0.25);border-radius:8px;padding:10px 14px;font-size:0.7rem;line-height:1.65;color:var(--text);margin-bottom:14px;}
 .notes b{color:var(--head);}
+.notes details>summary{cursor:pointer;color:var(--accent);font-weight:600;list-style:none;
+  display:flex;align-items:center;min-height:32px;user-select:none;}
+.notes details>summary::-webkit-details-marker{display:none;}
+.notes details>summary::before{content:"▸";display:inline-block;margin-right:7px;
+  transition:transform .15s ease;font-size:0.8rem;}
+.notes details[open]>summary::before{transform:rotate(90deg);}
+.notes details[open]>summary{margin-bottom:6px;}
+@media(max-width:640px){.notes details>summary{min-height:44px;}}
 .warn{background:rgba(245,158,11,0.08);border-color:rgba(245,158,11,0.35);}
 form{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;}
 label{display:block;font-size:0.65rem;color:var(--muted);margin-bottom:4px;letter-spacing:0.05em;text-transform:uppercase;}
@@ -1118,6 +1127,48 @@ details[open] summary{border-radius:8px 8px 0 0;}
 .pill-target{background:rgba(16,185,129,0.15);color:var(--green);}
 .pill-eod{background:rgba(148,163,184,0.15);color:var(--muted);}
 .pill-none{background:rgba(148,163,184,0.12);color:var(--muted);}
+/* ── Trade-log toolbar / filters / pagination / analytics ──────────────────
+   Every colour below is a var() the page already defines; nothing new is
+   introduced. min-height 44px on each control is the tap-target floor, not
+   decoration — this toolbar is the densest control cluster on the page. */
+.tbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;}
+.tbar-label{color:var(--muted);font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:0.09em;}
+.tbar-count{color:var(--muted);font-size:0.7rem;}
+.tbar input,.tbar select{background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 9px;border-radius:6px;font-size:0.72rem;font-family:inherit;min-height:44px;}
+.tbar input:focus,.tbar select:focus{outline:none;border-color:var(--accent);}
+.copy-btn{background:var(--bg);border:1px solid var(--border);color:var(--accent);padding:6px 12px;border-radius:6px;font-size:0.68rem;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;min-height:44px;}
+.copy-btn:hover{border-color:var(--accent);}
+.copy-btn.copied{border-color:var(--green);color:var(--green);}
+.tg-btn{background:var(--bg);border:1px solid var(--border);color:var(--accent);border-radius:6px;cursor:pointer;padding:6px 10px;font-size:0.72rem;font-family:inherit;font-weight:600;min-height:44px;white-space:nowrap;}
+.tg-btn:hover{border-color:var(--accent);}
+.tg-btn.active{border-color:var(--accent);background:rgba(34,211,238,0.12);}
+.pag{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:10px;}
+.pag button{background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 11px;border-radius:6px;font-size:0.72rem;cursor:pointer;font-family:inherit;min-height:44px;min-width:44px;}
+.pag button:hover:not([disabled]){border-color:var(--accent);color:var(--accent);}
+.pag button.active{border-color:var(--accent);color:var(--accent);font-weight:700;background:rgba(34,211,238,0.1);}
+.pag button[disabled]{opacity:0.3;cursor:default;}
+.pag-info{font-size:0.7rem;color:var(--muted);padding:0 4px;}
+/* Sortable headers. The arrow is appended by JS into a fixed <span>, so the
+   label text is never rewritten and cannot accumulate arrows. */
+th.sortable{cursor:pointer;user-select:none;}
+th.sortable:hover{color:var(--accent);}
+th.sortable .arw{color:var(--accent);font-size:0.6rem;margin-left:3px;}
+.ana-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;}
+.ana-card{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:12px 14px;}
+.ana-card h3{font-size:0.6rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--muted);margin:0 0 9px;font-weight:600;}
+.ana-stat{display:flex;align-items:baseline;gap:7px;margin-bottom:6px;}
+.ana-stat-val{font-size:0.95rem;font-weight:700;color:var(--head);}
+.ana-stat-label{font-size:0.62rem;color:var(--muted);}
+/* Pure-CSS distribution bars — no chart library is loaded on this page and one
+   is not being added for a histogram. */
+.dist-row{display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:0.62rem;}
+.dist-key{color:var(--muted);min-width:84px;text-align:right;white-space:nowrap;}
+.dist-bar{height:10px;border-radius:3px;flex:0 0 auto;min-width:2px;}
+.dist-n{color:var(--muted);white-space:nowrap;}
+.split-row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:14px;}
+.split-row label{display:inline;margin:0;text-transform:none;letter-spacing:0;font-size:0.68rem;color:var(--text);cursor:pointer;}
+.split-chk{display:flex;align-items:center;gap:6px;min-height:44px;}
+.split-chk input{accent-color:var(--accent);cursor:pointer;width:18px;height:18px;min-height:0;}
 /* CSV downloads. Real buttons rather than inline text links: at 440px a bare
    <a> inside a <p> is a ~14px-tall tap target, well under the 44px floor. */
 .dl-row{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px;}
@@ -1156,6 +1207,13 @@ details[open] summary{border-radius:8px 8px 0 0;}
   td[style*="white-space:normal"]{min-width:180px;}
   .dl-row{flex-direction:column;}
   .dl-link{width:100%;justify-content:center;}
+  /* Toolbar wraps to full-width rows rather than forcing the page sideways. */
+  .tbar{gap:6px;}
+  .tbar input,.tbar select{flex:1 1 46%;min-width:0;width:auto;}
+  .tbar .copy-btn,.tbar .tg-btn{flex:1 1 46%;}
+  .tbar-count{width:100%;}
+  .ana-grid{grid-template-columns:1fr;}
+  .dist-key{min-width:70px;}
 }`;
 
 function _lightAttr() {
@@ -1208,19 +1266,17 @@ function tradeModeNoticeHTML() {
   const cfg = earlyBird.getConfig();
   if (!earlyBird.tradesStock(cfg)) {
     return `<div class="notes warn">
-<b>EARLYBIRD_TRADE_MODE = "${escHtml(cfg.tradeMode)}" — this backtest will report NO TRADE for every day.</b>
-This page simulates the <b>STOCK leg only</b>, and the current mode trades no stock leg. Simulating the
-NIFTY option leg needs historical <b>premium</b> candles per strike, which Fyers delists at expiry, and
-inventing them from a delta/theta model would be simulating the strategy rather than testing it — so the
-option leg is deliberately not backtested. Set the mode to <b>stock</b> or <b>both</b> to get results here,
-and paper-trade the option leg instead.
+<b>Mode is "${escHtml(cfg.tradeMode)}" — expect 0 trades here.</b> This page backtests the <b>stock leg only</b>.
+Switch the mode to <b>stock</b> or <b>both</b> for results.
+<details><summary>Why the option leg isn't backtested</summary>It needs historical premium candles per strike,
+which Fyers delists at expiry. Modelling them from delta/theta would simulate the strategy rather than test
+it — so paper-trade the option leg instead.</details>
 </div>`;
   }
   if (earlyBird.tradesOption(cfg)) {
     return `<div class="notes warn">
-<b>EARLYBIRD_TRADE_MODE = "both" — the NIFTY option leg is NOT included in these figures.</b>
-There are no historical option premiums to simulate it against, so everything below is
-<b>stock-leg only</b>. The live/paper option leg's P&amp;L is additional to what this page reports.
+<b>Mode is "both" — the NIFTY option leg is NOT in these figures.</b> Everything below is stock-leg only;
+the option leg's P&amp;L is additional.
 </div>`;
   }
   return "";
@@ -1367,6 +1423,7 @@ function renderForm(from, to, universeKey) {
 
 ${tradeModeNoticeHTML()}
 <div class="notes">
+<details><summary>How this backtest works &amp; how long it takes</summary>
 <b>What this simulates:</b> NIFTY's ${earlyBird._fmtMins(cfg.sessionStartMin)} ${cfg.resolutionMins}-minute candle decides the day's direction
 (<b>NIFTY is never traded</b>). Every universe stock's own ${earlyBird._fmtMins(cfg.sessionStartMin)} candle is tested for the same shape in the
 same direction, gapped names beyond ${cfg.maxGapPct}% of the previous daily close are dropped, and the
@@ -1374,14 +1431,13 @@ ${cfg.maxConcurrent} tightest-stop confirmations become pending stop orders. Ent
 edge, stop the other edge (or the <b>body edge</b> when the wick risk exceeds ${cfg.maxSlPts}), target 1:${cfg.targetRR}.
 No new entries after <b>${earlyBird._fmtMins(cfg.entryEndMin)}</b>; everything still open squares off at <b>${earlyBird._fmtMins(cfg.forcedExitMin)}</b>.
 Flat <b>${cfg.qty} shares</b> per stock. No options, no strike, no expiry anywhere on this page.
-</div>
-
-<div class="notes warn">
+<br/><br/>
 <b>Speed:</b> a run fetches <b>two history series per symbol</b> (${cfg.resolutionMins}-min + daily) for the whole range, once.
 On a cold cache the full F&amp;O universe (~220 names) is ~440 Fyers calls, paced under the API's rate
 limits — expect <b>several minutes</b>. Every series is cached on disk under
 <code>~/trading-data/early_bird_bt_cache/</code>, so a repeat run of the same or a narrower range is near-instant.
 <b>The default range is one month</b> for that reason; widen it deliberately.
+</details>
 </div>
 
 <div class="panel">
@@ -1440,6 +1496,16 @@ ${pnlCell(d.pnl)}
 }
 
 // ── Trade list ───────────────────────────────────────────────────────────────
+//
+// The server still renders a COMPLETE, no-JS table (renderTradeTable) — the CSV
+// exports and a browser with JS off must keep working. The toolbar below adds a
+// SECOND, client-rendered view over the same rows, driven by one embedded
+// `TRADES` array so that filter / sort / paginate / copy / AI-export all read
+// from a single source rather than three divergent ones.
+//
+// NOTHING here recomputes a rule. Every field is copied verbatim off the trade
+// objects runEarlyBirdBacktest() produced; the only arithmetic is counting,
+// summing and bucketing what is already there.
 function renderTradeTable(trades) {
   if (!trades.length) {
     return `<p class="m">No trades. If days were tradeable but nothing filled, look at the
@@ -1476,11 +1542,568 @@ ${pnlCell(t.pnl)}
 </tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
+/**
+ * Embedded trade array for the client-side toolbar.
+ *
+ * `</script>` inside any string field (an exit reason is free text) would end the
+ * <script> tag early and drop the rest of the JSON into the document as markup.
+ * The type="application/json" + JSON.parse pattern is what every other backtest
+ * page uses; the escape is the same one emaRsiStBacktest applies.
+ *
+ * MAX_EMBEDDED_TRADES caps the payload: a multi-year F&O run can produce tens of
+ * thousands of trades and the browser has to sort them on every click. The
+ * server-rendered table above and the CSV are NOT capped — the summary stats on
+ * the page are computed server-side over the full set either way.
+ */
+const MAX_EMBEDDED_TRADES = 2000;
+
+function tradesJsonTag(trades) {
+  const capped = trades.length > MAX_EMBEDDED_TRADES ? trades.slice(-MAX_EMBEDDED_TRADES) : trades;
+  const json = JSON.stringify(capped).replace(/<\/script>/gi, "<\\/script>");
+  return `<script id="eb-trades-data" type="application/json">${json}</script>`;
+}
+
+/**
+ * The trade-log toolbar + the client-rendered table it drives.
+ * Mirrors the controls on emaRsiStBacktest: Day P&L toggle, Analytics toggle,
+ * reason search, side filter, result filter, rows-per-page, copy, AI export,
+ * pagination and column sorting.
+ */
+function tradeToolbarHTML(trades) {
+  return `
+<div class="tbar">
+  <span class="tbar-label">Trade Log</span>
+  <button id="ebDwToggle" type="button" class="tg-btn" onclick="ebToggleDayWise()" title="Day-wise P&amp;L summary">👁 Day P&amp;L</button>
+  <button id="ebAnaToggle" type="button" class="tg-btn" onclick="ebToggleAnalytics()" title="Performance analytics">📊 Analytics</button>
+  <input id="ebSearch" placeholder="Search reason…" oninput="ebFilter()" aria-label="Search symbol or exit reason"/>
+  <select id="ebSide" onchange="ebFilter()" aria-label="Filter by side">
+    <option value="">All Sides</option>
+    <option value="LONG">LONG only</option>
+    <option value="SHORT">SHORT only</option>
+  </select>
+  <select id="ebResult" onchange="ebFilter()" aria-label="Filter by result">
+    <option value="">All Results</option>
+    <option value="win">Wins only</option>
+    <option value="loss">Losses only</option>
+  </select>
+  <select id="ebPP" onchange="ebFilter()" aria-label="Rows per page">
+    <option value="5">5/page</option>
+    <option value="10" selected>10/page</option>
+    <option value="25">25/page</option>
+    <option value="50">50/page</option>
+    <option value="999999">All</option>
+  </select>
+  <span class="tbar-count" id="ebCount"></span>
+  <button type="button" class="copy-btn" onclick="ebCopyTradeLog(this)">📋 Copy Trade Log</button>
+  ${aiExportButton()}
+  <button type="button" class="copy-btn" onclick="ebReset()">Reset</button>
+</div>
+
+<div id="ebDayWrap" style="display:none;margin-bottom:14px;">
+  <div class="tbar">
+    <span class="tbar-label">Day P&amp;L</span>
+    <span class="tbar-count" id="ebDayCount"></span>
+    <button type="button" class="copy-btn" onclick="ebCopyDayView(this)">📋 Copy Day P&amp;L</button>
+  </div>
+  <div class="tbl-scroll"><table>
+    <thead><tr><th>Date</th><th>Trades</th><th>Wins</th><th>Losses</th><th>Day P&amp;L</th><th>Cumulative</th></tr></thead>
+    <tbody id="ebDayBody"></tbody>
+  </table></div>
+</div>
+
+<div id="ebAnaWrap" style="display:none;margin-bottom:14px;">
+  <div class="ana-grid">
+    <div class="ana-card"><h3>🔥 Win / loss streaks</h3><div id="ebAnaStreaks"></div></div>
+    <div class="ana-card"><h3>📅 Best / worst day</h3><div id="ebAnaDays"></div></div>
+    <div class="ana-card"><h3>📊 Net P&amp;L distribution</h3><div id="ebAnaDist"></div></div>
+    <div class="ana-card"><h3>🚪 By exit type</h3><div id="ebAnaExit"></div></div>
+    <div class="ana-card"><h3>🏷 Top symbols by net P&amp;L</h3><div id="ebAnaSym"></div></div>
+    <div class="ana-card"><h3>⏱ By bars held</h3><div id="ebAnaHold"></div></div>
+  </div>
+  <p class="sub" style="margin:8px 0 0;">Analytics follow the filters above — narrow the log and every panel recomputes over that subset.</p>
+</div>
+
+<div class="tbl-scroll"><table id="ebTable">
+<thead><tr>
+<th class="sortable" onclick="ebSort('symbol')"     id="ebh-symbol">Symbol<span class="arw"></span></th>
+<th class="sortable" onclick="ebSort('side')"       id="ebh-side">Side<span class="arw"></span></th>
+<th class="sortable" onclick="ebSort('entry')"      id="ebh-entry">Entry time<span class="arw"></span></th>
+<th class="sortable" onclick="ebSort('exit')"       id="ebh-exit">Exit time<span class="arw"></span></th>
+<th class="sortable" onclick="ebSort('entryLevel')" id="ebh-entryLevel">Level<span class="arw"></span></th>
+<th class="sortable" onclick="ebSort('ePrice')"     id="ebh-ePrice">Fill<span class="arw"></span></th>
+<th class="sortable" onclick="ebSort('sl')"         id="ebh-sl">SL<span class="arw"></span></th>
+<th class="sortable" onclick="ebSort('target')"     id="ebh-target">Target<span class="arw"></span></th>
+<th class="sortable" onclick="ebSort('xPrice')"     id="ebh-xPrice">Exit<span class="arw"></span></th>
+<th class="sortable" onclick="ebSort('exitType')"   id="ebh-exitType">Type<span class="arw"></span></th>
+<th class="sortable" onclick="ebSort('riskPts')"    id="ebh-riskPts">Risk<span class="arw"></span></th>
+<th>SL basis</th>
+<th class="sortable" onclick="ebSort('gapPct')"     id="ebh-gapPct">Gap<span class="arw"></span></th>
+<th>Qty</th>
+<th class="sortable" onclick="ebSort('grossPnl')"   id="ebh-grossPnl">Gross<span class="arw"></span></th>
+<th class="sortable" onclick="ebSort('charges')"    id="ebh-charges">Charges<span class="arw"></span></th>
+<th class="sortable" onclick="ebSort('pnl')"        id="ebh-pnl">Net<span class="arw"></span></th>
+<th class="sortable" onclick="ebSort('held')"       id="ebh-held">Bars<span class="arw"></span></th>
+<th>Exit reason</th>
+</tr></thead><tbody id="ebBody"></tbody></table></div>
+<div class="pag" id="ebPag"></div>
+${trades.length > MAX_EMBEDDED_TRADES ? `<div class="notes warn" style="margin-top:10px;">Showing the latest
+${MAX_EMBEDDED_TRADES.toLocaleString()} of ${trades.length.toLocaleString()} trades in this interactive log for
+browser performance. Every headline figure, breakdown and CSV on this page covers <b>all</b>
+${trades.length.toLocaleString()} trades.</div>` : ""}`;
+}
+
+/**
+ * The client script behind the toolbar. Plain ES5 in a template literal, the
+ * same shape every other backtest page uses. It reads TRADES and never touches
+ * any strategy rule: filtering is string/sign tests, sorting is a comparator,
+ * and every analytics panel is a count, a sum or a bucket over t.pnl / t.held /
+ * t.exitType / t.symbol as the engine already wrote them.
+ */
+function tradeToolbarJS() {
+  return `
+var TRADES = JSON.parse(document.getElementById('eb-trades-data').textContent);
+var ebFiltered = TRADES.slice();
+var ebSortCol = 'entry', ebSortDir = 1, ebPage = 1, ebPP = 10;
+
+function ebMoney(v){
+  if(v===null||v===undefined||!isFinite(v)) return '\\u2014';
+  var s='\\u20b9'+Math.abs(v).toLocaleString('en-IN',{maximumFractionDigits:2});
+  return v<0?'-'+s:s;
+}
+function ebNum(v,dp){ return (typeof v==='number'&&isFinite(v))?v.toFixed(dp==null?2:dp):'\\u2014'; }
+function ebEsc(v){
+  return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+function ebDayOf(t){ return t.entry?String(t.entry).split(',')[0].trim():'Unknown'; }
+
+function ebFilter(){
+  var q=(document.getElementById('ebSearch').value||'').toLowerCase();
+  var side=document.getElementById('ebSide').value;
+  var res=document.getElementById('ebResult').value;
+  ebPP=parseInt(document.getElementById('ebPP').value,10)||10;
+  ebPage=1;
+  ebFiltered=TRADES.filter(function(t){
+    if(side && t.side!==side) return false;
+    if(res==='win'  && !(t.pnl>0)) return false;
+    if(res==='loss' && !(t.pnl<0)) return false;
+    if(q){
+      var hay=((t.symbol||'')+' '+(t.reason||'')+' '+(t.exitType||'')+' '+(t.entryReason||'')).toLowerCase();
+      if(hay.indexOf(q)<0) return false;
+    }
+    return true;
+  });
+  ebApplySort();
+}
+
+function ebSort(col){
+  if(ebSortCol===col){ ebSortDir*=-1; } else { ebSortCol=col; ebSortDir=1; }
+  // The arrow lives in its own <span class="arw">, so the header LABEL is never
+  // rewritten — repeated clicks cannot stack arrows onto the text.
+  var arws=document.querySelectorAll('#ebTable th .arw');
+  for(var i=0;i<arws.length;i++) arws[i].textContent='';
+  var h=document.getElementById('ebh-'+col);
+  if(h){ var a=h.querySelector('.arw'); if(a) a.textContent=ebSortDir===1?' \\u25b2':' \\u25bc'; }
+  ebApplySort();
+}
+
+function ebApplySort(){
+  // Dates sort on the unix timestamp the engine already stamped, never on the
+  // DD/MM/YYYY string — string order would interleave months.
+  var key = ebSortCol==='entry' ? 'entryTs' : ebSortCol==='exit' ? 'exitTs' : ebSortCol;
+  ebFiltered.sort(function(a,b){
+    var av=a[key], bv=b[key];
+    if(av==null) av=ebSortDir===1?Infinity:-Infinity;
+    if(bv==null) bv=ebSortDir===1?Infinity:-Infinity;
+    if(typeof av==='string'||typeof bv==='string'){
+      av=String(av); bv=String(bv);
+      return av<bv?-ebSortDir:av>bv?ebSortDir:0;
+    }
+    return (av-bv)*ebSortDir;
+  });
+  ebRender();
+}
+
+function ebRender(){
+  var tb=document.getElementById('ebBody');
+  var total=ebFiltered.length;
+  document.getElementById('ebCount').textContent=total+' of '+TRADES.length+' trades';
+  var start=(ebPage-1)*ebPP;
+  var slice=ebFiltered.slice(start,start+ebPP);
+  if(!slice.length){
+    tb.innerHTML='<tr><td colspan="19" class="m" style="text-align:center;padding:18px;">No trades match these filters.</td></tr>';
+    document.getElementById('ebPag').innerHTML='';
+    if(ebAnaVisible) ebRenderAnalytics();
+    return;
+  }
+  var out='';
+  for(var i=0;i<slice.length;i++){
+    var t=slice[i];
+    var sideCls=t.side==='SHORT'?'pill-short':'pill-long';
+    var exCls=t.exitType==='SL'?'pill-sl':(t.exitType==='TARGET'?'pill-target':'pill-eod');
+    var pc=(t.pnl==null||!isFinite(t.pnl))?'m':(t.pnl>=0?'g':'r');
+    out+='<tr>'
+      +'<td><b>'+ebEsc(t.symbol)+'</b></td>'
+      +'<td><span class="pill '+sideCls+'">'+ebEsc(t.side)+'</span></td>'
+      +'<td class="m" style="font-size:0.64rem;">'+ebEsc(t.entry)+'</td>'
+      +'<td class="m" style="font-size:0.64rem;">'+ebEsc(t.exit)+'</td>'
+      +'<td>'+ebNum(t.entryLevel)+'</td>'
+      +'<td>'+ebNum(t.ePrice)+'</td>'
+      +'<td class="r">'+ebNum(t.sl)+'</td>'
+      +'<td class="g">'+ebNum(t.target)+'</td>'
+      +'<td>'+ebNum(t.xPrice)+'</td>'
+      +'<td><span class="pill '+exCls+'">'+ebEsc(t.exitType)+'</span></td>'
+      +'<td class="m">'+ebNum(t.riskPts)+'</td>'
+      +'<td class="m" style="font-size:0.62rem;">'+ebEsc(t.slBasis||'')+'</td>'
+      +'<td class="m">'+ebNum(t.gapPct)+'%</td>'
+      +'<td class="m">'+ebEsc(t.qty)+'</td>'
+      +'<td class="m">'+ebMoney(t.grossPnl)+'</td>'
+      +'<td class="m">'+ebMoney(t.charges)+'</td>'
+      +'<td class="'+pc+'" style="font-weight:700;">'+ebMoney(t.pnl)+'</td>'
+      +'<td class="m">'+ebEsc(t.held)+'</td>'
+      +'<td class="m" style="font-size:0.62rem;max-width:300px;white-space:normal;">'+ebEsc(t.reason||'')+'</td>'
+      +'</tr>';
+  }
+  tb.innerHTML=out;
+  ebRenderPag();
+  if(ebAnaVisible) ebRenderAnalytics();
+}
+
+function ebRenderPag(){
+  var bar=document.getElementById('ebPag');
+  var pages=Math.max(1,Math.ceil(ebFiltered.length/ebPP));
+  if(pages<=1){ bar.innerHTML=''; return; }
+  var h='<button type="button" onclick="ebGoPage('+(ebPage-1)+')"'+(ebPage===1?' disabled':'')+'>\\u2190 Prev</button>';
+  h+='<span class="pag-info">Page '+ebPage+' of '+pages+'</span>';
+  var lo=Math.max(1,ebPage-2), hi=Math.min(pages,ebPage+2);
+  for(var p=lo;p<=hi;p++) h+='<button type="button" class="'+(p===ebPage?'active':'')+'" onclick="ebGoPage('+p+')">'+p+'</button>';
+  h+='<button type="button" onclick="ebGoPage('+(ebPage+1)+')"'+(ebPage===pages?' disabled':'')+'>Next \\u2192</button>';
+  bar.innerHTML=h;
+}
+
+function ebGoPage(p){
+  var pages=Math.max(1,Math.ceil(ebFiltered.length/ebPP));
+  ebPage=Math.max(1,Math.min(pages,p));
+  ebRender();
+}
+
+function ebReset(){
+  document.getElementById('ebSearch').value='';
+  document.getElementById('ebSide').value='';
+  document.getElementById('ebResult').value='';
+  document.getElementById('ebPP').value='10';
+  var arws=document.querySelectorAll('#ebTable th .arw');
+  for(var i=0;i<arws.length;i++) arws[i].textContent='';
+  ebSortCol='entry'; ebSortDir=1; ebPP=10; ebPage=1;
+  ebFiltered=TRADES.slice();
+  ebApplySort();
+}
+
+// ── Day P&L ────────────────────────────────────────────────────────────────
+// Groups the SAME trade rows by entry date. It does not re-derive any per-day
+// funnel figure — the server-rendered per-day table above still owns scanned /
+// confirmed / taken / triggered, which are plan facts, not trade facts.
+function ebBuildDays(){
+  var map={}, order=[];
+  TRADES.forEach(function(t){
+    var d=ebDayOf(t);
+    if(!map[d]){ map[d]={date:d,ts:t.entryTs||0,trades:0,wins:0,losses:0,pnl:0}; order.push(d); }
+    var r=map[d];
+    r.trades++;
+    if(typeof t.pnl==='number'&&isFinite(t.pnl)){
+      r.pnl+=t.pnl;
+      if(t.pnl>0) r.wins++; else if(t.pnl<0) r.losses++;
+    }
+    if((t.entryTs||0)<r.ts||!r.ts) r.ts=t.entryTs||r.ts;
+  });
+  var days=order.map(function(d){return map[d];}).sort(function(a,b){return a.ts-b.ts;});
+  var cum=0;
+  days.forEach(function(d){ cum+=d.pnl; d.cum=cum; });
+  return days;
+}
+
+function ebRenderDays(){
+  var days=ebBuildDays();
+  window._ebDays=days;
+  var out='';
+  days.forEach(function(d){
+    out+='<tr><td>'+ebEsc(d.date)+'</td><td>'+d.trades+'</td>'
+      +'<td class="g">'+d.wins+'</td><td class="r">'+d.losses+'</td>'
+      +'<td class="'+(d.pnl>=0?'g':'r')+'" style="font-weight:700;">'+ebMoney(d.pnl)+'</td>'
+      +'<td class="'+(d.cum>=0?'g':'r')+'" style="font-weight:700;">'+ebMoney(d.cum)+'</td></tr>';
+  });
+  document.getElementById('ebDayBody').innerHTML=out||'<tr><td colspan="6" class="m" style="text-align:center;padding:18px;">No trading days.</td></tr>';
+  document.getElementById('ebDayCount').textContent=days.length+' day(s) with a trade';
+}
+
+var ebDwVisible=false;
+function ebToggleDayWise(){
+  ebDwVisible=!ebDwVisible;
+  document.getElementById('ebDayWrap').style.display=ebDwVisible?'block':'none';
+  document.getElementById('ebDwToggle').classList.toggle('active',ebDwVisible);
+  if(ebDwVisible) ebRenderDays();
+}
+
+// ── Analytics ──────────────────────────────────────────────────────────────
+var ebAnaVisible=false;
+function ebToggleAnalytics(){
+  ebAnaVisible=!ebAnaVisible;
+  document.getElementById('ebAnaWrap').style.display=ebAnaVisible?'block':'none';
+  document.getElementById('ebAnaToggle').classList.toggle('active',ebAnaVisible);
+  if(ebAnaVisible) ebRenderAnalytics();
+}
+
+function ebStat(val,label,cls){
+  return '<div class="ana-stat"><span class="ana-stat-val'+(cls?' '+cls:'')+'">'+val+'</span>'
+    +'<span class="ana-stat-label">'+label+'</span></div>';
+}
+// One horizontal bar, width proportional to the biggest count in the panel.
+function ebBar(key,n,max,color){
+  var pct=max>0?Math.max(2,Math.round((n/max)*100)):2;
+  return '<div class="dist-row"><span class="dist-key">'+ebEsc(key)+'</span>'
+    +'<span class="dist-bar" style="width:'+pct+'%;background:'+color+';"></span>'
+    +'<span class="dist-n">'+n+'</span></div>';
+}
+
+function ebRenderAnalytics(){
+  // Chronological, because streaks and the equity path are order-dependent.
+  var tr=ebFiltered.slice().sort(function(a,b){ return (a.entryTs||0)-(b.entryTs||0); });
+
+  if(!tr.length){
+    ['ebAnaStreaks','ebAnaDays','ebAnaDist','ebAnaExit','ebAnaSym','ebAnaHold'].forEach(function(id){
+      document.getElementById(id).innerHTML='<p class="m" style="font-size:0.65rem;">No trades in the current filter.</p>';
+    });
+    return;
+  }
+
+  // ── Streaks
+  var maxW=0,maxL=0,curW=0,curL=0,wRuns=[],lRuns=[];
+  tr.forEach(function(t){
+    if(t.pnl>0){ curW++; if(curL>0){lRuns.push(curL);} curL=0; if(curW>maxW) maxW=curW; }
+    else if(t.pnl<0){ curL++; if(curW>0){wRuns.push(curW);} curW=0; if(curL>maxL) maxL=curL; }
+  });
+  if(curW>0) wRuns.push(curW);
+  if(curL>0) lRuns.push(curL);
+  function avg(a){ return a.length?(a.reduce(function(x,y){return x+y;},0)/a.length).toFixed(1):'0'; }
+  // Equity path over the filtered subset — same walk computeStats does server-side.
+  var eq=0,peak=0,dd=0;
+  tr.forEach(function(t){ eq+=(t.pnl||0); if(eq>peak) peak=eq; if(eq-peak<dd) dd=eq-peak; });
+  document.getElementById('ebAnaStreaks').innerHTML=
+    ebStat(maxW,'Best win streak','g')
+    +ebStat(maxL,'Worst loss streak','r')
+    +ebStat(avg(wRuns),'Avg win streak')
+    +ebStat(avg(lRuns),'Avg loss streak')
+    +ebStat(ebMoney(dd),'Max drawdown (filtered)','r');
+
+  // ── Best / worst day
+  var dmap={};
+  tr.forEach(function(t){
+    var d=ebDayOf(t);
+    if(!dmap[d]) dmap[d]={pnl:0,n:0};
+    dmap[d].pnl+=(t.pnl||0); dmap[d].n++;
+  });
+  var dkeys=Object.keys(dmap);
+  var best=null,worst=null,green=0,red=0,dsum=0;
+  dkeys.forEach(function(k){
+    var v=dmap[k].pnl;
+    dsum+=v;
+    if(v>=0) green++; else red++;
+    if(best===null||v>dmap[best].pnl) best=k;
+    if(worst===null||v<dmap[worst].pnl) worst=k;
+  });
+  document.getElementById('ebAnaDays').innerHTML=
+    ebStat(ebMoney(dmap[best].pnl),'Best day \\u2014 '+ebEsc(best)+' ('+dmap[best].n+' trades)','g')
+    +ebStat(ebMoney(dmap[worst].pnl),'Worst day \\u2014 '+ebEsc(worst)+' ('+dmap[worst].n+' trades)','r')
+    +ebStat(green,'Green days ('+Math.round((green/dkeys.length)*100)+'%)','g')
+    +ebStat(red,'Red days ('+Math.round((red/dkeys.length)*100)+'%)','r')
+    +ebStat(ebMoney(dsum/dkeys.length),'Avg day P&L');
+
+  // ── Net P&L distribution. Buckets are a plain linear split of the observed
+  //    range — a presentation choice, not a threshold the strategy uses.
+  var vals=tr.map(function(t){ return (typeof t.pnl==='number'&&isFinite(t.pnl))?t.pnl:0; });
+  var lo=Math.min.apply(null,vals), hi=Math.max.apply(null,vals);
+  var nb=Math.min(10,Math.max(4,Math.ceil(Math.sqrt(vals.length))));
+  var span=(hi-lo)||1, step=span/nb;
+  var counts=[]; for(var b=0;b<nb;b++) counts.push(0);
+  vals.forEach(function(v){
+    var idx=Math.floor((v-lo)/step);
+    if(idx<0) idx=0; if(idx>=nb) idx=nb-1;
+    counts[idx]++;
+  });
+  var cmax=Math.max.apply(null,counts);
+  var dh='';
+  for(var k=0;k<nb;k++){
+    var b0=lo+k*step, b1=lo+(k+1)*step;
+    dh+=ebBar(ebMoney(Math.round(b0))+'\\u2192'+ebMoney(Math.round(b1)),counts[k],cmax,
+      (b1<=0?'var(--red)':(b0>=0?'var(--green)':'var(--accent)')));
+  }
+  document.getElementById('ebAnaDist').innerHTML=dh;
+
+  // ── By exit type
+  var xm={};
+  tr.forEach(function(t){
+    var x=t.exitType||'\\u2014';
+    if(!xm[x]) xm[x]={n:0,w:0,pnl:0};
+    xm[x].n++; if(t.pnl>0) xm[x].w++; xm[x].pnl+=(t.pnl||0);
+  });
+  var xk=Object.keys(xm).sort(function(a,b){ return xm[b].n-xm[a].n; });
+  var xmax=xk.length?xm[xk[0]].n:0;
+  var xh='';
+  xk.forEach(function(x){
+    var d=xm[x];
+    xh+=ebBar(x+' '+Math.round((d.w/d.n)*100)+'% WR',d.n,xmax,d.pnl>=0?'var(--green)':'var(--red)');
+    xh+='<div class="dist-row"><span class="dist-key"></span><span class="dist-n '+(d.pnl>=0?'g':'r')+'">'+ebMoney(d.pnl)+'</span></div>';
+  });
+  document.getElementById('ebAnaExit').innerHTML=xh;
+
+  // ── Top symbols by |net|
+  var sm={};
+  tr.forEach(function(t){
+    var y=t.symbol||'\\u2014';
+    if(!sm[y]) sm[y]={n:0,pnl:0};
+    sm[y].n++; sm[y].pnl+=(t.pnl||0);
+  });
+  var sk=Object.keys(sm).sort(function(a,b){ return Math.abs(sm[b].pnl)-Math.abs(sm[a].pnl); }).slice(0,10);
+  var smax=0; sk.forEach(function(y){ if(Math.abs(sm[y].pnl)>smax) smax=Math.abs(sm[y].pnl); });
+  var sh='';
+  sk.forEach(function(y){
+    var d=sm[y];
+    var pct=smax>0?Math.max(2,Math.round((Math.abs(d.pnl)/smax)*100)):2;
+    sh+='<div class="dist-row"><span class="dist-key">'+ebEsc(y)+'</span>'
+      +'<span class="dist-bar" style="width:'+pct+'%;background:'+(d.pnl>=0?'var(--green)':'var(--red)')+';"></span>'
+      +'<span class="dist-n '+(d.pnl>=0?'g':'r')+'">'+ebMoney(d.pnl)+' ('+d.n+')</span></div>';
+  });
+  document.getElementById('ebAnaSym').innerHTML=sh;
+
+  // ── By bars held
+  var hm={};
+  tr.forEach(function(t){
+    var h=t.held||0;
+    var b= h<=1?'1 bar' : h<=2?'2 bars' : h<=4?'3-4 bars' : h<=8?'5-8 bars' : '9+ bars';
+    if(!hm[b]) hm[b]={n:0,w:0,pnl:0};
+    hm[b].n++; if(t.pnl>0) hm[b].w++; hm[b].pnl+=(t.pnl||0);
+  });
+  var order=['1 bar','2 bars','3-4 bars','5-8 bars','9+ bars'].filter(function(b){ return hm[b]; });
+  var hmax=0; order.forEach(function(b){ if(hm[b].n>hmax) hmax=hm[b].n; });
+  var hh='';
+  order.forEach(function(b){
+    var d=hm[b];
+    hh+=ebBar(b+' '+Math.round((d.w/d.n)*100)+'% WR',d.n,hmax,d.pnl>=0?'var(--green)':'var(--red)');
+    hh+='<div class="dist-row"><span class="dist-key"></span><span class="dist-n '+(d.pnl>=0?'g':'r')+'">'+ebMoney(d.pnl)+'</span></div>';
+  });
+  document.getElementById('ebAnaHold').innerHTML=hh;
+}
+
+// ── Clipboard ──────────────────────────────────────────────────────────────
+function ebDoCopy(text,btn,label){
+  var orig='\\ud83d\\udccb Copy '+label;
+  function ok(){
+    if(!btn) return;
+    btn.classList.add('copied'); btn.textContent='\\u2705 Copied!';
+    setTimeout(function(){ btn.classList.remove('copied'); btn.textContent=orig; },2000);
+  }
+  function fallback(){
+    var ta=document.createElement('textarea');
+    ta.value=text; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.select();
+    try{ document.execCommand('copy'); }catch(e){}
+    document.body.removeChild(ta); ok();
+  }
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(ok).catch(fallback);
+  } else fallback();
+}
+
+function ebCopyTradeLog(btn){
+  var lines=['Symbol\\tSide\\tEntry\\tExit\\tLevel\\tFill\\tSL\\tTarget\\tExitPrice\\tType\\tRisk\\tSL basis\\tGap%\\tQty\\tGross\\tCharges\\tNet\\tBars\\tExit reason'];
+  ebFiltered.forEach(function(t){
+    lines.push([t.symbol,t.side,t.entry,t.exit,t.entryLevel,t.ePrice,t.sl,t.target,t.xPrice,
+      t.exitType,t.riskPts,t.slBasis,t.gapPct,t.qty,t.grossPnl,t.charges,t.pnl,t.held,t.reason]
+      .map(function(v){ return v==null?'':String(v).replace(/[\\t\\r\\n]+/g,' '); }).join('\\t'));
+  });
+  ebDoCopy(lines.join('\\n'),btn,'Trade Log');
+}
+
+function ebCopyDayView(btn){
+  var days=window._ebDays||ebBuildDays();
+  var lines=['Date\\tTrades\\tWins\\tLosses\\tDay P&L\\tCumulative'];
+  days.forEach(function(d){
+    lines.push(d.date+'\\t'+d.trades+'\\t'+d.wins+'\\t'+d.losses+'\\t'+d.pnl.toFixed(2)+'\\t'+d.cum.toFixed(2));
+  });
+  ebDoCopy(lines.join('\\n'),btn,'Day P&L');
+}
+
+ebFilter();
+`;
+}
+
 function renderBreakdown(title, rowsHtml, headers) {
   return `<h2>${escHtml(title)}</h2><div class="tbl-scroll"><table>
 <thead><tr>${headers.map(h => `<th>${escHtml(h)}</th>`).join("")}</tr></thead>
 <tbody>${rowsHtml}</tbody></table></div>`;
 }
+
+/** Universe <option>s for the results page's Run Again form. */
+function rerunUniverseOptions(selected) {
+  let unis = [];
+  try { unis = universe.listUniverses().universes || []; } catch (_) { unis = []; }
+  if (!unis.length) unis = [{ key: "FNO", label: "F&O universe", count: 0 }];
+  return unis.map(u =>
+    `<option value="${escHtml(u.key)}"${u.key === selected ? " selected" : ""}>${escHtml(u.label)} (${u.count})</option>`
+  ).join("");
+}
+
+/**
+ * "Run Again", with optional per-year / per-month splitting.
+ *
+ * Modelled on emaRsiStBacktest's control, with one difference that matters here:
+ * the UNIVERSE is carried through. Dropping it would silently re-run every split
+ * tab against EARLYBIRD_UNIVERSE instead of the universe the results on screen
+ * were actually produced from, and the two runs would not be comparable.
+ *
+ * A split opens one tab per period. Each is an independent background job and
+ * backtestJobManager serialises them, so the tabs queue rather than fighting for
+ * the same memory budget.
+ */
+const RERUN_JS = `
+function ebRunAgain(){
+  var f=document.getElementById('rr-from').value;
+  var t=document.getElementById('rr-to').value;
+  var u=document.getElementById('rr-uni').value;
+  if(!f||!t){ alert('Set both From and To dates.'); return; }
+  if(f>t){ alert("'From' is after 'To'."); return; }
+  var base=${JSON.stringify(ENDPOINT)};
+  function url(a,b){
+    return base+'?from='+encodeURIComponent(a)+'&to='+encodeURIComponent(b)+'&universe='+encodeURIComponent(u);
+  }
+  var byYear=document.getElementById('rr-years').checked;
+  var byMonth=document.getElementById('rr-months').checked;
+  if(byYear){
+    var fy=parseInt(f.split('-')[0],10), ty=parseInt(t.split('-')[0],10);
+    for(var y=fy;y<=ty;y++){
+      var yf=(y===fy)?f:(y+'-01-01');
+      var yt=(y===ty)?t:(y+'-12-31');
+      window.open(url(yf,yt),'_blank');
+    }
+    return;
+  }
+  if(byMonth){
+    var fp=f.split('-'), tp=t.split('-');
+    var cm=parseInt(fp[0],10)*12+(parseInt(fp[1],10)-1);
+    var em=parseInt(tp[0],10)*12+(parseInt(tp[1],10)-1);
+    for(var m=cm;m<=em;m++){
+      var yr=Math.floor(m/12), mo=m%12;
+      var pad=String(mo+1).padStart(2,'0');
+      var mf=(m===cm)?f:(yr+'-'+pad+'-01');
+      // Day 0 of the NEXT month is the last day of THIS one — leap years included.
+      var last=new Date(Date.UTC(yr,mo+1,0)).getUTCDate();
+      var mt=(m===em)?t:(yr+'-'+pad+'-'+String(last).padStart(2,'0'));
+      window.open(url(mf,mt),'_blank');
+    }
+    return;
+  }
+  window.location=url(f,t);
+}`;
 
 function renderResults(from, to, universeKey, stats, result, meta) {
   const cfg = earlyBird.getConfig();
@@ -1518,6 +2141,7 @@ ${pnlCell(s.pnl)}<td class="m">${s.triggered}</td><td class="${s.untriggered ? "
 
 ${tradeModeNoticeHTML()}
 <div class="notes">
+<details><summary>Rules used for this run</summary>
 <b>Direction:</b> NIFTY's ${earlyBird._fmtMins(cfg.sessionStartMin)} ${cfg.resolutionMins}-min candle only — NIFTY itself is never traded.
 <b>Shape test:</b> body ≥ ${cfg.minBodyPct}% of range, opposing wick ≤ ${cfg.maxOpposingWickPct}%, applied identically to the index and to every stock.
 <b>Gap rule:</b> stocks opening more than ${cfg.maxGapPct}% from the previous daily close are dropped; an unknown previous close is also a refusal.
@@ -1525,18 +2149,22 @@ ${tradeModeNoticeHTML()}
 <b>Fills:</b> a triggering bar fills <b>at the level</b>, never at its high/low. A bar that both triggered and stopped books the <b>loss</b> — the entry is not skipped.
 <b>Windows:</b> entries ${earlyBird._fmtMins(cfg.entryStartMin)}–${earlyBird._fmtMins(cfg.entryEndMin)}, forced exit ${earlyBird._fmtMins(cfg.forcedExitMin)}.
 <b>Costs:</b> ₹${slippagePts()} slippage <b>each way</b> (rupees on a stock price — one tick on a liquid name; raise <code>EARLYBIRD_BT_SLIPPAGE_PTS</code> to test a wider touch), plus equity-intraday charges.
+</details>
 </div>
 
 <div class="notes warn">
-<b>Charges caveat, stated plainly:</b> <code>src/utils/charges.js</code> has only an options and a futures path —
-there is <b>no cash-equity-intraday path in that helper</b>. Billing option rates (STT 0.15% of premium,
+<b>Not validated:</b> this strategy has never traded live or on paper. Charges billed this run:
+<b>${fmtMoney(stats.totalCharges)}</b>.
+<details><summary>How charges are calculated</summary>
+<code>src/utils/charges.js</code> has only an options and a futures path — there is
+<b>no cash-equity-intraday path in that helper</b>. Billing option rates (STT 0.15% of premium,
 exchange 0.03553% of premium turnover) against ₹-lakh equity turnover would overstate costs by an order of
 magnitude, so this page computes equity-intraday charges itself: STT ${escHtml(process.env.EARLYBIRD_CHG_STT_PCT || "0.025")}% sell-side,
 NSE txn ${escHtml(process.env.EARLYBIRD_CHG_EXCHANGE_PCT || "0.00297")}% of turnover, brokerage
 ${escHtml(process.env.EARLYBIRD_CHG_BROKERAGE_PCT || "0.03")}% capped at ₹${escHtml(process.env.EARLYBIRD_CHG_BROKERAGE_CAP || "20")}/leg,
 GST ${escHtml(process.env.EARLYBIRD_CHG_GST_PCT || "18")}%, stamp ${escHtml(process.env.EARLYBIRD_CHG_STAMP_PCT || "0.003")}% buy-side, SEBI
-₹${escHtml(process.env.EARLYBIRD_CHG_SEBI_PER_CRORE || "10")}/crore. Total billed across this run:
-<b>${fmtMoney(stats.totalCharges)}</b>. <b>This strategy has never traded live or on paper — nothing here is validated.</b>
+₹${escHtml(process.env.EARLYBIRD_CHG_SEBI_PER_CRORE || "10")}/crore.
+</details>
 </div>
 
 <h2>Headline</h2>
@@ -1566,18 +2194,21 @@ GST ${escHtml(process.env.EARLYBIRD_CHG_GST_PCT || "18")}%, stamp ${escHtml(proc
 ${renderBreakdown("Breakdown by exit type", exitRows, ["Exit", "Trades", "Wins", "Win rate", "Net P&L"])}
 ${renderBreakdown("Breakdown by side", sideRows, ["Side", "Trades", "Wins", "Win rate", "Net P&L"])}
 
-<details><summary>▸ Per-symbol breakdown (${result.perSymbol.length} symbol(s) with a setup)</summary>
+<details><summary>Per-symbol breakdown (${result.perSymbol.length} symbol(s) with a setup)</summary>
 <div class="det-body"><div class="tbl-scroll"><table>
 <thead><tr><th>Symbol</th><th>Trades</th><th>Wins</th><th>Win rate</th><th>Net P&amp;L</th><th>Triggered</th><th>Never triggered</th></tr></thead>
 <tbody>${symRows}</tbody></table></div></div></details>
 
-<details open><summary>▸ Per-day funnel (${result.dayRows.length} session(s)) — NIFTY candle, verdict, scanned/confirmed/taken/triggered, day P&amp;L</summary>
+<details open><summary>Per-day funnel (${result.dayRows.length} session(s)) — NIFTY candle, verdict, scanned/confirmed/taken/triggered, day P&amp;L</summary>
 <div class="det-body">${renderDayTable(result.dayRows)}</div></details>
 
-<details open><summary>▸ All trades (${result.trades.length}) — entry / SL / target / exit / reason / SL basis</summary>
+<h2>Trade log</h2>
+${result.trades.length ? tradeToolbarHTML(result.trades) : renderTradeTable(result.trades)}
+
+<details><summary>Plain table — all ${result.trades.length} trade(s), unfiltered (works with JavaScript off)</summary>
 <div class="det-body">${renderTradeTable(result.trades)}</div></details>
 
-<details><summary>▸ No-trade days (${result.noTrade.length}) — why nothing was taken</summary>
+<details><summary>No-trade days (${result.noTrade.length}) — why nothing was taken</summary>
 <div class="det-body"><div class="tbl-scroll"><table>
 <thead><tr><th>Date</th><th>Reason</th></tr></thead><tbody>
 ${result.noTrade.map(d => `<tr><td>${escHtml(d.date)}</td><td class="m" style="white-space:normal;">${escHtml(d.reason)}</td></tr>`).join("") || `<tr><td colspan="2" class="m">Every session was tradeable.</td></tr>`}
@@ -1586,9 +2217,48 @@ ${result.noTrade.map(d => `<tr><td>${escHtml(d.date)}</td><td class="m" style="w
 <div class="dl-row">
 <a class="dl-link" href="${ENDPOINT}/csv?jobId=${escHtml(meta.jobId || "")}">⤓ Download trades CSV</a>
 <a class="dl-link" href="${ENDPOINT}/days.csv?jobId=${escHtml(meta.jobId || "")}">⤓ Download per-day funnel CSV</a>
+</div>
+
+<h2>Run again</h2>
+<div class="panel">
+<form method="GET" action="${ENDPOINT}" id="eb-rerun">
+  <div><label for="rr-from">From</label><input id="rr-from" type="date" name="from" value="${escHtml(from)}" required/></div>
+  <div><label for="rr-to">To</label><input id="rr-to" type="date" name="to" value="${escHtml(to)}" required/></div>
+  <div><label for="rr-uni">Universe</label><select id="rr-uni" name="universe">${rerunUniverseOptions(universeKey)}</select></div>
+  <div><button type="button" id="rr-go" onclick="ebRunAgain()">🔄 Run Again</button></div>
+</form>
+<div class="split-row">
+  <span class="preset-row-label">Split</span>
+  <span class="split-chk"><input type="checkbox" id="rr-years" onchange="if(this.checked)document.getElementById('rr-months').checked=false;"/><label for="rr-years">Split by years</label></span>
+  <span class="split-chk"><input type="checkbox" id="rr-months" onchange="if(this.checked)document.getElementById('rr-years').checked=false;"/><label for="rr-months">Split by months</label></span>
+</div>
+<p class="sub" style="margin:8px 0 0;">A split opens <b>one new tab per period</b>. Each tab is a separate background job and this
+page's own memory ceiling still applies per tab, so a wide split over the full F&amp;O universe will queue —
+runs are serialised, one at a time.</p>
 </div>`;
 
-  return pageShell(`EarlyBird Backtest — ${from} → ${to}`, body, "earlyBirdBacktest");
+  // The embedded trade array + every client behaviour, appended AFTER the markup
+  // it drives so the DOM ids exist by the time the script runs (no DOMContentLoaded
+  // wrapper needed, matching the other backtest pages).
+  const scripts = result.trades.length
+    ? `${tradesJsonTag(result.trades)}
+${aiExportScriptTag({
+  mode: "EARLYBIRD",
+  strategyName: "EarlyBird",
+  from, to,
+  // EarlyBird P&L is REAL RUPEES on a cash-equity position — not NIFTY points,
+  // and not a δ+θ option-premium simulation. `optionSim` can only produce those
+  // two wrong labels, so the unit is stated explicitly instead; passing `unit`
+  // also drops the helper's option-sim disclaimer, which would be false here.
+  optionSim: false,
+  unit: "₹",
+  fullCount: result.trades.length,
+})}
+<script>${tradeToolbarJS()}
+${RERUN_JS}</script>`
+    : `<script>${RERUN_JS}</script>`;
+
+  return pageShell(`EarlyBird Backtest — ${from} → ${to}`, body + scripts, "earlyBirdBacktest");
 }
 
 function renderErrorPage(msg, from, to) {

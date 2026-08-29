@@ -39,6 +39,11 @@ function aiExportButton() {
  * @param {string} cfg.from          range start (YYYY-MM-DD)
  * @param {string} cfg.to            range end (YYYY-MM-DD)
  * @param {boolean} cfg.optionSim    true → P&L is ₹ (δ+θ sim); false → NIFTY pts
+ * @param {string} [cfg.unit]        OVERRIDE the P&L unit label. `optionSim` only ever
+ *   yields "₹" (option premium sim) or "pts" (NIFTY points), and a page whose P&L is
+ *   neither — EarlyBird books REAL RUPEES on cash equity — would be mislabelled by both.
+ *   Pass unit:"₹" there. When set, the δ+θ simulation disclaimer is also dropped, because
+ *   it is only true of the option-sim pages.
  * @param {number} [cfg.fullCount]   full trade count if the embedded set is capped
  * @param {{key:string,label:string}[]} [cfg.extraCols]  strategy-specific columns
  */
@@ -49,6 +54,7 @@ function aiExportScriptTag(cfg) {
     from: String(cfg.from || ""),
     to: String(cfg.to || ""),
     optionSim: !!cfg.optionSim,
+    unit: cfg.unit != null ? String(cfg.unit) : null,
     fullCount: cfg.fullCount != null ? Number(cfg.fullCount) : null,
     extraCols: Array.isArray(cfg.extraCols)
       ? cfg.extraCols.map(c => ({ key: String(c.key), label: String(c.label) }))
@@ -59,7 +65,7 @@ function aiExportScriptTag(cfg) {
   var CFG = ${JSON.stringify(safe)};
   function _num(v){ return (typeof v==='number' && isFinite(v)) ? v : null; }
   function _fmtNum(v){ if(v==null||!isFinite(v)) return String(v); return Number.isInteger(v)?String(v):(Math.round(v*100)/100).toString(); }
-  function _unit(){ return CFG.optionSim ? '₹' : 'pts'; }
+  function _unit(){ return CFG.unit ? CFG.unit : (CFG.optionSim ? '₹' : 'pts'); }
   function _pnl(v){ var n=_num(v); if(n===null) return '—'; return (n>=0?'+':'')+_fmtNum(n); }
   // One-line, pipe-escaped cell for a Markdown table.
   function _cell(v){ if(v==null) return ''; var s=(typeof v==='object')?JSON.stringify(v):String(v); s=s.replace(/\\r?\\n/g,' ').replace(/\\|/g,'\\\\|'); if(s.length>140) s=s.slice(0,139)+'…'; return s; }
@@ -78,7 +84,14 @@ function aiExportScriptTag(cfg) {
     if(CFG.fullCount && CFG.fullCount>trades.length) meta.push('(page shows latest '+trades.length+' of '+CFG.fullCount+')');
     out.push('> '+meta.join(' · '));
     out.push('>');
-    out.push('> Backtest P&L is a δ+θ option-premium **simulation** (no live option chain), so treat absolute numbers as directional only. Structured for AI analysis: summary stats, a field legend, then the trades.');
+    // The delta+theta caveat is TRUE ONLY of the option-sim pages. A page that
+    // passes its own unit (EarlyBird: real rupees on cash equity) would be
+    // describing itself as a simulation it never ran, so it gets the neutral
+    // line instead. NOTE: this comment lives INSIDE a template literal - no
+    // backticks, or the string ends here.
+    out.push(CFG.unit
+      ? '> Structured for AI analysis: summary stats, a field legend, then the trades.'
+      : '> Backtest P&L is a δ+θ option-premium **simulation** (no live option chain), so treat absolute numbers as directional only. Structured for AI analysis: summary stats, a field legend, then the trades.');
     out.push('');
     out.push('## Summary');
     out.push('| Trades | Wins | Losses | Win % | Net P&L ('+_unit()+') | Avg win | Avg loss | Profit factor |');
