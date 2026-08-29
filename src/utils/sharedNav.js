@@ -27,6 +27,7 @@ const STRATEGY_MODES = [
   { mode: 'HA_SCALP',   label: 'HA Scalp', envKey: 'HA_SCALP_MODE_ENABLED'         },
   { mode: 'RSI_PIVOT_ST', label: 'RSI Pivot ST', envKey: 'RSI_PIVOT_ST_MODE_ENABLED' },
   { mode: 'SIMPLE930', label: 'SIMPLE_9:30', envKey: 'SIMPLE930_MODE_ENABLED' },
+  { mode: 'EARLYBIRD',  label: 'EarlyBird',    envKey: 'EARLYBIRD_MODE_ENABLED'  },
 ];
 
 // Strategies currently enabled in Settings (default ON, same as the sidebar).
@@ -46,6 +47,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   let _trendPbMode = null;
   let _trendDayScalpMode = null;
   let _haScalpMode = null;
+  let _earlyBirdMode = null;
   let _rsiPivotStMode = null;
   let _simple930Mode = null;
   let _anyTradeActive = false;
@@ -59,6 +61,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     _trendPbMode = sss.getTrendPbMode ? sss.getTrendPbMode() : null;
     _trendDayScalpMode = sss.getTrendDayScalpMode ? sss.getTrendDayScalpMode() : null;
     _haScalpMode = sss.getHaScalpMode ? sss.getHaScalpMode() : null;
+    _earlyBirdMode = sss.getEarlyBirdMode ? sss.getEarlyBirdMode() : null;
     _rsiPivotStMode = sss.getRsiPivotStMode ? sss.getRsiPivotStMode() : null;
     _simple930Mode = sss.getSimple930Mode ? sss.getSimple930Mode() : null;
     _anyTradeActive = sss.isAnyActive ? sss.isAnyActive() : false;
@@ -95,6 +98,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const trendPbModeOn  = (process.env.TREND_PB_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const tdsModeOn      = (process.env.TDS_MODE_ENABLED      || 'true').toLowerCase() === 'true';
   const haScalpModeOn  = (process.env.HA_SCALP_MODE_ENABLED || 'true').toLowerCase() === 'true';
+  const earlyBirdModeOn = (process.env.EARLYBIRD_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const rsiPivotStModeOn = (process.env.RSI_PIVOT_ST_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const simple930ModeOn = (process.env.SIMPLE930_MODE_ENABLED || 'true').toLowerCase() === 'true';
 
@@ -157,6 +161,10 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const showHaScalpPaper      = (process.env.UI_SHOW_HA_SCALP_PAPER         || 'true').toLowerCase()  === 'true';
   const showHaScalpLive       = (process.env.UI_SHOW_HA_SCALP_LIVE          || 'true').toLowerCase()  === 'true';
   const showHaScalpHistory    = (process.env.UI_SHOW_HA_SCALP_HISTORY       || 'true').toLowerCase()  === 'true';
+  const showEarlyBirdBacktest = (process.env.UI_SHOW_EARLYBIRD_BACKTEST      || 'true').toLowerCase()  === 'true';
+  const showEarlyBirdPaper    = (process.env.UI_SHOW_EARLYBIRD_PAPER         || 'true').toLowerCase()  === 'true';
+  const showEarlyBirdLive     = (process.env.UI_SHOW_EARLYBIRD_LIVE          || 'true').toLowerCase()  === 'true';
+  const showEarlyBirdHistory  = (process.env.UI_SHOW_EARLYBIRD_HISTORY       || 'true').toLowerCase()  === 'true';
   // RSI Pivot ST — never traded; ships visible but its Live page is triple-gated to dry-run.
   const showRsiPivotStBacktest = (process.env.UI_SHOW_RSI_PIVOT_ST_BACKTEST || 'true').toLowerCase()  === 'true';
   const showRsiPivotStPaper    = (process.env.UI_SHOW_RSI_PIVOT_ST_PAPER    || 'true').toLowerCase()  === 'true';
@@ -183,6 +191,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const haScalpKeys = ['haScalpBacktest', 'haScalpPaper', 'haScalpLive', 'haScalpHistory'];
   const rsiPivotStKeys = ['rsiPivotStBacktest', 'rsiPivotStPaper', 'rsiPivotStLive', 'rsiPivotStHistory'];
   const simple930Keys = ['simple930Backtest', 'simple930Paper', 'simple930Live', 'simple930History'];
+  const earlyBirdKeys = ['earlyBirdBacktest', 'earlyBirdPaper', 'earlyBirdLive', 'earlyBirdHistory'];
 
   const isTradingOpen  = tradingKeys.includes(activePage);
   const isBbRsiOpen    = bbRsiKeys.includes(activePage);
@@ -194,6 +203,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const isHaScalpOpen  = haScalpKeys.includes(activePage);
   const isRsiPivotStOpen = rsiPivotStKeys.includes(activePage);
   const isSimple930Open = simple930Keys.includes(activePage);
+  const isEarlyBirdOpen = earlyBirdKeys.includes(activePage);
 
   // When a strategy's PAPER session is running, hide its Live / Live (Harness)
   // entries — paper and live are mutually exclusive per strategy, so the live
@@ -206,6 +216,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const trendPbPaperRunning  = _trendPbMode  === 'TREND_PB_PAPER';
   const tdsPaperRunning      = _trendDayScalpMode === 'TREND_DAY_SCALP_PAPER';
   const haScalpPaperRunning  = _haScalpMode === 'HA_SCALP_PAPER';
+  const earlyBirdPaperRunning = _earlyBirdMode === 'EARLY_BIRD_PAPER';
   const rsiPivotStPaperRunning = _rsiPivotStMode === 'RSI_PIVOT_ST_PAPER';
   const simple930PaperRunning = _simple930Mode === 'SIMPLE930_PAPER';
 
@@ -276,6 +287,13 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     ...(showHaScalpPaper    ? [{ key: 'haScalpPaper',    href: '/ha-scalp-paper/status', icon: '📋', label: 'Paper'    }] : []),
     ...(showHaScalpLive && !haScalpPaperRunning ? [{ key: 'haScalpLive', href: '/ha-scalp-live', icon: '📡', label: 'Live' }] : []),
     ...(showHaScalpHistory  ? [{ key: 'haScalpHistory',  href: '/ha-scalp-paper/history', icon: '📜', label: 'History' }] : []),
+  ];
+
+  const earlyBirdItems = [
+    ...(showEarlyBirdBacktest ? [{ key: 'earlyBirdBacktest', href: '/early-bird-backtest',     icon: '🔍', label: 'Backtest' }] : []),
+    ...(showEarlyBirdPaper    ? [{ key: 'earlyBirdPaper',    href: '/early-bird-paper/status', icon: '📋', label: 'Paper'    }] : []),
+    ...(showEarlyBirdLive && !earlyBirdPaperRunning ? [{ key: 'earlyBirdLive', href: '/early-bird-live', icon: '📡', label: 'Live' }] : []),
+    ...(showEarlyBirdHistory  ? [{ key: 'earlyBirdHistory',  href: '/early-bird-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 
   // No Backtest entry: Fyers exposes no historical per-strike OI, so this
@@ -362,6 +380,11 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       header: 'SIMPLE 9:30', collapsible: true, collapsed: !isSimple930Open,
       groupId: 'nav-simple930',
       items: simple930Items,
+    }] : []),
+    ...(earlyBirdModeOn ? [{
+      header: 'EARLYBIRD', collapsible: true, collapsed: !isEarlyBirdOpen,
+      groupId: 'nav-early-bird',
+      items: earlyBirdItems,
     }] : []),
     {
       header: 'SYSTEM', collapsible: false,

@@ -42,6 +42,7 @@ const FILE_PREFIX_BY_MODE = {
   trend_pb: "trend_pb_paper_skips_",
   trend_day_scalp: "trend_day_scalp_paper_skips_",
   ha_scalp: "ha_scalp_paper_skips_",
+  early_bird: "early_bird_paper_skips_",
   rsi_pivot_st: "rsi_pivot_st_paper_skips_",
   simple930: "simple930_paper_skips_",
 };

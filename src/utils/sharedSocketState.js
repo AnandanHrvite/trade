@@ -45,6 +45,9 @@ let haScalpMode = null;
 // RSI Pivot SuperTrend mode: "RSI_PIVOT_ST_PAPER" | "RSI_PIVOT_ST_LIVE" | null
 let rsiPivotStMode = null;
 
+// EarlyBird mode: "EARLY_BIRD_PAPER" | "EARLY_BIRD_LIVE" | null
+let earlyBirdMode = null;
+
 // SIMPLE_9:30 mode: "SIMPLE930_PAPER" | "SIMPLE930_LIVE" | null
 let simple930Mode = null;
 
@@ -193,6 +196,25 @@ function getHaScalpMode() {
 }
 
 
+// ── EarlyBird mode (first-15-min cash-equity breakout) ──────────────────────
+
+function setEarlyBirdActive(mode) {
+  earlyBirdMode = mode;
+}
+
+function clearEarlyBird() {
+  earlyBirdMode = null;
+}
+
+function isEarlyBirdActive() {
+  return earlyBirdMode !== null;
+}
+
+function getEarlyBirdMode() {
+  return earlyBirdMode;
+}
+
+
 // ── RSI Pivot SuperTrend mode ───────────────────────────────────────────────
 
 function setRsiPivotStActive(mode) {
@@ -237,6 +259,7 @@ function isAnyActive() {
          orbMode !== null || ema9vwapMode !== null || trendPbMode !== null ||
          trendDayScalpMode !== null ||
          haScalpMode !== null ||
+         earlyBirdMode !== null ||
          rsiPivotStMode !== null || simple930Mode !== null;
 }
 
@@ -307,6 +330,14 @@ function canStart(mode) {
       if (haScalpMode === "HA_SCALP_PAPER") return { allowed: false, reason: "HA Scalp Paper is running — stop it first" };
       if (haScalpMode === "HA_SCALP_LIVE")  return { allowed: false, reason: "HA Scalp Live is already running" };
       return { allowed: true };
+    case "EARLY_BIRD_PAPER":
+      if (earlyBirdMode === "EARLY_BIRD_LIVE")  return { allowed: false, reason: "EarlyBird Live is running — stop it first" };
+      if (earlyBirdMode === "EARLY_BIRD_PAPER") return { allowed: false, reason: "EarlyBird Paper is already running" };
+      return { allowed: true };
+    case "EARLY_BIRD_LIVE":
+      if (earlyBirdMode === "EARLY_BIRD_PAPER") return { allowed: false, reason: "EarlyBird Paper is running — stop it first" };
+      if (earlyBirdMode === "EARLY_BIRD_LIVE")  return { allowed: false, reason: "EarlyBird Live is already running" };
+      return { allowed: true };
     case "RSI_PIVOT_ST_PAPER":
       if (rsiPivotStMode === "RSI_PIVOT_ST_LIVE")  return { allowed: false, reason: "RSI Pivot ST Live is running — stop it first" };
       if (rsiPivotStMode === "RSI_PIVOT_ST_PAPER") return { allowed: false, reason: "RSI Pivot ST Paper is already running" };
@@ -346,6 +377,8 @@ module.exports = {
   // HA Scalp
   setHaScalpActive, clearHaScalp, isHaScalpActive, getHaScalpMode,
   // RSI Pivot SuperTrend
+  setEarlyBirdActive, clearEarlyBird, isEarlyBirdActive, getEarlyBirdMode,
+
   setRsiPivotStActive, clearRsiPivotSt, isRsiPivotStActive, getRsiPivotStMode,
   // SIMPLE_9:30
   setSimple930Active, clearSimple930, isSimple930Active, getSimple930Mode,

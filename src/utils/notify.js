@@ -109,6 +109,11 @@ function modeGroup(mode) {
   // HA Scalp. Group key HA_SCALP so every env key stays on the HA_SCALP_ prefix
   // (HA_SCALP_MODE_ENABLED, TG_HA_SCALP_ENTRY, …).
   if (m === "HA_SCALP" || m.startsWith("HA-SCALP") || m.startsWith("HA_SCALP")) return "HA_SCALP";
+  // EarlyBird. Group key EARLYBIRD so every env key stays on the EARLYBIRD_
+  // prefix (EARLYBIRD_MODE_ENABLED, TG_EARLYBIRD_ENTRY, …). Note the mode tag
+  // is EARLY_BIRD (matching the tradeLogger key) while the group drops the
+  // underscore — both spellings are matched below on purpose.
+  if (m === "EARLYBIRD" || m === "EARLY_BIRD" || m.startsWith("EARLY-BIRD") || m.startsWith("EARLY_BIRD") || m.startsWith("EARLYBIRD")) return "EARLYBIRD";
   if (m === "RSI_PIVOT_ST" || m.startsWith("RSI_PIVOT_ST-") || m.startsWith("RSI_PIVOT_ST_")) return "RSI_PIVOT_ST";
   // SIMPLE_9:30. Group key SIMPLE930 so every env key stays on the SIMPLE930_
   // prefix (SIMPLE930_MODE_ENABLED, TG_SIMPLE930_ENTRY, …) — an env var may not
@@ -720,7 +725,7 @@ function notifyConsolidatedDayReport({ byMode }) {
   if (!canSend("TG_DAYREPORT_CONSOLIDATED")) return false;
 
   // Only include strategies that are currently enabled in Settings.
-  const groups = ["EMA_RSI_ST", "BB_RSI", "PA", "ORB", "EMA9VWAP", "TREND_PB", "TDS", "RSI_PIVOT_ST", "SIMPLE930", "HA_SCALP"].filter(isModeEnabled);
+  const groups = ["EMA_RSI_ST", "BB_RSI", "PA", "ORB", "EMA9VWAP", "TREND_PB", "TDS", "RSI_PIVOT_ST", "SIMPLE930", "HA_SCALP", "EARLYBIRD"].filter(isModeEnabled);
   let totalTrades = 0, totalPnl = 0, totalWins = 0, totalLosses = 0;
   const rows = [];
 

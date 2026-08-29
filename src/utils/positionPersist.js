@@ -788,6 +788,104 @@ function clearSimple930Position() {
   console.log("[PERSIST] SIMPLE_9:30 position file cleared.");
 }
 
+// ── EARLY_BIRD (first-15-min cash-equity breakout, F&O stocks, Fyers) ────────
+// UNLIKE EVERY OTHER STRATEGY HERE this one holds MANY positions at once — one
+// per confirming stock, up to EARLYBIRD_MAX_CONCURRENT. So the snapshot stores
+// an ARRAY, and the load/clear helpers speak arrays too. A caller that expects
+// a single `position` object will get `positions: []` and must be updated, not
+// worked around.
+//
+// Every level (entry, stop, target) is FROZEN at 09:30 and never moves — there
+// is no trail and no breakeven — so a crash-recovered position needs no ratchet
+// state. The pending (not-yet-triggered) setups are stored alongside, because
+// losing them on a restart would silently cancel the day's remaining orders.
+//
+// These are CASH EQUITY positions: `qty` is a share count, not a lot, and a
+// SHORT is a real intraday short sale. There is no strike, expiry or option LTP.
+
+const EARLY_BIRD_POS_FILE = path.join(DATA_DIR, ".active_early_bird_position.json");
+
+function _ebLevels(p) {
+  return {
+    symbol:        p.symbol,
+    fyersSymbol:   p.fyersSymbol,
+    side:          p.side,                 // "LONG" | "SHORT"
+    qty:           p.qty,
+    entryPrice:    p.entryPrice,
+    stop:          p.stop,
+    target:        p.target,
+    riskPts:       p.riskPts,
+    rewardPts:     p.rewardPts,
+    bigCandle:     p.bigCandle,
+    slBasis:       p.slBasis,
+    gapPct:        p.gapPct,
+    prevClose:     p.prevClose,
+    shape:         p.shape,
+    signalOpen:    p.signalOpen,
+    signalHigh:    p.signalHigh,
+    signalLow:     p.signalLow,
+    signalClose:   p.signalClose,
+    signalBarTime: p.signalBarTime,
+    entryUnixSec:  p.entryUnixSec,
+    entryTime:     p.entryTime,
+    orderId:       p.orderId,
+  };
+}
+
+function saveEarlyBirdPositions(positions, sessionMeta, pendingSetups) {
+  try {
+    const list = Array.isArray(positions) ? positions.filter(Boolean) : [];
+    const pend = Array.isArray(pendingSetups) ? pendingSetups.filter(Boolean) : [];
+    if (!list.length && !pend.length) { _persistAtomic(EARLY_BIRD_POS_FILE, null); return; }
+    const data = {
+      positions:   list.map(_ebLevels),
+      pendingSetups: pend.map(_ebLevels),
+      sessionMeta: sessionMeta || {},
+      savedAt:     Date.now(),
+      savedDate:   new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
+    };
+    _persistAtomic(EARLY_BIRD_POS_FILE, JSON.stringify(data, null, 2));
+    console.log(`💾 [PERSIST] EARLY_BIRD saved: ${list.length} open position(s), ${pend.length} pending setup(s)` +
+      (list.length ? ` — ${list.map(p => `${p.side} ${p.qty}×${p.symbol}@₹${p.entryPrice}`).join(", ")}` : ""));
+  } catch (err) {
+    console.warn(`⚠️ [PERSIST] Could not save EARLY_BIRD positions: ${err.message}`);
+  }
+}
+
+function loadEarlyBirdPositions() {
+  try {
+    if (!fs.existsSync(EARLY_BIRD_POS_FILE)) return null;
+    const data = JSON.parse(fs.readFileSync(EARLY_BIRD_POS_FILE, "utf-8"));
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    if (data.savedDate && data.savedDate !== today) {
+      console.log(`[PERSIST] Stale EARLY_BIRD snapshot from ${data.savedDate} — discarding.`);
+      fs.unlinkSync(EARLY_BIRD_POS_FILE);
+      return null;
+    }
+    // Normalise: an older/partial file must never hand back undefined arrays.
+    if (!Array.isArray(data.positions))     data.positions = [];
+    if (!Array.isArray(data.pendingSetups)) data.pendingSetups = [];
+    if (data.positions.length) {
+      console.log(`[PERSIST] EARLY_BIRD loaded ${data.positions.length} open position(s): ` +
+        data.positions.map(p => `${p.side} ${p.qty}×${p.symbol}@₹${p.entryPrice}`).join(", "));
+    }
+    if (data.pendingSetups.length) {
+      console.log(`[PERSIST] EARLY_BIRD loaded ${data.pendingSetups.length} pending setup(s): ` +
+        data.pendingSetups.map(p => `${p.side} ${p.symbol}@₹${p.entryPrice}`).join(", "));
+    }
+    return data;
+  } catch (err) {
+    console.warn(`[PERSIST] Could not load EARLY_BIRD positions: ${err.message}`);
+    return null;
+  }
+}
+
+function clearEarlyBirdPositions() {
+  _persistAtomic(EARLY_BIRD_POS_FILE, null);
+  console.log("[PERSIST] EARLY_BIRD position file cleared.");
+}
+
+
 module.exports = {
   saveTradePosition, loadTradePosition, clearTradePosition,
   saveBbRsiPosition, loadBbRsiPosition, clearBbRsiPosition,
@@ -797,6 +895,7 @@ module.exports = {
   saveTrendPbPosition, loadTrendPbPosition, clearTrendPbPosition,
   saveTrendDayScalpPosition, loadTrendDayScalpPosition, clearTrendDayScalpPosition,
   saveHaScalpPosition, loadHaScalpPosition, clearHaScalpPosition,
+  saveEarlyBirdPositions, loadEarlyBirdPositions, clearEarlyBirdPositions,
   saveRsiPivotStPosition, loadRsiPivotStPosition, clearRsiPivotStPosition,
   saveSimple930Position, loadSimple930Position, clearSimple930Position,
 };

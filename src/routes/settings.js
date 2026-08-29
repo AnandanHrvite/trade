@@ -467,6 +467,58 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
+    section: "EARLYBIRD STRATEGY (first 15-min breakout, CASH EQUITY) — Fyers",
+    icon: "\u{1F426}",
+    nav: "EARLYBIRD",
+    group: "Strategies",
+    fields: [
+      // ── Enable / live gating ──
+      { key: "EARLYBIRD_PAPER_ENABLED", label: "EarlyBird Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new EarlyBird paper sessions.", default: "true", subheader: "Mode & Live" },
+      { key: "EARLYBIRD_LIVE_ENABLED", label: "EarlyBird Live Orders (gates /early-bird-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live CASH EQUITY orders via Fyers. NEVER traded — paper-validate first, then diff a recorded session in /replay.", default: "false" },
+      { key: "EARLYBIRD_LIVE_DRY_RUN", label: "EarlyBird Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep it simulated even when live is on.", default: "false" },
+
+      // ── The signal candle ──
+      { key: "EARLYBIRD_RESOLUTION", label: "Candle Timeframe (min)", type: "select", options: ["5", "15", "30"], effect: EFFECT.SESSION, desc: "The chart the rules were read off. 15 minutes is the strategy as specified — the day's FIRST candle is the signal candle.", default: "15", subheader: "The signal candle (the day's first bar)" },
+      { key: "EARLYBIRD_MAX_OPPOSING_WICK_PCT", label: "Max Opposing Wick (% of candle range)", type: "number", min: 0, max: 100, step: 5, effect: EFFECT.SESSION, desc: "The wick that argues AGAINST the move — the upper wick on a green candle, the lower wick on a red one. This one number covers all three drawings: a full-body candle, a long favourable wick, and a small opposing wick. Lower = stricter.", default: "30" },
+      { key: "EARLYBIRD_MIN_BODY_PCT", label: "Minimum Body (% of candle range)", type: "number", min: 0, max: 100, step: 5, effect: EFFECT.SESSION, desc: "The body must be a real body, as a share of the candle's own range. Stops a tiny-bodied candle with two long wicks counting as a strength candle.", default: "40" },
+      { key: "EARLYBIRD_MIN_RANGE_PTS", label: "Minimum Candle Range (0 = off)", type: "number", min: 0, max: 500, step: 1, effect: EFFECT.SESSION, desc: "Ignore an opening candle whose whole range is smaller than this. OFF by default — the rules do not ask for it.", default: "0" },
+
+      // ── Confirmation ──
+      { key: "EARLYBIRD_UNIVERSE", label: "Stock Universe", type: "select", options: ["FNO", "NIFTY50", "NIFTY100"], effect: EFFECT.SESSION, desc: "Which list of stocks is scanned at 09:30. FNO (~220 names) is the list from the strategy's own stock-selection slides.", default: "FNO", subheader: "Confirmation (NIFTY must agree with the stock)" },
+      { key: "EARLYBIRD_MIN_CONFIRMING_STOCKS", label: "Stocks That Must Confirm", type: "number", min: 1, max: 500, step: 1, effect: EFFECT.SESSION, desc: "How many stocks must print the same-direction opening candle as NIFTY before the day is tradeable. 1 = the rule as specified. Raising it turns this into a market-breadth gate.", default: "1" },
+      { key: "EARLYBIRD_MAX_GAP_PCT", label: "Max Opening Gap (%)", type: "number", min: 0, max: 100, step: 0.5, effect: EFFECT.SESSION, desc: "Skip a stock that opened more than this far from the previous day's close, in either direction. This is the \"don't trade a stock which opened about 2% than the previous day\" rule.", default: "2" },
+
+      // ── Entry / stop / target ──
+      { key: "EARLYBIRD_ENTRY_BUFFER_PTS", label: "Entry / Stop Buffer (₹)", type: "number", min: 0, max: 100, step: 0.5, effect: EFFECT.SESSION, desc: "How far past the signal candle the pending order and the stop sit — \"a little above the breakout candle\". Applied to BOTH ends: entry beyond the extreme, stop beyond the other extreme.", default: "5", subheader: "Entry, stop and target" },
+      { key: "EARLYBIRD_TARGET_RR", label: "Target Reward:Risk", type: "number", min: 0.1, max: 20, step: 0.5, effect: EFFECT.SESSION, desc: "Book profit at this multiple of the actual risk. 2 = the 1:2 in the rules; set 1 for the 1:1 the rules also allow.", default: "2" },
+      { key: "EARLYBIRD_MAX_SL_PTS", label: "Big-Candle Threshold (₹, 0 = off)", type: "number", min: 0, max: 1000, step: 5, effect: EFFECT.SESSION, desc: "When the wick-to-wick risk is wider than this, the stop moves off the wick and onto the candle's BODY edge (open/close) instead — the \"if the breakout candle is too big, ignore the wick\" rule. It can only ever tighten the stop.", default: "60" },
+
+      // ── Session window ──
+      { key: "EARLYBIRD_SESSION_START", label: "Session Start", type: "time", effect: EFFECT.SESSION, desc: "Where the day's first candle begins (IST). This is the signal candle.", default: "09:15", subheader: "Session window" },
+      { key: "EARLYBIRD_ENTRY_START", label: "Entry Window Start", type: "time", effect: EFFECT.SESSION, desc: "No entries before this (IST) — the signal candle has just closed.", default: "09:30" },
+      { key: "EARLYBIRD_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No new entries after this time (IST). The rule is 10:45; a pending order not triggered by then is cancelled.", default: "10:45" },
+      { key: "EARLYBIRD_FORCED_EXIT", label: "Forced Exit (square-off)", type: "time", effect: EFFECT.SESSION, desc: "Hard square-off (IST). The rule is \"exit at 1 pm\" — anything still open closes at market here.", default: "13:00" },
+
+      // ── Sizing & day breakers ──
+      { key: "EARLYBIRD_QTY", label: "Quantity per Stock (shares)", type: "number", min: 1, max: 100000, step: 1, effect: EFFECT.INSTANT, desc: "Shares per position. This is CASH EQUITY, not options — there are no lots.", default: "100", subheader: "Sizing & Day Breakers" },
+      { key: "EARLYBIRD_MAX_CONCURRENT", label: "Max Positions At Once", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "How many stocks may be held simultaneously. When more confirm than this, the tightest-stop names are taken first.", default: "5" },
+      { key: "EARLYBIRD_MAX_DAILY_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 100, step: 1, effect: EFFECT.SESSION, desc: "Max entries per day across all stocks.", default: "5" },
+      { key: "EARLYBIRD_MAX_DAILY_LOSSES", label: "Stop-outs That End the Day", type: "number", min: 0, max: 20, step: 1, effect: EFFECT.SESSION, desc: "Day ends after this many stop-outs (0 = off).", default: "3" },
+      { key: "EARLYBIRD_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 0, max: 200000, step: 500, effect: EFFECT.SESSION, desc: "Stop trading after this much loss (0 = off). Note 100 shares of a ₹3,000 stock is a ₹300,000 position — size this deliberately.", default: "5000" },
+      { key: "EARLYBIRD_DAILY_PROFIT_LOCK", label: "Daily Profit Lock (₹)", type: "number", min: 0, max: 200000, step: 500, effect: EFFECT.SESSION, desc: "Stop for the day once this much is banked (0 = off, the default).", default: "0" },
+      { key: "EARLYBIRD_MAX_WEEKLY_LOSS", label: "Max Weekly Loss (₹)", type: "number", min: 0, max: 500000, step: 1000, effect: EFFECT.SESSION, desc: "Stop for the week after this much loss (0 = off).", default: "0" },
+
+      // ── Data plumbing ──
+      { key: "EARLYBIRD_POLL_MS", label: "Stock Quote Poll (ms)", type: "number", min: 500, max: 30000, step: 500, effect: EFFECT.SESSION, desc: "How often the shortlisted stocks' prices are refreshed while setups are pending or positions are open.", default: "2000", subheader: "Data plumbing" },
+      { key: "EARLYBIRD_HISTORY_LAG_MS", label: "Bar-Close History Lag (ms)", type: "number", min: 0, max: 60000, step: 500, effect: EFFECT.SESSION, desc: "How long after 09:30 before the history endpoint is asked for the opening candle. Too short and the bar is not published yet, which would lose the whole day.", default: "5000" },
+      { key: "EARLYBIRD_WARMUP_DAYS", label: "History Preload (calendar days)", type: "number", min: 2, max: 120, step: 1, effect: EFFECT.SESSION, desc: "How far back to fetch. Only the previous daily close is strictly needed (for the gap rule), so this is small by design.", default: "7" },
+      { key: "EARLYBIRD_SCAN_CONCURRENCY", label: "Scan Concurrency (symbols at once)", type: "number", min: 1, max: 30, step: 1, effect: EFFECT.SESSION, desc: "How many symbols are fetched in parallel during the 09:30 scan. Higher is faster but risks Fyers rate limits.", default: "8" },
+
+      // ── Backtest ──
+      { key: "EARLYBIRD_BT_SLIPPAGE_PTS", label: "Backtest Slippage Haircut (₹ each way)", type: "number", min: 0, max: 20, step: 0.05, effect: EFFECT.BACKTEST, desc: "Backtest cost per side, in rupees of stock price. Applied to both entry and exit. Without it a breakout backtest always flatters.", default: "0.05", subheader: "Backtest" },
+    ],
+  },
+  {
     section: "SIMPLE_9:30 STRATEGY (option-premium breakout) — Zerodha",
     icon: "\u{1F3AF}",
     nav: "SIMPLE 9:30",
@@ -692,6 +744,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_TREND_PB_STARTED", label: "Trend Pullback — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a Trend Pullback session starts.", default: "true" },
       { key: "TG_TDS_STARTED", label: "Trend Day Scalp — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a Trend Day Scalp session starts.", default: "true" },
       { key: "TG_HA_SCALP_STARTED", label: "HA Scalp — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an HA Scalp session starts.", default: "true" },
+      { key: "TG_EARLYBIRD_STARTED", label: "EarlyBird — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an EarlyBird session starts.", default: "true" },
       { key: "TG_SIMPLE930_STARTED", label: "SIMPLE_9:30 — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a SIMPLE_9:30 session starts.", default: "true" },
       { key: "TG_RSI_PIVOT_ST_STARTED", label: "RSI Pivot ST — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an RSI Pivot ST session starts.", default: "true" },
 
@@ -703,6 +756,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_TREND_PB_ENTRY", label: "Trend Pullback — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Trend Pullback entry.", default: "true" },
       { key: "TG_TDS_ENTRY", label: "Trend Day Scalp — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Trend Day Scalp entry.", default: "true" },
       { key: "TG_HA_SCALP_ENTRY", label: "HA Scalp — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on HA Scalp entries.", default: "true" },
+      { key: "TG_EARLYBIRD_ENTRY", label: "EarlyBird — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on EarlyBird entries.", default: "true" },
       { key: "TG_SIMPLE930_ENTRY", label: "SIMPLE_9:30 — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every SIMPLE_9:30 entry.", default: "true" },
       { key: "TG_RSI_PIVOT_ST_ENTRY", label: "RSI Pivot ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every RSI Pivot ST entry.", default: "true" },
 
@@ -714,6 +768,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_TREND_PB_EXIT", label: "Trend Pullback — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Trend Pullback exit.", default: "true" },
       { key: "TG_TDS_EXIT", label: "Trend Day Scalp — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Trend Day Scalp exit.", default: "true" },
       { key: "TG_HA_SCALP_EXIT", label: "HA Scalp — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on HA Scalp exits.", default: "true" },
+      { key: "TG_EARLYBIRD_EXIT", label: "EarlyBird — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on EarlyBird exits.", default: "true" },
       { key: "TG_SIMPLE930_EXIT", label: "SIMPLE_9:30 — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every SIMPLE_9:30 exit.", default: "true" },
       { key: "TG_RSI_PIVOT_ST_EXIT", label: "RSI Pivot ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every RSI Pivot ST exit.", default: "true" },
 
@@ -730,6 +785,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_TREND_PB_DAYREPORT", label: "Trend Pullback — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a Trend Pullback day summary on stop.", default: "true" },
       { key: "TG_TDS_DAYREPORT", label: "Trend Day Scalp — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a Trend Day Scalp day summary on stop.", default: "true" },
       { key: "TG_HA_SCALP_DAYREPORT", label: "HA Scalp — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send the HA Scalp day report when the session stops.", default: "true" },
+      { key: "TG_EARLYBIRD_DAYREPORT", label: "EarlyBird — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send the EarlyBird day report when the session stops.", default: "true" },
       { key: "TG_SIMPLE930_DAYREPORT", label: "SIMPLE_9:30 — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a SIMPLE_9:30 day summary on stop.", default: "true" },
       { key: "TG_RSI_PIVOT_ST_DAYREPORT", label: "RSI Pivot ST — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send an RSI Pivot ST day summary on stop.", default: "true" },
 
@@ -831,6 +887,7 @@ const SETTINGS_SCHEMA = [
       { key: "TREND_PB_MODE_ENABLED",  label: "Trend Pullback Mode",       type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Trend Pullback menu and settings.", default: "true" },
       { key: "TDS_MODE_ENABLED",       label: "Trend Day Scalp Mode",      type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Trend Day Scalp menu and settings.", default: "true" },
       { key: "HA_SCALP_MODE_ENABLED",  label: "HA Scalp Mode",             type: "toggle", effect: EFFECT.INSTANT, desc: "Show the HA Scalp menu and settings.", default: "true" },
+      { key: "EARLYBIRD_MODE_ENABLED", label: "EarlyBird Mode",            type: "toggle", effect: EFFECT.INSTANT, desc: "Show the EarlyBird menu and settings.", default: "true" },
       { key: "SIMPLE930_MODE_ENABLED", label: "SIMPLE_9:30 Mode",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show the SIMPLE_9:30 menu and settings.", default: "true" },
       { key: "RSI_PIVOT_ST_MODE_ENABLED", label: "RSI Pivot ST Mode",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show the RSI Pivot ST menu and settings.", default: "true" },
       { key: "UI_SHOW_SIMULATE",       label: "Show Simulate Menu",        type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Simulate sub-menu.", default: "false", subheader: "Shared sub-menus (all strategies)" },
@@ -886,6 +943,10 @@ const SETTINGS_SCHEMA = [
       { key: "UI_SHOW_HA_SCALP_PAPER",    label: "HA Scalp → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under HA Scalp.", default: "true" },
       { key: "UI_SHOW_HA_SCALP_LIVE",     label: "HA Scalp → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live under HA Scalp.", default: "true" },
       { key: "UI_SHOW_HA_SCALP_HISTORY",  label: "HA Scalp → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under HA Scalp.", default: "true" },
+      { key: "UI_SHOW_EARLYBIRD_BACKTEST", label: "EarlyBird → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under EarlyBird.", default: "true", subheader: "EarlyBird sub-menus" },
+      { key: "UI_SHOW_EARLYBIRD_PAPER",    label: "EarlyBird → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under EarlyBird.", default: "true" },
+      { key: "UI_SHOW_EARLYBIRD_LIVE",     label: "EarlyBird → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live under EarlyBird.", default: "true" },
+      { key: "UI_SHOW_EARLYBIRD_HISTORY",  label: "EarlyBird → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under EarlyBird.", default: "true" },
 
       // ── SIMPLE_9:30 submenu ──
       { key: "UI_SHOW_SIMPLE930_BACKTEST", label: "SIMPLE_9:30 → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under SIMPLE_9:30.", default: "true", subheader: "SIMPLE_9:30 sub-menus" },
@@ -965,6 +1026,7 @@ const MODE_SECTION_TITLES = {
   ha_scalp: "HA SCALP STRATEGY (Heikin Ashi 15m) — Zerodha",
   simple930: "SIMPLE_9:30 STRATEGY (option-premium breakout) — Zerodha",
   rsi_pivot_st: "RSI_PIVOT_ST STRATEGY (RSI + Standard Pivot R1/S1 + SuperTrend) — Zerodha",
+  early_bird: "EARLYBIRD STRATEGY (first 15-min breakout, CASH EQUITY) — Fyers",
 };
 const SNAPSHOT_COMMON_SECTION_TITLES = new Set([
   "Instrument & Backtest",
@@ -972,7 +1034,7 @@ const SNAPSHOT_COMMON_SECTION_TITLES = new Set([
   "OPEN-INTEREST FILTER (OI + Price Buildup)",
 ]);
 
-const _MODE_KEYS = { ema_rsi_st: new Set(), bb_rsi: new Set(), pa: new Set(), orb: new Set(), ema9vwap: new Set(), trend_pb: new Set(), trend_day_scalp: new Set(), ha_scalp: new Set(), simple930: new Set(), rsi_pivot_st: new Set() };
+const _MODE_KEYS = { ema_rsi_st: new Set(), bb_rsi: new Set(), pa: new Set(), orb: new Set(), ema9vwap: new Set(), trend_pb: new Set(), trend_day_scalp: new Set(), ha_scalp: new Set(), simple930: new Set(), rsi_pivot_st: new Set(), early_bird: new Set() };
 const _KEY_TO_MODES = new Map();
 (function buildModeKeyIndex() {
   const commonKeys = [];
@@ -1402,7 +1464,7 @@ router.post("/restart", (req, res) => {
 // cache & logs always clear fully. The aggregate paper JSON + capital restore is
 // handled client-side via the per-strategy /reset endpoints (full paper wipe only).
 // Auto-gated by the app.js x-api-secret middleware (not in OPEN_PATHS).
-const RESET_PAPER_MODES = ["ema_rsi_st", "bb_rsi", "pa", "orb", "ema9vwap", "trend_pb", "trend_day_scalp", "ha_scalp", "simple930", "rsi_pivot_st"];
+const RESET_PAPER_MODES = ["ema_rsi_st", "bb_rsi", "pa", "orb", "ema9vwap", "trend_pb", "trend_day_scalp", "ha_scalp", "simple930", "rsi_pivot_st", "early_bird"];
 const _RESET_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 router.post("/reset-data", (req, res) => {
@@ -1714,6 +1776,7 @@ router.get("/", (req, res) => {
   const trendPbModeOn  = (envData["TREND_PB_MODE_ENABLED"] ?? process.env.TREND_PB_MODE_ENABLED ?? "true").toLowerCase() === "true";
   const tdsModeOn      = (envData["TDS_MODE_ENABLED"]      ?? process.env.TDS_MODE_ENABLED      ?? "true").toLowerCase() === "true";
   const haScalpModeOn  = (envData["HA_SCALP_MODE_ENABLED"] ?? process.env.HA_SCALP_MODE_ENABLED ?? "true").toLowerCase() === "true";
+  const earlyBirdModeOn = (envData["EARLYBIRD_MODE_ENABLED"] ?? process.env.EARLYBIRD_MODE_ENABLED ?? "true").toLowerCase() === "true";
   const simple930ModeOn = (envData["SIMPLE930_MODE_ENABLED"] ?? process.env.SIMPLE930_MODE_ENABLED ?? "true").toLowerCase() === "true";
   const rsiPivotStModeOn = (envData["RSI_PIVOT_ST_MODE_ENABLED"] ?? process.env.RSI_PIVOT_ST_MODE_ENABLED ?? "true").toLowerCase() === "true";
   // Server Logs (📜 LOGS) and Cache Files buttons moved into the Logs (/trade-logs) page as tabs —
@@ -1730,6 +1793,7 @@ router.get("/", (req, res) => {
     "HA SCALP STRATEGY (Heikin Ashi 15m) — Zerodha":                haScalpModeOn,
     "SIMPLE_9:30 STRATEGY (option-premium breakout) — Zerodha":     simple930ModeOn,
     "RSI_PIVOT_ST STRATEGY (RSI + Standard Pivot R1/S1 + SuperTrend) — Zerodha": rsiPivotStModeOn,
+    "EARLYBIRD STRATEGY (first 15-min breakout, CASH EQUITY) — Fyers": earlyBirdModeOn,
   };
 
   // Rail entries are collected while the sections render so the index and the
