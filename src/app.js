@@ -2208,7 +2208,6 @@ ${buildSidebar('dashboard', liveActive)}
       ${paModeOn && paMode === 'PA_LIVE' ? '<span class="top-bar-badge live-active" style="border-color:#a78bfa;"><span style="width:5px;height:5px;border-radius:50%;background:#a78bfa;display:inline-block;"></span>PA LIVE</span>' : ''}
       ${orbModeOn && orbMode === 'ORB_PAPER' ? '<span class="top-bar-badge live-active" style="border-color:#10b981;"><span style="width:5px;height:5px;border-radius:50%;background:#10b981;display:inline-block;"></span>ORB PAPER</span>' : ''}
       ${anyModeActive && !specificBadgeShown ? '<span class="top-bar-badge live-active" style="border-color:#22c55e;"><span style="width:5px;height:5px;border-radius:50%;background:#22c55e;display:inline-block;"></span>TRADE ACTIVE</span>' : ''}
-      ${!liveActive && (!bbRsiModeOn || !bbRsiMode) && (!paModeOn || !paMode) && (!orbModeOn || !orbMode) && (!ema9vwapModeOn || !ema9vwapMode) && (!trendPbModeOn || !trendPbMode) && (!tdsModeOn || !tdsMode) && (!haScalpModeOn || !haScalpMode) && (!earlyBirdModeOn || !earlyBirdMode) && (!simple930ModeOn || !simple930Mode) && (!rsiPivotStModeOn || !rsiPivotStMode) ? '<span class="top-bar-badge">● IDLE</span>' : ''}
     </div>
   </div>
 
@@ -2908,16 +2907,22 @@ function startAll(btn){
 // ── Quick-Action button live state (mutual lock: Paper ↔ Live) ──────────────
 var _dashSrc = 'paper';            // top-bar toggle source; also drives the charts
 var _allBtnState = { paperOn:false, liveOn:false };
+var _marketsClosed = false;        // set by checkTradingStatus() on weekend / NSE holiday
 // Derived from the same enabled-strategy roster as the Start-All endpoint lists.
 var ALL_BTN_POLL = ${JSON.stringify(startAllPollTargets)};
 
 function _applyAllBtnState(paperOn, liveOn){
   // Harness is a paper-side concept (Paper + dry-run live log) — only show it
   // when the PAPER source is selected; hide it under LIVE.
+  // _marketsClosed wins over both: this poll runs every few seconds and would
+  // otherwise re-show the buttons that checkTradingStatus() just hid on a
+  // weekend / NSE holiday.
   var hb = document.getElementById('btn-all-harness');
-  if(hb) hb.style.display = (_dashSrc === 'live') ? 'none' : '';
+  if(hb) hb.style.display = (_marketsClosed || _dashSrc === 'live') ? 'none' : '';
   var b = document.getElementById('btn-all-start');
   if(!b) return;
+  if(_marketsClosed){ b.style.display = 'none'; return; }
+  b.style.display = '';
   b.classList.remove('run-paper','run-live','is-active-paper','is-active-live','is-locked');
   if(_dashSrc === 'live'){
     if(liveOn){
@@ -3640,10 +3645,10 @@ async function checkTradingStatus(){
     } catch(e){}
     // Markets shut = nothing to start: hide BOTH Start-All buttons (paper and
     // harness), not just the paper one.
-    var marketsClosed = isHoliday || day === 0 || day === 6;
+    _marketsClosed = isHoliday || day === 0 || day === 6;
     ['btn-all-start','btn-all-harness'].forEach(function(id){
       var b = document.getElementById(id);
-      if(b) b.style.display = marketsClosed ? 'none' : '';
+      if(b) b.style.display = _marketsClosed ? 'none' : '';
     });
 
     if(!alertDiv || alertDiv._dismissed) return;
