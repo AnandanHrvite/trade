@@ -936,14 +936,18 @@ router.get("/file/:filename", (req, res) => {
   if (!fs.existsSync(filepath)) {
     return res.status(404).send("File not found");
   }
-  // HTML guides with a status marker get a live "as-per-settings" panel injected.
-  if (filename.toLowerCase().endsWith(".html") && GUIDE_STATUS[filename]) {
+  // Every .html document goes out through res.send, not sendFile, so the
+  // app-wide response middleware (right-click suppression) can reach it — a
+  // guide streamed straight off disk would silently skip that. Guides carrying
+  // the status marker also get the live "as-per-settings" panel injected here.
+  if (filename.toLowerCase().endsWith(".html")) {
     try {
-      const html = fs.readFileSync(filepath, "utf-8");
-      if (html.includes(STATUS_MARKER)) {
-        res.setHeader("Content-Type", "text/html; charset=utf-8");
-        return res.send(html.replace(STATUS_MARKER, renderStatusPanel(filename)));
+      let html = fs.readFileSync(filepath, "utf-8");
+      if (GUIDE_STATUS[filename] && html.includes(STATUS_MARKER)) {
+        html = html.replace(STATUS_MARKER, renderStatusPanel(filename));
       }
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      return res.send(html);
     } catch (e) { /* fall through to static send on any read error */ }
   }
   res.sendFile(filepath);
