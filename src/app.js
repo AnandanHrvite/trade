@@ -54,6 +54,27 @@ const app = express();
 app.use(compression());
 app.use(express.json({ limit: "25mb" })); // tradebook CSV imports (pnlHistory.js) can be several MB of JSON-wrapped text
 
+// ── Right-click suppression (UI_DISABLE_RIGHT_CLICK) ────────────────────────
+// Wraps res.send so the guard script lands in EVERY HTML page. The routes each
+// render their own markup with no shared layout, and neither shared head helper
+// (faviconLink / buildSidebar) is used by all of them — a per-page edit would
+// have missed the standalone backtest interstitials and the login page.
+// process.env is read per request, which is what makes the Settings toggle
+// instant: no restart, the next page load already has it.
+const { noContextMenuJS } = require("./utils/sharedNav");
+app.use((req, res, next) => {
+  const send = res.send.bind(res);
+  res.send = (body) => {
+    if (String(process.env.UI_DISABLE_RIGHT_CLICK || "").toLowerCase() !== "true") return send(body);
+    if (typeof body !== "string" || !/^\s*<(!doctype html|html)\b/i.test(body)) return send(body);
+    const tag = `<script>${noContextMenuJS()}</script>`;
+    // Prefer just inside </body>; pages that omit it get the tag appended.
+    const i = body.lastIndexOf("</body>");
+    return send(i === -1 ? body + tag : body.slice(0, i) + tag + body.slice(i));
+  };
+  next();
+});
+
 // ── Vendored front-end libraries ────────────────────────────────────────────
 // Self-host the Lightweight Charts library (used by every strategy's chart)
 // instead of pulling it from unpkg.com at page load. A CDN outage / blocked

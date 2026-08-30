@@ -1842,6 +1842,32 @@ function faviconLink() {
 }
 
 /**
+ * Right-click (context menu) suppression, gated by UI_DISABLE_RIGHT_CLICK.
+ *
+ * Injected into EVERY HTML response by the middleware in app.js rather than
+ * emitted per page — the two shared head/script helpers (faviconLink,
+ * buildSidebar) each miss a dozen pages, and "the whole app" has to mean the
+ * standalone backtest interstitials and the login page too.
+ *
+ * Text inputs and textareas keep their native menu so copy/paste still works;
+ * blocking those is what makes a page feel broken rather than protected. The
+ * listener is registered on `document` in the capture phase so it runs before
+ * any page-level handler, and re-registration is guarded because a page could
+ * conceivably be injected twice (an inner document, a re-render).
+ */
+function noContextMenuJS() {
+  return `
+if (!window.__ncmInit) {
+  window.__ncmInit = true;
+  document.addEventListener('contextmenu', function (e) {
+    var t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    e.preventDefault();
+  }, true);
+}`;
+}
+
+/**
  * CSS for the custom modal system (alert, confirm, prompt replacements).
  */
 function modalCSS() {
@@ -3095,4 +3121,4 @@ document.querySelectorAll('.clear-cache-btn').forEach(function(btn){
 `;
 }
 
-module.exports = { STRATEGY_MODES, enabledStrategies, buildSidebar, sidebarCSS, themeJS, toastJS, aiExportJS, logViewerHTML, faviconLink, modalCSS, modalJS, expiryHolidayModalCSS, expiryHolidayModalHTML, expiryHolidayModalJS, errorPage, tableEnhancerCSS, tableEnhancerJS, dateRangeOptionsHTML, dateRangeJS, multiSelectCSS, multiSelectHTML, multiSelectJS, clearCacheButtonHTML, clearCacheJS };
+module.exports = { STRATEGY_MODES, noContextMenuJS, enabledStrategies, buildSidebar, sidebarCSS, themeJS, toastJS, aiExportJS, logViewerHTML, faviconLink, modalCSS, modalJS, expiryHolidayModalCSS, expiryHolidayModalHTML, expiryHolidayModalJS, errorPage, tableEnhancerCSS, tableEnhancerJS, dateRangeOptionsHTML, dateRangeJS, multiSelectCSS, multiSelectHTML, multiSelectJS, clearCacheButtonHTML, clearCacheJS };

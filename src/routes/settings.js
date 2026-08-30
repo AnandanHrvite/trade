@@ -893,6 +893,7 @@ const SETTINGS_SCHEMA = [
     group: "System",
     fields: [
       { key: "UI_THEME", label: "Application Theme", type: "select", options: ["dark", "light", "auto"], effect: EFFECT.INSTANT, desc: "Switch between dark and light mode. auto = light during the day (06:00–18:00 IST) and dark at night; each page picks its theme when it loads.", default: "dark" },
+      { key: "UI_DISABLE_RIGHT_CLICK", label: "Disable right-click menu", type: "toggle", effect: EFFECT.INSTANT, desc: "Block the browser right-click menu on every page. Text boxes keep their menu so copy and paste still work.", default: "false" },
     ],
   },
   {
