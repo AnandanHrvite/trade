@@ -115,21 +115,32 @@ router.get("/download-day", (req, res) => {
   });
 });
 
-// Stream every recorded day's tick folder as one zip. The per-row ⬇ grabs a
-// single day; this is the "download all" bulk version for offline analysis.
-// Same streaming approach — never buffers the archive in memory.
+// Stream recorded day folders as one zip. The per-row ⬇ grabs a single day;
+// this is the bulk version for offline analysis. Same streaming approach —
+// never buffers the archive in memory.
+//
+// Honours the table's filters: the page sends ?days=A,B,C — the dates left
+// after the mode/date-range/search filters — so "Download all" downloads what
+// the user is actually looking at. Omitting `days` keeps the old behaviour
+// (every recorded day), which is what an unfiltered table asks for anyway.
 router.get("/download-all", (req, res) => {
   if (!fs.existsSync(TICKS_ROOT)) {
     return res.status(404).json({ ok: false, error: "No recordings on disk yet" });
   }
-  const days = fs.readdirSync(TICKS_ROOT)
+  const onDisk = fs.readdirSync(TICKS_ROOT)
     .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
     .sort();
+  // Intersect with the requested list rather than trusting it: keeps the shell
+  // args to real, existing date dirs (no traversal, no missing-path zip error).
+  const wanted = String(req.query.days || "")
+    .split(",").map((d) => d.trim()).filter(Boolean);
+  const days = wanted.length ? onDisk.filter((d) => wanted.includes(d)) : onDisk;
   if (days.length === 0) {
     return res.status(404).json({ ok: false, error: "No recorded days to download" });
   }
   res.setHeader("Content-Type", "application/zip");
-  res.setHeader("Content-Disposition", `attachment; filename="ticks-all.zip"`);
+  const zipName = wanted.length ? `ticks-filtered-${days.length}days.zip` : "ticks-all.zip";
+  res.setHeader("Content-Disposition", `attachment; filename="${zipName}"`);
   // Pass each date dir explicitly so paths in the archive stay relative
   // (date/spot.jsonl etc.), not absolute. cwd=TICKS_ROOT.
   const zip = spawn("zip", ["-rq", "-", ...days], { cwd: TICKS_ROOT });
@@ -167,8 +178,44 @@ router.post("/delete-all", express.json(), (req, res) => {
     // and delete the wrong slice of the archive.
     const { istDateString, realNow } = tickRecorder._internals;
     const yesterday = istDateString(realNow() - 86400_000);
+
+    // The table's filters decide the scope. Two shapes, because a day FOLDER on
+    // disk is shared by every mode that ran that day:
+    //
+    //  • No mode filter  → whole-folder delete for the listed days (raw ticks,
+    //    markers, market context all go). `sessions` carries the filtered dates.
+    //  • Mode filter set → the user is looking at one strategy's rows, so wiping
+    //    the folder would also destroy other strategies' ticks for that day.
+    //    Delete just those sessions' markers; the raw ticks stay behind.
+    const { sessions, modeFiltered } = req.body || {};
+    const list = Array.isArray(sessions) ? sessions : null;
+
+    if (list && modeFiltered) {
+      let removed = 0, skipped = 0;
+      for (const s of list) {
+        if (!s || !s.date || !s.sessionId) { skipped += 1; continue; }
+        if (s.date > yesterday) { skipped += 1; continue; }  // today is spared
+        const out = tickReplay.deleteSessionMarker({ date: s.date, sessionId: s.sessionId });
+        if (out && out.ok) removed += 1; else skipped += 1;
+      }
+      return res.json({ ok: true, mode: "markers", removed, skipped, keptToday: true });
+    }
+
+    if (list) {
+      // Distinct dates from the filtered rows, capped at yesterday.
+      const dates = [...new Set(list.map((s) => s && s.date).filter(Boolean))]
+        .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d) && d <= yesterday);
+      let deleted = 0;
+      for (const d of dates) {
+        const out = tickRecorder.deleteRecordingsInRange({ from: d, to: d });
+        deleted += out.deleted;
+      }
+      return res.json({ ok: true, mode: "days", deleted, keptToday: true });
+    }
+
+    // No filter payload at all — legacy full wipe up to yesterday.
     const out = tickRecorder.deleteRecordingsInRange({ to: yesterday });
-    res.json({ ok: true, deleted: out.deleted, kept: out.kept, keptToday: true });
+    res.json({ ok: true, mode: "days", deleted: out.deleted, kept: out.kept, keptToday: true });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }
@@ -589,8 +636,8 @@ ${buildSidebar('replay', false)}
           <option value="50">50 / page</option>
           <option value="100">100 / page</option>
         </select>
-        <button class="row-btn" onclick="downloadAll()" title="Download every recorded day's tick folder as one zip">⬇ Download all</button>
-        <button class="row-btn danger" onclick="deleteAllRecordings(this)" title="Permanently delete all recorded days up to yesterday — raw ticks, session markers and market context. Today's in-progress recording is kept. Irreversible.">🗑 Delete all</button>
+        <button class="row-btn" onclick="downloadAll()" title="Download the filtered days' tick folders as one zip (every recorded day when no filter is set)">⬇ Download all</button>
+        <button class="row-btn danger" onclick="deleteAllRecordings(this)" title="Delete what the table is showing, up to yesterday. No mode filter: the whole day folder goes (raw ticks, markers, market context — for every strategy that day). Mode filter set: only those sessions are dropped, raw ticks kept. Today's recording is kept. Irreversible.">🗑 Delete all</button>
       </div>
     </div>
     <div id="sessions-meta" class="muted" style="margin-top:8px;"></div>
@@ -1368,8 +1415,16 @@ async function copySessionId(sid, btn) {
 }
 
 function downloadAll() {
+  // Honour the table's filters: zip only the days the user can currently see.
+  // Days, not sessions — a day folder is the unit on disk (all modes share it).
+  var days = [...new Set(_filteredSessions().map(s => s.date).filter(Boolean))].sort();
+  var all = (_allSessionsCache || []).length;
+  var q = (days.length && days.length !== [...new Set((_allSessionsCache || []).map(s => s.date))].length)
+    ? '?days=' + encodeURIComponent(days.join(','))
+    : '';
+  if (all && !days.length) { alert('No sessions match the current filter — nothing to download.'); return; }
   // Direct nav so the browser handles the streamed zip as a normal download.
-  window.location.href = '/replay/download-all';
+  window.location.href = '/replay/download-all' + q;
 }
 
 function downloadDay(date) {
@@ -1406,15 +1461,48 @@ async function deleteSession(date, sessionId, btn) {
 }
 
 async function deleteAllRecordings(btn) {
-  if (!confirm('⚠️ Delete ALL recorded sessions up to yesterday?\\n\\n' +
-               'This permanently removes every recorded day — raw ticks, session ' +
-               'markers AND market context. These days can NEVER be replayed again.\\n\\n' +
-               "Today's in-progress recording is kept.\\n\\n" +
-               'This cannot be undone. Continue?')) return;
+  // Scope = whatever the table is showing. A mode filter changes the KIND of
+  // delete too: a day folder on disk is shared by every strategy that ran that
+  // day, so deleting the folder would take other strategies' ticks with it.
+  // With a mode filter we drop just those sessions' markers instead.
+  const rows = _filteredSessions();
+  const isFiltered = rows.length !== (_allSessionsCache || []).length;
+  const modeFiltered = !!_sessFilter.mode;
+  if (!rows.length) { alert('No sessions match the current filter — nothing to delete.'); return; }
+
+  const dates = [...new Set(rows.map(s => s.date).filter(Boolean))];
+  let msg;
+  if (modeFiltered) {
+    msg = '⚠️ Remove ' + rows.length + ' "' + _sessFilter.mode + '" session(s) from the list?\\n\\n' +
+          "Only these sessions' markers are dropped, so they stop appearing here " +
+          'and can no longer be replayed.\\n\\n' +
+          'Raw tick files are KEPT — other strategies recorded on the same day ' +
+          'still need them.\\n\\n' +
+          "Today's recording is kept.\\n\\nThis cannot be undone. Continue?";
+  } else {
+    msg = (isFiltered
+            ? '⚠️ Delete the ' + dates.length + ' filtered recorded day(s)?\\n\\n'
+            : '⚠️ Delete ALL recorded sessions up to yesterday?\\n\\n') +
+          'This permanently removes ' + (isFiltered ? 'those days' : 'every recorded day') +
+          ' — raw ticks, session markers AND market context, for EVERY strategy ' +
+          'that recorded on ' + (isFiltered ? 'those days' : 'them') + '. ' +
+          'They can NEVER be replayed again.\\n\\n' +
+          "Today's in-progress recording is kept.\\n\\n" +
+          'This cannot be undone. Continue?';
+  }
+  if (!confirm(msg)) return;
+
   const orig = btn.textContent;
   btn.disabled = true; btn.textContent = '…';
   try {
-    const r = await secretFetch('/replay/delete-all', { method: 'POST' });
+    const r = await secretFetch('/replay/delete-all', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessions: rows.map(s => ({ date: s.date, sessionId: s.sessionId })),
+        modeFiltered,
+      }),
+    });
     if (!r) { btn.disabled = false; btn.textContent = orig; return; }
     const data = await r.json();
     if (!data.ok) {
@@ -1426,7 +1514,9 @@ async function deleteAllRecordings(btn) {
     // by the server, so a local wipe would leave the cache disagreeing with disk.
     await loadSessions();
     btn.disabled = false; btn.textContent = orig;
-    alert('Deleted ' + (data.deleted || 0) + ' recorded day(s).');
+    alert(data.mode === 'markers'
+      ? 'Removed ' + (data.removed || 0) + ' session(s). Raw ticks kept.'
+      : 'Deleted ' + (data.deleted || 0) + ' recorded day(s).');
   } catch (e) {
     btn.disabled = false; btn.textContent = orig;
     alert('Delete all failed: ' + e.message);
