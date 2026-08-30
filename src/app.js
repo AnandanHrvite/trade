@@ -1345,9 +1345,8 @@ app.get("/", (req, res) => {
   // ── Cumulative P&L placement ─────────────────────────────────────────────
   // Always a full-width band below the strategy grid. It used to tuck into the
   // last row's spare columns when the enabled-card count left a clean gap, but
-  // that arithmetic assumed a fixed 3-column grid; the grid is now width-driven
-  // (see .mm-grid) so the number of columns depends on the viewport, not on how
-  // many strategies are on, and no card count can predict where the gap lands.
+  // there is no gap to tuck into any more: .mm-grid balances its rows and grows
+  // the last row's cards to fill it, so the strategy grid never ends short.
   const cumCardInner = `
     <div class="dash-chart-hdr">
       <div class="dash-chart-title">
@@ -1874,24 +1873,28 @@ app.get("/", (req, res) => {
 
     /* ── PER-MODULE START CARDS ── */
     /* ── PER-MODULE P&L CHART CARDS (Paper/Live toggle) ── */
-    /* Columns follow the available WIDTH, not the number of enabled strategies.
-       They used to be pinned to the strategy count (--mm-cols), so every new
-       strategy made every card narrower: at nine of them a card was ~180px on a
-       1920px screen, and just above the old 1100px breakpoint it was ~100px —
-       the stats line and the sparkline both collapsed into noise. The count was
-       also hand-maintained and had already drifted (3M GAP FIX was missing from
-       it, which is why one card sat alone on a second row).
+    /* Rows are balanced over the number of VISIBLE cards and the last row is
+       never short of full width. Two pieces make that work:
+       - --mm-cols is computed in JS (_layoutModuleGrid) as the count spread
+         evenly over ceil(count / 4) rows, so 5 cards go 3+2 rather than 4+1 and
+         7 go 4+3. Cards are hidden per strategy at runtime, so the count cannot
+         be baked in server-side.
+       - flex, not grid: grid keeps a short LAST row at the full column width and
+         leaves a hole on the right. Flex items grow into whatever the row has
+         left, so the trailing 2 or 3 cards widen and the row is flush.
        250px is what a card needs to keep its stats line — "27 trades · 8W/19L ·
-       +₹4,910.40" — on one line, so the row simply fits as many cards of at
-       least that width as it can and wraps the rest. min(100%,250px) keeps the
-       floor itself from overflowing a viewport narrower than 250px.
-       auto-FIT (not auto-fill): empty tracks collapse, so four visible cards
-       share the full row instead of hugging the left with dead space to the
-       right where the disabled strategies' tracks would have been. */
-    .mm-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%,250px), 1fr)); gap:10px; }
-    /* Grid items default to min-width:auto, which can force a track wider than
-       its share and overflow the (clipped) page. Let them shrink so the grids
-       always reflow to the available width. */
+       +₹4,910.40" — on one line, so the basis is a max() against that floor:
+       once a column would be narrower (phones, narrow splits), the floor wins
+       and the cards wrap on their own regardless of --mm-cols. */
+    .mm-grid { display:flex; flex-wrap:wrap; gap:10px; --mm-cols:4; }
+    /* The 0.5px shaved off the basis is anti-wrap slack: an exact fit
+       (cols * basis + gaps == 100%) can round up a fraction of a pixel on a
+       fractional container width and bump the last card to its own row. Flex
+       grow reclaims the slack immediately, so the cards still fill the row. */
+    .mm-grid > .mm-card { flex:1 1 max(250px, calc((100% - (var(--mm-cols) - 1) * 10px) / var(--mm-cols) - 0.5px)); }
+    /* Grid and flex items both default to min-width:auto, which can force an
+       item wider than its share and overflow the (clipped) page. Let them
+       shrink so the grids always reflow to the available width. */
     .mm-grid > *, .da-grid > *, .ts-grid > * { min-width:0; }
     .mm-card { background:#0d1320; border:1px solid #1a2236; border-radius:9px; padding:8px 10px 9px; display:flex; flex-direction:column; }
     .mm-hdr { display:flex; align-items:center; gap:8px; padding-bottom:6px; border-bottom:1px solid #1a2236; margin-bottom:6px; }
@@ -3196,13 +3199,28 @@ var _mmToggle = { EMA_RSI_ST: 'paper', BB_RSI: 'paper', PA: 'paper', ORB: 'paper
 // A strategy with no trades in the selected source+range has nothing to show,
 // so its whole card is hidden rather than kept as a "0 trades" placeholder.
 // When that empties the grid, one note stands in for all of them.
+// Rows are balanced over the VISIBLE cards, never ragged: 4 per row is the
+// widest a row gets, and the count is then spread evenly over the rows that
+// needs — 5 cards go 3+2 (not 4+1), 7 go 4+3, 11 go 4+4+3. The last row's cards
+// stretch to fill whatever width is left (flex-grow, see .mm-grid), so there is
+// no dead space on the right regardless of how many strategies are enabled.
+var MM_MAX_COLS = 4;
+function _layoutModuleGrid(visible){
+  var grid = document.getElementById('mmGrid');
+  if (!grid) return;
+  var rows = Math.max(1, Math.ceil(visible / MM_MAX_COLS));
+  grid.style.setProperty('--mm-cols', String(Math.max(1, Math.ceil(visible / rows))));
+}
+
 function _updateModuleGridEmpty(){
   var note = document.getElementById('mmGridEmpty');
   if (!note) return;
-  var anyVisible = false;
+  var visible = 0;
   document.querySelectorAll('.mm-card[data-mode]').forEach(function(c){
-    if (c.style.display !== 'none') anyVisible = true;
+    if (c.style.display !== 'none') visible++;
   });
+  var anyVisible = visible > 0;
+  _layoutModuleGrid(visible);
   note.style.display = anyVisible ? 'none' : '';
   if (anyVisible) return;
   // Same wording as the per-card and cumulative empty lines, so the note names
