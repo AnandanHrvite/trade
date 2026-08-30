@@ -1619,7 +1619,7 @@ function renderForm(from, to, universeKey) {
 <form method="GET" action="${ENDPOINT}" id="eb-form" class="run-bar">
   <div><label for="eb-from">From</label><input id="eb-from" type="date" name="from" value="${escHtml(from)}" required/></div>
   <div><label for="eb-to">To</label><input id="eb-to" type="date" name="to" value="${escHtml(to)}" required/></div>
-  <div><label for="eb-uni">Universe</label><select id="eb-uni" name="universe">${opts}</select></div>
+  <div${cfg.tradeMode === "option" ? ' style="display:none;"' : ""}><label for="eb-uni">Universe</label><select id="eb-uni" name="universe">${opts}</select></div>
   <div><button type="submit" id="eb-run">Run Backtest</button></div>
   <div><button type="button" id="eb-cancel" class="cancel-btn" style="display:none;">✕ Cancel</button></div>
   <div>${clearCacheButtonHTML()}</div>
@@ -2318,7 +2318,9 @@ ${pnlCell(s.pnl)}<td class="m">${s.triggered}</td><td class="${s.untriggered ? "
   <span class="crumb crumb-strat">${escHtml(cfg.tradeMode.toUpperCase())} MODE</span>
   <span class="crumb-sep">›</span>
   <span class="crumb crumb-range">${escHtml(from)} → ${escHtml(to)}</span>
-  <span class="crumb-meta">${escHtml(universeKey)} · ${f.daysSeen} session(s) · ${cfg.qty} shares/stock · charges ${fmtMoney(stats.totalCharges)}</span>
+  <span class="crumb-meta">${cfg.tradeMode === "option"
+    ? `NIFTY option · ${f.daysSeen} session(s) · ${cfg.optionLots} lot(s)`
+    : `${escHtml(universeKey)} · ${f.daysSeen} session(s) · ${cfg.qty} shares/stock`} · charges ${fmtMoney(stats.totalCharges)}</span>
 </div>
 
 <h2>Headline</h2>
@@ -2379,7 +2381,7 @@ ${result.noTrade.map(d => `<tr><td>${escHtml(d.date)}</td><td class="m" style="w
 <form method="GET" action="${ENDPOINT}" id="eb-rerun" class="run-bar" style="margin-bottom:0;background:transparent;border:0;padding:0;">
   <div><label for="rr-from">From</label><input id="rr-from" type="date" name="from" value="${escHtml(from)}" required/></div>
   <div><label for="rr-to">To</label><input id="rr-to" type="date" name="to" value="${escHtml(to)}" required/></div>
-  <div><label for="rr-uni">Universe</label><select id="rr-uni" name="universe">${rerunUniverseOptions(universeKey)}</select></div>
+  <div${cfg.tradeMode === "option" ? ' style="display:none;"' : ""}><label for="rr-uni">Universe</label><select id="rr-uni" name="universe">${rerunUniverseOptions(universeKey)}</select></div>
   <div><button type="button" id="rr-go" onclick="ebRunAgain()">🔄 Run Again</button></div>
 </form>
 <div class="split-row">

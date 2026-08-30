@@ -480,8 +480,8 @@ const SETTINGS_SCHEMA = [
       // ── The signal candle ──
       // ── What to trade ──
       { key: "EARLYBIRD_TRADE_MODE", label: "What To Trade", type: "select", options: ["stock", "option", "both"], effect: EFFECT.SESSION, desc: "stock = buy/short the CASH EQUITY of the F&O stocks that confirm NIFTY's signal (the original rules). option = buy ONE NIFTY CE/PE off NIFTY's own opening candle and DO NOT check any stock. both = run the two legs at once, independently. Note the stock leg needs stock confirmation; the option leg never does.", default: "stock", subheader: "What to trade" },
-      { key: "EARLYBIRD_OPTION_LOTS", label: "NIFTY Option Lots (option mode)", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Lots per NIFTY option trade. Only used when the mode trades options; the stock leg uses EARLYBIRD_QTY shares instead.", default: "1" },
-      { key: "EARLYBIRD_ITM_STEPS", label: "Option ITM Steps (0 = ATM)", type: "number", min: 0, max: 3, step: 1, effect: EFFECT.SESSION, desc: "Strikes in-the-money to buy (0 = ATM). 1 step ≈ delta 0.6 — a higher delta tracks the spot move better and decays slower in percentage terms.", default: "1" },
+      { leg: "option", key: "EARLYBIRD_OPTION_LOTS", label: "NIFTY Option Lots (option mode)", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Lots per NIFTY option trade. Only used when the mode trades options; the stock leg uses EARLYBIRD_QTY shares instead.", default: "1" },
+      { leg: "option", key: "EARLYBIRD_ITM_STEPS", label: "Option ITM Steps (0 = ATM)", type: "number", min: 0, max: 3, step: 1, effect: EFFECT.SESSION, desc: "Strikes in-the-money to buy (0 = ATM). 1 step ≈ delta 0.6 — a higher delta tracks the spot move better and decays slower in percentage terms.", default: "1" },
 
       { key: "EARLYBIRD_RESOLUTION", label: "Candle Timeframe (min)", type: "select", options: ["5", "15", "30"], effect: EFFECT.SESSION, desc: "The chart the rules were read off. 15 minutes is the strategy as specified — the day's FIRST candle is the signal candle.", default: "15", subheader: "The signal candle (the day's first bar)" },
       { key: "EARLYBIRD_MAX_OPPOSING_WICK_PCT", label: "Max Opposing Wick (% of candle range)", type: "number", min: 0, max: 100, step: 5, effect: EFFECT.SESSION, desc: "The wick that argues AGAINST the move — the upper wick on a green candle, the lower wick on a red one. This one number covers all three drawings: a full-body candle, a long favourable wick, and a small opposing wick. Lower = stricter.", default: "30" },
@@ -489,9 +489,9 @@ const SETTINGS_SCHEMA = [
       { key: "EARLYBIRD_MIN_RANGE_PTS", label: "Minimum Candle Range (0 = off)", type: "number", min: 0, max: 500, step: 1, effect: EFFECT.SESSION, desc: "Ignore an opening candle whose whole range is smaller than this. OFF by default — the rules do not ask for it.", default: "0" },
 
       // ── Confirmation ──
-      { key: "EARLYBIRD_UNIVERSE", label: "Stock Universe", type: "select", options: ["FNO", "NIFTY50", "NIFTY100"], effect: EFFECT.SESSION, desc: "Which list of stocks is scanned at 09:30. FNO (~220 names) is the list from the strategy's own stock-selection slides.", default: "FNO", subheader: "Confirmation (NIFTY must agree with the stock)" },
-      { key: "EARLYBIRD_MIN_CONFIRMING_STOCKS", label: "Stocks That Must Confirm", type: "number", min: 1, max: 500, step: 1, effect: EFFECT.SESSION, desc: "How many stocks must print the same-direction opening candle as NIFTY before the day is tradeable. 1 = the rule as specified. Raising it turns this into a market-breadth gate.", default: "1" },
-      { key: "EARLYBIRD_MAX_GAP_PCT", label: "Max Opening Gap (%)", type: "number", min: 0, max: 100, step: 0.5, effect: EFFECT.SESSION, desc: "Skip a stock that opened more than this far from the previous day's close, in either direction. This is the \"don't trade a stock which opened about 2% than the previous day\" rule.", default: "2" },
+      { leg: "stock", key: "EARLYBIRD_UNIVERSE", label: "Stock Universe", type: "select", options: ["FNO", "NIFTY50", "NIFTY100"], effect: EFFECT.SESSION, desc: "Which list of stocks is scanned at 09:30. FNO (~220 names) is the list from the strategy's own stock-selection slides.", default: "FNO", subheader: "Confirmation (NIFTY must agree with the stock)" },
+      { leg: "stock", key: "EARLYBIRD_MIN_CONFIRMING_STOCKS", label: "Stocks That Must Confirm", type: "number", min: 1, max: 500, step: 1, effect: EFFECT.SESSION, desc: "How many stocks must print the same-direction opening candle as NIFTY before the day is tradeable. 1 = the rule as specified. Raising it turns this into a market-breadth gate.", default: "1" },
+      { leg: "stock", key: "EARLYBIRD_MAX_GAP_PCT", label: "Max Opening Gap (%)", type: "number", min: 0, max: 100, step: 0.5, effect: EFFECT.SESSION, desc: "Skip a stock that opened more than this far from the previous day's close, in either direction. This is the \"don't trade a stock which opened about 2% than the previous day\" rule.", default: "2" },
 
       // ── Entry / stop / target ──
       { key: "EARLYBIRD_ENTRY_BUFFER_PTS", label: "Entry / Stop Buffer (₹)", type: "number", min: 0, max: 100, step: 0.5, effect: EFFECT.SESSION, desc: "How far past the signal candle the pending order and the stop sit — \"a little above the breakout candle\". Applied to BOTH ends: entry beyond the extreme, stop beyond the other extreme.", default: "5", subheader: "Entry, stop and target" },
@@ -505,8 +505,8 @@ const SETTINGS_SCHEMA = [
       { key: "EARLYBIRD_FORCED_EXIT", label: "Forced Exit (square-off)", type: "time", effect: EFFECT.SESSION, desc: "Hard square-off (IST). The rule is \"exit at 1 pm\" — anything still open closes at market here.", default: "13:00" },
 
       // ── Sizing & day breakers ──
-      { key: "EARLYBIRD_QTY", label: "Quantity per Stock (shares)", type: "number", min: 1, max: 100000, step: 1, effect: EFFECT.INSTANT, desc: "Shares per position. This is CASH EQUITY, not options — there are no lots.", default: "100", subheader: "Sizing & Day Breakers" },
-      { key: "EARLYBIRD_MAX_CONCURRENT", label: "Max Positions At Once", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "How many stocks may be held simultaneously. When more confirm than this, the tightest-stop names are taken first.", default: "5" },
+      { leg: "stock", key: "EARLYBIRD_QTY", label: "Quantity per Stock (shares)", type: "number", min: 1, max: 100000, step: 1, effect: EFFECT.INSTANT, desc: "Shares per position. This is CASH EQUITY, not options — there are no lots.", default: "100", subheader: "Sizing & Day Breakers" },
+      { leg: "stock", key: "EARLYBIRD_MAX_CONCURRENT", label: "Max Positions At Once", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "How many stocks may be held simultaneously. When more confirm than this, the tightest-stop names are taken first.", default: "5" },
       { key: "EARLYBIRD_MAX_DAILY_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 100, step: 1, effect: EFFECT.SESSION, desc: "Max entries per day across all stocks.", default: "5" },
       { key: "EARLYBIRD_MAX_DAILY_LOSSES", label: "Stop-outs That End the Day", type: "number", min: 0, max: 20, step: 1, effect: EFFECT.SESSION, desc: "Day ends after this many stop-outs (0 = off).", default: "3" },
       { key: "EARLYBIRD_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 0, max: 200000, step: 500, effect: EFFECT.SESSION, desc: "Stop trading after this much loss (0 = off). Note 100 shares of a ₹3,000 stock is a ₹300,000 position — size this deliberately.", default: "5000" },
@@ -517,19 +517,19 @@ const SETTINGS_SCHEMA = [
       { key: "EARLYBIRD_POLL_MS", label: "Stock Quote Poll (ms)", type: "number", min: 500, max: 30000, step: 500, effect: EFFECT.SESSION, desc: "How often the shortlisted stocks' prices are refreshed while setups are pending or positions are open.", default: "2000", subheader: "Data plumbing" },
       { key: "EARLYBIRD_HISTORY_LAG_MS", label: "Bar-Close History Lag (ms)", type: "number", min: 0, max: 60000, step: 500, effect: EFFECT.SESSION, desc: "How long after 09:30 before the history endpoint is asked for the opening candle. Too short and the bar is not published yet, which would lose the whole day.", default: "5000" },
       { key: "EARLYBIRD_WARMUP_DAYS", label: "History Preload (calendar days)", type: "number", min: 2, max: 120, step: 1, effect: EFFECT.SESSION, desc: "How far back to fetch. Only the previous daily close is strictly needed (for the gap rule), so this is small by design.", default: "7" },
-      { key: "EARLYBIRD_SCAN_CONCURRENCY", label: "Scan Concurrency (symbols at once)", type: "number", min: 1, max: 12, step: 1, effect: EFFECT.SESSION, desc: "How many symbols are fetched in parallel during the 09:30 scan. Each one issues two calls (intraday + daily), so the real number in flight is double this.", default: "4" },
-      { key: "EARLYBIRD_SCAN_RPS", label: "Scan Rate Limit (per second)", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Fyers meters history calls per second. Exceeding it makes Fyers answer 'no data' — indistinguishable from a delisted stock — so an over-fast scan silently reports most of the universe as having no candle. A full ~220-name scan takes about 2 minutes at this rate, well inside the entry window.", default: "8" },
-      { key: "EARLYBIRD_SCAN_RPM", label: "Scan Rate Limit (per minute)", type: "number", min: 1, max: 2000, step: 10, effect: EFFECT.SESSION, desc: "The second Fyers history window. Both this and the per-second cap are honoured.", default: "180" },
-      { key: "EARLYBIRD_QUOTE_CHUNK", label: "Quote Poll Batch Size (symbols)", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "How many shortlisted symbols are requested per quote call. EarlyBird polls REST quotes for its shortlist rather than pushing equity symbols through the shared NIFTY socket.", default: "20" },
-      { key: "EARLYBIRD_OPTION_LTP_RETRY_MS", label: "Option Premium Retry (ms)", type: "number", min: 1000, max: 60000, step: 500, effect: EFFECT.SESSION, desc: "After a failed option-premium fetch, how long before the entry is retried. Stops a dead or unquoted contract from hammering the quote API on every tick while the entry window is open.", default: "5000" },
+      { leg: "stock", key: "EARLYBIRD_SCAN_CONCURRENCY", label: "Scan Concurrency (symbols at once)", type: "number", min: 1, max: 12, step: 1, effect: EFFECT.SESSION, desc: "How many symbols are fetched in parallel during the 09:30 scan. Each one issues two calls (intraday + daily), so the real number in flight is double this.", default: "4" },
+      { leg: "stock", key: "EARLYBIRD_SCAN_RPS", label: "Scan Rate Limit (per second)", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Fyers meters history calls per second. Exceeding it makes Fyers answer 'no data' — indistinguishable from a delisted stock — so an over-fast scan silently reports most of the universe as having no candle. A full ~220-name scan takes about 2 minutes at this rate, well inside the entry window.", default: "8" },
+      { leg: "stock", key: "EARLYBIRD_SCAN_RPM", label: "Scan Rate Limit (per minute)", type: "number", min: 1, max: 2000, step: 10, effect: EFFECT.SESSION, desc: "The second Fyers history window. Both this and the per-second cap are honoured.", default: "180" },
+      { leg: "stock", key: "EARLYBIRD_QUOTE_CHUNK", label: "Quote Poll Batch Size (symbols)", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "How many shortlisted symbols are requested per quote call. EarlyBird polls REST quotes for its shortlist rather than pushing equity symbols through the shared NIFTY socket.", default: "20" },
+      { leg: "option", key: "EARLYBIRD_OPTION_LTP_RETRY_MS", label: "Option Premium Retry (ms)", type: "number", min: 1000, max: 60000, step: 500, effect: EFFECT.SESSION, desc: "After a failed option-premium fetch, how long before the entry is retried. Stops a dead or unquoted contract from hammering the quote API on every tick while the entry window is open.", default: "5000" },
       { key: "EARLYBIRD_QUOTE_STALE_SEC", label: "Quote Staleness Limit (sec)", type: "number", min: 5, max: 600, step: 5, effect: EFFECT.SESSION, desc: "A price older than this stops being used for exit decisions, and the failure is surfaced on the status page. Stops a position being managed off a frozen quote.", default: "30" },
 
       // ── Paper P&L cost model (equity intraday) ──
-      { key: "EARLYBIRD_BROKERAGE_PER_ORDER", label: "Brokerage Cap (₹ per order)", type: "number", min: 0, max: 500, step: 1, effect: EFFECT.SESSION, desc: "Per-leg brokerage cap used when costing a paper trade. The discount-broker standard is ₹20 or 0.03%, whichever is lower.", default: "20", subheader: "Paper cost model (equity intraday)" },
-      { key: "EARLYBIRD_STT_PCT", label: "STT — Sell Side (%)", type: "number", min: 0, max: 1, step: 0.001, effect: EFFECT.SESSION, desc: "Securities Transaction Tax on the SELL leg. Equity intraday is 0.025%, far below the options rate.", default: "0.025" },
-      { key: "EARLYBIRD_TXN_PCT", label: "Exchange Txn Charge (%)", type: "number", min: 0, max: 1, step: 0.00001, effect: EFFECT.SESSION, desc: "NSE equity transaction charge on total turnover.", default: "0.00297" },
-      { key: "EARLYBIRD_SEBI_PCT", label: "SEBI Turnover Fee (%)", type: "number", min: 0, max: 1, step: 0.0001, effect: EFFECT.SESSION, desc: "SEBI fee as a percentage of turnover (₹10 per crore).", default: "0.0001" },
-      { key: "EARLYBIRD_STAMP_PCT", label: "Stamp Duty — Buy Side (%)", type: "number", min: 0, max: 1, step: 0.001, effect: EFFECT.SESSION, desc: "Stamp duty on the BUY leg only.", default: "0.003" },
+      { leg: "stock", key: "EARLYBIRD_BROKERAGE_PER_ORDER", label: "Brokerage Cap (₹ per order)", type: "number", min: 0, max: 500, step: 1, effect: EFFECT.SESSION, desc: "Per-leg brokerage cap used when costing a paper trade. The discount-broker standard is ₹20 or 0.03%, whichever is lower.", default: "20", subheader: "Paper cost model (equity intraday)" },
+      { leg: "stock", key: "EARLYBIRD_STT_PCT", label: "STT — Sell Side (%)", type: "number", min: 0, max: 1, step: 0.001, effect: EFFECT.SESSION, desc: "Securities Transaction Tax on the SELL leg. Equity intraday is 0.025%, far below the options rate.", default: "0.025" },
+      { leg: "stock", key: "EARLYBIRD_TXN_PCT", label: "Exchange Txn Charge (%)", type: "number", min: 0, max: 1, step: 0.00001, effect: EFFECT.SESSION, desc: "NSE equity transaction charge on total turnover.", default: "0.00297" },
+      { leg: "stock", key: "EARLYBIRD_SEBI_PCT", label: "SEBI Turnover Fee (%)", type: "number", min: 0, max: 1, step: 0.0001, effect: EFFECT.SESSION, desc: "SEBI fee as a percentage of turnover (₹10 per crore).", default: "0.0001" },
+      { leg: "stock", key: "EARLYBIRD_STAMP_PCT", label: "Stamp Duty — Buy Side (%)", type: "number", min: 0, max: 1, step: 0.001, effect: EFFECT.SESSION, desc: "Stamp duty on the BUY leg only.", default: "0.003" },
 
       // ── Backtest ──
       { key: "EARLYBIRD_BT_SLIPPAGE_PTS", label: "Backtest Slippage Haircut (₹ each way)", type: "number", min: 0, max: 20, step: 0.05, effect: EFFECT.BACKTEST, desc: "Backtest cost per side, in rupees of stock price. Applied to both entry and exit. Without it a breakout backtest always flatters.", default: "0.05", subheader: "Backtest" },
@@ -543,13 +543,13 @@ const SETTINGS_SCHEMA = [
       // ── Equity-intraday cost model ──
       // charges.js has only an options and a futures path, so these rates are
       // applied locally by the backtest. See that file's header for why.
-      { key: "EARLYBIRD_CHG_STT_PCT", label: "STT — Sell Side (% of turnover)", type: "number", min: 0, max: 1, step: 0.001, effect: EFFECT.BACKTEST, desc: "Securities Transaction Tax on the SELL leg of an equity-intraday trade. NSE rate is 0.025%.", default: "0.025", subheader: "Backtest cost model (equity intraday)" },
-      { key: "EARLYBIRD_CHG_EXCHANGE_PCT", label: "Exchange Txn Charge (% of turnover)", type: "number", min: 0, max: 1, step: 0.00001, effect: EFFECT.BACKTEST, desc: "NSE equity transaction charge on total turnover. Much smaller than the options rate — this is why option charges cannot be reused here.", default: "0.00297" },
-      { key: "EARLYBIRD_CHG_BROKERAGE_PCT", label: "Brokerage (% per leg)", type: "number", min: 0, max: 5, step: 0.01, effect: EFFECT.BACKTEST, desc: "Percentage brokerage per leg, before the cap below.", default: "0.03" },
-      { key: "EARLYBIRD_CHG_BROKERAGE_CAP", label: "Brokerage Cap (₹ per leg)", type: "number", min: 0, max: 500, step: 1, effect: EFFECT.BACKTEST, desc: "Maximum brokerage per leg. The discount-broker standard is ₹20.", default: "20" },
-      { key: "EARLYBIRD_CHG_GST_PCT", label: "GST (%)", type: "number", min: 0, max: 50, step: 1, effect: EFFECT.BACKTEST, desc: "GST charged on brokerage + exchange + SEBI fees.", default: "18" },
-      { key: "EARLYBIRD_CHG_STAMP_PCT", label: "Stamp Duty — Buy Side (%)", type: "number", min: 0, max: 1, step: 0.001, effect: EFFECT.BACKTEST, desc: "Stamp duty on the BUY leg of an equity-intraday trade.", default: "0.003" },
-      { key: "EARLYBIRD_CHG_SEBI_PER_CRORE", label: "SEBI Fee (₹ per crore)", type: "number", min: 0, max: 1000, step: 1, effect: EFFECT.BACKTEST, desc: "SEBI turnover fee, in rupees per crore of turnover.", default: "10" },
+      { leg: "stock", key: "EARLYBIRD_CHG_STT_PCT", label: "STT — Sell Side (% of turnover)", type: "number", min: 0, max: 1, step: 0.001, effect: EFFECT.BACKTEST, desc: "Securities Transaction Tax on the SELL leg of an equity-intraday trade. NSE rate is 0.025%.", default: "0.025", subheader: "Backtest cost model (equity intraday)" },
+      { leg: "stock", key: "EARLYBIRD_CHG_EXCHANGE_PCT", label: "Exchange Txn Charge (% of turnover)", type: "number", min: 0, max: 1, step: 0.00001, effect: EFFECT.BACKTEST, desc: "NSE equity transaction charge on total turnover. Much smaller than the options rate — this is why option charges cannot be reused here.", default: "0.00297" },
+      { leg: "stock", key: "EARLYBIRD_CHG_BROKERAGE_PCT", label: "Brokerage (% per leg)", type: "number", min: 0, max: 5, step: 0.01, effect: EFFECT.BACKTEST, desc: "Percentage brokerage per leg, before the cap below.", default: "0.03" },
+      { leg: "stock", key: "EARLYBIRD_CHG_BROKERAGE_CAP", label: "Brokerage Cap (₹ per leg)", type: "number", min: 0, max: 500, step: 1, effect: EFFECT.BACKTEST, desc: "Maximum brokerage per leg. The discount-broker standard is ₹20.", default: "20" },
+      { leg: "stock", key: "EARLYBIRD_CHG_GST_PCT", label: "GST (%)", type: "number", min: 0, max: 50, step: 1, effect: EFFECT.BACKTEST, desc: "GST charged on brokerage + exchange + SEBI fees.", default: "18" },
+      { leg: "stock", key: "EARLYBIRD_CHG_STAMP_PCT", label: "Stamp Duty — Buy Side (%)", type: "number", min: 0, max: 1, step: 0.001, effect: EFFECT.BACKTEST, desc: "Stamp duty on the BUY leg of an equity-intraday trade.", default: "0.003" },
+      { leg: "stock", key: "EARLYBIRD_CHG_SEBI_PER_CRORE", label: "SEBI Fee (₹ per crore)", type: "number", min: 0, max: 1000, step: 1, effect: EFFECT.BACKTEST, desc: "SEBI turnover fee, in rupees per crore of turnover.", default: "10" },
     ],
   },
   {
@@ -1651,12 +1651,18 @@ router.get("/", (req, res) => {
     else if (f.key.startsWith("BB_RSI_"))   frozenGroup = "bb_rsi";
     else if (f.key.startsWith("VIX_"))     frozenGroup = "vix";
     const frozenAttr = frozenGroup ? `data-freeze-group="${frozenGroup}"` : "";
+    // A field marked `leg` only applies to one EarlyBird trade mode. The row is
+    // hidden client-side when EARLYBIRD_TRADE_MODE does not include that leg —
+    // e.g. the stock universe is meaningless in "option" mode, where no stock is
+    // scanned at all. Hidden, not disabled: a disabled row still reads as "a
+    // setting I must think about", which is the confusion being removed.
+    const legAttr = f.leg ? `data-eb-leg="${f.leg}"` : "";
     const rowClass = frozen ? "setting-row frozen" : "setting-row";
 
     if (f.type === "toggle") {
       const checked = val === "true" || val === "1" ? "checked" : "";
       return `
-        <div class="${rowClass}" ${frozenAttr}>
+        <div class="${rowClass}" ${frozenAttr} ${legAttr}>
           <div class="setting-info">
             <div class="setting-label">${f.label}${effBadge}</div>
             ${descHtml}
@@ -1675,7 +1681,7 @@ router.get("/", (req, res) => {
         return `<option value="${ov}" ${ov === val ? "selected" : ""}>${ol}</option>`;
       }).join("");
       return `
-        <div class="${rowClass}" ${frozenAttr}>
+        <div class="${rowClass}" ${frozenAttr} ${legAttr}>
           <div class="setting-info">
             <div class="setting-label">${f.label}${effBadge}</div>
             ${descHtml}
@@ -1686,7 +1692,7 @@ router.get("/", (req, res) => {
 
     if (f.type === "number") {
       return `
-        <div class="${rowClass}" ${frozenAttr}>
+        <div class="${rowClass}" ${frozenAttr} ${legAttr}>
           <div class="setting-info">
             <div class="setting-label">${f.label}${effBadge}</div>
             ${descHtml}
@@ -1700,7 +1706,7 @@ router.get("/", (req, res) => {
 
     if (f.type === "date") {
       return `
-        <div class="${rowClass}" ${frozenAttr}>
+        <div class="${rowClass}" ${frozenAttr} ${legAttr}>
           <div class="setting-info">
             <div class="setting-label">${f.label}${effBadge}</div>
             ${descHtml}
@@ -1711,7 +1717,7 @@ router.get("/", (req, res) => {
 
     if (f.type === "time") {
       return `
-        <div class="${rowClass}" ${frozenAttr}>
+        <div class="${rowClass}" ${frozenAttr} ${legAttr}>
           <div class="setting-info">
             <div class="setting-label">${f.label}${effBadge}</div>
             ${descHtml}
@@ -1722,7 +1728,7 @@ router.get("/", (req, res) => {
 
     if (f.type === "password") {
       return `
-        <div class="${rowClass}" ${frozenAttr}>
+        <div class="${rowClass}" ${frozenAttr} ${legAttr}>
           <div class="setting-info">
             <div class="setting-label">${f.label}${effBadge}</div>
             ${descHtml}
@@ -1736,7 +1742,7 @@ router.get("/", (req, res) => {
 
     // text
     return `
-      <div class="${rowClass}" ${frozenAttr}>
+      <div class="${rowClass}" ${frozenAttr} ${legAttr}>
         <div class="setting-info">
           <div class="setting-label">${f.label}</div>
           ${descHtml}
@@ -2772,6 +2778,29 @@ document.addEventListener('keydown', function(e){
     vixToggleEl.addEventListener('change', updateVixSectionVisibility);
   }
   updateVixSectionVisibility();
+
+  // ── EarlyBird: hide the settings the chosen trade mode does not use ────────
+  // "option" mode scans no stock at all, so the universe, the confirmation
+  // count, the gap rule, share sizing and the equity cost model are dead
+  // controls there; "stock" mode never touches an option, so lots and ITM
+  // steps are dead. Showing them is what made this page confusing. The values
+  // are left untouched in the env — only the ROW is hidden, so switching the
+  // mode back restores exactly what was configured before.
+  function updateEarlyBirdLegVisibility() {
+    var sel = document.querySelector('[data-key="EARLYBIRD_TRADE_MODE"]');
+    if (!sel) return;
+    var mode = sel.value || 'stock';
+    document.querySelectorAll('[data-eb-leg]').forEach(function(row) {
+      var leg = row.getAttribute('data-eb-leg');
+      var used = (mode === 'both') || (mode === leg);
+      row.style.display = used ? '' : 'none';
+    });
+  }
+  var ebModeEl = document.querySelector('[data-key="EARLYBIRD_TRADE_MODE"]');
+  if (ebModeEl) {
+    ebModeEl.addEventListener('change', updateEarlyBirdLegVisibility);
+  }
+  updateEarlyBirdLegVisibility();
 
 })();
 

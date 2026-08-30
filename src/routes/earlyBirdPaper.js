@@ -785,6 +785,19 @@ function _fmtMins(mins) {
   return earlyBird._fmtMins(mins);
 }
 
+/**
+ * How the option leg's strike is described on the page. EARLYBIRD_ITM_STEPS is
+ * consumed inside config/instrument.js through a computed `${MODE}_ITM_STEPS`
+ * lookup, so it is deliberately NOT on the engine's cfg — read it here the same
+ * way instrument.js does, including its "missing = 1 step" default, so the page
+ * never claims ATM while the broker leg is actually buying 1-step ITM.
+ */
+function _itmStepsLabel() {
+  const n = parseInt(process.env.EARLYBIRD_ITM_STEPS || "1", 10);
+  if (!Number.isFinite(n) || n <= 0) return "ATM";
+  return `${n}-step ITM`;
+}
+
 // ═════════════════════════════════════════════════════════════════════════════
 // OPTION LEG — EARLYBIRD_TRADE_MODE = "option" | "both"
 //
@@ -2471,7 +2484,9 @@ ${buildSidebar('earlyBirdPaper', liveActive)}
 <div class="main-content">
 ${bbRsiTopBar({
   title: "🐦 EarlyBird — Paper",
-  metaLine: `NSE CASH EQUITY of F&O stocks · the ${_fmtMins(cfg.sessionStartMin)} ${cfg.resolutionMins}-min candle decides the whole day · NIFTY is the filter, never traded · ${cfg.qty} shares × up to ${cfg.maxConcurrent} stocks · target 1:${cfg.targetRR} · square-off ${_fmtMins(cfg.forcedExitMin)}`,
+  metaLine: `${earlyBird.tradesStock(cfg)
+      ? `NSE CASH EQUITY of F&O stocks · NIFTY is the filter, never traded · ${cfg.qty} shares × up to ${cfg.maxConcurrent} stocks`
+      : `NIFTY ${_itmStepsLabel()} CE/PE · ${cfg.optionLots} lot(s) · no stock is scanned`} · the ${_fmtMins(cfg.sessionStartMin)} ${cfg.resolutionMins}-min candle decides the whole day · target 1:${cfg.targetRR} · square-off ${_fmtMins(cfg.forcedExitMin)}`,
   running: state.running,
   primaryAction: { href: "/early-bird-paper/start", label: "▶ Start", color: "#0369a1" },
   stopAction:    { href: "/early-bird-paper/stop",  label: "■ Stop" },
@@ -2490,8 +2505,8 @@ ${bbRsiCapitalStrip({ starting: startCap, current: startCap + (data.totalPnl || 
   <div id="eb-quotewarn" class="eb-warn"></div>
   ${state.dayClosed ? `<div class="eb-warn">⏸️ ${state.dayClosedReason}</div>` : ""}
   <ul class="rule-list">
-    <li><b>NIFTY's first ${cfg.resolutionMins}-min candle picks the side.</b> Body ≥ ${cfg.minBodyPct}% of range with an opposing wick ≤ ${cfg.maxOpposingWickPct}% → green means BUY stocks, red means SHORT stocks. Anything else and the day is skipped.</li>
-    <li><b>A stock qualifies</b> when its OWN first candle has the same shape in the same direction, and it opened within ${cfg.maxGapPct}% of its previous daily close. At least ${cfg.minConfirmingStocks} must qualify.</li>
+    <li><b>NIFTY's first ${cfg.resolutionMins}-min candle picks the side.</b> Body ≥ ${cfg.minBodyPct}% of range with an opposing wick ≤ ${cfg.maxOpposingWickPct}% → ${earlyBird.tradesStock(cfg) ? "green means BUY stocks, red means SHORT stocks" : "green buys a CE, red buys a PE"}. Anything else and the day is skipped.</li>
+    ${earlyBird.tradesStock(cfg) ? `<li><b>A stock qualifies</b> when its OWN first candle has the same shape in the same direction, and it opened within ${cfg.maxGapPct}% of its previous daily close. At least ${cfg.minConfirmingStocks} must qualify.</li>` : `<li><b>No stock is scanned.</b> The option leg trades NIFTY's own candle, so it needs no confirming stock — the universe, the gap rule and the confirmation count do not apply.</li>`}
     <li><b>Entry</b> = the signal candle's high (LONG) or low (SHORT) ± ₹${cfg.entryBufferPts}, filled at that LEVEL the first time price trades through it. <b>Stop</b> = the other end ± ₹${cfg.entryBufferPts}, moved onto the candle BODY if the wick risk exceeds ₹${cfg.maxSlPts}. <b>Target</b> = 1:${cfg.targetRR} of the real risk.</li>
     <li><b>No new entries after ${_fmtMins(cfg.entryEndMin)}</b>; everything still open is squared off at ${_fmtMins(cfg.forcedExitMin)}. The stop never moves — no trail, no breakeven, no partials, no re-entry.</li>
   </ul>
@@ -2502,8 +2517,11 @@ ${bbRsiStatGrid([
   { label: "Open / Cap", value: `${state.positions.size}/${cfg.maxConcurrent}` },
   { label: "Trades", value: `${state.tradesTaken}/${_maxDailyTrades()}` },
   { label: "W / L", value: `${wins} / ${losses}` },
-  { label: "Universe", value: `${cfg.universe} (${universeSize})` },
-  { label: "Qty / stock", value: String(cfg.qty) },
+  ...(earlyBird.tradesStock(cfg)
+    ? [{ label: "Universe", value: `${cfg.universe} (${universeSize})` },
+       { label: "Qty / stock", value: String(cfg.qty) }]
+    : [{ label: "Instrument", value: "NIFTY option" },
+       { label: "Lots", value: String(cfg.optionLots) }]),
 ])}
 
 ${earlyBird.tradesOption(cfg) ? `
