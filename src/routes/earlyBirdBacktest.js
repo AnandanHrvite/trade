@@ -1283,6 +1283,10 @@ h2{color:var(--head);font-size:0.82rem;margin:22px 0 8px;letter-spacing:0.04em;t
 .crumb-range{background:rgba(245,158,11,0.1);color:#fbbf24;border:0.5px solid rgba(245,158,11,0.2);text-transform:none;}
 .crumb-sep{color:var(--muted);font-size:10px;}
 .crumb-meta{margin-left:auto;font-size:0.62rem;color:var(--muted);white-space:nowrap;}
+.eb-what{background:rgba(34,211,238,0.06);border:1px solid rgba(34,211,238,0.22);border-radius:8px;
+  padding:10px 14px;margin-bottom:14px;font-size:0.74rem;line-height:1.6;color:var(--text);}
+.eb-what b{color:var(--head);}
+.eb-what .eb-what-t{font-weight:700;color:var(--accent);display:block;margin-bottom:3px;font-size:0.72rem;}
 .run-bar-note{font-size:0.66rem;color:var(--muted);margin-left:auto;align-self:center;}
 .run-bar-note b{color:var(--head);}
 .panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:14px;}
@@ -1598,6 +1602,39 @@ const FORM_JS = `
 })();`;
 
 // ── The form ────────────────────────────────────────────────────────────────
+/**
+ * One plain-English sentence saying what THIS run actually does, so the page
+ * does not rely on the reader knowing what "OPTION MODE" means. Shown on both
+ * the empty form and the results page.
+ */
+function modeExplainerHTML(cfg, universeKey) {
+  const c = cfg || earlyBird.getConfig();
+  const tf = `${c.resolutionMins}-min`;
+  const stock = earlyBird.tradesStock(c);
+  const option = earlyBird.tradesOption(c);
+
+  let what;
+  if (stock && option) {
+    what = `Trades <b>both</b>: the F&amp;O stocks that match NIFTY (${c.qty} shares each, up to ${c.maxConcurrent} at a time) ` +
+           `<b>and</b> one NIFTY option (${c.optionLots} lot). The two run separately — the option is taken even if no stock matches.`;
+  } else if (option) {
+    what = `Buys <b>one NIFTY option</b> (${c.optionLots} lot) — a CE if the candle is green, a PE if it is red. ` +
+           `<b>No stocks are looked at</b>, so the stock list makes no difference here.`;
+  } else {
+    what = `Buys or shorts the <b>F&amp;O stocks</b> that match NIFTY's direction — ${c.qty} shares each, up to ${c.maxConcurrent} at a time` +
+           `${universeKey ? `, picked from the <b>${escHtml(universeKey)}</b> list` : ""}. NIFTY itself is only the filter, never traded.`;
+  }
+
+  return `<div class="eb-what">
+  <span class="eb-what-t">What this run does</span>
+  The day's <b>first ${tf} candle</b> (${escHtml(earlyBird._fmtMins(c.sessionStartMin))}–${escHtml(earlyBird._fmtMins(c.sessionStartMin + c.resolutionMins))}) decides everything.
+  NIFTY must close with a strong body (at least ${c.minBodyPct}% of the candle) and only a small wick against the move (under ${c.maxOpposingWickPct}%) — green means it goes long, red means it goes short. If it does not, the day is skipped.
+  ${what}
+  <br/><b>Entry</b> is ₹${c.entryBufferPts} beyond that candle, <b>stop</b> is ₹${c.entryBufferPts} beyond the other end, and the <b>target</b> is ${c.targetRR}× whatever the stop risks.
+  Nothing new is entered after ${escHtml(earlyBird._fmtMins(c.entryEndMin))}, and anything still open is closed at ${escHtml(earlyBird._fmtMins(c.forcedExitMin))}.
+</div>`;
+}
+
 function renderForm(from, to, universeKey) {
   const cfg = earlyBird.getConfig();
   let unis = [];
@@ -1616,6 +1653,7 @@ function renderForm(from, to, universeKey) {
   <span class="crumb-sep">›</span>
   <span class="crumb crumb-range">${escHtml(from)} → ${escHtml(to)}</span>
 </div>
+${modeExplainerHTML(cfg, cfg.tradeMode === "option" ? null : universeKey)}
 <form method="GET" action="${ENDPOINT}" id="eb-form" class="run-bar">
   <div><label for="eb-from">From</label><input id="eb-from" type="date" name="from" value="${escHtml(from)}" required/></div>
   <div><label for="eb-to">To</label><input id="eb-to" type="date" name="to" value="${escHtml(to)}" required/></div>
@@ -1712,7 +1750,7 @@ ${pnlCell(t.pnl)}
 <thead><tr>
 <th>Symbol</th><th>Side</th><th>Entry time</th><th>Exit time</th>
 <th>Level</th><th>Fill</th><th>SL</th><th>Target</th><th>Exit</th><th>Type</th>
-<th>Risk</th><th>SL basis</th><th>Gap</th><th>Qty</th>
+<th>Risk</th><th title="Where the stop came from: the candle's wick, or its body when the candle was too big.">SL basis</th><th>Gap</th><th>Qty</th>
 <th>Spot pts</th><th>Gross</th><th>Charges</th><th>Net</th><th>Bars</th><th>Exit reason</th>
 </tr></thead><tbody>${rows}</tbody></table></div>`;
 }
@@ -1804,21 +1842,21 @@ function tradeToolbarHTML(trades) {
 <th class="sortable" onclick="ebSort('side')"       id="ebh-side">Side<span class="arw"></span></th>
 <th class="sortable" onclick="ebSort('entry')"      id="ebh-entry">Entry time<span class="arw"></span></th>
 <th class="sortable" onclick="ebSort('exit')"       id="ebh-exit">Exit time<span class="arw"></span></th>
-<th class="sortable" onclick="ebSort('entryLevel')" id="ebh-entryLevel">Level<span class="arw"></span></th>
-<th class="sortable" onclick="ebSort('ePrice')"     id="ebh-ePrice">Fill<span class="arw"></span></th>
-<th class="sortable" onclick="ebSort('sl')"         id="ebh-sl">SL<span class="arw"></span></th>
+<th class="sortable" onclick="ebSort('entryLevel')" id="ebh-entryLevel" title="The price the pending order sat at — the signal candle's high (buy) or low (sell), plus the buffer.">Level<span class="arw"></span></th>
+<th class="sortable" onclick="ebSort('ePrice')"     id="ebh-ePrice" title="The price actually paid, after slippage.">Fill<span class="arw"></span></th>
+<th class="sortable" onclick="ebSort('sl')"         id="ebh-sl" title="Stop loss — where the trade gets closed if it goes the wrong way.">SL<span class="arw"></span></th>
 <th class="sortable" onclick="ebSort('target')"     id="ebh-target">Target<span class="arw"></span></th>
 <th class="sortable" onclick="ebSort('xPrice')"     id="ebh-xPrice">Exit<span class="arw"></span></th>
-<th class="sortable" onclick="ebSort('exitType')"   id="ebh-exitType">Type<span class="arw"></span></th>
-<th class="sortable" onclick="ebSort('riskPts')"    id="ebh-riskPts">Risk<span class="arw"></span></th>
+<th class="sortable" onclick="ebSort('exitType')"   id="ebh-exitType" title="How the trade ended: hit the target, hit the stop, or was closed at the square-off time.">Type<span class="arw"></span></th>
+<th class="sortable" onclick="ebSort('riskPts')"    id="ebh-riskPts" title="Distance in rupees between the entry and the stop — what one trade risks per share.">Risk<span class="arw"></span></th>
 <th>SL basis</th>
-<th class="sortable" onclick="ebSort('gapPct')"     id="ebh-gapPct">Gap<span class="arw"></span></th>
+<th class="sortable" onclick="ebSort('gapPct')"     id="ebh-gapPct" title="How far the stock opened from the previous day's close, in percent.">Gap<span class="arw"></span></th>
 <th>Qty</th>
-<th class="sortable" onclick="ebSort('spotPts')"    id="ebh-spotPts">Spot pts<span class="arw"></span></th>
-<th class="sortable" onclick="ebSort('grossPnl')"   id="ebh-grossPnl">Gross<span class="arw"></span></th>
+<th class="sortable" onclick="ebSort('spotPts')"    id="ebh-spotPts" title="How far NIFTY itself moved on the trade, in index points.">Spot pts<span class="arw"></span></th>
+<th class="sortable" onclick="ebSort('grossPnl')"   id="ebh-grossPnl" title="Profit or loss before brokerage and taxes.">Gross<span class="arw"></span></th>
 <th class="sortable" onclick="ebSort('charges')"    id="ebh-charges">Charges<span class="arw"></span></th>
-<th class="sortable" onclick="ebSort('pnl')"        id="ebh-pnl">Net<span class="arw"></span></th>
-<th class="sortable" onclick="ebSort('held')"       id="ebh-held">Bars<span class="arw"></span></th>
+<th class="sortable" onclick="ebSort('pnl')"        id="ebh-pnl" title="Profit or loss after brokerage and taxes — the real number.">Net<span class="arw"></span></th>
+<th class="sortable" onclick="ebSort('held')"       id="ebh-held" title="How many candles the trade stayed open.">Bars<span class="arw"></span></th>
 <th>Exit reason</th>
 </tr></thead><tbody id="ebBody"></tbody></table></div>
 <div class="pag" id="ebPag"></div>
@@ -2322,6 +2360,8 @@ ${pnlCell(s.pnl)}<td class="m">${s.triggered}</td><td class="${s.untriggered ? "
     ? `NIFTY option · ${f.daysSeen} session(s) · ${cfg.optionLots} lot(s)`
     : `${escHtml(universeKey)} · ${f.daysSeen} session(s) · ${cfg.qty} shares/stock`} · charges ${fmtMoney(stats.totalCharges)}</span>
 </div>
+
+${modeExplainerHTML(cfg, cfg.tradeMode === "option" ? null : universeKey)}
 
 <h2>Headline</h2>
 <div class="stat-grid">

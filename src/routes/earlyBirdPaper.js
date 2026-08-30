@@ -2505,10 +2505,14 @@ ${bbRsiCapitalStrip({ starting: startCap, current: startCap + (data.totalPnl || 
   <div id="eb-quotewarn" class="eb-warn"></div>
   ${state.dayClosed ? `<div class="eb-warn">⏸️ ${state.dayClosedReason}</div>` : ""}
   <ul class="rule-list">
-    <li><b>NIFTY's first ${cfg.resolutionMins}-min candle picks the side.</b> Body ≥ ${cfg.minBodyPct}% of range with an opposing wick ≤ ${cfg.maxOpposingWickPct}% → ${earlyBird.tradesStock(cfg) ? "green means BUY stocks, red means SHORT stocks" : "green buys a CE, red buys a PE"}. Anything else and the day is skipped.</li>
-    ${earlyBird.tradesStock(cfg) ? `<li><b>A stock qualifies</b> when its OWN first candle has the same shape in the same direction, and it opened within ${cfg.maxGapPct}% of its previous daily close. At least ${cfg.minConfirmingStocks} must qualify.</li>` : `<li><b>No stock is scanned.</b> The option leg trades NIFTY's own candle, so it needs no confirming stock — the universe, the gap rule and the confirmation count do not apply.</li>`}
-    <li><b>Entry</b> = the signal candle's high (LONG) or low (SHORT) ± ₹${cfg.entryBufferPts}, filled at that LEVEL the first time price trades through it. <b>Stop</b> = the other end ± ₹${cfg.entryBufferPts}, moved onto the candle BODY if the wick risk exceeds ₹${cfg.maxSlPts}. <b>Target</b> = 1:${cfg.targetRR} of the real risk.</li>
-    <li><b>No new entries after ${_fmtMins(cfg.entryEndMin)}</b>; everything still open is squared off at ${_fmtMins(cfg.forcedExitMin)}. The stop never moves — no trail, no breakeven, no partials, no re-entry.</li>
+    <li><b>1. NIFTY's first candle picks the side.</b> It has to be a strong candle — the body at least ${cfg.minBodyPct}% of the whole candle, and the wick pushing back against the move under ${cfg.maxOpposingWickPct}%. ${earlyBird.tradesStock(cfg) && earlyBird.tradesOption(cfg)
+      ? "Green = buy stocks + a CE, red = short stocks + buy a PE"
+      : earlyBird.tradesStock(cfg) ? "Green = buy stocks, red = short stocks" : "Green = buy a CE, red = buy a PE"}. Anything weaker and the day is skipped.</li>
+    ${earlyBird.tradesStock(cfg)
+      ? `<li><b>2. Then pick the stocks.</b> A stock joins in only if its own first candle looks the same and points the same way as NIFTY, and it did not open more than ${cfg.maxGapPct}% away from yesterday's close. At least ${cfg.minConfirmingStocks} must qualify, and at most ${cfg.maxConcurrent} are traded.${earlyBird.tradesOption(cfg) ? " The NIFTY option leg does not wait for this — it trades even if no stock qualifies." : ""}</li>`
+      : `<li><b>2. No stocks are checked.</b> This mode trades NIFTY's own candle, so it does not wait for any stock to agree. The stock list, the gap rule and the confirming count do nothing here.</li>`}
+    <li><b>3. Enter ₹${cfg.entryBufferPts} beyond that candle</b> — above it on a green day, below it on a red one. The order waits there and fills the moment price reaches it. The <b>stop</b> sits ₹${cfg.entryBufferPts} beyond the other end of the candle — or on the candle's body instead, if the candle was so big that the wick would risk more than ₹${cfg.maxSlPts}. The <b>target</b> is ${cfg.targetRR}× whatever the stop is risking.</li>
+    <li><b>4. Exit.</b> Whichever comes first — target, stop, or ${_fmtMins(cfg.forcedExitMin)} square-off. No new trades after ${_fmtMins(cfg.entryEndMin)}. The stop never moves once set, and a stopped-out name is not re-entered that day.</li>
   </ul>
 </div>
 
