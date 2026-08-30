@@ -1274,6 +1274,16 @@ body{margin:0;font-family:'IBM Plex Mono',ui-monospace,monospace;background:var(
 h1{color:var(--head);font-size:1.05rem;margin:0 0 4px;}
 h2{color:var(--head);font-size:0.82rem;margin:22px 0 8px;letter-spacing:0.04em;text-transform:uppercase;}
 .sub{color:var(--muted);font-size:0.7rem;margin:0 0 16px;}
+/* Breadcrumb strip — same context bar the other backtest pages carry, so this
+   page identifies its mode/strategy/range the way its siblings do. */
+.crumbs{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:0 0 12px;}
+.crumb{font-size:0.6rem;font-weight:700;padding:2px 8px;border-radius:3px;text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap;}
+.crumb-mode{background:rgba(34,211,238,0.12);color:var(--accent);border:0.5px solid rgba(34,211,238,0.25);}
+.crumb-strat{background:rgba(16,185,129,0.1);color:#34d399;border:0.5px solid rgba(16,185,129,0.2);}
+.crumb-range{background:rgba(245,158,11,0.1);color:#fbbf24;border:0.5px solid rgba(245,158,11,0.2);text-transform:none;}
+.crumb-sep{color:var(--muted);font-size:10px;}
+.run-bar-note{font-size:0.66rem;color:var(--muted);margin-left:auto;align-self:center;}
+.run-bar-note b{color:var(--head);}
 .panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:14px;}
 .notes{background:rgba(34,211,238,0.06);border:1px solid rgba(34,211,238,0.25);border-radius:8px;padding:10px 14px;font-size:0.7rem;line-height:1.65;color:var(--text);margin-bottom:14px;}
 .notes b{color:var(--head);}
@@ -1288,15 +1298,21 @@ h2{color:var(--head);font-size:0.82rem;margin:22px 0 8px;letter-spacing:0.04em;t
 .warn{background:rgba(245,158,11,0.08);border-color:rgba(245,158,11,0.35);}
 form{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;}
 label{display:block;font-size:0.65rem;color:var(--muted);margin-bottom:4px;letter-spacing:0.05em;text-transform:uppercase;}
-input,select{background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px 10px;font-family:inherit;font-size:0.76rem;min-height:44px;}
-button{background:var(--accent);border:0;color:#04121a;font-weight:700;border-radius:6px;padding:10px 20px;font-family:inherit;font-size:0.78rem;cursor:pointer;min-height:44px;}
+.run-bar{display:flex;align-items:flex-end;gap:10px;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:11px 14px;margin-bottom:14px;flex-wrap:wrap;}
+.run-bar label{font-size:0.58rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted);display:block;margin-bottom:3px;}
+input,select{background:#fff;border:1px solid #1e3a8a;color:#0f172a;border-radius:5px;padding:5px 8px;font-family:inherit;font-size:0.75rem;cursor:pointer;color-scheme:light;min-height:34px;}
+button{background:#1a3a8a;color:#90c0ff;border:1px solid #2a5ac0;font-weight:700;border-radius:5px;padding:6px 14px;font-family:inherit;font-size:0.7rem;cursor:pointer;white-space:nowrap;min-height:34px;}
+button:hover{background:#2563eb;}
+:root[data-theme="light"] button{background:#2563eb;color:#fff;border-color:#2563eb;}
+:root[data-theme="light"] button:hover{background:#1d4ed8;}
 /* Cancel — only visible while a job is in flight. */
 .cancel-btn{background:#3a1a1a;color:#f87171;border:1px solid #7f1d1d;}
+.cancel-btn:hover{background:#4a2020;}
 /* Date presets. min-height 44px is the tap-target floor, NOT decoration: these
    are the densest controls on the page and the ones most often hit on a phone. */
 .preset-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 8px;}
 .preset-row-label{font-size:0.58rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;min-width:52px;}
-.preset-btn{font-size:0.65rem;padding:3px 12px;min-height:44px;border-radius:6px;background:rgba(59,130,246,0.08);color:#60a5fa;border:1px solid rgba(59,130,246,0.25);cursor:pointer;font-family:inherit;font-weight:600;transition:background 0.15s;}
+.preset-btn{font-size:0.65rem;padding:3px 10px;min-height:26px;border-radius:4px;background:rgba(59,130,246,0.08);color:#60a5fa;border:0.5px solid rgba(59,130,246,0.2);cursor:pointer;font-family:inherit;font-weight:600;transition:all 0.15s;}
 .preset-btn:hover:not([disabled]){background:rgba(59,130,246,0.2);}
 .preset-btn[disabled]{opacity:0.3;cursor:not-allowed;}
 .stat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;}
@@ -1393,6 +1409,9 @@ th.sortable .arw{color:var(--accent);font-size:0.6rem;margin-left:3px;}
   form{flex-direction:column;align-items:stretch;}
   form>div{width:100%;}
   form input,form select,form button{width:100%;}
+  .crumbs{gap:5px;}
+  .crumb{font-size:0.55rem;padding:2px 6px;}
+  .run-bar-note{margin-left:0;width:100%;}
   .preset-row{gap:5px;}
   .preset-row-label{width:100%;min-width:0;margin-bottom:-2px;}
   .preset-btn{flex:1 1 auto;min-width:64px;padding:3px 8px;}
@@ -1614,6 +1633,13 @@ function renderForm(from, to, universeKey) {
   ).join("");
 
   const body = `
+<div class="crumbs">
+  <span class="crumb crumb-mode">EARLYBIRD BACKTEST</span>
+  <span class="crumb-sep">›</span>
+  <span class="crumb crumb-strat">${escHtml(cfg.tradeMode.toUpperCase())} MODE</span>
+  <span class="crumb-sep">›</span>
+  <span class="crumb crumb-range">${escHtml(from)} → ${escHtml(to)}</span>
+</div>
 <h1>EarlyBird Backtest</h1>
 <p class="sub">First-15-minute signal candle · NIFTY-confirmed · traded in <b>CASH EQUITY</b> on F&amp;O stocks</p>
 
@@ -1638,20 +1664,18 @@ limits — expect <b>several minutes</b>. Every series is cached on disk under
 </details>
 </div>
 
-<div class="panel">
-<form method="GET" action="${ENDPOINT}" id="eb-form">
+<form method="GET" action="${ENDPOINT}" id="eb-form" class="run-bar">
   <div><label for="eb-from">From</label><input id="eb-from" type="date" name="from" value="${escHtml(from)}" required/></div>
   <div><label for="eb-to">To</label><input id="eb-to" type="date" name="to" value="${escHtml(to)}" required/></div>
   <div><label for="eb-uni">Universe</label><select id="eb-uni" name="universe">${opts}</select></div>
   <div><button type="submit" id="eb-run">Run Backtest</button></div>
   <div><button type="button" id="eb-cancel" class="cancel-btn" style="display:none;">✕ Cancel</button></div>
   <div>${clearCacheButtonHTML()}</div>
+  <span class="run-bar-note">Range: <b id="eb-range-label">${escHtml(from)} → ${escHtml(to)}</b></span>
 </form>
 
-<p class="sub" style="margin:14px 0 6px;">Selected range: <b id="eb-range-label">${escHtml(from)} → ${escHtml(to)}</b></p>
 ${PRESET_ROWS_HTML}
 ${presetYearMonthRowsHTML()}
-</div>
 
 <script>${PRESET_JS}
 ${FORM_JS}
@@ -2423,7 +2447,7 @@ ${result.noTrade.map(d => `<tr><td>${escHtml(d.date)}</td><td class="m" style="w
 
 <h2>Run again</h2>
 <div class="panel">
-<form method="GET" action="${ENDPOINT}" id="eb-rerun">
+<form method="GET" action="${ENDPOINT}" id="eb-rerun" class="run-bar" style="margin-bottom:0;background:transparent;border:0;padding:0;">
   <div><label for="rr-from">From</label><input id="rr-from" type="date" name="from" value="${escHtml(from)}" required/></div>
   <div><label for="rr-to">To</label><input id="rr-to" type="date" name="to" value="${escHtml(to)}" required/></div>
   <div><label for="rr-uni">Universe</label><select id="rr-uni" name="universe">${rerunUniverseOptions(universeKey)}</select></div>
