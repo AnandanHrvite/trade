@@ -1282,6 +1282,7 @@ h2{color:var(--head);font-size:0.82rem;margin:22px 0 8px;letter-spacing:0.04em;t
 .crumb-strat{background:rgba(16,185,129,0.1);color:#34d399;border:0.5px solid rgba(16,185,129,0.2);}
 .crumb-range{background:rgba(245,158,11,0.1);color:#fbbf24;border:0.5px solid rgba(245,158,11,0.2);text-transform:none;}
 .crumb-sep{color:var(--muted);font-size:10px;}
+.crumb-meta{margin-left:auto;font-size:0.62rem;color:var(--muted);white-space:nowrap;}
 .run-bar-note{font-size:0.66rem;color:var(--muted);margin-left:auto;align-self:center;}
 .run-bar-note b{color:var(--head);}
 .panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:14px;}
@@ -1416,6 +1417,7 @@ th.sortable .arw{color:var(--accent);font-size:0.6rem;margin-left:3px;}
   form input,form select,form button{width:100%;}
   .crumbs{gap:5px;}
   .crumb{font-size:0.55rem;padding:2px 6px;}
+  .crumb-meta{margin-left:0;width:100%;white-space:normal;}
   .run-bar-note{margin-left:0;width:100%;}
   .preset-row{gap:5px;}
   .preset-row-label{width:100%;min-width:0;margin-bottom:-2px;}
@@ -1469,37 +1471,6 @@ function exitPill(x) {
 }
 function num(v, dp) {
   return _num(v) ? v.toFixed(dp == null ? 2 : dp) : "—";
-}
-
-/**
- * The STOCK-LEG-ONLY banner, in the page rather than only in the console.
- *
- * runEarlyBirdBacktest() already console.warn()s this, but a user who set
- * EARLYBIRD_TRADE_MODE=option and never opens /logs sees only a wall of
- * "NO TRADE" days and reasonably concludes the strategy never fires. Same text,
- * same two cases, rendered where the result is actually read.
- *
- * Returns "" in plain "stock" mode — there is nothing missing to warn about.
- */
-function tradeModeNoticeHTML() {
-  const cfg = earlyBird.getConfig();
-  if (!earlyBird.tradesOption(cfg)) return "";   // stock-only: nothing to explain
-  const OPT = optionSimCfg();
-  const legs = earlyBird.tradesStock(cfg) ? "stock leg and the NIFTY option leg" : "NIFTY option leg only";
-  return `<div class="notes warn">
-<b>Mode is "${escHtml(cfg.tradeMode)}" — this run covers the ${legs}.</b>
-Every option level (entry, stop, 1:${cfg.targetRR} target) is a <b>NIFTY SPOT</b> level, so the decisions need no
-premium history. Only the rupee conversion is modelled:
-${OPT.on
-  ? `premium move = spot move × δ<b>${OPT.delta}</b>, minus θ<b>₹${OPT.thetaPerDay}</b>/day, × ${optionQty(cfg)} qty.`
-  : `<b>BACKTEST_OPTION_SIM is off</b> — raw spot points × ${optionQty(cfg)} qty, no delta or theta.`}
-<details><summary>What this model can and cannot tell you</summary>
-It uses the same <code>BACKTEST_OPTION_SIM</code> / <code>BACKTEST_DELTA</code> / <code>BACKTEST_THETA_DAY</code>
-keys as every other backtest here, so the option figures are comparable across strategies. It cannot capture an
-IV crush, a strike-specific skew, or a real bid-ask at your strike — a fixed delta is a straight-line stand-in for
-a curve. Treat the <b>spot points</b> column as the measured result and the rupee column as an estimate.
-</details>
-</div>`;
 }
 
 // ── Date-range presets ───────────────────────────────────────────────────────
@@ -1645,30 +1616,6 @@ function renderForm(from, to, universeKey) {
   <span class="crumb-sep">›</span>
   <span class="crumb crumb-range">${escHtml(from)} → ${escHtml(to)}</span>
 </div>
-<h1>EarlyBird Backtest</h1>
-<p class="sub">First-15-minute signal candle · NIFTY-confirmed · traded in <b>CASH EQUITY</b> on F&amp;O stocks</p>
-
-${tradeModeNoticeHTML()}
-<div class="notes">
-<details><summary>How this backtest works &amp; how long it takes</summary>
-<b>What this simulates:</b> NIFTY's ${earlyBird._fmtMins(cfg.sessionStartMin)} ${cfg.resolutionMins}-minute candle decides the day's direction
-(<b>NIFTY is never traded</b>). Every universe stock's own ${earlyBird._fmtMins(cfg.sessionStartMin)} candle is tested for the same shape in the
-same direction, gapped names beyond ${cfg.maxGapPct}% of the previous daily close are dropped, and the
-${cfg.maxConcurrent} tightest-stop confirmations become pending stop orders. Entry ${cfg.entryBufferPts} away from the candle
-edge, stop the other edge (or the <b>body edge</b> when the wick risk exceeds ${cfg.maxSlPts}), target 1:${cfg.targetRR}.
-No new entries after <b>${earlyBird._fmtMins(cfg.entryEndMin)}</b>; everything still open squares off at <b>${earlyBird._fmtMins(cfg.forcedExitMin)}</b>.
-Flat <b>${cfg.qty} shares</b> per stock.
-${earlyBird.tradesOption(cfg) ? `The <b>NIFTY option leg</b> is also simulated (no stock confirmation needed):
-its entry, stop and target are NIFTY spot levels, converted to rupees with the shared delta/theta model.` : ""}
-<br/><br/>
-<b>Speed:</b> a run fetches <b>two history series per symbol</b> (${cfg.resolutionMins}-min + daily) for the whole range, once.
-On a cold cache the full F&amp;O universe (~220 names) is ~440 Fyers calls, paced under the API's rate
-limits — expect <b>several minutes</b>. Every series is cached on disk under
-<code>~/trading-data/early_bird_bt_cache/</code>, so a repeat run of the same or a narrower range is near-instant.
-<b>The default range is one month</b> for that reason; widen it deliberately.
-</details>
-</div>
-
 <form method="GET" action="${ENDPOINT}" id="eb-form" class="run-bar">
   <div><label for="eb-from">From</label><input id="eb-from" type="date" name="from" value="${escHtml(from)}" required/></div>
   <div><label for="eb-to">To</label><input id="eb-to" type="date" name="to" value="${escHtml(to)}" required/></div>
@@ -2365,36 +2312,13 @@ ${pnlCell(s.pnl)}<td class="m">${s.triggered}</td><td class="${s.untriggered ? "
   const trigRate = f.taken ? _r2((f.triggered / f.taken) * 100) : 0;
 
   const body = `
-<h1>EarlyBird Backtest — ${escHtml(from)} → ${escHtml(to)}</h1>
-<p class="sub">${escHtml(universeKey)} universe · ${f.daysSeen} session(s) · cash equity, ${cfg.qty} shares/stock ·
-<a href="${ENDPOINT}" style="color:var(--accent);">← new run</a></p>
-
-${tradeModeNoticeHTML()}
-<div class="notes">
-<details><summary>Rules used for this run</summary>
-<b>Direction:</b> NIFTY's ${earlyBird._fmtMins(cfg.sessionStartMin)} ${cfg.resolutionMins}-min candle only — NIFTY itself is never traded.
-<b>Shape test:</b> body ≥ ${cfg.minBodyPct}% of range, opposing wick ≤ ${cfg.maxOpposingWickPct}%, applied identically to the index and to every stock.
-<b>Gap rule:</b> stocks opening more than ${cfg.maxGapPct}% from the previous daily close are dropped; an unknown previous close is also a refusal.
-<b>Levels:</b> entry ${cfg.entryBufferPts} beyond the candle edge, stop the opposite edge (or the <b>body edge</b> once wick risk exceeds ${cfg.maxSlPts}), target 1:${cfg.targetRR}. All frozen at ${earlyBird._fmtMins(cfg.sessionStartMin + cfg.resolutionMins)} — no trail, no breakeven, no partials, no re-entry.
-<b>Fills:</b> a triggering bar fills <b>at the level</b>, never at its high/low. A bar that both triggered and stopped books the <b>loss</b> — the entry is not skipped.
-<b>Windows:</b> entries ${earlyBird._fmtMins(cfg.entryStartMin)}–${earlyBird._fmtMins(cfg.entryEndMin)}, forced exit ${earlyBird._fmtMins(cfg.forcedExitMin)}.
-<b>Costs:</b> ₹${slippagePts()} slippage <b>each way</b> (rupees on a stock price — one tick on a liquid name; raise <code>EARLYBIRD_BT_SLIPPAGE_PTS</code> to test a wider touch), plus equity-intraday charges.
-</details>
-</div>
-
-<div class="notes warn">
-<b>Not validated:</b> this strategy has never traded live or on paper. Charges billed this run:
-<b>${fmtMoney(stats.totalCharges)}</b>.
-<details><summary>How charges are calculated</summary>
-<code>src/utils/charges.js</code> has only an options and a futures path — there is
-<b>no cash-equity-intraday path in that helper</b>. Billing option rates (STT 0.15% of premium,
-exchange 0.03553% of premium turnover) against ₹-lakh equity turnover would overstate costs by an order of
-magnitude, so this page computes equity-intraday charges itself: STT ${escHtml(process.env.EARLYBIRD_CHG_STT_PCT || "0.025")}% sell-side,
-NSE txn ${escHtml(process.env.EARLYBIRD_CHG_EXCHANGE_PCT || "0.00297")}% of turnover, brokerage
-${escHtml(process.env.EARLYBIRD_CHG_BROKERAGE_PCT || "0.03")}% capped at ₹${escHtml(process.env.EARLYBIRD_CHG_BROKERAGE_CAP || "20")}/leg,
-GST ${escHtml(process.env.EARLYBIRD_CHG_GST_PCT || "18")}%, stamp ${escHtml(process.env.EARLYBIRD_CHG_STAMP_PCT || "0.003")}% buy-side, SEBI
-₹${escHtml(process.env.EARLYBIRD_CHG_SEBI_PER_CRORE || "10")}/crore.
-</details>
+<div class="crumbs">
+  <span class="crumb crumb-mode">EARLYBIRD BACKTEST</span>
+  <span class="crumb-sep">›</span>
+  <span class="crumb crumb-strat">${escHtml(cfg.tradeMode.toUpperCase())} MODE</span>
+  <span class="crumb-sep">›</span>
+  <span class="crumb crumb-range">${escHtml(from)} → ${escHtml(to)}</span>
+  <span class="crumb-meta">${escHtml(universeKey)} · ${f.daysSeen} session(s) · ${cfg.qty} shares/stock · charges ${fmtMoney(stats.totalCharges)}</span>
 </div>
 
 <h2>Headline</h2>
