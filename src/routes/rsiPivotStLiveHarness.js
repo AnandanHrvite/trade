@@ -127,7 +127,7 @@ router.get("/start", async (req, res) => {
       modeTag:    "RSI_PIVOT_ST-PAPER",   // the paper route's mode field in notify payloads
       broker:     "zerodha",
       dryRun,
-      liveLogKey: "rsi_pivot_st-live",
+      liveLogKey: null, // live trades are not logged to disk
     });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });

@@ -1022,8 +1022,10 @@ check("skip and trade loggers both know the mode", () => {
   const trade = require("../src/utils/tradeLogger");
   assert.doesNotThrow(() => skip.filePathFor("simple930", "2026-01-01"));
   assert.doesNotThrow(() => trade.filePathFor("simple930"));
-  assert.doesNotThrow(() => trade.filePathFor("simple930-live"));
-  assert.doesNotThrow(() => trade.dailyFilePathFor("simple930-live", "2026-01-01"));
+  // Live trades are deliberately NOT logged to disk — the harness passes
+  // liveLogKey:null, so the "-live" mode key must stay unknown to tradeLogger.
+  assert.throws(() => trade.filePathFor("simple930-live"));
+  assert.throws(() => trade.dailyFilePathFor("simple930-live", "2026-01-01"));
 });
 check("Telegram routes this strategy's alerts to its own group", () => {
   const notify = require("../src/utils/notify");

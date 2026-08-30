@@ -125,7 +125,7 @@ router.get("/start", async (req, res) => {
       broker:     "zerodha",
       dryRun,
       isFutures:  false,               // this strategy only ever buys options
-      liveLogKey: "simple930-live",    // MUST match tradeLogger's key character for character
+      liveLogKey: null,                // live trades are not logged to disk (Trade Logs shows paper only)
     });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });

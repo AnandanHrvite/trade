@@ -115,7 +115,7 @@ router.get("/start", async (req, res) => {
       broker:     "fyers",
       dryRun,
       isFutures:  process.env.INSTRUMENT === "NIFTY_FUTURES",
-      liveLogKey: "pa-live",
+      liveLogKey: null, // live trades are not logged to disk
     });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });

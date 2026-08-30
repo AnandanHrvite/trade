@@ -175,7 +175,7 @@ router.get("/start", async (req, res) => {
       // option entry, so the same broker call serves both. NOTE: the option leg
       // has never been exercised against a live broker — keep it dry-run.
       isFutures:  false,
-      liveLogKey: "early_bird-live", // MUST match tradeLogger's key character for character
+      liveLogKey: null,             // live trades are not logged to disk (Trade Logs shows paper only)
     });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });

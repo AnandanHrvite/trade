@@ -156,7 +156,7 @@ router.get("/start", async (req, res) => {
       broker:     "zerodha",       // ORDERS go to Zerodha; DATA still comes from Fyers
       dryRun,
       isFutures:  false,           // this strategy only ever buys NIFTY options
-      liveLogKey: "ha_scalp-live", // MUST match tradeLogger's key character for character
+      liveLogKey: null, // live trades are not logged to disk
     });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });

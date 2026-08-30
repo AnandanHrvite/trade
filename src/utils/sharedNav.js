@@ -1972,7 +1972,6 @@ window.__ltInit = true;
     '.mode-ha_scalp{color:#c2410c!important;}',
     '.mode-rsi_pivot_st{color:#c2410c!important;}',
     '.mode-simple930{color:#c2410c!important;}',
-    '.mode-simple930-live{color:#c2410c!important;}',
     '.brk-action,.brk-action.re-login{color:#1d4ed8!important;}',
     '.brk-wallet-sub .zero,.pnl-flat,.ms-caret,.log-time,.da-empty,.bc-link,.tbar label,.pager label,.run-bar label,#dashRange label{color:#4b5769!important;}',
     '#da-mode-badge{color:#1d4ed8!important;}',

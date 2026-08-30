@@ -30,21 +30,6 @@ const FILE_BY_MODE = {
   early_bird: "early_bird_paper_trades_log.jsonl",
   rsi_pivot_st: "rsi_pivot_st_paper_trades_log.jsonl",
   simple930: "simple930_paper_trades_log.jsonl",
-  // Live-harness log keys. The harnesses install with liveLogKey "{mode}-live"
-  // (liveHarness.js calls appendTradeLog(cfg.liveLogKey, …)); without these entries
-  // filePathFor() threw "unknown mode" and every live trade was silently dropped.
-  "ema_rsi_st-live":    "ema_rsi_st_live_trades_log.jsonl",
-  "bb_rsi-live":    "bb_rsi_live_trades_log.jsonl",
-  "pa-live":       "pa_live_trades_log.jsonl",
-  "orb-live":      "orb_live_trades_log.jsonl",
-  "ema9vwap-live": "ema9vwap_live_trades_log.jsonl",
-  "trend_pb-live": "trend_pb_live_trades_log.jsonl",
-  "trend_day_scalp-live": "trend_day_scalp_live_trades_log.jsonl",
-  "ha_scalp-live": "ha_scalp_live_trades_log.jsonl",
-  // MUST match the harness's liveLogKey character for character.
-  "early_bird-live": "early_bird_live_trades_log.jsonl",
-  "rsi_pivot_st-live": "rsi_pivot_st_live_trades_log.jsonl",
-  "simple930-live": "simple930_live_trades_log.jsonl",
 };
 
 const DAILY_PREFIX_BY_MODE = {
@@ -59,18 +44,6 @@ const DAILY_PREFIX_BY_MODE = {
   early_bird: "early_bird_paper_trades_",
   rsi_pivot_st: "rsi_pivot_st_paper_trades_",
   simple930: "simple930_paper_trades_",
-  "ema_rsi_st-live":    "ema_rsi_st_live_trades_",
-  "bb_rsi-live":    "bb_rsi_live_trades_",
-  "pa-live":       "pa_live_trades_",
-  "orb-live":      "orb_live_trades_",
-  "ema9vwap-live": "ema9vwap_live_trades_",
-  "trend_pb-live": "trend_pb_live_trades_",
-  "trend_day_scalp-live": "trend_day_scalp_live_trades_",
-  "ha_scalp-live": "ha_scalp_live_trades_",
-  // MUST match the harness's liveLogKey character for character.
-  "early_bird-live": "early_bird_live_trades_",
-  "rsi_pivot_st-live": "rsi_pivot_st_live_trades_",
-  "simple930-live": "simple930_live_trades_",
 };
 
 // One-time dir ensure at module load — keeps the hot-path append sync-free.

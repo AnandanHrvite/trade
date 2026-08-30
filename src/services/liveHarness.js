@@ -362,7 +362,7 @@ function _makeEntryHook(cfg) {
           // Optional exchange-resident disaster stop (default OFF; fire-and-forget, fails safe).
           _slPending.set(cfg.mode, _maybePlaceExchangeSL(cfg, _realPositions.get(cfg.mode)));
           try {
-            tradeLogger.appendTradeLog(cfg.liveLogKey, {
+            if (cfg.liveLogKey) tradeLogger.appendTradeLog(cfg.liveLogKey, {
               _viaHarness: true, event: "ENTRY", orderId: result.orderId, symbol: p.symbol,
               qty: p.qty, side: p.side, spotAtEntry: p.spotAtEntry, stopLoss: p.stopLoss,
               reason: p.reason, ts: Date.now(),
@@ -489,7 +489,7 @@ function _makeExitHook(cfg) {
         _logEvent({ mode: cfg.mode, event: "REAL_EXIT_OK", orderId: result.orderId, symbol: p.symbol, paperPnl: p.pnl });
         console.log(`✅ [HARNESS LIVE][${cfg.mode}] SELL filled — orderId=${result.orderId} | paper-pnl=${p.pnl}`);
         try {
-          tradeLogger.appendTradeLog(cfg.liveLogKey, {
+          if (cfg.liveLogKey) tradeLogger.appendTradeLog(cfg.liveLogKey, {
             _viaHarness: true, event: "EXIT", orderId: result.orderId, symbol: p.symbol,
             side: p.side, spotAtEntry: p.spotAtEntry, spotAtExit: p.spotAtExit,
             paperPnl: p.pnl, sessionPnl: p.sessionPnl, ts: Date.now(),
@@ -521,7 +521,7 @@ function _makeExitHook(cfg) {
  *   dryRun     — when true (DEFAULT), log-only, no real orders placed
  *   isFutures  — pass through to broker call
  *   defaultQty — fallback qty if exit notification doesn't carry it
- *   liveLogKey — tradeLogger mode key for live trade log (e.g. "pa-live")
+ *   liveLogKey — tradeLogger mode key for live trade log; null disables live logging
  *
  * Returns nothing; uninstall via uninstallHarness().
  */
