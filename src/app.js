@@ -3609,13 +3609,14 @@ function dismissStatusAlert(){
   var d=document.getElementById('trading-status-alert');
   if(d){d._dismissed=true;d.style.display='none';}
 }
-function showStatusPill(alertDiv, icon, msg, color){
+function showStatusPill(alertDiv, icon, msg, color, dismissible){
   if(alertDiv._dismissed) return;
   alertDiv.style.display = 'block';
   alertDiv.innerHTML = '<div style="display:inline-flex;align-items:center;gap:6px;background:#07111f;border:0.5px solid '
     +color+';border-radius:20px;padding:3px 10px 3px 8px;font-size:0.68rem;color:'+color+';white-space:nowrap;">'
     +'<span>'+icon+'</span> <span>'+msg+'</span>'
-    +' <span class="status-pill-dismiss" role="button" aria-label="Dismiss" tabindex="0" onclick="dismissStatusAlert()" style="cursor:pointer;opacity:0.5;margin-left:4px;">&#x2715;</span>'
+    + (dismissible === false ? '' :
+       ' <span class="status-pill-dismiss" role="button" aria-label="Dismiss" tabindex="0" onclick="dismissStatusAlert()" style="cursor:pointer;opacity:0.5;margin-left:4px;">&#x2715;</span>')
     +'</div>';
 }
 async function checkTradingStatus(){
@@ -3637,15 +3638,22 @@ async function checkTradingStatus(){
         }
       }
     } catch(e){}
-    var btnAllHol = document.getElementById('btn-all-start');
-    if(btnAllHol) btnAllHol.style.display = isHoliday ? 'none' : '';
+    // Markets shut = nothing to start: hide BOTH Start-All buttons (paper and
+    // harness), not just the paper one.
+    var marketsClosed = isHoliday || day === 0 || day === 6;
+    ['btn-all-start','btn-all-harness'].forEach(function(id){
+      var b = document.getElementById(id);
+      if(b) b.style.display = marketsClosed ? 'none' : '';
+    });
 
     if(!alertDiv || alertDiv._dismissed) return;
     if(isHoliday){
-      showStatusPill(alertDiv, '🎉', 'NSE Holiday — markets closed today', '#fbbf24'); return;
+      showStatusPill(alertDiv, '🎉', 'NSE Holiday — markets closed today', '#fbbf24', false); return;
     }
     if(day === 0 || day === 6){
-      showStatusPill(alertDiv, '🏖️', 'Weekend — markets resume Monday 9:15 AM', '#ef4444'); return;
+      // Not dismissible: the weekend state lasts all day, so a ✕ only hides a
+      // fact the user cannot change.
+      showStatusPill(alertDiv, '🏖️', 'Weekend — markets resume Monday 9:15 AM', '#ef4444', false); return;
     }
     if(hour < 7 || hour >= 16){
       showStatusPill(alertDiv, '🕐', hour < 7 ? 'Pre-market — opens 9:15 AM IST' : 'Post-market — closed for the day', '#60a5fa'); return;
