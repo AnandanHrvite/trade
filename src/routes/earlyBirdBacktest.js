@@ -1303,8 +1303,13 @@ label{display:block;font-size:0.65rem;color:var(--muted);margin-bottom:4px;lette
 input,select{background:#fff;border:1px solid #1e3a8a;color:#0f172a;border-radius:5px;padding:5px 8px;font-family:inherit;font-size:0.75rem;cursor:pointer;color-scheme:light;min-height:34px;}
 button{background:#1a3a8a;color:#90c0ff;border:1px solid #2a5ac0;font-weight:700;border-radius:5px;padding:6px 14px;font-family:inherit;font-size:0.7rem;cursor:pointer;white-space:nowrap;min-height:34px;}
 button:hover{background:#2563eb;}
-:root[data-theme="light"] button{background:#2563eb;color:#fff;border-color:#2563eb;}
-:root[data-theme="light"] button:hover{background:#1d4ed8;}
+:root[data-theme="light"] .run-bar button:not(.preset-btn):not(.cancel-btn){background:#2563eb;color:#fff;border-color:#2563eb;}
+:root[data-theme="light"] .run-bar button:not(.preset-btn):not(.cancel-btn):hover{background:#1d4ed8;}
+/* Presets keep their outline look in BOTH themes — they are secondary controls,
+   and a bare button-element light override (specificity 0,1,1) would beat .preset-btn
+   (0,1,0) and paint every date preset solid blue. */
+:root[data-theme="light"] .preset-btn{background:rgba(59,130,246,0.08);color:#2563eb;border-color:rgba(59,130,246,0.35);}
+:root[data-theme="light"] .preset-btn:hover:not([disabled]){background:rgba(59,130,246,0.18);}
 /* Cancel — only visible while a job is in flight. */
 .cancel-btn{background:#3a1a1a;color:#f87171;border:1px solid #7f1d1d;}
 .cancel-btn:hover{background:#4a2020;}
