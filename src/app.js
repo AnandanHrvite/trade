@@ -4299,16 +4299,34 @@ async function reconcileOrphanedPositions() {
     }
 
     const savedEarlyBird = loadEarlyBirdPositions();
-    if (savedEarlyBird && Array.isArray(savedEarlyBird.positions) && savedEarlyBird.positions.length) {
-      // EarlyBird is the only multi-position strategy here, and its positions are
+    // The OPTION leg is not in positions[] — it is saved under sessionMeta — so
+    // in option-ONLY mode that array is legitimately empty while a real NIFTY
+    // option position is open. Testing the array alone meant an option-only
+    // crash raised NO alert, even though the retention gate below correctly
+    // kept the snapshot. Both legs are checked here, and each is described in
+    // its own terms: equity names have share counts, the option has a premium.
+    const _ebOptPos = savedEarlyBird && savedEarlyBird.sessionMeta
+      ? savedEarlyBird.sessionMeta.optionPosition : null;
+    const _ebStockPos = savedEarlyBird && Array.isArray(savedEarlyBird.positions)
+      ? savedEarlyBird.positions : [];
+    if (savedEarlyBird && (_ebStockPos.length || _ebOptPos)) {
+      // EarlyBird is the only multi-position strategy here, and its stock legs are
       // CASH EQUITY in individual stocks — not a NIFTY option — so the message
       // lists every open name rather than a single symbol.
-      const lines = savedEarlyBird.positions.map(p =>
+      const lines = _ebStockPos.map(p =>
         `  ${p.side} ${p.qty}×${p.symbol}: entry=₹${p.entryPrice} SL=₹${p.stop} TGT=₹${p.target}`).join("\n");
+      const optLine = _ebOptPos
+        ? `  OPTION ${_ebOptPos.optionSide || ""} ${_ebOptPos.qty}×${_ebOptPos.symbol}: entry=₹${_ebOptPos.optionEntryLtp} premium` +
+          ` (${_ebOptPos.side} signal; SL/TGT are SPOT ${_ebOptPos.stop}/${_ebOptPos.target})`
+        : "";
       const pend = Array.isArray(savedEarlyBird.pendingSetups) ? savedEarlyBird.pendingSetups.length : 0;
+      const what = [
+        _ebStockPos.length ? `${_ebStockPos.length} open EQUITY position(s)` : "",
+        _ebOptPos ? `1 open OPTION position` : "",
+      ].filter(Boolean).join(" + ");
       const msg = `🚨 [STARTUP] Persisted EARLYBIRD position(s) found (crash recovery)!\n` +
-        `  ${savedEarlyBird.positions.length} open EQUITY position(s)` + (pend ? `, ${pend} pending setup(s)` : "") + `\n` +
-        lines + `\n` +
+        `  ${what}` + (pend ? `, ${pend} pending setup(s)` : "") + `\n` +
+        [lines, optLine].filter(Boolean).join("\n") + `\n` +
         `  Saved at: ${new Date(savedEarlyBird.savedAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}\n` +
         `Bot was tracking these before crash. Check Fyers dashboard!`;
       console.warn(msg);

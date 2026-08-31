@@ -414,7 +414,27 @@ async function refresh() {
 
     var pb = document.getElementById('pos-body');
     if (pb) {
-      var pos = data.positions || [];
+      var pos = (data.positions || []).slice();
+      // The NIFTY option leg is NOT in positions[] — it arrives separately at
+      // option.position — so without this the table reads "No open positions"
+      // on an option-only day while the Open PnL tile above it shows the money.
+      // Its levels are SPOT levels and its price is a PREMIUM, so the row is
+      // labelled to say so rather than pretending to be another equity line.
+      // (The Open/max tile deliberately still counts stocks only: the option
+      // leg does not consume a slot of the concurrent-stock cap.)
+      var _op = data.option && data.option.position;
+      if (_op) {
+        pos.push({
+          symbol: _op.symbol,
+          side: (_op.optionSide || _op.side) + ' (opt)',
+          qty: _op.qty,
+          entryPrice: _op.optionEntryLtp,
+          stop: _op.stop,
+          target: _op.target,
+          lastPrice: _op.optionLtp,
+          livePnl: _op.livePnl,
+        });
+      }
       pb.innerHTML = !pos.length
         ? '<tr><td colspan="8">No open positions.</td></tr>'
         : pos.map(function (p) {
