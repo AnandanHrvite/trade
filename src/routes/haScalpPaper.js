@@ -503,11 +503,27 @@ function _mergeBars(bars) {
   if (!fresh.length) return;
   const newest = fresh[fresh.length - 1];
   state.lastClosedBarTime = newest.time;
-  // Fire ONCE, for the newest bar only. evaluateEntry always reads the LAST
-  // element of state.candles, so replaying older bars would re-evaluate the same
-  // series N times — normally harmless, but if history only starts answering
-  // mid-session (a token restored at 13:00) `fresh` is the whole day and this
-  // would be ~100 identical evaluations in one tick of the poll loop.
+
+  // An OPEN position is judged on EVERY fresh bar, oldest first. When history
+  // stalls and several bars land in one poll, the doji / weak-candle exit must
+  // still see each of them — the backtest tests every bar, and a position that
+  // should have closed on the 10:00 bar cannot be allowed to survive to 10:45
+  // just because the bars arrived together. Exits only, and only while a
+  // position is open, so this stays a no-op on the normal one-bar-at-a-time path.
+  if (state.position) {
+    for (const c of fresh) {
+      if (!state.position) break;
+      if (c.time === newest.time) break;   // the newest bar is onCandleClose's job
+      try { _checkCandleExits(c.time); }
+      catch (e) { console.error(`🚨 [HA-SCALP-PAPER] catch-up exit error: ${e.message}`); }
+    }
+  }
+
+  // ENTRY is evaluated for the newest bar only. evaluateEntry always reads the
+  // LAST element of state.candles, so replaying older bars would re-evaluate the
+  // same series N times — normally harmless, but if history only starts
+  // answering mid-session (a token restored at 13:00) `fresh` is the whole day
+  // and this would be ~100 identical evaluations in one tick of the poll loop.
   try { onCandleClose(newest); }
   catch (e) { console.error(`🚨 [HA-SCALP-PAPER] onCandleClose error: ${e.message}`); }
 }
@@ -842,10 +858,19 @@ function _checkExits(spotPrice) {
  * The engine owns both tests (haStrategy.exitSignal) so paper, backtest, live
  * and replay cannot drift apart.
  */
-function _checkCandleExits() {
+function _checkCandleExits(barTime) {
   const pos = state.position;
   if (!pos) return;
-  const ha = state.ha.length ? state.ha[state.ha.length - 1] : null;
+  // Default to the newest HA candle; when a specific bar is named (the catch-up
+  // path in _mergeBars) test THAT bar, so a batch of bars arriving together is
+  // judged one bar at a time exactly as the backtest judges them.
+  let ha = null;
+  if (barTime == null) {
+    ha = state.ha.length ? state.ha[state.ha.length - 1] : null;
+  } else {
+    const i = state.candles.findIndex(c => c.time === barTime);
+    ha = i >= 0 ? state.ha[i] : null;
+  }
   if (!ha) return;
   // Never let the signal candle itself close the trade: the entry happens on
   // the bar AFTER it, so the position must survive at least one new bar.
@@ -992,7 +1017,7 @@ function onCandleClose(bar) {
   // trade — which is exactly the user's "get ready for the new entry or exit
   // from the trade if already entered".
   if (state.position) {
-    try { _checkCandleExits(); }
+    try { _checkCandleExits(bar.time); }
     catch (e) { console.error(`🚨 [HA-SCALP-PAPER] candle-exit error: ${e.message}`); }
     if (state.position) return;
   }
