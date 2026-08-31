@@ -3470,10 +3470,20 @@ setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily 
   // trade, or an open position — a trade taken, just not finished yet. A failed
   // status fetch (d == null) is not proof of an idle strategy, so it keeps its
   // tile and shows OFFLINE rather than disappearing mid-session.
+  // hasOpenPosition: strategies report an open position in one of two shapes —
+  // a single "position", or EarlyBird's "positions[]" PLUS a separate NIFTY
+  // option leg at "option.position". Testing "position" alone made an EarlyBird
+  // tile vanish on an option-only day that had not closed a trade yet.
+  function hasOpenPosition(d){
+    if (!d) return false;
+    if (d.position) return true;
+    if (Array.isArray(d.positions) && d.positions.length) return true;
+    return !!(d.option && d.option.position);
+  }
   function shouldShowLiveTile(d){
     if (!d) return true;
     var taken = d.tradeCount != null ? d.tradeCount : (d.tradesTaken || 0);
-    return (+taken > 0) || !!d.position;
+    return (+taken > 0) || hasOpenPosition(d);
   }
 
   function renderLive(data) {
@@ -3490,8 +3500,17 @@ setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily 
         html += '<div class="da-tile ' + t.cls + '"><div class="da-tile-hdr">' + t.label + '<span class="da-pill">OFFLINE</span></div><div class="da-sub-line">No data</div></div>';
         return;
       }
-      // Field names vary by strategy (ORB uses livePnl/tradesTaken) — fall back.
-      var open = d.unrealisedPnl !== undefined ? d.unrealisedPnl : (d.unrealised !== undefined ? d.unrealised : (d.livePnl || 0));
+      // Field names vary by strategy (ORB uses livePnl/tradesTaken, EarlyBird
+      // openPnl — already summed across its stock legs AND its option leg) —
+      // fall back through all of them, or the tile shows Open ₹0 while a
+      // position is live. Same order as realtime.js openPnl().
+      // `|| 0` on the result, not per-branch: a strategy that is flat reports
+      // null here, and fmtINR(null) would paint "—" where "₹0" belongs.
+      var open = (d.unrealisedPnl !== undefined ? d.unrealisedPnl
+               : d.unrealised !== undefined ? d.unrealised
+               : d.livePnl !== undefined ? d.livePnl
+               : d.openPnl !== undefined ? d.openPnl
+               : 0) || 0;
       var closed = d.sessionPnl || 0;
       var day = (+open || 0) + (+closed || 0);
       var c = cls(day);
