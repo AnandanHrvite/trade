@@ -103,6 +103,17 @@ function renderPage({ liveActive, sidebarKey = "realtime", autoFlipBack = false 
     PAPER: Object.fromEntries(strategies.map(s => [s.key, s.paperPrefix + '/status'])),
     LIVE:  Object.fromEntries(strategies.map(s => [s.key, s.livePrefix  + '/status'])),
   });
+  // Manual square-off targets. The LIVE prefixes for the newer strategies are
+  // paper-wrapping harnesses with no /exit of their own — the paper engine owns
+  // the position and the harness mirrors its exit to the broker, so exiting the
+  // PAPER route is what closes a live trade too. Hence LIVE falls back to the
+  // paper prefix wherever the live router exposes no /exit.
+  const LIVE_HAS_OWN_EXIT = new Set(['EMA_RSI_ST', 'BB_RSI', 'PA', 'ORB']);
+  const exitUrlsJson = JSON.stringify({
+    PAPER: Object.fromEntries(strategies.map(s => [s.key, s.paperPrefix + '/exit'])),
+    LIVE:  Object.fromEntries(strategies.map(s => [s.key,
+      (LIVE_HAS_OWN_EXIT.has(s.key) ? s.livePrefix : s.paperPrefix) + '/exit'])),
+  });
   const labelsJson      = JSON.stringify(Object.fromEntries(strategies.map(s => [s.key, s.label])));
   const accentsJson     = JSON.stringify(Object.fromEntries(strategies.map(s => [s.key, s.accentClass])));
   const dayLogPrefixes  = JSON.stringify(Object.fromEntries(strategies.filter(s => s.hasDayLog).map(s => [s.key, s.paperPrefix])));
@@ -162,6 +173,7 @@ function renderPage({ liveActive, sidebarKey = "realtime", autoFlipBack = false 
           : `<span class="act-btn act-btn-disabled" title="Per-date JSONL not exposed for this strategy">— No Day Log —</span>`}
         <a class="act-btn" id="open-${s.key}" href="${s.paperPrefix}/status">Open Status →</a>
       </div>
+      <button type="button" class="act-btn exit-btn" id="exit-${s.key}" onclick="exitPosition('${s.key}', this)" hidden>🚪 Exit Trade</button>
     </div>`).join('\n');
 
   // Rows arrive with the first poll (≤4s), which is also what decides which
@@ -271,13 +283,19 @@ ${faviconLink()}
   /* EarlyBird aggregate block — several cash-equity positions in one card. */
   .eb-head { margin-bottom:2px; }
   .eb-list { margin-top:8px; display:flex; flex-direction:column; gap:5px; }
-  .eb-row { display:grid; grid-template-columns:auto minmax(0,1fr) auto auto auto auto; gap:8px; align-items:center; font-size:0.74rem; color:#cbd5e1; font-variant-numeric:tabular-nums; }
+  .eb-row { display:grid; grid-template-columns:auto minmax(0,1fr) auto auto auto auto auto; gap:8px; align-items:center; font-size:0.74rem; color:#cbd5e1; font-variant-numeric:tabular-nums; }
   .eb-sym { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .eb-qty, .eb-px, .eb-pts, .eb-pnl { white-space:nowrap; text-align:right; }
   .eb-pnl { font-weight:600; }
+  /* Per-leg square-off. 44px tall on touch so it clears the tap-target floor
+     without stretching the row on desktop. */
+  .eb-exit { background:transparent; border:1px solid #7f1d1d; color:#f87171; border-radius:5px; font-size:0.68rem; font-weight:700; padding:3px 7px; cursor:pointer; font-family:inherit; line-height:1.2; white-space:nowrap; }
+  .eb-exit:hover { background:rgba(239,68,68,0.16); border-color:#ef4444; color:#fca5a5; }
+  .eb-exit:disabled { opacity:0.5; cursor:default; }
   @media(max-width:768px){
-    .eb-row { grid-template-columns:auto minmax(0,1fr) auto; row-gap:2px; }
+    .eb-row { grid-template-columns:auto minmax(0,1fr) auto auto; row-gap:2px; }
     .eb-px { grid-column:2 / 4; text-align:left; color:#7d8aa3; }
+    .eb-exit { min-height:32px; padding:6px 10px; }
   }
   :root[data-theme="light"] .eb-row { color:#475569; }
   :root[data-theme="light"] .eb-px { color:#5c6b7f; }
@@ -313,6 +331,15 @@ ${faviconLink()}
   .act-btn.copied { background:rgba(16,185,129,0.18); border-color:#10b981; color:#10b981; }
   .act-btn-disabled { background:#040c18; border-style:dashed; color:var(--muted-1,#8ba1c2); cursor:default; }
   .act-btn-disabled:hover { background:#040c18; color:var(--muted-1,#8ba1c2); border-color:#1c2c47; }
+  /* Manual square-off. Sits below the actions grid, full width, and only while
+     the strategy actually holds something — a live Exit button on a flat card
+     is an invitation to a misclick. */
+  .exit-btn { width:100%; margin-top:8px; min-height:44px; background:rgba(239,68,68,0.10); border-color:#7f1d1d; color:#f87171; }
+  /* Specificity must match the per-strategy accent rules below
+     (.card.<accent> .act-btn:not(.act-btn-disabled):hover), or the card's accent
+     colour would repaint this button's hover border blue/green/orange. */
+  .card .act-btn.exit-btn:not(.act-btn-disabled):hover { background:rgba(239,68,68,0.20); border-color:#ef4444; color:#fca5a5; }
+  .exit-btn:disabled { opacity:0.55; cursor:default; }
   .card.ema_rsi_st    .act-btn:not(.act-btn-disabled):hover { border-color:#3b82f6; }
   .card.bb_rsi    .act-btn:not(.act-btn-disabled):hover { border-color:#f59e0b; }
   .card.pa       .act-btn:not(.act-btn-disabled):hover { border-color:#a855f7; }
@@ -480,6 +507,7 @@ ${modalJS()}
 const STRATEGY_KEYS    = ${strategyOrder};
 const ENDPOINTS        = ${endpointsJson};
 const STATUS_PAGES     = ${statusPagesJson};
+const EXIT_URLS        = ${exitUrlsJson};
 const STRATEGY_LABELS  = ${labelsJson};
 const STRATEGY_ACCENTS = ${accentsJson};
 const JSONL_PREFIX     = ${dayLogPrefixes};
@@ -625,6 +653,9 @@ function renderPositionsEarlyBird(d, list) {
       <span class="eb-px">\${fmtNum(entry)} → \${fmtNum(ltp)}</span>
       <span class="eb-pts \${cls(pts)}">\${fmtNum(pts)}</span>
       <span class="eb-pnl \${cls(upnl)}">\${upnl === null ? '—' : fmtINR(upnl)}</span>
+      <button type="button" class="eb-exit" title="Square off \${escapeHtml(p.symbol || '')} only"
+              data-symbol="\${escapeHtml(p.symbol || '')}"
+              onclick="exitPosition('EARLYBIRD', this, this.dataset.symbol)">EXIT</button>
     </div>\`;
   }
   return \`
@@ -681,6 +712,11 @@ function renderColumn(strategy, d) {
     bodyEl.innerHTML = '<div class="flat-block">Endpoint unavailable</div>';
     statsEl.innerHTML = '';
     metaEl.innerHTML = '<span>—</span><span>—</span>';
+    // An endpoint that dies mid-position must take its Exit button with it: the
+    // card no longer knows what is open, and the /exit call would go to the same
+    // unreachable engine. It comes back with the next successful poll.
+    const offEl = document.getElementById('exit-' + strategy);
+    if (offEl) offEl.hidden = true;
     // A dead endpoint stays on screen — hiding it would look like a quiet
     // strategy instead of a broken one.
     showCard(strategy, true);
@@ -717,6 +753,23 @@ function renderColumn(strategy, d) {
   // card up filled the screen with finished business and pushed the live
   // positions off it.
   showCard(strategy, openList.length > 0);
+
+  // The Exit button lives and dies with the position. It is hidden — not
+  // disabled — when flat, because a greyed square-off button on a card that
+  // holds nothing still reads as "there is something to close".
+  const exitEl = document.getElementById('exit-' + strategy);
+  if (exitEl) {
+    const canExit = openList.length > 0 && !isStale(d);
+    exitEl.hidden = !canExit;
+    if (canExit) {
+      exitEl.disabled = false;
+      // EarlyBird can hold several legs at once; say so, since this button
+      // closes all of them and the per-row EXIT closes just one.
+      exitEl.textContent = openList.length > 1
+        ? '🚪 Exit All (' + openList.length + ')'
+        : '🚪 Exit Trade';
+    }
+  }
 }
 
 // Cards are hidden, not removed, so the poll can bring one back the moment its
@@ -1027,6 +1080,67 @@ async function fetchText(url) {
   } catch (e) {
     return { ok:false, status:0, text:'', err:String(e) };
   }
+}
+
+// Manual square-off from the monitor. Confirms first (this spends real money in
+// LIVE), then hits the strategy's /exit through secretFetch — the exit routes
+// are NOT in app.js OPEN_PATHS, so a plain fetch or a link navigation would 403.
+//
+// symbol is EarlyBird-only: its /exit takes ?symbol= to close one leg and closes
+// the whole book when omitted. Every other engine ignores the parameter, so it is
+// only ever sent when a per-row button asked for it.
+async function exitPosition(strategy, btn, symbol) {
+  const label = STRATEGY_LABELS[strategy] || strategy;
+  const what = symbol ? symbol : (strategy === 'EARLYBIRD' ? 'ALL open positions' : 'the open position');
+  const ok = await showConfirm({
+    icon: '🚪',
+    title: 'Exit ' + label + '?',
+    message: 'Square off ' + what + ' now at market, in ' + mode + ' mode.\\n\\n'
+           + (mode === 'LIVE'
+              ? 'This places a real exit order with the broker (unless the dry-run harness is on).'
+              : 'This closes the paper position and books its P&L.'),
+    confirmText: 'Exit now',
+  });
+  if (!ok) return;
+
+  const base = (EXIT_URLS[mode] || {})[strategy];
+  if (!base) {
+    await showAlert({ icon: '⚠️', title: 'No exit route', message: 'No /exit endpoint is configured for ' + label + ' in ' + mode + ' mode.', btnClass: 'modal-btn-danger' });
+    return;
+  }
+  const url = symbol ? base + '?symbol=' + encodeURIComponent(symbol) : base;
+
+  const orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Exiting…';
+  // The 4s poll is paused across the round trip: a repaint mid-exit rebuilds the
+  // position block and destroys the very button being clicked, which would throw
+  // on the re-enable below and lose the result message.
+  if (timer) { clearInterval(timer); timer = null; }
+  let res = null, err = null;
+  try {
+    res = await secretFetch(url);
+  } catch (e) {
+    err = (e && e.message) || 'Network error';
+  }
+  timer = setInterval(poll, 4000);
+
+  if (err) {
+    btn.disabled = false; btn.textContent = orig;
+    await showAlert({ icon: '⚠️', title: 'Exit failed', message: err, btnClass: 'modal-btn-danger' });
+    return;
+  }
+  // null = the user cancelled the API-secret prompt; nothing was sent.
+  if (!res) { btn.disabled = false; btn.textContent = orig; return; }
+  if (!res.ok) {
+    btn.disabled = false; btn.textContent = orig;
+    await showAlert({ icon: '⚠️', title: 'Exit failed', message: label + ' /exit returned HTTP ' + res.status + '.', btnClass: 'modal-btn-danger' });
+    return;
+  }
+  // Left disabled and labelled: the next poll (≤4s) either clears the position —
+  // taking the button with it — or brings it back enabled if the engine refused.
+  btn.textContent = '✓ Exit sent';
+  poll();
 }
 
 async function copyDayLog(strategy, btn) {
