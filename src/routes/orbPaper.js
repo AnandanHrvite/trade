@@ -584,6 +584,13 @@ function _managePositionOnClose(bar) {
 function _checkExits(spotPrice) {
   if (!state.position) return;
   const pos = state.position;
+  // Futures have no option contract to poll — the traded price IS the index
+  // level, so mirror the spot in and every downstream reader (live P&L cards,
+  // peak/MFE tracking, the stale-premium warning) stays correct unchanged.
+  if (pos.isFutures && spotPrice > 0) {
+    state.optionLtp = spotPrice;
+    state.optionLtpUpdatedAt = Date.now();
+  }
   const optLtp = state.optionLtp || pos.optionEntryLtp;
 
   // Stale-premium warning. WARN ONLY — every other engine in this repo does the
@@ -1159,7 +1166,10 @@ router.get("/status/data", (req, res) => {
   if (pos) {
     const lot = pos.qty || instrumentConfig.getLotQty();
     if (state.optionLtp != null) {
-      livePnl = parseFloat(((state.optionLtp - pos.optionEntryLtp) * lot).toFixed(2));
+      livePnl = instrumentMode.unrealisedPnl({
+      side: pos.side, entrySpot: pos.entrySpot, currentSpot: state.lastTickPrice,
+      entryPremium: pos.optionEntryLtp, currentPremium: state.optionLtp, qty: lot,
+    });
     }
   }
 
@@ -1252,7 +1262,10 @@ router.get("/status", (req, res) => {
   // Live live PnL for badge
   let livePnl = null;
   if (pos && state.optionLtp != null) {
-    livePnl = parseFloat(((state.optionLtp - pos.optionEntryLtp) * (pos.qty || instrumentConfig.getLotQty())).toFixed(2));
+    livePnl = instrumentMode.unrealisedPnl({
+      side: pos.side, entrySpot: pos.entrySpot, currentSpot: state.lastTickPrice,
+      entryPremium: pos.optionEntryLtp, currentPremium: state.optionLtp, qty: (pos.qty || instrumentConfig.getLotQty()),
+    });
   }
 
   // Build stat cards
@@ -1337,7 +1350,7 @@ router.get("/status", (req, res) => {
           <div style="display:flex;align-items:center;gap:8px;">
             <span style="font-size:2.2rem;font-weight:900;color:${pos.side === "CE" ? "#10b981" : "#ef4444"};">${pos.side}</span>
             <div>
-              <div style="font-size:0.72rem;color:${pos.side === "CE" ? "#10b981" : "#ef4444"};">${pos.side === "CE" ? "CALL · Bullish breakout" : "PUT · Bearish breakout"}</div>
+              <div style="font-size:0.72rem;color:${pos.side === "CE" ? "#10b981" : "#ef4444"};">${pos.isFutures ? (pos.side === "CE" ? "LONG · Bullish breakout" : "SHORT · Bearish breakout") : (pos.side === "CE" ? "CALL · Bullish breakout" : "PUT · Bearish breakout")}</div>
               <span style="font-size:0.65rem;font-weight:700;color:#94a3b8;">${pos.signalStrength || "ORB"}</span>
             </div>
           </div>
@@ -1366,7 +1379,7 @@ router.get("/status", (req, res) => {
 
       <!-- Premium section -->
       <div style="background:#0a0f24;border:2px solid #3b82f6;border-radius:12px;padding:18px 20px;margin-bottom:14px;">
-        <div style="font-size:0.68rem;font-weight:700;color:#3b82f6;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:14px;">Option Premium (${pos.side})</div>
+        <div style="font-size:0.68rem;font-weight:700;color:#3b82f6;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:14px;">${pos.isFutures ? `Futures Price (${pos.side === "CE" ? "LONG" : "SHORT"})` : `Option Premium (${pos.side})`}</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px;align-items:center;">
           <div style="text-align:center;padding:12px;background:#071a3e;border:1px solid #1e3a5f;border-radius:10px;">
             <div style="font-size:0.63rem;color:#60a5fa;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Entry Price</div>
@@ -1412,7 +1425,7 @@ router.get("/status", (req, res) => {
           <div style="font-size:1.05rem;font-weight:700;color:#c8d8f0;">${pos.initialSlSpot ? "₹" + pos.initialSlSpot.toFixed(2) : "—"}</div>
         </div>
         <div style="background:#0a1f12;border:1px solid #0d4030;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Peak Premium</div>
+          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">${pos.isFutures ? "Peak Price" : "Peak Premium"}</div>
           <div style="font-size:1.05rem;font-weight:700;color:#10b981;">${pos.peakPremium ? "₹" + pos.peakPremium.toFixed(2) : "—"}</div>
         </div>
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">

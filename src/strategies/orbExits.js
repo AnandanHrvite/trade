@@ -160,12 +160,27 @@ function isHardSlHit(side, spotPrice, slSpot) {
  * @param {number} nowMs      clock for secsToMFE/secsToMAE (injected so replay,
  *                            which compresses time, stays honest)
  */
+/**
+ * Open-trade P&L in ₹, for whichever instrument the position holds.
+ *
+ * Options are BOUGHT, so the premium move IS the P&L for both CE and PE.
+ * A futures position prices on the INDEX and carries a direction: CE = LONG,
+ * PE = SHORT. Without the sign a winning short reports as a loss and the
+ * per-trade rupee cap would exit it.
+ */
+function _openPnl(pos, spotPrice, optionLtp) {
+  if (pos && pos.isFutures) {
+    return (spotPrice - pos.entrySpot) * (pos.side === "CE" ? 1 : -1) * pos.qty;
+  }
+  return (optionLtp - pos.optionEntryLtp) * pos.qty;
+}
+
 function trackExcursion(pos, spotPrice, optionLtp, nowMs) {
   if (!pos) return;
-  if (optionLtp > pos.peakPremium) pos.peakPremium = optionLtp;
+  if (optionLtp > pos.peakPremium) pos.peakPremium = optionLtp;   // spot high in futures mode
 
   const favPts = (spotPrice - pos.entrySpot) * (pos.side === "CE" ? 1 : -1);
-  const curPnl = (optionLtp - pos.optionEntryLtp) * pos.qty;
+  const curPnl = _openPnl(pos, spotPrice, optionLtp);
   if (favPts > (pos.mfeSpotPts || 0)) {
     pos.mfeSpotPts = parseFloat(favPts.toFixed(2));
     pos.secsToMFE  = parseFloat(((nowMs - pos.entryTimeMs) / 1000).toFixed(1));
@@ -187,14 +202,16 @@ function trackExcursion(pos, spotPrice, optionLtp, nowMs) {
 function evaluateTickExits(pos, { spotPrice, optionLtp }) {
   if (!pos) return { exit: false, reason: null };
 
-  const curPnl = (optionLtp - pos.optionEntryLtp) * pos.qty;
+  const curPnl = _openPnl(pos, spotPrice, optionLtp);
 
   // The daily-loss gate only fires when flat, so THIS is what caps one open trade.
   if (isMaxTradeLossHit(curPnl)) {
     return { exit: true, reason: `Max trade loss (₹${Math.round(curPnl)} ≤ -₹${maxTradeLossINR()})` };
   }
-  // Catches IV-crush / vega losses the spot-based stop can miss.
-  if (isPremiumStopHit(optionLtp, pos.optionEntryLtp)) {
+  // Catches IV-crush / vega losses the spot-based stop can miss. Futures have
+  // neither premium nor IV — and in that mode optionLtp mirrors the SPOT, so
+  // leaving this on would test a 35% fall in NIFTY itself.
+  if (!pos.isFutures && isPremiumStopHit(optionLtp, pos.optionEntryLtp)) {
     return { exit: true, reason: `Premium disaster stop (₹${optionLtp} ≤ −${premiumStopPct()}% of entry ₹${pos.optionEntryLtp})` };
   }
   if (isHardSlHit(pos.side, spotPrice, pos.slSpot)) {

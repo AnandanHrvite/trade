@@ -1127,7 +1127,10 @@ router.get("/status/data", (req, res) => {
 
   let livePnl = null;
   if (pos && state.optionLtp != null) {
-    livePnl = parseFloat(((state.optionLtp - pos.optionEntryLtp) * (pos.qty || tdsLotQty())).toFixed(2));
+    livePnl = instrumentMode.unrealisedPnl({
+      side: pos.side, entrySpot: pos.entrySpot, currentSpot: state.lastTickPrice,
+      entryPremium: pos.optionEntryLtp, currentPremium: state.optionLtp, qty: pos.qty || tdsLotQty(),
+    });
   }
 
   const cumPnl = []; let cum = 0;

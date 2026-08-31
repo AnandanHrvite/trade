@@ -466,6 +466,24 @@ function _fireExitHooks(p) {
  * notifyEntry({ mode, side, symbol, strike, expiry, spotAtEntry,
  *               optionEntryLtp, stopLoss, qty, reason })
  */
+/**
+ * Is THIS alert about a futures position?
+ *
+ * Payload wins when it says anything (a trade record carries `isFutures` /
+ * `instrument`), because one process can hold both an index-futures position and
+ * a cash-equity leg (EARLYBIRD) at the same time. Only when the payload is
+ * silent do we fall back to the live INSTRUMENT toggle, which is what the
+ * strategies that don't stamp their notify payload are trading.
+ */
+function _isFuturesAlert(p) {
+  if (!p) return false;
+  if (p.isFutures === true)  return true;
+  if (p.isFutures === false) return false;
+  if (p.instrument) return String(p.instrument).toUpperCase() === "NIFTY_FUTURES";
+  if (p.isSpot === true) return false;                     // cash-equity leg
+  return String(process.env.INSTRUMENT || "NIFTY_OPTIONS").trim().toUpperCase() === "NIFTY_FUTURES";
+}
+
 function notifyEntry(p) {
   // Fire the live-order hook FIRST — must run regardless of Telegram gating
   // (a mode with TG entry alerts disabled must still place its real order).
@@ -475,8 +493,14 @@ function notifyEntry(p) {
   if (!isModeEnabled(group)) return;
   if (!canSend(`TG_${group}_ENTRY`)) return;
 
-  const sideEmoji = p.side === "CE" ? "📈 CALL (CE)" : "📉 PUT (PE)";
-  const strikeStr = p.strike ? `Strike: ${p.strike}  |  Expiry: ${p.expiry || "—"}` : "";
+  // A futures position is a LONG/SHORT on the index, not a bought CE/PE, and it
+  // has no strike, no expiry and no premium — printing those as "—" would read
+  // as missing data rather than "not applicable".
+  const isFut = _isFuturesAlert(p);
+  const sideEmoji = isFut
+    ? (p.side === "CE" ? "📈 LONG FUT" : "📉 SHORT FUT")
+    : (p.side === "CE" ? "📈 CALL (CE)" : "📉 PUT (PE)");
+  const strikeStr = (!isFut && p.strike) ? `Strike: ${p.strike}  |  Expiry: ${p.expiry || "—"}` : "";
 
   const lines = [
     `${modeLabel(p.mode)} — ENTRY`,
@@ -486,7 +510,7 @@ function notifyEntry(p) {
     strikeStr || null,
     ``,
     `Spot @ Entry   : ${inr(p.spotAtEntry)}`,
-    `Option Premium : ${inr(p.optionEntryLtp)}`,
+    isFut ? null : `Option Premium : ${inr(p.optionEntryLtp)}`,
     `Stop Loss      : ${inr(p.stopLoss)}`,
     `Qty / Lots     : ${p.qty || "—"}`,
     ``,
@@ -523,15 +547,18 @@ function notifyExit(p) {
   if (!isModeEnabled(group)) return;
   if (!canSend(`TG_${group}_EXIT`)) return;
 
-  const sideEmoji = p.side === "CE" ? "📈 CALL (CE)"
+  const isFut     = _isFuturesAlert(p);
+  const sideEmoji = isFut
+                  ? (p.side === "CE" ? "📈 LONG FUT" : p.side === "PE" ? "📉 SHORT FUT" : `🎯 ${p.side || "—"}`)
+                  : p.side === "CE" ? "📈 CALL (CE)"
                   : p.side === "PE" ? "📉 PUT (PE)"
                   : `🎯 ${p.side || "—"}`;
   const pnlLine   = `PnL (net)      : ${inr(p.pnl)}  ${pnlArrow(p.pnl)}`;
-  const strikeStr = p.strike ? `Strike: ${p.strike}  |  Expiry: ${p.expiry || "—"}` : "";
+  const strikeStr = (!isFut && p.strike) ? `Strike: ${p.strike}  |  Expiry: ${p.expiry || "—"}` : "";
 
   // Optional "how the trade travelled" block — only the fields we were handed.
   const peakLines = [
-    p.peakPremium != null ? `Peak Premium   : ${inr(p.peakPremium)}` : null,
+    (!isFut && p.peakPremium != null) ? `Peak Premium   : ${inr(p.peakPremium)}` : null,
     p.peakPnl     != null ? `Peak PnL       : ${inr(p.peakPnl)}`     : null,
     p.maxDrawdown != null ? `Max Drawdown   : ${inr(p.maxDrawdown)}` : null,
     fmtHeld(p.heldMs) != null
@@ -548,8 +575,8 @@ function notifyExit(p) {
     ``,
     `Spot @ Entry   : ${inr(p.spotAtEntry)}`,
     `Spot @ Exit    : ${inr(p.spotAtExit)}`,
-    `Premium @ Entry: ${inr(p.optionEntryLtp)}`,
-    `Premium @ Exit : ${inr(p.optionExitLtp)}`,
+    isFut ? null : `Premium @ Entry: ${inr(p.optionEntryLtp)}`,
+    isFut ? null : `Premium @ Exit : ${inr(p.optionExitLtp)}`,
     ``,
     pnlLine,
     `Session PnL    : ${inr(p.sessionPnl)}`,

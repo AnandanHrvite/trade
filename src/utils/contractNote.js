@@ -48,14 +48,24 @@ function contractRow(t, broker) {
   const optEntry = _num(t.optionEntryLtp);
   const optExit = _num(t.optionExitLtp);
 
+  // A SHORT futures position is SOLD first and BOUGHT back — the buy/sell columns
+  // must reflect the real legs, or a winning short prints as a loss. Options are
+  // always bought first here (these engines never write options), so only the
+  // futures PE leg reverses. `side` carries the strategy's CE/PE signal: on
+  // futures, CE = LONG and PE = SHORT.
+  const isShortFut = isFutures && String(t.side).toUpperCase() === "PE";
+
   let buy, sell, segment;
   if (!isFutures && (optEntry !== null || optExit !== null)) {
     buy = optEntry;
     sell = optExit;
     segment = "F&O - Options";
   } else {
-    buy = _num(t.spotAtEntry !== undefined ? t.spotAtEntry : t.entryPrice);
-    sell = _num(t.spotAtExit !== undefined ? t.spotAtExit : t.exitPrice);
+    const entryPx = _num(t.spotAtEntry !== undefined ? t.spotAtEntry : t.entryPrice);
+    const exitPx  = _num(t.spotAtExit  !== undefined ? t.spotAtExit  : t.exitPrice);
+    // Short: the SELL is the entry and the BUY is the exit.
+    buy  = isShortFut ? exitPx  : entryPx;
+    sell = isShortFut ? entryPx : exitPx;
     segment = isFutures ? "F&O - Futures" : "F&O - Options";
   }
   const qty = _num(t.qty);

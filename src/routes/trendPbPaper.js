@@ -1029,7 +1029,13 @@ router.get("/status", (req, res) => {
   const pnlColor = (n) => (n || 0) >= 0 ? "#10b981" : "#ef4444";
 
   let livePnl = null;
-  if (pos && state.optionLtp != null) livePnl = parseFloat(((state.optionLtp - pos.optionEntryLtp) * (pos.qty || instrumentConfig.getLotQty())).toFixed(2));
+  if (pos && (pos.isFutures ? state.lastTickPrice != null : state.optionLtp != null)) {
+    livePnl = instrumentMode.unrealisedPnl({
+      side: pos.side, entrySpot: pos.entrySpot, currentSpot: state.lastTickPrice,
+      entryPremium: pos.optionEntryLtp, currentPremium: state.optionLtp,
+      qty: pos.qty || instrumentConfig.getLotQty(),
+    });
+  }
 
   const statCards = [
     { label: "Session PnL", value: `<span id="ajax-session-pnl" style="color:${pnlColor(state.sessionPnl)};">${typeof state.sessionPnl === "number" ? (state.sessionPnl >= 0 ? "+" : "") + "₹" + state.sessionPnl.toLocaleString("en-IN", {minimumFractionDigits:2, maximumFractionDigits:2}) : "—"}</span>`, accent: pnlColor(state.sessionPnl) },
@@ -1063,7 +1069,7 @@ router.get("/status", (req, res) => {
           <div style="display:flex;align-items:center;gap:8px;">
             <span style="font-size:2.2rem;font-weight:900;color:${pos.side === "CE" ? "#10b981" : "#ef4444"};">${pos.side}</span>
             <div>
-              <div style="font-size:0.72rem;color:${pos.side === "CE" ? "#10b981" : "#ef4444"};">${pos.side === "CE" ? "CALL · uptrend pullback" : "PUT · downtrend pullback"}</div>
+              <div style="font-size:0.72rem;color:${pos.side === "CE" ? "#10b981" : "#ef4444"};">${pos.isFutures ? (pos.side === "CE" ? "LONG · uptrend pullback" : "SHORT · downtrend pullback") : (pos.side === "CE" ? "CALL · uptrend pullback" : "PUT · downtrend pullback")}</div>
               <span style="font-size:0.65rem;font-weight:700;color:#94a3b8;">${pos.signalStrength || "TREND_PB"}${pos.trendBias ? " · " + pos.trendBias : ""}</span>
             </div>
           </div>
@@ -1078,7 +1084,7 @@ router.get("/status", (req, res) => {
         </div>
       </div>
       <div style="background:#0a0f24;border:2px solid #3b82f6;border-radius:12px;padding:18px 20px;margin-bottom:14px;">
-        <div style="font-size:0.68rem;font-weight:700;color:#3b82f6;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:14px;">Option Premium (${pos.side})</div>
+        <div style="font-size:0.68rem;font-weight:700;color:#3b82f6;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:14px;">${pos.isFutures ? `Futures Price (${pos.side === "CE" ? "LONG" : "SHORT"})` : `Option Premium (${pos.side})`}</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px;align-items:center;">
           <div style="text-align:center;padding:12px;background:#071a3e;border:1px solid #1e3a5f;border-radius:10px;">
             <div style="font-size:0.63rem;color:#60a5fa;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Entry Price</div>
@@ -1104,7 +1110,7 @@ router.get("/status", (req, res) => {
         <div style="background:#1c1400;border:1px solid #78350f;border-radius:8px;padding:12px 14px;"><div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Stop${pos.trailArmed ? " (trail)" : pos.breakevenArmed ? " (BE)" : ""}${pos.lastEma ? ` · EMA ${pos.lastEma}` : ""}</div><div style="font-size:1.05rem;font-weight:700;color:#f59e0b;">${pos.slSpot ? "₹" + pos.slSpot.toFixed(2) : "—"}</div></div>
         <div style="background:#10131c;border:1px solid #1e2940;border-radius:8px;padding:12px 14px;"><div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Initial SL <span style="color:var(--muted-2,#6d85a8);">(risk ${pos.riskPts ? pos.riskPts.toFixed(1) : "—"}pt)</span></div><div style="font-size:1.05rem;font-weight:700;color:#c8d8f0;">${pos.initialSlSpot ? "₹" + pos.initialSlSpot.toFixed(2) : "—"}</div></div>
         <div style="background:#0a1f12;border:1px solid #0d4030;border-radius:8px;padding:12px 14px;"><div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Pullback ${pos.side === "CE" ? "Low" : "High"}</div><div style="font-size:1.05rem;font-weight:700;color:#10b981;">${(pos.side === "CE" ? pos.pullbackLow : pos.pullbackHigh) != null ? "₹" + (pos.side === "CE" ? pos.pullbackLow : pos.pullbackHigh).toFixed(2) : "—"}</div></div>
-        <div style="background:#0a1f12;border:1px solid #0d4030;border-radius:8px;padding:12px 14px;"><div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Peak Premium</div><div style="font-size:1.05rem;font-weight:700;color:#10b981;">${pos.peakPremium ? "₹" + pos.peakPremium.toFixed(2) : "—"}</div></div>
+        <div style="background:#0a1f12;border:1px solid #0d4030;border-radius:8px;padding:12px 14px;"><div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">${pos.isFutures ? "Peak Price" : "Peak Premium"}</div><div style="font-size:1.05rem;font-weight:700;color:#10b981;">${pos.peakPremium ? "₹" + pos.peakPremium.toFixed(2) : "—"}</div></div>
       </div>
       ${pos.entryReason ? `<div style="padding:10px 14px;background:#071a12;border-radius:8px;font-size:0.73rem;color:#a7f3d0;line-height:1.5;margin-top:12px;">Entry: ${pos.entryReason}</div>` : ""}
     </div>`;

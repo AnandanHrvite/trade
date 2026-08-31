@@ -553,22 +553,26 @@ function showHistoryTradeModal(sessionIdx, tradeIdx){
   var eSl   = t.stopLoss || t.initialStopLoss || null;
   var pc  = t.pnl == null ? '#c8d8f0' : t.pnl >= 0 ? '#10b981' : '#ef4444';
   var sc  = t.side === 'CE' ? '#10b981' : '#ef4444';
+  var isFut = !!t.isFutures || t.instrument === 'NIFTY_FUTURES';
+  var instLbl = isFut ? 'Futures' : 'Option';
   var optDiff = (t.optionEntryLtp != null && t.optionExitLtp != null) ? parseFloat((t.optionExitLtp - t.optionEntryLtp).toFixed(2)) : null;
   var dc  = optDiff == null ? '#c8d8f0' : optDiff >= 0 ? '#10b981' : '#ef4444';
   var pnlPts = (eSpot && xSpot && t.side) ? parseFloat(((t.side==='PE' ? eSpot - xSpot : xSpot - eSpot)).toFixed(2)) : null;
   var badge = document.getElementById('histm-badge');
-  badge.textContent = (t.side || '\\u2014') + (t.optionStrike ? ' \\u00b7 ' + t.optionStrike : '') + (t.optionType ? ' ' + t.optionType : '');
+  badge.textContent = isFut
+    ? ((t.side === 'PE' ? 'SHORT' : 'LONG') + ' FUT')
+    : ((t.side || '\\u2014') + (t.optionStrike ? ' \\u00b7 ' + t.optionStrike : '') + (t.optionType ? ' ' + t.optionType : ''));
   badge.style.background = t.side === 'CE' ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)';
   badge.style.color = sc;
   badge.style.border = '1px solid ' + (t.side === 'CE' ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)');
 
   var contractHtml = '<div style="background:#06100e;border:1px solid #0d3020;border-radius:10px;padding:12px 14px;margin-bottom:10px;">'
-    + '<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:#34d399;margin-bottom:8px;font-weight:700;">Option Contract</div>'
+    + '<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:#34d399;margin-bottom:8px;font-weight:700;">' + instLbl + ' Contract</div>'
     + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;">'
     + histCell('Symbol', t.symbol || '\\u2014', '#c8d8f0')
-    + histCell('Strike', t.optionStrike || '\\u2014', '#e0eaf8')
-    + histCell('Expiry', t.optionExpiry || '\\u2014', '#f59e0b')
-    + histCell('Option Type', t.optionType || t.side || '\\u2014', sc)
+    + (isFut ? '' : histCell('Strike', t.optionStrike || '\\u2014', '#e0eaf8'))
+    + (isFut ? '' : histCell('Expiry', t.optionExpiry || '\\u2014', '#f59e0b'))
+    + histCell(isFut ? 'Direction' : 'Option Type', isFut ? (t.side === 'PE' ? 'SHORT' : 'LONG') : (t.optionType || t.side || '\\u2014'), sc)
     + histCell('Qty', t.qty ? t.qty + ' qty' : '\\u2014', '#c8d8f0')
     + histCell('PnL Mode', t.pnlMode || 'spot-diff', '#8b8bf0')
     + '</div></div>';
@@ -577,7 +581,7 @@ function showHistoryTradeModal(sessionIdx, tradeIdx){
     + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;">'
     + histCell('Entry Time', t.entryTime || '\\u2014', '#c8d8f0')
     + histCell('NIFTY Spot @ Entry', histFmt(eSpot), '#e0eaf8')
-    + histCell('Option LTP @ Entry', histFmt(t.optionEntryLtp), '#60a5fa')
+    + (isFut ? '' : histCell('Option LTP @ Entry', histFmt(t.optionEntryLtp), '#60a5fa'))
     + histCell('Initial Stop Loss', histFmt(eSl), '#f59e0b', 'NIFTY spot SL level')
     + histCell('SL Distance', (eSl && eSpot) ? Math.abs(eSpot - eSl).toFixed(2) + ' pts' : '\\u2014', '#f59e0b')
     + histCell('Entry Signal', t.entryReason || '\\u2014', '#c8d8f0')
@@ -587,9 +591,9 @@ function showHistoryTradeModal(sessionIdx, tradeIdx){
     + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;">'
     + histCell('Exit Time', t.exitTime || '\\u2014', '#c8d8f0')
     + histCell('NIFTY Spot @ Exit', histFmt(xSpot), '#e0eaf8')
-    + histCell('Option LTP @ Exit', histFmt(t.optionExitLtp), '#60a5fa')
+    + (isFut ? '' : histCell('Option LTP @ Exit', histFmt(t.optionExitLtp), '#60a5fa'))
     + histCell('NIFTY Move (pts)', pnlPts != null ? (pnlPts >= 0 ? '+' : '') + pnlPts + ' pts' : '\\u2014', pnlPts != null ? (pnlPts >= 0 ? '#10b981' : '#ef4444') : '#c8d8f0', t.side === 'PE' ? 'Entry-Exit (PE profits on fall)' : 'Exit-Entry (CE profits on rise)')
-    + histCell('Option Move (pts)', optDiff != null ? (optDiff >= 0 ? '\\u25b2 +' : '\\u25bc ') + optDiff + ' pts' : '\\u2014', dc)
+    + (isFut ? '' : histCell('Option Move (pts)', optDiff != null ? (optDiff >= 0 ? '\\u25b2 +' : '\\u25bc ') + optDiff + ' pts' : '\\u2014', dc))
     + histCell('Net PnL', t.pnl != null ? (t.pnl >= 0 ? '+' : '') + histFmt(t.pnl) : '\\u2014', pc, 'After STT + charges')
     + '</div></div>';
   var reasonHtml = '<div style="background:#060910;border:1px solid #1a2236;border-radius:10px;padding:12px 14px;">'
