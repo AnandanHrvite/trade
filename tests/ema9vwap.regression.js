@@ -44,27 +44,45 @@ function check(label, fn) {
 function loadCandles() {
   const dir = path.join(os.homedir(), "trading-data", "backtest_cache");
   try {
-    const f = fs.readdirSync(dir).find(n => /NIFTY50-INDEX_5_/.test(n));
-    if (f) {
-      const arr = JSON.parse(fs.readFileSync(path.join(dir, f), "utf8"));
-      if (Array.isArray(arr) && arr.length > 500 && arr.some(c => c.volume > 0)) {
-        console.log(`  (using real cached candles: ${f}, ${arr.length} bars)`);
-        return arr;
-      }
+    // Several months, not one file: the rare paths below (a points stop winning a
+    // bar against the negative-candle stop, a same-side re-entry inside the SL
+    // cooldown) simply never occur in ~1,650 bars, and their tests then fail on
+    // their own "cannot verify" preconditions rather than on any real defect.
+    // NOTE: no volume>0 filter — NIFTY is an INDEX and its cached bars carry
+    // volume:0, so requiring volume silently discarded every real file and fell
+    // back to the synthetic series. Test 1 asserts VWAP ignores volume anyway.
+    const files = fs.readdirSync(dir).filter(n => /NIFTY50-INDEX_5_/.test(n)).sort().slice(0, 6);
+    let arr = [];
+    for (const f of files) {
+      const part = JSON.parse(fs.readFileSync(path.join(dir, f), "utf8"));
+      if (Array.isArray(part)) arr = arr.concat(part);
+    }
+    arr.sort((a, b) => a.time - b.time);
+    if (arr.length > 500) {
+      console.log(`  (using real cached candles: ${files.length} file(s), ${arr.length} bars)`);
+      return arr;
     }
   } catch (_) { /* fall through */ }
   console.log("  (cache unavailable — using deterministic synthetic candles)");
   let seed = 42; const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
   const out = [];
-  for (let d = 0; d < 12; d++) {
+  for (let d = 0; d < 40; d++) {
     let p = 24000 + d * 25;
+    // Alternate trending and choppy sessions so both the signal crosses and the
+    // adverse excursions the stop tests need actually occur.
+    const drift = (d % 3 === 0) ? 0 : ((d % 3 === 1) ? 1.6 : -1.6);
     for (let i = 0; i < 75; i++) {
-      p += (rnd() - 0.48) * 22;
+      const open = p;
+      const body = (rnd() - 0.5) * 26 + drift;
+      const close = open + body;
+      const hi = Math.max(open, close) + rnd() * 14;
+      const lo = Math.min(open, close) - rnd() * 14;
       out.push({
         time: Math.floor(Date.UTC(2026, 3, 6 + d, 3, 45, 0) / 1000) + i * 300,
-        open: p, high: p + rnd() * 9, low: p - rnd() * 9, close: p,
+        open, high: hi, low: lo, close,
         volume: Math.floor(1e6 + rnd() * 4e7),
       });
+      p = close;
     }
   }
   return out;
@@ -177,12 +195,16 @@ async function runBT(env = {}) {
   // fire on the same bar, the PROTECTIVE stop must win — and must book its own
   // level, not the close. The engine used to check time-stop / negative-candle
   // first, reporting the wrong rule and the wrong price.
-  const both = await runBT({ EMA9VWAP_STOP_LOSS_PTS: "25", EMA9VWAP_NEG_CANDLE_LIMIT: "2" });
+  // 10pts, NOT 25: a 25pt adverse move is rarer than "still red after 2 candles",
+  // so the negative-candle stop took every bar and the points stop never fired —
+  // the test could not distinguish correct precedence from the bug. At 10pts the
+  // two rules genuinely contend (verified: reversing their order fails this).
+  const both = await runBT({ EMA9VWAP_STOP_LOSS_PTS: "10", EMA9VWAP_NEG_CANDLE_LIMIT: "2" });
   check("protective stops outrank the candle-close stops (paper precedence)", () => {
-    const slHits = both.trades.filter(t => /^SL \(25pts\)/.test(t.exitReason));
+    const slHits = both.trades.filter(t => /^SL \(10pts\)/.test(t.exitReason));
     assert.ok(slHits.length > 0, "the points stop never won a bar — precedence cannot be verified");
     for (const t of slHits) {
-      assert.ok(Math.abs(Math.abs(t.spotPnlPts) - 25) < 0.011,
+      assert.ok(Math.abs(Math.abs(t.spotPnlPts) - 10) < 0.011,
         `a points-stop exit booked ${t.spotPnlPts}pts — a candle-close rule took the bar first`);
     }
     // The invariant with teeth: a candle-close rule may only win a bar the
@@ -195,10 +217,10 @@ async function runBT(env = {}) {
       const c = byTs.get(t.exitTs);
       if (!c) continue;
       const adverse = t.side === "CE" ? (c.low - t.entryPrice) : (t.entryPrice - c.high);
-      if (adverse <= -25) stolen++;
+      if (adverse <= -10) stolen++;
     }
     assert.strictEqual(stolen, 0,
-      `${stolen} bar(s) went to the negative-candle stop although the 25pt points stop was breached on that same bar — candle-close rules are being evaluated before the intrabar stops`);
+      `${stolen} bar(s) went to the negative-candle stop although the 10pt points stop was breached on that same bar — candle-close rules are being evaluated before the intrabar stops`);
   });
 
   for (const [k, v, label, re] of [
@@ -241,8 +263,12 @@ async function runBT(env = {}) {
     }
   });
 
-  const slPause = await runBT({ EMA9VWAP_STOP_LOSS_PTS: "25", EMA9VWAP_SL_PAUSE_CANDLES: "10" });
-  const slNoPause = await runBT({ EMA9VWAP_STOP_LOSS_PTS: "25", EMA9VWAP_SL_PAUSE_CANDLES: "0" });
+  // 10pts for the same reason as the precedence test above: at 25pts the stop fired
+  // too rarely to block anything, so pause=10 and pause=0 produced identical trade
+  // counts and the check proved nothing. (Verified: disabling the cooldown arming
+  // in the engine now fails this test.)
+  const slPause = await runBT({ EMA9VWAP_STOP_LOSS_PTS: "10", EMA9VWAP_SL_PAUSE_CANDLES: "10" });
+  const slNoPause = await runBT({ EMA9VWAP_STOP_LOSS_PTS: "10", EMA9VWAP_SL_PAUSE_CANDLES: "0" });
   check("same-side SL cooldown blocks re-entry on the stopped-out side", () => {
     const RES = 5, N = 10;
     let violations = 0;
@@ -250,7 +276,7 @@ async function runBT(env = {}) {
       const t = slPause.trades[i];
       for (let j = 0; j < i; j++) {
         const p = slPause.trades[j];
-        if (!/^SL \(25pts\)/.test(p.exitReason)) continue;
+        if (!/^SL \(10pts\)/.test(p.exitReason)) continue;
         if (p.side !== t.side || istDay(p.exitTs) !== istDay(t.entryTs)) continue;
         if (t.entryTs < p.exitTs + N * RES * 60) violations++;
       }

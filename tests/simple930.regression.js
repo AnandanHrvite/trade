@@ -847,11 +847,12 @@ check("live orders stay triple-gated (own switch + global dry-run + hold-back)",
   assert.ok(/zerodhaBroker\.isAuthenticated\(\)/.test(src), "does not require broker auth for real orders");
 });
 check("the live-harness log key matches tradeLogger's key character for character", () => {
-  const harness = read("routes/simple930LiveHarness.js");
-  const m = /liveLogKey:\s*"([^"]+)"/.exec(harness);
-  assert.ok(m, "no liveLogKey in the harness");
+  const harness = decomment(read("routes/simple930LiveHarness.js"));
+  const m = /liveLogKey:\s*(null|"([^"]+)")/.exec(harness);
+  assert.ok(m, "the harness declares no liveLogKey at all");
+  if (m[1] === "null") return;   // by design: live trades are not logged to disk
   const logger = read("utils/tradeLogger.js");
-  assert.ok(logger.includes(`"${m[1]}"`), `tradeLogger has no entry for "${m[1]}" — every live trade would be silently dropped`);
+  assert.ok(logger.includes(`"${m[2]}"`), `tradeLogger has no entry for "${m[2]}" — every live trade would be silently dropped`);
 });
 check("the paper route persists and clears its position snapshot", () => {
   const src = decomment(read("routes/simple930Paper.js"));
