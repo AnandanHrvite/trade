@@ -395,10 +395,16 @@ async function _maybeRefreshHistory() {
       state._histFailures = 0;
       state._histNextTryMs = null;
       _mergeBars(bars);
+    } else if (getISTMinutes() < haStrategy.getConfig().sessionStartMin) {
+      // BEFORE THE BELL there are no bars for today yet, so an empty answer is
+      // the correct answer — not a failure. Counting it as one used to spend the
+      // whole pre-open hour climbing the backoff ladder, so the first real bars
+      // of the day landed on a 60s retry and arrived in a batch. Just wait.
+      state._histNextTryMs = Date.now() + 30_000;
     } else {
-      // A genuinely empty window. Real failures — an expired token included —
-      // arrive as a throw and are handled in the catch below, so reaching here
-      // means Fyers answered "ok"/"no_data" with nothing in it.
+      // A genuinely empty window during market hours. Real failures — an expired
+      // token included — arrive as a throw and are handled in the catch below,
+      // so reaching here means Fyers answered "ok"/"no_data" with nothing in it.
       _noteHistoryFailure(null);
     }
   } catch (e) {
@@ -514,7 +520,7 @@ function _mergeBars(bars) {
     for (const c of fresh) {
       if (!state.position) break;
       if (c.time === newest.time) break;   // the newest bar is onCandleClose's job
-      try { _checkCandleExits(c.time); }
+      try { _checkCandleExits(c.time, true); }
       catch (e) { console.error(`🚨 [HA-SCALP-PAPER] catch-up exit error: ${e.message}`); }
     }
   }
@@ -688,7 +694,15 @@ function simulateSell(reason, opts) {
   const o = opts || {};
   const pos = state.position;
   const exitOptLtp = state.optionLtp || pos.optionEntryLtp;
-  const exitSpot   = state.lastTickPrice || pos.entrySpot;
+  // A CATCH-UP exit (a bar that only arrived in a late batch) is measured on
+  // THAT bar's close, not on the current tick — the trade ended when that candle
+  // closed, and marking it at a price printed minutes later would misreport
+  // where the exit happened. The option premium is still the live one: there is
+  // no historical premium to read, and o.staleSpot flags the trade so the
+  // mismatch is visible rather than silent.
+  const exitSpot   = (typeof o.exitSpot === "number" && Number.isFinite(o.exitSpot))
+    ? parseFloat(o.exitSpot.toFixed(2))
+    : (state.lastTickPrice || pos.entrySpot);
   const qty        = pos.qty;
   const charges    = getCharges({ broker: "fyers", isSpot: false, entryPremium: pos.optionEntryLtp, exitPremium: exitOptLtp, qty });
   const pnl        = parseFloat(((exitOptLtp - pos.optionEntryLtp) * qty - charges).toFixed(2));
@@ -716,7 +730,13 @@ function simulateSell(reason, opts) {
     entryTime:      pos.entryTime,
     exitTime:       istNow(),
     entryBarTime:   pos.entryBarTime,
-    exitBarTime:    Math.floor(getBucketStart(Date.now(), _resMin()) / 1000),
+    exitBarTime:    (typeof o.exitBarTime === "number")
+      ? o.exitBarTime
+      : Math.floor(getBucketStart(Date.now(), _resMin()) / 1000),
+    // True when the bar that triggered this exit arrived late (batched history):
+    // spot is that bar's close, but optionExitLtp is the premium at the moment
+    // the batch was processed. Flagged so analysis can exclude these fills.
+    lateBarExit:    o.lateBar === true ? true : undefined,
     pnl,
     pnlMode:        `option premium: entry ₹${pos.optionEntryLtp} → exit ₹${exitOptLtp} (levels measured on NIFTY 50 spot)`,
     exitReason:     reason,
@@ -858,18 +878,22 @@ function _checkExits(spotPrice) {
  * The engine owns both tests (haStrategy.exitSignal) so paper, backtest, live
  * and replay cannot drift apart.
  */
-function _checkCandleExits(barTime) {
+function _checkCandleExits(barTime, lateBar) {
   const pos = state.position;
   if (!pos) return;
   // Default to the newest HA candle; when a specific bar is named (the catch-up
   // path in _mergeBars) test THAT bar, so a batch of bars arriving together is
   // judged one bar at a time exactly as the backtest judges them.
   let ha = null;
+  let raw = null;
   if (barTime == null) {
-    ha = state.ha.length ? state.ha[state.ha.length - 1] : null;
+    const n = state.ha.length;
+    ha  = n ? state.ha[n - 1] : null;
+    raw = state.candles.length ? state.candles[state.candles.length - 1] : null;
   } else {
     const i = state.candles.findIndex(c => c.time === barTime);
-    ha = i >= 0 ? state.ha[i] : null;
+    ha  = i >= 0 ? state.ha[i] : null;
+    raw = i >= 0 ? state.candles[i] : null;
   }
   if (!ha) return;
   // Never let the signal candle itself close the trade: the entry happens on
@@ -878,7 +902,14 @@ function _checkCandleExits(barTime) {
 
   const ex = haStrategy.exitSignal(pos.side, ha, {});
   if (!ex) return;
-  simulateSell(`${ex.label} — ${ex.detail}`);
+  // opts carry the bar's own close only when this is a CATCH-UP bar (one older
+  // than the newest closed bar). On the normal path the newest bar's close and
+  // the current tick are the same moment, so nothing is overridden.
+  const isCatchUp = lateBar === true && raw && typeof raw.close === "number";
+  simulateSell(
+    `${ex.label} — ${ex.detail}`,
+    isCatchUp ? { exitSpot: raw.close, exitBarTime: raw.time, lateBar: true } : {}
+  );
 }
 
 function _enforceEod() {
