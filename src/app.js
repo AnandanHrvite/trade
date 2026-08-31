@@ -3534,7 +3534,7 @@ setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily 
       // openPnl — already summed across its stock legs AND its option leg) —
       // fall back through all of them, or the tile shows Open ₹0 while a
       // position is live. Same order as realtime.js openPnl().
-      // `|| 0` on the result, not per-branch: a strategy that is flat reports
+      // '|| 0' on the result, not per-branch: a strategy that is flat reports
       // null here, and fmtINR(null) would paint "—" where "₹0" belongs.
       var open = (d.unrealisedPnl !== undefined ? d.unrealisedPnl
                : d.unrealised !== undefined ? d.unrealised
