@@ -2958,6 +2958,15 @@ router.get("/reset", (req, res) => {
   // numbers on screen. Safe to reset wholesale: we already refused above
   // unless the engine is stopped.
   state = _freshState();
+  // ...and today's JSONL has to go with it. rehydrateSessionFromJsonl() runs at
+  // module load and re-reads that file, so a reset that spared it came straight
+  // back on the next PM2 restart / deploy — the numbers reappearing was this,
+  // not the in-memory wipe failing.
+  const today = tradeLogger.istDateString(Date.now());
+  for (const p of [tradeLogger.dailyFilePathFor(MODE_KEY, today), skipLogger.filePathFor(MODE_KEY, today)]) {
+    try { if (p && fs.existsSync(p)) fs.unlinkSync(p); }
+    catch (e) { console.warn(`${LOG_TAG} reset could not remove ${p}: ${e.message}`); }
+  }
   return res.json({ success: true, message: `EarlyBird paper trade history cleared. Capital reset to ₹${fresh.toLocaleString("en-IN")}` });
 });
 
