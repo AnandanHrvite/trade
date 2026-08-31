@@ -2935,7 +2935,7 @@ function startAll(btn){
 // ── Quick-Action button live state (mutual lock: Paper ↔ Live) ──────────────
 var _dashSrc = 'paper';            // top-bar toggle source; also drives the charts
 var _allBtnState = { paperOn:false, liveOn:false };
-var _marketsClosed = false;        // set by checkTradingStatus() on weekend / NSE holiday
+var _marketsClosed = false;        // set by checkTradingStatus(): weekend / NSE holiday / pre- or post-market
 // Derived from the same enabled-strategy roster as the Start-All endpoint lists.
 var ALL_BTN_POLL = ${JSON.stringify(startAllPollTargets)};
 
@@ -2944,7 +2944,7 @@ function _applyAllBtnState(paperOn, liveOn){
   // when the PAPER source is selected; hide it under LIVE.
   // _marketsClosed wins over both: this poll runs every few seconds and would
   // otherwise re-show the buttons that checkTradingStatus() just hid on a
-  // weekend / NSE holiday.
+  // weekend / NSE holiday / outside market hours.
   var hb = document.getElementById('btn-all-harness');
   if(hb) hb.style.display = (_marketsClosed || _dashSrc === 'live') ? 'none' : '';
   var b = document.getElementById('btn-all-start');
@@ -3736,8 +3736,10 @@ async function checkTradingStatus(){
       }
     } catch(e){}
     // Markets shut = nothing to start: hide BOTH Start-All buttons (paper and
-    // harness), not just the paper one.
-    _marketsClosed = isHoliday || day === 0 || day === 6;
+    // harness), not just the paper one. Pre/post-market counts as shut too —
+    // the same window the pill reports as closed, so the buttons and the pill
+    // never disagree.
+    _marketsClosed = isHoliday || day === 0 || day === 6 || hour < 7 || hour >= 16;
     ['btn-all-start','btn-all-harness'].forEach(function(id){
       var b = document.getElementById(id);
       if(b) b.style.display = _marketsClosed ? 'none' : '';
