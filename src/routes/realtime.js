@@ -603,7 +603,10 @@ function renderPositionStandard(d, pos) {
   const sideClass = pos.side === 'CE' || pos.side === 'PE' ? pos.side : '';
   // A futures leg has no premium: CE reads LONG, PE reads SHORT, and the two
   // option-premium rows are dropped rather than shown as a permanent em-dash.
-  const isFut = pos.isFutures === true;
+  // Truthy, not strict ===: every producer sends a real boolean today, but a
+  // string "true" arriving from JSON would silently render a future as an
+  // option — degrade toward the loud case, not the wrong one.
+  const isFut = !!pos.isFutures;
   const sideTxt = isFut ? (pos.side === 'CE' ? 'LONG' : pos.side === 'PE' ? 'SHORT' : (pos.side || '')) : (pos.side || '');
   return \`
     <div class="pos-block">
