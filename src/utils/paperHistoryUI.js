@@ -207,10 +207,14 @@ function dailyFilesSectionHTML() {
 }
 
 // ── Daily Data Files + JSONL-viewer client runtime (server-side paginated) ───
-function dailyFilesClusterJS(routePrefix) {
+// `allowDelete` is opt-in per strategy: the Delete button only appears for
+// routes that expose POST {prefix}/daily-files/:date. Without the endpoint the
+// button would 404, so it stays hidden rather than shipping to every strategy.
+function dailyFilesClusterJS(routePrefix, allowDelete) {
   return `
 // ── Daily Data Files (skip + trade JSONL, server-side paginated) ─────────────
 var _DF_PREFIX = '${routePrefix}';
+var _DF_CAN_DELETE = ${allowDelete ? 'true' : 'false'};
 var _dfPage = 1, _dfPageSize = 10;
 function _dfFmtBytes(n){ if (!n) return '—'; if (n<1024) return n+' B'; if (n<1048576) return (n/1024).toFixed(1)+' KB'; return (n/1048576).toFixed(2)+' MB'; }
 async function loadDailyFiles(){
@@ -230,6 +234,7 @@ async function loadDailyFiles(){
         if (r.skipsSize)  btns += '<button class="export-btn" style="margin-right:4px;" onclick="viewJsonl(\\'skips\\',\\''+r.date+'\\')" title="View skip JSONL for '+r.date+'">👁 Skips</button>';
         if (r.tradesSize) btns += '<button class="export-btn" style="margin-right:4px;" onclick="viewJsonl(\\'trades\\',\\''+r.date+'\\')" title="View trade JSONL for '+r.date+'">👁 Trades</button>';
         if (r.tradesSize) btns += '<button class="export-btn" style="background:rgba(16,185,129,0.08);color:#10b981;border-color:rgba(16,185,129,0.3);" onclick="restoreSession(\\''+r.date+'\\')" title="Rebuild session from JSONL — recovers deleted/missing trades">♻ Restore</button>';
+        if (_DF_CAN_DELETE && (r.tradesSize || r.skipsSize)) btns += '<button class="export-btn" style="margin-left:4px;background:rgba(233,69,96,0.08);color:#e94560;border-color:rgba(233,69,96,0.3);" onclick="deleteDailyFiles(\\''+r.date+'\\')" title="Delete the raw JSONL file(s) for '+r.date+' — cannot be undone">🗑 Delete</button>';
         if (!btns) btns = '<span style="color:var(--muted-1,#8ba1c2);">—</span>';
         return '<tr><td>'+r.date+'</td><td>'+sCell+'</td><td>'+tCell+'</td><td>'+btns+'</td></tr>';
       }).join('');
@@ -284,6 +289,22 @@ async function restoreSession(date){
     await showAlert({icon:'✅',title:'Restored',message:'Restored ' + d.restored + ' trade(s) — PnL ₹' + (d.sessionPnl || 0),btnClass:'modal-btn-success'});
     location.reload();
   } catch(e) { showAlert({icon:'⚠️',title:'Restore error',message:(e && e.message) || String(e),btnClass:'modal-btn-danger'}); }
+}
+async function deleteDailyFiles(date){
+  var ok = await showConfirm({
+    icon: '⚠️',
+    title: 'Delete daily files',
+    message: 'Delete the trade + skip JSONL file(s) for '+date+'?\\nThis is the raw log Restore rebuilds from — once deleted that day cannot be recovered.',
+    confirmText: 'Delete',
+    confirmClass: 'modal-btn-danger'
+  });
+  if (!ok) return;
+  try {
+    var res = await fetch(_DF_PREFIX + '/daily-files/'+date, { method: 'POST', cache: 'no-store' });
+    var d = await res.json();
+    if (!d.success) { showAlert({icon:'⚠️',title:'Delete failed',message:d.error||'Unknown error',btnClass:'modal-btn-danger'}); return; }
+    loadDailyFiles();
+  } catch(e) { showAlert({icon:'⚠️',title:'Delete error',message:(e && e.message) || String(e),btnClass:'modal-btn-danger'}); }
 }
 loadDailyFiles();
 
@@ -1332,7 +1353,7 @@ function openContractNote(scope, idx){
 ${tradeModalJS()}
 ${dayViewAnalyticsJS({ routePrefix: cfg.routePrefix, startCap, filter })}
 ${cfg.extraAnalyticsJS || ""}
-${dailyFilesClusterJS(cfg.routePrefix)}
+${dailyFilesClusterJS(cfg.routePrefix, cfg.allowDailyFileDelete)}
 ${tableEnhancerJS()}
 </script>
 </body>

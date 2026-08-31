@@ -2825,6 +2825,7 @@ router.get("/history", (req, res) => {
   const startCap = parseFloat(process.env.FYERS_INV_AMOUNT || "100000");
   res.send(renderHistoryPage({
     routePrefix: "/early-bird-paper",
+    allowDailyFileDelete: true,
     sidebarKey: "earlyBirdHistory",
     pageTitle: "🐦 EarlyBird Paper Trade History",
     pageDocTitle: "EarlyBird Paper — History",
@@ -2928,10 +2929,35 @@ router.post("/restore-session/:date", (req, res) => {
   return res.json({ success: true, restored: missing.length, sessionPnl, message: `Restored ${missing.length} trade(s).` });
 });
 
+// Delete one day's JSONL files (trade + skip). The session rows in
+// early_bird_paper_trades.json are deleted separately from the Sessions table;
+// this only removes the raw day files, which is also what /restore-session
+// rebuilds from — so deleting here makes that day unrecoverable.
+router.post("/daily-files/:date", (req, res) => {
+  if (state.running) return res.status(400).json({ success: false, error: "Stop EarlyBird paper trading before deleting daily files." });
+  const date = String(req.params.date || "").trim();
+  if (!_EB_DATE_RE.test(date)) return res.status(400).json({ success: false, error: "Invalid date — expected YYYY-MM-DD." });
+  const removed = [];
+  const failed  = [];
+  for (const [label, p] of [["trades", tradeLogger.dailyFilePathFor(MODE_KEY, date)], ["skips", skipLogger.filePathFor(MODE_KEY, date)]]) {
+    try { if (p && fs.existsSync(p)) { fs.unlinkSync(p); removed.push(label); } }
+    catch (e) { failed.push(`${label}: ${e.message}`); }
+  }
+  if (failed.length) return res.status(500).json({ success: false, error: `Could not delete — ${failed.join("; ")}` });
+  if (!removed.length) return res.status(404).json({ success: false, error: `No daily files found for ${date}.` });
+  console.log(`🗑️ ${LOG_TAG} Deleted daily file(s) for ${date}: ${removed.join(" + ")}`);
+  return res.json({ success: true, removed, message: `Deleted ${removed.join(" + ")} file(s) for ${date}.` });
+});
+
 router.get("/reset", (req, res) => {
   if (state.running) return res.status(400).json({ success: false, error: "Stop EarlyBird paper trading before resetting." });
   const fresh = parseFloat(process.env.FYERS_INV_AMOUNT || "100000");
   saveData({ capital: fresh, totalPnl: 0, sessions: [] });
+  // The status page reads Session P&L / trades / W-L off the in-memory state,
+  // not off the file — wiping only the file left the last stopped session's
+  // numbers on screen. Safe to reset wholesale: we already refused above
+  // unless the engine is stopped.
+  state = _freshState();
   return res.json({ success: true, message: `EarlyBird paper trade history cleared. Capital reset to ₹${fresh.toLocaleString("en-IN")}` });
 });
 
