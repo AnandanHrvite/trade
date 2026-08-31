@@ -1356,7 +1356,7 @@ router.get("/status/data", (req, res) => {
       forcedExit: _envStr("RSI_PIVOT_ST_EXIT_TIME", "15:15"),
     },
     position: pos ? {
-      side: pos.side, symbol: pos.symbol, entrySpot: pos.entrySpot, optionEntryLtp: pos.optionEntryLtp,
+      side: pos.side, isFutures: !!pos.isFutures, symbol: pos.symbol, entrySpot: pos.entrySpot, optionEntryLtp: pos.optionEntryLtp,
       slSpot: pos.slSpot, premiumFloor: pos.premiumFloor, initialPremiumFloor: pos.initialPremiumFloor,
       premiumStopPct: pos.premiumStopPct,
       premiumStopSides: pos.premiumStopSides,

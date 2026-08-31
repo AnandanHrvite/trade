@@ -601,18 +601,22 @@ function renderPositionStandard(d, pos) {
     ? pos.optPremiumPct
     : (optionEntry && optionCurrent ? ((optionCurrent - optionEntry) / optionEntry) * 100 : null);
   const sideClass = pos.side === 'CE' || pos.side === 'PE' ? pos.side : '';
+  // A futures leg has no premium: CE reads LONG, PE reads SHORT, and the two
+  // option-premium rows are dropped rather than shown as a permanent em-dash.
+  const isFut = pos.isFutures === true;
+  const sideTxt = isFut ? (pos.side === 'CE' ? 'LONG' : pos.side === 'PE' ? 'SHORT' : (pos.side || '')) : (pos.side || '');
   return \`
     <div class="pos-block">
       <div>
-        <span class="pos-side \${sideClass}">\${pos.side || ''}</span>
+        <span class="pos-side \${sideClass}">\${sideTxt}</span>
         <span class="pos-symbol">\${pos.symbol || ''}</span>
       </div>
       <div class="pnl-big \${cls(upnl)}">\${fmtINR(upnl)}\${pct !== null ? '<span class="pct">' + (pct >= 0 ? '+' : '') + Number(pct).toFixed(2) + '%</span>' : ''}</div>
       <div class="pos-grid">
         <div class="lbl">Qty</div><div class="val">\${pos.qty ?? '—'}</div>
         <div class="lbl">Entry Spot</div><div class="val">\${fmtNum(entryPrice)}</div>
-        <div class="lbl">Entry Opt</div><div class="val">\${fmtNum(optionEntry)}</div>
-        <div class="lbl">Curr Opt</div><div class="val">\${fmtNum(optionCurrent)}</div>
+        \${isFut ? '' : \`<div class="lbl">Entry Opt</div><div class="val">\${fmtNum(optionEntry)}</div>
+        <div class="lbl">Curr Opt</div><div class="val">\${fmtNum(optionCurrent)}</div>\`}
         <div class="lbl">Live Spot</div><div class="val">\${fmtNum(liveClose)}</div>
         <div class="lbl">Pts Moved</div><div class="val \${cls(pointsMoved)}">\${fmtNum(pointsMoved)}</div>
         <div class="lbl">Stop Loss</div><div class="val">\${fmtNum(stopLoss)}</div>

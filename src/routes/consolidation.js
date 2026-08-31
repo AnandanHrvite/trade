@@ -908,7 +908,7 @@ function tradesToText(list, header){
 }
 
 function tradesToCSV(list){
-  const cols = ['date','mode','side','symbol','qty','entryPrice','exitPrice','spotAtEntry','spotAtExit','optionEntryLtp','optionExitLtp','entryTime','exitTime','pnl','pnlMode','entryReason','exitReason','optionStrike','optionType','optionExpiry','strategy','instrument'];
+  const cols = ['date','mode','side','symbol','qty','entryPrice','exitPrice','spotAtEntry','spotAtExit','optionEntryLtp','optionExitLtp','entryTime','exitTime','pnl','pnlMode','entryReason','exitReason','optionStrike','optionType','optionExpiry','strategy','instrument','isFutures'];
   const esc = v => {
     if (v == null) return '';
     const s = String(v);

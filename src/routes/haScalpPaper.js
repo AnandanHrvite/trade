@@ -1404,7 +1404,7 @@ router.get("/status/data", (req, res) => {
       forcedExit: _envStr("HA_SCALP_FORCED_EXIT", "15:15"),
     },
     position: pos ? {
-      side: pos.side, symbol: pos.symbol, entrySpot: pos.entrySpot, optionEntryLtp: pos.optionEntryLtp,
+      side: pos.side, isFutures: !!pos.isFutures, symbol: pos.symbol, entrySpot: pos.entrySpot, optionEntryLtp: pos.optionEntryLtp,
       slSpot: pos.slSpot, riskPts: pos.riskPts,
       trend: pos.trend, ma: pos.ma, bodyPct: pos.bodyPct,
       upperWickPct: pos.upperWickPct, lowerWickPct: pos.lowerWickPct,

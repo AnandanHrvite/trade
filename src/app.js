@@ -1407,7 +1407,11 @@ app.get("/", (req, res) => {
   {
     const { isExpiryOverrideStale } = instrumentConfig;
     const value = (process.env.OPTION_EXPIRY_OVERRIDE || "").trim();
-    if (value && isExpiryOverrideStale(value)) {
+    // A stale OPTION expiry blocks nothing when the app is trading FUTURES: the
+    // month contract is derived from the date, not from this override. Showing
+    // "entries are blocked" there would be a false alarm about a real block.
+    const _futuresMode = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
+    if (!_futuresMode && value && isExpiryOverrideStale(value)) {
       const fmt = (d) => new Date(`${d}T00:00:00+05:30`)
         .toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" });
       // While the post-close roll is still retrying (15:40 → 16:45 IST) the expiry

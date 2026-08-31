@@ -1179,7 +1179,7 @@ router.get("/status/data", (req, res) => {
       resMin: _resMin(),
     },
     position: pos ? {
-      side: pos.side, symbol: pos.symbol, entrySpot: pos.entrySpot, optionEntryLtp: pos.optionEntryLtp,
+      side: pos.side, isFutures: !!pos.isFutures, symbol: pos.symbol, entrySpot: pos.entrySpot, optionEntryLtp: pos.optionEntryLtp,
       slSpot: pos.slSpot, initialSlSpot: pos.initialSlSpot, targetSpot: pos.targetSpot,
       beArmSpot: pos.beArmSpot, beArmed: !!pos.beArmed, riskPts: pos.riskPts, targetR: pos.targetR,
       optionStrike: pos.optionStrike, optionExpiry: pos.optionExpiry,

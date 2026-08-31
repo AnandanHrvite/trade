@@ -989,7 +989,7 @@ router.get("/status/data", (req, res) => {
     trendBias: diag.trendBias || null, vwap: diag.vwap != null ? diag.vwap : null, atr5: diag.atr5 != null ? diag.atr5 : null,
     wins, losses, winRate, bestTrade, worstTrade, cumPnl, livePnl,
     position: pos ? {
-      side: pos.side, symbol: pos.symbol, entrySpot: pos.entrySpot, optionEntryLtp: pos.optionEntryLtp,
+      side: pos.side, isFutures: !!pos.isFutures, symbol: pos.symbol, entrySpot: pos.entrySpot, optionEntryLtp: pos.optionEntryLtp,
       slSpot: pos.slSpot, targetSpot: null, initialSlSpot: pos.initialSlSpot,
       breakevenArmed: pos.breakevenArmed, trailArmed: pos.trailArmed, lastEma: pos.lastEma, lastAtr: pos.lastAtr,
       peakPremium: pos.peakPremium, entryTime: pos.entryTime, signalStrength: pos.signalStrength,

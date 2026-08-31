@@ -14,7 +14,7 @@ These keys are given **different fallbacks at different engine call sites**. Wit
 | `BACKTEST_THETA_DAY` | `8`×10, `10`×5 | `src/routes/bbRsiBacktest.js`, `src/routes/earlyBirdBacktest.js`, `src/routes/haScalpBacktest.js`, `src/routes/orbBacktest.js`, `src/routes/paBacktest.js`, `src/routes/rsiPivotStBacktest.js`, `src/routes/trendDayScalpBacktest.js`, `src/routes/trendPbBacktest.js`, `src/services/backtestEngine.js`, `src/services/ema9vwapBacktestEngine.js` |
 | `BB_RSI_ENABLED` | `(any but true)`×2, `false`×1 | `src/app.js`, `src/routes/bbRsiLive.js` |
 | `EMA_RSI_ST_LIVE_ENABLED` | `false`×5, `(any but true)`×1 | `src/app.js`, `src/routes/auth.js`, `src/routes/emaRsiStLive.js`, `src/routes/emaRsiStLiveHarness.js` |
-| `INSTRUMENT` | `(not NIFTY_FUTURES)`×10, `NIFTY_OPTIONS`×2 | `src/config/instrument.js`, `src/routes/bbRsiLiveHarness.js`, `src/routes/earlyBirdLiveHarness.js`, `src/routes/ema9vwapLiveHarness.js`, `src/routes/emaRsiStLiveHarness.js`, `src/routes/haScalpLiveHarness.js`, `src/routes/orbLiveHarness.js`, `src/routes/paLiveHarness.js`, `src/routes/rsiPivotStLiveHarness.js`, `src/routes/trendDayScalpLiveHarness.js`, `src/routes/trendPbLiveHarness.js`, `src/utils/instrumentMode.js` |
+| `INSTRUMENT` | `(not NIFTY_FUTURES)`×10, ``×1, `NIFTY_OPTIONS`×1 | `src/config/instrument.js`, `src/routes/bbRsiLiveHarness.js`, `src/routes/earlyBirdLiveHarness.js`, `src/routes/ema9vwapLiveHarness.js`, `src/routes/emaRsiStLiveHarness.js`, `src/routes/haScalpLiveHarness.js`, `src/routes/orbLiveHarness.js`, `src/routes/paLiveHarness.js`, `src/routes/rsiPivotStLiveHarness.js`, `src/routes/trendDayScalpLiveHarness.js`, `src/routes/trendPbLiveHarness.js`, `src/utils/notify.js` |
 | `PA_ENABLED` | `(any but true)`×2, `true`×1 | `src/app.js`, `src/routes/paLive.js` |
 
 ## ⚠️ Status panels that misreport the default
@@ -241,7 +241,7 @@ The engine falls back to one value; a status panel or log banner prints another.
 | `HARD_SL_ENABLED` | toggle | `false` | Place a stop-loss order at the exchange on entry. |
 | `HARNESS_EXCHANGE_SL_ENABLED` | toggle | `false` | Leave a stop-loss order at the exchange for harness-run strategies (Trend PB, EMA9+VWAP, TDS). Off = the stop only lives in this process and dies with it. |
 | `HARNESS_SL_PCT` | number | `0.5` | How far below the entry premium that stop sits. 0.5 = trigger at half the premium paid. |
-| `INSTRUMENT` | select | `(not NIFTY_FUTURES)` ⚠️ also `NIFTY_OPTIONS`×2 | Options (CE/PE) or Futures. |
+| `INSTRUMENT` | select | `(not NIFTY_FUTURES)` ⚠️ also ``×1, `NIFTY_OPTIONS`×1 | Options (CE/PE) or Futures. |
 | `LIVE_EXIT_WAIT_MS` | number | — | How long to wait on a live exit before alerting (ms). |
 | `LIVE_HARNESS_DRY_RUN` | toggle | `true` | Global switch: log live orders but place none. |
 | `LOT_MULTIPLIER` | number | `1` | Number of lots per trade. |

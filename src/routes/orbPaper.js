@@ -1210,7 +1210,7 @@ router.get("/status/data", (req, res) => {
     cumPnl,
     livePnl,
     position: pos ? {
-      side: pos.side, symbol: pos.symbol,
+      side: pos.side, isFutures: !!pos.isFutures, symbol: pos.symbol,
       entrySpot: pos.entrySpot, optionEntryLtp: pos.optionEntryLtp,
       slSpot: pos.slSpot, targetSpot: pos.targetSpot,
       initialSlSpot: pos.initialSlSpot, breakevenArmed: pos.breakevenArmed, lastEma: pos.lastEma, peakPremium: pos.peakPremium,
