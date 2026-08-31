@@ -245,6 +245,39 @@ check("ORB's premium disaster stop cannot fire on futures", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+section("Replay re-runs the instrument that was RECORDED");
+
+check("the recorded INSTRUMENT is pinned, not taken from today's toggle", () => {
+  const { _internals } = require("../src/services/tickReplay");
+  const f = _internals._resolveReplayInstrumentEnv;
+  assert.ok(typeof f === "function", "tickReplay must resolve the recorded instrument");
+  const prev = process.env.INSTRUMENT;
+  try {
+    // A futures recording holds NO option ticks. Replaying it under today's
+    // options toggle would price every trade off a contract never quoted that
+    // day — a data mismatch that reads like a strategy result.
+    process.env.INSTRUMENT = "NIFTY_OPTIONS";
+    assert.strictEqual(f({ INSTRUMENT: "NIFTY_FUTURES" }).INSTRUMENT, "NIFTY_FUTURES",
+      "a futures recording must replay as futures whatever the current toggle says");
+    process.env.INSTRUMENT = "NIFTY_FUTURES";
+    assert.strictEqual(f({ INSTRUMENT: "NIFTY_OPTIONS" }).INSTRUMENT, "NIFTY_OPTIONS",
+      "an options recording must replay as options");
+  } finally { process.env.INSTRUMENT = prev; }
+});
+
+check("a legacy recording with no INSTRUMENT replays as OPTIONS", () => {
+  const { _internals } = require("../src/services/tickReplay");
+  const f = _internals._resolveReplayInstrumentEnv;
+  const prev = process.env.INSTRUMENT;
+  try {
+    process.env.INSTRUMENT = "NIFTY_FUTURES";
+    // Every session recorded before the toggle existed was an options session.
+    assert.strictEqual(f({}).INSTRUMENT, "NIFTY_OPTIONS");
+    assert.strictEqual(f({ INSTRUMENT: "junk" }).INSTRUMENT, "NIFTY_OPTIONS");
+  } finally { process.env.INSTRUMENT = prev; }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 section("Alerts and history label the instrument they actually traded");
 
 check("a Telegram alert trusts the payload over the global toggle", () => {

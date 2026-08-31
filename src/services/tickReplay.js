@@ -218,6 +218,26 @@ const _MODE_TO_ENV_PREFIX = {
 //
 // When no market.jsonl exists (recordings made before this feature), falls back
 // to the legacy snapshot pin so old days still replay without crashing.
+/**
+ * The INSTRUMENT the recorded session actually traded.
+ *
+ * Pinned historically for BOTH replay toggles, for exactly the reason expiry is:
+ * a recording made in NIFTY_FUTURES holds no option ticks, and replaying it
+ * under today's NIFTY_OPTIONS toggle would price every trade off a contract that
+ * was never quoted (or vice versa) — the run would look like a strategy result
+ * when it is really a data mismatch. "Current settings" mode re-simulates the
+ * RULES against the recorded market, not a different instrument.
+ *
+ * A recording that predates the snapshot (or one made before INSTRUMENT was
+ * captured) falls back to NIFTY_OPTIONS, which is what every such session was.
+ */
+function _resolveReplayInstrumentEnv(snapshot) {
+  const snap = snapshot || {};
+  const raw = String(snap.INSTRUMENT || "").trim().toUpperCase();
+  const value = raw === "NIFTY_FUTURES" ? "NIFTY_FUTURES" : "NIFTY_OPTIONS";
+  return { INSTRUMENT: value };
+}
+
 function _resolveReplayExpiryEnv({ marketContext, snapshot, mode }) {
   const prefix = _MODE_TO_ENV_PREFIX[mode] || null;   // null for bb_rsi/pa (common key only)
   const snap = snapshot || {};
@@ -1670,6 +1690,13 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
       snapshot: data.sessionStart.settings,
       mode,
     });
+    // The traded INSTRUMENT is as historical as the expiry — pin it the same way
+    // and through the same object, so the cache key and the applied env agree.
+    const _instrumentEnv = _resolveReplayInstrumentEnv(data.sessionStart.settings);
+    Object.assign(expiryResolution.env, _instrumentEnv);
+    if (_instrumentEnv.INSTRUMENT === "NIFTY_FUTURES") {
+      console.log(`📼 [replay] instrument pinned from the recording: NIFTY_FUTURES`);
+    }
     if (!data.marketContext) {
       console.warn(`⚠️ [replay] ${mode} ${date}: no Market Context Snapshot (market.jsonl) — expiry falls back to legacy pin; old-day option contract may mismatch. Re-record to fix.`);
     } else {
@@ -2242,5 +2269,5 @@ module.exports = {
   // getQuotes and write replay-clock data into today's real recording.
   isReplayInProgress: () => _replayInProgress,
   // exposed for tests
-  _internals: { _buildOptionTimeline, _lookupAtOrBefore, _createHarness, _invokeRoute, MODE_TO_MODULE, _resolveReplayExpiryEnv, _buildReplayCacheKey },
+  _internals: { _buildOptionTimeline, _lookupAtOrBefore, _createHarness, _invokeRoute, MODE_TO_MODULE, _resolveReplayExpiryEnv, _resolveReplayInstrumentEnv, _buildReplayCacheKey },
 };
