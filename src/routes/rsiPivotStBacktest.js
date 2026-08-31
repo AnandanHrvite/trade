@@ -87,10 +87,14 @@ function runRsiPivotStBacktest(intraday, daily) {
   if (!intraday || !intraday.length) return empty;
 
   const cfg = rsiPivotStrategy.getConfig();
-  const DELTA        = parseFloat(process.env.BACKTEST_DELTA || "0.55");
-  const THETA_DAY    = parseFloat(process.env.BACKTEST_THETA_DAY || "8");
+  // FUTURES MODE — index points are rupees 1:1: no delta, no theta, and the
+  // "premium" the sim carries IS the spot level (see instrumentMode.js).
+  const IS_FUT       = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
+  const DELTA        = IS_FUT ? 1.0 : parseFloat(process.env.BACKTEST_DELTA || "0.55");
+  const THETA_DAY    = IS_FUT ? 0   : parseFloat(process.env.BACKTEST_THETA_DAY || "8");
   const LOT_SIZE     = instrumentConfig.getLotQty();
   const SEED_PREMIUM = parseFloat(process.env.RSI_PIVOT_ST_BT_SEED_PREMIUM || "180");
+  // In futures the entry "premium" is the entry SPOT — seeded per trade below.
   const SLIPPAGE_PTS = parseFloat(process.env.RSI_PIVOT_ST_BT_SLIPPAGE_PTS || "2");
   const RES          = cfg.resolutionMins;
 
@@ -155,7 +159,7 @@ function runRsiPivotStBacktest(intraday, daily) {
     function priceAt(exitPx, exitTime) {
       const raw = premiumAt(exitPx, exitTime);
       const exitPrem = Math.max(0.05, raw - 2 * SLIPPAGE_PTS);   // buy high + sell low
-      const charges = getCharges({ broker: "zerodha", isFutures: false, entryPremium: pos.optionEntryLtp, exitPremium: exitPrem, qty: LOT_SIZE });
+      const charges = getCharges({ broker: "zerodha", isFutures: IS_FUT, entryPremium: pos.optionEntryLtp, exitPremium: exitPrem, qty: LOT_SIZE });
       return {
         pnl: parseFloat(((exitPrem - pos.optionEntryLtp) * LOT_SIZE - charges).toFixed(2)),
         exitPrem: parseFloat(exitPrem.toFixed(2)),
@@ -281,10 +285,12 @@ function runRsiPivotStBacktest(intraday, daily) {
         gateStats.setups++;
         sawSetup = true;
 
-        const entryPrem = SEED_PREMIUM;
+        const entryPrem = IS_FUT ? sig.entrySpot : SEED_PREMIUM;
         // null when the premium stop is switched off for this side — the exit
         // block below skips the floor test entirely in that case.
-        const floor = rsiPivotStrategy.premiumStop(entryPrem, null, cfg, sig.side);
+        // Futures have no premium, so the premium floor is absent — matching the
+        // paper route, which disables it rather than deriving one from a spot.
+        const floor = IS_FUT ? null : rsiPivotStrategy.premiumStop(entryPrem, null, cfg, sig.side);
         pos = {
           side: sig.side,
           entryTime: c.time,

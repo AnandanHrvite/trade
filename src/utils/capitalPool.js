@@ -41,11 +41,13 @@
  * • Purely observational. It can never place, size, alter OR stop an order, and
  *   every failure path fails OPEN.
  * • Models the OPTION PREMIUM outlay (`qty × premium`), which is what these
- *   strategies actually spend. Under `INSTRUMENT=NIFTY_FUTURES` there is no
- *   premium and no option poll, so the reservation stays at the assumed-premium
- *   estimate and is nominal — the P&L side of the pool is still exact. Nothing
- *   else in the app models futures margin either; don't read the blocked figure
- *   as exposure in that mode.
+ *   strategies actually spend. Under `INSTRUMENT=NIFTY_FUTURES` the routes that
+ *   know their fill price reserve SPAN+exposure MARGIN instead, via
+ *   instrumentMode.capitalRequired() (NIFTY_FUTURES_MARGIN_PCT, default 11%) —
+ *   reserving the notional there would read ~₹15.6L against a lot that really
+ *   blocks ~₹1.7L and would log a false "overdrawn" on every entry. Routes that
+ *   size off capitalPool.estimatedPremium() instead stay nominal in that mode.
+ *   The P&L side of the pool is exact either way.
  * • Disabled during replay/simulation: a replay would otherwise be judged
  *   against TODAY's pool rather than the pool that existed when the session was
  *   recorded, which would make replays non-reproducible.

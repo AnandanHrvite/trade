@@ -67,6 +67,7 @@ const aiExport    = require("../utils/aiExport");
 const fyers       = require("../config/fyers");
 const { notifyEntry, notifyExit, notifyStarted, notifyDayReport } = require("../utils/notify");
 const { getCharges } = require("../utils/charges");
+const instrumentMode = require("../utils/instrumentMode");
 const { getISTMinutes, getBucketStart } = require("../utils/tradeUtils");
 const skipLogger = require("../utils/skipLogger");
 const capitalPool = require("../utils/capitalPool");
@@ -329,7 +330,15 @@ function startPolling() {
     // every level is measured on — arrives on the shared tick feed, so there is
     // nothing to fetch for it and no second symbol to confuse the attribution.
     try {
-      const optSym = state.position ? state.position.symbol : null;
+      // Futures need no premium poll — the traded price IS the index level, so
+      // mirror the spot in and every downstream reader stays correct unchanged.
+      if (state.position && state.position.isFutures) {
+        if (state.lastTickPrice > 0) {
+          state.optionLtp = state.lastTickPrice;
+          state.optionLtpUpdatedAt = Date.now();
+        }
+      }
+      const optSym = (state.position && !state.position.isFutures) ? state.position.symbol : null;
       if (optSym) {
         const symbols = [optSym];
         const r = await fyers.getQuotes(symbols);
@@ -546,20 +555,28 @@ async function simulateBuy(side, sig) {
   }
   const indexSpot = spotPrice;
 
+  const _isFut = instrumentMode.isFutures();
+
   let optInfo;
   try {
-    optInfo = await instrumentConfig.validateAndGetOptionSymbol(indexSpot, side, "HA_SCALP");
+    optInfo = _isFut
+      ? await instrumentMode.resolveEntryInstrument(indexSpot, side, "HA_SCALP")
+      : await instrumentConfig.validateAndGetOptionSymbol(indexSpot, side, "HA_SCALP");
   } catch (e) {
     log(`❌ [HA-SCALP-PAPER] Symbol resolve failed: ${e.message}`);
     return;
   }
   if (!optInfo || optInfo.invalid) {
-    log(`❌ [HA-SCALP-PAPER] No valid expiry — skip ${side} entry`);
-    skipLogger.appendSkipLog(MODE_KEY, { gate: "expiry", reason: "no valid option expiry", side, spot: indexSpot });
+    log(`❌ [HA-SCALP-PAPER] No valid ${_isFut ? "futures contract" : "expiry"} — skip ${side} entry`);
+    skipLogger.appendSkipLog(MODE_KEY, { gate: "expiry", reason: _isFut ? "no valid futures contract" : "no valid option expiry", side, spot: indexSpot });
     return;
   }
 
   let optionEntryLtp = null;
+  if (_isFut) {
+    // Futures trade AT the index level — there is no premium to quote.
+    optionEntryLtp = indexSpot;
+  } else {
   try {
     const r = await fyers.getQuotes([optInfo.symbol]);
     if (r && r.s === "ok" && r.d && r.d.length) {
@@ -578,6 +595,7 @@ async function simulateBuy(side, sig) {
     log(`❌ [HA-SCALP-PAPER] Option LTP not available — entry skipped`);
     skipLogger.appendSkipLog(MODE_KEY, { gate: "option_ltp", reason: "no option LTP", symbol: optInfo.symbol, side, spot: indexSpot });
     return;
+  }
   }
 
   // The stop is a LEVEL the engine read off the signal candle's RAW low/high.
@@ -605,13 +623,14 @@ async function simulateBuy(side, sig) {
 
   // Capital check — advisory only: an overdrawn pool raises a dashboard alert,
   // it never stops a paper trade. Sits AFTER the last abort path.
-  const _cap = capitalPool.check(MODE_KEY, qty * optionEntryLtp);
+  const _cap = capitalPool.check(MODE_KEY, instrumentMode.capitalRequired(qty, optionEntryLtp));
   if (!_cap.ok) {
     log(`⚠️ [HA-SCALP-PAPER] ${_cap.reason} — entry taken anyway, pool now overdrawn`);
     capitalPool.noteShortfall(MODE_KEY, _cap, { side, symbol: optInfo.symbol });
   }
 
   const pos = {
+    isFutures:      _isFut,
     side,
     symbol:         optInfo.symbol,
     optionStrike:   optInfo.strike,
@@ -655,13 +674,13 @@ async function simulateBuy(side, sig) {
   };
 
   state.position = pos;
-  capitalPool.block(MODE_KEY, qty * optionEntryLtp, { side, symbol: optInfo.symbol, qty, premium: optionEntryLtp });
+  capitalPool.block(MODE_KEY, instrumentMode.capitalRequired(qty, optionEntryLtp), { side, symbol: optInfo.symbol, qty, premium: optionEntryLtp });
   try { require("../utils/positionPersist").saveHaScalpPosition(pos, { sessionPnl: state.sessionPnl }); } catch (_) {}
   state.optionLtp = optionEntryLtp;
   state.optionLtpUpdatedAt = Date.now();
   state.tradesTaken++;
 
-  log(`🟢 [HA-SCALP-PAPER] BUY_${side} ${optInfo.symbol} qty=${qty} @ spot=${spotPrice} (index ${indexSpot}) optLtp=₹${optionEntryLtp}`);
+  log(`🟢 [HA-SCALP-PAPER] ${_isFut ? (side === "CE" ? "LONG" : "SHORT") + " FUT" : "BUY_" + side} ${optInfo.symbol} qty=${qty} @ spot=${spotPrice} (index ${indexSpot})${_isFut ? "" : ` optLtp=₹${optionEntryLtp}`}`);
   log(`   ├─ Trend  : ${pos.trend} — raw close ${sig.rawClose} is ${side === "CE" ? "ABOVE" : "BELOW"} the ${sig.cfg.maPeriod} ${String(pos.maType).toUpperCase()} at ${pos.ma}`);
   log(`   ├─ Candle : ${side === "CE" ? "BULLISH" : "BEARISH"} Heikin Ashi, NO ${side === "CE" ? "BOTTOM" : "TOP"} WICK (${side === "CE" ? pos.lowerWickPct : pos.upperWickPct}% of range) · body ${pos.bodyPct}% · HA ${pos.haOpen} → ${pos.haClose}`);
   log(`   ├─ Stop   : ${slSpot} = the signal candle's RAW ${side === "CE" ? "LOW" : "HIGH"} (${slPts}pt away). It never moves.`);
@@ -704,8 +723,13 @@ function simulateSell(reason, opts) {
     ? parseFloat(o.exitSpot.toFixed(2))
     : (state.lastTickPrice || pos.entrySpot);
   const qty        = pos.qty;
-  const charges    = getCharges({ broker: "fyers", isSpot: false, entryPremium: pos.optionEntryLtp, exitPremium: exitOptLtp, qty });
-  const pnl        = parseFloat(((exitOptLtp - pos.optionEntryLtp) * qty - charges).toFixed(2));
+  const _pnlRes    = instrumentMode.computePnl({
+    side: pos.side, entrySpot: pos.entrySpot, exitSpot,
+    entryPremium: pos.optionEntryLtp, exitPremium: exitOptLtp,
+    qty, broker: "fyers",
+  });
+  const charges    = _pnlRes.charges;
+  const pnl        = _pnlRes.pnl;
 
   state.sessionPnl = parseFloat((state.sessionPnl + pnl).toFixed(2));
   if (pnl < 0) state.consecutiveLosses++; else if (pnl > 0) state.consecutiveLosses = 0;
@@ -724,9 +748,9 @@ function simulateSell(reason, opts) {
     spotAtExit:     exitSpot,
     indexAtEntry:   pos.indexAtEntry,
     spotSymbol:  pos.spotSymbol,
-    optionEntryLtp: pos.optionEntryLtp,
-    optionExitLtp:  exitOptLtp,
-    bestOptionLtp:  pos.peakPremium || null,
+    optionEntryLtp: pos.isFutures ? null : pos.optionEntryLtp,
+    optionExitLtp:  pos.isFutures ? null : exitOptLtp,
+    bestOptionLtp:  pos.isFutures ? null : (pos.peakPremium || null),
     entryTime:      pos.entryTime,
     exitTime:       istNow(),
     entryBarTime:   pos.entryBarTime,
@@ -773,7 +797,8 @@ function simulateSell(reason, opts) {
     durationMs:     Date.now() - pos.entryTimeMs,
     charges,
     isSpot:      false,
-    instrument:     "NIFTY_OPTIONS",
+    isFutures:      !!pos.isFutures,
+    instrument:     pos.isFutures ? "NIFTY_FUTURES" : "NIFTY_OPTIONS",
   };
   state.sessionTrades.push(trade);
   tradeLogger.appendTradeLog(MODE_KEY, trade);

@@ -124,7 +124,10 @@ router.get("/start", async (req, res) => {
       modeTag:    "SIMPLE930-PAPER",   // simple930Paper's mode field in notify payloads
       broker:     "zerodha",
       dryRun,
-      isFutures:  false,               // this strategy only ever buys options
+      // SIMPLE930 is premium-denominated (its trigger/stop/trail are option
+      // premium levels), so it has no futures form and the paper route refuses
+      // to run under INSTRUMENT=NIFTY_FUTURES. Always options here.
+      isFutures:  false,
       liveLogKey: null,                // live trades are not logged to disk (Trade Logs shows paper only)
     });
   } catch (err) {

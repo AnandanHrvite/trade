@@ -297,7 +297,7 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
           const netPremPts = spotPnlPts * DELTA - thetaCost / LOT_SIZE;
           const estEntry   = 200;
           const estExit    = Math.max(1, estEntry + netPremPts);
-          const _chg = getCharges({ broker: "fyers", isFutures: false, exitPremium: estExit, entryPremium: estEntry, qty: LOT_SIZE });
+          const _chg = getCharges({ broker: "fyers", isFutures, exitPremium: estExit, entryPremium: estEntry, qty: LOT_SIZE });
           pnl = parseFloat(((spotPnlPts * DELTA * LOT_SIZE) - thetaCost - _chg).toFixed(2));
         } else {
           const _chg = getCharges({ broker: "fyers", isFutures, exitPremium: exitPrice, entryPremium: position.entryPrice, qty: LOT_SIZE });

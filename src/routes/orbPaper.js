@@ -44,6 +44,7 @@ const aiExport    = require("../utils/aiExport");
 const fyers       = require("../config/fyers");
 const { notifyEntry, notifyExit, notifyStarted, notifyDayReport } = require("../utils/notify");
 const { getCharges } = require("../utils/charges");
+const instrumentMode = require("../utils/instrumentMode");
 const { fmtISTDateTime, getISTMinutes, getBucketStart } = require("../utils/tradeUtils");
 const skipLogger = require("../utils/skipLogger");
 const { RSI } = require("technicalindicators");
@@ -277,20 +278,29 @@ async function simulateBuy(side, sigSnapshot) {
 async function _simulateBuyInner(side, sigSnapshot, spot) {
 
   // Resolve ATM option symbol (auto expiry)
+  const _isFut = instrumentMode.isFutures();
+
   let optInfo;
   try {
-    optInfo = await instrumentConfig.validateAndGetOptionSymbol(spot, side, "ORB");
+    optInfo = _isFut
+      ? await instrumentMode.resolveEntryInstrument(spot, side, "ORB")
+      : await instrumentConfig.validateAndGetOptionSymbol(spot, side, "ORB");
   } catch (e) {
     log(`❌ [ORB-PAPER] Symbol resolve failed: ${e.message}`);
     return;
   }
   if (!optInfo || optInfo.invalid) {
-    log(`❌ [ORB-PAPER] No valid expiry — skip ${side} entry`);
+    log(`❌ [ORB-PAPER] No valid ${_isFut ? "futures contract" : "expiry"} — skip ${side} entry`);
     return;
   }
 
   // Fetch current option quote (LTP + bid/ask for the STEP 8 spread gate)
   let optionEntryLtp = null, optBid = null, optAsk = null;
+  if (_isFut) {
+    // Futures trade AT the index level — there is no premium, so the premium
+    // band and option bid-ask gates below do not apply and are skipped.
+    optionEntryLtp = spot;
+  } else {
   try {
     const r = await fyers.getQuotes([optInfo.symbol]);
     if (r && r.s === "ok" && r.d && r.d.length) {
@@ -330,12 +340,13 @@ async function _simulateBuyInner(side, sigSnapshot, spot) {
     skipLogger.appendSkipLog("orb", { gate: "spread", reason: `${_sp.reason} > ${maxSpread}pt`, symbol: optInfo.symbol, side, spot, spread: _sp.spread });
     return;
   }
+  }
 
   const qty = instrumentConfig.getLotQty();
 
   // ── Capital check — advisory only: an overdrawn pool raises a dashboard alert,
   //    it never stops the trade (a paper session must keep collecting data).
-  const _cap = capitalPool.check("orb", qty * optionEntryLtp);
+  const _cap = capitalPool.check("orb", instrumentMode.capitalRequired(qty, optionEntryLtp));
   if (!_cap.ok) {
     log(`⚠️ [ORB-PAPER] ${_cap.reason} — entry taken anyway, pool now overdrawn`);
     capitalPool.noteShortfall("orb", _cap, { side, symbol: optInfo.symbol });
@@ -358,6 +369,7 @@ async function _simulateBuyInner(side, sigSnapshot, spot) {
   const _initSl = _stop.slSpot;
   const pos = {
     side,
+    isFutures:      _isFut,
     symbol:         optInfo.symbol,
     optionStrike:   optInfo.strike,
     optionExpiry:   optInfo.expiry,
@@ -401,13 +413,14 @@ async function _simulateBuyInner(side, sigSnapshot, spot) {
   };
 
   state.position = pos;
-  capitalPool.block("orb", qty * optionEntryLtp, { side, symbol: optInfo.symbol, qty, premium: optionEntryLtp });
+  capitalPool.block("orb", instrumentMode.capitalRequired(qty, optionEntryLtp), { side, symbol: optInfo.symbol, qty, premium: optionEntryLtp });
   try { require("../utils/positionPersist").saveOrbPosition(pos, { sessionPnl: state.sessionPnl }); } catch (_) {}
   state.optionLtp = optionEntryLtp;
   state.optionLtpUpdatedAt = Date.now();
   state._ltpStaleLogged = false;
   state.tradesTaken++;
-  startOptionPolling();
+  // Futures P&L comes from the spot feed — no option contract to poll.
+  if (!_isFut) startOptionPolling();
 
   log(`🟢 [ORB-PAPER] BUY_${side} ${optInfo.symbol} qty=${qty} @ spot=${spot} optLtp=${optionEntryLtp}`);
   log(`   risk: ${_stop.note}`);
@@ -440,8 +453,13 @@ function simulateSell(reason) {
   const exitOptLtp = state.optionLtp || pos.optionEntryLtp;
   const exitSpot   = state.lastTickPrice || pos.entrySpot;
   const qty        = pos.qty;
-  const charges    = getCharges({ broker: "fyers", isFutures: false, entryPremium: pos.optionEntryLtp, exitPremium: exitOptLtp, qty });
-  const pnl        = parseFloat(((exitOptLtp - pos.optionEntryLtp) * qty - charges).toFixed(2));
+  const _pnlRes    = instrumentMode.computePnl({
+    side: pos.side, entrySpot: pos.entrySpot, exitSpot,
+    entryPremium: pos.optionEntryLtp, exitPremium: exitOptLtp,
+    qty, broker: "fyers",
+  });
+  const charges    = _pnlRes.charges;
+  const pnl        = _pnlRes.pnl;
 
   state.sessionPnl = parseFloat((state.sessionPnl + pnl).toFixed(2));
 
@@ -453,9 +471,9 @@ function simulateSell(reason) {
     exitPrice:      exitSpot,
     spotAtEntry:    pos.entrySpot,
     spotAtExit:     exitSpot,
-    optionEntryLtp: pos.optionEntryLtp,
-    optionExitLtp:  exitOptLtp,
-    bestOptionLtp:  pos.peakPremium  || null,   // peak option premium during trade — observer-only
+    optionEntryLtp: pos.isFutures ? null : pos.optionEntryLtp,
+    optionExitLtp:  pos.isFutures ? null : exitOptLtp,
+    bestOptionLtp:  pos.isFutures ? null : (pos.peakPremium  || null),   // peak option premium during trade — observer-only
     entryTime:      pos.entryTime,
     exitTime:       istNow(),
     entryBarTime:   pos.entryBarTime,
@@ -490,13 +508,13 @@ function simulateSell(reason) {
     secsToMAE:      pos.secsToMAE   || 0,
     durationMs:     Date.now() - pos.entryTimeMs,
     charges,
-    isFutures:      false,
-    instrument:     "NIFTY_OPTIONS",
+    isFutures:      !!pos.isFutures,
+    instrument:     pos.isFutures ? "NIFTY_FUTURES" : "NIFTY_OPTIONS",
   };
   state.sessionTrades.push(trade);
   tradeLogger.appendTradeLog("orb", trade);
 
-  log(`🔴 [ORB-PAPER] EXIT ${pos.side} ${pos.symbol} @ optLtp=${exitOptLtp} spot=${exitSpot} | PnL=₹${pnl} (${reason})`);
+  log(`🔴 [ORB-PAPER] EXIT ${pos.side} ${pos.symbol} @ ${pos.isFutures ? "" : `optLtp=${exitOptLtp} `}spot=${exitSpot} | PnL=₹${pnl} (${reason})`);
 
   notifyExit({
     mode: "ORB-PAPER",

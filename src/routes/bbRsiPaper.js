@@ -1013,7 +1013,13 @@ async function resolveAndEnter(side, spot, result) {
       const strike = Math.round(spot / 50) * 50;
       symbol = `NSE:NIFTY-SIM-${strike}${side}`;
     } else {
-      const optionInfo = await validateAndGetOptionSymbol(spot, side);
+      // Honour the INSTRUMENT toggle: in futures mode there is no strike or
+      // expiry to validate — the month contract IS the tradeable symbol. The
+      // P&L branch below already prices futures; without this the route would
+      // trade an OPTION while booking it as futures.
+      const optionInfo = (instrumentConfig.INSTRUMENT === "NIFTY_FUTURES")
+        ? { symbol: await getSymbol(side), strike: null, expiry: null, invalid: false }
+        : await validateAndGetOptionSymbol(spot, side);
       if (optionInfo.invalid) {
         log(`⚠️ [BB_RSI-PAPER] Option symbol invalid for ${side} — skipping entry`);
         return;
@@ -1368,7 +1374,9 @@ router.post("/manualEntry", async (req, res) => {
   }
 
   try {
-    const optResult = await validateAndGetOptionSymbol(spot, side);
+    const optResult = (instrumentConfig.INSTRUMENT === "NIFTY_FUTURES")
+      ? { symbol: await getSymbol(side), strike: null, expiry: null, invalid: false }
+      : await validateAndGetOptionSymbol(spot, side);
     const symbol = optResult.symbol;
     const qty = getLotQty();
     log(`🖐️ [BB_RSI-PAPER] MANUAL ENTRY ${side} @ spot ₹${spot} | SL: ₹${sl} (${slSrcLbl})`);

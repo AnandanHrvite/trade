@@ -81,10 +81,14 @@ function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [] } = 
   // TREND_PB_VIX_ENABLED=true, which checkBacktestVix decides for itself).
   const lookupVix = vixFilter.buildVixLookup(vixCandles || []);
 
-  const DELTA        = parseFloat(process.env.BACKTEST_DELTA || "0.55");
-  const THETA_DAY    = parseFloat(process.env.BACKTEST_THETA_DAY || "8");
+  // FUTURES MODE — index points are rupees 1:1: no delta, no theta, and the
+  // "premium" the sim carries IS the spot level (see instrumentMode.js).
+  const IS_FUT       = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
+  const DELTA        = IS_FUT ? 1.0 : parseFloat(process.env.BACKTEST_DELTA || "0.55");
+  const THETA_DAY    = IS_FUT ? 0   : parseFloat(process.env.BACKTEST_THETA_DAY || "8");
   const LOT_SIZE     = instrumentConfig.getLotQty();
-  const SEED_PREMIUM = parseFloat(process.env.TREND_PB_BT_SEED_PREMIUM || "240");     // slightly-ITM ≈ ATM + one strike intrinsic
+  const SEED_PREMIUM = parseFloat(process.env.TREND_PB_BT_SEED_PREMIUM || "240");
+  // In futures the entry "premium" is the entry SPOT — seeded per trade below.     // slightly-ITM ≈ ATM + one strike intrinsic
   const SLIPPAGE_PTS = parseFloat(process.env.TREND_PB_BT_SLIPPAGE_PTS || "1.5");     // spread+slippage haircut EACH way (premium pts)
   const SIG_WINDOW   = parseInt(process.env.TREND_PB_SIG_WINDOW || "300", 10);        // trailing bars to seed EMA50(15m)
 
@@ -134,7 +138,7 @@ function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [] } = 
     const spotMove = pos.side === "CE" ? (exitSpot - pos.entrySpot) : (pos.entrySpot - exitSpot);
     const exitPremRaw = Math.max(0.05, pos.optionEntryLtp + spotMove * DELTA - thetaCost / LOT_SIZE);
     const exitPrem = Math.max(0.05, exitPremRaw - 2 * SLIPPAGE_PTS);   // buy high + sell low
-    const charges = getCharges({ broker: "fyers", isFutures: false, entryPremium: pos.optionEntryLtp, exitPremium: exitPrem, qty: LOT_SIZE });
+    const charges = getCharges({ broker: "fyers", isFutures: IS_FUT, entryPremium: pos.optionEntryLtp, exitPremium: exitPrem, qty: LOT_SIZE });
     const pnl = parseFloat(((exitPrem - pos.optionEntryLtp) * LOT_SIZE - charges).toFixed(2));
     return { pnl, exitPrem: parseFloat(exitPrem.toFixed(2)), heldCandles: Math.round(candlesHeld) };
   }
@@ -280,7 +284,7 @@ function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [] } = 
       const initSl = parseFloat((side === "CE" ? c.close - riskPts : c.close + riskPts).toFixed(2));
       position = {
         side, entryTime: c.time, entrySpot: c.close,
-        optionEntryLtp: SEED_PREMIUM, slSpot: initSl, riskPts,
+        optionEntryLtp: IS_FUT ? c.close : SEED_PREMIUM, slSpot: initSl, riskPts,
         bestSpot: c.close, breakevenArmed: false, trailArmed: false, emaArmed: false,
         candlesHeld: 0, trendBias: bias, signalStrength: baseline ? "BASELINE" : (sig.signalStrength || "STRONG"),
         entryReason,

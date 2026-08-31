@@ -237,11 +237,16 @@ function rateLimits() {
  * nothing at all.
  */
 function optionSimCfg() {
+  // FUTURES MODE — index points are rupees 1:1: δ=1, no theta. The premium sim
+  // still runs so the code path is shared, it just becomes an identity.
+  const isFut = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
   const on    = process.env.BACKTEST_OPTION_SIM !== "false";   // on by default
   const delta = parseFloat(process.env.BACKTEST_DELTA    || "0.55");
   const theta = parseFloat(process.env.BACKTEST_THETA_DAY || "10");
+  if (isFut) return { on: true, isFutures: true, delta: 1.0, thetaPerDay: 0 };
   return {
     on,
+    isFutures: false,
     delta: Number.isFinite(delta) && delta > 0 ? delta : 0.55,
     thetaPerDay: Number.isFinite(theta) && theta >= 0 ? theta : 10,
   };
@@ -275,10 +280,14 @@ function _bookOptionTrade(pos, exitFill, exitType, exitReason, exitTime, heldBar
     // Charges need a premium level to bill against. The real entry premium is
     // unknown (no premium history), so estimate an ATM premium and move it by
     // the modelled amount — the same approach backtestEngine.js takes.
-    const estEntry = 200;
-    const estExit  = Math.max(0.05, _r2(estEntry + netPremiumPts));
-    charges = _r2(getCharges({ isFutures: false, entryPremium: estEntry, exitPremium: estExit, qty, broker: "fyers" }));
-    pnlMode = `opt_sim (spot ${spotPts}pt × δ${OPT.delta} = ${_r2(premiumMovePts)}pt − θ${thetaPts}pt) × ${qty}`;
+    // Futures bill against the real index level (it IS the traded price); options
+    // have no premium history, so an ATM estimate is moved by the modelled amount.
+    const estEntry = OPT.isFutures ? pos.entryFill : 200;
+    const estExit  = OPT.isFutures ? exitFill      : Math.max(0.05, _r2(estEntry + netPremiumPts));
+    charges = _r2(getCharges({ isFutures: !!OPT.isFutures, entryPremium: estEntry, exitPremium: estExit, qty, broker: "fyers" }));
+    pnlMode = OPT.isFutures
+      ? `futures (spot ${spotPts}pt, 1:1) × ${qty}`
+      : `opt_sim (spot ${spotPts}pt × δ${OPT.delta} = ${_r2(premiumMovePts)}pt − θ${thetaPts}pt) × ${qty}`;
   } else {
     gross   = _r2(spotPts * qty);
     charges = _r2(getCharges({ isFutures: false, entryPremium: 200, exitPremium: 200, qty, broker: "fyers" }));

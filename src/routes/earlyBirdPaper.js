@@ -122,6 +122,7 @@ const capitalPool = require("../utils/capitalPool");
 // module fails at boot, not at 09:30 on the one day the mode is switched on.
 const instrumentConfig = require("../config/instrument");
 const { getCharges }   = require("../utils/charges");
+const instrumentMode  = require("../utils/instrumentMode");
 
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
 const CALLBACK_ID        = "earlyBirdPaper";
@@ -994,9 +995,13 @@ async function _openOptionPosition(setup, triggerSpot, nowMins, cfg) {
 
   log(`⚡ ${LOG_TAG} OPTION TRIGGER — NIFTY spot ${triggerSpot} ${setup.side === "LONG" ? "traded UP through" : "traded DOWN through"} the ${setup.entry} entry level. Resolving the ${optionSide} strike…`);
 
+  const _isFut = instrumentMode.isFutures();
+
   let optInfo;
   try {
-    optInfo = await instrumentConfig.validateAndGetOptionSymbol(triggerSpot, optionSide, "EARLYBIRD");
+    optInfo = _isFut
+      ? await instrumentMode.resolveEntryInstrument(triggerSpot, optionSide, "EARLYBIRD")
+      : await instrumentConfig.validateAndGetOptionSymbol(triggerSpot, optionSide, "EARLYBIRD");
   } catch (e) {
     state.optionLtpFailAt = Date.now();
     log(`❌ ${LOG_TAG} OPTION — strike/expiry resolve failed: ${e.message}. Will retry while the entry window is open.`);
@@ -1015,10 +1020,18 @@ async function _openOptionPosition(setup, triggerSpot, nowMins, cfg) {
   }
 
   let premium = null;
-  try {
-    premium = await _fetchOptionPremium(optInfo.symbol);
-  } catch (e) {
-    log(`⚠️ ${LOG_TAG} OPTION — premium fetch threw for ${optInfo.symbol}: ${e.message}`);
+  if (_isFut) {
+    // Futures trade AT the index level, and this route books at the FROZEN entry
+    // level (a resting stop order would have filled there) — the same basis the
+    // futures P&L below measures from. Using triggerSpot here instead would make
+    // the recorded entry price and the P&L basis disagree by the slippage.
+    premium = entrySpot;
+  } else {
+    try {
+      premium = await _fetchOptionPremium(optInfo.symbol);
+    } catch (e) {
+      log(`⚠️ ${LOG_TAG} OPTION — premium fetch threw for ${optInfo.symbol}: ${e.message}`);
+    }
   }
 
   // ── RE-CHECKED AFTER THE AWAIT. Two concurrent polls could both have passed
@@ -1056,7 +1069,7 @@ async function _openOptionPosition(setup, triggerSpot, nowMins, cfg) {
   }
 
   // Capital check — advisory only, exactly as on the stock leg.
-  const _cap = capitalPool.check(MODE_KEY, qty * premium);
+  const _cap = capitalPool.check(MODE_KEY, instrumentMode.capitalRequired(qty, premium));
   if (!_cap.ok) {
     log(`⚠️ ${LOG_TAG} ${_cap.reason} — option entry taken anyway, pool now overdrawn`);
     capitalPool.noteShortfall(MODE_KEY, _cap, { side: optionSide, symbol: optInfo.symbol });
@@ -1064,6 +1077,7 @@ async function _openOptionPosition(setup, triggerSpot, nowMins, cfg) {
 
   const pos = {
     leg:            "option",
+    isFutures:      _isFut,
     symbol:         optInfo.symbol,      // the FULL Fyers option symbol
     optionSide,                          // CE | PE
     optionStrike:   optInfo.strike,
@@ -1104,7 +1118,7 @@ async function _openOptionPosition(setup, triggerSpot, nowMins, cfg) {
   state.optionLtpFails  = 0;
   state.optionLtpFailAt = null;
   state.tradesTaken++;
-  capitalPool.block(MODE_KEY, qty * premium, { side: optionSide, symbol: optInfo.symbol, qty, premium });
+  capitalPool.block(MODE_KEY, instrumentMode.capitalRequired(qty, premium), { side: optionSide, symbol: optInfo.symbol, qty, premium });
   _persist();
 
   const slip = _r2(Math.abs(triggerSpot - entrySpot));
@@ -1169,11 +1183,20 @@ async function _closeOptionPosition(ex) {
   const cfg = earlyBird.getConfig();
   let exitPremium = null;
   let premiumSource = "live quote";
+  if (pos.isFutures) {
+    // Futures mark at the index level the exit fired on — there is no premium
+    // quote, and falling through to the option fetch would book the trade at
+    // the entry price (a phantom flat).
+    exitPremium = (typeof ex.price === "number" && Number.isFinite(ex.price) && ex.price > 0)
+      ? ex.price : state.lastTickPrice;
+    premiumSource = "index level (futures)";
+  } else {
   try {
     exitPremium = await _fetchOptionPremium(pos.symbol);
     if (exitPremium != null) { try { tickRecorder.recordOptionLtp(pos.symbol, exitPremium, "early-bird-paper"); } catch (_) {} }
   } catch (e) {
     log(`⚠️ ${LOG_TAG} OPTION — exit premium fetch threw for ${pos.symbol}: ${e.message}`);
+  }
   }
   if (typeof exitPremium !== "number" || !Number.isFinite(exitPremium) || exitPremium <= 0) {
     exitPremium = (typeof state.optionLtp === "number" && Number.isFinite(state.optionLtp) && state.optionLtp > 0)
@@ -1189,9 +1212,14 @@ async function _closeOptionPosition(ex) {
   // A BOUGHT option: profit is (exit − entry) × qty, whichever side it is.
   // earlyBird.computePnl is cash-equity and direction-signed — using it here
   // would flip the sign on every PE and report a winner as a loser.
-  const gross   = _r2((exitPremium - pos.optionEntryLtp) * qty);
-  const charges = getCharges({ broker: "fyers", isSpot: false, entryPremium: pos.optionEntryLtp, exitPremium, qty });
-  const pnl     = _r2(gross - charges);
+  const _pnlRes = instrumentMode.computePnl({
+    side: pos.optionSide, entrySpot: pos.entrySpot, exitSpot,
+    entryPremium: pos.optionEntryLtp, exitPremium,
+    qty, broker: "fyers",
+  });
+  const gross   = _r2(_pnlRes.gross);
+  const charges = _pnlRes.charges;
+  const pnl     = _r2(_pnlRes.pnl);
 
   state.sessionPnl = _r2(state.sessionPnl + pnl);
   if (ex.exitType === "SL") state.stopOuts++;
@@ -1244,7 +1272,8 @@ async function _closeOptionPosition(ex) {
     secsToMFE:      pos.secsToMFE || 0,
     secsToMAE:      pos.secsToMAE || 0,
     durationMs:     Date.now() - pos.entryTimeMs,
-    instrument:     "NIFTY_OPTION",
+    instrument:     pos.isFutures ? "NIFTY_FUTURES" : "NIFTY_OPTION",
+    isFutures:      !!pos.isFutures,
     isSpot:         false,
   };
 
@@ -1310,6 +1339,11 @@ function _dropExpiredOptionSetup(cfg, spot) {
 async function _pollOptionPremium() {
   if (!state.optionPosition) return;
   if (!earlyBird.tradesOption()) return;
+  if (state.optionPosition.isFutures) {
+    // Futures mark on the shared spot feed — nothing to poll.
+    if (state.lastTickPrice > 0) state.optionLtp = state.lastTickPrice;
+    return;
+  }
   const sym = state.optionPosition.symbol;
   try {
     const ltp = await _fetchOptionPremium(sym);

@@ -62,6 +62,7 @@ const aiExport    = require("../utils/aiExport");
 const fyers       = require("../config/fyers");
 const { notifyEntry, notifyExit, notifyStarted, notifyDayReport } = require("../utils/notify");
 const { getCharges } = require("../utils/charges");
+const instrumentMode = require("../utils/instrumentMode");
 const { getISTMinutes, getBucketStart } = require("../utils/tradeUtils");
 const skipLogger = require("../utils/skipLogger");
 const capitalPool = require("../utils/capitalPool");
@@ -286,7 +287,15 @@ function startPolling() {
   const poll = async () => {
     if (_pollStopped) return;
     try {
-      const optSym = state.position ? state.position.symbol : null;
+      // Futures need no premium poll — the traded price IS the index level, so
+      // mirror the spot in and every downstream reader stays correct unchanged.
+      if (state.position && state.position.isFutures) {
+        if (state.lastTickPrice > 0) {
+          state.optionLtp = state.lastTickPrice;
+          state.optionLtpUpdatedAt = Date.now();
+        }
+      }
+      const optSym = (state.position && !state.position.isFutures) ? state.position.symbol : null;
       if (optSym) {
         const r = await fyers.getQuotes([optSym]);
         if (r && r.s === "ok" && Array.isArray(r.d) && r.d.length) {
@@ -467,22 +476,30 @@ async function simulateBuy(side, sig) {
     return;
   }
 
+  const _isFut = instrumentMode.isFutures();
+
   let optInfo;
   try {
     // strikeOverride keeps instrument.js's expiry/symbol builder while using
-    // the strike this strategy chose.
-    optInfo = await instrumentConfig.validateAndGetOptionSymbol(spot, side, "RSI_PIVOT_ST", { strikeOverride: strikeInfo.strike });
+    // the strike this strategy chose. Futures have no strike to override.
+    optInfo = _isFut
+      ? await instrumentMode.resolveEntryInstrument(spot, side, "RSI_PIVOT_ST")
+      : await instrumentConfig.validateAndGetOptionSymbol(spot, side, "RSI_PIVOT_ST", { strikeOverride: strikeInfo.strike });
   } catch (e) {
     log(`❌ [RSI_PIVOT_ST-PAPER] Symbol resolve failed: ${e.message}`);
     return;
   }
   if (!optInfo || optInfo.invalid) {
-    log(`❌ [RSI_PIVOT_ST-PAPER] No valid expiry — skip ${side} entry`);
-    skipLogger.appendSkipLog(MODE_KEY, { gate: "expiry", reason: "no valid option expiry", side, spot });
+    log(`❌ [RSI_PIVOT_ST-PAPER] No valid ${_isFut ? "futures contract" : "expiry"} — skip ${side} entry`);
+    skipLogger.appendSkipLog(MODE_KEY, { gate: "expiry", reason: _isFut ? "no valid futures contract" : "no valid option expiry", side, spot });
     return;
   }
 
   let optionEntryLtp = null;
+  if (_isFut) {
+    // Futures trade AT the index level — there is no premium to quote.
+    optionEntryLtp = spot;
+  } else {
   try {
     const r = await fyers.getQuotes([optInfo.symbol]);
     if (r && r.s === "ok" && r.d && r.d.length) {
@@ -502,14 +519,17 @@ async function simulateBuy(side, sig) {
     skipLogger.appendSkipLog(MODE_KEY, { gate: "option_ltp", reason: "no option LTP", symbol: optInfo.symbol, side, spot });
     return;
   }
+  }
 
   const cfg = _cfg();
   // The PREMIUM floor is anchored to the ACTUAL fill, not to the signal — 25%
   // of a premium the trade never paid is not the rule. Which sides carry it is
   // the RSI_PIVOT_ST_PREMIUM_SL_SIDES toggle; a side left out gets a null floor
   // and is NOT aborted, because "no premium stop" is a valid configuration.
-  const premiumApplies = rsiPivotStrategy.premiumStopApplies(side, cfg);
-  const premiumFloor = rsiPivotStrategy.premiumStop(optionEntryLtp, null, cfg, side);
+  // A futures position has no premium, so the premium floor is simply absent —
+  // it must NOT abort the entry (that would silently disable the strategy).
+  const premiumApplies = !_isFut && rsiPivotStrategy.premiumStopApplies(side, cfg);
+  const premiumFloor = _isFut ? null : rsiPivotStrategy.premiumStop(optionEntryLtp, null, cfg, side);
   if (premiumApplies && !Number.isFinite(premiumFloor)) {
     log(`🚫 [RSI_PIVOT_ST-PAPER] Entry ABORTED — premium floor not computable from entry LTP ${optionEntryLtp}`);
     skipLogger.appendSkipLog(MODE_KEY, { gate: "levels_uncomputable", reason: `premium floor unusable from ltp ${optionEntryLtp}`, side, spot });
@@ -538,13 +558,14 @@ async function simulateBuy(side, sig) {
 
   // Capital check — advisory only: an overdrawn pool raises a dashboard alert,
   // it never stops a paper trade. Sits AFTER the last abort path.
-  const _cap = capitalPool.check(MODE_KEY, qty * optionEntryLtp);
+  const _cap = capitalPool.check(MODE_KEY, instrumentMode.capitalRequired(qty, optionEntryLtp));
   if (!_cap.ok) {
     log(`⚠️ [RSI_PIVOT_ST-PAPER] ${_cap.reason} — entry taken anyway, pool now overdrawn`);
     capitalPool.noteShortfall(MODE_KEY, _cap, { side, symbol: optInfo.symbol });
   }
 
   const pos = {
+    isFutures:      _isFut,
     side,
     symbol:         optInfo.symbol,
     optionStrike:   optInfo.strike,
@@ -585,7 +606,7 @@ async function simulateBuy(side, sig) {
   };
 
   state.position = pos;
-  capitalPool.block(MODE_KEY, qty * optionEntryLtp, { side, symbol: optInfo.symbol, qty, premium: optionEntryLtp });
+  capitalPool.block(MODE_KEY, instrumentMode.capitalRequired(qty, optionEntryLtp), { side, symbol: optInfo.symbol, qty, premium: optionEntryLtp });
   try { require("../utils/positionPersist").saveRsiPivotStPosition(pos, { sessionPnl: state.sessionPnl }); } catch (_) {}
   state.optionLtp = optionEntryLtp;
   state.optionLtpUpdatedAt = Date.now();
@@ -633,8 +654,13 @@ function simulateSell(reason, opts) {
   const exitOptLtp = state.optionLtp || pos.optionEntryLtp;
   const exitSpot   = state.lastTickPrice || pos.entrySpot;
   const qty        = pos.qty;
-  const charges    = getCharges({ broker: "zerodha", isFutures: false, entryPremium: pos.optionEntryLtp, exitPremium: exitOptLtp, qty });
-  const pnl        = parseFloat(((exitOptLtp - pos.optionEntryLtp) * qty - charges).toFixed(2));
+  const _pnlRes    = instrumentMode.computePnl({
+    side: pos.side, entrySpot: pos.entrySpot, exitSpot,
+    entryPremium: pos.optionEntryLtp, exitPremium: exitOptLtp,
+    qty, broker: "zerodha",
+  });
+  const charges    = _pnlRes.charges;
+  const pnl        = _pnlRes.pnl;
 
   state.sessionPnl = parseFloat((state.sessionPnl + pnl).toFixed(2));
   if (pnl < 0) state.consecutiveLosses++; else if (pnl > 0) state.consecutiveLosses = 0;
@@ -650,9 +676,9 @@ function simulateSell(reason, opts) {
     exitPrice:      exitSpot,
     spotAtEntry:    pos.entrySpot,
     spotAtExit:     exitSpot,
-    optionEntryLtp: pos.optionEntryLtp,
-    optionExitLtp:  exitOptLtp,
-    bestOptionLtp:  pos.peakPremium || null,
+    optionEntryLtp: pos.isFutures ? null : pos.optionEntryLtp,
+    optionExitLtp:  pos.isFutures ? null : exitOptLtp,
+    bestOptionLtp:  pos.isFutures ? null : (pos.peakPremium || null),
     entryTime:      pos.entryTime,
     exitTime:       istNow(),
     entryBarTime:   pos.entryBarTime,
@@ -690,13 +716,13 @@ function simulateSell(reason, opts) {
     secsToMAE:      pos.secsToMAE || 0,
     durationMs:     Date.now() - pos.entryTimeMs,
     charges,
-    isFutures:      false,
-    instrument:     "NIFTY_OPTIONS",
+    isFutures:      !!pos.isFutures,
+    instrument:     pos.isFutures ? "NIFTY_FUTURES" : "NIFTY_OPTIONS",
   };
   state.sessionTrades.push(trade);
   tradeLogger.appendTradeLog(MODE_KEY, trade);
 
-  log(`🔴 [RSI_PIVOT_ST-PAPER] EXIT ${pos.side} ${pos.symbol} @ optLtp=₹${exitOptLtp} spot=${exitSpot} | PnL=₹${pnl} (${reason})`);
+  log(`🔴 [RSI_PIVOT_ST-PAPER] EXIT ${pos.side} ${pos.symbol} @ ${pos.isFutures ? "" : `optLtp=₹${exitOptLtp} `}spot=${exitSpot} | PnL=₹${pnl} (${reason})`);
 
   notifyExit({
     mode: "RSI_PIVOT_ST-PAPER",
@@ -798,6 +824,10 @@ function _trailSuperTrend() {
 function _checkExits() {
   if (!state.position) return;
   const pos = state.position;
+  if (pos.isFutures && state.lastTickPrice > 0) {
+    state.optionLtp = state.lastTickPrice;
+    state.optionLtpUpdatedAt = Date.now();
+  }
   const optLtp = state.optionLtp;
   const spot   = state.lastTickPrice;
   if (typeof optLtp !== "number" || !Number.isFinite(optLtp) || optLtp <= 0) return;
@@ -820,7 +850,10 @@ function _checkExits() {
     if (favPts > (pos.mfeSpotPts || 0)) { pos.mfeSpotPts = parseFloat(favPts.toFixed(2)); pos.secsToMFE = parseFloat(((Date.now() - pos.entryTimeMs) / 1000).toFixed(1)); }
     if (favPts < (pos.maeSpotPts || 0)) { pos.maeSpotPts = parseFloat(favPts.toFixed(2)); pos.secsToMAE = parseFloat(((Date.now() - pos.entryTimeMs) / 1000).toFixed(1)); }
   }
-  const curPnl = (optLtp - pos.optionEntryLtp) * pos.qty;
+  const curPnl = instrumentMode.unrealisedPnl({
+    side: pos.side, entrySpot: pos.entrySpot, currentSpot: spot,
+    entryPremium: pos.optionEntryLtp, currentPremium: optLtp, qty: pos.qty,
+  });
   if (curPnl > (pos.mfePnl || 0)) pos.mfePnl = parseFloat(curPnl.toFixed(2));
   if (curPnl < (pos.maePnl || 0)) pos.maePnl = parseFloat(curPnl.toFixed(2));
 

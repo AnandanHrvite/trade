@@ -169,12 +169,13 @@ router.get("/start", async (req, res) => {
       modeTag:    MODE_TAG,          // the paper route's mode field in notify payloads
       broker:     "fyers",           // orders AND data both come from Fyers here
       dryRun,
-      // isFutures:false → productType "INTRADAY", which is correct for BOTH legs:
-      // cash equity and bought NIFTY options both trade INTRADAY (only futures
-      // want MARGIN). The paper route passes the full Fyers option symbol on an
-      // option entry, so the same broker call serves both. NOTE: the option leg
-      // has never been exercised against a live broker — keep it dry-run.
-      isFutures:  false,
+      // productType follows the leg: cash equity and bought NIFTY options both
+      // trade INTRADAY; only futures want MARGIN. One harness carries ONE flag,
+      // so futures is claimed only when the option leg is the ONLY leg —
+      // in "both" mode the stock leg still needs INTRADAY and wins. NOTE: the
+      // option leg has never been exercised against a live broker — keep it dry-run.
+      isFutures:  process.env.INSTRUMENT === "NIFTY_FUTURES"
+                  && String(process.env.EARLYBIRD_TRADE_MODE || "stock").trim().toLowerCase() === "option",
       liveLogKey: null,             // live trades are not logged to disk (Trade Logs shows paper only)
     });
   } catch (err) {

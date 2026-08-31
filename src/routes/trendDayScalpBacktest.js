@@ -67,10 +67,14 @@ function runTrendDayScalpBacktest(intraday) {
   if (!intraday || !intraday.length) return { trades: [], days: 0, skipped: [], gateStats: { decided: 0, tradeable: 0 } };
 
   const cfg = tdsStrategy.getConfig();
-  const DELTA        = parseFloat(process.env.BACKTEST_DELTA || "0.55");
-  const THETA_DAY    = parseFloat(process.env.BACKTEST_THETA_DAY || "8");
+  // FUTURES MODE — index points are rupees 1:1: no delta, no theta, and the
+  // "premium" the sim carries IS the spot level (see instrumentMode.js).
+  const IS_FUT       = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
+  const DELTA        = IS_FUT ? 1.0 : parseFloat(process.env.BACKTEST_DELTA || "0.55");
+  const THETA_DAY    = IS_FUT ? 0   : parseFloat(process.env.BACKTEST_THETA_DAY || "8");
   const LOT_SIZE     = instrumentConfig.getLotQty();
   const SEED_PREMIUM = parseFloat(process.env.TDS_BT_SEED_PREMIUM || "240");
+  // In futures the entry "premium" is the entry SPOT — seeded per trade below.
   const SLIPPAGE_PTS = parseFloat(process.env.TDS_BT_SLIPPAGE_PTS || "1.5");
   const RES          = _resMin();
 
@@ -127,7 +131,7 @@ function runTrendDayScalpBacktest(intraday) {
       const spotMove = pos.side === "CE" ? (exitSpot - pos.entrySpot) : (pos.entrySpot - exitSpot);
       const raw = Math.max(0.05, pos.optionEntryLtp + spotMove * DELTA - thetaCost / LOT_SIZE);
       const exitPrem = Math.max(0.05, raw - 2 * SLIPPAGE_PTS);   // buy high + sell low
-      const charges = getCharges({ broker: "fyers", isFutures: false, entryPremium: pos.optionEntryLtp, exitPremium: exitPrem, qty: LOT_SIZE });
+      const charges = getCharges({ broker: "fyers", isFutures: IS_FUT, entryPremium: pos.optionEntryLtp, exitPremium: exitPrem, qty: LOT_SIZE });
       return {
         pnl: parseFloat(((exitPrem - pos.optionEntryLtp) * LOT_SIZE - charges).toFixed(2)),
         exitPrem: parseFloat(exitPrem.toFixed(2)),
@@ -234,7 +238,7 @@ function runTrendDayScalpBacktest(intraday) {
           side: sig.side,
           entryTime: c.time,
           entrySpot: sig.entrySpot,          // the bar's CLOSE — same as paper
-          optionEntryLtp: SEED_PREMIUM,
+          optionEntryLtp: IS_FUT ? sig.entrySpot : SEED_PREMIUM,
           slPts: sig.slPts,
           slSpot: sig.slSpot,
           initialSlSpot: sig.slSpot,

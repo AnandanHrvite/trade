@@ -56,6 +56,12 @@ const aiExport    = require("../utils/aiExport");
 const fyers       = require("../config/fyers");
 const { notifyEntry, notifyExit, notifyStarted, notifyDayReport, sendIfMaster } = require("../utils/notify");
 const { getCharges } = require("../utils/charges");
+const instrumentMode = require("../utils/instrumentMode");
+
+/** Configured premium trigger — read lazily for the futures-refusal message. */
+function earlyCfgTrigger() {
+  try { return strategy.getConfig().triggerPremium; } catch (_) { return "?"; }
+}
 const { getISTMinutes, getBucketStart } = require("../utils/tradeUtils");
 const skipLogger  = require("../utils/skipLogger");
 const capitalPool = require("../utils/capitalPool");
@@ -401,6 +407,24 @@ async function runSelection() {
   if (!strategy._px(spot)) {
     state._lastSelectionTryMs = Date.now();
     log(`⚠️ ${LOG_TAG} No NIFTY index price yet — cannot compute the ATM strike, selection deferred`);
+    return;
+  }
+
+  // SIMPLE930 is premium-denominated end to end: the entry trigger, the stop,
+  // the trail and the band are all option-premium levels (see the pnlMode
+  // string — "every level is a premium, not a spot"). NIFTY futures have no
+  // premium, so there is no faithful futures translation of this strategy.
+  // Refuse loudly rather than trade options against an explicit FUTURES toggle.
+  if (instrumentMode.isFutures()) {
+    if (!state._futuresRefusalLogged) {
+      state._futuresRefusalLogged = true;
+      log(`⛔ ${LOG_TAG} INSTRUMENT=NIFTY_FUTURES — this strategy trades an option PREMIUM level (trigger ₹${earlyCfgTrigger()}), which has no futures equivalent. No watchlist, no entries. Switch INSTRUMENT back to NIFTY_OPTIONS to run it.`);
+      skipLogger.appendSkipLog(MODE_KEY, {
+        gate: "instrument",
+        reason: "SIMPLE930 is premium-denominated — not defined for NIFTY_FUTURES",
+        spot,
+      });
+    }
     return;
   }
 

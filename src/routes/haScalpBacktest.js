@@ -138,10 +138,14 @@ function runHaScalpBacktest(intraday, rangeFrom) {
   if (!intraday || !intraday.length) return empty;
 
   const cfg = haStrategy.getConfig();
-  const DELTA        = parseFloat(process.env.BACKTEST_DELTA || "0.55");
-  const THETA_DAY    = parseFloat(process.env.BACKTEST_THETA_DAY || "8");
+  // FUTURES MODE — index points are rupees 1:1: no delta, no theta, and the
+  // "premium" the sim carries IS the spot level (see instrumentMode.js).
+  const IS_FUT       = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
+  const DELTA        = IS_FUT ? 1.0 : parseFloat(process.env.BACKTEST_DELTA || "0.55");
+  const THETA_DAY    = IS_FUT ? 0   : parseFloat(process.env.BACKTEST_THETA_DAY || "8");
   const LOT_SIZE     = instrumentConfig.getLotQty();
   const SEED_PREMIUM = parseFloat(process.env.HA_SCALP_BT_SEED_PREMIUM || "240");
+  // In futures the entry "premium" is the entry SPOT — seeded per trade below.
   const SLIPPAGE_PTS = parseFloat(process.env.HA_SCALP_BT_SLIPPAGE_PTS || "1.5");
   const RES          = cfg.resolutionMins;
 
@@ -205,7 +209,7 @@ function runHaScalpBacktest(intraday, rangeFrom) {
       const move = pos.side === "CE" ? (exitPx - pos.entrySpot) : (pos.entrySpot - exitPx);
       const raw = Math.max(0.05, pos.optionEntryLtp + move * DELTA - thetaCost / LOT_SIZE);
       const exitPrem = Math.max(0.05, raw - 2 * SLIPPAGE_PTS);   // buy high + sell low
-      const charges = getCharges({ broker: "fyers", isFutures: false, entryPremium: pos.optionEntryLtp, exitPremium: exitPrem, qty: LOT_SIZE });
+      const charges = getCharges({ broker: "fyers", isFutures: IS_FUT, entryPremium: pos.optionEntryLtp, exitPremium: exitPrem, qty: LOT_SIZE });
       return {
         pnl: parseFloat(((exitPrem - pos.optionEntryLtp) * LOT_SIZE - charges).toFixed(2)),
         exitPrem: parseFloat(exitPrem.toFixed(2)),
@@ -257,7 +261,7 @@ function runHaScalpBacktest(intraday, rangeFrom) {
             side: sig.side,
             entryTime: c.time,
             entrySpot: parseFloat(c.open.toFixed(2)),   // NEXT candle's OPEN — the rule
-            optionEntryLtp: SEED_PREMIUM,
+            optionEntryLtp: IS_FUT ? parseFloat(c.open.toFixed(2)) : SEED_PREMIUM,
             slSpot: sig.slSpot,
             // Risk is restated against the ACTUAL fill, not the signal close —
             // the signal's own slPts was measured from a price we did not get.

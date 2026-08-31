@@ -63,6 +63,7 @@ const tradeGuards = require("../utils/tradeGuards");
 const { notifyEntry, notifyExit, notifyStarted, notifyDayReport, sendTelegram } = require("../utils/notify");
 const { awaitExit } = require("../utils/boundedExit");   // bound the wait on a broker square-off
 const { getCharges } = require("../utils/charges");
+const instrumentMode = require("../utils/instrumentMode");
 const { getISTMinutes, getBucketStart, fmtISTDateTime } = require("../utils/tradeUtils");
 
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
@@ -187,13 +188,26 @@ async function _placeLiveBuyImpl(side, sigSnapshot) {
   const spot = state.lastTickPrice;
   if (!spot || !side) return;
 
+  // Mirrors orbPaper: the INSTRUMENT toggle decides WHAT is bought. Without this
+  // a NIFTY_FUTURES session would place a real OPTION order.
+  const _isFut = instrumentMode.isFutures();
+
   let optInfo;
-  try { optInfo = await instrumentConfig.validateAndGetOptionSymbol(spot, side, "ORB"); }
+  try {
+    optInfo = _isFut
+      ? await instrumentMode.resolveEntryInstrument(spot, side, "ORB")
+      : await instrumentConfig.validateAndGetOptionSymbol(spot, side, "ORB");
+  }
   catch (e) { log(`❌ Symbol resolve failed: ${e.message}`); return; }
-  if (!optInfo || optInfo.invalid) { log(`❌ No valid expiry — skip ${side} entry`); return; }
+  if (!optInfo || optInfo.invalid) { log(`❌ No valid ${_isFut ? "futures contract" : "expiry"} — skip ${side} entry`); return; }
 
   // Fetch current option quote (LTP + bid/ask for the STEP 8 spread gate)
   let optionEntryLtp = null, optBid = null, optAsk = null;
+  if (_isFut) {
+    // Futures trade AT the index level — there is no premium, so the premium
+    // band and option bid-ask gates below do not apply and are skipped.
+    optionEntryLtp = spot;
+  } else {
   try {
     const r = await fyers.getQuotes([optInfo.symbol]);
     if (r && r.s === "ok" && r.d && r.d.length) {
@@ -232,6 +246,7 @@ async function _placeLiveBuyImpl(side, sigSnapshot) {
     skipLogger.appendSkipLog("orb", { gate: "spread", reason: `${_sp.reason} > ${maxSpread}pt`, symbol: optInfo.symbol, side, spot, spread: _sp.spread, _live: true });
     return;
   }
+  }
 
   const qty = instrumentConfig.getLotQty();
 
@@ -243,7 +258,7 @@ async function _placeLiveBuyImpl(side, sigSnapshot) {
     entryOrderId = `dryrun:${Date.now()}`;
   } else {
     try {
-      const ord = await fyersBroker.placeMarketOrder(optInfo.symbol, 1, qty, "ORB-LIVE", { isFutures: false });
+      const ord = await fyersBroker.placeMarketOrder(optInfo.symbol, 1, qty, "ORB-LIVE", { isFutures: _isFut });
       if (!ord || !ord.success) {
         log(`❌ [ORB-LIVE] BUY order failed: ${JSON.stringify(ord)}`);
         return;
@@ -269,7 +284,8 @@ async function _placeLiveBuyImpl(side, sigSnapshot) {
   });
   const _initSl = _stop.slSpot;
   const pos = {
-    side, symbol: optInfo.symbol, optionStrike: optInfo.strike, optionExpiry: optInfo.expiry,
+    side, isFutures: _isFut,
+    symbol: optInfo.symbol, optionStrike: optInfo.strike, optionExpiry: optInfo.expiry,
     qty, entrySpot: spot, entryPrice: spot, optionEntryLtp,
     entryTime: istNow(), entryTimeMs: Date.now(),
     entryBarTime: Math.floor(getBucketStart(Date.now(), RES_MIN) / 1000),
@@ -397,7 +413,7 @@ async function placeOrbHardSL() {
 
   const placement = (async () => {
     try {
-      const result = await fyersBroker.placeSLMOrder(pos.symbol, -1, pos.qty, trigger, { isFutures: false });
+      const result = await fyersBroker.placeSLMOrder(pos.symbol, -1, pos.qty, trigger, { isFutures: !!pos.isFutures });
       if (result && result.success) {
         _orbHardSLOrderId = result.orderId;
         _orbHardSLSymbol  = pos.symbol;
@@ -506,7 +522,7 @@ async function _placeLiveSellImpl(reason) {
     exitOrderId = `dryrun:${Date.now()}`;
   } else {
     try {
-      const ord = await fyersBroker.placeMarketOrder(pos.symbol, -1, qty, "ORB-LIVE-X", { isFutures: false });
+      const ord = await fyersBroker.placeMarketOrder(pos.symbol, -1, qty, "ORB-LIVE-X", { isFutures: !!pos.isFutures });
       if (!ord || !ord.success) {
         log(`❌ [ORB-LIVE] SELL order failed: ${JSON.stringify(ord)}`);
         sendTelegram(`🚨 ORB EXIT FAILED: ${pos.symbol} ${pos.side} × ${qty} — ${reason}. Broker rejected — check Fyers dashboard IMMEDIATELY!`).catch(() => {});
@@ -532,8 +548,13 @@ async function _placeLiveSellImpl(reason) {
     }
   }
 
-  const charges = getCharges({ broker: "fyers", isFutures: false, entryPremium: pos.optionEntryLtp, exitPremium: exitOptLtp, qty });
-  const pnl = parseFloat(((exitOptLtp - pos.optionEntryLtp) * qty - charges).toFixed(2));
+  const _pnlRes = instrumentMode.computePnl({
+    side: pos.side, entrySpot: pos.entrySpot, exitSpot,
+    entryPremium: pos.optionEntryLtp, exitPremium: exitOptLtp,
+    qty, broker: "fyers",
+  });
+  const charges = _pnlRes.charges;
+  const pnl = _pnlRes.pnl;
   state.sessionPnl = parseFloat((state.sessionPnl + pnl).toFixed(2));
 
   const trade = {
@@ -566,8 +587,8 @@ async function _placeLiveSellImpl(reason) {
     durationMs: Date.now() - pos.entryTimeMs, charges,
     entryOrderId: pos.entryOrderId, exitOrderId,
     isLive: !_orderIsDryRun(), isDryRun: _orderIsDryRun(),
-    isFutures: false,   // ORB is single-leg option buying — matches orbPaper's record
-    instrument: "NIFTY_OPTIONS",
+    isFutures: !!pos.isFutures,
+    instrument: pos.isFutures ? "NIFTY_FUTURES" : "NIFTY_OPTIONS",
   };
   state.sessionTrades.push(trade);
   tradeLogger.appendTradeLog("orb", Object.assign({ _live: true }, trade));

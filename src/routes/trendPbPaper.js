@@ -43,6 +43,7 @@ const aiExport    = require("../utils/aiExport");
 const fyers       = require("../config/fyers");
 const { notifyEntry, notifyExit, notifyStarted, notifyDayReport } = require("../utils/notify");
 const { getCharges } = require("../utils/charges");
+const instrumentMode = require("../utils/instrumentMode");
 const { fmtISTDateTime, getISTMinutes, getBucketStart } = require("../utils/tradeUtils");
 const skipLogger = require("../utils/skipLogger");
 const capitalPool = require("../utils/capitalPool");
@@ -246,62 +247,72 @@ async function simulateBuy(side, sig) {
   const spot = state.lastTickPrice;
   if (!spot || !side) return;
 
+  const _isFut = instrumentMode.isFutures();
+
   let optInfo;
   try {
-    optInfo = await instrumentConfig.validateAndGetOptionSymbol(spot, side, "TREND_PB");
+    optInfo = _isFut
+      ? await instrumentMode.resolveEntryInstrument(spot, side, "TREND_PB")
+      : await instrumentConfig.validateAndGetOptionSymbol(spot, side, "TREND_PB");
   } catch (e) {
     log(`❌ [TREND_PB-PAPER] Symbol resolve failed: ${e.message}`);
     return;
   }
   if (!optInfo || optInfo.invalid) {
-    log(`❌ [TREND_PB-PAPER] No valid expiry — skip ${side} entry`);
+    log(`❌ [TREND_PB-PAPER] No valid ${_isFut ? "futures contract" : "expiry"} — skip ${side} entry`);
     return;
   }
 
   let optionEntryLtp = null, optBid = null, optAsk = null;
-  try {
-    const r = await fyers.getQuotes([optInfo.symbol]);
-    if (r && r.s === "ok" && r.d && r.d.length) {
-      const v = r.d[0].v || {};
-      const ltp = v.lp || v.ltp;
-      if (typeof ltp === "number" && ltp > 0) {
-        optionEntryLtp = ltp;
-        optBid = Number(v.bid || v.bid_price || 0) || null;
-        optAsk = Number(v.ask || v.ask_price || 0) || null;
-        try { tickRecorder.recordOptionLtp(optInfo.symbol, ltp, "trend-pb-paper"); } catch (_) {}
+  if (_isFut) {
+    // Futures trade AT the index level — no premium, so the premium band and
+    // option bid-ask gates below do not apply and are skipped, not failed.
+    optionEntryLtp = spot;
+  } else {
+    try {
+      const r = await fyers.getQuotes([optInfo.symbol]);
+      if (r && r.s === "ok" && r.d && r.d.length) {
+        const v = r.d[0].v || {};
+        const ltp = v.lp || v.ltp;
+        if (typeof ltp === "number" && ltp > 0) {
+          optionEntryLtp = ltp;
+          optBid = Number(v.bid || v.bid_price || 0) || null;
+          optAsk = Number(v.ask || v.ask_price || 0) || null;
+          try { tickRecorder.recordOptionLtp(optInfo.symbol, ltp, "trend-pb-paper"); } catch (_) {}
+        }
       }
+    } catch (e) {
+      log(`⚠️ [TREND_PB-PAPER] Option LTP fetch failed: ${e.message} — entry blocked`);
+      return;
     }
-  } catch (e) {
-    log(`⚠️ [TREND_PB-PAPER] Option LTP fetch failed: ${e.message} — entry blocked`);
-    return;
-  }
-  if (!optionEntryLtp) {
-    log(`❌ [TREND_PB-PAPER] Option LTP not available — entry skipped`);
-    return;
-  }
+    if (!optionEntryLtp) {
+      log(`❌ [TREND_PB-PAPER] Option LTP not available — entry skipped`);
+      return;
+    }
 
-  // ── Option filter: slightly-ITM (resolved above), premium band, spread ──
-  const premMin = parseFloat(process.env.TREND_PB_PREMIUM_MIN || "120");
-  const premMax = parseFloat(process.env.TREND_PB_PREMIUM_MAX || "400");
-  const premGateOn = (process.env.TREND_PB_PREMIUM_GATE_ENABLED || "true").toLowerCase() === "true";
-  if (premGateOn && (optionEntryLtp < premMin || optionEntryLtp > premMax)) {
-    log(`⏸️ [TREND_PB-PAPER] Premium gate: ${optInfo.symbol} LTP ₹${optionEntryLtp} outside [${premMin}, ${premMax}] — entry skipped`);
-    skipLogger.appendSkipLog("trend_pb", { gate: "premium_range", reason: `LTP ₹${optionEntryLtp} outside [${premMin}, ${premMax}]`, symbol: optInfo.symbol, side, spot, optLtp: optionEntryLtp });
-    return;
+    // ── Option filter: slightly-ITM (resolved above), premium band, spread ──
+    const premMin = parseFloat(process.env.TREND_PB_PREMIUM_MIN || "120");
+    const premMax = parseFloat(process.env.TREND_PB_PREMIUM_MAX || "400");
+    const premGateOn = (process.env.TREND_PB_PREMIUM_GATE_ENABLED || "true").toLowerCase() === "true";
+    if (premGateOn && (optionEntryLtp < premMin || optionEntryLtp > premMax)) {
+      log(`⏸️ [TREND_PB-PAPER] Premium gate: ${optInfo.symbol} LTP ₹${optionEntryLtp} outside [${premMin}, ${premMax}] — entry skipped`);
+      skipLogger.appendSkipLog("trend_pb", { gate: "premium_range", reason: `LTP ₹${optionEntryLtp} outside [${premMin}, ${premMax}]`, symbol: optInfo.symbol, side, spot, optLtp: optionEntryLtp });
+      return;
+    }
+    const maxSpread = parseFloat(process.env.TREND_PB_MAX_SPREAD_PTS || process.env.MAX_BID_ASK_SPREAD_PTS || "2");
+    const _sp = tradeGuards.checkSpread(optBid, optAsk, maxSpread);
+    if (!_sp.ok) {
+      log(`⏸️ [TREND_PB-PAPER] Spread gate: ${optInfo.symbol} ${_sp.reason} > ${maxSpread}pt — entry skipped`);
+      skipLogger.appendSkipLog("trend_pb", { gate: "spread", reason: `${_sp.reason} > ${maxSpread}pt`, symbol: optInfo.symbol, side, spot, spread: _sp.spread });
+      return;
   }
-  const maxSpread = parseFloat(process.env.TREND_PB_MAX_SPREAD_PTS || process.env.MAX_BID_ASK_SPREAD_PTS || "2");
-  const _sp = tradeGuards.checkSpread(optBid, optAsk, maxSpread);
-  if (!_sp.ok) {
-    log(`⏸️ [TREND_PB-PAPER] Spread gate: ${optInfo.symbol} ${_sp.reason} > ${maxSpread}pt — entry skipped`);
-    skipLogger.appendSkipLog("trend_pb", { gate: "spread", reason: `${_sp.reason} > ${maxSpread}pt`, symbol: optInfo.symbol, side, spot, spread: _sp.spread });
-    return;
   }
 
   const qty = instrumentConfig.getLotQty();
 
   // ── Capital check — advisory only: an overdrawn pool raises a dashboard alert,
   //    it never stops the trade (a paper session must keep collecting data).
-  const _cap = capitalPool.check("trend_pb", qty * optionEntryLtp);
+  const _cap = capitalPool.check("trend_pb", instrumentMode.capitalRequired(qty, optionEntryLtp));
   if (!_cap.ok) {
     log(`⚠️ [TREND_PB-PAPER] ${_cap.reason} — entry taken anyway, pool now overdrawn`);
     capitalPool.noteShortfall("trend_pb", _cap, { side, symbol: optInfo.symbol });
@@ -320,6 +331,7 @@ async function simulateBuy(side, sig) {
 
   const pos = {
     side,
+    isFutures:      _isFut,
     symbol:         optInfo.symbol,
     optionStrike:   optInfo.strike,
     optionExpiry:   optInfo.expiry,
@@ -357,14 +369,15 @@ async function simulateBuy(side, sig) {
   };
 
   state.position = pos;
-  capitalPool.block("trend_pb", qty * optionEntryLtp, { side, symbol: optInfo.symbol, qty, premium: optionEntryLtp });
+  capitalPool.block("trend_pb", instrumentMode.capitalRequired(qty, optionEntryLtp), { side, symbol: optInfo.symbol, qty, premium: optionEntryLtp });
   try { require("../utils/positionPersist").saveTrendPbPosition(pos, { sessionPnl: state.sessionPnl }); } catch (_) {}
   state.optionLtp = optionEntryLtp;
   state.optionLtpUpdatedAt = Date.now();
   state.tradesTaken++;
-  startOptionPolling();
+  // Futures P&L comes from the spot feed — there is no option contract to poll.
+  if (!_isFut) startOptionPolling();
 
-  log(`🟢 [TREND_PB-PAPER] BUY_${side} ${optInfo.symbol} qty=${qty} @ spot=${spot} optLtp=${optionEntryLtp} | initial SL=${pos.slSpot} (risk ${riskPts.toFixed(1)}pt, structural)`);
+  log(`🟢 [TREND_PB-PAPER] ${_isFut ? (side === "CE" ? "LONG" : "SHORT") + " FUT" : "BUY_" + side} ${optInfo.symbol} qty=${qty} @ spot=${spot}${_isFut ? "" : ` optLtp=${optionEntryLtp}`} | initial SL=${pos.slSpot} (risk ${riskPts.toFixed(1)}pt, structural)`);
 
   notifyEntry({
     mode: "TREND_PB-PAPER",
@@ -394,8 +407,13 @@ function simulateSell(reason) {
   const exitOptLtp = state.optionLtp || pos.optionEntryLtp;
   const exitSpot   = state.lastTickPrice || pos.entrySpot;
   const qty        = pos.qty;
-  const charges    = getCharges({ broker: "fyers", isFutures: false, entryPremium: pos.optionEntryLtp, exitPremium: exitOptLtp, qty });
-  const pnl        = parseFloat(((exitOptLtp - pos.optionEntryLtp) * qty - charges).toFixed(2));
+  const _pnlRes    = instrumentMode.computePnl({
+    side: pos.side, entrySpot: pos.entrySpot, exitSpot,
+    entryPremium: pos.optionEntryLtp, exitPremium: exitOptLtp,
+    qty, broker: "fyers",
+  });
+  const charges    = _pnlRes.charges;
+  const pnl        = _pnlRes.pnl;
 
   state.sessionPnl = parseFloat((state.sessionPnl + pnl).toFixed(2));
   if (pnl < 0) state.consecutiveLosses++; else if (pnl > 0) state.consecutiveLosses = 0;
@@ -408,15 +426,15 @@ function simulateSell(reason) {
     exitPrice:      exitSpot,
     spotAtEntry:    pos.entrySpot,
     spotAtExit:     exitSpot,
-    optionEntryLtp: pos.optionEntryLtp,
-    optionExitLtp:  exitOptLtp,
-    bestOptionLtp:  pos.peakPremium || null,
+    optionEntryLtp: pos.isFutures ? null : pos.optionEntryLtp,
+    optionExitLtp:  pos.isFutures ? null : exitOptLtp,
+    bestOptionLtp:  pos.isFutures ? null : (pos.peakPremium || null),
     entryTime:      pos.entryTime,
     exitTime:       istNow(),
     entryBarTime:   pos.entryBarTime,
     exitBarTime:    Math.floor(getBucketStart(Date.now(), RES_MIN) / 1000),
     pnl,
-    pnlMode:        `option premium: entry ₹${pos.optionEntryLtp} → exit ₹${exitOptLtp}`,
+    pnlMode:        _pnlRes.pnlMode,
     exitReason:     reason,
     entryReason:    pos.entryReason,
     stopLoss:       pos.slSpot,
@@ -444,13 +462,13 @@ function simulateSell(reason) {
     secsToMAE:      pos.secsToMAE || 0,
     durationMs:     Date.now() - pos.entryTimeMs,
     charges,
-    isFutures:      false,
-    instrument:     "NIFTY_OPTIONS",
+    isFutures:      !!pos.isFutures,
+    instrument:     pos.isFutures ? "NIFTY_FUTURES" : "NIFTY_OPTIONS",
   };
   state.sessionTrades.push(trade);
   tradeLogger.appendTradeLog("trend_pb", trade);
 
-  log(`🔴 [TREND_PB-PAPER] EXIT ${pos.side} ${pos.symbol} @ optLtp=${exitOptLtp} spot=${exitSpot} | PnL=₹${pnl} (${reason})`);
+  log(`🔴 [TREND_PB-PAPER] EXIT ${pos.side} ${pos.symbol} @ ${pos.isFutures ? "" : `optLtp=${exitOptLtp} `}spot=${exitSpot} | PnL=₹${pnl} (${reason})`);
 
   notifyExit({
     mode: "TREND_PB-PAPER",
@@ -542,6 +560,13 @@ function _managePositionOnClose(bar) {
 function _checkExits(spotPrice) {
   if (!state.position) return;
   const pos = state.position;
+  // Futures have no option contract to poll — the traded price IS the index
+  // level, so mirror the spot into optionLtp and every downstream reader
+  // (status cards, MFE/peak tracking, exit record) stays correct unchanged.
+  if (pos.isFutures && spotPrice > 0) {
+    state.optionLtp = spotPrice;
+    state.optionLtpUpdatedAt = Date.now();
+  }
   const optLtp = state.optionLtp || pos.optionEntryLtp;
 
   // Track best spot (MFE anchor for the trail) + peak premium + MFE/MAE.
@@ -550,7 +575,10 @@ function _checkExits(spotPrice) {
   if (optLtp > pos.peakPremium) pos.peakPremium = optLtp;
 
   const _favPts = (spotPrice - pos.entrySpot) * (pos.side === "CE" ? 1 : -1);
-  const _curPnl = (optLtp - pos.optionEntryLtp) * pos.qty;
+  const _curPnl = instrumentMode.unrealisedPnl({
+    side: pos.side, entrySpot: pos.entrySpot, currentSpot: spotPrice,
+    entryPremium: pos.optionEntryLtp, currentPremium: optLtp, qty: pos.qty,
+  });
   if (_favPts > (pos.mfeSpotPts || 0)) { pos.mfeSpotPts = parseFloat(_favPts.toFixed(2)); pos.secsToMFE = parseFloat(((Date.now() - pos.entryTimeMs) / 1000).toFixed(1)); }
   if (_curPnl > (pos.mfePnl     || 0)) pos.mfePnl     = parseFloat(_curPnl.toFixed(2));
   if (_favPts < (pos.maeSpotPts || 0)) { pos.maeSpotPts = parseFloat(_favPts.toFixed(2)); pos.secsToMAE = parseFloat(((Date.now() - pos.entryTimeMs) / 1000).toFixed(1)); }
@@ -564,7 +592,8 @@ function _checkExits(spotPrice) {
   }
 
   // Premium disaster backstop — catches IV-crush / gap the spot stop can miss.
-  const premStopPct = parseFloat(process.env.TREND_PB_PREMIUM_STOP_PCT || "35");
+  // Futures have no premium and no IV, so this backstop does not apply.
+  const premStopPct = pos.isFutures ? 0 : parseFloat(process.env.TREND_PB_PREMIUM_STOP_PCT || "35");
   if (premStopPct > 0 && optLtp <= pos.optionEntryLtp * (1 - premStopPct / 100)) {
     simulateSell(`Premium disaster stop (₹${optLtp} ≤ −${premStopPct}% of entry ₹${pos.optionEntryLtp})`);
     return;
@@ -933,9 +962,12 @@ router.get("/status/data", (req, res) => {
   try { const s = trendPbStrategy.getSignal(state.candles, { silent: true }); diag = { trendBias: s.trendBias, vwap: s.vwap, atr5: s.atr5, ema5: s.ema5 }; } catch (_) {}
 
   let livePnl = null;
-  if (pos && state.optionLtp != null) {
+  if (pos && (pos.isFutures ? state.lastTickPrice != null : state.optionLtp != null)) {
     const lot = pos.qty || instrumentConfig.getLotQty();
-    livePnl = parseFloat(((state.optionLtp - pos.optionEntryLtp) * lot).toFixed(2));
+    livePnl = instrumentMode.unrealisedPnl({
+      side: pos.side, entrySpot: pos.entrySpot, currentSpot: state.lastTickPrice,
+      entryPremium: pos.optionEntryLtp, currentPremium: state.optionLtp, qty: lot,
+    });
   }
 
   const cumPnl = []; let cum = 0;

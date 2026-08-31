@@ -155,7 +155,7 @@ router.get("/start", async (req, res) => {
       modeTag:    MODE_TAG,        // the paper route's mode field in notify payloads
       broker:     "zerodha",       // ORDERS go to Zerodha; DATA still comes from Fyers
       dryRun,
-      isFutures:  false,           // this strategy only ever buys NIFTY options
+      isFutures:  process.env.INSTRUMENT === "NIFTY_FUTURES",
       liveLogKey: null, // live trades are not logged to disk
     });
   } catch (err) {
