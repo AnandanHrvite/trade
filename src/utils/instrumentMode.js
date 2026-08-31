@@ -25,9 +25,16 @@
 const instrumentConfig = require("../config/instrument");
 const { getCharges }   = require("./charges");
 
-/** True when the Settings toggle currently selects NIFTY futures. */
+/**
+ * True when the Settings toggle currently selects NIFTY futures.
+ *
+ * Delegates to instrument.js's getter rather than re-reading process.env, so
+ * the two normalisers can never drift — a dozen call sites still compare
+ * `instrumentConfig.INSTRUMENT === "NIFTY_FUTURES"` directly, and any
+ * disagreement between them would buy one instrument while pricing another.
+ */
 function isFutures() {
-  return String(process.env.INSTRUMENT || "NIFTY_OPTIONS").trim().toUpperCase() === "NIFTY_FUTURES";
+  return instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
 }
 
 /** "futures" | "options" — for logs and trade records. */

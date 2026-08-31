@@ -74,7 +74,12 @@ function loadAllTrades() {
           mode:        src.mode,
           date:        sessionDate,
           strategy:    s.strategy || "",
-          instrument:  s.instrument || "NIFTY",
+          // The TRADE knows what it traded; the session-level field is a coarse
+          // label and would mark a futures trade as an option after a toggle
+          // flip mid-history. Fall back to the session only when the trade is
+          // silent (rows written before the instrument was stamped).
+          instrument:  t.instrument || s.instrument || "NIFTY",
+          isFutures:   t.isFutures === true || t.instrument === "NIFTY_FUTURES",
           side:        t.side || "",
           symbol:      t.symbol || "",
           qty:         t.qty || 0,

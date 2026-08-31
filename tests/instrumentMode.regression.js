@@ -155,6 +155,127 @@ check("lot size is identical in both modes, so sizing needs no special case", ()
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+section("The two instrument readers can never disagree");
+
+check("normalisation is shared — a padded or lowercase INSTRUMENT is not a split brain", () => {
+  // A dozen call sites still compare `instrumentConfig.INSTRUMENT === "NIFTY_FUTURES"`
+  // directly. If that getter and instrumentMode.isFutures() normalise differently,
+  // a stray space in .env makes one say options and the other futures — the engine
+  // buys an OPTION and prices it as a FUTURE.
+  const prev = process.env.INSTRUMENT;
+  const instrument = require("../src/config/instrument");
+  try {
+    for (const v of [" nifty_futures ", "NIFTY_FUTURES", "nifty_options", "garbage", "", "NIFTY_FUTURES "]) {
+      process.env.INSTRUMENT = v;
+      const viaConfig = instrument.INSTRUMENT === "NIFTY_FUTURES";
+      const viaMode   = instrumentMode.isFutures();
+      assert.strictEqual(viaConfig, viaMode,
+        `INSTRUMENT=${JSON.stringify(v)}: config says ${viaConfig}, instrumentMode says ${viaMode}`);
+    }
+  } finally { process.env.INSTRUMENT = prev; }
+});
+
+check("an unrecognised INSTRUMENT falls back to OPTIONS, never to futures", () => {
+  const prev = process.env.INSTRUMENT;
+  const instrument = require("../src/config/instrument");
+  try {
+    for (const v of ["", "garbage", "NIFTY", "FUTURES"]) {
+      process.env.INSTRUMENT = v;
+      assert.strictEqual(instrument.INSTRUMENT, "NIFTY_OPTIONS",
+        `INSTRUMENT=${JSON.stringify(v)} must fall back to options, got ${instrument.INSTRUMENT}`);
+    }
+  } finally { process.env.INSTRUMENT = prev; }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+section("A short futures position is not reported as a loss");
+
+check("the contract note reverses the buy/sell legs on a SHORT future", () => {
+  const { contractRow } = require("../src/utils/contractNote");
+  // PE on futures = SHORT. Entering at 24000 and exiting at 23900 is a 100pt WIN.
+  const r = contractRow({ side: "PE", isFutures: true, spotAtEntry: 24000, spotAtExit: 23900, qty: 65 }, "fyers");
+  assert.strictEqual(r.segment, "F&O - Futures");
+  assert.ok(r.gross > 0, `a winning short must show a positive gross, got ${r.gross}`);
+  assert.strictEqual(r.buy, 23900, "the BUY leg of a short is the exit");
+  assert.strictEqual(r.sell, 24000, "the SELL leg of a short is the entry");
+});
+
+check("the contract note leaves BOUGHT options exactly as they were", () => {
+  const { contractRow } = require("../src/utils/contractNote");
+  const r = contractRow({ side: "PE", isFutures: false, optionEntryLtp: 200, optionExitLtp: 250,
+                          spotAtEntry: 24000, spotAtExit: 23900, qty: 65 }, "fyers");
+  assert.strictEqual(r.segment, "F&O - Options");
+  assert.strictEqual(r.buy, 200);
+  assert.strictEqual(r.sell, 250);
+  assert.strictEqual(r.gross, 3250, "a bought option's gross is the premium move");
+});
+
+check("ORB's per-trade rupee cap does not exit a WINNING futures short", () => {
+  const orbExits = require("../src/strategies/orbExits");
+  const prev = process.env.ORB_MAX_TRADE_LOSS;
+  try {
+    process.env.ORB_MAX_TRADE_LOSS = "1500";
+    const pos = { isFutures: true, side: "PE", entrySpot: 24000, optionEntryLtp: 24000,
+                  qty: 65, slSpot: 24040, peakPremium: 24000, entryTimeMs: Date.now() };
+    // Spot fell 100pt — the short is up ₹6,500. Unsigned maths would read -₹6,500
+    // and trip the cap.
+    const d = orbExits.evaluateTickExits(pos, { spotPrice: 23900, optionLtp: 23900 });
+    assert.strictEqual(d.exit, false, `winning short was exited: ${d.reason}`);
+  } finally { if (prev === undefined) delete process.env.ORB_MAX_TRADE_LOSS; else process.env.ORB_MAX_TRADE_LOSS = prev; }
+});
+
+check("ORB's premium disaster stop still fires on a real option collapse", () => {
+  const orbExits = require("../src/strategies/orbExits");
+  const pos = { isFutures: false, side: "PE", entrySpot: 24000, optionEntryLtp: 200,
+                qty: 65, slSpot: 24040, peakPremium: 200, entryTimeMs: Date.now() };
+  const d = orbExits.evaluateTickExits(pos, { spotPrice: 24010, optionLtp: 100 });
+  assert.strictEqual(d.exit, true, "a 50% premium collapse must still exit");
+  assert.ok(/Premium disaster stop/.test(d.reason), d.reason);
+});
+
+check("ORB's premium disaster stop cannot fire on futures", () => {
+  const orbExits = require("../src/strategies/orbExits");
+  // optionLtp mirrors the SPOT in futures mode, so an unguarded premium stop
+  // would be testing a 35% fall in NIFTY itself.
+  const pos = { isFutures: true, side: "CE", entrySpot: 24000, optionEntryLtp: 24000,
+                qty: 65, slSpot: 1, peakPremium: 24000, entryTimeMs: Date.now() };
+  const d = orbExits.evaluateTickExits(pos, { spotPrice: 15000, optionLtp: 15000 });
+  assert.ok(!/Premium disaster stop/.test(d.reason || ""),
+    `futures must not hit a premium stop, got: ${d.reason}`);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+section("Alerts and history label the instrument they actually traded");
+
+check("a Telegram alert trusts the payload over the global toggle", () => {
+  // EARLYBIRD can hold an index position and a cash-equity leg at the same time;
+  // the equity leg must never inherit a global futures flag.
+  const src = read("utils/notify.js");
+  assert.ok(/function _isFuturesAlert/.test(src), "notify.js must resolve the instrument centrally");
+  const fnSrc = src.slice(src.indexOf("function _isFuturesAlert"));
+  assert.ok(/p\.isFutures === false\) return false/.test(fnSrc),
+    "an explicit isFutures:false in the payload must win over the env toggle");
+  assert.ok(/p\.isSpot === true\) return false/.test(fnSrc),
+    "a cash-equity leg must never be labelled futures");
+});
+
+check("the trade-history modal reads each TRADE's own instrument, not a global", () => {
+  const src = read("utils/paperHistoryUI.js");
+  assert.ok(/t\.isFutures \|\| t\.instrument === 'NIFTY_FUTURES'/.test(src),
+    "history can mix both modes — the label must follow the row, never process.env");
+});
+
+check("consolidation carries the trade's instrument through to the row", () => {
+  for (const f of ["routes/consolidation.js", "routes/liveConsolidation.js"]) {
+    const src = decomment(read(f));
+    assert.ok(/instrument:\s*t\.instrument \|\| s\.instrument/.test(src),
+      `${f} takes the instrument from the SESSION, so a mode flip mid-history mislabels rows`);
+    assert.ok(/isFutures:\s*t\.isFutures === true/.test(src),
+      `${f} drops isFutures, so downstream cannot tell the modes apart`);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 section("Every strategy honours the toggle — discovered from disk, not listed");
 
 // Discovering the routes is the whole point: a strategy added later is enrolled

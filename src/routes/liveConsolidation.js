@@ -72,7 +72,9 @@ function loadAllTrades() {
           mode:        src.mode,
           date:        sessionDate,
           strategy:    s.strategy || "",
-          instrument:  s.instrument || "NIFTY",
+          // Same reasoning as consolidation.js: the trade's own stamp wins.
+          instrument:  t.instrument || s.instrument || "NIFTY",
+          isFutures:   t.isFutures === true || t.instrument === "NIFTY_FUTURES",
           side:        t.side || "",
           symbol:      t.symbol || "",
           qty:         t.qty || 0,

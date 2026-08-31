@@ -330,25 +330,25 @@ async function simulateBuy(side, sig) {
     // Futures trade AT the index level — there is no premium to quote.
     optionEntryLtp = spot;
   } else {
-  try {
-    const r = await fyers.getQuotes([optInfo.symbol]);
-    if (r && r.s === "ok" && r.d && r.d.length) {
-      const v = r.d[0].v || {};
-      const ltp = v.lp || v.ltp;
-      if (typeof ltp === "number" && ltp > 0) {
-        optionEntryLtp = ltp;
-        try { tickRecorder.recordOptionLtp(optInfo.symbol, ltp, "trend-day-scalp-paper"); } catch (_) {}
+    try {
+      const r = await fyers.getQuotes([optInfo.symbol]);
+      if (r && r.s === "ok" && r.d && r.d.length) {
+        const v = r.d[0].v || {};
+        const ltp = v.lp || v.ltp;
+        if (typeof ltp === "number" && ltp > 0) {
+          optionEntryLtp = ltp;
+          try { tickRecorder.recordOptionLtp(optInfo.symbol, ltp, "trend-day-scalp-paper"); } catch (_) {}
+        }
       }
+    } catch (e) {
+      log(`⚠️ [TDS-PAPER] Option LTP fetch failed: ${e.message} — entry blocked`);
+      return;
     }
-  } catch (e) {
-    log(`⚠️ [TDS-PAPER] Option LTP fetch failed: ${e.message} — entry blocked`);
-    return;
-  }
-  if (!optionEntryLtp) {
-    log(`❌ [TDS-PAPER] Option LTP not available — entry skipped`);
-    skipLogger.appendSkipLog(MODE_KEY, { gate: "option_ltp", reason: "no option LTP", symbol: optInfo.symbol, side, spot });
-    return;
-  }
+    if (!optionEntryLtp) {
+      log(`❌ [TDS-PAPER] Option LTP not available — entry skipped`);
+      skipLogger.appendSkipLog(MODE_KEY, { gate: "option_ltp", reason: "no option LTP", symbol: optInfo.symbol, side, spot });
+      return;
+    }
   }
 
   const qty = tdsLotQty();
@@ -705,15 +705,15 @@ function _maybeDecideDayGate() {
     log(`🚦 [TDS-PAPER] DAY GATE PASSED — ${gate.reason}`);
     log(`   └─ ${gate.side} only for the rest of the day. Hunting a pullback into the VWAP/EMA zone.`);
   } else {
-    log(`🚦 [TDS-PAPER] DAY GATE FAILED — ${gate.reason}`);
-    for (const c of gate.checks || []) log(`   ${c.ok ? "✓" : "✗"} ${c.name}: ${c.detail}`);
-    log(`   └─ Standing aside for the whole session. A zero beats a loss on a day with no trend.`);
-    skipLogger.appendSkipLog(MODE_KEY, {
-      gate: "day_gate", reason: gate.reason,
-      rangePts: gate.rangePts, rangePct: gate.rangePct, vwap: gate.vwap,
-      extensionPts: gate.extensionPts, extensionNeeded: gate.extensionNeeded,
-      streakOk: gate.streakOk, spot: gate.spot,
-    });
+      log(`🚦 [TDS-PAPER] DAY GATE FAILED — ${gate.reason}`);
+      for (const c of gate.checks || []) log(`   ${c.ok ? "✓" : "✗"} ${c.name}: ${c.detail}`);
+      log(`   └─ Standing aside for the whole session. A zero beats a loss on a day with no trend.`);
+      skipLogger.appendSkipLog(MODE_KEY, {
+        gate: "day_gate", reason: gate.reason,
+        rangePts: gate.rangePts, rangePct: gate.rangePct, vwap: gate.vwap,
+        extensionPts: gate.extensionPts, extensionNeeded: gate.extensionNeeded,
+        streakOk: gate.streakOk, spot: gate.spot,
+      });
   }
 }
 
@@ -872,10 +872,10 @@ function onTick(tick) {
     }
     state.barStartTime = bucketMs;
   } else {
-    state.currentBar.high  = Math.max(state.currentBar.high, price);
-    state.currentBar.low   = Math.min(state.currentBar.low, price);
-    state.currentBar.close = price;
-    state.currentBar.volume = (state.currentBar.volume || 0) + 1;
+      state.currentBar.high  = Math.max(state.currentBar.high, price);
+      state.currentBar.low   = Math.min(state.currentBar.low, price);
+      state.currentBar.close = price;
+      state.currentBar.volume = (state.currentBar.volume || 0) + 1;
   }
 
   if (state.position) _checkExits(price);
@@ -1008,9 +1008,9 @@ router.get("/start", async (req, res) => {
     socketManager.addCallback(CALLBACK_ID, onTick, log);
     log("📡 [TDS-PAPER] Piggybacking on existing WebSocket");
   } else {
-    socketManager.start(NIFTY_INDEX_SYMBOL, () => {}, log);
-    socketManager.addCallback(CALLBACK_ID, onTick, log);
-    log("📡 [TDS-PAPER] Started WebSocket");
+      socketManager.start(NIFTY_INDEX_SYMBOL, () => {}, log);
+      socketManager.addCallback(CALLBACK_ID, onTick, log);
+      log("📡 [TDS-PAPER] Started WebSocket");
   }
 
   scheduleAutoStop();

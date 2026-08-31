@@ -301,45 +301,45 @@ async function _simulateBuyInner(side, sigSnapshot, spot) {
     // band and option bid-ask gates below do not apply and are skipped.
     optionEntryLtp = spot;
   } else {
-  try {
-    const r = await fyers.getQuotes([optInfo.symbol]);
-    if (r && r.s === "ok" && r.d && r.d.length) {
-      const v = r.d[0].v || {};
-      const ltp = v.lp || v.ltp;
-      if (typeof ltp === "number" && ltp > 0) {
-        optionEntryLtp = ltp;
-        optBid = Number(v.bid || v.bid_price || 0) || null;
-        optAsk = Number(v.ask || v.ask_price || 0) || null;
-        try { tickRecorder.recordOptionLtp(optInfo.symbol, ltp, "orb-paper"); } catch (_) {}
+    try {
+      const r = await fyers.getQuotes([optInfo.symbol]);
+      if (r && r.s === "ok" && r.d && r.d.length) {
+        const v = r.d[0].v || {};
+        const ltp = v.lp || v.ltp;
+        if (typeof ltp === "number" && ltp > 0) {
+          optionEntryLtp = ltp;
+          optBid = Number(v.bid || v.bid_price || 0) || null;
+          optAsk = Number(v.ask || v.ask_price || 0) || null;
+          try { tickRecorder.recordOptionLtp(optInfo.symbol, ltp, "orb-paper"); } catch (_) {}
+        }
       }
+    } catch (e) {
+      log(`⚠️ [ORB-PAPER] Option LTP fetch failed: ${e.message} — entry blocked`);
+      return;
     }
-  } catch (e) {
-    log(`⚠️ [ORB-PAPER] Option LTP fetch failed: ${e.message} — entry blocked`);
-    return;
-  }
-  if (!optionEntryLtp) {
-    log(`❌ [ORB-PAPER] Option LTP not available — entry skipped`);
-    return;
-  }
+    if (!optionEntryLtp) {
+      log(`❌ [ORB-PAPER] Option LTP not available — entry skipped`);
+      return;
+    }
 
-  // ── STEP 8 — Option filter: slightly-ITM (resolved above), premium band, spread ──
-  // Band widened for slightly-ITM premiums (higher intrinsic than ATM).
-  const premMin = parseFloat(process.env.ORB_PREMIUM_MIN || "120");
-  const premMax = parseFloat(process.env.ORB_PREMIUM_MAX || "400");
-  const premGateOn = (process.env.ORB_PREMIUM_GATE_ENABLED || "false").toLowerCase() === "true";
-  if (premGateOn && (optionEntryLtp < premMin || optionEntryLtp > premMax)) {
-    log(`⏸️ [ORB-PAPER] Premium gate: ${optInfo.symbol} LTP ₹${optionEntryLtp} outside [${premMin}, ${premMax}] — entry skipped`);
-    skipLogger.appendSkipLog("orb", { gate: "premium_range", reason: `LTP ₹${optionEntryLtp} outside [${premMin}, ${premMax}]`, symbol: optInfo.symbol, side, spot, optLtp: optionEntryLtp });
-    return;
-  }
-  // Bid-ask spread gate — fails OPEN when the snapshot lacks depth (no-quote).
-  const maxSpread = parseFloat(process.env.ORB_MAX_SPREAD_PTS || process.env.MAX_BID_ASK_SPREAD_PTS || "2");
-  const _sp = tradeGuards.checkSpread(optBid, optAsk, maxSpread);
-  if (!_sp.ok) {
-    log(`⏸️ [ORB-PAPER] Spread gate: ${optInfo.symbol} ${_sp.reason} > ${maxSpread}pt — entry skipped`);
-    skipLogger.appendSkipLog("orb", { gate: "spread", reason: `${_sp.reason} > ${maxSpread}pt`, symbol: optInfo.symbol, side, spot, spread: _sp.spread });
-    return;
-  }
+    // ── STEP 8 — Option filter: slightly-ITM (resolved above), premium band, spread ──
+    // Band widened for slightly-ITM premiums (higher intrinsic than ATM).
+    const premMin = parseFloat(process.env.ORB_PREMIUM_MIN || "120");
+    const premMax = parseFloat(process.env.ORB_PREMIUM_MAX || "400");
+    const premGateOn = (process.env.ORB_PREMIUM_GATE_ENABLED || "false").toLowerCase() === "true";
+    if (premGateOn && (optionEntryLtp < premMin || optionEntryLtp > premMax)) {
+      log(`⏸️ [ORB-PAPER] Premium gate: ${optInfo.symbol} LTP ₹${optionEntryLtp} outside [${premMin}, ${premMax}] — entry skipped`);
+      skipLogger.appendSkipLog("orb", { gate: "premium_range", reason: `LTP ₹${optionEntryLtp} outside [${premMin}, ${premMax}]`, symbol: optInfo.symbol, side, spot, optLtp: optionEntryLtp });
+      return;
+    }
+    // Bid-ask spread gate — fails OPEN when the snapshot lacks depth (no-quote).
+    const maxSpread = parseFloat(process.env.ORB_MAX_SPREAD_PTS || process.env.MAX_BID_ASK_SPREAD_PTS || "2");
+    const _sp = tradeGuards.checkSpread(optBid, optAsk, maxSpread);
+    if (!_sp.ok) {
+      log(`⏸️ [ORB-PAPER] Spread gate: ${optInfo.symbol} ${_sp.reason} > ${maxSpread}pt — entry skipped`);
+      skipLogger.appendSkipLog("orb", { gate: "spread", reason: `${_sp.reason} > ${maxSpread}pt`, symbol: optInfo.symbol, side, spot, spread: _sp.spread });
+      return;
+    }
   }
 
   const qty = instrumentConfig.getLotQty();
@@ -422,7 +422,7 @@ async function _simulateBuyInner(side, sigSnapshot, spot) {
   // Futures P&L comes from the spot feed — no option contract to poll.
   if (!_isFut) startOptionPolling();
 
-  log(`🟢 [ORB-PAPER] BUY_${side} ${optInfo.symbol} qty=${qty} @ spot=${spot} optLtp=${optionEntryLtp}`);
+  log(`🟢 [ORB-PAPER] ${_isFut ? (side === "CE" ? "LONG" : "SHORT") + " FUT" : "BUY_" + side} ${optInfo.symbol} qty=${qty} @ spot=${spot}${_isFut ? "" : ` optLtp=${optionEntryLtp}`}`);
   log(`   risk: ${_stop.note}`);
 
   notifyEntry({
@@ -758,10 +758,10 @@ function onTick(tick) {
     }
     state.barStartTime = bucketMs;
   } else {
-    state.currentBar.high  = Math.max(state.currentBar.high, price);
-    state.currentBar.low   = Math.min(state.currentBar.low, price);
-    state.currentBar.close = price;
-    state.currentBar.volume = (state.currentBar.volume || 0) + 1;
+      state.currentBar.high  = Math.max(state.currentBar.high, price);
+      state.currentBar.low   = Math.min(state.currentBar.low, price);
+      state.currentBar.close = price;
+      state.currentBar.volume = (state.currentBar.volume || 0) + 1;
   }
 
   // In-position exit checks (tick-level)
@@ -905,9 +905,9 @@ router.get("/start", async (req, res) => {
     socketManager.addCallback(CALLBACK_ID, onTick, log);
     log("📡 [ORB-PAPER] Piggybacking on existing WebSocket");
   } else {
-    socketManager.start(NIFTY_INDEX_SYMBOL, () => {}, log);
-    socketManager.addCallback(CALLBACK_ID, onTick, log);
-    log("📡 [ORB-PAPER] Started WebSocket");
+      socketManager.start(NIFTY_INDEX_SYMBOL, () => {}, log);
+      socketManager.addCallback(CALLBACK_ID, onTick, log);
+      log("📡 [ORB-PAPER] Started WebSocket");
   }
 
   scheduleAutoStop();

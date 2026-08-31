@@ -500,25 +500,25 @@ async function simulateBuy(side, sig) {
     // Futures trade AT the index level — there is no premium to quote.
     optionEntryLtp = spot;
   } else {
-  try {
-    const r = await fyers.getQuotes([optInfo.symbol]);
-    if (r && r.s === "ok" && r.d && r.d.length) {
-      const v = r.d[0].v || {};
-      const ltp = v.lp || v.ltp;
-      if (typeof ltp === "number" && ltp > 0) {
-        optionEntryLtp = ltp;
-        try { tickRecorder.recordOptionLtp(optInfo.symbol, ltp, "rsi-pivot-st-paper"); } catch (_) {}
+    try {
+      const r = await fyers.getQuotes([optInfo.symbol]);
+      if (r && r.s === "ok" && r.d && r.d.length) {
+        const v = r.d[0].v || {};
+        const ltp = v.lp || v.ltp;
+        if (typeof ltp === "number" && ltp > 0) {
+          optionEntryLtp = ltp;
+          try { tickRecorder.recordOptionLtp(optInfo.symbol, ltp, "rsi-pivot-st-paper"); } catch (_) {}
+        }
       }
+    } catch (e) {
+      log(`⚠️ [RSI_PIVOT_ST-PAPER] Option LTP fetch failed: ${e.message} — entry blocked`);
+      return;
     }
-  } catch (e) {
-    log(`⚠️ [RSI_PIVOT_ST-PAPER] Option LTP fetch failed: ${e.message} — entry blocked`);
-    return;
-  }
-  if (!optionEntryLtp) {
-    log(`❌ [RSI_PIVOT_ST-PAPER] Option LTP not available — entry skipped`);
-    skipLogger.appendSkipLog(MODE_KEY, { gate: "option_ltp", reason: "no option LTP", symbol: optInfo.symbol, side, spot });
-    return;
-  }
+    if (!optionEntryLtp) {
+      log(`❌ [RSI_PIVOT_ST-PAPER] Option LTP not available — entry skipped`);
+      skipLogger.appendSkipLog(MODE_KEY, { gate: "option_ltp", reason: "no option LTP", symbol: optInfo.symbol, side, spot });
+      return;
+    }
   }
 
   const cfg = _cfg();
@@ -1020,9 +1020,9 @@ function onTick(tick) {
     state.formingBar = { time: bucketSec, open: price, high: price, low: price, close: price };
     state.formingBarStart = bucketMs;
   } else {
-    state.formingBar.high  = Math.max(state.formingBar.high, price);
-    state.formingBar.low   = Math.min(state.formingBar.low, price);
-    state.formingBar.close = price;
+      state.formingBar.high  = Math.max(state.formingBar.high, price);
+      state.formingBar.low   = Math.min(state.formingBar.low, price);
+      state.formingBar.close = price;
   }
 
   // Spot-based exits are tested per tick so a SuperTrend stop does not wait for
@@ -1146,9 +1146,9 @@ router.get("/start", async (req, res) => {
     socketManager.addCallback(CALLBACK_ID, onTick, log);
     log("📡 [RSI_PIVOT_ST-PAPER] Piggybacking on existing WebSocket (NIFTY 50 index)");
   } else {
-    socketManager.start(NIFTY_INDEX_SYMBOL, () => {}, log);
-    socketManager.addCallback(CALLBACK_ID, onTick, log);
-    log("📡 [RSI_PIVOT_ST-PAPER] Started WebSocket (NIFTY 50 index)");
+      socketManager.start(NIFTY_INDEX_SYMBOL, () => {}, log);
+      socketManager.addCallback(CALLBACK_ID, onTick, log);
+      log("📡 [RSI_PIVOT_ST-PAPER] Started WebSocket (NIFTY 50 index)");
   }
 
   scheduleAutoStop();

@@ -577,25 +577,25 @@ async function simulateBuy(side, sig) {
     // Futures trade AT the index level — there is no premium to quote.
     optionEntryLtp = indexSpot;
   } else {
-  try {
-    const r = await fyers.getQuotes([optInfo.symbol]);
-    if (r && r.s === "ok" && r.d && r.d.length) {
-      const v = r.d[0].v || {};
-      const ltp = v.lp || v.ltp;
-      if (typeof ltp === "number" && ltp > 0) {
-        optionEntryLtp = ltp;
-        try { tickRecorder.recordOptionLtp(optInfo.symbol, ltp, "ha-scalp-paper"); } catch (_) {}
+    try {
+      const r = await fyers.getQuotes([optInfo.symbol]);
+      if (r && r.s === "ok" && r.d && r.d.length) {
+        const v = r.d[0].v || {};
+        const ltp = v.lp || v.ltp;
+        if (typeof ltp === "number" && ltp > 0) {
+          optionEntryLtp = ltp;
+          try { tickRecorder.recordOptionLtp(optInfo.symbol, ltp, "ha-scalp-paper"); } catch (_) {}
+        }
       }
+    } catch (e) {
+      log(`⚠️ [HA-SCALP-PAPER] Option LTP fetch failed: ${e.message} — entry blocked`);
+      return;
     }
-  } catch (e) {
-    log(`⚠️ [HA-SCALP-PAPER] Option LTP fetch failed: ${e.message} — entry blocked`);
-    return;
-  }
-  if (!optionEntryLtp) {
-    log(`❌ [HA-SCALP-PAPER] Option LTP not available — entry skipped`);
-    skipLogger.appendSkipLog(MODE_KEY, { gate: "option_ltp", reason: "no option LTP", symbol: optInfo.symbol, side, spot: indexSpot });
-    return;
-  }
+    if (!optionEntryLtp) {
+      log(`❌ [HA-SCALP-PAPER] Option LTP not available — entry skipped`);
+      skipLogger.appendSkipLog(MODE_KEY, { gate: "option_ltp", reason: "no option LTP", symbol: optInfo.symbol, side, spot: indexSpot });
+      return;
+    }
   }
 
   // The stop is a LEVEL the engine read off the signal candle's RAW low/high.
@@ -916,9 +916,9 @@ function _checkCandleExits(barTime, lateBar) {
     ha  = n ? state.ha[n - 1] : null;
     raw = state.candles.length ? state.candles[state.candles.length - 1] : null;
   } else {
-    const i = state.candles.findIndex(c => c.time === barTime);
-    ha  = i >= 0 ? state.ha[i] : null;
-    raw = i >= 0 ? state.candles[i] : null;
+      const i = state.candles.findIndex(c => c.time === barTime);
+      ha  = i >= 0 ? state.ha[i] : null;
+      raw = i >= 0 ? state.candles[i] : null;
   }
   if (!ha) return;
   // Never let the signal candle itself close the trade: the entry happens on
@@ -1224,9 +1224,9 @@ router.get("/start", async (req, res) => {
     socketManager.addCallback(CALLBACK_ID, onTick, log);
     log("📡 [HA-SCALP-PAPER] Piggybacking on existing WebSocket (NIFTY 50 index — strike + heartbeat only)");
   } else {
-    socketManager.start(NIFTY_INDEX_SYMBOL, () => {}, log);
-    socketManager.addCallback(CALLBACK_ID, onTick, log);
-    log("📡 [HA-SCALP-PAPER] Started WebSocket (NIFTY 50 index — strike + heartbeat only)");
+      socketManager.start(NIFTY_INDEX_SYMBOL, () => {}, log);
+      socketManager.addCallback(CALLBACK_ID, onTick, log);
+      log("📡 [HA-SCALP-PAPER] Started WebSocket (NIFTY 50 index — strike + heartbeat only)");
   }
 
   scheduleAutoStop();

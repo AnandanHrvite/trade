@@ -18,8 +18,17 @@ const { isNonTradingDay, getPreviousTradingDay, formatDateToYYYYMMDD } = require
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-// Read dynamically so settings toggle takes effect immediately (no restart)
-function getInstrument()   { return process.env.INSTRUMENT || "NIFTY_OPTIONS"; }
+// Read dynamically so settings toggle takes effect immediately (no restart).
+// NORMALISED (trim + uppercase) because a dozen call sites compare this with a
+// strict `=== "NIFTY_FUTURES"`: a stray space or a lowercase value in .env would
+// otherwise make some of them say options and others say futures — the engine
+// would buy an OPTION while pricing the trade as a future. Anything that is not
+// a recognised instrument falls back to options, the safe default.
+const _INSTRUMENTS = new Set(["NIFTY_OPTIONS", "NIFTY_FUTURES"]);
+function getInstrument() {
+  const raw = String(process.env.INSTRUMENT || "").trim().toUpperCase();
+  return _INSTRUMENTS.has(raw) ? raw : "NIFTY_OPTIONS";
+}
 function getStrikeOffsetCE() { return parseInt(process.env.STRIKE_OFFSET_CE || process.env.STRIKE_OFFSET || "0", 10); }
 function getStrikeOffsetPE() { return parseInt(process.env.STRIKE_OFFSET_PE || process.env.STRIKE_OFFSET || "0", 10); }
 

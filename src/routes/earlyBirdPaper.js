@@ -1027,11 +1027,11 @@ async function _openOptionPosition(setup, triggerSpot, nowMins, cfg) {
     // the recorded entry price and the P&L basis disagree by the slippage.
     premium = entrySpot;
   } else {
-    try {
-      premium = await _fetchOptionPremium(optInfo.symbol);
-    } catch (e) {
-      log(`⚠️ ${LOG_TAG} OPTION — premium fetch threw for ${optInfo.symbol}: ${e.message}`);
-    }
+      try {
+        premium = await _fetchOptionPremium(optInfo.symbol);
+      } catch (e) {
+        log(`⚠️ ${LOG_TAG} OPTION — premium fetch threw for ${optInfo.symbol}: ${e.message}`);
+      }
   }
 
   // ── RE-CHECKED AFTER THE AWAIT. Two concurrent polls could both have passed
@@ -1191,12 +1191,12 @@ async function _closeOptionPosition(ex) {
       ? ex.price : state.lastTickPrice;
     premiumSource = "index level (futures)";
   } else {
-  try {
-    exitPremium = await _fetchOptionPremium(pos.symbol);
-    if (exitPremium != null) { try { tickRecorder.recordOptionLtp(pos.symbol, exitPremium, "early-bird-paper"); } catch (_) {} }
-  } catch (e) {
-    log(`⚠️ ${LOG_TAG} OPTION — exit premium fetch threw for ${pos.symbol}: ${e.message}`);
-  }
+    try {
+      exitPremium = await _fetchOptionPremium(pos.symbol);
+      if (exitPremium != null) { try { tickRecorder.recordOptionLtp(pos.symbol, exitPremium, "early-bird-paper"); } catch (_) {} }
+    } catch (e) {
+      log(`⚠️ ${LOG_TAG} OPTION — exit premium fetch threw for ${pos.symbol}: ${e.message}`);
+    }
   }
   if (typeof exitPremium !== "number" || !Number.isFinite(exitPremium) || exitPremium <= 0) {
     exitPremium = (typeof state.optionLtp === "number" && Number.isFinite(state.optionLtp) && state.optionLtp > 0)
@@ -1492,14 +1492,14 @@ async function _pollQuotes() {
     state.lastQuoteError = null;
     state.lastQuoteOkMs = Date.now();
   } else {
-    state.quoteFailures++;
-    state.lastQuoteError = lastErr || "quote response carried no usable prices";
-    // Loud, but not once every 2 seconds. A position is NEVER left frozen with
-    // no price and no warning — this is the warning, and _checkExits refuses to
-    // act on a stale price rather than acting on a wrong one.
-    if (state.quoteFailures === 3 || state.quoteFailures % 20 === 0) {
-      log(`⚠️ ${LOG_TAG} Quote poll has failed ${state.quoteFailures}× in a row (${state.lastQuoteError}). ${state.positions.size} open position(s) are NOT being priced — exits cannot fire until quotes return.`);
-    }
+      state.quoteFailures++;
+      state.lastQuoteError = lastErr || "quote response carried no usable prices";
+      // Loud, but not once every 2 seconds. A position is NEVER left frozen with
+      // no price and no warning — this is the warning, and _checkExits refuses to
+      // act on a stale price rather than acting on a wrong one.
+      if (state.quoteFailures === 3 || state.quoteFailures % 20 === 0) {
+        log(`⚠️ ${LOG_TAG} Quote poll has failed ${state.quoteFailures}× in a row (${state.lastQuoteError}). ${state.positions.size} open position(s) are NOT being priced — exits cannot fire until quotes return.`);
+      }
   }
 }
 
@@ -2082,9 +2082,9 @@ router.get("/start", async (req, res) => {
     socketManager.addCallback(CALLBACK_ID, onTick, log);
     log(`📡 ${LOG_TAG} Piggybacking on the existing WebSocket (NIFTY 50 index — heartbeat only)`);
   } else {
-    socketManager.start(NIFTY_INDEX_SYMBOL, () => {}, log);
-    socketManager.addCallback(CALLBACK_ID, onTick, log);
-    log(`📡 ${LOG_TAG} Started the WebSocket (NIFTY 50 index — heartbeat only)`);
+      socketManager.start(NIFTY_INDEX_SYMBOL, () => {}, log);
+      socketManager.addCallback(CALLBACK_ID, onTick, log);
+      log(`📡 ${LOG_TAG} Started the WebSocket (NIFTY 50 index — heartbeat only)`);
   }
 
   scheduleAutoStop();
@@ -2718,17 +2718,17 @@ function ebRenderOption(d){
     box.innerHTML = '<div class="eb-mut">No option trade today — the NIFTY opening candle is not a signal candle.</div>';
     if (st) st.textContent = 'no signal';
   } else {
-    var cell = function(k, v){ return '<div class="b"><span class="k">' + k + '</span><span class="v">' + v + '</span></div>'; };
-    box.innerHTML =
-      cell('Buy', ebEsc(s.optionSide) + ' <span class="eb-mut" style="font-weight:400;">(' + ebEsc(s.side) + ')</span>')
-      + cell('Entry spot', ebFmt(s.entry))
-      + cell('Stop spot', ebFmt(s.stop))
-      + cell('Target spot', ebFmt(s.target))
-      + cell('Risk / reward', ebFmt(s.riskPts) + ' / ' + ebFmt(s.rewardPts) + ' pt')
-      + cell('NIFTY now', ebFmt(o.spot))
-      + (o.distance !== null && o.distance !== undefined ? cell('Spot to go', ebFmt(o.distance) + ' pt') : '')
-      + cell('Size', ebFmt(o.lots) + ' lot × ' + ebFmt(o.lotQty));
-    if (st) st.textContent = o.position ? 'in position' : o.triggered ? 'done for the day' : o.armed ? 'armed — waiting for the trigger' : 'not armed';
+      var cell = function(k, v){ return '<div class="b"><span class="k">' + k + '</span><span class="v">' + v + '</span></div>'; };
+      box.innerHTML =
+        cell('Buy', ebEsc(s.optionSide) + ' <span class="eb-mut" style="font-weight:400;">(' + ebEsc(s.side) + ')</span>')
+        + cell('Entry spot', ebFmt(s.entry))
+        + cell('Stop spot', ebFmt(s.stop))
+        + cell('Target spot', ebFmt(s.target))
+        + cell('Risk / reward', ebFmt(s.riskPts) + ' / ' + ebFmt(s.rewardPts) + ' pt')
+        + cell('NIFTY now', ebFmt(o.spot))
+        + (o.distance !== null && o.distance !== undefined ? cell('Spot to go', ebFmt(o.distance) + ' pt') : '')
+        + cell('Size', ebFmt(o.lots) + ' lot × ' + ebFmt(o.lotQty));
+      if (st) st.textContent = o.position ? 'in position' : o.triggered ? 'done for the day' : o.armed ? 'armed — waiting for the trigger' : 'not armed';
   }
 
   if (rs) {

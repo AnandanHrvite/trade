@@ -208,44 +208,44 @@ async function _placeLiveBuyImpl(side, sigSnapshot) {
     // band and option bid-ask gates below do not apply and are skipped.
     optionEntryLtp = spot;
   } else {
-  try {
-    const r = await fyers.getQuotes([optInfo.symbol]);
-    if (r && r.s === "ok" && r.d && r.d.length) {
-      const v = r.d[0].v || {};
-      const ltp = v.lp || v.ltp;
-      if (typeof ltp === "number" && ltp > 0) {
-        optionEntryLtp = ltp;
-        optBid = Number(v.bid || v.bid_price || 0) || null;
-        optAsk = Number(v.ask || v.ask_price || 0) || null;
-        try { tickRecorder.recordOptionLtp(optInfo.symbol, ltp, "orb-live"); } catch (_) {}
+    try {
+      const r = await fyers.getQuotes([optInfo.symbol]);
+      if (r && r.s === "ok" && r.d && r.d.length) {
+        const v = r.d[0].v || {};
+        const ltp = v.lp || v.ltp;
+        if (typeof ltp === "number" && ltp > 0) {
+          optionEntryLtp = ltp;
+          optBid = Number(v.bid || v.bid_price || 0) || null;
+          optAsk = Number(v.ask || v.ask_price || 0) || null;
+          try { tickRecorder.recordOptionLtp(optInfo.symbol, ltp, "orb-live"); } catch (_) {}
+        }
       }
+    } catch (e) {
+      // Paper logs and blocks here; live used to swallow the error, so a broker
+      // outage produced a bare "LTP unavailable" with no cause in the log.
+      log(`⚠️ Option LTP fetch failed: ${e.message} — entry blocked`);
+      return;
     }
-  } catch (e) {
-    // Paper logs and blocks here; live used to swallow the error, so a broker
-    // outage produced a bare "LTP unavailable" with no cause in the log.
-    log(`⚠️ Option LTP fetch failed: ${e.message} — entry blocked`);
-    return;
-  }
-  if (!optionEntryLtp) { log(`❌ Option LTP unavailable — entry blocked`); return; }
+    if (!optionEntryLtp) { log(`❌ Option LTP unavailable — entry blocked`); return; }
 
-  // ── STEP 8 — Option filter: slightly-ITM (resolved above), premium band, spread ──
-  // Band widened for slightly-ITM premiums (higher intrinsic than ATM).
-  const premMin = parseFloat(process.env.ORB_PREMIUM_MIN || "120");
-  const premMax = parseFloat(process.env.ORB_PREMIUM_MAX || "400");
-  const premGateOn = (process.env.ORB_PREMIUM_GATE_ENABLED || "false").toLowerCase() === "true";
-  if (premGateOn && (optionEntryLtp < premMin || optionEntryLtp > premMax)) {
-    log(`⏸️ [ORB-LIVE] Premium gate: ${optInfo.symbol} LTP ₹${optionEntryLtp} outside [${premMin}, ${premMax}] — entry skipped`);
-    skipLogger.appendSkipLog("orb", { gate: "premium_range", reason: `LTP ₹${optionEntryLtp} outside [${premMin}, ${premMax}]`, symbol: optInfo.symbol, side, spot, optLtp: optionEntryLtp, _live: true });
-    return;
-  }
-  // Bid-ask spread gate — fails OPEN when the broker snapshot lacks depth.
-  const maxSpread = parseFloat(process.env.ORB_MAX_SPREAD_PTS || process.env.MAX_BID_ASK_SPREAD_PTS || "2");
-  const _sp = tradeGuards.checkSpread(optBid, optAsk, maxSpread);
-  if (!_sp.ok) {
-    log(`⏸️ [ORB-LIVE] Spread gate: ${optInfo.symbol} ${_sp.reason} > ${maxSpread}pt — entry skipped`);
-    skipLogger.appendSkipLog("orb", { gate: "spread", reason: `${_sp.reason} > ${maxSpread}pt`, symbol: optInfo.symbol, side, spot, spread: _sp.spread, _live: true });
-    return;
-  }
+    // ── STEP 8 — Option filter: slightly-ITM (resolved above), premium band, spread ──
+    // Band widened for slightly-ITM premiums (higher intrinsic than ATM).
+    const premMin = parseFloat(process.env.ORB_PREMIUM_MIN || "120");
+    const premMax = parseFloat(process.env.ORB_PREMIUM_MAX || "400");
+    const premGateOn = (process.env.ORB_PREMIUM_GATE_ENABLED || "false").toLowerCase() === "true";
+    if (premGateOn && (optionEntryLtp < premMin || optionEntryLtp > premMax)) {
+      log(`⏸️ [ORB-LIVE] Premium gate: ${optInfo.symbol} LTP ₹${optionEntryLtp} outside [${premMin}, ${premMax}] — entry skipped`);
+      skipLogger.appendSkipLog("orb", { gate: "premium_range", reason: `LTP ₹${optionEntryLtp} outside [${premMin}, ${premMax}]`, symbol: optInfo.symbol, side, spot, optLtp: optionEntryLtp, _live: true });
+      return;
+    }
+    // Bid-ask spread gate — fails OPEN when the broker snapshot lacks depth.
+    const maxSpread = parseFloat(process.env.ORB_MAX_SPREAD_PTS || process.env.MAX_BID_ASK_SPREAD_PTS || "2");
+    const _sp = tradeGuards.checkSpread(optBid, optAsk, maxSpread);
+    if (!_sp.ok) {
+      log(`⏸️ [ORB-LIVE] Spread gate: ${optInfo.symbol} ${_sp.reason} > ${maxSpread}pt — entry skipped`);
+      skipLogger.appendSkipLog("orb", { gate: "spread", reason: `${_sp.reason} > ${maxSpread}pt`, symbol: optInfo.symbol, side, spot, spread: _sp.spread, _live: true });
+      return;
+    }
   }
 
   const qty = instrumentConfig.getLotQty();
@@ -257,18 +257,18 @@ async function _placeLiveBuyImpl(side, sigSnapshot) {
     log(`🟡 [ORB-LIVE DRY-RUN] WOULD place BUY ${side} ${qty} × ${optInfo.symbol} @ market (ref ₹${optionEntryLtp})`);
     entryOrderId = `dryrun:${Date.now()}`;
   } else {
-    try {
-      const ord = await fyersBroker.placeMarketOrder(optInfo.symbol, 1, qty, "ORB-LIVE", { isFutures: _isFut });
-      if (!ord || !ord.success) {
-        log(`❌ [ORB-LIVE] BUY order failed: ${JSON.stringify(ord)}`);
+      try {
+        const ord = await fyersBroker.placeMarketOrder(optInfo.symbol, 1, qty, "ORB-LIVE", { isFutures: _isFut });
+        if (!ord || !ord.success) {
+          log(`❌ [ORB-LIVE] BUY order failed: ${JSON.stringify(ord)}`);
+          return;
+        }
+        entryOrderId = ord.orderId;
+        log(`🟢 [ORB-LIVE] BUY order placed — orderId=${entryOrderId}`);
+      } catch (e) {
+        log(`❌ [ORB-LIVE] BUY order threw: ${e.message}`);
         return;
       }
-      entryOrderId = ord.orderId;
-      log(`🟢 [ORB-LIVE] BUY order placed — orderId=${entryOrderId}`);
-    } catch (e) {
-      log(`❌ [ORB-LIVE] BUY order threw: ${e.message}`);
-      return;
-    }
   }
 
   // Initial hard SL comes from the STRATEGY (sig.slSpot) — the wider of the entry
@@ -521,31 +521,31 @@ async function _placeLiveSellImpl(reason) {
     log(`🟡 [ORB-LIVE DRY-RUN] WOULD place SELL ${qty} × ${pos.symbol} @ market (ref ₹${exitOptLtp}) — reason: ${reason}`);
     exitOrderId = `dryrun:${Date.now()}`;
   } else {
-    try {
-      const ord = await fyersBroker.placeMarketOrder(pos.symbol, -1, qty, "ORB-LIVE-X", { isFutures: !!pos.isFutures });
-      if (!ord || !ord.success) {
-        log(`❌ [ORB-LIVE] SELL order failed: ${JSON.stringify(ord)}`);
-        sendTelegram(`🚨 ORB EXIT FAILED: ${pos.symbol} ${pos.side} × ${qty} — ${reason}. Broker rejected — check Fyers dashboard IMMEDIATELY!`).catch(() => {});
-      } else {
-        exitOrderId = ord.orderId;
-        log(`🔴 [ORB-LIVE] SELL order placed — orderId=${exitOrderId}`);
+      try {
+        const ord = await fyersBroker.placeMarketOrder(pos.symbol, -1, qty, "ORB-LIVE-X", { isFutures: !!pos.isFutures });
+        if (!ord || !ord.success) {
+          log(`❌ [ORB-LIVE] SELL order failed: ${JSON.stringify(ord)}`);
+          sendTelegram(`🚨 ORB EXIT FAILED: ${pos.symbol} ${pos.side} × ${qty} — ${reason}. Broker rejected — check Fyers dashboard IMMEDIATELY!`).catch(() => {});
+        } else {
+          exitOrderId = ord.orderId;
+          log(`🔴 [ORB-LIVE] SELL order placed — orderId=${exitOrderId}`);
+        }
+      } catch (e) {
+        log(`❌ [ORB-LIVE] SELL order threw: ${e.message}`);
+        sendTelegram(`🚨 ORB EXIT THREW: ${pos.symbol} ${pos.side} × ${qty} — ${e.message}. Check Fyers dashboard IMMEDIATELY!`).catch(() => {});
       }
-    } catch (e) {
-      log(`❌ [ORB-LIVE] SELL order threw: ${e.message}`);
-      sendTelegram(`🚨 ORB EXIT THREW: ${pos.symbol} ${pos.side} × ${qty} — ${e.message}. Check Fyers dashboard IMMEDIATELY!`).catch(() => {});
-    }
-    // The exit failed but we already cancelled the exchange stop, and the code
-    // below drops the position record regardless — that would leave a REAL,
-    // untracked long with no protection at all. Put the SL-M back before the
-    // record goes away, so the orphan at least still has a stop resting.
-    if (!exitOrderId) {
-      await placeOrbHardSL().catch(() => {});
-      // placeOrbHardSL no-ops when HARD_SL_ENABLED is off or the trigger is
-      // unusable, so report what actually happened rather than assuming.
-      log(_orbHardSLOrderId
-        ? `⚠️ [ORB-LIVE] Exit unconfirmed — exchange SL-M re-armed on the orphaned position. Verify on the Fyers dashboard.`
-        : `🚨 [ORB-LIVE] Exit unconfirmed AND no exchange SL could be placed — the position may be open and UNPROTECTED. Square off manually NOW.`);
-    }
+      // The exit failed but we already cancelled the exchange stop, and the code
+      // below drops the position record regardless — that would leave a REAL,
+      // untracked long with no protection at all. Put the SL-M back before the
+      // record goes away, so the orphan at least still has a stop resting.
+      if (!exitOrderId) {
+        await placeOrbHardSL().catch(() => {});
+        // placeOrbHardSL no-ops when HARD_SL_ENABLED is off or the trigger is
+        // unusable, so report what actually happened rather than assuming.
+        log(_orbHardSLOrderId
+          ? `⚠️ [ORB-LIVE] Exit unconfirmed — exchange SL-M re-armed on the orphaned position. Verify on the Fyers dashboard.`
+          : `🚨 [ORB-LIVE] Exit unconfirmed AND no exchange SL could be placed — the position may be open and UNPROTECTED. Square off manually NOW.`);
+      }
   }
 
   const _pnlRes = instrumentMode.computePnl({
@@ -802,10 +802,10 @@ function onTick(tick) {
     else state.currentBar = { time: bucketSec, open: price, high: price, low: price, close: price, volume: 1 };
     state.barStartTime = bucketMs;
   } else {
-    state.currentBar.high = Math.max(state.currentBar.high, price);
-    state.currentBar.low  = Math.min(state.currentBar.low,  price);
-    state.currentBar.close = price;
-    state.currentBar.volume = (state.currentBar.volume || 0) + 1;
+      state.currentBar.high = Math.max(state.currentBar.high, price);
+      state.currentBar.low  = Math.min(state.currentBar.low,  price);
+      state.currentBar.close = price;
+      state.currentBar.volume = (state.currentBar.volume || 0) + 1;
   }
   if (state.position) _checkExits(price);
   if (state.position) {
