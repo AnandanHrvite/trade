@@ -55,10 +55,14 @@ function brokerPools(strategies) {
   const z = parseFloat(process.env.ZERODHA_INV_AMOUNT || '100000');
   const f = parseFloat(process.env.FYERS_INV_AMOUNT   || '100000');
   const pools = [];
-  if (strategies.some(s => BROKER_OF[s.key] === 'ZERODHA'))
-    pools.push({ id:'ZERODHA', label:'ZERODHA', sub:'EMA_RSI_ST · EMA9+VWAP', inv:z });
-  if (strategies.some(s => BROKER_OF[s.key] === 'FYERS'))
-    pools.push({ id:'FYERS', label:'FYERS', sub:'BB_RSI · PA · ORB · TREND PB · TREND DAY SCALP', inv:f });
+  // sub = the enabled strategies actually routed to that broker, never a
+  // hardcoded list (it went stale every time a strategy was added).
+  const subOf = (broker) => strategies.filter(s => BROKER_OF[s.key] === broker)
+                                      .map(s => s.label).join(' \u00b7 ');
+  const zSub = subOf('ZERODHA');
+  const fSub = subOf('FYERS');
+  if (zSub) pools.push({ id:'ZERODHA', label:'ZERODHA', sub:zSub, inv:z });
+  if (fSub) pools.push({ id:'FYERS', label:'FYERS', sub:fSub, inv:f });
   return pools;
 }
 
