@@ -481,7 +481,10 @@ function _isFuturesAlert(p) {
   if (p.isFutures === false) return false;
   if (p.instrument) return String(p.instrument).toUpperCase() === "NIFTY_FUTURES";
   if (p.isSpot === true) return false;                     // cash-equity leg
-  return String(process.env.INSTRUMENT || "NIFTY_OPTIONS").trim().toUpperCase() === "NIFTY_FUTURES";
+  // Delegate rather than re-deriving: a second copy of the normaliser is exactly
+  // the drift this was meant to remove.
+  try { return require("../config/instrument").INSTRUMENT === "NIFTY_FUTURES"; }
+  catch (_) { return false; }
 }
 
 function notifyEntry(p) {

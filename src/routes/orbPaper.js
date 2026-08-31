@@ -1167,9 +1167,9 @@ router.get("/status/data", (req, res) => {
     const lot = pos.qty || instrumentConfig.getLotQty();
     if (state.optionLtp != null) {
       livePnl = instrumentMode.unrealisedPnl({
-      side: pos.side, entrySpot: pos.entrySpot, currentSpot: state.lastTickPrice,
-      entryPremium: pos.optionEntryLtp, currentPremium: state.optionLtp, qty: lot,
-    });
+        side: pos.side, entrySpot: pos.entrySpot, currentSpot: state.lastTickPrice,
+        entryPremium: pos.optionEntryLtp, currentPremium: state.optionLtp, qty: lot,
+      });
     }
   }
 
