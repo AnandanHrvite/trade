@@ -3148,13 +3148,36 @@ function _renderDashTotal(){
   _updateChartStats('dash-cum-stats', trades);
 }
 
+// The login cookie has a sliding 15-min expiry, so a tab left open outlives
+// its session: the page HTML is already rendered, but every later data fetch
+// comes back 401. Swallowing that into an empty array drew *blank charts on a
+// logged-out page*, which reads as "no trades today" — the one message it must
+// never send. Say the session expired instead, and offer the way back.
+var _authBannerShown = false;
+function _authLost(){
+  if (_authBannerShown) return;
+  _authBannerShown = true;
+  var bar = document.createElement('div');
+  bar.id = 'sessionExpiredBar';
+  bar.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:9999;background:#b91c1c;color:#fff;'
+    + 'padding:12px 16px;font:600 0.9rem system-ui,sans-serif;display:flex;gap:12px;'
+    + 'align-items:center;justify-content:center;flex-wrap:wrap;'
+    + 'padding-top:calc(12px + env(safe-area-inset-top));';
+  bar.innerHTML = '<span>Session expired — charts below are not your data.</span>'
+    + '<a href="/login" style="background:#fff;color:#b91c1c;padding:6px 14px;border-radius:6px;'
+    + 'text-decoration:none;min-height:44px;display:inline-flex;align-items:center;">Log in again</a>';
+  document.body.appendChild(bar);
+}
+
 async function loadDashCumCharts(){
   try {
     var r = await fetch('/consolidation/data?enabledOnly=1', { cache: 'no-store' });
+    if (r.status === 401) _authLost();
     if (r.ok){ var d = await r.json(); _dcData.paper = (d && d.trades) || []; }
   } catch(_){ _dcData.paper = []; }
   try {
     var r2 = await fetch('/live-consolidation/data?enabledOnly=1', { cache: 'no-store' });
+    if (r2.status === 401) _authLost();
     if (r2.ok){ var d2 = await r2.json(); _dcData.live = (d2 && d2.trades) || []; }
   } catch(_){ _dcData.live = []; }
   _renderDashTotal();
@@ -3299,10 +3322,12 @@ function _renderBrokerWallets(){
 async function loadModuleCharts(){
   try {
     var r1 = await fetch('/consolidation/data', { cache: 'no-store' });
+    if (r1.status === 401) _authLost();
     if (r1.ok){ var d1 = await r1.json(); _mmData.paper = (d1 && d1.trades) || []; }
   } catch(_){ _mmData.paper = []; }
   try {
     var r2 = await fetch('/live-consolidation/data', { cache: 'no-store' });
+    if (r2.status === 401) _authLost();
     if (r2.ok){ var d2 = await r2.json(); _mmData.live = (d2 && d2.trades) || []; }
   } catch(_){ _mmData.live = []; }
   ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB','TDS','HA_SCALP','EARLYBIRD','SIMPLE930','RSI_PIVOT_ST'].forEach(_renderModuleChart);
@@ -3463,7 +3488,12 @@ setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily 
   }
 
   function fetchJSON(url){
-    return fetch(url, { cache:'no-store' }).then(function(r){ return r.ok ? r.json() : null; }).catch(function(){ return null; });
+    return fetch(url, { cache:'no-store' }).then(function(r){
+      // A 401 here means the sliding login cookie lapsed while the tab sat open.
+      // Returning null would leave the panel on "Loading analytics…" forever.
+      if (r.status === 401) { _authLost(); return null; }
+      return r.ok ? r.json() : null;
+    }).catch(function(){ return null; });
   }
 
   // Keep a tile only if the strategy has something to report today: a closed
