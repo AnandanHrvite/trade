@@ -448,11 +448,12 @@ ${sidebar}
   <div class="cols">
 ${cardsHtml}
   </div>
-  <!-- Cards are hidden until a strategy actually has something to watch (open
-       position, a trade today, or a dead endpoint). With ten strategies the wall
-       of identical FLAT boxes buried the one card that mattered. The rollup
-       table below still lists every strategy. -->
-  <div class="cards-empty" id="cards-empty" hidden>No strategy has taken a trade yet — cards appear here on the first entry.</div>
+  <!-- A card is shown only while that strategy is holding an open position (or
+       its endpoint is dead). With ten strategies the wall of identical FLAT
+       boxes — and, later in the day, cards for trades already closed — buried
+       the one card that mattered. The rollup table below still lists every
+       strategy, open and closed. -->
+  <div class="cards-empty" id="cards-empty" hidden>No open positions right now — a card appears here while a strategy is holding one. Today's trades are in the table below.</div>
 
   <div class="rollup-wrap">
   <table class="rollup">
@@ -603,21 +604,24 @@ function renderPositionsEarlyBird(d, list) {
   let rows = '';
   for (const p of list) {
     if (!p) continue;
-    const side = p.side === 'LONG' || p.side === 'SHORT' ? p.side : '';
+    // CE/PE = the folded-in NIFTY option leg, priced on the premium: a bought
+    // PE gains as its own price rises, so it moves LONG-wise on its own ltp.
+    const side = ['LONG', 'SHORT', 'CE', 'PE'].includes(p.side) ? p.side : '';
     const entry = typeof p.entryPrice === 'number' && Number.isFinite(p.entryPrice) ? p.entryPrice : null;
     const ltp = typeof p.ltp === 'number' && Number.isFinite(p.ltp) ? p.ltp : null;
     const qty = typeof p.qty === 'number' && Number.isFinite(p.qty) ? p.qty : null;
-    const mult = side === 'LONG' ? 1 : (side === 'SHORT' ? -1 : 0);
+    const mult = side === 'SHORT' ? -1 : (side ? 1 : 0);
     const pts = typeof p.pointsMoved === 'number' && Number.isFinite(p.pointsMoved)
       ? p.pointsMoved
       : (entry !== null && ltp !== null && mult ? (ltp - entry) * mult : null);
     const upnl = typeof p.livePnl === 'number' && Number.isFinite(p.livePnl)
       ? p.livePnl
       : (pts !== null && qty !== null ? pts * qty : null);
+    const isOpt = side === 'CE' || side === 'PE';
     rows += \`<div class="eb-row">
-      <span class="pos-side \${side === 'LONG' ? 'CE' : (side === 'SHORT' ? 'PE' : '')}">\${side || '—'}</span>
+      <span class="pos-side \${isOpt ? side : (side === 'LONG' ? 'CE' : (side === 'SHORT' ? 'PE' : ''))}">\${side || '—'}</span>
       <span class="eb-sym">\${escapeHtml(p.symbol || '—')}</span>
-      <span class="eb-qty">\${qty !== null ? qty + ' sh' : '—'}</span>
+      <span class="eb-qty">\${qty !== null ? qty + (isOpt ? ' qty' : ' sh') : '—'}</span>
       <span class="eb-px">\${fmtNum(entry)} → \${fmtNum(ltp)}</span>
       <span class="eb-pts \${cls(pts)}">\${fmtNum(pts)}</span>
       <span class="eb-pnl \${cls(upnl)}">\${upnl === null ? '—' : fmtINR(upnl)}</span>
@@ -626,7 +630,11 @@ function renderPositionsEarlyBird(d, list) {
   return \`
     <div class="pos-block">
       <div class="eb-head">
-        <span class="pos-symbol">\${list.length} open position\${list.length === 1 ? '' : 's'} · cash equity</span>
+        <span class="pos-symbol">\${list.length} open position\${list.length === 1 ? '' : 's'}\${(() => {
+          const opt = list.some(p => p && (p.side === 'CE' || p.side === 'PE'));
+          const stk = list.some(p => p && (p.side === 'LONG' || p.side === 'SHORT'));
+          return opt && stk ? ' · cash equity + option' : (opt ? ' · NIFTY option' : ' · cash equity');
+        })()}</span>
       </div>
       <div class="pnl-big \${cls(total)}">\${fmtINR(total)}</div>
       <div class="eb-list">\${rows}</div>
@@ -635,9 +643,28 @@ function renderPositionsEarlyBird(d, list) {
 
 // EarlyBird reports positions[]; everything else reports a single position.
 // Returned as an array either way so renderColumn has one code path.
+// EarlyBird's NIFTY OPTION leg is NOT in positions[] — it sits in its own
+// option.position field — so it must be folded in here, or an option-mode day
+// paints "FLAT" on the card while the rollup below shows its open P&L. It is
+// normalised to the same {symbol, side, entryPrice, ltp, qty, livePnl} shape the
+// stock rows use, priced on the PREMIUM (its entry/ltp are option prices).
 function openPositionsOf(d) {
   if (!d) return [];
-  if (Array.isArray(d.positions)) return d.positions.filter(Boolean);
+  if (Array.isArray(d.positions)) {
+    const list = d.positions.filter(Boolean);
+    const op = d.option && d.option.position ? d.option.position : null;
+    if (op) {
+      list.push({
+        symbol: op.symbol,
+        side: op.optionSide || op.side,
+        entryPrice: op.optionEntryLtp,
+        ltp: op.optionLtp,
+        qty: op.qty,
+        livePnl: op.livePnl,
+      });
+    }
+    return list;
+  }
   return d.position ? [d.position] : [];
 }
 
@@ -685,9 +712,11 @@ function renderColumn(strategy, d) {
   const tickTime = d.lastTickTime || '';
   metaEl.innerHTML = \`<span>LTP \${ltp}\${tickTime ? ' · ' + tickTime : ''}</span><span>\${d.tickCount ?? 0} ticks</span>\`;
 
-  // Worth a card only once there is something to watch: money at risk now, or a
-  // trade already taken today. Everything else lives in the rollup table.
-  showCard(strategy, openList.length > 0 || todayTrades(d) > 0);
+  // Worth a card only while money is actually at risk RIGHT NOW. A strategy that
+  // traded and is now flat drops back to the rollup table below — keeping its
+  // card up filled the screen with finished business and pushed the live
+  // positions off it.
+  showCard(strategy, openList.length > 0);
 }
 
 // Cards are hidden, not removed, so the poll can bring one back the moment its
