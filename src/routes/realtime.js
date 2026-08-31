@@ -764,10 +764,15 @@ function renderRollup(all) {
     totalTrades += +trades || 0;
     totalW += +w || 0;
     totalL += +l || 0;
-    // Same rule as the cards above: a strategy earns a row once it has money at
-    // risk or a trade today. It is only the row that is dropped — its numbers
-    // are already in the totals, so TOTAL still speaks for every strategy.
-    if (!d.position && !(trades > 0)) { quiet++; continue; }
+    // A strategy earns a row once it has money at risk or a trade today. Unlike
+    // the cards above, a CLOSED trade keeps its row — the table is the record of
+    // the day, the cards are the live view. openPositionsOf (not d.position) is
+    // what decides "at risk": EarlyBird reports positions[] plus an option leg
+    // and never sets d.position, so testing that field alone dropped its row
+    // while its open P&L still counted toward TOTAL.
+    // Only the row is dropped — the numbers above are already in the totals, so
+    // TOTAL still speaks for every strategy.
+    if (!openPositionsOf(d).length && !(trades > 0)) { quiet++; continue; }
     rows++;
     html += \`<tr class="\${accent}" data-key="\${key}">
       <td>\${label}</td>
