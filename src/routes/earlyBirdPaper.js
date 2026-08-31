@@ -2491,6 +2491,7 @@ ${bbRsiTopBar({
   primaryAction: { href: "/early-bird-paper/start", label: "▶ Start", color: "#0369a1" },
   stopAction:    { href: "/early-bird-paper/stop",  label: "■ Stop" },
   historyHref: "/early-bird-paper/history",
+  resetJs: "ebHandleReset(this)",
 })}
 
 ${bbRsiCapitalStrip({ starting: startCap, current: startCap + (data.totalPnl || 0), allTime: data.totalPnl || 0 })}
@@ -2587,6 +2588,37 @@ ${bbRsiActivityLog({ logsJSON: JSON.stringify(state.log.slice(-400)) })}
 </div>
 <script>
 ${modalJS()}
+
+// Wipes every stored EarlyBird paper session and puts capital back to
+// FYERS_INV_AMOUNT. The server refuses while a session is running, so the
+// button only ever has to handle a stopped engine plus the double confirm.
+async function ebHandleReset(btn){
+  var ok = await showDoubleConfirm({
+    icon: '⚠️', title: 'Reset EarlyBird Paper Trade',
+    message: 'Reset ALL EarlyBird paper trade history?\\nThis wipes all sessions and restores starting capital.\\nCannot be undone.',
+    confirmText: 'Reset All', confirmClass: 'modal-btn-danger',
+    subject: 'ALL EarlyBird paper sessions & capital',
+    secondConfirmText: 'Yes, reset all'
+  });
+  if (!ok) return;
+  if (btn) { btn.textContent = '⏳...'; btn.disabled = true; }
+  try {
+    var res = await secretFetch('/early-bird-paper/reset');
+    if (!res) { if (btn) { btn.textContent = '↺ Reset'; btn.disabled = false; } return; }
+    var data;
+    try { data = await res.json(); } catch(_) { data = { success: false, error: 'Server error (status ' + res.status + ')' }; }
+    if (!data.success) {
+      if (btn) { btn.textContent = '↺ Reset'; btn.disabled = false; }
+      await showAlert({ icon: '❌', title: 'Reset Failed', message: data.error || 'Reset failed', btnClass: 'modal-btn-danger' });
+      return;
+    }
+    location.reload();
+  } catch(e) {
+    if (btn) { btn.textContent = '↺ Reset'; btn.disabled = false; }
+    await showAlert({ icon: '❌', title: 'Reset Failed', message: e.message, btnClass: 'modal-btn-danger' });
+  }
+}
+
 var EB_SCAN = [], EB_SCAN_OPEN = false, EB_SCAN_LIMIT = 80;
 
 function ebEsc(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
