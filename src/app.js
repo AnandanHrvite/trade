@@ -3753,7 +3753,9 @@ async function checkTradingStatus(){
       showStatusPill(alertDiv, '🏖️', 'Weekend — markets resume Monday 9:15 AM', '#ef4444', false); return;
     }
     if(hour < 7 || hour >= 16){
-      showStatusPill(alertDiv, '🕐', hour < 7 ? 'Pre-market — opens 9:15 AM IST' : 'Post-market — closed for the day', '#60a5fa'); return;
+      // Not dismissible, same reason as weekend/holiday: pre/post-market is a
+      // fact the user cannot change, so a ✕ only hides it.
+      showStatusPill(alertDiv, '🕐', hour < 7 ? 'Pre-market — opens 9:15 AM IST' : 'Post-market — closed for the day', '#60a5fa', false); return;
     }
     alertDiv.style.display = 'none';
   } catch(e){}
