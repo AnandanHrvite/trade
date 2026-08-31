@@ -1514,7 +1514,7 @@ router.get("/status", (req, res) => {
 
       <!-- Option Premium Section -->
       <div style="background:#0a0f24;border:2px solid #3b82f6;border-radius:12px;padding:18px 20px;margin-bottom:14px;">
-        <div style="font-size:0.68rem;font-weight:700;color:#3b82f6;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:14px;">Option Premium (${pos.optionType || pos.side} Price)</div>
+        <div style="font-size:0.68rem;font-weight:700;color:#3b82f6;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:14px;">${instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? `Futures Price (${pos.side === "CE" ? "LONG" : "SHORT"})` : `Option Premium (${pos.optionType || pos.side} Price)`}</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px;align-items:center;">
           <!-- Entry Premium -->
           <div style="text-align:center;padding:12px;background:#071a3e;border:1px solid #1e3a5f;border-radius:10px;">

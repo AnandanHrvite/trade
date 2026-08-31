@@ -3132,7 +3132,7 @@ router.get("/status", (req, res) => {
 
       <!-- ★ OPTION PREMIUM SECTION — most important block ★ -->
       <div style="background:#0a0f24;border:2px solid #3b82f6;border-radius:12px;padding:18px 20px;margin-bottom:14px;">
-        <div style="font-size:0.68rem;font-weight:700;color:#3b82f6;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:14px;">📊 Option Premium (${pos.optionType} Price)</div>
+        <div style="font-size:0.68rem;font-weight:700;color:#3b82f6;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:14px;">${instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? `📊 Futures Price (${pos.side === "CE" ? "LONG" : "SHORT"})` : `📊 Option Premium (${pos.optionType} Price)`}</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px;align-items:center;">
 
           <!-- Entry Premium -->
