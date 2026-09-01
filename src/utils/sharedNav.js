@@ -176,6 +176,10 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const showSimple930Live     = (process.env.UI_SHOW_SIMPLE930_LIVE        || 'true').toLowerCase()  === 'true';
   const showSimple930History  = (process.env.UI_SHOW_SIMPLE930_HISTORY     || 'true').toLowerCase()  === 'true';
 
+  // ── Top-level underlying groups (NIFTY is implicit — it holds the strategies
+  //    that already exist; BANK NIFTY is its own opt-in parent) ──
+  const showBankNifty  = (process.env.UI_SHOW_BANKNIFTY || 'true').toLowerCase() === 'true';
+
   // ── System submenu toggles (Settings is always shown) ──
   const showTradeLogs  = (process.env.UI_SHOW_TRADE_LOGS  || 'true').toLowerCase() === 'true';
   const showTokenSync  = (process.env.UI_SHOW_TOKEN_SYNC  || 'true').toLowerCase() === 'true';
@@ -209,6 +213,9 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const isSimple930Open = simple930Keys.includes(activePage);
   const isEarlyBirdOpen = earlyBirdKeys.includes(activePage);
   const isSystemOpen    = systemKeys.includes(activePage);
+  // NIFTY BANK pages. Empty until the first BN route ships — the parent still
+  // renders so the group is visible and its entries drop straight in.
+  const bankNiftyKeys = [];
   // Pages that live outside every group (Real-Time monitor, docs, …) used to see
   // the ungrouped top-level links; keep Dashboard open for them so the sidebar is
   // never rendered fully collapsed.
@@ -347,58 +354,72 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     ...(emaRsiStModeOn ? [{
       header: 'EMA_RSI_ST', collapsible: true, collapsed: !isTradingOpen,
       groupId: 'nav-ema_rsi_st',
+      parent: 'nifty',
       items: emaRsiStItems,
     }] : []),
     ...(bbRsiModeOn ? [{
       header: 'BB_RSI', collapsible: true, collapsed: !isBbRsiOpen,
       groupId: 'nav-bb_rsi',
+      parent: 'nifty',
       items: bbRsiItems,
     }] : []),
     ...(paModeOn ? [{
       header: 'PRICE ACTION', collapsible: true, collapsed: !isPAOpen,
       groupId: 'nav-pa',
+      parent: 'nifty',
       items: paItems,
     }] : []),
     ...(orbModeOn ? [{
       header: 'ORB', collapsible: true, collapsed: !isOrbOpen,
       groupId: 'nav-orb',
+      parent: 'nifty',
       items: orbItems,
     }] : []),
     ...(ema9vwapModeOn ? [{
       header: 'EMA9+VWAP', collapsible: true, collapsed: !isEma9vwapOpen,
       groupId: 'nav-ema9vwap',
+      parent: 'nifty',
       items: ema9vwapItems,
     }] : []),
     ...(trendPbModeOn ? [{
       header: 'TREND PULLBACK', collapsible: true, collapsed: !isTrendPbOpen,
       groupId: 'nav-trend-pb',
+      parent: 'nifty',
       items: trendPbItems,
     }] : []),
     ...(tdsModeOn ? [{
       header: 'TREND DAY SCALP', collapsible: true, collapsed: !isTdsOpen,
       groupId: 'nav-trend-day-scalp',
+      parent: 'nifty',
       items: tdsItems,
     }] : []),
     ...(haScalpModeOn ? [{
       header: 'HA SCALP', collapsible: true, collapsed: !isHaScalpOpen,
       groupId: 'nav-ha-scalp',
+      parent: 'nifty',
       items: haScalpItems,
     }] : []),
     ...(rsiPivotStModeOn ? [{
       header: 'RSI PIVOT ST', collapsible: true, collapsed: !isRsiPivotStOpen,
       groupId: 'nav-rsi-pivot-st',
+      parent: 'nifty',
       items: rsiPivotStItems,
     }] : []),
     ...(simple930ModeOn ? [{
       header: 'SIMPLE 9:30', collapsible: true, collapsed: !isSimple930Open,
       groupId: 'nav-simple930',
+      parent: 'nifty',
       items: simple930Items,
     }] : []),
     ...(earlyBirdModeOn ? [{
       header: 'EARLYBIRD', collapsible: true, collapsed: !isEarlyBirdOpen,
       groupId: 'nav-early-bird',
+      parent: 'nifty',
       items: earlyBirdItems,
     }] : []),
+    // The NIFTY and BANK NIFTY parents render here — after Dashboard, before
+    // System. Every section carrying a `parent` is nested inside one of them.
+    { parentsAnchor: true },
     {
       header: 'SYSTEM', collapsible: true, collapsed: !isSystemOpen,
       groupId: 'nav-system',
@@ -500,7 +521,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     </a>`;
   }
 
-  const navItems = sections.map(section => {
+  function renderSection(section) {
     const items = section.items.map(renderItem).join('');
     if (section.collapsible && section.header) {
       const gid = section.groupId || 'nav-' + section.header.toLowerCase().replace(/\s+/g, '-');
@@ -517,6 +538,38 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       ? `<div class="sb-section-header">${section.header}</div>`
       : '';
     return `<div class="sb-section">${header}${items}</div>`;
+  }
+
+  // ── Two-level nav: underlying parent → strategy group → page ───────────────
+  // Each parent is its own accordion (independent of the group accordion inside
+  // it), so opening BANK NIFTY closes NIFTY but leaves whichever strategy group
+  // was open inside it untouched.
+  const parentDefs = [
+    { id: 'nav-parent-nifty', key: 'nifty', header: 'NIFTY' },
+    ...(showBankNifty ? [{ id: 'nav-parent-banknifty', key: 'banknifty', header: 'BANK NIFTY' }] : []),
+  ];
+  const isBankNiftyOpen = bankNiftyKeys.includes(activePage);
+  const parentOpen = { nifty: !isBankNiftyOpen, banknifty: isBankNiftyOpen };
+
+  function renderParents() {
+    return parentDefs.map(pd => {
+      const children = sections.filter(sec => sec.parent === pd.key).map(renderSection).join('')
+        || `<div class="sb-parent-empty">No strategies yet</div>`;
+      const collapsed = parentOpen[pd.key] ? '' : ' collapsed';
+      return `<div class="sb-section sb-parent">
+        <div class="sb-section-header sb-collapsible sb-parent-header${collapsed}" onclick="toggleNavParent('${pd.id}')" data-parent="${pd.id}">
+          <span>${pd.header}</span>
+          <span class="sb-chevron">${collapsed ? '›' : '‹'}</span>
+        </div>
+        <div class="sb-parent-items${collapsed}" id="${pd.id}">${children}</div>
+      </div>`;
+    }).join('');
+  }
+
+  const navItems = sections.map(section => {
+    if (section.parentsAnchor) return renderParents();
+    if (section.parent) return '';   // rendered inside its parent
+    return renderSection(section);
   }).join('');
 
   const bottomBtns = [
@@ -595,6 +648,29 @@ function closeSidebar(){
   if(ov) ov.classList.remove('active');
   document.body.style.overflow='';
 }
+function toggleNavParent(pid){
+  var el=document.getElementById(pid);
+  var hdr=document.querySelector('[data-parent="'+pid+'"]');
+  if(!el) return;
+  var willOpen = el.classList.contains('collapsed');
+  // Accordion at the parent level only — the strategy groups nested inside keep
+  // whatever open/closed state they had.
+  document.querySelectorAll('.sb-parent-items').forEach(function(g){
+    if(g.id === pid) return;
+    g.classList.add('collapsed');
+    var h=document.querySelector('[data-parent="'+g.id+'"]');
+    if(h) h.classList.add('collapsed');
+  });
+  if(willOpen){
+    el.classList.remove('collapsed');
+    if(hdr) hdr.classList.remove('collapsed');
+    try{sessionStorage.setItem('nav_parent_last_open',pid);}catch(e){}
+  } else {
+    el.classList.add('collapsed');
+    if(hdr) hdr.classList.add('collapsed');
+    try{sessionStorage.removeItem('nav_parent_last_open');}catch(e){}
+  }
+}
 function toggleNavGroup(gid){
   var el=document.getElementById(gid);
   var hdr=document.querySelector('[data-group="'+gid+'"]');
@@ -621,6 +697,23 @@ function toggleNavGroup(gid){
     try{sessionStorage.removeItem('nav_last_open');}catch(e){}
   }
 }
+// Restore the parent accordion: the parent holding the current page wins,
+// otherwise the last one the user opened.
+(function(){
+  var lastParent = null;
+  try{ lastParent = sessionStorage.getItem('nav_parent_last_open'); }catch(e){}
+  var activeItem = document.querySelector('.sb-parent-items .sb-nav-item.active');
+  if(activeItem){
+    var pp = activeItem.closest('.sb-parent-items');
+    if(pp) lastParent = pp.id;
+  }
+  document.querySelectorAll('.sb-parent-items').forEach(function(g){
+    var open = (lastParent && g.id === lastParent);
+    var hdr = document.querySelector('[data-parent="'+g.id+'"]');
+    g.classList.toggle('collapsed', !open);
+    if(hdr) hdr.classList.toggle('collapsed', !open);
+  });
+})();
 // Restore: only the "last open" group stays open; everything else collapses.
 (function(){
   var lastOpen = null;
@@ -927,6 +1020,11 @@ function sidebarCSS() {
     :root[data-theme="light"] .sb-brand-sub { color:#8ea6c8; }
     :root[data-theme="light"] .sb-section + .sb-section { border-top-color:#253347; }
     :root[data-theme="light"] .sb-section-header { color:#8ea6c8; }
+    /* Higher specificity than the rule above, so the underlying parents keep
+       their emphasis on the light theme too. */
+    :root[data-theme="light"] .sb-section-header.sb-parent-header { color:#3b6ea8; }
+    :root[data-theme="light"] .sb-section-header.sb-parent-header:not(.collapsed) { color:#2563eb; }
+    :root[data-theme="light"] .sb-parent-items .sb-section { border-left-color:#e0e4ea; }
     :root[data-theme="light"] .sb-nav-item { color:#b3c6e0; }
     :root[data-theme="light"] .sb-nav-item:hover { color:#c8dcf0; background:rgba(59,130,246,0.08); }
     :root[data-theme="light"] .sb-nav-item.active { color:#ffffff; background:rgba(59,130,246,0.15); }
@@ -1149,6 +1247,20 @@ function sidebarCSS() {
     .sb-section-header.sb-collapsible.collapsed .sb-chevron{transform:rotate(0deg);}
     .sb-group-items{overflow:hidden;max-height:500px;transition:max-height 0.25s ease-in-out,opacity 0.2s;opacity:1;}
     .sb-group-items.collapsed{max-height:0;opacity:0;padding:0;}
+    /* Underlying parents (NIFTY / BANK NIFTY). Brighter and a touch larger than
+       a strategy header so the two levels read as two levels. max-height is
+       generous because the box has to fit every child header PLUS whichever
+       child group is expanded inside it. */
+    .sb-parent-header{font-size:0.6rem;color:#8fb3e0;letter-spacing:2.5px;padding-top:10px;padding-bottom:4px;}
+    .sb-parent-header:not(.collapsed){color:#60a5fa;}
+    .sb-parent-items{overflow:hidden;max-height:1600px;transition:max-height 0.3s ease-in-out,opacity 0.2s;opacity:1;}
+    .sb-parent-items.collapsed{max-height:0;opacity:0;padding:0;}
+    /* Nested one notch so a strategy group never looks like a top-level one. */
+    .sb-parent-items .sb-section{padding-left:8px;border-left:1px solid #0e1e36;margin-left:8px;}
+    .sb-parent-items .sb-section + .sb-section{border-top:none;padding-top:0;}
+    .sb-parent-items .sb-section-header{font-size:0.5rem;letter-spacing:1.6px;}
+    .sb-parent-items .sb-nav-item{padding-left:20px;}
+    .sb-parent-empty{padding:8px 16px 10px 24px;font-size:0.62rem;color:var(--muted-2,#6d85a8);font-style:italic;}
     .sb-nav-item{display:flex;align-items:center;gap:8px;padding:9px 16px;font-size:0.72rem;color:#a8bcd8;cursor:pointer;border-left:2px solid transparent;transition:all 0.12s;text-decoration:none;}
     .sb-nav-item:hover{color:#7aacf0;background:rgba(59,130,246,0.04);}
     .sb-nav-item.active{color:#60a5fa;background:rgba(59,130,246,0.08);border-left-color:#3b82f6;}
