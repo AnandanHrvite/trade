@@ -241,6 +241,30 @@ function build() {
     });
   }
 
+  // Settings keys with NO literal `process.env.KEY` anywhere — every per-index
+  // key (BANKNIFTY_*, and OPTION_EXPIRY_OVERRIDE since the expiry roll went
+  // per-index) is read as `process.env[U.env.something]` out of instrument.js's
+  // UNDERLYING_DEFS table, which scanCode() cannot see. They are real, operator-
+  // facing settings with a description; dropping them left this reference
+  // silently missing a whole block of the Settings page.
+  let schemaOnly = 0;
+  for (const [name, m] of meta) {
+    if (code.has(name)) continue;
+    schemaOnly += 1;
+    const section = m.section || "Not exposed in Settings";
+    if (!sections.has(section)) sections.set(section, []);
+    sections.get(section).push({
+      name,
+      type: m.type || "text",
+      def: SECRET.test(name)
+        ? "_(secret — set in `.env`)_"
+        : m.schemaDefault !== null && m.schemaDefault !== undefined ? `\`${m.schemaDefault}\`` : "\u2014",
+      desc: m.desc || m.label || "",
+      files: [],
+    });
+  }
+  const totalKeys = code.size + schemaOnly;
+
   const order = [...sections.keys()].sort((a, b) => {
     const last = (s) => (s === "Not exposed in Settings" ? 1 : 0);
     return last(a) - last(b) || a.localeCompare(b);
@@ -254,8 +278,10 @@ function build() {
   lines.push("");
   lines.push(
     `Derived from every \`process.env\` read in \`src/\` and from \`SETTINGS_SCHEMA\` in ` +
-      `[settings.js](src/routes/settings.js). **${code.size} keys** across **${order.length} groups**. ` +
-      "Descriptions come from the Settings UI, defaults from the code, so neither can drift from what actually runs."
+      `[settings.js](src/routes/settings.js). **${totalKeys} keys** across **${order.length} groups**. ` +
+      "Descriptions come from the Settings UI, and defaults from the engine's own fallback wherever the key is read as a literal " +
+      "`process.env.KEY`, so neither can drift from what actually runs. Keys reached only through a helper (`cfgOn(\"KEY\", …)`) or " +
+      "through instrument.js's per-index table show the Settings default instead \u2014 that is the one the UI writes."
   );
   lines.push("");
 
@@ -293,7 +319,7 @@ function build() {
     lines.push("| Key | Type | Default | Description |");
     lines.push("|---|---|---|---|");
     for (const r of rows) {
-      const desc = r.desc || `_used in ${r.files.length} file${r.files.length === 1 ? "" : "s"}_`;
+      const desc = r.desc || (r.files.length ? `_used in ${r.files.length} file${r.files.length === 1 ? "" : "s"}_` : "\u2014");
       lines.push(`| \`${r.name}\` | ${r.type} | ${esc(r.def)} | ${esc(desc)} |`);
     }
     lines.push("");
@@ -302,12 +328,12 @@ function build() {
   lines.push("---");
   lines.push("");
   lines.push(
-    `_${undocumented.length} of ${code.size} keys have no Settings description — they are listed above with their call-site count instead. ` +
+    `_${undocumented.length} of ${totalKeys} keys have no Settings description — they are listed above with their call-site count instead. ` +
       "Add them to `SETTINGS_SCHEMA` to give them a description here._"
   );
   lines.push("");
 
-  return { text: lines.join("\n"), stats: { keys: code.size, groups: order.length, conflicts, misreports, undocumented } };
+  return { text: lines.join("\n"), stats: { keys: totalKeys, groups: order.length, conflicts, misreports, undocumented } };
 }
 
 const { text, stats } = build();

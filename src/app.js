@@ -1418,82 +1418,133 @@ app.get("/", (req, res) => {
     ? `ℹ️ Token valid until 6 AM. Re-login each morning before starting live trade.`
     : ``;
 
-  // ── Option expiry override warning ───────────────────────────────────────
-  // Trigger when the common expiry override is set AND that expiry day's session
-  // (15:30 IST close) is already past. Staleness is decided by instrument.js —
-  // the same predicate the entry guard uses — so this banner can never claim the
-  // expiry is fine while the engine is refusing to trade it (or vice versa).
-  // There is ONE common expiry for every strategy (no per-mode override), so
-  // there is exactly one key to check.
+  // ── Option expiry warnings — ONE BANNER PER INDEX ────────────────────────
+  // Two things can go wrong, and each is raised separately for each underlying:
+  //
+  //   (a) the index's stored override has already passed its 15:30 close, so
+  //       every strategy on that index refuses entries. Staleness is decided by
+  //       instrument.js — the same predicate the entry guard uses — so this
+  //       banner can never claim the expiry is fine while the engine is refusing
+  //       to trade it (or vice versa).
+  //   (b) nothing could be resolved at all (utils/expiryHealth.js verdict
+  //       "fail"), which is the case the auto-roll cannot repair on its own.
+  //
+  // Per index rather than one shared strip because NIFTY 50 and NIFTY BANK
+  // expire on DIFFERENT calendars — NIFTY BANK has been monthly-only since NSE
+  // withdrew its weeklies in Nov-2024 — so one of them is stale most weeks while
+  // the other trades normally. A single banner could not say which index is
+  // blocked, nor which Settings key to fix, which is the only thing the operator
+  // actually needs from it.
   let optionExpiryAlertHtml = "";
   {
-    const { isExpiryOverrideStale } = instrumentConfig;
-    const value = (process.env.OPTION_EXPIRY_OVERRIDE || "").trim();
+    const { isExpiryOverrideStale, underlyingOf } = instrumentConfig;
+    let expiryHealth = null;
+    try { expiryHealth = require("./utils/expiryHealth"); } catch (_) { /* no banner, never a broken page */ }
+
     // A stale OPTION expiry blocks nothing when the app is trading FUTURES: the
     // month contract is derived from the date, not from this override. Showing
     // "entries are blocked" there would be a false alarm about a real block.
     const _futuresMode = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
-    if (!_futuresMode && value && isExpiryOverrideStale(value)) {
-      const fmt = (d) => new Date(`${d}T00:00:00+05:30`)
-        .toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" });
-      // While the post-close roll is still retrying (15:40 → 16:45 IST) the expiry
-      // is being repaired, so "entries are blocked — go fix it" is noise. Say what
-      // is happening instead; the red banner returns if every attempt fails.
-      let rollPending = false;
-      try { rollPending = require("./utils/expiryHealth").isRollPending(); } catch (_) {}
-      optionExpiryAlertHtml = rollPending
-        ? `<div class="opt-expiry-alert rolling">`
-          + `<span class="opt-expiry-icon">🔄</span>`
-          + `<div class="opt-expiry-text">`
-          +   `<div class="opt-expiry-title">Option expiry expired — updating it automatically</div>`
-          +   `<div class="opt-expiry-body"><strong>${fmt(value)}</strong> has ended. The next contract is being resolved now, with retries until 16:45 IST. Nothing to do unless this is still here after that.</div>`
-          + `</div>`
-          + `</div>`
-        :
-        `<div class="opt-expiry-alert">`
-        + `<span class="opt-expiry-icon">🚨</span>`
-        + `<div class="opt-expiry-text">`
-        +   `<div class="opt-expiry-title">Option expiry session ended — entries are blocked</div>`
-        +   `<div class="opt-expiry-body"><strong>Option Expiry (manual)</strong> = ${fmt(value)}. That contract no longer exists, so every strategy will refuse entries until it is updated to the next expiry date.</div>`
-        + `</div>`
-        + `<a href="/settings#OPTION_EXPIRY_OVERRIDE" class="opt-expiry-cta">Change Expiry →</a>`
-        + `</div>`;
-    }
-  }
+    const fmt = (d) => new Date(`${d}T00:00:00+05:30`)
+      .toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" });
+    const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    // Settings opens by SECTION, not by field, so "#SOME_KEY" would land on the
+    // first section and leave the operator hunting for the box the banner just
+    // told them to fill in. Ask Settings which section owns the key.
+    const settingsHref = (k) => {
+      try {
+        const anchor = require("./routes/settings").sectionAnchorFor(k);
+        return anchor ? `/settings#${anchor}` : "/settings";
+      } catch (_) { return "/settings"; }
+    };
 
-  // ── Expiry could not be resolved at all ──────────────────────────────────
-  // Raised by the background expiry-health check (utils/expiryHealth.js), which
-  // runs the same resolution an entry runs. It normally repairs a blank/expired
-  // expiry itself; this banner is the case it cannot — nothing the broker quotes
-  // matched, so a human has to pick the contract. Read-only: rendering never
-  // triggers a broker call, so a slow API can't slow the Dashboard down.
-  if (!optionExpiryAlertHtml) {
-    try {
-      const health = require("./utils/expiryHealth").getState();
-      // `reason` can carry a broker/exception message, so it is escaped before
-      // reaching the markup rather than trusted to stay plain text.
-      const reason = String(health.reason || "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-      if (health.status === "fail") {
-        optionExpiryAlertHtml =
+    // While the post-close roll is still retrying (15:40 → 16:45 IST) the expiry
+    // is being repaired, so "entries are blocked — go fix it" is noise. Say what
+    // is happening instead; the red banner returns if every attempt fails.
+    let rollPending = false;
+    try { rollPending = Boolean(expiryHealth && expiryHealth.isRollPending()); } catch (_) {}
+
+    const keys = expiryHealth ? expiryHealth.underlyingKeys() : ["NIFTY", "BANKNIFTY"];
+    const health = (() => { try { return expiryHealth ? expiryHealth.getStates() : {}; } catch (_) { return {}; } })();
+
+    const banners = [];
+    for (const key of keys) {
+      const U     = underlyingOf(key);
+      const oKey  = U.env.expiryOverride;
+      const value = String(process.env[oKey] || "").trim();
+
+      if (!_futuresMode && value && isExpiryOverrideStale(value)) {
+        banners.push(rollPending
+          ? `<div class="opt-expiry-alert rolling">`
+            + `<span class="opt-expiry-icon">🔄</span>`
+            + `<div class="opt-expiry-text">`
+            +   `<div class="opt-expiry-title">${U.label} option expiry expired — updating it automatically</div>`
+            +   `<div class="opt-expiry-body"><strong>${fmt(value)}</strong> has ended. The next ${U.label} contract is being resolved now, with retries until 16:45 IST. Nothing to do unless this is still here after that.</div>`
+            + `</div>`
+            + `</div>`
+          : `<div class="opt-expiry-alert">`
+            + `<span class="opt-expiry-icon">🚨</span>`
+            + `<div class="opt-expiry-text">`
+            +   `<div class="opt-expiry-title">${U.label} option expiry session ended — ${U.label} entries are blocked</div>`
+            +   `<div class="opt-expiry-body"><strong>${oKey}</strong> = ${fmt(value)}. That contract no longer exists, so every ${U.label} strategy will refuse entries until it is updated to the next expiry date.</div>`
+            + `</div>`
+            + `<a href="${settingsHref(oKey)}" class="opt-expiry-cta">Change Expiry →</a>`
+            + `</div>`);
+        continue;   // one banner per index — the stale value is the actionable fact
+      }
+
+      // ── Expiry could not be resolved at all ────────────────────────────────
+      // Raised by the background expiry-health check, which runs the same
+      // resolution an entry runs. It normally repairs a blank/expired expiry
+      // itself; this is the case it cannot — nothing the broker quotes matched,
+      // so a human has to pick the contract. Read-only: rendering never triggers
+      // a broker call, so a slow API can't slow the Dashboard down.
+      const st = health[key];
+      if (st && st.status === "fail") {
+        // `reason` can carry a broker/exception message, so it is escaped before
+        // reaching the markup rather than trusted to stay plain text.
+        const reason = esc(st.reason || "");
+        banners.push(
           `<div class="opt-expiry-alert">`
           + `<span class="opt-expiry-icon">🚨</span>`
           + `<div class="opt-expiry-text">`
-          +   `<div class="opt-expiry-title">Option expiry could not be resolved — entries will be skipped</div>`
-          +   `<div class="opt-expiry-body">Auto-detection found no NIFTY contract the broker will quote${reason ? ` (${reason})` : ""}. Set <strong>Option Expiry (manual)</strong> for this week.</div>`
+          +   `<div class="opt-expiry-title">${U.label} option expiry could not be resolved — ${U.label} entries will be skipped</div>`
+          +   `<div class="opt-expiry-body">Auto-detection found no ${U.label} contract the broker will quote${reason ? ` (${reason})` : ""}. Set <strong>${oKey}</strong> for this expiry.</div>`
           + `</div>`
-          + `<a href="/settings#OPTION_EXPIRY_OVERRIDE" class="opt-expiry-cta">Set Expiry →</a>`
-          + `</div>`;
+          + `<a href="${settingsHref(oKey)}" class="opt-expiry-cta">Set Expiry →</a>`
+          + `</div>`
+        );
       }
-    } catch (_) { /* health module unavailable — no banner, never a broken page */ }
+    }
+    optionExpiryAlertHtml = banners.join("");
   }
 
-  // ── Dashboard quick-edit values for the two expiry keys (same keys the
-  // Settings page owns — this is a second editor, not a second source). The
-  // date is pattern-checked before it reaches a value="" attribute.
-  const _rawExpiryOverride = (process.env.OPTION_EXPIRY_OVERRIDE || "").trim();
-  const dashExpiryDate = /^\d{4}-\d{2}-\d{2}$/.test(_rawExpiryOverride) ? _rawExpiryOverride : "";
-  const dashExpiryType =
-    (process.env.OPTION_EXPIRY_TYPE || "weekly").trim().toLowerCase() === "monthly" ? "monthly" : "weekly";
+  // ── Dashboard quick-edit values, one row per index (same keys the Settings
+  // page owns — this is a second editor, not a second source). Each date is
+  // pattern-checked before it reaches a value="" attribute, and the type is
+  // narrowed to the two options the select offers.
+  const dashExpiryRows = (() => {
+    let keys;
+    try { keys = require("./utils/expiryHealth").underlyingKeys(); }
+    catch (_) { keys = ["NIFTY", "BANKNIFTY"]; }
+    return keys.map((key) => {
+      const U   = instrumentConfig.underlyingOf(key);
+      const raw = String(process.env[U.env.expiryOverride] || "").trim();
+      const typ = String(process.env[U.env.expiryType] || "").trim().toLowerCase();
+      return {
+        key,
+        label:       U.label,
+        overrideKey: U.env.expiryOverride,
+        typeKey:     U.env.expiryType,
+        // Only this index's own weekly flag decides whether "weekly" is even
+        // offerable — NIFTY BANK has no weekly contract to name, so its select
+        // must not be able to write one.
+        weekly:      U.weekly,
+        date:        /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : "",
+        type:        typ === "monthly" ? "monthly" : typ === "weekly" ? "weekly" : (U.weekly ? "weekly" : "monthly"),
+      };
+    });
+  })();
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -1617,10 +1668,12 @@ app.get("/", (req, res) => {
     }
 
     /* ── BROKER CONNECTIONS — compact single-line rows ── */
-    /* 3 tracks on wide screens: Fyers | Zerodha | Option-expiry controls. The
-       broker rows had a lot of dead horizontal space, so the expiry strip fills
-       it instead of costing another line. */
-    .brokers { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,0.95fr); gap:8px; margin-bottom:0; }
+    /* 2×2 on wide screens: Fyers | Zerodha on the first row, then one
+       option-expiry strip per index (NIFTY 50 | NIFTY BANK) on the second. The
+       expiry strips used to share the broker row as a third narrow track; with
+       one strip per index a symmetric 2-column grid gives each of them the same
+       width as a broker row and still costs only one extra line. */
+    .brokers { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:8px; margin-bottom:0; }
     .brokers > .brk-expiry { grid-column:1 / -1; }
     /* flex-wrap:wrap (not nowrap) so the login button drops to its own line
        when the column is narrow instead of overflowing the clipped body and
@@ -1646,7 +1699,6 @@ app.get("/", (req, res) => {
        (1700 - 200px sidebar - 40px page padding = 1460 content, /2.95fr ≈ 489
        per broker). At the old 1500 threshold a 1550px window gave each broker
        439px and the Zerodha login button dropped to a second line. */
-    @media (max-width:1700px) { .brokers { grid-template-columns:repeat(2,minmax(0,1fr)); } .brokers > .brk-cfg { grid-column:1 / -1; } }
     @media (max-width:1200px) { .brokers { grid-template-columns:1fr; } }
     .brk-row.ok   { border-color:#0d3a1e; background:#04100a; }
     .brk-row.ok.blue { border-color:#0d2545; background:#030b18; }
@@ -2250,8 +2302,12 @@ ${buildSidebar('dashboard', liveActive)}
            POST /admin/reset still exists for the rare stuck-socket case. -->
       <!-- Expiry / holiday pills stay outside the idle-only block: which expiry is
            next matters most while a session is running. Click opens the shared
-           NIFTY Expiry & NSE Holidays calendar (same popup as Settings). -->
-      <span id="expiry-info-pill" class="top-bar-cache schedule empty clickable" title="Next NIFTY weekly/monthly expiry — click for the full expiry calendar" onclick="showExpiryHolidaysModal()"></span>
+           Expiry & NSE Holidays calendar (same popup as Settings).
+           One pill per index: NIFTY 50 expires every Tuesday, NIFTY BANK only
+           monthly (NSE withdrew BANKNIFTY weeklies in Nov-2024), so a single
+           pill would be showing the wrong date for one of them most weeks. -->
+      <span id="expiry-info-pill" class="top-bar-cache schedule empty clickable" title="Next NIFTY 50 weekly/monthly expiry — click for the full expiry calendar" onclick="showExpiryHolidaysModal()"></span>
+      <span id="bn-expiry-info-pill" class="top-bar-cache schedule empty clickable" title="Next NIFTY BANK expiry — monthly only, since NSE withdrew BANKNIFTY weekly options in Nov-2024. Click for the full expiry calendar" onclick="showExpiryHolidaysModal()"></span>
       <span id="holiday-info-pill" class="top-bar-cache schedule empty clickable" title="Next NSE trading holiday — click for the full holiday list" onclick="showExpiryHolidaysModal()"></span>
       <div id="trading-status-alert" style="display:none;position:relative;"></div>
       ${liveActive ? '<span class="top-bar-badge live-active"><span style="width:5px;height:5px;border-radius:50%;background:#ef4444;display:inline-block;"></span>LIVE ACTIVE</span>' : ''}
@@ -2294,20 +2350,23 @@ ${buildSidebar('dashboard', liveActive)}
           ? `<a href="/auth/zerodha/login" class="brk-action login zerodha">🔐 Login with Zerodha</a>`
           : `<span class="brk-action muted-hint">Set ZERODHA_API_KEY in .env</span>`}
     </div>
-    <div class="brk-cfg">
-      <span class="brk-cfg-label" title="OPTION_EXPIRY_OVERRIDE / OPTION_EXPIRY_TYPE — the same keys as Settings. One common expiry for every strategy. Blank = auto-detect.">⏱ Expiry</span>
+    ${dashExpiryRows.map((r) => `
+    <div class="brk-cfg" data-underlying="${r.key}">
+      <span class="brk-cfg-label" title="${r.overrideKey} / ${r.typeKey} — the same keys as Settings. One common expiry for every ${r.label} strategy. Blank = auto-detect.">⏱ ${r.label} Expiry</span>
       <span class="brk-cfg-field">
-        <input type="date" id="dashExpiryDate" class="brk-cfg-input" value="${dashExpiryDate}"
-               title="Option Expiry (manual). Blank = auto-detect."/>
+        <input type="date" id="dashExpiryDate_${r.key}" class="brk-cfg-input" value="${r.date}"
+               title="${r.label} Option Expiry (manual). Blank = auto-detect."/>
       </span>
       <span class="brk-cfg-field">
-        <select id="dashExpiryType" class="brk-cfg-input" title="Weekly = Tuesday expiry. Monthly = last Tuesday of the month (getLastTuesdayOfMonth), or the preponed date when NSE moves it.">
-          <option value="weekly"${dashExpiryType === 'weekly' ? ' selected' : ''}>weekly</option>
-          <option value="monthly"${dashExpiryType === 'monthly' ? ' selected' : ''}>monthly</option>
+        <select id="dashExpiryType_${r.key}" class="brk-cfg-input" title="${r.weekly
+            ? 'Weekly = Tuesday expiry. Monthly = last Tuesday of the month, or the preponed date when NSE moves it.'
+            : `${r.label} has NO weekly contract — NSE withdrew them in Nov-2024 — so monthly is the only option here. Turn on the ${r.label} Weekly Expiries Exist toggle in Settings if NSE ever relists them.`}">
+          ${r.weekly ? `<option value="weekly"${r.type === 'weekly' ? ' selected' : ''}>weekly</option>` : ''}
+          <option value="monthly"${r.type === 'monthly' ? ' selected' : ''}>monthly</option>
         </select>
       </span>
-      <button type="button" class="brk-cfg-save" onclick="saveDashExpiry(this)" title="Save both keys to .env (same as Settings save)">Save</button>
-    </div>
+      <button type="button" class="brk-cfg-save" onclick="saveDashExpiry(this,'${r.key}','${r.overrideKey}','${r.typeKey}')" title="Save ${r.overrideKey} + ${r.typeKey} to .env (same as a Settings save)">Save</button>
+    </div>`).join('')}
     ${zerodhaOk && zerodhaExpiryHtml ? `<div class="brk-expiry ${pastExpiry ? 'expired' : nearExpiry ? 'expiring' : 'valid'}">${zerodhaExpiryHtml}</div>` : ''}
   </div>`}
 
@@ -3388,7 +3447,7 @@ function setSchedulePillLabel(el, full, short){
   el.textContent = window.innerWidth <= SCHED_PILL_NARROW ? short : full;
 }
 function applySchedulePillLabels(){
-  ['expiry-info-pill','holiday-info-pill'].forEach(function(id){
+  ['expiry-info-pill','bn-expiry-info-pill','holiday-info-pill'].forEach(function(id){
     var el = document.getElementById(id);
     if (!el || !el.dataset.full) return;
     var want = window.innerWidth <= SCHED_PILL_NARROW ? el.dataset.short : el.dataset.full;
@@ -3414,6 +3473,7 @@ async function loadMarketSchedulePills(){
   }
   function fmtDMY(iso){ var p = iso.split('-'); return p[2] + '/' + p[1] + '/' + p[0]; }
   var expEl = document.getElementById('expiry-info-pill');
+  var bnExpEl = document.getElementById('bn-expiry-info-pill');
   var holEl = document.getElementById('holiday-info-pill');
   if (!expEl || !holEl) return;
   try {
@@ -3439,12 +3499,41 @@ async function loadMarketSchedulePills(){
       expEl.classList.remove('empty');
       setSchedulePillLabel(
         expEl,
-        '📅 Next Expiry Date : ' + fmtDMY(nextExp.date) + ' - ' + typeLbl + ' - ' + when,
+        '📅 Next NIFTY Expiry Date : ' + fmtDMY(nextExp.date) + ' - ' + typeLbl + ' - ' + when,
         '📅 ' + dm + ' · ' + typeLbl + ' · ' + whenShort
       );
     } else {
       expEl.classList.add('empty');
-      setSchedulePillLabel(expEl, '📅 No upcoming expiry', '📅 No expiry');
+      setSchedulePillLabel(expEl, '📅 No upcoming NIFTY expiry', '📅 No expiry');
+    }
+    // Next NIFTY BANK expiry — the MONTHLY rows of the very same calendar.
+    // NSE withdrew BANKNIFTY weeklies in Nov-2024, so the month contract is the
+    // only one listed; filtering here rather than asking for a second calendar
+    // keeps both pills on one /api/expiry-dates response and guarantees they can
+    // never disagree about a holiday prepone.
+    if (bnExpEl) {
+      var nextBn = null;
+      for (var b = 0; b < expiries.length; b++) {
+        if (!expiries[b].monthly) continue;
+        var bd = expiries[b].actual || expiries[b].date;
+        if (bd >= todayIso) { nextBn = { date:bd, preponed:expiries[b].preponed }; break; }
+      }
+      if (nextBn) {
+        var bdd = diffDays(nextBn.date);
+        var bnType = 'M' + (nextBn.preponed ? '*' : '');
+        var bnWhen = bdd === 0 ? 'today' : bdd + (bdd === 1 ? ' day' : ' days');
+        var bnWhenShort = bdd === 0 ? 'today' : bdd + 'd';
+        var bnDm = fmtDMY(nextBn.date).slice(0, 5);
+        bnExpEl.classList.remove('empty');
+        setSchedulePillLabel(
+          bnExpEl,
+          '🏦 Next BANK NIFTY Expiry Date : ' + fmtDMY(nextBn.date) + ' - ' + bnType + ' - ' + bnWhen,
+          '🏦 ' + bnDm + ' · ' + bnType + ' · ' + bnWhenShort
+        );
+      } else {
+        bnExpEl.classList.add('empty');
+        setSchedulePillLabel(bnExpEl, '🏦 No upcoming BANK NIFTY expiry', '🏦 No expiry');
+      }
     }
     // Next holiday
     var holidays = ((hr && hr.holidays) || []).slice().sort();
@@ -3820,16 +3909,20 @@ setInterval(pollSessionActiveSwap, 10000);
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── Option expiry quick-save (dashboard mirror of the Settings fields) ───────
-// Writes OPTION_EXPIRY_OVERRIDE + OPTION_EXPIRY_TYPE through POST /settings/save,
-// so the audit log + per-mode daily settings snapshot behave exactly as they do
-// when the change is made on the Settings page. Both keys are INSTANT effect.
-// The route fans the pair out into every per-strategy expiry key server-side, so
-// this stays a two-key POST — do NOT list the per-mode keys here, or they would
-// count as "explicitly sent" and opt themselves OUT of that fan-out.
-async function saveDashExpiry(btn){
-  var dateEl = document.getElementById('dashExpiryDate');
-  var typeEl = document.getElementById('dashExpiryType');
-  if(!dateEl || !typeEl) return;
+// Writes ONE index's override + type pair (OPTION_EXPIRY_* for NIFTY 50,
+// BANKNIFTY_OPTION_EXPIRY_* for NIFTY BANK) through POST /settings/save, so the
+// audit log + per-mode daily settings snapshot behave exactly as they do when
+// the change is made on the Settings page. Both keys are INSTANT effect.
+// One index per Save: the two calendars are independent — NIFTY BANK has been
+// monthly-only since Nov-2024 — so writing both pairs from one button would
+// stamp a NIFTY Tuesday onto a contract that has never been listed.
+// Two keys is the whole payload: instrument.js resolves every strategy on an
+// index from that index's pair, so there are no per-strategy expiry keys to
+// send as well.
+async function saveDashExpiry(btn, underlying, overrideKey, typeKey){
+  var dateEl = document.getElementById('dashExpiryDate_' + underlying);
+  var typeEl = document.getElementById('dashExpiryType_' + underlying);
+  if(!dateEl || !typeEl || !overrideKey || !typeKey) return;
   var label = btn.textContent;
   btn.disabled = true; btn.textContent = 'Saving…';
   try {
@@ -3837,11 +3930,13 @@ async function saveDashExpiry(btn){
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({
-        updates: {
-          OPTION_EXPIRY_OVERRIDE: (dateEl.value || '').trim(),
-          OPTION_EXPIRY_TYPE: typeEl.value
-        },
-        note: 'dashboard: option expiry quick-edit'
+        updates: (function(){
+          var u = {};
+          u[overrideKey] = (dateEl.value || '').trim();
+          u[typeKey]     = typeEl.value;
+          return u;
+        })(),
+        note: 'dashboard: ' + underlying + ' option expiry quick-edit'
       })
     });
     if(!res){ btn.disabled = false; btn.textContent = label; return; }
@@ -4184,10 +4279,12 @@ server.listen(PORT, HOST, () => {
     console.warn(`   Spot feed keep-up: not started — ${err.message}`);
   }
 
-  // Expiry health — resolves the option expiry ahead of the open, rolls a blank
-  // or expired OPTION_EXPIRY_OVERRIDE to the newly-resolved date (Settings and
-  // the Dashboard strip both read process.env, so both update), and raises the
-  // Dashboard banner + a Telegram when nothing can be resolved.
+  // Expiry health — resolves EACH INDEX's option expiry ahead of the open, rolls
+  // a blank or expired override (OPTION_EXPIRY_OVERRIDE for NIFTY 50,
+  // BANKNIFTY_OPTION_EXPIRY_OVERRIDE for NIFTY BANK) to that index's
+  // newly-resolved date (Settings and the Dashboard strips both read
+  // process.env, so both update), and raises a per-index Dashboard banner + a
+  // Telegram naming the index when nothing can be resolved.
   // Gated by EXPIRY_HEALTHCHECK_ENABLED / EXPIRY_AUTO_ROLL_ENABLED.
   try {
     require("./utils/expiryHealth").start();

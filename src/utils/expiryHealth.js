@@ -1,5 +1,5 @@
 /**
- * expiryHealth.js — keep the option expiry current, and shout when it can't be
+ * expiryHealth.js — keep every index's option expiry current, and shout when it can't be
  * ─────────────────────────────────────────────────────────────────────────────
  *
  * The hole this closes
@@ -9,21 +9,35 @@
  * the setup had already gone — and a manual override that had expired simply sat
  * there blocking every strategy until someone noticed and retyped it.
  *
+ * ONE CHECK PER INDEX
+ * ───────────────────
+ * Every underlying in instrument.js's UNDERLYING_DEFS (NIFTY 50 and NIFTY BANK
+ * today) gets its OWN resolution, its OWN roll into its OWN override key, its
+ * OWN Dashboard verdict and its OWN Telegram. They cannot share one: NIFTY 50
+ * expires weekly on a Tuesday, NIFTY BANK only monthly (NSE withdrew BANKNIFTY
+ * weeklies in Nov-2024), so a single verdict would be wrong for one of them
+ * every week — and rolling one date into both keys would hand BANKNIFTY a
+ * contract that has never been listed.
+ *
  * What this does
  * ──────────────
- *   1. On a schedule (and at boot) it runs the SAME resolution a trade runs, so
- *      it can never report "fine" while an entry would be refused. On expiry day
- *      the contract dies at the 15:30 close and is replaced the SAME evening by
- *      the post-close ladder: 15:40, then 16:15 / 16:30 / 16:45 if it keeps
- *      failing. app.js holds its 16:00 token clear while that ladder runs, since
- *      every attempt needs the token. Only when all four fail does the Dashboard
- *      ask for the expiry to be typed in by hand.
- *   2. If OPTION_EXPIRY_OVERRIDE is blank or has already expired, it writes the
- *      newly-resolved expiry back through the Settings persistence path. The
- *      Settings page, the Dashboard expiry strip and .env all show the new date
- *      immediately, and it survives a restart.
- *   3. If resolution FAILS, it changes nothing, raises a Dashboard banner and
- *      sends one Telegram — that is the case where a human must pick the expiry.
+ *   1. On a schedule (and at boot) it runs, PER INDEX, the SAME resolution a
+ *      trade runs, so it can never report "fine" while an entry would be
+ *      refused. On expiry day the contract dies at the 15:30 close and is
+ *      replaced the SAME evening by the post-close ladder: 15:40, then 16:15 /
+ *      16:30 / 16:45 if it keeps failing. app.js holds its 16:00 token clear
+ *      while that ladder runs, since every attempt needs the token. Only when
+ *      all four fail does the Dashboard ask for the expiry to be typed in by
+ *      hand — naming exactly which index still needs it.
+ *   2. If an index's override ({OPTION_EXPIRY_OVERRIDE} for NIFTY,
+ *      {BANKNIFTY_OPTION_EXPIRY_OVERRIDE} for NIFTY BANK) is blank or has
+ *      already expired, it writes that index's newly-resolved expiry back
+ *      through the Settings persistence path. The Settings page, the Dashboard
+ *      expiry strips and .env all show the new date immediately, and it
+ *      survives a restart.
+ *   3. If resolution FAILS, it changes nothing, raises a Dashboard banner for
+ *      that index and sends one Telegram — that is the case where a human must
+ *      pick the expiry.
  *
  * A deliberately FORWARD-dated override is never touched. Someone who set next
  * week's expiry on purpose (e.g. to avoid 0DTE) keeps it; only a blank or an
@@ -35,9 +49,10 @@
  *   - It never places, modifies or cancels an order. Its only broker calls are
  *     the read-only getQuotes() probes validateAndGetOptionSymbol already makes.
  *   - It never re-implements expiry logic. It asks instrument.js, so there is
- *     still exactly one definition of "the nearest tradeable contract".
+ *     still exactly one definition of "the nearest tradeable contract" — and
+ *     one definition of what NIFTY BANK's expiries even are.
  *
- * Verdicts:
+ * Verdicts (per index):
  *   ok       — a real contract was named and quoted back
  *   fail     — nothing validated: an entry right now would be skipped
  *   unknown  — could not attempt it (no token / no spot / disabled). Not an
@@ -59,15 +74,45 @@ const notify      = require("./notify");
 const WINDOW_OPEN_MIN  = 480;   // 08:00
 const WINDOW_CLOSE_MIN = 930;   // 15:30
 
+// ── The indices this checks ──────────────────────────────────────────────────
+// Read from instrument.js rather than listed here, so adding a third index to
+// UNDERLYING_DEFS puts it under the same auto-roll + alerting without touching
+// this file. Falls back to the two known keys if that require ever fails, since
+// a health check that silently monitors NOTHING is the worst outcome available.
+function underlyingKeys() {
+  try {
+    const keys = Object.keys(require("../config/instrument").UNDERLYING_DEFS || {});
+    if (keys.length) return keys;
+  } catch (_) { /* fall through */ }
+  return ["NIFTY", "BANKNIFTY"];
+}
+
+/** Human name for messages/logs — "NIFTY 50", "NIFTY BANK". */
+function labelOf(key) {
+  try { return require("../config/instrument").underlyingOf(key).label; }
+  catch (_) { return key; }
+}
+
+/** The .env key holding this index's manual expiry override. */
+function overrideKeyOf(key) {
+  try { return require("../config/instrument").underlyingOf(key).env.expiryOverride; }
+  catch (_) { return key === "NIFTY" ? "OPTION_EXPIRY_OVERRIDE" : `${key}_OPTION_EXPIRY_OVERRIDE`; }
+}
+
 // ── The post-close roll ladder ───────────────────────────────────────────────
 // The stored expiry dies at the 15:30 close, and until it is replaced every
-// strategy refuses entries. app.js clears both broker tokens at 16:00, after
-// which nothing can be resolved until the next morning's login — so the whole
-// repair has to happen in the evening, on fixed minutes (a 30-minute interval
-// tick anchored to boot could land at 15:35 and then at 16:05).
+// strategy on that index refuses entries. app.js clears both broker tokens at
+// 16:00, after which nothing can be resolved until the next morning's login —
+// so the whole repair has to happen in the evening, on fixed minutes (a
+// 30-minute interval tick anchored to boot could land at 15:35 and then 16:05).
 //
 //   15:40  first attempt — the usual case, done before the token clear
 //   16:15 / 16:30 / 16:45  three retries, for a broker that answered badly once
+//
+// ONE ladder covers every index: each rung runs check(), which resolves all of
+// them, so NIFTY and NIFTY BANK are repaired in the same pass. The ladder is
+// finished only when NO index is left stale — a month-end that expires both at
+// once cannot let one of them fall off the retries.
 //
 // While the ladder is still running app.js HOLDS the token clear (see
 // isRollPending) — clearing the token mid-ladder would guarantee the retries
@@ -88,25 +133,27 @@ let _running = false;   // one check at a time — the fallback ladder must not 
 let _tradingDay = { day: null, allowed: null };
 let _lastCheckAt  = 0;      // rate-limits the in-window checks off the 1-minute heartbeat
 
-// Today's post-close ladder. `done` = the expiry is current again (or there was
-// nothing to repair); `exhausted` = all four attempts ran and it is still stale,
-// which is the only state that asks the operator to step in.
+// Today's post-close ladder. `done` = every index's expiry is current again (or
+// there was nothing to repair); `exhausted` = all four attempts ran and at least
+// one index is still stale, which is the only state that asks the operator in.
 let _postClose = { day: null, attempts: 0, done: false, exhausted: false };
 
-// Last verdict, read by the Dashboard. Starts "unknown" so a page load before the
-// first check renders no banner rather than a false alarm.
-let _state = {
-  status:     "unknown",
-  symbol:     null,
-  expiry:     null,
-  expiryDate: null,
-  reason:     null,
-  checkedAt:  null,
-};
+// Last verdict PER INDEX, read by the Dashboard. A key starts "unknown" so a
+// page load before the first check renders no banner rather than a false alarm.
+const _states = Object.create(null);
+
+function _blankState() {
+  return { status: "unknown", symbol: null, expiry: null, expiryDate: null, reason: null, checkedAt: null };
+}
+function _stateOf(key) {
+  if (!_states[key]) _states[key] = { ..._blankState(), underlying: key, label: labelOf(key) };
+  return _states[key];
+}
 
 // Telegram goes out on a CHANGE of verdict, and again once a day while broken —
-// enough to be noticed, not enough to become background noise.
-let _notified = { status: null, day: null };
+// enough to be noticed, not enough to become background noise. Tracked per index
+// so a NIFTY BANK failure is not swallowed by a healthy NIFTY 50.
+const _notified = Object.create(null);   // key -> { status, day }
 
 function _enabled() {
   return (process.env.EXPIRY_HEALTHCHECK_ENABLED || "true").toLowerCase() !== "false";
@@ -150,54 +197,71 @@ function _skipReason() {
   return null;
 }
 
-function _setState(patch) {
-  _state = { ..._state, ...patch, checkedAt: Date.now() };
+function _setState(key, patch) {
+  _states[key] = { ..._stateOf(key), ...patch, underlying: key, label: labelOf(key), checkedAt: Date.now() };
 }
 
 /**
- * Resolve the expiry, roll the override if it is blank or expired, and record
- * the verdict. Never throws — a health check that takes the process down with it
- * is worse than no health check.
+ * Resolve every index's expiry, roll the ones whose override is blank or
+ * expired, and record a verdict for each. Never throws — a health check that
+ * takes the process down with it is worse than no health check.
  */
 async function check() {
-  if (_running) return _state;
+  if (_running) return getStates();
 
   const skip = _skipReason();
   if (skip) {
     // A skip is not a verdict. Clear any previous alarm so a banner can never
     // outlive the condition that raised it.
-    _setState({ status: "unknown", symbol: null, expiry: null, expiryDate: null, reason: skip });
-    return _state;
+    for (const key of underlyingKeys()) {
+      _setState(key, { status: "unknown", symbol: null, expiry: null, expiryDate: null, reason: skip });
+    }
+    return getStates();
   }
-  if (!(await _isTradingDay())) return _state;
+  if (!(await _isTradingDay())) return getStates();
 
   _running = true;
+  try {
+    // Sequential, not parallel: each index costs a handful of getQuotes probes
+    // and they share one broker session — firing both at once is how a rate
+    // limit turns two healthy indices into two "assumed VALID" guesses.
+    for (const key of underlyingKeys()) await _checkOne(key);
+  } finally {
+    _running = false;
+  }
+
+  for (const key of underlyingKeys()) _maybeNotify(key);
+  return getStates();
+}
+
+/** One index: resolve, roll if needed, record the verdict. Never throws. */
+async function _checkOne(key) {
   try {
     const instrument = require("../config/instrument");
 
     let spot;
     try {
-      spot = await instrument.getLiveSpot();
+      spot = await instrument.getLiveSpot(key);
     } catch (err) {
-      _setState({ status: "unknown", symbol: null, expiry: null, expiryDate: null, reason: `no spot price (${err.message})` });
-      return _state;
+      _setState(key, { status: "unknown", symbol: null, expiry: null, expiryDate: null, reason: `no spot price (${err.message})` });
+      return;
     }
 
-    // Ask what AUTO-detection would pick, ignoring any override — that is the
-    // contract a fresh override must be set to, and the honest health verdict.
-    const auto = await instrument.validateAndGetOptionSymbol(spot, "CE", null, { ignoreOverride: true });
+    // Ask what AUTO-detection would pick for THIS index, ignoring any override —
+    // that is the contract a fresh override must be set to, and the honest
+    // health verdict.
+    const auto = await instrument.validateAndGetOptionSymbol(spot, "CE", null, { ignoreOverride: true, underlying: key });
 
     if (!auto || !auto.symbol || auto.invalid) {
-      _setState({
+      _setState(key, {
         status: "fail", symbol: null, expiry: null, expiryDate: null,
         reason: "no expiry could be validated against the broker",
       });
-      _maybeNotify();
-      return _state;
+      return;
     }
 
-    _maybeRoll(auto);
-    _setState({
+    _maybeRoll(key, auto);
+    _setState(key, {
       status: "ok",
       symbol: auto.symbol,
       expiry: auto.expiry,
@@ -205,25 +269,21 @@ async function check() {
       reason: null,
     });
   } catch (err) {
-    _setState({ status: "unknown", symbol: null, expiry: null, expiryDate: null, reason: `check errored (${err.message})` });
-  } finally {
-    _running = false;
+    _setState(key, { status: "unknown", symbol: null, expiry: null, expiryDate: null, reason: `check errored (${err.message})` });
   }
-
-  _maybeNotify();
-  return _state;
 }
 
 /**
- * Write the resolved expiry into OPTION_EXPIRY_OVERRIDE when the stored value is
- * blank or already expired. The change is announced by log + Telegram rather than
- * returned, so there is one record of it and no state that nothing reads.
+ * Write the resolved expiry into THIS index's override key when the stored value
+ * is blank or already expired. The change is announced by log + Telegram rather
+ * than returned, so there is one record of it and no state that nothing reads.
  */
-function _maybeRoll(auto) {
+function _maybeRoll(key, auto) {
   if (!_autoRollEnabled() || !auto.expiryDate) return;
 
   const instrument = require("../config/instrument");
-  const current    = (process.env.OPTION_EXPIRY_OVERRIDE || "").trim();
+  const U          = instrument.underlyingOf(key);
+  const current    = String(process.env[U.env.expiryOverride] || "").trim();
 
   // A live, forward-dated override is a deliberate choice — leave it alone.
   if (current && !instrument.isExpiryOverrideStale(current)) return;
@@ -232,70 +292,92 @@ function _maybeRoll(auto) {
   // one dead contract with another only looks like a fix. Leave the stale value
   // (and its banner) in place and try again on the next check.
   if (instrument.isExpiryOverrideStale(auto.expiryDate)) {
-    console.warn(`[expiryHealth] ⚠️  Resolved expiry ${auto.expiryDate} has already expired — not rolling to it`);
+    console.warn(`[expiryHealth/${key}] ⚠️  Resolved expiry ${auto.expiryDate} has already expired — not rolling to it`);
     return;
   }
 
   // The code decides weekly vs monthly from the date itself; keep the Settings
-  // dropdown honest about which one this contract actually is.
+  // dropdown honest about which one this contract actually is. A monthly-only
+  // index (NIFTY BANK) can only ever produce the YYMMM form, so this writes
+  // "monthly" for it without needing a special case.
   const type = /^\d{2}[A-Z]{3}$/.test(String(auto.expiry || "")) ? "monthly" : "weekly";
 
   try {
     const settings = require("../routes/settings");
     const res = settings.applyUpdates(
-      { OPTION_EXPIRY_OVERRIDE: auto.expiryDate, OPTION_EXPIRY_TYPE: type },
-      `auto expiry roll: ${current || "(blank)"} → ${auto.expiryDate} (${auto.expiry})`
+      { [U.env.expiryOverride]: auto.expiryDate, [U.env.expiryType]: type },
+      `auto expiry roll (${U.label}): ${current || "(blank)"} → ${auto.expiryDate} (${auto.expiry})`
     );
     if (!res || res.success === false) {
-      console.warn(`[expiryHealth] ⚠️  Could not save rolled expiry: ${(res && res.error) || "unknown error"}`);
+      console.warn(`[expiryHealth/${key}] ⚠️  Could not save rolled expiry: ${(res && res.error) || "unknown error"}`);
       return;
     }
-    console.log(`[expiryHealth] 🔄 Expiry rolled ${current || "(blank)"} → ${auto.expiryDate} (${auto.expiry}, ${type}) — Settings and Dashboard updated`);
+    console.log(`[expiryHealth/${key}] 🔄 ${U.label} expiry rolled ${current || "(blank)"} → ${auto.expiryDate} (${auto.expiry}, ${type}) — Settings and Dashboard updated`);
     notify.sendIfMaster(
-      `🔄 <b>Option expiry updated automatically</b>\n` +
+      `🔄 <b>${U.label} option expiry updated automatically</b>\n` +
       `${current || "(blank)"} → <b>${auto.expiryDate}</b> (${auto.expiry}, ${type})`
     );
   } catch (err) {
-    console.warn(`[expiryHealth] ⚠️  Expiry roll failed: ${err.message}`);
+    console.warn(`[expiryHealth/${key}] ⚠️  Expiry roll failed: ${err.message}`);
   }
 }
 
-function _maybeNotify() {
-  const day = _istDay();
-  if (_notified.status === _state.status && _notified.day === day) return;
+function _maybeNotify(key) {
+  const day   = _istDay();
+  const state = _stateOf(key);
+  const prev  = _notified[key] || { status: null, day: null };
+  if (prev.status === state.status && prev.day === day) return;
 
   // A failed rung of the post-close ladder is not news yet — the retries are
   // still coming, and the ladder sends exactly one message if they all fail.
   // Nothing is recorded in _notified either, so a failure that outlives the
   // ladder still reports itself on the next check.
-  if (_state.status === "fail" && isRollPending()) return;
+  if (state.status === "fail" && isRollPending()) return;
 
-  if (_state.status === "fail") {
+  const label = labelOf(key);
+  if (state.status === "fail") {
     notify.sendIfMaster(
-      `🚨 <b>Option expiry could not be resolved</b>\n` +
-      `No tradeable NIFTY contract was found, so every strategy will skip entries.\n` +
-      `Set <b>Option Expiry (manual)</b> in Settings for this week.`
+      `🚨 <b>${label} option expiry could not be resolved</b>\n` +
+      `No tradeable ${label} contract was found, so every ${label} strategy will skip entries.\n` +
+      `Set <b>${overrideKeyOf(key)}</b> in Settings for this expiry.`
     );
-  } else if (_state.status === "ok" && _notified.status === "fail") {
-    notify.sendIfMaster(`✅ <b>Option expiry resolved again</b> — ${_state.expiry} (${_state.symbol})`);
+  } else if (state.status === "ok" && prev.status === "fail") {
+    notify.sendIfMaster(`✅ <b>${label} option expiry resolved again</b> — ${state.expiry} (${state.symbol})`);
   }
-  _notified = { status: _state.status, day };
+  _notified[key] = { status: state.status, day };
 }
 
-/** Current verdict for the Dashboard. Pure read — never triggers a broker call. */
-function getState() {
-  return { ..._state };
+/**
+ * Current verdict for ONE index. Pure read — never triggers a broker call.
+ * Defaults to NIFTY so a caller that predates the per-index split still reads
+ * the verdict it always read.
+ */
+function getState(underlying) {
+  return { ..._stateOf(underlying || "NIFTY") };
 }
 
-/** Is the stored expiry still one that cannot be traded? */
-function _overrideStale() {
+/** Every index's verdict, keyed by underlying. Pure read. */
+function getStates() {
+  const out = {};
+  for (const key of underlyingKeys()) out[key] = { ..._stateOf(key) };
+  return out;
+}
+
+/** Is THIS index's stored expiry still one that cannot be traded? */
+function isOverrideStale(underlying) {
   try {
     const instrument = require("../config/instrument");
-    const current    = (process.env.OPTION_EXPIRY_OVERRIDE || "").trim();
+    const U       = instrument.underlyingOf(underlying);
+    const current = String(process.env[U.env.expiryOverride] || "").trim();
     return Boolean(current) && instrument.isExpiryOverrideStale(current);
   } catch (_) {
     return false;   // cannot tell → never claim a problem we have not proven
   }
+}
+
+/** Every index whose stored expiry has expired — [] when there is nothing to repair. */
+function staleUnderlyings() {
+  return underlyingKeys().filter(isOverrideStale);
 }
 
 /** Reset the ladder when the IST date turns over. */
@@ -317,16 +399,16 @@ function isRollPending() {
   if (pc.done || pc.exhausted) return false;
   const mins = _istMinutes();
   // Only from the first attempt until just past the last one, and only if there
-  // is actually something to repair.
+  // is actually something — on any index — to repair.
   if (mins < POST_CLOSE_ATTEMPT_MINS[0]) return false;
   if (mins > LADDER_END_MIN) return false;
-  return _overrideStale();
+  return staleUnderlyings().length > 0;
 }
 
 /**
- * One rung of the ladder: run the same check an entry runs (which rolls the
- * expiry as a side effect), then decide whether the day is finished, needs
- * another attempt, or has run out of them.
+ * One rung of the ladder: run the same check an entry runs, for every index
+ * (which rolls each expiry as a side effect), then decide whether the day is
+ * finished, needs another attempt, or has run out of them.
  */
 async function _runPostCloseAttempt(attemptNo) {
   if (!(await _isTradingDay())) {
@@ -334,29 +416,39 @@ async function _runPostCloseAttempt(attemptNo) {
     return;
   }
 
-  console.log(`[expiryHealth] 🔁 Post-close expiry roll — attempt ${attemptNo}/${POST_CLOSE_ATTEMPT_MINS.length}`);
+  const before = staleUnderlyings();
+  console.log(`[expiryHealth] 🔁 Post-close expiry roll — attempt ${attemptNo}/${POST_CLOSE_ATTEMPT_MINS.length} ` +
+              `(stale: ${before.map(labelOf).join(", ") || "none"})`);
   await check();
 
-  if (!_overrideStale()) {
+  const stale = staleUnderlyings();
+  if (stale.length === 0) {
     _postClose.done = true;
-    console.log(`[expiryHealth] ✅ Post-close roll complete — expiry is current again`);
+    console.log(`[expiryHealth] ✅ Post-close roll complete — every index's expiry is current again`);
     return;
   }
 
   if (attemptNo < POST_CLOSE_ATTEMPT_MINS.length) {
-    console.warn(`[expiryHealth] ⚠️  Expiry still stale after attempt ${attemptNo} — retrying at ` +
+    console.warn(`[expiryHealth] ⚠️  Still stale after attempt ${attemptNo} (${stale.map(labelOf).join(", ")}) — retrying at ` +
                  `${_fmtIstMinute(POST_CLOSE_ATTEMPT_MINS[attemptNo])} IST`);
     return;
   }
 
-  // Out of attempts — this is the case that needs a person.
+  // Out of attempts — this is the case that needs a person. The message names
+  // the indices that are still broken AND the exact key to set for each, so a
+  // NIFTY BANK failure cannot be read as a NIFTY 50 one.
   _postClose.exhausted = true;
-  const current = (process.env.OPTION_EXPIRY_OVERRIDE || "").trim();
-  console.error(`[expiryHealth] ❌ All ${POST_CLOSE_ATTEMPT_MINS.length} post-close attempts failed — ${current} is still stale`);
+  const lines = stale.map((key) => {
+    const current = String(process.env[overrideKeyOf(key)] || "").trim() || "(blank)";
+    return `• <b>${labelOf(key)}</b> — ${current} → set <b>${overrideKeyOf(key)}</b>`;
+  });
+  console.error(`[expiryHealth] ❌ All ${POST_CLOSE_ATTEMPT_MINS.length} post-close attempts failed — still stale: ` +
+                stale.map((k) => `${labelOf(k)} (${process.env[overrideKeyOf(k)] || "blank"})`).join(", "));
   notify.sendIfMaster(
     `⚠️ <b>Option expiry could not be rolled</b>\n` +
-    `<b>${current}</b> has expired and ${POST_CLOSE_ATTEMPT_MINS.length} attempts could not name the next contract.\n` +
-    `Set <b>Option Expiry (manual)</b> in Settings — entries stay blocked until then.`
+    `${POST_CLOSE_ATTEMPT_MINS.length} attempts could not name the next contract for:\n` +
+    `${lines.join("\n")}\n` +
+    `Set it in Settings — entries on those indices stay blocked until then.`
   );
 }
 
@@ -389,9 +481,9 @@ function start() {
     const pc = _postCloseForDay();
     if (!pc.done && !pc.exhausted && pc.attempts < POST_CLOSE_ATTEMPT_MINS.length &&
         mins >= POST_CLOSE_ATTEMPT_MINS[pc.attempts] && mins <= LADDER_END_MIN) {
-      // Most days the expiry is still live at 15:40 — nothing to repair, and no
-      // reason to spend a broker probe finding that out.
-      if (!_overrideStale()) { pc.done = true; return; }
+      // Most days no index expires at 15:40 — nothing to repair, and no reason
+      // to spend a broker probe finding that out.
+      if (staleUnderlyings().length === 0) { pc.done = true; return; }
       // A check still in flight would make check() a no-op and the verdict below
       // read pre-roll state; leave this rung unclaimed and retry next minute.
       if (_running) return;
@@ -410,8 +502,8 @@ function start() {
   }, HEARTBEAT_MS);
   _timer.unref();
 
-  console.log(`   Expiry health    : ✅ every ${Math.round(_intervalMs() / 60000)} min, 08:00–15:30 IST, ` +
-              `post-close roll ${POST_CLOSE_ATTEMPT_MINS.map(_fmtIstMinute).join("/")}` +
+  console.log(`   Expiry health    : ✅ ${underlyingKeys().map(labelOf).join(" + ")} — every ${Math.round(_intervalMs() / 60000)} min, ` +
+              `08:00–15:30 IST, post-close roll ${POST_CLOSE_ATTEMPT_MINS.map(_fmtIstMinute).join("/")}` +
               `${_autoRollEnabled() ? " (auto-roll ON)" : " (auto-roll off)"}`);
 }
 
@@ -419,4 +511,14 @@ function stop() {
   if (_timer) { clearInterval(_timer); _timer = null; }
 }
 
-module.exports = { start, stop, check, getState, isRollPending };
+module.exports = {
+  start, stop, check,
+  getState,            // one index's verdict (defaults to NIFTY)
+  getStates,           // every index's verdict, keyed by underlying
+  isRollPending,
+  isOverrideStale,     // is THIS index's stored expiry already past its close?
+  staleUnderlyings,    // every index that needs a new expiry right now
+  underlyingKeys,      // the indices this monitors — the Dashboard renders one strip each
+  labelOf,
+  overrideKeyOf,
+};

@@ -754,7 +754,7 @@ const SETTINGS_SCHEMA = [
       { key: "STRIKE_OFFSET_PE", label: "PE Strike Offset", type: "number", min: -200, max: 200, step: 50, effect: EFFECT.INSTANT, desc: "PE strike vs ATM (+50=ITM, 0=ATM, -50=OTM).", default: "0" },
       { key: "NIFTY_WEEKLY_EXPIRY_ENABLED", label: "NIFTY 50 — Weekly Expiries Exist", type: "toggle", effect: EFFECT.INSTANT, desc: "NIFTY 50 lists a weekly (Tuesday) contract as well as the monthly one, so this stays ON. Turning it off makes every NIFTY 50 expiry resolve to the month contract instead.", default: "true" },
       { key: "OPTION_EXPIRY_TYPE", label: "Expiry Type", type: "select", options: ["weekly", "monthly"], effect: EFFECT.INSTANT, desc: "Weekly or monthly expiry.", default: "weekly" },
-      { key: "OPTION_EXPIRY_OVERRIDE", label: "Option Expiry (manual)", type: "date", effect: EFFECT.INSTANT, desc: "Option expiry for all strategies. Filled in automatically once the stored one expires; a future date you set is left alone." },
+      { key: "OPTION_EXPIRY_OVERRIDE", label: "Option Expiry (manual)", type: "date", effect: EFFECT.INSTANT, desc: "Option expiry for every NIFTY 50 strategy — NIFTY BANK has its own BANKNIFTY_OPTION_EXPIRY_OVERRIDE, because the two indices expire on different calendars. Filled in automatically once the stored one expires; a future date you set is left alone." },
       { key: "NIFTY_SPOT_FALLBACK", label: "NIFTY Spot Fallback", type: "number", min: 15000, max: 35000, step: 50, effect: EFFECT.INSTANT, desc: "Fallback NIFTY price when no live quote.", default: "24000" },
       { key: "NIFTY_FUTURES_MARGIN_PCT", label: "Futures Margin %", type: "number", min: 1, max: 100, step: 0.5, effect: EFFECT.INSTANT, desc: "SPAN+exposure margin as % of notional, used to size the capital pool when Trade Type is NIFTY_FUTURES. Advisory only — never blocks a trade.", default: "11" },
 
@@ -766,7 +766,7 @@ const SETTINGS_SCHEMA = [
       { key: "BANKNIFTY_STRIKE_OFFSET_PE", label: "NIFTY BANK — PE Strike Offset", type: "number", min: -400, max: 400, step: 100, effect: EFFECT.INSTANT, desc: "PE strike vs ATM, in points on the 100-point grid (+100=ITM, 0=ATM, -100=OTM).", default: "0" },
       { key: "BANKNIFTY_WEEKLY_EXPIRY_ENABLED", label: "NIFTY BANK — Weekly Expiries Exist", type: "toggle", effect: EFFECT.INSTANT, desc: "OFF, and it must stay off: NSE WITHDREW BANKNIFTY weekly options in November 2024, so every NIFTY BANK contract is the MONTHLY one. This toggle exists only for the day NSE changes its mind — switching it on lets the engine build weekly (YYMDD) symbols again, and until that day those symbols simply do not exist, so every entry would be refused.", default: "false" },
       { key: "BANKNIFTY_OPTION_EXPIRY_TYPE", label: "NIFTY BANK — Expiry Type", type: "select", options: ["monthly", "weekly"], effect: EFFECT.INSTANT, desc: "Monthly is the only real answer today — NSE WITHDREW BANKNIFTY weekly options in November 2024, so there is no weekly NIFTY BANK contract to name. Weekly is honoured only if the Weekly Expiries Exist toggle above is switched on, which is there purely for the day NSE reverses that decision.", default: "monthly" },
-      { key: "BANKNIFTY_OPTION_EXPIRY_OVERRIDE", label: "NIFTY BANK — Option Expiry (manual)", type: "date", effect: EFFECT.INSTANT, desc: "Manual NIFTY BANK expiry (YYYY-MM-DD) for every NIFTY BANK strategy. Blank = auto-detect, which is normally what you want. A date that has already passed BLOCKS NIFTY BANK entries rather than quietly trading a different expiry." },
+      { key: "BANKNIFTY_OPTION_EXPIRY_OVERRIDE", label: "NIFTY BANK — Option Expiry (manual)", type: "date", effect: EFFECT.INSTANT, desc: "Manual NIFTY BANK expiry (YYYY-MM-DD) for every NIFTY BANK strategy. Filled in automatically once the stored one expires, exactly as the NIFTY 50 key above is — the roll runs per index, so each one gets its own monthly/weekly date. A future date you set is left alone. A date that has already passed BLOCKS NIFTY BANK entries rather than quietly trading a different expiry." },
       { key: "BANKNIFTY_SPOT_FALLBACK", label: "NIFTY BANK — Spot Fallback", type: "number", min: 30000, max: 80000, step: 100, effect: EFFECT.INSTANT, desc: "Fallback NIFTY BANK price when no live quote is available.", default: "54000" },
       { key: "BANKNIFTY_FUTURES_MARGIN_PCT", label: "NIFTY BANK — Futures Margin %", type: "number", min: 1, max: 100, step: 0.5, effect: EFFECT.INSTANT, desc: "SPAN+exposure margin as % of notional, used to size the capital pool when the Trade Type is futures. Advisory only — never blocks a trade.", default: "11" },
 
@@ -2616,7 +2616,8 @@ router.get("/", (req, res) => {
         </nav>
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
           <div class="top-bar-title">Settings</div>
-          <span id="expiry-info-pill" class="top-bar-cache schedule empty" title="Next NIFTY weekly/monthly expiry"></span>
+          <span id="expiry-info-pill" class="top-bar-cache schedule empty" title="Next NIFTY 50 weekly/monthly expiry"></span>
+          <span id="bn-expiry-info-pill" class="top-bar-cache schedule empty" title="Next NIFTY BANK expiry — monthly only, since NSE withdrew BANKNIFTY weekly options in Nov-2024"></span>
           <span id="holiday-info-pill" class="top-bar-cache schedule empty" title="Next NSE trading holiday"></span>
         </div>
       </div>
@@ -4052,6 +4053,7 @@ async function loadSettingsSchedulePills(){
   }
   function fmtDMY(iso){ var p = iso.split('-'); return p[2] + '/' + p[1] + '/' + p[0]; }
   var expEl = document.getElementById('expiry-info-pill');
+  var bnExpEl = document.getElementById('bn-expiry-info-pill');
   var holEl = document.getElementById('holiday-info-pill');
   if (!expEl || !holEl) return;
   try {
@@ -4071,10 +4073,30 @@ async function loadSettingsSchedulePills(){
       var typeLbl = (nextExp.monthly ? 'M' : 'W') + (nextExp.preponed ? '*' : '');
       var when = d === 0 ? 'today' : d + (d === 1 ? ' day' : ' days');
       expEl.classList.remove('empty');
-      expEl.textContent = '📅 Next Expiry Date : ' + fmtDMY(nextExp.date) + ' - ' + typeLbl + ' - ' + when;
+      expEl.textContent = '📅 Next NIFTY Expiry Date : ' + fmtDMY(nextExp.date) + ' - ' + typeLbl + ' - ' + when;
     } else {
       expEl.classList.add('empty');
-      expEl.textContent = '📅 No upcoming expiry';
+      expEl.textContent = '📅 No upcoming NIFTY expiry';
+    }
+    // NIFTY BANK — the MONTHLY rows of the same calendar. It has no weekly
+    // contract (NSE withdrew BANKNIFTY weeklies in Nov-2024), so filtering the
+    // one response keeps both pills from ever disagreeing about a prepone.
+    if (bnExpEl) {
+      var nextBn = null;
+      for (var b = 0; b < expiries.length; b++) {
+        if (!expiries[b].monthly) continue;
+        var bd0 = expiries[b].actual || expiries[b].date;
+        if (bd0 >= todayIso) { nextBn = { date:bd0, preponed:expiries[b].preponed }; break; }
+      }
+      if (nextBn) {
+        var bdd = diffDays(nextBn.date);
+        var bnWhen = bdd === 0 ? 'today' : bdd + (bdd === 1 ? ' day' : ' days');
+        bnExpEl.classList.remove('empty');
+        bnExpEl.textContent = '🏦 Next BANK NIFTY Expiry Date : ' + fmtDMY(nextBn.date) + ' - M' + (nextBn.preponed ? '*' : '') + ' - ' + bnWhen;
+      } else {
+        bnExpEl.classList.add('empty');
+        bnExpEl.textContent = '🏦 No upcoming BANK NIFTY expiry';
+      }
     }
     var holidays = ((hr && hr.holidays) || []).slice().sort();
     var nextHol = null;
@@ -4486,5 +4508,28 @@ function applyUpdates(updates, note) {
 }
 
 router.applyUpdates = applyUpdates;
+
+/**
+ * The Settings URL fragment that opens the section a given key lives in.
+ *
+ * The page's hash names a SECTION, not a field (see initSections), so a
+ * deep-link written as "#SOME_KEY" silently lands on the first section instead
+ * of the setting it names. Callers that link an operator straight to a setting
+ * — the Dashboard's per-index expiry banners — ask here rather than hard-coding
+ * a slug a section rename would quietly break.
+ *
+ * @param {string} key  env key, e.g. "BANKNIFTY_OPTION_EXPIRY_OVERRIDE"
+ * @returns {string} the slug, or "" when the key is in no section (link to /settings).
+ */
+function sectionAnchorFor(key) {
+  const want = String(key || "").trim().toUpperCase();
+  if (!want) return "";
+  for (const s of SETTINGS_SCHEMA) {
+    if ((s.fields || []).some((f) => f.key === want)) return sectionSlug(s);
+  }
+  return "";
+}
+
+router.sectionAnchorFor = sectionAnchorFor;
 
 module.exports = router;

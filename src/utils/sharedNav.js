@@ -2757,7 +2757,7 @@ function expiryHolidayModalHTML() {
     <div id="ehTab-expiry">
       <div style="padding:10px 16px 0;">
         <div class="expiry-legend">
-          <span><span class="expiry-dot" style="background:#3b82f6;"></span> Monthly expiry</span>
+          <span><span class="expiry-dot" style="background:#3b82f6;"></span> Monthly expiry &mdash; also the NIFTY BANK contract</span>
           <span><span class="expiry-dot" style="background:#f59e0b;"></span> Preponed (holiday)</span>
         </div>
       </div>
@@ -2868,7 +2868,7 @@ async function loadExpiriesTable() {
       return;
     }
     var yearEl = document.getElementById('expiryYearTitle');
-    if (yearEl) yearEl.textContent = 'NIFTY Options Expiry Calendar ' + (data.years || [data.year]).join(' – ');
+    if (yearEl) yearEl.textContent = 'NIFTY 50 & NIFTY BANK Options Expiry Calendar ' + (data.years || [data.year]).join(' – ');
     var todayStr = new Date(new Date().toLocaleString("en-US",{timeZone:"Asia/Kolkata"})).toISOString().split('T')[0];
     var rows = '';
     var n = 0;
@@ -2884,7 +2884,13 @@ async function loadExpiriesTable() {
       var dt = new Date(e.date + 'T00:00:00');
       var display = dt.toLocaleDateString('en-IN', {day:'2-digit', month:'short', year:'numeric'});
       var dayName = dt.toLocaleDateString('en-US', {weekday:'short'});
-      var type = e.monthly ? '<span style="color:#3b82f6;font-weight:600;">Monthly</span>' : 'Weekly';
+      // NIFTY BANK trades ONLY the monthly contract (NSE withdrew its weeklies in
+      // Nov-2024), so a monthly row is BOTH indices' expiry and a weekly row is
+      // NIFTY 50's alone. Saying so here is what makes this one table usable for
+      // both — otherwise a NIFTY BANK date has to be inferred from a legend.
+      var type = e.monthly
+        ? '<span style="color:#3b82f6;font-weight:600;">Monthly</span> <span style="color:var(--muted-1,#8ba1c2);font-size:0.9em;">NIFTY 50 + BANK</span>'
+        : 'Weekly <span style="color:var(--muted-1,#8ba1c2);font-size:0.9em;">NIFTY 50</span>';
       var actual = display;
       if (e.preponed) {
         var aDt = new Date(e.actual + 'T00:00:00');
