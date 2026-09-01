@@ -290,7 +290,15 @@ function getNearestWeeklyExpiryDate(underlying) {
  * For holiday-aware expiry, use validateAndGetOptionSymbol() which is async.
  *
  * NOTE: NIFTY 50 index options switched to TUESDAY weekly expiry.
- * BankNifty = Wednesday, FinNifty = Tuesday, Nifty = Tuesday.
+ *
+ * The line that used to sit here — "BankNifty = Wednesday, FinNifty = Tuesday"
+ * — described the pre-2024 calendar and is no longer true of either. It is
+ * called out rather than silently deleted because BANKNIFTY now flows through
+ * this function: NSE withdrew BANKNIFTY WEEKLY options in Nov-2024, so for that
+ * index there is no weekly expiry day at all and getNearestWeeklyExpiryDate()
+ * hands back the MONTHLY date (the month's last Tuesday). A reader who trusted
+ * the old comment would conclude the BANKNIFTY date this returns is a day out.
+ * It is not.
  */
 function getNearestThursdayExpiry(underlying) {
   const expiry = getNearestWeeklyExpiryDate(underlying);

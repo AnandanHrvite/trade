@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BN Pivot RSI ST — Strategy Guide</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0 18px 80px;
+    background: #0d1117; color: #c9d1d9;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.65; font-size: 16px;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; }
+  header.hero {
+    margin: 0 -18px 8px; padding: 40px 26px 30px;
+    background: linear-gradient(135deg, #161b22 0%, #101d24 100%);
+    border-bottom: 3px solid #0ea5e9;
+  }
+  header.hero .kicker { color: #0ea5e9; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; font-size: 0.72rem; }
+  header.hero h1 { margin: 6px 0 8px; font-size: 2rem; color: #f0f6fc; }
+  header.hero p { margin: 0; color: #8b949e; max-width: 640px; }
+  h2 { color: #f0f6fc; font-size: 1.35rem; margin: 38px 0 12px; padding-bottom: 8px; border-bottom: 1px solid #21262d; }
+  h3 { color: #58a6ff; font-size: 1.05rem; margin: 24px 0 8px; }
+  code { background: rgba(110,118,129,0.18); color: #7dd3fc; padding: 1.5px 6px; border-radius: 4px; font-size: 0.85em; font-family: 'SF Mono', ui-monospace, Menlo, monospace; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 18px 22px; margin: 14px 0; }
+  .card.accent { border-left: 4px solid #0ea5e9; }
+  .card.warn { border-left: 4px solid #d29922; background: #1c1a12; }
+  .card.bad  { border-left: 4px solid #f85149; background: #1c1214; }
+  ul, ol { padding-left: 22px; }
+  li { margin: 5px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.88rem; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #21262d; vertical-align: top; }
+  th { color: #8b949e; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.6px; }
+  td code { white-space: nowrap; }
+  /* Every wide table is wrapped in one of these, so it scrolls inside its own
+     box instead of pushing the page wider than the phone. */
+  .table-wrap { width: 100%; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 14px 0; }
+  .flow .step { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 8px 14px; font-size: 0.85rem; }
+  .flow .arrow { color: #0ea5e9; font-weight: 700; }
+  .pill { display: inline-block; background: rgba(14,165,233,0.15); color: #0ea5e9; border: 1px solid rgba(14,165,233,0.35); border-radius: 20px; padding: 2px 12px; font-size: 0.78rem; font-weight: 600; }
+  .muted { color: #6e7681; font-size: 0.85rem; }
+  a { color: #58a6ff; }
+  .num { font-family: 'SF Mono', ui-monospace, Menlo, monospace; color: #f0f6fc; }
+  /* TradingView-style chart wrapper. No chart is drawn in this guide yet — see
+     "No market data yet" — but the wrapper and the renderer below are kept in
+     step with the other guides so charts can be added the day there is data. */
+  .tv-chart { margin: 16px 0 6px; border: 1px solid #30363d; border-radius: 10px; overflow: hidden; background: #0d1626; }
+  .tv-chart .tv-svg { width: 100%; height: auto; display: block; }
+  .tv-cap { color: #8b949e; font-size: 0.82rem; margin: 0 0 16px; padding-left: 4px; }
+  .tv-cap b { color: #c9d1d9; }
+  .tv-empty { color: #6e7681; padding: 40px; text-align: center; font-size: 0.9rem; }
+
+/* ── MOBILE (shared block — keep in sync across all guides) ── */
+  @media (max-width: 768px) {
+    /* The setting tables are three columns of prose. A table cannot lay out
+       narrower than its min-content width, so at 393px they ran up to 259px past
+       the right edge and the browser zoomed the whole guide out to fit. Each one
+       now scrolls inside its own box and the page keeps the phone's width. */
+    table { display: block; width: 100%; max-width: 100%; overflow-x: auto;
+            -webkit-overflow-scrolling: touch; }
+    /* Long env keys wrap; fenced blocks keep their formatting and scroll. */
+    code { overflow-wrap: anywhere; word-break: break-word; }
+    pre { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    pre code { overflow-wrap: normal; word-break: normal; }
+    img, svg, canvas { max-width: 100%; }
+    .tv-chart { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    /* .cols is a two-up flex row with no wrap — the second card was pushed off
+       screen rather than dropping under the first. */
+    .cols { flex-direction: column; }
+    .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+    [style*="grid-template-columns"] { grid-template-columns: 1fr !important; }
+    /* Contents links are the guide's only navigation, and they were 18-31px.
+       The three guides each mark theirs up differently: nav.toc (ORB, EMA9VWAP,
+       Setup), a nav.no-print link bar (Price Action) and a two-column card list
+       (BB_RSI, EMA_RSI_ST, Trend Pullback). */
+    nav.toc a, .toc a, nav.no-print .container a,
+    .card li a { min-height: 44px; display: inline-flex; align-items: center; }
+    /* A two-column contents list leaves ~170px per column at 393px. */
+    ul[style*="columns"], ol[style*="columns"] { columns: 1 !important; -webkit-columns: 1 !important; }
+    .hero { padding-left: 16px; padding-right: 16px; }
+    .hero h1 { font-size: 1.7rem; }
+    .section { padding: 20px 14px; }
+  }
+/* ── END MOBILE ── */</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <div class="kicker">NIFTY BANK &middot; Fyers data &middot; Zerodha orders &middot; Plain-English edition</div>
+  <h1>BN Pivot RSI ST</h1>
+  <p>This is <a href="/docs/file/RSI_PIVOT_ST_Strategy_Guide.html">RSI Pivot ST</a>'s rule set, unchanged, pointed at a different index. Two lines are fixed before the open from yesterday's high, low and close; a five-minute NIFTY BANK candle has to push through one of them while the momentum reading agrees; then an option is bought and held until a stop catches up. Every threshold is identical to the NIFTY version. Only the instrument is different &mdash; and the instrument changes three things that matter.</p>
+  <p class="muted" style="margin-top:10px;">Engine <code>src/strategies/bn_pivot_rsi_st.js</code> &middot; every rule and every default below was read out of that file or out of the Settings schema, not copied from the NIFTY guide</p>
+</header>
+
+<!--LIVE_STATUS_PANEL-->
+
+<div class="card bad" id="nodata">
+  <strong>No market data yet &mdash; and that is why this guide has no charts and no rupee figures.</strong>
+  <ul style="margin:10px 0 0;">
+    <li><b>The strategy has never traded.</b> Zero paper sessions, zero live orders, zero backtests. There is no win rate, no trade count, no average stop size and no P&amp;L on this page because none of those numbers exist.</li>
+    <li><b>There are no charts.</b> The Fyers API token in this environment is expired (<code>getQuotes</code> answers <em>"Please provide valid token"</em>), the backtest and candle caches hold no NIFTY BANK bars, and no session has been tick-recorded. Nothing could be plotted from real data, and a hand-drawn trade would be worse than no chart at all.</li>
+    <li><b>Nothing was carried over from the NIFTY guide.</b> RSI Pivot ST's charts and examples are NIFTY 50 data. Reproducing them here would be a lie about a NIFTY BANK strategy, so they are absent rather than borrowed.</li>
+    <li><b>Every rupee a backtest eventually prints is simulated.</b> There is no historical option chain anywhere in this repo, so the backtest models the premium from delta and theta rather than reading a quote. See <a href="#backtest">the backtest section</a> before you believe a single &#8377; figure.</li>
+  </ul>
+  <p style="margin:10px 0 0;">What <em>is</em> on this page: the rules as the engine actually implements them, the settings as the Settings schema actually ships them, and arithmetic examples produced by calling the real engine at a stated index level. Those are labelled where they appear.</p>
+</div>
+
+<div class="card">
+  <strong>What's inside</strong>
+  <ol style="margin:10px 0 0; columns:2; column-gap:30px;">
+    <li><a href="#idea">The idea in one minute</a></li>
+    <li><a href="#differences">What differs from RSI Pivot ST</a></li>
+    <li><a href="#glossary">Words you'll see</a></li>
+    <li><a href="#pivots">Step 1 &mdash; The two lines, drawn before the open</a></li>
+    <li><a href="#entry">Step 2 &mdash; The entry needs both halves</a></li>
+    <li><a href="#strike">Step 3 &mdash; Which option gets bought</a></li>
+    <li><a href="#stops">Step 4 &mdash; The stops, and why CE and PE differ</a></li>
+    <li><a href="#refuse">The trades it refuses</a></li>
+    <li><a href="#risk">Safety limits</a></li>
+    <li><a href="#modes">Paper, Live &amp; Replay</a></li>
+    <li><a href="#backtest">The backtest, and why its rupees are not comparable</a></li>
+    <li><a href="#config">All the settings, explained</a></li>
+    <li><a href="#missing">What's still missing / not validated</a></li>
+  </ol>
+</div>
+
+<h2 id="idea">1. The idea in one minute</h2>
+
+<p>Take yesterday's NIFTY BANK high, low and close, average them, and you get the <b>pivot point</b> &mdash; a rough centre of gravity for today. Reflect yesterday's low across it and you get <b>R1</b>, a line above. Reflect yesterday's high across it and you get <b>S1</b>, a line below. Those two lines are the strategy's whole map of the day, and their usefulness is precisely that they are <em>boring</em>: computed once from finished bars, and fixed until the close.</p>
+
+<p>If a five-minute candle is strong enough to push <em>through</em> R1 and close there, and RSI agrees that the strength is real, buy a Call. If a candle breaks down through S1 and closes there with RSI agreeing, buy a Put. There is no profit target &mdash; the position is held until a stop trails into it or the day is squared off.</p>
+
+<div class="flow">
+  <div class="step">Yesterday's H / L / C</div><div class="arrow">&rarr;</div>
+  <div class="step">PP, R1, S1 (frozen)</div><div class="arrow">&rarr;</div>
+  <div class="step">5-min NIFTY BANK candle crosses &amp; closes beyond</div><div class="arrow">&rarr;</div>
+  <div class="step">RSI agrees</div><div class="arrow">&rarr;</div>
+  <div class="step">buy the monthly option</div><div class="arrow">&rarr;</div>
+  <div class="step">hold until a stop</div>
+</div>
+
+<h2 id="differences">2. What differs from RSI Pivot ST</h2>
+
+<p>Exactly three things, and none of them is a rule change. Every threshold &mdash; RSI 70 and 40, SuperTrend(10, 2), the 25% premium floor, the 1% strike distance, the 09:30&ndash;15:00 entry window, the 15:15 square-off, five trades a day, the &#8377;5,000 day stop &mdash; is identical to the NIFTY engine, and so are the deliberate omissions. What changes is the instrument.</p>
+
+<div class="table-wrap"><table>
+  <tr><th>&nbsp;</th><th>RSI Pivot ST</th><th>BN Pivot RSI ST</th></tr>
+  <tr><td><b>Spot</b></td><td><code>NSE:NIFTY50-INDEX</code></td><td><code>NSE:NIFTYBANK-INDEX</code> &mdash; pivots, RSI(14) and SuperTrend(10,&nbsp;2) are all computed on NIFTY BANK candles</td></tr>
+  <tr><td><b>Strike grid</b></td><td>every 50 points</td><td>every <b>100</b> points (<code>BANKNIFTY_STRIKE_STEP</code>)</td></tr>
+  <tr><td><b>Expiry</b></td><td>weekly or monthly</td><td><b>MONTHLY ONLY</b> &mdash; NSE withdrew BANKNIFTY weekly options in November 2024</td></tr>
+  <tr><td><b>Lot size</b></td><td><code>NIFTY_LOT_SIZE</code></td><td><code>BANKNIFTY_LOT_SIZE</code>, default <b>30</b></td></tr>
+</table></div>
+
+<div class="card bad">
+  <strong>The monthly expiry makes the 25% premium floor a materially LOOSER stop, and nothing compensates for it.</strong> The only stop a Put ever carries is a floor set 25% below the best premium the trade has seen. On NIFTY that floor sits under a <em>weekly</em> contract, which bleeds time value fast, so 25% of the premium is a comparatively small number of index points. A BANKNIFTY <em>monthly</em> contract decays far more slowly: the same 25% is a much larger adverse move in the index before the stop is reached, and it stays that way all day. Same rule, same percentage, a different amount of risk &mdash; because the contract underneath it is different. This is a real behavioural difference between the two strategies, not a footnote, and the engine does <b>not</b> adjust for it. If you want a tighter stop on NIFTY BANK you have to say so in <code>BN_PIVOT_RSI_ST_PREMIUM_SL_PCT</code>; the rule as written does not do it for you.
+</div>
+
+<div class="card accent">
+  <strong>What the option symbol looks like.</strong> Symbols are built as <code>NSE:{prefix}{expiry code}{strike}{CE|PE}</code>, and a monthly expiry code is <code>YYMMM</code> &mdash; the year and the month, never a day. Called right now with no live quote available (it falls back to an index level of 54,000, because the Fyers token is expired), the repo's own symbol builder returns <code>NSE:BANKNIFTY26SEP54000CE</code>. A March-2026 contract would carry the code <code>26MAR</code>. There is no weekly code to fall back to: <code>BANKNIFTY_WEEKLY_EXPIRY_ENABLED</code> ships <code>false</code> and must stay that way, because weekly BANKNIFTY symbols simply do not exist &mdash; switching it on would make every entry refuse.
+</div>
+
+<h2 id="glossary">3. Words you'll see</h2>
+
+<div class="card">
+  <ul style="margin:0;">
+    <li><b>Standard (floor) pivot</b> &mdash; three prices worked out from <em>yesterday's</em> high, low and close. They do not move once the day starts.</li>
+    <li><b>PP</b> &mdash; the middle line, <code>(High + Low + Close) &divide; 3</code>. Drawn for context; nothing trades on it.</li>
+    <li><b>R1</b> &mdash; the first line <em>above</em> PP, <code>2&nbsp;&times;&nbsp;PP &minus; Low</code>. The CE trigger.</li>
+    <li><b>S1</b> &mdash; the first line <em>below</em> PP, <code>2&nbsp;&times;&nbsp;PP &minus; High</code>. The PE trigger.</li>
+    <li><b>Cross and close</b> &mdash; the candle before must have finished on one side of the line and this candle must finish on the other. A candle that poked through and came back has not crossed, and neither has one that was already past the line.</li>
+    <li><b>RSI</b> &mdash; a 0&ndash;100 momentum reading over the last 14 closes. Here it is the second opinion that has to agree with the break.</li>
+    <li><b>SuperTrend</b> &mdash; a line that sits below price in an uptrend and flips above it in a downtrend. When it is below, it doubles as a stop that only ever moves up.</li>
+    <li><b>Premium</b> &mdash; what the option itself costs, in rupees. Not the NIFTY BANK level.</li>
+    <li><b>Premium floor</b> &mdash; an exit price set 25% below the best premium the trade has seen. It rises with the trade and never falls.</li>
+    <li><b>OTM / ITM</b> &mdash; a strike above spot for a CE (out of the money, cheaper) or below it (in the money, dearer and closer-tracking). PE is the mirror.</li>
+  </ul>
+</div>
+
+<div class="card warn">
+  <strong>Both halves, on the same candle.</strong> The RSI reading and the cross must happen on the <em>same closed</em> five-minute candle. RSI going high an hour before the break does not count, and neither does a break on a candle whose RSI has already faded. This is the single most common way to misread the rule.
+</div>
+
+<h2 id="pivots">4. Step 1 &mdash; The two lines, drawn before the open</h2>
+
+<p>The formula is the classic floor-trader arithmetic, taken from <code>computePivots()</code> in the engine:</p>
+
+<div class="card">
+  <p style="margin:0;"><code>PP = (H + L + C) / 3</code> &nbsp;&nbsp; <code>R1 = 2&middot;PP &minus; L</code> &nbsp;&nbsp; <code>S1 = 2&middot;PP &minus; H</code> &nbsp;&nbsp; <code>R2 = PP + (H &minus; L)</code> &nbsp;&nbsp; <code>S2 = PP &minus; (H &minus; L)</code></p>
+  <p style="margin:8px 0 0;">Only R1 and S1 are traded. R2 and S2 are returned for context.</p>
+</div>
+
+<div class="card accent">
+  <strong>Worked example &mdash; arithmetic only, at a stated hypothetical daily bar.</strong> These are not observed prices; they are what the engine returns when it is handed a made-up previous-day bar, and they exist here purely to show the shape of the numbers on a ~54,000 index. Feed <code>computePivots()</code> a previous day with high <span class="num">54,620</span>, low <span class="num">54,180</span> and close <span class="num">54,500</span> and it answers:
+  <ul style="margin:10px 0 0;">
+    <li><b>PP</b> = <span class="num">54,433.33</span> &nbsp;&nbsp;(range <span class="num">440</span>)</li>
+    <li><b>R1</b> = <span class="num">54,686.67</span> &nbsp;&larr; the Call trigger</li>
+    <li><b>S1</b> = <span class="num">54,246.67</span> &nbsp;&larr; the Put trigger</li>
+    <li><b>R2</b> = <span class="num">54,873.33</span>, <b>S2</b> = <span class="num">53,993.33</span> &mdash; context only</li>
+  </ul>
+  <p style="margin:10px 0 0;">In that example R1 sits <span class="num">253.34</span> points above PP and S1 <span class="num">186.66</span> below it &mdash; the levels are asymmetric whenever yesterday closed off the middle of its range, which is the formula working, not a bug. Read those distances against the index they belong to: this repo's own fallback level for NIFTY BANK is <span class="num">54,000</span> against <span class="num">24,000</span> for NIFTY, so a 250-point break here is a much smaller <em>percentage</em> event than a 250-point break on NIFTY. Do not carry an intuition for "how far is far" across from the NIFTY guide.</p>
+</div>
+
+<div class="card warn">
+  <strong>The bar that feeds this must be YESTERDAY, not today.</strong> A daily candle that is still forming would make R1 and S1 drift all session, and then no replay and no backtest could ever reproduce an entry. The engine walks backwards through the daily series to the newest completed bar strictly <em>before</em> the day being traded, which is also what lets a backtest step through history without peeking at the day it is trading. If there is no usable prior daily bar, the answer is "cannot trade" &mdash; never zero.
+</div>
+
+<h2 id="entry">5. Step 2 &mdash; The entry needs both halves</h2>
+
+<p>An entry is only ever decided on a <b>closed</b> five-minute candle, and both tests must pass on that <em>same</em> candle. Reading RSI on the very bar that does the crossing is deliberate: it removes any lag between the two halves of the rule.</p>
+
+<div class="table-wrap"><table>
+  <tr><th>Side</th><th>Momentum half</th><th>Level half</th></tr>
+  <tr><td><b>CE</b> (Call)</td><td>RSI(14) <b>above 70</b> on the signal candle</td><td>The candle <b>crosses and closes</b> above R1 &mdash; the previous close sat at or below R1, this one closes above</td></tr>
+  <tr><td><b>PE</b> (Put)</td><td>RSI(14) <b>below 40</b> on the signal candle</td><td>The candle crosses and closes below S1 &mdash; the previous close sat at or above S1, this one closes below</td></tr>
+</table></div>
+
+<div class="card accent">
+  <strong>"Crosses" is doing real work in that sentence.</strong> A candle that is <em>already</em> sitting above R1 and closes higher still is not a cross. Taking it would be chasing a move that already happened. The engine requires the transition itself: below-or-at, then above.
+</div>
+
+<p>The engine refuses to decide anything until it holds <b>20</b> closed five-minute candles &mdash; that is <code>minBarsFor()</code> at the shipped defaults, which takes the largest of RSI period + 2, SuperTrend period + 2, and a floor of 20. Until then it reports a warm-up reason rather than a signal, and the paper page shows the countdown from the same function so the badge can never disagree with the engine.</p>
+
+<h2 id="strike">6. Step 3 &mdash; Which option gets bought</h2>
+
+<p>The strike is chosen from the signal candle's closing price, as a percentage of spot, in the direction the setting picks. The default is <b>OTM at 1%</b>, and the raw distance is rounded to the nearest <b>100</b>-point BANKNIFTY strike. If the percentage is so small that it rounds to <b>zero</b> steps, the engine falls back to ATM rather than inventing a strike that does not exist.</p>
+
+<div class="card accent">
+  <strong>Worked example &mdash; arithmetic only, at a stated spot of 54,387.</strong> Every row below is the literal return value of <code>strikeForSide(54387, side, cfg)</code> with the shipped defaults. 54,387 is a stated index level chosen to show the rounding, <em>not</em> an observed price and <em>not</em> a trade.
+  <div class="table-wrap"><table style="margin-top:10px;">
+    <tr><th>Mode</th><th>Call</th><th>Put</th><th>Steps from ATM</th></tr>
+    <tr><td><code>OTM</code> <span class="pill">default</span></td><td><span class="num">54,900</span> (513 pts away)</td><td><span class="num">53,900</span> (487 pts away)</td><td>5</td></tr>
+    <tr><td><code>ITM</code></td><td><span class="num">53,900</span> (487 pts away)</td><td><span class="num">54,900</span> (513 pts away)</td><td>5</td></tr>
+    <tr><td><code>ATM</code></td><td><span class="num">54,400</span></td><td><span class="num">54,400</span></td><td>0</td></tr>
+  </table></div>
+  <p style="margin:10px 0 0;">The arithmetic: 1% of 54,387 is 543.87 points; 543.87 &divide; 100 is 5.44, which rounds to <b>5</b> strikes; ATM is 54,387 rounded to the nearest 100, i.e. 54,400; and the strike is 54,400 &plusmn; 5 &times; 100. Because ATM rounds down here, the CE ends up 513 points from spot and the PE 487 &mdash; the two are not symmetric, and that is the grid, not a bug.</p>
+</div>
+
+<div class="card warn">
+  <strong>Five strikes out is a real shift, and the ATM fallback never comes into play here.</strong> The "rounds to zero &rarr; use ATM" branch exists for degenerate configurations &mdash; a tiny percentage, or a coarse grid on a small index. At the shipped defaults it does not fire: 1% of an index near 54,000 is about 540 points, and 540 &divide; 100 rounds to five strikes. Do not read the fallback as a hint that the 1% default is marginal here &mdash; it is not.
+</div>
+
+<h2 id="stops">7. Step 4 &mdash; The stops, and why CE and PE differ</h2>
+
+<div class="card bad">
+  <strong>The two sides are stopped differently, and that is the rule &mdash; not a bug and not an oversight.</strong> It is stated identically in the engine header, in the paper route header, in the NIFTY sibling and here. If you are reading this later and thinking of "balancing" the two sides, don't.
+</div>
+
+<h3>CE &mdash; two stops, both live, whichever fires first</h3>
+<ul>
+  <li><b>SuperTrend(10, 2)</b> on the five-minute NIFTY BANK <em>spot</em> chart. It is both the initial stop and the trail. It only ever moves in the trade's favour &mdash; a SuperTrend that ticks down mid-trade is ignored, because a trail that can loosen is not a trail. And if the line <b>flips bearish</b>, that flip is itself an exit: the reason for being long has gone.</li>
+  <li><b>A 25% premium floor</b> on the option's own price, set 25% below the <em>highest</em> premium the trade has seen, ratcheting up and never down.</li>
+</ul>
+
+<h3>PE &mdash; one stop only, by default</h3>
+<ul>
+  <li><b>The 25% premium floor, and nothing else.</b> Out of the box the SuperTrend is applied to CE only (<code>BN_PIVOT_RSI_ST_ST_SIDES=CE</code>), so a Put is held by the premium floor alone &mdash; and on a slow-decaying monthly contract that floor is a long way away. Re-read the warning in <a href="#differences">section 2</a>.</li>
+  <li>This is a <em>setting</em>, not a law of the engine. <code>BN_PIVOT_RSI_ST_ST_SIDES</code> accepts <code>BOTH</code>, <code>CE</code>, <code>PE</code> or <code>NONE</code>; on PE the line is the exact mirror &mdash; it must sit above price to enter, and a flip to bullish is the exit.</li>
+</ul>
+
+<div class="card accent">
+  <strong>How the floor ratchets &mdash; arithmetic only, at a stated entry premium of &#8377;100.</strong> Every figure is the literal return of <code>premiumStop(entry, highWater, cfg, side)</code> at the shipped 25%. &#8377;100 is a round number chosen so the percentages read cleanly; it is <b>not</b> a BANKNIFTY quote, and this repo currently has no way to fetch one.
+  <div class="table-wrap"><table style="margin-top:10px;">
+    <tr><th>Best premium so far</th><th>Floor (25% under best)</th><th>Where that sits vs the &#8377;100 entry</th></tr>
+    <tr><td>&#8377;100 (entry)</td><td>&#8377;75.00</td><td>25% below entry</td></tr>
+    <tr><td>&#8377;120</td><td>&#8377;90.00</td><td>still 10% below entry</td></tr>
+    <tr><td>&#8377;133.33</td><td>&#8377;100.00</td><td>exactly break-even</td></tr>
+    <tr><td>&#8377;160</td><td>&#8377;120.00</td><td>20% above entry &mdash; the first locked-in profit</td></tr>
+  </table></div>
+  <p style="margin:10px 0 0;">Read the third row twice. At a 25% give-back the premium must run <b>a third above entry</b> before the floor even reaches your entry price. Anything that goes your way by less than that and then turns is a losing trade, however right the direction was. There is no target and no breakeven rule to bank anything on the way, so <b>this rule needs big winners, not frequent ones</b> &mdash; and that bar is higher here than on NIFTY. A monthly option costs more than a weekly at the same moneyness, so the same index move is a smaller <em>percentage</em> of its premium; "a third above entry" therefore asks for a larger move in NIFTY BANK than the identical sentence asks for in NIFTY.</p>
+</div>
+
+<div class="card warn">
+  <strong>You can configure a trade with no stop at all.</strong> <code>BN_PIVOT_RSI_ST_PREMIUM_SL_SIDES</code> (default <code>BOTH</code>) can switch the premium floor off for a side. If that side also has no SuperTrend &mdash; a PE at the defaults, or any side under <code>ST_SIDES=NONE</code> &mdash; the position has <b>no stop of any kind</b> and can only be closed by the 15:15 square-off, with the full premium at risk. The engine does not quietly substitute a stop; <code>isStoplessSide()</code> is what the routes call to detect the case, and they log it loudly and keep going. Only turn the floor off for a side that still carries the SuperTrend.
+</div>
+
+<div class="card warn">
+  <strong>A side that expects a SuperTrend stop is refused without one.</strong> On any side <code>BN_PIVOT_RSI_ST_ST_SIDES</code> covers &mdash; CE at the defaults &mdash; if the SuperTrend is still warming up, has flipped the wrong way, or already sits through the entry close (so the trade would be stopped on its very first tick), the engine declines the setup and says so in the skip log.
+  <br><br>Note the limit of this rule: it only fires where the SuperTrend applies. A side configured with neither the SuperTrend nor the premium floor is <em>not</em> refused &mdash; it is entered unprotected and logged as such.
+</div>
+
+<h3>What is NOT here</h3>
+<p>There is <b>no profit target at all</b>, on either side. The trade runs until a stop trails into it or the 15:15 square-off. And deliberately absent, so nobody adds them back in later "helpfully": no VIX gate, no Open Interest filter, no ADX, no volume test, no EMA, no VWAP, no ATR sizing, no multi-timeframe bias, no extra confirmation candle, no breakeven jump, no partial booking, no re-entry after a stop, no expiry-day rule, no quality score.</p>
+
+<h2 id="refuse">8. The trades it refuses</h2>
+
+<p>Most of what an engine does is decline, and every refusal here names <em>which half</em> failed &mdash; a skip log that only says "no signal" teaches nothing. These are the branches in <code>getSignal()</code>, in the order it tests them:</p>
+
+<div class="card">
+  <ul style="margin:0;">
+    <li><b>Fewer than 20 closed candles</b> &mdash; warm-up. RSI(14) and SuperTrend(10) both need history.</li>
+    <li><b>The signal candle or the one before it has unusable OHLC</b> &mdash; refuses to decide rather than compute nonsense.</li>
+    <li><b>The series carries one bar per IST day</b> &mdash; someone handed daily candles to an intraday engine. Refused.</li>
+    <li><b>The bar closes before 09:30 or after 15:00</b>, or the daily trade budget is spent. The bar's <em>close</em> time is what is gated, so the 14:55 bar &mdash; closing at 15:00 &mdash; is still legal.</li>
+    <li><b>No usable prior daily bar</b> &mdash; there is no R1 or S1 to trade, so there is no trade. Never treated as zero.</li>
+    <li><b>RSI could not be computed</b>, or resolved to a non-number &mdash; refused rather than quoted stale.</li>
+    <li><b>The level broke but RSI did not agree</b> &mdash; "closed above R1 but RSI is not above 70". A breakout out of a range with no momentum behind it is precisely the breakout that fails.</li>
+    <li><b>RSI is past the threshold but there is no fresh cross</b> &mdash; price is already beyond the level. Entering here is chasing.</li>
+    <li><b>The SuperTrend is not on the right side of price</b> (CE at the defaults) &mdash; no initial stop can be placed, so the entry is declined rather than opened unprotected.</li>
+    <li><b>The SuperTrend already sits through the entry close</b> &mdash; the trade would be stopped on its first tick.</li>
+  </ul>
+</div>
+
+<h2 id="risk">9. Safety limits</h2>
+
+<div class="card">
+  <ul style="margin:0;">
+    <li><b>Max 5 trades a day.</b> The pivot levels are fixed all day, so only a handful of genuine crosses can honestly occur &mdash; a higher number would mean the rule is firing on noise.</li>
+    <li><b>Max &#8377;5,000 loss in a day</b>, then the day is over.</li>
+    <li><b>Weekly loss cap is off by default</b> (<code>0</code>). It reads the per-day log files, so it survives a restart.</li>
+    <li><b>Entries only between 09:30 and 15:00</b> (IST), gated on the bar's close time.</li>
+    <li><b>Everything is squared off at 15:15.</b> Nothing is carried overnight, ever.</li>
+    <li>The shared portfolio-wide cap applies on top of all of this &mdash; <code>bn_pivot_rsi_st</code> is registered in the portfolio-risk paper-mode list and draws on the <b>Zerodha</b> paper capital pool.</li>
+  </ul>
+</div>
+
+<div class="card warn">
+  <strong>Sizing is a NIFTY BANK lot, and it is a different number from NIFTY's.</strong> One lot is <code>BANKNIFTY_LOT_SIZE</code>, which ships at <b>30</b> (NSE's Nov-2024 revision). <code>getLotQty("BANKNIFTY")</code> returns 30 at the shipped defaults. Every &#8377;1 of premium movement is therefore &#8377;30 per lot &mdash; and the global <code>LOT_MULTIPLIER</code> is applied on top, clamped by <code>MAX_LOT_MULTIPLIER</code>. A NIFTY BANK lot and a NIFTY lot are not interchangeable units of size, so "one lot here" is <b>not</b> the same rupee exposure as "one lot" on the NIFTY sibling. Read the capital strip on the paper page rather than assuming the two match.
+</div>
+
+<h2 id="modes">10. Paper, Live &amp; Replay</h2>
+
+<div class="card">
+  <p style="margin:0 0 8px;"><b>Paper</b> (<code>/bn-pivot-rsi-st-paper</code>) is the canonical surface. Every decision, fill and exit rule lives there; the other modes follow it, never the reverse.</p>
+  <p style="margin:0 0 8px;"><b>Live</b> (<code>/bn-pivot-rsi-st-live</code>) does not re-implement anything &mdash; it <em>wraps</em> Paper through the shared live harness and forwards its decisions to the broker, so Live equals Paper by construction. There is no hand-written <code>*Live.js</code> for this strategy, on purpose.</p>
+  <p style="margin:0 0 8px;"><b>Backtest</b> (<code>/bn-pivot-rsi-st-backtest</code>) calls the same <code>getSignal()</code> and re-implements only Paper's exits. See the next section before reading any number it produces.</p>
+  <p style="margin:0 0 8px;"><b>Two brokers.</b> Candles and quotes come from <b>Fyers</b>, as everywhere in this app, but orders go to <b>Zerodha</b> &mdash; the same split the NIFTY sibling uses. That is why starting Live checks both logins, and it is why the crash-recovery snapshot is reconciled against the <em>Zerodha</em> book.</p>
+  <p style="margin:0;"><b>Crash recovery.</b> An open position is snapshotted to <code>.active_bn_pivot_rsi_st_position.json</code> under <code>~/trading-data/</code> and reconciled against the broker's book on the next boot. Both stops are recomputed from values the route already persists, so a recovered position resumes on exactly the same numbers.</p>
+</div>
+
+<div class="card bad">
+  <strong>Live orders are triple-gated, and by default nothing places one.</strong> A real order needs <b>all three</b>: <code>BN_PIVOT_RSI_ST_LIVE_ENABLED=true</code> <em>and</em> the global <code>LIVE_HARNESS_DRY_RUN=false</code> <em>and</em> <code>BN_PIVOT_RSI_ST_LIVE_DRY_RUN</code> not true &mdash; plus a logged-in Zerodha session. The shipped defaults leave <code>BN_PIVOT_RSI_ST_LIVE_ENABLED=false</code> and the global harness in dry-run, so the live page logs the broker call it <em>would</em> have made and sends nothing. Given that this strategy has never produced a single paper trade, leave it that way.
+</div>
+
+<div class="card">
+  <strong>Where things land on disk.</strong> All of it lives in <code>~/trading-data/</code>, outside the repo, so a deploy never wipes it.
+  <div class="table-wrap"><table style="margin-top:10px;">
+    <tr><th>What</th><th>Where</th></tr>
+    <tr><td>Paper sessions and trades</td><td><code>bn_pivot_rsi_st_paper_trades.json</code></td></tr>
+    <tr><td>Cumulative audit log</td><td><code>bn_pivot_rsi_st_paper_trades_log.jsonl</code></td></tr>
+    <tr><td>Per-day audit log (canonical export)</td><td><code>trades/bn_pivot_rsi_st_paper_trades_YYYY-MM-DD.jsonl</code></td></tr>
+    <tr><td>Skip log (why it did not trade)</td><td><code>skips/bn_pivot_rsi_st_paper_skips_YYYY-MM-DD.jsonl</code></td></tr>
+    <tr><td>Crash-recovery snapshot</td><td><code>.active_bn_pivot_rsi_st_position.json</code></td></tr>
+  </table></div>
+  <p style="margin:10px 0 0;">Live trades are deliberately <b>not</b> written to their own day file &mdash; the harness passes no live log key, which is how every harness-wrapped strategy in this repo behaves. Trade Logs shows paper only.</p>
+</div>
+
+<div class="card warn">
+  <strong>Replay needs a recorded session, and there are none.</strong> <code>/replay</code> reproduces a day tick-by-tick from <code>data/ticks/YYYY-MM-DD/</code>, which is how Paper and Live are proven to agree before a live gate is touched. No NIFTY BANK session has been recorded, so there is nothing to replay yet. Keep <code>TICK_RECORDER_ENABLED</code> on for any session you intend to check later.
+</div>
+
+<h2 id="backtest">11. The backtest, and why its rupees are not comparable</h2>
+
+<p>The backtest drives the <em>same</em> signal engine, so the entries are honest, and it is conservative about intra-bar order: the adverse stop is tested on the bar's extreme <em>before</em> anything favourable, a bar that opened beyond a level fills at the open rather than the better price, and the trail only advances on a bar close, matching Paper. It also fetches a separate daily series padded a week before the range, so the very first session still has a yesterday to compute R1/S1 from.</p>
+
+<div class="card bad">
+  <strong>But the rupees are simulated, and the defaults are the wrong shape for this instrument.</strong> There is no historical option chain in this repo, so the backtest never reads a premium &mdash; it <em>models</em> one from delta and theta and seeds it at a fixed number. Three defaults drive that model:
+  <div class="table-wrap"><table style="margin-top:10px;">
+    <tr><th>Key</th><th>Default</th><th>Why it is wrong here</th></tr>
+    <tr><td><code>BN_PIVOT_RSI_ST_BT_SEED_PREMIUM</code></td><td><code>180</code></td><td>A NIFTY-<em>weekly</em>-sized premium. The backtest route says so itself &mdash; it warns on the console that a BANKNIFTY monthly ATM premium is several times &#8377;180. Nobody here has measured the real number (the token is expired), but a &#8377;180 seed is certainly the wrong order of magnitude, so every &#8377; figure and the 25% floor are computed off a starting price the contract never had.</td></tr>
+    <tr><td><code>BACKTEST_THETA_DAY</code></td><td><code>8</code></td><td>Daily time decay in &#8377;, again a weekly-shaped number. A monthly contract decays far more slowly, so this over-charges the simulated position for holding.</td></tr>
+    <tr><td><code>BACKTEST_DELTA</code></td><td><code>0.55</code></td><td>How much premium moves per index point. Unverified for a 5-strike-OTM BANKNIFTY monthly.</td></tr>
+  </table></div>
+  <p style="margin:10px 0 0;"><b>Until those three are set for a BANKNIFTY monthly contract, backtest rupees here are not comparable to RSI Pivot ST's</b> &mdash; not "roughly comparable", not comparable at all, because the premium series they are computed from is a different instrument's. The backtest page prints a warning to the console when <code>BN_PIVOT_RSI_ST_BT_SEED_PREMIUM</code> is left unset for exactly this reason. And note what this does to the stop: the 25% floor is applied to the <em>model</em>, not to a quote, and on the PE side that floor is the <b>only</b> stop &mdash; so a PE backtest is largely a test of the premium model rather than of the market.</p>
+  <p style="margin:10px 0 0;">Slippage is charged separately: <code>BN_PIVOT_RSI_ST_BT_SLIPPAGE_PTS</code> ships at <code>2</code> points <em>each way</em>. Without it, option-buying backtests always flatter.</p>
+</div>
+
+<div class="card warn">
+  <strong>None of this has been run.</strong> No backtest has been executed against this engine &mdash; the caches hold no NIFTY BANK candles and the Fyers token is expired, so a history fetch returns zero bars. When you do run one, fix the three keys above first, and read the result as directional rather than as a P&amp;L you could have collected.
+</div>
+
+<h2 id="config">12. All the settings, explained</h2>
+
+<p class="muted">Every key below is generated from the Settings schema in <code>src/routes/settings.js</code> &mdash; the label, the default and the description are the ones the app actually ships, not a hand-written copy. The strategy's own keys live in <b>Settings &rarr; BN PIVOT RSI ST</b>.</p>
+
+
+<h3>Mode &amp; Live</h3>
+<div class="table-wrap"><table>
+  <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>BN_PIVOT_RSI_ST_PAPER_ENABLED</code></td><td><code>true</code></td><td>Allow new BN Pivot RSI ST paper sessions.</td></tr>
+  <tr><td><code>BN_PIVOT_RSI_ST_LIVE_ENABLED</code></td><td><code>false</code></td><td>Enable live orders via Zerodha. NEVER traded — paper-validate first.</td></tr>
+  <tr><td><code>BN_PIVOT_RSI_ST_LIVE_DRY_RUN</code></td><td><code>false</code></td><td>Keep it simulated even when live is on — the broker call is logged but no real order is sent.</td></tr>
+</table></div>
+
+<h3>Signal (RSI + Pivot cross)</h3>
+<div class="table-wrap"><table>
+  <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>BN_PIVOT_RSI_ST_RESOLUTION</code></td><td><code>5</code></td><td>Which candle decides. Entries are taken only on a CLOSED candle of this size — 5-min is the rule as written.</td></tr>
+  <tr><td><code>BN_PIVOT_RSI_ST_RSI_PERIOD</code></td><td><code>14</code></td><td>How many candles the RSI is measured over. 14 is the standard setting and what the rule assumes.</td></tr>
+  <tr><td><code>BN_PIVOT_RSI_ST_RSI_CE_MIN</code></td><td><code>70</code></td><td>A CE (call) is only bought when RSI on the signal candle is above this — momentum must already be strong. Raise it for fewer, stronger buys.</td></tr>
+  <tr><td><code>BN_PIVOT_RSI_ST_RSI_PE_MAX</code></td><td><code>40</code></td><td>A PE (put) is only bought when RSI on the signal candle is below this — selling must already be strong. Lower it for fewer, stronger sells.</td></tr>
+  <tr><td><code>BN_PIVOT_RSI_ST_PIVOT_BUFFER_PTS</code></td><td><code>0</code></td><td>How far past R1 (or S1) the candle must close before it counts as a break. 0 = a close just beyond the level is enough. Raise it to ignore candles that only tickle the line.</td></tr>
+</table></div>
+
+<h3>Session window</h3>
+<div class="table-wrap"><table>
+  <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>BN_PIVOT_RSI_ST_SESSION_START</code></td><td><code>09:15</code></td><td>When the strategy starts watching candles for the day (IST).</td></tr>
+  <tr><td><code>BN_PIVOT_RSI_ST_ENTRY_START</code></td><td><code>09:30</code></td><td>No entries before this (IST). The first candles of the day are noisy and often break a pivot for no reason.</td></tr>
+  <tr><td><code>BN_PIVOT_RSI_ST_ENTRY_END</code></td><td><code>15:00</code></td><td>No new entries after this time (IST) — too late in the day for a fresh trade to work out.</td></tr>
+  <tr><td><code>BN_PIVOT_RSI_ST_EXIT_TIME</code></td><td><code>15:15</code></td><td>Everything still open is closed at this time (IST). Nothing is carried overnight.</td></tr>
+</table></div>
+
+<h3>Strike</h3>
+<div class="table-wrap"><table>
+  <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>BN_PIVOT_RSI_ST_STRIKE_MODE</code></td><td><code>OTM</code></td><td>Which strike to buy. ATM = nearest to spot. OTM = 1% of spot away from the money (cheaper, needs a bigger move). ITM = 1% into the money (costlier, moves more with spot).</td></tr>
+  <tr><td><code>BN_PIVOT_RSI_ST_STRIKE_PCT</code></td><td><code>1</code></td><td>How far from spot the ITM/OTM strike sits, as a percentage. 1% of a 54000 NIFTY BANK is 540 points, rounded to the nearest 100-point strike. Ignored when the mode is ATM.</td></tr>
+</table></div>
+
+<h3>Stops</h3>
+<div class="table-wrap"><table>
+  <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>BN_PIVOT_RSI_ST_ST_PERIOD</code></td><td><code>10</code></td><td>ATR length behind the SuperTrend line used as the CE stop. Longer = a slower, looser trail.</td></tr>
+  <tr><td><code>BN_PIVOT_RSI_ST_ST_MULT</code></td><td><code>2</code></td><td>How many ATRs below price the SuperTrend line sits. Smaller = a tighter stop that gets hit more often; larger = more room and bigger losses.</td></tr>
+  <tr><td><code>BN_PIVOT_RSI_ST_ST_SIDES</code></td><td><code>CE</code></td><td>Which side uses the SuperTrend line as its stop and trail, on top of the premium stop. CE is the original rule. On PE the line is mirrored: it sits ABOVE price and a flip to bullish is the exit. A side that uses it also gains the "SuperTrend must be on the right side of price" entry check, so it takes FEWER trades; a side without it relies on the premium stop alone.</td></tr>
+  <tr><td><code>BN_PIVOT_RSI_ST_PREMIUM_SL_PCT</code></td><td><code>25</code></td><td>Exit when the option price falls this far below its best price so far. 25 means: bought at 100, exit at 75; if it runs to 140, the exit rises to 105. Which sides use it is set by the toggle below.</td></tr>
+  <tr><td><code>BN_PIVOT_RSI_ST_PREMIUM_SL_SIDES</code></td><td><code>BOTH</code></td><td>Which side carries the premium stop. WARNING: PE has no other stop — it never uses the SuperTrend — so choosing "CE only" or "Neither" leaves every PE trade with NO stop at all, and the 15:15 square-off becomes its only exit. The same is true for CE if you also switch the SuperTrend stop off above. The engine still takes those trades but warns loudly in the log.</td></tr>
+</table></div>
+
+<h3>Sizing &amp; Day Breakers</h3>
+<div class="table-wrap"><table>
+  <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>BN_PIVOT_RSI_ST_LOT_MULTIPLIER</code></td><td><code>0</code></td><td>Lots per trade. 0 = use the global LOT_MULTIPLIER, which is the default.</td></tr>
+  <tr><td><code>BN_PIVOT_RSI_ST_MAX_TRADES</code></td><td><code>5</code></td><td>Max entries per day. The pivot levels are fixed all day, so a handful of crosses is all this rule can honestly produce.</td></tr>
+  <tr><td><code>BN_PIVOT_RSI_ST_MAX_DAILY_LOSS</code></td><td><code>5000</code></td><td>Stop trading for the day after this much loss (0 = off).</td></tr>
+  <tr><td><code>BN_PIVOT_RSI_ST_MAX_WEEKLY_LOSS</code></td><td><code>0</code></td><td>Stop trading for the rest of the week after this much loss across Mon–today (0 = off). Read from the day files, so it survives a restart.</td></tr>
+</table></div>
+
+<h3>Backtest</h3>
+<div class="table-wrap"><table>
+  <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>BN_PIVOT_RSI_ST_BT_SLIPPAGE_PTS</code></td><td><code>2</code></td><td>Backtest cost per side, in points. Without this, option-buying backtests always flatter.</td></tr>
+  <tr><td><code>BN_PIVOT_RSI_ST_BT_SEED_PREMIUM</code></td><td><code>180</code></td><td>Starting option price the backtest assumes, since there is no historical option chain. The 25% stop is measured against this simulated premium, so it is the weakest number in any backtest result.</td></tr>
+</table></div>
+
+<h3>Shared NIFTY BANK settings (Settings &rarr; Instrument &amp; Backtest)</h3>
+<p>These are <em>not</em> in the strategy's section, because they describe the index rather than the strategy &mdash; every present and future NIFTY BANK engine reads the same block. Two of them are why this strategy behaves differently from its NIFTY sibling.</p>
+
+<div class="table-wrap"><table>
+  <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>BANKNIFTY_STRIKE_STEP</code></td><td><code>100</code></td><td>The strike grid this index is listed on. NIFTY BANK strikes exist every 100 points, so the ATM strike is spot rounded to the nearest 100. Change it only if NSE changes the grid.</td></tr>
+  <tr><td><code>BANKNIFTY_LOT_SIZE</code></td><td><code>30</code></td><td>Quantity per NIFTY BANK lot — 30 since NSE's Nov-2024 revision.</td></tr>
+  <tr><td><code>BANKNIFTY_STRIKE_OFFSET_CE</code></td><td><code>0</code></td><td>CE strike vs ATM, in points on the 100-point grid (-100=ITM, 0=ATM, +100=OTM).</td></tr>
+  <tr><td><code>BANKNIFTY_STRIKE_OFFSET_PE</code></td><td><code>0</code></td><td>PE strike vs ATM, in points on the 100-point grid (+100=ITM, 0=ATM, -100=OTM).</td></tr>
+  <tr><td><code>BANKNIFTY_WEEKLY_EXPIRY_ENABLED</code></td><td><code>false</code></td><td>OFF, and it must stay off: NSE WITHDREW BANKNIFTY weekly options in November 2024, so every NIFTY BANK contract is the MONTHLY one. This toggle exists only for the day NSE changes its mind — switching it on lets the engine build weekly (YYMDD) symbols again, and until that day those symbols simply do not exist, so every entry would be refused.</td></tr>
+  <tr><td><code>BANKNIFTY_OPTION_EXPIRY_TYPE</code></td><td><code>monthly</code></td><td>Monthly is the only real answer today — NSE WITHDREW BANKNIFTY weekly options in November 2024, so there is no weekly NIFTY BANK contract to name. Weekly is honoured only if the Weekly Expiries Exist toggle above is switched on, which is there purely for the day NSE reverses that decision.</td></tr>
+  <tr><td><code>BANKNIFTY_OPTION_EXPIRY_OVERRIDE</code></td><td>&mdash;</td><td>Manual NIFTY BANK expiry (YYYY-MM-DD) for every NIFTY BANK strategy. Blank = auto-detect, which is normally what you want. A date that has already passed BLOCKS NIFTY BANK entries rather than quietly trading a different expiry.</td></tr>
+  <tr><td><code>BANKNIFTY_SPOT_FALLBACK</code></td><td><code>54000</code></td><td>Fallback NIFTY BANK price when no live quote is available.</td></tr>
+  <tr><td><code>BANKNIFTY_FUTURES_MARGIN_PCT</code></td><td><code>11</code></td><td>SPAN+exposure margin as % of notional, used to size the capital pool when the Trade Type is futures. Advisory only — never blocks a trade.</td></tr>
+</table></div>
+
+<h3>Menu visibility &amp; Telegram alerts</h3>
+
+<div class="table-wrap"><table>
+  <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>BN_PIVOT_RSI_ST_MODE_ENABLED</code></td><td><code>true</code></td><td>Show the BN Pivot RSI ST menu and settings. This is the NIFTY BANK replica of RSI Pivot ST.</td></tr>
+  <tr><td><code>UI_SHOW_BANKNIFTY</code></td><td><code>true</code></td><td>Show the BANK NIFTY parent group in the sidebar. The NIFTY BANK strategies nest under it, the way the NIFTY strategies nest under NIFTY.</td></tr>
+  <tr><td><code>UI_SHOW_BN_PIVOT_RSI_ST_BACKTEST</code></td><td><code>true</code></td><td>Show Backtest under BN Pivot RSI ST.</td></tr>
+  <tr><td><code>UI_SHOW_BN_PIVOT_RSI_ST_PAPER</code></td><td><code>true</code></td><td>Show Paper under BN Pivot RSI ST.</td></tr>
+  <tr><td><code>UI_SHOW_BN_PIVOT_RSI_ST_LIVE</code></td><td><code>true</code></td><td>Show Live under BN Pivot RSI ST.</td></tr>
+  <tr><td><code>UI_SHOW_BN_PIVOT_RSI_ST_HISTORY</code></td><td><code>true</code></td><td>Show History under BN Pivot RSI ST.</td></tr>
+  <tr><td><code>TG_BN_PIVOT_RSI_ST_STARTED</code></td><td><code>true</code></td><td>Alert when a BN Pivot RSI ST session starts.</td></tr>
+  <tr><td><code>TG_BN_PIVOT_RSI_ST_ENTRY</code></td><td><code>true</code></td><td>Alert on every BN Pivot RSI ST entry.</td></tr>
+  <tr><td><code>TG_BN_PIVOT_RSI_ST_EXIT</code></td><td><code>true</code></td><td>Alert on every BN Pivot RSI ST exit.</td></tr>
+  <tr><td><code>TG_BN_PIVOT_RSI_ST_DAYREPORT</code></td><td><code>true</code></td><td>Send a BN Pivot RSI ST day summary on stop.</td></tr>
+</table></div>
+
+<h3>Read from <code>.env</code> only &mdash; not exposed in the Settings UI</h3>
+<p>These three are read by the code but have no field in the Settings schema, so they can only be changed in <code>.env</code>. The defaults below are the fallbacks in the source, and the same three are equally absent from the NIFTY sibling's schema.</p>
+
+<div class="table-wrap"><table>
+  <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>BN_PIVOT_RSI_ST_POLL_MS</code></td><td><code>2000</code></td><td>How often the option price is re-read while a trade is open. This is what the premium floor is measured against, so a slower poll means a later exit.</td></tr>
+  <tr><td><code>BN_PIVOT_RSI_ST_HISTORY_LAG_MS</code></td><td><code>5000</code></td><td>How long to wait after a candle closes before asking Fyers for it. Asking too early often returns the bar one short, which would delay every decision by a whole candle.</td></tr>
+  <tr><td><code>BN_PIVOT_RSI_ST_ST_CE_ENABLED</code></td><td><code>true</code></td><td>Legacy CE SuperTrend on/off flag, kept so an existing <code>.env</code> keeps behaving as it did. It is consulted <em>only</em> when <code>BN_PIVOT_RSI_ST_ST_SIDES</code> is absent; the selector wins whenever it is set.</td></tr>
+</table></div>
+
+<h2 id="missing">13. What's still missing / not validated</h2>
+
+<div class="card bad">
+  <strong>Be honest with yourself about what you are looking at.</strong>
+  <ul style="margin:10px 0 0;">
+    <li><b>It has never traded. Not once.</b> Zero paper sessions, zero live orders, zero backtests. There is no win rate, no profit factor, no trade count and no drawdown figure on this page because there are no trades.</li>
+    <li><b>There is no market data to look at either.</b> The Fyers token is expired, so every history fetch returns zero candles and every chart renders blank &mdash; that looks like a code bug and is not one. The backtest and candle caches hold no NIFTY BANK bars, and no session has been tick-recorded.</li>
+    <li><b>No threshold here has been fitted or backtested</b> &mdash; on NIFTY <em>or</em> on NIFTY BANK. RSI 70 and 40, SuperTrend 10 and 2, the 25% floor, 1% OTM, five trades a day: every one is inherited from the NIFTY sibling, where it was also never validated. Inheriting an unvalidated number does not make it more likely to be right.</li>
+    <li><b>The transplant itself is the untested claim.</b> The rules work on NIFTY BANK by construction, but whether a rule set designed around NIFTY's volatility and a weekly option behaves the same way on an index that moves twice as far, on a monthly contract, is exactly the question nobody here has answered.</li>
+    <li><b>The premium floor is looser here and nothing offsets it.</b> Stated once more because it is the single most consequential difference: 25% of a slow-decaying monthly premium is a bigger adverse index move than 25% of a weekly. On the PE side it is the only stop there is.</li>
+    <li><b>Backtest rupees are simulated and mis-seeded.</b> &#8377;180 seed, &#8377;8/day theta and 0.55 delta are all NIFTY-weekly numbers. Fix them before quoting any &#8377; figure, and never compare an unfixed run against the NIFTY sibling's.</li>
+    <li><b>What to do next.</b> Run paper sessions with the tick recorder on. Diff them against <code>/replay</code> to confirm Paper and Live agree on a recorded day. Only then consider touching a live gate &mdash; and even then, remember that trades produced before any bug fix were produced by different code.</li>
+  </ul>
+</div>
+
+<p class="muted" style="margin-top:30px;">Engine: <code>src/strategies/bn_pivot_rsi_st.js</code> &nbsp;&middot;&nbsp; canonical route: <code>src/routes/bnPivotRsiStPaper.js</code> &nbsp;&middot;&nbsp; backtest: <code>src/routes/bnPivotRsiStBacktest.js</code> &nbsp;&middot;&nbsp; live harness: <code>src/routes/bnPivotRsiStLiveHarness.js</code>. Sibling guide: <a href="/docs/file/RSI_PIVOT_ST_Strategy_Guide.html">RSI Pivot ST</a>.</p>
+
+</div>
+
+<!-- The shared TVChart kit is carried here verbatim, in step with every other
+     guide, even though this guide draws no chart yet: there is no NIFTY BANK
+     data to plot (see "No market data yet" at the top). The day a recorded
+     session or a cached candle series exists, a chart can be added without
+     touching anything else. -->
+<script>
+/* ============================================================================
+ * TVChart v3 — dependency-free TradingView-style candlestick renderer.
+ * v2 features: OHLC header, subtitle, bottom time axis, last-price tag/line.
+ * v3 adds:   hlines (labelled price levels), shades (vertical highlight spans),
+ *            pane (RSI / volume / line sub-panel under the price chart).
+ * Pure buildSVG(spec) -> string (no DOM), never throws on bad data.
+ * Backward-compatible with every v1/v2 spec.
+ * ==========================================================================*/
+(function (global) {
+  "use strict";
+  function isNum(x) { return typeof x === "number" && isFinite(x); }
+  function esc(s) { return String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+  function fmt(v) { return isNum(v) ? v.toFixed(2).replace(/\.00$/,"") : "—"; }
+
+  function priceRange(spec) {
+    var lo = Infinity, hi = -Infinity;
+    function eat(v){ if(isNum(v)){ if(v>hi)hi=v; if(v<lo)lo=v; } }
+    (spec.candles||[]).forEach(function(c){ eat(c[1]); eat(c[2]); });
+    (spec.overlays||[]).forEach(function(o){ (o.data||[]).forEach(eat); });
+    (spec.bands||[]).forEach(function(b){ (b.upper||[]).forEach(eat); (b.lower||[]).forEach(eat); (b.mid||[]).forEach(eat); });
+    (spec.markers||[]).forEach(function(m){ if(isNum(m.price)) eat(m.price); });
+    (spec.hlines||[]).forEach(function(h){ eat(h.price); });
+    (spec.zones||[]).forEach(function(z){ eat(z.top); eat(z.bottom); });
+    if(!isFinite(lo)||!isFinite(hi)){ lo=0; hi=1; }
+    if(lo===hi){ lo-=1; hi+=1; }
+    var pad=(hi-lo)*0.10; return { lo:lo-pad, hi:hi+pad };
+  }
+
+  // Build a path that starts a fresh subpath after every gap. Indicator series
+  // are null until they have enough history (EMA/BB/RSI warm-up), and a path
+  // that opens with "L" is invalid — that used to drop the whole line.
+  function linePath(data, X, Y) {
+    var d = "", pen = false;
+    for (var i=0;i<data.length;i++){
+      if(!isNum(data[i])){ pen = false; continue; }
+      d += (pen ? "L" : "M") + X(i) + " " + Y(data[i]) + " "; pen = true;
+    }
+    return d;
+  }
+
+  function buildSVG(spec) {
+    spec = spec||{};
+    var candles = spec.candles||[]; var n = candles.length;
+    if(!n) return '<div class="tv-empty">chart data unavailable</div>';
+
+    var pane = null;
+    if (spec.pane && spec.pane.data && spec.pane.data.length) pane = spec.pane;
+    var paneH  = pane ? (isNum(pane.height) ? pane.height : 92) : 0;
+    var paneGap = pane ? 12 : 0;
+
+    var W=880, padL=6, padR=74, padT=52, padB=40, plotH=348;
+    var H = padT + plotH + paneGap + paneH + padB;
+    var rng=priceRange(spec); var plotW=W-padL-padR;
+    var slot=plotW/n; var cw=Math.max(2,Math.min(20,slot*0.66)); var wickW=Math.max(0.8,cw*0.12);
+    var up="#26a69a",down="#ef5350",grid="#1b2636",axis="#5a7499",txt="#e8eef8",mut="#8b98ac";
+    var plotBot = padT+plotH;
+    var paneTop = plotBot+paneGap, paneBot = paneTop+paneH;
+    var axisBot = pane ? paneBot : plotBot;
+    function X(i){ return padL+slot*(i+0.5); }
+    function Y(p){ return padT+(rng.hi-p)/(rng.hi-rng.lo)*plotH; }
+    var out=[];
+    out.push('<svg viewBox="0 0 '+W+' '+H+'" class="tv-svg" role="img" aria-label="'+esc(spec.title||"price chart")+'" preserveAspectRatio="xMidYMid meet">');
+    out.push('<rect x="0" y="0" width="'+W+'" height="'+H+'" fill="#0d1421"/>');
+
+    // horizontal price grid + right-side labels
+    for(var g=0;g<=4;g++){ var gp=rng.hi-(rng.hi-rng.lo)*(g/4); var gy=Y(gp);
+      out.push('<line x1="'+padL+'" y1="'+gy+'" x2="'+(W-padR)+'" y2="'+gy+'" stroke="'+grid+'" stroke-width="1"/>');
+      out.push('<text x="'+(W-padR+6)+'" y="'+(gy+3.5)+'" fill="'+axis+'" font-size="10.5" font-family="monospace">'+gp.toFixed(0)+'</text>'); }
+
+    // vertical time grid + bottom axis labels (every ~1/7 of the candles)
+    var times = spec.times || [];
+    var step = Math.max(1, Math.round(n/7));
+    for(var t=0;t<n;t+=step){ var tx=X(t);
+      out.push('<line x1="'+tx+'" y1="'+padT+'" x2="'+tx+'" y2="'+axisBot+'" stroke="'+grid+'" stroke-width="0.7" opacity="0.5"/>');
+      if(times[t]) out.push('<text x="'+tx+'" y="'+(axisBot+15)+'" fill="'+axis+'" font-size="10" text-anchor="middle" font-family="system-ui">'+esc(times[t])+'</text>'); }
+
+    // vertical highlight spans (e.g. "position held", "no-trade window")
+    (spec.shades||[]).forEach(function(s){ if(!isNum(s.from)||!isNum(s.to)) return;
+      var sx=X(s.from)-slot/2, sw=Math.max(1,X(s.to)-X(s.from)+slot);
+      out.push('<rect x="'+sx+'" y="'+padT+'" width="'+sw+'" height="'+plotH+'" fill="'+(s.color||"rgba(96,165,250,0.07)")+'"/>');
+      if(s.label){ var sly = s.labelBottom ? (padT+plotH-7) : (padT+13);
+        out.push('<text x="'+(sx+sw/2)+'" y="'+sly+'" fill="'+(s.text||"#7c93b5")+'" font-size="10" text-anchor="middle" font-family="system-ui">'+esc(s.label)+'</text>'); } });
+
+    // zones (e.g. ORB opening-range box)
+    (spec.zones||[]).forEach(function(z){ if(!isNum(z.from)||!isNum(z.to)) return;
+      var zx=X(z.from)-cw/2, zw=X(z.to)-X(z.from)+cw; var zTop=Y(isNum(z.top)?z.top:rng.hi), zBot=Y(isNum(z.bottom)?z.bottom:rng.lo);
+      out.push('<rect x="'+zx+'" y="'+zTop+'" width="'+zw+'" height="'+(zBot-zTop)+'" fill="'+(z.color||"rgba(96,165,250,0.10)")+'" stroke="'+(z.stroke||"rgba(96,165,250,0.5)")+'" stroke-dasharray="4 3" stroke-width="1"/>');
+      if(z.label) out.push('<text x="'+(zx+4)+'" y="'+(zTop-4)+'" fill="'+(z.stroke||"#60a5fa")+'" font-size="10.5" font-weight="600">'+esc(z.label)+'</text>'); });
+
+    // band envelopes (VWAP band / Bollinger)
+    (spec.bands||[]).forEach(function(b){ var u=b.upper||[], l=b.lower||[];
+      if(u.length&&l.length){ var pts=[]; for(var i=0;i<u.length;i++) if(isNum(u[i])) pts.push(X(i)+","+Y(u[i]));
+        for(var j=l.length-1;j>=0;j--) if(isNum(l[j])) pts.push(X(j)+","+Y(l[j]));
+        out.push('<polygon points="'+pts.join(" ")+'" fill="'+(b.fill||"rgba(120,144,200,0.08)")+'"/>');
+        [u,l].forEach(function(line){
+          out.push('<path d="'+linePath(line,X,Y)+'" fill="none" stroke="'+(b.color||"#a78bfa")+'" stroke-width="1.3" opacity="0.85"/>'); }); }
+      if(b.mid){
+        out.push('<path d="'+linePath(b.mid,X,Y)+'" fill="none" stroke="'+(b.color||"#a78bfa")+'" stroke-width="1" stroke-dasharray="2 3" opacity="0.7"/>'); } });
+
+    // labelled horizontal price levels (stop / target / neckline / OR high-low)
+    (spec.hlines||[]).forEach(function(hl){ if(!isNum(hl.price)) return;
+      var hy=Y(hl.price), hc=hl.color||"#fbbf24";
+      out.push('<line x1="'+padL+'" y1="'+hy+'" x2="'+(W-padR)+'" y2="'+hy+'" stroke="'+hc+'" stroke-width="'+(hl.width||1.2)+'" '+(hl.solid?"":'stroke-dasharray="6 4" ')+'opacity="0.9"/>');
+      out.push('<rect x="'+(W-padR)+'" y="'+(hy-8)+'" width="'+padR+'" height="16" fill="'+hc+'" opacity="0.92"/>');
+      out.push('<text x="'+(W-padR+5)+'" y="'+(hy+3.5)+'" fill="#0d1421" font-size="10" font-weight="700" font-family="monospace">'+hl.price.toFixed(0)+'</text>');
+      if(hl.label){ var lw=hl.label.length*5.9+10;
+        // labelAt (0..1) slides the tag along the line so it can dodge markers
+        var lx1=padL+3+(isNum(hl.labelAt)?hl.labelAt:0)*(W-padR-padL-lw-6);
+        lx1=Math.max(padL+3,Math.min(lx1,W-padR-lw-3));
+        out.push('<rect x="'+lx1+'" y="'+(hy-15)+'" width="'+lw+'" height="14" rx="3" fill="'+hc+'" opacity="0.92"/>');
+        out.push('<text x="'+(lx1+5)+'" y="'+(hy-4.5)+'" fill="#0d1421" font-size="9.8" font-weight="700" font-family="system-ui">'+esc(hl.label)+'</text>'); } });
+
+    // candlesticks
+    candles.forEach(function(c,i){ if(!c||!isNum(c[0])||!isNum(c[3])) return;
+      var o=c[0],h=c[1],lw=c[2],cl=c[3]; var col=cl>=o?up:down, cx=X(i);
+      if(isNum(h)&&isNum(lw)) out.push('<rect x="'+(cx-wickW/2)+'" y="'+Y(h)+'" width="'+wickW+'" height="'+Math.max(0.5,Y(lw)-Y(h))+'" fill="'+col+'"/>');
+      var yo=Y(o),yc=Y(cl),top=Math.min(yo,yc),bh=Math.max(1,Math.abs(yc-yo));
+      out.push('<rect x="'+(cx-cw/2)+'" y="'+top+'" width="'+cw+'" height="'+bh+'" fill="'+col+'"/>'); });
+
+    // overlay indicator lines (EMA / VWAP / MAs)
+    (spec.overlays||[]).forEach(function(ov){
+      out.push('<path d="'+linePath(ov.data||[],X,Y)+'" fill="none" stroke="'+(ov.color||"#fbbf24")+'" stroke-width="'+(ov.width||1.6)+'" '+(ov.dash?'stroke-dasharray="5 3" ':"")+'opacity="0.95"/>'); });
+
+    // last-price dashed line + right-axis tag (TradingView style)
+    if(spec.lastPriceTag !== false){ var last=candles[n-1]; if(last&&isNum(last[3])){ var lp=last[3], ly=Y(lp);
+      var lcol=(isNum(last[0])&&lp>=last[0])?up:down;
+      out.push('<line x1="'+padL+'" y1="'+ly+'" x2="'+(W-padR)+'" y2="'+ly+'" stroke="'+lcol+'" stroke-width="0.8" stroke-dasharray="2 2" opacity="0.7"/>');
+      out.push('<rect x="'+(W-padR)+'" y="'+(ly-8)+'" width="'+padR+'" height="16" fill="'+lcol+'"/>');
+      out.push('<text x="'+(W-padR+6)+'" y="'+(ly+3.5)+'" fill="#0d1421" font-size="10.5" font-weight="700" font-family="monospace">'+lp.toFixed(2)+'</text>'); } }
+
+    // markers (buy / exit / dot)
+    (spec.markers||[]).forEach(function(m){ if(!isNum(m.i)) return; var mx=X(m.i);
+      var my=isNum(m.price)?Y(m.price):(m.type==="buy"?plotBot-14:padT+14);
+      var isBuy=m.type==="buy", isExit=m.type==="exit"; var col=m.color||(isBuy?"#26a69a":isExit?"#ef5350":"#fbbf24");
+      if(isBuy||isExit){ var ay=isBuy?my+18:my-18, tri=isBuy?(mx-6)+","+ay+" "+(mx+6)+","+ay+" "+mx+","+(ay-10):(mx-6)+","+ay+" "+(mx+6)+","+ay+" "+mx+","+(ay+10);
+        out.push('<polygon points="'+tri+'" fill="'+col+'"/>'); }
+      else out.push('<circle cx="'+mx+'" cy="'+my+'" r="3.5" fill="'+col+'" stroke="#0d1421" stroke-width="1"/>');
+      if(m.text){ var lblY=isBuy?my+34:(isExit?my-26:my-10); var tw=m.text.length*6.2+10;
+        var lx0=Math.max(padL+1,Math.min(mx-tw/2,W-padR-tw-1));
+        out.push('<rect x="'+lx0+'" y="'+(lblY-11)+'" width="'+tw+'" height="15" rx="3" fill="'+col+'" opacity="0.94"/>');
+        out.push('<text x="'+(lx0+tw/2)+'" y="'+lblY+'" fill="#0d1421" font-size="10.5" font-weight="700" text-anchor="middle" font-family="system-ui">'+esc(m.text)+'</text>'); } });
+
+    // ── sub-panel: RSI / volume / any line series ─────────────────────────
+    if(pane){
+      var pd=pane.data||[], pType=pane.type||"line";
+      var plo=Infinity, phi=-Infinity;
+      pd.forEach(function(v){ if(isNum(v)){ if(v>phi)phi=v; if(v<plo)plo=v; } });
+      if(pType==="rsi"){ plo=0; phi=100; }
+      if(pType==="volume"){ plo=0; }
+      if(isNum(pane.min)) plo=pane.min;
+      if(isNum(pane.max)) phi=pane.max;
+      if(!isFinite(plo)||!isFinite(phi)){ plo=0; phi=1; }
+      if(plo===phi){ plo-=1; phi+=1; }
+      var pPad=(pType==="rsi"||pType==="volume")?0:(phi-plo)*0.12;
+      var pLo=plo-pPad, pHi=phi+pPad;
+      function PY(v){ return paneTop+(pHi-v)/(pHi-pLo)*paneH; }
+      out.push('<rect x="'+padL+'" y="'+paneTop+'" width="'+(W-padR-padL)+'" height="'+paneH+'" fill="#0b111c"/>');
+      out.push('<line x1="'+padL+'" y1="'+paneTop+'" x2="'+(W-padR)+'" y2="'+paneTop+'" stroke="'+grid+'" stroke-width="1"/>');
+
+      // guide levels inside the pane (e.g. RSI 70 / 40)
+      (pane.levels||[]).forEach(function(lv){ var v=isNum(lv)?lv:lv.value; if(!isNum(v)) return;
+        var c=(lv&&lv.color)||"#3f5570", ly2=PY(v);
+        out.push('<line x1="'+padL+'" y1="'+ly2+'" x2="'+(W-padR)+'" y2="'+ly2+'" stroke="'+c+'" stroke-width="1" stroke-dasharray="4 3" opacity="0.8"/>');
+        out.push('<text x="'+(W-padR+6)+'" y="'+(ly2+3.5)+'" fill="'+c+'" font-size="10" font-family="monospace">'+v+'</text>'); });
+
+      if(pType==="volume"){
+        var bw=Math.max(1.5,slot*0.6);
+        pd.forEach(function(v,i){ if(!isNum(v)) return; var c2=candles[i];
+          var col2=(c2&&isNum(c2[0])&&isNum(c2[3])&&c2[3]>=c2[0])?"rgba(38,166,154,0.55)":"rgba(239,83,80,0.55)";
+          if(pane.colors&&pane.colors[i]) col2=pane.colors[i];
+          var by=PY(v); out.push('<rect x="'+(X(i)-bw/2)+'" y="'+by+'" width="'+bw+'" height="'+Math.max(0.5,paneBot-by)+'" fill="'+col2+'"/>'); });
+      } else {
+        out.push('<path d="'+linePath(pd,X,PY)+'" fill="none" stroke="'+(pane.color||"#c084fc")+'" stroke-width="1.6"/>');
+      }
+      (pane.markers||[]).forEach(function(m){ if(!isNum(m.i)||!isNum(m.value)) return;
+        out.push('<circle cx="'+X(m.i)+'" cy="'+PY(m.value)+'" r="3.2" fill="'+(m.color||"#fbbf24")+'" stroke="#0b111c" stroke-width="1"/>'); });
+      if(pane.label) out.push('<text x="'+(padL+5)+'" y="'+(paneTop+13)+'" fill="'+mut+'" font-size="10.5" font-weight="600" font-family="system-ui">'+esc(pane.label)+'</text>');
+    }
+
+    // header: title, subtitle, and OHLC readout (TradingView top-left)
+    out.push('<text x="'+padL+'" y="17" fill="'+txt+'" font-size="13" font-weight="700" font-family="system-ui">'+esc(spec.title||"")+'</text>');
+    if(spec.subtitle) out.push('<text x="'+padL+'" y="32" fill="'+mut+'" font-size="10.5" font-family="system-ui">'+esc(spec.subtitle)+'</text>');
+    if(spec.ohlc !== false){ var f=candles[n-1]; if(f){ var oc=(isNum(f[0])&&isNum(f[3])&&f[3]>=f[0])?up:down;
+      var parts=[["O",f[0]],["H",f[1]],["L",f[2]],["C",f[3]]], hy2=spec.subtitle?46:32;
+      var lx=padL;
+      parts.forEach(function(p){ out.push('<text x="'+lx+'" y="'+hy2+'" font-size="10.5" font-family="monospace" fill="'+mut+'">'+p[0]+'</text>');
+        lx+=11; out.push('<text x="'+lx+'" y="'+hy2+'" font-size="10.5" font-family="monospace" fill="'+oc+'">'+fmt(p[1])+'</text>'); lx+=(fmt(p[1]).length*6.4)+10; }); } }
+
+    // legend (bottom-left, above time axis)
+    var lgx=padL, lgy=H-4;
+    (spec.legend||[]).forEach(function(lg){ out.push('<rect x="'+lgx+'" y="'+(lgy-8)+'" width="14" height="3" rx="1.5" fill="'+(lg.color||"#fbbf24")+'"/>');
+      out.push('<text x="'+(lgx+18)+'" y="'+(lgy-4)+'" fill="'+axis+'" font-size="10" font-family="system-ui">'+esc(lg.label)+'</text>');
+      lgx+=22+lg.label.length*6.1; });
+
+    out.push("</svg>"); return out.join("");
+  }
+
+  var TVChart = { buildSVG: buildSVG, render: function(elId, spec){ try { var el=document.getElementById(elId); if(!el) return; el.innerHTML=buildSVG(spec); } catch(e){} } };
+  global.TVChart = TVChart;
+})(window);
+</script>
+
+</body>
+</html>

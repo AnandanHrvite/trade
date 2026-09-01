@@ -32,6 +32,7 @@ const GUIDE_MODE_BY_FILE = {
   "trend_day_scalp_strategy_guide.html": "TDS",
   "ha_scalp_strategy_guide.html": "HA_SCALP",
   "rsi_pivot_st_strategy_guide.html": "RSI_PIVOT_ST",
+  "bn_pivot_rsi_st_strategy_guide.html": "BN_PIVOT_RSI_ST",
   "simple930_strategy_guide.html":    "SIMPLE930",
   "earlybird_strategy_guide.html":    "EARLYBIRD",
 };
@@ -858,6 +859,30 @@ const GUIDE_STATUS = {
     { type: "value", label: "SuperTrend Stop applies to", key: "RSI_PIVOT_ST_ST_SIDES", def: "CE", warnOn: ["NONE"] },
     { type: "value", label: "Premium Stop applies to (CE-only / NONE leaves PE with NO stop)", key: "RSI_PIVOT_ST_PREMIUM_SL_SIDES", def: "BOTH", warnOn: ["CE", "NONE"] },
   ] }] },
+  // The NIFTY BANK replica of the row above. The extra group carries the
+  // INDEX-level keys, because on this strategy they are not incidental: the
+  // 100-point grid and the monthly-only expiry are two of the three things
+  // that make it behave differently from its NIFTY sibling.
+  "BN_PIVOT_RSI_ST_Strategy_Guide.html": { title: "BN Pivot RSI ST — Live Configuration", groups: [
+    { rows: [
+      { type: "bool", label: "BN Pivot RSI ST Mode (sidebar + Settings section)", key: "BN_PIVOT_RSI_ST_MODE_ENABLED", def: "true" },
+      { type: "bool", label: "BN Pivot RSI ST Paper Trading", key: "BN_PIVOT_RSI_ST_PAPER_ENABLED", def: "true" },
+      { type: "live", label: "Live Orders (Zerodha, via paper harness)", enableKey: "BN_PIVOT_RSI_ST_LIVE_ENABLED", dryKey: "BN_PIVOT_RSI_ST_LIVE_DRY_RUN" },
+      { type: "value", label: "SuperTrend Stop applies to", key: "BN_PIVOT_RSI_ST_ST_SIDES", def: "CE", warnOn: ["NONE"] },
+      { type: "value", label: "Premium Stop applies to (CE-only / NONE leaves PE with NO stop)", key: "BN_PIVOT_RSI_ST_PREMIUM_SL_SIDES", def: "BOTH", warnOn: ["CE", "NONE"] },
+    ] },
+    { heading: "NIFTY BANK instrument (shared by every NIFTY BANK strategy)", rows: [
+      { type: "value", label: "Strike step — the grid strikes are listed on", key: "BANKNIFTY_STRIKE_STEP", def: "100" },
+      { type: "value", label: "Lot size (quantity per lot)", key: "BANKNIFTY_LOT_SIZE", def: "30" },
+      { type: "value", label: "Expiry type — monthly is the only real answer since Nov-2024", key: "BANKNIFTY_OPTION_EXPIRY_TYPE", def: "monthly", warnOn: ["weekly"] },
+      { type: "bool", label: "Weekly expiries exist (must stay OFF — NSE withdrew BANKNIFTY weeklies)", key: "BANKNIFTY_WEEKLY_EXPIRY_ENABLED", def: "false" },
+    ] },
+    { heading: "Backtest premium model — the defaults are NIFTY-weekly-shaped", rows: [
+      { type: "value", label: "Seed premium (₹180 is a NIFTY weekly, not a BANKNIFTY monthly)", key: "BN_PIVOT_RSI_ST_BT_SEED_PREMIUM", def: "180" },
+      { type: "value", label: "Theta per day (₹) used by every backtest", key: "BACKTEST_THETA_DAY", def: "8" },
+      { type: "value", label: "Delta used by every backtest", key: "BACKTEST_DELTA", def: "0.55" },
+    ] },
+  ] },
   "SIMPLE930_Strategy_Guide.html": { title: "SIMPLE_9:30 — Live Configuration", groups: [{ rows: [
     { type: "bool", label: "SIMPLE_9:30 Mode (sidebar + Settings section)", key: "SIMPLE930_MODE_ENABLED", def: "true" },
     { type: "bool", label: "SIMPLE_9:30 Paper Trading", key: "SIMPLE930_PAPER_ENABLED", def: "true" },
