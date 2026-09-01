@@ -192,6 +192,10 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const rsiPivotStKeys = ['rsiPivotStBacktest', 'rsiPivotStPaper', 'rsiPivotStLive', 'rsiPivotStHistory'];
   const simple930Keys = ['simple930Backtest', 'simple930Paper', 'simple930Live', 'simple930History'];
   const earlyBirdKeys = ['earlyBirdBacktest', 'earlyBirdPaper', 'earlyBirdLive', 'earlyBirdHistory'];
+  // Dashboard (top-level) and System are collapsible groups too, so the whole
+  // sidebar behaves the same way — one accordion, no ungrouped stragglers.
+  const dashboardKeys = ['dashboard', 'allBacktest', 'replay', 'consolidation', 'liveConsolidation', 'consolidationReport', 'advisor', 'oi-monitor', 'swingScanner'];
+  const systemKeys    = ['tradeLogs', 'tokenSync', 'settings'];
 
   const isTradingOpen  = tradingKeys.includes(activePage);
   const isBbRsiOpen    = bbRsiKeys.includes(activePage);
@@ -204,6 +208,14 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const isRsiPivotStOpen = rsiPivotStKeys.includes(activePage);
   const isSimple930Open = simple930Keys.includes(activePage);
   const isEarlyBirdOpen = earlyBirdKeys.includes(activePage);
+  const isSystemOpen    = systemKeys.includes(activePage);
+  // Pages that live outside every group (Real-Time monitor, docs, …) used to see
+  // the ungrouped top-level links; keep Dashboard open for them so the sidebar is
+  // never rendered fully collapsed.
+  const anyGroupOpen = isTradingOpen || isBbRsiOpen || isPAOpen || isOrbOpen || isEma9vwapOpen
+    || isTrendPbOpen || isTdsOpen || isHaScalpOpen || isRsiPivotStOpen || isSimple930Open
+    || isEarlyBirdOpen || isSystemOpen;
+  const isDashboardOpen = dashboardKeys.includes(activePage) || !anyGroupOpen;
 
   // When a strategy's PAPER session is running, hide its Live / Live (Harness)
   // entries — paper and live are mutually exclusive per strategy, so the live
@@ -328,7 +340,8 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
 
   const sections = [
     ...(topLevelItems.length ? [{
-      header: null, collapsible: false,
+      header: 'DASHBOARD', collapsible: true, collapsed: !isDashboardOpen,
+      groupId: 'nav-dashboard',
       items: topLevelItems,
     }] : []),
     ...(emaRsiStModeOn ? [{
@@ -387,7 +400,8 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       items: earlyBirdItems,
     }] : []),
     {
-      header: 'SYSTEM', collapsible: false,
+      header: 'SYSTEM', collapsible: true, collapsed: !isSystemOpen,
+      groupId: 'nav-system',
       items: [
         ...(showTradeLogs  ? [{ key: 'tradeLogs',  href: '/trade-logs',  icon: '📄', label: 'Logs' }] : []),
         // Login Logs, Server Logs (📜 LOGS) and Cache Files now live as tabs inside the Logs (/trade-logs) page.
@@ -617,6 +631,9 @@ function toggleNavGroup(gid){
     var parent = activeGroup.closest('.sb-group-items');
     if(parent) lastOpen = parent.id;
   }
+  // Nothing active and nothing remembered — fall back to the Dashboard group so
+  // the sidebar never restores fully collapsed.
+  if(!lastOpen && document.getElementById('nav-dashboard')) lastOpen = 'nav-dashboard';
   document.querySelectorAll('.sb-group-items').forEach(function(g){
     var shouldOpen = (lastOpen && g.id === lastOpen);
     var hdr = document.querySelector('[data-group="'+g.id+'"]');
