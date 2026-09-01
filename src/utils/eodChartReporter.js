@@ -63,6 +63,8 @@ const STRATEGIES = [
   { group: "TREND_PB",     label: "Trend Pullback",    module: "../routes/trendPbPaper",     overlay: "vwapLine" },
   { group: "TDS",          label: "Trend Day Scalp",   module: "../routes/trendDayScalpPaper" },
   { group: "RSI_PIVOT_ST", label: "RSI Pivot ST",      module: "../routes/rsiPivotStPaper" },
+  // Same engine on NIFTY BANK.
+  { group: "BN_PIVOT_RSI_ST", label: "BN Pivot RSI ST", module: "../routes/bnPivotRsiStPaper" },
   // SIMPLE_9:30 draws the OPTION PREMIUM of the leg it held, not a spot chart —
   // that is the only chart any of its rules read.
   { group: "SIMPLE930",    label: "SIMPLE 9:30",       module: "../routes/simple930Paper" },

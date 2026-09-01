@@ -129,7 +129,15 @@ function requestCancel() {
 //      session-start warm-up, so onCandleClose never fired and they replayed 0
 //      trades on every date. The harness now grows the spot series from the pumped
 //      ticks — every cached result for those modes is wrong and must be recomputed.
-const REPLAY_CACHE_VERSION = 12;
+// v13: two indices now share one recording. Spot ticks carry an `idx` and the
+//      replay filters the stream to the index the mode actually trades (a
+//      missing `idx` = NIFTY 50, which is every recording made before today),
+//      and a BANKNIFTY mode pins its expiry from
+//      marketContext.underlyings.BANKNIFTY.monthlyExpiry instead of the NIFTY
+//      weekly. No recording on disk today holds BANKNIFTY ticks, so no existing
+//      result actually changes — but the run is no longer computed the same way,
+//      and a cache that outlived that would be indistinguishable from one that did.
+const REPLAY_CACHE_VERSION = 13;
 
 function _replayCacheDir() {
   return path.join(ROOT_DIR, "_replay_cache");
@@ -156,6 +164,42 @@ function _fileFingerprint(p) {
 // from the replay clock (Date.now is patched to the replay tick time), which
 // reproduces what the live recording did. Either way the current env value is
 // never allowed to leak in.
+// ── Which INDEX does a replay mode trade? ────────────────────────────────────
+// One day file now holds the ticks of more than one index: socketManager can
+// carry NIFTY 50 and NIFTY BANK on the single permitted connection, and
+// tickRecorder stamps every spot record with `idx`. A replay that ignored that
+// would pump BANKNIFTY prices into a NIFTY strategy's candle builder (and the
+// reverse), which is the exact failure the `idx` stamp exists to prevent.
+//
+// BACKWARD COMPATIBILITY: recordings made before the stamp shipped have NO
+// `idx` at all. A record with no `idx` means "the only index that existed then"
+// = NIFTY 50. So the match is asymmetric ON PURPOSE:
+//   · a NIFTY mode accepts  idx === NIFTY  OR  no idx at all
+//   · a BANKNIFTY mode accepts idx === BANKNIFTY and nothing else
+// Inverting that would feed every old day's NIFTY ticks to BANKNIFTY.
+const _NIFTY_INDEX     = "NSE:NIFTY50-INDEX";
+const _BANKNIFTY_INDEX = "NSE:NIFTYBANK-INDEX";
+const _MODE_TO_SPOT_INDEX = {
+  // BN_PIVOT_RSI_ST (NIFTY BANK, monthly options) — the only non-NIFTY mode.
+  "bn-pivot-rsi-st-paper": _BANKNIFTY_INDEX,
+};
+/** The spot index a mode's engine subscribes to. Defaults to NIFTY 50. */
+function _spotIndexOf(mode) { return _MODE_TO_SPOT_INDEX[mode] || _NIFTY_INDEX; }
+/** Human name for the underlying, for logs that must not be ambiguous. */
+const _MODE_UNDERLYING_LABEL = {
+  "bn-pivot-rsi-st-paper": "BN_PIVOT_RSI_ST (NIFTY BANK, monthly options)",
+};
+function _underlyingLabelOf(mode) {
+  return _MODE_UNDERLYING_LABEL[mode]
+      || (_spotIndexOf(mode) === _BANKNIFTY_INDEX ? "NIFTY BANK" : "NIFTY 50");
+}
+/** Does this recorded spot tick belong to `wantIdx`? See the asymmetry note above. */
+function _spotTickIsIndex(rec, wantIdx) {
+  const idx = rec && rec.idx;
+  if (wantIdx === _NIFTY_INDEX) return !idx || idx === _NIFTY_INDEX;
+  return idx === wantIdx;
+}
+
 const _EXPIRY_PIN_KEYS = [
   "OPTION_EXPIRY_OVERRIDE",          "OPTION_EXPIRY_TYPE",
   "EMA_RSI_ST_OPTION_EXPIRY_OVERRIDE",    "EMA_RSI_ST_OPTION_EXPIRY_TYPE",
@@ -238,7 +282,61 @@ function _resolveReplayInstrumentEnv(snapshot) {
   return { INSTRUMENT: value };
 }
 
+/**
+ * Expiry for a BANKNIFTY mode. Resolved by INDEX, never by mode:
+ * instrument.js reads BANKNIFTY_OPTION_EXPIRY_{OVERRIDE,TYPE} for every
+ * BANKNIFTY strategy (UNDERLYING_DEFS.BANKNIFTY.env), so there is no per-mode
+ * key to mirror and _MODE_TO_ENV_PREFIX is deliberately untouched.
+ *
+ * MONTHLY, always. NSE withdrew BANKNIFTY weekly options in Nov-2024, so the
+ * recorded market context's weekly fields are empty for this index and pinning
+ * a weekly date would name a contract that never existed. The NIFTY expiry keys
+ * are blanked rather than left alone, so a standing NIFTY override in today's
+ * Settings cannot leak into a BANKNIFTY run through the common key.
+ */
+const _BANKNIFTY_EXPIRY_OVERRIDE_KEY = "BANKNIFTY_OPTION_EXPIRY_OVERRIDE";
+const _BANKNIFTY_EXPIRY_TYPE_KEY     = "BANKNIFTY_OPTION_EXPIRY_TYPE";
+function _resolveBankniftyExpiryEnv({ marketContext, snapshot }) {
+  const snap = snapshot || {};
+  const env  = {};
+  for (const k of _EXPIRY_PIN_KEYS) env[k] = "";   // NIFTY's keys — unread here, blanked so nothing leaks
+
+  // An explicit override the recorded day actually traded wins, exactly as it
+  // does on the NIFTY path.
+  const recorded = String(snap[_BANKNIFTY_EXPIRY_OVERRIDE_KEY] || "").trim();
+  if (recorded.length >= 8) {
+    const type = String(snap[_BANKNIFTY_EXPIRY_TYPE_KEY] || "").trim().toLowerCase() === "weekly"
+      ? "weekly" : "monthly";
+    env[_BANKNIFTY_EXPIRY_OVERRIDE_KEY] = recorded;
+    env[_BANKNIFTY_EXPIRY_TYPE_KEY]     = type;
+    return { env, source: "explicit-override", date: recorded, type, underlying: "BANKNIFTY" };
+  }
+
+  const bn = marketContext && marketContext.underlyings && marketContext.underlyings.BANKNIFTY;
+  if (bn && bn.monthlyExpiry) {
+    env[_BANKNIFTY_EXPIRY_OVERRIDE_KEY] = bn.monthlyExpiry;
+    env[_BANKNIFTY_EXPIRY_TYPE_KEY]     = "monthly";
+    return { env, source: "market-context", date: bn.monthlyExpiry, type: "monthly", underlying: "BANKNIFTY" };
+  }
+
+  // Older recording: market.jsonl has no `underlyings` block, so the BANKNIFTY
+  // monthly expiry of that day is simply not in the archive. Substituting the
+  // NIFTY weekly would be worse than not pinning — it names a contract that
+  // never traded. Leave blank (instrument.js auto-computes off the replay clock)
+  // and SAY SO; the caller turns this into a visible warning.
+  env[_BANKNIFTY_EXPIRY_OVERRIDE_KEY] = "";
+  env[_BANKNIFTY_EXPIRY_TYPE_KEY]     = "";
+  return {
+    env, source: "unpinned-banknifty", date: null, type: "monthly", underlying: "BANKNIFTY",
+    warn: "the recorded Market Context Snapshot carries no underlyings.BANKNIFTY block, so the NIFTY BANK monthly expiry of that day could not be pinned. It is auto-computed from the replay clock instead — re-record the day to pin it. The NIFTY expiry was NOT substituted.",
+  };
+}
+
 function _resolveReplayExpiryEnv({ marketContext, snapshot, mode }) {
+  // BANKNIFTY resolves through its own index keys — see _resolveBankniftyExpiryEnv.
+  if (_spotIndexOf(mode) === _BANKNIFTY_INDEX) {
+    return _resolveBankniftyExpiryEnv({ marketContext, snapshot });
+  }
   const prefix = _MODE_TO_ENV_PREFIX[mode] || null;   // null for bb_rsi/pa (common key only)
   const snap = snapshot || {};
   const cfg  = snap;   // expiry is ALWAYS historical — read from the recording, never current env
@@ -455,6 +553,11 @@ async function loadSessionData({ date, mode, sessionId, synthesize = false }) {
 
   const sessions = _readJsonl(path.join(dir, "sessions.jsonl"));
 
+  // The index this mode trades. One day file can hold two indices' spot ticks,
+  // so every spot-stream read below — and the pump in replaySession — is
+  // filtered to this one. See _spotTickIsIndex for the no-`idx` legacy rule.
+  const spotIndex = _spotIndexOf(mode);
+
   let sessionStart, sessionStop;
   if (synthesize) {
     // ── Day-based replay: NO per-strategy marker required ────────────────────
@@ -466,10 +569,17 @@ async function loadSessionData({ date, mode, sessionId, synthesize = false }) {
     // from the recorded Market Context Snapshot).
     let firstT = Infinity, lastT = -Infinity;
     await _streamJsonl(path.join(dir, "spot.jsonl"), {
+      filterFn: r => _spotTickIsIndex(r, spotIndex),
       onRec: r => { if (r.t < firstT) firstT = r.t; if (r.t > lastT) lastT = r.t; },
     });
     if (!Number.isFinite(firstT)) {
-      throw new Error(`No spot ticks recorded for ${date} — cannot day-replay ${mode}`);
+      throw new Error(
+        `No ${spotIndex} spot ticks recorded for ${date} — cannot day-replay ${mode} ` +
+        `(${_underlyingLabelOf(mode)}). ` +
+        (spotIndex === _NIFTY_INDEX
+          ? "The day's recording is empty."
+          : "Recordings made before this index joined the shared feed contain NIFTY 50 ticks only, so this day genuinely cannot be replayed for it.")
+      );
     }
     sessionStart = { t: firstT, e: "start", mode, sid: `synthetic:${mode}:${date}`, settings: null, warmup: null, meta: { synthetic: true } };
     sessionStop  = { t: lastT,  e: "stop",  mode, sid: sessionStart.sid, reason: "synth_day" };
@@ -515,7 +625,7 @@ async function loadSessionData({ date, mode, sessionId, synthesize = false }) {
   if (!sessionStop) {
     let lastT = startT;
     await _streamJsonl(path.join(dir, "spot.jsonl"), {
-      filterFn: r => r.t >= startT,
+      filterFn: r => r.t >= startT && _spotTickIsIndex(r, spotIndex),
       onRec:    r => { if (r.t > lastT) lastT = r.t; },
     });
     sessionStop = { t: lastT, e: "stop", mode, sid: sessionStart.sid, reason: "synth_eod" };
@@ -529,6 +639,7 @@ async function loadSessionData({ date, mode, sessionId, synthesize = false }) {
     oiTicks,
     marketContext,
     spotPath: path.join(dir, "spot.jsonl"),
+    spotIndex,
   };
 }
 
@@ -627,6 +738,7 @@ const _MODE_TO_CANONICAL_FILE = {
   "ha-scalp-paper":        "ha_scalp_paper_trades.json",
   "early-bird-paper":      "early_bird_paper_trades.json",
   "rsi-pivot-st-paper":    "rsi_pivot_st_paper_trades.json",
+  "bn-pivot-rsi-st-paper": "bn_pivot_rsi_st_paper_trades.json",
   "simple930-paper":       "simple930_paper_trades.json",
 };
 function _lookupCanonicalSession(mode, sessionStartTs) {
@@ -710,7 +822,7 @@ function _lookupCanonicalSession(mode, sessionStartTs) {
  * The harness exposes `pumpTick(tick)` for the engine to fan ticks through
  * the captured callbacks.
  */
-function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles, recordedDateStr = null, recordedPivots = null, outputSubdir = "_replay_trades", outputSuffix = "replay", syntheticWarmup = false }) {
+function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles, recordedDateStr = null, recordedPivots = null, outputSubdir = "_replay_trades", outputSuffix = "replay", syntheticWarmup = false, spotIndex = _NIFTY_INDEX }) {
   const socketManager     = require("../utils/socketManager");
   const fyers             = require("../config/fyers");
   const notify            = require("../utils/notify");
@@ -727,6 +839,13 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     sm_start:        socketManager.start,
     sm_addCallback:  socketManager.addCallback,
     sm_removeCallback: socketManager.removeCallback,
+    // The shared socket carries more than one spot index now. These three exist
+    // on the real manager, so they must exist on the stub too — spotFeedSupervisor
+    // (and any strategy /start) tops up indices through them, and a missing method
+    // would throw mid-replay.
+    sm_addSpotSymbol:    socketManager.addSpotSymbol,
+    sm_removeSpotSymbol: socketManager.removeSpotSymbol,
+    sm_spotSymbols:      socketManager.spotSymbols,
     sm_isRunning:    socketManager.isRunning,
     sm_stop:         socketManager.stop,
     fyers_getQuotes: fyers.getQuotes,
@@ -802,6 +921,10 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     ss_clearEarlyBird:         sharedSocketState.clearEarlyBird,
     ss_setRsiPivotStActive:    sharedSocketState.setRsiPivotStActive,
     ss_clearRsiPivotSt:        sharedSocketState.clearRsiPivotSt,
+    // BN_PIVOT_RSI_ST (NIFTY BANK, monthly options) keeps its OWN mutex slot, so
+    // it needs its own pair here — and its mutators are named …Mode, not …Active.
+    ss_setBnPivotRsiStMode:    sharedSocketState.setBnPivotRsiStMode,
+    ss_clearBnPivotRsiStMode:  sharedSocketState.clearBnPivotRsiStMode,
     ss_setSimple930Active:     sharedSocketState.setSimple930Active,
     ss_clearSimple930:         sharedSocketState.clearSimple930,
     // fs originals — paper /stop calls saveSession() → savePaperData() which
@@ -1029,7 +1152,14 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
   // so one bar reproduces them exactly. Used only as a FALLBACK, only for the
   // spot index, so a working token still wins and other strategies' daily reads
   // (daily EMA/RSI, yesterday's close) are untouched.
-  const _isSpotIndex = (sym) => String(sym || "").toUpperCase().includes("NIFTY50-INDEX");
+  // Either index. The recorded pivots belong to whatever index the RECORDED
+  // session traded, so the fallback is correct for a NIFTY BANK session too —
+  // and only one mode replays at a time, so there is no ambiguity about whose
+  // pivots these are.
+  const _isSpotIndex = (sym) => {
+    const u = String(sym || "").toUpperCase();
+    return u.includes("NIFTY50-INDEX") || u.includes("NIFTYBANK-INDEX");
+  };
   let _warnedPivotFallback = false;
 
   function _recordedDailyBar() {
@@ -1071,12 +1201,31 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     _droppedWarned = 0;
 
     // socketManager: capture callbacks, do not open a real WS
+    // A replay pumps exactly ONE index — the one the mode trades (spotIndex) —
+    // so the real manager's per-index binding has nothing to separate here: every
+    // captured callback is already bound to that index by construction. The
+    // 4th `symbol` argument of addCallback is therefore accepted and ignored,
+    // and a subscribe for a DIFFERENT index is accepted but silently gets no
+    // ticks (rather than being handed this index's, which is the one outcome
+    // the real manager refuses too).
     socketManager.start = function (symbol, onTick, onLog) {
       if (typeof onTick === "function") callbacks.push({ id: "__primary__", onTick, onLog });
     };
-    socketManager.addCallback = function (id, onTick, onLog) {
+    socketManager.addCallback = function (id, onTick, onLog, _symbol) {
       callbacks.push({ id, onTick, onLog });
     };
+    socketManager.addSpotSymbol = function (symbol, onSpotTick) {
+      if (symbol === spotIndex && typeof onSpotTick === "function") {
+        callbacks.push({ id: `__spot__${symbol}`, onTick: onSpotTick, onLog: null });
+      }
+      return true;
+    };
+    socketManager.removeSpotSymbol = function (symbol) {
+      const idx = callbacks.findIndex(c => c.id === `__spot__${symbol}`);
+      if (idx >= 0) callbacks.splice(idx, 1);
+      return true;
+    };
+    socketManager.spotSymbols = () => [spotIndex];
     socketManager.removeCallback = function (id) {
       const idx = callbacks.findIndex(c => c.id === id);
       if (idx >= 0) callbacks.splice(idx, 1);
@@ -1254,6 +1403,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     sharedSocketState.clearEarlyBird         = () => {};
     sharedSocketState.setRsiPivotStActive    = () => {};
     sharedSocketState.clearRsiPivotSt        = () => {};
+    sharedSocketState.setBnPivotRsiStMode    = () => {};
+    sharedSocketState.clearBnPivotRsiStMode  = () => {};
     sharedSocketState.setSimple930Active     = () => {};
     sharedSocketState.clearSimple930         = () => {};
 
@@ -1437,6 +1588,9 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     socketManager.start             = orig.sm_start;
     socketManager.addCallback       = orig.sm_addCallback;
     socketManager.removeCallback    = orig.sm_removeCallback;
+    socketManager.addSpotSymbol     = orig.sm_addSpotSymbol;
+    socketManager.removeSpotSymbol  = orig.sm_removeSpotSymbol;
+    socketManager.spotSymbols       = orig.sm_spotSymbols;
     socketManager.isRunning         = orig.sm_isRunning;
     socketManager.stop              = orig.sm_stop;
     fyers.getQuotes                 = orig.fyers_getQuotes;
@@ -1485,6 +1639,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     sharedSocketState.clearEarlyBird         = orig.ss_clearEarlyBird;
     sharedSocketState.setRsiPivotStActive    = orig.ss_setRsiPivotStActive;
     sharedSocketState.clearRsiPivotSt        = orig.ss_clearRsiPivotSt;
+    sharedSocketState.setBnPivotRsiStMode    = orig.ss_setBnPivotRsiStMode;
+    sharedSocketState.clearBnPivotRsiStMode  = orig.ss_clearBnPivotRsiStMode;
     sharedSocketState.setSimple930Active     = orig.ss_setSimple930Active;
     sharedSocketState.clearSimple930         = orig.ss_clearSimple930;
     fs.writeFileSync     = orig.fs_writeFileSync;
@@ -1561,6 +1717,7 @@ const MODE_TO_MODULE = {
   "ha-scalp-paper":        "../routes/haScalpPaper",
   "early-bird-paper":      "../routes/earlyBirdPaper",
   "rsi-pivot-st-paper":    "../routes/rsiPivotStPaper",
+  "bn-pivot-rsi-st-paper": "../routes/bnPivotRsiStPaper",
   "simple930-paper":       "../routes/simple930Paper",
   // Live modes are NOT supported for replay (they place real orders). If a
   // live session was recorded, replay it as the matching paper mode.
@@ -1697,10 +1854,13 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     if (_instrumentEnv.INSTRUMENT === "NIFTY_FUTURES") {
       console.log(`📼 [replay] instrument pinned from the recording: NIFTY_FUTURES`);
     }
+    const _underlying = _underlyingLabelOf(mode);
     if (!data.marketContext) {
-      console.warn(`⚠️ [replay] ${mode} ${date}: no Market Context Snapshot (market.jsonl) — expiry falls back to legacy pin; old-day option contract may mismatch. Re-record to fix.`);
+      console.warn(`⚠️ [replay] ${mode} ${date} — ${_underlying}: no Market Context Snapshot (market.jsonl) — expiry falls back to legacy pin; old-day option contract may mismatch. Re-record to fix.`);
+    } else if (expiryResolution.warn) {
+      console.warn(`⚠️ [replay] ${mode} ${date} — ${_underlying}: ${expiryResolution.warn}`);
     } else {
-      console.log(`📼 [replay] expiry pinned from market context: ${expiryResolution.date || "(auto)"} (${expiryResolution.type}, ${expiryResolution.source})`);
+      console.log(`📼 [replay] ${_underlying}: expiry pinned from market context: ${expiryResolution.date || "(auto)"} (${expiryResolution.type}, ${expiryResolution.source})`);
     }
 
     // 1b. Result cache: an identical re-run is deterministic, so short-circuit
@@ -1797,6 +1957,7 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
       // Synthetic day sessions have no recorded warm-up → let /start fetch real
       // history instead of returning an empty recorded snapshot.
       syntheticWarmup: synthesize || !!(data.sessionStart.meta && data.sessionStart.meta.synthetic),
+      spotIndex: data.spotIndex,
     });
     harness.install();
 
@@ -1882,12 +2043,13 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     const _istHHMM = (t) => new Date(t).toLocaleTimeString("en-IN", {
       timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false,
     });
-    console.log(`📼 [replay] ${mode} ${data.sessionStart.sid}: streaming spot ticks (${data.optionTicks.length} option ticks loaded)…`);
+    console.log(`📼 [replay] ${mode} ${data.sessionStart.sid} — ${_underlying} [${data.spotIndex}]: streaming spot ticks (${data.optionTicks.length} option ticks loaded)…`);
     // setTimeout(r, 0) goes through the harness override and falls through
     // unchanged to orig.setTimeout_(r, 0) (0 is not > SHORT_DELAY_CAP_MS),
     // so this resolves in the timers phase alongside paper's queued polls.
     const _yield      = () => new Promise(r => setTimeout(r, 0));
     let ticksReplayed = 0;
+    let ticksSkippedOtherIndex = 0;
     const startT = data.sessionStart.t;
     const stopT  = data.sessionStop.t;
 
@@ -1904,6 +2066,11 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
         let tick;
         try { tick = JSON.parse(trimmed); } catch (_) { continue; }
         if (tick.t < startT || tick.t > stopT) continue;
+        // One day file, two indices. Anything that is not THIS mode's index is
+        // another strategy's underlying — pumping it would build the wrong
+        // candles. Counted, not silently dropped: a run that matches nothing
+        // must say why rather than report "0 trades".
+        if (!_spotTickIsIndex(tick, data.spotIndex)) { ticksSkippedOtherIndex++; continue; }
 
         harness.pumpTick(tick);
         ticksReplayed++;
@@ -1919,6 +2086,18 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     } finally {
       rl.close();
       spotStream.destroy();
+    }
+    if (ticksSkippedOtherIndex > 0) {
+      console.log(`📼 [replay] ${_underlying}: used ${ticksReplayed} ${data.spotIndex} tick(s); skipped ${ticksSkippedOtherIndex} tick(s) belonging to another index in the same day file.`);
+    }
+    if (ticksReplayed === 0) {
+      console.warn(
+        `⚠️ [replay] ${mode} ${date} — ${_underlying}: NOT ONE ${data.spotIndex} tick fell inside the session window` +
+        (ticksSkippedOtherIndex > 0
+          ? `, though ${ticksSkippedOtherIndex} tick(s) for another index did. This day's recording does not cover this underlying.`
+          : `. The recorded spot stream is empty for this window.`) +
+        ` The run below books whatever /stop produces from no ticks at all — read it as "no data", not "no setup".`
+      );
     }
 
     // 7. Call /stop — squares off any open position via paper's own
@@ -2138,6 +2317,7 @@ function replayPreflight() {
   if (sharedSocketState.isHaScalpActive && sharedSocketState.isHaScalpActive()) activeModes.push(sharedSocketState.getHaScalpMode() || "ha_scalp");
   if (sharedSocketState.isEarlyBirdActive && sharedSocketState.isEarlyBirdActive()) activeModes.push(sharedSocketState.getEarlyBirdMode() || "early_bird");
   if (sharedSocketState.isRsiPivotStActive && sharedSocketState.isRsiPivotStActive()) activeModes.push(sharedSocketState.getRsiPivotStMode() || "rsi_pivot_st");
+  if (sharedSocketState.isBnPivotRsiStActive && sharedSocketState.isBnPivotRsiStActive()) activeModes.push(sharedSocketState.getBnPivotRsiStMode() || "bn_pivot_rsi_st");
   if (sharedSocketState.isSimple930Active && sharedSocketState.isSimple930Active()) activeModes.push(sharedSocketState.getSimple930Mode() || "simple930");
   if (activeModes.length > 0) {
     return {
@@ -2200,6 +2380,7 @@ function forceClearSharedState() {
     ha_scalp: sharedSocketState.getHaScalpMode ? sharedSocketState.getHaScalpMode() : null,
     early_bird: sharedSocketState.getEarlyBirdMode ? sharedSocketState.getEarlyBirdMode() : null,
     rsi_pivot_st: sharedSocketState.getRsiPivotStMode ? sharedSocketState.getRsiPivotStMode() : null,
+    bn_pivot_rsi_st: sharedSocketState.getBnPivotRsiStMode ? sharedSocketState.getBnPivotRsiStMode() : null,
     simple930: sharedSocketState.getSimple930Mode ? sharedSocketState.getSimple930Mode() : null,
     replayInProgress: _replayInProgress,
   };
@@ -2216,6 +2397,7 @@ function forceClearSharedState() {
   if (sharedSocketState.clearHaScalp) sharedSocketState.clearHaScalp();
   if (sharedSocketState.clearEarlyBird) sharedSocketState.clearEarlyBird();
   if (sharedSocketState.clearRsiPivotSt) sharedSocketState.clearRsiPivotSt();
+  if (sharedSocketState.clearBnPivotRsiStMode) sharedSocketState.clearBnPivotRsiStMode();
   if (sharedSocketState.clearSimple930) sharedSocketState.clearSimple930();
   _replayInProgress = false;
   return { ok: true, cleared: before };

@@ -19,6 +19,7 @@
  *   BB_RSI        Bollinger(30,2) + RSI(14)              — pure indicators
  *   PA            swing structure + chart patterns       — pure price structure
  *   RSI_PIVOT_ST  RSI + prev-day pivot cross + SuperTrend — pure, given pivots
+ *   BN_PIVOT_RSI_ST  the same, tuned separately for NIFTY BANK — pure, given pivots
  *
  * The rest are excluded because their rule is not expressible on an arbitrary
  * stock timeframe, and forcing them would produce signals their author never
@@ -71,6 +72,7 @@ const emaRsiSt   = require("../strategies/strategy1_sar_ema_rsi");
 const bbRsi      = require("../strategies/bb_rsi");
 const priceAction= require("../strategies/price_action");
 const rsiPivotSt = require("../strategies/rsi_pivot_st");
+const bnPivotRsiSt = require("../strategies/bn_pivot_rsi_st");
 
 // Every timeframe the scanner offers, in the order the dropdown shows them.
 // `mins` is the bar length; 'W' is a calendar week and has no minute length.
@@ -302,6 +304,59 @@ const ADAPTERS = [
         pivotBufferPts:  parseFloat(process.env.RSI_PIVOT_ST_PIVOT_BUFFER_PTS || "0") || 0,
       });
       const s = rsiPivotSt.getSignal(candles, {
+        cfg,
+        silent:       true,
+        dailyCandles: ctx.dailyCandles || [],
+      });
+      return {
+        side:   sideFromSignal(s.signal),
+        reason: s.reason || s.skipReason || "",
+        stop:   num(s.slSpot),
+        target: null,
+        indicators: {
+          RSI:        r2(s.rsi),
+          Pivot:      r2(s.pp),
+          R1:         r2(s.r1),
+          S1:         r2(s.s1),
+          SuperTrend: r2(s.superTrend),
+        },
+      };
+    },
+  },
+
+  {
+    key:        "BN_PIVOT_RSI_ST",
+    label:      "BN Pivot RSI ST",
+    envKey:     "BN_PIVOT_RSI_ST_MODE_ENABLED",
+    // Same rules as RSI_PIVOT_ST, but reading the BN_PIVOT_RSI_ST_* Settings keys,
+    // so the NIFTY BANK engine can be tuned without touching the NIFTY one.
+    blurb:      "Close crosses the previous day's R1 (or S1) with RSI confirming, stopped by SuperTrend.",
+    // Weekly is excluded on purpose: the levels are PREVIOUS-DAY pivots, and the
+    // module itself refuses a series that carries one bar per day. A weekly bar
+    // crossing yesterday's R1 is not a statement anyone defined.
+    timeframes: ["5", "15", "30", "60", "240"],
+    timeframeNote: "Uses previous-day pivots, so it needs intraday bars — weekly is not defined for it.",
+    needsDaily: true,
+    stateful:   false,
+    scaleKeys:  [{ key: "BN_PIVOT_RSI_ST_PIVOT_BUFFER_PTS", def: "0" }],
+    minBars() {
+      const cfg = bnPivotRsiSt.getConfig();
+      return Math.max(cfg.rsiPeriod + 2, cfg.stPeriod + 2, 20);
+    },
+    evaluate(candles, ctx) {
+      const base = bnPivotRsiSt.getConfig();
+      // Widen the entry window to the whole day. Everything else — RSI bands,
+      // SuperTrend period/multiplier, pivot buffer — stays exactly as Settings
+      // has it. resolutionMins must match the bars we are handing over, since
+      // the module derives each bar's CLOSE time from it.
+      const cfg = Object.assign({}, base, {
+        resolutionMins:  ctx.tfMinutes || base.resolutionMins,
+        sessionStartMin: 0,
+        entryStartMin:   0,
+        entryEndMin:     24 * 60,
+        pivotBufferPts:  parseFloat(process.env.BN_PIVOT_RSI_ST_PIVOT_BUFFER_PTS || "0") || 0,
+      });
+      const s = bnPivotRsiSt.getSignal(candles, {
         cfg,
         silent:       true,
         dailyCandles: ctx.dailyCandles || [],

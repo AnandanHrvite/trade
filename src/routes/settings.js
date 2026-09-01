@@ -648,6 +648,58 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
+    section: "BN_PIVOT_RSI_ST STRATEGY (NIFTY BANK — RSI + Standard Pivot R1/S1 + SuperTrend) — Zerodha",
+    icon: "\u{1F3E6}",
+    nav: "BN PIVOT RSI ST",
+    group: "Strategies",
+    fields: [
+      // An exact replica of RSI_PIVOT_ST — same rules, same thresholds, same
+      // stops, same defaults — trading NIFTY BANK instead of NIFTY 50. Keep
+      // the two sections in step: a change to one is almost always a change
+      // to both. The index-level constants (strike grid, lot size, expiry)
+      // are NOT here — they live in the NIFTY BANK block of
+      // Instrument & Backtest, shared by every NIFTY BANK strategy.
+      // ── Enable / live gating ──
+      { key: "BN_PIVOT_RSI_ST_PAPER_ENABLED", label: "BN Pivot RSI ST Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new BN Pivot RSI ST paper sessions.", default: "true", subheader: "Mode & Live" },
+      { key: "BN_PIVOT_RSI_ST_LIVE_ENABLED", label: "BN Pivot RSI ST Live Orders (gates /bn-pivot-rsi-st-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Zerodha. NEVER traded — paper-validate first.", default: "false" },
+      { key: "BN_PIVOT_RSI_ST_LIVE_DRY_RUN", label: "BN Pivot RSI ST Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep it simulated even when live is on — the broker call is logged but no real order is sent.", default: "false" },
+
+      // ── The entry rule ──
+      { key: "BN_PIVOT_RSI_ST_RESOLUTION", label: "Candle Timeframe (min)", type: "select", options: ["1", "3", "5", "15"], effect: EFFECT.SESSION, desc: "Which candle decides. Entries are taken only on a CLOSED candle of this size — 5-min is the rule as written.", default: "5", subheader: "Signal (RSI + Pivot cross)" },
+      { key: "BN_PIVOT_RSI_ST_RSI_PERIOD", label: "RSI Period", type: "number", min: 2, max: 100, step: 1, effect: EFFECT.SESSION, desc: "How many candles the RSI is measured over. 14 is the standard setting and what the rule assumes.", default: "14" },
+      { key: "BN_PIVOT_RSI_ST_RSI_CE_MIN", label: "CE needs RSI above", type: "number", min: 0, max: 100, step: 1, effect: EFFECT.SESSION, desc: "A CE (call) is only bought when RSI on the signal candle is above this — momentum must already be strong. Raise it for fewer, stronger buys.", default: "70" },
+      { key: "BN_PIVOT_RSI_ST_RSI_PE_MAX", label: "PE needs RSI below", type: "number", min: 0, max: 100, step: 1, effect: EFFECT.SESSION, desc: "A PE (put) is only bought when RSI on the signal candle is below this — selling must already be strong. Lower it for fewer, stronger sells.", default: "40" },
+      { key: "BN_PIVOT_RSI_ST_PIVOT_BUFFER_PTS", label: "Pivot Buffer (pts)", type: "number", min: 0, max: 200, step: 1, effect: EFFECT.SESSION, desc: "How far past R1 (or S1) the candle must close before it counts as a break. 0 = a close just beyond the level is enough. Raise it to ignore candles that only tickle the line.", default: "0" },
+
+      // ── Window ──
+      { key: "BN_PIVOT_RSI_ST_SESSION_START", label: "Session Start", type: "time", effect: EFFECT.SESSION, desc: "When the strategy starts watching candles for the day (IST).", default: "09:15", subheader: "Session window" },
+      { key: "BN_PIVOT_RSI_ST_ENTRY_START", label: "Entry Window Start", type: "time", effect: EFFECT.SESSION, desc: "No entries before this (IST). The first candles of the day are noisy and often break a pivot for no reason.", default: "09:30" },
+      { key: "BN_PIVOT_RSI_ST_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No new entries after this time (IST) — too late in the day for a fresh trade to work out.", default: "15:00" },
+      { key: "BN_PIVOT_RSI_ST_EXIT_TIME", label: "Forced Exit (EOD square-off)", type: "time", effect: EFFECT.SESSION, desc: "Everything still open is closed at this time (IST). Nothing is carried overnight.", default: "15:15" },
+
+      // ── Strike ──
+      { key: "BN_PIVOT_RSI_ST_STRIKE_MODE", label: "Which Strike to Buy", type: "select", options: ["ATM", "ITM", "OTM"], effect: EFFECT.SESSION, desc: "Which strike to buy. ATM = nearest to spot. OTM = 1% of spot away from the money (cheaper, needs a bigger move). ITM = 1% into the money (costlier, moves more with spot).", default: "OTM", subheader: "Strike" },
+      { key: "BN_PIVOT_RSI_ST_STRIKE_PCT", label: "Strike Distance (% of spot)", type: "number", min: 0, max: 20, step: 0.25, effect: EFFECT.SESSION, desc: "How far from spot the ITM/OTM strike sits, as a percentage. 1% of a 54000 NIFTY BANK is 540 points, rounded to the nearest 100-point strike. Ignored when the mode is ATM.", default: "1" },
+
+      // ── Stops. Deliberately asymmetric — see the CE toggle's note. ──
+      { key: "BN_PIVOT_RSI_ST_ST_PERIOD", label: "SuperTrend Period", type: "number", min: 2, max: 100, step: 1, effect: EFFECT.SESSION, desc: "ATR length behind the SuperTrend line used as the CE stop. Longer = a slower, looser trail.", default: "10", subheader: "Stops" },
+      { key: "BN_PIVOT_RSI_ST_ST_MULT", label: "SuperTrend Multiplier", type: "number", min: 0.1, max: 10, step: 0.1, effect: EFFECT.SESSION, desc: "How many ATRs below price the SuperTrend line sits. Smaller = a tighter stop that gets hit more often; larger = more room and bigger losses.", default: "2" },
+      { key: "BN_PIVOT_RSI_ST_ST_SIDES", label: "SuperTrend Stop Applies To", type: "select", options: [{ value: "CE", label: "CE only (original rule)" }, { value: "BOTH", label: "Both CE and PE" }, { value: "PE", label: "PE only" }, { value: "NONE", label: "Neither (no SuperTrend stop)" }], effect: EFFECT.SESSION, desc: "Which side uses the SuperTrend line as its stop and trail, on top of the premium stop. CE is the original rule. On PE the line is mirrored: it sits ABOVE price and a flip to bullish is the exit. A side that uses it also gains the \"SuperTrend must be on the right side of price\" entry check, so it takes FEWER trades; a side without it relies on the premium stop alone.", default: "CE" },
+      { key: "BN_PIVOT_RSI_ST_PREMIUM_SL_PCT", label: "Premium Stop (% of option price)", type: "number", min: 1, max: 90, step: 1, effect: EFFECT.SESSION, desc: "Exit when the option price falls this far below its best price so far. 25 means: bought at 100, exit at 75; if it runs to 140, the exit rises to 105. Which sides use it is set by the toggle below.", default: "25" },
+      { key: "BN_PIVOT_RSI_ST_PREMIUM_SL_SIDES", label: "Premium Stop Applies To", type: "select", options: [{ value: "BOTH", label: "Both CE and PE" }, { value: "CE", label: "CE only" }, { value: "PE", label: "PE only" }, { value: "NONE", label: "Neither (no premium stop)" }], effect: EFFECT.SESSION, desc: "Which side carries the premium stop. WARNING: PE has no other stop — it never uses the SuperTrend — so choosing \"CE only\" or \"Neither\" leaves every PE trade with NO stop at all, and the 15:15 square-off becomes its only exit. The same is true for CE if you also switch the SuperTrend stop off above. The engine still takes those trades but warns loudly in the log.", default: "BOTH" },
+
+      // ── Sizing & day-level breakers ──
+      { key: "BN_PIVOT_RSI_ST_LOT_MULTIPLIER", label: "Lot Multiplier (BN Pivot RSI ST only)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.INSTANT, desc: "Lots per trade. 0 = use the global LOT_MULTIPLIER, which is the default.", default: "0", subheader: "Sizing & Day Breakers" },
+      { key: "BN_PIVOT_RSI_ST_MAX_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Max entries per day. The pivot levels are fixed all day, so a handful of crosses is all this rule can honestly produce.", default: "5" },
+      { key: "BN_PIVOT_RSI_ST_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 0, max: 50000, step: 250, effect: EFFECT.SESSION, desc: "Stop trading for the day after this much loss (0 = off).", default: "5000" },
+      { key: "BN_PIVOT_RSI_ST_MAX_WEEKLY_LOSS", label: "Max Weekly Loss (₹)", type: "number", min: 0, max: 200000, step: 500, effect: EFFECT.SESSION, desc: "Stop trading for the rest of the week after this much loss across Mon–today (0 = off). Read from the day files, so it survives a restart.", default: "0" },
+
+      // ── Backtest ──
+      { key: "BN_PIVOT_RSI_ST_BT_SLIPPAGE_PTS", label: "Backtest Spread/Slippage Haircut (pts each way)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.BACKTEST, desc: "Backtest cost per side, in points. Without this, option-buying backtests always flatter.", default: "2", subheader: "Backtest" },
+      { key: "BN_PIVOT_RSI_ST_BT_SEED_PREMIUM", label: "Backtest Seed Premium (₹)", type: "number", min: 20, max: 1000, step: 10, effect: EFFECT.BACKTEST, desc: "Starting option price the backtest assumes, since there is no historical option chain. The 25% stop is measured against this simulated premium, so it is the weakest number in any backtest result.", default: "180" },
+    ],
+  },
+  {
     section: "OPEN-INTEREST FILTER (OI + Price Buildup)",
     icon: "📊",
     nav: "OI Filter",
@@ -676,16 +728,48 @@ const SETTINGS_SCHEMA = [
       { key: "TRADE_START_TIME", label: "Market Start Time", type: "time", effect: EFFECT.SESSION, desc: "Market open time (IST).", default: "09:15" },
       { key: "TRADE_STOP_TIME", label: "Market Stop Time", type: "time", effect: EFFECT.SESSION, desc: "Auto-stop and square-off time (IST).", default: "15:30" },
       { key: "INSTRUMENT", label: "Trade Type", type: "select", options: ["NIFTY_OPTIONS", "NIFTY_FUTURES"], effect: EFFECT.INSTANT, desc: "Options (CE/PE) or Futures." },
-      { key: "NIFTY_LOT_SIZE", label: "Lot Size (Qty)", type: "number", min: 1, max: 200, step: 1, effect: EFFECT.INSTANT, desc: "Quantity per lot." },
-      { key: "NIFTY_FUTURES_MARGIN_PCT", label: "Futures Margin %", type: "number", min: 1, max: 100, step: 0.5, effect: EFFECT.INSTANT, desc: "SPAN+exposure margin as % of notional, used to size the capital pool when Trade Type is NIFTY_FUTURES. Advisory only — never blocks a trade.", default: "11" },
       { key: "LOT_MULTIPLIER", label: "Lot Multiplier", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "Number of lots per trade." },
-      { key: "STRIKE_OFFSET_CE", label: "CE Strike Offset", type: "number", min: -200, max: 200, step: 50, effect: EFFECT.INSTANT, desc: "CE strike vs ATM (-50=ITM, 0=ATM, +50=OTM).", default: "0" },
-      { key: "STRIKE_OFFSET_PE", label: "PE Strike Offset", type: "number", min: -200, max: 200, step: 50, effect: EFFECT.INSTANT, desc: "PE strike vs ATM (+50=ITM, 0=ATM, -50=OTM).", default: "0" },
-      { key: "OPTION_EXPIRY_OVERRIDE", label: "Option Expiry (manual)", type: "date", effect: EFFECT.INSTANT, desc: "Option expiry for all strategies. Filled in automatically once the stored one expires; a future date you set is left alone." },
-      { key: "OPTION_EXPIRY_TYPE", label: "Expiry Type", type: "select", options: ["weekly", "monthly"], effect: EFFECT.INSTANT, desc: "Weekly or monthly expiry.", default: "weekly" },
       { key: "EXPIRY_HEALTHCHECK_ENABLED", label: "Expiry Health Check", type: "toggle", effect: EFFECT.SERVER, desc: "Check before the open that the expiry names a contract the broker quotes.", default: "true" },
       { key: "EXPIRY_HEALTHCHECK_MINS", label: "Expiry Check Interval (min)", type: "number", min: 5, max: 240, step: 5, effect: EFFECT.SERVER, desc: "How often to re-check the expiry (08:00–15:30 IST). After the close it always runs at 15:40, retrying at 16:15 / 16:30 / 16:45, so a just-expired date rolls the same day.", default: "30" },
       { key: "EXPIRY_AUTO_ROLL_ENABLED", label: "Auto-Roll Expired Expiry", type: "toggle", effect: EFFECT.INSTANT, desc: "When the expiry above is blank or expired, replace it with the next one automatically.", default: "true" },
+
+      // ── PER-INDEX CONFIGURATION ────────────────────────────────────────────
+      // One block per underlying, and the blocks are deliberately IDENTICAL in
+      // shape: same nine fields, same order — only the env key names and the
+      // numbers change. Adding a third index means copying one block, renaming
+      // its keys and adding the matching row to UNDERLYING_DEFS in
+      // src/config/instrument.js, which is where the engines read them from.
+      //
+      // They are written out by hand rather than generated from
+      // instrumentConfig.listUnderlyings() because scripts/genEnvDocs.js parses
+      // THIS FILE line by line looking for `key: "..."` literals — a generated
+      // block would document nothing, and docs/ENV.md is a build artifact.
+      //
+      // NIFTY keeps its ORIGINAL, unprefixed key names (STRIKE_OFFSET_CE,
+      // OPTION_EXPIRY_OVERRIDE, ...). Renaming them would silently reset every
+      // existing .env to defaults on the next deploy.
+      { key: "NIFTY_STRIKE_STEP", label: "NIFTY 50 — Strike Step (pts)", type: "number", min: 5, max: 1000, step: 5, effect: EFFECT.INSTANT, desc: "The strike grid this index is listed on. NIFTY 50 strikes exist every 50 points, so the ATM strike is spot rounded to the nearest 50. Change it only if NSE changes the grid.", default: "50", subheader: "NIFTY 50" },
+      { key: "NIFTY_LOT_SIZE", label: "Lot Size (Qty)", type: "number", min: 1, max: 200, step: 1, effect: EFFECT.INSTANT, desc: "Quantity per lot." },
+      { key: "STRIKE_OFFSET_CE", label: "CE Strike Offset", type: "number", min: -200, max: 200, step: 50, effect: EFFECT.INSTANT, desc: "CE strike vs ATM (-50=ITM, 0=ATM, +50=OTM).", default: "0" },
+      { key: "STRIKE_OFFSET_PE", label: "PE Strike Offset", type: "number", min: -200, max: 200, step: 50, effect: EFFECT.INSTANT, desc: "PE strike vs ATM (+50=ITM, 0=ATM, -50=OTM).", default: "0" },
+      { key: "NIFTY_WEEKLY_EXPIRY_ENABLED", label: "NIFTY 50 — Weekly Expiries Exist", type: "toggle", effect: EFFECT.INSTANT, desc: "NIFTY 50 lists a weekly (Tuesday) contract as well as the monthly one, so this stays ON. Turning it off makes every NIFTY 50 expiry resolve to the month contract instead.", default: "true" },
+      { key: "OPTION_EXPIRY_TYPE", label: "Expiry Type", type: "select", options: ["weekly", "monthly"], effect: EFFECT.INSTANT, desc: "Weekly or monthly expiry.", default: "weekly" },
+      { key: "OPTION_EXPIRY_OVERRIDE", label: "Option Expiry (manual)", type: "date", effect: EFFECT.INSTANT, desc: "Option expiry for all strategies. Filled in automatically once the stored one expires; a future date you set is left alone." },
+      { key: "NIFTY_SPOT_FALLBACK", label: "NIFTY Spot Fallback", type: "number", min: 15000, max: 35000, step: 50, effect: EFFECT.INSTANT, desc: "Fallback NIFTY price when no live quote.", default: "24000" },
+      { key: "NIFTY_FUTURES_MARGIN_PCT", label: "Futures Margin %", type: "number", min: 1, max: 100, step: 0.5, effect: EFFECT.INSTANT, desc: "SPAN+exposure margin as % of notional, used to size the capital pool when Trade Type is NIFTY_FUTURES. Advisory only — never blocks a trade.", default: "11" },
+
+      // NIFTY BANK — same nine fields, BANKNIFTY_-prefixed keys. Every value
+      // here is read live per entry, so a save applies without a restart.
+      { key: "BANKNIFTY_STRIKE_STEP", label: "NIFTY BANK — Strike Step (pts)", type: "number", min: 5, max: 1000, step: 5, effect: EFFECT.INSTANT, desc: "The strike grid this index is listed on. NIFTY BANK strikes exist every 100 points, so the ATM strike is spot rounded to the nearest 100. Change it only if NSE changes the grid.", default: "100", subheader: "NIFTY BANK" },
+      { key: "BANKNIFTY_LOT_SIZE", label: "NIFTY BANK — Lot Size (Qty)", type: "number", min: 1, max: 200, step: 1, effect: EFFECT.INSTANT, desc: "Quantity per NIFTY BANK lot — 30 since NSE's Nov-2024 revision.", default: "30" },
+      { key: "BANKNIFTY_STRIKE_OFFSET_CE", label: "NIFTY BANK — CE Strike Offset", type: "number", min: -400, max: 400, step: 100, effect: EFFECT.INSTANT, desc: "CE strike vs ATM, in points on the 100-point grid (-100=ITM, 0=ATM, +100=OTM).", default: "0" },
+      { key: "BANKNIFTY_STRIKE_OFFSET_PE", label: "NIFTY BANK — PE Strike Offset", type: "number", min: -400, max: 400, step: 100, effect: EFFECT.INSTANT, desc: "PE strike vs ATM, in points on the 100-point grid (+100=ITM, 0=ATM, -100=OTM).", default: "0" },
+      { key: "BANKNIFTY_WEEKLY_EXPIRY_ENABLED", label: "NIFTY BANK — Weekly Expiries Exist", type: "toggle", effect: EFFECT.INSTANT, desc: "OFF, and it must stay off: NSE WITHDREW BANKNIFTY weekly options in November 2024, so every NIFTY BANK contract is the MONTHLY one. This toggle exists only for the day NSE changes its mind — switching it on lets the engine build weekly (YYMDD) symbols again, and until that day those symbols simply do not exist, so every entry would be refused.", default: "false" },
+      { key: "BANKNIFTY_OPTION_EXPIRY_TYPE", label: "NIFTY BANK — Expiry Type", type: "select", options: ["monthly", "weekly"], effect: EFFECT.INSTANT, desc: "Monthly is the only real answer today — NSE WITHDREW BANKNIFTY weekly options in November 2024, so there is no weekly NIFTY BANK contract to name. Weekly is honoured only if the Weekly Expiries Exist toggle above is switched on, which is there purely for the day NSE reverses that decision.", default: "monthly" },
+      { key: "BANKNIFTY_OPTION_EXPIRY_OVERRIDE", label: "NIFTY BANK — Option Expiry (manual)", type: "date", effect: EFFECT.INSTANT, desc: "Manual NIFTY BANK expiry (YYYY-MM-DD) for every NIFTY BANK strategy. Blank = auto-detect, which is normally what you want. A date that has already passed BLOCKS NIFTY BANK entries rather than quietly trading a different expiry." },
+      { key: "BANKNIFTY_SPOT_FALLBACK", label: "NIFTY BANK — Spot Fallback", type: "number", min: 30000, max: 80000, step: 100, effect: EFFECT.INSTANT, desc: "Fallback NIFTY BANK price when no live quote is available.", default: "54000" },
+      { key: "BANKNIFTY_FUTURES_MARGIN_PCT", label: "NIFTY BANK — Futures Margin %", type: "number", min: 1, max: 100, step: 0.5, effect: EFFECT.INSTANT, desc: "SPAN+exposure margin as % of notional, used to size the capital pool when the Trade Type is futures. Advisory only — never blocks a trade.", default: "11" },
+
       { key: "TICK_RECORDER_ENABLED", label: "Tick Recorder (for Replay)", type: "toggle", effect: EFFECT.SESSION, desc: "Record ticks so sessions can be replayed.", default: "true", subheader: "Recording & Replay" },
       { key: "TICK_RECORDER_RETAIN_DAYS", label: "Tick Recordings Retention (days)", type: "number", min: 7, max: 180, step: 1, effect: EFFECT.SERVER, desc: "Delete tick recordings older than this.", default: "30" },
       { key: "OPTION_CHAIN_RECORDER_ENABLED", label: "Day-Wide Option-Chain Recorder", type: "toggle", effect: EFFECT.INSTANT, desc: "Record the option chain for replay.", default: "true" },
@@ -717,7 +801,6 @@ const SETTINGS_SCHEMA = [
       { key: "TIME_STOP_FLAT_PTS", label: "Time-Stop Flat (pts, default)", type: "number", min: 5, max: 40, step: 1, effect: EFFECT.SESSION, desc: "Flat-P&L band that triggers the time-stop.", default: "20" },
       { key: "HARD_SL_ENABLED", label: "Hard SL (Exchange)", type: "toggle", effect: EFFECT.SESSION, desc: "Place a stop-loss order at the exchange on entry.", default: "false" },
       { key: "HARD_SL_DELTA", label: "Hard SL Delta", type: "number", min: 0.2, max: 0.8, step: 0.05, effect: EFFECT.INSTANT, desc: "Delta used to convert the spot stop to a premium trigger.", default: "0.5" },
-      { key: "NIFTY_SPOT_FALLBACK", label: "NIFTY Spot Fallback", type: "number", min: 15000, max: 35000, step: 50, effect: EFFECT.INSTANT, desc: "Fallback NIFTY price when no live quote.", default: "24000" },
       { key: "ZERODHA_INV_AMOUNT", label: "Zerodha Investment Amount (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.INSTANT, desc: "Paper money pool for Zerodha strategies (₹).", default: "100000", subheader: "Capital" },
       { key: "FYERS_INV_AMOUNT", label: "Fyers Investment Amount (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.INSTANT, desc: "Paper money pool for Fyers strategies (₹).", default: "100000" },
       { key: "BACKTEST_CAPITAL", label: "Backtest Capital (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.BACKTEST },
@@ -782,6 +865,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_EARLYBIRD_STARTED", label: "EarlyBird — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an EarlyBird session starts.", default: "true" },
       { key: "TG_SIMPLE930_STARTED", label: "SIMPLE_9:30 — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a SIMPLE_9:30 session starts.", default: "true" },
       { key: "TG_RSI_PIVOT_ST_STARTED", label: "RSI Pivot ST — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an RSI Pivot ST session starts.", default: "true" },
+      { key: "TG_BN_PIVOT_RSI_ST_STARTED", label: "BN Pivot RSI ST — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a BN Pivot RSI ST session starts.", default: "true" },
 
       { key: "TG_EMA_RSI_ST_ENTRY", label: "EMA_RSI_ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST entry.", default: "true", subheader: "Trade Entry" },
       { key: "TG_BB_RSI_ENTRY", label: "BB_RSI — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BB_RSI entry.", default: "true" },
@@ -794,6 +878,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_EARLYBIRD_ENTRY", label: "EarlyBird — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on EarlyBird entries.", default: "true" },
       { key: "TG_SIMPLE930_ENTRY", label: "SIMPLE_9:30 — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every SIMPLE_9:30 entry.", default: "true" },
       { key: "TG_RSI_PIVOT_ST_ENTRY", label: "RSI Pivot ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every RSI Pivot ST entry.", default: "true" },
+      { key: "TG_BN_PIVOT_RSI_ST_ENTRY", label: "BN Pivot RSI ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BN Pivot RSI ST entry.", default: "true" },
 
       { key: "TG_EMA_RSI_ST_EXIT", label: "EMA_RSI_ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST exit.", default: "true", subheader: "Trade Exit" },
       { key: "TG_BB_RSI_EXIT", label: "BB_RSI — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BB_RSI exit.", default: "true" },
@@ -806,6 +891,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_EARLYBIRD_EXIT", label: "EarlyBird — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on EarlyBird exits.", default: "true" },
       { key: "TG_SIMPLE930_EXIT", label: "SIMPLE_9:30 — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every SIMPLE_9:30 exit.", default: "true" },
       { key: "TG_RSI_PIVOT_ST_EXIT", label: "RSI Pivot ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every RSI Pivot ST exit.", default: "true" },
+      { key: "TG_BN_PIVOT_RSI_ST_EXIT", label: "BN Pivot RSI ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BN Pivot RSI ST exit.", default: "true" },
 
       { key: "TG_EMA_RSI_ST_SIGNALS", label: "EMA_RSI_ST — Signal/Skip Alerts", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert why a trade was or wasn't taken.", default: "true", subheader: "Signal / Skip" },
       { key: "TG_BB_RSI_SIGNALS", label: "BB_RSI — Signal/Skip Alerts", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert why a trade was or wasn't taken.", default: "false" },
@@ -823,6 +909,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_EARLYBIRD_DAYREPORT", label: "EarlyBird — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send the EarlyBird day report when the session stops.", default: "true" },
       { key: "TG_SIMPLE930_DAYREPORT", label: "SIMPLE_9:30 — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a SIMPLE_9:30 day summary on stop.", default: "true" },
       { key: "TG_RSI_PIVOT_ST_DAYREPORT", label: "RSI Pivot ST — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send an RSI Pivot ST day summary on stop.", default: "true" },
+      { key: "TG_BN_PIVOT_RSI_ST_DAYREPORT", label: "BN Pivot RSI ST — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a BN Pivot RSI ST day summary on stop.", default: "true" },
 
       { key: "TG_DAYREPORT_CONSOLIDATED", label: "Consolidated Day Report (Market Close)", type: "toggle", effect: EFFECT.INSTANT, desc: "Send one combined end-of-day summary at 15:30 IST.", default: "true" },
       { key: "TG_EOD_CHARTS", label: "EOD Chart Images (Market Close)", type: "toggle", effect: EFFECT.INSTANT, desc: "At 15:34 IST send one chart image per strategy that took an entry today, with its entry/exit markers. Strategies that did not trade send nothing.", default: "true" },
@@ -927,6 +1014,7 @@ const SETTINGS_SCHEMA = [
       { key: "EARLYBIRD_MODE_ENABLED", label: "EarlyBird Mode",            type: "toggle", effect: EFFECT.INSTANT, desc: "Show the EarlyBird menu and settings.", default: "true" },
       { key: "SIMPLE930_MODE_ENABLED", label: "SIMPLE_9:30 Mode",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show the SIMPLE_9:30 menu and settings.", default: "true" },
       { key: "RSI_PIVOT_ST_MODE_ENABLED", label: "RSI Pivot ST Mode",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show the RSI Pivot ST menu and settings.", default: "true" },
+      { key: "BN_PIVOT_RSI_ST_MODE_ENABLED", label: "BN Pivot RSI ST Mode (NIFTY BANK)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the BN Pivot RSI ST menu and settings. This is the NIFTY BANK replica of RSI Pivot ST.", default: "true" },
       { key: "UI_SHOW_SIMULATE",       label: "Show Simulate Menu",        type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Simulate sub-menu.", default: "false", subheader: "Shared sub-menus (all strategies)" },
       { key: "UI_SHOW_COMPARE",        label: "Show Compare Menu",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Compare sub-menu.", default: "false" },
       { key: "UI_SHOW_TRACKER",        label: "Show Tracker Menu (EMA_RSI_ST only)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Tracker sub-menu (EMA_RSI_ST).", default: "false" },
@@ -998,6 +1086,12 @@ const SETTINGS_SCHEMA = [
       { key: "UI_SHOW_RSI_PIVOT_ST_LIVE",     label: "RSI Pivot ST → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live under RSI Pivot ST.", default: "true" },
       { key: "UI_SHOW_RSI_PIVOT_ST_HISTORY",  label: "RSI Pivot ST → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under RSI Pivot ST.", default: "true" },
 
+      // ── BN Pivot RSI ST submenu (NIFTY BANK) ──
+      { key: "UI_SHOW_BN_PIVOT_RSI_ST_BACKTEST", label: "BN Pivot RSI ST → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under BN Pivot RSI ST.", default: "true", subheader: "BN Pivot RSI ST sub-menus" },
+      { key: "UI_SHOW_BN_PIVOT_RSI_ST_PAPER",    label: "BN Pivot RSI ST → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under BN Pivot RSI ST.", default: "true" },
+      { key: "UI_SHOW_BN_PIVOT_RSI_ST_LIVE",     label: "BN Pivot RSI ST → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live under BN Pivot RSI ST.", default: "true" },
+      { key: "UI_SHOW_BN_PIVOT_RSI_ST_HISTORY",  label: "BN Pivot RSI ST → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under BN Pivot RSI ST.", default: "true" },
+
       // ── System submenu (Settings is always shown) ──
       { key: "UI_SHOW_LOGS",       label: "Logs → Server Logs tab", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Server Logs tab.", default: "true", subheader: "System sub-menus" },
       { key: "UI_SHOW_TRADE_LOGS", label: "System → Logs", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Logs under the System group.", default: "true" },
@@ -1063,6 +1157,7 @@ const MODE_SECTION_TITLES = {
   ha_scalp: "HA SCALP STRATEGY (Heikin Ashi 15m) — Zerodha",
   simple930: "SIMPLE_9:30 STRATEGY (option-premium breakout) — Zerodha",
   rsi_pivot_st: "RSI_PIVOT_ST STRATEGY (RSI + Standard Pivot R1/S1 + SuperTrend) — Zerodha",
+  bn_pivot_rsi_st: "BN_PIVOT_RSI_ST STRATEGY (NIFTY BANK — RSI + Standard Pivot R1/S1 + SuperTrend) — Zerodha",
   early_bird: "EARLYBIRD STRATEGY (first 15-min breakout, CASH EQUITY) — Fyers",
 };
 const SNAPSHOT_COMMON_SECTION_TITLES = new Set([
@@ -1071,7 +1166,7 @@ const SNAPSHOT_COMMON_SECTION_TITLES = new Set([
   "OPEN-INTEREST FILTER (OI + Price Buildup)",
 ]);
 
-const _MODE_KEYS = { ema_rsi_st: new Set(), bb_rsi: new Set(), pa: new Set(), orb: new Set(), ema9vwap: new Set(), trend_pb: new Set(), trend_day_scalp: new Set(), ha_scalp: new Set(), simple930: new Set(), rsi_pivot_st: new Set(), early_bird: new Set() };
+const _MODE_KEYS = { ema_rsi_st: new Set(), bb_rsi: new Set(), pa: new Set(), orb: new Set(), ema9vwap: new Set(), trend_pb: new Set(), trend_day_scalp: new Set(), ha_scalp: new Set(), simple930: new Set(), rsi_pivot_st: new Set(), bn_pivot_rsi_st: new Set(), early_bird: new Set() };
 const _KEY_TO_MODES = new Map();
 (function buildModeKeyIndex() {
   const commonKeys = [];
@@ -1142,6 +1237,10 @@ const IMMEDIATE_KEYS = new Set([
   "OI_LOOKBACK_CANDLES", "OI_MIN_DELTA_PCT", "OI_FAIL_MODE",
   "INSTRUMENT", "NIFTY_LOT_SIZE", "NIFTY_FUTURES_MARGIN_PCT", "STRIKE_OFFSET_CE", "STRIKE_OFFSET_PE", "LOT_MULTIPLIER",
   "OPTION_EXPIRY_OVERRIDE", "OPTION_EXPIRY_TYPE",
+  "NIFTY_STRIKE_STEP", "NIFTY_WEEKLY_EXPIRY_ENABLED",
+  "BANKNIFTY_STRIKE_STEP", "BANKNIFTY_LOT_SIZE", "BANKNIFTY_FUTURES_MARGIN_PCT",
+  "BANKNIFTY_STRIKE_OFFSET_CE", "BANKNIFTY_STRIKE_OFFSET_PE", "BANKNIFTY_SPOT_FALLBACK",
+  "BANKNIFTY_WEEKLY_EXPIRY_ENABLED", "BANKNIFTY_OPTION_EXPIRY_OVERRIDE", "BANKNIFTY_OPTION_EXPIRY_TYPE",
   "BACKTEST_CAPITAL", "BACKTEST_OPTION_SIM",
   "BACKTEST_DELTA", "BACKTEST_THETA_DAY", "ZERODHA_INV_AMOUNT", "FYERS_INV_AMOUNT",
   "PAPER_CAPITAL_GATE_ENABLED", "PAPER_CAPITAL_EST_PREMIUM",
@@ -1501,7 +1600,7 @@ router.post("/restart", (req, res) => {
 // cache & logs always clear fully. The aggregate paper JSON + capital restore is
 // handled client-side via the per-strategy /reset endpoints (full paper wipe only).
 // Auto-gated by the app.js x-api-secret middleware (not in OPEN_PATHS).
-const RESET_PAPER_MODES = ["ema_rsi_st", "bb_rsi", "pa", "orb", "ema9vwap", "trend_pb", "trend_day_scalp", "ha_scalp", "simple930", "rsi_pivot_st", "early_bird"];
+const RESET_PAPER_MODES = ["ema_rsi_st", "bb_rsi", "pa", "orb", "ema9vwap", "trend_pb", "trend_day_scalp", "ha_scalp", "simple930", "rsi_pivot_st", "bn_pivot_rsi_st", "early_bird"];
 const _RESET_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 router.post("/reset-data", (req, res) => {
@@ -1822,6 +1921,7 @@ router.get("/", (req, res) => {
   const earlyBirdModeOn = (envData["EARLYBIRD_MODE_ENABLED"] ?? process.env.EARLYBIRD_MODE_ENABLED ?? "true").toLowerCase() === "true";
   const simple930ModeOn = (envData["SIMPLE930_MODE_ENABLED"] ?? process.env.SIMPLE930_MODE_ENABLED ?? "true").toLowerCase() === "true";
   const rsiPivotStModeOn = (envData["RSI_PIVOT_ST_MODE_ENABLED"] ?? process.env.RSI_PIVOT_ST_MODE_ENABLED ?? "true").toLowerCase() === "true";
+  const bnPivotRsiStModeOn = (envData["BN_PIVOT_RSI_ST_MODE_ENABLED"] ?? process.env.BN_PIVOT_RSI_ST_MODE_ENABLED ?? "true").toLowerCase() === "true";
   // Server Logs (📜 LOGS) and Cache Files buttons moved into the Logs (/trade-logs) page as tabs —
   // UI_SHOW_LOGS / UI_SHOW_CACHE_FILES now gate those tabs there, not top-bar buttons here.
   // (bbRsiModeOn already computed above for isFieldFrozen)
@@ -1836,6 +1936,7 @@ router.get("/", (req, res) => {
     "HA SCALP STRATEGY (Heikin Ashi 15m) — Zerodha":                haScalpModeOn,
     "SIMPLE_9:30 STRATEGY (option-premium breakout) — Zerodha":     simple930ModeOn,
     "RSI_PIVOT_ST STRATEGY (RSI + Standard Pivot R1/S1 + SuperTrend) — Zerodha": rsiPivotStModeOn,
+    "BN_PIVOT_RSI_ST STRATEGY (NIFTY BANK — RSI + Standard Pivot R1/S1 + SuperTrend) — Zerodha": bnPivotRsiStModeOn,
     "EARLYBIRD STRATEGY (first 15-min breakout, CASH EQUITY) — Fyers": earlyBirdModeOn,
   };
 

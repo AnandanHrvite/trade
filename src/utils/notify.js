@@ -12,15 +12,15 @@
  *
  * Toggle hierarchy:
  *   TG_ENABLED                                  — master gate; if false, nothing sends
- *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|TDS|RSI_PIVOT_ST|SIMPLE930}_STARTED    — session-start alerts (per mode)
- *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|TDS|RSI_PIVOT_ST|SIMPLE930}_ENTRY      — trade entry alerts (per mode)
- *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|TDS|RSI_PIVOT_ST|SIMPLE930}_EXIT       — trade exit alerts (per mode)
+ *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|TDS|RSI_PIVOT_ST|BN_PIVOT_RSI_ST|SIMPLE930}_STARTED    — session-start alerts (per mode)
+ *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|TDS|RSI_PIVOT_ST|BN_PIVOT_RSI_ST|SIMPLE930}_ENTRY      — trade entry alerts (per mode)
+ *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|TDS|RSI_PIVOT_ST|BN_PIVOT_RSI_ST|SIMPLE930}_EXIT       — trade exit alerts (per mode)
  *   TG_{EMA_RSI_ST|BB_RSI|PA|EMA9VWAP}_SIGNALS                 — candle-close skip/signal alerts (these modes only)
- *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|TDS|RSI_PIVOT_ST|SIMPLE930}_DAYREPORT  — per-mode day report on session stop
+ *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|TDS|RSI_PIVOT_ST|BN_PIVOT_RSI_ST|SIMPLE930}_DAYREPORT  — per-mode day report on session stop
  *   TG_DAYREPORT_CONSOLIDATED                   — one combined day report at market close
  *   TG_EOD_CHARTS                               — per-strategy chart images at market close
  *
- *   (ORB, TREND_PB, TDS, RSI_PIVOT_ST and SIMPLE930 emit no SIGNAL alerts, so they have no _SIGNALS toggle.)
+ *   (ORB, TREND_PB, TDS, RSI_PIVOT_ST, BN_PIVOT_RSI_ST and SIMPLE930 emit no SIGNAL alerts, so they have no _SIGNALS toggle.)
  *
  * If TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID are missing, all functions silently
  * do nothing — no errors.
@@ -115,6 +115,10 @@ function modeGroup(mode) {
   // underscore — both spellings are matched below on purpose.
   if (m === "EARLYBIRD" || m === "EARLY_BIRD" || m.startsWith("EARLY-BIRD") || m.startsWith("EARLY_BIRD") || m.startsWith("EARLYBIRD")) return "EARLYBIRD";
   if (m === "RSI_PIVOT_ST" || m.startsWith("RSI_PIVOT_ST-") || m.startsWith("RSI_PIVOT_ST_")) return "RSI_PIVOT_ST";
+  // BN_PIVOT_RSI_ST — the same engine on NIFTY BANK. Its own group key so its
+  // Telegram toggles (TG_BN_PIVOT_RSI_ST_*) and BN_PIVOT_RSI_ST_MODE_ENABLED are
+  // independent of the NIFTY sibling's.
+  if (m === "BN_PIVOT_RSI_ST" || m.startsWith("BN_PIVOT_RSI_ST-") || m.startsWith("BN_PIVOT_RSI_ST_")) return "BN_PIVOT_RSI_ST";
   // SIMPLE_9:30. Group key SIMPLE930 so every env key stays on the SIMPLE930_
   // prefix (SIMPLE930_MODE_ENABLED, TG_SIMPLE930_ENTRY, …) — an env var may not
   // contain a colon, which is why the group is not literally "SIMPLE_9:30".
@@ -395,6 +399,8 @@ function modeLabel(mode) {
   if (m.startsWith("SIMPLE930-LIVE"))  return "🔴 SIMPLE 9:30 LIVE" + m.slice("SIMPLE930-LIVE".length);
   if (m.startsWith("RSI_PIVOT_ST-PAPER")) return "🎯 RSI PIVOT ST PAPER" + m.slice("RSI_PIVOT_ST-PAPER".length);
   if (m.startsWith("RSI_PIVOT_ST-LIVE"))  return "⚡ RSI PIVOT ST LIVE" + m.slice("RSI_PIVOT_ST-LIVE".length);
+  if (m.startsWith("BN_PIVOT_RSI_ST-PAPER")) return "🎯 BN PIVOT RSI ST PAPER" + m.slice("BN_PIVOT_RSI_ST-PAPER".length);
+  if (m.startsWith("BN_PIVOT_RSI_ST-LIVE"))  return "⚡ BN PIVOT RSI ST LIVE" + m.slice("BN_PIVOT_RSI_ST-LIVE".length);
   return m;
 }
 
@@ -755,7 +761,7 @@ function notifyConsolidatedDayReport({ byMode }) {
   if (!canSend("TG_DAYREPORT_CONSOLIDATED")) return false;
 
   // Only include strategies that are currently enabled in Settings.
-  const groups = ["EMA_RSI_ST", "BB_RSI", "PA", "ORB", "EMA9VWAP", "TREND_PB", "TDS", "RSI_PIVOT_ST", "SIMPLE930", "HA_SCALP", "EARLYBIRD"].filter(isModeEnabled);
+  const groups = ["EMA_RSI_ST", "BB_RSI", "PA", "ORB", "EMA9VWAP", "TREND_PB", "TDS", "RSI_PIVOT_ST", "BN_PIVOT_RSI_ST", "SIMPLE930", "HA_SCALP", "EARLYBIRD"].filter(isModeEnabled);
   let totalTrades = 0, totalPnl = 0, totalWins = 0, totalLosses = 0;
   const rows = [];
 

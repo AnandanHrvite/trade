@@ -892,6 +892,7 @@ const GUIDE_STATUS = {
       { type: "bool", label: "Trend Day Scalp Mode", key: "TDS_MODE_ENABLED", def: "true" },
       { type: "bool", label: "HA Scalp Mode", key: "HA_SCALP_MODE_ENABLED", def: "true" },
       { type: "bool", label: "RSI Pivot ST Mode", key: "RSI_PIVOT_ST_MODE_ENABLED", def: "true" },
+      { type: "bool", label: "BN Pivot RSI ST Mode (NIFTY BANK, monthly options)", key: "BN_PIVOT_RSI_ST_MODE_ENABLED", def: "true" },
       { type: "bool", label: "SIMPLE_9:30 Mode", key: "SIMPLE930_MODE_ENABLED", def: "true" },
       { type: "bool", label: "EarlyBird Mode", key: "EARLYBIRD_MODE_ENABLED", def: "true" },
     ] },

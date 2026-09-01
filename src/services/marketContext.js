@@ -7,6 +7,14 @@
  * an immutable Market Context Snapshot to data/ticks/YYYY-MM-DD/market.jsonl:
  * weekly/monthly expiry, strike interval, lot size, instrument meta, versions.
  *
+ * MULTI-INDEX: the top-level fields stay exactly as they were — NIFTY 50 facts,
+ * so every recording made before NIFTY BANK existed and every reader written
+ * against them keeps working unchanged. Each index the app knows about is ALSO
+ * written under `underlyings.{KEY}`, which is where a BANKNIFTY strategy's
+ * replay reads its own strike interval, lot size and (monthly-only) expiry. One
+ * record per day either way: replay takes the LAST line of market.jsonl, so a
+ * second record would shadow the first rather than extend it.
+ *
  * Why here (not per strategy):
  *   - A day recorded today must be replayable six months later by a strategy that
  *     doesn't exist yet — using the SAME ticks and the SAME historical expiry.
@@ -54,12 +62,48 @@ async function maybeCapture() {
   try {
     // Lazy-require to avoid any require-cycle at socketManager init time.
     const instrument = require("../config/instrument");
-    const ctx = await instrument.getMarketContext();
+    // NIFTY 50 stays the top-level snapshot — the shape every existing reader
+    // (and every recording already on disk) expects.
+    const ctx = await instrument.getMarketContext("NIFTY");
     ctx.date = day;
+
+    // Every index, keyed by underlying, for strategies that trade another one.
+    // Resolved one at a time rather than in parallel: each hits the same Fyers
+    // option-chain endpoint, and this runs once a day — there is nothing to win
+    // by racing them, and a rate-limit here would cost the whole snapshot.
+    ctx.underlyings = {};
+    for (const u of instrument.listUnderlyings()) {
+      try {
+        const one = u.key === "NIFTY" ? ctx : await instrument.getMarketContext(u.key);
+        ctx.underlyings[u.key] = {
+          index:             one.index,
+          underlying:        one.underlying,
+          strikeInterval:    one.strikeInterval,
+          lotSize:           one.lotSize,
+          weeklyExpiriesExist: one.weeklyExpiriesExist,
+          weeklyExpiry:      one.weeklyExpiry,
+          weeklyExpiryCode:  one.weeklyExpiryCode,
+          monthlyExpiry:     one.monthlyExpiry,
+          monthlyExpiryCode: one.monthlyExpiryCode,
+          futuresExpiry:     one.futuresExpiry,
+        };
+      } catch (e) {
+        // One index failing must not cost the whole day's snapshot — the others
+        // are still worth freezing, and the gap is recorded rather than hidden.
+        ctx.underlyings[u.key] = { underlying: u.key, error: String((e && e.message) || e) };
+        console.warn(`[marketContext] ${u.key} context failed for ${day}: ${(e && e.message) || e}`);
+      }
+    }
+
     const wrote = tickRecorder.recordMarketContext(ctx);
     _capturedDay = day;   // mark captured even if another process won the write
     if (wrote) {
-      console.log(`📋 [marketContext] captured ${day}: weekly=${ctx.weeklyExpiry} monthly=${ctx.monthlyExpiry} lot=${ctx.lotSize} strikeStep=${ctx.strikeInterval}`);
+      const perIndex = Object.values(ctx.underlyings)
+        .map((u) => u.error
+          ? `${u.underlying}=FAILED(${u.error})`
+          : `${u.underlying}: ${u.weeklyExpiriesExist ? `weekly=${u.weeklyExpiry}` : "monthly-only"} monthly=${u.monthlyExpiry} lot=${u.lotSize} strikeStep=${u.strikeInterval}`)
+        .join(" | ");
+      console.log(`📋 [marketContext] captured ${day} — ${perIndex}`);
     }
   } catch (e) {
     console.warn(`[marketContext] capture failed for ${day}: ${e.message}`);

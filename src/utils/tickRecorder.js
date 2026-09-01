@@ -207,7 +207,7 @@ function flushAllSync() {
  * gives the strategy the exact same shape it saw live.
  * Adds `t` (unix ms wall clock at receipt) for replay ordering.
  */
-function recordSpotTick(tick) {
+function recordSpotTick(tick, spotSymbol) {
   if (!ENABLED || !tick) return;
   if (!_initialized) _init();
   // Defensive: drop ticks if buffer hasn't been drained (timer stall guard).
@@ -215,7 +215,16 @@ function recordSpotTick(tick) {
   if (buffers.spot.length >= MAX_BUFFER_RECORDS) return;
   // Store the whole raw tick + a wall-clock receipt timestamp.
   // Fyers ticks include their own `tt` (exchange timestamp) — we keep both.
-  buffers.spot.push({ t: Date.now(), ...tick });
+  //
+  // `idx` names the INDEX this tick belongs to. Two indices (NIFTY 50 and
+  // NIFTY BANK) can now share one socket and therefore one day file, and a
+  // replay that could not separate them would feed BANKNIFTY prices into a
+  // NIFTY strategy. Written only when the caller supplies it, so an older day
+  // file with no `idx` still replays exactly as it did (a missing `idx` means
+  // "the only index that existed then" — NIFTY).
+  const rec = { t: Date.now(), ...tick };
+  if (spotSymbol) rec.idx = spotSymbol;
+  buffers.spot.push(rec);
 }
 
 /**
@@ -392,7 +401,7 @@ function recordMarketContext(ctx) {
 // the EXACT config the live session ran with, regardless of subsequent edits.
 // Tokens / secrets are excluded by construction.
 const _SETTINGS_KEY_MATCHERS = [
-  /^PA_/, /^BB_RSI_/, /^EMA_RSI_ST_/, /^ORB_/, /^TREND_PB_/, /^TDS_/, /^HA_SCALP_/, /^EARLYBIRD_/, /^RSI_PIVOT_ST_/, /^SIMPLE930_/, /^VIX_/, /^BACKTEST_/, /^TRADE_/,
+  /^PA_/, /^BB_RSI_/, /^EMA_RSI_ST_/, /^ORB_/, /^TREND_PB_/, /^TDS_/, /^HA_SCALP_/, /^EARLYBIRD_/, /^RSI_PIVOT_ST_/, /^BN_PIVOT_RSI_ST_/, /^SIMPLE930_/, /^VIX_/, /^BACKTEST_/, /^TRADE_/,
   /^MAX_/, /^MIN_/, /^EMA_/, /^SAR_/, /^RSI_/, /^ADX_/,
   /^INSTRUMENT/, /^OPTION_/, /^BREAKEVEN/, /^FAIL_MODE/,
   /^MODE_/, /^EXPIRY/, /^STRIKE/, /^QTY/, /^LOT/, /^SIGNAL/,

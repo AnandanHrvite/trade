@@ -69,6 +69,9 @@ const STRATEGY_BADGE = {
   trend_day_scalp: { label: "TREND DAY SCALP", cls: "mode-trend_day_scalp" },
   ha_scalp: { label: "HA SCALP", cls: "mode-ha_scalp" },
   rsi_pivot_st: { label: "RSI PIVOT ST", cls: "mode-rsi_pivot_st" },
+  // BN_PIVOT_RSI_ST (NIFTY BANK, monthly options) — its own key, so a NIFTY BANK
+  // replay output is never badged as the NIFTY one.
+  bn_pivot_rsi_st: { label: "BN PIVOT RSI ST", cls: "mode-bn_pivot_rsi_st" },
   simple930: { label: "SIMPLE_9:30", cls: "mode-simple930" },
   early_bird: { label: "EARLYBIRD", cls: "mode-early_bird" },
 };
@@ -92,7 +95,7 @@ function _istDateFromMs(ms) {
 function detectMeta(group, rel, abs, mtimeMs) {
   if (!group.tagged) return { strat: null, date: null };
   // Filename-encoded modes (replay / replay_sim outputs) — no per-file date.
-  const nameMatch = path.basename(rel).match(/^(ema_rsi_st|bb_rsi|pa|orb|trend_pb|trend_day_scalp|ha_scalp|rsi_pivot_st|simple930|early_bird)\b/i);
+  const nameMatch = path.basename(rel).match(/^(ema_rsi_st|bb_rsi|pa|orb|trend_pb|trend_day_scalp|ha_scalp|bn_pivot_rsi_st|rsi_pivot_st|simple930|early_bird)\b/i);
   if (nameMatch) return { strat: nameMatch[1].toLowerCase(), date: null };
   // Hash-named replay-cache JSON: read embedded mode/date, with an mtime cache.
   const cached = _tagCache.get(abs);
@@ -410,6 +413,7 @@ router.get("/", (req, res) => {
     .mode-trend_day_scalp { color:#a855f7; }
 .mode-ha_scalp { color:#f97316; }
     .mode-rsi_pivot_st { color:#facc15; }
+    .mode-bn_pivot_rsi_st { color:#818cf8; }
     .mode-simple930 { color:#fb923c; }
     .mode-early_bird { color:#14b8a6; }
     .mode-sim      { color:#ec4899; }
@@ -548,6 +552,7 @@ ${embed ? '' : buildSidebar('tradeLogs', liveActive)}
     trend_day_scalp: { label: 'TREND DAY SCALP', cls: 'mode-trend_day_scalp' },
     ha_scalp: { label: 'HA SCALP', cls: 'mode-ha_scalp' },
     rsi_pivot_st: { label: 'RSI PIVOT ST', cls: 'mode-rsi_pivot_st' },
+    bn_pivot_rsi_st: { label: 'BN PIVOT RSI ST', cls: 'mode-bn_pivot_rsi_st' },
     simple930: { label: 'SIMPLE_9:30', cls: 'mode-simple930' },
     early_bird: { label: 'EARLYBIRD', cls: 'mode-early_bird' },
   };

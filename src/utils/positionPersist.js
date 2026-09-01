@@ -703,6 +703,92 @@ function clearRsiPivotStPosition() {
   console.log("[PERSIST] RSI_PIVOT_ST position file cleared.");
 }
 
+
+// ── BN_PIVOT_RSI_ST (RSI + pivot breakout + SuperTrend stop, NIFTY BANK, Zerodha) ─
+// Byte-for-byte the RSI_PIVOT_ST block above on a different underlying and a
+// different file, so a NIFTY and a NIFTY BANK position can be persisted and
+// recovered at the same time without one overwriting the other. Same persisted
+// fields: SuperTrend stop, the ratcheting premium floor and its peak, pivots.
+// The stop is a FROZEN price at entry (SuperTrend level + premium floor), so a
+// crash-recovered position can be reconstructed exactly: there is no trail
+// state and no breakeven flag to lose.
+
+const BN_PIVOT_RSI_ST_POS_FILE = path.join(DATA_DIR, ".active_bn_pivot_rsi_st_position.json");
+
+function saveBnPivotRsiStPosition(position, sessionMeta) {
+  try {
+    if (!position) { _persistAtomic(BN_PIVOT_RSI_ST_POS_FILE, null); return; }
+    const data = {
+      position: {
+        side:            position.side,
+        symbol:          position.symbol,
+        qty:             position.qty,
+        entryPrice:      position.entryPrice,
+        spotAtEntry:     position.spotAtEntry || position.entrySpot,
+        stopLoss:        position.stopLoss || position.slSpot,
+        initialStopLoss: position.initialStopLoss || position.initialSlSpot,
+        target:          position.targetSpot,
+        slPts:           position.slPts,
+        targetPts:       position.targetPts,
+        rr:              position.rr,
+        signalStrength:  position.signalStrength,
+        crossedLevel:    position.crossedLevel,
+        pp:              position.pp,
+        r1:              position.r1,
+        s1:              position.s1,
+        entryUnixSec:    position.entryUnixSec,
+        entryTime:       position.entryTime,
+        orderId:         position.orderId,
+        isFutures:       !!position.isFutures,
+        optionEntryLtp:  position.optionEntryLtp,
+        optionStrike:    position.optionStrike,
+        optionExpiry:    position.optionExpiry,
+        optionType:      position.optionType || position.side,
+        // The premium floor is the second (and on PE the only) stop, and it
+        // RATCHETS — recovery must resume on the floor already reached, not
+        // re-derive it from the entry. null is meaningful: it records that this
+        // side does not carry a premium stop at all.
+        premiumFloor:        position.premiumFloor != null ? position.premiumFloor : null,
+        initialPremiumFloor: position.initialPremiumFloor != null ? position.initialPremiumFloor : null,
+        peakPremium:         position.peakPremium,
+        premiumStopPct:      position.premiumStopPct,
+        premiumStopSides:    position.premiumStopSides,
+        premiumStopApplies:  position.premiumStopApplies,
+      },
+      sessionMeta: sessionMeta || {},
+      savedAt: Date.now(),
+      savedDate: new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
+    };
+    _persistAtomic(BN_PIVOT_RSI_ST_POS_FILE, JSON.stringify(data, null, 2));
+    console.log(`💾 [PERSIST] BN_PIVOT_RSI_ST (NIFTY BANK) position saved: ${position.side} ${position.symbol} @ ₹${position.entryPrice}`);
+  } catch (err) {
+    console.warn(`⚠️ [PERSIST] Could not save BN_PIVOT_RSI_ST (NIFTY BANK) position: ${err.message}`);
+  }
+}
+
+function loadBnPivotRsiStPosition() {
+  try {
+    if (!fs.existsSync(BN_PIVOT_RSI_ST_POS_FILE)) return null;
+    const data = JSON.parse(fs.readFileSync(BN_PIVOT_RSI_ST_POS_FILE, "utf-8"));
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    if (data.savedDate && data.savedDate !== today) {
+      console.log(`[PERSIST] Stale BN_PIVOT_RSI_ST (NIFTY BANK) position from ${data.savedDate} — discarding.`);
+      fs.unlinkSync(BN_PIVOT_RSI_ST_POS_FILE);
+      return null;
+    }
+    if (data.position) console.log(`[PERSIST] BN_PIVOT_RSI_ST (NIFTY BANK) position loaded: ${data.position.side} ${data.position.symbol} @ ₹${data.position.entryPrice}`);
+    return data;
+  } catch (err) {
+    console.warn(`[PERSIST] Could not load BN_PIVOT_RSI_ST (NIFTY BANK) position: ${err.message}`);
+    return null;
+  }
+}
+
+function clearBnPivotRsiStPosition() {
+  _persistAtomic(BN_PIVOT_RSI_ST_POS_FILE, null);
+  console.log("[PERSIST] BN_PIVOT_RSI_ST (NIFTY BANK) position file cleared.");
+}
+
 // ── SIMPLE_9:30 (09:25 ITM pick, premium-trigger entry, Zerodha) ────────────
 // Unlike the frozen-price strategies above, this one DOES
 // carry live trail state: `stop` ratchets up behind `peak` on every new premium
@@ -918,5 +1004,6 @@ module.exports = {
   saveHaScalpPosition, loadHaScalpPosition, clearHaScalpPosition,
   saveEarlyBirdPositions, loadEarlyBirdPositions, clearEarlyBirdPositions,
   saveRsiPivotStPosition, loadRsiPivotStPosition, clearRsiPivotStPosition,
+  saveBnPivotRsiStPosition, loadBnPivotRsiStPosition, clearBnPivotRsiStPosition,
   saveSimple930Position, loadSimple930Position, clearSimple930Position,
 };

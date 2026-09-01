@@ -30,6 +30,8 @@ const SOURCES = [
   { mode: "TDS",      file: path.join(DATA_DIR, "trend_day_scalp_paper_trades.json"), label: "TREND DAY SCALP", color: "#a855f7" },
   { mode: "HA_SCALP", file: path.join(DATA_DIR, "ha_scalp_paper_trades.json"), label: "HA SCALP", color: "#f97316" },
   { mode: "RSI_PIVOT_ST", file: path.join(DATA_DIR, "rsi_pivot_st_paper_trades.json"), label: "RSI PIVOT ST", color: "#facc15" },
+  // Same rules on NIFTY BANK (monthly options) — its own trades file, never folded into RSI PIVOT ST's.
+  { mode: "BN_PIVOT_RSI_ST", file: path.join(DATA_DIR, "bn_pivot_rsi_st_paper_trades.json"), label: "BN PIVOT RSI ST", color: "#818cf8" },
   { mode: "SIMPLE930", file: path.join(DATA_DIR, "simple930_paper_trades.json"), label: "SIMPLE_9:30", color: "#fb923c" },
   // EarlyBird is cash equity (share counts, real intraday shorts), not options.
   { mode: "EARLYBIRD", file: path.join(DATA_DIR, "early_bird_paper_trades.json"), label: "EarlyBird", color: "#14b8a6" },
@@ -1206,7 +1208,7 @@ function wireTableControls(){
 // ── Analytics Panel ─────────────────────────────────────────────────────────
 let _anaVisible = false;
 const _anaCharts = {};
-const _MODE_COLOR = { EMA_RSI_ST: '#3b82f6', BB_RSI: '#f59e0b', PA: '#a855f7', ORB: '#10b981', EMA9VWAP: '#06b6d4', TREND_PB: '#ec4899', TDS: '#c084fc', HA_SCALP: '#f97316', RSI_PIVOT_ST: '#facc15', SIMPLE930: '#fb923c', EARLYBIRD: '#14b8a6' };
+const _MODE_COLOR = { EMA_RSI_ST: '#3b82f6', BB_RSI: '#f59e0b', PA: '#a855f7', ORB: '#10b981', EMA9VWAP: '#06b6d4', TREND_PB: '#ec4899', TDS: '#c084fc', HA_SCALP: '#f97316', RSI_PIVOT_ST: '#facc15', BN_PIVOT_RSI_ST: '#818cf8', SIMPLE930: '#fb923c', EARLYBIRD: '#14b8a6' };
 
 function fmtAna(v){ return '₹' + Math.round(Math.abs(v||0)).toLocaleString('en-IN'); }
 function fmtAnaSigned(v){ const n = v||0; return (n>=0?'+':'-') + '₹' + Math.round(Math.abs(n)).toLocaleString('en-IN'); }

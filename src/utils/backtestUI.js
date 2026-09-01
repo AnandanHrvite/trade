@@ -169,7 +169,17 @@ body{font-family:'IBM Plex Mono',monospace;background:#060810;color:#a0b8d8;min-
 .copy-btn:hover{background:#0a1e3d;border-color:${accent};}
 .copy-btn.copied{background:#064e3b;border-color:#10b981;color:#34d399;}
 
-.tw{border:0.5px solid #0e1428;border-radius:8px;overflow:hidden;margin-bottom:10px;}
+.tw{border:0.5px solid #0e1428;border-radius:8px;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;margin-bottom:10px;}
+.tw::-webkit-scrollbar{height:6px;}
+.tw::-webkit-scrollbar-thumb{background:#1a2236;border-radius:3px;}
+/* Only BELOW the desktop breakpoint. On a wide screen the table still lays out
+   at width:100% exactly as it always has — forcing max-content there would make
+   pages that currently fit start scrolling. Below it, width:100% is what caused
+   the ~14-column trade table to compress into an unreadable smear inside a
+   wrapper that used to be overflow:hidden, so the columns simply vanished off
+   the right edge; letting the table exceed the wrapper is what makes the
+   horizontal scroll above actually reachable. */
+@media(max-width:900px){.tw table{min-width:max-content;}}
 table{width:100%;border-collapse:collapse;}
 thead th{background:#04060e;padding:7px 10px;text-align:left;font-size:0.58rem;text-transform:uppercase;letter-spacing:0.8px;color:var(--muted-2,#6d85a8);cursor:pointer;user-select:none;white-space:nowrap;}
 thead th:hover{color:#c8d8f0;}

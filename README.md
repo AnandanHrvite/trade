@@ -1,6 +1,6 @@
 # Palani Andawar Trading Bot
 
-NIFTY algorithmic trading bot with **11 independent strategies** (EMA_RSI_ST, BB_RSI, Price Action, ORB, EMA9+VWAP, Trend Pullback, Trend Day Scalp, HA Scalp, RSI Pivot ST, SIMPLE_9:30 — all NIFTY options — plus **EarlyBird**, which trades **cash equity** in F&O stocks, a NIFTY option, or both), dual-broker architecture (Fyers + Zerodha), background backtesting, paper trading, deterministic **tick-replay** of recorded sessions, after-hours simulation, live NIFTY candlestick charts, consolidated cross-mode analytics (paper + live), per-module dashboard P&L cards, **unified real-time monitor** (one screen for all strategies with a PAPER/LIVE toggle), crash-safe JSONL trade audit, near-miss filter audit, Telegram alerts, and a full web dashboard.
+Indian index algorithmic trading bot with **12 independent strategies** (EMA_RSI_ST, BB_RSI, Price Action, ORB, EMA9+VWAP, Trend Pullback, Trend Day Scalp, HA Scalp, RSI Pivot ST, SIMPLE_9:30 — all NIFTY options — plus **BN Pivot RSI ST**, the same RSI Pivot ST rules on **NIFTY BANK monthly options**, and **EarlyBird**, which trades **cash equity** in F&O stocks, a NIFTY option, or both), dual-broker architecture (Fyers + Zerodha), background backtesting, paper trading, deterministic **tick-replay** of recorded sessions, after-hours simulation, live NIFTY candlestick charts, consolidated cross-mode analytics (paper + live), per-module dashboard P&L cards, **unified real-time monitor** (one screen for all strategies with a PAPER/LIVE toggle), crash-safe JSONL trade audit, near-miss filter audit, Telegram alerts, and a full web dashboard.
 
 ## Architecture
 
@@ -59,6 +59,9 @@ All four strategies run **in parallel** on the same WebSocket — different cand
 | **RSI Pivot ST Paper** | RSI(14) extreme + a candle crossing and closing beyond yesterday's Standard Pivot R1/S1 (single-leg OTM CE/PE) | 5-min | Simulated | `/rsi-pivot-st-paper` |
 | **RSI Pivot ST Backtest** | Same engine over a date range (conservative intra-bar ordering, δ+θ premium sim) | 5-min historical | Historical | `/rsi-pivot-st-backtest` |
 | **RSI Pivot ST Live (Harness)** | Runs Live by wrapping Paper (Zerodha orders, triple-gated dry-run) | 5-min | Zerodha (PAPER-wrapped) | `/rsi-pivot-st-live` |
+| **BN Pivot RSI ST Paper** | The RSI Pivot ST rules on **NIFTY BANK** — monthly options, 100-pt strike grid | 5-min | Simulated | `/bn-pivot-rsi-st-paper` |
+| **BN Pivot RSI ST Backtest** | Same engine over a date range (conservative intra-bar ordering, δ+θ premium sim) | 5-min historical | Historical | `/bn-pivot-rsi-st-backtest` |
+| **BN Pivot RSI ST Live (Harness)** | Runs Live by wrapping Paper (Zerodha orders, triple-gated dry-run) | 5-min | Zerodha (PAPER-wrapped) | `/bn-pivot-rsi-st-live` |
 | **SIMPLE_9:30 Paper** | At 09:25 picks the ITM strike nearest ₹180 on each side; buys whichever clears ₹180 by 09:35, 20pt stop that trails only after the premium touches the box top, 09:45 sideways exit | 1-sec option premium poll | Simulated | `/simple930-paper` |
 | **SIMPLE_9:30 Backtest** | Same engine over a date range on **real** 1-min option premium candles (no delta/theta model) | 1-min historical (option premium) | Historical | `/simple930-backtest` |
 | **SIMPLE_9:30 Live (Harness)** | Runs Live by wrapping Paper (Zerodha orders, triple-gated dry-run) | 1-sec option premium poll | Zerodha (PAPER-wrapped) | `/simple930-live` |
@@ -296,6 +299,23 @@ Two levels decide the whole day, and they are fixed before the open. Yesterday's
 - **Backtest** (`/rsi-pivot-st-backtest`, [src/routes/rsiPivotStBacktest.js](src/routes/rsiPivotStBacktest.js)): drives the **same** `getSignal` and re-implements only paper's exits (paper is canonical). Two series are fetched — intraday 5-min bars for every decision, and a separate **daily** series, requested from a week *before* the range so the first session still has a yesterday to compute R1/S1 from. **Conservative intra-bar ordering**: the adverse stop is tested on the bar's high/low *before* anything favourable, so a bar touching both books the loss; a bar that opened beyond a level fills at the **open**; entry is the signal bar's close; the SuperTrend trail advances only on a bar **close**, matching paper. **The premium stop is the weakest number in any backtest result** — there is no historical option chain, so the premium is δ+θ simulated seeded at `RSI_PIVOT_ST_BT_SEED_PREMIUM=180` and the 25% floor is applied to *that*, plus `RSI_PIVOT_ST_BT_SLIPPAGE_PTS=2`pt each way.
 
 
+### BN Pivot RSI ST — RSI Pivot ST, on NIFTY BANK (`src/strategies/bn_pivot_rsi_st.js`)
+
+**Never traded, and never validated.** Zero paper sessions, zero live orders, zero backtests. Collect clean paper days and diff one against `/replay` before touching a live gate.
+
+Every rule is **identical** to [RSI Pivot ST](#rsi-pivot-st--rsi-extreme--pivot-r1s1-breakout-supertrend-stopped) above — same pivots, same RSI thresholds, same asymmetric stops, same absence of a profit target — read that section for the strategy itself. Settings live under the `BN_PIVOT_RSI_ST_*` prefix and are **independent** of `RSI_PIVOT_ST_*`, so the two can be tuned separately.
+
+Only the instrument differs, and each difference is a consequence of the underlying rather than a rule change:
+
+- **Spot is `NSE:NIFTYBANK-INDEX`.** Pivots, RSI and SuperTrend are all computed on NIFTY BANK candles.
+- **Strikes are struck every 100 points** (`BANKNIFTY_STRIKE_STEP`), not 50. The 1%-of-spot strike rule therefore lands ~5 strikes out on a ~54,000 index.
+- **Options are MONTHLY only.** NSE withdrew BANKNIFTY weekly options in Nov-2024, so the symbol is always the month code (`NSE:BANKNIFTY26MAR54000CE`). A monthly contract decays far more slowly than a weekly one, which makes the 25% premium floor a materially **looser** stop in rupee terms than it is on NIFTY. That is the instrument's doing; nothing compensates for it.
+- **Lot size is `BANKNIFTY_LOT_SIZE`** (default 30), separate from `NIFTY_LOT_SIZE`.
+
+Per-index settings (strike grid, lot size, strike offsets, expiry override and type, spot fallback, futures margin %) are configured **separately for NIFTY 50 and NIFTY BANK** under Settings → Common, so a second NIFTY BANK strategy needs no further plumbing.
+
+The two indices share the **single** Fyers WebSocket: `socketManager` subscribes both and routes every tick to the callbacks bound to that index. A tick it cannot attribute is dropped and counted, never delivered to a guess.
+
 ### SIMPLE_9:30 — the ₹180 option-premium breakout (`src/strategies/simple930.js`)
 
 **Never traded, and never validated.** Zero paper sessions, zero live orders. ₹180, ₹220/₹160 and the 20-point stop are the operator's own numbers, not fitted ones. Collect clean paper days and diff one against `/replay` before touching a live gate.
@@ -395,6 +415,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   trend_day_scalp_paper_trades.json # Trend Day Scalp paper sessions
   ha_scalp_paper_trades.json      # HA Scalp paper sessions
   rsi_pivot_st_paper_trades.json  # RSI Pivot ST paper sessions
+  bn_pivot_rsi_st_paper_trades.json # BN Pivot RSI ST (NIFTY BANK) paper sessions
   simple930_paper_trades.json     # SIMPLE_9:30 paper sessions
   historical_pnl.json             # One-time P&L baselines per broker (Kite / Fyers)
   nse_holidays.json               # Last good NSE holiday fetch, keyed by year — keeps 2027+ working if NSE blocks the box
@@ -407,6 +428,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   .active_trend_day_scalp_position.json # Crash recovery — Trend Day Scalp position
   .active_ha_scalp_position.json  # Crash recovery — HA Scalp position
   .active_rsi_pivot_st_position.json # Crash recovery — RSI Pivot ST position
+  .active_bn_pivot_rsi_st_position.json # Crash recovery — BN Pivot RSI ST position
   .active_simple930_position.json # Crash recovery — SIMPLE_9:30 position (carries the live trail state)
   .harness_events.json            # Live-harness event log (DRY-RUN/real order events), survives restart
   ema_rsi_st_paper_trades_log.jsonl    # Crash-safe per-trade JSONL audit (cumulative)
@@ -526,6 +548,14 @@ log, so each session's trades carry the exact config that produced them.
 | `/rsi-pivot-st-paper/status` | Paper trade — NIFTY chart with the frozen PP / R1 / S1 levels and the SuperTrend line |
 | `/rsi-pivot-st-paper/history` | Sessions (per-session delete + view modal) |
 | `/rsi-pivot-st-live` | Live via the paper-wrapping harness (**Zerodha** orders; gated by `RSI_PIVOT_ST_LIVE_ENABLED` + `LIVE_HARNESS_DRY_RUN` + `RSI_PIVOT_ST_LIVE_DRY_RUN`) |
+
+### BN Pivot RSI ST (NIFTY BANK)
+| URL | Description |
+|-----|-------------|
+| `/bn-pivot-rsi-st-backtest` | Date-range backtest on NIFTY BANK (5-min index bars + a padded daily series for the pivots; δ+θ premium sim) |
+| `/bn-pivot-rsi-st-paper/status` | Paper trade — NIFTY BANK chart with the frozen PP / R1 / S1 levels and the SuperTrend line |
+| `/bn-pivot-rsi-st-paper/history` | Sessions (per-session delete + view modal) |
+| `/bn-pivot-rsi-st-live` | Live via the paper-wrapping harness (**Zerodha** orders; gated by `BN_PIVOT_RSI_ST_LIVE_ENABLED` + `LIVE_HARNESS_DRY_RUN` + `BN_PIVOT_RSI_ST_LIVE_DRY_RUN`) |
 
 ### SIMPLE_9:30
 | URL | Description |

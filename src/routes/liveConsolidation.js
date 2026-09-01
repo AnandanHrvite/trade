@@ -26,6 +26,9 @@ const SOURCES = [
   { mode: "BB_RSI", file: path.join(DATA_DIR, "bb_rsi_live_trades.json"), label: "BB_RSI", color: "#f59e0b" },
   { mode: "PA",    file: path.join(DATA_DIR, "pa_live_trades.json"),    label: "Price Action", color: "#a855f7" },
   { mode: "RSI_PIVOT_ST", file: path.join(DATA_DIR, "rsi_pivot_st_live_trades.json"), label: "RSI PIVOT ST", color: "#facc15" },
+  // NIFTY BANK, monthly options. The dashboard's Live toggle reads this list via
+  // /live-consolidation/data — a strategy missing here is invisible in BOTH places.
+  { mode: "BN_PIVOT_RSI_ST", file: path.join(DATA_DIR, "bn_pivot_rsi_st_live_trades.json"), label: "BN PIVOT RSI ST", color: "#818cf8" },
   { mode: "SIMPLE930", file: path.join(DATA_DIR, "simple930_live_trades.json"), label: "SIMPLE_9:30", color: "#fb923c" },
   { mode: "HA_SCALP", file: path.join(DATA_DIR, "ha_scalp_live_trades.json"), label: "HA SCALP", color: "#f97316" },
   // EarlyBird is cash equity: side is LONG/SHORT, qty is a share count.
@@ -197,6 +200,7 @@ router.get("/", (req, res) => {
     .badge-BB_RSI{background:rgba(245,158,11,0.12);color:#f59e0b;border:0.5px solid rgba(245,158,11,0.3);}
     .badge-PA{background:rgba(168,85,247,0.12);color:#a855f7;border:0.5px solid rgba(168,85,247,0.3);}
     .badge-RSI_PIVOT_ST{background:rgba(250,204,21,0.12);color:#facc15;border:0.5px solid rgba(250,204,21,0.3);}
+    .badge-BN_PIVOT_RSI_ST{background:rgba(129,140,248,0.12);color:#818cf8;border:0.5px solid rgba(129,140,248,0.3);}
     .badge-SIMPLE930{background:rgba(251,146,60,0.12);color:#fb923c;border:0.5px solid rgba(251,146,60,0.3);}
     .badge-HA_SCALP{background:rgba(249,115,22,0.12);color:#f97316;border:0.5px solid rgba(249,115,22,0.3);}
     .badge-EARLYBIRD{background:rgba(20,184,166,0.12);color:#14b8a6;border:0.5px solid rgba(20,184,166,0.3);}

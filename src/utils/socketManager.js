@@ -1,10 +1,31 @@
 /**
  * socketManager.js
  * ─────────────────────────────────────────────────────────────────────────────
- * ONE permanent WebSocket. The spot index (NSE:NIFTY50-INDEX) is the primary
- * subscription; option contracts can be added and removed on the fly as
- * strategies enter and exit trades (see utils/optionFeed.js, which owns the
- * leasing policy — this file only owns the wire).
+ * ONE permanent WebSocket. A spot INDEX is the primary subscription; option
+ * contracts can be added and removed on the fly as strategies enter and exit
+ * trades (see utils/optionFeed.js, which owns the leasing policy — this file
+ * only owns the wire).
+ *
+ * ── MORE THAN ONE INDEX ─────────────────────────────────────────────────────
+ * This used to be exactly one spot symbol. It could not stay that way once a
+ * strategy traded NIFTY BANK: `start()` with a different symbol RE-POINTED the
+ * shared subscription, so a BANKNIFTY session silently cut the live spot feed
+ * out from under every running NIFTY strategy, and every strategy's fan-out
+ * would then have received BANKNIFTY ticks into its NIFTY candle builder.
+ *
+ * So the spot subscription is now a SET (`_spotSymbols`), and delivery is
+ * per-symbol: `start()` on an already-running socket ADDS an index instead of
+ * replacing one, and every callback is bound to the index it asked for. A
+ * callback never sees a tick from an index it did not subscribe to.
+ *
+ * With two indices live, "which instrument is this tick?" can no longer be
+ * answered by "everything that is not an option". Attribution becomes a strict
+ * positive match against `_spotSymbols`, and anything unmatched is DROPPED and
+ * counted — never delivered to a guess. The failure mode is "this index gets no
+ * live ticks and the health surface says so", never "the wrong index's price
+ * was written into a candle". A second index is refused outright if the probe
+ * has already shown that the wire renames symbols, because exact matching
+ * cannot work in that case.
  *
  * ── Symbol attribution (why the probe exists) ────────────────────────────────
  * Every tick from the SDK lands in ONE `message` handler. Before options rode
@@ -123,9 +144,27 @@ class SocketManager {
     this._lastErrorCode  = null;
     this._lastErrorMsg   = null;
     // ── Multi-callback fan-out for parallel modes (main + bb_rsi) ──────────
-    // Map of callbackId → { onTick, onLog }
-    // When secondary modes (bb_rsi) register, ticks are dispatched to ALL callbacks.
+    // Map of callbackId → { onTick, onLog, symbol }
+    // `symbol` is the spot INDEX the callback subscribed to; a callback is only
+    // ever handed ticks for that index. Registrations that do not name one
+    // default to the primary index, which is every pre-BANKNIFTY call site.
     this._callbacks  = new Map();
+    // ── Spot indices sharing this wire ────────────────────────────────────
+    // `_symbol` remains the PRIMARY (whichever index started the socket) and is
+    // what the connect handler logs. `_spotSymbols` is every index currently
+    // subscribed, re-asserted on each reconnect.
+    this._spotSymbols   = new Set();
+    // symbol → epoch ms of the last tick DELIVERED for that index. The watchdog
+    // deliberately still reads `_lastSpotTickAt` ("any index"), because what it
+    // reconnects is the WIRE and a dead wire silences every index at once. This
+    // map exists so the opposite case — one index silent while another ticks,
+    // which the watchdog cannot see — is at least VISIBLE on the health surface
+    // instead of looking perfectly healthy.
+    this._lastTickBySpot = new Map();
+    // symbol → the onSpotTick handler passed by whoever added that index.
+    // The primary's handler stays in `_onSpotTick` so the original single-index
+    // path is byte-for-byte unchanged.
+    this._spotHandlers  = new Map();
     // ── Extra (non-spot) subscriptions — option contracts ──────────────────
     // Set of exact Fyers symbols currently subscribed alongside the spot index.
     // Re-asserted on every reconnect. optionFeed owns when entries appear/vanish.
@@ -166,7 +205,24 @@ class SocketManager {
     if (!this._stopped && this._symbol === spotSymbol) {
       this._onSpotTick = onSpotTick;
       this._onLog      = onLog;
+      this._spotSymbols.add(spotSymbol);
       if (onLog) onLog(`📡 [SOCKET] Reusing existing connection for ${spotSymbol}`);
+      return;
+    }
+
+    // A DIFFERENT index arriving at a LIVE socket. Never re-point: other
+    // strategies are mid-session on the current index and re-pointing would cut
+    // their feed. Add it alongside instead.
+    if (!this._stopped && this._symbol) {
+      if (this._spotSymbols.has(spotSymbol)) {
+        this._spotHandlers.set(spotSymbol, onSpotTick || null);
+        if (onLog) onLog(`📡 [SOCKET] Reusing existing connection for ${spotSymbol} (secondary index)`);
+        return;
+      }
+      const added = this.addSpotSymbol(spotSymbol, onSpotTick, onLog);
+      if (!added && onLog) {
+        onLog(`🛑 [SOCKET] ${spotSymbol} could NOT join the shared feed — this strategy gets no live spot ticks (decisions that read closed candles from the history endpoint are unaffected).`);
+      }
       return;
     }
     // Reaching here means a DIFFERENT spot instrument (the same-symbol case
@@ -174,8 +230,8 @@ class SocketManager {
     // old one, so it must be re-learned — and the probe only runs with no extras
     // subscribed, so those go too. Skipping this would leave the strict spot
     // match rejecting every tick of the new instrument until the bail-out fired
-    // 50 ticks later. All call sites currently pass the same NIFTY index symbol,
-    // so this is a latent path, not a live one.
+    // 50 ticks later. Only reachable from a STOPPED socket now — a live one
+    // takes the add-alongside branch above.
     if (this._symbol && this._symbol !== spotSymbol) {
       if (this._extraSymbols.size) {
         this._tombstone(Array.from(this._extraSymbols));
@@ -193,6 +249,8 @@ class SocketManager {
       // reason to trust it again. Only stop(), a genuinely new session, does.
     }
     this._symbol        = spotSymbol;
+    this._spotSymbols   = new Set([spotSymbol]);
+    this._spotHandlers.clear();
     this._onSpotTick    = onSpotTick;
     this._onLog         = onLog;
     this._stopped       = false;
@@ -213,17 +271,96 @@ class SocketManager {
   }
 
   /**
+   * Subscribe a SECOND (third, …) spot index alongside the primary one, so a
+   * BANKNIFTY strategy and a NIFTY strategy can share this single connection.
+   *
+   * Refused — returning false rather than throwing — when the attribution probe
+   * has already shown that the wire labels ticks with something other than the
+   * symbol we subscribed with. Exact matching is the only thing separating two
+   * indices, so without it a BANKNIFTY tick could be delivered as NIFTY. The
+   * caller is expected to carry on without live ticks (every strategy here
+   * decides on closed candles fetched from the history endpoint) rather than
+   * trade on a price that might belong to the other index.
+   *
+   * @returns {boolean} true when the index is now subscribed
+   */
+  addSpotSymbol(symbol, onSpotTick, onLog) {
+    if (!symbol) return false;
+    if (this._spotSymbols.has(symbol)) {
+      if (onSpotTick) this._spotHandlers.set(symbol, onSpotTick);
+      return true;
+    }
+    if (this._stopped || !this._symbol) {
+      this._log(`⚠️  [SOCKET] Cannot add spot index ${symbol} — socket is not running. Call start() first.`);
+      return false;
+    }
+    if (this._spotTickSymbol !== null && this._spotTickSymbol !== this._symbol) {
+      this._log(
+        `🛑 [SOCKET] Refusing to add spot index ${symbol}: this feed labels ticks "${this._spotTickSymbol}" ` +
+        `while we subscribed "${this._symbol}", so two indices cannot be told apart on the wire. ` +
+        `${symbol} will get NO live ticks rather than risk being fed ${this._symbol} prices.`
+      );
+      return false;
+    }
+    this._spotSymbols.add(symbol);
+    if (onSpotTick) this._spotHandlers.set(symbol, onSpotTick);
+    if (!this._sendSubscribe([symbol])) {
+      // A subscribe that failed on the wire must not stay in the set, or the
+      // reconnect path would keep re-asserting a symbol the SDK rejected.
+      this._spotSymbols.delete(symbol);
+      this._spotHandlers.delete(symbol);
+      return false;
+    }
+    this._log(`📡 [SOCKET] Spot index ADDED: ${symbol} — now streaming ${this._spotSymbols.size} indices (${Array.from(this._spotSymbols).join(", ")}); ticks are routed per index.`);
+    return true;
+  }
+
+  /**
+   * Drop a secondary spot index when its strategy stops. The PRIMARY index is
+   * never removed here — it is owned by start()/stop(), and pulling it would
+   * leave the connection subscribed to nothing.
+   */
+  removeSpotSymbol(symbol) {
+    if (!symbol || symbol === this._symbol || !this._spotSymbols.has(symbol)) return false;
+    this._spotSymbols.delete(symbol);
+    this._spotHandlers.delete(symbol);
+    // Tombstoned for the same reason an option is: queued ticks for it keep
+    // arriving briefly, and they must not be re-attributed to another index.
+    this._tombstone([symbol]);
+    this._sendUnsubscribe([symbol]);
+    this._log(`📡 [SOCKET] Spot index REMOVED: ${symbol} — ${this._spotSymbols.size} index(es) still streaming.`);
+    return true;
+  }
+
+  /** Every spot index currently subscribed (diagnostics / health surface). */
+  spotSymbols() { return Array.from(this._spotSymbols); }
+
+  /**
    * Register an additional tick callback (for parallel modes like bb_rsi).
    * Returns a callbackId to use for unregistering.
    * Socket must already be started by the primary mode.
+   *
+   * `symbol` names the spot INDEX this callback wants; it defaults to the
+   * primary index, which is what every pre-BANKNIFTY call site means. A
+   * callback is NEVER handed a tick from another index — that is the whole
+   * point of binding it here.
    */
-  addCallback(callbackId, onTick, onLog) {
+  addCallback(callbackId, onTick, onLog, symbol) {
     // Log only on a genuine first insert. Idempotent re-registration (e.g. the
     // option-chain recorder re-asserts its callback every poll to survive a
     // stop()-triggered _callbacks.clear()) must stay silent, or it floods /logs.
     const isNew = !this._callbacks.has(callbackId);
-    this._callbacks.set(callbackId, { onTick, onLog });
-    if (isNew) this._log(`📡 [SOCKET] Callback registered: ${callbackId} (total: ${this._callbacks.size})`);
+    // `symbol` may be omitted, and the socket may not have a primary yet — the
+    // option-chain recorder registers at boot, before any strategy calls
+    // start(). Storing null there and treating null as "everything" at delivery
+    // time would hand that callback BOTH indices' ticks once a second one
+    // joined. So null means "the primary, whatever it turns out to be", and it
+    // is resolved at DELIVERY time rather than frozen here.
+    const sym = symbol || null;
+    this._callbacks.set(callbackId, { onTick, onLog, symbol: sym });
+    if (isNew) {
+      this._log(`📡 [SOCKET] Callback registered: ${callbackId} on ${sym || `${this._symbol || "primary index"} (default)`} (total: ${this._callbacks.size})`);
+    }
   }
 
   /**
@@ -348,6 +485,15 @@ class SocketManager {
       downForMs:     this._lastDownAt ? downForMs : 0,
       inMarketHours: inMarket,
       optionSymbols:      this._extraSymbols.size,
+      spotSymbols:        Array.from(this._spotSymbols),
+      primarySpotSymbol:  this._symbol,
+      // Per-index freshness. A subscribed index with a null/stale entry while
+      // another is ticking means THAT index's subscription is dead, which the
+      // wire-level watchdog cannot detect.
+      lastTickBySpot:     Array.from(this._spotSymbols).reduce((acc, sym) => {
+        acc[sym] = this._lastTickBySpot.get(sym) || null;
+        return acc;
+      }, {}),
       symbolAttribution:  this._spotTickSymbol,
       unattributedTicks:  this._unattributedCount,
       flapping:           this._flapping,
@@ -372,6 +518,9 @@ class SocketManager {
     }
     this._extraSymbols.clear();
     this._onExtraTick = null;
+    this._spotSymbols.clear();    // next session re-declares its indices
+    this._spotHandlers.clear();
+    this._lastTickBySpot.clear();
     this._spotTickSymbol = null;  // re-probe on the next session
     this._lastSpotTickAt = null;  // watchdog clock starts fresh with the session
     this._extrasDisabled = false; // a new session gets a fresh chance
@@ -417,9 +566,13 @@ class SocketManager {
     // tick would fall through and be delivered as spot. Expected, so no warning.
     if (sym && this._isTombstoned(sym)) return;
 
-    // Attribution probe: while no extras are subscribed every tick is spot, so
-    // the first resolvable symbol we see IS the spot symbol on the wire.
-    if (this._spotTickSymbol === null && this._extraSymbols.size === 0 && sym) {
+    // Attribution probe: while no extras are subscribed AND only one index is
+    // subscribed, every tick is that index's, so the first resolvable symbol we
+    // see IS its on-the-wire representation. With two indices up there is
+    // nothing to infer — the tick has to name itself, and the strict match
+    // below does the work.
+    if (this._spotTickSymbol === null && this._spotSymbols.size <= 1
+        && this._extraSymbols.size === 0 && sym) {
       this._spotTickSymbol = sym;
       if (!this._attributionLogged) {
         this._attributionLogged = true;
@@ -435,37 +588,67 @@ class SocketManager {
       return;
     }
 
-    // Once we know what the spot instrument looks like on the wire, delivery is
-    // a POSITIVE match against it — not "anything that wasn't an option".
-    // Gating on `_extraSymbols.size > 0` instead would leave a hole every time a
-    // contract is dropped: its queued ticks arrive with the set already empty
-    // and get delivered as spot, writing an option premium into the candle
-    // series. Unrecoverable corruption; a dropped tick is not.
-    //
-    // Skipped before the first option ever shares the connection, and again
-    // once we have given up on sharing it — in both states there is nothing to
-    // disambiguate, so the check could only cost us genuine spot ticks. Those
-    // sessions behave exactly as they did before this feature.
-    if (this._extrasEverUsed && !this._extrasDisabled
-        && this._spotTickSymbol !== null && sym !== this._spotTickSymbol) {
-      this._noteUnattributed(sym);
-      return;
+    // ── Which index is this? ────────────────────────────────────────────────
+    // With TWO OR MORE indices on the wire the answer must be positive and
+    // exact: a tick that does not name one of them is dropped, never guessed.
+    // Guessing here would write a BANKNIFTY price into a NIFTY candle series,
+    // which is unrecoverable; a dropped tick is not.
+    let spotSym;
+    if (this._spotSymbols.size > 1) {
+      if (sym && this._spotSymbols.has(sym)) {
+        spotSym = sym;
+      } else {
+        this._noteUnattributed(sym);
+        return;
+      }
+    } else {
+      // ── SINGLE index: byte-for-byte the original behaviour ────────────────
+      // Once we know what the spot instrument looks like on the wire, delivery
+      // is a POSITIVE match against it — not "anything that wasn't an option".
+      // Gating on `_extraSymbols.size > 0` instead would leave a hole every time
+      // a contract is dropped: its queued ticks arrive with the set already
+      // empty and get delivered as spot, writing an option premium into the
+      // candle series.
+      //
+      // Skipped before the first option ever shares the connection, and again
+      // once we have given up on sharing it — in both states there is nothing to
+      // disambiguate, so the check could only cost us genuine spot ticks.
+      if (this._extrasEverUsed && !this._extrasDisabled
+          && this._spotTickSymbol !== null && sym !== this._spotTickSymbol) {
+        this._noteUnattributed(sym);
+        return;
+      }
+      spotSym = this._symbol;
     }
 
     // A spot tick got through, so attribution is still working — and this is
     // the clock the watchdog reconnects on.
     this._unattributedStreak = 0;
     this._lastSpotTickAt = Date.now();
+    this._lastTickBySpot.set(spotSym, this._lastSpotTickAt);
 
     // Record raw tick for after-hours replay (no-op when TICK_RECORDER_ENABLED=false).
     // Done before fan-out so even if a strategy throws, the tick is still captured.
-    try { tickRecorder.recordSpotTick(t); } catch (_) {}
-    // Primary callback
-    if (this._onSpotTick) {
+    // The index is passed explicitly: with two of them recording into one day
+    // file, replay has to be able to tell a NIFTY tick from a BANKNIFTY one.
+    try { tickRecorder.recordSpotTick(t, spotSym); } catch (_) {}
+
+    // Primary callback — only ever the PRIMARY index's.
+    if (spotSym === this._symbol && this._onSpotTick) {
       try { this._onSpotTick(t); } catch (e) { this._log(`🚨 [SOCKET] onSpotTick error: ${e.message}`); }
     }
-    // Fan-out to all secondary callbacks (bb_rsi, etc.)
+    // Whoever added this index as a secondary one.
+    const handler = this._spotHandlers.get(spotSym);
+    if (handler) {
+      try { handler(t); } catch (e) { this._log(`🚨 [SOCKET] onSpotTick error (${spotSym}): ${e.message}`); }
+    }
+    // Fan-out to secondary callbacks BOUND TO THIS INDEX (bb_rsi, etc.).
+    // A callback registered for another index must never see this tick. A
+    // callback that named no index means the PRIMARY one — resolved here, not
+    // at registration, because it may have registered before start() set it.
     for (const [id, cb] of this._callbacks) {
+      const want = cb.symbol || this._symbol;
+      if (want && want !== spotSym) continue;
       try { if (cb.onTick) cb.onTick(t); } catch (e) { this._log(`🚨 [SOCKET] Fan-out error (${id}): ${e.message}`); }
     }
   }
@@ -499,6 +682,31 @@ class SocketManager {
    * so this stays off until stop() starts a genuinely new session.
    */
   _bailOutOfExtras() {
+    // With two or more indices up, an unattributable run means the wire is not
+    // naming ticks the way we subscribed, so the SECOND index is what made
+    // exact matching mandatory in the first place. Drop back to the primary
+    // index alone: it can then be served by the original permissive path, and
+    // one working feed beats two dead ones. The secondary's strategy keeps
+    // deciding on closed candles from the history endpoint.
+    if (this._spotSymbols.size > 1) {
+      const secondaries = Array.from(this._spotSymbols).filter((x) => x !== this._symbol);
+      for (const sym of secondaries) {
+        this._spotSymbols.delete(sym);
+        this._spotHandlers.delete(sym);
+      }
+      if (secondaries.length) {
+        this._tombstone(secondaries);
+        this._sendUnsubscribe(secondaries);
+      }
+      this._unattributedStreak = 0;
+      this._log(
+        `🛑 [SOCKET] ${UNATTRIBUTED_BAIL} consecutive unattributable ticks with ${secondaries.length + 1} indices subscribed — ` +
+        `this feed cannot be split by symbol. Dropped ${secondaries.join(", ")}; ${this._symbol} keeps streaming. ` +
+        `Strategies on the dropped index get NO live spot ticks and must rely on history-endpoint candles.`
+      );
+      return;
+    }
+
     const dropped = Array.from(this._extraSymbols);
     this._extrasDisabled     = true;
     this._unattributedStreak = 0;
@@ -625,8 +833,12 @@ class SocketManager {
         this._lastTickAt  = Date.now();
         this._lastSpotTickAt = Date.now();
         this._lastDownAt  = null;
-        this._log(`✅ [SOCKET] Connected — subscribing: ${this._symbol}`);
-        skt.subscribe([this._symbol]);
+        // Re-assert EVERY subscribed index, not just the primary: a reconnect
+        // resets the server-side subscription set, and a BANKNIFTY strategy
+        // would otherwise silently lose its feed on the first drop.
+        const spots = this._spotSymbols.size ? Array.from(this._spotSymbols) : [this._symbol];
+        this._log(`✅ [SOCKET] Connected — subscribing ${spots.length} index(es): ${spots.join(", ")}`);
+        skt.subscribe(spots);
         skt.mode(skt.FullMode);
         // Re-assert option subscriptions the previous connection carried — a
         // reconnect resets the server-side subscription set, and a strategy

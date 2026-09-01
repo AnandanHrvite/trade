@@ -24,6 +24,7 @@ const trendPbStrategy = require("../strategies/trend_pb");
 const tdsStrategy     = require("../strategies/trend_day_scalp");
 const haScalpStrategy = require("../strategies/ha_scalp");
 const rsiPivotStStrategy = require("../strategies/rsi_pivot_st");
+const bnPivotRsiStStrategy = require("../strategies/bn_pivot_rsi_st");
 const simple930Strategy  = require("../strategies/simple930");
 const earlyBirdStrategy  = require("../strategies/early_bird");
 const sharedSocketState = require("../utils/sharedSocketState");
@@ -36,6 +37,8 @@ const TREND_PB_KEY = "TREND_PB_BACKTEST";
 const TDS_KEY      = "TREND_DAY_SCALP_BACKTEST";
 const HA_SCALP_KEY = "HA_SCALP_BACKTEST";
 const RSI_PIVOT_ST_KEY = "RSI_PIVOT_ST_BACKTEST";
+// MUST match the RESULT_KEY bnPivotRsiStBacktest.js saves under.
+const BN_PIVOT_RSI_ST_KEY = "BN_PIVOT_RSI_ST_BACKTEST";
 const SIMPLE930_KEY    = "SIMPLE930_BACKTEST";
 // MUST match the RESULT_KEY earlyBirdBacktest.js saves under.
 const EARLYBIRD_KEY    = "EARLY_BIRD_BACKTEST";
@@ -150,6 +153,7 @@ router.get("/", (req, res) => {
   const tdsOn      = _modeOn("TDS_MODE_ENABLED");
   const haScalpOn  = _modeOn("HA_SCALP_MODE_ENABLED");
   const rsiPivotStOn = _modeOn("RSI_PIVOT_ST_MODE_ENABLED");
+  const bnPivotRsiStOn = _modeOn("BN_PIVOT_RSI_ST_MODE_ENABLED");
   const simple930On  = _modeOn("SIMPLE930_MODE_ENABLED");
   const earlyBirdOn  = _modeOn("EARLYBIRD_MODE_ENABLED");
 
@@ -161,6 +165,7 @@ router.get("/", (req, res) => {
   const tdsResult      = tdsOn      ? loadResult(TDS_KEY)      : null;
   const haScalpResult  = haScalpOn  ? loadResult(HA_SCALP_KEY)  : null;
   const rsiPivotStResult = rsiPivotStOn ? loadResult(RSI_PIVOT_ST_KEY) : null;
+  const bnPivotRsiStResult = bnPivotRsiStOn ? loadResult(BN_PIVOT_RSI_ST_KEY) : null;
   const simple930Result  = simple930On  ? loadResult(SIMPLE930_KEY)  : null;
   const earlyBirdResult  = earlyBirdOn  ? loadResult(EARLYBIRD_KEY)  : null;
 
@@ -203,6 +208,13 @@ router.get("/", (req, res) => {
     "RSI PIVOT ST", { bg: "rgba(250,204,21,0.12)", fg: "#facc15", border: "rgba(250,204,21,0.25)" },
     rsiPivotStStrategy && rsiPivotStStrategy.NAME ? rsiPivotStStrategy.NAME : "RSI_PIVOT_ST",
     RSI_PIVOT_ST_KEY, "/rsi-pivot-st-backtest", rsiPivotStResult
+  ) : "";
+  // Same rules as RSI PIVOT ST on a different underlying — the label says which,
+  // because two identically-shaped panels side by side are otherwise unreadable.
+  const bnPivotRsiStPanel = bnPivotRsiStOn ? renderPanel(
+    "BN PIVOT RSI ST · NIFTY BANK", { bg: "rgba(129,140,248,0.12)", fg: "#818cf8", border: "rgba(129,140,248,0.25)" },
+    bnPivotRsiStStrategy && bnPivotRsiStStrategy.NAME ? bnPivotRsiStStrategy.NAME : "BN_PIVOT_RSI_ST",
+    BN_PIVOT_RSI_ST_KEY, "/bn-pivot-rsi-st-backtest", bnPivotRsiStResult
   ) : "";
   const simple930Panel = simple930On ? renderPanel(
     "SIMPLE_9:30", { bg: "rgba(251,146,60,0.12)", fg: "#fb923c", border: "rgba(251,146,60,0.25)" },
@@ -365,9 +377,10 @@ ${buildSidebar('allBacktest', liveActive)}
   ${tdsPanel}
         ${haScalpPanel}
   ${rsiPivotStPanel}
+  ${bnPivotRsiStPanel}
   ${simple930Panel}
   ${earlyBirdPanel}
-  ${(!emaRsiStOn && !bbRsiOn && !paOn && !orbOn && !trendPbOn && !tdsOn && !haScalpOn && !rsiPivotStOn && !simple930On && !earlyBirdOn) ? `
+  ${(!emaRsiStOn && !bbRsiOn && !paOn && !orbOn && !trendPbOn && !tdsOn && !haScalpOn && !rsiPivotStOn && !bnPivotRsiStOn && !simple930On && !earlyBirdOn) ? `
   <div style="background:#08091a;border:0.5px solid #0e1428;border-radius:10px;padding:24px;text-align:center;color:#94a3b8;font-size:0.78rem;">
     No strategies enabled. Toggle one on in <a href="/settings" style="color:#60a5fa;">Settings → Strategy Modes</a>.
   </div>` : ""}

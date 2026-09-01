@@ -1,9 +1,16 @@
 /**
  * spotFeedSupervisor.js
  * ─────────────────────────────────────────────────────────────────────────────
- * Keeps the shared NIFTY spot feed alive for the WHOLE trading session so the
- * day's ticks are recorded as a MARKET archive — not as a by-product of whichever
+ * Keeps the shared spot feed alive for the WHOLE trading session so the day's
+ * ticks are recorded as a MARKET archive — not as a by-product of whichever
  * strategies happened to be running.
+ *
+ * It keeps EVERY index the app can trade subscribed, not just NIFTY 50. The
+ * archive contract is "a day recorded today must be replayable by ANY strategy,
+ * including one created months later" — and a BANKNIFTY strategy created later
+ * cannot be replayed against a day where only NIFTY ticks were captured. The
+ * index list comes from instrument.js's underlying registry, so adding a third
+ * index there is enough to start recording it.
  *
  * The hole this closes
  * ────────────────────
@@ -42,8 +49,45 @@
 const socketManager     = require("./socketManager");
 const sharedSocketState = require("./sharedSocketState");
 const nseHolidays       = require("./nseHolidays");
+const instrumentConfig  = require("../config/instrument");
 
+// The index that OPENS the connection. It stays the socket's primary symbol, so
+// every pre-existing call site — all of which mean NIFTY 50 — is unaffected.
 const SPOT_SYMBOL = "NSE:NIFTY50-INDEX";
+
+/**
+ * Every index to record, primary first. Sourced from the underlying registry so
+ * a new index needs no edit here. `SPOT_FEED_INDICES` (comma-separated Fyers
+ * symbols) overrides it for the rare case where one index should be left out.
+ */
+function _spotSymbols() {
+  const raw = String(process.env.SPOT_FEED_INDICES || "").trim();
+  if (raw) {
+    const list = raw.split(",").map((x) => x.trim()).filter(Boolean);
+    if (list.length) return list;
+  }
+  const all = instrumentConfig.listUnderlyings().map((u) => u.spot);
+  // Primary first — the order decides which index owns the connection.
+  return [SPOT_SYMBOL, ...all.filter((x) => x !== SPOT_SYMBOL)];
+}
+
+/**
+ * Make sure every index in the list is subscribed on the already-running
+ * socket. Cheap and idempotent: addSpotSymbol() returns immediately for one it
+ * already carries. Needed because a STRATEGY may have opened the socket with
+ * only its own index, in which case nothing else would ever subscribe the rest.
+ */
+function _ensureSecondaryIndices() {
+  const want = _spotSymbols();
+  if (want.length < 2) return;
+  const have = new Set(socketManager.spotSymbols ? socketManager.spotSymbols() : []);
+  for (const sym of want) {
+    if (sym === SPOT_SYMBOL || have.has(sym)) continue;
+    // A refusal is logged by socketManager itself with the reason; the archive
+    // for that index is simply incomplete, which is visible rather than silent.
+    socketManager.addSpotSymbol(sym, null, null);
+  }
+}
 
 // 10s: short enough that a strategy /stop mid-session costs at most a few
 // seconds of ticks, cheap enough to be invisible (a few boolean checks plus a
@@ -142,7 +186,13 @@ async function _check() {
     return;
   }
 
-  if (socketManager.isRunning()) { _skipReason = null; return; }
+  if (socketManager.isRunning()) {
+    // The socket may have been opened by a single strategy carrying only its own
+    // index — top up the rest so the day's archive stays complete for all of them.
+    _ensureSecondaryIndices();
+    _skipReason = null;
+    return;
+  }
 
   if (socketManager.isAuthFailed()) { _skipOnce("Fyers auth failed — re-login at /auth/login"); return; }
   if (!process.env.ACCESS_TOKEN)    { _skipOnce("no Fyers token — log in to start recording"); return; }
@@ -150,15 +200,17 @@ async function _check() {
 
   // Re-check after the await: a strategy may have started the socket, or a
   // replay may have begun, while the holiday lookup was in flight.
-  if (socketManager.isRunning()) return;
+  if (socketManager.isRunning()) { _ensureSecondaryIndices(); return; }
   try { if (require("../services/tickReplay").isReplayInProgress()) return; } catch (_) {}
 
   // No tick callback and no log sink: recordSpotTick() already runs inside
   // socketManager's message handler, and _log falls back to console.log (which
   // logger.js pipes to /logs).
   socketManager.start(SPOT_SYMBOL, null, null);
+  _ensureSecondaryIndices();
   _skipReason = null;
-  console.log(`📡 [feed] market open — shared spot feed started for recording (${SPOT_SYMBOL})`);
+  const live = socketManager.spotSymbols ? socketManager.spotSymbols() : [SPOT_SYMBOL];
+  console.log(`📡 [feed] market open — shared spot feed started for recording: ${live.join(", ")} (primary ${SPOT_SYMBOL})`);
 }
 
 // Self-scheduling loop (setTimeout, not setInterval) so a slow holiday lookup

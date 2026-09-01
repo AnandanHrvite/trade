@@ -45,6 +45,13 @@ let haScalpMode = null;
 // RSI Pivot SuperTrend mode: "RSI_PIVOT_ST_PAPER" | "RSI_PIVOT_ST_LIVE" | null
 let rsiPivotStMode = null;
 
+// BN Pivot RSI SuperTrend mode (NIFTY BANK):
+//   "BN_PIVOT_RSI_ST_PAPER" | "BN_PIVOT_RSI_ST_LIVE" | null
+// Deliberately its OWN slot, independent of rsiPivotStMode: BN_PIVOT_RSI_ST is
+// the same rules on a DIFFERENT underlying (NIFTY BANK vs NIFTY 50), so the two
+// may run side by side. Only paper-vs-live within BN is mutually exclusive.
+let bnPivotRsiStMode = null;
+
 // EarlyBird mode: "EARLY_BIRD_PAPER" | "EARLY_BIRD_LIVE" | null
 let earlyBirdMode = null;
 
@@ -233,6 +240,24 @@ function getRsiPivotStMode() {
   return rsiPivotStMode;
 }
 
+// ── BN Pivot RSI SuperTrend mode (NIFTY BANK) ───────────────────────────────
+
+function setBnPivotRsiStMode(mode) {
+  bnPivotRsiStMode = mode;
+}
+
+function clearBnPivotRsiStMode() {
+  bnPivotRsiStMode = null;
+}
+
+function isBnPivotRsiStActive() {
+  return bnPivotRsiStMode !== null;
+}
+
+function getBnPivotRsiStMode() {
+  return bnPivotRsiStMode;
+}
+
 // ── SIMPLE_9:30 mode (9:30 option-premium trigger) ──────────────────────────
 
 function setSimple930Active(mode) {
@@ -260,7 +285,8 @@ function isAnyActive() {
          trendDayScalpMode !== null ||
          haScalpMode !== null ||
          earlyBirdMode !== null ||
-         rsiPivotStMode !== null || simple930Mode !== null;
+         rsiPivotStMode !== null || bnPivotRsiStMode !== null ||
+         simple930Mode !== null;
 }
 
 /** Can the given mode start? Returns { allowed, reason } */
@@ -346,6 +372,17 @@ function canStart(mode) {
       if (rsiPivotStMode === "RSI_PIVOT_ST_PAPER") return { allowed: false, reason: "RSI Pivot ST Paper is running — stop it first" };
       if (rsiPivotStMode === "RSI_PIVOT_ST_LIVE")  return { allowed: false, reason: "RSI Pivot ST Live is already running" };
       return { allowed: true };
+    // BN_PIVOT_RSI_ST is NIFTY BANK — a different underlying from RSI_PIVOT_ST,
+    // so it is checked ONLY against its own sibling. The two strategies are free
+    // to run at the same time.
+    case "BN_PIVOT_RSI_ST_PAPER":
+      if (bnPivotRsiStMode === "BN_PIVOT_RSI_ST_LIVE")  return { allowed: false, reason: "BN Pivot RSI ST Live is running — stop it first" };
+      if (bnPivotRsiStMode === "BN_PIVOT_RSI_ST_PAPER") return { allowed: false, reason: "BN Pivot RSI ST Paper is already running" };
+      return { allowed: true };
+    case "BN_PIVOT_RSI_ST_LIVE":
+      if (bnPivotRsiStMode === "BN_PIVOT_RSI_ST_PAPER") return { allowed: false, reason: "BN Pivot RSI ST Paper is running — stop it first" };
+      if (bnPivotRsiStMode === "BN_PIVOT_RSI_ST_LIVE")  return { allowed: false, reason: "BN Pivot RSI ST Live is already running" };
+      return { allowed: true };
     case "SIMPLE930_PAPER":
       if (simple930Mode === "SIMPLE930_LIVE")  return { allowed: false, reason: "SIMPLE_9:30 Live is running — stop it first" };
       if (simple930Mode === "SIMPLE930_PAPER") return { allowed: false, reason: "SIMPLE_9:30 Paper is already running" };
@@ -380,6 +417,8 @@ module.exports = {
   setEarlyBirdActive, clearEarlyBird, isEarlyBirdActive, getEarlyBirdMode,
 
   setRsiPivotStActive, clearRsiPivotSt, isRsiPivotStActive, getRsiPivotStMode,
+  // BN Pivot RSI SuperTrend (NIFTY BANK)
+  setBnPivotRsiStMode, clearBnPivotRsiStMode, isBnPivotRsiStActive, getBnPivotRsiStMode,
   // SIMPLE_9:30
   setSimple930Active, clearSimple930, isSimple930Active, getSimple930Mode,
   // Combined

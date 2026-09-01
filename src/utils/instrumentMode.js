@@ -19,6 +19,13 @@
  *     LTP polling) do not apply and are reported as skipped, not failed.
  *
  * Read `process.env` on every call — the Settings toggle is INSTANT (no restart).
+ *
+ * ── UNDERLYING ──────────────────────────────────────────────────────────────
+ * Every function that names or prices a contract takes an optional
+ * `underlying` ("NIFTY" — the default and previous behaviour — or "BANKNIFTY").
+ * It selects the symbol stem, the strike grid, the lot size, the expiry family
+ * and the futures margin percentage. A strategy passes its own underlying once,
+ * at the call site, and everything downstream follows.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -67,9 +74,10 @@ function directionFor(side) {
  * @param {function} [fetchQuote] async (symbol) => { ltp, bid, ask } — option mode only
  * @returns {Promise<{symbol,strike,expiry,invalid,isFutures,entryPremium,bid,ask,direction,label}>}
  */
-async function resolveEntryInstrument(spot, side, modeTag, fetchQuote) {
+async function resolveEntryInstrument(spot, side, modeTag, fetchQuote, opts = {}) {
+  const U = instrumentConfig.underlyingOf(opts.underlying);
   if (isFutures()) {
-    const symbol = await instrumentConfig.getSymbol(side);
+    const symbol = await instrumentConfig.getSymbol(side, U);
     return {
       symbol,
       strike:       null,
@@ -81,10 +89,14 @@ async function resolveEntryInstrument(spot, side, modeTag, fetchQuote) {
       ask:          null,
       direction:    directionFor(side),
       label:        "futures",
+      underlying:   U.key,
     };
   }
 
-  const info = await instrumentConfig.validateAndGetOptionSymbol(spot, side, modeTag);
+  const info = await instrumentConfig.validateAndGetOptionSymbol(spot, side, modeTag, {
+    underlying:     U,
+    strikeOverride: opts.strikeOverride,
+  });
   let entryPremium = null, bid = null, ask = null;
   if (info && !info.invalid && typeof fetchQuote === "function") {
     const q = await fetchQuote(info.symbol);
@@ -98,6 +110,7 @@ async function resolveEntryInstrument(spot, side, modeTag, fetchQuote) {
     symbol:    info && info.symbol,
     strike:    info && info.strike,
     expiry:    info && info.expiry,
+    expiryDate: info && info.expiryDate,
     invalid:   !info || !!info.invalid,
     isFutures: false,
     entryPremium,
@@ -105,6 +118,7 @@ async function resolveEntryInstrument(spot, side, modeTag, fetchQuote) {
     ask,
     direction: 1,
     label:     "options",
+    underlying: U.key,
   };
 }
 
@@ -174,14 +188,15 @@ function computePnl({ side, entrySpot, exitSpot, entryPremium, exitPremium, qty,
  * approximation here can never block a trade.
  *
  * @param {number} qty
- * @param {number} price   premium (options) or index level (futures)
+ * @param {number} price       premium (options) or index level (futures)
+ * @param {string} [underlying] "NIFTY" (default) or "BANKNIFTY" — each carries
+ *                              its own {UNDERLYING}_FUTURES_MARGIN_PCT.
  */
-function capitalRequired(qty, price) {
+function capitalRequired(qty, price, underlying) {
   const _qty = qty || 0;
   const _px  = price || 0;
   if (!isFutures()) return _qty * _px;
-  let pct = parseFloat(process.env.NIFTY_FUTURES_MARGIN_PCT || "11");
-  if (!Number.isFinite(pct) || pct <= 0 || pct > 100) pct = 11;
+  const pct = instrumentConfig.underlyingOf(underlying).marginPct;
   return parseFloat((_qty * _px * (pct / 100)).toFixed(2));
 }
 

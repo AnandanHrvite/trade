@@ -29,6 +29,8 @@ const FILE_BY_MODE = {
   ha_scalp: "ha_scalp_paper_trades_log.jsonl",
   early_bird: "early_bird_paper_trades_log.jsonl",
   rsi_pivot_st: "rsi_pivot_st_paper_trades_log.jsonl",
+  // BN_PIVOT_RSI_ST (NIFTY BANK) — same engine as rsi_pivot_st on a different underlying.
+  bn_pivot_rsi_st: "bn_pivot_rsi_st_paper_trades_log.jsonl",
   simple930: "simple930_paper_trades_log.jsonl",
 };
 
@@ -43,6 +45,7 @@ const DAILY_PREFIX_BY_MODE = {
   ha_scalp: "ha_scalp_paper_trades_",
   early_bird: "early_bird_paper_trades_",
   rsi_pivot_st: "rsi_pivot_st_paper_trades_",
+  bn_pivot_rsi_st: "bn_pivot_rsi_st_paper_trades_",
   simple930: "simple930_paper_trades_",
 };
 
