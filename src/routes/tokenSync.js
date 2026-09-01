@@ -330,10 +330,11 @@ router.post("/restart", (req, res) => {
       sharedSocketState.getOrbMode(), sharedSocketState.getEma9VwapMode(), sharedSocketState.getTrendPbMode(),
       sharedSocketState.getTrendDayScalpMode(),
       
-      // Without these two the refusal is correct (isAnyActive knows them) but
+      // Without these the refusal is correct (isAnyActive knows them) but
       // anonymous: the roster came back empty and the operator was told
       // " running — stop it before restarting."
       sharedSocketState.getRsiPivotStMode ? sharedSocketState.getRsiPivotStMode() : null,
+      sharedSocketState.getBnPivotRsiStMode ? sharedSocketState.getBnPivotRsiStMode() : null,
       sharedSocketState.getSimple930Mode ? sharedSocketState.getSimple930Mode() : null,
     ].filter(Boolean).join(", ");
     return res.status(409).json({ success: false, error: `${running} running — stop it before restarting.` });
