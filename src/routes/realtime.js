@@ -380,6 +380,11 @@ ${faviconLink()}
   .rollup tr.simple930 td:first-child { color:#fdba74; }
   .rollup tr.earlybird td:first-child { color:#5eead4; }
   .rollup tr.total    td:first-child { color:#e0eaf8; }
+  /* Strategy name links to that strategy's own status page (PAPER or LIVE,
+     following the toggle). Colour is inherited so the per-strategy accent
+     rules above keep working in both themes. */
+  .rollup td:first-child a { color:inherit; text-decoration:none; border-bottom:1px dotted currentColor; }
+  .rollup td:first-child a:hover { border-bottom-style:solid; }
   .rollup tr.quiet td { color:#7d8aa3; font-weight:400; font-size:0.8rem; text-align:left; }
 
   .pulse { display:inline-block; width:7px; height:7px; border-radius:50%; background:#10b981; margin-left:6px; animation:pulse 1.5s ease-in-out infinite; vertical-align:middle; }
@@ -807,6 +812,14 @@ function renderCardsEmpty() {
   box.hidden = anyVisible;
 }
 
+// Strategy name in the rollup doubles as a link to that strategy's status page,
+// following the PAPER/LIVE toggle — same target as the card's "Open Status".
+// Falls back to plain text if the strategy has no page for the current source.
+function nameCell(key, label) {
+  const href = (STATUS_PAGES[mode] || {})[key];
+  return href ? '<a href="' + href + '">' + label + '</a>' : label;
+}
+
 function renderRollup(all) {
   let totalOpen = 0, totalClosed = 0, totalTrades = 0, totalW = 0, totalL = 0;
   let anyRunning = false, anyData = false;
@@ -819,7 +832,7 @@ function renderRollup(all) {
     const accent = STRATEGY_ACCENTS[key] || key.toLowerCase();
     const label = STRATEGY_LABELS[key];
     if (!d) {
-      html += \`<tr class="\${accent}" data-key="\${key}"><td>\${label}</td><td>OFFLINE</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>\`;
+      html += \`<tr class="\${accent}" data-key="\${key}"><td>\${nameCell(key, label)}</td><td>OFFLINE</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>\`;
       continue;
     }
     anyData = true;
@@ -846,7 +859,7 @@ function renderRollup(all) {
     if (!openPositionsOf(d).length && !(trades > 0)) { quiet++; continue; }
     rows++;
     html += \`<tr class="\${accent}" data-key="\${key}">
-      <td>\${label}</td>
+      <td>\${nameCell(key, label)}</td>
       <td>\${d.running ? 'RUNNING' : 'STOPPED'}</td>
       <td class="\${cls(open)}">\${fmtINR(open)}</td>
       <td class="\${cls(closed)}">\${fmtINR(closed)}</td>
