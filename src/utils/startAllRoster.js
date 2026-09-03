@@ -11,13 +11,17 @@
  *
  * Route-shape contract (already true of all 12 strategies):
  *   /{slug}-paper/start           canonical paper engine
- *   /{slug}-live/start            pure-live engine, when the strategy has one
+ *   /{slug}-live/start            live route — a real-order engine, OR the
+ *                                 paper-wrapping harness for the eight
+ *                                 strategies that have no separate live engine
  *   /{slug}-live-harness/start    paper-wrapping harness, when the strategy
- *                                 has a separate live engine
- * A strategy with only a `-live` mount is one whose live route IS the
- * paper-wrapping harness (EMA9+VWAP, Trend_PB, TDS, HA Scalp, SIMPLE_9:30,
- * RSI Pivot ST, BN Pivot RSI ST, EarlyBird) — it takes part in Paper + Harness
- * and is left out of Start All (Live), exactly as the old table said.
+ *                                 also has a real-order live engine
+ * Which of the two a `-live` mount is, is DECLARED, not guessed: every harness
+ * router sets `router.isLiveHarness = true`. Guessing it from the path would
+ * mean the day someone mounts a real-order live engine at /{slug}-live with no
+ * harness beside it, the 🧪 Start All (Harness) button fires real orders. An
+ * unmarked `-live` mount is therefore treated as a real live engine — it joins
+ * Start All (Live) and is left out of Start All (Harness).
  *
  * The mode key is matched to the route slug case- and separator-insensitively
  * (EMA_RSI_ST ↔ /ema_rsi_st-…, BN_PIVOT_RSI_ST ↔ /bn-pivot-rsi-st-…). A
@@ -55,7 +59,7 @@ function hasStartRoute(handler) {
 }
 
 // Longest suffix first — '/bb_rsi-live-harness' also ends in '-live'.
-const KINDS = [['-live-harness', 'harness'], ['-live', 'live'], ['-paper', 'paper']];
+const SUFFIXES = [['-live-harness', 'harness'], ['-live', 'live'], ['-paper', 'paper']];
 
 const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
@@ -64,8 +68,10 @@ function discoverStartRoutes() {
   const bySlug = new Map();
   for (const m of _mounts) {
     if (!hasStartRoute(m.handler)) continue;
-    for (const [suffix, kind] of KINDS) {
+    for (const [suffix, slot] of SUFFIXES) {
       if (!m.path.endsWith(suffix)) continue;
+      // A `-live` mount goes in the harness slot only when the router says so.
+      const kind = (slot === 'live' && m.handler.isLiveHarness) ? 'harness' : slot;
       const key = norm(m.path.slice(0, m.path.length - suffix.length));
       if (!key) break;
       const entry = bySlug.get(key) || { paper: null, live: null, harness: null };
@@ -84,8 +90,9 @@ const _warned = new Set();
  * Read per request — Settings saves mutate process.env live, and the dashboard
  * refetches this on every Start-All click.
  *
- * @returns {Array<{mode,label,paper,live,harness}>} `live` is null for a
- *          harness-only strategy; `paper`/`harness` are always present.
+ * @returns {Array<{mode,label,paper,live,harness}>} `paper` is always present;
+ *          `live` is null for a strategy with no real-order live engine, and
+ *          `harness` is null for one with no declared harness.
  */
 function startAllRoster() {
   const found = discoverStartRoutes();
@@ -99,15 +106,12 @@ function startAllRoster() {
       }
       continue;
     }
-    // No separate -live-harness mount ⇒ the -live route is the harness.
-    const live    = routes.harness ? routes.live : null;
-    const harness = routes.harness || routes.live;
     roster.push({
       mode:    s.mode,
       label:   s.label,
       paper:   `${routes.paper}/start`,
-      live:    live    ? `${live}/start`    : null,
-      harness: harness ? `${harness}/start` : null,
+      live:    routes.live    ? `${routes.live}/start`    : null,
+      harness: routes.harness ? `${routes.harness}/start` : null,
     });
   }
   return roster;

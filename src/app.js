@@ -1344,7 +1344,11 @@ app.get("/", (req, res) => {
   // it again on click (/api/start-all-roster) so a strategy enabled after this
   // page was rendered still starts without a reload.
   const startAllModes = startAllRoster();
-  const startAllLiveModes  = startAllModes.filter((m) => m.live);
+  // Split per button: a strategy takes part in Live only if it has a real-order
+  // live engine, and in Harness only if it has a declared paper-wrapping one.
+  // Neither list may carry a null endpoint — `startAll` would POST to "null".
+  const startAllLiveModes    = startAllModes.filter((m) => m.live);
+  const startAllHarnessModes = startAllModes.filter((m) => m.harness);
   // Button-state poll: same roster, /start → /status/data on each wired route.
   const startAllPollTargets = [
     ...startAllModes.map((m) => ({ url: m.paper.replace('/start', '/status/data'), kind: 'paper' })),
@@ -1357,8 +1361,8 @@ app.get("/", (req, res) => {
   const startAllEndpointLabels = {};
   for (const m of startAllModes) {
     startAllEndpointLabels[m.paper] = `${m.label} Paper`;
-    if (m.live) startAllEndpointLabels[m.live] = `${m.label} Live`;
-    startAllEndpointLabels[m.harness] = `${m.label} Live (Harness)`;
+    if (m.live)    startAllEndpointLabels[m.live]    = `${m.label} Live`;
+    if (m.harness) startAllEndpointLabels[m.harness] = `${m.label} Live (Harness)`;
   }
 
   // ── Broker investment pools (paper) — remaining = pool + paper P&L over the
@@ -2306,7 +2310,7 @@ ${buildSidebar('dashboard', liveActive)}
     </div>
     <div class="top-bar-right">
       ${anyModeActive ? '' : `
-      <button id="btn-all-harness" class="top-bar-btn" style="border-color:#b45309;color:#f59e0b;" onclick="startAllHarness(this)" title="Start all Live (Harness) modes in DRY-RUN — runs Paper + logs would-be broker orders (${startAllModes.map((m) => m.label).join(' + ') || 'no strategy enabled'})">🧪 Start All (Harness)</button>
+      <button id="btn-all-harness" class="top-bar-btn" style="border-color:#b45309;color:#f59e0b;" onclick="startAllHarness(this)" title="Start all Live (Harness) modes in DRY-RUN — runs Paper + logs would-be broker orders (${startAllHarnessModes.map((m) => m.label).join(' + ') || 'no strategy enabled'})">🧪 Start All (Harness)</button>
       <button id="btn-all-start" class="top-bar-btn run-paper" onclick="startAll(this)" title="Start all paper modes">▶ Start All (Paper)</button>`}
       <!-- The manual "Reset Token" button was removed: token clearing is now
            automatic (4:00 PM + 7:00 AM IST schedulers, and the login routes
@@ -2796,9 +2800,10 @@ async function pollDashboardStatus(){
 // construction) and respect LIVE_HARNESS_DRY_RUN.
 var PAPER_ENDPOINTS   = ${JSON.stringify(startAllModes.map((m) => m.paper))};
 var LIVE_ENDPOINTS    = ${JSON.stringify(startAllLiveModes.map((m) => m.live))};
-var HARNESS_ENDPOINTS = ${JSON.stringify(startAllModes.map((m) => m.harness))};
+var HARNESS_ENDPOINTS = ${JSON.stringify(startAllHarnessModes.map((m) => m.harness))};
 var ALL_MODE_LABELS   = ${JSON.stringify(startAllModes.map((m) => m.label))};
 var LIVE_MODE_LABELS  = ${JSON.stringify(startAllLiveModes.map((m) => m.label))};
+var HARNESS_MODE_LABELS = ${JSON.stringify(startAllHarnessModes.map((m) => m.label))};
 var ENDPOINT_LABELS   = ${JSON.stringify(startAllEndpointLabels)};
 
 // Replaces every roster-derived list in one place, so the endpoints, the button
@@ -2806,7 +2811,8 @@ var ENDPOINT_LABELS   = ${JSON.stringify(startAllEndpointLabels)};
 // about which strategies are in play.
 function _applyRoster(modes){
   if(!Array.isArray(modes) || !modes.length) return false;
-  var paper = [], live = [], harness = [], labels = [], liveLabels = [], names = {}, poll = [];
+  var paper = [], live = [], harness = [];
+  var labels = [], liveLabels = [], harnessLabels = [], names = {}, poll = [];
   modes.forEach(function(m){
     if(!m || !m.paper) return;
     paper.push(m.paper); labels.push(m.label);
@@ -2817,24 +2823,58 @@ function _applyRoster(modes){
       names[m.live] = m.label + ' Live';
       poll.push({ url: m.live.replace('/start','/status/data'), kind: 'live' });
     }
-    if(m.harness){ harness.push(m.harness); names[m.harness] = m.label + ' Live (Harness)'; }
+    if(m.harness){
+      harness.push(m.harness); harnessLabels.push(m.label);
+      names[m.harness] = m.label + ' Live (Harness)';
+    }
   });
   if(!paper.length) return false;
   PAPER_ENDPOINTS = paper; LIVE_ENDPOINTS = live; HARNESS_ENDPOINTS = harness;
-  ALL_MODE_LABELS = labels; LIVE_MODE_LABELS = liveLabels; ENDPOINT_LABELS = names;
+  ALL_MODE_LABELS = labels; LIVE_MODE_LABELS = liveLabels; HARNESS_MODE_LABELS = harnessLabels;
+  ENDPOINT_LABELS = names;
   ALL_BTN_POLL = poll;
   return true;
 }
 
 // Called at the top of every Start-All handler. A failed fetch is not an error:
 // the page keeps the roster it was rendered with rather than refusing to start.
+// Bounded, because it now sits between the click and the first /start — an
+// unanswered request must not leave the button hanging on ⏳ forever.
 async function _refreshRoster(){
+  var ctl = new AbortController();
+  var tid = setTimeout(function(){ ctl.abort(); }, 5000);
   try {
-    var r = await fetch('/api/start-all-roster', { cache:'no-store' });
+    var r = await fetch('/api/start-all-roster', { cache:'no-store', signal: ctl.signal });
     if(!r.ok) return false;
     var d = await r.json();
     return _applyRoster(d && d.modes);
   } catch(e){ return false; }
+  finally { clearTimeout(tid); }
+}
+
+// Opens a Start-All click: refuses a second one, then disables the button
+// BEFORE the roster fetch. That fetch is a network round-trip, and a button
+// left live across it can be clicked again and start the whole roster twice.
+// _startAllBusy is raised here too, so pollSessionActiveSwap() cannot navigate
+// away while the click is still resolving.
+var _startAllClickBusy = false;
+async function _beginStartAll(btn){
+  if(_startAllClickBusy) return false;
+  _startAllClickBusy = true;
+  _startAllBusy = true;
+  btn.disabled = true;
+  btn.textContent = '⏳ Checking strategies...';
+  await _refreshRoster();
+  return true;
+}
+
+// Every path that does NOT reach _runStartAll (nothing enabled, confirm
+// cancelled) — releases the guards and puts the button back.
+function _abortStartAll(btn, origText){
+  _startAllClickBusy = false;
+  _startAllBusy = false;
+  btn.disabled = false;
+  btn.textContent = origText;
 }
 
 function _escHtml(s){
@@ -3034,44 +3074,44 @@ async function _runStartAll(btn, origText, label, endpoints){
     await _handleStartAllResult(btn, origText, label, endpoints, result);
   } finally {
     _startAllBusy = false;
+    _startAllClickBusy = false;
   }
 }
 
 async function startAllPaper(btn){
-  await _refreshRoster();
-  if (await _noModesEnabled(PAPER_ENDPOINTS, 'Paper')) return;
-  var modeList = ALL_MODE_LABELS.join(' + ');
   var orig = btn.textContent;
-  btn.disabled = true; btn.textContent = '⏳ Starting paper: ' + modeList + '...';
+  if (!await _beginStartAll(btn)) return;
+  if (await _noModesEnabled(PAPER_ENDPOINTS, 'Paper')) return _abortStartAll(btn, orig);
+  btn.textContent = '⏳ Starting paper: ' + ALL_MODE_LABELS.join(' + ') + '...';
   await _runStartAll(btn, orig, 'All Paper', PAPER_ENDPOINTS);
 }
 
 async function startAllLive(btn){
-  await _refreshRoster();
-  if (await _noModesEnabled(LIVE_ENDPOINTS, 'Live')) return;
+  var orig = btn.textContent;
+  if (!await _beginStartAll(btn)) return;
+  if (await _noModesEnabled(LIVE_ENDPOINTS, 'Live')) return _abortStartAll(btn, orig);
   var ok = await showConfirm({
     icon: '⚠️', title: 'Start ALL Live Trades',
     message: 'Start ' + LIVE_MODE_LABELS.join(' + ') + ' Live?\\nReal orders will be placed on broker accounts.',
     confirmText: 'Start All', confirmClass: 'modal-btn-danger'
   });
-  if(!ok) return;
-  var orig = btn.textContent;
-  btn.disabled = true; btn.textContent = '⏳ Starting all live trades...';
+  if(!ok) return _abortStartAll(btn, orig);
+  btn.textContent = '⏳ Starting all live trades...';
   await _runStartAll(btn, orig, 'All Live', LIVE_ENDPOINTS);
 }
 
 async function startAllHarness(btn){
-  await _refreshRoster();
-  if (await _noModesEnabled(HARNESS_ENDPOINTS, 'Live (Harness)')) return;
-  var modeList = ALL_MODE_LABELS.join(' + ');
+  var orig = btn.textContent;
+  if (!await _beginStartAll(btn)) return;
+  if (await _noModesEnabled(HARNESS_ENDPOINTS, 'Live (Harness)')) return _abortStartAll(btn, orig);
+  var modeList = HARNESS_MODE_LABELS.join(' + ');
   var ok = await showConfirm({
     icon: '🧪', title: 'Start ALL Live (Harness)',
     message: 'Start ' + modeList + ' via Paper Harness?\\n\\nEach runs Paper unchanged and logs the broker order it WOULD place. Orders follow the global DRY-RUN flag — no real orders while LIVE_HARNESS_DRY_RUN is ON.',
     confirmText: 'Start All (Harness)', confirmClass: 'modal-btn-primary'
   });
-  if(!ok) return;
-  var orig = btn.textContent;
-  btn.disabled = true; btn.textContent = '⏳ Starting harness: ' + modeList + '...';
+  if(!ok) return _abortStartAll(btn, orig);
+  btn.textContent = '⏳ Starting harness: ' + modeList + '...';
   await _runStartAll(btn, orig, 'All Harness', HARNESS_ENDPOINTS);
 }
 

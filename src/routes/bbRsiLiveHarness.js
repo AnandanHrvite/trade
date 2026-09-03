@@ -297,4 +297,9 @@ setInterval(refresh, 3000);
   res.send(html);
 });
 
+// Start-All roster: this router is the PAPER-wrapping harness, not a real-order
+// live engine — declared, so utils/startAllRoster.js never has to infer it from the
+// mount path (a future strategy could mount a REAL live engine at /{slug}-live).
+router.isLiveHarness = true;
+
 module.exports = router;
