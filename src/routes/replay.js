@@ -612,6 +612,7 @@ ${buildSidebar('replay', false)}
       </div>
       <div class="range-field" id="range-diag-btns" style="display:none; flex-direction:row; gap:8px; align-items:flex-end;"></div>
     </div>
+    <div id="range-preset-note" class="muted" style="margin-top:8px; display:none;"></div>
     <div id="range-progress" class="rp-block" style="display:none;"></div>
     <div id="range-result" style="margin-top:12px;"></div>
   </div>
@@ -2028,17 +2029,53 @@ function setRangeDefaults() {
     minDate: earliest,
     maxDate: latest,
     disableMobile: true,
-    onChange: () => { document.getElementById('range-preset').value = ''; },
+    onChange: () => {
+      const sel = document.getElementById('range-preset');
+      if (sel) sel.value = '';
+      _setRangeNote('');
+    },
   };
 
   if (_rangeFromFp) _rangeFromFp.destroy();
   if (_rangeToFp)   _rangeToFp.destroy();
   _rangeFromFp = flatpickr(fromEl, Object.assign({}, common, { defaultDate: prevFrom }));
   _rangeToFp   = flatpickr(toEl,   Object.assign({}, common, { defaultDate: prevTo   }));
+
+  // The dropdown ships selected on "Today". If today has no recording yet the
+  // boxes hold the latest recorded day instead, so drop the preset back to
+  // Custom rather than mislabel the dates — otherwise picking "Yesterday"
+  // (which may land on that same day) looks like nothing happened.
+  const presetSel = document.getElementById('range-preset');
+  if (presetSel && presetSel.value === 'today' && todayOrNearest !== today) {
+    presetSel.value = '';
+    _setRangeNote('No recording for today (' + _dmy(today) + ') yet — showing the latest recorded day ' + _dmy(todayOrNearest) + '.');
+  }
 }
 
-// Quick-range presets. Computes [from,to] in local time, then clamps to the
-// recorded-date bounds enforced on the inputs (min/max from setRangeDefaults).
+const _PRESET_LABELS = {
+  'today': 'Today', 'yesterday': 'Yesterday', 'this-week': 'This week',
+  'last-week': 'Last week', 'this-month': 'This month', 'this-year': 'This year',
+};
+
+// DD/MM/YYYY for messages, matching the altFormat on the date inputs.
+function _dmy(iso) {
+  const p = String(iso || '').split('-');
+  return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : String(iso || '');
+}
+
+// Show / clear the line under the range row that explains what the preset
+// actually did. Without it a preset that lands on the dates already in the
+// boxes (common before the day's session starts) looks like a dead control.
+function _setRangeNote(msg) {
+  const el = document.getElementById('range-preset-note');
+  if (!el) return;
+  el.textContent = msg || '';
+  el.style.display = msg ? 'block' : 'none';
+}
+
+// Quick-range presets. Computes [from,to] in local time, then narrows to the
+// recorded dates that fall INSIDE that window — never to a date outside it,
+// which used to make "Yesterday" silently resolve to the latest recording.
 function applyRangePreset(preset) {
   if (!preset) return;
   const fromEl = document.getElementById('range-from');
@@ -2068,18 +2105,35 @@ function applyRangePreset(preset) {
     case 'this-year':  from = new Date(now.getFullYear(), 0, 1); break;
     default: return;
   }
-  let f = fmt(from), t = fmt(to);
-  // Snap to nearest recorded date so we never request dates with no data
-  // (weekends, holidays, gaps in recording).
+  const wantFrom = fmt(from), wantTo = fmt(to);
+  let f = wantFrom, t = wantTo;
+  const label = _PRESET_LABELS[preset] || preset;
+  const windowLabel = wantFrom === wantTo ? _dmy(wantFrom) : _dmy(wantFrom) + ' → ' + _dmy(wantTo);
+
   if (_enabledDates.length) {
-    const firstOnOrAfter = _enabledDates.find(d => d >= f);
-    f = firstOnOrAfter || _enabledDates[_enabledDates.length - 1];
-    const onOrBefore = _enabledDates.filter(d => d <= t);
-    t = onOrBefore.length ? onOrBefore[onOrBefore.length - 1] : _enabledDates[0];
+    // Only recorded days *within* the requested window qualify. A window with
+    // none of them (weekend, holiday, or the session not started yet) leaves
+    // the inputs alone and says so — substituting an unrelated date is worse
+    // than doing nothing.
+    const inWindow = _enabledDates.filter(d => d >= f && d <= t);
+    if (!inWindow.length) {
+      _setRangeNote('No recorded session in ' + label + ' (' + windowLabel + ') — dates left unchanged.');
+      const sel = document.getElementById('range-preset');
+      if (sel) sel.value = '';
+      return;
+    }
+    f = inWindow[0];
+    t = inWindow[inWindow.length - 1];
   }
+
   // setDate(_, false) avoids firing onChange, which would re-clear the preset.
   if (_rangeFromFp) _rangeFromFp.setDate(f, false); else fromEl.value = f;
   if (_rangeToFp)   _rangeToFp.setDate(t, false);   else toEl.value   = t;
+
+  _setRangeNote(f === wantFrom && t === wantTo
+    ? ''
+    : label + ' is ' + windowLabel + '; narrowed to the recorded day' +
+      (f === t ? ' ' + _dmy(f) : 's ' + _dmy(f) + ' → ' + _dmy(t)) + '.');
 }
 
 // Every replay-able paper mode currently offered in the Strategy dropdown
