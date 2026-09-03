@@ -704,6 +704,53 @@ const ENTRIES  = ALL_SIGS.filter(x => x.sig.signal !== "NONE");
     }
   });
 
+  // Both trails on at once is a configuration an operator will reach for, and the
+  // two rules write to the SAME field. Whichever is TIGHTER must win regardless of
+  // the order they run in, the ratchet must stay one-way, and the note must name
+  // the rule that actually moved the stop last — otherwise the log blames the
+  // wrong trail for an exit.
+  check("the candle trail and the SuperTrend trail compose without loosening the stop", () => {
+    const orbExits = require("../src/strategies/orbExits");
+    const snap = { st: process.env.ORB_ST_TRAIL_ENABLED, ct: process.env.ORB_CANDLE_TRAIL_ENABLED,
+                   ctn: process.env.ORB_CANDLE_TRAIL_CANDLES, be: process.env.ORB_BREAKEVEN_PTS,
+                   beOr: process.env.ORB_BREAKEVEN_OR_MULT, ema: process.env.ORB_TRAIL_EMA };
+    try {
+      Object.assign(process.env, {
+        ORB_ST_TRAIL_ENABLED: "true", ORB_CANDLE_TRAIL_ENABLED: "true",
+        ORB_CANDLE_TRAIL_CANDLES: "2", ORB_BREAKEVEN_PTS: "0",
+        ORB_BREAKEVEN_OR_MULT: "0", ORB_TRAIL_EMA: "500",
+      });
+      let bars = [], t0 = Math.floor(Date.UTC(2026, 8, 3, 3, 45) / 1000), px = 24000;
+      for (let i = 0; i < 90; i++) {
+        const d = 7 + Math.sin(i / 4) * 11, o = px, c = px + d;
+        bars.push({ time: t0 + i * 300, open: o, high: Math.max(o, c) + 6, low: Math.min(o, c) - 6, close: c });
+        px = c;
+      }
+      const E = 40;
+      const pos = { side: "CE", entrySpot: bars[E].close, slSpot: bars[E].low - 40, orh: 24050,
+                    orl: 24010, rangePts: 40, breakevenArmed: false, emaArmed: false };
+      let moved = 0;
+      for (let i = E + 1; i < bars.length; i++) {
+        const before = pos.slSpot;
+        const d = orbExits.evaluateCloseExits(pos, bars[i], bars.slice(Math.max(0, i - 259), i + 1));
+        assert.ok(pos.slSpot >= before, `a CE stop LOOSENED ${before} -> ${pos.slSpot} with both trails on`);
+        assert.ok(Number.isFinite(pos.slSpot), "the stop became non-finite with both trails on");
+        assert.strictEqual(d.trailMoved, pos.slSpot !== before, "trailMoved disagreed with the stop actually moving");
+        if (d.trailMoved) {
+          moved++;
+          assert.ok(/SuperTrend|Candle trail/.test(d.trailNote || ""), `unnamed trail moved the stop: ${d.trailNote}`);
+          assert.ok(pos.slSpot < bars[i].close, "a trail placed the stop at or above the close");
+        }
+        if (d.exit) break;
+      }
+      assert.ok(moved > 0, "neither trail moved the stop on a clean uptrend — the fixture or the wiring is wrong");
+    } finally {
+      process.env.ORB_ST_TRAIL_ENABLED = snap.st; process.env.ORB_CANDLE_TRAIL_ENABLED = snap.ct;
+      process.env.ORB_CANDLE_TRAIL_CANDLES = snap.ctn; process.env.ORB_BREAKEVEN_PTS = snap.be;
+      process.env.ORB_BREAKEVEN_OR_MULT = snap.beOr; process.env.ORB_TRAIL_EMA = snap.ema;
+    }
+  });
+
   // ORB_SL_SOURCE=supertrend is a STOP, not a filter: it may move where the stop
   // sits but it must never change which breakouts the engine takes. It also has to
   // survive SuperTrend's warm-up, where the line does not exist yet, without ever
