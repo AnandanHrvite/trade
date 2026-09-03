@@ -465,6 +465,19 @@ function evaluateCloseExits(pos, bar, candles) {
  *
  * Matching is on the reason PREFIX, which every emitter (orbExits itself,
  * orbBacktest's back-solved fills, scripts/lib/orbSim) writes verbatim.
+ *
+ * KNOWN LIMITATION — a stop that was MOVED before it was hit still reports as a
+ * plain "Hard SL hit", so this returns true for it. A stop lifted to breakeven, or
+ * ratcheted 100pt into profit by the candle / SuperTrend trail, means the MOVE
+ * ENDED — exactly what the EMA trail means — yet it mints a re-entry budget as
+ * though the breakout had been proved wrong. Deliberately NOT fixed here: the
+ * classification drives real re-entry decisions, so narrowing it is a strategy
+ * hypothesis that belongs behind scripts/orbSweep.js, not a quiet edit in a module
+ * whose contract is "no behaviour change". It predates both trails (breakeven has
+ * done it since 2026-07) and is inert at the shipped ORB_REENTRY_AFTER_SL=0. To fix
+ * it properly the emitters would have to distinguish the stop they placed from the
+ * stop they ended on — pos.initialSlSpot is already carried and is the natural
+ * discriminator.
  */
 function isStopOutExit(reason) {
   if (!reason || typeof reason !== "string") return false;
