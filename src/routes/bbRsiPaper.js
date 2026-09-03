@@ -29,7 +29,7 @@ const { verifyFyersToken } = require("../utils/fyersAuthCheck");
 const { buildSidebar, sidebarCSS, modalCSS, modalJS, errorPage, tableEnhancerCSS, tableEnhancerJS } = require("../utils/sharedNav");
 const { dailyFilesPaginate, renderHistoryPage } = require("../utils/paperHistoryUI");
 const { isTradingAllowed } = require("../utils/nseHolidays");
-const { reverseSlice, formatISTTimestamp, fmtISTDateTime, getISTMinutes: _getISTMinutesReal, getBucketStart: _getBucketStartRaw, isPreMarketBucket, parseOptionDetails, parseTimeToMinutes } = require("../utils/tradeUtils");
+const { istDayFromAny, istIsoFromAny, reverseSlice, formatISTTimestamp, fmtISTDateTime, getISTMinutes: _getISTMinutesReal, getBucketStart: _getBucketStartRaw, isPreMarketBucket, parseOptionDetails, parseTimeToMinutes } = require("../utils/tradeUtils");
 const vixFilter = require("../services/vixFilter");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
 const oiFilter = require("../services/oiFilter");
@@ -184,7 +184,7 @@ function rehydrateSessionFromJsonl() {
     if (!trades.length) {
       const saved = (data.sessions || []).filter(s => Array.isArray(s.trades) && s.trades.length);
       if (saved.length) {
-        const last = saved.reduce((a, b) => (String(b.date) > String(a.date) ? b : a));
+        const last = saved.reduce((a, b) => (istDayFromAny(b.date) > istDayFromAny(a.date) ? b : a));
         trades = last.trades;
         source = `last session (${last.date || "?"})`;
         // Stale only when today's day-file has no trades at all — then what we just
@@ -201,7 +201,7 @@ function rehydrateSessionFromJsonl() {
     state.sessionPnl = parseFloat(trades.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0).toFixed(2));
     state._wins   = trades.filter(t => Number(t.pnl) > 0).length;
     state._losses = trades.filter(t => Number(t.pnl) < 0).length;
-    if (!state.sessionStart) state.sessionStart = trades[0].entryTime || trades[0].loggedAt || null;
+    if (!state.sessionStart) state.sessionStart = istIsoFromAny(trades[0].entryTime || trades[0].loggedAt);
     console.log(`♻️ [BB_RSI-PAPER] Restart recovery — loaded ${trades.length} trade(s) from ${source} (PnL ₹${state.sessionPnl})`);
   } catch (err) {
     console.warn(`[BB_RSI-PAPER] session rehydrate failed: ${err.message}`);
@@ -2899,7 +2899,7 @@ router.post("/restore-session/:date", (req, res) => {
     restoredFromJsonl: true,
   };
   data.sessions.push(session);
-  data.sessions.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  data.sessions.sort((a, b) => istDayFromAny(a.date).localeCompare(istDayFromAny(b.date)));
   data.totalPnl = parseFloat(data.sessions.reduce((sum, s) => sum + (s.pnl || 0), 0).toFixed(2));
   data.capital = parseFloat((getBbRsiCapitalFromEnv() + data.totalPnl).toFixed(2));
   saveBbRsiData(data);

@@ -183,6 +183,64 @@ function parseTrailTiers(tierStr) {
     .sort((a, b) => b.peak - a.peak);
 }
 
+/**
+ * IST calendar day ("YYYY-MM-DD") for a session/trade date field, whatever shape
+ * it was written in. Returns "" when the value can't be read as a date.
+ *
+ * Session `date` is not one format. Normally it is the ISO instant taken at
+ * Start, but a restart mid-session rehydrates sessionStart from a trade's
+ * `entryTime`, which is an en-IN locale string — and on Node's ICU that is
+ * "4/9/2026, 09:20:15", unpadded. A plain slice(0,10) of that yields
+ * "4/9/2026, ", which no date range can match: it sorts after every ISO date,
+ * so a closed range (Today, Yesterday, Last month) drops the whole session
+ * while an open one (This month, All) keeps it. The day looked half-missing.
+ *
+ * Reading the day through here instead means every surface groups and filters
+ * a recovered session on the same IST day as a clean one.
+ */
+function istDayFromAny(value) {
+  if (value == null || value === "") return "";
+  const v = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;            // already a bare IST day
+  // ISO instant → the IST day it falls in, matching how the UI's ranges are
+  // built. Identical to a UTC slice for any session inside market hours; it
+  // only differs for one written between 00:00 and 05:30 IST.
+  if (/^\d{4}-\d{2}-\d{2}T/.test(v)) {
+    const t = Date.parse(v);
+    return isNaN(t) ? v.slice(0, 10) : new Date(t + 19800000).toISOString().slice(0, 10);
+  }
+  // en-IN locale: D/M/YYYY (day first), with or without a time after it.
+  const m = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (m) return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+  return "";
+}
+
+/**
+ * ISO instant for a session-start value, whatever shape it arrives in.
+ * Returns null when the value can't be read as a time.
+ *
+ * The companion to istDayFromAny on the WRITING side: a session's date should
+ * always be stored as an instant, so string-sorting sessions (which is how
+ * "the most recent saved session" is picked) orders them by time. A day-first
+ * locale stamp sorts by its leading day-of-month instead, which put "4/9/2026"
+ * ahead of every ISO date forever.
+ */
+function istIsoFromAny(value) {
+  if (value == null || value === "") return null;
+  if (typeof value === "number") return isNaN(value) ? null : new Date(value).toISOString();
+  const v = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}T/.test(v)) { const t = Date.parse(v); return isNaN(t) ? null : new Date(t).toISOString(); }
+  // "D/M/YYYY, HH:MM:SS" (en-IN, day first) — the wall clock is IST, so build
+  // the instant by subtracting the offset rather than letting Date guess.
+  const m = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})[,\s]+(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if (m) {
+    const utcMs = Date.UTC(+m[3], +m[2] - 1, +m[1], +m[4], +m[5], +(m[6] || 0)) - 19800000;
+    return new Date(utcMs).toISOString();
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return new Date(Date.parse(v + "T00:00:00Z") - 19800000).toISOString();
+  return null;
+}
+
 // ── Sleep helper for retry logic ────────────────────────────────────────────
 
 function sleep(ms) {
@@ -193,6 +251,8 @@ module.exports = {
   fastISTTime,
   formatISTTimestamp,
   fmtISTDateTime,
+  istDayFromAny,
+  istIsoFromAny,
   getISTMinutes,
   getBucketStart,
   isPreMarketBucket,

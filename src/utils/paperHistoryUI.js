@@ -25,6 +25,7 @@ const {
   contractNoteModalHTML, contractNoteClientJS,
 } = require("./contractNote");
 const { resolveTheme } = require("./theme");
+const { istDayFromAny } = require("./tradeUtils");
 
 function inr(n) {
   return typeof n === "number"
@@ -1160,7 +1161,7 @@ function buildSessionCards(sessions, opts) {
     <div class="session-card">
       <div class="session-head" onclick="this.parentElement.classList.toggle('open')">
         <div>
-          <div class="session-meta">Session ${sIdx} &middot; ${String(s.date || "").slice(0,10)} &middot; ${s.strategy || "—"}</div>
+          <div class="session-meta">Session ${sIdx} &middot; ${istDayFromAny(s.date)} &middot; ${s.strategy || "—"}</div>
           <div style="margin-top:4px;display:flex;gap:10px;font-size:0.7rem;color:var(--muted-1,#8ba1c2);">
             <span class="sc-trade-count">${trades.length} trade${trades.length !== 1 ? "s" : ""}</span>
             <span class="sc-wins" style="color:#10b981;">${sessionWins}W</span>
@@ -1169,10 +1170,10 @@ function buildSessionCards(sessions, opts) {
           </div>
         </div>
         <div style="display:flex;align-items:center;gap:8px;">
-          ${replayMode && s.date ? `<a class="copy-btn" href="/replay?from=${String(s.date).slice(0,10)}&to=${String(s.date).slice(0,10)}&mode=${replayMode}&settings=snapshot&run=1" target="_blank" rel="noopener" onclick="event.stopPropagation();" title="Open this session's candlestick chart + trade markers in Replay" style="text-decoration:none;">📈 View chart</a>` : ""}
+          ${replayMode && s.date ? `<a class="copy-btn" href="/replay?from=${istDayFromAny(s.date)}&to=${istDayFromAny(s.date)}&mode=${replayMode}&settings=snapshot&run=1" target="_blank" rel="noopener" onclick="event.stopPropagation();" title="Open this session's candlestick chart + trade markers in Replay" style="text-decoration:none;">📈 View chart</a>` : ""}
           <button class="copy-btn" onclick="event.stopPropagation();openContractNote('session',${actualIdx})" title="Contract note (gross, charges, net P&L) for this day">📄 Report</button>
           <button class="copy-btn" onclick="event.stopPropagation();copySessionLog(this,${actualIdx})">📋 Copy Trade Log</button>
-          <button class="reset-btn" onclick="event.stopPropagation();deleteSession(${actualIdx}, 'Session ${sIdx} (${String(s.date || "").slice(0,10)})')">🗑 Delete Session</button>
+          <button class="reset-btn" onclick="event.stopPropagation();deleteSession(${actualIdx}, 'Session ${sIdx} (${istDayFromAny(s.date)})')">🗑 Delete Session</button>
         </div>
         <div>
           <div class="session-pnl session-pnl-val" style="color:${pnlColor(sPnl)};">${sPnl >= 0 ? "+" : ""}${inr(sPnl)}</div>
@@ -1221,8 +1222,16 @@ function renderHistoryPage(cfg) {
   // built entirely client-side from the embedded data — broker is derived from
   // the route prefix (ema_rsi_st → Zerodha rates, others → Fyers).
   const cnBroker = (cfg.broker !== undefined) ? cfg.broker : brokerForRoute(cfg.routePrefix);
-  const sessions = (cfg.sessions || []).map(s => ({ ...s, trades: attachContractNotes(s.trades || [], cnBroker) }));
-  const allTrades = sessions.flatMap(s => (s.trades || []).map(t => ({ ...t, date: s.date })));
+  const sessions = (cfg.sessions || []).map(s => ({
+    ...s,
+    // A session date is written either as the ISO instant from Start or, after a
+    // restart, as a trade's en-IN "4/9/2026, 09:20:15". Resolve it to the IST day
+    // ONCE here so no browser has to re-parse a shape — the one place that did
+    // read it as US month/day and filed a September session under April.
+    istDay: istDayFromAny(s.date),
+    trades: attachContractNotes(s.trades || [], cnBroker),
+  }));
+  const allTrades = sessions.flatMap(s => (s.trades || []).map(t => ({ ...t, date: s.istDay })));
   const totalWins   = allTrades.filter(t => t.pnl > 0).length;
   const totalLosses = allTrades.filter(t => t.pnl < 0).length;
   const startCap = cfg.startCap;
@@ -1344,7 +1353,7 @@ function openContractNote(scope, idx){
   var trades, sub, file;
   if(scope==='session'){
     var s=(ALL_SESSIONS_JSON||[])[idx]||{}; trades=s.trades||[];
-    var d=s.date?String(s.date).slice(0,10):'';
+    var d=s.istDay||'';
     sub='Session '+(idx+1)+(d?(' · '+d):'')+' · '+trades.length+' trade'+(trades.length!==1?'s':'');
     file=CN_STRAT_LABEL.replace(/\\s+/g,'-').toLowerCase()+'-'+(d||('session-'+(idx+1)));
   } else {

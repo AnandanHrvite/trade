@@ -33,6 +33,7 @@ const { buildSidebar, sidebarCSS, faviconLink, enabledStrategies,
         dateRangeOptionsHTML, dateRangeJS,
         multiSelectCSS, multiSelectHTML, multiSelectJS } = require("../utils/sharedNav");
 const { resolveTheme } = require("../utils/theme");
+const { istDayFromAny } = require("../utils/tradeUtils");
 
 const _HOME = require("os").homedir();
 const DATA_DIR = path.join(_HOME, "trading-data");
@@ -89,7 +90,7 @@ function loadBook(sources, book) {
   for (const src of sources) {
     const data = safeRead(path.join(DATA_DIR, src.file));
     for (const s of (data.sessions || [])) {
-      const sessionDate = String(s.date || "").slice(0, 10);
+      const sessionDate = istDayFromAny(s.date);
       for (const t of (s.trades || [])) {
         const side = t.side || t.optionType || "";
         // Same formula the engines use for pnlPoints — recomputed only when the

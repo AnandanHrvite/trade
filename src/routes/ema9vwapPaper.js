@@ -42,6 +42,7 @@ function _intraCandleEntryEnabled() {
 const tickRecorder  = require("../utils/tickRecorder");
 const optionFeed    = require("../utils/optionFeed");
 const { verifyFyersToken } = require("../utils/fyersAuthCheck");
+const { istDayFromAny, istIsoFromAny } = require("../utils/tradeUtils");
 const { buildSidebar, sidebarCSS, toastJS, logViewerHTML, faviconLink, modalCSS, modalJS, tableEnhancerCSS, tableEnhancerJS } = require("../utils/sharedNav");
 const { dailyFilesPaginate, renderHistoryPage } = require("../utils/paperHistoryUI");
 const { isTradingAllowed } = require("../utils/nseHolidays");
@@ -322,7 +323,7 @@ function rehydrateSessionFromJsonl() {
     if (!trades.length) {
       const saved = (data.sessions || []).filter(s => Array.isArray(s.trades) && s.trades.length);
       if (saved.length) {
-        const last = saved.reduce((a, b) => (String(b.date) > String(a.date) ? b : a));
+        const last = saved.reduce((a, b) => (istDayFromAny(b.date) > istDayFromAny(a.date) ? b : a));
         trades = last.trades;
         source = `last session (${last.date || "?"})`;
         // Stale only when today's day-file has no trades at all — then what we just
@@ -339,7 +340,7 @@ function rehydrateSessionFromJsonl() {
     ptState.sessionPnl = parseFloat(trades.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0).toFixed(2));
     ptState._sessionWins   = trades.filter(t => Number(t.pnl) > 0).length;
     ptState._sessionLosses = trades.filter(t => Number(t.pnl) < 0).length;
-    if (!ptState.sessionStart) ptState.sessionStart = trades[0].entryTime || trades[0].loggedAt || null;
+    if (!ptState.sessionStart) ptState.sessionStart = istIsoFromAny(trades[0].entryTime || trades[0].loggedAt);
     console.log(`♻️ [EMA9+VWAP-PAPER] Restart recovery — loaded ${trades.length} trade(s) from ${source} (PnL ₹${ptState.sessionPnl})`);
   } catch (err) {
     console.warn(`[EMA9+VWAP-PAPER] session rehydrate failed: ${err.message}`);
@@ -4432,7 +4433,7 @@ router.post("/restore-session/:date", (req, res) => {
     restoredFromJsonl: true,
   };
   data.sessions.push(session);
-  data.sessions.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  data.sessions.sort((a, b) => istDayFromAny(a.date).localeCompare(istDayFromAny(b.date)));
   data.totalPnl = parseFloat(data.sessions.reduce(
     (sum, s) => sum + (s.sessionPnl != null ? s.sessionPnl : (s.pnl || 0)),
     0

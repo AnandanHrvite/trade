@@ -113,7 +113,7 @@ const aiExport    = require("../utils/aiExport");
 const fyers       = require("../config/fyers");
 const { getUniverse, fyersSymbol, plainSymbol } = require("../utils/stockUniverse");
 const { notifyEntry, notifyExit, notifyStarted, notifyDayReport } = require("../utils/notify");
-const { getISTMinutes } = require("../utils/tradeUtils");
+const { istDayFromAny, istIsoFromAny, getISTMinutes } = require("../utils/tradeUtils");
 const skipLogger  = require("../utils/skipLogger");
 const capitalPool = require("../utils/capitalPool");
 // OPTION LEG ONLY (EARLYBIRD_TRADE_MODE=option|both). The default "stock" mode
@@ -313,7 +313,7 @@ function rehydrateSessionFromJsonl() {
     if (!trades.length) {
       const saved = (data.sessions || []).filter(s => Array.isArray(s.trades) && s.trades.length);
       if (saved.length) {
-        const last = saved.reduce((a, b) => (String(b.date) > String(a.date) ? b : a));
+        const last = saved.reduce((a, b) => (istDayFromAny(b.date) > istDayFromAny(a.date) ? b : a));
         trades = last.trades;
         source = `last session (${last.date || "?"})`;
         stale  = all.length === 0;
@@ -325,7 +325,7 @@ function rehydrateSessionFromJsonl() {
     state.tradesTaken   = trades.length;
     state.stopOuts = trades.filter(t => String(t.exitType || "") === "SL").length;
     state.sessionPnl = parseFloat(trades.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0).toFixed(2));
-    if (!state.sessionStart) state.sessionStart = trades[0].entryTime || trades[0].loggedAt || null;
+    if (!state.sessionStart) state.sessionStart = istIsoFromAny(trades[0].entryTime || trades[0].loggedAt);
     // The two legs have separate "already traded" locks. A recovered OPTION
     // trade must set optionAttempted, or a restart would allow the day's second
     // option trade — the one rule that says there is never a re-entry. It is
@@ -2956,7 +2956,7 @@ router.post("/restore-session/:date", (req, res) => {
   if (!missing.length) return res.json({ success: true, restored: 0, message: "Nothing to restore — all trades already in sessions." });
   const sessionPnl = _r2(missing.reduce((s, t) => s + (Number(t.pnl) || 0), 0));
   data.sessions.push({ date, strategy: (missing[0] && missing[0].strategy) || STRATEGY_NAME, pnl: sessionPnl, trades: missing, restoredFromJsonl: true });
-  data.sessions.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  data.sessions.sort((a, b) => istDayFromAny(a.date).localeCompare(istDayFromAny(b.date)));
   data.totalPnl = _r2(data.sessions.reduce((s, x) => s + (x.pnl || 0), 0));
   data.capital  = _r2(parseFloat(process.env.FYERS_INV_AMOUNT || "100000") + data.totalPnl);
   saveData(data);

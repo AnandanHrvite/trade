@@ -31,6 +31,7 @@ const { fetchCandlesCachedBT } = require("../services/backtestEngine");
 const { VIX_SYMBOL } = require("../services/vixFilter");
 const fyers = require("../config/fyers");
 const { resolveTheme } = require("../utils/theme");
+const { istDayFromAny } = require("../utils/tradeUtils");
 
 const _HOME = require("os").homedir();
 const DATA_DIR = path.join(_HOME, "trading-data");
@@ -150,7 +151,7 @@ function loadBook(sources, book) {
   for (const src of sources) {
     const data = safeRead(path.join(DATA_DIR, src.file));
     for (const s of (data.sessions || [])) {
-      const sessionDate = String(s.date || "").slice(0, 10);
+      const sessionDate = istDayFromAny(s.date);
       for (const t of (s.trades || [])) {
         out.push({
           book,

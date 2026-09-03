@@ -16,6 +16,7 @@ const fs = require("fs");
 const path = require("path");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS, toastJS, aiExportJS } = require("../utils/sharedNav");
 const { resolveTheme } = require("../utils/theme");
+const { istDayFromAny } = require("../utils/tradeUtils");
 
 const _HOME = require("os").homedir();
 const DATA_DIR = path.join(_HOME, "trading-data");
@@ -69,8 +70,7 @@ function loadAllTrades() {
   for (const src of SOURCES) {
     const data = safeRead(src.file);
     for (const s of (data.sessions || [])) {
-      const rawDate = s.date || "";
-      const sessionDate = rawDate.slice(0, 10);
+      const sessionDate = istDayFromAny(s.date);
       for (const t of (s.trades || [])) {
         out.push({
           mode:        src.mode,

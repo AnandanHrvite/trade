@@ -73,7 +73,7 @@ const fyers       = require("../config/fyers");
 const { notifyEntry, notifyExit, notifyStarted, notifyDayReport } = require("../utils/notify");
 const { getCharges } = require("../utils/charges");
 const instrumentMode = require("../utils/instrumentMode");
-const { getISTMinutes, getBucketStart } = require("../utils/tradeUtils");
+const { istDayFromAny, fmtISTDateTime, istIsoFromAny, getISTMinutes, getBucketStart } = require("../utils/tradeUtils");
 const skipLogger = require("../utils/skipLogger");
 const capitalPool = require("../utils/capitalPool");
 
@@ -249,7 +249,7 @@ function rehydrateSessionFromJsonl() {
     if (!trades.length) {
       const saved = (data.sessions || []).filter(s => Array.isArray(s.trades) && s.trades.length);
       if (saved.length) {
-        const last = saved.reduce((a, b) => (String(b.date) > String(a.date) ? b : a));
+        const last = saved.reduce((a, b) => (istDayFromAny(b.date) > istDayFromAny(a.date) ? b : a));
         trades = last.trades;
         source = `last session (${last.date || "?"})`;
         stale  = all.length === 0;
@@ -261,7 +261,7 @@ function rehydrateSessionFromJsonl() {
     state.tradesTaken   = trades.length;
     state.stopOuts = trades.filter(t => /stop|SuperTrend|premium floor/i.test(String(t.exitReason || ""))).length;
     state.sessionPnl = parseFloat(trades.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0).toFixed(2));
-    if (!state.sessionStart) state.sessionStart = trades[0].entryTime || trades[0].loggedAt || null;
+    if (!state.sessionStart) state.sessionStart = istIsoFromAny(trades[0].entryTime || trades[0].loggedAt);
     console.log(`♻️ [BN-PIVOT-RSI-ST-PAPER] Restart recovery — loaded ${trades.length} trade(s) from ${source} (PnL ₹${state.sessionPnl}, ${state.stopOuts} stop-out(s))`);
   } catch (err) {
     console.warn(`[BN-PIVOT-RSI-ST-PAPER] session rehydrate failed: ${err.message}`);
@@ -1597,7 +1597,7 @@ router.get("/status", (req, res) => {
       value: `<span id="ajax-tick-count">${(state.tickCount || 0).toLocaleString()}</span>`,
       sub: `Last: <span id="ajax-last-tick">${state.lastTickPrice ? "₹" + state.lastTickPrice.toLocaleString("en-IN") : "—"}</span>` },
     { label: "Session Start", accent: "#2a4020",
-      value: `<span style="font-size:0.85rem;color:#c8d8f0;">${state.sessionStart || "—"}</span>` },
+      value: `<span style="font-size:0.85rem;color:#c8d8f0;">${fmtISTDateTime(state.sessionStart)}</span>` },
   ];
 
   const posHtml = pos ? (() => {

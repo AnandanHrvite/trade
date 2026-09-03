@@ -296,6 +296,83 @@ check("no Loss Streak card renders a literal '/ 3'", () => {
     `hardcoded "/ 3" denominator still rendered in: ${offenders.join(", ")}`);
 });
 
+
+// ── GROUP 3 — a date range must mean the same day the data was stamped with ──
+// The Dashboard's range filter reads a session's `date`, which is not written in
+// one format: normally the ISO instant from Start, but after a mid-session
+// restart it is rehydrated from a trade's en-IN `entryTime` ("4/9/2026,
+// 09:20:15"). Slicing ten characters off that yields "4/9/2026, ", which sorts
+// after every ISO date — so the session survived an open-ended range (This
+// month, All) and vanished from every closed one (Today, Yesterday, Last
+// month). Same silent shape as the two groups above: the filter said one thing,
+// the book showed another.
+
+section("GROUP 3 — session dates and the date-range filter");
+
+const { istDayFromAny, istIsoFromAny } = require("../src/utils/tradeUtils");
+const sharedNav = require("../src/utils/sharedNav");
+
+check("every shape a session date is written in resolves to the same IST day", () => {
+  const shapes = {
+    "ISO instant (normal Start)":   "2026-09-04T03:45:00.000Z",
+    "en-IN, unpadded (restart)":    "4/9/2026, 09:20:15",
+    "en-IN, padded (restart)":      "04/09/2026, 09:20:15",
+    "bare day":                     "2026-09-04",
+  };
+  for (const [what, raw] of Object.entries(shapes)) {
+    assert.strictEqual(istDayFromAny(raw), "2026-09-04", `${what}: ${raw} -> ${istDayFromAny(raw)}`);
+  }
+  // Unreadable input must not masquerade as a date — "" is filtered and visible.
+  for (const junk of ["garbage", "", null, undefined]) assert.strictEqual(istDayFromAny(junk), "");
+});
+
+check("a restart-rehydrated sessionStart is stored as a sortable instant", () => {
+  const iso = istIsoFromAny("4/9/2026, 09:20:15");
+  assert.ok(/^\d{4}-\d{2}-\d{2}T/.test(iso), `expected an ISO instant, got ${iso}`);
+  assert.strictEqual(istDayFromAny(iso), "2026-09-04", "the instant must land on the IST day it was taken");
+  // Sorting is how "the most recent saved session" is picked.
+  const sorted = [iso, istIsoFromAny("3/9/2026, 15:20:15"), "2026-09-04T03:45:00.000Z"].sort();
+  assert.strictEqual(istDayFromAny(sorted[0]), "2026-09-03", "the older session must sort first");
+});
+
+check("Today and Yesterday are closed single-day IST windows", () => {
+  const drRange = new Function(sharedNav.dateRangeJS() + "; return drRange;")();
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  const td = drRange("td");
+  assert.deepStrictEqual(td, { from: today, to: today }, "Today must be bounded at BOTH ends");
+  const yd = drRange("yd");
+  assert.strictEqual(yd.from, yd.to, "Yesterday must be a single day");
+  assert.ok(yd.to < today, `Yesterday (${yd.to}) must precede today (${today})`);
+});
+
+check("the Dashboard's range select offers Today and Yesterday, and opens on Today", () => {
+  const html = sharedNav.dateRangeOptionsHTML("td");
+  assert.ok(/<option value="td" selected>Today<\/option>/.test(html), "Today missing or not selectable");
+  assert.ok(/<option value="yd">Yesterday<\/option>/.test(html), "Yesterday missing");
+  assert.ok(/dateRangeOptionsHTML\('td'\)/.test(decomment(read("app.js"))),
+    "the Dashboard no longer opens on Today");
+});
+
+check("no surface reads a session date by slicing it", () => {
+  const offenders = [];
+  for (const f of ["routes/consolidation.js", "routes/liveConsolidation.js",
+                   "routes/consolidationReport.js", "routes/edgeAnalytics.js",
+                   "utils/paperHistoryUI.js"]) {
+    if (/s\.date[^\n]*\.slice\(0, ?10\)/.test(decomment(read(f)))) offenders.push(f);
+  }
+  assert.deepStrictEqual(offenders, [],
+    `session date still read with slice(0,10) — a restart-recovered day is dropped by every closed range: ${offenders.join(", ")}`);
+});
+
+check("no restart fallback stores a trade's locale entryTime as the session start", () => {
+  const offenders = [];
+  for (const f of fs.readdirSync(path.join(SRC, "routes")).filter(n => /Paper\.js$/.test(n))) {
+    if (/sessionStart = trades\[0\]\.entryTime/.test(decomment(read(`routes/${f}`)))) offenders.push(f);
+  }
+  assert.deepStrictEqual(offenders, [],
+    `raw entryTime assigned to sessionStart in: ${offenders.join(", ")}`);
+});
+
 // ── Run ─────────────────────────────────────────────────────────────────────
 run().then(() => {
   console.log(`\n${fail === 0 ? "ALL PASS" : "FAILURES"} — ${pass} passed, ${fail} failed\n`);
