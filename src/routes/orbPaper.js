@@ -574,7 +574,7 @@ function _managePositionOnClose(bar) {
   if (d.trailMoved) {
     // Same reason as breakeven: crash recovery must see the RATCHETED stop.
     try { require("../utils/positionPersist").saveOrbPosition(pos, { sessionPnl: state.sessionPnl }); } catch (_) {}
-    log(`🪜 [ORB-PAPER] Candle trail — SL → ${pos.slSpot} (behind the last candles, favourable ${d.favPts.toFixed(1)}pt)`);
+    log(`🪜 [ORB-PAPER] ${d.trailNote || "Trail"} — SL → ${pos.slSpot} (favourable ${d.favPts.toFixed(1)}pt)`);
   }
   if (d.exit) simulateSell(d.reason);
 }

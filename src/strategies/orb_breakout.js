@@ -678,6 +678,12 @@ function getSignal(candles, opts) {
     // including the entry candle, the stop must clear. 2 = the entry candle and the
     // one before it, which is the shape a discretionary trader draws by hand.
     slLookback:   Math.max(1, parseInt(process.env.ORB_SL_LOOKBACK_CANDLES || "2", 10) || 1),
+    // Read by slSource = "supertrend" AND by orbExits' SuperTrend trail, so the
+    // initial stop and the trail sit on the SAME line. Deliberately separate from
+    // the ORB_ST_* entry gate below: that one is a direction filter at 10/3, this
+    // one is a stop at 10/2 (a tighter band trails closer behind price).
+    slStPeriod:   Math.max(2, parseInt(process.env.ORB_SL_ST_PERIOD || "10", 10) || 10),
+    slStMult:     parseFloat(process.env.ORB_SL_ST_MULT || "2"),
     vwapOn:       _vwapFilterOn(),
     rsiOn:        (process.env.ORB_RSI_ENABLED || "true").toLowerCase() === "true",
     rsiPeriod:    Math.max(2, parseInt(process.env.ORB_RSI_PERIOD || "14", 10)),
@@ -951,6 +957,11 @@ function getSignal(candles, opts) {
     //                bar the move is built on, so its extreme is the level that
     //                invalidates the breakout; it also gives a stop that does not
     //                shrink just because the entry candle happened to be small.
+    //   "supertrend"— the SuperTrend(ORB_SL_ST_PERIOD, ORB_SL_ST_MULT) line, default
+    //                10/2. Not a candle extreme at all: an ATR band that already
+    //                sits where the trend would be invalidated, and the one anchor
+    //                that keeps moving after entry (turn on ORB_ST_TRAIL_ENABLED
+    //                and the same line becomes the trailing stop).
     //   "lookback" — the extreme of the LAST ORB_SL_LOOKBACK_CANDLES candles ending
     //                at the entry candle (default 2 = entry candle + the one before
     //                it). "breakout" anchors to a bar that may be many candles back,
@@ -960,7 +971,17 @@ function getSignal(candles, opts) {
     //                discretionary trader draws: clear the recent swing, nothing more.
     //                Window never crosses into the previous day.
     let structural;
-    if (cfg.slSource === "lookback") {
+    if (cfg.slSource === "supertrend") {
+      // The SuperTrend line as at the entry candle. This is the SAME line the
+      // SuperTrend trail (ORB_ST_TRAIL_ENABLED) then ratchets, so a trade that
+      // starts on it stays on it. Falls back to the entry candle's extreme while
+      // SuperTrend is still warming up — never to "no stop".
+      const stArr  = computeSuperTrend(candles, cfg.slStPeriod, cfg.slStMult);
+      const stLast = stArr[lastIdx];
+      structural = (stLast && stLast.value != null)
+        ? stLast.value
+        : (side === "CE" ? last.low : last.high);
+    } else if (cfg.slSource === "lookback") {
       const from = Math.max(0, lastIdx - (cfg.slLookback - 1));
       let ext = side === "CE" ? last.low : last.high;
       for (let i = lastIdx; i >= from; i--) {
@@ -1004,7 +1025,7 @@ function getSignal(candles, opts) {
       targetSpot: _r2(targetSpot),
       signalStrength: "STRONG",
       confirmed: true,
-      reason: `ORB ${side}${tag}: breakout close ${brk.close} beyond ${side === "CE" ? `ORH ${or.high}` : `ORL ${or.low}`} + buffer ${buffer}pt (body ${_r2(brkBody)}pt), ${why}; SL ${_r2(slSpot)} = wider of ${cfg.slSource === "lookback" ? `last-${cfg.slLookback}-candle` : cfg.slSource === "breakout" ? "breakout-candle" : "entry-candle"} extreme / ${cfg.slAtrMult}×ATR5${gapPts != null ? `, gap ${gapPts}pt` : ""}`,
+      reason: `ORB ${side}${tag}: breakout close ${brk.close} beyond ${side === "CE" ? `ORH ${or.high}` : `ORL ${or.low}`} + buffer ${buffer}pt (body ${_r2(brkBody)}pt), ${why}; SL ${_r2(slSpot)} = wider of ${cfg.slSource === "supertrend" ? `SuperTrend(${cfg.slStPeriod},${cfg.slStMult}) line` : cfg.slSource === "lookback" ? `last-${cfg.slLookback}-candle extreme` : cfg.slSource === "breakout" ? "breakout-candle extreme" : "entry-candle extreme"} / ${cfg.slAtrMult}×ATR5${gapPts != null ? `, gap ${gapPts}pt` : ""}`,
     }));
   };
 

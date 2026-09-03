@@ -657,7 +657,7 @@ async function _managePositionOnClose(bar) {
   }
   if (d.trailMoved) {
     try { saveOrbPosition(pos, { sessionPnl: state.sessionPnl || 0 }); } catch (_) {}
-    log(`🪜 Candle trail — SL → ${pos.slSpot} (behind the last candles, favourable ${d.favPts.toFixed(1)}pt)`);
+    log(`🪜 ${d.trailNote || "Trail"} — SL → ${pos.slSpot} (favourable ${d.favPts.toFixed(1)}pt)`);
   }
   if (d.exit) return placeLiveSell(d.reason);
 

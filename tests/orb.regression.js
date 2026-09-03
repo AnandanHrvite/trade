@@ -603,6 +603,104 @@ const ENTRIES  = ALL_SIGS.filter(x => x.sig.signal !== "NONE");
     }
   });
 
+  // The SuperTrend stop + trail (2026-09-04). Both ship OFF, so the first assertion
+  // is the one that matters most: turning nothing on must change nothing. The rest
+  // guard the three properties that make a ratcheting stop safe — it only ever
+  // tightens, it is never placed AT the close (the next tick would trigger it), and
+  // it is never taken from a SuperTrend pointing against the trade.
+  check("the SuperTrend trail ships off, tightens only, and never trails against the trend", () => {
+    const orbExits = require("../src/strategies/orbExits");
+    const { computeSuperTrend } = require("../src/utils/supertrend");
+    const snap = { on: process.env.ORB_ST_TRAIL_ENABLED, be: process.env.ORB_BREAKEVEN_PTS,
+                   beOr: process.env.ORB_BREAKEVEN_OR_MULT, ct: process.env.ORB_CANDLE_TRAIL_ENABLED };
+    try {
+      process.env.ORB_BREAKEVEN_PTS = "0"; process.env.ORB_BREAKEVEN_OR_MULT = "0";
+      process.env.ORB_CANDLE_TRAIL_ENABLED = "false";
+
+      // A clean uptrend, so SuperTrend is bullish and its line sits below the close.
+      const bars = [];
+      let t = Math.floor(Date.UTC(2026, 8, 3, 3, 45) / 1000);
+      for (let i = 0; i < 60; i++) {
+        const o = 24000 + i * 6, c = o + 5;
+        bars.push({ time: t + i * 300, open: o, high: c + 4, low: o - 4, close: c });
+      }
+      const bar = bars[bars.length - 1], hist = bars.slice(0, -1);
+      const line = computeSuperTrend(bars, 10, 2)[bars.length - 1];
+      assert.ok(line && line.value != null && line.trend === 1, "fixture is not a SuperTrend uptrend");
+      const mk = (side, sl) => ({ side, entrySpot: 24100, slSpot: sl, orh: 24050, orl: 24010,
+                                  rangePts: 40, breakevenArmed: false, emaArmed: false });
+
+      // 1. OFF by default — a fresh checkout must trade exactly as it did before.
+      process.env.ORB_ST_TRAIL_ENABLED = snap.on === undefined ? undefined : snap.on;
+      delete process.env.ORB_ST_TRAIL_ENABLED;
+      const off = mk("CE", 24000);
+      orbExits.evaluateCloseExits(off, bar, hist);
+      assert.strictEqual(off.slSpot, 24000, "the SuperTrend trail moved the stop while it was OFF");
+
+      // 2. ON — the stop lands ON the line, and clear of the close.
+      process.env.ORB_ST_TRAIL_ENABLED = "true";
+      const on = mk("CE", 24000);
+      const d = orbExits.evaluateCloseExits(on, bar, hist);
+      assert.strictEqual(on.slSpot, line.value, "the trail did not put the stop on the SuperTrend line");
+      assert.ok(d.trailMoved && /SuperTrend/.test(d.trailNote || ""),
+        "the trail moved the stop without telling the route which rule did it");
+      assert.ok(on.slSpot < bar.close, "the trail placed the stop at or above the close — the next tick exits");
+
+      // 3. Tighten-only: a stop already closer than the line is left alone.
+      const tight = mk("CE", line.value + 20);
+      const d3 = orbExits.evaluateCloseExits(tight, bar, hist);
+      assert.strictEqual(tight.slSpot, line.value + 20, "the trail LOOSENED a stop that was already tighter");
+      assert.strictEqual(d3.trailMoved, false, "the trail reported a move it did not make");
+
+      // 4. A PE in this uptrend must not be trailed onto a bullish line.
+      const pe = mk("PE", 24400);
+      orbExits.evaluateCloseExits(pe, bar, hist);
+      assert.strictEqual(pe.slSpot, 24400, "a PE was trailed onto a SuperTrend pointing the other way");
+
+      // 5. Idempotent whether or not the harness already pushed the closing bar into
+      //    the series — paper does, the backtest does, a future harness may not.
+      const dup = mk("CE", 24000);
+      orbExits.evaluateCloseExits(dup, bar, bars);
+      assert.strictEqual(dup.slSpot, line.value, "passing the closing bar twice changed the trailed stop");
+    } finally {
+      if (snap.on === undefined) delete process.env.ORB_ST_TRAIL_ENABLED; else process.env.ORB_ST_TRAIL_ENABLED = snap.on;
+      process.env.ORB_BREAKEVEN_PTS = snap.be; process.env.ORB_BREAKEVEN_OR_MULT = snap.beOr;
+      process.env.ORB_CANDLE_TRAIL_ENABLED = snap.ct;
+    }
+  });
+
+  // ORB_SL_SOURCE=supertrend is a STOP, not a filter: it may move where the stop
+  // sits but it must never change which breakouts the engine takes. It also has to
+  // survive SuperTrend's warm-up, where the line does not exist yet, without ever
+  // returning a stop on the wrong side of the entry — the 2026-08-13 defect class.
+  check("the SuperTrend stop anchor changes the stop, never the entries", () => {
+    const { computeSuperTrend } = require("../src/utils/supertrend");
+    const snap = process.env.ORB_SL_SOURCE;
+    try {
+      const run = (src) => {
+        process.env.ORB_SL_SOURCE = src;
+        return allSignals().filter(x => x.sig.signal !== "NONE")
+                           .map(x => ({ t: x.bar.time, side: x.sig.side, entry: x.sig.entrySpot, sl: x.sig.slSpot }));
+      };
+      const base = run("breakout"), st = run("supertrend");
+      assert.strictEqual(st.length, base.length, "the stop anchor changed HOW MANY trades are taken");
+      st.forEach((s, k) => {
+        assert.strictEqual(s.t, base[k].t, "the stop anchor changed WHICH candle is entered on");
+        assert.strictEqual(s.entry, base[k].entry, "the stop anchor changed the entry price");
+        const wrongSide = s.side === "CE" ? s.sl >= s.entry : s.sl <= s.entry;
+        assert.ok(!wrongSide, `SuperTrend stop ${s.sl} is on the wrong side of a ${s.side} entry ${s.entry}`);
+        const gi = IDX.get(s.t);
+        const win = CANDLES.slice(Math.max(0, gi - 199), gi + 1);
+        const line = computeSuperTrend(win, 10, 2)[win.length - 1];
+        // Either the line itself, or — during warm-up, when there is no line — the
+        // documented fallback to the entry candle's own extreme.
+        const onLine = line && line.value != null && Math.abs(line.value - s.sl) < 0.011;
+        const fallback = Math.abs((s.side === "CE" ? CANDLES[gi].low : CANDLES[gi].high) - s.sl) < 0.011;
+        assert.ok(onLine || fallback, `stop ${s.sl} is neither the SuperTrend line nor the warm-up fallback`);
+      });
+    } finally { if (snap === undefined) delete process.env.ORB_SL_SOURCE; else process.env.ORB_SL_SOURCE = snap; }
+  });
+
   // ── Paper ↔ Live parity ──────────────────────────────────────────────────
   // Paper is canonical. Every one of these pinned an actual defect found on
   // 2026-07-26, when live was a hand-written mirror of paper end to end.

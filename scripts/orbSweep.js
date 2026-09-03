@@ -74,6 +74,14 @@ const VARIANTS = [
   { name: "arm +25pt + 2 closes",    env: { ORB_TRAIL_ARM_PTS: "25", ORB_TRAIL_CONFIRM_CLOSES: "2" } },
   { name: "arm +25pt + EMA34",       env: { ORB_TRAIL_ARM_PTS: "25", ORB_TRAIL_EMA: "34" } },
   { name: "arm +25 + 2cl + EMA34",   env: { ORB_TRAIL_ARM_PTS: "25", ORB_TRAIL_CONFIRM_CLOSES: "2", ORB_TRAIL_EMA: "34" } },
+  // ── SuperTrend stop / trail, 2026-09-04. The trail is the only exit here that
+  //    moves the HARD stop onto an indicator line, so it exits intrabar rather than
+  //    on a close — the opposite trade-off to the EMA trail. Multiplier is the dial
+  //    that matters: 2 rides close behind price, 3 is roughly the entry gate's band.
+  { name: "ST(10,2) trail",          env: { ORB_ST_TRAIL_ENABLED: "true" } },
+  { name: "ST(10,3) trail",          env: { ORB_ST_TRAIL_ENABLED: "true", ORB_SL_ST_MULT: "3" } },
+  { name: "ST(10,2) stop + trail",   env: { ORB_SL_SOURCE: "supertrend", ORB_ST_TRAIL_ENABLED: "true" } },
+  { name: "ST(10,2) stop only",      env: { ORB_SL_SOURCE: "supertrend" } },
   // The combination worth knowing about, if the parts hold on TEST.
   { name: "OR cap 70 + EMA34",       env: { ORB_OR_MAX_PTS: "70", ORB_TRAIL_EMA: "34" } },
 ];

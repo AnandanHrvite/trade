@@ -52,6 +52,11 @@
  */
 
 const { EMA } = require("technicalindicators");
+// Repo convention: SuperTrend is not in `technicalindicators`, so the one shared
+// implementation is used here too — the same module orb_breakout.js reads for its
+// entry gate and for ORB_SL_SOURCE=supertrend. No cycle: supertrend.js requires
+// nothing from this repo.
+const { computeSuperTrend } = require("../utils/supertrend");
 
 const _r2 = (x) => Math.round(x * 100) / 100;
 const _envNum = (key, dflt) => parseFloat(process.env[key] || dflt);
@@ -107,6 +112,57 @@ function trailConfirmCloses(){ const v = parseInt(process.env.ORB_TRAIL_CONFIRM_
  */
 function candleTrailOn()     { return _envOn("ORB_CANDLE_TRAIL_ENABLED", "false"); }
 function candleTrailBars()   { const v = parseInt(process.env.ORB_CANDLE_TRAIL_CANDLES || "2", 10); return Number.isFinite(v) && v > 0 ? v : 1; }
+
+/**
+ * SUPERTREND TRAIL (2026-09-04, ships OFF).
+ *
+ * The classic SuperTrend stop: the hard SL is ratcheted onto the
+ * SuperTrend(ORB_SL_ST_PERIOD, ORB_SL_ST_MULT) line — 10/2 by default — on every
+ * candle close, and price crossing that line ends the trade INTRABAR through the
+ * shared hard-SL check. Pair it with ORB_SL_SOURCE=supertrend and the initial stop
+ * and the trail are literally the same line, which is the whole point of the
+ * indicator: one level that starts as the stop and walks itself up behind price.
+ *
+ * Deliberately reads its OWN period/multiplier rather than the ORB_ST_* entry gate's
+ * (10/3). Those are two different jobs — a direction filter wants a slower band, a
+ * stop wants a tighter one — and sharing the keys would silently retune the entry
+ * gate whenever the stop was tightened.
+ *
+ * Three safety properties, all shared with the candle trail:
+ *   • TIGHTEN-ONLY. A widening band never pushes the stop back out, so the trail
+ *     can never undo breakeven or hand back risk that was already taken off.
+ *   • NEVER AT THE CLOSE. A line on the wrong side of the close is refused; it
+ *     would be triggered by the very next tick.
+ *   • DIRECTION-CHECKED. The line is only used while SuperTrend agrees with the
+ *     position (bullish under a CE, bearish over a PE). When it flips against the
+ *     trade the line is on the far side of price and the previous two rules would
+ *     reject it anyway — this just makes the intent explicit.
+ *
+ * It does not replace the EMA trail; both run and whichever ends the trade first
+ * wins. UNPROVEN: measure with scripts/orbSweep.js before moving the default.
+ */
+function stTrailOn()         { return _envOn("ORB_ST_TRAIL_ENABLED", "false"); }
+// NaN-safe in the same direction as trailArmPts(): a hand-edited .env with a
+// non-numeric value degrades to the documented 10/2, never to NaN (which would make
+// computeSuperTrend return all-null and silently disable the trail).
+function stTrailPeriod()     { const v = parseInt(process.env.ORB_SL_ST_PERIOD || "10", 10); return Number.isFinite(v) && v >= 2 ? v : 10; }
+function stTrailMult()       { const v = _envNum("ORB_SL_ST_MULT", "2"); return Number.isFinite(v) && v > 0 ? v : 2; }
+
+/**
+ * The bar series with `bar` guaranteed present exactly once as the LAST element.
+ * Paper pushes the closing bar into state.candles before managing the position;
+ * the backtest slices a window that already ends on it; a future harness may do
+ * neither. Indicator maths cannot tolerate the bar being missing OR duplicated, so
+ * normalise rather than assume. Multi-day on purpose — unlike the candle trail this
+ * needs the preload to warm ATR up.
+ */
+function _seriesWithBar(candles, bar) {
+  const arr = Array.isArray(candles) ? candles : [];
+  if (typeof bar.time !== "number") {
+    return (arr.length && arr[arr.length - 1] === bar) ? arr : arr.concat([bar]);
+  }
+  return arr.filter(c => c && typeof c.time === "number" && c.time < bar.time).concat([bar]);
+}
 
 /**
  * Adaptive breakeven trigger: max(fixed pts, ORB_BREAKEVEN_OR_MULT × OR width), so
@@ -226,24 +282,30 @@ function evaluateTickExits(pos, { spotPrice, optionLtp }) {
  *   2. breakeven — lift the hard SL to entry once far enough in profit (never loosens)
  *  2b. candle trail — ratchet the hard SL behind the last N candles while in profit
  *      (ORB_CANDLE_TRAIL_ENABLED, ships off; never loosens)
+ *  2c. SuperTrend trail — ratchet the hard SL onto the SuperTrend line
+ *      (ORB_ST_TRAIL_ENABLED, ships off; never loosens)
  *   3. EMA trend-trail — exit only when a candle CLOSES back across the EMA, and only
  *      after price has first closed on the correct side of it (emaArmed). Without the
  *      arm, a fresh entry taken below a stale/gap-day EMA would be stopped out on its
  *      very first candle.
  *
- * Mutates `pos.slSpot` / `pos.breakevenArmed` / `pos.emaArmed` / `pos.lastEma`.
+ * Mutates `pos.slSpot` / `pos.breakevenArmed` / `pos.emaArmed` / `pos.lastEma` /
+ * `pos.lastStopSt` (the stop-SuperTrend line, observer-only like `lastEma`).
  * `breakevenArmed` in the result is true ONLY on the candle that arms it, and
- * `trailMoved` only on a candle that actually moved the stop, so callers can
+ * `trailMoved` only on a candle that actually moved the stop (with `trailNote`
+ * naming WHICH trail moved it), so callers can
  * log it and re-snapshot for crash recovery exactly once. `favPts` / `bePts` ride
  * along so the routes can keep logging the numbers that justified the arm — those
  * are how a breakeven exit is diagnosed after the fact.
  *
- * @param {Array} candles  the bar series (OHLC) — EMA trail + candle trail read it
+ * @param {Array} candles  the bar series (OHLC) — EMA trail, candle trail and the
+ *                          SuperTrend trail all read it
  * @returns {{exit:boolean, reason:string|null, breakevenArmed:boolean,
- *            trailMoved:boolean, favPts:number|null, bePts:number|null}}
+ *            trailMoved:boolean, trailNote:string|null,
+ *            favPts:number|null, bePts:number|null}}
  */
 function evaluateCloseExits(pos, bar, candles) {
-  const none = { exit: false, reason: null, breakevenArmed: false, trailMoved: false, favPts: null, bePts: null };
+  const none = { exit: false, reason: null, breakevenArmed: false, trailMoved: false, trailNote: null, favPts: null, bePts: null };
   if (!pos || !bar || typeof bar.close !== "number") return none;
   const close = bar.close;
 
@@ -252,10 +314,10 @@ function evaluateCloseExits(pos, bar, candles) {
   const bodyPts   = Math.abs(bar.close - bar.open);
   if (oppositeExitOn() && oppThresh > 0 && bodyPts >= oppThresh) {
     if (pos.side === "CE" && bar.close < bar.open && bar.close < pos.orh) {
-      return { exit: true, reason: `Strong opposite candle (red body ${bodyPts.toFixed(1)}pt ≥ ${oppThresh.toFixed(1)}pt, closed below ORH)`, breakevenArmed: false, trailMoved: false, favPts: null, bePts: null };
+      return { exit: true, reason: `Strong opposite candle (red body ${bodyPts.toFixed(1)}pt ≥ ${oppThresh.toFixed(1)}pt, closed below ORH)`, breakevenArmed: false, trailMoved: false, trailNote: null, favPts: null, bePts: null };
     }
     if (pos.side === "PE" && bar.close > bar.open && bar.close > pos.orl) {
-      return { exit: true, reason: `Strong opposite candle (green body ${bodyPts.toFixed(1)}pt ≥ ${oppThresh.toFixed(1)}pt, closed above ORL)`, breakevenArmed: false, trailMoved: false, favPts: null, bePts: null };
+      return { exit: true, reason: `Strong opposite candle (green body ${bodyPts.toFixed(1)}pt ≥ ${oppThresh.toFixed(1)}pt, closed above ORL)`, breakevenArmed: false, trailMoved: false, trailNote: null, favPts: null, bePts: null };
     }
   }
 
@@ -274,6 +336,9 @@ function evaluateCloseExits(pos, bar, candles) {
   //     once this close is in profit. Tighten-only: a wider pullback candle can
   //     never push the stop back out. See candleTrailOn() for why it ships off.
   let trailMoved = false;
+  // Which trail actually moved the stop, so the routes can log the truth instead of
+  // hard-coding "Candle trail" — two rules can move it now.
+  let trailNote  = null;
   if (candleTrailOn() && favPts > 0) {
     const n     = candleTrailBars();
     const _day  = (t) => Math.floor((t + 19800) / 86400);
@@ -301,6 +366,35 @@ function evaluateCloseExits(pos, bar, candles) {
     if (Number.isFinite(ext) && tighter && clear) {
       pos.slSpot = _r2(ext);
       trailMoved = true;
+      trailNote  = `Candle trail (last ${n})`;
+    }
+  }
+
+  // 2c. SuperTrend trail — ratchet the stop onto the SuperTrend line. Runs AFTER
+  //     the candle trail so that when both are on the tighter of the two wins (each
+  //     is tighten-only, so whichever moves the stop further simply survives).
+  //     No profit precondition, unlike the candle trail: the SuperTrend line IS the
+  //     stop from the moment of entry when ORB_SL_SOURCE=supertrend, and requiring
+  //     profit first would leave the trade on a stale level for exactly the bars
+  //     where the trend is deciding. Tighten-only keeps that safe.
+  if (stTrailOn()) {
+    const stPeriod = stTrailPeriod();
+    const stMult   = stTrailMult();
+    const stArr = computeSuperTrend(_seriesWithBar(candles, bar), stPeriod, stMult);
+    const line  = stArr.length ? stArr[stArr.length - 1] : null;
+    if (line && line.value != null) {
+      pos.lastStopSt = _r2(line.value);
+      // Only while SuperTrend agrees with the trade — see the note on stTrailOn().
+      if (line.trend === (pos.side === "CE" ? 1 : -1)) {
+        const v       = line.value;
+        const tighter = pos.side === "CE" ? v > pos.slSpot : v < pos.slSpot;
+        const clear   = pos.side === "CE" ? v < close      : v > close;
+        if (tighter && clear) {
+          pos.slSpot = _r2(v);
+          trailMoved = true;
+          trailNote  = `SuperTrend(${stPeriod},${stMult}) trail`;
+        }
+      }
     }
   }
 
@@ -325,12 +419,12 @@ function evaluateCloseExits(pos, bar, candles) {
       if (pos.emaBreaks >= need) {
         const side = pos.side === "CE" ? "below" : "above";
         const runs = need > 1 ? ` ${pos.emaBreaks} closes running` : "";
-        return { exit: true, reason: `Closed ${side} EMA${emaPeriod}${runs} (${close} ${pos.side === "CE" ? "<" : ">"} ${pos.lastEma})`, breakevenArmed: armedNow, trailMoved, favPts, bePts };
+        return { exit: true, reason: `Closed ${side} EMA${emaPeriod}${runs} (${close} ${pos.side === "CE" ? "<" : ">"} ${pos.lastEma})`, breakevenArmed: armedNow, trailMoved, trailNote, favPts, bePts };
       }
     }
   }
 
-  return { exit: false, reason: null, breakevenArmed: armedNow, trailMoved, favPts, bePts };
+  return { exit: false, reason: null, breakevenArmed: armedNow, trailMoved, trailNote, favPts, bePts };
 }
 
 /**
