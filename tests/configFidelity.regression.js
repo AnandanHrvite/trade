@@ -407,7 +407,7 @@ function runPreset(preset, recorded, startFrom, startTo, istNow) {
   };
   const sandbox = {
     document: { getElementById: (id) => els[id] || null },
-    _enabledDates: recorded, _rangeFromFp: null, _rangeToFp: null,
+    _enabledDates: recorded, _pinnedDates: [], _rangeFromFp: null, _rangeToFp: null,
     // Stubs for whatever the page does not (yet) define, so an older replay.js
     // still runs here and trips on its dates rather than on a ReferenceError.
     _setRangeNote: (m) => { NOTE = m || ""; },
@@ -434,27 +434,33 @@ check("a preset never resolves to a date outside its own window", () => {
   // Pre-fix this fell back to the LATEST recording (03-09) when the window held
   // none, so "Last week" silently answered with a day in THIS week.
   const r = runPreset("last-week", RECORDED, "2026-09-03", "2026-09-03", IST_NOW);
-  assert.ok(!r.from || (r.from >= "2026-08-24" && r.from <= "2026-08-30") || r.from === "2026-09-03",
-    `last-week produced ${r.from}`);
-  assert.strictEqual(r.from, "2026-09-03", "dates must be left untouched, not snapped elsewhere");
+  assert.ok(r.from >= "2026-08-24" && r.from <= "2026-08-30",
+    `last week is 24-08..30-08, but From landed on ${r.from}`);
+  assert.ok(r.to >= "2026-08-24" && r.to <= "2026-08-30",
+    `last week is 24-08..30-08, but To landed on ${r.to}`);
   assert.ok(/No recorded session in Last week/.test(r.note),
-    `a preset that changes nothing must say why, got: ${r.note || "(silence)"}`);
+    `an empty window must say why, got: ${r.note || "(silence)"}`);
 });
 
-check("a preset whose window holds no recording says so instead of going quiet", () => {
+check("Today puts TODAY in the boxes even when today has no recording", () => {
+  // The whole point of the label. Showing the newest recorded day instead made
+  // "Today" read as yesterday, which is exactly what was reported.
   const r = runPreset("today", RECORDED, "2026-09-03", "2026-09-03", IST_NOW);
+  assert.strictEqual(r.from, "2026-09-04", "From must be today");
+  assert.strictEqual(r.to, "2026-09-04", "To must be today");
+  assert.strictEqual(r.preset, "today", "the dropdown must keep saying Today, since the dates now match it");
   assert.ok(/No recorded session in Today/.test(r.note),
     `expected a note saying Today has no recording, got: ${r.note || "(silence)"}`);
-  assert.strictEqual(r.preset, "", "the dropdown must drop back to Custom, not mislabel the dates");
 });
 
-check("Yesterday resolves to yesterday, and Today and Yesterday cannot collide", () => {
+check("Today and Yesterday never land on the same date", () => {
   const y = runPreset("yesterday", RECORDED, "2026-09-01", "2026-09-01", IST_NOW);
   assert.strictEqual(y.from, "2026-09-03", "yesterday of 04-09 IST is 03-09");
   assert.strictEqual(y.to, "2026-09-03");
+  assert.strictEqual(y.note, "", "03-09 is recorded and is exactly yesterday — nothing to explain");
   const t = runPreset("today", RECORDED, "2026-09-01", "2026-09-01", IST_NOW);
-  assert.ok(t.from !== y.from || t.note,
-    "Today and Yesterday landed on the same date with nothing on screen to explain it");
+  assert.notStrictEqual(t.from, y.from,
+    "Today and Yesterday resolved to the same date, so one of them is lying");
 });
 
 check("a multi-day preset narrows to recorded days INSIDE the window", () => {
@@ -462,6 +468,16 @@ check("a multi-day preset narrows to recorded days INSIDE the window", () => {
   assert.strictEqual(r.from, "2026-08-31", "week starts Monday 31-08, which is recorded");
   assert.strictEqual(r.to, "2026-09-03", "04-09 is unrecorded, so the last recorded day is 03-09");
   assert.ok(/narrowed to the recorded days/.test(r.note), `narrowing must be stated, got: ${r.note}`);
+});
+
+check("the picker's upper bound never clamps Today back to the last recording", () => {
+  // maxDate was the newest recorded day, so setDate(today) snapped straight
+  // back to it — the bound itself reintroduced the reported bug.
+  const body = decomment(read("routes/replay.js"));
+  assert.ok(!/maxDate: latest,/.test(body),
+    "maxDate is pinned to the newest recording — Today cannot be displayed");
+  assert.ok(/maxDate: latest > today \? latest : today/.test(body),
+    "maxDate must extend to today so the Today preset is representable");
 });
 
 check("the /replay date controls read today in IST, never off toISOString", () => {

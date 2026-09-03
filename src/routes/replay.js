@@ -1992,6 +1992,9 @@ function downloadDiagnostic(btn, context, rows) {
 let _allSessionsCache = [];
 
 let _enabledDates = [];
+// Days a quick range named that have no recording. Kept selectable so the
+// From/To boxes can show the dates the chosen preset actually means.
+let _pinnedDates = [];
 let _rangeFromFp = null;
 let _rangeToFp   = null;
 
@@ -2028,9 +2031,19 @@ function setRangeDefaults() {
     dateFormat: 'Y-m-d',
     altInput: true,
     altFormat: 'd/m/Y',
-    enable: _enabledDates,
-    minDate: earliest,
-    maxDate: latest,
+    // A predicate, not a plain list, so a preset can pin a day that has no
+    // recording (see _pinnedDates). Unrecorded days still render greyed out,
+    // which is what the calendar is for; what changed is that the box is no
+    // longer forbidden from *displaying* the day the user asked for.
+    enable: [(d) => {
+      const s = _localDateStr(d);
+      return _enabledDates.includes(s) || _pinnedDates.includes(s);
+    }],
+    // No minDate: "This year" reaches back to 1 Jan, before the first
+    // recording. maxDate is today rather than the newest recording — with
+    // maxDate pinned to the newest recording, setting Today was clamped to
+    // the last recorded day, which is what made Today read as yesterday.
+    maxDate: latest > today ? latest : today,
     disableMobile: true,
     onChange: () => {
       const sel = document.getElementById('range-preset');
@@ -2110,30 +2123,38 @@ function applyRangePreset(preset) {
   const label = _PRESET_LABELS[preset] || preset;
   const windowLabel = wantFrom === wantTo ? _dmy(wantFrom) : _dmy(wantFrom) + ' → ' + _dmy(wantTo);
 
-  if (_enabledDates.length) {
-    // Only recorded days *within* the requested window qualify. A window with
-    // none of them (weekend, holiday, or the session not started yet) leaves
-    // the inputs alone and says so — substituting an unrelated date is worse
-    // than doing nothing.
-    const inWindow = _enabledDates.filter(d => d >= f && d <= t);
-    if (!inWindow.length) {
-      _setRangeNote('No recorded session in ' + label + ' (' + windowLabel + ') — dates left unchanged.');
-      const sel = document.getElementById('range-preset');
-      if (sel) sel.value = '';
-      return;
-    }
+  // Only recorded days *within* the requested window qualify — a preset must
+  // never resolve to a date outside the window it names.
+  const inWindow = _enabledDates.filter(d => d >= f && d <= t);
+  let note = '';
+  if (!_enabledDates.length) {
+    // Nothing recorded at all; the pickers are plain inputs in this state.
+    _pinnedDates = [];
+  } else if (!inWindow.length) {
+    // Nothing recorded anywhere in the window. Still show the dates the preset
+    // actually names — putting a different day in the boxes made "Today" read
+    // as yesterday. Pin them so the picker will display them, and say plainly
+    // that there is nothing there to run.
+    _pinnedDates = [wantFrom, wantTo];
+    note = 'No recorded session in ' + label + ' (' + windowLabel + ') — nothing to replay for those dates.';
+  } else {
+    _pinnedDates = [];
     f = inWindow[0];
     t = inWindow[inWindow.length - 1];
+    if (f !== wantFrom || t !== wantTo) {
+      note = label + ' is ' + windowLabel + '; narrowed to the recorded day' +
+        (f === t ? ' ' + _dmy(f) : 's ' + _dmy(f) + ' → ' + _dmy(t)) + '.';
+    }
   }
 
   // setDate(_, false) avoids firing onChange, which would re-clear the preset.
   if (_rangeFromFp) _rangeFromFp.setDate(f, false); else fromEl.value = f;
   if (_rangeToFp)   _rangeToFp.setDate(t, false);   else toEl.value   = t;
+  // The pinned day only becomes pickable once the calendar re-renders.
+  if (_rangeFromFp && _rangeFromFp.redraw) _rangeFromFp.redraw();
+  if (_rangeToFp   && _rangeToFp.redraw)   _rangeToFp.redraw();
 
-  _setRangeNote(f === wantFrom && t === wantTo
-    ? ''
-    : label + ' is ' + windowLabel + '; narrowed to the recorded day' +
-      (f === t ? ' ' + _dmy(f) : 's ' + _dmy(f) + ' → ' + _dmy(t)) + '.');
+  _setRangeNote(note);
 }
 
 // Every replay-able paper mode currently offered in the Strategy dropdown
