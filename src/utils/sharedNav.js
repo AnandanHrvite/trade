@@ -23,7 +23,9 @@ const STRATEGY_MODES = [
   { mode: 'ORB',        label: 'ORB',          envKey: 'ORB_MODE_ENABLED'        },
   { mode: 'EMA9VWAP',   label: 'EMA9+VWAP',    envKey: 'EMA9VWAP_MODE_ENABLED'   },
   { mode: 'TREND_PB',   label: 'Trend_PB',     envKey: 'TREND_PB_MODE_ENABLED'   },
-  { mode: 'TDS',        label: 'Trend Day Scalp', envKey: 'TDS_MODE_ENABLED'     },
+  // `slug` is only needed when the mode key is not the route slug (TDS lives at
+  // /trend-day-scalp-*). startAllRoster.js matches key→slug otherwise.
+  { mode: 'TDS',        label: 'Trend Day Scalp', envKey: 'TDS_MODE_ENABLED', slug: 'trend-day-scalp' },
   { mode: 'HA_SCALP',   label: 'HA Scalp', envKey: 'HA_SCALP_MODE_ENABLED'         },
   { mode: 'RSI_PIVOT_ST', label: 'RSI Pivot ST', envKey: 'RSI_PIVOT_ST_MODE_ENABLED' },
   { mode: 'BN_PIVOT_RSI_ST', label: 'BN Pivot RSI ST', envKey: 'BN_PIVOT_RSI_ST_MODE_ENABLED' },

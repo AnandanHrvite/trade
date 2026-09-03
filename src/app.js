@@ -15,33 +15,18 @@ const { ACTIVE, getActiveStrategy } = require("./strategies");
 const instrumentConfig = require("./config/instrument");
 const zerodha  = require("./services/zerodhaBroker");
 const { clearFyersToken } = require("./config/fyers");
-const { buildSidebar, sidebarCSS, modalCSS, modalJS, enabledStrategies,
+const { buildSidebar, sidebarCSS, modalCSS, modalJS,
         expiryHolidayModalCSS, expiryHolidayModalHTML, expiryHolidayModalJS,
         dateRangeOptionsHTML, dateRangeJS } = require("./utils/sharedNav");
 const { resolveTheme } = require("./utils/theme");
 
-// Start-All route triplet per strategy, keyed by the canonical mode key in
-// sharedNav's STRATEGY_MODES. The dashboard's Start All (Paper / Live / Harness)
-// buttons are built by mapping enabledStrategies() over this table, so they list
-// exactly the strategies the sidebar lists — no strategy is hardcoded into the
-// buttons and none can be silently left out. `live: null` = the strategy has no
-// separate pure-live engine (its /…-live route IS the paper-wrapping harness),
-// so it takes part in Paper + Harness only. Wiring a new strategy into Start All
-// is one row here plus its row in STRATEGY_MODES.
-const START_ALL_ROUTES = {
-  EMA_RSI_ST: { paper: '/ema_rsi_st-paper/start', live: '/ema_rsi_st-live/start', harness: '/ema_rsi_st-live-harness/start' },
-  BB_RSI:     { paper: '/bb_rsi-paper/start',     live: '/bb_rsi-live/start',     harness: '/bb_rsi-live-harness/start'     },
-  PA:         { paper: '/pa-paper/start',         live: '/pa-live/start',         harness: '/pa-live-harness/start'         },
-  ORB:        { paper: '/orb-paper/start',        live: '/orb-live/start',        harness: '/orb-live-harness/start'        },
-  EMA9VWAP:   { paper: '/ema9vwap-paper/start',   live: null,                     harness: '/ema9vwap-live/start'           },
-  TREND_PB:   { paper: '/trend-pb-paper/start',   live: null,                     harness: '/trend-pb-live/start'           },
-  TDS:        { paper: '/trend-day-scalp-paper/start', live: null,               harness: '/trend-day-scalp-live/start'    },
-  HA_SCALP:   { paper: '/ha-scalp-paper/start', live: null,                      harness: '/ha-scalp-live/start'           },
-  SIMPLE930:  { paper: '/simple930-paper/start', live: null,                     harness: '/simple930-live/start'          },
-  RSI_PIVOT_ST: { paper: '/rsi-pivot-st-paper/start', live: null,                harness: '/rsi-pivot-st-live/start'       },
-  BN_PIVOT_RSI_ST: { paper: '/bn-pivot-rsi-st-paper/start', live: null,          harness: '/bn-pivot-rsi-st-live/start'    },
-  EARLYBIRD:  { paper: '/early-bird-paper/start', live: null,                    harness: '/early-bird-live/start'         },
-};
+// Start-All roster. The dashboard's Start All (Paper / Live / Harness) buttons
+// no longer read a hand-written route table: startAllRoster.js discovers every
+// mounted router that exposes a /start route and joins it to the enabled
+// strategies from sharedNav's STRATEGY_MODES. Mount a new strategy's routes the
+// usual way (/{slug}-paper, /{slug}-live[, /{slug}-live-harness]) and it joins
+// Start All with no further wiring — see the module header for the contract.
+const { trackMounts, startAllRoster } = require("./utils/startAllRoster");
 const sharedSocketState = require("./utils/sharedSocketState");
 
 const crypto = require("crypto");
@@ -52,6 +37,7 @@ const consolidatedEodReporter = require("./utils/consolidatedEodReporter");
 const manualTradesSyncJob = require("./utils/manualTradesSyncJob");
 const { loadTradePosition, clearTradePosition, loadBbRsiPosition, clearBbRsiPosition, loadPAPosition, clearPAPosition, loadEma9VwapPosition, clearEma9VwapPosition, loadOrbPosition, clearOrbPosition, loadTrendPbPosition, clearTrendPbPosition, loadTrendDayScalpPosition, clearTrendDayScalpPosition, loadHaScalpPosition, clearHaScalpPosition, loadRsiPivotStPosition, clearRsiPivotStPosition, loadBnPivotRsiStPosition, clearBnPivotRsiStPosition, loadSimple930Position, clearSimple930Position, loadEarlyBirdPositions, clearEarlyBirdPositions } = require("./utils/positionPersist");
 const app = express();
+trackMounts(app);   // record every app.use(path, router) so Start All can discover the strategy routes
 app.use(compression());
 app.use(express.json({ limit: "25mb" })); // tradebook CSV imports (pnlHistory.js) can be several MB of JSON-wrapped text
 
@@ -776,6 +762,7 @@ const OPEN_PATHS = [
   "/auth/zerodha/logout",
   "/api/holidays",          // read-only holiday list
   "/api/expiry-dates",      // read-only expiry calendar
+  "/api/start-all-roster",  // read-only Start-All roster (dashboard button)
   "/login-logs",            // failed login attempts viewer
   "/login-logs/data",       // login logs JSON data
   "/login-logs/clear",      // reset login logs
@@ -990,6 +977,14 @@ const OPEN_PREFIXES = [
   "/bn-pivot-rsi-st-paper/view/",
   "/bn-pivot-rsi-st-paper/download/",
 ];
+// Read-only status surfaces of ANY strategy route, matched by shape rather than
+// by name. The dashboard polls `/status/data` with a plain fetch (no secret) for
+// its per-strategy tiles, for the Start-All button state and for the post-start
+// verification — every one of those goes silently blank on a strategy whose
+// exact path nobody remembered to list above. The named entries stay (they also
+// cover /history); this only removes the "new strategy forgot a line" failure.
+const OPEN_STATUS_RE = /^\/[a-z0-9_]+(?:-[a-z0-9_]+)*-(?:paper|live|live-harness)\/status(?:\/data|\/chart-data)?$/;
+
 app.use((req, res, next) => {
   const secret = process.env.API_SECRET;
   if (!secret) return next(); // no secret set → open (dev mode)
@@ -1000,7 +995,8 @@ app.use((req, res, next) => {
   // and a few (deploy/webhook, tracker/fetch-and-start) are deliberately POSTable.
   const isReadMethod = req.method === "GET" || req.method === "HEAD";
   const isOpen = OPEN_PATHS.includes(req.path)
-    || (isReadMethod && OPEN_PREFIXES.some(p => req.path.startsWith(p)));
+    || (isReadMethod && OPEN_PREFIXES.some(p => req.path.startsWith(p)))
+    || (isReadMethod && OPEN_STATUS_RE.test(req.path));
   if (isOpen) return next();
   const token = req.headers["x-api-secret"] || req.query.secret;
   if (token !== secret) return res.status(403).json({ success: false, error: "Forbidden — missing or wrong secret." });
@@ -1226,6 +1222,23 @@ app.get("/api/expiry-dates", async (req, res) => {
   }
 });
 
+// ── Start-All roster ──────────────────────────────────────────────────────────
+// The live list of startable strategies, fetched by the dashboard on every
+// Start All click. Discovered from the mounted routers and filtered by the
+// *_MODE_ENABLED toggles, so a strategy added to the app — or enabled in
+// Settings after the page was rendered — is started without a page reload and
+// without editing the button.
+app.get("/api/start-all-roster", (req, res) => {
+  const modes = startAllRoster();
+  res.json({
+    success: true,
+    modes,
+    paper:   modes.map((m) => m.paper),
+    live:    modes.filter((m) => m.live).map((m) => m.live),
+    harness: modes.filter((m) => m.harness).map((m) => m.harness),
+  });
+});
+
 // ── Candle Cache Info ─────────────────────────────────────────────────────────
 // Lightweight liveness probe so the dashboard can auto-swap to/from realtime view.
 app.get("/api/session-active", (req, res) => {
@@ -1326,12 +1339,11 @@ app.get("/", (req, res) => {
   ].filter((t) => t.on).map((t) => ({ key: t.key, cls: t.cls, label: t.label }));
 
   // ── Start-All roster — the enabled strategies (same helper the sidebar uses)
-  // joined to their start routes. Read per request because Settings saves mutate
-  // process.env live. A strategy with no START_ALL_ROUTES row is skipped rather
-  // than crashing the dashboard.
-  const startAllModes = enabledStrategies()
-    .filter((s) => START_ALL_ROUTES[s.mode])
-    .map((s) => ({ label: s.label, ...START_ALL_ROUTES[s.mode] }));
+  // joined to the start routes discovered from the mounted routers. Read per
+  // request because Settings saves mutate process.env live; the buttons refetch
+  // it again on click (/api/start-all-roster) so a strategy enabled after this
+  // page was rendered still starts without a reload.
+  const startAllModes = startAllRoster();
   const startAllLiveModes  = startAllModes.filter((m) => m.live);
   // Button-state poll: same roster, /start → /status/data on each wired route.
   const startAllPollTargets = [
@@ -2774,16 +2786,56 @@ async function pollDashboardStatus(){
 /* pollDashboardStatus disabled — dashboard no longer shows realtime data */
 
 // ── Quick Action: Start All Paper / All Live ────────────────────────────────
-// All three lists are generated from the server-side startAllModes roster, which
-// is filtered by the *_MODE_ENABLED Settings toggles — only enabled strategies
-// appear here. Harness routes wrap PAPER (LIVE = PAPER by construction) and
-// respect LIVE_HARNESS_DRY_RUN.
+// The lists below are the roster as it stood when this page was RENDERED — the
+// enabled strategies joined to the start routes discovered from the mounted
+// routers. Every Start-All click refetches them from /api/start-all-roster
+// first (_refreshRoster), so a strategy that was added to the app or enabled in
+// Settings since the page loaded is started too, without a reload and without
+// this button naming any strategy. The render-time lists are the fallback for
+// when that fetch fails. Harness routes wrap PAPER (LIVE = PAPER by
+// construction) and respect LIVE_HARNESS_DRY_RUN.
 var PAPER_ENDPOINTS   = ${JSON.stringify(startAllModes.map((m) => m.paper))};
 var LIVE_ENDPOINTS    = ${JSON.stringify(startAllLiveModes.map((m) => m.live))};
 var HARNESS_ENDPOINTS = ${JSON.stringify(startAllModes.map((m) => m.harness))};
 var ALL_MODE_LABELS   = ${JSON.stringify(startAllModes.map((m) => m.label))};
 var LIVE_MODE_LABELS  = ${JSON.stringify(startAllLiveModes.map((m) => m.label))};
 var ENDPOINT_LABELS   = ${JSON.stringify(startAllEndpointLabels)};
+
+// Replaces every roster-derived list in one place, so the endpoints, the button
+// labels, the failure-list names and the button-state poll can never disagree
+// about which strategies are in play.
+function _applyRoster(modes){
+  if(!Array.isArray(modes) || !modes.length) return false;
+  var paper = [], live = [], harness = [], labels = [], liveLabels = [], names = {}, poll = [];
+  modes.forEach(function(m){
+    if(!m || !m.paper) return;
+    paper.push(m.paper); labels.push(m.label);
+    names[m.paper] = m.label + ' Paper';
+    poll.push({ url: m.paper.replace('/start','/status/data'), kind: 'paper' });
+    if(m.live){
+      live.push(m.live); liveLabels.push(m.label);
+      names[m.live] = m.label + ' Live';
+      poll.push({ url: m.live.replace('/start','/status/data'), kind: 'live' });
+    }
+    if(m.harness){ harness.push(m.harness); names[m.harness] = m.label + ' Live (Harness)'; }
+  });
+  if(!paper.length) return false;
+  PAPER_ENDPOINTS = paper; LIVE_ENDPOINTS = live; HARNESS_ENDPOINTS = harness;
+  ALL_MODE_LABELS = labels; LIVE_MODE_LABELS = liveLabels; ENDPOINT_LABELS = names;
+  ALL_BTN_POLL = poll;
+  return true;
+}
+
+// Called at the top of every Start-All handler. A failed fetch is not an error:
+// the page keeps the roster it was rendered with rather than refusing to start.
+async function _refreshRoster(){
+  try {
+    var r = await fetch('/api/start-all-roster', { cache:'no-store' });
+    if(!r.ok) return false;
+    var d = await r.json();
+    return _applyRoster(d && d.modes);
+  } catch(e){ return false; }
+}
 
 function _escHtml(s){
   return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
@@ -2986,6 +3038,7 @@ async function _runStartAll(btn, origText, label, endpoints){
 }
 
 async function startAllPaper(btn){
+  await _refreshRoster();
   if (await _noModesEnabled(PAPER_ENDPOINTS, 'Paper')) return;
   var modeList = ALL_MODE_LABELS.join(' + ');
   var orig = btn.textContent;
@@ -2994,6 +3047,7 @@ async function startAllPaper(btn){
 }
 
 async function startAllLive(btn){
+  await _refreshRoster();
   if (await _noModesEnabled(LIVE_ENDPOINTS, 'Live')) return;
   var ok = await showConfirm({
     icon: '⚠️', title: 'Start ALL Live Trades',
@@ -3007,6 +3061,7 @@ async function startAllLive(btn){
 }
 
 async function startAllHarness(btn){
+  await _refreshRoster();
   if (await _noModesEnabled(HARNESS_ENDPOINTS, 'Live (Harness)')) return;
   var modeList = ALL_MODE_LABELS.join(' + ');
   var ok = await showConfirm({
