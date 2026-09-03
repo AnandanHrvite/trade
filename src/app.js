@@ -2286,7 +2286,7 @@ ${buildSidebar('dashboard', liveActive)}
     </div>
     <div class="dash-range" id="dashRange" title="Date range for all charts">
       <label for="dashRangeSel">Range</label>
-      <select id="dashRangeSel">${dateRangeOptionsHTML('tm')}</select>
+      <select id="dashRangeSel">${dateRangeOptionsHTML('td')}</select>
       <span class="drg-custom" id="dashRangeCustom" style="display:none;">
         <input type="date" id="dashRangeFrom" title="From date (inclusive)"/>
         <input type="date" id="dashRangeTo" title="To date (inclusive)"/>
