@@ -2007,7 +2007,7 @@ function setRangeDefaults() {
   if (_enabledDates.length === 0) {
     if (_rangeFromFp) { _rangeFromFp.destroy(); _rangeFromFp = null; }
     if (_rangeToFp)   { _rangeToFp.destroy();   _rangeToFp   = null; }
-    const today = new Date().toISOString().slice(0, 10);
+    const today = _localDateStr(_istNow());
     fromEl.value = toEl.value = today;
     return;
   }
@@ -2016,7 +2016,10 @@ function setRangeDefaults() {
   const latest   = _enabledDates[_enabledDates.length - 1];
   // Default to today (or the most recent recorded date ≤ today if today
   // has no recording — weekend, holiday, or session not yet started).
-  const today = new Date().toISOString().slice(0, 10);
+  // Local date, NOT toISOString(): before 05:30 IST the UTC date is still
+  // yesterday, which made this function and applyRangePreset disagree about
+  // what "today" is for the whole early-morning window.
+  const today = _localDateStr(_istNow());
   const onOrBefore = _enabledDates.filter(d => d <= today);
   const todayOrNearest = onOrBefore.length ? onOrBefore[onOrBefore.length - 1] : latest;
   const prevFrom = fromEl.value && _enabledDates.includes(fromEl.value) ? fromEl.value : todayOrNearest;
@@ -2073,18 +2076,15 @@ function _setRangeNote(msg) {
   el.style.display = msg ? 'block' : 'none';
 }
 
-// Quick-range presets. Computes [from,to] in local time, then narrows to the
+// Quick-range presets. Computes [from,to] on the IST calendar, then narrows to the
 // recorded dates that fall INSIDE that window — never to a date outside it,
 // which used to make "Yesterday" silently resolve to the latest recording.
 function applyRangePreset(preset) {
   if (!preset) return;
   const fromEl = document.getElementById('range-from');
   const toEl   = document.getElementById('range-to');
-  const fmt = d => {
-    const x = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
-    return x.toISOString().slice(0, 10);
-  };
-  const now = new Date();
+  const fmt = _localDateStr;
+  const now = _istNow();
   let from = new Date(now), to = new Date(now);
   switch (preset) {
     case 'today':     break;
@@ -2632,6 +2632,14 @@ setInterval(refreshPreflight, 5000);
 const _settingsSourceSel = document.getElementById('settings-source');
 if (_settingsSourceSel) _settingsSourceSel.addEventListener('change', refreshSettingsSourceUi);
 
+// "Now" as an IST wall-clock Date: the y/m/d/h fields read as Asia/Kolkata, so
+// ordinary getDate()/setDate() arithmetic on it stays on IST calendar days.
+// Recordings are named by IST trading day, so the date controls must anchor to
+// IST rather than to whatever timezone the viewer's machine happens to be in.
+function _istNow() {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+}
+
 // Local-date YYYY-MM-DD (not UTC) so "today" is correct in IST near midnight.
 function _localDateStr(d) {
   return d.getFullYear() + '-' +
@@ -2644,7 +2652,7 @@ function _localDateStr(d) {
 function applySessDateShortcut(val) {
   const fromEl = document.getElementById('sess-filter-from');
   const toEl   = document.getElementById('sess-filter-to');
-  const now = new Date();
+  const now = _istNow();
   let from = null, to = null;
   if (val === 'today')        { from = new Date(now); to = new Date(now); }
   else if (val === 'yesterday') { const y = new Date(now); y.setDate(y.getDate() - 1); from = y; to = new Date(y); }

@@ -373,6 +373,107 @@ check("no restart fallback stores a trade's locale entryTime as the session star
     `raw entryTime assigned to sessionStart in: ${offenders.join(", ")}`);
 });
 
+section("GROUP 4 — /replay quick ranges must mean what they say");
+
+// Extract a top-level function declaration from a route's client-side script by
+// brace-matching, so these cases exercise the SHIPPED code rather than a copy.
+// `required` is false for the presentational helpers: a missing one must fall
+// back to a stub so the case still fails on the BEHAVIOUR it is guarding rather
+// than on its own scaffolding.
+function grabFn(src, name, required = true) {
+  const i = src.indexOf(`\nfunction ${name}(`);
+  if (i < 0) {
+    assert.ok(!required, `function ${name} not found in replay.js`);
+    return "";
+  }
+  let depth = 0, started = false;
+  for (let j = i; j < src.length; j++) {
+    if (src[j] === "{") { depth++; started = true; }
+    else if (src[j] === "}") { depth--; if (started && depth === 0) return src.slice(i, j + 1); }
+  }
+  throw new Error(`unbalanced braces in ${name}`);
+}
+
+// Load applyRangePreset into a sandbox with a minimal DOM, a fixed IST clock and
+// a fixed set of recorded days. Returns what the From/To boxes end up holding.
+function runPreset(preset, recorded, startFrom, startTo, istNow) {
+  const vm  = require("vm");
+  const src = read("routes/replay.js");
+  let FROM = startFrom, TO = startTo, PRESET = preset, NOTE = "";
+  const els = {
+    "range-from":   { get value() { return FROM; },   set value(v) { FROM = v; } },
+    "range-to":     { get value() { return TO; },     set value(v) { TO = v; } },
+    "range-preset": { get value() { return PRESET; }, set value(v) { PRESET = v; } },
+  };
+  const sandbox = {
+    document: { getElementById: (id) => els[id] || null },
+    _enabledDates: recorded, _rangeFromFp: null, _rangeToFp: null,
+    // Stubs for whatever the page does not (yet) define, so an older replay.js
+    // still runs here and trips on its dates rather than on a ReferenceError.
+    _setRangeNote: (m) => { NOTE = m || ""; },
+    _dmy: (iso) => String(iso || ""),
+    _istNow: () => new Date(istNow),
+    _localDateStr: (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`,
+    _PRESET_LABELS: { today: "Today", yesterday: "Yesterday", "this-week": "This week",
+                      "last-week": "Last week", "this-month": "This month", "this-year": "This year" },
+  };
+  vm.createContext(sandbox);
+  vm.runInContext([grabFn(src, "_localDateStr", false), grabFn(src, "_dmy", false),
+                   grabFn(src, "applyRangePreset"),
+                   `_istNow = () => new Date(${JSON.stringify(istNow)});`].join("\n"), sandbox);
+  sandbox.applyRangePreset(preset);
+  return { from: FROM, to: TO, preset: PRESET, note: NOTE };
+}
+
+// Friday 2026-09-04 03:54 IST — before the day's session, and inside the window
+// where the UTC date is still 2026-09-03.
+const IST_NOW  = "2026-09-04T03:54:00";
+const RECORDED = ["2026-08-31", "2026-09-01", "2026-09-02", "2026-09-03"];
+
+check("a preset never resolves to a date outside its own window", () => {
+  // Pre-fix this fell back to the LATEST recording (03-09) when the window held
+  // none, so "Last week" silently answered with a day in THIS week.
+  const r = runPreset("last-week", RECORDED, "2026-09-03", "2026-09-03", IST_NOW);
+  assert.ok(!r.from || (r.from >= "2026-08-24" && r.from <= "2026-08-30") || r.from === "2026-09-03",
+    `last-week produced ${r.from}`);
+  assert.strictEqual(r.from, "2026-09-03", "dates must be left untouched, not snapped elsewhere");
+  assert.ok(/No recorded session in Last week/.test(r.note),
+    `a preset that changes nothing must say why, got: ${r.note || "(silence)"}`);
+});
+
+check("a preset whose window holds no recording says so instead of going quiet", () => {
+  const r = runPreset("today", RECORDED, "2026-09-03", "2026-09-03", IST_NOW);
+  assert.ok(/No recorded session in Today/.test(r.note),
+    `expected a note saying Today has no recording, got: ${r.note || "(silence)"}`);
+  assert.strictEqual(r.preset, "", "the dropdown must drop back to Custom, not mislabel the dates");
+});
+
+check("Yesterday resolves to yesterday, and Today and Yesterday cannot collide", () => {
+  const y = runPreset("yesterday", RECORDED, "2026-09-01", "2026-09-01", IST_NOW);
+  assert.strictEqual(y.from, "2026-09-03", "yesterday of 04-09 IST is 03-09");
+  assert.strictEqual(y.to, "2026-09-03");
+  const t = runPreset("today", RECORDED, "2026-09-01", "2026-09-01", IST_NOW);
+  assert.ok(t.from !== y.from || t.note,
+    "Today and Yesterday landed on the same date with nothing on screen to explain it");
+});
+
+check("a multi-day preset narrows to recorded days INSIDE the window", () => {
+  const r = runPreset("this-week", RECORDED, "2026-09-03", "2026-09-03", IST_NOW);
+  assert.strictEqual(r.from, "2026-08-31", "week starts Monday 31-08, which is recorded");
+  assert.strictEqual(r.to, "2026-09-03", "04-09 is unrecorded, so the last recorded day is 03-09");
+  assert.ok(/narrowed to the recorded days/.test(r.note), `narrowing must be stated, got: ${r.note}`);
+});
+
+check("the /replay date controls read today in IST, never off toISOString", () => {
+  // toISOString() is UTC: between 00:00 and 05:30 IST it names YESTERDAY, which
+  // made setRangeDefaults and applyRangePreset disagree for the whole window.
+  const body = decomment(read("routes/replay.js"));
+  const offenders = (body.match(/new Date\(\)\.toISOString\(\)\.slice\(0, ?10\)/g) || []);
+  assert.deepStrictEqual(offenders, [],
+    `\"today\" derived from the UTC date in replay.js (${offenders.length} site(s)) — use _istNow()`);
+  assert.ok(/function _istNow\(\)/.test(body), "replay.js must define the IST clock helper");
+});
+
 // ── Run ─────────────────────────────────────────────────────────────────────
 run().then(() => {
   console.log(`\n${fail === 0 ? "ALL PASS" : "FAILURES"} — ${pass} passed, ${fail} failed\n`);
