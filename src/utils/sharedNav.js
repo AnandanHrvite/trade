@@ -3008,6 +3008,7 @@ ${linkHref ? `<a href="${linkHref}" class="err-link">${linkText || 'Go Back'}</a
 // moment one side gained a range the other didn't — and the two pages would
 // then disagree about what, say, "Last month" covers on the 1st of a month.
 const DATE_RANGE_OPTIONS = [
+  { value: 'td',     label: 'Today' },
   { value: 'tm',     label: 'This month' },
   { value: 'lm',     label: 'Last month' },
   { value: 'exp',    label: 'Current week expiry' },
@@ -3089,6 +3090,9 @@ function drReady(){
 function drRange(key, customFrom, customTo){
   var t=drParts();
   if(key==='custom') return { from: customFrom || '', to: customTo || '' };
+  // Both ends on today's IST date — a single-day window, not an open-ended one,
+  // so a record stamped tomorrow (a clock skew, a hand-edited log) stays out.
+  if(key==='td'){ var d=drToday(); return { from:d, to:d }; }
   // Open end on 'tm': the month is still running, and no trade can be dated later.
   if(key==='tm') return { from: drYmd(new Date(t.y,t.m,1)), to:'' };
   // new Date(y,-1,1) rolls to last December and new Date(y,m,0) is the last day
