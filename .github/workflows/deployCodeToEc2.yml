@@ -20,10 +20,14 @@ jobs:
           REMOTE_HOST: ${{ secrets.HOST_DNS }}
           REMOTE_USER: ${{ secrets.USERNAME }}
           TARGET: "/var/www/html/trade/"
-          EXCLUDE: ".env, node_modules/"
+          # .git/ is a fresh packfile on every run, so rsync can never delta it
+          # — several MB re-sent each deploy for a directory nothing on the box
+          # reads (deploys are rsync-based, not `git pull`).
+          EXCLUDE: ".env, node_modules/, .git/"
 
       - name: Install deps & restart app via PM2
-        uses: appleboy/ssh-action@master
+        # Pinned: @master re-downloaded the drone-ssh binary on every run.
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.HOST_DNS }}
           username: ${{ secrets.USERNAME }}
@@ -42,7 +46,21 @@ jobs:
 
             cd /var/www/html/trade/
 
-            npm install --omit=dev
+            # Only reinstall when the dependency tree actually changed. This box
+            # is a t3.micro (2 burstable vCPU, ~950MB RAM) already running the
+            # bot at a 900MB heap cap, so npm competes with it for RAM and CPU
+            # credits and costs ~2 minutes — on every push, including the
+            # src-only ones that are the overwhelming majority. The marker lives
+            # inside node_modules so a wiped tree always forces a fresh install,
+            # and is written only after a successful install so a failed one is
+            # never cached as done.
+            LOCK_HASH=$(sha256sum package-lock.json | cut -d' ' -f1)
+            MARKER=node_modules/.deploy-lock-hash
+            if [ -f "$MARKER" ] && [ "$(cat "$MARKER")" = "$LOCK_HASH" ]; then
+              echo "deps unchanged (lock $LOCK_HASH) — skipping npm install"
+            else
+              npm install --omit=dev && echo "$LOCK_HASH" > "$MARKER"
+            fi
 
             # Start or restart via ecosystem.config.js so the deploy ALWAYS
             # picks up the latest memory/heap caps, node_args, and env vars.
@@ -54,6 +72,11 @@ jobs:
 
             pm2 save
 
-            # Auto-start PM2 (and trading-bot) on server reboot
-            PM2_PATH=$(which pm2)
-            sudo env PATH=$PATH:$(dirname $PM2_PATH) pm2 startup systemd -u $USER --hp $HOME
+            # Auto-start PM2 (and trading-bot) on server reboot. One-time setup,
+            # so only pay for the sudo round-trip when the unit is missing.
+            if systemctl list-unit-files 2>/dev/null | grep -q "^pm2-$USER\.service"; then
+              echo "pm2 systemd unit already installed — skipping startup"
+            else
+              PM2_PATH=$(which pm2)
+              sudo env PATH=$PATH:$(dirname $PM2_PATH) pm2 startup systemd -u $USER --hp $HOME
+            fi
