@@ -191,7 +191,7 @@ const { ATR, RSI } = require("technicalindicators");
 const { computeSuperTrend } = require("../utils/supertrend");
 // Exit classification for the re-entry rule. One-way dependency (entry reads the
 // exit engine's verdict); orbExits requires nothing from here, so there is no cycle.
-const { isStopOutExit } = require("./orbExits");
+const { isStopOutExit, stopSuperTrendParams } = require("./orbExits");
 
 const NAME        = "ORB_15MIN";
 const DESCRIPTION = "Opening Range Breakout — 15-min OR, next-candle confirmation, slightly-ITM CE/PE buying";
@@ -678,12 +678,14 @@ function getSignal(candles, opts) {
     // including the entry candle, the stop must clear. 2 = the entry candle and the
     // one before it, which is the shape a discretionary trader draws by hand.
     slLookback:   Math.max(1, parseInt(process.env.ORB_SL_LOOKBACK_CANDLES || "2", 10) || 1),
-    // Read by slSource = "supertrend" AND by orbExits' SuperTrend trail, so the
-    // initial stop and the trail sit on the SAME line. Deliberately separate from
-    // the ORB_ST_* entry gate below: that one is a direction filter at 10/3, this
-    // one is a stop at 10/2 (a tighter band trails closer behind price).
-    slStPeriod:   Math.max(2, parseInt(process.env.ORB_SL_ST_PERIOD || "10", 10) || 10),
-    slStMult:     parseFloat(process.env.ORB_SL_ST_MULT || "2"),
+    // Read by slSource = "supertrend". Resolved by orbExits — the ONE owner of these
+    // two keys — because the SuperTrend trail ratchets the very line this anchor
+    // places the stop on, and a second parse here is how the two silently end up on
+    // different bands (a junk or 0 multiplier fell through to computeSuperTrend's own
+    // 10/3 default on this side while the trail used 10/2). Deliberately separate from
+    // the ORB_ST_* entry gate below: that one is a direction filter at 10/3, this one
+    // is a stop at 10/2 (a tighter band trails closer behind price).
+    slSt:         stopSuperTrendParams(),
     vwapOn:       _vwapFilterOn(),
     rsiOn:        (process.env.ORB_RSI_ENABLED || "true").toLowerCase() === "true",
     rsiPeriod:    Math.max(2, parseInt(process.env.ORB_RSI_PERIOD || "14", 10)),
@@ -976,7 +978,7 @@ function getSignal(candles, opts) {
       // SuperTrend trail (ORB_ST_TRAIL_ENABLED) then ratchets, so a trade that
       // starts on it stays on it. Falls back to the entry candle's extreme while
       // SuperTrend is still warming up — never to "no stop".
-      const stArr  = computeSuperTrend(candles, cfg.slStPeriod, cfg.slStMult);
+      const stArr  = computeSuperTrend(candles, cfg.slSt.period, cfg.slSt.mult);
       const stLast = stArr[lastIdx];
       structural = (stLast && stLast.value != null)
         ? stLast.value
@@ -1025,7 +1027,7 @@ function getSignal(candles, opts) {
       targetSpot: _r2(targetSpot),
       signalStrength: "STRONG",
       confirmed: true,
-      reason: `ORB ${side}${tag}: breakout close ${brk.close} beyond ${side === "CE" ? `ORH ${or.high}` : `ORL ${or.low}`} + buffer ${buffer}pt (body ${_r2(brkBody)}pt), ${why}; SL ${_r2(slSpot)} = wider of ${cfg.slSource === "supertrend" ? `SuperTrend(${cfg.slStPeriod},${cfg.slStMult}) line` : cfg.slSource === "lookback" ? `last-${cfg.slLookback}-candle extreme` : cfg.slSource === "breakout" ? "breakout-candle extreme" : "entry-candle extreme"} / ${cfg.slAtrMult}×ATR5${gapPts != null ? `, gap ${gapPts}pt` : ""}`,
+      reason: `ORB ${side}${tag}: breakout close ${brk.close} beyond ${side === "CE" ? `ORH ${or.high}` : `ORL ${or.low}`} + buffer ${buffer}pt (body ${_r2(brkBody)}pt), ${why}; SL ${_r2(slSpot)} = wider of ${cfg.slSource === "supertrend" ? `SuperTrend(${cfg.slSt.period},${cfg.slSt.mult}) line` : cfg.slSource === "lookback" ? `last-${cfg.slLookback}-candle extreme` : cfg.slSource === "breakout" ? "breakout-candle extreme" : "entry-candle extreme"} / ${cfg.slAtrMult}×ATR5${gapPts != null ? `, gap ${gapPts}pt` : ""}`,
     }));
   };
 

@@ -291,7 +291,7 @@ async function _placeLiveBuyImpl(side, sigSnapshot) {
     entryBarTime: Math.floor(getBucketStart(Date.now(), RES_MIN) / 1000),
     orh: sigSnapshot.orh, orl: sigSnapshot.orl, rangePts: sigSnapshot.rangePts,
     targetSpot: sigSnapshot.targetSpot, initialSlSpot: _initSl, slSpot: _initSl,
-    breakevenArmed: false, emaArmed: false, lastEma: null,
+    breakevenArmed: false, emaArmed: false, lastEma: null, lastStopSt: null,
     peakPremium: optionEntryLtp,
     signalStrength: sigSnapshot.signalStrength, vixAtEntry: getCachedVix(),
     oiAtEntry: oiFilter.getCachedOi(), oiRegime: oiFilter.getCachedRegime(),
@@ -1252,7 +1252,7 @@ router.get("/status", (req, res) => {
           <div id="ajax-nifty-move" style="font-size:0.63rem;color:${spotMove != null && spotMove >= 0 ? "#10b981" : "#ef4444"};margin-top:2px;">${spotMove != null ? (spotMove >= 0 ? "▲" : "▼") + " " + Math.abs(spotMove).toFixed(1) + " pts" : "—"}</div>
         </div>
         <div style="background:#1c1400;border:1px solid #78350f;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Hard SL${pos.breakevenArmed ? " (BE)" : ""}${pos.lastEma ? ` · EMA ${pos.lastEma}` : ""}</div>
+          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Hard SL${pos.breakevenArmed ? " (BE)" : ""}${pos.lastEma ? ` · EMA ${pos.lastEma}` : ""}${pos.lastStopSt ? ` · ST ${pos.lastStopSt}` : ""}</div>
           <div style="font-size:1.05rem;font-weight:700;color:#f59e0b;">${pos.slSpot ? "₹" + pos.slSpot.toFixed(2) : "—"}</div>
         </div>
         <div style="background:#0a1f12;border:1px solid #0d4030;border-radius:8px;padding:12px 14px;">

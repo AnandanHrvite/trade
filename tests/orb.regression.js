@@ -631,7 +631,6 @@ const ENTRIES  = ALL_SIGS.filter(x => x.sig.signal !== "NONE");
                                   rangePts: 40, breakevenArmed: false, emaArmed: false });
 
       // 1. OFF by default — a fresh checkout must trade exactly as it did before.
-      process.env.ORB_ST_TRAIL_ENABLED = snap.on === undefined ? undefined : snap.on;
       delete process.env.ORB_ST_TRAIL_ENABLED;
       const off = mk("CE", 24000);
       orbExits.evaluateCloseExits(off, bar, hist);
@@ -666,6 +665,42 @@ const ENTRIES  = ALL_SIGS.filter(x => x.sig.signal !== "NONE");
       if (snap.on === undefined) delete process.env.ORB_ST_TRAIL_ENABLED; else process.env.ORB_ST_TRAIL_ENABLED = snap.on;
       process.env.ORB_BREAKEVEN_PTS = snap.be; process.env.ORB_BREAKEVEN_OR_MULT = snap.beOr;
       process.env.ORB_CANDLE_TRAIL_ENABLED = snap.ct;
+    }
+  });
+
+  // The initial-stop anchor and the trail MUST resolve ORB_SL_ST_* identically —
+  // they are two ends of one stop, and the "wider of" contract is meaningless if the
+  // anchor places the stop on a 3x band that the trail then ratchets on a 2x one.
+  // This is a REGRESSION GUARD, not a hypothetical: both a junk and a 0 multiplier
+  // used to fall through to computeSuperTrend's own 10/3 default on the strategy side
+  // while orbExits clamped to 10/2, and the logged reason read "SuperTrend(10,NaN)".
+  check("the stop anchor and the SuperTrend trail always resolve the SAME line", () => {
+    const orbExits = require("../src/strategies/orbExits");
+    const src = fs.readFileSync(path.join(__dirname, "../src/strategies/orb_breakout.js"), "utf-8");
+    assert.ok(/stopSuperTrendParams/.test(src),
+      "orb_breakout no longer resolves ORB_SL_ST_* through orbExits — it has grown a second parse");
+    assert.ok(!/process\.env\.ORB_SL_ST_/.test(src),
+      "orb_breakout reads ORB_SL_ST_* directly again; there must be exactly one owner");
+
+    const snapP = process.env.ORB_SL_ST_PERIOD, snapM = process.env.ORB_SL_ST_MULT;
+    try {
+      // Every degenerate value must land on the DOCUMENTED default, never on
+      // computeSuperTrend's own 10/3 and never on NaN.
+      for (const [pv, mv] of [["abc", "abc"], ["0", "0"], ["", ""], ["-4", "-1"], ["1", "0.0"]]) {
+        process.env.ORB_SL_ST_PERIOD = pv; process.env.ORB_SL_ST_MULT = mv;
+        const r = orbExits.stopSuperTrendParams();
+        assert.ok(Number.isFinite(r.period) && r.period >= 2,
+          `ORB_SL_ST_PERIOD=${JSON.stringify(pv)} resolved to ${r.period}`);
+        assert.ok(Number.isFinite(r.mult) && r.mult > 0,
+          `ORB_SL_ST_MULT=${JSON.stringify(mv)} resolved to ${r.mult}`);
+      }
+      delete process.env.ORB_SL_ST_PERIOD; delete process.env.ORB_SL_ST_MULT;
+      const d = orbExits.stopSuperTrendParams();
+      assert.strictEqual(d.period, 10, "the documented default period is no longer 10");
+      assert.strictEqual(d.mult, 2, "the documented default multiplier is no longer 2");
+    } finally {
+      if (snapP === undefined) delete process.env.ORB_SL_ST_PERIOD; else process.env.ORB_SL_ST_PERIOD = snapP;
+      if (snapM === undefined) delete process.env.ORB_SL_ST_MULT;   else process.env.ORB_SL_ST_MULT   = snapM;
     }
   });
 

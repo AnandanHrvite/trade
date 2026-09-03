@@ -389,6 +389,7 @@ async function _simulateBuyInner(side, sigSnapshot, spot) {
     breakevenArmed: false,
     emaArmed:       false,
     lastEma:        null,
+    lastStopSt:     null,
     peakPremium:    optionEntryLtp,
     signalStrength: sigSnapshot.signalStrength,
     vixAtEntry:     getCachedVix(),
@@ -1213,7 +1214,7 @@ router.get("/status/data", (req, res) => {
       side: pos.side, isFutures: !!pos.isFutures, symbol: pos.symbol,
       entrySpot: pos.entrySpot, optionEntryLtp: pos.optionEntryLtp,
       slSpot: pos.slSpot, targetSpot: pos.targetSpot,
-      initialSlSpot: pos.initialSlSpot, breakevenArmed: pos.breakevenArmed, lastEma: pos.lastEma, peakPremium: pos.peakPremium,
+      initialSlSpot: pos.initialSlSpot, breakevenArmed: pos.breakevenArmed, lastEma: pos.lastEma, lastStopSt: pos.lastStopSt, peakPremium: pos.peakPremium,
       entryTime: pos.entryTime, signalStrength: pos.signalStrength,
       orh: pos.orh, orl: pos.orl, rangePts: pos.rangePts,
       qty: pos.qty,
@@ -1413,7 +1414,7 @@ router.get("/status", (req, res) => {
           <div id="ajax-nifty-move" style="font-size:0.63rem;color:${spotMove != null && spotMove >= 0 ? "#10b981" : "#ef4444"};margin-top:2px;">${spotMove != null ? (spotMove >= 0 ? "▲" : "▼") + " " + Math.abs(spotMove).toFixed(1) + " pts" : "—"}</div>
         </div>
         <div style="background:#1c1400;border:1px solid #78350f;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Hard SL${pos.breakevenArmed ? " (BE)" : ""}${pos.lastEma ? ` · EMA ${pos.lastEma}` : ""}</div>
+          <div style="font-size:0.6rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Hard SL${pos.breakevenArmed ? " (BE)" : ""}${pos.lastEma ? ` · EMA ${pos.lastEma}` : ""}${pos.lastStopSt ? ` · ST ${pos.lastStopSt}` : ""}</div>
           <div style="font-size:1.05rem;font-weight:700;color:#f59e0b;">${pos.slSpot ? "₹" + pos.slSpot.toFixed(2) : "—"}</div>
         </div>
         <div style="background:#0a1f12;border:1px solid #0d4030;border-radius:8px;padding:12px 14px;">

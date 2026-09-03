@@ -142,11 +142,34 @@ function candleTrailBars()   { const v = parseInt(process.env.ORB_CANDLE_TRAIL_C
  * wins. UNPROVEN: measure with scripts/orbSweep.js before moving the default.
  */
 function stTrailOn()         { return _envOn("ORB_ST_TRAIL_ENABLED", "false"); }
-// NaN-safe in the same direction as trailArmPts(): a hand-edited .env with a
-// non-numeric value degrades to the documented 10/2, never to NaN (which would make
-// computeSuperTrend return all-null and silently disable the trail).
-function stTrailPeriod()     { const v = parseInt(process.env.ORB_SL_ST_PERIOD || "10", 10); return Number.isFinite(v) && v >= 2 ? v : 10; }
-function stTrailMult()       { const v = _envNum("ORB_SL_ST_MULT", "2"); return Number.isFinite(v) && v > 0 ? v : 2; }
+
+/**
+ * THE ONE OWNER of ORB_SL_ST_PERIOD / ORB_SL_ST_MULT — exported, unlike every other
+ * threshold in this module, because orb_breakout.js's ORB_SL_SOURCE=supertrend anchor
+ * has to land on the SAME line this trail then ratchets. Two parses of one pair of
+ * keys is not a style question here: it is the "wider of" contract silently breaking.
+ *
+ * The export is narrow on purpose — it hands over the resolved PARAMETERS, not the
+ * stop level, so the anchor still computes its own stop and this module still owns
+ * the trail decision. That keeps the rule about not exporting ingredients intact:
+ * what is shared is the configuration, not the rule.
+ *
+ * NaN- and zero-safe in the same direction as trailArmPts(): a hand-edited .env with
+ * a non-numeric or 0 value degrades to the documented 10/2. This matters more than it
+ * looks. computeSuperTrend() applies its OWN defaults for a falsy argument (10/3, the
+ * classic swing setting), so an unguarded NaN or 0 did not disable anything loudly —
+ * it silently placed the INITIAL STOP on a 3x band while the TRAIL ratcheted a 2x one,
+ * i.e. two different stops for one trade, with the logged reason reading
+ * "SuperTrend(10,NaN)".
+ */
+function stopSuperTrendParams() {
+  const p = parseInt(process.env.ORB_SL_ST_PERIOD || "10", 10);
+  const m = _envNum("ORB_SL_ST_MULT", "2");
+  return {
+    period: Number.isFinite(p) && p >= 2 ? p : 10,
+    mult:   Number.isFinite(m) && m > 0  ? m : 2,
+  };
+}
 
 /**
  * The bar series with `bar` guaranteed present exactly once as the LAST element.
@@ -378,8 +401,7 @@ function evaluateCloseExits(pos, bar, candles) {
   //     profit first would leave the trade on a stale level for exactly the bars
   //     where the trend is deciding. Tighten-only keeps that safe.
   if (stTrailOn()) {
-    const stPeriod = stTrailPeriod();
-    const stMult   = stTrailMult();
+    const { period: stPeriod, mult: stMult } = stopSuperTrendParams();
     const stArr = computeSuperTrend(_seriesWithBar(candles, bar), stPeriod, stMult);
     const line  = stArr.length ? stArr[stArr.length - 1] : null;
     if (line && line.value != null) {
@@ -480,12 +502,17 @@ function isLtpStale(updatedAtMs, nowMs) {
  * ORB ended up with four copies of its exits in the first place. If a new harness
  * needs a decision, ask for the decision — do not export the ingredients.
  *
+ * The ONE exception is stopSuperTrendParams(), and it proves the rule rather than
+ * breaking it: the initial-stop anchor and the trail must sit on the SAME SuperTrend
+ * line, so the CONFIGURATION is shared while each side still owns its own decision.
+ *
  * The predicates exist only because a BAR-based harness (orbBacktest, orbValidate)
  * must ask "would this have tripped inside the candle?" before it can compute a
  * realistic fill price, which is an execution concern this module cannot answer.
  */
 module.exports = {
   trackExcursion,
+  stopSuperTrendParams,
   evaluateTickExits,
   evaluateCloseExits,
   isLtpStale,
