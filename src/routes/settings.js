@@ -34,12 +34,30 @@ const ENV_PATH = path.join(process.cwd(), ".env");
 // ~/trading-data — used by the /settings/reset-data cache wipe.
 const TRADING_DATA_DIR = path.join(require("os").homedir(), "trading-data");
 
-// ── Keys that are SENSITIVE and should never be shown/editable in the UI ─────
+// ── Keys that are SENSITIVE and should never be SHOWN in the UI ─────────────
 const HIDDEN_KEYS = [
   "SECRET_KEY", "ZERODHA_API_SECRET",
   "ACCESS_TOKEN", "ZERODHA_ACCESS_TOKEN",
   "TELEGRAM_BOT_TOKEN",
 ];
+
+// Write-only repair path for the broker credentials.
+//
+// HIDDEN_KEYS blocks these from being READ in the UI, which is right — but it
+// also blocked WRITING them, and there is no other way in without SSH. When a
+// SECRET_KEY is wrong (e.g. the masked ******** listing from VIEW .env was
+// pasted back into .env), the broker login is dead and the only fix is a shell
+// on the host. These keys stay masked everywhere they are displayed and are
+// never echoed back; Bulk Edit may SET them.
+const WRITABLE_SECRET_KEYS = new Set([
+  "SECRET_KEY", "APP_ID",
+  "ZERODHA_API_SECRET", "ZERODHA_API_KEY",
+]);
+
+/** A value that is only asterisks/bullets is a display mask, not a secret. */
+function isMaskedValue(v) {
+  return /^[*•]+$/.test(String(v || "").trim());
+}
 
 // ── Settings schema: defines the UI layout ──────────────────────────────────
 // ── Effect types for the info tooltip ────────────────────────────────────────
@@ -1559,9 +1577,24 @@ router.post("/save", (req, res) => {
 
   const safeUpdates = updates && typeof updates === "object" ? { ...updates } : {};
 
-  // Block writes to sensitive keys via UI
+  // Block writes to sensitive keys via UI — except the broker credentials,
+  // which are the only way to repair a bad secret without SSH. A masked
+  // placeholder is refused so the mask can never become the stored secret.
+  const rejectedMasked = [];
   for (const k of HIDDEN_KEYS) {
-    if (k in safeUpdates) delete safeUpdates[k];
+    if (!(k in safeUpdates)) continue;
+    if (WRITABLE_SECRET_KEYS.has(k)) {
+      if (!isMaskedValue(safeUpdates[k])) continue;   // real value → allow it through
+      rejectedMasked.push(k);
+    }
+    delete safeUpdates[k];
+  }
+  if (rejectedMasked.length) {
+    return res.status(400).json({
+      success: false,
+      error: `Refused to save a masked placeholder for: ${rejectedMasked.join(", ")}. `
+           + `The ******** comes from the VIEW .env listing — paste the real value instead.`,
+    });
   }
 
   // Normalize + validate deletes (uppercase, strip invalid chars, block sensitive)

@@ -58,17 +58,32 @@ function pruneOldEntries() {
   }
 }
 
+// The audit log is written to disk in plaintext and rendered in the Settings
+// audit view, so a credential must never reach it. Record that the key changed
+// — never what it changed to or from.
+const SECRET_KEY_RE = /(SECRET|TOKEN|PASSWORD|API_KEY|ACCESS)/i;
+
+function auditValue(key, value) {
+  if (value === null || value === undefined) return value;
+  return SECRET_KEY_RE.test(key) ? "<redacted>" : value;
+}
+
 function diffEntries(prevEnv, updates, deleteKeys) {
   const out = [];
   const ts  = new Date().toISOString();
   for (const [key, to] of Object.entries(updates || {})) {
     const from = key in prevEnv ? prevEnv[key] : null;
     if (from === to) continue;
-    out.push({ ts, key, from, to, action: from === null ? "add" : "update" });
+    out.push({
+      ts, key,
+      from: auditValue(key, from),
+      to:   auditValue(key, to),
+      action: from === null ? "add" : "update",
+    });
   }
   for (const key of deleteKeys || []) {
     if (!(key in prevEnv)) continue;
-    out.push({ ts, key, from: prevEnv[key], to: null, action: "delete" });
+    out.push({ ts, key, from: auditValue(key, prevEnv[key]), to: null, action: "delete" });
   }
   return out;
 }
