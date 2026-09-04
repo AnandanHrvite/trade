@@ -728,6 +728,8 @@ const SETTINGS_SCHEMA = [
     group: "Trading",
     fields: [
       { key: "CHART_ENABLED", label: "Live NIFTY Chart", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the candlestick chart on status pages.", default: "true", subheader: "Instrument & Session" },
+      { key: "OPTION_CHART_ENABLED", label: "Option Premium Chart", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the traded contract's own premium chart under the spot chart. Built from live ticks, so it is empty until a position opens.", default: "true" },
+      { key: "OPTION_CHART_BAR_MIN", label: "Option Chart Bar (min)", type: "number", effect: EFFECT.INSTANT, desc: "Candle size for the option premium chart. 1-15 minutes.", default: "1" },
       { key: "VIX_FAIL_MODE", label: "VIX Unavailable (all modules)", type: "select", options: ["closed", "open"], effect: EFFECT.INSTANT, desc: "What to do when VIX data is missing.", default: "closed" },
       { key: "TRADE_RESOLUTION", label: "Candle Resolution (min) — ALL strategies", type: "select", options: ["3", "5", "15"], effect: EFFECT.SESSION, desc: "Candle timeframe in minutes. One global setting — every strategy uses it.", default: "5" },
       { key: "TRADE_START_TIME", label: "Market Start Time", type: "time", effect: EFFECT.SESSION, desc: "Market open time (IST).", default: "09:15" },

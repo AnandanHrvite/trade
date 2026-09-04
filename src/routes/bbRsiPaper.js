@@ -43,6 +43,7 @@ const tradeGuards = require("../utils/tradeGuards");
 const { logNearMiss } = require("../utils/nearMissLog");
 const skipLogger = require("../utils/skipLogger");
 const capitalPool = require("../utils/capitalPool");
+const optionChart  = require("../utils/optionChart");
 const confirmCandle = require("../utils/confirmCandle");
 const tickSimulator = require("../services/tickSimulator");
 
@@ -141,6 +142,7 @@ let state = {
   optionLtp:      null,
   optionLtpUpdatedAt: null,
   optionSymbol:   null,
+  optionChart:    null,
   _slPauseUntil:  null,
   _slPauseUntilBySide: { CE: 0, PE: 0 },
   _consecSLsBySide:    { CE: 0, PE: 0 },
@@ -292,6 +294,8 @@ function _applyOptionLtp(ltp, at) {
   state.optionLtp = ltp;
   state.optionLtpUpdatedAt = at || Date.now();
   state.position.optionCurrentLtp = ltp;
+  // Premium bars for the option chart (display only — never read by the engine).
+  state.optionChart = optionChart.pushLtp(state.optionChart, state.optionSymbol, ltp, at);
   if (!state.position.optionEntryLtp) {
     state.position.optionEntryLtp = ltp;
     // Real premium known — replace the estimate blocked at entry.
@@ -1196,7 +1200,7 @@ router.get("/start", async (req, res) => {
     running: true, position: null, candles: [], currentBar: null, barStartTime: null,
     log: [], sessionTrades: [], sessionStart: new Date().toISOString(),
     sessionPnl: 0, _wins: 0, _losses: 0, tickCount: 0, lastTickTime: null, lastTickPrice: null,
-    optionLtp: null, optionSymbol: null, _slPauseUntil: null,
+    optionLtp: null, optionSymbol: null, optionChart: null, _slPauseUntil: null,
     _slPauseUntilBySide: { CE: 0, PE: 0 }, _consecSLsBySide: { CE: 0, PE: 0 },
     _lastSLSpotBySide: { CE: 0, PE: 0 },
     _dailyLossHit: false, _expiryDayBlocked: _expiryBlocked,
@@ -1470,6 +1474,7 @@ router.get("/status/chart-data", async (req, res) => {
     const armedTrigger = state._armedSignal ? state._armedSignal.triggerLevel : null;
     const armedSide    = state._armedSignal ? state._armedSignal.side : null;
     return res.json({ candles, markers, stopLoss, entryPrice, armedTrigger, armedSide, bbUpper, bbMiddle, bbLower,
+      optionChart: optionChart.buildPayload({ store: state.optionChart, position: state.position, trades: state.sessionTrades }),
       adx: adxSeries,
       adxMax: parseFloat(process.env.BB_RSI_ADX_MAX || "30"),
       rsi: rsiSeries,
@@ -1986,6 +1991,7 @@ ${process.env.CHART_ENABLED !== "false" ? `<!-- NIFTY Chart -->
       <span style="color:#3b82f6;">▲ Entry</span> &nbsp;<span style="color:#10b981;">▼ Win</span> &nbsp;<span style="color:#ef4444;">▼ Loss</span> &nbsp;<span style="color:#4a9cf5;">── BB U/L</span> &nbsp;<span style="color:#94a3b8;">-- BB Mid</span> &nbsp;<span style="color:#22c55e;">── ST</span> &nbsp;<span style="color:#f59e0b;">── SL</span> &nbsp;<span style="color:#3b82f6;">-- Entry</span>
     </div>
   </div>
+  ${optionChart.optionChartHtml('bb-opt-chart')}
 </div>` : ""}
 
 <!-- Session trades table -->
@@ -2573,6 +2579,7 @@ function spUpdateBanner() {
   } else { el.style.display = 'none'; el.innerHTML = ''; }
 }
 </script>
+${optionChart.optionChartScript({ dataUrl: '/bb_rsi-paper/status/chart-data', id: 'bb-opt-chart' })}
 <script>
 // ── AJAX live refresh ────────────────────────────────────────────────────
 (function() {
@@ -3180,7 +3187,7 @@ router.post("/simulate/start", async (req, res) => {
       running: true, position: null, candles: [], currentBar: null, barStartTime: null,
       log: [], sessionTrades: [], sessionStart: new Date().toISOString(),
       sessionPnl: 0, _wins: 0, _losses: 0, tickCount: 0, lastTickTime: null, lastTickPrice: null,
-      optionLtp: null, optionSymbol: null, _slPauseUntil: null, _dailyLossHit: false,
+      optionLtp: null, optionSymbol: null, optionChart: null, _slPauseUntil: null, _dailyLossHit: false,
       _expiryDayBlocked: false,
       _armedSignal: null, _entryInFlight: false,
       _simMode: true, _simScenario: label,
