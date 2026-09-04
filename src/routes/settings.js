@@ -1769,11 +1769,16 @@ router.post("/audit-restore", (req, res) => {
   }
 
   // Translate targets into updates/deletes, skipping sensitive keys.
+  // A "<redacted>" prior value is the audit log's placeholder for a secret, not
+  // a value that can be restored — writing it would break the credential it
+  // names (ZERODHA_API_KEY is redacted in the log but is not in HIDDEN_KEYS,
+  // so it would otherwise be restored literally).
   const hiddenSet = new Set(HIDDEN_KEYS);
   const cleaned = {};
   const deleteKeys = [];
   for (const [k, from] of targets) {
     if (hiddenSet.has(k)) continue;
+    if (from === settingsAudit.REDACTED) continue;
     if (from === null || from === undefined) deleteKeys.push(k); // was an "add" → remove
     else cleaned[k] = String(from);
   }

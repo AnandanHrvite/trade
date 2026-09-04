@@ -170,9 +170,10 @@ router.post("/manual", async (req, res) => {
     console.error("❌ [Fyers] APP_ID/SECRET_KEY looks like a masked placeholder (********), not a real credential.");
     return res.status(400).send(buildErrorPage(
       "Fyers Login Failed",
-      "APP_ID or SECRET_KEY in .env is a masked placeholder (********), not the real value. " +
-      "That mask comes from the Settings \u201ccopy .env\u201d view; paste the real secret from the Fyers " +
-      "dashboard into .env and restart. Fyers reports this as \u201cinternal server error\u201d (code -99)."
+      "APP_ID or SECRET_KEY is a masked placeholder (********), not the real value \u2014 that mask " +
+      "comes from the Settings \u201cVIEW .env\u201d listing. Fix it in Settings \u2192 BULK EDIT: paste " +
+      "<code>SECRET_KEY=&lt;your real Fyers secret&gt;</code> and confirm (the server restarts itself). " +
+      "Left as-is, Fyers reports this as \u201cinternal server error\u201d (code -99)."
     ));
   }
 
@@ -232,6 +233,19 @@ router.get("/callback", async (req, res) => {
     ));
   }
 
+  // Same masked-placeholder guard as the manual paste path. This is the route
+  // the browser actually lands on, so without it the only symptom is Fyers'
+  // code -99 "internal server error" at the end of the round trip.
+  if (maskedCredential(process.env.SECRET_KEY) || maskedCredential(process.env.APP_ID)) {
+    console.error("❌ [Fyers] APP_ID/SECRET_KEY looks like a masked placeholder (********), not a real credential.");
+    return res.status(400).send(buildErrorPage(
+      "Fyers Login Failed",
+      "APP_ID or SECRET_KEY is a masked placeholder (********), not the real value — that mask " +
+      "comes from the Settings “VIEW .env” listing. Fix it in Settings → BULK EDIT: paste " +
+      "<code>SECRET_KEY=&lt;your real Fyers secret&gt;</code> and confirm (the server restarts itself)."
+    ));
+  }
+
   try {
     const response = await fyers.generate_access_token({
       client_id:  process.env.APP_ID,
@@ -253,8 +267,8 @@ router.get("/callback", async (req, res) => {
       // placeholder rather than the real value.
       const secretLooksMasked = maskedCredential(process.env.SECRET_KEY);
       const detail = (response && response.code === -99 && secretLooksMasked)
-        ? "SECRET_KEY in .env is ******** (a masked placeholder), not the real app secret. " +
-          "Paste the real secret from the Fyers dashboard into .env and restart."
+        ? "SECRET_KEY is ******** (a masked placeholder), not the real app secret. " +
+          "Fix it in Settings → BULK EDIT: paste SECRET_KEY=&lt;your real Fyers secret&gt; and confirm."
         : JSON.stringify(response);
       return res.status(400).send(buildErrorPage("Fyers Login Failed", detail));
     }

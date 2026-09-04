@@ -4473,7 +4473,7 @@ for (const [key, label] of [
       `\n❌  ${key} is "${val}" — a masked placeholder, not the real ${label} credential.\n` +
       `    It comes from the Settings "VIEW .env / COPY" listing, which masks secrets.\n` +
       `    ${label} login will fail (Fyers reports it as code -99 "internal server error").\n` +
-      `    Fix: put the real ${key} into .env on this host and restart.\n`
+      `    Fix without SSH: Settings → BULK EDIT → paste ${key}=<real value> and confirm.\n`
     );
   }
 }

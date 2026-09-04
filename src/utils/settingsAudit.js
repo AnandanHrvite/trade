@@ -63,9 +63,13 @@ function pruneOldEntries() {
 // — never what it changed to or from.
 const SECRET_KEY_RE = /(SECRET|TOKEN|PASSWORD|API_KEY|ACCESS)/i;
 
+// Exported so the restore path can recognise a placeholder and refuse to write
+// it back over the real credential.
+const REDACTED = "<redacted>";
+
 function auditValue(key, value) {
   if (value === null || value === undefined) return value;
-  return SECRET_KEY_RE.test(key) ? "<redacted>" : value;
+  return SECRET_KEY_RE.test(key) ? REDACTED : value;
 }
 
 function diffEntries(prevEnv, updates, deleteKeys) {
@@ -137,6 +141,7 @@ function readAuditLog(opts = {}) {
 
 module.exports = {
   AUDIT_FILE,
+  REDACTED,
   diffEntries,
   appendEntries,
   logSave,
