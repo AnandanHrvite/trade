@@ -789,6 +789,156 @@ function clearBnPivotRsiStPosition() {
   console.log("[PERSIST] BN_PIVOT_RSI_ST (NIFTY BANK) position file cleared.");
 }
 
+
+// ── EMA_RSI_ST_V2 (EMA20/50 + RSI + SuperTrend-only stop, NIFTY, Zerodha) ────
+// A deliberate clone of the EMA_RSI_ST (V1) block at the top of this file, on
+// its own file so a V1 and a V2 position can be persisted and recovered at the
+// same time without one overwriting the other.
+//
+// V2 has exactly ONE stop: the SuperTrend line, which is BOTH the initial stop
+// and the trail — it ratchets on every closed candle and never widens. So
+// `stopLoss` is live trail state, not a frozen entry level: a restart that
+// re-derived it from the entry would wind the stop back to where it started and
+// hand back risk the trail had already retired. `initialStopLoss` is kept
+// alongside it purely so the recovered position can still report its original
+// risk. There is no target, no breakeven flag and no EMA21 trail in V2, so
+// these two levels plus the entry identity are the whole of its exit state.
+
+const EMA_RSI_ST_V2_POS_FILE = path.join(DATA_DIR, ".active_ema_rsi_st_v2_position.json");
+
+function saveEmaRsiStV2Position(position, sessionMeta) {
+  try {
+    if (!position) { _persistAtomic(EMA_RSI_ST_V2_POS_FILE, null); return; }
+    const data = {
+      position: {
+        side:            position.side,
+        symbol:          position.symbol,
+        qty:             position.qty,
+        entryPrice:      position.entryPrice,
+        spotAtEntry:     position.spotAtEntry || position.entrySpot,
+        // The SuperTrend trail — V2's only stop. Persisted at its CURRENT
+        // ratcheted value, never re-derived on load.
+        stopLoss:        position.stopLoss != null ? position.stopLoss : position.slSpot,
+        initialStopLoss: position.initialStopLoss != null ? position.initialStopLoss : position.initialSlSpot,
+        bestPrice:       position.bestPrice,
+        entryUnixSec:    position.entryUnixSec,
+        entryTime:       position.entryTime,
+        orderId:         position.orderId,
+        isFutures:       !!position.isFutures,
+        optionEntryLtp:  position.optionEntryLtp,
+        optionStrike:    position.optionStrike,
+        optionExpiry:    position.optionExpiry,
+        optionType:      position.optionType || position.side,
+        signalStrength:  position.signalStrength,
+      },
+      sessionMeta: sessionMeta || {},
+      savedAt: Date.now(),
+      savedDate: new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
+    };
+    _persistAtomic(EMA_RSI_ST_V2_POS_FILE, JSON.stringify(data, null, 2));
+    console.log(`💾 [PERSIST] EMA_RSI_ST_V2 position saved: ${position.side} ${position.symbol} @ ₹${position.entryPrice}`);
+  } catch (err) {
+    console.warn(`⚠️ [PERSIST] Could not save EMA_RSI_ST_V2 position: ${err.message}`);
+  }
+}
+
+function loadEmaRsiStV2Position() {
+  try {
+    if (!fs.existsSync(EMA_RSI_ST_V2_POS_FILE)) return null;
+    const data = JSON.parse(fs.readFileSync(EMA_RSI_ST_V2_POS_FILE, "utf-8"));
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    if (data.savedDate && data.savedDate !== today) {
+      console.log(`[PERSIST] Stale EMA_RSI_ST_V2 position from ${data.savedDate} — discarding.`);
+      fs.unlinkSync(EMA_RSI_ST_V2_POS_FILE);
+      return null;
+    }
+    if (data.position) console.log(`[PERSIST] EMA_RSI_ST_V2 position loaded: ${data.position.side} ${data.position.symbol} @ ₹${data.position.entryPrice}`);
+    return data;
+  } catch (err) {
+    console.warn(`[PERSIST] Could not load EMA_RSI_ST_V2 position: ${err.message}`);
+    return null;
+  }
+}
+
+function clearEmaRsiStV2Position() {
+  _persistAtomic(EMA_RSI_ST_V2_POS_FILE, null);
+  console.log("[PERSIST] EMA_RSI_ST_V2 position file cleared.");
+}
+
+// ── BN_EMA_RSI_ST_V2 (the same engine on NIFTY BANK, Zerodha) ───────────────
+// A sibling of the EMA_RSI_ST_V2 block above, on its OWN file so a NIFTY V2 and
+// a NIFTY BANK V2 position can be persisted and recovered at the same time
+// without one overwriting the other. Same engine, different underlying — the
+// two strategies are free to hold a position simultaneously.
+//
+// Everything the V2 comment above says about `stopLoss` applies here verbatim:
+// the SuperTrend line is BOTH the initial stop and the trail, so it is
+// persisted at its CURRENT ratcheted value and never re-derived on load.
+// `initialStopLoss` is kept only so the recovered position can report its
+// original risk. BANKNIFTY moves further per point than NIFTY, so a recovered
+// BN position carries proportionally more rupee risk at the same stop distance.
+
+const BN_EMA_RSI_ST_V2_POS_FILE = path.join(DATA_DIR, ".active_bn_ema_rsi_st_v2_position.json");
+
+function saveBnEmaRsiStV2Position(position, sessionMeta) {
+  try {
+    if (!position) { _persistAtomic(BN_EMA_RSI_ST_V2_POS_FILE, null); return; }
+    const data = {
+      position: {
+        side:            position.side,
+        symbol:          position.symbol,
+        qty:             position.qty,
+        entryPrice:      position.entryPrice,
+        spotAtEntry:     position.spotAtEntry || position.entrySpot,
+        // The SuperTrend trail — this strategy's only stop. Persisted at its
+        // CURRENT ratcheted value, never re-derived on load.
+        stopLoss:        position.stopLoss != null ? position.stopLoss : position.slSpot,
+        initialStopLoss: position.initialStopLoss != null ? position.initialStopLoss : position.initialSlSpot,
+        bestPrice:       position.bestPrice,
+        entryUnixSec:    position.entryUnixSec,
+        entryTime:       position.entryTime,
+        orderId:         position.orderId,
+        isFutures:       !!position.isFutures,
+        optionEntryLtp:  position.optionEntryLtp,
+        optionStrike:    position.optionStrike,
+        optionExpiry:    position.optionExpiry,
+        optionType:      position.optionType || position.side,
+        signalStrength:  position.signalStrength,
+      },
+      sessionMeta: sessionMeta || {},
+      savedAt: Date.now(),
+      savedDate: new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
+    };
+    _persistAtomic(BN_EMA_RSI_ST_V2_POS_FILE, JSON.stringify(data, null, 2));
+    console.log(`💾 [PERSIST] BN_EMA_RSI_ST_V2 (NIFTY BANK) position saved: ${position.side} ${position.symbol} @ ₹${position.entryPrice}`);
+  } catch (err) {
+    console.warn(`⚠️ [PERSIST] Could not save BN_EMA_RSI_ST_V2 (NIFTY BANK) position: ${err.message}`);
+  }
+}
+
+function loadBnEmaRsiStV2Position() {
+  try {
+    if (!fs.existsSync(BN_EMA_RSI_ST_V2_POS_FILE)) return null;
+    const data = JSON.parse(fs.readFileSync(BN_EMA_RSI_ST_V2_POS_FILE, "utf-8"));
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    if (data.savedDate && data.savedDate !== today) {
+      console.log(`[PERSIST] Stale BN_EMA_RSI_ST_V2 (NIFTY BANK) position from ${data.savedDate} — discarding.`);
+      fs.unlinkSync(BN_EMA_RSI_ST_V2_POS_FILE);
+      return null;
+    }
+    if (data.position) console.log(`[PERSIST] BN_EMA_RSI_ST_V2 (NIFTY BANK) position loaded: ${data.position.side} ${data.position.symbol} @ ₹${data.position.entryPrice}`);
+    return data;
+  } catch (err) {
+    console.warn(`[PERSIST] Could not load BN_EMA_RSI_ST_V2 (NIFTY BANK) position: ${err.message}`);
+    return null;
+  }
+}
+
+function clearBnEmaRsiStV2Position() {
+  _persistAtomic(BN_EMA_RSI_ST_V2_POS_FILE, null);
+  console.log("[PERSIST] BN_EMA_RSI_ST_V2 (NIFTY BANK) position file cleared.");
+}
+
 // ── SIMPLE_9:30 (09:25 ITM pick, premium-trigger entry, Zerodha) ────────────
 // Unlike the frozen-price strategies above, this one DOES
 // carry live trail state: `stop` ratchets up behind `peak` on every new premium
@@ -1005,5 +1155,7 @@ module.exports = {
   saveEarlyBirdPositions, loadEarlyBirdPositions, clearEarlyBirdPositions,
   saveRsiPivotStPosition, loadRsiPivotStPosition, clearRsiPivotStPosition,
   saveBnPivotRsiStPosition, loadBnPivotRsiStPosition, clearBnPivotRsiStPosition,
+  saveEmaRsiStV2Position, loadEmaRsiStV2Position, clearEmaRsiStV2Position,
+  saveBnEmaRsiStV2Position, loadBnEmaRsiStV2Position, clearBnEmaRsiStV2Position,
   saveSimple930Position, loadSimple930Position, clearSimple930Position,
 };

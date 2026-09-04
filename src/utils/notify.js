@@ -12,15 +12,15 @@
  *
  * Toggle hierarchy:
  *   TG_ENABLED                                  — master gate; if false, nothing sends
- *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|TDS|RSI_PIVOT_ST|BN_PIVOT_RSI_ST|SIMPLE930}_STARTED    — session-start alerts (per mode)
- *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|TDS|RSI_PIVOT_ST|BN_PIVOT_RSI_ST|SIMPLE930}_ENTRY      — trade entry alerts (per mode)
- *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|TDS|RSI_PIVOT_ST|BN_PIVOT_RSI_ST|SIMPLE930}_EXIT       — trade exit alerts (per mode)
+ *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|TDS|RSI_PIVOT_ST|BN_PIVOT_RSI_ST|EMA_RSI_ST_V2|BN_EMA_RSI_ST_V2|SIMPLE930}_STARTED    — session-start alerts (per mode)
+ *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|TDS|RSI_PIVOT_ST|BN_PIVOT_RSI_ST|EMA_RSI_ST_V2|BN_EMA_RSI_ST_V2|SIMPLE930}_ENTRY      — trade entry alerts (per mode)
+ *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|TDS|RSI_PIVOT_ST|BN_PIVOT_RSI_ST|EMA_RSI_ST_V2|BN_EMA_RSI_ST_V2|SIMPLE930}_EXIT       — trade exit alerts (per mode)
  *   TG_{EMA_RSI_ST|BB_RSI|PA|EMA9VWAP}_SIGNALS                 — candle-close skip/signal alerts (these modes only)
- *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|TDS|RSI_PIVOT_ST|BN_PIVOT_RSI_ST|SIMPLE930}_DAYREPORT  — per-mode day report on session stop
+ *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB|TDS|RSI_PIVOT_ST|BN_PIVOT_RSI_ST|EMA_RSI_ST_V2|BN_EMA_RSI_ST_V2|SIMPLE930}_DAYREPORT  — per-mode day report on session stop
  *   TG_DAYREPORT_CONSOLIDATED                   — one combined day report at market close
  *   TG_EOD_CHARTS                               — per-strategy chart images at market close
  *
- *   (ORB, TREND_PB, TDS, RSI_PIVOT_ST, BN_PIVOT_RSI_ST and SIMPLE930 emit no SIGNAL alerts, so they have no _SIGNALS toggle.)
+ *   (ORB, TREND_PB, TDS, RSI_PIVOT_ST, BN_PIVOT_RSI_ST, EMA_RSI_ST_V2, BN_EMA_RSI_ST_V2 and SIMPLE930 emit no SIGNAL alerts, so they have no _SIGNALS toggle.)
  *
  * If TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID are missing, all functions silently
  * do nothing — no errors.
@@ -123,14 +123,37 @@ function modeGroup(mode) {
   // prefix (SIMPLE930_MODE_ENABLED, TG_SIMPLE930_ENTRY, …) — an env var may not
   // contain a colon, which is why the group is not literally "SIMPLE_9:30".
   if (m === "SIMPLE930" || m.startsWith("SIMPLE930-") || m.startsWith("SIMPLE930_")) return "SIMPLE930";
+  // BN_EMA_RSI_ST_V2 — the same engine on NIFTY BANK, with its own group key and
+  // its own TG_BN_EMA_RSI_ST_V2_* toggles. Tested FIRST, before both the
+  // EMA_RSI_ST_V2 branch and the EMA_RSI_ST fallback: like V2 it has no branch of
+  // its own further down, so a BN mode string that reached the fallback would
+  // silently fire on V1's toggles and land in V1's bucket in the consolidated
+  // report. Most-specific-first is the rule for every match in this function.
+  if (m === "BN_EMA_RSI_ST_V2" || m.startsWith("BN_EMA_RSI_ST_V2-") || m.startsWith("BN_EMA_RSI_ST_V2_")) return "BN_EMA_RSI_ST_V2";
+  // EMA_RSI_ST_V2 — a separate strategy from EMA_RSI_ST (V1), not another mode
+  // of it, so it gets its own group key and its own TG_EMA_RSI_ST_V2_* toggles.
+  // This MUST be tested before the fallback below: V1 has no explicit branch —
+  // it is the default return — so without this line every V2 mode string would
+  // fall through and fire on V1's toggles.
+  if (m === "EMA_RSI_ST_V2" || m.startsWith("EMA_RSI_ST_V2-") || m.startsWith("EMA_RSI_ST_V2_")) return "EMA_RSI_ST_V2";
   return "EMA_RSI_ST";
 }
 
 /** Is a strategy group enabled? Gated by {GROUP}_MODE_ENABLED (default on).
  *  When a strategy is disabled in Settings, none of its alerts should fire and
  *  it should not appear in the consolidated report. */
+// Groups whose {GROUP}_MODE_ENABLED defaults to OFF rather than ON. Every older
+// strategy ships enabled, so an unset key means "on"; EMA_RSI_ST_V2 ships dark
+// until it has been paper-validated, and without this it would fire Telegram
+// alerts and appear in the consolidated report while Settings still showed it
+// disabled (the Settings schema, sharedNav, realtime and app.js all default it
+// to "false").
+const DEFAULT_OFF_GROUPS = new Set(["EMA_RSI_ST_V2", "BN_EMA_RSI_ST_V2"]);
+
 function isModeEnabled(group) {
-  return !isOff(process.env[`${group}_MODE_ENABLED`]);
+  const v = process.env[`${group}_MODE_ENABLED`];
+  if (DEFAULT_OFF_GROUPS.has(group)) return String(v || "").toLowerCase() === "true";
+  return !isOff(v);
 }
 
 /** Central gate — checks master + specific toggle key. Returns true if allowed. */
@@ -401,6 +424,10 @@ function modeLabel(mode) {
   if (m.startsWith("RSI_PIVOT_ST-LIVE"))  return "⚡ RSI PIVOT ST LIVE" + m.slice("RSI_PIVOT_ST-LIVE".length);
   if (m.startsWith("BN_PIVOT_RSI_ST-PAPER")) return "🎯 BN PIVOT RSI ST PAPER" + m.slice("BN_PIVOT_RSI_ST-PAPER".length);
   if (m.startsWith("BN_PIVOT_RSI_ST-LIVE"))  return "⚡ BN PIVOT RSI ST LIVE" + m.slice("BN_PIVOT_RSI_ST-LIVE".length);
+  if (m.startsWith("BN_EMA_RSI_ST_V2-PAPER")) return "📄 BN EMA_RSI_ST_V2 PAPER" + m.slice("BN_EMA_RSI_ST_V2-PAPER".length);
+  if (m.startsWith("BN_EMA_RSI_ST_V2-LIVE"))  return "⚡ BN EMA_RSI_ST_V2 LIVE" + m.slice("BN_EMA_RSI_ST_V2-LIVE".length);
+  if (m.startsWith("EMA_RSI_ST_V2-PAPER")) return "📄 EMA_RSI_ST_V2 PAPER" + m.slice("EMA_RSI_ST_V2-PAPER".length);
+  if (m.startsWith("EMA_RSI_ST_V2-LIVE"))  return "⚡ EMA_RSI_ST_V2 LIVE" + m.slice("EMA_RSI_ST_V2-LIVE".length);
   return m;
 }
 
@@ -761,7 +788,7 @@ function notifyConsolidatedDayReport({ byMode }) {
   if (!canSend("TG_DAYREPORT_CONSOLIDATED")) return false;
 
   // Only include strategies that are currently enabled in Settings.
-  const groups = ["EMA_RSI_ST", "BB_RSI", "PA", "ORB", "EMA9VWAP", "TREND_PB", "TDS", "RSI_PIVOT_ST", "BN_PIVOT_RSI_ST", "SIMPLE930", "HA_SCALP", "EARLYBIRD"].filter(isModeEnabled);
+  const groups = ["EMA_RSI_ST", "BB_RSI", "PA", "ORB", "EMA9VWAP", "TREND_PB", "TDS", "RSI_PIVOT_ST", "BN_PIVOT_RSI_ST", "EMA_RSI_ST_V2", "BN_EMA_RSI_ST_V2", "SIMPLE930", "HA_SCALP", "EARLYBIRD"].filter(isModeEnabled);
   let totalTrades = 0, totalPnl = 0, totalWins = 0, totalLosses = 0;
   const rows = [];
 

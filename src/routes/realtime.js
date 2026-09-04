@@ -29,6 +29,11 @@ const { resolveTheme } = require("../utils/theme");
 // the Copy Day Log button. TREND_PB still exposes cumulative JSONL only.
 const STRATEGY_DEFS = [
   { key:'EMA_RSI_ST',    label:'EMA_RSI_ST',        accentClass:'ema_rsi_st',    accent:'#3b82f6', paperPrefix:'/ema_rsi_st-paper',    livePrefix:'/ema_rsi_st-live',    hasDayLog:true,  modeFlag:'EMA_RSI_ST_MODE_ENABLED'    },
+  // EMA_RSI_ST_V2: a clone of EMA_RSI_ST with its own rules and its own
+  // EMA_RSI_ST_V2_* settings. It has NO legacy /ema_rsi_st_v2-live route — live runs
+  // through the paper-wrapping harness — so livePrefix points at that harness.
+  // defaultOff: unlike every other row it stays hidden until explicitly enabled.
+  { key:'EMA_RSI_ST_V2', label:'EMA_RSI_ST_V2', accentClass:'emarsistv2', accent:'#38bdf8', paperPrefix:'/ema_rsi_st_v2-paper', livePrefix:'/ema_rsi_st_v2-live-harness', hasDayLog:true, modeFlag:'EMA_RSI_ST_V2_MODE_ENABLED', defaultOff:true },
   { key:'BB_RSI',    label:'BB_RSI',        accentClass:'bb_rsi',    accent:'#f59e0b', paperPrefix:'/bb_rsi-paper',    livePrefix:'/bb_rsi-live',    hasDayLog:true,  modeFlag:'BB_RSI_MODE_ENABLED'    },
   { key:'PA',       label:'PRICE ACTION', accentClass:'pa',       accent:'#a855f7', paperPrefix:'/pa-paper',       livePrefix:'/pa-live',       hasDayLog:true,  modeFlag:'PA_MODE_ENABLED'       },
   { key:'ORB',      label:'ORB',          accentClass:'orb',      accent:'#10b981', paperPrefix:'/orb-paper',      livePrefix:'/orb-live',      hasDayLog:true,  modeFlag:'ORB_MODE_ENABLED'      },
@@ -42,6 +47,9 @@ const STRATEGY_DEFS = [
   // never sources a spot price of its own, so the NIFTY BANK level it shows is the one
   // the BN paper/live engine actually decided on.
   { key:'BN_PIVOT_RSI_ST', label:'BN PIVOT RSI ST', accentClass:'bnpivotrsist', accent:'#818cf8', paperPrefix:'/bn-pivot-rsi-st-paper', livePrefix:'/bn-pivot-rsi-st-live', hasDayLog:true, modeFlag:'BN_PIVOT_RSI_ST_MODE_ENABLED' },
+  // BN_EMA_RSI_ST_V2: EMA_RSI_ST_V2's rules on NIFTY BANK. No legacy live route
+  // either, so livePrefix points at its harness. defaultOff like its sibling.
+  { key:'BN_EMA_RSI_ST_V2', label:'BN EMA_RSI_ST_V2', accentClass:'bnemarsistv2', accent:'#2dd4bf', paperPrefix:'/bn_ema_rsi_st_v2-paper', livePrefix:'/bn_ema_rsi_st_v2-live-harness', hasDayLog:true, modeFlag:'BN_EMA_RSI_ST_V2_MODE_ENABLED', defaultOff:true },
   { key:'SIMPLE930', label:'SIMPLE_9:30', accentClass:'simple930', accent:'#fb923c', paperPrefix:'/simple930-paper', livePrefix:'/simple930-live', hasDayLog:true, modeFlag:'SIMPLE930_MODE_ENABLED' },
   // EarlyBird trades CASH EQUITY of several stocks at once — its /status/data
   // returns `positions[]`, not a single `position`, so renderColumn below
@@ -50,12 +58,12 @@ const STRATEGY_DEFS = [
 ];
 
 function enabledStrategies() {
-  return STRATEGY_DEFS.filter(s => (process.env[s.modeFlag] || 'true').toLowerCase() !== 'false');
+  return STRATEGY_DEFS.filter(s => (process.env[s.modeFlag] || (s.defaultOff ? 'false' : 'true')).toLowerCase() !== 'false');
 }
 
 // Broker investment pools: each strategy's paper P&L draws from one shared pool.
 // EMA_RSI_ST trades through Zerodha; BB_RSI/PA/ORB through Fyers.
-const BROKER_OF = { EMA_RSI_ST:'ZERODHA', BB_RSI:'FYERS', PA:'FYERS', ORB:'FYERS', EMA9VWAP:'ZERODHA', TREND_PB:'FYERS', TDS:'FYERS', HA_SCALP:'ZERODHA', RSI_PIVOT_ST:'ZERODHA', BN_PIVOT_RSI_ST:'ZERODHA', SIMPLE930:'ZERODHA', EARLYBIRD:'FYERS' };
+const BROKER_OF = { EMA_RSI_ST:'ZERODHA', EMA_RSI_ST_V2:'ZERODHA', BB_RSI:'FYERS', PA:'FYERS', ORB:'FYERS', EMA9VWAP:'ZERODHA', TREND_PB:'FYERS', TDS:'FYERS', HA_SCALP:'ZERODHA', RSI_PIVOT_ST:'ZERODHA', BN_PIVOT_RSI_ST:'ZERODHA', BN_EMA_RSI_ST_V2:'ZERODHA', SIMPLE930:'ZERODHA', EARLYBIRD:'FYERS' };
 function brokerPools(strategies) {
   const z = parseFloat(process.env.ZERODHA_INV_AMOUNT || '100000');
   const f = parseFloat(process.env.FYERS_INV_AMOUNT   || '100000');
@@ -257,7 +265,9 @@ ${faviconLink()}
   .card.tds      { border-top-color:#a855f7; }
 .card.hascalp  { border-top-color:#f97316; }
   .card.rsipivotst { border-top-color:#facc15; }
+  .card.emarsistv2 { border-top-color:#38bdf8; }
   .card.bnpivotrsist { border-top-color:#818cf8; }
+  .card.bnemarsistv2 { border-top-color:#2dd4bf; }
   .card.simple930 { border-top-color:#fb923c; }
   .card.earlybird { border-top-color:#14b8a6; }
 
@@ -272,7 +282,9 @@ ${faviconLink()}
   .card.tds      .card-title { color:#c084fc; }
 .card.hascalp  .card-title { color:#fdba74; }
   .card.rsipivotst .card-title { color:#fde047; }
+  .card.emarsistv2 .card-title { color:#7dd3fc; }
   .card.bnpivotrsist .card-title { color:#a5b4fc; }
+  .card.bnemarsistv2 .card-title { color:#5eead4; }
   .card.simple930 .card-title { color:#fdba74; }
   .card.earlybird .card-title { color:#5eead4; }
 
@@ -356,7 +368,9 @@ ${faviconLink()}
   .card.tds      .act-btn:not(.act-btn-disabled):hover { border-color:#a855f7; }
 .card.hascalp  .act-btn:not(.act-btn-disabled):hover { border-color:#f97316; }
   .card.rsipivotst .act-btn:not(.act-btn-disabled):hover { border-color:#facc15; }
+  .card.emarsistv2 .act-btn:not(.act-btn-disabled):hover { border-color:#38bdf8; }
   .card.bnpivotrsist .act-btn:not(.act-btn-disabled):hover { border-color:#818cf8; }
+  .card.bnemarsistv2 .act-btn:not(.act-btn-disabled):hover { border-color:#2dd4bf; }
   .card.simple930 .act-btn:not(.act-btn-disabled):hover { border-color:#fb923c; }
   .card.earlybird .act-btn:not(.act-btn-disabled):hover { border-color:#14b8a6; }
 
@@ -376,7 +390,9 @@ ${faviconLink()}
   .rollup tr.tds      td:first-child { color:#c084fc; }
 .rollup tr.hascalp  td:first-child { color:#fdba74; }
   .rollup tr.rsipivotst td:first-child { color:#fde047; }
+  .rollup tr.emarsistv2 td:first-child { color:#7dd3fc; }
   .rollup tr.bnpivotrsist td:first-child { color:#a5b4fc; }
+  .rollup tr.bnemarsistv2 td:first-child { color:#5eead4; }
   .rollup tr.simple930 td:first-child { color:#fdba74; }
   .rollup tr.earlybird td:first-child { color:#5eead4; }
   .rollup tr.total    td:first-child { color:#e0eaf8; }
@@ -406,7 +422,9 @@ ${faviconLink()}
   :root[data-theme="light"] .card.tds      .card-title { color:#7e22ce; }
 :root[data-theme="light"] .card.hascalp  .card-title { color:#c2410c; }
   :root[data-theme="light"] .card.rsipivotst .card-title { color:#a16207; }
+  :root[data-theme="light"] .card.emarsistv2 .card-title { color:#0369a1; }
   :root[data-theme="light"] .card.bnpivotrsist .card-title { color:#4338ca; }
+  :root[data-theme="light"] .card.bnemarsistv2 .card-title { color:#0f766e; }
   :root[data-theme="light"] .card.simple930 .card-title { color:#c2410c; }
   :root[data-theme="light"] .card.earlybird .card-title { color:#0f766e; }
   :root[data-theme="light"] .pos-block,
@@ -445,7 +463,9 @@ ${faviconLink()}
   :root[data-theme="light"] .rollup tr.tds      td:first-child { color:#7e22ce; }
 :root[data-theme="light"] .rollup tr.hascalp  td:first-child { color:#c2410c; }
   :root[data-theme="light"] .rollup tr.rsipivotst td:first-child { color:#a16207; }
+  :root[data-theme="light"] .rollup tr.emarsistv2 td:first-child { color:#0369a1; }
   :root[data-theme="light"] .rollup tr.bnpivotrsist td:first-child { color:#4338ca; }
+  :root[data-theme="light"] .rollup tr.bnemarsistv2 td:first-child { color:#0f766e; }
   :root[data-theme="light"] .rollup tr.simple930 td:first-child { color:#c2410c; }
   :root[data-theme="light"] .rollup tr.earlybird td:first-child { color:#0f766e; }
   :root[data-theme="light"] .pos-zero { color:#4b5769 !important; }

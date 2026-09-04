@@ -62,6 +62,11 @@ const IGNORE_NAMES = new Set([".DS_Store", ".gitkeep"]);
 // replay-cache file can still be told apart by which engine produced it.
 const STRATEGY_BADGE = {
   ema_rsi_st:    { label: "EMA_RSI_ST",    cls: "mode-ema_rsi_st" },
+  // EMA_RSI_ST_V2 — its own key, so a V2 replay output is never badged as V1's.
+  ema_rsi_st_v2: { label: "EMA_RSI_ST_V2", cls: "mode-ema_rsi_st_v2" },
+  // Same engine on NIFTY BANK — its own key, so a BN replay output is never
+  // badged as the NIFTY one.
+  bn_ema_rsi_st_v2: { label: "BN EMA_RSI_ST_V2", cls: "mode-bn_ema_rsi_st_v2" },
   bb_rsi:    { label: "BB_RSI",    cls: "mode-bb_rsi" },
   pa:       { label: "PA",       cls: "mode-pa" },
   orb:      { label: "ORB",      cls: "mode-orb" },
@@ -95,7 +100,7 @@ function _istDateFromMs(ms) {
 function detectMeta(group, rel, abs, mtimeMs) {
   if (!group.tagged) return { strat: null, date: null };
   // Filename-encoded modes (replay / replay_sim outputs) — no per-file date.
-  const nameMatch = path.basename(rel).match(/^(ema_rsi_st|bb_rsi|pa|orb|trend_pb|trend_day_scalp|ha_scalp|bn_pivot_rsi_st|rsi_pivot_st|simple930|early_bird)\b/i);
+  const nameMatch = path.basename(rel).match(/^(bn_ema_rsi_st_v2|ema_rsi_st_v2|ema_rsi_st|bb_rsi|pa|orb|trend_pb|trend_day_scalp|ha_scalp|bn_pivot_rsi_st|rsi_pivot_st|simple930|early_bird)\b/i);
   if (nameMatch) return { strat: nameMatch[1].toLowerCase(), date: null };
   // Hash-named replay-cache JSON: read embedded mode/date, with an mtime cache.
   const cached = _tagCache.get(abs);
@@ -103,7 +108,7 @@ function detectMeta(group, rel, abs, mtimeMs) {
   let meta = { strat: null, date: null };
   try {
     const obj = JSON.parse(fs.readFileSync(abs, "utf-8"));
-    const m = String(obj && obj.mode || "").match(/^(ema_rsi_st|bb_rsi|pa|orb|trend[-_]pb)/i);
+    const m = String(obj && obj.mode || "").match(/^(bn_ema_rsi_st_v2|ema_rsi_st_v2|ema_rsi_st|bb_rsi|pa|orb|trend[-_]pb)/i);
     if (m) meta.strat = m[1].toLowerCase().replace(/-/g, "_");   // "trend-pb" → "trend_pb"
     // `date` was added to cached results later; fall back to a numeric sessionId (epoch ms).
     if (typeof obj.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(obj.date)) meta.date = obj.date;
@@ -406,6 +411,8 @@ router.get("/", (req, res) => {
     .mode-head { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; background:#0d1320; border-bottom:1px solid #1a2236; gap:10px; flex-wrap:wrap; }
     .mode-name { font-weight:700; font-size:0.78rem; letter-spacing:0.5px; text-transform:uppercase; }
     .mode-ema_rsi_st    { color:#60a5fa; }
+    .mode-ema_rsi_st_v2 { color:#7dd3fc; }
+    .mode-bn_ema_rsi_st_v2 { color:#5eead4; }
     .mode-bb_rsi    { color:#fbbf24; }
     .mode-pa       { color:#a78bfa; }
     .mode-orb      { color:#10b981; }
@@ -545,6 +552,8 @@ ${embed ? '' : buildSidebar('tradeLogs', liveActive)}
   var _tagFilter = {}; // group key -> active strategy filter ('' = all)
   var STRAT_BADGE = {
     ema_rsi_st:    { label: 'EMA_RSI_ST',    cls: 'mode-ema_rsi_st' },
+    ema_rsi_st_v2: { label: 'EMA_RSI_ST_V2', cls: 'mode-ema_rsi_st_v2' },
+    bn_ema_rsi_st_v2: { label: 'BN EMA_RSI_ST_V2', cls: 'mode-bn_ema_rsi_st_v2' },
     bb_rsi:    { label: 'BB_RSI',    cls: 'mode-bb_rsi' },
     pa:       { label: 'PA',       cls: 'mode-pa' },
     orb:      { label: 'ORB',      cls: 'mode-orb' },

@@ -45,7 +45,7 @@ function sendAiSkipMarkdown(res, records, baseName, meta) {
   res.send(md);
 }
 
-const MODES = ["ema_rsi_st", "bb_rsi", "pa", "orb", "ema9vwap", "trend_pb", "trend_day_scalp", "ha_scalp", "rsi_pivot_st", "bn_pivot_rsi_st", "simple930", "early_bird"];
+const MODES = ["ema_rsi_st", "ema_rsi_st_v2", "bb_rsi", "pa", "orb", "ema9vwap", "trend_pb", "trend_day_scalp", "ha_scalp", "rsi_pivot_st", "bn_pivot_rsi_st", "bn_ema_rsi_st_v2", "simple930", "early_bird"];
 
 function validMode(m) { return MODES.includes(m); }
 function validDate(d) { return typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d); }
@@ -535,6 +535,11 @@ function enabledModesFromEnv() {
   const on = (v) => String(v == null ? "true" : v).toLowerCase() === "true";
   return {
     ema_rsi_st:    on(process.env.EMA_RSI_ST_MODE_ENABLED),
+    // EMA_RSI_ST_V2 defaults OFF (every other mode defaults ON), so it is
+    // compared explicitly rather than through the default-true on().
+    ema_rsi_st_v2: String(process.env.EMA_RSI_ST_V2_MODE_ENABLED || "false").toLowerCase() === "true",
+    // Its NIFTY BANK sibling defaults OFF for the same reason.
+    bn_ema_rsi_st_v2: String(process.env.BN_EMA_RSI_ST_V2_MODE_ENABLED || "false").toLowerCase() === "true",
     bb_rsi:    on(process.env.BB_RSI_MODE_ENABLED),
     pa:       on(process.env.PA_MODE_ENABLED),
     orb:      on(process.env.ORB_MODE_ENABLED),
@@ -597,6 +602,8 @@ router.get("/", (req, res) => {
     .mode-head { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; background:#0d1320; border-bottom:1px solid #1a2236; }
     .mode-name { font-weight:700; font-size:0.78rem; letter-spacing:0.5px; text-transform:uppercase; }
     .mode-ema_rsi_st    { color:#60a5fa; }
+    .mode-ema_rsi_st_v2 { color:#7dd3fc; }
+    .mode-bn_ema_rsi_st_v2 { color:#5eead4; }
     .mode-bb_rsi    { color:#fbbf24; }
     .mode-pa       { color:#a78bfa; }
     .mode-orb      { color:#10b981; }
@@ -1046,6 +1053,8 @@ ${buildSidebar('tradeLogs', liveActive)}
 
   var MODE_LIST = [
     { key: 'ema_rsi_st',    label: 'EMA_RSI_ST',        cls: 'mode-ema_rsi_st' },
+    { key: 'ema_rsi_st_v2', label: 'EMA_RSI_ST_V2',     cls: 'mode-ema_rsi_st_v2' },
+    { key: 'bn_ema_rsi_st_v2', label: 'BN EMA_RSI_ST_V2', cls: 'mode-bn_ema_rsi_st_v2' },
     { key: 'bb_rsi',    label: 'BB_RSI',        cls: 'mode-bb_rsi' },
     { key: 'pa',       label: 'PRICE ACTION', cls: 'mode-pa' },
     { key: 'orb',      label: 'ORB',          cls: 'mode-orb' },
@@ -1070,8 +1079,8 @@ ${buildSidebar('tradeLogs', liveActive)}
   })();
 
   // Per-section page state.
-  var _filesPage  = { ema_rsi_st:1, bb_rsi:1, pa:1, orb:1, ema9vwap:1, trend_pb:1, trend_day_scalp:1, ha_scalp:1, rsi_pivot_st:1, bn_pivot_rsi_st:1, simple930:1, early_bird:1 };
-  var _skipsPage  = { ema_rsi_st:1, bb_rsi:1, pa:1, orb:1, ema9vwap:1, trend_pb:1, trend_day_scalp:1, ha_scalp:1, rsi_pivot_st:1, bn_pivot_rsi_st:1, simple930:1, early_bird:1 };
+  var _filesPage  = { ema_rsi_st:1, ema_rsi_st_v2:1, bn_ema_rsi_st_v2:1, bb_rsi:1, pa:1, orb:1, ema9vwap:1, trend_pb:1, trend_day_scalp:1, ha_scalp:1, rsi_pivot_st:1, bn_pivot_rsi_st:1, simple930:1, early_bird:1 };
+  var _skipsPage  = { ema_rsi_st:1, ema_rsi_st_v2:1, bn_ema_rsi_st_v2:1, bb_rsi:1, pa:1, orb:1, ema9vwap:1, trend_pb:1, trend_day_scalp:1, ha_scalp:1, rsi_pivot_st:1, bn_pivot_rsi_st:1, simple930:1, early_bird:1 };
   var _auditPage  = 1;
   var _view = { mode:null, date:null, kind:null, page:1, total:0, pageSize:25 }; // modal state
 

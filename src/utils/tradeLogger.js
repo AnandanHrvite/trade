@@ -31,6 +31,19 @@ const FILE_BY_MODE = {
   rsi_pivot_st: "rsi_pivot_st_paper_trades_log.jsonl",
   // BN_PIVOT_RSI_ST (NIFTY BANK) — same engine as rsi_pivot_st on a different underlying.
   bn_pivot_rsi_st: "bn_pivot_rsi_st_paper_trades_log.jsonl",
+  // EMA_RSI_ST_V2 — the EMA_RSI_ST clone with a SuperTrend-only stop.
+  // Its live counterpart key is "ema_rsi_st_v2-live". It is NOT registered here
+  // because no strategy logs live trades to disk any more (see f0372ea: every
+  // harness installs with liveLogKey:null). If live logging is ever turned back
+  // on for V2, add "ema_rsi_st_v2-live" here and in DAILY_PREFIX_BY_MODE below —
+  // MUST match tradeLogger's key character for character, because nothing
+  // normalises hyphens/underscores/case and an unregistered key drops every live
+  // trade from both logs while the run still looks healthy.
+  ema_rsi_st_v2: "ema_rsi_st_v2_paper_trades_log.jsonl",
+  // BN_EMA_RSI_ST_V2 — the same engine on NIFTY BANK. Paper key only, for the
+  // same reason as its NIFTY sibling above: no strategy logs live trades to
+  // disk any more, and the harness passes liveLogKey:null.
+  bn_ema_rsi_st_v2: "bn_ema_rsi_st_v2_paper_trades_log.jsonl",
   simple930: "simple930_paper_trades_log.jsonl",
 };
 
@@ -46,6 +59,9 @@ const DAILY_PREFIX_BY_MODE = {
   early_bird: "early_bird_paper_trades_",
   rsi_pivot_st: "rsi_pivot_st_paper_trades_",
   bn_pivot_rsi_st: "bn_pivot_rsi_st_paper_trades_",
+  // MUST match tradeLogger's key character for character (see FILE_BY_MODE).
+  ema_rsi_st_v2: "ema_rsi_st_v2_paper_trades_",
+  bn_ema_rsi_st_v2: "bn_ema_rsi_st_v2_paper_trades_",
   simple930: "simple930_paper_trades_",
 };
 

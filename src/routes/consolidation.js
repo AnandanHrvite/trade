@@ -23,6 +23,12 @@ const DATA_DIR = path.join(_HOME, "trading-data");
 
 const SOURCES = [
   { mode: "EMA_RSI_ST",    file: path.join(DATA_DIR, "ema_rsi_st_paper_trades.json"),          label: "EMA_RSI_ST", color: "#3b82f6" },
+  // EMA_RSI_ST_V2 — a separate strategy from V1 with its own trades file, never
+  // folded into EMA_RSI_ST's.
+  { mode: "EMA_RSI_ST_V2", file: path.join(DATA_DIR, "ema_rsi_st_v2_paper_trades.json"), label: "EMA_RSI_ST_V2", color: "#38bdf8" },
+  // The same engine on NIFTY BANK — its own trades file, never merged with the
+  // NIFTY one: same rules, different underlying and different settings.
+  { mode: "BN_EMA_RSI_ST_V2", file: path.join(DATA_DIR, "bn_ema_rsi_st_v2_paper_trades.json"), label: "BN EMA_RSI_ST_V2", color: "#2dd4bf" },
   { mode: "BB_RSI",    file: path.join(DATA_DIR, "bb_rsi_paper_trades.json"),    label: "BB_RSI", color: "#f59e0b" },
   { mode: "PA",       file: path.join(DATA_DIR, "pa_paper_trades.json"),       label: "Price Action", color: "#a855f7" },
   { mode: "ORB",      file: path.join(DATA_DIR, "orb_paper_trades.json"),      label: "ORB", color: "#10b981" },
@@ -193,6 +199,8 @@ router.get("/", (req, res) => {
     .badge-pe{background:rgba(239,68,68,0.12);color:#ef4444;border:0.5px solid rgba(239,68,68,0.25);}
     .badge-mode{padding:2px 7px;border-radius:4px;font-size:0.58rem;font-weight:700;letter-spacing:0.5px;}
     .badge-EMA_RSI_ST{background:rgba(59,130,246,0.12);color:#3b82f6;border:0.5px solid rgba(59,130,246,0.3);}
+    .badge-EMA_RSI_ST_V2{background:rgba(56,189,248,0.12);color:#38bdf8;border:0.5px solid rgba(56,189,248,0.3);}
+    .badge-BN_EMA_RSI_ST_V2{background:rgba(45,212,191,0.12);color:#2dd4bf;border:0.5px solid rgba(45,212,191,0.3);}
     .badge-BB_RSI{background:rgba(245,158,11,0.12);color:#f59e0b;border:0.5px solid rgba(245,158,11,0.3);}
     .badge-PA{background:rgba(168,85,247,0.12);color:#a855f7;border:0.5px solid rgba(168,85,247,0.3);}
 
@@ -1208,7 +1216,7 @@ function wireTableControls(){
 // ── Analytics Panel ─────────────────────────────────────────────────────────
 let _anaVisible = false;
 const _anaCharts = {};
-const _MODE_COLOR = { EMA_RSI_ST: '#3b82f6', BB_RSI: '#f59e0b', PA: '#a855f7', ORB: '#10b981', EMA9VWAP: '#06b6d4', TREND_PB: '#ec4899', TDS: '#c084fc', HA_SCALP: '#f97316', RSI_PIVOT_ST: '#facc15', BN_PIVOT_RSI_ST: '#818cf8', SIMPLE930: '#fb923c', EARLYBIRD: '#14b8a6' };
+const _MODE_COLOR = { EMA_RSI_ST: '#3b82f6', EMA_RSI_ST_V2: '#38bdf8', BN_EMA_RSI_ST_V2: '#2dd4bf', BB_RSI: '#f59e0b', PA: '#a855f7', ORB: '#10b981', EMA9VWAP: '#06b6d4', TREND_PB: '#ec4899', TDS: '#c084fc', HA_SCALP: '#f97316', RSI_PIVOT_ST: '#facc15', BN_PIVOT_RSI_ST: '#818cf8', SIMPLE930: '#fb923c', EARLYBIRD: '#14b8a6' };
 
 function fmtAna(v){ return '₹' + Math.round(Math.abs(v||0)).toLocaleString('en-IN'); }
 function fmtAnaSigned(v){ const n = v||0; return (n>=0?'+':'-') + '₹' + Math.round(Math.abs(n)).toLocaleString('en-IN'); }
@@ -2118,9 +2126,13 @@ applyFilters();
 
 // Mirror sharedNav's per-strategy gating so the dashboard chart can show
 // only currently-enabled strategies (default true when the env key is unset).
+// Strategies that ship OFF: an unset key means disabled, not enabled. Every
+// legacy strategy defaults ON, so the fallback below stays "true".
+const _DEFAULT_OFF_MODES = new Set(["EMA_RSI_ST_V2", "BN_EMA_RSI_ST_V2"]);
 function _modeEnabled(mode) {
   const key = mode + "_MODE_ENABLED";
-  return (process.env[key] || "true").toLowerCase() === "true";
+  const dflt = _DEFAULT_OFF_MODES.has(mode) ? "false" : "true";
+  return (process.env[key] || dflt).toLowerCase() === "true";
 }
 
 // JSON endpoint — used by dashboard cumulative P&L chart.

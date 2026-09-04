@@ -45,6 +45,8 @@ const FILE_PREFIX_BY_MODE = {
   early_bird: "early_bird_paper_skips_",
   rsi_pivot_st: "rsi_pivot_st_paper_skips_",
   bn_pivot_rsi_st: "bn_pivot_rsi_st_paper_skips_",
+  ema_rsi_st_v2: "ema_rsi_st_v2_paper_skips_",
+  bn_ema_rsi_st_v2: "bn_ema_rsi_st_v2_paper_skips_",
   simple930: "simple930_paper_skips_",
 };
 

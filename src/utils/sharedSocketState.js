@@ -52,6 +52,20 @@ let rsiPivotStMode = null;
 // may run side by side. Only paper-vs-live within BN is mutually exclusive.
 let bnPivotRsiStMode = null;
 
+// EMA_RSI_ST_V2 mode: "EMA_RSI_ST_V2_PAPER" | "EMA_RSI_ST_V2_LIVE" | null
+// Its OWN slot, deliberately independent of `primaryMode` (which carries V1's
+// EMA_RSI_ST_PAPER/LIVE). V2 is a separate strategy with its own rules, its own
+// settings and its own position file — the two are free to run side by side.
+// Only paper-vs-live WITHIN V2 is mutually exclusive.
+let emaRsiStV2Mode = null;
+
+// BN_EMA_RSI_ST_V2 mode (NIFTY BANK):
+//   "BN_EMA_RSI_ST_V2_PAPER" | "BN_EMA_RSI_ST_V2_LIVE" | null
+// Its OWN slot, deliberately independent of emaRsiStV2Mode: this is the SAME
+// engine on a DIFFERENT underlying (NIFTY BANK vs NIFTY 50), so the two may run
+// side by side. Only paper-vs-live WITHIN the BN strategy is mutually exclusive.
+let bnEmaRsiStV2Mode = null;
+
 // EarlyBird mode: "EARLY_BIRD_PAPER" | "EARLY_BIRD_LIVE" | null
 let earlyBirdMode = null;
 
@@ -258,6 +272,42 @@ function getBnPivotRsiStMode() {
   return bnPivotRsiStMode;
 }
 
+// ── EMA_RSI_ST_V2 mode ──────────────────────────────────────────────────────
+
+function setEmaRsiStV2Mode(mode) {
+  emaRsiStV2Mode = mode;
+}
+
+function clearEmaRsiStV2Mode() {
+  emaRsiStV2Mode = null;
+}
+
+function isEmaRsiStV2Active() {
+  return emaRsiStV2Mode !== null;
+}
+
+function getEmaRsiStV2Mode() {
+  return emaRsiStV2Mode;
+}
+
+// ── BN_EMA_RSI_ST_V2 mode (NIFTY BANK) ──────────────────────────────────────
+
+function setBnEmaRsiStV2Mode(mode) {
+  bnEmaRsiStV2Mode = mode;
+}
+
+function clearBnEmaRsiStV2Mode() {
+  bnEmaRsiStV2Mode = null;
+}
+
+function isBnEmaRsiStV2Active() {
+  return bnEmaRsiStV2Mode !== null;
+}
+
+function getBnEmaRsiStV2Mode() {
+  return bnEmaRsiStV2Mode;
+}
+
 // ── SIMPLE_9:30 mode (9:30 option-premium trigger) ──────────────────────────
 
 function setSimple930Active(mode) {
@@ -286,6 +336,8 @@ function isAnyActive() {
          haScalpMode !== null ||
          earlyBirdMode !== null ||
          rsiPivotStMode !== null || bnPivotRsiStMode !== null ||
+         emaRsiStV2Mode !== null ||
+         bnEmaRsiStV2Mode !== null ||
          simple930Mode !== null;
 }
 
@@ -383,6 +435,28 @@ function canStart(mode) {
       if (bnPivotRsiStMode === "BN_PIVOT_RSI_ST_PAPER") return { allowed: false, reason: "BN Pivot RSI ST Paper is running — stop it first" };
       if (bnPivotRsiStMode === "BN_PIVOT_RSI_ST_LIVE")  return { allowed: false, reason: "BN Pivot RSI ST Live is already running" };
       return { allowed: true };
+    // EMA_RSI_ST_V2 is checked ONLY against its own sibling — it is a separate
+    // strategy from EMA_RSI_ST (V1), not another mode of it, so V1 and V2 may
+    // run at the same time.
+    case "EMA_RSI_ST_V2_PAPER":
+      if (emaRsiStV2Mode === "EMA_RSI_ST_V2_LIVE")  return { allowed: false, reason: "EMA_RSI_ST_V2 Live is running — stop it first" };
+      if (emaRsiStV2Mode === "EMA_RSI_ST_V2_PAPER") return { allowed: false, reason: "EMA_RSI_ST_V2 Paper is already running" };
+      return { allowed: true };
+    case "EMA_RSI_ST_V2_LIVE":
+      if (emaRsiStV2Mode === "EMA_RSI_ST_V2_PAPER") return { allowed: false, reason: "EMA_RSI_ST_V2 Paper is running — stop it first" };
+      if (emaRsiStV2Mode === "EMA_RSI_ST_V2_LIVE")  return { allowed: false, reason: "EMA_RSI_ST_V2 Live is already running" };
+      return { allowed: true };
+    // BN_EMA_RSI_ST_V2 is NIFTY BANK — the same engine as EMA_RSI_ST_V2 on a
+    // DIFFERENT underlying, so it is checked ONLY against its own sibling. The
+    // NIFTY and NIFTY BANK versions are free to run at the same time.
+    case "BN_EMA_RSI_ST_V2_PAPER":
+      if (bnEmaRsiStV2Mode === "BN_EMA_RSI_ST_V2_LIVE")  return { allowed: false, reason: "BN_EMA_RSI_ST_V2 Live is running — stop it first" };
+      if (bnEmaRsiStV2Mode === "BN_EMA_RSI_ST_V2_PAPER") return { allowed: false, reason: "BN_EMA_RSI_ST_V2 Paper is already running" };
+      return { allowed: true };
+    case "BN_EMA_RSI_ST_V2_LIVE":
+      if (bnEmaRsiStV2Mode === "BN_EMA_RSI_ST_V2_PAPER") return { allowed: false, reason: "BN_EMA_RSI_ST_V2 Paper is running — stop it first" };
+      if (bnEmaRsiStV2Mode === "BN_EMA_RSI_ST_V2_LIVE")  return { allowed: false, reason: "BN_EMA_RSI_ST_V2 Live is already running" };
+      return { allowed: true };
     case "SIMPLE930_PAPER":
       if (simple930Mode === "SIMPLE930_LIVE")  return { allowed: false, reason: "SIMPLE_9:30 Live is running — stop it first" };
       if (simple930Mode === "SIMPLE930_PAPER") return { allowed: false, reason: "SIMPLE_9:30 Paper is already running" };
@@ -419,6 +493,10 @@ module.exports = {
   setRsiPivotStActive, clearRsiPivotSt, isRsiPivotStActive, getRsiPivotStMode,
   // BN Pivot RSI SuperTrend (NIFTY BANK)
   setBnPivotRsiStMode, clearBnPivotRsiStMode, isBnPivotRsiStActive, getBnPivotRsiStMode,
+  // EMA_RSI_ST_V2
+  setEmaRsiStV2Mode, clearEmaRsiStV2Mode, isEmaRsiStV2Active, getEmaRsiStV2Mode,
+  // BN_EMA_RSI_ST_V2 (NIFTY BANK)
+  setBnEmaRsiStV2Mode, clearBnEmaRsiStV2Mode, isBnEmaRsiStV2Active, getBnEmaRsiStV2Mode,
   // SIMPLE_9:30
   setSimple930Active, clearSimple930, isSimple930Active, getSimple930Mode,
   // Combined

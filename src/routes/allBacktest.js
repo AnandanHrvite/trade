@@ -25,6 +25,7 @@ const tdsStrategy     = require("../strategies/trend_day_scalp");
 const haScalpStrategy = require("../strategies/ha_scalp");
 const rsiPivotStStrategy = require("../strategies/rsi_pivot_st");
 const bnPivotRsiStStrategy = require("../strategies/bn_pivot_rsi_st");
+const emaRsiStV2Strategy = require("../strategies/ema_rsi_st_v2");
 const simple930Strategy  = require("../strategies/simple930");
 const earlyBirdStrategy  = require("../strategies/early_bird");
 const sharedSocketState = require("../utils/sharedSocketState");
@@ -39,6 +40,10 @@ const HA_SCALP_KEY = "HA_SCALP_BACKTEST";
 const RSI_PIVOT_ST_KEY = "RSI_PIVOT_ST_BACKTEST";
 // MUST match the RESULT_KEY bnPivotRsiStBacktest.js saves under.
 const BN_PIVOT_RSI_ST_KEY = "BN_PIVOT_RSI_ST_BACKTEST";
+// MUST match the RESULT_KEY emaRsiStV2Backtest.js saves under.
+const EMA_RSI_ST_V2_KEY = "EMA_RSI_ST_V2_BACKTEST";
+// MUST match the RESULT_KEY bnEmaRsiStV2Backtest.js saves under.
+const BN_EMA_RSI_ST_V2_KEY = "BN_EMA_RSI_ST_V2_BACKTEST";
 const SIMPLE930_KEY    = "SIMPLE930_BACKTEST";
 // MUST match the RESULT_KEY earlyBirdBacktest.js saves under.
 const EARLYBIRD_KEY    = "EARLY_BIRD_BACKTEST";
@@ -154,6 +159,10 @@ router.get("/", (req, res) => {
   const haScalpOn  = _modeOn("HA_SCALP_MODE_ENABLED");
   const rsiPivotStOn = _modeOn("RSI_PIVOT_ST_MODE_ENABLED");
   const bnPivotRsiStOn = _modeOn("BN_PIVOT_RSI_ST_MODE_ENABLED");
+  // EMA_RSI_ST_V2 defaults OFF; _modeOn() defaults ON, so it is compared here.
+  const emaRsiStV2On = String(process.env.EMA_RSI_ST_V2_MODE_ENABLED || "false").toLowerCase() === "true";
+  // The NIFTY BANK sibling also defaults OFF, so it is compared here too.
+  const bnEmaRsiStV2On = String(process.env.BN_EMA_RSI_ST_V2_MODE_ENABLED || "false").toLowerCase() === "true";
   const simple930On  = _modeOn("SIMPLE930_MODE_ENABLED");
   const earlyBirdOn  = _modeOn("EARLYBIRD_MODE_ENABLED");
 
@@ -166,6 +175,8 @@ router.get("/", (req, res) => {
   const haScalpResult  = haScalpOn  ? loadResult(HA_SCALP_KEY)  : null;
   const rsiPivotStResult = rsiPivotStOn ? loadResult(RSI_PIVOT_ST_KEY) : null;
   const bnPivotRsiStResult = bnPivotRsiStOn ? loadResult(BN_PIVOT_RSI_ST_KEY) : null;
+  const emaRsiStV2Result = emaRsiStV2On ? loadResult(EMA_RSI_ST_V2_KEY) : null;
+  const bnEmaRsiStV2Result = bnEmaRsiStV2On ? loadResult(BN_EMA_RSI_ST_V2_KEY) : null;
   const simple930Result  = simple930On  ? loadResult(SIMPLE930_KEY)  : null;
   const earlyBirdResult  = earlyBirdOn  ? loadResult(EARLYBIRD_KEY)  : null;
 
@@ -215,6 +226,17 @@ router.get("/", (req, res) => {
     "BN PIVOT RSI ST · NIFTY BANK", { bg: "rgba(129,140,248,0.12)", fg: "#818cf8", border: "rgba(129,140,248,0.25)" },
     bnPivotRsiStStrategy && bnPivotRsiStStrategy.NAME ? bnPivotRsiStStrategy.NAME : "BN_PIVOT_RSI_ST",
     BN_PIVOT_RSI_ST_KEY, "/bn-pivot-rsi-st-backtest", bnPivotRsiStResult
+  ) : "";
+  const emaRsiStV2Panel = emaRsiStV2On ? renderPanel(
+    "EMA_RSI_ST_V2", { bg: "rgba(56,189,248,0.12)", fg: "#38bdf8", border: "rgba(56,189,248,0.25)" },
+    emaRsiStV2Strategy && emaRsiStV2Strategy.NAME ? emaRsiStV2Strategy.NAME : "EMA_RSI_ST_V2",
+    EMA_RSI_ST_V2_KEY, "/ema_rsi_st_v2-backtest", emaRsiStV2Result
+  ) : "";
+  // The same engine module — it serves both underlyings — on its own panel.
+  const bnEmaRsiStV2Panel = bnEmaRsiStV2On ? renderPanel(
+    "BN EMA_RSI_ST_V2 · NIFTY BANK", { bg: "rgba(45,212,191,0.12)", fg: "#2dd4bf", border: "rgba(45,212,191,0.25)" },
+    emaRsiStV2Strategy && emaRsiStV2Strategy.NAME ? emaRsiStV2Strategy.NAME : "BN_EMA_RSI_ST_V2",
+    BN_EMA_RSI_ST_V2_KEY, "/bn_ema_rsi_st_v2-backtest", bnEmaRsiStV2Result
   ) : "";
   const simple930Panel = simple930On ? renderPanel(
     "SIMPLE_9:30", { bg: "rgba(251,146,60,0.12)", fg: "#fb923c", border: "rgba(251,146,60,0.25)" },
@@ -370,6 +392,7 @@ ${buildSidebar('allBacktest', liveActive)}
   </div>
 
   ${emaRsiStPanel}
+  ${emaRsiStV2Panel}
   ${bbRsiPanel}
   ${paPanel}
   ${orbPanel}
@@ -378,9 +401,10 @@ ${buildSidebar('allBacktest', liveActive)}
         ${haScalpPanel}
   ${rsiPivotStPanel}
   ${bnPivotRsiStPanel}
+  ${bnEmaRsiStV2Panel}
   ${simple930Panel}
   ${earlyBirdPanel}
-  ${(!emaRsiStOn && !bbRsiOn && !paOn && !orbOn && !trendPbOn && !tdsOn && !haScalpOn && !rsiPivotStOn && !bnPivotRsiStOn && !simple930On && !earlyBirdOn) ? `
+  ${(!emaRsiStOn && !emaRsiStV2On && !bbRsiOn && !paOn && !orbOn && !trendPbOn && !tdsOn && !haScalpOn && !rsiPivotStOn && !bnPivotRsiStOn && !bnEmaRsiStV2On && !simple930On && !earlyBirdOn) ? `
   <div style="background:#08091a;border:0.5px solid #0e1428;border-radius:10px;padding:24px;text-align:center;color:#94a3b8;font-size:0.78rem;">
     No strategies enabled. Toggle one on in <a href="/settings" style="color:#60a5fa;">Settings → Strategy Modes</a>.
   </div>` : ""}

@@ -401,7 +401,7 @@ function recordMarketContext(ctx) {
 // the EXACT config the live session ran with, regardless of subsequent edits.
 // Tokens / secrets are excluded by construction.
 const _SETTINGS_KEY_MATCHERS = [
-  /^PA_/, /^BB_RSI_/, /^EMA_RSI_ST_/, /^ORB_/, /^TREND_PB_/, /^TDS_/, /^HA_SCALP_/, /^EARLYBIRD_/, /^RSI_PIVOT_ST_/, /^BN_PIVOT_RSI_ST_/, /^SIMPLE930_/, /^VIX_/, /^BACKTEST_/, /^TRADE_/,
+  /^PA_/, /^BB_RSI_/, /^EMA_RSI_ST_/, /^EMA_RSI_ST_V2_/, /^BN_EMA_RSI_ST_V2_/, /^ORB_/, /^TREND_PB_/, /^TDS_/, /^HA_SCALP_/, /^EARLYBIRD_/, /^RSI_PIVOT_ST_/, /^BN_PIVOT_RSI_ST_/, /^SIMPLE930_/, /^VIX_/, /^BACKTEST_/, /^TRADE_/,
   /^MAX_/, /^MIN_/, /^EMA_/, /^SAR_/, /^RSI_/, /^ADX_/,
   /^INSTRUMENT/, /^OPTION_/, /^BREAKEVEN/, /^FAIL_MODE/,
   /^MODE_/, /^EXPIRY/, /^STRIKE/, /^QTY/, /^LOT/, /^SIGNAL/,

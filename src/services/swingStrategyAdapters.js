@@ -20,6 +20,8 @@
  *   PA            swing structure + chart patterns       — pure price structure
  *   RSI_PIVOT_ST  RSI + prev-day pivot cross + SuperTrend — pure, given pivots
  *   BN_PIVOT_RSI_ST  the same, tuned separately for NIFTY BANK — pure, given pivots
+ *   EMA_RSI_ST_V2    a separate strategy from EMA_RSI_ST — its own rules and keys
+ *   BN_EMA_RSI_ST_V2 the same engine, tuned separately for NIFTY BANK — pure indicators
  *
  * The rest are excluded because their rule is not expressible on an arbitrary
  * stock timeframe, and forcing them would produce signals their author never
@@ -69,6 +71,7 @@
  */
 
 const emaRsiSt   = require("../strategies/strategy1_sar_ema_rsi");
+const emaRsiStV2 = require("../strategies/ema_rsi_st_v2");
 const bbRsi      = require("../strategies/bb_rsi");
 const priceAction= require("../strategies/price_action");
 const rsiPivotSt = require("../strategies/rsi_pivot_st");
@@ -182,6 +185,45 @@ const ADAPTERS = [
           EMA50:      r2(s.ema50),
           SuperTrend: r2(s.supertrend),
           STtrend:    s.stTrend === 1 ? "up" : s.stTrend === -1 ? "down" : null,
+        },
+      };
+    },
+  },
+
+  {
+    key:        "EMA_RSI_ST_V2",
+    label:      "EMA_RSI_ST_V2",
+    // Defaults OFF, unlike every other adapter. The caller gates on this key, so a
+    // V2 that is not switched on in Settings simply does not appear here.
+    envKey:     "EMA_RSI_ST_V2_MODE_ENABLED",
+    envDefault: "false",
+    // A SEPARATE strategy from EMA_RSI_ST, not a mode of it: three conditions per
+    // side (EMA20/50 alignment, close beyond EMA20, one RSI threshold with no cap)
+    // and the SuperTrend value itself as the stop. It reads the EMA_RSI_ST_V2_* keys
+    // only, so V1 and V2 tune independently.
+    blurb:      "EMA20/50 alignment + close beyond EMA20 + single RSI threshold. SuperTrend is the stop.",
+    timeframes: TIMEFRAME_KEYS,                 // no absolute-point gate anywhere
+    needsDaily: false,                          // 5-minute intraday bars only
+    stateful:   false,
+    scaleKeys:  [],
+    minBars() {
+      return emaRsiStV2.warmupBars(emaRsiStV2.getConfig()) + 5;
+    },
+    evaluate(candles) {
+      // skipTimeCheck widens the entry window to the whole day, exactly as the
+      // EMA_RSI_ST adapter above does; every other rule stays as Settings has it.
+      const s = emaRsiStV2.getSignal(candles, { silent: true, skipTimeCheck: true });
+      return {
+        side:   sideFromSignal(s.signal),
+        reason: s.reason || s.skipReason || "",
+        stop:   num(s.slSpot),
+        target: null,                           // V2 has no profit target
+        indicators: {
+          RSI:        r2(s.rsi),
+          EMA20:      r2(s.ema20),
+          EMA50:      r2(s.ema50),
+          SuperTrend: r2(s.supertrend),
+          STtrend:    s.stTrendInt === 1 ? "up" : s.stTrendInt === -1 ? "down" : null,
         },
       };
     },
@@ -376,6 +418,45 @@ const ADAPTERS = [
       };
     },
   },
+
+  {
+    key:        "BN_EMA_RSI_ST_V2",
+    label:      "BN EMA_RSI_ST_V2",
+    // Defaults OFF for the same reason as its NIFTY sibling: unproven, so it
+    // stays out of the scanner until it is switched on in Settings.
+    envKey:     "BN_EMA_RSI_ST_V2_MODE_ENABLED",
+    envDefault: "false",
+    // The SAME engine as EMA_RSI_ST_V2, read through the BN_EMA_RSI_ST_V2_* env
+    // prefix, so the NIFTY and NIFTY BANK versions tune independently. On the
+    // scanner it evaluates the same rules against whatever stock series it is
+    // handed — the underlying only decides live/paper option selection.
+    blurb:      "EMA20/50 alignment + close beyond EMA20 + single RSI threshold. SuperTrend is the stop. (NIFTY BANK tuning.)",
+    timeframes: TIMEFRAME_KEYS,                 // no absolute-point gate anywhere
+    needsDaily: false,                          // 5-minute intraday bars only
+    stateful:   false,
+    scaleKeys:  [],
+    minBars() {
+      return emaRsiStV2.warmupBars(emaRsiStV2.getConfig("BN_EMA_RSI_ST_V2")) + 5;
+    },
+    evaluate(candles) {
+      // skipTimeCheck widens the entry window to the whole day, exactly as the
+      // sibling adapters do; every other rule stays as Settings has it.
+      const s = emaRsiStV2.getSignal(candles, { silent: true, skipTimeCheck: true, prefix: "BN_EMA_RSI_ST_V2" });
+      return {
+        side:   sideFromSignal(s.signal),
+        reason: s.reason || s.skipReason || "",
+        stop:   num(s.slSpot),
+        target: null,                           // no profit target
+        indicators: {
+          RSI:        r2(s.rsi),
+          EMA20:      r2(s.ema20),
+          EMA50:      r2(s.ema50),
+          SuperTrend: r2(s.supertrend),
+          STtrend:    s.stTrendInt === 1 ? "up" : s.stTrendInt === -1 ? "down" : null,
+        },
+      };
+    },
+  },
 ];
 
 const BY_KEY = new Map(ADAPTERS.map(a => [a.key, a]));
@@ -386,7 +467,13 @@ const BY_KEY = new Map(ADAPTERS.map(a => [a.key, a]));
  * dropdown must never be cached across requests.
  */
 function activeAdapters() {
-  return ADAPTERS.filter(a => String(process.env[a.envKey] || "true").toLowerCase() === "true");
+  // `envDefault` lets an adapter ship OFF. Every legacy strategy defaults ON, so
+  // the fallback stays "true"; EMA_RSI_ST_V2 and BN_EMA_RSI_ST_V2 set "false" and stay out
+  // of the scanner until it is switched on in Settings. Without this the adapter's
+  // own "Defaults OFF" comment was untrue and V2 appeared here while Settings,
+  // the sidebar and the monitors all showed it disabled.
+  return ADAPTERS.filter(
+    (a) => String(process.env[a.envKey] || a.envDefault || "true").toLowerCase() === "true");
 }
 
 function getAdapter(key) {

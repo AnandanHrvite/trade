@@ -8,14 +8,15 @@
     "dev": "nodemon src/app.js",
     "docs:env": "node scripts/genEnvDocs.js",
     "docs:check": "node scripts/genEnvDocs.js --check",
-    "test": "node tests/ema9vwap.regression.js && node tests/orb.regression.js && node tests/liveParity.regression.js && node tests/configFidelity.regression.js && node tests/swingScanner.regression.js && node tests/simple930.regression.js && node tests/instrumentMode.regression.js && node tests/bnPivotRsiSt.regression.js",
+    "test": "node tests/ema9vwap.regression.js && node tests/orb.regression.js && node tests/liveParity.regression.js && node tests/configFidelity.regression.js && node tests/swingScanner.regression.js && node tests/simple930.regression.js && node tests/instrumentMode.regression.js && node tests/bnPivotRsiSt.regression.js && node tests/emaRsiStV2.regression.js",
     "test:orb": "node tests/orb.regression.js",
     "test:parity": "node tests/liveParity.regression.js",
     "test:config": "node tests/configFidelity.regression.js",
     "test:scanner": "node tests/swingScanner.regression.js",
     "test:simple930": "node tests/simple930.regression.js",
     "test:instrument": "node tests/instrumentMode.regression.js",
-    "test:bn": "node tests/bnPivotRsiSt.regression.js"
+    "test:bn": "node tests/bnPivotRsiSt.regression.js",
+    "test:v2": "node tests/emaRsiStV2.regression.js"
   },
   "dependencies": {
     "compression": "^1.8.1",

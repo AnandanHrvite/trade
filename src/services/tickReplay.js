@@ -731,6 +731,8 @@ const _MODE_TO_CANONICAL_FILE = {
   "pa-paper":       "pa_paper_trades.json",
   "bb_rsi-paper":    "bb_rsi_paper_trades.json",
   "ema_rsi_st-paper":    "ema_rsi_st_paper_trades.json",
+  "ema_rsi_st_v2-paper": "ema_rsi_st_v2_paper_trades.json",
+  "bn_ema_rsi_st_v2-paper": "bn_ema_rsi_st_v2_paper_trades.json",
   "orb-paper":      "orb_paper_trades.json",
   "ema9vwap-paper": "ema9vwap_paper_trades.json",
   "trend-pb-paper": "trend_pb_paper_trades.json",
@@ -925,6 +927,18 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     // it needs its own pair here — and its mutators are named …Mode, not …Active.
     ss_setBnPivotRsiStMode:    sharedSocketState.setBnPivotRsiStMode,
     ss_clearBnPivotRsiStMode:  sharedSocketState.clearBnPivotRsiStMode,
+    // EMA_RSI_ST_V2 is a SEPARATE strategy from V1 with its own mutex slot, so
+    // it needs its own pair here — and its mutators are named …Mode, not …Active.
+    ss_setEmaRsiStV2Mode:      sharedSocketState.setEmaRsiStV2Mode,
+    ss_clearEmaRsiStV2Mode:    sharedSocketState.clearEmaRsiStV2Mode,
+    // EMA_RSI_ST_V2 likewise keeps its OWN mutex slot, separate from V1's
+    // primaryMode, so it needs its own pair here too.
+    ss_setEmaRsiStV2Mode:      sharedSocketState.setEmaRsiStV2Mode,
+    ss_clearEmaRsiStV2Mode:    sharedSocketState.clearEmaRsiStV2Mode,
+    // BN_EMA_RSI_ST_V2 (NIFTY BANK) has its OWN mutex slot as well — the same
+    // engine on a different underlying, so it must be saved separately.
+    ss_setBnEmaRsiStV2Mode:    sharedSocketState.setBnEmaRsiStV2Mode,
+    ss_clearBnEmaRsiStV2Mode:  sharedSocketState.clearBnEmaRsiStV2Mode,
     ss_setSimple930Active:     sharedSocketState.setSimple930Active,
     ss_clearSimple930:         sharedSocketState.clearSimple930,
     // fs originals — paper /stop calls saveSession() → savePaperData() which
@@ -1405,6 +1419,12 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     sharedSocketState.clearRsiPivotSt        = () => {};
     sharedSocketState.setBnPivotRsiStMode    = () => {};
     sharedSocketState.clearBnPivotRsiStMode  = () => {};
+    sharedSocketState.setEmaRsiStV2Mode      = () => {};
+    sharedSocketState.clearEmaRsiStV2Mode    = () => {};
+    sharedSocketState.setEmaRsiStV2Mode      = () => {};
+    sharedSocketState.clearEmaRsiStV2Mode    = () => {};
+    sharedSocketState.setBnEmaRsiStV2Mode    = () => {};
+    sharedSocketState.clearBnEmaRsiStV2Mode  = () => {};
     sharedSocketState.setSimple930Active     = () => {};
     sharedSocketState.clearSimple930         = () => {};
 
@@ -1641,6 +1661,12 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     sharedSocketState.clearRsiPivotSt        = orig.ss_clearRsiPivotSt;
     sharedSocketState.setBnPivotRsiStMode    = orig.ss_setBnPivotRsiStMode;
     sharedSocketState.clearBnPivotRsiStMode  = orig.ss_clearBnPivotRsiStMode;
+    sharedSocketState.setEmaRsiStV2Mode      = orig.ss_setEmaRsiStV2Mode;
+    sharedSocketState.clearEmaRsiStV2Mode    = orig.ss_clearEmaRsiStV2Mode;
+    sharedSocketState.setEmaRsiStV2Mode      = orig.ss_setEmaRsiStV2Mode;
+    sharedSocketState.clearEmaRsiStV2Mode    = orig.ss_clearEmaRsiStV2Mode;
+    sharedSocketState.setBnEmaRsiStV2Mode    = orig.ss_setBnEmaRsiStV2Mode;
+    sharedSocketState.clearBnEmaRsiStV2Mode  = orig.ss_clearBnEmaRsiStV2Mode;
     sharedSocketState.setSimple930Active     = orig.ss_setSimple930Active;
     sharedSocketState.clearSimple930         = orig.ss_clearSimple930;
     fs.writeFileSync     = orig.fs_writeFileSync;
@@ -1710,6 +1736,8 @@ const MODE_TO_MODULE = {
   "pa-paper":       "../routes/paPaper",
   "bb_rsi-paper":    "../routes/bbRsiPaper",
   "ema_rsi_st-paper":    "../routes/emaRsiStPaper",
+  "ema_rsi_st_v2-paper": "../routes/emaRsiStV2Paper",
+  "bn_ema_rsi_st_v2-paper": "../routes/bnEmaRsiStV2Paper",
   "orb-paper":      "../routes/orbPaper",
   "ema9vwap-paper": "../routes/ema9vwapPaper",
   "trend-pb-paper": "../routes/trendPbPaper",
@@ -2318,6 +2346,9 @@ function replayPreflight() {
   if (sharedSocketState.isEarlyBirdActive && sharedSocketState.isEarlyBirdActive()) activeModes.push(sharedSocketState.getEarlyBirdMode() || "early_bird");
   if (sharedSocketState.isRsiPivotStActive && sharedSocketState.isRsiPivotStActive()) activeModes.push(sharedSocketState.getRsiPivotStMode() || "rsi_pivot_st");
   if (sharedSocketState.isBnPivotRsiStActive && sharedSocketState.isBnPivotRsiStActive()) activeModes.push(sharedSocketState.getBnPivotRsiStMode() || "bn_pivot_rsi_st");
+  if (sharedSocketState.isEmaRsiStV2Active && sharedSocketState.isEmaRsiStV2Active()) activeModes.push(sharedSocketState.getEmaRsiStV2Mode() || "ema_rsi_st_v2");
+  if (sharedSocketState.isEmaRsiStV2Active && sharedSocketState.isEmaRsiStV2Active()) activeModes.push(sharedSocketState.getEmaRsiStV2Mode() || "ema_rsi_st_v2");
+  if (sharedSocketState.isBnEmaRsiStV2Active && sharedSocketState.isBnEmaRsiStV2Active()) activeModes.push(sharedSocketState.getBnEmaRsiStV2Mode() || "bn_ema_rsi_st_v2");
   if (sharedSocketState.isSimple930Active && sharedSocketState.isSimple930Active()) activeModes.push(sharedSocketState.getSimple930Mode() || "simple930");
   if (activeModes.length > 0) {
     return {
@@ -2381,6 +2412,8 @@ function forceClearSharedState() {
     early_bird: sharedSocketState.getEarlyBirdMode ? sharedSocketState.getEarlyBirdMode() : null,
     rsi_pivot_st: sharedSocketState.getRsiPivotStMode ? sharedSocketState.getRsiPivotStMode() : null,
     bn_pivot_rsi_st: sharedSocketState.getBnPivotRsiStMode ? sharedSocketState.getBnPivotRsiStMode() : null,
+    ema_rsi_st_v2: sharedSocketState.getEmaRsiStV2Mode ? sharedSocketState.getEmaRsiStV2Mode() : null,
+    bn_ema_rsi_st_v2: sharedSocketState.getBnEmaRsiStV2Mode ? sharedSocketState.getBnEmaRsiStV2Mode() : null,
     simple930: sharedSocketState.getSimple930Mode ? sharedSocketState.getSimple930Mode() : null,
     replayInProgress: _replayInProgress,
   };
@@ -2398,6 +2431,9 @@ function forceClearSharedState() {
   if (sharedSocketState.clearEarlyBird) sharedSocketState.clearEarlyBird();
   if (sharedSocketState.clearRsiPivotSt) sharedSocketState.clearRsiPivotSt();
   if (sharedSocketState.clearBnPivotRsiStMode) sharedSocketState.clearBnPivotRsiStMode();
+  if (sharedSocketState.clearEmaRsiStV2Mode) sharedSocketState.clearEmaRsiStV2Mode();
+  if (sharedSocketState.clearEmaRsiStV2Mode) sharedSocketState.clearEmaRsiStV2Mode();
+  if (sharedSocketState.clearBnEmaRsiStV2Mode) sharedSocketState.clearBnEmaRsiStV2Mode();
   if (sharedSocketState.clearSimple930) sharedSocketState.clearSimple930();
   _replayInProgress = false;
   return { ok: true, cleared: before };

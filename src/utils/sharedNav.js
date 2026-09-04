@@ -29,6 +29,14 @@ const STRATEGY_MODES = [
   { mode: 'HA_SCALP',   label: 'HA Scalp', envKey: 'HA_SCALP_MODE_ENABLED'         },
   { mode: 'RSI_PIVOT_ST', label: 'RSI Pivot ST', envKey: 'RSI_PIVOT_ST_MODE_ENABLED' },
   { mode: 'BN_PIVOT_RSI_ST', label: 'BN Pivot RSI ST', envKey: 'BN_PIVOT_RSI_ST_MODE_ENABLED' },
+  // envDefault 'false': V2 ships dark. Without it enabledStrategies() below would
+  // default it ON and Start-All, the consolidated report and edge analytics would
+  // all include a strategy the sidebar and Settings show as disabled.
+  { mode: 'EMA_RSI_ST_V2', label: 'EMA_RSI_ST_V2', envKey: 'EMA_RSI_ST_V2_MODE_ENABLED', envDefault: 'false' },
+  // Same engine on NIFTY BANK. envDefault 'false' for the same reason as its
+  // NIFTY sibling: it must stay out of Start-All, the consolidated report and
+  // edge analytics until it is deliberately switched on.
+  { mode: 'BN_EMA_RSI_ST_V2', label: 'BN EMA_RSI_ST_V2', envKey: 'BN_EMA_RSI_ST_V2_MODE_ENABLED', envDefault: 'false' },
   { mode: 'SIMPLE930', label: 'SIMPLE_9:30', envKey: 'SIMPLE930_MODE_ENABLED' },
   { mode: 'EARLYBIRD',  label: 'EarlyBird',    envKey: 'EARLYBIRD_MODE_ENABLED'  },
 ];
@@ -37,7 +45,9 @@ const STRATEGY_MODES = [
 // Read from process.env on every call — Settings saves mutate process.env live,
 // so callers must not cache the result across requests.
 function enabledStrategies() {
-  return STRATEGY_MODES.filter(s => (process.env[s.envKey] || 'true').toLowerCase() === 'true');
+  // A row may declare envDefault to ship OFF; everything legacy defaults ON.
+  return STRATEGY_MODES.filter(
+    s => (process.env[s.envKey] || s.envDefault || 'true').toLowerCase() === 'true');
 }
 
 function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
@@ -53,6 +63,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   let _earlyBirdMode = null;
   let _rsiPivotStMode = null;
   let _bnPivotRsiStMode = null;
+  let _emaRsiStV2Mode = null;
   let _simple930Mode = null;
   let _anyTradeActive = false;
   try {
@@ -68,6 +79,8 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     _earlyBirdMode = sss.getEarlyBirdMode ? sss.getEarlyBirdMode() : null;
     _rsiPivotStMode = sss.getRsiPivotStMode ? sss.getRsiPivotStMode() : null;
     _bnPivotRsiStMode = sss.getBnPivotRsiStMode ? sss.getBnPivotRsiStMode() : null;
+    _emaRsiStV2Mode = sss.getEmaRsiStV2Mode ? sss.getEmaRsiStV2Mode() : null;
+    _bnEmaRsiStV2Mode = sss.getBnEmaRsiStV2Mode ? sss.getBnEmaRsiStV2Mode() : null;
     _simple930Mode = sss.getSimple930Mode ? sss.getSimple930Mode() : null;
     _anyTradeActive = sss.isAnyActive ? sss.isAnyActive() : false;
   } catch (_) {}
@@ -106,6 +119,11 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const earlyBirdModeOn = (process.env.EARLYBIRD_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const rsiPivotStModeOn = (process.env.RSI_PIVOT_ST_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const bnPivotRsiStModeOn = (process.env.BN_PIVOT_RSI_ST_MODE_ENABLED || 'true').toLowerCase() === 'true';
+  // EMA_RSI_ST_V2 — defaults OFF, unlike V1's 'true'. A brand-new, unvalidated
+  // strategy ships hidden until it is deliberately switched on in Settings.
+  const emaRsiStV2ModeOn = (process.env.EMA_RSI_ST_V2_MODE_ENABLED || 'false').toLowerCase() === 'true';
+  // BN_EMA_RSI_ST_V2 — the same engine on NIFTY BANK. Also defaults OFF.
+  const bnEmaRsiStV2ModeOn = (process.env.BN_EMA_RSI_ST_V2_MODE_ENABLED || 'false').toLowerCase() === 'true';
   const simple930ModeOn = (process.env.SIMPLE930_MODE_ENABLED || 'true').toLowerCase() === 'true';
 
   // ── Per-module menu-visibility toggles (managed from Settings page) ──
@@ -182,6 +200,20 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const showBnPivotRsiStPaper    = (process.env.UI_SHOW_BN_PIVOT_RSI_ST_PAPER    || 'true').toLowerCase()  === 'true';
   const showBnPivotRsiStLive     = (process.env.UI_SHOW_BN_PIVOT_RSI_ST_LIVE     || 'true').toLowerCase()  === 'true';
   const showBnPivotRsiStHistory  = (process.env.UI_SHOW_BN_PIVOT_RSI_ST_HISTORY  || 'true').toLowerCase()  === 'true';
+  // EMA_RSI_ST_V2 — the EMA_RSI_ST clone with a SuperTrend-only stop. Whole
+  // group is gated by EMA_RSI_ST_V2_MODE_ENABLED (default off) above; these
+  // only pick which of its pages show once the group is on.
+  const showEmaRsiStV2Backtest    = (process.env.UI_SHOW_EMA_RSI_ST_V2_BACKTEST     || 'true').toLowerCase()  === 'true';
+  const showEmaRsiStV2Paper       = (process.env.UI_SHOW_EMA_RSI_ST_V2_PAPER        || 'true').toLowerCase()  === 'true';
+  const showEmaRsiStV2LiveHarness = (process.env.UI_SHOW_EMA_RSI_ST_V2_LIVE_HARNESS || 'false').toLowerCase() === 'true';
+  const showEmaRsiStV2History     = (process.env.UI_SHOW_EMA_RSI_ST_V2_HISTORY      || 'true').toLowerCase()  === 'true';
+  // BN_EMA_RSI_ST_V2 (NIFTY BANK) — whole group is gated by
+  // BN_EMA_RSI_ST_V2_MODE_ENABLED (default off) above; these only pick which of
+  // its pages show once the group is on.
+  const showBnEmaRsiStV2Backtest    = (process.env.UI_SHOW_BN_EMA_RSI_ST_V2_BACKTEST     || 'true').toLowerCase()  === 'true';
+  const showBnEmaRsiStV2Paper       = (process.env.UI_SHOW_BN_EMA_RSI_ST_V2_PAPER        || 'true').toLowerCase()  === 'true';
+  const showBnEmaRsiStV2LiveHarness = (process.env.UI_SHOW_BN_EMA_RSI_ST_V2_LIVE_HARNESS || 'false').toLowerCase() === 'true';
+  const showBnEmaRsiStV2History     = (process.env.UI_SHOW_BN_EMA_RSI_ST_V2_HISTORY      || 'true').toLowerCase()  === 'true';
   // SIMPLE_9:30 — never traded; ships visible but its Live page is triple-gated to dry-run.
   const showSimple930Backtest = (process.env.UI_SHOW_SIMPLE930_BACKTEST    || 'true').toLowerCase()  === 'true';
   const showSimple930Paper    = (process.env.UI_SHOW_SIMPLE930_PAPER       || 'true').toLowerCase()  === 'true';
@@ -207,6 +239,8 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const haScalpKeys = ['haScalpBacktest', 'haScalpPaper', 'haScalpLive', 'haScalpHistory'];
   const rsiPivotStKeys = ['rsiPivotStBacktest', 'rsiPivotStPaper', 'rsiPivotStLive', 'rsiPivotStHistory'];
   const bnPivotRsiStKeys = ['bnPivotRsiStBacktest', 'bnPivotRsiStPaper', 'bnPivotRsiStLive', 'bnPivotRsiStHistory'];
+  const emaRsiStV2Keys = ['emaRsiStV2Backtest', 'emaRsiStV2Paper', 'emaRsiStV2LiveHarness', 'emaRsiStV2History'];
+  const bnEmaRsiStV2Keys = ['bnEmaRsiStV2Backtest', 'bnEmaRsiStV2Paper', 'bnEmaRsiStV2LiveHarness', 'bnEmaRsiStV2History'];
   const simple930Keys = ['simple930Backtest', 'simple930Paper', 'simple930Live', 'simple930History'];
   const earlyBirdKeys = ['earlyBirdBacktest', 'earlyBirdPaper', 'earlyBirdLive', 'earlyBirdHistory'];
   // Dashboard (top-level) and System are collapsible groups too, so the whole
@@ -224,18 +258,22 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const isHaScalpOpen  = haScalpKeys.includes(activePage);
   const isRsiPivotStOpen = rsiPivotStKeys.includes(activePage);
   const isBnPivotRsiStOpen = bnPivotRsiStKeys.includes(activePage);
+  const isEmaRsiStV2Open = emaRsiStV2Keys.includes(activePage);
+  const isBnEmaRsiStV2Open = bnEmaRsiStV2Keys.includes(activePage);
   const isSimple930Open = simple930Keys.includes(activePage);
   const isEarlyBirdOpen = earlyBirdKeys.includes(activePage);
   const isSystemOpen    = systemKeys.includes(activePage);
   // NIFTY BANK pages — every item key of every strategy nested under the BANK
   // NIFTY parent. Each new BANKNIFTY strategy adds its own key list here so the
   // parent opens on its pages.
-  const bankNiftyKeys = [...bnPivotRsiStKeys];
+  const bankNiftyKeys = [...bnPivotRsiStKeys, ...bnEmaRsiStV2Keys];
   // Pages that live outside every group (Real-Time monitor, docs, …) used to see
   // the ungrouped top-level links; keep Dashboard open for them so the sidebar is
   // never rendered fully collapsed.
   const anyGroupOpen = isTradingOpen || isBbRsiOpen || isPAOpen || isOrbOpen || isEma9vwapOpen
     || isTrendPbOpen || isTdsOpen || isHaScalpOpen || isRsiPivotStOpen || isBnPivotRsiStOpen || isSimple930Open
+    || isEmaRsiStV2Open
+    || isBnEmaRsiStV2Open
     || isEarlyBirdOpen || isSystemOpen;
   const isDashboardOpen = dashboardKeys.includes(activePage) || !anyGroupOpen;
 
@@ -253,6 +291,8 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const earlyBirdPaperRunning = _earlyBirdMode === 'EARLY_BIRD_PAPER';
   const rsiPivotStPaperRunning = _rsiPivotStMode === 'RSI_PIVOT_ST_PAPER';
   const bnPivotRsiStPaperRunning = _bnPivotRsiStMode === 'BN_PIVOT_RSI_ST_PAPER';
+  const emaRsiStV2PaperRunning = _emaRsiStV2Mode === 'EMA_RSI_ST_V2_PAPER';
+  const bnEmaRsiStV2PaperRunning = _bnEmaRsiStV2Mode === 'BN_EMA_RSI_ST_V2_PAPER';
   const simple930PaperRunning = _simple930Mode === 'SIMPLE930_PAPER';
 
   // Build a ema_rsi_st items list with per-feature toggle
@@ -346,6 +386,26 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     ...(showBnPivotRsiStPaper    ? [{ key: 'bnPivotRsiStPaper',    href: '/bn-pivot-rsi-st-paper/status', icon: '📋', label: 'Paper'    }] : []),
     ...(showBnPivotRsiStLive && !bnPivotRsiStPaperRunning ? [{ key: 'bnPivotRsiStLive', href: '/bn-pivot-rsi-st-live', icon: '📡', label: 'Live' }] : []),
     ...(showBnPivotRsiStHistory  ? [{ key: 'bnPivotRsiStHistory',  href: '/bn-pivot-rsi-st-paper/history', icon: '📜', label: 'History' }] : []),
+  ];
+
+  const emaRsiStV2Items = [
+    ...(showEmaRsiStV2Backtest ? [{ key: 'emaRsiStV2Backtest', href: '/ema_rsi_st_v2-backtest',     icon: '🔍', label: 'Backtest' }] : []),
+    ...(showEmaRsiStV2Paper    ? [{ key: 'emaRsiStV2Paper',    href: '/ema_rsi_st_v2-paper/status', icon: '📋', label: 'Paper'    }] : []),
+    // V2 has no native Live route — live runs through the paper-wrapping harness
+    // only, exactly as TREND_PB does. Hidden while Paper is running, since the
+    // two are mutually exclusive in sharedSocketState.
+    ...(showEmaRsiStV2LiveHarness && !emaRsiStV2PaperRunning ? [{ key: 'emaRsiStV2LiveHarness', href: '/ema_rsi_st_v2-live-harness', icon: '🔧', label: 'Live (Harness)' }] : []),
+    ...(showEmaRsiStV2History  ? [{ key: 'emaRsiStV2History',  href: '/ema_rsi_st_v2-paper/history', icon: '📜', label: 'History' }] : []),
+  ];
+
+  const bnEmaRsiStV2Items = [
+    ...(showBnEmaRsiStV2Backtest ? [{ key: 'bnEmaRsiStV2Backtest', href: '/bn_ema_rsi_st_v2-backtest',     icon: '🔍', label: 'Backtest' }] : []),
+    ...(showBnEmaRsiStV2Paper    ? [{ key: 'bnEmaRsiStV2Paper',    href: '/bn_ema_rsi_st_v2-paper/status', icon: '📋', label: 'Paper'    }] : []),
+    // No native Live route, exactly as the NIFTY sibling — live runs through the
+    // paper-wrapping harness only. Hidden while Paper is running, since the two
+    // are mutually exclusive in sharedSocketState.
+    ...(showBnEmaRsiStV2LiveHarness && !bnEmaRsiStV2PaperRunning ? [{ key: 'bnEmaRsiStV2LiveHarness', href: '/bn_ema_rsi_st_v2-live-harness', icon: '🔧', label: 'Live (Harness)' }] : []),
+    ...(showBnEmaRsiStV2History  ? [{ key: 'bnEmaRsiStV2History',  href: '/bn_ema_rsi_st_v2-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 
   const simple930Items = [
@@ -450,6 +510,23 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       parent: 'banknifty',
       items: bnPivotRsiStItems,
     }] : []),
+    // EMA_RSI_ST_V2 — a NIFTY strategy, so it sits under the NIFTY parent
+    // alongside V1. Its own section rather than extra items inside V1's: the two
+    // are separate strategies with separate settings, positions and sockets.
+    ...(emaRsiStV2ModeOn ? [{
+      header: 'EMA_RSI_ST_V2', collapsible: true, collapsed: !isEmaRsiStV2Open,
+      groupId: 'nav-ema_rsi_st_v2',
+      parent: 'nifty',
+      items: emaRsiStV2Items,
+    }] : []),
+    // The same engine on NIFTY BANK — so it sits under the BANK NIFTY parent
+    // beside PIVOT RSI ST, not under NIFTY with its sibling.
+    ...(bnEmaRsiStV2ModeOn ? [{
+      header: 'EMA_RSI_ST_V2', collapsible: true, collapsed: !isBnEmaRsiStV2Open,
+      groupId: 'nav-bn_ema_rsi_st_v2',
+      parent: 'banknifty',
+      items: bnEmaRsiStV2Items,
+    }] : []),
     // The NIFTY and BANK NIFTY parents render here — after Dashboard, before
     // System. Every section carrying a `parent` is nested inside one of them.
     { parentsAnchor: true },
@@ -548,6 +625,22 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
       : '';
 
+    const emaRsiStV2LiveBadge = p.key === 'emaRsiStV2LiveHarness' && _emaRsiStV2Mode === 'EMA_RSI_ST_V2_LIVE'
+      ? `<span class="sb-nav-badge live">LIVE</span>`
+      : '';
+
+    const emaRsiStV2PaperBadge = p.key === 'emaRsiStV2Paper' && _emaRsiStV2Mode === 'EMA_RSI_ST_V2_PAPER'
+      ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
+      : '';
+
+    const bnEmaRsiStV2LiveBadge = p.key === 'bnEmaRsiStV2LiveHarness' && _bnEmaRsiStV2Mode === 'BN_EMA_RSI_ST_V2_LIVE'
+      ? `<span class="sb-nav-badge live">LIVE</span>`
+      : '';
+
+    const bnEmaRsiStV2PaperBadge = p.key === 'bnEmaRsiStV2Paper' && _bnEmaRsiStV2Mode === 'BN_EMA_RSI_ST_V2_PAPER'
+      ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
+      : '';
+
     const simple930LiveBadge = p.key === 'simple930Live' && _simple930Mode === 'SIMPLE930_LIVE'
       ? `<span class="sb-nav-badge live">LIVE</span>`
       : '';
@@ -558,7 +651,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
 
     return `<a href="${p.href}" class="sb-nav-item${isActive ? ' active' : ''}">
       <span class="sb-nav-icon">${p.icon}</span> ${p.label}
-      ${liveBadge}${runningBadge}${bbRsiLiveBadge}${bbRsiPaperBadge}${paLiveBadge}${paPaperBadge}${orbLiveBadge}${orbPaperBadge}${tdsLiveBadge}${tdsPaperBadge}${haScalpLiveBadge}${haScalpPaperBadge}${rsiPivotStLiveBadge}${rsiPivotStPaperBadge}${bnPivotRsiStLiveBadge}${bnPivotRsiStPaperBadge}${simple930LiveBadge}${simple930PaperBadge}
+      ${liveBadge}${runningBadge}${bbRsiLiveBadge}${bbRsiPaperBadge}${paLiveBadge}${paPaperBadge}${orbLiveBadge}${orbPaperBadge}${tdsLiveBadge}${tdsPaperBadge}${haScalpLiveBadge}${haScalpPaperBadge}${rsiPivotStLiveBadge}${rsiPivotStPaperBadge}${bnPivotRsiStLiveBadge}${bnPivotRsiStPaperBadge}${emaRsiStV2LiveBadge}${emaRsiStV2PaperBadge}${simple930LiveBadge}${simple930PaperBadge}
     </a>`;
   }
 
@@ -2169,6 +2262,8 @@ window.__ltInit = true;
     '.mode-ha_scalp{color:#c2410c!important;}',
     '.mode-rsi_pivot_st{color:#c2410c!important;}',
     '.mode-bn_pivot_rsi_st{color:#4d7c0f!important;}',
+    '.mode-ema_rsi_st_v2{color:#0369a1!important;}',
+    '.mode-bn_ema_rsi_st_v2{color:#0f766e!important;}',
     '.mode-simple930{color:#c2410c!important;}',
     '.brk-action,.brk-action.re-login{color:#1d4ed8!important;}',
     '.brk-wallet-sub .zero,.pnl-flat,.ms-caret,.log-time,.da-empty,.bc-link,.tbar label,.pager label,.run-bar label,#dashRange label{color:#4b5769!important;}',

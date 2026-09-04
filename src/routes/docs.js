@@ -24,6 +24,8 @@ const { renderMarkdown, escapeHtml } = require("../utils/markdown");
  */
 const GUIDE_MODE_BY_FILE = {
   "ema_rsi_st_strategy_guide.html":    "EMA_RSI_ST",
+  "ema_rsi_st_v2_strategy_guide.html": "EMA_RSI_ST_V2",
+  "bn_ema_rsi_st_v2_strategy_guide.html": "BN_EMA_RSI_ST_V2",
   "bb_rsi_strategy_guide.html":        "BB_RSI",
   "price_action_strategy_guide.html":  "PA",
   "orb_strategy_guide.html":           "ORB",
@@ -816,6 +818,27 @@ const GUIDE_STATUS = {
     { type: "bool", label: "Opposite-Side Cooldown", key: "EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_ENABLED", def: "true" },
     { type: "bool", label: "Expiry-Day-Only", key: "TRADE_EXPIRY_DAY_ONLY", def: "false" },
   ] }] },
+  // EMA_RSI_ST_V2 — a separate strategy from V1: every key below is V2's own.
+  // The mode toggle defaults FALSE (V1 defaults true), so the guide stays hidden
+  // until it is switched on in Settings.
+  "EMA_RSI_ST_V2_Strategy_Guide.html": { title: "EMA_RSI_ST_V2 — Live Configuration", groups: [{ rows: [
+    { type: "bool", label: "EMA_RSI_ST_V2 Mode (sidebar + Settings section)", key: "EMA_RSI_ST_V2_MODE_ENABLED", def: "false" },
+    { type: "live", label: "Live Orders (Zerodha)", enableKey: "EMA_RSI_ST_V2_LIVE_ENABLED", dryKey: "EMA_RSI_ST_V2_LIVE_DRY_RUN" },
+    { type: "bool", label: "Confirmation Candle", key: "EMA_RSI_ST_V2_CONFIRM_CANDLE_ENABLED", def: "true" },
+    { type: "bool", label: "Opposite-Side Cooldown", key: "EMA_RSI_ST_V2_OPPOSITE_SIDE_COOLDOWN_ENABLED", def: "true" },
+    { type: "value", label: "SuperTrend Period", key: "EMA_RSI_ST_V2_SUPERTREND_PERIOD", def: "10" },
+    { type: "value", label: "SuperTrend Multiplier", key: "EMA_RSI_ST_V2_SUPERTREND_MULT", def: "2" },
+  ] }] },
+  // The same engine on NIFTY BANK — every key below is its own BN_ one, so the
+  // guide reads the NIFTY BANK settings, not the NIFTY ones.
+  "BN_EMA_RSI_ST_V2_Strategy_Guide.html": { title: "BN EMA_RSI_ST_V2 (NIFTY BANK) — Live Configuration", groups: [{ rows: [
+    { type: "bool", label: "BN EMA_RSI_ST_V2 Mode (sidebar + Settings section)", key: "BN_EMA_RSI_ST_V2_MODE_ENABLED", def: "false" },
+    { type: "live", label: "Live Orders (Zerodha)", enableKey: "BN_EMA_RSI_ST_V2_LIVE_ENABLED", dryKey: "BN_EMA_RSI_ST_V2_LIVE_DRY_RUN" },
+    { type: "bool", label: "Confirmation Candle", key: "BN_EMA_RSI_ST_V2_CONFIRM_CANDLE_ENABLED", def: "true" },
+    { type: "bool", label: "Opposite-Side Cooldown", key: "BN_EMA_RSI_ST_V2_OPPOSITE_SIDE_COOLDOWN_ENABLED", def: "true" },
+    { type: "value", label: "SuperTrend Period", key: "BN_EMA_RSI_ST_V2_SUPERTREND_PERIOD", def: "10" },
+    { type: "value", label: "SuperTrend Multiplier", key: "BN_EMA_RSI_ST_V2_SUPERTREND_MULT", def: "2" },
+  ] }] },
   "BB_RSI_Strategy_Guide.html": { title: "BB_RSI — Live Configuration", groups: [{ rows: [
     { type: "bool", label: "BB_RSI Mode (sidebar + Settings section)", key: "BB_RSI_MODE_ENABLED", def: "true" },
     { type: "live", label: "Live Orders (Fyers)", enableKey: "BB_RSI_LIVE_ENABLED", dryKey: "BB_RSI_LIVE_DRY_RUN" },
@@ -909,6 +932,8 @@ const GUIDE_STATUS = {
     ] },
     { heading: "Strategy master toggles", rows: [
       { type: "bool", label: "EMA_RSI_ST Mode", key: "EMA_RSI_ST_MODE_ENABLED", def: "true" },
+      { type: "bool", label: "EMA_RSI_ST_V2 Mode", key: "EMA_RSI_ST_V2_MODE_ENABLED", def: "false" },
+      { type: "bool", label: "BN EMA_RSI_ST_V2 Mode (NIFTY BANK, monthly options)", key: "BN_EMA_RSI_ST_V2_MODE_ENABLED", def: "false" },
       { type: "bool", label: "BB_RSI Mode", key: "BB_RSI_MODE_ENABLED", def: "true" },
       { type: "bool", label: "Price Action Mode", key: "PA_MODE_ENABLED", def: "true" },
       { type: "bool", label: "ORB Mode", key: "ORB_MODE_ENABLED", def: "true" },

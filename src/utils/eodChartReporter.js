@@ -65,6 +65,10 @@ const STRATEGIES = [
   { group: "RSI_PIVOT_ST", label: "RSI Pivot ST",      module: "../routes/rsiPivotStPaper" },
   // Same engine on NIFTY BANK.
   { group: "BN_PIVOT_RSI_ST", label: "BN Pivot RSI ST", module: "../routes/bnPivotRsiStPaper" },
+  // The EMA_RSI_ST clone with a SuperTrend-only stop — its own paper route.
+  { group: "EMA_RSI_ST_V2", label: "EMA_RSI_ST_V2", module: "../routes/emaRsiStV2Paper" },
+  // The same engine on NIFTY BANK — its own paper route, its own chart.
+  { group: "BN_EMA_RSI_ST_V2", label: "BN_EMA_RSI_ST_V2 (NIFTY BANK)", module: "../routes/bnEmaRsiStV2Paper" },
   // SIMPLE_9:30 draws the OPTION PREMIUM of the leg it held, not a spot chart —
   // that is the only chart any of its rules read.
   { group: "SIMPLE930",    label: "SIMPLE 9:30",       module: "../routes/simple930Paper" },

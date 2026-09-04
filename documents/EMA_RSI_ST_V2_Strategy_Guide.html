@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EMA_RSI_ST_V2 — Strategy Guide</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0 18px 80px;
+    background: #0d1117; color: #c9d1d9;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.65; font-size: 16px;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; }
+  header.hero {
+    margin: 0 -18px 8px; padding: 40px 26px 30px;
+    background: linear-gradient(135deg, #161b22 0%, #10222e 100%);
+    border-bottom: 3px solid #38bdf8;
+  }
+  header.hero .kicker { color: #38bdf8; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; font-size: 0.72rem; }
+  header.hero h1 { margin: 6px 0 8px; font-size: 2rem; color: #f0f6fc; }
+  header.hero p { margin: 0; color: #8b949e; max-width: 640px; }
+  h2 { color: #f0f6fc; font-size: 1.35rem; margin: 38px 0 12px; padding-bottom: 8px; border-bottom: 1px solid #21262d; }
+  h3 { color: #58a6ff; font-size: 1.05rem; margin: 24px 0 8px; }
+  code { background: rgba(110,118,129,0.18); color: #7dd3fc; padding: 1.5px 6px; border-radius: 4px; font-size: 0.85em; font-family: 'SF Mono', ui-monospace, Menlo, monospace; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 18px 22px; margin: 14px 0; }
+  .card.accent { border-left: 4px solid #38bdf8; }
+  .card.warn { border-left: 4px solid #d29922; background: #1c1a12; }
+  .card.bad  { border-left: 4px solid #f85149; background: #1c1214; }
+  ul, ol { padding-left: 22px; }
+  li { margin: 5px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.88rem; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #21262d; vertical-align: top; }
+  th { color: #8b949e; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.6px; }
+  td code { white-space: nowrap; }
+  .flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 14px 0; }
+  .flow .step { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 8px 14px; font-size: 0.85rem; }
+  .flow .arrow { color: #38bdf8; font-weight: 700; }
+  .pill { display: inline-block; background: rgba(56,189,248,0.15); color: #38bdf8; border: 1px solid rgba(56,189,248,0.35); border-radius: 20px; padding: 2px 12px; font-size: 0.78rem; font-weight: 600; }
+  .muted { color: #6e7681; font-size: 0.85rem; }
+  a { color: #58a6ff; }
+  .num { font-family: 'SF Mono', ui-monospace, Menlo, monospace; color: #f0f6fc; }
+  /* TradingView-style chart wrapper */
+  .tv-chart { margin: 16px 0 6px; border: 1px solid #30363d; border-radius: 10px; overflow: hidden; background: #0d1626; }
+  .tv-chart .tv-svg { width: 100%; height: auto; display: block; }
+  .tv-cap { color: #8b949e; font-size: 0.82rem; margin: 0 0 16px; padding-left: 4px; }
+  .tv-cap b { color: #c9d1d9; }
+  .tv-empty { color: #6e7681; padding: 40px; text-align: center; font-size: 0.9rem; }
+
+/* ── MOBILE (shared block — keep in sync across all guides) ── */
+  @media (max-width: 768px) {
+    /* The setting tables are three columns of prose. A table cannot lay out
+       narrower than its min-content width, so at 393px they ran up to 259px past
+       the right edge and the browser zoomed the whole guide out to fit. Each one
+       now scrolls inside its own box and the page keeps the phone's width. */
+    table { display: block; width: 100%; max-width: 100%; overflow-x: auto;
+            -webkit-overflow-scrolling: touch; }
+    /* Long env keys wrap; fenced blocks keep their formatting and scroll. */
+    code { overflow-wrap: anywhere; word-break: break-word; }
+    pre { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    pre code { overflow-wrap: normal; word-break: normal; }
+    img, svg, canvas { max-width: 100%; }
+    .tv-chart { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    /* .cols is a two-up flex row with no wrap — the second card was pushed off
+       screen rather than dropping under the first. */
+    .cols { flex-direction: column; }
+    .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+    [style*="grid-template-columns"] { grid-template-columns: 1fr !important; }
+    /* Contents links are the guide's only navigation, and they were 18-31px.
+       The three guides each mark theirs up differently: nav.toc (ORB, EMA9VWAP,
+       Setup), a nav.no-print link bar (Price Action) and a two-column card list
+       (BB_RSI, EMA_RSI_ST, Trend Pullback). */
+    nav.toc a, .toc a, nav.no-print .container a,
+    .card li a { min-height: 44px; display: inline-flex; align-items: center; }
+    /* A two-column contents list leaves ~170px per column at 393px. */
+    ul[style*="columns"], ol[style*="columns"] { columns: 1 !important; -webkit-columns: 1 !important; }
+    .hero { padding-left: 16px; padding-right: 16px; }
+    .hero h1 { font-size: 1.7rem; }
+    .section { padding: 20px 14px; }
+  }
+/* ── END MOBILE ── */</style></head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <div class="kicker">Strategy · NIFTY 50 · Fyers data · Zerodha orders · Plain-English edition</div>
+  <h1>EMA_RSI_ST_V2</h1>
+  <p>A stripped-down rewrite of EMA_RSI_ST. Three things have to line up on one finished five-minute candle — the trend, the close, and the momentum reading — and then a single SuperTrend line does all the stopping. No target, no second stop, no third opinion.</p>
+  <p class="muted" style="margin-top:10px;">Updated 2026-09-05 &nbsp;·&nbsp; plain-English edition &nbsp;·&nbsp; every chart below was produced by running the real engine on real 2025 NIFTY candles</p>
+</header>
+
+<!--LIVE_STATUS_PANEL-->
+
+<div class="card bad">
+  <strong>Read this first.</strong> V2 has <b>never traded live</b> and has <b>zero paper sessions</b>. The only evidence that exists is a backtest, and the backtest says two opposite things depending on how you measure it: <b>+2,255 spot points</b> when you count NIFTY points and ignore costs, but <b>&minus;&#8377;77,978</b> when you run the real backtest route with modelled option premiums and a slippage haircut. Both numbers are in this guide. The second one is the one that matters, and it is negative.
+</div>
+
+<div class="card">
+  <strong>What&#39;s inside</strong>
+  <ol style="margin:10px 0 0; columns:2; column-gap:30px;">
+    <li><a href="#idea">The idea in one minute</a></li>
+    <li><a href="#glossary">Words you&#39;ll see</a></li>
+    <li><a href="#entry">The entry — three rules, one candle</a></li>
+    <li><a href="#confirm">The confirmation candle</a></li>
+    <li><a href="#stop">The stop — SuperTrend and nothing else</a></li>
+    <li><a href="#vsv1">What makes V2 different from V1</a></li>
+    <li><a href="#win">A winning trade, start to finish</a></li>
+    <li><a href="#loss">A losing trade, start to finish</a></li>
+    <li><a href="#money">The money, with real numbers</a></li>
+    <li><a href="#refuse">The trades it refuses</a></li>
+    <li><a href="#risk">Safety limits</a></li>
+    <li><a href="#modes">Paper, Live, Backtest &amp; Replay</a></li>
+    <li><a href="#config">All the settings, explained</a></li>
+    <li><a href="#missing">What&#39;s still missing / not validated</a></li>
+  </ol>
+</div>
+
+<h2 id="idea">1. The idea in one minute</h2>
+
+<p>Buy in the direction the market is already going, but only once, and only when three cheap tests agree.</p>
+
+<p>The first test is the trend: the 20-candle average has to be above the 50-candle average for a Call. The second is the price itself: the candle has to <em>finish</em> above that 20-candle average, not just poke at it. The third is momentum: the RSI reading has to be on the right side of the middle. For a Put, flip all three.</p>
+
+<p>That is the whole entry. There is no profit target. The trade is held until a SuperTrend line — one line, drawn from the candles themselves — catches up to the price, or until 14:00 comes and everything is closed regardless.</p>
+
+<div class="flow">
+  <div class="step">EMA20 above EMA50</div><div class="arrow">&rarr;</div>
+  <div class="step">candle closes above EMA20</div><div class="arrow">&rarr;</div>
+  <div class="step">RSI above 52</div><div class="arrow">&rarr;</div>
+  <div class="step">next candle crosses that close</div><div class="arrow">&rarr;</div>
+  <div class="step">buy</div><div class="arrow">&rarr;</div>
+  <div class="step">hold until SuperTrend, or 14:00</div>
+</div>
+
+<div class="card accent">
+  <strong>Why a V2 at all?</strong> V1 (<code>EMA_RSI_ST</code>) grew a lot of parts — an optional EMA9 triple stack, an RSI ceiling, an EMA21 trail, a negative-candle stop, an option-premium stop, a points stop. Every one of those is a knob, and every knob is a chance to fit the past instead of the future. V2 keeps three entry rules and one stop, so there is far less to tune and far less to fool yourself with. <b>V1 is untouched.</b> They run under separate settings and share nothing.
+</div>
+
+<h2 id="glossary">2. Words you&#39;ll see</h2>
+
+<div class="card">
+  <ul style="margin:0;">
+    <li><b>EMA20 / EMA50</b> &mdash; exponential moving averages of the closing price over 20 and 50 candles. The recent candles count for more than the old ones, so they turn faster than a plain average. EMA20 above EMA50 is the usual shorthand for &quot;the short-term trend is up&quot;.</li>
+    <li><b>RSI(14)</b> &mdash; a 0&ndash;100 momentum reading over the last 14 candles. 50 is the neutral middle. Above it means buyers have had the upper hand recently; below it means sellers have.</li>
+    <li><b>SuperTrend(10, 2)</b> &mdash; a line that sits below price while the trend is up and flips above it when the trend turns. The 10 is how many candles of range it measures; the 2 is how many of those ranges it stands away from price. In V2 it is <em>only</em> a stop.</li>
+    <li><b>Finished candle</b> &mdash; a five-minute bar that has closed. V2 never reads the bar that is still forming, which is exactly why Paper and Replay give the same answer twice.</li>
+    <li><b>Trigger</b> &mdash; the closing price of the candle that passed all three rules. It is the price the <em>next</em> candle has to cross before anything is bought.</li>
+    <li><b>Tighten-only trail</b> &mdash; a stop that is allowed to move closer to price but never further away. If the SuperTrend line slips back down mid-trade, the stop stays where it was.</li>
+    <li><b>Spot points</b> &mdash; movement measured in NIFTY index points, not in rupees of option premium. The two are not the same thing, and the gap between them is the central problem in this guide.</li>
+    <li><b>CE / PE</b> &mdash; a Call option (you profit if NIFTY rises) and a Put option (you profit if it falls).</li>
+  </ul>
+</div>
+
+<h2 id="entry">3. The entry — three rules, one candle</h2>
+
+<p>Everything is decided on a <b>finished</b> five-minute candle. All three tests are read off that same candle. Not one of them is allowed to have been true an hour ago.</p>
+
+<table>
+  <tr><th>&nbsp;</th><th>CE &mdash; buy a Call</th><th>PE &mdash; buy a Put</th></tr>
+  <tr><td><b>1. Trend</b></td><td>EMA20 <b>above</b> EMA50</td><td>EMA20 <b>below</b> EMA50</td></tr>
+  <tr><td><b>2. Close</b></td><td>the candle <b>closes above</b> EMA20</td><td>the candle <b>closes below</b> EMA20</td></tr>
+  <tr><td><b>3. Momentum</b></td><td>RSI(14) <b>above 52</b></td><td>RSI(14) <b>below 48</b></td></tr>
+</table>
+
+<p>The PE side is the exact mirror of the CE side. There is no asymmetry anywhere in V2 — no side gets an extra filter or a different stop.</p>
+
+<div class="card warn">
+  <strong>Rule 2 is not the same as rule 1.</strong> EMA20 can sit above EMA50 (an uptrend) while the candle itself closes <em>below</em> EMA20 (a pullback). That is a common state, and V2 does not buy it. It wants the trend up <em>and</em> price back on top of the fast average on the same bar.
+</div>
+
+<div class="card">
+  <strong>52 and 48, not 70 and 30.</strong> Those are barely off the neutral 50. This is on purpose: rules 1 and 2 already establish direction, so the RSI test is here to veto a signal firing into obvious weakness, not to hunt for extremes. Raise <code>EMA_RSI_ST_V2_RSI_CE_MIN</code> and you get fewer, later, stronger entries — and you will miss the start of most moves.
+</div>
+
+<h2 id="confirm">4. The confirmation candle</h2>
+
+<p>The candle that passes all three rules does <b>not</b> buy anything. It only arms the trade. Default: <b>ON</b>.</p>
+
+<div class="card accent">
+  <strong>How it actually works.</strong>
+  <ol style="margin:10px 0 0;">
+    <li>A finished candle passes all three rules. Call its closing price the <b>trigger</b>.</li>
+    <li>During the <em>immediately next</em> candle, price must cross that trigger — strictly above it for a CE, strictly below for a PE.</li>
+    <li>If it does, the fill happens <b>inside that candle</b>, at the crossing price. Not at the next close.</li>
+    <li>If that one candle never crosses the trigger, the setup is dropped. It does not carry over.</li>
+  </ol>
+</div>
+
+<p>Paper and Live fill on the first tick past the trigger. The backtest fills at the same market moment through a shared helper, so all three modes agree by construction rather than by luck.</p>
+
+<div class="card warn">
+  <strong>What this buys you and what it costs you.</strong> It throws away the signals that were a one-candle spike and immediately snapped back &mdash; the classic way a moving-average rule gets whipsawed. The cost is that you never get the first candle of a move, and on a gap-and-run day the crossing price can be well above where the signal candle closed. Turning it off (<code>EMA_RSI_ST_V2_CONFIRM_CANDLE_ENABLED=false</code>) enters on the signal candle itself.
+</div>
+
+<h2 id="stop">5. The stop — SuperTrend and nothing else</h2>
+
+<div class="card accent">
+  <ul style="margin:0;">
+    <li><b>The initial stop</b> is the SuperTrend value at the moment of entry &mdash; below price for a CE, above it for a PE.</li>
+    <li><b>The trail</b> is the same line, re-read at every candle close.</li>
+    <li><b>Tighten-only.</b> A CE stop may only move up; a PE stop may only move down. A SuperTrend that loosens is ignored.</li>
+    <li><b>Enforced intra-candle.</b> The execution layer checks every tick. You do not wait for a candle to close to be stopped out.</li>
+    <li><b>Hard close at 14:00</b>, stop or no stop. Nothing is carried past it and nothing is carried overnight.</li>
+  </ul>
+</div>
+
+<h3>What is deliberately absent</h3>
+<p>No profit target. No negative-candle stop. No option-premium stop. No fixed-points stop. No EMA21 trail. No breakeven jump, no partial booking. If a trade is open, the only two things that can close it are the SuperTrend line and the clock.</p>
+
+<div class="card warn">
+  <strong>No target means the exit is always late.</strong> A SuperTrend trail gives back part of every winner &mdash; that is how a trail works. The trade that made <b>+360.1 points</b> in the worked example below did not exit at its high; it ran to 14:00 and closed there. In exchange, nothing caps how far a winner can run. The backtest bears this out: the average win is <b>+48.5 points</b> against an average loss of <b>&minus;25.7 points</b>, which is where the whole spot-points edge comes from.
+</div>
+
+<h2 id="vsv1">6. What makes V2 different from V1</h2>
+
+<p>These are deliberate removals, not oversights. If you are reading this later and think one of them should be &quot;added back&quot;, that is V1 &mdash; and V1 already exists, untouched, right next to this.</p>
+
+<table>
+  <tr><th>&nbsp;</th><th>V1 (EMA_RSI_ST)</th><th>V2</th></tr>
+  <tr><td><b>SuperTrend on entry</b></td><td>Required. A CE needs SuperTrend bullish before it will fire.</td><td><b>Not a rule at all.</b> SuperTrend is only the stop.</td></tr>
+  <tr><td><b>RSI ceiling</b></td><td>A CE is blocked at RSI &ge; 80 as &quot;overbought&quot;; a PE at RSI &le; 20.</td><td><b>No cap.</b> One threshold per side. RSI 95 is a valid CE.</td></tr>
+  <tr><td><b>EMA9 triple stack</b></td><td>Optional extra alignment test.</td><td>Gone.</td></tr>
+  <tr><td><b>EMA21</b></td><td>Computed and used as a trail.</td><td><b>Not computed anywhere.</b> Not in entry, exit or trail.</td></tr>
+  <tr><td><b>Negative-candle stop</b></td><td>Present.</td><td>Gone.</td></tr>
+  <tr><td><b>Option-premium stop</b></td><td>Present.</td><td>Gone.</td></tr>
+  <tr><td><b>Fixed-points stop</b></td><td>Present.</td><td>Gone.</td></tr>
+  <tr><td><b>Profit target</b></td><td>Present.</td><td>Gone.</td></tr>
+  <tr><td><b>The stop</b></td><td>Several, whichever fires first.</td><td><b>SuperTrend only</b>, plus the 14:00 close.</td></tr>
+</table>
+
+<div class="card bad">
+  <strong>The one honest caveat, and it is not a small one.</strong>
+  <p style="margin:10px 0 0;">SuperTrend is V2&#39;s only stop, and V2 does not test SuperTrend on entry. Those two facts collide. A setup can pass all three entry rules while the SuperTrend line is sitting on the <em>wrong side of price</em> &mdash; above the close on a CE. If that trade were opened, its stop would already be behind it: there would be <b>no protective stop at all</b>.</p>
+  <p style="margin:10px 0 0;">V2 <b>skips</b> those trades and writes the reason to the log. Measured over 2024&ndash;25 NIFTY data, that is <b>1,555 of 10,429 qualifying setups &mdash; 14.9%</b>. The remaining <b>8,874</b> fired.</p>
+  <p style="margin:10px 0 0;"><b>The side effect is worth saying plainly:</b> in practice this means a CE is never taken while SuperTrend is red. So SuperTrend still behaves like a directional filter on roughly one setup in seven, even though it is not written as an entry rule. If you ever describe V2 as &quot;no SuperTrend on entry&quot;, that is true of the rules and not quite true of the behaviour.</p>
+</div>
+
+<h2 id="win">7. A winning trade, start to finish</h2>
+
+<p>Real NIFTY 5-minute candles from <b>17 April 2025</b>, run through the real engine. Nothing below was placed by hand.</p>
+
+<div class="tv-chart" id="v2-win"></div>
+<p class="tv-cap"><b>The Call that ran to the bell.</b> At <b>11:15</b> the candle closes at <span class="num">23482.35</span>. EMA20 sits at 23410.83, above EMA50 at 23391.19 &mdash; trend up. The close is above EMA20 &mdash; rule two passes. RSI is <b>64.4</b>, past 52 &mdash; rule three passes. That close becomes the trigger. The very next candle, <b>11:20</b>, reaches a high of 23485.40, crossing it, so the fill happens intra-bar at <b>23482.35</b>. The initial stop is the SuperTrend value at the signal bar, <span class="num">23401.48</span> &mdash; about 81 points below entry. From there the stop ratchets up all afternoon and never once loosens: 23401.48 &rarr; 23420.78 &rarr; 23436.82 &rarr; 23468.04 &hellip; and by 13:55 it has climbed to <b>23790.20</b>. It is never hit. At <b>14:00</b> the hard square-off closes the trade at <span class="num">23842.40</span> &mdash; <b>+360.1 spot points</b>, held 32 candles.</p>
+
+<div class="card">
+  <strong>Read the lower panel.</strong> RSI is only 64.4 at entry &mdash; nowhere near an extreme. It then climbs into the mid-80s and <em>stays</em> there for hours. Under V1&#39;s rules this trade would have been blocked outright once RSI passed 80. That is the single clearest argument for removing the cap &mdash; and also the clearest argument for why removing it will hurt on the days the market turns straight back down from an extreme. This chart is one day, not evidence.
+</div>
+
+<h2 id="loss">8. A losing trade, start to finish</h2>
+
+<p>Real candles from <b>8 April 2025</b>. Same engine, same settings, a much shorter story.</p>
+
+<div class="tv-chart" id="v2-loss"></div>
+<p class="tv-cap"><b>Stopped in three candles.</b> At <b>11:05</b> a large green candle closes at <span class="num">22481.15</span>. EMA20 at 22363.99 is above EMA50 at 22271.33, the close is above EMA20, and RSI is <b>66.3</b>. All three rules pass, so 22481.15 becomes the trigger. At <b>11:10</b> price reaches 22487.75, crosses it, and the fill is at <b>22481.15</b>. The initial stop is the SuperTrend at the signal bar, <span class="num">22318.34</span>. But that same 11:10 candle is a large red one, and its close pulls the SuperTrend <em>up</em> to <span class="num">22342.93</span> &mdash; a tighten, so the stop moves. Price never recovers. At <b>11:25</b> the candle trades down to a low of 22323.15, through the stop, and the trade is closed at <b>22342.93</b> &mdash; <b>&minus;138.2 spot points</b>, held 3 candles.</p>
+
+<div class="card warn">
+  <strong>This is what &quot;median 25 points&quot; hides.</strong> Across the 2025 backtest the median initial stop was <b>25.1 points</b>. This trade&#39;s initial stop was 163 points away, and it still lost 138. SuperTrend spacing depends on how wide the recent candles were, so a strategy with no fixed stop has <em>no fixed risk per trade</em>. On a volatile morning the stop is far away and the loss is large; on a quiet one it is close and you are stopped by noise. Both extremes are in the numbers below.
+</div>
+
+<h2 id="money">9. The money, with real numbers</h2>
+
+<p>Two different measurements exist, and they disagree. Read both.</p>
+
+<h3>Measurement one — spot points, no costs</h3>
+<p class="muted">The real engine run over cached 2025 NIFTY 5-minute candles. Movement is counted in NIFTY index points. <b>No costs, no option premium, no slippage.</b></p>
+
+<div class="card">
+  <table>
+    <tbody>
+      <tr><td>Trades</td><td class="num">388</td></tr>
+      <tr><td>Trading days covered</td><td class="num">234 (1.66 trades per trading day)</td></tr>
+      <tr><td>Winners</td><td class="num">165 &mdash; a <b>42.5%</b> win rate</td></tr>
+      <tr><td>Losers</td><td class="num">223</td></tr>
+      <tr><td>Net</td><td class="num" style="color:#26a69a;font-weight:600;">+2,255 spot points</td></tr>
+      <tr><td>Average win</td><td class="num">+48.5 pts</td></tr>
+      <tr><td>Average loss</td><td class="num">&minus;25.7 pts</td></tr>
+      <tr><td>Exits by SuperTrend stop</td><td class="num">322</td></tr>
+      <tr><td>Exits at the 14:00 close</td><td class="num">66</td></tr>
+    </tbody>
+  </table>
+  <p style="margin:10px 0 0;">The shape is a classic trend-follower: <b>it loses more often than it wins</b>, and it survives on the winners being roughly twice the size of the losers. Only 66 trades &mdash; about one in six &mdash; ever reach 14:00; the other 322 are stopped out by the trail.</p>
+</div>
+
+<div class="card">
+  <strong>How far away the stop sits, and for how long.</strong>
+  <table style="margin-top:10px;">
+    <tr><th>&nbsp;</th><th>Median</th><th>Minimum</th><th>Maximum</th></tr>
+    <tr><td>Initial stop distance</td><td class="num">25.1 pts</td><td class="num">0.2 pts</td><td class="num">307.9 pts</td></tr>
+    <tr><td>Candles held</td><td class="num">13</td><td class="num">&mdash;</td><td class="num">41</td></tr>
+  </table>
+  <p style="margin:10px 0 0;">A <b>0.2-point</b> stop is not a stop. That trade is closed by the next tick of noise, and it is a real entry in these results, not a rounding artefact. A <b>307.9-point</b> stop at the other end is a position whose worst case is enormous. Nothing in V2 clamps either end.</p>
+</div>
+
+<h3>Measurement two — the real backtest, in rupees</h3>
+
+<div class="card bad">
+  <strong>Over 2024&ndash;25, with simulated option premiums and a 2-point slippage haircut both ways, the backtest route produced <b>552 trades</b>, a <b>33.5% win rate</b>, and a net of <b>&minus;&#8377;77,978</b>.</strong>
+  <p style="margin:10px 0 0;">So the spot-points figure is positive and the money figure is firmly negative. There is no clever reading that reconciles them &mdash; the difference <em>is</em> the answer. Being right about direction in index points does not pay for the option you had to buy to express it. Premium decay and dealing costs eat the edge, and the win rate drops from 42.5% to 33.5% once every trade has to clear a spread before it counts as a winner.</p>
+  <p style="margin:10px 0 0;">Do not quote the +2,255 figure on its own. It is the strategy&#39;s <em>signal quality</em>, not its profit.</p>
+</div>
+
+<h2 id="refuse">10. The trades it refuses</h2>
+
+<p>The most interesting refusal is the one described in section 6 &mdash; the setup that passes every entry rule but has nowhere to put a stop.</p>
+
+<div class="tv-chart" id="v2-skip"></div>
+<p class="tv-cap"><b>All three rules pass, and it still does not trade.</b> Real candles from 8 April 2025, the same session as the losing trade above. At <b>10:55</b> the candle closes at <span class="num">22374.40</span>. EMA20 is 22347.70, above EMA50 at 22257.60 &mdash; trend up. The close is above EMA20. RSI is <b>56.6</b>, past 52. Three for three, and the clock is inside the 10:30&ndash;13:00 window. But the SuperTrend line is at <span class="num">22394.36</span> &mdash; <em>above</em> the close, on the wrong side. A CE opened here would have its only stop already behind it, so V2 declines and logs why. The same thing is true at 10:50 and again at 11:00. Not until 11:05, when the big candle closes at 22481.15 and leaves SuperTrend below it, does a trade become possible &mdash; and that is the trade that lost 138 points.</p>
+
+<div class="card">
+  <strong>The other refusals.</strong>
+  <ul style="margin:10px 0 0;">
+    <li><b>Outside 10:30&ndash;13:00.</b> No entries before or after, whatever the candle says.</li>
+    <li><b>The confirmation candle never crossed the trigger.</b> One candle to cross, and only one.</li>
+    <li><b>Not enough history.</b> V2 refuses outright until it has EMA_SLOW + 5 candles &mdash; 55 bars at the defaults, which is more than a whole session, so previous days are preloaded before the day starts.</li>
+    <li><b>The day&#39;s budget is spent</b> &mdash; 2 trades done, or the loss cap hit, or two losses in a row.</li>
+    <li><b>Still in a cooldown</b> after a recent stop-out, on either side.</li>
+  </ul>
+</div>
+
+<h2 id="risk">11. Safety limits</h2>
+
+<div class="card">
+  <ul style="margin:0;">
+    <li><b>Entries only between 10:30 and 13:00 IST.</b> The open is skipped deliberately &mdash; its crosses reverse &mdash; and a late entry has no room left before the 14:00 close.</li>
+    <li><b>Maximum 2 trades a day.</b> Deliberately tight. V2 is meant to take a couple of good crosses, not grind the session.</li>
+    <li><b>&#8377;1,000 daily loss cap.</b> Reach it and the day is over. This is small &mdash; one ordinary loser can end the session, which is the intent while the strategy is unproven.</li>
+    <li><b>Stop for the day after 2 consecutive losses.</b> The usual sign the market is chopping and every cross is fake.</li>
+    <li><b>2-candle pause on the same side after a stop-out</b>, so the engine cannot re-buy the identical failed signal ten minutes later.</li>
+    <li><b>2-candle opposite-side cooldown</b>, so a stopped-out CE cannot flip straight into a PE on the next candle.</li>
+    <li><b>Hard square-off at 14:00.</b> Nothing overnight, ever.</li>
+    <li>The shared portfolio-wide cap applies on top of all of this.</li>
+  </ul>
+</div>
+
+<div class="card warn">
+  <strong>Note how the guards interact with the loss cap.</strong> At 2 trades a day and a &#8377;1,000 cap, a single bad trade can end the day before the second is ever taken. That is a deliberate throttle on an unproven strategy, not a tuned number &mdash; and it means the live trade count will be lower than the backtest&#39;s 1.66 per day suggests.
+</div>
+
+<h2 id="modes">12. Paper, Live, Backtest &amp; Replay</h2>
+
+<div class="card">
+  <p style="margin:0 0 8px;"><b>Paper</b> is the canonical surface. Every decision, fill and exit rule lives there; the other modes follow it, never the reverse.</p>
+  <p style="margin:0 0 8px;"><b>Live</b> is a harness that <em>wraps</em> Paper and forwards its decisions to the broker, so Live equals Paper by construction rather than by two implementations agreeing. It is gated three ways: <code>EMA_RSI_ST_V2_LIVE_ENABLED</code> must be on, the global <code>LIVE_HARNESS_DRY_RUN</code> must be off, and <code>EMA_RSI_ST_V2_LIVE_DRY_RUN</code> must not be on. All three ship in the safe position, so nothing places a real order out of the box.</p>
+  <p style="margin:0 0 8px;"><b>Two brokers.</b> Candles and quotes come from <b>Fyers</b>; orders go to <b>Zerodha</b> &mdash; the same split V1 uses. That is why starting Live checks both logins.</p>
+  <p style="margin:0;"><b>Replay.</b> Because nothing in V2 reads a forming candle or live spot, a recorded session replays bit-for-bit. That is the tool to use before touching a live gate: replay a paper day and confirm Live and Paper made the same decisions.</p>
+</div>
+
+<div class="card warn">
+  <strong>What the backtest can and cannot tell you.</strong> The entries are honest &mdash; the backtest drives the same signal engine and fills the confirmation candle at the same market moment through a shared helper. <b>The rupees are not.</b> There is no historical option chain in this repo, so the premium is <em>modelled</em> from a seed price and decay, and the &minus;&#8377;77,978 figure is therefore a modelled loss, not a recorded one. It is still the more truthful of the two measurements, because at least it charges you for the spread &mdash; but treat its exact size as an estimate and its <em>sign</em> as the finding.
+</div>
+
+<h2 id="config">13. All the settings, explained</h2>
+
+<p class="muted">Every key below appears in <b>Settings &rarr; EMA_RSI_ST_V2 Strategy</b>. Defaults are the ones the Settings schema ships. <b>None of these are shared with V1</b> &mdash; the two strategies tune completely independently.</p>
+
+<h3>Mode &amp; Live</h3>
+<table>
+  <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>EMA_RSI_ST_V2_MODE_ENABLED</code></td><td><code>false</code></td><td>Show the EMA_RSI_ST_V2 menu and settings. A separate strategy from EMA_RSI_ST, not a mode of it. Ships OFF because V2 is unproven &mdash; turn it on to paper-trade it.</td></tr>
+  <tr><td><code>EMA_RSI_ST_V2_PAPER_ENABLED</code></td><td><code>false</code></td><td>Allow new EMA_RSI_ST_V2 paper sessions to start. OFF blocks the Start button &mdash; use it to park the strategy without hiding it.</td></tr>
+  <tr><td><code>EMA_RSI_ST_V2_LIVE_ENABLED</code></td><td><code>false</code></td><td>Send real orders to Zerodha. NEVER traded live &mdash; paper-validate a run of sessions first. Off means the harness refuses to start unless the global dry-run is also on.</td></tr>
+  <tr><td><code>EMA_RSI_ST_V2_LIVE_DRY_RUN</code></td><td><code>false</code></td><td>Keep V2 simulated even when live orders are switched on &mdash; the broker call is written to the log but no real order leaves the machine. A per-strategy safety catch on top of the global one.</td></tr>
+</table>
+
+<h3>Signal (EMA + RSI)</h3>
+<table>
+  <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>EMA_RSI_ST_V2_EMA_FAST</code></td><td><code>20</code></td><td>The faster of the two moving averages. A CE needs it ABOVE the slow one, a PE below. Smaller reacts to a turn sooner and gives more (and noisier) signals; larger waits for a clearer trend.</td></tr>
+  <tr><td><code>EMA_RSI_ST_V2_EMA_SLOW</code></td><td><code>50</code></td><td>The slower moving average the fast one is measured against. Raise it and the trend has to be older and better established before a cross counts; lower it and crosses come thick and fast.</td></tr>
+  <tr><td><code>EMA_RSI_ST_V2_RSI_PERIOD</code></td><td><code>14</code></td><td>How many candles the RSI is measured over. 14 is the standard and what the rule assumes.</td></tr>
+  <tr><td><code>EMA_RSI_ST_V2_RSI_CE_MIN</code></td><td><code>52</code></td><td>A CE (call) is only bought when RSI on the signal candle is above this. Raise it for fewer but stronger buys; lower it and weak, barely-positive momentum starts qualifying.</td></tr>
+  <tr><td><code>EMA_RSI_ST_V2_RSI_PE_MAX</code></td><td><code>48</code></td><td>A PE (put) is only bought when RSI on the signal candle is below this. Lower it for fewer but stronger sells; raise it and mild weakness starts counting as a signal.</td></tr>
+  <tr><td><code>EMA_RSI_ST_V2_CONFIRM_CANDLE_ENABLED</code></td><td><code>true</code></td><td>The candle that crosses only ARMS the setup &mdash; entry waits for the NEXT candle to close in the same direction. Costs you the first candle of the move but skips the crosses that immediately snap back. OFF enters on the crossing candle itself.</td></tr>
+</table>
+
+<h3>Stops (SuperTrend trail — V2&#39;s only stop)</h3>
+<table>
+  <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>EMA_RSI_ST_V2_SUPERTREND_PERIOD</code></td><td><code>10</code></td><td>ATR length behind the SuperTrend line. THIS LINE IS V2&#39;S ONLY STOP &mdash; it is a trailing exit, not an entry filter, so unlike V1 the SuperTrend never blocks a trade from being taken. Longer = a slower, looser trail that gives the trade more room.</td></tr>
+  <tr><td><code>EMA_RSI_ST_V2_SUPERTREND_MULT</code></td><td><code>2</code></td><td>How many ATRs away from price the SuperTrend line sits. Smaller = a tighter trail that banks small moves but gets shaken out often; larger = more breathing room and bigger losses when it is finally hit. Again: this is the ONLY stop V2 has, not an entry filter.</td></tr>
+</table>
+
+<h3>Session window</h3>
+<table>
+  <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>EMA_RSI_ST_V2_ENTRY_START</code></td><td><code>10:30</code></td><td>No entries before this time (IST). V2 deliberately skips the open &mdash; the first hour is noisy and its crosses reverse. Move it earlier for more trades and more false starts.</td></tr>
+  <tr><td><code>EMA_RSI_ST_V2_ENTRY_END</code></td><td><code>13:00</code></td><td>No NEW entries after this time (IST). A trade opened later has too little of the day left to work, and theta is eating it. A position already open is not affected.</td></tr>
+  <tr><td><code>EMA_RSI_ST_V2_EOD_EXIT_TIME</code></td><td><code>14:00</code></td><td>Anything still open is closed at this time (IST), stop or no stop. Nothing is carried overnight. Note V2 squares off at 14:00 &mdash; much earlier than most strategies &mdash; which caps both the loss and the run.</td></tr>
+  <tr><td><code>EMA_RSI_ST_V2_WARMUP_DAYS</code></td><td><code>5</code></td><td>How many earlier trading days of candles are loaded before the session so the EMAs, RSI and SuperTrend start the day already settled. Too few and the first signals are computed from half-formed indicators.</td></tr>
+</table>
+
+<h3>Day guards</h3>
+<table>
+  <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>EMA_RSI_ST_V2_MAX_DAILY_TRADES</code></td><td><code>2</code></td><td>Stop taking new entries once this many trades are done for the day. 2 is deliberately tight &mdash; V2 is meant to take a couple of good crosses, not grind the session.</td></tr>
+  <tr><td><code>EMA_RSI_ST_V2_MAX_DAILY_LOSS</code></td><td><code>1000</code></td><td>Stop trading for the rest of the day once losses reach this much (0 = off). Raise it and a bad day can run further; lower it and one ordinary loser can end the session.</td></tr>
+  <tr><td><code>EMA_RSI_ST_V2_MAX_CONSEC_LOSSES</code></td><td><code>2</code></td><td>Halt for the day after this many losing trades back to back (0 = off) &mdash; the usual sign the market is chopping and every cross is a fake. Lower reacts sooner but also quits on ordinary bad luck.</td></tr>
+  <tr><td><code>EMA_RSI_ST_V2_SL_PAUSE_CANDLES</code></td><td><code>2</code></td><td>After a stop-out, refuse the SAME side for this many candles (0 = off). Stops the engine re-buying the identical failed signal a minute later.</td></tr>
+  <tr><td><code>EMA_RSI_ST_V2_OPPOSITE_SIDE_COOLDOWN_ENABLED</code></td><td><code>true</code></td><td>After an exit, also pause the OTHER side briefly, so a stopped-out CE cannot flip straight into a PE on the very next candle. OFF allows the immediate flip.</td></tr>
+  <tr><td><code>EMA_RSI_ST_V2_OPPOSITE_SIDE_COOLDOWN_CANDLES</code></td><td><code>2</code></td><td>How many candles the opposite-side pause lasts. Longer means a genuine reversal is missed; shorter means whipsaw flips get through. Ignored when the toggle above is off.</td></tr>
+</table>
+
+<h3>Backtest</h3>
+<table>
+  <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>EMA_RSI_ST_V2_BT_SLIPPAGE_PTS</code></td><td><code>2</code></td><td>Cost the backtest charges per side, in points, to stand in for the bid-ask spread you really pay. Set it to 0 and every option-buying backtest flatters itself.</td></tr>
+  <tr><td><code>EMA_RSI_ST_V2_BT_SEED_PREMIUM</code></td><td><code>180</code></td><td>The option price the backtest starts each trade from, since no historical option chain exists here. It is a guess, and it is the weakest number in any V2 backtest result.</td></tr>
+</table>
+
+<h3>Menu &amp; alerts</h3>
+<table>
+  <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>UI_SHOW_EMA_RSI_ST_V2_BACKTEST</code> / <code>_PAPER</code> / <code>_LIVE_HARNESS</code> / <code>_HISTORY</code></td><td><code>false</code></td><td>Sidebar sub-menu visibility, one per page. All ship OFF: V2 is unproven, so nothing appears until you ask for it.</td></tr>
+  <tr><td><code>TG_EMA_RSI_ST_V2_STARTED</code> / <code>_ENTRY</code> / <code>_EXIT</code> / <code>_DAYREPORT</code></td><td><code>true</code></td><td>Telegram alerts: session start, every entry, every exit, and a day summary on stop.</td></tr>
+</table>
+
+<h2 id="missing">14. What&#39;s still missing / not validated</h2>
+
+<div class="card bad">
+  <strong>Be honest with yourself about what you are looking at.</strong>
+  <ul style="margin:10px 0 0;">
+    <li><b>It has never traded live.</b> Not one order, not one rupee.</li>
+    <li><b>Zero paper sessions.</b> There is no forward-tested record at all &mdash; nothing has been observed running against a live tick feed.</li>
+    <li><b>The backtest rupees are simulated.</b> There is no historical option chain in this repo, so premiums are modelled from a seed price and decay. The &minus;&#8377;77,978 is a modelled loss.</li>
+    <li><b>And that modelled loss is the headline.</b> +2,255 spot points and &minus;&#8377;77,978 are the same 2024&ndash;25 behaviour measured two ways. The one that includes what you actually pay is negative. Nothing here has been shown to make money.</li>
+    <li><b>The 0.2-point stop is real.</b> The median initial stop is 25.1 points, but the minimum in the 2025 run was 0.2 points &mdash; noise level, stopped out instantly, and V2 has nothing that clamps a stop to a sensible floor. The 307.9-point maximum is the same problem at the other end.</li>
+    <li><b>The 42.5% win rate is a losing win rate on its own.</b> It only works because the average win (+48.5) is nearly twice the average loss (&minus;25.7). Anything that shrinks that ratio &mdash; a wider spread, a worse fill, a tighter multiplier &mdash; turns the whole thing negative, and in the rupee backtest it already has.</li>
+    <li><b>No threshold has been fitted.</b> 52 and 48, SuperTrend 10 and 2, 2 trades a day, the &#8377;1,000 cap &mdash; these are stated rules and repo conventions, not values that earned their place from data.</li>
+    <li><b>V2 and V1 share no settings.</b> Tuning one does nothing to the other. Do not assume a number that worked in V1 transfers.</li>
+    <li><b>What to do next.</b> Run paper sessions with the tick recorder on. Replay them and confirm Paper and Live agree on a recorded day. Then decide whether the spot-points signal is worth trying to express in something cheaper than a bought option &mdash; because as an option-buying strategy, the only measurement that charges you for costs says no.</li>
+  </ul>
+</div>
+
+<p class="muted" style="margin-top:30px;">Engine: <code>src/strategies/ema_rsi_st_v2.js</code> &nbsp;&middot;&nbsp; the engine header comment is the authoritative rule statement &nbsp;&middot;&nbsp; every chart on this page was rendered from output of that engine on real NIFTY candles.</p>
+
+</div>
+
+<script>
+/* ============================================================================
+ * TVChart v3 — dependency-free TradingView-style candlestick renderer.
+ * v2 features: OHLC header, subtitle, bottom time axis, last-price tag/line.
+ * v3 adds:   hlines (labelled price levels), shades (vertical highlight spans),
+ *            pane (RSI / volume / line sub-panel under the price chart).
+ * Pure buildSVG(spec) -> string (no DOM), never throws on bad data.
+ * Backward-compatible with every v1/v2 spec.
+ * ==========================================================================*/
+(function (global) {
+  "use strict";
+  function isNum(x) { return typeof x === "number" && isFinite(x); }
+  function esc(s) { return String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+  function fmt(v) { return isNum(v) ? v.toFixed(2).replace(/\.00$/,"") : "—"; }
+
+  function priceRange(spec) {
+    var lo = Infinity, hi = -Infinity;
+    function eat(v){ if(isNum(v)){ if(v>hi)hi=v; if(v<lo)lo=v; } }
+    (spec.candles||[]).forEach(function(c){ eat(c[1]); eat(c[2]); });
+    (spec.overlays||[]).forEach(function(o){ (o.data||[]).forEach(eat); });
+    (spec.bands||[]).forEach(function(b){ (b.upper||[]).forEach(eat); (b.lower||[]).forEach(eat); (b.mid||[]).forEach(eat); });
+    (spec.markers||[]).forEach(function(m){ if(isNum(m.price)) eat(m.price); });
+    (spec.hlines||[]).forEach(function(h){ eat(h.price); });
+    (spec.zones||[]).forEach(function(z){ eat(z.top); eat(z.bottom); });
+    if(!isFinite(lo)||!isFinite(hi)){ lo=0; hi=1; }
+    if(lo===hi){ lo-=1; hi+=1; }
+    var pad=(hi-lo)*0.10; return { lo:lo-pad, hi:hi+pad };
+  }
+
+  // Build a path that starts a fresh subpath after every gap. Indicator series
+  // are null until they have enough history (EMA/BB/RSI warm-up), and a path
+  // that opens with "L" is invalid — that used to drop the whole line.
+  function linePath(data, X, Y) {
+    var d = "", pen = false;
+    for (var i=0;i<data.length;i++){
+      if(!isNum(data[i])){ pen = false; continue; }
+      d += (pen ? "L" : "M") + X(i) + " " + Y(data[i]) + " "; pen = true;
+    }
+    return d;
+  }
+
+  function buildSVG(spec) {
+    spec = spec||{};
+    var candles = spec.candles||[]; var n = candles.length;
+    if(!n) return '<div class="tv-empty">chart data unavailable</div>';
+
+    var pane = null;
+    if (spec.pane && spec.pane.data && spec.pane.data.length) pane = spec.pane;
+    var paneH  = pane ? (isNum(pane.height) ? pane.height : 92) : 0;
+    var paneGap = pane ? 12 : 0;
+
+    var W=880, padL=6, padR=74, padT=52, padB=40, plotH=348;
+    var H = padT + plotH + paneGap + paneH + padB;
+    var rng=priceRange(spec); var plotW=W-padL-padR;
+    var slot=plotW/n; var cw=Math.max(2,Math.min(20,slot*0.66)); var wickW=Math.max(0.8,cw*0.12);
+    var up="#26a69a",down="#ef5350",grid="#1b2636",axis="#5a7499",txt="#e8eef8",mut="#8b98ac";
+    var plotBot = padT+plotH;
+    var paneTop = plotBot+paneGap, paneBot = paneTop+paneH;
+    var axisBot = pane ? paneBot : plotBot;
+    function X(i){ return padL+slot*(i+0.5); }
+    function Y(p){ return padT+(rng.hi-p)/(rng.hi-rng.lo)*plotH; }
+    var out=[];
+    out.push('<svg viewBox="0 0 '+W+' '+H+'" class="tv-svg" role="img" aria-label="'+esc(spec.title||"price chart")+'" preserveAspectRatio="xMidYMid meet">');
+    out.push('<rect x="0" y="0" width="'+W+'" height="'+H+'" fill="#0d1421"/>');
+
+    // horizontal price grid + right-side labels
+    for(var g=0;g<=4;g++){ var gp=rng.hi-(rng.hi-rng.lo)*(g/4); var gy=Y(gp);
+      out.push('<line x1="'+padL+'" y1="'+gy+'" x2="'+(W-padR)+'" y2="'+gy+'" stroke="'+grid+'" stroke-width="1"/>');
+      out.push('<text x="'+(W-padR+6)+'" y="'+(gy+3.5)+'" fill="'+axis+'" font-size="10.5" font-family="monospace">'+gp.toFixed(0)+'</text>'); }
+
+    // vertical time grid + bottom axis labels (every ~1/7 of the candles)
+    var times = spec.times || [];
+    var step = Math.max(1, Math.round(n/7));
+    for(var t=0;t<n;t+=step){ var tx=X(t);
+      out.push('<line x1="'+tx+'" y1="'+padT+'" x2="'+tx+'" y2="'+axisBot+'" stroke="'+grid+'" stroke-width="0.7" opacity="0.5"/>');
+      if(times[t]) out.push('<text x="'+tx+'" y="'+(axisBot+15)+'" fill="'+axis+'" font-size="10" text-anchor="middle" font-family="system-ui">'+esc(times[t])+'</text>'); }
+
+    // vertical highlight spans (e.g. "position held", "no-trade window")
+    (spec.shades||[]).forEach(function(s){ if(!isNum(s.from)||!isNum(s.to)) return;
+      var sx=X(s.from)-slot/2, sw=Math.max(1,X(s.to)-X(s.from)+slot);
+      out.push('<rect x="'+sx+'" y="'+padT+'" width="'+sw+'" height="'+plotH+'" fill="'+(s.color||"rgba(96,165,250,0.07)")+'"/>');
+      if(s.label){ var sly = s.labelBottom ? (padT+plotH-7) : (padT+13);
+        out.push('<text x="'+(sx+sw/2)+'" y="'+sly+'" fill="'+(s.text||"#7c93b5")+'" font-size="10" text-anchor="middle" font-family="system-ui">'+esc(s.label)+'</text>'); } });
+
+    // zones (e.g. ORB opening-range box)
+    (spec.zones||[]).forEach(function(z){ if(!isNum(z.from)||!isNum(z.to)) return;
+      var zx=X(z.from)-cw/2, zw=X(z.to)-X(z.from)+cw; var zTop=Y(isNum(z.top)?z.top:rng.hi), zBot=Y(isNum(z.bottom)?z.bottom:rng.lo);
+      out.push('<rect x="'+zx+'" y="'+zTop+'" width="'+zw+'" height="'+(zBot-zTop)+'" fill="'+(z.color||"rgba(96,165,250,0.10)")+'" stroke="'+(z.stroke||"rgba(96,165,250,0.5)")+'" stroke-dasharray="4 3" stroke-width="1"/>');
+      if(z.label) out.push('<text x="'+(zx+4)+'" y="'+(zTop-4)+'" fill="'+(z.stroke||"#60a5fa")+'" font-size="10.5" font-weight="600">'+esc(z.label)+'</text>'); });
+
+    // band envelopes (VWAP band / Bollinger)
+    (spec.bands||[]).forEach(function(b){ var u=b.upper||[], l=b.lower||[];
+      if(u.length&&l.length){ var pts=[]; for(var i=0;i<u.length;i++) if(isNum(u[i])) pts.push(X(i)+","+Y(u[i]));
+        for(var j=l.length-1;j>=0;j--) if(isNum(l[j])) pts.push(X(j)+","+Y(l[j]));
+        out.push('<polygon points="'+pts.join(" ")+'" fill="'+(b.fill||"rgba(120,144,200,0.08)")+'"/>');
+        [u,l].forEach(function(line){
+          out.push('<path d="'+linePath(line,X,Y)+'" fill="none" stroke="'+(b.color||"#a78bfa")+'" stroke-width="1.3" opacity="0.85"/>'); }); }
+      if(b.mid){
+        out.push('<path d="'+linePath(b.mid,X,Y)+'" fill="none" stroke="'+(b.color||"#a78bfa")+'" stroke-width="1" stroke-dasharray="2 3" opacity="0.7"/>'); } });
+
+    // labelled horizontal price levels (stop / target / neckline / OR high-low)
+    (spec.hlines||[]).forEach(function(hl){ if(!isNum(hl.price)) return;
+      var hy=Y(hl.price), hc=hl.color||"#fbbf24";
+      out.push('<line x1="'+padL+'" y1="'+hy+'" x2="'+(W-padR)+'" y2="'+hy+'" stroke="'+hc+'" stroke-width="'+(hl.width||1.2)+'" '+(hl.solid?"":'stroke-dasharray="6 4" ')+'opacity="0.9"/>');
+      out.push('<rect x="'+(W-padR)+'" y="'+(hy-8)+'" width="'+padR+'" height="16" fill="'+hc+'" opacity="0.92"/>');
+      out.push('<text x="'+(W-padR+5)+'" y="'+(hy+3.5)+'" fill="#0d1421" font-size="10" font-weight="700" font-family="monospace">'+hl.price.toFixed(0)+'</text>');
+      if(hl.label){ var lw=hl.label.length*5.9+10;
+        // labelAt (0..1) slides the tag along the line so it can dodge markers
+        var lx1=padL+3+(isNum(hl.labelAt)?hl.labelAt:0)*(W-padR-padL-lw-6);
+        lx1=Math.max(padL+3,Math.min(lx1,W-padR-lw-3));
+        out.push('<rect x="'+lx1+'" y="'+(hy-15)+'" width="'+lw+'" height="14" rx="3" fill="'+hc+'" opacity="0.92"/>');
+        out.push('<text x="'+(lx1+5)+'" y="'+(hy-4.5)+'" fill="#0d1421" font-size="9.8" font-weight="700" font-family="system-ui">'+esc(hl.label)+'</text>'); } });
+
+    // candlesticks
+    candles.forEach(function(c,i){ if(!c||!isNum(c[0])||!isNum(c[3])) return;
+      var o=c[0],h=c[1],lw=c[2],cl=c[3]; var col=cl>=o?up:down, cx=X(i);
+      if(isNum(h)&&isNum(lw)) out.push('<rect x="'+(cx-wickW/2)+'" y="'+Y(h)+'" width="'+wickW+'" height="'+Math.max(0.5,Y(lw)-Y(h))+'" fill="'+col+'"/>');
+      var yo=Y(o),yc=Y(cl),top=Math.min(yo,yc),bh=Math.max(1,Math.abs(yc-yo));
+      out.push('<rect x="'+(cx-cw/2)+'" y="'+top+'" width="'+cw+'" height="'+bh+'" fill="'+col+'"/>'); });
+
+    // overlay indicator lines (EMA / VWAP / MAs)
+    (spec.overlays||[]).forEach(function(ov){
+      out.push('<path d="'+linePath(ov.data||[],X,Y)+'" fill="none" stroke="'+(ov.color||"#fbbf24")+'" stroke-width="'+(ov.width||1.6)+'" '+(ov.dash?'stroke-dasharray="5 3" ':"")+'opacity="0.95"/>'); });
+
+    // last-price dashed line + right-axis tag (TradingView style)
+    if(spec.lastPriceTag !== false){ var last=candles[n-1]; if(last&&isNum(last[3])){ var lp=last[3], ly=Y(lp);
+      var lcol=(isNum(last[0])&&lp>=last[0])?up:down;
+      out.push('<line x1="'+padL+'" y1="'+ly+'" x2="'+(W-padR)+'" y2="'+ly+'" stroke="'+lcol+'" stroke-width="0.8" stroke-dasharray="2 2" opacity="0.7"/>');
+      out.push('<rect x="'+(W-padR)+'" y="'+(ly-8)+'" width="'+padR+'" height="16" fill="'+lcol+'"/>');
+      out.push('<text x="'+(W-padR+6)+'" y="'+(ly+3.5)+'" fill="#0d1421" font-size="10.5" font-weight="700" font-family="monospace">'+lp.toFixed(2)+'</text>'); } }
+
+    // markers (buy / exit / dot)
+    (spec.markers||[]).forEach(function(m){ if(!isNum(m.i)) return; var mx=X(m.i);
+      var my=isNum(m.price)?Y(m.price):(m.type==="buy"?plotBot-14:padT+14);
+      var isBuy=m.type==="buy", isExit=m.type==="exit"; var col=m.color||(isBuy?"#26a69a":isExit?"#ef5350":"#fbbf24");
+      if(isBuy||isExit){ var ay=isBuy?my+18:my-18, tri=isBuy?(mx-6)+","+ay+" "+(mx+6)+","+ay+" "+mx+","+(ay-10):(mx-6)+","+ay+" "+(mx+6)+","+ay+" "+mx+","+(ay+10);
+        out.push('<polygon points="'+tri+'" fill="'+col+'"/>'); }
+      else out.push('<circle cx="'+mx+'" cy="'+my+'" r="3.5" fill="'+col+'" stroke="#0d1421" stroke-width="1"/>');
+      if(m.text){ var lblY=isBuy?my+34:(isExit?my-26:my-10); var tw=m.text.length*6.2+10;
+        var lx0=Math.max(padL+1,Math.min(mx-tw/2,W-padR-tw-1));
+        out.push('<rect x="'+lx0+'" y="'+(lblY-11)+'" width="'+tw+'" height="15" rx="3" fill="'+col+'" opacity="0.94"/>');
+        out.push('<text x="'+(lx0+tw/2)+'" y="'+lblY+'" fill="#0d1421" font-size="10.5" font-weight="700" text-anchor="middle" font-family="system-ui">'+esc(m.text)+'</text>'); } });
+
+    // ── sub-panel: RSI / volume / any line series ─────────────────────────
+    if(pane){
+      var pd=pane.data||[], pType=pane.type||"line";
+      var plo=Infinity, phi=-Infinity;
+      pd.forEach(function(v){ if(isNum(v)){ if(v>phi)phi=v; if(v<plo)plo=v; } });
+      if(pType==="rsi"){ plo=0; phi=100; }
+      if(pType==="volume"){ plo=0; }
+      if(isNum(pane.min)) plo=pane.min;
+      if(isNum(pane.max)) phi=pane.max;
+      if(!isFinite(plo)||!isFinite(phi)){ plo=0; phi=1; }
+      if(plo===phi){ plo-=1; phi+=1; }
+      var pPad=(pType==="rsi"||pType==="volume")?0:(phi-plo)*0.12;
+      var pLo=plo-pPad, pHi=phi+pPad;
+      function PY(v){ return paneTop+(pHi-v)/(pHi-pLo)*paneH; }
+      out.push('<rect x="'+padL+'" y="'+paneTop+'" width="'+(W-padR-padL)+'" height="'+paneH+'" fill="#0b111c"/>');
+      out.push('<line x1="'+padL+'" y1="'+paneTop+'" x2="'+(W-padR)+'" y2="'+paneTop+'" stroke="'+grid+'" stroke-width="1"/>');
+
+      // guide levels inside the pane (e.g. RSI 70 / 40)
+      (pane.levels||[]).forEach(function(lv){ var v=isNum(lv)?lv:lv.value; if(!isNum(v)) return;
+        var c=(lv&&lv.color)||"#3f5570", ly2=PY(v);
+        out.push('<line x1="'+padL+'" y1="'+ly2+'" x2="'+(W-padR)+'" y2="'+ly2+'" stroke="'+c+'" stroke-width="1" stroke-dasharray="4 3" opacity="0.8"/>');
+        out.push('<text x="'+(W-padR+6)+'" y="'+(ly2+3.5)+'" fill="'+c+'" font-size="10" font-family="monospace">'+v+'</text>'); });
+
+      if(pType==="volume"){
+        var bw=Math.max(1.5,slot*0.6);
+        pd.forEach(function(v,i){ if(!isNum(v)) return; var c2=candles[i];
+          var col2=(c2&&isNum(c2[0])&&isNum(c2[3])&&c2[3]>=c2[0])?"rgba(38,166,154,0.55)":"rgba(239,83,80,0.55)";
+          if(pane.colors&&pane.colors[i]) col2=pane.colors[i];
+          var by=PY(v); out.push('<rect x="'+(X(i)-bw/2)+'" y="'+by+'" width="'+bw+'" height="'+Math.max(0.5,paneBot-by)+'" fill="'+col2+'"/>'); });
+      } else {
+        out.push('<path d="'+linePath(pd,X,PY)+'" fill="none" stroke="'+(pane.color||"#c084fc")+'" stroke-width="1.6"/>');
+      }
+      (pane.markers||[]).forEach(function(m){ if(!isNum(m.i)||!isNum(m.value)) return;
+        out.push('<circle cx="'+X(m.i)+'" cy="'+PY(m.value)+'" r="3.2" fill="'+(m.color||"#fbbf24")+'" stroke="#0b111c" stroke-width="1"/>'); });
+      if(pane.label) out.push('<text x="'+(padL+5)+'" y="'+(paneTop+13)+'" fill="'+mut+'" font-size="10.5" font-weight="600" font-family="system-ui">'+esc(pane.label)+'</text>');
+    }
+
+    // header: title, subtitle, and OHLC readout (TradingView top-left)
+    out.push('<text x="'+padL+'" y="17" fill="'+txt+'" font-size="13" font-weight="700" font-family="system-ui">'+esc(spec.title||"")+'</text>');
+    if(spec.subtitle) out.push('<text x="'+padL+'" y="32" fill="'+mut+'" font-size="10.5" font-family="system-ui">'+esc(spec.subtitle)+'</text>');
+    if(spec.ohlc !== false){ var f=candles[n-1]; if(f){ var oc=(isNum(f[0])&&isNum(f[3])&&f[3]>=f[0])?up:down;
+      var parts=[["O",f[0]],["H",f[1]],["L",f[2]],["C",f[3]]], hy2=spec.subtitle?46:32;
+      var lx=padL;
+      parts.forEach(function(p){ out.push('<text x="'+lx+'" y="'+hy2+'" font-size="10.5" font-family="monospace" fill="'+mut+'">'+p[0]+'</text>');
+        lx+=11; out.push('<text x="'+lx+'" y="'+hy2+'" font-size="10.5" font-family="monospace" fill="'+oc+'">'+fmt(p[1])+'</text>'); lx+=(fmt(p[1]).length*6.4)+10; }); } }
+
+    // legend (bottom-left, above time axis)
+    var lgx=padL, lgy=H-4;
+    (spec.legend||[]).forEach(function(lg){ out.push('<rect x="'+lgx+'" y="'+(lgy-8)+'" width="14" height="3" rx="1.5" fill="'+(lg.color||"#fbbf24")+'"/>');
+      out.push('<text x="'+(lgx+18)+'" y="'+(lgy-4)+'" fill="'+axis+'" font-size="10" font-family="system-ui">'+esc(lg.label)+'</text>');
+      lgx+=22+lg.label.length*6.1; });
+
+    out.push("</svg>"); return out.join("");
+  }
+
+  var TVChart = { buildSVG: buildSVG, render: function(elId, spec){ try { var el=document.getElementById(elId); if(!el) return; el.innerHTML=buildSVG(spec); } catch(e){} } };
+  global.TVChart = TVChart;
+})(window);
+</script>
+
+<script>
+(function(){ if(typeof TVChart==="undefined") return;
+
+/* Every array below is verbatim output of src/strategies/ema_rsi_st_v2.js run on
+ * real cached NIFTY 5-minute candles — EMA20/EMA50 from the EMA helper, RSI(14)
+ * from the RSI helper, and the SuperTrend(10,2) series from computeSuperTrend().
+ * The "stop in force" line is that same SuperTrend put through the engine's
+ * tighten-only rule. Nothing is hand-placed. */
+
+TVChart.render("v2-win", {
+  "title": "NIFTY 50 · 2025-04-17 · all three rules pass, the trail never catches, 14:00 closes it",
+  "subtitle": "5m · EMA20 > EMA50 · close above EMA20 · RSI 64.4 > 52 · entry via the confirmation candle · SuperTrend(10,2) is the only stop",
+  "times": ["10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55","12:00","12:05","12:10","12:15","12:20","12:25","12:30","12:35","12:40","12:45","12:50","12:55","13:00","13:05","13:10","13:15","13:20","13:25","13:30","13:35","13:40","13:45","13:50","13:55","14:00","14:05","14:10","14:15","14:20"],
+  "candles": [[23382.95,23406.05,23382.95,23391.7],[23392,23412.25,23392,23408.25],[23406.85,23409.6,23396.45,23406.4],[23406,23426.95,23402.9,23421.95],[23421.8,23441.4,23421.65,23440.15],[23440.35,23444.95,23419.75,23420.7],[23420.4,23422.25,23402.85,23406.65],[23406.55,23413.85,23369.15,23377.4],[23378.9,23425.35,23378.9,23423.6],[23423.6,23441.6,23422.75,23440.1],[23440.95,23485.2,23439.35,23482.35],[23481.9,23485.4,23471.25,23480.2],[23479.3,23517.35,23476.3,23512.1],[23512.05,23549.45,23510.3,23538.3],[23537.3,23574.5,23536.7,23558],[23558,23615.45,23551.55,23596.5],[23598.85,23603,23581.55,23600.55],[23600.45,23634.65,23596.55,23600.25],[23600.25,23603.65,23567.4,23601.05],[23601.2,23606.4,23576.3,23602.85],[23603.15,23625.1,23596.45,23618.45],[23618.7,23648.05,23615.2,23634.45],[23634.25,23658.1,23623,23649.45],[23649,23655.6,23626.65,23645.25],[23644.25,23682.85,23643.9,23679.25],[23677.9,23715.9,23674.6,23708.8],[23708.45,23709,23672.35,23685.05],[23684.55,23717.05,23683.85,23712.35],[23712.05,23742.1,23703.3,23735.7],[23735.95,23747.6,23731.6,23743.45],[23743.05,23746.85,23719.75,23738.35],[23738.5,23745.5,23723.95,23744.65],[23742.65,23771.2,23737.05,23768.1],[23768.05,23789.25,23762.05,23788.65],[23787.85,23798.75,23780.6,23788.5],[23786.95,23789.9,23761.7,23785.35],[23783.75,23792.1,23770.7,23775.3],[23774.35,23789.6,23770,23776.5],[23775.4,23807.6,23773,23807.1],[23806.65,23819.15,23800.05,23816.45],[23814.6,23842.1,23812.95,23840.35],[23839.25,23850.1,23832.05,23840.85],[23839.25,23847.65,23834.55,23845.05],[23842.4,23868.25,23842.4,23850.8],[23849.55,23859.55,23848.35,23853.75],[23853.35,23871.6,23827.55,23831.15],[23828.7,23842.95,23783.8,23828],[23827.7,23829,23814.5,23819.35]],
+  "overlays": [
+    {"name":"EMA20","color":"#38bdf8","width":1.4,"data":[23383.52,23385.88,23387.83,23391.08,23395.75,23398.13,23398.94,23396.89,23399.43,23403.31,23410.83,23417.44,23426.46,23437.11,23448.62,23462.7,23475.83,23487.68,23498.48,23508.42,23518.9,23529.9,23541.29,23551.19,23563.39,23577.23,23587.5,23599.39,23612.37,23624.86,23635.67,23646.05,23657.67,23670.14,23681.42,23691.32,23699.31,23706.66,23716.23,23725.77,23736.69,23746.61,23755.98,23765.01,23773.46,23778.96,23783.63,23787.03]},
+    {"name":"EMA50","color":"#f59e0b","width":1.4,"data":[23374.93,23376.23,23377.42,23379.16,23381.55,23383.09,23384.01,23383.75,23385.32,23387.46,23391.19,23394.68,23399.28,23404.73,23410.74,23418.03,23425.19,23432.05,23438.68,23445.12,23451.91,23459.07,23466.54,23473.55,23481.61,23490.52,23498.15,23506.55,23515.54,23524.47,23532.86,23541.17,23550.07,23559.42,23568.41,23576.91,23584.69,23592.22,23600.64,23609.11,23618.17,23626.91,23635.46,23643.91,23652.13,23659.16,23665.78,23671.8]},
+    {"name":"SuperTrend(10,2)","color":"#3f5570","width":1,"data":[23410.45,23410.45,23410.45,23359.88,23378.04,23379.17,23379.17,23447.01,23447.01,23447.01,23401.48,23420.78,23436.82,23468.04,23492.39,23513.83,23525.28,23547.69,23547.69,23547.69,23547.69,23565.18,23573.73,23575.2,23596.25,23626.58,23626.58,23631.59,23652.96,23673.64,23673.64,23673.64,23690.94,23713.34,23729.97,23729.97,23729.97,23729.97,23733.1,23754.3,23771.93,23787.43,23790.2,23804.34,23805.82,23805.82,23805.82,23805.82]},
+    {"name":"the stop actually in force (tighten-only)","color":"#ef5350","width":2,"data":[null,null,null,null,null,null,null,null,null,null,null,23401.48,23420.78,23436.82,23468.04,23492.39,23513.83,23525.28,23547.69,23547.69,23547.69,23547.69,23565.18,23573.73,23575.2,23596.25,23626.58,23626.58,23631.59,23652.96,23673.64,23673.64,23673.64,23690.94,23713.34,23729.97,23729.97,23729.97,23729.97,23733.1,23754.3,23771.93,23787.43,23790.2,null,null,null,null]}
+  ],
+  "shades": [{"from":11,"to":43,"color":"rgba(38,166,154,0.06)","label":"holding the CE — 32 candles","labelBottom":true}],
+  "markers": [
+    {"i":10,"type":"dot","color":"#fbbf24","price":23482.35,"text":"signal close 23482.35 = the trigger"},
+    {"i":11,"type":"buy","price":23482.35,"text":"BUY CE 23482.35 · stop 23401.48"},
+    {"i":43,"type":"exit","price":23842.4,"text":"EXIT 23842.40 at 14:00 · +360.1 pts"}
+  ],
+  "legend": [
+    {"color":"#38bdf8","label":"EMA20"},
+    {"color":"#f59e0b","label":"EMA50"},
+    {"color":"#ef5350","label":"SuperTrend stop, ratcheted 23401.48 → 23790.20"},
+    {"color":"#26a69a","label":"entry 23482.35, exit 23842.40 — +360.1 spot points"}
+  ],
+  "pane": {"type":"line","label":"RSI(14) — 52 is the CE threshold, 48 the PE one; there is NO upper cap","color":"#a78bfa","height":92,"min":0,"max":100,
+    "levels":[{"value":52,"color":"#26a69a"},{"value":48,"color":"#ef5350"},{"value":80,"color":"#5a4a7a"}],
+    "data":[52,55.3,54.9,58,61.4,56.2,52.7,46.2,55.5,58.3,64.4,63.9,68,70.9,72.9,76.3,76.6,76.5,76.6,76.8,78.3,79.8,81.2,79.6,82.5,84.6,76.7,79.1,80.9,81.5,79.8,80.4,82.3,83.8,83.7,82.5,78.5,78.6,81.7,82.6,84.5,84.5,84.9,85.4,85.6,75,73.6,69.8]}
+});
+
+TVChart.render("v2-loss", {
+  "title": "NIFTY 50 · 2025-04-08 · the same three rules, stopped out in three candles",
+  "subtitle": "5m · entry 22481.15 via the confirmation candle · initial stop 22318.34 tightens to 22342.93 and is hit",
+  "times": ["10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55","12:00","12:05","12:10","12:15","12:20","12:25","12:30"],
+  "candles": [[22387.55,22409.6,22378.15,22392.25],[22391.3,22432.4,22382.35,22383.95],[22384.55,22403,22369.15,22385.65],[22382.6,22411.35,22378,22411.35],[22410.15,22429.35,22394.5,22424.35],[22425.3,22432.6,22375.1,22377.75],[22377.4,22380.65,22285.9,22297.5],[22297.5,22318.25,22275.6,22292.65],[22292.1,22308.05,22270.85,22290],[22292.3,22384.35,22287.95,22381.7],[22383.4,22411.75,22352.3,22374.4],[22374.75,22420.85,22374.75,22389.3],[22388.9,22489.95,22388.9,22481.15],[22481.15,22487.75,22436.55,22436.55],[22436.15,22455.2,22384.35,22385.95],[22383.85,22403.75,22365.75,22391.75],[22391.75,22394.4,22323.15,22363.05],[22364.8,22366.35,22319.4,22344.75],[22344.5,22405.05,22327.95,22392.1],[22391.35,22391.85,22351.15,22357.35],[22357.8,22434.5,22353.65,22417.55],[22418.25,22426.1,22380.8,22422.25],[22422.15,22437.3,22402.25,22429.1],[22429.8,22464.9,22418.85,22450.4],[22450.9,22491.25,22447.55,22486.7],[22487.2,22552.3,22487.2,22552.3],[22554.3,22558.05,22506.05,22512.4],[22513.05,22555.4,22513.05,22550.65],[22551,22585.05,22547.85,22583.85],[22584.5,22654.3,22563.9,22637.9]],
+  "overlays": [
+    {"name":"EMA20","color":"#38bdf8","width":1.4,"data":[22332.3,22337.22,22341.83,22348.45,22355.68,22357.78,22352.04,22346.39,22341.02,22344.89,22347.7,22351.66,22363.99,22370.9,22372.34,22374.19,22373.13,22370.42,22372.49,22371.05,22375.48,22379.93,22384.61,22390.88,22400,22414.51,22423.83,22435.91,22450,22467.89]},
+    {"name":"EMA50","color":"#f59e0b","width":1.4,"data":[22207.41,22214.33,22221.05,22228.51,22236.19,22241.74,22243.93,22245.84,22247.57,22252.83,22257.6,22262.76,22271.33,22277.81,22282.05,22286.35,22289.36,22291.53,22295.47,22297.9,22302.59,22307.29,22312.06,22317.49,22324.12,22333.07,22340.1,22348.36,22357.6,22368.59]},
+    {"name":"SuperTrend(10,2)","color":"#3f5570","width":1,"data":[22508.09,22508.09,22494.37,22494.37,22494.37,22494.37,22444.13,22405.23,22394.36,22394.36,22394.36,22394.36,22318.34,22342.93,22342.93,22342.93,22342.93,22342.93,22342.93,22342.93,22342.93,22342.93,22342.93,22342.93,22360.52,22408.64,22421.65,22426.27,22461.85,22496.88]},
+    {"name":"the stop actually in force (tighten-only)","color":"#ef5350","width":2,"data":[null,null,null,null,null,null,null,null,null,null,null,null,null,22318.34,22342.93,22342.93,22342.93,null,null,null,null,null,null,null,null,null,null,null,null,null]}
+  ],
+  "shades": [{"from":13,"to":16,"color":"rgba(239,83,80,0.07)","label":"holding the CE — 3 candles","labelBottom":true}],
+  "markers": [
+    {"i":12,"type":"dot","color":"#fbbf24","price":22481.15,"text":"signal close 22481.15 = the trigger · RSI 66.3"},
+    {"i":13,"type":"buy","price":22481.15,"text":"BUY CE 22481.15"},
+    {"i":16,"type":"exit","price":22342.93,"text":"STOPPED 22342.93 · −138.2 pts"}
+  ],
+  "legend": [
+    {"color":"#38bdf8","label":"EMA20"},
+    {"color":"#f59e0b","label":"EMA50"},
+    {"color":"#ef5350","label":"stop in force: 22318.34 → 22342.93 (tightened, never loosened)"},
+    {"color":"#ef5350","label":"entry 22481.15, exit 22342.93 — −138.2 spot points"}
+  ],
+  "pane": {"type":"line","label":"RSI(14) — 66.3 at the signal, well past 52","color":"#a78bfa","height":92,"min":0,"max":100,
+    "levels":[{"value":52,"color":"#26a69a"},{"value":48,"color":"#ef5350"}],
+    "data":[63.5,62.2,62.4,64.9,66.1,58.2,47.6,47,46.7,57.5,56.6,58.1,66.3,60.1,54.1,54.6,51.3,49.2,54.4,50.3,56.4,56.8,57.5,59.6,63,68.2,62.4,65.5,67.8,71.3]}
+});
+
+TVChart.render("v2-skip", {
+  "title": "All three entry rules pass — and V2 refuses, because there is nowhere to put the stop",
+  "subtitle": "5m · 2025-04-08 · at 10:55 the SuperTrend line sits ABOVE the close, so a CE would have no protective stop · 14.9% of 2024–25 setups are refused this way",
+  "times": ["09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20"],
+  "candles": [[22517.45,22521.5,22463.05,22480.75],[22481.25,22487.9,22454,22479.3],[22479.05,22521.4,22466.3,22475.8],[22473.6,22474.35,22434.2,22447.15],[22447.3,22447.3,22393.7,22412.75],[22414.3,22425.5,22382.6,22390.25],[22387.55,22409.6,22378.15,22392.25],[22391.3,22432.4,22382.35,22383.95],[22384.55,22403,22369.15,22385.65],[22382.6,22411.35,22378,22411.35],[22410.15,22429.35,22394.5,22424.35],[22425.3,22432.6,22375.1,22377.75],[22377.4,22380.65,22285.9,22297.5],[22297.5,22318.25,22275.6,22292.65],[22292.1,22308.05,22270.85,22290],[22292.3,22384.35,22287.95,22381.7],[22383.4,22411.75,22352.3,22374.4],[22374.75,22420.85,22374.75,22389.3],[22388.9,22489.95,22388.9,22481.15],[22481.15,22487.75,22436.55,22436.55],[22436.15,22455.2,22384.35,22385.95],[22383.85,22403.75,22365.75,22391.75]],
+  "overlays": [
+    {"name":"EMA20","color":"#38bdf8","width":1.4,"data":[22254.42,22275.84,22294.88,22309.38,22319.23,22325.99,22332.3,22337.22,22341.83,22348.45,22355.68,22357.78,22352.04,22346.39,22341.02,22344.89,22347.7,22351.66,22363.99,22370.9,22372.34,22374.19]},
+    {"name":"EMA50","color":"#f59e0b","width":1.4,"data":[22146.89,22159.92,22172.31,22183.09,22192.09,22199.86,22207.41,22214.33,22221.05,22228.51,22236.19,22241.74,22243.93,22245.84,22247.57,22252.83,22257.6,22262.76,22271.33,22277.81,22282.05,22286.35]},
+    {"name":"SuperTrend(10,2) — on the WRONG side of price","color":"#ef5350","width":1.6,"data":[22392.27,22392.27,22392.27,22392.27,22392.27,22523.96,22508.09,22508.09,22494.37,22494.37,22494.37,22494.37,22444.13,22405.23,22394.36,22394.36,22394.36,22394.36,22318.34,22342.93,22342.93,22342.93]}
+  ],
+  "markers": [
+    {"i":16,"type":"dot","color":"#f85149","price":22374.4,"text":"close 22374.40 · all 3 rules pass · SKIPPED"}
+  ],
+  "hlines": [
+    {"price":22394.36,"color":"#f85149","label":"SuperTrend 22394.36 — above the close, so no stop can be placed","labelAt":0.04}
+  ],
+  "legend": [
+    {"color":"#38bdf8","label":"EMA20 22347.70 — above EMA50, rule 1 passes"},
+    {"color":"#f59e0b","label":"EMA50 22257.60"},
+    {"color":"#f85149","label":"SuperTrend 22394.36 above the close 22374.40 — no protective stop, so no trade"}
+  ],
+  "pane": {"type":"line","label":"RSI(14) — 56.6 at 10:55, past the 52 threshold; the momentum rule passes too","color":"#a78bfa","height":92,"min":0,"max":100,
+    "levels":[{"value":52,"color":"#26a69a"},{"value":48,"color":"#ef5350"}],
+    "data":[77,76.8,76.3,71.7,66.5,63.3,63.5,62.2,62.4,64.9,66.1,58.2,47.6,47,46.7,57.5,56.6,58.1,66.3,60.1,54.1,54.6]}
+});
+
+})();
+</script>
+
+</body>
+</html>
