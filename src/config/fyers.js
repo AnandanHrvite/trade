@@ -1,6 +1,23 @@
 require("dotenv").config();
 const fs  = require("fs");
 const path = require("path");
+
+// ── HTTP deadline for every Fyers REST call ─────────────────────────────────
+// The Fyers SDK builds its axios instance as axios.create({ httpsAgent }) with
+// no `timeout`, and axios defaults to 0 = wait forever. A hung socket therefore
+// wedges getQuotes / place_order indefinitely — which stalls the pre-entry
+// spread guard (holding _entryPending, blocking ALL further entries) and the
+// exit path's premium fetch. Setting the global default BEFORE the SDK is
+// required makes its instance inherit the deadline; instances copy defaults at
+// create() time, so this require order matters.
+const FYERS_HTTP_TIMEOUT_MS = Math.max(
+  1000,
+  parseInt(process.env.FYERS_HTTP_TIMEOUT_MS || "6000", 10) || 6000
+);
+try {
+  require("axios").defaults.timeout = FYERS_HTTP_TIMEOUT_MS;
+} catch (_) { /* axios always ships with the SDK; never block startup on this */ }
+
 const { fyersModel } = require("fyers-api-v3");
 
 // Fyers SDK writes its own debug logs to ./logs/ — auto-create the directory
