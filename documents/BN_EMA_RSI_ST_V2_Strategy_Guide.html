@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BN_EMA_RSI_ST_V2 (NIFTY BANK) — Strategy Guide</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0 18px 80px;
+    background: #0d1117; color: #c9d1d9;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.65; font-size: 16px;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; }
+  header.hero {
+    margin: 0 -18px 8px; padding: 40px 26px 30px;
+    background: linear-gradient(135deg, #161b22 0%, #10222e 100%);
+    border-bottom: 3px solid #38bdf8;
+  }
+  header.hero .kicker { color: #38bdf8; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; font-size: 0.72rem; }
+  header.hero h1 { margin: 6px 0 8px; font-size: 2rem; color: #f0f6fc; }
+  header.hero p { margin: 0; color: #8b949e; max-width: 640px; }
+  h2 { color: #f0f6fc; font-size: 1.35rem; margin: 38px 0 12px; padding-bottom: 8px; border-bottom: 1px solid #21262d; }
+  h3 { color: #58a6ff; font-size: 1.05rem; margin: 24px 0 8px; }
+  code { background: rgba(110,118,129,0.18); color: #7dd3fc; padding: 1.5px 6px; border-radius: 4px; font-size: 0.85em; font-family: 'SF Mono', ui-monospace, Menlo, monospace; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 18px 22px; margin: 14px 0; }
+  .card.accent { border-left: 4px solid #38bdf8; }
+  .card.warn { border-left: 4px solid #d29922; background: #1c1a12; }
+  .card.bad  { border-left: 4px solid #f85149; background: #1c1214; }
+  ul, ol { padding-left: 22px; }
+  li { margin: 5px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.88rem; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #21262d; vertical-align: top; }
+  th { color: #8b949e; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.6px; }
+  td code { white-space: nowrap; }
+  .flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 14px 0; }
+  .flow .step { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 8px 14px; font-size: 0.85rem; }
+  .flow .arrow { color: #38bdf8; font-weight: 700; }
+  .pill { display: inline-block; background: rgba(56,189,248,0.15); color: #38bdf8; border: 1px solid rgba(56,189,248,0.35); border-radius: 20px; padding: 2px 12px; font-size: 0.78rem; font-weight: 600; }
+  .muted { color: #6e7681; font-size: 0.85rem; }
+  a { color: #58a6ff; }
+  .num { font-family: 'SF Mono', ui-monospace, Menlo, monospace; color: #f0f6fc; }
+  /* TradingView-style chart wrapper. No chart is drawn in this guide — the
+     strategy has never been run on NIFTY BANK data, so there is nothing real to
+     plot. The wrapper is kept in step with the sibling guides so a chart can be
+     added the day a paper session or a cached candle series exists. */
+  .tv-chart { margin: 16px 0 6px; border: 1px solid #30363d; border-radius: 10px; overflow: hidden; background: #0d1626; }
+  .tv-chart .tv-svg { width: 100%; height: auto; display: block; }
+  .tv-cap { color: #8b949e; font-size: 0.82rem; margin: 0 0 16px; padding-left: 4px; }
+  .tv-cap b { color: #c9d1d9; }
+  .tv-empty { color: #6e7681; padding: 40px; text-align: center; font-size: 0.9rem; }
+
+/* ── MOBILE (shared block — keep in sync across all guides) ── */
+  @media (max-width: 768px) {
+    /* The setting tables are three columns of prose. A table cannot lay out
+       narrower than its min-content width, so at 393px they ran up to 259px past
+       the right edge and the browser zoomed the whole guide out to fit. Each one
+       now scrolls inside its own box and the page keeps the phone's width. */
+    table { display: block; width: 100%; max-width: 100%; overflow-x: auto;
+            -webkit-overflow-scrolling: touch; }
+    /* Long env keys wrap; fenced blocks keep their formatting and scroll. */
+    code { overflow-wrap: anywhere; word-break: break-word; }
+    pre { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    pre code { overflow-wrap: normal; word-break: normal; }
+    img, svg, canvas { max-width: 100%; }
+    .tv-chart { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    /* .cols is a two-up flex row with no wrap — the second card was pushed off
+       screen rather than dropping under the first. */
+    .cols { flex-direction: column; }
+    .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+    [style*="grid-template-columns"] { grid-template-columns: 1fr !important; }
+    /* Contents links are the guide's only navigation, and they were 18-31px.
+       The three guides each mark theirs up differently: nav.toc (ORB, EMA9VWAP,
+       Setup), a nav.no-print link bar (Price Action) and a two-column card list
+       (BB_RSI, EMA_RSI_ST, Trend Pullback). */
+    nav.toc a, .toc a, nav.no-print .container a,
+    .card li a { min-height: 44px; display: inline-flex; align-items: center; }
+    /* A two-column contents list leaves ~170px per column at 393px. */
+    ul[style*="columns"], ol[style*="columns"] { columns: 1 !important; -webkit-columns: 1 !important; }
+    .hero { padding-left: 16px; padding-right: 16px; }
+    .hero h1 { font-size: 1.7rem; }
+    .section { padding: 20px 14px; }
+  }
+/* ── END MOBILE ── */</style></head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <div class="kicker">Strategy · NIFTY BANK · Fyers data · Zerodha orders · Plain-English edition</div>
+  <h1>BN_EMA_RSI_ST_V2</h1>
+  <p>The NIFTY BANK twin of EMA_RSI_ST_V2. <b>The rules are identical &mdash; same engine file, same three entry conditions, same single stop, same guards, same defaults.</b> What changes is the instrument underneath them, and that change is bigger than it looks.</p>
+  <p class="muted" style="margin-top:10px;">Updated 2026-09-05 &nbsp;·&nbsp; plain-English edition &nbsp;·&nbsp; no charts and no measured results &mdash; see the box below</p>
+</header>
+
+<!--LIVE_STATUS_PANEL-->
+
+<div class="card bad">
+  <strong>Read this first: nothing here has been measured.</strong>
+  <p style="margin:10px 0 0;">BN_EMA_RSI_ST_V2 has <b>never traded live</b>, has <b>zero paper sessions</b>, and has <b>zero backtests on NIFTY BANK data</b>. There is not one recorded trade of this strategy on this instrument. Every number in this guide is either a <em>configured setting</em> (a value the Settings page ships) or an <em>instrument fact</em> (the strike grid, the lot size, the expiry cadence). None of them is a result.</p>
+  <p style="margin:10px 0 0;"><b>There are no charts.</b> The illustrative candle charts in the other guides were rendered from real engine output. Nothing has been run on NIFTY BANK candles here, so there is no real output to draw &mdash; and a hand-drawn trade would be a lie about a strategy that has never traded. A chart-free guide is the honest version.</p>
+  <p style="margin:10px 0 0;"><b>Do not import the NIFTY twin's numbers.</b> Where this guide mentions what the same rules did on NIFTY, it names NIFTY explicitly and says the NIFTY BANK equivalent is unknown. Those are two different instruments with two different option chains; a NIFTY figure is context, never a forecast.</p>
+</div>
+
+<div class="card">
+  <strong>What&#39;s inside</strong>
+  <ol style="margin:10px 0 0; columns:2; column-gap:30px;">
+    <li><a href="#idea">The idea in one minute</a></li>
+    <li><a href="#same">Identical to the NIFTY version &mdash; what that means</a></li>
+    <li><a href="#instrument">The instrument, and why it changes the risk</a></li>
+    <li><a href="#glossary">Words you&#39;ll see</a></li>
+    <li><a href="#entry">The entry &mdash; three rules, one candle</a></li>
+    <li><a href="#confirm">The confirmation candle</a></li>
+    <li><a href="#stop">The stop &mdash; SuperTrend and nothing else</a></li>
+    <li><a href="#omitted">What is deliberately absent</a></li>
+    <li><a href="#refuse">The trades it refuses</a></li>
+    <li><a href="#risk">Safety limits &mdash; and why they are the wrong size here</a></li>
+    <li><a href="#numbers">What is known, and what is not</a></li>
+    <li><a href="#modes">Paper, Live, Backtest &amp; Replay</a></li>
+    <li><a href="#config">All the settings, explained</a></li>
+    <li><a href="#missing">What&#39;s still missing / not validated</a></li>
+  </ol>
+</div>
+
+<h2 id="idea">1. The idea in one minute</h2>
+
+<p>Buy in the direction NIFTY BANK is already going, but only once, and only when three cheap tests agree on the same finished five-minute candle.</p>
+
+<p>The first test is the trend: the 20-candle average has to be above the 50-candle average for a Call. The second is the price itself: the candle has to <em>finish</em> above that 20-candle average, not just poke at it. The third is momentum: the RSI reading has to be on the right side of the middle. For a Put, flip all three.</p>
+
+<p>That is the whole entry. There is no profit target. The trade is held until a SuperTrend line &mdash; one line, drawn from the NIFTY BANK candles themselves &mdash; catches up to price, or until 14:00 comes and everything is closed regardless.</p>
+
+<div class="flow">
+  <div class="step">EMA20 above EMA50</div><div class="arrow">&rarr;</div>
+  <div class="step">candle closes above EMA20</div><div class="arrow">&rarr;</div>
+  <div class="step">RSI above 52</div><div class="arrow">&rarr;</div>
+  <div class="step">next candle crosses that close</div><div class="arrow">&rarr;</div>
+  <div class="step">buy the BANKNIFTY monthly</div><div class="arrow">&rarr;</div>
+  <div class="step">hold until SuperTrend, or 14:00</div>
+</div>
+
+<h2 id="same">2. Identical to the NIFTY version — what that means</h2>
+
+<div class="card accent">
+  <strong>This is not a variant. It is the same strategy pointed at a different index.</strong>
+  <ul style="margin:10px 0 0;">
+    <li><b>One engine file.</b> Both run <code>src/strategies/ema_rsi_st_v2.js</code>. There is no separate NIFTY BANK engine. Every call from the NIFTY BANK routes passes the prefix <code>BN_EMA_RSI_ST_V2</code>, which is how the two read different settings out of one piece of code.</li>
+    <li><b>The same three entry conditions</b>, in the same order, read off the same last fully-closed 5-minute candle.</li>
+    <li><b>The same single stop</b> &mdash; SuperTrend(10, 2), initial and trail, tighten-only, enforced intra-candle.</li>
+    <li><b>The same guards</b>, with the <em>same numeric defaults</em>: 10:30&ndash;13:00, 2 trades a day, &#8377;1,000 loss cap, 2 consecutive losses, 2-candle pauses, 14:00 square-off.</li>
+    <li><b>The same deliberate omissions</b> &mdash; no SuperTrend entry gate, no RSI cap, no EMA21, no negative-candle stop, no premium stop, no points stop, no target.</li>
+  </ul>
+  <p style="margin:10px 0 0;">The practical consequence cuts both ways. <b>A rule change lands in both variants at once</b>, because there is only one engine to change &mdash; the rules can never quietly drift apart. But <b>the settings tune completely independently</b>: every key here is <code>BN_</code>-prefixed, so raising the RSI threshold on NIFTY does nothing to NIFTY BANK, and vice versa. The two can run side by side, each holding its own position.</p>
+</div>
+
+<h2 id="instrument">3. The instrument, and why it changes the risk</h2>
+
+<p>This is the part of the guide that actually matters. The rules are borrowed wholesale; the instrument is not.</p>
+
+<table>
+  <tr><th>&nbsp;</th><th>EMA_RSI_ST_V2 (NIFTY)</th><th>BN_EMA_RSI_ST_V2 (NIFTY BANK)</th></tr>
+  <tr><td><b>Underlying</b></td><td><code>NSE:NIFTY50-INDEX</code></td><td><code>NSE:NIFTYBANK-INDEX</code> &mdash; every EMA, the RSI and the SuperTrend are computed on NIFTY BANK candles, not NIFTY ones</td></tr>
+  <tr><td><b>Strike grid</b></td><td>50 points</td><td><b>100 points</b></td></tr>
+  <tr><td><b>Expiry</b></td><td>Weekly contracts available</td><td><b>Monthly only.</b> NSE withdrew BANKNIFTY weekly options in Nov-2024, so there is no weekly contract to buy</td></tr>
+  <tr><td><b>Lot size</b></td><td>65</td><td><b>30</b></td></tr>
+</table>
+
+<div class="card bad">
+  <strong>The risk that nobody adjusted for.</strong>
+  <p style="margin:10px 0 0;">Two facts stack on top of each other here, and neither is compensated for anywhere in the code.</p>
+  <p style="margin:10px 0 0;"><b>One: a monthly decays far more slowly than a weekly.</b> Theta on a BANKNIFTY monthly is a fraction of what a NIFTY weekly pays per day. That sounds like good news &mdash; the position bleeds less per hour when it goes nowhere &mdash; and in one sense it is. But it also means the premium does not fall away when the trade is wrong. The option refuses to die. A losing position keeps most of its value while the index keeps moving against the spot stop.</p>
+  <p style="margin:10px 0 0;"><b>Two: NIFTY BANK moves roughly twice NIFTY&#39;s points</b> for the same percentage move. The SuperTrend stop is measured in <em>index points</em>, not in premium. So a SuperTrend distance that looks the same on a chart is a materially larger move &mdash; and a materially larger rupee loss &mdash; here than on NIFTY.</p>
+  <p style="margin:10px 0 0;"><b>Put together: the same &#8377;1,000 daily cap and the same SuperTrend stop distance represent a materially LARGER rupee risk on NIFTY BANK than they do on NIFTY.</b> Nothing in the code compensates. The guards are the NIFTY numbers carried over verbatim &mdash; they were not scaled for the bigger index or the slower decay. <b>Sizing must be reviewed before the dry-run is ever switched off.</b></p>
+</div>
+
+<div class="card warn">
+  <strong>And the backtest&#39;s decay figure is the wrong one.</strong> The shared backtest models premium decay with <code>BACKTEST_THETA_DAY</code>, which is a <em>NIFTY weekly</em> decay figure. Applied to a BANKNIFTY monthly it <b>overstates decay</b> &mdash; a monthly loses value far more slowly than that number assumes. So a NIFTY BANK backtest is charging the trade for time-decay it would not actually pay. Combined with the seed-premium guess (see &sect;13), it means <b>the rupee output of a NIFTY BANK backtest is even less trustworthy than the NIFTY version&#39;s</b>, and the NIFTY version&#39;s was already labelled a modelled estimate rather than a measurement. Do not read a NIFTY BANK backtest as money.
+</div>
+
+<h2 id="glossary">4. Words you&#39;ll see</h2>
+
+<div class="card">
+  <ul style="margin:0;">
+    <li><b>EMA20 / EMA50</b> &mdash; exponential moving averages of the closing price over 20 and 50 candles. The recent candles count for more than the old ones, so they turn faster than a plain average. EMA20 above EMA50 is the usual shorthand for &quot;the short-term trend is up&quot;.</li>
+    <li><b>RSI(14)</b> &mdash; a 0&ndash;100 momentum reading over the last 14 candles. 50 is the neutral middle. Above it means buyers have had the upper hand recently; below it means sellers have.</li>
+    <li><b>SuperTrend(10, 2)</b> &mdash; a line that sits below price while the trend is up and flips above it when the trend turns. The 10 is how many candles of range it measures; the 2 is how many of those ranges it stands away from price. Here it is <em>only</em> a stop. Note the range it measures is a <b>NIFTY BANK</b> range, so the same settings put the line further from price in points than they do on NIFTY.</li>
+    <li><b>Finished candle</b> &mdash; a five-minute bar that has closed. The engine never reads the bar that is still forming, which is exactly why Paper and Replay give the same answer twice.</li>
+    <li><b>Trigger</b> &mdash; the closing price of the candle that passed all three rules. It is the price the <em>next</em> candle has to cross before anything is bought.</li>
+    <li><b>Tighten-only trail</b> &mdash; a stop that is allowed to move closer to price but never further away. If the SuperTrend line slips back mid-trade, the stop stays where it was.</li>
+    <li><b>Spot points</b> &mdash; movement measured in NIFTY BANK index points, not in rupees of option premium. The two are not the same thing.</li>
+    <li><b>Monthly contract</b> &mdash; the only kind of BANKNIFTY option that exists since Nov-2024. It expires at the end of the month, not the end of the week, and therefore loses value to time much more slowly.</li>
+    <li><b>CE / PE</b> &mdash; a Call option (you profit if NIFTY BANK rises) and a Put option (you profit if it falls).</li>
+  </ul>
+</div>
+
+<h2 id="entry">5. The entry — three rules, one candle</h2>
+
+<p>Everything is decided on a <b>finished</b> five-minute NIFTY BANK candle. All three tests are read off that same candle. Not one of them is allowed to have been true an hour ago.</p>
+
+<table>
+  <tr><th>&nbsp;</th><th>CE &mdash; buy a Call</th><th>PE &mdash; buy a Put</th></tr>
+  <tr><td><b>1. Trend</b></td><td>EMA20 <b>above</b> EMA50</td><td>EMA20 <b>below</b> EMA50</td></tr>
+  <tr><td><b>2. Close</b></td><td>the candle <b>closes above</b> EMA20</td><td>the candle <b>closes below</b> EMA20</td></tr>
+  <tr><td><b>3. Momentum</b></td><td>RSI(14) <b>above 52</b></td><td>RSI(14) <b>below 48</b></td></tr>
+</table>
+
+<p>The PE side is the exact mirror of the CE side. There is no asymmetry anywhere &mdash; no side gets an extra filter or a different stop.</p>
+
+<div class="card warn">
+  <strong>Rule 2 is not the same as rule 1.</strong> EMA20 can sit above EMA50 (an uptrend) while the candle itself closes <em>below</em> EMA20 (a pullback). That is a common state, and it is not bought. The rules want the trend up <em>and</em> price back on top of the fast average on the same bar.
+</div>
+
+<div class="card">
+  <strong>52 and 48, not 70 and 30.</strong> Those are barely off the neutral 50. This is on purpose: rules 1 and 2 already establish direction, so the RSI test is here to veto a signal firing into obvious weakness, not to hunt for extremes. Raise <code>BN_EMA_RSI_ST_V2_RSI_CE_MIN</code> and you get fewer, later, stronger entries &mdash; and you will miss the start of most moves. Note these are the NIFTY thresholds carried over unchanged; <b>no threshold has been fitted to NIFTY BANK behaviour</b>, because no NIFTY BANK data has been run.
+</div>
+
+<h2 id="confirm">6. The confirmation candle</h2>
+
+<p>The candle that passes all three rules does <b>not</b> buy anything. It only arms the trade. Default: <b>ON</b>.</p>
+
+<div class="card accent">
+  <strong>How it actually works.</strong>
+  <ol style="margin:10px 0 0;">
+    <li>A finished candle passes all three rules. Call its closing price the <b>trigger</b>.</li>
+    <li>During the <em>immediately next</em> candle, price must cross that trigger &mdash; strictly above it for a CE, strictly below for a PE.</li>
+    <li>If it does, the fill happens <b>inside that candle</b>, at the crossing price. Not at the next close.</li>
+    <li>If that one candle never crosses the trigger, the setup is dropped. It does not carry over.</li>
+  </ol>
+</div>
+
+<p>Paper and Live fill on the first tick past the trigger. The backtest fills at the same market moment through a shared helper, so all three modes agree by construction rather than by luck.</p>
+
+<div class="card warn">
+  <strong>What this buys you and what it costs you.</strong> It throws away the signals that were a one-candle spike and immediately snapped back &mdash; the classic way a moving-average rule gets whipsawed. The cost is that you never get the first candle of a move, and on a gap-and-run day the crossing price can be well above where the signal candle closed. That cost is <em>larger</em> on NIFTY BANK, where the index travels further inside a single five-minute bar. Turning it off (<code>BN_EMA_RSI_ST_V2_CONFIRM_CANDLE_ENABLED=false</code>) enters on the signal candle itself.
+</div>
+
+<h2 id="stop">7. The stop — SuperTrend and nothing else</h2>
+
+<div class="card accent">
+  <ul style="margin:0;">
+    <li><b>The initial stop</b> is the SuperTrend value at the moment of entry &mdash; below price for a CE, above it for a PE.</li>
+    <li><b>The trail</b> is the same line, re-read at every candle close.</li>
+    <li><b>Tighten-only.</b> A CE stop may only move up; a PE stop may only move down. A SuperTrend that loosens is ignored.</li>
+    <li><b>Enforced intra-candle.</b> The execution layer checks every tick. You do not wait for a candle to close to be stopped out.</li>
+    <li><b>Hard close at 14:00</b>, stop or no stop. Nothing is carried past it and nothing is carried overnight.</li>
+  </ul>
+</div>
+
+<div class="card warn">
+  <strong>The stop distance is not a fixed risk, and here it is a bigger one.</strong> SuperTrend spacing depends on how wide the recent candles were, so a strategy with no fixed stop has <em>no fixed risk per trade</em>. On a volatile morning the stop is far away and the loss is large; on a quiet one it is close and you are stopped by noise. Because NIFTY BANK candles are roughly twice as wide in points as NIFTY&#39;s, the whole distribution of stop distances sits further out &mdash; in points and, unless you resize, in rupees. Nothing clamps either end.
+</div>
+
+<div class="card warn">
+  <strong>Nothing overnight matters more here.</strong> The 14:00 square-off is not just tidiness. A monthly BANKNIFTY option held over a gap can move a long way before you are able to act on it, and there is no stop that works while the market is closed.
+</div>
+
+<h2 id="omitted">8. What is deliberately absent</h2>
+
+<p>These are deliberate removals inherited from the NIFTY V2 design, not oversights. If you are reading this later and think one of them should be &quot;added back&quot;, that is V1 &mdash; and V1 already exists, untouched, elsewhere in this app.</p>
+
+<div class="card">
+  <ul style="margin:0;">
+    <li><b>No SuperTrend gate on entry.</b> SuperTrend is only the stop. A CE can legitimately fire while SuperTrend is red.</li>
+    <li><b>No RSI cap.</b> One threshold per side and no ceiling &mdash; RSI 95 is a valid CE.</li>
+    <li><b>No EMA9 triple stack</b> and <b>no EMA21 anywhere</b> &mdash; not in the entry, not in the exit, not in the trail.</li>
+    <li><b>No negative-candle stop.</b></li>
+    <li><b>No option-premium stop.</b></li>
+    <li><b>No fixed-point stop.</b></li>
+    <li><b>No profit target</b>, no breakeven jump, no partial booking.</li>
+  </ul>
+  <p style="margin:10px 0 0;">If a trade is open, the only two things that can close it are the SuperTrend line and the clock.</p>
+</div>
+
+<div class="card bad">
+  <strong>The one honest caveat, and it is not a small one.</strong>
+  <p style="margin:10px 0 0;">SuperTrend is the only stop, and SuperTrend is not tested on entry. Those two facts collide. A setup can pass all three entry rules while the SuperTrend line is sitting on the <em>wrong side of price</em> &mdash; above the close on a CE. If that trade were opened, its stop would already be behind it: there would be <b>no protective stop at all</b>.</p>
+  <p style="margin:10px 0 0;">The engine <b>skips</b> those setups and writes the reason to the log. It does not open them unprotected. <b>How often that happens on NIFTY BANK is unknown</b> &mdash; the skip rate has never been measured on this instrument. (On NIFTY the same rule refused about one setup in seven over 2024&ndash;25; there is no reason to assume the NIFTY BANK proportion matches, and it has not been checked.)</p>
+  <p style="margin:10px 0 0;"><b>The side effect is worth saying plainly:</b> in practice a CE is never taken while SuperTrend is red. So SuperTrend still behaves like a partial directional filter, even though it is not written as an entry rule. If you ever describe this strategy as &quot;no SuperTrend on entry&quot;, that is true of the rules and not quite true of the behaviour.</p>
+</div>
+
+<h2 id="refuse">9. The trades it refuses</h2>
+
+<div class="card">
+  <ul style="margin:0;">
+    <li><b>The setup with nowhere to put a stop</b> &mdash; SuperTrend on the wrong side of price, as described just above. Skipped and logged, never opened unprotected.</li>
+    <li><b>Outside 10:30&ndash;13:00.</b> No entries before or after, whatever the candle says. The open is skipped deliberately, and NIFTY BANK&#39;s opening swing is the widest of the day.</li>
+    <li><b>The confirmation candle never crossed the trigger.</b> One candle to cross, and only one.</li>
+    <li><b>Not enough history.</b> The engine refuses outright until it has EMA_SLOW + 5 candles &mdash; <b>55 bars</b> at the defaults, which is more than a whole session, so previous days are preloaded before the day starts.</li>
+    <li><b>The day&#39;s budget is spent</b> &mdash; 2 trades done, or the loss cap hit, or two losses in a row.</li>
+    <li><b>Still in a cooldown</b> after a recent stop-out, on either side.</li>
+    <li><b>The option symbol does not validate.</b> Because BANKNIFTY is monthly-only, the expiry code is always a monthly one; a weekly-shaped symbol would not exist and is never built.</li>
+  </ul>
+</div>
+
+<h2 id="risk">10. Safety limits — and why they are the wrong size here</h2>
+
+<div class="card">
+  <ul style="margin:0;">
+    <li><b>Entries only between 10:30 and 13:00 IST.</b> The open is skipped deliberately &mdash; its crosses reverse &mdash; and a late entry has no room left before the 14:00 close.</li>
+    <li><b>Maximum 2 trades a day.</b> Deliberately tight: a couple of good crosses, not a session-long grind.</li>
+    <li><b>&#8377;1,000 daily loss cap.</b> Reach it and the day is over.</li>
+    <li><b>Stop for the day after 2 consecutive losses.</b> The usual sign the market is chopping and every cross is fake.</li>
+    <li><b>2-candle pause on the same side after a stop-out</b>, so the engine cannot re-buy the identical failed signal ten minutes later.</li>
+    <li><b>2-candle opposite-side cooldown</b>, so a stopped-out CE cannot flip straight into a PE on the next candle.</li>
+    <li><b>Hard square-off at 14:00.</b> Nothing overnight, ever.</li>
+    <li>The shared portfolio-wide cap applies on top of all of this.</li>
+  </ul>
+</div>
+
+<div class="card bad">
+  <strong>Every one of those numbers is the NIFTY number, unchanged.</strong>
+  <p style="margin:10px 0 0;">The &#8377;1,000 cap was chosen as a throttle on an unproven NIFTY strategy. It was copied here without being rescaled for an index that swings about twice as far in a day. The consequence is that <b>the same &#8377;1,000 is reached by a much smaller move against you</b>, in percentage terms, than it is on NIFTY. Expect it to end sessions earlier here &mdash; and with 2 trades a day allowed, a single bad trade can end the day before the second is ever taken.</p>
+  <p style="margin:10px 0 0;">That may be exactly what you want on an unvalidated strategy. It is not, however, a tuned risk budget for NIFTY BANK. <b>Review the cap and the position size together before turning the dry-run off.</b></p>
+</div>
+
+<h2 id="numbers">11. What is known, and what is not</h2>
+
+<div class="card">
+  <strong>Numbers you can rely on &mdash; these are settings and instrument facts, not results.</strong>
+  <table style="margin-top:10px;">
+    <tr><th>Number</th><th>Where it comes from</th></tr>
+    <tr><td>RSI thresholds <span class="num">52</span> / <span class="num">48</span></td><td>Settings defaults <code>BN_EMA_RSI_ST_V2_RSI_CE_MIN</code> / <code>_RSI_PE_MAX</code></td></tr>
+    <tr><td>EMA <span class="num">20</span> / <span class="num">50</span>, RSI period <span class="num">14</span></td><td>Settings defaults</td></tr>
+    <tr><td>SuperTrend <span class="num">10</span>, <span class="num">2</span></td><td>Settings defaults <code>_SUPERTREND_PERIOD</code> / <code>_SUPERTREND_MULT</code></td></tr>
+    <tr><td>Entry window <span class="num">10:30&ndash;13:00</span>, square-off <span class="num">14:00</span></td><td>Settings defaults</td></tr>
+    <tr><td><span class="num">2</span> trades/day · <span class="num">&#8377;1,000</span> cap · <span class="num">2</span> consecutive losses · <span class="num">2</span>-candle pauses</td><td>Settings defaults</td></tr>
+    <tr><td>Warm-up <span class="num">55</span> bars (EMA_SLOW 50 + 5)</td><td>The engine&#39;s warm-up rule at the default EMA_SLOW</td></tr>
+    <tr><td>Strike grid <span class="num">100</span> pts · lot <span class="num">30</span> · monthly-only expiry · <code>NSE:NIFTYBANK-INDEX</code></td><td>The instrument definition (NIFTY, for comparison: 50-pt grid, lot 65, weeklies available)</td></tr>
+    <tr><td>Backtest seed premium <span class="num">&#8377;180</span> · slippage <span class="num">2</span> pts each way</td><td>Settings defaults &mdash; both are assumptions, not observations</td></tr>
+  </table>
+</div>
+
+<div class="card bad">
+  <strong>Numbers that do not exist for this strategy.</strong>
+  <ul style="margin:10px 0 0;">
+    <li><b>Win rate</b> &mdash; unknown. Never measured on NIFTY BANK.</li>
+    <li><b>Net points or net rupees</b> &mdash; unknown. No backtest has been run on NIFTY BANK candles.</li>
+    <li><b>Trade frequency</b> &mdash; unknown. Nobody knows how many signals these rules produce on this index.</li>
+    <li><b>Average win / average loss, typical stop distance</b> &mdash; unknown.</li>
+    <li><b>How often the no-placeable-stop skip fires</b> &mdash; unknown on this instrument.</li>
+  </ul>
+  <p style="margin:10px 0 0;"><b>For context only, clearly labelled:</b> on <b>NIFTY</b>, the same rules produced a net of <b>&minus;&#8377;77,978</b> over 2024&ndash;25 in the backtest route with simulated option premiums and a slippage haircut. That is a <em>NIFTY</em> result on a <em>NIFTY weekly</em> option chain. <b>Nothing equivalent has been measured on NIFTY BANK, and the NIFTY BANK figure is unknown.</b> Do not present it, or any other NIFTY figure, as this strategy&#39;s.</p>
+</div>
+
+<h2 id="modes">12. Paper, Live, Backtest &amp; Replay</h2>
+
+<div class="card">
+  <p style="margin:0 0 8px;"><b>Paper</b> is the canonical surface. Every decision, fill and exit rule lives there; the other modes follow it, never the reverse.</p>
+  <p style="margin:0 0 8px;"><b>Live</b> is a harness that <em>wraps</em> Paper and forwards its decisions to the broker, so Live equals Paper by construction rather than by two implementations agreeing. It is gated three ways: <code>BN_EMA_RSI_ST_V2_LIVE_ENABLED</code> must be on, the global <code>LIVE_HARNESS_DRY_RUN</code> must be off, and <code>BN_EMA_RSI_ST_V2_LIVE_DRY_RUN</code> must not be on. All three ship in the safe position, so nothing places a real order out of the box.</p>
+  <p style="margin:0 0 8px;"><b>Two brokers.</b> Candles and quotes come from <b>Fyers</b>; orders go to <b>Zerodha</b> &mdash; the same split the NIFTY twin uses. That is why starting Live checks both logins.</p>
+  <p style="margin:0 0 8px;"><b>Its own position.</b> NIFTY BANK holds its own position file and its own mutex slot, so it can run alongside the NIFTY variant without either interfering with the other.</p>
+  <p style="margin:0;"><b>Replay.</b> Because nothing reads a forming candle or live spot, a recorded session replays bit-for-bit. Replay pins the recorded day&#39;s <b>monthly</b> BANKNIFTY expiry &mdash; it never substitutes the NIFTY expiry. That is the tool to use before touching a live gate: replay a paper day and confirm Live and Paper made the same decisions.</p>
+</div>
+
+<div class="card warn">
+  <strong>What the backtest can and cannot tell you here.</strong> The entries are honest &mdash; the backtest drives the same signal engine and fills the confirmation candle at the same market moment through a shared helper. <b>The rupees are not.</b> There is no historical option chain in this repo, so the premium is <em>modelled</em> from a seed price and a decay figure &mdash; and as &sect;3 explains, that decay figure is a NIFTY-weekly one applied to a BANKNIFTY monthly, which overstates the decay. The seed premium (&#8377;180 by default) is a NIFTY-weekly-shaped guess too; a BANKNIFTY monthly ATM premium is typically well above it. Treat a NIFTY BANK backtest as a test of the <em>signal</em>, and not at all as a statement about money.
+</div>
+
+<h2 id="config">13. All the settings, explained</h2>
+
+<p class="muted">Every key below appears in <b>Settings &rarr; BN_EMA_RSI_ST_V2 Strategy (NIFTY BANK)</b>. Defaults are the ones the Settings schema ships. <b>None of these are shared with the NIFTY variant</b> &mdash; every key is <code>BN_</code>-prefixed and the two tune completely independently, even though they run the same engine.</p>
+
+<h3>Mode &amp; Live</h3>
+<table>
+  <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>BN_EMA_RSI_ST_V2_MODE_ENABLED</code></td><td><code>false</code></td><td>Show the BN EMA_RSI_ST_V2 menu and settings. The same rules as EMA_RSI_ST_V2 but traded on NIFTY BANK, with its own settings and its own position &mdash; the two can run side by side. Ships OFF and unproven.</td></tr>
+  <tr><td><code>BN_EMA_RSI_ST_V2_PAPER_ENABLED</code></td><td><code>false</code></td><td>Allow new NIFTY BANK paper sessions to start. OFF blocks the Start button &mdash; use it to park the strategy without hiding it.</td></tr>
+  <tr><td><code>BN_EMA_RSI_ST_V2_LIVE_ENABLED</code></td><td><code>false</code></td><td>Send real orders to Zerodha. NEVER traded live &mdash; paper-validate a run of sessions first. Off means the harness refuses to start unless the global dry-run is also on.</td></tr>
+  <tr><td><code>BN_EMA_RSI_ST_V2_LIVE_DRY_RUN</code></td><td><code>false</code></td><td>Keep this strategy simulated even when live orders are switched on &mdash; the broker call is written to the log but no real order leaves the machine. A per-strategy safety catch on top of the global one.</td></tr>
+</table>
+
+<h3>Signal (EMA + RSI)</h3>
+<table>
+  <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>BN_EMA_RSI_ST_V2_EMA_FAST</code></td><td><code>20</code></td><td>The faster of the two moving averages. A CE needs it ABOVE the slow one, a PE below. Smaller reacts to a turn sooner and gives more (and noisier) signals; larger waits for a clearer trend.</td></tr>
+  <tr><td><code>BN_EMA_RSI_ST_V2_EMA_SLOW</code></td><td><code>50</code></td><td>The slower moving average the fast one is measured against. Raise it and the trend has to be older and better established before a cross counts; lower it and crosses come thick and fast.</td></tr>
+  <tr><td><code>BN_EMA_RSI_ST_V2_RSI_PERIOD</code></td><td><code>14</code></td><td>How many candles the RSI is measured over. 14 is the standard and what the rule assumes.</td></tr>
+  <tr><td><code>BN_EMA_RSI_ST_V2_RSI_CE_MIN</code></td><td><code>52</code></td><td>A CE (call) is only bought when RSI on the signal candle is above this. Raise it for fewer but stronger buys; lower it and weak, barely-positive momentum starts qualifying.</td></tr>
+  <tr><td><code>BN_EMA_RSI_ST_V2_RSI_PE_MAX</code></td><td><code>48</code></td><td>A PE (put) is only bought when RSI on the signal candle is below this. Lower it for fewer but stronger sells; raise it and mild weakness starts counting as a signal.</td></tr>
+  <tr><td><code>BN_EMA_RSI_ST_V2_CONFIRM_CANDLE_ENABLED</code></td><td><code>true</code></td><td>The candle that crosses only ARMS the setup &mdash; entry waits for the NEXT candle to close in the same direction. Costs you the first candle of the move but skips the crosses that immediately snap back. OFF enters on the crossing candle itself.</td></tr>
+</table>
+
+<h3>Stops (SuperTrend trail — the only stop)</h3>
+<table>
+  <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>BN_EMA_RSI_ST_V2_SUPERTREND_PERIOD</code></td><td><code>10</code></td><td>ATR length behind the SuperTrend line. THIS LINE IS THE ONLY STOP &mdash; it is a trailing exit, not an entry filter, so it never blocks a trade from being taken. Longer = a slower, looser trail that gives the trade more room. Note the ATR it measures is a BANKNIFTY ATR, so the same period sits further from price in points than it does on NIFTY.</td></tr>
+  <tr><td><code>BN_EMA_RSI_ST_V2_SUPERTREND_MULT</code></td><td><code>2</code></td><td>How many ATRs away from price the SuperTrend line sits. Smaller = a tighter trail that banks small moves but gets shaken out often; larger = more breathing room and bigger losses when it is finally hit. Again: this is the ONLY stop, not an entry filter.</td></tr>
+</table>
+
+<h3>Session window</h3>
+<table>
+  <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>BN_EMA_RSI_ST_V2_ENTRY_START</code></td><td><code>10:30</code></td><td>No entries before this time (IST). The open is deliberately skipped &mdash; the first hour is noisy and its crosses reverse, and BANKNIFTY&#39;s opening swing is the widest of the day. Move it earlier for more trades and more false starts.</td></tr>
+  <tr><td><code>BN_EMA_RSI_ST_V2_ENTRY_END</code></td><td><code>13:00</code></td><td>No NEW entries after this time (IST). A trade opened later has too little of the day left to work. A position already open is not affected.</td></tr>
+  <tr><td><code>BN_EMA_RSI_ST_V2_EOD_EXIT_TIME</code></td><td><code>14:00</code></td><td>Anything still open is closed at this time (IST), stop or no stop. Nothing is carried overnight &mdash; which matters more here, because a monthly BANKNIFTY option held over a gap can move a long way before you can act on it.</td></tr>
+  <tr><td><code>BN_EMA_RSI_ST_V2_WARMUP_DAYS</code></td><td><code>5</code></td><td>How many earlier trading days of candles are loaded before the session so the EMAs, RSI and SuperTrend start the day already settled. Too few and the first signals are computed from half-formed indicators.</td></tr>
+</table>
+
+<h3>Day guards</h3>
+<table>
+  <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>BN_EMA_RSI_ST_V2_MAX_DAILY_TRADES</code></td><td><code>2</code></td><td>Stop taking new entries once this many trades are done for the day. 2 is deliberately tight &mdash; the idea is a couple of good crosses, not grinding the session.</td></tr>
+  <tr><td><code>BN_EMA_RSI_ST_V2_MAX_DAILY_LOSS</code></td><td><code>1000</code></td><td>Stop trading for the rest of the day once losses reach this much (0 = off). Read this one carefully: &#8377;1,000 is the same number the NIFTY version uses, but BANKNIFTY swings about twice as far in a day, so the same &#8377;1,000 is hit by a much smaller move against you. Expect it to end sessions earlier here.</td></tr>
+  <tr><td><code>BN_EMA_RSI_ST_V2_MAX_CONSEC_LOSSES</code></td><td><code>2</code></td><td>Halt for the day after this many losing trades back to back (0 = off) &mdash; the usual sign the market is chopping and every cross is a fake. Lower reacts sooner but also quits on ordinary bad luck.</td></tr>
+  <tr><td><code>BN_EMA_RSI_ST_V2_SL_PAUSE_CANDLES</code></td><td><code>2</code></td><td>After a stop-out, refuse the SAME side for this many candles (0 = off). Stops the engine re-buying the identical failed signal a minute later.</td></tr>
+  <tr><td><code>BN_EMA_RSI_ST_V2_OPPOSITE_SIDE_COOLDOWN_ENABLED</code></td><td><code>true</code></td><td>After an exit, also pause the OTHER side briefly, so a stopped-out CE cannot flip straight into a PE on the very next candle. OFF allows the immediate flip.</td></tr>
+  <tr><td><code>BN_EMA_RSI_ST_V2_OPPOSITE_SIDE_COOLDOWN_CANDLES</code></td><td><code>2</code></td><td>How many candles the opposite-side pause lasts. Longer means a genuine reversal is missed; shorter means whipsaw flips get through. Ignored when the toggle above is off.</td></tr>
+</table>
+
+<h3>Backtest</h3>
+<table>
+  <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>BN_EMA_RSI_ST_V2_BT_SLIPPAGE_PTS</code></td><td><code>2</code></td><td>Cost the backtest charges per side, in points, to stand in for the bid-ask spread you really pay. Set it to 0 and every option-buying backtest flatters itself. BANKNIFTY monthlies are usually wider than NIFTY weeklies, so 2 is if anything optimistic here.</td></tr>
+  <tr><td><code>BN_EMA_RSI_ST_V2_BT_SEED_PREMIUM</code></td><td><code>180</code></td><td>The option price the backtest starts each trade from, since no historical option chain exists here. It is a guess, and it is the weakest number in any backtest result &mdash; more so on BANKNIFTY, where a monthly ATM premium is typically well above a NIFTY weekly&#39;s.</td></tr>
+</table>
+
+<h3>Menu &amp; alerts</h3>
+<table>
+  <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>UI_SHOW_BN_EMA_RSI_ST_V2_BACKTEST</code> / <code>_PAPER</code> / <code>_LIVE_HARNESS</code> / <code>_HISTORY</code></td><td><code>false</code></td><td>Sidebar sub-menu visibility, one per page. All ship OFF: this strategy is unproven, so nothing appears until you ask for it.</td></tr>
+  <tr><td><code>TG_BN_EMA_RSI_ST_V2_STARTED</code> / <code>_ENTRY</code> / <code>_EXIT</code> / <code>_DAYREPORT</code></td><td><code>true</code></td><td>Telegram alerts: session start, every entry, every exit, and a day summary on stop.</td></tr>
+</table>
+
+<h2 id="missing">14. What&#39;s still missing / not validated</h2>
+
+<div class="card bad">
+  <strong>Be honest with yourself about what you are looking at.</strong>
+  <ul style="margin:10px 0 0;">
+    <li><b>It has never traded live.</b> Not one order, not one rupee.</li>
+    <li><b>Zero paper sessions.</b> There is no forward-tested record at all &mdash; nothing has been observed running against a live NIFTY BANK tick feed.</li>
+    <li><b>Zero backtests on NIFTY BANK.</b> No historical run of these rules on this index exists. There is no win rate, no net figure, no trade count, no stop-distance distribution &mdash; not bad ones, <em>none</em>.</li>
+    <li><b>That is also why there are no charts.</b> Every chart in the sibling guides was rendered from real engine output. There is no real NIFTY BANK output to render, and a hand-drawn illustration of a trade that never happened would be worse than an empty page.</li>
+    <li><b>One engine, two strategies.</b> This shares <code>src/strategies/ema_rsi_st_v2.js</code> with the NIFTY variant, so <b>a rule change lands in both at once</b> &mdash; check the other one before changing anything here. The <em>settings</em>, by contrast, tune independently: nothing you change under <code>BN_</code> affects NIFTY, and nothing you change on NIFTY affects this.</li>
+    <li><b>No threshold has been fitted to this instrument.</b> 52 and 48, SuperTrend 10 and 2, 2 trades a day, the &#8377;1,000 cap &mdash; every one of them was carried over from NIFTY. They are repo conventions, not values that earned their place on NIFTY BANK data.</li>
+    <li><b>The guards are the wrong size and nothing in the code fixes that.</b> A monthly option decays slowly and NIFTY BANK moves roughly twice NIFTY&#39;s points, so the same cap and the same stop distance are a materially larger rupee risk here. <b>Review sizing before the dry-run is ever switched off.</b></li>
+    <li><b>A NIFTY BANK backtest, when one is run, will overstate decay.</b> <code>BACKTEST_THETA_DAY</code> is a NIFTY-weekly figure and the seed premium is a NIFTY-weekly-shaped guess. Read the signal, not the rupees.</li>
+    <li><b>What to do next.</b> Turn the mode on, run paper sessions with the tick recorder on, and let real NIFTY BANK signals accumulate. Replay one of those days and confirm Paper and Live agree. Only then is there any data to tune on &mdash; and only then does the question of whether these rules work on this index have an answer.</li>
+  </ul>
+</div>
+
+<p class="muted" style="margin-top:30px;">Engine: <code>src/strategies/ema_rsi_st_v2.js</code> (shared with the NIFTY variant, parameterised by env prefix) &nbsp;&middot;&nbsp; the engine header comment is the authoritative rule statement &nbsp;&middot;&nbsp; instrument constants from <code>src/config/instrument.js</code> &nbsp;&middot;&nbsp; no chart is drawn on this page because the strategy has not yet been run on NIFTY BANK data.</p>
+
+</div>
+
+</body>
+</html>
