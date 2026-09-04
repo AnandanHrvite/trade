@@ -1347,17 +1347,31 @@ router.get("/status/chart-data", (req, res) => {
 // Cached per (symbol, day) because the option history endpoint is slow and the
 // page polls; only the still-forming session is re-fetched.
 const _optChartCache = new Map();   // key -> { at, bars }
+const _optChartInflight = new Map(); // key -> Promise, collapses concurrent misses
 const _OPT_CHART_TTL_MS = 60000;
 
 async function _fetchOptionBars(symbol, dayIso) {
   const key = `${symbol}|${dayIso}|${_resMin()}`;
   const hit = _optChartCache.get(key);
   if (hit && Date.now() - hit.at < _OPT_CHART_TTL_MS) return hit.bars;
-  const { fetchCandles } = require("../services/backtestEngine");
-  const bars = await fetchCandles(symbol, String(_resMin()), dayIso, dayIso);
-  const out = Array.isArray(bars) ? bars : [];
-  _optChartCache.set(key, { at: Date.now(), bars: out });
-  return out;
+
+  // Cache the in-flight PROMISE, not just the result. Two browser tabs — or one
+  // tab whose poll comes round again before a slow fetch returns — otherwise
+  // both miss the cache and each fires its own Fyers history call for the very
+  // same day of the very same contract.
+  const inflight = _optChartInflight.get(key);
+  if (inflight) return inflight;
+
+  const p = (async () => {
+    const { fetchCandles } = require("../services/backtestEngine");
+    const bars = await fetchCandles(symbol, String(_resMin()), dayIso, dayIso);
+    const out = Array.isArray(bars) ? bars : [];
+    _optChartCache.set(key, { at: Date.now(), bars: out });
+    return out;
+  })().finally(() => { _optChartInflight.delete(key); });
+
+  _optChartInflight.set(key, p);
+  return p;
 }
 
 router.get("/status/option-chart", async (req, res) => {
@@ -1379,6 +1393,16 @@ router.get("/status/option-chart", async (req, res) => {
       : null;
 
     if (!src || !src.symbol) return res.json({ candles: [], symbol: null, reason: "No trade taken yet today." });
+
+    // FUTURES mode records no premium at all (optionEntryLtp/optionExitLtp are
+    // null) and its P&L is measured on spot, which the charts above already
+    // show. Charting it here would print "Bought at 0.00" from those nulls.
+    if (src.isFutures) {
+      return res.json({
+        candles: [], markers: [], symbol: src.symbol, side: src.side, isFutures: true,
+        reason: "Futures mode — the P&L is measured on the spot charts above, there is no separate premium series.",
+      });
+    }
 
     const bars = await _fetchOptionBars(src.symbol, src.day);
     const candles = bars
@@ -1406,10 +1430,12 @@ router.get("/status/option-chart", async (req, res) => {
       // imply (exit - entry) * qty equals the P&L, and it never does.
       charges: src.open ? null : (src.charges != null ? src.charges : null),
       isFutures: src.isFutures,
-      reason: candles.length ? null : `No premium history returned for ${src.symbol} — an expired Fyers token returns an empty series.`,
+      reason: candles.length ? null : `Fyers returned no premium candles for ${src.symbol} on ${src.day}.`,
     });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    // Includes the expired-token case: Fyers answers an auth failure with
+    // code -16, which fetchChunk turns into a throw, not an empty series.
+    res.json({ candles: [], markers: [], symbol: null, reason: `Could not load the premium chart: ${e.message}` });
   }
 });
 
@@ -1701,18 +1727,26 @@ setInterval(haRefresh, 4000);
       if (d.candles && d.candles.length) {
         ocs.setData(d.candles);
         if (empty) empty.style.display = 'none';
-      } else if (empty) {
-        empty.style.display = 'flex';
-        empty.textContent = d.reason || 'No trade taken yet today.';
+      } else {
+        // CLEAR the series. Skipping setData here left the PREVIOUS trade's
+        // candles drawn underneath the "could not load" overlay, which reads as
+        // live data for a contract this response knows nothing about.
+        ocs.setData([]);
+        if (empty) {
+          empty.style.display = 'flex';
+          empty.textContent = d.reason || 'No trade taken yet today.';
+        }
       }
-      if (d.markers && d.markers.length) ocs.setMarkers(d.markers.slice().sort(function(a,b){return a.time-b.time;}));
+      ocs.setMarkers((d.markers && d.markers.length) ? d.markers.slice().sort(function(a,b){return a.time-b.time;}) : []);
       olines.forEach(function(l){ try { ocs.removePriceLine(l); } catch(_){} });
       olines = [];
       addOptLine(d.entryLtp, '#94a3b8', 'Bought', LightweightCharts.LineStyle.Dotted);
       addOptLine(d.exitLtp,  '#ef4444', 'Sold',   LightweightCharts.LineStyle.Solid);
       if (d.open && d.liveLtp != null) addOptLine(d.liveLtp, '#3b82f6', 'Now', LightweightCharts.LineStyle.Dashed);
       if (legend) {
-        if (!d.symbol) { legend.textContent = ''; }
+        // Never render a premium that was not recorded: Number(null) is 0, so an
+        // unguarded money() would invent a "Bought at 0.00" that never happened.
+        if (!d.symbol || d.isFutures || d.entryLtp == null) { legend.textContent = ''; }
         else if (d.open) {
           var now = d.liveLtp != null ? d.liveLtp : null;
           legend.innerHTML = 'Bought at <b>' + money(d.entryLtp) + '</b>'
