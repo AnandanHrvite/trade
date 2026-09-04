@@ -1619,7 +1619,32 @@ router.post("/save", (req, res) => {
 // settings-audit log, and append per-mode daily settings snapshots. Shared by
 // POST /save and POST /audit-restore so both write identical audit trails.
 // Returns the updateEnvFile result (incl. needsRestart).
+// The env viewer and its COPY button print SECRET/TOKEN/ACCESS values as
+// ******** so the listing is safe to share. Paste that listing into Bulk Edit
+// and the mask arrives here as if it were the new value — overwriting the real
+// credential with eight asterisks. The app then hashes "********" as the Fyers
+// app secret, and Fyers answers {"code":-99,"message":"internal server error"},
+// which reads like an outage on their side rather than a wiped secret.
+//
+// A row whose value is only asterisks is never something the user typed on
+// purpose, so drop it and keep whatever is already on disk.
+function stripMaskedSecrets(cleaned) {
+  const dropped = [];
+  for (const k of Object.keys(cleaned)) {
+    if (/^\*+$/.test(String(cleaned[k] || "").trim())) {
+      delete cleaned[k];
+      dropped.push(k);
+    }
+  }
+  if (dropped.length) {
+    console.warn(`[settings] ignored masked placeholder value for: ${dropped.join(", ")} — kept the existing value.`);
+  }
+  return dropped;
+}
+
 function persistChanges(cleaned, deleteKeys, note, req) {
+  // Do this before the audit snapshot so a mask never reaches disk or the log.
+  const maskedDropped = stripMaskedSecrets(cleaned);
   // Snapshot prior values for audit BEFORE updateEnvFile mutates process.env.
   // Prefer .env on disk; fall back to process.env (covers schema defaults
   // not yet persisted to .env).
@@ -1632,6 +1657,7 @@ function persistChanges(cleaned, deleteKeys, note, req) {
   }
 
   const result = updateEnvFile(cleaned, deleteKeys);
+  if (maskedDropped.length) result.maskedDropped = maskedDropped;
   if (result.success) {
     const summary = [];
     if (Object.keys(cleaned).length) summary.push(`updated ${Object.keys(cleaned).length}: ${Object.keys(cleaned).join(", ")}`);

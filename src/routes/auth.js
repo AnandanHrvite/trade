@@ -82,6 +82,21 @@ function clearDisconnectedTokens(trigger) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * A masked placeholder is not a credential.
+ *
+ * The Settings "copy .env" view prints SECRET/TOKEN/ACCESS values as ********
+ * so they are safe to share. Pasting that listing back into .env stores the
+ * mask itself, and the app then hashes "********" as the app secret. Fyers
+ * decodes the auth_code fine and fails at the secret check, answering
+ * {"code":-99,"message":"internal server error"} — which reads like an outage
+ * on their side and sends you looking in the wrong place entirely.
+ */
+function maskedCredential(value) {
+  const v = String(value || "").trim();
+  return v === "" || /^\*+$/.test(v);
+}
+
+/**
  * GET /auth/login
  *
  * Shows a landing page with two options instead of redirecting straight to
@@ -149,6 +164,16 @@ router.post("/manual", async (req, res) => {
         "Couldn't find auth_code or request_token in that URL. Paste just the code value, or the full callback URL with ?auth_code=... in it.",
       ));
     }
+  }
+
+  if (maskedCredential(process.env.SECRET_KEY) || maskedCredential(process.env.APP_ID)) {
+    console.error("❌ [Fyers] APP_ID/SECRET_KEY looks like a masked placeholder (********), not a real credential.");
+    return res.status(400).send(buildErrorPage(
+      "Fyers Login Failed",
+      "APP_ID or SECRET_KEY in .env is a masked placeholder (********), not the real value. " +
+      "That mask comes from the Settings \u201ccopy .env\u201d view; paste the real secret from the Fyers " +
+      "dashboard into .env and restart. Fyers reports this as \u201cinternal server error\u201d (code -99)."
+    ));
   }
 
   try {
@@ -223,7 +248,15 @@ router.get("/callback", async (req, res) => {
       ));
     } else {
       console.error("❌ [Fyers] Token generation failed:", response);
-      return res.status(400).send(buildErrorPage("Fyers Login Failed", JSON.stringify(response)));
+      // -99 is what Fyers returns when the auth_code decodes but the app secret
+      // does not match — most often because SECRET_KEY holds a masked
+      // placeholder rather than the real value.
+      const secretLooksMasked = maskedCredential(process.env.SECRET_KEY);
+      const detail = (response && response.code === -99 && secretLooksMasked)
+        ? "SECRET_KEY in .env is ******** (a masked placeholder), not the real app secret. " +
+          "Paste the real secret from the Fyers dashboard into .env and restart."
+        : JSON.stringify(response);
+      return res.status(400).send(buildErrorPage("Fyers Login Failed", detail));
     }
   } catch (err) {
     console.error("❌ [Fyers] Auth error:", err);
