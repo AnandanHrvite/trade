@@ -18,34 +18,6 @@ try {
   require("axios").defaults.timeout = FYERS_HTTP_TIMEOUT_MS;
 } catch (_) { /* axios always ships with the SDK; never block startup on this */ }
 
-// The 6s deadline above protects the trading hot path, where a hung socket
-// blocks entries. Login is the opposite case: a one-shot human action against
-// a slower endpoint, with nothing to wedge — and 6s was tight enough that the
-// OAuth token exchange returned ECONNABORTED and cost the user the whole trip
-// through the broker. runWithAuthTimeout lends the shared axios instance a
-// longer deadline for just that call, then restores it.
-const FYERS_AUTH_TIMEOUT_MS = Math.max(
-  FYERS_HTTP_TIMEOUT_MS,
-  parseInt(process.env.FYERS_AUTH_TIMEOUT_MS || "30000", 10) || 30000
-);
-
-async function runWithAuthTimeout(fn) {
-  // The deadline has to be set on the SDK's OWN axios instance. It was built
-  // with axios.create() at require time, and an instance snapshots the global
-  // defaults at creation — raising axios.defaults.timeout afterwards does not
-  // reach it. `fyers.session` is that instance (apiService sets
-  // self.session = axiosInstance), so we set and restore the value on it.
-  const session = fyers && fyers.session;
-  if (!session || !session.defaults) return fn();
-  const prev = session.defaults.timeout;
-  session.defaults.timeout = FYERS_AUTH_TIMEOUT_MS;
-  try {
-    return await fn();
-  } finally {
-    session.defaults.timeout = prev;
-  }
-}
-
 const { fyersModel } = require("fyers-api-v3");
 
 // Fyers SDK writes its own debug logs to ./logs/ — auto-create the directory
@@ -76,10 +48,7 @@ function saveToken(token) {
   try {
     const dir = path.dirname(TOKEN_FILE);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    // 0600: this token places live orders. Default perms leave it readable by
-    // every account on the box — same treatment as the Drive credential store.
-    fs.writeFileSync(TOKEN_FILE, JSON.stringify({ token, savedAt: Date.now(), savedDate: todayIST() }), { encoding: "utf-8", mode: 0o600 });
-    try { fs.chmodSync(TOKEN_FILE, 0o600); } catch (_) {}   // tighten a pre-existing file
+    fs.writeFileSync(TOKEN_FILE, JSON.stringify({ token, savedAt: Date.now(), savedDate: todayIST() }), "utf-8");
   } catch (err) {
     console.warn("⚠️  Could not save Fyers token to disk:", err.message);
   }
@@ -142,4 +111,3 @@ fyers.clearToken = clearFyersToken; // expose on instance for convenience
 
 module.exports = fyers;
 module.exports.clearFyersToken = clearFyersToken;
-module.exports.runWithAuthTimeout = runWithAuthTimeout;
