@@ -39,7 +39,7 @@ function pnlColor(n) { return (typeof n === "number" && n >= 0) ? "#10b981" : "#
  * @param {Array} allRows  full, already-sorted row list
  * @param {Object} query   req.query ({ page, pageSize })
  * @returns {{rows:Array,total:number,page:number,pageSize:number,totalPages:number}}
- * pageSize omitted or 0 → return all rows (used by "Copy All Data").
+ * pageSize omitted or 0 → return all rows (used by the "All" rows option).
  */
 function dailyFilesPaginate(allRows, query) {
   const rows = Array.isArray(allRows) ? allRows : [];
@@ -666,8 +666,12 @@ function _aiNum(v){ return (v==null||v==='') ? '' : (typeof v==='number' ? (Math
 function _aiCell(v){
   if (v==null) return '';
   if (typeof v==='number') return String(Math.round(v*100)/100);
-  if (typeof v==='object') { try { return JSON.stringify(v); } catch(_) { return String(v); } }
-  return String(v).replace(/[\\r\\n]+/g,' ').replace(/\\|/g,'\\\\|');
+  var str;
+  if (typeof v==='object') { try { str = JSON.stringify(v); } catch(_) { str = String(v); } }
+  else str = String(v);
+  // Newlines and pipes would break the Markdown table row, so neutralise both
+  // on every value — stringified objects included.
+  return str.replace(/[\\r\\n]+/g,' ').replace(/\\|/g,'\\\\|');
 }
 function buildAiBundle(){
   var trades = (typeof ACTIVE_TRADES !== 'undefined' && ACTIVE_TRADES) ? ACTIVE_TRADES : (ALL_TRADES_JSON||[]);
@@ -690,7 +694,7 @@ function buildAiBundle(){
   var worst = trades.reduce(function(a,t){ return (a==null||(t.pnl||0)<(a.pnl||0))?t:a; }, null);
 
   // Per-day aggregation + equity curve / max drawdown on the daily series.
-  var dayMap = {}, order = [];
+  var dayMap = Object.create(null), order = [];
   trades.forEach(function(t){
     var d = t.date || 'Unknown';
     if(!dayMap[d]){ dayMap[d] = {date:d,n:0,w:0,l:0,pnl:0}; order.push(d); }
@@ -710,10 +714,14 @@ function buildAiBundle(){
   // Union of every field across all trades, so strategy-specific columns are kept.
   // Skip internal/derived fields that are noise for an LLM: _cn is the
   // contract-note cache the Report modal uses (a nested charges blob).
+  // Object.create(null) so a trade field named "toString"/"constructor" is not
+  // silently dropped by a truthy hit on the prototype chain.
   var SKIP = { _cn: 1 };
-  var seen = {}, cols = [];
+  var seen = Object.create(null), cols = [];
   trades.forEach(function(t){
-    Object.keys(t||{}).forEach(function(k){ if(!seen[k] && !SKIP[k]){ seen[k]=1; cols.push(k); } });
+    Object.keys(t||{}).forEach(function(k){
+      if(!seen[k] && !Object.prototype.hasOwnProperty.call(SKIP, k)){ seen[k]=1; cols.push(k); }
+    });
   });
   var preferred = ['date','side','entryTime','exitTime','entryPrice','exitPrice','spotAtEntry','spotAtExit','stopLoss','target','qty','lots','pnl','pnlPct','exitReason','entryReason'];
   cols.sort(function(a,b){
@@ -758,7 +766,7 @@ function buildAiBundle(){
   L.push('');
 
   // Exit-reason breakdown — usually the highest-signal cut for tuning.
-  var byExit = {};
+  var byExit = Object.create(null);
   trades.forEach(function(t){
     var r = (t.exitReason || 'Unknown').toString().trim() || 'Unknown';
     if(!byExit[r]) byExit[r] = {n:0,w:0,pnl:0};
