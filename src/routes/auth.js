@@ -307,13 +307,27 @@ router.get("/callback", async (req, res) => {
       ));
     } else {
       console.error("❌ [Fyers] Token generation failed:", response);
-      // -99 means Fyers decoded the auth_code but the app secret did not
-      // match. The masked-placeholder case is already caught above, so at this
-      // point the secret is simply the WRONG value for this APP_ID.
+      // Enough to tell a credential problem from a Fyers-side one, without
+      // printing either secret: -99 is Fyers' generic failure and does NOT on
+      // its own say which input it disliked.
+      console.error(
+        `   ↳ app_id="${String(process.env.APP_ID || "").trim()}"`
+        + ` secret_len=${String(process.env.SECRET_KEY || "").trim().length}`
+        + ` code_len=${String(tokenValue).length}`
+        + ` redirect="${process.env.REDIRECT_URL || "(unset)"}"`
+      );
+      // -99 is Fyers' generic "internal server error". The masked and missing
+      // cases are already caught above, so the likeliest remaining cause is a
+      // secret that does not match this APP_ID — but Fyers does not say so,
+      // and a genuine fault on their side looks identical. Word it as the
+      // first thing to check, not as a verdict.
       const detail = (response && response.code === -99)
-        ? "Fyers accepted the login code but rejected the app secret, so SECRET_KEY is not the " +
-          "right secret for this APP_ID. Copy it again from the Fyers dashboard, then set it in " +
-          "Settings → BULK EDIT."
+        ? "Fyers returned “internal server error” (code -99) for the token exchange. That is a " +
+          "generic failure and it does not say which input it rejected. Most often SECRET_KEY is " +
+          "not the secret for this APP_ID — check that pair on the Fyers dashboard first (the app " +
+          "id here is <code>" + String(process.env.APP_ID || "").trim() + "</code>). If they do " +
+          "match, the fault is on Fyers' side; wait and try again. Full response: " +
+          JSON.stringify(response)
         : JSON.stringify(response);
       return res.status(400).send(buildErrorPage("Fyers Login Failed", detail));
     }
