@@ -18,6 +18,29 @@ try {
   require("axios").defaults.timeout = FYERS_HTTP_TIMEOUT_MS;
 } catch (_) { /* axios always ships with the SDK; never block startup on this */ }
 
+// The 6s deadline above protects the trading hot path, where a hung socket
+// blocks entries. Login is the opposite case: a one-shot human action against
+// a slower endpoint, with nothing to wedge — and 6s was tight enough that the
+// OAuth token exchange returned ECONNABORTED and cost the user the whole trip
+// through the broker. runWithAuthTimeout lends the shared axios instance a
+// longer deadline for just that call, then restores it.
+const FYERS_AUTH_TIMEOUT_MS = Math.max(
+  FYERS_HTTP_TIMEOUT_MS,
+  parseInt(process.env.FYERS_AUTH_TIMEOUT_MS || "30000", 10) || 30000
+);
+
+async function runWithAuthTimeout(fn) {
+  let axiosLib = null;
+  try { axiosLib = require("axios"); } catch (_) { return fn(); }
+  const prev = axiosLib.defaults.timeout;
+  axiosLib.defaults.timeout = FYERS_AUTH_TIMEOUT_MS;
+  try {
+    return await fn();
+  } finally {
+    axiosLib.defaults.timeout = prev;
+  }
+}
+
 const { fyersModel } = require("fyers-api-v3");
 
 // Fyers SDK writes its own debug logs to ./logs/ — auto-create the directory
@@ -114,3 +137,4 @@ fyers.clearToken = clearFyersToken; // expose on instance for convenience
 
 module.exports = fyers;
 module.exports.clearFyersToken = clearFyersToken;
+module.exports.runWithAuthTimeout = runWithAuthTimeout;

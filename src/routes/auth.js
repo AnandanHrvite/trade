@@ -223,11 +223,15 @@ async function exchangeAuthCode(authCode, label) {
   let last = null;
   for (let i = 1; i <= ATTEMPTS; i++) {
     try {
-      const response = await fyers.generate_access_token({
-        client_id:  process.env.APP_ID,
-        secret_key: process.env.SECRET_KEY,
-        auth_code:  authCode,   // SDK always expects "auth_code" regardless of URL param name
-      });
+      // Borrow the longer auth deadline — the 6s hot-path timeout was what
+      // turned a slow-but-fine login into ECONNABORTED.
+      const response = await fyers.runWithAuthTimeout(() =>
+        fyers.generate_access_token({
+          client_id:  process.env.APP_ID,
+          secret_key: process.env.SECRET_KEY,
+          auth_code:  authCode,   // SDK always expects "auth_code" regardless of URL param name
+        })
+      );
       if (response && response.s === "ok") return response;
       last = response;
       // Only a transport abort is worth retrying. A code Fyers actively
