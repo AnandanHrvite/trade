@@ -30,14 +30,19 @@ const FYERS_AUTH_TIMEOUT_MS = Math.max(
 );
 
 async function runWithAuthTimeout(fn) {
-  let axiosLib = null;
-  try { axiosLib = require("axios"); } catch (_) { return fn(); }
-  const prev = axiosLib.defaults.timeout;
-  axiosLib.defaults.timeout = FYERS_AUTH_TIMEOUT_MS;
+  // The deadline has to be set on the SDK's OWN axios instance. It was built
+  // with axios.create() at require time, and an instance snapshots the global
+  // defaults at creation — raising axios.defaults.timeout afterwards does not
+  // reach it. `fyers.session` is that instance (apiService sets
+  // self.session = axiosInstance), so we set and restore the value on it.
+  const session = fyers && fyers.session;
+  if (!session || !session.defaults) return fn();
+  const prev = session.defaults.timeout;
+  session.defaults.timeout = FYERS_AUTH_TIMEOUT_MS;
   try {
     return await fn();
   } finally {
-    axiosLib.defaults.timeout = prev;
+    session.defaults.timeout = prev;
   }
 }
 
