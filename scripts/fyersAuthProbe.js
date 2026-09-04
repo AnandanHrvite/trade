@@ -13,7 +13,9 @@
  *
  *   1. open  https://<host>/auth/login  and log in at Fyers
  *   2. copy the auth_code=... value out of the URL you land on
- *   3. node scripts/fyersAuthProbe.js "<auth_code>"
+ *   3. node scripts/fyersAuthProbe.js "<auth_code>" [APP_ID] [SECRET_KEY]
+ *
+ * APP_ID/SECRET_KEY default to .env; pass them when that copy is stale.
  *
  * Secrets are never printed — only lengths and the first bytes of a hash.
  */
@@ -22,12 +24,15 @@ require("dotenv").config();
 const crypto = require("crypto");
 const https  = require("https");
 
-const APP_ID = String(process.env.APP_ID || "").trim();
-const SECRET = String(process.env.SECRET_KEY || "").trim();
+// The credentials default to .env, but can be passed as arguments so the probe
+// can be run from a machine whose .env is stale or masked:
+//   node scripts/fyersAuthProbe.js "<auth_code>" [APP_ID] [SECRET_KEY]
 const code   = String(process.argv[2] || "").trim();
+const APP_ID = String(process.argv[3] || process.env.APP_ID     || "").trim();
+const SECRET = String(process.argv[4] || process.env.SECRET_KEY || "").trim();
 
 if (!code) {
-  console.error("usage: node scripts/fyersAuthProbe.js \"<auth_code>\"");
+  console.error("usage: node scripts/fyersAuthProbe.js \"<auth_code>\" [APP_ID] [SECRET_KEY]");
   process.exit(2);
 }
 if (!APP_ID || !SECRET) {
