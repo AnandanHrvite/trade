@@ -40,6 +40,7 @@ const tradeGuards = require("../utils/tradeGuards");
 const { logNearMiss } = require("../utils/nearMissLog");
 const skipLogger = require("../utils/skipLogger");
 const capitalPool = require("../utils/capitalPool");
+const optionChart  = require("../utils/optionChart");
 const confirmCandle = require("../utils/confirmCandle");
 const tickSimulator = require("../services/tickSimulator");
 const { EMA, RSI } = require("technicalindicators");
@@ -222,6 +223,7 @@ let ptState = {
   // Option LTP tracking
   optionLtp:     null,
   optionSymbol:  null,
+  optionChart:   null,
   // SL-hit guard: block re-entry on the same candle where SL was hit
   _slHitCandleTime: null,
   // 50%-rule exit pause: after a 50%-rule exit, block re-entry for 2 candles (30 min on 15-min)
@@ -584,6 +586,8 @@ function _publishOptionLtp(symbol, ltp, at) {
   if (!(ltp > 0)) return;
   ptState.optionLtp = ltp;
   ptState.optionLtpUpdatedAt = at || Date.now();
+  // Premium bars for the option chart (display only — never read by the engine).
+  ptState.optionChart = optionChart.pushLtp(ptState.optionChart, symbol, ltp, at);
   if (ptState._ltpStaleLogged) {
     log(`✅ [PAPER] Option LTP recovered — ₹${ltp}`);
     ptState._ltpStaleLogged = false;
@@ -2938,6 +2942,7 @@ router.get("/status/chart-data", async (req, res) => {
     }
 
     return res.json({ candles, markers, stopLoss, entryPrice,
+      optionChart: optionChart.buildPayload({ store: ptState.optionChart, position: ptState.position, trades: ptState.sessionTrades }),
       armedTrigger: ptState._armedSignal ? ptState._armedSignal.triggerLevel : null,
       armedSide:    ptState._armedSignal ? ptState._armedSignal.side : null,
       ema9: ema9Series, ema20: ema20Series, ema50: ema50Series, ema21: ema21Series,
@@ -3495,6 +3500,7 @@ ${buildSidebar('emaRsiStPaper', sharedSocketState.getMode()==='EMA_RSI_ST_LIVE',
         <span style="color:#f59e0b;">── SL</span>
       </div>
     </div>
+    ${optionChart.optionChartHtml('ers-opt-chart')}
   </div>` : ""}
 
   ${ptState.sessionTrades.length > 0 ? `
@@ -4014,6 +4020,7 @@ ${modalJS()}
   });
 })();
 </script>
+${optionChart.optionChartScript({ dataUrl: '/ema_rsi_st-paper/status/chart-data', id: 'ers-opt-chart' })}
 <script>
 // ── AJAX live refresh — replaces meta http-equiv="refresh" ──────────────────
 // Polls /ema_rsi_st-paper/status/data every 2 s when trading is active.

@@ -57,6 +57,7 @@ const tradeGuards = require("../utils/tradeGuards");
 const { logNearMiss } = require("../utils/nearMissLog");
 const skipLogger = require("../utils/skipLogger");
 const capitalPool = require("../utils/capitalPool");
+const optionChart  = require("../utils/optionChart");
 const confirmCandle = require("../utils/confirmCandle");
 const tickSimulator = require("../services/tickSimulator");
 const { EMA } = require("technicalindicators");
@@ -247,6 +248,7 @@ let ptState = {
   // Option LTP tracking
   optionLtp:     null,
   optionSymbol:  null,
+  optionChart:   null,
   // SL-hit guard: block re-entry on the same candle where SL was hit
   _slHitCandleTime: null,
   // 50%-rule exit pause: after a 50%-rule exit, block re-entry for 2 candles (30 min on 15-min)
@@ -652,6 +654,8 @@ function _publishOptionLtp(symbol, ltp) {
   if (!ptState.position || ptState.optionSymbol !== symbol) return;
   if (!(ltp > 0)) return;
   ptState.optionLtp = ltp;
+  // Premium bars for the option chart (display only — never read by the engine).
+  ptState.optionChart = optionChart.pushLtp(ptState.optionChart, symbol, ltp);
   ptState.position.optionCurrentLtp = ltp;
   if (!ptState.position.optionEntryLtp) {
     ptState.position.optionEntryLtp = ltp;
@@ -2874,6 +2878,7 @@ router.get("/status/chart-data", async (req, res) => {
     }
 
     return res.json({ candles, markers, stopLoss, entryPrice,
+      optionChart: optionChart.buildPayload({ store: ptState.optionChart, position: ptState.position, trades: ptState.sessionTrades }),
       armedTrigger: ptState._armedSignal ? ptState._armedSignal.triggerLevel : null,
       armedSide:    ptState._armedSignal ? ptState._armedSignal.side : null,
       ema9: ema9Series,
@@ -3425,6 +3430,7 @@ ${buildSidebar('ema9vwapPaper', sharedSocketState.getEma9VwapMode()==='EMA9VWAP_
         <span style="color:#f59e0b;">── SL</span>
       </div>
     </div>
+    ${optionChart.optionChartHtml('e9v-opt-chart')}
   </div>` : ""}
 
   ${ptState.sessionTrades.length > 0 ? `
@@ -3930,6 +3936,7 @@ ${modalJS()}
   });
 })();
 </script>
+${optionChart.optionChartScript({ dataUrl: '/ema9vwap-paper/status/chart-data', id: 'e9v-opt-chart' })}
 <script>
 // ── AJAX live refresh — replaces meta http-equiv="refresh" ──────────────────
 // Polls /ema9vwap-paper/status/data every 2 s when trading is active.
