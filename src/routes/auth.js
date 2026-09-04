@@ -98,9 +98,13 @@ function maskedCredential(value) {
   return /^[*•]+$/.test(String(value || "").trim());
 }
 
-const FIX_IN_UI = 'Fix it in Settings → BULK EDIT: paste '
-  + '<code>SECRET_KEY=&lt;your real Fyers secret&gt;</code> and confirm '
-  + '(the server restarts itself).';
+/** "Fix it in Settings" line, naming the keys that actually need setting. */
+function fixInUi(keys) {
+  const lines = keys
+    .map(k => `<code>${k}=&lt;real ${k === "APP_ID" ? "Fyers app id" : "Fyers secret"}&gt;</code>`)
+    .join(" and ");
+  return `Fix it in Settings → BULK EDIT: paste ${lines} and confirm (the server restarts itself).`;
+}
 
 /**
  * Why the Fyers credentials cannot be used, or null when they look usable.
@@ -119,10 +123,12 @@ function badCredentialReason() {
   ].filter(([, v]) => maskedCredential(v)).map(([k]) => k);
 
   if (masked.length) {
+    const names = masked.join(" and ");
+    const be    = masked.length > 1 ? "are masked placeholders" : "is a masked placeholder";
     return {
-      log: `${masked.join(" and ")} is a masked placeholder (******** / ••••••••), not a real credential.`,
-      html: `${masked.join(" and ")} is a masked placeholder, not the real value — that mask comes `
-          + `from the Settings “VIEW .env” listing. ${FIX_IN_UI}`,
+      log: `${names} ${be} (******** / ••••••••), not a real credential.`,
+      html: `${names} ${be}, not the real value — that mask comes from the Settings `
+          + `“VIEW .env” listing. ${fixInUi(masked)}`,
     };
   }
 
@@ -130,10 +136,12 @@ function badCredentialReason() {
     .filter(([, v]) => v === "").map(([k]) => k);
 
   if (missing.length) {
+    const names = missing.join(" and ");
+    const be    = missing.length > 1 ? "are" : "is";
     return {
-      log: `${missing.join(" and ")} is not set — cannot exchange the auth code.`,
-      html: `${missing.join(" and ")} is not set on this server, so the login code cannot be `
-          + `exchanged for a token. ${FIX_IN_UI}`,
+      log: `${names} ${be} not set — cannot exchange the auth code.`,
+      html: `${names} ${be} not set on this server, so the login code cannot be exchanged `
+          + `for a token. ${fixInUi(missing)}`,
     };
   }
   return null;
