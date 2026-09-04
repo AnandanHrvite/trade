@@ -8,9 +8,13 @@
  * The day in one paragraph: before the open, yesterday's daily high/low/close
  * fix today's Standard Pivot levels — R1 above, S1 below. They never move. The
  * engine then watches closed 5-minute NIFTY candles. When one CROSSES AND
- * CLOSES above R1 while RSI(14) is above 70, it buys a CE. When one crosses and
- * closes below S1 while RSI is below 40, it buys a PE. The strike is 1% of spot
- * away from the money (ATM/ITM/OTM chosen in Settings).
+ * CLOSES above R1 while RSI(14) is above 70 that ARMS a CE; the entry is taken
+ * on the NEXT candle, and only if it closes above the breakout candle's high
+ * (the mirror for PE: cross and close below S1 with RSI under 40, then a close
+ * below the breakout candle's low). That confirmation candle is the default and
+ * can be switched off in Settings, which restores entry on the crossing candle
+ * itself. The strike is 1% of spot away from the money (ATM/ITM/OTM chosen in
+ * Settings).
  *
  * The two sides are stopped DIFFERENTLY, by rule:
  *   • CE — TWO stops, both live, first to trigger wins:

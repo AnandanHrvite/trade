@@ -36,8 +36,24 @@
  *   PE:  RSI(14) < BN_PIVOT_RSI_ST_RSI_PE_MAX (40)  AND  the candle CROSSES AND
  *        CLOSES below S1 (previous close at or above S1, this close below).
  *
- * RSI is read on the SAME closed candle that does the crossing — one bar, one
- * decision, no lag between the two halves of the rule.
+ * ── THE CONFIRMATION CANDLE (BN_PIVOT_RSI_ST_CONFIRM_ENABLED, default ON) ──
+ * With confirmation ON the crossing candle does NOT enter — it only ARMS the
+ * setup. Entry needs the NEXT candle to close beyond the breakout candle's own
+ * extreme: above its HIGH for CE, below its LOW for PE.
+ *
+ *        breakout candle:  crosses R1, closes 57656, high 57680  → armed
+ *        next candle:      closes 57695  → ENTER (57695 > 57680)
+ *                          closes 57660  → NO ENTRY (never cleared the high)
+ *
+ * This is what stops the strategy taking a candle that pokes a handful of
+ * points past the pivot and stalls: clearing the breakout high requires the
+ * move to actually extend. Only the IMMEDIATELY-next candle counts — an armed
+ * setup that is not confirmed on that bar is dead, and a new entry needs a
+ * fresh cross of the level. Turning the toggle OFF restores the old one-candle
+ * rule exactly.
+ *
+ * RSI is read on the candle that makes the DECISION — the confirming candle
+ * when confirmation is on, the crossing candle when it is off.
  *
  * ── STRIKE — 1% of spot, direction chosen in Settings ───────────────────────
  * BN_PIVOT_RSI_ST_STRIKE_MODE = ATM | ITM | OTM (default OTM).
@@ -66,7 +82,7 @@
  *
  * ── DELIBERATELY NOT HERE (do not "helpfully" add these) ────────────────────
  * No VIX gate, no OI filter, no ADX, no volume test, no EMA, no VWAP, no ATR
- * sizing, no multi-timeframe bias, no extra confirmation candle, no re-entry
+ * sizing, no multi-timeframe bias, no re-entry
  * after a stop, no breakeven jump, no partial booking, no fixed target, no
  * expiry-day rule, no quality score. There is no profit target at all — the
  * trade runs until a stop trails into it or the session forces it out.
@@ -213,6 +229,12 @@ function getConfig() {
 
     // The pivot half. Buffer defaults to 0 = the close must simply be beyond R1/S1.
     pivotBufferPts:  _numEnv("BN_PIVOT_RSI_ST_PIVOT_BUFFER_PTS", 0, 0),
+
+    // Confirmation candle. ON (default) = the breakout candle only ARMS the
+    // setup; entry waits for the NEXT candle to close beyond that breakout
+    // candle's high (CE) or low (PE). OFF restores the old behaviour, where
+    // the candle that crosses the pivot is itself the entry.
+    confirmEnabled:  String(process.env.BN_PIVOT_RSI_ST_CONFIRM_ENABLED || "true").toLowerCase() === "true",
 
     // Strike selection — 1% of spot, direction from STRIKE_MODE.
     strikeMode:      STRIKE_MODES.includes(rawStrike) ? rawStrike : "OTM",
@@ -508,6 +530,7 @@ function _baseSignal(cfg) {
     rsi: null, rsiPrev: null,
     pivots: null, pp: null, r1: null, s1: null,
     crossedLevel: null, prevClose: null,
+    breakoutBarTime: null, breakoutHigh: null, breakoutLow: null,
     superTrend: null, superTrendTrend: null,
     strike: null, strikeMode: null, strikeSteps: null,
     signalBarTime: null,
@@ -526,7 +549,7 @@ function _baseSignal(cfg) {
  */
 function minBarsFor(cfg) {
   const c = cfg || getConfig();
-  return Math.max(c.rsiPeriod + 2, c.stPeriod + 2, 20);
+  return Math.max(c.rsiPeriod + 3, c.stPeriod + 3, 20);
 }
 
 /**
@@ -620,8 +643,59 @@ function getSignal(candles, opts) {
   const buf = cfg.pivotBufferPts;
   const ceLevel = _r2(pivots.r1 + buf);
   const peLevel = _r2(pivots.s1 - buf);
-  const crossedUpR1   = prevBar.close <= ceLevel && bar.close > ceLevel;
-  const crossedDownS1 = prevBar.close >= peLevel && bar.close < peLevel;
+  //
+  // Two shapes, chosen by CONFIRM_ENABLED:
+  //
+  //   OFF — the legacy rule. The bar that crosses the level IS the entry:
+  //         previous close on one side, this close on the other.
+  //
+  //   ON (default) — the crossing bar only ARMS the setup. The bar BEFORE this
+  //         one must have crossed and closed beyond the level, and THIS bar
+  //         must close beyond that breakout bar's HIGH (CE) / LOW (PE). A
+  //         breakout that pokes 27 points past R1 and stalls never gets an
+  //         entry, because the next candle cannot close above its high without
+  //         actually extending the move. Only the immediately-next candle
+  //         counts: a setup not confirmed on the very next bar is dead, and
+  //         re-entry needs a fresh cross.
+  let crossedUpR1, crossedDownS1, brkBar = null;
+  if (cfg.confirmEnabled) {
+    // brkBar = the breakout candle, priorBar = the one before it (proves the
+    // cross was fresh rather than a bar already sitting beyond the level).
+    brkBar = prevBar;
+    const priorBar = candles[n - 3];
+    if (!_okBar(priorBar)) {
+      base.skipReason = base.reason =
+        "Confirmation needs three candles and the third has no usable OHLC — refusing to decide";
+      return base;
+    }
+    const brokeUp   = priorBar.close <= ceLevel && brkBar.close > ceLevel;
+    const brokeDown = priorBar.close >= peLevel && brkBar.close < peLevel;
+    crossedUpR1   = brokeUp   && bar.close > brkBar.high;
+    crossedDownS1 = brokeDown && bar.close < brkBar.low;
+
+    if (brokeUp || brokeDown) {
+      base.breakoutBarTime = brkBar.time;
+      base.breakoutHigh    = _r2(brkBar.high);
+      base.breakoutLow     = _r2(brkBar.low);
+    }
+    // Armed but not confirmed — say so explicitly, because "no fresh cross" would
+    // be a lie: the cross happened, the follow-through did not.
+    if (brokeUp && !crossedUpR1) {
+      base.skipReason = base.reason =
+        `Breakout candle closed above R1 ${ceLevel} (high ${_r2(brkBar.high)}) but this candle closed ${_r2(bar.close)} — ` +
+        `not above the breakout high, no confirmation`;
+      return base;
+    }
+    if (brokeDown && !crossedDownS1) {
+      base.skipReason = base.reason =
+        `Breakout candle closed below S1 ${peLevel} (low ${_r2(brkBar.low)}) but this candle closed ${_r2(bar.close)} — ` +
+        `not below the breakout low, no confirmation`;
+      return base;
+    }
+  } else {
+    crossedUpR1   = prevBar.close <= ceLevel && bar.close > ceLevel;
+    crossedDownS1 = prevBar.close >= peLevel && bar.close < peLevel;
+  }
 
   let side = null;
   if (crossedUpR1 && rsi > cfg.rsiCeMin) side = "CE";
@@ -629,12 +703,18 @@ function getSignal(candles, opts) {
 
   if (!side) {
     // Say which half failed — a skip log that only says "no signal" teaches nothing.
+    // With confirmation ON the crossing bar is the PREVIOUS one, so the message
+    // quotes the breakout high/low that this bar cleared, not a prev→now close pair.
     if (crossedUpR1) {
-      base.skipReason = base.reason =
-        `Closed above R1 ${ceLevel} (${_r2(prevBar.close)} → ${_r2(bar.close)}) but RSI ${base.rsi} is not above ${cfg.rsiCeMin}`;
+      base.skipReason = base.reason = cfg.confirmEnabled
+        ? `Confirmed above R1 ${ceLevel} (closed ${_r2(bar.close)} past the breakout high ${_r2(brkBar.high)}) ` +
+          `but RSI ${base.rsi} is not above ${cfg.rsiCeMin}`
+        : `Closed above R1 ${ceLevel} (${_r2(prevBar.close)} → ${_r2(bar.close)}) but RSI ${base.rsi} is not above ${cfg.rsiCeMin}`;
     } else if (crossedDownS1) {
-      base.skipReason = base.reason =
-        `Closed below S1 ${peLevel} (${_r2(prevBar.close)} → ${_r2(bar.close)}) but RSI ${base.rsi} is not below ${cfg.rsiPeMax}`;
+      base.skipReason = base.reason = cfg.confirmEnabled
+        ? `Confirmed below S1 ${peLevel} (closed ${_r2(bar.close)} past the breakout low ${_r2(brkBar.low)}) ` +
+          `but RSI ${base.rsi} is not below ${cfg.rsiPeMax}`
+        : `Closed below S1 ${peLevel} (${_r2(prevBar.close)} → ${_r2(bar.close)}) but RSI ${base.rsi} is not below ${cfg.rsiPeMax}`;
     } else if (rsi > cfg.rsiCeMin) {
       base.skipReason = base.reason =
         `RSI ${base.rsi} > ${cfg.rsiCeMin} but no fresh cross of R1 ${ceLevel} (prev close ${_r2(prevBar.close)}, close ${_r2(bar.close)})`;
@@ -709,9 +789,15 @@ function getSignal(candles, opts) {
   const stopText = stopParts.length
     ? `SL = ${stopParts.join(" + ")}`
     : `SL = NONE — no SuperTrend on ${side} and the premium stop is OFF for this side; EOD square-off is the only exit`;
+  // How the entry came about — with confirmation ON that is a two-candle
+  // story (breakout, then close beyond its extreme), and the record says so.
+  const crossText = cfg.confirmEnabled
+    ? `the breakout candle closed ${side === "CE" ? "above R1" : "below S1"} ${base.crossedLevel} and this candle confirmed by closing ` +
+      `${entry}, past its ${side === "CE" ? `high ${base.breakoutHigh}` : `low ${base.breakoutLow}`} (pivots from ${pivots.from})`
+    : `the candle crossed and closed ${side === "CE" ? "above R1" : "below S1"} ${base.crossedLevel} ` +
+      `(${_r2(prevBar.close)} → ${entry}, pivots from ${pivots.from})`;
   base.reason =
-    `BN_PIVOT_RSI_ST ${side}: RSI ${base.rsi} ${side === "CE" ? `> ${cfg.rsiCeMin}` : `< ${cfg.rsiPeMax}`} and the candle crossed ` +
-    `and closed ${side === "CE" ? "above R1" : "below S1"} ${base.crossedLevel} (${_r2(prevBar.close)} → ${entry}, pivots from ${pivots.from}) | ` +
+    `BN_PIVOT_RSI_ST ${side}: RSI ${base.rsi} ${side === "CE" ? `> ${cfg.rsiCeMin}` : `< ${cfg.rsiPeMax}`} and ${crossText} | ` +
     `strike ${base.strike} (${strikeInfo.mode}${strikeInfo.steps ? `, ${strikeInfo.steps} step${strikeInfo.steps > 1 ? "s" : ""} = ${strikeInfo.distancePts}pt`: ""}) | ${stopText}`;
 
   if (!o.silent) {
