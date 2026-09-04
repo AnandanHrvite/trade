@@ -1490,7 +1490,14 @@ for (const section of SETTINGS_SCHEMA) {
 
 // ── Write values back to .env file (preserves comments and structure) ───────
 function updateEnvFile(updates, deletes) {
-  const deleteSet = new Set(deletes || []);
+  // Every write funnels through here, so the credential-delete rule belongs at
+  // this level rather than on one route. /settings/save filters its own
+  // deletes, but audit-restore builds its list independently and calls
+  // persistChanges directly — an "add" row for APP_ID restores as a DELETE,
+  // which would remove the key and break the broker login.
+  const deleteSet = new Set(
+    (deletes || []).filter(k => !WRITABLE_SECRET_KEYS.has(k))
+  );
 
   // Step 1: Always update process.env in-memory first (this never fails)
   Object.entries(updates).forEach(([k, v]) => {
@@ -1552,6 +1559,10 @@ function updateEnvFile(updates, deletes) {
     success: true,
     updatedCount: Object.keys(updates).length,
     deletedCount,
+    // The keys actually removed, after the credential filter above. Callers log
+    // and audit from this, not from what they asked for, so a refused delete is
+    // never reported as having happened.
+    appliedDeletes: [...deleteSet],
     fileSaved,
     fileError,
     needsRestart: needsRestart.length > 0 ? needsRestart : null,
@@ -1708,10 +1719,13 @@ function persistChanges(cleaned, deleteKeys, note, req) {
 
   const result = updateEnvFile(cleaned, deleteKeys);
   if (maskedDropped.length) result.maskedDropped = maskedDropped;
+  // Report what was actually removed — updateEnvFile refuses to delete a broker
+  // credential, so the requested list can overstate it.
+  const appliedDeletes = result.appliedDeletes || deleteKeys;
   if (result.success) {
     const summary = [];
     if (Object.keys(cleaned).length) summary.push(`updated ${Object.keys(cleaned).length}: ${Object.keys(cleaned).join(", ")}`);
-    if (deleteKeys.length) summary.push(`deleted ${deleteKeys.length}: ${deleteKeys.join(", ")}`);
+    if (appliedDeletes.length) summary.push(`deleted ${appliedDeletes.length}: ${appliedDeletes.join(", ")}`);
     console.log(`[settings] ${summary.join(" | ")}`,
       result.fileSaved ? `(persisted to ${ENV_PATH})` : `(IN-MEMORY ONLY — .env write failed: ${result.fileError}, path: ${ENV_PATH})`);
 
@@ -1719,7 +1733,7 @@ function persistChanges(cleaned, deleteKeys, note, req) {
       const written = settingsAudit.logSave({
         prevEnv: auditPrevEnv,
         updates: cleaned,
-        deleteKeys,
+        deleteKeys: appliedDeletes,
         req,
         note,
       });
@@ -1730,7 +1744,7 @@ function persistChanges(cleaned, deleteKeys, note, req) {
 
     try {
       const affected = new Set();
-      const changedKeys = [...Object.keys(cleaned), ...deleteKeys];
+      const changedKeys = [...Object.keys(cleaned), ...appliedDeletes];
       for (const k of changedKeys) {
         const modes = _KEY_TO_MODES.get(k);
         if (modes) modes.forEach(m => affected.add(m));
@@ -1811,8 +1825,9 @@ router.post("/audit-restore", (req, res) => {
   const result = persistChanges(cleaned, deleteKeys, restoreNote, req);
   res.json({
     ...result,
-    restoredCount: Object.keys(cleaned).length + deleteKeys.length,
-    restoredKeys: [...Object.keys(cleaned), ...deleteKeys],
+    // Report what was applied — a delete of a broker credential is refused.
+    restoredCount: Object.keys(cleaned).length + (result.appliedDeletes || deleteKeys).length,
+    restoredKeys: [...Object.keys(cleaned), ...(result.appliedDeletes || deleteKeys)],
     envPath: ENV_PATH,
   });
 });
