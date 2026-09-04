@@ -26,6 +26,7 @@ const ema9vwapPaperRoute = require("./ema9vwapPaper");
 const liveDryRun      = require("../utils/liveDryRun");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
 
+const optionChart  = require("../utils/optionChart");
 // ── Programmatic invoker for the emaRsiStPaper express router ──────────────────
 function _invokePaperRoute(method, urlPath, query = {}) {
   return new Promise((resolve, reject) => {
@@ -278,6 +279,7 @@ ${buildSidebar('ema9vwapLive', false)}
         <span style="color:#f59e0b;">── SL</span>
       </div>
     </div>
+  ${optionChart.optionChartHtml('e9vh-opt-chart')}
   </div>
 
   <div class="card">
@@ -477,6 +479,7 @@ setInterval(refresh, 3000);
   window.addEventListener('resize', function() { chart.applyOptions({ width: container.clientWidth }); });
 })();
 </script>
+${optionChart.optionChartScript({ dataUrl: '/ema9vwap-paper/status/chart-data', id: 'e9vh-opt-chart' })}
 </body></html>`;
   res.send(html);
 });

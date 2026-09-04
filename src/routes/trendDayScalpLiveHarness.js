@@ -31,6 +31,7 @@ const liveDryRun   = require("../utils/liveDryRun");
 const tdsStrategy  = require("../strategies/trend_day_scalp");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
 
+const optionChart  = require("../utils/optionChart");
 // ── Programmatic invoker for the trendDayScalpPaper express router ───────────
 function _invokePaperRoute(method, urlPath) {
   return new Promise((resolve, reject) => {
@@ -244,6 +245,7 @@ ${buildSidebar('trendDayScalpLive', false)}
         <span style="color:#8b5cf6;">── VWAP</span> &nbsp;<span style="color:#3b82f6;">── EMA${scfg.emaPeriod}</span> &nbsp;<span style="color:#f59e0b;">── Stop</span> &nbsp;<span style="color:#10b981;">── Target</span>
       </div>
     </div>
+  ${optionChart.optionChartHtml('tdsh-opt-chart')}
   </div>
 
   <div class="card">
@@ -358,6 +360,7 @@ setInterval(refresh, 3000);
   window.addEventListener('resize', function(){ chart.applyOptions({ width: container.clientWidth }); });
 })();
 </script>
+${optionChart.optionChartScript({ dataUrl: '/trend-day-scalp-paper/status/chart-data', id: 'tdsh-opt-chart' })}
 </body></html>`;
   res.send(html);
 });

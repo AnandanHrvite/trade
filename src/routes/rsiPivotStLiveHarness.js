@@ -38,6 +38,7 @@ const liveDryRun    = require("../utils/liveDryRun");
 const rsiPivotStrategy = require("../strategies/rsi_pivot_st");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
 
+const optionChart  = require("../utils/optionChart");
 // ── Programmatic invoker for the rsiPivotStPaper express router ──────────────
 function _invokePaperRoute(method, urlPath) {
   return new Promise((resolve, reject) => {
@@ -253,6 +254,7 @@ ${buildSidebar('rsiPivotStLive', false)}
         <span style="color:#f87171;">── R1 (CE)</span> &nbsp;<span style="color:#64748b;">── PP</span> &nbsp;<span style="color:#4ade80;">── S1 (PE)</span> &nbsp;<span style="color:#a78bfa;">── SuperTrend</span>
       </div>
     </div>
+  ${optionChart.optionChartHtml('rpsh-opt-chart')}
   </div>
 
   <div class="card">
@@ -360,6 +362,7 @@ setInterval(refresh, 3000);
   window.addEventListener('resize', function(){ chart.applyOptions({ width: container.clientWidth }); });
 })();
 </script>
+${optionChart.optionChartScript({ dataUrl: '/rsi-pivot-st-paper/status/chart-data', id: 'rpsh-opt-chart' })}
 </body></html>`;
   res.send(html);
 });

@@ -33,6 +33,7 @@ const trendPbPaperRoute = require("./trendPbPaper");
 const liveDryRun   = require("../utils/liveDryRun");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
 
+const optionChart  = require("../utils/optionChart");
 // ── Programmatic invoker for the trendPbPaper express router ──────────────────
 function _invokePaperRoute(method, urlPath) {
   return new Promise((resolve, reject) => {
@@ -235,6 +236,7 @@ ${buildSidebar('trendPbLive', false)}
         <span style="color:#3b82f6;">── VWAP</span> &nbsp;<span style="color:#a78bfa;">── EMA20(5m)</span> &nbsp;<span style="color:#3b82f6;">▲ Entry</span> &nbsp;<span style="color:#f59e0b;">── Stop</span>
       </div>
     </div>
+  ${optionChart.optionChartHtml('tpbh-opt-chart')}
   </div>
 
   <div class="card">
@@ -337,6 +339,7 @@ setInterval(refresh, 3000);
   window.addEventListener('resize', function(){ chart.applyOptions({ width: container.clientWidth }); });
 })();
 </script>
+${optionChart.optionChartScript({ dataUrl: '/trend-pb-paper/status/chart-data', id: 'tpbh-opt-chart' })}
 </body></html>`;
   res.send(html);
 });

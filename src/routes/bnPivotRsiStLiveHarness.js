@@ -45,6 +45,7 @@ const bnPivotStrategy = require("../strategies/bn_pivot_rsi_st");
 const instrumentConfig = require("../config/instrument");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
 
+const optionChart  = require("../utils/optionChart");
 /** NIFTY BANK's resolved config row, read LIVE — strike grid, lot and expiry
  *  regime are Settings-configurable, so the page must never hard-code them. */
 const UNDERLYING = bnPivotStrategy.UNDERLYING;   // "BANKNIFTY"
@@ -278,6 +279,7 @@ ${buildSidebar('bnPivotRsiStLive', false)}
         <span style="color:#f87171;">── R1 (CE)</span> &nbsp;<span style="color:#64748b;">── PP</span> &nbsp;<span style="color:#4ade80;">── S1 (PE)</span> &nbsp;<span style="color:#a78bfa;">── SuperTrend</span>
       </div>
     </div>
+  ${optionChart.optionChartHtml('bnph-opt-chart')}
   </div>
 
   <div class="card">
@@ -385,6 +387,7 @@ setInterval(refresh, 3000);
   window.addEventListener('resize', function(){ chart.applyOptions({ width: container.clientWidth }); });
 })();
 </script>
+${optionChart.optionChartScript({ dataUrl: '/bn-pivot-rsi-st-paper/status/chart-data', id: 'bnph-opt-chart' })}
 </body></html>`;
   res.send(html);
 });
