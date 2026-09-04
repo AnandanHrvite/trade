@@ -17,7 +17,7 @@ const zerodha  = require("./services/zerodhaBroker");
 const { clearFyersToken } = require("./config/fyers");
 const { buildSidebar, sidebarCSS, modalCSS, modalJS,
         expiryHolidayModalCSS, expiryHolidayModalHTML, expiryHolidayModalJS,
-        dateRangeOptionsHTML, dateRangeJS } = require("./utils/sharedNav");
+        dateRangeOptionsHTML, dateRangeJS, STRATEGY_MODES } = require("./utils/sharedNav");
 const { resolveTheme } = require("./utils/theme");
 
 // Start-All roster. The dashboard's Start All (Paper / Live / Harness) buttons
@@ -26,7 +26,7 @@ const { resolveTheme } = require("./utils/theme");
 // strategies from sharedNav's STRATEGY_MODES. Mount a new strategy's routes the
 // usual way (/{slug}-paper, /{slug}-live[, /{slug}-live-harness]) and it joins
 // Start All with no further wiring — see the module header for the contract.
-const { trackMounts, startAllRoster } = require("./utils/startAllRoster");
+const { trackMounts, startAllRoster, discoverStartRoutes } = require("./utils/startAllRoster");
 const sharedSocketState = require("./utils/sharedSocketState");
 
 const crypto = require("crypto");
@@ -1323,6 +1323,13 @@ app.get("/", (req, res) => {
   // panel — built from the same *_MODE_ENABLED toggles the sidebar uses so the
   // panel only shows currently-enabled strategies (and includes ORB).
   const emaRsiStModeOn = (process.env.EMA_RSI_ST_MODE_ENABLED || 'true').toLowerCase() === 'true';
+  // Route slugs for the analytics tiles, discovered from the mounted routers.
+  const _dashNorm = (v) => String(v || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const _dashTileRoutes = discoverStartRoutes();
+  const _dashSlugFor = (mode) => {
+    const row = STRATEGY_MODES.find((s) => s.mode === mode);
+    return (row && (row.slug || row.mode)) || mode;
+  };
   const dashSessionTiles = [
     { key: 'EMA_RSI_ST',    cls: 'ema_rsi_st',    label: 'EMA_RSI_ST',        on: emaRsiStModeOn },
     { key: 'BB_RSI',    cls: 'bb_rsi',    label: 'BB_RSI',        on: bbRsiModeOn },
@@ -1336,7 +1343,18 @@ app.get("/", (req, res) => {
     { key: 'SIMPLE930', cls: 'simple930', label: 'SIMPLE_9:30', on: simple930ModeOn },
     { key: 'RSI_PIVOT_ST', cls: 'rsipivotst', label: 'RSI PIVOT ST', on: rsiPivotStModeOn },
     { key: 'BN_PIVOT_RSI_ST', cls: 'bnpivotrsist', label: 'BN PIVOT RSI ST', on: bnPivotRsiStModeOn },
-  ].filter((t) => t.on).map((t) => ({ key: t.key, cls: t.cls, label: t.label }));
+  ].filter((t) => t.on).map((t) => ({
+    key: t.key,
+    cls: t.cls,
+    label: t.label,
+    // Where the tile links to — discovered from the mounted routers (same
+    // source Start-All uses), so a new strategy's cards are clickable with no
+    // extra wiring. `paper`/`live` are null when that route is not mounted.
+    ...(() => {
+      const pages = (_dashTileRoutes.get(_dashNorm(_dashSlugFor(t.key))) || {}).pages || {};
+      return { paper: pages.paper || null, live: pages.live || pages.harness || null };
+    })(),
+  }));
 
   // ── Start-All roster — the enabled strategies (same helper the sidebar uses)
   // joined to the start routes discovered from the mounted routers. Read per
@@ -2189,6 +2207,13 @@ app.get("/", (req, res) => {
     .da-tile.pa    { border-top:2px solid #a78bfa; }
     .da-tile.orb      { border-top:2px solid #10b981; }
     .da-tile.info  { border-top:2px solid #22d3ee; }
+    /* Clickable tiles: an <a> that must still lay out exactly like the div it
+       replaced, so grid sizing and the mobile column count are unchanged. */
+    a.da-tile-link { display:block; text-decoration:none; color:inherit; cursor:pointer; transition:border-color .15s, background .15s, transform .15s; }
+    a.da-tile-link:hover, a.da-tile-link:focus-visible { border-color:#2b3a58; background:#0b1424; transform:translateY(-1px); }
+    a.da-tile-link:focus-visible { outline:2px solid #3b82f6; outline-offset:2px; }
+    a.da-tile-link:active { transform:none; }
+    @media (hover:none) { a.da-tile-link:hover { transform:none; } }
     .da-tile-hdr { display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:0.6rem; font-weight:700; text-transform:uppercase; letter-spacing:0.6px; color:#7d8aa3; margin-bottom:6px; }
     .da-tile-hdr .da-pill { font-size:0.55rem; padding:1px 7px; border-radius:3px; border:1px solid rgba(74,96,128,0.30); color:#7d8aa3; }
     .da-tile-hdr .da-pill.run { background:rgba(16,185,129,0.10); color:#10b981; border-color:rgba(16,185,129,0.30); }
@@ -2207,6 +2232,7 @@ app.get("/", (req, res) => {
     .da-empty { padding:14px 12px; text-align:center; color:var(--muted-1,#8ba1c2); font-size:0.72rem; }
     :root[data-theme="light"] .dash-analytics { background:#fff; border-color:#e0e4ea; }
     :root[data-theme="light"] .da-tile { background:#f8fafc; border-color:#e0e4ea; }
+    :root[data-theme="light"] a.da-tile-link:hover, :root[data-theme="light"] a.da-tile-link:focus-visible { background:#eef2f7; border-color:#c8d2e0; }
     :root[data-theme="light"] .da-title { color:#475569; }
     :root[data-theme="light"] .da-sub { color:#5c6b7f; }
     :root[data-theme="light"] .da-tile-hdr { color:#4b5769; }
@@ -3739,6 +3765,22 @@ setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily 
     return (+taken > 0) || hasOpenPosition(d);
   }
 
+  // Tile → page URL. Which page depends on where the trades came from: a tile
+  // whose trades are mostly live opens the live route, otherwise paper. Both
+  // URLs come from the server-discovered mounts, so an unmounted route simply
+  // renders a non-clickable tile instead of a dead link.
+  function tileHref(t, preferLive){
+    var url = preferLive ? (t.live || t.paper) : (t.paper || t.live);
+    return url || null;
+  }
+  // Wraps a tile's inner HTML in an <a> when a route exists, else a plain div —
+  // an unmounted route must not render a dead link.
+  function tileWrap(href, cls, label, inner){
+    if (!href) return '<div class="da-tile ' + cls + '">' + inner + '</div>';
+    return '<a class="da-tile da-tile-link ' + cls + '" href="' + href + '" title="Open ' + label + '">'
+      + inner + '</a>';
+  }
+
   function renderLive(data) {
     // data: { EMA_RSI_ST, BB_RSI, ... } keyed by tile, each from /{strat}-paper/status/data
     // Only strategies that took a trade today get a card; idle ones are omitted.
@@ -3750,7 +3792,9 @@ setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily 
     tiles.forEach(function(t){
       var d = data[t.key];
       if (!d) {
-        html += '<div class="da-tile ' + t.cls + '"><div class="da-tile-hdr">' + t.label + '<span class="da-pill">OFFLINE</span></div><div class="da-sub-line">No data</div></div>';
+        html += tileWrap(tileHref(t, false), t.cls, t.label,
+          '<div class="da-tile-hdr">' + t.label + '<span class="da-pill">OFFLINE</span></div>'
+          + '<div class="da-sub-line">No data</div>');
         return;
       }
       // Field names vary by strategy (ORB uses livePnl/tradesTaken, EarlyBird
@@ -3768,11 +3812,12 @@ setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily 
       var day = (+open || 0) + (+closed || 0);
       var c = cls(day);
       var pill = d.running ? 'run' : 'stop';
-      html += '<div class="da-tile ' + t.cls + '">' +
+      // The live view polls the paper status endpoint, so its tiles open the
+      // paper page — that is the screen holding the numbers shown here.
+      html += tileWrap(tileHref(t, false), t.cls, t.label,
         '<div class="da-tile-hdr">' + t.label + '<span class="da-pill ' + pill + '">' + (d.running ? 'RUNNING' : 'STOPPED') + '</span></div>' +
         '<div class="da-big ' + c + '">' + fmtINR(day) + '</div>' +
-        '<div class="da-sub-line">Open ' + fmtINR(open) + ' &middot; Closed ' + fmtINR(closed) + ' &middot; ' + (d.tradeCount!=null?d.tradeCount:(d.tradesTaken||0)) + 'T (' + (d.wins||0) + 'W/' + (d.losses||0) + 'L)</div>' +
-      '</div>';
+        '<div class="da-sub-line">Open ' + fmtINR(open) + ' &middot; Closed ' + fmtINR(closed) + ' &middot; ' + (d.tradeCount!=null?d.tradeCount:(d.tradesTaken||0)) + 'T (' + (d.wins||0) + 'W/' + (d.losses||0) + 'L)</div>');
     });
     html += '</div>';
     return html;
@@ -3784,7 +3829,7 @@ setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily 
     // limited to the enabled tiles. Trades are pre-filtered to enabled modes by
     // the /data?enabledOnly=1 fetch, so the total matches the visible cards.
     var bys = {};
-    SESSION_TILES.forEach(function(t){ bys[t.key] = {net:0,t:0,w:0,l:0}; });
+    SESSION_TILES.forEach(function(t){ bys[t.key] = {net:0,t:0,w:0,l:0,paperT:0,liveT:0}; });
     var tot = { net:0, t:0, w:0, l:0 };
     var byDate = {};
     var bestDay = null, worstDay = null;
@@ -3794,7 +3839,11 @@ setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily 
       if (toIso && tr.date > toIso) return;
       var key = String(tr.mode || '').toUpperCase();
       var p = +tr.pnl || 0;
-      if (bys[key]) { bys[key].net += p; bys[key].t++; if (p > 0) bys[key].w++; else if (p < 0) bys[key].l++; }
+      if (bys[key]) {
+        bys[key].net += p; bys[key].t++; if (p > 0) bys[key].w++; else if (p < 0) bys[key].l++;
+        // Which page the tile should open: tagged at fetch time by source list.
+        if (tr.__src === 'live') bys[key].liveT++; else bys[key].paperT++;
+      }
       tot.net += p; tot.t++; if (p > 0) tot.w++; else if (p < 0) tot.l++;
       byDate[tr.date] = (byDate[tr.date] || 0) + p;
     });
@@ -3839,22 +3888,32 @@ setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily 
       var net = s.net;
       var trades = s.t;
       var w = s.w, l = s.l;
-      lastHtml += '<div class="da-tile ' + t.cls + '">' +
+      // Open the page the day's trades actually came from — live when live
+      // contributed more of them, paper otherwise.
+      lastHtml += tileWrap(tileHref(t, s.liveT > s.paperT), t.cls, t.label,
         '<div class="da-tile-hdr">' + t.label + '<span class="da-pill">' + trades + 'T</span></div>' +
         '<div class="da-big ' + cls(net) + '">' + fmtINR(net) + '</div>' +
-        '<div class="da-sub-line">' + w + 'W / ' + l + 'L &middot; WR ' + pctWR(w,l) + '%</div>' +
-      '</div>';
+        '<div class="da-sub-line">' + w + 'W / ' + l + 'L &middot; WR ' + pctWR(w,l) + '%</div>');
     });
     // Total card for last day
     var tNet = lastDayAgg ? lastDayAgg.total.net : 0;
     var tTrades = lastDayAgg ? lastDayAgg.total.t : 0;
     var tW = lastDayAgg ? lastDayAgg.total.w : 0;
     var tL = lastDayAgg ? lastDayAgg.total.l : 0;
-    lastHtml += '<div class="da-tile info">' +
+    // TOTAL spans every strategy, so it opens the cross-mode history page for
+    // whichever side contributed the day's trades.
+    var totLive = 0, totPaper = 0;
+    if (lastDayAgg) {
+      SESSION_TILES.forEach(function(t){
+        var st = lastDayAgg.byStrategy[t.key];
+        if (st) { totLive += st.liveT; totPaper += st.paperT; }
+      });
+    }
+    lastHtml += tileWrap(totLive > totPaper ? '/live-consolidation' : '/consolidation',
+      'info', 'trade history',
       '<div class="da-tile-hdr">TOTAL<span class="da-pill">' + tTrades + 'T</span></div>' +
       '<div class="da-big ' + cls(tNet) + '">' + fmtINR(tNet) + '</div>' +
-      '<div class="da-sub-line">' + tW + 'W / ' + tL + 'L &middot; WR ' + pctWR(tW,tL) + '%</div>' +
-    '</div>';
+      '<div class="da-sub-line">' + tW + 'W / ' + tL + 'L &middot; WR ' + pctWR(tW,tL) + '%</div>');
     lastHtml += '</div>';
 
     var html = '';
@@ -3908,8 +3967,10 @@ setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily 
         fetchJSON('/consolidation/data?enabledOnly=1'),
         fetchJSON('/live-consolidation/data?enabledOnly=1'),
       ]);
-      var paperTrades = (paper && paper.trades) || [];
-      var liveTrades  = (live  && live.trades)  || [];
+      // Tag each trade with the list it came from so a tile can link to the
+      // page that actually holds it (paper vs live).
+      var paperTrades = ((paper && paper.trades) || []).map(function(t){ t.__src = 'paper'; return t; });
+      var liveTrades  = ((live  && live.trades)  || []).map(function(t){ t.__src = 'live';  return t; });
       body.innerHTML = renderPostMarket(paperTrades, liveTrades);
 
       clearPoll();

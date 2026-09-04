@@ -58,6 +58,26 @@ function hasStartRoute(handler) {
   return stack.some((l) => l && l.route && l.route.path === '/start');
 }
 
+// True when the router registers `path` itself (any method).
+function hasRoute(handler, path) {
+  const stack = handler && handler.stack;
+  if (!Array.isArray(stack)) return false;
+  return stack.some((l) => l && l.route && l.route.path === path);
+}
+
+/**
+ * The URL a human should land on for this router. The paper/backtest routers
+ * render their page at `/status` and keep the mount root unrouted (a 404), while
+ * the live-harness routers render at `/`. Probing the router instead of assuming
+ * either shape is what keeps a tile link off a dead URL.
+ * Falls back to the mount path when neither exists — no route to guess at.
+ */
+function pageUrl(mountPath, handler) {
+  if (hasRoute(handler, '/')) return mountPath;
+  if (hasRoute(handler, '/status')) return `${mountPath}/status`;
+  return mountPath;
+}
+
 // Longest suffix first — '/bb_rsi-live-harness' also ends in '-live'.
 const SUFFIXES = [['-live-harness', 'harness'], ['-live', 'live'], ['-paper', 'paper']];
 
@@ -74,8 +94,12 @@ function discoverStartRoutes() {
       const kind = (slot === 'live' && m.handler.isLiveHarness) ? 'harness' : slot;
       const key = norm(m.path.slice(0, m.path.length - suffix.length));
       if (!key) break;
-      const entry = bySlug.get(key) || { paper: null, live: null, harness: null };
-      if (!entry[kind]) entry[kind] = m.path;   // first mount wins
+      const entry = bySlug.get(key)
+        || { paper: null, live: null, harness: null, pages: {} };
+      if (!entry[kind]) {
+        entry[kind] = m.path;                      // first mount wins
+        entry.pages[kind] = pageUrl(m.path, m.handler);
+      }
       bySlug.set(key, entry);
       break;
     }
