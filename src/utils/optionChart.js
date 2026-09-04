@@ -31,7 +31,7 @@
  * chart, where they are actually measured.
  */
 
-const { getBucketStart } = require('./tradeUtils');
+const { getBucketStart, istIsoFromAny } = require('./tradeUtils');
 
 /** Bars kept per contract. At 1-minute buckets this is a full session and then some. */
 const MAX_BARS = 500;
@@ -127,7 +127,17 @@ function buildPayload({ store, position, trades } = {}) {
 
   const resMin = barMinutes();
   const bucket = (ts) => {
-    const ms = typeof ts === 'number' ? (ts < 1e12 ? ts * 1000 : ts) : Date.parse(ts);
+    // Trades stamp entryTime/exitTime with toLocaleString('en-IN') — "4/9/2026,
+    // 10:00:05", which is DAY-first. Date.parse reads that as 9 April and does
+    // NOT return NaN, so the markers silently landed ~5 months off the bar range
+    // and never rendered. istIsoFromAny understands the day-first form.
+    let ms;
+    if (typeof ts === 'number') {
+      ms = ts < 1e12 ? ts * 1000 : ts;
+    } else {
+      const iso = istIsoFromAny(ts);
+      ms = iso ? Date.parse(iso) : NaN;
+    }
     return Number.isFinite(ms) ? Math.floor(getBucketStart(ms, resMin) / 1000) : null;
   };
 
