@@ -26,6 +26,7 @@ const { EMA, ATR } = require("technicalindicators");
 const trendPbStrategy    = require("../strategies/trend_pb");
 const instrumentConfig   = require("../config/instrument");
 const sharedSocketState  = require("../utils/sharedSocketState");
+const optionChart  = require("../utils/optionChart");
 const socketManager      = require("../utils/socketManager");
 const tickRecorder       = require("../utils/tickRecorder");
 const optionFeed         = require("../utils/optionFeed");
@@ -190,6 +191,8 @@ let _optionPollStopped = true;
 function _applyOptionLtp(symbol, ltp, at, record) {
   if (!(ltp > 0) || !state.position) return;
   state.optionLtp = ltp;
+  // Premium bars for the option chart (display only — never read by the engine).
+  state.optionChart = optionChart.pushLtp(state.optionChart, symbol, ltp, at);
   state.optionLtpUpdatedAt = at || Date.now();
   if (record) { try { tickRecorder.recordOptionLtp(symbol, ltp, "trend-pb-paper"); } catch (_) {} }
 }
@@ -945,7 +948,8 @@ router.get("/status/chart-data", async (req, res) => {
 
     const stopLoss   = state.position && state.position.slSpot    != null ? state.position.slSpot    : null;
     const entryPrice = state.position && state.position.entrySpot != null ? state.position.entrySpot : null;
-    return res.json({ candles, markers, stopLoss, entryPrice, target: null, vwapLine, ema5Line });
+    return res.json({ candles, markers, stopLoss, entryPrice, target: null, vwapLine, ema5Line,
+      optionChart: optionChart.buildPayload({ store: state.optionChart, position: state.position, trades: state.sessionTrades }) });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
@@ -1178,6 +1182,7 @@ ${process.env.CHART_ENABLED !== "false" ? `<!-- NIFTY Chart -->
       <span style="color:#3b82f6;">── VWAP</span> &nbsp;<span style="color:#a78bfa;">── EMA20(5m)</span> &nbsp;<span style="color:#3b82f6;">▲ Entry</span> &nbsp;<span style="color:#f59e0b;">── Stop</span>
     </div>
   </div>
+  ${optionChart.optionChartHtml('tpb-opt-chart')}
 </div>` : ""}
 
 <div id="tpbp-trades-section" style="margin-bottom:18px;">
@@ -1268,6 +1273,7 @@ async function tpbpManualEntry(side) {
   window.addEventListener('resize', function(){ chart.applyOptions({ width: container.clientWidth }); });
 })();
 </script>
+${optionChart.optionChartScript({ dataUrl: '/trend-pb-paper/status/chart-data', id: 'tpb-opt-chart' })}
 
 <script>
 (function(){

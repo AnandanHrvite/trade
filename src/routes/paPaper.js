@@ -21,6 +21,7 @@ const paStrategy = require("../strategies/price_action");
 const instrumentConfig = require("../config/instrument");
 const { getSymbol, getLotQty, validateAndGetOptionSymbol } = instrumentConfig;
 const sharedSocketState = require("../utils/sharedSocketState");
+const optionChart  = require("../utils/optionChart");
 const socketManager = require("../utils/socketManager");
 const tickRecorder  = require("../utils/tickRecorder");
 const optionFeed    = require("../utils/optionFeed");
@@ -284,6 +285,8 @@ const OPTION_FEED_OWNER = "pa-paper";
 function _applyOptionLtp(ltp, at) {
   if (!(ltp > 0) || !state.position) return;
   state.optionLtp = ltp;
+  // Premium bars for the option chart (display only — never read by the engine).
+  state.optionChart = optionChart.pushLtp(state.optionChart, state.optionSymbol, ltp, at);
   state.optionLtpUpdatedAt = at || Date.now();
   state.position.optionCurrentLtp = ltp;
   if (!state.position.optionEntryLtp) {
@@ -1284,7 +1287,8 @@ router.get("/status/chart-data", async (req, res) => {
     }
     const stopLoss = state.position && state.position.stopLoss ? state.position.stopLoss : null;
     const entryPrice = state.position && state.position.entryPrice ? state.position.entryPrice : null;
-    return res.json({ candles, markers, stopLoss, entryPrice, patternLevel });
+    return res.json({ candles, markers, stopLoss, entryPrice, patternLevel,
+      optionChart: optionChart.buildPayload({ store: state.optionChart, position: state.position, trades: state.sessionTrades }) });
   } catch (err) { return res.status(500).json({ error: err.message }); }
 });
 
@@ -1794,6 +1798,7 @@ ${process.env.CHART_ENABLED !== "false" ? `<!-- NIFTY Chart -->
       <span style="color:#3b82f6;">▲ Entry</span> &nbsp;<span style="color:#10b981;">▼ Win</span> &nbsp;<span style="color:#ef4444;">▼ Loss</span> &nbsp;<span style="color:var(--muted-1,#8ba1c2);">● Swing H/L</span> &nbsp;<span style="color:#f59e0b;">── SL</span> &nbsp;<span style="color:#3b82f6;">-- Entry</span>
     </div>
   </div>
+  ${optionChart.optionChartHtml('pa-opt-chart')}
 </div>` : ""}
 
 <!-- Session trades table -->
@@ -2347,6 +2352,7 @@ function spUpdateBanner() {
   } else { el.style.display = 'none'; el.innerHTML = ''; }
 }
 </script>
+${optionChart.optionChartScript({ dataUrl: '/pa-paper/status/chart-data', id: 'pa-opt-chart' })}
 <script>
 // ── AJAX live refresh ────────────────────────────────────────────────────
 (function() {

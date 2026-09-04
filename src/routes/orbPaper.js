@@ -27,6 +27,7 @@ const orbStrategy        = require("../strategies/orb_breakout");
 const orbExits           = require("../strategies/orbExits");
 const instrumentConfig   = require("../config/instrument");
 const sharedSocketState  = require("../utils/sharedSocketState");
+const optionChart  = require("../utils/optionChart");
 const socketManager      = require("../utils/socketManager");
 const tickRecorder       = require("../utils/tickRecorder");
 const optionFeed         = require("../utils/optionFeed");
@@ -217,6 +218,8 @@ let _optionPollStopped = true;
 function _applyOptionLtp(symbol, ltp, at, record) {
   if (!(ltp > 0) || !state.position) return;
   state.optionLtp = ltp;
+  // Premium bars for the option chart (display only — never read by the engine).
+  state.optionChart = optionChart.pushLtp(state.optionChart, symbol, ltp, at);
   state.optionLtpUpdatedAt = at || Date.now();
   if (record) { try { tickRecorder.recordOptionLtp(symbol, ltp, "orb-paper"); } catch (_) {} }
 }
@@ -1148,7 +1151,8 @@ router.get("/status/chart-data", async (req, res) => {
       stOn:     (process.env.ORB_ST_ENABLED || "true").toLowerCase() === "true",
     };
 
-    return res.json({ candles, markers, stopLoss, entryPrice, target, orhLine, orlLine, rsi, superTrend, gateCfg });
+    return res.json({ candles, markers, stopLoss, entryPrice, target, orhLine, orlLine, rsi, superTrend, gateCfg,
+      optionChart: optionChart.buildPayload({ store: state.optionChart, position: state.position, trades: state.sessionTrades }) });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
@@ -1524,6 +1528,7 @@ ${process.env.CHART_ENABLED !== "false" ? `<!-- NIFTY Chart -->
       <span style="color:#eab308;">── RSI</span> <span id="orbp-rsi-now" style="color:#8ba1c2;"></span>
     </div>
   </div>
+  ${optionChart.optionChartHtml('orb-opt-chart')}
 </div>` : ""}
 
 <!-- Session trades -->
@@ -1714,6 +1719,7 @@ async function orbpManualEntry(side) {
   });
 })();
 </script>
+${optionChart.optionChartScript({ dataUrl: '/orb-paper/status/chart-data', id: 'orb-opt-chart' })}
 
 <script>
 // ── AJAX live refresh — only updates DOM fragments; full reload on state change

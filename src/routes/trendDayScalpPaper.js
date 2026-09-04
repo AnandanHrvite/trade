@@ -44,6 +44,7 @@ const path    = require("path");
 const tdsStrategy        = require("../strategies/trend_day_scalp");
 const instrumentConfig   = require("../config/instrument");
 const sharedSocketState  = require("../utils/sharedSocketState");
+const optionChart  = require("../utils/optionChart");
 const socketManager      = require("../utils/socketManager");
 const tickRecorder       = require("../utils/tickRecorder");
 const optionFeed         = require("../utils/optionFeed");
@@ -266,6 +267,8 @@ let _optionPollStopped = true;
 function _applyOptionLtp(symbol, ltp, at, record) {
   if (!(ltp > 0) || !state.position) return;
   state.optionLtp = ltp;
+  // Premium bars for the option chart (display only — never read by the engine).
+  state.optionChart = optionChart.pushLtp(state.optionChart, symbol, ltp, at);
   state.optionLtpUpdatedAt = at || Date.now();
   if (record) { try { tickRecorder.recordOptionLtp(symbol, ltp, "trend-day-scalp-paper"); } catch (_) {} }
 }
@@ -1103,6 +1106,7 @@ router.get("/status/chart-data", async (req, res) => {
     const pos = state.position;
     res.json({
       candles, vwapSeries, emaSeries, markers,
+      optionChart: optionChart.buildPayload({ store: state.optionChart, position: state.position, trades: state.sessionTrades }),
       entryPrice: pos ? pos.entrySpot : null,
       stopLoss:   pos ? pos.slSpot : null,
       target:     pos ? pos.targetSpot : null,
@@ -1263,6 +1267,7 @@ ${bbRsiCurrentBar({ bar: state.currentBar, resMin: _resMin() })}
       <span style="color:#8b5cf6;">── VWAP</span> &nbsp;<span style="color:#3b82f6;">── EMA${cfg.emaPeriod}</span> &nbsp;<span style="color:#f59e0b;">── Stop</span> &nbsp;<span style="color:#10b981;">── Target</span>
     </div>
   </div>
+  ${optionChart.optionChartHtml('tds-opt-chart')}
 </div>
 
 <div id="pos-card" style="margin-bottom:18px;">${_positionCardHtml(pos, state.optionLtp)}</div>
@@ -1349,6 +1354,7 @@ setInterval(tdsRefresh, 4000);
   window.addEventListener('resize', function(){ chart.applyOptions({ width: container.clientWidth }); });
 })();
 </script>
+${optionChart.optionChartScript({ dataUrl: '/trend-day-scalp-paper/status/chart-data', id: 'tds-opt-chart' })}
 </body></html>`;
   res.send(html);
 });
