@@ -231,14 +231,16 @@ router.get("/callback", async (req, res) => {
   if (status && status !== "success") {
     return res.status(400).send(buildErrorPage(
       "Fyers Login Failed",
-      `Fyers returned status="${status}". Please try again.`
+      `Fyers returned status="${status}". Please try again.`,
+      { manual: true }
     ));
   }
 
   if (!tokenValue) {
     return res.status(400).send(buildErrorPage(
       "Fyers Login Failed",
-      `No token in callback URL. Got: <code>${JSON.stringify(redactQuery(req.query))}</code>`
+      `No token in callback URL. Got: <code>${JSON.stringify(redactQuery(req.query))}</code>`,
+      { manual: true }
     ));
   }
 
@@ -258,11 +260,11 @@ router.get("/callback", async (req, res) => {
       ));
     } else {
       console.error("❌ [Fyers] Token generation failed:", redactResponse(response));
-      return res.status(400).send(buildErrorPage("Fyers Login Failed", JSON.stringify(redactResponse(response))));
+      return res.status(400).send(buildErrorPage("Fyers Login Failed", JSON.stringify(redactResponse(response)), { manual: true }));
     }
   } catch (err) {
     console.error("❌ [Fyers] Auth error:", err);
-    return res.status(500).send(buildErrorPage("Fyers Auth Error", err.message));
+    return res.status(500).send(buildErrorPage("Fyers Auth Error", err.message, { manual: true }));
   }
 });
 
@@ -647,10 +649,9 @@ function buildManualSuccessPage(accessToken) {
   h1{font-size:1.2rem;font-weight:700;color:#10b981;margin-bottom:8px;text-align:center;}
   .sub{font-size:0.82rem;color:#a0aec0;line-height:1.55;text-align:center;margin-bottom:20px;}
   .label{font-size:0.7rem;font-weight:700;color:#fbbf24;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;}
-  .token-box{background:#0a1429;border:1px solid #1e3a5f;border-radius:8px;padding:12px;font-family:monospace;font-size:0.72rem;color:#93c5fd;word-break:break-all;line-height:1.5;max-height:180px;overflow:auto;-webkit-user-select:all;user-select:all;}
+  .token-box{background:#0a1429;border:1px solid #1e3a5f;border-radius:8px;padding:12px;font-family:monospace;font-size:0.72rem;color:#93c5fd;word-break:break-all;line-height:1.5;max-height:180px;overflow:auto;}
   .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
   .btn{flex:1;min-width:130px;background:#2563eb;color:#fff;text-decoration:none;text-align:center;padding:11px 14px;border-radius:8px;font-weight:600;font-size:0.85rem;border:none;cursor:pointer;}
-  .btn.success{background:#047857;}
   .btn.secondary{background:#1e3a5f;}
   .btn:hover{filter:brightness(1.15);}
   .hint{font-size:0.74rem;color:var(--muted-1,#8ba1c2);line-height:1.6;margin-top:14px;text-align:center;}
@@ -697,7 +698,14 @@ function buildManualSuccessPage(accessToken) {
 </body></html>`;
 }
 
-function buildErrorPage(title, message) {
+function buildErrorPage(title, message, opts) {
+  // Fyers failures are the ones with a recovery path: the user can log in
+  // wherever it works and paste the auth code back. Desktop no longer passes
+  // through the landing page, so without this link the manual route is
+  // unreachable from a failed login. Zerodha has no such fallback.
+  const manualLink = (opts && opts.manual)
+    ? `<a href="/auth/manual" style="background:#1e3a5f;margin-right:8px;">📋 Manual Login</a>`
+    : "";
   return `<!DOCTYPE html><html lang="en"${_authLightAttr()}><head><meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>${title}</title>
@@ -733,7 +741,7 @@ function buildErrorPage(title, message) {
   input{font-size:16px;min-height:44px;}
 }
 </style></head>
-  <body><div class="card"><div class="icon">❌</div><h1>${title}</h1><p class="msg">${message}</p><a href="/">← Back to Dashboard</a></div></body></html>`;
+  <body><div class="card"><div class="icon">❌</div><h1>${title}</h1><p class="msg">${message}</p>${manualLink}<a href="/">← Back to Dashboard</a></div></body></html>`;
 }
 
 module.exports = router;
