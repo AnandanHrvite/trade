@@ -3875,6 +3875,12 @@ function showToast(msg, type) {
   }, 4000);
 }
 
+// The broker credentials may be SET here even though they are never shown.
+// Without SSH this is the only way to repair a wrong APP_ID/SECRET_KEY, and a
+// wrong one kills the broker login entirely. Must match WRITABLE_SECRET_KEYS
+// on the server, which enforces the same list.
+var WRITABLE_SECRET_KEYS = ['SECRET_KEY', 'APP_ID', 'ZERODHA_API_SECRET', 'ZERODHA_API_KEY'];
+
 // ── Bulk paste: parse KEY=VALUE pairs from textarea ──────────────────────
 // Lines starting with "-" (e.g. "-PA_MIN_RR") mark that key for deletion.
 function parseBulkPaste(text) {
@@ -3922,10 +3928,19 @@ function parseBulkPaste(text) {
       val = val.slice(1, -1);
     }
     if (!key) { skipped.push(raw); continue; }
-    // Skip sensitive keys (server also strips them, but warn user)
+    // Sensitive keys are ignored — EXCEPT the four broker credentials, which
+    // are repairable here on purpose: without SSH this is the only way to fix a
+    // wrong APP_ID/SECRET_KEY, and a wrong one kills the broker login. The
+    // server enforces the same list, and refuses a masked ******** value.
     if (key.indexOf('SECRET') >= 0 || key.indexOf('TOKEN') >= 0 || key.indexOf('ACCESS') >= 0) {
-      skipped.push(key + ' (sensitive — ignored)');
-      continue;
+      if (WRITABLE_SECRET_KEYS.indexOf(key) === -1) {
+        skipped.push(key + ' (sensitive — ignored)');
+        continue;
+      }
+      if (/^[*•]+$/.test(val)) {
+        skipped.push(key + ' (that is the masked placeholder, not the real value)');
+        continue;
+      }
     }
     // If this key was queued for deletion earlier, the later update wins
     var didx = deletes.indexOf(key);
