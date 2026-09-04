@@ -34,6 +34,15 @@ if (!APP_ID || !SECRET) {
   console.error(`APP_ID set: ${!!APP_ID}, SECRET_KEY set: ${!!SECRET} — both are required.`);
   process.exit(2);
 }
+// Hashing the display mask would produce a confident, meaningless answer —
+// exactly the wrong outcome for a tool whose job is to end the guessing.
+for (const [name, val] of [["APP_ID", APP_ID], ["SECRET_KEY", SECRET]]) {
+  if (/^[*•]+$/.test(val)) {
+    console.error(`${name} is "${val}" — the masked placeholder from the VIEW .env listing, `
+      + `not a real credential. Set the real value before probing.`);
+    process.exit(2);
+  }
+}
 
 console.log(`app_id      : ${APP_ID}`);
 console.log(`secret len  : ${SECRET.length}`);
