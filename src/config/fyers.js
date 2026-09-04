@@ -48,7 +48,10 @@ function saveToken(token) {
   try {
     const dir = path.dirname(TOKEN_FILE);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(TOKEN_FILE, JSON.stringify({ token, savedAt: Date.now(), savedDate: todayIST() }), "utf-8");
+    // 0600: this token places live orders. Default perms leave it readable by
+    // every account on the box — same treatment as the Drive credential store.
+    fs.writeFileSync(TOKEN_FILE, JSON.stringify({ token, savedAt: Date.now(), savedDate: todayIST() }), { encoding: "utf-8", mode: 0o600 });
+    try { fs.chmodSync(TOKEN_FILE, 0o600); } catch (_) {}   // tighten a pre-existing file
   } catch (err) {
     console.warn("⚠️  Could not save Fyers token to disk:", err.message);
   }

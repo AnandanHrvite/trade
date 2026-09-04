@@ -31,7 +31,9 @@ function saveZerodhaToken(token) {
     // Store with a "validated" flag — only set true after real OAuth callback
     const existing = loadRawToken();
     const validated = existing ? existing.validated : false;
-    fs.writeFileSync(TOKEN_FILE, JSON.stringify({ token, savedAt: Date.now(), validated }), "utf-8");
+    // 0600 — see the note in config/fyers.js saveToken(); this token trades.
+    fs.writeFileSync(TOKEN_FILE, JSON.stringify({ token, savedAt: Date.now(), validated }), { encoding: "utf-8", mode: 0o600 });
+    try { fs.chmodSync(TOKEN_FILE, 0o600); } catch (_) {}
   } catch (err) {
     console.warn("⚠️  Could not save Zerodha token:", err.message);
   }
@@ -46,7 +48,8 @@ function markTokenValidated(token) {
       savedAt:   Date.now(),
       savedDate: new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
       validated: true,
-    }), "utf-8");
+    }), { encoding: "utf-8", mode: 0o600 });
+    try { fs.chmodSync(TOKEN_FILE, 0o600); } catch (_) {}
   } catch (err) {
     console.warn("⚠️  Could not mark Zerodha token validated:", err.message);
   }
