@@ -1608,13 +1608,17 @@ router.post("/save", (req, res) => {
     return res.status(400).json({ success: false, error: `Refused to save — ${parts.join(" ")}` });
   }
 
-  // Normalize + validate deletes (uppercase, strip invalid chars, block sensitive)
+  // Normalize + validate deletes (uppercase, strip invalid chars, block
+  // sensitive). WRITABLE_SECRET_KEYS is blocked here too: those may be SET to
+  // repair a bad value, but removing one breaks the broker login just as an
+  // empty value does — and APP_ID / ZERODHA_API_KEY are not in HIDDEN_KEYS, so
+  // the hidden-key check alone would let them be deleted.
   const hiddenSet = new Set(HIDDEN_KEYS);
   const deleteKeys = [];
   if (Array.isArray(deletes)) {
     for (const raw of deletes) {
       const key = String(raw || "").trim().toUpperCase().replace(/[^A-Z0-9_]/g, "");
-      if (!key || hiddenSet.has(key)) continue;
+      if (!key || hiddenSet.has(key) || WRITABLE_SECRET_KEYS.has(key)) continue;
       deleteKeys.push(key);
     }
   }
@@ -3910,6 +3914,12 @@ function parseBulkPaste(text) {
     if (line.charAt(0) === '-' && line.indexOf('=') === -1 && line.indexOf(':') === -1) {
       var dkey = line.slice(1).trim().toUpperCase().replace(/[^A-Z0-9_]/g, '');
       if (!dkey) { skipped.push(raw); continue; }
+      // Credentials may be SET to repair a bad value, but never removed —
+      // deleting one breaks the broker login exactly as an empty value does.
+      if (WRITABLE_SECRET_KEYS.indexOf(dkey) !== -1) {
+        skipped.push(dkey + ' (cannot delete a broker credential — set it instead)');
+        continue;
+      }
       if (dkey.indexOf('SECRET') >= 0 || dkey.indexOf('TOKEN') >= 0 || dkey.indexOf('ACCESS') >= 0) {
         skipped.push(dkey + ' (sensitive — cannot delete)');
         continue;
