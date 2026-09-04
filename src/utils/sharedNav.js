@@ -765,9 +765,10 @@ function toggleNavGroup(gid){
     var parent = activeGroup.closest('.sb-group-items');
     if(parent) lastOpen = parent.id;
   }
-  // Nothing active and nothing remembered — fall back to the Dashboard group so
-  // the sidebar never restores fully collapsed.
-  if(!lastOpen && document.getElementById('nav-dashboard')) lastOpen = 'nav-dashboard';
+  // Nothing active on this page — fall back to the Dashboard group, which is the
+  // default-open one. A remembered group only wins while its own page is showing;
+  // otherwise a fresh page opens on Dashboard, matching the server-side render.
+  if(!activeGroup && document.getElementById('nav-dashboard')) lastOpen = 'nav-dashboard';
   document.querySelectorAll('.sb-group-items').forEach(function(g){
     var shouldOpen = (lastOpen && g.id === lastOpen);
     var hdr = document.querySelector('[data-group="'+g.id+'"]');
