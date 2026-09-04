@@ -1797,7 +1797,10 @@ app.get("/", (req, res) => {
     }
     /* max-width keeps the inputs from stretching across the whole strip when it
        spans the full grid width on laptop/tablet. */
-    .brk-cfg-field { flex:1 1 116px; min-width:0; max-width:190px; }
+    .brk-cfg-field { flex:0 1 auto; min-width:0; max-width:190px; }
+    /* Soak up the leftover row width here so the Save button sits next to the
+       fields instead of being flung to the far right edge of the strip. */
+    .brk-cfg-spacer { flex:1 1 0; min-width:0; }
     .brk-cfg-input {
       width:100%; min-width:0; color-scheme:dark;
       background:#0a0f18; border:1px solid #243049; color:#c8d8f0;
@@ -1844,6 +1847,9 @@ app.get("/", (req, res) => {
          260px they wrap onto separate full-width lines by themselves instead
          of being squeezed into an overlap. No extra breakpoint needed. */
       .brk-cfg-field { max-width:none; flex:1 1 260px; }
+      /* Fields grow again below 768px, so there is no leftover width to soak
+         up and the spacer would only force a needless wrap. */
+      .brk-cfg-spacer { display:none; }
     }
     @media (max-width:640px) {
       .brk-cfg-label { flex:1 0 100%; }
@@ -2348,8 +2354,7 @@ ${buildSidebar('dashboard', liveActive)}
            One pill per index: NIFTY 50 expires every Tuesday, NIFTY BANK only
            monthly (NSE withdrew BANKNIFTY weeklies in Nov-2024), so a single
            pill would be showing the wrong date for one of them most weeks. -->
-      <span id="expiry-info-pill" class="top-bar-cache schedule empty clickable" title="Next NIFTY 50 weekly/monthly expiry — click for the full expiry calendar" onclick="showExpiryHolidaysModal()"></span>
-      <span id="bn-expiry-info-pill" class="top-bar-cache schedule empty clickable" title="Next NIFTY BANK expiry — monthly only, since NSE withdrew BANKNIFTY weekly options in Nov-2024. Click for the full expiry calendar" onclick="showExpiryHolidaysModal()"></span>
+      <span id="expiry-info-pill" class="top-bar-cache schedule empty clickable" title="Next NIFTY 50 expiry (weekly/monthly) and next NIFTY BANK expiry — BANKNIFTY is monthly only, since NSE withdrew its weekly options in Nov-2024. Click for the full expiry calendar" onclick="showExpiryHolidaysModal()"></span>
       <span id="holiday-info-pill" class="top-bar-cache schedule empty clickable" title="Next NSE trading holiday — click for the full holiday list" onclick="showExpiryHolidaysModal()"></span>
       <div id="trading-status-alert" style="display:none;position:relative;"></div>
       ${liveActive ? '<span class="top-bar-badge live-active"><span style="width:5px;height:5px;border-radius:50%;background:#ef4444;display:inline-block;"></span>LIVE ACTIVE</span>' : ''}
@@ -2407,6 +2412,7 @@ ${buildSidebar('dashboard', liveActive)}
           <option value="monthly"${r.type === 'monthly' ? ' selected' : ''}>monthly</option>
         </select>
       </span>
+      <span class="brk-cfg-spacer"></span>
       <button type="button" class="brk-cfg-save" onclick="saveDashExpiry(this,'${r.key}','${r.overrideKey}','${r.typeKey}')" title="Save ${r.overrideKey} + ${r.typeKey} to .env (same as a Settings save)">Save</button>
     </div>`).join('')}
     ${zerodhaOk && zerodhaExpiryHtml ? `<div class="brk-expiry ${pastExpiry ? 'expired' : nearExpiry ? 'expiring' : 'valid'}">${zerodhaExpiryHtml}</div>` : ''}
@@ -3568,7 +3574,7 @@ function setSchedulePillLabel(el, full, short){
   el.textContent = window.innerWidth <= SCHED_PILL_NARROW ? short : full;
 }
 function applySchedulePillLabels(){
-  ['expiry-info-pill','bn-expiry-info-pill','holiday-info-pill'].forEach(function(id){
+  ['expiry-info-pill','holiday-info-pill'].forEach(function(id){
     var el = document.getElementById(id);
     if (!el || !el.dataset.full) return;
     var want = window.innerWidth <= SCHED_PILL_NARROW ? el.dataset.short : el.dataset.full;
@@ -3594,7 +3600,6 @@ async function loadMarketSchedulePills(){
   }
   function fmtDMY(iso){ var p = iso.split('-'); return p[2] + '/' + p[1] + '/' + p[0]; }
   var expEl = document.getElementById('expiry-info-pill');
-  var bnExpEl = document.getElementById('bn-expiry-info-pill');
   var holEl = document.getElementById('holiday-info-pill');
   if (!expEl || !holEl) return;
   try {
@@ -3611,51 +3616,44 @@ async function loadMarketSchedulePills(){
       var d = e.actual || e.date;
       if (d >= todayIso) { nextExp = { date:d, monthly:e.monthly, preponed:e.preponed }; break; }
     }
+    // One pill carries both indices: NIFTY takes the next expiry of any kind,
+    // NIFTY BANK the next MONTHLY row of that very same calendar (NSE withdrew
+    // BANKNIFTY weeklies in Nov-2024, so the month contract is the only one
+    // listed). Reading both off one /api/expiry-dates response guarantees they
+    // can never disagree about a holiday prepone.
+    var nextBn = null;
+    for (var b = 0; b < expiries.length; b++) {
+      if (!expiries[b].monthly) continue;
+      var bd = expiries[b].actual || expiries[b].date;
+      if (bd >= todayIso) { nextBn = { date:bd, preponed:expiries[b].preponed }; break; }
+    }
+    var nFull = '\u26A0 No upcoming NIFTY expiry', nShort = '\u26A0 No NIFTY expiry';
     if (nextExp) {
       var d = diffDays(nextExp.date);
       var typeLbl = (nextExp.monthly ? 'M' : 'W') + (nextExp.preponed ? '*' : '');
       var when = d === 0 ? 'today' : d + (d === 1 ? ' day' : ' days');
       var whenShort = d === 0 ? 'today' : d + 'd';
       var dm = fmtDMY(nextExp.date).slice(0, 5);   // 28/07/2026 -> 28/07
-      expEl.classList.remove('empty');
-      setSchedulePillLabel(
-        expEl,
-        '📅 Next NIFTY Expiry Date : ' + fmtDMY(nextExp.date) + ' - ' + typeLbl + ' - ' + when,
-        '📅 ' + dm + ' · ' + typeLbl + ' · ' + whenShort
-      );
-    } else {
-      expEl.classList.add('empty');
-      setSchedulePillLabel(expEl, '📅 No upcoming NIFTY expiry', '📅 No expiry');
+      nFull  = 'NIFTY ' + fmtDMY(nextExp.date) + ' - ' + typeLbl + ' - ' + when;
+      nShort = 'N ' + dm + ' \u00B7 ' + typeLbl + ' \u00B7 ' + whenShort;
     }
-    // Next NIFTY BANK expiry — the MONTHLY rows of the very same calendar.
-    // NSE withdrew BANKNIFTY weeklies in Nov-2024, so the month contract is the
-    // only one listed; filtering here rather than asking for a second calendar
-    // keeps both pills on one /api/expiry-dates response and guarantees they can
-    // never disagree about a holiday prepone.
-    if (bnExpEl) {
-      var nextBn = null;
-      for (var b = 0; b < expiries.length; b++) {
-        if (!expiries[b].monthly) continue;
-        var bd = expiries[b].actual || expiries[b].date;
-        if (bd >= todayIso) { nextBn = { date:bd, preponed:expiries[b].preponed }; break; }
-      }
-      if (nextBn) {
-        var bdd = diffDays(nextBn.date);
-        var bnType = 'M' + (nextBn.preponed ? '*' : '');
-        var bnWhen = bdd === 0 ? 'today' : bdd + (bdd === 1 ? ' day' : ' days');
-        var bnWhenShort = bdd === 0 ? 'today' : bdd + 'd';
-        var bnDm = fmtDMY(nextBn.date).slice(0, 5);
-        bnExpEl.classList.remove('empty');
-        setSchedulePillLabel(
-          bnExpEl,
-          '🏦 Next BANK NIFTY Expiry Date : ' + fmtDMY(nextBn.date) + ' - ' + bnType + ' - ' + bnWhen,
-          '🏦 ' + bnDm + ' · ' + bnType + ' · ' + bnWhenShort
-        );
-      } else {
-        bnExpEl.classList.add('empty');
-        setSchedulePillLabel(bnExpEl, '🏦 No upcoming BANK NIFTY expiry', '🏦 No expiry');
-      }
+    var bFull = '\u26A0 No upcoming BANK NIFTY expiry', bShort = '\u26A0 No BN expiry';
+    if (nextBn) {
+      var bdd = diffDays(nextBn.date);
+      var bnType = 'M' + (nextBn.preponed ? '*' : '');
+      var bnWhen = bdd === 0 ? 'today' : bdd + (bdd === 1 ? ' day' : ' days');
+      var bnWhenShort = bdd === 0 ? 'today' : bdd + 'd';
+      var bnDm = fmtDMY(nextBn.date).slice(0, 5);
+      bFull  = 'BANK NIFTY ' + fmtDMY(nextBn.date) + ' - ' + bnType + ' - ' + bnWhen;
+      bShort = 'BN ' + bnDm + ' \u00B7 ' + bnType + ' \u00B7 ' + bnWhenShort;
     }
+    if (nextExp || nextBn) expEl.classList.remove('empty');
+    else expEl.classList.add('empty');
+    setSchedulePillLabel(
+      expEl,
+      '\uD83D\uDCC5 ' + nFull + '  |  \uD83C\uDFE6 ' + bFull,
+      '\uD83D\uDCC5 ' + nShort + ' | ' + bShort
+    );
     // Next holiday
     var holidays = ((hr && hr.holidays) || []).slice().sort();
     var nextHol = null;

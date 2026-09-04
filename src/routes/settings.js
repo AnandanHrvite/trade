@@ -2623,8 +2623,7 @@ router.get("/", (req, res) => {
         </nav>
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
           <div class="top-bar-title">Settings</div>
-          <span id="expiry-info-pill" class="top-bar-cache schedule empty" title="Next NIFTY 50 weekly/monthly expiry"></span>
-          <span id="bn-expiry-info-pill" class="top-bar-cache schedule empty" title="Next NIFTY BANK expiry — monthly only, since NSE withdrew BANKNIFTY weekly options in Nov-2024"></span>
+          <span id="expiry-info-pill" class="top-bar-cache schedule empty" title="Next NIFTY 50 expiry (weekly/monthly) and next NIFTY BANK expiry — BANKNIFTY is monthly only, since NSE withdrew its weekly options in Nov-2024"></span>
           <span id="holiday-info-pill" class="top-bar-cache schedule empty" title="Next NSE trading holiday"></span>
         </div>
       </div>
@@ -4060,7 +4059,6 @@ async function loadSettingsSchedulePills(){
   }
   function fmtDMY(iso){ var p = iso.split('-'); return p[2] + '/' + p[1] + '/' + p[0]; }
   var expEl = document.getElementById('expiry-info-pill');
-  var bnExpEl = document.getElementById('bn-expiry-info-pill');
   var holEl = document.getElementById('holiday-info-pill');
   if (!expEl || !holEl) return;
   try {
@@ -4075,36 +4073,32 @@ async function loadSettingsSchedulePills(){
       var d0 = expiries[i].actual || expiries[i].date;
       if (d0 >= todayIso) { nextExp = { date:d0, monthly:expiries[i].monthly, preponed:expiries[i].preponed }; break; }
     }
+    // One pill carries both indices: NIFTY takes the next expiry of any kind,
+    // NIFTY BANK the next MONTHLY row of the same calendar (NSE withdrew
+    // BANKNIFTY weeklies in Nov-2024). One response, so they can never
+    // disagree about a holiday prepone.
+    var nextBn = null;
+    for (var b = 0; b < expiries.length; b++) {
+      if (!expiries[b].monthly) continue;
+      var bd0 = expiries[b].actual || expiries[b].date;
+      if (bd0 >= todayIso) { nextBn = { date:bd0, preponed:expiries[b].preponed }; break; }
+    }
+    var nFull = '\u26A0 No upcoming NIFTY expiry';
     if (nextExp) {
       var d = diffDays(nextExp.date);
       var typeLbl = (nextExp.monthly ? 'M' : 'W') + (nextExp.preponed ? '*' : '');
       var when = d === 0 ? 'today' : d + (d === 1 ? ' day' : ' days');
-      expEl.classList.remove('empty');
-      expEl.textContent = '📅 Next NIFTY Expiry Date : ' + fmtDMY(nextExp.date) + ' - ' + typeLbl + ' - ' + when;
-    } else {
-      expEl.classList.add('empty');
-      expEl.textContent = '📅 No upcoming NIFTY expiry';
+      nFull = 'NIFTY ' + fmtDMY(nextExp.date) + ' - ' + typeLbl + ' - ' + when;
     }
-    // NIFTY BANK — the MONTHLY rows of the same calendar. It has no weekly
-    // contract (NSE withdrew BANKNIFTY weeklies in Nov-2024), so filtering the
-    // one response keeps both pills from ever disagreeing about a prepone.
-    if (bnExpEl) {
-      var nextBn = null;
-      for (var b = 0; b < expiries.length; b++) {
-        if (!expiries[b].monthly) continue;
-        var bd0 = expiries[b].actual || expiries[b].date;
-        if (bd0 >= todayIso) { nextBn = { date:bd0, preponed:expiries[b].preponed }; break; }
-      }
-      if (nextBn) {
-        var bdd = diffDays(nextBn.date);
-        var bnWhen = bdd === 0 ? 'today' : bdd + (bdd === 1 ? ' day' : ' days');
-        bnExpEl.classList.remove('empty');
-        bnExpEl.textContent = '🏦 Next BANK NIFTY Expiry Date : ' + fmtDMY(nextBn.date) + ' - M' + (nextBn.preponed ? '*' : '') + ' - ' + bnWhen;
-      } else {
-        bnExpEl.classList.add('empty');
-        bnExpEl.textContent = '🏦 No upcoming BANK NIFTY expiry';
-      }
+    var bFull = '\u26A0 No upcoming BANK NIFTY expiry';
+    if (nextBn) {
+      var bdd = diffDays(nextBn.date);
+      var bnWhen = bdd === 0 ? 'today' : bdd + (bdd === 1 ? ' day' : ' days');
+      bFull = 'BANK NIFTY ' + fmtDMY(nextBn.date) + ' - M' + (nextBn.preponed ? '*' : '') + ' - ' + bnWhen;
     }
+    if (nextExp || nextBn) expEl.classList.remove('empty');
+    else expEl.classList.add('empty');
+    expEl.textContent = '\uD83D\uDCC5 ' + nFull + '  |  \uD83C\uDFE6 ' + bFull;
     var holidays = ((hr && hr.holidays) || []).slice().sort();
     var nextHol = null;
     for (var j = 0; j < holidays.length; j++) {
