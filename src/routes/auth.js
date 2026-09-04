@@ -77,6 +77,35 @@ function clearDisconnectedTokens(trigger) {
   return cleared;
 }
 
+/**
+ * Console output is piped to the /logs SSE stream and to disk, and error pages
+ * are rendered in the browser. Neither is a safe place for an auth_code or an
+ * access token — either one lets a holder place orders on the account. So we
+ * never print a credential: only its shape, which is all that is needed to
+ * debug "did the callback carry a code at all?".
+ */
+const SECRET_QUERY_KEYS = ["auth_code", "request_token", "access_token", "refresh_token", "code", "token"];
+
+function redactQuery(query) {
+  const out = {};
+  for (const [k, v] of Object.entries(query || {})) {
+    out[k] = SECRET_QUERY_KEYS.includes(k)
+      ? `<redacted:${String(v).length} chars>`
+      : v;
+  }
+  return out;
+}
+
+/** Strip token fields out of a broker response before it is logged or shown. */
+function redactResponse(resp) {
+  if (!resp || typeof resp !== "object") return resp;
+  const out = {};
+  for (const [k, v] of Object.entries(resp)) {
+    out[k] = /token/i.test(k) ? "<redacted>" : v;
+  }
+  return out;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // FYERS AUTH
 // ─────────────────────────────────────────────────────────────────────────────
@@ -84,23 +113,29 @@ function clearDisconnectedTokens(trigger) {
 /**
  * GET /auth/login
  *
- * Shows a landing page with two options instead of redirecting straight to
- * Fyers. The mobile redirect path is fragile — Fyers' OAuth URL deep-links
- * into the Fyers mobile app on Android/iOS, and the app sometimes consumes
- * the callback redirect so the bot never receives the auth_code. Giving the
- * user a "manual paste" option is the only universal fallback.
+ * Desktop redirects straight to Fyers, exactly like the Zerodha button does —
+ * the browser stays put there, so the callback always comes back and the
+ * extra click bought nothing.
  *
- * For backwards compat (deep links, scripts, the old "Re-login" button), pass
- * ?direct=1 to skip the landing page and redirect straight to Fyers.
+ * Mobile still gets the landing page: Fyers' OAuth URL deep-links into the
+ * Fyers app on Android/iOS, and the app sometimes swallows the callback so
+ * the bot never receives the auth_code. The "manual paste" option is the only
+ * universal fallback there.
+ *
+ * ?direct=1 forces the redirect (deep links, scripts, the "Re-login" button);
+ * ?choose=1 forces the landing page from a desktop browser.
  */
 router.get("/login", (req, res) => {
   clearDisconnectedTokens("Fyers");
   const url = fyers.generateAuthCode();
-  if (req.query.direct === "1") {
+  const ua = String(req.get("user-agent") || "");
+  const isMobile = /Android|iPhone|iPad|iPod|Mobile|Silk/i.test(ua);
+
+  if (req.query.choose !== "1" && (req.query.direct === "1" || !isMobile)) {
     console.log("🔐 [Fyers] Redirecting to login:", url);
     return res.redirect(url);
   }
-  console.log("🔐 [Fyers] Login landing page shown.");
+  console.log("🔐 [Fyers] Login landing page shown (mobile).");
   res.send(buildLoginLandingPage(url));
 });
 
@@ -162,10 +197,10 @@ router.post("/manual", async (req, res) => {
       console.log("✅ [Fyers] Manual login successful. Token saved to disk.");
       return res.send(buildManualSuccessPage(response.access_token));
     }
-    console.error("❌ [Fyers] Manual token exchange failed:", response);
+    console.error("❌ [Fyers] Manual token exchange failed:", redactResponse(response));
     return res.status(400).send(buildManualLoginPage(
       fyers.generateAuthCode(),
-      `Fyers rejected the code: ${response.message || JSON.stringify(response)}. Try again with a fresh code.`,
+      `Fyers rejected the code: ${response.message || JSON.stringify(redactResponse(response))}. Try again with a fresh code.`,
     ));
   } catch (err) {
     console.error("❌ [Fyers] Manual auth error:", err);
@@ -191,7 +226,7 @@ router.get("/callback", async (req, res) => {
   const tokenValue = req.query.auth_code || req.query.request_token;
   const status     = req.query.status;
 
-  console.log("🔁 [Fyers] Callback params:", req.query);
+  console.log("🔁 [Fyers] Callback params:", redactQuery(req.query));
 
   if (status && status !== "success") {
     return res.status(400).send(buildErrorPage(
@@ -203,7 +238,7 @@ router.get("/callback", async (req, res) => {
   if (!tokenValue) {
     return res.status(400).send(buildErrorPage(
       "Fyers Login Failed",
-      `No token in callback URL. Got: <code>${JSON.stringify(req.query)}</code>`
+      `No token in callback URL. Got: <code>${JSON.stringify(redactQuery(req.query))}</code>`
     ));
   }
 
@@ -222,8 +257,8 @@ router.get("/callback", async (req, res) => {
         "Fyers access token stored and saved to disk — survives server restarts."
       ));
     } else {
-      console.error("❌ [Fyers] Token generation failed:", response);
-      return res.status(400).send(buildErrorPage("Fyers Login Failed", JSON.stringify(response)));
+      console.error("❌ [Fyers] Token generation failed:", redactResponse(response));
+      return res.status(400).send(buildErrorPage("Fyers Login Failed", JSON.stringify(redactResponse(response))));
     }
   } catch (err) {
     console.error("❌ [Fyers] Auth error:", err);
@@ -300,12 +335,12 @@ router.get("/zerodha/login", (req, res) => {
 
 router.get("/zerodha/callback", async (req, res) => {
   const { request_token, status } = req.query;
-  console.log("🔁 [Zerodha] Callback params:", req.query);
+  console.log("🔁 [Zerodha] Callback params:", redactQuery(req.query));
 
   if (status !== "success" || !request_token) {
     return res.status(400).send(buildErrorPage(
       "Zerodha Login Failed",
-      `Status="${status}" | request_token: ${request_token || "missing"}`
+      `Status="${status}" | request_token: ${request_token ? "present" : "missing"}`
     ));
   }
 
@@ -461,7 +496,7 @@ function buildLoginLandingPage(authUrl) {
   <a href="${safeUrl}" class="btn">Continue to Fyers →</a>
   <a href="/auth/manual" class="alt">📋 Manual Login (paste code)</a>
   <div class="hint">
-    <b>On mobile?</b> Fyers' login link often opens the Fyers app instead of staying in your browser, and the redirect back to this bot can fail silently. If "Continue to Fyers" doesn't bring you back logged in, use <b>Manual Login</b> — log in wherever, copy the auth code from the redirect URL, and paste it here.
+    <b>Why this step on mobile?</b> Fyers' login link often opens the Fyers app instead of staying in your browser, and the redirect back to this bot can then fail silently. If "Continue to Fyers" doesn't bring you back logged in, use <b>Manual Login</b> — log in wherever, copy the auth code from the redirect URL, and paste it here.
   </div>
   <div style="text-align:center;"><a href="/" class="back">← Back to Dashboard</a></div>
 </div>
@@ -594,8 +629,13 @@ function copyUrl(){
 
 function buildManualSuccessPage(accessToken) {
   const tok = String(accessToken || "");
-  // HTML-escape so the token can never break out of the textarea attribute or DOM.
-  const tokEsc = tok.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  // The token is already saved on the server, so the page has no reason to
+  // carry it. Show a masked fingerprint only — enough to confirm which token
+  // landed, without leaving a live order-placing credential in the browser
+  // history, the back-button cache, or a screenshot.
+  const masked = tok.length > 12
+    ? `${tok.slice(0, 6)}${"•".repeat(24)}${tok.slice(-4)}`
+    : "•".repeat(24);
   return `<!DOCTYPE html><html lang="en"${_authLightAttr()}><head><meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Fyers Login Successful</title>${faviconLink()}
@@ -644,38 +684,16 @@ function buildManualSuccessPage(accessToken) {
 <div class="card">
   <div class="icon">✅</div>
   <h1>Fyers Login Successful</h1>
-  <p class="sub">Token stored on the server. You can copy it below if you need it elsewhere — otherwise just head to the dashboard and start a session.</p>
+  <p class="sub">Token stored on the server. Head to the dashboard and start a session.</p>
 
-  <div class="label">Access Token</div>
-  <div class="token-box" id="token-box">${tokEsc}</div>
+  <div class="label">Access Token (masked)</div>
+  <div class="token-box">${masked}</div>
   <div class="row">
-    <button type="button" class="btn success" onclick="copyToken()">📋 Copy Token</button>
     <a href="/" class="btn">→ Dashboard</a>
     <a href="/auth/manual" class="btn secondary">Re-do Manual Login</a>
   </div>
-  <p class="hint">Tap the token box and it'll select itself; or use the Copy button. Treat this token like a password — anyone with it can place orders on your account.</p>
+  <p class="hint">The full token stays on the server — it is never shown here, because anyone holding it can place orders on your account.</p>
 </div>
-<script>
-function copyToken(){
-  var tok = document.getElementById('token-box').textContent;
-  function flash(msg){
-    var btn = document.querySelector('.btn.success');
-    if(!btn) return;
-    var orig = btn.textContent; btn.textContent = msg;
-    setTimeout(function(){ btn.textContent = orig; }, 1400);
-  }
-  if(navigator.clipboard && navigator.clipboard.writeText){
-    navigator.clipboard.writeText(tok).then(function(){ flash('✅ Copied!'); }).catch(fallback);
-  } else { fallback(); }
-  function fallback(){
-    var ta = document.createElement('textarea');
-    ta.value = tok; ta.style.position='fixed'; ta.style.opacity='0';
-    document.body.appendChild(ta); ta.select();
-    try{ document.execCommand('copy'); flash('✅ Copied!'); }catch(e){ flash('Tap token to select'); }
-    document.body.removeChild(ta);
-  }
-}
-</script>
 </body></html>`;
 }
 
