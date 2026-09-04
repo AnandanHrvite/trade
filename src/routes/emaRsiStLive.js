@@ -21,6 +21,7 @@ const fs      = require("fs");
 const path    = require("path");
 const { buildSidebar, sidebarCSS, modalCSS, modalJS } = require("../utils/sharedNav");
 
+const optionChart  = require("../utils/optionChart");
 const socketManager     = require("../utils/socketManager");
 const tickRecorder      = require("../utils/tickRecorder");
 const liveDryRun        = require("../utils/liveDryRun");
@@ -593,6 +594,8 @@ function startOptionPolling(symbol) {
     if (!tradeState.position || tradeState.optionSymbol !== symbol) return;
     tradeState.optionLtp = ltp;
     tradeState.optionLtpUpdatedAt = Date.now();
+    // Premium bars for the option chart (display only — never read by the engine).
+    tradeState.optionChart = optionChart.pushLtp(tradeState.optionChart, symbol, ltp);
     if (tradeState.position) {
       tradeState.position.optionCurrentLtp = ltp;
       if (!tradeState.position.optionEntryLtp) {
@@ -660,6 +663,7 @@ function startOptionPolling(symbol) {
       if (!tradeState.position || tradeState.optionSymbol !== symbol) return;
       tradeState.optionLtp = ltp;
       tradeState.optionLtpUpdatedAt = Date.now();
+      tradeState.optionChart = optionChart.pushLtp(tradeState.optionChart, symbol, ltp);
       if (tradeState._ltpStaleLogged) {
         log(`✅ [LIVE] Option LTP recovered — ₹${ltp}`);
         tradeState._ltpStaleLogged = false;
@@ -2885,6 +2889,7 @@ router.get("/status/chart-data", (req, res) => {
     } catch (_) { /* ignore indicator calc errors */ }
 
     return res.json({ candles, markers, stopLoss, entryPrice,
+      optionChart: optionChart.buildPayload({ store: tradeState.optionChart, position: tradeState.position, trades: tradeState.sessionTrades }),
       armedTrigger: tradeState._armedSignal ? tradeState._armedSignal.triggerLevel : null,
       armedSide:    tradeState._armedSignal ? tradeState._armedSignal.side : null,
       ema9, ema20, ema50, ema21, supertrend,
@@ -3417,6 +3422,7 @@ ${buildSidebar('emaRsiStLive', tradeState.running, tradeState.running, {
         <span style="color:#f59e0b;">── SL</span>
       </div>
     </div>
+  ${optionChart.optionChartHtml('ersl-opt-chart')}
   </div>` : ""}
 
   <div>
@@ -3982,6 +3988,7 @@ async function manualEntry(side) {
   });
 })();
 </script>
+${optionChart.optionChartScript({ dataUrl: '/ema_rsi_st-live/status/chart-data', id: 'ersl-opt-chart' })}
 <script>
 // ── AJAX live refresh — replaces meta http-equiv="refresh" ──────────────────
 (function() {

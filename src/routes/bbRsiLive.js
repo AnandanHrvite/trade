@@ -26,6 +26,7 @@ const fyersBroker      = require("../services/fyersBroker");
 const instrumentConfig = require("../config/instrument");
 const { getSymbol, getLotQty, validateAndGetOptionSymbol } = instrumentConfig;
 const sharedSocketState = require("../utils/sharedSocketState");
+const optionChart  = require("../utils/optionChart");
 const socketManager = require("../utils/socketManager");
 const tickRecorder  = require("../utils/tickRecorder");
 const { verifyFyersToken } = require("../utils/fyersAuthCheck");
@@ -207,6 +208,8 @@ function startOptionPolling(symbol) {
       if (ltp && state.position) {
         state.optionLtp = ltp;
         state.optionLtpUpdatedAt = Date.now();
+        // Premium bars for the option chart (display only — never read by the engine).
+        state.optionChart = optionChart.pushLtp(state.optionChart, symbol, ltp);
         if (state._ltpStaleLogged) {
           log(`✅ [BB_RSI-LIVE] Option LTP recovered — ₹${ltp}`);
           state._ltpStaleLogged = false;
@@ -235,6 +238,7 @@ function startOptionPolling(symbol) {
     if (ltp && state.position) {
       state.optionLtp = ltp;
       state.optionLtpUpdatedAt = Date.now();
+      state.optionChart = optionChart.pushLtp(state.optionChart, symbol, ltp);
       state.position.optionCurrentLtp = ltp;
       if (!state.position.optionEntryLtp) {
         state.position.optionEntryLtp = ltp;
@@ -1594,6 +1598,7 @@ router.get("/status/chart-data", (req, res) => {
     const armedTrigger = state._armedSignal ? state._armedSignal.triggerLevel : null;
     const armedSide    = state._armedSignal ? state._armedSignal.side : null;
     return res.json({ candles, markers, stopLoss, entryPrice, armedTrigger, armedSide, bbUpper, bbMiddle, bbLower,
+      optionChart: optionChart.buildPayload({ store: state.optionChart, position: state.position, trades: state.sessionTrades }),
       adx: adxSeries,
       adxMax: parseFloat(process.env.BB_RSI_ADX_MAX || "30"),
       rsi: rsiSeries,
@@ -2142,6 +2147,7 @@ ${buildSidebar('bbRsiLive', liveActive, state.running, {
         <span style="color:#3b82f6;">▲ Entry</span> &nbsp;<span style="color:#10b981;">▼ Win</span> &nbsp;<span style="color:#ef4444;">▼ Loss</span> &nbsp;<span style="color:#f59e0b;">── SL</span> &nbsp;<span style="color:#3b82f6;">-- Entry</span>
       </div>
     </div>
+  ${optionChart.optionChartHtml('bbl-opt-chart')}
   </div>` : ""}
 
   <!-- SESSION TRADES TABLE -->
@@ -2856,6 +2862,7 @@ logFilter();
   });
 })();
 </script>
+${optionChart.optionChartScript({ dataUrl: '/bb_rsi-live/status/chart-data', id: 'bbl-opt-chart' })}
 </body></html>`;
 
   res.setHeader("Content-Type", "text/html");

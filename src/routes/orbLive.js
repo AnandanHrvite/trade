@@ -42,6 +42,7 @@ const orbStrategy        = require("../strategies/orb_breakout");
 const orbExits           = require("../strategies/orbExits");
 const instrumentConfig   = require("../config/instrument");
 const sharedSocketState  = require("../utils/sharedSocketState");
+const optionChart  = require("../utils/optionChart");
 const socketManager      = require("../utils/socketManager");
 const liveDryRun         = require("../utils/liveDryRun");
 const tickRecorder       = require("../utils/tickRecorder");
@@ -156,6 +157,8 @@ function startOptionPolling() {
             state.optionLtp = ltp;
             state.optionLtpUpdatedAt = Date.now();
             try { tickRecorder.recordOptionLtp(state.position.symbol, ltp, "orb-live"); } catch (_) {}
+            // Premium bars for the option chart (display only — never read by the engine).
+            state.optionChart = optionChart.pushLtp(state.optionChart, state.position.symbol, ltp);
           }
         }
       } catch (_) {}
@@ -1073,7 +1076,8 @@ router.get("/status/chart-data", (req, res) => {
       if (t.spotAtEntry != null) { const c = (t.entryBarTime != null && candles.find(c => c.time === t.entryBarTime)) || candles.find(c => Math.abs(c.close - t.spotAtEntry) < 1) || candles[0]; if (c) markers.push({ time: c.time, position: 'belowBar', color: '#3b82f6', shape: 'arrowUp', text: t.side + ' @ ' + t.spotAtEntry }); }
       if (t.spotAtExit != null)  { const c = (t.exitBarTime != null && candles.find(c => c.time === t.exitBarTime)) || candles.find(c => Math.abs(c.close - t.spotAtExit)  < 1) || candles[candles.length - 1]; if (c) markers.push({ time: c.time, position: 'aboveBar', color: t.pnl >= 0 ? '#10b981' : '#ef4444', shape: 'arrowDown', text: 'Exit ' + (t.pnl >= 0 ? '+' : '') + Math.round(t.pnl || 0) }); }
     }
-    res.json({ candles, markers, orhLine, orlLine, stopLoss: state.position && state.position.slSpot, entryPrice: state.position && state.position.entrySpot, target: state.position && state.position.targetSpot });
+    res.json({ candles, markers, orhLine, orlLine, stopLoss: state.position && state.position.slSpot, entryPrice: state.position && state.position.entrySpot, target: state.position && state.position.targetSpot,
+      optionChart: optionChart.buildPayload({ store: state.optionChart, position: state.position, trades: state.sessionTrades }) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -1356,6 +1360,7 @@ ${process.env.CHART_ENABLED !== "false" ? `<div style="margin-bottom:18px;">
       <span style="color:#10b981;">── ORH</span> &nbsp;<span style="color:#ef4444;">── ORL</span> &nbsp;<span style="color:#3b82f6;">▲ Entry</span>
     </div>
   </div>
+${optionChart.optionChartHtml('orbl-opt-chart')}
 </div>` : ""}
 
 <div id="orbl-trades-section" style="margin-bottom:18px;">
@@ -1442,6 +1447,7 @@ async function orblManualEntry(side) {
   window.addEventListener('resize', function(){ chart.applyOptions({ width: container.clientWidth }); });
 })();
 </script>
+${optionChart.optionChartScript({ dataUrl: '/orb-live/status/chart-data', id: 'orbl-opt-chart' })}
 
 <script>
 (function(){

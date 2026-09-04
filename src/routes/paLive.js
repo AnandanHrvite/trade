@@ -28,6 +28,7 @@ const fyersBroker      = require("../services/fyersBroker");
 const instrumentConfig = require("../config/instrument");
 const { getSymbol, getLotQty, validateAndGetOptionSymbol } = instrumentConfig;
 const sharedSocketState = require("../utils/sharedSocketState");
+const optionChart  = require("../utils/optionChart");
 const socketManager = require("../utils/socketManager");
 const tickRecorder  = require("../utils/tickRecorder");
 const { verifyFyersToken } = require("../utils/fyersAuthCheck");
@@ -199,6 +200,8 @@ function startOptionPolling(symbol) {
       if (ltp && state.position) {
         state.optionLtp = ltp;
         state.optionLtpUpdatedAt = Date.now();
+        // Premium bars for the option chart (display only — never read by the engine).
+        state.optionChart = optionChart.pushLtp(state.optionChart, symbol, ltp);
         if (state._ltpStaleLogged) {
           log(`✅ [PA-LIVE] Option LTP recovered — ₹${ltp}`);
           state._ltpStaleLogged = false;
@@ -227,6 +230,7 @@ function startOptionPolling(symbol) {
     if (ltp && state.position) {
       state.optionLtp = ltp;
       state.optionLtpUpdatedAt = Date.now();
+      state.optionChart = optionChart.pushLtp(state.optionChart, symbol, ltp);
       state.position.optionCurrentLtp = ltp;
       if (!state.position.optionEntryLtp) {
         state.position.optionEntryLtp = ltp;
@@ -1396,7 +1400,8 @@ router.get("/status/chart-data", (req, res) => {
     }
     const stopLoss = state.position && state.position.stopLoss ? state.position.stopLoss : null;
     const entryPrice = state.position && state.position.entryPrice ? state.position.entryPrice : null;
-    return res.json({ candles, markers, stopLoss, entryPrice, patternLevel });
+    return res.json({ candles, markers, stopLoss, entryPrice, patternLevel,
+      optionChart: optionChart.buildPayload({ store: state.optionChart, position: state.position, trades: state.sessionTrades }) });
   } catch (err) { return res.status(500).json({ error: err.message }); }
 });
 
@@ -1936,6 +1941,7 @@ ${buildSidebar('paLive', liveActive, state.running, {
         <span style="color:#3b82f6;">▲ Entry</span> &nbsp;<span style="color:#10b981;">▼ Win</span> &nbsp;<span style="color:#ef4444;">▼ Loss</span> &nbsp;<span style="color:#f59e0b;">── SL</span> &nbsp;<span style="color:#3b82f6;">-- Entry</span>
       </div>
     </div>
+  ${optionChart.optionChartHtml('pal-opt-chart')}
   </div>` : ""}
 
   <!-- SESSION TRADES TABLE -->
@@ -2610,6 +2616,7 @@ logFilter();
   });
 })();
 </script>
+${optionChart.optionChartScript({ dataUrl: '/pa-live/status/chart-data', id: 'pal-opt-chart' })}
 </body></html>`;
 
   res.setHeader("Content-Type", "text/html");
