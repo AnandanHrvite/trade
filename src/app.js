@@ -4453,6 +4453,31 @@ const PORT   = process.env.PORT   || 3000;
 const HOST   = "0.0.0.0";
 const EC2_IP = process.env.EC2_IP || "43.205.26.92"; // override via .env if IP changes
 
+// A masked placeholder is not a credential. The Settings "VIEW .env / COPY"
+// view prints SECRET/TOKEN values as ********, and pasting that listing back
+// into .env stores the mask itself. The app then hashes "********" as the
+// Fyers app secret: the auth_code decodes fine, the secret check fails, and
+// Fyers answers {"code":-99,"message":"internal server error"} — which reads
+// like an outage rather than a wiped secret. Say so at boot instead.
+// A warning, not an exit: paper/backtest and the running session must not be
+// held hostage to a broker-login credential.
+for (const [key, label] of [
+  ["SECRET_KEY", "Fyers"],
+  ["APP_ID", "Fyers"],
+  ["ZERODHA_API_SECRET", "Zerodha"],
+  ["ZERODHA_API_KEY", "Zerodha"],
+]) {
+  const val = String(process.env[key] || "").trim();
+  if (val && /^[*\u2022]+$/.test(val)) {
+    console.error(
+      `\n❌  ${key} is "${val}" — a masked placeholder, not the real ${label} credential.\n` +
+      `    It comes from the Settings "VIEW .env / COPY" listing, which masks secrets.\n` +
+      `    ${label} login will fail (Fyers reports it as code -99 "internal server error").\n` +
+      `    Fix: put the real ${key} into .env on this host and restart.\n`
+    );
+  }
+}
+
 // Fail fast with a clear message if certs are missing
 let sslOptions;
 try {
