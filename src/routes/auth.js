@@ -227,8 +227,11 @@ async function exchangeAuthCode(authCode, label) {
       // turned a slow-but-fine login into ECONNABORTED.
       const response = await fyers.runWithAuthTimeout(() =>
         fyers.generate_access_token({
-          client_id:  process.env.APP_ID,
-          secret_key: process.env.SECRET_KEY,
+          // Trim: the appIdHash is sha256("<id>:<secret>"), so a stray space or
+          // newline that rode along in the .env silently produces a wrong hash
+          // and the exchange fails with no hint that the value is the problem.
+          client_id:  String(process.env.APP_ID || "").trim(),
+          secret_key: String(process.env.SECRET_KEY || "").trim(),
           auth_code:  authCode,   // SDK always expects "auth_code" regardless of URL param name
         })
       );
@@ -311,6 +314,12 @@ router.get("/callback", async (req, res) => {
       ));
     } else {
       console.error("❌ [Fyers] Token generation failed:", redactResponse(response));
+      console.error(
+        `   ↳ app_id="${String(process.env.APP_ID || "").trim()}" ` +
+        `secret_len=${String(process.env.SECRET_KEY || "").trim().length} ` +
+        `code_len=${String(tokenValue).length} ` +
+        `redirect="${process.env.REDIRECT_URL || "(unset)"}"`
+      );
       return res.status(400).send(buildErrorPage("Fyers Login Failed", describeAuthFailure(response), { manual: true }));
     }
   } catch (err) {
