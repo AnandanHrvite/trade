@@ -187,12 +187,8 @@ router.post("/manual", async (req, res) => {
   }
 
   try {
-    const response = await fyers.generate_access_token({
-      client_id:  process.env.APP_ID,
-      secret_key: process.env.SECRET_KEY,
-      auth_code:  tokenValue,
-    });
-    if (response.s === "ok") {
+    const response = await exchangeAuthCode(tokenValue, "Fyers manual");
+    if (response && response.s === "ok") {
       fyers.setAccessToken(response.access_token);
       console.log("✅ [Fyers] Manual login successful. Token saved to disk.");
       return res.send(buildManualSuccessPage(response.access_token));
@@ -200,7 +196,7 @@ router.post("/manual", async (req, res) => {
     console.error("❌ [Fyers] Manual token exchange failed:", redactResponse(response));
     return res.status(400).send(buildManualLoginPage(
       fyers.generateAuthCode(),
-      `Fyers rejected the code: ${response.message || JSON.stringify(redactResponse(response))}. Try again with a fresh code.`,
+      describeAuthFailure(response),
     ));
   } catch (err) {
     console.error("❌ [Fyers] Manual auth error:", err);
@@ -210,6 +206,61 @@ router.post("/manual", async (req, res) => {
     ));
   }
 });
+
+/**
+ * Exchange an auth_code for an access token, retrying a network abort.
+ *
+ * config/fyers.js sets a global 6s axios deadline so a hung socket can never
+ * wedge the tick hot path. The login exchange inherits it, but login is a
+ * one-shot user action against a slower endpoint — 6s is tight enough that a
+ * momentary stall returns {s:"error", code:500, message:"ECONNABORTED"} and
+ * burns the user's trip through the broker. The auth_code is single-use and
+ * short-lived, so the retry has to reuse the same code straight away rather
+ * than sending the user back to Fyers.
+ */
+async function exchangeAuthCode(authCode, label) {
+  const ATTEMPTS = 3;
+  let last = null;
+  for (let i = 1; i <= ATTEMPTS; i++) {
+    try {
+      const response = await fyers.generate_access_token({
+        client_id:  process.env.APP_ID,
+        secret_key: process.env.SECRET_KEY,
+        auth_code:  authCode,   // SDK always expects "auth_code" regardless of URL param name
+      });
+      if (response && response.s === "ok") return response;
+      last = response;
+      // Only a transport abort is worth retrying. A code Fyers actively
+      // rejected (expired, already used, wrong app) fails the same way twice.
+      if (!isTransientAuthError(response)) return response;
+      console.warn(`⚠️  [${label}] Token exchange attempt ${i}/${ATTEMPTS} timed out${i < ATTEMPTS ? " — retrying." : " — giving up."}`);
+    } catch (err) {
+      last = { s: "error", message: err.message };
+      if (!isTransientAuthError(last)) throw err;
+      console.warn(`⚠️  [${label}] Token exchange attempt ${i}/${ATTEMPTS} failed (${err.message})${i < ATTEMPTS ? " — retrying." : " — giving up."}`);
+    }
+    if (i < ATTEMPTS) await new Promise(r => setTimeout(r, 400 * i));
+  }
+  return last;
+}
+
+/** Network-level abort/timeout — retryable. A rejected code is not. */
+function isTransientAuthError(resp) {
+  const msg = String((resp && resp.message) || "");
+  return /ECONNABORTED|ETIMEDOUT|ECONNRESET|ENOTFOUND|EAI_AGAIN|socket hang up|timeout/i.test(msg);
+}
+
+/** Turn an SDK error blob into something a human can act on. */
+function describeAuthFailure(resp) {
+  const msg = String((resp && resp.message) || "");
+  if (isTransientAuthError(msg ? { message: msg } : null)) {
+    return "Could not reach Fyers in time (the connection timed out). Fyers may be slow right now — try logging in again.";
+  }
+  if (/expired|invalid|used/i.test(msg)) {
+    return `Fyers rejected the login code: ${msg}. Codes are single-use and expire quickly — start the login again.`;
+  }
+  return msg || "Fyers returned an unexpected response.";
+}
 
 /**
  * GET /auth/callback
@@ -245,13 +296,9 @@ router.get("/callback", async (req, res) => {
   }
 
   try {
-    const response = await fyers.generate_access_token({
-      client_id:  process.env.APP_ID,
-      secret_key: process.env.SECRET_KEY,
-      auth_code:  tokenValue,   // SDK always expects "auth_code" regardless of URL param name
-    });
+    const response = await exchangeAuthCode(tokenValue, "Fyers");
 
-    if (response.s === "ok") {
+    if (response && response.s === "ok") {
       fyers.setAccessToken(response.access_token); // also saves to disk now
       console.log("✅ [Fyers] Login successful. Token saved to disk.");
       return res.send(buildSuccessPage(
@@ -260,11 +307,11 @@ router.get("/callback", async (req, res) => {
       ));
     } else {
       console.error("❌ [Fyers] Token generation failed:", redactResponse(response));
-      return res.status(400).send(buildErrorPage("Fyers Login Failed", JSON.stringify(redactResponse(response)), { manual: true }));
+      return res.status(400).send(buildErrorPage("Fyers Login Failed", describeAuthFailure(response), { manual: true }));
     }
   } catch (err) {
     console.error("❌ [Fyers] Auth error:", err);
-    return res.status(500).send(buildErrorPage("Fyers Auth Error", err.message, { manual: true }));
+    return res.status(500).send(buildErrorPage("Fyers Auth Error", describeAuthFailure({ message: err.message }), { manual: true }));
   }
 });
 
