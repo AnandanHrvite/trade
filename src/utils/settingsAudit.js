@@ -61,7 +61,12 @@ function pruneOldEntries() {
 // The audit log is written to disk in plaintext and rendered in the Settings
 // audit view, so a credential must never reach it. Record that the key changed
 // — never what it changed to or from.
-const SECRET_KEY_RE = /(SECRET|TOKEN|PASSWORD|API_KEY|ACCESS)/i;
+// Match the key NAME, not any key that merely contains the word: a bare
+// "…_URL", a "UI_SHOW_…" toggle or an "…_ALLOW_…" flag carries no credential,
+// and redacting those only destroys their audit history. Anchored on the tail
+// of the name so SECRET_KEY, LOGIN_SECRET, ZERODHA_API_KEY and ACCESS_TOKEN
+// are all caught while TOKEN_SYNC_LIVE_URL and UI_SHOW_TOKEN_SYNC are not.
+const SECRET_KEY_RE = /(^|_)(SECRET|SECRET_KEY|TOKEN|PASSWORD|PASSWD|API_KEY|APIKEY|ACCESS_TOKEN|PRIVATE_KEY)$/i;
 
 // Exported so the restore path can recognise a placeholder and refuse to write
 // it back over the real credential.

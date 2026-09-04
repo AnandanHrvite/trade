@@ -93,7 +93,10 @@ function clearDisconnectedTokens(trigger) {
  */
 function maskedCredential(value) {
   const v = String(value || "").trim();
-  return v === "" || /^\*+$/.test(v);
+  // Both mask forms: the Settings COPY listing writes ********, while
+  // GET /settings/data writes bullets. Either one stored as a credential is
+  // the same failure.
+  return v === "" || /^[*•]+$/.test(v);
 }
 
 /**

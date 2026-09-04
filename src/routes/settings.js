@@ -1659,12 +1659,14 @@ router.post("/save", (req, res) => {
 // app secret, and Fyers answers {"code":-99,"message":"internal server error"},
 // which reads like an outage on their side rather than a wiped secret.
 //
-// A row whose value is only asterisks is never something the user typed on
-// purpose, so drop it and keep whatever is already on disk.
+// A row whose value is only mask characters is never something the user typed
+// on purpose, so drop it and keep whatever is already on disk. Both mask forms
+// count: the COPY listing writes ********, and GET /settings/data writes
+// bullets.
 function stripMaskedSecrets(cleaned) {
   const dropped = [];
   for (const k of Object.keys(cleaned)) {
-    if (/^\*+$/.test(String(cleaned[k] || "").trim())) {
+    if (isMaskedValue(cleaned[k])) {
       delete cleaned[k];
       dropped.push(k);
     }
