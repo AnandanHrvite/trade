@@ -1338,6 +1338,81 @@ router.get("/status/chart-data", (req, res) => {
   }
 });
 
+// ── /status/option-chart — the traded CONTRACT's own premium candles ────────
+// The two charts above are NIFTY 50 spot, but the P&L is the OPTION premium,
+// and the two can disagree completely: spot can drift up 3 points while theta
+// takes the premium down. So this draws the actual instrument that was bought,
+// with the entry and exit premiums marked where they were paid and received.
+//
+// Cached per (symbol, day) because the option history endpoint is slow and the
+// page polls; only the still-forming session is re-fetched.
+const _optChartCache = new Map();   // key -> { at, bars }
+const _OPT_CHART_TTL_MS = 60000;
+
+async function _fetchOptionBars(symbol, dayIso) {
+  const key = `${symbol}|${dayIso}|${_resMin()}`;
+  const hit = _optChartCache.get(key);
+  if (hit && Date.now() - hit.at < _OPT_CHART_TTL_MS) return hit.bars;
+  const { fetchCandles } = require("../services/backtestEngine");
+  const bars = await fetchCandles(symbol, String(_resMin()), dayIso, dayIso);
+  const out = Array.isArray(bars) ? bars : [];
+  _optChartCache.set(key, { at: Date.now(), bars: out });
+  return out;
+}
+
+router.get("/status/option-chart", async (req, res) => {
+  try {
+    // Prefer the OPEN position; otherwise show the session's most recent trade,
+    // so after an exit the page still explains the trade that just happened.
+    const pos = state.position;
+    const lastTrade = state.sessionTrades.length ? state.sessionTrades[state.sessionTrades.length - 1] : null;
+    const src = pos
+      ? { symbol: pos.symbol, side: pos.side, entryLtp: pos.optionEntryLtp, exitLtp: null,
+          entryBarTime: pos.entryBarTime, exitBarTime: null, qty: pos.qty, open: true,
+          day: istDayFromAny(pos.entryTime), isFutures: !!pos.isFutures }
+      : lastTrade
+      ? { symbol: lastTrade.symbol, side: lastTrade.side, entryLtp: lastTrade.optionEntryLtp,
+          exitLtp: lastTrade.optionExitLtp, entryBarTime: lastTrade.entryBarTime,
+          exitBarTime: lastTrade.exitBarTime, qty: lastTrade.qty, open: false,
+          day: istDayFromAny(lastTrade.entryTime), pnl: lastTrade.pnl,
+          charges: lastTrade.charges, isFutures: !!lastTrade.isFutures }
+      : null;
+
+    if (!src || !src.symbol) return res.json({ candles: [], symbol: null, reason: "No trade taken yet today." });
+
+    const bars = await _fetchOptionBars(src.symbol, src.day);
+    const candles = bars
+      .filter(b => b && typeof b.time === "number")
+      .map(b => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close }))
+      .sort((a, b) => a.time - b.time);
+
+    const markers = [];
+    if (src.entryBarTime) {
+      markers.push({ time: src.entryBarTime, position: "belowBar", color: "#10b981", shape: "arrowUp",
+        text: `BUY ₹${src.entryLtp}` });
+    }
+    if (src.exitBarTime && src.exitLtp != null) {
+      markers.push({ time: src.exitBarTime, position: "aboveBar", color: (src.pnl || 0) >= 0 ? "#10b981" : "#ef4444",
+        shape: "arrowDown", text: `SELL ₹${src.exitLtp} (${(src.pnl || 0) >= 0 ? "+" : ""}${Math.round(src.pnl || 0)})` });
+    }
+
+    res.json({
+      candles, markers,
+      symbol: src.symbol, side: src.side, open: src.open,
+      entryLtp: src.entryLtp, exitLtp: src.exitLtp,
+      liveLtp: src.open ? state.optionLtp : null,
+      qty: src.qty, pnl: src.open ? null : src.pnl,
+      // The recorded P&L is NET of brokerage. Without this the legend would
+      // imply (exit - entry) * qty equals the P&L, and it never does.
+      charges: src.open ? null : (src.charges != null ? src.charges : null),
+      isFutures: src.isFutures,
+      reason: candles.length ? null : `No premium history returned for ${src.symbol} — an expired Fyers token returns an empty series.`,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.get("/status/data", (req, res) => {
   const pos = state.position;
   const optAge = state.optionLtpUpdatedAt ? Math.round((Date.now() - state.optionLtpUpdatedAt) / 1000) : null;
@@ -1508,6 +1583,20 @@ ${bbRsiCurrentBar({ bar: state.formingBar, resMin: cfg.resolutionMins })}
   <div class="chart-box" style="height:240px;"><div id="rawchart" style="width:100%;height:100%;"></div></div>
 </div>
 
+<div style="margin-bottom:18px;" id="optchart-wrap">
+  <div style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;font-weight:600;">
+    OPTION PREMIUM — <span id="optchart-title">the contract that was actually traded</span>
+  </div>
+  <div style="font-size:0.68rem;color:var(--muted-1,#8ba1c2);margin-bottom:8px;line-height:1.5;">
+    This is the instrument the money was in. The spot charts above can rise while this one falls — that gap is the whole P&amp;L.
+  </div>
+  <div class="chart-box" style="height:260px;position:relative;">
+    <div id="optchart" style="width:100%;height:100%;"></div>
+    <div id="optchart-empty" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:0 16px;font-size:0.72rem;color:var(--muted-1,#8ba1c2);">No trade taken yet today.</div>
+  </div>
+  <div id="optchart-legend" style="font-size:0.68rem;color:var(--muted-1,#8ba1c2);margin-top:8px;"></div>
+</div>
+
 <div id="pos-card" style="margin-bottom:18px;">${_positionCardHtml(pos, state.optionLtp)}</div>
 
 ${bbRsiActivityLog({ logsJSON: JSON.stringify(state.log.slice(-200)) })}
@@ -1590,11 +1679,66 @@ setInterval(haRefresh, 4000);
       addLine(d.stopLoss,   '#ef4444', 'Stop',  LightweightCharts.LineStyle.Solid);
     } catch(e) {}
   }
+  // ── Option premium chart — the contract the money was actually in ────────
+  var optc = document.getElementById('optchart');
+  var ochart = optc ? mk(optc) : null;
+  var ocs = ochart ? ochart.addCandlestickSeries({ upColor:'#10b981', downColor:'#ef4444', borderUpColor:'#10b981', borderDownColor:'#ef4444', wickUpColor:'#10b981', wickDownColor:'#ef4444' }) : null;
+  var olines = [];
+  function addOptLine(price, color, title, style) {
+    if (!ocs || price == null || !isFinite(price)) return;
+    olines.push(ocs.createPriceLine({ price: price, color: color, lineWidth: 1, lineStyle: style, axisLabelVisible: true, title: title }));
+  }
+  function money(n){ return '\u20b9' + Number(n).toFixed(2); }
+  async function fetchOptChart(){
+    if (!ocs) return;
+    try {
+      var r = await fetch('/ha-scalp-paper/status/option-chart', { cache:'no-store' });
+      var d = await r.json();
+      var empty = document.getElementById('optchart-empty');
+      var title = document.getElementById('optchart-title');
+      var legend = document.getElementById('optchart-legend');
+      if (title) title.textContent = d.symbol || 'the contract that was actually traded';
+      if (d.candles && d.candles.length) {
+        ocs.setData(d.candles);
+        if (empty) empty.style.display = 'none';
+      } else if (empty) {
+        empty.style.display = 'flex';
+        empty.textContent = d.reason || 'No trade taken yet today.';
+      }
+      if (d.markers && d.markers.length) ocs.setMarkers(d.markers.slice().sort(function(a,b){return a.time-b.time;}));
+      olines.forEach(function(l){ try { ocs.removePriceLine(l); } catch(_){} });
+      olines = [];
+      addOptLine(d.entryLtp, '#94a3b8', 'Bought', LightweightCharts.LineStyle.Dotted);
+      addOptLine(d.exitLtp,  '#ef4444', 'Sold',   LightweightCharts.LineStyle.Solid);
+      if (d.open && d.liveLtp != null) addOptLine(d.liveLtp, '#3b82f6', 'Now', LightweightCharts.LineStyle.Dashed);
+      if (legend) {
+        if (!d.symbol) { legend.textContent = ''; }
+        else if (d.open) {
+          var now = d.liveLtp != null ? d.liveLtp : null;
+          legend.innerHTML = 'Bought at <b>' + money(d.entryLtp) + '</b>'
+            + (now != null ? ' \u00b7 now <b>' + money(now) + '</b> \u00b7 ' + (now >= d.entryLtp ? 'up ' : 'down ') + money(Math.abs(now - d.entryLtp)) + ' a unit \u00d7 ' + d.qty : '')
+            + ' \u00b7 still open';
+        } else {
+          var diff = (d.exitLtp != null && d.entryLtp != null) ? (d.exitLtp - d.entryLtp) : null;
+          var gross = diff != null ? diff * d.qty : null;
+          var col = (d.pnl||0) >= 0 ? '#10b981' : '#ef4444';
+          legend.innerHTML = 'Bought at <b>' + money(d.entryLtp) + '</b> \u00b7 sold at <b>' + money(d.exitLtp) + '</b>'
+            + (diff != null ? ' \u00b7 ' + (diff >= 0 ? 'up ' : 'down ') + money(Math.abs(diff)) + ' a unit \u00d7 ' + d.qty + ' = ' + (gross >= 0 ? '+' : '-') + money(Math.abs(gross)) : '')
+            + (d.charges != null ? ' \u00b7 minus ' + money(d.charges) + ' costs' : '')
+            + (d.pnl != null ? ' \u00b7 net <b style="color:' + col + '">' + ((d.pnl||0) >= 0 ? '+' : '-') + money(Math.abs(d.pnl||0)) + '</b>' : '');
+        }
+      }
+    } catch(e) {}
+  }
+
   fetchChart();
   setInterval(fetchChart, 4000);
+  fetchOptChart();
+  setInterval(fetchOptChart, 15000);
   window.addEventListener('resize', function(){
     chart.applyOptions({ width: container.clientWidth });
     if (rchart && rawc) rchart.applyOptions({ width: rawc.clientWidth });
+    if (ochart && optc) ochart.applyOptions({ width: optc.clientWidth });
   });
 })();
 </script>
