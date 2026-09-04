@@ -1578,23 +1578,34 @@ router.post("/save", (req, res) => {
   const safeUpdates = updates && typeof updates === "object" ? { ...updates } : {};
 
   // Block writes to sensitive keys via UI — except the broker credentials,
-  // which are the only way to repair a bad secret without SSH. A masked
-  // placeholder is refused so the mask can never become the stored secret.
+  // which are the only way to repair a bad secret without SSH. Two values are
+  // refused for those: a masked placeholder (the ******** from the VIEW .env
+  // listing), and an empty one — "SECRET_KEY=" with nothing after it parses
+  // cleanly and would silently wipe a working credential, which is the exact
+  // breakage this path exists to repair.
   const rejectedMasked = [];
+  const rejectedEmpty  = [];
   for (const k of HIDDEN_KEYS) {
     if (!(k in safeUpdates)) continue;
     if (WRITABLE_SECRET_KEYS.has(k)) {
-      if (!isMaskedValue(safeUpdates[k])) continue;   // real value → allow it through
-      rejectedMasked.push(k);
+      const v = String(safeUpdates[k] ?? "").trim();
+      if (v === "")              rejectedEmpty.push(k);
+      else if (isMaskedValue(v)) rejectedMasked.push(k);
+      else continue;                                   // real value → allow it through
     }
     delete safeUpdates[k];
   }
-  if (rejectedMasked.length) {
-    return res.status(400).json({
-      success: false,
-      error: `Refused to save a masked placeholder for: ${rejectedMasked.join(", ")}. `
-           + `The ******** comes from the VIEW .env listing — paste the real value instead.`,
-    });
+  if (rejectedMasked.length || rejectedEmpty.length) {
+    const parts = [];
+    if (rejectedMasked.length) {
+      parts.push(`${rejectedMasked.join(", ")}: that ******** is the mask from the VIEW .env `
+               + `listing, not the real value.`);
+    }
+    if (rejectedEmpty.length) {
+      parts.push(`${rejectedEmpty.join(", ")}: an empty value would erase the credential. `
+               + `To clear it deliberately, edit .env on the host.`);
+    }
+    return res.status(400).json({ success: false, error: `Refused to save — ${parts.join(" ")}` });
   }
 
   // Normalize + validate deletes (uppercase, strip invalid chars, block sensitive)
@@ -3939,6 +3950,10 @@ function parseBulkPaste(text) {
       }
       if (/^[*•]+$/.test(val)) {
         skipped.push(key + ' (that is the masked placeholder, not the real value)');
+        continue;
+      }
+      if (val === '') {
+        skipped.push(key + ' (empty — that would erase the credential)');
         continue;
       }
     }
