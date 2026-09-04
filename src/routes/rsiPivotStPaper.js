@@ -54,6 +54,7 @@ const path    = require("path");
 const rsiPivotStrategy   = require("../strategies/rsi_pivot_st");
 const instrumentConfig   = require("../config/instrument");
 const sharedSocketState  = require("../utils/sharedSocketState");
+const optionChart  = require("../utils/optionChart");
 const socketManager      = require("../utils/socketManager");
 const tickRecorder       = require("../utils/tickRecorder");
 const { verifyFyersToken } = require("../utils/fyersAuthCheck");
@@ -309,6 +310,8 @@ function startPolling() {
             state.optionLtp = ltp;
             state.optionLtpUpdatedAt = Date.now();
             try { tickRecorder.recordOptionLtp(optSym, ltp, "rsi-pivot-st-paper"); } catch (_) {}
+            // Premium bars for the option chart (display only — never read by the engine).
+            state.optionChart = optionChart.pushLtp(state.optionChart, optSym, ltp);
           }
         }
       }
@@ -1278,6 +1281,7 @@ router.get("/status/chart-data", (req, res) => {
     const p = state.pivots;
     res.json({
       candles, markers, superTrend, rsi: rsiLine,
+      optionChart: optionChart.buildPayload({ store: state.optionChart, position: state.position, trades: state.sessionTrades }),
       // Whitespace points count toward rsi.length, so the warm-up overlay needs
       // the count of REAL values to know whether the line has anything to draw.
       rsiPoints,
@@ -1671,6 +1675,7 @@ ${process.env.CHART_ENABLED !== "false" ? `
       RSI(${cfg.rsiPeriod}) needs ${cfg.rsiPeriod + 1} closed ${resMin}-min bars — ${diag.bars} so far${diag.readyAt ? `, first value at ${diag.readyAt} IST` : ""}
     </div>
   </div>
+  ${optionChart.optionChartHtml('rps-opt-chart')}
 </div>` : ""}
 
 <div style="margin-bottom:18px;">
@@ -1802,6 +1807,7 @@ async function rpsHandleExit(btn) {
   }
 })();
 </script>
+${optionChart.optionChartScript({ dataUrl: '/rsi-pivot-st-paper/status/chart-data', id: 'rps-opt-chart' })}
 
 <script>
 (function(){
