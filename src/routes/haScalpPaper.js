@@ -71,6 +71,7 @@ const instrumentMode = require("../utils/instrumentMode");
 const { istDayFromAny, istIsoFromAny, getISTMinutes, getBucketStart } = require("../utils/tradeUtils");
 const skipLogger = require("../utils/skipLogger");
 const capitalPool = require("../utils/capitalPool");
+const optionChart = require("../utils/optionChart");
 
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
 const CALLBACK_ID        = "haScalpPaper";
@@ -193,6 +194,7 @@ function _freshState() {
     _sessionId:     null,
     // HA_SCALP specific
     lastSignal:     null,
+    optionChart:    null,   // premium OHLC accumulator (display only)
     ha:             [],     // Heikin Ashi series, index-aligned to state.candles
     ma:             [],     // trend MA series, index-aligned to state.candles
     lastHa:         null,   // newest closed HA candle, for the UI
@@ -335,6 +337,8 @@ function startPolling() {
       if (state.position && state.position.isFutures) {
         if (state.lastTickPrice > 0) {
           state.optionLtp = state.lastTickPrice;
+          // Premium bars for the option chart (display only — no rule reads them).
+          state.optionChart = optionChart.pushLtp(state.optionChart, state.position.symbol, state.lastTickPrice);
           state.optionLtpUpdatedAt = Date.now();
         }
       }
@@ -345,6 +349,7 @@ function startPolling() {
         const q = attributeQuotes(r, symbols, optSym);
         if (q.optLtp != null) {
           state.optionLtp = q.optLtp;
+          state.optionChart = optionChart.pushLtp(state.optionChart, optSym, q.optLtp);
           state.optionLtpUpdatedAt = Date.now();
           try { tickRecorder.recordOptionLtp(optSym, q.optLtp, "ha-scalp-paper"); } catch (_) {}
         }
@@ -677,6 +682,11 @@ async function simulateBuy(side, sig) {
   capitalPool.block(MODE_KEY, instrumentMode.capitalRequired(qty, optionEntryLtp), { side, symbol: optInfo.symbol, qty, premium: optionEntryLtp });
   try { require("../utils/positionPersist").saveHaScalpPosition(pos, { sessionPnl: state.sessionPnl }); } catch (_) {}
   state.optionLtp = optionEntryLtp;
+  // Seed the premium series with the fill itself, so the chart opens at the
+  // price actually paid rather than at whichever poll lands first.
+  if (!_isFut && optionEntryLtp > 0) {
+    state.optionChart = optionChart.pushLtp(state.optionChart, optInfo.symbol, optionEntryLtp);
+  }
   state.optionLtpUpdatedAt = Date.now();
   state.tradesTaken++;
 
@@ -1323,6 +1333,7 @@ router.get("/status/chart-data", (req, res) => {
     const pos = state.position;
     res.json({
       candles: haCandles, rawCandles, maLine, markers,
+      optionChart: optionChart.buildPayload({ store: state.optionChart, position: state.position, trades: state.sessionTrades }),
       entryPrice: pos ? pos.entrySpot : null,
       stopLoss:   pos ? pos.slSpot : null,
       target:     null,
@@ -1335,107 +1346,6 @@ router.get("/status/chart-data", (req, res) => {
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
-  }
-});
-
-// ── /status/option-chart — the traded CONTRACT's own premium candles ────────
-// The two charts above are NIFTY 50 spot, but the P&L is the OPTION premium,
-// and the two can disagree completely: spot can drift up 3 points while theta
-// takes the premium down. So this draws the actual instrument that was bought,
-// with the entry and exit premiums marked where they were paid and received.
-//
-// Cached per (symbol, day) because the option history endpoint is slow and the
-// page polls; only the still-forming session is re-fetched.
-const _optChartCache = new Map();   // key -> { at, bars }
-const _optChartInflight = new Map(); // key -> Promise, collapses concurrent misses
-const _OPT_CHART_TTL_MS = 60000;
-
-async function _fetchOptionBars(symbol, dayIso) {
-  const key = `${symbol}|${dayIso}|${_resMin()}`;
-  const hit = _optChartCache.get(key);
-  if (hit && Date.now() - hit.at < _OPT_CHART_TTL_MS) return hit.bars;
-
-  // Cache the in-flight PROMISE, not just the result. Two browser tabs — or one
-  // tab whose poll comes round again before a slow fetch returns — otherwise
-  // both miss the cache and each fires its own Fyers history call for the very
-  // same day of the very same contract.
-  const inflight = _optChartInflight.get(key);
-  if (inflight) return inflight;
-
-  const p = (async () => {
-    const { fetchCandles } = require("../services/backtestEngine");
-    const bars = await fetchCandles(symbol, String(_resMin()), dayIso, dayIso);
-    const out = Array.isArray(bars) ? bars : [];
-    _optChartCache.set(key, { at: Date.now(), bars: out });
-    return out;
-  })().finally(() => { _optChartInflight.delete(key); });
-
-  _optChartInflight.set(key, p);
-  return p;
-}
-
-router.get("/status/option-chart", async (req, res) => {
-  try {
-    // Prefer the OPEN position; otherwise show the session's most recent trade,
-    // so after an exit the page still explains the trade that just happened.
-    const pos = state.position;
-    const lastTrade = state.sessionTrades.length ? state.sessionTrades[state.sessionTrades.length - 1] : null;
-    const src = pos
-      ? { symbol: pos.symbol, side: pos.side, entryLtp: pos.optionEntryLtp, exitLtp: null,
-          entryBarTime: pos.entryBarTime, exitBarTime: null, qty: pos.qty, open: true,
-          day: istDayFromAny(pos.entryTime), isFutures: !!pos.isFutures }
-      : lastTrade
-      ? { symbol: lastTrade.symbol, side: lastTrade.side, entryLtp: lastTrade.optionEntryLtp,
-          exitLtp: lastTrade.optionExitLtp, entryBarTime: lastTrade.entryBarTime,
-          exitBarTime: lastTrade.exitBarTime, qty: lastTrade.qty, open: false,
-          day: istDayFromAny(lastTrade.entryTime), pnl: lastTrade.pnl,
-          charges: lastTrade.charges, isFutures: !!lastTrade.isFutures }
-      : null;
-
-    if (!src || !src.symbol) return res.json({ candles: [], symbol: null, reason: "No trade taken yet today." });
-
-    // FUTURES mode records no premium at all (optionEntryLtp/optionExitLtp are
-    // null) and its P&L is measured on spot, which the charts above already
-    // show. Charting it here would print "Bought at 0.00" from those nulls.
-    if (src.isFutures) {
-      return res.json({
-        candles: [], markers: [], symbol: src.symbol, side: src.side, isFutures: true,
-        reason: "Futures mode — the P&L is measured on the spot charts above, there is no separate premium series.",
-      });
-    }
-
-    const bars = await _fetchOptionBars(src.symbol, src.day);
-    const candles = bars
-      .filter(b => b && typeof b.time === "number")
-      .map(b => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close }))
-      .sort((a, b) => a.time - b.time);
-
-    const markers = [];
-    if (src.entryBarTime) {
-      markers.push({ time: src.entryBarTime, position: "belowBar", color: "#10b981", shape: "arrowUp",
-        text: `BUY ₹${src.entryLtp}` });
-    }
-    if (src.exitBarTime && src.exitLtp != null) {
-      markers.push({ time: src.exitBarTime, position: "aboveBar", color: (src.pnl || 0) >= 0 ? "#10b981" : "#ef4444",
-        shape: "arrowDown", text: `SELL ₹${src.exitLtp} (${(src.pnl || 0) >= 0 ? "+" : ""}${Math.round(src.pnl || 0)})` });
-    }
-
-    res.json({
-      candles, markers,
-      symbol: src.symbol, side: src.side, open: src.open,
-      entryLtp: src.entryLtp, exitLtp: src.exitLtp,
-      liveLtp: src.open ? state.optionLtp : null,
-      qty: src.qty, pnl: src.open ? null : src.pnl,
-      // The recorded P&L is NET of brokerage. Without this the legend would
-      // imply (exit - entry) * qty equals the P&L, and it never does.
-      charges: src.open ? null : (src.charges != null ? src.charges : null),
-      isFutures: src.isFutures,
-      reason: candles.length ? null : `Fyers returned no premium candles for ${src.symbol} on ${src.day}.`,
-    });
-  } catch (e) {
-    // Includes the expired-token case: Fyers answers an auth failure with
-    // code -16, which fetchChunk turns into a throw, not an empty series.
-    res.json({ candles: [], markers: [], symbol: null, reason: `Could not load the premium chart: ${e.message}` });
   }
 });
 
@@ -1609,19 +1519,7 @@ ${bbRsiCurrentBar({ bar: state.formingBar, resMin: cfg.resolutionMins })}
   <div class="chart-box" style="height:240px;"><div id="rawchart" style="width:100%;height:100%;"></div></div>
 </div>
 
-<div style="margin-bottom:18px;" id="optchart-wrap">
-  <div style="font-size:0.7rem;color:var(--muted-1,#8ba1c2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;font-weight:600;">
-    OPTION PREMIUM — <span id="optchart-title">the contract that was actually traded</span>
-  </div>
-  <div style="font-size:0.68rem;color:var(--muted-1,#8ba1c2);margin-bottom:8px;line-height:1.5;">
-    This is the instrument the money was in. The spot charts above can rise while this one falls — that gap is the whole P&amp;L.
-  </div>
-  <div class="chart-box" style="height:260px;position:relative;">
-    <div id="optchart" style="width:100%;height:100%;"></div>
-    <div id="optchart-empty" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:0 16px;font-size:0.72rem;color:var(--muted-1,#8ba1c2);">No trade taken yet today.</div>
-  </div>
-  <div id="optchart-legend" style="font-size:0.68rem;color:var(--muted-1,#8ba1c2);margin-top:8px;"></div>
-</div>
+${optionChart.optionChartHtml('ha-opt-chart')}
 
 <div id="pos-card" style="margin-bottom:18px;">${_positionCardHtml(pos, state.optionLtp)}</div>
 
@@ -1705,77 +1603,15 @@ setInterval(haRefresh, 4000);
       addLine(d.stopLoss,   '#ef4444', 'Stop',  LightweightCharts.LineStyle.Solid);
     } catch(e) {}
   }
-  // ── Option premium chart — the contract the money was actually in ────────
-  var optc = document.getElementById('optchart');
-  var ochart = optc ? mk(optc) : null;
-  var ocs = ochart ? ochart.addCandlestickSeries({ upColor:'#10b981', downColor:'#ef4444', borderUpColor:'#10b981', borderDownColor:'#ef4444', wickUpColor:'#10b981', wickDownColor:'#ef4444' }) : null;
-  var olines = [];
-  function addOptLine(price, color, title, style) {
-    if (!ocs || price == null || !isFinite(price)) return;
-    olines.push(ocs.createPriceLine({ price: price, color: color, lineWidth: 1, lineStyle: style, axisLabelVisible: true, title: title }));
-  }
-  function money(n){ return '\u20b9' + Number(n).toFixed(2); }
-  async function fetchOptChart(){
-    if (!ocs) return;
-    try {
-      var r = await fetch('/ha-scalp-paper/status/option-chart', { cache:'no-store' });
-      var d = await r.json();
-      var empty = document.getElementById('optchart-empty');
-      var title = document.getElementById('optchart-title');
-      var legend = document.getElementById('optchart-legend');
-      if (title) title.textContent = d.symbol || 'the contract that was actually traded';
-      if (d.candles && d.candles.length) {
-        ocs.setData(d.candles);
-        if (empty) empty.style.display = 'none';
-      } else {
-        // CLEAR the series. Skipping setData here left the PREVIOUS trade's
-        // candles drawn underneath the "could not load" overlay, which reads as
-        // live data for a contract this response knows nothing about.
-        ocs.setData([]);
-        if (empty) {
-          empty.style.display = 'flex';
-          empty.textContent = d.reason || 'No trade taken yet today.';
-        }
-      }
-      ocs.setMarkers((d.markers && d.markers.length) ? d.markers.slice().sort(function(a,b){return a.time-b.time;}) : []);
-      olines.forEach(function(l){ try { ocs.removePriceLine(l); } catch(_){} });
-      olines = [];
-      addOptLine(d.entryLtp, '#94a3b8', 'Bought', LightweightCharts.LineStyle.Dotted);
-      addOptLine(d.exitLtp,  '#ef4444', 'Sold',   LightweightCharts.LineStyle.Solid);
-      if (d.open && d.liveLtp != null) addOptLine(d.liveLtp, '#3b82f6', 'Now', LightweightCharts.LineStyle.Dashed);
-      if (legend) {
-        // Never render a premium that was not recorded: Number(null) is 0, so an
-        // unguarded money() would invent a "Bought at 0.00" that never happened.
-        if (!d.symbol || d.isFutures || d.entryLtp == null) { legend.textContent = ''; }
-        else if (d.open) {
-          var now = d.liveLtp != null ? d.liveLtp : null;
-          legend.innerHTML = 'Bought at <b>' + money(d.entryLtp) + '</b>'
-            + (now != null ? ' \u00b7 now <b>' + money(now) + '</b> \u00b7 ' + (now >= d.entryLtp ? 'up ' : 'down ') + money(Math.abs(now - d.entryLtp)) + ' a unit \u00d7 ' + d.qty : '')
-            + ' \u00b7 still open';
-        } else {
-          var diff = (d.exitLtp != null && d.entryLtp != null) ? (d.exitLtp - d.entryLtp) : null;
-          var gross = diff != null ? diff * d.qty : null;
-          var col = (d.pnl||0) >= 0 ? '#10b981' : '#ef4444';
-          legend.innerHTML = 'Bought at <b>' + money(d.entryLtp) + '</b> \u00b7 sold at <b>' + money(d.exitLtp) + '</b>'
-            + (diff != null ? ' \u00b7 ' + (diff >= 0 ? 'up ' : 'down ') + money(Math.abs(diff)) + ' a unit \u00d7 ' + d.qty + ' = ' + (gross >= 0 ? '+' : '-') + money(Math.abs(gross)) : '')
-            + (d.charges != null ? ' \u00b7 minus ' + money(d.charges) + ' costs' : '')
-            + (d.pnl != null ? ' \u00b7 net <b style="color:' + col + '">' + ((d.pnl||0) >= 0 ? '+' : '-') + money(Math.abs(d.pnl||0)) + '</b>' : '');
-        }
-      }
-    } catch(e) {}
-  }
-
   fetchChart();
   setInterval(fetchChart, 4000);
-  fetchOptChart();
-  setInterval(fetchOptChart, 15000);
   window.addEventListener('resize', function(){
     chart.applyOptions({ width: container.clientWidth });
     if (rchart && rawc) rchart.applyOptions({ width: rawc.clientWidth });
-    if (ochart && optc) ochart.applyOptions({ width: optc.clientWidth });
   });
 })();
 </script>
+${optionChart.optionChartScript({ dataUrl: '/ha-scalp-paper/status/chart-data', id: 'ha-opt-chart' })}
 </body></html>`;
   res.send(html);
 });
