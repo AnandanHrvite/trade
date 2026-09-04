@@ -185,8 +185,7 @@ function dailyFilesSectionHTML() {
       <div class="tbar">
         <span class="tbar-label">📁 Daily Data Files</span>
         <span class="tbar-count" id="dailyFilesCnt"></span>
-        <button class="copy-btn" onclick="copyAllDailyFiles(this)" style="margin-left:auto;" title="Copy all skip + trade JSONL across all dates">📋 Copy All Data</button>
-        <button class="dw-toggle" onclick="toggleDailyFiles()" id="dailyFilesToggle">Show</button>
+        <button class="dw-toggle" onclick="toggleDailyFiles()" id="dailyFilesToggle" style="margin-left:auto;">Show</button>
       </div>
       <div id="dailyFilesBody" style="overflow-x:auto;display:none;">
         <table id="dailyFilesTbl" class="tbl" style="width:100%;"><thead><tr>
@@ -369,38 +368,6 @@ async function viewJsonl(type, date){
 function copyJsonlViewed(btn){
   if (!_JSONL_CURRENT_TEXT) { showAlert({icon:'\\u26a0\\ufe0f',title:'No Data',message:'Nothing to copy yet',btnClass:'modal-btn-primary'}); return; }
   doCopy(_JSONL_CURRENT_TEXT, btn, 'JSONL');
-}
-async function copyAllDailyFiles(btn){
-  var orig = btn.innerHTML;
-  btn.innerHTML = '\\u23f3 Fetching…';
-  btn.disabled = true;
-  try {
-    var res = await fetch(_DF_PREFIX + '/download/daily-files?pageSize=0', { cache: 'no-store' });
-    var d = await res.json();
-    if (!d.rows || !d.rows.length) {
-      btn.innerHTML = orig; btn.disabled = false;
-      showAlert({icon:'\\u26a0\\ufe0f',title:'No Data',message:'No daily files to copy',btnClass:'modal-btn-primary'});
-      return;
-    }
-    var parts = [];
-    for (var i=0; i<d.rows.length; i++){
-      var r = d.rows[i];
-      if (r.skipsSize){
-        var sres = await fetch(_DF_PREFIX + '/view/skips/' + r.date, { cache: 'no-store' });
-        if (sres.ok) { var st = await sres.text(); parts.push('# === SKIPS ' + r.date + ' ===\\n' + st.replace(/\\s+$/, '')); }
-      }
-      if (r.tradesSize){
-        var tres = await fetch(_DF_PREFIX + '/view/trades/' + r.date, { cache: 'no-store' });
-        if (tres.ok) { var tt = await tres.text(); parts.push('# === TRADES ' + r.date + ' ===\\n' + tt.replace(/\\s+$/, '')); }
-      }
-    }
-    var combined = parts.join('\\n\\n');
-    btn.innerHTML = orig; btn.disabled = false;
-    doCopy(combined, btn, 'All Data');
-  } catch(e) {
-    btn.innerHTML = orig; btn.disabled = false;
-    showAlert({icon:'\\u274c',title:'Copy Failed',message:(e && e.message) || String(e),btnClass:'modal-btn-danger'});
-  }
 }
 if (document.getElementById('jsonlModal')) {
   document.getElementById('jsonlModal').addEventListener('click', function(e){ if (e.target === this) this.style.display = 'none'; });
@@ -690,21 +657,176 @@ function doCopy(text,btn,label){
 function fmtAna(v){ return '\\u20b9'+Math.round(Math.abs(v)).toLocaleString('en-IN'); }
 function fmtAnaSigned(v){ var n=v||0; var s=n>=0?'+':'-'; return s+'\\u20b9'+Math.round(Math.abs(n)).toLocaleString('en-IN'); }
 function fmtAnaShort(v){ return Math.abs(v)>=1000 ? '\\u20b9'+Math.round(v/1000)+'k' : '\\u20b9'+Math.round(v); }
-function copyAllJsonl(btn) {
-  var orig = btn.innerHTML;
-  btn.innerHTML = '\\u23f3 Fetching\\u2026';
-  btn.disabled = true;
-  fetch('${routePrefix}/download/trades.jsonl', { cache: 'no-store' }).then(function(res){
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    return res.text();
-  }).then(function(text){
-    btn.innerHTML = orig; btn.disabled = false;
-    if (!text || !text.trim()) { showAlert({icon:'\\u26a0\\ufe0f',title:'No Data',message:'No trade logs to copy yet',btnClass:'modal-btn-primary'}); return; }
-    doCopy(text, btn, 'JSONL');
-  }).catch(function(e){
-    btn.innerHTML = orig; btn.disabled = false;
-    showAlert({icon:'\\u274c',title:'Copy Failed',message:(e && e.message) || String(e),btnClass:'modal-btn-danger'});
+// ── AI-friendly export ──────────────────────────────────────────────────────
+// One button, one clipboard payload: a self-describing Markdown report that an
+// LLM can reason about with no follow-up prompting. Header explains what the
+// data is, then aggregate stats, then a per-day table, then every trade as a
+// full-fidelity record (all fields, so strategy-specific columns survive).
+function _aiNum(v){ return (v==null||v==='') ? '' : (typeof v==='number' ? (Math.round(v*100)/100) : v); }
+function _aiCell(v){
+  if (v==null) return '';
+  if (typeof v==='number') return String(Math.round(v*100)/100);
+  if (typeof v==='object') { try { return JSON.stringify(v); } catch(_) { return String(v); } }
+  return String(v).replace(/[\\r\\n]+/g,' ').replace(/\\|/g,'\\\\|');
+}
+function buildAiBundle(){
+  var trades = (typeof ACTIVE_TRADES !== 'undefined' && ACTIVE_TRADES) ? ACTIVE_TRADES : (ALL_TRADES_JSON||[]);
+  var sessions = ALL_SESSIONS_JSON || [];
+  var label = (typeof CN_STRAT_LABEL !== 'undefined') ? CN_STRAT_LABEL : 'Strategy';
+  var startCap = ${Number(startCap) || 0};
+  var scopeNote = ${JSON.stringify(filter ? "filtered subset" : "all sessions")};
+
+  var wins = trades.filter(function(t){ return (t.pnl||0) > 0; });
+  var losses = trades.filter(function(t){ return (t.pnl||0) < 0; });
+  var net = trades.reduce(function(a,t){ return a + (t.pnl||0); }, 0);
+  var grossWin = wins.reduce(function(a,t){ return a + (t.pnl||0); }, 0);
+  var grossLoss = Math.abs(losses.reduce(function(a,t){ return a + (t.pnl||0); }, 0));
+  var pf = grossLoss > 0 ? (grossWin/grossLoss) : null;
+  var wr = trades.length ? (wins.length/trades.length*100) : 0;
+  var avgWin = wins.length ? grossWin/wins.length : 0;
+  var avgLoss = losses.length ? grossLoss/losses.length : 0;
+  var expectancy = trades.length ? net/trades.length : 0;
+  var best = trades.reduce(function(a,t){ return (a==null||(t.pnl||0)>(a.pnl||0))?t:a; }, null);
+  var worst = trades.reduce(function(a,t){ return (a==null||(t.pnl||0)<(a.pnl||0))?t:a; }, null);
+
+  // Per-day aggregation + equity curve / max drawdown on the daily series.
+  var dayMap = {}, order = [];
+  trades.forEach(function(t){
+    var d = t.date || 'Unknown';
+    if(!dayMap[d]){ dayMap[d] = {date:d,n:0,w:0,l:0,pnl:0}; order.push(d); }
+    dayMap[d].n++; dayMap[d].pnl += (t.pnl||0);
+    if((t.pnl||0) > 0) dayMap[d].w++; else if((t.pnl||0) < 0) dayMap[d].l++;
   });
+  order.sort();
+  var cum = 0, peak = 0, maxDD = 0, dayLines = [];
+  order.forEach(function(d){
+    var r = dayMap[d];
+    cum += r.pnl;
+    if (cum > peak) peak = cum;
+    if (peak - cum > maxDD) maxDD = peak - cum;
+    dayLines.push('| ' + d + ' | ' + r.n + ' | ' + r.w + ' | ' + r.l + ' | ' + _aiNum(r.pnl) + ' | ' + _aiNum(cum) + ' |');
+  });
+
+  // Union of every field across all trades, so strategy-specific columns are kept.
+  // Skip internal/derived fields that are noise for an LLM: _cn is the
+  // contract-note cache the Report modal uses (a nested charges blob).
+  var SKIP = { _cn: 1 };
+  var seen = {}, cols = [];
+  trades.forEach(function(t){
+    Object.keys(t||{}).forEach(function(k){ if(!seen[k] && !SKIP[k]){ seen[k]=1; cols.push(k); } });
+  });
+  var preferred = ['date','side','entryTime','exitTime','entryPrice','exitPrice','spotAtEntry','spotAtExit','stopLoss','target','qty','lots','pnl','pnlPct','exitReason','entryReason'];
+  cols.sort(function(a,b){
+    var ia = preferred.indexOf(a), ib = preferred.indexOf(b);
+    if (ia !== -1 && ib !== -1) return ia - ib;
+    if (ia !== -1) return -1;
+    if (ib !== -1) return 1;
+    return a.localeCompare(b);
+  });
+
+  var L = [];
+  L.push('# ' + label + ' — Trade History Export');
+  L.push('');
+  L.push('You are given the complete trade history of an intraday NIFTY options algo-trading');
+  L.push('strategy. Every row is a CLOSED trade. P&L values are in INR, already net of the');
+  L.push('per-trade cost model where the engine applied one. Times are IST (Asia/Kolkata).');
+  L.push('"CE" = call option (bullish trade), "PE" = put option (bearish trade).');
+  L.push('');
+  L.push('- Strategy / page: ' + label);
+  L.push('- Scope: ' + scopeNote);
+  L.push('- Exported at: ' + new Date().toLocaleString('en-IN'));
+  L.push('- Sessions: ' + sessions.length + ' · Trading days with trades: ' + order.length);
+  L.push('- Starting capital: ' + startCap);
+  L.push('');
+  L.push('## Summary statistics');
+  L.push('');
+  L.push('| Metric | Value |');
+  L.push('| --- | --- |');
+  L.push('| Total trades | ' + trades.length + ' |');
+  L.push('| Wins / Losses | ' + wins.length + ' / ' + losses.length + ' |');
+  L.push('| Win rate | ' + wr.toFixed(1) + '% |');
+  L.push('| Net P&L | ' + _aiNum(net) + ' |');
+  L.push('| Gross profit | ' + _aiNum(grossWin) + ' |');
+  L.push('| Gross loss | ' + _aiNum(grossLoss) + ' |');
+  L.push('| Profit factor | ' + (pf==null ? 'n/a (no losses)' : pf.toFixed(2)) + ' |');
+  L.push('| Expectancy per trade | ' + _aiNum(expectancy) + ' |');
+  L.push('| Average win | ' + _aiNum(avgWin) + ' |');
+  L.push('| Average loss | ' + _aiNum(avgLoss) + ' |');
+  L.push('| Max drawdown (daily equity) | ' + _aiNum(maxDD) + ' |');
+  L.push('| Best trade | ' + (best ? _aiNum(best.pnl) + ' on ' + (best.date||'?') : 'n/a') + ' |');
+  L.push('| Worst trade | ' + (worst ? _aiNum(worst.pnl) + ' on ' + (worst.date||'?') : 'n/a') + ' |');
+  L.push('');
+
+  // Exit-reason breakdown — usually the highest-signal cut for tuning.
+  var byExit = {};
+  trades.forEach(function(t){
+    var r = (t.exitReason || 'Unknown').toString().trim() || 'Unknown';
+    if(!byExit[r]) byExit[r] = {n:0,w:0,pnl:0};
+    byExit[r].n++; byExit[r].pnl += (t.pnl||0);
+    if((t.pnl||0) > 0) byExit[r].w++;
+  });
+  var exitKeys = Object.keys(byExit).sort(function(a,b){ return byExit[b].n - byExit[a].n; });
+  if (exitKeys.length) {
+    L.push('## Breakdown by exit reason');
+    L.push('');
+    L.push('| Exit reason | Trades | Wins | Win rate | Net P&L |');
+    L.push('| --- | --- | --- | --- | --- |');
+    exitKeys.forEach(function(k){
+      var r = byExit[k];
+      L.push('| ' + _aiCell(k) + ' | ' + r.n + ' | ' + r.w + ' | ' + (r.n ? (r.w/r.n*100).toFixed(1) : '0') + '% | ' + _aiNum(r.pnl) + ' |');
+    });
+    L.push('');
+  }
+
+  if (dayLines.length) {
+    L.push('## Day-wise performance');
+    L.push('');
+    L.push('| Date | Trades | Wins | Losses | Day P&L | Cumulative P&L |');
+    L.push('| --- | --- | --- | --- | --- | --- |');
+    L.push.apply(L, dayLines);
+    L.push('');
+  }
+
+  L.push('## All trades (' + trades.length + ' rows, full field capture)');
+  L.push('');
+  if (!trades.length) {
+    L.push('_No trades in this scope._');
+  } else {
+    L.push('| # | ' + cols.join(' | ') + ' |');
+    L.push('| --- | ' + cols.map(function(){ return '---'; }).join(' | ') + ' |');
+    trades.forEach(function(t, i){
+      L.push('| ' + (i+1) + ' | ' + cols.map(function(c){ return _aiCell(t[c]); }).join(' | ') + ' |');
+    });
+  }
+  L.push('');
+  L.push('---');
+  L.push('End of export. When analysing: treat win rate and profit factor together (a high');
+  L.push('win rate with profit factor below 1 means losers are too large), check whether net');
+  L.push('P&L depends on a small number of outlier trades, and look at the exit-reason table');
+  L.push('to see which exit rule is actually producing the results.');
+  return L.join('\\n');
+}
+function copyAiBundle(btn){
+  var orig = btn.innerHTML;
+  try {
+    var text = buildAiBundle();
+    function onOk(){
+      btn.classList.add('copied'); btn.textContent = '✅ Copied!';
+      setTimeout(function(){ btn.classList.remove('copied'); btn.innerHTML = orig; }, 2000);
+    }
+    function fallback(){
+      var ta = document.createElement('textarea'); ta.value = text;
+      ta.style.position='fixed'; ta.style.opacity='0';
+      document.body.appendChild(ta); ta.select(); document.execCommand('copy');
+      document.body.removeChild(ta); onOk();
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(onOk).catch(fallback);
+    } else fallback();
+  } catch(e) {
+    btn.innerHTML = orig;
+    showAlert({icon:'❌',title:'Copy Failed',message:(e && e.message) || String(e),btnClass:'modal-btn-danger'});
+  }
 }
 function copyDayView(btn){
   var days=window._dayData||[];
@@ -1287,9 +1409,7 @@ ${buildSidebar(cfg.sidebarKey, cfg.liveActive)}
       <button id="dwToggle" class="dw-toggle" onclick="toggleDayWise()" title="Day-wise P&L summary">👁 Day P&L</button>
       <button id="anaToggle" class="dw-toggle" onclick="toggleAnalytics()" title="Performance Analytics">📊 Analytics</button>
       <button onclick="openContractNote('all')" class="export-btn" title="Contract note (gross, charges breakdown, net P&L) for all sessions">📄 Report</button>
-      <button onclick="copyAllJsonl(this)" class="export-btn" title="Copy the full per-trade JSONL log to clipboard">📋 Copy JSONL</button>
-      <a href="${cfg.routePrefix}/download/trades.jsonl" class="export-btn" style="text-decoration:none;display:inline-block;" title="Cumulative per-trade log (.txt) — full field capture for offline analysis">⬇ tradeLogs</a>
-      <a href="${cfg.routePrefix}/download/skips-all" class="export-btn" style="text-decoration:none;display:inline-block;" title="Cumulative skip log (.txt) — all daily skip files concatenated">⬇ skipLogs</a>
+      <button onclick="copyAiBundle(this)" class="export-btn" title="Copy an AI-ready report (context + stats + every trade) to paste into an LLM">🤖 Copy All Data</button>
       <button onclick="confirmReset()" class="reset-btn">🗑 Reset</button>
       <a href="${cfg.routePrefix}/status" style="background:#07111f;border:0.5px solid #0e1e36;color:var(--muted-1,#8ba1c2);padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;text-decoration:none;cursor:pointer;">← Status</a>
     </div>
