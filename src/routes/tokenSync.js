@@ -217,6 +217,20 @@ function fetchLiveTokens(cb) {
 // ── GET /token-sync/tokens ───────────────────────────────────────────────────
 router.get("/tokens", (req, res) => res.json(snapshot()));
 
+// ── GET /token-sync/status — "is this broker logged in?", nothing more ───────
+// /tokens hands back the raw credential, so it is secret-gated. A UI that only
+// needs to know WHETHER a broker holds a token (Settings hides a broker's
+// Logout button when it has none) should not have to prompt for the API secret,
+// so this returns booleans only — never a token, never a token length.
+router.get("/status", (req, res) => {
+  const snap = snapshot();
+  res.json({
+    success: true,
+    fyers:   { present: snap.fyers.present },
+    zerodha: { present: snap.zerodha.present },
+  });
+});
+
 // ── POST /token-sync/apply — paste a token in, use it immediately ────────────
 // Writes the same on-disk shape the brokers' own save paths write (stamped with
 // today's IST date so the loaders accept it), and applies it in-process so no

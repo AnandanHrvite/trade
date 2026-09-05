@@ -2738,6 +2738,13 @@ router.get("/", (req, res) => {
     }
     .btn-logout:hover { background: rgba(245,158,11,0.16); border-color: var(--amber, #f59e0b); }
     .btn-logout:disabled { opacity: 0.4; cursor: not-allowed; }
+    /* .btn-logout sets display:flex, which outranks the UA's [hidden] rule — so
+       hiding a logged-out broker's button needs this to actually take effect. */
+    .logout-row [hidden] { display: none !important; }
+    /* Shown in place of the buttons when no broker is logged in. */
+    .logout-none {
+      align-self: center; font-size: 0.8rem; color: var(--muted, #94a3b8); font-style: italic;
+    }
     @media (max-width: 640px) {
       .restart-section { flex-direction: column; align-items: stretch; }
       .btn-restart, .btn-logout { justify-content: center; min-height: 44px; }
@@ -2946,16 +2953,19 @@ router.get("/", (req, res) => {
                   process), so the next login starts clean. Refused while any engine is running.
                 </div>
               </div>
+              <!-- Buttons start hidden: refreshLogoutButtons() shows only the
+                   brokers that actually hold a token right now. -->
               <div class="logout-row">
-                <button class="btn-logout" id="logoutFyersBtn" onclick="brokerLogout('fyers', this)">
+                <button class="btn-logout" id="logoutFyersBtn" hidden onclick="brokerLogout('fyers', this)">
                   <span>🔑</span> Logout Fyers
                 </button>
-                <button class="btn-logout" id="logoutZerodhaBtn" onclick="brokerLogout('zerodha', this)">
+                <button class="btn-logout" id="logoutZerodhaBtn" hidden onclick="brokerLogout('zerodha', this)">
                   <span>🔑</span> Logout Zerodha
                 </button>
-                <button class="btn-logout" id="logoutBothBtn" onclick="brokerLogout('both', this)">
+                <button class="btn-logout" id="logoutBothBtn" hidden onclick="brokerLogout('both', this)">
                   <span>🧹</span> Logout Both
                 </button>
+                <div class="logout-none" id="logoutNone">Checking broker login…</div>
               </div>
             </div>
             <div class="restart-section" style="margin-top:0;border-top:0;border-radius:0 0 12px 12px;">
@@ -3070,6 +3080,10 @@ function updateRailDirty() {
   });
   showSection(target || items[0].getAttribute('data-target'), { hash: false, top: false });
 })();
+
+// Broker-logout buttons depend on which broker holds a token, so they can only
+// be decided at runtime (the page HTML ships them hidden).
+refreshLogoutButtons();
 
 // ── Settings search: filter rows by label / env key / description ──
 // While a query is active the index shows only sections with matches (and how
@@ -3869,6 +3883,37 @@ setInterval(function() {
   if (m && m.style.display === 'block') { loadBackups(); loadGdrive(); }
 }, 60000);
 
+// Shows a Logout button only for a broker that actually holds a token right now.
+// /token-sync/status reads the same on-disk snapshot the Token Sync page does —
+// one source of truth for "is this broker logged in" — but answers with booleans
+// only, so this needs no API secret. "Logout Both" needs both to be logged in.
+async function refreshLogoutButtons() {
+  var fy   = document.getElementById('logoutFyersBtn');
+  var ze   = document.getElementById('logoutZerodhaBtn');
+  var both = document.getElementById('logoutBothBtn');
+  var none = document.getElementById('logoutNone');
+  if (!fy || !ze || !both || !none) return;
+
+  var hasF = false, hasZ = false, failed = false;
+  try {
+    var r = await fetch('/token-sync/status', { method: 'GET' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    var d = await r.json();
+    hasF = !!(d && d.fyers   && d.fyers.present);
+    hasZ = !!(d && d.zerodha && d.zerodha.present);
+  } catch (e) {
+    failed = true;
+  }
+
+  fy.hidden   = !hasF;
+  ze.hidden   = !hasZ;
+  both.hidden = !(hasF && hasZ);
+  none.hidden = hasF || hasZ;
+  none.textContent = failed
+    ? 'Could not check broker login — reload the page.'
+    : 'No broker is logged in.';
+}
+
 // Clears a broker's saved OAuth token via /token-sync/reset — the same endpoint
 // the Token Sync page uses, so there is one clear path, not two. The server
 // refuses (409) while an engine is running; that message is shown as-is.
@@ -3905,6 +3950,9 @@ async function brokerLogout(broker, btn) {
     showToast('Could not clear the token: ' + e.message, 'error');
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = html; }
+    // A cleared token means that broker is no longer logged in — hide its
+    // button. Also runs after a failure, in case the token went anyway.
+    refreshLogoutButtons();
   }
 }
 

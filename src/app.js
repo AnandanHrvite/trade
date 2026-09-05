@@ -807,6 +807,7 @@ const OPEN_PATHS = [
   // /token-sync/apply, /pull, /reset and /restart stay out of this list too.
   // The page fetches all five through secretFetch.
   "/token-sync",            // token pull/copy/paste page shell (renders no token)
+  "/token-sync/status",     // "is each broker logged in" booleans only — no token (Settings hides logged-out brokers' Logout buttons)
   "/cache-files",           // cache / generated-file browser (read-only)
   "/cache-files/groups",    // JSON: per-group file count + size
   "/cache-files/list",      // JSON: paged files for one group
