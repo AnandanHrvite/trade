@@ -51,9 +51,25 @@ const TOKEN_SKEW_MS     = 120_000;       // refresh this long before actual expi
 function folderName() {
   return (process.env.GDRIVE_FOLDER_NAME || "Trading Bot Backups").trim() || "Trading Bot Backups";
 }
+/**
+ * How many uploads to keep. The Settings input wins when it has been set;
+ * GDRIVE_RETAIN stays the fallback so an untouched box keeps its old behaviour.
+ */
 function retainCount() {
+  const stored = readStore().retain;
+  if (Number.isFinite(stored) && stored > 0) return Math.floor(stored);
   const n = parseInt(process.env.GDRIVE_RETAIN || "30", 10);
   return Number.isFinite(n) && n > 0 ? n : 30;
+}
+
+/** Persist the Settings "keep last N" value. Resolves to the value actually stored. */
+function saveRetain(value) {
+  const n = parseInt(value, 10);
+  if (!Number.isFinite(n) || n < 1) return { ok: false, error: "Keep last must be a whole number of 1 or more" };
+  const capped = Math.min(n, 365);
+  writeStore({ retain: capped });
+  console.log(`[gdrive] keep-last set to ${capped}`);
+  return { ok: true, retain: capped };
 }
 
 // ── Store ────────────────────────────────────────────────────────────────────
@@ -531,6 +547,7 @@ function status() {
 module.exports = {
   isConnected,
   saveCredentials,
+  saveRetain,
   startDeviceAuth,
   pollDeviceAuth,
   cancelDeviceAuth,

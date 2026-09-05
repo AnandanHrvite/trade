@@ -3682,7 +3682,9 @@ function gdriveRender(d) {
   var main    = document.getElementById('gdrive-main');
   var actions = document.getElementById('gdrive-actions');
   var setup   = document.getElementById('gdrive-setup');
+  var retainRow = document.getElementById('gdrive-retain-row');
   if (!pill || !main || !actions) return;
+  if (retainRow && !d.connected) retainRow.style.display = 'none';
 
   gdriveRenderError(d.lastError);
 
@@ -3701,6 +3703,9 @@ function gdriveRender(d) {
     actions.innerHTML = gdriveBtn(d.uploading ? '⏳ Uploading…' : '☁ Backup to Drive now', 'gdriveUploadNow()', '96,165,250', 'gdriveUploadBtn') +
                         gdriveBtn('Disconnect', 'gdriveDisconnect()', '148,163,184', 'gdriveDisconnectBtn');
     if (d.uploading) { var ub = document.getElementById('gdriveUploadBtn'); if (ub) ub.disabled = true; }
+    if (retainRow) retainRow.style.display = 'flex';
+    var ri = document.getElementById('gdriveRetain');
+    if (ri && document.activeElement !== ri) ri.value = d.retain;
     if (setup) setup.open = false;
   } else if (d.configured) {
     pill.textContent = 'NOT CONNECTED';
@@ -3725,6 +3730,31 @@ async function loadGdrive() {
     var main = document.getElementById('gdrive-main');
     if (main) main.textContent = 'Failed to load Drive status: ' + e.message;
   }
+}
+
+async function gdriveSaveRetain() {
+  var el  = document.getElementById('gdriveRetain');
+  var btn = document.getElementById('gdriveRetainBtn');
+  var val = el ? el.value : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  try {
+    var r = await secretFetch('/backup/gdrive/retain', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ retain: val })
+    });
+    if (r) {
+      var d = await r.json();
+      if (d.ok) {
+        showToast('Drive will keep the last ' + d.retain + ' upload(s).', 'success');
+        gdriveRender(d.status);
+      } else {
+        showToast('Save failed: ' + (d.error || 'unknown'), 'error');
+      }
+    }
+  } catch (e) {
+    showToast('Save failed: ' + e.message, 'error');
+  }
+  if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
 }
 
 async function gdriveSaveCreds() {
@@ -4628,6 +4658,14 @@ pm2 startOrRestart ecosystem.config.js --update-env</pre>
             <span id="gdrive-device-note" style="font-size:0.68rem;color:#fbbf24;">Waiting for you to approve…</span>
             <button onclick="gdriveCancelConnect()" style="padding:6px 12px;background:rgba(148,163,184,0.12);color:#94a3b8;border:1px solid rgba(148,163,184,0.3);border-radius:7px;font-size:0.7rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">Cancel</button>
           </div>
+        </div>
+
+        <!-- keep-last row: static markup so a background status poll can never stomp what is being typed -->
+        <div id="gdrive-retain-row" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+          <label for="gdriveRetain" style="font-size:0.7rem;color:#9db4d6;font-weight:700;">Keep last</label>
+          <input type="number" id="gdriveRetain" min="1" max="365" step="1" style="width:74px;padding:6px 9px;background:#0a1426;border:1px solid #1a2640;border-radius:7px;color:#cfe0f8;font-size:0.7rem;font-family:'IBM Plex Mono',monospace;"/>
+          <span style="font-size:0.7rem;color:#9db4d6;">upload(s) — older ones are deleted from Drive after each upload.</span>
+          <button onclick="gdriveSaveRetain()" id="gdriveRetainBtn" style="padding:6px 12px;background:rgba(59,130,246,0.15);color:#60a5fa;border:1px solid rgba(59,130,246,0.3);border-radius:7px;font-size:0.7rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">Save</button>
         </div>
 
         <div id="gdrive-actions" style="display:flex;gap:8px;flex-wrap:wrap;"></div>

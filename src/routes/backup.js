@@ -12,6 +12,7 @@
  * Google Drive (optional off-site copy — see utils/googleDrive.js):
  * GET  /backup/gdrive/status      → connection + last upload/error for the card
  * POST /backup/gdrive/credentials → save the OAuth client (id + secret)
+ * POST /backup/gdrive/retain      → how many uploads to keep in the Drive folder
  * POST /backup/gdrive/connect     → start the device flow, returns the user code
  * GET  /backup/gdrive/poll        → poll until the user approves the code
  * POST /backup/gdrive/cancel      → abandon an in-progress connect
@@ -188,6 +189,12 @@ router.post("/gdrive/credentials", (req, res) => {
   if (!r.ok) return res.status(400).json(r);
   console.log("[gdrive] OAuth client saved from Settings");
   res.json({ ok: true, reconnectNeeded: !!r.reconnectNeeded, status: gdrive.status() });
+});
+
+router.post("/gdrive/retain", (req, res) => {
+  const r = gdrive.saveRetain((req.body || {}).retain);
+  if (!r.ok) return res.status(400).json(r);
+  res.json({ ok: true, retain: r.retain, status: gdrive.status() });
 });
 
 router.post("/gdrive/connect", async (req, res) => {
