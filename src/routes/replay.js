@@ -1941,6 +1941,23 @@ async function runReplay(date, mode, sessionId, btn) {
   refreshPreflight();
 }
 
+// For a zero-trade replay: name the gate that blocked the most signals, so the
+// verdict points at a cause instead of just reporting the symptom.
+function _zeroTradeHint(view) {
+  const byGate = {};
+  let anySummary = false;
+  for (const v of view) {
+    const ss = v.r && v.r.sim && v.r.sim.skipSummary;
+    if (!ss) continue;
+    anySummary = true;
+    for (const g of (ss.byGate || [])) byGate[g.gate] = (byGate[g.gate] || 0) + g.count;
+  }
+  if (!anySummary) return 'Re-run to capture skip reasons.';
+  const top = Object.entries(byGate).sort((a, b) => b[1] - a[1])[0];
+  if (!top) return 'No signal ever formed — indicators likely never warmed up (check the replay log for a missing warm-up warning).';
+  return 'Most blocked by <strong>' + _escapeHtml(top[0]) + '</strong> (' + top[1] + ' signal' + (top[1] === 1 ? '' : 's') + ') — see Download diagnostic.';
+}
+
 // Builds a single text blob with everything I'd need to debug a divergence:
 // result summary + per-session trade details.
 function buildDiagnosticBlob(context, rows) {
@@ -1972,6 +1989,17 @@ function buildDiagnosticBlob(context, rows) {
       lines.push('YourCfg:    PnL=' + r.sim.sessionPnl + ' | trades=' + r.sim.tradeCount + ' | ticks=' + r.sim.ticksReplayed);
       lines.push('YourCfg trades (full JSON):');
       lines.push(JSON.stringify(r.sim.sessionTrades, null, 2));
+      // Why entries didn't happen — the answer to "it replayed but took 0 trades".
+      const ss = r.sim.skipSummary;
+      if (ss) {
+        lines.push('Skip summary: ' + ss.blockedSignals + ' blocked signal(s), ' +
+                   ss.noSignalCandles + ' candle(s) with no signal' +
+                   (ss.dropped ? ' (' + ss.dropped + ' rows dropped — cap hit)' : ''));
+        for (const g of (ss.byGate || [])) lines.push('  gate ' + g.gate + ': ' + g.count);
+        if (ss.samples && ss.samples.length) {
+          lines.push('  top-gate samples: ' + JSON.stringify(ss.samples));
+        }
+      }
     } else {
       lines.push('YourCfg:    FAILED — ' + (r.sim && r.sim.error));
     }
@@ -2377,7 +2405,12 @@ function renderRangeResult(rows, context) {
       ? 'All runs failed — see per-session table below.'
       : !hasBaseline
         ? 'No baseline available for these sessions — showing replay-only totals (' + sOkCount + ' session' + (sOkCount === 1 ? '' : 's') + ', ' + totSTrd + ' trades, ' + fmtRupee(totSPnl) + ').'
-        : Math.abs(dPnl) < 0.005
+        : (totSTrd === 0 && totBTrd > 0)
+          // 0 replayed trades against a baseline that DID trade is a broken run,
+          // not a settings result — and "no net change" (both sides ₹0 apart)
+          // read as success. Say what actually happened and name the gate.
+          ? 'Replay took <strong>no trades at all</strong> while live took ' + totBTrd + ' — this is a replay problem, not a settings result. ' + _zeroTradeHint(view)
+          : Math.abs(dPnl) < 0.005
           ? 'No net change — your settings produce the same aggregate P&L on these days.'
           : dPnl > 0
             ? 'Across these ' + bothOkCount + ' sessions, replay is <strong>better</strong> than live by ' + fmtRupee(dPnl) + ' (improved ' + simBetter + ', regressed ' + simWorse + ').'

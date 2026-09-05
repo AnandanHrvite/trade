@@ -55,6 +55,61 @@ const { getBucketStart, isPreMarketBucket } = require("../utils/tradeUtils");
 // cache mtimes) must go through this instead.
 const _realNow = Date.now;
 
+// ── Skip capture (replay diagnostics) ───────────────────────────────────────
+// Replay silences the skip logger so re-evaluated gates can't pollute the real
+// skip files. The reasons are kept here instead so a zero-trade replay can say
+// WHICH gate rejected each signal. Bounded: a full session can emit one
+// `strategy` row per candle per side, and an unbounded array would balloon the
+// cached result object.
+const MAX_CAPTURED_SKIPS = 4000;
+let _skipCapture = [];
+let _skipCaptureDropped = 0;
+
+// Keep only JSON-safe scalars — a gate may hand over a live object (a candle, an
+// Error) that must not be serialised whole into the cached result.
+function _plainSkipEntry(entry) {
+  const out = {};
+  if (!entry || typeof entry !== "object") return out;
+  for (const [k, v] of Object.entries(entry)) {
+    if (v === null || ["string", "number", "boolean"].includes(typeof v)) out[k] = v;
+  }
+  return out;
+}
+
+// The replayed instant (harness pins Date.now to the recorded clock); falls back
+// to the real clock when called outside a run.
+function _replayClockNow() {
+  try { return Date.now(); } catch (_) { return _realNow(); }
+}
+
+// Rolls the captured rows into "which gate blocked entries, how often".
+// `strategy` rows mean no signal formed at all (one per candle) — counted
+// separately so they don't drown the gates that blocked a REAL signal.
+function _summariseSkips(rows, dropped) {
+  const byGate = {};
+  for (const r of rows) {
+    const g = r.gate || r.reason || "unknown";
+    byGate[g] = (byGate[g] || 0) + 1;
+  }
+  const noSignal = byGate.strategy || 0;
+  const blocking = Object.entries(byGate)
+    .filter(([g]) => g !== "strategy")
+    .sort((a, b) => b[1] - a[1])
+    .map(([gate, count]) => ({ gate, count }));
+  return {
+    total: rows.length,
+    dropped,
+    noSignalCandles: noSignal,
+    blockedSignals: blocking.reduce((n, b) => n + b.count, 0),
+    byGate: blocking,
+    // A handful of verbatim rows for the gate that fired most — enough to see
+    // the actual numbers without shipping the whole log.
+    samples: blocking.length
+      ? rows.filter(r => (r.gate || r.reason) === blocking[0].gate).slice(0, 5)
+      : [],
+  };
+}
+
 /**
  * Resolve a recording day-folder, rejecting anything that isn't a bare
  * YYYY-MM-DD. Every path.join(ROOT_DIR, date) goes through here: the day string
@@ -137,7 +192,7 @@ function requestCancel() {
 //      weekly. No recording on disk today holds BANKNIFTY ticks, so no existing
 //      result actually changes — but the run is no longer computed the same way,
 //      and a cache that outlived that would be indistinguishable from one that did.
-const REPLAY_CACHE_VERSION = 13;
+const REPLAY_CACHE_VERSION = 14;
 
 function _replayCacheDir() {
   return path.join(ROOT_DIR, "_replay_cache");
@@ -709,7 +764,12 @@ function _applySettingsOverride(settings) {
   const original = {};
   for (const k of Object.keys(settings)) {
     original[k] = process.env[k];   // may be undefined
-    process.env[k] = settings[k];
+    // An explicit `undefined` means "this key was NOT set in the recorded
+    // session" — it must be DELETED, not assigned. `process.env.X = undefined`
+    // stores the string "undefined", which reads as truthy and would be worse
+    // than the live value it replaced.
+    if (settings[k] === undefined) delete process.env[k];
+    else                           process.env[k] = settings[k];
   }
   return function restore() {
     for (const k of Object.keys(original)) {
@@ -1365,9 +1425,23 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     tickRecorder.recordSessionStop  = () => {};
     tickRecorder.recordMarketContext = () => false;
 
-    // skipLogger: silence skip logging during replay so re-evaluated gates
-    // don't append phantom rows to the canonical ~/trading-data/skips/ files.
-    skipLogger.appendSkipLog = () => {};
+    // skipLogger: don't let re-evaluated gates append phantom rows to the
+    // canonical ~/trading-data/skips/ files — but DON'T throw the reasons away
+    // either. A replay that takes zero trades used to be undiagnosable: the run
+    // reported "0 trades" and the one record of WHICH gate rejected each signal
+    // went to a no-op. Collect them in memory instead and return a summary on
+    // the result, so a zero-trade run says why.
+    _skipCapture = [];
+    _skipCaptureDropped = 0;
+    skipLogger.appendSkipLog = (mode, entry) => {
+      try {
+        if (_skipCapture.length < MAX_CAPTURED_SKIPS) {
+          _skipCapture.push({ mode, ..._plainSkipEntry(entry), t: _replayClockNow() });
+        } else {
+          _skipCaptureDropped++;
+        }
+      } catch (_) { /* diagnostics must never break a run */ }
+    };
 
     // vixFilter / oiFilter: wipe the process-global market-data caches so the
     // run starts from a clean slate and every VIX/OI read falls through to the
@@ -1986,6 +2060,15 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
       for (const _k of ["EMA_RSI_ST_CONFIRM_CANDLE_ENABLED", "BB_RSI_CONFIRM_CANDLE_ENABLED"]) {
         if (!(_k in _snapSettings)) _snapSettings[_k] = "false";
       }
+      // Snapshot mode must be the RECORDED config, not "recorded config merged
+      // over today's". _applySettingsOverride only SETS the keys it is given, so
+      // a managed strategy key added to .env after the recording kept its live
+      // value and silently changed a "deterministic" replay. Clear every managed
+      // key the snapshot does not pin so the run sees the same absent-key
+      // defaults the recorded session saw.
+      for (const _k of Object.keys(tickRecorder.snapshotSettings())) {
+        if (!(_k in _snapSettings)) _snapSettings[_k] = undefined;
+      }
       // Overlay the resolved historical expiry LAST so it wins over the snapshot's
       // own (possibly blank/auto-detected) expiry keys.
       Object.assign(_snapSettings, expiryResolution.env);
@@ -2005,6 +2088,18 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     //    real Fyers REST. Output dir differs by mode so simulator runs don't
     //    get mixed with deterministic snapshot runs.
     const warmupCandles = data.sessionStart.warmup || [];
+    // A marker-based session whose recording carries NO warm-up cannot replay:
+    // the interceptor below would hand the strategy an EMPTY candle array as if
+    // it were authoritative history, so EMA/RSI/SuperTrend never initialise and
+    // the engine physically cannot signal — the run reports "0 trades" and looks
+    // like a strategy result instead of a recording hole. Fall back to the real
+    // historical fetch (same path synthetic days use, dated to the replay clock)
+    // and say so loudly, rather than silently replaying a blind engine.
+    const _warmupMissing = warmupCandles.length === 0 &&
+                           !(data.sessionStart.meta && data.sessionStart.meta.synthetic);
+    if (_warmupMissing) {
+      console.warn(`⚠️ [replay] ${mode} ${data.sessionStart.sid}: recording has NO warm-up candles — falling back to a live historical fetch for warm-up. Indicators would otherwise start blind and the session would take zero trades. This run is NOT fully deterministic.`);
+    }
     harness = _createHarness({
       optionTimeline, vixTimeline, oiTimeline, warmupCandles,
       recordedDateStr: date,
@@ -2015,7 +2110,7 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
       outputSuffix: useCurrentSettings ? "sim" : "replay",
       // Synthetic day sessions have no recorded warm-up → let /start fetch real
       // history instead of returning an empty recorded snapshot.
-      syntheticWarmup: synthesize || !!(data.sessionStart.meta && data.sessionStart.meta.synthetic),
+      syntheticWarmup: synthesize || !!(data.sessionStart.meta && data.sessionStart.meta.synthetic) || _warmupMissing,
       spotIndex: data.spotIndex,
     });
     harness.install();
@@ -2264,6 +2359,10 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
       sessionPnl,
       chartData,  // { candles, markers, ...mode overlays } or null if unavailable
       canonical,  // { pnl, tradeCount, matchedAt, matchSkewMs } or null if no match
+      // Why entries didn't happen. The whole point is the zero-trade case: without
+      // this a replay that takes no trades is indistinguishable from one that was
+      // never wired up.
+      skipSummary: _summariseSkips(_skipCapture, _skipCaptureDropped),
     };
     // Cache only complete (non-cancelled) results so a future identical re-run
     // short-circuits. Cancelled runs are partial — never cache.
