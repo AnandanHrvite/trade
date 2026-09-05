@@ -1298,8 +1298,14 @@ app.get("/api/session-active", (req, res) => {
 // ── Home — HTML Dashboard ─────────────────────────────────────────────────────
 app.get("/", (req, res) => {
   // Redirect to Settings when Dashboard menu is hidden (user can re-enable from Settings → MENU VISIBILITY)
+  // Carry the query string across: a broker OAuth callback lands here as
+  // "/?login=fyers" and the toast is read from that param on whichever page
+  // actually renders. Dropping it would silently swallow the login feedback.
   const showDashboard = (process.env.UI_SHOW_DASHBOARD || 'false').toLowerCase() === 'true';
-  if (!showDashboard) return res.redirect("/settings");
+  if (!showDashboard) {
+    const qs = req.originalUrl.indexOf("?");
+    return res.redirect("/settings" + (qs > -1 ? req.originalUrl.slice(qs) : ""));
+  }
 
   // When any paper/live session is active, show the unified Real-Time monitor in place
   // of the normal dashboard (gated by UI_SHOW_REALTIME, default on).
@@ -1504,12 +1510,13 @@ app.get("/", (req, res) => {
   const nearExpiry = istHour === 5 && istMin >= 45;  // 5:45–5:59 AM: expiring soon
   const pastExpiry = istHour >= 6 && istHour < 9;   // 6:00–8:59 AM: already expired
 
+  // Only the two states that need acting on. A permanent "token is valid" strip
+  // is noise the whole trading day and trains the eye to skip the banner —
+  // which is exactly the banner that has to be noticed at 5:45 AM.
   const zerodhaExpiryHtml = zerodhaOk && pastExpiry
     ? `⚠️ <strong>Token expired at 6 AM.</strong> Please re-login with Zerodha before starting live trading.`
     : zerodhaOk && nearExpiry
     ? `⏰ <strong>Token expires at 6 AM</strong> — Re-login now if you plan to trade after 6 AM.`
-    : zerodhaOk
-    ? `ℹ️ Token valid until 6 AM. Re-login each morning before starting live trade.`
     : ``;
 
   // ── Option expiry warnings — ONE BANNER PER INDEX ────────────────────────
@@ -1841,7 +1848,6 @@ app.get("/", (req, res) => {
     }
     .brk-expiry.expired  { background:#2d1600; border-color:#c05621; color:#f6ad55; }
     .brk-expiry.expiring { background:#2a1600; border-color:#744210; color:#fbd38d; }
-    .brk-expiry.valid    { background:#070d14; border-color:#1a3050; color:var(--muted-1,#8ba1c2); }
 
     /* ── Option expiry quick-edit (mirrors Settings → OPTION_EXPIRY_OVERRIDE /
        OPTION_EXPIRY_TYPE; saves through the same POST /settings/save) ── */
@@ -2066,7 +2072,6 @@ app.get("/", (req, res) => {
     :root[data-theme="light"] .top-bar-badge { background:#eff6ff; border-color:#bfdbfe; color:#1d4ed8; }
     :root[data-theme="light"] .top-bar-badge.live-active { background:#fef2f2; border-color:#fca5a5; color:#b91c1c; }
     :root[data-theme="light"] .top-bar-badge.paper-active { background:#f0fdf4; border-color:#bbf7d0; color:#166534; }
-    :root[data-theme="light"] .brk-expiry.valid { background:#f8fafc; border-color:#e2e8f0; color:#475569; }
     :root[data-theme="light"] .brk-expiry.expiring { background:#fffbeb; border-color:#fde68a; color:#b45309; }
     :root[data-theme="light"] .brk-expiry.expired { background:#fef2f2; border-color:#fecaca; color:#c2410c; }
 
@@ -2477,7 +2482,7 @@ ${buildSidebar('dashboard', liveActive)}
       <span class="brk-cfg-spacer"></span>
       <button type="button" class="brk-cfg-save" onclick="saveDashExpiry(this,'${r.key}','${r.overrideKey}','${r.typeKey}')" title="Save ${r.overrideKey} + ${r.typeKey} to .env (same as a Settings save)">Save</button>
     </div>`).join('')}
-    ${zerodhaOk && zerodhaExpiryHtml ? `<div class="brk-expiry ${pastExpiry ? 'expired' : nearExpiry ? 'expiring' : 'valid'}">${zerodhaExpiryHtml}</div>` : ''}
+    ${zerodhaOk && zerodhaExpiryHtml ? `<div class="brk-expiry ${pastExpiry ? 'expired' : 'expiring'}">${zerodhaExpiryHtml}</div>` : ''}
   </div>`}
 
   <!-- (utility buttons moved to top-bar-right; cache pill + schedule pills also live there) -->
