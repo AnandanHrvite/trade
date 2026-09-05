@@ -149,3 +149,5 @@ vite.config.ts.timestamp-*
 certs
 
 /data/*
+# Local git worktree checkout (second copy of this repo)
+/navbase/

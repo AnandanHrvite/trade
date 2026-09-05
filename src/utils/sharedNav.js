@@ -2738,6 +2738,48 @@ async function secretGo(url, btn) {
   return true;
 }
 
+// ── Broker login toast ──────────────────────────────────────────────────────
+// A successful OAuth callback redirects to "/" with ?login=<broker>, instead of
+// parking the user on a dead confirmation page they have to click through. The
+// landing page varies (dashboard / settings / realtime, and "/" redirects), so
+// this lives in modalJS — the one bundle all three already inject. Failures
+// still render the full error card: they carry diagnostics a toast would cut off.
+(function() {
+  try {
+    var p = new URLSearchParams(location.search);
+    var broker = p.get('login');
+    if (!broker) return;
+    var name = { fyers: 'Fyers', zerodha: 'Zerodha' }[broker.toLowerCase()];
+    if (!name) return;
+    // Drop the param so a reload or a shared link does not re-toast.
+    p.delete('login');
+    var qs = p.toString();
+    history.replaceState(null, '', location.pathname + (qs ? '?' + qs : '') + location.hash);
+    var show = function() {
+      _loginToast(name + ' login successful ✅  Token saved to disk.');
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', show);
+    else show();
+  } catch (e) {}
+})();
+
+// Self-contained on purpose: the dashboard and realtime pages have no showToast,
+// and settings' own version expects its markup. Mirrors sharedNav's toast style.
+function _loginToast(msg) {
+  var isLight = document.documentElement.getAttribute('data-theme') === 'light';
+  var t = document.createElement('div');
+  t.setAttribute('role', 'status');
+  t.textContent = msg;
+  t.style.cssText = 'position:fixed;bottom:32px;left:50%;transform:translateX(-50%);'
+    + 'max-width:calc(100vw - 32px);text-align:center;'
+    + 'background:' + (isLight ? '#ffffff' : '#0d1320') + ';'
+    + 'border:1px solid #10b981;color:#10b981;padding:12px 24px;border-radius:10px;'
+    + 'font-size:0.85rem;font-weight:700;z-index:9999;letter-spacing:0.5px;pointer-events:none;'
+    + 'box-shadow:0 4px 24px ' + (isLight ? 'rgba(0,0,0,0.12)' : 'rgba(0,0,0,0.6)') + ';';
+  document.body.appendChild(t);
+  setTimeout(function() { t.remove(); }, 4000);
+}
+
 ${themeJS()}
 `;
 }
