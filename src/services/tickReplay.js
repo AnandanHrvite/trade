@@ -1745,6 +1745,34 @@ const MODE_TO_MODULE = {
   // live session was recorded, replay it as the matching paper mode.
 };
 
+// Per-strategy lot-multiplier keys. These wrappers (haLotQty() and friends)
+// divide the global LOT_MULTIPLIER back out and substitute their own, so setting
+// only LOT_MULTIPLIER would leave those strategies at their configured size. When
+// the Replay page pins a lot count we zero the strategy's own key ("0" = fall back
+// to the global one) so the pinned number is authoritative for every mode.
+const MODE_TO_LOT_MULT_KEY = {
+  "ha-scalp-paper":        "HA_SCALP_LOT_MULTIPLIER",
+  "trend-day-scalp-paper": "TDS_LOT_MULTIPLIER",
+  "rsi-pivot-st-paper":    "RSI_PIVOT_ST_LOT_MULTIPLIER",
+  "bn-pivot-rsi-st-paper": "BN_PIVOT_RSI_ST_LOT_MULTIPLIER",
+  "simple930-paper":       "SIMPLE930_LOT_MULTIPLIER",
+  // EarlyBird's EARLYBIRD_OPTION_LOTS multiplies the already-multiplied lot
+  // instead of replacing it, so it is pinned to 1 rather than 0.
+  "early-bird-paper":      "EARLYBIRD_OPTION_LOTS",
+};
+
+// Builds the env patch that pins a replay run to `lots` lots. Returns {} when no
+// override was asked for, so the caller can Object.assign it unconditionally.
+function _resolveReplayLotEnv(lots, mode) {
+  if (lots === undefined || lots === null || lots === "") return {};
+  const n = parseInt(lots, 10);
+  if (!Number.isFinite(n) || n < 1) return {};
+  const env = { LOT_MULTIPLIER: String(n) };
+  const perStrategyKey = MODE_TO_LOT_MULT_KEY[mode];
+  if (perStrategyKey) env[perStrategyKey] = (perStrategyKey === "EARLYBIRD_OPTION_LOTS") ? "1" : "0";
+  return env;
+}
+
 // Helper: invoke a route's /start and /stop handlers programmatically.
 // Express requires (req, res) — we pass mock objects.
 function _invokeRoute(routeModule, method, urlPath, query = {}) {
@@ -1823,7 +1851,7 @@ function _invokeRoute(routeModule, method, urlPath, query = {}) {
  * Returns:
  *   { ok, sessionId, mode, ticksReplayed, durationMs, sessionTrades, sessionPnl, error? }
  */
-async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSettings = false, noCache = false, synthesize = false } = {}) {
+async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSettings = false, noCache = false, synthesize = false, lots = null } = {}) {
   // NOTE: `synthesize` has NO caller as of 2026-07-28 — /replay/run dropped it
   // when whole-day replay was removed (a marker-less day produced a spot-proxy
   // P&L that read as real; see the removal note in src/routes/replay.js). The
@@ -1873,6 +1901,15 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     // and through the same object, so the cache key and the applied env agree.
     const _instrumentEnv = _resolveReplayInstrumentEnv(data.sessionStart.settings);
     Object.assign(expiryResolution.env, _instrumentEnv);
+    // Lot override from the Replay page's "Lots" box. Piggybacks on the same
+    // object as the pinned expiry/instrument so it lands in the cache key (built
+    // below) AND in the applied env for both settings sources — a run at 2 lots
+    // must not serve the cached 1-lot result.
+    const _lotEnv = _resolveReplayLotEnv(lots, mode);
+    Object.assign(expiryResolution.env, _lotEnv);
+    if (_lotEnv.LOT_MULTIPLIER) {
+      console.log(`📼 [replay] lots pinned from the Replay page: ${_lotEnv.LOT_MULTIPLIER}`);
+    }
     if (_instrumentEnv.INSTRUMENT === "NIFTY_FUTURES") {
       console.log(`📼 [replay] instrument pinned from the recording: NIFTY_FUTURES`);
     }

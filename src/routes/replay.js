@@ -222,9 +222,23 @@ router.post("/delete-all", express.json(), (req, res) => {
 });
 
 router.post("/run", express.json(), async (req, res) => {
-  const { date, mode, sessionId, speed, useCurrentSettings, noCache } = req.body || {};
+  const { date, mode, sessionId, speed, useCurrentSettings, noCache, lots } = req.body || {};
   if (!date || !mode) {
     return res.status(400).json({ ok: false, error: "date and mode are required" });
+  }
+  // Optional lot override from the page's "Lots" box. Absent/blank = leave the
+  // configured multiplier alone. Clamp to MAX_LOT_MULTIPLIER here so the UI cap
+  // can't be bypassed by hand-posting a huge number (getLotQty would clamp it
+  // anyway, but silently — a 400 tells the caller the run wasn't what they asked).
+  let lotsOverride = null;
+  if (lots !== undefined && lots !== null && lots !== "") {
+    const n = parseInt(lots, 10);
+    let maxMult = parseInt(process.env.MAX_LOT_MULTIPLIER || "10", 10);
+    if (!Number.isFinite(maxMult) || maxMult < 1) maxMult = 10;
+    if (!Number.isFinite(n) || n < 1 || n > maxMult) {
+      return res.status(400).json({ ok: false, error: `lots must be an integer between 1 and ${maxMult}` });
+    }
+    lotsOverride = n;
   }
   // Validate date shape before it reaches path.join(ROOT_DIR, date) — blocks any
   // "../" traversal. (mode is validated against MODE_TO_MODULE inside replaySession.)
@@ -248,6 +262,7 @@ router.post("/run", express.json(), async (req, res) => {
       speed: typeof speed === "number" ? speed : 0,
       useCurrentSettings: !!useCurrentSettings,
       noCache: !!noCache,  // force fresh recompute + cache overwrite when true
+      lots: lotsOverride,  // null = keep the snapshot/current lot multiplier
     });
     // Attach a contract-note row (_cn) to each trade so the Replay page's
     // Report modal can build a contract note client-side, identical to the
@@ -612,6 +627,11 @@ ${buildSidebar('replay', false)}
           <option value="current">My current settings</option>
           <option value="snapshot">Snapshot settings</option>
         </select>
+      </div>
+      <div class="range-field">
+        <label>Lots</label>
+        <input type="number" id="range-lots" min="1" max="10" step="1" placeholder="default"
+               title="Number of lots to replay with. Blank = use the configured lot multiplier (snapshot or current settings).">
       </div>
       <div class="range-field">
         <label>&nbsp;</label>
@@ -1609,11 +1629,20 @@ function cmpDelta(bPnl, sPnl) {
   return (sPnl || 0) - (bPnl || 0);
 }
 
-async function callReplayApi(date, mode, sessionId, useCurrentSettings) {
+// Reads the "Lots" box. Blank / junk / <1 → null, meaning "leave the configured
+// lot multiplier alone" (snapshot's own value, or the user's current settings).
+function getSelectedLots() {
+  const el = document.getElementById('range-lots');
+  if (!el) return null;
+  const n = parseInt(el.value, 10);
+  return (Number.isFinite(n) && n >= 1) ? n : null;
+}
+
+async function callReplayApi(date, mode, sessionId, useCurrentSettings, lots) {
   const r = await secretFetch('/replay/run', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ date, mode, sessionId, speed: 0, useCurrentSettings }),
+    body: JSON.stringify({ date, mode, sessionId, speed: 0, useCurrentSettings, lots: lots || undefined }),
     timeoutMs: 600000,  // a full-day replay far exceeds the 15s default → 10 min
   });
   // secretFetch returns null when the user cancels the API-secret prompt — the
@@ -1844,7 +1873,7 @@ async function runReplay(date, mode, sessionId, btn) {
   // sim.canonical. The replay-result column is this run's actual output.
   let sim = null;
   try {
-    try { sim = await callReplayApi(date, mode, sessionId, useCurrentSettings); }
+    try { sim = await callReplayApi(date, mode, sessionId, useCurrentSettings, getSelectedLots()); }
     catch (e) { sim = { ok: false, error: e.message }; }
   } finally {
     clearInterval(progressTimer);
@@ -2457,7 +2486,7 @@ async function runRange(btn) {
   if (from > to)    { alert('From date must be on or before To date.'); return; }
 
   const useCurrentSettings = (getSelectedSettingsSource() === 'current');
-  const context = { mode, label: modeLabel, from, to, useCurrentSettings };
+  const context = { mode, label: modeLabel, from, to, useCurrentSettings, lots: getSelectedLots() };
   const sessions = pickSessionsInRange(from, to, mode);
   if (sessions.length === 0) {
     const pill = mode === 'all' ? 'all strategies' : mode;
@@ -2557,7 +2586,7 @@ async function runSessionsBatch(sessions, context, btn, btnRestoreText) {
     renderProgress();
     let sim = null;
     try {
-      sim = await callReplayApi(s.date, s.mode, s.sessionId, useCurrentSettings);
+      sim = await callReplayApi(s.date, s.mode, s.sessionId, useCurrentSettings, context.lots);
     } catch (e) {
       sim = { ok: false, error: e.message };
     }
