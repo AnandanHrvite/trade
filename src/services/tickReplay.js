@@ -1057,6 +1057,14 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
   // can clear them — otherwise after the route-module cache is dropped, the
   // timer would still fire in real time and reference a dead state object.
   const SHORT_DELAY_CAP_MS = 30 * 1000;
+  // Outstanding collapsed short timers (paper's option-LTP poll chain). Read by
+  // the tick pump to pick the cheap yield when no poll is waiting. A Set, not a
+  // counter, so clearTimeout can retract a specific handle without knowing
+  // whether it was short or long.
+  const _pendingShortTimers = new Set();
+  // Intraday candles returned by the REAL history fetch during a warm-up-fallback
+  // run. 0 means the engine started blind (expired token / dry broker).
+  let _warmupFetchCount = 0;
   const _pendingLongTimers = new Set();
 
   // Clear the shared VIX + OI caches. Called on install (so the run reads only
@@ -1397,6 +1405,21 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
         if (_isBarResDaily(res)) return _dailyWithFallback(sym, () => orig.cc_fetchCandlesCached(sym, res, from, to, rawFetcher));
         return _replaySpotSeries(res, to);
       };
+    } else {
+      // Warm-up comes from the REAL history fetch on this path (synthetic day, or
+      // a recording with no captured warm-up). Count what it returns so the run
+      // can distinguish "no setup today" from "the fetch came back empty and the
+      // engine ran blind" — a silent 0-trade result otherwise.
+      backtestEngine.fetchCandles = async function (sym, res, from, to) {
+        const out = await orig.bt_fetchCandles(sym, res, from, to);
+        if (!_isBarResDaily(res) && Array.isArray(out)) _warmupFetchCount += out.length;
+        return out;
+      };
+      candleCache.fetchCandlesCached = async function (sym, res, from, to, rawFetcher) {
+        const out = await orig.cc_fetchCandlesCached(sym, res, from, to, rawFetcher);
+        if (!_isBarResDaily(res) && Array.isArray(out)) _warmupFetchCount += out.length;
+        return out;
+      };
     }
 
     // tradeLogger: divert to replay-specific files so we don't pollute the
@@ -1588,10 +1611,22 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
         _pendingLongTimers.add(handle);
         return handle;
       }
-      return orig.setTimeout_(cb, 0, ...args);
+      // Collapsed short timer (paper's option-LTP poll chain). Counted so the
+      // tick pump knows whether a real timer is waiting: draining one needs a
+      // timers-phase yield (~1.1ms), and paying that on EVERY tick is what made
+      // a session take minutes. When nothing is pending, a check-phase yield is
+      // ~80x cheaper and just as correct.
+      let h;
+      h = orig.setTimeout_((...wargs) => {
+        _pendingShortTimers.delete(h);
+        try { cb(...wargs); } catch (_) {}
+      }, 0, ...args);
+      _pendingShortTimers.add(h);
+      return h;
     };
     global.clearTimeout = function (handle) {
       _pendingLongTimers.delete(handle);
+      _pendingShortTimers.delete(handle);
       return orig.clearTimeout_(handle);
     };
 
@@ -1797,7 +1832,9 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     }
   }
 
-  return { install, uninstall, pumpTick, setNow, setWallClock, clearWallClock, enableDateShim, disableDateShim, getCallbacks: () => callbacks };
+  return { install, uninstall, pumpTick, setNow, setWallClock, clearWallClock, enableDateShim, disableDateShim, getCallbacks: () => callbacks,
+           hasPendingShortTimer: () => _pendingShortTimers.size > 0,
+           getWarmupFetchCount: () => _warmupFetchCount };
 }
 
 // ── Mode → route module mapping ─────────────────────────────────────────────
@@ -2104,6 +2141,7 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     // like a strategy result instead of a recording hole. Fall back to the real
     // historical fetch (same path synthetic days use, dated to the replay clock)
     // and say so loudly, rather than silently replaying a blind engine.
+    let _warmupFallbackFailed = false;
     const _warmupMissing = warmupCandles.length === 0 &&
                            !(data.sessionStart.meta && data.sessionStart.meta.synthetic);
     if (_warmupMissing) {
@@ -2168,6 +2206,22 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
       // block below re-pins and then clears it.
       harness.setWallClock(data.sessionStart.t);
     }
+    // Warm-up reality check. When the recording carried no warm-up we let /start
+    // fetch real history — which SILENTLY yields nothing if the broker token is
+    // expired (see the "0 candles = stale Fyers token" failure mode). The engine
+    // then runs blind and books zero trades while reporting success, which is
+    // indistinguishable from "the strategy found no setup". The harness counts
+    // what the fetch actually returned (paper routes export no state, and they
+    // are canonical — not something to instrument for diagnostics).
+    if (_warmupMissing) {
+      const _n = harness.getWarmupFetchCount();
+      if (!_n) {
+        _warmupFallbackFailed = true;
+        console.warn(`⚠️ [replay] ${mode} ${data.sessionStart.sid}: warm-up fallback loaded NO candles — the broker history fetch returned nothing (most often an expired Fyers token). Indicators start blind, so this run CANNOT signal and its "0 trades" is not a strategy result. Re-login to Fyers and re-run.`);
+      } else {
+        console.log(`📼 [replay] warm-up fallback loaded ${_n} candles from live history.`);
+      }
+    }
     if (startResp.status >= 400 && startResp.status !== 302) {
       throw new Error(`Route /start returned ${startResp.status}: ${JSON.stringify(startResp.body).slice(0, 200)}`);
     }
@@ -2210,10 +2264,27 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
       timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false,
     });
     console.log(`📼 [replay] ${mode} ${data.sessionStart.sid} — ${_underlying} [${data.spotIndex}]: streaming spot ticks (${data.optionTicks.length} option ticks loaded)…`);
+    // Yield between ticks. Two mechanisms, picked per tick:
+    //
+    //   • A timers-phase yield (setTimeout 0) is what actually DRAINS paper's
+    //     queued option-LTP polls — see the YIELD_EVERY note above. It is also
+    //     expensive: Node clamps a 0ms timer to ~1ms, so paying it on all ~55k
+    //     ticks cost ~60s of pure waiting per session (measured), which is most
+    //     of a replay's wall time.
+    //   • A check-phase yield (setImmediate) is ~80x cheaper (~0.014ms) and
+    //     keeps the event loop and HTTP responsive, but does NOT reliably let a
+    //     pending timer run first.
+    //
+    // So: use the expensive one only when the harness says a collapsed short
+    // timer is actually outstanding — i.e. exactly when there is a poll to
+    // drain — and the cheap one otherwise. Same per-tick polling freshness, a
+    // fraction of the wall time.
     // setTimeout(r, 0) goes through the harness override and falls through
     // unchanged to orig.setTimeout_(r, 0) (0 is not > SHORT_DELAY_CAP_MS),
     // so this resolves in the timers phase alongside paper's queued polls.
-    const _yield      = () => new Promise(r => setTimeout(r, 0));
+    const _yieldTimers = () => new Promise(r => setTimeout(r, 0));
+    const _yieldCheap  = () => new Promise(r => setImmediate(r));
+    const _yield       = () => (harness.hasPendingShortTimer() ? _yieldTimers() : _yieldCheap());
     let ticksReplayed = 0;
     let ticksSkippedOtherIndex = 0;
     const startT = data.sessionStart.t;
@@ -2375,6 +2446,10 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
       // this a replay that takes no trades is indistinguishable from one that was
       // never wired up.
       skipSummary: _summariseSkips(_skipCapture, _skipCaptureDropped),
+      // True when the engine ran with NO warm-up at all — its "0 trades" is a
+      // data problem (expired broker token / recording with no warm-up), not a
+      // strategy result. The UI must not present such a run as a comparison.
+      warmupBlind: _warmupFallbackFailed,
     };
     // Cache only complete (non-cancelled) results so a future identical re-run
     // short-circuits. Cancelled runs are partial — never cache.

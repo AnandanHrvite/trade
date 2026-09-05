@@ -1952,6 +1952,10 @@ function _zeroTradeHint(view) {
     anySummary = true;
     for (const g of (ss.byGate || [])) byGate[g.gate] = (byGate[g.gate] || 0) + g.count;
   }
+  // A blind engine outranks any gate tally: it explains the zero directly.
+  if (view.some(v => v.r && v.r.sim && v.r.sim.warmupBlind)) {
+    return 'The engine started with <strong>no warm-up candles</strong> — the history fetch returned nothing, which is almost always an expired Fyers token. Re-login to Fyers and run again.';
+  }
   if (!anySummary) return 'Re-run to capture skip reasons.';
   const top = Object.entries(byGate).sort((a, b) => b[1] - a[1])[0];
   if (!top) return 'No signal ever formed — indicators likely never warmed up (check the replay log for a missing warm-up warning).';
