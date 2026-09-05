@@ -2727,6 +2727,22 @@ router.get("/", (req, res) => {
     }
     .btn-restart:hover { background: rgba(239,68,68,0.15); border-color: var(--red); }
     .btn-restart:disabled { opacity: 0.4; cursor: not-allowed; }
+    /* Broker logout sits in the same row style but is amber, not red: it clears a
+       credential, it does not stop the process. */
+    .logout-row { display: flex; gap: 10px; flex-wrap: wrap; }
+    .btn-logout {
+      background: rgba(245,158,11,0.08); color: var(--amber, #f59e0b); border: 1px solid #78350f;
+      padding: 10px 18px; border-radius: 8px; font-weight: 700; font-size: 0.82rem;
+      cursor: pointer; font-family: inherit; white-space: nowrap; transition: all 0.15s;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .btn-logout:hover { background: rgba(245,158,11,0.16); border-color: var(--amber, #f59e0b); }
+    .btn-logout:disabled { opacity: 0.4; cursor: not-allowed; }
+    @media (max-width: 640px) {
+      .restart-section { flex-direction: column; align-items: stretch; }
+      .btn-restart, .btn-logout { justify-content: center; min-height: 44px; }
+      .logout-row .btn-logout { flex: 1 1 140px; }
+    }
 
     /* ── Bulk paste section ──────────────────────────────── */
     .bulk-section { padding: 18px 20px 20px; }
@@ -2922,7 +2938,27 @@ router.get("/", (req, res) => {
             <div class="section-head">
               <div class="section-head-title">🔄 Server Control</div>
             </div>
-            <div class="restart-section" style="margin-top:0;border-radius:0 0 12px 12px;">
+            <div class="restart-section" style="margin-top:0;border-radius:0;">
+              <div class="restart-info">
+                <div class="restart-title">Broker Logout</div>
+                <div class="restart-desc">
+                  Clears the saved OAuth token for a broker (deletes it from disk and from this
+                  process), so the next login starts clean. Refused while any engine is running.
+                </div>
+              </div>
+              <div class="logout-row">
+                <button class="btn-logout" id="logoutFyersBtn" onclick="brokerLogout('fyers', this)">
+                  <span>🔑</span> Logout Fyers
+                </button>
+                <button class="btn-logout" id="logoutZerodhaBtn" onclick="brokerLogout('zerodha', this)">
+                  <span>🔑</span> Logout Zerodha
+                </button>
+                <button class="btn-logout" id="logoutBothBtn" onclick="brokerLogout('both', this)">
+                  <span>🧹</span> Logout Both
+                </button>
+              </div>
+            </div>
+            <div class="restart-section" style="margin-top:0;border-top:0;border-radius:0 0 12px 12px;">
               <div class="restart-info">
                 <div class="restart-title">Restart Server</div>
                 <div class="restart-desc">
@@ -3832,6 +3868,42 @@ setInterval(function() {
   var m = document.getElementById('backupModal');
   if (m && m.style.display === 'block') { loadBackups(); loadGdrive(); }
 }, 60000);
+
+// Clears a broker's saved OAuth token via /token-sync/reset — the same endpoint
+// the Token Sync page uses, so there is one clear path, not two. The server
+// refuses (409) while an engine is running; that message is shown as-is.
+async function brokerLogout(broker, btn) {
+  var label = broker === 'both' ? 'BOTH brokers' : broker.toUpperCase();
+  var ok = await showConfirm({
+    icon: '🔑',
+    title: 'Clear Broker Token',
+    message: 'Clear the saved token for ' + label + '?\\n\\nThe token is deleted from disk and from this process. You will have to log in again before any live data or orders work.',
+    cancelText: 'Cancel',
+    confirmText: 'Clear Token',
+    confirmClass: 'modal-btn-danger',
+  });
+  if (!ok) return;
+
+  var html = btn ? btn.innerHTML : null;
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span>⏳</span> Clearing...'; }
+  try {
+    var r = await secretFetch('/token-sync/reset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ broker: broker }),
+    });
+    var data = r ? await r.json() : null;
+    if (!data || !data.success) {
+      showToast((data && data.error) || 'Could not clear the token', 'error');
+      return;
+    }
+    showToast('Token cleared: ' + data.cleared.join(', ').toUpperCase(), 'success');
+  } catch (e) {
+    showToast('Could not clear the token: ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = html; }
+  }
+}
 
 // Kicks the server restart endpoint and polls /settings/data until it's back,
 // then reloads the page. Shared by the explicit Restart button and the
