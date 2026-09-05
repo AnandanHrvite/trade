@@ -277,14 +277,16 @@ router.get("/callback", async (req, res) => {
   if (status && status !== "success") {
     return res.status(400).send(buildErrorPage(
       "Fyers Login Failed",
-      `Fyers returned status="${status}". Please try again.`
+      `Fyers returned status="${status}". Please try again.`,
+      { manual: true }
     ));
   }
 
   if (!tokenValue) {
     return res.status(400).send(buildErrorPage(
       "Fyers Login Failed",
-      `No token in callback URL. Got: <code>${JSON.stringify(req.query)}</code>`
+      `No token in callback URL. Got: <code>${JSON.stringify(req.query)}</code>`,
+      { manual: true }
     ));
   }
 
@@ -294,7 +296,7 @@ router.get("/callback", async (req, res) => {
   const badCred = badCredentialReason();
   if (badCred) {
     console.error(`❌ [Fyers] ${badCred.log}`);
-    return res.status(400).send(buildErrorPage("Fyers Login Failed", badCred.html));
+    return res.status(400).send(buildErrorPage("Fyers Login Failed", badCred.html, { manual: true }));
   }
 
   try {
@@ -307,10 +309,9 @@ router.get("/callback", async (req, res) => {
     if (response.s === "ok") {
       fyers.setAccessToken(response.access_token); // also saves to disk now
       console.log("✅ [Fyers] Login successful. Token saved to disk.");
-      return res.send(buildSuccessPage(
-        "Fyers Login Successful ✅",
-        "Fyers access token stored and saved to disk — survives server restarts."
-      ));
+      // Straight back to the app with a toast — a success page whose only
+      // control is "Back to Dashboard" is a click that tells the user nothing.
+      return res.redirect("/?login=fyers");
     } else {
       console.error("❌ [Fyers] Token generation failed:", response);
       // Enough to tell a credential problem from a Fyers-side one, without
@@ -335,11 +336,11 @@ router.get("/callback", async (req, res) => {
           "match, the fault is on Fyers' side; wait and try again. Full response: " +
           JSON.stringify(response)
         : JSON.stringify(response);
-      return res.status(400).send(buildErrorPage("Fyers Login Failed", detail));
+      return res.status(400).send(buildErrorPage("Fyers Login Failed", detail, { manual: true }));
     }
   } catch (err) {
     console.error("❌ [Fyers] Auth error:", err);
-    return res.status(500).send(buildErrorPage("Fyers Auth Error", err.message));
+    return res.status(500).send(buildErrorPage("Fyers Auth Error", err.message, { manual: true }));
   }
 });
 
@@ -424,10 +425,7 @@ router.get("/zerodha/callback", async (req, res) => {
   try {
     await zerodha.generateAccessToken(request_token); // also saves to disk now
     console.log("✅ [Zerodha] Login successful. Token saved to disk.");
-    return res.send(buildSuccessPage(
-      "Zerodha Login Successful ✅",
-      "Zerodha access token stored and saved to disk — survives server restarts."
-    ));
+    return res.redirect("/?login=zerodha");
   } catch (err) {
     console.error("❌ [Zerodha] Token exchange failed:", err.message);
     return res.status(500).send(buildErrorPage("Zerodha Auth Error", err.message));
@@ -791,7 +789,14 @@ function copyToken(){
 </body></html>`;
 }
 
-function buildErrorPage(title, message) {
+function buildErrorPage(title, message, opts) {
+  // Fyers failures are the ones with a recovery path: log in wherever it works
+  // and paste the auth code back. Desktop no longer passes through the landing
+  // page, so without this link the manual route has no entry point. Zerodha has
+  // no such fallback, hence the opt-in flag rather than always rendering it.
+  const manualLink = (opts && opts.manual)
+    ? `<a href="/auth/manual" style="background:#1e3a5f;margin-right:8px;">📋 Manual Login</a>`
+    : "";
   return `<!DOCTYPE html><html lang="en"${_authLightAttr()}><head><meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>${title}</title>
@@ -827,7 +832,7 @@ function buildErrorPage(title, message) {
   input{font-size:16px;min-height:44px;}
 }
 </style></head>
-  <body><div class="card"><div class="icon">❌</div><h1>${title}</h1><p class="msg">${message}</p><a href="/">← Back to Dashboard</a></div></body></html>`;
+  <body><div class="card"><div class="icon">❌</div><h1>${title}</h1><p class="msg">${message}</p>${manualLink}<a href="/">← Back to Dashboard</a></div></body></html>`;
 }
 
 module.exports = router;
