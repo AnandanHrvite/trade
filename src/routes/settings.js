@@ -3892,12 +3892,15 @@ async function brokerLogout(broker, btn) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ broker: broker }),
     });
-    var data = r ? await r.json() : null;
+    // secretFetch returns null when the user cancels the API-secret prompt —
+    // a deliberate abort, not a failure, so it gets no error toast.
+    if (!r) return;
+    var data = await r.json();
     if (!data || !data.success) {
       showToast((data && data.error) || 'Could not clear the token', 'error');
       return;
     }
-    showToast('Token cleared: ' + data.cleared.join(', ').toUpperCase(), 'success');
+    showToast('Token cleared: ' + (data.cleared || []).join(', ').toUpperCase(), 'success');
   } catch (e) {
     showToast('Could not clear the token: ' + e.message, 'error');
   } finally {
