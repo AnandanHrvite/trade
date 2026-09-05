@@ -150,23 +150,29 @@ function badCredentialReason() {
 /**
  * GET /auth/login
  *
- * Shows a landing page with two options instead of redirecting straight to
- * Fyers. The mobile redirect path is fragile — Fyers' OAuth URL deep-links
- * into the Fyers mobile app on Android/iOS, and the app sometimes consumes
- * the callback redirect so the bot never receives the auth_code. Giving the
- * user a "manual paste" option is the only universal fallback.
+ * Desktop goes straight to Fyers, the same one click as the Zerodha button.
+ * The browser stays put there, so the callback always comes back and the
+ * landing page only added a click.
  *
- * For backwards compat (deep links, scripts, the old "Re-login" button), pass
- * ?direct=1 to skip the landing page and redirect straight to Fyers.
+ * Mobile keeps the landing page: Fyers' OAuth URL deep-links into the Fyers
+ * app on Android/iOS, and the app sometimes consumes the callback redirect so
+ * the bot never receives the auth_code. The "manual paste" option is the only
+ * universal fallback there.
+ *
+ * ?direct=1 forces the redirect (deep links, scripts, the "Re-login" button);
+ * ?choose=1 forces the landing page from a desktop browser.
  */
 router.get("/login", (req, res) => {
   clearDisconnectedTokens("Fyers");
   const url = fyers.generateAuthCode();
-  if (req.query.direct === "1") {
+  const ua = String(req.get("user-agent") || "");
+  const isMobile = /Android|iPhone|iPad|iPod|Mobile|Silk/i.test(ua);
+
+  if (req.query.choose !== "1" && (req.query.direct === "1" || !isMobile)) {
     console.log("🔐 [Fyers] Redirecting to login:", url);
     return res.redirect(url);
   }
-  console.log("🔐 [Fyers] Login landing page shown.");
+  console.log("🔐 [Fyers] Login landing page shown (mobile).");
   res.send(buildLoginLandingPage(url));
 });
 
@@ -567,7 +573,7 @@ function buildLoginLandingPage(authUrl) {
   <a href="${safeUrl}" class="btn">Continue to Fyers →</a>
   <a href="/auth/manual" class="alt">📋 Manual Login (paste code)</a>
   <div class="hint">
-    <b>On mobile?</b> Fyers' login link often opens the Fyers app instead of staying in your browser, and the redirect back to this bot can fail silently. If "Continue to Fyers" doesn't bring you back logged in, use <b>Manual Login</b> — log in wherever, copy the auth code from the redirect URL, and paste it here.
+    <b>Why this step on mobile?</b> Fyers' login link often opens the Fyers app instead of staying in your browser, and the redirect back to this bot can fail silently. If "Continue to Fyers" doesn't bring you back logged in, use <b>Manual Login</b> — log in wherever, copy the auth code from the redirect URL, and paste it here.
   </div>
   <div style="text-align:center;"><a href="/" class="back">← Back to Dashboard</a></div>
 </div>
