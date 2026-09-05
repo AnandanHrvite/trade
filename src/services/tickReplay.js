@@ -764,10 +764,11 @@ function _applySettingsOverride(settings) {
   const original = {};
   for (const k of Object.keys(settings)) {
     original[k] = process.env[k];   // may be undefined
-    // An explicit `undefined` means "this key was NOT set in the recorded
-    // session" — it must be DELETED, not assigned. `process.env.X = undefined`
-    // stores the string "undefined", which reads as truthy and would be worse
-    // than the live value it replaced.
+    // Defensive: an explicit `undefined` means "unset this key", which must be a
+    // DELETE. `process.env.X = undefined` stores the string "undefined", which
+    // reads as truthy — a silent corruption. No caller relies on this today (see
+    // the unpinned-key note in replaySession, where clearing was rejected as
+    // unsafe), but the footgun is one assignment away for the next one.
     if (settings[k] === undefined) delete process.env[k];
     else                           process.env[k] = settings[k];
   }
@@ -2060,14 +2061,22 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
       for (const _k of ["EMA_RSI_ST_CONFIRM_CANDLE_ENABLED", "BB_RSI_CONFIRM_CANDLE_ENABLED"]) {
         if (!(_k in _snapSettings)) _snapSettings[_k] = "false";
       }
-      // Snapshot mode must be the RECORDED config, not "recorded config merged
-      // over today's". _applySettingsOverride only SETS the keys it is given, so
-      // a managed strategy key added to .env after the recording kept its live
-      // value and silently changed a "deterministic" replay. Clear every managed
-      // key the snapshot does not pin so the run sees the same absent-key
-      // defaults the recorded session saw.
-      for (const _k of Object.keys(tickRecorder.snapshotSettings())) {
-        if (!(_k in _snapSettings)) _snapSettings[_k] = undefined;
+      // Snapshot mode is a PARTIAL override: _applySettingsOverride only SETS the
+      // keys it is given, so a managed key present in today's env but absent from
+      // the recording keeps its CURRENT value — "snapshot settings" quietly means
+      // "recorded settings merged over today's".
+      //
+      // Clearing those keys is NOT a safe fix. A recording carries no schema
+      // version, so an absent key cannot be told apart from a key that existed and
+      // was genuinely unset — and unsetting one silently swaps in a code default
+      // that may differ from the recorded reality (deleting NIFTY_LOT_SIZE drops
+      // the lot to the 65 default and rewrites every rupee figure in the replay).
+      // So: report the drift, change nothing.
+      const _unpinned = Object.keys(tickRecorder.snapshotSettings())
+        .filter(_k => !(_k in _snapSettings) && process.env[_k] !== undefined)
+        .sort();
+      if (_unpinned.length) {
+        console.warn(`⚠️ [replay] ${mode} ${data.sessionStart.sid}: ${_unpinned.length} managed key(s) are NOT in this recording and keep their CURRENT value — this run is snapshot-settings merged over today's for them: ${_unpinned.slice(0, 12).join(", ")}${_unpinned.length > 12 ? ` …(+${_unpinned.length - 12})` : ""}`);
       }
       // Overlay the resolved historical expiry LAST so it wins over the snapshot's
       // own (possibly blank/auto-detected) expiry keys.
@@ -2130,16 +2139,19 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     //    recorded session-start IST time as "now", which always passes.
     harness.setNow(data.sessionStart.t);
     harness.setWallClock(data.sessionStart.t);
-    // Day-based (synthetic) replay fetches REAL warm-up history in /start, and
-    // strategies date their fetch range with `new Date()` (not Date.now()). Shim
-    // the Date constructor for the /start window so warm-up resolves to the
-    // REPLAYED date, not today. No-op for marker-based replays (warm-up stubbed).
-    if (synthesize) harness.enableDateShim();
+    // Any replay that fetches REAL warm-up history in /start needs this: strategies
+    // date their fetch range with `new Date()` (not Date.now()), so without the
+    // shim the fetch resolves to TODAY and warms up on the wrong day entirely.
+    // That is the synthetic day path AND a marker-based recording with no captured
+    // warm-up (_warmupMissing) — both bypass the recorded-warmup stub.
+    // No-op for a normal marker replay, whose warm-up is stubbed from disk.
+    const _needsDateShim = synthesize || _warmupMissing;
+    if (_needsDateShim) harness.enableDateShim();
     let startResp;
     try {
       startResp = await _invokeRoute(routeMod, "GET", "/start", {});
     } finally {
-      if (synthesize) harness.disableDateShim();
+      if (_needsDateShim) harness.disableDateShim();
       // Do NOT restore the real clock here. A paper route's polling loop is a
       // setTimeout the harness collapses to fire ASAP, so it lands in the window
       // between /start returning and the first pumped tick — while the spot file
