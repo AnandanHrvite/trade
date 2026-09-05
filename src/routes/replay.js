@@ -631,6 +631,7 @@ ${buildSidebar('replay', false)}
       <div class="range-field">
         <label>Lots</label>
         <input type="number" id="range-lots" min="1" max="10" step="1" placeholder="default"
+               style="min-width:90px; width:90px;"
                title="Number of lots to replay with. Blank = use the configured lot multiplier (snapshot or current settings).">
       </div>
       <div class="range-field">
@@ -1413,6 +1414,15 @@ function applyReplayDeepLink() {
     if (ss) ss.value = settings;
   }
 
+  // ?lots=N prefills the lot box so a shared link reproduces the same run size.
+  // Junk or out-of-range is ignored — the box stays blank and the run uses the
+  // configured multiplier, exactly as if the param were absent.
+  const lotsParam = parseInt(p.get('lots'), 10);
+  if (Number.isFinite(lotsParam) && lotsParam >= 1) {
+    const le = document.getElementById('range-lots');
+    if (le) le.value = String(lotsParam);
+  }
+
   if (mode) {
     const ms = document.getElementById('range-mode');
     if (ms) {
@@ -1939,6 +1949,9 @@ function buildDiagnosticBlob(context, rows) {
   lines.push('Generated: ' + new Date().toISOString());
   lines.push('Strategy: ' + (context && context.mode));
   lines.push('Range: ' + (context && context.from) + ' → ' + (context && context.to));
+  // Lot count changes every rupee figure below, so a dump without it can't be
+  // compared against another dump.
+  lines.push('Lots: ' + ((context && context.lots) ? context.lots : '(configured default)'));
   lines.push('Sessions: ' + rows.length);
   lines.push('');
 
