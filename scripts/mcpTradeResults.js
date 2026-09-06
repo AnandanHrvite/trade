@@ -59,6 +59,10 @@ function authCookie() {
   return `__trade_login=${crypto.createHash("sha256").update(s).digest("hex")}`;
 }
 
+// Per-request budget. A whole tool call can make several of these, so keep it
+// short enough that a dead box fails fast rather than stalling the client.
+const TIMEOUT_MS = 20000;
+
 // Any TLS-trust failure has the same remedy, and the box's cert is both
 // self-signed and (being long-lived) eventually expired — so match the whole
 // family rather than just the self-signed codes.
@@ -85,7 +89,7 @@ function getJson(pathAndQuery) {
         accept: "application/json",
         ...(cookie ? { cookie } : {}),
       },
-      timeout: 20000,
+      timeout: TIMEOUT_MS,
       // The box serves a self-signed cert on :3000, so verification fails by
       // default. Opt in explicitly rather than disabling it silently.
       ...(u.protocol === "https:" && process.env.TRADE_MCP_INSECURE === "1"
@@ -111,12 +115,20 @@ function getJson(pathAndQuery) {
       });
     });
 
-    req.on("timeout", () => req.destroy(new Error(`timed out after 20s calling ${REMOTE_URL}`)));
-    req.on("error", (err) => reject(new Error(
-      TLS_TRUST_ERRORS.has(err.code)
-        ? `the app's certificate is not trusted (${err.code}) — set TRADE_MCP_INSECURE=1 to accept it.`
-        : `cannot reach ${REMOTE_URL}: ${err.message}`
-    )));
+    // destroy(err) surfaces as an 'error' event; tag it so the handler below
+    // reports the timeout plainly instead of nesting it inside "cannot reach".
+    req.on("timeout", () => {
+      const e = new Error(`no response from ${REMOTE_URL} within ${TIMEOUT_MS / 1000}s — is the app running?`);
+      e.isTimeout = true;
+      req.destroy(e);
+    });
+    req.on("error", (err) => reject(
+      err.isTimeout ? err : new Error(
+        TLS_TRUST_ERRORS.has(err.code)
+          ? `the app's certificate is not trusted (${err.code}) — set TRADE_MCP_INSECURE=1 to accept it.`
+          : `cannot reach ${REMOTE_URL}: ${err.message}`
+      )
+    ));
   });
 }
 
