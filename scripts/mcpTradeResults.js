@@ -152,7 +152,9 @@ const TOOLS = [
       const all = readRange(mode, from, to);
       // Cap the payload so a wide range cannot blow up the client's context;
       // `returned < total` is the caller's signal to narrow the range.
-      const cap = Math.max(1, Math.min(num(limit) || 200, 1000));
+      // Only an omitted limit takes the default — an explicit 0 must stay 0,
+      // which `num(limit) || 200` would have silently turned into 200.
+      const cap = limit == null ? 200 : Math.max(0, Math.min(num(limit), 1000));
       return { mode, from: from || null, to: to || null, total: all.length, returned: Math.min(cap, all.length), trades: all.slice(0, cap) };
     },
   },
