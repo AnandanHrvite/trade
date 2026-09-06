@@ -132,24 +132,40 @@ function getJson(pathAndQuery) {
   });
 }
 
-/** Dates that have logs for a mode, newest first. Local disk or remote app. */
+/**
+ * Dates that have logs for a mode, newest first. Local disk or remote app.
+ *
+ * The remote shape is `{ rows: [{date, ...}] }` — see /trade-logs/list. Don't
+ * add fallbacks for other key names: guessing fails SILENTLY (an unrecognised
+ * shape yields []), and "no dates" reads as "this strategy never traded",
+ * which is a wrong answer rather than an error. Throw instead.
+ */
 async function sourceDates(mode) {
   if (!REMOTE) return tradeLogger.listDailyDates(mode).map((d) => d.date);
   // No ?page → the route returns every date unpaged (parsePaging returns null
   // only when `page` is absent), so a long history is never truncated.
   const j = await getJson(`/trade-logs/list?mode=${encodeURIComponent(mode)}`);
-  const rows = (j && (j.files || j.rows || j.dates)) || [];
-  return rows.map((r) => (typeof r === "string" ? r : r.date)).filter(Boolean);
+  if (!j || !Array.isArray(j.rows)) {
+    throw new Error(`/trade-logs/list?mode=${mode} returned no "rows" array — is ${REMOTE_URL} this app?`);
+  }
+  return j.rows.map((r) => r && r.date).filter(Boolean);
 }
 
-/** Raw records (trades AND settings snapshots) for one mode+date. */
+/**
+ * Raw records (trades AND settings snapshots) for one mode+date.
+ * Remote shape is `{ trades: [...] }`; same reasoning as above about not
+ * guessing at alternative keys.
+ */
 async function sourceRecords(mode, date) {
   if (!REMOTE) return tradeLogger.readDailyTrades(mode, date);
   // Same rule as above: omit ?page and /view returns the whole day.
   const j = await getJson(
     `/trade-logs/view?mode=${encodeURIComponent(mode)}&date=${encodeURIComponent(date)}`
   );
-  return (j && j.trades) || [];
+  if (!j || !Array.isArray(j.trades)) {
+    throw new Error(`/trade-logs/view?mode=${mode}&date=${date} returned no "trades" array`);
+  }
+  return j.trades;
 }
 
 // ---------------------------------------------------------------- helpers
@@ -165,12 +181,28 @@ function assertMode(mode) {
 }
 
 /**
+ * Validate a date up front, matching the route's own YYYY-MM-DD rule.
+ * Without this the two sources disagree on a malformed date: local disk just
+ * finds no file and reports an empty day, while the route rejects it with a
+ * bare HTTP 400. Same input should give the same answer either way.
+ */
+function assertDate(date) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date))) {
+    throw new Error(`bad date "${date}" — expected YYYY-MM-DD.`);
+  }
+}
+
+/**
  * Read trades for one mode across a date range (inclusive), newest date first.
  * Dates absent from disk are skipped silently — a day with no session is not an
  * error. settings_snapshot lines are filtered out; only real trades come back.
  */
 async function readRange(mode, from, to) {
   assertMode(mode);
+  // from/to are optional, but a malformed one would silently filter everything
+  // out and read as "no trades" — reject it instead.
+  if (from != null) assertDate(from);
+  if (to != null) assertDate(to);
   const dates = (await sourceDates(mode))
     .filter((d) => (!from || d >= from) && (!to || d <= to));
 
@@ -354,6 +386,7 @@ const TOOLS = [
     },
     async handler({ mode, date }) {
       assertMode(mode);
+      assertDate(date);
       const { snapshots } = aiExport.splitRecords(await sourceRecords(mode, date));
       return {
         mode,
@@ -386,6 +419,8 @@ const TOOLS = [
     },
     async handler({ mode, from, to }) {
       assertMode(mode);
+      if (from != null) assertDate(from);
+      if (to != null) assertDate(to);
       const dates = (await sourceDates(mode))
         .filter((d) => (!from || d >= from) && (!to || d <= to));
       // Feed aiExport the raw records (trades AND snapshots) — it splits them
