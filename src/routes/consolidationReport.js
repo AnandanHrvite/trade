@@ -143,6 +143,28 @@ const LIVE_SOURCES = [
   { mode: "EARLYBIRD",  file: "early_bird_live_trades.json" },
 ];
 
+// Mode → the strategy's Paper Trade History page. Clicking a per-strategy P&L cell
+// in the Daily Breakdown opens that page in a new tab, deep-linked to the day
+// (?date=YYYY-MM-DD) so the matching session card is expanded on arrival.
+// Paper only: no strategy serves a /history page for its live book, so a Live-only
+// cell stays plain text rather than linking to trades it doesn't show.
+const PAPER_HISTORY_PATH = {
+  EMA_RSI_ST:        "/ema_rsi_st-paper/history",
+  EMA_RSI_ST_V2:     "/ema_rsi_st_v2-paper/history",
+  BN_EMA_RSI_ST_V2:  "/bn_ema_rsi_st_v2-paper/history",
+  BB_RSI:            "/bb_rsi-paper/history",
+  PA:                "/pa-paper/history",
+  ORB:               "/orb-paper/history",
+  EMA9VWAP:          "/ema9vwap-paper/history",
+  TREND_PB:          "/trend-pb-paper/history",
+  TDS:               "/trend-day-scalp-paper/history",
+  HA_SCALP:          "/ha-scalp-paper/history",
+  RSI_PIVOT_ST:      "/rsi-pivot-st-paper/history",
+  BN_PIVOT_RSI_ST:   "/bn-pivot-rsi-st-paper/history",
+  SIMPLE930:         "/simple930-paper/history",
+  EARLYBIRD:         "/early-bird-paper/history",
+};
+
 function safeRead(p) {
   try {
     if (!fs.existsSync(p)) return {};
@@ -270,6 +292,12 @@ ${multiSelectCSS()}
     .tbl tfoot td{border-top:1px solid #17324f;font-weight:700;color:#e0eaf8;background:#04090f;}
     .cnt{font-size:0.56rem;color:var(--muted-1,#8ba1c2);font-weight:400;}
     .muted{color:var(--muted-2,#6d85a8);}
+    /* Per-strategy P&L cells open that strategy's paper history for the day.
+       Block + min-height keeps a comfortable tap target on a phone. */
+    .pnl-link{display:block;text-decoration:none;color:inherit;border-radius:5px;margin:-3px -4px;padding:3px 4px;min-height:38px;}
+    .pnl-link:hover,.pnl-link:focus-visible{background:rgba(56,189,248,0.12);outline:none;box-shadow:inset 0 0 0 1px rgba(56,189,248,0.45);}
+    :root[data-theme="light"] .pnl-link:hover,:root[data-theme="light"] .pnl-link:focus-visible{background:rgba(2,132,199,0.10);}
+    @media print{.pnl-link{color:inherit!important;background:none!important;box-shadow:none!important;}}
     .badge-mode{padding:2px 6px;border-radius:4px;font-size:0.52rem;font-weight:700;letter-spacing:0.5px;}
     .badge-EMA_RSI_ST{background:rgba(59,130,246,0.12);color:#3b82f6;}
     .badge-EMA_RSI_ST_V2{background:rgba(56,189,248,0.12);color:#38bdf8;}
@@ -392,6 +420,7 @@ const VIX_BY_DATE = ${JSON.stringify(vixByDate)};   // { 'YYYY-MM-DD': vixClose 
 const VIX_NOTE    = ${JSON.stringify(vixNote)};     // why the VIX column is empty, if it is
 const MODES = ${JSON.stringify(enabled.map(s => s.mode))};
 const MODE_LABEL = ${JSON.stringify(Object.fromEntries(enabled.map(s => [s.mode, s.mode])))};
+const HIST_PATH  = ${JSON.stringify(PAPER_HISTORY_PATH)};   // mode → paper history page
 
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function inr2(n){ return (n<0?'-':'')+'₹'+Math.abs(n).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}); }
@@ -450,8 +479,9 @@ function byDay(arr){
     const d=t.date||'—';
     if(!m.has(d)) m.set(d,{ date:d, modes:{}, n:0, wins:0, losses:0, net:0 });
     const g=m.get(d);
-    if(!g.modes[t.mode]) g.modes[t.mode]={n:0,pnl:0};
+    if(!g.modes[t.mode]) g.modes[t.mode]={n:0,pnl:0,paperN:0};
     g.modes[t.mode].n++; g.modes[t.mode].pnl+=t.pnl;
+    if(t.book==='paper') g.modes[t.mode].paperN++;
     g.n++; g.net+=t.pnl;
     if(t.pnl>0) g.wins++; else if(t.pnl<0) g.losses++;
   }
@@ -543,7 +573,13 @@ function render(){
     for(const mo of activeModes){
       const c=g.modes[mo];
       if(!c || !c.n){ row+='<td class="muted">—</td>'; continue; }
-      row+='<td><span style="color:'+pc(c.pnl)+'">'+inr2(c.pnl)+'</span><br><span class="cnt">'+c.n+' trade'+(c.n>1?'s':'')+'</span></td>';
+      const cell='<span style="color:'+pc(c.pnl)+'">'+inr2(c.pnl)+'</span><br><span class="cnt">'+c.n+' trade'+(c.n>1?'s':'')+'</span>';
+      // Only a cell that actually holds paper trades gets the deep link — a Live-only
+      // cell would otherwise open a paper page showing different trades.
+      const hp=HIST_PATH[mo];
+      row+= (hp && c.paperN)
+        ? '<td><a class="pnl-link" href="'+hp+'?date='+encodeURIComponent(g.date)+'" target="_blank" rel="noopener" title="Open '+esc(MODE_LABEL[mo]||mo)+' paper history for '+esc(prettyDate(g.date))+'">'+cell+'</a></td>'
+        : '<td>'+cell+'</td>';
     }
     const wr=g.n?(g.wins/g.n*100):0;
     // Trades column carries the whole W/L/Win% story; the P&L colour alone says

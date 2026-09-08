@@ -1288,7 +1288,7 @@ function buildSessionCards(sessions, opts) {
     }).join("");
 
     return `
-    <div class="session-card">
+    <div class="session-card" data-session-date="${istDayFromAny(s.date)}">
       <div class="session-head" onclick="this.parentElement.classList.toggle('open')">
         <div>
           <div class="session-meta">Session ${sIdx} &middot; ${istDayFromAny(s.date)} &middot; ${s.strategy || "—"}</div>
@@ -1496,6 +1496,19 @@ ${dayViewAnalyticsJS({ routePrefix: cfg.routePrefix, startCap, filter })}
 ${cfg.extraAnalyticsJS || ""}
 ${dailyFilesClusterJS(cfg.routePrefix, cfg.allowDailyFileDelete)}
 ${tableEnhancerJS()}
+// Deep-link from the Consolidation Report: /<mode>-paper/history?date=YYYY-MM-DD
+// opens every session card recorded on that day and scrolls to the first one, so
+// the P&L cell that was clicked lands directly on its trade rows.
+(function(){
+  var want = new URLSearchParams(location.search).get('date');
+  if (!want) return;
+  var cards = document.querySelectorAll('.session-card[data-session-date="' + CSS.escape(want) + '"]');
+  if (!cards.length) return;
+  cards.forEach(function(c){ c.classList.add('open'); });
+  cards[0].scrollIntoView({ behavior: 'smooth', block: 'start' });
+  cards[0].style.outline = '2px solid #3b82f6';
+  cards[0].style.outlineOffset = '2px';
+})();
 </script>
 </body>
 </html>`;
