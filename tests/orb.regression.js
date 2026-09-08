@@ -762,7 +762,7 @@ const ENTRIES  = ALL_SIGS.filter(x => x.sig.signal !== "NONE");
       const run = (src) => {
         process.env.ORB_SL_SOURCE = src;
         return allSignals().filter(x => x.sig.signal !== "NONE")
-                           .map(x => ({ t: x.bar.time, side: x.sig.side, entry: x.sig.entrySpot, sl: x.sig.slSpot }));
+                           .map(x => ({ t: x.bar.time, side: x.sig.side, entry: x.sig.entrySpot, sl: x.sig.slSpot, atr5: x.sig.atr5 }));
       };
       const base = run("breakout"), st = run("supertrend");
       assert.strictEqual(st.length, base.length, "the stop anchor changed HOW MANY trades are taken");
@@ -774,11 +774,23 @@ const ENTRIES  = ALL_SIGS.filter(x => x.sig.signal !== "NONE");
         const gi = IDX.get(s.t);
         const win = CANDLES.slice(Math.max(0, gi - 199), gi + 1);
         const line = computeSuperTrend(win, 10, 2)[win.length - 1];
-        // Either the line itself, or — during warm-up, when there is no line — the
-        // documented fallback to the entry candle's own extreme.
+        // The stop is the WIDER of the structural anchor and the ATR stop
+        // (orb_breakout: slSpot = min/max(structural, atrStop)), so there are three
+        // legitimate outcomes, not two: the SuperTrend line, the warm-up fallback to
+        // the entry candle's own extreme when there is no line, or — whenever
+        // ORB_SL_ATR_MULT is on and its stop is the wider of the two — the ATR stop.
+        const atrMult = parseFloat(process.env.ORB_SL_ATR_MULT || "0");
         const onLine = line && line.value != null && Math.abs(line.value - s.sl) < 0.011;
         const fallback = Math.abs((s.side === "CE" ? CANDLES[gi].low : CANDLES[gi].high) - s.sl) < 0.011;
-        assert.ok(onLine || fallback, `stop ${s.sl} is neither the SuperTrend line nor the warm-up fallback`);
+        const atrStop = (s.atr5 != null && atrMult > 0)
+          ? (s.side === "CE" ? s.entry - atrMult * s.atr5 : s.entry + atrMult * s.atr5)
+          : null;
+        // sig.atr5 is rounded to 2dp while the engine multiplies the RAW atr5, so the
+        // rebuilt ATR stop can sit up to mult x 0.005 away from the real one. Tolerance
+        // scales with the multiplier rather than the 0.011 used for the exact anchors.
+        const onAtr = atrStop != null && Math.abs(atrStop - s.sl) < (0.011 + atrMult * 0.005);
+        assert.ok(onLine || fallback || onAtr,
+          `stop ${s.sl} is none of the SuperTrend line, the warm-up fallback or the ${atrMult}xATR5 stop`);
       });
     } finally { if (snap === undefined) delete process.env.ORB_SL_SOURCE; else process.env.ORB_SL_SOURCE = snap; }
   });
