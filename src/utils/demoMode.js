@@ -197,6 +197,22 @@ function allows(method, path) {
 /** Convenience for the sidebar: may a demo session open this link? */
 function allowsPage(href) { return allows("GET", href).ok; }
 
+// ── Branding ────────────────────────────────────────────────────────────────
+// The demo is shown to people outside the household, so it carries the neutral
+// product name and never the owner's personal dedication. Applied as a rewrite
+// of the outgoing HTML rather than a per-page conditional: the name is spelled
+// out in ~16 files (page <title> tags, the report header, the sidebar brand)
+// and a page written next year would otherwise reintroduce it silently.
+const DEMO_BRAND = "Trading Bot";
+// Matches the dedication with or without its Om marks, and swallows a trailing
+// "Trading Bot" so "Palani Andawar Trading Bot" does not become it twice. The
+// trailing group is one alternation rather than two optional pieces — split up,
+// it would eat the "—" separator in "… \u0950 — Dashboard" and glue the words.
+const BRAND_RE = /(?:\u0BD0\s*)?Palani\s+Andawar(?:\s+Thunai)?(?:\s*\u0950)?(?:\s*[\u2014-]\s*Trading\s+BOT\b|\s+Trading\s+Bot\b)?/gi;
+
+/** Replace the owner's dedication with the product name. */
+function rebrand(html) { return String(html).replace(BRAND_RE, DEMO_BRAND); }
+
 // ── Page chrome ─────────────────────────────────────────────────────────────
 
 /** Ribbon + disabled-control styling. Injected with the guard script. */
@@ -324,6 +340,7 @@ module.exports = {
   runAsDemo, isDemo,
   allows, allowsPage,
   guardCSS, guardJS, ribbonHTML, blockedPageHTML,
+  rebrand, DEMO_BRAND,
   // exported for the regression suite
   ACTION_SEGMENTS, DENIED_PREFIXES,
 };

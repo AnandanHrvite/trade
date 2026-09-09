@@ -757,8 +757,8 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
 <div class="sidebar-overlay" id="sb-overlay" onclick="closeSidebar()"></div>
 <nav class="sidebar" id="main-sidebar">
   <div class="sb-brand">
-    <div class="sb-brand-name">ௐ Palani Andawar Thunai ॐ</div>
-    <div class="sb-brand-sub">TRADING BOT</div>
+    <div class="sb-brand-name">${isDemoSession ? 'Trading Bot' : 'ௐ Palani Andawar Thunai ॐ'}</div>
+    <div class="sb-brand-sub">${isDemoSession ? 'DEMO' : 'TRADING BOT'}</div>
   </div>
   <div class="sb-nav">
     ${navItems}

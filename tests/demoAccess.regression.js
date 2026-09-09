@@ -220,6 +220,64 @@ check("owner-only banners are not rendered for a demo session", () => {
     "the socket / Telegram / backup banners still render in a demo session");
 });
 
+section("GROUP 5 — the demo carries the product name, never the owner's");
+
+check("the dedication is rewritten out of every demo response", () => {
+  const forms = [
+    "<title>\u0BD0 Palani Andawar Thunai \u0950 \u2014 Dashboard</title>",
+    "<title>Login Logs \u2014 Palani Andawar Trading Bot</title>",
+    "<title>Backtest \u2014 \u0BD0 Palani Andawar Thunai \u0950</title>",
+    "<div class=\"rh-brand\">\u0BD0 Palani Andawar Thunai \u0950<br>Generated x</div>",
+  ];
+  for (const f of forms) {
+    const out = demo.rebrand(f);
+    assert.ok(!/Palani|Andawar|Thunai/.test(out), `dedication survived the rewrite: ${out}`);
+    assert.ok(/Trading Bot/.test(out), `product name missing after rewrite: ${out}`);
+    assert.ok(!/Trading Bot\s*Trading Bot/i.test(out), `name doubled up: ${out}`);
+  }
+  // The separator around a title must survive — "Logs \u2014 Palani…" keeps its spacing.
+  assert.strictEqual(demo.rebrand("<title>Login Logs \u2014 Palani Andawar Trading Bot</title>"),
+                     "<title>Login Logs \u2014 Trading Bot</title>");
+});
+
+check("the demo response path actually applies the rewrite", () => {
+  assert.ok(/demoMode\.rebrand\(body\)/.test(appSrc),
+    "the demo res.send wrapper never rebrands — page titles would still carry the dedication");
+});
+
+check("the sidebar brand is swapped for a demo session", () => {
+  const nav = read("utils/sharedNav.js");
+  assert.ok(/sb-brand-name[\s\S]{0,120}isDemoSession \? 'Trading Bot'/.test(nav),
+    "the sidebar still renders the dedication as its brand in a demo session");
+});
+
+check("no source file gains a NEW spelling the rewrite would miss", () => {
+  // The rewrite is a safety net over ~16 files; this is what tells us when a
+  // 17th spelling appears that the regex was never taught.
+  const fs2 = require("fs");
+  const files = [];
+  const walk = (dir) => {
+    for (const e of fs2.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) walk(full);
+      else if (e.name.endsWith(".js")) files.push(full);
+    }
+  };
+  walk(SRC);
+  const missed = [];
+  for (const f of files) {
+    // demoMode.js spells the name inside the PATTERN itself — matching there is
+    // the rewrite working, not a page that leaks it.
+    if (path.basename(f) === "demoMode.js") continue;
+    const txt = fs2.readFileSync(f, "utf-8");
+    for (const line of txt.split("\n")) {
+      if (!/Palani|Andawar|Thunai/.test(line)) continue;
+      if (/Palani|Andawar|Thunai/.test(demo.rebrand(line))) missed.push(path.relative(SRC, f) + ": " + line.trim().slice(0, 80));
+    }
+  }
+  assert.deepStrictEqual(missed, [], `these spellings survive rebrand():\n  ${missed.join("\n  ")}`);
+});
+
 check("the sidebar hides what the policy refuses", () => {
   const nav = decomment(read("utils/sharedNav.js"));
   assert.ok(/demoMode\.allowsPage\(/.test(nav),

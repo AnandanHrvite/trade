@@ -706,7 +706,10 @@ app.use((req, res, next) => {
     if (typeof body !== "string" || !/^\s*<(!doctype html|html)\b/i.test(body)) return send(body);
     const head = `<style>${demoMode.guardCSS()}</style>`;
     const tail = demoMode.ribbonHTML() + `<script>${demoMode.guardJS()}</script>`;
-    let out = body;
+    // The demo carries the neutral product name only — page titles and headers
+    // spell the owner's dedication out in ~16 files, so it is rewritten here
+    // once rather than conditioned per page.
+    let out = demoMode.rebrand(body);
     const h = out.indexOf("</head>");
     out = h === -1 ? head + out : out.slice(0, h) + head + out.slice(h);
     const b = out.lastIndexOf("</body>");
