@@ -11,6 +11,7 @@
  */
 
 const { resolveTheme } = require('./theme');
+const demoMode = require('./demoMode');   // read-only stakeholder session
 
 // Canonical strategy list + their Settings toggle keys, in sidebar order.
 // Single source of truth for "which strategies is this install running?" so
@@ -51,6 +52,10 @@ function enabledStrategies() {
 }
 
 function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
+  // Read-only demo session? Read from the request context rather than a caller
+  // argument — every page in the app calls buildSidebar, and none of them would
+  // have been updated to pass a flag they know nothing about.
+  const isDemoSession = demoMode.isDemo();
   // Import bb_rsi/primary/PA/ORB state inline to avoid circular dependency issues
   let _bbRsiMode = null;
   let _primaryMode = null;
@@ -656,7 +661,13 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   }
 
   function renderSection(section) {
-    const items = section.items.map(renderItem).join('');
+    // A demo session sees only what its policy would actually serve, so the
+    // stakeholder never clicks a menu item that answers with a refusal page.
+    const visible = isDemoSession
+      ? section.items.filter(p => demoMode.allowsPage(p.href))
+      : section.items;
+    if (!visible.length) return '';
+    const items = visible.map(renderItem).join('');
     if (section.collapsible && section.header) {
       const gid = section.groupId || 'nav-' + section.header.toLowerCase().replace(/\s+/g, '-');
       const collapsed = section.collapsed ? ' collapsed' : '';
@@ -687,7 +698,11 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
 
   function renderParents() {
     return parentDefs.map(pd => {
-      const children = sections.filter(sec => sec.parent === pd.key).map(renderSection).join('')
+      const rendered = sections.filter(sec => sec.parent === pd.key).map(renderSection).filter(Boolean);
+      // In a demo session a parent with no demo-eligible strategy page left is
+      // dropped entirely rather than rendered as an empty accordion.
+      if (isDemoSession && !rendered.length) return '';
+      const children = rendered.join('')
         || `<div class="sb-parent-empty">No strategies yet</div>`;
       const collapsed = parentOpen[pd.key] ? '' : ' collapsed';
       return `<div class="sb-section sb-parent">
@@ -706,11 +721,34 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     return renderSection(section);
   }).join('');
 
-  const bottomBtns = [
+  // Start / Stop / Exit are the sidebar's only write controls — a demo session
+  // gets a badge in their place instead of buttons the server would refuse.
+  const bottomBtns = isDemoSession
+    ? `<div class="sb-demo-pill" title="Signed in with the demo login — viewing only">\u{1F441} DEMO \u00b7 READ-ONLY</div>`
+    : [
     showExitBtn  ? `<button onclick="${exitBtnJs}"  class="sb-action-btn sb-exit-btn">${exitLabel}</button>`  : '',
     showStopBtn  ? `<button onclick="${stopBtnJs}"  class="sb-action-btn sb-stop-btn">${stopLabel}</button>`  : '',
     showStartBtn ? `<button onclick="${startBtnJs}" class="sb-action-btn sb-start-btn">${startLabel}</button>` : '',
   ].filter(Boolean).join('\n');
+
+  // Operator banners: broker re-login, Telegram health and the backup nag.
+  // All three are the owner's problem, and two of them link straight into
+  // routes a demo session is refused — so a demo simply doesn't get them.
+  const operatorBanners = isDemoSession ? '' : `<div id="socket-broken-banner" role="alert" style="display:none;position:fixed;top:0;left:0;right:0;z-index:99999;background:#7f1d1d;color:#fff;font-family:'IBM Plex Mono',monospace;font-size:0.82rem;font-weight:600;padding:10px 16px;text-align:center;border-bottom:2px solid #ef4444;box-shadow:0 4px 16px rgba(0,0,0,0.4);">
+  <span id="socket-broken-msg">⚠️ Broker socket disconnected</span>
+  <a href="/auth/login" style="color:#fff;text-decoration:underline;margin-left:14px;font-weight:700;">Re-login →</a>
+  <button onclick="document.getElementById('socket-broken-banner').style.display='none';" aria-label="Dismiss" style="margin-left:14px;background:transparent;border:1px solid rgba(255,255,255,0.4);color:#fff;padding:2px 9px;border-radius:4px;font-family:inherit;font-size:0.7rem;cursor:pointer;">Dismiss</button>
+</div>
+<div id="telegram-broken-banner" role="alert" style="display:none;position:fixed;top:0;left:0;right:0;z-index:99997;background:#78350f;color:#fff;font-family:'IBM Plex Mono',monospace;font-size:0.8rem;font-weight:600;padding:9px 16px;text-align:center;border-bottom:2px solid #f59e0b;box-shadow:0 4px 16px rgba(0,0,0,0.4);">
+  <span id="telegram-broken-msg">⚠️ Telegram alerts are failing</span>
+  <button onclick="document.getElementById('telegram-broken-banner').style.display='none';" aria-label="Dismiss" style="margin-left:14px;background:transparent;border:1px solid rgba(255,255,255,0.4);color:#fff;padding:2px 9px;border-radius:4px;font-family:inherit;font-size:0.7rem;cursor:pointer;">Dismiss</button>
+</div>
+<div id="backup-nag-banner" role="status" style="display:none;position:fixed;top:0;left:0;right:0;z-index:99998;background:#1e3a5f;color:#fff;font-family:'IBM Plex Mono',monospace;font-size:0.8rem;font-weight:600;padding:9px 16px;text-align:center;border-bottom:2px solid #3b82f6;box-shadow:0 4px 16px rgba(0,0,0,0.4);">
+  <span id="backup-nag-msg">📦 Today's data backup is ready</span>
+  <a id="backup-nag-link" href="/backup/download" style="color:#fff;text-decoration:underline;margin-left:14px;font-weight:700;">⬇ Download now</a>
+  <span id="backup-nag-hint" style="margin-left:14px;font-size:0.66rem;color:#bcd2f0;">(stays until you download today's copy)</span>
+  <button id="backup-nag-close" type="button" aria-label="Dismiss" title="Dismiss for this session" style="position:absolute;top:50%;right:14px;transform:translateY(-50%);background:transparent;border:none;color:#bcd2f0;font-size:1.1rem;line-height:1;cursor:pointer;padding:2px 6px;">✕</button>
+</div>`;
 
   return `
 <button class="hamburger" onclick="toggleSidebar()" aria-label="Menu" style="display:none;">
@@ -738,21 +776,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   <span class="deploy-chip-dot" id="deploy-chip-dot"></span>
   <span id="deploy-chip-label"></span>
 </div>
-<div id="socket-broken-banner" role="alert" style="display:none;position:fixed;top:0;left:0;right:0;z-index:99999;background:#7f1d1d;color:#fff;font-family:'IBM Plex Mono',monospace;font-size:0.82rem;font-weight:600;padding:10px 16px;text-align:center;border-bottom:2px solid #ef4444;box-shadow:0 4px 16px rgba(0,0,0,0.4);">
-  <span id="socket-broken-msg">⚠️ Broker socket disconnected</span>
-  <a href="/auth/login" style="color:#fff;text-decoration:underline;margin-left:14px;font-weight:700;">Re-login →</a>
-  <button onclick="document.getElementById('socket-broken-banner').style.display='none';" aria-label="Dismiss" style="margin-left:14px;background:transparent;border:1px solid rgba(255,255,255,0.4);color:#fff;padding:2px 9px;border-radius:4px;font-family:inherit;font-size:0.7rem;cursor:pointer;">Dismiss</button>
-</div>
-<div id="telegram-broken-banner" role="alert" style="display:none;position:fixed;top:0;left:0;right:0;z-index:99997;background:#78350f;color:#fff;font-family:'IBM Plex Mono',monospace;font-size:0.8rem;font-weight:600;padding:9px 16px;text-align:center;border-bottom:2px solid #f59e0b;box-shadow:0 4px 16px rgba(0,0,0,0.4);">
-  <span id="telegram-broken-msg">⚠️ Telegram alerts are failing</span>
-  <button onclick="document.getElementById('telegram-broken-banner').style.display='none';" aria-label="Dismiss" style="margin-left:14px;background:transparent;border:1px solid rgba(255,255,255,0.4);color:#fff;padding:2px 9px;border-radius:4px;font-family:inherit;font-size:0.7rem;cursor:pointer;">Dismiss</button>
-</div>
-<div id="backup-nag-banner" role="status" style="display:none;position:fixed;top:0;left:0;right:0;z-index:99998;background:#1e3a5f;color:#fff;font-family:'IBM Plex Mono',monospace;font-size:0.8rem;font-weight:600;padding:9px 16px;text-align:center;border-bottom:2px solid #3b82f6;box-shadow:0 4px 16px rgba(0,0,0,0.4);">
-  <span id="backup-nag-msg">📦 Today's data backup is ready</span>
-  <a id="backup-nag-link" href="/backup/download" style="color:#fff;text-decoration:underline;margin-left:14px;font-weight:700;">⬇ Download now</a>
-  <span id="backup-nag-hint" style="margin-left:14px;font-size:0.66rem;color:#bcd2f0;">(stays until you download today's copy)</span>
-  <button id="backup-nag-close" type="button" aria-label="Dismiss" title="Dismiss for this session" style="position:absolute;top:50%;right:14px;transform:translateY(-50%);background:transparent;border:none;color:#bcd2f0;font-size:1.1rem;line-height:1;cursor:pointer;padding:2px 6px;">✕</button>
-</div>
+${operatorBanners}
 <script>
 window.__LOGIN_GATE_ACTIVE = ${!!process.env.LOGIN_SECRET};
 (function(){
@@ -1400,6 +1424,9 @@ function sidebarCSS() {
     .sb-nav-item:hover{color:#7aacf0;background:rgba(59,130,246,0.04);}
     .sb-nav-item.active{color:#60a5fa;background:rgba(59,130,246,0.08);border-left-color:#3b82f6;}
     .sb-nav-item.disabled{color:var(--muted-2,#6d85a8);cursor:not-allowed;opacity:0.4;pointer-events:none;}
+    .sb-demo-pill{margin:6px 0 2px;padding:6px 8px;border-radius:8px;text-align:center;
+      font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:0.58rem;font-weight:700;letter-spacing:0.1em;
+      color:#fbbf24;background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.34);}
     .sb-nav-icon{font-size:13px;width:16px;flex-shrink:0;}
     .sb-nav-badge{margin-left:auto;font-size:0.55rem;font-weight:700;padding:1px 5px;border-radius:3px;background:rgba(59,130,246,0.15);color:#60a5fa;border:0.5px solid rgba(59,130,246,0.3);white-space:nowrap;}
     .sb-nav-badge.live{background:rgba(239,68,68,0.15);color:#f87171;border-color:rgba(239,68,68,0.3);animation:pulse 1.2s infinite;}

@@ -31,6 +31,7 @@ const sharedSocketState = require("./utils/sharedSocketState");
 
 const crypto = require("crypto");
 const loginLogStore = require("./utils/loginLogStore");
+const demoMode      = require("./utils/demoMode");   // read-only stakeholder login
 const fyersBroker   = require("./services/fyersBroker");
 const { sendTelegram, sendTelegramSync, getTelegramHealth, isConfigured: telegramConfigured } = require("./utils/notify");
 const consolidatedEodReporter = require("./utils/consolidatedEodReporter");
@@ -505,6 +506,16 @@ app.post("/login", (req, res) => {
     return res.redirect("/");
   }
 
+  // ── Demo password — same form, read-only session ───────────────────────────
+  // Checked AFTER the owner password so a mis-set DEMO_LOGIN_SECRET can never
+  // downgrade the owner's own login (isEnabled() also refuses equal secrets).
+  if (demoMode.isEnabled() && req.body.password === demoMode.demoSecret()) {
+    delete _loginAttempts[ip];
+    res.setHeader("Set-Cookie", `${LOGIN_COOKIE}=${demoMode.token()}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${loginMaxAge()}`);
+    console.log(`👁 [LOGIN] Demo (read-only) session opened from ${ip}`);
+    return res.redirect("/");
+  }
+
   // ── Failed attempt — increment rate limit counter ──────────────────────────
   if (_loginAttempts[ip]) _loginAttempts[ip].count++;
   else _loginAttempts[ip] = { count: 1, firstAttempt: now };
@@ -665,11 +676,53 @@ app.use((req, res, next) => {
     res.setHeader("Set-Cookie", `${LOGIN_COOKIE}=${expectedToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${loginMaxAge()}`);
     return next();
   }
+  // Demo (read-only) session — same cookie, a different token. The request runs
+  // inside demoMode's async context so the sidebar and page helpers, which never
+  // see `req`, can render the read-only variant.
+  if (demoMode.isEnabled() && cookies[LOGIN_COOKIE] === demoMode.token()) {
+    res.setHeader("Set-Cookie", `${LOGIN_COOKIE}=${demoMode.token()}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${loginMaxAge()}`);
+    return demoMode.runAsDemo(true, () => next());
+  }
   // Not authenticated — redirect HTML pages, block API calls
   if (req.headers.accept && req.headers.accept.includes("text/html")) {
     return res.redirect("/login");
   }
   return res.status(401).json({ success: false, error: "Not authenticated" });
+});
+
+// ── Demo gate — the read-only session's only real boundary ──────────────────
+// Runs immediately after login so nothing downstream (route, API_SECRET check,
+// rate limiter) can be reached by a demo request the policy refuses. Everything
+// the demo *is* allowed to see gets the ribbon + in-page guard injected here,
+// which is why this wraps res.send rather than living in a page helper: the
+// routers render their own HTML with no shared layout.
+app.use((req, res, next) => {
+  if (!demoMode.isDemo()) return next();
+
+  // Wrap res.send FIRST so the refusal page below carries the ribbon too — it
+  // is a page of the demo like any other, and it renders the shared sidebar.
+  const send = res.send.bind(res);
+  res.send = (body) => {
+    if (typeof body !== "string" || !/^\s*<(!doctype html|html)\b/i.test(body)) return send(body);
+    const head = `<style>${demoMode.guardCSS()}</style>`;
+    const tail = demoMode.ribbonHTML() + `<script>${demoMode.guardJS()}</script>`;
+    let out = body;
+    const h = out.indexOf("</head>");
+    out = h === -1 ? head + out : out.slice(0, h) + head + out.slice(h);
+    const b = out.lastIndexOf("</body>");
+    return send(b === -1 ? out + tail : out.slice(0, b) + tail + out.slice(b));
+  };
+
+  const verdict = demoMode.allows(req.method, req.path);
+  if (!verdict.ok) {
+    console.warn(`👁 [DEMO] refused ${req.method} ${req.path} — ${verdict.reason}`);
+    if (req.headers.accept && req.headers.accept.includes("text/html")) {
+      res.setHeader("Content-Type", "text/html");
+      return res.status(403).send(demoMode.blockedPageHTML(verdict.reason));
+    }
+    return res.status(403).json({ success: false, error: verdict.reason, demo: true });
+  }
+  next();
 });
 
 // ── Local security — simple secret token ────────────────────────────────────
@@ -1304,6 +1357,9 @@ app.get("/", (req, res) => {
   const showDashboard = (process.env.UI_SHOW_DASHBOARD || 'false').toLowerCase() === 'true';
   if (!showDashboard) {
     const qs = req.originalUrl.indexOf("?");
+    // A demo session cannot open Settings — landing it there would greet every
+    // stakeholder with a refusal page. Send it to the read-only monitor instead.
+    if (demoMode.isDemo()) return res.redirect("/realtime");
     return res.redirect("/settings" + (qs > -1 ? req.originalUrl.slice(qs) : ""));
   }
 

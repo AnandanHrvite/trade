@@ -1288,6 +1288,11 @@ const SETTINGS_SCHEMA = [
       { key: "LOGIN_RATE_WINDOW_MIN", label: "Login: Lockout Window (min)",   type: "number", min: 1,  max: 1440, step: 1, effect: EFFECT.INSTANT, desc: "Lockout window length, in minutes.",                                          default: "15" },
       { key: "LOGIN_OTP_MOBILE",      label: "Login: OTP Mobile Number",      type: "text",   effect: EFFECT.INSTANT, desc: "Typing this number on a locked-out login page sends an OTP to Telegram that clears the lockout (blank = off).", default: "" },
 
+      // ── Demo login (read-only stakeholder session) ──────────────────────────
+      { key: "DEMO_LOGIN_ENABLED", label: "Demo Login", type: "toggle", effect: EFFECT.INSTANT, desc: "Accept a second, read-only password on the login page. Needs a Login Password set, and a Demo Password different from it.", default: "false", subheader: "Demo Login (read-only)" },
+      { key: "DEMO_LOGIN_SECRET",  label: "Demo Password", type: "password", effect: EFFECT.INSTANT, desc: "Password that opens the read-only demo session. Every action route is refused for it: no start/stop/exit, no settings, no downloads, no broker login." },
+      { key: "DEMO_SHOW_LIVE",     label: "Demo: Include Live Pages", type: "toggle", effect: EFFECT.INSTANT, desc: "Let the demo see Live and Live (Harness) pages plus Live Traded History and P&L History. OFF = paper, backtest and monitors only.", default: "false" },
+
       // ── Write rate limit (POST/PUT/DELETE/PATCH per IP) ─────────────────────
       { key: "WRITE_RATE_PER_MIN", label: "Write Rate (req/min/IP)", type: "number", min: 0,   max: 6000, step: 10, effect: EFFECT.INSTANT, desc: "Max state-changing requests per minute per IP (0 = off).", default: "120", subheader: "Rate Limits" },
       { key: "WRITE_RATE_BURST",   label: "Write Rate Burst",        type: "number", min: 1,   max: 500,  step: 1,  effect: EFFECT.INSTANT, desc: "Short-burst request allowance.",  default: "30"  },
@@ -1431,6 +1436,7 @@ const IMMEDIATE_KEYS = new Set([
   "NIFTY_SPOT_FALLBACK", "CACHE_MAX_DAYS",
   "BB_RSI_ENABLED", "BB_RSI_MODE_ENABLED", "BB_RSI_VIX_ENABLED", "BB_RSI_EXPIRY_DAY_ONLY",
   "API_SECRET", "LOGIN_SECRET", "LOGIN_OTP_MOBILE", "UI_THEME",
+  "DEMO_LOGIN_ENABLED", "DEMO_LOGIN_SECRET", "DEMO_SHOW_LIVE",
   "UI_SHOW_SIMULATE", "UI_SHOW_COMPARE", "UI_SHOW_TRACKER",
   // EMA_RSI_ST thresholds — read from process.env inside getSignal() / per-tick on every candle
   "RSI_CE_MIN", "RSI_CE_MAX", "RSI_PE_MAX", "RSI_PE_MIN",
