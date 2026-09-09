@@ -211,27 +211,25 @@ const DEMO_BRAND = "Trading Bot";
 const BRAND_RE = /(?:\u0BD0\s*)?Palani\s+Andawar(?:\s+Thunai)?(?:\s*\u0950)?(?:\s*[\u2014-]\s*Trading\s+BOT\b|\s+Trading\s+Bot\b)?/gi;
 
 /** Replace the owner's dedication with the product name. */
-function rebrand(html) { return String(html).replace(BRAND_RE, DEMO_BRAND); }
+function rebrand(html) {
+  return String(html)
+    .replace(BRAND_RE, DEMO_BRAND)
+    // A few titles shout "Trading BOT"; the demo shows one spelling of the name.
+    .replace(/Trading\s+BOT\b/g, DEMO_BRAND);
+}
 
 // ── Page chrome ─────────────────────────────────────────────────────────────
 
 /** Ribbon + disabled-control styling. Injected with the guard script. */
 function guardCSS() {
   return `
-.demo-ribbon{position:fixed;top:0;left:0;right:0;z-index:99999;display:flex;align-items:center;
-  justify-content:center;gap:10px;padding:5px 12px;font-family:'IBM Plex Mono',ui-monospace,monospace;
-  font-size:0.6rem;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#0b1220;
-  background:linear-gradient(90deg,#fbbf24,#f59e0b);box-shadow:0 2px 12px rgba(0,0,0,0.35);}
-.demo-ribbon span.demo-sub{font-weight:500;letter-spacing:0.06em;text-transform:none;opacity:0.82;}
-body.demo-mode{padding-top:26px;}
-body.demo-mode .sidebar{top:26px;}
-.demo-blocked{opacity:0.42 !important;cursor:not-allowed !important;filter:grayscale(0.5);}
+.demo-blocked{display:none !important;}
 .demo-toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);z-index:100000;
   background:#1c1408;border:1px solid #f59e0b;color:#fbbf24;padding:10px 18px;border-radius:10px;
   font-family:'IBM Plex Sans',sans-serif;font-size:0.78rem;font-weight:600;
   box-shadow:0 12px 34px rgba(0,0,0,0.5);opacity:0;transition:opacity 0.18s;}
 .demo-toast.show{opacity:1;}
-@media(max-width:768px){.demo-ribbon{font-size:0.54rem;letter-spacing:0.08em;}}`;
+`;
 }
 
 /**
@@ -259,9 +257,8 @@ function guardJS() {
 
   // Anything whose label or handler names an action. Deliberately broad: a
   // false positive dims a button the server would have refused anyway.
-  var ACTION_RE = /start|stop|exit|save|delete|remove|reset|clear|restore|run\\b|apply|import|sync|place|order|refresh|kill|restart|square|cancel|download|export/i;
+  var ACTION_RE = /start|stop|exit|save|delete|remove|reset|clear|restore|\\brun\\b|apply|import|sync|place|order|kill|restart|square|download|export/i;
   function isAction(el){
-    if (el.closest && el.closest('.demo-ribbon')) return false;
     var txt = (el.textContent || '') + ' ' + (el.getAttribute('onclick') || '') + ' ' +
               (el.getAttribute('title') || '') + ' ' + (el.value || '');
     return ACTION_RE.test(txt);
@@ -272,6 +269,7 @@ function guardJS() {
       var el = nodes[i];
       if (el.__demoChecked) continue;
       el.__demoChecked = true;
+      // Hidden, not dimmed: a control the demo can never use is noise.
       if (isAction(el)) el.classList.add('demo-blocked');
     }
   }
@@ -320,14 +318,31 @@ function guardJS() {
 })();`;
 }
 
-/** The fixed banner that tells the viewer what session they are in. */
-function ribbonHTML() {
-  return `<div class="demo-ribbon">👁 Demo — read-only<span class="demo-sub">`
-       + `viewing only, no actions</span></div>`;
-}
+/**
+ * No page banner. The sidebar already says DEMO twice (brand sub-line and the
+ * read-only pill), and a fixed ribbon also painted itself a second time inside
+ * the Logs page's embedded tabs, which are a whole app shell in an iframe.
+ */
+function ribbonHTML() { return ""; }
 
-/** Page shown when a demo session reaches a route the policy refuses. */
-function blockedPageHTML(reason) {
+/**
+ * Page shown when a demo session reaches a route the policy refuses.
+ * `embedded` renders a bare card: the Logs page loads its tabs in iframes, and
+ * the full errorPage there paints a second sidebar inside the first.
+ */
+function blockedPageHTML(reason, embedded = false) {
+  if (embedded) {
+    return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/>
+<title>Not available in the demo</title><style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'IBM Plex Sans',-apple-system,sans-serif;background:#060810;color:#8899aa;
+  min-height:100vh;display:flex;align-items:center;justify-content:center;padding:28px;}
+.card{border:1px solid #7f1d1d;background:#0d1320;border-radius:12px;padding:26px 30px;text-align:center;max-width:380px;}
+.t{color:#ef4444;font-size:0.95rem;font-weight:700;margin:10px 0 8px;}
+.m{font-size:0.8rem;line-height:1.6;}
+</style></head><body><div class="card"><div style="font-size:1.8rem;">🚫</div>
+<div class="t">Not available in the demo</div><div class="m">${reason}</div></div></body></html>`;
+  }
   const { errorPage } = require("./sharedNav");
   return errorPage(
     "Not available in the demo",

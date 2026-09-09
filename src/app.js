@@ -721,7 +721,10 @@ app.use((req, res, next) => {
     console.warn(`👁 [DEMO] refused ${req.method} ${req.path} — ${verdict.reason}`);
     if (req.headers.accept && req.headers.accept.includes("text/html")) {
       res.setHeader("Content-Type", "text/html");
-      return res.status(403).send(demoMode.blockedPageHTML(verdict.reason));
+      // The Logs page loads its tabs in iframes (?embed=1); a refusal there gets
+      // a bare card instead of a second sidebar nested inside the first.
+      const embedded = req.query.embed === "1" || req.headers["sec-fetch-dest"] === "iframe";
+      return res.status(403).send(demoMode.blockedPageHTML(verdict.reason, embedded));
     }
     return res.status(403).json({ success: false, error: verdict.reason, demo: true });
   }

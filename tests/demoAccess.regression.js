@@ -278,6 +278,65 @@ check("no source file gains a NEW spelling the rewrite would miss", () => {
   assert.deepStrictEqual(missed, [], `these spellings survive rebrand():\n  ${missed.join("\n  ")}`);
 });
 
+section("GROUP 6 — the demo hides what it cannot use, and nests nothing");
+
+check("blocked controls are hidden, not dimmed", () => {
+  // A dimmed button the demo can never press is just noise on the screen.
+  assert.ok(/\.demo-blocked\{display:none/.test(demo.guardCSS()),
+    "demo-blocked still dims controls instead of hiding them");
+});
+
+check("no page ribbon — the sidebar already says DEMO", () => {
+  // The fixed ribbon painted itself twice on the Logs page, whose tabs are a
+  // second full app shell inside an iframe.
+  assert.strictEqual(demo.ribbonHTML(), "");
+});
+
+check("an embedded refusal renders a bare card, not a second app shell", () => {
+  const embedded = demo.blockedPageHTML("Not part of the demo.", true);
+  assert.ok(!/sb-nav-item|buildSidebar|class="sidebar"/.test(embedded),
+    "the iframe refusal page carries a whole sidebar — it nests inside the outer one");
+  assert.ok(/Not available in the demo/.test(embedded), "the bare card says nothing");
+  // The full-page form still gets the sidebar and a way back.
+  assert.ok(/Back to Dashboard/.test(demo.blockedPageHTML("x", false)));
+});
+
+check("app.js detects an embedded request", () => {
+  assert.ok(/sec-fetch-dest|embed/.test(appSrc) && /blockedPageHTML\(verdict\.reason, embedded\)/.test(appSrc),
+    "every refusal renders the full shell — an iframe tab would nest a second sidebar");
+});
+
+check("the Logs page drops the tabs the demo cannot open", () => {
+  // Each of those tabs is an iframe onto a denied page; leaving them turns the
+  // tab strip into a row of refusal cards.
+  const tl = decomment(read("routes/tradeLogs.js"));
+  assert.ok(/demoMode"\)\.isDemo\(\)/.test(tl),
+    "tradeLogs.js never consults the demo flag");
+  for (const [name, guard] of [["serverlogs", "showLogsTab"], ["cache", "showCacheTab"], ["loginlogs", "showLoginLogsTab"]]) {
+    const re = new RegExp(guard + "[\\s\\S]{0,200}data-tab=\"" + name + "\"");
+    assert.ok(re.test(tl), `the ${name} tab is not gated by ${guard}`);
+  }
+  assert.ok(/isDemo \? '' : `<button class="btn btn-delete"/.test(tl),
+    "the Reset Data button still renders for a demo session");
+});
+
+check("the deploy chip cannot render a 403 as DEPLOY FAILED", () => {
+  // It parsed any body as JSON; a demo's 403 has no .status, so it fell through
+  // to the failure branch and printed "DEPLOY FAILED NaNh ago".
+  const nav = decomment(read("utils/sharedNav.js"));
+  assert.ok(/fetch\('\/deploy\/status'\)\.then\(function\(r\)\{return r\.ok \? r\.json\(\) : null\}\)/.test(nav),
+    "the deploy poll still trusts a non-OK response body");
+  assert.ok(/!d \|\| !d\.status \|\| d\.status==='idle'/.test(nav),
+    "a statusless deploy response still falls through to the failure branch");
+  assert.ok(/isDemoSession \? '' : `<div class="deploy-chip"/.test(nav),
+    "the deploy chip still renders for a demo session");
+});
+
+check("the demo shows one spelling of the product name", () => {
+  assert.strictEqual(demo.rebrand("<title>Trade Logs — Trading BOT</title>"),
+                     "<title>Trade Logs — Trading Bot</title>");
+});
+
 check("the sidebar hides what the policy refuses", () => {
   const nav = decomment(read("utils/sharedNav.js"));
   assert.ok(/demoMode\.allowsPage\(/.test(nav),

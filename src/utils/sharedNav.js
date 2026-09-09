@@ -772,10 +772,10 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     ${process.env.LOGIN_SECRET ? '<a href="/logout" class="sb-nav-item" style="margin-top:6px;font-size:0.62rem;color:var(--muted-1,#8ba1c2);justify-content:center;padding:5px;"><span class="sb-nav-icon">🔓</span> Logout</a>' : ''}
   </div>
 </nav>
-<div class="deploy-chip" id="deploy-chip" style="display:none;">
+${isDemoSession ? '' : `<div class="deploy-chip" id="deploy-chip" style="display:none;">
   <span class="deploy-chip-dot" id="deploy-chip-dot"></span>
   <span id="deploy-chip-label"></span>
-</div>
+</div>`}
 ${operatorBanners}
 <script>
 window.__LOGIN_GATE_ACTIVE = ${!!process.env.LOGIN_SECRET};
@@ -929,8 +929,8 @@ function toggleNavGroup(gid){
   var deployStart=null;
 
   function poll(){
-    fetch('/deploy/status').then(function(r){return r.json()}).then(function(d){
-      if(d.status==='idle'){
+    fetch('/deploy/status').then(function(r){return r.ok ? r.json() : null}).then(function(d){
+      if(!d || !d.status || d.status==='idle'){
         chip.style.display='none';
         clearInterval(deployingTimer); deployingTimer=null;
         return;

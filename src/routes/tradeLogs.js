@@ -560,8 +560,13 @@ router.get("/", (req, res) => {
   const enabled = enabledModesFromEnv();
   // Server Logs + Cache Files tabs are gated by the same toggles that used to gate
   // their (now-removed) Settings top-bar buttons. Login Logs is always available.
-  const showLogsTab  = (process.env.UI_SHOW_LOGS ?? "true").toLowerCase() === "true";
-  const showCacheTab = (process.env.UI_SHOW_CACHE_FILES ?? "true").toLowerCase() === "true";
+  // A demo session gets neither the owner-only tabs nor Reset Data. They are
+  // dropped here rather than left to fail: each tab is an iframe onto a page
+  // the demo policy refuses, so leaving them renders a refusal card in a frame.
+  const isDemo = require("../utils/demoMode").isDemo();
+  const showLogsTab  = !isDemo && (process.env.UI_SHOW_LOGS ?? "true").toLowerCase() === "true";
+  const showCacheTab = !isDemo && (process.env.UI_SHOW_CACHE_FILES ?? "true").toLowerCase() === "true";
+  const showLoginLogsTab = !isDemo;
   res.setHeader("Content-Type", "text/html");
   res.send(`<!DOCTYPE html>
 <html lang="en">
@@ -803,7 +808,7 @@ ${buildSidebar('tradeLogs', liveActive)}
     <div class="top-bar-meta">Per-trade JSONL files · settings checkpoints · stored under ~/trading-data/trades</div>
   </div>
   <div class="top-bar-right">
-    <button class="btn btn-delete" onclick="openResetDataModal()" title="Selectively reset data: paper trade history, skip history, cache, logs, or ticks — with an optional date range. Checking Paper with no date range also restores starting capital + wipes sessions for all 5 strategies (a running strategy is skipped)." style="font-size:0.72rem;padding:7px 14px;">🧹 Reset Data</button>
+    ${isDemo ? '' : `<button class="btn btn-delete" onclick="openResetDataModal()" title="Selectively reset data: paper trade history, skip history, cache, logs, or ticks — with an optional date range. Checking Paper with no date range also restores starting capital + wipes sessions for all 5 strategies (a running strategy is skipped)." style="font-size:0.72rem;padding:7px 14px;">🧹 Reset Data</button>`}
   </div>
 </div>
 
@@ -813,7 +818,7 @@ ${buildSidebar('tradeLogs', liveActive)}
       <div class="tab active" data-tab="files" onclick="setTab('files')">📁 Trade Files <span class="badge" id="filesBadge">—</span></div>
       <div class="tab" data-tab="skips" onclick="setTab('skips')">🚫 Skip Logs <span class="badge" id="skipsBadge">—</span></div>
       <div class="tab" data-tab="audit" onclick="setTab('audit')">🔖 Checkpoints &amp; Settings Changes <span class="badge" id="auditBadge">—</span></div>
-      <div class="tab" data-tab="loginlogs" onclick="setTab('loginlogs')">🔐 Login Logs</div>
+      ${showLoginLogsTab ? `<div class="tab" data-tab="loginlogs" onclick="setTab('loginlogs')">🔐 Login Logs</div>` : ''}
       ${showLogsTab ? `<div class="tab" data-tab="serverlogs" onclick="setTab('serverlogs')">📜 Server Logs</div>` : ''}
       ${showCacheTab ? `<div class="tab" data-tab="cache" onclick="setTab('cache')">🧰 Cache Files</div>` : ''}
     </div>
@@ -877,9 +882,9 @@ ${buildSidebar('tradeLogs', liveActive)}
   </div>
 
   <!-- ── LOGIN LOGS TAB (embedded /login-logs) ─────────────────────── -->
-  <div class="tab-pane embed-pane" id="pane-loginlogs">
+  ${showLoginLogsTab ? `<div class="tab-pane embed-pane" id="pane-loginlogs">
     <iframe class="embed-frame" data-src="/login-logs?embed=1" title="Login Logs"></iframe>
-  </div>
+  </div>` : ''}
 
   <!-- ── SERVER LOGS TAB (embedded /logs) ──────────────────────────── -->
   ${showLogsTab ? `<div class="tab-pane embed-pane" id="pane-serverlogs">
