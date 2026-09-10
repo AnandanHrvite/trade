@@ -133,7 +133,10 @@ function _recordLoginAttempt(req, ip, result, passwordShown) {
   const hasBrowserGPS = !isNaN(browserLat) && !isNaN(browserLon);
   const entry = {
     time: at.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false }),
-    date: at.toISOString().slice(0, 10),
+    // IST, to match `time` above. toISOString() is UTC, so an attempt between
+    // midnight and 05:30 IST — prime bot-scan hours — was filed under the
+    // previous day next to an IST clock time.
+    date: at.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
     ip,
     result,
     password: passwordShown,
