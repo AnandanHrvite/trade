@@ -29,7 +29,16 @@ function loadAll() {
     return all
       .filter(e => e && typeof e === "object")
       .map(e => (e.result ? e : { ...e, result: "failed" }));
-  } catch {
+  } catch (err) {
+    // The file is unreadable — truncated by a kill mid-write, or hand-edited.
+    // Returning [] silently would be destructive: the very next attempt saves
+    // over it and the history is gone for good. Move it aside instead, so it
+    // can be recovered, and start a fresh log.
+    const quarantine = `${LOG_FILE}.corrupt-${Date.now()}`;
+    try {
+      fs.renameSync(LOG_FILE, quarantine);
+      console.warn(`⚠️ [LOGIN-LOG] ${LOG_FILE} is unreadable (${err.message}) — kept as ${quarantine}, starting a new log.`);
+    } catch {}
     return [];
   }
 }
@@ -62,7 +71,22 @@ function trim(entries) {
 
 function save(entries) {
   ensureDir();
-  fs.writeFileSync(LOG_FILE, JSON.stringify(trim(entries), null, 2));
+  // Write-then-rename, because writeFileSync is not atomic: a process killed
+  // partway through (PM2 reload, deploy, SIGTERM) leaves a truncated file, and
+  // the login path writes on every bot probe, so the window is hit eventually.
+  // rename(2) is atomic on POSIX — readers see the old complete file or the new
+  // one, never half of either. If the write fails the rename never happens and
+  // the existing log is left untouched.
+  const tmp = `${LOG_FILE}.tmp`;
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(trim(entries), null, 2));
+    fs.renameSync(tmp, LOG_FILE);
+  } catch (err) {
+    // Never let logging break a login: the owner still has to get in when the
+    // disk is full, and a demo sign-in now writes on its success path too.
+    console.warn(`⚠️ [LOGIN-LOG] Could not record attempt: ${err.message}`);
+    try { fs.unlinkSync(tmp); } catch {}
+  }
 }
 
 function addEntry(entry) {

@@ -239,6 +239,23 @@ check("a bot flood cannot evict demo sign-ins from the login log", () => {
   assert.strictEqual(onlyFailed[0].ip, "i0", "the newest failed row was dropped instead of the oldest");
 });
 
+check("the login log survives a kill mid-write", () => {
+  // Deploys run `pm2 startOrRestart`, and the login path writes on every bot
+  // probe, so a process killed partway through a write is a matter of time.
+  // writeFileSync is not atomic: that leaves a truncated file, and a loadAll
+  // that answered [] would let the next attempt save over the whole history.
+  const src = decomment(read("utils/loginLogStore.js"));
+  assert.ok(/renameSync\(\s*tmp\s*,\s*LOG_FILE\s*\)/.test(src),
+    "the log is written in place — a kill mid-write truncates it");
+  // Scoped to renameSync(tmp — loadAll's quarantine also renames, earlier.
+  assert.ok(src.indexOf("writeFileSync(tmp") < src.indexOf("renameSync(tmp"),
+    "the temp file must be written before it is renamed over the real one");
+  assert.ok(/corrupt-/.test(src),
+    "an unreadable log is discarded silently instead of being kept for recovery");
+  assert.ok(/catch \(err\) \{[\s\S]*?LOGIN-LOG/.test(src),
+    "a failed write is unhandled — logging an attempt must never break a login");
+});
+
 check("the demo lands on a page it is allowed to open", () => {
   // With UI_SHOW_DASHBOARD off, "/" redirects to /settings — which the demo is
   // refused, so a stakeholder's very first click would be a refusal page.
