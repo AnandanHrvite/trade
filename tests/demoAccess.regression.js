@@ -219,6 +219,26 @@ check("a demo sign-in is written to the login log", () => {
     "failed attempts are no longer logged");
 });
 
+check("a bot flood cannot evict demo sign-ins from the login log", () => {
+  // The login is scanned continuously by bots, and the log keeps a bounded
+  // newest-N. A plain tail-drop therefore deletes the rare demo rows first —
+  // the audit trail for the one password handed outside — leaving the flood.
+  const { trim } = require("../src/utils/loginLogStore");
+  const row = (i, result) => ({ ip: "i" + i, result, password: "p" + i });
+  const log = [];
+  for (let i = 0; i < 5; i++)    log.push(row(i, "demo"));
+  for (let i = 0; i < 3000; i++) log.unshift(row(i, "failed")); // newest-first
+  const kept = trim(log);
+  assert.strictEqual(kept.filter(e => e.result === "demo").length, 5,
+    "a flood of failed attempts evicted the demo sign-ins");
+  assert.ok(kept.length <= 2000,
+    "retention no longer bounds the file the login path rewrites synchronously");
+  // A failed-only log must still behave exactly as it did: newest N, oldest off.
+  const onlyFailed = trim(Array.from({ length: 3000 }, (_, i) => row(i, "failed")));
+  assert.strictEqual(onlyFailed.length, 2000);
+  assert.strictEqual(onlyFailed[0].ip, "i0", "the newest failed row was dropped instead of the oldest");
+});
+
 check("the demo lands on a page it is allowed to open", () => {
   // With UI_SHOW_DASHBOARD off, "/" redirects to /settings — which the demo is
   // refused, so a stakeholder's very first click would be a refusal page.

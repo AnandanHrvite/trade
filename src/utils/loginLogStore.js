@@ -39,11 +39,30 @@ function loadAll() {
 // the array — and the whole-file parse+rewrite each failed attempt does — grows
 // unbounded (tens of MB of sync I/O per probe over time). Keep newest 2000.
 const MAX_ENTRIES = 2000;
+// ...but a plain newest-2000 tail-drop lets that same bot flood evict every demo
+// sign-in, which is the audit trail for the one password that leaves the
+// building — rare rows, drowned by noise, exactly the ones worth keeping. So
+// reserve part of the budget for them: failed rows are trimmed first, and demo
+// rows survive up to this many. The TOTAL stays MAX_ENTRIES, so the sync
+// read+write this cap exists to bound does not grow.
+const MAX_DEMO = 500;
+
+/** Newest-first in, newest-first out, at most MAX_ENTRIES with demo rows spared. */
+function trim(entries) {
+  if (entries.length <= MAX_ENTRIES) return entries;
+  let demoBudget = Math.min(MAX_DEMO, entries.reduce((n, e) => n + (e.result === "demo" ? 1 : 0), 0));
+  let failBudget = MAX_ENTRIES - demoBudget;
+  const out = [];
+  for (const e of entries) { // relies on newest-first, so the oldest fall off the tail
+    if (e.result === "demo") { if (demoBudget > 0) { demoBudget--; out.push(e); } }
+    else if (failBudget > 0) { failBudget--; out.push(e); }
+  }
+  return out;
+}
 
 function save(entries) {
   ensureDir();
-  if (entries.length > MAX_ENTRIES) entries.length = MAX_ENTRIES; // newest-first, drop oldest tail
-  fs.writeFileSync(LOG_FILE, JSON.stringify(entries, null, 2));
+  fs.writeFileSync(LOG_FILE, JSON.stringify(trim(entries), null, 2));
 }
 
 function addEntry(entry) {
@@ -56,4 +75,7 @@ function clearAll() {
   save([]);
 }
 
-module.exports = { loadAll, addEntry, clearAll };
+// `trim` is exported for the retention regression test, which asserts a bot
+// flood cannot evict demo sign-ins — testing it through addEntry would mean
+// overwriting the real login log to do it.
+module.exports = { loadAll, addEntry, clearAll, trim };
