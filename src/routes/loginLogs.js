@@ -1,5 +1,5 @@
 /**
- * loginLogs.js — Failed login attempts viewer
+ * loginLogs.js — Login attempts viewer (failed tries + demo sign-ins)
  * ─────────────────────────────────────────────────────────────────────────────
  * GET  /login-logs           → UI page with paginated log history
  * GET  /login-logs/data      → JSON data (paginated)
@@ -15,12 +15,22 @@ const loginLogStore = require("../utils/loginLogStore");
 // ── Paginated JSON data ─────────────────────────────────────────────────────
 router.get("/data", (req, res) => {
   const all   = loginLogStore.loadAll(); // already newest-first
+  // Counts are of the WHOLE log, not the filtered slice — the filter chips show
+  // them, so they must not change when a filter is applied.
+  const counts = { all: all.length, failed: 0, demo: 0 };
+  for (const l of all) (l.result === "demo" ? counts.demo++ : counts.failed++);
+
+  const type  = String(req.query.type || "all").toLowerCase();
+  const rows  = type === "demo"   ? all.filter(l => l.result === "demo")
+              : type === "failed" ? all.filter(l => l.result !== "demo")
+              : all;
+
   const page  = Math.max(1, parseInt(req.query.page || "1", 10));
   const limit = Math.min(parseInt(req.query.limit || "10", 10), 100);
   const start = (page - 1) * limit;
-  const slice = all.slice(start, start + limit);
-  const totalPages = Math.max(1, Math.ceil(all.length / limit));
-  res.json({ total: all.length, page, totalPages, limit, logs: slice });
+  const slice = rows.slice(start, start + limit);
+  const totalPages = Math.max(1, Math.ceil(rows.length / limit));
+  res.json({ total: rows.length, counts, type, page, totalPages, limit, logs: slice });
 });
 
 // ── Clear all logs ──────────────────────────────────────────────────────────
@@ -114,6 +124,18 @@ router.get("/", (req, res) => {
     tr:hover td { background:rgba(59,130,246,0.03); }
     .mono { font-family:'IBM Plex Mono',monospace; font-size:0.68rem; }
     .pw { color:#f87171; font-weight:600; }
+    .pw-demo { color:var(--muted); font-weight:500; }
+    .res { display:inline-block; font-size:0.58rem; font-weight:700; letter-spacing:0.5px; text-transform:uppercase; padding:2px 7px; border-radius:4px; white-space:nowrap; }
+    .res-failed { background:rgba(239,68,68,0.14); color:#f87171; border:0.5px solid rgba(239,68,68,0.3); }
+    .res-demo   { background:rgba(245,158,11,0.14); color:#f59e0b; border:0.5px solid rgba(245,158,11,0.32); }
+
+    /* ── Filter chips ──────────────────────────────────────── */
+    .chips { display:flex; gap:6px; flex-wrap:wrap; }
+    .chip { font-size:0.66rem; font-weight:600; padding:5px 12px; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--muted); cursor:pointer; font-family:inherit; display:inline-flex; align-items:center; gap:6px; transition:all 0.12s; }
+    .chip:hover { border-color:var(--border2); color:var(--text); }
+    .chip.on { background:var(--surface2); border-color:var(--accent); color:var(--text2); }
+    .chip .n { font-family:'IBM Plex Mono',monospace; font-size:0.62rem; color:var(--dim); }
+    .chip.on .n { color:var(--accent); }
     .empty-state { text-align:center; padding:50px 24px; color:var(--dim); font-size:0.78rem; }
     .empty-state .icon { font-size:1.8rem; margin-bottom:10px; display:block; }
     .loc { color:#60a5fa; font-size:0.66rem; }
@@ -153,8 +175,8 @@ ${embed ? '' : buildSidebar('tradeLogs', liveActive)}
       <span class="bc-sep">›</span>
       <span class="bc-current">🔐 Login Logs</span>
     </nav>
-    <div class="top-bar-title">🔐 Failed Login Attempts</div>
-    <div class="top-bar-meta">Only invalid login tries are logged — IP, password, location, browser</div>
+    <div class="top-bar-title">🔐 Login Attempts</div>
+    <div class="top-bar-meta">Failed tries and demo (read-only) sign-ins — IP, password, location, browser</div>
   </div>
   <div class="top-bar-right">
     <span class="top-bar-badge" id="topBadge">● 0</span>
@@ -163,7 +185,12 @@ ${embed ? '' : buildSidebar('tradeLogs', liveActive)}
 
 <div class="page">
   <div class="toolbar">
-    <span class="badge-count" id="totalBadge"><span class="num">0</span>&nbsp;attempts</span>
+    <div class="chips">
+      <button class="chip on" id="chip-all"    onclick="setType('all')">All <span class="n" id="cnt-all">0</span></button>
+      <button class="chip"    id="chip-failed" onclick="setType('failed')">❌ Failed <span class="n" id="cnt-failed">0</span></button>
+      <button class="chip"    id="chip-demo"   onclick="setType('demo')">👁 Demo <span class="n" id="cnt-demo">0</span></button>
+    </div>
+    <span class="badge-count" id="totalBadge"><span class="num">0</span>&nbsp;shown</span>
     <button class="btn btn-danger" onclick="resetLogs()">🗑 Reset Logs</button>
   </div>
 
@@ -172,13 +199,14 @@ ${embed ? '' : buildSidebar('tradeLogs', liveActive)}
       <thead><tr>
         <th>#</th>
         <th>Time</th>
+        <th>Result</th>
         <th>IP Address</th>
         <th>Password Tried</th>
         <th>Location</th>
         <th>Browser / User Agent</th>
       </tr></thead>
       <tbody id="logBody">
-        <tr><td colspan="6" class="empty-state"><span class="icon">⏳</span>Loading…</td></tr>
+        <tr><td colspan="7" class="empty-state"><span class="icon">⏳</span>Loading…</td></tr>
       </tbody>
     </table>
   </div>
@@ -193,16 +221,29 @@ ${embed ? '' : buildSidebar('tradeLogs', liveActive)}
 ${modalJS()}
 
 var currentPage = 1;
+var currentType = 'all';
 var PER_PAGE = 10;
 
+function setType(t) {
+  currentType = t;
+  ['all','failed','demo'].forEach(function(k) {
+    document.getElementById('chip-' + k).classList.toggle('on', k === t);
+  });
+  fetchLogs(1);
+}
+
 function fetchLogs(page) {
-  fetch('/login-logs/data?page=' + page + '&limit=' + PER_PAGE, { cache: 'no-store' })
+  fetch('/login-logs/data?type=' + currentType + '&page=' + page + '&limit=' + PER_PAGE, { cache: 'no-store' })
     .then(function(r) { return r.json(); })
     .then(function(d) {
       renderTable(d);
       renderPager(d);
       currentPage = d.page;
-      document.getElementById('topBadge').textContent = '● ' + d.total;
+      var c = d.counts || { all: d.total, failed: d.total, demo: 0 };
+      document.getElementById('cnt-all').textContent    = c.all;
+      document.getElementById('cnt-failed').textContent = c.failed;
+      document.getElementById('cnt-demo').textContent   = c.demo;
+      document.getElementById('topBadge').textContent = '● ' + c.all;
     })
     .catch(function(e) { console.error(e); });
 }
@@ -212,11 +253,15 @@ function renderTable(d) {
   if (numEl) numEl.textContent = d.total;
   var tbody = document.getElementById('logBody');
   if (!d.logs.length) {
-    tbody.innerHTML = '<tr><td colspan="6" class="empty-state"><span class="icon">✅</span>No failed login attempts recorded.</td></tr>';
+    var msg = d.type === 'demo'   ? 'No demo logins recorded.'
+            : d.type === 'failed' ? 'No failed login attempts recorded.'
+            :                       'No login attempts recorded.';
+    tbody.innerHTML = '<tr><td colspan="7" class="empty-state"><span class="icon">✅</span>' + msg + '</td></tr>';
     return;
   }
   tbody.innerHTML = d.logs.map(function(l, i) {
     var idx = (d.page - 1) * d.limit + i + 1;
+    var isDemo = l.result === 'demo';
     var geoTag = l.geoSource === 'gps'
       ? '<span class="geo-tag geo-gps">GPS</span>'
       : (l.lat ? '<span class="geo-tag geo-ip">IP</span>' : '');
@@ -226,8 +271,9 @@ function renderTable(d) {
     return '<tr>'
       + '<td class="idx">' + idx + '</td>'
       + '<td class="mono"><span class="time-main">' + esc(l.time || '') + '</span><br><span class="time-date">' + esc(l.date || '') + '</span></td>'
+      + '<td>' + (isDemo ? '<span class="res res-demo">👁 Demo</span>' : '<span class="res res-failed">Failed</span>') + '</td>'
       + '<td class="mono">' + esc(l.ip || '—') + '</td>'
-      + '<td class="pw mono">' + esc(l.password || '') + '</td>'
+      + '<td class="mono ' + (isDemo ? 'pw-demo' : 'pw') + '">' + esc(l.password || '') + '</td>'
       + '<td>' + loc + '</td>'
       + '<td class="ua">' + esc(l.userAgent || '—') + '</td>'
       + '</tr>';
@@ -248,8 +294,8 @@ function go(p) { if (p >= 1) fetchLogs(p); }
 async function resetLogs() {
   var ok = await showDoubleConfirm({
     icon: '🧹',
-    title: 'Clear failed login logs',
-    message: 'Clear all failed login logs?\\nThis cannot be undone.',
+    title: 'Clear login logs',
+    message: 'Clear all login attempt logs?\\nThis cannot be undone.',
     confirmText: 'Clear',
     confirmClass: 'modal-btn-danger',
     secondConfirmText: 'Yes, clear all'

@@ -113,6 +113,56 @@ function _clientIp(req) {
 }
 function _sha256(s) { return crypto.createHash("sha256").update(String(s)).digest("hex"); }
 
+/**
+ * Record one login attempt in the login log.
+ *
+ * `result` is "failed" for a wrong password and "demo" for a successful
+ * read-only demo sign-in — the demo password is shared with stakeholders, so
+ * who used it and from where is worth the same forensics as a wrong guess.
+ * `passwordShown` is what the log displays: the typed string for a failed try,
+ * a placeholder for demo (never write our own secret to disk).
+ *
+ * Geolocation: browser GPS when the login form sent it, else a best-effort IP
+ * lookup. The lookup is fire-and-forget — the entry is written either way and
+ * the caller never waits on it.
+ */
+function _recordLoginAttempt(req, ip, result, passwordShown) {
+  const at = new Date();
+  const browserLat = parseFloat(req.body?.lat);
+  const browserLon = parseFloat(req.body?.lon);
+  const hasBrowserGPS = !isNaN(browserLat) && !isNaN(browserLon);
+  const entry = {
+    time: at.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false }),
+    date: at.toISOString().slice(0, 10),
+    ip,
+    result,
+    password: passwordShown,
+    userAgent: req.headers["user-agent"] || "",
+    lat: hasBrowserGPS ? browserLat : null,
+    lon: hasBrowserGPS ? browserLon : null,
+    city: (hasBrowserGPS && req.body?.geoCity) ? req.body.geoCity : null,
+    geoSource: hasBrowserGPS ? "gps" : "ip",
+  };
+  if (hasBrowserGPS) return loginLogStore.addEntry(entry);
+
+  try {
+    const geoUrl = `http://ip-api.com/json/${encodeURIComponent(ip)}?fields=lat,lon,city,status`;
+    const geoReq = require("http").get(geoUrl, { timeout: 3000 }, (geoRes) => {
+      let body = "";
+      geoRes.on("data", c => body += c);
+      geoRes.on("end", () => {
+        try {
+          const g = JSON.parse(body);
+          if (g.status === "success") { entry.lat = g.lat; entry.lon = g.lon; entry.city = g.city || null; }
+        } catch {}
+        loginLogStore.addEntry(entry);
+      });
+    });
+    geoReq.on("error", () => loginLogStore.addEntry(entry));
+    geoReq.on("timeout", () => { geoReq.destroy(); loginLogStore.addEntry(entry); });
+  } catch { loginLogStore.addEntry(entry); }
+}
+
 function loginPageHTML(error, opts = {}) {
   const lockedSec = Number(opts.lockedSec) > 0 ? Math.ceil(Number(opts.lockedSec)) : 0;
   const otpOffer  = lockedSec > 0 && _loginOtpReady();
@@ -513,6 +563,7 @@ app.post("/login", (req, res) => {
     delete _loginAttempts[ip];
     res.setHeader("Set-Cookie", `${LOGIN_COOKIE}=${demoMode.token()}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${loginMaxAge()}`);
     console.log(`👁 [LOGIN] Demo (read-only) session opened from ${ip}`);
+    _recordLoginAttempt(req, ip, "demo", "(demo password)");
     return res.redirect("/");
   }
 
@@ -521,42 +572,7 @@ app.post("/login", (req, res) => {
   else _loginAttempts[ip] = { count: 1, firstAttempt: now };
 
   // ── Log failed attempt ────────────────────────────────────────────────────
-  const _failNow = new Date();
-  const browserLat = parseFloat(req.body.lat);
-  const browserLon = parseFloat(req.body.lon);
-  const hasBrowserGPS = !isNaN(browserLat) && !isNaN(browserLon);
-  const entry = {
-    time: _failNow.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false }),
-    date: _failNow.toISOString().slice(0, 10),
-    ip,
-    password: req.body.password || "",
-    userAgent: req.headers["user-agent"] || "",
-    lat: hasBrowserGPS ? browserLat : null,
-    lon: hasBrowserGPS ? browserLon : null,
-    city: (hasBrowserGPS && req.body.geoCity) ? req.body.geoCity : null,
-    geoSource: hasBrowserGPS ? "gps" : "ip",
-  };
-  // If no browser GPS, fall back to IP geolocation
-  if (!hasBrowserGPS) {
-    try {
-      const geoUrl = `http://ip-api.com/json/${encodeURIComponent(ip)}?fields=lat,lon,city,status`;
-      const geoReq = require("http").get(geoUrl, { timeout: 3000 }, (geoRes) => {
-        let body = "";
-        geoRes.on("data", c => body += c);
-        geoRes.on("end", () => {
-          try {
-            const g = JSON.parse(body);
-            if (g.status === "success") { entry.lat = g.lat; entry.lon = g.lon; entry.city = g.city || null; }
-          } catch {}
-          loginLogStore.addEntry(entry);
-        });
-      });
-      geoReq.on("error", () => loginLogStore.addEntry(entry));
-      geoReq.on("timeout", () => { geoReq.destroy(); loginLogStore.addEntry(entry); });
-    } catch { loginLogStore.addEntry(entry); }
-  } else {
-    loginLogStore.addEntry(entry);
-  }
+  _recordLoginAttempt(req, ip, "failed", req.body.password || "");
 
   res.setHeader("Content-Type", "text/html");
   res.send(loginPageHTML("Wrong password. Please try again."));
@@ -841,7 +857,7 @@ const OPEN_PATHS = [
   "/api/holidays",          // read-only holiday list
   "/api/expiry-dates",      // read-only expiry calendar
   "/api/start-all-roster",  // read-only Start-All roster (dashboard button)
-  "/login-logs",            // failed login attempts viewer
+  "/login-logs",            // login attempts viewer (failed + demo)
   "/login-logs/data",       // login logs JSON data
   "/login-logs/clear",      // reset login logs
   "/settings",              // settings page (read-only view)
@@ -1161,7 +1177,7 @@ app.use("/token-sync",  require("./routes/tokenSync"));  // ← copy broker toke
 app.use("/backup",      require("./routes/backup"));     // ← daily downloadable data snapshots (Settings card + nag banner)
 app.use("/settings",    require("./routes/settings"));   // ← settings UI
 app.use("/docs",        require("./routes/docs"));       // ← docs viewer
-app.use("/login-logs",  require("./routes/loginLogs"));  // ← failed login log viewer
+app.use("/login-logs",  require("./routes/loginLogs"));  // ← login attempts log viewer
 app.use("/monitor",     require("./routes/monitor"));    // ← EC2 instance health monitor
 // ── BB_RSI mode routes (independent from main trade) ─────────────────────────
 app.use("/bb_rsi-live",          require("./routes/bbRsiLive"));          // ← bb_rsi live (Fyers orders)

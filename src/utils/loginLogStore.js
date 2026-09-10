@@ -1,7 +1,9 @@
 /**
- * loginLogStore.js — Persists failed login attempts to disk
+ * loginLogStore.js — Persists login attempts to disk
  * ─────────────────────────────────────────────────────────────────────────────
- * Stores IP, attempted password, user-agent, timestamp, and geolocation.
+ * Stores IP, attempted password, user-agent, timestamp, and geolocation for
+ * every failed try AND every successful demo (read-only) sign-in — entries
+ * carry `result`: "failed" | "demo".
  */
 
 const fs   = require("fs");
@@ -18,7 +20,11 @@ function loadAll() {
   ensureDir();
   if (!fs.existsSync(LOG_FILE)) return [];
   try {
-    return JSON.parse(fs.readFileSync(LOG_FILE, "utf-8"));
+    const all = JSON.parse(fs.readFileSync(LOG_FILE, "utf-8"));
+    if (!Array.isArray(all)) return [];
+    // Entries written before demo logins were logged have no `result`; they
+    // were all failed tries, so stamp them rather than rendering them blank.
+    return all.map(e => (e && !e.result ? { ...e, result: "failed" } : e));
   } catch {
     return [];
   }

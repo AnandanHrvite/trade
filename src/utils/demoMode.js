@@ -98,7 +98,7 @@ const ACTION_SEGMENTS = new Set([
 const DENIED_PREFIXES = [
   "/settings",       // config — every field is a write waiting to happen
   "/token-sync",     // hands out live broker tokens
-  "/login-logs",     // failed-login forensics: IPs, geolocation, typed passwords
+  "/login-logs",     // login forensics: IPs, geolocation, typed passwords, demo sign-ins
   "/cache-files",    // raw file browser (and its delete endpoints)
   "/backup",         // data snapshots — /backup/status is re-allowed below
   "/sync",           // full data-directory download
