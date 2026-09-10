@@ -205,6 +205,20 @@ check("the demo password is checked after the owner password", () => {
     "the demo password is checked first — a mis-set demo secret could downgrade the owner's login");
 });
 
+check("a demo sign-in is written to the login log", () => {
+  // The demo password is the one credential that leaves the building, so who
+  // used it and from where has to be auditable — the log used to hold failed
+  // tries only, and a successful demo session left no trace at all.
+  const demoAt = appSrc.indexOf("req.body.password === demoMode.demoSecret()");
+  const branch = appSrc.slice(demoAt, appSrc.indexOf("// ── Failed attempt", demoAt));
+  assert.ok(/_recordLoginAttempt\(req, ip, "demo"/.test(branch),
+    "the demo login branch no longer records the sign-in in the login log");
+  assert.ok(!/_recordLoginAttempt\(req, ip, "demo", demoMode\.demoSecret\(\)/.test(branch),
+    "the demo secret itself is being written to the login log — log a placeholder");
+  assert.ok(/_recordLoginAttempt\(req, ip, "failed"/.test(appSrc),
+    "failed attempts are no longer logged");
+});
+
 check("the demo lands on a page it is allowed to open", () => {
   // With UI_SHOW_DASHBOARD off, "/" redirects to /settings — which the demo is
   // refused, so a stakeholder's very first click would be a refusal page.

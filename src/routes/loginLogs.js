@@ -156,7 +156,7 @@ router.get("/", (req, res) => {
     @media (max-width:768px) {
       .page { padding:16px 12px 40px; }
       .tbl-wrap { border-radius:8px; overflow-x:auto; }
-      table { min-width:700px; }
+      table { min-width:780px; }
     }
   </style>
 </head>

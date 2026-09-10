@@ -22,9 +22,13 @@ function loadAll() {
   try {
     const all = JSON.parse(fs.readFileSync(LOG_FILE, "utf-8"));
     if (!Array.isArray(all)) return [];
-    // Entries written before demo logins were logged have no `result`; they
-    // were all failed tries, so stamp them rather than rendering them blank.
-    return all.map(e => (e && !e.result ? { ...e, result: "failed" } : e));
+    // Callers group and filter on `result`, so guarantee the contract here:
+    // every element is an object and every object carries a result. A row
+    // truncated by a half-written file must not 500 the viewer, and entries
+    // written before demo logins were logged were all failed tries.
+    return all
+      .filter(e => e && typeof e === "object")
+      .map(e => (e.result ? e : { ...e, result: "failed" }));
   } catch {
     return [];
   }
