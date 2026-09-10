@@ -143,6 +143,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const showPaperHist   = (process.env.UI_SHOW_PAPER_HISTORY || 'true').toLowerCase()  === 'true';
   const showLiveHist    = (process.env.UI_SHOW_LIVE_HISTORY  || 'true').toLowerCase()  === 'true';
   const showEdgeAnalytics = (process.env.UI_SHOW_EDGE_ANALYTICS || 'true').toLowerCase() === 'true';
+  const showLossesAnalyzer = (process.env.UI_SHOW_LOSSES_ANALYZER || 'true').toLowerCase() === 'true';
   const showAdvisor       = (process.env.UI_SHOW_ADVISOR || 'true').toLowerCase() === 'true';
   // Read-only research page for per-strike OI. Default OFF — it is a data-collection
   // instrument for an unbuilt strategy, not part of the daily trading flow.
@@ -250,7 +251,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const earlyBirdKeys = ['earlyBirdBacktest', 'earlyBirdPaper', 'earlyBirdLive', 'earlyBirdHistory'];
   // Dashboard (top-level) and System are collapsible groups too, so the whole
   // sidebar behaves the same way — one accordion, no ungrouped stragglers.
-  const dashboardKeys = ['dashboard', 'allBacktest', 'replay', 'consolidation', 'liveConsolidation', 'consolidationReport', 'advisor', 'oi-monitor', 'swingScanner'];
+  const dashboardKeys = ['dashboard', 'allBacktest', 'replay', 'consolidation', 'liveConsolidation', 'consolidationReport', 'lossesAnalyzer', 'advisor', 'oi-monitor', 'swingScanner'];
   const systemKeys    = ['tradeLogs', 'tokenSync', 'settings'];
 
   const isTradingOpen  = tradingKeys.includes(activePage);
@@ -428,6 +429,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     ...(showPaperHist   ? [{ key: 'consolidation',     href: '/consolidation',      icon: '📒', label: 'Paper Traded History' }] : []),
     ...(showLiveHist    ? [{ key: 'liveConsolidation', href: '/live-consolidation', icon: '📕', label: 'Live Traded History' }] : []),
     ...(showEdgeAnalytics ? [{ key: 'consolidationReport', href: '/consolidation-report', icon: '📑', label: 'Consolidation Report' }] : []),
+    ...(showLossesAnalyzer ? [{ key: 'lossesAnalyzer', href: '/losses-analyzer', icon: '🔍', label: 'Losses Analyzer' }] : []),
     ...(showAdvisor       ? [{ key: 'advisor',         href: '/advisor',            icon: '🧠', label: 'Settings Advisor' }] : []),
     ...(showOiMonitor     ? [{ key: 'oi-monitor',      href: '/oi-monitor',         icon: '🧱', label: 'OI Monitor' }] : []),
     ...(showSwingScanner  ? [{ key: 'swingScanner',     href: '/swing-scanner',      icon: '🔭', label: 'Swing Scanner' }] : []),

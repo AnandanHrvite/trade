@@ -1010,6 +1010,7 @@ const OPEN_PATHS = [
   "/advisor",             // settings advisor — read-only, suggests but never writes
   "/advisor/data",
   "/consolidation-report",
+  "/losses-analyzer",
   "/live-consolidation",
   "/live-consolidation/data",
   "/pnl-history",         // manual year-wise P&L — the baseline POSTs stay protected
@@ -1258,6 +1259,7 @@ app.use("/consolidation",       require("./routes/consolidation"));     // ← u
 app.use("/live-consolidation",  require("./routes/liveConsolidation")); // ← unified cross-mode LIVE trade history + analytics
 app.use("/edge-analytics",      require("./routes/edgeAnalytics"));     // ← edge metrics (WR/expectancy/PF/drawdown/by-hour) over recorded trades
 app.use("/consolidation-report", require("./routes/consolidationReport")); // ← printable consolidated report (paper+live, week/month/range filters, Save-as-PDF)
+app.use("/losses-analyzer",     require("./routes/lossesAnalyzer"));    // ← every losing trade with its full signal/entry/exit/indicator record + a why-it-lost verdict
 app.use("/advisor",             require("./routes/advisor"));           // ← offline settings advisor over the recorded trade book (read-only)
 app.use("/oi-monitor",          require("./routes/oiMonitor"));         // ← live per-strike OI ladder + wall/PCR readout (read-only research page)
 app.use("/swing-scanner",       require("./routes/swingScanner"));      // ← stock swing screen over the active strategies + manual Zerodha CNC entry
