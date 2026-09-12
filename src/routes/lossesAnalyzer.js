@@ -449,6 +449,7 @@ ${multiSelectCSS()}
       ], 'All reasons')}
       <a href="/consolidation-report" class="lnk-btn ml">📑 Consolidation Report</a>
       <button class="lnk-btn" id="btnCsv" style="margin-left:8px;">⬇ CSV</button>
+      <button class="lnk-btn" id="btnAi" style="margin-left:8px;" title="Markdown report written for an AI to read — every loss with its full story and verdict">🤖 AI Report</button>
     </div>
 
     <div class="tbar" id="tuneBar">
@@ -746,6 +747,116 @@ function downloadCsv(){
   setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },0);
 }
 
+// AI-friendly export — Markdown, not CSV. An LLM reads prose and labelled
+// key: value lines far better than a 40-column grid, so every trade is written
+// out as its own block with the same verdict sentence the drawer shows. Self
+// describing: the header states what the numbers mean so no schema is needed.
+function downloadAiReport(){
+  const f=currentFilter(), arr=applyFilter(f);
+  if(!arr.length){ alert('Nothing to export for this filter.'); return; }
+
+  const J=new Map(); let net=0, worst=null, gaveBackRs=0;
+  const byV={WRONG_ENTRY:{n:0,rs:0},GAVE_BACK:{n:0,rs:0},STOPPED:{n:0,rs:0},UNKNOWN:{n:0,rs:0}};
+  for(const t of arr){
+    net+=t.pnl; if(worst===null||t.pnl<worst) worst=t.pnl;
+    const j=judge(t,f.mfeFloor,f.gbRs); J.set(t.id,j);
+    byV[j.v].n++; byV[j.v].rs+=t.pnl;
+    if(j.v==='GAVE_BACK'&&j.peakRs!=null) gaveBackRs+=j.peakRs;
+  }
+  // Plain numbers for the AI — no ₹ glyphs or thousands separators to parse.
+  const rs=n=>n==null?'not recorded':Math.round(n);
+  const n1=(v,s)=>v==null?'not recorded':(v.toFixed(1)+(s||''));
+  const kv=o=>{ const k=Object.keys(o||{}).sort(); return k.length?k.map(x=>x+'='+o[x]).join(', '):'none recorded'; };
+  // Strip the HTML the on-screen verdict sentence carries (it goes through esc()).
+  const plain=h=>String(h).replace(/<[^>]*>/g,'').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"');
+
+  const modes=[...new Set(arr.map(t=>t.mode))].sort().join(', ');
+  const dates=arr.map(t=>t.date).filter(Boolean).sort();
+  const L=[];
+  L.push('# Losing trades — analysis pack');
+  L.push('');
+  L.push('Generated '+new Date().toString()+' from the Losses Analyzer of a NIFTY options trading bot.');
+  L.push('Every trade below is a LOSS. Winners are not in this file, so do not infer a win rate from it.');
+  L.push('');
+  L.push('## What you are reading');
+  L.push('');
+  L.push('- Money is Indian rupees, net of charges unless a line says gross. Points are NIFTY spot points.');
+  L.push('- MFE = the best the trade ever got in my favour. MAE = the worst it went against me. Both in spot points.');
+  L.push('- CE = long call (I profit when spot rises). PE = long put (I profit when spot falls).');
+  L.push('- Each trade carries a verdict decided by two thresholds set in the UI:');
+  L.push('  - "Wrong entry" = MFE never reached '+f.mfeFloor+' points, so the signal was wrong from the start (entry-rule problem).');
+  L.push('  - "Gave it back" = it ran past that floor and was worth at least '+f.gbRs+' rupees at peak, then closed red (exit-rule problem).');
+  L.push('  - "Stopped out" = a normal loss, the stop did its job (size/frequency question, not a rule question).');
+  L.push('  - "No data" = this engine did not record excursion, so no verdict is claimed.');
+  L.push('');
+  L.push('## Filter that produced this file');
+  L.push('');
+  L.push('- Book: '+f.book+'  |  Strategies: '+(modes||'none')+'  |  Side: '+f.side);
+  const rangeLabel=(document.getElementById('fRange')||{}).value||'all';
+  L.push('- Date range: '+(dates.length?dates[0]+' to '+dates[dates.length-1]:'n/a')+' (picker: '+rangeLabel+')');
+  L.push('- Verdict thresholds: MFE floor '+f.mfeFloor+' pts, give-back '+f.gbRs+' rupees');
+  L.push('');
+  L.push('## Totals');
+  L.push('');
+  L.push('- Losing trades: '+arr.length);
+  L.push('- Total lost: '+rs(net)+' (average '+rs(net/arr.length)+' per losing trade)');
+  L.push('- Worst single loss: '+rs(worst));
+  if(gaveBackRs) L.push('- Unrealised profit handed back by the "gave it back" trades: about '+rs(gaveBackRs));
+  L.push('');
+  L.push('## Split by verdict');
+  L.push('');
+  L.push('| Verdict | Trades | Share | Net | Avg |');
+  L.push('|---|---|---|---|---|');
+  for(const k of ['WRONG_ENTRY','GAVE_BACK','STOPPED','UNKNOWN']){
+    const c=byV[k]; if(!c.n) continue;
+    L.push('| '+VD_LABEL[k]+' | '+c.n+' | '+(c.n/arr.length*100).toFixed(0)+'% | '+rs(c.rs)+' | '+rs(c.rs/c.n)+' |');
+  }
+  L.push('');
+  L.push('## Every losing trade');
+  L.push('');
+  let i=0;
+  for(const t of arr){
+    const j=J.get(t.id); i++;
+    L.push('### '+i+'. '+prettyDate(t.date)+' — '+t.mode+' '+(t.side||'?')+' — lost '+rs(t.pnl));
+    L.push('');
+    L.push('- Verdict: '+VD_LABEL[j.v]);
+    L.push('- Why: '+plain(verdictText(t,j,f.mfeFloor,f.gbRs)));
+    L.push('- Book: '+t.book+'  |  Symbol: '+(t.symbol||'not recorded')+'  |  Qty: '+(t.qty==null?'not recorded':t.qty));
+    L.push('- Entry signal: '+(t.entryReason||'not recorded'));
+    L.push('- Exit reason: '+(t.exitReason||'not recorded')+(t.strength?'  |  Signal strength: '+t.strength:''));
+    L.push('- Timing (IST): in '+clockOf(t.entryTime)+', out '+clockOf(t.exitTime)+', held '+(t.durMin==null?'not recorded':t.durMin+' min')
+      +(t.candlesHeld==null?'':' ('+t.candlesHeld+' candles)'));
+    L.push('- Option price: entry '+(t.entryPrice==null?'not recorded':t.entryPrice)+' -> exit '+(t.exitPrice==null?'not recorded':t.exitPrice)
+      +(t.strike?'  |  Strike '+t.strike:'')+(t.expiry?'  |  Expiry '+t.expiry:''));
+    L.push('- Spot: entry '+(t.spotAtEntry==null?'not recorded':t.spotAtEntry)+' -> exit '+(t.spotAtExit==null?'not recorded':t.spotAtExit));
+    L.push('- Excursion: MFE '+n1(t.mfePts,' pts')+(t.secsToMFE==null?'':' after '+mins(t.secsToMFE)+' min')
+      +', MAE '+n1(t.maePts,' pts')+(t.secsToMAE==null?'':' within '+mins(t.secsToMAE)+' min'));
+    L.push('- Peak/worst in money: best '+rs(t.mfeRs)+', worst '+rs(t.maeRs));
+    L.push('- Stops: initial '+(t.slInit==null?'not recorded':t.slInit)+', final '+(t.slFinal==null?'not recorded':t.slFinal));
+    L.push('- Result: '+n1(t.pts,' pts')+', charges '+rs(t.charges)+', net '+rs(t.pnl)+(t.pnlMode?' ('+t.pnlMode+')':''));
+    L.push('- Regime: VIX '+(t.vixAtEntry==null?'not recorded':t.vixAtEntry)+' -> '+(t.vixAtExit==null?'not recorded':t.vixAtExit)
+      +(t.oiRegime?'  |  OI regime '+t.oiRegime:'')+(t.oiAtEntry==null?'':'  |  OI at entry '+t.oiAtEntry));
+    L.push('- Indicators at entry: '+kv(t.indEntry));
+    L.push('- Indicators at exit: '+kv(t.indExit));
+    L.push('');
+  }
+  L.push('## Questions worth answering from this data');
+  L.push('');
+  L.push('1. Which verdict is costing the most money, and is that an entry-rule or exit-rule fix?');
+  L.push('2. Do the wrong entries share a setup, time of day, VIX level or indicator state?');
+  L.push('3. For the give-backs, how far past the peak did the trade sit before the exit fired?');
+  L.push('4. Is any single strategy, side or weekday responsible for a disproportionate share?');
+  L.push('5. Are the stopped-out losses sized consistently, or is one outlier skewing the total?');
+  L.push('');
+  L.push('Note: this file only contains losses, so any suggested change must be judged against the winning trades too before acting on it.');
+
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([L.join('\\n')],{type:'text/markdown;charset=utf-8;'}));
+  a.download='losses-ai-report-'+(f.from||'all')+'-to-'+(f.to||'all')+'.md';
+  document.body.appendChild(a); a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },0);
+}
+
 // wire controls
 function wireSeg(id){
   document.querySelectorAll('#'+id+' button').forEach(b=>b.addEventListener('click',()=>{
@@ -767,6 +878,7 @@ document.getElementById('fTo').addEventListener('change',render);
 document.getElementById('fMfe').addEventListener('input',render);
 document.getElementById('fGb').addEventListener('input',render);
 document.getElementById('btnCsv').addEventListener('click',downloadCsv);
+document.getElementById('btnAi').addEventListener('click',downloadAiReport);
 render();
 </script>
 </body>
