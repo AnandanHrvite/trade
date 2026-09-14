@@ -8,8 +8,9 @@
  *   4. /stop reverses: stop paper + uninstall the harness
  *
  * This guarantees LIVE = PAPER by construction — the Heikin Ashi trend gate, the
- * wick-free entry candle, the frozen raw-candle stop and the doji/weak-candle
- * exits are whatever haScalpPaper says they are (single source of truth). No
+ * wick-free entry candle, the raw-candle stop (with its breakeven/trail ratchet)
+ * and the doji/weak-candle exits are whatever haScalpPaper says they are (single
+ * source of truth). No
  * decision, fill or exit rule is re-implemented here.
  *
  * ORDERS GO TO ZERODHA. Market data still comes from Fyers (the only broker with
@@ -289,8 +290,8 @@ ${buildSidebar('haScalpLive', liveActive)}
       <b>${s.resolutionMins}-min Heikin Ashi</b> candles on NIFTY spot${s.haContinuous ? ", chained continuously across days (matching TradingView)" : ", reseeded each day"}.<br>
       <b>Trend</b> — the ${s.maPeriod} ${s.maType.toUpperCase()} of RAW closes. Above it only CE, below it only PE. Never against it.<br>
       <b>Entry</b> — a ${s.maxWickPct === 0 ? "wick-free" : `≤${s.maxWickPct}%-wick`} HA candle in the trend's direction, body ≥${s.minBodyPts}pt.<br>
-      <b>Stop</b> — the signal candle's raw low (CE) / high (PE)${s.slBufferPts ? ` ±${s.slBufferPts}pt` : ""}${s.maxSlPts ? `, rejected if wider than ${s.maxSlPts}pt` : ""}. Frozen, never trailed.<br>
-      <b>Exits</b> — doji (body ≤${s.dojiBodyPct}% of range) ${s.exitOnDoji ? "ON" : "OFF"} · weak/opposite candle (body &lt;${s.weakBodyPct}%) ${s.exitOnWeak ? "ON" : "OFF"} · no target, no trail.
+      <b>Stop</b> — the signal candle's raw low (CE) / high (PE)${s.slBufferPts ? ` ±${s.slBufferPts}pt` : ""}${s.maxSlPts ? `, rejected if wider than ${s.maxSlPts}pt` : ""}. ${s.trailEnabled ? `Breakeven at +${s.breakevenPts}pt, then trails ${s.trailPts}pt behind from +${s.trailStartPts}pt.` : "Frozen, never trailed."}<br>
+      <b>Exits</b> — doji (body ≤${s.dojiBodyPct}% of range) ${s.exitOnDoji ? "ON" : "OFF"} · weak/opposite candle (body &lt;${s.weakBodyPct}%) ${s.exitOnWeak ? "ON" : "OFF"} · trail ${s.trailEnabled ? "ON" : "OFF"} · no target.
     </div>
   </div>
 

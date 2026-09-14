@@ -27,14 +27,17 @@
  * the two invents fills that could not have happened.
  *
  * Exits, in the order they are tested:
- *   1. stop  — the signal candle's frozen RAW high/low. Tested on every tick.
+ *   1. stop  — the signal candle's RAW high/low, then breakeven, then trailed
+ *              (HA_SCALP_TRAIL_ENABLED, default ON). Tested on every tick; the
+ *              level is raised on each 15-min close and only ever tightens.
  *   2. doji  — an HA candle whose body is tiny. Tested on each 15-min close.
  *   3. weak  — an HA candle that turned the opposite colour, or whose body
  *              shrank below the weak threshold. Tested on each 15-min close.
  *   4. EOD square-off at HA_SCALP_FORCED_EXIT
- * There is deliberately NO target, NO trail, NO breakeven jump, NO time stop,
- * NO premium stop and NO partial booking. The user asked for a stop and two
- * candle-based exits, and that is exactly what runs.
+ * There is deliberately NO target, NO time stop, NO premium stop and NO partial
+ * booking. The trail was added 2026-09-15 after the first 14 paper trades gave
+ * back every one of their open gains; set HA_SCALP_TRAIL_ENABLED=false for the
+ * original frozen-stop rule.
  *
  * Day-level breakers: HA_SCALP_MAX_DAILY_TRADES, HA_SCALP_MAX_DAILY_LOSS,
  * HA_SCALP_DAILY_PROFIT_LOCK and HA_SCALP_MAX_DAILY_LOSSES stop-outs.
@@ -1264,8 +1267,8 @@ router.get("/start", async (req, res) => {
   log(`⚙️ [HA-SCALP-PAPER] Chart    : ${NIFTY_INDEX_SYMBOL} · HEIKIN ASHI ${cfg.resolutionMins}-min${cfg.haContinuous ? " (chain continuous across days, matching TradingView)" : " (chain reseeds each day)"}`);
   log(`⚙️ [HA-SCALP-PAPER] Trend    : ${cfg.maPeriod} ${cfg.maType.toUpperCase()} of RAW closes — above it CE only, below it PE only. Never against it.`);
   log(`⚙️ [HA-SCALP-PAPER] Entry    : ${cfg.maxWickPct === 0 ? "wick-free" : `≤${cfg.maxWickPct}%-wick`} HA candle in the trend's direction (bullish + no bottom wick = CE, bearish + no top wick = PE), body ≥${cfg.minBodyPts}pt`);
-  log(`⚙️ [HA-SCALP-PAPER] Stop     : the signal candle's RAW ${"low (CE) / high (PE)"}${cfg.slBufferPts ? ` ±${cfg.slBufferPts}pt` : ""}${cfg.maxSlPts ? ` · rejected if wider than ${cfg.maxSlPts}pt` : ""} — frozen, never trailed`);
-  log(`⚙️ [HA-SCALP-PAPER] Exits    : doji (body ≤${cfg.dojiBodyPct}% of range) ${cfg.exitOnDoji ? "ON" : "OFF"} · weak/opposite candle (body <${cfg.weakBodyPct}%) ${cfg.exitOnWeak ? "ON" : "OFF"} · NO target, NO trail`);
+  log(`⚙️ [HA-SCALP-PAPER] Stop     : the signal candle's RAW ${"low (CE) / high (PE)"}${cfg.slBufferPts ? ` ±${cfg.slBufferPts}pt` : ""}${cfg.maxSlPts ? ` · rejected if wider than ${cfg.maxSlPts}pt` : ""} — ${cfg.trailEnabled ? `breakeven at +${cfg.breakevenPts}pt, then trails ${cfg.trailPts}pt behind from +${cfg.trailStartPts}pt` : "frozen, never trailed"}`);
+  log(`⚙️ [HA-SCALP-PAPER] Exits    : doji (body ≤${cfg.dojiBodyPct}% of range) ${cfg.exitOnDoji ? "ON" : "OFF"} · weak/opposite candle (body <${cfg.weakBodyPct}%) ${cfg.exitOnWeak ? "ON" : "OFF"} · trail ${cfg.trailEnabled ? "ON" : "OFF"} · NO target`);
   log(`⚙️ [HA-SCALP-PAPER] Session  : entries ${_envStr("HA_SCALP_ENTRY_START", "09:30")}–${_envStr("HA_SCALP_ENTRY_END", "15:00")} · max ${_maxDailyTrades()} trade(s)/day · loss cap ₹${_maxDailyLoss()} · EOD ${_envStr("HA_SCALP_FORCED_EXIT", "15:15")} · qty ${haLotQty()}`);
 
   await preloadHistory();
@@ -1546,7 +1549,7 @@ ${bbRsiCapitalStrip({ starting: startCap, current: startCap + (data.totalPnl || 
   <ul class="rule-list">
     <li><b>Above the ${maLabel} → CE only.</b> Below it → PE only. Never against it.</li>
     <li><b>Enter</b> on a ${cfg.maxWickPct === 0 ? "wick-free" : `≤${cfg.maxWickPct}%-wick`} Heikin Ashi candle in that direction — bullish with no bottom wick for a CE, bearish with no top wick for a PE. Body must be ≥ ${cfg.minBodyPts}pt.</li>
-    <li><b>Stop</b> = that candle's own raw ${"low (CE) / high (PE)"}${cfg.slBufferPts ? ` ± ${cfg.slBufferPts}pt` : ""}. It never moves.</li>
+    <li><b>Stop</b> = that candle's own raw ${"low (CE) / high (PE)"}${cfg.slBufferPts ? ` ± ${cfg.slBufferPts}pt` : ""}. ${cfg.trailEnabled ? `Moves to breakeven once ${cfg.breakevenPts}pt ahead, then follows the best price ${cfg.trailPts}pt behind from ${cfg.trailStartPts}pt ahead. It only ever tightens.` : "It never moves."}</li>
     <li><b>Exit</b> on a doji (body ≤ ${cfg.dojiBodyPct}% of range), a weak or opposite-colour candle (body &lt; ${cfg.weakBodyPct}%), or the ${_envStr("HA_SCALP_FORCED_EXIT", "15:15")} square-off. There is no target.</li>
   </ul>
 </div>

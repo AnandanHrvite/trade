@@ -3,15 +3,15 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * Date-range backtest on 15-minute **NIFTY 50 INDEX spot** candles. Every rule —
  * the Heikin Ashi construction, the 50-MA trend gate, the no-wick entry candle,
- * the frozen raw stop level and the doji / weak-candle exits — comes from the
- * SAME engine the paper route uses (src/strategies/ha_scalp.js). There is no
- * second copy of the maths here: this file fetches candles, walks bars, and
- * calls the engine.
+ * the raw stop level with its breakeven/trail ratchet, and the doji / weak-candle
+ * exits — come from the SAME engine the paper route uses
+ * (src/strategies/ha_scalp.js). There is no second copy of the maths here: this
+ * file fetches candles, walks bars, and calls the engine.
  *
  *   for each closed 15-min spot bar:
  *     getSignal(bars up to here, { ha, ma })   → BUY_CE / BUY_PE / NONE
  *   fill: the NEXT raw bar's OPEN (the signal fires on a closed bar)
- *   exits: stop (frozen raw level) → candle exit (doji/weak/opposite) → EOD
+ *   exits: stop (raw level, then breakeven/trail) → candle exit (doji/weak/opposite) → EOD
  *
  * ONE INSTRUMENT. Unlike the futures strategies there is no contract roll and no
  * second symbol: NSE:NIFTY50-INDEX is perpetual, so the whole range is one fetch
@@ -35,9 +35,12 @@
  *   • the signal candle itself can never exit the trade (the fill happens on the
  *     bar AFTER it), so exits are only ever read from bars past signalBarTime.
  *
- * There is NO TARGET on this engine — do not add one here. There is also no
- * trail, no breakeven and no premium stop; the trade runs to the stop, a doji, a
- * weak candle, or the square-off.
+ * There is NO TARGET on this engine — do not add one here, and no premium stop.
+ * The stop itself DOES move: breakeven then trail (HA_SCALP_TRAIL_ENABLED,
+ * default ON), ratcheting on each bar's own favourable extreme after that bar's
+ * adverse extreme has already tested the level — the same order Paper applies on
+ * candle close. The trade runs to that stop, a doji, a weak candle, or the
+ * square-off.
  *
  * There is NO historical option chain, so premium is δ+θ simulated. Treat ₹ as
  * DIRECTIONAL, not exact. A spread/slippage haircut of HA_SCALP_BT_SLIPPAGE_PTS
@@ -480,7 +483,7 @@ function _renderResults(res, from, to, trades, stats, meta) {
       { label: "Exit mix", value: exitMix },
       { label: "Trade frequency", value: meta.days ? `${((trades.length / meta.days) * 100).toFixed(1)}% of sessions` : "—" },
     ],
-    notes: `${instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? "FUTURES MODE — P&L is index points × lot with futures charges, no δ/θ and no premium stop (they have no meaning without a premium); a PE is a SHORT. " : ""}<b>Chart:</b> NIFTY 50 <b>INDEX spot</b> (<code>${escHtml(SPOT_SYMBOL)}</code>) ${cfg.resolutionMins}-min — not futures, and no volume is read anywhere in this strategy. Heikin Ashi is built ${cfg.haContinuous ? "CONTINUOUSLY across days (TradingView's own behaviour)" : "reseeded each IST day"}. <b>Warm-up:</b> ${escHtml(String(meta.warmupDays))} calendar day(s) of history were fetched BEFORE ${escHtml(from)} so the first requested session could already decide — the engine refuses to signal until it holds ${Math.max(cfg.maPeriod, cfg.haWarmupBars) + 1} bars (the ${cfg.maPeriod} ${cfg.maType.toUpperCase()} plus the recursive HA seed decay); those runway bars never open a trade. <b>Trend gate:</b> raw close above the ${cfg.maPeriod} ${cfg.maType.toUpperCase()} → CE only, below → PE only. A with-trend candle on the wrong side of the MA is skipped on purpose. <b>Entry candle:</b> a Heikin Ashi candle of the trend's colour with NO ${cfg.maxWickPct > 0 ? `wick beyond ${cfg.maxWickPct}% of its range` : "wick at all (exact zero — strict by the user's choice, so low frequency is expected)"} on the trend side, body ≥ ${cfg.minBodyPts}pt. <b>Fill:</b> the NEXT raw candle's OPEN — the signal fires on a closed bar and is filled on the bar that follows, which is what Paper and Live do on the first tick after the close. <b>Stop:</b> the signal candle's RAW ${cfg.slBufferPts ? `low−${cfg.slBufferPts}pt / high+${cfg.slBufferPts}pt` : "low / high"}, frozen at entry and never moved. <b>There is NO target</b>, no trail, no breakeven and no premium stop — the trade runs to the stop, a doji (HA body ≤ ${cfg.dojiBodyPct}% of range${cfg.exitOnDoji ? "" : ", currently OFF"}), a weak/opposite candle (body &lt; ${cfg.weakBodyPct}%${cfg.exitOnWeak ? "" : ", currently OFF"}), or the ${escHtml(process.env.HA_SCALP_FORCED_EXIT || "15:15")} square-off. Max ${escHtml(process.env.HA_SCALP_MAX_DAILY_TRADES || "3")} trades/day; the entry window is ${haStrategy._fmtMins(cfg.entryStartMin)}–${haStrategy._fmtMins(cfg.entryEndMin)}. Optional SL cap ${cfg.maxSlPts > 0 ? `<b>ON</b> at ${cfg.maxSlPts}pt` : "is OFF (default)"}. <b>Intra-bar ordering is conservative:</b> the stop is tested on the bar low/high BEFORE the candle exit is read on its close, so a bar doing both books the loss, and a bar that opened beyond the stop fills at the open. Option premium is δ+θ simulated (BACKTEST_DELTA ${escHtml(process.env.BACKTEST_DELTA || "0.55")}, θ ₹${escHtml(process.env.BACKTEST_THETA_DAY || "8")}/day) seeded at ₹${escHtml(process.env.HA_SCALP_BT_SEED_PREMIUM || "240")}, PLUS ${escHtml(process.env.HA_SCALP_BT_SLIPPAGE_PTS || "1.5")}pt slippage EACH way — treat ₹ as directional, not exact. <b>This strategy has NEVER traded live or on paper. Nothing here is validated, and the no-wick frequency has never been measured.</b>`,
+    notes: `${instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? "FUTURES MODE — P&L is index points × lot with futures charges, no δ/θ and no premium stop (they have no meaning without a premium); a PE is a SHORT. " : ""}<b>Chart:</b> NIFTY 50 <b>INDEX spot</b> (<code>${escHtml(SPOT_SYMBOL)}</code>) ${cfg.resolutionMins}-min — not futures, and no volume is read anywhere in this strategy. Heikin Ashi is built ${cfg.haContinuous ? "CONTINUOUSLY across days (TradingView's own behaviour)" : "reseeded each IST day"}. <b>Warm-up:</b> ${escHtml(String(meta.warmupDays))} calendar day(s) of history were fetched BEFORE ${escHtml(from)} so the first requested session could already decide — the engine refuses to signal until it holds ${Math.max(cfg.maPeriod, cfg.haWarmupBars) + 1} bars (the ${cfg.maPeriod} ${cfg.maType.toUpperCase()} plus the recursive HA seed decay); those runway bars never open a trade. <b>Trend gate:</b> raw close above the ${cfg.maPeriod} ${cfg.maType.toUpperCase()} → CE only, below → PE only. A with-trend candle on the wrong side of the MA is skipped on purpose. <b>Entry candle:</b> a Heikin Ashi candle of the trend's colour with NO ${cfg.maxWickPct > 0 ? `wick beyond ${cfg.maxWickPct}% of its range` : "wick at all (exact zero — strict by the user's choice, so low frequency is expected)"} on the trend side, body ≥ ${cfg.minBodyPts}pt. <b>Fill:</b> the NEXT raw candle's OPEN — the signal fires on a closed bar and is filled on the bar that follows, which is what Paper and Live do on the first tick after the close. <b>Stop:</b> the signal candle's RAW ${cfg.slBufferPts ? `low−${cfg.slBufferPts}pt / high+${cfg.slBufferPts}pt` : "low / high"}${cfg.trailEnabled ? `, then lifted to breakeven once ${cfg.breakevenPts}pt ahead and trailed ${cfg.trailPts}pt behind the best spot from ${cfg.trailStartPts}pt ahead (it only ever tightens, and it advances on each bar's own favourable extreme — the same ratchet Paper applies on candle close)` : ", frozen at entry and never moved"}. <b>There is NO target</b>${cfg.trailEnabled ? " and no premium stop" : ", no trail, no breakeven and no premium stop"} — the trade runs to the stop, a doji (HA body ≤ ${cfg.dojiBodyPct}% of range${cfg.exitOnDoji ? "" : ", currently OFF"}), a weak/opposite candle (body &lt; ${cfg.weakBodyPct}%${cfg.exitOnWeak ? "" : ", currently OFF"}), or the ${escHtml(process.env.HA_SCALP_FORCED_EXIT || "15:15")} square-off. Max ${escHtml(process.env.HA_SCALP_MAX_DAILY_TRADES || "3")} trades/day; the entry window is ${haStrategy._fmtMins(cfg.entryStartMin)}–${haStrategy._fmtMins(cfg.entryEndMin)}. Optional SL cap ${cfg.maxSlPts > 0 ? `<b>ON</b> at ${cfg.maxSlPts}pt` : "is OFF (default)"}. <b>Intra-bar ordering is conservative:</b> the stop is tested on the bar low/high BEFORE the candle exit is read on its close, so a bar doing both books the loss, and a bar that opened beyond the stop fills at the open. Option premium is δ+θ simulated (BACKTEST_DELTA ${escHtml(process.env.BACKTEST_DELTA || "0.55")}, θ ₹${escHtml(process.env.BACKTEST_THETA_DAY || "8")}/day) seeded at ₹${escHtml(process.env.HA_SCALP_BT_SEED_PREMIUM || "240")}, PLUS ${escHtml(process.env.HA_SCALP_BT_SLIPPAGE_PTS || "1.5")}pt slippage EACH way — treat ₹ as directional, not exact. <b>This strategy has NEVER traded live or on paper. Nothing here is validated, and the no-wick frequency has never been measured.</b>`,
   });
   // Appended, so the shared renderer's own responsive rules load first and these
   // ~440px overrides win.

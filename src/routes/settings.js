@@ -454,7 +454,7 @@ const SETTINGS_SCHEMA = [
       { key: "HA_SCALP_MIN_BODY_PTS", label: "Minimum Candle Body (pts)", type: "number", min: 0, max: 200, step: 1, effect: EFFECT.SESSION, desc: "A body smaller than this is not a strength candle. Without it, a flat candle satisfies \"no wick\" trivially.", default: "5" },
 
       // ── Exits ──
-      { key: "HA_SCALP_EXIT_ON_DOJI", label: "Exit on a Doji Candle", type: "toggle", effect: EFFECT.SESSION, desc: "A doji warns of a trend reversal — close the trade. Colour is irrelevant: a doji ends the trend question either way.", default: "true", subheader: "Exits (there is NO target and NO trail)" },
+      { key: "HA_SCALP_EXIT_ON_DOJI", label: "Exit on a Doji Candle", type: "toggle", effect: EFFECT.SESSION, desc: "A doji warns of a trend reversal — close the trade. Colour is irrelevant: a doji ends the trend question either way.", default: "true", subheader: "Exits (there is NO fixed target)" },
       { key: "HA_SCALP_DOJI_BODY_PCT", label: "Doji Body (% of range or less)", type: "number", min: 0, max: 100, step: 1, effect: EFFECT.SESSION, desc: "A candle whose body is this small a share of its range counts as a doji.", default: "20" },
       { key: "HA_SCALP_EXIT_ON_WEAK", label: "Exit on a Weak or Opposite Candle", type: "toggle", effect: EFFECT.SESSION, desc: "The trend is fading — close the trade. Covers both an opposite-coloured candle and a same-coloured one whose body has shrunk.", default: "true" },
       { key: "HA_SCALP_WEAK_BODY_PCT", label: "Weak Body (% of range)", type: "number", min: 0, max: 100, step: 1, effect: EFFECT.SESSION, desc: "A same-direction candle with a body below this share of its range is weak. Must sit above the doji threshold to mean anything separate.", default: "40" },

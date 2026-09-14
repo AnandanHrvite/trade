@@ -222,8 +222,8 @@ haLow   = min(low,  haOpen, haClose)</code></pre>
 <table>
 <tr><th></th><th>Where it comes from</th></tr>
 <tr><td><b>Entry</b></td><td>The <b>next candle's open</b>. The signal fires the instant the 15-minute candle closes, and the fill is the very next price the market prints. Paper and Live take the first tick after the close; Backtest takes the next raw bar's open — the same event.</td></tr>
-<tr><td><b>Stop</b></td><td>The <b>signal candle's own raw low</b> for a Call, or its <b>raw high</b> for a Put, plus <code>HA_SCALP_SL_BUFFER_PTS</code> (0 by default). It is frozen at entry and <b>never moved again</b>.</td></tr>
-<tr><td><b>Target</b></td><td><b>There isn't one.</b> No target, no trailing stop, no breakeven jump, no partial booking. The trade runs until a candle tells it to stop.</td></tr>
+<tr><td><b>Stop</b></td><td>The <b>signal candle's own raw low</b> for a Call, or its <b>raw high</b> for a Put, plus <code>HA_SCALP_SL_BUFFER_PTS</code> (0 by default). It then <b>moves in your favour only</b>: to breakeven once the trade is <code>HA_SCALP_BREAKEVEN_PTS</code> (15) ahead, and after <code>HA_SCALP_TRAIL_START_PTS</code> (25) it follows the best price <code>HA_SCALP_TRAIL_PTS</code> (20) behind. It never widens. Turn the whole ratchet off with <code>HA_SCALP_TRAIL_ENABLED=false</code>.</td></tr>
+<tr><td><b>Target</b></td><td><b>There isn't one.</b> No fixed target and no partial booking — the trade runs until the stop (frozen, breakeven or trailed) or a candle tells it to stop.</td></tr>
 </table>
 
 <p>The logic of the stop is simple: the signal candle was one where price never traded below its open. If price now goes back below that candle's low, the thing that made it a signal is no longer true, and the reason for the trade is gone.</p>
@@ -247,7 +247,7 @@ haLow   = min(low,  haOpen, haClose)</code></pre>
 <p>Here is a real one, drawn from the engine's own output.</p>
 
 <div class="tv-chart" id="ha-win"></div>
-<p class="tv-cap"><b>23 March 2026 — a Put that ran.</b> Spot is far below its 50 SMA, so only Puts are allowed. The 09:30 HA candle closes red with a 225-point body and <b>no top wick</b> — buyers never got above the open. Entry at the next candle's open, <b>22,706</b>; stop frozen at that candle's raw high, <b>22,743</b> (36 points). Five candles later the HA candle at 11:00 is a doji, and the trade is closed at <b>22,555</b> — <b>151 spot points</b> in the trade's favour. Note the stop was never moved: it sat at 22,743 the whole way.</p>
+<p class="tv-cap"><b>23 March 2026 — a Put that ran.</b> Spot is far below its 50 SMA, so only Puts are allowed. The 09:30 HA candle closes red with a 225-point body and <b>no top wick</b> — buyers never got above the open. Entry at the next candle's open, <b>22,706</b>; stop frozen at that candle's raw high, <b>22,743</b> (36 points). Five candles later the HA candle at 11:00 is a doji, and the trade is closed at <b>22,555</b> — <b>151 spot points</b> in the trade's favour. Note the stop was never moved: it sat at 22,743 the whole way. <b>This example predates the breakeven/trail ratchet</b> (added 15 Sept 2026, on by default) — it is drawn with the original frozen stop. The trail would not have changed this trade: price never came back near the stop, and the doji still ends it at 22,555.</p>
 
 <h2 id="reject">8. The trades it refuses</h2>
 
@@ -396,7 +396,7 @@ haLow   = min(low,  haOpen, haClose)</code></pre>
 <tr><td><code>HA_SCALP_MIN_BODY_PTS</code><br><span class="muted">Minimum Candle Body (pts)</span></td><td class="num">5</td><td>A body smaller than this is not a strength candle. Without it, a flat candle satisfies "no wick" trivially.</td></tr>
 </table>
 
-<h3>Exits (there is NO target and NO trail)</h3>
+<h3>Exits (there is NO fixed target)</h3>
 <table>
 <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
 <tr><td><code>HA_SCALP_EXIT_ON_DOJI</code><br><span class="muted">Exit on a Doji Candle</span></td><td class="num">true</td><td>A doji warns of a trend reversal — close the trade. Colour is irrelevant: a doji ends the trend question either way.</td></tr>
