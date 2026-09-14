@@ -4814,7 +4814,7 @@ async function reconcileOrphanedPositions() {
     if (savedHaScalp && savedHaScalp.position) {
       const p = savedHaScalp.position;
       const msg = `🚨 [STARTUP] Persisted HA_SCALP position found (crash recovery)!\n` +
-        `  ${p.side} ${p.symbol}: entry=₹${p.entryPrice} SL=₹${p.stopLoss} qty=${p.qty}\n` +
+        `  ${p.side} ${p.symbol}: entry=₹${p.entryPrice} SL=₹${p.stopLoss}${p.trailArmed ? " (trailed)" : p.breakevenArmed ? " (breakeven)" : ""} qty=${p.qty}\n` +
         `  Saved at: ${new Date(savedHaScalp.savedAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}\n` +
         `Bot was tracking this before crash. Check your broker dashboard!`;
       console.warn(msg);

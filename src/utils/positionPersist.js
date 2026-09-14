@@ -565,6 +565,13 @@ function saveHaScalpPosition(position, sessionMeta) {
         initialStopLoss: position.initialStopLoss || position.initialSlSpot,
         target:          null,   // HA_SCALP has no target, by design
         slPts:           position.slPts,
+        // Trail state. stopLoss above is the CURRENT (possibly trailed) level,
+        // so without these the snapshot cannot say whether it is the signal
+        // candle's extreme or a level the trail earned — and a resumed trade
+        // would trail from the entry again instead of from the best seen.
+        bestSpot:        position.bestSpot,
+        trailArmed:      !!position.trailArmed,
+        breakevenArmed:  !!position.breakevenArmed,
         trend:           position.trend,
         ma:              position.ma,
         maType:          position.maType,

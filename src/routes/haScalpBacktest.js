@@ -313,9 +313,15 @@ function runHaScalpBacktest(intraday, rangeFrom) {
             else {
               // Survived the bar — ratchet the stop for the NEXT one, exactly as
               // paper does on candle close. bestSpot advances on this bar's
-              // favourable extreme; the stop was already tested against the
-              // adverse extreme above, so a bar cannot both raise the stop and
-              // be stopped out by the level that raise produced.
+              // favourable extreme.
+              //
+              // A bar that spiked far enough to arm the trail and then retraced
+              // back through it leaves a level that is ALREADY breached at this
+              // close. That is deliberate and matches paper: paper sets the same
+              // level on the same close and its very next tick stops out. Here
+              // the next bar's adverse extreme takes it, and the worse-of
+              // open/level fill below books the retraced price — the same price
+              // paper's next tick would see. The give-back is real in both.
               const fav = isCE ? c.high : c.low;
               if (isCE ? fav > pos.bestSpot : fav < pos.bestSpot) pos.bestSpot = fav;
               const tr = haStrategy.trailStop(pos.side, pos, { cfg });

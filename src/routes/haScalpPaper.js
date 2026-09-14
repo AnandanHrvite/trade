@@ -698,8 +698,9 @@ async function simulateBuy(side, sig) {
   log(`🟢 [HA-SCALP-PAPER] ${_isFut ? (side === "CE" ? "LONG" : "SHORT") + " FUT" : "BUY_" + side} ${optInfo.symbol} qty=${qty} @ spot=${spotPrice} (index ${indexSpot})${_isFut ? "" : ` optLtp=₹${optionEntryLtp}`}`);
   log(`   ├─ Trend  : ${pos.trend} — raw close ${sig.rawClose} is ${side === "CE" ? "ABOVE" : "BELOW"} the ${sig.cfg.maPeriod} ${String(pos.maType).toUpperCase()} at ${pos.ma}`);
   log(`   ├─ Candle : ${side === "CE" ? "BULLISH" : "BEARISH"} Heikin Ashi, NO ${side === "CE" ? "BOTTOM" : "TOP"} WICK (${side === "CE" ? pos.lowerWickPct : pos.upperWickPct}% of range) · body ${pos.bodyPct}% · HA ${pos.haOpen} → ${pos.haClose}`);
-  log(`   ├─ Stop   : ${slSpot} = the signal candle's RAW ${side === "CE" ? "LOW" : "HIGH"} (${slPts}pt away). It never moves.`);
-  log(`   └─ Exits  : stop · doji candle · weak candle · EOD ${_envStr("HA_SCALP_FORCED_EXIT", "15:15")} — there is no target`);
+  const _tcfg = sig.cfg || {};
+  log(`   ├─ Stop   : ${slSpot} = the signal candle's RAW ${side === "CE" ? "LOW" : "HIGH"} (${slPts}pt away). ${_tcfg.trailEnabled ? `Moves to breakeven at +${_tcfg.breakevenPts}pt, then trails ${_tcfg.trailPts}pt behind from +${_tcfg.trailStartPts}pt.` : "It never moves."}`);
+  log(`   └─ Exits  : stop${_tcfg.trailEnabled ? " (incl. trail)" : ""} · doji candle · weak candle · EOD ${_envStr("HA_SCALP_FORCED_EXIT", "15:15")} — there is no target`);
 
   notifyEntry({
     mode: "HA-SCALP-PAPER",
@@ -962,12 +963,33 @@ function _checkCandleExits(barTime, lateBar) {
   // It only ever tightens, so doing it before the reversal tests below cannot
   // rescue a trade that should exit — and the raised level is what the next
   // tick's stopHit() compares against.
-  const tr = haStrategy.trailStop(pos.side, pos, {});
+  //
+  // On a CATCH-UP bar (several bars landing in one poll) the live bestSpot was
+  // built from ticks that happened AFTER this bar, so trailing on it would be
+  // lookahead. Use the bar's own favourable extreme instead — which is exactly
+  // what the backtest does — and let the normal path keep the tick-tracked
+  // value, where "now" and the bar's close are the same moment.
+  let trailPos = pos;
+  if (lateBar === true && raw) {
+    const fav = pos.side === "CE" ? raw.high : raw.low;
+    if (typeof fav === "number" && Number.isFinite(fav)) {
+      // Rebuild the anchor from the entry forward, bar by bar, so it can only
+      // ever reflect bars already judged. Kept in its own field and passed as a
+      // scoped view — overwriting pos.bestSpot would throw away the real
+      // tick-tracked extreme that the normal path depends on.
+      if (pos.catchUpBest == null) pos.catchUpBest = pos.entrySpot;
+      pos.catchUpBest = pos.side === "CE"
+        ? Math.max(pos.catchUpBest, fav)
+        : Math.min(pos.catchUpBest, fav);
+      trailPos = { entrySpot: pos.entrySpot, slSpot: pos.slSpot, bestSpot: pos.catchUpBest };
+    }
+  }
+  const tr = haStrategy.trailStop(pos.side, trailPos, {});
   if (tr) {
     pos.slSpot = tr.stop;
     pos.slPts = parseFloat(Math.abs(tr.stop - pos.entrySpot).toFixed(2));
     if (tr.reason === "BREAKEVEN") pos.breakevenArmed = true; else pos.trailArmed = true;
-    log(`🔒 [HA-SCALP-PAPER] ${tr.reason === "BREAKEVEN" ? "Breakeven armed" : "Trail raised"} — SL → ${pos.slSpot} (favourable ${tr.favPts}pt, best spot ${pos.bestSpot})`);
+    log(`🔒 [HA-SCALP-PAPER] ${tr.reason === "BREAKEVEN" ? "Breakeven armed" : "Trail raised"} — SL → ${pos.slSpot} (favourable ${tr.favPts}pt, best spot ${trailPos.bestSpot})`);
     try { require("../utils/positionPersist").saveHaScalpPosition(pos, { sessionPnl: state.sessionPnl }); } catch (_) {}
   }
 
@@ -1665,7 +1687,7 @@ function _positionCardHtml(pos, optLtp) {
     <div><span style="color:var(--muted-1,#8ba1c2);">Side</span> ${pos.side}</div>
     <div><span style="color:var(--muted-1,#8ba1c2);">Symbol</span> ${pos.symbol}</div>
     <div><span style="color:var(--muted-1,#8ba1c2);">Entry (spot)</span> ${pos.entrySpot}</div>
-    <div><span style="color:var(--muted-1,#8ba1c2);">Stop</span> ${pos.slSpot} (${pos.riskPts}pt)</div>
+    <div><span style="color:var(--muted-1,#8ba1c2);">Stop</span> ${pos.slSpot} (${pos.slPts != null ? pos.slPts : pos.riskPts}pt${pos.trailArmed ? ", trailed" : pos.breakevenArmed ? ", breakeven" : ""})</div>
     <div><span style="color:var(--muted-1,#8ba1c2);">Trend</span> ${pos.trend || "—"} vs MA ${pos.ma != null ? pos.ma : "—"}</div>
     <div><span style="color:var(--muted-1,#8ba1c2);">Signal candle</span> body ${pos.bodyPct != null ? pos.bodyPct + "%" : "—"}, ${wickLabel} wick ${wickPct != null ? wickPct + "%" : "—"}</div>
     <div><span style="color:var(--muted-1,#8ba1c2);">Live P&L</span> ₹${live}</div>
