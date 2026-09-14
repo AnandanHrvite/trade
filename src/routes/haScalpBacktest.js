@@ -266,6 +266,9 @@ function runHaScalpBacktest(intraday, rangeFrom) {
             // Risk is restated against the ACTUAL fill, not the signal close —
             // the signal's own slPts was measured from a price we did not get.
             slPts: parseFloat(Math.abs(c.open - sig.slSpot).toFixed(2)),
+            // Trail anchor, seeded with the fill — same contract as paper.
+            bestSpot: parseFloat(c.open.toFixed(2)),
+            trailArmed: false, breakevenArmed: false,
             trend: sig.trend, ma: sig.ma, maType: sig.maType,
             bodyPct: sig.bodyPct,
             wickPct: sig.side === "CE" ? sig.lowerWickPct : sig.upperWickPct,
@@ -296,7 +299,10 @@ function runHaScalpBacktest(intraday, rangeFrom) {
             const fill = isCE
               ? (c.open < pos.slSpot ? c.open : pos.slSpot)
               : (c.open > pos.slSpot ? c.open : pos.slSpot);
-            close(fill, c.time, `Stop hit — signal candle's raw ${isCE ? "low" : "high"} ${pos.slSpot} taken out (${pos.slPts}pt against)`, "STOP");
+            const what = pos.trailArmed ? "the trailed stop"
+              : pos.breakevenArmed ? "the breakeven stop"
+              : `signal candle's raw ${isCE ? "low" : "high"}`;
+            close(fill, c.time, `Stop hit — ${what} ${pos.slSpot} taken out (${pos.slPts}pt against)`, "STOP");
           } else if (c.time > pos.signalBarTime) {
             // Candle exit, on this CLOSED bar's HA candle. The `>` guard is what
             // stops the SIGNAL candle from exiting the trade it just opened —
@@ -304,6 +310,21 @@ function runHaScalpBacktest(intraday, rangeFrom) {
             // re-read of it would still be wrong.
             const ex = haStrategy.exitSignal(pos.side, haAll[gi], { cfg });
             if (ex) close(c.close, c.time, `${ex.label} — ${ex.detail}`, ex.reason);
+            else {
+              // Survived the bar — ratchet the stop for the NEXT one, exactly as
+              // paper does on candle close. bestSpot advances on this bar's
+              // favourable extreme; the stop was already tested against the
+              // adverse extreme above, so a bar cannot both raise the stop and
+              // be stopped out by the level that raise produced.
+              const fav = isCE ? c.high : c.low;
+              if (isCE ? fav > pos.bestSpot : fav < pos.bestSpot) pos.bestSpot = fav;
+              const tr = haStrategy.trailStop(pos.side, pos, { cfg });
+              if (tr) {
+                pos.slSpot = tr.stop;
+                pos.slPts = parseFloat(Math.abs(tr.stop - pos.entrySpot).toFixed(2));
+                if (tr.reason === "BREAKEVEN") pos.breakevenArmed = true; else pos.trailArmed = true;
+              }
+            }
           }
         }
       }

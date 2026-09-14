@@ -656,6 +656,11 @@ async function simulateBuy(side, sig) {
     initialSlSpot:  slSpot,
     slPts,
     riskPts:        slPts,
+    // Trail anchor — best spot seen while the trade is open. Seeded with the
+    // entry so a trade that never goes green trails from the entry, not from 0.
+    bestSpot:       spotPrice,
+    trailArmed:     false,
+    breakevenArmed: false,
     // Signal context (kept on the trade record for analytics / reports)
     signalSpot:     sig.entrySpot,
     signalSlPts:    sig.slPts,
@@ -890,6 +895,12 @@ function _checkExits(spotPrice) {
 
   if (optLtp > pos.peakPremium) pos.peakPremium = optLtp;
   const favPts = (spotPrice - pos.entrySpot) * (pos.side === "CE" ? 1 : -1);
+  // Trail anchor. Tracked per tick (the extreme is a tick event, not a candle
+  // one) but only ACTED on at candle close, so the stop still moves on closed
+  // bars exactly like every other decision in this engine.
+  if (pos.side === "CE" ? spotPrice > pos.bestSpot : spotPrice < pos.bestSpot) {
+    pos.bestSpot = spotPrice;
+  }
   const curPnl = (optLtp - pos.optionEntryLtp) * pos.qty;
   if (favPts > (pos.mfeSpotPts || 0)) { pos.mfeSpotPts = parseFloat(favPts.toFixed(2)); pos.secsToMFE = parseFloat(((Date.now() - pos.entryTimeMs) / 1000).toFixed(1)); }
   if (curPnl > (pos.mfePnl     || 0)) pos.mfePnl = parseFloat(curPnl.toFixed(2));
@@ -898,8 +909,20 @@ function _checkExits(spotPrice) {
 
   // The only per-tick exit: the signal candle's own raw high/low was taken out.
   if (haStrategy.stopHit(pos.side, spotPrice, pos.slSpot)) {
+    // Name the level that actually stopped it. A trailed or breakeven stop is
+    // no longer the signal candle's extreme, and calling it that in the log
+    // would hide the trail's work behind a reason string that reads like a loss.
+    const what = pos.trailArmed
+      ? `the trailed stop`
+      : pos.breakevenArmed
+        ? `the breakeven stop`
+        : `the signal candle's ${pos.side === "CE" ? "low" : "high"}`;
     simulateSell(
-      `Stop hit — spot ${spotPrice} took out the signal candle's ${pos.side === "CE" ? "low" : "high"} ${pos.slSpot} (${pos.riskPts}pt against)`,
+      `Stop hit — spot ${spotPrice} took out ${what} ${pos.slSpot} (${pos.riskPts}pt risk at entry)`,
+      // Still a stop-out even when the trailed level books a profit: the rule
+      // above counts the EVENT, not the sign of the P&L, and the restart
+      // recovery at _restoreSession re-derives this from the same "Stop hit"
+      // prefix — so both paths agree.
       { isStopOut: true }
     );
   }
@@ -934,6 +957,19 @@ function _checkCandleExits(barTime, lateBar) {
   // Never let the signal candle itself close the trade: the entry happens on
   // the bar AFTER it, so the position must survive at least one new bar.
   if (pos.signalBarTime != null && ha.time <= pos.signalBarTime) return;
+
+  // Breakeven / trail FIRST: raise the stop for the bar that is now starting.
+  // It only ever tightens, so doing it before the reversal tests below cannot
+  // rescue a trade that should exit — and the raised level is what the next
+  // tick's stopHit() compares against.
+  const tr = haStrategy.trailStop(pos.side, pos, {});
+  if (tr) {
+    pos.slSpot = tr.stop;
+    pos.slPts = parseFloat(Math.abs(tr.stop - pos.entrySpot).toFixed(2));
+    if (tr.reason === "BREAKEVEN") pos.breakevenArmed = true; else pos.trailArmed = true;
+    log(`🔒 [HA-SCALP-PAPER] ${tr.reason === "BREAKEVEN" ? "Breakeven armed" : "Trail raised"} — SL → ${pos.slSpot} (favourable ${tr.favPts}pt, best spot ${pos.bestSpot})`);
+    try { require("../utils/positionPersist").saveHaScalpPosition(pos, { sessionPnl: state.sessionPnl }); } catch (_) {}
+  }
 
   const ex = haStrategy.exitSignal(pos.side, ha, {});
   if (!ex) return;

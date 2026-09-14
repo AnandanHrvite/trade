@@ -96,9 +96,20 @@
  *        HA candle of the OPPOSITE colour. "Trend is getting weak, ready for
  *        exit better."
  *
- *     There is NO fixed target and NO trailing stop. The trade runs until the
- *     stop, a doji, a weak candle, or the square-off time. That is the rule as
- *     given; a target was explicitly not asked for.
+ *     d. BREAKEVEN + TRAIL (HA_SCALP_TRAIL_ENABLED, default ON) — the stop is
+ *        frozen only until the trade earns the right to move it. Once
+ *        favourable by HA_SCALP_BREAKEVEN_PTS (15) the stop lifts to the entry;
+ *        once favourable by HA_SCALP_TRAIL_START_PTS (25) it follows the best
+ *        spot at HA_SCALP_TRAIL_PTS (20) behind. It RATCHETS — never widened.
+ *
+ *        Added 2026-09-15 after the first 14 paper trades: 10 of them were up
+ *        more than ₹200 at some point (₹10,186 of open profit in total) and
+ *        every one round-tripped, because the stop never moved and there is no
+ *        target. Set HA_SCALP_TRAIL_ENABLED=false for the original frozen-stop
+ *        behaviour.
+ *
+ *     There is still NO fixed target. The trade runs until the stop (frozen,
+ *     breakeven or trailed), a doji, a weak candle, or the square-off time.
  *
  * ── THE FIRST HA CANDLE OF THE DAY ──────────────────────────────────────────
  * haOpen is recursive across the overnight boundary. This engine builds the HA
@@ -112,8 +123,9 @@
  * a drawn line depends on which swing points you pick and is not reproducible),
  * no VIX gate, no OI filter, no ADX, no RSI, no ATR, no VWAP, no SuperTrend, no
  * volume test, no multi-timeframe bias, no extra confirmation candle, no fixed
- * target, no trailing stop, no breakeven jump, no partial booking, no premium
- * stop, no re-entry rule beyond the shared cooldown, no expiry-day special case.
+ * target, no partial booking, no premium stop, no re-entry rule beyond the
+ * shared cooldown, no expiry-day special case. (The breakeven jump and trailing
+ * stop WERE on this list until 2026-09-15 — see exit rule 4d for why they moved.)
  *
  * ── DETERMINISM ─────────────────────────────────────────────────────────────
  * Every value a decision reads comes from CLOSED 15-minute candle OHLC as
@@ -134,7 +146,7 @@
  *   computeMA(candles, cfg)          -> MA series, index-aligned to `candles`
  *   classifyCandle(ha, cfg)          -> { bullish, bearish, doji, weak, ... }
  *   getSignal(candles, opts)         -> { signal, side, entrySpot, slSpot, ... }
- *   stopHit / exitSignal             -> the ONLY exit tests (plus route EOD)
+ *   stopHit / trailStop / exitSignal -> the ONLY exit tests (plus route EOD)
  */
 
 const { SMA, EMA } = require("technicalindicators");
@@ -247,6 +259,14 @@ function getConfig() {
     // Risk
     slBufferPts:     _numEnv("HA_SCALP_SL_BUFFER_PTS", 0, 0),
     maxSlPts:        _numEnv("HA_SCALP_MAX_SL_PTS", 0, 0),
+
+    // Breakeven + spot trail. Both ratchet the stop one way only and are read
+    // on CLOSED candles, like every other decision here — the per-tick test
+    // stays the single frozen-level compare in stopHit().
+    trailEnabled:    _boolEnv("HA_SCALP_TRAIL_ENABLED", true),
+    breakevenPts:    _numEnv("HA_SCALP_BREAKEVEN_PTS", 15, 0),
+    trailPts:        _numEnv("HA_SCALP_TRAIL_PTS", 20, 0),
+    trailStartPts:   _numEnv("HA_SCALP_TRAIL_START_PTS", 25, 0),
   };
 }
 
@@ -618,6 +638,59 @@ function stopHit(side, price, stop) {
 }
 
 /**
+ * Breakeven + spot trail. Returns the NEW stop level, or null to leave the stop
+ * alone. Never widens: a returned level is always at least as tight as `slSpot`,
+ * so a retrace cannot hand the trade back its original risk.
+ *
+ * Two stages, both measured in SPOT points from the entry (the same units the
+ * stop itself is in — no premium anywhere, so this stays as deterministic as
+ * the rest of the engine):
+ *
+ *   BREAKEVEN — once favourable by `breakevenPts`, the stop moves to the entry.
+ *               The trade can no longer become a full loss.
+ *   TRAIL     — once favourable by `trailStartPts`, the stop follows `bestSpot`
+ *               at a distance of `trailPts`.
+ *
+ * Both are applied in that order and the tightest wins, so with trailStartPts
+ * below breakevenPts the trail simply takes over earlier. Called on candle
+ * close; `bestSpot` is the best spot seen so far (tracked per tick by the route).
+ *
+ * @param {"CE"|"PE"} side
+ * @param {object} pos  { entrySpot, slSpot, bestSpot }
+ * @param {object} opts { cfg }
+ * @returns {{ stop: number, reason: "BREAKEVEN"|"TRAIL", favPts: number } | null}
+ */
+function trailStop(side, pos, opts) {
+  const o = opts || {};
+  const cfg = o.cfg || getConfig();
+  if (!cfg.trailEnabled) return null;
+  if (side !== "CE" && side !== "PE") return null;
+  if (!pos || !_num(pos.entrySpot) || !_num(pos.slSpot)) return null;
+
+  const best = _num(pos.bestSpot) ? pos.bestSpot : pos.entrySpot;
+  const dir = side === "CE" ? 1 : -1;
+  const favPts = (best - pos.entrySpot) * dir;
+  if (!(favPts > 0)) return null;
+
+  let stop = null, reason = null;
+
+  if (cfg.breakevenPts > 0 && favPts >= cfg.breakevenPts) {
+    stop = pos.entrySpot;
+    reason = "BREAKEVEN";
+  }
+  if (cfg.trailPts > 0 && favPts >= cfg.trailStartPts) {
+    const cand = best - dir * cfg.trailPts;
+    // Tighter of the two: further along the trade's direction.
+    if (stop == null || (cand - stop) * dir > 0) { stop = cand; reason = "TRAIL"; }
+  }
+  if (stop == null) return null;
+
+  // Ratchet only — never loosen a stop that is already tighter.
+  if ((stop - pos.slSpot) * dir <= 0) return null;
+  return { stop: _r2(stop), reason, favPts: _r2(favPts) };
+}
+
+/**
  * Candle-close exit test, run on each CLOSED 15-minute HA candle while a
  * position is open. Returns null when the trade should be left alone.
  *
@@ -684,6 +757,7 @@ module.exports = {
   classifyCandle,
   getSignal,
   stopHit,
+  trailStop,
   exitSignal,
   // shared time helpers (routes must not re-derive IST arithmetic)
   _istDayOf,
