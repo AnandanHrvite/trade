@@ -1047,7 +1047,16 @@ class SocketManager {
       try {
         if (this._stopped) { this._clearWatchdog(); return; }
         if (this._authFailed) return;  // don't try to reconnect on dead auth
-        if (!this._isMarketHours()) return;
+        if (!this._isMarketHours()) {
+          // The session is over but the feed is still ATTACHED (an overnight
+          // paper session). A storm latched before the close has nothing left to
+          // describe, and neither clear path can fire once the ticks stop — so
+          // without this it survives to 09:15 and greets the new session with
+          // yesterday's "over ~N min". Silent: a feed that idled out at the close
+          // did not "recover". stop() does the same for a RELEASED feed.
+          if (this._flapping) this._clearFlap(true);
+          return;
+        }
         // A reconnect is already scheduled — the backoff owns recovery from here.
         // Barging in with our own _connect() is what let two reconnect loops run
         // against one socket and kept the feed down for a whole session.
