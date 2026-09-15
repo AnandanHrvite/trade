@@ -472,7 +472,12 @@ class SocketManager {
     // strategy. Without this the dashboard showed green through 330 drops.
     // Gated on `running`: a released feed has not gone unstable, and the banner's
     // "strategies are getting NO live ticks" is meaningless with none attached.
-    else if (running && this._flapping) reason = "flapping";
+    // Gated on `inMarket` for the same reason `longDown` is: outside 09:15-15:30
+    // there are no ticks to lose, so "getting NO live ticks" is just the clock.
+    // A storm latched before the close would otherwise keep the banner red all
+    // evening with its "over ~N min" counting up — nothing clears _flapping while
+    // the feed stays attached, since both clear paths need a tick or a close.
+    else if (running && inMarket && this._flapping) reason = "flapping";
     return {
       running,
       authFailed:    this._authFailed,
@@ -946,6 +951,14 @@ class SocketManager {
    * that never carried a single tick still reported healthy.
    */
   _noteFlap(uptimeMs) {
+    // Outside market hours a connect-then-drop is Fyers closing an IDLE socket,
+    // not a feed fault — the same behaviour _scheduleReconnect() already names
+    // ("Fyers drops the idle socket seconds after accepting it"). That guard only
+    // skips reconnecting when no strategy is attached, so an evening paper
+    // session keeps the loop alive and every cycle counted as a flap: 5 of them
+    // latch _flapping, and nothing outside market hours can ever clear it again.
+    // Retries are untouched — this only decides what counts as a FAULT.
+    if (!this._isMarketHours()) return;
     this._flapCount += 1;
     if (!this._flapSince) this._flapSince = Date.now();
     if (this._flapCount < FLAP_ALERT_AFTER) return;
