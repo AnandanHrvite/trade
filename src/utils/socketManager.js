@@ -717,7 +717,11 @@ class SocketManager {
     // index alone: it can then be served by the original permissive path, and
     // one working feed beats two dead ones. The secondary's strategy keeps
     // deciding on closed candles from the history endpoint.
-    if (this._spotSymbols.size > 1) {
+    // Option contracts go FIRST when any are subscribed: they are the newest
+    // thing on the wire and the cheapest to lose (REST polling takes over),
+    // whereas dropping an index costs its strategies their live spot feed. If the
+    // run continues with no contracts left, the next bail-out drops the index.
+    if (this._spotSymbols.size > 1 && this._extraSymbols.size === 0) {
       // Keep NIFTY 50 when it is on the wire, whichever index opened the socket:
       // twelve strategies read it against two on NIFTY BANK. Keeping "the
       // primary" dropped NIFTY for all of them whenever a BANKNIFTY strategy
@@ -725,6 +729,10 @@ class SocketManager {
       // per-index handler (EMA_RSI_ST's, if it joined as a secondary) moves into
       // the primary slot, because the single-index path below delivers as _symbol.
       if (this._symbol !== DEFAULT_SPOT_SYMBOL && this._spotSymbols.has(DEFAULT_SPOT_SYMBOL)) {
+        // A label learned as the old primary's exact symbol proves the wire uses
+        // exact symbols, so NIFTY's label is its own. Left stale, the strict
+        // single-index path would reject every NIFTY tick and bail out again.
+        if (this._spotTickSymbol === this._symbol) this._spotTickSymbol = DEFAULT_SPOT_SYMBOL;
         this._symbol     = DEFAULT_SPOT_SYMBOL;
         this._onSpotTick = this._spotHandlers.get(DEFAULT_SPOT_SYMBOL) || null;
         this._spotHandlers.delete(DEFAULT_SPOT_SYMBOL);

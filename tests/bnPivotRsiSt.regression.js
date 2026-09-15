@@ -473,6 +473,33 @@ check("a multi-index bail-out keeps NIFTY 50 even when NIFTY BANK opened the soc
   }
 });
 
+check("a multi-index bail-out drops option contracts before it drops an index, and re-labels NIFTY", () => {
+  const NIFTY = "NSE:NIFTY50-INDEX", BANK = "NSE:NIFTYBANK-INDEX", OPT = "NSE:NIFTY26SEP24500CE";
+  const sm = socketManager;
+  const saved = {
+    symbol: sm._symbol, spots: sm._spotSymbols, handlers: sm._spotHandlers, onSpot: sm._onSpotTick,
+    probe: sm._spotTickSymbol, extras: sm._extraSymbols, disabled: sm._extrasDisabled,
+    tomb: sm._tombstone, unsub: sm._sendUnsubscribe,
+  };
+  try {
+    sm._tombstone = () => {}; sm._sendUnsubscribe = () => true;
+    sm._symbol = BANK; sm._spotSymbols = new Set([BANK, NIFTY]); sm._spotHandlers = new Map();
+    sm._onSpotTick = null; sm._spotTickSymbol = BANK; sm._extraSymbols = new Set([OPT]); sm._extrasDisabled = false;
+
+    sm._bailOutOfExtras();
+    assert.strictEqual(sm._extraSymbols.size, 0, "option contracts must be dropped first");
+    assert.strictEqual(sm._spotSymbols.size, 2, "an index was dropped while option contracts could have gone instead");
+
+    sm._bailOutOfExtras();
+    assert.deepStrictEqual(Array.from(sm._spotSymbols), [NIFTY], "the second bail-out must fall back to NIFTY alone");
+    assert.strictEqual(sm._spotTickSymbol, NIFTY, "a stale BANKNIFTY label makes the strict path reject every NIFTY tick");
+  } finally {
+    sm._symbol = saved.symbol; sm._spotSymbols = saved.spots; sm._spotHandlers = saved.handlers; sm._onSpotTick = saved.onSpot;
+    sm._spotTickSymbol = saved.probe; sm._extraSymbols = saved.extras; sm._extrasDisabled = saved.disabled;
+    sm._tombstone = saved.tomb; sm._sendUnsubscribe = saved.unsub;
+  }
+});
+
 check("shared-feed guards: pre-connect subscribe, supervisor NIFTY top-up, stopped Live, replay /start", () => {
   const sm = read("utils/socketManager.js");
   const errAt = sm.indexOf("skt.on('error'");
