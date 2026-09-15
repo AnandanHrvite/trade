@@ -656,6 +656,22 @@ check("the BN tick callback is BOUND to the BANKNIFTY index", () => {
     "the callback must be removed on teardown or it leaks on the shared socket");
 });
 
+check("the NIFTY V2 tick callback never takes V1's primary socket handler", () => {
+  // V1 (EMA_RSI_ST) owns socketManager's primary NIFTY handler. start() on a
+  // running same-symbol socket REPLACES it — so V2 passing onTick to start(), or
+  // calling start() at all while the socket runs, starved V1 of every tick
+  // (zero trades AND zero skip logs from 2026-09-05 while V2 ran).
+  const code = read("routes/emaRsiStV2Paper.js").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  assert.ok(/socketManager\.addCallback\(\s*SOCKET_CALLBACK_ID\s*,\s*onTick\b/.test(code),
+    "onTick must be registered via addCallback()");
+  assert.ok(!/socketManager\.start\(\s*subscribeSymbol\s*,\s*onTick/.test(code),
+    "passing onTick to start() overwrites V1's primary handler");
+  assert.ok(/if\s*\(\s*!socketManager\.isRunning\(\)\s*\)\s*socketManager\.start\(/.test(code),
+    "start() must be guarded by !isRunning() — even start(sym, () => {}) overwrites V1's handler");
+  const removals = (code.match(/socketManager\.removeCallback\(\s*SOCKET_CALLBACK_ID\s*\)/g) || []).length;
+  assert.ok(removals >= 4, `every teardown path must remove the callback (found ${removals}, want 4)`);
+});
+
 check("BANKNIFTY option symbols are parsed as BANKNIFTY, not NIFTY", () => {
   const code = read(BN_ROUTES[0]).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
   assert.ok(!/NSE:NIFTY[0-9]/.test(code),

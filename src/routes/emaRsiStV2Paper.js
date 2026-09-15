@@ -445,6 +445,10 @@ function isStartAllowed() {
 
 // ── Auto-stop timer handle (cleared on manual stop) ─────────────────────────────
 let _autoStopTimer = null;
+// Unique per route. V1 (EMA_RSI_ST) owns socketManager's PRIMARY NIFTY handler;
+// V2 must fan out through addCallback, because start() on a running NIFTY socket
+// REPLACES that handler — which silently starved V1 of every tick from 2026-09-05.
+const SOCKET_CALLBACK_ID = "ema_rsi_st_v2-paper";
 
 // Schedule auto-stop at TRADE_STOP_TIME (default 15:30 IST).
 // Set TRADE_STOP_TIME=HH:MM in .env to override.
@@ -1399,6 +1403,7 @@ async function onCandleClose(candle) {
       // EMA9_VWAP only, so an EMA_RSI_ST EOD stop tore the shared Fyers feed out
       // from under a running PA / ORB / Trend_PB engine — their candles, per-tick
       // stops and EOD square-off all went dead. Same guard /stop already uses.
+      socketManager.removeCallback(SOCKET_CALLBACK_ID);
       sharedSocketState.clearEmaRsiStV2Mode();
       if (!sharedSocketState.isAnyActive() && socketManager.isRunning()) {
         socketManager.stop();
@@ -2377,6 +2382,7 @@ router.get("/start", async (req, res) => {
     // Clear THIS slot first, then stop the shared socket only if nothing else is
     // subscribed — see the EOD note in onCandleClose. The old BB_RSI+EMA9_VWAP-only
     // guard killed the feed for a running PA / ORB / Trend_PB engine.
+    socketManager.removeCallback(SOCKET_CALLBACK_ID);
     sharedSocketState.clearEmaRsiStV2Mode();
     if (!sharedSocketState.isAnyActive() && socketManager.isRunning()) {
       socketManager.stop();
@@ -2388,8 +2394,10 @@ router.get("/start", async (req, res) => {
 
   log(`📡 Subscribing to ${subscribeSymbol} for live tick data...`);
 
-  // Start the socket manager — single socket, spot-only to begin
-  socketManager.start(subscribeSymbol, onTick, log);
+  // Secondary consumer: never pass onTick to start(), and never call start() on a
+  // running socket — even start(sym, () => {}) overwrites V1's primary handler.
+  if (!socketManager.isRunning()) socketManager.start(subscribeSymbol, () => {}, log);
+  socketManager.addCallback(SOCKET_CALLBACK_ID, onTick, log, subscribeSymbol);
   sharedSocketState.setEmaRsiStV2Mode("EMA_RSI_ST_V2_PAPER");
 
   return res.json({
@@ -2423,6 +2431,7 @@ router.get("/stop", async (req, res) => {
   // strategy (ORB/PA/BB_RSI/Trend_PB/EMA9_VWAP) is still subscribed. The old guard
   // only checked BB_RSI + EMA9_VWAP, so stopping EMA_RSI_ST could tear the shared
   // socket out from under a live ORB / PA / Trend_PB position.
+  socketManager.removeCallback(SOCKET_CALLBACK_ID);
   sharedSocketState.clearEmaRsiStV2Mode();
   if (ptState._simMode) {
     tickSimulator.stop();
@@ -4886,6 +4895,7 @@ function stopSession(reason = "Shutdown square-off") {
   try { stopOptionPolling(); } catch (_) {}
   if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
   sharedSocketState.clearEmaRsiStV2Mode();
+  socketManager.removeCallback(SOCKET_CALLBACK_ID);
   if (!ptState._simMode && !sharedSocketState.isAnyActive() && socketManager.isRunning()) {
     socketManager.stop();
   }
