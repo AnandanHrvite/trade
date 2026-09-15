@@ -614,6 +614,18 @@ class SocketManager {
     if (this._spotSymbols.size > 1) {
       if (sym && this._spotSymbols.has(sym)) {
         spotSym = sym;
+        // The probe above only runs with ONE index subscribed, but the feed
+        // supervisor (and a parallel Start All) subscribes two before the first
+        // tick — so attribution was never learned and every option contract was
+        // refused all day (REST polling only). An EXACT match on the subscribed
+        // primary is stronger proof than the single-index inference.
+        if (this._spotTickSymbol === null && sym === this._symbol && this._extraSymbols.size === 0) {
+          this._spotTickSymbol = sym;
+          if (!this._attributionLogged) {
+            this._attributionLogged = true;
+            this._log(`📡 [SOCKET] Tick symbol attribution OK ("${sym}", ${this._spotSymbols.size} indices) — options may share this connection`);
+          }
+        }
       } else {
         this._noteUnattributed(sym);
         return;
@@ -706,6 +718,17 @@ class SocketManager {
     // one working feed beats two dead ones. The secondary's strategy keeps
     // deciding on closed candles from the history endpoint.
     if (this._spotSymbols.size > 1) {
+      // Keep NIFTY 50 when it is on the wire, whichever index opened the socket:
+      // twelve strategies read it against two on NIFTY BANK. Keeping "the
+      // primary" dropped NIFTY for all of them whenever a BANKNIFTY strategy
+      // happened to start first. The kept index becomes the primary, and its
+      // per-index handler (EMA_RSI_ST's, if it joined as a secondary) moves into
+      // the primary slot, because the single-index path below delivers as _symbol.
+      if (this._symbol !== DEFAULT_SPOT_SYMBOL && this._spotSymbols.has(DEFAULT_SPOT_SYMBOL)) {
+        this._symbol     = DEFAULT_SPOT_SYMBOL;
+        this._onSpotTick = this._spotHandlers.get(DEFAULT_SPOT_SYMBOL) || null;
+        this._spotHandlers.delete(DEFAULT_SPOT_SYMBOL);
+      }
       const secondaries = Array.from(this._spotSymbols).filter((x) => x !== this._symbol);
       for (const sym of secondaries) {
         this._spotSymbols.delete(sym);
@@ -893,6 +916,16 @@ class SocketManager {
 
     skt.on('error', (err) => {
       if (gen !== this._connGen) return;  // superseded attempt
+      // A subscribe sent before the handshake completes (the supervisor adding
+      // NIFTY BANK at 09:15, a parallel Start All) makes the SDK emit
+      // {code:-99, type:"sub", "socket is disconnected"} — verified against
+      // fyers-api-v3. The connection is not broken: the connect handler
+      // re-subscribes every index. Reconnecting here tore down the socket that
+      // was coming up, and left a stale error on the health banner.
+      if (err && err.type === 'sub' && err.code === -99) {
+        this._log(`📡 [SOCKET] Subscribe queued before connect — re-asserted on connect (${err.message || 'socket is disconnected'})`);
+        return;
+      }
       this._log(`❌ [SOCKET] Error: ${JSON.stringify(err)}`);
       // Track last error for /socket-health surface.
       try {

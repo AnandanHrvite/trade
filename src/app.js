@@ -1166,6 +1166,21 @@ app.use((req, res, next) => {
 
 
 
+// A replay patches the shared socketManager and sharedSocketState for its whole
+// run, and its preflight only refuses to START while strategies are active — not
+// the reverse. A strategy started mid-replay registers into the replay harness
+// (fed the replayed day's prices), and when the run ends the harness drops every
+// callback and force-clears every mode: the strategy shows RUNNING with no feed.
+// The replay itself calls /start through the router stack, so it never hits this.
+app.use((req, res, next) => {
+  if (!/-(paper|live|live-harness)\/start\/?$/.test(req.path)) return next();
+  let inReplay = false;
+  try { inReplay = require("./services/tickReplay").isReplayInProgress(); } catch (_) {}
+  if (!inReplay) return next();
+  console.warn(`🚫 [REPLAY] ${req.path} refused — a replay is running`);
+  return res.status(409).json({ success: false, error: "A replay is running — it patches the shared feed. Start strategies after it finishes (or cancel it on /replay)." });
+});
+
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.use("/auth",       require("./routes/auth"));
 app.use("/ema_rsi_st-backtest",   require("./routes/emaRsiStBacktest"));

@@ -1825,6 +1825,11 @@ async function onCandleClose(candle) {
 
 function onSpotTick(tick) {
   if (!tick || !tick.ltp) return;
+  // This is the socket's PRIMARY handler and /stop cannot uninstall it — it
+  // stays until another start() replaces it. With other strategies keeping the
+  // shared socket up, a stopped Live session would otherwise go on building
+  // candles and placing REAL entries. Paper's onTick has always had this guard.
+  if (!tradeState.running) return;
   try {
 
   tradeState.tickCount++;

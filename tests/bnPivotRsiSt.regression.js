@@ -421,6 +421,76 @@ check("a BANKNIFTY-opened socket still feeds unbound NIFTY strategies NIFTY, and
   }
 });
 
+check("attribution is learned with two indices up, so options can still stream", () => {
+  // The single-index probe never runs when the supervisor subscribes NIFTY and
+  // NIFTY BANK before the first tick — canSubscribeExtras() stayed false all day.
+  const NIFTY = "NSE:NIFTY50-INDEX", BANK = "NSE:NIFTYBANK-INDEX";
+  const sm = socketManager;
+  const saved = {
+    symbol: sm._symbol, spots: sm._spotSymbols, handlers: sm._spotHandlers, cbs: sm._callbacks,
+    onSpot: sm._onSpotTick, stopped: sm._stopped, probe: sm._spotTickSymbol, extras: sm._extraSymbols,
+    disabled: sm._extrasDisabled, logged: sm._attributionLogged,
+  };
+  try {
+    sm._symbol = NIFTY; sm._spotSymbols = new Set([NIFTY, BANK]); sm._spotHandlers = new Map();
+    sm._callbacks = new Map(); sm._extraSymbols = new Set(); sm._spotTickSymbol = null;
+    sm._stopped = false; sm._extrasDisabled = false; sm._onSpotTick = null; sm._attributionLogged = true;
+    sm._routeTick({ symbol: BANK, ltp: 54400 });
+    assert.strictEqual(sm._spotTickSymbol, null, "a SECONDARY index's tick must not be learned as the primary's label");
+    sm._routeTick({ symbol: NIFTY, ltp: 24400 });
+    assert.strictEqual(sm._spotTickSymbol, NIFTY, "an exact primary match with two indices up must set attribution");
+    assert.ok(sm.canSubscribeExtras(), "options must be allowed to share the connection once attribution is proven");
+  } finally {
+    sm._symbol = saved.symbol; sm._spotSymbols = saved.spots; sm._spotHandlers = saved.handlers; sm._callbacks = saved.cbs;
+    sm._onSpotTick = saved.onSpot; sm._stopped = saved.stopped; sm._spotTickSymbol = saved.probe; sm._extraSymbols = saved.extras;
+    sm._extrasDisabled = saved.disabled; sm._attributionLogged = saved.logged;
+  }
+});
+
+check("a multi-index bail-out keeps NIFTY 50 even when NIFTY BANK opened the socket", () => {
+  const NIFTY = "NSE:NIFTY50-INDEX", BANK = "NSE:NIFTYBANK-INDEX";
+  const sm = socketManager;
+  const saved = {
+    symbol: sm._symbol, spots: sm._spotSymbols, handlers: sm._spotHandlers, cbs: sm._callbacks,
+    onSpot: sm._onSpotTick, stopped: sm._stopped, probe: sm._spotTickSymbol, extras: sm._extraSymbols,
+    tomb: sm._tombstone, unsub: sm._sendUnsubscribe,
+  };
+  try {
+    const v1 = [];
+    sm._symbol = BANK; sm._spotSymbols = new Set([BANK, NIFTY]); sm._callbacks = new Map();
+    sm._spotHandlers = new Map([[NIFTY, (t) => v1.push(t.ltp)]]);   // EMA_RSI_ST joined as a secondary
+    sm._onSpotTick = () => {}; sm._extraSymbols = new Set(); sm._spotTickSymbol = null; sm._stopped = false;
+    sm._tombstone = () => {}; sm._sendUnsubscribe = () => true;
+    sm._bailOutOfExtras();
+    assert.deepStrictEqual(Array.from(sm._spotSymbols), [NIFTY], "the bail-out dropped NIFTY 50 — twelve strategies lose their feed");
+    assert.strictEqual(sm._symbol, NIFTY, "the kept index must become the primary");
+    sm._routeTick({ symbol: "NIFTY50", ltp: 24400 });   // renamed on the wire — the single-index path delivers it
+    assert.deepStrictEqual(v1, [24400], "EMA_RSI_ST's per-index handler must move into the primary slot");
+  } finally {
+    sm._symbol = saved.symbol; sm._spotSymbols = saved.spots; sm._spotHandlers = saved.handlers; sm._callbacks = saved.cbs;
+    sm._onSpotTick = saved.onSpot; sm._stopped = saved.stopped; sm._spotTickSymbol = saved.probe; sm._extraSymbols = saved.extras;
+    sm._tombstone = saved.tomb; sm._sendUnsubscribe = saved.unsub;
+  }
+});
+
+check("shared-feed guards: pre-connect subscribe, supervisor NIFTY top-up, stopped Live, replay /start", () => {
+  const sm = read("utils/socketManager.js");
+  const errAt = sm.indexOf("skt.on('error'");
+  const body = sm.slice(errAt, sm.indexOf("skt.on('close'", errAt));
+  assert.ok(/err\.type === 'sub' && err\.code === -99[\s\S]*?return;/.test(body)
+    && body.indexOf("-99") < body.indexOf("_scheduleReconnect"),
+    "a pre-connect subscribe (-99 'sub') must not schedule a reconnect — it tears down the socket that is coming up");
+  const sup = read("utils/spotFeedSupervisor.js");
+  assert.ok(!/sym === SPOT_SYMBOL \|\| have\.has\(sym\)/.test(sup),
+    "the supervisor must not assume NIFTY 50 is on the wire — a BANKNIFTY-opened socket never gets it back");
+  const live = read("routes/emaRsiStLive.js");
+  assert.ok(/function onSpotTick\(tick\) \{\s*if \(!tick \|\| !tick\.ltp\) return;[\s\S]{0,400}?if \(!tradeState\.running\) return;/.test(live),
+    "EMA_RSI_ST Live's primary handler survives /stop — without a running guard it keeps placing real entries");
+  const app = read("app.js");
+  assert.ok(/isReplayInProgress\(\)[\s\S]{0,200}?status\(409\)/.test(app),
+    "strategy /start must be refused while a replay has the shared feed patched");
+});
+
 check("no route overwrites the NIFTY primary handler by calling start() on a running socket", () => {
   // start() on a running same-symbol socket REPLACES the primary handler, which
   // EMA_RSI_ST (V1) owns. Only V1's own paper/live routes may call it unguarded;

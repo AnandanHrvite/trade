@@ -79,10 +79,11 @@ function _spotSymbols() {
  */
 function _ensureSecondaryIndices() {
   const want = _spotSymbols();
-  if (want.length < 2) return;
   const have = new Set(socketManager.spotSymbols ? socketManager.spotSymbols() : []);
   for (const sym of want) {
-    if (sym === SPOT_SYMBOL || have.has(sym)) continue;
+    // NIFTY 50 is NOT assumed present: a BANKNIFTY strategy that opened the
+    // socket before 09:15 leaves it off the wire, and nothing else re-adds it.
+    if (have.has(sym)) continue;
     // A refusal is logged by socketManager itself with the reason; the archive
     // for that index is simply incomplete, which is visible rather than silent.
     socketManager.addSpotSymbol(sym, null, null);
