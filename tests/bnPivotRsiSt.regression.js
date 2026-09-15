@@ -380,6 +380,68 @@ check("a callback registered BEFORE start() still binds to the primary index", (
   }
 });
 
+check("a BANKNIFTY-opened socket still feeds unbound NIFTY strategies NIFTY, and keeps EMA_RSI_ST's handler", () => {
+  // Start-order independence: when a BANKNIFTY strategy opens the socket first,
+  // BANKNIFTY is the primary. An unbound addCallback used to resolve to that
+  // primary — every NIFTY piggybacker (BB_RSI, ORB, PA, …) got BANKNIFTY prices —
+  // and NIFTY itself was never subscribed. Registering must subscribe NIFTY and
+  // must not overwrite a per-index handler EMA_RSI_ST installed via start().
+  const NIFTY = "NSE:NIFTY50-INDEX", BANK = "NSE:NIFTYBANK-INDEX";
+  const sm = socketManager;
+  const saved = {
+    symbol: sm._symbol, spots: sm._spotSymbols, handlers: sm._spotHandlers,
+    cbs: sm._callbacks, onSpot: sm._onSpotTick, stopped: sm._stopped,
+    probe: sm._spotTickSymbol, extras: sm._extraSymbols, send: sm._sendSubscribe,
+  };
+  try {
+    sm._symbol = BANK; sm._spotSymbols = new Set([BANK]); sm._spotHandlers = new Map();
+    sm._callbacks = new Map(); sm._extraSymbols = new Set();
+    sm._spotTickSymbol = BANK; sm._stopped = false; sm._onSpotTick = () => {};
+    const sent = [];
+    sm._sendSubscribe = (syms) => { sent.push(...syms); return true; };
+
+    const got = { v1: [], legacy: [], bank: [] };
+    sm.addCallback("bank-strategy", (t) => got.bank.push(t.ltp), null, BANK);
+    sm.addCallback("legacy-nifty", (t) => got.legacy.push(t.ltp), null);
+    assert.ok(sm._spotSymbols.has(NIFTY) && sent.includes(NIFTY),
+      "an unbound NIFTY callback on a BANKNIFTY-opened socket must subscribe NIFTY, or it receives nothing");
+
+    sm._spotHandlers.set(NIFTY, (t) => got.v1.push(t.ltp));  // EMA_RSI_ST joined via start()
+    sm.addCallback("ema_rsi_st_v2-paper", () => {}, null, NIFTY);
+    sm._routeTick({ symbol: NIFTY, ltp: 24400 });
+    sm._routeTick({ symbol: BANK,  ltp: 54400 });
+
+    assert.deepStrictEqual(got.legacy, [24400], "an unbound callback received a BANKNIFTY price — it must mean NIFTY 50, not the primary");
+    assert.deepStrictEqual(got.bank,   [54400], "the BANKNIFTY callback saw a wrong or missing tick");
+    assert.deepStrictEqual(got.v1,     [24400], "a later NIFTY registration overwrote EMA_RSI_ST's per-index handler");
+  } finally {
+    sm._symbol = saved.symbol; sm._spotSymbols = saved.spots; sm._spotHandlers = saved.handlers;
+    sm._callbacks = saved.cbs; sm._onSpotTick = saved.onSpot; sm._stopped = saved.stopped;
+    sm._spotTickSymbol = saved.probe; sm._extraSymbols = saved.extras; sm._sendSubscribe = saved.send;
+  }
+});
+
+check("no route overwrites the NIFTY primary handler by calling start() on a running socket", () => {
+  // start() on a running same-symbol socket REPLACES the primary handler, which
+  // EMA_RSI_ST (V1) owns. Only V1's own paper/live routes may call it unguarded;
+  // a NIFTY route that did so silenced V1 from 2026-09-05 (EMA_RSI_ST_V2).
+  const V1_OWNERS = new Set(["emaRsiStPaper.js", "emaRsiStLive.js"]);
+  const BN_ROUTES = /^bn[A-Z]/;   // start(BANKNIFTY) never touches the NIFTY slot
+  const dir = path.join(__dirname, "..", "src", "routes");
+  const offenders = [];
+  for (const f of fs.readdirSync(dir).filter((x) => x.endsWith(".js"))) {
+    if (V1_OWNERS.has(f) || BN_ROUTES.test(f)) continue;
+    const lines = fs.readFileSync(path.join(dir, f), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "").split("\n").map((l) => l.replace(/\/\/.*$/, ""));
+    lines.forEach((line, i) => {
+      if (!/socketManager\.start\(/.test(line)) return;
+      const ctx = lines.slice(Math.max(0, i - 4), i + 1).join("\n");
+      if (!/isRunning\(\)/.test(ctx)) offenders.push(`${f}:${i + 1}`);
+    });
+  }
+  assert.deepStrictEqual(offenders, [], `unguarded socketManager.start() — would overwrite EMA_RSI_ST's handler: ${offenders.join(", ")}`);
+});
+
 check("an unattributable tick is DROPPED, never delivered as a guess", () => {
   const NIFTY = "NSE:NIFTY50-INDEX", BANK = "NSE:NIFTYBANK-INDEX";
   const sm = socketManager;

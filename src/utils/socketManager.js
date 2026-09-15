@@ -65,6 +65,13 @@ function _marketContext() {
   return _marketContextMod || (_marketContextMod = require('../services/marketContext'));
 }
 
+// The index an addCallback() that names none is bound to. Every such call site
+// is a NIFTY 50 strategy (or the NIFTY option-chain recorder). It used to mean
+// "the primary, whatever opened the socket" — so a BANKNIFTY strategy that
+// happened to start first handed every unbound NIFTY strategy BANKNIFTY prices.
+// Same literal spotFeedSupervisor uses (no instrument.js require: load cycle).
+const DEFAULT_SPOT_SYMBOL  = 'NSE:NIFTY50-INDEX';
+
 const HEARTBEAT_MS         = 20_000;
 const MAX_BACKOFF          = 15_000;
 const BASE_BACKOFF         = 2_000;
@@ -147,7 +154,7 @@ class SocketManager {
     // Map of callbackId → { onTick, onLog, symbol }
     // `symbol` is the spot INDEX the callback subscribed to; a callback is only
     // ever handed ticks for that index. Registrations that do not name one
-    // default to the primary index, which is every pre-BANKNIFTY call site.
+    // default to NIFTY 50 (DEFAULT_SPOT_SYMBOL), which is every such call site.
     this._callbacks  = new Map();
     // ── Spot indices sharing this wire ────────────────────────────────────
     // `_symbol` remains the PRIMARY (whichever index started the socket) and is
@@ -340,26 +347,31 @@ class SocketManager {
    * Returns a callbackId to use for unregistering.
    * Socket must already be started by the primary mode.
    *
-   * `symbol` names the spot INDEX this callback wants; it defaults to the
-   * primary index, which is what every pre-BANKNIFTY call site means. A
-   * callback is NEVER handed a tick from another index — that is the whole
-   * point of binding it here.
+   * `symbol` names the spot INDEX this callback wants; it defaults to NIFTY 50,
+   * which is what every call site that omits it means. A callback is NEVER
+   * handed a tick from another index — that is the whole point of binding it.
    */
   addCallback(callbackId, onTick, onLog, symbol) {
     // Log only on a genuine first insert. Idempotent re-registration (e.g. the
     // option-chain recorder re-asserts its callback every poll to survive a
     // stop()-triggered _callbacks.clear()) must stay silent, or it floods /logs.
     const isNew = !this._callbacks.has(callbackId);
-    // `symbol` may be omitted, and the socket may not have a primary yet — the
-    // option-chain recorder registers at boot, before any strategy calls
-    // start(). Storing null there and treating null as "everything" at delivery
-    // time would hand that callback BOTH indices' ticks once a second one
-    // joined. So null means "the primary, whatever it turns out to be", and it
-    // is resolved at DELIVERY time rather than frozen here.
+    // `symbol` may be omitted. Storing null and treating null as "everything"
+    // at delivery would hand that callback BOTH indices' ticks once a second
+    // one joined, so null is resolved to DEFAULT_SPOT_SYMBOL at delivery time.
     const sym = symbol || null;
+    const want = sym || DEFAULT_SPOT_SYMBOL;
     this._callbacks.set(callbackId, { onTick, onLog, symbol: sym });
     if (isNew) {
-      this._log(`📡 [SOCKET] Callback registered: ${callbackId} on ${sym || `${this._symbol || "primary index"} (default)`} (total: ${this._callbacks.size})`);
+      this._log(`📡 [SOCKET] Callback registered: ${callbackId} on ${want}${sym ? "" : " (default)"} (total: ${this._callbacks.size})`);
+      // A binding to an index the running wire does not carry would deliver
+      // nothing, silently — e.g. a NIFTY strategy piggybacking on a socket a
+      // BANKNIFTY strategy opened. Subscribe it. No handler is passed, so an
+      // existing per-index handler (EMA_RSI_ST's) is never overwritten. Before
+      // start() there is nothing to add to; start() subscribes the primary.
+      if (!this._stopped && this._symbol && !this._spotSymbols.has(want)) {
+        this.addSpotSymbol(want, null, onLog);
+      }
     }
   }
 
@@ -649,10 +661,10 @@ class SocketManager {
     }
     // Fan-out to secondary callbacks BOUND TO THIS INDEX (bb_rsi, etc.).
     // A callback registered for another index must never see this tick. A
-    // callback that named no index means the PRIMARY one — resolved here, not
-    // at registration, because it may have registered before start() set it.
+    // callback that named no index means NIFTY 50 — never "the primary", which
+    // is BANKNIFTY whenever a BANKNIFTY strategy happened to open the socket.
     for (const [id, cb] of this._callbacks) {
-      const want = cb.symbol || this._symbol;
+      const want = cb.symbol || DEFAULT_SPOT_SYMBOL;
       if (want && want !== spotSym) continue;
       try { if (cb.onTick) cb.onTick(t); } catch (e) { this._log(`🚨 [SOCKET] Fan-out error (${id}): ${e.message}`); }
     }
