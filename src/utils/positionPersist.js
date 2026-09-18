@@ -117,6 +117,9 @@ function saveTradePosition(position, sessionMeta) {
         initialStopLoss: position.initialStopLoss,
         bestPrice:       position.bestPrice,
         entryTime:       position.entryTime,
+        // Observer-only, but it must survive a restart: re-reading it after a
+        // resume would stamp the CURRENT VIX onto a trade that opened hours ago.
+        vixAtEntry:      position.vixAtEntry ?? null,
         orderId:         position.orderId,
         isFutures:       !!position.isFutures,
         optionEntryLtp:  position.optionEntryLtp,
@@ -183,6 +186,9 @@ function saveBbRsiPosition(position, sessionMeta) {
         initialStopLoss: position.initialStopLoss,
         bestPrice:       position.bestPrice,
         entryTime:       position.entryTime,
+        // Observer-only, but it must survive a restart: re-reading it after a
+        // resume would stamp the CURRENT VIX onto a trade that opened hours ago.
+        vixAtEntry:      position.vixAtEntry ?? null,
         orderId:         position.orderId,
         isFutures:       !!position.isFutures,
         optionEntryLtp:  position.optionEntryLtp,
@@ -311,6 +317,9 @@ function saveEma9VwapPosition(position, sessionMeta) {
         initialStopLoss: position.initialStopLoss,
         bestPrice:       position.bestPrice,
         entryTime:       position.entryTime,
+        // Observer-only, but it must survive a restart: re-reading it after a
+        // resume would stamp the CURRENT VIX onto a trade that opened hours ago.
+        vixAtEntry:      position.vixAtEntry ?? null,
         orderId:         position.orderId,
         isFutures:       !!position.isFutures,
         optionEntryLtp:  position.optionEntryLtp,
@@ -372,6 +381,9 @@ function saveOrbPosition(position, sessionMeta) {
         initialStopLoss: position.initialStopLoss,
         bestPrice:       position.bestPrice,
         entryTime:       position.entryTime,
+        // Observer-only, but it must survive a restart: re-reading it after a
+        // resume would stamp the CURRENT VIX onto a trade that opened hours ago.
+        vixAtEntry:      position.vixAtEntry ?? null,
         orderId:         position.orderId,
         isFutures:       !!position.isFutures,
         optionEntryLtp:  position.optionEntryLtp,
@@ -431,6 +443,9 @@ function saveTrendPbPosition(position, sessionMeta) {
         initialStopLoss: position.initialStopLoss,
         bestPrice:       position.bestPrice,
         entryTime:       position.entryTime,
+        // Observer-only, but it must survive a restart: re-reading it after a
+        // resume would stamp the CURRENT VIX onto a trade that opened hours ago.
+        vixAtEntry:      position.vixAtEntry ?? null,
         orderId:         position.orderId,
         isFutures:       !!position.isFutures,
         optionEntryLtp:  position.optionEntryLtp,
@@ -839,6 +854,9 @@ function saveEmaRsiStV2Position(position, sessionMeta) {
         bestPrice:       position.bestPrice,
         entryUnixSec:    position.entryUnixSec,
         entryTime:       position.entryTime,
+        // Observer-only, but it must survive a restart: re-reading it after a
+        // resume would stamp the CURRENT VIX onto a trade that opened hours ago.
+        vixAtEntry:      position.vixAtEntry ?? null,
         orderId:         position.orderId,
         isFutures:       !!position.isFutures,
         optionEntryLtp:  position.optionEntryLtp,
@@ -913,6 +931,9 @@ function saveBnEmaRsiStV2Position(position, sessionMeta) {
         bestPrice:       position.bestPrice,
         entryUnixSec:    position.entryUnixSec,
         entryTime:       position.entryTime,
+        // Observer-only, but it must survive a restart: re-reading it after a
+        // resume would stamp the CURRENT VIX onto a trade that opened hours ago.
+        vixAtEntry:      position.vixAtEntry ?? null,
         orderId:         position.orderId,
         isFutures:       !!position.isFutures,
         optionEntryLtp:  position.optionEntryLtp,
