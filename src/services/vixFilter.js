@@ -97,6 +97,11 @@ const VIX_CACHE_TTL = 60_000;
 function vixMaxStaleMs() {
   return Math.max(VIX_CACHE_TTL, parseFloat(process.env.VIX_MAX_STALE_SEC || "300") * 1000);
 }
+// Keep polling VIX purely so every trade record carries it, even when no
+// strategy filters on it. Observer-only — see the note in fetchLiveVix.
+function vixLoggingEnabled() {
+  return String(process.env.VIX_LOG_ENABLED ?? "true").toLowerCase() === "true";
+}
 // Return the cached VIX only if it is within the staleness bound, else null.
 function freshCachedVix() {
   if (_cachedVix === null) return null;
@@ -112,7 +117,18 @@ function freshCachedVix() {
  * Returns null if fetch fails (filter becomes permissive or closed per VIX_FAIL_MODE).
  */
 async function fetchLiveVix({ force = false } = {}) {
-  if (!force && !anyVixEnabled()) return null;
+  // Poll for the RECORD even when no filter wants it for a DECISION.
+  //
+  // Previously this returned early whenever every VIX toggle was off, so the
+  // cache stayed empty and every trade logged vixAtEntry/vixAtExit as null —
+  // 346 of 346 across Jul-Sep 2026. That silently removed the one field needed
+  // to ask "does this strategy only work in a calm market?", which is the first
+  // question to ask of a strategy whose win rate moves month to month.
+  //
+  // Gated by VIX_LOG_ENABLED (default on) so the poll can be switched off. It
+  // changes no decision: with the filters off, checkLiveVix is never consulted,
+  // and a fetch failure still leaves the value null exactly as before.
+  if (!force && !anyVixEnabled() && !vixLoggingEnabled()) return null;
 
   const now = Date.now();
   if (_cachedVix !== null && (now - _cachedVixTs) < VIX_CACHE_TTL) {

@@ -61,6 +61,7 @@ const sharedSocketState  = require("../utils/sharedSocketState");
 const socketManager      = require("../utils/socketManager");
 const tickRecorder       = require("../utils/tickRecorder");
 const tradeGuards        = require("../utils/tradeGuards");
+const vixFilter          = require("../services/vixFilter");
 const { verifyFyersToken } = require("../utils/fyersAuthCheck");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
 const { renderHistoryPage, dailyFilesPaginate } = require("../utils/paperHistoryUI");
@@ -654,6 +655,7 @@ async function simulateBuy(side, sig) {
     optionEntryLtp,
     entryTime:      istNow(),
     entryTimeMs:    Date.now(),
+    vixAtEntry:     vixFilter.getCachedVix(),   // observer-only — see VIX_LOG_ENABLED
     entryUnixSec:   Math.floor(Date.now() / 1000),
     entryBarTime:   Math.floor(getBucketStart(Date.now(), _resMin()) / 1000),
     slSpot,
@@ -814,6 +816,8 @@ function simulateSell(reason, opts) {
     maePnl:         pos.maePnl || 0,
     secsToMFE:      pos.secsToMFE || 0,
     secsToMAE:      pos.secsToMAE || 0,
+    vixAtEntry:     pos.vixAtEntry ?? null,
+    vixAtExit:      vixFilter.getCachedVix(),
     durationMs:     Date.now() - pos.entryTimeMs,
     charges,
     isSpot:      false,
