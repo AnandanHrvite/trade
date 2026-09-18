@@ -587,6 +587,9 @@ function saveHaScalpPosition(position, sessionMeta) {
         signalBarTime:   position.signalBarTime,
         entryUnixSec:    position.entryUnixSec,
         entryTime:       position.entryTime,
+        // Observer-only, but it must survive a restart: re-reading it after a
+        // resume would stamp the CURRENT VIX onto a trade that opened hours ago.
+        vixAtEntry:      position.vixAtEntry ?? null,
         orderId:         position.orderId,
         isFutures:       !!position.isFutures,
         optionEntryLtp:  position.optionEntryLtp,
@@ -659,6 +662,9 @@ function saveRsiPivotStPosition(position, sessionMeta) {
         s1:              position.s1,
         entryUnixSec:    position.entryUnixSec,
         entryTime:       position.entryTime,
+        // Observer-only, but it must survive a restart: re-reading it after a
+        // resume would stamp the CURRENT VIX onto a trade that opened hours ago.
+        vixAtEntry:      position.vixAtEntry ?? null,
         orderId:         position.orderId,
         isFutures:       !!position.isFutures,
         optionEntryLtp:  position.optionEntryLtp,
@@ -745,6 +751,9 @@ function saveBnPivotRsiStPosition(position, sessionMeta) {
         s1:              position.s1,
         entryUnixSec:    position.entryUnixSec,
         entryTime:       position.entryTime,
+        // Observer-only, but it must survive a restart: re-reading it after a
+        // resume would stamp the CURRENT VIX onto a trade that opened hours ago.
+        vixAtEntry:      position.vixAtEntry ?? null,
         orderId:         position.orderId,
         isFutures:       !!position.isFutures,
         optionEntryLtp:  position.optionEntryLtp,
@@ -1001,6 +1010,9 @@ function saveSimple930Position(position, sessionMeta) {
         peak:            position.peak,
         trough:          position.trough,
         entryTime:       position.entryTime,
+        // Observer-only, but it must survive a restart: re-reading it after a
+        // resume would stamp the CURRENT VIX onto a trade that opened hours ago.
+        vixAtEntry:      position.vixAtEntry ?? null,
         entryMin:        position.entryMin,
         entryTimeMs:     position.entryTimeMs,
         entryUnixSec:    position.entryUnixSec,

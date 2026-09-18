@@ -77,10 +77,13 @@ function getVixStrongOnly(mode = "ema_rsi_st") {
 }
 
 function anyVixEnabled() {
-  // MUST list every mode a call site can pass. fetchLiveVix() early-returns null when
-  // this is false, and checkLiveVix then falls through to VIX_FAIL_MODE (closed by
-  // default) — i.e. a mode missing from this list would block ALL of its entries the
-  // moment it is the only mode with VIX on.
+  // MUST list every mode a call site can pass. When this is false AND
+  // VIX_LOG_ENABLED is off, fetchLiveVix() early-returns null, and checkLiveVix
+  // then falls through to VIX_FAIL_MODE (closed by default) — i.e. a mode missing
+  // from this list would block ALL of its entries the moment it is the only mode
+  // with VIX on. (VIX_LOG_ENABLED keeps the cache warm for the trade record, so
+  // it makes that failure LESS likely, never more — but it is observer-only and
+  // must not be relied on to feed a filter: this list is still the contract.)
   return getVixEnabled("ema_rsi_st") || getVixEnabled("bb_rsi") || getVixEnabled("pa") ||
          getVixEnabled("orb") || getVixEnabled("trend_pb") || getVixEnabled("ema9vwap");
 }
