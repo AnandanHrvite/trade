@@ -4,6 +4,8 @@ Engine: `src/strategies/bb_rsi.js` · Routes: `bbRsi*.js` · Env prefix: `BB_RSI
 
 Append a dated bullet whenever this strategy changes. Newest on top.
 
+- 2026-09-19 — Global breakeven stop wired into bbRsiPaper + bbRsiLive, after the middle-band target and alongside the profit lock.
+
 - 2026-09-19 — Global profit lock wired into bbRsiPaper per-tick exit, placed AFTER the middle-band target (its own take-profit still wins) and before every stop. Shared rule in `tradeGuards.checkProfitLock`, `PROFIT_LOCK_*`, arm +8% / floor +5%.
 
 ## Log

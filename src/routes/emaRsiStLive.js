@@ -2276,6 +2276,9 @@ function onSpotTick(tick) {
     const _plPos = tradeState.position;
     const _plMsg = tradeGuards.checkProfitLock(
       _plPos.optionEntryLtp, tradeState.optionLtp, _plPos.bestOptionLtp,
+    ) || tradeGuards.checkBreakevenStop(
+      // Fallback for a trade that never reached the lock's arm level.
+      _plPos.optionEntryLtp, tradeState.optionLtp, _plPos.bestOptionLtp,
     );
     if (_plMsg) {
       log(`🔒 [LIVE] ${_plMsg}`);

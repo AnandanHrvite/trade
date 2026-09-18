@@ -682,9 +682,23 @@ async function _optionPollTick(symbol) {
     if (!ltp) return;
     _publishOptionLtp(symbol, ltp);
 
-    // ── Option LTP stop — 50% mid DISABLED — breakeven stop handles protection ──
+    // ── Option LTP stop — 50% mid DISABLED ──────────────────────────────────
     // Previously: if option premium dropped below 50% mid threshold, force exit.
-    // Now: breakeven at +25pt moves SL to entry, trail handles everything else.
+    //
+    // HISTORY, because this comment was wrong for months: it used to claim
+    // "breakeven at +25pt moves SL to entry, trail handles everything else".
+    // Neither was true in THIS file. EMA9+VWAP is a pure signal-exit strategy —
+    // pos.stopLoss stays null unless EMA9VWAP_CANDLE_TRAIL_ENABLED is on (it
+    // ships off), there was no breakeven anywhere in this engine, and .env also
+    // carries EMA9VWAP_STOP_LOSS_PTS=0 / OPT_STOP_PCT=0 / NEG_CANDLE_LIMIT=0.
+    // So the 50% guard was removed on the strength of protection that did not
+    // exist, leaving the position with no stop of any kind. That is the single
+    // biggest reason this strategy lost Rs8,997 over Jul-Sep 2026.
+    //
+    // NOW IT IS TRUE: the shared global guards in tradeGuards.js cover it —
+    // checkProfitLock (arm +8% / floor +5%) and checkBreakevenStop (arm +5%,
+    // floor = entry), both enforced per tick in _onTickExits below. They act on
+    // the option premium, so they work even with pos.stopLoss null.
   } finally {
     _optionPollBusy = false;
   }
@@ -1977,6 +1991,10 @@ function onTick(tick) {
   if (ptState.position && ptState.position.optionEntryLtp && ptState.optionLtp) {
     const _plPos = ptState.position;
     const _plMsg = tradeGuards.checkProfitLock(
+      _plPos.optionEntryLtp, ptState.optionLtp, _plPos.bestOptionLtp,
+    ) || tradeGuards.checkBreakevenStop(
+      // Fallback for a trade that never reached the lock's arm level. The lock's
+      // floor sits above entry, so when both are armed the lock wins (checked first).
       _plPos.optionEntryLtp, ptState.optionLtp, _plPos.bestOptionLtp,
     );
     if (_plMsg) {

@@ -4,6 +4,8 @@ Engine: `src/strategies/ema9_vwap.js` · Routes: `ema9vwap*.js` · Env prefix: `
 
 Append a dated bullet whenever this strategy changes. Newest on top.
 
+- 2026-09-19 — Global breakeven stop (tradeGuards.checkBreakevenStop, arm +5%) wired into the per-tick exit, and the long-stale comment at the option-poll corrected: it claimed a breakeven protected this engine when none existed here, which is how the 50% mid guard came to be removed leaving the position with NO stop at all.
+
 - 2026-09-19 — Global profit lock wired into ema9vwapPaper per-tick exit (before the option stop). Shared rule in `tradeGuards.checkProfitLock`, `PROFIT_LOCK_*`, arm +8% / floor +5%; no per-strategy keys.
 
 ## Log

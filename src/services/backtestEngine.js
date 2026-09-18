@@ -301,6 +301,13 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
   const _PL_ARM_SPOT_PTS   = _PL_VALID ? (_PL_ARM_PCT   / 100 * 200) / DELTA : 0;
   const _PL_FLOOR_SPOT_PTS = _PL_VALID ? (_PL_FLOOR_PCT / 100 * 200) / DELTA : 0;
 
+  // Global breakeven stop, same spot-equivalent conversion. Floor is ENTRY, so
+  // there is no floor distance to convert — only the arm.
+  const _BE_ARM_PCT  = tradeGuards.BREAKEVEN_ARM_PCT;
+  const _BE_VALID    = !isFutures && tradeGuards.BREAKEVEN_STOP_ENABLED && DELTA > 0
+                    && Number.isFinite(_BE_ARM_PCT) && _BE_ARM_PCT > 0;
+  const _BE_ARM_SPOT_PTS = _BE_VALID ? (_BE_ARM_PCT / 100 * 200) / DELTA : 0;
+
   // Clear IST memoization caches so back-to-back backtests don't cross-pollute
   _istDateCache.clear();
   _istHHMMCache.clear();
@@ -693,6 +700,27 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
           if (touched) {
             exitReason = `Profit lock +${_PL_FLOOR_PCT}% (≈${_PL_FLOOR_SPOT_PTS.toFixed(0)}pt spot, armed at +${_PL_ARM_PCT}%)`;
             exitPrice  = quantize(floorLvl, 2);
+          }
+        }
+      }
+
+      // Rule 1d: Global breakeven stop — the fallback for a trade that never
+      // reached the lock's arm level. Same previous-bar arming discipline as 1c
+      // (a bar's high and low have no known order), and the same spot-equivalent
+      // conversion. Exits at ENTRY, so it is not a stop-out: it must not arm the
+      // SL pause, and the reason string deliberately avoids "SL hit" so the
+      // classifier below does not read it as one.
+      if (!exitReason && _BE_VALID && position.bestPricePrevBar != null) {
+        const beFav = position.side === "CE"
+          ? (position.bestPricePrevBar - position.entryPrice)
+          : (position.entryPrice - position.bestPricePrevBar);
+        if (beFav >= _BE_ARM_SPOT_PTS) {
+          const beTouched = position.side === "CE"
+            ? candle.low  <= position.entryPrice
+            : candle.high >= position.entryPrice;
+          if (beTouched) {
+            exitReason = `Breakeven stop (armed at +${_BE_ARM_PCT}%, \u2248${_BE_ARM_SPOT_PTS.toFixed(0)}pt spot)`;
+            exitPrice  = quantize(position.entryPrice, 2);
           }
         }
       }

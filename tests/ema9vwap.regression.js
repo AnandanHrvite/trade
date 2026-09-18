@@ -157,6 +157,12 @@ check("resolution changes the close time used by the window", () => {
 
 // ── 3. Backtest optional stops — each must fire, and at the right price ──────
 console.log("\nBacktest optional stops");
+// The GLOBAL guards (profit lock, breakeven — tradeGuards.js) ship ON and act on
+// every strategy, so they would pre-empt the per-strategy stop each case here is
+// trying to isolate. They have their own suite (tests/profitLock.regression.js);
+// this one is about EMA9+VWAP's own optional stops, so switch them off for it.
+process.env.PROFIT_LOCK_ENABLED    = "false";
+process.env.BREAKEVEN_STOP_ENABLED = "false";
 async function runBT(env = {}) {
   Object.assign(process.env, env);
   const r = await BT.runEma9VwapBacktest(CANDLES, 100000, null, 0, []);

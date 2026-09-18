@@ -4,6 +4,8 @@ Engine: `src/strategies/orb_breakout.js`, `src/strategies/orbExits.js` · Routes
 
 Append a dated bullet whenever this strategy changes. Newest on top.
 
+- 2026-09-19 — Global breakeven stop added to orbExits.evaluateTickExits alongside the profit lock, so ORB paper/live/backtest inherit it together. ORB's own ORB_BREAKEVEN_PTS/_OR_MULT stay at 0: on the recorded trades the global premium breakeven armed on the same 6 trades and needs no spot trigger.
+
 - 2026-09-19 — Global profit lock added to `orbExits.evaluateTickExits` (options only; skipped on a futures leg where optionLtp mirrors spot), so ORB paper/live/backtest inherit it together. Shared rule in `tradeGuards.checkProfitLock`, `PROFIT_LOCK_*`, arm +8% / floor +5%.
 
 ## Log

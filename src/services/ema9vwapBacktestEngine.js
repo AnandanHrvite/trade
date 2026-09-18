@@ -127,6 +127,11 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
                    && _plArmPct > 0 && _plFloorPct >= 0 && _plFloorPct < _plArmPct;
   const _plArmSpotPts   = _plValid ? (_plArmPct   / 100 * 200) / DELTA : 0;
   const _plFloorSpotPts = _plValid ? (_plFloorPct / 100 * 200) / DELTA : 0;
+  // Global breakeven stop — same conversion; the floor IS entry, so only the arm converts.
+  const _beArmPct     = _tradeGuards.BREAKEVEN_ARM_PCT;
+  const _beValid      = _tradeGuards.BREAKEVEN_STOP_ENABLED && DELTA > 0
+                     && Number.isFinite(_beArmPct) && _beArmPct > 0;
+  const _beArmSpotPts = _beValid ? (_beArmPct / 100 * 200) / DELTA : 0;
 
   // ── Guards mirrored from paper (previously absent from this engine) ──────────
   // Opposite-side (flip) cooldown — same keys/defaults as ema9vwapPaper._refreshConfig.
@@ -411,6 +416,26 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
             // section runs, so paper CAN re-enter on this bar. Same reasoning as
             // the protective stops above. armSlPause stays false: this exits in
             // PROFIT, so it is not a stop-out and must not start an SL cooldown.
+            blocksReentry = false;
+          }
+        }
+      }
+      // (2c) global breakeven — fallback for a trade that never armed the lock.
+      //      Arms off the previous-bar peak for the same reason as (2b). Exits at
+      //      ENTRY, so like the lock it is not a stop-out: armSlPause stays false
+      //      and re-entry is not blocked (paper fires it inside onTick).
+      if (!doExit && _beValid && position.bestPricePrevBar != null) {
+        const _beFav = position.side === "CE"
+          ? (position.bestPricePrevBar - position.entryPrice)
+          : (position.entryPrice - position.bestPricePrevBar);
+        if (_beFav >= _beArmSpotPts) {
+          const _beTouched = position.side === "CE"
+            ? candle.low  <= position.entryPrice
+            : candle.high >= position.entryPrice;
+          if (_beTouched) {
+            doExit = true;
+            exitReason = `Breakeven stop (armed at +${_beArmPct}%, spot-equivalent)`;
+            exitLevel  = position.entryPrice;
             blocksReentry = false;
           }
         }

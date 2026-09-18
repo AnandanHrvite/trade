@@ -56,6 +56,11 @@ function check(name, fn) {
   try { fn(); console.log(`  ✅ ${name}`); pass++; }
   catch (e) { console.log(`  ❌ ${name}\n       ${e.message}`); fail++; }
 }
+/** Same, for the breakeven keys. */
+function freshEnvBE(over) {
+  for (const k of Object.keys(process.env)) if (k.startsWith("BREAKEVEN_")) delete process.env[k];
+  Object.assign(process.env, over || {});
+}
 /** Wipe every PROFIT_LOCK_ key so one case cannot leak into the next. */
 function freshEnv(over) {
   for (const k of Object.keys(process.env)) if (k.startsWith("PROFIT_LOCK_")) delete process.env[k];
@@ -177,6 +182,102 @@ check("a peak below entry cannot arm the lock", () => {
   // An underwater trade has no profit to lock; this is the case where firing
   // would turn the guard into an unintended stop-loss.
   assert.strictEqual(guards.checkProfitLock(100, 90, 95), null);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+section("Breakeven stop — the lock's fallback");
+
+check("ships armed at +5%, enabled", () => {
+  freshEnvBE();
+  assert.strictEqual(guards.BREAKEVEN_ARM_PCT, 5);
+  assert.strictEqual(guards.BREAKEVEN_STOP_ENABLED, true);
+});
+
+check("does not fire before the arm threshold", () => {
+  freshEnvBE();
+  assert.strictEqual(guards.checkBreakevenStop(100, 100, 103), null);
+});
+
+check("fires once armed and premium returns to entry", () => {
+  freshEnvBE();
+  assert.ok(guards.checkBreakevenStop(100, 100, 105));
+  assert.ok(guards.checkBreakevenStop(100,  90, 105));  // gapped through
+});
+
+check("never caps a runner", () => {
+  freshEnvBE();
+  assert.strictEqual(guards.checkBreakevenStop(100, 150, 150), null);
+});
+
+check("a peak below entry cannot arm it", () => {
+  freshEnvBE();
+  assert.strictEqual(guards.checkBreakevenStop(100, 90, 95), null);
+});
+
+check("disabled, zero or garbage arm is inert — never a free stop at entry", () => {
+  // The dangerous failure: a bad value silently becoming "exit at entry always".
+  freshEnvBE({ BREAKEVEN_STOP_ENABLED: "false" });
+  assert.strictEqual(guards.checkBreakevenStop(100, 100, 105), null);
+  freshEnvBE({ BREAKEVEN_ARM_PCT: "0" });
+  assert.strictEqual(guards.checkBreakevenStop(100, 100, 105), null);
+  freshEnvBE({ BREAKEVEN_ARM_PCT: "abc" });
+  assert.strictEqual(guards.checkBreakevenStop(100, 100, 105), null);
+  freshEnvBE({ BREAKEVEN_ARM_PCT: "-5" });
+  assert.strictEqual(guards.checkBreakevenStop(100, 100, 105), null);
+});
+
+check("the lock wins when both are armed (it is the tighter floor)", () => {
+  freshEnvBE();
+  // Peak +10% arms both. At 105 the lock's floor fires; breakeven would not,
+  // since price is still above entry. Callers check the lock FIRST.
+  assert.ok(guards.checkProfitLock(100, 105, 110), "lock should fire at its floor");
+  assert.strictEqual(guards.checkBreakevenStop(100, 105, 110), null,
+    "breakeven must stay silent while price is above entry");
+});
+
+check("V2 engines keep their documented no-breakeven design", () => {
+  // emaRsiStV2Paper's own header says the breakeven floor is "DELETED, not
+  // behind a toggle". Adding the global one there would be a rule change, not a
+  // gap being filled — so it must stay out unless the user asks for it.
+  for (const f of ["emaRsiStV2Paper.js", "bnEmaRsiStV2Paper.js"]) {
+    const src = decomment(read(`routes/${f}`));
+    assert.ok(!/checkBreakevenStop/.test(src),
+      `${f} gained a breakeven stop, but its header documents that it has none by design`);
+  }
+});
+
+check("a breakeven exit is never treated as a stop-out", () => {
+  // It exits AT entry, not at a loss. Classifying it as an SL would start the
+  // same-side pause and feed the consecutive-loss breaker.
+  const bt = read("services/backtestEngine.js");
+  const cls = bt.split("\n").find(l => /isSLExit\s*=/.test(l));
+  assert.ok(cls && !/breakeven/i.test(cls), "backtest classifies a breakeven as an SL exit");
+  assert.ok(!"Breakeven stop (armed at +5%)".toLowerCase().includes("sl hit"),
+    "the breakeven reason string would match the SL classifier");
+  const blk = bt.split("\n").find(l => /_blockEntryAfterExit = true/.test(l));
+  assert.ok(blk && !/breakeven/i.test(blk), "shared engine blocks re-entry after a breakeven");
+});
+
+check("BACKTEST applies the breakeven, with the same previous-bar arming", () => {
+  for (const f of ["backtestEngine.js", "ema9vwapBacktestEngine.js"]) {
+    const src = decomment(read(`services/${f}`));
+    assert.ok(/BREAKEVEN_ARM_PCT/.test(src), `${f} does not read the breakeven arm %`);
+    const i = src.search(/>=\s*(_BE_ARM_SPOT_PTS|_beArmSpotPts)/);
+    assert.ok(i > 0, `${f}: no breakeven arm comparison`);
+    const guard = src.split("\n").find(l => /(_BE_VALID|_beValid)/.test(l) && /bestPricePrevBar/.test(l));
+    assert.ok(guard, `${f}: breakeven not gated on the previous-bar snapshot (look-ahead)`);
+  }
+});
+
+check("Settings exposes every BREAKEVEN_ key the code reads", () => {
+  const settings = read("routes/settings.js");
+  const sources  = ["utils/tradeGuards.js", "services/backtestEngine.js"].map(read).join("\n");
+  // Only the GLOBAL keys. Per-strategy ones (EMA_RSI_ST_BREAKEVEN_*, ORB_BREAKEVEN_*)
+  // are that strategy's own older spot breakeven, checked by its own suite.
+  const keys = new Set(["BREAKEVEN_STOP_ENABLED", "BREAKEVEN_ARM_PCT"]);
+  for (const k of keys) assert.ok(sources.includes(k), `the code no longer reads ${k}`);
+  const missing = [...keys].filter(k => !settings.includes(`"${k}"`));
+  assert.deepStrictEqual(missing, [], `keys read by the code but absent from Settings: ${missing.join(", ")}`);
 });
 
 // ═══════════════════════════════════════════════════════════════════════════

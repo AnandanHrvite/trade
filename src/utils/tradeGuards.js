@@ -220,11 +220,63 @@ function checkProfitLock(entryLtp, currentLtp, bestLtp, {
   return `Profit lock +${floorPct}% — premium Rs${currentLtp} fell to the locked floor Rs${floorLtp} after peaking at Rs${parseFloat(bestLtp.toFixed(2))} (armed at +${armPct}%, entry Rs${parseFloat(entryLtp.toFixed(2))})`;
 }
 
+// ── Global breakeven stop ─────────────────────────────────────────────────
+//
+// The same shape as the profit lock, one step earlier: once premium has risen
+// by BREAKEVEN_ARM_PCT, the trade may not be sold below the entry premium. It
+// catches the trades the lock never reaches — a move that goes +5% and dies
+// arms this but never arms an +8% lock.
+//
+// WHY — measured on the same 321 active-strategy trades. Lock alone (8/5) nets
+// +Rs32,110; adding breakeven at +5% takes it to +Rs47,006. The obvious worry
+// is that it kills winners by stopping them flat on a dip: 72 winners did trade
+// back through entry after arming, but 66 of those dipped BEFORE their peak —
+// the breakeven was not armed yet, so they survive. Only 6 winners actually
+// dipped after peaking, worth Rs499 in total. So it risks ~Rs500 of real profit
+// to save ~Rs15,000.
+//
+// A LOWER arm scores better in replay (+Rs81,100 at +2%) — that is the
+// overfitting trap, and it also fires on noise, so the default is the more
+// conservative +5%.
+//
+// NOT FREE — a breakeven exit still pays ~Rs71 of charges, so a trade that
+// would have lost Rs50 costs more after this. It wins on the trades that were
+// heading for a real loss, not on the small ones.
+//
+// RELATIONSHIP TO THE LOCK — both may be armed at once. The lock's floor sits
+// ABOVE entry, so when both are armed the lock is strictly the tighter of the
+// two and should be checked first; this is the fallback for trades that never
+// reached the lock's arm level.
+//
+// CALLER CONTRACT — identical to checkProfitLock: per tick, option premium
+// only, never spot. Returns an exit-reason string, else null.
+function liveBreakevenArmPct() { return parseFloat(process.env.BREAKEVEN_ARM_PCT || "5"); }
+function liveBreakevenEnabled() {
+  return String(process.env.BREAKEVEN_STOP_ENABLED ?? "true").toLowerCase() === "true";
+}
+
+function checkBreakevenStop(entryLtp, currentLtp, bestLtp, {
+  armPct  = liveBreakevenArmPct(),
+  enabled = liveBreakevenEnabled(),
+} = {}) {
+  if (!enabled) return null;
+  if (!Number.isFinite(entryLtp) || entryLtp <= 0)     return null;
+  if (!Number.isFinite(currentLtp) || currentLtp <= 0) return null;
+  if (!Number.isFinite(bestLtp) || bestLtp <= 0)       return null;
+  if (!Number.isFinite(armPct) || armPct <= 0)         return null;
+
+  if (bestLtp < entryLtp * (1 + armPct / 100)) return null;  // never armed
+  if (currentLtp > entryLtp) return null;                    // still above entry
+
+  return `Breakeven stop — premium Rs${currentLtp} fell back to the entry Rs${parseFloat(entryLtp.toFixed(2))} after peaking at Rs${parseFloat(bestLtp.toFixed(2))} (armed at +${armPct}%)`;
+}
+
 module.exports = {
   fetchOptionQuote,
   checkSpread,
   checkTimeStop,
   checkProfitLock,
+  checkBreakevenStop,
   isProtectiveStop,
   resolveProtectiveStop,
   INDICATOR_HISTORY_CANDLES,
@@ -235,4 +287,6 @@ module.exports = {
   get PROFIT_LOCK_ENABLED()        { return liveProfitLockEnabled(); },
   get PROFIT_LOCK_ARM_PCT()        { return liveProfitLockArmPct(); },
   get PROFIT_LOCK_FLOOR_PCT()      { return liveProfitLockFloorPct(); },
+  get BREAKEVEN_STOP_ENABLED()     { return liveBreakevenEnabled(); },
+  get BREAKEVEN_ARM_PCT()          { return liveBreakevenArmPct(); },
 };

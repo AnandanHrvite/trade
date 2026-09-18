@@ -297,8 +297,10 @@ function evaluateTickExits(pos, { spotPrice, optionLtp }) {
   // only: it is defined on option premium, and in futures mode optionLtp mirrors
   // the SPOT, so leaving it on would test an 8% move in NIFTY itself.
   if (!pos.isFutures) {
-    const plMsg = require("../utils/tradeGuards")
-      .checkProfitLock(pos.optionEntryLtp, optionLtp, pos.peakPremium);
+    const _tg = require("../utils/tradeGuards");
+    const plMsg = _tg.checkProfitLock(pos.optionEntryLtp, optionLtp, pos.peakPremium)
+      // Fallback for a trade that never reached the lock's arm level.
+      || _tg.checkBreakevenStop(pos.optionEntryLtp, optionLtp, pos.peakPremium);
     if (plMsg) return { exit: true, reason: plMsg };
   }
   if (isHardSlHit(pos.side, spotPrice, pos.slSpot)) {

@@ -1007,7 +1007,9 @@ function _checkExits() {
   // before this engine's own exits: it is a premium ratchet that only ever fires
   // ABOVE entry, so it can never loosen the flat stop or the trail above.
   if (pos.optionEntryLtp) {
-    const _plMsg = tradeGuards.checkProfitLock(pos.optionEntryLtp, ltp, pos.peak);
+    const _plMsg = tradeGuards.checkProfitLock(pos.optionEntryLtp, ltp, pos.peak)
+      // Fallback for a trade that never reached the lock's arm level.
+      || tradeGuards.checkBreakevenStop(pos.optionEntryLtp, ltp, pos.peak);
     if (_plMsg) {
       log(`🔒 ${LOG_TAG} ${_plMsg}`);
       decide("PROFIT_LOCK", _plMsg, {

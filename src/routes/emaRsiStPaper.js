@@ -2050,6 +2050,10 @@ function onTick(tick) {
     const _plPos = ptState.position;
     const _plMsg = tradeGuards.checkProfitLock(
       _plPos.optionEntryLtp, ptState.optionLtp, _plPos.bestOptionLtp,
+    ) || tradeGuards.checkBreakevenStop(
+      // Fallback for a trade that never reached the lock's arm level. The lock's
+      // floor sits above entry, so when both are armed the lock wins (checked first).
+      _plPos.optionEntryLtp, ptState.optionLtp, _plPos.bestOptionLtp,
     );
     if (_plMsg) {
       log(`🔒 [PAPER] ${_plMsg}`);

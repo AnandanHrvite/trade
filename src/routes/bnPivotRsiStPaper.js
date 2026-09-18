@@ -929,7 +929,9 @@ function _checkExits() {
   //    the lock only ever fires above entry, so it can never loosen that floor.
   //    Options only — in futures mode optLtp mirrors the SPOT.
   if (!pos.isFutures && pos.optionEntryLtp) {
-    const _plMsg = tradeGuards.checkProfitLock(pos.optionEntryLtp, optLtp, pos.peakPremium);
+    const _plMsg = tradeGuards.checkProfitLock(pos.optionEntryLtp, optLtp, pos.peakPremium)
+      // Fallback for a trade that never reached the lock's arm level.
+      || tradeGuards.checkBreakevenStop(pos.optionEntryLtp, optLtp, pos.peakPremium);
     if (_plMsg) {
       log(`🔒 [BN-PIVOT-RSI-ST-PAPER] ${_plMsg}`);
       simulateSell(_plMsg, { isStopOut: false, stopName: "global profit lock", stopLevel: null, stopUnit: "premium" });

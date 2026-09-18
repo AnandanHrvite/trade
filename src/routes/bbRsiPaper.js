@@ -776,6 +776,9 @@ function onTick(tick) {
     if (pos.optionEntryLtp && state.optionLtp) {
       const _plMsg = tradeGuards.checkProfitLock(
         pos.optionEntryLtp, state.optionLtp, pos.bestOptionLtp,
+      ) || tradeGuards.checkBreakevenStop(
+        // Fallback for a trade that never reached the lock's arm level.
+        pos.optionEntryLtp, state.optionLtp, pos.bestOptionLtp,
       );
       if (_plMsg) {
         log(`🔒 [BB_RSI-PAPER] ${_plMsg}`);
