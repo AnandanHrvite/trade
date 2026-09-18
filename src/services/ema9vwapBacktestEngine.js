@@ -354,6 +354,10 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
       const _adverseExcursion = position.side === "CE"
         ? (candle.low  - position.entryPrice)
         : (position.entryPrice - candle.high);
+      // Snapshot the peak as of the PREVIOUS completed bar before folding this one
+      // in — the profit lock arms off the snapshot so it can never arm and fire
+      // within a single candle (we know a bar's high and low, not their order).
+      position.bestPricePrevBar = position.bestPrice;
       // Track the favourable extreme before any exit rule reads it.
       if (position.side === "CE") {
         if (position.bestPrice == null || candle.high > position.bestPrice) position.bestPrice = candle.high;
@@ -389,16 +393,11 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
       //      stops. Once the favourable excursion has reached the arm distance, the
       //      trade may not be given back past the floor distance. Not an SL: it exits
       //      in profit, so it must not arm the SL pause or block a re-entry.
-      if (!doExit && _plValid) {
-        const _favNow = position.side === "CE"
-          ? (candle.high - position.entryPrice)
-          : (position.entryPrice - candle.low);
-        const _favBest = position.bestPrice != null
-          ? (position.side === "CE"
-              ? (position.bestPrice - position.entryPrice)
-              : (position.entryPrice - position.bestPrice))
-          : _favNow;
-        if (Math.max(_favNow, _favBest) >= _plArmSpotPts) {
+      if (!doExit && _plValid && position.bestPricePrevBar != null) {
+        const _favBest = position.side === "CE"
+          ? (position.bestPricePrevBar - position.entryPrice)
+          : (position.entryPrice - position.bestPricePrevBar);
+        if (_favBest >= _plArmSpotPts) {
           const _floorLvl = position.side === "CE"
             ? position.entryPrice + _plFloorSpotPts
             : position.entryPrice - _plFloorSpotPts;

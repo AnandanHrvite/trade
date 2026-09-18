@@ -533,6 +533,12 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
           else if (position.side === "PE" && (position.stopLoss == null || position.stopLoss > _be)) position.stopLoss = _be;
         }
       }
+      // Snapshot the peak as of the PREVIOUS completed bar before folding this
+      // bar into it. The profit lock arms off this snapshot so it can never arm
+      // and fire within one candle — inside a bar we know the high and the low
+      // but not their order, and assuming up-then-down would manufacture exits
+      // paper could not take.
+      position.bestPricePrevBar = position.bestPrice;
       // Track favourable extreme (best price seen, for analysis)
       if (position.side === "CE") {
         if (!position.bestPrice || candle.high > position.bestPrice) position.bestPrice = candle.high;
@@ -664,18 +670,20 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
       // Ordering note: this sits with the other per-TICK stops (1 / 1a / 1b) and
       // BEFORE every candle-close rule, matching paper — paper checks the lock on
       // each tick, ahead of its own stops.
-      if (!exitReason && _PL_VALID) {
-        const favHigh = position.side === "CE"
-          ? (candle.high - position.entryPrice)
-          : (position.entryPrice - candle.low);
-        // Arm on the running best, not just this bar: a trade can arm on an
-        // earlier candle and only give back later. bestPrice is updated above.
-        const bestFav = position.bestPrice != null
-          ? (position.side === "CE"
-              ? (position.bestPrice - position.entryPrice)
-              : (position.entryPrice - position.bestPrice))
-          : favHigh;
-        const armed = Math.max(favHigh, bestFav) >= _PL_ARM_SPOT_PTS;
+      // Arm ONLY on a peak set by a COMPLETED EARLIER bar (bestPricePrevBar,
+      // snapshotted in the main loop before this bar is folded in). Within a
+      // single bar we know the high and the low but not their order, so arming on
+      // this bar's own high and then exiting on this bar's low would assume the
+      // sequence went up-then-down — a look-ahead that manufactures profitable
+      // exits paper could not take. It is null on an entry bar
+      // (runExitChecks({entryBar:true})), which correctly makes the lock a no-op
+      // there, mirroring how the trail rules here refuse to fire on the bar that
+      // sets them.
+      if (!exitReason && _PL_VALID && position.bestPricePrevBar != null) {
+        const bestFav = position.side === "CE"
+          ? (position.bestPricePrevBar - position.entryPrice)
+          : (position.entryPrice - position.bestPricePrevBar);
+        const armed = bestFav >= _PL_ARM_SPOT_PTS;
         if (armed) {
           // Did this bar trade back down to the locked floor?
           const floorLvl = position.side === "CE"

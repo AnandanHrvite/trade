@@ -280,6 +280,29 @@ check("BACKTEST applies the lock, in spot-equivalent terms", () => {
   }
 });
 
+check("a backtest cannot arm and fire the lock on the SAME bar (look-ahead)", () => {
+  // The dangerous bug: arming on this bar's HIGH and exiting on this bar's LOW.
+  // A bar gives us both extremes but not their order, so that silently assumes
+  // the move went up-then-down and manufactures profitable exits paper could
+  // never take — inflating every backtest. Both engines must arm off a peak
+  // snapshotted BEFORE the current bar is folded in.
+  for (const f of ["backtestEngine.js", "ema9vwapBacktestEngine.js"]) {
+    const src = decomment(read(`services/${f}`));
+    assert.ok(/bestPricePrevBar/.test(src),
+      `${f} does not snapshot a previous-bar peak — the lock can arm on the same bar it exits`);
+    // The arming comparison must read the SNAPSHOT, never the live peak.
+    const armLine = src.split("\n").find(l => /(>=)\s*(_PL_ARM_SPOT_PTS|_plArmSpotPts)/.test(l));
+    assert.ok(armLine, `${f}: could not find the arm comparison`);
+    const guard = src.split("\n").find(l => /_PL_VALID|_plValid/.test(l) && /bestPricePrevBar/.test(l));
+    assert.ok(guard, `${f}: the lock is not gated on the previous-bar snapshot`);
+    // And the snapshot must be taken BEFORE this bar updates the running peak.
+    const snap = src.indexOf("bestPricePrevBar = position.bestPrice");
+    const upd  = src.search(/bestPrice = candle\.(high|low)/);
+    assert.ok(snap > 0 && upd > 0 && snap < upd,
+      `${f}: the previous-bar snapshot must be taken before this bar's peak update`);
+  }
+});
+
 check("a backtest cannot arm the lock without tracking the peak", () => {
   // The lock must arm on the running favourable extreme, not just the current
   // bar — otherwise a trade that peaked on an earlier candle never arms.
