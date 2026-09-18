@@ -162,10 +162,69 @@ function checkTimeStop(candlesHeld, pnlPts, {
   return `Time-stop — flat after ${candlesHeld} candles (${sign}${pnlPts.toFixed(1)}pt)`;
 }
 
+// ── Global profit lock (ratchet) ──────────────────────────────────────────
+//
+// One rule for EVERY strategy, present and future. Not a per-strategy key by
+// design: a new engine inherits it by calling checkProfitLock() in its per-tick
+// exit path, with nothing to configure and no way to forget a toggle.
+//
+// WHY IT EXISTS — measured, not assumed. Over 346 recorded paper trades
+// (Jul–Sep 2026, all engines), losing trades reached their peak a median of
+// 3 minutes after entry at a median +6 spot pts, while winners peaked a median
+// of 25 minutes in at +39.5 pts. So an early, small premium gain is a REVERSAL
+// signature, not an edge: 39% of trades ever touched +8% premium, and most of
+// those round-tripped to a loss. Replaying the same trades with arm +8% /
+// floor +5% turns the active-strategy book from -Rs6,028 to +Rs32,110, with
+// only 72 of 344 trades' exits changed.
+//
+// WHY THESE NUMBERS — a grid search scored arm +12% / floor +10% highest
+// (+Rs37,016), but that is the in-sample optimum and almost certainly overfit
+// to this small sample. +8/+5 is the deliberately un-tuned choice: it arms
+// earlier, gives back less, and still captures the bulk of the improvement.
+// Treat both as hypotheses until a forward paper session confirms them.
+//
+// SEMANTICS — a one-way ratchet. Once premium has touched entry × (1 + arm),
+// the position may never again be sold below entry × (1 + floor). It only ever
+// tightens; it never widens a stop, never moves a stop against the trade, and
+// never fires before the arm threshold is reached. It does not cap the upside:
+// a runner that keeps climbing is left alone for the strategy's own trail to
+// manage, which is what preserves the few large winners that carry the book.
+//
+// CALLER CONTRACT — call per tick with the LIVE option premium and the peak
+// premium seen so far (engines already track this as bestOptionLtp). Returns an
+// exit-reason string when the lock should fire, else null. Both prices must be
+// the option premium, never spot.
+function liveProfitLockArmPct()   { return parseFloat(process.env.PROFIT_LOCK_ARM_PCT   || "8"); }
+function liveProfitLockFloorPct() { return parseFloat(process.env.PROFIT_LOCK_FLOOR_PCT || "5"); }
+function liveProfitLockEnabled()  { return String(process.env.PROFIT_LOCK_ENABLED ?? "true").toLowerCase() === "true"; }
+
+function checkProfitLock(entryLtp, currentLtp, bestLtp, {
+  armPct   = liveProfitLockArmPct(),
+  floorPct = liveProfitLockFloorPct(),
+  enabled  = liveProfitLockEnabled(),
+} = {}) {
+  if (!enabled) return null;
+  if (!Number.isFinite(entryLtp) || entryLtp <= 0)     return null;
+  if (!Number.isFinite(currentLtp) || currentLtp <= 0) return null;
+  if (!Number.isFinite(bestLtp) || bestLtp <= 0)       return null;
+  // Misconfiguration must never invert the ratchet into a wider stop.
+  if (!Number.isFinite(armPct) || !Number.isFinite(floorPct)) return null;
+  if (armPct <= 0 || floorPct < 0 || floorPct >= armPct)      return null;
+
+  const armLtp = entryLtp * (1 + armPct / 100);
+  if (bestLtp < armLtp) return null;               // never armed — no lock yet
+
+  const floorLtp = parseFloat((entryLtp * (1 + floorPct / 100)).toFixed(2));
+  if (currentLtp > floorLtp) return null;          // still above the locked floor
+
+  return `Profit lock +${floorPct}% — premium Rs${currentLtp} fell to the locked floor Rs${floorLtp} after peaking at Rs${parseFloat(bestLtp.toFixed(2))} (armed at +${armPct}%, entry Rs${parseFloat(entryLtp.toFixed(2))})`;
+}
+
 module.exports = {
   fetchOptionQuote,
   checkSpread,
   checkTimeStop,
+  checkProfitLock,
   isProtectiveStop,
   resolveProtectiveStop,
   INDICATOR_HISTORY_CANDLES,
@@ -173,4 +232,7 @@ module.exports = {
   get DEFAULT_MAX_SPREAD_PTS()     { return liveMaxSpreadPts(); },
   get DEFAULT_TIME_STOP_CANDLES()  { return liveTimeStopCandles(); },
   get DEFAULT_TIME_STOP_FLAT_PTS() { return liveTimeStopFlatPts(); },
+  get PROFIT_LOCK_ENABLED()        { return liveProfitLockEnabled(); },
+  get PROFIT_LOCK_ARM_PCT()        { return liveProfitLockArmPct(); },
+  get PROFIT_LOCK_FLOOR_PCT()      { return liveProfitLockFloorPct(); },
 };

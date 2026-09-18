@@ -4,6 +4,8 @@ Engine: `src/strategies/ema9_vwap.js` · Routes: `ema9vwap*.js` · Env prefix: `
 
 Append a dated bullet whenever this strategy changes. Newest on top.
 
+- 2026-09-19 — Global profit lock wired into ema9vwapPaper per-tick exit (before the option stop). Shared rule in `tradeGuards.checkProfitLock`, `PROFIT_LOCK_*`, arm +8% / floor +5%; no per-strategy keys.
+
 ## Log
 - 2026-08-14: backtest dates are DD/MM/YYYY everywhere. `tsFmtDate` used `toLocaleDateString('en-IN')`, which drops leading zeros (8/7/2026), and now pads from the IST-shifted timestamp; the Day P&L key split `entry` on a SPACE, leaving a trailing comma ("08/07/2026,"), and now splits on the comma; the Analytics "Day-wise Loss" / "Losses by Candles Held" tables read a `t.date` field that does not exist (`?` / `—`) and now use `tsFmtDate(t.entryTs)`. Day rows sort on the timestamp, not the DD/MM/YYYY string, so the cumulative column is in real date order.
 - 2026-08-11: light-theme `.run-btn` colour on the Backtest page — the dark navy fill had no entry in the light skin's hex rewriter, so it stayed a dark-theme button on a light page. Now a solid blue button with a white label (5.2:1). Styling only.

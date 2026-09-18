@@ -769,6 +769,22 @@ function onTick(tick) {
       }
     }
 
+    // 0b. GLOBAL PROFIT LOCK (shared across every strategy — see tradeGuards).
+    //     Placed AFTER the middle-band target so this mean-reversion strategy's own
+    //     take-profit still wins when both would fire on the same tick, and BEFORE
+    //     every stop below: once armed, the locked floor sits above entry.
+    if (pos.optionEntryLtp && state.optionLtp) {
+      const _plMsg = tradeGuards.checkProfitLock(
+        pos.optionEntryLtp, state.optionLtp, pos.bestOptionLtp,
+      );
+      if (_plMsg) {
+        log(`🔒 [BB_RSI-PAPER] ${_plMsg}`);
+        pos.slSource = "Profit lock";
+        simulateSell(price, _plMsg, price);
+        return;
+      }
+    }
+
     // 1. HARD STOP — catastrophic loss cap (wide). Exit once the trade moves
     //    BB_RSI_STOP_LOSS_PTS against entry. Backstop under the two-opposite-candle
     //    stop, which can only fire on a candle close — a single violent bar against a

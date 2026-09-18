@@ -1934,6 +1934,24 @@ function onTick(tick) {
   // V2 has NO fixed-points stop and NO option-premium stop: the SuperTrend level
   // in pos.stopLoss is the ONLY stop, and it is enforced tick-by-tick below.
 
+  // ── Global profit lock (shared across every strategy — see tradeGuards) ──
+  // Checked BEFORE the SuperTrend stop: once armed, the locked floor sits above
+  // entry, so it must win over a stop that is still below it. Options only —
+  // the lock is defined on option premium, and a futures leg has none.
+  if (ptState.position && !ptState.position.isFutures
+      && ptState.position.optionEntryLtp && ptState.optionLtp) {
+    const _plPos = ptState.position;
+    const _plMsg = tradeGuards.checkProfitLock(
+      _plPos.optionEntryLtp, ptState.optionLtp, _plPos.bestOptionLtp,
+    );
+    if (_plMsg) {
+      log(`🔒 [PAPER] ${_plMsg}`);
+      ptState._slHitCandleTime = ptState.currentBar ? ptState.currentBar.time : null;
+      simulateSell(ltp, _plMsg, ltp);
+      return;
+    }
+  }
+
   // ── SuperTrend trailing SL hit ────────────────────────────────────────────
   // pos.stopLoss is the SuperTrend(10,2) level — seeded at entry from
   // signal.stopLoss and tightened at every candle close by engine.trailStop().

@@ -46,6 +46,7 @@ const instrumentConfig   = require("../config/instrument");
 const sharedSocketState  = require("../utils/sharedSocketState");
 const socketManager      = require("../utils/socketManager");
 const tickRecorder       = require("../utils/tickRecorder");
+const tradeGuards        = require("../utils/tradeGuards");
 const { verifyFyersToken } = require("../utils/fyersAuthCheck");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
 const { renderHistoryPage, dailyFilesPaginate } = require("../utils/paperHistoryUI");
@@ -996,6 +997,22 @@ function _checkExits() {
     log(`🧗 ${LOG_TAG} Trail — SL ₹${prev} → ₹${newStop} (peak ₹${pos.peak}, ${cfg.trailPts}pt behind)`);
     decide("TRAIL", `SL moved ₹${prev} → ₹${newStop}`, { peak: pos.peak, trailPts: cfg.trailPts, move: pos.trailMoves });
     try { require("../utils/positionPersist").saveSimple930Position(pos, { sessionPnl: state.sessionPnl }); } catch (_) {}
+  }
+
+  // Global profit lock (shared across every strategy — see tradeGuards). Checked
+  // before this engine's own exits: it is a premium ratchet that only ever fires
+  // ABOVE entry, so it can never loosen the flat stop or the trail above.
+  if (pos.optionEntryLtp) {
+    const _plMsg = tradeGuards.checkProfitLock(pos.optionEntryLtp, ltp, pos.peak);
+    if (_plMsg) {
+      log(`🔒 ${LOG_TAG} ${_plMsg}`);
+      decide("PROFIT_LOCK", _plMsg, {
+        entry: pos.optionEntryLtp, peak: pos.peak, ltp,
+        armPct: tradeGuards.PROFIT_LOCK_ARM_PCT, floorPct: tradeGuards.PROFIT_LOCK_FLOOR_PCT,
+      });
+      simulateSell(_plMsg, { kind: "PROFIT_LOCK", isStopOut: false });
+      return;
+    }
   }
 
   const verdict = strategy.exitCheck(pos, ltp, getISTMinutes(), cfg);

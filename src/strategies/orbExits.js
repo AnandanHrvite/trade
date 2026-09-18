@@ -293,6 +293,14 @@ function evaluateTickExits(pos, { spotPrice, optionLtp }) {
   if (!pos.isFutures && isPremiumStopHit(optionLtp, pos.optionEntryLtp)) {
     return { exit: true, reason: `Premium disaster stop (₹${optionLtp} ≤ −${premiumStopPct()}% of entry ₹${pos.optionEntryLtp})` };
   }
+  // Global profit lock (shared across every strategy — see tradeGuards). Options
+  // only: it is defined on option premium, and in futures mode optionLtp mirrors
+  // the SPOT, so leaving it on would test an 8% move in NIFTY itself.
+  if (!pos.isFutures) {
+    const plMsg = require("../utils/tradeGuards")
+      .checkProfitLock(pos.optionEntryLtp, optionLtp, pos.peakPremium);
+    if (plMsg) return { exit: true, reason: plMsg };
+  }
   if (isHardSlHit(pos.side, spotPrice, pos.slSpot)) {
     return { exit: true, reason: `Hard SL hit (${spotPrice} ${pos.side === "CE" ? "≤" : "≥"} ${pos.slSpot})` };
   }

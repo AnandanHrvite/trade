@@ -1971,6 +1971,22 @@ function onTick(tick) {
     }
   }
 
+  // ── Global profit lock (shared across every strategy — see tradeGuards) ──
+  // Checked BEFORE the option stop: once armed, the locked floor sits above
+  // entry, so it must win over any wider stop below entry.
+  if (ptState.position && ptState.position.optionEntryLtp && ptState.optionLtp) {
+    const _plPos = ptState.position;
+    const _plMsg = tradeGuards.checkProfitLock(
+      _plPos.optionEntryLtp, ptState.optionLtp, _plPos.bestOptionLtp,
+    );
+    if (_plMsg) {
+      log(`🔒 [PAPER] ${_plMsg}`);
+      ptState._slHitCandleTime = ptState.currentBar ? ptState.currentBar.time : null;
+      simulateSell(ltp, _plMsg, ltp);
+      return;
+    }
+  }
+
   // ── Option-premium stop: exit if option LTP drops OPT_STOP_PCT below entry premium ──
   if (ptState.position && ptState.position.optionEntryLtp && ptState.optionLtp && _OPT_STOP_PCT > 0) {
     const _pos     = ptState.position;

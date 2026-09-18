@@ -4,6 +4,8 @@ Engine: `src/strategies/strategy1_sar_ema_rsi.js` · Routes: `emaRsiSt*.js` · E
 
 Append a dated bullet whenever this strategy changes. Newest on top.
 
+- 2026-09-19 — Global profit lock wired into emaRsiStPaper + emaRsiStV2Paper per-tick exits (before the option/SuperTrend stop). Shared rule in `tradeGuards.checkProfitLock`, `PROFIT_LOCK_*`, arm +8% / floor +5%; no per-strategy keys.
+
 ## Log
 - 2026-09-16: FIX — Live `onSpotTick` now returns when `tradeState.running` is false. It is the socket's primary handler and `/stop` cannot uninstall it, so with other strategies keeping the shared socket up a stopped Live session kept building candles and could place real entries. Paper's `onTick` already had this guard; no decision logic changed.
 - 2026-09-16: FIX — V1 took no entries (and logged no skips) from 2026-09-05 because `emaRsiStV2Paper.js` called `socketManager.start(NIFTY, onTick)`, which on a running NIFTY socket REPLACES the single primary handler V1 relies on; whichever of V1/V2 started second got all the ticks. V2 now registers via `addCallback("ema_rsi_st_v2-paper")`, starts the socket only when it is not running, and removes the callback on every teardown. V1 is untouched.

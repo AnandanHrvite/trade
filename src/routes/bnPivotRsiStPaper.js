@@ -66,6 +66,7 @@ const instrumentConfig   = require("../config/instrument");
 const sharedSocketState  = require("../utils/sharedSocketState");
 const optionChart  = require("../utils/optionChart");
 const socketManager      = require("../utils/socketManager");
+const tradeGuards        = require("../utils/tradeGuards");
 const tickRecorder       = require("../utils/tickRecorder");
 const { verifyFyersToken } = require("../utils/fyersAuthCheck");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
@@ -918,6 +919,19 @@ function _checkExits() {
   });
   if (curPnl > (pos.mfePnl || 0)) pos.mfePnl = parseFloat(curPnl.toFixed(2));
   if (curPnl < (pos.maePnl || 0)) pos.maePnl = parseFloat(curPnl.toFixed(2));
+
+  // 0. Global profit lock (shared across every strategy — see tradeGuards). Runs
+  //    ahead of this engine's own premium floor: both are premium ratchets, and
+  //    the lock only ever fires above entry, so it can never loosen that floor.
+  //    Options only — in futures mode optLtp mirrors the SPOT.
+  if (!pos.isFutures && pos.optionEntryLtp) {
+    const _plMsg = tradeGuards.checkProfitLock(pos.optionEntryLtp, optLtp, pos.peakPremium);
+    if (_plMsg) {
+      log(`🔒 [BN-PIVOT-RSI-ST-PAPER] ${_plMsg}`);
+      simulateSell(_plMsg, { isStopOut: false, stopName: "global profit lock", stopLevel: null, stopUnit: "premium" });
+      return;
+    }
+  }
 
   // 1. Premium floor — BOTH sides.
   if (bnPivotStrategy.premiumStopHit(optLtp, pos.premiumFloor)) {

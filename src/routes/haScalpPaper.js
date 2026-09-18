@@ -60,6 +60,7 @@ const instrumentConfig   = require("../config/instrument");
 const sharedSocketState  = require("../utils/sharedSocketState");
 const socketManager      = require("../utils/socketManager");
 const tickRecorder       = require("../utils/tickRecorder");
+const tradeGuards        = require("../utils/tradeGuards");
 const { verifyFyersToken } = require("../utils/fyersAuthCheck");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
 const { renderHistoryPage, dailyFilesPaginate } = require("../utils/paperHistoryUI");
@@ -910,6 +911,18 @@ function _checkExits(spotPrice) {
   if (curPnl > (pos.mfePnl     || 0)) pos.mfePnl = parseFloat(curPnl.toFixed(2));
   if (favPts < (pos.maeSpotPts || 0)) { pos.maeSpotPts = parseFloat(favPts.toFixed(2)); pos.secsToMAE = parseFloat(((Date.now() - pos.entryTimeMs) / 1000).toFixed(1)); }
   if (curPnl < (pos.maePnl     || 0)) pos.maePnl = parseFloat(curPnl.toFixed(2));
+
+  // Global profit lock (shared across every strategy — see tradeGuards). Options
+  // only: the lock is defined on option premium, and in futures mode optLtp
+  // mirrors the SPOT, so leaving it on would test an 8% move in NIFTY itself.
+  if (!pos.isFutures && pos.optionEntryLtp && state.optionLtp) {
+    const _plMsg = tradeGuards.checkProfitLock(pos.optionEntryLtp, state.optionLtp, pos.peakPremium);
+    if (_plMsg) {
+      log(`🔒 [HA-SCALP-PAPER] ${_plMsg}`);
+      simulateSell(_plMsg);
+      return;
+    }
+  }
 
   // The only per-tick exit: the signal candle's own raw high/low was taken out.
   if (haStrategy.stopHit(pos.side, spotPrice, pos.slSpot)) {

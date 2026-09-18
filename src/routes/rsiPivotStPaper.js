@@ -56,6 +56,7 @@ const instrumentConfig   = require("../config/instrument");
 const sharedSocketState  = require("../utils/sharedSocketState");
 const optionChart  = require("../utils/optionChart");
 const socketManager      = require("../utils/socketManager");
+const tradeGuards        = require("../utils/tradeGuards");
 const tickRecorder       = require("../utils/tickRecorder");
 const { verifyFyersToken } = require("../utils/fyersAuthCheck");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
@@ -848,6 +849,19 @@ function _checkExits() {
       pos.premiumFloor = trailed;
       log(`🔒 [RSI_PIVOT_ST-PAPER] Premium floor trail ₹${prev} → ₹${trailed} (high ₹${pos.peakPremium})`);
       try { require("../utils/positionPersist").saveRsiPivotStPosition(pos, { sessionPnl: state.sessionPnl }); } catch (_) {}
+    }
+  }
+
+  // Global profit lock (shared across every strategy — see tradeGuards). Runs
+  // alongside this engine's own premium floor: whichever is hit first exits, and
+  // the lock only ever fires above entry, so it can never loosen that floor.
+  // Options only — in futures mode optLtp mirrors the SPOT.
+  if (!pos.isFutures && pos.optionEntryLtp) {
+    const _plMsg = tradeGuards.checkProfitLock(pos.optionEntryLtp, optLtp, pos.peakPremium);
+    if (_plMsg) {
+      log(`🔒 [RSI_PIVOT_ST-PAPER] ${_plMsg}`);
+      simulateSell(_plMsg);
+      return;
     }
   }
 
