@@ -243,6 +243,60 @@ check("the lock is checked BEFORE the engine's own stop, not after", () => {
   }
 });
 
+check("the native LIVE engines honour it too", () => {
+  // Most live trading runs through the harness, which literally runs the paper
+  // engine — so it inherits the lock for free. These four have their own tick
+  // loops and do not, which is exactly why they can silently drift from paper.
+  for (const f of ["emaRsiStLive.js", "bbRsiLive.js", "paLive.js"]) {
+    const src = decomment(read(`routes/${f}`));
+    assert.ok(/checkProfitLock/.test(src), `${f} never calls checkProfitLock — live would drift from paper`);
+  }
+  // ORB live goes through the shared orbExits module.
+  assert.ok(/checkProfitLock/.test(decomment(read("strategies/orbExits.js"))));
+});
+
+check("the live harness inherits the lock by running paper", () => {
+  // If a harness ever stops wrapping its paper route, it stops inheriting every
+  // paper rule — the lock included — without any test here failing otherwise.
+  const dir = path.join(SRC, "routes");
+  const missing = [];
+  for (const f of fs.readdirSync(dir).filter(x => /LiveHarness\.js$/.test(x))) {
+    if (!/require\("\.\/[a-zA-Z0-9]*Paper"\)/.test(read(`routes/${f}`))) missing.push(f);
+  }
+  assert.deepStrictEqual(missing, [],
+    `harness routes that no longer wrap their paper engine: ${missing.join(", ")}`);
+});
+
+check("BACKTEST applies the lock, in spot-equivalent terms", () => {
+  // The backtest engines have no option chain, so they convert the premium
+  // thresholds to spot points the same way they already convert the option stop.
+  // Without this the backtest reports exits paper would never take, which breaks
+  // the repo's rule that backtest must match paper.
+  for (const f of ["backtestEngine.js", "ema9vwapBacktestEngine.js"]) {
+    const src = decomment(read(`services/${f}`));
+    assert.ok(/PROFIT_LOCK_ARM_PCT/.test(src),  `${f} does not read the profit-lock arm %`);
+    assert.ok(/PROFIT_LOCK_FLOOR_PCT/.test(src), `${f} does not read the profit-lock floor %`);
+    assert.ok(/DELTA/.test(src), `${f} must convert the premium thresholds via DELTA`);
+  }
+});
+
+check("a backtest cannot arm the lock without tracking the peak", () => {
+  // The lock must arm on the running favourable extreme, not just the current
+  // bar — otherwise a trade that peaked on an earlier candle never arms.
+  for (const f of ["backtestEngine.js", "ema9vwapBacktestEngine.js"]) {
+    const src = decomment(read(`services/${f}`));
+    assert.ok(/bestPrice/.test(src), `${f} has no favourable-extreme tracking for the lock to arm on`);
+    const upd = src.search(/bestPrice\s*=\s*candle\.(high|low)/);
+    assert.ok(upd > 0, `${f} never updates bestPrice from the bar`);
+    // Compare against where the arm threshold is USED (the >= comparison), not
+    // where the constant is declared — the declaration sits at the top of the
+    // run, long before any bar is seen, so matching it would always "fail".
+    const use = src.search(/>=\s*(_PL_ARM_SPOT_PTS|_plArmSpotPts)/);
+    assert.ok(use > 0, `${f} never compares against the arm distance`);
+    assert.ok(upd < use, `${f} reads the peak before updating it`);
+  }
+});
+
 check("Settings exposes every PROFIT_LOCK_ key the code reads", () => {
   const settings = read("routes/settings.js");
   const sources  = ["utils/tradeGuards.js", "strategies/orbExits.js"].map(read).join("\n");

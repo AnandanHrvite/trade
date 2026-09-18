@@ -281,6 +281,26 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
   // is the same 200 constant the PnL sim uses, so the two stay internally consistent.
   const _OPT_STOP_SPOT_PTS = (!isFutures && OPT_STOP_PCT > 0 && DELTA > 0) ? (OPT_STOP_PCT * 200) / DELTA : 0;
 
+  // ── Global profit lock, in spot-point terms ───────────────────────────────
+  // The lock is defined on option premium, and this engine has no live LTP — it
+  // models premium as spot × DELTA − theta. So convert both thresholds the same
+  // way _OPT_STOP_SPOT_PTS does, against the same 200 estimated entry premium,
+  // and the backtest stays internally consistent with its own P&L model.
+  //
+  // This is an APPROXIMATION of what paper does per tick: paper arms on the real
+  // premium, which also moves with IV and theta, not with spot alone. It is the
+  // same approximation the option stop above already accepts, and it is far
+  // closer to paper than having no lock at all (which would leave every backtest
+  // reporting exits paper would never take).
+  const _PL_ENABLED   = !isFutures && tradeGuards.PROFIT_LOCK_ENABLED;
+  const _PL_ARM_PCT   = tradeGuards.PROFIT_LOCK_ARM_PCT;
+  const _PL_FLOOR_PCT = tradeGuards.PROFIT_LOCK_FLOOR_PCT;
+  const _PL_VALID     = _PL_ENABLED && DELTA > 0
+                     && Number.isFinite(_PL_ARM_PCT) && Number.isFinite(_PL_FLOOR_PCT)
+                     && _PL_ARM_PCT > 0 && _PL_FLOOR_PCT >= 0 && _PL_FLOOR_PCT < _PL_ARM_PCT;
+  const _PL_ARM_SPOT_PTS   = _PL_VALID ? (_PL_ARM_PCT   / 100 * 200) / DELTA : 0;
+  const _PL_FLOOR_SPOT_PTS = _PL_VALID ? (_PL_FLOOR_PCT / 100 * 200) / DELTA : 0;
+
   // Clear IST memoization caches so back-to-back backtests don't cross-pollute
   _istDateCache.clear();
   _istHHMMCache.clear();
@@ -636,10 +656,43 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         }
       }
 
+      // Rule 1c: Global profit lock — the same ratchet paper applies per tick
+      // (see tradeGuards.checkProfitLock), expressed in spot points because this
+      // engine has no live premium. Once the favourable excursion has reached the
+      // arm distance, the trade may not be given back past the floor distance.
+      //
+      // Ordering note: this sits with the other per-TICK stops (1 / 1a / 1b) and
+      // BEFORE every candle-close rule, matching paper — paper checks the lock on
+      // each tick, ahead of its own stops.
+      if (!exitReason && _PL_VALID) {
+        const favHigh = position.side === "CE"
+          ? (candle.high - position.entryPrice)
+          : (position.entryPrice - candle.low);
+        // Arm on the running best, not just this bar: a trade can arm on an
+        // earlier candle and only give back later. bestPrice is updated above.
+        const bestFav = position.bestPrice != null
+          ? (position.side === "CE"
+              ? (position.bestPrice - position.entryPrice)
+              : (position.entryPrice - position.bestPrice))
+          : favHigh;
+        const armed = Math.max(favHigh, bestFav) >= _PL_ARM_SPOT_PTS;
+        if (armed) {
+          // Did this bar trade back down to the locked floor?
+          const floorLvl = position.side === "CE"
+            ? position.entryPrice + _PL_FLOOR_SPOT_PTS
+            : position.entryPrice - _PL_FLOOR_SPOT_PTS;
+          const touched = position.side === "CE" ? candle.low <= floorLvl : candle.high >= floorLvl;
+          if (touched) {
+            exitReason = `Profit lock +${_PL_FLOOR_PCT}% (≈${_PL_FLOOR_SPOT_PTS.toFixed(0)}pt spot, armed at +${_PL_ARM_PCT}%)`;
+            exitPrice  = quantize(floorLvl, 2);
+          }
+        }
+      }
+
       // ── BAR CLOSE ───────────────────────────────────────────────────────────
-      // Everything above (rules 1 / 1a / 1b) is a per-TICK stop: paper enforces
-      // those continuously while the bar is still forming. Everything below is a
-      // candle-CLOSE rule that paper evaluates inside onCandleClose.
+      // Everything above (rules 1 / 1a / 1b / 1c) is a per-TICK stop: paper
+      // enforces those continuously while the bar is still forming. Everything
+      // below is a candle-CLOSE rule that paper evaluates inside onCandleClose.
       //
       // emaRsiStPaper increments candlesHeld at the TOP of onCandleClose — after
       // the bar's ticks, before every candle-close rule. That placement matters:

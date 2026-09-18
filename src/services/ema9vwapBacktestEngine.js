@@ -117,6 +117,17 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
     ? (optStopPct * 200) / DELTA
     : 0;
 
+  // Global profit lock, converted the same way and against the same seed premium
+  // so it stays consistent with this engine's own P&L model. Approximation of
+  // paper's per-tick premium ratchet — see the note on _optStopSpotPts above.
+  const _plArmPct   = _tradeGuards.PROFIT_LOCK_ARM_PCT;
+  const _plFloorPct = _tradeGuards.PROFIT_LOCK_FLOOR_PCT;
+  const _plValid    = _tradeGuards.PROFIT_LOCK_ENABLED && DELTA > 0
+                   && Number.isFinite(_plArmPct) && Number.isFinite(_plFloorPct)
+                   && _plArmPct > 0 && _plFloorPct >= 0 && _plFloorPct < _plArmPct;
+  const _plArmSpotPts   = _plValid ? (_plArmPct   / 100 * 200) / DELTA : 0;
+  const _plFloorSpotPts = _plValid ? (_plFloorPct / 100 * 200) / DELTA : 0;
+
   // ── Guards mirrored from paper (previously absent from this engine) ──────────
   // Opposite-side (flip) cooldown — same keys/defaults as ema9vwapPaper._refreshConfig.
   const oppCooldownEnabled = (process.env.EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_ENABLED || "true").toLowerCase() === "true";
@@ -238,7 +249,7 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
       exitPrice:       _q(exitPrice, 2),
       stopLoss:        "N/A",
       initialStopLoss: "N/A",
-      bestPrice:       null,
+      bestPrice:       position.bestPrice != null ? _q(position.bestPrice, 2) : null,
       candlesHeld:     position.candlesHeld || 1,
       spotPnlPts,
       pnl:             pnlRupees,
@@ -343,6 +354,12 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
       const _adverseExcursion = position.side === "CE"
         ? (candle.low  - position.entryPrice)
         : (position.entryPrice - candle.high);
+      // Track the favourable extreme before any exit rule reads it.
+      if (position.side === "CE") {
+        if (position.bestPrice == null || candle.high > position.bestPrice) position.bestPrice = candle.high;
+      } else {
+        if (position.bestPrice == null || candle.low  < position.bestPrice) position.bestPrice = candle.low;
+      }
 
       // (1) points stop — paper: per-tick, exits AT the cap level.
       // NOTE on `blocksReentry` for the three PROTECTIVE stops below: paper fires
@@ -367,6 +384,31 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
         exitLevel = position.side === "CE"
           ? position.entryPrice - _optStopSpotPts
           : position.entryPrice + _optStopSpotPts;
+      }
+      // (2b) global profit lock — paper: per-tick premium ratchet, ahead of its own
+      //      stops. Once the favourable excursion has reached the arm distance, the
+      //      trade may not be given back past the floor distance. Not an SL: it exits
+      //      in profit, so it must not arm the SL pause or block a re-entry.
+      if (!doExit && _plValid) {
+        const _favNow = position.side === "CE"
+          ? (candle.high - position.entryPrice)
+          : (position.entryPrice - candle.low);
+        const _favBest = position.bestPrice != null
+          ? (position.side === "CE"
+              ? (position.bestPrice - position.entryPrice)
+              : (position.entryPrice - position.bestPrice))
+          : _favNow;
+        if (Math.max(_favNow, _favBest) >= _plArmSpotPts) {
+          const _floorLvl = position.side === "CE"
+            ? position.entryPrice + _plFloorSpotPts
+            : position.entryPrice - _plFloorSpotPts;
+          const _touched = position.side === "CE" ? candle.low <= _floorLvl : candle.high >= _floorLvl;
+          if (_touched) {
+            doExit = true;
+            exitReason = `Profit lock +${_plFloorPct}% (spot-equivalent, armed at +${_plArmPct}%)`;
+            exitLevel  = _floorLvl;
+          }
+        }
       }
       // (3) trail HIT — against the level carried in from an earlier candle's close.
       //     Checking before re-arming is what stops the trail firing on the very bar
@@ -449,6 +491,9 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
           position = {
             side, entryPrice: _q(entryPrice, 2), entryTime: candle.time,
             candlesHeld: 0, signalStrength: "STRONG", entryReason: sig.reason,
+            // Favourable extreme, carried across bars so the profit lock can arm
+            // on an earlier candle and fire on a later give-back.
+            bestPrice: _q(entryPrice, 2),
           };
         } else {
           vixBlocked += 1;

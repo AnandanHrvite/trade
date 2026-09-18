@@ -724,6 +724,21 @@ function onTick(tick) {
     // Peak option premium (long CE/PE both profit on premium rise) — observer-only, for the UI/log.
     if (state.optionLtp && state.optionLtp > (pos.bestOptionLtp || 0)) pos.bestOptionLtp = parseFloat(state.optionLtp.toFixed(2));
 
+    // 0. GLOBAL PROFIT LOCK (shared across every strategy — see tradeGuards).
+    //    Ahead of the SL checks: once armed, the locked floor sits above entry,
+    //    so a stop below entry must not get first refusal.
+    if (pos.optionEntryLtp && state.optionLtp) {
+      const _plMsg = tradeGuards.checkProfitLock(
+        pos.optionEntryLtp, state.optionLtp, pos.bestOptionLtp,
+      );
+      if (_plMsg) {
+        console.log(`🔒 [PA-LIVE] ${_plMsg}`);
+        pos.slSource = "Profit lock";
+        squareOff(price, _plMsg).catch(e => console.error(`🚨 [PA-LIVE] squareOff error: ${e.message}`));
+        return;
+      }
+    }
+
     // 1. SL hit (initial or swing-trailed)
     if (pos.side === "CE" && price <= pos.stopLoss) {
       const _isTrail = Math.abs(pos.stopLoss - pos.initialStopLoss) > 0.5;
