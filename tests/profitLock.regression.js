@@ -320,6 +320,45 @@ check("a backtest cannot arm the lock without tracking the peak", () => {
   }
 });
 
+check("a profit-lock exit is never treated as a stop-out", () => {
+  // It exits in PROFIT. If any mode classified it as an SL it would start the
+  // same-side SL pause and feed the consecutive-loss breaker, so a run of
+  // successful locks would progressively shut the strategy down.
+  for (const f of ["emaRsiStPaper.js", "ema9vwapPaper.js", "bbRsiPaper.js",
+                   "emaRsiStV2Paper.js", "bnEmaRsiStV2Paper.js"]) {
+    const src = decomment(read(`routes/${f}`));
+    const i = src.indexOf("checkProfitLock");
+    assert.ok(i > 0, `${f}: no checkProfitLock call`);
+    // Look at the exit branch that follows the call, not the whole file.
+    const branch = src.slice(i, i + 700);
+    assert.ok(!/_setSlPause/.test(branch),
+      `${f}: the profit lock arms the SL pause — it exits in profit and must not`);
+  }
+  // Backtest classifies by reason string; "Profit lock" must not read as an SL.
+  const bt = read("services/backtestEngine.js");
+  const cls = bt.split("\n").find(l => /isSLExit\s*=/.test(l));
+  assert.ok(cls, "could not find the backtest SL classification");
+  assert.ok(!/profit lock/i.test(cls), "backtest classifies a profit lock as an SL exit");
+  assert.ok(!"Profit lock +5% (=18pt spot, armed at +8%)".toLowerCase().includes("sl hit"),
+    "the profit-lock reason string would match the SL classifier");
+});
+
+check("a profit-lock exit does not block a same-bar re-entry", () => {
+  // Paper fires the lock inside onTick, which returns from the TICK handler only
+  // — the bar still closes and the entry section runs. A backtest that blocked
+  // the bar would take fewer trades than paper on exactly the bars the lock works.
+  const src = decomment(read("services/ema9vwapBacktestEngine.js"));
+  const i = src.indexOf("Profit lock +${_plFloorPct}%");
+  assert.ok(i > 0, "could not find the ema9vwap profit-lock exit");
+  assert.ok(/blocksReentry = false/.test(src.slice(i, i + 500)),
+    "ema9vwap backtest blocks re-entry after a profit lock — paper does not");
+  // The shared engine whitelists which reasons block; "Profit lock" must not match.
+  const bt = read("services/backtestEngine.js");
+  const blk = bt.split("\n").find(l => /_blockEntryAfterExit = true/.test(l));
+  assert.ok(blk, "could not find the shared engine's entry-block rule");
+  assert.ok(!/profit lock/i.test(blk), "shared engine blocks re-entry after a profit lock");
+});
+
 check("Settings exposes every PROFIT_LOCK_ key the code reads", () => {
   const settings = read("routes/settings.js");
   const sources  = ["utils/tradeGuards.js", "strategies/orbExits.js"].map(read).join("\n");

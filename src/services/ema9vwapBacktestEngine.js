@@ -406,6 +406,12 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
             doExit = true;
             exitReason = `Profit lock +${_plFloorPct}% (spot-equivalent, armed at +${_plArmPct}%)`;
             exitLevel  = _floorLvl;
+            // Paper fires the lock inside onTick, which returns from the TICK
+            // handler only — the bar still closes and onCandleClose's entry
+            // section runs, so paper CAN re-enter on this bar. Same reasoning as
+            // the protective stops above. armSlPause stays false: this exits in
+            // PROFIT, so it is not a stop-out and must not start an SL cooldown.
+            blocksReentry = false;
           }
         }
       }
