@@ -436,6 +436,11 @@ function snapshotSettings() {
       out[k] = process.env[k];
     }
   }
+  // Default-ON global guards: write the effective value even when the key is
+  // unset, so a recording always says whether they were on.
+  for (const k of ["PROFIT_LOCK_ENABLED", "BREAKEVEN_STOP_ENABLED"]) {
+    if (out[k] === undefined) out[k] = "true";
+  }
   return out;
 }
 

@@ -2100,9 +2100,16 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
       // Same rule for the global guards added 2026-09-19 (profit lock, breakeven
       // stop): both default ON, so a day recorded before they existed would replay
       // with exits the paper session never had and could not match it.
-      for (const _k of ["EMA_RSI_ST_CONFIRM_CANDLE_ENABLED", "BB_RSI_CONFIRM_CANDLE_ENABLED",
-                        "PROFIT_LOCK_ENABLED", "BREAKEVEN_STOP_ENABLED"]) {
+      for (const _k of ["EMA_RSI_ST_CONFIRM_CANDLE_ENABLED", "BB_RSI_CONFIRM_CANDLE_ENABLED"]) {
         if (!(_k in _snapSettings)) _snapSettings[_k] = "false";
+      }
+      // Date-gated, not absence-gated: a snapshot only holds keys that were SET
+      // in env, so on a later day an absent key means "default ON", not "did not
+      // exist". Only days before the guards shipped are forced off.
+      if (date < "2026-09-19") {
+        for (const _k of ["PROFIT_LOCK_ENABLED", "BREAKEVEN_STOP_ENABLED"]) {
+          if (!(_k in _snapSettings)) _snapSettings[_k] = "false";
+        }
       }
       // Snapshot mode is a PARTIAL override: _applySettingsOverride only SETS the
       // keys it is given, so a managed key present in today's env but absent from
