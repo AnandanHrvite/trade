@@ -2005,6 +2005,10 @@ function buildDiagnosticBlob(context, rows) {
         }
         for (const n of (ss.noSignalSamples || [])) lines.push('  no-signal: ' + JSON.stringify(n));
       }
+      if (r.sim.engineLog && r.sim.engineLog.length) {
+        lines.push('Engine log (' + r.sim.engineLog.length + ' decision lines):');
+        for (const l of r.sim.engineLog) lines.push('  ' + l);
+      }
     } else {
       lines.push('YourCfg:    FAILED — ' + (r.sim && r.sim.error));
     }

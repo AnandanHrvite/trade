@@ -64,6 +64,7 @@ const _realNow = Date.now;
 const MAX_CAPTURED_SKIPS = 4000;
 let _skipCapture = [];
 let _skipCaptureDropped = 0;
+let _engineLog = [];
 
 // Keep only JSON-safe scalars — a gate may hand over a live object (a candle, an
 // Error) that must not be serialised whole into the cached result.
@@ -929,6 +930,7 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     bt_fetchCandles: backtestEngine.fetchCandles,
     cc_fetchCandlesCached: candleCache.fetchCandlesCached,
     tl_appendTradeLog: tradeLogger.appendTradeLog,
+    c_log: console.log, c_warn: console.warn, c_error: console.error,
     tl_readDailyTrades: tradeLogger.readDailyTrades,
     notifyEntry:     notify.notifyEntry,
     notifyExit:      notify.notifyExit,
@@ -1670,6 +1672,27 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
       return orig.clearTimeout_(handle);
     };
 
+    // Engine log capture. The paper route explains every arm / entry / refusal
+    // in its own log lines, but those only reach /logs — a zero-trade run handed
+    // back nothing to read. Keep the decision lines (not the per-candle noise)
+    // so the diagnostic can show exactly where an entry died. Observer only.
+    _engineLog = [];
+    const _keep = /Signal: BUY|ARMED|Armed|CONFIRM|Intra-candle|ENTRY|BUY |EXIT|SELL|Cannot enter|aborted|SKIP|BLOCK|blocked|reached|halted|PAUSED|kill|invalid|expired|MANUAL EXPIRY|outside|error|Error|❌|🚫|🛑/;
+    const _tap = (origFn) => function (...a) {
+      try {
+        if (_engineLog.length < 300) {
+          const line = a.map(x => (typeof x === "string" ? x : (x && x.message) || String(x))).join(" ");
+          // The symbol pre-fetch logs MANUAL EXPIRY every candle — keep the first only.
+          const _dupExpiry = line.includes("MANUAL EXPIRY") && _engineLog.some(l => l.includes("MANUAL EXPIRY"));
+          if (_keep.test(line) && !_dupExpiry && !line.includes("[replay]")) _engineLog.push(line.replace(/\s+/g, " ").trim().slice(0, 260));
+        }
+      } catch (_) {}
+      return origFn.apply(console, a);
+    };
+    console.log   = _tap(orig.c_log);
+    console.warn  = _tap(orig.c_warn);
+    console.error = _tap(orig.c_error);
+
     // notifications: silence everything during replay
     notify.notifyEntry     = () => {};
     notify.notifyExit      = () => {};
@@ -1837,6 +1860,7 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
       try { orig.clearTimeout_(h); } catch (_) {}
     }
     _pendingLongTimers.clear();
+    console.log = orig.c_log; console.warn = orig.c_warn; console.error = orig.c_error;
     global.setTimeout   = orig.setTimeout_;
     global.clearTimeout = orig.clearTimeout_;
     // Drop the VIX/OI values this run cached at the REPLAYED instant so the next
@@ -1875,7 +1899,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
 
   return { install, uninstall, pumpTick, setNow, setWallClock, clearWallClock, enableDateShim, disableDateShim, getCallbacks: () => callbacks,
            hasPendingShortTimer: () => _pendingShortTimers.size > 0,
-           getWarmupFetchCount: () => _warmupFetchCount };
+           getWarmupFetchCount: () => _warmupFetchCount,
+           getEngineLog: () => _engineLog.slice() };
 }
 
 // ── Mode → route module mapping ─────────────────────────────────────────────
@@ -2505,6 +2530,8 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
       // this a replay that takes no trades is indistinguishable from one that was
       // never wired up.
       skipSummary: _summariseSkips(_skipCapture, _skipCaptureDropped),
+      // The engine's own decision lines for this run (arms, entries, refusals).
+      engineLog: harness.getEngineLog(),
       // True when the engine ran with NO warm-up at all — its "0 trades" is a
       // data problem (expired broker token / recording with no warm-up), not a
       // strategy result. The UI must not present such a run as a comparison.
