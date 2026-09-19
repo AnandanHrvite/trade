@@ -52,7 +52,10 @@ const _MEMO_TTL_MS = 3000;
 function getTodayRealized() {
   const dateStr = tradeLogger.istDateString();
   const now = Date.now();
-  if (_memo.val && _memo.date === dateStr && (now - _memo.ts) < _MEMO_TTL_MS) {
+  // `now >= _memo.ts`: a replay rewinds the clock, so a memo stamped at the END
+  // of one run would otherwise look "fresh" (negative age) for the whole of the
+  // next run of that day and serve the full day's loss from the first tick.
+  if (_memo.val && _memo.date === dateStr && now >= _memo.ts && (now - _memo.ts) < _MEMO_TTL_MS) {
     return _memo.val;
   }
   const byMode = {};

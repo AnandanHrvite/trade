@@ -417,6 +417,9 @@ const _SETTINGS_KEY_MATCHERS = [
   //   PROFIT_LOCK_* — the global profit-lock guard (its sibling BREAKEVEN_* is
   //   matched above). Uncaptured, a snapshot replay ran with TODAY's lock values.
   /^PROFIT_LOCK_/,
+  //   PORTFOLIO_* — the cross-strategy daily loss cap; it can block every entry,
+  //   so a snapshot replay must use the cap the session ran with, not today's.
+  /^PORTFOLIO_/,
   //   *_INV_AMOUNT — the paper capital base each strategy sizes its equity curve
   //   from. Uncaptured, a SNAPSHOT replay of an old day used TODAY's capital, so
   //   editing the investment amount silently changed a past day's replayed
