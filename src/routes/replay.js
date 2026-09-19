@@ -2003,6 +2003,7 @@ function buildDiagnosticBlob(context, rows) {
         if (ss.samples && ss.samples.length) {
           lines.push('  top-gate samples: ' + JSON.stringify(ss.samples));
         }
+        for (const n of (ss.noSignalSamples || [])) lines.push('  no-signal: ' + JSON.stringify(n));
       }
     } else {
       lines.push('YourCfg:    FAILED — ' + (r.sim && r.sim.error));

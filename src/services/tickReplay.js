@@ -100,6 +100,13 @@ function _summariseSkips(rows, dropped) {
     total: rows.length,
     dropped,
     noSignalCandles: noSignal,
+    // WHY the strategy said no — first and last few verbatim rows (with the
+    // indicator values), so a zero-trade run can be compared bar-for-bar with
+    // the live session instead of just reporting a count.
+    noSignalSamples: (() => {
+      const ns = rows.filter(r => r.gate === "strategy");
+      return ns.length <= 12 ? ns : ns.slice(0, 4).concat(ns.slice(Math.floor(ns.length / 2) - 2, Math.floor(ns.length / 2) + 2), ns.slice(-4));
+    })(),
     blockedSignals: blocking.reduce((n, b) => n + b.count, 0),
     byGate: blocking,
     // A handful of verbatim rows for the gate that fired most — enough to see
@@ -194,7 +201,8 @@ function requestCancel() {
 //      and a cache that outlived that would be indistinguishable from one that did.
 // v15: snapshot mode forces PROFIT_LOCK_ENABLED / BREAKEVEN_STOP_ENABLED off for
 //      recordings that pre-date them — results cached with the guards on are stale.
-const REPLAY_CACHE_VERSION = 15;
+// v16: pre-sliced warm-up is no longer sliced twice (one candle short before).
+const REPLAY_CACHE_VERSION = 16;
 
 function _replayCacheDir() {
   return path.join(ROOT_DIR, "_replay_cache");
@@ -890,7 +898,7 @@ function _lookupCanonicalSession(mode, sessionStartTs) {
  * The harness exposes `pumpTick(tick)` for the engine to fan ticks through
  * the captured callbacks.
  */
-function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles, recordedDateStr = null, recordedPivots = null, outputSubdir = "_replay_trades", outputSuffix = "replay", syntheticWarmup = false, spotIndex = _NIFTY_INDEX }) {
+function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles, warmupPreSliced = false, recordedDateStr = null, recordedPivots = null, outputSubdir = "_replay_trades", outputSuffix = "replay", syntheticWarmup = false, spotIndex = _NIFTY_INDEX }) {
   const socketManager     = require("../utils/socketManager");
   const fyers             = require("../config/fyers");
   const notify            = require("../utils/notify");
@@ -1180,6 +1188,18 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
   function _replaySpotSeries(res, to) {
     const warm = (warmupCandles || []).slice();
     const resMin = parseInt(res, 10);
+    // These routes drop the LAST fetched candle as "still forming" and record
+    // what is left. Handing that recording back unchanged makes them drop one
+    // more — the replay then runs one real candle short of the live session and
+    // every indicator (SuperTrend most visibly) drifts from it. Append a
+    // throwaway bar for their slice to eat, so the engine ends up with exactly
+    // the recorded series.
+    if (warmupPreSliced && warm.length && _base1m.size === 0) {
+      const last = warm[warm.length - 1];
+      const step = (Number.isFinite(resMin) && resMin > 0 ? resMin : 5) * 60;
+      warm.push({ ...last, time: last.time + step, open: last.close, high: last.close, low: last.close, volume: 0 });
+      return warm;
+    }
     if (!Number.isFinite(resMin) || resMin <= 0) return warm;
     if (_base1m.size === 0) return warm;
     if (!_rangeCoversRecordedDay(to)) return warm;
@@ -1894,6 +1914,12 @@ const MODE_TO_LOT_MULT_KEY = {
   "early-bird-paper":      "EARLYBIRD_OPTION_LOTS",
 };
 
+// Paper routes whose /start does `candles = fetched.slice(0, -1)` and then
+// records `candles` as the warm-up — see _replaySpotSeries.
+const _WARMUP_PRESLICED_MODES = new Set([
+  "ema_rsi_st-paper", "ema_rsi_st_v2-paper", "bn_ema_rsi_st_v2-paper", "ema9vwap-paper",
+]);
+
 // Builds the env patch that pins a replay run to `lots` lots. Returns {} when no
 // override was asked for, so the caller can Object.assign it unconditionally.
 function _resolveReplayLotEnv(lots, mode) {
@@ -2181,6 +2207,7 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     }
     harness = _createHarness({
       optionTimeline, vixTimeline, oiTimeline, warmupCandles,
+      warmupPreSliced: _WARMUP_PRESLICED_MODES.has(mode),
       recordedDateStr: date,
       // Levels the recorded session actually traded — the fallback when the live
       // daily fetch comes back dry (see _dailyWithFallback).
