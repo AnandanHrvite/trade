@@ -414,6 +414,9 @@ const _SETTINGS_KEY_MATCHERS = [
   //   NIFTY*     — NIFTY_LOT_SIZE (/^LOT/ does not match "NIFTY_LOT_SIZE")
   //   LTP_STALE* — stale-LTP fallback window
   /^EMA9VWAP_/, /^OI_/, /^OPT_/, /^TIME_STOP_/, /^NIFTY/, /^LTP_STALE/,
+  //   PROFIT_LOCK_* — the global profit-lock guard (its sibling BREAKEVEN_* is
+  //   matched above). Uncaptured, a snapshot replay ran with TODAY's lock values.
+  /^PROFIT_LOCK_/,
   //   *_INV_AMOUNT — the paper capital base each strategy sizes its equity curve
   //   from. Uncaptured, a SNAPSHOT replay of an old day used TODAY's capital, so
   //   editing the investment amount silently changed a past day's replayed

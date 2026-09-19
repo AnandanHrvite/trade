@@ -192,7 +192,9 @@ function requestCancel() {
 //      weekly. No recording on disk today holds BANKNIFTY ticks, so no existing
 //      result actually changes — but the run is no longer computed the same way,
 //      and a cache that outlived that would be indistinguishable from one that did.
-const REPLAY_CACHE_VERSION = 14;
+// v15: snapshot mode forces PROFIT_LOCK_ENABLED / BREAKEVEN_STOP_ENABLED off for
+//      recordings that pre-date them — results cached with the guards on are stale.
+const REPLAY_CACHE_VERSION = 15;
 
 function _replayCacheDir() {
   return path.join(ROOT_DIR, "_replay_cache");
@@ -2095,7 +2097,11 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
       // they actually took. Force the toggle OFF for any confirmation key the
       // snapshot doesn't pin, so pre-feature recordings reproduce exactly.
       const _snapSettings = Object.assign({}, data.sessionStart.settings || {});
-      for (const _k of ["EMA_RSI_ST_CONFIRM_CANDLE_ENABLED", "BB_RSI_CONFIRM_CANDLE_ENABLED"]) {
+      // Same rule for the global guards added 2026-09-19 (profit lock, breakeven
+      // stop): both default ON, so a day recorded before they existed would replay
+      // with exits the paper session never had and could not match it.
+      for (const _k of ["EMA_RSI_ST_CONFIRM_CANDLE_ENABLED", "BB_RSI_CONFIRM_CANDLE_ENABLED",
+                        "PROFIT_LOCK_ENABLED", "BREAKEVEN_STOP_ENABLED"]) {
         if (!(_k in _snapSettings)) _snapSettings[_k] = "false";
       }
       // Snapshot mode is a PARTIAL override: _applySettingsOverride only SETS the
