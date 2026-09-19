@@ -237,14 +237,17 @@ function _fileFingerprint(p) {
 const _NIFTY_INDEX     = "NSE:NIFTY50-INDEX";
 const _BANKNIFTY_INDEX = "NSE:NIFTYBANK-INDEX";
 const _MODE_TO_SPOT_INDEX = {
-  // BN_PIVOT_RSI_ST (NIFTY BANK, monthly options) — the only non-NIFTY mode.
+  // The NIFTY BANK modes (monthly options). A mode missing here replays NIFTY 50
+  // ticks into a BANKNIFTY engine and pins the NIFTY weekly expiry.
   "bn-pivot-rsi-st-paper": _BANKNIFTY_INDEX,
+  "bn_ema_rsi_st_v2-paper": _BANKNIFTY_INDEX,
 };
 /** The spot index a mode's engine subscribes to. Defaults to NIFTY 50. */
 function _spotIndexOf(mode) { return _MODE_TO_SPOT_INDEX[mode] || _NIFTY_INDEX; }
 /** Human name for the underlying, for logs that must not be ambiguous. */
 const _MODE_UNDERLYING_LABEL = {
   "bn-pivot-rsi-st-paper": "BN_PIVOT_RSI_ST (NIFTY BANK, monthly options)",
+  "bn_ema_rsi_st_v2-paper": "BN_EMA_RSI_ST_V2 (NIFTY BANK, monthly options)",
 };
 function _underlyingLabelOf(mode) {
   return _MODE_UNDERLYING_LABEL[mode]
@@ -918,6 +921,7 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     bt_fetchCandles: backtestEngine.fetchCandles,
     cc_fetchCandlesCached: candleCache.fetchCandlesCached,
     tl_appendTradeLog: tradeLogger.appendTradeLog,
+    tl_readDailyTrades: tradeLogger.readDailyTrades,
     notifyEntry:     notify.notifyEntry,
     notifyExit:      notify.notifyExit,
     notifyStarted:   notify.notifyStarted,
@@ -1437,6 +1441,20 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
       } catch (_) {}
     };
 
+    // tradeLogger.readDailyTrades: the day being replayed already has its REAL,
+    // finished log on disk. Read whole, the portfolio loss cap (portfolioRisk)
+    // sees the entire day's loss from the first tick and silently blocks every
+    // entry — a replay of any day the book ended below the cap books 0 trades.
+    // Serve only what had been logged by the replay clock, which is exactly
+    // what the live session saw at that moment.
+    tradeLogger.readDailyTrades = function (mode, dateStr) {
+      const rows = orig.tl_readDailyTrades(mode, dateStr);
+      return rows.filter((r) => {
+        const ts = Date.parse(r && (r.loggedAt || r.capturedAt));
+        return !Number.isFinite(ts) || ts <= replayNow;
+      });
+    };
+
     // tickRecorder: silence ALL recording calls during replay. Paper code
     // routinely calls recordSessionStart/recordOptionLtp/etc. — without these
     // stubs, every replay run permanently appends to the canonical recording
@@ -1726,6 +1744,7 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     backtestEngine.fetchCandles     = orig.bt_fetchCandles;
     candleCache.fetchCandlesCached  = orig.cc_fetchCandlesCached;
     tradeLogger.appendTradeLog      = orig.tl_appendTradeLog;
+    tradeLogger.readDailyTrades     = orig.tl_readDailyTrades;
     notify.notifyEntry              = orig.notifyEntry;
     notify.notifyExit               = orig.notifyExit;
     notify.notifyStarted            = orig.notifyStarted;

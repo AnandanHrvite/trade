@@ -51,6 +51,12 @@ const sharedSocketState = require("./sharedSocketState");
 const nseHolidays       = require("./nseHolidays");
 const instrumentConfig  = require("../config/instrument");
 
+// The REAL clock, captured at load. A replay pins the global Date.now() to the
+// replayed day; every question this file asks is about the real market right
+// now, so a pinned clock must never be able to answer it — it could otherwise
+// start the live feed, or block replays, on a weekend.
+const _realNow = Date.now;
+
 // The index that OPENS the connection. It stays the socket's primary symbol, so
 // every pre-existing call site — all of which mean NIFTY 50 — is unaffected.
 const SPOT_SYMBOL = "NSE:NIFTY50-INDEX";
@@ -111,12 +117,12 @@ function _enabled() {
 
 function _istMinutes() {
   // Fast IST: UTC+5:30 = +19800 seconds (matches socketManager/tickRecorder)
-  const istSec = Math.floor(Date.now() / 1000) + 19800;
+  const istSec = Math.floor(_realNow() / 1000) + 19800;
   return Math.floor(istSec / 60) % 1440;
 }
 
 function _istDay() {
-  const istSec = Math.floor(Date.now() / 1000) + 19800;
+  const istSec = Math.floor(_realNow() / 1000) + 19800;
   return Math.floor(istSec / 86400);
 }
 
@@ -132,7 +138,7 @@ function _inSession() {
  * which double-shifts on an IST box.
  */
 function _istDateObj() {
-  const d = new Date((Math.floor(Date.now() / 1000) + 19800) * 1000);
+  const d = new Date((Math.floor(_realNow() / 1000) + 19800) * 1000);
   return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
 }
 
@@ -264,6 +270,9 @@ function stop() {
  */
 function isRecordingActive() {
   if (!_enabled() || !_inSession()) return false;
+  // Nothing is recorded on a weekend or a known holiday, whatever holds the socket.
+  if (nseHolidays.isWeekend(_istDateObj())) return false;
+  if (_tradingDay.day === _istDay() && _tradingDay.allowed === false) return false;
   try { return socketManager.isRunning(); } catch (_) { return false; }
 }
 
