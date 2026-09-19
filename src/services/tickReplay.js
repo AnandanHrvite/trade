@@ -203,7 +203,9 @@ function requestCancel() {
 // v15: snapshot mode forces PROFIT_LOCK_ENABLED / BREAKEVEN_STOP_ENABLED off for
 //      recordings that pre-date them — results cached with the guards on are stale.
 // v16: pre-sliced warm-up is no longer sliced twice (one candle short before).
-const REPLAY_CACHE_VERSION = 16;
+// v17: a recorded expiry override that had already expired on the replayed day is
+//      no longer pinned (it made every entry refuse) — live-traded expiry is used.
+const REPLAY_CACHE_VERSION = 17;
 
 function _replayCacheDir() {
   return path.join(ROOT_DIR, "_replay_cache");
@@ -365,7 +367,24 @@ function _resolveReplayInstrumentEnv(snapshot) {
  */
 const _BANKNIFTY_EXPIRY_OVERRIDE_KEY = "BANKNIFTY_OPTION_EXPIRY_OVERRIDE";
 const _BANKNIFTY_EXPIRY_TYPE_KEY     = "BANKNIFTY_OPTION_EXPIRY_TYPE";
-function _resolveBankniftyExpiryEnv({ marketContext, snapshot }) {
+// A recorded override is only usable if it had not already expired on the day
+// being replayed. The session-start snapshot can hold a FORGOTTEN override: on
+// 2026-09-18 it said 2026-08-11, the live engine auto-rolled to 22-Sep mid-day
+// and traded that — while replay pinned 11-Aug, which instrument.js refuses as
+// expired, so every entry died with "symbol null invalid" and the run booked 0.
+function _overrideUsableOn(override, date) {
+  return !date || !/^\d{4}-\d{2}-\d{2}$/.test(override) || override >= date;
+}
+// "22 SEP 2026" (a logged trade's optionExpiry) → "2026-09-22".
+function _parseTradeExpiry(str) {
+  const m = String(str || "").trim().match(/^(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})$/);
+  if (!m) return null;
+  const mi = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"].indexOf(m[2].toUpperCase());
+  if (mi < 0) return null;
+  return `${m[3]}-${String(mi + 1).padStart(2, "0")}-${String(m[1]).padStart(2, "0")}`;
+}
+
+function _resolveBankniftyExpiryEnv({ marketContext, snapshot, date, tradedExpiry }) {
   const snap = snapshot || {};
   const env  = {};
   for (const k of _EXPIRY_PIN_KEYS) env[k] = "";   // NIFTY's keys — unread here, blanked so nothing leaks
@@ -373,12 +392,19 @@ function _resolveBankniftyExpiryEnv({ marketContext, snapshot }) {
   // An explicit override the recorded day actually traded wins, exactly as it
   // does on the NIFTY path.
   const recorded = String(snap[_BANKNIFTY_EXPIRY_OVERRIDE_KEY] || "").trim();
-  if (recorded.length >= 8) {
+  if (recorded.length >= 8 && _overrideUsableOn(recorded, date)) {
     const type = String(snap[_BANKNIFTY_EXPIRY_TYPE_KEY] || "").trim().toLowerCase() === "weekly"
       ? "weekly" : "monthly";
     env[_BANKNIFTY_EXPIRY_OVERRIDE_KEY] = recorded;
     env[_BANKNIFTY_EXPIRY_TYPE_KEY]     = type;
     return { env, source: "explicit-override", date: recorded, type, underlying: "BANKNIFTY" };
+  }
+
+  // Stale override → the contract the live session actually traded that day.
+  if (tradedExpiry && _overrideUsableOn(tradedExpiry, date)) {
+    env[_BANKNIFTY_EXPIRY_OVERRIDE_KEY] = tradedExpiry;
+    env[_BANKNIFTY_EXPIRY_TYPE_KEY]     = "monthly";
+    return { env, source: "live-trades", date: tradedExpiry, type: "monthly", underlying: "BANKNIFTY" };
   }
 
   const bn = marketContext && marketContext.underlyings && marketContext.underlyings.BANKNIFTY;
@@ -401,10 +427,10 @@ function _resolveBankniftyExpiryEnv({ marketContext, snapshot }) {
   };
 }
 
-function _resolveReplayExpiryEnv({ marketContext, snapshot, mode }) {
+function _resolveReplayExpiryEnv({ marketContext, snapshot, mode, date = null, tradedExpiry = null }) {
   // BANKNIFTY resolves through its own index keys — see _resolveBankniftyExpiryEnv.
   if (_spotIndexOf(mode) === _BANKNIFTY_INDEX) {
-    return _resolveBankniftyExpiryEnv({ marketContext, snapshot });
+    return _resolveBankniftyExpiryEnv({ marketContext, snapshot, date, tradedExpiry });
   }
   const prefix = _MODE_TO_ENV_PREFIX[mode] || null;   // null for bb_rsi/pa (common key only)
   const snap = snapshot || {};
@@ -427,23 +453,35 @@ function _resolveReplayExpiryEnv({ marketContext, snapshot, mode }) {
 
   // Explicit recorded override → honor it exactly, with its recorded weekly/monthly
   // type (the only case instrument.js consults the type).
-  if (effOverride && effOverride.length >= 8) {
+  if (effOverride && effOverride.length >= 8 && _overrideUsableOn(effOverride, date)) {
     const perModeType = prefix ? String(cfg[`${prefix}_OPTION_EXPIRY_TYPE`] || "").trim().toLowerCase() : "";
     const commonType  = String(cfg.OPTION_EXPIRY_TYPE || "").trim().toLowerCase();
     const type        = (perModeType || commonType) === "monthly" ? "monthly" : "weekly";
     return { env: _mirror(effOverride, type), source: "explicit-override", date: effOverride, type };
   }
 
+  // Recorded override already expired that day (see _overrideUsableOn) → use the
+  // contract the live session actually traded, straight from its trade log.
+  if (tradedExpiry && _overrideUsableOn(tradedExpiry, date)) {
+    return { env: _mirror(tradedExpiry, "weekly"), source: "live-trades", date: tradedExpiry, type: "weekly" };
+  }
+
   // Auto-detect → pin the recorded NEAREST expiry as a DATE. The type is pinned
   // "weekly" only because instrument.js ignores it on this path — the symbol
   // format is decided from the date itself (a month's last expiry is named with
   // the monthly code), so a recorded monthly-week date still resolves correctly.
-  if (marketContext && marketContext.weeklyExpiry) {
+  if (marketContext && marketContext.weeklyExpiry && _overrideUsableOn(marketContext.weeklyExpiry, date)) {
     return { env: _mirror(marketContext.weeklyExpiry, "weekly"), source: "market-context", date: marketContext.weeklyExpiry, type: "weekly" };
   }
 
   // No market context (legacy recording) → prior behaviour (blank pin = auto-compute).
-  return { env: _pinnedExpirySettings(snap), source: "legacy-pin", date: null, type: "weekly" };
+  // A stale override must not be re-pinned here either — blank it so
+  // instrument.js auto-computes from the replay clock instead of refusing.
+  const legacy = _pinnedExpirySettings(snap);
+  for (const k of Object.keys(legacy)) {
+    if (k.endsWith("_EXPIRY_OVERRIDE") && legacy[k] && !_overrideUsableOn(String(legacy[k]).trim(), date)) legacy[k] = "";
+  }
+  return { env: legacy, source: "legacy-pin", date: null, type: "weekly" };
 }
 
 function _buildReplayCacheKey({ mode, date, sessionStart, useCurrentSettings, expiryEnv }) {
@@ -2076,10 +2114,18 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     //     Used for the cache key AND the env applied below, so they never drift.
     // Expiry is historical for BOTH toggles — resolved from the recording, not
     // useCurrentSettings (current settings never change the option expiry).
+    let _tradedExpiry = null;
+    try {
+      const _live = _lookupCanonicalSession(mode, data.sessionStart.t);
+      const _t = _live && (_live.trades || []).find(t => _parseTradeExpiry(t.expiry));
+      if (_t) _tradedExpiry = _parseTradeExpiry(_t.expiry);
+    } catch (_) {}
     const expiryResolution = _resolveReplayExpiryEnv({
       marketContext: data.marketContext,
       snapshot: data.sessionStart.settings,
       mode,
+      date,
+      tradedExpiry: _tradedExpiry,
     });
     // The traded INSTRUMENT is as historical as the expiry — pin it the same way
     // and through the same object, so the cache key and the applied env agree.
