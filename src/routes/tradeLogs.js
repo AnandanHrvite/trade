@@ -984,7 +984,7 @@ ${buildSidebar('tradeLogs', liveActive)}
     var fullPaper = cats.paper && !ranged;
     if (fullPaper) {
       try {
-        var r = await secretFetch('/settings/reset-paper', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        var r = await secretFetch('/settings/reset-paper', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}', timeoutMs: 60000 });
         if (!r) { // user dismissed the API-secret prompt → abort the whole run
           if (btn) { btn.textContent = origText; btn.disabled = false; }
           showToast('Reset cancelled', 'info');

@@ -1879,6 +1879,13 @@ router.get("/reset-paper/targets", (req, res) => {
 // own guard). Then delete every per-day paper trade + skip JSONL on disk.
 // .env is never written. Auto-gated by the app.js x-api-secret middleware.
 router.post("/reset-paper", async (req, res) => {
+  // Zero targets means router-stack discovery broke (e.g. an Express upgrade
+  // changed the mount regexp) — refuse loudly rather than delete files and
+  // report a "successful" reset that touched no engine.
+  if (paperReset.discoverTargets(req.app).length === 0) {
+    console.error("[settings] ❌ reset-paper: no /<x>-paper router with GET /reset discovered — nothing reset");
+    return res.status(500).json({ success: false, error: "No paper strategies discovered on the router — nothing was reset. Check the server log." });
+  }
   let engines = [];
   try { engines = await paperReset.resetAllPaperEngines(req.app); }
   catch (e) { return res.status(500).json({ success: false, error: e.message }); }
@@ -3976,7 +3983,7 @@ async function runResetPaper(btn) {
   if (btn) { btn.textContent = '⏳ Resetting…'; btn.disabled = true; }
   var lines = [];
   try {
-    var r = await secretFetch('/settings/reset-paper', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    var r = await secretFetch('/settings/reset-paper', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}', timeoutMs: 60000 });
     if (!r) { if (btn) { btn.textContent = orig; btn.disabled = false; } showToast('Reset cancelled', 'info'); return; }
     var d;
     try { d = await r.json(); } catch (_) { d = { success: false, error: 'Server error (status ' + r.status + ')' }; }
