@@ -69,7 +69,28 @@ function _sourcesSig() {
   return sig;
 }
 
+// Mirror sharedNav's per-strategy gating (default true when the env key is
+// unset). Strategies that ship OFF: an unset key means disabled, not enabled.
+// Every legacy strategy defaults ON, so the fallback below stays "true".
+// Read on every call — Settings saves mutate process.env live.
+const _DEFAULT_OFF_MODES = new Set(["EMA_RSI_ST_V2", "BN_EMA_RSI_ST_V2"]);
+function _modeEnabled(mode) {
+  const key = mode + "_MODE_ENABLED";
+  const dflt = _DEFAULT_OFF_MODES.has(mode) ? "false" : "true";
+  return (process.env[key] || dflt).toLowerCase() === "true";
+}
+// The SOURCES rows for strategies currently enabled in Settings, in page order.
+function enabledSources() { return SOURCES.filter((src) => _modeEnabled(src.mode)); }
+
+// Returns the flattened trades of ENABLED strategies only. A strategy
+// switched off in Settings disappears from this page, its /data feed, the
+// dashboard curve and the EOD reports alike — its file is left untouched, so
+// switching it back on brings the history straight back.
 function loadAllTrades() {
+  return _loadAllTradesUnfiltered().filter((t) => _modeEnabled(t.mode));
+}
+
+function _loadAllTradesUnfiltered() {
   const sig = _sourcesSig();
   if (_allTradesCache && sig === _allTradesSig) return _allTradesCache;
   const out = [];
@@ -120,7 +141,7 @@ function loadAllTrades() {
 router.get("/", (req, res) => {
   const trades = loadAllTrades();
 
-  const modeCounts = { EMA_RSI_ST: 0, BB_RSI: 0, PA: 0, ORB: 0 };
+  const modeCounts = {};
   let totalPnl = 0, wins = 0, losses = 0;
   for (const t of trades) {
     modeCounts[t.mode] = (modeCounts[t.mode] || 0) + 1;
@@ -309,26 +330,12 @@ router.get("/", (req, res) => {
         <div class="sc-val" style="color:${totalPnl >= 0 ? '#10b981' : '#ef4444'};">${fmtINR(totalPnl)}</div>
         <div class="sc-sub">${total} trade${total !== 1 ? 's' : ''} · ${wins}W / ${losses}L · WR ${winRate}%</div>
       </div>
-      <div class="sc" style="--accent:#3b82f6;">
-        <div class="sc-label">EMA_RSI_ST</div>
-        <div class="sc-val">${modeCounts.EMA_RSI_ST}</div>
+      ${enabledSources().map((src) => `
+      <div class="sc" style="--accent:${src.color};">
+        <div class="sc-label">${src.label}</div>
+        <div class="sc-val">${modeCounts[src.mode] || 0}</div>
         <div class="sc-sub">trades</div>
-      </div>
-      <div class="sc" style="--accent:#f59e0b;">
-        <div class="sc-label">BB_RSI</div>
-        <div class="sc-val">${modeCounts.BB_RSI}</div>
-        <div class="sc-sub">trades</div>
-      </div>
-      <div class="sc" style="--accent:#a855f7;">
-        <div class="sc-label">Price Action</div>
-        <div class="sc-val">${modeCounts.PA}</div>
-        <div class="sc-sub">trades</div>
-      </div>
-      <div class="sc" style="--accent:#10b981;">
-        <div class="sc-label">ORB</div>
-        <div class="sc-val">${modeCounts.ORB}</div>
-        <div class="sc-sub">trades</div>
-      </div>
+      </div>`).join("")}
       <div class="sc" style="--accent:#10b981;">
         <div class="sc-label">Wins</div>
         <div class="sc-val" style="color:#10b981;">${wins}</div>
@@ -2124,27 +2131,11 @@ applyFilters();
   res.send(html);
 });
 
-// Mirror sharedNav's per-strategy gating so the dashboard chart can show
-// only currently-enabled strategies (default true when the env key is unset).
-// Strategies that ship OFF: an unset key means disabled, not enabled. Every
-// legacy strategy defaults ON, so the fallback below stays "true".
-const _DEFAULT_OFF_MODES = new Set(["EMA_RSI_ST_V2", "BN_EMA_RSI_ST_V2"]);
-function _modeEnabled(mode) {
-  const key = mode + "_MODE_ENABLED";
-  const dflt = _DEFAULT_OFF_MODES.has(mode) ? "false" : "true";
-  return (process.env[key] || dflt).toLowerCase() === "true";
-}
-
-// JSON endpoint — used by dashboard cumulative P&L chart.
-// With ?enabledOnly=1 the dashboard drops trades from strategies that are
-// toggled off in Settings, so the curve aligns to what's visible in the nav.
-// The full Consolidation history page omits the flag and still shows everything.
+// JSON endpoint — used by dashboard cumulative P&L chart. loadAllTrades()
+// already drops strategies toggled off in Settings; the dashboard's legacy
+// ?enabledOnly=1 flag is accepted and means the same thing.
 router.get("/data", (req, res) => {
-  let trades = loadAllTrades();
-  if (String(req.query.enabledOnly || "") === "1") {
-    trades = trades.filter((t) => _modeEnabled(t.mode));
-  }
-  res.json({ success: true, trades });
+  res.json({ success: true, trades: loadAllTrades() });
 });
 
 // ── Helper used in the outer HTML template (server-side) ──────────────────────
