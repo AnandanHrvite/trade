@@ -22,8 +22,8 @@ const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS,
         expiryHolidayModalCSS, expiryHolidayModalHTML, expiryHolidayModalJS } = require("../utils/sharedNav");
 const settingsAudit = require("../utils/settingsAudit");
 const tradeLogger   = require("../utils/tradeLogger");
-const skipLogger    = require("../utils/skipLogger");
 const tickRecorder  = require("../utils/tickRecorder");
+const paperReset    = require("../utils/paperReset");
 const { logStore }  = require("../services/logger");
 
 // Use process.cwd() for the .env path — this is where Node was started,
@@ -1865,14 +1865,42 @@ router.post("/restart", (req, res) => {
   }, 500);
 });
 
+// ── GET /settings/reset-paper/targets — which paper engines a reset will hit ──
+// Discovered from the live Express router stack (every /<x>-paper mount with a
+// GET /reset), so a strategy added later shows up here with no list to edit.
+router.get("/reset-paper/targets", (req, res) => {
+  const targets = paperReset.discoverTargets(req.app).map(t => ({ mount: t.mount, label: t.label }));
+  res.json({ success: true, targets });
+});
+
+// ── POST /settings/reset-paper — wipe ALL paper traded data, keep settings ───
+// For every discovered paper engine: run its own /reset (capital restored from
+// .env, sessions + in-memory state cleared; a running engine is skipped by its
+// own guard). Then delete every per-day paper trade + skip JSONL on disk.
+// .env is never written. Auto-gated by the app.js x-api-secret middleware.
+router.post("/reset-paper", async (req, res) => {
+  let engines = [];
+  try { engines = await paperReset.resetAllPaperEngines(req.app); }
+  catch (e) { return res.status(500).json({ success: false, error: e.message }); }
+  const files = paperReset.deletePaperFiles();
+  const done    = engines.filter(e => e.ok).map(e => e.label);
+  const skipped = engines.filter(e => e.skipped).map(e => e.label);
+  const failed  = engines.filter(e => !e.ok && !e.skipped).map(e => `${e.label} (${e.message || e.status})`);
+  console.log(`[settings] 🧹 reset-paper → reset:${done.length} skipped:${skipped.length} failed:${failed.length} · files paper:${files.paperFiles} skip:${files.skipFiles}${files.errors.length ? ` · ${files.errors.length} file error(s)` : ""}`);
+  res.json({
+    success: failed.length === 0 && files.errors.length === 0,
+    engines, done, skipped, failed,
+    files: { paperFiles: files.paperFiles, skipFiles: files.skipFiles, modes: files.modes, errors: files.errors },
+  });
+});
+
 // ── POST /settings/reset-data — selective data reset (categories + date range) ─
 // Body: { paper, skip, cache, logs, ticks, from?, to? } — booleans + optional
 // "YYYY-MM-DD" IST dates. Deletes only the checked categories. The date range
 // applies to dated-file categories only (paper daily JSONL, skip JSONL, ticks);
 // cache & logs always clear fully. The aggregate paper JSON + capital restore is
-// handled client-side via the per-strategy /reset endpoints (full paper wipe only).
+// POST /settings/reset-paper above (full paper wipe only).
 // Auto-gated by the app.js x-api-secret middleware (not in OPEN_PATHS).
-const RESET_PAPER_MODES = ["ema_rsi_st", "bb_rsi", "pa", "orb", "ema9vwap", "trend_pb", "trend_day_scalp", "ha_scalp", "simple930", "rsi_pivot_st", "bn_pivot_rsi_st", "ema_rsi_st_v2", "bn_ema_rsi_st_v2", "early_bird"];
 const _RESET_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 router.post("/reset-data", (req, res) => {
@@ -1883,36 +1911,16 @@ router.post("/reset-data", (req, res) => {
   if (to   && !_RESET_DATE_RE.test(to))   return res.status(400).json({ success: false, error: "bad 'to' date (want YYYY-MM-DD)" });
   if (from && to && from > to)            return res.status(400).json({ success: false, error: "'from' is after 'to'" });
 
-  const inRange = (d) => (!from || d >= from) && (!to || d <= to);
   const results = { paperFiles: 0, skipFiles: 0, ticksDays: 0, cacheDirs: 0, logsCleared: false };
   const errors = [];
 
-  // Paper daily JSONL — ~/trading-data/trades/{mode}_paper_trades_YYYY-MM-DD.jsonl
-  if (b.paper) {
-    for (const mode of RESET_PAPER_MODES) {
-      let dates;
-      try { dates = tradeLogger.listDailyDates(mode); }
-      catch (e) { errors.push(`paper ${mode}: ${e.message}`); continue; }
-      for (const { date } of dates) {
-        if (!inRange(date)) continue;
-        try { fs.unlinkSync(tradeLogger.dailyFilePathFor(mode, date)); results.paperFiles += 1; }
-        catch (e) { if (e.code !== "ENOENT") errors.push(`paper ${mode} ${date}: ${e.message}`); }
-      }
-    }
-  }
-
-  // Skip daily JSONL — ~/trading-data/skips/{mode}_paper_skips_YYYY-MM-DD.jsonl
-  if (b.skip) {
-    for (const mode of RESET_PAPER_MODES) {
-      let dates;
-      try { dates = skipLogger.listDates(mode); }
-      catch (e) { errors.push(`skip ${mode}: ${e.message}`); continue; }
-      for (const { date } of dates) {
-        if (!inRange(date)) continue;
-        try { fs.unlinkSync(skipLogger.filePathFor(mode, date)); results.skipFiles += 1; }
-        catch (e) { if (e.code !== "ENOENT") errors.push(`skip ${mode} ${date}: ${e.message}`); }
-      }
-    }
+  // Paper daily JSONL + skip daily JSONL — globbed from disk for every mode
+  // (no mode list to keep in sync); only the picked categories are swept.
+  if (b.paper || b.skip) {
+    const r = paperReset.deletePaperFiles({ from, to, paper: !!b.paper, skip: !!b.skip });
+    results.paperFiles = r.paperFiles;
+    results.skipFiles  = r.skipFiles;
+    errors.push(...r.errors);
   }
 
   // Ticks — day-folders in range (source of truth for Replay; deleting a day
@@ -2929,6 +2937,7 @@ router.get("/", (req, res) => {
         <button onclick="showHealthModal()" title="Quick app health + link to the full EC2 instance Monitor" style="padding:6px 14px;background:rgba(16,185,129,0.12);color:#10b981;border:1px solid rgba(16,185,129,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;">📈 HEALTH</button>
         <button onclick="showEnvModal()" style="padding:6px 14px;background:rgba(59,130,246,0.12);color:#60a5fa;border:1px solid rgba(59,130,246,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;">VIEW .env</button>
         <button onclick="showBulkModal()" title="Paste KEY=VALUE pairs to bulk update .env, then restart" style="padding:6px 14px;background:rgba(245,158,11,0.12);color:#f59e0b;border:1px solid rgba(245,158,11,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;">📋 BULK EDIT</button>
+        <button onclick="openResetPaperModal()" title="Wipe ALL paper traded data for every paper strategy (capital restored from .env, sessions + daily trade/skip files deleted). Settings are NOT touched. A running strategy is skipped." style="padding:6px 14px;background:rgba(239,68,68,0.12);color:#f87171;border:1px solid rgba(239,68,68,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;">🧹 RESET PAPER</button>
         <button onclick="resetAndSaveAll()" title="Write every field on this page to .env (not just dirty ones). Useful after code updates that add new settings with defaults — flushes those defaults into .env. Does NOT change values shown on screen." style="padding:6px 14px;background:rgba(251,191,36,0.12);color:#fbbf24;border:1px solid rgba(251,191,36,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;">💾 SAVE ALL → .env</button>
       </div>
     </div>
@@ -3919,6 +3928,84 @@ async function gdriveUploadNow() {
   loadGdrive();
 }
 
+// ── Reset Paper Trades ───────────────────────────────────────────────────────
+// The strategy list is NOT hard-coded: /settings/reset-paper/targets walks the
+// live router stack, so a strategy mounted later appears here automatically.
+var _rpTargets = [];
+async function openResetPaperModal() {
+  var m = document.getElementById('resetPaperModal');
+  if (!m) return;
+  var box = document.getElementById('rp_targets');
+  box.textContent = 'Loading…';
+  _rpTargets = [];
+  m.style.display = 'block';
+  try {
+    var r = await secretFetch('/settings/reset-paper/targets');
+    if (!r) { closeResetPaperModal(); return; }
+    var d = await r.json();
+    _rpTargets = (d && d.targets) || [];
+  } catch (e) { _rpTargets = []; }
+  if (!_rpTargets.length) {
+    box.innerHTML = '<span style="color:#f87171;">No paper strategies found.</span>';
+    document.getElementById('rp_run').disabled = true;
+    return;
+  }
+  document.getElementById('rp_run').disabled = false;
+  box.innerHTML = _rpTargets.map(function(t){
+    return '<span style="padding:3px 8px;border:1px solid #1a2640;border-radius:999px;background:#0a0e17;">' + t.label + '</span>';
+  }).join('');
+}
+function closeResetPaperModal() {
+  var m = document.getElementById('resetPaperModal');
+  if (m) m.style.display = 'none';
+}
+async function runResetPaper(btn) {
+  if (!_rpTargets.length) return;
+  var names = _rpTargets.map(function(t){ return t.label; });
+  var ok = await showDoubleConfirm({
+    icon: '🧹', title: 'Reset ALL Paper Trades',
+    message: 'This wipes paper traded data for ' + names.length + ' strategies:\\n• ' + names.join('\\n• ')
+           + '\\n\\nSessions, trade history, capital and per-day trade/skip files are cleared. Settings are NOT changed.\\n\\nCannot be undone.',
+    confirmText: 'Reset', confirmClass: 'modal-btn-danger',
+    subject: 'all paper trades',
+    secondConfirmText: 'Yes, reset all paper data'
+  });
+  if (!ok) return;
+
+  var orig = btn ? btn.textContent : '';
+  if (btn) { btn.textContent = '⏳ Resetting…'; btn.disabled = true; }
+  var lines = [];
+  try {
+    var r = await secretFetch('/settings/reset-paper', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    if (!r) { if (btn) { btn.textContent = orig; btn.disabled = false; } showToast('Reset cancelled', 'info'); return; }
+    var d;
+    try { d = await r.json(); } catch (_) { d = { success: false, error: 'Server error (status ' + r.status + ')' }; }
+    if (d && d.engines) {
+      if (d.done && d.done.length)       lines.push('✅ Capital + sessions reset: ' + d.done.join(', '));
+      if (d.skipped && d.skipped.length) lines.push('⏸ Skipped (running — stop first): ' + d.skipped.join(', '));
+      if (d.failed && d.failed.length)   lines.push('❌ Failed: ' + d.failed.join(', '));
+      if (d.files) {
+        lines.push('✅ Per-day trade files removed: ' + d.files.paperFiles);
+        lines.push('✅ Per-day skip files removed: ' + d.files.skipFiles);
+        if (d.files.errors && d.files.errors.length) lines.push('❌ File errors: ' + d.files.errors.join('; '));
+      }
+    } else {
+      lines.push('❌ Reset failed: ' + ((d && d.error) || 'unknown error'));
+    }
+  } catch (e) {
+    lines.push('❌ Reset failed: ' + (e.name === 'AbortError' ? 'timed out' : e.message));
+  }
+  if (btn) { btn.textContent = orig; btn.disabled = false; }
+  closeResetPaperModal();
+  var hadError = lines.some(function(l){ return l.indexOf('❌') === 0; });
+  showAlert({
+    icon: hadError ? '⚠️' : '🧹',
+    title: 'Reset Paper Trades — Done',
+    message: lines.join('\\n') || 'Nothing was reset.',
+    btnClass: hadError ? 'modal-btn-danger' : 'modal-btn-primary'
+  });
+}
+
 function showBackupModal() {
   var m = document.getElementById('backupModal');
   if (!m) return;
@@ -4596,6 +4683,30 @@ ${expiryHolidayModalHTML()}
     </div>
     <div id="envTableWrap" style="padding:16px 20px;max-height:70vh;overflow-y:auto;">
       <div style="color:var(--muted-1,#8ba1c2);font-size:0.8rem;">Loading...</div>
+    </div>
+  </div>
+</div>
+<!-- Reset Paper modal — strategy list is fetched live from /settings/reset-paper/targets -->
+<div id="resetPaperModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:9999;overflow-y:auto;padding:40px 20px;" onclick="if(event.target===this)closeResetPaperModal()">
+  <div style="max-width:480px;margin:0 auto;background:#0d1117;border:1px solid #1a2640;border-radius:12px;overflow:hidden;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:#111827;border-bottom:1px solid #1a2640;">
+      <span style="font-weight:700;font-size:0.95rem;color:#f87171;">🧹 Reset Paper Trades</span>
+      <button onclick="closeResetPaperModal()" style="background:none;border:none;color:var(--muted-1,#8ba1c2);font-size:1.2rem;cursor:pointer;">&times;</button>
+    </div>
+    <div style="padding:18px 20px 20px;">
+      <div style="font-size:0.78rem;color:#9db4d6;line-height:1.55;margin-bottom:12px;">
+        Wipes <b>all paper traded data</b> for every paper strategy currently mounted:
+        sessions &amp; trade history, capital restored to its .env starting value, and every per-day
+        paper trade / skip file. <b style="color:#34d399;">Settings (.env) are not changed.</b>
+        A strategy that is running is skipped — stop it first.
+      </div>
+      <div style="font-size:0.7rem;color:#8aa0c0;margin-bottom:6px;">Strategies this will reset:</div>
+      <div id="rp_targets" style="display:flex;flex-wrap:wrap;gap:6px;min-height:28px;margin-bottom:12px;font-family:'IBM Plex Mono',monospace;font-size:0.68rem;color:#cfe0f8;">Loading…</div>
+      <div style="font-size:0.7rem;color:#f59e0b;line-height:1.5;">⚠️ Cannot be undone. Take a backup first if you need the history.</div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
+        <button onclick="closeResetPaperModal()" style="padding:8px 16px;background:#1a2640;color:#9db4d6;border:none;border-radius:6px;font-size:0.8rem;font-weight:700;cursor:pointer;">Cancel</button>
+        <button id="rp_run" onclick="runResetPaper(this)" style="padding:8px 16px;background:#7f1d1d;color:#fecaca;border:1px solid rgba(239,68,68,0.4);border-radius:6px;font-size:0.8rem;font-weight:700;cursor:pointer;">🧹 Reset All Paper Data</button>
+      </div>
     </div>
   </div>
 </div>

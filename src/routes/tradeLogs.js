@@ -808,7 +808,7 @@ ${buildSidebar('tradeLogs', liveActive)}
     <div class="top-bar-meta">Per-trade JSONL files · settings checkpoints · stored under ~/trading-data/trades</div>
   </div>
   <div class="top-bar-right">
-    ${isDemo ? '' : `<button class="btn btn-delete" onclick="openResetDataModal()" title="Selectively reset data: paper trade history, skip history, cache, logs, or ticks — with an optional date range. Checking Paper with no date range also restores starting capital + wipes sessions for all 5 strategies (a running strategy is skipped)." style="font-size:0.72rem;padding:7px 14px;">🧹 Reset Data</button>`}
+    ${isDemo ? '' : `<button class="btn btn-delete" onclick="openResetDataModal()" title="Selectively reset data: paper trade history, skip history, cache, logs, or ticks — with an optional date range. Checking Paper with no date range also restores starting capital + wipes sessions for every mounted paper strategy (a running strategy is skipped)." style="font-size:0.72rem;padding:7px 14px;">🧹 Reset Data</button>`}
   </div>
 </div>
 
@@ -977,46 +977,39 @@ ${buildSidebar('tradeLogs', liveActive)}
 
     var lines = [];
 
-    // 1) Full paper wipe (no range) → per-strategy canonical reset (capital + sessions).
-    if (cats.paper && !ranged) {
-      var STRATS = [
-        { name: 'EMA_RSI_ST',     url: '/ema_rsi_st-paper/reset' },
-        { name: 'BB_RSI',     url: '/bb_rsi-paper/reset' },
-        { name: 'PA',        url: '/pa-paper/reset' },
-        { name: 'ORB',       url: '/orb-paper/reset' },
-        { name: 'EMA9+VWAP', url: '/ema9vwap-paper/reset' },
-        { name: 'TREND PB',  url: '/trend-pb-paper/reset' },
-      ];
-      var done = [], skipped = [], failed = [];
-      for (var i = 0; i < STRATS.length; i++) {
-        var s = STRATS[i];
-        try {
-          var r = await secretFetch(s.url);
-          if (!r) { // user dismissed the API-secret prompt → abort the whole run
-            if (btn) { btn.textContent = origText; btn.disabled = false; }
-            showToast('Reset cancelled', 'info');
-            return;
-          }
-          var d;
-          try { d = await r.json(); } catch (_) { d = { success: false, error: 'Server error (status ' + r.status + ')' }; }
-          if (d && d.success) done.push(s.name);
-          else {
-            var err = (d && d.error) || 'failed';
-            if (/before resetting/i.test(err)) skipped.push(s.name);
-            else failed.push(s.name + ' (' + err + ')');
-          }
-        } catch (e) {
-          failed.push(s.name + ' (' + (e.name === 'AbortError' ? 'timed out' : e.message) + ')');
+    // 1) Full paper wipe (no range) → POST /settings/reset-paper, which discovers
+    //    every mounted paper engine at request time and runs each one's own
+    //    /reset (capital + sessions) plus the per-day trade files. No strategy
+    //    list lives here, so a strategy added later is covered automatically.
+    var fullPaper = cats.paper && !ranged;
+    if (fullPaper) {
+      try {
+        var r = await secretFetch('/settings/reset-paper', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        if (!r) { // user dismissed the API-secret prompt → abort the whole run
+          if (btn) { btn.textContent = origText; btn.disabled = false; }
+          showToast('Reset cancelled', 'info');
+          return;
         }
+        var d;
+        try { d = await r.json(); } catch (_) { d = { success: false, error: 'Server error (status ' + r.status + ')' }; }
+        if (d && d.engines) {
+          if (d.done && d.done.length)       lines.push('✅ Capital + sessions reset: ' + d.done.join(', '));
+          if (d.skipped && d.skipped.length) lines.push('⏸ Skipped (running — stop first): ' + d.skipped.join(', '));
+          if (d.failed && d.failed.length)   lines.push('❌ Failed: ' + d.failed.join(', '));
+          if (d.files) lines.push('✅ Paper daily files: ' + d.files.paperFiles + ' removed');
+          if (d.files && d.files.errors && d.files.errors.length) lines.push('❌ Errors: ' + d.files.errors.join('; '));
+        } else {
+          lines.push('❌ Paper reset failed: ' + ((d && d.error) || 'unknown error'));
+        }
+      } catch (e) {
+        lines.push('❌ Paper reset failed: ' + (e.name === 'AbortError' ? 'timed out' : e.message));
       }
-      if (done.length)    lines.push('✅ Capital + sessions reset: ' + done.join(', '));
-      if (skipped.length) lines.push('⏸ Skipped (running — stop first): ' + skipped.join(', '));
-      if (failed.length)  lines.push('❌ Failed: ' + failed.join(', '));
     }
 
-    // 2) File-based deletions (paper daily JSONL, skip, ticks, cache, logs).
+    // 2) File-based deletions (ranged paper daily JSONL, skip, ticks, cache, logs).
+    //    Paper files were already handled above on a full wipe.
     try {
-      var body = { paper: cats.paper, skip: cats.skip, cache: cats.cache, logs: cats.logs, ticks: cats.ticks, from: from, to: to };
+      var body = { paper: cats.paper && !fullPaper, skip: cats.skip, cache: cats.cache, logs: cats.logs, ticks: cats.ticks, from: from, to: to };
       var res2 = await secretFetch('/settings/reset-data', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
       });
@@ -1029,7 +1022,7 @@ ${buildSidebar('tradeLogs', liveActive)}
       try { data2 = await res2.json(); } catch (_) { data2 = { success: false, error: 'Server error (status ' + res2.status + ')' }; }
       if (data2 && data2.results) {
         var rr = data2.results;
-        if (cats.paper) lines.push('✅ Paper daily files: ' + rr.paperFiles + ' removed');
+        if (cats.paper && !fullPaper) lines.push('✅ Paper daily files: ' + rr.paperFiles + ' removed');
         if (cats.skip)  lines.push('✅ Skip daily files: ' + rr.skipFiles + ' removed');
         if (cats.ticks) lines.push('✅ Tick days: ' + rr.ticksDays + ' removed');
         if (cats.cache) lines.push('✅ Cache dirs cleared: ' + rr.cacheDirs);
