@@ -31,7 +31,7 @@ const express = require("express");
 const router = express.Router();
 const fs = require("fs");
 const path = require("path");
-const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS, tableEnhancerCSS, tableEnhancerJS } = require("../utils/sharedNav");
+const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS, tableEnhancerCSS, tableEnhancerJS, enabledStrategies } = require("../utils/sharedNav");
 const { resolveTheme } = require("../utils/theme");
 const manualTrades = require("../utils/manualTrades");
 
@@ -92,9 +92,14 @@ function toFy(dateLike) {
   return `${startYear}-${yy}`;
 }
 
+// Only strategies enabled in Settings count, the same gate as the sidebar and
+// both consolidation pages. A disabled strategy's file is left untouched, so
+// switching it back on restores its history here too.
 function loadLiveTrades() {
   const trades = [];
+  const enabled = new Set(enabledStrategies().map((s) => s.mode));
   for (const src of LIVE_SOURCES) {
+    if (!enabled.has(src.mode)) continue;
     const data = safeRead(src.file);
     if (!data || !Array.isArray(data.sessions)) continue;
     for (const s of data.sessions) {
