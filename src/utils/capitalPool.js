@@ -39,6 +39,10 @@
  * • Blocked capital is in-memory only. Open paper positions are in-memory too,
  *   so a restart clears both together. A lost block can only ever make the pool
  *   look richer, never poorer — it can never manufacture a phantom rejection.
+ * • One block per open position. Single-position engines call `block()` and it
+ *   replaces whatever was there (a stale block cannot outlive the next entry);
+ *   EarlyBird holds several cash-equity positions at once, so it blocks with
+ *   `{add:true}` and releases with `{symbol}`, and the pool sums them.
  * • It can refuse an entry but never place, size or alter one. Every INTERNAL
  *   failure path (disk hiccup, unknown strategy, unknown cost) fails OPEN — an
  *   accounting error must not halt the book; only a genuine shortfall does.
@@ -72,6 +76,7 @@ const STRATEGIES = {
   pa:         { broker: "fyers",   label: "PA",         file: "pa_paper_trades.json"         },
   orb:        { broker: "fyers",   label: "ORB",        file: "orb_paper_trades.json"        },
   trend_pb:   { broker: "fyers",   label: "TREND_PB",   file: "trend_pb_paper_trades.json"   },
+  trend_day_scalp: { broker: "fyers", label: "TREND_DAY_SCALP", file: "trend_day_scalp_paper_trades.json" },
   rsi_pivot_st: { broker: "zerodha", label: "RSI_PIVOT_ST", file: "rsi_pivot_st_paper_trades.json" },
   // Same engine as rsi_pivot_st, NIFTY BANK underlying — Zerodha orders, so it
   // draws from the same ZERODHA_INV_AMOUNT pool as the NIFTY sibling.
@@ -89,16 +94,25 @@ const STRATEGIES = {
 
 const BROKER_ENV = { zerodha: "ZERODHA_INV_AMOUNT", fyers: "FYERS_INV_AMOUNT" };
 
-// key -> { blocked, meta, sessionPnl, filePnlEpoch }
+// key -> { blocks: Map<slot, {cost, meta}>, sessionPnl, filePnlEpoch }
+// `slot` is the position's symbol for additive blocks, or SINGLE for the one
+// block a single-position engine holds.
+const SINGLE = "_";
 const _live = new Map();
 
 function _liveOf(key) {
   let s = _live.get(key);
   if (!s) {
-    s = { blocked: 0, meta: null, sessionPnl: 0, filePnlEpoch: _filePnl(key) };
+    s = { blocks: new Map(), sessionPnl: 0, filePnlEpoch: _filePnl(key) };
     _live.set(key, s);
   }
   return s;
+}
+
+function _sumBlocks(s) {
+  let t = 0;
+  for (const b of s.blocks.values()) t += b.cost;
+  return parseFloat(t.toFixed(2));
 }
 
 // ── Config ───────────────────────────────────────────────────────────────────
@@ -169,7 +183,7 @@ function realizedFor(key) {
 
 function blockedFor(key) {
   const s = _live.get(key);
-  return s ? s.blocked : 0;
+  return s ? _sumBlocks(s) : 0;
 }
 
 // ── Pool ─────────────────────────────────────────────────────────────────────
@@ -185,12 +199,13 @@ function getPool(broker) {
   for (const [key, def] of Object.entries(STRATEGIES)) {
     if (def.broker !== broker) continue;
     realized += realizedFor(key);
-    const b = blockedFor(key);
-    if (b > 0) {
-      blocked += b;
-      const s = _live.get(key);
+    const s = _live.get(key);
+    if (!s) continue;
+    for (const b of s.blocks.values()) {
+      if (!(b.cost > 0)) continue;
+      blocked += b.cost;
       // Fixed fields last — meta is caller-supplied and must not clobber them.
-      positions.push({ ...(s && s.meta ? s.meta : {}), key, label: def.label, blocked: b });
+      positions.push({ ...(b.meta || {}), key, label: def.label, blocked: b.cost });
     }
   }
   realized = parseFloat(realized.toFixed(2));
@@ -340,15 +355,21 @@ function getAlerts(sinceMs) {
   return _alerts.filter(a => a.ts >= cutoff).reverse();
 }
 
-/** Reserve `cost` against the strategy's broker pool. Overwrites any stale block. */
+/**
+ * Reserve `cost` against the strategy's broker pool.
+ * Default: replaces any existing block (single-position engines — a stale block
+ * cannot outlive the next entry). `opts.add` keeps existing blocks and adds one
+ * for `meta.symbol` (multi-position engines); release it with the same symbol.
+ */
 function block(strategyKey, cost, meta = {}, opts = {}) {
   try {
     if (opts.sim || _inReplay() || !isEnabled() || !brokerOf(strategyKey)) return;
     const need = Number(cost);
     if (!Number.isFinite(need) || need <= 0) return;
     const s = _liveOf(strategyKey);
-    s.blocked = parseFloat(need.toFixed(2));
-    s.meta = meta || null;
+    const slot = opts.add ? String((meta && meta.symbol) || `#${s.blocks.size + 1}`) : SINGLE;
+    if (!opts.add) s.blocks.clear();
+    s.blocks.set(slot, { cost: parseFloat(need.toFixed(2)), meta: meta || null });
     const pool = getPool(brokerOf(strategyKey));
     console.log(`💰 [CAPITAL] ${STRATEGIES[strategyKey].label} blocked ₹${need.toFixed(0)} — `
       + `${pool.broker.toUpperCase()} pool: ₹${pool.available.toFixed(0)} free of ₹${(pool.base + pool.realized).toFixed(0)}`);
@@ -363,16 +384,18 @@ function updateBlock(strategyKey, cost, opts = {}) {
   try {
     if (opts.sim || _inReplay()) return;
     const s = _live.get(strategyKey);
-    if (!s || s.blocked <= 0) return;
+    const b = s && s.blocks.get(SINGLE);
+    if (!b || !(b.cost > 0)) return;
     const need = Number(cost);
     if (!Number.isFinite(need) || need <= 0) return;
-    s.blocked = parseFloat(need.toFixed(2));
+    b.cost = parseFloat(need.toFixed(2));
   } catch (_) {}
 }
 
 /**
  * Free the reservation and book the trade's net P&L into the running session
- * total. Safe to call when nothing is blocked.
+ * total. Safe to call when nothing is blocked. `opts.symbol` frees only that
+ * position's block (multi-position engines); without it every block is freed.
  */
 function release(strategyKey, netPnl, opts = {}) {
   try {
@@ -381,8 +404,17 @@ function release(strategyKey, netPnl, opts = {}) {
     // safe, and doing it before the sim/replay guard means a block can never be
     // stranded by the mode flag differing between entry and exit.
     const existing = _live.get(strategyKey);
-    const wasBlocked = existing ? existing.blocked : 0;
-    if (existing) { existing.blocked = 0; existing.meta = null; }
+    let wasBlocked = 0;
+    if (existing) {
+      if (opts.symbol != null) {
+        const b = existing.blocks.get(String(opts.symbol));
+        wasBlocked = b ? b.cost : 0;
+        existing.blocks.delete(String(opts.symbol));
+      } else {
+        wasBlocked = _sumBlocks(existing);
+        existing.blocks.clear();
+      }
+    }
 
     if (opts.sim || _inReplay()) return;
     const s = _liveOf(strategyKey);
@@ -406,7 +438,7 @@ function release(strategyKey, netPnl, opts = {}) {
 /** Drop every reservation for a strategy (used when a session is force-stopped). */
 function clear(strategyKey) {
   const s = _live.get(strategyKey);
-  if (s) { s.blocked = 0; s.meta = null; }
+  if (s) s.blocks.clear();
 }
 
 // Exactly what the callers use — the per-broker/per-strategy accessors

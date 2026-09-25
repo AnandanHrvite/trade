@@ -1124,7 +1124,8 @@ async function _openOptionPosition(setup, triggerSpot, nowMins, cfg) {
   state.optionLtpFails  = 0;
   state.optionLtpFailAt = null;
   state.tradesTaken++;
-  capitalPool.block(MODE_KEY, instrumentMode.capitalRequired(qty, premium), { side: optionSide, symbol: optInfo.symbol, qty, premium });
+  // add:true — this engine holds several positions at once; each gets its own block.
+  capitalPool.block(MODE_KEY, instrumentMode.capitalRequired(qty, premium), { side: optionSide, symbol: optInfo.symbol, qty, premium }, { add: true });
   _persist();
 
   const slip = _r2(Math.abs(triggerSpot - entrySpot));
@@ -1285,7 +1286,7 @@ async function _closeOptionPosition(ex) {
 
   state.sessionTrades.push(trade);
   tradeLogger.appendTradeLog(MODE_KEY, trade);
-  capitalPool.release(MODE_KEY, pnl);
+  capitalPool.release(MODE_KEY, pnl, { symbol: pos.symbol });   // frees this position's block only
   _persist();
 
   const held = Math.round(trade.durationMs / 1000);
@@ -1658,7 +1659,8 @@ function _openPosition(setup, triggerPrice, nowMins) {
   state.pending.delete(setup.symbol);
   state.attempted.add(setup.symbol);
   state.tradesTaken++;
-  capitalPool.block(MODE_KEY, qty * fillPrice, { side: setup.side, symbol: setup.symbol, qty, premium: fillPrice });
+  // add:true — this engine holds several positions at once; each gets its own block.
+  capitalPool.block(MODE_KEY, qty * fillPrice, { side: setup.side, symbol: setup.symbol, qty, premium: fillPrice }, { add: true });
   _persist();
 
   const slip = _r2(Math.abs(triggerPrice - fillPrice));
@@ -1856,7 +1858,7 @@ function _closePosition(pos, ex) {
   state.positions.delete(pos.symbol);
   state.sessionTrades.push(trade);
   tradeLogger.appendTradeLog(MODE_KEY, trade);
-  capitalPool.release(MODE_KEY, pnl);
+  capitalPool.release(MODE_KEY, pnl, { symbol: pos.symbol });   // frees this position's block only
   _persist();
 
   const held = Math.round(trade.durationMs / 1000);
