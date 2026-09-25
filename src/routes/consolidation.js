@@ -1137,7 +1137,7 @@ function buildDayView(){
   _dvDays = days;
   const tb = document.querySelector('#dayViewTbl tbody');
   if (!days.length){
-    tb.innerHTML = '<tr><td colspan="\${6 + ENABLED_MODES.length}" style="text-align:center;color:var(--muted-1,#8ba1c2);padding:18px;">No data</td></tr>';
+    tb.innerHTML = '<tr><td colspan="' + (6 + ENABLED_MODES.length) + '" style="text-align:center;color:var(--muted-1,#8ba1c2);padding:18px;">No data</td></tr>';
     document.getElementById('dvCount').textContent = '';
     return;
   }
