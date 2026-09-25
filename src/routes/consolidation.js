@@ -398,9 +398,7 @@ router.get("/", (req, res) => {
           <thead><tr>
             <th>Date</th>
             <th>Trades</th>
-            <th>EMA_RSI_ST</th>
-            <th>BB_RSI</th>
-            <th>PA</th>
+            ${enabledSources().map((src) => `<th>${src.label}</th>`).join("")}
             <th>Wins</th>
             <th>Losses</th>
             <th>P&amp;L</th>
@@ -651,6 +649,10 @@ router.get("/", (req, res) => {
 <script>
 ${aiExportJS()}
 const TRADES = ${JSON.stringify(trades)};
+// Strategies enabled in Settings, in page order. TRADES only ever holds these
+// modes; the analytics sections enumerate this list rather than a fixed trio so
+// a toggled-off strategy has no row, line or column, and a new one needs no edit.
+const ENABLED_MODES = ${JSON.stringify(enabledSources().map((src) => src.mode))};
 
 function fmtINR(n){
   if (typeof n !== 'number' || isNaN(n)) return '—';
@@ -1124,18 +1126,18 @@ function buildDayView(){
   const map = new Map();
   for (const t of _lastFiltered){
     const d = t.date || 'Unknown';
-    if (!map.has(d)) map.set(d, { date: d, trades: 0, wins: 0, losses: 0, pnl: 0, EMA_RSI_ST: 0, BB_RSI: 0, PA: 0, ORB: 0 });
+    if (!map.has(d)) map.set(d, { date: d, trades: 0, wins: 0, losses: 0, pnl: 0, byMode: Object.fromEntries(ENABLED_MODES.map(m => [m, 0])) });
     const b = map.get(d);
     b.trades++;
     b.pnl += (t.pnl || 0);
     if (t.pnl > 0) b.wins++; else if (t.pnl < 0) b.losses++;
-    if (t.mode && b[t.mode] != null) b[t.mode]++;
+    if (t.mode && b.byMode[t.mode] != null) b.byMode[t.mode]++;
   }
   const days = Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
   _dvDays = days;
   const tb = document.querySelector('#dayViewTbl tbody');
   if (!days.length){
-    tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--muted-1,#8ba1c2);padding:18px;">No data</td></tr>';
+    tb.innerHTML = '<tr><td colspan="\${6 + ENABLED_MODES.length}" style="text-align:center;color:var(--muted-1,#8ba1c2);padding:18px;">No data</td></tr>';
     document.getElementById('dvCount').textContent = '';
     return;
   }
@@ -1149,9 +1151,7 @@ function buildDayView(){
     return \`<tr style="background:\${pnlRowBg(dy.pnl)};">
       <td style="font-weight:600;">\${dy.date}</td>
       <td>\${dy.trades}</td>
-      <td>\${modeCell(dy.EMA_RSI_ST, 'EMA_RSI_ST')}</td>
-      <td>\${modeCell(dy.BB_RSI, 'BB_RSI')}</td>
-      <td>\${modeCell(dy.PA, 'PA')}</td>
+      \${ENABLED_MODES.map(m => '<td>' + modeCell(dy.byMode[m], m) + '</td>').join('')}
       <td style="color:#10b981;">\${dy.wins}</td>
       <td style="color:#ef4444;">\${dy.losses}</td>
       <td style="color:\${pc};font-weight:700;background:\${pbg};">\${dy.pnl >= 0 ? '+' : ''}\${fmtINR(dy.pnl)}</td>
@@ -1163,11 +1163,11 @@ function buildDayView(){
 
 function copyDayView(btn){
   if (!_dvDays.length){ alert('No data to copy.'); return; }
-  const lines = ['Date\\tTrades\\tSwing\\tBbRsi\\tPA\\tWins\\tLosses\\tPnL\\tCumulative PnL'];
+  const lines = [['Date', 'Trades', ...ENABLED_MODES, 'Wins', 'Losses', 'PnL', 'Cumulative PnL'].join('\\t')];
   let cum = 0;
   for (const dy of _dvDays){
     cum += dy.pnl;
-    lines.push([dy.date, dy.trades, dy.EMA_RSI_ST, dy.BB_RSI, dy.PA, dy.wins, dy.losses, dy.pnl.toFixed(2), cum.toFixed(2)].join('\\t'));
+    lines.push([dy.date, dy.trades, ...ENABLED_MODES.map(m => dy.byMode[m]), dy.wins, dy.losses, dy.pnl.toFixed(2), cum.toFixed(2)].join('\\t'));
   }
   copyText(lines.join('\\n'), btn);
 }
@@ -1458,7 +1458,7 @@ function renderAnalytics(){
 
   // ── Cross-mode comparison ──
   (function(){
-    const modes = ['EMA_RSI_ST','BB_RSI','PA'];
+    const modes = ENABLED_MODES;
     const EMPTY = '<tr><td colspan="10" style="text-align:center;color:var(--muted-2,#6d85a8);">No data</td></tr>';
     if (!trades.length){ anaEnhance('anaModeBody', '', EMPTY, {}); return; }
     {
@@ -1875,7 +1875,7 @@ function renderAnalytics(){
 
   // ── Cumulative P&L by Mode ──
   (function(){
-    const modes = ['EMA_RSI_ST','BB_RSI','PA'];
+    const modes = ENABLED_MODES;
     const sorted = trades.slice().sort((a,b) => {
       const ta = _parseTimeMs(a.entryTime), tb = _parseTimeMs(b.entryTime);
       if (ta!=null && tb!=null) return ta - tb;
@@ -1897,7 +1897,7 @@ function renderAnalytics(){
 
   // ── Monthly P&L stacked by mode ──
   (function(){
-    const modes = ['EMA_RSI_ST','BB_RSI','PA'];
+    const modes = ENABLED_MODES;
     const monthsSet = new Set();
     const data = {}; modes.forEach(m => data[m] = new Map());
     trades.forEach(t => { const k=_monthOf(t); if (!k) return; monthsSet.add(k); if (!data[t.mode]) return; data[t.mode].set(k, (data[t.mode].get(k)||0) + (t.pnl||0)); });

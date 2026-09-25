@@ -338,9 +338,9 @@ router.get("/", (req, res) => {
     <!-- Danger zone — wipe live trade history per mode -->
     <div class="tbar" style="border-color:rgba(239,68,68,0.25);background:rgba(239,68,68,0.03);">
       <label style="color:#f87171;">⚠ Reset Live History</label>
-      <button class="btn danger" onclick="resetLive('ema_rsi_st')" ${emaRsiStLive ? 'disabled title="EMA_RSI_ST live is running — stop it first"' : ''}>🗑 EMA_RSI_ST Live</button>
-      <button class="btn danger" onclick="resetLive('bb_rsi')" ${bbRsiLive ? 'disabled title="BB_RSI live is running — stop it first"' : ''}>🗑 BB_RSI Live</button>
-      <button class="btn danger" onclick="resetLive('pa')"    ${paLive    ? 'disabled title="PA live is running — stop it first"'    : ''}>🗑 PA Live</button>
+      ${_modeEnabled('EMA_RSI_ST') ? `<button class="btn danger" onclick="resetLive('ema_rsi_st')" ${emaRsiStLive ? 'disabled title="EMA_RSI_ST live is running — stop it first"' : ''}>🗑 EMA_RSI_ST Live</button>` : ''}
+      ${_modeEnabled('BB_RSI') ? `<button class="btn danger" onclick="resetLive('bb_rsi')" ${bbRsiLive ? 'disabled title="BB_RSI live is running — stop it first"' : ''}>🗑 BB_RSI Live</button>` : ''}
+      ${_modeEnabled('PA') ? `<button class="btn danger" onclick="resetLive('pa')"    ${paLive    ? 'disabled title="PA live is running — stop it first"'    : ''}>🗑 PA Live</button>` : ''}
       <button class="btn danger" onclick="resetLive('all')"   ${(emaRsiStLive || bbRsiLive || paLive) ? 'disabled title="Stop all live sessions first"' : ''} style="font-weight:700;">🗑 Reset ALL Live</button>
       <span style="margin-left:auto;font-size:0.64rem;color:var(--muted-1,#8ba1c2);line-height:1.4;">Clears the stored trade log only · real broker orders are unaffected</span>
     </div>
@@ -477,6 +477,9 @@ ${modalJS()}
 ${toastJS()}
 ${aiExportJS()}
 const TRADES = ${JSON.stringify(trades)};
+// Reset targets for the strategies enabled in Settings — a disabled strategy's
+// history is hidden, not deleted, so Reset ALL must not wipe it unseen.
+const RESET_ENABLED = ${JSON.stringify(['ema_rsi_st', 'bb_rsi', 'pa'].filter((k) => _modeEnabled(k.toUpperCase())))};
 
 function fmtINR(n){
   if (typeof n !== 'number' || isNaN(n)) return '—';
@@ -983,8 +986,9 @@ const _RESET_TARGETS = {
 
 async function resetLive(mode){
   const all = (mode === 'all');
-  const targets = all ? ['ema_rsi_st','bb_rsi','pa'] : [mode];
-  const label = all ? 'ALL Live modes (EMA_RSI_ST + BB_RSI + PA)' : _RESET_TARGETS[mode].label;
+  const targets = all ? RESET_ENABLED : [mode];
+  if (!targets.length){ showToast('No enabled live modes to reset', '#f59e0b'); return; }
+  const label = all ? 'ALL Live modes (' + targets.map(t => _RESET_TARGETS[t].label.replace(' Live','')).join(' + ') + ')' : _RESET_TARGETS[mode].label;
   const ok = await showDoubleConfirm({
     icon: '⚠️',
     title: 'Reset ' + label + ' History?',
