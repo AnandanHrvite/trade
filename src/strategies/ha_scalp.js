@@ -98,7 +98,7 @@
  *
  *     d. BREAKEVEN + TRAIL (HA_SCALP_TRAIL_ENABLED, default ON) — the stop is
  *        frozen only until the trade earns the right to move it. Once
- *        favourable by HA_SCALP_BREAKEVEN_PTS (15) the stop lifts to the entry;
+ *        favourable by HA_SCALP_BREAKEVEN_PTS (20) the stop lifts to the entry;
  *        once favourable by HA_SCALP_TRAIL_START_PTS (25) it follows the best
  *        spot at HA_SCALP_TRAIL_PTS (20) behind. It RATCHETS — never widened.
  *
@@ -257,16 +257,20 @@ function getConfig() {
     exitOnWeak:      _boolEnv("HA_SCALP_EXIT_ON_WEAK", true),
 
     // Risk
-    slBufferPts:     _numEnv("HA_SCALP_SL_BUFFER_PTS", 0, 0),
+    slBufferPts:     _numEnv("HA_SCALP_SL_BUFFER_PTS", 15, 0),
     maxSlPts:        _numEnv("HA_SCALP_MAX_SL_PTS", 0, 0),
+    // Stretched-move guard: skip when the raw close is this far from the MA.
+    maxMaDistPts:    _numEnv("HA_SCALP_MAX_MA_DIST_PTS", 150, 0),
 
     // Breakeven + spot trail. Both ratchet the stop one way only and are read
     // on CLOSED candles, like every other decision here — the per-tick test
     // stays the single frozen-level compare in stopHit().
     trailEnabled:    _boolEnv("HA_SCALP_TRAIL_ENABLED", true),
-    breakevenPts:    _numEnv("HA_SCALP_BREAKEVEN_PTS", 15, 0),
+    breakevenPts:    _numEnv("HA_SCALP_BREAKEVEN_PTS", 20, 0),
     trailPts:        _numEnv("HA_SCALP_TRAIL_PTS", 20, 0),
     trailStartPts:   _numEnv("HA_SCALP_TRAIL_START_PTS", 25, 0),
+    // The global +% premium breakeven (tradeGuards) — off here by default.
+    premiumBreakeven: _boolEnv("HA_SCALP_PREMIUM_BREAKEVEN_ENABLED", false),
   };
 }
 
@@ -520,6 +524,14 @@ function getSignal(candles, opts) {
   if (!above && !below) {
     base.skipReason = base.reason =
       `Raw close ${base.rawClose} is exactly on the ${cfg.maPeriod} ${cfg.maType.toUpperCase()} (${ma}) — no side, standing aside`;
+    return base;
+  }
+
+  const maDist = _r2(Math.abs(sig.close - ma));
+  if (cfg.maxMaDistPts > 0 && maDist > cfg.maxMaDistPts) {
+    base.skipReason = base.reason =
+      `Trend ${base.trend} but the raw close ${base.rawClose} is ${maDist}pt from the ${cfg.maPeriod} ` +
+      `${cfg.maType.toUpperCase()} (${ma}) > ${cfg.maxMaDistPts}pt — move already stretched, no entry`;
     return base;
   }
 

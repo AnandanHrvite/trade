@@ -926,8 +926,11 @@ function _checkExits(spotPrice) {
   // mirrors the SPOT, so leaving it on would test an 8% move in NIFTY itself.
   if (!pos.isFutures && pos.optionEntryLtp && state.optionLtp) {
     const _plMsg = tradeGuards.checkProfitLock(pos.optionEntryLtp, state.optionLtp, pos.peakPremium)
-      // Fallback for a trade that never reached the lock's arm level.
-      || tradeGuards.checkBreakevenStop(pos.optionEntryLtp, state.optionLtp, pos.peakPremium);
+      // Fallback for a trade that never reached the lock's arm level. Opt-in
+      // here (HA_SCALP_PREMIUM_BREAKEVEN_ENABLED) — the spot breakeven covers it.
+      || (haStrategy.getConfig().premiumBreakeven
+        ? tradeGuards.checkBreakevenStop(pos.optionEntryLtp, state.optionLtp, pos.peakPremium)
+        : null);
     if (_plMsg) {
       log(`🔒 [HA-SCALP-PAPER] ${_plMsg}`);
       simulateSell(_plMsg);
