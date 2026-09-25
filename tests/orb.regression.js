@@ -829,9 +829,27 @@ const ENTRIES  = ALL_SIGS.filter(x => x.sig.signal !== "NONE");
   });
 
   check("paper and live record the same set of skip-log gates", () => {
-    const gates = (src) => [...new Set((src.match(/gate: "[a-z_]+"/g) || []))].sort();
+    // "capital" is the PAPER account gate (utils/capitalPool.js): the paper pool
+    // refuses an entry it cannot fund. Live's account is the broker's — an
+    // unfundable order is rejected by Fyers itself, not by a pre-check — so the
+    // gate is paper-only by design and is excluded from the parity set.
+    const PAPER_ONLY = new Set(['gate: "capital"']);
+    const gates = (src) => [...new Set((src.match(/gate: "[a-z_]+"/g) || []))].filter(g => !PAPER_ONLY.has(g)).sort();
     assert.deepStrictEqual(gates(LIVE_SRC), gates(PAPER_SRC),
       "a rejection reason is recorded by one mode and not the other — the day files disagree on why no trade was taken");
+  });
+
+  // The pool used to be advisory ("entry taken anyway, pool now overdrawn"). It is
+  // now a hard gate: an entry the pool cannot fund is refused and skip-logged, so
+  // the paper book can never spend money it does not have.
+  check("the paper capital gate REFUSES an unfunded entry instead of entering anyway", () => {
+    const i = PAPER_SRC.indexOf('capitalPool.gate("orb"');
+    assert.ok(i >= 0, "orbPaper does not run capitalPool.gate() before entering");
+    assert.ok(!/capitalPool\.check\(/.test(PAPER_SRC), "orbPaper still uses the advisory capitalPool.check()");
+    assert.ok(!/entry taken anyway/.test(PAPER_SRC), "orbPaper still enters when the pool cannot fund the trade");
+    const after = PAPER_SRC.slice(i, i + 900);
+    assert.ok(/if \(!_cap\.ok\) \{[\s\S]*?gate: "capital"[\s\S]*?return;\s*\}/.test(after),
+      "a refused capital gate must skip-log the signal and return without a position");
   });
 
   // Paper's simulateSell is synchronous, so its stopSession bookkeeping always sees

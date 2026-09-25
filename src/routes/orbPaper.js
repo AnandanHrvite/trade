@@ -347,12 +347,17 @@ async function _simulateBuyInner(side, sigSnapshot, spot) {
 
   const qty = instrumentConfig.getLotQty();
 
-  // ── Capital check — advisory only: an overdrawn pool raises a dashboard alert,
-  //    it never stops the trade (a paper session must keep collecting data).
-  const _cap = capitalPool.check("orb", instrumentMode.capitalRequired(qty, optionEntryLtp));
+  // ── Capital gate — HARD: the pool must fund this position or the entry is
+  //    refused (error line + skip log + dashboard alert, see capitalPool.gate).
+  //    Sits AFTER the last strategy abort path so a refusal is never logged for
+  //    a signal that would have been dropped anyway.
+  const _cap = capitalPool.gate("orb", instrumentMode.capitalRequired(qty, optionEntryLtp), { side, symbol: optInfo.symbol, qty });
   if (!_cap.ok) {
-    log(`⚠️ [ORB-PAPER] ${_cap.reason} — entry taken anyway, pool now overdrawn`);
-    capitalPool.noteShortfall("orb", _cap, { side, symbol: optInfo.symbol });
+    if (!_cap.muted) {
+      log(`❌ [ORB-PAPER] Entry REFUSED — ${_cap.reason}`);
+      skipLogger.appendSkipLog("orb", { gate: "capital", reason: _cap.reason, spot: spot, side, symbol: optInfo.symbol, qty, cost: _cap.cost, available: _cap.available });
+    }
+    return;
   }
 
   // ── Initial hard SL comes from the STRATEGY (sig.slSpot) — the wider of the

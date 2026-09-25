@@ -1068,11 +1068,17 @@ async function _openOptionPosition(setup, triggerSpot, nowMins, cfg) {
     return;
   }
 
-  // Capital check — advisory only, exactly as on the stock leg.
-  const _cap = capitalPool.check(MODE_KEY, instrumentMode.capitalRequired(qty, premium));
+  // ── Capital gate — HARD, exactly as on the stock leg. A refused option leg
+  //    counts as the day's one attempt (no retry loop against an empty pool);
+  //    the flag is persisted the same way a fill persists it.
+  const _cap = capitalPool.gate(MODE_KEY, instrumentMode.capitalRequired(qty, premium), { side: optionSide, symbol: optInfo.symbol, qty });
   if (!_cap.ok) {
-    log(`⚠️ ${LOG_TAG} ${_cap.reason} — option entry taken anyway, pool now overdrawn`);
-    capitalPool.noteShortfall(MODE_KEY, _cap, { side: optionSide, symbol: optInfo.symbol });
+    log(`❌ ${LOG_TAG} OPTION — entry REFUSED, no retry today — ${_cap.reason}`);
+    skipLogger.appendSkipLog(MODE_KEY, { gate: "capital", leg: "option", reason: _cap.reason, symbol: optInfo.symbol, side: optionSide, spot: triggerSpot, qty, premium, cost: _cap.cost, available: _cap.available });
+    state.optionAttempted = true;
+    state.optionLtpFailAt = null;
+    _persist();
+    return;
   }
 
   const pos = {
@@ -1603,12 +1609,18 @@ function _openPosition(setup, triggerPrice, nowMins) {
   const fillPrice = setup.entry;
   const qty = setup.qty;
 
-  // Capital check — advisory only: an overdrawn pool raises a dashboard alert,
-  // it never stops a paper trade.
-  const _cap = capitalPool.check(MODE_KEY, qty * fillPrice);
+  // ── Capital gate — HARD: the pool must fund qty × entry or the setup is
+  //    refused. The setup is consumed (pending → attempted) exactly as a fill
+  //    would consume it: _checkTriggers runs on every tick, and leaving it
+  //    pending would re-run this refusal on every tick until the window closes.
+  const _cap = capitalPool.gate(MODE_KEY, qty * fillPrice, { side: setup.side, symbol: setup.symbol, qty });
   if (!_cap.ok) {
-    log(`⚠️ ${LOG_TAG} ${_cap.reason} — ${setup.symbol} entry taken anyway, pool now overdrawn`);
-    capitalPool.noteShortfall(MODE_KEY, _cap, { side: setup.side, symbol: setup.symbol });
+    log(`❌ ${LOG_TAG} ${setup.symbol} entry REFUSED — ${_cap.reason}`);
+    skipLogger.appendSkipLog(MODE_KEY, { gate: "capital", leg: "stock", reason: _cap.reason, symbol: setup.symbol, side: setup.side, price: fillPrice, qty, cost: _cap.cost, available: _cap.available });
+    state.pending.delete(setup.symbol);
+    state.attempted.add(setup.symbol);
+    _persist();
+    return;
   }
 
   const pos = {

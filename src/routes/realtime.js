@@ -242,11 +242,12 @@ ${faviconLink()}
   .w-meta { display:flex; justify-content:space-between; font-size:0.72rem; color:#7d8aa3; margin-top:4px; }
   .w-delta { font-variant-numeric:tabular-nums; font-weight:600; }
 
-  /* Capital shortfall alert — a paper entry the broker pool could not fund.
-     Amber, not red: nothing was stopped, the play money simply ran out. */
-  .cap-alert { background:#2a1f06; border:1px solid #7c5e10; border-left:4px solid #f59e0b; border-radius:10px; padding:12px 16px; margin-bottom:18px; }
-  .cap-alert-head { font-size:0.9rem; font-weight:700; color:#fbbf24; letter-spacing:0.3px; }
-  .cap-alert-sub { font-size:0.75rem; color:#c9a94a; margin-top:4px; line-height:1.55; }
+  /* Capital shortfall alert — a paper entry the broker pool REFUSED to fund.
+     Red: a signal was dropped, and every further signal will be until the pool
+     is topped up or a position exits. */
+  .cap-alert { background:#2a0e0e; border:1px solid #7c1d1d; border-left:4px solid #ef4444; border-radius:10px; padding:12px 16px; margin-bottom:18px; }
+  .cap-alert-head { font-size:0.9rem; font-weight:700; color:#f87171; letter-spacing:0.3px; }
+  .cap-alert-sub { font-size:0.75rem; color:#d08a8a; margin-top:4px; line-height:1.55; }
   .cap-alert-list { margin:8px 0 0; padding:0; list-style:none; display:flex; flex-direction:column; gap:4px; }
   .cap-alert-list li { font-size:0.72rem; color:#e6d9a8; font-variant-numeric:tabular-nums; }
   .cap-alert-list .t { color:#9a8a55; }
@@ -499,8 +500,8 @@ ${sidebar}
   </div>
   <div class="stop-all-note" id="stop-all-note" hidden></div>
 
-  <!-- Capital shortfall alert — filled by /realtime/capital. Trades are never
-       stopped when the pool runs dry; this is how you find out that it did. -->
+  <!-- Capital shortfall alert — filled by /realtime/capital. Entries are REFUSED
+       when the pool runs dry; this is how you find out that one was. -->
   <div class="cap-alert" id="cap-alert" hidden></div>
 
   <!-- Shown during a running session too: while trading is exactly when "how much
@@ -945,9 +946,9 @@ function renderPools(d) {
   }
 }
 
-// Capital alert — the broker pool could not fund an entry. The trade was taken
-// anyway (a paper session must keep collecting data), so this banner is the only
-// place that says the play money ran out.
+// Capital alert — the broker pool could not fund an entry, so the entry was
+// REFUSED (capitalPool.gate). The strategy log carries the error line; this
+// banner is the cross-strategy view of which signals were dropped and why.
 function renderCapitalAlert(d) {
   const box = document.getElementById('cap-alert');
   if (!box || !d) return;   // failed poll — keep the alert up, same as the ribbon
@@ -964,7 +965,7 @@ function renderCapitalAlert(d) {
   const rows = alerts.slice(0, 5).map(a => {
     const t = new Date(a.ts).toLocaleTimeString('en-IN', { hour12:false });
     return '<li><span class="t">' + t + '</span> — ' + a.label + ' ' + (a.side || '')
-         + ' needed ' + fmtINR(a.cost) + ', pool had ' + fmtINR(a.available)
+         + ' refused — needed ' + fmtINR(a.cost) + ', pool had ' + fmtINR(a.available)
          + ' (short ' + fmtINR(a.short) + ')</li>';
   }).join('');
 
@@ -972,10 +973,10 @@ function renderCapitalAlert(d) {
       // Says PAPER explicitly: unlike the ribbon this banner stays up under the
       // LIVE toggle (an alert you can hide by switching tabs is not an alert),
       // so it must name whose money ran out.
-      '<div class="cap-alert-head">⚠️ Paper capital pool exhausted — trades are still running</div>'
+      '<div class="cap-alert-head">❌ Paper capital pool exhausted — entries are being refused</div>'
     + '<div class="cap-alert-sub">'
-    + (poolLine || 'A paper entry cost more than the broker pool had left.')
-    + '<br>Nothing was stopped. Raise the investment amount in Settings → Instrument &amp; Backtest → Capital, or reset the paper history for that strategy.</div>'
+    + (poolLine || 'A paper entry cost more than the broker pool had left, so it was not taken.')
+    + '<br>Signals will keep being dropped until a position exits or the pool is topped up. Raise the investment amount in Settings → Instrument &amp; Backtest → Capital, or reset the paper history for that strategy.</div>'
     + (rows ? '<ul class="cap-alert-list">' + rows + '</ul>' : '')
     + (alerts.length > 5 ? '<div class="cap-alert-sub">…and ' + (alerts.length - 5) + ' more</div>' : '');
   box.hidden = false;

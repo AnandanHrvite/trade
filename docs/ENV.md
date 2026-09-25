@@ -406,7 +406,7 @@ The engine falls back to one value; a status panel or log banner prints another.
 | `LTP_STALE_FALLBACK_SEC` | number | `5` | Use candle close if the option price is older than this (sec). |
 | `LTP_STALE_THRESHOLD_SEC` | number | `15` | Warn if the option price hasn't updated for this long (sec). |
 | `MAX_BID_ASK_SPREAD_PTS` | number | `2` | Reject entries when the spread is wider than this. |
-| `NIFTY_FUTURES_MARGIN_PCT` | number | `11` | SPAN+exposure margin as % of notional, used to size the capital pool when Trade Type is NIFTY_FUTURES. Advisory only — never blocks a trade. |
+| `NIFTY_FUTURES_MARGIN_PCT` | number | `11` | SPAN+exposure margin as % of notional — what the paper capital pool blocks per futures entry when Trade Type is NIFTY_FUTURES. The pool gate refuses an entry it cannot fund, so an over-high % here refuses entries early and an over-low % lets the paper book take positions the real account could not. |
 | `NIFTY_LOT_SIZE` | number | — | Quantity per lot. |
 | `NIFTY_SPOT_FALLBACK` | number | `24000` | Fallback NIFTY price when no live quote. |
 | `NIFTY_STRIKE_STEP` | number | `50` | The strike grid this index is listed on. NIFTY 50 strikes exist every 50 points, so the ATM strike is spot rounded to the nearest 50. Change it only if NSE changes the grid. |
@@ -426,7 +426,7 @@ The engine falls back to one value; a status panel or log banner prints another.
 | `PA_LIVE_DRY_RUN` | toggle | `false` | Keep PA simulated even when live is on. |
 | `PA_LIVE_ENABLED` | toggle | `false` | Second gate for PA Live. Off = PA stays simulated even with the global switch off. |
 | `PAPER_CAPITAL_EST_PREMIUM` | number | `200` | EMA_RSI_ST / EMA9+VWAP / BB_RSI / PA decide before their option quote arrives — this premium is assumed for the check, then corrected to the real one a second later. |
-| `PAPER_CAPITAL_GATE_ENABLED` | toggle | `true` | Treat the investment amounts as real money: block qty × premium on entry, release it with the P&L on exit, so profits grow the pool and losses shrink it. Running out never stops a trade — the Real-Time dashboard raises an alert instead. Off = display only. |
+| `PAPER_CAPITAL_GATE_ENABLED` | toggle | `true` | Treat the investment amounts as real money: block qty × premium on entry, release it with the P&L on exit, so profits grow the pool and losses shrink it. An entry the pool cannot fund is REFUSED — logged as an error, skip-logged, and flagged on the Real-Time dashboard. Off = display only (every entry is taken). |
 | `PROFIT_LOCK_ARM_PCT` | number | `8` | The lock arms once premium touches entry + this %. Must be greater than the floor %, or the lock stays inert. |
 | `PROFIT_LOCK_ENABLED` | toggle | `true` | One rule for EVERY strategy, now and in future: once the option premium has risen by the arm %, never let the trade be sold below the floor %. Measured on 346 paper trades — losers peaked ~3 min after entry at ~+6pt while winners peaked ~25 min in at ~+39pt, so a small early gain is a reversal signature. It never caps the upside: a runner that keeps climbing is left to the strategy's own trail. |
 | `PROFIT_LOCK_FLOOR_PCT` | number | `5` | Once armed, the trade is closed if premium falls back to entry + this %. Replaying 344 trades at arm 8 / floor 5 changed 72 exits and turned the active book from -Rs6,028 to +Rs32,110 — treat that as a hypothesis to confirm in paper, not a promise. |

@@ -934,14 +934,19 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
     return;
   }
 
-  // ── Capital check — advisory only: an overdrawn pool raises a dashboard alert,
-  //    it never stops the trade. The real premium is stamped by the first option
-  //    poll (~1s from now), so check the assumed premium and true the block up there.
+  // ── Capital gate — HARD: the pool must fund qty × premium or the entry is
+  //    refused (error line + skip log + dashboard alert, see capitalPool.gate).
+  //    The real premium is stamped by the first option poll (~1s from now), so
+  //    the gate uses the assumed premium and the block is trued up there.
   const _estCost = qty * capitalPool.estimatedPremium();
-  const _cap = capitalPool.check("bn_ema_rsi_st_v2", _estCost, { sim: ptState._simMode });
+  const _cap = capitalPool.gate("bn_ema_rsi_st_v2", _estCost, { side, symbol, qty }, { sim: ptState._simMode });
   if (!_cap.ok) {
-    log(`⚠️ [PAPER] ${_cap.reason} — entry taken anyway, pool now overdrawn`);
-    capitalPool.noteShortfall("bn_ema_rsi_st_v2", _cap, { side, symbol });
+    if (!_cap.muted) {
+      log(`❌ [PAPER] Entry REFUSED — ${_cap.reason}`);
+      skipLogger.appendSkipLog("bn_ema_rsi_st_v2", { gate: "capital", reason: _cap.reason, spot: price, side, symbol, qty, cost: _cap.cost, available: _cap.available });
+    }
+    ptState._entryPending = false;
+    return;
   }
 
   // Data-collection metadata — frozen at entry so the trade record is self-describing for offline analysis.
@@ -2650,6 +2655,11 @@ router.post("/manualEntry", async (req, res) => {
 
     log(`🖐️ [PAPER] MANUAL ENTRY ${side} by user @ spot ₹${spot} | SL: ₹${sarSL} | Symbol: ${symbol}`);
     simulateBuy(symbol, side, qty, spot, `Manual ${side} entry by user | SL=₹${sarSL}`, sarSL, spot, true);
+    if (!ptState.position) {
+      // simulateBuy refused (capital gate, cooldown or protective-stop guard) — it
+      // has already logged why. Never report a position that was not opened.
+      return res.status(409).json({ success: false, error: "Entry refused — see the paper log for the reason" });
+    }
 
     return res.json({ success: true, spot: spot, side: side, sl: sarSL, symbol: symbol });
   } catch (e) {

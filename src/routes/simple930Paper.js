@@ -692,12 +692,18 @@ async function simulateBuy(side, leg, verdict, cfg) {
   const qty  = simpleLotQty();
   const band = strategy.bandLevels(cfg);
 
-  // Capital check — advisory only: an overdrawn pool raises a dashboard alert,
-  // it never stops a paper trade. Sits AFTER the last abort path.
-  const _cap = capitalPool.check(MODE_KEY, qty * fillLtp);
+  // ── Capital gate — HARD: the pool must fund qty × premium or the entry is
+  //    refused (error line + skip log + dashboard alert, see capitalPool.gate).
+  //    Sits AFTER the last abort path. The sustain counter restarts so the leg
+  //    must prove itself again; the ENTRY_RETRY_MS backoff above paces retries.
+  const _cap = capitalPool.gate(MODE_KEY, qty * fillLtp, { side, symbol: leg.symbol, qty });
   if (!_cap.ok) {
-    log(`⚠️ ${LOG_TAG} ${_cap.reason} — entry taken anyway, pool now overdrawn`);
-    capitalPool.noteShortfall(MODE_KEY, _cap, { side, symbol: leg.symbol });
+    if (!_cap.muted) {
+      log(`❌ ${LOG_TAG} Entry REFUSED — ${_cap.reason}`);
+      skipLogger.appendSkipLog(MODE_KEY, { gate: "capital", reason: _cap.reason, side, symbol: leg.symbol, qty, premium: fillLtp, cost: _cap.cost, available: _cap.available });
+    }
+    state.sustain[side] = 0;
+    return;
   }
 
   const pos = {

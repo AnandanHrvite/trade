@@ -565,12 +565,17 @@ async function simulateBuy(side, sig) {
   const qty = rsiPivotLotQty();
   const slPts = Number.isFinite(slSpot) ? parseFloat(Math.abs(slSpot - spot).toFixed(2)) : null;
 
-  // Capital check — advisory only: an overdrawn pool raises a dashboard alert,
-  // it never stops a paper trade. Sits AFTER the last abort path.
-  const _cap = capitalPool.check(MODE_KEY, instrumentMode.capitalRequired(qty, optionEntryLtp));
+  // ── Capital gate — HARD: the pool must fund this position or the entry is
+  //    refused (error line + skip log + dashboard alert, see capitalPool.gate).
+  //    Sits AFTER the last strategy abort path so a refusal is never logged for
+  //    a signal that would have been dropped anyway.
+  const _cap = capitalPool.gate(MODE_KEY, instrumentMode.capitalRequired(qty, optionEntryLtp), { side, symbol: optInfo.symbol, qty });
   if (!_cap.ok) {
-    log(`⚠️ [RSI_PIVOT_ST-PAPER] ${_cap.reason} — entry taken anyway, pool now overdrawn`);
-    capitalPool.noteShortfall(MODE_KEY, _cap, { side, symbol: optInfo.symbol });
+    if (!_cap.muted) {
+      log(`❌ [RSI_PIVOT_ST-PAPER] Entry REFUSED — ${_cap.reason}`);
+      skipLogger.appendSkipLog(MODE_KEY, { gate: "capital", reason: _cap.reason, spot: spot, side, symbol: optInfo.symbol, qty, cost: _cap.cost, available: _cap.available });
+    }
+    return;
   }
 
   const pos = {

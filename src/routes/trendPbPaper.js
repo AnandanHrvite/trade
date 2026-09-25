@@ -313,12 +313,17 @@ async function simulateBuy(side, sig) {
 
   const qty = instrumentConfig.getLotQty();
 
-  // ── Capital check — advisory only: an overdrawn pool raises a dashboard alert,
-  //    it never stops the trade (a paper session must keep collecting data).
-  const _cap = capitalPool.check("trend_pb", instrumentMode.capitalRequired(qty, optionEntryLtp));
+  // ── Capital gate — HARD: the pool must fund this position or the entry is
+  //    refused (error line + skip log + dashboard alert, see capitalPool.gate).
+  //    Sits AFTER the last strategy abort path so a refusal is never logged for
+  //    a signal that would have been dropped anyway.
+  const _cap = capitalPool.gate("trend_pb", instrumentMode.capitalRequired(qty, optionEntryLtp), { side, symbol: optInfo.symbol, qty });
   if (!_cap.ok) {
-    log(`⚠️ [TREND_PB-PAPER] ${_cap.reason} — entry taken anyway, pool now overdrawn`);
-    capitalPool.noteShortfall("trend_pb", _cap, { side, symbol: optInfo.symbol });
+    if (!_cap.muted) {
+      log(`❌ [TREND_PB-PAPER] Entry REFUSED — ${_cap.reason}`);
+      skipLogger.appendSkipLog("trend_pb", { gate: "capital", reason: _cap.reason, spot: spot, side, symbol: optInfo.symbol, qty, cost: _cap.cost, available: _cap.available });
+    }
+    return;
   }
 
   // ── Initial hard SL = structural (pullback low CE / high PE), clamped to a

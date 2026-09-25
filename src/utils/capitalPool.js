@@ -16,12 +16,13 @@
  *   • On entry  → `block()` reserves qty × entry premium.
  *   • On exit   → `release()` frees the reservation and books the net P&L.
  *
- * When the pool cannot fund an entry the trade is NOT stopped — a running paper
- * session must keep collecting data, and a paper strategy silently going quiet
- * for the rest of the day is worse than an overdrawn play-money balance. Instead
- * `check()` reports the shortfall, `noteShortfall()` records it, and the
- * Real-Time dashboard raises an alert banner. The pool simply goes negative,
- * which is the honest picture: this is how far past your money the book went.
+ * When the pool cannot fund an entry the entry is REFUSED, exactly as a broker
+ * would reject an order the account cannot pay for. `gate()` is the one call
+ * every paper route makes before opening a position: it runs `check()`, records
+ * the shortfall for the Real-Time alert banner and logs an error line; the route
+ * then skip-logs the signal and returns without a position. The pool can still
+ * read negative — realized losses shrink it — but it can no longer be pushed
+ * further negative by new entries.
  *
  * Design notes
  * ────────────
@@ -38,8 +39,9 @@
  * • Blocked capital is in-memory only. Open paper positions are in-memory too,
  *   so a restart clears both together. A lost block can only ever make the pool
  *   look richer, never poorer — it can never manufacture a phantom rejection.
- * • Purely observational. It can never place, size, alter OR stop an order, and
- *   every failure path fails OPEN.
+ * • It can refuse an entry but never place, size or alter one. Every INTERNAL
+ *   failure path (disk hiccup, unknown strategy, unknown cost) fails OPEN — an
+ *   accounting error must not halt the book; only a genuine shortfall does.
  * • Models the OPTION PREMIUM outlay (`qty × premium`), which is what these
  *   strategies actually spend. Under `INSTRUMENT=NIFTY_FUTURES` the routes that
  *   know their fill price reserve SPAN+exposure MARGIN instead, via
@@ -212,14 +214,14 @@ function _inReplay() {
 
 /**
  * Can `strategyKey` afford a `cost` rupee position right now?
- * ADVISORY ONLY — callers must not stop the trade on `ok:false`; they log it,
- * call `noteShortfall()` so the dashboard can alert, and carry on.
+ * Pure report — no logging, no side effects. Routes go through `gate()`.
  * Never throws — any internal error fails OPEN so a disk hiccup can never halt
  * the book.
  *
  * @param {string} strategyKey  one of STRATEGIES
  * @param {number} cost         rupees needed (qty × entry premium)
- * @param {{sim?:boolean}} [opts] sim=true (replay / scenario tester) → no gate
+ * @param {{sim?:boolean, qty?:number}} [opts] sim=true (replay / scenario
+ *        tester) → no gate; qty is only used to word the reason
  * @returns {{ok:boolean, disabled:boolean, cost:number, available:number, broker:string|null, reason:string}}
  */
 function check(strategyKey, cost, opts = {}) {
@@ -234,18 +236,61 @@ function check(strategyKey, cost, opts = {}) {
 
     const pool = getPool(broker);
     const ok = need <= pool.available;
+    const forQty = Number.isFinite(Number(opts.qty)) && Number(opts.qty) > 0 ? ` for ${Number(opts.qty)} qty` : "";
     return {
       ok, disabled: false, broker,
       cost: parseFloat(need.toFixed(2)),
       available: pool.available,
       reason: ok
-        ? `capital ok — ₹${need.toFixed(0)} of ₹${pool.available.toFixed(0)} free in the ${broker.toUpperCase()} pool`
-        : `insufficient ${broker.toUpperCase()} capital — needs ₹${need.toFixed(0)}, only ₹${pool.available.toFixed(0)} free `
+        ? `capital ok — ₹${need.toFixed(0)}${forQty} of ₹${pool.available.toFixed(0)} free in the ${broker.toUpperCase()} pool`
+        : `insufficient ${broker.toUpperCase()} capital — needs ₹${need.toFixed(0)}${forQty}, only ₹${pool.available.toFixed(0)} free `
           + `(₹${pool.base.toFixed(0)} invested, P&L ₹${pool.realized.toFixed(0)}, ₹${pool.blocked.toFixed(0)} in open positions)`,
     };
   } catch (err) {
     return off(`capital gate error (fail-open): ${err.message}`);
   }
+}
+
+// ── Entry gate ───────────────────────────────────────────────────────────────
+
+// A strategy whose signal keeps re-arming (a sustained trigger, an intra-candle
+// retry) would otherwise print the same refusal every few seconds for the rest
+// of the day. Repeats inside this window are still REFUSED — only the error
+// line, the skip-log row and the dashboard alert are suppressed (`muted:true`).
+const GATE_REPEAT_MUTE_MS = 60 * 1000;
+const _lastRefusal = new Map(); // strategyKey -> ms of the last logged refusal
+
+/**
+ * The hard capital gate every paper route runs before opening a position.
+ * Returns `check()`'s report; on `ok:false` the entry MUST NOT be taken. The
+ * gate itself logs the error line and records the dashboard alert, so a route
+ * only has to skip-log the signal with its own tag and return. `muted` tells the
+ * route the same strategy was refused within the last minute, so it can keep
+ * its own log quiet too.
+ *
+ * @param {string} strategyKey  one of STRATEGIES
+ * @param {number} cost         rupees needed (qty × entry premium, or margin)
+ * @param {{side?:string, symbol?:string, qty?:number}} [ctx]  wording + alert
+ * @param {{sim?:boolean}} [opts]  sim=true (replay / scenario tester) → no gate
+ * @returns {{ok:boolean, muted:boolean, disabled:boolean, cost:number, available:number, broker:string|null, reason:string}}
+ */
+function gate(strategyKey, cost, ctx = {}, opts = {}) {
+  const cap = check(strategyKey, cost, { sim: opts.sim, qty: ctx.qty });
+  if (cap.ok) return { ...cap, muted: false };
+  let muted = false;
+  try {
+    const now = Date.now();
+    const last = _lastRefusal.get(strategyKey) || 0;
+    muted = (now - last) < GATE_REPEAT_MUTE_MS;
+    if (!muted) {
+      _lastRefusal.set(strategyKey, now);
+      noteShortfall(strategyKey, cap, ctx);
+      const def = STRATEGIES[strategyKey];
+      const what = [ctx.side, ctx.symbol].filter(Boolean).join(" ");
+      console.error(`❌ [CAPITAL] ${def ? def.label : strategyKey} entry REFUSED${what ? ` (${what})` : ""} — ${cap.reason}`);
+    }
+  } catch (_) { /* logging must never change the verdict */ }
+  return { ...cap, muted };
 }
 
 // ── Shortfall alerts (surfaced by the Real-Time dashboard) ───────────────────
@@ -255,8 +300,8 @@ const _MAX_ALERTS = 20;
 let _alerts = [];
 
 /**
- * Record that `strategyKey` entered a trade its broker pool could not fund.
- * Purely a notification — nothing in the trading path reads this back.
+ * Record that `strategyKey` was refused an entry its broker pool could not
+ * fund. Purely a notification — nothing in the trading path reads this back.
  */
 function noteShortfall(strategyKey, cap, ctx = {}) {
   try {
@@ -370,8 +415,9 @@ function clear(strategyKey) {
 module.exports = {
   isEnabled,          // settings/UI: is the pool being tracked at all
   estimatedPremium,   // engines that decide before their option quote arrives
-  check,              // advisory affordability report (never stops a trade)
-  noteShortfall,      // record an entry the pool could not fund
+  check,              // pure affordability report (no side effects)
+  gate,               // the hard entry gate — ok:false means DO NOT enter
+  noteShortfall,      // record an entry the pool refused
   getAlerts,          // dashboard banner feed
   snapshot,           // both brokers, for /realtime/capital
   block,              // reserve on entry

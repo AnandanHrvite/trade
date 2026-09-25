@@ -348,14 +348,18 @@ function stopOptionPolling() {
 function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtEntry, slSource, entryMeta = {}) {
   if (state.position) return;
 
-  // ── Capital check — advisory only: an overdrawn pool raises a dashboard alert,
-  //    it never stops the trade. The real premium is stamped by the first option
-  //    poll (~1s from now), so check the assumed premium and true the block up there.
+  // ── Capital gate — HARD: the pool must fund qty × premium or the entry is
+  //    refused (error line + skip log + dashboard alert, see capitalPool.gate).
+  //    The real premium is stamped by the first option poll (~1s from now), so
+  //    the gate uses the assumed premium and the block is trued up there.
   const _estCost = qty * capitalPool.estimatedPremium();
-  const _cap = capitalPool.check("bb_rsi", _estCost, { sim: state._simMode });
+  const _cap = capitalPool.gate("bb_rsi", _estCost, { side, symbol, qty }, { sim: state._simMode });
   if (!_cap.ok) {
-    log(`⚠️ [BB_RSI-PAPER] ${_cap.reason} — entry taken anyway, pool now overdrawn`);
-    capitalPool.noteShortfall("bb_rsi", _cap, { side, symbol });
+    if (!_cap.muted) {
+      log(`❌ [BB_RSI-PAPER] Entry REFUSED — ${_cap.reason}`);
+      skipLogger.appendSkipLog("bb_rsi", { gate: "capital", reason: _cap.reason, spot: price, side, symbol, qty, cost: _cap.cost, available: _cap.available });
+    }
+    return;
   }
 
   const optDetails = parseOptionDetails(symbol);
@@ -1404,6 +1408,10 @@ router.post("/manualEntry", async (req, res) => {
     const qty = getLotQty();
     log(`🖐️ [BB_RSI-PAPER] MANUAL ENTRY ${side} @ spot ₹${spot} | SL: ₹${sl} (${slSrcLbl})`);
     simulateBuy(symbol, side, qty, spot, `Manual ${side} entry`, sl, null, spot, slSrcLbl);
+    if (!state.position) {
+      // simulateBuy refused (capital gate or a guard) — it has already logged why.
+      return res.status(409).json({ success: false, error: "Entry refused — see the paper log for the reason" });
+    }
     return res.json({ success: true, spot, side, sl, symbol });
   } catch (e) {
     log(`❌ [BB_RSI-PAPER] Manual entry failed: ${e.message}`);
