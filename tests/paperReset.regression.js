@@ -63,6 +63,11 @@ function buildApp() {
   return { app, calls };
 }
 
+const appSrc = decomment(read("app.js"));
+const paperMounts = [...appSrc.matchAll(/app\.use\(\s*"(\/[^"]+-paper)"\s*,\s*require\("\.\/routes\/([A-Za-z0-9_]+)"\)/g)]
+  .map(m => ({ mount: m[1], file: m[2] }));
+const paperFiles = fs.readdirSync(path.join(SRC, "routes")).filter(f => /Paper\.js$/.test(f)).map(f => f.replace(/\.js$/, ""));
+
 section("GROUP 1 — discovery walks the live router stack, not a list");
 
 check("finds every /<x>-paper mount that owns a GET /reset, in mount order", () => {
@@ -85,6 +90,14 @@ check("a strategy mounted AFTER the first discovery is picked up on the next cal
   const after = paperReset.discoverTargets(app).map(t => t.mount);
   assert.strictEqual(after.length, before + 1);
   assert(after.includes("/new-strategy-paper"));
+});
+
+check("modeOfMount maps every real mount to the file-name mode key tradeLogger uses", () => {
+  const tl = decomment(read("utils/tradeLogger.js"));
+  const known = new Set([...tl.matchAll(/^\s*([a-z0-9_]+):\s*"\1_paper_trades_"/gm)].map(m => m[1]));
+  assert(known.size >= 14, `only ${known.size} modes parsed from tradeLogger DAILY_PREFIX_BY_MODE`);
+  const unmapped = paperMounts.map(m => m.mount).filter(m => !known.has(paperReset.modeOfMount(m)));
+  assert.deepStrictEqual(unmapped, [], `mount → mode key not in tradeLogger: ${unmapped.join(", ")}`);
 });
 
 check("label is derived from the mount, so nothing needs naming by hand", () => {
@@ -139,11 +152,6 @@ check("a handler that never answers resolves as failed after the timeout, not a 
 
 section("GROUP 3 — every real paper route keeps the discoverable shape");
 
-const appSrc = decomment(read("app.js"));
-const paperMounts = [...appSrc.matchAll(/app\.use\(\s*"(\/[^"]+-paper)"\s*,\s*require\("\.\/routes\/([A-Za-z0-9_]+)"\)/g)]
-  .map(m => ({ mount: m[1], file: m[2] }));
-const paperFiles = fs.readdirSync(path.join(SRC, "routes")).filter(f => /Paper\.js$/.test(f)).map(f => f.replace(/\.js$/, ""));
-
 check("app.js mounts at least the fourteen paper engines that existed when this suite was written", () => {
   assert(paperMounts.length >= 14, `only ${paperMounts.length} /<x>-paper mounts found in app.js`);
 });
@@ -181,6 +189,9 @@ check("settings.js /reset-paper and tradeLogs.js carry no hand-written strategy 
   assert(!/-paper\/reset'/.test(tradeLogs), "tradeLogs.js fans out to hard-coded /<x>-paper/reset URLs again");
   assert(/paperReset\.discoverTargets\(req\.app\)/.test(settings), "settings.js must discover targets from req.app");
   assert(/discoverTargets\(req\.app\)\.length === 0/.test(settings), "settings.js /reset-paper must refuse when discovery finds nothing");
+  assert(/req\.body\.skip === false/.test(settings), "settings.js /reset-paper must honour body.skip === false (Logs dialog with Skip unchecked)");
+  assert(/excludeModes:\s*skippedModes/.test(settings), "settings.js /reset-paper must leave a running (skipped) engine's files alone");
+  assert(/JSON\.stringify\(\{ skip: cats\.skip \}\)/.test(tradeLogs), "tradeLogs.js must pass the Skip checkbox to /settings/reset-paper");
   assert(/paperReset\.resetAllPaperEngines\(req\.app\)/.test(settings), "settings.js must reset via resetAllPaperEngines(req.app)");
   assert(/secretFetch\('\/settings\/reset-paper'/.test(tradeLogs), "tradeLogs.js must delegate the full paper wipe to /settings/reset-paper");
 });

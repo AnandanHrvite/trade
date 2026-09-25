@@ -984,7 +984,7 @@ ${buildSidebar('tradeLogs', liveActive)}
     var fullPaper = cats.paper && !ranged;
     if (fullPaper) {
       try {
-        var r = await secretFetch('/settings/reset-paper', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}', timeoutMs: 60000 });
+        var r = await secretFetch('/settings/reset-paper', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ skip: cats.skip }), timeoutMs: 60000 });
         if (!r) { // user dismissed the API-secret prompt → abort the whole run
           if (btn) { btn.textContent = origText; btn.disabled = false; }
           showToast('Reset cancelled', 'info');
@@ -997,6 +997,7 @@ ${buildSidebar('tradeLogs', liveActive)}
           if (d.skipped && d.skipped.length) lines.push('⏸ Skipped (running — stop first): ' + d.skipped.join(', '));
           if (d.failed && d.failed.length)   lines.push('❌ Failed: ' + d.failed.join(', '));
           if (d.files) lines.push('✅ Paper daily files: ' + d.files.paperFiles + ' removed');
+          if (d.files && cats.skip) lines.push('✅ Skip daily files: ' + d.files.skipFiles + ' removed');
           if (d.files && d.files.errors && d.files.errors.length) lines.push('❌ Errors: ' + d.files.errors.join('; '));
         } else {
           lines.push('❌ Paper reset failed: ' + ((d && d.error) || 'unknown error'));
@@ -1007,9 +1008,9 @@ ${buildSidebar('tradeLogs', liveActive)}
     }
 
     // 2) File-based deletions (ranged paper daily JSONL, skip, ticks, cache, logs).
-    //    Paper files were already handled above on a full wipe.
-    try {
-      var body = { paper: cats.paper && !fullPaper, skip: cats.skip, cache: cats.cache, logs: cats.logs, ticks: cats.ticks, from: from, to: to };
+    //    Paper + skip files were already handled above on a full wipe.
+    var body = { paper: cats.paper && !fullPaper, skip: cats.skip && !fullPaper, cache: cats.cache, logs: cats.logs, ticks: cats.ticks, from: from, to: to };
+    if (body.paper || body.skip || body.cache || body.logs || body.ticks) try {
       var res2 = await secretFetch('/settings/reset-data', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
       });
@@ -1023,7 +1024,7 @@ ${buildSidebar('tradeLogs', liveActive)}
       if (data2 && data2.results) {
         var rr = data2.results;
         if (cats.paper && !fullPaper) lines.push('✅ Paper daily files: ' + rr.paperFiles + ' removed');
-        if (cats.skip)  lines.push('✅ Skip daily files: ' + rr.skipFiles + ' removed');
+        if (cats.skip && !fullPaper) lines.push('✅ Skip daily files: ' + rr.skipFiles + ' removed');
         if (cats.ticks) lines.push('✅ Tick days: ' + rr.ticksDays + ' removed');
         if (cats.cache) lines.push('✅ Cache dirs cleared: ' + rr.cacheDirs);
         if (cats.logs)  lines.push('✅ Logs cleared');

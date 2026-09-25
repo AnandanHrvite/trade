@@ -69,8 +69,8 @@ function discoverTargets(app) {
 /**
  * Run one router's GET /reset in-process. Resolves (never rejects) with
  * { mount, label, ok, skipped, status, message }.
- *   ok      — handler answered 2xx JSON / text or redirected (the two
- *             /history-redirect engines answer that way on success)
+ *   ok      — handler answered 2xx JSON / text, or redirected (all 14 answer
+ *             JSON today; a redirect on success is still treated as ok)
  *   skipped — handler refused with 400 (its own "stop the engine first" guard)
  */
 function dispatchReset(target, { timeoutMs = 15000 } = {}) {
@@ -117,21 +117,28 @@ async function resetAllPaperEngines(app) {
   return results;
 }
 
+/** Mount → mode key used in file names: "/trend-pb-paper" → "trend_pb". */
+function modeOfMount(mount) {
+  return String(mount || "").replace(/^\//, "").replace(/-paper$/, "").replace(/-/g, "_");
+}
+
 /**
  * Delete per-day paper files — trade JSONL and/or skip JSONL — for every mode
  * found on disk, optionally limited to an inclusive IST date range. Both
- * categories are swept unless `paper`/`skip` is passed false.
+ * categories are swept unless `paper`/`skip` is passed false. `excludeModes`
+ * keeps a running engine's files intact (a skipped engine must stay untouched).
  * Returns { paperFiles, skipFiles, modes: [...], errors: [...] }.
  */
-function deletePaperFiles({ from = "", to = "", paper = true, skip = true } = {}) {
+function deletePaperFiles({ from = "", to = "", paper = true, skip = true, excludeModes = [] } = {}) {
   const inRange = (d) => (!from || d >= from) && (!to || d <= to);
+  const excluded = new Set(excludeModes);
   const out = { paperFiles: 0, skipFiles: 0, modes: new Set(), errors: [] };
   const sweep = (dir, re, counter) => {
     let names;
     try { names = fs.readdirSync(dir); } catch (_) { return; }
     for (const n of names) {
       const m = re.exec(n);
-      if (!m || !inRange(m[2])) continue;
+      if (!m || !inRange(m[2]) || excluded.has(m[1])) continue;
       try { fs.unlinkSync(path.join(dir, n)); out[counter] += 1; out.modes.add(m[1]); }
       catch (e) { if (e.code !== "ENOENT") out.errors.push(`${n}: ${e.message}`); }
     }
@@ -142,4 +149,4 @@ function deletePaperFiles({ from = "", to = "", paper = true, skip = true } = {}
   return out;
 }
 
-module.exports = { discoverTargets, dispatchReset, resetAllPaperEngines, deletePaperFiles };
+module.exports = { discoverTargets, dispatchReset, resetAllPaperEngines, deletePaperFiles, modeOfMount };

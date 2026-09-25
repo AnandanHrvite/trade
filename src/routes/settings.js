@@ -1876,7 +1876,8 @@ router.get("/reset-paper/targets", (req, res) => {
 // ── POST /settings/reset-paper — wipe ALL paper traded data, keep settings ───
 // For every discovered paper engine: run its own /reset (capital restored from
 // .env, sessions + in-memory state cleared; a running engine is skipped by its
-// own guard). Then delete every per-day paper trade + skip JSONL on disk.
+// own guard and its files are left alone). Then delete every per-day paper
+// trade JSONL on disk, plus skip JSONL unless body.skip === false.
 // .env is never written. Auto-gated by the app.js x-api-secret middleware.
 router.post("/reset-paper", async (req, res) => {
   // Zero targets means router-stack discovery broke (e.g. an Express upgrade
@@ -1889,7 +1890,13 @@ router.post("/reset-paper", async (req, res) => {
   let engines = [];
   try { engines = await paperReset.resetAllPaperEngines(req.app); }
   catch (e) { return res.status(500).json({ success: false, error: e.message }); }
-  const files = paperReset.deletePaperFiles();
+  // A running engine refused its own reset — leave its day files alone too,
+  // so "skipped" means untouched, not "history gone but capital kept".
+  const skippedModes = engines.filter(e => !e.ok).map(e => paperReset.modeOfMount(e.mount));
+  // Body { skip: false } keeps skip history (Logs-page dialog with Skip
+  // unchecked); absent → wipe it too (Settings button = everything paper).
+  const wipeSkips = !(req.body && req.body.skip === false);
+  const files = paperReset.deletePaperFiles({ skip: wipeSkips, excludeModes: skippedModes });
   const done    = engines.filter(e => e.ok).map(e => e.label);
   const skipped = engines.filter(e => e.skipped).map(e => e.label);
   const failed  = engines.filter(e => !e.ok && !e.skipped).map(e => `${e.label} (${e.message || e.status})`);
