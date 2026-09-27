@@ -17,7 +17,7 @@ suggestion.
 
 **Standing build rules (every time):**
 - **Do NOT change any existing strategy.** Edits to shared files must only ADD lines —
-  prove it at the end (Phase 4, step 11).
+  prove it at the end (Phase 4, step 12).
 - **Keep it light — it runs on an EC2 t3.micro.** Compute once per candle close, small
   capped candle buffers, small chart payloads, no heavy loops per tick.
 - Use the shared profit-lock / breakeven helpers in `src/utils/tradeGuards.js`
