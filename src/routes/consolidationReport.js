@@ -1,6 +1,7 @@
 /**
  * Consolidation Report — a printable, DAILY consolidated report of every recorded
- * trade (paper + live), rendered as one table with a row per trading day.
+ * trade (paper + live), rendered as one table per market (NIFTY, BANK NIFTY,
+ * COMMODITY) with a row per trading day.
  *
  * Mirrors the Telegram "CONSOLIDATED DAY REPORT" layout (per-strategy trades + P&L,
  * then Total / Wins / Losses / Win rate / Net P&L) but for every day at once, in a
@@ -168,6 +169,25 @@ const PAPER_HISTORY_PATH = {
   EARLYBIRD:         "/early-bird-paper/history",
 };
 
+// COMMODITY (MCX) paper pages keep their own book under ~/trading-data/cmx
+// ({ days: { YYYY-MM-DD: { trades } } }). Shown in their own COMMODITY table,
+// only while that page's toggle is on.
+const CMX_SOURCES = [];
+for (const [c, cl] of [["CRUDE", "Crude"], ["GOLD", "Gold"], ["SILVER", "Silver"]]) {
+  for (const st of ["EMA_RSI_ST", "EMA_RSI_ST_V2"]) {
+    const id = `cmx_${c.toLowerCase()}_${st.toLowerCase()}`;
+    CMX_SOURCES.push({ mode: `CMX_${c}_${st}`, label: `${cl} · ${st}`, file: `cmx/${id}_paper_trades.json`,
+                       modeKey: `CMX_${c}_${st}_MODE_ENABLED`, hist: `/${id}-paper/status` });
+  }
+}
+
+// Which table a strategy's column sits in.
+function groupOf(mode) {
+  if (mode.startsWith("CMX_")) return "COMMODITY";
+  if (mode.startsWith("BN_"))  return "BANK NIFTY";
+  return "NIFTY";
+}
+
 function safeRead(p) {
   try {
     if (!fs.existsSync(p)) return {};
@@ -194,13 +214,24 @@ function loadBook(sources, book) {
   return out;
 }
 
+function loadCmxBook() {
+  const out = [];
+  for (const src of CMX_SOURCES) {
+    const data = safeRead(path.join(DATA_DIR, src.file));
+    for (const [date, d] of Object.entries(data.days || {})) {
+      for (const t of (d.trades || [])) out.push({ book: "paper", mode: src.mode, date, pnl: Number(t.pnl) || 0 });
+    }
+  }
+  return out;
+}
+
 // Cache the flattened trade list — same approach as consolidation.js / edgeAnalytics.js.
 // Invalidate by a cheap mtime+size signature so a new trade is picked up immediately.
 let _cache = null;
 let _sig   = null;
 function _sourcesSig() {
   let sig = "";
-  for (const src of [...PAPER_SOURCES, ...LIVE_SOURCES]) {
+  for (const src of [...PAPER_SOURCES, ...LIVE_SOURCES, ...CMX_SOURCES]) {
     try { const st = fs.statSync(path.join(DATA_DIR, src.file)); sig += `${src.mode}:${st.mtimeMs}:${st.size}|`; }
     catch (_) { sig += `${src.mode}:0|`; }
   }
@@ -209,7 +240,7 @@ function _sourcesSig() {
 function loadAllTrades() {
   const sig = _sourcesSig();
   if (_cache && sig === _sig) return _cache;
-  const trades = loadBook(PAPER_SOURCES, "paper").concat(loadBook(LIVE_SOURCES, "live"));
+  const trades = loadBook(PAPER_SOURCES, "paper").concat(loadBook(LIVE_SOURCES, "live"), loadCmxBook());
   trades.sort((a, b) => (a.date || "").localeCompare(b.date || "")); // oldest → newest
   _cache = trades;
   _sig   = sig;
@@ -221,7 +252,9 @@ router.get("/", async (req, res) => {
   // hidden from the sidebar, so its columns (and its trades in the day totals)
   // must not appear here either. Filtered per-request, never cached: Settings
   // saves mutate process.env while the process is running.
-  const enabled     = enabledStrategies();
+  const cmxOn       = CMX_SOURCES.filter(c => (process.env[c.modeKey] || "false").toLowerCase() === "true");
+  const enabled     = [...enabledStrategies().map(s => ({ mode: s.mode, label: s.mode })),
+                       ...cmxOn.map(c => ({ mode: c.mode, label: c.label }))];
   const enabledSet  = new Set(enabled.map(s => s.mode));
   const trades      = loadAllTrades().filter(t => enabledSet.has(t.mode));
   const theme = resolveTheme();
@@ -401,7 +434,7 @@ ${multiSelectCSS()}
         <button data-book="all">Both</button>
       </div>
       <label>Strategy</label>
-      ${multiSelectHTML('fMode', enabled.map(s => ({ value: s.mode, label: s.mode })), 'All strategies')}
+      ${multiSelectHTML('fMode', enabled.map(s => ({ value: s.mode, label: s.label })), 'All strategies')}
       <label>Range</label>
       <select id="fRange">${dateRangeOptionsHTML('tm')}</select>
       <span id="customWrap" style="display:none;">
@@ -423,8 +456,10 @@ const ALL = ${JSON.stringify(trades)};
 const VIX_BY_DATE = ${JSON.stringify(vixByDate)};   // { 'YYYY-MM-DD': vixClose } from Fyers
 const VIX_NOTE    = ${JSON.stringify(vixNote)};     // why the VIX column is empty, if it is
 const MODES = ${JSON.stringify(enabled.map(s => s.mode))};
-const MODE_LABEL = ${JSON.stringify(Object.fromEntries(enabled.map(s => [s.mode, s.mode])))};
-const HIST_PATH  = ${JSON.stringify(PAPER_HISTORY_PATH)};   // mode → paper history page
+const MODE_LABEL = ${JSON.stringify(Object.fromEntries(enabled.map(s => [s.mode, s.label])))};
+const HIST_PATH  = ${JSON.stringify({ ...PAPER_HISTORY_PATH, ...Object.fromEntries(CMX_SOURCES.map(c => [c.mode, c.hist])) })};   // mode → paper history page
+const GROUP_OF   = ${JSON.stringify(Object.fromEntries(enabled.map(s => [s.mode, groupOf(s.mode)])))};
+const GROUPS     = ['NIFTY', 'BANK NIFTY', 'COMMODITY'];
 
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function inr2(n){ return (n<0?'-':'')+'₹'+Math.abs(n).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}); }
@@ -492,6 +527,66 @@ function byDay(arr){
   return [...m.values()].sort((a,b)=>b.date.localeCompare(a.date)); // newest day first
 }
 
+function dayTable(title, gModes, gArr, showVix){
+  const days = byDay(gArr);
+  const keptArr = gArr.filter(t => !SKIP.has(t.date));
+  let tN=0,tW=0,tL=0,tNet=0,tWP=0,tLP=0; const totByMode={};
+  for(const mo of gModes) totByMode[mo]={n:0,pnl:0,wins:0,losses:0};
+  for(const t of keptArr){
+    tN++; tNet+=t.pnl;
+    if(t.pnl>0){ tW++; tWP+=t.pnl; } else if(t.pnl<0){ tL++; tLP+=t.pnl; }
+    const m=totByMode[t.mode];
+    if(m){ m.n++; m.pnl+=t.pnl; if(t.pnl>0) m.wins++; else if(t.pnl<0) m.losses++; }
+  }
+  const tWR = tN?(tW/tN*100):0;
+
+  let thead='<tr><th class="skip-col" title="Tick a day to leave it out of the totals">Skip</th><th>Date</th>'+(showVix?'<th>VIX</th>':'');
+  for(const mo of gModes) thead+='<th>'+esc(MODE_LABEL[mo]||mo)+'</th>';
+  thead+='<th>Trades</th><th>Net P&amp;L</th></tr>';
+
+  let body='';
+  for(const g of days){
+    const dayVix = (VIX_BY_DATE[g.date]!=null) ? VIX_BY_DATE[g.date] : null;
+    const off = SKIP.has(g.date);
+    let row='<td class="skip-col"><label><input type="checkbox" data-skip="'+esc(g.date)+'"'+(off?' checked':'')
+      +' aria-label="Skip '+esc(prettyDate(g.date))+'"/></label></td>'
+      +'<td>'+esc(prettyDate(g.date))+'</td>'+(showVix?'<td>'+fmtVix(dayVix)+'</td>':'');
+    for(const mo of gModes){
+      const c=g.modes[mo];
+      if(!c || !c.n){ row+='<td class="muted">—</td>'; continue; }
+      const cell='<span style="color:'+pc(c.pnl)+'">'+inr2(c.pnl)+'</span><br><span class="cnt">'+c.n+' trade'+(c.n>1?'s':'')+'</span>';
+      // Only a cell that actually holds paper trades gets the deep link — a Live-only
+      // cell would otherwise open a paper page showing different trades.
+      const hp=HIST_PATH[mo];
+      row+= (hp && c.paperN)
+        ? '<td><a class="pnl-link" href="'+hp+'?date='+encodeURIComponent(g.date)+'" target="_blank" rel="noopener" title="Open '+esc(MODE_LABEL[mo]||mo)+' paper history for '+esc(prettyDate(g.date))+'">'+cell+'</a></td>'
+        : '<td>'+cell+'</td>';
+    }
+    const wr=g.n?(g.wins/g.n*100):0;
+    row+='<td>'+g.n+' - <span style="color:#10b981">'+g.wins+'W</span> <span style="color:#ef4444">'+g.losses+'L</span> '+wr.toFixed(0)+'%</td>'
+      +'<td style="font-weight:700"><span style="color:'+pc(g.net)+'">'+inr2(g.net)+'</span></td>';
+    body+='<tr'+(off?' class="skipped"':'')+'>'+row+'</tr>';
+  }
+
+  // totals footer — VIX averaged across this table's kept days that have a reading
+  const vixVals = days.filter(g=>!SKIP.has(g.date)).map(g => VIX_BY_DATE[g.date]).filter(v => v != null);
+  const avgVix  = vixVals.length ? vixVals.reduce((s,v)=>s+v,0)/vixVals.length : null;
+  let foot='<tr><td class="skip-col"></td><td><b>TOTAL</b></td>'+(showVix?'<td>'+fmtVix(avgVix)+'</td>':'');
+  for(const mo of gModes){
+    const c=totByMode[mo];
+    if(!c || !c.n){ foot+='<td class="muted">—</td>'; continue; }
+    foot+='<td><span style="color:'+pc(c.pnl)+'">'+inr2(c.pnl)+'</span><br><span class="cnt">'+c.n+' · '
+      +'<span style="color:#10b981">'+c.wins+'W</span> / <span style="color:#ef4444">'+c.losses+'L</span></span></td>';
+  }
+  // The colour lives on an inner span: the light-theme .cnt rule is !important,
+  // so a colour set on .cnt itself would be greyed out in light mode.
+  foot+='<td><b>'+tN+'</b> - <span style="color:#10b981">'+tW+'W</span> <span style="color:#ef4444">'+tL+'L</span> '+tWR.toFixed(0)+'%'
+    +'<br><span class="cnt"><span style="color:#10b981">'+inr(tWP)+'</span> / <span style="color:#ef4444">'+inr(tLP)+'</span></span></td>'
+    +'<td style="font-weight:700"><span style="color:'+pc(tNet)+'">'+inr2(tNet)+'</span></td></tr>';
+
+  return '<div class="panel"><h3>'+esc(title)+' — Daily Breakdown</h3><div class="tbl-scroll"><table class="tbl"><thead>'+thead+'</thead><tbody>'+body+'</tbody><tfoot>'+foot+'</tfoot></table></div></div>';
+}
+
 function render(){
   const f=currentFilter();
   const arr=applyFilter(f);
@@ -528,15 +623,11 @@ function render(){
   for(const t of arr) traded[t.mode] = true;
   const activeModes = MODES.filter(m => f.modes.indexOf(m)>=0 && traded[m]);
 
-  // overall totals
-  let tN=0,tW=0,tL=0,tNet=0,tWP=0,tLP=0; const totByMode={};
-  for(const mo of activeModes) totByMode[mo]={n:0,pnl:0,wins:0,losses:0,winPnl:0,lossPnl:0};
+  // overall totals — every market together; each table below has its own TOTAL
+  let tN=0,tW=0,tL=0,tNet=0;
   for(const t of keptArr){
     tN++; tNet+=t.pnl;
-    if(t.pnl>0){ tW++; tWP+=t.pnl; } else if(t.pnl<0){ tL++; tLP+=t.pnl; }
-    const m=totByMode[t.mode];
-    if(m){ m.n++; m.pnl+=t.pnl;
-      if(t.pnl>0){ m.wins++; m.winPnl+=t.pnl; } else if(t.pnl<0){ m.losses++; m.lossPnl+=t.pnl; } }
+    if(t.pnl>0) tW++; else if(t.pnl<0) tL++;
   }
   const tWR = tN?(tW/tN*100):0;
 
@@ -562,57 +653,16 @@ function render(){
   for(const c of cards) h+='<div class="sc" style="--accent:'+c.a+'"><div class="sc-label">'+c.l+'</div><div class="sc-val" style="color:'+c.a+'">'+c.v+'</div><div class="sc-sub">'+c.sub+'</div></div>';
   h+='</div>';
 
-  // the daily table
-  let thead='<tr><th class="skip-col" title="Tick a day to leave it out of the totals">Skip</th><th>Date</th><th>VIX</th>';
-  for(const mo of activeModes) thead+='<th>'+esc(MODE_LABEL[mo])+'</th>';
-  thead+='<th>Trades</th><th>Net P&amp;L</th></tr>';
-
-  let body='';
-  for(const g of days){
-    const dayVix = (VIX_BY_DATE[g.date]!=null) ? VIX_BY_DATE[g.date] : null;
-    const off = SKIP.has(g.date);
-    let row='<td class="skip-col"><label><input type="checkbox" data-skip="'+esc(g.date)+'"'+(off?' checked':'')
-      +' aria-label="Skip '+esc(prettyDate(g.date))+'"/></label></td>'
-      +'<td>'+esc(prettyDate(g.date))+'</td><td>'+fmtVix(dayVix)+'</td>';
-    for(const mo of activeModes){
-      const c=g.modes[mo];
-      if(!c || !c.n){ row+='<td class="muted">—</td>'; continue; }
-      const cell='<span style="color:'+pc(c.pnl)+'">'+inr2(c.pnl)+'</span><br><span class="cnt">'+c.n+' trade'+(c.n>1?'s':'')+'</span>';
-      // Only a cell that actually holds paper trades gets the deep link — a Live-only
-      // cell would otherwise open a paper page showing different trades.
-      const hp=HIST_PATH[mo];
-      row+= (hp && c.paperN)
-        ? '<td><a class="pnl-link" href="'+hp+'?date='+encodeURIComponent(g.date)+'" target="_blank" rel="noopener" title="Open '+esc(MODE_LABEL[mo]||mo)+' paper history for '+esc(prettyDate(g.date))+'">'+cell+'</a></td>'
-        : '<td>'+cell+'</td>';
-    }
-    const wr=g.n?(g.wins/g.n*100):0;
-    // Trades column carries the whole W/L/Win% story; the P&L colour alone says
-    // profit-or-loss, so the separate Result column is redundant.
-    row+='<td>'+g.n+' - <span style="color:#10b981">'+g.wins+'W</span> <span style="color:#ef4444">'+g.losses+'L</span> '+wr.toFixed(0)+'%</td>'
-      +'<td style="font-weight:700"><span style="color:'+pc(g.net)+'">'+inr2(g.net)+'</span></td>';
-    body+='<tr'+(off?' class="skipped"':'')+'>'+row+'</tr>';
+  // One Daily Breakdown table per market — NIFTY, BANK NIFTY, COMMODITY — each
+  // with its own day rows and TOTAL. The cards above stay the all-market total.
+  // VIX is an NSE number, so the COMMODITY table has no VIX column.
+  for(const G of GROUPS){
+    const gModes = activeModes.filter(m => GROUP_OF[m]===G);
+    if(!gModes.length) continue;
+    h += dayTable(G, gModes, arr.filter(t => GROUP_OF[t.mode]===G), G!=='COMMODITY');
   }
-
-  // totals footer — VIX averaged across the shown days that have a Fyers reading
-  const avgVix  = vixVals.length ? vixVals.reduce((s,v)=>s+v,0)/vixVals.length : null;
-  let foot='<tr><td class="skip-col"></td><td><b>TOTAL</b></td><td>'+fmtVix(avgVix)+'</td>';
-  for(const mo of activeModes){
-    const c=totByMode[mo];
-    if(!c || !c.n){ foot+='<td class="muted">—</td>'; continue; }
-    // Per-strategy totals need the same W/L split the overall TOTAL shows — a bare
-    // trade count hides which strategy actually won its trades.
-    foot+='<td><span style="color:'+pc(c.pnl)+'">'+inr2(c.pnl)+'</span><br><span class="cnt">'+c.n+' · '
-      +'<span style="color:#10b981">'+c.wins+'W</span> / <span style="color:#ef4444">'+c.losses+'L</span></span></td>';
-  }
-  // The colour lives on an inner span: the light-theme .cnt rule is !important,
-  // so a colour set on .cnt itself would be greyed out in light mode.
-  foot+='<td><b>'+tN+'</b> - <span style="color:#10b981">'+tW+'W</span> <span style="color:#ef4444">'+tL+'L</span> '+tWR.toFixed(0)+'%'
-    +'<br><span class="cnt"><span style="color:#10b981">'+inr(tWP)+'</span> / <span style="color:#ef4444">'+inr(tLP)+'</span></span></td>'
-    +'<td style="font-weight:700"><span style="color:'+pc(tNet)+'">'+inr2(tNet)+'</span></td></tr>';
-
-  h+='<div class="panel"><h3>Daily Breakdown</h3><div class="tbl-scroll"><table class="tbl"><thead>'+thead+'</thead><tbody>'+body+'</tbody><tfoot>'+foot+'</tfoot></table></div>'
-    +'<div class="skip-note">Tick <b>Skip</b> to leave a day out of the cards and the TOTAL row — the trade files are not touched, and the choice stays in this browser.'
-    +(nSkipped?'<button type="button" id="clearSkip">Clear '+nSkipped+' skipped</button>':'')+'</div></div>';
+  h+='<div class="skip-note">Tick <b>Skip</b> to leave a day out of the cards and the TOTAL rows — the trade files are not touched, and the choice stays in this browser.'
+    +(nSkipped?'<button type="button" id="clearSkip">Clear '+nSkipped+' skipped</button>':'')+'</div>';
   C.innerHTML=h;
 
   // Re-bound on every render because render() replaces the whole table.
