@@ -169,7 +169,7 @@ function _freshState() {
     _entryInFlight: false,
     _lastEntryAttemptMs: null,
     _pendingEntry:  null,
-    _skipLoggedToday: false,
+    _incompleteLogged: false,
   };
 }
 
@@ -392,7 +392,9 @@ async function _fetchWarmupBars() {
 function _recomputeLevels() {
   try {
     const cfg = strat.getConfig();
-    state.levels = strat.dayLevels(state.candles, { cfg });
+    // Anchored to the real calendar day: before today's first bar, the newest
+    // bar is yesterday's, and must not be read as today's 09:15 candle.
+    state.levels = strat.dayLevels(state.candles, { cfg, day: strat._istDayOf(Math.floor(Date.now() / 1000)) });
     state.setupSide = strat.setupSide(state.levels);
   } catch (e) {
     console.error(`🚨 ${TAG} level recompute error: ${e.message}`);
@@ -693,12 +695,14 @@ function simulateSell(reason, opts) {
   if (state.tradesTaken >= _maxDailyTrades()) _closeDay(`Daily trade budget spent (${state.tradesTaken}/${_maxDailyTrades()})`);
 }
 
-function _closeDay(reason) {
+function _closeDay(reason, opts) {
   if (state.dayClosed) return;
   state.dayClosed = true;
   state.dayClosedReason = reason;
   log(`⏸️ ${TAG} ${reason} — no more entries today`);
-  skipLogger.appendSkipLog(MODE_KEY, { gate: "day_closed", reason, sessionPnl: state.sessionPnl, spot: state.lastTickPrice });
+  if (!(opts && opts.skipLogged)) {
+    skipLogger.appendSkipLog(MODE_KEY, { gate: "day_closed", reason, sessionPnl: state.sessionPnl, spot: state.lastTickPrice });
+  }
 }
 
 // ── Exits ────────────────────────────────────────────────────────────────────
@@ -814,15 +818,22 @@ async function evaluateEntry(opts) {
   state.lastSignal = sig;
 
   if (sig.signal === "NONE" || !sig.side) {
-    // Only log a skip once the day's question is decided, not every waiting bar.
-    if (!sig.warmup && (sig.dayDead || sig.spent) && !state._skipLoggedToday) {
-      state._skipLoggedToday = true;
+    // The day's answer is FINAL once the first break is used/missed, or the
+    // COMPLETE 09:15 candle closed inside yesterday's range — log it once and
+    // close the day. An incomplete 09:15 candle is NOT final (a later history
+    // fetch can still fill it), so it is only noted once and left open.
+    const final = sig.spent || (sig.dayDead && sig.orClose != null);
+    if (!sig.warmup && final) {
       skipLogger.appendSkipLog(MODE_KEY, {
         gate: _skipGate(sig), reason: sig.skipReason || sig.reason, spot: state.lastTickPrice,
         prevHigh: sig.prevHigh, prevLow: sig.prevLow, orHigh: sig.orHigh, orLow: sig.orLow, orClose: sig.orClose,
         setupSide: sig.setupSide, barTime: sig.signalBarTime,
       });
       log(`ℹ️ ${TAG} ${sig.skipReason || sig.reason}`);
+      _closeDay(sig.skipReason || sig.reason, { skipLogged: true });
+    } else if (sig.dayDead && !state._incompleteLogged) {
+      state._incompleteLogged = true;
+      log(`⚠️ ${TAG} ${sig.skipReason || sig.reason} — will re-check on the next candle`);
     }
     return;
   }
@@ -932,7 +943,8 @@ async function preloadHistory() {
       // Already past the analysis candle at start: judge the newest bar once so
       // the status card says what the day is (a missed first break is reported
       // as spent — never filled late).
-      if (state.candles.length) {
+      const lastBar = state.candles[state.candles.length - 1];
+      if (lastBar && strat._istDayOf(lastBar.time) === strat._istDayOf(Math.floor(Date.now() / 1000))) {
         const sig = strat.getSignal(state.candles, { silent: true });
         state.lastSignal = sig;
         if (sig.signal !== "NONE") {
@@ -948,8 +960,10 @@ async function preloadHistory() {
             log(`⚠️ ${TAG} ${why}`);
             _closeDay(why);
           }
-        } else if (sig.spent || sig.dayDead) {
-          log(`ℹ️ ${TAG} ${sig.skipReason}`);
+        } else {
+          // Same path as a live candle close: logs and closes a day whose
+          // answer is already final (setup spent / inside yesterday's range).
+          evaluateEntry().catch(e => console.error(`🚨 ${TAG} entry-eval error: ${e.message}`));
         }
       }
     } else {

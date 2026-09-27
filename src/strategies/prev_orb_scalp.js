@@ -166,10 +166,13 @@ function getConfig() {
 // ── levels ───────────────────────────────────────────────────────────────────
 /**
  * Yesterday's range and today's analysis (opening-range) candle, both taken
- * from the same bar series, for the IST day of the LAST bar.
+ * from the same bar series, for the IST day of the LAST bar — or for
+ * `opts.day` when given. The paper UI passes the real calendar day so that,
+ * before today's first bar exists, it shows yesterday as "yesterday" rather
+ * than treating yesterday as today.
  *
  * @param {Array}  candles ascending closed bars at cfg.resolutionMins
- * @param {object} opts    { cfg }
+ * @param {object} opts    { cfg, day }
  * @returns {{ day, prevDay: {day,date,high,low,bars,lastCloseMin,complete}|null,
  *             or: {time,open,high,low,close,bars,complete}|null }}
  */
@@ -179,8 +182,10 @@ function dayLevels(candles, opts) {
   const out = { day: null, prevDay: null, or: null };
   if (!Array.isArray(candles) || !candles.length) return out;
   const last = candles[candles.length - 1];
-  if (!_okBar(last)) return out;
-  const today = _istDayOf(last.time);
+  let today;
+  if (_num(o.day)) today = o.day;
+  else if (_okBar(last)) today = _istDayOf(last.time);
+  else return out;
   out.day = today;
 
   // ── previous session: the latest IST day before today that has bars ────────

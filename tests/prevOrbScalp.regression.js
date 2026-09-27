@@ -110,6 +110,14 @@ test("dayLevels ignores bars at/after 15:30 for yesterday's range", () => {
   assert.strictEqual(lv.prevDay.low, 22950);
 });
 
+test("pre-open: with an explicit day, yesterday is yesterday and there is no 09:15 candle yet", () => {
+  const lv = strat.dayLevels(yesterday(), { day: strat._istDayOf(ist(TODAY, 9, 0)) });
+  assert.strictEqual(lv.prevDay.date, YDAY);
+  assert.strictEqual(lv.prevDay.high, 23050);
+  assert.strictEqual(lv.or, null);
+  assert.strictEqual(strat.setupSide(lv), null);
+});
+
 test("yesterday = latest earlier day present (skips weekend gap)", () => {
   const older = session("2026-03-20", 25000, 500);
   const lv = strat.dayLevels(older.concat(peDay()));
