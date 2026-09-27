@@ -3423,7 +3423,7 @@ async function startAllCmx(btn){
     if (!r) return;
     var body = await r.json();
     var lines = (body.results || []).map(function(x){ return (x.ok ? '✅ ' : '❌ ') + x.label + ' — ' + x.note; });
-    await showAlert({ icon: body.success ? '🛢' : '⚠️', title: 'Start All (Commodity)', message: lines.join('\n') || 'No commodity page is switched on.' });
+    await showAlert({ icon: body.success ? '🛢' : '⚠️', title: 'Start All (Commodity)', message: lines.join('\\n') || 'No commodity page is switched on.' });
   } catch (e) {
     await showAlert({ icon: '⚠️', title: 'Start All (Commodity)', message: (e && e.message) || 'Request failed' });
   } finally { btn.disabled = false; btn.textContent = orig; }
