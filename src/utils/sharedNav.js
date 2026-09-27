@@ -701,11 +701,10 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   function renderParents() {
     return parentDefs.map(pd => {
       const rendered = sections.filter(sec => sec.parent === pd.key).map(renderSection).filter(Boolean);
-      // In a demo session a parent with no demo-eligible strategy page left is
-      // dropped entirely rather than rendered as an empty accordion.
-      if (isDemoSession && !rendered.length) return '';
-      const children = rendered.join('')
-        || `<div class="sb-parent-empty">No strategies yet</div>`;
+      // A parent with no enabled strategy page (all toggled off in Settings, or
+      // none demo-eligible) is dropped entirely rather than shown empty.
+      if (!rendered.length) return '';
+      const children = rendered.join('');
       const collapsed = parentOpen[pd.key] ? '' : ' collapsed';
       return `<div class="sb-section sb-parent">
         <div class="sb-section-header sb-collapsible sb-parent-header${collapsed}" onclick="toggleNavParent('${pd.id}')" data-parent="${pd.id}">
@@ -1421,7 +1420,6 @@ function sidebarCSS() {
     .sb-parent-items .sb-section + .sb-section{border-top:none;padding-top:0;}
     .sb-parent-items .sb-section-header{font-size:0.5rem;letter-spacing:1.6px;}
     .sb-parent-items .sb-nav-item{padding-left:20px;}
-    .sb-parent-empty{padding:8px 16px 10px 24px;font-size:0.62rem;color:var(--muted-2,#6d85a8);font-style:italic;}
     .sb-nav-item{display:flex;align-items:center;gap:8px;padding:9px 16px;font-size:0.72rem;color:#a8bcd8;cursor:pointer;border-left:2px solid transparent;transition:all 0.12s;text-decoration:none;}
     .sb-nav-item:hover{color:#7aacf0;background:rgba(59,130,246,0.04);}
     .sb-nav-item.active{color:#60a5fa;background:rgba(59,130,246,0.08);border-left-color:#3b82f6;}
