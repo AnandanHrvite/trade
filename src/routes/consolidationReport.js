@@ -177,7 +177,7 @@ for (const [c, cl] of [["CRUDE", "Crude"], ["GOLD", "Gold"], ["SILVER", "Silver"
   for (const st of ["EMA_RSI_ST", "EMA_RSI_ST_V2"]) {
     const id = `cmx_${c.toLowerCase()}_${st.toLowerCase()}`;
     CMX_SOURCES.push({ mode: `CMX_${c}_${st}`, label: `${cl} · ${st}`, file: `cmx/${id}_paper_trades.json`,
-                       modeKey: `CMX_${c}_${st}_MODE_ENABLED`, hist: `/${id}-paper/status` });
+                       modeKey: `CMX_${c}_${st}_MODE_ENABLED`, hist: `/${id}-paper/history` });
   }
 }
 

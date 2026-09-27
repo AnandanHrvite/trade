@@ -160,6 +160,12 @@ const ADAPTERS = {
     // Per-poll premium stops (after the profit lock).
     usesBreakevenStop: true,
     optStopPct: () => _num(process.env.OPT_STOP_PCT, 0.15),
+    // Chart overlays — the same periods the V1 rules read.
+    chartCfg: () => ({
+      emaFast: _int(process.env.EMA_RSI_ST_EMA_FAST, 20), emaSlow: _int(process.env.EMA_RSI_ST_EMA_SLOW, 50),
+      stPeriod: _int(process.env.EMA_RSI_ST_SUPERTREND_PERIOD, 10), stMult: _num(process.env.EMA_RSI_ST_SUPERTREND_MULT, 3),
+      rsiCeMin: _num(process.env.RSI_CE_MIN, 52), rsiPeMax: _num(process.env.RSI_PE_MAX, 48),
+    }),
   },
 
   V2: {
@@ -184,6 +190,10 @@ const ADAPTERS = {
     },
     usesBreakevenStop: false,
     optStopPct: () => 0,
+    chartCfg: () => {
+      const k = require("../strategies/ema_rsi_st_v2").getConfig("EMA_RSI_ST_V2");
+      return { emaFast: k.EMA_FAST, emaSlow: k.EMA_SLOW, stPeriod: k.ST_PERIOD, stMult: k.ST_MULT, rsiCeMin: k.RSI_CE_MIN, rsiPeMax: k.RSI_PE_MAX };
+    },
   },
 };
 
@@ -368,6 +378,7 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     const pnl = r2(gross - c.charges);
     const trade = {
       ...pos, exitTime: new Date().toISOString(), exitReason: reason,
+      exitBarTime: Math.floor(Date.now() / 1000 / (c.res * 60)) * c.res * 60,
       spotAtExit: spotExit, optionExitLtp: prem, grossPnl: gross, charges: c.charges, pnl,
     };
     state.trades.push(trade);
@@ -546,6 +557,7 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     state.res = c.res;
     state.armed = null; state.nextCandleAt = 0; state.lastError = null; state.seenQuoteAt = 0;
     state.manualStopDay = null;
+    state.startedAt = new Date().toISOString();
     persistRunning();
     log(`▶️ ${resumed ? "Resumed" : "Started"} ${label} — signal ${state.series.future} (${c.res}m, ${state.candles.length} warm-up candles) · options expire ${state.series.optionExpiry} · entries ${fmtMins(c.entryStart)}–${fmtMins(c.entryEnd)} · exit ${fmtMins(c.eodExit)}`);
     timer = setInterval(loop, 1000);
@@ -589,12 +601,68 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
       position: state.position, armed: state.armed ? { side: state.armed.side, triggerLevel: state.armed.triggerLevel } : null,
       trades: state.trades, sessionPnl: state.sessionPnl, halted: state.halted,
       lastSignal: state.lastSignal, lastError: state.lastError, candles: state.candles.length,
+      prevBar: state.candles.length ? state.candles[state.candles.length - 1] : null,
+      consecLosses: state.consecLosses, consecLimit: A.consecLimit(), startedAt: state.startedAt || null,
       logs: state.logs.slice(-150), history: days.slice(0, 60).map(([day, d]) => ({ day, trades: (d.trades || []).length, pnl: d.pnl })),
       allTime,
     };
   }
 
   function manualExit() { if (state.position) return exit("Manual exit", state.futLtp || state.position.spotAtEntry); }
+
+  // Manual CE / PE — a paper entry at the current future price, same guards,
+  // sizing and exits as a signal entry. The stop starts at the last closed
+  // candle's low (CE) / high (PE); the strategy's own trail takes over after.
+  async function manualEntry(side) {
+    if (side !== "CE" && side !== "PE") return { ok: false, reason: "side must be CE or PE" };
+    if (!state.running) return { ok: false, reason: "start the page first" };
+    if (state.position) return { ok: false, reason: "a trade is already open" };
+    if (!state.futLtp) return { ok: false, reason: "no live price yet — wait a few seconds" };
+    const c = cfg();
+    const nowSec = Math.floor(Date.now() / 1000);
+    const bucket = Math.floor(nowSec / (c.res * 60)) * c.res * 60;
+    const last = state.candles[state.candles.length - 1];
+    const seed = last ? (side === "CE" ? last.low : last.high) : null;
+    await enter(side, state.futLtp, { stopLoss: seed }, bucket, bucket, "manual entry");
+    return state.position ? { ok: true } : { ok: false, reason: "not entered — see the activity log" };
+  }
+
+  // Chart feed: today's closed candles (plus warm-up for the indicators), the
+  // strategy's overlays and the day's entry/exit markers.
+  function chartData() {
+    const { EMA, RSI } = require("technicalindicators");
+    const { computeSuperTrend } = require("../utils/supertrend");
+    const k = A.chartCfg();
+    const candles = state.candles.map((b) => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close }));
+    const closes = candles.map((b) => b.close);
+    const line = (arr) => arr.map((v, i) => ({ time: candles[i + candles.length - arr.length].time, value: r2(v) }));
+    const ema = (p) => (candles.length >= p ? line(EMA.calculate({ period: p, values: closes })) : []);
+    let supertrend = [];
+    try {
+      supertrend = computeSuperTrend(candles, k.stPeriod, k.stMult)
+        .map((p, i) => (p && p.value != null ? { time: candles[i].time, value: r2(p.value), trend: p.trend } : null)).filter(Boolean);
+    } catch (_) {}
+    const markers = [];
+    for (const t of state.trades) {
+      if (t.entryBarTime) markers.push({ time: t.entryBarTime, position: "belowBar", color: "#3b82f6", shape: "arrowUp", text: `${t.side} @ ${Math.round(t.spotAtEntry)}` });
+      if (t.exitBarTime) markers.push({ time: t.exitBarTime, position: "aboveBar", color: t.pnl > 0 ? "#10b981" : "#ef4444", shape: "arrowDown", text: `Exit ${t.pnl > 0 ? "+" : ""}${Math.round(t.pnl)}` });
+    }
+    const p = state.position;
+    if (p && p.entryBarTime) markers.push({ time: p.entryBarTime, position: "belowBar", color: "#3b82f6", shape: "arrowUp", text: `${p.side} @ ${Math.round(p.spotAtEntry)}` });
+    return {
+      candles, emaFast: ema(k.emaFast), emaSlow: ema(k.emaSlow), emaFastLen: k.emaFast, emaSlowLen: k.emaSlow,
+      rsi: candles.length > 15 ? line(RSI.calculate({ period: 14, values: closes })) : [],
+      rsiCeMin: k.rsiCeMin, rsiPeMax: k.rsiPeMax, supertrend, markers,
+      stopLoss: p && Number.isFinite(p.stopLoss) ? p.stopLoss : null, entry: p ? p.spotAtEntry : null,
+      armed: state.armed ? state.armed.triggerLevel : null,
+    };
+  }
+
+  // Every recorded day, newest first, with its trades — for the History page.
+  function historyDays() {
+    return Object.entries(loadBook().days || {}).sort((a, b) => b[0].localeCompare(a[0]))
+      .map(([day, d]) => ({ day, trades: d.trades || [], pnl: d.pnl || 0 }));
+  }
 
   // Resume after an app restart (deploys land in the evening, mid session).
   setTimeout(() => {
@@ -617,7 +685,7 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     start().then((res) => { if (!res.ok) log(`⚠️ Auto-start failed: ${res.reason}`); });
   }, 30000).unref();
 
-  return { start, stop, reset, snapshot, manualExit, state };
+  return { start, stop, reset, snapshot, manualExit, manualEntry, chartData, historyDays, state };
 }
 
 module.exports = { createEngine };
