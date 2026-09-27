@@ -433,6 +433,11 @@ ${multiSelectCSS()}
         <button data-book="live">Live</button>
         <button data-book="all">Both</button>
       </div>
+      <label>Market</label>
+      <div class="seg" id="segMkt">
+        <button data-mkt="all" class="on">All</button>
+        ${["NIFTY", "BANK NIFTY", "COMMODITY"].filter(g => enabled.some(s => groupOf(s.mode) === g)).map(g => `<button data-mkt="${g}">${g}</button>`).join("")}
+      </div>
       <label>Strategy</label>
       ${multiSelectHTML('fMode', enabled.map(s => ({ value: s.mode, label: s.label })), 'All strategies')}
       <label>Range</label>
@@ -496,10 +501,12 @@ function rangeLabelFor(range, from, to){
 
 function currentFilter(){
   const book = document.querySelector('#segBook button.on').dataset.book;
-  const modes = msValues('fMode');           // ticked strategies; [] = none ticked
+  const mkt  = document.querySelector('#segMkt button.on').dataset.mkt;
+  // ticked strategies ([] = none ticked), narrowed to the chosen market
+  const modes = msValues('fMode').filter(m => mkt==='all' || GROUP_OF[m]===mkt);
   const range = document.getElementById('fRange').value;
   const r = drRange(range, document.getElementById('fFrom').value, document.getElementById('fTo').value);
-  return {book,modes,from:r.from,to:r.to,rangeLabel:rangeLabelFor(range,r.from,r.to)};
+  return {book,mkt,modes,from:r.from,to:r.to,rangeLabel:rangeLabelFor(range,r.from,r.to)};
 }
 function applyFilter(f){
   return ALL.filter(t=>{
@@ -633,7 +640,7 @@ function render(){
 
   let head=vixWarn+'<div class="rpt-head"><div>'
     +'<div class="rh-title">Consolidated Day Report</div>'
-    +'<div class="rh-meta">Book: <b>'+bookLabel+'</b> &nbsp;·&nbsp; Strategy: <b>'+esc(f.modes.length===MODES.length ? 'All' : (f.modes.length ? f.modes.map(m=>MODE_LABEL[m]||m).join(', ') : 'None'))+'</b> &nbsp;·&nbsp; Period: <b>'+esc(f.rangeLabel)+'</b> &nbsp;·&nbsp; Trading days: <b>'+kept.length+'</b> &nbsp;·&nbsp; Trades: <b>'+tN+'</b>'
+    +'<div class="rh-meta">Book: <b>'+bookLabel+'</b> &nbsp;·&nbsp; Market: <b>'+(f.mkt==='all'?'All':esc(f.mkt))+'</b> &nbsp;·&nbsp; Strategy: <b>'+esc(f.modes.length===MODES.filter(m=>f.mkt==='all'||GROUP_OF[m]===f.mkt).length ? 'All' : (f.modes.length ? f.modes.map(m=>MODE_LABEL[m]||m).join(', ') : 'None'))+'</b> &nbsp;·&nbsp; Period: <b>'+esc(f.rangeLabel)+'</b> &nbsp;·&nbsp; Trading days: <b>'+kept.length+'</b> &nbsp;·&nbsp; Trades: <b>'+tN+'</b>'
     // A total that silently omits days would be misread as the full period.
     +(nSkipped ? ' &nbsp;·&nbsp; <b style="color:#f59e0b">'+nSkipped+' day'+(nSkipped>1?'s':'')+' skipped</b>' : '')+'</div>'
     +'</div><div class="rh-brand">ௐ Palani Andawar Thunai ॐ<br>Generated '+esc(gen)+'</div></div>';
@@ -674,6 +681,10 @@ function render(){
 // wire controls
 document.querySelectorAll('#segBook button').forEach(b=>b.addEventListener('click',()=>{
   document.querySelectorAll('#segBook button').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); render();
+}));
+document.querySelectorAll('#segMkt button').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('#segMkt button').forEach(x=>x.classList.remove('on'));
   b.classList.add('on'); render();
 }));
 msInit('fMode', render);
