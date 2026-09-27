@@ -694,7 +694,7 @@ async function validateAndGetOptionSymbol(spot, side, mode, opts = {}) {
   //    {MODE}_ITM_STEPS × 50 (CE → lower strike, PE → higher strike). Default 1 step.
   //    Set {MODE}_ITM_STEPS=0 to fall back to ATM. ─────────────────────────────
   const _itmMode = String(mode || "").toUpperCase();
-  if (!_hasOverride && (_itmMode === "ORB" || _itmMode === "TREND_PB" || _itmMode === "TDS" || _itmMode === "HA_SCALP" || _itmMode === "EARLYBIRD")) {
+  if (!_hasOverride && (_itmMode === "ORB" || _itmMode === "TREND_PB" || _itmMode === "TDS" || _itmMode === "HA_SCALP" || _itmMode === "PREV_ORB_SCALP" || _itmMode === "EARLYBIRD")) {
     const itmSteps = parseInt(process.env[`${_itmMode}_ITM_STEPS`] || "1", 10);
     if (itmSteps > 0 && (side === "CE" || side === "PE")) {
       const shifted = side === "CE" ? strike - itmSteps * U.strikeStep : strike + itmSteps * U.strikeStep;

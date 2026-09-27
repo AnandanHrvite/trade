@@ -33,6 +33,7 @@ const GUIDE_MODE_BY_FILE = {
   "trend_pullback_strategy_guide.html":"TREND_PB",
   "trend_day_scalp_strategy_guide.html": "TDS",
   "ha_scalp_strategy_guide.html": "HA_SCALP",
+  "prev_orb_scalp_strategy_guide.html": "PREV_ORB_SCALP",
   "rsi_pivot_st_strategy_guide.html": "RSI_PIVOT_ST",
   "bn_pivot_rsi_st_strategy_guide.html": "BN_PIVOT_RSI_ST",
   "simple930_strategy_guide.html":    "SIMPLE930",
@@ -875,6 +876,11 @@ const GUIDE_STATUS = {
     { type: "bool", label: "HA Scalp Paper Trading", key: "HA_SCALP_PAPER_ENABLED", def: "true" },
     { type: "live", label: "Live Orders (Zerodha, via paper harness)", enableKey: "HA_SCALP_LIVE_ENABLED", dryKey: "HA_SCALP_LIVE_DRY_RUN" },
   ] }] },
+  "PREV_ORB_SCALP_Strategy_Guide.html": { title: "Prev ORB Scalp — Live Configuration", groups: [{ rows: [
+    { type: "bool", label: "Prev ORB Scalp Mode (sidebar + Settings section)", key: "PREV_ORB_SCALP_MODE_ENABLED", def: "true" },
+    { type: "bool", label: "Prev ORB Scalp Paper Trading", key: "PREV_ORB_SCALP_PAPER_ENABLED", def: "true" },
+    { type: "live", label: "Live Orders (Zerodha, via paper harness)", enableKey: "PREV_ORB_SCALP_LIVE_ENABLED", dryKey: "PREV_ORB_SCALP_LIVE_DRY_RUN" },
+  ] }] },
   "RSI_PIVOT_ST_Strategy_Guide.html": { title: "RSI Pivot ST — Live Configuration", groups: [{ rows: [
     { type: "bool", label: "RSI Pivot ST Mode (sidebar + Settings section)", key: "RSI_PIVOT_ST_MODE_ENABLED", def: "true" },
     { type: "bool", label: "RSI Pivot ST Paper Trading", key: "RSI_PIVOT_ST_PAPER_ENABLED", def: "true" },
@@ -941,6 +947,7 @@ const GUIDE_STATUS = {
       { type: "bool", label: "Trend Pullback Mode", key: "TREND_PB_MODE_ENABLED", def: "true" },
       { type: "bool", label: "Trend Day Scalp Mode", key: "TDS_MODE_ENABLED", def: "true" },
       { type: "bool", label: "HA Scalp Mode", key: "HA_SCALP_MODE_ENABLED", def: "true" },
+      { type: "bool", label: "Prev ORB Scalp Mode", key: "PREV_ORB_SCALP_MODE_ENABLED", def: "true" },
       { type: "bool", label: "RSI Pivot ST Mode", key: "RSI_PIVOT_ST_MODE_ENABLED", def: "true" },
       { type: "bool", label: "BN Pivot RSI ST Mode (NIFTY BANK, monthly options)", key: "BN_PIVOT_RSI_ST_MODE_ENABLED", def: "true" },
       { type: "bool", label: "SIMPLE_9:30 Mode", key: "SIMPLE930_MODE_ENABLED", def: "true" },

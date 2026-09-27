@@ -41,6 +41,7 @@ const STRATEGY_DEFS = [
   { key:'TREND_PB', label:'TREND PB',     accentClass:'trendpb',  accent:'#ec4899', paperPrefix:'/trend-pb-paper', livePrefix:'/trend-pb-live', hasDayLog:false, modeFlag:'TREND_PB_MODE_ENABLED' },
   { key:'TDS',      label:'TREND DAY SCALP', accentClass:'tds',   accent:'#a855f7', paperPrefix:'/trend-day-scalp-paper', livePrefix:'/trend-day-scalp-live', hasDayLog:true, modeFlag:'TDS_MODE_ENABLED' },
   { key:'HA_SCALP', label:'HA SCALP',        accentClass:'hascalp', accent:'#f97316', paperPrefix:'/ha-scalp-paper',      livePrefix:'/ha-scalp-live',        hasDayLog:true, modeFlag:'HA_SCALP_MODE_ENABLED' },
+  { key:'PREV_ORB_SCALP', label:'PREV ORB SCALP', accentClass:'prevorb', accent:'#e879f9', paperPrefix:'/prev-orb-scalp-paper', livePrefix:'/prev-orb-scalp-live', hasDayLog:true, modeFlag:'PREV_ORB_SCALP_MODE_ENABLED' },
   { key:'RSI_PIVOT_ST', label:'RSI PIVOT ST', accentClass:'rsipivotst', accent:'#facc15', paperPrefix:'/rsi-pivot-st-paper', livePrefix:'/rsi-pivot-st-live', hasDayLog:true, modeFlag:'RSI_PIVOT_ST_MODE_ENABLED' },
   // Same rules as RSI_PIVOT_ST, different underlying: BN_PIVOT_RSI_ST (NIFTY BANK,
   // monthly options). Its Entry/Live Spot come from its OWN /status/data — this page
@@ -63,7 +64,7 @@ function enabledStrategies() {
 
 // Broker investment pools: each strategy's paper P&L draws from one shared pool.
 // EMA_RSI_ST trades through Zerodha; BB_RSI/PA/ORB through Fyers.
-const BROKER_OF = { EMA_RSI_ST:'ZERODHA', EMA_RSI_ST_V2:'ZERODHA', BB_RSI:'FYERS', PA:'FYERS', ORB:'FYERS', EMA9VWAP:'ZERODHA', TREND_PB:'FYERS', TDS:'FYERS', HA_SCALP:'ZERODHA', RSI_PIVOT_ST:'ZERODHA', BN_PIVOT_RSI_ST:'ZERODHA', BN_EMA_RSI_ST_V2:'ZERODHA', SIMPLE930:'ZERODHA', EARLYBIRD:'FYERS' };
+const BROKER_OF = { EMA_RSI_ST:'ZERODHA', EMA_RSI_ST_V2:'ZERODHA', BB_RSI:'FYERS', PA:'FYERS', ORB:'FYERS', EMA9VWAP:'ZERODHA', TREND_PB:'FYERS', TDS:'FYERS', HA_SCALP:'ZERODHA', PREV_ORB_SCALP:'ZERODHA', RSI_PIVOT_ST:'ZERODHA', BN_PIVOT_RSI_ST:'ZERODHA', BN_EMA_RSI_ST_V2:'ZERODHA', SIMPLE930:'ZERODHA', EARLYBIRD:'FYERS' };
 function brokerPools(strategies) {
   const z = parseFloat(process.env.ZERODHA_INV_AMOUNT || '100000');
   const f = parseFloat(process.env.FYERS_INV_AMOUNT   || '100000');
@@ -265,6 +266,7 @@ ${faviconLink()}
   .card.trendpb  { border-top-color:#ec4899; }
   .card.tds      { border-top-color:#a855f7; }
 .card.hascalp  { border-top-color:#f97316; }
+.card.prevorb  { border-top-color:#e879f9; }
   .card.rsipivotst { border-top-color:#facc15; }
   .card.emarsistv2 { border-top-color:#38bdf8; }
   .card.bnpivotrsist { border-top-color:#818cf8; }
@@ -282,6 +284,7 @@ ${faviconLink()}
   .card.trendpb  .card-title { color:#f472b6; }
   .card.tds      .card-title { color:#c084fc; }
 .card.hascalp  .card-title { color:#fdba74; }
+.card.prevorb  .card-title { color:#f0abfc; }
   .card.rsipivotst .card-title { color:#fde047; }
   .card.emarsistv2 .card-title { color:#7dd3fc; }
   .card.bnpivotrsist .card-title { color:#a5b4fc; }
@@ -368,6 +371,7 @@ ${faviconLink()}
   .card.trendpb  .act-btn:not(.act-btn-disabled):hover { border-color:#ec4899; }
   .card.tds      .act-btn:not(.act-btn-disabled):hover { border-color:#a855f7; }
 .card.hascalp  .act-btn:not(.act-btn-disabled):hover { border-color:#f97316; }
+.card.prevorb  .act-btn:not(.act-btn-disabled):hover { border-color:#e879f9; }
   .card.rsipivotst .act-btn:not(.act-btn-disabled):hover { border-color:#facc15; }
   .card.emarsistv2 .act-btn:not(.act-btn-disabled):hover { border-color:#38bdf8; }
   .card.bnpivotrsist .act-btn:not(.act-btn-disabled):hover { border-color:#818cf8; }
@@ -390,6 +394,7 @@ ${faviconLink()}
   .rollup tr.trendpb  td:first-child { color:#f472b6; }
   .rollup tr.tds      td:first-child { color:#c084fc; }
 .rollup tr.hascalp  td:first-child { color:#fdba74; }
+.rollup tr.prevorb  td:first-child { color:#f0abfc; }
   .rollup tr.rsipivotst td:first-child { color:#fde047; }
   .rollup tr.emarsistv2 td:first-child { color:#7dd3fc; }
   .rollup tr.bnpivotrsist td:first-child { color:#a5b4fc; }
@@ -422,6 +427,7 @@ ${faviconLink()}
   :root[data-theme="light"] .card.trendpb  .card-title { color:#be185d; }
   :root[data-theme="light"] .card.tds      .card-title { color:#7e22ce; }
 :root[data-theme="light"] .card.hascalp  .card-title { color:#c2410c; }
+:root[data-theme="light"] .card.prevorb  .card-title { color:#a21caf; }
   :root[data-theme="light"] .card.rsipivotst .card-title { color:#a16207; }
   :root[data-theme="light"] .card.emarsistv2 .card-title { color:#0369a1; }
   :root[data-theme="light"] .card.bnpivotrsist .card-title { color:#4338ca; }
@@ -463,6 +469,7 @@ ${faviconLink()}
   :root[data-theme="light"] .rollup tr.trendpb  td:first-child { color:#be185d; }
   :root[data-theme="light"] .rollup tr.tds      td:first-child { color:#7e22ce; }
 :root[data-theme="light"] .rollup tr.hascalp  td:first-child { color:#c2410c; }
+:root[data-theme="light"] .rollup tr.prevorb  td:first-child { color:#a21caf; }
   :root[data-theme="light"] .rollup tr.rsipivotst td:first-child { color:#a16207; }
   :root[data-theme="light"] .rollup tr.emarsistv2 td:first-child { color:#0369a1; }
   :root[data-theme="light"] .rollup tr.bnpivotrsist td:first-child { color:#4338ca; }

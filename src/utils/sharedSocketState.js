@@ -41,6 +41,9 @@ let trendDayScalpMode = null;
 // HA Scalp mode: "HA_SCALP_PAPER" | "HA_SCALP_LIVE" | null
 let haScalpMode = null;
 
+// Prev ORB Scalp mode: "PREV_ORB_SCALP_PAPER" | "PREV_ORB_SCALP_LIVE" | null
+let prevOrbScalpMode = null;
+
 
 // RSI Pivot SuperTrend mode: "RSI_PIVOT_ST_PAPER" | "RSI_PIVOT_ST_LIVE" | null
 let rsiPivotStMode = null;
@@ -216,6 +219,24 @@ function getHaScalpMode() {
   return haScalpMode;
 }
 
+// ── Prev ORB Scalp mode (prev-day H/L + 09:15 15m ORB, 3-min scalp) ──────────
+
+function setPrevOrbScalpActive(mode) {
+  prevOrbScalpMode = mode;
+}
+
+function clearPrevOrbScalp() {
+  prevOrbScalpMode = null;
+}
+
+function isPrevOrbScalpActive() {
+  return prevOrbScalpMode !== null;
+}
+
+function getPrevOrbScalpMode() {
+  return prevOrbScalpMode;
+}
+
 
 // ── EarlyBird mode (first-15-min cash-equity breakout) ──────────────────────
 
@@ -334,6 +355,7 @@ function isAnyActive() {
          orbMode !== null || ema9vwapMode !== null || trendPbMode !== null ||
          trendDayScalpMode !== null ||
          haScalpMode !== null ||
+         prevOrbScalpMode !== null ||
          earlyBirdMode !== null ||
          rsiPivotStMode !== null || bnPivotRsiStMode !== null ||
          emaRsiStV2Mode !== null ||
@@ -407,6 +429,14 @@ function canStart(mode) {
     case "HA_SCALP_LIVE":
       if (haScalpMode === "HA_SCALP_PAPER") return { allowed: false, reason: "HA Scalp Paper is running — stop it first" };
       if (haScalpMode === "HA_SCALP_LIVE")  return { allowed: false, reason: "HA Scalp Live is already running" };
+      return { allowed: true };
+    case "PREV_ORB_SCALP_PAPER":
+      if (prevOrbScalpMode === "PREV_ORB_SCALP_LIVE")  return { allowed: false, reason: "Prev ORB Scalp Live is running — stop it first" };
+      if (prevOrbScalpMode === "PREV_ORB_SCALP_PAPER") return { allowed: false, reason: "Prev ORB Scalp Paper is already running" };
+      return { allowed: true };
+    case "PREV_ORB_SCALP_LIVE":
+      if (prevOrbScalpMode === "PREV_ORB_SCALP_PAPER") return { allowed: false, reason: "Prev ORB Scalp Paper is running — stop it first" };
+      if (prevOrbScalpMode === "PREV_ORB_SCALP_LIVE")  return { allowed: false, reason: "Prev ORB Scalp Live is already running" };
       return { allowed: true };
     case "EARLY_BIRD_PAPER":
       if (earlyBirdMode === "EARLY_BIRD_LIVE")  return { allowed: false, reason: "EarlyBird Live is running — stop it first" };
@@ -487,6 +517,8 @@ module.exports = {
   setTrendDayScalpActive, clearTrendDayScalp, isTrendDayScalpActive, getTrendDayScalpMode,
   // HA Scalp
   setHaScalpActive, clearHaScalp, isHaScalpActive, getHaScalpMode,
+  // Prev ORB Scalp
+  setPrevOrbScalpActive, clearPrevOrbScalp, isPrevOrbScalpActive, getPrevOrbScalpMode,
   // RSI Pivot SuperTrend
   setEarlyBirdActive, clearEarlyBird, isEarlyBirdActive, getEarlyBirdMode,
 

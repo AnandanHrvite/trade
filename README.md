@@ -1,6 +1,6 @@
 # Palani Andawar Trading Bot
 
-Indian index algorithmic trading bot with **12 independent strategies** (EMA_RSI_ST, BB_RSI, Price Action, ORB, EMA9+VWAP, Trend Pullback, Trend Day Scalp, HA Scalp, RSI Pivot ST, SIMPLE_9:30 — all NIFTY options — plus **BN Pivot RSI ST**, the same RSI Pivot ST rules on **NIFTY BANK monthly options**, and **EarlyBird**, which trades **cash equity** in F&O stocks, a NIFTY option, or both), dual-broker architecture (Fyers + Zerodha), background backtesting, paper trading, deterministic **tick-replay** of recorded sessions, after-hours simulation, live NIFTY candlestick charts, consolidated cross-mode analytics (paper + live), per-module dashboard P&L cards, **unified real-time monitor** (one screen for all strategies with a PAPER/LIVE toggle), crash-safe JSONL trade audit, near-miss filter audit, Telegram alerts, and a full web dashboard.
+Indian index algorithmic trading bot with **13 independent strategies** (EMA_RSI_ST, BB_RSI, Price Action, ORB, EMA9+VWAP, Trend Pullback, Trend Day Scalp, HA Scalp, Prev ORB Scalp, RSI Pivot ST, SIMPLE_9:30 — all NIFTY options — plus **BN Pivot RSI ST**, the same RSI Pivot ST rules on **NIFTY BANK monthly options**, and **EarlyBird**, which trades **cash equity** in F&O stocks, a NIFTY option, or both), dual-broker architecture (Fyers + Zerodha), background backtesting, paper trading, deterministic **tick-replay** of recorded sessions, after-hours simulation, live NIFTY candlestick charts, consolidated cross-mode analytics (paper + live), per-module dashboard P&L cards, **unified real-time monitor** (one screen for all strategies with a PAPER/LIVE toggle), crash-safe JSONL trade audit, near-miss filter audit, Telegram alerts, and a full web dashboard.
 
 ## Architecture
 
@@ -51,6 +51,9 @@ All four strategies run **in parallel** on the same WebSocket — different cand
 | **HA Scalp Paper** | A no-wick **Heikin Ashi** candle in the direction of the 50 MA, stopped at that candle's own raw high/low | 15-min (HA) | Simulated | `/ha-scalp-paper` |
 | **HA Scalp Backtest** | Same engine over a date range (conservative intra-bar ordering) | 15-min historical | Historical | `/ha-scalp-backtest` |
 | **HA Scalp Live (Harness)** | Runs Live by wrapping Paper (Zerodha orders, triple-gated dry-run) | 15-min (HA) | Zerodha (PAPER-wrapped) | `/ha-scalp-live` |
+| **Prev ORB Scalp Paper** | The 09:15 15-min candle closes beyond yesterday's high/low; the first 3-min close beyond that candle is entered, stop at its other end, target = its size, then trailed | 15-min setup / 3-min entry | Simulated | `/prev-orb-scalp-paper` |
+| **Prev ORB Scalp Backtest** | Same engine over a date range (conservative intra-bar ordering, profit lock simulated) | 3-min historical | Historical | `/prev-orb-scalp-backtest` |
+| **Prev ORB Scalp Live (Harness)** | Runs Live by wrapping Paper (Zerodha orders, triple-gated dry-run) | 3-min | Zerodha (PAPER-wrapped) | `/prev-orb-scalp-live` |
 | **EarlyBird Paper** | The day's **first 15-min candle** on NIFTY sets the side. `stock` mode buys/shorts the **cash equity** of any F&O stock printing the same shape (up to 5 at once); `option` mode buys ONE **NIFTY CE/PE** off NIFTY's own candle with **no stock check**; `both` runs the two independently | 15-min (first bar) | Simulated | `/early-bird-paper` |
 | **EarlyBird Backtest** | Same engine over a date range (conservative intra-bar ordering, equity-intraday charges) | 15-min historical | Historical | `/early-bird-backtest` |
 | **EarlyBird Live (Harness)** | Runs Live by wrapping Paper (Fyers **equity** orders, triple-gated dry-run) | 15-min | Fyers (PAPER-wrapped) | `/early-bird-live` |
@@ -273,6 +276,17 @@ See [BB_RSI.md](BB_RSI.md) for the authoritative spec. Summary:
 - **LIVE = PAPER** (`/ha-scalp-live`, [src/routes/haScalpLiveHarness.js](src/routes/haScalpLiveHarness.js)): wraps the Paper engine with the shared harness. **Triple-gated to dry-run**: real orders require `HA_SCALP_LIVE_ENABLED=true` AND `LIVE_HARNESS_DRY_RUN=false` AND `HA_SCALP_LIVE_DRY_RUN` not-true, plus an authenticated **Zerodha** session (Fyers still supplies the candles and premiums). An open position is crash-recovered via `positionPersist` (`.active_ha_scalp_position.json`) and reconciled against the Zerodha book on boot.
 - **Backtest** (`/ha-scalp-backtest`, [src/routes/haScalpBacktest.js](src/routes/haScalpBacktest.js)): drives the **same** `getSignal` and re-implements only paper's exits (paper canonical). Warm-up days are prepended to the fetch so the first requested day can trade, but never produce trades themselves. **Conservative intra-bar ordering**: the stop is tested on the bar's high/low **before** any close-based exit, so a bar touching both books the LOSS; a bar that opened beyond the stop fills at the **open**. Option P&L is simulated, seeded at `HA_SCALP_BT_SEED_PREMIUM=240` plus `HA_SCALP_BT_SLIPPAGE_PTS=1.5`pt each way.
 
+### Strategy 8b: PREV ORB SCALP — yesterday's range broken at the open, confirmed on the 3-min chart (single-leg ITM CE/PE, Zerodha)
+
+Engine: [src/strategies/prev_orb_scalp.js](src/strategies/prev_orb_scalp.js). One trade a day at most.
+
+- **Levels**: yesterday's NIFTY spot HIGH and LOW, drawn on the paper chart with the 09:15 candle's high/low.
+- **Setup**: the 09:15 15-min candle (built from 3-min bars) must **close** below yesterday's LOW → PE day, or above yesterday's HIGH → CE day. Otherwise no trade.
+- **Entry**: the **first** 3-min candle from 09:30 that closes below the 09:15 low (PE) / above the 09:15 high (CE), at its close. Only the first such close counts. No entries after 14:30.
+- **Stop / target**: stop = that 3-min candle's high (PE) / low (CE); target = its size from the entry. At the target the stop moves to the target, then trails each closed 3-min candle's high (PE) / low (CE) (`PREV_ORB_SCALP_TRAIL_AFTER_TARGET`, off = exit at target). The global premium profit lock applies. Square-off 15:15.
+- **Not here on purpose**: no VIX/OI/RSI/MA/volume/ATR filter, no retest, no second trade.
+- **Live** = Paper wrapped by the harness, triple-gated to dry-run. **Not market-validated** — zero paper or live trades so far.
+
 ### Strategy 9: RSI PIVOT ST — RSI extreme + a Standard Pivot R1/S1 break, SuperTrend-stopped (single-leg OTM CE/PE, Zerodha)
 
 **Never traded, and no backtest has been run against it.** Zero paper sessions, zero live orders. Every threshold below is the user's stated rule or a repo convention, not a fitted value. Collect clean paper days and diff them against `/replay` before touching any live gate.
@@ -414,6 +428,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   trend_pb_paper_trades.json      # Trend Pullback paper sessions
   trend_day_scalp_paper_trades.json # Trend Day Scalp paper sessions
   ha_scalp_paper_trades.json      # HA Scalp paper sessions
+  prev_orb_scalp_paper_trades.json # Prev ORB Scalp paper sessions
   rsi_pivot_st_paper_trades.json  # RSI Pivot ST paper sessions
   bn_pivot_rsi_st_paper_trades.json # BN Pivot RSI ST (NIFTY BANK) paper sessions
   simple930_paper_trades.json     # SIMPLE_9:30 paper sessions
@@ -427,6 +442,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   .active_trend_pb_position.json  # Crash recovery — Trend Pullback position
   .active_trend_day_scalp_position.json # Crash recovery — Trend Day Scalp position
   .active_ha_scalp_position.json  # Crash recovery — HA Scalp position
+  .active_prev_orb_scalp_position.json # Crash recovery — Prev ORB Scalp position
   .active_rsi_pivot_st_position.json # Crash recovery — RSI Pivot ST position
   .active_bn_pivot_rsi_st_position.json # Crash recovery — BN Pivot RSI ST position
   .active_simple930_position.json # Crash recovery — SIMPLE_9:30 position (carries the live trail state)
@@ -540,6 +556,14 @@ log, so each session's trades carry the exact config that produced them.
 | `/ha-scalp-paper/status` | Paper trade — Heikin Ashi chart with the 50 MA and the stop, plus the raw candle chart |
 | `/ha-scalp-paper/history` | Sessions (per-session delete + view modal) |
 | `/ha-scalp-live` | Live via the paper-wrapping harness (Zerodha orders; gated by `HA_SCALP_LIVE_ENABLED` + `LIVE_HARNESS_DRY_RUN` + `HA_SCALP_LIVE_DRY_RUN`) |
+
+### Prev ORB Scalp
+| URL | Description |
+|-----|-------------|
+| `/prev-orb-scalp-backtest` | Prev ORB Scalp date-range backtest (3-min bars, next-candle-open fills) |
+| `/prev-orb-scalp-paper/status` | Paper trade — 3-min chart with yesterday's high/low, the 09:15 high/low, entry, stop and target |
+| `/prev-orb-scalp-paper/history` | Sessions (per-session delete + view modal) |
+| `/prev-orb-scalp-live` | Live via the paper-wrapping harness (Zerodha orders; gated by `PREV_ORB_SCALP_LIVE_ENABLED` + `LIVE_HARNESS_DRY_RUN` + `PREV_ORB_SCALP_LIVE_DRY_RUN`) |
 
 ### RSI Pivot ST
 | URL | Description |

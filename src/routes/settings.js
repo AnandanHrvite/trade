@@ -494,6 +494,44 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
+    section: "PREV ORB SCALP STRATEGY (Prev-day range + 15m/3m) — Zerodha",
+    icon: "\u{1F3AF}",
+    nav: "PREV ORB SCALP",
+    group: "Strategies",
+    fields: [
+      // ── Enable / live gating ──
+      { key: "PREV_ORB_SCALP_PAPER_ENABLED", label: "Prev ORB Scalp Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new Prev ORB Scalp paper sessions.", default: "true", subheader: "Mode & Live" },
+      { key: "PREV_ORB_SCALP_LIVE_ENABLED", label: "Prev ORB Scalp Live Orders (gates /prev-orb-scalp-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Zerodha. NEVER traded — paper-validate first.", default: "false" },
+      { key: "PREV_ORB_SCALP_LIVE_DRY_RUN", label: "Prev ORB Scalp Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep it simulated even when live is on.", default: "false" },
+
+      // ── The chart ──
+      { key: "PREV_ORB_SCALP_RESOLUTION", label: "Entry Candle Timeframe (min)", type: "select", options: ["1", "3", "5"], effect: EFFECT.SESSION, desc: "The small candle used to spot the breakout and to trail the stop. 3 minutes is the strategy as specified.", default: "3", subheader: "The chart (NIFTY 50 spot)" },
+      { key: "PREV_ORB_SCALP_OR_MINS", label: "Opening Candle Length (min)", type: "select", options: ["15", "30", "45", "60"], effect: EFFECT.SESSION, desc: "How long the first candle from 09:15 is. Its high and low are compared with yesterday's range to decide the trade. 15 minutes is the rule as specified.", default: "15" },
+      { key: "PREV_ORB_SCALP_WARMUP_DAYS", label: "History Preload (calendar days)", type: "number", min: 2, max: 30, step: 1, effect: EFFECT.SESSION, desc: "How far back to fetch on start so yesterday's high and low are known, even after a weekend or holiday.", default: "7" },
+
+      // ── Window ──
+      { key: "PREV_ORB_SCALP_SESSION_START", label: "Session Start", type: "time", effect: EFFECT.SESSION, desc: "Where the opening candle starts (IST).", default: "09:15", subheader: "Session window" },
+      { key: "PREV_ORB_SCALP_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No new entries after this time (IST).", default: "14:30" },
+      { key: "PREV_ORB_SCALP_FORCED_EXIT", label: "Forced Exit (EOD square-off)", type: "time", effect: EFFECT.SESSION, desc: "Hard square-off time (IST). A trade still open is closed here.", default: "15:15" },
+
+      // ── Exits ──
+      { key: "PREV_ORB_SCALP_TRAIL_AFTER_TARGET", label: "Trail After Target", type: "boolean", effect: EFFECT.SESSION, desc: "ON = when the target is hit, the stop moves up to the target and then follows each closed candle's low (CE) or high (PE), so a big move can keep running. OFF = exit right at the target.", default: "true", subheader: "Exits" },
+
+      // ── Sizing & breakers ──
+      { key: "PREV_ORB_SCALP_LOT_MULTIPLIER", label: "Lot Multiplier (Prev ORB Scalp only)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.INSTANT, desc: "Lots per trade. 0 = use the global LOT_MULTIPLIER, which is the default (1 lot).", default: "0", subheader: "Sizing & Breakers" },
+      { key: "PREV_ORB_SCALP_ITM_STEPS", label: "ITM Steps (strikes in-the-money)", type: "number", min: 0, max: 3, step: 1, effect: EFFECT.INSTANT, desc: "Strikes in-the-money to buy (0 = ATM). 1 step ≈ delta 0.6.", default: "1" },
+      { key: "PREV_ORB_SCALP_MAX_WEEKLY_LOSS", label: "Max Weekly Loss (₹)", type: "number", min: 0, max: 200000, step: 1000, effect: EFFECT.SESSION, desc: "Stop for the week after this much loss (0 = off).", default: "0" },
+
+      // ── Data plumbing ──
+      { key: "PREV_ORB_SCALP_POLL_MS", label: "Option Premium Poll (ms)", type: "number", min: 500, max: 30000, step: 500, effect: EFFECT.SESSION, desc: "How often the option premium is refreshed while a trade is open. Spot comes from the shared tick socket, so nothing else is polled.", default: "2000", subheader: "Data plumbing" },
+      { key: "PREV_ORB_SCALP_HISTORY_LAG_MS", label: "Bar-Close History Lag (ms)", type: "number", min: 0, max: 60000, step: 500, effect: EFFECT.SESSION, desc: "How long after a bar closes before the Fyers history endpoint is asked for it. Too short and the bar is not published yet, which delays every decision by a whole candle.", default: "5000" },
+
+      // ── Backtest ──
+      { key: "PREV_ORB_SCALP_BT_SLIPPAGE_PTS", label: "Backtest Spread/Slippage Haircut (pts each way)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.BACKTEST, desc: "Backtest cost per side, in points. Without this, option-buying backtests always flatter.", default: "1.5", subheader: "Backtest" },
+      { key: "PREV_ORB_SCALP_BT_SEED_PREMIUM", label: "Backtest Seed Premium (₹)", type: "number", min: 50, max: 800, step: 10, effect: EFFECT.BACKTEST, desc: "Assumed entry premium for the backtest (₹).", default: "260" },
+    ],
+  },
+  {
     section: "EARLYBIRD STRATEGY (first 15-min breakout, CASH EQUITY) — Fyers",
     icon: "\u{1F426}",
     nav: "EARLYBIRD",
@@ -1024,6 +1062,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_TREND_PB_STARTED", label: "Trend Pullback — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a Trend Pullback session starts.", default: "true" },
       { key: "TG_TDS_STARTED", label: "Trend Day Scalp — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a Trend Day Scalp session starts.", default: "true" },
       { key: "TG_HA_SCALP_STARTED", label: "HA Scalp — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an HA Scalp session starts.", default: "true" },
+      { key: "TG_PREV_ORB_SCALP_STARTED", label: "Prev ORB Scalp — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a Prev ORB Scalp session starts.", default: "true" },
       { key: "TG_EARLYBIRD_STARTED", label: "EarlyBird — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an EarlyBird session starts.", default: "true" },
       { key: "TG_SIMPLE930_STARTED", label: "SIMPLE_9:30 — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a SIMPLE_9:30 session starts.", default: "true" },
       { key: "TG_RSI_PIVOT_ST_STARTED", label: "RSI Pivot ST — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an RSI Pivot ST session starts.", default: "true" },
@@ -1039,6 +1078,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_TREND_PB_ENTRY", label: "Trend Pullback — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Trend Pullback entry.", default: "true" },
       { key: "TG_TDS_ENTRY", label: "Trend Day Scalp — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Trend Day Scalp entry.", default: "true" },
       { key: "TG_HA_SCALP_ENTRY", label: "HA Scalp — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on HA Scalp entries.", default: "true" },
+      { key: "TG_PREV_ORB_SCALP_ENTRY", label: "Prev ORB Scalp — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on Prev ORB Scalp entries.", default: "true" },
       { key: "TG_EARLYBIRD_ENTRY", label: "EarlyBird — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on EarlyBird entries.", default: "true" },
       { key: "TG_SIMPLE930_ENTRY", label: "SIMPLE_9:30 — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every SIMPLE_9:30 entry.", default: "true" },
       { key: "TG_RSI_PIVOT_ST_ENTRY", label: "RSI Pivot ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every RSI Pivot ST entry.", default: "true" },
@@ -1054,6 +1094,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_TREND_PB_EXIT", label: "Trend Pullback — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Trend Pullback exit.", default: "true" },
       { key: "TG_TDS_EXIT", label: "Trend Day Scalp — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Trend Day Scalp exit.", default: "true" },
       { key: "TG_HA_SCALP_EXIT", label: "HA Scalp — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on HA Scalp exits.", default: "true" },
+      { key: "TG_PREV_ORB_SCALP_EXIT", label: "Prev ORB Scalp — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on Prev ORB Scalp exits.", default: "true" },
       { key: "TG_EARLYBIRD_EXIT", label: "EarlyBird — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on EarlyBird exits.", default: "true" },
       { key: "TG_SIMPLE930_EXIT", label: "SIMPLE_9:30 — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every SIMPLE_9:30 exit.", default: "true" },
       { key: "TG_RSI_PIVOT_ST_EXIT", label: "RSI Pivot ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every RSI Pivot ST exit.", default: "true" },
@@ -1074,6 +1115,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_TREND_PB_DAYREPORT", label: "Trend Pullback — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a Trend Pullback day summary on stop.", default: "true" },
       { key: "TG_TDS_DAYREPORT", label: "Trend Day Scalp — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a Trend Day Scalp day summary on stop.", default: "true" },
       { key: "TG_HA_SCALP_DAYREPORT", label: "HA Scalp — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send the HA Scalp day report when the session stops.", default: "true" },
+      { key: "TG_PREV_ORB_SCALP_DAYREPORT", label: "Prev ORB Scalp — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send the Prev ORB Scalp day report when the session stops.", default: "true" },
       { key: "TG_EARLYBIRD_DAYREPORT", label: "EarlyBird — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send the EarlyBird day report when the session stops.", default: "true" },
       { key: "TG_SIMPLE930_DAYREPORT", label: "SIMPLE_9:30 — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a SIMPLE_9:30 day summary on stop.", default: "true" },
       { key: "TG_RSI_PIVOT_ST_DAYREPORT", label: "RSI Pivot ST — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send an RSI Pivot ST day summary on stop.", default: "true" },
@@ -1182,6 +1224,7 @@ const SETTINGS_SCHEMA = [
       { key: "TREND_PB_MODE_ENABLED",  label: "Trend Pullback Mode",       type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Trend Pullback menu and settings.", default: "true" },
       { key: "TDS_MODE_ENABLED",       label: "Trend Day Scalp Mode",      type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Trend Day Scalp menu and settings.", default: "true" },
       { key: "HA_SCALP_MODE_ENABLED",  label: "HA Scalp Mode",             type: "toggle", effect: EFFECT.INSTANT, desc: "Show the HA Scalp menu and settings.", default: "true" },
+      { key: "PREV_ORB_SCALP_MODE_ENABLED", label: "Prev ORB Scalp Mode",   type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Prev ORB Scalp menu and settings.", default: "true" },
       { key: "EARLYBIRD_MODE_ENABLED", label: "EarlyBird Mode",            type: "toggle", effect: EFFECT.INSTANT, desc: "Show the EarlyBird menu and settings.", default: "true" },
       { key: "SIMPLE930_MODE_ENABLED", label: "SIMPLE_9:30 Mode",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show the SIMPLE_9:30 menu and settings.", default: "true" },
       { key: "RSI_PIVOT_ST_MODE_ENABLED", label: "RSI Pivot ST Mode",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show the RSI Pivot ST menu and settings.", default: "true" },
@@ -1241,6 +1284,11 @@ const SETTINGS_SCHEMA = [
       { key: "UI_SHOW_HA_SCALP_PAPER",    label: "HA Scalp → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under HA Scalp.", default: "true" },
       { key: "UI_SHOW_HA_SCALP_LIVE",     label: "HA Scalp → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live under HA Scalp.", default: "true" },
       { key: "UI_SHOW_HA_SCALP_HISTORY",  label: "HA Scalp → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under HA Scalp.", default: "true" },
+      // ── Prev ORB Scalp submenu ──
+      { key: "UI_SHOW_PREV_ORB_SCALP_BACKTEST", label: "Prev ORB Scalp → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under Prev ORB Scalp.", default: "true", subheader: "Prev ORB Scalp sub-menus" },
+      { key: "UI_SHOW_PREV_ORB_SCALP_PAPER",    label: "Prev ORB Scalp → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under Prev ORB Scalp.", default: "true" },
+      { key: "UI_SHOW_PREV_ORB_SCALP_LIVE",     label: "Prev ORB Scalp → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live under Prev ORB Scalp.", default: "true" },
+      { key: "UI_SHOW_PREV_ORB_SCALP_HISTORY",  label: "Prev ORB Scalp → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under Prev ORB Scalp.", default: "true" },
       { key: "UI_SHOW_EARLYBIRD_BACKTEST", label: "EarlyBird → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under EarlyBird.", default: "true", subheader: "EarlyBird sub-menus" },
       { key: "UI_SHOW_EARLYBIRD_PAPER",    label: "EarlyBird → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under EarlyBird.", default: "true" },
       { key: "UI_SHOW_EARLYBIRD_LIVE",     label: "EarlyBird → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live under EarlyBird.", default: "true" },
@@ -1348,6 +1396,7 @@ const MODE_SECTION_TITLES = {
   trend_pb: "TREND PULLBACK STRATEGY — Fyers",
   trend_day_scalp: "TREND DAY SCALP STRATEGY — Fyers",
   ha_scalp: "HA SCALP STRATEGY (Heikin Ashi 15m) — Zerodha",
+  prev_orb_scalp: "PREV ORB SCALP STRATEGY (Prev-day range + 15m/3m) — Zerodha",
   simple930: "SIMPLE_9:30 STRATEGY (option-premium breakout) — Zerodha",
   rsi_pivot_st: "RSI_PIVOT_ST STRATEGY (RSI + Standard Pivot R1/S1 + SuperTrend) — Zerodha",
   bn_pivot_rsi_st: "BN_PIVOT_RSI_ST STRATEGY (NIFTY BANK — RSI + Standard Pivot R1/S1 + SuperTrend) — Zerodha",
@@ -1361,7 +1410,7 @@ const SNAPSHOT_COMMON_SECTION_TITLES = new Set([
   "OPEN-INTEREST FILTER (OI + Price Buildup)",
 ]);
 
-const _MODE_KEYS = { ema_rsi_st: new Set(), bb_rsi: new Set(), pa: new Set(), orb: new Set(), ema9vwap: new Set(), trend_pb: new Set(), trend_day_scalp: new Set(), ha_scalp: new Set(), simple930: new Set(), rsi_pivot_st: new Set(), bn_pivot_rsi_st: new Set(), ema_rsi_st_v2: new Set(), bn_ema_rsi_st_v2: new Set(), early_bird: new Set() };
+const _MODE_KEYS = { ema_rsi_st: new Set(), bb_rsi: new Set(), pa: new Set(), orb: new Set(), ema9vwap: new Set(), trend_pb: new Set(), trend_day_scalp: new Set(), ha_scalp: new Set(), prev_orb_scalp: new Set(), simple930: new Set(), rsi_pivot_st: new Set(), bn_pivot_rsi_st: new Set(), ema_rsi_st_v2: new Set(), bn_ema_rsi_st_v2: new Set(), early_bird: new Set() };
 const _KEY_TO_MODES = new Map();
 (function buildModeKeyIndex() {
   const commonKeys = [];
@@ -2214,6 +2263,7 @@ router.get("/", (req, res) => {
   const trendPbModeOn  = (envData["TREND_PB_MODE_ENABLED"] ?? process.env.TREND_PB_MODE_ENABLED ?? "true").toLowerCase() === "true";
   const tdsModeOn      = (envData["TDS_MODE_ENABLED"]      ?? process.env.TDS_MODE_ENABLED      ?? "true").toLowerCase() === "true";
   const haScalpModeOn  = (envData["HA_SCALP_MODE_ENABLED"] ?? process.env.HA_SCALP_MODE_ENABLED ?? "true").toLowerCase() === "true";
+  const prevOrbScalpModeOn = (envData["PREV_ORB_SCALP_MODE_ENABLED"] ?? process.env.PREV_ORB_SCALP_MODE_ENABLED ?? "true").toLowerCase() === "true";
   const earlyBirdModeOn = (envData["EARLYBIRD_MODE_ENABLED"] ?? process.env.EARLYBIRD_MODE_ENABLED ?? "true").toLowerCase() === "true";
   const simple930ModeOn = (envData["SIMPLE930_MODE_ENABLED"] ?? process.env.SIMPLE930_MODE_ENABLED ?? "true").toLowerCase() === "true";
   const rsiPivotStModeOn = (envData["RSI_PIVOT_ST_MODE_ENABLED"] ?? process.env.RSI_PIVOT_ST_MODE_ENABLED ?? "true").toLowerCase() === "true";
@@ -2234,6 +2284,7 @@ router.get("/", (req, res) => {
     "TREND PULLBACK STRATEGY — Fyers":                              trendPbModeOn,
     "TREND DAY SCALP STRATEGY — Fyers":                             tdsModeOn,
     "HA SCALP STRATEGY (Heikin Ashi 15m) — Zerodha":                haScalpModeOn,
+    "PREV ORB SCALP STRATEGY (Prev-day range + 15m/3m) — Zerodha": prevOrbScalpModeOn,
     "SIMPLE_9:30 STRATEGY (option-premium breakout) — Zerodha":     simple930ModeOn,
     "RSI_PIVOT_ST STRATEGY (RSI + Standard Pivot R1/S1 + SuperTrend) — Zerodha": rsiPivotStModeOn,
     "BN_PIVOT_RSI_ST STRATEGY (NIFTY BANK — RSI + Standard Pivot R1/S1 + SuperTrend) — Zerodha": bnPivotRsiStModeOn,

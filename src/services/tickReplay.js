@@ -851,6 +851,7 @@ const _MODE_TO_CANONICAL_FILE = {
   "trend-pb-paper": "trend_pb_paper_trades.json",
   "trend-day-scalp-paper": "trend_day_scalp_paper_trades.json",
   "ha-scalp-paper":        "ha_scalp_paper_trades.json",
+  "prev-orb-scalp-paper":  "prev_orb_scalp_paper_trades.json",
   "early-bird-paper":      "early_bird_paper_trades.json",
   "rsi-pivot-st-paper":    "rsi_pivot_st_paper_trades.json",
   "bn-pivot-rsi-st-paper": "bn_pivot_rsi_st_paper_trades.json",
@@ -1034,6 +1035,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     ss_clearTrendDayScalp:     sharedSocketState.clearTrendDayScalp,
     ss_setHaScalpActive:       sharedSocketState.setHaScalpActive,
     ss_clearHaScalp:           sharedSocketState.clearHaScalp,
+    ss_setPrevOrbScalpActive:  sharedSocketState.setPrevOrbScalpActive,
+    ss_clearPrevOrbScalp:      sharedSocketState.clearPrevOrbScalp,
     ss_setEarlyBirdActive:     sharedSocketState.setEarlyBirdActive,
     ss_clearEarlyBird:         sharedSocketState.clearEarlyBird,
     ss_setRsiPivotStActive:    sharedSocketState.setRsiPivotStActive,
@@ -1589,6 +1592,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     sharedSocketState.clearTrendDayScalp     = () => {};
     sharedSocketState.setHaScalpActive       = () => {};
     sharedSocketState.clearHaScalp           = () => {};
+    sharedSocketState.setPrevOrbScalpActive  = () => {};
+    sharedSocketState.clearPrevOrbScalp      = () => {};
     sharedSocketState.setEarlyBirdActive     = () => {};
     sharedSocketState.clearEarlyBird         = () => {};
     sharedSocketState.setRsiPivotStActive    = () => {};
@@ -1863,6 +1868,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     sharedSocketState.clearTrendDayScalp     = orig.ss_clearTrendDayScalp;
     sharedSocketState.setHaScalpActive       = orig.ss_setHaScalpActive;
     sharedSocketState.clearHaScalp           = orig.ss_clearHaScalp;
+    sharedSocketState.setPrevOrbScalpActive  = orig.ss_setPrevOrbScalpActive;
+    sharedSocketState.clearPrevOrbScalp      = orig.ss_clearPrevOrbScalp;
     sharedSocketState.setEarlyBirdActive     = orig.ss_setEarlyBirdActive;
     sharedSocketState.clearEarlyBird         = orig.ss_clearEarlyBird;
     sharedSocketState.setRsiPivotStActive    = orig.ss_setRsiPivotStActive;
@@ -1953,6 +1960,7 @@ const MODE_TO_MODULE = {
   "trend-pb-paper": "../routes/trendPbPaper",
   "trend-day-scalp-paper": "../routes/trendDayScalpPaper",
   "ha-scalp-paper":        "../routes/haScalpPaper",
+  "prev-orb-scalp-paper":  "../routes/prevOrbScalpPaper",
   "early-bird-paper":      "../routes/earlyBirdPaper",
   "rsi-pivot-st-paper":    "../routes/rsiPivotStPaper",
   "bn-pivot-rsi-st-paper": "../routes/bnPivotRsiStPaper",
@@ -1968,6 +1976,7 @@ const MODE_TO_MODULE = {
 // to the global one) so the pinned number is authoritative for every mode.
 const MODE_TO_LOT_MULT_KEY = {
   "ha-scalp-paper":        "HA_SCALP_LOT_MULTIPLIER",
+  "prev-orb-scalp-paper":  "PREV_ORB_SCALP_LOT_MULTIPLIER",
   "trend-day-scalp-paper": "TDS_LOT_MULTIPLIER",
   "rsi-pivot-st-paper":    "RSI_PIVOT_ST_LOT_MULTIPLIER",
   "bn-pivot-rsi-st-paper": "BN_PIVOT_RSI_ST_LOT_MULTIPLIER",
@@ -2692,6 +2701,7 @@ function replayPreflight() {
   if (sharedSocketState.isTrendPbActive())  activeModes.push(sharedSocketState.getTrendPbMode() || "trend_pb");
   if (sharedSocketState.isTrendDayScalpActive && sharedSocketState.isTrendDayScalpActive()) activeModes.push(sharedSocketState.getTrendDayScalpMode() || "trend_day_scalp");
   if (sharedSocketState.isHaScalpActive && sharedSocketState.isHaScalpActive()) activeModes.push(sharedSocketState.getHaScalpMode() || "ha_scalp");
+  if (sharedSocketState.isPrevOrbScalpActive && sharedSocketState.isPrevOrbScalpActive()) activeModes.push(sharedSocketState.getPrevOrbScalpMode() || "prev_orb_scalp");
   if (sharedSocketState.isEarlyBirdActive && sharedSocketState.isEarlyBirdActive()) activeModes.push(sharedSocketState.getEarlyBirdMode() || "early_bird");
   if (sharedSocketState.isRsiPivotStActive && sharedSocketState.isRsiPivotStActive()) activeModes.push(sharedSocketState.getRsiPivotStMode() || "rsi_pivot_st");
   if (sharedSocketState.isBnPivotRsiStActive && sharedSocketState.isBnPivotRsiStActive()) activeModes.push(sharedSocketState.getBnPivotRsiStMode() || "bn_pivot_rsi_st");
@@ -2757,6 +2767,7 @@ function forceClearSharedState() {
     trend_pb: sharedSocketState.getTrendPbMode(),
     trend_day_scalp: sharedSocketState.getTrendDayScalpMode ? sharedSocketState.getTrendDayScalpMode() : null,
     ha_scalp: sharedSocketState.getHaScalpMode ? sharedSocketState.getHaScalpMode() : null,
+    prev_orb_scalp: sharedSocketState.getPrevOrbScalpMode ? sharedSocketState.getPrevOrbScalpMode() : null,
     early_bird: sharedSocketState.getEarlyBirdMode ? sharedSocketState.getEarlyBirdMode() : null,
     rsi_pivot_st: sharedSocketState.getRsiPivotStMode ? sharedSocketState.getRsiPivotStMode() : null,
     bn_pivot_rsi_st: sharedSocketState.getBnPivotRsiStMode ? sharedSocketState.getBnPivotRsiStMode() : null,
@@ -2776,6 +2787,7 @@ function forceClearSharedState() {
   sharedSocketState.clearTrendPb();
   if (sharedSocketState.clearTrendDayScalp) sharedSocketState.clearTrendDayScalp();
   if (sharedSocketState.clearHaScalp) sharedSocketState.clearHaScalp();
+  if (sharedSocketState.clearPrevOrbScalp) sharedSocketState.clearPrevOrbScalp();
   if (sharedSocketState.clearEarlyBird) sharedSocketState.clearEarlyBird();
   if (sharedSocketState.clearRsiPivotSt) sharedSocketState.clearRsiPivotSt();
   if (sharedSocketState.clearBnPivotRsiStMode) sharedSocketState.clearBnPivotRsiStMode();

@@ -100,6 +100,11 @@ function modeGroup(mode) {
   const m = String(mode).toUpperCase();
   if (m === "BB_RSI"    || m.startsWith("BB_RSI-")    || m.startsWith("BB_RSI_"))    return "BB_RSI";
   if (m === "PA"       || m.startsWith("PA-")       || m.startsWith("PA_"))       return "PA";
+  // Prev ORB Scalp. Tested BEFORE ORB and with anchored prefixes only: the name
+  // contains "ORB", so any substring test would route it into ORB's bucket.
+  // Group key PREV_ORB_SCALP keeps env keys on the PREV_ORB_SCALP_ prefix
+  // (PREV_ORB_SCALP_MODE_ENABLED, TG_PREV_ORB_SCALP_ENTRY, …).
+  if (m === "PREV_ORB_SCALP" || m.startsWith("PREV-ORB-SCALP") || m.startsWith("PREV_ORB_SCALP")) return "PREV_ORB_SCALP";
   if (m === "ORB"      || m.startsWith("ORB-")      || m.startsWith("ORB_"))      return "ORB";
   if (m === "EMA9VWAP" || m.startsWith("EMA9VWAP-") || m.startsWith("EMA9VWAP_")) return "EMA9VWAP";
   if (m === "TREND_PB" || m.startsWith("TREND_PB-") || m.startsWith("TREND_PB_")) return "TREND_PB";
@@ -408,6 +413,12 @@ function modeLabel(mode) {
   if (m === "PA-LIVE")      return "⚡ PA LIVE";
   // ORB live modes may carry a " (DRY-RUN)" suffix — match by prefix
   // and preserve the suffix so the alert still shows the dry-run flag.
+  // PREV ORB SCALP — the harness tags itself "PREV_ORB_SCALP-LIVE", paper uses
+  // "PREV-ORB-SCALP-PAPER"; both spellings are matched.
+  if (m.startsWith("PREV-ORB-SCALP-PAPER")) return "📐 PREV ORB SCALP PAPER" + m.slice("PREV-ORB-SCALP-PAPER".length);
+  if (m.startsWith("PREV_ORB_SCALP-PAPER")) return "📐 PREV ORB SCALP PAPER" + m.slice("PREV_ORB_SCALP-PAPER".length);
+  if (m.startsWith("PREV-ORB-SCALP-LIVE"))  return "🔴 PREV ORB SCALP LIVE" + m.slice("PREV-ORB-SCALP-LIVE".length);
+  if (m.startsWith("PREV_ORB_SCALP-LIVE"))  return "🔴 PREV ORB SCALP LIVE" + m.slice("PREV_ORB_SCALP-LIVE".length);
   if (m.startsWith("ORB-PAPER"))       return "📄 ORB PAPER" + m.slice("ORB-PAPER".length);
   if (m.startsWith("ORB-LIVE"))        return "⚡ ORB LIVE" + m.slice("ORB-LIVE".length);
   if (m.startsWith("EMA9VWAP-PAPER"))  return "📄 EMA9+VWAP PAPER" + m.slice("EMA9VWAP-PAPER".length);
@@ -788,7 +799,7 @@ function notifyConsolidatedDayReport({ byMode }) {
   if (!canSend("TG_DAYREPORT_CONSOLIDATED")) return false;
 
   // Only include strategies that are currently enabled in Settings.
-  const groups = ["EMA_RSI_ST", "BB_RSI", "PA", "ORB", "EMA9VWAP", "TREND_PB", "TDS", "RSI_PIVOT_ST", "BN_PIVOT_RSI_ST", "EMA_RSI_ST_V2", "BN_EMA_RSI_ST_V2", "SIMPLE930", "HA_SCALP", "EARLYBIRD"].filter(isModeEnabled);
+  const groups = ["EMA_RSI_ST", "BB_RSI", "PA", "ORB", "EMA9VWAP", "TREND_PB", "TDS", "RSI_PIVOT_ST", "BN_PIVOT_RSI_ST", "EMA_RSI_ST_V2", "BN_EMA_RSI_ST_V2", "SIMPLE930", "HA_SCALP", "PREV_ORB_SCALP", "EARLYBIRD"].filter(isModeEnabled);
   let totalTrades = 0, totalPnl = 0, totalWins = 0, totalLosses = 0;
   const rows = [];
 

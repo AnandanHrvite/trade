@@ -318,7 +318,7 @@ check("ORB honours it through the shared orbExits module", () => {
 
 check("futures legs are excluded wherever an engine can trade them", () => {
   // Same trap as above: in futures mode these engines mirror spot into optionLtp.
-  for (const f of ["bnEmaRsiStV2Paper.js", "haScalpPaper.js", "rsiPivotStPaper.js", "bnPivotRsiStPaper.js"]) {
+  for (const f of ["bnEmaRsiStV2Paper.js", "haScalpPaper.js", "rsiPivotStPaper.js", "bnPivotRsiStPaper.js", "prevOrbScalpPaper.js"]) {
     const src = decomment(read(`routes/${f}`));
     const i = src.indexOf("checkProfitLock");
     assert.ok(i > 0, `${f} does not call checkProfitLock`);

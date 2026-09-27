@@ -70,6 +70,7 @@ function collectTodayStats(istDate) {
     TREND_PB: { trades: 0, wins: 0, losses: 0, pnl: 0 },
       TREND_DAY_SCALP: { trades: 0, wins: 0, losses: 0, pnl: 0 },
       HA_SCALP:        { trades: 0, wins: 0, losses: 0, pnl: 0 },
+      PREV_ORB_SCALP:  { trades: 0, wins: 0, losses: 0, pnl: 0 },
     RSI_PIVOT_ST:    { trades: 0, wins: 0, losses: 0, pnl: 0 },
     BN_PIVOT_RSI_ST: { trades: 0, wins: 0, losses: 0, pnl: 0 },
     EMA_RSI_ST_V2:   { trades: 0, wins: 0, losses: 0, pnl: 0 },

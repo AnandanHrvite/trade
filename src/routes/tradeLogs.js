@@ -45,7 +45,7 @@ function sendAiSkipMarkdown(res, records, baseName, meta) {
   res.send(md);
 }
 
-const MODES = ["ema_rsi_st", "ema_rsi_st_v2", "bb_rsi", "pa", "orb", "ema9vwap", "trend_pb", "trend_day_scalp", "ha_scalp", "rsi_pivot_st", "bn_pivot_rsi_st", "bn_ema_rsi_st_v2", "simple930", "early_bird"];
+const MODES = ["ema_rsi_st", "ema_rsi_st_v2", "bb_rsi", "pa", "orb", "ema9vwap", "trend_pb", "trend_day_scalp", "ha_scalp", "prev_orb_scalp", "rsi_pivot_st", "bn_pivot_rsi_st", "bn_ema_rsi_st_v2", "simple930", "early_bird"];
 
 function validMode(m) { return MODES.includes(m); }
 function validDate(d) { return typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d); }
@@ -547,6 +547,7 @@ function enabledModesFromEnv() {
     trend_pb: on(process.env.TREND_PB_MODE_ENABLED),
     trend_day_scalp: on(process.env.TDS_MODE_ENABLED),
   ha_scalp: on(process.env.HA_SCALP_MODE_ENABLED),
+    prev_orb_scalp: on(process.env.PREV_ORB_SCALP_MODE_ENABLED),
     rsi_pivot_st: on(process.env.RSI_PIVOT_ST_MODE_ENABLED),
     bn_pivot_rsi_st: on(process.env.BN_PIVOT_RSI_ST_MODE_ENABLED),
     simple930: on(process.env.SIMPLE930_MODE_ENABLED),
@@ -616,6 +617,7 @@ router.get("/", (req, res) => {
     .mode-trend_pb { color:#ec4899; }
     .mode-trend_day_scalp { color:#a855f7; }
 .mode-ha_scalp { color:#f97316; }
+.mode-prev_orb_scalp { color:#e879f9; }
     .mode-rsi_pivot_st { color:#facc15; }
     .mode-bn_pivot_rsi_st { color:#818cf8; }
     .mode-simple930 { color:#fb923c; }
@@ -1061,6 +1063,7 @@ ${buildSidebar('tradeLogs', liveActive)}
     { key: 'trend_pb', label: 'TREND PB',     cls: 'mode-trend_pb' },
     { key: 'trend_day_scalp', label: 'TREND DAY SCALP', cls: 'mode-trend_day_scalp' },
       { key: 'ha_scalp', label: 'HA SCALP', cls: 'mode-ha_scalp' },
+    { key: 'prev_orb_scalp', label: 'PREV ORB SCALP', cls: 'mode-prev_orb_scalp' },
     { key: 'rsi_pivot_st', label: 'RSI PIVOT ST', cls: 'mode-rsi_pivot_st' },
     { key: 'bn_pivot_rsi_st', label: 'BN PIVOT RSI ST', cls: 'mode-bn_pivot_rsi_st' },
     { key: 'simple930', label: 'SIMPLE_9:30', cls: 'mode-simple930' },
@@ -1078,8 +1081,8 @@ ${buildSidebar('tradeLogs', liveActive)}
   })();
 
   // Per-section page state.
-  var _filesPage  = { ema_rsi_st:1, ema_rsi_st_v2:1, bn_ema_rsi_st_v2:1, bb_rsi:1, pa:1, orb:1, ema9vwap:1, trend_pb:1, trend_day_scalp:1, ha_scalp:1, rsi_pivot_st:1, bn_pivot_rsi_st:1, simple930:1, early_bird:1 };
-  var _skipsPage  = { ema_rsi_st:1, ema_rsi_st_v2:1, bn_ema_rsi_st_v2:1, bb_rsi:1, pa:1, orb:1, ema9vwap:1, trend_pb:1, trend_day_scalp:1, ha_scalp:1, rsi_pivot_st:1, bn_pivot_rsi_st:1, simple930:1, early_bird:1 };
+  var _filesPage  = { ema_rsi_st:1, ema_rsi_st_v2:1, bn_ema_rsi_st_v2:1, bb_rsi:1, pa:1, orb:1, ema9vwap:1, trend_pb:1, trend_day_scalp:1, ha_scalp:1, prev_orb_scalp:1, rsi_pivot_st:1, bn_pivot_rsi_st:1, simple930:1, early_bird:1 };
+  var _skipsPage  = { ema_rsi_st:1, ema_rsi_st_v2:1, bn_ema_rsi_st_v2:1, bb_rsi:1, pa:1, orb:1, ema9vwap:1, trend_pb:1, trend_day_scalp:1, ha_scalp:1, prev_orb_scalp:1, rsi_pivot_st:1, bn_pivot_rsi_st:1, simple930:1, early_bird:1 };
   var _auditPage  = 1;
   var _view = { mode:null, date:null, kind:null, page:1, total:0, pageSize:25 }; // modal state
 

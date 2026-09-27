@@ -646,6 +646,86 @@ function clearHaScalpPosition() {
   console.log("[PERSIST] HA_SCALP position file cleared.");
 }
 
+// ── PREV_ORB_SCALP (prev-day H/L + 09:15 15m ORB → 3-min scalp, Zerodha) ────
+// stopLoss is the CURRENT level (it jumps to the target once reached, then
+// trails each closed 3-min candle), so targetReached + initialStopLoss are
+// persisted alongside it — without them a resumed trade could not tell a
+// trailed stop from the signal candle's original extreme.
+
+const PREV_ORB_SCALP_POS_FILE = path.join(DATA_DIR, ".active_prev_orb_scalp_position.json");
+
+function savePrevOrbScalpPosition(position, sessionMeta) {
+  try {
+    if (!position) { _persistAtomic(PREV_ORB_SCALP_POS_FILE, null); return; }
+    const data = {
+      position: {
+        side:            position.side,
+        symbol:          position.symbol,
+        qty:             position.qty,
+        entryPrice:      position.entryPrice,
+        spotAtEntry:     position.spotAtEntry || position.entrySpot,
+        stopLoss:        position.stopLoss || position.slSpot,
+        initialStopLoss: position.initialStopLoss || position.initialSlSpot,
+        target:          position.target ?? position.targetSpot ?? null,
+        targetReached:   !!position.targetReached,
+        slPts:           position.slPts,
+        candleSize:      position.candleSize,
+        breakLevel:      position.breakLevel,
+        prevHigh:        position.prevHigh,
+        prevLow:         position.prevLow,
+        prevDate:        position.prevDate,
+        orHigh:          position.orHigh,
+        orLow:           position.orLow,
+        orClose:         position.orClose,
+        signalRawHigh:   position.signalRawHigh,
+        signalRawLow:    position.signalRawLow,
+        signalBarTime:   position.signalBarTime,
+        entryUnixSec:    position.entryUnixSec,
+        entryTime:       position.entryTime,
+        // Observer-only, but it must survive a restart: re-reading it after a
+        // resume would stamp the CURRENT VIX onto a trade that opened hours ago.
+        vixAtEntry:      position.vixAtEntry ?? null,
+        orderId:         position.orderId,
+        isFutures:       !!position.isFutures,
+        optionEntryLtp:  position.optionEntryLtp,
+        optionStrike:    position.optionStrike,
+        optionExpiry:    position.optionExpiry,
+        optionType:      position.optionType || position.side,
+      },
+      sessionMeta: sessionMeta || {},
+      savedAt: Date.now(),
+      savedDate: new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
+    };
+    _persistAtomic(PREV_ORB_SCALP_POS_FILE, JSON.stringify(data, null, 2));
+    console.log(`💾 [PERSIST] PREV_ORB_SCALP position saved: ${position.side} ${position.symbol} @ ₹${position.entryPrice}`);
+  } catch (err) {
+    console.warn(`⚠️ [PERSIST] Could not save PREV_ORB_SCALP position: ${err.message}`);
+  }
+}
+
+function loadPrevOrbScalpPosition() {
+  try {
+    if (!fs.existsSync(PREV_ORB_SCALP_POS_FILE)) return null;
+    const data = JSON.parse(fs.readFileSync(PREV_ORB_SCALP_POS_FILE, "utf-8"));
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    if (data.savedDate && data.savedDate !== today) {
+      console.log(`[PERSIST] Stale PREV_ORB_SCALP position from ${data.savedDate} — discarding.`);
+      fs.unlinkSync(PREV_ORB_SCALP_POS_FILE);
+      return null;
+    }
+    if (data.position) console.log(`[PERSIST] PREV_ORB_SCALP position loaded: ${data.position.side} ${data.position.symbol} @ ₹${data.position.entryPrice}`);
+    return data;
+  } catch (err) {
+    console.warn(`[PERSIST] Could not load PREV_ORB_SCALP position: ${err.message}`);
+    return null;
+  }
+}
+
+function clearPrevOrbScalpPosition() {
+  _persistAtomic(PREV_ORB_SCALP_POS_FILE, null);
+  console.log("[PERSIST] PREV_ORB_SCALP position file cleared.");
+}
+
 
 // ── RSI_PIVOT_ST (RSI + pivot breakout + SuperTrend stop, Zerodha) ──────────
 // The stop is a FROZEN price at entry (SuperTrend level + premium floor), so a
@@ -1192,6 +1272,7 @@ module.exports = {
   saveTrendPbPosition, loadTrendPbPosition, clearTrendPbPosition,
   saveTrendDayScalpPosition, loadTrendDayScalpPosition, clearTrendDayScalpPosition,
   saveHaScalpPosition, loadHaScalpPosition, clearHaScalpPosition,
+  savePrevOrbScalpPosition, loadPrevOrbScalpPosition, clearPrevOrbScalpPosition,
   saveEarlyBirdPositions, loadEarlyBirdPositions, clearEarlyBirdPositions,
   saveRsiPivotStPosition, loadRsiPivotStPosition, clearRsiPivotStPosition,
   saveBnPivotRsiStPosition, loadBnPivotRsiStPosition, clearBnPivotRsiStPosition,

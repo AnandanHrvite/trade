@@ -36,7 +36,7 @@ const fyersBroker   = require("./services/fyersBroker");
 const { sendTelegram, sendTelegramSync, getTelegramHealth, isConfigured: telegramConfigured } = require("./utils/notify");
 const consolidatedEodReporter = require("./utils/consolidatedEodReporter");
 const manualTradesSyncJob = require("./utils/manualTradesSyncJob");
-const { loadTradePosition, clearTradePosition, loadBbRsiPosition, clearBbRsiPosition, loadPAPosition, clearPAPosition, loadEma9VwapPosition, clearEma9VwapPosition, loadOrbPosition, clearOrbPosition, loadTrendPbPosition, clearTrendPbPosition, loadTrendDayScalpPosition, clearTrendDayScalpPosition, loadHaScalpPosition, clearHaScalpPosition, loadRsiPivotStPosition, clearRsiPivotStPosition, loadBnPivotRsiStPosition, clearBnPivotRsiStPosition, loadEmaRsiStV2Position, clearEmaRsiStV2Position, loadBnEmaRsiStV2Position, clearBnEmaRsiStV2Position, loadSimple930Position, clearSimple930Position, loadEarlyBirdPositions, clearEarlyBirdPositions } = require("./utils/positionPersist");
+const { loadTradePosition, clearTradePosition, loadBbRsiPosition, clearBbRsiPosition, loadPAPosition, clearPAPosition, loadEma9VwapPosition, clearEma9VwapPosition, loadOrbPosition, clearOrbPosition, loadTrendPbPosition, clearTrendPbPosition, loadTrendDayScalpPosition, clearTrendDayScalpPosition, loadHaScalpPosition, clearHaScalpPosition, loadPrevOrbScalpPosition, clearPrevOrbScalpPosition, loadRsiPivotStPosition, clearRsiPivotStPosition, loadBnPivotRsiStPosition, clearBnPivotRsiStPosition, loadEmaRsiStV2Position, clearEmaRsiStV2Position, loadBnEmaRsiStV2Position, clearBnEmaRsiStV2Position, loadSimple930Position, clearSimple930Position, loadEarlyBirdPositions, clearEarlyBirdPositions } = require("./utils/positionPersist");
 const app = express();
 trackMounts(app);   // record every app.use(path, router) so Start All can discover the strategy routes
 app.use(compression());
@@ -815,6 +815,12 @@ const OPEN_PATHS = [
   "/ha-scalp-paper/status/chart-data",
   "/ha-scalp-paper/history",
   "/ha-scalp-live/status/data",
+  // PREV ORB Scalp — same reason: the dashboard tile polls status/data unsecured.
+  "/prev-orb-scalp-paper/status",
+  "/prev-orb-scalp-paper/status/data",
+  "/prev-orb-scalp-paper/status/chart-data",
+  "/prev-orb-scalp-paper/history",
+  "/prev-orb-scalp-live/status/data",
   "/early-bird-paper/status",
   "/early-bird-paper/status/data",
   "/early-bird-paper/status/chart-data",
@@ -954,6 +960,10 @@ const OPEN_PATHS = [
   "/ha-scalp-backtest/status",
   "/ha-scalp-backtest/idle",
   "/ha-scalp-backtest/result",
+  "/prev-orb-scalp-backtest",
+  "/prev-orb-scalp-backtest/status",
+  "/prev-orb-scalp-backtest/idle",
+  "/prev-orb-scalp-backtest/result",
   "/early-bird-backtest",
   "/early-bird-backtest/status",
   "/early-bird-backtest/idle",
@@ -992,6 +1002,7 @@ const OPEN_PATHS = [
   "/trend-pb-live",
   "/trend-day-scalp-live",
   "/ha-scalp-live",
+  "/prev-orb-scalp-live",
   "/early-bird-live",
   "/simple930-live",
   "/rsi-pivot-st-live",
@@ -1081,6 +1092,8 @@ const OPEN_PREFIXES = [
   "/trend-day-scalp-paper/download/",
   "/ha-scalp-paper/view/",
   "/ha-scalp-paper/download/",
+  "/prev-orb-scalp-paper/view/",
+  "/prev-orb-scalp-paper/download/",
   "/early-bird-paper/view/",
   "/early-bird-paper/download/",
   "/simple930-paper/view/",
@@ -1251,6 +1264,11 @@ app.use("/trend-day-scalp-live",     require("./routes/trendDayScalpLiveHarness"
 app.use("/ha-scalp-paper",      require("./routes/haScalpPaper"));            // ← canonical engine
 app.use("/ha-scalp-backtest",   require("./routes/haScalpBacktest"));         // ← same signal engine, paper's exits
 app.use("/ha-scalp-live",       require("./routes/haScalpLiveHarness"));      // ← LIVE via PAPER + harness (triple-gated dry-run)
+
+// ── PREV_ORB_SCALP routes (prev-day range + 15m/3m ORB scalp on NIFTY 50 spot, Zerodha) ─
+app.use("/prev-orb-scalp-paper",    require("./routes/prevOrbScalpPaper"));        // ← canonical engine
+app.use("/prev-orb-scalp-backtest", require("./routes/prevOrbScalpBacktest"));     // ← same signal engine, paper's exits
+app.use("/prev-orb-scalp-live",     require("./routes/prevOrbScalpLiveHarness"));  // ← LIVE via PAPER + harness (triple-gated dry-run)
 
 // ── EARLYBIRD routes (first 15-min breakout, CASH EQUITY on F&O stocks, Fyers) ─
 app.use("/early-bird-paper",    require("./routes/earlyBirdPaper"));          // ← canonical engine
@@ -1436,6 +1454,8 @@ app.get("/", (req, res) => {
   const tdsModeOn      = (process.env.TDS_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const haScalpMode    = sharedSocketState.getHaScalpMode ? sharedSocketState.getHaScalpMode() : null;
   const haScalpModeOn  = (process.env.HA_SCALP_MODE_ENABLED || 'true').toLowerCase() === 'true';
+  const prevOrbScalpMode   = sharedSocketState.getPrevOrbScalpMode ? sharedSocketState.getPrevOrbScalpMode() : null;
+  const prevOrbScalpModeOn = (process.env.PREV_ORB_SCALP_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const earlyBirdMode   = sharedSocketState.getEarlyBirdMode ? sharedSocketState.getEarlyBirdMode() : null;
   const earlyBirdModeOn = (process.env.EARLYBIRD_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const simple930Mode    = sharedSocketState.getSimple930Mode ? sharedSocketState.getSimple930Mode() : null;
@@ -1466,6 +1486,7 @@ app.get("/", (req, res) => {
     || (trendPbModeOn && trendPbMode)
     || (tdsModeOn && tdsMode)
     || (haScalpModeOn && haScalpMode)
+    || (prevOrbScalpModeOn && prevOrbScalpMode)
     || (earlyBirdModeOn && earlyBirdMode)
     || (simple930ModeOn && simple930Mode)
     || (rsiPivotStModeOn && rsiPivotStMode)
@@ -1501,6 +1522,7 @@ app.get("/", (req, res) => {
     { key: 'TREND_PB', cls: 'trendpb',  label: 'TREND PB',     on: trendPbModeOn },
     { key: 'TDS',      cls: 'tds',      label: 'TREND DAY SCALP', on: tdsModeOn },
     { key: 'HA_SCALP', cls: 'hascalp',  label: 'HA SCALP',     on: haScalpModeOn },
+    { key: 'PREV_ORB_SCALP', cls: 'prevorb', label: 'PREV ORB SCALP', on: prevOrbScalpModeOn },
     { key: 'EARLYBIRD', cls: 'earlybird', label: 'EARLYBIRD',   on: earlyBirdModeOn },
     { key: 'SIMPLE930', cls: 'simple930', label: 'SIMPLE_9:30', on: simple930ModeOn },
     { key: 'RSI_PIVOT_ST', cls: 'rsipivotst', label: 'RSI PIVOT ST', on: rsiPivotStModeOn },
@@ -2209,6 +2231,7 @@ app.get("/", (req, res) => {
     .mm-card.trendpb  .mm-dot { background:#ec4899; }
     .mm-card.tds      .mm-dot { background:#a855f7; }
     .mm-card.hascalp  .mm-dot { background:#f97316; }
+    .mm-card.prevorb  .mm-dot { background:#e879f9; }
     .mm-card.earlybird .mm-dot { background:#22d3ee; }
     .mm-card.simple930 .mm-dot { background:#fb923c; }
     .mm-card.rsipivotst .mm-dot { background:#c2410c; }
@@ -2673,6 +2696,17 @@ ${buildSidebar('dashboard', liveActive)}
       <div class="mm-stats" id="mm-stats-HA_SCALP">—</div>
       <div class="mm-wrap"><canvas id="mmChart-HA_SCALP"></canvas></div>
       <div class="mm-empty" id="mm-empty-HA_SCALP" style="display:none;">No paper trades yet</div>
+    </div>
+    ` : ''}
+    ${prevOrbScalpModeOn ? `
+    <div class="mm-card prevorb" data-mode="PREV_ORB_SCALP">
+      <div class="mm-hdr">
+        <span class="mm-dot"></span>
+        <span class="mm-title">PREV ORB SCALP</span>
+      </div>
+      <div class="mm-stats" id="mm-stats-PREV_ORB_SCALP">—</div>
+      <div class="mm-wrap"><canvas id="mmChart-PREV_ORB_SCALP"></canvas></div>
+      <div class="mm-empty" id="mm-empty-PREV_ORB_SCALP" style="display:none;">No paper trades yet</div>
     </div>
     ` : ''}
     ${earlyBirdModeOn ? `
@@ -3602,10 +3636,10 @@ document.addEventListener('click', function(e){
   if (!src || _dashSrc === src) return;
   _dashSrc = src;
   _dcToggle = src;
-  ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB','TDS','HA_SCALP','EARLYBIRD','SIMPLE930','RSI_PIVOT_ST','BN_PIVOT_RSI_ST','EMA_RSI_ST_V2','BN_EMA_RSI_ST_V2'].forEach(function(m){ _mmToggle[m] = src; });
+  ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB','TDS','HA_SCALP','PREV_ORB_SCALP','EARLYBIRD','SIMPLE930','RSI_PIVOT_ST','BN_PIVOT_RSI_ST','EMA_RSI_ST_V2','BN_EMA_RSI_ST_V2'].forEach(function(m){ _mmToggle[m] = src; });
   document.querySelectorAll('#dashSrcToggle .dst-btn').forEach(function(b){ b.classList.toggle('active', b === btn); });
   _renderDashTotal();
-  ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB','TDS','HA_SCALP','EARLYBIRD','SIMPLE930','RSI_PIVOT_ST','BN_PIVOT_RSI_ST','EMA_RSI_ST_V2','BN_EMA_RSI_ST_V2'].forEach(_renderModuleChart);
+  ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB','TDS','HA_SCALP','PREV_ORB_SCALP','EARLYBIRD','SIMPLE930','RSI_PIVOT_ST','BN_PIVOT_RSI_ST','EMA_RSI_ST_V2','BN_EMA_RSI_ST_V2'].forEach(_renderModuleChart);
   _applyAllBtnState(_allBtnState.paperOn, _allBtnState.liveOn);
 });
 
@@ -3617,7 +3651,7 @@ document.addEventListener('click', function(e){
   function refreshRange(){
     _readDashRange();
     _renderDashTotal();
-    ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB','TDS','HA_SCALP','EARLYBIRD','SIMPLE930','RSI_PIVOT_ST','BN_PIVOT_RSI_ST','EMA_RSI_ST_V2','BN_EMA_RSI_ST_V2'].forEach(_renderModuleChart);
+    ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB','TDS','HA_SCALP','PREV_ORB_SCALP','EARLYBIRD','SIMPLE930','RSI_PIVOT_ST','BN_PIVOT_RSI_ST','EMA_RSI_ST_V2','BN_EMA_RSI_ST_V2'].forEach(_renderModuleChart);
     _renderBrokerWallets();
   }
   function syncCustomVisibility(){
@@ -3649,7 +3683,7 @@ loadDashCumCharts();
 // ── Per-Module P&L Charts (top-bar Paper/Live toggle + Range filter) ─────────
 var _mmData = { paper: null, live: null };
 var _mmCharts = {};
-var _mmToggle = { EMA_RSI_ST: 'paper', BB_RSI: 'paper', PA: 'paper', ORB: 'paper', EMA9VWAP: 'paper', TREND_PB: 'paper', TDS: 'paper', HA_SCALP: 'paper', EARLYBIRD: 'paper', SIMPLE930: 'paper', RSI_PIVOT_ST: 'paper', BN_PIVOT_RSI_ST: 'paper', EMA_RSI_ST_V2: 'paper', BN_EMA_RSI_ST_V2: 'paper' };
+var _mmToggle = { EMA_RSI_ST: 'paper', BB_RSI: 'paper', PA: 'paper', ORB: 'paper', EMA9VWAP: 'paper', TREND_PB: 'paper', TDS: 'paper', HA_SCALP: 'paper', PREV_ORB_SCALP: 'paper', EARLYBIRD: 'paper', SIMPLE930: 'paper', RSI_PIVOT_ST: 'paper', BN_PIVOT_RSI_ST: 'paper', EMA_RSI_ST_V2: 'paper', BN_EMA_RSI_ST_V2: 'paper' };
 
 // A strategy with no trades in the selected source+range has nothing to show,
 // so its whole card is hidden rather than kept as a "0 trades" placeholder.
@@ -3741,7 +3775,7 @@ async function loadModuleCharts(){
     if (r2.status === 401) _authLost();
     if (r2.ok){ var d2 = await r2.json(); _mmData.live = (d2 && d2.trades) || []; }
   } catch(_){ _mmData.live = []; }
-  ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB','TDS','HA_SCALP','EARLYBIRD','SIMPLE930','RSI_PIVOT_ST','BN_PIVOT_RSI_ST','EMA_RSI_ST_V2','BN_EMA_RSI_ST_V2'].forEach(_renderModuleChart);
+  ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB','TDS','HA_SCALP','PREV_ORB_SCALP','EARLYBIRD','SIMPLE930','RSI_PIVOT_ST','BN_PIVOT_RSI_ST','EMA_RSI_ST_V2','BN_EMA_RSI_ST_V2'].forEach(_renderModuleChart);
   _renderBrokerWallets();
 }
 
@@ -3883,7 +3917,7 @@ setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily 
   var LIVE_URLS = {
     EMA_RSI_ST:'/ema_rsi_st-paper/status/data', BB_RSI:'/bb_rsi-paper/status/data',
     PA:'/pa-paper/status/data', ORB:'/orb-paper/status/data', EMA9VWAP:'/ema9vwap-paper/status/data',
-    TREND_PB:'/trend-pb-paper/status/data', TDS:'/trend-day-scalp-paper/status/data', HA_SCALP:'/ha-scalp-paper/status/data', EARLYBIRD:'/early-bird-paper/status/data', SIMPLE930:'/simple930-paper/status/data',
+    TREND_PB:'/trend-pb-paper/status/data', TDS:'/trend-day-scalp-paper/status/data', HA_SCALP:'/ha-scalp-paper/status/data', PREV_ORB_SCALP:'/prev-orb-scalp-paper/status/data', EARLYBIRD:'/early-bird-paper/status/data', SIMPLE930:'/simple930-paper/status/data',
     RSI_PIVOT_ST:'/rsi-pivot-st-paper/status/data',
     BN_PIVOT_RSI_ST:'/bn-pivot-rsi-st-paper/status/data',
     EMA_RSI_ST_V2:'/ema_rsi_st_v2-paper/status/data',
@@ -4836,6 +4870,17 @@ async function reconcileOrphanedPositions() {
       sendTelegram(msg);
     }
 
+    const savedPrevOrbScalp = loadPrevOrbScalpPosition();
+    if (savedPrevOrbScalp && savedPrevOrbScalp.position) {
+      const p = savedPrevOrbScalp.position;
+      const msg = `🚨 [STARTUP] Persisted PREV_ORB_SCALP position found (crash recovery)!\n` +
+        `  ${p.side} ${p.symbol}: entry=₹${p.entryPrice} SL=₹${p.stopLoss}${p.targetReached ? " (target hit, trailing)" : ""} qty=${p.qty}\n` +
+        `  Saved at: ${new Date(savedPrevOrbScalp.savedAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}\n` +
+        `Bot was tracking this before crash. Check your broker dashboard!`;
+      console.warn(msg);
+      sendTelegram(msg);
+    }
+
     const savedEarlyBird = loadEarlyBirdPositions();
     // The OPTION leg is not in positions[] — it is saved under sessionMeta — so
     // in option-ONLY mode that array is legitimately empty while a real NIFTY
@@ -4957,7 +5002,7 @@ async function reconcileOrphanedPositions() {
     // book is always safe — skip the guard to avoid a spurious every-boot warning.
     const _liveActive =
       (process.env.LIVE_HARNESS_DRY_RUN || "true").toLowerCase() !== "true" ||
-      ["EMA_RSI_ST", "BB_RSI", "PA", "ORB", "EMA9VWAP", "TREND_PB", "TDS", "HA_SCALP", "SIMPLE930", "RSI_PIVOT_ST", "BN_PIVOT_RSI_ST", "EMA_RSI_ST_V2", "BN_EMA_RSI_ST_V2", "EARLYBIRD"].some(
+      ["EMA_RSI_ST", "BB_RSI", "PA", "ORB", "EMA9VWAP", "TREND_PB", "TDS", "HA_SCALP", "PREV_ORB_SCALP", "SIMPLE930", "RSI_PIVOT_ST", "BN_PIVOT_RSI_ST", "EMA_RSI_ST_V2", "BN_EMA_RSI_ST_V2", "EARLYBIRD"].some(
         (s) => (process.env[`${s}_LIVE_ENABLED`] || "").toLowerCase() === "true",
       );
 
@@ -4983,7 +5028,7 @@ async function reconcileOrphanedPositions() {
         // returns the parsed file whenever it exists and is today's, even if the
         // record has no `.position`, which used to trigger a spurious
         // "retaining unverified snapshot" warning on an empty record.
-        const _zSnaps = [savedTrade, savedEma9Vwap, savedRsiPivotSt, savedBnPivotRsiSt, savedEmaRsiStV2, savedBnEmaRsiStV2, savedSimple930, savedHaScalp].filter(x => x && x.position).length;
+        const _zSnaps = [savedTrade, savedEma9Vwap, savedRsiPivotSt, savedBnPivotRsiSt, savedEmaRsiStV2, savedBnEmaRsiStV2, savedSimple930, savedHaScalp, savedPrevOrbScalp].filter(x => x && x.position).length;
         if (_liveActive && _zSnaps > 0 && !_zReadable) {
           const msg = `⚠️ [STARTUP] Zerodha book came back EMPTY — can't tell flat from an API error. Retaining ${_zSnaps} crash snapshot(s) UNVERIFIED (re-checking next boot). Check Zerodha dashboard.`;
           console.warn(msg); sendTelegram(msg);
@@ -4997,6 +5042,7 @@ async function reconcileOrphanedPositions() {
           if (savedBnPivotRsiSt) clearBnPivotRsiStPosition(); // BN_PIVOT_RSI_ST (NIFTY BANK) is the same engine on Zerodha
           if (savedSimple930) clearSimple930Position();   // SIMPLE_9:30 is a Zerodha strategy too (Fyers data, Zerodha orders)
           if (savedHaScalp) clearHaScalpPosition();       // HA_SCALP likewise — Fyers candles, Zerodha orders
+          if (savedPrevOrbScalp) clearPrevOrbScalpPosition(); // PREV_ORB_SCALP likewise — Fyers candles, Zerodha orders
         }
       }
     }
@@ -5072,6 +5118,7 @@ async function gracefulShutdown(signal) {
     if (sharedSocketState.getTrendPbMode &&  sharedSocketState.getTrendPbMode())  activeModes.push(sharedSocketState.getTrendPbMode());
     if (sharedSocketState.getTrendDayScalpMode && sharedSocketState.getTrendDayScalpMode()) activeModes.push(sharedSocketState.getTrendDayScalpMode());
     if (sharedSocketState.getHaScalpMode && sharedSocketState.getHaScalpMode()) activeModes.push(sharedSocketState.getHaScalpMode());
+    if (sharedSocketState.getPrevOrbScalpMode && sharedSocketState.getPrevOrbScalpMode()) activeModes.push(sharedSocketState.getPrevOrbScalpMode());
     if (sharedSocketState.getSimple930Mode && sharedSocketState.getSimple930Mode()) activeModes.push(sharedSocketState.getSimple930Mode());
     if (sharedSocketState.getRsiPivotStMode && sharedSocketState.getRsiPivotStMode()) activeModes.push(sharedSocketState.getRsiPivotStMode());
     if (sharedSocketState.getBnPivotRsiStMode && sharedSocketState.getBnPivotRsiStMode()) activeModes.push(sharedSocketState.getBnPivotRsiStMode());
@@ -5096,6 +5143,7 @@ async function gracefulShutdown(signal) {
       m === "EMA_RSI_ST_LIVE" || m === "BB_RSI_LIVE" || m === "PA_LIVE" ||
       m === "ORB_LIVE" || m === "EMA9VWAP_LIVE" || m === "TREND_PB_LIVE" ||
       m === "TREND_DAY_SCALP_LIVE" || m === "HA_SCALP_LIVE" ||
+      m === "PREV_ORB_SCALP_LIVE" ||
       m === "EARLY_BIRD_LIVE" ||
       m === "SIMPLE930_LIVE" ||
       m === "RSI_PIVOT_ST_LIVE" ||
@@ -5119,6 +5167,7 @@ async function gracefulShutdown(signal) {
       "TREND_PB_PAPER": require("./routes/trendPbPaper"),
       "TREND_DAY_SCALP_PAPER": require("./routes/trendDayScalpPaper"),
       "HA_SCALP_PAPER":        require("./routes/haScalpPaper"),
+      "PREV_ORB_SCALP_PAPER":  require("./routes/prevOrbScalpPaper"),
       "EARLY_BIRD_PAPER":      require("./routes/earlyBirdPaper"),
       "SIMPLE930_PAPER":       require("./routes/simple930Paper"),
       "RSI_PIVOT_ST_PAPER":    require("./routes/rsiPivotStPaper"),

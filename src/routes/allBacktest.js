@@ -23,6 +23,7 @@ const orbStrategy   = require("../strategies/orb_breakout");
 const trendPbStrategy = require("../strategies/trend_pb");
 const tdsStrategy     = require("../strategies/trend_day_scalp");
 const haScalpStrategy = require("../strategies/ha_scalp");
+const prevOrbScalpStrategy = require("../strategies/prev_orb_scalp");
 const rsiPivotStStrategy = require("../strategies/rsi_pivot_st");
 const bnPivotRsiStStrategy = require("../strategies/bn_pivot_rsi_st");
 const emaRsiStV2Strategy = require("../strategies/ema_rsi_st_v2");
@@ -37,6 +38,8 @@ const ORB_KEY   = "ORB_BACKTEST";
 const TREND_PB_KEY = "TREND_PB_BACKTEST";
 const TDS_KEY      = "TREND_DAY_SCALP_BACKTEST";
 const HA_SCALP_KEY = "HA_SCALP_BACKTEST";
+// MUST match the RESULT_KEY prevOrbScalpBacktest.js saves under.
+const PREV_ORB_SCALP_KEY = "PREV_ORB_SCALP_BACKTEST";
 const RSI_PIVOT_ST_KEY = "RSI_PIVOT_ST_BACKTEST";
 // MUST match the RESULT_KEY bnPivotRsiStBacktest.js saves under.
 const BN_PIVOT_RSI_ST_KEY = "BN_PIVOT_RSI_ST_BACKTEST";
@@ -157,6 +160,7 @@ router.get("/", (req, res) => {
   const trendPbOn  = _modeOn("TREND_PB_MODE_ENABLED");
   const tdsOn      = _modeOn("TDS_MODE_ENABLED");
   const haScalpOn  = _modeOn("HA_SCALP_MODE_ENABLED");
+  const prevOrbScalpOn = _modeOn("PREV_ORB_SCALP_MODE_ENABLED");
   const rsiPivotStOn = _modeOn("RSI_PIVOT_ST_MODE_ENABLED");
   const bnPivotRsiStOn = _modeOn("BN_PIVOT_RSI_ST_MODE_ENABLED");
   // EMA_RSI_ST_V2 defaults OFF; _modeOn() defaults ON, so it is compared here.
@@ -173,6 +177,7 @@ router.get("/", (req, res) => {
   const trendPbResult  = trendPbOn  ? loadResult(TREND_PB_KEY) : null;
   const tdsResult      = tdsOn      ? loadResult(TDS_KEY)      : null;
   const haScalpResult  = haScalpOn  ? loadResult(HA_SCALP_KEY)  : null;
+  const prevOrbScalpResult = prevOrbScalpOn ? loadResult(PREV_ORB_SCALP_KEY) : null;
   const rsiPivotStResult = rsiPivotStOn ? loadResult(RSI_PIVOT_ST_KEY) : null;
   const bnPivotRsiStResult = bnPivotRsiStOn ? loadResult(BN_PIVOT_RSI_ST_KEY) : null;
   const emaRsiStV2Result = emaRsiStV2On ? loadResult(EMA_RSI_ST_V2_KEY) : null;
@@ -214,6 +219,11 @@ router.get("/", (req, res) => {
     "HA SCALP", { bg: "rgba(249,115,22,0.12)", fg: "#fdba74", border: "rgba(249,115,22,0.25)" },
     haScalpStrategy && haScalpStrategy.NAME ? haScalpStrategy.NAME : "HA_SCALP",
     HA_SCALP_KEY, "/ha-scalp-backtest", haScalpResult
+  ) : "";
+  const prevOrbScalpPanel = prevOrbScalpOn ? renderPanel(
+    "PREV ORB SCALP", { bg: "rgba(232,121,249,0.12)", fg: "#f0abfc", border: "rgba(232,121,249,0.25)" },
+    prevOrbScalpStrategy && prevOrbScalpStrategy.NAME ? prevOrbScalpStrategy.NAME : "PREV_ORB_SCALP",
+    PREV_ORB_SCALP_KEY, "/prev-orb-scalp-backtest", prevOrbScalpResult
   ) : "";
   const rsiPivotStPanel = rsiPivotStOn ? renderPanel(
     "RSI PIVOT ST", { bg: "rgba(250,204,21,0.12)", fg: "#facc15", border: "rgba(250,204,21,0.25)" },
@@ -399,12 +409,13 @@ ${buildSidebar('allBacktest', liveActive)}
   ${trendPbPanel}
   ${tdsPanel}
         ${haScalpPanel}
+  ${prevOrbScalpPanel}
   ${rsiPivotStPanel}
   ${bnPivotRsiStPanel}
   ${bnEmaRsiStV2Panel}
   ${simple930Panel}
   ${earlyBirdPanel}
-  ${(!emaRsiStOn && !emaRsiStV2On && !bbRsiOn && !paOn && !orbOn && !trendPbOn && !tdsOn && !haScalpOn && !rsiPivotStOn && !bnPivotRsiStOn && !bnEmaRsiStV2On && !simple930On && !earlyBirdOn) ? `
+  ${(!emaRsiStOn && !emaRsiStV2On && !bbRsiOn && !paOn && !orbOn && !trendPbOn && !tdsOn && !haScalpOn && !prevOrbScalpOn && !rsiPivotStOn && !bnPivotRsiStOn && !bnEmaRsiStV2On && !simple930On && !earlyBirdOn) ? `
   <div style="background:#08091a;border:0.5px solid #0e1428;border-radius:10px;padding:24px;text-align:center;color:#94a3b8;font-size:0.78rem;">
     No strategies enabled. Toggle one on in <a href="/settings" style="color:#60a5fa;">Settings → Strategy Modes</a>.
   </div>` : ""}

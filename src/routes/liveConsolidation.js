@@ -38,6 +38,7 @@ const SOURCES = [
   { mode: "BN_PIVOT_RSI_ST", file: path.join(DATA_DIR, "bn_pivot_rsi_st_live_trades.json"), label: "BN PIVOT RSI ST", color: "#818cf8" },
   { mode: "SIMPLE930", file: path.join(DATA_DIR, "simple930_live_trades.json"), label: "SIMPLE_9:30", color: "#fb923c" },
   { mode: "HA_SCALP", file: path.join(DATA_DIR, "ha_scalp_live_trades.json"), label: "HA SCALP", color: "#f97316" },
+  { mode: "PREV_ORB_SCALP", file: path.join(DATA_DIR, "prev_orb_scalp_live_trades.json"), label: "PREV ORB SCALP", color: "#e879f9" },
   // EarlyBird is cash equity: side is LONG/SHORT, qty is a share count.
   { mode: "EARLYBIRD", file: path.join(DATA_DIR, "early_bird_live_trades.json"), label: "EarlyBird", color: "#14b8a6" },
 ];
@@ -232,6 +233,7 @@ router.get("/", (req, res) => {
     .badge-BN_PIVOT_RSI_ST{background:rgba(129,140,248,0.12);color:#818cf8;border:0.5px solid rgba(129,140,248,0.3);}
     .badge-SIMPLE930{background:rgba(251,146,60,0.12);color:#fb923c;border:0.5px solid rgba(251,146,60,0.3);}
     .badge-HA_SCALP{background:rgba(249,115,22,0.12);color:#f97316;border:0.5px solid rgba(249,115,22,0.3);}
+    .badge-PREV_ORB_SCALP{background:rgba(232,121,249,0.12);color:#e879f9;border:0.5px solid rgba(232,121,249,0.3);}
     .badge-EARLYBIRD{background:rgba(20,184,166,0.12);color:#14b8a6;border:0.5px solid rgba(20,184,166,0.3);}
 
     .roll-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}

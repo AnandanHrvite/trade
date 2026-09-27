@@ -57,6 +57,7 @@ const PAPER_SOURCES = [
   { mode: "TREND_PB",         file: "trend_pb_paper_trades.json" },
   { mode: "TDS",              file: "trend_day_scalp_paper_trades.json" },
   { mode: "HA_SCALP",         file: "ha_scalp_paper_trades.json" },
+  { mode: "PREV_ORB_SCALP",   file: "prev_orb_scalp_paper_trades.json" },
   { mode: "RSI_PIVOT_ST",     file: "rsi_pivot_st_paper_trades.json" },
   { mode: "BN_PIVOT_RSI_ST",  file: "bn_pivot_rsi_st_paper_trades.json" },
   { mode: "SIMPLE930",        file: "simple930_paper_trades.json" },
@@ -307,6 +308,7 @@ ${multiSelectCSS()}
     .badge-TREND_PB{background:rgba(236,72,153,0.12);color:#ec4899;}
     .badge-TDS{background:rgba(168,85,247,0.12);color:#a855f7;}
     .badge-HA_SCALP{background:rgba(249,115,22,0.12);color:#f97316;}
+    .badge-PREV_ORB_SCALP{background:rgba(232,121,249,0.12);color:#e879f9;}
     .badge-RSI_PIVOT_ST{background:rgba(250,204,21,0.12);color:#facc15;}
     .badge-BN_PIVOT_RSI_ST{background:rgba(129,140,248,0.12);color:#818cf8;}
     .badge-SIMPLE930{background:rgba(251,146,60,0.12);color:#fb923c;}

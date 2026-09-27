@@ -53,6 +53,7 @@ const PAPER_SOURCES = [
   { mode: "TREND_PB", file: "trend_pb_paper_trades.json" },
   { mode: "TDS",      file: "trend_day_scalp_paper_trades.json" },
   { mode: "HA_SCALP", file: "ha_scalp_paper_trades.json" },
+  { mode: "PREV_ORB_SCALP", file: "prev_orb_scalp_paper_trades.json" },
   { mode: "RSI_PIVOT_ST", file: "rsi_pivot_st_paper_trades.json" },
   // NIFTY BANK, monthly options — same rules, separate edge.
   { mode: "BN_PIVOT_RSI_ST", file: "bn_pivot_rsi_st_paper_trades.json" },
@@ -71,6 +72,7 @@ const LIVE_SOURCES = [
   { mode: "TREND_PB", file: "trend_pb_live_trades.json" },
   { mode: "TDS",      file: "trend_day_scalp_live_trades.json" },
   { mode: "HA_SCALP", file: "ha_scalp_live_trades.json" },
+  { mode: "PREV_ORB_SCALP", file: "prev_orb_scalp_live_trades.json" },
   { mode: "RSI_PIVOT_ST", file: "rsi_pivot_st_live_trades.json" },
   { mode: "BN_PIVOT_RSI_ST", file: "bn_pivot_rsi_st_live_trades.json" },
   { mode: "SIMPLE930", file: "simple930_live_trades.json" },

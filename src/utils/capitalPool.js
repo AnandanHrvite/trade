@@ -89,6 +89,7 @@ const STRATEGIES = {
   bn_ema_rsi_st_v2: { broker: "zerodha", label: "BN_EMA_RSI_ST_V2 (NIFTY BANK)", file: "bn_ema_rsi_st_v2_paper_trades.json" },
   simple930: { broker: "zerodha", label: "SIMPLE_9:30", file: "simple930_paper_trades.json" },
   ha_scalp:  { broker: "zerodha", label: "HA_SCALP",    file: "ha_scalp_paper_trades.json"  },
+  prev_orb_scalp: { broker: "zerodha", label: "PREV_ORB_SCALP", file: "prev_orb_scalp_paper_trades.json" },
   early_bird: { broker: "fyers",  label: "EARLYBIRD",   file: "early_bird_paper_trades.json" },
 };
 
