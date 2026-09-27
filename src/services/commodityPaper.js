@@ -154,7 +154,9 @@ function createEngine({ id, prefix, label, strategy }) {
 
   // ── live config ─────────────────────────────────────────────────────────────
   const cfg = () => ({
-    res:        Math.max(1, _int(process.env[`${prefix}_RESOLUTION`], 5)),
+    // Candle size is fixed for a running session — a mid-session change would mix
+    // candle lengths in one series. It applies on the next Start.
+    res:        state.res || Math.max(1, _int(process.env[`${prefix}_RESOLUTION`], 5)),
     lots:       Math.max(1, _int(process.env[`${prefix}_LOTS`], 1)),
     entryStart: _mins(process.env[`${prefix}_ENTRY_START`], "15:00"),
     entryEnd:   _mins(process.env[`${prefix}_ENTRY_END`], "22:30"),
@@ -170,7 +172,7 @@ function createEngine({ id, prefix, label, strategy }) {
   });
 
   const state = {
-    running: false, day: null, series: null, candles: [], lastBarTime: null,
+    running: false, starting: false, res: null, day: null, series: null, candles: [], lastBarTime: null,
     futLtp: null, optLtp: null, lastQuoteAt: null, nextQuoteAt: 0, nextCandleAt: 0,
     position: null, armed: null, trades: [], sessionPnl: 0,
     consecLosses: 0, halted: null, slPauseUntil: { CE: 0, PE: 0 }, oppCooldown: null,
@@ -283,9 +285,10 @@ function createEngine({ id, prefix, label, strategy }) {
     let premium = null;
     try { premium = (await quotes([opt.symbol]))[opt.symbol] || null; } catch (err) { noteError(err.message); }
     if (!premium) { log(`❌ ${side} skipped — no price for ${opt.symbol}`); return; }
-    if (state.position) return;   // a parallel path got there first
+    if (state.position || !state.running) return;   // a parallel path got there first, or Stop was pressed
 
-    const u = mcx.underlyingInfo();
+    // The session's contract decides the size — not a Settings change made since Start.
+    const u = { key: state.series.underlying, ...mcx.UNDERLYINGS[state.series.underlying] };
     state.position = {
       side, symbol: opt.symbol, strike: opt.strike, expiry: opt.expiry,
       lots: c.lots, multiplier: u.multiplier,
@@ -458,8 +461,13 @@ function createEngine({ id, prefix, label, strategy }) {
   }
 
   // ── start / stop / reset ───────────────────────────────────────────────────
-  async function start({ resumed = false } = {}) {
-    if (state.running) return { ok: false, reason: "already running" };
+  async function start(opts) {
+    if (state.running || state.starting) return { ok: false, reason: "already running" };
+    state.starting = true;
+    try { return await _start(opts); } finally { state.starting = false; }
+  }
+  async function _start({ resumed = false } = {}) {
+    state.res = null;
     const c = cfg();
     const dow = istDow();
     if (dow === 0 || dow === 6) return { ok: false, reason: "MCX is closed on Saturday and Sunday" };
@@ -484,6 +492,7 @@ function createEngine({ id, prefix, label, strategy }) {
     }
 
     state.running = true;
+    state.res = c.res;
     state.armed = null; state.nextQuoteAt = 0; state.nextCandleAt = 0; state.lastError = null;
     persistRunning();
     log(`▶️ ${resumed ? "Resumed" : "Started"} ${label} — signal ${state.series.future} (${c.res}m, ${state.candles.length} warm-up candles) · options expire ${state.series.optionExpiry} · entries ${fmtMins(c.entryStart)}–${fmtMins(c.entryEnd)} · exit ${fmtMins(c.eodExit)}`);
@@ -495,6 +504,7 @@ function createEngine({ id, prefix, label, strategy }) {
     if (!state.running) return;
     if (state.position) await exit(`Session ${reason}`, state.futLtp || state.position.spotAtEntry);
     state.running = false;
+    state.res = null;
     state.armed = null;
     if (timer) { clearInterval(timer); timer = null; }
     persistRunning();
@@ -517,7 +527,8 @@ function createEngine({ id, prefix, label, strategy }) {
     const days = Object.entries(book.days || {}).sort((a, b) => b[0].localeCompare(a[0]));
     const allTime = r2(days.reduce((s, [, d]) => s + (d.pnl || 0), 0));
     return {
-      id, label, prefix, strategy, rulesKey: A.rulesKey, cfg: c, underlying: mcx.underlyingInfo(),
+      id, label, prefix, strategy, rulesKey: A.rulesKey, cfg: c,
+      underlying: state.running && state.series ? { key: state.series.underlying, ...mcx.UNDERLYINGS[state.series.underlying] } : mcx.underlyingInfo(),
       running: state.running, series: state.series ? { future: state.series.future, futureExpiry: state.series.futureExpiry, optionExpiry: state.series.optionExpiry } : null,
       futLtp: state.futLtp, optLtp: state.optLtp, lastQuoteAt: state.lastQuoteAt,
       position: state.position, armed: state.armed ? { side: state.armed.side, triggerLevel: state.armed.triggerLevel } : null,
