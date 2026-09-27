@@ -95,8 +95,12 @@ router.post("/webhook", (req, res) => {
 });
 
 /* ── Status endpoint (polled by sidebar) ───────────────────────────────────── */
+// Changes on every process start, so open pages can tell a new build is live
+// and reload themselves.
+const BOOT_ID = String(Date.now());
+
 router.get("/status", (req, res) => {
-  res.json(currentState());
+  res.json({ ...currentState(), bootId: BOOT_ID });
 });
 
 module.exports = router;

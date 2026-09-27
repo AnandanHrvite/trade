@@ -999,9 +999,19 @@ function toggleNavGroup(gid){
 
   var deployingTimer=null;
   var deployStart=null;
+  var bootId=null;
 
   function poll(){
     fetch('/deploy/status').then(function(r){return r.ok ? r.json() : null}).then(function(d){
+      // Server restarted (new deploy live) → reload, unless the user is mid-typing.
+      if(d && d.bootId){
+        if(!bootId) bootId=d.bootId;
+        else if(d.bootId!==bootId){
+          var ae=document.activeElement;
+          var typing=ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName);
+          if(!typing){ location.reload(); return; }
+        }
+      }
       if(!d || !d.status || d.status==='idle'){
         chip.style.display='none';
         clearInterval(deployingTimer); deployingTimer=null;
