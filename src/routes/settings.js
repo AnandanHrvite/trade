@@ -2230,6 +2230,47 @@ router.get("/", (req, res) => {
     return out.join("");
   }
 
+  // ── Menu Visibility as one grid ────────────────────────────────────────────
+  // 15 strategies × 5 sub-menus as 20+ tabs was unreadable. Instead: one row per
+  // strategy (its *_MODE_ENABLED master + its UI_SHOW_{P}_{COL} page toggles),
+  // then the non-strategy toggles as plain lists. Same data-key inputs, so save,
+  // defaults and search work unchanged.
+  const MV_COLS = [
+    ["BACKTEST", "Backtest"], ["PATTERN_BACKTEST", "Pattern Test"], ["PAPER", "Paper"],
+    ["LIVE", "Live"], ["LIVE_HARNESS", "Live Harness"], ["HISTORY", "History"],
+  ];
+  function renderMenuVisibility(fields) {
+    const byKey = new Map(fields.map(f => [f.key, f]));
+    const used = new Set();
+    const cell = (f, extraClass) => {
+      if (!f) return `<div class="mv-cell mv-na">—</div>`;
+      used.add(f.key);
+      const val = envData[f.key] ?? process.env[f.key] ?? f.default ?? "";
+      const checked = val === "true" || val === "1" ? "checked" : "";
+      return `<div class="mv-cell ${extraClass}" title="${esc(f.label)} (${f.key})">
+          <label class="toggle-switch"><input type="checkbox" data-key="${f.key}" ${checked} onchange="markDirty(this)"/><span class="toggle-slider"></span></label>
+        </div>`;
+    };
+    const rows = fields.filter(f => /_MODE_ENABLED$/.test(f.key)).map(m => {
+      const p = m.key.replace(/_MODE_ENABLED$/, "");
+      const subs = MV_COLS.map(([c]) => byKey.get(`UI_SHOW_${p}_${c}`));
+      const name = m.label.replace(/ Mode\b/, "");
+      const keys = [m.key, ...subs.filter(Boolean).map(f => f.key)].join(" ");
+      return `<div class="mv-row">
+          <div class="mv-name"><span class="setting-label">${esc(name)}</span><span class="env-key-tag mv-keys">${keys}</span></div>
+          ${cell(m, "mv-master")}${subs.map(f => cell(f, "mv-sub")).join("")}
+        </div>`;
+    }).join("");
+    const grid = `<div class="mv-title">Strategies <span>— first switch shows the strategy; the rest show its pages. Pages of a hidden strategy stay hidden.</span></div>
+      <div class="mv-scroll"><div class="mv-grid">
+        <div class="mv-row mv-head"><div class="mv-name">Strategy</div><div class="mv-cell">Show</div>${MV_COLS.map(([, l]) => `<div class="mv-cell">${l}</div>`).join("")}</div>
+        ${rows}
+      </div></div>`;
+    const rest = splitIntoTabs(fields.filter(f => !used.has(f.key)))
+      .map(t => `<div class="mv-title">${esc(t.title.replace(/ \(all strategies\)/, ""))}</div>${renderTabFields(t.fields)}`).join("");
+    return grid + rest;
+  }
+
   // ── Sub-tabs inside a section ──────────────────────────────────────────────
   // A field carrying `subheader` opens a new tab; fields before the first one
   // fall into an implicit "General" tab. One tab → no tab bar is rendered.
@@ -2302,7 +2343,8 @@ router.get("/", (req, res) => {
     const eyeBtn = `<button type="button" class="section-eye-btn" onclick="showSectionSummary(${idx})" title="View all configured values">👁</button>`;
     const defaultsBtn = `<button type="button" class="section-defaults-btn" onclick="loadSectionDefaults('${sectionId}')" title="Fill all fields in this section with the recommended schema defaults — does NOT save until you click Save Changes">↺ Load Defaults</button>`;
     const fieldCount = s.fields.length;
-    const tabs = splitIntoTabs(s.fields);
+    const isMenuVis = s.nav === "Menu Visibility";
+    const tabs = isMenuVis ? [{ title: "All", fields: s.fields }] : splitIntoTabs(s.fields);
     railItems.push({ group: s.group || "System", id: sectionId, icon: s.icon, nav: s.nav || s.section, count: fieldCount });
 
     const tabBar = tabs.length > 1
@@ -2311,7 +2353,7 @@ router.get("/", (req, res) => {
         ).join("")}</div>`
       : "";
     const panels = tabs.map((t, i) =>
-      `<div class="tab-panel${i === 0 ? " active" : ""}" data-tab="${i}">${renderTabFields(t.fields)}</div>`
+      `<div class="tab-panel${i === 0 ? " active" : ""}" data-tab="${i}">${isMenuVis ? renderMenuVisibility(t.fields) : renderTabFields(t.fields)}</div>`
     ).join("");
 
     return `
@@ -2580,6 +2622,27 @@ router.get("/", (req, res) => {
     .settings-search-bar.active { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(59,130,246,0.15), 0 4px 14px rgba(0,0,0,0.18); }
     .setting-row.search-hit { box-shadow: inset 3px 0 0 var(--accent); }
     .setting-row.search-miss { display: none !important; }
+    .mv-row.search-miss { display: none !important; }
+    .mv-row.search-hit { box-shadow: inset 3px 0 0 var(--accent); }
+    .sec-pane.searching .mv-head { display: none; }
+
+    /* ── Menu Visibility grid ── */
+    .mv-title { padding: 14px 18px 6px; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--border); }
+    .mv-title span { text-transform: none; letter-spacing: 0; font-weight: 400; }
+    .mv-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .mv-grid { min-width: 640px; }
+    .mv-row { display: grid; grid-template-columns: minmax(150px, 1.6fr) repeat(7, minmax(64px, 1fr)); align-items: center; border-bottom: 1px solid var(--border); }
+    .mv-row:hover { background: rgba(59,130,246,0.04); }
+    .mv-head { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+    .mv-head .mv-cell, .mv-head .mv-name { padding-top: 10px; padding-bottom: 10px; }
+    .mv-name { padding: 8px 12px 8px 18px; position: sticky; left: 0; background: var(--surface); z-index: 1; }
+    .mv-name .setting-label { font-size: 0.85rem; }
+    .mv-keys { display: none !important; }
+    .mv-cell { display: flex; justify-content: center; align-items: center; min-height: 48px; text-align: center; }
+    .mv-cell.mv-master { border-right: 1px solid var(--border); }
+    .mv-na { color: var(--muted); opacity: 0.4; }
+    .mv-row:has(.mv-master input:not(:checked)) .mv-sub { opacity: 0.35; }
+    .mv-row:has(.mv-master input:not(:checked)) .mv-name .setting-label { opacity: 0.55; }
     .ssb-empty { color: var(--yellow); font-style: italic; }
     .sec-none {
       display: none; padding: 22px 20px; text-align: center;
@@ -3195,7 +3258,7 @@ function filterSettings(rawQuery) {
     countEl.textContent = '';
     countEl.classList.remove('ssb-empty');
     pane.classList.remove('searching', 'no-hits');
-    document.querySelectorAll('.setting-row.search-hit, .setting-row.search-miss').forEach(function(r){
+    document.querySelectorAll('.setting-row.search-hit, .setting-row.search-miss, .mv-row.search-hit, .mv-row.search-miss').forEach(function(r){
       r.classList.remove('search-hit', 'search-miss');
     });
     document.querySelectorAll('.rail-item').forEach(function(b){
@@ -3217,7 +3280,7 @@ function filterSettings(rawQuery) {
   document.querySelectorAll('.settings-section[data-section]').forEach(function(section){
     var id = section.getAttribute('data-section');
     var sectionHits = 0;
-    section.querySelectorAll('.setting-row').forEach(function(row){
+    section.querySelectorAll('.setting-row, .mv-row:not(.mv-head)').forEach(function(row){
       var label  = (row.querySelector('.setting-label') || {}).textContent || '';
       var keyTag = (row.querySelector('.env-key-tag') || {}).textContent || '';
       var desc   = (row.querySelector('.field-desc') || {}).textContent || '';
