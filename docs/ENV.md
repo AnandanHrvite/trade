@@ -188,7 +188,7 @@ The engine falls back to one value; a status panel or log banner prints another.
 | `CMX_EMA_RSI_ST_V2_RESOLUTION` | number | `5` | Candle length the EMA_RSI_ST_V2 rules run on, for every commodity. Takes effect on the next Start. |
 | `CMX_GOLD_CONTRACT` | select | `GOLDM` | Which gold contract the Gold pages trade. A full Gold lot is 10× a Mini — one option lot can cost lakhs. Takes effect on the next Start. |
 | `CMX_POLL_SECONDS` | number | — | How often the live price is checked while a trade is open or a signal is waiting. Stops are checked at this pace, not on every tick. Lower = closer to real stops, more broker calls. |
-| `CMX_SESSION_END` | time | — | When MCX closes (IST) — the engine stops itself here. MCX closes at 23:30 in Indian summer and 23:55 when US clocks go back (Nov–Mar); change it then. |
+| `CMX_SESSION_END` | time | `23:30` | When MCX closes (IST) — the engine stops itself here. MCX closes at 23:30 in Indian summer and 23:55 when US clocks go back (Nov–Mar); change it then. |
 | `CMX_SESSION_START` | time | — | When MCX opens (IST). Prices are ignored before this. |
 | `CMX_SILVER_CONTRACT` | select | `SILVERM` | Which silver contract the Silver pages trade. A full Silver lot is 6× a Mini. Takes effect on the next Start. |
 | `CMX_STARTING_CAPITAL` | number | — | Shown for reference only. |

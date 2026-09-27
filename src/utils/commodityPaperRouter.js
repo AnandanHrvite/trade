@@ -201,6 +201,26 @@ const RULES = {
 };
 const ICONS = { CRUDE: "🛢️", GOLD: "🥇", SILVER: "🥈" };
 
+// Every commodity engine built by commodityPage(), in mount order — read by the
+// Dashboard's Start All (Commodity) button and the 4 PM token-clear hold.
+const ENGINES = [];
+const enabledEngines = () => ENGINES.filter((e) => String(process.env[e.snapshot().modeKey] || "false").toLowerCase() === "true");
+
+/**
+ * When a commodity page is switched on, the Fyers token must outlive the 4 PM
+ * NSE clear — MCX trades until CMX_SESSION_END. Returns the epoch ms to clear it
+ * at instead (session end + 15 min, today), or null when nothing needs it.
+ */
+function fyersTokenHoldUntil(now = Date.now()) {
+  if (!enabledEngines().length) return null;
+  const ist = new Date(now + 19800000);
+  if (ist.getUTCDay() === 0 || ist.getUTCDay() === 6) return null;
+  const [h, m] = String(process.env.CMX_SESSION_END || "23:30").split(":").map(Number);
+  const endMin = (Number.isFinite(h) ? h : 23) * 60 + (Number.isFinite(m) ? m : 30) + 15;
+  const nowMin = ist.getUTCHours() * 60 + ist.getUTCMinutes();
+  return endMin > nowMin ? now + (endMin - nowMin) * 60000 - ist.getUTCSeconds() * 1000 : null;
+}
+
 /**
  * One commodity × strategy Paper page. Everything is derived from the pair:
  *   ("GOLD", "V2") → /cmx_gold_ema_rsi_st_v2-paper, toggle
@@ -227,7 +247,8 @@ function commodityPage({ commodity, strategy }) {
     rulesText: RULES[strategy],
   });
   router.engine = engine;
+  ENGINES.push(engine);
   return router;
 }
 
-module.exports = { createCommodityPaperRouter, commodityPage };
+module.exports = { createCommodityPaperRouter, commodityPage, enabledEngines, fyersTokenHoldUntil };

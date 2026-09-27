@@ -12,6 +12,30 @@ jobs:
       - name: Checkout the code
         uses: actions/checkout@v3
 
+      # Refuse the deploy while a COMMODITY (MCX) paper page is running — MCX
+      # trades until ~23:30, well after the NSE close when pushes are allowed,
+      # and a PM2 restart mid-session would interrupt it. Runs BEFORE the sync,
+      # so a refused deploy leaves the box untouched. Each running page keeps a
+      # ~/trading-data/cmx/.running_<page>.json stamped with today's IST date and
+      # deletes it when it stops. To deploy: stop the commodity pages (or wait
+      # until 23:45 IST), then re-run this workflow.
+      - name: Refuse deploy while commodity paper is running
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: ${{ secrets.HOST_DNS }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            TODAY=$(TZ=Asia/Kolkata date +%F)
+            NOW=$((10#$(TZ=Asia/Kolkata date +%H%M)))
+            RUNNING=$(grep -l "\"day\": \"$TODAY\"" ~/trading-data/cmx/.running_*.json 2>/dev/null | sed 's#.*/.running_##; s#.json$##' | tr '\n' ' ')
+            if [ -n "$RUNNING" ] && [ "$NOW" -lt 2345 ]; then
+              echo "DEPLOY REFUSED: commodity paper running on EC2: $RUNNING"
+              echo "Stop those pages (or wait until 23:45 IST), then re-run this workflow."
+              exit 1
+            fi
+            echo "no commodity paper running - deploy allowed"
+
       - name: Sync files to EC2
         uses: easingthemes/ssh-deploy@v4.1.9
         with:

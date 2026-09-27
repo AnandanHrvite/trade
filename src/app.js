@@ -1421,6 +1421,19 @@ app.get("/api/expiry-dates", async (req, res) => {
 // *_MODE_ENABLED toggles, so a strategy added to the app — or enabled in
 // Settings after the page was rendered — is started without a page reload and
 // without editing the button.
+// ── COMMODITY Start All — separate from the NSE Start All, since MCX keeps its
+// own hours. Starts every switched-on commodity page that is not running yet.
+app.post("/api/cmx/start-all", async (req, res) => {
+  const results = [];
+  for (const e of require("./utils/commodityPaperRouter").enabledEngines()) {
+    const s = e.snapshot();
+    if (s.running) { results.push({ label: s.label, ok: true, note: "already running" }); continue; }
+    const r = await e.start();
+    results.push({ label: s.label, ok: r.ok, note: r.ok ? "started" : r.reason });
+  }
+  res.json({ success: results.length > 0 && results.every((r) => r.ok), results });
+});
+
 app.get("/api/start-all-roster", (req, res) => {
   const modes = startAllRoster();
   res.json({
@@ -2562,6 +2575,8 @@ ${buildSidebar('dashboard', liveActive)}
       ${anyModeActive ? '' : `
       <button id="btn-all-harness" class="top-bar-btn" style="border-color:#b45309;color:#f59e0b;" onclick="startAllHarness(this)" title="Start all Live (Harness) modes in DRY-RUN — runs Paper + logs would-be broker orders (${startAllHarnessModes.map((m) => m.label).join(' + ') || 'no strategy enabled'})">🧪 Start All (Harness)</button>
       <button id="btn-all-start" class="top-bar-btn run-paper" onclick="startAll(this)" title="Start all paper modes">▶ Start All (Paper)</button>`}
+      ${require("./utils/commodityPaperRouter").enabledEngines().length ? `
+      <button id="btn-cmx-start" class="top-bar-btn" style="border-color:#a16207;color:#facc15;" onclick="startAllCmx(this)" title="Start every switched-on COMMODITY (MCX) paper page. MCX runs 9:00 AM – 11:30 PM; press any time before 3 PM.">🛢 Start All (Commodity)</button>` : ""}
       <!-- The manual "Reset Token" button was removed: token clearing is now
            automatic (4:00 PM + 7:00 AM IST schedulers, and the login routes
            wipe any DISCONNECTED broker's saved token before starting OAuth).
@@ -3396,6 +3411,22 @@ async function startAllHarness(btn){
   if(!ok) return _abortStartAll(btn, orig);
   btn.textContent = '⏳ Starting harness: ' + modeList + '...';
   await _runStartAll(btn, orig, 'All Harness', HARNESS_ENDPOINTS);
+}
+
+// COMMODITY pages start on their own button — MCX hours are not NSE hours, so
+// the NSE market-closed logic above never hides it.
+async function startAllCmx(btn){
+  var orig = btn.textContent;
+  btn.disabled = true; btn.textContent = '⏳ Starting commodity…';
+  try {
+    var r = await secretFetch('/api/cmx/start-all', { method: 'POST', timeoutMs: 180000 });
+    if (!r) return;
+    var body = await r.json();
+    var lines = (body.results || []).map(function(x){ return (x.ok ? '✅ ' : '❌ ') + x.label + ' — ' + x.note; });
+    await showAlert({ icon: body.success ? '🛢' : '⚠️', title: 'Start All (Commodity)', message: lines.join('\n') || 'No commodity page is switched on.' });
+  } catch (e) {
+    await showAlert({ icon: '⚠️', title: 'Start All (Commodity)', message: (e && e.message) || 'Request failed' });
+  } finally { btn.disabled = false; btn.textContent = orig; }
 }
 
 // Single Start-All button follows the top-bar PAPER/LIVE toggle.
@@ -4563,10 +4594,25 @@ function runEODTokenClear(deadline) {
   }
 
   try {
-    console.log("🔴 [EOD] Auto-clearing Fyers & Zerodha tokens...");
-    clearFyersToken();
-    zerodha.clearZerodhaToken();
-    console.log("✅ [EOD] Both tokens cleared. Fresh login required tomorrow morning.");
+    // A switched-on COMMODITY page trades MCX until ~23:30 on the Fyers token, so
+    // on those days only Zerodha is cleared now and Fyers after the MCX close.
+    // (A restart in between drops that timer; the 7:00 AM reset clears it then.)
+    const fyHoldUntil = require("./utils/commodityPaperRouter").fyersTokenHoldUntil();
+    if (fyHoldUntil) {
+      console.log("🔴 [EOD] Auto-clearing Zerodha token — Fyers kept for the MCX session...");
+      zerodha.clearZerodhaToken();
+      const at = new Date(fyHoldUntil + 19800000).toISOString().slice(11, 16);
+      console.log(`⏸️  [EOD] Fyers token clear held for COMMODITY until ${at} IST`);
+      setTimeout(() => {
+        try { clearFyersToken(); console.log("✅ [EOD] Fyers token cleared after the MCX session."); }
+        catch (e) { console.error(`❌ [EOD] Fyers token clear failed: ${e.message}`); }
+      }, fyHoldUntil - Date.now());
+    } else {
+      console.log("🔴 [EOD] Auto-clearing Fyers & Zerodha tokens...");
+      clearFyersToken();
+      zerodha.clearZerodhaToken();
+      console.log("✅ [EOD] Both tokens cleared. Fresh login required tomorrow morning.");
+    }
   } catch (err) {
     console.error(`❌ [EOD] Token clear failed: ${err.message}`);
   } finally {
