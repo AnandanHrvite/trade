@@ -5,9 +5,9 @@ description: Build a BRAND-NEW strategy end-to-end from its rules — engine, Pa
 
 # New Strategy — full build from core rules only
 
-The user will give you **only the trading logic**. Everything else in this document is
-your job and must NOT be asked about. They have specified the plumbing once already;
-never make them do it again.
+The user gives a strategy **name** and its **core logic**. Everything else in this
+document is your job and must NOT be asked about. They have specified the plumbing once
+already; never make them do it again.
 
 Treat the user's rules as the complete specification of *what to trade*. Add **no**
 filters, gates, confirmations or "improvements" they did not ask for — no VIX, OI,
@@ -15,14 +15,37 @@ ADX, volume, ATR, VWAP, multi-timeframe, quality score, confirmation candle. If 
 believe one is needed, finish the build as specified and raise it at the end as a
 suggestion.
 
+**Standing build rules (every time):**
+- **Do NOT change any existing strategy.** Edits to shared files must only ADD lines —
+  prove it at the end (Phase 4, step 11).
+- **Keep it light — it runs on an EC2 t3.micro.** Compute once per candle close, small
+  capped candle buffers, small chart payloads, no heavy loops per tick.
+- Use the shared profit-lock / breakeven helpers in `src/utils/tradeGuards.js`
+  (`checkProfitLock`, `checkBreakevenStop`) — never re-implement them.
+- Recheck in a loop until a round finds nothing wrong, then commit. **Never push** until
+  the user says "push".
+
 ---
 
 ## Phase 0 — Pin the rules before writing anything
 
-Most rework comes from under-specified rules, not bad code. Read the user's message
-and check each item below. **Only ask about what is genuinely ambiguous and would
-change the code** — batch the questions into ONE `AskUserQuestion` call with plain-
-English options and real numbers. Never ask about anything in Phase 1+.
+Most rework comes from under-specified rules, not bad code. Steps, in order:
+
+1. **Input missing?** If the name or core logic is missing, still a placeholder
+   (`<NAME>`, `<your rules here>`), or too thin to trade, ask for it first.
+2. **Explain the rules back** in simple English bullet points with one real-numbers
+   example (e.g. "NIFTY 24,500, 5-min candle closes 24,540 above the level → buy
+   24,500 CE, stop 24,480…").
+3. **Ask every unclear point in ONE `AskUserQuestion` round** — never drip-feed. Always
+   check this list and ask each item the rules do not already settle, with plain-English
+   options and real numbers, recommended option first: timeframes (signal vs exit), entry
+   at candle close or on the break, stop and target as a level or as points, trailing,
+   max trades per day (and re-entry after a stop), entry cut-off time, square-off time,
+   strike ATM/ITM, broker Zerodha or Fyers — plus the ambiguities in the table below.
+   Never ask about anything in Phase 1+.
+4. **Wait for the user's "confirmed".** Write no code before it.
+5. **After "confirmed", ask nothing more** — the user will be away. For anything still
+   open pick the repo's sensible default, note it, and list those choices in the report.
 
 Ambiguities that have actually caused rework here:
 
@@ -99,7 +122,8 @@ Rules that have bitten this repo:
 ## Phase 2 — The three routes
 
 Copy the structure of the most recently built strategy (currently
-`src/routes/haScalp*.js`; before that `gapFix3m*.js`). Do **not** invent a new shape.
+`src/routes/prevOrbScalp*.js`; before that `haScalp*.js` — check `git log` for the
+newest). Do **not** invent a new shape.
 
 **If you copy a route and rename its identifiers, budget real time for the second
 half of the job.** A bulk find-and-replace gets the names right and the *semantics*
@@ -251,14 +275,17 @@ one most often skipped — a strategy missing from it has invisible live trades 
 *and* under the dashboard's Live toggle, which reads `/live-consolidation/data`.
 Most older strategies are still absent from it; add yours.
 
-**Docs** — `README.md` (routes table, strategy section, env table), `CHANGELOG.md`,
+**Docs** — `README.md` (routes table, strategy section — no env keys; run
+`npm run docs:env` to regenerate `docs/ENV.md`), no `CHANGELOG.md` entry,
 and a guide in `documents/{NAME}_Strategy_Guide.html` (Phase 5).
 
 ---
 
 ## Phase 4 — Verification (do all of it; do not report done without it)
 
-1. `node -c` every changed `.js`, then `npm test` — four zero-dependency regression
+0. Add a NEW `tests/{name}.regression.js` (engine rules, every exit branch, warm-up,
+   null guards) and hook it into `npm test`.
+1. `node -c` every changed `.js`, then `npm test` — the zero-dependency regression
    suites, and `configFidelity` asserts directly on `app.js`, `settings.js` and
    `instrument.js`, all three of which you just edited.
 2. **Offline test harness** in the scratchpad: assert indicator alignment, each entry
@@ -307,6 +334,13 @@ and a guide in `documents/{NAME}_Strategy_Guide.html` (Phase 5).
 10. Confirm visibility everywhere: the strategy appears on `/`, `/realtime`, `/replay`,
    `/all-backtest`, `/trade-logs`, both consolidations and `/edge-analytics`, and
    disappears from all of them when `{MODE}_MODE_ENABLED=false`.
+
+11. **Simulated full paper day** — start → entry → exit → trade logs → history, plus a
+   **late-start** case (started mid-session: warm-up preload works, no stale/instant
+   entry). Report the backtest win rate / profit factor honestly, even if bad.
+12. **Add-only proof**: `git diff` on every shared (non-new) file must show no removed or
+   changed lines of existing strategies (`git diff <file> | grep '^-[^-]'` empty); explain
+   any unavoidable one (e.g. a comma added to the last array item).
 
 ---
 
