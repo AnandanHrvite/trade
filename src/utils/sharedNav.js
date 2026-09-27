@@ -238,10 +238,9 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   // ── Top-level underlying groups (NIFTY is implicit — it holds the strategies
   //    that already exist; BANK NIFTY is its own opt-in parent) ──
   const showBankNifty  = (process.env.UI_SHOW_BANKNIFTY || 'true').toLowerCase() === 'true';
-  // COMMODITY (MCX crude) — its own parent. Each strategy ships OFF.
-  const showCommodity       = (process.env.UI_SHOW_COMMODITY || 'true').toLowerCase() === 'true';
-  const cmxEmaRsiStModeOn   = (process.env.CMX_EMA_RSI_ST_MODE_ENABLED    || 'false').toLowerCase() === 'true';
-  const cmxEmaRsiStV2ModeOn = (process.env.CMX_EMA_RSI_ST_V2_MODE_ENABLED || 'false').toLowerCase() === 'true';
+  // COMMODITY (MCX) — its own parent, one group per commodity. Every page ships OFF.
+  const showCommodity = (process.env.UI_SHOW_COMMODITY || 'true').toLowerCase() === 'true';
+  const cmxOn = (key) => (process.env[key] || 'false').toLowerCase() === 'true';
 
   // ── System submenu toggles (Settings is always shown) ──
   const showTradeLogs  = (process.env.UI_SHOW_TRADE_LOGS  || 'true').toLowerCase() === 'true';
@@ -288,7 +287,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   // NIFTY parent. Each new BANKNIFTY strategy adds its own key list here so the
   // parent opens on its pages.
   const bankNiftyKeys = [...bnPivotRsiStKeys, ...bnEmaRsiStV2Keys];
-  const commodityKeys = ['cmxEmaRsiStPaper', 'cmxEmaRsiStV2Paper'];
+  const commodityKeys = ['cmxCrudeEmaRsiStPaper', 'cmxCrudeEmaRsiStV2Paper', 'cmxGoldEmaRsiStPaper', 'cmxGoldEmaRsiStV2Paper', 'cmxSilverEmaRsiStPaper', 'cmxSilverEmaRsiStV2Paper'];
   // Pages that live outside every group (Real-Time monitor, docs, …) used to see
   // the ungrouped top-level links; keep Dashboard open for them so the sidebar is
   // never rendered fully collapsed.
@@ -565,19 +564,37 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       parent: 'banknifty',
       items: bnEmaRsiStV2Items,
     }] : []),
-    // ── COMMODITY (MCX crude) — paper only, one section per strategy ──────
-    ...(cmxEmaRsiStModeOn ? [{
-      header: 'EMA_RSI_ST', collapsible: true, collapsed: activePage !== 'cmxEmaRsiStPaper',
-      groupId: 'nav-cmx_ema_rsi_st',
+    // ── COMMODITY — one group per commodity, both strategies inside ──────
+    {
+      header: 'CRUDE OIL', collapsible: true,
+      collapsed: !['cmxCrudeEmaRsiStPaper', 'cmxCrudeEmaRsiStV2Paper'].includes(activePage),
+      groupId: 'nav-cmx-crude',
       parent: 'commodity',
-      items: [{ key: 'cmxEmaRsiStPaper', href: '/cmx_ema_rsi_st-paper/status', icon: '📋', label: 'Paper' }],
-    }] : []),
-    ...(cmxEmaRsiStV2ModeOn ? [{
-      header: 'EMA_RSI_ST_V2', collapsible: true, collapsed: activePage !== 'cmxEmaRsiStV2Paper',
-      groupId: 'nav-cmx_ema_rsi_st_v2',
+      items: [
+        ...(cmxOn('CMX_CRUDE_EMA_RSI_ST_MODE_ENABLED')    ? [{ key: 'cmxCrudeEmaRsiStPaper',   href: '/cmx_crude_ema_rsi_st-paper/status',    icon: '📋', label: 'EMA_RSI_ST Paper' }] : []),
+        ...(cmxOn('CMX_CRUDE_EMA_RSI_ST_V2_MODE_ENABLED') ? [{ key: 'cmxCrudeEmaRsiStV2Paper', href: '/cmx_crude_ema_rsi_st_v2-paper/status', icon: '📋', label: 'EMA_RSI_ST_V2 Paper' }] : []),
+      ],
+    },
+    {
+      header: 'GOLD', collapsible: true,
+      collapsed: !['cmxGoldEmaRsiStPaper', 'cmxGoldEmaRsiStV2Paper'].includes(activePage),
+      groupId: 'nav-cmx-gold',
       parent: 'commodity',
-      items: [{ key: 'cmxEmaRsiStV2Paper', href: '/cmx_ema_rsi_st_v2-paper/status', icon: '📋', label: 'Paper' }],
-    }] : []),
+      items: [
+        ...(cmxOn('CMX_GOLD_EMA_RSI_ST_MODE_ENABLED')    ? [{ key: 'cmxGoldEmaRsiStPaper',   href: '/cmx_gold_ema_rsi_st-paper/status',    icon: '📋', label: 'EMA_RSI_ST Paper' }] : []),
+        ...(cmxOn('CMX_GOLD_EMA_RSI_ST_V2_MODE_ENABLED') ? [{ key: 'cmxGoldEmaRsiStV2Paper', href: '/cmx_gold_ema_rsi_st_v2-paper/status', icon: '📋', label: 'EMA_RSI_ST_V2 Paper' }] : []),
+      ],
+    },
+    {
+      header: 'SILVER', collapsible: true,
+      collapsed: !['cmxSilverEmaRsiStPaper', 'cmxSilverEmaRsiStV2Paper'].includes(activePage),
+      groupId: 'nav-cmx-silver',
+      parent: 'commodity',
+      items: [
+        ...(cmxOn('CMX_SILVER_EMA_RSI_ST_MODE_ENABLED')    ? [{ key: 'cmxSilverEmaRsiStPaper',   href: '/cmx_silver_ema_rsi_st-paper/status',    icon: '📋', label: 'EMA_RSI_ST Paper' }] : []),
+        ...(cmxOn('CMX_SILVER_EMA_RSI_ST_V2_MODE_ENABLED') ? [{ key: 'cmxSilverEmaRsiStV2Paper', href: '/cmx_silver_ema_rsi_st_v2-paper/status', icon: '📋', label: 'EMA_RSI_ST_V2 Paper' }] : []),
+      ],
+    },
     // The NIFTY and BANK NIFTY parents render here — after Dashboard, before
     // System. Every section carrying a `parent` is nested inside one of them.
     { parentsAnchor: true },

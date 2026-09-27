@@ -1,8 +1,8 @@
 /**
- * mcxContracts.js — which MCX crude contracts to watch and trade (COMMODITY pages only)
+ * mcxContracts.js — which MCX contracts to watch and trade (COMMODITY pages only)
  * ─────────────────────────────────────────────────────────────────────────────
  * The NSE instrument.js computes expiries from rules (last Tuesday etc.). MCX
- * crude does not follow those rules — its options expire a few days BEFORE the
+ * does not follow those rules — crude options expire a few days BEFORE the
  * future they sit on (Oct-26 options: 15 Oct, Oct-26 future: 19 Oct) — so this
  * file does not compute anything. It reads Fyers' own symbol master
  * (public.fyers.in/sym_details/MCX_COM.csv) and picks from what is listed:
@@ -28,21 +28,32 @@ const MASTER_URL = "https://public.fyers.in/sym_details/MCX_COM.csv";
 const CACHE_DIR  = path.join(os.homedir(), "trading-data", "cmx");
 const CACHE_FILE = path.join(CACHE_DIR, "MCX_COM.csv");
 
-// Barrels per 1 lot. The master's "lot" column is 1 (MCX quotes in lots), so
-// P&L per lot = premium move × this multiplier.
+// Units per 1 lot, in the unit the price is quoted in. The master's "lot"
+// column is 1 (MCX quotes in lots), so P&L per lot = premium move × multiplier.
+//   crude: price per barrel · gold: price per 10 g · silver: price per kg
 const UNDERLYINGS = {
-  CRUDEOIL:  { label: "Crude Oil",      multiplier: 100 },
-  CRUDEOILM: { label: "Crude Oil Mini", multiplier: 10  },
+  CRUDEOIL:  { label: "Crude Oil",      multiplier: 100, unit: "100 barrels" },
+  CRUDEOILM: { label: "Crude Oil Mini", multiplier: 10,  unit: "10 barrels"  },
+  GOLD:      { label: "Gold",           multiplier: 100, unit: "1 kg"        },
+  GOLDM:     { label: "Gold Mini",      multiplier: 10,  unit: "100 g"       },
+  SILVER:    { label: "Silver",         multiplier: 30,  unit: "30 kg"       },
+  SILVERM:   { label: "Silver Mini",    multiplier: 5,   unit: "5 kg"        },
 };
 
-function underlyingKey() {
-  const k = String(process.env.CMX_UNDERLYING || "CRUDEOIL").trim().toUpperCase();
-  return UNDERLYINGS[k] ? k : "CRUDEOIL";
+// Each commodity menu trades one contract size, picked in Settings.
+const COMMODITIES = {
+  CRUDE:  { label: "Crude Oil", envKey: "CMX_CRUDE_CONTRACT",  choices: ["CRUDEOIL", "CRUDEOILM"], def: "CRUDEOIL" },
+  GOLD:   { label: "Gold",      envKey: "CMX_GOLD_CONTRACT",   choices: ["GOLDM", "GOLD"],         def: "GOLDM"    },
+  SILVER: { label: "Silver",    envKey: "CMX_SILVER_CONTRACT", choices: ["SILVERM", "SILVER"],     def: "SILVERM"  },
+};
+
+/** The contract (e.g. "GOLDM") a commodity menu trades right now. */
+function contractFor(commodity) {
+  const C = COMMODITIES[commodity];
+  const k = String(process.env[C.envKey] || C.def).trim().toUpperCase();
+  return C.choices.includes(k) ? k : C.def;
 }
-function underlyingInfo() {
-  const key = underlyingKey();
-  return { key, ...UNDERLYINGS[key] };
-}
+function underlyingInfo(key) { return { key, ...UNDERLYINGS[key] }; }
 
 function _istDateStr(ms) {
   return new Date(ms + 19800000).toISOString().slice(0, 10);
@@ -85,7 +96,6 @@ async function _rows() {
 
   const rows = [];
   for (const line of text.split("\n")) {
-    if (line.indexOf("MCX:CRUDEOIL") < 0) continue;
     const c = line.split(",");
     if (c.length < 18) continue;
     const und = c[13];
@@ -105,12 +115,13 @@ async function _rows() {
 }
 
 /**
- * The contract set for today: the nearest option series expiring AFTER today and
- * the future it is written on. Returns { future, optionExpiry, optionExpiryLabel,
- * strikes } or throws with a plain reason.
+ * The contract set for today for underlying `U` (e.g. "CRUDEOIL"): the nearest
+ * option series expiring AFTER today and the future it is written on. Returns
+ * { underlying, future, futureExpiry, optionExpiry, series } or throws with a
+ * plain reason.
  */
-async function resolveSeries() {
-  const U = underlyingKey();
+async function resolveSeries(U) {
+  if (!UNDERLYINGS[U]) throw new Error(`unknown MCX contract ${U}`);
   const rows = (await _rows()).filter((r) => r.und === U);
   const today = _istDateStr(Date.now());
 
@@ -142,4 +153,4 @@ function atmOption(seriesInfo, side, price) {
   return { symbol: best.symbol, strike: best.strike, expiry: seriesInfo.optionExpiry };
 }
 
-module.exports = { underlyingKey, underlyingInfo, resolveSeries, atmOption, UNDERLYINGS };
+module.exports = { COMMODITIES, UNDERLYINGS, contractFor, underlyingInfo, resolveSeries, atmOption };

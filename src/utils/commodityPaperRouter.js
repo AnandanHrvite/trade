@@ -1,7 +1,7 @@
 /**
  * commodityPaperRouter.js — the Paper page for a COMMODITY engine
- * (src/services/commodityPaper.js). One builder, used by both
- * /cmx_ema_rsi_st-paper and /cmx_ema_rsi_st_v2-paper.
+ * (src/services/commodityPaper.js). One builder, used by every
+ * /cmx_{crude,gold,silver}_{ema_rsi_st,ema_rsi_st_v2}-paper page.
  *
  *   GET /status           the page
  *   GET /status/fragment  the live part of the page (polled every 4 s)
@@ -27,9 +27,9 @@ function hhmm(iso) {
 }
 function fmtMins(m) { return String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0"); }
 
-function createCommodityPaperRouter({ engine, base, navKey, title, rulesText }) {
+function createCommodityPaperRouter({ engine, base, navKey, title, icon, rulesText }) {
   const router = express.Router();
-  const modeKey = () => `${engine.snapshot().prefix}_MODE_ENABLED`;
+  const modeKey = () => engine.snapshot().modeKey;
   const modeOn  = () => String(process.env[modeKey()] || "false").toLowerCase() === "true";
 
   function liveFragment(s) {
@@ -54,7 +54,7 @@ function createCommodityPaperRouter({ engine, base, navKey, title, rulesText }) 
   <div class="cx-h">Open trade</div>
   <div class="cx-row">
     <div><span class="k">Bought</span><span class="cx-pill ${p.side === "CE" ? "cx-ce" : "cx-pe"}">${p.side}</span> ${esc(p.symbol)}</div>
-    <div><span class="k">Lots</span>${p.lots} (${p.lots * p.multiplier} units)</div>
+    <div><span class="k">Lots</span>${p.lots}</div>
     <div><span class="k">Entry</span>₹${p.optionEntryLtp} at ${hhmm(p.entryTime)}</div>
     <div><span class="k">Now</span>${s.optLtp != null ? "₹" + s.optLtp : "—"}</div>
     <div><span class="k">Open P&L</span><b style="color:${pnlColor(unreal || 0)}">${rs(unreal)}</b></div>
@@ -105,7 +105,7 @@ ${posCard}
     const off = modeOn() ? "" : `<div class="cx-note cx-warn">This strategy is switched off. Turn on <b>${modeKey()}</b> in Settings → Menu Visibility to start it.</div>`;
     const contract = s.series
       ? `Signal from <b>${esc(s.series.future)}</b> (expires ${s.series.futureExpiry}) · buys options expiring <b>${s.series.optionExpiry}</b>`
-      : `The contract is picked when you press Start (nearest ${esc(s.underlying.label)} option expiry after today).`;
+      : `The contract is picked when you press Start: ${esc(s.underlying.label)}, nearest option expiry after today.`;
 
     res.send(`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
@@ -136,7 +136,7 @@ ${posCard}
 ${buildSidebar(navKey, false, s.running)}
 <div class="main-content">
 ${bbRsiTopBar({
-  title: `🛢️ ${title} — Paper`,
+  title: `${icon} ${title} — Paper`,
   metaLine: `${esc(s.underlying.label)} (MCX) · ${c.res}m candles · entries ${fmtMins(c.entryStart)}–${fmtMins(c.entryEnd)} · exit ${fmtMins(c.eodExit)} · ${c.lots} lot`,
   running: s.running,
   primaryAction: modeOn() ? { href: `${base}/start`, label: "▶ Start", color: "#0369a1" } : null,
@@ -148,8 +148,8 @@ ${msg}${off}
   <div class="cx-h">How it trades</div>
   <div class="cx-muted">${contract}</div>
   <ul class="rule-list">${rulesText}
-    <li><b>Buys</b> the at-the-money ${esc(s.underlying.label)} option, ${c.lots} lot = ${c.lots * s.underlying.multiplier} units. P&L = premium change × units − ₹${c.charges} charges.</li>
-    <li><b>Day guards:</b> max ${c.maxTrades} trades, stop for the day at −₹${c.maxLoss}. Paper only — no real orders, and separate from all NIFTY strategies.</li>
+    <li><b>Buys</b> the at-the-money ${esc(s.underlying.label)} option, ${c.lots} lot (1 lot = ${esc(s.underlying.unit)}). P&L = premium change × ${s.underlying.multiplier} per lot − ₹${c.charges} charges.</li>
+    <li><b>Day guards:</b> max ${c.maxTrades} trades, stop for the day at −₹${c.maxLoss} — for this page alone. Paper only — no real orders, and separate from all NIFTY strategies.</li>
   </ul>
 </div>
 <div id="cx-live">${liveFragment(s)}</div>
@@ -189,4 +189,45 @@ ${msg}${off}
   return router;
 }
 
-module.exports = { createCommodityPaperRouter };
+const RULES = {
+  V1: `
+    <li><b>Signal:</b> the EMA_RSI_ST rules — EMA20/50 trend + RSI + SuperTrend on the future, using the same settings as the NIFTY EMA_RSI_ST.</li>
+    <li><b>Entry:</b> with the confirmation candle on, the next candle must cross the signal candle's close.</li>
+    <li><b>Exits:</b> previous-candle stop trailed on EMA21, EMA21 touch-back, negative-candle stop, option stop %, profit lock / breakeven, opposite signal, and the day's exit time.</li>`,
+  V2: `
+    <li><b>Signal:</b> the EMA_RSI_ST_V2 rules — EMA20 vs EMA50 + close beyond EMA20 + RSI on the future, using the same settings as the NIFTY EMA_RSI_ST_V2.</li>
+    <li><b>Entry:</b> with the confirmation candle on, the next candle must cross the signal candle's close.</li>
+    <li><b>Exits:</b> SuperTrend trailing stop (its only stop), profit lock, opposite signal, and the day's exit time.</li>`,
+};
+const ICONS = { CRUDE: "🛢️", GOLD: "🥇", SILVER: "🥈" };
+
+/**
+ * One commodity × strategy Paper page. Everything is derived from the pair:
+ *   ("GOLD", "V2") → /cmx_gold_ema_rsi_st_v2-paper, toggle
+ *   CMX_GOLD_EMA_RSI_ST_V2_MODE_ENABLED, settings CMX_EMA_RSI_ST_V2_*.
+ */
+function commodityPage({ commodity, strategy }) {
+  const { createEngine } = require("../services/commodityPaper");
+  const { COMMODITIES } = require("../services/mcxContracts");
+  const strat = strategy === "V2" ? "EMA_RSI_ST_V2" : "EMA_RSI_ST";
+  const id = `cmx_${commodity.toLowerCase()}_${strat.toLowerCase()}`;
+  const camel = commodity.charAt(0) + commodity.slice(1).toLowerCase();
+  const engine = createEngine({
+    id, commodity, strategy,
+    prefix:  `CMX_${strat}`,
+    modeKey: `CMX_${commodity}_${strat}_MODE_ENABLED`,
+    label:   `${strat} (${COMMODITIES[commodity].label})`,
+  });
+  const router = createCommodityPaperRouter({
+    engine,
+    base:   `/${id}-paper`,
+    navKey: `cmx${camel}${strategy === "V2" ? "EmaRsiStV2" : "EmaRsiSt"}Paper`,
+    title:  `${strat} · ${COMMODITIES[commodity].label}`,
+    icon:   ICONS[commodity],
+    rulesText: RULES[strategy],
+  });
+  router.engine = engine;
+  return router;
+}
+
+module.exports = { createCommodityPaperRouter, commodityPage };

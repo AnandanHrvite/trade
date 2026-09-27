@@ -50,10 +50,10 @@ const { calcCharges } = require("../src/utils/charges");
 // futures" does not exist. They must refuse the mode, not silently ignore it.
 const PREMIUM_DENOMINATED = new Set(["simple930Paper.js"]);
 
-// COMMODITY (MCX crude) pages. They never trade NIFTY, so the NIFTY_FUTURES
-// toggle has nothing to switch: they always buy crude options. Exempt only while
-// they stay out of the NIFTY instrument code entirely — asserted below.
-const NOT_NIFTY = new Set(["cmxEmaRsiStPaper.js", "cmxEmaRsiStV2Paper.js"]);
+// COMMODITY (MCX) pages. They never trade NIFTY, so the NIFTY_FUTURES toggle
+// has nothing to switch: they always buy MCX options. Exempt only while they stay
+// out of the NIFTY instrument code entirely — asserted below.
+const NOT_NIFTY = { has: (f) => /^cmx[A-Z][A-Za-z0-9]*Paper\.js$/.test(f) };
 
 // ─────────────────────────────────────────────────────────────────────────────
 section("The helper itself — direction, P&L and charge rates");

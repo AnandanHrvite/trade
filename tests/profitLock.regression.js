@@ -302,8 +302,10 @@ check("every enabled paper engine calls checkProfitLock", () => {
     const src = decomment(read(`routes/${f}`));
     // ORB delegates its tick exits to the shared orbExits module.
     if (/orbExits\.evaluateTickExits/.test(src)) continue;
-    // The COMMODITY (MCX crude) pages delegate their exits to services/commodityPaper.js.
-    if (/services\/commodityPaper/.test(src)
+    // The COMMODITY (MCX) pages are built by utils/commodityPaperRouter, whose
+    // engine (services/commodityPaper.js) owns the exits.
+    if (/utils\/commodityPaperRouter/.test(src)
+        && /services\/commodityPaper/.test(decomment(read("utils/commodityPaperRouter.js")))
         && /checkProfitLock/.test(decomment(read("services/commodityPaper.js")))) continue;
     if (!/checkProfitLock/.test(src)) missing.push(f);
   }

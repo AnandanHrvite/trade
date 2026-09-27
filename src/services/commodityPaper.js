@@ -1,17 +1,20 @@
 /**
- * commodityPaper.js — PAPER engine for the COMMODITY (MCX crude) copies of
- * EMA_RSI_ST and EMA_RSI_ST_V2.
+ * commodityPaper.js — PAPER engine for the COMMODITY (MCX crude / gold / silver)
+ * copies of EMA_RSI_ST and EMA_RSI_ST_V2. One engine per commodity × strategy;
+ * all of them may run at once.
  * ─────────────────────────────────────────────────────────────────────────────
  * WHY A SEPARATE ENGINE, NOT A COPY OF emaRsiStPaper.js
  * The NIFTY paper routes are wired into shared machinery: the capital pool, the
  * portfolio-wide daily-loss lock, the shared socket and its 15:30 teardown, the
  * tick recorder, replay, OI/VIX gates, Start-All and the consolidated reports.
- * A crude copy plugged into any of those could move a NIFTY decision (a crude
- * loss tripping the global daily lock; the NSE socket shutting at 15:30 and
- * starving an 11 PM crude session). So this engine touches NONE of them:
+ * A commodity copy plugged into any of those could move a NIFTY decision (a
+ * crude loss tripping the global daily lock; the NSE socket shutting at 15:30
+ * and starving an 11 PM crude session). So this engine touches NONE of them:
  *
  *   • prices come from Fyers REST (history for closed candles, quotes for the
- *     live price while a trade or armed signal needs it) — no socket at all
+ *     live price) — no socket at all. Every running commodity engine shares ONE
+ *     batched quote call (the hub below), so six engines cost one request per
+ *     poll, not six, and cannot crowd the NIFTY engines' broker budget.
  *   • its own files under ~/trading-data/cmx/ — no shared trade logs
  *   • the strategy RULES are the originals, called read-only:
  *       V1 → strategy1_sar_ema_rsi.getSignal (EMA_RSI_ST_* settings)
@@ -21,7 +24,7 @@
  *
  * Exits mirror the NIFTY paper routes at their defaults. Left out on purpose:
  * the NIFTY-points features (EMA_RSI_ST_STOP_LOSS_PTS, EMA_RSI_ST_BREAKEVEN_PTS)
- * because a NIFTY point is not a crude rupee, and the VIX / OI / spread gates,
+ * because a NIFTY point is not a crude or gold rupee, and the VIX / OI / spread gates,
  * which read NSE data. The per-tick stop is checked on each poll
  * (CMX_POLL_SECONDS), not on every tick.
  */
@@ -55,6 +58,50 @@ function istDow(ms = Date.now()) { return new Date(ms + 19800000).getUTCDay(); }
 function istClock(ms = Date.now()) { return new Date(ms + 19800000).toISOString().slice(11, 19); }
 function fmtMins(m) { return String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0"); }
 function r2(n) { return Math.round(n * 100) / 100; }
+
+// ── shared quote hub ─────────────────────────────────────────────────────────
+// Engines declare which symbols they need and how urgently; one getQuotes call
+// every CMX_POLL_SECONDS serves them all (every 30 s when nobody holds a trade
+// or an armed signal — the price is then only for display).
+const hub = {
+  needs: new Map(),     // engineId → { symbols: [], fast: bool }
+  last: {},             // symbol → { lp, at }
+  nextAt: 0,
+  busy: false,
+  timer: null,
+  lastErr: null,
+};
+function hubNeed(engineId, symbols, fast) {
+  if (!symbols || !symbols.length) hub.needs.delete(engineId);
+  else hub.needs.set(engineId, { symbols: symbols.filter(Boolean), fast: !!fast });
+  if (hub.needs.size && !hub.timer) hub.timer = setInterval(hubTick, 1000);
+  if (!hub.needs.size && hub.timer) { clearInterval(hub.timer); hub.timer = null; }
+}
+function hubUrgent() { hub.nextAt = 0; }
+async function hubTick() {
+  if (hub.busy || Date.now() < hub.nextAt) return;
+  const syms = new Set();
+  let fast = false;
+  for (const n of hub.needs.values()) { n.symbols.forEach((x) => syms.add(x)); fast = fast || n.fast; }
+  if (!syms.size) return;
+  const poll = Math.max(2, _int(process.env.CMX_POLL_SECONDS, 3));
+  hub.nextAt = Date.now() + (fast ? poll : 30) * 1000;
+  hub.busy = true;
+  try {
+    const list = [...syms];
+    for (let i = 0; i < list.length; i += 50) {           // Fyers takes ≤ 50 per call
+      const r = await fyers.getQuotes(list.slice(i, i + 50));
+      if (r.s !== "ok") throw new Error(`quotes: ${r.message || r.s}`);
+      const at = Date.now();
+      for (const d of r.d || []) {
+        const v = d.v || {};
+        if (Number.isFinite(v.lp) && v.lp > 0) hub.last[d.n || v.symbol] = { lp: v.lp, at };
+      }
+    }
+    hub.lastErr = null;
+  } catch (err) { hub.lastErr = err.message; }
+  finally { hub.busy = false; }
+}
 
 // ── strategy adapters — the ONLY place the two strategies differ ──────────────
 const ADAPTERS = {
@@ -141,16 +188,21 @@ const ADAPTERS = {
 };
 
 /**
- * createEngine({ id, prefix, label, strategy: "V1"|"V2" })
- *   id      file/URL slug, e.g. "cmx_ema_rsi_st"
- *   prefix  env prefix for commodity-only settings, e.g. "CMX_EMA_RSI_ST"
+ * createEngine({ id, commodity, strategy, prefix, modeKey, label })
+ *   id         file/URL slug, e.g. "cmx_gold_ema_rsi_st"
+ *   commodity  "CRUDE" | "GOLD" | "SILVER" (see mcxContracts.COMMODITIES)
+ *   strategy   "V1" | "V2"
+ *   prefix     env prefix of the per-strategy commodity settings, e.g.
+ *              "CMX_EMA_RSI_ST" — shared by that strategy's three commodities
+ *   modeKey    this page's on/off toggle, e.g. "CMX_GOLD_EMA_RSI_ST_MODE_ENABLED"
  */
-function createEngine({ id, prefix, label, strategy }) {
+function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
   const A = ADAPTERS[strategy];
   const TRADES_FILE = path.join(DATA_DIR, `${id}_paper_trades.json`);
   const ACTIVE_FILE = path.join(DATA_DIR, `.active_${id}_position.json`);
   const RUN_FILE    = path.join(DATA_DIR, `.running_${id}.json`);
-  const TAG = `[${prefix}-PAPER]`;
+  const TAG = `[${id.toUpperCase()}-PAPER]`;
+  const modeOn = () => String(process.env[modeKey] || "false").toLowerCase() === "true";
 
   // ── live config ─────────────────────────────────────────────────────────────
   const cfg = () => ({
@@ -165,7 +217,6 @@ function createEngine({ id, prefix, label, strategy }) {
     maxLoss:    Math.max(0, _num(process.env[`${prefix}_MAX_DAILY_LOSS`], 5000)),
     sessStart:  _mins(process.env.CMX_SESSION_START, "09:00"),
     sessEnd:    _mins(process.env.CMX_SESSION_END, "23:30"),
-    pollSec:    Math.max(2, _int(process.env.CMX_POLL_SECONDS, 3)),
     charges:    Math.max(0, _num(process.env.CMX_CHARGES_PER_TRADE, 60)),
     confirm:    confirmCandle.enabled(A.rulesKey),
     startCap:   Math.max(0, _num(process.env.CMX_STARTING_CAPITAL, 100000)),
@@ -173,10 +224,10 @@ function createEngine({ id, prefix, label, strategy }) {
 
   const state = {
     running: false, starting: false, res: null, day: null, series: null, candles: [], lastBarTime: null,
-    futLtp: null, optLtp: null, lastQuoteAt: null, nextQuoteAt: 0, nextCandleAt: 0,
+    futLtp: null, optLtp: null, lastQuoteAt: null, nextCandleAt: 0,
     position: null, armed: null, trades: [], sessionPnl: 0,
     consecLosses: 0, halted: null, slPauseUntil: { CE: 0, PE: 0 }, oppCooldown: null,
-    lastSignal: null, lastError: null, logs: [],
+    lastSignal: null, lastError: null, logs: [], seenQuoteAt: 0, manualStopDay: null,
   };
   let timer = null, busy = false, lastErrLogAt = 0;
 
@@ -288,7 +339,7 @@ function createEngine({ id, prefix, label, strategy }) {
     if (state.position || !state.running) return;   // a parallel path got there first, or Stop was pressed
 
     // The session's contract decides the size — not a Settings change made since Start.
-    const u = { key: state.series.underlying, ...mcx.UNDERLYINGS[state.series.underlying] };
+    const u = mcx.underlyingInfo(state.series.underlying);
     state.position = {
       side, symbol: opt.symbol, strike: opt.strike, expiry: opt.expiry,
       lots: c.lots, multiplier: u.multiplier,
@@ -301,6 +352,7 @@ function createEngine({ id, prefix, label, strategy }) {
     state.optLtp = premium;
     state.armed = null;
     persistPosition();
+    hubNeed(id, [state.series.future, opt.symbol], true);
     log(`✅ BUY ${side} ${opt.symbol} @ ₹${premium} × ${c.lots} lot (${u.multiplier * c.lots} units) | fut ${spot} | SL ${fix.stopLoss} | ${how}`);
   }
 
@@ -365,7 +417,8 @@ function createEngine({ id, prefix, label, strategy }) {
       if (block) { log(`⏸️ ${sig.signal} on ${bar.close} — skipped: ${block}`); return; }
       if (c.confirm) {
         state.armed = { side, triggerLevel: bar.close, armedBarTime: bar.time, sig };
-        state.nextQuoteAt = 0;
+        hubNeed(id, [state.series.future], true);
+        hubUrgent();
         log(`🎯 ${sig.signal} signal candle closed — ARMED; next candle must cross ${bar.close} | ${sig.reason || ""}`);
       } else {
         await enter(side, bar.close, sig, bar.time + c.res * 60, bar.time + c.res * 60, "candle close");
@@ -443,18 +496,16 @@ function createEngine({ id, prefix, label, strategy }) {
         } catch (err) { noteError(err.message); state.nextCandleAt = Date.now() + 15000; }
       }
 
-      // Live price: every poll while it matters, every 30 s otherwise (display only).
-      const needFast = !!(state.position || state.armed);
-      if (Date.now() >= state.nextQuoteAt) {
-        state.nextQuoteAt = Date.now() + (needFast ? c.pollSec : 30) * 1000;
-        try {
-          const syms = [state.series.future, state.position && state.position.symbol];
-          const q = await quotes(syms);
-          if (q[state.series.future]) { state.futLtp = q[state.series.future]; state.lastQuoteAt = Date.now(); }
-          if (state.position && q[state.position.symbol]) state.optLtp = q[state.position.symbol];
-          if (state.futLtp && nowMin >= c.sessStart) await onPrice(state.futLtp);
-        } catch (err) { noteError(err.message); }
-      }
+      // Live price from the shared hub: fast while a trade or armed signal needs
+      // it, slow otherwise (display only). Act once per fresh future quote.
+      hubNeed(id, [state.series.future, state.position && state.position.symbol], !!(state.position || state.armed));
+      const fq = hub.last[state.series.future];
+      if (state.position) { const oq = hub.last[state.position.symbol]; if (oq) state.optLtp = oq.lp; }
+      if (fq && fq.at > state.seenQuoteAt) {
+        state.seenQuoteAt = fq.at;
+        state.futLtp = fq.lp; state.lastQuoteAt = fq.at;
+        if (nowMin >= c.sessStart) await onPrice(state.futLtp);
+      } else if (hub.lastErr) noteError(hub.lastErr);
     } catch (err) {
       noteError(`loop error: ${err.message}`);
     } finally { busy = false; }
@@ -474,7 +525,7 @@ function createEngine({ id, prefix, label, strategy }) {
     if (istNowMinutes() >= c.sessEnd) return { ok: false, reason: `MCX session is over for today (closes ${fmtMins(c.sessEnd)})` };
 
     rollDay();
-    try { state.series = await mcx.resolveSeries(); }
+    try { state.series = await mcx.resolveSeries(mcx.contractFor(commodity)); }
     catch (err) { return { ok: false, reason: `could not pick the contract: ${err.message}` }; }
 
     // Warm-up: ~7 calendar days of closed candles on the signal future.
@@ -493,7 +544,8 @@ function createEngine({ id, prefix, label, strategy }) {
 
     state.running = true;
     state.res = c.res;
-    state.armed = null; state.nextQuoteAt = 0; state.nextCandleAt = 0; state.lastError = null;
+    state.armed = null; state.nextCandleAt = 0; state.lastError = null; state.seenQuoteAt = 0;
+    state.manualStopDay = null;
     persistRunning();
     log(`▶️ ${resumed ? "Resumed" : "Started"} ${label} — signal ${state.series.future} (${c.res}m, ${state.candles.length} warm-up candles) · options expire ${state.series.optionExpiry} · entries ${fmtMins(c.entryStart)}–${fmtMins(c.entryEnd)} · exit ${fmtMins(c.eodExit)}`);
     timer = setInterval(loop, 1000);
@@ -507,6 +559,8 @@ function createEngine({ id, prefix, label, strategy }) {
     state.res = null;
     state.armed = null;
     if (timer) { clearInterval(timer); timer = null; }
+    hubNeed(id, null);
+    if (/manual/i.test(reason)) state.manualStopDay = istDay();   // auto-start leaves it alone today
     persistRunning();
     log(`⏹️ Stopped — ${reason} | day P&L ₹${state.sessionPnl} over ${state.trades.length} trade(s)`);
   }
@@ -528,7 +582,8 @@ function createEngine({ id, prefix, label, strategy }) {
     const allTime = r2(days.reduce((s, [, d]) => s + (d.pnl || 0), 0));
     return {
       id, label, prefix, strategy, rulesKey: A.rulesKey, cfg: c,
-      underlying: state.running && state.series ? { key: state.series.underlying, ...mcx.UNDERLYINGS[state.series.underlying] } : mcx.underlyingInfo(),
+      underlying: mcx.underlyingInfo(state.running && state.series ? state.series.underlying : mcx.contractFor(commodity)),
+      commodity, commodityLabel: mcx.COMMODITIES[commodity].label, modeKey,
       running: state.running, series: state.series ? { future: state.series.future, futureExpiry: state.series.futureExpiry, optionExpiry: state.series.optionExpiry } : null,
       futLtp: state.futLtp, optLtp: state.optLtp, lastQuoteAt: state.lastQuoteAt,
       position: state.position, armed: state.armed ? { side: state.armed.side, triggerLevel: state.armed.triggerLevel } : null,
@@ -541,13 +596,26 @@ function createEngine({ id, prefix, label, strategy }) {
 
   function manualExit() { if (state.position) return exit("Manual exit", state.futLtp || state.position.spotAtEntry); }
 
-  // Resume after an app restart (deploys land in the evening, mid crude session).
+  // Resume after an app restart (deploys land in the evening, mid session).
   setTimeout(() => {
     const r = _readJson(RUN_FILE, null);
     if (!r || r.day !== istDay()) { if (r) persistRunning(); return; }
-    if (String(process.env[`${prefix}_MODE_ENABLED`] || "false").toLowerCase() !== "true") return;
+    if (!modeOn()) return;
     start({ resumed: true }).then((res) => { if (!res.ok) log(`⚠️ Could not resume after restart: ${res.reason}`); });
   }, 20000).unref();
+
+  // CMX_AUTO_START: start by itself each weekday once the session is open —
+  // unless switched off, or stopped by hand today. One try per 5 minutes.
+  let lastAutoTry = 0;
+  setInterval(() => {
+    if (state.running || state.starting || !modeOn()) return;
+    if (String(process.env.CMX_AUTO_START || "false").toLowerCase() !== "true") return;
+    if (state.manualStopDay === istDay() || Date.now() - lastAutoTry < 300000) return;
+    const c = cfg(), m = istNowMinutes(), dow = istDow();
+    if (dow === 0 || dow === 6 || m < c.sessStart || m >= c.eodExit) return;
+    lastAutoTry = Date.now();
+    start().then((res) => { if (!res.ok) log(`⚠️ Auto-start failed: ${res.reason}`); });
+  }, 30000).unref();
 
   return { start, stop, reset, snapshot, manualExit, state };
 }
