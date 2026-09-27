@@ -238,6 +238,10 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   // ── Top-level underlying groups (NIFTY is implicit — it holds the strategies
   //    that already exist; BANK NIFTY is its own opt-in parent) ──
   const showBankNifty  = (process.env.UI_SHOW_BANKNIFTY || 'true').toLowerCase() === 'true';
+  // COMMODITY (MCX crude) — its own parent. Each strategy ships OFF.
+  const showCommodity       = (process.env.UI_SHOW_COMMODITY || 'true').toLowerCase() === 'true';
+  const cmxEmaRsiStModeOn   = (process.env.CMX_EMA_RSI_ST_MODE_ENABLED    || 'false').toLowerCase() === 'true';
+  const cmxEmaRsiStV2ModeOn = (process.env.CMX_EMA_RSI_ST_V2_MODE_ENABLED || 'false').toLowerCase() === 'true';
 
   // ── System submenu toggles (Settings is always shown) ──
   const showTradeLogs  = (process.env.UI_SHOW_TRADE_LOGS  || 'true').toLowerCase() === 'true';
@@ -284,6 +288,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   // NIFTY parent. Each new BANKNIFTY strategy adds its own key list here so the
   // parent opens on its pages.
   const bankNiftyKeys = [...bnPivotRsiStKeys, ...bnEmaRsiStV2Keys];
+  const commodityKeys = ['cmxEmaRsiStPaper', 'cmxEmaRsiStV2Paper'];
   // Pages that live outside every group (Real-Time monitor, docs, …) used to see
   // the ungrouped top-level links; keep Dashboard open for them so the sidebar is
   // never rendered fully collapsed.
@@ -291,7 +296,8 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     || isTrendPbOpen || isTdsOpen || isHaScalpOpen || isPrevOrbScalpOpen || isRsiPivotStOpen || isBnPivotRsiStOpen || isSimple930Open
     || isEmaRsiStV2Open
     || isBnEmaRsiStV2Open
-    || isEarlyBirdOpen || isSystemOpen;
+    || isEarlyBirdOpen || isSystemOpen
+    || commodityKeys.includes(activePage);
   const isDashboardOpen = dashboardKeys.includes(activePage) || !anyGroupOpen;
 
   // When a strategy's PAPER session is running, hide its Live / Live (Harness)
@@ -559,6 +565,19 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       parent: 'banknifty',
       items: bnEmaRsiStV2Items,
     }] : []),
+    // ── COMMODITY (MCX crude) — paper only, one section per strategy ──────
+    ...(cmxEmaRsiStModeOn ? [{
+      header: 'EMA_RSI_ST', collapsible: true, collapsed: activePage !== 'cmxEmaRsiStPaper',
+      groupId: 'nav-cmx_ema_rsi_st',
+      parent: 'commodity',
+      items: [{ key: 'cmxEmaRsiStPaper', href: '/cmx_ema_rsi_st-paper/status', icon: '📋', label: 'Paper' }],
+    }] : []),
+    ...(cmxEmaRsiStV2ModeOn ? [{
+      header: 'EMA_RSI_ST_V2', collapsible: true, collapsed: activePage !== 'cmxEmaRsiStV2Paper',
+      groupId: 'nav-cmx_ema_rsi_st_v2',
+      parent: 'commodity',
+      items: [{ key: 'cmxEmaRsiStV2Paper', href: '/cmx_ema_rsi_st_v2-paper/status', icon: '📋', label: 'Paper' }],
+    }] : []),
     // The NIFTY and BANK NIFTY parents render here — after Dashboard, before
     // System. Every section carrying a `parent` is nested inside one of them.
     { parentsAnchor: true },
@@ -727,9 +746,11 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const parentDefs = [
     { id: 'nav-parent-nifty', key: 'nifty', header: 'NIFTY' },
     ...(showBankNifty ? [{ id: 'nav-parent-banknifty', key: 'banknifty', header: 'BANK NIFTY' }] : []),
+    ...(showCommodity ? [{ id: 'nav-parent-commodity', key: 'commodity', header: 'COMMODITY' }] : []),
   ];
   const isBankNiftyOpen = bankNiftyKeys.includes(activePage);
-  const parentOpen = { nifty: !isBankNiftyOpen, banknifty: isBankNiftyOpen };
+  const isCommodityOpen = commodityKeys.includes(activePage);
+  const parentOpen = { nifty: !isBankNiftyOpen && !isCommodityOpen, banknifty: isBankNiftyOpen, commodity: isCommodityOpen };
 
   function renderParents() {
     return parentDefs.map(pd => {

@@ -66,6 +66,10 @@ function buildApp() {
 const appSrc = decomment(read("app.js"));
 const paperMounts = [...appSrc.matchAll(/app\.use\(\s*"(\/[^"]+-paper)"\s*,\s*require\("\.\/routes\/([A-Za-z0-9_]+)"\)/g)]
   .map(m => ({ mount: m[1], file: m[2] }));
+// COMMODITY (MCX crude) pages: their router (and its /reset) comes from the shared
+// utils/commodityPaperRouter builder, and their history lives under
+// ~/trading-data/cmx, not in tradeLogger's daily files.
+const usesCommodityRouter = (file) => /commodityPaperRouter/.test(decomment(read(`routes/${file}.js`)));
 const paperFiles = fs.readdirSync(path.join(SRC, "routes")).filter(f => /Paper\.js$/.test(f)).map(f => f.replace(/\.js$/, ""));
 
 section("GROUP 1 — discovery walks the live router stack, not a list");
@@ -96,7 +100,8 @@ check("modeOfMount maps every real mount to the file-name mode key tradeLogger u
   const tl = decomment(read("utils/tradeLogger.js"));
   const known = new Set([...tl.matchAll(/^\s*([a-z0-9_]+):\s*"\1_paper_trades_"/gm)].map(m => m[1]));
   assert(known.size >= 14, `only ${known.size} modes parsed from tradeLogger DAILY_PREFIX_BY_MODE`);
-  const unmapped = paperMounts.map(m => m.mount).filter(m => !known.has(paperReset.modeOfMount(m)));
+  const unmapped = paperMounts.filter(m => !usesCommodityRouter(m.file))
+    .map(m => m.mount).filter(m => !known.has(paperReset.modeOfMount(m)));
   assert.deepStrictEqual(unmapped, [], `mount → mode key not in tradeLogger: ${unmapped.join(", ")}`);
 });
 
@@ -157,7 +162,8 @@ check("app.js mounts at least the fourteen paper engines that existed when this 
 });
 
 check("every /<x>-paper mount's router defines router.get(\"/reset\") — otherwise Reset Paper silently misses it", () => {
-  const missing = paperMounts.filter(({ file }) => !/router\.get\(\s*"\/reset"/.test(decomment(read(`routes/${file}.js`))));
+  const missing = paperMounts.filter(({ file }) => !/router\.get\(\s*"\/reset"/.test(decomment(read(
+    usesCommodityRouter(file) ? "utils/commodityPaperRouter.js" : `routes/${file}.js`))));
   assert.deepStrictEqual(missing.map(m => m.mount), [], `no GET /reset in: ${missing.map(m => m.file).join(", ")}`);
 });
 

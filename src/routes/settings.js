@@ -890,6 +890,39 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
+    section: "COMMODITY (MCX crude) — EMA_RSI_ST + EMA_RSI_ST_V2, paper only",
+    icon: "\u{1F6E2}",
+    nav: "Commodity (MCX)",
+    group: "Strategies",
+    fields: [
+      // Crude copies of EMA_RSI_ST / EMA_RSI_ST_V2. The SIGNAL rules are the
+      // originals and read the EMA_RSI_ST_* / EMA_RSI_ST_V2_* settings above —
+      // only timing, size and day guards are commodity-specific (CMX_*). Prices
+      // come from Fyers REST, so nothing here touches the NIFTY socket, capital
+      // pool or global guards. The Mode toggles live in MENU VISIBILITY.
+      { key: "CMX_UNDERLYING", label: "Commodity", type: "select", options: [{ value: "CRUDEOIL", label: "Crude Oil (1 lot = 100 barrels)" }, { value: "CRUDEOILM", label: "Crude Oil Mini (1 lot = 10 barrels)" }], effect: EFFECT.SESSION, desc: "What both commodity strategies trade. Mini is one-tenth the size — same moves, one-tenth the rupees. Takes effect on the next Start.", default: "CRUDEOIL", subheader: "Market" },
+      { key: "CMX_SESSION_START", label: "MCX Session Start", type: "time", effect: EFFECT.SESSION, desc: "When MCX opens (IST). Prices are ignored before this.", default: "09:00" },
+      { key: "CMX_SESSION_END", label: "MCX Session End", type: "time", effect: EFFECT.SESSION, desc: "When MCX closes (IST) — the engine stops itself here. MCX closes at 23:30 in Indian summer and 23:55 when US clocks go back (Nov–Mar); change it then.", default: "23:30" },
+      { key: "CMX_POLL_SECONDS", label: "Price Check Every (sec)", type: "number", min: 2, max: 30, step: 1, effect: EFFECT.INSTANT, desc: "How often the live price is checked while a trade is open or a signal is waiting. Stops are checked at this pace, not on every tick. Lower = closer to real stops, more broker calls.", default: "3" },
+      { key: "CMX_CHARGES_PER_TRADE", label: "Charges per Trade (₹)", type: "number", min: 0, max: 1000, step: 5, effect: EFFECT.INSTANT, desc: "Brokerage + taxes taken off each paper trade's P&L (buy + sell together).", default: "60" },
+      { key: "CMX_STARTING_CAPITAL", label: "Paper Capital (₹)", type: "number", min: 0, max: 10000000, step: 5000, effect: EFFECT.INSTANT, desc: "Shown for reference only.", default: "100000" },
+      { key: "CMX_EMA_RSI_ST_RESOLUTION", label: "EMA_RSI_ST — Candle Size (min)", type: "number", min: 1, max: 60, step: 1, effect: EFFECT.SESSION, desc: "Candle length the EMA_RSI_ST rules run on for crude. Takes effect on the next Start.", default: "5", subheader: "EMA_RSI_ST" },
+      { key: "CMX_EMA_RSI_ST_LOTS", label: "EMA_RSI_ST — Lots", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "Lots per paper trade. 1 Crude Oil lot = 100 barrels, so a ₹10 premium move is ₹1,000.", default: "1" },
+      { key: "CMX_EMA_RSI_ST_ENTRY_START", label: "EMA_RSI_ST — Entry Window Start", type: "time", effect: EFFECT.INSTANT, desc: "No new entries before this time (IST). Crude moves most in the evening, when US markets are open.", default: "15:00" },
+      { key: "CMX_EMA_RSI_ST_ENTRY_END", label: "EMA_RSI_ST — Entry Window End", type: "time", effect: EFFECT.INSTANT, desc: "No new entries after this time (IST). An open trade is not affected.", default: "22:30" },
+      { key: "CMX_EMA_RSI_ST_EOD_EXIT_TIME", label: "EMA_RSI_ST — Forced Exit", type: "time", effect: EFFECT.INSTANT, desc: "Anything still open is closed at this time (IST). Nothing is held overnight.", default: "23:00" },
+      { key: "CMX_EMA_RSI_ST_MAX_DAILY_TRADES", label: "EMA_RSI_ST — Max Trades/Day", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "No new entries once this many trades are done for the day.", default: "3" },
+      { key: "CMX_EMA_RSI_ST_MAX_DAILY_LOSS", label: "EMA_RSI_ST — Max Daily Loss (₹)", type: "number", min: 0, max: 100000, step: 500, effect: EFFECT.INSTANT, desc: "Stop for the day once losses reach this much (0 = off). Counts only this strategy's crude trades — never the NIFTY ones.", default: "5000" },
+      { key: "CMX_EMA_RSI_ST_V2_RESOLUTION", label: "EMA_RSI_ST_V2 — Candle Size (min)", type: "number", min: 1, max: 60, step: 1, effect: EFFECT.SESSION, desc: "Candle length the EMA_RSI_ST_V2 rules run on for crude. Takes effect on the next Start.", default: "5", subheader: "EMA_RSI_ST_V2" },
+      { key: "CMX_EMA_RSI_ST_V2_LOTS", label: "EMA_RSI_ST_V2 — Lots", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "Lots per paper trade. 1 Crude Oil lot = 100 barrels, so a ₹10 premium move is ₹1,000.", default: "1" },
+      { key: "CMX_EMA_RSI_ST_V2_ENTRY_START", label: "EMA_RSI_ST_V2 — Entry Window Start", type: "time", effect: EFFECT.INSTANT, desc: "No new entries before this time (IST). Crude moves most in the evening, when US markets are open.", default: "15:00" },
+      { key: "CMX_EMA_RSI_ST_V2_ENTRY_END", label: "EMA_RSI_ST_V2 — Entry Window End", type: "time", effect: EFFECT.INSTANT, desc: "No new entries after this time (IST). An open trade is not affected.", default: "22:30" },
+      { key: "CMX_EMA_RSI_ST_V2_EOD_EXIT_TIME", label: "EMA_RSI_ST_V2 — Forced Exit", type: "time", effect: EFFECT.INSTANT, desc: "Anything still open is closed at this time (IST). Nothing is held overnight.", default: "23:00" },
+      { key: "CMX_EMA_RSI_ST_V2_MAX_DAILY_TRADES", label: "EMA_RSI_ST_V2 — Max Trades/Day", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "No new entries once this many trades are done for the day.", default: "3" },
+      { key: "CMX_EMA_RSI_ST_V2_MAX_DAILY_LOSS", label: "EMA_RSI_ST_V2 — Max Daily Loss (₹)", type: "number", min: 0, max: 100000, step: 500, effect: EFFECT.INSTANT, desc: "Stop for the day once losses reach this much (0 = off). Counts only this strategy's crude trades — never the NIFTY ones.", default: "5000" },
+    ],
+  },
+  {
     section: "OPEN-INTEREST FILTER (OI + Price Buildup)",
     icon: "📊",
     nav: "OI Filter",
@@ -1215,6 +1248,7 @@ const SETTINGS_SCHEMA = [
       { key: "UI_SHOW_OI_MONITOR",     label: "Show OI Monitor",           type: "toggle", effect: EFFECT.INSTANT, desc: "Show the OI Monitor menu — read-only per-strike Open Interest ladder, walls and PCR. Research page: places no orders.", default: "false" },
       { key: "UI_SHOW_SWING_SCANNER",  label: "Show Swing Scanner",        type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Swing Scanner menu — screens stocks with your active strategies and can place REAL Zerodha delivery orders. Off by default because it is the one page with no dry-run gate.", default: "false" },
       { key: "UI_SHOW_BANKNIFTY",      label: "Show BANK NIFTY group",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show the BANK NIFTY parent group in the sidebar. The NIFTY BANK strategies nest under it, the way the NIFTY strategies nest under NIFTY.", default: "true" },
+      { key: "UI_SHOW_COMMODITY",      label: "Show COMMODITY group",      type: "toggle", effect: EFFECT.INSTANT, desc: "Show the COMMODITY (MCX crude) parent group in the sidebar. It only appears once one of the commodity strategies below is switched on.", default: "true" },
       { key: "UI_SHOW_EDGE_ANALYTICS_BUTTON", label: "Show Edge Analytics button", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Edge Analytics button on the Consolidation Report page.", default: "true" },
       { key: "EMA_RSI_ST_MODE_ENABLED",     label: "EMA_RSI_ST Mode",                type: "toggle", effect: EFFECT.INSTANT, desc: "Show the EMA_RSI_ST menu and settings.", default: "true", subheader: "Strategy master toggles" },
       { key: "BB_RSI_MODE_ENABLED",     label: "BB_RSI Mode",                type: "toggle", effect: EFFECT.INSTANT, desc: "Show the BB_RSI menu and settings.", default: "true" },
@@ -1231,6 +1265,8 @@ const SETTINGS_SCHEMA = [
       { key: "BN_PIVOT_RSI_ST_MODE_ENABLED", label: "BN Pivot RSI ST Mode (NIFTY BANK)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the BN Pivot RSI ST menu and settings. This is the NIFTY BANK replica of RSI Pivot ST.", default: "true" },
       { key: "EMA_RSI_ST_V2_MODE_ENABLED", label: "EMA_RSI_ST_V2 Mode", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the EMA_RSI_ST_V2 menu and settings. A separate strategy from EMA_RSI_ST, not a mode of it. Ships OFF because V2 is unproven — turn it on to paper-trade it.", default: "false" },
       { key: "BN_EMA_RSI_ST_V2_MODE_ENABLED", label: "BN EMA_RSI_ST_V2 Mode (NIFTY BANK)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the BN EMA_RSI_ST_V2 menu and settings. The same rules as EMA_RSI_ST_V2 but traded on NIFTY BANK, with its own settings and its own position — the two can run side by side. Ships OFF and unproven.", default: "false" },
+      { key: "CMX_EMA_RSI_ST_MODE_ENABLED", label: "Crude EMA_RSI_ST Mode (Commodity)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the COMMODITY → EMA_RSI_ST Paper page and allow it to start. The EMA_RSI_ST rules on MCX crude, paper only, separate from every NIFTY strategy. Ships OFF.", default: "false" },
+      { key: "CMX_EMA_RSI_ST_V2_MODE_ENABLED", label: "Crude EMA_RSI_ST_V2 Mode (Commodity)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the COMMODITY → EMA_RSI_ST_V2 Paper page and allow it to start. The EMA_RSI_ST_V2 rules on MCX crude, paper only, separate from every NIFTY strategy. Ships OFF.", default: "false" },
       { key: "UI_SHOW_SIMULATE",       label: "Show Simulate Menu",        type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Simulate sub-menu.", default: "false", subheader: "Shared sub-menus (all strategies)" },
       { key: "UI_SHOW_COMPARE",        label: "Show Compare Menu",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Compare sub-menu.", default: "false" },
       { key: "UI_SHOW_TRACKER",        label: "Show Tracker Menu (EMA_RSI_ST only)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Tracker sub-menu (EMA_RSI_ST).", default: "false" },
@@ -2313,6 +2349,9 @@ router.get("/", (req, res) => {
   const emaRsiStV2ModeOn = (envData["EMA_RSI_ST_V2_MODE_ENABLED"] ?? process.env.EMA_RSI_ST_V2_MODE_ENABLED ?? "false").toLowerCase() === "true";
   // The NIFTY BANK sibling — also "false" by default.
   const bnEmaRsiStV2ModeOn = (envData["BN_EMA_RSI_ST_V2_MODE_ENABLED"] ?? process.env.BN_EMA_RSI_ST_V2_MODE_ENABLED ?? "false").toLowerCase() === "true";
+  // Commodity section shows once either crude strategy is on.
+  const cmxModeOn = ["CMX_EMA_RSI_ST_MODE_ENABLED", "CMX_EMA_RSI_ST_V2_MODE_ENABLED"]
+    .some(k => (envData[k] ?? process.env[k] ?? "false").toLowerCase() === "true");
   // Server Logs (📜 LOGS) and Cache Files buttons moved into the Logs (/trade-logs) page as tabs —
   // UI_SHOW_LOGS / UI_SHOW_CACHE_FILES now gate those tabs there, not top-bar buttons here.
   // (bbRsiModeOn already computed above for isFieldFrozen)
@@ -2331,6 +2370,7 @@ router.get("/", (req, res) => {
     "BN_PIVOT_RSI_ST STRATEGY (NIFTY BANK — RSI + Standard Pivot R1/S1 + SuperTrend) — Zerodha": bnPivotRsiStModeOn,
     "EMA_RSI_ST_V2 STRATEGY (EMA20/50 + RSI + SuperTrend trail) — Zerodha": emaRsiStV2ModeOn,
     "BN_EMA_RSI_ST_V2 STRATEGY (NIFTY BANK — EMA20/50 + RSI + SuperTrend trail) — Zerodha": bnEmaRsiStV2ModeOn,
+    "COMMODITY (MCX crude) — EMA_RSI_ST + EMA_RSI_ST_V2, paper only": cmxModeOn,
     "EARLYBIRD STRATEGY (first 15-min breakout, CASH EQUITY) — Fyers": earlyBirdModeOn,
   };
 

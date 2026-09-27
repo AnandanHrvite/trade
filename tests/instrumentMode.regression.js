@@ -50,6 +50,11 @@ const { calcCharges } = require("../src/utils/charges");
 // futures" does not exist. They must refuse the mode, not silently ignore it.
 const PREMIUM_DENOMINATED = new Set(["simple930Paper.js"]);
 
+// COMMODITY (MCX crude) pages. They never trade NIFTY, so the NIFTY_FUTURES
+// toggle has nothing to switch: they always buy crude options. Exempt only while
+// they stay out of the NIFTY instrument code entirely — asserted below.
+const NOT_NIFTY = new Set(["cmxEmaRsiStPaper.js", "cmxEmaRsiStV2Paper.js"]);
+
 // ─────────────────────────────────────────────────────────────────────────────
 section("The helper itself — direction, P&L and charge rates");
 
@@ -324,6 +329,15 @@ check("the discovery actually found the paper routes", () => {
 
 for (const file of paperRoutes) {
   const src = decomment(read(path.join("routes", file)));
+
+  if (NOT_NIFTY.has(file)) {
+    check(`${file} trades MCX only — never touches the NIFTY instrument code`, () => {
+      assert.ok(!/config\/instrument|instrumentMode|NIFTY_FUTURES/.test(src),
+        `${file} is exempt from the NIFTY futures toggle only while it never builds a NIFTY symbol`);
+      assert.ok(/commodityPaper/.test(src), `${file} must run on the commodity engine`);
+    });
+    continue;
+  }
 
   if (PREMIUM_DENOMINATED.has(file)) {
     check(`${file} REFUSES futures mode (its levels are premiums)`, () => {

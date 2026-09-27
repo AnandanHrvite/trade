@@ -791,6 +791,13 @@ const OPEN_PATHS = [
   "/bn_ema_rsi_st_v2-paper/debug",           // read-only debug
   "/bn_ema_rsi_st_v2-paper/client.js",       // static asset
   "/bn_ema_rsi_st_v2-paper/simulate",        // read-only simulate page (its /simulate/start still needs the secret)
+  // COMMODITY (MCX crude) paper pages — read-only surfaces; start/stop/exit/reset stay protected.
+  "/cmx_ema_rsi_st-paper/status",
+  "/cmx_ema_rsi_st-paper/status/data",
+  "/cmx_ema_rsi_st-paper/status/fragment",
+  "/cmx_ema_rsi_st_v2-paper/status",
+  "/cmx_ema_rsi_st_v2-paper/status/data",
+  "/cmx_ema_rsi_st_v2-paper/status/fragment",
   "/ema9vwap-paper/status",      // read-only status page
   "/ema9vwap-paper/status/data", // dashboard AJAX poll
   "/ema9vwap-paper/history",     // read-only history
@@ -1235,6 +1242,13 @@ app.use("/ema_rsi_st_v2-live-harness", require("./routes/emaRsiStV2LiveHarness")
 app.use("/bn_ema_rsi_st_v2-paper",        require("./routes/bnEmaRsiStV2Paper"));       // ← canonical engine
 app.use("/bn_ema_rsi_st_v2-backtest",     require("./routes/bnEmaRsiStV2Backtest"));    // ← same signal engine, paper's exits
 app.use("/bn_ema_rsi_st_v2-live-harness", require("./routes/bnEmaRsiStV2LiveHarness")); // ← LIVE via PAPER + harness (triple-gated dry-run, Zerodha)
+
+// ── COMMODITY (MCX crude) — paper only ────────────────────────────────────────
+// Self-contained engine (src/services/commodityPaper.js): REST prices, own files
+// under ~/trading-data/cmx, no shared socket / capital pool / global guards, so
+// nothing here can move a NIFTY or BANK NIFTY strategy.
+app.use("/cmx_ema_rsi_st-paper",    require("./routes/cmxEmaRsiStPaper"));
+app.use("/cmx_ema_rsi_st_v2-paper", require("./routes/cmxEmaRsiStV2Paper"));
 
 app.use("/bb_rsi-live-harness", require("./routes/bbRsiLiveHarness")); // ← BB_RSI live via PAPER + harness (Fyers orders)
 app.use("/orb-live-harness",   require("./routes/orbLiveHarness"));   // ← ORB live via PAPER + harness (Fyers orders)
