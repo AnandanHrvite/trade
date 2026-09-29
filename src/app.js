@@ -1552,9 +1552,10 @@ app.get("/", (req, res) => {
   // NIFTY BANK sibling — defaults OFF for the same reason.
   const bnEmaRsiStV2ModeOn = (process.env.BN_EMA_RSI_ST_V2_MODE_ENABLED || 'false').toLowerCase() === 'true';
   // One chart card per COMMODITY page (switched on, or still running).
-  const dashCmxCards = require("./utils/commodityPaperRouter").visibleEngines().map((e) => {
+  const { visibleEngines: cmxVisibleEngines, commodityIcon } = require("./utils/commodityPaperRouter");
+  const dashCmxCards = cmxVisibleEngines().map((e) => {
     const s = e.snapshot();
-    return { mode: cmxDashMode(s), base: `/${s.id}-paper`, title: `${s.commodityLabel.toUpperCase()} · ${s.strategy === "V2" ? "EMA_RSI_ST_V2" : "EMA_RSI_ST"}` };
+    return { mode: cmxDashMode(s), base: `/${s.id}-paper`, icon: commodityIcon(s.commodity), title: `${s.commodityLabel.toUpperCase()} · ${s.strategy === "V2" ? "EMA_RSI_ST_V2" : "EMA_RSI_ST"}` };
   });
   const analyticsPanelOn = (process.env.UI_DASHBOARD_ANALYTICS_PANEL || 'true').toLowerCase() === 'true';
   const activeStrategyName = getActiveStrategy().NAME;
@@ -1629,7 +1630,7 @@ app.get("/", (req, res) => {
   }));
   // COMMODITY pages join the Last Session / Today So Far panel — paper only.
   for (const c of dashCmxCards) {
-    dashSessionTiles.push({ key: c.mode, cls: 'cmx', label: '🛢 ' + c.title, paper: c.base + '/status', live: null, statusData: c.base + '/status/data' });
+    dashSessionTiles.push({ key: c.mode, cls: 'cmx', label: c.icon + ' ' + c.title, paper: c.base + '/status', live: null, statusData: c.base + '/status/data' });
   }
 
   // ── Start-All roster — the enabled strategies (same helper the sidebar uses)
@@ -2486,7 +2487,11 @@ app.get("/", (req, res) => {
     @media (max-width:1100px){ .da-grid.cols-5,.da-grid.cols-6 { grid-template-columns:repeat(3, 1fr); } }
     @media (max-width:900px){ .da-grid.cols-3,.da-grid.cols-4,.da-grid.cols-5,.da-grid.cols-6 { grid-template-columns:1fr 1fr; } }
     @media (max-width:560px){ .da-grid.cols-2,.da-grid.cols-3,.da-grid.cols-4,.da-grid.cols-5,.da-grid.cols-6 { grid-template-columns:1fr; } }
-    .da-tile { background:#080e1a; border:1px solid #1a2236; border-radius:7px; padding:9px 11px; min-width:0; }
+    /* Column flex + a growing header: a label that wraps (the COMMODITY tiles'
+       "CRUDE OIL · EMA_RSI_ST_V2") pushes the row's other headers down with it,
+       so every value in a row stays on one line. */
+    .da-tile { background:#080e1a; border:1px solid #1a2236; border-radius:7px; padding:9px 11px; min-width:0; display:flex; flex-direction:column; }
+    .da-tile > .da-tile-hdr { flex:1 0 auto; align-items:flex-start; }
     .da-tile.ema_rsi_st { border-top:2px solid #3b82f6; }
     .da-tile.bb_rsi { border-top:2px solid #f59e0b; }
     .da-tile.pa    { border-top:2px solid #a78bfa; }
@@ -2495,7 +2500,7 @@ app.get("/", (req, res) => {
     .da-tile.cmx   { border-top:2px solid #eab308; }
     /* Clickable tiles: an <a> that must still lay out exactly like the div it
        replaced, so grid sizing and the mobile column count are unchanged. */
-    a.da-tile-link { display:block; text-decoration:none; color:inherit; cursor:pointer; transition:border-color .15s, background .15s, transform .15s; }
+    a.da-tile-link { display:flex; text-decoration:none; color:inherit; cursor:pointer; transition:border-color .15s, background .15s, transform .15s; }
     a.da-tile-link:hover, a.da-tile-link:focus-visible { border-color:#2b3a58; background:#0b1424; transform:translateY(-1px); }
     a.da-tile-link:focus-visible { outline:2px solid #3b82f6; outline-offset:2px; }
     a.da-tile-link:active { transform:none; }
@@ -2873,7 +2878,7 @@ ${buildSidebar('dashboard', liveActive)}
     <div class="mm-card cmx" data-mode="${c.mode}">
       <div class="mm-hdr">
         <span class="mm-dot"></span>
-        <span class="mm-title">🛢 ${c.title}</span>
+        <span class="mm-title">${c.icon} ${c.title}</span>
       </div>
       <div class="mm-stats" id="mm-stats-${c.mode}">—</div>
       <div class="mm-wrap"><canvas id="mmChart-${c.mode}"></canvas></div>

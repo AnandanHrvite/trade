@@ -356,6 +356,9 @@ const RULES = {
     <li><b>Exits:</b> SuperTrend trailing stop (its only stop), profit lock, opposite signal, and the day's exit time.</li>`,
 };
 const ICONS = { CRUDE: "🛢️", GOLD: "🥇", SILVER: "🥈" };
+// The page's own icon, for the monitors that list a commodity page — 🛢 only
+// fits CRUDE.
+const commodityIcon = (commodity) => ICONS[commodity] || "🛢️";
 
 // Every commodity engine built by commodityPage(), in mount order — read by the
 // Dashboard's Start All (Commodity) button and the 4 PM token-clear hold.
@@ -444,4 +447,4 @@ function commodityPage({ commodity, strategy }) {
   return router;
 }
 
-module.exports = { createCommodityPaperRouter, commodityPage, enabledEngines, visibleEngines, anyRunning, monitorView, fyersTokenHoldUntil };
+module.exports = { createCommodityPaperRouter, commodityPage, commodityIcon, enabledEngines, visibleEngines, anyRunning, monitorView, fyersTokenHoldUntil };
