@@ -586,6 +586,19 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     return { ok: true };
   }
 
+  // One recorded day off the book — the History page's Delete Session. Today's
+  // day is refused while running: the next exit would write it straight back.
+  function deleteDay(day) {
+    if (state.running && day === state.day) return { ok: false, reason: "stop the session before deleting today" };
+    const book = loadBook();
+    if (!book.days || !book.days[day]) return { ok: false, reason: `no session on ${day}` };
+    delete book.days[day];
+    _writeJson(TRADES_FILE, book);
+    if (day === state.day) { state.day = null; rollDay(); }
+    log(`🗑 Deleted the ${day} session`);
+    return { ok: true };
+  }
+
   function snapshot() {
     rollDay();
     const c = cfg();
@@ -685,7 +698,7 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     start().then((res) => { if (!res.ok) log(`⚠️ Auto-start failed: ${res.reason}`); });
   }, 30000).unref();
 
-  return { start, stop, reset, snapshot, manualExit, manualEntry, chartData, historyDays, state };
+  return { start, stop, reset, deleteDay, snapshot, manualExit, manualEntry, chartData, historyDays, state };
 }
 
 module.exports = { createEngine };

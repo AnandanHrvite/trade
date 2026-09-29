@@ -1346,6 +1346,10 @@ function buildSessionCards(sessions, opts) {
  *   extraAnalyticsHTML / extraAnalyticsJS  OPTIONAL — injected at the top of
  *                 the Analytics panel; the JS may define renderExtraAnalytics()
  *                 (called whenever Analytics renders, always on full data).
+ *   replayMode    OPTIONAL — the /replay mode for "View chart"; defaults to the
+ *                 route prefix. "" hides the button (a page Replay can't run).
+ *   contractRow   OPTIONAL — (trade) => contract-note row, for a page whose
+ *                 charges aren't the NSE schedule (the MCX commodity pages).
  */
 function renderHistoryPage(cfg) {
   // Attach a contract-note row (_cn) to every trade so the Report modal can be
@@ -1359,7 +1363,9 @@ function renderHistoryPage(cfg) {
     // ONCE here so no browser has to re-parse a shape — the one place that did
     // read it as US month/day and filed a September session under April.
     istDay: istDayFromAny(s.date),
-    trades: attachContractNotes(s.trades || [], cnBroker),
+    trades: cfg.contractRow
+      ? (s.trades || []).map(t => ({ ...t, _cn: cfg.contractRow(t) }))
+      : attachContractNotes(s.trades || [], cnBroker),
   }));
   const allTrades = sessions.flatMap(s => (s.trades || []).map(t => ({ ...t, date: s.istDay })));
   const totalWins   = allTrades.filter(t => t.pnl > 0).length;
@@ -1389,7 +1395,7 @@ function renderHistoryPage(cfg) {
       </label>`;
   }
 
-  const sessionCards = buildSessionCards(sessions, { emptyLabel: cfg.emptyLabel, filterField: filter && filter.field, replayMode: (cfg.routePrefix || "").replace(/^\//, "") });
+  const sessionCards = buildSessionCards(sessions, { emptyLabel: cfg.emptyLabel, filterField: filter && filter.field, replayMode: cfg.replayMode !== undefined ? cfg.replayMode : (cfg.routePrefix || "").replace(/^\//, "") });
 
   return `<!DOCTYPE html>
 <html lang="en">

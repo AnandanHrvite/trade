@@ -14,6 +14,7 @@
 const express = require("express");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS } = require("./sharedNav");
 const { bbRsiStyleCSS, bbRsiTopBar, bbRsiStatGrid, bbRsiCapitalStrip } = require("./bbRsiStyleUI");
+const { renderHistoryPage, dailyFilesPaginate } = require("./paperHistoryUI");
 
 function esc(s) {
   return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -26,6 +27,24 @@ function pnlColor(n) { return n > 0 ? "#10b981" : n < 0 ? "#ef4444" : "#94a3b8";
 function hhmm(iso) {
   if (!iso) return "—";
   return new Date(new Date(iso).getTime() + 19800000).toISOString().slice(11, 16);
+}
+// "30/09/2026, 15:05:12" — the IST stamp the NIFTY history pages store and split.
+function istStamp(iso) {
+  if (!iso) return "";
+  const d = new Date(new Date(iso).getTime() + 19800000).toISOString();
+  return `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}, ${d.slice(11, 19)}`;
+}
+// Contract-note row for an MCX option trade: net is the P&L the trade booked,
+// after the flat CMX_CHARGES_PER_TRADE — not the NSE charge schedule.
+function mcxContractRow(t) {
+  const charges = Number(t.charges) || 0;
+  return {
+    side: t.side, segment: "MCX - Options", exchange: "MCX",
+    buy: t.optionEntryLtp, sell: t.optionExitLtp, qty: t.qty,
+    gross: typeof t.grossPnl === "number" ? t.grossPnl : Math.round((t.pnl + charges) * 100) / 100,
+    net: t.pnl, strike: t.strike, symbol: t.symbol, date: String(t.entryTime || "").split(",")[0] || null,
+    charges: { stt: 0, exchangeTxn: 0, sebi: 0, gst: 0, stampDuty: 0, brokerage: charges, total: charges, estimated: true },
+  };
 }
 function fmtMins(m) { return String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0"); }
 
@@ -146,12 +165,6 @@ function createCommodityPaperRouter({ engine, base, navKey, title, icon, rulesTe
 .cx-chart{height:420px;border:1px solid #1a2236;border-radius:10px;overflow:hidden;background:#0a0f1c;}
 .rule-list{margin:8px 0 0;padding-left:18px;color:var(--muted-1,#8ba1c2);font-size:0.75rem;line-height:1.7;}
 .rule-list b{color:#cbd5e1;font-weight:600;}
-.cx-day{border:1px solid #1a2236;border-radius:8px;margin-bottom:10px;background:#0a1020;}
-.cx-day>summary{display:flex;flex-wrap:wrap;gap:6px 18px;align-items:center;min-height:44px;padding:8px 14px;cursor:pointer;font-size:0.8rem;color:#e2e8f0;list-style:none;}
-.cx-day>summary::-webkit-details-marker{display:none;}
-.cx-day[open]>summary{border-bottom:1px solid #1a2236;}
-.cx-day .cx-scroll{padding:6px 8px 10px;}
-.cx-day.cx-hl{border-color:#3b82f6;}
 @media (max-width:640px){ .cx-card{padding:12px;} .cx-row{font-size:0.76rem;gap:8px 14px;} .cx-chart{height:320px;} .cx-flat-btns .cx-btn{flex:1;} }`;
 
   // `monitor` is the same session in the field names the Real-Time monitor reads
@@ -265,59 +278,46 @@ ${msg}${off}
 </body></html>`);
   });
 
-  // Every recorded day with its trades. ?date=YYYY-MM-DD opens that day
-  // (the Consolidation Report links here).
+  // Every recorded day as one session card — the same History page every NIFTY
+  // paper strategy renders (utils/paperHistoryUI). ?date=YYYY-MM-DD opens that
+  // day (the Consolidation Report links here). Replay can't run MCX, so no
+  // "View chart"; the contract note carries the flat MCX charge each trade booked.
   router.get("/history", (req, res) => {
     const s = engine.snapshot();
-    const c = s.cfg;
-    const days = engine.historyDays();
-    const pick = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.date || "")) ? String(req.query.date) : null;
-    const all = days.flatMap((d) => d.trades);
-    const wins = all.filter((t) => t.pnl > 0), losses = all.filter((t) => t.pnl < 0);
-    const net = Math.round(all.reduce((a, t) => a + (t.pnl || 0), 0) * 100) / 100;
-    const sum = (a) => a.reduce((x, t) => x + t.pnl, 0);
-    const pf = losses.length ? Math.abs(sum(wins) / sum(losses)) : null;
-    const best = days.length ? days.reduce((a, d) => (d.pnl > a.pnl ? d : a)) : null;
-    const worst = days.length ? days.reduce((a, d) => (d.pnl < a.pnl ? d : a)) : null;
-
-    const cards = bbRsiStatGrid([
-      { label: "Trading days", value: String(days.length) },
-      { label: "Total trades", value: String(all.length), sub: `${wins.length}W · ${losses.length}L` },
-      { label: "Win rate", value: all.length ? (wins.length / all.length * 100).toFixed(1) + "%" : "—" },
-      { label: "Net P&L", value: rs(net), color: pnlColor(net) },
-      { label: "Avg win / loss", value: `${wins.length ? rs(sum(wins) / wins.length) : "—"} / ${losses.length ? rs(sum(losses) / losses.length) : "—"}` },
-      { label: "Profit factor", value: pf != null ? pf.toFixed(2) : "—" },
-      { label: "Best day", value: best ? rs(best.pnl) : "—", color: best ? pnlColor(best.pnl) : null, sub: best ? best.day : "" },
-      { label: "Worst day", value: worst ? rs(worst.pnl) : "—", color: worst ? pnlColor(worst.pnl) : null, sub: worst ? worst.day : "" },
-    ]);
-    const dayBlocks = days.map((d) => {
-      const w = d.trades.filter((t) => t.pnl > 0).length, l = d.trades.filter((t) => t.pnl < 0).length;
-      const open = pick ? pick === d.day : false;
-      return `<details class="cx-day${open ? " cx-hl" : ""}" id="d-${d.day}"${open ? " open" : ""}>
-<summary><b>${d.day}</b><span>${d.trades.length} trade${d.trades.length === 1 ? "" : "s"} · <span style="color:#10b981">${w}W</span> <span style="color:#ef4444">${l}L</span></span><b style="margin-left:auto;color:${pnlColor(d.pnl)}">${rs(d.pnl)}</b></summary>
-${d.trades.length ? tradeTable(d.trades) : `<div class="cx-muted" style="padding:10px 14px;">No trades.</div>`}
-</details>`;
-    }).join("");
-
-    res.send(`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
-<title>${esc(title)} — History</title>${faviconLink()}
-<style>${pageCSS()}</style></head><body>
-${buildSidebar(navKey, false, s.running)}
-<div class="main-content">
-${bbRsiTopBar({
-  title: `${icon} ${title} — History`,
-  metaLine: `${esc(s.underlying.label)} (MCX) · paper trades on this page only · <a class="cx-a" href="${base}/status">← Back to Paper</a>`,
-  running: s.running,
-})}
-${bbRsiCapitalStrip({ starting: c.startCap, current: Math.round((c.startCap + s.allTime) * 100) / 100, allTime: s.allTime, note: "Every closed paper trade on this page, all days." })}
-${cards}
-${pick && !days.some((d) => d.day === pick) ? `<div class="cx-note cx-warn">No trades recorded on ${pick}.</div>` : ""}
-${days.length ? dayBlocks : `<div class="cx-card"><div class="cx-muted">No history yet — trades show here once the page has traded.</div></div>`}
-</div>
-${pick ? `<script>(function(){var e=document.getElementById('d-${pick}');if(e)e.scrollIntoView({block:'start'});})();</script>` : ""}
-</body></html>`);
+    const sessions = engine.historyDays().slice().reverse().map((d) => ({
+      date: d.day, strategy: s.label, pnl: d.pnl,
+      trades: d.trades.map((t) => ({
+        ...t, entryTime: istStamp(t.entryTime), exitTime: istStamp(t.exitTime),
+        entryReason: t.reason, optionStrike: t.strike, optionType: t.side, optionExpiry: t.expiry,
+        qty: t.lots * t.multiplier,
+      })),
+    }));
+    res.send(renderHistoryPage({
+      routePrefix: base,
+      sidebarKey: navKey,
+      pageTitle: `${icon} ${esc(title)} Paper Trade History`,
+      pageDocTitle: `${title} Paper — History`,
+      modalLabel: `${title} Paper`,
+      liveActive: false,
+      sessions,
+      capital: Math.round((s.cfg.startCap + s.allTime) * 100) / 100,
+      totalPnl: s.allTime,
+      startCap: s.cfg.startCap,
+      emptyLabel: `Start ${title} paper trading to record your first session.`,
+      replayMode: "",
+      contractRow: mcxContractRow,
+    }));
   });
+  router.delete("/session/:idx", (req, res) => {
+    const days = engine.historyDays().slice().reverse();   // the page's oldest-first order
+    const d = days[parseInt(req.params.idx, 10)];
+    if (!d) return res.status(404).json({ success: false, error: "Session not found — reload the page." });
+    const r = engine.deleteDay(d.day);
+    return r.ok ? res.json({ success: true }) : res.status(400).json({ success: false, error: r.reason });
+  });
+  // The History page's Daily Data Files panel. Commodity pages keep no per-day
+  // JSONL, so it always lists none.
+  router.get("/download/daily-files", (req, res) => res.json(dailyFilesPaginate([], req.query)));
 
   router.get("/start", async (req, res) => {
     if (!modeOn()) return res.redirect(`${base}/status?msg=` + encodeURIComponent(`Switched off — turn on ${modeKey()} in Settings first.`));
@@ -334,7 +334,8 @@ ${pick ? `<script>(function(){var e=document.getElementById('d-${pick}');if(e)e.
     const r = engine.reset();
     // Settings → Reset Paper calls every engine's /reset in-process and reads a
     // 400 as "skipped because it is running".
-    if (req.headers && req.headers["x-paper-reset"]) {
+    // The History page's Reset is a fetch() and reads JSON back too.
+    if (req.headers && (req.headers["x-paper-reset"] || req.get("sec-fetch-dest") === "empty")) {
       return r.ok ? res.json({ success: true, message: `${title} history cleared` })
                   : res.status(400).json({ success: false, error: `Stop ${title} paper trading first before resetting.` });
     }
