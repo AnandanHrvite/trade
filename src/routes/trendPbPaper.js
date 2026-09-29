@@ -119,7 +119,7 @@ function _freshState() {
 }
 
 function log(msg) {
-  const stamp = new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
+  const stamp = new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hourCycle: "h23" });
   const line = `[${stamp}] ${msg}`;
   state.log.push(line);
   if (state.log.length > 200) state.log.shift();
@@ -127,7 +127,7 @@ function log(msg) {
 }
 
 function istNow() {
-  return new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
+  return new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hourCycle: "h23" });
 }
 
 // ── Crash/restart recovery: rehydrate today's in-memory session from JSONL ─────
@@ -910,6 +910,11 @@ router.post("/manualEntry", async (req, res) => {
   log(`🖐️ [TREND_PB-PAPER] MANUAL ${side} entry triggered by user @ spot ₹${spot}`);
   try {
     await simulateBuy(side, sig);
+    if (!state.position || state.position.entryReason !== sig.reason) {
+      // Refused (capital gate, premium/spread gate, …) — simulateBuy logged why —
+      // or an automatic entry won the race. Never report a manual fill that did not happen.
+      return res.status(409).json({ success: false, error: "Entry refused — see the paper log for the reason" });
+    }
     return res.json({ success: true, side, spot, slSpot });
   } catch (e) {
     log(`❌ [TREND_PB-PAPER] Manual entry failed: ${e.message}`);
@@ -1476,6 +1481,7 @@ router.get("/reset", (req, res) => {
   if (state.running) return res.status(400).json({ success: false, error: "Stop Trend Pullback paper trading before resetting." });
   const fresh = parseFloat(process.env.FYERS_INV_AMOUNT || "100000");
   saveData({ capital: fresh, totalPnl: 0, sessions: [] });
+  require("../utils/paperReset").clearTodayFiles("trend_pb"); // else restart rehydrates today's session
   return res.json({ success: true, message: `Trend Pullback paper trade history cleared. Capital reset to ₹${fresh.toLocaleString("en-IN")}` });
 });
 

@@ -1839,6 +1839,7 @@ router.get("/reset", (req, res) => {
   if (state.running) return res.status(400).json({ success: false, error: "Stop HA Scalp paper trading before resetting." });
   const fresh = parseFloat(process.env.FYERS_INV_AMOUNT || "100000");
   saveData({ capital: fresh, totalPnl: 0, sessions: [] });
+  require("../utils/paperReset").clearTodayFiles(MODE_KEY); // else restart rehydrates today's session
   return res.json({ success: true, message: `HA Scalp paper trade history cleared. Capital reset to ₹${fresh.toLocaleString("en-IN")}` });
 });
 

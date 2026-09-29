@@ -2877,6 +2877,7 @@ router.get("/reset", (req, res) => {
 
   const freshCapital = getPACapitalFromEnv();
   savePAData({ capital: freshCapital, totalPnl: 0, sessions: [] });
+  require("../utils/paperReset").clearTodayFiles("pa"); // else restart rehydrates today's session
 
   log(`🔄 PA paper trade data reset. Capital restored to ₹${freshCapital.toLocaleString("en-IN")}`);
 

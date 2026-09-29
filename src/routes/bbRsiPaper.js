@@ -3048,6 +3048,7 @@ router.get("/reset", (req, res) => {
 
   const freshCapital = getBbRsiCapitalFromEnv();
   saveBbRsiData({ capital: freshCapital, totalPnl: 0, sessions: [] });
+  require("../utils/paperReset").clearTodayFiles("bb_rsi"); // else restart rehydrates today's session
 
   log(`🔄 BB_RSI paper trade data reset. Capital restored to ₹${freshCapital.toLocaleString("en-IN")}`);
 

@@ -188,6 +188,18 @@ check("every real /reset handler answers JSON — the shared history-page Reset 
   assert.deepStrictEqual(bad, [], `non-JSON /reset in: ${bad.join(", ")}`);
 });
 
+check("every per-strategy /reset clears today's day files, else a restart rehydrates the wiped session", () => {
+  const bad = [];
+  for (const { file } of paperMounts) {
+    const src = decomment(read(`routes/${file}.js`));
+    const start = src.indexOf('router.get("/reset"');
+    if (start < 0) continue;  // factory routers (commodityPaperRouter) reset through their engine
+    const body = src.slice(start, src.indexOf("\n});", start));
+    if (!/clearTodayFiles\(|unlinkSync\(/.test(body)) bad.push(file);
+  }
+  assert.deepStrictEqual(bad, [], `/reset leaves today's JSONL in: ${bad.join(", ")}`);
+});
+
 check("settings.js /reset-paper and tradeLogs.js carry no hand-written strategy list", () => {
   const settings  = decomment(read("routes/settings.js"));
   const tradeLogs = decomment(read("routes/tradeLogs.js"));

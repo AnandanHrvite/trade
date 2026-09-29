@@ -2214,6 +2214,7 @@ router.get("/reset", (req, res) => {
   if (state.running) return res.status(400).json({ success: false, error: "Stop BN_PIVOT_RSI_ST paper trading first before resetting." });
   const init = { capital: parseFloat(process.env.ZERODHA_INV_AMOUNT || process.env.FYERS_INV_AMOUNT || "100000"), totalPnl: 0, sessions: [] };
   saveData(init);
+  require("../utils/paperReset").clearTodayFiles(MODE_KEY); // else restart rehydrates today's session
   state = _freshState();
   res.json({ success: true, message: `BN_PIVOT_RSI_ST paper trade history cleared. Capital reset to ₹${init.capital.toLocaleString("en-IN")}` });
 });

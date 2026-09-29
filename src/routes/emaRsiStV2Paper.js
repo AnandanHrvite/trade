@@ -4272,6 +4272,7 @@ router.get("/reset", (req, res) => {
 
   const freshCapital = getCapitalFromEnv();
   savePaperData({ capital: freshCapital, totalPnl: 0, sessions: [] });
+  require("../utils/paperReset").clearTodayFiles("ema_rsi_st_v2"); // else restart rehydrates today's session
 
   log(`🔄 Paper trade data reset. Capital restored to ₹${freshCapital.toLocaleString("en-IN")}`);
 

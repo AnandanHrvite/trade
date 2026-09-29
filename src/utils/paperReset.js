@@ -149,4 +149,22 @@ function deletePaperFiles({ from = "", to = "", paper = true, skip = true, exclu
   return out;
 }
 
-module.exports = { discoverTargets, dispatchReset, resetAllPaperEngines, deletePaperFiles, modeOfMount };
+/**
+ * Delete TODAY's per-day trade + skip JSONL for one mode. Called by each
+ * strategy's own GET /reset: every paper route rehydrates today's session from
+ * that file at module load, so a reset that spared it came back on the next
+ * PM2 restart / deploy (EarlyBird hit this first). Never throws.
+ */
+function clearTodayFiles(mode) {
+  const tradeLogger = require("./tradeLogger");
+  const skipLogger  = require("./skipLogger");
+  const today = tradeLogger.istDateString(Date.now());
+  const removed = [];
+  for (const get of [() => tradeLogger.dailyFilePathFor(mode, today), () => skipLogger.filePathFor(mode, today)]) {
+    try { const f = get(); if (fs.existsSync(f)) { fs.unlinkSync(f); removed.push(path.basename(f)); } }
+    catch (e) { console.warn(`[paperReset] ${mode}: could not clear today's file — ${e.message}`); }
+  }
+  return removed;
+}
+
+module.exports = { discoverTargets, dispatchReset, resetAllPaperEngines, deletePaperFiles, modeOfMount, clearTodayFiles };

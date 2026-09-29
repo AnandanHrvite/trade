@@ -2052,6 +2052,7 @@ router.get("/reset", (req, res) => {
   if (state.running) return res.status(400).json({ success: false, error: "Stop SIMPLE_9:30 paper trading before resetting." });
   const fresh = _startCapital();
   saveData({ capital: fresh, totalPnl: 0, sessions: [] });
+  require("../utils/paperReset").clearTodayFiles(MODE_KEY); // else restart rehydrates today's session
   return res.json({ success: true, message: `SIMPLE_9:30 paper trade history cleared. Capital reset to ₹${fresh.toLocaleString("en-IN")}` });
 });
 
