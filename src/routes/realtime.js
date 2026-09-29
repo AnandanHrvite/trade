@@ -21,7 +21,7 @@ const router  = express.Router();
 const sharedSocketState = require("../utils/sharedSocketState");
 // modalCSS/modalJS carry secretFetch + the API-secret prompt: /stop requires
 // API_SECRET (only the read-only /status/data paths are in app.js OPEN_PATHS),
-// so Stop All would 403 on every engine without them.
+// so Stop NIFTY / Stop Commodity would 403 on every engine without them.
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
 const { resolveTheme } = require("../utils/theme");
 
@@ -240,7 +240,7 @@ ${faviconLink()}
   .toggle button.active[data-mode="PAPER"] { background:#2563eb; color:#fff; }
   .toggle button.active[data-mode="LIVE"]  { background:#dc2626; color:#fff; }
 
-  /* Stop All — the panic button. Kept visually distinct from the PAPER/LIVE
+  /* Stop NIFTY / Stop Commodity — the panic buttons. Kept visually distinct from the PAPER/LIVE
      toggle so it can never be hit while aiming for a mode switch. */
   .top-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
   .stop-all { background:#7f1d1d; border:1px solid #b91c1c; color:#fee2e2; font-size:0.82rem; font-weight:700; letter-spacing:0.4px; padding:0 16px; min-height:44px; border-radius:8px; cursor:pointer; transition:all 0.15s; }
@@ -545,7 +545,8 @@ ${sidebar}
            IS the Dashboard. Hidden by the poll once every commodity page is up. -->
       <button type="button" class="cmx-start" id="cmx-start" title="Start every switched-on COMMODITY (MCX) paper page that is not running yet" hidden>🛢 Start All (Commodity)</button>` : ''}
       ${!nseActive && strategies.some(s => !s.paperOnly) ? `<button type="button" class="nse-start" id="nse-start" title="Start every enabled NIFTY / BANK NIFTY paper strategy — same list as the Dashboard's Start All (Paper)" hidden>▶ Start All (Paper)</button>` : ''}
-      <button type="button" class="stop-all" id="stop-all">🛑 Stop All</button>
+      ${strategies.some(s => !s.paperOnly) ? `<button type="button" class="stop-all" id="stop-nse" title="Stop every NIFTY and BANK NIFTY strategy, PAPER and LIVE — commodity keeps running">🛑 Stop NIFTY</button>` : ''}
+      ${hasCommodity ? `<button type="button" class="stop-all" id="stop-cmx" title="Stop every COMMODITY (MCX) paper page — NIFTY keeps running">🛑 Stop Commodity</button>` : ''}
     </div>
   </div>
   <div class="stop-all-note" id="stop-all-note" hidden></div>
@@ -1074,22 +1075,36 @@ document.querySelectorAll('#mode-toggle button').forEach(b => {
   });
 });
 
-// ── Stop All ────────────────────────────────────────────────────────────────
-// Fans out GET /stop across every enabled strategy, PAPER and LIVE both. Each
-// engine's own /stop is reused verbatim, so an open position is squared off by
-// exactly the same code path the per-strategy Stop button uses.
+// ── Stop NIFTY / Stop Commodity ─────────────────────────────────────────────
+// Two buttons, one per market: NSE and MCX keep different hours, so closing
+// NIFTY at 15:30 must not also flatten a commodity session that runs to 23:30.
+// Each fans out GET /stop across its own strategies (NIFTY: PAPER and LIVE
+// both; COMMODITY: paper only). Each engine's own /stop is reused verbatim, so
+// an open position is squared off by the same code path its Stop button uses.
 //
 // Two clicks: the first arms, the second fires. This squares off real money in
 // LIVE — a stray click on a phone must not be able to flatten the book.
-let stopArmed = false;
+const STOP_SCOPES = {
+  nse: { btnId: 'stop-nse', label: '🛑 Stop NIFTY',     name: 'Stop NIFTY',
+         what: 'every <b>NIFTY and BANK NIFTY</b> strategy in <b>both</b> PAPER and LIVE',
+         none: 'no NIFTY / BANK NIFTY strategy is running in PAPER or LIVE',
+         has: t => PAPER_ONLY.indexOf(t.key) === -1 },
+  cmx: { btnId: 'stop-cmx', label: '🛑 Stop Commodity', name: 'Stop Commodity',
+         what: 'every <b>COMMODITY (MCX)</b> paper page',
+         none: 'no commodity page is running',
+         has: t => PAPER_ONLY.indexOf(t.key) !== -1 },
+};
+let stopArmed = null;   // the scope waiting for its confirming second click
 let stopArmTimer = null;
 let stopBusy = false;   // a sweep is in flight — btn.disabled alone does not stop a key-repeat
 
-function disarmStopAll() {
-  stopArmed = false;
+function disarmStop() {
   if (stopArmTimer) { clearTimeout(stopArmTimer); stopArmTimer = null; }
-  const btn = document.getElementById('stop-all');
-  if (btn) { btn.classList.remove('armed'); btn.textContent = '🛑 Stop All'; }
+  if (!stopArmed) return;
+  const sc = STOP_SCOPES[stopArmed];
+  stopArmed = null;
+  const btn = document.getElementById(sc.btnId);
+  if (btn) { btn.classList.remove('armed'); btn.textContent = sc.label; }
 }
 
 function stopNote(html) {
@@ -1099,22 +1114,24 @@ function stopNote(html) {
   box.hidden = !html;
 }
 
-async function stopAll() {
-  const btn = document.getElementById('stop-all');
+async function stopScope(scope) {
+  const sc = STOP_SCOPES[scope];
+  const btn = document.getElementById(sc.btnId);
   if (!btn) return;
   if (stopBusy) return;   // never start a second sweep over a running one
 
-  if (!stopArmed) {
-    stopArmed = true;
+  if (stopArmed !== scope) {
+    disarmStop();         // the other button may be armed — only one at a time
+    stopArmed = scope;
     btn.classList.add('armed');
     btn.textContent = '🛑 Click again to confirm';
-    stopNote('This stops <b>every</b> strategy in <b>both</b> PAPER and LIVE, and squares off any open position. Click Stop All again within 6s to confirm.');
-    stopArmTimer = setTimeout(() => { disarmStopAll(); stopNote(''); }, 6000);
+    stopNote('This stops ' + sc.what + ', and squares off any open position. Click ' + sc.name + ' again within 6s to confirm.');
+    stopArmTimer = setTimeout(() => { disarmStop(); stopNote(''); }, 6000);
     return;
   }
 
   if (stopArmTimer) { clearTimeout(stopArmTimer); stopArmTimer = null; }
-  stopArmed = false;
+  stopArmed = null;
   stopBusy = true;
   btn.classList.remove('armed');
   btn.disabled = true;
@@ -1127,7 +1144,7 @@ async function stopAll() {
   // An unreachable status endpoint is treated as "might be running": better to
   // send a harmless stop to an idle engine than to skip a live one.
   const live = [];
-  await Promise.all(STOP_URLS.map(async t => {
+  await Promise.all(STOP_URLS.filter(sc.has).map(async t => {
     try {
       const r = await fetch(t.statusUrl, { cache:'no-store' });
       if (!r.ok) { live.push(t); return; }          // can't tell → stop it anyway
@@ -1143,7 +1160,7 @@ async function stopAll() {
   }));
 
   if (!live.length) {
-    stopNote('<b>Nothing to stop</b> — no strategy is running in PAPER or LIVE.');
+    stopNote('<b>Nothing to stop</b> — ' + sc.none + '.');
     return;
   }
 
@@ -1167,7 +1184,7 @@ async function stopAll() {
   }
 
   const name = t => STRATEGY_LABELS[t.key] + ' ' + t.mode;
-  let msg = '<b>Stop All finished.</b> ';
+  let msg = '<b>' + sc.name + ' finished.</b> ';
   if (stopped.length) msg += 'Stopped: ' + stopped.map(name).join(', ') + '. ';
   if (failed.length) {
     msg += '<b>Could not stop:</b> ' + failed.map(t => name(t) + ' (http ' + t.status + ')').join(', ')
@@ -1181,11 +1198,12 @@ async function stopAll() {
     // stays greyed out and the only way back is a page reload.
     stopBusy = false;
     btn.disabled = false;
-    btn.textContent = '🛑 Stop All';
+    btn.textContent = sc.label;
   }
 }
 
-document.getElementById('stop-all')?.addEventListener('click', stopAll);
+document.getElementById('stop-nse')?.addEventListener('click', () => stopScope('nse'));
+document.getElementById('stop-cmx')?.addEventListener('click', () => stopScope('cmx'));
 
 // ── Start All (Commodity) ───────────────────────────────────────────────────
 // Offered only while a switched-on commodity page is not running. A page whose
