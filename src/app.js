@@ -1460,7 +1460,9 @@ app.get("/api/start-all-roster", (req, res) => {
 // ── Candle Cache Info ─────────────────────────────────────────────────────────
 // Lightweight liveness probe so the dashboard can auto-swap to/from realtime view.
 app.get("/api/session-active", (req, res) => {
-  res.json({ active: !!sharedSocketState.isAnyActive() });
+  // COMMODITY engines never touch the shared socket state (they poll quotes), so
+  // they are asked separately — otherwise an MCX-only evening never flips.
+  res.json({ active: !!sharedSocketState.isAnyActive() || require("./utils/commodityPaperRouter").anyRunning() });
 });
 
 // ── Home — HTML Dashboard ─────────────────────────────────────────────────────
@@ -1481,7 +1483,7 @@ app.get("/", (req, res) => {
   // When any paper/live session is active, show the unified Real-Time monitor in place
   // of the normal dashboard (gated by UI_SHOW_REALTIME, default on).
   const showRealtime = (process.env.UI_SHOW_REALTIME || 'true').toLowerCase() === 'true';
-  if (showRealtime && sharedSocketState.isAnyActive()) {
+  if (showRealtime && (sharedSocketState.isAnyActive() || require("./utils/commodityPaperRouter").anyRunning())) {
     const { renderRealtimePage } = require("./routes/realtime");
     const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
     return res.send(renderRealtimePage({ liveActive, sidebarKey: "dashboard", autoFlipBack: true }));
@@ -3430,15 +3432,19 @@ async function startAllHarness(btn){
 async function startAllCmx(btn){
   var orig = btn.textContent;
   btn.disabled = true; btn.textContent = '⏳ Starting commodity…';
+  // Holds the swap poll off, or it navigates away under the result popup.
+  _startAllBusy = true;
   try {
     var r = await secretFetch('/api/cmx/start-all', { method: 'POST', timeoutMs: 180000 });
     if (!r) return;
     var body = await r.json();
     var lines = (body.results || []).map(function(x){ return (x.ok ? '✅ ' : '❌ ') + x.label + ' — ' + x.note; });
     await showAlert({ icon: body.success ? '🛢' : '⚠️', title: 'Start All (Commodity)', message: lines.join('\\n') || 'No commodity page is switched on.' });
+    // Straight to the Real-Time view instead of waiting out the 10s swap poll.
+    if ((body.results || []).some(function(x){ return x.ok; })) { location.replace('/'); return; }
   } catch (e) {
     await showAlert({ icon: '⚠️', title: 'Start All (Commodity)', message: (e && e.message) || 'Request failed' });
-  } finally { btn.disabled = false; btn.textContent = orig; }
+  } finally { _startAllBusy = false; btn.disabled = false; btn.textContent = orig; }
 }
 
 // Single Start-All button follows the top-bar PAPER/LIVE toggle.

@@ -58,8 +58,23 @@ const STRATEGY_DEFS = [
   { key:'EARLYBIRD', label:'EarlyBird', accentClass:'earlybird', accent:'#14b8a6', paperPrefix:'/early-bird-paper', livePrefix:'/early-bird-live', hasDayLog:true, modeFlag:'EARLYBIRD_MODE_ENABLED' },
 ];
 
+// COMMODITY (MCX) pages — one row per switched-on commodity engine, read from
+// the engines themselves so a new commodity page appears here with no wiring.
+// paperOnly: there is no live route, so the LIVE source shows nothing for them.
+function commodityStrategies() {
+  const { enabledEngines } = require("../utils/commodityPaperRouter");
+  return enabledEngines().map((e) => {
+    const s = e.snapshot();
+    const strat = s.strategy === 'V2' ? 'EMA_RSI_ST_V2' : 'EMA_RSI_ST';
+    return { key: `CMX_${s.commodity}_${strat}`, label: `${s.commodityLabel.toUpperCase()} · ${strat}`,
+             accentClass: 'cmx', accent: '#eab308', paperPrefix: `/${s.id}-paper`, livePrefix: null,
+             hasDayLog: false, modeFlag: s.modeKey, paperOnly: true };
+  });
+}
+
 function enabledStrategies() {
-  return STRATEGY_DEFS.filter(s => (process.env[s.modeFlag] || (s.defaultOff ? 'false' : 'true')).toLowerCase() !== 'false');
+  return STRATEGY_DEFS.filter(s => (process.env[s.modeFlag] || (s.defaultOff ? 'false' : 'true')).toLowerCase() !== 'false')
+    .concat(commodityStrategies());
 }
 
 // Broker investment pools: each strategy's paper P&L draws from one shared pool.
@@ -107,15 +122,17 @@ function renderPage({ liveActive, sidebarKey = "realtime", autoFlipBack = false 
   // decides the source, so letting it be switched would only mislead. (The
   // broker-balance ribbon used to be hidden here too; it now stays up, because
   // while trading is exactly when "how much is left" matters.)
-  const sessionActive = sharedSocketState.isAnyActive();
+  const sessionActive = sharedSocketState.isAnyActive() || require("../utils/commodityPaperRouter").anyRunning();
+  const hasCommodity  = strategies.some(s => s.paperOnly);
 
   const endpointsJson = JSON.stringify({
     PAPER: Object.fromEntries(strategies.map(s => [s.key, s.paperPrefix + '/status/data'])),
-    LIVE:  Object.fromEntries(strategies.map(s => [s.key, s.livePrefix  + '/status/data'])),
+    // null = paper-only (COMMODITY): nothing to poll under the LIVE source.
+    LIVE:  Object.fromEntries(strategies.map(s => [s.key, s.paperOnly ? null : s.livePrefix + '/status/data'])),
   });
   const statusPagesJson = JSON.stringify({
     PAPER: Object.fromEntries(strategies.map(s => [s.key, s.paperPrefix + '/status'])),
-    LIVE:  Object.fromEntries(strategies.map(s => [s.key, s.livePrefix  + '/status'])),
+    LIVE:  Object.fromEntries(strategies.map(s => [s.key, (s.paperOnly ? s.paperPrefix : s.livePrefix) + '/status'])),
   });
   // Manual square-off targets. The LIVE prefixes for the newer strategies are
   // paper-wrapping harnesses with no /exit of their own — the paper engine owns
@@ -140,8 +157,9 @@ function renderPage({ liveActive, sidebarKey = "realtime", autoFlipBack = false 
   // no-op when idle), so the HTTP response alone cannot tell running from idle.
   const stopUrlsJson    = JSON.stringify(strategies.map(s => ([
     { key: s.key, mode: 'PAPER', url: s.paperPrefix + '/stop', statusUrl: s.paperPrefix + '/status/data' },
-    { key: s.key, mode: 'LIVE',  url: s.livePrefix  + '/stop', statusUrl: s.livePrefix  + '/status/data' },
+    ...(s.paperOnly ? [] : [{ key: s.key, mode: 'LIVE',  url: s.livePrefix  + '/stop', statusUrl: s.livePrefix  + '/status/data' }]),
   ])).flat());
+  const paperOnlyJson   = JSON.stringify(strategies.filter(s => s.paperOnly).map(s => s.key));
 
   const pools           = brokerPools(strategies);
   const poolsJson       = JSON.stringify(pools);
@@ -225,6 +243,11 @@ ${faviconLink()}
   .stop-all:hover:not(:disabled) { background:#b91c1c; color:#fff; }
   .stop-all:disabled { opacity:0.6; cursor:default; }
   .stop-all.armed { background:#dc2626; color:#fff; border-color:#ef4444; }
+  .cmx-start { background:#1c1604; border:1px solid #a16207; color:#facc15; font-size:0.82rem; font-weight:700; letter-spacing:0.4px; padding:0 16px; min-height:44px; border-radius:8px; cursor:pointer; transition:all 0.15s; }
+  .cmx-start:hover:not(:disabled) { background:#a16207; color:#fff; }
+  .cmx-start:disabled { opacity:0.6; cursor:default; }
+  :root[data-theme="light"] .cmx-start { background:#fefce8 !important; border-color:#a16207 !important; color:#a16207; }
+  :root[data-theme="light"] .cmx-start:hover:not(:disabled) { background:#a16207 !important; color:#fff; }
   .stop-all-note { background:#2a0f0f; border:1px solid #7f1d1d; border-left:4px solid #dc2626; border-radius:10px; padding:10px 14px; margin-bottom:14px; font-size:0.78rem; color:#fca5a5; line-height:1.6; }
   :root[data-theme="light"] .stop-all { background:#fef2f2 !important; border-color:#dc2626 !important; color:#b91c1c; }
   :root[data-theme="light"] .stop-all:hover:not(:disabled) { background:#dc2626 !important; color:#fff; }
@@ -273,6 +296,7 @@ ${faviconLink()}
   .card.bnemarsistv2 { border-top-color:#2dd4bf; }
   .card.simple930 { border-top-color:#fb923c; }
   .card.earlybird { border-top-color:#14b8a6; }
+  .card.cmx { border-top-color:#eab308; }
 
   .card-header { display:flex; align-items:center; justify-content:space-between; }
   .card-title { font-size:1rem; font-weight:600; letter-spacing:0.5px; }
@@ -291,6 +315,7 @@ ${faviconLink()}
   .card.bnemarsistv2 .card-title { color:#5eead4; }
   .card.simple930 .card-title { color:#fdba74; }
   .card.earlybird .card-title { color:#5eead4; }
+  .card.cmx .card-title { color:#fde68a; }
 
   .badge { font-size:0.66rem; padding:3px 8px; border-radius:4px; border:1px solid; font-weight:600; letter-spacing:0.4px; }
   .badge.run  { background:rgba(16,185,129,0.12); color:#10b981; border-color:rgba(16,185,129,0.35); }
@@ -378,6 +403,7 @@ ${faviconLink()}
   .card.bnemarsistv2 .act-btn:not(.act-btn-disabled):hover { border-color:#2dd4bf; }
   .card.simple930 .act-btn:not(.act-btn-disabled):hover { border-color:#fb923c; }
   .card.earlybird .act-btn:not(.act-btn-disabled):hover { border-color:#14b8a6; }
+  .card.cmx .act-btn:not(.act-btn-disabled):hover { border-color:#eab308; }
 
   /* Rollup table */
   .rollup { width:100%; border-collapse:collapse; background:#0a1628; border:1px solid #1c2c47; border-radius:10px; overflow:hidden; }
@@ -401,6 +427,7 @@ ${faviconLink()}
   .rollup tr.bnemarsistv2 td:first-child { color:#5eead4; }
   .rollup tr.simple930 td:first-child { color:#fdba74; }
   .rollup tr.earlybird td:first-child { color:#5eead4; }
+  .rollup tr.cmx td:first-child { color:#fde68a; }
   .rollup tr.total    td:first-child { color:#e0eaf8; }
   /* Strategy name links to that strategy's own status page (PAPER or LIVE,
      following the toggle). Colour is inherited so the per-strategy accent
@@ -434,6 +461,7 @@ ${faviconLink()}
   :root[data-theme="light"] .card.bnemarsistv2 .card-title { color:#0f766e; }
   :root[data-theme="light"] .card.simple930 .card-title { color:#c2410c; }
   :root[data-theme="light"] .card.earlybird .card-title { color:#0f766e; }
+  :root[data-theme="light"] .card.cmx .card-title { color:#a16207; }
   :root[data-theme="light"] .pos-block,
   :root[data-theme="light"] .flat-block { background:#f8fafc !important; border-color:#e0e4ea !important; }
   :root[data-theme="light"] .flat-block { color:#4b5769; }
@@ -476,6 +504,7 @@ ${faviconLink()}
   :root[data-theme="light"] .rollup tr.bnemarsistv2 td:first-child { color:#0f766e; }
   :root[data-theme="light"] .rollup tr.simple930 td:first-child { color:#c2410c; }
   :root[data-theme="light"] .rollup tr.earlybird td:first-child { color:#0f766e; }
+  :root[data-theme="light"] .rollup tr.cmx td:first-child { color:#a16207; }
   :root[data-theme="light"] .pos-zero { color:#4b5769 !important; }
   :root[data-theme="light"] .pos-pos  { color:#059669 !important; }
   :root[data-theme="light"] .pos-neg  { color:#dc2626 !important; }
@@ -502,6 +531,10 @@ ${sidebar}
         <button data-mode="PAPER" class="active">PAPER</button>
         <button data-mode="LIVE">LIVE</button>
       </div>` : ''}
+      ${hasCommodity ? `<!-- MCX keeps its own hours, so it starts on its own button — and it has to be
+           here as well as on the Dashboard: while a NIFTY session runs, this page
+           IS the Dashboard. Hidden by the poll once every commodity page is up. -->
+      <button type="button" class="cmx-start" id="cmx-start" title="Start every switched-on COMMODITY (MCX) paper page that is not running yet" hidden>🛢 Start All (Commodity)</button>` : ''}
       <button type="button" class="stop-all" id="stop-all">🛑 Stop All</button>
     </div>
   </div>
@@ -557,6 +590,7 @@ const STRATEGY_ACCENTS = ${accentsJson};
 const JSONL_PREFIX     = ${dayLogPrefixes};
 const WALLET_POOLS     = ${poolsJson};
 const STOP_URLS        = ${stopUrlsJson};
+const PAPER_ONLY       = ${paperOnlyJson};   // COMMODITY — no LIVE source
 let mode = 'PAPER';
 let timer = null;
 
@@ -756,6 +790,10 @@ function renderColumn(strategy, d) {
   const statsEl = document.getElementById('stats-' + strategy);
   const metaEl  = document.getElementById('meta-' + strategy);
 
+  // Paper-only strategy under the LIVE source: there is nothing to show, and
+  // OFFLINE would read as a fault.
+  if (d && d.notApplicable) { showCard(strategy, false); return; }
+
   renderActivity(strategy, d);
 
   if (!d) {
@@ -797,7 +835,7 @@ function renderColumn(strategy, d) {
 
   const ltp = d.lastTickPrice ? fmtNum(d.lastTickPrice) : '—';
   const tickTime = d.lastTickTime || '';
-  metaEl.innerHTML = \`<span>LTP \${ltp}\${tickTime ? ' · ' + tickTime : ''}</span><span>\${d.tickCount ?? 0} ticks</span>\`;
+  metaEl.innerHTML = \`<span>LTP \${ltp}\${tickTime ? ' · ' + tickTime : ''}</span><span>\${d.feedNote ? escapeHtml(d.feedNote) : (d.tickCount ?? 0) + ' ticks'}</span>\`;
 
   // Worth a card only while money is actually at risk RIGHT NOW. A strategy that
   // traded and is now flat drops back to the rollup table below — keeping its
@@ -859,6 +897,7 @@ function renderRollup(all) {
     const d = all[key];
     const accent = STRATEGY_ACCENTS[key] || key.toLowerCase();
     const label = STRATEGY_LABELS[key];
+    if (d && d.notApplicable) continue;
     if (!d) {
       html += \`<tr class="\${accent}" data-key="\${key}"><td>\${nameCell(key, label)}</td><td>OFFLINE</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>\`;
       continue;
@@ -995,12 +1034,18 @@ async function poll() {
     .then(r => r.ok ? r.json() : null)
     .catch(() => null);
   // Capital rides along with the strategy fetches — one round trip, not two.
+  // A COMMODITY page answers with its session under "monitor", already in the
+  // field names the NIFTY strategies use.
   const results = await Promise.all(
-    STRATEGY_KEYS.map(k => fetchOne(eps[k])).concat(fetchOne('/realtime/capital'))
+    STRATEGY_KEYS.map(k => eps[k]
+      ? fetchOne(eps[k]).then(d => (d && d.monitor) ? d.monitor : d)
+      : Promise.resolve({ notApplicable: true })
+    ).concat(fetchOne('/realtime/capital'))
   );
   const capital = results.pop();
   const all = {};
   STRATEGY_KEYS.forEach((k, i) => { all[k] = results[i]; renderColumn(k, results[i]); });
+  renderCmxStart(all);
   renderCardsEmpty();
   renderRollup(all);
   renderPools(capital);
@@ -1130,6 +1175,37 @@ async function stopAll() {
 }
 
 document.getElementById('stop-all')?.addEventListener('click', stopAll);
+
+// ── Start All (Commodity) ───────────────────────────────────────────────────
+// Offered only while a switched-on commodity page is not running. A page whose
+// endpoint did not answer counts as "not running" — better a button that
+// reports "already running" than no way to start.
+let cmxBusy = false;
+function renderCmxStart(all) {
+  const btn = document.getElementById('cmx-start');
+  if (!btn || cmxBusy) return;
+  btn.hidden = mode === 'LIVE' || !PAPER_ONLY.some(k => !(all[k] && all[k].running));
+}
+async function startAllCmx() {
+  const btn = document.getElementById('cmx-start');
+  if (!btn || cmxBusy) return;
+  cmxBusy = true;
+  btn.disabled = true; btn.textContent = '⏳ Starting commodity…';
+  try {
+    const r = await secretFetch('/api/cmx/start-all', { method: 'POST', timeoutMs: 180000 });
+    if (!r) return;   // API-secret prompt cancelled — nothing was sent
+    const body = await r.json();
+    const lines = (body.results || []).map(x => (x.ok ? '✅ ' : '❌ ') + x.label + ' — ' + x.note);
+    await showAlert({ icon: body.success ? '🛢' : '⚠️', title: 'Start All (Commodity)', message: lines.join('\\n') || 'No commodity page is switched on.' });
+  } catch (e) {
+    await showAlert({ icon: '⚠️', title: 'Start All (Commodity)', message: (e && e.message) || 'Request failed' });
+  } finally {
+    cmxBusy = false;
+    btn.disabled = false; btn.textContent = '🛢 Start All (Commodity)';
+    poll();
+  }
+}
+document.getElementById('cmx-start')?.addEventListener('click', startAllCmx);
 
 async function fetchText(url) {
   try {

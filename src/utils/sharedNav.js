@@ -101,7 +101,11 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   // session is live it must read RUNNING whatever page you are on (Dashboard,
   // Logs, Settings... none of which pass isRunning). Pages that own a session
   // still pass it, so their own Start/Stop flips the pill in the same response.
-  const sessionRunning = isRunning || _anyTradeActive;
+  // COMMODITY engines sit outside sharedSocketState, so they are asked directly.
+  // Required here, not at the top: commodityPaperRouter itself requires this file.
+  let _cmxRunning = false;
+  try { _cmxRunning = require("./commodityPaperRouter").anyRunning(); } catch (_) {}
+  const sessionRunning = isRunning || _anyTradeActive || _cmxRunning;
 
   const {
     showStopBtn  = false,

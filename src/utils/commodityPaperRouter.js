@@ -154,7 +154,12 @@ function createCommodityPaperRouter({ engine, base, navKey, title, icon, rulesTe
 .cx-day.cx-hl{border-color:#3b82f6;}
 @media (max-width:640px){ .cx-card{padding:12px;} .cx-row{font-size:0.76rem;gap:8px 14px;} .cx-chart{height:320px;} .cx-flat-btns .cx-btn{flex:1;} }`;
 
-  router.get("/status/data", (req, res) => res.json(engine.snapshot()));
+  // `monitor` is the same session in the field names the Real-Time monitor reads
+  // from every NIFTY strategy — see monitorView().
+  router.get("/status/data", (req, res) => {
+    const s = engine.snapshot();
+    res.json({ ...s, monitor: monitorView(s) });
+  });
   router.get("/status/fragment", (req, res) => {
     const s = engine.snapshot();
     res.json({ top: topFragment(s), bottom: bottomFragment(s) });
@@ -357,6 +362,40 @@ const ICONS = { CRUDE: "🛢️", GOLD: "🥇", SILVER: "🥈" };
 const ENGINES = [];
 const enabledEngines = () => ENGINES.filter((e) => String(process.env[e.snapshot().modeKey] || "false").toLowerCase() === "true");
 
+// True while any commodity engine is running — switched on or not, since a page
+// toggled off mid-session keeps trading until it is stopped.
+const anyRunning = () => ENGINES.some((e) => e.state.running);
+
+/**
+ * An engine snapshot in the shape the Real-Time monitor (routes/realtime.js)
+ * reads from the NIFTY strategies' /status/data: one open position, today's
+ * counters, newest-first log lines. "Spot" on that screen is the MCX future here.
+ */
+function monitorView(s) {
+  const p = s.position;
+  const ist = (iso) => new Date(new Date(iso).getTime() + 19800000).toISOString().slice(11, 19);
+  return {
+    running: s.running,
+    sessionPnl: s.sessionPnl,
+    tradeCount: s.trades.length,
+    wins: s.trades.filter((t) => t.pnl > 0).length,
+    losses: s.trades.filter((t) => t.pnl < 0).length,
+    unrealisedPnl: p && s.optLtp ? Math.round((s.optLtp - p.optionEntryLtp) * p.multiplier * p.lots * 100) / 100 : 0,
+    lastTickPrice: s.futLtp,
+    lastTickTime: s.lastQuoteAt ? ist(s.lastQuoteAt) : "",
+    feedNote: "MCX quote poll",
+    logs: s.logs.slice().reverse(),
+    logTotal: s.logs.length,
+    position: p ? {
+      side: p.side, symbol: p.symbol,
+      qty: `${p.lots} lot (${p.lots * p.multiplier} units)`,
+      entryPrice: p.spotAtEntry, liveClose: s.futLtp,
+      optionEntryLtp: p.optionEntryLtp, optionCurrentLtp: s.optLtp,
+      stopLoss: p.stopLoss, entryTime: ist(p.entryTime),
+    } : null,
+  };
+}
+
 /**
  * When a commodity page is switched on, the Fyers token must outlive the 4 PM
  * NSE clear — MCX trades until CMX_SESSION_END. Returns the epoch ms to clear it
@@ -402,4 +441,4 @@ function commodityPage({ commodity, strategy }) {
   return router;
 }
 
-module.exports = { createCommodityPaperRouter, commodityPage, enabledEngines, fyersTokenHoldUntil };
+module.exports = { createCommodityPaperRouter, commodityPage, enabledEngines, anyRunning, monitorView, fyersTokenHoldUntil };

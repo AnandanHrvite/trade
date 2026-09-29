@@ -173,10 +173,11 @@ const PAPER_HISTORY_PATH = {
 // ({ days: { YYYY-MM-DD: { trades } } }). Shown in their own COMMODITY table,
 // only while that page's toggle is on.
 const CMX_SOURCES = [];
-for (const [c, cl] of [["CRUDE", "Crude"], ["GOLD", "Gold"], ["SILVER", "Silver"]]) {
+for (const [c, cl] of [["CRUDE", "Crude Oil"], ["GOLD", "Gold"], ["SILVER", "Silver"]]) {
   for (const st of ["EMA_RSI_ST", "EMA_RSI_ST_V2"]) {
     const id = `cmx_${c.toLowerCase()}_${st.toLowerCase()}`;
-    CMX_SOURCES.push({ mode: `CMX_${c}_${st}`, label: `${cl} · ${st}`, file: `cmx/${id}_paper_trades.json`,
+    // group/col: the table prints the commodity once, above its strategy columns.
+    CMX_SOURCES.push({ mode: `CMX_${c}_${st}`, label: `${cl} · ${st}`, group: cl, col: st, file: `cmx/${id}_paper_trades.json`,
                        modeKey: `CMX_${c}_${st}_MODE_ENABLED`, hist: `/${id}-paper/history` });
   }
 }
@@ -254,7 +255,7 @@ router.get("/", async (req, res) => {
   // saves mutate process.env while the process is running.
   const cmxOn       = CMX_SOURCES.filter(c => (process.env[c.modeKey] || "false").toLowerCase() === "true");
   const enabled     = [...enabledStrategies().map(s => ({ mode: s.mode, label: s.mode })),
-                       ...cmxOn.map(c => ({ mode: c.mode, label: c.label }))];
+                       ...cmxOn.map(c => ({ mode: c.mode, label: c.label, group: c.group, col: c.col }))];
   const enabledSet  = new Set(enabled.map(s => s.mode));
   const trades      = loadAllTrades().filter(t => enabledSet.has(t.mode));
   const theme = resolveTheme();
@@ -318,7 +319,20 @@ ${multiSelectCSS()}
     .sc-sub{font-size:0.6rem;color:var(--muted-1,#8ba1c2);margin-top:3px;}
     .panel{background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;padding:14px 16px;margin-bottom:14px;}
     .panel h3{font-size:0.62rem;text-transform:uppercase;letter-spacing:1.4px;color:var(--muted-2,#6d85a8);margin-bottom:10px;font-family:'IBM Plex Mono',monospace;}
-    .tbl-scroll{overflow-x:auto;}
+    .panel h3 .h3-sub{display:block;margin-top:4px;font-size:0.62rem;letter-spacing:0;text-transform:none;color:var(--muted-1,#8ba1c2);font-family:'Inter',sans-serif;font-weight:400;}
+    .tbl-scroll{overflow-x:auto;scrollbar-width:thin;scrollbar-color:#1e3a5f #04090f;}
+    .tbl-scroll::-webkit-scrollbar{height:8px;}
+    .tbl-scroll::-webkit-scrollbar-track{background:#04090f;}
+    .tbl-scroll::-webkit-scrollbar-thumb{background:#1e3a5f;border-radius:4px;}
+    :root[data-theme="light"] .tbl-scroll{scrollbar-color:#cbd5e1 #f1f5f9;}
+    :root[data-theme="light"] .tbl-scroll::-webkit-scrollbar-track{background:#f1f5f9;}
+    :root[data-theme="light"] .tbl-scroll::-webkit-scrollbar-thumb{background:#cbd5e1;}
+    /* Grouped header (COMMODITY): the commodity sits once above its strategies,
+       and a rule down the left of each group carries the grouping into the rows. */
+    .tbl th.grp{text-align:center;color:#7dd3fc;border-left:0.5px solid #17324f;border-bottom:0.5px solid #0e1e36;}
+    .tbl th.grp-first,.tbl td.grp-first{border-left:0.5px solid #17324f;}
+    :root[data-theme="light"] .tbl th.grp{color:#0369a1!important;border-left-color:#cbd5e1!important;}
+    :root[data-theme="light"] .tbl th.grp-first,:root[data-theme="light"] .tbl td.grp-first{border-left-color:#cbd5e1!important;}
     .tbl{width:100%;border-collapse:collapse;font-family:'IBM Plex Mono',monospace;font-size:0.72rem;}
     .tbl th{padding:8px 10px;text-align:right;font-size:0.56rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-2,#6d85a8);background:#04090f;border-bottom:0.5px solid #0e1e36;font-weight:600;white-space:nowrap;}
     .tbl th:first-child{text-align:left;}
@@ -424,7 +438,7 @@ ${multiSelectCSS()}
   ${buildSidebar('consolidationReport', false)}
   <div class="main-content">
     <h1 class="page-title">📑 Consolidation Report</h1>
-    <p class="page-sub">Day-by-day consolidated report of every recorded trade — per-strategy P&amp;L, wins/losses and net for each day.</p>
+    <p class="page-sub">What every strategy made or lost, day by day. Pick a book, market and period — the totals come first, then one table per market.</p>
 
     <div class="tbar">
       <label>Book</label>
@@ -463,6 +477,10 @@ const VIX_NOTE    = ${JSON.stringify(vixNote)};     // why the VIX column is emp
 const MODES = ${JSON.stringify(enabled.map(s => s.mode))};
 const MODE_LABEL = ${JSON.stringify(Object.fromEntries(enabled.map(s => [s.mode, s.label])))};
 const HIST_PATH  = ${JSON.stringify({ ...PAPER_HISTORY_PATH, ...Object.fromEntries(CMX_SOURCES.map(c => [c.mode, c.hist])) })};   // mode → paper history page
+// Table headers only: a COMMODITY column prints as its strategy, under one
+// header cell per commodity. NIFTY / BANK NIFTY columns have no group.
+const COL_GROUP  = ${JSON.stringify(Object.fromEntries(enabled.filter(s => s.group).map(s => [s.mode, s.group])))};
+const COL_LABEL  = ${JSON.stringify(Object.fromEntries(enabled.filter(s => s.group).map(s => [s.mode, s.col])))};
 const GROUP_OF   = ${JSON.stringify(Object.fromEntries(enabled.map(s => [s.mode, groupOf(s.mode)])))};
 const GROUPS     = ['NIFTY', 'BANK NIFTY', 'COMMODITY'];
 
@@ -536,6 +554,7 @@ function byDay(arr){
 
 function dayTable(title, gModes, gArr, showVix){
   const days = byDay(gArr);
+  const hasLinks = gArr.some(t => t.book==='paper' && HIST_PATH[t.mode]);
   const keptArr = gArr.filter(t => !SKIP.has(t.date));
   let tN=0,tW=0,tL=0,tNet=0,tWP=0,tLP=0; const totByMode={};
   for(const mo of gModes) totByMode[mo]={n:0,pnl:0,wins:0,losses:0};
@@ -547,9 +566,30 @@ function dayTable(title, gModes, gArr, showVix){
   }
   const tWR = tN?(tW/tN*100):0;
 
-  let thead='<tr><th class="skip-col" title="Tick a day to leave it out of the totals">Skip</th><th>Date</th>'+(showVix?'<th>VIX</th>':'');
-  for(const mo of gModes) thead+='<th>'+esc(MODE_LABEL[mo]||mo)+'</th>';
-  thead+='<th>Trades</th><th>Net P&amp;L</th></tr>';
+  // Grouped tables get a two-line header; gModes arrive already in group order.
+  const grouped = gModes.some(mo => COL_GROUP[mo]);
+  const span = grouped ? ' rowspan="2"' : '';
+  // first column of each group — draws the rule that separates the groups
+  const firstOf = {};
+  gModes.forEach((mo,i) => { if(grouped && (i===0 || COL_GROUP[mo]!==COL_GROUP[gModes[i-1]])) firstOf[mo]=true; });
+  const gc = mo => firstOf[mo] ? ' class="grp-first"' : '';
+  const tradesTh = ' title="Trades taken · winners · losers · share of trades that won">Trades · W / L · Win %</th>';
+
+  let thead='<tr><th class="skip-col"'+span+' title="Tick a day to leave it out of the totals">Skip</th><th'+span+'>Date</th>'+(showVix?'<th'+span+'>VIX</th>':'');
+  if(grouped){
+    for(let i=0;i<gModes.length;){
+      const grp=COL_GROUP[gModes[i]]||''; let n=0;
+      while(i+n<gModes.length && (COL_GROUP[gModes[i+n]]||'')===grp) n++;
+      thead+='<th class="grp" colspan="'+n+'">'+esc(grp)+'</th>';
+      i+=n;
+    }
+    thead+='<th'+span+tradesTh+'<th'+span+'>Day P&amp;L</th></tr><tr>';
+    for(const mo of gModes) thead+='<th'+gc(mo)+'>'+esc(COL_LABEL[mo]||MODE_LABEL[mo]||mo)+'</th>';
+    thead+='</tr>';
+  } else {
+    for(const mo of gModes) thead+='<th>'+esc(MODE_LABEL[mo]||mo)+'</th>';
+    thead+='<th'+tradesTh+'<th>Day P&amp;L</th></tr>';
+  }
 
   let body='';
   for(const g of days){
@@ -560,17 +600,17 @@ function dayTable(title, gModes, gArr, showVix){
       +'<td>'+esc(prettyDate(g.date))+'</td>'+(showVix?'<td>'+fmtVix(dayVix)+'</td>':'');
     for(const mo of gModes){
       const c=g.modes[mo];
-      if(!c || !c.n){ row+='<td class="muted">—</td>'; continue; }
+      if(!c || !c.n){ row+='<td class="muted'+(firstOf[mo]?' grp-first':'')+'">—</td>'; continue; }
       const cell='<span style="color:'+pc(c.pnl)+'">'+inr2(c.pnl)+'</span><br><span class="cnt">'+c.n+' trade'+(c.n>1?'s':'')+'</span>';
       // Only a cell that actually holds paper trades gets the deep link — a Live-only
       // cell would otherwise open a paper page showing different trades.
       const hp=HIST_PATH[mo];
       row+= (hp && c.paperN)
-        ? '<td><a class="pnl-link" href="'+hp+'?date='+encodeURIComponent(g.date)+'" target="_blank" rel="noopener" title="Open '+esc(MODE_LABEL[mo]||mo)+' paper history for '+esc(prettyDate(g.date))+'">'+cell+'</a></td>'
-        : '<td>'+cell+'</td>';
+        ? '<td'+gc(mo)+'><a class="pnl-link" href="'+hp+'?date='+encodeURIComponent(g.date)+'" target="_blank" rel="noopener" title="Open '+esc(MODE_LABEL[mo]||mo)+' paper history for '+esc(prettyDate(g.date))+'">'+cell+'</a></td>'
+        : '<td'+gc(mo)+'>'+cell+'</td>';
     }
     const wr=g.n?(g.wins/g.n*100):0;
-    row+='<td>'+g.n+' - <span style="color:#10b981">'+g.wins+'W</span> <span style="color:#ef4444">'+g.losses+'L</span> '+wr.toFixed(0)+'%</td>'
+    row+='<td>'+g.n+' · <span style="color:#10b981">'+g.wins+'W</span> <span style="color:#ef4444">'+g.losses+'L</span> · '+wr.toFixed(0)+'%</td>'
       +'<td style="font-weight:700"><span style="color:'+pc(g.net)+'">'+inr2(g.net)+'</span></td>';
     body+='<tr'+(off?' class="skipped"':'')+'>'+row+'</tr>';
   }
@@ -581,17 +621,18 @@ function dayTable(title, gModes, gArr, showVix){
   let foot='<tr><td class="skip-col"></td><td><b>TOTAL</b></td>'+(showVix?'<td>'+fmtVix(avgVix)+'</td>':'');
   for(const mo of gModes){
     const c=totByMode[mo];
-    if(!c || !c.n){ foot+='<td class="muted">—</td>'; continue; }
-    foot+='<td><span style="color:'+pc(c.pnl)+'">'+inr2(c.pnl)+'</span><br><span class="cnt">'+c.n+' · '
+    if(!c || !c.n){ foot+='<td class="muted'+(firstOf[mo]?' grp-first':'')+'">—</td>'; continue; }
+    foot+='<td'+gc(mo)+'><span style="color:'+pc(c.pnl)+'">'+inr2(c.pnl)+'</span><br><span class="cnt">'+c.n+' trade'+(c.n>1?'s':'')+' · '
       +'<span style="color:#10b981">'+c.wins+'W</span> / <span style="color:#ef4444">'+c.losses+'L</span></span></td>';
   }
   // The colour lives on an inner span: the light-theme .cnt rule is !important,
   // so a colour set on .cnt itself would be greyed out in light mode.
-  foot+='<td><b>'+tN+'</b> - <span style="color:#10b981">'+tW+'W</span> <span style="color:#ef4444">'+tL+'L</span> '+tWR.toFixed(0)+'%'
-    +'<br><span class="cnt"><span style="color:#10b981">'+inr(tWP)+'</span> / <span style="color:#ef4444">'+inr(tLP)+'</span></span></td>'
+  foot+='<td><b>'+tN+'</b> · <span style="color:#10b981">'+tW+'W</span> <span style="color:#ef4444">'+tL+'L</span> · '+tWR.toFixed(0)+'%'
+    +'<br><span class="cnt">won <span style="color:#10b981">'+inr(tWP)+'</span> · lost <span style="color:#ef4444">'+inr(Math.abs(tLP))+'</span></span></td>'
     +'<td style="font-weight:700"><span style="color:'+pc(tNet)+'">'+inr2(tNet)+'</span></td></tr>';
 
-  return '<div class="panel"><h3>'+esc(title)+' — Daily Breakdown</h3><div class="tbl-scroll"><table class="tbl"><thead>'+thead+'</thead><tbody>'+body+'</tbody><tfoot>'+foot+'</tfoot></table></div></div>';
+  return '<div class="panel"><h3>'+esc(title)+' — day by day'
+    +'<span class="h3-sub">One row per trading day, one column per strategy'+(hasLinks?' — click a P&amp;L to open the trades behind it':'')+'. TOTAL covers this market only.</span></h3><div class="tbl-scroll"><table class="tbl"><thead>'+thead+'</thead><tbody>'+body+'</tbody><tfoot>'+foot+'</tfoot></table></div></div>';
 }
 
 function render(){
@@ -639,8 +680,8 @@ function render(){
   const tWR = tN?(tW/tN*100):0;
 
   let head=vixWarn+'<div class="rpt-head"><div>'
-    +'<div class="rh-title">Consolidated Day Report</div>'
-    +'<div class="rh-meta">Book: <b>'+bookLabel+'</b> &nbsp;·&nbsp; Market: <b>'+(f.mkt==='all'?'All':esc(f.mkt))+'</b> &nbsp;·&nbsp; Strategy: <b>'+esc(f.modes.length===MODES.filter(m=>f.mkt==='all'||GROUP_OF[m]===f.mkt).length ? 'All' : (f.modes.length ? f.modes.map(m=>MODE_LABEL[m]||m).join(', ') : 'None'))+'</b> &nbsp;·&nbsp; Period: <b>'+esc(f.rangeLabel)+'</b> &nbsp;·&nbsp; Trading days: <b>'+kept.length+'</b> &nbsp;·&nbsp; Trades: <b>'+tN+'</b>'
+    +'<div class="rh-title">Totals — '+(f.mkt==='all'?'all markets combined':esc(f.mkt)+' only')+'</div>'
+    +'<div class="rh-meta">Book: <b>'+bookLabel+'</b> &nbsp;·&nbsp; Market: <b>'+(f.mkt==='all'?'All':esc(f.mkt))+'</b> &nbsp;·&nbsp; Strategies: <b>'+esc(f.modes.length===MODES.filter(m=>f.mkt==='all'||GROUP_OF[m]===f.mkt).length ? 'All' : (f.modes.length ? f.modes.map(m=>MODE_LABEL[m]||m).join(', ') : 'None'))+'</b> &nbsp;·&nbsp; Period: <b>'+esc(f.rangeLabel)+'</b> &nbsp;·&nbsp; Trading days: <b>'+kept.length+'</b> &nbsp;·&nbsp; Trades: <b>'+tN+'</b>'
     // A total that silently omits days would be misread as the full period.
     +(nSkipped ? ' &nbsp;·&nbsp; <b style="color:#f59e0b">'+nSkipped+' day'+(nSkipped>1?'s':'')+' skipped</b>' : '')+'</div>'
     +'</div><div class="rh-brand">ௐ Palani Andawar Thunai ॐ<br>Generated '+esc(gen)+'</div></div>';
@@ -666,7 +707,7 @@ function render(){
   for(const G of GROUPS){
     const gModes = activeModes.filter(m => GROUP_OF[m]===G);
     if(!gModes.length) continue;
-    h += dayTable(G, gModes, arr.filter(t => GROUP_OF[t.mode]===G), G!=='COMMODITY');
+    h += dayTable(G==='COMMODITY' ? 'COMMODITY (MCX)' : G, gModes, arr.filter(t => GROUP_OF[t.mode]===G), G!=='COMMODITY');
   }
   h+='<div class="skip-note">Tick <b>Skip</b> to leave a day out of the cards and the TOTAL rows — the trade files are not touched, and the choice stays in this browser.'
     +(nSkipped?'<button type="button" id="clearSkip">Clear '+nSkipped+' skipped</button>':'')+'</div>';
