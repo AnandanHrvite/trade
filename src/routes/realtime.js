@@ -62,8 +62,8 @@ const STRATEGY_DEFS = [
 // the engines themselves so a new commodity page appears here with no wiring.
 // paperOnly: there is no live route, so the LIVE source shows nothing for them.
 function commodityStrategies() {
-  const { enabledEngines } = require("../utils/commodityPaperRouter");
-  return enabledEngines().map((e) => {
+  const { visibleEngines } = require("../utils/commodityPaperRouter");
+  return visibleEngines().map((e) => {
     const s = e.snapshot();
     const strat = s.strategy === 'V2' ? 'EMA_RSI_ST_V2' : 'EMA_RSI_ST';
     return { key: `CMX_${s.commodity}_${strat}`, label: `${s.commodityLabel.toUpperCase()} · ${strat}`,
@@ -124,6 +124,10 @@ function renderPage({ liveActive, sidebarKey = "realtime", autoFlipBack = false 
   // while trading is exactly when "how much is left" matters.)
   const sessionActive = sharedSocketState.isAnyActive() || require("../utils/commodityPaperRouter").anyRunning();
   const hasCommodity  = strategies.some(s => s.paperOnly);
+  // While only COMMODITY runs this page still stands in for the Dashboard, so it
+  // must also be able to start the NIFTY paper roster (the Dashboard's button is
+  // not reachable from here).
+  const nseActive     = sharedSocketState.isAnyActive();
 
   const endpointsJson = JSON.stringify({
     PAPER: Object.fromEntries(strategies.map(s => [s.key, s.paperPrefix + '/status/data'])),
@@ -248,6 +252,11 @@ ${faviconLink()}
   .cmx-start:disabled { opacity:0.6; cursor:default; }
   :root[data-theme="light"] .cmx-start { background:#fefce8 !important; border-color:#a16207 !important; color:#a16207; }
   :root[data-theme="light"] .cmx-start:hover:not(:disabled) { background:#a16207 !important; color:#fff; }
+  .nse-start { background:#0c2a4a; border:1px solid #2563eb; color:#93c5fd; font-size:0.82rem; font-weight:700; letter-spacing:0.4px; padding:0 16px; min-height:44px; border-radius:8px; cursor:pointer; transition:all 0.15s; }
+  .nse-start:hover:not(:disabled) { background:#2563eb; color:#fff; }
+  .nse-start:disabled { opacity:0.6; cursor:default; }
+  :root[data-theme="light"] .nse-start { background:#eff6ff !important; border-color:#2563eb !important; color:#1d4ed8; }
+  :root[data-theme="light"] .nse-start:hover:not(:disabled) { background:#2563eb !important; color:#fff; }
   .stop-all-note { background:#2a0f0f; border:1px solid #7f1d1d; border-left:4px solid #dc2626; border-radius:10px; padding:10px 14px; margin-bottom:14px; font-size:0.78rem; color:#fca5a5; line-height:1.6; }
   :root[data-theme="light"] .stop-all { background:#fef2f2 !important; border-color:#dc2626 !important; color:#b91c1c; }
   :root[data-theme="light"] .stop-all:hover:not(:disabled) { background:#dc2626 !important; color:#fff; }
@@ -535,6 +544,7 @@ ${sidebar}
            here as well as on the Dashboard: while a NIFTY session runs, this page
            IS the Dashboard. Hidden by the poll once every commodity page is up. -->
       <button type="button" class="cmx-start" id="cmx-start" title="Start every switched-on COMMODITY (MCX) paper page that is not running yet" hidden>🛢 Start All (Commodity)</button>` : ''}
+      ${!nseActive && strategies.some(s => !s.paperOnly) ? `<button type="button" class="nse-start" id="nse-start" title="Start every enabled NIFTY / BANK NIFTY paper strategy — same list as the Dashboard's Start All (Paper)" hidden>▶ Start All (Paper)</button>` : ''}
       <button type="button" class="stop-all" id="stop-all">🛑 Stop All</button>
     </div>
   </div>
@@ -1046,6 +1056,7 @@ async function poll() {
   const all = {};
   STRATEGY_KEYS.forEach((k, i) => { all[k] = results[i]; renderColumn(k, results[i]); });
   renderCmxStart(all);
+  renderNseStart(all);
   renderCardsEmpty();
   renderRollup(all);
   renderPools(capital);
@@ -1206,6 +1217,59 @@ async function startAllCmx() {
   }
 }
 document.getElementById('cmx-start')?.addEventListener('click', startAllCmx);
+
+// ── Start All (Paper) — NIFTY / BANK NIFTY ──────────────────────────────────
+// Only rendered while no NSE session is up (the page is showing because a
+// COMMODITY page runs). Offered on weekdays until 15:30 IST, and hidden again
+// once any NSE strategy reports running.
+let nseBusy = false;
+function nseStartWindow() {
+  const ist = new Date(Date.now() + 19800000);
+  const day = ist.getUTCDay(), mins = ist.getUTCHours() * 60 + ist.getUTCMinutes();
+  return day !== 0 && day !== 6 && mins < 15 * 60 + 30;
+}
+function renderNseStart(all) {
+  const btn = document.getElementById('nse-start');
+  if (!btn || nseBusy) return;
+  const nseRunning = STRATEGY_KEYS.some(k => PAPER_ONLY.indexOf(k) === -1 && all[k] && all[k].running);
+  btn.hidden = mode === 'LIVE' || nseRunning || !nseStartWindow();
+}
+async function startAllNse() {
+  const btn = document.getElementById('nse-start');
+  if (!btn || nseBusy) return;
+  nseBusy = true;
+  btn.disabled = true; btn.textContent = '⏳ Checking strategies…';
+  const ok = [], bad = [];
+  try {
+    // The same roster the Dashboard's button starts from.
+    const r = await fetch('/api/start-all-roster', { cache:'no-store' });
+    const modes = r.ok ? ((await r.json()).modes || []) : [];
+    if (!modes.length) { await showAlert({ icon:'⚠️', title:'Nothing to start', message:'No NIFTY / BANK NIFTY strategy is enabled in Settings.' }); return; }
+    // Sequential, like the Dashboard: parallel starts race each other for the socket.
+    for (const m of modes) {
+      if (!m || !m.paper) continue;
+      btn.textContent = '⏳ Starting ' + m.label + '…';
+      try {
+        const res = await secretFetch(m.paper);
+        if (!res) { bad.push(m.label + ' — cancelled'); break; }   // API-secret prompt dismissed
+        let body = null; try { body = await res.json(); } catch (_) {}
+        if (res.ok && (!body || body.success !== false)) ok.push(m.label);
+        else bad.push(m.label + ' — ' + ((body && (body.error || body.message)) || 'HTTP ' + res.status));
+      } catch (e) { bad.push(m.label + ' — ' + ((e && e.message) || 'network error')); }
+    }
+    await showAlert({ icon: bad.length ? '⚠️' : '▶', title: 'Start All (Paper)',
+      message: (ok.length ? '✅ Started: ' + ok.join(', ') : '') + (bad.length ? (ok.length ? '\\n\\n' : '') + '❌ ' + bad.join('\\n❌ ') : '') });
+  } catch (e) {
+    await showAlert({ icon:'⚠️', title:'Start All (Paper)', message:(e && e.message) || 'Request failed' });
+  } finally {
+    nseBusy = false;
+    btn.disabled = false; btn.textContent = '▶ Start All (Paper)';
+    // The page was rendered for a commodity-only session; reload so the NSE
+    // cards, toggle state and this button all reflect the new session.
+    if (ok.length) location.reload(); else poll();
+  }
+}
+document.getElementById('nse-start')?.addEventListener('click', startAllNse);
 
 async function fetchText(url) {
   try {

@@ -365,6 +365,9 @@ const enabledEngines = () => ENGINES.filter((e) => String(process.env[e.snapshot
 // True while any commodity engine is running — switched on or not, since a page
 // toggled off mid-session keeps trading until it is stopped.
 const anyRunning = () => ENGINES.some((e) => e.state.running);
+// What the shared monitors list: switched on, or still running after being
+// switched off (it trades until stopped, so it must stay visible and stoppable).
+const visibleEngines = () => ENGINES.filter((e) => e.state.running || String(process.env[e.snapshot().modeKey] || "false").toLowerCase() === "true");
 
 /**
  * An engine snapshot in the shape the Real-Time monitor (routes/realtime.js)
@@ -441,4 +444,4 @@ function commodityPage({ commodity, strategy }) {
   return router;
 }
 
-module.exports = { createCommodityPaperRouter, commodityPage, enabledEngines, anyRunning, monitorView, fyersTokenHoldUntil };
+module.exports = { createCommodityPaperRouter, commodityPage, enabledEngines, visibleEngines, anyRunning, monitorView, fyersTokenHoldUntil };
