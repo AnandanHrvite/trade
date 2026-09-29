@@ -1451,7 +1451,13 @@ app.post("/api/cmx/start-all", async (req, res) => {
 // shape /consolidation/data uses. Kept out of that list on purpose: it also
 // feeds the NSE end-of-day Telegram report.
 app.get("/api/cmx/trades", (req, res) => {
-  const ist = (iso) => (iso ? new Date(new Date(iso).getTime() + 19800000).toISOString().slice(11, 19) : "");
+  // "DD/MM/YYYY, HH:MM:SS" IST — the NSE paper books' format. The charts sort a
+  // day's trades by this string, so any other shape would misplace them.
+  const ist = (iso) => {
+    if (!iso) return "";
+    const x = new Date(new Date(iso).getTime() + 19800000).toISOString();
+    return `${x.slice(8, 10)}/${x.slice(5, 7)}/${x.slice(0, 4)}, ${x.slice(11, 19)}`;
+  };
   const trades = [];
   for (const e of require("./utils/commodityPaperRouter").visibleEngines()) {
     const mode = cmxDashMode(e.snapshot());
