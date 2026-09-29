@@ -1514,6 +1514,10 @@ app.get("/", (req, res) => {
   }
   try {
   const fyersOk     = !!process.env.ACCESS_TOKEN;
+  // COMMODITY: any page switched on, and the MCX close its engines stop taking
+  // starts at (commodityPaper.js cfg().sessEnd).
+  const cmxOn       = require("./utils/commodityPaperRouter").enabledEngines().length > 0;
+  const cmxSessEnd  = /^\d{1,2}:\d{2}$/.test(process.env.CMX_SESSION_END || "") ? process.env.CMX_SESSION_END : "23:30";
   const zerodhaOk   = zerodha.isAuthenticated();
   const zerodhaConf = !!process.env.ZERODHA_API_KEY;
   const liveEnabled = process.env.EMA_RSI_ST_LIVE_ENABLED === "true";
@@ -2629,8 +2633,8 @@ ${buildSidebar('dashboard', liveActive)}
       ${anyModeActive ? '' : `
       <button id="btn-all-harness" class="top-bar-btn" style="border-color:#b45309;color:#f59e0b;" onclick="startAllHarness(this)" title="Start all Live (Harness) modes in DRY-RUN — runs Paper + logs would-be broker orders (${startAllHarnessModes.map((m) => m.label).join(' + ') || 'no strategy enabled'})">🧪 Start All (Harness)</button>
       <button id="btn-all-start" class="top-bar-btn run-paper" onclick="startAll(this)" title="Start all paper modes">▶ Start All (Paper)</button>`}
-      ${require("./utils/commodityPaperRouter").enabledEngines().length ? `
-      <button id="btn-cmx-start" class="top-bar-btn" style="border-color:#a16207;color:#facc15;" onclick="startAllCmx(this)" title="Start every switched-on COMMODITY (MCX) paper page. MCX runs 9:00 AM – 11:30 PM; press any time before 3 PM.">🛢 Start All (Commodity)</button>` : ""}
+      ${cmxOn && fyersOk ? `
+      <button id="btn-cmx-start" class="top-bar-btn" style="display:none;border-color:#a16207;color:#facc15;" onclick="startAllCmx(this)" title="Start every switched-on COMMODITY (MCX) paper page. MCX runs 9:00 AM – ${cmxSessEnd} IST; press any time before 3 PM.">🛢 Start All (Commodity)</button>` : ""}
       <!-- The manual "Reset Token" button was removed: token clearing is now
            automatic (4:00 PM + 7:00 AM IST schedulers, and the login routes
            wipe any DISCONNECTED broker's saved token before starting OAuth).
@@ -3505,6 +3509,9 @@ function startAll(btn){
 // ── Quick-Action button live state (mutual lock: Paper ↔ Live) ──────────────
 var _dashSrc = 'paper';            // top-bar toggle source; also drives the charts
 var _allBtnState = { paperOn:false, liveOn:false };
+var CMX_ON = ${cmxOn ? 'true' : 'false'};
+var CMX_END_MIN = ${Number(cmxSessEnd.split(':')[0]) * 60 + Number(cmxSessEnd.split(':')[1])};
+var CMX_END_LABEL = ${JSON.stringify(cmxSessEnd)};
 var _marketsClosed = false;        // set by checkTradingStatus(): weekend / NSE holiday / pre- or post-market
 // Derived from the same enabled-strategy roster as the Start-All endpoint lists.
 var ALL_BTN_POLL = ${JSON.stringify(startAllPollTargets)};
@@ -3718,6 +3725,9 @@ function _renderDashTotal(){
   // markets — /consolidation is NSE only.
   if (link) link.href = src === 'live' ? '/live-consolidation'
     : ((_dcData.cmx && _dcData.cmx.length) ? '/consolidation-report' : '/consolidation');
+  // Nothing in the source/range → no card, same as the strategy cards above.
+  var card = document.getElementById('dashCumCard');
+  if (card) card.style.display = trades.length ? '' : 'none';
   var emptyEl = document.getElementById('dashCumEmpty');
   if (emptyEl) emptyEl.textContent = 'No ' + src + ' trades ' + (_dashRangeActive() ? 'in this range' : 'yet');
   if (_dcChart) { _dcChart.destroy(); _dcChart = null; }
@@ -3828,8 +3838,8 @@ var CMX_MM_MODES = ${JSON.stringify(dashCmxCards.map((c) => c.mode))};
 var _mmToggle = { EMA_RSI_ST: 'paper', BB_RSI: 'paper', PA: 'paper', ORB: 'paper', EMA9VWAP: 'paper', TREND_PB: 'paper', TDS: 'paper', HA_SCALP: 'paper', PREV_ORB_SCALP: 'paper', EARLYBIRD: 'paper', SIMPLE930: 'paper', RSI_PIVOT_ST: 'paper', BN_PIVOT_RSI_ST: 'paper', EMA_RSI_ST_V2: 'paper', BN_EMA_RSI_ST_V2: 'paper' };
 
 // A strategy with no trades in the selected source+range has nothing to show,
-// so its whole card is hidden rather than kept as a "0 trades" placeholder.
-// When that empties the grid, one note stands in for all of them.
+// so its whole card is hidden rather than kept as a "0 trades" placeholder —
+// and an emptied grid shows nothing at all.
 // Rows are balanced over the VISIBLE cards, never ragged: 4 per row is the
 // widest a row gets, and the count is then spread evenly over the rows that
 // needs — 5 cards go 3+2 (not 4+1), 7 go 4+3, 11 go 4+4+3. The last row's cards
@@ -3850,14 +3860,9 @@ function _updateModuleGridEmpty(){
   document.querySelectorAll('.mm-card[data-mode]').forEach(function(c){
     if (c.style.display !== 'none') visible++;
   });
-  var anyVisible = visible > 0;
   _layoutModuleGrid(visible);
-  note.style.display = anyVisible ? 'none' : '';
-  if (anyVisible) return;
-  // Same wording as the per-card and cumulative empty lines, so the note names
-  // the source and range the grid is actually showing.
-  var txt = document.getElementById('mmGridEmptyTxt');
-  if (txt) txt.textContent = 'No strategy has any ' + _dashSrc + ' trades ' + (_dashRangeActive() ? 'in this range' : 'yet');
+  // An empty grid shows nothing — no placeholder panel for trades that aren't there.
+  note.style.display = 'none';
 }
 
 function _renderModuleChart(mode){
@@ -4402,6 +4407,13 @@ async function checkTradingStatus(){
       var b = document.getElementById(id);
       if(b) b.style.display = _marketsClosed ? 'none' : '';
     });
+    // COMMODITY keeps MCX hours, not NSE's: startable on a weekday from 7 AM
+    // (the overnight Fyers token is wiped at 7) until the MCX session ends —
+    // the engine refuses a start after that. NSE holidays don't close MCX.
+    var mins = hour * 60 + now.getMinutes();
+    var cmxOpen = CMX_ON && day !== 0 && day !== 6 && mins < CMX_END_MIN;
+    var cb = document.getElementById('btn-cmx-start');
+    if(cb) cb.style.display = (cmxOpen && hour >= 7) ? '' : 'none';
 
     if(!alertDiv || alertDiv._dismissed) return;
     if(isHoliday){
@@ -4415,7 +4427,12 @@ async function checkTradingStatus(){
     if(hour < 7 || hour >= 16){
       // Not dismissible, same reason as weekend/holiday: pre/post-market is a
       // fact the user cannot change, so a ✕ only hides it.
-      showStatusPill(alertDiv, '🕐', hour < 7 ? 'Pre-market — opens 9:15 AM IST' : 'Post-market — closed for the day', '#60a5fa', false); return;
+      // Name the market: with a COMMODITY page on, MCX is still open until
+      // late evening while NSE is shut.
+      var pillTxt = hour < 7
+        ? (CMX_ON ? 'Pre-market — NSE opens 9:15 AM · MCX 9:00 AM IST' : 'Pre-market — opens 9:15 AM IST')
+        : (cmxOpen ? 'NSE closed for the day · MCX open till ' + CMX_END_LABEL + ' IST' : 'Post-market — closed for the day');
+      showStatusPill(alertDiv, '🕐', pillTxt, '#60a5fa', false); return;
     }
     alertDiv.style.display = 'none';
   } catch(e){}
