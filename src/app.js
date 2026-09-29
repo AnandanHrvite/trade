@@ -897,6 +897,7 @@ const OPEN_PATHS = [
   "/api/holidays",          // read-only holiday list
   "/api/expiry-dates",      // read-only expiry calendar
   "/api/start-all-roster",  // read-only Start-All roster (dashboard button)
+  "/api/cmx/trades",        // read-only COMMODITY paper trades (dashboard cards)
   "/login-logs",            // login attempts viewer (failed + demo)
   "/login-logs/data",       // login logs JSON data
   "/login-logs/clear",      // reset login logs
@@ -1446,6 +1447,23 @@ app.post("/api/cmx/start-all", async (req, res) => {
   res.json({ success: results.length > 0 && results.every((r) => r.ok), results });
 });
 
+// COMMODITY paper trades for the Dashboard's per-strategy cards, in the row
+// shape /consolidation/data uses. Kept out of that list on purpose: it also
+// feeds the NSE end-of-day Telegram report.
+app.get("/api/cmx/trades", (req, res) => {
+  const ist = (iso) => (iso ? new Date(new Date(iso).getTime() + 19800000).toISOString().slice(11, 19) : "");
+  const trades = [];
+  for (const e of require("./utils/commodityPaperRouter").visibleEngines()) {
+    const mode = cmxDashMode(e.snapshot());
+    for (const d of e.historyDays()) {
+      for (const t of d.trades) trades.push({ mode, date: d.day, entryTime: ist(t.entryTime), pnl: Number(t.pnl) || 0 });
+    }
+  }
+  res.json({ success: true, trades });
+});
+// Mode key of a commodity engine on the Dashboard — also the card's data-mode.
+function cmxDashMode(s) { return `CMX_${s.commodity}_${s.strategy === "V2" ? "EMA_RSI_ST_V2" : "EMA_RSI_ST"}`; }
+
 app.get("/api/start-all-roster", (req, res) => {
   const modes = startAllRoster();
   res.json({
@@ -1527,6 +1545,11 @@ app.get("/", (req, res) => {
   const bnEmaRsiStV2Mode   = sharedSocketState.getBnEmaRsiStV2Mode ? sharedSocketState.getBnEmaRsiStV2Mode() : null;
   // NIFTY BANK sibling — defaults OFF for the same reason.
   const bnEmaRsiStV2ModeOn = (process.env.BN_EMA_RSI_ST_V2_MODE_ENABLED || 'false').toLowerCase() === 'true';
+  // One chart card per COMMODITY page (switched on, or still running).
+  const dashCmxCards = require("./utils/commodityPaperRouter").visibleEngines().map((e) => {
+    const s = e.snapshot();
+    return { mode: cmxDashMode(s), title: `${s.commodityLabel.toUpperCase()} · ${s.strategy === "V2" ? "EMA_RSI_ST_V2" : "EMA_RSI_ST"}` };
+  });
   const analyticsPanelOn = (process.env.UI_DASHBOARD_ANALYTICS_PANEL || 'true').toLowerCase() === 'true';
   const activeStrategyName = getActiveStrategy().NAME;
 
@@ -2295,6 +2318,7 @@ app.get("/", (req, res) => {
     .mm-card.bnpivotrsist .mm-dot { background:#84cc16; }
     .mm-card.emarsistv2 .mm-dot { background:#a78bfa; }
     .mm-card.bnemarsistv2 .mm-dot { background:#2dd4bf; }
+    .mm-card.cmx .mm-dot { background:#eab308; }
     .mm-title { font-size:0.62rem; font-weight:700; text-transform:uppercase; letter-spacing:1.4px; color:#a0b0c8; }
     /* Global Paper/Live source toggle (top-bar) — drives every chart on the dashboard */
     .dash-src-toggle { display:inline-flex; background:#07111f; border:1px solid #1a2236; border-radius:4px; padding:2px; flex-shrink:0; }
@@ -2834,6 +2858,16 @@ ${buildSidebar('dashboard', liveActive)}
       <div class="mm-empty" id="mm-empty-BN_EMA_RSI_ST_V2" style="display:none;">No paper trades yet</div>
     </div>
     ` : ''}
+    ${dashCmxCards.map((c) => `
+    <div class="mm-card cmx" data-mode="${c.mode}">
+      <div class="mm-hdr">
+        <span class="mm-dot"></span>
+        <span class="mm-title">🛢 ${c.title}</span>
+      </div>
+      <div class="mm-stats" id="mm-stats-${c.mode}">—</div>
+      <div class="mm-wrap"><canvas id="mmChart-${c.mode}"></canvas></div>
+      <div class="mm-empty" id="mm-empty-${c.mode}" style="display:none;">No paper trades yet</div>
+    </div>`).join('')}
   </div>
   <div class="mm-card mm-grid-empty" id="mmGridEmpty" style="display:none;">
     <div class="mm-empty" id="mmGridEmptyTxt">No trades yet</div>
@@ -3718,7 +3752,7 @@ document.addEventListener('click', function(e){
   ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB','TDS','HA_SCALP','PREV_ORB_SCALP','EARLYBIRD','SIMPLE930','RSI_PIVOT_ST','BN_PIVOT_RSI_ST','EMA_RSI_ST_V2','BN_EMA_RSI_ST_V2'].forEach(function(m){ _mmToggle[m] = src; });
   document.querySelectorAll('#dashSrcToggle .dst-btn').forEach(function(b){ b.classList.toggle('active', b === btn); });
   _renderDashTotal();
-  ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB','TDS','HA_SCALP','PREV_ORB_SCALP','EARLYBIRD','SIMPLE930','RSI_PIVOT_ST','BN_PIVOT_RSI_ST','EMA_RSI_ST_V2','BN_EMA_RSI_ST_V2'].forEach(_renderModuleChart);
+  ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB','TDS','HA_SCALP','PREV_ORB_SCALP','EARLYBIRD','SIMPLE930','RSI_PIVOT_ST','BN_PIVOT_RSI_ST','EMA_RSI_ST_V2','BN_EMA_RSI_ST_V2'].concat(CMX_MM_MODES).forEach(_renderModuleChart);
   _applyAllBtnState(_allBtnState.paperOn, _allBtnState.liveOn);
 });
 
@@ -3730,7 +3764,7 @@ document.addEventListener('click', function(e){
   function refreshRange(){
     _readDashRange();
     _renderDashTotal();
-    ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB','TDS','HA_SCALP','PREV_ORB_SCALP','EARLYBIRD','SIMPLE930','RSI_PIVOT_ST','BN_PIVOT_RSI_ST','EMA_RSI_ST_V2','BN_EMA_RSI_ST_V2'].forEach(_renderModuleChart);
+    ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB','TDS','HA_SCALP','PREV_ORB_SCALP','EARLYBIRD','SIMPLE930','RSI_PIVOT_ST','BN_PIVOT_RSI_ST','EMA_RSI_ST_V2','BN_EMA_RSI_ST_V2'].concat(CMX_MM_MODES).forEach(_renderModuleChart);
     _renderBrokerWallets();
   }
   function syncCustomVisibility(){
@@ -3762,6 +3796,9 @@ loadDashCumCharts();
 // ── Per-Module P&L Charts (top-bar Paper/Live toggle + Range filter) ─────────
 var _mmData = { paper: null, live: null };
 var _mmCharts = {};
+// COMMODITY cards. Paper only, and not in _mmToggle: they follow the top-bar
+// source directly, so under LIVE they find no rows and hide themselves.
+var CMX_MM_MODES = ${JSON.stringify(dashCmxCards.map((c) => c.mode))};
 var _mmToggle = { EMA_RSI_ST: 'paper', BB_RSI: 'paper', PA: 'paper', ORB: 'paper', EMA9VWAP: 'paper', TREND_PB: 'paper', TDS: 'paper', HA_SCALP: 'paper', PREV_ORB_SCALP: 'paper', EARLYBIRD: 'paper', SIMPLE930: 'paper', RSI_PIVOT_ST: 'paper', BN_PIVOT_RSI_ST: 'paper', EMA_RSI_ST_V2: 'paper', BN_EMA_RSI_ST_V2: 'paper' };
 
 // A strategy with no trades in the selected source+range has nothing to show,
@@ -3800,7 +3837,7 @@ function _updateModuleGridEmpty(){
 function _renderModuleChart(mode){
   var card = document.querySelector('.mm-card[data-mode="' + mode + '"]');
   if (!card) return;
-  var src = _mmToggle[mode];
+  var src = _mmToggle[mode] || _dashSrc;
   var all = _mmData[src] || [];
   var trades = _applyDashRange(all.filter(function(t){ return (t.mode || '').toUpperCase() === mode; }));
   if (_mmCharts[mode]) { _mmCharts[mode].destroy(); _mmCharts[mode] = null; }
@@ -3854,7 +3891,15 @@ async function loadModuleCharts(){
     if (r2.status === 401) _authLost();
     if (r2.ok){ var d2 = await r2.json(); _mmData.live = (d2 && d2.trades) || []; }
   } catch(_){ _mmData.live = []; }
-  ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB','TDS','HA_SCALP','PREV_ORB_SCALP','EARLYBIRD','SIMPLE930','RSI_PIVOT_ST','BN_PIVOT_RSI_ST','EMA_RSI_ST_V2','BN_EMA_RSI_ST_V2'].forEach(_renderModuleChart);
+  // COMMODITY rows join the paper list; the broker wallets ignore them (their
+  // modes are in no pool) and so does the cumulative chart (its own fetch).
+  if (CMX_MM_MODES.length) {
+    try {
+      var r3 = await fetch('/api/cmx/trades', { cache: 'no-store' });
+      if (r3.ok){ var d3 = await r3.json(); _mmData.paper = (_mmData.paper || []).concat((d3 && d3.trades) || []); }
+    } catch(_){}
+  }
+  ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB','TDS','HA_SCALP','PREV_ORB_SCALP','EARLYBIRD','SIMPLE930','RSI_PIVOT_ST','BN_PIVOT_RSI_ST','EMA_RSI_ST_V2','BN_EMA_RSI_ST_V2'].concat(CMX_MM_MODES).forEach(_renderModuleChart);
   _renderBrokerWallets();
 }
 
