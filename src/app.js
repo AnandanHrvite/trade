@@ -1548,7 +1548,7 @@ app.get("/", (req, res) => {
   // One chart card per COMMODITY page (switched on, or still running).
   const dashCmxCards = require("./utils/commodityPaperRouter").visibleEngines().map((e) => {
     const s = e.snapshot();
-    return { mode: cmxDashMode(s), title: `${s.commodityLabel.toUpperCase()} · ${s.strategy === "V2" ? "EMA_RSI_ST_V2" : "EMA_RSI_ST"}` };
+    return { mode: cmxDashMode(s), base: `/${s.id}-paper`, title: `${s.commodityLabel.toUpperCase()} · ${s.strategy === "V2" ? "EMA_RSI_ST_V2" : "EMA_RSI_ST"}` };
   });
   const analyticsPanelOn = (process.env.UI_DASHBOARD_ANALYTICS_PANEL || 'true').toLowerCase() === 'true';
   const activeStrategyName = getActiveStrategy().NAME;
@@ -1621,6 +1621,10 @@ app.get("/", (req, res) => {
       return { paper: pages.paper || null, live: pages.live || pages.harness || null };
     })(),
   }));
+  // COMMODITY pages join the Last Session / Today So Far panel — paper only.
+  for (const c of dashCmxCards) {
+    dashSessionTiles.push({ key: c.mode, cls: 'cmx', label: '🛢 ' + c.title, paper: c.base + '/status', live: null, statusData: c.base + '/status/data' });
+  }
 
   // ── Start-All roster — the enabled strategies (same helper the sidebar uses)
   // joined to the start routes discovered from the mounted routers. Read per
@@ -2482,6 +2486,7 @@ app.get("/", (req, res) => {
     .da-tile.pa    { border-top:2px solid #a78bfa; }
     .da-tile.orb      { border-top:2px solid #10b981; }
     .da-tile.info  { border-top:2px solid #22d3ee; }
+    .da-tile.cmx   { border-top:2px solid #eab308; }
     /* Clickable tiles: an <a> that must still lay out exactly like the div it
        replaced, so grid sizing and the mobile column count are unchanged. */
     a.da-tile-link { display:block; text-decoration:none; color:inherit; cursor:pointer; transition:border-color .15s, background .15s, transform .15s; }
@@ -4264,7 +4269,10 @@ setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily 
         if (st) { totLive += st.liveT; totPaper += st.paperT; }
       });
     }
-    lastHtml += tileWrap(totLive > totPaper ? '/live-consolidation' : '/consolidation',
+    // /consolidation is NSE only — a day with commodity in it opens the report
+    // that shows both markets.
+    var dayHasCmx = !!(lastDayAgg && SESSION_TILES.some(function(t){ return t.cls === 'cmx' && lastDayAgg.byStrategy[t.key].t > 0; }));
+    lastHtml += tileWrap(totLive > totPaper ? '/live-consolidation' : (dayHasCmx ? '/consolidation-report' : '/consolidation'),
       'info', 'trade history',
       '<div class="da-tile-hdr">TOTAL<span class="da-pill">' + tTrades + 'T</span></div>' +
       '<div class="da-big ' + cls(tNet) + '">' + fmtINR(tNet) + '</div>' +
@@ -4307,8 +4315,10 @@ setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily 
       // setMode writes this through textContent, so it takes the character, not
       // the HTML entity — "&middot;" printed itself verbatim.
       setMode('live', 'Polling every 8s · ' + istDateISO());
+      // A COMMODITY tile carries its own status URL; its session sits under
+      // "monitor" in the same field names as the NSE strategies'.
       var liveResults = await Promise.all(SESSION_TILES.map(function(t){
-        return fetchJSON(LIVE_URLS[t.key]);
+        return fetchJSON(t.statusData || LIVE_URLS[t.key]).then(function(d){ return (d && d.monitor) ? d.monitor : d; });
       }));
       var liveData = {};
       SESSION_TILES.forEach(function(t, i){ liveData[t.key] = liveResults[i]; });
@@ -4318,13 +4328,15 @@ setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily 
       _pollTimer = setInterval(refresh, 8000);
     } else {
       setMode('post', 'Paper + Live combined · refreshed ' + istDateISO());
-      var [paper, live] = await Promise.all([
+      var [paper, live, cmx] = await Promise.all([
         fetchJSON('/consolidation/data?enabledOnly=1'),
         fetchJSON('/live-consolidation/data?enabledOnly=1'),
+        fetchJSON('/api/cmx/trades'),
       ]);
       // Tag each trade with the list it came from so a tile can link to the
-      // page that actually holds it (paper vs live).
-      var paperTrades = ((paper && paper.trades) || []).map(function(t){ t.__src = 'paper'; return t; });
+      // page that actually holds it (paper vs live). COMMODITY rows are paper.
+      var paperTrades = ((paper && paper.trades) || []).concat((cmx && cmx.trades) || [])
+        .map(function(t){ t.__src = 'paper'; return t; });
       var liveTrades  = ((live  && live.trades)  || []).map(function(t){ t.__src = 'live';  return t; });
       body.innerHTML = renderPostMarket(paperTrades, liveTrades);
 
