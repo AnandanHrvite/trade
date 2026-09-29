@@ -1776,7 +1776,15 @@ function onTick(tick) {
           _oiTag = ` | ${_oiIntra.reason}`;
         }
       }
-      if (!_oiIntraBlocked) {
+      // Capital pre-check — a refused entry must not pay for a symbol lookup and a
+      // Fyers quote on every tick of the bar. Same gate simulateBuy runs; muted
+      // repeats stay refused without re-logging.
+      const _capIntra = capitalPool.gate("ema_rsi_st_v2", getLotQty() * capitalPool.estimatedPremium(), { side, qty: getLotQty() }, { sim: ptState._simMode });
+      if (!_capIntra.ok && !_capIntra.muted) {
+        log(`❌ [PAPER] Intra-candle entry REFUSED — ${_capIntra.reason}`);
+        skipLogger.appendSkipLog("ema_rsi_st_v2", { gate: "capital", reason: _capIntra.reason, spot: ltp, side, signal, path: "intra-candle", cost: _capIntra.cost, available: _capIntra.available });
+      }
+      if (!_oiIntraBlocked && _capIntra.ok) {
       ptState._entryPending = true; // prevent double-fire while async symbol lookup runs
       // Safety: auto-reset after 4s in case of any unhandled error path
       const _ptIntraTimer = setTimeout(() => { if (ptState._entryPending) { ptState._entryPending = false; } }, 4000);
@@ -2586,7 +2594,7 @@ router.post("/manualEntry", async (req, res) => {
 
     log(`🖐️ [PAPER] MANUAL ENTRY ${side} by user @ spot ₹${spot} | SL: ₹${sarSL} | Symbol: ${symbol}`);
     simulateBuy(symbol, side, qty, spot, `Manual ${side} entry by user | SL=₹${sarSL}`, sarSL, spot, true);
-    if (!ptState.position) {
+    if (!ptState.position || !/^Manual/.test(String(ptState.position.reason || ""))) {
       // simulateBuy refused (capital gate, cooldown or protective-stop guard) — it
       // has already logged why. Never report a position that was not opened.
       return res.status(409).json({ success: false, error: "Entry refused — see the paper log for the reason" });

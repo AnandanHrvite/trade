@@ -145,8 +145,13 @@ for (const r of paperRoutes) {
   check(`${r.file}: runs the HARD gate and returns on refusal, before blocking`, () => {
     assert.ok(!/capitalPool\.check\(/.test(r.src), "still calls the advisory check()");
     assert.ok(!/taken anyway/.test(r.src), "still enters when the pool cannot fund the trade");
-    const gates = [...r.src.matchAll(/capitalPool\.gate\(/g)].map(m => m.index);
-    assert.ok(gates.length >= 1, "no capitalPool.gate() call");
+    // `const _cap = capitalPool.gate(` is an entry gate: it must return on refusal.
+    const gates = [...r.src.matchAll(/const _cap = capitalPool\.gate\(/g)].map(m => m.index);
+    assert.ok(gates.length >= 1, "no capitalPool.gate() entry gate");
+    // `_capIntra` is the intra-candle pre-check: it must keep the entry block shut.
+    if (/const _capIntra = capitalPool\.gate\(/.test(r.src)) {
+      assert.ok(/if \(!_oiIntraBlocked && _capIntra\.ok\) \{/.test(r.src), "intra-candle pre-check does not stop the entry path");
+    }
     for (const i of gates) {
       const after = r.src.slice(i, i + 1400);
       const blockAt = after.indexOf("capitalPool.block(");

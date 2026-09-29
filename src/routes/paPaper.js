@@ -1206,7 +1206,7 @@ router.post("/manualEntry", async (req, res) => {
     const qty = getLotQty();
     log(`🖐️ [PA-PAPER] MANUAL ENTRY ${side} @ spot ₹${spot} | SL: ₹${sl} (PrevCandle${prevCandle ? '=' + (side === 'CE' ? prevCandle.low : prevCandle.high) : ''})`);
     simulateBuy(symbol, side, qty, spot, `Manual ${side} entry`, sl, null, spot);
-    if (!state.position) {
+    if (!state.position || !/^Manual/.test(String(state.position.reason || ""))) {
       // simulateBuy refused (capital gate or a guard) — it has already logged why.
       return res.status(409).json({ success: false, error: "Entry refused — see the paper log for the reason" });
     }
