@@ -3698,7 +3698,10 @@ function _renderDashTotal(){
   var dot = document.getElementById('dashCumDot');
   if (dot) dot.style.background = _pnlColor(total);
   var link = document.getElementById('dashCumLink');
-  if (link) link.href = src === 'live' ? '/live-consolidation' : '/consolidation';
+  // With commodity in the paper total, "View" opens the report that shows both
+  // markets — /consolidation is NSE only.
+  if (link) link.href = src === 'live' ? '/live-consolidation'
+    : ((_dcData.cmx && _dcData.cmx.length) ? '/consolidation-report' : '/consolidation');
   var emptyEl = document.getElementById('dashCumEmpty');
   if (emptyEl) emptyEl.textContent = 'No ' + src + ' trades ' + (_dashRangeActive() ? 'in this range' : 'yet');
   if (_dcChart) { _dcChart.destroy(); _dcChart = null; }
@@ -3733,6 +3736,13 @@ async function loadDashCumCharts(){
     if (r.status === 401) _authLost();
     if (r.ok){ var d = await r.json(); _dcData.paper = (d && d.trades) || []; }
   } catch(_){ _dcData.paper = []; }
+  // COMMODITY paper trades count toward the paper total too. Fetched here and
+  // not read from CMX_MM_MODES: that is declared further down this script.
+  try {
+    var rc = await fetch('/api/cmx/trades', { cache: 'no-store' });
+    if (rc.ok){ var dc = await rc.json(); _dcData.cmx = (dc && dc.trades) || []; }
+  } catch(_){}
+  if (_dcData.cmx && _dcData.cmx.length) _dcData.paper = (_dcData.paper || []).concat(_dcData.cmx);
   try {
     var r2 = await fetch('/live-consolidation/data?enabledOnly=1', { cache: 'no-store' });
     if (r2.status === 401) _authLost();
