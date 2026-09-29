@@ -373,6 +373,9 @@ ${multiSelectCSS()}
     .tbl td.skip-col label{display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:28px;cursor:pointer;}
     .tbl tr.skipped td{opacity:0.38;text-decoration:line-through;}
     .tbl tr.skipped td.skip-col{opacity:1;text-decoration:none;}
+    .mkt-split{font-size:0.7rem;color:var(--muted-1,#8ba1c2);font-family:'IBM Plex Mono',monospace;margin:-6px 0 16px;display:flex;flex-wrap:wrap;gap:4px 0;}
+    .mkt-split i{font-style:normal;opacity:0.5;margin:0 10px;}
+    :root[data-theme="light"] .mkt-split{color:#4b5769!important;}
     .skip-note{font-size:0.56rem;color:var(--muted-1,#8ba1c2);font-family:'IBM Plex Mono',monospace;margin-top:8px;}
     .skip-note button{background:none;border:0.5px solid #17324f;color:var(--muted-1,#8ba1c2);border-radius:5px;padding:3px 8px;font-family:inherit;font-size:0.56rem;cursor:pointer;margin-left:8px;min-height:26px;}
     .skip-note button:hover{color:#38bdf8;border-color:#38bdf8;}
@@ -700,6 +703,16 @@ function render(){
   let h=head+'<div class="stat-grid">';
   for(const c of cards) h+='<div class="sc" style="--accent:'+c.a+'"><div class="sc-label">'+c.l+'</div><div class="sc-val" style="color:'+c.a+'">'+c.v+'</div><div class="sc-sub">'+c.sub+'</div></div>';
   h+='</div>';
+
+  // All view: show how the combined total splits by market, so it visibly
+  // differs from a single-market view before the per-market tables below.
+  if(f.mkt==='all'){
+    const split=GROUPS.map(G=>{
+      const g=keptArr.filter(t=>GROUP_OF[t.mode]===G);
+      return g.length ? '<span><b>'+esc(G)+'</b> '+g.length+' trade'+(g.length>1?'s':'')+' · <span style="color:'+pc(g.reduce((s,t)=>s+t.pnl,0))+'">'+inr(g.reduce((s,t)=>s+t.pnl,0))+'</span></span>' : '';
+    }).filter(Boolean);
+    if(split.length>1) h+='<div class="mkt-split">By market: '+split.join('<i>│</i>')+'</div>';
+  }
 
   // One Daily Breakdown table per market — NIFTY, BANK NIFTY, COMMODITY — each
   // with its own day rows and TOTAL. The cards above stay the all-market total.
