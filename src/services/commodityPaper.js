@@ -41,7 +41,7 @@ const { sendTelegram, canSend } = require("../utils/notify");
 
 const DATA_DIR = path.join(os.homedir(), "trading-data", "cmx");
 const MAX_CANDLES = 400;
-const LOG_MAX = 3000;   // a full MCX day of per-candle detail (~6 lines × ~170 candles)
+const LOG_MAX = 3000;   // a full MCX day of per-candle detail (~6 lines × ~170 candles); full copy via /status/log
 
 // ── small helpers ────────────────────────────────────────────────────────────
 function _mins(raw, def) {
@@ -488,10 +488,12 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
   // what it did, so a day can be analysed from the log alone.
   function logCandle(bar, sig, winOk) {
     const f = (v) => (Number.isFinite(v) ? r2(v) : "?");
-    log(`📊 ──── Candle close ${istClock(bar.time * 1000).slice(0, 5)} ────`);
+    const resSec = cfg().res * 60;
+    log(`📊 ──── Candle ${istClock(bar.time * 1000).slice(0, 5)}–${istClock((bar.time + resSec) * 1000).slice(0, 5)} closed ────`);
     log(`   OHLC: O=${bar.open} H=${bar.high} L=${bar.low} C=${bar.close} | body=${f(Math.abs(bar.close - bar.open))}`);
     log(`   EMA20=${f(sig.ema20)} EMA50=${f(sig.ema50)} | RSI=${f(sig.rsi)} | ST=${f(sig.supertrend)}(${sig.stTrend || "?"})`);
-    const blockNote = !state.position && (sig.signal === "BUY_CE" || sig.signal === "BUY_PE")
+    // Only where onBarClose would check it anyway — entryBlock can latch state.halted.
+    const blockNote = winOk && !state.position && (sig.signal === "BUY_CE" || sig.signal === "BUY_PE")
       ? (entryBlock(sig.signal === "BUY_CE" ? "CE" : "PE") || "") : "";
     log(`   Signal: ${sig.signal || "NONE"}${winOk ? "" : " | outside entry window"}${blockNote ? " | blocked: " + blockNote : ""} | ${sig.reason || "—"}`);
     const pos = state.position;
@@ -708,7 +710,7 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
       lastSignal: state.lastSignal, lastError: state.lastError, candles: state.candles.length,
       prevBar: state.candles.length ? state.candles[state.candles.length - 1] : null,
       consecLosses: state.consecLosses, consecLimit: A.consecLimit(), startedAt: state.startedAt || null,
-      logs: state.logs.slice(), history: days.slice(0, 60).map(([day, d]) => ({ day, trades: (d.trades || []).length, pnl: d.pnl })),
+      logs: state.logs.slice(-300), logTotal: state.logs.length, history: days.slice(0, 60).map(([day, d]) => ({ day, trades: (d.trades || []).length, pnl: d.pnl })),
       allTime,
     };
   }
@@ -790,7 +792,9 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     start().then((res) => { if (!res.ok) log(`⚠️ Auto-start failed: ${res.reason}`); });
   }, 30000).unref();
 
-  return { start, stop, reset, deleteDay, snapshot, manualExit, manualEntry, chartData, historyDays, state };
+  function fullLog() { return state.logs.join("\n"); }
+
+  return { start, stop, reset, deleteDay, snapshot, fullLog, manualExit, manualEntry, chartData, historyDays, state };
 }
 
 module.exports = { createEngine };

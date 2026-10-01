@@ -7,6 +7,7 @@
  *   GET /status/fragment  the live parts of the page, JSON {top, bottom} (polled every 4 s)
  *   GET /status/data      JSON snapshot
  *   GET /status/chart-data candles + overlays + markers for the chart
+ *   GET /status/log       the whole in-memory day log, plain text
  *   GET /history          every recorded day (?date=YYYY-MM-DD opens one)
  *   GET /start · /stop · /exit · /manual?side=CE|PE · /reset
  */
@@ -131,8 +132,8 @@ function createCommodityPaperRouter({ engine, base, navKey, title, icon, rulesTe
     : `<div class="cx-muted">No history yet.</div>`}
 </div>
 <div class="cx-card">
-  <div class="cx-h">Activity log</div>
-  <pre class="cx-log">${s.logs.length ? s.logs.slice(-300).reverse().map(esc).join("\n") : "Nothing yet — press Start."}</pre>
+  <div class="cx-h">Activity log <a class="cx-a" style="float:right;text-transform:none;" href="${base}/status/log" target="_blank">Full day log (${s.logTotal} lines) →</a></div>
+  <pre class="cx-log">${s.logs.length ? s.logs.slice().reverse().map(esc).join("\n") : "Nothing yet — press Start."}</pre>
 </div>`;
   }
 
@@ -178,6 +179,8 @@ function createCommodityPaperRouter({ engine, base, navKey, title, icon, rulesTe
     res.json({ top: topFragment(s), bottom: bottomFragment(s) });
   });
   router.get("/status/chart-data", (req, res) => res.json(engine.chartData()));
+  // The whole in-memory day log as plain text, oldest first — for copy/analysis.
+  router.get("/status/log", (req, res) => res.type("text/plain; charset=utf-8").send(engine.fullLog()));
 
   router.get("/status", (req, res) => {
     const s = engine.snapshot();
@@ -391,8 +394,8 @@ function monitorView(s) {
     lastTickPrice: s.futLtp,
     lastTickTime: s.lastQuoteAt ? ist(s.lastQuoteAt) : "",
     feedNote: "MCX quote poll",
-    logs: s.logs.slice().reverse(),
-    logTotal: s.logs.length,
+    logs: s.logs.slice(-100).reverse(),
+    logTotal: s.logTotal,
     position: p ? {
       side: p.side, symbol: p.symbol,
       qty: `${p.lots} lot (${p.lots * p.multiplier} units)`,

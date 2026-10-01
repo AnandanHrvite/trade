@@ -706,7 +706,10 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
             exitReason = floorPts > _PL_FLOOR_SPOT_PTS
               ? `Profit lock trail ${_PL_TRAIL_PCT}% (≈${floorPts.toFixed(0)}pt spot kept of ${bestFav.toFixed(0)}pt best)`
               : `Profit lock +${_PL_FLOOR_PCT}% (≈${_PL_FLOOR_SPOT_PTS.toFixed(0)}pt spot, armed at +${_PL_ARM_PCT}%)`;
-            exitPrice  = quantize(floorLvl, 2);
+            // A bar that OPENS past the floor fills at the open, like the SL rule
+            // above — the trailed floor sits close to price, so gaps are common.
+            const gapped = position.side === "CE" ? candle.open < floorLvl : candle.open > floorLvl;
+            exitPrice  = quantize(gapped ? candle.open : floorLvl, 2);
           }
         }
       }
