@@ -132,7 +132,7 @@ function createCommodityPaperRouter({ engine, base, navKey, title, icon, rulesTe
 </div>
 <div class="cx-card">
   <div class="cx-h">Activity log</div>
-  <pre class="cx-log">${s.logs.length ? s.logs.slice().reverse().map(esc).join("\n") : "Nothing yet — press Start."}</pre>
+  <pre class="cx-log">${s.logs.length ? s.logs.slice(-300).reverse().map(esc).join("\n") : "Nothing yet — press Start."}</pre>
 </div>`;
   }
 

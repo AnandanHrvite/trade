@@ -41,7 +41,7 @@ const { sendTelegram, canSend } = require("../utils/notify");
 
 const DATA_DIR = path.join(os.homedir(), "trading-data", "cmx");
 const MAX_CANDLES = 400;
-const LOG_MAX = 400;
+const LOG_MAX = 3000;   // a full MCX day of per-candle detail (~6 lines × ~170 candles)
 
 // ── small helpers ────────────────────────────────────────────────────────────
 function _mins(raw, def) {
@@ -414,6 +414,7 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
       state.oppCooldown = { side: pos.side, until: Date.now() + A.oppCooldownCandles() * resMs };
     }
     log(`${pnl >= 0 ? "💰" : "🔻"} EXIT ${pos.side} ${pos.symbol} @ ₹${prem} | ${reason} | P&L ₹${pnl} (gross ₹${gross}) | day ₹${state.sessionPnl}`);
+    log(`   Trade detail: fut ${pos.spotAtEntry} → ${spotExit} | premium ₹${pos.optionEntryLtp} → ₹${prem} (best ₹${pos.bestOptionLtp}) | MFE=${r2(pos.mfe || 0)} MAE=${r2(pos.mae || 0)} | held ${pos.candlesHeld} candles | SL ${pos.initialStopLoss} → ${pos.stopLoss} | lock ${pos.lockArmedAt ? "armed" : "never armed"}`);
     if (modeOn()) tg("TG_CMX_EXIT", [
       `🛢 ${label} PAPER — EXIT`, ``,
       pos.side === "CE" ? "📈 CALL (CE)" : "📉 PUT (PE)",
@@ -439,6 +440,7 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     state.lastSignal = { at: bar.time, signal: sig.signal, reason: winOk ? sig.reason : `outside entry window (${sig.reason || ""})`, close: bar.close };
 
     if (state.armed && state.armed.armedBarTime !== bar.time) state.armed = null;   // confirm window passed
+    logCandle(bar, sig, winOk);
 
     const pos = state.position;
     if (pos) {
@@ -468,6 +470,45 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     }
   }
 
+  // Profit-lock / breakeven state of an open position, for the logs.
+  function lockStatus(pos) {
+    const e = pos.optionEntryLtp, best = pos.bestOptionLtp;
+    if (!e || !tradeGuards.PROFIT_LOCK_ENABLED) return "lock off";
+    const armLtp = r2(e * (1 + tradeGuards.PROFIT_LOCK_ARM_PCT / 100));
+    if (!best || best < armLtp) {
+      const be = A.usesBreakevenStop && tradeGuards.BREAKEVEN_STOP_ENABLED
+        && best >= e * (1 + tradeGuards.BREAKEVEN_ARM_PCT / 100) ? " | breakeven armed @ ₹" + e : "";
+      return `lock not armed (arms at ₹${armLtp}, +${tradeGuards.PROFIT_LOCK_ARM_PCT}%)${be}`;
+    }
+    const floor = tradeGuards.profitLockFloorLtp(e, best, tradeGuards.PROFIT_LOCK_FLOOR_PCT, tradeGuards.PROFIT_LOCK_TRAIL_PCT);
+    return `lock ARMED — floor ₹${floor} (trail ${tradeGuards.PROFIT_LOCK_TRAIL_PCT}% of gain)`;
+  }
+
+  // One detailed block per candle close — what the engine saw and why it did
+  // what it did, so a day can be analysed from the log alone.
+  function logCandle(bar, sig, winOk) {
+    const f = (v) => (Number.isFinite(v) ? r2(v) : "?");
+    log(`📊 ──── Candle close ${istClock(bar.time * 1000).slice(0, 5)} ────`);
+    log(`   OHLC: O=${bar.open} H=${bar.high} L=${bar.low} C=${bar.close} | body=${f(Math.abs(bar.close - bar.open))}`);
+    log(`   EMA20=${f(sig.ema20)} EMA50=${f(sig.ema50)} | RSI=${f(sig.rsi)} | ST=${f(sig.supertrend)}(${sig.stTrend || "?"})`);
+    const blockNote = !state.position && (sig.signal === "BUY_CE" || sig.signal === "BUY_PE")
+      ? (entryBlock(sig.signal === "BUY_CE" ? "CE" : "PE") || "") : "";
+    log(`   Signal: ${sig.signal || "NONE"}${winOk ? "" : " | outside entry window"}${blockNote ? " | blocked: " + blockNote : ""} | ${sig.reason || "—"}`);
+    const pos = state.position;
+    if (pos) {
+      const dir = pos.side === "CE" ? 1 : -1;
+      const gap = Number.isFinite(pos.stopLoss) ? f((bar.close - pos.stopLoss) * dir) : "?";
+      log(`   Open ${pos.side} @ fut ${pos.spotAtEntry} | SL=${pos.stopLoss} (gap=${gap}) | best fut=${pos.bestPrice} | MFE=${f(pos.mfe || 0)} MAE=${f(pos.mae || 0)} | held ${pos.candlesHeld} candles`);
+      if (state.optLtp) {
+        const units = pos.multiplier * pos.lots;
+        const d = r2(state.optLtp - pos.optionEntryLtp);
+        log(`   Option: entry=₹${pos.optionEntryLtp} now=₹${state.optLtp} best=₹${pos.bestOptionLtp} (Δ₹${d} × ${units} = ₹${r2(d * units)} gross) | ${lockStatus(pos)}`);
+      } else {
+        log(`   Option: no live premium yet — profit lock cannot be checked`);
+      }
+    }
+  }
+
   // ── per-poll price checks ──────────────────────────────────────────────────
   async function onPrice(fut) {
     const c = cfg();
@@ -493,6 +534,11 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     pos.mae = Math.min(pos.mae || 0, r2(fav));
     if (state.optLtp && state.optLtp > (pos.bestOptionLtp || 0)) pos.bestOptionLtp = state.optLtp;
     if (pos.side === "CE" ? fut > pos.bestPrice : fut < pos.bestPrice) pos.bestPrice = fut;
+    if (!pos.lockArmedAt && tradeGuards.PROFIT_LOCK_ENABLED && pos.optionEntryLtp
+        && pos.bestOptionLtp >= pos.optionEntryLtp * (1 + tradeGuards.PROFIT_LOCK_ARM_PCT / 100)) {
+      pos.lockArmedAt = new Date().toISOString();
+      log(`🔒 Profit lock ARMED — premium ₹${pos.bestOptionLtp} ≥ +${tradeGuards.PROFIT_LOCK_ARM_PCT}% of entry ₹${pos.optionEntryLtp} | ${lockStatus(pos)}`);
+    }
 
     if (state.optLtp) {
       const lock = tradeGuards.checkProfitLock(pos.optionEntryLtp, state.optLtp, pos.bestOptionLtp)
@@ -662,7 +708,7 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
       lastSignal: state.lastSignal, lastError: state.lastError, candles: state.candles.length,
       prevBar: state.candles.length ? state.candles[state.candles.length - 1] : null,
       consecLosses: state.consecLosses, consecLimit: A.consecLimit(), startedAt: state.startedAt || null,
-      logs: state.logs.slice(-150), history: days.slice(0, 60).map(([day, d]) => ({ day, trades: (d.trades || []).length, pnl: d.pnl })),
+      logs: state.logs.slice(), history: days.slice(0, 60).map(([day, d]) => ({ day, trades: (d.trades || []).length, pnl: d.pnl })),
       allTime,
     };
   }
