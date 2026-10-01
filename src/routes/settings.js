@@ -1481,8 +1481,21 @@ const _KEY_TO_MODES = new Map();
   }
 })();
 
+// Commodity modes (cmx_<commodity>_<base>) run the base strategy's signal rules
+// with the COMMODITY section's timing/size/guards, so their settings are both.
+// Derived from the id, so a new commodity copy of any strategy works unedited.
+const CMX_SECTION_TITLE = "COMMODITY (MCX crude / gold / silver) — EMA_RSI_ST + EMA_RSI_ST_V2, paper only";
+function _cmxModeKeys(mode) {
+  const m = /^cmx_[a-z]+_(.+)$/.exec(mode);
+  if (!m) return null;
+  const section = SETTINGS_SCHEMA.find(s => s.section === CMX_SECTION_TITLE);
+  const keys = new Set(_MODE_KEYS[m[1]] || []);
+  if (section) for (const f of section.fields) keys.add(f.key);
+  return keys;
+}
+
 function buildModeSnapshot(mode) {
-  const keys = _MODE_KEYS[mode];
+  const keys = _MODE_KEYS[mode] || _cmxModeKeys(mode);
   if (!keys) return null;
   const settings = {};
   for (const k of keys) {

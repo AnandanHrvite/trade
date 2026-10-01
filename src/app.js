@@ -1235,6 +1235,7 @@ app.use("/ema_rsi_st-live",      require("./routes/emaRsiStLive"));
 app.use("/tracker",    require("./routes/manualTracker"));
 app.use("/logs",       require("./routes/logs"));       // ← live log viewer
 app.use("/trade-logs", require("./routes/tradeLogs"));  // ← per-trade JSONL viewer + settings checkpoints
+app.use("/mcp-data",   require("./routes/mcpData"));    // ← read-only JSON for the trade-results MCP (all markets)
 app.use("/cache-files", require("./routes/cacheFiles")); // ← cache / generated-file browser (caches, ticks, replay outputs)
 app.use("/sync",        require("./routes/sync"));       // ← EC2→local data sync (download tar.gz)
 app.use("/token-sync",  require("./routes/tokenSync"));  // ← copy broker token from LIVE → paste on a laptop

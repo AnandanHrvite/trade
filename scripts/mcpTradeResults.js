@@ -7,10 +7,13 @@
  * BB_RSI do last week?" without anyone opening a dashboard or pasting JSONL.
  *
  * Two sources, same tools (see the source block below): the running app on EC2 via
- * its /trade-logs API when TRADE_MCP_URL is set — which is the point, since the real
+ * its /mcp-data API when TRADE_MCP_URL is set — which is the point, since the real
  * trades live on the box — or this machine's ~/trading-data/ when it isn't.
  *
- * It is READ-ONLY by construction: it requires tradeLogger/aiExport, calls only GET
+ * Covers NIFTY, BANKNIFTY and COMMODITY strategies. The mode list is discovered
+ * (utils/tradeSources), never hard-coded, so a new strategy needs no edit here.
+ *
+ * It is READ-ONLY by construction: it requires tradeSources/aiExport, calls only GET
  * endpoints, and loads no broker module. It cannot place, modify or cancel an order,
  * nor start or stop a session. Keep it that way.
  *
@@ -30,16 +33,16 @@ const crypto = require("crypto");
 const https = require("https");
 const http = require("http");
 const { URL } = require("url");
-const tradeLogger = require("../src/utils/tradeLogger");
+const tradeSources = require("../src/utils/tradeSources");
 const aiExport = require("../src/utils/aiExport");
 
 const PROTOCOL_VERSION = "2024-11-05";
-const MODES = Object.keys(tradeLogger.DAILY_PREFIX_BY_MODE);
+const MARKETS = ["NIFTY", "BANKNIFTY", "COMMODITY"];
 
 // ---------------------------------------------------------------- source
 //
 // Two sources, same tools. Set TRADE_MCP_URL to read the running app (EC2)
-// over its /trade-logs API; leave it unset to read this machine's
+// over its /mcp-data API; leave it unset to read this machine's
 // ~/trading-data/ directly. The remote source is what makes this useful — the
 // real trades live on the box, not on the laptop.
 //
@@ -133,39 +136,48 @@ function getJson(pathAndQuery) {
 }
 
 /**
- * Dates that have logs for a mode, newest first. Local disk or remote app.
+ * Every known mode, [{ mode, market }]. Read fresh on each call so a strategy
+ * added (or a commodity book created) while the server runs is picked up.
  *
- * The remote shape is `{ rows: [{date, ...}] }` — see /trade-logs/list. Don't
- * add fallbacks for other key names: guessing fails SILENTLY (an unrecognised
- * shape yields []), and "no dates" reads as "this strategy never traded",
- * which is a wrong answer rather than an error. Throw instead.
+ * Remote shapes are fixed by routes/mcpData.js. Don't add fallbacks for other
+ * key names: an unrecognised shape would read as "no trades", which is a wrong
+ * answer rather than an error. Throw instead.
  */
-async function sourceDates(mode) {
-  if (!REMOTE) return tradeLogger.listDailyDates(mode).map((d) => d.date);
-  // No ?page → the route returns every date unpaged (parsePaging returns null
-  // only when `page` is absent), so a long history is never truncated.
-  const j = await getJson(`/trade-logs/list?mode=${encodeURIComponent(mode)}`);
-  if (!j || !Array.isArray(j.rows)) {
-    throw new Error(`/trade-logs/list?mode=${mode} returned no "rows" array — is ${REMOTE_URL} this app?`);
+async function sourceModes() {
+  if (!REMOTE) return tradeSources.listModes();
+  const j = await getJson("/mcp-data/modes");
+  if (!j || !Array.isArray(j.modes)) {
+    throw new Error(`/mcp-data/modes returned no "modes" array — is ${REMOTE_URL} this app, deployed with /mcp-data?`);
   }
-  return j.rows.map((r) => r && r.date).filter(Boolean);
+  return j.modes;
 }
 
-/**
- * Raw records (trades AND settings snapshots) for one mode+date.
- * Remote shape is `{ trades: [...] }`; same reasoning as above about not
- * guessing at alternative keys.
- */
+/** Dates that have logs for a mode, newest first. */
+async function sourceDates(mode) {
+  if (!REMOTE) return tradeSources.listDates(mode);
+  const j = await getJson(`/mcp-data/dates?mode=${encodeURIComponent(mode)}`);
+  if (!j || !Array.isArray(j.dates)) throw new Error(`/mcp-data/dates?mode=${mode} returned no "dates" array`);
+  return j.dates;
+}
+
+/** Raw records (trades AND settings snapshots) for one mode+date. */
 async function sourceRecords(mode, date) {
-  if (!REMOTE) return tradeLogger.readDailyTrades(mode, date);
-  // Same rule as above: omit ?page and /view returns the whole day.
+  if (!REMOTE) return tradeSources.readRecords(mode, date);
   const j = await getJson(
-    `/trade-logs/view?mode=${encodeURIComponent(mode)}&date=${encodeURIComponent(date)}`
+    `/mcp-data/records?mode=${encodeURIComponent(mode)}&date=${encodeURIComponent(date)}`
   );
-  if (!j || !Array.isArray(j.trades)) {
-    throw new Error(`/trade-logs/view?mode=${mode}&date=${date} returned no "trades" array`);
+  if (!j || !Array.isArray(j.records)) throw new Error(`/mcp-data/records?mode=${mode}&date=${date} returned no "records" array`);
+  return j.records;
+}
+
+/** The settings in force right now. Needs the running app — it owns the settings map. */
+async function sourceSettings(mode) {
+  if (!REMOTE) {
+    throw new Error("current settings come from the running app — set TRADE_MCP_URL. For a past day use get_settings_snapshot.");
   }
-  return j.trades;
+  const j = await getJson(`/mcp-data/settings?mode=${encodeURIComponent(mode)}`);
+  if (!j || !j.settings || typeof j.settings !== "object") throw new Error(`/mcp-data/settings?mode=${mode} returned no "settings" object`);
+  return j.settings;
 }
 
 // ---------------------------------------------------------------- helpers
@@ -174,10 +186,19 @@ const num = (v) => (typeof v === "number" && isFinite(v) ? v : Number(v) || 0);
 const r2 = (v) => Math.round(num(v) * 100) / 100;
 
 /** Validate a mode name up front so every tool reports the same clear error. */
-function assertMode(mode) {
-  if (!MODES.includes(mode)) {
-    throw new Error(`unknown mode "${mode}". Known modes: ${MODES.join(", ")}`);
+async function assertMode(mode) {
+  const modes = (await sourceModes()).map((m) => m.mode);
+  if (!modes.includes(mode)) {
+    throw new Error(`unknown mode "${mode}". Known modes: ${modes.join(", ")}`);
   }
+}
+
+/** Modes for one market, or all of them when market is omitted. */
+async function modesIn(market) {
+  if (market != null && !MARKETS.includes(market)) {
+    throw new Error(`unknown market "${market}". Known markets: ${MARKETS.join(", ")}`);
+  }
+  return (await sourceModes()).filter((m) => !market || m.market === market);
 }
 
 /**
@@ -197,8 +218,9 @@ function assertDate(date) {
  * Dates absent from disk are skipped silently — a day with no session is not an
  * error. settings_snapshot lines are filtered out; only real trades come back.
  */
-async function readRange(mode, from, to) {
-  assertMode(mode);
+async function readRange(mode, from, to, { modeChecked = false } = {}) {
+  // compare_modes passes modes it just listed — skip the extra lookup per mode.
+  if (!modeChecked) await assertMode(mode);
   // from/to are optional, but a malformed one would silently filter everything
   // out and read as "no trades" — reject it instead.
   if (from != null) assertDate(from);
@@ -259,14 +281,19 @@ const TOOLS = [
   {
     name: "list_modes",
     description:
-      "List every strategy whose trade results are on disk, with how many days of logs each has and its newest date. Call this first to learn valid mode names.",
-    inputSchema: { type: "object", properties: {}, additionalProperties: false },
-    async handler() {
+      "List every strategy (NIFTY, BANKNIFTY and COMMODITY) with its market, how many days of logs it has and its newest date. Call this first to learn valid mode names. Commodity modes are cmx_<commodity>_<strategy>.",
+    inputSchema: {
+      type: "object",
+      properties: { market: { type: "string", enum: MARKETS, description: "Only this market. Omit for all." } },
+      additionalProperties: false,
+    },
+    async handler({ market }) {
       const rows = [];
-      for (const mode of MODES) {
+      for (const { mode, market: mk } of await modesIn(market)) {
         const dates = await sourceDates(mode);
         rows.push({
           mode,
+          market: mk,
           days: dates.length,
           latest: dates.length ? dates[0] : null,
           earliest: dates.length ? dates[dates.length - 1] : null,
@@ -288,7 +315,7 @@ const TOOLS = [
       additionalProperties: false,
     },
     async handler({ mode }) {
-      assertMode(mode);
+      await assertMode(mode);
       return { mode, dates: await sourceDates(mode) };
     },
   },
@@ -349,32 +376,33 @@ const TOOLS = [
   {
     name: "compare_modes",
     description:
-      "Compare every strategy's results over the same date range, best net P&L first. Use to answer which strategy is performing best.",
+      "Compare every strategy's results over the same date range, best net P&L first. Use to answer which strategy is performing best. Optionally limit to one market.",
     inputSchema: {
       type: "object",
       properties: {
         from: { type: "string", description: "Start date YYYY-MM-DD." },
         to: { type: "string", description: "End date YYYY-MM-DD." },
+        market: { type: "string", enum: MARKETS, description: "Only this market. Omit for all." },
       },
       additionalProperties: false,
     },
-    async handler({ from, to }) {
+    async handler({ from, to, market }) {
       const rows = [];
-      for (const mode of MODES) {
-        const trades = await readRange(mode, from, to);
+      for (const { mode, market: mk } of await modesIn(market)) {
+        const trades = await readRange(mode, from, to, { modeChecked: true });
         // Strategies that did not trade in the window add only noise.
         if (!trades.length) continue;
-        rows.push({ mode, ...statsOf(trades) });
+        rows.push({ mode, market: mk, ...statsOf(trades) });
       }
       rows.sort((a, b) => b.net - a.net);
-      return { from: from || null, to: to || null, modes: rows };
+      return { from: from || null, to: to || null, market: market || null, modes: rows };
     },
   },
 
   {
     name: "get_settings_snapshot",
     description:
-      "Return the settings that were in force for a strategy on a given day, as recorded in that day's log. Use to check which config produced a day's results.",
+      "Return the settings that were in force for a strategy on a given day, as recorded in that day's log. Use to check which config produced a day's results. Commodity logs record no snapshots — use get_current_settings for those.",
     inputSchema: {
       type: "object",
       properties: {
@@ -385,7 +413,7 @@ const TOOLS = [
       additionalProperties: false,
     },
     async handler({ mode, date }) {
-      assertMode(mode);
+      await assertMode(mode);
       assertDate(date);
       const { snapshots } = aiExport.splitRecords(await sourceRecords(mode, date));
       return {
@@ -404,6 +432,22 @@ const TOOLS = [
   },
 
   {
+    name: "get_current_settings",
+    description:
+      "Return the settings a strategy is using right now on the running app (any market, including commodity). Needs TRADE_MCP_URL.",
+    inputSchema: {
+      type: "object",
+      properties: { mode: { type: "string", description: "Strategy key, e.g. cmx_gold_ema_rsi_st." } },
+      required: ["mode"],
+      additionalProperties: false,
+    },
+    async handler({ mode }) {
+      await assertMode(mode);
+      return { mode, settings: await sourceSettings(mode) };
+    },
+  },
+
+  {
     name: "export_markdown",
     description:
       "Render a strategy's trades over a date range as the app's AI-friendly Markdown report (summary + field legend + settings + trade tables). Use when you want the full annotated record rather than raw JSON.",
@@ -418,7 +462,7 @@ const TOOLS = [
       additionalProperties: false,
     },
     async handler({ mode, from, to }) {
-      assertMode(mode);
+      await assertMode(mode);
       if (from != null) assertDate(from);
       if (to != null) assertDate(to);
       const dates = (await sourceDates(mode))
@@ -460,7 +504,7 @@ function handle(msg) {
       return reply(id, {
         protocolVersion: PROTOCOL_VERSION,
         capabilities: { tools: {} },
-        serverInfo: { name: "trade-results", version: "1.0.0" },
+        serverInfo: { name: "trade-results", version: "1.1.0" },
       });
 
     case "notifications/initialized":

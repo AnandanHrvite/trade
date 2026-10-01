@@ -124,6 +124,11 @@ function setSettingsProvider(fn) {
   _snapshotProvider = typeof fn === "function" ? fn : null;
 }
 
+/** Current settings for a mode via the registered provider; null if none. */
+function getSettingsSnapshot(mode) {
+  return _snapshotProvider ? _snapshotProvider(mode) : null;
+}
+
 function _writeSnapshotLineSync(mode, dateStr, obj) {
   try {
     fs.appendFileSync(dailyFilePathFor(mode, dateStr), JSON.stringify(obj) + "\n");
@@ -232,6 +237,7 @@ module.exports = {
   appendTradeLog,
   appendSettingsSnapshot,
   setSettingsProvider,
+  getSettingsSnapshot,
   filePathFor,
   dailyFilePathFor,
   listDailyDates,
