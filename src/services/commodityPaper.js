@@ -242,7 +242,7 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
 
   const state = {
     running: false, starting: false, res: null, day: null, series: null, candles: [], lastBarTime: null,
-    futLtp: null, optLtp: null, lastQuoteAt: null, nextCandleAt: 0,
+    futLtp: null, optLtp: null, lastQuoteAt: null, nextCandleAt: 0, formingBar: null,
     position: null, armed: null, trades: [], sessionPnl: 0,
     consecLosses: 0, halted: null, slPauseUntil: { CE: 0, PE: 0 }, oppCooldown: null,
     lastSignal: null, lastError: null, logs: [], seenQuoteAt: 0, manualStopDay: null,
@@ -594,6 +594,11 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
       if (fq && fq.at > state.seenQuoteAt) {
         state.seenQuoteAt = fq.at;
         state.futLtp = fq.lp; state.lastQuoteAt = fq.at;
+        // The candle still forming, from the live quotes — display only.
+        const bucket = Math.floor(fq.at / 1000 / (c.res * 60)) * c.res * 60;
+        const fb = state.formingBar;
+        if (!fb || fb.time !== bucket) state.formingBar = { time: bucket, open: fq.lp, high: fq.lp, low: fq.lp, close: fq.lp };
+        else { fb.high = Math.max(fb.high, fq.lp); fb.low = Math.min(fb.low, fq.lp); fb.close = fq.lp; }
         if (nowMin >= c.sessStart) await onPrice(state.futLtp);
       } else if (hub.lastErr) noteError(hub.lastErr);
     } catch (err) {
@@ -709,6 +714,7 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
       trades: state.trades, sessionPnl: state.sessionPnl, halted: state.halted,
       lastSignal: state.lastSignal, lastError: state.lastError, candles: state.candles.length,
       prevBar: state.candles.length ? state.candles[state.candles.length - 1] : null,
+      formingBar: state.running ? state.formingBar : null,
       consecLosses: state.consecLosses, consecLimit: A.consecLimit(), startedAt: state.startedAt || null,
       logs: state.logs.slice(-300), logTotal: state.logs.length, history: days.slice(0, 60).map(([day, d]) => ({ day, trades: (d.trades || []).length, pnl: d.pnl })),
       allTime,
