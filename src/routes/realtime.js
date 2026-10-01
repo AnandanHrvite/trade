@@ -1261,8 +1261,13 @@ function nseStartWindow() {
 }
 function renderNseStart(all) {
   const btn = document.getElementById('nse-start');
-  if (!btn || nseBusy) return;
   const nseRunning = STRATEGY_KEYS.some(k => PAPER_ONLY.indexOf(k) === -1 && all[k] && all[k].running);
+  // Stop NIFTY stays up all through market hours (it is the panic button, and
+  // this tab cannot see the other mode). After the 15:30 close it hides once
+  // nothing NSE runs here, so a commodity-only evening shows only Stop Commodity.
+  const stop = document.getElementById('stop-nse');
+  if (stop && !stopBusy) stop.hidden = !nseRunning && !nseStartWindow();
+  if (!btn || nseBusy) return;
   btn.hidden = mode === 'LIVE' || nseRunning || !nseStartWindow();
 }
 async function startAllNse() {
