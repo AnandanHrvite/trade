@@ -37,6 +37,7 @@ const fyers        = require("../config/fyers");
 const mcx          = require("./mcxContracts");
 const tradeGuards  = require("../utils/tradeGuards");
 const confirmCandle = require("../utils/confirmCandle");
+const { sendTelegram, canSend } = require("../utils/notify");
 
 const DATA_DIR = path.join(os.homedir(), "trading-data", "cmx");
 const MAX_CANDLES = 400;
@@ -58,6 +59,13 @@ function istDow(ms = Date.now()) { return new Date(ms + 19800000).getUTCDay(); }
 function istClock(ms = Date.now()) { return new Date(ms + 19800000).toISOString().slice(11, 19); }
 function fmtMins(m) { return String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0"); }
 function r2(n) { return Math.round(n * 100) / 100; }
+
+// Telegram — plain sendTelegram, NOT notifyEntry/notifyExit: those also fire the
+// NIFTY live-order hooks, and a commodity paper trade must never reach them.
+function tg(key, lines) {
+  if (!canSend(key)) return;
+  sendTelegram(lines.filter((l) => l != null).join("\n")).catch(() => {});
+}
 
 // ── shared quote hub ─────────────────────────────────────────────────────────
 // Engines declare which symbols they need and how urgently; one getQuotes call
@@ -364,6 +372,17 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     persistPosition();
     hubNeed(id, [state.series.future, opt.symbol], true);
     log(`✅ BUY ${side} ${opt.symbol} @ ₹${premium} × ${c.lots} lot (${u.multiplier * c.lots} units) | fut ${spot} | SL ${fix.stopLoss} | ${how}`);
+    if (modeOn()) tg("TG_CMX_ENTRY", [
+      `🛢 ${label} PAPER — ENTRY`, ``,
+      side === "CE" ? "📈 CALL (CE)" : "📉 PUT (PE)",
+      `Symbol : ${opt.symbol}`,
+      `Strike: ${opt.strike}  |  Expiry: ${opt.expiry || "—"}`, ``,
+      `Future @ Entry : ₹${spot}`,
+      `Option Premium : ₹${premium}`,
+      `Stop Loss      : ${fix.stopLoss != null ? "₹" + fix.stopLoss : "—"}`,
+      `Qty / Lots     : ${u.multiplier * c.lots} (${c.lots} lot)`, ``,
+      `Reason : ${state.position.reason || "—"}`,
+    ]);
   }
 
   async function exit(reason, spotExit, { slHit = false } = {}) {
@@ -395,6 +414,18 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
       state.oppCooldown = { side: pos.side, until: Date.now() + A.oppCooldownCandles() * resMs };
     }
     log(`${pnl >= 0 ? "💰" : "🔻"} EXIT ${pos.side} ${pos.symbol} @ ₹${prem} | ${reason} | P&L ₹${pnl} (gross ₹${gross}) | day ₹${state.sessionPnl}`);
+    if (modeOn()) tg("TG_CMX_EXIT", [
+      `🛢 ${label} PAPER — EXIT`, ``,
+      pos.side === "CE" ? "📈 CALL (CE)" : "📉 PUT (PE)",
+      `Symbol : ${pos.symbol}`, ``,
+      `Future @ Entry : ₹${pos.spotAtEntry}`,
+      `Future @ Exit  : ₹${spotExit}`,
+      `Premium @ Entry: ₹${pos.optionEntryLtp}`,
+      `Premium @ Exit : ₹${prem}`, ``,
+      `PnL (net)      : ₹${pnl}  ${pnl >= 0 ? "🟢" : "🔴"}`,
+      `Day PnL        : ₹${state.sessionPnl}`, ``,
+      `Exit Reason    : ${reason}`,
+    ]);
   }
 
   // ── candle close ───────────────────────────────────────────────────────────
@@ -561,6 +592,14 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     persistRunning();
     log(`▶️ ${resumed ? "Resumed" : "Started"} ${label} — signal ${state.series.future} (${c.res}m, ${state.candles.length} warm-up candles) · options expire ${state.series.optionExpiry} · entries ${fmtMins(c.entryStart)}–${fmtMins(c.entryEnd)} · exit ${fmtMins(c.eodExit)}`);
     timer = setInterval(loop, 1000);
+    if (modeOn()) tg("TG_CMX_STARTED", [
+      `🛢 ${label} PAPER — ${resumed ? "RESUMED" : "STARTED"}`, ``,
+      `Signal  : ${state.series.future} (${c.res}m)`,
+      `Options : expire ${state.series.optionExpiry}`,
+      `Entries : ${fmtMins(c.entryStart)} → ${fmtMins(c.entryEnd)} IST · exit ${fmtMins(c.eodExit)}`,
+      `Max Loss: ₹${c.maxLoss} | Max Trades: ${c.maxTrades} | Lots: ${c.lots}`,
+      state.position ? `Open    : ${state.position.side} ${state.position.symbol} (restored)` : null,
+    ]);
     return { ok: true };
   }
 
@@ -575,6 +614,13 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     if (/manual/i.test(reason)) state.manualStopDay = istDay();   // auto-start leaves it alone today
     persistRunning();
     log(`⏹️ Stopped — ${reason} | day P&L ₹${state.sessionPnl} over ${state.trades.length} trade(s)`);
+    const wins = state.trades.filter((t) => t.pnl > 0).length;
+    tg("TG_CMX_DAYREPORT", [
+      `🛢 ${label} PAPER — STOPPED`, ``,
+      `Reason : ${reason}`,
+      `Trades : ${state.trades.length}  (W ${wins} / L ${state.trades.length - wins})`,
+      `Day PnL: ₹${state.sessionPnl}  ${state.sessionPnl >= 0 ? "🟢" : "🔴"}`,
+    ]);
   }
 
   function reset() {

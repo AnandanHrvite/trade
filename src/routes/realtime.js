@@ -546,7 +546,7 @@ ${sidebar}
       <button type="button" class="cmx-start" id="cmx-start" title="Start every switched-on COMMODITY (MCX) paper page that is not running yet" hidden>🛢 Start All (Commodity)</button>` : ''}
       ${!nseActive && strategies.some(s => !s.paperOnly) ? `<button type="button" class="nse-start" id="nse-start" title="Start every enabled NIFTY / BANK NIFTY paper strategy — same list as the Dashboard's Start All (Paper)" hidden>▶ Start All (Paper)</button>` : ''}
       ${strategies.some(s => !s.paperOnly) ? `<button type="button" class="stop-all" id="stop-nse" title="Stop every NIFTY and BANK NIFTY strategy, PAPER and LIVE — commodity keeps running">🛑 Stop NIFTY</button>` : ''}
-      ${hasCommodity ? `<button type="button" class="stop-all" id="stop-cmx" title="Stop every COMMODITY (MCX) paper page — NIFTY keeps running">🛑 Stop Commodity</button>` : ''}
+      ${hasCommodity ? `<button type="button" class="stop-all" id="stop-cmx" title="Stop every COMMODITY (MCX) paper page — NIFTY keeps running" hidden>🛑 Stop Commodity</button>` : ''}
     </div>
   </div>
   <div class="stop-all-note" id="stop-all-note" hidden></div>
@@ -1212,6 +1212,10 @@ document.getElementById('stop-cmx')?.addEventListener('click', () => stopScope('
 let cmxBusy = false;
 function renderCmxStart(all) {
   const btn = document.getElementById('cmx-start');
+  // Stop Commodity is the other half: shown only once a commodity page runs, and
+  // never mid-start — Start and Stop side by side reads as "both at once".
+  const stop = document.getElementById('stop-cmx');
+  if (stop && !stopBusy) stop.hidden = cmxBusy || !PAPER_ONLY.some(k => all[k] && all[k].running);
   if (!btn || cmxBusy) return;
   btn.hidden = mode === 'LIVE' || !PAPER_ONLY.some(k => !(all[k] && all[k].running));
 }
@@ -1220,6 +1224,8 @@ async function startAllCmx() {
   if (!btn || cmxBusy) return;
   cmxBusy = true;
   btn.disabled = true; btn.textContent = '⏳ Starting commodity…';
+  const stop = document.getElementById('stop-cmx');
+  if (stop) stop.hidden = true;
   try {
     const r = await secretFetch('/api/cmx/start-all', { method: 'POST', timeoutMs: 180000 });
     if (!r) return;   // API-secret prompt cancelled — nothing was sent
