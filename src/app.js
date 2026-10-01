@@ -1104,6 +1104,7 @@ const OPEN_PREFIXES = [
   "/auth/callback",              // broker OAuth redirect — arrives with the broker's own query string
   "/docs/file/",                 // guide HTML
   "/docs/pdf/",                  // guide PDF export
+  "/mcp-data/",                  // read-only JSON for the trade-results MCP (still login-gated)
   "/ema_rsi_st-paper/view/",     // per-day trade / skip viewers
   "/ema_rsi_st-paper/download/",
   "/ema_rsi_st_v2-paper/view/",
