@@ -187,8 +187,9 @@ function checkTimeStop(candlesHeld, pnlPts, {
 // the position may never again be sold below entry × (1 + floor). It only ever
 // tightens; it never widens a stop, never moves a stop against the trade, and
 // never fires before the arm threshold is reached. It does not cap the upside:
-// a runner that keeps climbing is left alone for the strategy's own trail to
-// manage, which is what preserves the few large winners that carry the book.
+// a runner that keeps climbing is never sold while it climbs. With the trail
+// (PROFIT_LOCK_TRAIL_PCT) the floor rises with the peak, so a runner gives back
+// at most (100 − trail)% of its best gain before the lock takes it.
 //
 // CALLER CONTRACT — call per tick with the LIVE option premium and the peak
 // premium seen so far (engines already track this as bestOptionLtp). Returns an
@@ -197,11 +198,28 @@ function checkTimeStop(candlesHeld, pnlPts, {
 function liveProfitLockArmPct()   { return parseFloat(process.env.PROFIT_LOCK_ARM_PCT   || "8"); }
 function liveProfitLockFloorPct() { return parseFloat(process.env.PROFIT_LOCK_FLOOR_PCT || "5"); }
 function liveProfitLockEnabled()  { return String(process.env.PROFIT_LOCK_ENABLED ?? "true").toLowerCase() === "true"; }
+// TRAIL — once armed, the floor also follows the peak: it is never below
+// entry + TRAIL% of the best premium gain so far (0 = off, fixed floor only).
+// Added 2026-10-01 after a V2 PE ran 142.75 → 330 with the floor stuck at
+// 149.89. Example at 70: peak 330 → gain 187.25 → floor 142.75 + 131.07 = 273.82.
+// It only ever rises with the peak, so it never widens the fixed floor.
+function liveProfitLockTrailPct() { return parseFloat(process.env.PROFIT_LOCK_TRAIL_PCT ?? "70"); }
+
+// The floor premium for an armed lock: the fixed floor, raised by the trail.
+// Shared with the backtests so their spot-equivalent floor matches paper.
+function profitLockFloorLtp(entryLtp, bestLtp, floorPct, trailPct) {
+  let floor = entryLtp * (1 + floorPct / 100);
+  if (Number.isFinite(trailPct) && trailPct > 0 && trailPct < 100 && bestLtp > entryLtp) {
+    floor = Math.max(floor, entryLtp + (bestLtp - entryLtp) * trailPct / 100);
+  }
+  return parseFloat(floor.toFixed(2));
+}
 
 function checkProfitLock(entryLtp, currentLtp, bestLtp, {
   armPct   = liveProfitLockArmPct(),
   floorPct = liveProfitLockFloorPct(),
   enabled  = liveProfitLockEnabled(),
+  trailPct = liveProfitLockTrailPct(),
 } = {}) {
   if (!enabled) return null;
   if (!Number.isFinite(entryLtp) || entryLtp <= 0)     return null;
@@ -214,9 +232,13 @@ function checkProfitLock(entryLtp, currentLtp, bestLtp, {
   const armLtp = entryLtp * (1 + armPct / 100);
   if (bestLtp < armLtp) return null;               // never armed — no lock yet
 
-  const floorLtp = parseFloat((entryLtp * (1 + floorPct / 100)).toFixed(2));
+  const floorLtp = profitLockFloorLtp(entryLtp, bestLtp, floorPct, trailPct);
   if (currentLtp > floorLtp) return null;          // still above the locked floor
 
+  const fixedFloor = parseFloat((entryLtp * (1 + floorPct / 100)).toFixed(2));
+  if (floorLtp > fixedFloor) {
+    return `Profit lock trail ${trailPct}% — premium Rs${currentLtp} fell to the trailed floor Rs${floorLtp} (keeps ${trailPct}% of the gain to peak Rs${parseFloat(bestLtp.toFixed(2))}, entry Rs${parseFloat(entryLtp.toFixed(2))})`;
+  }
   return `Profit lock +${floorPct}% — premium Rs${currentLtp} fell to the locked floor Rs${floorLtp} after peaking at Rs${parseFloat(bestLtp.toFixed(2))} (armed at +${armPct}%, entry Rs${parseFloat(entryLtp.toFixed(2))})`;
 }
 
@@ -276,6 +298,7 @@ module.exports = {
   checkSpread,
   checkTimeStop,
   checkProfitLock,
+  profitLockFloorLtp,
   checkBreakevenStop,
   isProtectiveStop,
   resolveProtectiveStop,
@@ -287,6 +310,7 @@ module.exports = {
   get PROFIT_LOCK_ENABLED()        { return liveProfitLockEnabled(); },
   get PROFIT_LOCK_ARM_PCT()        { return liveProfitLockArmPct(); },
   get PROFIT_LOCK_FLOOR_PCT()      { return liveProfitLockFloorPct(); },
+  get PROFIT_LOCK_TRAIL_PCT()      { return liveProfitLockTrailPct(); },
   get BREAKEVEN_STOP_ENABLED()     { return liveBreakevenEnabled(); },
   get BREAKEVEN_ARM_PCT()          { return liveBreakevenArmPct(); },
 };

@@ -122,12 +122,42 @@ check("never caps a runner — a trade still climbing is left alone", () => {
   assert.strictEqual(guards.checkProfitLock(100, 300, 300), null);
 });
 
-check("the floor is fixed at entry+floor%, it does not trail the peak", () => {
-  freshEnv();
+check("trail 0 = fixed floor at entry+floor%, it does not follow the peak", () => {
+  freshEnv({ PROFIT_LOCK_TRAIL_PCT: "0" });
   // Peak 200 (+100%) but price back to 106: still above the +5% floor, so the
   // global lock holds its tongue and the strategy's own trail owns the exit.
   assert.strictEqual(guards.checkProfitLock(100, 106, 200), null);
   assert.ok(guards.checkProfitLock(100, 104, 200));
+});
+
+check("trail ships at 70% of the best gain", () => {
+  freshEnv();
+  assert.strictEqual(guards.PROFIT_LOCK_TRAIL_PCT, 70);
+});
+
+check("trail: floor follows the peak — the 2026-10-01 V2 PE case", () => {
+  freshEnv();
+  // Entry 142.75, peak 330 → keep 70% of 187.25 → floor 273.82.
+  assert.strictEqual(guards.profitLockFloorLtp(142.75, 330, 5, 70), 273.82);
+  assert.strictEqual(guards.checkProfitLock(142.75, 274, 330), null);
+  const msg = guards.checkProfitLock(142.75, 273.8, 330);
+  assert.ok(msg && /trail/.test(msg) && /273\.82/.test(msg), `trail did not fire: ${msg}`);
+});
+
+check("trail never sits below the fixed floor and never fires before arming", () => {
+  freshEnv();
+  // Peak +8.5%: 70% of the gain is +5.95% — above the +5% floor, so it wins.
+  assert.strictEqual(guards.profitLockFloorLtp(100, 108.5, 5, 70), 105.95);
+  // Peak +6%: not armed, so nothing fires even though 70% of the gain is +4.2%.
+  assert.strictEqual(guards.checkProfitLock(100, 101, 106), null);
+});
+
+check("a garbage trail is ignored, never a wider floor", () => {
+  for (const v of ["abc", "-10", "100", "250"]) {
+    freshEnv({ PROFIT_LOCK_TRAIL_PCT: v });
+    assert.strictEqual(guards.checkProfitLock(100, 106, 200), null, `trail=${v} changed the floor`);
+    assert.ok(guards.checkProfitLock(100, 104, 200), `trail=${v} disabled the fixed floor`);
+  }
 });
 
 // ═══════════════════════════════════════════════════════════════════════════

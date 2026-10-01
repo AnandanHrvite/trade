@@ -295,6 +295,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
   const _PL_ENABLED   = !isFutures && tradeGuards.PROFIT_LOCK_ENABLED;
   const _PL_ARM_PCT   = tradeGuards.PROFIT_LOCK_ARM_PCT;
   const _PL_FLOOR_PCT = tradeGuards.PROFIT_LOCK_FLOOR_PCT;
+  const _PL_TRAIL_PCT = tradeGuards.PROFIT_LOCK_TRAIL_PCT;
   const _PL_VALID     = _PL_ENABLED && DELTA > 0
                      && Number.isFinite(_PL_ARM_PCT) && Number.isFinite(_PL_FLOOR_PCT)
                      && _PL_ARM_PCT > 0 && _PL_FLOOR_PCT >= 0 && _PL_FLOOR_PCT < _PL_ARM_PCT;
@@ -692,13 +693,19 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
           : (position.entryPrice - position.bestPricePrevBar);
         const armed = bestFav >= _PL_ARM_SPOT_PTS;
         if (armed) {
-          // Did this bar trade back down to the locked floor?
+          // Did this bar trade back down to the locked floor? The trail raises
+          // it to TRAIL% of the best gain (premium gain ≈ delta × spot gain, so
+          // the same % applies to spot points).
+          const _trailPts = (_PL_TRAIL_PCT > 0 && _PL_TRAIL_PCT < 100) ? bestFav * _PL_TRAIL_PCT / 100 : 0;
+          const floorPts = Math.max(_PL_FLOOR_SPOT_PTS, _trailPts);
           const floorLvl = position.side === "CE"
-            ? position.entryPrice + _PL_FLOOR_SPOT_PTS
-            : position.entryPrice - _PL_FLOOR_SPOT_PTS;
+            ? position.entryPrice + floorPts
+            : position.entryPrice - floorPts;
           const touched = position.side === "CE" ? candle.low <= floorLvl : candle.high >= floorLvl;
           if (touched) {
-            exitReason = `Profit lock +${_PL_FLOOR_PCT}% (≈${_PL_FLOOR_SPOT_PTS.toFixed(0)}pt spot, armed at +${_PL_ARM_PCT}%)`;
+            exitReason = floorPts > _PL_FLOOR_SPOT_PTS
+              ? `Profit lock trail ${_PL_TRAIL_PCT}% (≈${floorPts.toFixed(0)}pt spot kept of ${bestFav.toFixed(0)}pt best)`
+              : `Profit lock +${_PL_FLOOR_PCT}% (≈${_PL_FLOOR_SPOT_PTS.toFixed(0)}pt spot, armed at +${_PL_ARM_PCT}%)`;
             exitPrice  = quantize(floorLvl, 2);
           }
         }

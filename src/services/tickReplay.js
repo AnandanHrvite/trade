@@ -205,7 +205,8 @@ function requestCancel() {
 // v16: pre-sliced warm-up is no longer sliced twice (one candle short before).
 // v17: a recorded expiry override that had already expired on the replayed day is
 //      no longer pinned (it made every entry refuse) — live-traded expiry is used.
-const REPLAY_CACHE_VERSION = 17;
+// v18: profit-lock trail (PROFIT_LOCK_TRAIL_PCT) — forced 0 for days before it shipped.
+const REPLAY_CACHE_VERSION = 18;
 
 function _replayCacheDir() {
   return path.join(ROOT_DIR, "_replay_cache");
@@ -2235,6 +2236,11 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
         for (const _k of ["PROFIT_LOCK_ENABLED", "BREAKEVEN_STOP_ENABLED"]) {
           if (!(_k in _snapSettings)) _snapSettings[_k] = "false";
         }
+      }
+      // Profit-lock trail shipped 2026-10-02 (default 70): earlier days ran with
+      // the fixed floor only, so replay them with the trail off.
+      if (date < "2026-10-02" && !("PROFIT_LOCK_TRAIL_PCT" in _snapSettings)) {
+        _snapSettings.PROFIT_LOCK_TRAIL_PCT = "0";
       }
       // Snapshot mode is a PARTIAL override: _applySettingsOverride only SETS the
       // keys it is given, so a managed key present in today's env but absent from

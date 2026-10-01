@@ -111,6 +111,7 @@ function runPrevOrbScalpBacktest(intraday, rangeFrom, opts) {
     enabled: tradeGuards.PROFIT_LOCK_ENABLED,
     armPct: tradeGuards.PROFIT_LOCK_ARM_PCT,
     floorPct: tradeGuards.PROFIT_LOCK_FLOOR_PCT,
+    trailPct: tradeGuards.PROFIT_LOCK_TRAIL_PCT,
   };
   const lockOk = !IS_FUT && lock.enabled && Number.isFinite(lock.armPct) && Number.isFinite(lock.floorPct) &&
     lock.armPct > 0 && lock.floorPct >= 0 && lock.floorPct < lock.armPct;
@@ -221,7 +222,7 @@ function runPrevOrbScalpBacktest(intraday, rangeFrom, opts) {
           // Adverse level: the stop, or the armed profit-lock floor if tighter.
           let lockSpot = null;
           if (lockOk && pos.peakPrem >= pos.optionEntryLtp * (1 + lock.armPct / 100)) {
-            const floorPrem = pos.optionEntryLtp * (1 + lock.floorPct / 100);
+            const floorPrem = tradeGuards.profitLockFloorLtp(pos.optionEntryLtp, pos.peakPrem, lock.floorPct, lock.trailPct);
             lockSpot = pos.entrySpot + dir * (floorPrem - pos.optionEntryLtp) / DELTA;
           }
           const useLock = lockSpot != null && (lockSpot - pos.slSpot) * dir > 0;
@@ -252,7 +253,7 @@ function runPrevOrbScalpBacktest(intraday, rangeFrom, opts) {
             }
             // Profit lock armed inside this bar and closed back below its floor.
             if (pos && lockOk && pos.peakPrem >= pos.optionEntryLtp * (1 + lock.armPct / 100)) {
-              const floorPrem = pos.optionEntryLtp * (1 + lock.floorPct / 100);
+              const floorPrem = tradeGuards.profitLockFloorLtp(pos.optionEntryLtp, pos.peakPrem, lock.floorPct, lock.trailPct);
               const lvl = pos.entrySpot + dir * (floorPrem - pos.optionEntryLtp) / DELTA;
               if ((lvl - pos.slSpot) * dir > 0 && strat.stopHit(pos.side, c.close, lvl)) {
                 close(c.close, c.time, `Profit lock +${lock.floorPct}% — armed and given back inside the bar`, "PROFIT_LOCK");

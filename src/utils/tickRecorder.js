@@ -444,6 +444,7 @@ function snapshotSettings() {
   for (const k of ["PROFIT_LOCK_ENABLED", "BREAKEVEN_STOP_ENABLED"]) {
     if (out[k] === undefined) out[k] = "true";
   }
+  if (out.PROFIT_LOCK_TRAIL_PCT === undefined) out.PROFIT_LOCK_TRAIL_PCT = "70";
   return out;
 }
 

@@ -122,6 +122,7 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
   // paper's per-tick premium ratchet — see the note on _optStopSpotPts above.
   const _plArmPct   = _tradeGuards.PROFIT_LOCK_ARM_PCT;
   const _plFloorPct = _tradeGuards.PROFIT_LOCK_FLOOR_PCT;
+  const _plTrailPct = _tradeGuards.PROFIT_LOCK_TRAIL_PCT;
   const _plValid    = _tradeGuards.PROFIT_LOCK_ENABLED && DELTA > 0
                    && Number.isFinite(_plArmPct) && Number.isFinite(_plFloorPct)
                    && _plArmPct > 0 && _plFloorPct >= 0 && _plFloorPct < _plArmPct;
@@ -403,13 +404,18 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
           ? (position.bestPricePrevBar - position.entryPrice)
           : (position.entryPrice - position.bestPricePrevBar);
         if (_favBest >= _plArmSpotPts) {
+          // Trail: the floor rises to TRAIL% of the best gain (see tradeGuards).
+          const _trailPts = (_plTrailPct > 0 && _plTrailPct < 100) ? _favBest * _plTrailPct / 100 : 0;
+          const _floorPts = Math.max(_plFloorSpotPts, _trailPts);
           const _floorLvl = position.side === "CE"
-            ? position.entryPrice + _plFloorSpotPts
-            : position.entryPrice - _plFloorSpotPts;
+            ? position.entryPrice + _floorPts
+            : position.entryPrice - _floorPts;
           const _touched = position.side === "CE" ? candle.low <= _floorLvl : candle.high >= _floorLvl;
           if (_touched) {
             doExit = true;
-            exitReason = `Profit lock +${_plFloorPct}% (spot-equivalent, armed at +${_plArmPct}%)`;
+            exitReason = _floorPts > _plFloorSpotPts
+              ? `Profit lock trail ${_plTrailPct}% (spot-equivalent, ${_floorPts.toFixed(0)}pt kept of ${_favBest.toFixed(0)}pt best)`
+              : `Profit lock +${_plFloorPct}% (spot-equivalent, armed at +${_plArmPct}%)`;
             exitLevel  = _floorLvl;
             // Paper fires the lock inside onTick, which returns from the TICK
             // handler only — the bar still closes and onCandleClose's entry
