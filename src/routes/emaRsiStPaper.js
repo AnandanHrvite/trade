@@ -255,6 +255,11 @@ let ptState = {
   _expiryDayBlocked:  false, // blocks entries on non-expiry days
   _simMode:           false, // simulation mode (fake ticks, no broker)
   _simScenario:       null,  // active scenario name
+  // Sticky "this session came from /simulate" marker. _simMode alone is NOT enough:
+  // onSimDone() clears it when the scenario finishes, so by the time the user presses
+  // Stop the engine looks like a real session and persisted the synthetic trades into
+  // the canonical paper history. Set in resetSimState(), cleared only by /start.
+  _simSession:        false,
   // Win/loss counters: maintained in simulateSell so /status/data doesn't filter on every poll
   _sessionWins:   0,
   _sessionLosses: 0,
@@ -2148,6 +2153,17 @@ function saveSession() {
     sessionPnl:  ptState.sessionPnl,
   };
 
+  // ── Simulation isolation ────────────────────────────────────────────────────
+  // /simulate sets ptState.running itself and onSimDone() clears only _simMode, so
+  // the user's Stop click landed here looking like a real session: it pushed the
+  // synthetic trades into ema_rsi_st_paper_trades.json, moved `capital` and `totalPnl`
+  // by the simulated P&L, and Telegrammed a day report for a session that never
+  // happened. Return the session so /stop still answers; just never persist or broadcast it.
+  if (ptState._simSession || ptState._simMode) {
+    log(`🧪 [PAPER] Simulation session — NOT written to paper history (${session.totalTrades} trade(s), PnL ₹${session.sessionPnl}).`);
+    return { ...session, simulated: true };
+  }
+
   data.sessions.push(session);
   data.totalPnl = parseFloat((data.totalPnl + ptState.sessionPnl).toFixed(2));
   data.capital  = parseFloat((data.capital  + ptState.sessionPnl).toFixed(2));
@@ -2319,6 +2335,7 @@ router.get("/start", async (req, res) => {
   ptState.currentBar    = null;
   ptState.barStartTime  = null;
   ptState.position      = null;
+  ptState._simSession   = false;   // a real session — persistence is live again
   ptState.sessionTrades = [];
   ptState._staleSession = false;
   ptState.sessionPnl    = 0;
@@ -4948,6 +4965,7 @@ router.post("/simulate/start", async (req, res) => {
     ptState._sessionLosses       = 0;
     ptState._expiryDayBlocked    = false;
     ptState._simMode             = true;
+    ptState._simSession          = true;   // sticky — survives onSimDone clearing _simMode
     ptState._simScenario         = label;
     _cachedClosedCandleSL        = null;
     // 09:15 IST = 03:45 UTC on the same IST date

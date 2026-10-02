@@ -147,6 +147,10 @@ let state = {
   _dailyLossHit:  false,
   _simMode:       false,
   _simScenario:   null,
+  // Sticky "this session came from /simulate" marker. onSimDone() clears _simMode
+  // when the scenario finishes, so a later Stop looked like a real session and saved
+  // the synthetic P&L into paper history. Set in resetSimState(), cleared by /start.
+  _simSession:    false,
 };
 
 // ── Crash/restart recovery: rehydrate the in-memory session from today's JSONL ──
@@ -282,8 +286,11 @@ const OPTION_FEED_OWNER = "pa-paper";
  * A null/zero ltp is a no-op, so a failed REST poll leaves the last good price
  * standing exactly as before.
  */
-function _applyOptionLtp(ltp, at) {
-  if (!(ltp > 0) || !state.position) return;
+function _applyOptionLtp(symbol, ltp, at) {
+  // Ownership check: a reply for a contract we no longer hold (exit + re-entry on
+  // another strike while it was in flight) must not be stamped as the NEW
+  // position's entry premium. Publish only while we still own `symbol`.
+  if (!(ltp > 0) || !state.position || state.optionSymbol !== symbol) return;
   state.optionLtp = ltp;
   // Premium bars for the option chart (display only — never read by the engine).
   state.optionChart = optionChart.pushLtp(state.optionChart, state.optionSymbol, ltp, at);
@@ -304,7 +311,7 @@ function startOptionPolling(symbol) {
   // poll interval old. The REST poll below stays as the fallback and is what
   // renews the lease — stop polling and the subscription lapses on its own.
   const _onStreamed = (ltp, at) => {
-    if (state.position && state.optionSymbol === symbol) _applyOptionLtp(ltp, at);
+    if (state.position && state.optionSymbol === symbol) _applyOptionLtp(symbol, ltp, at);
   };
   optionFeed.track(OPTION_FEED_OWNER, symbol, _onStreamed);
   function scheduleNext() {
@@ -312,17 +319,22 @@ function startOptionPolling(symbol) {
     const delay = _rateLimitBackoff > 0 ? 2000 : 500;
     _optionPollTimer = setTimeout(async () => {
       if (!state.position || !state.optionSymbol) { stopOptionPolling(); return; }
+      // Stale loop for a previous contract — a newer startOptionPolling owns the
+      // timer and feed lease now, so just die without touching either.
+      if (state.optionSymbol !== symbol) return;
       optionFeed.track(OPTION_FEED_OWNER, symbol, _onStreamed);
       const streamed = optionFeed.getFresh(symbol);
-      if (streamed) _applyOptionLtp(streamed.ltp, streamed.at);
-      else _applyOptionLtp(await fetchOptionLtp(symbol), Date.now());
+      if (streamed) _applyOptionLtp(symbol, streamed.ltp, streamed.at);
+      else _applyOptionLtp(symbol, await fetchOptionLtp(symbol), Date.now());
+      if (state.optionSymbol !== symbol) return; // contract changed while in flight
       scheduleNext();
     }, delay);
   }
   // The first price still comes over REST: the subscription has only just been
   // placed, so the stream has nothing yet and entry must not wait for a tick.
   fetchOptionLtp(symbol).then(ltp => {
-    _applyOptionLtp(ltp, Date.now());
+    _applyOptionLtp(symbol, ltp, Date.now());
+    if (state.optionSymbol !== symbol) return; // contract changed while in flight
     scheduleNext();
   });
   _optionPollTimer = true;
@@ -1025,6 +1037,7 @@ router.get("/start", async (req, res) => {
     sessionPnl: 0, _wins: 0, _losses: 0, tickCount: 0, lastTickTime: null, lastTickPrice: null,
     optionLtp: null, optionSymbol: null, _slPauseUntil: null, _dailyLossHit: false,
     _expiryDayBlocked: _expiryBlocked,
+    _simSession: false,   // a real session — persistence is live again
   };
 
   sharedSocketState.setPAActive("PA_PAPER");
@@ -1133,6 +1146,15 @@ function stopSession() {
   }
 
   if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
+
+  // ── Simulation isolation ────────────────────────────────────────────────────
+  // onSimDone() clears only _simMode, so a Stop after a finished /simulate run
+  // pushed the synthetic trades into pa_paper_trades.json, moved totalPnl (and with it the
+  // shared capital pool) and Telegrammed a day report. Never persist or broadcast it.
+  if (state._simSession) {
+    log(`🧪 [PA-PAPER] Simulation session — NOT written to paper history (${state.sessionTrades.length} trade(s), PnL ₹${state.sessionPnl}).`);
+    return;
+  }
 
   // Save session
   if (state.sessionTrades.length > 0) {
@@ -3047,6 +3069,7 @@ router.post("/simulate/start", async (req, res) => {
       optionLtp: null, optionSymbol: null, _slPauseUntil: null, _dailyLossHit: false,
       _expiryDayBlocked: false,
       _simMode: true, _simScenario: label,
+      _simSession: true,   // sticky — survives onSimDone clearing _simMode
     };
     // 09:15 IST = 03:45 UTC on the same IST date
     const simStart = simDate
