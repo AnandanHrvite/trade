@@ -95,7 +95,7 @@ function brokerPools(strategies) {
   // COMMODITY has its own pool (CMX_STARTING_CAPITAL) — shown while any
   // commodity page is switched on.
   const cmx = require("../utils/commodityPaperRouter").enabledEngines().map(e => e.snapshot().label);
-  if (cmx.length) pools.push({ id:'COMMODITY', label:'COMMODITY', sub:cmx.join(' \u00b7 '), inv:parseFloat(process.env.CMX_STARTING_CAPITAL || '100000') || 100000 });
+  if (cmx.length) pools.push({ id:'COMMODITY', label:'COMMODITY', sub:cmx.join(' \u00b7 '), inv:(v => Number.isFinite(v) && v >= 0 ? v : 100000)(parseFloat(process.env.CMX_STARTING_CAPITAL || '100000')) });
   return pools;
 }
 

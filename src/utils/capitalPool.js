@@ -144,9 +144,11 @@ function estimatedPremium() {
   return Number.isFinite(v) && v > 0 ? v : 200;
 }
 
+// 0 is a real setting (no money → every entry refused); only blank/garbage
+// falls back to the default.
 function baseCapital(broker) {
   const v = parseFloat(process.env[BROKER_ENV[broker]] || "100000");
-  return Number.isFinite(v) && v > 0 ? v : 100000;
+  return Number.isFinite(v) && v >= 0 ? v : 100000;
 }
 
 function brokerOf(key) {
@@ -183,8 +185,24 @@ function _filePnl(key) {
  * All-time realized P&L for one strategy = what its saved sessions hold on disk,
  * plus the P&L of the session currently running (not yet written to that file).
  */
+// key -> () => P&L of the running session's closed trades not yet saved to the
+// file. Registered by the route, which owns that number and rebuilds it after a
+// restart — so a deploy mid-session or a History edit cannot drop it from the
+// pool the way the in-memory accumulator below can.
+const _unsaved = new Map();
+
+function trackSession(strategyKey, getUnsavedPnl) {
+  if (STRATEGIES[strategyKey] && typeof getUnsavedPnl === "function") _unsaved.set(strategyKey, getUnsavedPnl);
+}
+
 function realizedFor(key) {
   const filePnl = _filePnl(key);
+  const g = _unsaved.get(key);
+  if (g) {
+    let u = 0;
+    try { u = Number(g()); } catch (_) {}
+    return parseFloat((filePnl + (Number.isFinite(u) ? u : 0)).toFixed(2));
+  }
   const s = _live.get(key);
   if (!s) return filePnl;
   // File moved → the running session was saved (or history was edited); its P&L
@@ -476,5 +494,6 @@ module.exports = {
   block,              // reserve on entry
   updateBlock,        // correct the reservation once the real premium lands
   release,            // free on exit and book the P&L
+  trackSession,       // route reports its unsaved session P&L (survives restarts)
   clear,              // free without a P&L (session stopped without square-off)
 };
