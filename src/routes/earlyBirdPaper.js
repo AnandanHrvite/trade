@@ -259,6 +259,10 @@ function _freshState() {
     dayClosed:      false,
     dayClosedReason: null,
     _staleSession:  false,
+    // True once this session's P&L is inside early_bird_paper_trades.json
+    // totalPnl (saved by stopSession, or a rehydrated session the file already
+    // holds) — the capital pool must then stop adding sessionPnl on top of it.
+    _saved:         false,
     _entryLocks:    new Set(),   // symbols with an entry in flight
   };
 }
@@ -320,6 +324,8 @@ function rehydrateSessionFromJsonl() {
         trades = last.trades;
         source = `last session (${last.date || "?"})`;
         stale  = all.length === 0;
+        state._saved = true;   // already in the file's totalPnl — not unsaved P&L
+
       }
     }
     if (!trades.length) return;
@@ -346,6 +352,11 @@ function rehydrateSessionFromJsonl() {
   }
 }
 rehydrateSessionFromJsonl();
+// The pool's realized P&L = file totalPnl + this. Read from the CURRENT state
+// on every call: the running session's closed trades (and today's trades
+// rehydrated after a restart that the file does not hold yet), and 0 once
+// stopSession / restore-session has written them into the file.
+capitalPool.trackSession(MODE_KEY, () => (state._saved ? 0 : (Number(state.sessionPnl) || 0)));
 require("../utils/staleSessionGate").clearStaleSessionOnTradingDay(() => state, LOG_TAG);
 
 /**
@@ -973,14 +984,17 @@ async function _stepOptionLeg() {
   // a dead symbol would otherwise hammer the quote API twice a second.
   if (state.optionLtpFailAt && Date.now() - state.optionLtpFailAt < _optionLtpRetryMs()) return;
 
-  state.optionEntryLock = true;
+  // Pinned: a Stop → Start during the entry's await replaces `state`; the
+  // failure throttle and the lock release belong to THIS session only.
+  const s = state;
+  s.optionEntryLock = true;
   try {
-    await _openOptionPosition(state.optionPending, spot, nowMins, cfg);
+    await _openOptionPosition(s.optionPending, spot, nowMins, cfg);
   } catch (e) {
     console.error(`🚨 ${LOG_TAG} option entry error: ${e.message}`);
-    state.optionLtpFailAt = Date.now();
+    s.optionLtpFailAt = Date.now();
   } finally {
-    state.optionEntryLock = false;
+    s.optionEntryLock = false;
   }
 }
 
@@ -993,6 +1007,15 @@ async function _stepOptionLeg() {
  * is the live one, because that is genuinely what the option cost at that moment.
  */
 async function _openOptionPosition(setup, triggerSpot, nowMins, cfg) {
+  // Pin the session: after each await below, a Stop → Start may have replaced
+  // `state`. This entry then belongs to a session that is gone — abandon it
+  // without touching the new one (no fill, no optionAttempted, no fail counters).
+  const s = state;
+  const _superseded = () => {
+    if (state === s) return false;
+    console.log(`⏭️ ${LOG_TAG} OPTION — entry abandoned: the session was stopped and a new one started while it was in flight.`);
+    return true;
+  };
   const optionSide = setup.optionSide;
   const entrySpot  = setup.entry;
 
@@ -1006,11 +1029,13 @@ async function _openOptionPosition(setup, triggerSpot, nowMins, cfg) {
       ? await instrumentMode.resolveEntryInstrument(triggerSpot, optionSide, "EARLYBIRD")
       : await instrumentConfig.validateAndGetOptionSymbol(triggerSpot, optionSide, "EARLYBIRD");
   } catch (e) {
+    if (_superseded()) return;
     state.optionLtpFailAt = Date.now();
     log(`❌ ${LOG_TAG} OPTION — strike/expiry resolve failed: ${e.message}. Will retry while the entry window is open.`);
     skipLogger.appendSkipLog(MODE_KEY, { gate: "option_symbol", leg: "option", reason: e.message, side: optionSide, spot: triggerSpot });
     return;
   }
+  if (_superseded()) return;
   if (!optInfo || optInfo.invalid || !optInfo.symbol) {
     state.optionLtpFailAt = Date.now();
     log(`❌ ${LOG_TAG} OPTION — no valid expiry for the ${optionSide} strike. Entry blocked; will retry while the entry window is open.`);
@@ -1039,6 +1064,7 @@ async function _openOptionPosition(setup, triggerSpot, nowMins, cfg) {
 
   // ── RE-CHECKED AFTER THE AWAIT. Two concurrent polls could both have passed
   //    the synchronous guards before either reached here.
+  if (_superseded()) return;
   if (state.optionPosition || state.optionAttempted) {
     log(`⏭️ ${LOG_TAG} OPTION — entry abandoned after the premium fetch: a position was opened while it was in flight.`);
     return;
@@ -1550,12 +1576,17 @@ function _priceOf(symbol) {
 // ── Poll loop ────────────────────────────────────────────────────────────────
 let _pollTimer = null;
 let _pollStopped = true;
+// Bumped by every start/stop. A poll that was mid-await when /stop ran must not
+// reschedule itself after a new /start cleared _pollStopped — that would leave
+// two loops running side by side. Only the current generation reschedules.
+let _pollGen = 0;
 
 function startPolling() {
   stopPolling();
   _pollStopped = false;
+  const gen = ++_pollGen;
   const poll = async () => {
-    if (_pollStopped) return;
+    if (_pollStopped || gen !== _pollGen) return;
 
     // 1. The 09:30 scan, once.
     if (_planDue()) {
@@ -1577,13 +1608,14 @@ function startPolling() {
     try { await _stepOptionLeg(); } catch (e) { console.error(`🚨 ${LOG_TAG} option-leg error: ${e.message}`); }
     try { await _pollOptionPremium(); } catch (e) { console.error(`🚨 ${LOG_TAG} option premium poll error: ${e.message}`); }
 
-    if (!_pollStopped) _pollTimer = setTimeout(poll, _pollMs());
+    if (!_pollStopped && gen === _pollGen) _pollTimer = setTimeout(poll, _pollMs());
   };
   _pollTimer = setTimeout(poll, 250);
 }
 
 function stopPolling() {
   _pollStopped = true;
+  _pollGen++;
   if (_pollTimer) { clearTimeout(_pollTimer); _pollTimer = null; }
 }
 
@@ -2153,6 +2185,16 @@ router.get("/start", async (req, res) => {
   res.redirect("/early-bird-paper/status");
 });
 
+/**
+ * The session's P&L is now in the file's totalPnl: stop reporting it as unsaved
+ * in the same synchronous step, and drop the pool's 5s memo of the file so it
+ * re-reads the new total instead of briefly showing neither.
+ */
+function _markSavedToFile(s) {
+  s._saved = true;
+  try { capitalPool.sessionSaved(MODE_KEY); } catch (_) {}
+}
+
 async function stopSession() {
   // Pin the session being stopped: the option square-off below is awaited, and
   // everything after it must act on THIS session, never a newer one.
@@ -2214,6 +2256,7 @@ async function stopSession() {
         data.totalPnl = _r2(data.totalPnl + s.sessionPnl);
         data.capital  = _r2(parseFloat(process.env.FYERS_INV_AMOUNT || "100000") + data.totalPnl);
         saveData(data);
+        _markSavedToFile(s);
         log(`💾 ${LOG_TAG} Session saved — ${s.sessionTrades.length} trade(s), PnL ₹${s.sessionPnl}`);
       } catch (e) {
         log(`⚠️ ${LOG_TAG} Save failed: ${e.message}`);
@@ -3014,6 +3057,9 @@ router.post("/restore-session/:date", (req, res) => {
   data.totalPnl = _r2(data.sessions.reduce((s, x) => s + (x.pnl || 0), 0));
   data.capital  = _r2(parseFloat(process.env.FYERS_INV_AMOUNT || "100000") + data.totalPnl);
   saveData(data);
+  // Today's restore writes exactly the trades a restart rehydrated into the
+  // (stopped) state, so they are now in totalPnl — stop counting them twice.
+  if (date === tradeLogger.istDateString(Date.now())) _markSavedToFile(state);
   return res.json({ success: true, restored: missing.length, sessionPnl, message: `Restored ${missing.length} trade(s).` });
 });
 
