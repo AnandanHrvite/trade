@@ -1187,135 +1187,148 @@ async function _closeOptionPosition(ex) {
   // able to book the same position twice.
   state.optionPosition = null;
 
-  const cfg = earlyBird.getConfig();
-  let exitPremium = null;
-  let premiumSource = "live quote";
-  if (pos.isFutures) {
-    // Futures mark at the index level the exit fired on — there is no premium
-    // quote, and falling through to the option fetch would book the trade at
-    // the entry price (a phantom flat).
-    exitPremium = (typeof ex.price === "number" && Number.isFinite(ex.price) && ex.price > 0)
-      ? ex.price : state.lastTickPrice;
-    premiumSource = "index level (futures)";
-  } else {
+  // Whatever throws after the claim above, the position's capital block must
+  // still be freed — otherwise it stays reserved in the pool for the day.
+  let released = false;
+  let bookedPnl = 0;
+  try {
+    const cfg = earlyBird.getConfig();
+    let exitPremium = null;
+    let premiumSource = "live quote";
+    if (pos.isFutures) {
+      // Futures mark at the index level the exit fired on — there is no premium
+      // quote, and falling through to the option fetch would book the trade at
+      // the entry price (a phantom flat).
+      exitPremium = (typeof ex.price === "number" && Number.isFinite(ex.price) && ex.price > 0)
+        ? ex.price : state.lastTickPrice;
+      premiumSource = "index level (futures)";
+    } else {
+      try {
+        exitPremium = await _fetchOptionPremium(pos.symbol);
+        if (exitPremium != null) { try { tickRecorder.recordOptionLtp(pos.symbol, exitPremium, "early-bird-paper"); } catch (_) {} }
+      } catch (e) {
+        log(`⚠️ ${LOG_TAG} OPTION — exit premium fetch threw for ${pos.symbol}: ${e.message}`);
+      }
+    }
+    if (typeof exitPremium !== "number" || !Number.isFinite(exitPremium) || exitPremium <= 0) {
+      exitPremium = (typeof state.optionLtp === "number" && Number.isFinite(state.optionLtp) && state.optionLtp > 0)
+        ? state.optionLtp : pos.optionEntryLtp;
+      premiumSource = "last known premium (quote unavailable at exit)";
+      log(`⚠️ ${LOG_TAG} OPTION — no live premium at exit; booking at the ${premiumSource} ₹${exitPremium}.`);
+    }
+    state.optionLtp = exitPremium;
+
+    const exitSpot = (typeof ex.price === "number" && Number.isFinite(ex.price)) ? ex.price : pos.entrySpot;
+    const qty = pos.qty;
+
+    // A BOUGHT option: profit is (exit − entry) × qty, whichever side it is.
+    // earlyBird.computePnl is cash-equity and direction-signed — using it here
+    // would flip the sign on every PE and report a winner as a loser.
+    const _pnlRes = instrumentMode.computePnl({
+      side: pos.optionSide, entrySpot: pos.entrySpot, exitSpot,
+      entryPremium: pos.optionEntryLtp, exitPremium,
+      qty, broker: "fyers",
+    });
+    const gross   = _r2(_pnlRes.gross);
+    const charges = _pnlRes.charges;
+    const pnl     = _r2(_pnlRes.pnl);
+    bookedPnl = pnl;
+
+    state.sessionPnl = _r2(state.sessionPnl + pnl);
+    if (ex.exitType === "SL") state.stopOuts++;
+
+    const trade = {
+      leg:            "option",
+      symbol:         pos.symbol,
+      optionSide:     pos.optionSide,
+      optionStrike:   pos.optionStrike,
+      optionExpiry:   pos.optionExpiry,
+      side:           pos.side,
+      qty,
+      lots:           pos.lots,
+      optionEntryLtp: pos.optionEntryLtp,
+      optionExitLtp:  exitPremium,
+      entryPrice:     pos.optionEntryLtp,
+      exitPrice:      exitPremium,
+      entrySpot:      pos.entrySpot,
+      exitSpot,
+      entryTime:      pos.entryTime,
+      exitTime:       istNow(),
+      entryBarTime:   pos.signalBarTime,
+      entryUnixSec:   pos.entryUnixSec,
+      exitUnixSec:    Math.floor(Date.now() / 1000),
+      pnl,
+      grossPnl:       gross,
+      charges,
+      pnlMode:        `option premium: BUY ${pos.optionSide} ${qty} × ₹${pos.optionEntryLtp} → ₹${exitPremium} (${premiumSource}); every level measured on NIFTY SPOT`,
+      exitReason:     ex.reason,
+      exitType:       ex.exitType,
+      entryReason:    pos.entryReason,
+      stopLoss:       pos.stop,
+      initialStopLoss: pos.stop,
+      target:         pos.target,
+      riskPts:        pos.riskPts,
+      rewardPts:      pos.rewardPts,
+      bigCandle:      pos.bigCandle,
+      slBasis:        pos.slBasis,
+      shape:          pos.shape,
+      signalOpen:     pos.signalOpen,
+      signalHigh:     pos.signalHigh,
+      signalLow:      pos.signalLow,
+      signalClose:    pos.signalClose,
+      signalBarTime:  pos.signalBarTime,
+      triggerPrice:   pos.triggerSpot,
+      peakSpot:       pos.peakSpot,
+      troughSpot:     pos.troughSpot,
+      mfePts:         pos.mfePts || 0,
+      maePts:         pos.maePts || 0,
+      secsToMFE:      pos.secsToMFE || 0,
+      secsToMAE:      pos.secsToMAE || 0,
+      durationMs:     Date.now() - pos.entryTimeMs,
+      instrument:     pos.isFutures ? "NIFTY_FUTURES" : "NIFTY_OPTION",
+      isFutures:      !!pos.isFutures,
+      isSpot:         false,
+    };
+
+    state.sessionTrades.push(trade);
+    tradeLogger.appendTradeLog(MODE_KEY, trade);
+    released = true;
+    capitalPool.release(MODE_KEY, pnl, { symbol: pos.symbol });   // frees this position's block only
+    _persist();
+
+    const held = Math.round(trade.durationMs / 1000);
+    log(`${pnl >= 0 ? "✅" : "❌"} ${LOG_TAG} OPTION EXIT [${ex.exitType}] ${pos.optionSide} ${qty}×${pos.symbol} — ${ex.reason}`);
+    log(`   ├─ Spot   : ${pos.entrySpot} → ${exitSpot} (${_r2(exitSpot - pos.entrySpot)} pts) · the level that fired this exit`);
+    log(`   ├─ Premium: ₹${pos.optionEntryLtp} → ₹${exitPremium} (${premiumSource}) · ${_r2(exitPremium - pos.optionEntryLtp)}/qty × ${qty}`);
+    log(`   ├─ P&L    : gross ₹${gross} − charges ₹${charges} = ₹${pnl} · held ${held}s · MFE ${trade.mfePts} spot pts / MAE ${trade.maePts} spot pts`);
+    log(`   └─ Book   : session ₹${state.sessionPnl} · ${state.stopOuts} stop-out(s) · ${state.positions.size} stock position(s) still open · no option re-entry today`);
+
+    notifyExit({
+      mode: "EARLYBIRD-PAPER",
+      side: pos.optionSide, symbol: pos.symbol,
+      spotAtEntry: pos.entrySpot, spotAtExit: exitSpot,
+      optionEntryLtp: pos.optionEntryLtp, optionExitLtp: exitPremium,
+      pnl, sessionPnl: state.sessionPnl,
+      exitReason: ex.reason, entryReason: pos.entryReason,
+      entryTime: pos.entryTime, exitTime: trade.exitTime, qty,
+      heldMs: trade.durationMs,
+    });
+
     try {
-      exitPremium = await _fetchOptionPremium(pos.symbol);
-      if (exitPremium != null) { try { tickRecorder.recordOptionLtp(pos.symbol, exitPremium, "early-bird-paper"); } catch (_) {} }
-    } catch (e) {
-      log(`⚠️ ${LOG_TAG} OPTION — exit premium fetch threw for ${pos.symbol}: ${e.message}`);
+      tickRecorder.recordExit({
+        mode: "early-bird-paper", sessionId: state._sessionId, ts: Date.now(),
+        side: pos.optionSide, symbol: pos.symbol, qty,
+        spotExit: exitSpot, optionExit: exitPremium, pnl, reason: ex.reason,
+      });
+    } catch (_) {}
+
+    _applyDayBreakers();
+  } finally {
+    if (!released) {
+      log(`⚠️ ${LOG_TAG} OPTION — exit for ${pos.symbol} did not complete; releasing its capital block (P&L ₹${bookedPnl}).`);
+      try { capitalPool.release(MODE_KEY, bookedPnl, { symbol: pos.symbol }); } catch (_) {}
     }
   }
-  if (typeof exitPremium !== "number" || !Number.isFinite(exitPremium) || exitPremium <= 0) {
-    exitPremium = (typeof state.optionLtp === "number" && Number.isFinite(state.optionLtp) && state.optionLtp > 0)
-      ? state.optionLtp : pos.optionEntryLtp;
-    premiumSource = "last known premium (quote unavailable at exit)";
-    log(`⚠️ ${LOG_TAG} OPTION — no live premium at exit; booking at the ${premiumSource} ₹${exitPremium}.`);
-  }
-  state.optionLtp = exitPremium;
-
-  const exitSpot = (typeof ex.price === "number" && Number.isFinite(ex.price)) ? ex.price : pos.entrySpot;
-  const qty = pos.qty;
-
-  // A BOUGHT option: profit is (exit − entry) × qty, whichever side it is.
-  // earlyBird.computePnl is cash-equity and direction-signed — using it here
-  // would flip the sign on every PE and report a winner as a loser.
-  const _pnlRes = instrumentMode.computePnl({
-    side: pos.optionSide, entrySpot: pos.entrySpot, exitSpot,
-    entryPremium: pos.optionEntryLtp, exitPremium,
-    qty, broker: "fyers",
-  });
-  const gross   = _r2(_pnlRes.gross);
-  const charges = _pnlRes.charges;
-  const pnl     = _r2(_pnlRes.pnl);
-
-  state.sessionPnl = _r2(state.sessionPnl + pnl);
-  if (ex.exitType === "SL") state.stopOuts++;
-
-  const trade = {
-    leg:            "option",
-    symbol:         pos.symbol,
-    optionSide:     pos.optionSide,
-    optionStrike:   pos.optionStrike,
-    optionExpiry:   pos.optionExpiry,
-    side:           pos.side,
-    qty,
-    lots:           pos.lots,
-    optionEntryLtp: pos.optionEntryLtp,
-    optionExitLtp:  exitPremium,
-    entryPrice:     pos.optionEntryLtp,
-    exitPrice:      exitPremium,
-    entrySpot:      pos.entrySpot,
-    exitSpot,
-    entryTime:      pos.entryTime,
-    exitTime:       istNow(),
-    entryBarTime:   pos.signalBarTime,
-    entryUnixSec:   pos.entryUnixSec,
-    exitUnixSec:    Math.floor(Date.now() / 1000),
-    pnl,
-    grossPnl:       gross,
-    charges,
-    pnlMode:        `option premium: BUY ${pos.optionSide} ${qty} × ₹${pos.optionEntryLtp} → ₹${exitPremium} (${premiumSource}); every level measured on NIFTY SPOT`,
-    exitReason:     ex.reason,
-    exitType:       ex.exitType,
-    entryReason:    pos.entryReason,
-    stopLoss:       pos.stop,
-    initialStopLoss: pos.stop,
-    target:         pos.target,
-    riskPts:        pos.riskPts,
-    rewardPts:      pos.rewardPts,
-    bigCandle:      pos.bigCandle,
-    slBasis:        pos.slBasis,
-    shape:          pos.shape,
-    signalOpen:     pos.signalOpen,
-    signalHigh:     pos.signalHigh,
-    signalLow:      pos.signalLow,
-    signalClose:    pos.signalClose,
-    signalBarTime:  pos.signalBarTime,
-    triggerPrice:   pos.triggerSpot,
-    peakSpot:       pos.peakSpot,
-    troughSpot:     pos.troughSpot,
-    mfePts:         pos.mfePts || 0,
-    maePts:         pos.maePts || 0,
-    secsToMFE:      pos.secsToMFE || 0,
-    secsToMAE:      pos.secsToMAE || 0,
-    durationMs:     Date.now() - pos.entryTimeMs,
-    instrument:     pos.isFutures ? "NIFTY_FUTURES" : "NIFTY_OPTION",
-    isFutures:      !!pos.isFutures,
-    isSpot:         false,
-  };
-
-  state.sessionTrades.push(trade);
-  tradeLogger.appendTradeLog(MODE_KEY, trade);
-  capitalPool.release(MODE_KEY, pnl, { symbol: pos.symbol });   // frees this position's block only
-  _persist();
-
-  const held = Math.round(trade.durationMs / 1000);
-  log(`${pnl >= 0 ? "✅" : "❌"} ${LOG_TAG} OPTION EXIT [${ex.exitType}] ${pos.optionSide} ${qty}×${pos.symbol} — ${ex.reason}`);
-  log(`   ├─ Spot   : ${pos.entrySpot} → ${exitSpot} (${_r2(exitSpot - pos.entrySpot)} pts) · the level that fired this exit`);
-  log(`   ├─ Premium: ₹${pos.optionEntryLtp} → ₹${exitPremium} (${premiumSource}) · ${_r2(exitPremium - pos.optionEntryLtp)}/qty × ${qty}`);
-  log(`   ├─ P&L    : gross ₹${gross} − charges ₹${charges} = ₹${pnl} · held ${held}s · MFE ${trade.mfePts} spot pts / MAE ${trade.maePts} spot pts`);
-  log(`   └─ Book   : session ₹${state.sessionPnl} · ${state.stopOuts} stop-out(s) · ${state.positions.size} stock position(s) still open · no option re-entry today`);
-
-  notifyExit({
-    mode: "EARLYBIRD-PAPER",
-    side: pos.optionSide, symbol: pos.symbol,
-    spotAtEntry: pos.entrySpot, spotAtExit: exitSpot,
-    optionEntryLtp: pos.optionEntryLtp, optionExitLtp: exitPremium,
-    pnl, sessionPnl: state.sessionPnl,
-    exitReason: ex.reason, entryReason: pos.entryReason,
-    entryTime: pos.entryTime, exitTime: trade.exitTime, qty,
-    heldMs: trade.durationMs,
-  });
-
-  try {
-    tickRecorder.recordExit({
-      mode: "early-bird-paper", sessionId: state._sessionId, ts: Date.now(),
-      side: pos.optionSide, symbol: pos.symbol, qty,
-      spotExit: exitSpot, optionExit: exitPremium, pnl, reason: ex.reason,
-    });
-  } catch (_) {}
-
-  _applyDayBreakers();
 }
 
 /** The option setup never triggered by EARLYBIRD_ENTRY_END. Named, not vanished. */
@@ -2012,7 +2025,7 @@ function scheduleAutoStop() {
   const stopMin = h * 60 + (isNaN(m) ? 0 : m);
   const minsLeft = stopMin - getISTMinutes();
   if (minsLeft <= 0) return;
-  _autoStopTimer = setTimeout(() => { log(`⏰ ${LOG_TAG} Auto-stop @ ${raw} IST`); stopSession(); }, minsLeft * 60 * 1000);
+  _autoStopTimer = setTimeout(() => { log(`⏰ ${LOG_TAG} Auto-stop @ ${raw} IST`); stopSession().catch(e => console.error(`🚨 ${LOG_TAG} auto-stop error: ${e.message}`)); }, minsLeft * 60 * 1000);
 }
 
 // ── Session lifecycle ────────────────────────────────────────────────────────
@@ -2124,7 +2137,7 @@ router.get("/start", async (req, res) => {
   res.redirect("/early-bird-paper/status");
 });
 
-function stopSession() {
+async function stopSession() {
   if (!state.running) return;
 
   for (const pos of Array.from(state.positions.values())) {
@@ -2141,10 +2154,9 @@ function stopSession() {
   }
 
   // The OPTION leg. Its square-off needs a premium fetch, so unlike the stock
-  // legs above it cannot complete synchronously — it is started here and the
-  // trade is booked when the quote returns. The session save below therefore
-  // may not include it; the JSONL trade log always does, and the session is
-  // rebuilt from that on the next boot (rehydrateSessionFromJsonl).
+  // legs above it cannot complete synchronously — it is started here (claiming
+  // the position synchronously) and awaited below, before the session is saved,
+  // so the saved session and totalPnl include the option trade.
   let optionClose = null;
   if (state.optionPosition) {
     log(`⏹️ ${LOG_TAG} Squaring off the open OPTION position (${state.optionPosition.symbol}) — fetching its exit premium…`);
@@ -2158,13 +2170,6 @@ function stopSession() {
 
   state.running = false;
   stopPolling();
-  // The snapshot is cleared only AFTER that async close has booked its trade —
-  // _closeOptionPosition ends in a _persist(), which would otherwise re-create
-  // the file we just deleted and leave a phantom snapshot for the next boot.
-  const _clearSnapshot = () => { try { require("../utils/positionPersist").clearEarlyBirdPositions(); } catch (_) {} };
-  if (optionClose) optionClose.then(_clearSnapshot, _clearSnapshot);
-  else _clearSnapshot();
-
   try { tickRecorder.recordSessionStop({ mode: "early-bird-paper", sessionId: state._sessionId || null, reason: "user_stop" }); } catch (_) {}
 
   socketManager.removeCallback(CALLBACK_ID);
@@ -2172,6 +2177,13 @@ function stopSession() {
   if (!sharedSocketState.isAnyActive() && socketManager.isRunning()) socketManager.stop();
 
   if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
+
+  // Wait for the option square-off to book its trade before the snapshot is
+  // cleared and the session saved. The snapshot is cleared only AFTER it —
+  // _closeOptionPosition ends in a _persist(), which would otherwise re-create
+  // the file and leave a phantom snapshot for the next boot.
+  if (optionClose) await optionClose;
+  try { require("../utils/positionPersist").clearEarlyBirdPositions(); } catch (_) {}
 
   if (state.sessionTrades.length > 0) {
     try {
@@ -2201,7 +2213,10 @@ function stopSession() {
   });
 }
 
-router.get("/stop", (req, res) => { stopSession(); res.redirect("/early-bird-paper/status"); });
+router.get("/stop", async (req, res) => {
+  try { await stopSession(); } catch (e) { console.error(`🚨 ${LOG_TAG} stop error: ${e.message}`); }
+  res.redirect("/early-bird-paper/status");
+});
 
 /**
  * Manual exit. With no query it squares off EVERY open position; `?symbol=XYZ`
