@@ -246,10 +246,26 @@ function _computeAtr(candles, period) {
 }
 
 // ── Trade simulation ──────────────────────────────────────────────────────────
+// Guards the await window inside simulateBuy. state.position is only set AFTER
+// two network round-trips (symbol resolve + option quote), so a /manualEntry
+// landing while a candle-close entry awaits its quote would see a flat book and
+// open a second position over the first.
+let _entryInFlight = false;
+
 async function simulateBuy(side, sig) {
   const spot = state.lastTickPrice;
   if (!spot || !side) return;
+  if (_entryInFlight || state.position) return;
+  _entryInFlight = true;
+  try {
+    await _simulateBuyInner(side, sig, spot);
+  } finally {
+    _entryInFlight = false;
+  }
+}
 
+async function _simulateBuyInner(side, sig, spot) {
+  const _sid = state._sessionId;
   const _isFut = instrumentMode.isFutures();
 
   let optInfo;
@@ -310,6 +326,10 @@ async function simulateBuy(side, sig) {
       return;
   }
   }
+
+  // /stop (or a stop + restart) may have run while we awaited — opening now
+  // would strand an orphan position and its capital block.
+  if (state.position || !state.running || state._sessionId !== _sid) return;
 
   const qty = instrumentConfig.getLotQty();
 

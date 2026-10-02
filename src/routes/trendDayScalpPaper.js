@@ -310,6 +310,7 @@ function stopOptionPolling() {
 async function simulateBuy(side, sig) {
   const spot = state.lastTickPrice;
   if (!spot || !side) return;
+  const _sid = state._sessionId;
 
   const _isFut = instrumentMode.isFutures();
 
@@ -353,6 +354,10 @@ async function simulateBuy(side, sig) {
       return;
     }
   }
+
+  // /stop (or a stop + restart) may have run while we awaited — opening now
+  // would strand an orphan position and its capital block.
+  if (state.position || !state.running || state._sessionId !== _sid) return;
 
   const qty = tdsLotQty();
 

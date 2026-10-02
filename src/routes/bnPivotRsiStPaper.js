@@ -487,6 +487,7 @@ function _refreshIndicatorReadouts() {
 async function simulateBuy(side, sig) {
   const spot = state.lastTickPrice || sig.entrySpot;
   if (!side) return;
+  const _sid = state._sessionId;
   if (typeof spot !== "number" || !(spot > 0)) {
     log(`⚠️ [BN-PIVOT-RSI-ST-PAPER] No ${_u().label} price yet — cannot choose a strike, entry deferred`);
     return;
@@ -580,6 +581,10 @@ async function simulateBuy(side, sig) {
       return;
     }
   }
+
+  // /stop (or a stop + restart) may have run while we awaited — opening now
+  // would strand an orphan position and its capital block.
+  if (state.position || !state.running || state._sessionId !== _sid) return;
 
   const qty = bnPivotLotQty();
   const slPts = Number.isFinite(slSpot) ? parseFloat(Math.abs(slSpot - spot).toFixed(2)) : null;

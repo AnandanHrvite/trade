@@ -279,6 +279,7 @@ async function simulateBuy(side, sigSnapshot) {
 }
 
 async function _simulateBuyInner(side, sigSnapshot, spot) {
+  const _sid = state._sessionId;
 
   // Resolve ATM option symbol (auto expiry)
   const _isFut = instrumentMode.isFutures();
@@ -344,6 +345,10 @@ async function _simulateBuyInner(side, sigSnapshot, spot) {
       return;
     }
   }
+
+  // /stop (or a stop + restart) may have run while we awaited — opening now
+  // would strand an orphan position and its capital block.
+  if (state.position || !state.running || state._sessionId !== _sid) return;
 
   const qty = instrumentConfig.getLotQty();
 

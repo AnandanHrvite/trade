@@ -155,7 +155,7 @@ function loadData() {
   if (_dataCache) return _dataCache;
   ensureDir();
   if (!fs.existsSync(PT_FILE)) {
-    const init = { capital: parseFloat(process.env.FYERS_INV_AMOUNT || "100000"), totalPnl: 0, sessions: [] };
+    const init = { capital: parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000"), totalPnl: 0, sessions: [] };
     fs.writeFileSync(PT_FILE, JSON.stringify(init, null, 2));
     _dataCache = init;
     return init;
@@ -163,7 +163,7 @@ function loadData() {
   try { _dataCache = JSON.parse(fs.readFileSync(PT_FILE, "utf-8")); }
   catch (e) {
     console.error("[ha-scalp-paper] ha_scalp_paper_trades.json corrupt — resetting:", e.message);
-    _dataCache = { capital: parseFloat(process.env.FYERS_INV_AMOUNT || "100000"), totalPnl: 0, sessions: [] };
+    _dataCache = { capital: parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000"), totalPnl: 0, sessions: [] };
     fs.writeFileSync(PT_FILE, JSON.stringify(_dataCache, null, 2));
   }
   return _dataCache;
@@ -559,6 +559,7 @@ async function simulateBuy(side, sig) {
   // price every level of this strategy is measured on.
   const spotPrice = state.lastTickPrice;
   if (!side) return;
+  const _sid = state._sessionId;
   if (typeof spotPrice !== "number" || !(spotPrice > 0)) {
     log(`⚠️ [HA-SCALP-PAPER] No NIFTY spot price yet — entry deferred`);
     return;
@@ -627,6 +628,10 @@ async function simulateBuy(side, sig) {
     skipLogger.appendSkipLog(MODE_KEY, { gate: "fill_past_stop", reason: `spot ${spotPrice} already beyond stop ${slSpot}`, side, spot: spotPrice });
     return;
   }
+
+  // /stop (or a stop + restart) may have run while we awaited — opening now
+  // would strand an orphan position and its capital block.
+  if (state.position || !state.running || state._sessionId !== _sid) return;
 
   const qty = haLotQty();
   const slPts = parseFloat(Math.abs(slSpot - spotPrice).toFixed(2));
@@ -753,7 +758,7 @@ function simulateSell(reason, opts) {
   const _pnlRes    = instrumentMode.computePnl({
     side: pos.side, entrySpot: pos.entrySpot, exitSpot,
     entryPremium: pos.optionEntryLtp, exitPremium: exitOptLtp,
-    qty, broker: "fyers",
+    qty, broker: "zerodha",
   });
   const charges    = _pnlRes.charges;
   const pnl        = _pnlRes.pnl;
@@ -1370,7 +1375,7 @@ function stopSession() {
       const data = loadData();
       data.sessions.push({ date: state.sessionStart, strategy: haStrategy.NAME, pnl: state.sessionPnl, trades: state.sessionTrades });
       data.totalPnl = parseFloat((data.totalPnl + state.sessionPnl).toFixed(2));
-      data.capital  = parseFloat((parseFloat(process.env.FYERS_INV_AMOUNT || "100000") + data.totalPnl).toFixed(2));
+      data.capital  = parseFloat((parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000") + data.totalPnl).toFixed(2));
       saveData(data);
       log(`💾 [HA-SCALP-PAPER] Session saved — ${state.sessionTrades.length} trades, PnL ₹${state.sessionPnl}`);
     } catch (e) {
@@ -1524,7 +1529,7 @@ router.get("/status", (req, res) => {
 
   const wins   = state.sessionTrades.filter(t => t.pnl > 0).length;
   const losses = state.sessionTrades.filter(t => t.pnl < 0).length;
-  const startCap = parseFloat(process.env.FYERS_INV_AMOUNT || "100000");
+  const startCap = parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000");
   const maLabel = `${cfg.maPeriod} ${cfg.maType.toUpperCase()}`;
 
   const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/>
@@ -1730,7 +1735,7 @@ function _positionCardHtml(pos, optLtp) {
 router.get("/history", (req, res) => {
   const data = loadData();
   const liveActive = sharedSocketState.getHaScalpMode() === "HA_SCALP_LIVE";
-  const startCap = parseFloat(process.env.FYERS_INV_AMOUNT || "100000");
+  const startCap = parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000");
   res.send(renderHistoryPage({
     routePrefix: "/ha-scalp-paper",
     sidebarKey: "haScalpHistory",
@@ -1810,7 +1815,7 @@ router.delete("/session/:index", (req, res) => {
   if (isNaN(idx) || idx < 0 || idx >= (data.sessions || []).length) return res.status(400).json({ success: false, error: "Invalid session index." });
   data.sessions.splice(idx, 1);
   data.totalPnl = parseFloat(data.sessions.reduce((s, x) => s + (x.pnl || 0), 0).toFixed(2));
-  data.capital  = parseFloat((parseFloat(process.env.FYERS_INV_AMOUNT || "100000") + data.totalPnl).toFixed(2));
+  data.capital  = parseFloat((parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000") + data.totalPnl).toFixed(2));
   saveData(data);
   return res.json({ success: true, message: "Session deleted successfully." });
 });
@@ -1830,14 +1835,14 @@ router.post("/restore-session/:date", (req, res) => {
   data.sessions.push({ date, strategy: (missing[0] && missing[0].strategy) || haStrategy.NAME, pnl: sessionPnl, trades: missing, restoredFromJsonl: true });
   data.sessions.sort((a, b) => istDayFromAny(a.date).localeCompare(istDayFromAny(b.date)));
   data.totalPnl = parseFloat(data.sessions.reduce((s, x) => s + (x.pnl || 0), 0).toFixed(2));
-  data.capital  = parseFloat((parseFloat(process.env.FYERS_INV_AMOUNT || "100000") + data.totalPnl).toFixed(2));
+  data.capital  = parseFloat((parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000") + data.totalPnl).toFixed(2));
   saveData(data);
   return res.json({ success: true, restored: missing.length, sessionPnl, message: `Restored ${missing.length} trade(s).` });
 });
 
 router.get("/reset", (req, res) => {
   if (state.running) return res.status(400).json({ success: false, error: "Stop HA Scalp paper trading before resetting." });
-  const fresh = parseFloat(process.env.FYERS_INV_AMOUNT || "100000");
+  const fresh = parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000");
   saveData({ capital: fresh, totalPnl: 0, sessions: [] });
   require("../utils/paperReset").clearTodayFiles(MODE_KEY); // else restart rehydrates today's session
   return res.json({ success: true, message: `HA Scalp paper trade history cleared. Capital reset to ₹${fresh.toLocaleString("en-IN")}` });

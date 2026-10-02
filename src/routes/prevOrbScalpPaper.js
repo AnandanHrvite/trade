@@ -112,7 +112,7 @@ function lotQty() {
 function ensureDir() { if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true }); }
 
 let _dataCache = null;
-function _initData() { return { capital: parseFloat(process.env.FYERS_INV_AMOUNT || "100000"), totalPnl: 0, sessions: [] }; }
+function _initData() { return { capital: parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000"), totalPnl: 0, sessions: [] }; }
 function loadData() {
   if (_dataCache) return _dataCache;
   ensureDir();
@@ -436,6 +436,7 @@ function _mergeBars(bars) {
 async function simulateBuy(side, sig) {
   const spotPrice = state.lastTickPrice;
   if (!side) return;
+  const _sid = state._sessionId;
   if (typeof spotPrice !== "number" || !(spotPrice > 0)) {
     log(`⚠️ ${TAG} No NIFTY spot price yet — entry deferred`);
     return;
@@ -495,7 +496,7 @@ async function simulateBuy(side, sig) {
   }
   // Every abort path above can still be retried; a position is about to exist,
   // so re-check that nothing else opened one while we awaited.
-  if (state.position || !state.running) return;
+  if (state.position || !state.running || state._sessionId !== _sid) return;
 
   const qty = lotQty();
   const slPts = parseFloat(Math.abs(slSpot - fillSpot).toFixed(2));
@@ -605,6 +606,8 @@ function simulateSell(reason, opts) {
   // Clear the position FIRST so a re-entrant tick can never double-sell it.
   state.position = null;
   state.sessionPnl = parseFloat((state.sessionPnl + pnl).toFixed(2));
+  // Release the block now, before the logging/notify calls below can throw.
+  capitalPool.release(MODE_KEY, pnl);
 
   const trade = {
     side:           pos.side,
@@ -687,7 +690,6 @@ function simulateSell(reason, opts) {
     });
   } catch (_) {}
 
-  capitalPool.release(MODE_KEY, pnl);
   try { require("../utils/positionPersist").clearPrevOrbScalpPosition(); } catch (_) {}
   state.optionLtp = null;
   state.optionLtpUpdatedAt = null;
@@ -1092,7 +1094,7 @@ function stopSession() {
       const data = loadData();
       data.sessions.push({ date: state.sessionStart, strategy: strat.NAME, pnl: state.sessionPnl, trades: state.sessionTrades });
       data.totalPnl = parseFloat((data.totalPnl + state.sessionPnl).toFixed(2));
-      data.capital  = parseFloat((parseFloat(process.env.FYERS_INV_AMOUNT || "100000") + data.totalPnl).toFixed(2));
+      data.capital  = parseFloat((parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000") + data.totalPnl).toFixed(2));
       saveData(data);
       log(`💾 ${TAG} Session saved — ${state.sessionTrades.length} trade(s), PnL ₹${state.sessionPnl}`);
     } catch (e) {
@@ -1220,7 +1222,7 @@ router.get("/status", (req, res) => {
   const cfg  = strat.getConfig();
   const wins   = state.sessionTrades.filter(t => t.pnl > 0).length;
   const losses = state.sessionTrades.filter(t => t.pnl < 0).length;
-  const startCap = parseFloat(process.env.FYERS_INV_AMOUNT || "100000");
+  const startCap = parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000");
   const lv = state.levels || {};
 
   const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/>
@@ -1415,7 +1417,7 @@ router.get("/history", (req, res) => {
     liveActive,
     sessions: data.sessions || [],
     totalPnl: data.totalPnl,
-    startCap: parseFloat(process.env.FYERS_INV_AMOUNT || "100000"),
+    startCap: parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000"),
     emptyLabel: "Start Prev ORB Scalp paper trading to record your first session.",
   }));
 });
@@ -1471,7 +1473,7 @@ router.delete("/session/:index", (req, res) => {
   if (isNaN(idx) || idx < 0 || idx >= (data.sessions || []).length) return res.status(400).json({ success: false, error: "Invalid session index." });
   data.sessions.splice(idx, 1);
   data.totalPnl = parseFloat(data.sessions.reduce((s, x) => s + (x.pnl || 0), 0).toFixed(2));
-  data.capital  = parseFloat((parseFloat(process.env.FYERS_INV_AMOUNT || "100000") + data.totalPnl).toFixed(2));
+  data.capital  = parseFloat((parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000") + data.totalPnl).toFixed(2));
   saveData(data);
   return res.json({ success: true, message: "Session deleted successfully." });
 });
@@ -1492,14 +1494,14 @@ router.post("/restore-session/:date", (req, res) => {
   data.sessions.push({ date, strategy: strat.NAME, pnl: sessionPnl, trades: missing, restoredFromJsonl: true });
   data.sessions.sort((a, b) => istDayFromAny(a.date).localeCompare(istDayFromAny(b.date)));
   data.totalPnl = parseFloat(data.sessions.reduce((s, x) => s + (x.pnl || 0), 0).toFixed(2));
-  data.capital  = parseFloat((parseFloat(process.env.FYERS_INV_AMOUNT || "100000") + data.totalPnl).toFixed(2));
+  data.capital  = parseFloat((parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000") + data.totalPnl).toFixed(2));
   saveData(data);
   return res.json({ success: true, restored: missing.length, sessionPnl, message: `Restored ${missing.length} trade(s).` });
 });
 
 router.get("/reset", (req, res) => {
   if (state.running) return res.status(400).json({ success: false, error: "Stop Prev ORB Scalp paper trading before resetting." });
-  const fresh = parseFloat(process.env.FYERS_INV_AMOUNT || "100000");
+  const fresh = parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000");
   saveData({ capital: fresh, totalPnl: 0, sessions: [] });
   require("../utils/paperReset").clearTodayFiles(MODE_KEY); // else restart rehydrates today's session
   return res.json({ success: true, message: `Prev ORB Scalp paper trade history cleared. Capital reset to ₹${fresh.toLocaleString("en-IN")}` });
