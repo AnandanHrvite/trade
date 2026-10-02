@@ -248,7 +248,7 @@ function rehydrateSessionFromJsonl() {
     }
     if (!trades.length) return;
     state._staleSession = stale;
-    state._unsaved      = source === "today's live session";
+    state._unsaved      = false;   // rehydrated trades are not counted: they may have been deleted from History, and the pool must not resurrect them
     state.sessionTrades = trades;
     state.tradesTaken   = trades.length;
     state.stopOuts = trades.filter(t => /stop|SuperTrend|premium floor/i.test(String(t.exitReason || ""))).length;

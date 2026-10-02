@@ -206,7 +206,7 @@ function rehydrateSessionFromJsonl() {
     }
     if (!trades.length) return;
 
-    state._pnlSaved     = source !== "today's live session"; // step 2 = already in the file
+    state._pnlSaved     = true;   // rehydrated trades are not counted: they may have been deleted from History, and the pool must not resurrect them
     state._staleSession = stale;
     state.sessionTrades = trades;
     state.sessionPnl = parseFloat(trades.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0).toFixed(2));

@@ -324,10 +324,11 @@ function rehydrateSessionFromJsonl() {
         trades = last.trades;
         source = `last session (${last.date || "?"})`;
         stale  = all.length === 0;
-        state._saved = true;   // already in the file's totalPnl — not unsaved P&L
-
       }
     }
+    // Rehydrated trades are not counted by the pool: they may have been deleted
+    // from History, and the pool must not resurrect them.
+    state._saved = true;
     if (!trades.length) return;
     state._staleSession = stale;
     state.sessionTrades = trades;
