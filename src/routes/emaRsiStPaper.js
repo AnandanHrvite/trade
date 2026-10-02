@@ -1148,7 +1148,9 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   };
 
   ptState.sessionTrades.push(trade);
-  tradeLogger.appendTradeLog("ema_rsi_st", trade); // crash-safe per-trade JSONL
+  if (!ptState._simMode && !ptState._simSession) {
+    tradeLogger.appendTradeLog("ema_rsi_st", trade); // crash-safe per-trade JSONL
+  }
   ptState.sessionPnl = parseFloat((ptState.sessionPnl + netPnl).toFixed(2));
   // Maintain O(1) counters so status endpoints don't need Array.filter on every poll
   if (netPnl > 0) { ptState._sessionWins++;   }

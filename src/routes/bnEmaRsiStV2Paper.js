@@ -1017,7 +1017,9 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
 
   // Crash-recovery snapshot: written on entry, refreshed on every trail move,
   // cleared on exit. app.js reconciles it against the broker book on boot.
-  try { require("../utils/positionPersist").saveBnEmaRsiStV2Position(ptState.position, { sessionPnl: ptState.sessionPnl }); } catch (_) {}
+  if (!ptState._simMode && !ptState._simSession) {
+    try { require("../utils/positionPersist").saveBnEmaRsiStV2Position(ptState.position, { sessionPnl: ptState.sessionPnl }); } catch (_) {}
+  }
 
   // Set option symbol and start REST polling (no socket changes)
   // Skip option polling for futures and simulation mode — no option premium to track
@@ -1166,7 +1168,9 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   };
 
   ptState.sessionTrades.push(trade);
-  tradeLogger.appendTradeLog("bn_ema_rsi_st_v2", trade); // crash-safe per-trade JSONL
+  if (!ptState._simMode && !ptState._simSession) {
+    tradeLogger.appendTradeLog("bn_ema_rsi_st_v2", trade); // crash-safe per-trade JSONL
+  }
   ptState.sessionPnl = parseFloat((ptState.sessionPnl + netPnl).toFixed(2));
   // Maintain O(1) counters so status endpoints don't need Array.filter on every poll
   if (netPnl > 0) { ptState._sessionWins++;   }
@@ -1401,7 +1405,9 @@ async function onCandleClose(candle) {
       const _o = pos.stopLoss;
       pos.stopLoss = _trail.stop;
       log(`📐 [PAPER] SL trail ${pos.side}: ₹${_o} → ₹${pos.stopLoss} (${_trail.tag || "SuperTrend"})`);
-      try { require("../utils/positionPersist").saveBnEmaRsiStV2Position(pos, { sessionPnl: ptState.sessionPnl }); } catch (_) {}
+      if (!ptState._simMode && !ptState._simSession) {
+        try { require("../utils/positionPersist").saveBnEmaRsiStV2Position(pos, { sessionPnl: ptState.sessionPnl }); } catch (_) {}
+      }
     }
   }
   // SL-hit is enforced intra-candle in onTick against the stop set above —

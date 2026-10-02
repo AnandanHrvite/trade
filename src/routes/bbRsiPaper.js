@@ -249,6 +249,11 @@ function isStartAllowed() {
 
 // ── Option LTP polling ──────────────────────────────────────────────────────
 let _optionPollTimer = null;
+// Poll generation: bumped by every stopOptionPolling(). Each poll chain captures
+// the value it started under; a reply or loop from an older generation (exit +
+// re-entry on the SAME strike while it was in flight) is dropped, since the
+// symbol check alone cannot tell the two positions apart.
+let _optionPollGen = 0;
 let _rateLimitBackoff = 0; // 0 = normal 500ms; >0 triggers 2s wait & warn-once
 
 async function fetchOptionLtp(symbol) {
@@ -313,18 +318,20 @@ function _applyOptionLtp(symbol, ltp, at) {
 
 function startOptionPolling(symbol) {
   stopOptionPolling();
+  const gen = _optionPollGen;
   // Stream the held contract on the shared Fyers websocket. Ticks push straight
   // into state, so the premium a stop-loss reads is current instead of up to one
   // poll interval old. The REST poll below stays as the fallback and is what
   // renews the lease — stop polling and the subscription lapses on its own.
   const _onStreamed = (ltp, at) => {
-    if (state.position && state.optionSymbol === symbol) _applyOptionLtp(symbol, ltp, at);
+    if (gen === _optionPollGen && state.position && state.optionSymbol === symbol) _applyOptionLtp(symbol, ltp, at);
   };
   optionFeed.track(OPTION_FEED_OWNER, symbol, _onStreamed);
   function scheduleNext() {
     if (!_optionPollTimer) return;
     const delay = _rateLimitBackoff > 0 ? 2000 : 500;
     _optionPollTimer = setTimeout(async () => {
+      if (gen !== _optionPollGen) return; // stale chain — a newer one owns the timer
       if (!state.position || !state.optionSymbol) { stopOptionPolling(); return; }
       // Stale loop for a previous contract — a newer startOptionPolling owns the
       // timer and feed lease now, so just die without touching either.
@@ -332,14 +339,19 @@ function startOptionPolling(symbol) {
       optionFeed.track(OPTION_FEED_OWNER, symbol, _onStreamed);
       const streamed = optionFeed.getFresh(symbol);
       if (streamed) _applyOptionLtp(symbol, streamed.ltp, streamed.at);
-      else _applyOptionLtp(symbol, await fetchOptionLtp(symbol), Date.now());
-      if (state.optionSymbol !== symbol) return; // contract changed while in flight
+      else {
+        const _ltp = await fetchOptionLtp(symbol);
+        if (gen !== _optionPollGen) return; // position changed while in flight
+        _applyOptionLtp(symbol, _ltp, Date.now());
+      }
+      if (gen !== _optionPollGen || state.optionSymbol !== symbol) return; // contract changed while in flight
       scheduleNext();
     }, delay);
   }
   // The first price still comes over REST: the subscription has only just been
   // placed, so the stream has nothing yet and entry must not wait for a tick.
   fetchOptionLtp(symbol).then(ltp => {
+    if (gen !== _optionPollGen) return; // position changed while in flight
     _applyOptionLtp(symbol, ltp, Date.now());
     if (state.optionSymbol !== symbol) return; // contract changed while in flight
     scheduleNext();
@@ -350,6 +362,7 @@ function startOptionPolling(symbol) {
 function stopOptionPolling() {
   if (_optionPollTimer && _optionPollTimer !== true) clearTimeout(_optionPollTimer);
   _optionPollTimer = null;
+  _optionPollGen++;
   try { optionFeed.release(OPTION_FEED_OWNER); } catch (_) {}
 }
 
@@ -574,7 +587,9 @@ function simulateSell(exitPrice, reason, spotAtExit) {
     instrument:      instrumentConfig.INSTRUMENT,
   };
   state.sessionTrades.push(trade);
-  tradeLogger.appendTradeLog("bb_rsi", trade); // crash-safe per-trade JSONL
+  if (!state._simMode && !state._simSession) {
+    tradeLogger.appendTradeLog("bb_rsi", trade); // crash-safe per-trade JSONL
+  }
 
   state.sessionPnl = parseFloat((state.sessionPnl + netPnl).toFixed(2));
   if (netPnl > 0) state._wins = (state._wins || 0) + 1;
