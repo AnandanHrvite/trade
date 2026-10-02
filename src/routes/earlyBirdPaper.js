@@ -304,11 +304,19 @@ function _persist() {
   } catch (_) {}
 }
 
+// One trade's identity in the history file vs the day JSONL. Not entryBarTime
+// alone: that is the day's signal candle, shared by EVERY EarlyBird trade that
+// day, so a second session's trades looked "already saved" and were never
+// restored.
+function _ebTradeKey(t) {
+  return `${t.symbol || ""}@${t.entryTime || ""}@${t.entryBarTime || ""}@${t.entryPrice || ""}`;
+}
+
 // ── Crash/restart recovery: rehydrate today's in-memory session from JSONL ────
 function rehydrateSessionFromJsonl() {
   try {
     const data = loadData();
-    const keyOf = (t) => String(t.entryBarTime || t.entryTime || `${t.symbol}@${t.entryPrice}@${t.entryTime}`);
+    const keyOf = _ebTradeKey;
     const today = tradeLogger.istDateString(Date.now());
     const all = tradeLogger.readDailyTrades(MODE_KEY, today)
       .filter(t => t && !t.type && (t.side || t.entryTime || t.entryBarTime || t.symbol));
@@ -3042,15 +3050,15 @@ router.delete("/session/:index", (req, res) => {
 });
 
 router.post("/restore-session/:date", (req, res) => {
-  if (state.running) return res.status(400).json({ success: false, error: "Stop EarlyBird paper trading before restoring." });
+  if (state.running || _stopping) return res.status(400).json({ success: false, error: "Stop EarlyBird paper trading before restoring." });
   const date = String(req.params.date || "").trim();
   if (!_EB_DATE_RE.test(date)) return res.status(400).json({ success: false, error: "Invalid date — expected YYYY-MM-DD." });
   const allTrades = tradeLogger.readDailyTrades(MODE_KEY, date);
   if (!allTrades.length) return res.status(404).json({ success: false, error: "No trades found in daily JSONL for that date." });
   const data = loadData();
   const seen = new Set();
-  for (const s of (data.sessions || [])) for (const t of (s.trades || [])) { const key = t.entryBarTime || t.entryTime || `${t.symbol}@${t.entryPrice}@${t.entryTime}`; if (key) seen.add(String(key)); }
-  const missing = allTrades.filter(t => { const key = t.entryBarTime || t.entryTime || `${t.symbol}@${t.entryPrice}@${t.entryTime}`; return key && !seen.has(String(key)); });
+  for (const s of (data.sessions || [])) for (const t of (s.trades || [])) { seen.add(_ebTradeKey(t)); }
+  const missing = allTrades.filter(t => { return !seen.has(_ebTradeKey(t)); });
   if (!missing.length) return res.json({ success: true, restored: 0, message: "Nothing to restore — all trades already in sessions." });
   const sessionPnl = _r2(missing.reduce((s, t) => s + (Number(t.pnl) || 0), 0));
   data.sessions.push({ date, strategy: (missing[0] && missing[0].strategy) || STRATEGY_NAME, pnl: sessionPnl, trades: missing, restoredFromJsonl: true });

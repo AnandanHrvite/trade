@@ -81,8 +81,10 @@ function enabledStrategies() {
 // EMA_RSI_ST trades through Zerodha; BB_RSI/PA/ORB through Fyers.
 const BROKER_OF = { EMA_RSI_ST:'ZERODHA', EMA_RSI_ST_V2:'ZERODHA', BB_RSI:'FYERS', PA:'FYERS', ORB:'FYERS', EMA9VWAP:'ZERODHA', TREND_PB:'FYERS', TDS:'FYERS', HA_SCALP:'ZERODHA', PREV_ORB_SCALP:'ZERODHA', RSI_PIVOT_ST:'ZERODHA', BN_PIVOT_RSI_ST:'ZERODHA', BN_EMA_RSI_ST_V2:'ZERODHA', SIMPLE930:'ZERODHA', EARLYBIRD:'FYERS' };
 function brokerPools(strategies) {
-  const z = parseFloat(process.env.ZERODHA_INV_AMOUNT || '100000');
-  const f = parseFloat(process.env.FYERS_INV_AMOUNT   || '100000');
+  // Same fallback as capitalPool.baseCapital — the ribbon must show the amount the gate uses.
+  const inv = (v) => (n => Number.isFinite(n) && n >= 0 ? n : 100000)(parseFloat(v || '100000'));
+  const z = inv(process.env.ZERODHA_INV_AMOUNT);
+  const f = inv(process.env.FYERS_INV_AMOUNT);
   const pools = [];
   // sub = the enabled strategies actually routed to that broker, never a
   // hardcoded list (it went stale every time a strategy was added).
@@ -95,7 +97,7 @@ function brokerPools(strategies) {
   // COMMODITY has its own pool (CMX_STARTING_CAPITAL) — shown while any
   // commodity page is switched on.
   const cmx = require("../utils/commodityPaperRouter").enabledEngines().map(e => e.snapshot().label);
-  if (cmx.length) pools.push({ id:'COMMODITY', label:'COMMODITY', sub:cmx.join(' \u00b7 '), inv:(v => Number.isFinite(v) && v >= 0 ? v : 100000)(parseFloat(process.env.CMX_STARTING_CAPITAL || '100000')) });
+  if (cmx.length) pools.push({ id:'COMMODITY', label:'COMMODITY', sub:cmx.join(' \u00b7 '), inv:inv(process.env.CMX_STARTING_CAPITAL) });
   return pools;
 }
 
