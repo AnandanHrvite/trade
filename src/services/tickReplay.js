@@ -2633,7 +2633,7 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     // copy made every later require() (the shutdown handler's stopSession, the
     // capital pool's session getter) load a fresh, never-started copy instead of
     // the instance Express is actually serving.
-    if (routeMod) {
+    if (routeMod || liveCacheEntry) {   // also when the replay copy failed to load
       try {
         const routePath = require.resolve(MODE_TO_MODULE[mode]);
         if (liveCacheEntry) require.cache[routePath] = liveCacheEntry;
