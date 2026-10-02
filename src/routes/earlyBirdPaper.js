@@ -203,6 +203,9 @@ function saveData(d) {
 // symbol ("RELIANCE"), which is also the natural per-symbol lock: one attempt
 // per stock per day, enforced by `attempted`.
 let state = _freshState();
+// True while stopSession() awaits the option square-off. /start and /reset must
+// not replace `state` then — the stop still has to save and clear THAT session.
+let _stopping = false;
 function _freshState() {
   return {
     running:        false,
@@ -1181,11 +1184,14 @@ function _trackOptionExcursion(pos, spot) {
  * seen and says so out loud rather than leaving the position open forever.
  */
 async function _closeOptionPosition(ex) {
-  const pos = state.optionPosition;
+  // Pin this session's state: the premium fetch below awaits, and a /stop +
+  // /start in that gap replaces the module `state` with a fresh session.
+  const s = state;
+  const pos = s.optionPosition;
   if (!pos) return;
   // Claim it synchronously: this function awaits, and a second poll must not be
   // able to book the same position twice.
-  state.optionPosition = null;
+  s.optionPosition = null;
 
   // Whatever throws after the claim above, the position's capital block must
   // still be freed — otherwise it stays reserved in the pool for the day.
@@ -1200,7 +1206,7 @@ async function _closeOptionPosition(ex) {
       // quote, and falling through to the option fetch would book the trade at
       // the entry price (a phantom flat).
       exitPremium = (typeof ex.price === "number" && Number.isFinite(ex.price) && ex.price > 0)
-        ? ex.price : state.lastTickPrice;
+        ? ex.price : s.lastTickPrice;
       premiumSource = "index level (futures)";
     } else {
       try {
@@ -1211,12 +1217,12 @@ async function _closeOptionPosition(ex) {
       }
     }
     if (typeof exitPremium !== "number" || !Number.isFinite(exitPremium) || exitPremium <= 0) {
-      exitPremium = (typeof state.optionLtp === "number" && Number.isFinite(state.optionLtp) && state.optionLtp > 0)
-        ? state.optionLtp : pos.optionEntryLtp;
+      exitPremium = (typeof s.optionLtp === "number" && Number.isFinite(s.optionLtp) && s.optionLtp > 0)
+        ? s.optionLtp : pos.optionEntryLtp;
       premiumSource = "last known premium (quote unavailable at exit)";
       log(`⚠️ ${LOG_TAG} OPTION — no live premium at exit; booking at the ${premiumSource} ₹${exitPremium}.`);
     }
-    state.optionLtp = exitPremium;
+    s.optionLtp = exitPremium;
 
     const exitSpot = (typeof ex.price === "number" && Number.isFinite(ex.price)) ? ex.price : pos.entrySpot;
     const qty = pos.qty;
@@ -1234,8 +1240,8 @@ async function _closeOptionPosition(ex) {
     const pnl     = _r2(_pnlRes.pnl);
     bookedPnl = pnl;
 
-    state.sessionPnl = _r2(state.sessionPnl + pnl);
-    if (ex.exitType === "SL") state.stopOuts++;
+    s.sessionPnl = _r2(s.sessionPnl + pnl);
+    if (ex.exitType === "SL") s.stopOuts++;
 
     const trade = {
       leg:            "option",
@@ -1290,25 +1296,25 @@ async function _closeOptionPosition(ex) {
       isSpot:         false,
     };
 
-    state.sessionTrades.push(trade);
+    s.sessionTrades.push(trade);
     tradeLogger.appendTradeLog(MODE_KEY, trade);
     released = true;
     capitalPool.release(MODE_KEY, pnl, { symbol: pos.symbol });   // frees this position's block only
-    _persist();
+    if (s === state) _persist();   // never re-snapshot over a newer session
 
     const held = Math.round(trade.durationMs / 1000);
     log(`${pnl >= 0 ? "✅" : "❌"} ${LOG_TAG} OPTION EXIT [${ex.exitType}] ${pos.optionSide} ${qty}×${pos.symbol} — ${ex.reason}`);
     log(`   ├─ Spot   : ${pos.entrySpot} → ${exitSpot} (${_r2(exitSpot - pos.entrySpot)} pts) · the level that fired this exit`);
     log(`   ├─ Premium: ₹${pos.optionEntryLtp} → ₹${exitPremium} (${premiumSource}) · ${_r2(exitPremium - pos.optionEntryLtp)}/qty × ${qty}`);
     log(`   ├─ P&L    : gross ₹${gross} − charges ₹${charges} = ₹${pnl} · held ${held}s · MFE ${trade.mfePts} spot pts / MAE ${trade.maePts} spot pts`);
-    log(`   └─ Book   : session ₹${state.sessionPnl} · ${state.stopOuts} stop-out(s) · ${state.positions.size} stock position(s) still open · no option re-entry today`);
+    log(`   └─ Book   : session ₹${s.sessionPnl} · ${s.stopOuts} stop-out(s) · ${s.positions.size} stock position(s) still open · no option re-entry today`);
 
     notifyExit({
       mode: "EARLYBIRD-PAPER",
       side: pos.optionSide, symbol: pos.symbol,
       spotAtEntry: pos.entrySpot, spotAtExit: exitSpot,
       optionEntryLtp: pos.optionEntryLtp, optionExitLtp: exitPremium,
-      pnl, sessionPnl: state.sessionPnl,
+      pnl, sessionPnl: s.sessionPnl,
       exitReason: ex.reason, entryReason: pos.entryReason,
       entryTime: pos.entryTime, exitTime: trade.exitTime, qty,
       heldMs: trade.durationMs,
@@ -1316,13 +1322,13 @@ async function _closeOptionPosition(ex) {
 
     try {
       tickRecorder.recordExit({
-        mode: "early-bird-paper", sessionId: state._sessionId, ts: Date.now(),
+        mode: "early-bird-paper", sessionId: s._sessionId, ts: Date.now(),
         side: pos.optionSide, symbol: pos.symbol, qty,
         spotExit: exitSpot, optionExit: exitPremium, pnl, reason: ex.reason,
       });
     } catch (_) {}
 
-    _applyDayBreakers();
+    if (s === state) _applyDayBreakers();
   } finally {
     if (!released) {
       log(`⚠️ ${LOG_TAG} OPTION — exit for ${pos.symbol} did not complete; releasing its capital block (P&L ₹${bookedPnl}).`);
@@ -2030,7 +2036,7 @@ function scheduleAutoStop() {
 
 // ── Session lifecycle ────────────────────────────────────────────────────────
 router.get("/start", async (req, res) => {
-  if (state.running) return res.redirect("/early-bird-paper/status");
+  if (state.running || _stopping) return res.redirect("/early-bird-paper/status");
 
   if (String(process.env.EARLYBIRD_MODE_ENABLED || "true").toLowerCase() !== "true") {
     return res.status(403).send(_errorPage("EarlyBird Disabled", "Enable EarlyBird Mode in Settings first", "/settings", "Go to Settings"));
@@ -2053,6 +2059,7 @@ router.get("/start", async (req, res) => {
     return res.status(400).send(_errorPage("Session Closed", `Past ${_fmtMins(cfg.forcedExitMin)} IST — EarlyBird squares everything off by then`, "/early-bird-paper/status", "← Back"));
   }
 
+  if (_stopping) return res.redirect("/early-bird-paper/status");   // a stop began during the awaits above
   state = _freshState();
   state.running = true;
   state.sessionStart = new Date().toISOString();
@@ -2138,79 +2145,87 @@ router.get("/start", async (req, res) => {
 });
 
 async function stopSession() {
-  if (!state.running) return;
+  // Pin the session being stopped: the option square-off below is awaited, and
+  // everything after it must act on THIS session, never a newer one.
+  const s = state;
+  if (!s.running) return;
+  _stopping = true;
+  try {
 
-  for (const pos of Array.from(state.positions.values())) {
-    const price = _priceOf(pos.symbol);
-    _closePosition(pos, {
-      exitType: "MANUAL",
-      reason: "Session stopped",
-      price: price != null ? price : pos.entryPrice,
-    });
-  }
-  if (state.pending.size) {
-    log(`⏹️ ${LOG_TAG} ${state.pending.size} pending setup(s) cancelled by the session stop: ${Array.from(state.pending.keys()).join(", ")}`);
-    state.pending.clear();
-  }
-
-  // The OPTION leg. Its square-off needs a premium fetch, so unlike the stock
-  // legs above it cannot complete synchronously — it is started here (claiming
-  // the position synchronously) and awaited below, before the session is saved,
-  // so the saved session and totalPnl include the option trade.
-  let optionClose = null;
-  if (state.optionPosition) {
-    log(`⏹️ ${LOG_TAG} Squaring off the open OPTION position (${state.optionPosition.symbol}) — fetching its exit premium…`);
-    optionClose = _closeOptionPosition({ exitType: "MANUAL", reason: "Session stopped", price: state.lastTickPrice })
-      .catch(e => console.error(`🚨 ${LOG_TAG} option session-stop exit error: ${e.message}`));
-  }
-  if (state.optionPending) {
-    log(`⏹️ ${LOG_TAG} Pending OPTION setup cancelled by the session stop (${state.optionPending.side} ${state.optionPending.optionSide} @ spot ${state.optionPending.entry})`);
-    state.optionPending = null;
-  }
-
-  state.running = false;
-  stopPolling();
-  try { tickRecorder.recordSessionStop({ mode: "early-bird-paper", sessionId: state._sessionId || null, reason: "user_stop" }); } catch (_) {}
-
-  socketManager.removeCallback(CALLBACK_ID);
-  sharedSocketState.clearEarlyBird();   // clear OWN mode first (else the socket never stops → leak)
-  if (!sharedSocketState.isAnyActive() && socketManager.isRunning()) socketManager.stop();
-
-  if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
-
-  // Wait for the option square-off to book its trade before the snapshot is
-  // cleared and the session saved. The snapshot is cleared only AFTER it —
-  // _closeOptionPosition ends in a _persist(), which would otherwise re-create
-  // the file and leave a phantom snapshot for the next boot.
-  if (optionClose) await optionClose;
-  try { require("../utils/positionPersist").clearEarlyBirdPositions(); } catch (_) {}
-
-  if (state.sessionTrades.length > 0) {
-    try {
-      const data = loadData();
-      data.sessions.push({ date: state.sessionStart, strategy: STRATEGY_NAME, pnl: state.sessionPnl, trades: state.sessionTrades });
-      data.totalPnl = _r2(data.totalPnl + state.sessionPnl);
-      data.capital  = _r2(parseFloat(process.env.FYERS_INV_AMOUNT || "100000") + data.totalPnl);
-      saveData(data);
-      log(`💾 ${LOG_TAG} Session saved — ${state.sessionTrades.length} trade(s), PnL ₹${state.sessionPnl}`);
-    } catch (e) {
-      log(`⚠️ ${LOG_TAG} Save failed: ${e.message}`);
+    for (const pos of Array.from(s.positions.values())) {
+      const price = _priceOf(pos.symbol);
+      _closePosition(pos, {
+        exitType: "MANUAL",
+        reason: "Session stopped",
+        price: price != null ? price : pos.entryPrice,
+      });
     }
-  }
+    if (s.pending.size) {
+      log(`⏹️ ${LOG_TAG} ${s.pending.size} pending setup(s) cancelled by the session stop: ${Array.from(s.pending.keys()).join(", ")}`);
+      s.pending.clear();
+    }
 
-  const wins = state.sessionTrades.filter(t => t.pnl > 0).length;
-  log(`📋 ${LOG_TAG} Day summary — ${state.sessionTrades.length} trade(s), ${wins}W/${state.sessionTrades.length - wins}L, net ₹${state.sessionPnl}, week ₹${weeklyPnl()}`);
-  if (state.plan) {
-    log(`📋 ${LOG_TAG} Funnel — ${state.plan.scanned} scanned → ${state.plan.confirmingCount} confirmed → ${state.attempted.size} entered → ${state.dropped.length} never triggered`);
-  }
-  log(`🔴 ${LOG_TAG} Session stopped`);
+    // The OPTION leg. Its square-off needs a premium fetch, so unlike the stock
+    // legs above it cannot complete synchronously — it is started here (claiming
+    // the position synchronously) and awaited below, before the session is saved,
+    // so the saved session and totalPnl include the option trade.
+    let optionClose = null;
+    if (s.optionPosition) {
+      log(`⏹️ ${LOG_TAG} Squaring off the open OPTION position (${s.optionPosition.symbol}) — fetching its exit premium…`);
+      optionClose = _closeOptionPosition({ exitType: "MANUAL", reason: "Session stopped", price: s.lastTickPrice })
+        .catch(e => console.error(`🚨 ${LOG_TAG} option session-stop exit error: ${e.message}`));
+    }
+    if (s.optionPending) {
+      log(`⏹️ ${LOG_TAG} Pending OPTION setup cancelled by the session stop (${s.optionPending.side} ${s.optionPending.optionSide} @ spot ${s.optionPending.entry})`);
+      s.optionPending = null;
+    }
 
-  notifyDayReport({
-    mode: "EARLYBIRD-PAPER",
-    sessionTrades: state.sessionTrades,
-    sessionPnl: state.sessionPnl,
-    sessionStart: state.sessionStart,
-  });
+    s.running = false;
+    stopPolling();
+    try { tickRecorder.recordSessionStop({ mode: "early-bird-paper", sessionId: s._sessionId || null, reason: "user_stop" }); } catch (_) {}
+
+    socketManager.removeCallback(CALLBACK_ID);
+    sharedSocketState.clearEarlyBird();   // clear OWN mode first (else the socket never stops → leak)
+    if (!sharedSocketState.isAnyActive() && socketManager.isRunning()) socketManager.stop();
+
+    if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
+
+    // Wait for the option square-off to book its trade before the snapshot is
+    // cleared and the session saved. The snapshot is cleared only AFTER it —
+    // _closeOptionPosition ends in a _persist(), which would otherwise re-create
+    // the file and leave a phantom snapshot for the next boot.
+    if (optionClose) await optionClose;
+    try { require("../utils/positionPersist").clearEarlyBirdPositions(); } catch (_) {}
+
+    if (s.sessionTrades.length > 0) {
+      try {
+        const data = loadData();
+        data.sessions.push({ date: s.sessionStart, strategy: STRATEGY_NAME, pnl: s.sessionPnl, trades: s.sessionTrades });
+        data.totalPnl = _r2(data.totalPnl + s.sessionPnl);
+        data.capital  = _r2(parseFloat(process.env.FYERS_INV_AMOUNT || "100000") + data.totalPnl);
+        saveData(data);
+        log(`💾 ${LOG_TAG} Session saved — ${s.sessionTrades.length} trade(s), PnL ₹${s.sessionPnl}`);
+      } catch (e) {
+        log(`⚠️ ${LOG_TAG} Save failed: ${e.message}`);
+      }
+    }
+
+    const wins = s.sessionTrades.filter(t => t.pnl > 0).length;
+    log(`📋 ${LOG_TAG} Day summary — ${s.sessionTrades.length} trade(s), ${wins}W/${s.sessionTrades.length - wins}L, net ₹${s.sessionPnl}, week ₹${weeklyPnl()}`);
+    if (s.plan) {
+      log(`📋 ${LOG_TAG} Funnel — ${s.plan.scanned} scanned → ${s.plan.confirmingCount} confirmed → ${s.attempted.size} entered → ${s.dropped.length} never triggered`);
+    }
+    log(`🔴 ${LOG_TAG} Session stopped`);
+
+    notifyDayReport({
+      mode: "EARLYBIRD-PAPER",
+      sessionTrades: s.sessionTrades,
+      sessionPnl: s.sessionPnl,
+      sessionStart: s.sessionStart,
+    });
+  } finally {
+    _stopping = false;
+  }
 }
 
 router.get("/stop", async (req, res) => {
@@ -3013,7 +3028,7 @@ router.post("/daily-files/:date", (req, res) => {
 });
 
 router.get("/reset", (req, res) => {
-  if (state.running) return res.status(400).json({ success: false, error: "Stop EarlyBird paper trading before resetting." });
+  if (state.running || _stopping) return res.status(400).json({ success: false, error: "Stop EarlyBird paper trading before resetting." });
   const fresh = parseFloat(process.env.FYERS_INV_AMOUNT || "100000");
   saveData({ capital: fresh, totalPnl: 0, sessions: [] });
   // The status page reads Session P&L / trades / W-L off the in-memory state,
