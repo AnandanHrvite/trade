@@ -36,6 +36,7 @@ const os   = require("os");
 const fyers        = require("../config/fyers");
 const mcx          = require("./mcxContracts");
 const tradeGuards  = require("../utils/tradeGuards");
+const capitalPool  = require("../utils/capitalPool");
 const confirmCandle = require("../utils/confirmCandle");
 const { sendTelegram, canSend } = require("../utils/notify");
 
@@ -358,6 +359,9 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
 
     // The session's contract decides the size — not a Settings change made since Start.
     const u = mcx.underlyingInfo(state.series.underlying);
+    const cost = premium * u.multiplier * c.lots;
+    const cap = capitalPool.gate(id, cost, { side, symbol: opt.symbol, qty: u.multiplier * c.lots });
+    if (!cap.ok) { if (!cap.muted) log(`❌ ${side} skipped — ${cap.reason}`); return; }
     state.position = {
       side, symbol: opt.symbol, strike: opt.strike, expiry: opt.expiry,
       lots: c.lots, multiplier: u.multiplier,
@@ -369,6 +373,7 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     };
     state.optLtp = premium;
     state.armed = null;
+    capitalPool.block(id, cost, { side, symbol: opt.symbol, qty: u.multiplier * c.lots, premium });
     persistPosition();
     hubNeed(id, [state.series.future, opt.symbol], true);
     log(`✅ BUY ${side} ${opt.symbol} @ ₹${premium} × ${c.lots} lot (${u.multiplier * c.lots} units) | fut ${spot} | SL ${fix.stopLoss} | ${how}`);
@@ -406,6 +411,8 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     state.position = null;
     persistPosition();
     saveDayTrades();
+    // The day book already holds this P&L, so only the reservation is freed.
+    capitalPool.release(id);
 
     const resMs = c.res * 60000;
     if (slHit && A.slPauseCandles() > 0) state.slPauseUntil[pos.side] = Date.now() + A.slPauseCandles() * resMs;
@@ -633,7 +640,12 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     // Same-day open position from before a restart — carry on managing it.
     const saved = _readJson(ACTIVE_FILE, null);
     if (saved && saved.position) {
-      if (saved.day === state.day) { state.position = saved.position; log(`♻️ Restored open ${saved.position.side} ${saved.position.symbol} from before restart`); }
+      if (saved.day === state.day) {
+        state.position = saved.position;
+        const p = saved.position;
+        capitalPool.block(id, (p.optionEntryLtp || 0) * (p.multiplier || 0) * (p.lots || 0), { side: p.side, symbol: p.symbol, premium: p.optionEntryLtp });
+        log(`♻️ Restored open ${p.side} ${p.symbol} from before restart`);
+      }
       else { log(`🧹 Dropped a stale saved position from ${saved.day}`); try { fs.unlinkSync(ACTIVE_FILE); } catch (_) {} }
     }
 

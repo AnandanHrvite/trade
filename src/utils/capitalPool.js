@@ -93,7 +93,18 @@ const STRATEGIES = {
   early_bird: { broker: "fyers",  label: "EARLYBIRD",   file: "early_bird_paper_trades.json" },
 };
 
-const BROKER_ENV = { zerodha: "ZERODHA_INV_AMOUNT", fyers: "FYERS_INV_AMOUNT" };
+// COMMODITY (MCX) paper engines — their own pool (CMX_STARTING_CAPITAL), so a
+// crude loss can never refuse a NIFTY entry. Keyed by the engine id; the book
+// lives in ~/trading-data/cmx/ as { days: { YYYY-MM-DD: { pnl } } } and is
+// written on every exit, so realized P&L is the sum of its days.
+for (const c of ["crude", "gold", "silver"]) {
+  for (const [v, name] of [["ema_rsi_st", "EMA_RSI_ST"], ["ema_rsi_st_v2", "EMA_RSI_ST_V2"]]) {
+    const id = `cmx_${c}_${v}`;
+    STRATEGIES[id] = { broker: "commodity", label: `${name} (${c.toUpperCase()})`, file: path.join("cmx", `${id}_paper_trades.json`), days: true };
+  }
+}
+
+const BROKER_ENV = { zerodha: "ZERODHA_INV_AMOUNT", fyers: "FYERS_INV_AMOUNT", commodity: "CMX_STARTING_CAPITAL" };
 
 // key -> { blocks: Map<slot, {cost, meta}>, sessionPnl, filePnlEpoch }
 // `slot` is the position's symbol for additive blocks, or SINGLE for the one
@@ -158,8 +169,11 @@ function _filePnl(key) {
   let val = 0;
   try {
     const raw = fs.readFileSync(path.join(DATA_DIR, def.file), "utf8");
-    const n = Number(JSON.parse(raw).totalPnl);
-    if (Number.isFinite(n)) val = n;
+    const book = JSON.parse(raw);
+    const n = def.days
+      ? Object.values(book.days || {}).reduce((t, d) => t + (Number(d && d.pnl) || 0), 0)
+      : Number(book.totalPnl);
+    if (Number.isFinite(n)) val = parseFloat(n.toFixed(2));
   } catch (_) { /* missing/corrupt file → treat as no realized P&L */ }
   _pnlMemo.set(key, { ts: now, val });
   return val;
@@ -219,7 +233,7 @@ function getPool(broker) {
 }
 
 function snapshot() {
-  return { zerodha: getPool("zerodha"), fyers: getPool("fyers") };
+  return { zerodha: getPool("zerodha"), fyers: getPool("fyers"), commodity: getPool("commodity") };
 }
 
 // ── Gate ─────────────────────────────────────────────────────────────────────

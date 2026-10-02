@@ -192,7 +192,7 @@ The engine falls back to one value; a status panel or log banner prints another.
 | `CMX_SESSION_END` | time | `` ⚠️ also `23:30`×1 | When MCX closes (IST) — the engine stops itself here. MCX closes at 23:30 in Indian summer and 23:55 when US clocks go back (Nov–Mar); change it then. |
 | `CMX_SESSION_START` | time | — | When MCX opens (IST). Prices are ignored before this. |
 | `CMX_SILVER_CONTRACT` | select | `SILVERM` | Which silver contract the Silver pages trade. A full Silver lot is 6× a Mini. Takes effect on the next Start. |
-| `CMX_STARTING_CAPITAL` | number | — | Shown for reference only. |
+| `CMX_STARTING_CAPITAL` | number | `100000` | Money pool shared by every commodity page. An entry is refused when the pool cannot pay for it (premium × lots). |
 
 ## EARLYBIRD STRATEGY (first 15-min breakout, CASH EQUITY) — Fyers
 

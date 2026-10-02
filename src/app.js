@@ -1670,8 +1670,9 @@ app.get("/", (req, res) => {
   }
 
   // ── Broker investment pools (paper) — remaining = pool + paper P&L over the
-  // top-bar date range. Zerodha pool = EMA_RSI_ST (+ EMA9+VWAP, also Zerodha);
-  // Fyers pool = BB_RSI + PA + ORB — enabled strategies only.
+  // top-bar date range, summed over every ENABLED strategy that trades through
+  // that broker (same broker map as utils/capitalPool.js). COMMODITY has its own
+  // pool and no broker card here — the Real-Time ribbon shows it.
   //
   // The P&L half is filled in client-side from the same trade list the charts
   // read, not from each file's all-time `totalPnl`: a wallet that ignored the
@@ -1679,19 +1680,27 @@ app.get("/", (req, res) => {
   // Sharing `_applyDashRange` is what keeps them from drifting apart again.
   const zerodhaInv = parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000");
   const fyersInv   = parseFloat(process.env.FYERS_INV_AMOUNT   || "100000");
+  const _poolModes = [
+    ['fyers',   'BB_RSI',           bbRsiModeOn],
+    ['fyers',   'PA',               paModeOn],
+    ['fyers',   'ORB',              orbModeOn],
+    ['fyers',   'TREND_PB',         trendPbModeOn],
+    ['fyers',   'TDS',              tdsModeOn],
+    ['fyers',   'EARLYBIRD',        earlyBirdModeOn],
+    ['zerodha', 'EMA_RSI_ST',       emaRsiStModeOn],
+    ['zerodha', 'EMA9VWAP',         ema9vwapModeOn],
+    ['zerodha', 'EMA_RSI_ST_V2',    emaRsiStV2ModeOn],
+    ['zerodha', 'BN_EMA_RSI_ST_V2', bnEmaRsiStV2ModeOn],
+    ['zerodha', 'RSI_PIVOT_ST',     rsiPivotStModeOn],
+    ['zerodha', 'BN_PIVOT_RSI_ST',  bnPivotRsiStModeOn],
+    ['zerodha', 'HA_SCALP',         haScalpModeOn],
+    ['zerodha', 'PREV_ORB_SCALP',   prevOrbScalpModeOn],
+    ['zerodha', 'SIMPLE930',        simple930ModeOn],
+  ];
+  const _modesOf = (broker) => _poolModes.filter(([b, , on]) => b === broker && on).map(([, m]) => m);
   const brokerPools = {
-    fyers: {
-      inv: fyersInv,
-      modes: [
-        ...(bbRsiModeOn ? ['BB_RSI'] : []),
-        ...(paModeOn ? ['PA'] : []),
-        ...(orbModeOn ? ['ORB'] : []),
-      ],
-    },
-    zerodha: {
-      inv: zerodhaInv,
-      modes: ['EMA_RSI_ST', ...(ema9vwapModeOn ? ['EMA9VWAP'] : [])],
-    },
+    fyers:   { inv: fyersInv,   modes: _modesOf('fyers') },
+    zerodha: { inv: zerodhaInv, modes: _modesOf('zerodha') },
   };
   const _inr0 = (n) => '₹' + Math.round(n).toLocaleString('en-IN');
   // Rendered with the pool alone and a "…" delta: the range-filtered number is
