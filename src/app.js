@@ -1405,6 +1405,9 @@ app.get("/api/holidays", async (req, res) => {
       details.push(...list);
       sources[y] = { count: list.length, source: await getHolidaySource(y) };
     }
+    // MCX follows the NSE list but only skips the morning (opens 5 PM),
+    // except on these national holidays when it stays shut all day.
+    for (const h of details) h.mcx = /republic|independence|gandhi|good friday|christmas/i.test(h.name || "") ? "closed" : "evening";
     const holidays = details.map(h => h.date);
     // `holidays` stays a flat array of ISO dates — every existing caller reads
     // that shape. `details` adds the API-supplied names, `sources` says where
@@ -4390,13 +4393,15 @@ async function checkTradingStatus(){
 
     // Holiday check runs first and unconditionally so the Start All button
     // is hidden regardless of weekend/pre/post-market early-returns below.
-    var isHoliday = false;
+    var isHoliday = false, mcxShutAllDay = false;
     try {
       var hres = await fetch('/api/holidays', {cache:'no-store'});
       if(hres.ok){
         var hdata = await hres.json();
         if(hdata && hdata.success && hdata.holidays && hdata.holidays.includes(todayStr)){
           isHoliday = true;
+          var hd = (hdata.details || []).find(function(h){ return h.date === todayStr; });
+          mcxShutAllDay = !!(hd && hd.mcx === 'closed');
         }
       }
     } catch(e){}
@@ -4411,9 +4416,11 @@ async function checkTradingStatus(){
     });
     // COMMODITY keeps MCX hours, not NSE's: startable on a weekday from 7 AM
     // (the overnight Fyers token is wiped at 7) until the MCX session ends —
-    // the engine refuses a start after that. NSE holidays don't close MCX.
+    // the engine refuses a start after that. On an NSE holiday MCX opens at
+    // 5 PM, or stays shut all day (h.mcx from /api/holidays).
     var mins = hour * 60 + now.getMinutes();
-    var cmxOpen = CMX_ON && day !== 0 && day !== 6 && mins < CMX_END_MIN;
+    var cmxOpen = CMX_ON && day !== 0 && day !== 6 && mins < CMX_END_MIN
+      && !mcxShutAllDay && !(isHoliday && hour < 17);
     var cb = document.getElementById('btn-cmx-start');
     if(cb) cb.style.display = (cmxOpen && hour >= 7) ? '' : 'none';
 

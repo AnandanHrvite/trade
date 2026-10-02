@@ -3005,6 +3005,7 @@ function expiryHolidayModalHTML() {
     <div style="display:flex;gap:6px;padding:10px 16px 0;border-bottom:1px solid #1a2640;">
       <button id="ehBtn-expiry" type="button" onclick="showExpHolTab('expiry')" class="eh-tab-btn eh-tab-active">Expiry Calendar</button>
       <button id="ehBtn-holiday" type="button" onclick="showExpHolTab('holiday')" class="eh-tab-btn">NSE Holidays</button>
+      <button id="ehBtn-mcx" type="button" onclick="showExpHolTab('mcx')" class="eh-tab-btn">MCX Holidays</button>
     </div>
     <!-- Expiry tab -->
     <div id="ehTab-expiry">
@@ -3031,6 +3032,15 @@ function expiryHolidayModalHTML() {
       </div>
       <!-- Where each year's list came from. Blank until the first load. -->
       <div id="holidaySourceNote" class="eh-source-note"></div>
+    </div>
+    <!-- MCX tab: same dates as NSE; MCX skips only the morning on most of them -->
+    <div id="ehTab-mcx" style="display:none;">
+      <div class="holiday-modal-body" style="padding:12px 16px 16px;">
+        <table class="holiday-table">
+          <thead><tr><th>#</th><th>Date</th><th>Day</th><th>Holiday</th><th>MCX</th></tr></thead>
+          <tbody id="mcxHolidayTableBody"></tbody>
+        </table>
+      </div>
     </div>
   </div>
 </div>`;
@@ -3087,7 +3097,7 @@ async function loadHolidaysTable() {
       return;
     }
     var todayStr = new Date(new Date().toLocaleString("en-US",{timeZone:"Asia/Kolkata"})).toISOString().split('T')[0];
-    var rows = '';
+    var rows = '', mcxRows = '';
     var n = 0;
     list.sort(function(a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; }).forEach(function(h) {
       var d = h.date;
@@ -3099,9 +3109,13 @@ async function loadHolidaysTable() {
       var cls = d === todayStr ? 'today-holiday' : '';
       n++;
       rows += '<tr class="' + cls + '"><td>' + n + '</td><td>' + display + '</td><td>' + dayName + '</td><td>' + name + '</td></tr>';
+      var mcx = h.mcx === 'closed' ? '<span style="color:#ef4444;">Closed all day</span>' : h.mcx === 'evening' ? '<span style="color:#f59e0b;">Open 5 PM onwards</span>' : '—';
+      mcxRows += '<tr class="' + cls + '"><td>' + n + '</td><td>' + display + '</td><td>' + dayName + '</td><td>' + name + '</td><td>' + mcx + '</td></tr>';
     });
-    if (!n) rows = '<tr><td colspan="4" style="text-align:center;color:var(--muted-1,#8ba1c2);padding:20px;">No upcoming holidays</td></tr>';
+    if (!n) rows = mcxRows = '<tr><td colspan="5" style="text-align:center;color:var(--muted-1,#8ba1c2);padding:20px;">No upcoming holidays</td></tr>';
     body.innerHTML = rows;
+    var mcxBody = document.getElementById('mcxHolidayTableBody');
+    if (mcxBody) mcxBody.innerHTML = mcxRows;
   } catch(e) {
     body.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#ef4444;padding:20px;">Failed to load holidays</td></tr>';
   }
@@ -3207,16 +3221,12 @@ async function refreshHolidays() {
   }
 }
 function showExpHolTab(tab) {
-  var ex = document.getElementById('ehTab-expiry');
-  var ho = document.getElementById('ehTab-holiday');
-  var bex = document.getElementById('ehBtn-expiry');
-  var bho = document.getElementById('ehBtn-holiday');
-  if (!ex || !ho || !bex || !bho) return;
-  var isExpiry = (tab === 'expiry');
-  ex.style.display = isExpiry ? 'block' : 'none';
-  ho.style.display = isExpiry ? 'none'  : 'block';
-  bex.classList.toggle('eh-tab-active', isExpiry);
-  bho.classList.toggle('eh-tab-active', !isExpiry);
+  ['expiry', 'holiday', 'mcx'].forEach(function(t) {
+    var pane = document.getElementById('ehTab-' + t);
+    var btn = document.getElementById('ehBtn-' + t);
+    if (pane) pane.style.display = t === tab ? 'block' : 'none';
+    if (btn) btn.classList.toggle('eh-tab-active', t === tab);
+  });
 }`;
 }
 
