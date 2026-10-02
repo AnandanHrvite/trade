@@ -2105,6 +2105,7 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
   let restoreEnv  = () => {};
   let harness     = null;
   let routeMod    = null;
+  let liveCacheEntry = null;   // the mounted route module, put back after the replay
 
   try {
     if (!MODE_TO_MODULE[mode]) {
@@ -2312,6 +2313,7 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     //    state is fresh (Node caches require results — we clear cache for the
     //    route module so its `let state = {...}` reinitialises).
     const routePath = require.resolve(MODE_TO_MODULE[mode]);
+    liveCacheEntry = require.cache[routePath];
     delete require.cache[routePath];
     routeMod = require(MODE_TO_MODULE[mode]);
 
@@ -2627,10 +2629,16 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     // could still be left "active". Force-clear so the preflight banner
     // never gets stuck. Cheap, idempotent — only clears in-memory flags.
     try { forceClearSharedState(); } catch (_) {}
-    // Drop the route module from the cache so the live-trading process can
-    // re-require it cleanly without our patched state.
+    // Put the MOUNTED route module back in the cache. Just deleting the replay
+    // copy made every later require() (the shutdown handler's stopSession, the
+    // capital pool's session getter) load a fresh, never-started copy instead of
+    // the instance Express is actually serving.
     if (routeMod) {
-      try { delete require.cache[require.resolve(MODE_TO_MODULE[mode])]; } catch (_) {}
+      try {
+        const routePath = require.resolve(MODE_TO_MODULE[mode]);
+        if (liveCacheEntry) require.cache[routePath] = liveCacheEntry;
+        else delete require.cache[routePath];
+      } catch (_) {}
     }
     _replayInProgress = false;
   }
