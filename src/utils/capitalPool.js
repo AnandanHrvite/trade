@@ -238,7 +238,10 @@ function snapshot() {
 
 // ── Gate ─────────────────────────────────────────────────────────────────────
 
-function _inReplay() {
+// Tick replay drives the NSE engines only — commodity runs on live MCX quotes
+// alongside it, so a replay must not switch the commodity gate off.
+function _inReplay(strategyKey) {
+  if (brokerOf(strategyKey) === "commodity") return false;
   try { return require("../services/tickReplay").isReplayInProgress(); } catch (_) { return false; }
 }
 
@@ -257,7 +260,7 @@ function _inReplay() {
 function check(strategyKey, cost, opts = {}) {
   const off = (reason) => ({ ok: true, disabled: true, cost: 0, available: 0, broker: brokerOf(strategyKey), reason });
   try {
-    if (opts.sim || _inReplay()) return off("capital gate skipped (simulation)");
+    if (opts.sim || _inReplay(strategyKey)) return off("capital gate skipped (simulation)");
     if (!isEnabled())            return off("capital gate disabled");
     const broker = brokerOf(strategyKey);
     if (!broker)                 return off(`capital gate: unknown strategy "${strategyKey}"`);
@@ -378,7 +381,7 @@ function getAlerts(sinceMs) {
  */
 function block(strategyKey, cost, meta = {}, opts = {}) {
   try {
-    if (opts.sim || _inReplay() || !isEnabled() || !brokerOf(strategyKey)) return;
+    if (opts.sim || _inReplay(strategyKey) || !isEnabled() || !brokerOf(strategyKey)) return;
     const need = Number(cost);
     if (!Number.isFinite(need) || need <= 0) return;
     const s = _liveOf(strategyKey);
@@ -397,7 +400,7 @@ function block(strategyKey, cost, meta = {}, opts = {}) {
  */
 function updateBlock(strategyKey, cost, opts = {}) {
   try {
-    if (opts.sim || _inReplay()) return;
+    if (opts.sim || _inReplay(strategyKey)) return;
     const s = _live.get(strategyKey);
     const b = s && s.blocks.get(SINGLE);
     if (!b || !(b.cost > 0)) return;
@@ -431,7 +434,10 @@ function release(strategyKey, netPnl, opts = {}) {
       }
     }
 
-    if (opts.sim || _inReplay()) return;
+    // A book written on every exit (commodity) must be re-read now, not after
+    // the memo expires — or a same-candle re-entry is gated without this trade.
+    _pnlMemo.delete(strategyKey);
+    if (opts.sim || _inReplay(strategyKey)) return;
     const s = _liveOf(strategyKey);
     const p = Number(netPnl);
     if (Number.isFinite(p)) {
