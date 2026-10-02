@@ -1183,7 +1183,16 @@ function _trackOptionExcursion(pos, spot) {
  * the P&L is made of. A premium fetch that fails falls back to the last one
  * seen and says so out loud rather than leaving the position open forever.
  */
-async function _closeOptionPosition(ex) {
+// Remembers the square-off in flight on its own session, so a /stop landing
+// during an SL or /exit premium fetch waits for that trade before saving.
+function _closeOptionPosition(ex) {
+  const s = state;
+  const p = _closeOptionPositionInner(ex);
+  s._optionClosing = p.catch(() => {});
+  return p;
+}
+
+async function _closeOptionPositionInner(ex) {
   // Pin this session's state: the premium fetch below awaits, and a /stop +
   // /start in that gap replaces the module `state` with a fresh session.
   const s = state;
@@ -2195,6 +2204,7 @@ async function stopSession() {
     // _closeOptionPosition ends in a _persist(), which would otherwise re-create
     // the file and leave a phantom snapshot for the next boot.
     if (optionClose) await optionClose;
+    if (s._optionClosing) await s._optionClosing;   // an SL / /exit square-off already in flight
     try { require("../utils/positionPersist").clearEarlyBirdPositions(); } catch (_) {}
 
     if (s.sessionTrades.length > 0) {
