@@ -268,6 +268,10 @@ let ptState = {
   // the shared monitors don't count a week-old session as today's P&L. Cleared by
   // /start, which rebuilds the session from scratch.
   _staleSession:  false,
+  // True once sessionPnl is inside ema_rsi_st_paper_trades.json totalPnl (saved by
+  // saveSession, restored from History, or rehydrated from a saved session) — the
+  // capital pool must then stop adding it on top. Cleared by /start.
+  _pnlSaved:      false,
 };
 
 // ── Crash/restart recovery: rehydrate the in-memory session from today's JSONL ──
@@ -313,6 +317,7 @@ function rehydrateSessionFromJsonl() {
     }
     if (!trades.length) return;
 
+    ptState._pnlSaved     = source !== "today's live session"; // step 2 = already in the file
     ptState._staleSession = stale;
     ptState.sessionTrades = trades;
     ptState.sessionPnl = parseFloat(trades.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0).toFixed(2));
@@ -325,6 +330,10 @@ function rehydrateSessionFromJsonl() {
   }
 }
 rehydrateSessionFromJsonl();
+// Capital pool: realized P&L = file totalPnl + this session's closed trades not yet
+// saved there (rehydrated above after a restart). Sim sessions never reach the file.
+capitalPool.trackSession("ema_rsi_st", () =>
+  (ptState._simMode || ptState._simSession || ptState._pnlSaved) ? 0 : (Number(ptState.sessionPnl) || 0));
 // A previous day's session may only stay on screen while the market is shut.
 require("../utils/staleSessionGate").clearStaleSessionOnTradingDay(() => ptState, "[EMA_RSI_ST-PAPER]");
 
@@ -2180,6 +2189,8 @@ function saveSession() {
   data.capital  = parseFloat((data.capital  + ptState.sessionPnl).toFixed(2));
 
   savePaperData(data);
+  ptState._pnlSaved = true;   // same step the file's totalPnl gained it
+  capitalPool.sessionSaved("ema_rsi_st");
   log(`💾 Session saved. Running capital: ₹${data.capital} | Total PnL: ₹${data.totalPnl}`);
 
   // ── Daily Report + Telegram EOD ──────────────────────────────────────────────
@@ -2350,6 +2361,7 @@ router.get("/start", async (req, res) => {
   ptState.sessionTrades = [];
   ptState._staleSession = false;
   ptState.sessionPnl    = 0;
+  ptState._pnlSaved     = false;
   ptState.sessionStart  = istNow();
   ptState.log           = [];
   ptState.tickCount     = 0;
@@ -4598,6 +4610,9 @@ router.post("/restore-session/:date", (req, res) => {
   ).toFixed(2));
   data.capital = parseFloat((getCapitalFromEnv() + data.totalPnl).toFixed(2));
   savePaperData(data);
+  // Restoring today pulls the rehydrated (unsaved) session's trades into the file.
+  if (date === tradeLogger.istDateString(Date.now())) ptState._pnlSaved = true;
+  capitalPool.sessionSaved("ema_rsi_st");
   log(`♻️ Restored paper session for ${date}: ${missing.length} trade(s), PnL ₹${sessionPnl}`);
   return res.json({ success: true, restored: missing.length, sessionPnl, message: `Restored ${missing.length} trade(s).` });
 });

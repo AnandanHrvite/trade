@@ -102,6 +102,9 @@ function _freshState() {
     // Exposed as `staleSession` so the shared monitors don’t report a week-old session
     // as today’s P&L. A fresh session start clears it.
     _staleSession:  false,
+    // True while sessionPnl holds closed trades NOT yet in trend_pb_paper_trades.json
+    // totalPnl — the capital pool adds sessionPnl only then (see trackSession below).
+    _unsaved:       false,
     tradesTaken:    0,
     consecutiveLosses: 0,
     candles:        [],
@@ -158,6 +161,7 @@ function rehydrateSessionFromJsonl() {
     }
     if (!trades.length) return;
     state._staleSession = stale;
+    state._unsaved      = source === "today's live session";
     state.sessionTrades = trades;
     state.tradesTaken   = trades.length;
     state.sessionPnl = parseFloat(trades.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0).toFixed(2));
@@ -170,6 +174,12 @@ function rehydrateSessionFromJsonl() {
 rehydrateSessionFromJsonl();
 // A previous day's session may only stay on screen while the market is shut.
 require("../utils/staleSessionGate").clearStaleSessionOnTradingDay(() => state, "[TREND_PB-PAPER]");
+
+// Capital pool realized P&L = file totalPnl + this session's unsaved closed trades.
+// A replay re-requires this module — it must not replace the live instance's getter.
+let _replayLoad = false;
+try { _replayLoad = require("../services/tickReplay").isReplayInProgress(); } catch (_) {}
+if (!_replayLoad) capitalPool.trackSession("trend_pb", () => (state._unsaved ? state.sessionPnl : 0));
 
 // ── Option LTP polling (recursive setTimeout so the replay harness advances it) ──
 const OPTION_POLL_MS = 3000;
@@ -811,6 +821,7 @@ router.get("/start", async (req, res) => {
 
   state = _freshState();
   state.running = true;
+  state._unsaved = true;
   state.sessionStart = new Date().toISOString();
   state._sessionId = `trend-pb-paper:${Date.now()}`;
 
@@ -890,6 +901,8 @@ function stopSession() {
       data.sessions.push({ date: state.sessionStart, strategy: trendPbStrategy.NAME, pnl: state.sessionPnl, trades: state.sessionTrades });
       data.totalPnl = parseFloat((data.totalPnl + state.sessionPnl).toFixed(2));
       saveData(data);
+      state._unsaved = false;   // now inside totalPnl — the pool must not add it twice
+      capitalPool.sessionSaved("trend_pb");
       log(`💾 [TREND_PB-PAPER] Session saved — ${state.sessionTrades.length} trades, PnL ₹${state.sessionPnl}`);
     } catch (e) {
       log(`⚠️ [TREND_PB-PAPER] Save failed: ${e.message}`);
@@ -1494,6 +1507,9 @@ router.post("/restore-session/:date", (req, res) => {
   data.totalPnl = parseFloat(data.sessions.reduce((s, x) => s + (x.pnl || 0), 0).toFixed(2));
   data.capital  = parseFloat((parseFloat(process.env.FYERS_INV_AMOUNT || "100000") + data.totalPnl).toFixed(2));
   saveData(data);
+  // Today's restored trades are the ones a restart rehydrated as unsaved — now in totalPnl.
+  if (date === tradeLogger.istDateString(Date.now())) state._unsaved = false;
+  capitalPool.sessionSaved("trend_pb");   // drop the pool's file-P&L memo now
   return res.json({ success: true, restored: missing.length, sessionPnl, message: `Restored ${missing.length} trade(s).` });
 });
 
@@ -1502,6 +1518,8 @@ router.get("/reset", (req, res) => {
   const fresh = parseFloat(process.env.FYERS_INV_AMOUNT || "100000");
   saveData({ capital: fresh, totalPnl: 0, sessions: [] });
   require("../utils/paperReset").clearTodayFiles("trend_pb"); // else restart rehydrates today's session
+  state._unsaved = false;   // the rehydrated unsaved trades were just wiped with the history
+  capitalPool.sessionSaved("trend_pb");
   return res.json({ success: true, message: `Trend Pullback paper trade history cleared. Capital reset to ₹${fresh.toLocaleString("en-IN")}` });
 });
 

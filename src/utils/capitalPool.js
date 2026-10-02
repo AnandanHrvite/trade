@@ -192,7 +192,17 @@ function _filePnl(key) {
 const _unsaved = new Map();
 
 function trackSession(strategyKey, getUnsavedPnl) {
+  // Tick replay re-requires the route modules; the replay copy must never
+  // replace the live session's getter.
+  if (_inReplay(strategyKey)) return;
   if (STRATEGIES[strategyKey] && typeof getUnsavedPnl === "function") _unsaved.set(strategyKey, getUnsavedPnl);
+}
+
+// Call right after writing the session into the trades file, in the same step
+// the getter above drops to 0 — otherwise the 5s memo still holds the old file
+// total and the session's P&L is counted nowhere until it expires.
+function sessionSaved(strategyKey) {
+  _pnlMemo.delete(strategyKey);
 }
 
 function realizedFor(key) {
@@ -495,5 +505,6 @@ module.exports = {
   updateBlock,        // correct the reservation once the real premium lands
   release,            // free on exit and book the P&L
   trackSession,       // route reports its unsaved session P&L (survives restarts)
+  sessionSaved,       // route just wrote its session to the file — re-read it
   clear,              // free without a P&L (session stopped without square-off)
 };

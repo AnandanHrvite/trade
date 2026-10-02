@@ -137,6 +137,10 @@ let state = {
   // Exposed as `staleSession` so the shared monitors don’t report a week-old session
   // as today’s P&L. A fresh session start clears it.
   _staleSession:  false,
+  // True once sessionPnl is inside pa_paper_trades.json totalPnl (saved by stopSession,
+  // restored from History, or rehydrated from a saved session) — the capital pool
+  // must then stop adding it on top. Cleared by /start.
+  _pnlSaved:      false,
   tickCount:      0,
   lastTickTime:   null,
   lastTickPrice:  null,
@@ -195,6 +199,7 @@ function rehydrateSessionFromJsonl() {
     }
     if (!trades.length) return;
 
+    state._pnlSaved     = source !== "today's live session"; // step 2 = already in the file
     state._staleSession = stale;
     state.sessionTrades = trades;
     state.sessionPnl = parseFloat(trades.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0).toFixed(2));
@@ -207,6 +212,10 @@ function rehydrateSessionFromJsonl() {
   }
 }
 rehydrateSessionFromJsonl();
+// Capital pool: realized P&L = file totalPnl + this session's closed trades not yet
+// saved there (rehydrated above after a restart). Sim sessions never reach the file.
+capitalPool.trackSession("pa", () =>
+  (state._simMode || state._simSession || state._pnlSaved) ? 0 : (Number(state.sessionPnl) || 0));
 // A previous day's session may only stay on screen while the market is shut.
 require("../utils/staleSessionGate").clearStaleSessionOnTradingDay(() => state, "[PA-PAPER]");
 
@@ -1053,6 +1062,7 @@ router.get("/start", async (req, res) => {
     optionLtp: null, optionSymbol: null, _slPauseUntil: null, _dailyLossHit: false,
     _expiryDayBlocked: _expiryBlocked,
     _simSession: false,   // a real session — persistence is live again
+    _pnlSaved: false,
   };
 
   sharedSocketState.setPAActive("PA_PAPER");
@@ -1183,6 +1193,8 @@ function stopSession() {
       });
       data.totalPnl = parseFloat((data.totalPnl + state.sessionPnl).toFixed(2));
       savePAData(data);
+      state._pnlSaved = true;   // same step the file's totalPnl gained it
+      capitalPool.sessionSaved("pa");
       log(`💾 [PA-PAPER] Session saved — ${state.sessionTrades.length} trades, PnL: ₹${state.sessionPnl}`);
     } catch (err) {
       log(`⚠️ [PA-PAPER] Save failed: ${err.message}`);
@@ -2799,6 +2811,9 @@ router.post("/restore-session/:date", (req, res) => {
   data.totalPnl = parseFloat(data.sessions.reduce((sum, s) => sum + (s.pnl || 0), 0).toFixed(2));
   data.capital = parseFloat((getPACapitalFromEnv() + data.totalPnl).toFixed(2));
   savePAData(data);
+  // Restoring today pulls the rehydrated (unsaved) session's trades into the file.
+  if (date === tradeLogger.istDateString(Date.now())) state._pnlSaved = true;
+  capitalPool.sessionSaved("pa");
   log(`♻️ Restored PA paper session for ${date}: ${missing.length} trade(s), PnL ₹${sessionPnl}`);
   return res.json({ success: true, restored: missing.length, sessionPnl, message: `Restored ${missing.length} trade(s).` });
 });

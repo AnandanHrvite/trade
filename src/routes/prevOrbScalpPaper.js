@@ -144,6 +144,9 @@ function _freshState() {
     sessionStart:   null,
     sessionTrades:  [],
     sessionPnl:     0,
+    // True while sessionPnl holds closed trades NOT yet in the paper-trades file's
+    // totalPnl — the capital pool adds sessionPnl only then (see trackSession below).
+    _unsaved:       false,
     tradesTaken:    0,
     candles:        [],     // CLOSED 3-min spot bars — the only decision series
     lastClosedBarTime: null,
@@ -210,6 +213,7 @@ function rehydrateSessionFromJsonl() {
     }
     if (!trades.length) return;
     state._staleSession = stale;
+    state._unsaved      = source === "today's live session";
     state.sessionTrades = trades;
     state.tradesTaken   = trades.length;
     state.sessionPnl = parseFloat(trades.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0).toFixed(2));
@@ -221,6 +225,12 @@ function rehydrateSessionFromJsonl() {
 }
 rehydrateSessionFromJsonl();
 require("../utils/staleSessionGate").clearStaleSessionOnTradingDay(() => state, TAG);
+
+// Capital pool realized P&L = file totalPnl + this session's unsaved closed trades.
+// A replay re-requires this module — it must not replace the live instance's getter.
+let _replayLoad = false;
+try { _replayLoad = require("../services/tickReplay").isReplayInProgress(); } catch (_) {}
+if (!_replayLoad) capitalPool.trackSession(MODE_KEY, () => (state._unsaved ? state.sessionPnl : 0));
 
 /**
  * Realised P&L for the current ISO week (Mon → today) from the per-day JSONL
@@ -1014,6 +1024,7 @@ router.get("/start", async (req, res) => {
 
   state = _freshState();
   state.running = true;
+  state._unsaved = true;
   state.sessionStart = new Date().toISOString();
   state._sessionId = `prev-orb-scalp-paper:${Date.now()}`;
   sharedSocketState.setPrevOrbScalpActive("PREV_ORB_SCALP_PAPER");
@@ -1096,6 +1107,8 @@ function stopSession() {
       data.totalPnl = parseFloat((data.totalPnl + state.sessionPnl).toFixed(2));
       data.capital  = parseFloat((parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000") + data.totalPnl).toFixed(2));
       saveData(data);
+      state._unsaved = false;   // now inside totalPnl — the pool must not add it twice
+      capitalPool.sessionSaved(MODE_KEY);
       log(`💾 ${TAG} Session saved — ${state.sessionTrades.length} trade(s), PnL ₹${state.sessionPnl}`);
     } catch (e) {
       log(`⚠️ ${TAG} Save failed: ${e.message}`);
@@ -1496,6 +1509,9 @@ router.post("/restore-session/:date", (req, res) => {
   data.totalPnl = parseFloat(data.sessions.reduce((s, x) => s + (x.pnl || 0), 0).toFixed(2));
   data.capital  = parseFloat((parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000") + data.totalPnl).toFixed(2));
   saveData(data);
+  // Today's restored trades are the ones a restart rehydrated as unsaved — now in totalPnl.
+  if (date === tradeLogger.istDateString(Date.now())) state._unsaved = false;
+  capitalPool.sessionSaved(MODE_KEY);   // drop the pool's file-P&L memo now
   return res.json({ success: true, restored: missing.length, sessionPnl, message: `Restored ${missing.length} trade(s).` });
 });
 
@@ -1504,6 +1520,8 @@ router.get("/reset", (req, res) => {
   const fresh = parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000");
   saveData({ capital: fresh, totalPnl: 0, sessions: [] });
   require("../utils/paperReset").clearTodayFiles(MODE_KEY); // else restart rehydrates today's session
+  state._unsaved = false;   // the rehydrated unsaved trades were just wiped with the history
+  capitalPool.sessionSaved(MODE_KEY);
   return res.json({ success: true, message: `Prev ORB Scalp paper trade history cleared. Capital reset to ₹${fresh.toLocaleString("en-IN")}` });
 });
 
