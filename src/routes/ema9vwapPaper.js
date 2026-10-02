@@ -580,6 +580,11 @@ const OPTION_FEED_OWNER = "ema9vwap-paper";
 // Rebound per position in startOptionPolling so the closure captures the symbol
 // actually held; null while flat.
 let _onStreamedOptionLtp = null;
+// Poll generation: bumped by every stopOptionPolling(). Each poll chain captures
+// the value it started under; a reply or loop from an older generation (exit +
+// re-entry on the SAME strike while it was in flight) is dropped, since the
+// symbol check alone cannot tell the two positions apart.
+let _optionPollGen = 0;
 
 async function fetchOptionLtp(symbol) {
   try {
@@ -661,13 +666,14 @@ function _publishOptionLtp(symbol, ltp) {
     ptState.position.optionEntryLtp = ltp;
     ptState.position.optionEntryLtpTime = istNow();
     // Real premium known — replace the estimate blocked at entry.
-    capitalPool.updateBlock("ema9vwap", (ptState.position.qty || 0) * ltp, { sim: ptState._simMode });
+    capitalPool.updateBlock("ema9vwap", (ptState.position.qty || 0) * ltp, { sim: (ptState._simMode || ptState._simSession) });
     log(`📌 [PAPER] Option entry LTP: ₹${ltp} (SPOT @ ₹${ptState.position.spotAtEntry} | SL: ₹${ptState.position.stopLoss})`);
   }
 }
 
 // ── Option LTP poll tick — shared logic used by immediate fetch + recurring loop ──
-async function _optionPollTick(symbol) {
+async function _optionPollTick(symbol, gen) {
+  if (gen !== _optionPollGen) return; // stale chain — a newer one owns polling
   if (_optionPollBusy) return; // skip if previous call still in flight
   if (_rateLimitSkipCycles > 0) { _rateLimitSkipCycles--; return; }
   _optionPollBusy = true;
@@ -679,6 +685,7 @@ async function _optionPollTick(symbol) {
     optionFeed.track(OPTION_FEED_OWNER, symbol, _onStreamedOptionLtp);
     const streamed = optionFeed.getFresh(symbol);
     const ltp = streamed ? streamed.ltp : await fetchOptionLtp(symbol);
+    if (gen !== _optionPollGen) return; // position changed while in flight
     if (!ltp) return;
     _publishOptionLtp(symbol, ltp);
 
@@ -700,19 +707,20 @@ async function _optionPollTick(symbol) {
     // floor = entry), both enforced per tick in _onTickExits below. They act on
     // the option premium, so they work even with pos.stopLoss null.
   } finally {
-    _optionPollBusy = false;
+    if (gen === _optionPollGen) _optionPollBusy = false; // a stale tick must not clear a newer chain's flag
   }
 }
 
 function startOptionPolling(symbol) {
   stopOptionPolling(); // clear any previous
   _optionPollBusy = false;
+  const gen = _optionPollGen;
 
   // Stream the held contract on the shared Fyers websocket. Ticks publish
   // straight through _publishOptionLtp, so the premium the exit rules read is
   // current rather than up to a poll interval old. Subscribing here (not on the
   // first poll) gets the stream warming while the immediate REST fetch runs.
-  _onStreamedOptionLtp = (ltp) => _publishOptionLtp(symbol, ltp);
+  _onStreamedOptionLtp = (ltp) => { if (gen === _optionPollGen) _publishOptionLtp(symbol, ltp); };
   optionFeed.track(OPTION_FEED_OWNER, symbol, _onStreamedOptionLtp);
 
   // ── Recursive setTimeout loop (replaces setInterval) ──────────────────────
@@ -720,15 +728,15 @@ function startOptionPolling(symbol) {
   // If getQuotes() takes >1s (slow network), calls accumulate and pile up.
   // setTimeout-chaining guarantees exactly 1s gap BETWEEN calls, not 1s PERIOD.
   function scheduleNext() {
-    if (!_optionPollTimer) return; // polling was stopped
+    if (!_optionPollTimer || gen !== _optionPollGen) return; // polling was stopped / restarted
     _optionPollTimer = setTimeout(async () => {
-      await _optionPollTick(symbol);
+      await _optionPollTick(symbol, gen);
       scheduleNext(); // reschedule only after this call finishes
     }, 1000);
   }
 
   // Kick off with an immediate tick, then start the loop
-  _optionPollTick(symbol).then(scheduleNext);
+  _optionPollTick(symbol, gen).then(scheduleNext);
 
   // Mark polling as active (non-null timer signals "running" to stopOptionPolling)
   _optionPollTimer = true; // placeholder until first setTimeout fires
@@ -754,6 +762,7 @@ function stopOptionPolling() {
   }
   _optionPollTimer = null;
   _optionPollBusy  = false;
+  _optionPollGen++;
   _onStreamedOptionLtp = null;
   // Release the websocket lease now rather than letting it lapse, so the
   // contract is unsubscribed the moment the position is gone.
@@ -869,7 +878,7 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
   //    The real premium is stamped by the first option poll (~1s from now), so
   //    the gate uses the assumed premium and the block is trued up there.
   const _estCost = qty * capitalPool.estimatedPremium();
-  const _cap = capitalPool.gate("ema9vwap", _estCost, { side, symbol, qty }, { sim: ptState._simMode });
+  const _cap = capitalPool.gate("ema9vwap", _estCost, { side, symbol, qty }, { sim: (ptState._simMode || ptState._simSession) });
   if (!_cap.ok) {
     if (!_cap.muted) {
       log(`❌ [PAPER] Entry REFUSED — ${_cap.reason}`);
@@ -961,7 +970,7 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
   // Set option symbol and start REST polling (no socket changes)
   // Skip option polling for futures and simulation mode — no option premium to track
   ptState.optionSymbol = symbol;
-  capitalPool.block("ema9vwap", _estCost, { side, symbol, qty, premium: null }, { sim: ptState._simMode });
+  capitalPool.block("ema9vwap", _estCost, { side, symbol, qty, premium: null }, { sim: (ptState._simMode || ptState._simSession) });
   if (ptState._simMode) {
     log(`📊 [PAPER] Simulation mode — skipping option LTP polling`);
   } else if (instrumentConfig.INSTRUMENT !== "NIFTY_FUTURES") {
@@ -1212,7 +1221,7 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   }
 
   ptState.position = null;
-  capitalPool.release("ema9vwap", netPnl, { sim: ptState._simMode });
+  capitalPool.release("ema9vwap", netPnl, { sim: (ptState._simMode || ptState._simSession) });
   try { require("../utils/positionPersist").clearEma9VwapPosition(); } catch (_) {}
 
   // Opposite-side (flip) cooldown — block opposite-side entry for N candles.
@@ -1869,7 +1878,7 @@ function onTick(tick) {
       // Capital pre-check — a refused entry must not pay for a symbol lookup and a
       // Fyers quote on every tick of the bar. Same gate simulateBuy runs; muted
       // repeats stay refused without re-logging.
-      const _capIntra = capitalPool.gate("ema9vwap", getLotQty() * capitalPool.estimatedPremium(), { side, qty: getLotQty() }, { sim: ptState._simMode });
+      const _capIntra = capitalPool.gate("ema9vwap", getLotQty() * capitalPool.estimatedPremium(), { side, qty: getLotQty() }, { sim: (ptState._simMode || ptState._simSession) });
       if (!_capIntra.ok && !_capIntra.muted) {
         log(`❌ [PAPER] Intra-candle entry REFUSED — ${_capIntra.reason}`);
         skipLogger.appendSkipLog("ema9vwap", { gate: "capital", reason: _capIntra.reason, spot: ltp, side, signal, path: "intra-candle", cost: _capIntra.cost, available: _capIntra.available });

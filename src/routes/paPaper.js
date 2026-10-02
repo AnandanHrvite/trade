@@ -304,7 +304,7 @@ function _applyOptionLtp(symbol, ltp, at) {
   if (!state.position.optionEntryLtp) {
     state.position.optionEntryLtp = ltp;
     // Real premium known — replace the estimate blocked at entry.
-    capitalPool.updateBlock("pa", (state.position.qty || 0) * ltp, { sim: state._simMode });
+    capitalPool.updateBlock("pa", (state.position.qty || 0) * ltp, { sim: (state._simMode || state._simSession) });
     log(`📌 [PA-PAPER] Option entry LTP: ₹${ltp}`);
   }
 }
@@ -371,7 +371,7 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtE
   //    The real premium is stamped by the first option poll (~1s from now), so
   //    the gate uses the assumed premium and the block is trued up there.
   const _estCost = qty * capitalPool.estimatedPremium();
-  const _cap = capitalPool.gate("pa", _estCost, { side, symbol, qty }, { sim: state._simMode });
+  const _cap = capitalPool.gate("pa", _estCost, { side, symbol, qty }, { sim: (state._simMode || state._simSession) });
   if (!_cap.ok) {
     if (!_cap.muted) {
       log(`❌ [PA-PAPER] Entry REFUSED — ${_cap.reason}`);
@@ -443,7 +443,7 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtE
   };
 
   state.optionSymbol = symbol;
-  capitalPool.block("pa", _estCost, { side, symbol, qty, premium: null }, { sim: state._simMode });
+  capitalPool.block("pa", _estCost, { side, symbol, qty, premium: null }, { sim: (state._simMode || state._simSession) });
   if (!state._simMode && instrumentConfig.INSTRUMENT !== "NIFTY_FUTURES") {
     startOptionPolling(symbol);
   }
@@ -589,7 +589,7 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   }
 
   state.position = null;
-  capitalPool.release("pa", netPnl, { sim: state._simMode });
+  capitalPool.release("pa", netPnl, { sim: (state._simMode || state._simSession) });
 
   if (!state._simMode) {
     notifyExit({
