@@ -766,6 +766,9 @@ function onTick(tick) {
 // ── onCandleClose — evaluate signal on 3-min bar close ──────────────────────
 
 async function onCandleClose(bar) {
+  // Read before any await below (OI / VIX): a Stop + Start during them must
+  // not let this candle enter the NEW session — see _entryGen.
+  const _sidClose = _entryGen;
   if (!state.running) return;
 
   // Sample futures OI each candle close (no-op unless an OI filter is enabled; live only)
@@ -881,11 +884,11 @@ async function onCandleClose(bar) {
   const spot = bar.close;
 
   // Resolve option symbol
-  resolveAndEnter(side, spot, result);
+  resolveAndEnter(side, spot, result, _sidClose);
 }
 
-async function resolveAndEnter(side, spot, result) {
-  const _sid = _entryGen;
+async function resolveAndEnter(side, spot, result, sid = _entryGen) {
+  const _sid = sid;
   try {
     let symbol;
     if (state._simMode) {

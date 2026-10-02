@@ -1256,6 +1256,9 @@ function simulateSell(exitPrice, reason, spotAtExit) {
 // ── On each completed candle ──────────────────────────────────────────
 
 async function onCandleClose(candle) {
+  // Read before any await below (OI / VIX): a Stop + Start during them must
+  // not let this candle enter the NEW session — see _entryGen.
+  const _sidClose = _entryGen;
   // Drop any previous candle's skip-log writer up front, so an early `return` in the
   // exit section below can never leave a stale closure that would attribute a later
   // rejection to the wrong candle. Re-armed further down once the signal is known.
@@ -1616,7 +1619,7 @@ async function onCandleClose(candle) {
     // is in-flight do not fire a second entry.
     ptState._entryPending = true;
     const _ptEntryTimer = setTimeout(() => { if (ptState._entryPending) ptState._entryPending = false; }, 4000);
-    const _sid = _entryGen;
+    const _sid = _sidClose;
 
     let symbolPromise;
     if (INSTR === "NIFTY_FUTURES") {

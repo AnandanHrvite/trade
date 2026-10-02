@@ -899,6 +899,9 @@ function onTick(tick) {
 // ── onCandleClose — evaluate signal on 3-min bar close ──────────────────────
 
 async function onCandleClose(bar) {
+  // Read before any await below (OI / VIX): a Stop + Start during them must
+  // not let this candle enter the NEW session — see _entryGen.
+  const _sidClose = _entryGen;
   if (!state.running) return;
 
   // ── Confirmation candle on close (BB_RSI_CONFIRM_ON_CLOSE) ────────────────────
@@ -1064,7 +1067,7 @@ async function onCandleClose(bar) {
   }
 
   // Resolve option symbol
-  resolveAndEnter(side, spot, result);
+  resolveAndEnter(side, spot, result, _sidClose);
 }
 
 // Signal strength for bb_rsi (gates BB_RSI_VIX_STRONG_ONLY in elevated-VIX regimes).
@@ -1075,8 +1078,8 @@ function deriveBbRsiStrength(result) {
   return bbRsiStrategy.signalStrength(result);
 }
 
-async function resolveAndEnter(side, spot, result) {
-  const _sid = _entryGen;
+async function resolveAndEnter(side, spot, result, sid = _entryGen) {
+  const _sid = sid;
   try {
     let symbol;
     if (state._simMode) {
