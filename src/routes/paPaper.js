@@ -372,6 +372,13 @@ function stopOptionPolling() {
 
 // ── Simulated Buy/Sell ──────────────────────────────────────────────────────
 
+// Bumped synchronously by /start and every simulation reset. An async entry path
+// captures it before its first await and re-checks it right before simulateBuy:
+// a /stop (or stop + restart) during the symbol/quote await would otherwise open a
+// position + capital block on a dead session that nothing can exit. _sessionId is
+// not usable for this — /start assigns it only after its history pre-load await.
+let _entryGen = 0;
+
 function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtEntry, slSource, entryMeta = {}) {
   if (state.position) return;
 
@@ -878,6 +885,7 @@ async function onCandleClose(bar) {
 }
 
 async function resolveAndEnter(side, spot, result) {
+  const _sid = _entryGen;
   try {
     let symbol;
     if (state._simMode) {
@@ -920,6 +928,10 @@ async function resolveAndEnter(side, spot, result) {
         return;
       }
     }
+
+    // /stop (or a stop + restart) may have run while we awaited — opening now
+    // would strand an orphan position and its capital block.
+    if (state.position || !state.running || _entryGen !== _sid) return;
 
     simulateBuy(symbol, side, qty, spot, result.reason, structuralSL, result.target, spot, result.slSource, {
       signalStrength: result.signalStrength || null,
@@ -1064,6 +1076,10 @@ router.get("/start", async (req, res) => {
     _simSession: false,   // a real session — persistence is live again
     _pnlSaved: false,
   };
+  _entryGen++;
+  // Safety net: a block stranded by a previous session (position never exited)
+  // would otherwise shrink the shared pool for the rest of the process.
+  capitalPool.clear("pa");
 
   sharedSocketState.setPAActive("PA_PAPER");
 
@@ -1247,10 +1263,15 @@ router.post("/manualEntry", async (req, res) => {
   }
   const sig = candles.length >= 30 ? paStrategy.getSignal(candles, { silent: true, preview: true }) : null;
 
+  const _sid = _entryGen;
   try {
     const optResult = (instrumentConfig.INSTRUMENT === "NIFTY_FUTURES")
       ? { symbol: await getSymbol(side), strike: null, expiry: null, invalid: false }
       : await validateAndGetOptionSymbol(spot, side);
+    // /stop (or a stop + restart) may have run during the lookup — see _entryGen.
+    if (state.position || !state.running || _entryGen !== _sid) {
+      return res.status(409).json({ success: false, error: "Session stopped or position opened during symbol lookup — entry dropped" });
+    }
     const symbol = optResult.symbol;
     const qty = getLotQty();
     log(`🖐️ [PA-PAPER] MANUAL ENTRY ${side} @ spot ₹${spot} | SL: ₹${sl} (PrevCandle${prevCandle ? '=' + (side === 'CE' ? prevCandle.low : prevCandle.high) : ''})`);
@@ -3101,6 +3122,7 @@ router.post("/simulate/start", async (req, res) => {
       _simMode: true, _simScenario: label,
       _simSession: true,   // sticky — survives onSimDone clearing _simMode
     };
+    _entryGen++;
     // 09:15 IST = 03:45 UTC on the same IST date
     const simStart = simDate
       ? new Date(simDate + "T09:15:00+05:30")

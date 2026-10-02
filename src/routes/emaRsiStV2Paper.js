@@ -459,6 +459,10 @@ function isStartAllowed() {
 
 // ── Auto-stop timer handle (cleared on manual stop) ─────────────────────────────
 let _autoStopTimer = null;
+// Bumped by /start and /simulate/start. Every async entry path captures it before
+// its first await and rechecks it (plus running) right before simulateBuy, so an
+// entry whose lookup straddled a /stop or stop+restart never opens on a dead session.
+let _entrySessionGen = 0;
 // Unique per route. V1 (EMA_RSI_ST) owns socketManager's PRIMARY NIFTY handler;
 // V2 must fan out through addCallback, because start() on a running NIFTY socket
 // REPLACES that handler — which silently starved V1 of every tick from 2026-09-05.
@@ -1306,6 +1310,7 @@ async function onCandleClose(candle) {
   //   • bar N's SuperTrend trail overwrote the stop just resolved for the new entry.
   // Live never had this: its onCandleClose has no await before the same block.
   const _posAtClose = ptState.position;
+  const _sid = _entrySessionGen;
   if (!ptState._simMode) await oiFilter.recordOiSample(candle.close);
   // True only when the position open at this bar's close is still the one we hold.
   const _ownsClose = !!_posAtClose && ptState.position === _posAtClose;
@@ -1578,6 +1583,8 @@ async function onCandleClose(candle) {
         }
       }
 
+      // /stop (or stop + restart) may have run during the awaits above.
+      if (ptState.position || !ptState.running || _entrySessionGen !== _sid) { ptState._entryPending = false; clearTimeout(_ptEntryTimer); return; }
       simulateBuy(symbol, side, getLotQty(), candle.close, reason + _oiTag, stopLoss, candle.close, false, {
         signalStrength: "STRONG",
         // Entry fires at THIS candle's close, so it is fully closed and counts as
@@ -1822,6 +1829,7 @@ function onTick(tick) {
       log(`⚡ [PAPER] Intra-candle ${TRADE_RES >= 15 ? "STRONG " : ""}entry @ ₹${ltp} | VIX: ${_vixIntraVal != null ? _vixIntraVal.toFixed(1) : "n/a"} | [${TRADE_RES}m bar] ${reason}`);
       const INSTR = instrumentConfig.INSTRUMENT; // top-level constant — no inline require needed
 
+      const _sidIntra = _entrySessionGen;
       let symbolPromise;
       if (ptState._simMode) {
         // In simulation mode, use a dummy option symbol (no broker API needed)
@@ -1879,6 +1887,8 @@ function onTick(tick) {
           }
         }
 
+        // /stop (or stop + restart) may have run during the awaits above.
+        if (ptState.position || !ptState.running || _entrySessionGen !== _sidIntra) { ptState._entryPending = false; clearTimeout(_ptIntraTimer); return; }
         simulateBuy(symbol, side, getLotQty(), ltp, reason + _oiTag, stopLoss, ltp, true, {
           signalStrength: "STRONG",
           // This bar is still forming — captured NOW, before the async gap, so a
@@ -2193,6 +2203,9 @@ router.get("/start", async (req, res) => {
   // NOTE: the OI series is intentionally NOT reset here — it is global NIFTY-futures
   // OI shared across the parallel strategies; resetting would wipe another running
   // strategy's warmed series. Stale series is auto-discarded by STALE_GAP_MS.
+  _entrySessionGen++;
+  // Safety net: drop any reservation a previous session of THIS strategy leaked.
+  capitalPool.clear("ema_rsi_st_v2");
   ptState.running       = true;
   ptState.candles       = [];
   ptState.currentBar    = null;
@@ -2446,6 +2459,8 @@ router.get("/start", async (req, res) => {
       simulateSell(ptState.lastTickPrice, "Auto-stop " + _stopLabelAtStart, ptState.lastTickPrice);
     }
     ptState.running = false;
+    // Square-off above needs lastTickPrice; never let a reservation outlive the session.
+    capitalPool.clear("ema_rsi_st_v2");
     stopOptionPolling();
     try {
       tickRecorder.recordSessionStop({
@@ -2516,6 +2531,8 @@ router.get("/stop", async (req, res) => {
     socketManager.stop();
   }
   ptState.running = false;  // ← FIX: was missing — UI stayed "LIVE" after manual stop
+  // Square-off above needs currentBar; never let a reservation outlive the session.
+  capitalPool.clear("ema_rsi_st_v2");
 
   try {
     tickRecorder.recordSessionStop({
@@ -2622,6 +2639,7 @@ router.post("/manualEntry", async (req, res) => {
   }
 
   // Get option symbol
+  const _sidManual = _entrySessionGen;
   try {
     const { validateAndGetOptionSymbol } = require("../config/instrument");
     const optResult = await validateAndGetOptionSymbol(spot, side, 'ema_rsi_st_v2');
@@ -2634,6 +2652,12 @@ router.post("/manualEntry", async (req, res) => {
         : "no valid option symbol could be resolved on Fyers";
       log(`❌ [PAPER] Manual entry refused — ${why}`);
       return res.status(409).json({ success: false, error: why });
+    }
+    if (!ptState.running || _entrySessionGen !== _sidManual) {
+      return res.status(409).json({ success: false, error: "Session stopped during symbol lookup — entry cancelled" });
+    }
+    if (ptState.position) {
+      return res.status(400).json({ success: false, error: "Already in a position. Exit first." });
     }
     const symbol = optResult.symbol;
     const qty = getLotQty();   // clamped (MAX_LOT_MULTIPLIER) — don't recompute raw and bypass the cap
@@ -4752,6 +4776,7 @@ router.post("/simulate/start", async (req, res) => {
 
   // Common state reset
   function resetSimState(label, simDate) {
+    _entrySessionGen++;
     ptState.running       = true;
     ptState.candles       = [];
     ptState.currentBar    = null;

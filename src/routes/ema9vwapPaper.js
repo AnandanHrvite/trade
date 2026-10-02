@@ -850,6 +850,14 @@ function parseOptionDetails(symbol) {
   return null;
 }
 
+// Bumped synchronously by /start and every simulation reset. An async entry path
+// captures it before its first await and re-checks it right before simulateBuy:
+// a /stop (or stop + restart) during the symbol/quote await would otherwise open a
+// position + capital block on a dead session that nothing can exit. _sessionId is
+// not usable for this — /start assigns it only after its candle pre-load await,
+// and simulations null it.
+let _entryGen = 0;
+
 function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, isIntraCandle = false, entryMeta = {}) {
   // Guard: never overwrite an existing position (catches async race between candle-close
   // fallback and intra-tick entry both resolving at the same time)
@@ -1608,6 +1616,7 @@ async function onCandleClose(candle) {
     // is in-flight do not fire a second entry.
     ptState._entryPending = true;
     const _ptEntryTimer = setTimeout(() => { if (ptState._entryPending) ptState._entryPending = false; }, 4000);
+    const _sid = _entryGen;
 
     let symbolPromise;
     if (INSTR === "NIFTY_FUTURES") {
@@ -1661,6 +1670,10 @@ async function onCandleClose(candle) {
           return;
         }
       }
+
+      // /stop (or a stop + restart) may have run while we awaited — opening now
+      // would strand an orphan position and its capital block.
+      if (ptState.position || !ptState.running || _entryGen !== _sid) { ptState._entryPending = false; clearTimeout(_ptEntryTimer); return; }
 
       simulateBuy(symbol, side, getLotQty(), candle.close, reason + _oiTag, stopLoss, candle.close, false, {
         signalStrength: signalStrength || "STRONG",
@@ -1898,6 +1911,7 @@ function onTick(tick) {
       ptState._entryPending = true; // prevent double-fire while async symbol lookup runs
       // Safety: auto-reset after 4s in case of any unhandled error path
       const _ptIntraTimer = setTimeout(() => { if (ptState._entryPending) { ptState._entryPending = false; } }, 4000);
+      const _sid = _entryGen;
       log(`⚡ [PAPER] Intra-candle ${TRADE_RES >= 15 ? "STRONG " : ""}entry @ ₹${ltp} | VIX: ${_vixIntraVal != null ? _vixIntraVal.toFixed(1) : "n/a"} | [${TRADE_RES}m bar] ${reason}`);
       const INSTR = instrumentConfig.INSTRUMENT; // top-level constant — no inline require needed
 
@@ -1957,6 +1971,9 @@ function onTick(tick) {
             return;
           }
         }
+
+        // /stop (or a stop + restart) may have run while we awaited — see _entryGen.
+        if (ptState.position || !ptState.running || _entryGen !== _sid) { ptState._entryPending = false; clearTimeout(_ptIntraTimer); return; }
 
         simulateBuy(symbol, side, getLotQty(), ltp, reason + _oiTag, stopLoss, ltp, true, {
           signalStrength: signalStrength || "STRONG",
@@ -2316,6 +2333,10 @@ router.get("/start", async (req, res) => {
   ptState.currentBar    = null;
   ptState.barStartTime  = null;
   ptState.position      = null;
+  _entryGen++;
+  // Safety net: a block stranded by a previous session (position never exited)
+  // would otherwise shrink the shared pool for the rest of the process.
+  capitalPool.clear("ema9vwap");
   ptState._simSession   = false;   // a real session — persistence is live again
   // The boot reconcile in app.js deliberately RETAINS this snapshot when the broker
   // book came back empty (empty is indistinguishable from a swallowed API error), so
@@ -2546,6 +2567,8 @@ router.get("/start", async (req, res) => {
     if (ptState.position && ptState.lastTickPrice) {
       simulateSell(ptState.lastTickPrice, "Auto-stop " + _stopLabelAtStart, ptState.lastTickPrice);
     }
+    // No tick price → the square-off above was skipped; free the capital block.
+    if (ptState.position) capitalPool.clear("ema9vwap");
     ptState.running = false;
     _releaseLiveHarness("scheduled auto-stop");
     stopOptionPolling();
@@ -2604,6 +2627,8 @@ router.get("/stop", async (req, res) => {
   if (ptState.position && ptState.currentBar) {
     simulateSell(ptState.currentBar.close, "Manual stop", ptState.currentBar.close);
   }
+  // No bar yet → the square-off above was skipped; free the capital block.
+  if (ptState.position) capitalPool.clear("ema9vwap");
 
   stopOptionPolling();
   // Stop tick simulator if in sim mode, otherwise stop socket
@@ -2728,9 +2753,14 @@ router.post("/manualEntry", async (req, res) => {
   }
 
   // Get option symbol
+  const _sid = _entryGen;
   try {
     const { validateAndGetOptionSymbol } = require("../config/instrument");
     const optResult = await validateAndGetOptionSymbol(spot, side, 'ema9vwap');
+    // /stop (or a stop + restart) may have run during the lookup — see _entryGen.
+    if (ptState.position || !ptState.running || _entryGen !== _sid) {
+      return res.status(409).json({ success: false, error: "Session stopped or position opened during symbol lookup — entry dropped" });
+    }
     // Both automatic entry paths already refuse an unresolvable symbol; this
     // manual route did not, so it would have entered on symbol=null (no premium
     // → "spot proxy" P&L with the option stop inert). Same refusal, stated.
@@ -4870,6 +4900,7 @@ router.post("/simulate/start", async (req, res) => {
     ptState.currentBar    = null;
     ptState.barStartTime  = null;
     ptState.position      = null;
+    _entryGen++;
     ptState.sessionTrades = [];
     ptState._staleSession = false;
     ptState.sessionPnl    = 0;
