@@ -1259,23 +1259,29 @@ function sidebarCSS() {
     :root[data-theme="light"] { background-color:#f4f6f9 !important; }
     :root[data-theme="light"] body { background:#f4f6f9 !important; color:#334155 !important; }
 
-    /* Sidebar — keep dark for contrast */
-    :root[data-theme="light"] .sidebar { background:#1b2638 !important; border-right-color:#15202f !important; }
-    :root[data-theme="light"] .sb-brand { border-bottom-color:#253347; }
-    :root[data-theme="light"] .sb-brand-sub { color:#8ea6c8; }
-    :root[data-theme="light"] .sb-section + .sb-section { border-top-color:#253347; }
-    :root[data-theme="light"] .sb-section-header { color:#8ea6c8; }
+    /* Sidebar — follows the light skin like the rest of the page */
+    :root[data-theme="light"] .sidebar { background:#ffffff !important; border-right-color:#e0e4ea !important; }
+    :root[data-theme="light"] .sb-brand { border-bottom-color:#e0e4ea; }
+    :root[data-theme="light"] .sb-brand-name { color:#2563eb; }
+    :root[data-theme="light"] .sb-brand-sub { color:#5c6b7f; }
+    :root[data-theme="light"] .sb-section + .sb-section { border-top-color:#e0e4ea; }
+    :root[data-theme="light"] .sb-section-header { color:#5c6b7f; }
+    :root[data-theme="light"] .sb-section-header.sb-collapsible:hover { color:#2563eb; }
     /* Higher specificity than the rule above, so the underlying parents keep
        their emphasis on the light theme too. */
     :root[data-theme="light"] .sb-section-header.sb-parent-header { color:#3b6ea8; }
     :root[data-theme="light"] .sb-section-header.sb-parent-header:not(.collapsed) { color:#2563eb; }
     :root[data-theme="light"] .sb-parent-items .sb-section { border-left-color:#e0e4ea; }
-    :root[data-theme="light"] .sb-nav-item { color:#b3c6e0; }
-    :root[data-theme="light"] .sb-nav-item:hover { color:#c8dcf0; background:rgba(59,130,246,0.08); }
-    :root[data-theme="light"] .sb-nav-item.active { color:#ffffff; background:rgba(59,130,246,0.15); }
-    :root[data-theme="light"] .sb-divider { background:#253347; }
-    :root[data-theme="light"] .sb-bottom { border-top-color:#253347; }
-    :root[data-theme="light"] .sb-status-row { color:#8ea6c8; }
+    :root[data-theme="light"] .sb-nav-item { color:#334155; }
+    :root[data-theme="light"] .sb-nav-item:hover { color:#1d4ed8; background:rgba(59,130,246,0.06); }
+    :root[data-theme="light"] .sb-nav-item.active { color:#1d4ed8; background:rgba(59,130,246,0.10); border-left-color:#2563eb; }
+    :root[data-theme="light"] .sb-nav-item.disabled { color:#94a3b8; }
+    :root[data-theme="light"] .sb-divider { background:#e0e4ea; }
+    :root[data-theme="light"] .sb-bottom { border-top-color:#e0e4ea; }
+    :root[data-theme="light"] .sb-status-row { color:#5c6b7f; }
+    :root[data-theme="light"] .sb-stop-btn { border-color:#bfdbfe; color:#1d4ed8; }
+    :root[data-theme="light"] .sb-start-btn { border-color:#a7f3d0; color:#047857; }
+    :root[data-theme="light"] .sb-exit-btn { border-color:#fecaca; color:#b91c1c; }
 
     /* Top bar */
     :root[data-theme="light"] .top-bar { background:#ffffff !important; border-bottom-color:#e0e4ea !important; }
@@ -2554,10 +2560,7 @@ window.__ltInit = true;
       if (r.style && r.selectorText &&
           // Rules already written for this theme hold the light values —
           // remapping them would send the colour back the other way.
-          r.selectorText.indexOf('data-theme="light"') < 0 &&
-          // The drawer stays dark in the light skin (see .sidebar above), so its
-          // text must keep the dark-theme values.
-          !/(^|[\s,>+~])(\.sb-|\.sidebar|#main-sidebar)/.test(r.selectorText)) {
+          r.selectorText.indexOf('data-theme="light"') < 0) {
         _mapDecl(r.style, 'color', textMap);
         _mapDecl(r.style, 'background-color', bgMap);
         for (var k = 0; k < _SIDES.length; k++) _mapDecl(r.style, _SIDES[k], borderMap);
