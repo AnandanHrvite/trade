@@ -1106,6 +1106,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_BN_PIVOT_RSI_ST_STARTED", label: "BN Pivot RSI ST — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a BN Pivot RSI ST session starts.", default: "true" },
       { key: "TG_EMA_RSI_ST_V2_STARTED", label: "EMA_RSI_ST_V2 — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an EMA_RSI_ST_V2 session starts.", default: "true" },
       { key: "TG_BN_EMA_RSI_ST_V2_STARTED", label: "BN_EMA_RSI_ST_V2 — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a BN_EMA_RSI_ST_V2 (NIFTY BANK) session starts.", default: "true" },
+      { key: "TG_CMX_STARTED", label: "Commodity (MCX) — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when any Crude / Gold / Silver paper page starts.", default: "true" },
 
       { key: "TG_EMA_RSI_ST_ENTRY", label: "EMA_RSI_ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST entry.", default: "true", subheader: "Trade Entry" },
       { key: "TG_BB_RSI_ENTRY", label: "BB_RSI — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BB_RSI entry.", default: "true" },
@@ -1122,6 +1123,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_BN_PIVOT_RSI_ST_ENTRY", label: "BN Pivot RSI ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BN Pivot RSI ST entry.", default: "true" },
       { key: "TG_EMA_RSI_ST_V2_ENTRY", label: "EMA_RSI_ST_V2 — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST_V2 entry.", default: "true" },
       { key: "TG_BN_EMA_RSI_ST_V2_ENTRY", label: "BN_EMA_RSI_ST_V2 — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BN_EMA_RSI_ST_V2 (NIFTY BANK) entry.", default: "true" },
+      { key: "TG_CMX_ENTRY", label: "Commodity (MCX) — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Crude / Gold / Silver paper entry.", default: "true" },
 
       { key: "TG_EMA_RSI_ST_EXIT", label: "EMA_RSI_ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST exit.", default: "true", subheader: "Trade Exit" },
       { key: "TG_BB_RSI_EXIT", label: "BB_RSI — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BB_RSI exit.", default: "true" },
@@ -1138,6 +1140,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_BN_PIVOT_RSI_ST_EXIT", label: "BN Pivot RSI ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BN Pivot RSI ST exit.", default: "true" },
       { key: "TG_EMA_RSI_ST_V2_EXIT", label: "EMA_RSI_ST_V2 — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST_V2 exit.", default: "true" },
       { key: "TG_BN_EMA_RSI_ST_V2_EXIT", label: "BN_EMA_RSI_ST_V2 — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BN_EMA_RSI_ST_V2 (NIFTY BANK) exit.", default: "true" },
+      { key: "TG_CMX_EXIT", label: "Commodity (MCX) — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Crude / Gold / Silver paper exit.", default: "true" },
 
       { key: "TG_EMA_RSI_ST_SIGNALS", label: "EMA_RSI_ST — Signal/Skip Alerts", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert why a trade was or wasn't taken.", default: "true", subheader: "Signal / Skip" },
       { key: "TG_BB_RSI_SIGNALS", label: "BB_RSI — Signal/Skip Alerts", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert why a trade was or wasn't taken.", default: "false" },
@@ -1159,10 +1162,6 @@ const SETTINGS_SCHEMA = [
       { key: "TG_BN_PIVOT_RSI_ST_DAYREPORT", label: "BN Pivot RSI ST — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a BN Pivot RSI ST day summary on stop.", default: "true" },
       { key: "TG_EMA_RSI_ST_V2_DAYREPORT", label: "EMA_RSI_ST_V2 — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send an EMA_RSI_ST_V2 day summary on stop.", default: "true" },
       { key: "TG_BN_EMA_RSI_ST_V2_DAYREPORT", label: "BN_EMA_RSI_ST_V2 — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a BN_EMA_RSI_ST_V2 (NIFTY BANK) day summary on stop.", default: "true" },
-
-      { key: "TG_CMX_STARTED", label: "Commodity (MCX) — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when any Crude / Gold / Silver paper page starts.", default: "true", subheader: "Commodity (MCX)" },
-      { key: "TG_CMX_ENTRY", label: "Commodity (MCX) — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Crude / Gold / Silver paper entry.", default: "true" },
-      { key: "TG_CMX_EXIT", label: "Commodity (MCX) — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Crude / Gold / Silver paper exit.", default: "true" },
       { key: "TG_CMX_DAYREPORT", label: "Commodity (MCX) — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a day summary when a Crude / Gold / Silver paper page stops.", default: "true" },
 
       { key: "TG_DAYREPORT_CONSOLIDATED", label: "Consolidated Day Report (Market Close)", type: "toggle", effect: EFFECT.INSTANT, desc: "Send one combined end-of-day summary at 15:30 IST.", default: "true" },
