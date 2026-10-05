@@ -111,7 +111,8 @@ check("fires once armed and premium falls THROUGH the floor (gap down)", () => {
 
 check("stays silent while premium is still above the floor", () => {
   freshEnv();
-  assert.strictEqual(guards.checkProfitLock(100, 106, 108), null);
+  // Peak +8% → tier floor 106.8 (85% of the gain).
+  assert.strictEqual(guards.checkProfitLock(100, 107, 108), null);
 });
 
 check("never caps a runner — a trade still climbing is left alone", () => {
@@ -146,10 +147,41 @@ check("trail: floor follows the peak — the 2026-10-01 V2 PE case", () => {
 
 check("trail never sits below the fixed floor and never fires before arming", () => {
   freshEnv();
-  // Peak +8.5%: 70% of the gain is +5.95% — above the +5% floor, so it wins.
-  assert.strictEqual(guards.profitLockFloorLtp(100, 108.5, 5, 70), 105.95);
+  // Peak +8.5%: 85% of the gain (first tier) is +7.22% — above the +5% floor, so it wins.
+  assert.strictEqual(guards.profitLockFloorLtp(100, 108.5, 5, 70), 107.22);
+  // Flat trail (tiers blank): 70% of the gain is +5.95%.
+  assert.strictEqual(guards.profitLockFloorLtp(100, 108.5, 5, 70, ""), 105.95);
   // Peak +6%: not armed, so nothing fires even though 70% of the gain is +4.2%.
   assert.strictEqual(guards.checkProfitLock(100, 101, 106), null);
+});
+
+check("tiers: a small peak keeps more, a big runner keeps the flat trail", () => {
+  freshEnv();
+  assert.strictEqual(guards.PROFIT_LOCK_TRAIL_TIERS, "20:85,40:80");
+  assert.strictEqual(guards.profitLockFloorLtp(100, 110, 5, 70), 108.5);   // 85% of +10
+  assert.strictEqual(guards.profitLockFloorLtp(100, 130, 5, 70), 124);     // 80% of +30
+  assert.strictEqual(guards.profitLockFloorLtp(100, 150, 5, 70), 135);     // 70% of +50
+  const msg = guards.checkProfitLock(100, 108.4, 110);
+  assert.ok(msg && /trail 85%/.test(msg) && /108\.5/.test(msg), `tier did not fire: ${msg}`);
+});
+
+check("tiers: the floor never drops as the peak crosses a tier edge", () => {
+  freshEnv();
+  let prev = 0;
+  for (let best = 108; best <= 200; best += 0.05) {
+    const f = guards.profitLockFloorLtp(100, best, 5, 70);
+    assert.ok(f >= prev, `floor fell from ${prev} to ${f} at peak ${best.toFixed(2)}`);
+    prev = f;
+  }
+});
+
+check("tiers: trail 0 turns them off too, and garbage tiers fall back to the flat trail", () => {
+  freshEnv({ PROFIT_LOCK_TRAIL_PCT: "0" });
+  assert.strictEqual(guards.profitLockFloorLtp(100, 110, 5, guards.PROFIT_LOCK_TRAIL_PCT), 105);
+  for (const v of ["", "abc", "20:150,x:y", "-5:80"]) {
+    freshEnv({ PROFIT_LOCK_TRAIL_TIERS: v });
+    assert.strictEqual(guards.profitLockFloorLtp(100, 110, 5, 70), 107, `tiers=${v}`);
+  }
 });
 
 check("a garbage trail is ignored, never a wider floor", () => {

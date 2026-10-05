@@ -488,7 +488,8 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
       return `lock not armed (arms at ₹${armLtp}, +${tradeGuards.PROFIT_LOCK_ARM_PCT}%)${be}`;
     }
     const floor = tradeGuards.profitLockFloorLtp(e, best, tradeGuards.PROFIT_LOCK_FLOOR_PCT, tradeGuards.PROFIT_LOCK_TRAIL_PCT);
-    return `lock ARMED — floor ₹${floor} (trail ${tradeGuards.PROFIT_LOCK_TRAIL_PCT}% of gain)`;
+    const kept = best > e ? Math.round((floor - e) / (best - e) * 100) : 0;
+    return `lock ARMED — floor ₹${floor} (keeps ${kept}% of gain)`;
   }
 
   // One detailed block per candle close — what the engine saw and why it did

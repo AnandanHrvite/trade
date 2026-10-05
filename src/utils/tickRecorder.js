@@ -445,6 +445,7 @@ function snapshotSettings() {
     if (out[k] === undefined) out[k] = "true";
   }
   if (out.PROFIT_LOCK_TRAIL_PCT === undefined) out.PROFIT_LOCK_TRAIL_PCT = "70";
+  if (out.PROFIT_LOCK_TRAIL_TIERS === undefined) out.PROFIT_LOCK_TRAIL_TIERS = "20:85,40:80";
   return out;
 }
 

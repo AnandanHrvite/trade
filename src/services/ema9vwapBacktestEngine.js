@@ -123,6 +123,7 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
   const _plArmPct   = _tradeGuards.PROFIT_LOCK_ARM_PCT;
   const _plFloorPct = _tradeGuards.PROFIT_LOCK_FLOOR_PCT;
   const _plTrailPct = _tradeGuards.PROFIT_LOCK_TRAIL_PCT;
+  const _plTiers    = _tradeGuards.PROFIT_LOCK_TRAIL_TIERS;
   const _plValid    = _tradeGuards.PROFIT_LOCK_ENABLED && DELTA > 0
                    && Number.isFinite(_plArmPct) && Number.isFinite(_plFloorPct)
                    && _plArmPct > 0 && _plFloorPct >= 0 && _plFloorPct < _plArmPct;
@@ -404,8 +405,9 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
           ? (position.bestPricePrevBar - position.entryPrice)
           : (position.entryPrice - position.bestPricePrevBar);
         if (_favBest >= _plArmSpotPts) {
-          // Trail: the floor rises to TRAIL% of the best gain (see tradeGuards).
-          const _trailPts = (_plTrailPct > 0 && _plTrailPct < 100) ? _favBest * _plTrailPct / 100 : 0;
+          // Trail: the floor rises to the tiered keep % of the best gain (see tradeGuards).
+          const _bestPremPct = _favBest * DELTA / 200 * 100;
+          const _trailPts = _favBest * _tradeGuards.profitLockTrailKeepPct(_bestPremPct, _plTrailPct, _plTiers) / 100;
           const _floorPts = Math.max(_plFloorSpotPts, _trailPts);
           const _floorLvl = position.side === "CE"
             ? position.entryPrice + _floorPts
@@ -414,7 +416,7 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
           if (_touched) {
             doExit = true;
             exitReason = _floorPts > _plFloorSpotPts
-              ? `Profit lock trail ${_plTrailPct}% (spot-equivalent, ${_floorPts.toFixed(0)}pt kept of ${_favBest.toFixed(0)}pt best)`
+              ? `Profit lock trail ${Math.round(_floorPts / _favBest * 100)}% (spot-equivalent, ${_floorPts.toFixed(0)}pt kept of ${_favBest.toFixed(0)}pt best)`
               : `Profit lock +${_plFloorPct}% (spot-equivalent, armed at +${_plArmPct}%)`;
             exitLevel  = _floorLvl;
             // Paper fires the lock inside onTick, which returns from the TICK

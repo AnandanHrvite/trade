@@ -205,12 +205,48 @@ function liveProfitLockEnabled()  { return String(process.env.PROFIT_LOCK_ENABLE
 // It only ever rises with the peak, so it never widens the fixed floor.
 function liveProfitLockTrailPct() { return parseFloat(process.env.PROFIT_LOCK_TRAIL_PCT ?? "70"); }
 
+// TIERS — a tighter trail for small peaks. Live data (502 trades, Jul–Oct
+// 2026): 144 trades peaked ≥+10% premium, and a flat 70% trail still hands back
+// 3 points of a 10% move. A small early peak is the reversal signature, so it
+// keeps more; a big runner keeps less, so a normal pullback does not shake it
+// out. Format "upToGain%:keep%,…" — default "20:85,40:80": below +20% keep 85%
+// of the gain, below +40% keep 80%, above that PROFIT_LOCK_TRAIL_PCT (70).
+// Example: entry 100, peak 110 → floor 108.5 (was 107); peak 150 → floor 135.
+// Blank = flat trail only. Peak-on-peak replay: +Rs27.9k vs +Rs21.5k for the
+// flat 70% since 21-Sep — an upper bound, it cannot see shake-outs.
+function liveProfitLockTrailTiers() { return process.env.PROFIT_LOCK_TRAIL_TIERS ?? "20:85,40:80"; }
+
+function parseTrailTiers(spec) {
+  return String(spec || "").split(",").map(t => t.split(":").map(Number))
+    .filter(([upTo, keep]) => upTo > 0 && keep > 0 && keep < 100)
+    .map(([upTo, keep]) => ({ upTo, keep }))
+    .sort((a, b) => a.upTo - b.upTo);
+}
+
+// The % of the best gain the trail keeps, for a peak gain of gainPct (% of
+// entry). 0 when the trail is off — TRAIL_PCT 0 switches the tiers off too, so
+// old replays that force it to 0 stay fixed-floor. The floor never falls as the
+// peak rises: at each tier edge the floor reached there is carried forward, so
+// a lower keep % for a bigger peak can never pull the floor back down.
+function profitLockTrailKeepPct(gainPct, trailPct, tiersSpec = liveProfitLockTrailTiers()) {
+  if (!Number.isFinite(trailPct) || trailPct <= 0 || trailPct >= 100) return 0;
+  if (!Number.isFinite(gainPct) || gainPct <= 0) return 0;
+  let carried = 0;                 // gain % kept at the last tier edge passed
+  let keep = trailPct;
+  for (const t of parseTrailTiers(tiersSpec)) {
+    if (gainPct < t.upTo) { keep = t.keep; break; }
+    carried = Math.max(carried, t.upTo * t.keep / 100);
+  }
+  return gainPct * keep / 100 >= carried ? keep : carried / gainPct * 100;
+}
+
 // The floor premium for an armed lock: the fixed floor, raised by the trail.
 // Shared with the backtests so their spot-equivalent floor matches paper.
-function profitLockFloorLtp(entryLtp, bestLtp, floorPct, trailPct) {
+function profitLockFloorLtp(entryLtp, bestLtp, floorPct, trailPct, tiersSpec = liveProfitLockTrailTiers()) {
   let floor = entryLtp * (1 + floorPct / 100);
-  if (Number.isFinite(trailPct) && trailPct > 0 && trailPct < 100 && bestLtp > entryLtp) {
-    floor = Math.max(floor, entryLtp + (bestLtp - entryLtp) * trailPct / 100);
+  if (bestLtp > entryLtp) {
+    const keep = profitLockTrailKeepPct((bestLtp / entryLtp - 1) * 100, trailPct, tiersSpec);
+    floor = Math.max(floor, entryLtp + (bestLtp - entryLtp) * keep / 100);
   }
   return parseFloat(floor.toFixed(2));
 }
@@ -220,6 +256,7 @@ function checkProfitLock(entryLtp, currentLtp, bestLtp, {
   floorPct = liveProfitLockFloorPct(),
   enabled  = liveProfitLockEnabled(),
   trailPct = liveProfitLockTrailPct(),
+  tiers    = liveProfitLockTrailTiers(),
 } = {}) {
   if (!enabled) return null;
   if (!Number.isFinite(entryLtp) || entryLtp <= 0)     return null;
@@ -232,12 +269,13 @@ function checkProfitLock(entryLtp, currentLtp, bestLtp, {
   const armLtp = entryLtp * (1 + armPct / 100);
   if (bestLtp < armLtp) return null;               // never armed — no lock yet
 
-  const floorLtp = profitLockFloorLtp(entryLtp, bestLtp, floorPct, trailPct);
+  const floorLtp = profitLockFloorLtp(entryLtp, bestLtp, floorPct, trailPct, tiers);
   if (currentLtp > floorLtp) return null;          // still above the locked floor
 
   const fixedFloor = parseFloat((entryLtp * (1 + floorPct / 100)).toFixed(2));
   if (floorLtp > fixedFloor) {
-    return `Profit lock trail ${trailPct}% — premium Rs${currentLtp} fell to the trailed floor Rs${floorLtp} (keeps ${trailPct}% of the gain to peak Rs${parseFloat(bestLtp.toFixed(2))}, entry Rs${parseFloat(entryLtp.toFixed(2))})`;
+    const keptOfGain = Math.round((floorLtp - entryLtp) / (bestLtp - entryLtp) * 100);
+    return `Profit lock trail ${keptOfGain}% — premium Rs${currentLtp} fell to the trailed floor Rs${floorLtp} (keeps ${keptOfGain}% of the gain to peak Rs${parseFloat(bestLtp.toFixed(2))}, entry Rs${parseFloat(entryLtp.toFixed(2))})`;
   }
   return `Profit lock +${floorPct}% — premium Rs${currentLtp} fell to the locked floor Rs${floorLtp} after peaking at Rs${parseFloat(bestLtp.toFixed(2))} (armed at +${armPct}%, entry Rs${parseFloat(entryLtp.toFixed(2))})`;
 }
@@ -299,6 +337,7 @@ module.exports = {
   checkTimeStop,
   checkProfitLock,
   profitLockFloorLtp,
+  profitLockTrailKeepPct,
   checkBreakevenStop,
   isProtectiveStop,
   resolveProtectiveStop,
@@ -311,6 +350,7 @@ module.exports = {
   get PROFIT_LOCK_ARM_PCT()        { return liveProfitLockArmPct(); },
   get PROFIT_LOCK_FLOOR_PCT()      { return liveProfitLockFloorPct(); },
   get PROFIT_LOCK_TRAIL_PCT()      { return liveProfitLockTrailPct(); },
+  get PROFIT_LOCK_TRAIL_TIERS()    { return liveProfitLockTrailTiers(); },
   get BREAKEVEN_STOP_ENABLED()     { return liveBreakevenEnabled(); },
   get BREAKEVEN_ARM_PCT()          { return liveBreakevenArmPct(); },
 };
