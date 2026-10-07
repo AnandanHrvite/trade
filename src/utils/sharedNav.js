@@ -3110,7 +3110,7 @@ async function loadHolidaysTable() {
       body.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--muted-1,#8ba1c2);padding:20px;">No holidays found</td></tr>';
       return;
     }
-    var todayStr = new Date(new Date().toLocaleString("en-US",{timeZone:"Asia/Kolkata"})).toISOString().split('T')[0];
+    var todayStr = new Date().toLocaleDateString("en-CA",{timeZone:"Asia/Kolkata"});
     var rows = '', mcxRows = '';
     var n = 0;
     list.sort(function(a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; }).forEach(function(h) {
@@ -3150,7 +3150,7 @@ async function loadExpiriesTable() {
     }
     var yearEl = document.getElementById('expiryYearTitle');
     if (yearEl) yearEl.textContent = 'NIFTY 50 & NIFTY BANK Options Expiry Calendar ' + (data.years || [data.year]).join(' – ');
-    var todayStr = new Date(new Date().toLocaleString("en-US",{timeZone:"Asia/Kolkata"})).toISOString().split('T')[0];
+    var todayStr = new Date().toLocaleDateString("en-CA",{timeZone:"Asia/Kolkata"});
     var rows = '';
     var n = 0;
     var lastYear = '';

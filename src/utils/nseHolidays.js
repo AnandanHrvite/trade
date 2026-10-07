@@ -383,6 +383,13 @@ async function refreshFromUpstream() {
  * @returns {Promise<{list:Array,dates:string[],set:Set,source:string,fetchedAt:number}>}
  */
 async function ensureYear(year) {
+  const entry = await _ensureYear(year);
+  // After the lookup, so a cold boot has already tried NSE before judging coverage.
+  try { getHolidayCoverageWarning(); } catch (_) { /* advisory only */ }
+  return entry;
+}
+
+async function _ensureYear(year) {
   const y = normaliseYear(year);
   let entry = _years.get(y);
   if (entryFresh(entry)) return entry;
@@ -533,6 +540,93 @@ async function getPreviousTradingDay(startDate) {
   return date;
 }
 
+// ── Synchronous, cache-only lookups ─────────────────────────────────────────
+// instrument.js's "which week are we trading" helper is synchronous (a dozen
+// call sites depend on that), yet it must know whether TODAY is a preponed
+// expiry to roll at 15:30 on it. These read whatever the async path has already
+// cached — the running process warms it on every entry/health check — and fall
+// back to the same 2026 / fixed-date lists ensureYear() would. They never fetch,
+// never write the cache, and never throw.
+
+/** Holiday Set for a year from the in-memory cache, else the offline fallback. */
+function holidaySetSync(year) {
+  const y = Number(year);
+  const entry = _years.get(y);
+  if (entry && entry.set) return entry.set;
+  const list = y === 2026 ? FALLBACK_HOLIDAYS_2026 : derivedFixedHolidays(y);
+  return new Set(list.map(h => h.date));
+}
+
+/** Weekend or (cached) NSE holiday — synchronous twin of isNonTradingDay(). */
+function isNonTradingDaySync(date) {
+  if (isWeekend(date)) return true;
+  return holidaySetSync(date.getFullYear()).has(formatDateToYYYYMMDD(date));
+}
+
+/**
+ * The date an expiry scheduled on `date` actually settles on: `date` itself, or
+ * the nearest earlier trading day when it falls on a holiday/weekend. Returns a
+ * new Date; synchronous twin of the isNonTradingDay → getPreviousTradingDay pair.
+ */
+function preponedExpirySync(date) {
+  const d = new Date(date);
+  for (let i = 0; i < 30 && isNonTradingDaySync(d); i++) d.setDate(d.getDate() - 1);
+  return d;
+}
+
+// ── Next-year holiday coverage ──────────────────────────────────────────────
+// Only 2026 has a hardcoded fallback. NSE publishes the following year's list
+// around Nov–Dec; if it has not reached us by then, January's lunar holidays
+// (and therefore its preponed expiries) are unknown. Surface that early.
+let _coverageWarn = { day: null, msg: null };
+
+function _istDateParts() {
+  const ist = new Date(Date.now() + 19800000);   // UTC+5:30, read via getUTC*
+  return { year: ist.getUTCFullYear(), month: ist.getUTCMonth(), iso: ist.toISOString().slice(0, 10) };
+}
+
+/** Does the on-disk NSE snapshot hold a non-empty list for `year`? Never throws. */
+function _diskHasYearSync(year) {
+  try {
+    const json = JSON.parse(fs.readFileSync(STORE_FILE, 'utf-8'));
+    const list = json && json.years && json.years[String(year)];
+    return Array.isArray(list) && list.length > 0;
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
+ * In November/December, warn when NEXT year's NSE holiday list is unavailable —
+ * not cached from the API, not in the disk snapshot, and no hardcoded fallback.
+ * Evaluated (and console.warn'd) at most once per IST day; returns the warning
+ * text, or null when coverage is fine or it is too early in the year to matter.
+ * Synchronous and side-effect free beyond the log, so a Telegram/Dashboard hook
+ * can poll it cheaply.
+ * @returns {string|null}
+ */
+function getHolidayCoverageWarning() {
+  const { year, month, iso } = _istDateParts();
+  if (_coverageWarn.day === iso) return _coverageWarn.msg;
+
+  let msg = null;
+  if (month >= 10) {                       // Nov (10) / Dec (11)
+    const next = year + 1;
+    const cached = _years.get(next);
+    const covered = (cached && (cached.source === 'api' || cached.source === 'disk'))
+      || next === 2026                     // the one year with a hardcoded fallback
+      || _diskHasYearSync(next);
+    if (!covered) {
+      msg = `NSE holiday list for ${next} is not available yet (no API data, no disk snapshot, no fallback) — ` +
+            `only fixed-date holidays will be known for ${next}, so lunar holidays and their preponed expiries ` +
+            `will be missed. Use REFRESH on the holiday calendar once NSE publishes it.`;
+      console.warn(`[nseHolidays] ⚠️  ${msg}`);
+    }
+  }
+  _coverageWarn = { day: iso, msg };
+  return msg;
+}
+
 /**
  * Format date to YYYY-MM-DD string
  */
@@ -551,6 +645,7 @@ function formatDateToYYYYMMDD(date) {
 function clearCache() {
   _years.clear();
   _diskLoaded = false;
+  _coverageWarn = { day: null, msg: null };   // re-judge after a refresh
   console.log('[nseHolidays] Cache cleared');
 }
 
@@ -676,9 +771,10 @@ async function isExpiryDay() {
  * Check if a given date string (YYYY-MM-DD) is an expiry day.
  * Used by backtest to filter candles to expiry-only days.
  *
- * NIFTY weekly expiry day changed in April 2025:
- *   • Before 2025-04-04: Thursday was expiry (preponed to Wednesday if Thu = holiday)
- *   • 2025-04-04 onwards: Tuesday is expiry (preponed to Monday if Tue = holiday)
+ * NIFTY weekly expiry day moved Thursday → Tuesday on 1-Sep-2025:
+ *   • Before 2025-09-01: Thursday was expiry (preponed to Wednesday if Thu = holiday)
+ *     — the last Thursday expiry was 2025-08-28
+ *   • 2025-09-01 onwards: Tuesday is expiry (preponed to Monday if Tue = holiday)
  *
  * The cutover can be overridden via EXPIRY_DAY_CUTOVER env var (YYYY-MM-DD).
  */
@@ -701,11 +797,11 @@ async function isExpiryDate(dateStr) {
 
 /**
  * Which weekday carries the NIFTY weekly expiry on a given date.
- * Thursday (4) before the April-2025 cutover, Tuesday (2) after it.
+ * Thursday (4) before the 1-Sep-2025 cutover, Tuesday (2) from it on.
  * ISO strings compare lexicographically, so no Date parsing is needed.
  */
 function expiryWeekdayFor(isoDate) {
-  const cutover = process.env.EXPIRY_DAY_CUTOVER || "2025-04-04";
+  const cutover = process.env.EXPIRY_DAY_CUTOVER || "2025-09-01";
   return isoDate < cutover ? 4 : 2;
 }
 
@@ -769,6 +865,9 @@ module.exports = {
   isNSEHoliday,
   isWeekend,
   isNonTradingDay,
+  isNonTradingDaySync,          // cache-only, never fetches — for synchronous expiry maths
+  preponedExpirySync,
+  getHolidayCoverageWarning,    // Nov/Dec: next year's NSE list missing → warning text, else null
   getNextTradingDay,
   getPreviousTradingDay,
   clearCache,

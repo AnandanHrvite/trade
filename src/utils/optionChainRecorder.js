@@ -133,7 +133,16 @@ async function _resolveExpiryCode() {
     const type = (process.env.OPTION_EXPIRY_TYPE || "weekly").trim().toLowerCase();
     code = type === "monthly" ? ctx.monthlyExpiryCode : ctx.weeklyExpiryCode;
   } catch (_) { /* fall through */ }
-  if (!code) { try { code = instrument.getNearestThursdayExpiry(); } catch (_) {} }
+  // Fallback: the same rolling helpers getMarketContext uses (they roll once the
+  // (possibly preponed) expiry session has closed) — monthly when pinned monthly.
+  if (!code) {
+    try {
+      const type = (process.env.OPTION_EXPIRY_TYPE || "weekly").trim().toLowerCase();
+      code = type === "monthly"
+        ? instrument.expiryCodeFor(instrument.getNearestMonthlyExpiryDate())
+        : instrument.getNearestThursdayExpiry();
+    } catch (_) {}
+  }
   if (code && day) _expiry = { day, code };
   return code;
 }

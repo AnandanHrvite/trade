@@ -1,6 +1,6 @@
 require("dotenv").config();
 const fyers = require("./fyers");
-const { isNonTradingDay, getPreviousTradingDay, formatDateToYYYYMMDD } = require("../utils/nseHolidays");
+const { isNonTradingDay, getPreviousTradingDay, formatDateToYYYYMMDD, preponedExpirySync } = require("../utils/nseHolidays");
 
 /**
  * instrument.js — Auto Strike & Auto Expiry
@@ -246,38 +246,58 @@ function getLastTuesdayOfMonth() {
 }
 
 /**
- * The nearest upcoming weekly-expiry DATE (Tuesday). Today counts while its
- * session is still open; past 15:30 IST it rolls to next Tuesday.
+ * Has the contract SCHEDULED for `scheduled` already stopped trading at `ist`?
  *
- * ⚠️  NOT holiday-adjusted — callers that can `await` prepone it themselves.
+ * Judged on the date it actually settles — the scheduled Tuesday, or the trading
+ * day it is preponed to when that Tuesday is a holiday — so a preponed MONDAY
+ * expiry rolls at Monday's 15:30 close, not Tuesday's. Holiday knowledge is the
+ * cache-only sync lookup (warmed by every async holiday check in the process,
+ * else the offline fallback list).
+ */
+function _expirySessionOver(scheduled, ist) {
+  const eff   = formatDateToYYYYMMDD(preponedExpirySync(scheduled));
+  const today = formatDateToYYYYMMDD(ist);
+  return eff < today || (eff === today && ist.getHours() * 60 + ist.getMinutes() >= SESSION_END_MIN);
+}
+
+/**
+ * The nearest MONTHLY expiry DATE still trading: this month's last Tuesday, or
+ * next month's once this month's (possibly preponed) expiry session has closed.
+ * Like getNearestWeeklyExpiryDate, the SCHEDULED date is returned (not preponed).
+ */
+function getNearestMonthlyExpiryDate() {
+  const ist = nowIST();
+  let m = lastExpiryWeekdayOf(ist.getFullYear(), ist.getMonth());
+  if (_expirySessionOver(m, ist)) {
+    m = lastExpiryWeekdayOf(
+      ist.getMonth() === 11 ? ist.getFullYear() + 1 : ist.getFullYear(),
+      ist.getMonth() === 11 ? 0 : ist.getMonth() + 1
+    );
+  }
+  m.setHours(12, 0, 0, 0);
+  return m;
+}
+
+/**
+ * The nearest upcoming weekly-expiry DATE (Tuesday). Today counts while its
+ * session is still open; once the week's expiry session has closed (15:30 IST
+ * on the Tuesday, or on the day it was preponed to) it rolls to next Tuesday.
+ *
+ * ⚠️  Returns the SCHEDULED Tuesday, NOT holiday-adjusted — callers that can
+ * `await` prepone it themselves. Only the roll decision looks at the prepone.
  * This is the single definition of "which week are we trading", so the computed
  * fallback and the recorded market context can never disagree about it.
  */
 function getNearestWeeklyExpiryDate(underlying) {
-  const ist = nowIST();
-
   // Monthly-only index: "the nearest expiry" IS this month's last Tuesday,
   // rolling to next month's once that session has ended.
-  if (!underlyingOf(underlying).weekly) {
-    let m = lastExpiryWeekdayOf(ist.getFullYear(), ist.getMonth());
-    const past = formatDateToYYYYMMDD(m) < formatDateToYYYYMMDD(ist)
-      || (formatDateToYYYYMMDD(m) === formatDateToYYYYMMDD(ist)
-          && ist.getHours() * 60 + ist.getMinutes() >= SESSION_END_MIN);
-    if (past) {
-      m = lastExpiryWeekdayOf(
-        ist.getMonth() === 11 ? ist.getFullYear() + 1 : ist.getFullYear(),
-        ist.getMonth() === 11 ? 0 : ist.getMonth() + 1
-      );
-    }
-    m.setHours(12, 0, 0, 0);
-    return m;
-  }
+  if (!underlyingOf(underlying).weekly) return getNearestMonthlyExpiryDate();
 
-  let days = (WEEKLY_EXPIRY_DOW - ist.getDay() + 7) % 7;
-  if (days === 0 && ist.getHours() * 60 + ist.getMinutes() >= SESSION_END_MIN) days = 7;
+  const ist = nowIST();
   const expiry = new Date(ist);
-  expiry.setDate(ist.getDate() + days);
+  expiry.setDate(ist.getDate() + (WEEKLY_EXPIRY_DOW - ist.getDay() + 7) % 7);
   expiry.setHours(12, 0, 0, 0);   // midday — immune to DST/offset arithmetic
+  if (_expirySessionOver(expiry, ist)) expiry.setDate(expiry.getDate() + 7);
   return expiry;
 }
 
@@ -774,6 +794,12 @@ async function validateAndGetOptionSymbol(spot, side, mode, opts = {}) {
       console.warn(`${TAG} ⚠️  ${label} ${formatDateToYYYYMMDD(eff)} is a holiday/weekend — preponing to ${formatDateToYYYYMMDD(preponed)}`);
       eff = preponed;
     }
+    // A contract whose (preponed) session has already closed is still quoted by
+    // getQuotes until Fyers drops it overnight — never hand it back as live.
+    if (isExpiryOverrideStale(formatDateToYYYYMMDD(eff))) {
+      console.warn(`${TAG} ⚠️  ${label} ${formatDateToYYYYMMDD(eff)} has already expired — skipping it`);
+      return null;
+    }
     const code   = expiryCodeFor(eff, U);
     const symbol = `NSE:${U.optPrefix}${code}${strike}${side}`;
     if (await isSymbolValidViaQuotes(symbol)) {
@@ -964,8 +990,9 @@ async function getMarketContext(underlying) {
   const weeklyCode = expiryCodeFor(weekly, U);
   const weeklyDate = formatDateToYYYYMMDD(weekly);
 
-  const ist = nowIST();
-  let monthly = lastExpiryWeekdayOf(ist.getFullYear(), ist.getMonth());
+  // The live monthly contract — rolls to next month once this month's (possibly
+  // preponed) expiry session has closed, exactly as the weekly does.
+  let monthly = getNearestMonthlyExpiryDate();
   try { if (await isNonTradingDay(monthly)) monthly = await getPreviousTradingDay(monthly); }
   catch (_) { /* keep computed */ }
   const monthlyCode = expiryCodeFor(monthly, U);
@@ -1001,6 +1028,7 @@ module.exports = {
   getNearestThursdayExpiry,
   expiryCodeFor,               // date → the Fyers code Fyers really uses (weekly YYMDD / monthly YYMMM)
   getNearestWeeklyExpiryDate,  // the single definition of "which week are we trading"
+  getNearestMonthlyExpiryDate, // the live monthly contract's scheduled date (rolls after its close)
   getFuturesExpiry,
   getProductType,
   getMarketContext,            // async — resolve the day's immutable Market Context Snapshot

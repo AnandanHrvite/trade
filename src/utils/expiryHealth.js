@@ -182,7 +182,7 @@ async function _isTradingDay() {
   const day = _istDay();
   if (_tradingDay.day === day && _tradingDay.allowed !== null) return _tradingDay.allowed;
   let allowed = true;
-  try { allowed = !(await nseHolidays.isNonTradingDay(new Date())); }
+  try { allowed = !(await nseHolidays.isNonTradingDay(new Date(`${day}T12:00:00`))); }   // IST date at local noon, not the UTC instant
   catch (_) { allowed = true; }   // calendar unavailable → check anyway rather than skip silently
   _tradingDay = { day, allowed };
   return allowed;
