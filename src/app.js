@@ -27,6 +27,9 @@ const { resolveTheme } = require("./utils/theme");
 // usual way (/{slug}-paper, /{slug}-live[, /{slug}-live-harness]) and it joins
 // Start All with no further wiring — see the module header for the contract.
 const { trackMounts, startAllRoster, discoverStartRoutes } = require("./utils/startAllRoster");
+// Pure page routers (backtests, analysis tools) mount lazily — their module is only
+// required on first request, so a disabled strategy's pages cost no heap at boot.
+const { lazyRouter } = require("./utils/lazyRouter");
 const sharedSocketState = require("./utils/sharedSocketState");
 
 const crypto = require("crypto");
@@ -1229,8 +1232,8 @@ app.use((req, res, next) => {
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.use("/auth",       require("./routes/auth"));
-app.use("/ema_rsi_st-backtest",   require("./routes/emaRsiStBacktest"));
-app.use("/result",     require("./routes/result"));
+app.use("/ema_rsi_st-backtest",   lazyRouter(() => require("./routes/emaRsiStBacktest")));
+app.use("/result",     lazyRouter(() => require("./routes/result")));
 app.use("/ema_rsi_st-paper", require("./routes/emaRsiStPaper"));
 app.use("/ema_rsi_st-live",      require("./routes/emaRsiStLive"));
 app.use("/tracker",    require("./routes/manualTracker"));
@@ -1248,8 +1251,8 @@ app.use("/monitor",     require("./routes/monitor"));    // ← EC2 instance hea
 // ── BB_RSI mode routes (independent from main trade) ─────────────────────────
 app.use("/bb_rsi-live",          require("./routes/bbRsiLive"));          // ← bb_rsi live (Fyers orders)
 app.use("/bb_rsi-paper",    require("./routes/bbRsiPaper"));     // ← bb_rsi paper trade
-app.use("/bb_rsi-backtest", require("./routes/bbRsiBacktest"));  // ← bb_rsi backtest
-app.use("/compare",        require("./routes/compare"));        // ← paper vs backtest compare
+app.use("/bb_rsi-backtest", lazyRouter(() => require("./routes/bbRsiBacktest")));  // ← bb_rsi backtest
+app.use("/compare",        lazyRouter(() => require("./routes/compare")));        // ← paper vs backtest compare
 // ── Price Action mode routes (5-min, independent from main & bb_rsi) ─────────
 app.use("/pa-live",        require("./routes/paLive"));      // ← PA live (Fyers orders) — legacy
 app.use("/pa-live-harness", require("./routes/paLiveHarness")); // ← PA live via PAPER + harness (LIVE = PAPER guaranteed)
@@ -1259,7 +1262,7 @@ app.use("/ema_rsi_st-live-harness", require("./routes/emaRsiStLiveHarness")); //
 // A separate strategy from EMA_RSI_ST, not another mode of it. There is no
 // legacy /ema_rsi_st_v2-live route — the harness is V2's only live path.
 app.use("/ema_rsi_st_v2-paper",        require("./routes/emaRsiStV2Paper"));       // ← canonical engine
-app.use("/ema_rsi_st_v2-backtest",     require("./routes/emaRsiStV2Backtest"));    // ← same signal engine, paper's exits
+app.use("/ema_rsi_st_v2-backtest",     lazyRouter(() => require("./routes/emaRsiStV2Backtest")));    // ← same signal engine, paper's exits
 app.use("/ema_rsi_st_v2-live-harness", require("./routes/emaRsiStV2LiveHarness")); // ← LIVE via PAPER + harness (triple-gated dry-run, Zerodha)
 
 // ── BN_EMA_RSI_ST_V2 routes (the same engine on NIFTY BANK, Zerodha) ──────────
@@ -1267,7 +1270,7 @@ app.use("/ema_rsi_st_v2-live-harness", require("./routes/emaRsiStV2LiveHarness")
 // its NIFTY sibling there is no legacy /bn_ema_rsi_st_v2-live route — the harness
 // is its only live path.
 app.use("/bn_ema_rsi_st_v2-paper",        require("./routes/bnEmaRsiStV2Paper"));       // ← canonical engine
-app.use("/bn_ema_rsi_st_v2-backtest",     require("./routes/bnEmaRsiStV2Backtest"));    // ← same signal engine, paper's exits
+app.use("/bn_ema_rsi_st_v2-backtest",     lazyRouter(() => require("./routes/bnEmaRsiStV2Backtest")));    // ← same signal engine, paper's exits
 app.use("/bn_ema_rsi_st_v2-live-harness", require("./routes/bnEmaRsiStV2LiveHarness")); // ← LIVE via PAPER + harness (triple-gated dry-run, Zerodha)
 
 // ── COMMODITY (MCX crude / gold / silver) — paper only ───────────────────────
@@ -1284,67 +1287,67 @@ app.use("/cmx_silver_ema_rsi_st_v2-paper", require("./routes/cmxSilverEmaRsiStV2
 app.use("/bb_rsi-live-harness", require("./routes/bbRsiLiveHarness")); // ← BB_RSI live via PAPER + harness (Fyers orders)
 app.use("/orb-live-harness",   require("./routes/orbLiveHarness"));   // ← ORB live via PAPER + harness (Fyers orders)
 app.use("/pa-paper",       require("./routes/paPaper"));     // ← PA paper trade
-app.use("/pa-backtest",    require("./routes/paBacktest"));  // ← PA backtest
-app.use("/pa-pattern-backtest", require("./routes/paPatternBacktest")); // ← PA per-pattern backtest dashboard
+app.use("/pa-backtest",    lazyRouter(() => require("./routes/paBacktest")));  // ← PA backtest
+app.use("/pa-pattern-backtest", lazyRouter(() => require("./routes/paPatternBacktest"))); // ← PA per-pattern backtest dashboard
 // ── ORB routes (parallel strategy — paper, backtest, live) ──────────────────
 app.use("/orb-paper",         require("./routes/orbPaper"));      // ← ORB paper trade
-app.use("/orb-backtest",      require("./routes/orbBacktest"));   // ← ORB date-range backtest
+app.use("/orb-backtest",      lazyRouter(() => require("./routes/orbBacktest")));   // ← ORB date-range backtest
 app.use("/orb-live",          require("./routes/orbLive"));       // ← ORB LIVE — real Fyers orders (DRY-RUN gated)
 // ── EMA9+VWAP routes (5-min, EMA9 vs VWAP±σ band; Zerodha live via harness) ──
 app.use("/ema9vwap-paper",    require("./routes/ema9vwapPaper"));       // ← EMA9+VWAP paper trade
-app.use("/ema9vwap-backtest", require("./routes/ema9vwapBacktest"));    // ← EMA9+VWAP date-range backtest
+app.use("/ema9vwap-backtest", lazyRouter(() => require("./routes/ema9vwapBacktest")));    // ← EMA9+VWAP date-range backtest
 app.use("/ema9vwap-live",     require("./routes/ema9vwapLiveHarness")); // ← EMA9+VWAP LIVE via PAPER + harness (Zerodha orders)
 // ── Trend Pullback routes (5-min; 15m bias + 5m pullback/resumption) ─────────
 app.use("/trend-pb-paper",    require("./routes/trendPbPaper"));        // ← Trend Pullback paper trade (Phase A)
-app.use("/trend-pb-backtest", require("./routes/trendPbBacktest"));     // ← Trend Pullback backtest — walk-forward + dumb-baseline (Phase B)
+app.use("/trend-pb-backtest", lazyRouter(() => require("./routes/trendPbBacktest")));     // ← Trend Pullback backtest — walk-forward + dumb-baseline (Phase B)
 app.use("/trend-pb-live",     require("./routes/trendPbLiveHarness"));  // ← Trend Pullback LIVE via PAPER + harness (Fyers orders, triple-gated dry-run) (Phase C)
 
 // ── TREND_DAY_SCALP routes (10:15 day gate → VWAP/EMA pullback scalp, Fyers) ─
 app.use("/trend-day-scalp-paper",    require("./routes/trendDayScalpPaper"));       // ← canonical engine
-app.use("/trend-day-scalp-backtest", require("./routes/trendDayScalpBacktest"));    // ← same signal engine, paper's exits
+app.use("/trend-day-scalp-backtest", lazyRouter(() => require("./routes/trendDayScalpBacktest")));    // ← same signal engine, paper's exits
 app.use("/trend-day-scalp-live",     require("./routes/trendDayScalpLiveHarness")); // ← LIVE via PAPER + harness (triple-gated dry-run)
 
 
 // ── HA_SCALP routes (15-min Heikin Ashi trend scalp on NIFTY 50 spot, Zerodha) ─
 app.use("/ha-scalp-paper",      require("./routes/haScalpPaper"));            // ← canonical engine
-app.use("/ha-scalp-backtest",   require("./routes/haScalpBacktest"));         // ← same signal engine, paper's exits
+app.use("/ha-scalp-backtest",   lazyRouter(() => require("./routes/haScalpBacktest")));         // ← same signal engine, paper's exits
 app.use("/ha-scalp-live",       require("./routes/haScalpLiveHarness"));      // ← LIVE via PAPER + harness (triple-gated dry-run)
 
 // ── PREV_ORB_SCALP routes (prev-day range + 15m/3m ORB scalp on NIFTY 50 spot, Zerodha) ─
 app.use("/prev-orb-scalp-paper",    require("./routes/prevOrbScalpPaper"));        // ← canonical engine
-app.use("/prev-orb-scalp-backtest", require("./routes/prevOrbScalpBacktest"));     // ← same signal engine, paper's exits
+app.use("/prev-orb-scalp-backtest", lazyRouter(() => require("./routes/prevOrbScalpBacktest")));     // ← same signal engine, paper's exits
 app.use("/prev-orb-scalp-live",     require("./routes/prevOrbScalpLiveHarness"));  // ← LIVE via PAPER + harness (triple-gated dry-run)
 
 // ── EARLYBIRD routes (first 15-min breakout, CASH EQUITY on F&O stocks, Fyers) ─
 app.use("/early-bird-paper",    require("./routes/earlyBirdPaper"));          // ← canonical engine
-app.use("/early-bird-backtest", require("./routes/earlyBirdBacktest"));       // ← same signal engine, paper's exits
+app.use("/early-bird-backtest", lazyRouter(() => require("./routes/earlyBirdBacktest")));       // ← same signal engine, paper's exits
 app.use("/early-bird-live",     require("./routes/earlyBirdLiveHarness"));    // ← LIVE via PAPER + harness (triple-gated dry-run)
 
 // ── SIMPLE_9:30 routes (09:25 ITM watchlist → first leg above ₹180, Zerodha) ──
 app.use("/simple930-paper",    require("./routes/simple930Paper"));      // ← canonical engine
-app.use("/simple930-backtest", require("./routes/simple930Backtest"));   // ← same signal engine, paper's exits, REAL option candles
+app.use("/simple930-backtest", lazyRouter(() => require("./routes/simple930Backtest")));   // ← same signal engine, paper's exits, REAL option candles
 app.use("/simple930-live",     require("./routes/simple930LiveHarness"));// ← LIVE via PAPER + harness (triple-gated dry-run, ZERODHA orders)
 app.use("/rsi-pivot-st-paper",    require("./routes/rsiPivotStPaper"));       // ← canonical engine
-app.use("/rsi-pivot-st-backtest", require("./routes/rsiPivotStBacktest"));    // ← same signal engine, paper's exits
+app.use("/rsi-pivot-st-backtest", lazyRouter(() => require("./routes/rsiPivotStBacktest")));    // ← same signal engine, paper's exits
 app.use("/rsi-pivot-st-live",     require("./routes/rsiPivotStLiveHarness")); // ← LIVE via PAPER + harness (triple-gated dry-run, Zerodha)
 
 // ── BN_PIVOT_RSI_ST routes (RSI_PIVOT_ST rules on NIFTY BANK, Zerodha) ───────
 app.use("/bn-pivot-rsi-st-paper",    require("./routes/bnPivotRsiStPaper"));       // ← canonical engine
-app.use("/bn-pivot-rsi-st-backtest", require("./routes/bnPivotRsiStBacktest"));    // ← same signal engine, paper's exits
+app.use("/bn-pivot-rsi-st-backtest", lazyRouter(() => require("./routes/bnPivotRsiStBacktest")));    // ← same signal engine, paper's exits
 app.use("/bn-pivot-rsi-st-live",     require("./routes/bnPivotRsiStLiveHarness")); // ← LIVE via PAPER + harness (triple-gated dry-run, Zerodha)
 app.use("/deploy",         require("./routes/deploy"));         // ← GitHub Actions deploy status
 app.use("/consolidation",       require("./routes/consolidation"));     // ← unified cross-mode PAPER trade history + analytics
 app.use("/live-consolidation",  require("./routes/liveConsolidation")); // ← unified cross-mode LIVE trade history + analytics
 app.use("/edge-analytics",      require("./routes/edgeAnalytics"));     // ← edge metrics (WR/expectancy/PF/drawdown/by-hour) over recorded trades
-app.use("/consolidation-report", require("./routes/consolidationReport")); // ← printable consolidated report (paper+live, week/month/range filters, Save-as-PDF)
-app.use("/losses-analyzer",     require("./routes/lossesAnalyzer"));    // ← every losing trade with its full signal/entry/exit/indicator record + a why-it-lost verdict
-app.use("/advisor",             require("./routes/advisor"));           // ← offline settings advisor over the recorded trade book (read-only)
-app.use("/oi-monitor",          require("./routes/oiMonitor"));         // ← live per-strike OI ladder + wall/PCR readout (read-only research page)
+app.use("/consolidation-report", lazyRouter(() => require("./routes/consolidationReport"))); // ← printable consolidated report (paper+live, week/month/range filters, Save-as-PDF)
+app.use("/losses-analyzer",     lazyRouter(() => require("./routes/lossesAnalyzer")));    // ← every losing trade with its full signal/entry/exit/indicator record + a why-it-lost verdict
+app.use("/advisor",             lazyRouter(() => require("./routes/advisor")));           // ← offline settings advisor over the recorded trade book (read-only)
+app.use("/oi-monitor",          lazyRouter(() => require("./routes/oiMonitor")));         // ← live per-strike OI ladder + wall/PCR readout (read-only research page)
 app.use("/swing-scanner",       require("./routes/swingScanner"));      // ← stock swing screen over the active strategies + manual Zerodha CNC entry
 app.use("/realtime",            require("./routes/realtime"));          // ← unified real-time monitor (PAPER/LIVE toggle, all 3 strategies)
-app.use("/replay",              require("./routes/replay"));            // ← deterministic tick-replay backtest (PAPER = REPLAY = LIVE)
-app.use("/all-backtest",   require("./routes/allBacktest"));    // ← unified backtest dashboard (all 3 strategies, stats only)
-app.use("/pnl-history",    require("./routes/pnlHistory"));    // ← manual year-wise P&L (Kite + Fyers) + live bot overlay
+app.use("/replay",              lazyRouter(() => require("./routes/replay")));            // ← deterministic tick-replay backtest (PAPER = REPLAY = LIVE)
+app.use("/all-backtest",   lazyRouter(() => require("./routes/allBacktest")));    // ← unified backtest dashboard (all 3 strategies, stats only)
+app.use("/pnl-history",    lazyRouter(() => require("./routes/pnlHistory")));    // ← manual year-wise P&L (Kite + Fyers) + live bot overlay
 
 // Cancel button on the shared backtest progress page. One endpoint for every
 // strategy — the page is built by backtestJobManager, so the job id is all the
@@ -3586,7 +3589,9 @@ async function pollAllBtnsStatus(){
   } catch(_){}
 }
 pollAllBtnsStatus();
-setInterval(pollAllBtnsStatus, 10000);
+// Polls skip while the tab is hidden and catch up the moment it is shown again.
+setInterval(function(){ if (!document.hidden) pollAllBtnsStatus(); }, 10000);
+document.addEventListener('visibilitychange', function(){ if (!document.hidden) pollAllBtnsStatus(); });
 
 // ── Dashboard Cumulative P&L Charts (Paper + Live) ───────────────────────────
 function _fmtINR(n){
@@ -4072,7 +4077,8 @@ async function loadMarketSchedulePills(){
   } catch(_){}
 }
 loadMarketSchedulePills();
-setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily at most
+setInterval(function(){ if (!document.hidden) loadMarketSchedulePills(); }, 3600000); // hourly — these change daily at most
+document.addEventListener('visibilitychange', function(){ if (!document.hidden) loadMarketSchedulePills(); });
 
 // ── Dashboard Analytics Panel ─────────────────────────────────────────────────
 // Live view (market hours) vs Post-market view (last session only).
@@ -4334,6 +4340,9 @@ setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily 
   function clearPoll(){ if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; } }
 
   async function refresh(){
+    // A hidden tab polls nothing (8s in session = a dozen+ status fetches each);
+    // the visibilitychange listener below refreshes the moment it is shown again.
+    if (document.hidden) return;
     var body = document.getElementById('da-body');
     // Only need holidays here (for the market-open check). Expiry data is
     // surfaced in the top-bar pills, populated independently.
@@ -4375,6 +4384,7 @@ setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily 
     }
   }
 
+  document.addEventListener('visibilitychange', function(){ if (!document.hidden) refresh(); });
   refresh();
 })();
 
@@ -4458,7 +4468,8 @@ async function checkTradingStatus(){
   } catch(e){}
 }
 checkTradingStatus();
-setInterval(checkTradingStatus, 60000); // Check every minute
+setInterval(function(){ if (!document.hidden) checkTradingStatus(); }, 60000); // Check every minute
+document.addEventListener('visibilitychange', function(){ if (!document.hidden) checkTradingStatus(); });
 /* setInterval(pollDashboardStatus, 4000); — disabled (no realtime data on dashboard) */
 
 // Auto-swap to Real-Time view as soon as a session starts (UI_SHOW_REALTIME).
@@ -4476,7 +4487,8 @@ async function pollSessionActiveSwap(){
     if (j && j.active === true) location.replace('/');
   } catch(e){}
 }
-setInterval(pollSessionActiveSwap, 10000);
+setInterval(function(){ if (!document.hidden) pollSessionActiveSwap(); }, 10000);
+document.addEventListener('visibilitychange', function(){ if (!document.hidden) pollSessionActiveSwap(); });
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── Option expiry quick-save (dashboard mirror of the Settings fields) ───────
