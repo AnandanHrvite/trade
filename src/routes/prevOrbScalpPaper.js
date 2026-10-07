@@ -615,6 +615,11 @@ function simulateSell(reason, opts) {
 
   // Clear the position FIRST so a re-entrant tick can never double-sell it.
   state.position = null;
+  // ...which means a throw anywhere below (trade log, persistence) would leave the
+  // position cleared with NO notifyExit — and the live harness, which only sees
+  // notifyExit, would never close the REAL position. The finally guarantees it.
+  let _exitNotified = false;
+  try {
   state.sessionPnl = parseFloat((state.sessionPnl + pnl).toFixed(2));
   // Release the block now, before the logging/notify calls below can throw.
   capitalPool.release(MODE_KEY, pnl);
@@ -680,6 +685,7 @@ function simulateSell(reason, opts) {
 
   log(`🔴 ${TAG} EXIT ${pos.side} ${pos.symbol} @ optLtp=₹${exitOptLtp} spot=${exitSpot} | PnL=₹${pnl} (${reason})`);
 
+  _exitNotified = true;
   notifyExit({
     mode: "PREV-ORB-SCALP-PAPER",
     side: pos.side, symbol: pos.symbol,
@@ -691,6 +697,21 @@ function simulateSell(reason, opts) {
     peakPremium: trade.bestOptionLtp, peakPnl: trade.mfePnl,
     maxDrawdown: trade.maePnl, heldMs: trade.durationMs,
   });
+  } finally {
+    if (!_exitNotified) {
+      try {
+        notifyExit({
+          mode: "PREV-ORB-SCALP-PAPER",
+          side: pos.side, symbol: pos.symbol,
+          spotAtEntry: pos.entrySpot, spotAtExit: exitSpot,
+          optionEntryLtp: pos.optionEntryLtp, optionExitLtp: exitOptLtp,
+          pnl, sessionPnl: state.sessionPnl,
+          exitReason: reason + " (exit bookkeeping failed)", entryReason: pos.entryReason,
+          entryTime: pos.entryTime, qty,
+        });
+      } catch (e) { console.error(`${TAG} fallback notifyExit failed: ${e.message}`); }
+    }
+  }
 
   try {
     tickRecorder.recordExit({
@@ -1000,6 +1021,28 @@ function _lateStartStopMins() {
   return LATE_START_GRACE_MIN;
 }
 
+// ── Live-harness lifecycle safety ────────────────────────────────────────────
+// The PREV_ORB_SCALP-LIVE harness fires REAL orders on this engine's notify tag. It used to be
+// removed only by its own /stop, so it survived auto-stop / EOD / paper-stop /
+// SIGTERM and stayed armed: the next paper start then placed real orders. Every
+// session-ending path now releases it AFTER the virtual square-off (so the
+// harness still sees the closing notifyExit — an exit already in flight runs to
+// completion after uninstall), and /start drops a stale one unless the harness
+// itself is the caller (?_viaHarness=1). Same contract as ema9vwapPaper.js.
+const LIVE_HARNESS_MODE = "PREV_ORB_SCALP-LIVE";
+function _releaseLiveHarness(reason) {
+  try {
+    const lh = require("../services/liveHarness");
+    if (!lh.isInstalled(LIVE_HARNESS_MODE)) return false;   // idempotent no-op
+    lh.uninstallHarness(LIVE_HARNESS_MODE);
+    console.log(`🔒 [${LIVE_HARNESS_MODE}] Live harness released (${reason}) — no further real orders can be placed from this engine.`);
+    return true;
+  } catch (err) {
+    console.error(`[${LIVE_HARNESS_MODE}] harness release FAILED (${reason}): ${err.message}`);
+    return false;
+  }
+}
+
 function scheduleAutoStop() {
   if (_autoStopTimer) clearTimeout(_autoStopTimer);
   const raw = process.env.TRADE_STOP_TIME || "15:30";
@@ -1011,6 +1054,14 @@ function scheduleAutoStop() {
 
 // ── Session lifecycle ────────────────────────────────────────────────────────
 router.get("/start", async (req, res) => {
+  // Live-harness safety net — FIRST statement, before any early return. Only the
+  // *LiveHarness twin (which passes _viaHarness=1) may start paper with it attached.
+  if (!req.query || req.query._viaHarness !== "1") {
+    if (_releaseLiveHarness("paper /start — harness was still installed")) {
+      console.log(`🛑 [${LIVE_HARNESS_MODE}] A live harness was still attached and has been REMOVED before starting. This session is paper-only.`);
+    }
+  }
+
   if (state.running) return res.redirect("/prev-orb-scalp-paper/status");
 
   if (String(process.env.PREV_ORB_SCALP_MODE_ENABLED || "true").toLowerCase() !== "true") {
@@ -1099,8 +1150,10 @@ router.get("/start", async (req, res) => {
 });
 
 function stopSession() {
-  if (!state.running) return;
+  if (!state.running) { _releaseLiveHarness("stopSession — engine not running"); return; }
   if (state.position) simulateSell("Session stopped");
+  // Released AFTER the virtual square-off above, so the harness still closes the real position.
+  _releaseLiveHarness("session end");
   state.running = false;
   stopPolling();
 

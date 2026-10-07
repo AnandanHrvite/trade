@@ -30,13 +30,13 @@ const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("..
 const { verifyFyersToken } = require("../utils/fyersAuthCheck");
 
 // ── Programmatic invoker for the bbRsiPaper express router ──────────────────
-function _invokePaperRoute(method, urlPath) {
+function _invokePaperRoute(method, urlPath, query = {}) {
   return new Promise((resolve, reject) => {
     let resolved = false;
     const finish = (payload) => { if (!resolved) { resolved = true; resolve(payload); } };
     const req = {
       method: method.toUpperCase(),
-      url: urlPath, path: urlPath, query: {},
+      url: urlPath, path: urlPath, query: { ...query },
       headers: { host: "localhost" },
       get: () => undefined,
       app: { get: () => undefined, set: () => {} },
@@ -113,7 +113,7 @@ router.get("/start", async (req, res) => {
       modeTag:    "BB_RSI-PAPER",   // bbRsiPaper's mode field in notify payloads
       broker:     "fyers",
       dryRun,
-      isFutures:  process.env.INSTRUMENT === "NIFTY_FUTURES",
+      isFutures:  String(process.env.INSTRUMENT || "").trim().toUpperCase() === "NIFTY_FUTURES",
       liveLogKey: null, // live trades are not logged to disk
     });
   } catch (err) {
@@ -126,7 +126,7 @@ router.get("/start", async (req, res) => {
   // its state so the inherited behaviour is explicit, not silent.
   console.log(`🧪 [BB_RSI-LIVE-HARNESS] confirmation candle: ${(process.env.BB_RSI_CONFIRM_CANDLE_ENABLED || "true").toLowerCase() === "true" ? "ON (2-candle cross & close)" : "OFF (legacy candle-close)"}`);
   try {
-    const startResp = await _invokePaperRoute("GET", "/start");
+    const startResp = await _invokePaperRoute("GET", "/start", { _viaHarness: "1" }); // the ONE start allowed to keep the harness attached
     if (startResp.status >= 400 && startResp.status !== 302) {
       liveHarness.uninstallHarness("BB_RSI-LIVE");
       return res.status(startResp.status).json({

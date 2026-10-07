@@ -2632,10 +2632,9 @@ router.get("/start", async (req, res) => {
  * Stops the session, squares off virtual position, saves summary to disk
  */
 router.get("/stop", async (req, res) => {
-  // Release the harness before the running-guard: a stale harness must be
-  // removable even when the engine is already stopped.
-  _releaseLiveHarness("paper /stop");
   if (!ptState.running) {
+    // A stale harness must be removable even when the engine is already stopped.
+    _releaseLiveHarness("paper /stop — engine not running");
     return res.status(400).json({ success: false, error: "Paper trading is not running." });
   }
 
@@ -2643,6 +2642,9 @@ router.get("/stop", async (req, res) => {
   if (ptState.position && ptState.currentBar) {
     simulateSell(ptState.currentBar.close, "Manual stop", ptState.currentBar.close);
   }
+  // Released AFTER the square-off: releasing first removed the hooks before the
+  // closing notifyExit fired, so the harness never closed the REAL position.
+  _releaseLiveHarness("paper /stop");
   // No bar yet → the square-off above was skipped; free the capital block.
   if (ptState.position) capitalPool.clear("ema9vwap");
 
@@ -5130,16 +5132,17 @@ router.post("/simulate/start", async (req, res) => {
  * shutdown Telegram falsely reported it squared. Idempotent: no-op if not running.
  */
 function stopSession(reason = "Shutdown square-off") {
-  // Release the harness FIRST and unconditionally. It must be dropped even when the
-  // engine is already stopped — a harness that outlived its session is exactly the
-  // state that let a later paper start place real orders.
-  _releaseLiveHarness("stopSession/shutdown");
-  if (!ptState.running) return;
+  // The harness must be dropped even when the engine is already stopped — a harness
+  // that outlived its session is exactly the state that let a later paper start
+  // place real orders.
+  if (!ptState.running) { _releaseLiveHarness("stopSession/shutdown — engine not running"); return; }
   try {
     if (ptState.position && ptState.currentBar) {
       simulateSell(ptState.currentBar.close, reason, ptState.currentBar.close);
     }
   } catch (e) { try { log(`⚠️ [PAPER] stopSession squareoff error: ${e.message}`); } catch (_) {} }
+  // Released AFTER the square-off (releasing first dropped the closing notifyExit).
+  _releaseLiveHarness("stopSession/shutdown");
   // The square-off above is conditional on currentBar and can throw, so a
   // position may survive it. Free its capital reservation either way — a leaked
   // block would keep shrinking the broker pool for the rest of the process.

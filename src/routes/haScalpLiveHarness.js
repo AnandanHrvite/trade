@@ -45,13 +45,13 @@ const MODE_TAG = "HA-SCALP-PAPER";   // haScalpPaper's mode field in notify payl
 const LOG      = "[HA-SCALP-LIVE]";
 
 // ── Programmatic invoker for the haScalpPaper express router ─────────────────
-function _invokePaperRoute(method, urlPath) {
+function _invokePaperRoute(method, urlPath, query = {}) {
   return new Promise((resolve, reject) => {
     let resolved = false;
     const finish = (payload) => { if (!resolved) { resolved = true; resolve(payload); } };
     const req = {
       method: method.toUpperCase(),
-      url: urlPath, path: urlPath, query: {},
+      url: urlPath, path: urlPath, query: { ...query },
       headers: { host: "localhost" },
       get: () => undefined,
       app: { get: () => undefined, set: () => {} },
@@ -156,7 +156,7 @@ router.get("/start", async (req, res) => {
       modeTag:    MODE_TAG,        // the paper route's mode field in notify payloads
       broker:     "zerodha",       // ORDERS go to Zerodha; DATA still comes from Fyers
       dryRun,
-      isFutures:  process.env.INSTRUMENT === "NIFTY_FUTURES",
+      isFutures:  String(process.env.INSTRUMENT || "").trim().toUpperCase() === "NIFTY_FUTURES",
       liveLogKey: null, // live trades are not logged to disk
     });
   } catch (err) {
@@ -164,7 +164,7 @@ router.get("/start", async (req, res) => {
   }
 
   try {
-    const startResp = await _invokePaperRoute("GET", "/start");
+    const startResp = await _invokePaperRoute("GET", "/start", { _viaHarness: "1" }); // the ONE start allowed to keep the harness attached
     if (startResp.status >= 400 && startResp.status !== 302) {
       liveHarness.uninstallHarness(MODE);
       return res.status(startResp.status).json({

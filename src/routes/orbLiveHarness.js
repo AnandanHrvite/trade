@@ -30,13 +30,13 @@ const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("..
 const { verifyFyersToken } = require("../utils/fyersAuthCheck");
 
 // ── Programmatic invoker for the orbPaper express router ────────────────────
-function _invokePaperRoute(method, urlPath) {
+function _invokePaperRoute(method, urlPath, query = {}) {
   return new Promise((resolve, reject) => {
     let resolved = false;
     const finish = (payload) => { if (!resolved) { resolved = true; resolve(payload); } };
     const req = {
       method: method.toUpperCase(),
-      url: urlPath, path: urlPath, query: {},
+      url: urlPath, path: urlPath, query: { ...query },
       headers: { host: "localhost" },
       get: () => undefined,
       app: { get: () => undefined, set: () => {} },
@@ -113,7 +113,7 @@ router.get("/start", async (req, res) => {
       modeTag:    "ORB-PAPER",   // orbPaper's mode field in notify payloads
       broker:     "fyers",
       dryRun,
-      isFutures:  process.env.INSTRUMENT === "NIFTY_FUTURES",
+      isFutures:  String(process.env.INSTRUMENT || "").trim().toUpperCase() === "NIFTY_FUTURES",
       liveLogKey: null, // live trades are not logged to disk
     });
   } catch (err) {
@@ -123,7 +123,7 @@ router.get("/start", async (req, res) => {
   // Trigger orbPaper /start — paper runs unchanged, harness intercepts its
   // notifyEntry/Exit calls.
   try {
-    const startResp = await _invokePaperRoute("GET", "/start");
+    const startResp = await _invokePaperRoute("GET", "/start", { _viaHarness: "1" }); // the ONE start allowed to keep the harness attached
     if (startResp.status >= 400 && startResp.status !== 302) {
       liveHarness.uninstallHarness("ORB-LIVE");
       return res.status(startResp.status).json({

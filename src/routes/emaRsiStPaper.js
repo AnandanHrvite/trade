@@ -471,6 +471,28 @@ function _lateStartStopMins() {
 
 // Schedule auto-stop at TRADE_STOP_TIME (default 15:30 IST).
 // Set TRADE_STOP_TIME=HH:MM in .env to override.
+// ── Live-harness lifecycle safety ────────────────────────────────────────────
+// The EMA_RSI_ST-LIVE harness fires REAL orders on this engine's notify tag. It used to be
+// removed only by its own /stop, so it survived auto-stop / EOD / paper-stop /
+// SIGTERM and stayed armed: the next paper start then placed real orders. Every
+// session-ending path now releases it AFTER the virtual square-off (so the
+// harness still sees the closing notifyExit — an exit already in flight runs to
+// completion after uninstall), and /start drops a stale one unless the harness
+// itself is the caller (?_viaHarness=1). Same contract as ema9vwapPaper.js.
+const LIVE_HARNESS_MODE = "EMA_RSI_ST-LIVE";
+function _releaseLiveHarness(reason) {
+  try {
+    const lh = require("../services/liveHarness");
+    if (!lh.isInstalled(LIVE_HARNESS_MODE)) return false;   // idempotent no-op
+    lh.uninstallHarness(LIVE_HARNESS_MODE);
+    console.log(`🔒 [${LIVE_HARNESS_MODE}] Live harness released (${reason}) — no further real orders can be placed from this engine.`);
+    return true;
+  } catch (err) {
+    console.error(`[${LIVE_HARNESS_MODE}] harness release FAILED (${reason}): ${err.message}`);
+    return false;
+  }
+}
+
 function scheduleAutoStop(stopFn) {
   if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
   const stopMins = _STOP_MINS; // cached at module load — no env read
@@ -1583,6 +1605,7 @@ async function onCandleClose(candle) {
       log(`════════════════════════════════════════════════════════════════════\n`);
       log("⏰ [PAPER] Market closed (" + _stopLabel + " IST) — auto-stopping paper trade engine.");
       ptState.running = false;
+      _releaseLiveHarness("EOD auto-stop");   // after the EOD square-off above
       saveSession();
       // Clear THIS (primary) slot FIRST, then stop the shared socket only if no
       // other strategy is still subscribed. The old guard checked BB_RSI +
@@ -2318,6 +2341,14 @@ function generatePaperDailyReport(trades, sessionPnl) {
  * Connects to live Fyers socket and starts simulating trades
  */
 router.get("/start", async (req, res) => {
+  // Live-harness safety net — FIRST statement, before any early return. Only the
+  // *LiveHarness twin (which passes _viaHarness=1) may start paper with it attached.
+  if (!req.query || req.query._viaHarness !== "1") {
+    if (_releaseLiveHarness("paper /start — harness was still installed")) {
+      console.log(`🛑 [${LIVE_HARNESS_MODE}] A live harness was still attached and has been REMOVED before starting. This session is paper-only.`);
+    }
+  }
+
   // Re-read env into module-level config so Settings UI changes and replay
   // env overrides (snapshot or simulator mode) take effect for this session.
   _refreshConfig();
@@ -2628,6 +2659,7 @@ router.get("/start", async (req, res) => {
       simulateSell(ptState.lastTickPrice, "Auto-stop " + _stopLabelAtStart, ptState.lastTickPrice);
     }
     ptState.running = false;
+    _releaseLiveHarness("scheduled auto-stop");   // after the square-off above
     // Square-off above needs lastTickPrice; never let a reservation outlive the session.
     capitalPool.clear("ema_rsi_st");
     stopOptionPolling();
@@ -2673,6 +2705,7 @@ router.get("/start", async (req, res) => {
  */
 router.get("/stop", async (req, res) => {
   if (!ptState.running) {
+    _releaseLiveHarness("paper /stop — engine not running");   // a stale harness must still be removable
     return res.status(400).json({ success: false, error: "Paper trading is not running." });
   }
 
@@ -2680,6 +2713,8 @@ router.get("/stop", async (req, res) => {
   if (ptState.position && ptState.currentBar) {
     simulateSell(ptState.currentBar.close, "Manual stop", ptState.currentBar.close);
   }
+  // Released AFTER the virtual square-off, so the harness still closes the real position.
+  _releaseLiveHarness("paper /stop");
 
   stopOptionPolling();
   if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
@@ -4976,6 +5011,9 @@ function _post(url, body, btn, resetLabel) {
 
 router.post("/simulate/start", async (req, res) => {
   if (ptState.running) return res.json({ success: false, error: "Session already running. Stop it first." });
+  // The simulator bypasses /start; sim mode never notifies, but release anyway so
+  // "paper can never place a real order" does not rest on one flag.
+  _releaseLiveHarness("simulate/start");
 
   const { mode = "scenario", scenario, basePrice = 24500, speed = 10, candleCount = 75, date } = req.body || {};
 
@@ -5203,12 +5241,14 @@ router.post("/simulate/start", async (req, res) => {
  * shutdown Telegram falsely reported it squared. Idempotent: no-op if not running.
  */
 function stopSession(reason = "Shutdown square-off") {
-  if (!ptState.running) return;
+  if (!ptState.running) { _releaseLiveHarness("stopSession — engine not running"); return; }
   try {
     if (ptState.position && ptState.currentBar) {
       simulateSell(ptState.currentBar.close, reason, ptState.currentBar.close);
     }
   } catch (e) { try { log(`⚠️ [PAPER] stopSession squareoff error: ${e.message}`); } catch (_) {} }
+  // Released AFTER the virtual square-off above (shutdown / SIGTERM path).
+  _releaseLiveHarness("stopSession/shutdown");
   // The square-off above is conditional on currentBar and can throw, so a
   // position may survive it. Free its capital reservation either way — a leaked
   // block would keep shrinking the broker pool for the rest of the process.

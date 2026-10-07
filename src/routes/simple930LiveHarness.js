@@ -38,13 +38,13 @@ const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("..
 const MODE = "SIMPLE930-LIVE";
 
 // ── Programmatic invoker for the simple930Paper express router ───────────────
-function _invokePaperRoute(method, urlPath) {
+function _invokePaperRoute(method, urlPath, query = {}) {
   return new Promise((resolve, reject) => {
     let resolved = false;
     const finish = (payload) => { if (!resolved) { resolved = true; resolve(payload); } };
     const req = {
       method: method.toUpperCase(),
-      url: urlPath, path: urlPath, query: {},
+      url: urlPath, path: urlPath, query: { ...query },
       headers: { host: "localhost" },
       get: () => undefined,
       app: { get: () => undefined, set: () => {} },
@@ -137,7 +137,7 @@ router.get("/start", async (req, res) => {
   const cfg = strategy.getConfig();
   console.log(`🧪 [${MODE}-HARNESS] plan: ${strategy.describePlan(cfg)}`);
   try {
-    const startResp = await _invokePaperRoute("GET", "/start");
+    const startResp = await _invokePaperRoute("GET", "/start", { _viaHarness: "1" }); // the ONE start allowed to keep the harness attached
     if (startResp.status >= 400 && startResp.status !== 302) {
       liveHarness.uninstallHarness(MODE);
       return res.status(startResp.status).json({

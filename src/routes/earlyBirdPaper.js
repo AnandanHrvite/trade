@@ -1241,6 +1241,10 @@ async function _closeOptionPositionInner(ex) {
   // still be freed — otherwise it stays reserved in the pool for the day.
   let released = false;
   let bookedPnl = 0;
+  // The position is claimed (cleared) above BEFORE notifyExit below; a throw in
+  // between (premium fetch, P&L, trade log) used to skip the notify, and the live
+  // harness — which only sees notifyExit — never closed the REAL position.
+  let _exitNotified = false;
   try {
     const cfg = earlyBird.getConfig();
     let exitPremium = null;
@@ -1353,6 +1357,7 @@ async function _closeOptionPositionInner(ex) {
     log(`   ├─ P&L    : gross ₹${gross} − charges ₹${charges} = ₹${pnl} · held ${held}s · MFE ${trade.mfePts} spot pts / MAE ${trade.maePts} spot pts`);
     log(`   └─ Book   : session ₹${s.sessionPnl} · ${s.stopOuts} stop-out(s) · ${s.positions.size} stock position(s) still open · no option re-entry today`);
 
+    _exitNotified = true;
     notifyExit({
       mode: "EARLYBIRD-PAPER",
       side: pos.optionSide, symbol: pos.symbol,
@@ -1377,6 +1382,19 @@ async function _closeOptionPositionInner(ex) {
     if (!released) {
       log(`⚠️ ${LOG_TAG} OPTION — exit for ${pos.symbol} did not complete; releasing its capital block (P&L ₹${bookedPnl}).`);
       try { capitalPool.release(MODE_KEY, bookedPnl, { symbol: pos.symbol }); } catch (_) {}
+    }
+    if (!_exitNotified) {
+      try {
+        notifyExit({
+          mode: "EARLYBIRD-PAPER",
+          side: pos.optionSide, symbol: pos.symbol,
+          spotAtEntry: pos.entrySpot, optionEntryLtp: pos.optionEntryLtp,
+          pnl: bookedPnl, sessionPnl: s.sessionPnl, qty: pos.qty,
+          isFutures: !!pos.isFutures,
+          exitReason: `${ex && ex.reason} (exit bookkeeping failed)`, entryReason: pos.entryReason,
+          entryTime: pos.entryTime,
+        });
+      } catch (e) { console.error(`${LOG_TAG} fallback notifyExit failed: ${e.message}`); }
     }
   }
 }
@@ -1742,6 +1760,9 @@ function _openPosition(setup, triggerPrice, nowMins) {
   notifyEntry({
     mode: "EARLYBIRD-PAPER",
     side: setup.side, symbol: setup.symbol,
+    // The harness orders on brokerSymbol: a bare "RELIANCE" is not a Fyers symbol.
+    // isSpot marks the cash-equity leg (INTRADAY product; side LONG/SHORT → BUY/SELL).
+    brokerSymbol: setup.fyersSymbol, isSpot: true,
     spotAtEntry: fillPrice, optionEntryLtp: fillPrice,
     qty, stopLoss: setup.stop, target: setup.target,
     entryTime: pos.entryTime,
@@ -1925,6 +1946,10 @@ function _closePosition(pos, ex) {
   };
 
   state.positions.delete(pos.symbol);
+  // Removed from the book FIRST; a throw below (trade log, persist) would skip
+  // notifyExit and leave the live harness's REAL position open. Guaranteed below.
+  let _exitNotified = false;
+  try {
   state.sessionTrades.push(trade);
   tradeLogger.appendTradeLog(MODE_KEY, trade);
   capitalPool.release(MODE_KEY, pnl, { symbol: pos.symbol });   // frees this position's block only
@@ -1935,9 +1960,11 @@ function _closePosition(pos, ex) {
   log(`   ├─ P&L    : gross ₹${gross} − charges ₹${charges} = ₹${pnl} · held ${held}s · MFE ₹${trade.mfePnl} / MAE ₹${trade.maePnl}`);
   log(`   └─ Book   : ${state.positions.size} open · ${state.pending.size} pending · session ₹${state.sessionPnl} · ${state.stopOuts} stop-out(s)`);
 
+  _exitNotified = true;
   notifyExit({
     mode: "EARLYBIRD-PAPER",
     side: pos.side, symbol: pos.symbol,
+    brokerSymbol: pos.fyersSymbol, isSpot: true,   // must match the entry's order symbol
     spotAtEntry: pos.entryPrice, spotAtExit: exitPrice,
     optionEntryLtp: pos.entryPrice, optionExitLtp: exitPrice,
     pnl, sessionPnl: state.sessionPnl,
@@ -1945,6 +1972,20 @@ function _closePosition(pos, ex) {
     entryTime: pos.entryTime, exitTime: trade.exitTime, qty,
     peakPnl: trade.mfePnl, maxDrawdown: trade.maePnl, heldMs: trade.durationMs,
   });
+  } finally {
+    if (!_exitNotified) {
+      try {
+        notifyExit({
+          mode: "EARLYBIRD-PAPER",
+          side: pos.side, symbol: pos.symbol, brokerSymbol: pos.fyersSymbol, isSpot: true,
+          spotAtEntry: pos.entryPrice, spotAtExit: exitPrice,
+          pnl, sessionPnl: state.sessionPnl, qty,
+          exitReason: `${ex.reason} (exit bookkeeping failed)`, entryReason: pos.entryReason,
+          entryTime: pos.entryTime,
+        });
+      } catch (e) { console.error(`${LOG_TAG} fallback notifyExit failed: ${e.message}`); }
+    }
+  }
 
   try {
     tickRecorder.recordExit({
@@ -2086,6 +2127,28 @@ function _lateStartStopMins() {
   return LATE_START_GRACE_MIN;
 }
 
+// ── Live-harness lifecycle safety ────────────────────────────────────────────
+// The EARLY_BIRD-LIVE harness fires REAL orders on this engine's notify tag. It used to be
+// removed only by its own /stop, so it survived auto-stop / EOD / paper-stop /
+// SIGTERM and stayed armed: the next paper start then placed real orders. Every
+// session-ending path now releases it AFTER the virtual square-off (so the
+// harness still sees the closing notifyExit — an exit already in flight runs to
+// completion after uninstall), and /start drops a stale one unless the harness
+// itself is the caller (?_viaHarness=1). Same contract as ema9vwapPaper.js.
+const LIVE_HARNESS_MODE = "EARLY_BIRD-LIVE";
+function _releaseLiveHarness(reason) {
+  try {
+    const lh = require("../services/liveHarness");
+    if (!lh.isInstalled(LIVE_HARNESS_MODE)) return false;   // idempotent no-op
+    lh.uninstallHarness(LIVE_HARNESS_MODE);
+    console.log(`🔒 [${LIVE_HARNESS_MODE}] Live harness released (${reason}) — no further real orders can be placed from this engine.`);
+    return true;
+  } catch (err) {
+    console.error(`[${LIVE_HARNESS_MODE}] harness release FAILED (${reason}): ${err.message}`);
+    return false;
+  }
+}
+
 function scheduleAutoStop() {
   if (_autoStopTimer) clearTimeout(_autoStopTimer);
   const raw = process.env.TRADE_STOP_TIME || "15:30";
@@ -2098,6 +2161,14 @@ function scheduleAutoStop() {
 
 // ── Session lifecycle ────────────────────────────────────────────────────────
 router.get("/start", async (req, res) => {
+  // Live-harness safety net — FIRST statement, before any early return. Only the
+  // *LiveHarness twin (which passes _viaHarness=1) may start paper with it attached.
+  if (!req.query || req.query._viaHarness !== "1") {
+    if (_releaseLiveHarness("paper /start — harness was still installed")) {
+      console.log(`🛑 [${LIVE_HARNESS_MODE}] A live harness was still attached and has been REMOVED before starting. This session is paper-only.`);
+    }
+  }
+
   if (state.running || _stopping) return res.redirect("/early-bird-paper/status");
 
   if (String(process.env.EARLYBIRD_MODE_ENABLED || "true").toLowerCase() !== "true") {
@@ -2220,7 +2291,7 @@ async function stopSession() {
   // Pin the session being stopped: the option square-off below is awaited, and
   // everything after it must act on THIS session, never a newer one.
   const s = state;
-  if (!s.running) return;
+  if (!s.running) { _releaseLiveHarness("stopSession — engine not running"); return; }
   _stopping = true;
   try {
 
@@ -2268,6 +2339,9 @@ async function stopSession() {
     // the file and leave a phantom snapshot for the next boot.
     if (optionClose) await optionClose;
     if (s._optionClosing) await s._optionClosing;   // an SL / /exit square-off already in flight
+    // Released only now: the option leg's notifyExit fires AFTER an awaited premium
+    // fetch, so releasing any earlier would drop the hook before its closing order.
+    _releaseLiveHarness("session end");
     try { require("../utils/positionPersist").clearEarlyBirdPositions(); } catch (_) {}
 
     if (s.sessionTrades.length > 0) {

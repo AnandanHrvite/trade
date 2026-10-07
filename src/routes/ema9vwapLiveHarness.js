@@ -137,7 +137,7 @@ router.get("/start", async (req, res) => {
       modeTag:    "EMA9VWAP-PAPER",       // ema9vwapPaper's mode field in notify payloads
       broker:     "zerodha",
       dryRun,
-      isFutures:  process.env.INSTRUMENT === "NIFTY_FUTURES",
+      isFutures:  String(process.env.INSTRUMENT || "").trim().toUpperCase() === "NIFTY_FUTURES",
       liveLogKey: null, // live trades are not logged to disk
     });
   } catch (err) {

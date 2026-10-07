@@ -212,6 +212,21 @@ function rehydrateSessionFromJsonl() {
   }
 }
 rehydrateSessionFromJsonl();
+
+// ── Daily limits survive a Stop → Start ──────────────────────────────────────
+// /start resets sessionPnl / the trade list, so a mid-day restart used to hand the
+// engine a fresh daily-loss budget and trade count. Seed both from today's
+// already-logged trades (the day JSONL — the same source the boot rehydrate reads;
+// rows tagged _live are live-engine records, not this paper's). Never during a
+// replay, whose day file is not today's real session.
+function _priorTodayTotals(key) {
+  try { if (require("../services/tickReplay").isReplayInProgress()) return { pnl: 0, count: 0 }; } catch (_) {}
+  try {
+    const rows = tradeLogger.readDailyTrades(key, tradeLogger.istDateString(Date.now()))
+      .filter(t => t && !t.type && !t._live && (t.side || t.entryTime || t.entryBarTime || t.symbol));
+    return { pnl: parseFloat(rows.reduce((s, t) => s + (Number(t.pnl) || 0), 0).toFixed(2)), count: rows.length };
+  } catch (_) { return { pnl: 0, count: 0 }; }
+}
 // Capital pool: realized P&L = file totalPnl + this session's closed trades not yet
 // saved there (rehydrated above after a restart). Sim sessions never reach the file.
 capitalPool.trackSession("pa", () =>
@@ -599,7 +614,7 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   }
 
   // Daily loss kill
-  if (state.sessionPnl <= -_PA_MAX_LOSS) {
+  if ((state.sessionPnl + (state._dayPnlBase || 0)) <= -_PA_MAX_LOSS) {
     state._dailyLossHit = true;
     log(`🚨 [PA-PAPER] Daily loss limit hit (₹${state.sessionPnl} <= -₹${_PA_MAX_LOSS}) — no more entries today`);
   }
@@ -803,7 +818,7 @@ async function onCandleClose(bar) {
   state._omhLogged = false;
   if (state._dailyLossHit) { log(`⏭️ [PA-PAPER] SKIP: daily loss limit hit`); return; }
   { const _pf = require("../utils/portfolioRisk").checkPortfolioCap(); if (_pf.blocked) { log(`⏭️ [PA-PAPER] SKIP: ${_pf.reason}`); return; } }
-  if (state.sessionTrades.length >= _PA_MAX_TRADES) { log(`⏭️ [PA-PAPER] SKIP: max trades (${_PA_MAX_TRADES}) reached`); return; }
+  if (state.sessionTrades.length + (state._dayTradesBase || 0) >= _PA_MAX_TRADES) { log(`⏭️ [PA-PAPER] SKIP: max trades (${_PA_MAX_TRADES}) reached`); return; }
   if (state._slPauseUntil && simNow() < state._slPauseUntil) {
     const secsLeft = Math.ceil((state._slPauseUntil - simNow()) / 1000);
     log(`⏭️ [PA-PAPER] SKIP: SL cooldown (${secsLeft}s left)`);
@@ -1027,6 +1042,28 @@ function _lateStartStopMins() {
   return LATE_START_GRACE_MIN;
 }
 
+// ── Live-harness lifecycle safety ────────────────────────────────────────────
+// The PA-LIVE harness fires REAL orders on this engine's notify tag. It used to be
+// removed only by its own /stop, so it survived auto-stop / EOD / paper-stop /
+// SIGTERM and stayed armed: the next paper start then placed real orders. Every
+// session-ending path now releases it AFTER the virtual square-off (so the
+// harness still sees the closing notifyExit — an exit already in flight runs to
+// completion after uninstall), and /start drops a stale one unless the harness
+// itself is the caller (?_viaHarness=1). Same contract as ema9vwapPaper.js.
+const LIVE_HARNESS_MODE = "PA-LIVE";
+function _releaseLiveHarness(reason) {
+  try {
+    const lh = require("../services/liveHarness");
+    if (!lh.isInstalled(LIVE_HARNESS_MODE)) return false;   // idempotent no-op
+    lh.uninstallHarness(LIVE_HARNESS_MODE);
+    console.log(`🔒 [${LIVE_HARNESS_MODE}] Live harness released (${reason}) — no further real orders can be placed from this engine.`);
+    return true;
+  } catch (err) {
+    console.error(`[${LIVE_HARNESS_MODE}] harness release FAILED (${reason}): ${err.message}`);
+    return false;
+  }
+}
+
 function scheduleAutoStop(stopFn) {
   if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
   const nowMins = getISTMinutes();
@@ -1048,6 +1085,14 @@ function _errorPage(title, message, linkHref, linkText) {
 // ── Routes ────────────────────────────────────────────────────────────────────
 
 router.get("/start", async (req, res) => {
+  // Live-harness safety net — FIRST statement, before any early return. Only the
+  // *LiveHarness twin (which passes _viaHarness=1) may start paper with it attached.
+  if (!req.query || req.query._viaHarness !== "1") {
+    if (_releaseLiveHarness("paper /start — harness was still installed")) {
+      console.log(`🛑 [${LIVE_HARNESS_MODE}] A live harness was still attached and has been REMOVED before starting. This session is paper-only.`);
+    }
+  }
+
   if (state.running) return res.redirect("/pa-paper/status");
 
   // Re-read env into module-level config so Settings UI changes and replay
@@ -1092,6 +1137,12 @@ router.get("/start", async (req, res) => {
     _simSession: false,   // a real session — persistence is live again
     _pnlSaved: false,
   };
+  {
+    const _prior = _priorTodayTotals("pa");
+    state._dayPnlBase = _prior.pnl; state._dayTradesBase = _prior.count;
+    if (_prior.count) log(`📒 [PA-PAPER] ${_prior.count} trade(s) already taken today (₹${_prior.pnl}) — counted toward today's limits`);
+    if (_prior.pnl <= -_PA_MAX_LOSS) state._dailyLossHit = true;
+  }
   _entryGen++;
   // Safety net: a block stranded by a previous session (position never exited)
   // would otherwise shrink the shared pool for the rest of the process.
@@ -1166,13 +1217,15 @@ router.get("/start", async (req, res) => {
 });
 
 function stopSession() {
-  if (!state.running) return;
+  if (!state.running) { _releaseLiveHarness("stopSession — engine not running"); return; }
 
   // Exit any open position
   if (state.position) {
     simulateSell(state.lastTickPrice || state.position.entryPrice, "Session stopped", state.lastTickPrice);
   }
 
+  // Released AFTER the virtual square-off above, so the harness still closes the real position.
+  _releaseLiveHarness("session end");
   state.running = false;
   stopOptionPolling();
 
@@ -3124,6 +3177,9 @@ function _post(url, body, btn, resetLabel) {
 
 router.post("/simulate/start", async (req, res) => {
   if (state.running) return res.json({ success: false, error: "Session already running. Stop it first." });
+  // The simulator bypasses /start; sim mode never notifies, but release anyway so
+  // "paper can never place a real order" does not rest on one flag.
+  _releaseLiveHarness("simulate/start");
 
   const { mode = "scenario", scenario, basePrice = 24500, speed = 10, candleCount = 75, date } = req.body || {};
 

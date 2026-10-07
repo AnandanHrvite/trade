@@ -58,13 +58,13 @@ function _expiryLabel() {
 }
 
 // ── Programmatic invoker for the bnPivotRsiStPaper express router ──────────────
-function _invokePaperRoute(method, urlPath) {
+function _invokePaperRoute(method, urlPath, query = {}) {
   return new Promise((resolve, reject) => {
     let resolved = false;
     const finish = (payload) => { if (!resolved) { resolved = true; resolve(payload); } };
     const req = {
       method: method.toUpperCase(),
-      url: urlPath, path: urlPath, query: {},
+      url: urlPath, path: urlPath, query: { ...query },
       headers: { host: "localhost" },
       get: () => undefined,
       app: { get: () => undefined, set: () => {} },
@@ -146,7 +146,7 @@ router.get("/start", async (req, res) => {
       modeTag:    "BN_PIVOT_RSI_ST-PAPER",   // the paper route's mode field in notify payloads
       broker:     "zerodha",
       dryRun,
-      isFutures:  process.env.INSTRUMENT === "NIFTY_FUTURES",
+      isFutures:  String(process.env.INSTRUMENT || "").trim().toUpperCase() === "NIFTY_FUTURES",
       // null, exactly like RSI_PIVOT_ST and every other harness in this repo:
       // live trades are not logged to disk, and Trade Logs shows paper only.
       // To turn it on, set this to "bn_pivot_rsi_st-live" AND register that key
@@ -161,7 +161,7 @@ router.get("/start", async (req, res) => {
   }
 
   try {
-    const startResp = await _invokePaperRoute("GET", "/start");
+    const startResp = await _invokePaperRoute("GET", "/start", { _viaHarness: "1" }); // the ONE start allowed to keep the harness attached
     if (startResp.status >= 400 && startResp.status !== 302) {
       liveHarness.uninstallHarness("BN_PIVOT_RSI_ST-LIVE");
       return res.status(startResp.status).json({

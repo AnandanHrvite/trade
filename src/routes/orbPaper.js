@@ -156,7 +156,7 @@ function rehydrateSessionFromJsonl() {
     //    lines with trades — keep only real trade records.
     const today = tradeLogger.istDateString(Date.now());
     const all = tradeLogger.readDailyTrades("orb", today)
-      .filter(t => t && !t.type && (t.side || t.entryTime || t.entryBarTime || t.symbol));
+      .filter(t => t && !t.type && !t._live && (t.side || t.entryTime || t.entryBarTime || t.symbol));
     const seen = new Set();
     for (const s of (data.sessions || [])) {
       for (const t of (s.trades || [])) seen.add(keyOf(t));
@@ -194,6 +194,21 @@ function rehydrateSessionFromJsonl() {
   }
 }
 rehydrateSessionFromJsonl();
+
+// ── Daily limits survive a Stop → Start ──────────────────────────────────────
+// /start resets sessionPnl / the trade list, so a mid-day restart used to hand the
+// engine a fresh daily-loss budget and trade count. Seed both from today's
+// already-logged trades (the day JSONL — the same source the boot rehydrate reads;
+// rows tagged _live are live-engine records, not this paper's). Never during a
+// replay, whose day file is not today's real session.
+function _priorTodayTotals(key) {
+  try { if (require("../services/tickReplay").isReplayInProgress()) return { pnl: 0, count: 0 }; } catch (_) {}
+  try {
+    const rows = tradeLogger.readDailyTrades(key, tradeLogger.istDateString(Date.now()))
+      .filter(t => t && !t.type && !t._live && (t.side || t.entryTime || t.entryBarTime || t.symbol));
+    return { pnl: parseFloat(rows.reduce((s, t) => s + (Number(t.pnl) || 0), 0).toFixed(2)), count: rows.length };
+  } catch (_) { return { pnl: 0, count: 0 }; }
+}
 // A previous day's session may only stay on screen while the market is shut.
 require("../utils/staleSessionGate").clearStaleSessionOnTradingDay(() => state, "[ORB-PAPER]");
 
@@ -678,8 +693,8 @@ async function onCandleClose(bar) {
 
   // Daily-loss kill — only bites while trade budget remains (maxTrades > 1).
   const maxLoss = parseFloat(process.env.ORB_MAX_DAILY_LOSS || "3000");
-  if (state.sessionPnl <= -maxLoss) {
-    skipLogger.appendSkipLog("orb", { gate: "daily_loss", reason: `sessionPnl ${state.sessionPnl} <= -${maxLoss}`, spot: _spot });
+  if ((state.sessionPnl + (state._dayPnlBase || 0)) <= -maxLoss) {
+    skipLogger.appendSkipLog("orb", { gate: "daily_loss", reason: `day PnL ${state.sessionPnl + (state._dayPnlBase || 0)} <= -${maxLoss}`, spot: _spot });
     return;
   }
 
@@ -847,6 +862,28 @@ function _lateStartStopMins() {
   return LATE_START_GRACE_MIN;
 }
 
+// ── Live-harness lifecycle safety ────────────────────────────────────────────
+// The ORB-LIVE harness fires REAL orders on this engine's notify tag. It used to be
+// removed only by its own /stop, so it survived auto-stop / EOD / paper-stop /
+// SIGTERM and stayed armed: the next paper start then placed real orders. Every
+// session-ending path now releases it AFTER the virtual square-off (so the
+// harness still sees the closing notifyExit — an exit already in flight runs to
+// completion after uninstall), and /start drops a stale one unless the harness
+// itself is the caller (?_viaHarness=1). Same contract as ema9vwapPaper.js.
+const LIVE_HARNESS_MODE = "ORB-LIVE";
+function _releaseLiveHarness(reason) {
+  try {
+    const lh = require("../services/liveHarness");
+    if (!lh.isInstalled(LIVE_HARNESS_MODE)) return false;   // idempotent no-op
+    lh.uninstallHarness(LIVE_HARNESS_MODE);
+    console.log(`🔒 [${LIVE_HARNESS_MODE}] Live harness released (${reason}) — no further real orders can be placed from this engine.`);
+    return true;
+  } catch (err) {
+    console.error(`[${LIVE_HARNESS_MODE}] harness release FAILED (${reason}): ${err.message}`);
+    return false;
+  }
+}
+
 function scheduleAutoStop() {
   if (_autoStopTimer) clearTimeout(_autoStopTimer);
   const raw = process.env.TRADE_STOP_TIME || "15:30";
@@ -864,6 +901,14 @@ function scheduleAutoStop() {
 // ── Session lifecycle ───────────────────────────────────────────────────────
 
 router.get("/start", async (req, res) => {
+  // Live-harness safety net — FIRST statement, before any early return. Only the
+  // *LiveHarness twin (which passes _viaHarness=1) may start paper with it attached.
+  if (!req.query || req.query._viaHarness !== "1") {
+    if (_releaseLiveHarness("paper /start — harness was still installed")) {
+      console.log(`🛑 [${LIVE_HARNESS_MODE}] A live harness was still attached and has been REMOVED before starting. This session is paper-only.`);
+    }
+  }
+
   if (state.running) return res.redirect("/orb-paper/status");
 
   if ((process.env.ORB_MODE_ENABLED || "true").toLowerCase() !== "true") {
@@ -904,6 +949,12 @@ router.get("/start", async (req, res) => {
   state.sessionStart = new Date().toISOString();
   state._sessionId = `orb-paper:${Date.now()}`;
   state._expiryDayBlocked = _expiryBlocked;
+  {
+    const _prior = _priorTodayTotals("orb");
+    state._dayPnlBase  = _prior.pnl;
+    state.tradesTaken  = _prior.count;   // the daily trade budget is per DAY, not per Start
+    if (_prior.count) log(`📒 [ORB-PAPER] ${_prior.count} trade(s) already taken today (₹${_prior.pnl}) — counted toward today's limits`);
+  }
 
   sharedSocketState.setOrbActive("ORB_PAPER");
 
@@ -976,8 +1027,10 @@ router.get("/start", async (req, res) => {
 });
 
 function stopSession() {
-  if (!state.running) return;
+  if (!state.running) { _releaseLiveHarness("stopSession — engine not running"); return; }
   if (state.position) simulateSell("Session stopped");
+  // Released AFTER the virtual square-off above, so the harness still closes the real position.
+  _releaseLiveHarness("session end");
   state.running = false;
   stopOptionPolling();
 

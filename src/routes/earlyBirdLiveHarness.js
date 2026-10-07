@@ -53,13 +53,13 @@ const MODE_TAG = "EARLYBIRD-PAPER";   // earlyBirdPaper's mode field in notify p
 const LOG      = "[EARLYBIRD-LIVE]";
 
 // ── Programmatic invoker for the earlyBirdPaper express router ───────────────
-function _invokePaperRoute(method, urlPath) {
+function _invokePaperRoute(method, urlPath, query = {}) {
   return new Promise((resolve, reject) => {
     let resolved = false;
     const finish = (payload) => { if (!resolved) { resolved = true; resolve(payload); } };
     const req = {
       method: method.toUpperCase(),
-      url: urlPath, path: urlPath, query: {},
+      url: urlPath, path: urlPath, query: { ...query },
       headers: { host: "localhost" },
       get: () => undefined,
       app: { get: () => undefined, set: () => {} },
@@ -174,7 +174,7 @@ router.get("/start", async (req, res) => {
       // so futures is claimed only when the option leg is the ONLY leg —
       // in "both" mode the stock leg still needs INTRADAY and wins. NOTE: the
       // option leg has never been exercised against a live broker — keep it dry-run.
-      isFutures:  process.env.INSTRUMENT === "NIFTY_FUTURES"
+      isFutures:  String(process.env.INSTRUMENT || "").trim().toUpperCase() === "NIFTY_FUTURES"
                   && String(process.env.EARLYBIRD_TRADE_MODE || "stock").trim().toLowerCase() === "option",
       liveLogKey: null,             // live trades are not logged to disk (Trade Logs shows paper only)
     });
@@ -183,7 +183,7 @@ router.get("/start", async (req, res) => {
   }
 
   try {
-    const startResp = await _invokePaperRoute("GET", "/start");
+    const startResp = await _invokePaperRoute("GET", "/start", { _viaHarness: "1" }); // the ONE start allowed to keep the harness attached
     if (startResp.status >= 400 && startResp.status !== 302) {
       liveHarness.uninstallHarness(MODE);
       return res.status(startResp.status).json({

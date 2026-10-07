@@ -130,6 +130,119 @@ for (const { live, paper, label } of PAIRS) {
   });
 }
 
+// ── Live harness ↔ paper wiring ─────────────────────────────────────────────
+// The harness routes are parity-by-construction for DECISIONS, but the wiring
+// between a harness and its paper is hand-written, and it drifted three ways.
+console.log("\nLive harness wiring");
+
+const HARNESS_FILES = fs.readdirSync(ROUTES).filter(f => /LiveHarness\.js$/.test(f));
+const harnessInfo = HARNESS_FILES.map((h) => {
+  const src = read(h);
+  const paperFile = (src.match(/require\("\.\/(\w+Paper)"\)/) || [])[1] + ".js";
+  let tag = (src.match(/modeTag:\s*"([^"]+)"/) || [])[1];
+  if (!tag) {
+    const ref = (src.match(/modeTag:\s*([A-Z_]+)/) || [])[1];
+    tag = ref && (src.match(new RegExp(`const ${ref}\\s*=\\s*"([^"]+)"`)) || [])[1];
+  }
+  const mode = (src.match(/mode:\s*"([^"]+-LIVE)"/) || [])[1]
+            || (src.match(/const MODE\s*=\s*"([^"]+)"/) || [])[1];
+  return { h, src, paperFile, tag, mode };
+});
+
+check("every harness modeTag is UNIQUE (one paper signal must never fire two harnesses)", () => {
+  const seen = new Map();
+  for (const { h, tag } of harnessInfo) {
+    assert.ok(tag, `${h}: could not read its modeTag`);
+    assert.ok(!seen.has(tag), `${h} and ${seen.get(tag)} both filter on "${tag}" — one paper entry would place real orders through both`);
+    seen.set(tag, h);
+  }
+});
+
+for (const { h, paperFile, tag } of harnessInfo) {
+  check(`${h}: modeTag "${tag}" is the literal its paper emits in notifyEntry AND notifyExit`, () => {
+    const P = decomment(read(paperFile));
+    // The literal, or a module constant that holds exactly that literal.
+    const consts = [...P.matchAll(new RegExp(`const (\\w+)\\s*=\\s*['"]${tag}['"]`, "g"))].map(m => m[1]);
+    const val = [`['"]${tag}['"]`, ...consts.map(c => `${c}\\b`)].join("|");
+    for (const fn of ["notifyEntry", "notifyExit"]) {
+      const re = new RegExp(`${fn}\\(\\{[\\s\\S]{0,120}?mode:\\s*(?:${val})`);
+      assert.ok(re.test(P), `${paperFile} never calls ${fn} with mode "${tag}" — the harness would never fire (or would fire on another engine's tag)`);
+    }
+  });
+}
+
+for (const { h, src, paperFile, mode } of harnessInfo) {
+  check(`${paperFile}: releases its ${mode} harness after the square-off; /start drops a stale one`, () => {
+    const P = read(paperFile);
+    assert.ok(new RegExp(`LIVE_HARNESS_MODE\\s*=\\s*"${mode}"`).test(P), `${paperFile} does not name its harness "${mode}"`);
+    assert.ok(/function _releaseLiveHarness\(/.test(P), `${paperFile} has no _releaseLiveHarness — its harness stays armed after the session ends`);
+    assert.ok(/req\.query\._viaHarness !== "1"\) \{\s*if \(_releaseLiveHarness/.test(P), `${paperFile} /start does not drop a stale harness`);
+    assert.ok(/_invokePaperRoute\("GET", "\/start", \{ _viaHarness: "1" \}\)/.test(src), `${h} starts paper without _viaHarness=1 — paper /start would uninstall it`);
+    assert.ok(/_invokePaperRoute\(method, urlPath, query = \{\}\)/.test(src) && /query: \{ \.\.\.query \}|query: \{ \.\.\.\(query/.test(src) || /ema9vwap/.test(h),
+      `${h}: _invokePaperRoute drops the query, so _viaHarness never reaches paper`);
+    // stopSession: the release must come AFTER the virtual square-off, or the
+    // closing notifyExit fires with no hook installed and the REAL position stays open.
+    const i = P.search(/\n(async )?function stopSession\(/);
+    assert.ok(i >= 0, `${paperFile} has no stopSession`);
+    const body = P.slice(i, P.indexOf("\n}\n", i));
+    const sq  = body.search(/simulateSell\(|_closePosition\(|_closeOptionPosition\(|_squareOff\w*\(/);
+    const rel = body.search(/_releaseLiveHarness\("(?![^"]*not running)/);
+    assert.ok(rel >= 0, `${paperFile}: stopSession never releases the harness`);
+    if (sq >= 0) assert.ok(rel > sq, `${paperFile}: stopSession releases the harness BEFORE the square-off — the closing order would never be sent`);
+  });
+}
+
+check("liveHarness: a FUTURES PE is a SHORT — SELL to enter, BUY to exit (options stay BUY→SELL)", () => {
+  const os = require("os");
+  const { spawnSync } = require("child_process");
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "harness-parity-"));
+  const P = (m) => JSON.stringify(path.join(__dirname, "..", m));
+  // Child process with a throw-away HOME: the harness persists to ~/trading-data,
+  // and a test must never touch the real file.
+  const script = `
+    process.env.LIVE_HARNESS_DRY_RUN = "false";
+    process.env.HARNESS_BROKER_TIMEOUT_MS = "1500";
+    process.env.HARNESS_EXCHANGE_SL_ENABLED = "false";
+    const fb = require(${P("src/services/fyersBroker")});
+    const calls = []; let n = 0; const held = {};
+    fb.isAuthenticated = () => true;
+    fb.placeMarketOrder = async (sym, side, qty) => { calls.push([sym, side]); held[sym] = qty; return { success: true, orderId: "O" + (++n) }; };
+    fb.getOrders = async () => Array.from({ length: n }, (_, i) => ({ id: "O" + (i + 1), status: 2, filledQty: 75, qty: 75 }));
+    fb.getPositions = async () => ({ netPositions: Object.keys(held).map(s => ({ symbol: s, netQty: held[s] })) });
+    const notify = require(${P("src/utils/notify")});
+    const lh = require(${P("src/services/liveHarness")});
+    const tick = (ms) => new Promise(r => setTimeout(r, ms));
+    const run = async (isFutures, side, sym) => {
+      lh.installHarness({ mode: "T-LIVE", modeTag: "T-PAPER", broker: "fyers", dryRun: false, isFutures });
+      notify.notifyEntry({ mode: "T-PAPER", side, symbol: sym, qty: 75 });
+      await tick(50);
+      notify.notifyExit({ mode: "T-PAPER", side, symbol: sym, qty: 75 });
+      lh.uninstallHarness("T-LIVE");   // paper releases right after square-off — must not abort the exit
+      await tick(600);
+    };
+    (async () => {
+      await run(true,  "PE", "NSE:NIFTY26OCTFUT");
+      await run(true,  "CE", "NSE:NIFTY26NOVFUT");
+      await run(false, "PE", "NSE:NIFTY2610624500PE");
+      console.log("CALLS" + JSON.stringify(calls));
+      process.exit(0);
+    })().catch(e => { console.log("ERR " + e.message); process.exit(1); });
+  `;
+  const r = spawnSync(process.execPath, ["-e", script], {
+    cwd: path.join(__dirname, ".."),
+    env: { ...process.env, HOME: home, USERPROFILE: home, TELEGRAM_BOT_TOKEN: "", TELEGRAM_CHAT_ID: "", ACCESS_TOKEN: "test" },
+    encoding: "utf-8", timeout: 30000,
+  });
+  const line = (r.stdout || "").split("\n").find(l => l.startsWith("CALLS"));
+  assert.ok(line, `harness script failed: ${(r.stdout || "").slice(-400)} ${(r.stderr || "").slice(-400)}`);
+  const calls = JSON.parse(line.slice(5));
+  assert.deepStrictEqual(calls, [
+    ["NSE:NIFTY26OCTFUT", -1],     ["NSE:NIFTY26OCTFUT", 1],      // futures PE: SELL in, BUY out
+    ["NSE:NIFTY26NOVFUT", 1],      ["NSE:NIFTY26NOVFUT", -1],     // futures CE: BUY in, SELL out
+    ["NSE:NIFTY2610624500PE", 1],  ["NSE:NIFTY2610624500PE", -1], // option PE is BOUGHT, then sold
+  ], `unexpected broker sides (1=BUY, -1=SELL): ${JSON.stringify(calls)}`);
+});
+
 // ── boundedExit behaviour (async — run last) ────────────────────────────────
 (async () => {
   console.log("\nBounded exit wait");
