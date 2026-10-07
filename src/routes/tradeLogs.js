@@ -18,6 +18,7 @@
 const express = require("express");
 const router  = express.Router();
 const fs      = require("fs");
+const fsp     = fs.promises;
 const path    = require("path");
 const sharedSocketState = require("../utils/sharedSocketState");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS, toastJS } = require("../utils/sharedNav");
@@ -51,7 +52,9 @@ function validMode(m) { return MODES.includes(m); }
 function validDate(d) { return typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d); }
 
 // Parse ?page= / ?pageSize=. Returns null when ?page is absent (legacy callers).
-function parsePaging(req, defaultSize = 10, maxSize = 500) {
+// pageSize is clamped to 100 (the largest option the UI offers) so one request
+// can never ask for a 500-file count sweep.
+function parsePaging(req, defaultSize = 10, maxSize = 100) {
   const rawPage = req.query.page;
   if (rawPage === undefined || rawPage === null || rawPage === "") return null;
   const page = Math.max(1, parseInt(rawPage, 10) || 1);
@@ -59,28 +62,221 @@ function parsePaging(req, defaultSize = 10, maxSize = 500) {
   return { page, pageSize };
 }
 
-// Count trades + checkpoint markers in a daily trade JSONL.
-function countTradesFile(mode, date) {
-  let trades = 0, checkpoints = 0;
+// ── Per-file scan cache ─────────────────────────────────────────────────────
+// Counting a day file means JSON-parsing every line. Results are cached by
+// path and keyed on size + mtimeMs, so only files that changed since the last
+// request are re-read. Bounded LRU (oldest evicted) — entries are tiny.
+const SCAN_CACHE_MAX = 2000;
+const _scanCache = new Map(); // `${kind}:${fp}` → { size, mtimeMs, ...scan }
+
+function _cacheGet(key, size, mtimeMs) {
+  const e = _scanCache.get(key);
+  if (!e) return null;
+  if (e.size !== size || e.mtimeMs !== mtimeMs) { _scanCache.delete(key); return null; }
+  _scanCache.delete(key); _scanCache.set(key, e); // refresh LRU position
+  return e;
+}
+function _cacheSet(key, entry) {
+  _scanCache.delete(key);
+  while (_scanCache.size >= SCAN_CACHE_MAX) _scanCache.delete(_scanCache.keys().next().value);
+  _scanCache.set(key, entry);
+}
+
+// Read exactly the bytes covered by one stat, so the text and the size/mtime
+// cache key describe the same content even while the file is being appended.
+// Returns null when the file is missing/unreadable.
+async function readSnapshot(fp) {
+  let fh;
   try {
-    const text = fs.readFileSync(tradeLogger.dailyFilePathFor(mode, date), "utf-8");
-    for (const line of text.split(/\r?\n/)) {
-      const t = line.trim();
-      if (!t) continue;
-      try {
-        const obj = JSON.parse(t);
-        if (obj && obj.type === "checkpoint") checkpoints++;
-        else trades++;
-      } catch (_) { /* skip bad line */ }
+    fh = await fsp.open(fp, "r");
+    const st = await fh.stat();
+    const buf = Buffer.alloc(st.size);
+    let off = 0;
+    while (off < st.size) {
+      const { bytesRead } = await fh.read(buf, off, st.size - off, off);
+      if (!bytesRead) break;
+      off += bytesRead;
     }
-  } catch (_) { /* file vanished */ }
-  return { trades, checkpoints };
+    return { text: buf.toString("utf-8", 0, off), size: st.size, mtimeMs: st.mtimeMs };
+  } catch (_) {
+    return null;
+  } finally {
+    if (fh) { try { await fh.close(); } catch (_) {} }
+  }
+}
+
+// One pass over a JSONL text. Same line rules as tradeLogger.readDailyTrades /
+// skipLogger.readDailySkips: trim, skip blanks, skip unparseable lines.
+// kind "trades": { trades, checkpoints }  ·  kind "skips": { total, byGate }.
+// Also returns parsed (lines that parsed) and bad (non-blank lines that didn't).
+function scanText(text, kind, collect) {
+  const r = kind === "skips" ? { total: 0, byGate: {} } : { trades: 0, checkpoints: 0 };
+  let parsed = 0, bad = 0;
+  for (const line of text.split(/\r?\n/)) {
+    const t = line.trim();
+    if (!t) continue;
+    let obj;
+    try { obj = JSON.parse(t); } catch (_) { bad++; continue; }
+    parsed++;
+    if (collect) collect.push(obj);
+    if (kind === "skips") {
+      r.total++;
+      const g = obj && obj.gate ? String(obj.gate) : "unknown";
+      r.byGate[g] = (r.byGate[g] || 0) + 1;
+    } else if (obj && obj.type === "checkpoint") r.checkpoints++;
+    else r.trades++;
+  }
+  r.parsed = parsed; r.bad = bad;
+  return r;
+}
+
+// Cached scan of one file. size/mtimeMs from a directory listing allow a hit
+// without opening the file. Returns null when the file can't be read.
+async function scanFileCached(fp, kind, size, mtimeMs) {
+  const key = `${kind}:${fp}`;
+  if (size != null && mtimeMs != null) {
+    const hit = _cacheGet(key, size, mtimeMs);
+    if (hit) return hit;
+  }
+  const snap = await readSnapshot(fp);
+  if (!snap) return null;
+  const entry = { size: snap.size, mtimeMs: snap.mtimeMs, ...scanText(snap.text, kind) };
+  _cacheSet(key, entry);
+  return entry;
+}
+
+// Async equivalent of readDailyTrades / readDailySkips (whole file, all lines).
+async function readParsedAsync(fp) {
+  let text;
+  try { text = await fsp.readFile(fp, "utf-8"); }
+  catch (_) { return []; }
+  const out = [];
+  scanText(text, "trades", out);
+  return out;
+}
+
+// One page of parsed records from a day file. Returns { total, slice }, the
+// same values a full parse + slice gives. When the cached scan says the file
+// has no malformed lines, only the requested page's lines are JSON-parsed.
+async function readPageAsync(fp, kind, start, pageSize) {
+  const snap = await readSnapshot(fp);
+  if (!snap) return { total: 0, slice: [] };
+  const key = `${kind}:${fp}`;
+  const hit = _cacheGet(key, snap.size, snap.mtimeMs);
+  if (hit && hit.bad === 0) {
+    const lines = [];
+    for (const line of snap.text.split(/\r?\n/)) { const t = line.trim(); if (t) lines.push(t); }
+    try {
+      return { total: lines.length, slice: lines.slice(start, start + pageSize).map(l => JSON.parse(l)) };
+    } catch (_) { /* rewritten in place under the same size+mtime — fall through to a full scan */ }
+  }
+  const all = [];
+  const scan = scanText(snap.text, kind, all);
+  _cacheSet(key, { size: snap.size, mtimeMs: snap.mtimeMs, ...scan });
+  return { total: all.length, slice: all.slice(start, start + pageSize) };
+}
+
+// fs.existsSync without blocking the event loop.
+async function fileExists(fp) {
+  try { await fsp.access(fp); return true; } catch (_) { return false; }
+}
+
+// Route wrapper: stream the AI report, turning a failure into a 500 (or a
+// truncated end if bytes were already sent).
+function runAiStream(req, res, fps, kind, baseName, meta) {
+  return streamAiReport(req, res, fps, kind, baseName, meta).catch((err) => {
+    console.warn(`[trade-logs] AI export failed: ${err.message}`);
+    if (!res.headersSent) res.status(500).send("export failed");
+    else res.end();
+  });
+}
+
+// Count trades + checkpoint markers in a daily trade JSONL.
+async function countTradesFile(mode, date, size, mtimeMs) {
+  let s = null;
+  try { s = await scanFileCached(tradeLogger.dailyFilePathFor(mode, date), "trades", size, mtimeMs); }
+  catch (_) { /* unknown mode */ }
+  return s ? { trades: s.trades, checkpoints: s.checkpoints } : { trades: 0, checkpoints: 0 };
+}
+
+// Stream an AI Markdown report over many day files without holding every
+// parsed record at once. Output is byte-identical to
+// aiExport.build(Skip)Markdown(allRecords, meta):
+//   pass 1 builds the report from slim records (only the fields the summary,
+//          legend and settings read — every key kept, values nulled) and keeps
+//          everything up to and including the "## Trades"/"## Skips" heading;
+//   pass 2 builds each mode's table section from that mode's full records only
+//          (sections are per mode and joined by "\n", so they splice exactly).
+async function streamAiReport(req, res, fps, kind, baseName, meta) {
+  const isSkips = kind === "skips";
+  const build = isSkips ? aiExport.buildSkipMarkdown : aiExport.buildMarkdown;
+  const marker = isSkips ? "\n## Skips\n" : "\n## Trades\n";
+  const keep = isSkips ? ["mode", "strategy", "gate", "type"] : ["mode", "strategy", "pnl", "type"];
+  const isRow = (o) => o && typeof o === "object" && o.type !== "settings_snapshot";
+  const modeOf = (o) => String(o.mode || o.strategy || "unknown");
+  const slim = (o) => {
+    if (!o || typeof o !== "object" || Array.isArray(o)) return o;
+    if (o.type === "settings_snapshot") return isSkips ? null : o; // snapshots feed the settings section
+    const s = {};
+    for (const k of Object.keys(o)) s[k] = keep.includes(k) ? o[k] : null;
+    return s;
+  };
+
+  let aborted = false;
+  req.on("close", () => { if (!res.writableEnded) aborted = true; });
+
+  // Pass 1 — slim records + which modes each file holds.
+  let slimRecs = [];
+  const modesByFile = [];
+  for (const fp of fps) {
+    const recs = await readParsedAsync(fp);
+    const ms = new Set();
+    for (const o of recs) {
+      if (isRow(o)) ms.add(modeOf(o));
+      const s = slim(o);
+      if (s !== null || o === null) slimRecs.push(s);
+    }
+    modesByFile.push(ms);
+    if (aborted) return;
+  }
+  const skeleton = build(slimRecs, meta);
+  slimRecs = null;
+
+  res.setHeader("Content-Disposition", `attachment; filename="${baseName}.md"`);
+  res.setHeader("Content-Type", "text/markdown; charset=utf-8");
+  const cut = skeleton.lastIndexOf(marker);
+  const modes = new Set();
+  for (const ms of modesByFile) for (const m of ms) modes.add(m);
+  if (!modes.size || cut < 0) return res.send(skeleton); // no rows: report is all header
+
+  const order = isSkips ? Array.from(modes).sort() : Array.from(modes).sort((a, b) => a.localeCompare(b));
+  const write = (chunk) => new Promise((resolve) => {
+    if (res.write(chunk)) return resolve();
+    const done = () => { res.off("drain", done); res.off("close", done); resolve(); };
+    res.on("drain", done);
+    res.on("close", done);
+  });
+  await write(skeleton.slice(0, cut + marker.length));
+  for (let i = 0; i < order.length; i++) {
+    if (aborted) return res.end();
+    const m = order[i];
+    const rows = [];
+    for (let f = 0; f < fps.length; f++) {
+      if (!modesByFile[f].has(m)) continue;
+      for (const o of await readParsedAsync(fps[f])) if (isRow(o) && modeOf(o) === m) rows.push(o);
+    }
+    const doc = build(rows, meta);
+    const at = doc.lastIndexOf(marker);
+    await write((i ? "\n" : "") + doc.slice(at + marker.length, -1));
+  }
+  res.end("\n");
 }
 
 // ── GET /trade-logs/list — daily files. Supports ?mode= for per-mode paging. ─
 // Legacy shape (no params)        → { success, modes: { ema_rsi_st: [...], ... } }
 // Paged shape (?mode=&page=...)   → { success, mode, page, pageSize, total, count, rows }
-router.get("/list", (req, res) => {
+router.get("/list", async (req, res) => {
+  try {
   const requestedMode = String(req.query.mode || "").toLowerCase();
   const paging = parsePaging(req, 10);
 
@@ -93,10 +289,11 @@ router.get("/list", (req, res) => {
     const slice = paging
       ? dates.slice((paging.page - 1) * paging.pageSize, (paging.page - 1) * paging.pageSize + paging.pageSize)
       : dates;
-    const rows = slice.map(f => {
-      const c = countTradesFile(requestedMode, f.date);
-      return { date: f.date, size: f.size, mtimeMs: f.mtimeMs, trades: c.trades, checkpoints: c.checkpoints };
-    });
+    const rows = [];
+    for (const f of slice) {
+      const c = await countTradesFile(requestedMode, f.date, f.size, f.mtimeMs);
+      rows.push({ date: f.date, size: f.size, mtimeMs: f.mtimeMs, trades: c.trades, checkpoints: c.checkpoints });
+    }
     return res.json({
       success: true,
       mode: requestedMode,
@@ -114,12 +311,17 @@ router.get("/list", (req, res) => {
     let files;
     try { files = tradeLogger.listDailyDates(mode); }
     catch (_) { files = []; }
-    out[mode] = files.map(f => {
-      const c = countTradesFile(mode, f.date);
-      return { date: f.date, size: f.size, mtimeMs: f.mtimeMs, trades: c.trades, checkpoints: c.checkpoints };
-    });
+    const rows = [];
+    for (const f of files) {
+      const c = await countTradesFile(mode, f.date, f.size, f.mtimeMs);
+      rows.push({ date: f.date, size: f.size, mtimeMs: f.mtimeMs, trades: c.trades, checkpoints: c.checkpoints });
+    }
+    out[mode] = rows;
   }
   res.json({ success: true, modes: out });
+  } catch (err) {
+    if (!res.headersSent) res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // ── GET /trade-logs/counts — file count per mode, trades + skips ────────────
@@ -138,21 +340,21 @@ router.get("/counts", (_req, res) => {
 // ── GET /trade-logs/view — parsed JSONL for one file ────────────────────────
 // Legacy (no ?page)  → { success, mode, date, count, trades: [all] }
 // Paged (?page=...)  → { success, mode, date, page, pageSize, total, count, trades: [slice] }
-router.get("/view", (req, res) => {
+router.get("/view", async (req, res) => {
   const mode = String(req.query.mode || "").toLowerCase();
   const date = String(req.query.date || "");
   if (!validMode(mode)) return res.status(400).json({ success: false, error: "bad mode" });
   if (!validDate(date)) return res.status(400).json({ success: false, error: "bad date" });
-  let trades;
-  try { trades = tradeLogger.readDailyTrades(mode, date); }
-  catch (err) { return res.status(500).json({ success: false, error: err.message }); }
   const paging = parsePaging(req, 25);
+  let fp;
+  try { fp = tradeLogger.dailyFilePathFor(mode, date); }
+  catch (err) { return res.status(500).json({ success: false, error: err.message }); }
   if (!paging) {
+    const trades = await readParsedAsync(fp);
     return res.json({ success: true, mode, date, count: trades.length, trades });
   }
-  const total = trades.length;
   const start = (paging.page - 1) * paging.pageSize;
-  const slice = trades.slice(start, start + paging.pageSize);
+  const { total, slice } = await readPageAsync(fp, "trades", start, paging.pageSize);
   res.json({
     success: true,
     mode, date,
@@ -163,15 +365,15 @@ router.get("/view", (req, res) => {
 });
 
 // ── GET /trade-logs/download — raw JSONL stream ─────────────────────────────
-router.get("/download", (req, res) => {
+router.get("/download", async (req, res) => {
   const mode = String(req.query.mode || "").toLowerCase();
   const date = String(req.query.date || "");
   if (!validMode(mode)) return res.status(400).send("bad mode");
   if (!validDate(date)) return res.status(400).send("bad date");
   const fp = tradeLogger.dailyFilePathFor(mode, date);
-  if (!fs.existsSync(fp)) return res.status(404).send("file not found");
+  if (!(await fileExists(fp))) return res.status(404).send("file not found");
   if (wantsAi(req)) {
-    return sendAiMarkdown(res, tradeLogger.readDailyTrades(mode, date),
+    return sendAiMarkdown(res, await readParsedAsync(fp),
       `${mode}_paper_trades_${date}_AI`,
       { title: `${mode.toUpperCase()} paper trades`, source: `Trade Logs · ${mode} · ${date}`, range: date });
   }
@@ -194,9 +396,8 @@ router.get("/download-all", (req, res) => {
   dates.sort((a, b) => a.date.localeCompare(b.date));
   const today = tradeLogger.istDateString();
   if (wantsAi(req)) {
-    const records = [];
-    for (const d of dates) records.push(...tradeLogger.readDailyTrades(mode, d.date));
-    return sendAiMarkdown(res, records, `${mode}_paper_trades_ALL_${today}_AI`,
+    return runAiStream(req, res, dates.map(d => tradeLogger.dailyFilePathFor(mode, d.date)), "trades",
+      `${mode}_paper_trades_ALL_${today}_AI`,
       { title: `${mode.toUpperCase()} paper trades (all history)`, source: `Trade Logs · ${mode} · all days`,
         range: dates.length ? `${dates[0].date} → ${dates[dates.length - 1].date}` : "" });
   }
@@ -235,10 +436,9 @@ router.get("/download-everything", (req, res) => {
   const today = tradeLogger.istDateString();
   const rangeTag = (from || to) ? `_${from || "start"}_to_${to || today}` : "";
   if (wantsAi(req)) {
-    const records = [];
-    for (const f of files) records.push(...tradeLogger.readDailyTrades(f.mode, f.date));
     const dts = files.map(f => f.date).sort();
-    return sendAiMarkdown(res, records, `all_strategies_paper_trades_ALL${rangeTag}_${today}_AI`,
+    return runAiStream(req, res, files.map(f => tradeLogger.dailyFilePathFor(f.mode, f.date)), "trades",
+      `all_strategies_paper_trades_ALL${rangeTag}_${today}_AI`,
       { title: "All strategies — paper trades", source: "Trade Logs · Download Everything",
         range: `${from || dts[0]} → ${to || dts[dts.length - 1]}` });
   }
@@ -293,27 +493,16 @@ router.post("/delete-all", (req, res) => {
 });
 
 // Count skip lines + per-gate buckets for a daily skip JSONL.
-function countSkipsFile(mode, date) {
-  let total = 0;
-  const byGate = {};
-  try {
-    const text = fs.readFileSync(skipLogger.filePathFor(mode, date), "utf-8");
-    for (const line of text.split(/\r?\n/)) {
-      const t = line.trim();
-      if (!t) continue;
-      try {
-        const obj = JSON.parse(t);
-        total++;
-        const g = obj && obj.gate ? String(obj.gate) : "unknown";
-        byGate[g] = (byGate[g] || 0) + 1;
-      } catch (_) { /* skip bad line */ }
-    }
-  } catch (_) { /* file vanished */ }
-  return { total, byGate };
+async function countSkipsFile(mode, date, size, mtimeMs) {
+  let s = null;
+  try { s = await scanFileCached(skipLogger.filePathFor(mode, date), "skips", size, mtimeMs); }
+  catch (_) { /* unknown mode */ }
+  return s ? { total: s.total, byGate: { ...s.byGate } } : { total: 0, byGate: {} };
 }
 
 // ── GET /trade-logs/skips/list — daily skip files. Same paging contract as /list.
-router.get("/skips/list", (req, res) => {
+router.get("/skips/list", async (req, res) => {
+  try {
   const requestedMode = String(req.query.mode || "").toLowerCase();
   const paging = parsePaging(req, 10);
 
@@ -326,10 +515,11 @@ router.get("/skips/list", (req, res) => {
     const slice = paging
       ? dates.slice((paging.page - 1) * paging.pageSize, (paging.page - 1) * paging.pageSize + paging.pageSize)
       : dates;
-    const rows = slice.map(f => {
-      const c = countSkipsFile(requestedMode, f.date);
-      return { date: f.date, size: f.size, mtimeMs: f.mtimeMs, total: c.total, byGate: c.byGate };
-    });
+    const rows = [];
+    for (const f of slice) {
+      const c = await countSkipsFile(requestedMode, f.date, f.size, f.mtimeMs);
+      rows.push({ date: f.date, size: f.size, mtimeMs: f.mtimeMs, total: c.total, byGate: c.byGate });
+    }
     return res.json({
       success: true,
       mode: requestedMode,
@@ -346,30 +536,35 @@ router.get("/skips/list", (req, res) => {
     let files;
     try { files = skipLogger.listDates(mode); }
     catch (_) { files = []; }
-    out[mode] = files.map(f => {
-      const c = countSkipsFile(mode, f.date);
-      return { date: f.date, size: f.size, mtimeMs: f.mtimeMs, total: c.total, byGate: c.byGate };
-    });
+    const rows = [];
+    for (const f of files) {
+      const c = await countSkipsFile(mode, f.date, f.size, f.mtimeMs);
+      rows.push({ date: f.date, size: f.size, mtimeMs: f.mtimeMs, total: c.total, byGate: c.byGate });
+    }
+    out[mode] = rows;
   }
   res.json({ success: true, modes: out });
+  } catch (err) {
+    if (!res.headersSent) res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // ── GET /trade-logs/skips/view — parsed JSONL for one skip file ─────────────
-router.get("/skips/view", (req, res) => {
+router.get("/skips/view", async (req, res) => {
   const mode = String(req.query.mode || "").toLowerCase();
   const date = String(req.query.date || "");
   if (!validMode(mode)) return res.status(400).json({ success: false, error: "bad mode" });
   if (!validDate(date)) return res.status(400).json({ success: false, error: "bad date" });
-  let skips;
-  try { skips = skipLogger.readDailySkips(mode, date); }
-  catch (err) { return res.status(500).json({ success: false, error: err.message }); }
   const paging = parsePaging(req, 25);
+  let fp;
+  try { fp = skipLogger.filePathFor(mode, date); }
+  catch (err) { return res.status(500).json({ success: false, error: err.message }); }
   if (!paging) {
+    const skips = await readParsedAsync(fp);
     return res.json({ success: true, mode, date, count: skips.length, skips });
   }
-  const total = skips.length;
   const start = (paging.page - 1) * paging.pageSize;
-  const slice = skips.slice(start, start + paging.pageSize);
+  const { total, slice } = await readPageAsync(fp, "skips", start, paging.pageSize);
   res.json({
     success: true,
     mode, date,
@@ -380,15 +575,15 @@ router.get("/skips/view", (req, res) => {
 });
 
 // ── GET /trade-logs/skips/download — raw JSONL stream ───────────────────────
-router.get("/skips/download", (req, res) => {
+router.get("/skips/download", async (req, res) => {
   const mode = String(req.query.mode || "").toLowerCase();
   const date = String(req.query.date || "");
   if (!validMode(mode)) return res.status(400).send("bad mode");
   if (!validDate(date)) return res.status(400).send("bad date");
   const fp = skipLogger.filePathFor(mode, date);
-  if (!fs.existsSync(fp)) return res.status(404).send("file not found");
+  if (!(await fileExists(fp))) return res.status(404).send("file not found");
   if (wantsAi(req)) {
-    return sendAiSkipMarkdown(res, skipLogger.readDailySkips(mode, date),
+    return sendAiSkipMarkdown(res, await readParsedAsync(fp),
       `${mode}_paper_skips_${date}_AI`,
       { title: `${mode.toUpperCase()} skips`, source: `Trade Logs · skips · ${mode} · ${date}`, range: date });
   }
@@ -409,9 +604,8 @@ router.get("/skips/download-all", (req, res) => {
   dates.sort((a, b) => a.date.localeCompare(b.date));
   const today = skipLogger.istDateString();
   if (wantsAi(req)) {
-    const records = [];
-    for (const d of dates) records.push(...skipLogger.readDailySkips(mode, d.date));
-    return sendAiSkipMarkdown(res, records, `${mode}_paper_skips_ALL_${today}_AI`,
+    return runAiStream(req, res, dates.map(d => skipLogger.filePathFor(mode, d.date)), "skips",
+      `${mode}_paper_skips_ALL_${today}_AI`,
       { title: `${mode.toUpperCase()} skips (all history)`, source: `Trade Logs · skips · ${mode} · all days`,
         range: dates.length ? `${dates[0].date} → ${dates[dates.length - 1].date}` : "" });
   }
@@ -443,10 +637,9 @@ router.get("/skips/download-everything", (req, res) => {
   if (!files.length) return res.status(404).send("no skip logs found");
   const today = skipLogger.istDateString();
   if (wantsAi(req)) {
-    const records = [];
-    for (const f of files) records.push(...skipLogger.readDailySkips(f.mode, f.date));
     const dts = files.map(f => f.date).sort();
-    return sendAiSkipMarkdown(res, records, `all_strategies_paper_skips_ALL_${today}_AI`,
+    return runAiStream(req, res, files.map(f => skipLogger.filePathFor(f.mode, f.date)), "skips",
+      `all_strategies_paper_skips_ALL_${today}_AI`,
       { title: "All strategies — skips", source: "Trade Logs · skips · Download Everything",
         range: dts.length ? `${dts[0]} → ${dts[dts.length - 1]}` : "" });
   }
