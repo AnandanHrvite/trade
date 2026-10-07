@@ -77,6 +77,7 @@ const PT_FILE  = path.join(DATA_DIR, "orb_live_trades.json");
 
 function ensureDir() { if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true }); }
 let _dataCache = null;
+let _dataCorrupt = false;
 function loadData() {
   if (_dataCache) return _dataCache;
   ensureDir();
@@ -87,13 +88,19 @@ function loadData() {
   }
   try { _dataCache = JSON.parse(fs.readFileSync(PT_FILE, "utf-8")); }
   catch (e) {
-    console.error("[orb-live] orb_live_trades.json corrupt — resetting:", e.message);
+    // Never overwrite real-money history with an empty book: copy the bad file
+    // aside, alert, and refuse further saves until it is repaired by hand.
+    _dataCorrupt = true;
+    const bak = `${PT_FILE}.corrupt-${Date.now()}`;
+    try { fs.copyFileSync(PT_FILE, bak); } catch (_) {}
+    console.error(`[orb-live] orb_live_trades.json corrupt (${e.message}) — backed up to ${bak}; saves disabled until fixed.`);
+    try { sendTelegram(`🚨 ORB LIVE: orb_live_trades.json is corrupt — backed up to ${path.basename(bak)}. Trade history saves are DISABLED until the file is repaired.`).catch(() => {}); } catch (_) {}
     _dataCache = { capital: parseFloat(process.env.FYERS_INV_AMOUNT || "100000"), totalPnl: 0, sessions: [] };
-    fs.writeFileSync(PT_FILE, JSON.stringify(_dataCache, null, 2));
   }
   return _dataCache;
 }
 function saveData(d) {
+  if (_dataCorrupt) { console.error("[orb-live] save skipped — orb_live_trades.json is corrupt (see .corrupt-* backup)."); return; }
   ensureDir();
   const tmp = PT_FILE + ".tmp";
   fs.writeFileSync(tmp, JSON.stringify(d, null, 2));
