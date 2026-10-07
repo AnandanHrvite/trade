@@ -45,7 +45,89 @@ function _scheduleExpiry(id) {
   if (t.unref) t.unref();
 }
 
+// ── Run gate ────────────────────────────────────────────────────────────────
+// Every strategy's backtest page starts a run on a plain GET, so the demo
+// login's read-only GET allowance and any stray link could otherwise kick off a
+// Fyers-heavy job. createJob() is the one place every route funnels through, so
+// the refusal lives here rather than in 16 routers:
+//   • a demo session may view finished results but never start a run;
+//   • nobody starts a run during market hours (Mon–Fri 09:15–15:30 IST) while a
+//     live engine is active — a *_LIVE socket slot, or any installed live
+//     harness (harness-live sessions run under a *_PAPER mode string).
+function _isMarketHoursIST(now = Date.now()) {
+  const ist = new Date(now + 19800 * 1000);       // UTC+5:30, read via getUTC*
+  const day = ist.getUTCDay();
+  if (day === 0 || day === 6) return false;
+  const mins = ist.getUTCHours() * 60 + ist.getUTCMinutes();
+  return mins >= 555 && mins < 930;
+}
+
+function _activeLiveModes() {
+  const live = [];
+  try {
+    const s = require("./sharedSocketState");
+    for (const [name, fn] of Object.entries(s)) {
+      if (!/^get[A-Za-z0-9]*Mode$/.test(name) || typeof fn !== "function") continue;
+      const m = fn();
+      if (typeof m === "string" && /_LIVE$/.test(m) && !live.includes(m)) live.push(m);
+    }
+  } catch (_) {}
+  try {
+    const harness = require("../services/liveHarness");
+    if (typeof harness.isInstalled === "function" && harness.isInstalled()) live.push("live harness");
+  } catch (_) {}
+  return live;
+}
+
+/** Why a new run must not start right now, or null when it may. */
+function runRefusal() {
+  try {
+    if (require("./demoMode").isDemo()) {
+      return "Running a backtest is disabled in the demo login — finished results can still be viewed.";
+    }
+  } catch (_) {}
+  if (_isMarketHoursIST()) {
+    const live = _activeLiveModes();
+    if (live.length) {
+      return `Backtest blocked during market hours while live trading is active (${live.join(", ")}). ` +
+             `Run it after 15:30 IST or once the live session is stopped.`;
+    }
+  }
+  return null;
+}
+
+/** Thrown out of updateProgress() for a run createJob() refused. */
+class BacktestRefusedError extends Error {
+  constructor(reason) {
+    super(reason);
+    this.name = "BacktestRefusedError";
+    this.refused = true;
+  }
+}
+
 function createJob(type) {
+  // Refused runs get a job record already in the "error" state carrying the
+  // reason, so every route's existing flow (progress page → /status → error)
+  // shows it unchanged. It never takes the active slot, and its first
+  // updateProgress() throws, unwinding the route's job body before any fetch.
+  const refusal = runRefusal();
+  if (refusal) {
+    const id = crypto.randomBytes(6).toString("hex");
+    jobs.set(id, {
+      id, type,
+      status: "error",
+      refused: true,
+      progress: { phase: "Refused", pct: 0, current: 0, total: 0, log: [{ i: 0, t: 0, m: refusal }] },
+      result: null,
+      error: refusal,
+      startedAt: Date.now(),
+      completedAt: Date.now(),
+    });
+    _scheduleExpiry(id);
+    console.warn(`[backtest] ${type} run refused — ${refusal}`);
+    return { id, existing: false, refused: true, reason: refusal };
+  }
+
   // Only 1 concurrent backtest — protect server resources
   if (activeJobId) {
     const active = jobs.get(activeJobId);
@@ -105,6 +187,7 @@ class BacktestCancelledError extends Error {
 function updateProgress(id, progress) {
   const job = jobs.get(id);
   if (!job) return;
+  if (job.refused) throw new BacktestRefusedError(job.error);
   if (job.status === "cancelled") throw new BacktestCancelledError();
   if (job.status === "running") {
     job.progress = { ...job.progress, ...progress };
@@ -180,7 +263,7 @@ function cancelJob(id) {
 
 function completeJob(id, result) {
   const job = jobs.get(id);
-  if (job && job.status !== "cancelled") {
+  if (job && job.status !== "cancelled" && !job.refused) {
     job.status = "done";
     job.result = result;
     const log = Array.isArray(job.progress && job.progress.log) ? job.progress.log : [];
@@ -200,7 +283,8 @@ function failJob(id, error) {
   const job = jobs.get(id);
   // A cancelled job unwinds through its route's catch → failJob. Keep the
   // "cancelled" status; the run didn't fail, the user stopped it.
-  if (job && job.status !== "cancelled") {
+  // A refused run keeps its refusal reason, not whatever the unwind reported.
+  if (job && job.status !== "cancelled" && !job.refused) {
     job.status = "error";
     job.error = typeof error === "string" ? error : (error.message || String(error));
     job.progress = { ...job.progress, phase: "Failed" };
@@ -593,6 +677,8 @@ module.exports = {
   failJob,
   cancelJob,
   BacktestCancelledError,
+  BacktestRefusedError,
+  runRefusal,
   getJob,
   getActiveJob,
   isIdle,

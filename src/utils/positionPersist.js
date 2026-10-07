@@ -95,6 +95,56 @@ function _flushSync() {
 }
 process.on("exit", _flushSync);
 
+// ── Corrupt / previous-day snapshot bookkeeping ─────────────────────────────
+// A snapshot that fails to parse used to come back as a silent null — the same
+// answer as "no position" — so a torn write could hide a real open position.
+// Instead the file is moved aside to `.corrupt-<ts>` (never deleted: it is the
+// only record left), logged, and listed for the boot reconcile to Telegram.
+const _corruptSnapshots = [];   // { file, movedTo, error, ts }
+function _readSnapshot(file) {
+  const raw = fs.readFileSync(file, "utf-8");
+  try {
+    return JSON.parse(raw);
+  } catch (err) {
+    const movedTo = `${file}.corrupt-${Date.now()}`;
+    try { fs.renameSync(file, movedTo); } catch (e2) {
+      console.error(`🚨 [PERSIST] Could not move corrupt snapshot aside (${e2.message}): ${file}`);
+    }
+    console.error(`🚨 [PERSIST] Corrupt crash-recovery snapshot ${path.basename(file)} (${err.message}) — moved to ${path.basename(movedTo)}. A real position may be open; verify at the broker.`);
+    _corruptSnapshots.push({ file, movedTo, error: err.message, ts: Date.now() });
+    return null;
+  }
+}
+function getCorruptSnapshots() { return _corruptSnapshots.slice(); }
+
+// A previous-day snapshot is not today's state, so load*() still returns null for
+// it — but it is NOT deleted on load any more. Deleting it before the boot
+// reconcile had read the broker book threw away the only record of a position
+// that may have been carried overnight. The reconcile clears it (clearStaleSnapshot)
+// once the broker book proves flat, and Telegrams if the broker shows a position.
+const _staleSnapshots = new Map();  // file -> { file, name, savedDate, savedAt, data }
+function _markStale(file, data) {
+  _staleSnapshots.set(file, {
+    file, name: path.basename(file), savedDate: data && data.savedDate,
+    savedAt: data && data.savedAt, data,
+  });
+}
+function getStaleSnapshots() { return [..._staleSnapshots.values()]; }
+function clearStaleSnapshot(file) {
+  const rec = _staleSnapshots.get(file);
+  _staleSnapshots.delete(file);
+  if (!rec || _pending.has(file)) return;   // a newer save owns the file now
+  try {
+    // Only delete if the file still holds the SAME stale day — a session that
+    // started since boot may have written today's snapshot over it.
+    const cur = JSON.parse(fs.readFileSync(file, "utf-8"));
+    if (cur && cur.savedDate === rec.savedDate) {
+      _persistAtomic(file, null);
+      console.log(`[PERSIST] Previous-day snapshot ${rec.name} (${rec.savedDate}) cleared after broker check.`);
+    }
+  } catch (_) { /* gone or unreadable — nothing to clear */ }
+}
+
 // ── Trade (15-min Zerodha) ────────────────────────────────────────────────────
 
 const TRADE_POS_FILE = path.join(DATA_DIR, ".active_ema_rsi_st_position.json");
@@ -142,12 +192,13 @@ function saveTradePosition(position, sessionMeta) {
 function loadTradePosition() {
   try {
     if (!fs.existsSync(TRADE_POS_FILE)) return null;
-    const data = JSON.parse(fs.readFileSync(TRADE_POS_FILE, "utf-8"));
+    const data = _readSnapshot(TRADE_POS_FILE);
+    if (!data) return null;
     // Only return if saved today (IST) — stale positions from yesterday are invalid
     const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
     if (data.savedDate && data.savedDate !== today) {
-      console.log(`[PERSIST] Stale trade position from ${data.savedDate} — discarding.`);
-      fs.unlinkSync(TRADE_POS_FILE);
+      console.log(`[PERSIST] Stale trade position from ${data.savedDate} — ignoring; kept until the boot reconcile has checked the broker.`);
+      _markStale(TRADE_POS_FILE, data);
       return null;
     }
     if (data.position) {
@@ -210,11 +261,12 @@ function saveBbRsiPosition(position, sessionMeta) {
 function loadBbRsiPosition() {
   try {
     if (!fs.existsSync(BB_RSI_POS_FILE)) return null;
-    const data = JSON.parse(fs.readFileSync(BB_RSI_POS_FILE, "utf-8"));
+    const data = _readSnapshot(BB_RSI_POS_FILE);
+    if (!data) return null;
     const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
     if (data.savedDate && data.savedDate !== today) {
-      console.log(`[PERSIST] Stale bb_rsi position from ${data.savedDate} — discarding.`);
-      fs.unlinkSync(BB_RSI_POS_FILE);
+      console.log(`[PERSIST] Stale bb_rsi position from ${data.savedDate} — ignoring; kept until the boot reconcile has checked the broker.`);
+      _markStale(BB_RSI_POS_FILE, data);
       return null;
     }
     if (data.position) {
@@ -274,11 +326,12 @@ function savePAPosition(position, sessionMeta) {
 function loadPAPosition() {
   try {
     if (!fs.existsSync(PA_POS_FILE)) return null;
-    const data = JSON.parse(fs.readFileSync(PA_POS_FILE, "utf-8"));
+    const data = _readSnapshot(PA_POS_FILE);
+    if (!data) return null;
     const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
     if (data.savedDate && data.savedDate !== today) {
-      console.log(`[PERSIST] Stale PA position from ${data.savedDate} — discarding.`);
-      fs.unlinkSync(PA_POS_FILE);
+      console.log(`[PERSIST] Stale PA position from ${data.savedDate} — ignoring; kept until the boot reconcile has checked the broker.`);
+      _markStale(PA_POS_FILE, data);
       return null;
     }
     if (data.position) {
@@ -341,11 +394,12 @@ function saveEma9VwapPosition(position, sessionMeta) {
 function loadEma9VwapPosition() {
   try {
     if (!fs.existsSync(EMA9VWAP_POS_FILE)) return null;
-    const data = JSON.parse(fs.readFileSync(EMA9VWAP_POS_FILE, "utf-8"));
+    const data = _readSnapshot(EMA9VWAP_POS_FILE);
+    if (!data) return null;
     const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
     if (data.savedDate && data.savedDate !== today) {
-      console.log(`[PERSIST] Stale EMA9+VWAP position from ${data.savedDate} — discarding.`);
-      fs.unlinkSync(EMA9VWAP_POS_FILE);
+      console.log(`[PERSIST] Stale EMA9+VWAP position from ${data.savedDate} — ignoring; kept until the boot reconcile has checked the broker.`);
+      _markStale(EMA9VWAP_POS_FILE, data);
       return null;
     }
     if (data.position) {
@@ -405,11 +459,12 @@ function saveOrbPosition(position, sessionMeta) {
 function loadOrbPosition() {
   try {
     if (!fs.existsSync(ORB_POS_FILE)) return null;
-    const data = JSON.parse(fs.readFileSync(ORB_POS_FILE, "utf-8"));
+    const data = _readSnapshot(ORB_POS_FILE);
+    if (!data) return null;
     const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
     if (data.savedDate && data.savedDate !== today) {
-      console.log(`[PERSIST] Stale ORB position from ${data.savedDate} — discarding.`);
-      fs.unlinkSync(ORB_POS_FILE);
+      console.log(`[PERSIST] Stale ORB position from ${data.savedDate} — ignoring; kept until the boot reconcile has checked the broker.`);
+      _markStale(ORB_POS_FILE, data);
       return null;
     }
     if (data.position) console.log(`[PERSIST] ORB position loaded: ${data.position.side} ${data.position.symbol} @ ₹${data.position.entryPrice}`);
@@ -467,11 +522,12 @@ function saveTrendPbPosition(position, sessionMeta) {
 function loadTrendPbPosition() {
   try {
     if (!fs.existsSync(TREND_PB_POS_FILE)) return null;
-    const data = JSON.parse(fs.readFileSync(TREND_PB_POS_FILE, "utf-8"));
+    const data = _readSnapshot(TREND_PB_POS_FILE);
+    if (!data) return null;
     const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
     if (data.savedDate && data.savedDate !== today) {
-      console.log(`[PERSIST] Stale Trend_PB position from ${data.savedDate} — discarding.`);
-      fs.unlinkSync(TREND_PB_POS_FILE);
+      console.log(`[PERSIST] Stale Trend_PB position from ${data.savedDate} — ignoring; kept until the boot reconcile has checked the broker.`);
+      _markStale(TREND_PB_POS_FILE, data);
       return null;
     }
     if (data.position) console.log(`[PERSIST] Trend_PB position loaded: ${data.position.side} ${data.position.symbol} @ ₹${data.position.entryPrice}`);
@@ -538,11 +594,12 @@ function saveTrendDayScalpPosition(position, sessionMeta) {
 function loadTrendDayScalpPosition() {
   try {
     if (!fs.existsSync(TDS_POS_FILE)) return null;
-    const data = JSON.parse(fs.readFileSync(TDS_POS_FILE, "utf-8"));
+    const data = _readSnapshot(TDS_POS_FILE);
+    if (!data) return null;
     const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
     if (data.savedDate && data.savedDate !== today) {
-      console.log(`[PERSIST] Stale TREND_DAY_SCALP position from ${data.savedDate} — discarding.`);
-      fs.unlinkSync(TDS_POS_FILE);
+      console.log(`[PERSIST] Stale TREND_DAY_SCALP position from ${data.savedDate} — ignoring; kept until the boot reconcile has checked the broker.`);
+      _markStale(TDS_POS_FILE, data);
       return null;
     }
     if (data.position) console.log(`[PERSIST] TREND_DAY_SCALP position loaded: ${data.position.side} ${data.position.symbol} @ ₹${data.position.entryPrice}`);
@@ -626,11 +683,12 @@ function saveHaScalpPosition(position, sessionMeta) {
 function loadHaScalpPosition() {
   try {
     if (!fs.existsSync(HA_SCALP_POS_FILE)) return null;
-    const data = JSON.parse(fs.readFileSync(HA_SCALP_POS_FILE, "utf-8"));
+    const data = _readSnapshot(HA_SCALP_POS_FILE);
+    if (!data) return null;
     const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
     if (data.savedDate && data.savedDate !== today) {
-      console.log(`[PERSIST] Stale HA_SCALP position from ${data.savedDate} — discarding.`);
-      fs.unlinkSync(HA_SCALP_POS_FILE);
+      console.log(`[PERSIST] Stale HA_SCALP position from ${data.savedDate} — ignoring; kept until the boot reconcile has checked the broker.`);
+      _markStale(HA_SCALP_POS_FILE, data);
       return null;
     }
     if (data.position) console.log(`[PERSIST] HA_SCALP position loaded: ${data.position.side} ${data.position.symbol} @ ₹${data.position.entryPrice}`);
@@ -706,11 +764,12 @@ function savePrevOrbScalpPosition(position, sessionMeta) {
 function loadPrevOrbScalpPosition() {
   try {
     if (!fs.existsSync(PREV_ORB_SCALP_POS_FILE)) return null;
-    const data = JSON.parse(fs.readFileSync(PREV_ORB_SCALP_POS_FILE, "utf-8"));
+    const data = _readSnapshot(PREV_ORB_SCALP_POS_FILE);
+    if (!data) return null;
     const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
     if (data.savedDate && data.savedDate !== today) {
-      console.log(`[PERSIST] Stale PREV_ORB_SCALP position from ${data.savedDate} — discarding.`);
-      fs.unlinkSync(PREV_ORB_SCALP_POS_FILE);
+      console.log(`[PERSIST] Stale PREV_ORB_SCALP position from ${data.savedDate} — ignoring; kept until the boot reconcile has checked the broker.`);
+      _markStale(PREV_ORB_SCALP_POS_FILE, data);
       return null;
     }
     if (data.position) console.log(`[PERSIST] PREV_ORB_SCALP position loaded: ${data.position.side} ${data.position.symbol} @ ₹${data.position.entryPrice}`);
@@ -791,11 +850,12 @@ function saveRsiPivotStPosition(position, sessionMeta) {
 function loadRsiPivotStPosition() {
   try {
     if (!fs.existsSync(RSI_PIVOT_ST_POS_FILE)) return null;
-    const data = JSON.parse(fs.readFileSync(RSI_PIVOT_ST_POS_FILE, "utf-8"));
+    const data = _readSnapshot(RSI_PIVOT_ST_POS_FILE);
+    if (!data) return null;
     const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
     if (data.savedDate && data.savedDate !== today) {
-      console.log(`[PERSIST] Stale RSI_PIVOT_ST position from ${data.savedDate} — discarding.`);
-      fs.unlinkSync(RSI_PIVOT_ST_POS_FILE);
+      console.log(`[PERSIST] Stale RSI_PIVOT_ST position from ${data.savedDate} — ignoring; kept until the boot reconcile has checked the broker.`);
+      _markStale(RSI_PIVOT_ST_POS_FILE, data);
       return null;
     }
     if (data.position) console.log(`[PERSIST] RSI_PIVOT_ST position loaded: ${data.position.side} ${data.position.symbol} @ ₹${data.position.entryPrice}`);
@@ -880,11 +940,12 @@ function saveBnPivotRsiStPosition(position, sessionMeta) {
 function loadBnPivotRsiStPosition() {
   try {
     if (!fs.existsSync(BN_PIVOT_RSI_ST_POS_FILE)) return null;
-    const data = JSON.parse(fs.readFileSync(BN_PIVOT_RSI_ST_POS_FILE, "utf-8"));
+    const data = _readSnapshot(BN_PIVOT_RSI_ST_POS_FILE);
+    if (!data) return null;
     const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
     if (data.savedDate && data.savedDate !== today) {
-      console.log(`[PERSIST] Stale BN_PIVOT_RSI_ST (NIFTY BANK) position from ${data.savedDate} — discarding.`);
-      fs.unlinkSync(BN_PIVOT_RSI_ST_POS_FILE);
+      console.log(`[PERSIST] Stale BN_PIVOT_RSI_ST (NIFTY BANK) position from ${data.savedDate} — ignoring; kept until the boot reconcile has checked the broker.`);
+      _markStale(BN_PIVOT_RSI_ST_POS_FILE, data);
       return null;
     }
     if (data.position) console.log(`[PERSIST] BN_PIVOT_RSI_ST (NIFTY BANK) position loaded: ${data.position.side} ${data.position.symbol} @ ₹${data.position.entryPrice}`);
@@ -959,11 +1020,12 @@ function saveEmaRsiStV2Position(position, sessionMeta) {
 function loadEmaRsiStV2Position() {
   try {
     if (!fs.existsSync(EMA_RSI_ST_V2_POS_FILE)) return null;
-    const data = JSON.parse(fs.readFileSync(EMA_RSI_ST_V2_POS_FILE, "utf-8"));
+    const data = _readSnapshot(EMA_RSI_ST_V2_POS_FILE);
+    if (!data) return null;
     const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
     if (data.savedDate && data.savedDate !== today) {
-      console.log(`[PERSIST] Stale EMA_RSI_ST_V2 position from ${data.savedDate} — discarding.`);
-      fs.unlinkSync(EMA_RSI_ST_V2_POS_FILE);
+      console.log(`[PERSIST] Stale EMA_RSI_ST_V2 position from ${data.savedDate} — ignoring; kept until the boot reconcile has checked the broker.`);
+      _markStale(EMA_RSI_ST_V2_POS_FILE, data);
       return null;
     }
     if (data.position) console.log(`[PERSIST] EMA_RSI_ST_V2 position loaded: ${data.position.side} ${data.position.symbol} @ ₹${data.position.entryPrice}`);
@@ -1036,11 +1098,12 @@ function saveBnEmaRsiStV2Position(position, sessionMeta) {
 function loadBnEmaRsiStV2Position() {
   try {
     if (!fs.existsSync(BN_EMA_RSI_ST_V2_POS_FILE)) return null;
-    const data = JSON.parse(fs.readFileSync(BN_EMA_RSI_ST_V2_POS_FILE, "utf-8"));
+    const data = _readSnapshot(BN_EMA_RSI_ST_V2_POS_FILE);
+    if (!data) return null;
     const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
     if (data.savedDate && data.savedDate !== today) {
-      console.log(`[PERSIST] Stale BN_EMA_RSI_ST_V2 (NIFTY BANK) position from ${data.savedDate} — discarding.`);
-      fs.unlinkSync(BN_EMA_RSI_ST_V2_POS_FILE);
+      console.log(`[PERSIST] Stale BN_EMA_RSI_ST_V2 (NIFTY BANK) position from ${data.savedDate} — ignoring; kept until the boot reconcile has checked the broker.`);
+      _markStale(BN_EMA_RSI_ST_V2_POS_FILE, data);
       return null;
     }
     if (data.position) console.log(`[PERSIST] BN_EMA_RSI_ST_V2 (NIFTY BANK) position loaded: ${data.position.side} ${data.position.symbol} @ ₹${data.position.entryPrice}`);
@@ -1134,11 +1197,12 @@ function saveSimple930Position(position, sessionMeta) {
 function loadSimple930Position() {
   try {
     if (!fs.existsSync(SIMPLE930_POS_FILE)) return null;
-    const data = JSON.parse(fs.readFileSync(SIMPLE930_POS_FILE, "utf-8"));
+    const data = _readSnapshot(SIMPLE930_POS_FILE);
+    if (!data) return null;
     const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
     if (data.savedDate && data.savedDate !== today) {
-      console.log(`[PERSIST] Stale SIMPLE_9:30 position from ${data.savedDate} — discarding.`);
-      fs.unlinkSync(SIMPLE930_POS_FILE);
+      console.log(`[PERSIST] Stale SIMPLE_9:30 position from ${data.savedDate} — ignoring; kept until the boot reconcile has checked the broker.`);
+      _markStale(SIMPLE930_POS_FILE, data);
       return null;
     }
     if (data.position) console.log(`[PERSIST] SIMPLE_9:30 position loaded: ${data.position.side} ${data.position.symbol} @ ₹${data.position.entryPrice}`);
@@ -1232,11 +1296,12 @@ function saveEarlyBirdPositions(positions, sessionMeta, pendingSetups) {
 function loadEarlyBirdPositions() {
   try {
     if (!fs.existsSync(EARLY_BIRD_POS_FILE)) return null;
-    const data = JSON.parse(fs.readFileSync(EARLY_BIRD_POS_FILE, "utf-8"));
+    const data = _readSnapshot(EARLY_BIRD_POS_FILE);
+    if (!data) return null;
     const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
     if (data.savedDate && data.savedDate !== today) {
-      console.log(`[PERSIST] Stale EARLY_BIRD snapshot from ${data.savedDate} — discarding.`);
-      fs.unlinkSync(EARLY_BIRD_POS_FILE);
+      console.log(`[PERSIST] Stale EARLY_BIRD snapshot from ${data.savedDate} — ignoring; kept until the boot reconcile has checked the broker.`);
+      _markStale(EARLY_BIRD_POS_FILE, data);
       return null;
     }
     // Normalise: an older/partial file must never hand back undefined arrays.
@@ -1279,4 +1344,6 @@ module.exports = {
   saveEmaRsiStV2Position, loadEmaRsiStV2Position, clearEmaRsiStV2Position,
   saveBnEmaRsiStV2Position, loadBnEmaRsiStV2Position, clearBnEmaRsiStV2Position,
   saveSimple930Position, loadSimple930Position, clearSimple930Position,
+  // Boot-reconcile helpers (corrupt files moved aside, previous-day snapshots kept)
+  getCorruptSnapshots, getStaleSnapshots, clearStaleSnapshot,
 };

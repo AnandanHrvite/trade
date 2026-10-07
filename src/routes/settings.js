@@ -1620,6 +1620,21 @@ for (const section of SETTINGS_SCHEMA) {
   }
 }
 
+// Every running trading session (any sharedSocketState slot) plus any installed
+// live harness. Used to refuse a restart / warn on a mid-session save.
+function _activeSessions() {
+  const out = [];
+  for (const [name, fn] of Object.entries(sharedSocketState)) {
+    if (!/^get[A-Za-z0-9]*Mode$/.test(name) || typeof fn !== "function") continue;
+    try { const m = fn(); if (m && !out.includes(m)) out.push(m); } catch (_) {}
+  }
+  try {
+    const h = require("../services/liveHarness");
+    if (h.isInstalled() && !out.length) out.push("live harness");
+  } catch (_) {}
+  return out;
+}
+
 // ── Write values back to .env file (preserves comments and structure) ───────
 function updateEnvFile(updates, deletes) {
   // Every write funnels through here, so the credential-delete rule belongs at
@@ -1673,7 +1688,22 @@ function updateEnvFile(updates, deletes) {
       newKeys.forEach(k => newLines.push(`${k}=${updates[k]}`));
     }
 
-    fs.writeFileSync(ENV_PATH, newLines.join("\n"), "utf-8");
+    // Atomic: tmp + rename, so a crash mid-write can never leave a truncated
+    // .env (which would boot with half the config). Fall back to an in-place
+    // write when the rename is not possible (e.g. a bind-mounted .env file).
+    const out = newLines.join("\n");
+    const tmp = `${ENV_PATH}.${process.pid}.tmp`;
+    try {
+      fs.writeFileSync(tmp, out, "utf-8");
+      fs.renameSync(tmp, ENV_PATH);
+    } catch (atomicErr) {
+      try { fs.unlinkSync(tmp); } catch (_) {}
+      console.warn(`[settings] atomic .env write failed (${atomicErr.message}) — writing in place`);
+      fs.writeFileSync(ENV_PATH, out, "utf-8");
+    }
+    // Truthful report: read back and confirm every update landed on disk.
+    const back = fs.readFileSync(ENV_PATH, "utf-8");
+    if (back !== out) throw new Error(".env read-back did not match what was written");
     fileSaved = true;
   } catch (err) {
     fileError = err.message;
@@ -1718,7 +1748,23 @@ router.post("/save", (req, res) => {
     return res.status(400).json({ success: false, error: "Missing updates or deletes" });
   }
 
-  const safeUpdates = updates && typeof updates === "object" ? { ...updates } : {};
+  // Normalise keys FIRST (uppercase, strip invalid chars) so every guard below
+  // sees the key exactly as it will be written — "access_token" or " SECRET_KEY"
+  // used to slip past HIDDEN_KEYS and land on disk upper-cased.
+  const safeUpdates = {};
+  const badValueKeys = [];
+  if (updates && typeof updates === "object") {
+    for (const [k, v] of Object.entries(updates)) {
+      const key = String(k || "").trim().toUpperCase().replace(/[^A-Z0-9_]/g, "");
+      if (!key) continue;
+      // A CR/LF in a value would inject extra KEY=VALUE lines into .env.
+      if (/[\r\n]/.test(String(v ?? ""))) { badValueKeys.push(key); continue; }
+      safeUpdates[key] = v;
+    }
+  }
+  if (badValueKeys.length) {
+    return res.status(400).json({ success: false, error: `Refused to save — line breaks are not allowed in a value (${badValueKeys.join(", ")}).` });
+  }
 
   // Block writes to sensitive keys via UI — except the broker credentials,
   // which are the only way to repair a bad secret without SSH. Two values are
@@ -1803,6 +1849,11 @@ router.post("/save", (req, res) => {
   }
 
   const result = persistChanges(cleaned, deleteKeys, note, req);
+  const active = _activeSessions();
+  if (active.length) {
+    result.warning = `Saved while sessions are running (${active.join(", ")}). ` +
+      `Keys read live apply on the next check; session/server-restart keys apply only after those sessions are restarted.`;
+  }
   res.json({ ...result, envPath: ENV_PATH });
 });
 
@@ -1966,15 +2017,27 @@ router.post("/audit-restore", (req, res) => {
 
 // ── POST /settings/restart — Restart the server process ─────────────────────
 router.post("/restart", (req, res) => {
-  console.log("[settings] 🔄 Server restart requested from Settings UI");
+  // A restart mid-session kills every running engine (and, for live ones, the
+  // square-off path). Refuse unless the caller explicitly forces it.
+  const active = _activeSessions();
+  const force = req.body && (req.body.force === true || req.body.force === "true");
+  if (active.length && !force) {
+    console.warn(`[settings] 🔄 Restart refused — active sessions: ${active.join(", ")}`);
+    return res.status(409).json({
+      success: false,
+      active,
+      error: `Restart refused — sessions are running: ${active.join(", ")}. Stop them first, or confirm a forced restart.`,
+    });
+  }
+  console.log(`[settings] 🔄 Server restart requested from Settings UI${active.length ? ` (FORCED with active: ${active.join(", ")})` : ""}`);
   res.json({ success: true, message: "Restarting server..." });
 
-  // Give time for response to be sent, then exit.
-  // If running under nodemon, it auto-restarts. If running under systemd/pm2, they restart too.
-  // If running bare `node`, process just exits (user will need to start manually).
+  // Give time for the response to be sent, then SIGTERM ourselves so app.js
+  // gracefulShutdown() runs (stops sessions, squares off live positions)
+  // instead of a bare process.exit(). nodemon/PM2 restart the process after.
   setTimeout(() => {
-    console.log("[settings] 🔄 Exiting process for restart...");
-    process.exit(0);
+    console.log("[settings] 🔄 Sending SIGTERM for restart...");
+    process.kill(process.pid, "SIGTERM");
   }, 500);
 });
 
@@ -3583,6 +3646,7 @@ async function saveSettings() {
 
       // Build message based on what was saved
       var msg = data.updatedCount + ' setting' + (data.updatedCount > 1 ? 's' : '') + ' applied';
+      if (data.warning) setTimeout(function() { showToast(data.warning, 'info'); }, 2500);
       if (!data.fileSaved) {
         msg += ' ⚠️ NOT SAVED TO DISK — .env write failed: ' + (data.fileError || 'unknown') + '. Changes will be lost on restart!';
         showToast(msg, 'error');
@@ -4209,7 +4273,7 @@ function showBackupModal() {
   loadBackups();
   loadGdrive();
 }
-// Refresh the list only while the modal is open.
+// Refresh the list only while the modal is open and the tab is visible.
 setInterval(function() {
   var m = document.getElementById('backupModal');
   if (!document.hidden && m && m.style.display === 'block') { loadBackups(); loadGdrive(); }
@@ -4295,22 +4359,50 @@ async function brokerLogout(broker, btn) {
 // Kicks the server restart endpoint and polls /settings/data until it's back,
 // then reloads the page. Shared by the explicit Restart button and the
 // post-save auto-restart prompt.
-function triggerServerRestart(btn) {
+// POST /settings/restart. The server refuses (409) while trading sessions run;
+// show the refusal and let the user force it. Resolves true when a restart is
+// on its way, false when refused/cancelled.
+async function _postRestart() {
+  async function post(force) {
+    try {
+      var r = await secretFetch('/settings/restart', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(force ? { force: true } : {}),
+      });
+      var d = null; try { d = await r.json(); } catch (_) {}
+      return { status: r.status, data: d };
+    } catch (_) { return { status: 0, data: null }; }   // server died mid-request — expected
+  }
+  var res = await post(false);
+  if (res.status !== 409) return true;
+  var msg = (res.data && res.data.error) || 'Restart refused — sessions are running.';
+  showToast(msg, 'error');
+  if (!confirm(msg + '\\n\\nForce the restart anyway? Running sessions will be stopped (live positions squared off).')) return false;
+  res = await post(true);
+  if (res.status === 409) { showToast('Restart still refused', 'error'); return false; }
+  return true;
+}
+
+async function triggerServerRestart(btn) {
   if (btn) {
     btn.disabled = true;
     btn.innerHTML = '<span>⏳</span> Restarting...';
   }
   showToast('Restarting server — page will reload when it comes back...', 'info');
 
-  secretFetch('/settings/restart', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-  }).catch(function() {}); // will fail when server dies — that's expected
+  if (!(await _postRestart())) {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<span>🔄</span> Restart Server'; }
+    return;
+  }
 
-  var attempts = 0;
+  // Graceful shutdown drains for up to ~15s before the process exits, so the
+  // old process keeps answering for a while — only a response AFTER it went
+  // down counts as "back".
+  var attempts = 0, wentDown = false;
   var poller = setInterval(function() {
     attempts++;
-    if (attempts > 30) { // 30 seconds max
+    if (attempts > 60) { // 60 seconds max
       clearInterval(poller);
       if (btn) {
         btn.disabled = false;
@@ -4321,13 +4413,13 @@ function triggerServerRestart(btn) {
     }
     fetch('/settings/data', { method: 'GET' })
       .then(function(r) {
-        if (r.ok) {
+        if (r.ok && (wentDown || attempts > 25)) {
           clearInterval(poller);
           showToast('Server restarted successfully!', 'success');
           setTimeout(function() { window.location.reload(); }, 500);
         }
       })
-      .catch(function() {}); // still down, keep polling
+      .catch(function() { wentDown = true; }); // still down, keep polling
   }, 1000);
 }
 
@@ -4540,16 +4632,17 @@ async function bulkUpdateAndRestart() {
     showToast((savedParts.join(', ') || 'no changes') + ' — restarting server...', 'info');
     btn.innerHTML = '<span>⏳</span> Restarting...';
 
-    secretFetch('/settings/restart', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-    }).catch(function(){}); // server dies mid-request
+    if (!(await _postRestart())) {
+      btn.disabled = false;
+      btn.innerHTML = '<span>🚀</span> Update & Restart';
+      return;
+    }
 
-    // Poll until server back
-    var attempts = 0;
+    // Poll until server back (only a response after it went down counts)
+    var attempts = 0, wentDown = false;
     var poller = setInterval(function() {
       attempts++;
-      if (attempts > 30) {
+      if (attempts > 60) {
         clearInterval(poller);
         btn.disabled = false;
         btn.innerHTML = '<span>🚀</span> Update & Restart';
@@ -4558,13 +4651,13 @@ async function bulkUpdateAndRestart() {
       }
       fetch('/settings/data', { method: 'GET' })
         .then(function(r) {
-          if (r.ok) {
+          if (r.ok && (wentDown || attempts > 25)) {
             clearInterval(poller);
             showToast('Server restarted — reloading...', 'success');
             setTimeout(function(){ window.location.reload(); }, 500);
           }
         })
-        .catch(function(){});
+        .catch(function(){ wentDown = true; });
     }, 1000);
   } catch (err) {
     showToast('Update failed: ' + (err.message || err), 'error');

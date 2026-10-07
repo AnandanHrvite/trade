@@ -7,9 +7,15 @@ const tickRecorder = require("./tickRecorder");
 // time. Previously these were module-load constants, so a Settings edit only
 // took effect after a full process restart (the Settings UI wrongly labelled it
 // "session restart"). Live reads make the toggle apply on the next entry check.
-function liveMaxSpreadPts()      { return parseFloat(process.env.MAX_BID_ASK_SPREAD_PTS || "2"); }
-function liveTimeStopCandles()   { return parseInt(process.env.TIME_STOP_CANDLES || "4", 10); }
-function liveTimeStopFlatPts()   { return parseFloat(process.env.TIME_STOP_FLAT_PTS || "20"); }
+// Numeric env parse with a default for blank/garbled values. A NaN threshold
+// makes every `<`/`>=` comparison false, so a guard silently failed OPEN.
+function _numOr(raw, def) {
+  const n = typeof raw === "number" ? raw : parseFloat(raw);
+  return Number.isFinite(n) ? n : def;
+}
+function liveMaxSpreadPts()      { return _numOr(parseFloat(process.env.MAX_BID_ASK_SPREAD_PTS || "2"), 2); }
+function liveTimeStopCandles()   { return _numOr(parseInt(process.env.TIME_STOP_CANDLES || "4", 10), 4); }
+function liveTimeStopFlatPts()   { return _numOr(parseFloat(process.env.TIME_STOP_FLAT_PTS || "20"), 20); }
 
 async function fetchOptionQuote(fyers, symbol) {
   try {
@@ -155,6 +161,10 @@ function checkTimeStop(candlesHeld, pnlPts, {
   maxCandles = liveTimeStopCandles(),
   flatPts    = liveTimeStopFlatPts(),
 } = {}) {
+  // Per-mode overrides (PA_TIME_STOP_* etc.) are parsed by the caller; a garbled
+  // one arrives as NaN and would make the comparisons below always false.
+  if (!Number.isFinite(maxCandles)) maxCandles = liveTimeStopCandles();
+  if (!Number.isFinite(flatPts))    flatPts    = liveTimeStopFlatPts();
   if (!Number.isFinite(candlesHeld) || candlesHeld < maxCandles) return null;
   if (!Number.isFinite(pnlPts))                                 return null;
   if (Math.abs(pnlPts) >= flatPts)                              return null;

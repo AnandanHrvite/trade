@@ -173,10 +173,11 @@ async function appendSettingsSnapshot(mode, snapshot, meta = {}) {
   const dateStr = istDateString(ts);
   // Don't seed a daily trade-log file on non-trading days (weekend/holiday):
   // no trades are taken, so a settings save would otherwise create a phantom
-  // dated JSONL with nothing but snapshot lines. TZ is Asia/Calcutta so a bare
-  // `new Date()` resolves weekday/holiday in IST.
+  // dated JSONL with nothing but snapshot lines. The EC2 host runs in UTC, so a
+  // bare `new Date()` named the PREVIOUS day between 00:00–05:30 IST; judge the
+  // IST date instead (a local-midday Date carrying the IST Y-M-D).
   try {
-    if (await isNonTradingDay(new Date())) return;
+    if (await isNonTradingDay(new Date(`${dateStr}T12:00:00`))) return;
   } catch (err) {
     console.warn(`[tradeLogger] non-trading-day check failed (mode=${mode}): ${err.message}`);
   }

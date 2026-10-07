@@ -22,6 +22,41 @@ const { faviconLink } = require("../utils/sharedNav");
 const fyers   = require("../config/fyers");
 const zerodha = require("../services/zerodhaBroker");
 const socketManager = require("../utils/socketManager");
+const sharedSocketState = require("../utils/sharedSocketState");
+
+// HTML-escape anything reflected from the request or a broker response into a
+// page. /auth/callback is reachable by any link a third party crafts, so a raw
+// ?status=<script> used to execute in the app's origin.
+function _esc(v) {
+  return String(v == null ? "" : v)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+// After a NEW Fyers token is saved, let the shared socket recover in-session
+// from a -15 auth failure instead of waiting for a process restart. Guarded:
+// reauth() is optional on socketManager and must never break the login flow.
+function _reauthFyersSocket() {
+  try {
+    if (typeof socketManager.reauth !== "function") return;
+    Promise.resolve(socketManager.reauth())
+      .catch(err => console.warn(`⚠️ [Fyers] socket reauth after login failed: ${err && err.message}`));
+  } catch (err) {
+    console.warn(`⚠️ [Fyers] socket reauth after login failed: ${err && err.message}`);
+  }
+}
+
+// Strategies whose orders go to ZERODHA (paper modes included: a harness-live
+// session runs under its *_PAPER mode string and still places Zerodha orders).
+const _ZERODHA_STRATEGY_RE = /^(EMA_RSI_ST|EMA9VWAP|RSI_PIVOT_ST|BN_PIVOT_RSI_ST|EMA_RSI_ST_V2|BN_EMA_RSI_ST_V2|SIMPLE930|HA_SCALP|PREV_ORB_SCALP)_(PAPER|LIVE)$/;
+function _activeZerodhaModes() {
+  const out = [];
+  for (const [name, fn] of Object.entries(sharedSocketState)) {
+    if (!/^get[A-Za-z0-9]*Mode$/.test(name) || typeof fn !== "function") continue;
+    try { const m = fn(); if (m && _ZERODHA_STRATEGY_RE.test(m) && !out.includes(m)) out.push(m); } catch (_) {}
+  }
+  return out;
+}
 
 /** `data-theme="light"` when UI_THEME resolves to light — these broker-auth
  *  screens render outside sharedNav, so they need their own theme hook. */
@@ -241,6 +276,7 @@ router.post("/manual", async (req, res) => {
     if (response.s === "ok") {
       fyers.setAccessToken(response.access_token);
       console.log("✅ [Fyers] Manual login successful. Token saved to disk.");
+      _reauthFyersSocket();
       return res.send(buildManualSuccessPage(response.access_token));
     }
     console.error("❌ [Fyers] Manual token exchange failed:", response);
@@ -277,7 +313,7 @@ router.get("/callback", async (req, res) => {
   if (status && status !== "success") {
     return res.status(400).send(buildErrorPage(
       "Fyers Login Failed",
-      `Fyers returned status="${status}". Please try again.`,
+      `Fyers returned status="${_esc(status)}". Please try again.`,
       { manual: true }
     ));
   }
@@ -285,7 +321,7 @@ router.get("/callback", async (req, res) => {
   if (!tokenValue) {
     return res.status(400).send(buildErrorPage(
       "Fyers Login Failed",
-      `No token in callback URL. Got: <code>${JSON.stringify(req.query)}</code>`,
+      `No token in callback URL. Got: <code>${_esc(JSON.stringify(req.query))}</code>`,
       { manual: true }
     ));
   }
@@ -309,6 +345,7 @@ router.get("/callback", async (req, res) => {
     if (response.s === "ok") {
       fyers.setAccessToken(response.access_token); // also saves to disk now
       console.log("✅ [Fyers] Login successful. Token saved to disk.");
+      _reauthFyersSocket();
       // Straight back to the app with a toast — a success page whose only
       // control is "Back to Dashboard" is a click that tells the user nothing.
       return res.redirect("/?login=fyers");
@@ -334,13 +371,13 @@ router.get("/callback", async (req, res) => {
           "not the secret for this APP_ID — check that pair on the Fyers dashboard first (the app " +
           "id here is <code>" + String(process.env.APP_ID || "").trim() + "</code>). If they do " +
           "match, the fault is on Fyers' side; wait and try again. Full response: " +
-          JSON.stringify(response)
-        : JSON.stringify(response);
+          _esc(JSON.stringify(response))
+        : _esc(JSON.stringify(response));
       return res.status(400).send(buildErrorPage("Fyers Login Failed", detail, { manual: true }));
     }
   } catch (err) {
     console.error("❌ [Fyers] Auth error:", err);
-    return res.status(500).send(buildErrorPage("Fyers Auth Error", err.message, { manual: true }));
+    return res.status(500).send(buildErrorPage("Fyers Auth Error", _esc(err.message), { manual: true }));
   }
 });
 
@@ -406,7 +443,7 @@ router.get("/zerodha/login", (req, res) => {
   } catch (err) {
     res.status(500).send(buildErrorPage(
       "Zerodha Error",
-      err.message + "<br><br>Make sure kiteconnect is installed: <code>npm install kiteconnect</code>"
+      _esc(err.message) + "<br><br>Make sure kiteconnect is installed: <code>npm install kiteconnect</code>"
     ));
   }
 });
@@ -418,7 +455,7 @@ router.get("/zerodha/callback", async (req, res) => {
   if (status !== "success" || !request_token) {
     return res.status(400).send(buildErrorPage(
       "Zerodha Login Failed",
-      `Status="${status}" | request_token: ${request_token || "missing"}`
+      `Status="${_esc(status)}" | request_token: ${_esc(request_token || "missing")}`
     ));
   }
 
@@ -428,14 +465,41 @@ router.get("/zerodha/callback", async (req, res) => {
     return res.redirect("/?login=zerodha");
   } catch (err) {
     console.error("❌ [Zerodha] Token exchange failed:", err.message);
-    return res.status(500).send(buildErrorPage("Zerodha Auth Error", err.message));
+    return res.status(500).send(buildErrorPage("Zerodha Auth Error", _esc(err.message)));
   }
 });
 
 
+// GET only CONFIRMS — a state-changing GET could be fired by any link, image
+// tag or prefetch. The actual logout is the POST below.
 router.get("/zerodha/logout", (req, res) => {
+  const active = _activeZerodhaModes();
+  const warn = active.length
+    ? `<br><br><b>Zerodha sessions are running: ${_esc(active.join(", "))}.</b> Logging out will leave them unable to place or exit orders.`
+    : "";
+  res.send(`<!DOCTYPE html><html lang="en"${_authLightAttr()}><head><meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/><title>Zerodha Logout</title>${faviconLink()}
+<style>body{font-family:-apple-system,sans-serif;background:#0f1117;color:#e2e8f0;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:16px;}
+.card{background:#1a1f2e;border:1px solid #2d3748;border-radius:16px;padding:32px 36px;max-width:520px;text-align:center;}
+button,a{display:inline-block;margin:8px 4px 0;padding:10px 22px;border-radius:8px;font-weight:600;border:0;cursor:pointer;text-decoration:none;font-size:0.9rem;}
+button{background:#c53030;color:#fff;}a{background:#2563eb;color:#fff;}
+:root[data-theme="light"] body{background:#f4f6f9;color:#334155;}:root[data-theme="light"] .card{background:#fff;border-color:#e0e4ea;}</style></head>
+<body><div class="card"><h2>Log out of Zerodha?</h2><p style="margin-top:12px;line-height:1.6;">This clears the saved Zerodha token.${warn}</p>
+<form method="POST" action="/auth/zerodha/logout">${active.length ? '<input type="hidden" name="force" value="true"/>' : ""}
+<button type="submit">${active.length ? "Log out anyway" : "Log out"}</button><a href="/">Cancel</a></form></div></body></html>`);
+});
+
+router.post("/zerodha/logout", (req, res) => {
+  const active = _activeZerodhaModes();
+  const force = req.body && (req.body.force === true || req.body.force === "true");
+  if (active.length && !force) {
+    return res.status(409).send(buildErrorPage(
+      "Logout Refused",
+      `Zerodha sessions are running: ${_esc(active.join(", "))}. Stop them first, or confirm the forced logout from <a href="/auth/zerodha/logout" style="display:inline;padding:0;background:none;color:#93c5fd;">the logout page</a>.`
+    ));
+  }
   zerodha.logout();
-  console.log("🔴 [Zerodha] Token cleared via logout route.");
+  console.log(`🔴 [Zerodha] Token cleared via logout route${active.length ? ` (FORCED with active: ${active.join(", ")})` : ""}.`);
   return res.send(buildSuccessPage(
     "Zerodha Logged Out ✅",
     "Zerodha token has been cleared. You will need to login again before starting Live Trade."

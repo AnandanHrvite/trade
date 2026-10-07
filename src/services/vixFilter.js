@@ -58,22 +58,29 @@ function getVixEnabled(mode = "ema_rsi_st") {
   return process.env.VIX_FILTER_ENABLED !== "false";
 }
 
+// Parse a numeric env value; a blank/garbled value (NaN) falls back to the
+// default. A NaN threshold made every VIX comparison false → the gate failed OPEN.
+function _numOr(raw, def) {
+  const n = parseFloat(raw);
+  return Number.isFinite(n) ? n : def;
+}
+
 function getVixMaxEntry(mode = "ema_rsi_st") {
-  if (mode === "bb_rsi")    return parseFloat(process.env.BB_RSI_VIX_MAX_ENTRY    || process.env.VIX_MAX_ENTRY || "20");
-  if (mode === "pa")       return parseFloat(process.env.PA_VIX_MAX_ENTRY       || process.env.VIX_MAX_ENTRY || "20");
-  if (mode === "orb")      return parseFloat(process.env.ORB_VIX_MAX_ENTRY      || process.env.VIX_MAX_ENTRY || "22");
-  if (mode === "trend_pb") return parseFloat(process.env.TREND_PB_VIX_MAX_ENTRY || process.env.VIX_MAX_ENTRY || "22");
-  if (mode === "ema9vwap") return parseFloat(process.env.EMA9VWAP_VIX_MAX_ENTRY || process.env.VIX_MAX_ENTRY || "20");
-  return parseFloat(process.env.VIX_MAX_ENTRY || "20");
+  if (mode === "bb_rsi")    return _numOr(parseFloat(process.env.BB_RSI_VIX_MAX_ENTRY    || process.env.VIX_MAX_ENTRY || "20"), 20);
+  if (mode === "pa")       return _numOr(parseFloat(process.env.PA_VIX_MAX_ENTRY       || process.env.VIX_MAX_ENTRY || "20"), 20);
+  if (mode === "orb")      return _numOr(parseFloat(process.env.ORB_VIX_MAX_ENTRY      || process.env.VIX_MAX_ENTRY || "22"), 22);
+  if (mode === "trend_pb") return _numOr(parseFloat(process.env.TREND_PB_VIX_MAX_ENTRY || process.env.VIX_MAX_ENTRY || "22"), 22);
+  if (mode === "ema9vwap") return _numOr(parseFloat(process.env.EMA9VWAP_VIX_MAX_ENTRY || process.env.VIX_MAX_ENTRY || "20"), 20);
+  return _numOr(parseFloat(process.env.VIX_MAX_ENTRY || "20"), 20);
 }
 
 function getVixStrongOnly(mode = "ema_rsi_st") {
-  if (mode === "bb_rsi")    return parseFloat(process.env.BB_RSI_VIX_STRONG_ONLY    || process.env.VIX_STRONG_ONLY || "16");
-  if (mode === "pa")       return parseFloat(process.env.PA_VIX_STRONG_ONLY       || process.env.VIX_STRONG_ONLY || "16");
-  if (mode === "orb")      return parseFloat(process.env.ORB_VIX_STRONG_ONLY      || process.env.VIX_STRONG_ONLY || "18");
-  if (mode === "trend_pb") return parseFloat(process.env.TREND_PB_VIX_STRONG_ONLY || process.env.VIX_STRONG_ONLY || "18");
-  if (mode === "ema9vwap") return parseFloat(process.env.EMA9VWAP_VIX_STRONG_ONLY || process.env.VIX_STRONG_ONLY || "16");
-  return parseFloat(process.env.VIX_STRONG_ONLY || "16");
+  if (mode === "bb_rsi")    return _numOr(parseFloat(process.env.BB_RSI_VIX_STRONG_ONLY    || process.env.VIX_STRONG_ONLY || "16"), 16);
+  if (mode === "pa")       return _numOr(parseFloat(process.env.PA_VIX_STRONG_ONLY       || process.env.VIX_STRONG_ONLY || "16"), 16);
+  if (mode === "orb")      return _numOr(parseFloat(process.env.ORB_VIX_STRONG_ONLY      || process.env.VIX_STRONG_ONLY || "18"), 18);
+  if (mode === "trend_pb") return _numOr(parseFloat(process.env.TREND_PB_VIX_STRONG_ONLY || process.env.VIX_STRONG_ONLY || "18"), 18);
+  if (mode === "ema9vwap") return _numOr(parseFloat(process.env.EMA9VWAP_VIX_STRONG_ONLY || process.env.VIX_STRONG_ONLY || "16"), 16);
+  return _numOr(parseFloat(process.env.VIX_STRONG_ONLY || "16"), 16);
 }
 
 function anyVixEnabled() {
@@ -98,7 +105,7 @@ const VIX_CACHE_TTL = 60_000;
 // 25). Past this age the cache is treated as "no data" so checkLiveVix falls
 // through to VIX_FAIL_MODE (fail-closed by default). Tunable via env.
 function vixMaxStaleMs() {
-  return Math.max(VIX_CACHE_TTL, parseFloat(process.env.VIX_MAX_STALE_SEC || "300") * 1000);
+  return Math.max(VIX_CACHE_TTL, _numOr(parseFloat(process.env.VIX_MAX_STALE_SEC || "300"), 300) * 1000);
 }
 // Keep polling VIX purely so every trade record carries it, even when no
 // strategy filters on it. Observer-only — see the note in fetchLiveVix.

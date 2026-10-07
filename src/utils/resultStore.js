@@ -14,15 +14,21 @@ function ensureDir() {
 // the same unchanged file on each call. (Same pattern as consolidation.js.)
 let _cache = null;
 let _cacheSig = null;
+let _corruptUnbacked = false;   // corrupt file we could NOT move aside → never overwrite it
 
 function saveResult(strategyKey, result) {
   ensureDir();
   let all = loadAll();
+  if (_corruptUnbacked) throw new Error("backtest_results.json is corrupt and could not be backed up — not overwriting it");
   all[strategyKey] = {
     ...result,
     savedAt: new Date().toISOString(),
   };
-  fs.writeFileSync(RESULTS_FILE, JSON.stringify(all, null, 2));
+  // Atomic: tmp + rename, so a crash mid-write can never leave a torn file
+  // (a torn file used to parse-fail → {} → the next save wiped every strategy).
+  const tmp = `${RESULTS_FILE}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(all, null, 2));
+  fs.renameSync(tmp, RESULTS_FILE);
   _cache = null; _cacheSig = null; // invalidate — next loadAll re-reads the fresh file
 }
 
@@ -33,10 +39,24 @@ function loadAll() {
     const st = fs.statSync(RESULTS_FILE);
     const sig = `${st.mtimeMs}:${st.size}`;
     if (_cache && _cacheSig === sig) return _cache;
+    _corruptUnbacked = false;
     _cache = JSON.parse(fs.readFileSync(RESULTS_FILE, "utf-8"));
     _cacheSig = sig;
     return _cache;
-  } catch {
+  } catch (err) {
+    // Unparseable file: move it aside (never overwrite the only copy) so the next
+    // save starts a fresh file instead of silently replacing the damaged one.
+    if (err instanceof SyntaxError) {
+      const backup = `${RESULTS_FILE}.corrupt-${Date.now()}`;
+      try {
+        fs.renameSync(RESULTS_FILE, backup);
+        console.error(`[resultStore] backtest_results.json is corrupt (${err.message}) — moved to ${path.basename(backup)}`);
+      } catch (e2) {
+        console.error(`[resultStore] backtest_results.json is corrupt and could not be backed up (${e2.message}) — saves are refused until it is fixed`);
+        _corruptUnbacked = true;
+      }
+    }
+    _cache = null; _cacheSig = null;
     return {};
   }
 }

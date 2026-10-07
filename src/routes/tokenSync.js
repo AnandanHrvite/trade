@@ -126,6 +126,14 @@ function applyBrokerToken(broker, token) {
     // fyers.setAccessToken is wrapped in config/fyers.js — sets process.env
     // ACCESS_TOKEN and persists to ~/trading-data/.fyers_token.
     require("../config/fyers").setAccessToken(token);
+    // Let the shared socket recover from a -15 auth failure with the new token
+    // (optional on socketManager; never allowed to fail the apply).
+    try {
+      const sm = require("../utils/socketManager");
+      if (typeof sm.reauth === "function") {
+        Promise.resolve(sm.reauth()).catch(e => console.warn(`⚠️  [tokenSync] socket reauth failed: ${e && e.message}`));
+      }
+    } catch (e) { console.warn(`⚠️  [tokenSync] socket reauth failed: ${e && e.message}`); }
   } else {
     // zerodhaBroker.setAccessToken sets env, seeds the Kite client and marks
     // the disk token validated (otherwise the loader ignores it on boot).
@@ -235,7 +243,20 @@ router.get("/status", (req, res) => {
 // Writes the same on-disk shape the brokers' own save paths write (stamped with
 // today's IST date so the loaders accept it), and applies it in-process so no
 // restart is needed for backtests to start working.
+// Swapping a broker credential under a running engine can break its feed or its
+// order path mid-trade. Refuse while anything runs unless the caller forces it.
+function _refuseWhileActive(req, res) {
+  const force = req.body && (req.body.force === true || req.body.force === "true");
+  if (sharedSocketState.isAnyActive() && !force) {
+    res.status(409).json({ success: false, needsForce: true,
+      error: "An engine is running — replacing its broker token mid-session can break its feed or orders. Stop it first, or confirm to force." });
+    return true;
+  }
+  return false;
+}
+
 router.post("/apply", (req, res) => {
+  if (_refuseWhileActive(req, res)) return;
   const broker = String((req.body && req.body.broker) || "").toLowerCase();
   const token  = String((req.body && req.body.token) || "").trim();
 
@@ -261,6 +282,7 @@ router.post("/apply", (req, res) => {
 // "both") pulls Fyers and Zerodha together. A broker LIVE has no token for is
 // skipped, not failed — a laptop that only backtests never needs Zerodha.
 router.post("/pull", (req, res) => {
+  if (_refuseWhileActive(req, res)) return;
   const want = String((req.body && req.body.broker) || "both").toLowerCase();
   if (!["fyers", "zerodha", "both"].includes(want)) {
     return res.status(400).json({ success: false, error: "broker must be 'fyers', 'zerodha' or 'both'." });
@@ -624,6 +646,15 @@ ${buildSidebar('tokenSync', liveActive)}
       });
       if (!res) return;                       // secret prompt cancelled
       var d = await res.json();
+      if (res.status === 409 && d.needsForce) {
+        if (!confirm(d.error + ' Apply anyway?')) return showToast('Not applied', '#f87171');
+        res = await secretFetch('/token-sync/apply', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ broker: broker, token: token, force: true })
+        });
+        if (!res) return;
+        d = await res.json();
+      }
       if (!d.success) return showToast(d.error || 'Apply failed', '#f87171');
       el.value = '';
       SNAP = d.snapshot; render();
@@ -648,6 +679,16 @@ ${buildSidebar('tokenSync', liveActive)}
       });
       if (!res) return;                       // secret prompt cancelled
       var d = await res.json();
+      if (res.status === 409 && d.needsForce) {
+        if (!confirm(d.error + ' Pull anyway?')) return showToast('Not pulled', '#f87171');
+        res = await secretFetch('/token-sync/pull', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ broker: 'both', force: true }),
+          timeoutMs: 20000
+        });
+        if (!res) return;
+        d = await res.json();
+      }
       if (!d.success) return showToast(d.error || 'Pull failed', '#f87171');
       SNAP = d.snapshot;
       var msg = 'Pulled from LIVE: ' + (d.applied || []).join(' + ').toUpperCase();

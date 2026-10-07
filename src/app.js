@@ -43,7 +43,12 @@ const { loadTradePosition, clearTradePosition, loadBbRsiPosition, clearBbRsiPosi
 const app = express();
 trackMounts(app);   // record every app.use(path, router) so Start All can discover the strategy routes
 app.use(compression());
-app.use(express.json({ limit: "25mb" })); // tradebook CSV imports (pnlHistory.js) can be several MB of JSON-wrapped text
+// Keep the raw bytes of the deploy webhook only — its X-Hub-Signature-256 HMAC
+// is computed over the exact payload, which a re-serialised req.body is not.
+const _keepWebhookRaw = (req, _res, buf) => {
+  if (req.originalUrl && req.originalUrl.split("?")[0] === "/deploy/webhook") req.rawBody = buf;
+};
+app.use(express.json({ limit: "25mb", verify: _keepWebhookRaw })); // tradebook CSV imports (pnlHistory.js) can be several MB of JSON-wrapped text
 
 // ── Right-click suppression (UI_DISABLE_RIGHT_CLICK) ────────────────────────
 // Wraps res.send so the guard script lands in EVERY HTML page. The routes each
@@ -487,7 +492,7 @@ if (navigator.geolocation) {
 }
 
 // URL-encoded body parser for login form
-app.use(express.urlencoded({ extended: false }));
+app.use(express.urlencoded({ extended: false, verify: _keepWebhookRaw }));
 
 app.get("/login", (req, res) => {
   const secret = process.env.LOGIN_SECRET;
@@ -5010,7 +5015,41 @@ server.listen(PORT, HOST, () => {
 });
 
 // ── Position Reconciliation — detect orphaned positions after crash ──────────
+// Real positions the live harness believed it held (persisted by liveHarness on
+// every fill/exit). Accepts { mode: {symbol, qty} } and { "mode|symbol": {...} }
+// and one level of nesting ({ mode: { symbol: {...} } }). Never throws.
+function _readHarnessRealPositions() {
+  const file = path.join(require("os").homedir(), "trading-data", ".harness_real_positions.json");
+  let obj;
+  try {
+    if (!fs.existsSync(file)) return [];
+    obj = JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch (err) {
+    return [{ key: "(unreadable)", symbol: "?", qty: "?", error: err.message }];
+  }
+  const out = [];
+  const isRec = (v) => v && typeof v === "object" && v.symbol && Number(v.qty) !== 0 && v.qty != null;
+  for (const [k, v] of Object.entries(obj || {})) {
+    if (isRec(v)) { out.push({ key: k, symbol: v.symbol, qty: v.qty }); continue; }
+    if (v && typeof v === "object") {
+      for (const [k2, v2] of Object.entries(v)) if (isRec(v2)) out.push({ key: `${k}|${k2}`, symbol: v2.symbol, qty: v2.qty });
+    }
+  }
+  return out;
+}
+
+// Which broker a crash snapshot file belongs to (everything else is Fyers).
+const _ZERODHA_SNAPSHOT_FILES = new Set([
+  ".active_ema_rsi_st_position.json", ".active_ema9vwap_position.json",
+  ".active_rsi_pivot_st_position.json", ".active_bn_pivot_rsi_st_position.json",
+  ".active_ema_rsi_st_v2_position.json", ".active_bn_ema_rsi_st_v2_position.json",
+  ".active_simple930_position.json", ".active_ha_scalp_position.json",
+  ".active_prev_orb_scalp_position.json",
+]);
+
 async function reconcileOrphanedPositions() {
+  const _persist = require("./utils/positionPersist");
+  let _anySnapshots = false;
   try {
     // ── Check persisted position files first (bot was tracking a live position) ──
     const savedTrade = loadTradePosition();
@@ -5217,6 +5256,37 @@ async function reconcileOrphanedPositions() {
       sendTelegram(msg);
     }
 
+    // ── Corrupt snapshots (moved aside by positionPersist) — always alert ──
+    const _corrupt = typeof _persist.getCorruptSnapshots === "function" ? _persist.getCorruptSnapshots() : [];
+    if (_corrupt.length) {
+      const msg = `🚨 [STARTUP] ${_corrupt.length} CORRUPT crash-recovery snapshot(s) — moved aside, position state UNKNOWN:\n` +
+        _corrupt.map(c => `  ${path.basename(c.file)} → ${path.basename(c.movedTo)} (${c.error})`).join("\n") +
+        `\nA real position may be open. Check BOTH broker dashboards.`;
+      console.error(msg); sendTelegram(msg);
+    }
+
+    // ── Previous-day snapshots — kept by positionPersist until a broker check ──
+    const _staleAll = typeof _persist.getStaleSnapshots === "function" ? _persist.getStaleSnapshots() : [];
+    const _staleHasPos = (r) => {
+      const d = (r && r.data) || {};
+      return !!(d.position || (Array.isArray(d.positions) && d.positions.length) || (d.sessionMeta && d.sessionMeta.optionPosition));
+    };
+    const _staleZ = _staleAll.filter(r => _ZERODHA_SNAPSHOT_FILES.has(r.name));
+    const _staleF = _staleAll.filter(r => !_ZERODHA_SNAPSHOT_FILES.has(r.name));
+    const _staleLine = (r) => `  ${r.name} (saved ${r.savedDate || "?"})${_staleHasPos(r) ? " — HAD AN OPEN POSITION" : ""}`;
+    const _clearStale = (list) => { for (const r of list) { try { _persist.clearStaleSnapshot(r.file); } catch (_) {} } };
+
+    // ── Live-harness real positions (~/trading-data/.harness_real_positions.json) ──
+    // The harness persists what it believes it really holds; after a crash this is
+    // the only record of a harness-live position (paper snapshots don't say "real").
+    const _harnessRecs = _readHarnessRealPositions();
+    if (_harnessRecs.length) {
+      const msg = `🚨 [STARTUP] Live-harness REAL position record(s) found (crash recovery)!\n` +
+        _harnessRecs.map(r => r.error ? `  harness file unreadable: ${r.error}` : `  ${r.key}: ${r.symbol} qty=${r.qty}`).join("\n") +
+        `\nThe harness believed these were open at the broker. Verify on the broker dashboard.`;
+      console.warn(msg); sendTelegram(msg);
+    }
+
     // Only the retain-on-unreadable-book guard needs to fire when real orders are
     // possible. In paper-only mode (harness dry-run AND no native live enabled) a
     // snapshot never maps to a real broker position, so clearing it on an empty
@@ -5227,8 +5297,26 @@ async function reconcileOrphanedPositions() {
         (s) => (process.env[`${s}_LIVE_ENABLED`] || "").toLowerCase() === "true",
       );
 
+    // Count only snapshots that actually carry a position — loadTradePosition()
+    // returns the parsed file whenever it exists and is today's, even if the
+    // record has no `.position`.
+    const _zSnaps = [savedTrade, savedEma9Vwap, savedRsiPivotSt, savedBnPivotRsiSt, savedEmaRsiStV2, savedBnEmaRsiStV2, savedSimple930, savedHaScalp, savedPrevOrbScalp].filter(x => x && x.position).length;
+    const _zStalePos = _staleZ.filter(_staleHasPos).length;
+    const _zPending = _zSnaps + _zStalePos + _harnessRecs.length;
+    _anySnapshots = _anySnapshots || _zPending > 0;
+
     // ── Check broker positions (live API) ──
-    if (zerodha.isAuthenticated()) {
+    if (!zerodha.isAuthenticated()) {
+      // Previously skipped silently — a crash snapshot then sat unverified with no
+      // alert at all. Say so when there is something to verify.
+      if (_liveActive && _zPending > 0) {
+        const msg = `⚠️ [STARTUP] Zerodha is NOT authenticated — cannot read its book. Retaining ${_zSnaps + _zStalePos} crash snapshot(s)` +
+          (_harnessRecs.length ? ` + ${_harnessRecs.length} harness record(s)` : "") + ` UNVERIFIED. Log in and check the Zerodha dashboard.`;
+        console.warn(msg); sendTelegram(msg);
+      } else if (!_liveActive) {
+        _clearStale(_staleZ);   // paper-only boot: a previous-day snapshot never maps to a real position
+      }
+    } else {
       const zPos = await zerodha.getPositions();
       const zOpen = (zPos.net || zPos.day || []).filter(p =>
         p.quantity !== 0 && p.tradingsymbol && p.tradingsymbol.includes("NIFTY")
@@ -5236,6 +5324,7 @@ async function reconcileOrphanedPositions() {
       if (zOpen.length > 0) {
         const msg = `🚨 [STARTUP] Orphaned Zerodha position detected!\n` +
           zOpen.map(p => `  ${p.tradingsymbol}: qty=${p.quantity} pnl=₹${p.pnl || 0}`).join("\n") +
+          (_staleZ.length ? `\nPrevious-day snapshot(s) kept for reference:\n${_staleZ.map(_staleLine).join("\n")}` : "") +
           `\nBot is NOT tracking this. Check Zerodha dashboard and close manually if needed.`;
         console.warn(msg);
         sendTelegram(msg);
@@ -5245,16 +5334,14 @@ async function reconcileOrphanedPositions() {
         // (that would mask a real orphan). Only clear when the book was provably
         // readable (non-empty); otherwise retain + warn and re-check next boot.
         const _zReadable = ((zPos.net || []).length + (zPos.day || []).length) > 0;
-        // Count only snapshots that actually carry a position — loadTradePosition()
-        // returns the parsed file whenever it exists and is today's, even if the
-        // record has no `.position`, which used to trigger a spurious
-        // "retaining unverified snapshot" warning on an empty record.
-        const _zSnaps = [savedTrade, savedEma9Vwap, savedRsiPivotSt, savedBnPivotRsiSt, savedEmaRsiStV2, savedBnEmaRsiStV2, savedSimple930, savedHaScalp, savedPrevOrbScalp].filter(x => x && x.position).length;
-        if (_liveActive && _zSnaps > 0 && !_zReadable) {
-          const msg = `⚠️ [STARTUP] Zerodha book came back EMPTY — can't tell flat from an API error. Retaining ${_zSnaps} crash snapshot(s) UNVERIFIED (re-checking next boot). Check Zerodha dashboard.`;
+        if (_liveActive && _zPending > 0 && !_zReadable) {
+          const msg = `⚠️ [STARTUP] Zerodha book came back EMPTY — can't tell flat from an API error. Retaining ${_zSnaps + _zStalePos} crash snapshot(s)` +
+            (_harnessRecs.length ? ` + ${_harnessRecs.length} harness record(s)` : "") +
+            ` UNVERIFIED (re-checking next boot). Check Zerodha dashboard.`;
           console.warn(msg); sendTelegram(msg);
         } else {
           console.log("✅ [STARTUP] Zerodha: no orphaned positions.");
+          _clearStale(_staleZ);   // broker book proves flat — previous-day snapshots can go
           if (savedTrade) clearTradePosition();  // broker confirms no position — safe to clear stale file
           if (savedEma9Vwap) clearEma9VwapPosition(); // EMA9+VWAP trades Zerodha too — safe to clear
           if (savedRsiPivotSt) clearRsiPivotStPosition(); // RSI_PIVOT_ST places its orders on Zerodha as well
@@ -5268,7 +5355,24 @@ async function reconcileOrphanedPositions() {
       }
     }
 
-    if (fyersBroker.isAuthenticated()) {
+    const _ebHasPosF = !!(savedEarlyBird && (
+      (Array.isArray(savedEarlyBird.positions) && savedEarlyBird.positions.length) ||
+      (savedEarlyBird.sessionMeta && savedEarlyBird.sessionMeta.optionPosition)
+    ));
+    const _fStalePos = _staleF.filter(_staleHasPos).length;
+    const _fPending = [savedBbRsi, savedPA, savedOrb, savedTrendPb, savedTds].filter(x => x && x.position).length +
+      (_ebHasPosF ? 1 : 0) + _fStalePos + _harnessRecs.length;
+    _anySnapshots = _anySnapshots || _fPending > 0;
+
+    if (!fyersBroker.isAuthenticated()) {
+      if (_liveActive && _fPending > 0) {
+        const msg = `⚠️ [STARTUP] Fyers is NOT authenticated — cannot read its book. Retaining ${_fPending - _harnessRecs.length} crash snapshot(s)` +
+          (_harnessRecs.length ? ` + ${_harnessRecs.length} harness record(s)` : "") + ` UNVERIFIED. Log in and check the Fyers dashboard.`;
+        console.warn(msg); sendTelegram(msg);
+      } else if (!_liveActive) {
+        _clearStale(_staleF);
+      }
+    } else {
       const fPos = await fyersBroker.getPositions();
       // EarlyBird trades CASH EQUITY in individual stocks, so a NIFTY-only
       // filter would silently miss every one of its orphans. Match a NIFTY leg
@@ -5279,6 +5383,7 @@ async function reconcileOrphanedPositions() {
       if (fOpen.length > 0) {
         const msg = `🚨 [STARTUP] Orphaned Fyers position detected!\n` +
           fOpen.map(p => `  ${p.symbol}: qty=${p.netQty} pnl=₹${p.pl || 0}`).join("\n") +
+          (_staleF.length ? `\nPrevious-day snapshot(s) kept for reference:\n${_staleF.map(_staleLine).join("\n")}` : "") +
           `\nBot is NOT tracking this. Check Fyers dashboard and close manually if needed.`;
         console.warn(msg);
         sendTelegram(msg);
@@ -5298,11 +5403,14 @@ async function reconcileOrphanedPositions() {
         ));
         const _fSnaps = [savedBbRsi, savedPA, savedOrb, savedTrendPb, savedTds].filter(x => x && x.position).length +
           (_ebHasPos ? 1 : 0);
-        if (_liveActive && _fSnaps > 0 && !_fReadable) {
-          const msg = `⚠️ [STARTUP] Fyers book came back EMPTY — can't tell flat from an API error. Retaining ${_fSnaps} crash snapshot(s) UNVERIFIED (re-checking next boot). Check Fyers dashboard.`;
+        if (_liveActive && (_fSnaps + _fStalePos + _harnessRecs.length) > 0 && !_fReadable) {
+          const msg = `⚠️ [STARTUP] Fyers book came back EMPTY — can't tell flat from an API error. Retaining ${_fSnaps + _fStalePos} crash snapshot(s)` +
+            (_harnessRecs.length ? ` + ${_harnessRecs.length} harness record(s)` : "") +
+            ` UNVERIFIED (re-checking next boot). Check Fyers dashboard.`;
           console.warn(msg); sendTelegram(msg);
         } else {
           console.log("✅ [STARTUP] Fyers: no orphaned positions.");
+          _clearStale(_staleF);
           // BB_RSI + PA + ORB + Trend_PB + TREND_DAY_SCALP all trade on Fyers; broker-flat means any stale snapshot is safe to clear.
           if (savedBbRsi)   clearBbRsiPosition();  // broker confirms no position — safe to clear
           if (savedPA)      clearPAPosition();
@@ -5315,6 +5423,11 @@ async function reconcileOrphanedPositions() {
     }
   } catch (err) {
     console.warn(`⚠️ [STARTUP] Position reconciliation failed: ${err.message}`);
+    // A throw mid-reconcile (broker API error) leaves every snapshot unverified —
+    // that must not be silent when there was something to verify.
+    if (_anySnapshots) {
+      try { sendTelegram(`⚠️ [STARTUP] Position reconciliation FAILED (${err.message}) with crash snapshot(s) present — positions UNVERIFIED. Check both broker dashboards.`); } catch (_) {}
+    }
   }
 }
 
@@ -5345,6 +5458,7 @@ async function gracefulShutdown(signal) {
     if (sharedSocketState.getBnPivotRsiStMode && sharedSocketState.getBnPivotRsiStMode()) activeModes.push(sharedSocketState.getBnPivotRsiStMode());
     if (sharedSocketState.getEmaRsiStV2Mode && sharedSocketState.getEmaRsiStV2Mode()) activeModes.push(sharedSocketState.getEmaRsiStV2Mode());
     if (sharedSocketState.getBnEmaRsiStV2Mode && sharedSocketState.getBnEmaRsiStV2Mode()) activeModes.push(sharedSocketState.getBnEmaRsiStV2Mode());
+    if (sharedSocketState.getEarlyBirdMode && sharedSocketState.getEarlyBirdMode()) activeModes.push(sharedSocketState.getEarlyBirdMode());
 
     if (activeModes.length === 0) {
       // No Telegram here: with no live positions in play there is nothing the
@@ -5412,10 +5526,6 @@ async function gracefulShutdown(signal) {
       }
     }
 
-    // Belt-and-braces: drop every live harness after the sessions were stopped.
-    // Each route's stopSession() already releases its own, but an exception in one
-    // of them must not leave order hooks armed while the process winds down.
-    try { require("./services/liveHarness").uninstallHarness(); } catch (_) {}
 
     // Send Telegram alert SYNCHRONOUSLY (curl-based) so the message is
     // flushed before process.exit fires in 3-8s. An async https.request
@@ -5441,6 +5551,12 @@ async function gracefulShutdown(signal) {
     const waitMs = hasLive ? (3000 + _harnessTimeout + 2000) : 3000;
     console.log(`🔄 [SHUTDOWN] Waiting ${waitMs / 1000}s for exits to complete...`);
     setTimeout(() => {
+      // Belt-and-braces: drop every live harness only AFTER the drain wait. A
+      // stopSession() can resolve before its harness square-off (cancel SL →
+      // exit order) has finished, and that in-flight exit still needs the
+      // order hooks; stopSession() does NOT reliably uninstall them itself.
+      // Dropping them here guarantees nothing is left armed while we exit.
+      try { require("./services/liveHarness").uninstallHarness(); } catch (_) {}
       console.log("👋 [SHUTDOWN] Exiting.");
       process.exit(0);
     }, waitMs);

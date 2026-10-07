@@ -16,7 +16,11 @@ module.exports = {
       watch: false,
       autorestart: true,
       restart_delay: 5000,
-      kill_timeout: 8000,
+      // Must exceed app.js gracefulShutdown()'s live drain wait —
+      // 3000 + HARNESS_BROKER_TIMEOUT_MS (default 8000) + 2000 ≈ 13s — plus the
+      // awaited stopSession() square-offs before it. At 8000 PM2 SIGKILLed the
+      // process mid square-off. Raise this if HARNESS_BROKER_TIMEOUT_MS is raised.
+      kill_timeout: 20000,
       // Exit code 10 = our "config error, do not restart" sentinel (see
       // app.js EXIT_CONFIG_ERROR). Prevents PM2 from crash-looping the bot
       // — and spamming Telegram — when something like missing SSL certs

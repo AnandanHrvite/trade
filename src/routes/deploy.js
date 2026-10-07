@@ -8,6 +8,7 @@
 
 const express = require("express");
 const router  = express.Router();
+const crypto  = require("crypto");
 
 // In-memory deploy state
 let deployState = {
@@ -59,17 +60,48 @@ function currentState() {
 }
 
 /* ── Webhook receiver ──────────────────────────────────────────────────────── */
+// GitHub signs each delivery with HMAC-SHA256 of the raw body using the webhook
+// secret (X-Hub-Signature-256: sha256=<hex>). With DEPLOY_WEBHOOK_SECRET set,
+// unsigned / mis-signed requests are rejected; unset, the webhook stays open
+// (it only flips a status badge) and a warning is logged once.
+let _warnedNoSecret = false;
+function _verifyGithubSignature(req) {
+  const secret = String(process.env.DEPLOY_WEBHOOK_SECRET || "").trim();
+  if (!secret) {
+    if (!_warnedNoSecret) {
+      _warnedNoSecret = true;
+      console.warn("[deploy] ⚠️  DEPLOY_WEBHOOK_SECRET is not set — /deploy/webhook accepts unsigned requests. Set it to the GitHub webhook secret.");
+    }
+    return true;
+  }
+  const sig = String(req.headers["x-hub-signature-256"] || "");
+  if (!sig.startsWith("sha256=") || !req.rawBody) return false;
+  const expected = "sha256=" + crypto.createHmac("sha256", secret).update(req.rawBody).digest("hex");
+  const a = Buffer.from(sig), b = Buffer.from(expected);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
 router.post("/webhook", (req, res) => {
+  if (!_verifyGithubSignature(req)) {
+    console.warn("[deploy] webhook rejected — bad or missing X-Hub-Signature-256");
+    return res.sendStatus(401);
+  }
   const event  = req.headers["x-github-event"];
   const body   = req.body;
 
   // Only handle workflow_run events
   if (event !== "workflow_run") return res.sendStatus(204);
 
-  const run    = body.workflow_run;
+  // A webhook configured as application/x-www-form-urlencoded wraps the JSON
+  // in a `payload` field.
+  let payload = body;
+  if (payload && typeof payload.payload === "string") {
+    try { payload = JSON.parse(payload.payload); } catch (_) { return res.sendStatus(400); }
+  }
+  const run    = payload && payload.workflow_run;
   if (!run) return res.sendStatus(204);
 
-  const action = body.action; // requested | in_progress | completed
+  const action = payload.action; // requested | in_progress | completed
 
   if (action === "requested" || action === "in_progress") {
     deployState = {

@@ -31,12 +31,44 @@ router.get("/stream", (req, res) => {
   const history = logStore;
   res.write(`data: ${JSON.stringify({ type: "history", logs: history })}\n\n`);
 
+  // Backpressure: a slow / backgrounded client must not make every console.log
+  // buffer unboundedly in this socket. While the kernel buffer is full, drop
+  // live lines (counting them) and resume on 'drain' with a gap notice.
+  let blocked = false, dropped = 0, closed = false;
+  const send = (chunk) => {
+    if (closed) return;
+    if (blocked) { dropped++; return; }
+    if (!res.write(chunk)) blocked = true;
+  };
+  const onDrain = () => {
+    blocked = false;
+    if (dropped) {
+      const n = dropped; dropped = 0;
+      send(`data: ${JSON.stringify({ type: "log", log: { id: `gap_${Date.now()}`, time: new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false }), date: new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }), level: "warn", msg: `[logs] ${n} line(s) skipped — client was too slow` } })}\n\n`);
+    }
+  };
+  res.on("drain", onDrain);
+
   const onLog = (entry) => {
-    res.write(`data: ${JSON.stringify({ type: "log", log: entry })}\n\n`);
+    send(`data: ${JSON.stringify({ type: "log", log: entry })}\n\n`);
   };
 
+  // SSE comment heartbeat every 25s keeps proxies / load balancers from
+  // closing an idle stream (and surfaces a dead client as a write error).
+  const heartbeat = setInterval(() => send(`: ping ${Date.now()}\n\n`), 25000);
+  if (heartbeat.unref) heartbeat.unref();
+
+  const cleanup = () => {
+    if (closed) return;
+    closed = true;
+    clearInterval(heartbeat);
+    logEvents.off("log", onLog);
+    res.off("drain", onDrain);
+  };
   logEvents.on("log", onLog);
-  req.on("close", () => logEvents.off("log", onLog));
+  req.on("close", cleanup);
+  res.on("close", cleanup);
+  res.on("error", cleanup);
 });
 
 // ── Polling endpoint — reliable fallback (works with self-signed certs) ───────
