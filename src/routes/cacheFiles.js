@@ -383,8 +383,12 @@ router.get("/download", (req, res) => {
   fs.createReadStream(abs).pipe(res);
 });
 
+// Route an async handler's rejection to Express's error handler instead of an
+// unhandled rejection (which Telegrams the user).
+const safeAsync = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+
 // ── GET /cache-files/download-all — stream a group as .tar.gz ───────────────
-router.get("/download-all", async (req, res) => {
+router.get("/download-all", safeAsync(async (req, res) => {
   const key = String(req.query.group || "");
   if (!validGroup(key)) return res.status(400).send("bad group");
   const group = GROUP_BY_KEY[key];
@@ -406,7 +410,7 @@ router.get("/download-all", async (req, res) => {
   tar.stdin.on("error", () => {});
   tar.stdin.write(files.map(f => f.rel).join("\n") + "\n");
   tar.stdin.end();
-});
+}));
 
 // ── POST /cache-files/delete — delete one file (write op, gated) ────────────
 router.post("/delete", (req, res) => {
@@ -427,7 +431,7 @@ router.post("/delete", (req, res) => {
 });
 
 // ── POST /cache-files/delete-all — delete every file in a group (gated) ─────
-router.post("/delete-all", async (req, res) => {
+router.post("/delete-all", safeAsync(async (req, res) => {
   const key = String(req.query.group || req.body?.group || "");
   if (!validGroup(key)) return res.status(400).json({ success: false, error: "bad group" });
   const group = GROUP_BY_KEY[key];
@@ -448,7 +452,7 @@ router.post("/delete-all", async (req, res) => {
   }
   console.log(`[cache-files] delete-all group=${key}${tagFilter ? ` tag=${tagFilter}` : ""} removed=${deleted.length} failed=${failed.length}`);
   res.json({ success: failed.length === 0, group: key, tag: tagFilter || null, deleted, failed });
-});
+}));
 
 // ── POST /cache-files/clear-candles — wipe both historical-candle caches ────
 // The one-click version of "delete-all" on the two candle groups, called by the
