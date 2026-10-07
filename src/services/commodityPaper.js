@@ -38,6 +38,7 @@ const mcx          = require("./mcxContracts");
 const tradeGuards  = require("../utils/tradeGuards");
 const capitalPool  = require("../utils/capitalPool");
 const confirmCandle = require("../utils/confirmCandle");
+const mcxHolidays  = require("../utils/mcxHolidays");
 const { sendTelegram, canSend } = require("../utils/notify");
 
 const DATA_DIR = path.join(os.homedir(), "trading-data", "cmx");
@@ -638,6 +639,25 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     } catch (err) { return { ok: false, reason: `could not load candles (is the Fyers login fresh?): ${err.message}` }; }
     state.lastBarTime = state.candles.length ? state.candles[state.candles.length - 1].time : null;
 
+    // MCX holiday gate — weekday closures (full day, or the morning of an
+    // evening-only day). No calendar: if well past the latest session open the
+    // future has printed no bar and its quote shows no trade since that open,
+    // the session is not running. Any sign of activity vetoes it (see mcxHolidays).
+    const gate = { nowMs: Date.now(), sessStartMin: c.sessStart, sessEndMin: c.sessEnd, resMin: c.res, lastBarTimeSec: state.lastBarTime };
+    if (mcxHolidays.mcxSessionClosed(gate).closed) {
+      try {
+        const r = await fyers.getQuotes([state.series.future]);
+        const d = r && r.s === "ok" && (r.d || [])[0];
+        gate.quoteTradeSec = mcxHolidays.quoteTradeSec(d && d.v);
+      } catch (_) { /* no quote → bars alone decide */ }
+      const shut = mcxHolidays.mcxSessionClosed(gate);
+      if (shut.closed) {
+        closedUntil = shut.untilMs;
+        return { ok: false, reason: `MCX looks closed today — no trade in ${state.series.future} since ${fmtMins(shut.openMin)}; not polling until ${istDay(shut.untilMs)} ${istClock(shut.untilMs).slice(0, 5)} IST` };
+      }
+    }
+    closedUntil = 0;
+
     // Same-day open position from before a restart — carry on managing it.
     const saved = _readJson(ACTIVE_FILE, null);
     if (saved && saved.position) {
@@ -800,13 +820,17 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
 
   // CMX_AUTO_START: start by itself each weekday once the session is open —
   // unless switched off, or stopped by hand today. One try per 5 minutes.
-  let lastAutoTry = 0;
+  let lastAutoTry = 0, closedUntil = 0;   // closedUntil: MCX-holiday quiet period (ms), set by _start
   setInterval(() => {
     if (state.running || state.starting || !modeOn()) return;
     if (String(process.env.CMX_AUTO_START || "false").toLowerCase() !== "true") return;
     if (state.manualStopDay === istDay() || Date.now() - lastAutoTry < 300000) return;
     const c = cfg(), m = istNowMinutes(), dow = istDow();
     if (dow === 0 || dow === 6 || m < c.sessStart || m >= c.eodExit) return;
+    // A weekday MCX holiday was detected → quiet until the next session open.
+    // Within the first bars after an open, wait: too early to tell a holiday.
+    if (Date.now() < closedUntil) return;
+    if (mcxHolidays.inOpenGrace({ nowMs: Date.now(), sessStartMin: c.sessStart, sessEndMin: c.sessEnd, resMin: c.res })) return;
     lastAutoTry = Date.now();
     start().then((res) => { if (!res.ok) log(`⚠️ Auto-start failed: ${res.reason}`); });
   }, 30000).unref();
