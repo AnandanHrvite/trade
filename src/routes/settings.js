@@ -4212,8 +4212,12 @@ function showBackupModal() {
 // Refresh the list only while the modal is open.
 setInterval(function() {
   var m = document.getElementById('backupModal');
-  if (m && m.style.display === 'block') { loadBackups(); loadGdrive(); }
+  if (!document.hidden && m && m.style.display === 'block') { loadBackups(); loadGdrive(); }
 }, 60000);
+document.addEventListener('visibilitychange', function() {
+  var m = document.getElementById('backupModal');
+  if (!document.hidden && m && m.style.display === 'block') { loadBackups(); loadGdrive(); }
+});
 
 // Shows a Logout button only for a broker that actually holds a token right now.
 // /token-sync/status reads the same on-disk snapshot the Token Sync page does —

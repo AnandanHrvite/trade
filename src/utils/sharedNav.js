@@ -1049,7 +1049,9 @@ function toggleNavGroup(gid){
   }
 
   poll();
-  setInterval(poll,20000);
+  // Background tabs skip the fetch; one catch-up poll when the tab is shown again.
+  setInterval(function(){ if(!document.hidden) poll(); }, 20000);
+  document.addEventListener('visibilitychange', function(){ if(!document.hidden) poll(); });
 })();
 
 /* ── Broker socket health banner (auth failures, dropped feed) ────────────── */
@@ -1098,7 +1100,9 @@ function toggleNavGroup(gid){
       .catch(function(){ /* network blip — leave banner state as-is */ });
   }
   poll();
-  setInterval(poll, 10000);
+  // Background tabs skip the fetch; one catch-up poll when the tab is shown again.
+  setInterval(function(){ if(!document.hidden) poll(); }, 10000);
+  document.addEventListener('visibilitychange', function(){ if(!document.hidden) poll(); });
 })();
 
 /* ── Telegram delivery banner (alerts blocked / rate-limited / mis-configured) ─ */
@@ -1148,7 +1152,9 @@ function toggleNavGroup(gid){
       .catch(function(){ /* network blip — leave banner state as-is */ });
   }
   poll();
-  setInterval(poll, 15000);
+  // Background tabs skip the fetch; one catch-up poll when the tab is shown again.
+  setInterval(function(){ if(!document.hidden) poll(); }, 15000);
+  document.addEventListener('visibilitychange', function(){ if(!document.hidden) poll(); });
 })();
 
 /* ── Backup download-nag banner (stays until today's snapshot is downloaded) ─ */
@@ -1190,7 +1196,9 @@ function toggleNavGroup(gid){
       .catch(function(){ /* network blip — leave banner state as-is */ });
   }
   poll();
-  setInterval(poll, 30000);
+  // Background tabs skip the fetch; one catch-up poll when the tab is shown again.
+  setInterval(function(){ if(!document.hidden) poll(); }, 30000);
+  document.addEventListener('visibilitychange', function(){ if(!document.hidden) poll(); });
 })();
 
 /* ── Fixed-banner height, published as --banner-h ───────────────────────────

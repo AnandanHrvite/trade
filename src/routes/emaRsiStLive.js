@@ -4004,7 +4004,9 @@ async function manualEntry(side) {
 
   fetchChart();
   if (${tradeState.running}) {
-    setInterval(fetchChart, 4000);
+    // Background tabs skip the fetch; one catch-up refresh when the tab is shown again.
+    setInterval(function(){ if (!document.hidden) fetchChart(); }, 4000);
+    document.addEventListener('visibilitychange', function(){ if (!document.hidden) fetchChart(); });
   }
 
   window.addEventListener('resize', function() {
@@ -4234,7 +4236,9 @@ ${optionChart.optionChartScript({ dataUrl: '/ema_rsi_st-live/status/chart-data',
   }
 
   if (${tradeState.running}) {
-    _interval = setInterval(fetchAndUpdate, 2000);
+    // Background tabs skip the fetch; one catch-up refresh when the tab is shown again.
+    _interval = setInterval(function(){ if (!document.hidden) fetchAndUpdate(); }, 2000);
+    document.addEventListener('visibilitychange', function(){ if (!document.hidden && _interval) fetchAndUpdate(); });
   }
 })();
 </script>

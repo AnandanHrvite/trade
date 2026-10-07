@@ -1364,7 +1364,7 @@ async function exitPosition(strategy, btn, symbol) {
   } catch (e) {
     err = (e && e.message) || 'Network error';
   }
-  timer = setInterval(poll, 4000);
+  timer = setInterval(pollIfVisible, 4000);
 
   if (err) {
     btn.disabled = false; btn.textContent = orig;
@@ -1437,12 +1437,16 @@ async function copyDayLog(strategy, btn) {
 
 updateOpenLinks();
 poll();
-timer = setInterval(poll, 4000);
+// Background tabs skip the ~16-call fan-out; one catch-up poll when the tab is shown again.
+function pollIfVisible() { if (!document.hidden) poll(); }
+timer = setInterval(pollIfVisible, 4000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden && timer) poll(); });
 
 // When rendered at /, flip back to normal dashboard the moment no session is active.
 const AUTO_FLIP_BACK = ${autoFlipBack ? "true" : "false"};
 if (AUTO_FLIP_BACK) {
   setInterval(async () => {
+    if (document.hidden) return;
     try {
       const r = await fetch('/api/session-active', { cache:'no-store' });
       if (!r.ok) return;

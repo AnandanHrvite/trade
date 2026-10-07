@@ -1443,7 +1443,11 @@ async function orblManualEntry(side) {
     } catch (e) {}
   }
   fetchChart();
-  if (${state.running}) setInterval(fetchChart, 4000);
+  if (${state.running}) {
+    // Background tabs skip the fetch; one catch-up refresh when the tab is shown again.
+    setInterval(function(){ if (!document.hidden) fetchChart(); }, 4000);
+    document.addEventListener('visibilitychange', function(){ if (!document.hidden) fetchChart(); });
+  }
   window.addEventListener('resize', function(){ chart.applyOptions({ width: container.clientWidth }); });
 })();
 </script>
@@ -1598,7 +1602,7 @@ ${optionChart.optionChartScript({ dataUrl: '/orb-live/status/chart-data', id: 'o
   }
 
   renderTrades(${tradesJSON});  // paint existing trades on load (covers stopped/reloaded sessions)
-  ${state.running ? "var _it = setInterval(fetchAndUpdate, 2000); fetchAndUpdate();" : ""}
+  ${state.running ? "var _it = setInterval(function(){ if (!document.hidden) fetchAndUpdate(); }, 2000); fetchAndUpdate();" : ""}
   document.addEventListener('visibilitychange', function(){ if (document.visibilityState === 'visible' && ${state.running}) fetchAndUpdate(); });
 })();
 </script>

@@ -2756,7 +2756,9 @@ setRangeDefaults();
 refreshPreflight();
 refreshSettingsSourceUi();
 loadSessions();
-setInterval(refreshPreflight, 5000);
+// Background tabs skip the fetch; one catch-up refresh when the tab is shown again.
+setInterval(function(){ if (!document.hidden) refreshPreflight(); }, 5000);
+document.addEventListener('visibilitychange', function(){ if (!document.hidden) refreshPreflight(); });
 
 // React when the user toggles the Settings source radio
 const _settingsSourceSel = document.getElementById('settings-source');

@@ -471,7 +471,9 @@ async function poll() {
 }
 
 poll();
-setInterval(poll, 5000);
+// Background tabs skip the fetch; one catch-up refresh when the tab is shown again.
+setInterval(function(){ if (!document.hidden) poll(); }, 5000);
+document.addEventListener('visibilitychange', function(){ if (!document.hidden) poll(); });
 
 ${toastJS()}
 <\/script>

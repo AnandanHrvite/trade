@@ -291,7 +291,9 @@ async function stopSession() {
   }
 }
 refresh();
-setInterval(refresh, 3000);
+// Background tabs skip the fetch; one catch-up refresh when the tab is shown again.
+setInterval(function(){ if (!document.hidden) refresh(); }, 3000);
+document.addEventListener('visibilitychange', function(){ if (!document.hidden) refresh(); });
 </script>
 </body></html>`;
   res.send(html);
