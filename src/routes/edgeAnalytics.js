@@ -106,14 +106,27 @@ const MARKETS = ["NIFTY", "BANK NIFTY", "COMMODITY"];
 // Exit reasons carry the fill price ("Trail SL hit @ ₹22484.08"), so the raw text
 // makes one filter option per trade. Numbers become "#" so the picker and the
 // By Exit Reason table group by the rule that fired, not the price it fired at.
-// Only price-like numbers go (₹-prefixed, decimal, or 3+ digits): a percentage or
-// a small count is part of the rule itself ("Option stop 25%", "2-candle stop").
+// Price-like numbers go: ₹- or Rs-prefixed, decimal, 3+ digits, or a point count
+// ("35pt", "≈52pt"). A percentage or a small bare count is part of the rule itself
+// ("Option stop 25%", "2-candle stop"), and digits inside a word ("EMA9", an option
+// symbol) are never touched.
+const REASON_NUM_RE = /(?<![A-Za-z0-9.])(₹\s*|Rs\.?\s*)?\d+(?:,\d+)*(?:\.\d+)?/g;
 function reasonGroup(r) {
   const s = String(r == null ? "" : r).trim();
   if (!s || s === "\u2014") return "\u2014";
-  return s.replace(/(₹\s*)?\b\d[\d,]*(?:\.\d+)?\b(?!\s*%)/g, m =>
-            (m.charAt(0) === "₹" ? "₹#" : (/[.,]|\d{3}/.test(m) ? "#" : m)))
-          .replace(/\s+/g, " ").slice(0, 80);
+  return s.replace(REASON_NUM_RE, (m, cur, off, str) => {
+    const rest = str.slice(off + m.length);
+    if (/^\s*%/.test(rest)) return m;
+    if (cur) return "₹#";
+    if (/[.,]/.test(m) || /\d{3}/.test(m) || /^\s*pts?\b/i.test(rest)) return "#";
+    return m;
+  }).replace(/\s+/g, " ").slice(0, 120);
+}
+
+// JSON embedded in an inline <script>: a "</script>" (or a U+2028 line separator)
+// inside an exit reason would otherwise end the script block early.
+function jsonForScript(v) {
+  return JSON.stringify(v).replace(/</g, "\\u003c").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
 }
 
 function safeRead(p) {
@@ -136,9 +149,11 @@ function tradeRow(book, mode, date, t) {
   // Same formula the engines use for pnlPoints — recomputed only when the
   // engine did not record it (ORB, MCX), so every strategy can be compared.
   // MCX records the future's price as spotAtEntry/spotAtExit.
+  // The pair is taken together so an entry premium is never subtracted from an exit spot.
   let pts = round(t.pnlPoints, 2);
-  const eP = num(t.entryPrice) !== null ? num(t.entryPrice) : num(t.spotAtEntry);
-  const xP = num(t.exitPrice)  !== null ? num(t.exitPrice)  : num(t.spotAtExit);
+  const optPair = num(t.entryPrice) !== null && num(t.exitPrice) !== null;
+  const eP = optPair ? num(t.entryPrice) : num(t.spotAtEntry);
+  const xP = optPair ? num(t.exitPrice)  : num(t.spotAtExit);
   if (pts === null && eP !== null && xP !== null) {
     // PE gains as the underlying falls; a cash-equity SHORT is a real short
     // sale, so it too earns on the way down — both invert the subtraction.
@@ -478,10 +493,10 @@ ${multiSelectCSS()}
 <script>
 ${dateRangeJS()}
 ${multiSelectJS()}
-const ALL = ${JSON.stringify(trades)};
-const MODES      = ${JSON.stringify(enabled.map(x => ({ value: x.mode, label: x.label })))};
-const MODE_LABEL = ${JSON.stringify(Object.fromEntries(enabled.map(x => [x.mode, x.label])))};
-const MARKET_OF  = ${JSON.stringify(Object.fromEntries(enabled.map(x => [x.mode, groupOf(x.mode)])))};
+const ALL = ${jsonForScript(trades)};
+const MODES      = ${jsonForScript(enabled.map(x => ({ value: x.mode, label: x.label })))};
+const MODE_LABEL = ${jsonForScript(Object.fromEntries(enabled.map(x => [x.mode, x.label])))};
+const MARKET_OF  = ${jsonForScript(Object.fromEntries(enabled.map(x => [x.mode, groupOf(x.mode)])))};
 
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function inr(n){ const v=Math.round(n); return (v<0?'-':'')+'₹'+Math.abs(v).toLocaleString('en-IN'); }
@@ -566,7 +581,8 @@ function applyFilter(f){
 // Market button and the Exit / Hour lists follow the trades in scope, so the menu is
 // rebuilt in place. A box's tick is remembered by value across rebuilds: unticking
 // "EOD" on NIFTY, flipping to COMMODITY and back keeps it unticked. A value never
-// seen before arrives ticked, the same way every list first opens.
+// seen before arrives ticked, the same way every list first opens — unless the
+// list was set to None.
 const MS_MEM={};
 function msRebuild(id, items, onChange){
   const root=document.getElementById(id); if(!root) return;
@@ -574,14 +590,18 @@ function msRebuild(id, items, onChange){
   _msBoxes(root).forEach(b=>{ mem[b.value]=b.checked; });
   const allLabel=root.getAttribute('data-all-label')||'All';
   let h='<label class="ms-opt"><input type="checkbox" class="ms-all" checked/>'+esc(allLabel)+'</label><div class="ms-sep"></div>';
+  // After an explicit "None" (every remembered box unticked) a newly listed value
+  // arrives unticked too, so switching book or market cannot quietly undo it.
+  const vals=Object.keys(mem), noneSel=vals.length>0 && vals.every(v=>!mem[v]);
   for(const it of items){
-    const on=(it.value in mem)?mem[it.value]:true;
+    const on=(it.value in mem)?mem[it.value]:!noneSel;
     h+='<label class="ms-opt"'+(it.title?' title="'+esc(it.title)+'"':'')+'><input type="checkbox" value="'+esc(it.value)+'"'+(on?' checked':'')+'/>'+esc(it.label)+'</label>';
   }
   if(!items.length) h+='<div class="ms-opt" style="cursor:default;opacity:0.6">No trades in scope</div>';
   root.querySelector('.ms-menu').innerHTML=h;
   const all=root.querySelector('.ms-all');
-  all.addEventListener('change',()=>{ _msBoxes(root).forEach(b=>{ b.checked=all.checked; mem[b.value]=b.checked; }); _msPaint(root); onChange(); });
+  // All / None means every value, including ones listed in another scope.
+  all.addEventListener('change',()=>{ for(const k in mem) mem[k]=all.checked; _msBoxes(root).forEach(b=>{ b.checked=all.checked; mem[b.value]=b.checked; }); _msPaint(root); onChange(); });
   _msBoxes(root).forEach(b=>b.addEventListener('change',()=>{ mem[b.value]=b.checked; _msPaint(root); onChange(); }));
   _msPaint(root);
 }
@@ -798,7 +818,15 @@ function render(){
   document.getElementById('cntPill').textContent = arr.length+' trades';
   destroyCharts();
   const C=document.getElementById('content');
-  if(!arr.length){ C.innerHTML='<div class="empty">No '+f.book+' trades'+(f.mkt==='all'?'':' in '+esc(f.mkt))+' for this filter. Try widening the date range or switching book/market/strategy.</div>'; return; }
+  // Day patterns read the scope, not the cuts, so they stay on screen even when
+  // Outcome / Side / Exit / Hour leave nothing for the cards below.
+  const dpHTML=dayPatternsHTML(applyScope(f));
+  if(!arr.length){
+    C.innerHTML='<div class="empty">No '+f.book+' trades'+(f.mkt==='all'?'':' in '+esc(f.mkt))+' for this filter. Try widening the date range or switching book/market/strategy.</div>'
+      +(applyScope(f).length?dpHTML:'');
+    paintTable('dpCount'); paintTable('dpCap'); paintTable('dpShape');
+    return;
+  }
   const s=stats(arr);
 
   const cards=[
@@ -863,7 +891,7 @@ function render(){
      t:'Longest streak of losing days — the run your daily-loss cap and your nerves have to survive.'},
   ]);
 
-  h+=dayPatternsHTML(applyScope(f));
+  h+=dpHTML;
 
   h+='<div class="panel"><h3>Equity Curve (cumulative net P&L · trade-by-trade)</h3><div class="chart-wrap tall"><canvas id="eqChart"></canvas></div></div>';
 
@@ -1196,12 +1224,20 @@ function mcHTML(arr){
 // by entry clock here — "the 3rd trade of the day" must mean the same thing
 // whether it came from BB_RSI or ORB.
 const SEQ_ORDER=['1st','2nd','3rd','4th','5th+'];
+// Seconds break same-minute ties, so two strategies entering in one minute keep
+// their real order in the All-combined day view.
+function entrySecs(t){
+  const v=String(t||'');
+  if(/^\\d{4}-\\d{2}-\\d{2}T/.test(v)){ const d=new Date(v); return isNaN(d)?0:d.getUTCSeconds(); }
+  const m=v.match(/\\d{1,2}:\\d{2}:(\\d{2})/);
+  return m?+m[1]:0;
+}
 function byEntry(a,b){
   const ma=entryMins(a.entryTime), mb=entryMins(b.entryTime);
   if(ma===null&&mb===null) return 0;
   if(ma===null) return 1;
   if(mb===null) return -1;
-  return ma-mb;
+  return (ma-mb)||(entrySecs(a.entryTime)-entrySecs(b.entryTime));
 }
 function seqTable(arr){
   const byDay=new Map();
@@ -1257,8 +1293,8 @@ function dayPatternsHTML(scope){
   // losing trades that came after the day's first win
   let lostAfterWin=0,lostAfterWinRs=0;
   // "win, then only losses": a win followed by 1+ trades that all lost
-  let winThenLoss=0,winThenLossRs=0,winErased=0,winFollowed=0;
-  let firstWinDays=0,firstWinRestRed=0, firstLossDays=0,firstLossRecovered=0;
+  let winThenLoss=0,winThenLossRs=0,winErased=0,winFollowed=0,lossAfterWinDays=0;
+  let firstWinDays=0,firstWinMore=0,firstWinRestRed=0, firstLossDays=0,firstLossRecovered=0;
   let stopAtWin=0;
   for(const d of days){
     const ts=d.ts;
@@ -1272,16 +1308,19 @@ function dayPatternsHTML(scope){
       for(const t of after) if(t.pnl<0){ lostAfterWin++; lostAfterWinRs+=t.pnl; }
       if(after.length){
         winFollowed++;
+        if(after.some(t=>t.pnl<0)) lossAfterWinDays++;
         if(after.every(t=>t.pnl<0)){
           winThenLoss++; winThenLossRs+=after.reduce((a,t)=>a+t.pnl,0);
-          if(d.net<0) winErased++;
+          // erased = the win plus everything after it went net negative — an
+          // earlier loss (the L in L W L) must not count against the win
+          if(ts.slice(d.firstWin).reduce((a,t)=>a+t.pnl,0)<0) winErased++;
         }
       }
       stopAtWin+=ts.slice(0,d.firstWin+1).reduce((a,t)=>a+t.pnl,0);
     } else stopAtWin+=d.net;
     if(ts[0].pnl>0){
       firstWinDays++;
-      if(ts.length>1 && ts.slice(1).reduce((a,t)=>a+t.pnl,0)<0) firstWinRestRed++;
+      if(ts.length>1){ firstWinMore++; if(ts.slice(1).reduce((a,t)=>a+t.pnl,0)<0) firstWinRestRed++; }
     } else if(ts[0].pnl<0){
       firstLossDays++;
       if(d.net>0) firstLossRecovered++;
@@ -1294,14 +1333,15 @@ function dayPatternsHTML(scope){
      t:'The trade taken right after a winner on the same day: how often it won and what those trades made in total.'},
     {l:'Next trade after a loss',v:al?pct(alW,al)+' WR':'—',sub:al?al+' trades · '+inr(alNet):'no loss was followed',a:al?pc(alNet):'#3a5070',
      t:'The trade taken right after a loser on the same day. Compare with the card before it: is the next trade worse after a win or after a loss?'},
-    {l:'Losses after a win',v:String(lostAfterWin),sub:lostAfterWin?inr(lostAfterWinRs)+' lost after the day\\'s 1st win':'none',a:lostAfterWin?'#ef4444':'#10b981',
-     t:'Losing trades taken later on a day that had already booked a win.'},
+    {l:'Loss after a win',v:winFollowed?lossAfterWinDays+' / '+winFollowed+' days':'—',
+     sub:lostAfterWin?lostAfterWin+' losing trades · '+inr(lostAfterWinRs):(winFollowed?'no loss followed a win':'no win was followed'),a:lossAfterWinDays?'#ef4444':(winFollowed?'#10b981':'#3a5070'),
+     t:'Days where at least one losing trade came after the day\\'s first win (W L, W W L, L W L…) — out of all days where the first win was followed by more trades. The sub-line counts those losing trades and what they lost.'},
     {l:'Win, then only losses',v:winThenLoss+' / '+winFollowed+' days',sub:winThenLoss?inr(winThenLossRs)+' given back':'days a win was followed',a:winThenLoss?'#ef4444':'#10b981',
      t:'Days where every trade after the first win lost (e.g. W L L, or L W L L) — out of all days where the first win was followed by more trades.'},
-    {l:'Win erased',v:winThenLoss?winErased+' days':'—',sub:winThenLoss?'of those ended the day red':'',a:winErased?'#ef4444':'#3a5070',
-     t:'Of the "win, then only losses" days, how many finished in the red — the later losses wiped out the win and more.'},
-    {l:'1st trade won',v:firstWinDays+' days',sub:firstWinDays?firstWinRestRed+' had the rest of the day red':'',a:'#38bdf8',
-     t:'Days that opened with a winner, and how many of them then lost money on the trades after it.'},
+    {l:'Win erased',v:winThenLoss?winErased+' days':'—',sub:winThenLoss?'later losses beat the win':'',a:winErased?'#ef4444':'#3a5070',
+     t:'Of the "win, then only losses" days, how many had the losses after the win wipe out the win and more (counted from the win onward, so a loss before the win is not blamed on it).'},
+    {l:'1st trade won',v:firstWinDays+' days',sub:firstWinMore?firstWinRestRed+' of '+firstWinMore+' lost money after it':(firstWinDays?'none traded again':''),a:'#38bdf8',
+     t:'Days that opened with a winner. Sub-line: of those that traded again, how many lost money on the trades after the opening win.'},
     {l:'1st trade lost',v:firstLossDays+' days',sub:firstLossDays?firstLossRecovered+' recovered to a green day':'',a:'#38bdf8',
      t:'Days that opened with a loser, and how many still finished green.'},
     {l:'Stop at 1st win',v:inr(stopAtWin),sub:(stopDelta>=0?'+':'')+inr(stopDelta)+' vs actual',a:pc(stopDelta),
