@@ -16,6 +16,7 @@ const fs   = require("fs");
 const path = require("path");
 const {
   guardedCall, withRetry, withCautiousRetry, breakerStatus, safetyConfig,
+  isUncertainWriteError,
 } = require("../utils/brokerSafety");
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -203,7 +204,11 @@ function convertSymbol(fyersSymbol) {
 // Order placement
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function placeMarketOrder(fyersSymbol, side, qty, orderTag = "ALGO_LIVE", { isFutures = false } = {}) {
+// opts.isExit — a closing order: goes out even while the circuit breaker is OPEN.
+// Returns { success, orderId, raw, uncertain? }: uncertain:true means a transport
+// error (timeout / ECONNRESET / 5xx) after the request may have reached Kite —
+// the order MAY be live; callers must treat it as UNKNOWN, not as a rejection.
+async function placeMarketOrder(fyersSymbol, side, qty, orderTag = "ALGO_LIVE", { isFutures = false, isExit = false } = {}) {
   if (!isAuthenticated()) {
     throw new Error("Zerodha not authenticated. Complete Zerodha login first.");
   }
@@ -228,7 +233,7 @@ async function placeMarketOrder(fyersSymbol, side, qty, orderTag = "ALGO_LIVE", 
       withCautiousRetry(() => kite.placeOrder(kite.VARIETY_REGULAR, orderParams), {
         attempts: 2, baseMs: 200, label: "zerodha.placeOrder",
       }),
-    );
+    { bypassOpen: !!isExit });
     if (response && response.order_id) {
       console.log(`[ZerodhaBroker] Order SUCCESS — ${sideLabel} ${qty} × ${tradingsymbol} | OrderID: ${response.order_id}`);
       return { success: true,  orderId: response.order_id, raw: response };
@@ -237,8 +242,9 @@ async function placeMarketOrder(fyersSymbol, side, qty, orderTag = "ALGO_LIVE", 
       return { success: false, orderId: null, raw: response };
     }
   } catch (err) {
-    console.error(`[ZerodhaBroker] Order EXCEPTION — ${sideLabel} ${qty} × ${tradingsymbol}: ${err.message}`);
-    return { success: false, orderId: null, raw: { error: err.message } };
+    const uncertain = isUncertainWriteError(err);
+    console.error(`[ZerodhaBroker] Order EXCEPTION — ${sideLabel} ${qty} × ${tradingsymbol}: ${err.message}${uncertain ? " (OUTCOME UNKNOWN — order may be live)" : ""}`);
+    return { success: false, orderId: null, uncertain, raw: { error: err.message } };
   }
 }
 
@@ -321,7 +327,7 @@ async function placeEquityOrder(tradingsymbol, qty, { variety = "regular", trans
     return { success: false, orderId: null, raw: response || { error: "Kite returned no order_id" }, request: Object.assign({ variety }, orderParams) };
   } catch (err) {
     console.error(`[ZerodhaBroker] Equity order EXCEPTION — ${transactionType} ${qty} × ${sym}: ${err.message}`);
-    return { success: false, orderId: null, raw: { error: err.message || String(err) }, request: Object.assign({ variety }, orderParams) };
+    return { success: false, orderId: null, uncertain: isUncertainWriteError(err), raw: { error: err.message || String(err) }, request: Object.assign({ variety }, orderParams) };
   }
 }
 
@@ -406,7 +412,7 @@ async function placeSLMOrder(fyersSymbol, side, qty, triggerPrice, { isFutures =
     return { success: false, orderId: null, raw: response };
   } catch (err) {
     console.error(`[ZerodhaBroker] SL-M EXCEPTION — ${tradingsymbol}: ${err.message}`);
-    return { success: false, orderId: null, raw: { error: err.message } };
+    return { success: false, orderId: null, uncertain: isUncertainWriteError(err), raw: { error: err.message } };
   }
 }
 
@@ -435,7 +441,9 @@ async function modifySLMOrder(orderId, newTriggerPrice) {
 /**
  * Cancel an open SL-M order (before placing market exit).
  */
-async function cancelOrder(orderId) {
+// opts.isExit — cancelling a protective SL ahead of a square-off: bypasses an
+// OPEN breaker like the exit itself.
+async function cancelOrder(orderId, { isExit = false } = {}) {
   if (!isAuthenticated()) throw new Error("Zerodha not authenticated.");
   console.log(`[ZerodhaBroker] cancelOrder: ${orderId}`);
   try {
@@ -444,12 +452,12 @@ async function cancelOrder(orderId) {
       withCautiousRetry(() => kite.cancelOrder(kite.VARIETY_REGULAR, orderId), {
         attempts: 2, baseMs: 200, label: "zerodha.cancelOrder",
       }),
-    );
+    { bypassOpen: !!isExit });
     console.log(`[ZerodhaBroker] Order cancelled — ${orderId}`);
     return { success: true, raw: response };
   } catch (err) {
     console.error(`[ZerodhaBroker] Cancel EXCEPTION — ${orderId}: ${err.message}`);
-    return { success: false, raw: { error: err.message } };
+    return { success: false, uncertain: isUncertainWriteError(err), raw: { error: err.message } };
   }
 }
 

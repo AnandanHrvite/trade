@@ -20,6 +20,7 @@
 const fyers = require("../config/fyers");
 const {
   guardedCall, withRetry, withCautiousRetry, breakerStatus, safetyConfig,
+  isUncertainWriteError,
 } = require("../utils/brokerSafety");
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -65,10 +66,14 @@ async function _getPositions() {
  * @param {number} side - 1=BUY, -1=SELL
  * @param {number} qty - quantity
  * @param {string} orderTag - optional tag for tracking
- * @param {object} opts - { isFutures: bool }
- * @returns {{ success, orderId, raw }}
+ * @param {object} opts - { isFutures: bool, isExit: bool }
+ *   isExit — a closing order: goes out even while the circuit breaker is OPEN.
+ * @returns {{ success, orderId, raw, uncertain? }}
+ *   uncertain:true — transport error (timeout / ECONNRESET / 5xx) after the
+ *   request may have reached Fyers: the order MAY be live. Callers must treat it
+ *   as UNKNOWN, never as a clean rejection.
  */
-async function placeMarketOrder(fyersSymbol, side, qty, orderTag = "BB_RSI", { isFutures = false } = {}) {
+async function placeMarketOrder(fyersSymbol, side, qty, orderTag = "BB_RSI", { isFutures = false, isExit = false } = {}) {
   if (!isAuthenticated()) {
     throw new Error("Fyers not authenticated. Complete Fyers login first.");
   }
@@ -102,7 +107,7 @@ async function placeMarketOrder(fyersSymbol, side, qty, orderTag = "BB_RSI", { i
       withCautiousRetry(() => _placeOrder(orderParams), {
         attempts: 2, baseMs: 200, label: "fyers.place_order",
       }),
-    );
+    { bypassOpen: !!isExit });
 
     if (response && response.s === "ok" && response.id) {
       console.log(`[FyersBroker] Order SUCCESS — ${sideLabel} ${qty} × ${fyersSymbol} | OrderID: ${response.id}`);
@@ -115,10 +120,12 @@ async function placeMarketOrder(fyersSymbol, side, qty, orderTag = "BB_RSI", { i
       raw: response || { error: "Unknown response from Fyers" },
     };
   } catch (err) {
-    console.error(`[FyersBroker] Order EXCEPTION — ${sideLabel} ${qty} × ${fyersSymbol}: ${err.message}`);
+    const uncertain = isUncertainWriteError(err);
+    console.error(`[FyersBroker] Order EXCEPTION — ${sideLabel} ${qty} × ${fyersSymbol}: ${err.message}${uncertain ? " (OUTCOME UNKNOWN — order may be live)" : ""}`);
     return {
       success: false,
       orderId: null,
+      uncertain,
       raw: { error: err.message || String(err) },
     };
   }
@@ -168,7 +175,7 @@ async function placeSLMOrder(fyersSymbol, side, qty, triggerPrice, { isFutures =
     return { success: false, orderId: null, raw: response || { error: "Unknown" } };
   } catch (err) {
     console.error(`[FyersBroker] SL-M EXCEPTION — ${fyersSymbol}: ${err.message}`);
-    return { success: false, orderId: null, raw: { error: err.message } };
+    return { success: false, orderId: null, uncertain: isUncertainWriteError(err), raw: { error: err.message } };
   }
 }
 
@@ -229,7 +236,9 @@ async function getPositions() {
   }
 }
 
-async function cancelOrder(orderId) {
+// opts.isExit — cancelling a protective SL ahead of a square-off: bypasses an
+// OPEN breaker like the exit itself.
+async function cancelOrder(orderId, { isExit = false } = {}) {
   if (!isAuthenticated()) throw new Error("Fyers not authenticated");
   console.log(`[FyersBroker] cancelOrder: ${orderId}`);
   try {
@@ -237,14 +246,14 @@ async function cancelOrder(orderId) {
       withCautiousRetry(() => _cancelOrder(orderId), {
         attempts: 2, baseMs: 200, label: "fyers.cancel_order",
       }),
-    );
+    { bypassOpen: !!isExit });
     const ok = response && response.s === "ok";
     if (ok) console.log(`[FyersBroker] Order cancelled — ${orderId}`);
     else console.warn(`[FyersBroker] Cancel FAILED — ${orderId} | ${JSON.stringify(response).slice(0, 200)}`);
     return { success: ok, raw: response };
   } catch (err) {
     console.error(`[FyersBroker] Cancel EXCEPTION — ${orderId}: ${err.message}`);
-    return { success: false, raw: { error: err.message } };
+    return { success: false, uncertain: isUncertainWriteError(err), raw: { error: err.message } };
   }
 }
 
@@ -256,14 +265,14 @@ async function exitPosition(symbol) {
       withCautiousRetry(() => _exitPosition(symbol), {
         attempts: 2, baseMs: 200, label: "fyers.exit_position",
       }),
-    );
+    { bypassOpen: true });   // a square-off must never be trapped by the breaker
     const ok = response && response.s === "ok";
     if (ok) console.log(`[FyersBroker] Position exited — ${symbol}`);
     else console.warn(`[FyersBroker] Exit FAILED — ${symbol} | ${JSON.stringify(response).slice(0, 200)}`);
     return { success: ok, raw: response };
   } catch (err) {
     console.error(`[FyersBroker] Exit EXCEPTION — ${symbol}: ${err.message}`);
-    return { success: false, raw: { error: err.message } };
+    return { success: false, uncertain: isUncertainWriteError(err), raw: { error: err.message } };
   }
 }
 

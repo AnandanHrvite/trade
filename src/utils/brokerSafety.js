@@ -100,6 +100,43 @@ function isConnectPhaseError(err) {
       || msg.includes("dns");
 }
 
+// ── Infra-failure classifier (circuit breaker) ───────────────────────────────
+// Only transport / timeout / 5xx failures say "the broker is down". A rejection
+// (bad symbol, margin, RMS, freeze qty, token/permission, 4xx incl. 429) means the
+// broker answered — counting it would let a burst of ordinary rejects open the
+// breaker and then trap a live position behind it.
+const INFRA_MSG = [
+  "timeout", "timed out", "socket hang up", "network", "econnreset", "etimedout",
+  "econnrefused", "getaddrinfo", "eai_again", "epipe", "ehostunreach", "enetunreach",
+  "502", "503", "504", "bad gateway", "service unavailable", "gateway timeout",
+];
+function _httpStatus(err) {
+  const v = err && (err.status || err.statusCode || (err.response && err.response.status));
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+function isInfraFailure(err) {
+  if (!err) return false;
+  if (err.code === "CIRCUIT_OPEN") return false;
+  if (err.code && TRANSIENT_CODES.has(String(err.code).toUpperCase())) return true;
+  const st = _httpStatus(err);
+  if (st != null) return st >= 500;
+  const msg = (err.message || String(err)).toLowerCase();
+  return INFRA_MSG.some((needle) => msg.includes(needle));
+}
+
+// ── Uncertain-outcome classifier (writes) ────────────────────────────────────
+// A WRITE that failed with a transport error AFTER it may have reached the
+// broker (timeout, ECONNRESET, socket hang up, 5xx) has an UNKNOWN outcome: the
+// order may be live. Connect-phase errors (request never sent) and an open
+// breaker (never attempted) are definite failures, not uncertain ones.
+function isUncertainWriteError(err) {
+  if (!err) return false;
+  if (err.code === "CIRCUIT_OPEN") return false;
+  if (isConnectPhaseError(err)) return false;
+  return isInfraFailure(err);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // CircuitBreaker
 // ─────────────────────────────────────────────────────────────────────────────
@@ -268,18 +305,29 @@ async function withCautiousRetry(fn, { attempts = 2, baseMs = 200, label = "writ
  *     exceptions into {success:false} for its callers; the inner functions
  *     used with guardedCall throw on real errors and return on rejections.
  */
-async function guardedCall(brokerName, fn) {
+//
+// opts.bypassOpen — exits / square-offs / SL cancels: a breaker must never trap
+// us in a live position, so these go out even while it is OPEN. A bypassed call
+// does not consume the half-open probe budget; its outcome still feeds the
+// breaker (a success closes it, an infra failure counts).
+async function guardedCall(brokerName, fn, opts = {}) {
   const cb = breakers[brokerName];
-  if (cb && !cb.canPass()) {
+  const bypass = !!(opts && opts.bypassOpen);
+  if (cb && !bypass && !cb.canPass()) {
     const s = cb.status();
     throw new CircuitOpenError(brokerName, s.msUntilHalfOpen);
+  }
+  if (cb && bypass && cb.state !== STATE.CLOSED) {
+    console.warn(`[CircuitBreaker:${brokerName}] ${cb.state} — exit-side call bypassing the breaker`);
   }
   try {
     const result = await fn();
     if (cb) cb.onSuccess();
     return result;
   } catch (err) {
-    if (cb) cb.onFailure(err);
+    // Only transport / timeout / 5xx count toward tripping; rejections don't.
+    if (cb && isInfraFailure(err)) cb.onFailure(err);
+    else if (cb && cb.state === STATE.HALF_OPEN) cb.halfOpenInFlight = Math.max(0, cb.halfOpenInFlight - 1);
     throw err;
   }
 }
@@ -299,5 +347,7 @@ module.exports = {
   withCautiousRetry,
   isTransientNetwork,
   isConnectPhaseError,
+  isInfraFailure,
+  isUncertainWriteError,
   safetyConfig,
 };
