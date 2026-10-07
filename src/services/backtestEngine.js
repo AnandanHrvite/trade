@@ -130,7 +130,6 @@ async function fetchCandles(symbol, resolution, from, to) {
     : unique;
   const _dropped = unique.length - sessionOnly.length;
   console.log(`   ✅ Total candles fetched: ${sessionOnly.length}${_dropped ? ` (dropped ${_dropped} pre-open/post-close)` : ""}`);
-  if (global.gc) global.gc();
   return sessionOnly;
 }
 

@@ -2387,7 +2387,9 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     //    EC2 t3.micro guards:
     //      - line-by-line streaming → never materialises the full file
     //      - yield to event loop every YIELD_EVERY ticks → keeps HTTP responsive
-    //      - GC every GC_EVERY ticks (if --expose-gc) → bounds heap growth
+    //      - every GC_EVERY ticks, force a GC only if the heap is past
+    //        GC_HEAP_FRAC of its limit — an unconditional full GC every 2k
+    //        ticks (~27/day replayed) stalled the live engines sharing this loop
     //
     //    YIELD_EVERY=1 is critical for correct exit P&L: paper's option-LTP
     //    polling is a setTimeout chain. With short-delay collapse to 0ms,
@@ -2409,6 +2411,8 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     //    can freeze for 20+ seconds mid-trade in a long position.
     const YIELD_EVERY = 1;
     const GC_EVERY    = 2000;
+    const GC_HEAP_FRAC = 0.7;
+    const _heapLimit  = require("v8").getHeapStatistics().heap_size_limit;
     // Heartbeat: an EMA_RSI_ST day is tens of thousands of ticks and, while flat,
     // the paper engine logs nothing for minutes — making the Replay activity
     // pane look stopped. Emit a progress line every HEARTBEAT_EVERY ticks so
@@ -2472,7 +2476,8 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
 
         if (speed > 0) await new Promise(r => setTimeout(r, speed));
         else if (ticksReplayed % YIELD_EVERY === 0) await _yield();
-        if (global.gc && ticksReplayed % GC_EVERY === 0) global.gc();
+        if (global.gc && ticksReplayed % GC_EVERY === 0
+            && process.memoryUsage().heapUsed > _heapLimit * GC_HEAP_FRAC) global.gc();
       }
     } finally {
       rl.close();
