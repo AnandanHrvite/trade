@@ -110,7 +110,41 @@ function _freshState() {
     position: null, optionLtp: null, optionLtpUpdatedAt: null,
     log: [], _sessionId: null, _expiryDayBlocked: false,
     _ltpStaleLogged: false,   // one stale-premium warning per trade, not per process
+    // Today's EARLIER live sessions (restored on /start) — so a stop + restart cannot
+    // reset the daily loss cap / trade budget. sessionPnl stays this-session-only,
+    // because it is what gets saved (and added to totalPnl) at stop.
+    _priorDayPnl: 0, _priorDayTrades: [],
   };
+}
+
+// Realised P&L for the whole IST day (earlier sessions today + this one).
+function _dayPnl() {
+  return parseFloat(((state._priorDayPnl || 0) + (state.sessionPnl || 0)).toFixed(2));
+}
+
+// Today's saved live sessions of the SAME stream (dry-run vs real) as this one.
+function _todaysSavedSessions(dryRun) {
+  try {
+    const today = tradeLogger.istDateString(Date.now());
+    return (loadData().sessions || []).filter(x => x && x.date
+      && tradeLogger.istDateString(new Date(x.date).getTime()) === today
+      && !!x.isLive === !dryRun);
+  } catch (e) { log(`⚠️ Could not restore today's earlier sessions: ${e.message}`); return []; }
+}
+
+// ORB_MAX_DAILY_LOSS, NaN-safe: a malformed value used to make the cap compare
+// against NaN — always false — i.e. silently DISABLE the daily loss kill.
+const _DEFAULT_MAX_DAILY_LOSS = 3000;
+let _maxLossWarnedFor;
+function _orbMaxDailyLoss() {
+  const raw = process.env.ORB_MAX_DAILY_LOSS;
+  const v = parseFloat(raw || String(_DEFAULT_MAX_DAILY_LOSS));
+  if (Number.isFinite(v)) return v;
+  if (_maxLossWarnedFor !== raw) {
+    _maxLossWarnedFor = raw;
+    console.warn(`[orb-live] ORB_MAX_DAILY_LOSS="${raw}" is not a number — using ₹${_DEFAULT_MAX_DAILY_LOSS}`);
+  }
+  return _DEFAULT_MAX_DAILY_LOSS;
 }
 
 function log(msg) {
@@ -190,6 +224,8 @@ async function placeLiveBuy(side, sigSnapshot) {
 async function _placeLiveBuyImpl(side, sigSnapshot) {
   const spot = state.lastTickPrice;
   if (!spot || !side) return;
+  // Session this entry belongs to — re-checked after the awaits below (mirrors orbPaper).
+  const _sid = state._sessionId;
 
   // Mirrors orbPaper: the INSTRUMENT toggle decides WHAT is bought. Without this
   // a NIFTY_FUTURES session would place a real OPTION order.
@@ -251,26 +287,43 @@ async function _placeLiveBuyImpl(side, sigSnapshot) {
     }
   }
 
+  // /stop (or a stop + restart) may have run while we awaited the symbol resolve /
+  // quote above — placing the order now would open a REAL position no session
+  // tracks (an orphan). Same guard as orbPaper (paper is canonical).
+  if (state.position || !state.running || state._sessionId !== _sid) return;
+
   const qty = instrumentConfig.getLotQty();
+
+  // Futures are directional: CE = LONG (BUY), PE = SHORT (SELL) — exactly how paper
+  // books them (instrumentMode.directionFor). Options are always bought.
+  const _entrySide = (_isFut && side === "PE") ? -1 : 1;
+  const _entryVerb = _entrySide === 1 ? "BUY" : "SELL";
 
   // ── BROKER CALL ──────────────────────────────────────────────────────────
   let entryOrderId = null;
   const _entryDryRun = isDryRun();   // decided ONCE, then stamped on the position
   if (_entryDryRun) {
-    log(`🟡 [ORB-LIVE DRY-RUN] WOULD place BUY ${side} ${qty} × ${optInfo.symbol} @ market (ref ₹${optionEntryLtp})`);
+    log(`🟡 [ORB-LIVE DRY-RUN] WOULD place ${_entryVerb} ${side} ${qty} × ${optInfo.symbol} @ market (ref ₹${optionEntryLtp})`);
     entryOrderId = `dryrun:${Date.now()}`;
   } else {
       try {
-        const ord = await fyersBroker.placeMarketOrder(optInfo.symbol, 1, qty, "ORB-LIVE", { isFutures: _isFut });
+        const ord = await fyersBroker.placeMarketOrder(optInfo.symbol, _entrySide, qty, "ORB-LIVE", { isFutures: _isFut });
         if (!ord || !ord.success) {
-          log(`❌ [ORB-LIVE] BUY order failed: ${JSON.stringify(ord)}`);
+          log(`❌ [ORB-LIVE] ${_entryVerb} order failed: ${JSON.stringify(ord)}`);
           return;
         }
         entryOrderId = ord.orderId;
-        log(`🟢 [ORB-LIVE] BUY order placed — orderId=${entryOrderId}`);
+        log(`🟢 [ORB-LIVE] ${_entryVerb} order placed — orderId=${entryOrderId}`);
       } catch (e) {
-        log(`❌ [ORB-LIVE] BUY order threw: ${e.message}`);
+        log(`❌ [ORB-LIVE] ${_entryVerb} order threw: ${e.message}`);
         return;
+      }
+      // The order is filled — the position is real whatever happened meanwhile. If
+      // the session was stopped DURING the broker round-trip, still record + persist
+      // it below (so crash-recovery reconciles it) but make it impossible to miss.
+      if (!state.running || state._sessionId !== _sid) {
+        log(`🚨 [ORB-LIVE] Session stopped while the ${_entryVerb} was at the broker — ${optInfo.symbol} × ${qty} is OPEN. Square off manually.`);
+        sendTelegram(`🚨 ORB — session stopped mid-entry; ${optInfo.symbol} × ${qty} is OPEN at Fyers. Square off manually NOW.`).catch(() => {});
       }
   }
 
@@ -370,6 +423,12 @@ let _orbHardSLSymbol  = null;   // contract the resting SL-M belongs to (stackin
 let _orbHardSLPending = null;   // in-flight placement — cancel must await it
 let _orbHardSLTrigger = null;
 
+// Order side that CLOSES a position: a futures SHORT (PE) is closed with a BUY,
+// everything else (options, futures LONG) with a SELL.
+function _orbExitSide(pos) {
+  return (pos && pos.isFutures && pos.side === "PE") ? 1 : -1;
+}
+
 function isOrbHardSLEnabled() {
   return process.env.HARD_SL_ENABLED === "true" && instrumentConfig.INSTRUMENT !== "NIFTY_FUTURES";
 }
@@ -416,7 +475,7 @@ async function placeOrbHardSL() {
 
   const placement = (async () => {
     try {
-      const result = await fyersBroker.placeSLMOrder(pos.symbol, -1, pos.qty, trigger, { isFutures: !!pos.isFutures });
+      const result = await fyersBroker.placeSLMOrder(pos.symbol, _orbExitSide(pos), pos.qty, trigger, { isFutures: !!pos.isFutures });
       if (result && result.success) {
         _orbHardSLOrderId = result.orderId;
         _orbHardSLSymbol  = pos.symbol;
@@ -498,8 +557,17 @@ async function cancelOrbHardSL() {
 // (state.position is cleared only after the await) would place a SECOND SELL —
 // opening a naked short. Mirror the proven swing/bb_rsi _squareOffInFlight guard.
 let _squareOffInFlight = false;
-async function placeLiveSell(reason) {
+// A failed exit KEEPS the position (see _placeLiveSellImpl), so the per-tick exit
+// would otherwise re-fire on the very next tick. Tick-driven retries wait at least
+// EXIT_RETRY_GAP_MS after a failed attempt; explicit exits (manual /exit, session
+// stop, the EOD backup timer) pass { force: true } and bypass the gap.
+const EXIT_RETRY_GAP_MS = 5000;
+const EXIT_MAX_ATTEMPTS = 3;          // per placeLiveSell call, 2s apart (mirrors bbRsiLive squareOff)
+let _lastExitFailAt = 0;
+let _lastExitAlertAt = 0;
+async function placeLiveSell(reason, opts) {
   if (_squareOffInFlight || !state.position) return;
+  if (!(opts && opts.force) && _lastExitFailAt && Date.now() - _lastExitFailAt < EXIT_RETRY_GAP_MS) return;
   _squareOffInFlight = true;
   try {
     await _placeLiveSellImpl(reason);
@@ -519,37 +587,55 @@ async function _placeLiveSellImpl(reason) {
   // was in flight we would sell the same lot twice — a naked short.
   await cancelOrbHardSL();
 
+  // Futures SHORT (PE) closes with a BUY; options / futures LONG close with a SELL.
+  const _exitSide = _orbExitSide(pos);
+  const _exitVerb = _exitSide === 1 ? "BUY" : "SELL";
+
   let exitOrderId = null;
   if (_orderIsDryRun()) {
-    log(`🟡 [ORB-LIVE DRY-RUN] WOULD place SELL ${qty} × ${pos.symbol} @ market (ref ₹${exitOptLtp}) — reason: ${reason}`);
+    log(`🟡 [ORB-LIVE DRY-RUN] WOULD place ${_exitVerb} ${qty} × ${pos.symbol} @ market (ref ₹${exitOptLtp}) — reason: ${reason}`);
     exitOrderId = `dryrun:${Date.now()}`;
   } else {
-      try {
-        const ord = await fyersBroker.placeMarketOrder(pos.symbol, -1, qty, "ORB-LIVE-X", { isFutures: !!pos.isFutures });
-        if (!ord || !ord.success) {
-          log(`❌ [ORB-LIVE] SELL order failed: ${JSON.stringify(ord)}`);
-          sendTelegram(`🚨 ORB EXIT FAILED: ${pos.symbol} ${pos.side} × ${qty} — ${reason}. Broker rejected — check Fyers dashboard IMMEDIATELY!`).catch(() => {});
-        } else {
-          exitOrderId = ord.orderId;
-          log(`🔴 [ORB-LIVE] SELL order placed — orderId=${exitOrderId}`);
+      // Bounded retry (mirrors bbRsiLive squareOff): a stuck open position loses real money.
+      let _lastErr = null;
+      for (let attempt = 1; attempt <= EXIT_MAX_ATTEMPTS && !exitOrderId; attempt++) {
+        try {
+          const ord = await fyersBroker.placeMarketOrder(pos.symbol, _exitSide, qty, "ORB-LIVE-X", { isFutures: !!pos.isFutures });
+          if (!ord || !ord.success) {
+            _lastErr = `broker rejected: ${JSON.stringify(ord)}`;
+            log(`❌ [ORB-LIVE] ${_exitVerb} order failed (attempt ${attempt}/${EXIT_MAX_ATTEMPTS}): ${JSON.stringify(ord)}`);
+          } else {
+            exitOrderId = ord.orderId;
+            log(`🔴 [ORB-LIVE] ${_exitVerb} order placed — orderId=${exitOrderId}`);
+          }
+        } catch (e) {
+          _lastErr = `threw: ${e.message}`;
+          log(`❌ [ORB-LIVE] ${_exitVerb} order threw (attempt ${attempt}/${EXIT_MAX_ATTEMPTS}): ${e.message}`);
         }
-      } catch (e) {
-        log(`❌ [ORB-LIVE] SELL order threw: ${e.message}`);
-        sendTelegram(`🚨 ORB EXIT THREW: ${pos.symbol} ${pos.side} × ${qty} — ${e.message}. Check Fyers dashboard IMMEDIATELY!`).catch(() => {});
+        if (!exitOrderId && attempt < EXIT_MAX_ATTEMPTS) await new Promise(r => setTimeout(r, 2000));
       }
-      // The exit failed but we already cancelled the exchange stop, and the code
-      // below drops the position record regardless — that would leave a REAL,
-      // untracked long with no protection at all. Put the SL-M back before the
-      // record goes away, so the orphan at least still has a stop resting.
+      // The exit failed. The position is still OPEN at the broker, so it stays OPEN
+      // here too: no P&L is booked, state.position and the crash snapshot are kept,
+      // and the next tick (throttled by EXIT_RETRY_GAP_MS) / EOD timer / manual exit
+      // retries. We already cancelled the exchange stop — put it back.
       if (!exitOrderId) {
+        _lastExitFailAt = Date.now();
         await placeOrbHardSL().catch(() => {});
         // placeOrbHardSL no-ops when HARD_SL_ENABLED is off or the trigger is
         // unusable, so report what actually happened rather than assuming.
         log(_orbHardSLOrderId
-          ? `⚠️ [ORB-LIVE] Exit unconfirmed — exchange SL-M re-armed on the orphaned position. Verify on the Fyers dashboard.`
-          : `🚨 [ORB-LIVE] Exit unconfirmed AND no exchange SL could be placed — the position may be open and UNPROTECTED. Square off manually NOW.`);
+          ? `⚠️ [ORB-LIVE] Exit FAILED after ${EXIT_MAX_ATTEMPTS} attempts — position kept, exchange SL-M re-armed; retrying. Verify on the Fyers dashboard.`
+          : `🚨 [ORB-LIVE] Exit FAILED after ${EXIT_MAX_ATTEMPTS} attempts AND no exchange SL could be placed — the position is open and UNPROTECTED. Retrying; square off manually if it persists.`);
+        // Alert at most once a minute — retries continue on every throttled tick.
+        if (Date.now() - _lastExitAlertAt >= 60000) {
+          _lastExitAlertAt = Date.now();
+          sendTelegram(`🚨 ORB EXIT FAILED: ${pos.symbol} ${pos.side} × ${qty} — ${reason} (${_lastErr}). Position still OPEN — retrying; check Fyers dashboard IMMEDIATELY!`).catch(() => {});
+        }
+        return;
       }
   }
+  _lastExitFailAt = 0;
+  _lastExitAlertAt = 0;
 
   const _pnlRes = instrumentMode.computePnl({
     side: pos.side, entrySpot: pos.entrySpot, exitSpot,
@@ -694,7 +780,7 @@ function _checkExits(spotPrice) {
  * orbPaper._todaysExits() — paper is canonical, so the shape is copied, not invented.
  */
 function _todaysExits() {
-  return (state.sessionTrades || [])
+  return (state._priorDayTrades || []).concat(state.sessionTrades || [])
     .filter(t => t && t.exitReason)
     .map(t => ({ reason: t.exitReason, atUnixSec: Number(t.exitBarTime) || 0 }));
 }
@@ -719,8 +805,10 @@ async function onCandleClose(bar) {
   if (state.tradesTaken >= maxTrades) return; // expected, not a skip
 
   // Daily-loss kill — only bites while trade budget remains (maxTrades > 1).
-  const maxLoss = parseFloat(process.env.ORB_MAX_DAILY_LOSS || "3000");
-  if (state.sessionPnl <= -maxLoss) { skipLogger.appendSkipLog("orb", { gate: "daily_loss", reason: `sessionPnl ${state.sessionPnl} <= -${maxLoss}`, spot: _spot, _live: true }); return; }
+  // Day P&L, not session P&L: a stop + restart must not hand back a fresh budget.
+  const maxLoss = _orbMaxDailyLoss();
+  const _dayNet = _dayPnl();
+  if (_dayNet <= -maxLoss) { skipLogger.appendSkipLog("orb", { gate: "daily_loss", reason: `dayPnl ${_dayNet} <= -${maxLoss}`, spot: _spot, _live: true }); return; }
 
   // Portfolio-wide daily loss cap (across ALL strategies; default disabled).
   // Paper has always applied this; live did not, so an armed cap stopped paper
@@ -734,7 +822,7 @@ async function onCandleClose(bar) {
   }
 
   // Portfolio risk breaker — consecutive-losing-days / weekly-loss stop (live stream).
-  const _throttle = orbRiskState.getThrottle("orb-live", tradeLogger.istDateString(Date.now()), state.sessionPnl);
+  const _throttle = orbRiskState.getThrottle("orb-live", tradeLogger.istDateString(Date.now()), _dayPnl());
   if (_throttle.block) {
     log(`⏸️ Risk breaker: ${_throttle.reason}`);
     skipLogger.appendSkipLog("orb", { gate: "risk_throttle", reason: _throttle.reason, spot: _spot, _live: true });
@@ -850,6 +938,40 @@ function scheduleAutoStop() {
   }, minsLeft * 60 * 1000);
 }
 
+// ── EOD backup timer — wall-clock square-off at ORB_FORCED_EXIT ─────────────
+// The forced exit above is tick-driven: a feed that goes quiet near the close
+// (socket drop, no ticks) would leave a real position open past ORB_FORCED_EXIT.
+// This fires at the same IST time regardless of ticks (mirrors bbRsiLive /
+// emaRsiStLive). placeLiveSell's in-flight guard makes a double-fire harmless.
+let _eodBackupTimer = null;
+function _forcedExitMins() {
+  const raw = process.env.ORB_FORCED_EXIT || "15:15";
+  const [h, m] = raw.split(":").map(Number);
+  return h * 60 + (isNaN(m) ? 0 : m);
+}
+function scheduleEODBackup() {
+  clearEODBackup();
+  const stopMin = _forcedExitMins();
+  if (!Number.isFinite(stopMin)) return;
+  // Second-precision IST time-of-day (getISTMinutes truncates, which would fire up
+  // to 59s EARLY). IST is a fixed UTC+5:30, so this is server-TZ independent.
+  const msIntoIstDay = (Date.now() + 19800000) % 86400000;
+  const msUntil = stopMin * 60000 - msIntoIstDay;
+  if (msUntil <= 0) return;
+  _eodBackupTimer = setTimeout(() => {
+    _eodBackupTimer = null;
+    if (!state.position) return;
+    const raw = process.env.ORB_FORCED_EXIT || "15:15";
+    log(`🚨 [ORB-LIVE] EOD BACKUP TIMER — force exit at ${raw} IST (tick-based exit may have missed)`);
+    placeLiveSell(`EOD backup timer (${raw} IST)`, { force: true })
+      .catch(e => log(`❌ [ORB-LIVE] EOD backup exit error: ${e.message}`));
+  }, msUntil);
+  log(`⏰ [ORB-LIVE] EOD backup timer set — force exit in ${Math.round(msUntil / 60000)} min (${process.env.ORB_FORCED_EXIT || "15:15"} IST)`);
+}
+function clearEODBackup() {
+  if (_eodBackupTimer) { clearTimeout(_eodBackupTimer); _eodBackupTimer = null; }
+}
+
 // ── Routes ──────────────────────────────────────────────────────────────────
 
 router.get("/start", async (req, res) => {
@@ -892,6 +1014,15 @@ router.get("/start", async (req, res) => {
   state.sessionStart = new Date().toISOString();
   state._sessionId = `orb-live:${Date.now()}`;
   state._expiryDayBlocked = _expiryBlocked;
+  // Restore today's earlier sessions so the daily loss cap and trade budget survive
+  // a stop + restart (they used to reset to zero on every /start).
+  {
+    const _prior = _todaysSavedSessions(isDryRun());
+    state._priorDayPnl = parseFloat(_prior.reduce((a, x) => a + (Number(x.pnl) || 0), 0).toFixed(2));
+    state._priorDayTrades = _prior.reduce((a, x) => a.concat(Array.isArray(x.trades) ? x.trades : []), []);
+    state.tradesTaken = state._priorDayTrades.length;
+    if (_prior.length) log(`♻️ Restored today's earlier live sessions — ${state.tradesTaken} trade(s), P&L ₹${state._priorDayPnl} count toward today's limits`);
+  }
 
   // Register ORB_LIVE in sharedSocketState — extend canStart if not present
   if (typeof sharedSocketState.setOrbActive === "function") sharedSocketState.setOrbActive("ORB_LIVE");
@@ -925,6 +1056,7 @@ router.get("/start", async (req, res) => {
   if (socketManager.isRunning()) socketManager.addCallback(CALLBACK_ID, onTick, log);
   else { socketManager.start(NIFTY_INDEX_SYMBOL, () => {}, log); socketManager.addCallback(CALLBACK_ID, onTick, log); }
   scheduleAutoStop();
+  scheduleEODBackup();
   const dryStr = isDryRun() ? "DRY-RUN" : "🚨 REAL ORDERS";
   log(`🟢 [ORB-LIVE ${dryStr}] Session started`);
   notifyStarted({
@@ -951,7 +1083,7 @@ async function stopSession() {
   if (!state.running) return;
   state.running = false;
   if (state.position) {
-    try { await awaitExit(placeLiveSell("Session stopped"), "ORB-LIVE"); }
+    try { await awaitExit(placeLiveSell("Session stopped", { force: true }), "ORB-LIVE"); }
     catch (e) {
       log(`⚠️ ${e.message}`);
       sendTelegram(`🚨 ORB EXIT NOT CONFIRMED on session stop — ${e.message}`).catch(() => {});
@@ -967,6 +1099,7 @@ async function stopSession() {
   if (typeof sharedSocketState.clearOrb === "function") sharedSocketState.clearOrb();   // clear OWN mode first (else socket never stops → leak)
   if (!sharedSocketState.isAnyActive() && socketManager.isRunning()) socketManager.stop();
   if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
+  clearEODBackup();
   if (state.sessionTrades.length) {
     try {
       const data = loadData();
@@ -977,7 +1110,8 @@ async function stopSession() {
     } catch (e) { log(`⚠️ Save failed: ${e.message}`); }
   }
   // Record today's net for the risk breaker (separate live P&L stream).
-  try { orbRiskState.recordDay("orb-live", tradeLogger.istDateString(Date.now()), state.sessionPnl); } catch (_) {}
+  // recordDay OVERWRITES the day, so pass the day's cumulative net, not this session's.
+  try { orbRiskState.recordDay("orb-live", tradeLogger.istDateString(Date.now()), _dayPnl()); } catch (_) {}
   log("🔴 Session stopped");
   notifyDayReport({ mode: `ORB-LIVE ${isDryRun() ? "(DRY-RUN)" : ""}`, sessionTrades: state.sessionTrades, sessionPnl: state.sessionPnl, sessionStart: state.sessionStart });
 }
@@ -988,7 +1122,7 @@ router.get("/stop", async (req, res) => { await stopSession(); res.redirect("/or
 // user saw the position still open and had to refresh.
 router.get("/exit", async (req, res) => {
   if (state.position) {
-    try { await awaitExit(placeLiveSell("Manual exit"), "ORB-LIVE"); }
+    try { await awaitExit(placeLiveSell("Manual exit", { force: true }), "ORB-LIVE"); }
     catch (e) { log(`⚠️ ${e.message}`); }
   }
   res.redirect("/orb-live/status");
@@ -1033,7 +1167,7 @@ router.get("/status/data", (req, res) => {
   const winRate = state.sessionTrades.length ? ((wins / state.sessionTrades.length) * 100).toFixed(1) : null;
   res.json({
     running: state.running, dryRun: isDryRun(),
-    sessionPnl: state.sessionPnl, tradesTaken: state.tradesTaken,
+    sessionPnl: state.sessionPnl, dayPnl: _dayPnl(), tradesTaken: state.tradesTaken,
     sessionTrades: state.sessionTrades.slice(-50), log: state.log.slice(-100),
     tickCount: state.tickCount, lastTickPrice: state.lastTickPrice, candles: state.candles.length,
     currentBar: state.currentBar, sessionStart: state.sessionStart,
@@ -1109,11 +1243,11 @@ router.get("/status", (req, res) => {
   const _vixStrongOnly = vixFilter.getVixStrongOnly("orb");
   // Effective budget, matching the gate — see the note in orbPaper.
   const _maxTrades = orbStrategy.reentryPlan(_todaysExits(), parseInt(process.env.ORB_MAX_DAILY_TRADES || "1", 10)).maxTrades;
-  const _maxLoss   = parseFloat(process.env.ORB_MAX_DAILY_LOSS || "3000");
+  const _maxLoss   = _orbMaxDailyLoss();
   const _forcedExit = process.env.ORB_FORCED_EXIT || "15:15";
   const _orStart = process.env.ORB_RANGE_START || "09:15";
   const _orEnd   = process.env.ORB_RANGE_END   || "09:30";
-  const dailyLossHit = state.sessionPnl <= -_maxLoss;
+  const dailyLossHit = _dayPnl() <= -_maxLoss;
 
   const pnlColor = (n) => (n || 0) >= 0 ? "#10b981" : "#ef4444";
 
@@ -1535,7 +1669,7 @@ ${optionChart.optionChartScript({ dataUrl: '/orb-live/status/chart-data', id: 'o
       if (orValEl) orValEl.textContent = (d.orh && d.orl) ? d.orl + '/' + d.orh : '—';
       setText('ajax-or-sub', d.orh && d.orl ? (d.rangePts + ' pts · ${_orStart}–${_orEnd}') : '${_orStart}–${_orEnd} IST');
 
-      var dlossHit = (d.sessionPnl || 0) <= -_maxLoss;
+      var dlossHit = (d.dayPnl != null ? d.dayPnl : (d.sessionPnl || 0)) <= -_maxLoss;
       var dlEl = document.getElementById('ajax-daily-loss-val');
       if (dlEl) dlEl.style.color = dlossHit ? '#ef4444' : '#10b981';
       var dlSub = document.getElementById('ajax-daily-loss-sub');

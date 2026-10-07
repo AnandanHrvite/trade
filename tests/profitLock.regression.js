@@ -415,9 +415,17 @@ check("the native LIVE engines honour it too", () => {
   // Most live trading runs through the harness, which literally runs the paper
   // engine — so it inherits the lock for free. These four have their own tick
   // loops and do not, which is exactly why they can silently drift from paper.
-  for (const f of ["emaRsiStLive.js", "bbRsiLive.js", "paLive.js"]) {
+  for (const f of ["emaRsiStLive.js", "bbRsiLive.js"]) {
     const src = decomment(read(`routes/${f}`));
     assert.ok(/checkProfitLock/.test(src), `${f} never calls checkProfitLock — live would drift from paper`);
+  }
+  // PA is the exception: paPaper (canonical) does NOT apply the lock — it is in
+  // ENGINES_WITHOUT_OPTION_POSITIONS — so paLive must not either, or live closes
+  // real trades paper keeps open. Parity, not presence, is the invariant.
+  {
+    const paperHas = /checkProfitLock/.test(decomment(read("routes/paPaper.js")));
+    const liveHas  = /checkProfitLock/.test(decomment(read("routes/paLive.js")));
+    assert.strictEqual(liveHas, paperHas, `paLive.js ${liveHas ? "calls" : "skips"} checkProfitLock but paPaper.js ${paperHas ? "calls" : "skips"} it — live would drift from paper`);
   }
   // ORB live goes through the shared orbExits module.
   assert.ok(/checkProfitLock/.test(decomment(read("strategies/orbExits.js"))));

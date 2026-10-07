@@ -52,20 +52,53 @@ const skipLogger = require("../utils/skipLogger");
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
 const CALLBACK_ID = "PA_LIVE";
 
-// ── Module-level config ─────────────────────────────────────────────────────
-const PA_RES            = parseInt(process.env.TRADE_RESOLUTION || "5", 10);
-const _PA_MAX_TRADES    = parseInt(process.env.PA_MAX_DAILY_TRADES || "30", 10);
-const _PA_MAX_LOSS      = parseFloat(process.env.PA_MAX_DAILY_LOSS || "2000");
-const _PA_PAUSE_CANDLES = parseInt(process.env.PA_SL_PAUSE_CANDLES || "2", 10);
-const _PA_BE_TRIGGER    = parseFloat(process.env.PA_BREAKEVEN_TRIGGER || "300"); // ₹ peak profit to lift SL to breakeven (0 = off)
-const _PA_BE_BUFFER     = parseFloat(process.env.PA_BREAKEVEN_BUFFER || "1");    // spot pts above (CE) / below (PE) entry for the BE SL
+// ── Module-level config (re-read at /start, mirroring paPaper._refreshConfig) ──
+// These used to be `const`s frozen at module load, so a Settings save never
+// reached a running process: live kept the old caps/times while paper (which
+// re-reads at /start) used the new ones.
+//
+// NaN-safe: a malformed value (e.g. "2k" or "") used to parse to NaN, and every
+// comparison against NaN is false — `sessionPnl <= -NaN` never trips, so the
+// daily loss cap and max-trades cap silently disarmed on a REAL-money engine.
+// Fall back to the default and warn instead.
+function _envNum(key, def, parse) {
+  const raw = process.env[key];
+  if (raw === undefined || raw === "") return def;
+  const v = parse(raw);
+  if (!Number.isFinite(v)) {
+    console.warn(`⚠️ [PA-LIVE] ${key}="${raw}" is not a number — using default ${def}`);
+    return def;
+  }
+  return v;
+}
+const _int   = (s) => parseInt(s, 10);
+const _float = (s) => parseFloat(s);
+
+let PA_RES;
+let _PA_MAX_TRADES;
+let _PA_MAX_LOSS;
+let _PA_PAUSE_CANDLES;
+let _PA_BE_TRIGGER;
+let _PA_BE_BUFFER;
+let _STOP_MINS;
+let _ENTRY_STOP_MINS;
+let _PA_START_MINS;
+function _refreshConfig() {
+  PA_RES            = _envNum("TRADE_RESOLUTION",     5,    _int);
+  _PA_MAX_TRADES    = _envNum("PA_MAX_DAILY_TRADES",  30,   _int);
+  _PA_MAX_LOSS      = _envNum("PA_MAX_DAILY_LOSS",    2000, _float);
+  _PA_PAUSE_CANDLES = _envNum("PA_SL_PAUSE_CANDLES",  2,    _int);
+  _PA_BE_TRIGGER    = _envNum("PA_BREAKEVEN_TRIGGER", 300,  _float); // ₹ peak profit to lift SL to breakeven (0 = off)
+  _PA_BE_BUFFER     = _envNum("PA_BREAKEVEN_BUFFER",  1,    _float); // spot pts above (CE) / below (PE) entry for the BE SL
+  _STOP_MINS        = parseTimeToMinutes(process.env.TRADE_STOP_TIME, "15:30");
+  _ENTRY_STOP_MINS  = parseTimeToMinutes(process.env.PA_ENTRY_END, "14:30");
+  _PA_START_MINS    = parseTimeToMinutes(process.env.PA_ENTRY_START, "09:21");
+}
+_refreshConfig();
 
 // ── Previous day OHLC (fetched on session start) ────────────────────
 let _prevDayOHLC     = null;
 let _prevPrevDayOHLC = null;
-
-const _STOP_MINS       = parseTimeToMinutes(process.env.TRADE_STOP_TIME, "15:30");
-const _ENTRY_STOP_MINS = parseTimeToMinutes(process.env.PA_ENTRY_END, "14:30");
 
 const getISTMinutes = _getISTMinutesReal;
 const fastISTTime   = _fastISTTime;
@@ -81,29 +114,55 @@ function ensureDir() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
+// Atomic write: a crash / PM2 restart mid-write used to leave a truncated
+// pa_live_trades.json, which the loader then read as "no sessions" — and the
+// next save overwrote the whole real-money trade history with one session.
+function _writePADataAtomic(data) {
+  ensureDir();
+  const tmp = SL_FILE + ".tmp";
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
+  fs.renameSync(tmp, SL_FILE);
+}
+
+// Returns the parsed file, or null when it exists but cannot be parsed. On a
+// parse failure the bad file is copied aside as `.corrupt-<timestamp>` and the
+// user is alerted; callers must NOT write when this returns null, or they
+// would replace the history with an empty book.
 function loadPAData() {
   ensureDir();
   if (!fs.existsSync(SL_FILE)) {
     const initial = { sessions: [] };
-    fs.writeFileSync(SL_FILE, JSON.stringify(initial, null, 2));
+    _writePADataAtomic(initial);
     return initial;
   }
-  try { return JSON.parse(fs.readFileSync(SL_FILE, "utf-8")); }
-  catch (_) { return { sessions: [] }; }
+  try {
+    const data = JSON.parse(fs.readFileSync(SL_FILE, "utf-8"));
+    if (!data || !Array.isArray(data.sessions)) throw new Error("missing sessions[]");
+    return data;
+  } catch (err) {
+    const backup = `${SL_FILE}.corrupt-${Date.now()}`;
+    try { fs.copyFileSync(SL_FILE, backup); } catch (_) {}
+    console.error(`🚨 [PA-LIVE] ${SL_FILE} is unreadable (${err.message}) — backed up to ${backup}; refusing to overwrite it`);
+    sendTelegram(`🚨 PA-LIVE trade history file is corrupt (${err.message}). Backed up to ${path.basename(backup)} — sessions will NOT be saved until it is repaired.`).catch(() => {});
+    return null;
+  }
 }
 
 function savePASession() {
   if (!state.sessionTrades || state.sessionTrades.length === 0) return;
   try {
     const data = loadPAData();
+    if (!data) {
+      log(`🚨 [PA-LIVE] Session NOT saved — trade file is corrupt (see backup). ${state.sessionTrades.length} trades, PnL: ₹${state.sessionPnl}: ${JSON.stringify(state.sessionTrades)}`);
+      return;
+    }
     data.sessions.push({
       date:     state.sessionStart,
       strategy: paStrategy.NAME,
       pnl:      state.sessionPnl,
       trades:   state.sessionTrades,
     });
-    ensureDir();
-    fs.writeFileSync(SL_FILE, JSON.stringify(data, null, 2));
+    _writePADataAtomic(data);
     log(`💾 [PA-LIVE] Session saved — ${state.sessionTrades.length} trades, PnL: ₹${state.sessionPnl}`);
   } catch (err) {
     log(`⚠️ [PA-LIVE] Save failed: ${err.message}`);
@@ -133,6 +192,30 @@ let state = {
   _entryPending:  false,
 };
 
+// ── Day-level caps across restarts ──────────────────────────────────────────
+// /start resets state, so a Stop + Start (or a PM2 restart) used to zero the
+// daily loss and trade count — a restart after hitting PA_MAX_DAILY_LOSS re-armed
+// a full fresh budget of real-money losses. Earlier sessions saved TODAY are
+// kept in _priorDayPnl / _priorDayTrades (NOT merged into sessionTrades, which
+// would then be saved a second time) and added in by the cap checks.
+function _istDay(ms) { return new Date(ms).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }); }
+function _loadTodayPriorSessions() {
+  const today = _istDay(Date.now());
+  let pnl = 0, trades = 0;
+  const data = loadPAData();
+  if (!data) return { pnl, trades, ok: false };
+  for (const s of data.sessions) {
+    const t = s && s.date ? Date.parse(s.date) : NaN;
+    if (!Number.isFinite(t) || _istDay(t) !== today) continue;
+    const p = Number(s.pnl);
+    if (Number.isFinite(p)) pnl += p;
+    trades += Array.isArray(s.trades) ? s.trades.length : 0;
+  }
+  return { pnl: parseFloat(pnl.toFixed(2)), trades, ok: true };
+}
+function _dayPnl()        { return (state.sessionPnl || 0) + (state._priorDayPnl || 0); }
+function _dayTradeCount() { return state.sessionTrades.length + (state._priorDayTrades || 0); }
+
 function istNow() { return formatISTTimestamp(Date.now()); }
 
 function log(msg) {
@@ -144,7 +227,7 @@ function log(msg) {
 
 function getBucketStart(unixMs) { return _getBucketStartRaw(unixMs, PA_RES); }
 
-const _PA_START_MINS = parseTimeToMinutes(process.env.PA_ENTRY_START, "09:21");
+// _PA_START_MINS is declared and populated by _refreshConfig() above
 
 function isMarketHours() {
   const total = getISTMinutes();
@@ -402,6 +485,13 @@ function verifyOrderFill(orderId, label) {
 let _orderInFlight     = false;
 let _squareOffInFlight = false;
 
+// Session generation (mirrors paPaper's _entryGen). Bumped synchronously by
+// /start and stopSession. An async entry path captures it before its first
+// await and re-checks it right before the broker call: a /stop (or stop +
+// restart) during the symbol / spread-quote await would otherwise place a REAL
+// order on a dead session that nothing tracks or exits.
+let _entryGen = 0;
+
 // DRY-RUN: this route used to call Fyers unconditionally — it honoured NEITHER
 // the global LIVE_HARNESS_DRY_RUN kill-switch NOR PA_LIVE_ENABLED, so simply
 // opening /pa-live/start placed real money orders. Now every broker call in this
@@ -423,8 +513,13 @@ function _simOrder(prefix) {
 // Label for Telegram/notify so a simulated fill can never read as a real one.
 function _modeLabel() { return _orderIsDryRun() ? "PA-LIVE (DRY-RUN)" : "PA-LIVE"; }
 
-async function placeOrder(fyersSymbol, side, qty) {
-  if (_orderInFlight) {
+// opts.isExit: the duplicate guard exists to stop a double ENTRY. It also held
+// for 5s after every order, so an exit fired within 5s of the entry (or a retry
+// of a failed exit) was refused as a "duplicate" — and squareOff silently gave
+// up with the position still open. Exits are serialised by _squareOffInFlight
+// instead, so they bypass this guard (but still set it, to hold off entries).
+async function placeOrder(fyersSymbol, side, qty, opts = {}) {
+  if (_orderInFlight && !opts.isExit) {
     log(`⚠️ [PA-LIVE] Order in flight — skipping duplicate`);
     return { success: false, reason: "duplicate_guard" };
   }
@@ -470,7 +565,12 @@ async function squareOff(exitPrice, reason) {
   const { symbol, qty, side, entryPrice, entryTime, spotAtEntry,
           optionEntryLtp, optionCurrentLtp,
           signalStrength, vixAtEntry, oiAtEntry, oiRegime, entryHourIST, entryMinuteIST } = state.position;
-  const isFutures = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
+  // Use the instrument the position was OPENED in — a mid-trade INSTRUMENT toggle
+  // must not flip the closing side. Futures PE was opened SHORT (SELL), so it is
+  // closed with a BUY; every option leg and a futures CE (long) close with a SELL.
+  const isFutures = typeof state.position.isFutures === "boolean"
+    ? state.position.isFutures
+    : instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
   const exitOrderSide = (isFutures && side === "PE") ? 1 : -1;
 
   log(`🔄 [PA-LIVE] Square off: ${reason}`);
@@ -486,9 +586,8 @@ async function squareOff(exitPrice, reason) {
   const MAX_EXIT_RETRIES = 3;
   let result = null;
   for (let attempt = 1; attempt <= MAX_EXIT_RETRIES; attempt++) {
-    result = await placeOrder(symbol, exitOrderSide, qty);
+    result = await placeOrder(symbol, exitOrderSide, qty, { isExit: true });
     if (result.success) break;
-    if (result.reason === "duplicate_guard") break;
     if (attempt < MAX_EXIT_RETRIES) {
       log(`⚠️ [PA-LIVE] Exit attempt ${attempt}/${MAX_EXIT_RETRIES} failed — retrying in 2s...`);
       await sleep(2000);
@@ -496,16 +595,16 @@ async function squareOff(exitPrice, reason) {
   }
 
   if (!result || !result.success) {
-    if (result && result.reason !== "duplicate_guard") {
-      log(`🚨 [PA-LIVE] EXIT ORDER FAILED after ${MAX_EXIT_RETRIES} attempts — MANUAL INTERVENTION REQUIRED!`);
-      sendTelegram(`🚨 PA EXIT FAILED: ${symbol} ${side} × ${qty} — ${reason}. Check Fyers dashboard IMMEDIATELY!`).catch(() => {});
-      // The position stays open but its exchange stop was cancelled above — put
-      // it back, otherwise a failed exit silently strips the only protection
-      // that survives this process dying. (duplicate_guard is skipped: another
-      // square-off is already in flight and owns the SL.)
-      await placePAHardSL();
-    }
+    // Always alert and re-arm: exits bypass the duplicate guard, and a second
+    // square-off is already blocked by _squareOffInFlight, so every failure here
+    // is a real one with the position still open.
+    log(`🚨 [PA-LIVE] EXIT ORDER FAILED after ${MAX_EXIT_RETRIES} attempts — MANUAL INTERVENTION REQUIRED!`);
+    sendTelegram(`🚨 PA EXIT FAILED: ${symbol} ${side} × ${qty} — ${reason}. Check Fyers dashboard IMMEDIATELY!`).catch(() => {});
+    // The position stays open but its exchange stop was cancelled above — put
+    // it back, otherwise a failed exit silently strips the only protection
+    // that survives this process dying.
     _squareOffInFlight = false;
+    await placePAHardSL();
     return;
   }
 
@@ -609,7 +708,7 @@ async function squareOff(exitPrice, reason) {
     state._consecSLs = 0;
   }
 
-  if (state.sessionPnl <= -_PA_MAX_LOSS) {
+  if (_dayPnl() <= -_PA_MAX_LOSS) {
     state._dailyLossHit = true;
     log(`🚨 [PA-LIVE] Daily loss limit hit — no more entries`);
   }
@@ -724,23 +823,10 @@ function onTick(tick) {
     // Peak option premium (long CE/PE both profit on premium rise) — observer-only, for the UI/log.
     if (state.optionLtp && state.optionLtp > (pos.bestOptionLtp || 0)) pos.bestOptionLtp = parseFloat(state.optionLtp.toFixed(2));
 
-    // 0. GLOBAL PROFIT LOCK (shared across every strategy — see tradeGuards).
-    //    Ahead of the SL checks: once armed, the locked floor sits above entry,
-    //    so a stop below entry must not get first refusal.
-    if (pos.optionEntryLtp && state.optionLtp) {
-      const _plMsg = tradeGuards.checkProfitLock(
-        pos.optionEntryLtp, state.optionLtp, pos.bestOptionLtp,
-      ) || tradeGuards.checkBreakevenStop(
-        // Fallback for a trade that never reached the lock's arm level.
-        pos.optionEntryLtp, state.optionLtp, pos.bestOptionLtp,
-      );
-      if (_plMsg) {
-        console.log(`🔒 [PA-LIVE] ${_plMsg}`);
-        pos.slSource = "Profit lock";
-        squareOff(price, _plMsg).catch(e => console.error(`🚨 [PA-LIVE] squareOff error: ${e.message}`));
-        return;
-      }
-    }
+    // PARITY: no global profit-lock / premium-breakeven exit here. paPaper (the
+    // canonical engine) never applies them — PA's only breakeven is its own
+    // spot-based PA_BREAKEVEN_TRIGGER step below — so applying them here closed
+    // real trades that paper kept open.
 
     // 1. SL hit (initial or swing-trailed)
     if (pos.side === "CE" && price <= pos.stopLoss) {
@@ -786,6 +872,9 @@ function onTick(tick) {
 // ── onCandleClose ───────────────────────────────────────────────────────────
 
 async function onCandleClose(bar) {
+  // Read before any await below (OI / VIX): a Stop + Start during them must
+  // not let this candle enter the NEW session — see _entryGen.
+  const _sidClose = _entryGen;
   if (!state.running) return;
 
   // Sample futures OI each candle close (no-op unless an OI filter is enabled)
@@ -830,7 +919,7 @@ async function onCandleClose(bar) {
   // so an armed cap stopped paper entering while live kept trading real money.
   { const _pf = require("../utils/portfolioRisk").checkPortfolioCap(); if (_pf.blocked) { log(`⏭️ [PA-LIVE] SKIP: ${_pf.reason}`); return; } }
   if (state._entryPending) { log(`⏭️ [PA-LIVE] SKIP: entry pending`); return; }
-  if (state.sessionTrades.length >= _PA_MAX_TRADES) { log(`⏭️ [PA-LIVE] SKIP: max trades (${_PA_MAX_TRADES}) reached`); return; }
+  if (_dayTradeCount() >= _PA_MAX_TRADES) { log(`⏭️ [PA-LIVE] SKIP: max trades (${_PA_MAX_TRADES}) reached`); return; }
   if (state._slPauseUntil && Date.now() < state._slPauseUntil) {
     const secsLeft = Math.ceil((state._slPauseUntil - Date.now()) / 1000);
     log(`⏭️ [PA-LIVE] SKIP: SL cooldown (${secsLeft}s left)`);
@@ -906,14 +995,19 @@ async function onCandleClose(bar) {
     if (_oi.regime) result.reason = `${result.reason} | ${_oi.reason}`;
   }
 
+  // /stop (or stop + restart) may have run during the VIX / OI awaits.
+  if (!state.running || _entryGen !== _sidClose) return;
+
   const side = result.signal === "BUY_CE" ? "CE" : "PE";
   const spot = bar.close;
 
-  resolveAndEnter(side, spot, result);
+  resolveAndEnter(side, spot, result, _sidClose);
 }
 
-async function resolveAndEnter(side, spot, result) {
+async function resolveAndEnter(side, spot, result, sid = _entryGen) {
+  const _sid = sid;
   if (state._entryPending || state.position) return;
+  if (!state.running || _entryGen !== _sid) return;
   state._entryPending = true;
 
   try {
@@ -923,7 +1017,13 @@ async function resolveAndEnter(side, spot, result) {
       return;
     }
 
-    const optionInfo = await validateAndGetOptionSymbol(spot, side);
+    // Honour the INSTRUMENT toggle exactly like paPaper: in futures mode the
+    // month contract IS the tradeable symbol (no strike/expiry to validate).
+    // Live used to always buy an OPTION here while booking P&L as futures.
+    const isFutures = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
+    const optionInfo = isFutures
+      ? { symbol: await getSymbol(side), strike: null, expiry: null, invalid: false }
+      : await validateAndGetOptionSymbol(spot, side);
     if (optionInfo.invalid) {
       log(`⚠️ [PA-LIVE] Option symbol invalid — skipping`);
       return;
@@ -931,6 +1031,10 @@ async function resolveAndEnter(side, spot, result) {
 
     const qty    = getLotQty();
     const symbol = optionInfo.symbol;
+    // Options are always BOUGHT (CE or PE). Futures carry direction in the side:
+    // CE = long (BUY), PE = short (SELL) — same as emaRsiStLive. squareOff closes
+    // with the opposite side.
+    const entryOrderSide = (isFutures && side === "PE") ? -1 : 1;
 
     // ── Bid-ask spread guard before real order ──
     {
@@ -951,10 +1055,32 @@ async function resolveAndEnter(side, spot, result) {
       }
     }
 
-    // Place BUY order via Fyers
-    const orderResult = await placeOrder(symbol, 1, qty);
+    // /stop (or a stop + restart) may have run while we awaited the symbol /
+    // quote — placing the order now would open a real position nothing exits.
+    if (state.position || !state.running || _entryGen !== _sid) {
+      log(`⏭️ [PA-LIVE] Entry abandoned — session stopped/restarted while resolving ${symbol}`);
+      return;
+    }
+
+    // Place entry order via Fyers
+    const orderResult = await placeOrder(symbol, entryOrderSide, qty);
     if (!orderResult.success) {
       log(`❌ [PA-LIVE] Entry order failed — skipping trade`);
+      return;
+    }
+
+    // The session died DURING the order round-trip: stopSession already ran
+    // with no position to square off, so this fill would be an untracked
+    // orphan. Flatten it immediately and make it impossible to miss.
+    if (!state.running || _entryGen !== _sid) {
+      log(`🚨 [PA-LIVE] Session stopped while entry ${symbol} was in flight — flattening the fill`);
+      const _undo = await placeOrder(symbol, -entryOrderSide, qty, { isExit: true });
+      if (!_undo.success) {
+        log(`🚨 [PA-LIVE] Could NOT flatten orphan entry ${symbol} × ${qty} — square it off on Fyers NOW`);
+        sendTelegram(`🚨 PA-LIVE orphan entry ${symbol} × ${qty} (session stopped mid-order) could NOT be flattened — square it off on Fyers NOW!`).catch(() => {});
+      } else {
+        sendTelegram(`⚠️ PA-LIVE: session stopped mid-entry — ${symbol} × ${qty} was filled and immediately flattened. Verify on Fyers.`).catch(() => {});
+      }
       return;
     }
 
@@ -1000,6 +1126,7 @@ async function resolveAndEnter(side, spot, result) {
       orderId:          orderResult.orderId || null,
       // How this position was ENTERED — every order for it must match (see _orderIsDryRun).
       dryRun:           !!orderResult.dryRun,
+      isFutures,        // squareOff closes with the side this was opened in
 
       optionEntryLtp:   null,
       optionCurrentLtp: null,
@@ -1024,11 +1151,11 @@ async function resolveAndEnter(side, spot, result) {
     };
 
     state.optionSymbol = symbol;
-    if (instrumentConfig.INSTRUMENT !== "NIFTY_FUTURES") {
+    if (!isFutures) {
       startOptionPolling(symbol);
     }
 
-    log(`📝 [PA-LIVE] BUY ${qty} × ${symbol} @ ₹${spot} | SL: ₹${structuralSL} | ${result.reason}`);
+    log(`📝 [PA-LIVE] ${entryOrderSide === 1 ? "BUY" : "SELL"} ${qty} × ${symbol} @ ₹${spot} | SL: ₹${structuralSL} | ${result.reason}`);
 
     notifyEntry({
       mode: _modeLabel(),
@@ -1162,6 +1289,10 @@ function _errorPage(title, message, linkHref, linkText) {
 router.get("/start", async (req, res) => {
   if (state.running) return res.json({ success: true, message: "Already running" });
 
+  // Re-read env into module-level config so Settings UI changes take effect for
+  // this session — mirrors paPaper's /start.
+  _refreshConfig();
+
   const check = sharedSocketState.canStart("PA_LIVE");
   if (!check.allowed) {
     return res.status(409).send(_errorPage("Cannot Start", check.reason, "/pa-live/status", "\u2190 Back"));
@@ -1198,6 +1329,11 @@ router.get("/start", async (req, res) => {
     log(`📅 [PA-LIVE] Expiry-only mode: ${isExpiry ? "✅ Today is expiry — trading allowed" : "❌ Not expiry day — entries blocked"}`);
   }
 
+  // Earlier live sessions saved today still count against today's caps.
+  let _prior = { pnl: 0, trades: 0, ok: true };
+  try { _prior = _loadTodayPriorSessions(); }
+  catch (e) { _prior = { pnl: 0, trades: 0, ok: false }; console.error(`🚨 [PA-LIVE] Could not read today's earlier sessions: ${e.message}`); }
+
   // Reset state
   state = {
     running: true, position: null, candles: [], currentBar: null, barStartTime: null,
@@ -1207,7 +1343,18 @@ router.get("/start", async (req, res) => {
     optionSymbol: null, _slPauseUntil: null,
     _dailyLossHit: false, _entryPending: false,
     _expiryDayBlocked: _expiryBlocked,
+    _priorDayPnl: _prior.pnl, _priorDayTrades: _prior.trades,
   };
+  _entryGen++;
+  if (!_prior.ok) {
+    log(`🚨 [PA-LIVE] Today's earlier sessions could not be read — daily loss / trade caps start from zero this session`);
+  } else if (_prior.trades > 0) {
+    log(`📒 [PA-LIVE] Restored today's earlier sessions — ${_prior.trades} trades, P&L ₹${_prior.pnl} count toward today's caps`);
+  }
+  if (_dayPnl() <= -_PA_MAX_LOSS) {
+    state._dailyLossHit = true;
+    log(`🚨 [PA-LIVE] Daily loss limit already hit today (₹${_prior.pnl}) — no entries this session`);
+  }
 
   sharedSocketState.setPAActive("PA_LIVE");
 
@@ -1300,6 +1447,7 @@ router.get("/start", async (req, res) => {
 async function stopSession() {
   if (!state.running) return;
   state.running = false;
+  _entryGen++;   // any entry still awaiting a quote/symbol belongs to a dead session
 
   if (state.position) {
     try { await awaitExit(squareOff(state.lastTickPrice || state.position.entryPrice, "Session stopped"), "PA-LIVE"); }
@@ -2662,8 +2810,7 @@ router.post("/reset", (req, res) => {
     });
   }
   try {
-    ensureDir();
-    fs.writeFileSync(SL_FILE, JSON.stringify({ sessions: [] }, null, 2));
+    _writePADataAtomic({ sessions: [] });
     log("🔄 [PA-LIVE] Price Action live trade history cleared.");
     return res.json({ success: true, message: "Price Action live trade history cleared." });
   } catch (err) {

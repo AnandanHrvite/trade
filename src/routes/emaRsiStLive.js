@@ -163,6 +163,17 @@ function _refreshConfig() {
   TRADE_RES              = parseInt(process.env.TRADE_RESOLUTION || "5", 10);
   _MAX_DAILY_TRADES      = parseInt(process.env.MAX_DAILY_TRADES || "20", 10);
   _MAX_DAILY_LOSS        = parseFloat(process.env.MAX_DAILY_LOSS || "5000");
+  // Fail CLOSED on a malformed cap: NaN made `pnl <= -Math.abs(NaN)` and
+  // `count >= NaN` permanently false, silently disarming both kill-switches on
+  // real money. Fall back to the documented defaults instead.
+  if (!Number.isFinite(_MAX_DAILY_LOSS)) {
+    console.warn(`[LIVE] MAX_DAILY_LOSS="${process.env.MAX_DAILY_LOSS}" is not a number — using default ₹5000`);
+    _MAX_DAILY_LOSS = 5000;
+  }
+  if (!Number.isFinite(_MAX_DAILY_TRADES)) {
+    console.warn(`[LIVE] MAX_DAILY_TRADES="${process.env.MAX_DAILY_TRADES}" is not a number — using default 20`);
+    _MAX_DAILY_TRADES = 20;
+  }
   _OPT_STOP_PCT          = parseFloat(process.env.OPT_STOP_PCT || "0.15");
   _EMA_RSI_ST_SL_PAUSE_CANDLES = parseInt(process.env.EMA_RSI_ST_SL_PAUSE_CANDLES || "3", 10);
   {
@@ -222,17 +233,44 @@ function loadLiveData() {
   ensureLiveDir();
   if (!fs.existsSync(LT_FILE)) {
     const initial = { sessions: [] };
-    fs.writeFileSync(LT_FILE, JSON.stringify(initial, null, 2));
+    const _tmpInit = LT_FILE + ".tmp";
+    fs.writeFileSync(_tmpInit, JSON.stringify(initial, null, 2));
+    fs.renameSync(_tmpInit, LT_FILE);
     return initial;
   }
-  try { return JSON.parse(fs.readFileSync(LT_FILE, "utf-8")); }
-  catch (_) { return { sessions: [] }; }
+  let _raw;
+  try {
+    _raw = fs.readFileSync(LT_FILE, "utf-8");
+    const _parsed = JSON.parse(_raw);
+    if (!_parsed || !Array.isArray(_parsed.sessions)) throw new Error("missing sessions[]");
+    return _parsed;
+  } catch (err) {
+    // A corrupt history must not be read as empty and then overwritten by the
+    // next saveLiveSession() — that wipes every prior live session AND resets the
+    // restart-recovery daily-loss budget. Preserve the bad bytes first (once per
+    // distinct file content), then shout.
+    const _sig = `${(_raw || "").length}:${(_raw || "").slice(0, 64)}`;
+    if (_ltCorruptSig !== _sig) {
+      _ltCorruptSig = _sig;
+      const _bak = `${LT_FILE}.corrupt-${Date.now()}`;
+      try { fs.copyFileSync(LT_FILE, _bak); } catch (_) {}
+      console.error(`[LIVE] ${LT_FILE} is unreadable (${err.message}) — preserved as ${_bak}; refusing to overwrite it`);
+      sendTelegram(`🚨 EMA_RSI_ST LIVE — live trade history was corrupt (${err.message}). Backed up to ${path.basename(_bak)}; today's prior P&L / trade count could NOT be restored.`).catch(() => {});
+    }
+    // Readers get an empty history; _corrupt tells saveLiveSession() NOT to write.
+    return { sessions: [], _corrupt: true };
+  }
 }
+let _ltCorruptSig = null;
 
 function saveLiveSession() {
   if (!tradeState.sessionTrades || tradeState.sessionTrades.length === 0) return;
   try {
     const data = loadLiveData();
+    if (data._corrupt) {
+      log(`🚨 [LIVE] Session NOT saved — ${LT_FILE} is corrupt (see .corrupt-* backup). ${tradeState.sessionTrades.length} trades, PnL: ₹${tradeState.sessionPnl}: ${JSON.stringify(tradeState.sessionTrades)}`);
+      return;
+    }
     data.sessions.push({
       date:       tradeState.sessionStart || new Date().toISOString(),
       strategy:   ACTIVE,
@@ -719,6 +757,11 @@ function clearEODBackupTimer() {
 
 let _orderInFlight    = false; // prevent duplicate ENTRY orders on rapid ticks
 let _squareOffInFlight = false; // prevent concurrent EXIT calls (multiple SL ticks in-flight)
+// Session generation — bumped on /start and /stop. An entry captures it BEFORE
+// its first await (VIX / OI / symbol / quote) and re-checks it immediately before
+// the real order, so a /stop (or stop→start) landing mid-entry cannot place an
+// order into a dead session and orphan it. Mirrors emaRsiStPaper._entrySessionGen.
+let _entrySessionGen = 0;
 
 // ── DRY-RUN harness ───────────────────────────────────────────────────────
 // When LIVE_HARNESS_DRY_RUN=true (default), EMA_RSI_ST Live logs the Zerodha call it
@@ -748,8 +791,12 @@ function _simOrder(prefix) {
   return { success: true, orderId: `DRYRUN-${prefix}-${Date.now()}-${++_dryRunSeq}`, dryRun: true };
 }
 
-async function placeMarketOrder(fyersSymbol, side, qty) {
-  if (_orderInFlight) {
+// opts.isExit: exits bypass the duplicate guard. It exists to stop a double ENTRY
+// and is held 5s after every order, so an SL firing within 5s of the entry was
+// refused as a "duplicate" and left the position open. Exits are serialised by
+// _squareOffInFlight instead (they still set the flag, holding off entries).
+async function placeMarketOrder(fyersSymbol, side, qty, opts = {}) {
+  if (_orderInFlight && !(opts && opts.isExit)) {
     log(`⚠️  Order already in flight — skipping duplicate ${side === 1 ? "BUY" : "SELL"} ${fyersSymbol}`);
     return { success: false, reason: "duplicate_guard" };
   }
@@ -781,6 +828,44 @@ async function placeMarketOrder(fyersSymbol, side, qty) {
     // Release guard after 5s to allow legitimate next orders
     setTimeout(() => { _orderInFlight = false; }, 5000);
   }
+}
+
+// An entry order FILLED but the engine can no longer track it — another entry won
+// the race, or /stop / EOD / a new session landed during the broker round-trip.
+// Dropping it would strand a real position at Zerodha with no hard SL and no
+// trail, so unwind it immediately and Telegram. Calls the broker directly: the
+// 5s _orderInFlight guard is still held by the entry being unwound, so routing
+// through placeMarketOrder() would always be refused as a duplicate.
+async function _unwindUntrackedFill(symbol, entryOrderSide, qty, entryResult, why) {
+  const exitSide = entryOrderSide === 1 ? -1 : 1;
+  const label    = `${exitSide === 1 ? "BUY" : "SELL"} ${qty} × ${symbol}`;
+  const entryId  = (entryResult && entryResult.orderId) || "?";
+  log(`🚨 [LIVE] Entry ${entryId} filled but is UNTRACKED (${why}) — unwinding now: ${label}`);
+  try {
+    let res;
+    if (entryResult && entryResult.dryRun) {
+      res = _simOrder("UNWIND");
+      log(`🧪 [DRY-RUN] No real order placed — would ${label} via Zerodha to unwind | virtual OrderID: ${res.orderId}`);
+    } else {
+      res = await zerodha.placeMarketOrder(
+        symbol, exitSide, qty, `${ACTIVE}_LIVE`.substring(0, 20),
+        { isFutures: instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" }
+      );
+    }
+    if (res && res.success) {
+      log(`✅ [LIVE] Untracked fill unwound — ${label} | OrderID: ${res.orderId}`);
+      if (!res.dryRun) {
+        verifyOrderFill(res.orderId, `UNWIND ${label}`);
+        sendTelegram(`⚠️ EMA_RSI_ST LIVE — entry ${symbol} (order ${entryId}) filled after ${why}; auto-unwound with ${label} (order ${res.orderId}). Verify on Zerodha.`).catch(() => {});
+      }
+      return true;
+    }
+    log(`🚨 [LIVE] Unwind order FAILED — ${label} | ${JSON.stringify(res && res.raw)}`);
+  } catch (err) {
+    log(`🚨 [LIVE] Unwind order exception — ${label} | ${err.message}`);
+  }
+  sendTelegram(`🚨 EMA_RSI_ST LIVE — UNTRACKED POSITION: ${symbol} ×${qty} (entry order ${entryId}) filled after ${why} and the auto-unwind FAILED. No stop is resting — square it off on Zerodha NOW.`).catch(() => {});
+  return false;
 }
 
 /**
@@ -1044,6 +1129,17 @@ async function squareOff(exitPrice, reason) {
   }
   if (!tradeState.position) return;
   _squareOffInFlight = true;
+  // try/finally: any throw below (e.g. placeMarketOrder rethrowing when Zerodha
+  // is unauthenticated) used to leave _squareOffInFlight latched true, so every
+  // later SL / EOD / manual exit was ignored for the rest of the session.
+  try {
+    await _squareOffLocked(exitPrice, reason);
+  } finally {
+    _squareOffInFlight = false;
+  }
+}
+
+async function _squareOffLocked(exitPrice, reason) {
   const closedSide = tradeState.position.side;
 
   const { symbol, qty, side, entryPrice, optionEntryLtp, entryTime,
@@ -1066,22 +1162,30 @@ async function squareOff(exitPrice, reason) {
 
   log(`📤 [LIVE] ${exitLabel} ${qty} × ${symbol} via Zerodha`);
 
-  const result = await placeMarketOrder(symbol, exitOrderSide, qty);
+  let result;
+  try {
+    result = await placeMarketOrder(symbol, exitOrderSide, qty, { isExit: true });
+  } catch (err) {
+    // Same handling as a failed exit below — but this path used to throw straight
+    // out with the exchange stop already cancelled. Re-arm it and alert.
+    log(`🚨 [LIVE] EXIT ORDER THREW — position kept open | ${err.message}`);
+    log(`🚨 [LIVE] CHECK ZERODHA DASHBOARD — manual square-off may be required!`);
+    try { await placeHardSL(); } catch (e2) { log(`🚨 [HARD SL] Re-arm after failed exit threw: ${e2.message}`); }
+    sendTelegram(`🚨 EMA_RSI_ST LIVE — EXIT FAILED for ${symbol} ×${qty} (${reason}): ${err.message}. Position still OPEN — check Zerodha.`).catch(() => {});
+    return;
+  }
 
   // Guard 2: if exit order FAILED or was a duplicate, keep position tracked
   if (!result.success) {
-    if (result.reason === "duplicate_guard") {
-      log(`⚠️ [LIVE] Exit order blocked (duplicate_guard) — position remains open`);
-    } else {
-      log(`🚨 [LIVE] EXIT ORDER FAILED — position kept open for retry | ${JSON.stringify(result.raw)}`);
-      log(`🚨 [LIVE] CHECK ZERODHA DASHBOARD — manual square-off may be required!`);
-      // The position stays open but its exchange stop was cancelled above — put
-      // it back, otherwise a failed exit silently strips the only protection
-      // that survives this process dying. (duplicate_guard is skipped: another
-      // square-off is already in flight and owns the SL.)
-      await placeHardSL();
-    }
-    _squareOffInFlight = false;
+    // Exits bypass the duplicate guard and squareOff() is serialised by
+    // _squareOffInFlight, so every failure here is real: position still open.
+    log(`🚨 [LIVE] EXIT ORDER FAILED — position kept open for retry | ${JSON.stringify(result.raw || result.reason)}`);
+    log(`🚨 [LIVE] CHECK ZERODHA DASHBOARD — manual square-off may be required!`);
+    // The position stays open but its exchange stop was cancelled above — put
+    // it back, otherwise a failed exit silently strips the only protection
+    // that survives this process dying.
+    try { await placeHardSL(); } catch (e2) { log(`🚨 [HARD SL] Re-arm after failed exit threw: ${e2.message}`); }
+    sendTelegram(`🚨 EMA_RSI_ST LIVE — EXIT ORDER FAILED for ${symbol} ×${qty} (${reason}). Position still OPEN — check Zerodha.`).catch(() => {});
     return;
   }
 
@@ -1518,6 +1622,7 @@ async function onCandleClose(candle) {
     if (tradeState.running) {
       log("⏰ [LIVE] Market closed (" + _eodStopLabel + " IST) — auto-stopping live trade engine.");
       tradeState.running = false;
+      _entrySessionGen++;   // invalidate any entry still awaiting VIX / symbol / quote
       saveLiveSession();
       sharedSocketState.clear();
       stopOptionPolling();
@@ -1540,6 +1645,8 @@ async function onCandleClose(candle) {
   // Skipped when confirmation candle is ON — entry then waits for the next-candle
   // intra-bar cross (handled in onTick), never on this candle's close.
   if (!confirmCandle.enabled("EMA_RSI_ST") && !tradeState.position && !tradeState._entryPending && !tradeState._expiryDayBlocked && isMarketHours() && (signal === "BUY_CE" || signal === "BUY_PE")) {
+    // Captured before the first await (VIX) — re-checked right before the order.
+    const _sid = _entrySessionGen;
     // Daily loss kill switch — hard block, no bypass
     if (tradeState._dailyLossHit) {
       log(`🛑 [LIVE] Daily loss limit active — entry blocked (${signal})`);
@@ -1561,7 +1668,7 @@ async function onCandleClose(candle) {
       log(`🚫 [LIVE] Chop guard — ${tradeState._chopConsecLosses} consecutive losses (≥ ${_chopMax}) — EMA_RSI_ST halted for the session (${signal})`);
       return;
     }
-    if (tradeState.sessionTrades.length >= _MAX_DAILY_TRADES) {
+    if (tradeState.sessionTrades.length + (tradeState._priorTradesToday || 0) >= _MAX_DAILY_TRADES) {
       log(`🚫 [LIVE] Daily max trades reached — candle-close entry blocked (${signal})`);
       return;
     }
@@ -1676,28 +1783,6 @@ async function onCandleClose(candle) {
         }
       }
 
-      const result = await placeMarketOrder(symbol, orderSide, getLotQty());
-
-      if (!result.success) {
-        if (result.reason !== "duplicate_guard") {
-          log(`❌ [LIVE] Entry order failed — not tracking position to avoid phantom trade`);
-        } else {
-          log(`⚠️ [LIVE] Entry blocked — order in flight (duplicate_guard). No position created.`);
-        }
-        tradeState._entryPending = false;
-        clearTimeout(_ltEntryTimer);
-        return;
-      }
-
-      // Guard: a tick may have already entered while Zerodha order was in-flight
-      if (tradeState.position) {
-        log(`⚠️ [LIVE] Position already set while candle-close order was in-flight — ignoring duplicate`);
-        tradeState._entryPending = false;
-        clearTimeout(_ltEntryTimer);
-        return;
-      }
-
-      const optDetails = parseOptionDetails(symbol);
       // Relaxed from 50% mid to 35%/65% — matches backtest and paper trade.
       // CE: 35% from low. PE: 65% from low. Gives ~40% more room.
       const _ccLastCandle = tradeState.candles.length >= 1 ? tradeState.candles[tradeState.candles.length - 1] : null;
@@ -1708,6 +1793,9 @@ async function onCandleClose(candle) {
       // Initial SL = the prev-candle low/high from getSignal, used as-is (no-op cap).
       // Entry fires at THIS candle's close, so it is fully closed structure; the
       // bar still forming is the next one.
+      // Resolved BEFORE the real order (paper resolves it inside simulateBuy,
+      // before the fill): deciding it after the fill meant an `unprotected`
+      // verdict returned with a REAL position open and untracked.
       const _slCapResult = _applyInitialSLCap(stopLoss, candle.close, side, _ccLastCandle, candle.time + TRADE_RES * 60, indicators.ema21);
       if (_slCapResult.unprotected) {
         log(`🚫 [LIVE] Entry aborted — ${_slCapResult.reason}`);
@@ -1721,6 +1809,43 @@ async function onCandleClose(candle) {
       }
       stopLoss = _slCapResult.stopLoss;
       if (_slCapResult.capLog) log(_slCapResult.capLog);
+
+      // Last gate before real money: a /stop (or stop→start) during the awaits
+      // above must not place an order into a dead session (paper: same check
+      // right before simulateBuy). Only release _entryPending if it is still ours.
+      if (tradeState.position || !tradeState.running || _entrySessionGen !== _sid) {
+        if (_entrySessionGen === _sid) tradeState._entryPending = false;
+        clearTimeout(_ltEntryTimer);
+        log(`🚫 [LIVE] Candle-close entry abandoned — session stopped/restarted or position opened during entry checks`);
+        return;
+      }
+
+      const result = await placeMarketOrder(symbol, orderSide, getLotQty());
+
+      if (!result.success) {
+        if (result.reason !== "duplicate_guard") {
+          log(`❌ [LIVE] Entry order failed — not tracking position to avoid phantom trade`);
+        } else {
+          log(`⚠️ [LIVE] Entry blocked — order in flight (duplicate_guard). No position created.`);
+        }
+        tradeState._entryPending = false;
+        clearTimeout(_ltEntryTimer);
+        return;
+      }
+
+      // Guard: a tick may have already entered — or /stop / EOD / a restart
+      // landed — while the Zerodha order was in flight. The order is FILLED, so
+      // dropping it would orphan a real position: unwind it immediately.
+      if (tradeState.position || !tradeState.running || _entrySessionGen !== _sid) {
+        const _why = tradeState.position ? "another entry won the race" : "session stopped/restarted mid-order";
+        log(`⚠️ [LIVE] Candle-close order filled but cannot be tracked (${_why})`);
+        if (_entrySessionGen === _sid) tradeState._entryPending = false;
+        clearTimeout(_ltEntryTimer);
+        await _unwindUntrackedFill(symbol, orderSide, getLotQty(), result, _why);
+        return;
+      }
+
+      const optDetails = parseOptionDetails(symbol);
 
       // Data-collection metadata — frozen at entry so the trade record is self-describing for offline analysis.
       const _entryIstMin     = Math.floor((Math.floor(Date.now() / 1000) + 19800) / 60) % 1440;
@@ -1906,8 +2031,8 @@ function onSpotTick(tick) {
         log(`🚫 [LIVE] Chop guard — ${tradeState._chopConsecLosses} consecutive losses (≥ ${process.env.EMA_RSI_ST_MAX_CONSEC_LOSSES}) — EMA_RSI_ST halted for the session`);
         tradeState._chopGuardLoggedCandle = _currentBarTime;
       }
-    } else if (tradeState.sessionTrades.length >= _MAX_DAILY_TRADES) {
-      // Daily max trades cap reached
+    } else if (tradeState.sessionTrades.length + (tradeState._priorTradesToday || 0) >= _MAX_DAILY_TRADES) {
+      // Daily max trades cap reached (incl. today's earlier sessions)
       if (!tradeState._maxTradesLoggedCandle || tradeState._maxTradesLoggedCandle !== _currentBarTime) {
         log(`🚫 [LIVE] Daily max trades (${_MAX_DAILY_TRADES}) reached — no more entries today`);
         tradeState._maxTradesLoggedCandle = _currentBarTime;
@@ -2023,6 +2148,9 @@ function onSpotTick(tick) {
       } else {
       // ── 50% entry gate REMOVED — breakeven stop handles protection ──────────
       tradeState._entryPending = true;
+      // Captured synchronously, before the symbol / quote awaits — re-checked
+      // right before the real order (see candle-close path).
+      const _sidIntra = _entrySessionGen;
       const _ltIntraTimer = setTimeout(() => { if (tradeState._entryPending) tradeState._entryPending = false; }, 4000);
       log(`⚡ [LIVE] Intra-candle ${TRADE_RES >= 15 ? "STRONG" : ""} entry @ ₹${ltp} | VIX: ${_vixIntraVal != null ? _vixIntraVal.toFixed(1) : "n/a"} | [${TRADE_RES}m bar] ${reason}`);
 
@@ -2093,27 +2221,6 @@ function onSpotTick(tick) {
           }
         }
 
-        const result = await placeMarketOrder(symbol, orderSide, getLotQty());
-
-        if (!result.success) {
-          if (result.reason !== "duplicate_guard") {
-            log(`❌ [LIVE] Intra-tick entry order failed — skipping.`);
-          } else {
-            log(`⚠️ [LIVE] Intra-tick entry blocked — order in flight (duplicate_guard). No position created.`);
-          }
-          tradeState._entryPending = false;
-          clearTimeout(_ltIntraTimer);
-          return;
-        }
-
-        if (tradeState.position) {
-          log(`⚠️ [LIVE] Position already set while intra-tick order was in-flight — ignoring duplicate`);
-          tradeState._entryPending = false;
-          clearTimeout(_ltIntraTimer);
-          return;
-        }
-
-        const optDetails   = parseOptionDetails(symbol);
         // Relaxed from 50% mid to 35%/65% — matches backtest and paper trade.
         const _intraLastCandle = tradeState.candles.length >= 1 ? tradeState.candles[tradeState.candles.length - 1] : null;
         const entryPrevMid = _intraLastCandle
@@ -2121,7 +2228,9 @@ function onSpotTick(tick) {
           : null;
 
         // ── HYBRID INITIAL SL CAP ─────────────────────────────────────────
-        // _currentBarTime was captured synchronously before the order round-trip.
+        // _currentBarTime was captured synchronously before the symbol/quote awaits.
+        // Resolved BEFORE the real order (paper: inside simulateBuy, before the
+        // fill) so an `unprotected` verdict aborts with nothing at the broker.
         const _slCapResultIntra = _applyInitialSLCap(stopLoss, ltp, side, _intraLastCandle, _currentBarTime, indicators.ema21);
         if (_slCapResultIntra.unprotected) {
           log(`🚫 [LIVE] Entry aborted — ${_slCapResultIntra.reason}`);
@@ -2135,6 +2244,40 @@ function onSpotTick(tick) {
         }
         stopLoss = _slCapResultIntra.stopLoss;
         if (_slCapResultIntra.capLog) log(_slCapResultIntra.capLog);
+
+        // Last gate before real money — /stop or stop→start during the awaits.
+        if (tradeState.position || !tradeState.running || _entrySessionGen !== _sidIntra) {
+          if (_entrySessionGen === _sidIntra) tradeState._entryPending = false;
+          clearTimeout(_ltIntraTimer);
+          log(`🚫 [LIVE] Intra-tick entry abandoned — session stopped/restarted or position opened during entry checks`);
+          return;
+        }
+
+        const result = await placeMarketOrder(symbol, orderSide, getLotQty());
+
+        if (!result.success) {
+          if (result.reason !== "duplicate_guard") {
+            log(`❌ [LIVE] Intra-tick entry order failed — skipping.`);
+          } else {
+            log(`⚠️ [LIVE] Intra-tick entry blocked — order in flight (duplicate_guard). No position created.`);
+          }
+          tradeState._entryPending = false;
+          clearTimeout(_ltIntraTimer);
+          return;
+        }
+
+        // Filled, but another entry won the race or the session ended mid-order —
+        // unwind instead of dropping a real position untracked.
+        if (tradeState.position || !tradeState.running || _entrySessionGen !== _sidIntra) {
+          const _why = tradeState.position ? "another entry won the race" : "session stopped/restarted mid-order";
+          log(`⚠️ [LIVE] Intra-tick order filled but cannot be tracked (${_why})`);
+          if (_entrySessionGen === _sidIntra) tradeState._entryPending = false;
+          clearTimeout(_ltIntraTimer);
+          await _unwindUntrackedFill(symbol, orderSide, getLotQty(), result, _why);
+          return;
+        }
+
+        const optDetails   = parseOptionDetails(symbol);
 
         // Data-collection metadata — frozen at entry so the trade record is self-describing for offline analysis.
         const _entryIstMinIntra    = Math.floor((Math.floor(Date.now() / 1000) + 19800) / 60) % 1440;
@@ -2379,6 +2522,7 @@ router.get("/start", async (req, res) => {
 
   // Reset state
   tradeState.running        = true;
+  _entrySessionGen++;   // new session — entries captured under the old gen are void
   tradeState.candles        = [];
   tradeState.log            = [];
   tradeState.position       = null;
@@ -2405,6 +2549,7 @@ router.get("/start", async (req, res) => {
   tradeState._pauseUntilTime       = null;
   tradeState._dailyLossHit         = false; // reset daily kill switch on new session
   tradeState._priorRealizedToday   = 0;     // today's realized P&L from PRIOR sessions (restart recovery)
+  tradeState._priorTradesToday     = 0;     // today's trade count from PRIOR sessions (MAX_DAILY_TRADES)
   // ── Restart recovery: re-arm the daily-loss kill-switch from today's realized
   // live P&L. Without this, a crash/restart (or manual stop→start) mid-day reset
   // the loss budget to ₹0, letting the same day breach MAX_DAILY_LOSS repeatedly.
@@ -2419,6 +2564,7 @@ router.get("/start", async (req, res) => {
   try {
     const _today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
     let _realized = 0;
+    let _priorTrades = 0;
     for (const s of (loadLiveData().sessions || [])) {
       // s.date is EITHER istNow() "DD/MM/YYYY, HH:MM:SS" (which `new Date()` can't
       // parse → Invalid Date → never matched, silently disabling this recovery)
@@ -2432,7 +2578,14 @@ router.get("/start", async (req, res) => {
         const _dt = new Date(_sd);
         if (!isNaN(_dt)) d = _dt.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
       }
-      if (d === _today) _realized += Number(s.pnl) || 0;
+      if (d === _today) {
+        _realized += Number(s.pnl) || 0;
+        _priorTrades += Array.isArray(s.trades) ? s.trades.length : 0;
+      }
+    }
+    if (_priorTrades > 0) {
+      tradeState._priorTradesToday = _priorTrades;
+      log(`♻️ [LIVE] Restart recovery — ${_priorTrades} trade(s) from today's earlier sessions count toward MAX_DAILY_TRADES (${_MAX_DAILY_TRADES})`);
     }
     if (_realized !== 0) {
       tradeState._priorRealizedToday = parseFloat(_realized.toFixed(2));
@@ -2668,6 +2821,9 @@ router.get("/start", async (req, res) => {
 
 router.get("/stop", async (req, res) => {
   if (!tradeState.running) return res.status(400).json({ success: false, error: "Trading is not running." });
+  // Bumped synchronously, before the square-off await: an entry mid-way through
+  // its VIX / symbol / quote awaits must not place an order into this dead session.
+  _entrySessionGen++;
 
   if (tradeState.position && tradeState.currentBar) {
     log("🛑 [LIVE] Manual stop — squaring off open position via Zerodha");
@@ -2793,6 +2949,8 @@ router.post("/manualEntry", async (req, res) => {
   const gap = Math.abs(spot - stopLoss);
   if (gap > MAX_SL) stopLoss = side === "CE" ? spot - MAX_SL : spot + MAX_SL;
 
+  // Captured before the symbol await — re-checked right before the real order.
+  const _sidManual = _entrySessionGen;
   try {
     const { validateAndGetOptionSymbol, getLotQty } = require("../config/instrument");
     const optResult = await validateAndGetOptionSymbol(spot, side, 'ema_rsi_st');
@@ -2802,10 +2960,22 @@ router.post("/manualEntry", async (req, res) => {
 
     log(`🖐️ [LIVE] MANUAL ENTRY ${side} by user @ spot ₹${spot} | SL: ₹${stopLoss} | Symbol: ${symbol}`);
 
+    // /stop (or stop→start) may have run during the symbol await.
+    if (tradeState.position || !tradeState.running || _entrySessionGen !== _sidManual) {
+      log(`🚫 [LIVE] Manual entry abandoned — session stopped/restarted or position opened during symbol lookup`);
+      return res.status(409).json({ success: false, error: "Session stopped or position opened during entry — no order placed." });
+    }
+
     const result = await placeMarketOrder(symbol, 1, qty); // always BUY options
-    if (!result || result.error) {
-      log(`❌ [LIVE] Manual entry order FAILED: ${result ? result.error : "no result"}`);
-      return res.status(500).json({ success: false, error: result ? result.error : "Order failed" });
+    if (!result || !result.success) {
+      log(`❌ [LIVE] Manual entry order FAILED: ${result ? (result.error || result.reason || "rejected") : "no result"}`);
+      return res.status(500).json({ success: false, error: result ? (result.error || result.reason || "Order failed") : "Order failed" });
+    }
+
+    if (tradeState.position || !tradeState.running || _entrySessionGen !== _sidManual) {
+      const _why = tradeState.position ? "another entry won the race" : "session stopped/restarted mid-order";
+      await _unwindUntrackedFill(symbol, 1, qty, result, _why);
+      return res.status(409).json({ success: false, error: `Entry filled but could not be tracked (${_why}) — unwind attempted; verify on Zerodha.` });
     }
 
     const optDetails = parseOptionDetails(symbol);
@@ -4267,7 +4437,10 @@ router.post("/reset", (req, res) => {
   }
   try {
     ensureLiveDir();
-    fs.writeFileSync(LT_FILE, JSON.stringify({ sessions: [] }, null, 2));
+    const _tmpReset = LT_FILE + ".tmp";
+    fs.writeFileSync(_tmpReset, JSON.stringify({ sessions: [] }, null, 2));
+    fs.renameSync(_tmpReset, LT_FILE);
+    _ltCorruptSig = null;
     log("🔄 [LIVE] EMA_RSI_ST live trade history cleared.");
     return res.json({ success: true, message: "EMA_RSI_ST live trade history cleared." });
   } catch (err) {

@@ -50,24 +50,45 @@ const confirmCandle = require("../utils/confirmCandle");
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
 const CALLBACK_ID = "BB_RSI_LIVE";
 
-// ── Module-level config ─────────────────────────────────────────────────────
-const BB_RSI_RES            = bbRsiStrategy.resolutionMin();
-const _BB_RSI_MAX_TRADES    = parseInt(process.env.BB_RSI_MAX_DAILY_TRADES || "30", 10);
-const _BB_RSI_MAX_LOSS      = parseFloat(process.env.BB_RSI_MAX_DAILY_LOSS || "2000");
-const _BB_RSI_PAUSE_CANDLES = parseInt(process.env.BB_RSI_SL_PAUSE_CANDLES || "2", 10);
+// ── Module-level config (re-read at /start, mirrors bbRsiPaper._refreshConfig) ──
+// Declared with `let` so _refreshConfig() can update them. As consts they froze
+// at process boot, so a Settings change (max loss, max trades, entry window…)
+// reached paper on its next /start but never reached live until a PM2 restart.
 // Note: BB_RSI has no option-premium stop. The shared OPT_STOP_PCT belongs to
 // EMA_RSI_ST; BB_RSI exits on the BB middle-band target / the two-opposite-candle
 // stop or trail / the hard stop / the profit lock only (see src/strategies/bb_rsi.js),
 // so it is deliberately not read here.
 // Per-side SL pause — when true, an SL on CE only pauses CE entries (PE still allowed)
-const _BB_RSI_PER_SIDE_PAUSE = (process.env.BB_RSI_PER_SIDE_PAUSE || "true") === "true";
+let BB_RSI_RES;
+let _BB_RSI_MAX_TRADES;
+let _BB_RSI_MAX_LOSS;
+let _BB_RSI_PAUSE_CANDLES;
+let _BB_RSI_PER_SIDE_PAUSE;
+let _STOP_MINS;
+let _ENTRY_STOP_MINS;
+let _BB_RSI_START_MINS;
+// A risk cap that parses to NaN disables itself silently (every `x >= NaN` /
+// `x <= -NaN` is false) — fall back to the default and say so.
+function _finiteOr(raw, parsed, def, key) {
+  if (Number.isFinite(parsed)) return parsed;
+  console.warn(`⚠️ [BB_RSI-LIVE] ${key}="${raw}" is not a number — using default ${def}`);
+  return def;
+}
+function _refreshConfig() {
+  BB_RSI_RES             = bbRsiStrategy.resolutionMin();
+  _BB_RSI_MAX_TRADES     = _finiteOr(process.env.BB_RSI_MAX_DAILY_TRADES, parseInt(process.env.BB_RSI_MAX_DAILY_TRADES || "30", 10), 30, "BB_RSI_MAX_DAILY_TRADES");
+  _BB_RSI_MAX_LOSS       = _finiteOr(process.env.BB_RSI_MAX_DAILY_LOSS, parseFloat(process.env.BB_RSI_MAX_DAILY_LOSS || "2000"), 2000, "BB_RSI_MAX_DAILY_LOSS");
+  _BB_RSI_PAUSE_CANDLES  = _finiteOr(process.env.BB_RSI_SL_PAUSE_CANDLES, parseInt(process.env.BB_RSI_SL_PAUSE_CANDLES || "2", 10), 2, "BB_RSI_SL_PAUSE_CANDLES");
+  _BB_RSI_PER_SIDE_PAUSE = (process.env.BB_RSI_PER_SIDE_PAUSE || "true") === "true";
+  _STOP_MINS             = parseTimeToMinutes(process.env.TRADE_STOP_TIME, "15:30");
+  _ENTRY_STOP_MINS       = parseTimeToMinutes(process.env.BB_RSI_ENTRY_END, "14:30");
+  _BB_RSI_START_MINS     = parseTimeToMinutes(process.env.BB_RSI_ENTRY_START, "09:21");
+}
+_refreshConfig();
 
 // ── Previous day OHLC (reference, fetched on session start) ─────────────────
 let _prevDayOHLC     = null;
 let _prevPrevDayOHLC = null;
-
-const _STOP_MINS       = parseTimeToMinutes(process.env.TRADE_STOP_TIME, "15:30");
-const _ENTRY_STOP_MINS = parseTimeToMinutes(process.env.BB_RSI_ENTRY_END, "14:30");
 
 const getISTMinutes = _getISTMinutesReal;
 const fastISTTime   = _fastISTTime;
@@ -83,33 +104,80 @@ function ensureDir() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
+// Atomic write: a crash mid-write must never leave a truncated history file.
+function _writeLiveFileAtomic(obj) {
+  ensureDir();
+  const tmp = `${SL_FILE}.tmp-${process.pid}-${Date.now()}`;
+  fs.writeFileSync(tmp, JSON.stringify(obj, null, 2));
+  fs.renameSync(tmp, SL_FILE);
+}
+
+// Returns the parsed file, or null when it exists but cannot be parsed. On a
+// parse failure the bad file is copied aside as `.corrupt-<ts>` and the user is
+// alerted; callers must NOT write in that case — the old `{sessions:[]}` fallback
+// let the next save overwrite (wipe) the entire real-money trade history.
+let _corruptAlerted = false;
 function loadBbRsiData() {
   ensureDir();
   if (!fs.existsSync(SL_FILE)) {
     const initial = { sessions: [] };
-    fs.writeFileSync(SL_FILE, JSON.stringify(initial, null, 2));
+    _writeLiveFileAtomic(initial);
     return initial;
   }
-  try { return JSON.parse(fs.readFileSync(SL_FILE, "utf-8")); }
-  catch (_) { return { sessions: [] }; }
+  try {
+    const data = JSON.parse(fs.readFileSync(SL_FILE, "utf-8"));
+    if (!data || !Array.isArray(data.sessions)) throw new Error("missing sessions[]");
+    return data;
+  } catch (err) {
+    if (!_corruptAlerted) {
+      _corruptAlerted = true;
+      const bak = `${SL_FILE}.corrupt-${Date.now()}`;
+      try { fs.copyFileSync(SL_FILE, bak); } catch (_) {}
+      console.error(`🚨 [BB_RSI-LIVE] ${SL_FILE} is unreadable (${err.message}) — backed up to ${bak}; refusing to overwrite it`);
+      sendTelegram(`🚨 BB_RSI LIVE trade history file is corrupt (${err.message}). Backed up to ${path.basename(bak)}; new sessions will NOT be saved until it is fixed.`).catch(() => {});
+    }
+    return null;
+  }
 }
 
 function saveBbRsiSession() {
   if (!state.sessionTrades || state.sessionTrades.length === 0) return;
   try {
     const data = loadBbRsiData();
+    if (!data) {
+      log(`🚨 [BB_RSI-LIVE] Session NOT saved — history file is corrupt (see .corrupt-* backup). ${state.sessionTrades.length} trades, PnL: ₹${state.sessionPnl}: ${JSON.stringify(state.sessionTrades)}`);
+      return;
+    }
     data.sessions.push({
       date:     state.sessionStart,
       strategy: bbRsiStrategy.NAME,
       pnl:      state.sessionPnl,
       trades:   state.sessionTrades,
     });
-    ensureDir();
-    fs.writeFileSync(SL_FILE, JSON.stringify(data, null, 2));
+    _writeLiveFileAtomic(data);
+    _corruptAlerted = false;
     log(`💾 [BB_RSI-LIVE] Session saved — ${state.sessionTrades.length} trades, PnL: ₹${state.sessionPnl}`);
   } catch (err) {
     log(`⚠️ [BB_RSI-LIVE] Save failed: ${err.message}`);
   }
+}
+
+// Realised P&L + trade count from sessions already saved TODAY (IST).
+function _loadTodayLiveTotals() {
+  const out = { pnl: 0, trades: 0 };
+  const data = loadBbRsiData();
+  if (!data) return out;
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  for (const s of data.sessions) {
+    if (!s || !s.date) continue;
+    const d = new Date(s.date);
+    if (isNaN(d.getTime()) || d.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }) !== today) continue;
+    const pnl = parseFloat(s.pnl);
+    if (Number.isFinite(pnl)) out.pnl += pnl;
+    out.trades += Array.isArray(s.trades) ? s.trades.length : 0;
+  }
+  out.pnl = parseFloat(out.pnl.toFixed(2));
+  return out;
 }
 
 // ── State ────────────────────────────────────────────────────────────────────
@@ -152,7 +220,7 @@ function log(msg) {
 
 function getBucketStart(unixMs) { return _getBucketStartRaw(unixMs, BB_RSI_RES); }
 
-const _BB_RSI_START_MINS = parseTimeToMinutes(process.env.BB_RSI_ENTRY_START, "09:21");
+// _BB_RSI_START_MINS declared and populated by _refreshConfig() above
 
 function isMarketHours() {
   const total = getISTMinutes();
@@ -406,6 +474,13 @@ function verifyOrderFill(orderId, label) {
   }, 3000);
 }
 
+// Bumped synchronously by /start and /stop (mirrors bbRsiPaper._entryGen). An
+// async entry path captures it before its first await and re-checks it right
+// before placeOrder: a /stop (or stop + restart) during the symbol/quote/VIX/OI
+// awaits would otherwise send a REAL order for a dead session that nothing
+// tracks or exits. _sessionId is not usable — /start assigns it after awaits.
+let _entryGen = 0;
+
 // ── Order placement (Fyers with duplicate guard) ─────────────────────────────
 let _orderInFlight     = false;
 let _squareOffInFlight = false;
@@ -430,8 +505,13 @@ function _simOrder(prefix) {
 // Label for Telegram/notify so a simulated fill can never read as a real one.
 function _modeLabel() { return _orderIsDryRun() ? "BB_RSI-LIVE (DRY-RUN)" : "BB_RSI-LIVE"; }
 
-async function placeOrder(fyersSymbol, side, qty) {
-  if (_orderInFlight) {
+// opts.isExit: exits BYPASS the duplicate guard. The guard exists to stop a
+// double ENTRY; squareOff() has its own _squareOffInFlight lock. Applied to exits
+// it blocked the 2s retry (flag held 5s after the failed attempt) and the loop
+// broke with no alert and no hard-SL re-arm.
+async function placeOrder(fyersSymbol, side, qty, opts = {}) {
+  const _isExit = !!opts.isExit;
+  if (_orderInFlight && !_isExit) {
     log(`⚠️ [BB_RSI-LIVE] Order in flight — skipping duplicate`);
     return { success: false, reason: "duplicate_guard" };
   }
@@ -493,9 +573,8 @@ async function squareOff(exitPrice, reason) {
   const MAX_EXIT_RETRIES = 3;
   let result = null;
   for (let attempt = 1; attempt <= MAX_EXIT_RETRIES; attempt++) {
-    result = await placeOrder(symbol, exitOrderSide, qty);
+    result = await placeOrder(symbol, exitOrderSide, qty, { isExit: true });
     if (result.success) break;
-    if (result.reason === "duplicate_guard") break;  // another exit already in flight
     if (attempt < MAX_EXIT_RETRIES) {
       log(`⚠️ [BB_RSI-LIVE] Exit attempt ${attempt}/${MAX_EXIT_RETRIES} failed — retrying in 2s...`);
       await sleep(2000);
@@ -503,15 +582,13 @@ async function squareOff(exitPrice, reason) {
   }
 
   if (!result || !result.success) {
-    if (result && result.reason !== "duplicate_guard") {
-      log(`🚨 [BB_RSI-LIVE] EXIT ORDER FAILED after ${MAX_EXIT_RETRIES} attempts — MANUAL INTERVENTION REQUIRED!`);
-      sendTelegram(`🚨 BB_RSI EXIT FAILED: ${symbol} ${side} × ${qty} — ${reason}. Check Fyers dashboard IMMEDIATELY!`).catch(() => {});
-      // The position stays open but its exchange stop was cancelled above — put
-      // it back, otherwise a failed exit silently strips the only protection
-      // that survives this process dying. (duplicate_guard is skipped: another
-      // square-off is already in flight and owns the SL.)
-      await placeBbRsiHardSL();
-    }
+    log(`🚨 [BB_RSI-LIVE] EXIT ORDER FAILED after ${MAX_EXIT_RETRIES} attempts — MANUAL INTERVENTION REQUIRED!`);
+    sendTelegram(`🚨 BB_RSI EXIT FAILED: ${symbol} ${side} × ${qty} — ${reason}. Check Fyers dashboard IMMEDIATELY!`).catch(() => {});
+    // The position stays open but its exchange stop was cancelled above — put
+    // it back, otherwise a failed exit silently strips the only protection
+    // that survives this process dying. Always: squareOff() is serialised by
+    // _squareOffInFlight, so no other exit owns the SL here.
+    await placeBbRsiHardSL();
     _squareOffInFlight = false;
     return;
   }
@@ -656,7 +733,7 @@ async function squareOff(exitPrice, reason) {
     state._consecSLs = Math.max(state._consecSLsBySide.CE, state._consecSLsBySide.PE);
   }
 
-  if (state.sessionPnl <= -_BB_RSI_MAX_LOSS) {
+  if (state.sessionPnl + (state._priorPnlToday || 0) <= -_BB_RSI_MAX_LOSS) {
     state._dailyLossHit = true;
     log(`🚨 [BB_RSI-LIVE] Daily loss limit hit — no more entries`);
   }
@@ -886,6 +963,9 @@ function onTick(tick) {
 // ── onCandleClose ───────────────────────────────────────────────────────────
 
 async function onCandleClose(bar) {
+  // Read before any await below (VIX / OI): a Stop + Start during them must
+  // not let this candle enter the NEW session — see _entryGen.
+  const _sidClose = _entryGen;
   if (!state.running) return;
 
   // ── Confirmation candle on close (BB_RSI_CONFIRM_ON_CLOSE) ────────────────────
@@ -901,7 +981,7 @@ async function onCandleClose(bar) {
       state._armedSignal = null; // consume
       const _r = Object.assign({}, _a.result, { reason: `${_a.result.reason} | CONFIRM ${_a.side} close ${bar.close}` });
       log(`⚡ [BB_RSI-LIVE] Confirmation close ₹${bar.close} (signal close ${_a.triggerLevel}) — entering ${_a.side}`);
-      await resolveAndEnter(_a.side, bar.close, _r);
+      await resolveAndEnter(_a.side, bar.close, _r, _sidClose);
       return;
     }
     // no cross → fall through to expiry + re-evaluation
@@ -953,7 +1033,7 @@ async function onCandleClose(bar) {
   // so an armed cap stopped paper entering while live kept trading real money.
   { const _pf = require("../utils/portfolioRisk").checkPortfolioCap(); if (_pf.blocked) { log(`⏭️ [BB_RSI-LIVE] SKIP: ${_pf.reason}`); return; } }
   if (state._entryPending) { log(`⏭️ [BB_RSI-LIVE] SKIP: entry pending`); return; }
-  if (state.sessionTrades.length >= _BB_RSI_MAX_TRADES) { log(`⏭️ [BB_RSI-LIVE] SKIP: max trades (${_BB_RSI_MAX_TRADES}) reached`); return; }
+  if (state.sessionTrades.length + (state._priorTradesToday || 0) >= _BB_RSI_MAX_TRADES) { log(`⏭️ [BB_RSI-LIVE] SKIP: max trades (${_BB_RSI_MAX_TRADES}) reached (incl. ${state._priorTradesToday || 0} from earlier sessions today)`); return; }
   // Per-side SL cooldown is checked AFTER the strategy returns a side. Fast-path
   // when both sides are paused.
   const _pauseCE = state._slPauseUntilBySide && state._slPauseUntilBySide.CE > Date.now();
@@ -1041,6 +1121,9 @@ async function onCandleClose(bar) {
     if (_oi.regime) result.reason = `${result.reason} | ${_oi.reason}`;
   }
 
+  // /stop (or stop + restart) may have run during the VIX / OI awaits.
+  if (!state.running || _entryGen !== _sidClose) return;
+
   const side = _signalSide;
   const spot = bar.close;
 
@@ -1055,7 +1138,7 @@ async function onCandleClose(bar) {
     return;
   }
 
-  resolveAndEnter(side, spot, result);
+  resolveAndEnter(side, spot, result, _sidClose);
 }
 
 // Signal strength for bb_rsi (gates BB_RSI_VIX_STRONG_ONLY in elevated-VIX regimes).
@@ -1066,9 +1149,12 @@ function deriveBbRsiStrength(result) {
   return bbRsiStrategy.signalStrength(result);
 }
 
-async function resolveAndEnter(side, spot, result) {
+async function resolveAndEnter(side, spot, result, sid = _entryGen) {
+  const _sid = sid;
   if (state._entryPending || state.position) return;
+  if (!state.running || _entryGen !== _sid) return;
   state._entryPending = true;
+  const isFutures = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
 
   try {
     // Check BB_RSI_ENABLED
@@ -1077,7 +1163,12 @@ async function resolveAndEnter(side, spot, result) {
       return;
     }
 
-    const optionInfo = await validateAndGetOptionSymbol(spot, side);
+    // Honour the INSTRUMENT toggle (mirrors paper): in futures mode the month
+    // contract IS the tradeable symbol. squareOff() and the P&L already treat the
+    // position as futures — entering an option here booked it as the wrong thing.
+    const optionInfo = isFutures
+      ? { symbol: await getSymbol(side), strike: null, expiry: null, invalid: false }
+      : await validateAndGetOptionSymbol(spot, side);
     if (optionInfo.invalid) {
       log(`⚠️ [BB_RSI-LIVE] Option symbol invalid — skipping`);
       return;
@@ -1105,10 +1196,29 @@ async function resolveAndEnter(side, spot, result) {
       }
     }
 
-    // Place BUY order via Fyers
-    const orderResult = await placeOrder(symbol, 1, qty);
+    // /stop (or a stop + restart) may have run while we awaited the symbol /
+    // quote — a real order now would be an orphan nothing tracks or exits.
+    if (state.position || !state.running || _entryGen !== _sid) {
+      log(`⏭️ [BB_RSI-LIVE] Entry aborted — session stopped/restarted during symbol/quote lookup`);
+      return;
+    }
+
+    // Options: always BUY the CE/PE contract. Futures: CE = LONG = BUY(1),
+    // PE = SHORT = SELL(-1) — squareOff() closes PE with BUY(1). Same as emaRsiStLive.
+    const entryOrderSide = (isFutures && side === "PE") ? -1 : 1;
+    const orderResult = await placeOrder(symbol, entryOrderSide, qty);
     if (!orderResult.success) {
       log(`❌ [BB_RSI-LIVE] Entry order failed — skipping trade`);
+      return;
+    }
+
+    // The session was stopped while the order was in flight. The order cannot be
+    // recalled, and stopSession() saw no position to square off — flatten it now
+    // and make it impossible to miss.
+    if (!state.running || _entryGen !== _sid) {
+      log(`🚨 [BB_RSI-LIVE] Entry filled AFTER the session stopped — flattening ${symbol} × ${qty}`);
+      const _undo = await placeOrder(symbol, entryOrderSide === 1 ? -1 : 1, qty, { isExit: true });
+      sendTelegram(`🚨 BB_RSI LIVE: entry ${symbol} × ${qty} filled after the session stopped — flatten order ${_undo.success ? "sent" : "FAILED"}. Verify on the Fyers dashboard NOW.`).catch(() => {});
       return;
     }
 
@@ -1202,7 +1312,7 @@ async function resolveAndEnter(side, spot, result) {
       startOptionPolling(symbol);
     }
 
-    log(`📝 [BB_RSI-LIVE] BUY ${qty} × ${symbol} @ ₹${spot} | SL: ₹${clampedSL} | ${result.reason}`);
+    log(`📝 [BB_RSI-LIVE] ${entryOrderSide === 1 ? "BUY" : "SELL"} ${qty} × ${symbol} @ ₹${spot} | SL: ₹${clampedSL} | ${result.reason}`);
 
     notifyEntry({
       mode: _modeLabel(),
@@ -1333,6 +1443,10 @@ function _errorPage(title, message, linkHref, linkText) {
 router.get("/start", async (req, res) => {
   if (state.running) return res.json({ success: true, message: "Already running" });
 
+  // Re-read env into module-level config so Settings UI changes take effect for
+  // this session (mirrors bbRsiPaper /start).
+  _refreshConfig();
+
   const check = sharedSocketState.canStart("BB_RSI_LIVE");
   if (!check.allowed) {
     return res.status(409).send(_errorPage("Cannot Start", check.reason, "/bb_rsi-live/status", "\u2190 Back"));
@@ -1369,6 +1483,8 @@ router.get("/start", async (req, res) => {
     log(`📅 [BB_RSI-LIVE] Expiry-only mode: ${isExpiry ? "✅ Today is expiry — trading allowed" : "❌ Not expiry day — entries blocked"}`);
   }
 
+  const _todayPrior = _loadTodayLiveTotals();
+
   // Reset state
   state = {
     running: true, position: null, candles: [], currentBar: null, barStartTime: null,
@@ -1381,7 +1497,18 @@ router.get("/start", async (req, res) => {
     _dailyLossHit: false, _entryPending: false,
     _armedSignal: null, _entryInFlight: false,
     _expiryDayBlocked: _expiryBlocked,
+    // Today's earlier live sessions (a stop/start or PM2 restart must not reset
+    // the daily loss cap or trade count — they are DAILY limits on real money).
+    _priorPnlToday: _todayPrior.pnl, _priorTradesToday: _todayPrior.trades,
   };
+  _entryGen++;
+  if (_todayPrior.trades > 0) {
+    log(`📒 [BB_RSI-LIVE] Restored today's earlier live sessions — ${_todayPrior.trades} trades, PnL ₹${_todayPrior.pnl}`);
+  }
+  if (_todayPrior.pnl <= -_BB_RSI_MAX_LOSS) {
+    state._dailyLossHit = true;
+    log(`🚨 [BB_RSI-LIVE] Daily loss limit already hit today (₹${_todayPrior.pnl}) — no entries this session`);
+  }
 
   sharedSocketState.setBbRsiActive("BB_RSI_LIVE");
 
@@ -1475,6 +1602,7 @@ router.get("/start", async (req, res) => {
 async function stopSession() {
   if (!state.running) return;
   state.running = false;
+  _entryGen++;   // invalidate any entry awaiting a symbol / quote / VIX / OI
 
   if (state.position) {
     try { await awaitExit(squareOff(state.lastTickPrice || state.position.entryPrice, "Session stopped"), "BB_RSI-LIVE"); }
@@ -2909,8 +3037,8 @@ router.post("/reset", (req, res) => {
     });
   }
   try {
-    ensureDir();
-    fs.writeFileSync(SL_FILE, JSON.stringify({ sessions: [] }, null, 2));
+    _writeLiveFileAtomic({ sessions: [] });
+    _corruptAlerted = false;
     log("🔄 [BB_RSI-LIVE] BB_RSI live trade history cleared.");
     return res.json({ success: true, message: "BB_RSI live trade history cleared." });
   } catch (err) {
