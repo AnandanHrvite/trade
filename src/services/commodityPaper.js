@@ -643,14 +643,19 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     // evening-only day). No calendar: if well past the latest session open the
     // future has printed no bar and its quote shows no trade since that open,
     // the session is not running. Any sign of activity vetoes it (see mcxHolidays).
+    // Fails OPEN: "closed" needs a quote that actually came back with an exchange
+    // trade time older than the open — missing/failed data never blocks a start.
+    // Skipped when a same-day position is saved, so a restart can't orphan it.
     const gate = { nowMs: Date.now(), sessStartMin: c.sessStart, sessEndMin: c.sessEnd, resMin: c.res, lastBarTimeSec: state.lastBarTime };
-    if (mcxHolidays.mcxSessionClosed(gate).closed) {
+    const savedPeek = _readJson(ACTIVE_FILE, null);
+    const hasSavedToday = !!(savedPeek && savedPeek.position && savedPeek.day === state.day);
+    if (!hasSavedToday && mcxHolidays.mcxSessionClosed(gate).closed) {
       try {
         const r = await fyers.getQuotes([state.series.future]);
         const d = r && r.s === "ok" && (r.d || [])[0];
         gate.quoteTradeSec = mcxHolidays.quoteTradeSec(d && d.v);
-      } catch (_) { /* no quote → bars alone decide */ }
-      const shut = mcxHolidays.mcxSessionClosed(gate);
+      } catch (_) { /* no quote → treated as open below */ }
+      const shut = Number.isFinite(gate.quoteTradeSec) ? mcxHolidays.mcxSessionClosed(gate) : { closed: false };
       if (shut.closed) {
         closedUntil = shut.untilMs;
         return { ok: false, reason: `MCX looks closed today — no trade in ${state.series.future} since ${fmtMins(shut.openMin)}; not polling until ${istDay(shut.untilMs)} ${istClock(shut.untilMs).slice(0, 5)} IST` };
