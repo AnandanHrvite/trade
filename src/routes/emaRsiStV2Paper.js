@@ -468,6 +468,18 @@ let _entrySessionGen = 0;
 // REPLACES that handler — which silently starved V1 of every tick from 2026-09-05.
 const SOCKET_CALLBACK_ID = "ema_rsi_st_v2-paper";
 
+// A session started after its stop time (e.g. a 16:00 start) used to get no
+// timer at all and held its socket slot all night. Hard-stop it this long after
+// start instead. Never in replay — replay runs at any wall-clock hour.
+const LATE_START_GRACE_MIN = 30;
+function _lateStartStopMins() {
+  try { if (require("../services/tickReplay").isReplayInProgress()) return 0; } catch (_) {}
+  const t = (getISTMinutes() + LATE_START_GRACE_MIN) % 1440;
+  const hhmm = String(Math.floor(t / 60)).padStart(2, "0") + ":" + String(t % 60).padStart(2, "0");
+  log(`⏰ [PAPER] Session started after its stop time — will stop at ${hhmm} IST`);
+  return LATE_START_GRACE_MIN;
+}
+
 // Schedule auto-stop at TRADE_STOP_TIME (default 15:30 IST).
 // Set TRADE_STOP_TIME=HH:MM in .env to override.
 function scheduleAutoStop(stopFn) {
@@ -480,14 +492,15 @@ function scheduleAutoStop(stopFn) {
   const now    = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
   const stopAt = new Date(now);
   stopAt.setHours(stopH, stopM, 0, 0);
-  const msUntilStop = stopAt - now;
-  if (msUntilStop <= 0) return; // already past stop time today
+  let msUntilStop = stopAt - now;
+  const late = msUntilStop <= 0;
+  if (late) { msUntilStop = _lateStartStopMins() * 60 * 1000; if (!msUntilStop) return; }
   _autoStopTimer = setTimeout(() => {
     if (!ptState.running) return;
     stopFn("⏰ [PAPER] Auto-stop: " + stopLabel + " reached — closing session.");
   }, msUntilStop);
   const minUntil = Math.round(msUntilStop / 60000);
-  log("⏰ [PAPER] Auto-stop scheduled in " + minUntil + " min (at " + stopLabel + ")");
+  if (!late) log("⏰ [PAPER] Auto-stop scheduled in " + minUntil + " min (at " + stopLabel + ")");
 }
 
 function getCapitalFromEnv() {

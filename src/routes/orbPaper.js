@@ -835,14 +835,26 @@ async function preloadHistory() {
 // ── Auto-stop at TRADE_STOP_TIME ────────────────────────────────────────────
 
 let _autoStopTimer = null;
+// A session started after its stop time (e.g. a 16:00 start) used to get no
+// timer at all and held its socket slot all night. Hard-stop it this long after
+// start instead. Never in replay — replay runs at any wall-clock hour.
+const LATE_START_GRACE_MIN = 30;
+function _lateStartStopMins() {
+  try { if (require("../services/tickReplay").isReplayInProgress()) return 0; } catch (_) {}
+  const t = (getISTMinutes() + LATE_START_GRACE_MIN) % 1440;
+  const hhmm = String(Math.floor(t / 60)).padStart(2, "0") + ":" + String(t % 60).padStart(2, "0");
+  log(`⏰ [ORB-PAPER] Session started after its stop time — will stop at ${hhmm} IST`);
+  return LATE_START_GRACE_MIN;
+}
+
 function scheduleAutoStop() {
   if (_autoStopTimer) clearTimeout(_autoStopTimer);
   const raw = process.env.TRADE_STOP_TIME || "15:30";
   const [h, m] = raw.split(":").map(Number);
   const stopMin = h * 60 + (isNaN(m) ? 0 : m);
   const now = getISTMinutes();
-  const minsLeft = stopMin - now;
-  if (minsLeft <= 0) return;
+  let minsLeft = stopMin - now;
+  if (minsLeft <= 0) { minsLeft = _lateStartStopMins(); if (!minsLeft) return; }
   _autoStopTimer = setTimeout(() => {
     log(`⏰ [ORB-PAPER] Auto-stop @ ${raw} IST`);
     stopSession();

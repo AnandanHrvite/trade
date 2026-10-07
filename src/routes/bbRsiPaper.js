@@ -1215,16 +1215,29 @@ async function preloadHistory() {
 // ── Auto-stop timer ─────────────────────────────────────────────────────────
 let _autoStopTimer = null;
 
+// A session started after its stop time (e.g. a 16:00 start) used to get no
+// timer at all and held its socket slot all night. Hard-stop it this long after
+// start instead. Never in replay — replay runs at any wall-clock hour.
+const LATE_START_GRACE_MIN = 30;
+function _lateStartStopMins() {
+  try { if (require("../services/tickReplay").isReplayInProgress()) return 0; } catch (_) {}
+  const t = (getISTMinutes() + LATE_START_GRACE_MIN) % 1440;
+  const hhmm = String(Math.floor(t / 60)).padStart(2, "0") + ":" + String(t % 60).padStart(2, "0");
+  log(`⏰ [BB_RSI-PAPER] Session started after its stop time — will stop at ${hhmm} IST`);
+  return LATE_START_GRACE_MIN;
+}
+
 function scheduleAutoStop(stopFn) {
   if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
   const nowMins = getISTMinutes();
-  const ms = (_STOP_MINS - nowMins) * 60 * 1000;
-  if (ms <= 0) return;
+  let ms = (_STOP_MINS - nowMins) * 60 * 1000;
+  const late = ms <= 0;
+  if (late) { ms = _lateStartStopMins() * 60 * 1000; if (!ms) return; }
   _autoStopTimer = setTimeout(() => {
     if (!state.running) return;
     stopFn("⏰ [BB_RSI-PAPER] Auto-stop reached");
   }, ms);
-  log(`⏰ [BB_RSI-PAPER] Auto-stop in ${Math.round(ms / 60000)} min`);
+  if (!late) log(`⏰ [BB_RSI-PAPER] Auto-stop in ${Math.round(ms / 60000)} min`);
 }
 
 // errorPage imported from sharedNav (shared across all route files)
