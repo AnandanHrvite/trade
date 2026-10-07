@@ -3,12 +3,16 @@ module.exports = {
     {
       name: "trading-bot",
       script: "src/app.js",
-      // t3.micro = 956 MB usable. Pushed caps to the ceiling per user request
-      // so paper/live sessions aren't killed by pm2 under load. V8 heap is set
-      // just below the pm2 restart threshold so GC runs before pm2 kills us.
+      // t3.micro = 956 MB total, but the kernel, sshd, SSM agent and the pm2
+      // daemon hold ~200 MB, leaving the bot ~750 MB of real RAM. RSS is the
+      // old-space heap PLUS young gen, code and Buffers, so the old 900 MB heap
+      // cap let RSS outrun physical RAM — the kernel OOM-killer (or swap-less
+      // thrash) struck before pm2's 30 s memory sample could restart cleanly.
+      // 620 MB old space makes V8 collect hard before RAM runs out; pm2 then
+      // restarts at 750 MB as the last line of defence.
       // --expose-gc lets the backtest engine trigger GC manually.
-      node_args: "--expose-gc --max-old-space-size=900",
-      max_memory_restart: "940M",
+      node_args: "--expose-gc --max-old-space-size=620",
+      max_memory_restart: "750M",
       watch: false,
       autorestart: true,
       restart_delay: 5000,
