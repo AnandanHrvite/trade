@@ -410,7 +410,7 @@ function _resolveBankniftyExpiryEnv({ marketContext, snapshot, date, tradedExpir
   }
 
   const bn = marketContext && marketContext.underlyings && marketContext.underlyings.BANKNIFTY;
-  if (bn && bn.monthlyExpiry) {
+  if (bn && bn.monthlyExpiry && _overrideUsableOn(bn.monthlyExpiry, date)) {
     env[_BANKNIFTY_EXPIRY_OVERRIDE_KEY] = bn.monthlyExpiry;
     env[_BANKNIFTY_EXPIRY_TYPE_KEY]     = "monthly";
     return { env, source: "market-context", date: bn.monthlyExpiry, type: "monthly", underlying: "BANKNIFTY" };
@@ -1014,6 +1014,7 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     // false mid-replay — the real sharedSocketState gets stuck "active" and
     // the preflight banner falsely blocks the next replay. Stub the mutators
     // so replays can't touch real state at all; reads still pass through.
+    ss_canStart:          sharedSocketState.canStart,
     ss_setActive:         sharedSocketState.setActive,
     ss_clear:             sharedSocketState.clear,
     ss_setBbRsiActive:    sharedSocketState.setBbRsiActive,
@@ -1578,6 +1579,9 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     // /stop's clear() don't touch real session state. Reads (isActive,
     // getMode, etc.) are left intact — they return whatever real-process
     // state actually holds.
+    // canStart() reserves the slot for 30s on success; the stubbed setters below
+    // would never release it, so a replay must only PROBE (no reservation).
+    sharedSocketState.canStart          = (m) => orig.ss_canStart(m, { reserve: false });
     sharedSocketState.setActive         = () => {};
     sharedSocketState.clear             = () => {};
     sharedSocketState.setBbRsiActive    = () => {};
@@ -1854,6 +1858,7 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     tickRecorder.recordSessionStop  = orig.tr_recordSessionStop;
     tickRecorder.recordMarketContext = orig.tr_recordMarketContext;
     skipLogger.appendSkipLog        = orig.sl_appendSkipLog;
+    sharedSocketState.canStart          = orig.ss_canStart;
     sharedSocketState.setActive         = orig.ss_setActive;
     sharedSocketState.clear             = orig.ss_clear;
     sharedSocketState.setBbRsiActive    = orig.ss_setBbRsiActive;

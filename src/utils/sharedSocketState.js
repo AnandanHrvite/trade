@@ -363,8 +363,8 @@ function isAnyActive() {
          simple930Mode !== null;
 }
 
-/** Can the given mode start? Returns { allowed, reason } */
-function canStart(mode) {
+/** Raw mutex check (no reservation). Returns { allowed, reason } */
+function _canStartRaw(mode) {
   switch (mode) {
     case "EMA_RSI_ST_LIVE":
       if (primaryMode === "EMA_RSI_ST_PAPER") return { allowed: false, reason: "Paper Trade is running — stop it first" };
@@ -500,6 +500,37 @@ function canStart(mode) {
   }
 }
 
+// ── Start reservation (check-then-act race) ───────────────────────────────
+// Every /start handler does canStart() → several awaits (token verify, holiday
+// check, symbol resolve) → set*Active(). Two near-simultaneous /start requests
+// (double-click, two tabs) both passed canStart() before either set the slot, so
+// two sessions of the same strategy ran on one mutex. canStart() now RESERVES
+// the strategy's slot for START_RESERVATION_MS when it allows; the reservation
+// is released by that strategy's set*/clear* call or expires on its own (a
+// /start that bails out early simply lets it lapse).
+const START_RESERVATION_MS = 30000;
+const _reservations = new Map();   // slot ("BB_RSI", "EMA_RSI_ST_V2", …) -> expiresAt
+function _slotOf(mode) { return String(mode || "").replace(/_(PAPER|LIVE)$/, ""); }
+
+/**
+ * Can the given mode start? Returns { allowed, reason }.
+ * Called from /start paths: an allowed answer reserves the slot (see above).
+ * Pass { reserve: false } for a read-only probe (status/display, replay).
+ */
+function canStart(mode, opts) {
+  const raw = _canStartRaw(mode);
+  if (!raw.allowed) return raw;
+  const slot = _slotOf(mode);
+  const now = Date.now();
+  const until = _reservations.get(slot);
+  if (until && until > now) {
+    return { allowed: false, reason: `${slot}: start already in progress — retry in ${Math.ceil((until - now) / 1000)}s` };
+  }
+  if (!opts || opts.reserve !== false) _reservations.set(slot, now + START_RESERVATION_MS);
+  else _reservations.delete(slot);
+  return raw;
+}
+
 module.exports = {
   // Primary (backward compatible)
   setActive, clear, isActive, getMode,
@@ -534,3 +565,24 @@ module.exports = {
   // Combined
   isAnyActive, canStart,
 };
+
+// set*/clear* release the strategy's start reservation. Wrapped here (rather
+// than edited into 30 bodies) so a newly added slot cannot forget it.
+const _CLEAR_SLOT = {
+  clear: "EMA_RSI_ST", clearBbRsi: "BB_RSI", clearPA: "PA", clearOrb: "ORB",
+  clearEma9Vwap: "EMA9VWAP", clearTrendPb: "TREND_PB", clearTrendDayScalp: "TREND_DAY_SCALP",
+  clearHaScalp: "HA_SCALP", clearPrevOrbScalp: "PREV_ORB_SCALP", clearEarlyBird: "EARLY_BIRD",
+  clearRsiPivotSt: "RSI_PIVOT_ST", clearBnPivotRsiStMode: "BN_PIVOT_RSI_ST",
+  clearEmaRsiStV2Mode: "EMA_RSI_ST_V2", clearBnEmaRsiStV2Mode: "BN_EMA_RSI_ST_V2",
+  clearSimple930: "SIMPLE930",
+};
+for (const name of Object.keys(module.exports)) {
+  const fn = module.exports[name];
+  if (typeof fn !== "function" || !/^(set|clear)/.test(name)) continue;
+  module.exports[name] = function (...args) {
+    const r = fn.apply(this, args);
+    const slot = name.startsWith("set") ? _slotOf(args[0]) : _CLEAR_SLOT[name];
+    if (slot) _reservations.delete(slot);
+    return r;
+  };
+}

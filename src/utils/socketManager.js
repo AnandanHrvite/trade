@@ -105,6 +105,16 @@ const FLAP_REALERT_MS      = 15 * 60_000;
 // holding a tombstone is one map entry and the cost of missing one is a
 // corrupted candle series.
 const TOMBSTONE_MS         = 60_000;
+// A subscribed spot index with no REAL tick for this long during market hours
+// is reported stale (health + one Telegram per outage). Measured per index from
+// ticks actually delivered — reconnects and the watchdog do not reset it, so a
+// wire that keeps reconnecting without ever delivering still trips it, and so
+// does one index going silent while another keeps ticking.
+const SPOT_STALE_MS        = 60_000;
+// An option contract the server rejected by name is not re-subscribed for this
+// long, so optionFeed's lease renewals cannot spin a subscribe/error loop. The
+// contract stays on its REST fallback meanwhile.
+const REJECT_MS            = 5 * 60_000;
 
 /**
  * Resolve the instrument symbol carried by a raw SDK tick.
@@ -202,6 +212,19 @@ class SocketManager {
     this._flapping      = false;  // sticky while the storm lasts; cleared by a stable connect
     this._flapSince     = null;   // when the current storm started
     this._flapAlertedAt = 0;      // last Telegram push, for FLAP_REALERT_MS cadence
+    // ── Token the SDK instance was built with ─────────────────────────────
+    // The SDK keeps its token in a closure, so a re-login is only picked up by
+    // building a new instance (see _resetSdk). `_authFailedToken` is the
+    // ACCESS_TOKEN that hit AUTH_FAIL_LIMIT — a different one means re-login.
+    this._sktToken        = null;
+    this._authFailedToken = null;
+    // ── Per-index silence (see SPOT_STALE_MS) ─────────────────────────────
+    this._spotSubscribedAt = new Map();   // symbol -> when it joined the wire
+    this._staleSpots       = new Map();   // symbol -> outage start (alerted once)
+    this._rejectedExtras   = new Map();   // symbol -> expiry ms (server rejected it)
+    // Connection generation a reconnect was already scheduled for. One drop
+    // fires BOTH 'error' and 'close'; only the first may schedule.
+    this._reconnectGen     = -1;
   }
 
   // ── Public API ──────────────────────────────────────────────────────────────
@@ -213,6 +236,7 @@ class SocketManager {
       this._onSpotTick = onSpotTick;
       this._onLog      = onLog;
       this._spotSymbols.add(spotSymbol);
+      if (!this._spotSubscribedAt.has(spotSymbol)) this._spotSubscribedAt.set(spotSymbol, Date.now());
       if (onLog) onLog(`📡 [SOCKET] Reusing existing connection for ${spotSymbol}`);
       return;
     }
@@ -257,6 +281,9 @@ class SocketManager {
     }
     this._symbol        = spotSymbol;
     this._spotSymbols   = new Set([spotSymbol]);
+    this._spotSubscribedAt = new Map([[spotSymbol, Date.now()]]);
+    this._staleSpots.clear();
+    this._authFailedToken = null;
     this._spotHandlers.clear();
     this._onSpotTick    = onSpotTick;
     this._onLog         = onLog;
@@ -318,6 +345,7 @@ class SocketManager {
       this._spotHandlers.delete(symbol);
       return false;
     }
+    this._spotSubscribedAt.set(symbol, Date.now());
     this._log(`📡 [SOCKET] Spot index ADDED: ${symbol} — now streaming ${this._spotSymbols.size} indices (${Array.from(this._spotSymbols).join(", ")}); ticks are routed per index.`);
     return true;
   }
@@ -331,6 +359,8 @@ class SocketManager {
     if (!symbol || symbol === this._symbol || !this._spotSymbols.has(symbol)) return false;
     this._spotSymbols.delete(symbol);
     this._spotHandlers.delete(symbol);
+    this._spotSubscribedAt.delete(symbol);
+    this._staleSpots.delete(symbol);
     // Tombstoned for the same reason an option is: queued ticks for it keep
     // arriving briefly, and they must not be re-attributed to another index.
     this._tombstone([symbol]);
@@ -421,6 +451,11 @@ class SocketManager {
     if (!this.canSubscribeExtras()) return false;
     if (symbol === this._spotTickSymbol || symbol === this._symbol) return false;
     if (this._extraSymbols.has(symbol)) return true;
+    const rejUntil = this._rejectedExtras.get(symbol);
+    if (rejUntil !== undefined) {
+      if (Date.now() < rejUntil) return false;   // server rejected it by name — REST fallback
+      this._rejectedExtras.delete(symbol);
+    }
     // Re-entering a strike we just left: the tombstone has done its job and
     // must go, or every tick for the new subscription would be discarded.
     this._tombstones.delete(symbol);
@@ -490,6 +525,10 @@ class SocketManager {
     // evening with its "over ~N min" counting up — nothing clears _flapping while
     // the feed stays attached, since both clear paths need a tick or a close.
     else if (running && inMarket && this._flapping) reason = "flapping";
+    // One or more subscribed indices have delivered no real tick for
+    // SPOT_STALE_MS — including the case of one index silent while another
+    // ticks, and a wire that reconnects without ever delivering.
+    else if (running && inMarket && this._staleSpots.size) reason = "stale";
     return {
       running,
       authFailed:    this._authFailed,
@@ -516,6 +555,8 @@ class SocketManager {
       flapping:           this._flapping,
       flapCount:          this._flapCount,
       flapSince:          this._flapSince,
+      staleSpots:         Array.from(this._staleSpots.keys()),
+      staleSince:         this._staleSpots.size ? Math.min(...this._staleSpots.values()) : null,
     };
   }
 
@@ -538,6 +579,8 @@ class SocketManager {
     this._spotSymbols.clear();    // next session re-declares its indices
     this._spotHandlers.clear();
     this._lastTickBySpot.clear();
+    this._spotSubscribedAt.clear();
+    this._staleSpots.clear();     // silently — a released feed has not "recovered"
     this._spotTickSymbol = null;  // re-probe on the next session
     this._lastSpotTickAt = null;  // watchdog clock starts fresh with the session
     this._extrasDisabled = false; // a new session gets a fresh chance
@@ -655,6 +698,7 @@ class SocketManager {
     this._unattributedStreak = 0;
     this._lastSpotTickAt = Date.now();
     this._lastTickBySpot.set(spotSym, this._lastSpotTickAt);
+    if (this._staleSpots.size && this._staleSpots.has(spotSym)) this._onSpotRecovered(spotSym);
 
     // Record raw tick for after-hours replay (no-op when TICK_RECORDER_ENABLED=false).
     // Done before fan-out so even if a strategy throws, the tick is still captured.
@@ -838,26 +882,37 @@ class SocketManager {
     this._detachListeners();
     this._closeConnection();
 
-    const token = `${process.env.APP_ID}:${process.env.ACCESS_TOKEN}`;
+    const connAccess = process.env.ACCESS_TOKEN;
+    const token = `${process.env.APP_ID}:${connAccess}`;
     this._log(`📡 [SOCKET] Connecting... symbol: ${this._symbol}`);
 
-    // NOTE: there is deliberately no "rebuild the SDK on a flap storm" step here.
-    // The Fyers SDK is a hard singleton (see the header): `new` throws once an
-    // instance exists, so the fallback path hands back the SAME object. Nulling
-    // the reference would therefore close a working socket and get the identical
-    // instance in return — strictly worse than leaving it alone.
+    // NOTE: there is deliberately no "rebuild the SDK on a flap storm" step here
+    // — rebuilding with the SAME token cannot fix a flap. The SDK keeps its token
+    // in a closure, though, so a CHANGED token (re-login) can only be picked up
+    // by a new instance: reusing the old one would keep presenting the dead
+    // token forever (code -15). That is the one case we rebuild.
+    if (this._skt && this._sktToken !== token) {
+      this._log('🔑 [SOCKET] Access token changed — rebuilding SDK instance with the current token');
+      this._resetSdk();
+    }
 
     // Acquire SDK instance:
     // - First connect this session → create via `new`
     // - All reconnects → reuse the same instance (re-creating throws)
     if (!this._skt) {
+      // The SDK singleton outlives stop() (which only drops OUR reference), so a
+      // fresh session would otherwise get the PREVIOUS session's instance — and
+      // its token — back from getInstance(). Retire it first.
+      if (fyersDataSocket.instance) this._resetSdk();
       try {
         this._skt = new fyersDataSocket(token, './logs', true);
+        this._sktToken = token;
       } catch (err) {
         // SDK singleton already exists from a prior session in this process.
         this._log(`⚠️  [SOCKET] SDK singleton exists — using getInstance()`);
         try {
           this._skt = fyersDataSocket.getInstance();
+          this._sktToken = null;   // unknown — the next attempt rebuilds it
         } catch (e2) {
           this._log(`❌ [SOCKET] Cannot acquire SDK instance: ${e2.message}`);
           this._scheduleReconnect();
@@ -934,6 +989,13 @@ class SocketManager {
         this._log(`📡 [SOCKET] Subscribe queued before connect — re-asserted on connect (${err.message || 'socket is disconnected'})`);
         return;
       }
+      // A sub/unsub error that names one of our symbols (e.g. an expired or
+      // invalid option contract) is about THAT symbol, not the connection.
+      // Reconnecting would re-assert the same bad symbol and loop. Drop it.
+      if (!(err && err.code === -15)) {
+        const named = this._symbolsNamedIn(err);
+        if (named.length) { this._dropRejectedSymbols(named, err); return; }
+      }
       this._log(`❌ [SOCKET] Error: ${JSON.stringify(err)}`);
       // Track last error for /socket-health surface.
       try {
@@ -945,9 +1007,18 @@ class SocketManager {
       // clear the bad token from disk + env so a stale token can't be picked up after a
       // restart, fire a Telegram alert, and surface broken-state on the health endpoint.
       if (err && err.code === -15) {
+        // The token this attempt presented is not the current one — a re-login
+        // landed mid-flight. Never clear the NEW token over the OLD one's
+        // rejection; reconnect with the current token instead.
+        if (process.env.ACCESS_TOKEN && process.env.ACCESS_TOKEN !== connAccess) {
+          this._log('🔑 [SOCKET] -15 was for a superseded token — reconnecting with the current one (token NOT cleared)');
+          setImmediate(() => { try { this.reauth(); } catch (e) { this._log(`🚨 [SOCKET] reauth failed: ${e.message}`); } });
+          return;
+        }
         this._authFailCount += 1;
         if (this._authFailCount >= AUTH_FAIL_LIMIT && !this._authFailed) {
           this._authFailed = true;
+          this._authFailedToken = connAccess || null;
           this._clearRetry();
           this._log(`🛑 [SOCKET] Auth rejected ${this._authFailCount}× (code -15) — giving up. Token cleared. Re-login at /auth/login.`);
           try { clearFyersToken(); } catch (e) { this._log(`⚠️  [SOCKET] Token clear failed: ${e.message}`); }
@@ -1064,6 +1135,10 @@ class SocketManager {
   _scheduleReconnect() {
     if (this._stopped) return;
     if (this._authFailed) return;  // hard-stop on permanent auth failure
+    // One drop fires 'error' AND 'close'; each used to schedule (and bump the
+    // backoff). Only the first per connection attempt counts.
+    if (this._reconnectGen === this._connGen) return;
+    this._reconnectGen = this._connGen;
     // Market closed and no strategy attached: there is nothing to reconnect FOR,
     // and Fyers drops the idle socket seconds after accepting it — so the loop
     // manufactures flaps all evening instead of recovering anything. This is the
@@ -1099,8 +1174,14 @@ class SocketManager {
     this._watchdog = setInterval(() => {
       try {
         if (this._stopped) { this._clearWatchdog(); return; }
-        if (this._authFailed) return;  // don't try to reconnect on dead auth
+        if (this._authFailed) {
+          // Dead auth: only a NEW token (re-login) can recover — pick it up.
+          if (this.authTokenChanged()) this.reauth();
+          return;
+        }
         if (!this._isMarketHours()) {
+          // Outages end with the session, silently (no ticks to lose after close).
+          if (this._staleSpots.size) this._staleSpots.clear();
           // The session is over but the feed is still ATTACHED (an overnight
           // paper session). A storm latched before the close has nothing left to
           // describe, and neither clear path can fire once the ticks stop — so
@@ -1110,6 +1191,9 @@ class SocketManager {
           if (this._flapping) this._clearFlap(true);
           return;
         }
+        // Per-index silence is checked BEFORE the retry gate: a feed stuck in
+        // its backoff loop is exactly the silent feed this has to report.
+        this._checkSpotStaleness();
         // A reconnect is already scheduled — the backoff owns recovery from here.
         // Barging in with our own _connect() is what let two reconnect loops run
         // against one socket and kept the feed down for a whole session.
@@ -1133,6 +1217,144 @@ class SocketManager {
 
   _clearWatchdog() {
     if (this._watchdog) { clearInterval(this._watchdog); this._watchdog = null; }
+  }
+
+  /**
+   * True when auth was declared dead and process.env.ACCESS_TOKEN now holds a
+   * DIFFERENT token (the user re-logged in).
+   */
+  authTokenChanged() {
+    const cur = process.env.ACCESS_TOKEN;
+    return !!cur && cur !== this._authFailedToken;
+  }
+
+  /**
+   * Recover from a Fyers auth failure (code -15) after a re-login: clear the
+   * sticky auth state, retire the SDK instance (it holds the old token in a
+   * closure), and reconnect with the current process.env.ACCESS_TOKEN. The
+   * connect handler re-subscribes every spot index and option contract.
+   * On a stopped socket it only clears the auth state — the next start()
+   * connects with the current token. Returns true when a reconnect was started.
+   */
+  reauth() {
+    this._authFailed      = false;
+    this._authFailCount   = 0;
+    this._authFailedToken = null;
+    this._lastErrorCode   = null;
+    this._lastErrorMsg    = null;
+    if (this._stopped) {
+      this._log('🔑 [SOCKET] Auth state cleared — next start() uses the current token');
+      return false;
+    }
+    if (!process.env.ACCESS_TOKEN) {
+      this._log('⚠️  [SOCKET] reauth() with no ACCESS_TOKEN set — waiting for login');
+      return false;
+    }
+    this._log('🔑 [SOCKET] Re-authenticating — reconnecting with the current token');
+    this._retryCount = 0;
+    this._clearRetry();
+    this._detachListeners();
+    this._resetSdk();
+    this._lastDownAt = Date.now();
+    this._connect();
+    return true;
+  }
+
+  /**
+   * Retire the SDK instance so the next _connect() builds a new one with the
+   * current token. The SDK is a singleton (`new` throws while
+   * fyersDataSocket.instance is set), so the static slot is cleared too. The
+   * old instance's events are ignored via _connGen.
+   */
+  _resetSdk() {
+    const old = this._skt || fyersDataSocket.instance || null;
+    this._skt = null;
+    this._sktToken = null;
+    this._connectedAt = null;
+    if (old) {
+      try { old.close(); } catch (_) {}
+      // The SDK starts a 1s interval per instance; a discarded one would leak.
+      try { if (old.secondcountertimer) clearInterval(old.secondcountertimer); } catch (_) {}
+      try { if (old.autreconnecttimer) clearInterval(old.autreconnecttimer); } catch (_) {}
+    }
+    try { fyersDataSocket.instance = null; } catch (_) {}
+  }
+
+  /** Our subscribed/recent symbols that an SDK error object names. */
+  _symbolsNamedIn(err) {
+    if (!err) return [];
+    let text;
+    try { text = typeof err === 'string' ? err : JSON.stringify(err); } catch (_) { return []; }
+    if (!text) return [];
+    const cand = new Set([...this._extraSymbols, ...this._spotSymbols, ...this._tombstones.keys()]);
+    if (this._symbol) cand.add(this._symbol);
+    return Array.from(cand).filter(sym => sym && text.includes(sym));
+  }
+
+  /**
+   * Non-fatal per-symbol sub/unsub error: log it, drop an option contract
+   * (blocked from re-subscribe for REJECT_MS; optionFeed stays on REST), and
+   * do NOT reconnect. Spot indices are only logged — they are re-asserted on
+   * the next reconnect, and the stale-spot alert reports one that stays silent.
+   */
+  _dropRejectedSymbols(named, err) {
+    const msg = (err && err.message) ? String(err.message) : JSON.stringify(err);
+    for (const sym of named) {
+      if (this._extraSymbols.has(sym)) {
+        this._extraSymbols.delete(sym);
+        this._tombstone([sym]);
+        this._rejectedExtras.set(sym, Date.now() + REJECT_MS);
+        this._log(`⚠️  [SOCKET] Server rejected option ${sym} (${msg}) — dropped, REST fallback; not reconnecting`);
+      } else {
+        this._log(`⚠️  [SOCKET] Subscription error for ${sym} (${msg}) — non-fatal, not reconnecting`);
+      }
+    }
+  }
+
+  /** IST trading day? Holiday cache is sync-only; unknown → assume trading. */
+  _isTradingDayNow() {
+    try { return !require('./nseHolidays').isNonTradingDaySync(new Date()); }
+    catch (_) { return true; }
+  }
+
+  /**
+   * Watchdog hook (market hours only): flag every subscribed index whose last
+   * REAL tick (or its subscribe time / today's 09:15 open, whichever is later)
+   * is older than SPOT_STALE_MS. Telegram once per outage; _onSpotRecovered
+   * sends the all-clear.
+   */
+  _checkSpotStaleness() {
+    if (!this._spotSymbols.size || !this._isTradingDayNow()) return;
+    const now = Date.now();
+    const istSec = Math.floor(now / 1000) + 19800;
+    const openMs = ((Math.floor(istSec / 86400) * 86400) + 555 * 60 - 19800) * 1000;
+    for (const sym of this._spotSymbols) {
+      if (this._staleSpots.has(sym)) continue;
+      const last = Math.max(this._lastTickBySpot.get(sym) || 0, this._spotSubscribedAt.get(sym) || 0, openMs);
+      const silent = now - last;
+      if (silent <= SPOT_STALE_MS) continue;
+      this._staleSpots.set(sym, last);
+      const others = Array.from(this._spotSymbols).filter(s => s !== sym && !this._staleSpots.has(s));
+      this._log(`🚨 [SOCKET] No ${sym} tick for ${Math.round(silent / 1000)}s during market hours — feed is SILENT for it${others.length ? ` (still ticking: ${others.join(', ')})` : ''}`);
+      try {
+        require('./notify').sendIfMaster(
+          `🚨 Fyers feed silent: ${sym}\n\n` +
+          `No live tick for ${Math.round(silent / 1000)}s during market hours.\n` +
+          (others.length ? `Other indices still ticking: ${others.join(', ')}\n` : '') +
+          `Strategies on ${sym} are getting NO live ticks. Check /auth/socket-health; re-login if it persists.`
+        );
+      } catch (e) {
+        this._log(`⚠️  [SOCKET] Stale-feed notify failed: ${e.message}`);
+      }
+    }
+  }
+
+  _onSpotRecovered(sym) {
+    const since = this._staleSpots.get(sym);
+    this._staleSpots.delete(sym);
+    const mins = since ? Math.round((Date.now() - since) / 60000) : 0;
+    this._log(`✅ [SOCKET] ${sym} ticks flowing again${mins ? ` after ~${mins} min` : ''}`);
+    try { require('./notify').sendIfMaster(`✅ Fyers feed recovered: ${sym} ticks are flowing again${mins ? ` (silent ~${mins} min)` : ''}.`); } catch (_) {}
   }
 
   _isMarketHours() {

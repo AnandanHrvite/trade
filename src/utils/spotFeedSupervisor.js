@@ -201,7 +201,19 @@ async function _check() {
     return;
   }
 
-  if (socketManager.isAuthFailed()) { _skipOnce("Fyers auth failed — re-login at /auth/login"); return; }
+  if (socketManager.isAuthFailed()) {
+    // Sticky only until the token changes: after a re-login, clear the dead-auth
+    // state (reauth() on a stopped socket just resets it) and fall through to
+    // start the feed with the new token. Older socketManagers lack reauth().
+    const changed = typeof socketManager.authTokenChanged === "function" && socketManager.authTokenChanged();
+    if (!changed || typeof socketManager.reauth !== "function") {
+      _skipOnce("Fyers auth failed — re-login at /auth/login");
+      return;
+    }
+    console.log("🔑 [feed] new Fyers token detected after auth failure — re-authenticating");
+    socketManager.reauth();
+    if (socketManager.isAuthFailed()) return;
+  }
   if (!process.env.ACCESS_TOKEN)    { _skipOnce("no Fyers token — log in to start recording"); return; }
   if (!(await _isTradingDay()))     { _skipOnce("not a trading day"); return; }
 
