@@ -749,7 +749,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       return `<div class="sb-section">
         <div class="sb-section-header sb-collapsible${collapsed}" onclick="toggleNavGroup('${gid}')" data-group="${gid}">
           <span>${section.header}</span>
-          <span class="sb-chevron">${section.collapsed ? '›' : '‹'}</span>
+          <span class="sb-chevron">›</span>
         </div>
         <div class="sb-group-items${collapsed}" id="${gid}">${items}</div>
       </div>`;
@@ -784,7 +784,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       return `<div class="sb-section sb-parent">
         <div class="sb-section-header sb-collapsible sb-parent-header${collapsed}" onclick="toggleNavParent('${pd.id}')" data-parent="${pd.id}">
           <span>${pd.header}</span>
-          <span class="sb-chevron">${collapsed ? '›' : '‹'}</span>
+          <span class="sb-chevron">›</span>
         </div>
         <div class="sb-parent-items${collapsed}" id="${pd.id}">${children}</div>
       </div>`;
@@ -1494,7 +1494,10 @@ function sidebarCSS() {
     .sb-section-header.sb-collapsible{cursor:pointer;display:flex;align-items:center;justify-content:space-between;padding-right:16px;transition:color 0.15s;}
     .sb-section-header.sb-collapsible:hover{color:#3b82f6;}
     .sb-chevron{font-size:0.7rem;transition:transform 0.2s;display:inline-block;}
-    .sb-section-header.sb-collapsible:not(.collapsed) .sb-chevron{transform:rotate(-90deg);}
+    /* One glyph for both states, turned by the header's .collapsed class alone:
+       toggleNavGroup/Parent flip only that class, so a glyph picked at render
+       time pointed the wrong way once a section was opened or closed. */
+    .sb-section-header.sb-collapsible:not(.collapsed) .sb-chevron{transform:rotate(90deg);}
     .sb-section-header.sb-collapsible.collapsed .sb-chevron{transform:rotate(0deg);}
     .sb-group-items{overflow:hidden;max-height:500px;transition:max-height 0.25s ease-in-out,opacity 0.2s;opacity:1;}
     .sb-group-items.collapsed{max-height:0;opacity:0;padding:0;}
