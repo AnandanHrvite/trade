@@ -14,7 +14,11 @@
  * MFE/MAE trade efficiency, a bootstrap Monte Carlo, and side / hold / VIX / strength cuts —
  * plus the edge-quality set: expectancy in R, break-even win rate + cushion, top-5 profit
  * concentration, net ex top-5, equity-curve R², trades/day, worst red run, a monthly P&L
- * grid, an R-multiple distribution and an Nth-trade-of-the-day cut.
+ * grid, an R-multiple distribution and an Nth-trade-of-the-day cut — plus day patterns:
+ * days by trade count, a daily-cap what-if, W/L day sequences and what follows a winner.
+ *
+ * Market (NIFTY / BANK NIFTY / COMMODITY) narrows the Strategy list the same way the
+ * Consolidation Report does; Exit and Hour options are re-listed from the trades in scope.
  *
  * Layout is a scanning dashboard, not a chart viewer: short chart boxes, cards stepping
  * 8 → 4 → 2 columns, and tables/heat grids scrolling inside their own panel so the phone
@@ -79,6 +83,39 @@ const LIVE_SOURCES = [
   { mode: "EARLYBIRD", file: "early_bird_live_trades.json" },
 ];
 
+// COMMODITY (MCX) paper engines keep their own book under ~/trading-data/cmx as
+// { days: { YYYY-MM-DD: { trades } } } — same list consolidationReport.js reads.
+// Paper only: there is no MCX live book yet.
+const CMX_SOURCES = [];
+for (const [c, cl] of [["CRUDE", "Crude Oil"], ["GOLD", "Gold"], ["SILVER", "Silver"]]) {
+  for (const st of ["EMA_RSI_ST", "EMA_RSI_ST_V2"]) {
+    const id = `cmx_${c.toLowerCase()}_${st.toLowerCase()}`;
+    CMX_SOURCES.push({ mode: `CMX_${c}_${st}`, label: `${cl} · ${st}`,
+                       file: `cmx/${id}_paper_trades.json`, modeKey: `CMX_${c}_${st}_MODE_ENABLED` });
+  }
+}
+
+// Which market a strategy trades — the same split the Consolidation Report tables use.
+function groupOf(mode) {
+  if (mode.startsWith("CMX_")) return "COMMODITY";
+  if (mode.startsWith("BN_"))  return "BANK NIFTY";
+  return "NIFTY";
+}
+const MARKETS = ["NIFTY", "BANK NIFTY", "COMMODITY"];
+
+// Exit reasons carry the fill price ("Trail SL hit @ ₹22484.08"), so the raw text
+// makes one filter option per trade. Numbers become "#" so the picker and the
+// By Exit Reason table group by the rule that fired, not the price it fired at.
+// Only price-like numbers go (₹-prefixed, decimal, or 3+ digits): a percentage or
+// a small count is part of the rule itself ("Option stop 25%", "2-candle stop").
+function reasonGroup(r) {
+  const s = String(r == null ? "" : r).trim();
+  if (!s || s === "\u2014") return "\u2014";
+  return s.replace(/(₹\s*)?\b\d[\d,]*(?:\.\d+)?\b(?!\s*%)/g, m =>
+            (m.charAt(0) === "₹" ? "₹#" : (/[.,]|\d{3}/.test(m) ? "#" : m)))
+          .replace(/\s+/g, " ").slice(0, 80);
+}
+
 function safeRead(p) {
   try {
     if (!fs.existsSync(p)) return {};
@@ -93,35 +130,42 @@ function safeRead(p) {
 function num(v) { const n = Number(v); return Number.isFinite(n) ? n : null; }
 function round(v, d) { const n = num(v); return n === null ? null : Math.round(n * Math.pow(10, d)) / Math.pow(10, d); }
 
-function loadBook(sources, book) {
-  const out = [];
-  for (const src of sources) {
-    const data = safeRead(path.join(DATA_DIR, src.file));
-    for (const s of (data.sessions || [])) {
-      const sessionDate = istDayFromAny(s.date);
-      for (const t of (s.trades || [])) {
-        const side = t.side || t.optionType || "";
-        // Same formula the engines use for pnlPoints — recomputed only when the
-        // engine did not record it (ORB), so every strategy can be compared.
-        let pts = round(t.pnlPoints, 2);
-        if (pts === null && num(t.entryPrice) !== null && num(t.exitPrice) !== null) {
-          // PE gains as the underlying falls; a cash-equity SHORT is a real short
-          // sale, so it too earns on the way down — both invert the subtraction.
-          pts = round((num(t.exitPrice) - num(t.entryPrice)) * (side === "PE" || side === "SHORT" ? -1 : 1), 2);
-        }
-        const durMs = num(t.durationMs);
-        out.push({
+const ISO_RE = /^\d{4}-\d{2}-\d{2}T/;
+function tradeRow(book, mode, date, t) {
+  const side = t.side || t.optionType || "";
+  // Same formula the engines use for pnlPoints — recomputed only when the
+  // engine did not record it (ORB, MCX), so every strategy can be compared.
+  // MCX records the future's price as spotAtEntry/spotAtExit.
+  let pts = round(t.pnlPoints, 2);
+  const eP = num(t.entryPrice) !== null ? num(t.entryPrice) : num(t.spotAtEntry);
+  const xP = num(t.exitPrice)  !== null ? num(t.exitPrice)  : num(t.spotAtExit);
+  if (pts === null && eP !== null && xP !== null) {
+    // PE gains as the underlying falls; a cash-equity SHORT is a real short
+    // sale, so it too earns on the way down — both invert the subtraction.
+    pts = round((xP - eP) * (side === "PE" || side === "SHORT" ? -1 : 1), 2);
+  }
+  // MCX stores ISO stamps and no durationMs. Only ISO is parsed: Date.parse reads
+  // the engines' "DD/MM/YYYY" stamps as month-first and would invent durations.
+  let durMs = num(t.durationMs);
+  if (durMs === null && ISO_RE.test(String(t.entryTime)) && ISO_RE.test(String(t.exitTime))) {
+    const a = Date.parse(t.entryTime), b = Date.parse(t.exitTime);
+    if (Number.isFinite(a) && Number.isFinite(b) && b >= a) durMs = b - a;
+  }
+  let qty = num(t.qty);
+  if (qty === null && num(t.multiplier) !== null && num(t.lots) !== null) qty = num(t.multiplier) * num(t.lots);
+  return {
           book,
-          mode:        src.mode,
-          date:        sessionDate,
+          mode,
+          date,
           side,
           entryTime:   t.entryTime || "",
           exitTime:    t.exitTime || "",
           pnl:         Number(t.pnl) || 0,
           exitReason:  t.exitReason || "—",
+          exitGroup:   reasonGroup(t.exitReason),
           // Extra dimensions for the pro metrics. Rounded to keep the embedded
           // payload small — these feed averages/percentiles, not accounting.
-          qty:      num(t.qty),
+          qty,
           durMin:   durMs === null ? null : Math.round(durMs / 60000),
           pts,
           mfePts:   round(t.mfeSpotPts, 2),   // best favourable spot excursion (≥0)
@@ -131,8 +175,27 @@ function loadBook(sources, book) {
           vix:      round(t.vixAtEntry, 2),
           strength: t.signalStrength || null,
           charges:  round(t.charges, 2),
-        });
-      }
+  };
+}
+
+function loadBook(sources, book) {
+  const out = [];
+  for (const src of sources) {
+    const data = safeRead(path.join(DATA_DIR, src.file));
+    for (const s of (data.sessions || [])) {
+      const sessionDate = istDayFromAny(s.date);
+      for (const t of (s.trades || [])) out.push(tradeRow(book, src.mode, sessionDate, t));
+    }
+  }
+  return out;
+}
+
+function loadCmxBook() {
+  const out = [];
+  for (const src of CMX_SOURCES) {
+    const data = safeRead(path.join(DATA_DIR, src.file));
+    for (const [date, d] of Object.entries(data.days || {})) {
+      for (const t of (d.trades || [])) out.push(tradeRow("paper", src.mode, date, t));
     }
   }
   return out;
@@ -146,7 +209,7 @@ let _edgeCache = null;
 let _edgeSig   = null;
 function _sourcesSig() {
   let sig = "";
-  for (const src of [...PAPER_SOURCES, ...LIVE_SOURCES]) {
+  for (const src of [...PAPER_SOURCES, ...LIVE_SOURCES, ...CMX_SOURCES]) {
     try { const st = fs.statSync(path.join(DATA_DIR, src.file)); sig += `${src.mode}:${st.mtimeMs}:${st.size}|`; }
     catch (_) { sig += `${src.mode}:0|`; }
   }
@@ -155,7 +218,7 @@ function _sourcesSig() {
 function loadAllTrades() {
   const sig = _sourcesSig();
   if (_edgeCache && sig === _edgeSig) return _edgeCache;
-  const trades = loadBook(PAPER_SOURCES, "paper").concat(loadBook(LIVE_SOURCES, "live"));
+  const trades = loadBook(PAPER_SOURCES, "paper").concat(loadBook(LIVE_SOURCES, "live"), loadCmxBook());
   // oldest → newest so the equity curve reads left-to-right
   trades.sort((a, b) => (a.date || "").localeCompare(b.date || ""));
   _edgeCache = trades;
@@ -163,58 +226,28 @@ function loadAllTrades() {
   return trades;
 }
 
-// Server-side twin of the client's entryHour(): istNow() writes "DD/MM/YYYY, HH:MM:SS"
-// (IST), older records "HH:MM, DD/MM/YYYY" — both carry exactly one clock field, so the
-// first HH:MM is the entry time. An ISO "…T…Z" stamp is UTC, so shift +5:30 first.
-// Kept in step with the client copy: the picker must list the same buckets the chart bins.
-function _entryHourIST(v) {
-  const str = String(v == null ? "" : v);
-  if (/^\d{4}-\d{2}-\d{2}T/.test(str)) {
-    const d = new Date(str);
-    if (isNaN(d)) return null;
-    return new Date(d.getTime() + 19800000).getUTCHours();
-  }
-  const m = str.match(/(\d{1,2}):(\d{2})/);
-  if (!m) return null;
-  const h = +m[1], mi = +m[2];
-  return (h >= 0 && h <= 23 && mi >= 0 && mi <= 59) ? h : null;
-}
-
 router.get("/", (req, res) => {
   // Only analyse strategies that are enabled in Settings — a disabled strategy is
   // hidden from the sidebar, so it must not appear in the Strategy dropdown, the
   // per-strategy table, or the "All" totals. Filtered per-request, never cached:
   // Settings saves mutate process.env while the process is running.
-  const enabled    = enabledStrategies();
-  const enabledSet = new Set(enabled.map(s => s.mode));
+  // COMMODITY engines only count while their own page toggle is on.
+  const cmxOn      = CMX_SOURCES.filter(x => (process.env[x.modeKey] || "false").toLowerCase() === "true");
+  const enabled    = [...enabledStrategies().map(x => ({ mode: x.mode, label: x.label })),
+                      ...cmxOn.map(x => ({ mode: x.mode, label: x.label }))];
+  const enabledSet = new Set(enabled.map(x => x.mode));
   const trades     = loadAllTrades().filter(t => enabledSet.has(t.mode));
-  const modePicker = multiSelectHTML('fMode', enabled.map(s => ({ value: s.mode, label: s.label })), 'All');
+  const modePicker = multiSelectHTML('fMode', enabled.map(x => ({ value: x.mode, label: x.label })), 'All');
+  // Market buttons list only markets that have an enabled strategy, so a
+  // NIFTY-only install shows no BANK NIFTY / COMMODITY button that can never match.
+  const marketButtons = MARKETS.filter(g => enabled.some(x => groupOf(x.mode) === g))
+    .map(g => `<button data-mkt="${g}">${g}</button>`).join('');
 
-  // Exit-reason and entry-hour pickers are built from the data, not a hard-coded
-  // list: every engine words its exit reasons differently, and a fixed list would
-  // silently drop a new one. Reasons are ordered worst-net-first so the exits that
-  // bleed the most are the first thing you can tick.
-  const _reasonNet = new Map();
-  for (const t of trades) {
-    const k = t.exitReason || "\u2014";
-    _reasonNet.set(k, (_reasonNet.get(k) || 0) + (Number(t.pnl) || 0));
-  }
-  const reasonPicker = multiSelectHTML('fReason',
-    [..._reasonNet.entries()].sort((a, b) => a[1] - b[1])
-      .map(([k]) => ({ value: k, label: k.length > 30 ? k.slice(0, 30) + "\u2026" : k })),
-    'All');
-
-  // Entry hour: IST hour parsed the same way the client's entryHour() does, so the
-  // picker lists exactly the buckets the hour chart can show.
-  const _hours = new Set();
-  for (const t of trades) {
-    const h = _entryHourIST(t.entryTime);
-    if (h !== null) _hours.add(h);
-  }
-  const hourPicker = multiSelectHTML('fHour',
-    [..._hours].sort((a, b) => a - b)
-      .map(h => ({ value: String(h), label: String(h).padStart(2, '0') + ':00' })),
-    'All');
+  // Exit-reason and entry-hour options are built in the browser from the trades
+  // in the current book / market / strategy / range (refreshPickers), so a
+  // COMMODITY view never lists NIFTY exit reasons. The server ships them empty.
+  const reasonPicker = multiSelectHTML('fReason', [], 'All');
+  const hourPicker   = multiSelectHTML('fHour', [], 'All');
 
   // Side buttons come from the data too. CE/PE are always offered so the segment
   // never collapses on an empty book, but LONG/SHORT only appear once a
@@ -341,6 +374,13 @@ ${multiSelectCSS()}
     .badge-PA{background:rgba(168,85,247,0.12);color:#a855f7;border:0.5px solid rgba(168,85,247,0.3);}
     .badge-ORB{background:rgba(16,185,129,0.12);color:#10b981;border:0.5px solid rgba(16,185,129,0.3);}
     .badge-EARLYBIRD{background:rgba(20,184,166,0.12);color:#14b8a6;border:0.5px solid rgba(20,184,166,0.3);}
+    .dp-bar{display:flex;align-items:center;gap:10px;margin:0 0 8px;flex-wrap:wrap;}
+    .dp-bar .cap{margin:0;flex:1 1 300px;}
+    .shape{display:inline-flex;gap:2px;}
+    .shape b{display:inline-block;min-width:15px;text-align:center;padding:1px 3px;border-radius:3px;font-size:0.6rem;font-weight:700;}
+    .shape b.w{background:rgba(16,185,129,0.16);color:#10b981;}
+    .shape b.l{background:rgba(239,68,68,0.16);color:#ef4444;}
+    .shape b.b{background:rgba(148,163,184,0.16);color:#94a3b8;}
     .empty{text-align:center;padding:50px 20px;color:var(--muted-1,#8ba1c2);font-size:0.85rem;}
     /* phone: full-width controls, 44px touch targets, no cramped two-up rows */
     @media(max-width:700px){
@@ -391,13 +431,18 @@ ${multiSelectCSS()}
   ${buildSidebar('edgeAnalytics', false)}
   <div class="main-content">
     <h1 class="page-title">📈 Edge Analytics</h1>
-    <p class="page-sub">Win rate · expectancy · profit factor · Sharpe · system quality · drawdown · MFE/MAE · Monte Carlo — computed from your recorded trades. <a href="/consolidation-report">← Consolidation Report</a></p>
+    <p class="page-sub">Win rate · expectancy · profit factor · Sharpe · drawdown · day patterns · MFE/MAE · Monte Carlo — computed from your recorded trades. <a href="/consolidation-report">← Consolidation Report</a></p>
 
     <div class="tbar">
       <label>Book</label>
       <div class="seg" id="segBook">
         <button data-book="paper" class="on">Paper</button>
         <button data-book="live">Live</button>
+      </div>
+      <label>Market</label>
+      <div class="seg" id="segMkt">
+        <button data-mkt="all" class="on">All</button>
+        ${marketButtons}
       </div>
       <label>Strategy</label>
       ${modePicker}
@@ -434,9 +479,9 @@ ${multiSelectCSS()}
 ${dateRangeJS()}
 ${multiSelectJS()}
 const ALL = ${JSON.stringify(trades)};
-// Every hour bucket the picker offers. Used to tell "all ticked" (no hour
-// narrowing, keep undated trades) from a real hour selection.
-const HOUR_OPTS = ${JSON.stringify([...new Set(trades.map(t => _entryHourIST(t.entryTime)).filter(h => h !== null))].sort((a, b) => a - b).map(String))};
+const MODES      = ${JSON.stringify(enabled.map(x => ({ value: x.mode, label: x.label })))};
+const MODE_LABEL = ${JSON.stringify(Object.fromEntries(enabled.map(x => [x.mode, x.label])))};
+const MARKET_OF  = ${JSON.stringify(Object.fromEntries(enabled.map(x => [x.mode, groupOf(x.mode)])))};
 
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function inr(n){ const v=Math.round(n); return (v<0?'-':'')+'₹'+Math.abs(v).toLocaleString('en-IN'); }
@@ -465,38 +510,97 @@ function weekday(dateStr){ if(!dateStr) return null; const d=new Date(dateStr+'T
 
 // Range bounds come from sharedNav's drRange() so this page and the Dashboard
 // top bar always resolve a given range to the same two dates.
+function currentMarket(){ return document.querySelector('#segMkt button.on').dataset.mkt; }
+// True when every option of a picker is ticked — "no narrowing". Reason and hour
+// lists change with the scope, so "all ticked" is read off the boxes themselves.
+function msAll(id){
+  const root=document.getElementById(id); if(!root) return true;
+  const boxes=_msBoxes(root);
+  for(let i=0;i<boxes.length;i++) if(!boxes[i].checked) return false;
+  return true;
+}
 function currentFilter(){
   const book = document.querySelector('#segBook button.on').dataset.book;
-  const modes = msValues('fMode');           // ticked strategies; [] = none ticked
+  const mkt  = currentMarket();
+  // ticked strategies ([] = none ticked), narrowed to the chosen market
+  const modes = msValues('fMode').filter(m => mkt==='all' || MARKET_OF[m]===mkt);
   const range = document.getElementById('fRange').value;
   const r = drRange(range, document.getElementById('fFrom').value, document.getElementById('fTo').value);
   const outcome = document.querySelector('#segOutcome button.on').dataset.outcome;
   const side    = document.querySelector('#segSide button.on').dataset.side;
-  const reasons = msValues('fReason');
-  const hours   = msValues('fHour');
-  return {book,modes,from:r.from,to:r.to,outcome,side,reasons,hours};
+  const reasons = msAll('fReason') ? null : msValues('fReason');
+  const hours   = msAll('fHour')   ? null : msValues('fHour');
+  return {book,mkt,modes,from:r.from,to:r.to,outcome,side,reasons,hours};
 }
-function applyFilter(f){
+// Book / market / strategy / date only — the population a day's trade sequence is
+// read from, and the trades the Exit and Hour pickers offer options for.
+function applyScope(f){
   return ALL.filter(t=>{
     if(t.book!==f.book) return false;
     if(f.modes.indexOf(t.mode)===-1) return false;
     if(f.from && t.date < f.from) return false;
     if(f.to   && t.date > f.to)   return false;
+    return true;
+  });
+}
+function applyFilter(f){
+  return applyScope(f).filter(t=>{
     // Scratch (exactly 0) is neither a win nor a loss — it is excluded by both
     // cuts on purpose, so "Losers" is real bleed and never flat trades.
     if(f.outcome==='loss' && !(t.pnl<0)) return false;
     if(f.outcome==='win'  && !(t.pnl>0)) return false;
     if(f.side!=='all' && t.side!==f.side) return false;
-    if(f.reasons.indexOf(t.exitReason||'\u2014')===-1) return false;
+    if(f.reasons && f.reasons.indexOf(t.exitGroup)===-1) return false;
     // Undated/unparseable entry times have no hour bucket; drop them only when the
     // hour picker is actually narrowed, so the default view still counts them.
-    if(f.hours.length!==HOUR_OPTS.length){
+    if(f.hours){
       const h=entryHour(t.entryTime);
       if(h===null || f.hours.indexOf(String(h))===-1) return false;
     }
     return true;
   });
 }
+
+// ── Scope-aware pickers ─────────────────────────────────────────────────────
+// The shared multi-select renders a fixed list. Here the Strategy list follows the
+// Market button and the Exit / Hour lists follow the trades in scope, so the menu is
+// rebuilt in place. A box's tick is remembered by value across rebuilds: unticking
+// "EOD" on NIFTY, flipping to COMMODITY and back keeps it unticked. A value never
+// seen before arrives ticked, the same way every list first opens.
+const MS_MEM={};
+function msRebuild(id, items, onChange){
+  const root=document.getElementById(id); if(!root) return;
+  const mem=MS_MEM[id]||(MS_MEM[id]={});
+  _msBoxes(root).forEach(b=>{ mem[b.value]=b.checked; });
+  const allLabel=root.getAttribute('data-all-label')||'All';
+  let h='<label class="ms-opt"><input type="checkbox" class="ms-all" checked/>'+esc(allLabel)+'</label><div class="ms-sep"></div>';
+  for(const it of items){
+    const on=(it.value in mem)?mem[it.value]:true;
+    h+='<label class="ms-opt"'+(it.title?' title="'+esc(it.title)+'"':'')+'><input type="checkbox" value="'+esc(it.value)+'"'+(on?' checked':'')+'/>'+esc(it.label)+'</label>';
+  }
+  if(!items.length) h+='<div class="ms-opt" style="cursor:default;opacity:0.6">No trades in scope</div>';
+  root.querySelector('.ms-menu').innerHTML=h;
+  const all=root.querySelector('.ms-all');
+  all.addEventListener('change',()=>{ _msBoxes(root).forEach(b=>{ b.checked=all.checked; mem[b.value]=b.checked; }); _msPaint(root); onChange(); });
+  _msBoxes(root).forEach(b=>b.addEventListener('change',()=>{ mem[b.value]=b.checked; _msPaint(root); onChange(); }));
+  _msPaint(root);
+}
+function refreshPickers(withModes){
+  const mkt=currentMarket();
+  if(withModes) msRebuild('fMode', MODES.filter(m=>mkt==='all'||MARKET_OF[m.value]===mkt), onScope);
+  const scope=applyScope(currentFilter());
+  // Reasons worst-net-first, so the exits that bleed the most are the first you can tick.
+  const rNet=new Map();
+  for(const t of scope) rNet.set(t.exitGroup,(rNet.get(t.exitGroup)||0)+t.pnl);
+  msRebuild('fReason', [...rNet.entries()].sort((a,b)=>a[1]-b[1])
+    .map(([k])=>({value:k,label:k.length>30?k.slice(0,30)+'\u2026':k,title:k})), render);
+  const hrs=new Set();
+  for(const t of scope){ const hh=entryHour(t.entryTime); if(hh!==null) hrs.add(hh); }
+  msRebuild('fHour', [...hrs].sort((a,b)=>a-b)
+    .map(hh=>({value:String(hh),label:String(hh).padStart(2,'0')+':00'})), render);
+}
+// Anything that changes which trades are in scope re-lists the pickers first.
+function onScope(){ refreshPickers(false); render(); }
 
 function stats(arr){
   let net=0,gw=0,gl=0,wins=0,losses=0,scratch=0,sumWin=0,sumLoss=0,best=-1e9,worst=1e9;
@@ -694,7 +798,7 @@ function render(){
   document.getElementById('cntPill').textContent = arr.length+' trades';
   destroyCharts();
   const C=document.getElementById('content');
-  if(!arr.length){ C.innerHTML='<div class="empty">No '+f.book+' trades for this filter. Try widening the date range or switching book/strategy.</div>'; return; }
+  if(!arr.length){ C.innerHTML='<div class="empty">No '+f.book+' trades'+(f.mkt==='all'?'':' in '+esc(f.mkt))+' for this filter. Try widening the date range or switching book/market/strategy.</div>'; return; }
   const s=stats(arr);
 
   const cards=[
@@ -758,6 +862,8 @@ function render(){
     {l:'Worst Red Run',v:e.maxRed+(e.maxRed===1?' day':' days'),sub:'consecutive losing days',a:e.maxRed>=4?'#ef4444':(e.maxRed>=3?'#f59e0b':'#10b981'),
      t:'Longest streak of losing days — the run your daily-loss cap and your nerves have to survive.'},
   ]);
+
+  h+=dayPatternsHTML(applyScope(f));
 
   h+='<div class="panel"><h3>Equity Curve (cumulative net P&L · trade-by-trade)</h3><div class="chart-wrap tall"><canvas id="eqChart"></canvas></div></div>';
 
@@ -830,6 +936,9 @@ function render(){
   paintTable('mode');
   paintTable('reason');
   paintTable('seq');
+  paintTable('dpCount');
+  paintTable('dpCap');
+  paintTable('dpShape');
   paintTable('side');
   paintTable('hold');
   paintTable('strength');
@@ -897,6 +1006,8 @@ function paintTable(key){
 
 // Delegated so the buttons survive every innerHTML rebuild of #content.
 document.getElementById('content').addEventListener('click', e=>{
+  const dp = e.target.closest('[data-dayp]');
+  if(dp){ if(DAYP_SPLIT!==dp.dataset.dayp){ DAYP_SPLIT=dp.dataset.dayp; render(); } return; }
   const b = e.target.closest('.pg-btn');
   if(!b || b.disabled) return;
   const t = TBL[b.dataset.pg];
@@ -912,7 +1023,7 @@ function modeTable(arr){
   return registerTable('mode',
     '<th>Strategy</th><th>Trades</th><th>WR</th><th>Net</th><th>Exp</th><th>PF</th>',
     rows,
-    r=>'<tr><td><span class="badge-mode badge-'+r.mode+'">'+r.mode+'</span></td>'
+    r=>'<tr><td><span class="badge-mode badge-'+r.mode+'">'+esc(MODE_LABEL[r.mode]||r.mode)+'</span></td>'
       +'<td>'+r.s.n+'</td><td>'+r.s.wr.toFixed(0)+'%</td>'
       +'<td style="color:'+pc(r.s.net)+'">'+sign(r.s.net)+inr(r.s.net)+'</td>'
       +'<td style="color:'+pc(r.s.exp)+'">'+inr(r.s.exp)+'</td>'
@@ -920,7 +1031,7 @@ function modeTable(arr){
 }
 
 function reasonTable(arr){
-  const m=groupNet(arr, t=>t.exitReason||'—');
+  const m=groupNet(arr, t=>t.exitGroup);
   const rows=[...m.values()].sort((a,b)=>a.net-b.net); // worst first — find the bleed
   return registerTable('reason',
     '<th>Exit Reason</th><th>N</th><th>WR</th><th>Net</th><th>Avg</th>',
@@ -1085,6 +1196,13 @@ function mcHTML(arr){
 // by entry clock here — "the 3rd trade of the day" must mean the same thing
 // whether it came from BB_RSI or ORB.
 const SEQ_ORDER=['1st','2nd','3rd','4th','5th+'];
+function byEntry(a,b){
+  const ma=entryMins(a.entryTime), mb=entryMins(b.entryTime);
+  if(ma===null&&mb===null) return 0;
+  if(ma===null) return 1;
+  if(mb===null) return -1;
+  return ma-mb;
+}
 function seqTable(arr){
   const byDay=new Map();
   for(const t of arr){
@@ -1094,16 +1212,166 @@ function seqTable(arr){
   }
   const seq=new Map();
   for(const list of byDay.values()){
-    const ordered=[...list].sort((a,b)=>{
-      const ma=entryMins(a.entryTime), mb=entryMins(b.entryTime);
-      if(ma===null&&mb===null) return 0;
-      if(ma===null) return 1;
-      if(mb===null) return -1;
-      return ma-mb;
-    });
+    const ordered=[...list].sort(byEntry);
     ordered.forEach((t,i)=>seq.set(t,SEQ_ORDER[Math.min(i,4)]));
   }
   return bucketTable('seq',arr,t=>seq.get(t)||'—',SEQ_ORDER.concat('—'));
+}
+
+// ── Day patterns ──────────────────────────────────────────────────────────────
+// How a trading day unfolds trade by trade: how days with 1, 2, 3… trades end,
+// what a daily trade cap would have kept, and what happens after a winner —
+// especially the days where a win was followed by nothing but losses.
+// A "day" is one strategy's day by default (a trade cap is per engine); the
+// Combined view orders every ticked strategy's trades by entry time instead.
+let DAYP_SPLIT='mode';
+function dayGroups(arr){
+  const m=new Map();
+  for(const t of arr){
+    if(!t.date) continue;
+    const k=DAYP_SPLIT==='mode'?t.date+'|'+t.mode:t.date;
+    if(!m.has(k)) m.set(k,[]);
+    m.get(k).push(t);
+  }
+  const out=[];
+  for(const list of m.values()){
+    const ts=[...list].sort(byEntry);
+    const net=ts.reduce((a,t)=>a+t.pnl,0);
+    const firstWin=ts.findIndex(t=>t.pnl>0);
+    out.push({ts,net,firstWin,shape:ts.map(t=>t.pnl>0?'W':(t.pnl<0?'L':'B')).join('')});
+  }
+  return out;
+}
+function dayPatternsHTML(scope){
+  const days=dayGroups(scope);
+  const head='<div class="sect">Day patterns</div>'
+    +'<div class="dp-bar"><div class="seg" id="segDayp">'
+    +'<button data-dayp="mode"'+(DAYP_SPLIT==='mode'?' class="on"':'')+' title="Each strategy\\'s day on its own — a trade cap is set per strategy">Per strategy</button>'
+    +'<button data-dayp="all"'+(DAYP_SPLIT==='all'?' class="on"':'')+' title="Every ticked strategy\\'s trades on a date, in entry-time order">All combined</button></div>'
+    +'<span class="cap">Reads every trade in the book / market / strategy / range — Outcome, Side, Exit and Hour are ignored here, because a day\\'s sequence needs all of its trades. W = win, L = loss, B = break-even, in entry order.</span></div>';
+  if(!days.length) return head+'<div class="panel"><div class="cap">No dated trades in scope.</div></div>';
+  const actual=days.reduce((a,d)=>a+d.net,0);
+
+  // after-a-win / after-a-loss: the very next trade the same day
+  let aw=0,awW=0,awNet=0, al=0,alW=0,alNet=0;
+  // losing trades that came after the day's first win
+  let lostAfterWin=0,lostAfterWinRs=0;
+  // "win, then only losses": a win followed by 1+ trades that all lost
+  let winThenLoss=0,winThenLossRs=0,winErased=0,winFollowed=0;
+  let firstWinDays=0,firstWinRestRed=0, firstLossDays=0,firstLossRecovered=0;
+  let stopAtWin=0;
+  for(const d of days){
+    const ts=d.ts;
+    for(let i=1;i<ts.length;i++){
+      const prev=ts[i-1].pnl, cur=ts[i].pnl;
+      if(prev>0){ aw++; awNet+=cur; if(cur>0) awW++; }
+      else if(prev<0){ al++; alNet+=cur; if(cur>0) alW++; }
+    }
+    if(d.firstWin>=0){
+      const after=ts.slice(d.firstWin+1);
+      for(const t of after) if(t.pnl<0){ lostAfterWin++; lostAfterWinRs+=t.pnl; }
+      if(after.length){
+        winFollowed++;
+        if(after.every(t=>t.pnl<0)){
+          winThenLoss++; winThenLossRs+=after.reduce((a,t)=>a+t.pnl,0);
+          if(d.net<0) winErased++;
+        }
+      }
+      stopAtWin+=ts.slice(0,d.firstWin+1).reduce((a,t)=>a+t.pnl,0);
+    } else stopAtWin+=d.net;
+    if(ts[0].pnl>0){
+      firstWinDays++;
+      if(ts.length>1 && ts.slice(1).reduce((a,t)=>a+t.pnl,0)<0) firstWinRestRed++;
+    } else if(ts[0].pnl<0){
+      firstLossDays++;
+      if(d.net>0) firstLossRecovered++;
+    }
+  }
+  const pct=(a,b)=>b?(a/b*100).toFixed(0)+'%':'—';
+  const stopDelta=stopAtWin-actual;
+  const cards=cardRow([
+    {l:'Next trade after a win',v:aw?pct(awW,aw)+' WR':'—',sub:aw?aw+' trades · '+inr(awNet):'no win was followed',a:aw?pc(awNet):'#3a5070',
+     t:'The trade taken right after a winner on the same day: how often it won and what those trades made in total.'},
+    {l:'Next trade after a loss',v:al?pct(alW,al)+' WR':'—',sub:al?al+' trades · '+inr(alNet):'no loss was followed',a:al?pc(alNet):'#3a5070',
+     t:'The trade taken right after a loser on the same day. Compare with the card before it: is the next trade worse after a win or after a loss?'},
+    {l:'Losses after a win',v:String(lostAfterWin),sub:lostAfterWin?inr(lostAfterWinRs)+' lost after the day\\'s 1st win':'none',a:lostAfterWin?'#ef4444':'#10b981',
+     t:'Losing trades taken later on a day that had already booked a win.'},
+    {l:'Win, then only losses',v:winThenLoss+' / '+winFollowed+' days',sub:winThenLoss?inr(winThenLossRs)+' given back':'days a win was followed',a:winThenLoss?'#ef4444':'#10b981',
+     t:'Days where every trade after the first win lost (e.g. W L L, or L W L L) — out of all days where the first win was followed by more trades.'},
+    {l:'Win erased',v:winThenLoss?winErased+' days':'—',sub:winThenLoss?'of those ended the day red':'',a:winErased?'#ef4444':'#3a5070',
+     t:'Of the "win, then only losses" days, how many finished in the red — the later losses wiped out the win and more.'},
+    {l:'1st trade won',v:firstWinDays+' days',sub:firstWinDays?firstWinRestRed+' had the rest of the day red':'',a:'#38bdf8',
+     t:'Days that opened with a winner, and how many of them then lost money on the trades after it.'},
+    {l:'1st trade lost',v:firstLossDays+' days',sub:firstLossDays?firstLossRecovered+' recovered to a green day':'',a:'#38bdf8',
+     t:'Days that opened with a loser, and how many still finished green.'},
+    {l:'Stop at 1st win',v:inr(stopAtWin),sub:(stopDelta>=0?'+':'')+inr(stopDelta)+' vs actual',a:pc(stopDelta),
+     t:'What-if: each day stops trading after its first winner (days with no win keep every trade). Actual net is '+inr(actual)+'.'},
+  ]);
+
+  // Days by trade count
+  const CNT_ORDER=['1','2','3','4','5+'];
+  const cnt=new Map();
+  for(const d of days){
+    const k=CNT_ORDER[Math.min(d.ts.length,5)-1];
+    if(!cnt.has(k)) cnt.set(k,{key:k,days:0,green:0,n:0,wins:0,net:0});
+    const g=cnt.get(k); g.days++; if(d.net>0) g.green++; g.n+=d.ts.length; g.wins+=d.ts.filter(t=>t.pnl>0).length; g.net+=d.net;
+  }
+  const cntRows=CNT_ORDER.filter(k=>cnt.has(k)).map(k=>cnt.get(k));
+  const cntTbl=registerTable('dpCount',
+    '<th>Trades/day</th><th>Days</th><th>Green</th><th>Trade WR</th><th>Net</th><th>Avg/day</th>',
+    cntRows,
+    r=>'<tr><td>'+r.key+'</td><td>'+r.days+'</td><td>'+r.green+' ('+pct(r.green,r.days)+')</td>'
+      +'<td>'+pct(r.wins,r.n)+'</td>'
+      +'<td style="color:'+pc(r.net)+'">'+sign(r.net)+inr(r.net)+'</td>'
+      +'<td style="color:'+pc(r.net/r.days)+'">'+inr(r.net/r.days)+'</td></tr>');
+
+  // Daily cap what-if: keep only the first N trades of each day
+  const maxN=Math.max(...days.map(d=>d.ts.length));
+  const capRows=[];
+  for(let n=1;n<=Math.min(maxN,5);n++){
+    let net=0,kept=0,wins=0,green=0;
+    for(const d of days){
+      const k=d.ts.slice(0,n), kn=k.reduce((a,t)=>a+t.pnl,0);
+      net+=kn; kept+=k.length; wins+=k.filter(t=>t.pnl>0).length; if(kn>0) green++;
+    }
+    capRows.push({key:'Max '+n,net,kept,wins,green});
+  }
+  capRows.push({key:'No cap',net:actual,kept:scope.filter(t=>t.date).length,
+    wins:scope.filter(t=>t.date&&t.pnl>0).length,green:days.filter(d=>d.net>0).length,actual:true});
+  const capTbl=registerTable('dpCap',
+    '<th>Cap</th><th>Trades</th><th>WR</th><th>Green days</th><th>Net</th><th>vs actual</th>',
+    capRows,
+    r=>{ const dl=r.net-actual;
+      return '<tr><td'+(r.actual?' style="font-weight:700"':'')+'>'+r.key+'</td><td>'+r.kept+'</td><td>'+pct(r.wins,r.kept)+'</td>'
+      +'<td>'+r.green+' / '+days.length+'</td>'
+      +'<td style="color:'+pc(r.net)+'">'+sign(r.net)+inr(r.net)+'</td>'
+      +'<td style="color:'+(r.actual?'inherit':pc(dl))+'">'+(r.actual?'—':sign(dl)+inr(dl))+'</td></tr>'; });
+
+  // Day shapes: W/L sequence → days, green, net
+  const shp=new Map();
+  for(const d of days){
+    const k=d.shape.length>6?d.shape.slice(0,6)+'…':d.shape;
+    if(!shp.has(k)) shp.set(k,{key:k,days:0,green:0,net:0});
+    const g=shp.get(k); g.days++; if(d.net>0) g.green++; g.net+=d.net;
+  }
+  const shpRows=[...shp.values()].sort((a,b)=>b.days-a.days||a.net-b.net);
+  const shpTbl=registerTable('dpShape',
+    '<th>Sequence</th><th>Days</th><th>Green</th><th>Net</th><th>Avg/day</th>',
+    shpRows,
+    r=>'<tr><td>'+shapeHTML(r.key)+'</td><td>'+r.days+'</td><td>'+pct(r.green,r.days)+'</td>'
+      +'<td style="color:'+pc(r.net)+'">'+sign(r.net)+inr(r.net)+'</td>'
+      +'<td style="color:'+pc(r.net/r.days)+'">'+inr(r.net/r.days)+'</td></tr>');
+
+  return head+cards+'<div class="row3">'
+    +'<div class="panel"><h3>Days by Trade Count</h3><div class="cap">How days with 1, 2, 3… trades ended. Green = the day closed in profit.</div>'+cntTbl+'</div>'
+    +'<div class="panel"><h3>Daily Trade Cap — What If</h3><div class="cap">Only the first N trades of each day kept. A cap that beats "No cap" is money the later trades gave back.</div>'+capTbl+'</div>'
+    +'<div class="panel"><h3>Day Sequences</h3><div class="cap">Each day as its run of wins and losses, most common first. WLL = won the 1st, lost the next two.</div>'+shpTbl+'</div>'
+    +'</div>';
+}
+function shapeHTML(k){
+  let h='<span class="shape">';
+  for(const ch of k) h+=ch==='W'?'<b class="w">W</b>':(ch==='L'?'<b class="l">L</b>':(ch==='B'?'<b class="b">B</b>':'<b class="b">…</b>'));
+  return h+'</span>';
 }
 
 const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -1297,9 +1565,15 @@ function drawMC(){
 // wire controls
 document.querySelectorAll('#segBook button').forEach(b=>b.addEventListener('click',()=>{
   document.querySelectorAll('#segBook button').forEach(x=>x.classList.remove('on'));
-  b.classList.add('on'); render();
+  b.classList.add('on'); onScope();
 }));
-msInit('fMode', render);
+// Market narrows the Strategy list to that market's strategies, then re-lists
+// Exit / Hour from what is left — the same split the Consolidation Report uses.
+document.querySelectorAll('#segMkt button').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('#segMkt button').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); refreshPickers(true); render();
+}));
+msInit('fMode', onScope);
 msInit('fReason', render);
 msInit('fHour', render);
 // Outcome + Side are single-choice segmented controls: same paint-and-render
@@ -1321,6 +1595,8 @@ function _msTickAll(id){
   });
   const txt=root.querySelector('.ms-text');
   if(txt) txt.textContent = root.getAttribute('data-all-label')||'All';
+  // forget remembered unticks too, or the next rebuild would bring them back
+  MS_MEM[id]={};
 }
 document.getElementById('btnReset').addEventListener('click',()=>{
   document.querySelectorAll('#segOutcome button').forEach(x=>x.classList.toggle('on', x.dataset.outcome==='all'));
@@ -1334,16 +1610,17 @@ document.getElementById('fRange').addEventListener('change',()=>{
   document.getElementById('customWrap').style.display = range==='custom'?'inline':'none';
   // Only 'Current week expiry' needs the expiry calendar — fetched on first use
   // and cached, so every later selection resolves without a round-trip.
-  if(range==='exp'){ drReady().then(render); return; }
-  render();
+  if(range==='exp'){ drReady().then(onScope); return; }
+  onScope();
 });
 let _wasMobile=MOBILE();
 window.addEventListener('resize',()=>{
   const m=MOBILE();
   if(m!==_wasMobile){ _wasMobile=m; render(); }   // tick density differs per layout
 });
-document.getElementById('fFrom').addEventListener('change',render);
-document.getElementById('fTo').addEventListener('change',render);
+document.getElementById('fFrom').addEventListener('change',onScope);
+document.getElementById('fTo').addEventListener('change',onScope);
+refreshPickers(true);
 render();
 </script>
 </body>
