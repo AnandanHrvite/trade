@@ -449,9 +449,33 @@ async function pushToDrive(file, trigger) {
   }
 }
 
+/** Age (ms) of the newest dated snapshot on disk, or Infinity when there is none. */
+function lastSnapshotAgeMs() {
+  const newest = listBackups().reduce((mx, b) => Math.max(mx, b.mtimeMs || 0), 0);
+  return newest > 0 ? Date.now() - newest : Infinity;
+}
+
+const DAY_MS = 24 * 3600 * 1000;
+const NON_TRADING_MAX_AGE_MS = 7 * DAY_MS;   // weekly floor so settings/manual edits still get backed up
+// Boot catch-up freshness: >24h so a 07:00 catch-up isn't repeated at the next 07:00 restart.
+const BOOT_FRESH_MS = 30 * 3600 * 1000;
+
 async function runDaily() {
   if (!isEnabled()) return;
   const date = istDateStr();
+  // Nothing trades on a weekend / NSE holiday, so a full tar+gzip just burns CPU
+  // credits. Skip unless the last snapshot is a week old (catches settings edits).
+  // Wall-clock IST Date so the weekday/holiday check is right on a UTC box.
+  try {
+    const istNow = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+    const age = lastSnapshotAgeMs();
+    if (age < NON_TRADING_MAX_AGE_MS && await require("./nseHolidays").isNonTradingDay(istNow)) {
+      console.log(`[backup] daily snapshot skipped — ${date} is a non-trading day (last snapshot ${(age / 3600000).toFixed(1)}h old)`);
+      return;
+    }
+  } catch (err) {
+    console.warn(`[backup] non-trading-day check failed, backing up anyway: ${(err && err.message) || err}`);
+  }
   const r = await createSnapshot(date);
   if (r.ok) {
     const mb = (r.sizeBytes / (1024 * 1024)).toFixed(2);
@@ -490,6 +514,23 @@ function scheduleNext() {
 }
 
 /** Start the scheduler and ensure today has a snapshot to grab right away. */
+// No snapshot for today yet — cut one now so there's always a file to download.
+// Runs at most once a day (a later restart finds the file and skips), so pushing
+// it to Drive too can't turn restarts into repeat uploads. It's what covers a day
+// the app was down at BACKUP_HOUR_IST.
+function bootSnapshot(date) {
+  createSnapshot(date).then(async (r) => {
+    if (r.ok) {
+      console.log(`[backup] boot snapshot ready: backup-${date}.tar.gz (${(r.sizeBytes / 1048576).toFixed(2)} MB)`);
+      await pushToDrive(r.file, "boot");
+    } else {
+      console.warn(`[backup] boot snapshot failed: ${r.error}`);
+    }
+  // Fire-and-forget: pushToDrive rejects on any network fault, and with no
+  // catch that surfaced as a boot-time "🚨 UNHANDLED REJECTION" telegram.
+  }).catch((err) => console.warn(`[backup] boot snapshot failed: ${(err && err.message) || err}`));
+}
+
 function start() {
   if (!isEnabled()) {
     console.log("[backup] disabled (BACKUP_ENABLED=false)");
@@ -506,23 +547,26 @@ function start() {
     const nowIst = new Date().toLocaleString("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
     const [h, m] = nowIst.split(":").map(Number);
     const istMin = (h % 24) * 60 + (m || 0);
-    if (istMin >= 540 && istMin <= 930) {
+    // The daily 07:00 restart used to cut a full snapshot here and then the
+    // scheduled run cut the same thing again at BACKUP_HOUR_IST. Catch up at boot
+    // only when the newest snapshot is over 30h old AND today's scheduled run
+    // won't cover it — i.e. we're past the hour, or today is a non-trading day
+    // (runDaily may skip those, so a missed Friday would otherwise wait till Monday).
+    const ageMs = lastSnapshotAgeMs();
+    if (ageMs < BOOT_FRESH_MS) {
+      console.log(`[backup] boot snapshot skipped — last snapshot ${(ageMs / 3600000).toFixed(1)}h old`);
+    } else if (istMin >= 540 && istMin <= 930) {
       console.log("[backup] boot snapshot deferred (market hours) — scheduled run will create it");
+    } else if (istMin < backupHourIST() * 60) {
+      const istNow = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+      require("./nseHolidays").isNonTradingDay(istNow)
+        .catch(() => true)   // unknown → treat as non-trading so we still catch up
+        .then((nonTrading) => {
+          if (nonTrading) bootSnapshot(date);
+          else console.log(`[backup] boot snapshot skipped — before ${backupHourIST()}:00 IST, scheduled run will cover today`);
+        });
     } else {
-      // No snapshot for today yet — cut one now so there's always a file to download.
-      // This branch runs at most once a day (a later restart finds the file and
-      // skips), so pushing it to Drive too can't turn restarts into repeat uploads.
-      // It's what covers a day the app was down at BACKUP_HOUR_IST.
-      createSnapshot(date).then(async (r) => {
-        if (r.ok) {
-          console.log(`[backup] boot snapshot ready: backup-${date}.tar.gz (${(r.sizeBytes / 1048576).toFixed(2)} MB)`);
-          await pushToDrive(r.file, "boot");
-        } else {
-          console.warn(`[backup] boot snapshot failed: ${r.error}`);
-        }
-      // Fire-and-forget: pushToDrive rejects on any network fault, and with no
-      // catch that surfaced as a boot-time "🚨 UNHANDLED REJECTION" telegram.
-      }).catch((err) => console.warn(`[backup] boot snapshot failed: ${(err && err.message) || err}`));
+      bootSnapshot(date);
     }
   }
   scheduleNext();
