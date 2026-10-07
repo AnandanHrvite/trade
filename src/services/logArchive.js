@@ -38,7 +38,6 @@ let flushing    = false;
 let dropped     = 0;                 // entries lost to buffer overflow since last notice
 const dayBytes  = new Map();         // "YYYY-MM-DD" → bytes written today (lazily seeded from disk)
 const overCap   = new Set();         // days that hit MAX_DAY_BYTES (stop appending, warn once)
-let readCache   = null;              // { date, key, entries } — one parsed day, past days are immutable
 
 function clampInt(raw, def, min, max) {
   const n = parseInt(raw, 10);
@@ -187,31 +186,177 @@ function listDates() {
   return out.sort((a, b) => (a.date < b.date ? 1 : -1));
 }
 
-/**
- * Parsed entries for one archived day, oldest first.
- * Past-day files only ever grow while that day is current, so the single-slot
- * cache is keyed on size+mtime — a stale read is impossible.
- */
-function readDay(date) {
-  if (!ENABLED) return [];
+// ── Line index (incremental) ─────────────────────────────────────────────────
+// Instead of holding a parsed day (several times the file size), each cached
+// day keeps a compact index: byte start + length of every line that parses as
+// JSON, in two growable Uint32Arrays (8 bytes/entry). Today's file only ever
+// grows, so a re-read scans just the bytes appended since the last one. An
+// unterminated tail line (a write in flight) is never committed — it is
+// re-examined on the next read — but it is still served if it already parses,
+// matching what a naive whole-file parse would return. All reads are async and
+// chunked so a large first scan never blocks the shared event loop.
+
+const READ_CHUNK      = 1024 * 1024;  // bytes per fs read during a scan
+const MAX_CACHED_DAYS = 2;            // today + one browsed past day
+
+const indexCache = new Map();         // date → idx (Map order = LRU, newest last)
+const indexLocks = new Map();         // date → in-flight refresh promise
+
+function newIndex(ino) {
+  return {
+    ino, consumed: 0, size: 0, mtimeMs: 0, count: 0,
+    starts: new Uint32Array(1024), lens: new Uint32Array(1024),
+    tail: null,                       // { start, len } of a parseable unterminated last line
+  };
+}
+
+function pushLine(idx, start, len) {
+  if (idx.count === idx.starts.length) {
+    const cap = idx.starts.length * 2;
+    const s = new Uint32Array(cap); s.set(idx.starts); idx.starts = s;
+    const l = new Uint32Array(cap); l.set(idx.lens);   idx.lens   = l;
+  }
+  idx.starts[idx.count] = start;
+  idx.lens[idx.count]   = len;
+  idx.count += 1;
+}
+
+function parses(buf, s, e) {
+  if (e <= s) return false;
+  try { JSON.parse(buf.toString("utf8", s, e)); return true; } catch (_) { return false; }
+}
+
+// Scan [idx.consumed, size) and commit every complete, parseable line.
+async function scanFrom(fh, idx, size) {
+  let carry = null;                   // bytes of a line split across chunks
+  let carryStart = idx.consumed;
+  let pos = idx.consumed;
+  idx.tail = null;
+  while (pos < size) {
+    const want = Math.min(READ_CHUNK, size - pos);
+    const chunk = Buffer.allocUnsafe(want);
+    const { bytesRead } = await fh.read(chunk, 0, want, pos);
+    if (!bytesRead) break;
+    const buf  = carry ? Buffer.concat([carry, chunk.subarray(0, bytesRead)]) : chunk.subarray(0, bytesRead);
+    const base = carry ? carryStart : pos;  // file offset of buf[0]
+    let s = 0, nl;
+    while ((nl = buf.indexOf(10, s)) !== -1) {
+      if (parses(buf, s, nl)) pushLine(idx, base + s, nl - s);
+      s = nl + 1;
+    }
+    idx.consumed = base + s;
+    carry = s < buf.length ? Buffer.from(buf.subarray(s)) : null;
+    carryStart = base + s;
+    pos += bytesRead;
+  }
+  if (carry && parses(carry, 0, carry.length)) idx.tail = { start: carryStart, len: carry.length };
+}
+
+async function refreshIndex(date) {
   const fp = filePathFor(date);
   let st;
-  try { st = fs.statSync(fp); } catch (_) { return []; }
+  try { st = await fs.promises.stat(fp); }
+  catch (_) { indexCache.delete(date); return null; }
 
-  const key = `${st.size}:${st.mtimeMs}`;
-  if (readCache && readCache.date === date && readCache.key === key) return readCache.entries;
-
-  let text = "";
-  try { text = fs.readFileSync(fp, "utf-8"); }
-  catch (err) { warn(`read failed for ${date}: ${err.message}`); return []; }
-
-  const entries = [];
-  for (const line of text.split("\n")) {
-    if (!line) continue;
-    try { entries.push(JSON.parse(line)); } catch (_) { /* truncated tail line */ }
+  let idx = indexCache.get(date);
+  if (idx && idx.ino === st.ino && st.size === idx.size && st.mtimeMs === idx.mtimeMs) {
+    indexCache.delete(date); indexCache.set(date, idx);   // LRU touch
+    return idx;
   }
-  readCache = { date, key, entries };
-  return entries;
+  // Shrunk, replaced or first read → rebuild; grew in place → scan the delta.
+  if (!idx || idx.ino !== st.ino || st.size < idx.consumed) idx = newIndex(st.ino);
+
+  let fh;
+  try {
+    fh = await fs.promises.open(fp, "r");
+    await scanFrom(fh, idx, st.size);
+  } catch (err) {
+    warn(`read failed for ${date}: ${err.message}`);
+    indexCache.delete(date);
+    return null;
+  } finally {
+    if (fh) { try { await fh.close(); } catch (_) {} }
+  }
+  idx.size = st.size;
+  idx.mtimeMs = st.mtimeMs;
+
+  indexCache.delete(date);
+  indexCache.set(date, idx);
+  while (indexCache.size > MAX_CACHED_DAYS) indexCache.delete(indexCache.keys().next().value);
+  return idx;
+}
+
+// One refresh per day at a time — concurrent requests share it.
+function getIndex(date) {
+  if (!ENABLED) return Promise.resolve(null);
+  filePathFor(date);                  // validate before touching the lock map
+  const inflight = indexLocks.get(date);
+  if (inflight) return inflight;
+  const p = refreshIndex(date).finally(() => indexLocks.delete(date));
+  indexLocks.set(date, p);
+  return p;
+}
+
+function totalOf(idx) { return idx ? idx.count + (idx.tail ? 1 : 0) : 0; }
+
+// Parse entries [from, to) of an index, reading only their byte span.
+async function readRange(date, idx, from, to) {
+  const out = [];
+  if (!idx || from >= to) return out;
+  // Snapshot: a concurrent refresh may grow/reallocate the arrays or clear the
+  // tail, but never rewrites slots below the old count, so these stay valid.
+  const { count, starts, lens, tail } = idx;
+  if (to > count + (tail ? 1 : 0)) to = count + (tail ? 1 : 0);
+  const startOf = (i) => (i < count ? starts[i] : tail.start);
+  const lenOf   = (i) => (i < count ? lens[i]   : tail.len);
+  let fh;
+  try {
+    fh = await fs.promises.open(filePathFor(date), "r");
+    let i = from;
+    while (i < to) {
+      // Batch consecutive entries into ≤ READ_CHUNK reads (a single huge line still reads whole).
+      const spanStart = startOf(i);
+      let j = i + 1;
+      while (j < to && startOf(j) + lenOf(j) - spanStart <= READ_CHUNK) j++;
+      const spanLen = startOf(j - 1) + lenOf(j - 1) - spanStart;
+      const buf = Buffer.allocUnsafe(spanLen);
+      let got = 0;
+      while (got < spanLen) {
+        const { bytesRead } = await fh.read(buf, got, spanLen - got, spanStart + got);
+        if (!bytesRead) break;
+        got += bytesRead;
+      }
+      for (let k = i; k < j; k++) {
+        const s = startOf(k) - spanStart;
+        try { out.push(JSON.parse(buf.toString("utf8", s, s + lenOf(k)))); } catch (_) {}
+      }
+      i = j;
+    }
+  } catch (err) {
+    warn(`read failed for ${date}: ${err.message}`);
+  } finally {
+    if (fh) { try { await fh.close(); } catch (_) {} }
+  }
+  return out;
+}
+
+/** Number of entries in one archived day (incremental for today). */
+async function countDay(date) {
+  return totalOf(await getIndex(date));
+}
+
+/** One page of a day: { total, logs } — only the requested window is parsed. */
+async function readDayPage(date, from, limit) {
+  const idx   = await getIndex(date);
+  const total = totalOf(idx);
+  const logs  = from < total ? await readRange(date, idx, from, Math.min(total, from + limit)) : [];
+  return { total, logs };
+}
+
+/** Every parsed entry for one archived day, oldest first (exports). Not cached. */
+async function readDay(date) {
+  const idx = await getIndex(date);
+  return readRange(date, idx, 0, totalOf(idx));
 }
 
 /** Delete archives older than RETAIN_DAYS (today counts as day 1). */
@@ -227,7 +372,7 @@ function prune(retainDays) {
       catch (err) { warn(`prune failed for ${date}: ${err.message}`); }
       dayBytes.delete(date);
       overCap.delete(date);
-      if (readCache && readCache.date === date) readCache = null;
+      indexCache.delete(date);
     } else {
       kept += 1;
     }
@@ -242,6 +387,6 @@ if (ENABLED) {
 }
 
 module.exports = {
-  append, flush, listDates, readDay, prune, istDateString, filePathFor,
+  append, flush, listDates, readDay, readDayPage, countDay, prune, istDateString, filePathFor,
   ROOT_DIR, RETAIN_DAYS, ENABLED,
 };

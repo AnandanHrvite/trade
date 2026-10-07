@@ -68,7 +68,7 @@ function clampNum(raw, def, min, max) {
 
 // Today is listed too: the in-memory ring only holds the last 5 000 entries
 // since the last restart, while today's file holds the whole day.
-router.get("/dates", (req, res) => {
+router.get("/dates", async (req, res) => {
   const today = logArchive.istDateString();
   if (logArchive.ENABLED) logArchive.flush(true);
   const days  = logArchive.listDates().map(d => ({ ...d, isToday: d.date === today }));
@@ -78,7 +78,9 @@ router.get("/dates", (req, res) => {
   // the in-memory total and offers the full file instead of silently showing a
   // truncated day.
   let todayEntries = 0;
-  try { if (logArchive.ENABLED) todayEntries = logArchive.readDay(today).length; } catch (_) {}
+  // Counted from an incremental line index — only bytes appended since the
+  // last request are scanned, nothing is held parsed.
+  try { if (logArchive.ENABLED) todayEntries = await logArchive.countDay(today); } catch (_) {}
   res.json({
     today,
     retainDays: logArchive.RETAIN_DAYS,
@@ -89,35 +91,36 @@ router.get("/dates", (req, res) => {
 });
 
 // ── Paginated read of one archived day (same shape as /logs/data) ─────────────
-router.get("/day", (req, res) => {
+router.get("/day", async (req, res) => {
   const date = String(req.query.date || "");
   if (!DATE_RE.test(date)) return res.status(400).json({ error: "date must be YYYY-MM-DD" });
 
   // Today's tail is still buffered in memory — flush so the archive is current.
   if (date === logArchive.istDateString()) logArchive.flush(true);
 
-  const entries = logArchive.readDay(date);
-  const total   = entries.length;
   // Non-numeric query params must fall back to the defaults, not NaN — NaN
   // bounds make slice() return an empty page and the viewer look empty.
   const limit   = clampNum(req.query.limit, 100, 1, 500);
   const from    = Math.max(0, clampNum(req.query.from, 0, 0, Number.MAX_SAFE_INTEGER));
-  const logs    = from < total ? entries.slice(from, from + limit) : [];
+  let total = 0, logs = [];
+  // Only the requested window is read and parsed (incremental index for today).
+  try { ({ total, logs } = await logArchive.readDayPage(date, from, limit)); }
+  catch (err) { return res.status(500).json({ error: err.message }); }
 
   res.json({ date, total, from, limit, logs, hasMore: (from + limit) < total });
 });
 
 // Resolve the entry set an export should serve: an archived day, or memory.
-function exportEntries(dateRaw) {
+async function exportEntries(dateRaw) {
   const date = String(dateRaw || "");
   if (!DATE_RE.test(date)) return { entries: logStore, label: new Date().toISOString().slice(0, 10) };
   if (date === logArchive.istDateString()) logArchive.flush(true);
-  return { entries: logArchive.readDay(date), label: date };
+  return { entries: await logArchive.readDay(date), label: date };
 }
 
 // ── Export as plain text ──────────────────────────────────────────────────────
-router.get("/export", (req, res) => {
-  const { entries, label } = exportEntries(req.query.date);
+router.get("/export", async (req, res) => {
+  const { entries, label } = await exportEntries(req.query.date);
   const lines = entries
     .map(e => `[${e.date} ${e.time}] [${String(e.level).padEnd(5)}] ${e.msg}`)
     .join("\n");
@@ -127,8 +130,8 @@ router.get("/export", (req, res) => {
 });
 
 // ── Export as JSON ────────────────────────────────────────────────────────────
-router.get("/export-json", (req, res) => {
-  const { entries, label } = exportEntries(req.query.date);
+router.get("/export-json", async (req, res) => {
+  const { entries, label } = await exportEntries(req.query.date);
   res.setHeader("Content-Disposition", `attachment; filename="trading-bot-logs-${label}.json"`);
   res.setHeader("Content-Type", "application/json");
   res.json(entries);
