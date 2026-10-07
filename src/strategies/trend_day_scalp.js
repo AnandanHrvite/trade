@@ -284,6 +284,42 @@ function computeAtrSeries(candles, period) {
   return out;
 }
 
+/**
+ * BACKTEST ONLY — every series getSignal reads, computed ONCE over the whole
+ * array so a backtest can read bar i without slicing + recomputing the prefix
+ * (O(n²) over a long range). Each entry at i equals what getSignal derives from
+ * candles.slice(0, i + 1):
+ *   vwap — per-session running value: bar i's own IST day, valid in-session bars
+ *          j <= i, summed in the same order computeVwapSeries uses, so the float
+ *          result is bit-identical to computeVwapSeries(prefix)[i] for every i
+ *          whose day is the prefix's last day (the only indices getSignal reads).
+ *   ema / atr — causal forward recursions, so the full-array value at i equals
+ *          the last value over the prefix.
+ * Paper/live never call this.
+ */
+function computeBacktestSeries(candles, cfg) {
+  cfg = cfg || getConfig();
+  const n = Array.isArray(candles) ? candles.length : 0;
+  const vwap = new Array(n).fill(null);
+  const acc = new Map();   // IST day -> { sumP, count }
+  for (let i = 0; i < n; i++) {
+    const c = candles[i];
+    if (!c || !_num(c.high) || !_num(c.low) || !_num(c.close)) continue;
+    if (_utcSecToIstMins(c.time) < cfg.sessionStartMin) continue;
+    const day = _istDayOf(c.time);
+    let a = acc.get(day);
+    if (!a) { a = { sumP: 0, count: 0 }; acc.set(day, a); }
+    a.sumP += (c.high + c.low + c.close) / 3;
+    a.count++;
+    vwap[i] = { time: c.time, value: _r2(a.sumP / a.count) };
+  }
+  return {
+    vwap,
+    ema: computeEmaSeries(candles, cfg.emaPeriod),
+    atr: computeAtrSeries(candles, cfg.atrPeriod),
+  };
+}
+
 /** The pullback zone: whichever of VWAP / EMA sits NEARER to price. */
 function pullbackZone(side, vwap, ema) {
   if (!_num(vwap) && !_num(ema)) return null;
@@ -469,14 +505,20 @@ function getSignal(candles, opts) {
   const o = opts || {};
   const cfg = o.cfg || getConfig();
   const base = _baseSignal(cfg);
+  // o.precomputed — BACKTEST ONLY: { series, endIdx } where `series` is
+  // computeBacktestSeries(candles, cfg) over the WHOLE array and `endIdx` is the
+  // signal bar. Same read as candles.slice(0, endIdx + 1) without the O(n)
+  // prefix copy + indicator recompute per bar. Paper/live never pass it.
+  const pre = o.precomputed || null;
+  const n = !Array.isArray(candles) ? 0 : pre ? pre.endIdx + 1 : candles.length;
 
-  if (!Array.isArray(candles) || candles.length < 2) {
+  if (!Array.isArray(candles) || n < 2) {
     base.warmup = true;
-    base.skipReason = base.reason = `Warming up (${candles ? candles.length : 0} candles)`;
+    base.skipReason = base.reason = `Warming up (${candles ? (pre ? n : candles.length) : 0} candles)`;
     return base;
   }
 
-  const last = candles[candles.length - 1];
+  const last = candles[n - 1];
   if (!last || !_num(last.open) || !_num(last.high) || !_num(last.low) || !_num(last.close)) {
     base.skipReason = base.reason = "Last candle has no usable OHLC — refusing to decide";
     return base;
@@ -513,11 +555,10 @@ function getSignal(candles, opts) {
   }
 
   // ── Indicators, all from CLOSED bars. ────────────────────────────────────
-  const vwapSeries = computeVwapSeries(candles, cfg.sessionStartMin);
-  const emaSeries  = computeEmaSeries(candles, cfg.emaPeriod);
-  const atrSeries  = computeAtrSeries(candles, cfg.atrPeriod);
+  const vwapSeries = pre ? pre.series.vwap : computeVwapSeries(candles, cfg.sessionStartMin);
+  const emaSeries  = pre ? pre.series.ema  : computeEmaSeries(candles, cfg.emaPeriod);
+  const atrSeries  = pre ? pre.series.atr  : computeAtrSeries(candles, cfg.atrPeriod);
 
-  const n = candles.length;
   const vwapNow = vwapSeries[n - 1] ? vwapSeries[n - 1].value : null;
   const emaNow  = emaSeries[n - 1]  ? emaSeries[n - 1].value  : null;
   const atrNow  = atrSeries[n - 1]  ? atrSeries[n - 1].value  : null;
@@ -723,6 +764,7 @@ module.exports = {
   computeVwapSeries,
   computeEmaSeries,
   computeAtrSeries,
+  computeBacktestSeries,
   pullbackZone,
   evaluateDayGate,
   getSignal,

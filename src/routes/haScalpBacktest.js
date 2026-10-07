@@ -344,8 +344,12 @@ async function runHaScalpBacktest(intraday, rangeFrom) {
       // ── 3. Look for a new signal on this bar's CLOSE. ──────────────────────
       if (!pos && !pendingEntry) {
         const alreadyTraded = dayTrades >= MAX_TRADES;
-        const sig = haStrategy.getSignal(sorted.slice(0, gi + 1), {
-          cfg, silent: true, alreadyTraded, ha: haAll.slice(0, gi + 1), ma: maAll.slice(0, gi + 1),
+        // Engine reads bar gi of the full arrays — no per-bar prefix copies
+        // (that was O(n²) over a long range). haAll/maAll are index-aligned to
+        // `sorted`, so this is the same read the sliced call made.
+        const sig = haStrategy.getSignal(sorted, {
+          cfg, silent: true, alreadyTraded,
+          precomputed: { ha: haAll, ma: maAll, endIdx: gi },
         });
         if (sig.warmup) { dayWarmupBars++; }
         else {

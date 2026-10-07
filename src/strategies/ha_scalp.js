@@ -456,15 +456,21 @@ function getSignal(candles, opts) {
   // The MA needs `maPeriod` bars; the HA chain needs its own warm-up on top of
   // whatever the MA needs, because early HA colours are seed artefacts.
   const minBars = Math.max(cfg.maPeriod, cfg.haWarmupBars) + 1;
-  if (!Array.isArray(candles) || candles.length < minBars) {
+  // o.precomputed — BACKTEST ONLY: { ha, ma, endIdx } where `ha` / `ma` are
+  // toHeikinAshi / computeMA over the WHOLE `candles` array and `endIdx` is the
+  // signal bar. Reading candles/ha/ma at endIdx is exactly what passing
+  // candles.slice(0, endIdx + 1) with ha/ma sliced to the same length did, minus
+  // three O(n) prefix copies per bar. Paper/live never pass it.
+  const pre = o.precomputed || null;
+  const n = !Array.isArray(candles) ? 0 : pre ? pre.endIdx + 1 : candles.length;
+  if (!Array.isArray(candles) || n < minBars) {
     base.warmup = true;
     base.skipReason = base.reason =
-      `Warming up (${candles ? candles.length : 0}/${minBars} 15-min candles — ` +
+      `Warming up (${candles ? (pre ? n : candles.length) : 0}/${minBars} 15-min candles — ` +
       `the ${cfg.maPeriod} MA and the Heikin Ashi chain both need history)`;
     return base;
   }
 
-  const n = candles.length;
   const sig = candles[n - 1];
   if (!_okBar(sig)) {
     base.skipReason = base.reason = "Signal candle has no usable OHLC — refusing to decide";
@@ -494,8 +500,10 @@ function getSignal(candles, opts) {
   }
 
   // ── Heikin Ashi + MA, both index-aligned to `candles`. ────────────────────
-  const ha = Array.isArray(o.ha) && o.ha.length === n ? o.ha : toHeikinAshi(candles, { cfg });
-  const maSeries = Array.isArray(o.ma) && o.ma.length === n ? o.ma : computeMA(candles, { cfg });
+  const ha = pre ? pre.ha
+    : Array.isArray(o.ha) && o.ha.length === n ? o.ha : toHeikinAshi(candles, { cfg });
+  const maSeries = pre ? pre.ma
+    : Array.isArray(o.ma) && o.ma.length === n ? o.ma : computeMA(candles, { cfg });
 
   const haBar = ha[n - 1];
   const ma = maSeries[n - 1];

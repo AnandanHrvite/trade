@@ -99,6 +99,10 @@ async function runTrendDayScalpBacktest(intraday) {
     byDay.get(k).push(i);              // store INDICES into `sorted`
   }
 
+  // VWAP/EMA/ATR computed ONCE over every bar and read at each bar's index —
+  // see computeBacktestSeries. Replaces a per-bar prefix slice + recompute.
+  const fullSeries = tdsStrategy.computeBacktestSeries(sorted, cfg);
+
   const trades = [];
   const skipped = [];
   let days = 0;
@@ -118,7 +122,9 @@ async function runTrendDayScalpBacktest(intraday) {
     const gateIdxPos = idxs.findIndex(i => _utcSecToIstMins(sorted[i].time) === gateStartMin);
     if (gateIdxPos < 0) { skipped.push({ date: istDateOf(dayTs), reason: `no ${tdsStrategy._fmtMins(cfg.gateMin)} gate bar in the session` }); continue; }
 
-    const gate = tdsStrategy.evaluateDayGate(sorted.slice(0, idxs[gateIdxPos] + 1), { cfg, silent: true });
+    // evaluateDayGate reads only the last bar's IST-day bars (in order), so
+    // today's bars up to the gate bar are the exact input the full prefix gave.
+    const gate = tdsStrategy.evaluateDayGate(idxs.slice(0, gateIdxPos + 1).map(i => sorted[i]), { cfg, silent: true });
     if (gate.decided) gateStats.decided++;
     if (!gate.tradeable) { skipped.push({ date: istDateOf(dayTs), reason: gate.reason }); continue; }
     gateStats.tradeable++;
@@ -234,7 +240,10 @@ async function runTrendDayScalpBacktest(intraday) {
       if (!pos && !dayClosed && dayTrades < MAX_TRADES) {
         const closeMins = istMin + RES;
         if (closeMins > cfg.entryEndMin) continue;
-        const sig = tdsStrategy.getSignal(sorted.slice(0, i + 1), { dayGate: gate, cfg, silent: true });
+        const sig = tdsStrategy.getSignal(sorted, {
+          dayGate: gate, cfg, silent: true,
+          precomputed: { series: fullSeries, endIdx: i },
+        });
         if (sig.signal === "NONE" || !sig.side) continue;
 
         pos = {
