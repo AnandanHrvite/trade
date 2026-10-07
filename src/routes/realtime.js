@@ -1026,7 +1026,7 @@ function renderCapitalAlert(d) {
   ).join(' · ');
 
   const rows = alerts.slice(0, 5).map(a => {
-    const t = new Date(a.ts).toLocaleTimeString('en-IN', { hour12:false });
+    const t = new Date(a.ts).toLocaleTimeString('en-IN', { hourCycle:'h23' });
     return '<li><span class="t">' + t + '</span> — ' + a.label + ' ' + (a.side || '')
          + ' refused — needed ' + fmtINR(a.cost) + ', pool had ' + fmtINR(a.available)
          + ' (short ' + fmtINR(a.short) + ')</li>';

@@ -231,7 +231,7 @@ function encodePng(cv) {
 function istHHMM(epochSec) {
   try {
     return new Date(epochSec * 1000).toLocaleTimeString("en-GB", {
-      timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false,
+      timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
     });
   } catch (_) {
     return "";

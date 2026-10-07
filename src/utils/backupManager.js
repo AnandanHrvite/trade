@@ -503,7 +503,7 @@ function start() {
     // that pins a vCPU and burns burst credits exactly while the live feed is warming
     // back up after a restart. The scheduled daily run (and POST /backup/create)
     // still guarantee a file; we just don't cut one mid-session at boot.
-    const nowIst = new Date().toLocaleString("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false });
+    const nowIst = new Date().toLocaleString("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
     const [h, m] = nowIst.split(":").map(Number);
     const istMin = (h % 24) * 60 + (m || 0);
     if (istMin >= 540 && istMin <= 930) {

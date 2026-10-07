@@ -132,7 +132,7 @@ function _recordLoginAttempt(req, ip, result, passwordShown) {
   const browserLon = parseFloat(req.body?.lon);
   const hasBrowserGPS = !isNaN(browserLat) && !isNaN(browserLon);
   const entry = {
-    time: at.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false }),
+    time: at.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hourCycle: "h23" }),
     // IST, to match `time` above. toISOString() is UTC, so an attempt between
     // midnight and 05:30 IST — prime bot-scan hours — was filed under the
     // previous day next to an IST clock time.
@@ -371,7 +371,7 @@ ${otpOffer ? `<div class="otp-box">
   if (!el) return;
   function tick(){
     try {
-      el.innerHTML = new Date().toLocaleTimeString('en-IN', { timeZone:'Asia/Kolkata', hour12:false }) + '&nbsp;IST';
+      el.innerHTML = new Date().toLocaleTimeString('en-IN', { timeZone:'Asia/Kolkata', hourCycle:'h23' }) + '&nbsp;IST';
     } catch (e) { el.textContent = ''; return; }  // no tz support — stop, don't loop on the same failure
     setTimeout(tick, 1000);
   }
@@ -4398,7 +4398,9 @@ async function checkTradingStatus(){
     var alertDiv = document.getElementById('trading-status-alert');
     var now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
     var day = now.getDay(); var hour = now.getHours();
-    var todayStr = now.toISOString().split('T')[0];
+    // IST calendar date. toISOString() would read \`now\` back as UTC and give
+    // yesterday's date from 00:00 to 05:30 IST, missing a holiday until 5:30.
+    var todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 
     // Holiday check runs first and unconditionally so the Start All button
     // is hidden regardless of weekend/pre/post-market early-returns below.

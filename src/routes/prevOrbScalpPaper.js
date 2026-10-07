@@ -177,14 +177,14 @@ function _freshState() {
 }
 
 function log(msg) {
-  const stamp = new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
+  const stamp = new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hourCycle: "h23" });
   const line = `[${stamp}] ${msg}`;
   state.log.push(line);
   if (state.log.length > 200) state.log.shift();
   console.log(line);
 }
 
-function istNow() { return new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false }); }
+function istNow() { return new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hourCycle: "h23" }); }
 function _persist() {
   try { require("../utils/positionPersist").savePrevOrbScalpPosition(state.position, { sessionPnl: state.sessionPnl }); } catch (_) {}
 }

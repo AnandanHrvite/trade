@@ -4665,7 +4665,7 @@ async function showHealthModal() {
       html += '</tr>';
     }
     html += '</table>';
-    html += '<div style="margin-top:12px;color:var(--muted-1,#8ba1c2);font-size:0.68rem;text-align:center;">Last checked: ' + new Date(d.timestamp).toLocaleTimeString('en-IN', {timeZone:'Asia/Kolkata', hour12:false}) + ' IST</div>';
+    html += '<div style="margin-top:12px;color:var(--muted-1,#8ba1c2);font-size:0.68rem;text-align:center;">Last checked: ' + new Date(d.timestamp).toLocaleTimeString('en-IN', {timeZone:'Asia/Kolkata', hourCycle:'h23'}) + ' IST</div>';
     body.innerHTML = html;
 
     // Live Telegram reachability probe (getMe — sends no chat message). Updates
@@ -5138,7 +5138,7 @@ router.get("/audit", (req, res) => {
   const fmtTs = ts => {
     try {
       const d = new Date(ts);
-      return d.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false }).replace(",", "");
+      return d.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hourCycle: "h23" }).replace(",", "");
     } catch (_) { return ts; }
   };
 

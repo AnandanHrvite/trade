@@ -114,13 +114,13 @@ function _freshState() {
 }
 
 function log(msg) {
-  const stamp = new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
+  const stamp = new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hourCycle: "h23" });
   const line = `[${stamp}] ${msg}`;
   state.log.push(line);
   if (state.log.length > 200) state.log.shift();
   console.log(line);
 }
-function istNow() { return new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false }); }
+function istNow() { return new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hourCycle: "h23" }); }
 
 // Per-strategy override ORB_LIVE_DRY_RUN holds ORB in dry-run even when the
 // global LIVE_HARNESS_DRY_RUN flag is off (so EMA_RSI_ST can go real independently).

@@ -764,7 +764,7 @@ function getSignal(candles, opts) {
     `strike ${base.strike} (${strikeInfo.mode}${strikeInfo.steps ? `, ${strikeInfo.steps} step${strikeInfo.steps > 1 ? "s" : ""} = ${strikeInfo.distancePts}pt`: ""}) | ${stopText}`;
 
   if (!o.silent) {
-    const ist = new Date(bar.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
+    const ist = new Date(bar.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hourCycle: "h23" });
     console.log(`[RSI_PIVOT_ST ${ist}] ENTER ${side} @ ${entry} | ${side === "CE" ? `ST ${base.slSpot}` : "premium-stop only"} | strike ${base.strike} | RSI ${base.rsi}`);
   }
   return base;

@@ -333,7 +333,7 @@ function getSignal(candles, opts) {
   base.rsi = parseFloat(rsi.toFixed(1));
   base.adx = adx != null ? parseFloat(adx.toFixed(1)) : null;
 
-  var _ist = new Date(sc.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
+  var _ist = new Date(sc.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hourCycle: "h23" });
 
   // ── Chop guard 1: band width ──────────────────────────────────────────────
   // A band collapsed to noise width has no "stretch" to fade — every touch is just the

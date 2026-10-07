@@ -294,7 +294,7 @@ function getSignal(candles, opts) {
   var rsiCE = rsi > cfg.RSI_CE_MIN;                      // 3. single threshold, NO cap
   var rsiPE = rsi < cfg.RSI_PE_MAX;
 
-  var _istTime = new Date(signalCandle.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
+  var _istTime = new Date(signalCandle.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hourCycle: "h23" });
   if (!silent) console.log(
     "[" + (prefix === DEFAULT_PREFIX ? "V2" : "BN-V2") + " " + _istTime + "] EMA20=" + emaFast.toFixed(1) + " EMA50=" + emaSlow.toFixed(1) +
     "(" + (emaUp ? "20>50" : emaDown ? "20<50" : "=") + ")" +

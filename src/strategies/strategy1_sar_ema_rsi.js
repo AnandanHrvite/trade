@@ -227,7 +227,7 @@ function getSignal(candles, opts) {
     signalStrength: "STRONG",
   };
 
-  var _istTime = new Date(signalCandle.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
+  var _istTime = new Date(signalCandle.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hourCycle: "h23" });
   var _emaStr = TRIPLE_STACK
     ? "EMA9=" + emaFastest.toFixed(1) + " EMA20=" + emaFast.toFixed(1) + " EMA50=" + emaSlow.toFixed(1) + "(" + (emaUp ? "9>20>50" : emaDown ? "9<20<50" : "mixed") + ")"
     : "EMA20=" + emaFast.toFixed(1) + " EMA50=" + emaSlow.toFixed(1) + "(" + (emaUp ? "20>50" : emaDown ? "20<50" : "=") + ")";

@@ -915,7 +915,7 @@ function tsToIST(ts){ return ts ? new Date(ts * 1000) : null; }
 // Always DD/MM/YYYY, zero-padded — toLocaleDateString drops the leading zeros.
 function tsFmtDate(ts){ if(!ts) return 'Unknown'; var d=new Date((ts+19800)*1000); return String(d.getUTCDate()).padStart(2,'0')+'/'+String(d.getUTCMonth()+1).padStart(2,'0')+'/'+d.getUTCFullYear(); }
 function tsFmtMonth(ts){ var d=tsToIST(ts); if(!d) return '2025-01'; var m=new Intl.DateTimeFormat('en-CA',{year:'numeric',month:'2-digit',timeZone:'Asia/Kolkata'}).format(d); return m; }
-function tsHour(ts){ var d=tsToIST(ts); if(!d) return 9; return parseInt(new Intl.DateTimeFormat('en-GB',{hour:'2-digit',hour12:false,timeZone:'Asia/Kolkata'}).format(d)); }
+function tsHour(ts){ var d=tsToIST(ts); if(!d) return 9; return parseInt(new Intl.DateTimeFormat('en-GB',{hour:'2-digit',hourCycle:'h23',timeZone:'Asia/Kolkata'}).format(d)); }
 function tsDow(ts){ var d=tsToIST(ts); if(!d) return 1; var s=new Intl.DateTimeFormat('en-US',{weekday:'short',timeZone:'Asia/Kolkata'}).format(d); var map={Sun:0,Mon:1,Tue:2,Wed:3,Thu:4,Fri:5,Sat:6}; return map[s]!=null?map[s]:1; }
 function toggleAnalytics(){
   anaVisible = !anaVisible;

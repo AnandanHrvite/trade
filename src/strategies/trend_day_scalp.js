@@ -651,7 +651,7 @@ function getSignal(candles, opts) {
     `| target ${targetSpot} (${cfg.targetR}R) | breakeven arms at ${beArmSpot} → stop ${beStopSpot}`;
 
   if (!o.silent) {
-    const ist = new Date(last.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
+    const ist = new Date(last.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hourCycle: "h23" });
     console.log(`[TREND_DAY_SCALP ${ist}] ENTER ${side} @ ${entry} | SL ${slSpot} (${slPts}pt) | TGT ${targetSpot} (${cfg.targetR}R) | BE arm ${beArmSpot}`);
   }
   return base;

@@ -528,7 +528,7 @@ function _tracer(candle, ctx, silent) {
     emit(decision) {
       if (silent) return;
       if ((process.env.ORB_DEBUG_TRACE || "false").toLowerCase() !== "true") return;
-      const t = candle ? new Date(candle.time * 1000).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false }) : "--:--:--";
+      const t = candle ? new Date(candle.time * 1000).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hourCycle: "h23" }) : "--:--:--";
       const head = [
         `close=${candle ? candle.close : "n/a"}`,
         ctx.orh != null ? `ORH=${ctx.orh} ORL=${ctx.orl} (${ctx.rangePts}pt)` : "OR=pending",
@@ -847,7 +847,7 @@ function getSignal(candles, opts) {
   // than re-buying the bar that just stopped us out. See reentryPlan() for which
   // exits qualify and why the stop candle itself is excluded.
   if (rearmAfter != null) {
-    tr.info("re-entry", `re-armed — ignoring breakouts at or before ${new Date(rearmAfter * 1000).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false })}`);
+    tr.info("re-entry", `re-armed — ignoring breakouts at or before ${new Date(rearmAfter * 1000).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hourCycle: "h23" })}`);
   }
 
   let b = -1, side = null, q = null, rejected = null;
@@ -1016,7 +1016,7 @@ function getSignal(candles, opts) {
     const targetSpot = side === "CE" ? or.high + rangePts * TARGET_OR_MULT : or.low - rangePts * TARGET_OR_MULT;
 
     if (!silent) {
-      const t = new Date(last.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
+      const t = new Date(last.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hourCycle: "h23" });
       console.log(`[ORB ${t}] ENTER ${side}${tag} | ORH=${or.high} ORL=${or.low} range=${rangePts}pt${atr15 ? ` (${(rangePts / atr15).toFixed(2)}×ATR15)` : ""} buf=${buffer} | brk body=${_r2(brkBody)}pt | entry ${_r2(entrySpot)} SL ${_r2(slSpot)} (risk ${_r2(Math.abs(entrySpot - slSpot))}pt) | ${why}`);
     }
     return done(Object.assign(sig, {

@@ -268,7 +268,7 @@ function _freshState() {
 }
 
 function log(msg) {
-  const stamp = new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
+  const stamp = new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hourCycle: "h23" });
   const line = `[${stamp}] ${msg}`;
   state.log.push(line);
   if (state.log.length > 1200) state.log.shift();   // the 09:30 funnel is ~220 lines
@@ -276,7 +276,7 @@ function log(msg) {
 }
 
 function istNow() {
-  return new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
+  return new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hourCycle: "h23" });
 }
 
 /**

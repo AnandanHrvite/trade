@@ -1201,7 +1201,7 @@ ${buildSidebar('tradeLogs', liveActive)}
     return (n/(1024*1024)).toFixed(2) + ' MB';
   }
   function fmtMtime(ms) {
-    try { return new Date(ms).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false }).replace(',', ''); }
+    try { return new Date(ms).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hourCycle: 'h23' }).replace(',', ''); }
     catch (_) { return '—'; }
   }
   function escHtml(s) {
@@ -1653,7 +1653,7 @@ ${buildSidebar('tradeLogs', liveActive)}
           return;
         }
         var fmtTs = function(ts){
-          try { return new Date(ts).toLocaleString('en-IN', { timeZone:'Asia/Kolkata', hour12:false }).replace(',', ''); }
+          try { return new Date(ts).toLocaleString('en-IN', { timeZone:'Asia/Kolkata', hourCycle:'h23' }).replace(',', ''); }
           catch (_) { return ts; }
         };
         var fmtVal = function(v){

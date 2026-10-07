@@ -976,7 +976,7 @@ function renderStatusPanel(filename) {
     return head + rows;
   }).join("");
 
-  const stamp = new Date().toLocaleString("en-GB", { timeZone: "Asia/Kolkata", hour12: false }) + " IST";
+  const stamp = new Date().toLocaleString("en-GB", { timeZone: "Asia/Kolkata", hourCycle: "h23" }) + " IST";
 
   return `<div style="max-width:900px;margin:28px auto 0;padding:22px 26px;background:#161b22;border:1px solid #30363d;border-left:4px solid #58a6ff;border-radius:10px;box-shadow:0 4px 24px rgba(0,0,0,0.4);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
     <div style="display:flex;align-items:center;gap:9px;margin-bottom:4px;">

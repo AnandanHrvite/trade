@@ -231,7 +231,7 @@ function _freshState() {
 }
 
 function log(msg) {
-  const stamp = new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
+  const stamp = new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hourCycle: "h23" });
   const line = `[${stamp}] ${msg}`;
   state.log.push(line);
   if (state.log.length > 400) state.log.shift();
@@ -247,7 +247,7 @@ function log(msg) {
 function decide(kind, headline, detail) {
   const row = {
     ts:     new Date().toISOString(),
-    ist:    new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false }),
+    ist:    new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hourCycle: "h23" }),
     kind,                       // PLAN | SCAN | WATCH | ENTRY | TRAIL | BAND | EXIT | SKIP | DAY
     headline,
     ...(detail && typeof detail === "object" ? { detail } : {}),
@@ -258,7 +258,7 @@ function decide(kind, headline, detail) {
 }
 
 function istNow() {
-  return new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
+  return new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hourCycle: "h23" });
 }
 
 // ── Crash/restart recovery: rehydrate today's in-memory session from JSONL ────

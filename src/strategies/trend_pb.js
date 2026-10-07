@@ -323,7 +323,7 @@ function getSignal(candles, opts) {
   base.reason = `TREND PB ${side}: 15m ${bias} (HH/HL${side === "CE" ? "" : "→LH/LL"}, EMA20${side === "CE" ? ">" : "<"}EMA50, slope ${side === "CE" ? "up" : "dn"}${vwap != null ? `, spot ${side === "CE" ? ">" : "<"} VWAP ${vwap}` : ""}) → healthy 5m pullback to EMA${cfg.ema5Period} (low ${pbLow}) → resumption close ${_r2(last.close)} beyond prev ${side === "CE" ? "high" : "low"}, body ${_r2(body)}pt ≥ ${_r2(minBody)}pt [STRONG]`;
 
   if (!silent) {
-    const istStr = new Date(last.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
+    const istStr = new Date(last.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hourCycle: "h23" });
     console.log(`[TREND_PB ${istStr}] ENTER ${side} | bias=${bias} EMA20_15=${base.ema20_15}/EMA50_15=${base.ema50_15} | ATR5=${base.atr5} pbLow=${pbLow} | resume close=${_r2(last.close)} body=${_r2(body)}pt SL=${slSpot} [STRONG]`);
   }
 

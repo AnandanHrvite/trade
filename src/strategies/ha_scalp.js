@@ -626,7 +626,7 @@ function getSignal(candles, opts) {
     `entry at the next candle's open | SL = signal candle raw ${wantCE ? "low" : "high"} ${slSpot} (${slPts}pt)`;
 
   if (!o.silent) {
-    const ist = new Date(sig.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
+    const ist = new Date(sig.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hourCycle: "h23" });
     console.log(
       `[HA_SCALP ${ist}] ENTER ${side} | trend ${base.trend} vs MA ${ma} | ` +
       `HA body ${cls.body}pt (${cls.bodyPct}%), ${wickLabel} wick ${wickPct}% | SL ${slSpot} (${slPts}pt)`

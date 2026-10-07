@@ -296,7 +296,7 @@ function getSignal(candles, opts) {
 
   var _ist = "";
   if (!silent) {
-    _ist = new Date(sc.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
+    _ist = new Date(sc.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hourCycle: "h23" });
   }
 
   // Build a ready-to-enter signal from captured pattern info (structural SL + cap).

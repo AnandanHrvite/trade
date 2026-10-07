@@ -427,7 +427,7 @@ function getSignal(candles, opts) {
     `target ${target} (candle size ${size}pt)${cfg.trailAfterTarget ? ", then trail" : ""}`;
 
   if (!o.silent) {
-    const ist = new Date(sig.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
+    const ist = new Date(sig.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hourCycle: "h23" });
     console.log(`[PREV_ORB_SCALP ${ist}] ENTER ${side} @ ${entry} | SL ${slSpot} | target ${target}`);
   }
   return base;

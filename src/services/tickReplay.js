@@ -2415,7 +2415,7 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     // the run always shows it's alive (additive logging — no effect on result).
     const HEARTBEAT_EVERY = 5000;
     const _istHHMM = (t) => new Date(t).toLocaleTimeString("en-IN", {
-      timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false,
+      timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
     });
     console.log(`📼 [replay] ${mode} ${data.sessionStart.sid} — ${_underlying} [${data.spotIndex}]: streaming spot ticks (${data.optionTicks.length} option ticks loaded)…`);
     // Yield between ticks. Two mechanisms, picked per tick:
