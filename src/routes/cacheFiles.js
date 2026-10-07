@@ -98,7 +98,96 @@ function _istDateFromMs(ms) {
 //   _replay_cache                       → sha1-named .json; the result JSON carries
 //                                         a top-level "mode" (and now "date") field.
 // strat is a strategy key (ema_rsi_st|bb_rsi|pa|orb) or null; date is "YYYY-MM-DD" or null.
-function detectMeta(group, rel, abs, mtimeMs) {
+// Only these top-level fields feed the meta. tickReplay writes them in the first
+// few lines of the result object, ahead of the (possibly MB) trades/chart data.
+const _HEAD_KEYS = ["mode", "date", "sessionId"];
+const _HEAD_BYTES = 64 * 1024;
+
+// Scan the top level of a JSON object prefix for _HEAD_KEYS without parsing the
+// rest. Returns a plain object holding exactly those keys (as JSON.parse would
+// give them) once all three are seen or the object closes inside the prefix; or
+// null when the prefix can't answer (truncated first, a wanted key holds a
+// non-scalar, or the text isn't a plain object) — the caller then parses fully.
+function _scanHead(text) {
+  let i = 0;
+  const n = text.length;
+  const ws = () => { while (i < n && (text[i] === " " || text[i] === "\n" || text[i] === "\r" || text[i] === "\t")) i++; };
+  const strEnd = (start) => {             // index just past the closing quote, or -1
+    for (let j = start + 1; j < n; j++) {
+      if (text[j] === "\\") { j++; continue; }
+      if (text[j] === '"') return j + 1;
+    }
+    return -1;
+  };
+  const out = {};
+  let found = 0;
+  ws();
+  if (text[i] !== "{") return null;
+  i++; ws();
+  if (text[i] === "}") return out;
+  for (;;) {
+    ws();
+    if (i >= n || text[i] !== '"') return null;
+    const kEnd = strEnd(i);
+    if (kEnd < 0) return null;
+    let key;
+    try { key = JSON.parse(text.slice(i, kEnd)); } catch (_) { return null; }
+    i = kEnd; ws();
+    if (text[i] !== ":") return null;
+    i++; ws();
+    if (i >= n) return null;
+    const wanted = _HEAD_KEYS.includes(key);
+    const c = text[i];
+    if (c === "{" || c === "[") {
+      if (wanted) return null;             // non-scalar where we expect a scalar
+      let depth = 0;
+      for (; i < n; i++) {
+        const ch = text[i];
+        if (ch === '"') { const e = strEnd(i); if (e < 0) return null; i = e - 1; continue; }
+        if (ch === "{" || ch === "[") depth++;
+        else if (ch === "}" || ch === "]") { depth--; if (depth === 0) { i++; break; } }
+      }
+      if (depth !== 0) return null;
+    } else {
+      let vEnd;
+      if (c === '"') { vEnd = strEnd(i); if (vEnd < 0) return null; }
+      else { vEnd = i; while (vEnd < n && !/[,}\s]/.test(text[vEnd])) vEnd++; if (vEnd >= n) return null; }
+      if (wanted) {
+        let v;
+        try { v = JSON.parse(text.slice(i, vEnd)); } catch (_) { return null; }
+        if (!Object.prototype.hasOwnProperty.call(out, key)) found++;
+        out[key] = v;                      // last duplicate wins, as in JSON.parse
+      }
+      i = vEnd;
+    }
+    ws();
+    if (text[i] === ",") { i++; if (found === _HEAD_KEYS.length) return out; continue; }
+    if (text[i] === "}") return out;
+    return null;
+  }
+}
+
+// The parsed head of a replay-cache result: the prefix scan when the first 64 KB
+// answers it, else a full (async) read + parse — same fields either way.
+async function _readHead(abs) {
+  const fh = await fs.promises.open(abs, "r");
+  let prefix;
+  try {
+    const buf = Buffer.alloc(_HEAD_BYTES);
+    const { bytesRead } = await fh.read(buf, 0, _HEAD_BYTES, 0);
+    prefix = buf.slice(0, bytesRead).toString("utf-8");
+    if (bytesRead === _HEAD_BYTES) {
+      const head = _scanHead(prefix);
+      if (head) return head;
+      prefix = null;                       // fall through to a full parse
+    }
+  } finally {
+    await fh.close().catch(() => {});
+  }
+  return JSON.parse(prefix !== null ? prefix : await fs.promises.readFile(abs, "utf-8"));
+}
+
+async function detectMeta(group, rel, abs, mtimeMs) {
   if (!group.tagged) return { strat: null, date: null };
   // Filename-encoded modes (replay / replay_sim outputs) — no per-file date.
   const nameMatch = path.basename(rel).match(/^(bn_ema_rsi_st_v2|ema_rsi_st_v2|ema_rsi_st|bb_rsi|pa|orb|trend_pb|trend_day_scalp|ha_scalp|prev_orb_scalp|bn_pivot_rsi_st|rsi_pivot_st|simple930|early_bird)\b/i);
@@ -108,7 +197,7 @@ function detectMeta(group, rel, abs, mtimeMs) {
   if (cached && cached.mtimeMs === mtimeMs) return cached.meta;
   let meta = { strat: null, date: null };
   try {
-    const obj = JSON.parse(fs.readFileSync(abs, "utf-8"));
+    const obj = await _readHead(abs);
     const m = String(obj && obj.mode || "").match(/^(bn_ema_rsi_st_v2|ema_rsi_st_v2|ema_rsi_st|bb_rsi|pa|orb|trend[-_]pb)/i);
     if (m) meta.strat = m[1].toLowerCase().replace(/-/g, "_");   // "trend-pb" → "trend_pb"
     // `date` was added to cached results later; fall back to a numeric sessionId (epoch ms).
@@ -117,6 +206,17 @@ function detectMeta(group, rel, abs, mtimeMs) {
   } catch (_) { /* leave nulls */ }
   _tagCache.set(abs, { mtimeMs, meta });
   return meta;
+}
+
+// Sequential on purpose: one file's head in memory at a time; repeats hit _tagCache.
+async function _filterByTag(group, files, tagFilter) {
+  const out = [];
+  for (const f of files) {
+    let strat = null;
+    try { strat = (await detectMeta(group, f.rel, path.join(group.base, f.rel), f.mtimeMs)).strat; } catch (_) {}
+    if (strat === tagFilter) out.push(f);
+  }
+  return out;
 }
 
 function validGroup(k) { return Object.prototype.hasOwnProperty.call(GROUP_BY_KEY, k); }
@@ -193,7 +293,8 @@ router.get("/groups", (_req, res) => {
 });
 
 // ── GET /cache-files/list — paged files for one group ───────────────────────
-router.get("/list", (req, res) => {
+router.get("/list", async (req, res) => {
+  try {
   const key = String(req.query.group || "");
   if (!validGroup(key)) return res.status(400).json({ success: false, error: "bad group" });
   const group = GROUP_BY_KEY[key];
@@ -203,7 +304,7 @@ router.get("/list", (req, res) => {
   const tagsPresent = new Set();
   if (group.tagged) {
     for (const f of files) {
-      const meta = detectMeta(group, f.rel, path.join(group.base, f.rel), f.mtimeMs);
+      const meta = await detectMeta(group, f.rel, path.join(group.base, f.rel), f.mtimeMs);
       f.tag = meta.strat;
       f.sessionDate = meta.date;
       if (f.tag) tagsPresent.add(f.tag);
@@ -234,6 +335,9 @@ router.get("/list", (req, res) => {
     count: slice.length,
     rows: slice,
   });
+  } catch (err) {
+    if (!res.headersSent) res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // ── GET /cache-files/view — text content of one file (capped) ───────────────
@@ -280,14 +384,14 @@ router.get("/download", (req, res) => {
 });
 
 // ── GET /cache-files/download-all — stream a group as .tar.gz ───────────────
-router.get("/download-all", (req, res) => {
+router.get("/download-all", async (req, res) => {
   const key = String(req.query.group || "");
   if (!validGroup(key)) return res.status(400).send("bad group");
   const group = GROUP_BY_KEY[key];
   let files = listFiles(group);
   const tagFilter = String(req.query.tag || "").toLowerCase();
   if (group.tagged && tagFilter && STRATEGY_BADGE[tagFilter]) {
-    files = files.filter(f => detectMeta(group, f.rel, path.join(group.base, f.rel), f.mtimeMs).strat === tagFilter);
+    files = await _filterByTag(group, files, tagFilter);
   }
   if (!files.length) return res.status(404).send("no files for this group");
   const filename = `${group.key}${tagFilter ? "_" + tagFilter : ""}_${istDateString()}.tar.gz`;
@@ -323,7 +427,7 @@ router.post("/delete", (req, res) => {
 });
 
 // ── POST /cache-files/delete-all — delete every file in a group (gated) ─────
-router.post("/delete-all", (req, res) => {
+router.post("/delete-all", async (req, res) => {
   const key = String(req.query.group || req.body?.group || "");
   if (!validGroup(key)) return res.status(400).json({ success: false, error: "bad group" });
   const group = GROUP_BY_KEY[key];
@@ -332,7 +436,7 @@ router.post("/delete-all", (req, res) => {
   // what lets "Delete All" clear only BB_RSI without touching EMA_RSI_ST.
   const tagFilter = String(req.query.tag || req.body?.tag || "").toLowerCase();
   if (group.tagged && tagFilter && STRATEGY_BADGE[tagFilter]) {
-    files = files.filter(f => detectMeta(group, f.rel, path.join(group.base, f.rel), f.mtimeMs).strat === tagFilter);
+    files = await _filterByTag(group, files, tagFilter);
   }
   const deleted = [];
   const failed = [];

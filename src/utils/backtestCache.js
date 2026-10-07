@@ -10,7 +10,8 @@
  *   - Cache key = symbol + resolution + from + to  (exact match)
  *   - Atomic writes (tmp → rename) to prevent corruption
  *   - Optional skipCache flag for forced fresh fetch
- *   - Cache auto-prunes files older than 90 days to prevent unbounded growth
+ *   - Cache auto-prunes files unused for 90 days (a hit refreshes mtime, so
+ *     this is LRU-ish) and evicts least-recently-used files past a 500 MB cap
  */
 
 const fs   = require("fs");
@@ -18,7 +19,8 @@ const path = require("path");
 const os   = require("os");
 
 const CACHE_DIR = path.join(os.homedir(), "trading-data", "backtest_cache");
-const MAX_AGE_DAYS = 90; // auto-prune cache files older than this
+const MAX_AGE_DAYS = 90; // auto-prune cache files not used for this long
+const MAX_TOTAL_BYTES = 500 * 1024 * 1024; // evict oldest-mtime first above this
 
 function ensureDir() {
   if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
@@ -49,6 +51,9 @@ async function loadFromCache(symbol, resolution, from, to) {
     const raw = await fs.promises.readFile(p, "utf-8");
     const data = JSON.parse(raw);
     if (!Array.isArray(data) || data.length === 0) return null;
+    // Mark as recently used so pruning keeps hot chunks (fire-and-forget).
+    const now = new Date();
+    fs.promises.utimes(p, now, now).catch(() => {});
     return data;
   } catch (_) {
     return null;
@@ -106,24 +111,69 @@ async function fetchCandlesWithCache(symbol, resolution, from, to, rawFetcher, s
 }
 
 /**
- * Prune cache files older than MAX_AGE_DAYS.
- * Call this occasionally (e.g. on server start) to prevent unbounded growth.
+ * Pick the files to delete: anything unused for MAX_AGE_DAYS, then the
+ * least-recently-used of the rest until the total fits under MAX_TOTAL_BYTES.
+ * entries: [{ fp, size, mtimeMs }]
+ */
+function _selectEvictions(entries, now = Date.now()) {
+  const cutoff = now - MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
+  const evict = [];
+  const keep = [];
+  for (const e of entries) (e.mtimeMs < cutoff ? evict : keep).push(e);
+  let total = keep.reduce((s, e) => s + e.size, 0);
+  if (total > MAX_TOTAL_BYTES) {
+    keep.sort((a, b) => a.mtimeMs - b.mtimeMs); // oldest first
+    for (const e of keep) {
+      if (total <= MAX_TOTAL_BYTES) break;
+      evict.push(e);
+      total -= e.size;
+    }
+  }
+  return evict;
+}
+
+function _logPruned(n) {
+  if (n > 0) console.log(`[backtestCache] 🧹 Pruned ${n} cache files (age > ${MAX_AGE_DAYS}d or over ${MAX_TOTAL_BYTES / (1024 * 1024)} MB cap)`);
+}
+
+/**
+ * Synchronous prune — kept for the Monitor page's "Prune cache" action, which
+ * reads stats immediately after the call. Boot uses pruneCacheAsync().
  */
 function pruneOldCacheFiles() {
   try {
     ensureDir();
-    const cutoff = Date.now() - MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
-    const files = fs.readdirSync(CACHE_DIR).filter(f => f.endsWith(".json"));
-    let pruned = 0;
-    for (const f of files) {
+    const entries = [];
+    for (const f of fs.readdirSync(CACHE_DIR)) {
+      if (!f.endsWith(".json")) continue;
       const fp = path.join(CACHE_DIR, f);
-      const stat = fs.statSync(fp);
-      if (stat.mtimeMs < cutoff) {
-        fs.unlinkSync(fp);
-        pruned++;
-      }
+      try { const st = fs.statSync(fp); entries.push({ fp, size: st.size, mtimeMs: st.mtimeMs }); } catch (_) {}
     }
-    if (pruned > 0) console.log(`[backtestCache] 🧹 Pruned ${pruned} old cache files`);
+    let pruned = 0;
+    for (const e of _selectEvictions(entries)) {
+      try { fs.unlinkSync(e.fp); pruned++; } catch (_) {}
+    }
+    _logPruned(pruned);
+  } catch (e) {
+    console.warn("[backtestCache] Prune failed:", e.message);
+  }
+}
+
+/** Same policy as pruneOldCacheFiles(), without blocking the event loop. */
+async function pruneCacheAsync() {
+  try {
+    await fs.promises.mkdir(CACHE_DIR, { recursive: true });
+    const names = (await fs.promises.readdir(CACHE_DIR)).filter(f => f.endsWith(".json"));
+    const entries = [];
+    for (const f of names) {
+      const fp = path.join(CACHE_DIR, f);
+      try { const st = await fs.promises.stat(fp); entries.push({ fp, size: st.size, mtimeMs: st.mtimeMs }); } catch (_) {}
+    }
+    let pruned = 0;
+    for (const e of _selectEvictions(entries)) {
+      try { await fs.promises.unlink(e.fp); pruned++; } catch (_) {}
+    }
+    _logPruned(pruned);
   } catch (e) {
     console.warn("[backtestCache] Prune failed:", e.message);
   }
@@ -160,8 +210,8 @@ function clearAllCache() {
   }
 }
 
-// Prune on first load
-pruneOldCacheFiles();
+// Prune on first load — async so boot never stalls on a big cache dir.
+pruneCacheAsync();
 
 /**
  * Split a date range into full calendar months for granular caching.
@@ -279,4 +329,4 @@ async function fetchCandlesSmartCache(symbol, resolution, from, to, rawFetcher, 
   return allCandles;
 }
 
-module.exports = { fetchCandlesWithCache, fetchCandlesSmartCache, getCacheStats, clearAllCache, pruneOldCacheFiles, CACHE_DIR };
+module.exports = { fetchCandlesWithCache, fetchCandlesSmartCache, getCacheStats, clearAllCache, pruneOldCacheFiles, pruneCacheAsync, _selectEvictions, CACHE_DIR };

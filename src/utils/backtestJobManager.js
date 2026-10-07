@@ -19,6 +19,32 @@ const { resolveTheme } = require("./theme");
 const jobs = new Map();
 let activeJobId = null;
 
+/**
+ * Age-out for finished jobs. The count caps below bound how many results sit in
+ * memory, but not for how long — after a busy afternoon the last 3 results (each
+ * a full trade array) would otherwise live until the next run. A finished job is
+ * dropped outright after 2h: the routes already treat an unknown jobId as "not
+ * found" (redirect / re-run), and no UI flow is still reading a result that old.
+ * Pruned on access plus one unref'd timer per finished job — no standing interval.
+ */
+const FINISHED_JOB_TTL_MS = 2 * 60 * 60 * 1000;
+
+function _pruneExpired(now = Date.now()) {
+  for (const [id, job] of jobs) {
+    if (job.status === "running") continue;
+    const endedAt = job.completedAt || job.startedAt;
+    if (now - endedAt >= FINISHED_JOB_TTL_MS) jobs.delete(id);
+  }
+}
+
+function _scheduleExpiry(id) {
+  const t = setTimeout(() => {
+    const j = jobs.get(id);
+    if (j && j.status !== "running") _pruneExpired();
+  }, FINISHED_JOB_TTL_MS + 1000);
+  if (t.unref) t.unref();
+}
+
 function createJob(type) {
   // Only 1 concurrent backtest — protect server resources
   if (activeJobId) {
@@ -28,6 +54,7 @@ function createJob(type) {
     }
   }
 
+  _pruneExpired();
   const id = crypto.randomBytes(6).toString("hex");
   jobs.set(id, {
     id,
@@ -165,6 +192,7 @@ function completeJob(id, result) {
     // Cleanup old jobs to prevent memory leak (each job holds full trade array)
     const all = [...jobs.entries()].sort((a, b) => b[1].startedAt - a[1].startedAt);
     for (const [oldId] of all.slice(3)) jobs.delete(oldId);
+    _scheduleExpiry(id);
   }
 }
 
@@ -176,11 +204,14 @@ function failJob(id, error) {
     job.status = "error";
     job.error = typeof error === "string" ? error : (error.message || String(error));
     job.progress = { ...job.progress, phase: "Failed" };
+    job.completedAt = Date.now();
     if (activeJobId === id) activeJobId = null;
+    _scheduleExpiry(id);
   }
 }
 
 function getJob(id) {
+  _pruneExpired();
   return jobs.get(id) || null;
 }
 

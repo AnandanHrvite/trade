@@ -1034,8 +1034,22 @@ applyFilters();
 // JSON endpoint — used by dashboard cumulative P&L chart. loadAllTrades()
 // already drops strategies toggled off in Settings; the dashboard's legacy
 // ?enabledOnly=1 flag is accepted and means the same thing.
+//
+// The dashboard polls this every 8s in-session, and re-stringifying every trade
+// each time is the expensive part. The body depends only on the trade files
+// (mtime+size signature) and on which strategies are enabled (process.env, read
+// live) — no query param changes it — so one cached string keyed on both is
+// enough. Sent exactly as res.json() would: same bytes, same Content-Type.
+let _dataBody = null;
+let _dataKey  = null;
 router.get("/data", (req, res) => {
-  res.json({ success: true, trades: loadAllTrades() });
+  const key = _sourcesSig() + "#" + SOURCES.map((src) => (_modeEnabled(src.mode) ? "1" : "0")).join("");
+  if (_dataBody === null || key !== _dataKey) {
+    _dataBody = JSON.stringify({ success: true, trades: loadAllTrades() });
+    _dataKey  = key;
+  }
+  if (!res.get("Content-Type")) res.set("Content-Type", "application/json");
+  res.send(_dataBody);
 });
 
 function fmtINR(n) {
