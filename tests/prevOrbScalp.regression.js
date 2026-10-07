@@ -32,9 +32,15 @@ const assert = require("assert");
 const strat = require("../src/strategies/prev_orb_scalp");
 
 let passed = 0, failed = 0;
+// Tests run strictly in order on one promise chain — the backtest runner is
+// async (it yields to the event loop per session), and several tests set and
+// then delete env keys, so they must never overlap.
+let _chain = Promise.resolve();
 function test(name, fn) {
-  try { fn(); passed++; }
-  catch (e) { failed++; console.error(`✗ ${name}\n    ${e.message}`); }
+  _chain = _chain.then(async () => {
+    try { await fn(); passed++; }
+    catch (e) { failed++; console.error(`✗ ${name}\n    ${e.message}`); }
+  });
 }
 
 // ── fixtures ────────────────────────────────────────────────────────────────
@@ -325,7 +331,7 @@ function fillDay(bars, fromMin, px) {
   return bars.sort((a, b) => a.time - b.time);
 }
 
-test("backtest: PE target reached → SL to target → trailed stop exit", () => {
+test("backtest: PE target reached → SL to target → trailed stop exit", async () => {
   const bars = peDay().concat([
     bar(TODAY, 9, 30, 22910, 22915, 22880, 22885),   // break: SL 22915, target 22850
     bar(TODAY, 9, 33, 22884, 22890, 22860, 22865),   // fill at open 22884
@@ -334,7 +340,7 @@ test("backtest: PE target reached → SL to target → trailed stop exit", () =>
     bar(TODAY, 9, 42, 22825, 22830, 22800, 22805),   // trail → 22830
     bar(TODAY, 9, 45, 22806, 22840, 22800, 22835),   // high 22840 ≥ 22830 → stop at 22830
   ]);
-  const r = runPrevOrbScalpBacktest(fillDay(bars, 9 * 60 + 48, 22835), TODAY, NOLOCK);
+  const r = await runPrevOrbScalpBacktest(fillDay(bars, 9 * 60 + 48, 22835), TODAY, NOLOCK);
   assert.strictEqual(r.trades.length, 1);
   const t = r.trades[0];
   assert.strictEqual(t.side, "PE");
@@ -347,100 +353,100 @@ test("backtest: PE target reached → SL to target → trailed stop exit", () =>
   assert.ok(t.pnl > 0);
 });
 
-test("backtest: stop tested BEFORE target on a bar that does both", () => {
+test("backtest: stop tested BEFORE target on a bar that does both", async () => {
   const bars = peDay().concat([
     bar(TODAY, 9, 30, 22910, 22915, 22880, 22885),
     bar(TODAY, 9, 33, 22884, 22920, 22840, 22900),
   ]);
-  const r = runPrevOrbScalpBacktest(fillDay(bars, 9 * 60 + 36, 22900), TODAY, NOLOCK);
+  const r = await runPrevOrbScalpBacktest(fillDay(bars, 9 * 60 + 36, 22900), TODAY, NOLOCK);
   assert.strictEqual(r.trades[0].exitCode, "STOP");
   assert.strictEqual(r.trades[0].xPrice, 22915);
 });
 
-test("backtest: gap through the stop fills at the open, not the level", () => {
+test("backtest: gap through the stop fills at the open, not the level", async () => {
   const bars = peDay().concat([
     bar(TODAY, 9, 30, 22910, 22915, 22880, 22885),
     bar(TODAY, 9, 33, 22884, 22890, 22880, 22889),
     bar(TODAY, 9, 36, 22940, 22950, 22935, 22945),
   ]);
-  const r = runPrevOrbScalpBacktest(fillDay(bars, 9 * 60 + 39, 22945), TODAY, NOLOCK);
+  const r = await runPrevOrbScalpBacktest(fillDay(bars, 9 * 60 + 39, 22945), TODAY, NOLOCK);
   assert.strictEqual(r.trades[0].exitCode, "STOP");
   assert.strictEqual(r.trades[0].xPrice, 22940);
 });
 
-test("backtest: fill already through the stop is aborted (paper parity)", () => {
+test("backtest: fill already through the stop is aborted (paper parity)", async () => {
   const bars = peDay().concat([
     bar(TODAY, 9, 30, 22910, 22915, 22880, 22885),
     bar(TODAY, 9, 33, 22920, 22925, 22900, 22910),
   ]);
-  const r = runPrevOrbScalpBacktest(fillDay(bars, 9 * 60 + 36, 22910), TODAY, NOLOCK);
+  const r = await runPrevOrbScalpBacktest(fillDay(bars, 9 * 60 + 36, 22910), TODAY, NOLOCK);
   assert.strictEqual(r.trades.length, 0);
   assert.strictEqual(r.funnel.abortedPastStop, 1);
 });
 
-test("backtest: target touched then closed back through → TARGET_LOCK at target", () => {
+test("backtest: target touched then closed back through → TARGET_LOCK at target", async () => {
   const bars = peDay().concat([
     bar(TODAY, 9, 30, 22910, 22915, 22880, 22885),
     bar(TODAY, 9, 33, 22884, 22890, 22845, 22870),
   ]);
-  const r = runPrevOrbScalpBacktest(fillDay(bars, 9 * 60 + 36, 22870), TODAY, NOLOCK);
+  const r = await runPrevOrbScalpBacktest(fillDay(bars, 9 * 60 + 36, 22870), TODAY, NOLOCK);
   assert.strictEqual(r.trades[0].exitCode, "TARGET_LOCK");
   assert.strictEqual(r.trades[0].xPrice, 22850);
 });
 
-test("backtest: trail OFF → exit at target", () => {
+test("backtest: trail OFF → exit at target", async () => {
   process.env.PREV_ORB_SCALP_TRAIL_AFTER_TARGET = "false";
   const bars = peDay().concat([
     bar(TODAY, 9, 30, 22910, 22915, 22880, 22885),
     bar(TODAY, 9, 33, 22884, 22890, 22845, 22870),
   ]);
-  const r = runPrevOrbScalpBacktest(fillDay(bars, 9 * 60 + 36, 22870), TODAY, NOLOCK);
+  const r = await runPrevOrbScalpBacktest(fillDay(bars, 9 * 60 + 36, 22870), TODAY, NOLOCK);
   delete process.env.PREV_ORB_SCALP_TRAIL_AFTER_TARGET;
   assert.strictEqual(r.trades[0].exitCode, "TARGET");
   assert.strictEqual(r.trades[0].xPrice, 22850);
 });
 
-test("backtest: EOD square-off at 15:15 open", () => {
+test("backtest: EOD square-off at 15:15 open", async () => {
   const bars = peDay().concat([bar(TODAY, 9, 30, 22910, 22915, 22880, 22885)]);
-  const r = runPrevOrbScalpBacktest(fillDay(bars, 9 * 60 + 33, 22880), TODAY, NOLOCK);
+  const r = await runPrevOrbScalpBacktest(fillDay(bars, 9 * 60 + 33, 22880), TODAY, NOLOCK);
   assert.strictEqual(r.trades[0].exitCode, "EOD");
   assert.strictEqual(r.trades[0].exit.slice(-8), "15:15:00");
 });
 
-test("backtest: one trade a day, warm-up day never trades, inside-range day counted", () => {
+test("backtest: one trade a day, warm-up day never trades, inside-range day counted", async () => {
   const bars = peDay().concat([
     bar(TODAY, 9, 30, 22910, 22915, 22880, 22885),
     bar(TODAY, 9, 33, 22884, 22920, 22880, 22918),   // stopped
     bar(TODAY, 9, 36, 22918, 22920, 22870, 22875),   // second close below — must NOT trade
   ]);
-  const r = runPrevOrbScalpBacktest(fillDay(bars, 9 * 60 + 39, 22875), TODAY, NOLOCK);
+  const r = await runPrevOrbScalpBacktest(fillDay(bars, 9 * 60 + 39, 22875), TODAY, NOLOCK);
   assert.strictEqual(r.trades.length, 1);
   assert.strictEqual(r.days, 1);
-  const r2 = runPrevOrbScalpBacktest(yesterday().concat(fillDay(orBars(23000, 23010, 22960, 22970), 9 * 60 + 30, 22970)), TODAY, NOLOCK);
+  const r2 = await runPrevOrbScalpBacktest(yesterday().concat(fillDay(orBars(23000, 23010, 22960, 22970), 9 * 60 + 30, 22970)), TODAY, NOLOCK);
   assert.strictEqual(r2.trades.length, 0);
   assert.strictEqual(r2.funnel.insideRange, 1);
 });
 
-test("backtest: every trade's stop is on the losing side of its entry", () => {
+test("backtest: every trade's stop is on the losing side of its entry", async () => {
   const bars = peDay().concat([bar(TODAY, 9, 30, 22910, 22915, 22880, 22885)]);
-  const r = runPrevOrbScalpBacktest(fillDay(bars, 9 * 60 + 33, 22880), TODAY, NOLOCK);
+  const r = await runPrevOrbScalpBacktest(fillDay(bars, 9 * 60 + 33, 22880), TODAY, NOLOCK);
   for (const t of r.trades) assert.ok(t.side === "PE" ? t.sl > t.ePrice : t.sl < t.ePrice);
 });
 
-test("backtest: simulated profit lock fires on a give-back", () => {
+test("backtest: simulated profit lock fires on a give-back", async () => {
   // δ 0.55, seed 260: arm +8% = +20.8 premium ≈ 37.8 spot pts; floor +5% ≈ 23.6 pts.
   const bars = peDay().concat([
     bar(TODAY, 9, 30, 22910, 22915, 22800, 22805),   // break: SL 22915, size 115 → target 22690
     bar(TODAY, 9, 33, 22804, 22806, 22760, 22765),   // fill 22804, favourable 44pt → arms lock
     bar(TODAY, 9, 36, 22766, 22790, 22765, 22788),   // back to 22790 → through floor (~22780)
   ]);
-  const r = runPrevOrbScalpBacktest(fillDay(bars, 9 * 60 + 39, 22788), TODAY, { lock: { enabled: true, armPct: 8, floorPct: 5 } });
+  const r = await runPrevOrbScalpBacktest(fillDay(bars, 9 * 60 + 39, 22788), TODAY, { lock: { enabled: true, armPct: 8, floorPct: 5 } });
   assert.strictEqual(r.trades[0].exitCode, "PROFIT_LOCK");
   assert.ok(r.trades[0].pnl > -500, `pnl ${r.trades[0].pnl}`);
 });
 
-test("backtest: empty input", () => {
-  assert.strictEqual(runPrevOrbScalpBacktest([], "2026-01-01").trades.length, 0);
+test("backtest: empty input", async () => {
+  assert.strictEqual((await runPrevOrbScalpBacktest([], "2026-01-01")).trades.length, 0);
 });
 
 // ── paper route exits (canonical) ───────────────────────────────────────────
@@ -551,6 +557,8 @@ test("routes never re-implement the break/target maths", () => {
   }
 });
 
-try { fs.rmSync(TMP_HOME, { recursive: true, force: true }); } catch (_) {}
-console.log(`\nprevOrbScalp: ${passed} passed, ${failed} failed`);
-process.exit(failed ? 1 : 0);
+_chain.then(() => {
+  try { fs.rmSync(TMP_HOME, { recursive: true, force: true }); } catch (_) {}
+  console.log(`\nprevOrbScalp: ${passed} passed, ${failed} failed`);
+  process.exit(failed ? 1 : 0);
+});

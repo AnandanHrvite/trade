@@ -106,7 +106,7 @@ function _shiftDate(dateStr, days) {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
 }
 
-function runBnPivotRsiStBacktest(intraday, daily) {
+async function runBnPivotRsiStBacktest(intraday, daily) {
   const empty = {
     trades: [], days: 0, skipped: [],
     gateStats: { noPivots: 0, crossNoRsi: 0, rsiNoCross: 0, noSuperTrend: 0, setups: 0 },
@@ -150,6 +150,9 @@ function runBnPivotRsiStBacktest(intraday, daily) {
   const gateStats = { noPivots: 0, crossNoRsi: 0, rsiNoCross: 0, noSuperTrend: 0, setups: 0 };
 
   for (const k of dayKeys) {
+    // Yield once per session so live ticks/orders sharing this process are not
+    // starved while a long backtest runs.
+    await new Promise(resolve => setImmediate(resolve));
     const bars = byDay.get(k);
     if (!bars || bars.length < 3) continue;
     days++;
@@ -461,7 +464,7 @@ router.get("/", async (req, res) => {
         }
 
         backtestJobs.updateProgress(id, { phase: `Running BN Pivot RSI ST backtest on ${_u().label} (${intraday.length.toLocaleString()} candles, ${daily.length} daily bars)…`, pct: 75 });
-        const result = runBnPivotRsiStBacktest(intraday, daily);
+        const result = await runBnPivotRsiStBacktest(intraday, daily);
         const stats = computeBacktestStats(result.trades);
         stats.optionSim = true;
         stats.delta = parseFloat(process.env.BACKTEST_DELTA || "0.55");

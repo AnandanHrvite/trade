@@ -93,7 +93,7 @@ function istHHMMSS(unixSec) {
 }
 function entryTsStr(unixSec) { return `${istDateOf(unixSec)}, ${istHHMMSS(unixSec)}`; }
 
-function runOrbBacktest(allCandles, expirySet, vixCandles = []) {
+async function runOrbBacktest(allCandles, expirySet, vixCandles = []) {
   if (!allCandles || !allCandles.length) return [];
   // Ascending time order is required so the flat array aligns with the per-day
   // grouping below (globalBase bookkeeping) for the multi-day signal window.
@@ -196,6 +196,9 @@ function runOrbBacktest(allCandles, expirySet, vixCandles = []) {
   // days) so allCandles[globalBase + i] === dayCandles[i] stays true.
   let globalBase = 0;
   for (const [_dateStr, dayCandles] of byDate) {
+    // Yield once per session so live ticks/orders sharing this process are not
+    // starved while a long backtest runs.
+    await new Promise(resolve => setImmediate(resolve));
     const _dayLen = dayCandles.length;
     // New session — paper's state resets every morning on /start. Seeded BEFORE
     // the skip guards below because orbPaper records a day even when it never
@@ -559,7 +562,7 @@ router.get("/", async (req, res) => {
           : [];
 
         backtestJobs.updateProgress(id, { phase: `Running ORB backtest (${candles.length.toLocaleString()} candles)…`, pct: 5 });
-        const trades = runOrbBacktest(candles, expirySet, vixCandles);
+        const trades = await runOrbBacktest(candles, expirySet, vixCandles);
         const stats = computeBacktestStats(trades);
         // P&L is computed in ₹ (premium × LOT_SIZE − charges). Mark the result
         // so /all-backtest renders it as ₹ instead of "pts".

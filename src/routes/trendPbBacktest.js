@@ -73,7 +73,7 @@ function _atrAtLast(window, period) {
  * Run the backtest. `baseline=true` swaps the entry rule for the naive
  * bias-at-window-open engine but keeps the identical exit machinery + costs.
  */
-function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [] } = {}) {
+async function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [] } = {}) {
   if (!allCandles || !allCandles.length) return [];
   allCandles = allCandles.slice().sort((a, b) => a.time - b.time);
 
@@ -161,6 +161,9 @@ function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [] } = 
   }
 
   for (const [, dayCandles] of byDate) {
+    // Yield once per session so live ticks/orders sharing this process are not
+    // starved while a long backtest runs.
+    await new Promise(resolve => setImmediate(resolve));
     const _dayLen = dayCandles.length;
     if (dayCandles.length < 5) { globalBase += _dayLen; continue; }
     let position = null;
@@ -387,14 +390,14 @@ router.get("/", async (req, res) => {
           : [];
 
         backtestJobs.updateProgress(id, { phase: `Running Trend Pullback backtest (${candles.length.toLocaleString()} candles)…`, pct: 5 });
-        const trades = runTrendPbBacktest(candles, { baseline: false, vixCandles });
+        const trades = await runTrendPbBacktest(candles, { baseline: false, vixCandles });
         const stats = computeBacktestStats(trades);
         stats.optionSim = true;
         stats.delta = parseFloat(process.env.BACKTEST_DELTA || "0.55");
         stats.thetaPerDay = parseFloat(process.env.BACKTEST_THETA_DAY || "8");
 
         backtestJobs.updateProgress(id, { phase: "Running dumb baseline + walk-forward…", pct: 90 });
-        const baselineTrades = runTrendPbBacktest(candles, { baseline: true, vixCandles });
+        const baselineTrades = await runTrendPbBacktest(candles, { baseline: true, vixCandles });
         const baselineStats = computeBacktestStats(baselineTrades);
         const wf = walkForward(trades, {});
 

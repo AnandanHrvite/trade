@@ -432,7 +432,7 @@ const ENTRIES  = ALL_SIGS.filter(x => x.sig.signal !== "NONE");
   console.log("\nBacktest end-to-end");
 
   const BT = require("../src/routes/orbBacktest").runOrbBacktest;
-  const BT_TRADES = BT(CANDLES, null);
+  const BT_TRADES = await BT(CANDLES, null);
 
   check("the backtest actually runs and produces well-formed records", () => {
     assert.ok(Array.isArray(BT_TRADES), "runOrbBacktest did not return an array");

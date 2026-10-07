@@ -90,7 +90,7 @@ function warmupRange(from, to) {
  * @param {string} rangeFrom "YYYY-MM-DD" IST — the first day a trade may open.
  * @param {object} [opts]    { cfg, lock: { enabled, armPct, floorPct } } — test hooks
  */
-function runPrevOrbScalpBacktest(intraday, rangeFrom, opts) {
+async function runPrevOrbScalpBacktest(intraday, rangeFrom, opts) {
   const o = opts || {};
   const funnel = {
     days: 0, noPrevDay: 0, incomplete: 0, insideRange: 0, peDays: 0, ceDays: 0,
@@ -133,6 +133,9 @@ function runPrevOrbScalpBacktest(intraday, rangeFrom, opts) {
   const candleSizes = [];
 
   for (let d = 0; d < dayKeys.length; d++) {
+    // Yield once per session so live ticks/orders sharing this process are not
+    // starved while a long backtest runs.
+    await new Promise(resolve => setImmediate(resolve));
     const k = dayKeys[d];
     const idxs = byDay.get(k);
     const dayTs = sorted[idxs[0]].time;
@@ -433,7 +436,7 @@ router.get("/", async (req, res) => {
           return;
         }
         backtestJobs.updateProgress(id, { phase: `Running Prev ORB Scalp backtest (${intraday.length.toLocaleString()} candles)…`, pct: 75 });
-        const result = runPrevOrbScalpBacktest(intraday, from);
+        const result = await runPrevOrbScalpBacktest(intraday, from);
         const stats = computeBacktestStats(result.trades);
         stats.optionSim = true;
         stats.delta = parseFloat(process.env.BACKTEST_DELTA || "0.55");

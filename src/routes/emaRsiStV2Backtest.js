@@ -163,7 +163,7 @@ function getGuardConfig() {
  * non-zero count is a bug in this file, surfaced on the results page rather than
  * swallowed.
  */
-function runEmaRsiStV2Backtest(candles, activeFromTs) {
+async function runEmaRsiStV2Backtest(candles, activeFromTs) {
   const empty = {
     trades: [], days: 0, warmupViolations: 0, warmupBars: 0,
     gateStats: { setups: 0, confirmArmed: 0, confirmFilled: 0, confirmExpired: 0,
@@ -209,9 +209,20 @@ function runEmaRsiStV2Backtest(candles, activeFromTs) {
   const globalIndex = new Map();
   for (let i = 0; i < sorted.length; i++) globalIndex.set(sorted[i].time, i);
 
+  // Indicator series computed ONCE over every bar, then read at each bar's
+  // global index. EMA/RSI/ATR-SuperTrend are causal forward recursions, so the
+  // value at gIdx over the full array is bit-identical to the last value over
+  // sorted.slice(0, gIdx + 1) — the per-bar prefix copy + full recompute this
+  // replaces was O(n²) and blocked the event loop for seconds on a long range.
+  // stratCfg is also the snapshot the engine reads for the whole run.
+  const fullSeries = engine.computeSeries(sorted, stratCfg);
+
   let days = 0;
 
   for (const k of dayKeys) {
+    // Yield once per session so live ticks/orders sharing this process are not
+    // starved while a long backtest runs.
+    await new Promise(resolve => setImmediate(resolve));
     const bars = byDay.get(k);
     if (!bars || !bars.length) continue;
     // Only sessions inside the requested range count as "scanned".
@@ -354,9 +365,9 @@ function runEmaRsiStV2Backtest(candles, activeFromTs) {
       const c = bars[i];
       const gIdx = globalIndex.get(c.time);
       const istMin = _istMins(c.time);
-      // Prefix of ALL bars up to and including this one — the engine's warm-up is
-      // longer than one session, so it must see previous days too.
-      const upTo = sorted.slice(0, gIdx + 1);
+      // The engine reads ALL bars up to and including this one (endIdx = gIdx) —
+      // its warm-up is longer than one session, so it must see previous days too.
+      const pre = { series: fullSeries, endIdx: gIdx, cfg: stratCfg };
 
       // ── 1. Manage an open position on THIS bar ─────────────────────────────
       // ORDER MATTERS. The stop is tested against the bar's ADVERSE extreme
@@ -391,14 +402,15 @@ function runEmaRsiStV2Backtest(candles, activeFromTs) {
       // Only after the stop survived the bar, so the stop can never tighten onto
       // a level this same bar merely traded through.
       if (pos) {
-        const t = engine.trailStop(upTo, pos.side, pos.slSpot, stratCfg);
+        const t = engine.trailStop(sorted, pos.side, pos.slSpot, stratCfg,
+          { supertrend: fullSeries.supertrend, endIdx: gIdx });
         if (t && t.changed && Number.isFinite(t.stop)) pos.slSpot = t.stop;
       }
 
       // ── 3. Read the engine on this bar's CLOSE ─────────────────────────────
       // One call serves both the opposite-signal exit and the entry search, so
       // the two can never disagree about what this bar printed.
-      const sig = engine.getSignal(upTo, { silent: true });
+      const sig = engine.getSignal(sorted, { silent: true, precomputed: pre });
       const sigSide = sig.signal === "BUY_CE" ? "CE" : sig.signal === "BUY_PE" ? "PE" : null;
 
       // 3a. OPPOSITE-SIGNAL EXIT — kept from V1. A favourable/close-based exit,
@@ -618,7 +630,7 @@ router.get("/", async (req, res) => {
         }
 
         backtestJobs.updateProgress(id, { phase: `Running ${LABEL} backtest (${candles.length.toLocaleString()} candles)…`, pct: 70 });
-        const result = runEmaRsiStV2Backtest(candles, activeFromTs);
+        const result = await runEmaRsiStV2Backtest(candles, activeFromTs);
 
         const stats = computeBacktestStats(result.trades);
         stats.optionSim   = instrumentConfig.INSTRUMENT !== "NIFTY_FUTURES";
@@ -683,3 +695,4 @@ a{display:inline-flex;align-items:center;min-height:44px;margin-top:16px;backgro
 }
 
 module.exports = router;
+module.exports.runEmaRsiStV2Backtest = runEmaRsiStV2Backtest;

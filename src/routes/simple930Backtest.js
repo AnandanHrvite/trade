@@ -508,6 +508,9 @@ async function runJob(id, from, to) {
   const trades = [];
   const dayLog = [];
   for (const p of plans) {
+    // Yield once per session so live ticks/orders sharing this process are not
+    // starved while a long backtest runs.
+    await new Promise(resolve => setImmediate(resolve));
     if (p.skip) { dayLog.push({ date: p.dateStr, outcome: "skipped", note: p.skip }); continue; }
     const ladder = p.rungs.map(r => {
       const perDay = seriesBySymbol.get(r.symbol);

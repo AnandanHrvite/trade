@@ -132,7 +132,7 @@ function warmupRange(from, to) {
  * seed-contaminated) series than the chart shows, and the decision and the chart
  * must agree.
  */
-function runHaScalpBacktest(intraday, rangeFrom) {
+async function runHaScalpBacktest(intraday, rangeFrom) {
   const empty = {
     trades: [], days: 0, skipped: [],
     funnel: { barsSeen: 0, warmupBars: 0, tradableBars: 0, setups: 0, entries: 0, trendUp: 0, trendDown: 0, trendFlat: 0 },
@@ -186,6 +186,9 @@ function runHaScalpBacktest(intraday, rangeFrom) {
   let days = 0;
 
   for (const k of dayKeys) {
+    // Yield once per session so live ticks/orders sharing this process are not
+    // starved while a long backtest runs.
+    await new Promise(resolve => setImmediate(resolve));
     const idxs = byDay.get(k);
     if (!idxs || !idxs.length) continue;
     const dayTs = sorted[idxs[0]].time;
@@ -538,7 +541,7 @@ router.get("/", async (req, res) => {
         console.log(`${LOG} job ${id}: ${intraday.length.toLocaleString()} ${cfg.resolutionMins}-min spot candles fetched (warm-up included)`);
 
         backtestJobs.updateProgress(id, { phase: `Running HA Scalp backtest (${intraday.length.toLocaleString()} spot candles)…`, pct: 75 });
-        const result = runHaScalpBacktest(intraday, from);
+        const result = await runHaScalpBacktest(intraday, from);
         const stats = computeBacktestStats(result.trades);
         stats.optionSim = true;
         stats.delta = parseFloat(process.env.BACKTEST_DELTA || "0.55");

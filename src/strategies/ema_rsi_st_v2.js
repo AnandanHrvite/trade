@@ -193,21 +193,29 @@ function computeSeries(candles, cfg) {
 function getSignal(candles, opts) {
   var silent = (opts && opts.silent === true);
   var prefix = (opts && opts.prefix) || DEFAULT_PREFIX;
-  var cfg    = getConfig(prefix);
+  // opts.precomputed — BACKTEST ONLY: { series, endIdx, cfg } where `series` is
+  // computeSeries(candles, cfg) over the WHOLE array and `endIdx` is the signal
+  // bar. Every indicator here is causal (EMA/RSI/ATR are forward recursions), so
+  // series[endIdx] over the full array is bit-identical to series[last] over
+  // candles.slice(0, endIdx + 1) — this is the same read without the O(n²)
+  // prefix copy + recompute. Paper/live never pass it.
+  var pre    = (opts && opts.precomputed) || null;
+  var cfg    = (pre && pre.cfg) || getConfig(prefix);
   var WARMUP = warmupBars(cfg);
+  var nBars  = !Array.isArray(candles) ? 0 : pre ? pre.endIdx + 1 : candles.length;
 
-  if (!Array.isArray(candles) || candles.length < WARMUP) {
+  if (!Array.isArray(candles) || nBars < WARMUP) {
     return {
       signal: "NONE",
       warmup: true,
-      reason: "Warming up (" + (Array.isArray(candles) ? candles.length : 0) + "/" + WARMUP + " candles)",
+      reason: "Warming up (" + nBars + "/" + WARMUP + " candles)",
       stopLoss: null, slSpot: null, entrySpot: null, triggerLevel: null,
       prevCandleHigh: null, prevCandleLow: null,
     };
   }
 
-  var signalCandle = candles[candles.length - 1];
-  var prevCandle   = candles[candles.length - 2];
+  var signalCandle = candles[nBars - 1];
+  var prevCandle   = candles[nBars - 2];
 
   // The signal candle's own OHLC must be real numbers BEFORE any indicator maths.
   // Number(null) === 0 and Number("") === 0, so a missing close otherwise flows into
@@ -240,8 +248,8 @@ function getSignal(candles, opts) {
   }
 
   // ── Indicators — all read the LAST CLOSED candle ────────────────────────────
-  var series = computeSeries(candles, cfg);
-  var last   = candles.length - 1;
+  var series = pre ? pre.series : computeSeries(candles, cfg);
+  var last   = nBars - 1;
   var emaFast = series.emaFast[last];
   var emaSlow = series.emaSlow[last];
   var rsi     = series.rsi[last];
@@ -391,14 +399,18 @@ function getSignal(candles, opts) {
  * `currentStop`), `changed` says whether it moved. A non-finite SuperTrend or a
  * SuperTrend on the wrong side of price leaves the stop exactly where it was.
  */
-function trailStop(candles, side, currentStop, cfg) {
+function trailStop(candles, side, currentStop, cfg, precomputed) {
   if (typeof cfg === "string") cfg = getConfig(cfg);
   cfg = cfg || getConfig();
   var unchanged = { stop: currentStop, changed: false, tag: null };
-  if (!Array.isArray(candles) || candles.length < cfg.ST_PERIOD + 2) return unchanged;
+  // precomputed — BACKTEST ONLY: { supertrend, endIdx }, the SuperTrend over the
+  // WHOLE array with this cfg. Causal, so identical to recomputing on the prefix.
+  var pre = precomputed || null;
+  var nBars = !Array.isArray(candles) ? 0 : pre ? pre.endIdx + 1 : candles.length;
+  if (!Array.isArray(candles) || nBars < cfg.ST_PERIOD + 2) return unchanged;
 
-  var st = computeSuperTrend(candles, cfg.ST_PERIOD, cfg.ST_MULT);
-  var cur = st[st.length - 1];
+  var st = pre ? pre.supertrend : computeSuperTrend(candles, cfg.ST_PERIOD, cfg.ST_MULT);
+  var cur = st[nBars - 1];
   if (!cur || !_num(cur.value)) return unchanged;
 
   var lvl = cur.value;

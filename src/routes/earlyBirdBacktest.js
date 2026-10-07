@@ -206,7 +206,7 @@ function rateLimits() {
  * Memory ceiling for one run, in symbol-days (symbols × trading days).
  *
  * 60000 symbol-days is ~186 MB of candles — about ONE YEAR of the full ~220-name
- * FNO universe, or ~5 years of NIFTY50. The process gets a 900 MB heap and
+ * FNO universe, or ~5 years of NIFTY50. The process gets a 620 MB heap and
  * shares it with any live/paper session, so this deliberately spends only about
  * a fifth of the budget on raw candles: peak RSS is higher than the candle
  * arrays alone (trade records, per-day rows, and GC headroom on top), and the
@@ -673,7 +673,7 @@ function buildPrevCloseIndex(dailyCandles) {
 //   data.stocks      Array<{ symbol, byDay, prevIdx }>
 //   data.dayKeys     number[] ascending — the days to simulate
 // ─────────────────────────────────────────────────────────────────────────────
-function runEarlyBirdBacktest(data, onProgress) {
+async function runEarlyBirdBacktest(data, onProgress) {
   const cfg  = earlyBird.getConfig();
   const SLIP = slippagePts();
 
@@ -716,6 +716,9 @@ function runEarlyBirdBacktest(data, onProgress) {
   const niftyByDay = (data && data.niftyByDay) || new Map();
 
   for (let di = 0; di < dayKeys.length; di++) {
+    // Yield once per session so live ticks/orders sharing this process are not
+    // starved while a long backtest runs.
+    await new Promise(resolve => setImmediate(resolve));
     const dayKey = dayKeys[di];
     funnel.daysSeen++;
 
@@ -2598,7 +2601,7 @@ router.get("/", async (req, res) => {
     const _maxDaysForUniverse = Math.max(1, Math.floor(_maxSymbolDays / _symbolsForEstimate));
     return res.status(400).send(renderErrorPage(
       `That range is too large to hold in memory. ${_symbolsForEstimate} symbols × ~${_estTradingDays} trading days ` +
-      `≈ ${_estMb} MB of candles, and this process is capped at 900 MB heap (t3.micro) — exceeding it would make ` +
+      `≈ ${_estMb} MB of candles, and this process is capped at 620 MB heap (t3.micro) — exceeding it would make ` +
       `PM2 restart the whole bot and kill any running paper or live session. ` +
       `With the "${universeKey}" universe (${_symbolsForEstimate} symbols) the safe limit is about ` +
       `${_maxDaysForUniverse} trading days (~${Math.max(1, Math.round(_maxDaysForUniverse / 21))} months). ` +
@@ -2664,7 +2667,7 @@ router.get("/", async (req, res) => {
         }
 
         report(`Simulating ${data.dayKeys.length} session(s) over ${data.stocks.length} symbol(s)…`, 72);
-        const result = runEarlyBirdBacktest(data, (done, total) => {
+        const result = await runEarlyBirdBacktest(data, (done, total) => {
           report(`Simulating day ${done}/${total}…`, 72 + Math.round((done / total) * 25));
         });
 

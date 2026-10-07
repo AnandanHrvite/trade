@@ -63,7 +63,7 @@ function entryTsStr(unixSec) { return `${istDateOf(unixSec)}, ${istHHMMSS(unixSe
  * @param {Array} intraday TDS_RESOLUTION-minute spot candles across the range,
  *        INCLUDING enough warm-up before `from` for EMA/ATR to seed.
  */
-function runTrendDayScalpBacktest(intraday) {
+async function runTrendDayScalpBacktest(intraday) {
   if (!intraday || !intraday.length) return { trades: [], days: 0, skipped: [], gateStats: { decided: 0, tradeable: 0 } };
 
   const cfg = tdsStrategy.getConfig();
@@ -105,6 +105,9 @@ function runTrendDayScalpBacktest(intraday) {
   const gateStats = { decided: 0, tradeable: 0 };
 
   for (const k of dayKeys) {
+    // Yield once per session so live ticks/orders sharing this process are not
+    // starved while a long backtest runs.
+    await new Promise(resolve => setImmediate(resolve));
     const idxs = byDay.get(k);
     if (!idxs.length) continue;
     days++;
@@ -341,7 +344,7 @@ router.get("/", async (req, res) => {
         // Drop the warm-up days from the RESULT window while leaving them in the
         // series the engine reads (indicators stay warm, trades stay in range).
         const fromTs = Math.floor(new Date(from + "T00:00:00+05:30").getTime() / 1000);
-        const all = runTrendDayScalpBacktest(intraday);
+        const all = await runTrendDayScalpBacktest(intraday);
         const trades = all.trades.filter(t => t.entryTs >= fromTs);
         const days = all.days;
         const stats = computeBacktestStats(trades);
