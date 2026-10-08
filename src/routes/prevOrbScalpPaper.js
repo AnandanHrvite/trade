@@ -54,6 +54,7 @@ const { notifyEntry, notifyExit, notifyStarted, notifyDayReport } = require("../
 const instrumentMode = require("../utils/instrumentMode");
 const { istDayFromAny, istIsoFromAny, getISTMinutes, getBucketStart } = require("../utils/tradeUtils");
 const skipLogger = require("../utils/skipLogger");
+const { freshSpot, DEFAULT_MAX_AGE_MS: SPOT_MAX_AGE_MS } = require("../utils/freshSpot");
 const capitalPool = require("../utils/capitalPool");
 const optionChart = require("../utils/optionChart");
 
@@ -444,9 +445,14 @@ function _mergeBars(bars) {
 
 // ── Trade simulation ─────────────────────────────────────────────────────────
 async function simulateBuy(side, sig) {
-  const spotPrice = state.lastTickPrice;
   if (!side) return;
   const _sid = state._sessionId;
+  // A silent feed leaves lastTickPrice at the last tick it ever saw (on
+  // 2026-10-08, the previous close) — decide on a direct quote instead.
+  const _spot = await freshSpot({ tickPrice: state.lastTickPrice, tickAt: state.lastTickTime });
+  if (_spot.source === "quote") log(`📡 ${TAG} Live feed stale (${_spot.ageMs == null ? "no tick yet" : Math.round(_spot.ageMs / 1000) + "s old"}) — using quoted spot ${_spot.spot}`);
+  if (state._sessionId !== _sid) return;
+  const spotPrice = _spot.spot;
   if (typeof spotPrice !== "number" || !(spotPrice > 0)) {
     log(`⚠️ ${TAG} No NIFTY spot price yet — entry deferred`);
     return;
@@ -491,7 +497,11 @@ async function simulateBuy(side, sig) {
   }
 
   // Re-read spot AFTER the awaits — the quote round-trip took real time.
-  const fillSpot = (typeof state.lastTickPrice === "number" && state.lastTickPrice > 0) ? state.lastTickPrice : spotPrice;
+  // A tick that arrived during the awaits is the freshest price; a stale one
+  // must not override the quote we just decided on.
+  const _tickFresh = typeof state.lastTickPrice === "number" && state.lastTickPrice > 0
+    && typeof state.lastTickTime === "number" && Date.now() - state.lastTickTime <= SPOT_MAX_AGE_MS;
+  const fillSpot = (_tickFresh || _spot.source !== "quote") && state.lastTickPrice > 0 ? state.lastTickPrice : spotPrice;
   const slSpot = sig.slSpot;
   const targetSpot = sig.targetSpot;
   if (!Number.isFinite(slSpot) || !Number.isFinite(targetSpot)) {

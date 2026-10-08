@@ -66,6 +66,7 @@ function earlyCfgTrigger() {
 }
 const { istDayFromAny, istIsoFromAny, getISTMinutes, getBucketStart } = require("../utils/tradeUtils");
 const skipLogger  = require("../utils/skipLogger");
+const { freshSpot } = require("../utils/freshSpot");
 const capitalPool = require("../utils/capitalPool");
 
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
@@ -415,13 +416,6 @@ async function runSelection() {
   const nowMin = getISTMinutes();
   if (nowMin < cfg.selectionMin) return;
 
-  const spot = state.lastTickPrice;
-  if (!strategy._px(spot)) {
-    state._lastSelectionTryMs = Date.now();
-    log(`⚠️ ${LOG_TAG} No NIFTY index price yet — cannot compute the ATM strike, selection deferred`);
-    return;
-  }
-
   // SIMPLE930 is premium-denominated end to end: the entry trigger, the stop,
   // the trail and the band are all option-premium levels (see the pnlMode
   // string — "every level is a premium, not a spot"). NIFTY futures have no
@@ -434,7 +428,7 @@ async function runSelection() {
       skipLogger.appendSkipLog(MODE_KEY, {
         gate: "instrument",
         reason: "SIMPLE930 is premium-denominated — not defined for NIFTY_FUTURES",
-        spot,
+        spot: state.lastTickPrice,
       });
     }
     return;
@@ -442,8 +436,20 @@ async function runSelection() {
 
   state._selectionInFlight = true;
   state._lastSelectionTryMs = Date.now();
-  state.selectionTried++;
   try {
+    // The ATM is built off the index level, so a silent feed (lastTickPrice
+    // frozen at the last tick — on 2026-10-08 the previous close) would centre
+    // the whole ladder on a stale number. Fall back to a direct quote.
+    const _sid = state._sessionId;
+    const _spot = await freshSpot({ tickPrice: state.lastTickPrice, tickAt: state.lastTickTime });
+    if (state._sessionId !== _sid || state.selection) return;
+    const spot = _spot.spot;
+    if (!strategy._px(spot)) {
+      log(`⚠️ ${LOG_TAG} No NIFTY index price yet — cannot compute the ATM strike, selection deferred`);
+      return;
+    }
+    if (_spot.source === "quote") log(`📡 ${LOG_TAG} Live feed stale (${_spot.ageMs == null ? "no tick yet" : Math.round(_spot.ageMs / 1000) + "s old"}) — ATM from quoted NIFTY ${spot}`);
+    state.selectionTried++;
     const atm = instrumentConfig.calcATMStrike(spot);
 
     // Resolve (and validate) the expiry ONCE, off the ATM contract. Every ladder

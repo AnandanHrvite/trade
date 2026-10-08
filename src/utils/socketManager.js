@@ -130,6 +130,53 @@ function tickSymbol(t) {
   return s.length ? s : null;
 }
 
+/**
+ * Keep the SDK's send pipeline alive across closes.
+ *
+ * fyers-api-v3 (1.7.0) sends EVERYTHING — the 'cn' login frame, subscribes,
+ * mode changes — through a queue drained by `instance.interval`, rate-limited
+ * by a module-level counter that `instance.secondcountertimer` resets to 0
+ * every second; once the counter passes 10 the drainer sends nothing. Its
+ * close paths (close(), and the onClose handler every drop fires) clear BOTH
+ * timers, and the reset timer is only ever created in the constructor. So after
+ * the first close, a process could send ~11 more frames in total and then went
+ * mute for good: every reconnect "Connected — subscribing" with the login frame
+ * never leaving the queue, Fyers sending nothing and dropping it ~2 min later.
+ * That was the 2026-10-08 all-day silent feed (first idle drop 07:41, no tick
+ * after). Re-login did not help either: the onClose handler targets the static
+ * `instance`, so the old socket's late close cleared the NEW instance's timers.
+ *
+ * The fix: own both timers. Reads of the two properties return undefined, so
+ * the SDK's clearInterval() calls become no-ops; a new drainer assigned by
+ * connect() retires the previous one, so exactly one runs (it is a no-op while
+ * the socket is down). _resetSdk() clears the real handles via releaseSdkTimers.
+ */
+const SDK_TIMERS = Symbol('sdkTimers');
+function guardSdkTimers(skt) {
+  if (!skt || skt[SDK_TIMERS]) return skt;
+  const timers = { counter: skt.secondcountertimer || null, drainer: skt.interval || null };
+  Object.defineProperty(skt, SDK_TIMERS, { value: timers, enumerable: false });
+  Object.defineProperty(skt, 'secondcountertimer', {
+    configurable: true, enumerable: true,
+    get: () => undefined,
+    set: (v) => { if (v && v !== timers.counter) { if (timers.counter) clearInterval(timers.counter); timers.counter = v; } },
+  });
+  Object.defineProperty(skt, 'interval', {
+    configurable: true, enumerable: true,
+    get: () => undefined,
+    set: (v) => { if (v && v !== timers.drainer) { if (timers.drainer) clearInterval(timers.drainer); timers.drainer = v; } },
+  });
+  return skt;
+}
+function releaseSdkTimers(skt) {
+  const timers = skt && skt[SDK_TIMERS];
+  if (!timers) return;
+  if (timers.counter) clearInterval(timers.counter);
+  if (timers.drainer) clearInterval(timers.drainer);
+  timers.counter = null;
+  timers.drainer = null;
+}
+
 class SocketManager {
   constructor() {
     this._symbol         = null;
@@ -600,6 +647,9 @@ class SocketManager {
     // and could schedule a reconnect (or clear the token on a stale -15) for a
     // session that is over.
     this._connGen += 1;
+    // The guarded timers survive close() by design; a stopped session has no
+    // use for them, and the next start() builds a fresh instance anyway.
+    try { releaseSdkTimers(this._skt); } catch (_) {}
     // Null the instance ONLY here so the next session can create a fresh one.
     this._skt = null;
     this._log('🔴 [SOCKET] Stopped');
@@ -905,13 +955,13 @@ class SocketManager {
       // its token — back from getInstance(). Retire it first.
       if (fyersDataSocket.instance) this._resetSdk();
       try {
-        this._skt = new fyersDataSocket(token, './logs', true);
+        this._skt = guardSdkTimers(new fyersDataSocket(token, './logs', true));
         this._sktToken = token;
       } catch (err) {
         // SDK singleton already exists from a prior session in this process.
         this._log(`⚠️  [SOCKET] SDK singleton exists — using getInstance()`);
         try {
-          this._skt = fyersDataSocket.getInstance();
+          this._skt = guardSdkTimers(fyersDataSocket.getInstance());
           this._sktToken = null;   // unknown — the next attempt rebuilds it
         } catch (e2) {
           this._log(`❌ [SOCKET] Cannot acquire SDK instance: ${e2.message}`);
@@ -1274,7 +1324,11 @@ class SocketManager {
     if (old) {
       try { old.close(); } catch (_) {}
       // The SDK starts a 1s interval per instance; a discarded one would leak.
+      // Guarded instances hide their timers (see guardSdkTimers) — release the
+      // real handles; an unguarded one still exposes them on the properties.
+      try { releaseSdkTimers(old); } catch (_) {}
       try { if (old.secondcountertimer) clearInterval(old.secondcountertimer); } catch (_) {}
+      try { if (old.interval) clearInterval(old.interval); } catch (_) {}
       try { if (old.autreconnecttimer) clearInterval(old.autreconnecttimer); } catch (_) {}
     }
     try { fyersDataSocket.instance = null; } catch (_) {}
@@ -1372,3 +1426,4 @@ class SocketManager {
 module.exports = new SocketManager();
 // Exported for unit tests — the attribution rules live and die by this resolver.
 module.exports.tickSymbol = tickSymbol;
+module.exports.guardSdkTimers = guardSdkTimers;
