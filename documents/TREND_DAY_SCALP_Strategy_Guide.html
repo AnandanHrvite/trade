@@ -49,6 +49,15 @@
   .tv-cap b { color: #c9d1d9; }
   .tv-empty { color: #6e7681; padding: 40px; text-align: center; font-size: 0.9rem; }
 
+
+  nav.toc { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 14px 22px; margin: 14px 0; }
+  nav.toc strong { color: #f0f6fc; }
+  nav.toc ol { margin: 8px 0 0; columns: 2; column-gap: 30px; padding-left: 22px; }
+  nav.toc li { margin: 3px 0; break-inside: avoid; }
+  .summary li { margin: 4px 0; }
+  @media (max-width: 768px) { nav.toc ol { columns: 1; } }
+  .ex { display: inline-block; font-size: 0.7rem; color: #d29922; border: 1px solid rgba(210,153,34,0.4); border-radius: 12px; padding: 0 8px; margin-left: 6px; vertical-align: middle; }
+
 /* ── MOBILE (shared block — keep in sync across all guides) ── */
   @media (max-width: 768px) {
     /* The setting tables are three columns of prose. A table cannot lay out
@@ -83,311 +92,263 @@
 /* ── END MOBILE ── */</style>
 </head>
 <body>
+
 <div class="wrap">
 
 <header class="hero">
-  <div class="kicker">Strategy 8 · Fyers · Plain-English edition</div>
+  <div class="kicker">Strategy guide · NIFTY options · Fyers · Simple-English edition</div>
   <h1>Trend Day Scalp</h1>
-  <p>Most days NIFTY goes nowhere in particular, and a bought option quietly bleeds while it does. This strategy spends the first hour deciding whether today is worth trading <em>at all</em>. On most days the answer is no, and it does nothing. When the answer is yes, it buys one dip in the direction the day already chose, risks a fixed 12–18 points, and takes a fixed profit.</p>
-  <p class="muted" style="margin-top:10px;">Updated 2026-08-09 &nbsp;·&nbsp; plain-English edition &nbsp;·&nbsp; every number below is produced by running the live engine</p>
+  <p>On most days NIFTY wanders, and a bought option slowly loses value while it does. This bot looks at the first hour once, at 10:15, and asks: "Is today a real trend day?" Most days the answer is no, and it does nothing. When the answer is yes, it buys one dip in the day's direction, with a fixed stop and a fixed target.</p>
+  <p class="muted" style="margin-top:10px;">Updated 2026-10-08 · every chart is an example built from made-up candles and checked against the real engine code</p>
 </header>
 
-<!--LIVE_STATUS_PANEL-->
-
-<div class="card bad">
-  <strong>Read this first: this strategy has never traded.</strong> Not one paper session, not one live order. Every figure in this guide comes from the engine running on constructed candles. There is no win rate here because none has been measured.
-</div>
-
-<div class="card">
-  <strong>What's inside</strong>
-  <ol style="margin:10px 0 0; columns:2; column-gap:30px;">
-    <li><a href="#idea">The idea in one minute</a></li>
-    <li><a href="#why">Why it was built this way</a></li>
-    <li><a href="#glossary">Words you'll see</a></li>
-    <li><a href="#gate">Step 1 — Is today worth trading?</a></li>
-    <li><a href="#entry">Step 2 — Buying the dip</a></li>
-    <li><a href="#exit">Step 3 — How we get out</a></li>
-    <li><a href="#reject">Days it says no</a></li>
-    <li><a href="#money">The money, with real numbers</a></li>
-    <li><a href="#risk">Safety limits</a></li>
-    <li><a href="#modes">Paper, Live, Backtest &amp; Replay</a></li>
-    <li><a href="#config">All the settings, explained</a></li>
-    <li><a href="#missing">What's still missing</a></li>
-  </ol>
-</div>
-
-<h2 id="idea">1. The idea in one minute</h2>
-
-<p>Buying an option is a race against the clock. Every day you hold one, time decay takes a slice, so a day where price wanders sideways is a slow loss even when you are not wrong. The usual response is to trade more carefully. This strategy's response is to <b>trade far less often</b>.</p>
-
-<p>At <b>10:15</b> it looks at the first hour once and asks three questions. Did the market actually move? Has it stayed on one side of its average price? Has it committed, or is it hugging the middle? If any answer is no, the day is over before it began — no trade, no loss, nothing.</p>
-
-<p>When all three are yes, the direction is locked for the rest of the day and it waits for one thing: a dip back to the average price that gets bought straight back up. That is the entry. From there the trade has a fixed stop, a fixed target, and one single move of the stop to break-even. Nothing trails, nothing is left to judgement.</p>
-
-<h2 id="why">2. Why it was built this way</h2>
-
-<p>The other seven strategies in this app share a shape: they buy a breakout and let the winner run. That produces a handful of very large winners carrying a long tail of small losses. ORB's own notes record nine trades where the single best one was 211% of the total profit — remove that one trade and the strategy loses money.</p>
-
-<p>This one is built to be the opposite: <b>low but steady</b>. It gives up the huge winner on purpose, in exchange for a result that does not depend on catching it.</p>
-
-<div class="card">
-  <strong>The number that shaped every rule below.</strong>
-  <p style="margin:8px 0 0;">On one lot, a round trip costs about <b>₹88 in statutory charges</b> plus roughly 1.5 points of slippage on each side (~₹195). Call it <b>₹300 gone</b> before the trade is right about anything. At a delta of 0.6, that is about <b>17 index points of movement just to break even</b>.</p>
-  <p style="margin:8px 0 0;">That is why the target is 2.5× the risk and not a scalper's ten points. A strategy whose average win is twelve points cannot survive its own costs, no matter how often it is right.</p>
-</div>
-
-<h2 id="glossary">3. Words you'll see</h2>
-
-<table>
-<tr><th>Word</th><th>What it actually means</th></tr>
-<tr><td><b>VWAP</b></td><td>The day's average price, rebuilt from 09:15 each morning. Price above it means buyers have had the upper hand today.</td></tr>
-<tr><td><b>EMA20</b></td><td>A smoothed line following the last 20 candles. Price tends to fall back to it and bounce during a trend.</td></tr>
-<tr><td><b>The zone</b></td><td>Whichever of those two lines sits <i>nearer</i> to price. That is where a dip is bought.</td></tr>
-<tr><td><b>ATR</b></td><td>How far the market has been moving per candle lately. Used to judge whether a candle is decisive or limp.</td></tr>
-<tr><td><b>R</b></td><td>One unit of risk. If the stop is 18 points away, 1R = 18 points and the 2.5R target is 45.0 points.</td></tr>
-<tr><td><b>Break-even jump</b></td><td>The one and only time the stop moves — to just above entry, so a winner cannot turn into a loser.</td></tr>
-</table>
-
-<h2 id="gate">4. Step 1 — Is today worth trading?</h2>
-
-<p>At 10:15 the engine freezes a verdict for the whole day. Three tests, all of which must pass:</p>
-
-<table>
-<tr><th>Test</th><th>Why it exists</th><th>On the day below</th></tr>
-<tr><td><b>The day actually moved</b><br><span class="muted">first hour ≥ 0.5% of spot</span></td><td>A quiet first hour usually means a quiet day, and a quiet day has no move big enough to pay for the option.</td><td>160.5pt = 0.66% of 24334 (need >= 0.5%) ✅</td></tr>
-<tr><td><b>One-directional</b><br><span class="muted">last 6 closes all on the same side of VWAP</span></td><td>If price keeps crossing back and forth over its own average, that is chop. Chop is where bought options go to die.</td><td>all 6 above VWAP 24258.97 ✅</td></tr>
-<tr><td><b>Committed, not drifting</b><br><span class="muted">spot at least 0.20× the range away from VWAP</span></td><td>Price can technically stay above VWAP while sitting right on top of it. That is not a trend, it is a coin flip.</td><td>75.03pt vs need 32.10pt (0.20 x range) ✅</td></tr>
-</table>
-
-<!-- ── how to read the charts (plain-English key) ── -->
-<div class="tv-key" style="margin:18px 0 6px; border:1px solid #2b3648; border-left:4px solid #60a5fa; border-radius:10px; background:#101725; padding:14px 18px;">
-  <div style="font-weight:700; color:#e8eef8; font-size:0.95rem; margin-bottom:8px;">New to charts? Read this once and every picture below makes sense</div>
-  <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:8px 20px; font-size:0.84rem; line-height:1.55; color:#a9b6c9;">
-    <div><b style="color:#26a69a;">Green bar</b> &mdash; that slice of time ended <b>higher</b> than it started. Buyers won.</div>
-    <div><b style="color:#ef5350;">Red bar</b> &mdash; that slice of time ended <b>lower</b> than it started. Sellers won.</div>
-    <div><b style="color:#e8eef8;">The thin spike</b> above and below each bar is the highest and lowest price touched inside it.</div>
-    <div><b style="color:#26a69a;">&#9650; Triangle up</b> = the moment we <b>bought</b>. <b style="color:#ef5350;">&#9660; Triangle down</b> = the moment we <b>sold</b>.</div>
-    <div><b style="color:#fbbf24;">Yellow dot</b> = the candle that set off the signal &mdash; the thing the strategy was waiting for.</div>
-    <div><b style="color:#fbbf24;">Dashed line with a price tag</b> = a level that matters: a stop-loss, a target, or a floor under our profit.</div>
-    <div><b style="color:#94a3b8;">Shaded column</b> = the stretch of time we were actually holding the option.</div>
-    <div><b style="color:#7890c8;">Coloured lines</b> are the strategy's tools. The small legend under each chart names them.</div>
-  </div>
-  <div style="font-size:0.8rem; color:#7d8ba0; margin-top:9px;"><b style="color:#a9b6c9;">A word on "points".</b> Every price on these charts is the <b>index level itself</b> &mdash; not rupees, and not the price of the option you buy. So "+30 points" means the index moved 30 points our way. As a rough rule of thumb the option we buy gains a little over <b>half a point</b> for each point the index moves, and one lot is about 65 units &mdash; so a 30-point index move is roughly &#8377;1,050 on one lot before costs.</div>
-</div>
-
-<div class="chart-box"><div id="tds-gate"></div></div>
-
-<p>All three passed, so this became a <b>CE-only day</b>: from 10:15 until the close it will consider buying calls and nothing else. It will not flip if price reverses. It will not take a put. The direction was decided once.</p>
-
-<div class="card warn">
-  <strong>Why 0.20 — and why the first two answers were wrong.</strong> This threshold was originally set by arithmetic on an idealised path: on a day that climbs in a perfectly straight line the average price sits exactly halfway between the low and the high, so spot finishes 0.5× the range above VWAP. That reasoning gave 0.6 first, then 0.35. Both were wrong, because real first hours do not climb in straight lines — VWAP tracks price much more closely than the idealised case. <b>Measured over 39 real sessions the distance is median 0.18× the range and p90 is 0.39.</b> A 0.35 setting therefore sat near the 85th percentile and passed just 13% of days, which is how the first backtest of this strategy produced five trades in a year. 0.20 sits just above the measured median: roughly the more-committed half of days. It is <i>not</i> the value that scored best on that sample — 0.15 did — because 17 trades cannot tell those two apart, and picking the winner of a noisy sweep is how you fit a curve to nothing.</p>
-
-<p>Four things have to line up on one closed candle:</p>
-
-<ol>
-  <li><b>Price dipped to the zone.</b> Within the last 3 candles, the low reached whichever of VWAP / EMA20 is nearer. A wick counts — on a real trend day price often just grazes the line and bounces.</li>
-  <li><b>It closed back through it.</b> The dip was bought, not continued.</li>
-  <li><b>The move is fresh.</b> Either this candle itself dipped in, or the one before closed on the wrong side. This stops it buying the fifth candle of a rally that left the zone long ago.</li>
-  <li><b>The candle means it.</b> Green, with a body of at least 0.4× ATR. A tiny indecisive candle is not a reclaim.</li>
-</ol>
-
-<div class="chart-box"><div id="tds-trade"></div></div>
-
-<p>On the day above that happened at <b>11:20</b>. The zone sat at <b>24337.91</b> (the EMA20, which was nearer than VWAP at 24319.73). Price dipped to <b>24335.41</b> and closed back at <b>24353.41</b> with a body of 14 points — comfortably past the 7.26 points required by that day's ATR of 18.14.</p>
-
-<h2 id="exit">6. Step 3 — How we get out</h2>
-
-<p>Everything is decided at entry. There is no judgement left afterwards.</p>
-
-<table>
-<tr><th>Level</th><th>Where</th><th>Why</th></tr>
-<tr><td><b>Stop</b></td><td>24335.41 — 18 points below entry</td><td>The low of the dip. If the dip that was supposed to be bought keeps going, the read was wrong.</td></tr>
-<tr><td><b>Target</b></td><td>24398.41 — 2.5R, 45.0 points</td><td>Taken and done. Not trailed past, not held for more.</td></tr>
-<tr><td><b>Break-even jump</b></td><td>at 24371.41, stop moves to 24356.41</td><td>Once the trade is up by one unit of risk, the stop moves once to just above entry and <b>never moves again</b>.</td></tr>
-<tr><td><b>Time stop</b></td><td>25 minutes</td><td>If it has not reached +1R by then, it is going nowhere and is only paying time decay.</td></tr>
-<tr><td><b>Premium stop</b></td><td>option down 25%</td><td>Catches the case where the index sits still but the option bleeds anyway.</td></tr>
-</table>
-
-<p>On this day the break-even jump armed at <b>11:25</b> and the target was reached at <b>11:55</b> — <b>Target hit (2.5R)</b> at 24398.41.</p>
-
-<div class="chart-box"><div id="tds-pe"></div></div>
-<p class="tv-cap"><b>The same machine pointing the other way.</b> The grey band on the left is the first hour, and at 10:15 it is judged once: the day moved <b>0.63%</b> (needs 0.5%), the last six closes were <em>all</em> below VWAP, and price sat <b>74 points</b> from VWAP against the 31 required. Three passes, so this is a <b>PE-only day</b> &mdash; from here it will not buy a single Call no matter what price does. Later the market bounces back up into the zone (the nearer of the purple VWAP and blue EMA20 lines), and one decisive red candle rejects it and closes back below &rarr; <b>BUY PE at 24,483</b>. The stop goes at the top of that bounce, <b>24 points</b> away, and that distance is our "1R". Target is fixed at <b>2.5R = 60 points</b>. Ten minutes later the trade is up 1R so the stop makes its one and only move, up to break-even. Half an hour after that the target prints and we are done &mdash; no trailing, no second-guessing.</p>
-
-<div class="chart-box"><div id="tds-stopped"></div></div>
-<p class="tv-cap"><b>And the loser, which looks almost identical until it doesn't.</b> Good day gate, clean dip into the zone, a convincing green candle reclaiming it &rarr; <b>BUY CE at 24,443</b>, stop 21 points below at the low of the dip. Then price hangs about for a few candles, never gets the 1R it needs to move the stop to break-even, and rolls over. <b>25 minutes</b> after entry the dip low gives way and we are out for <b>exactly 1R</b>. That is the whole design in one picture: every loss is the same size, and every win is 2.5 of them. You do not need to be right often &mdash; at this shape, being right <b>29% of the time</b> is break-even.</p>
-
-<div class="card">
-  <strong>Why there is no trailing stop.</strong> Every other strategy in this app trails, and it is exactly what turns their winners into scratches — a normal pullback taps the trail and the trade is closed just before the move continues. Here the fixed target does that job instead. The stop makes precisely one move, to break-even, and then holds still.
-</div>
-
-<h2 id="reject">7. Days it says no</h2>
-
-<p>This is the part that matters most, because it is what most days look like.</p>
-
-<div class="chart-box"><div id="tds-reject"></div></div>
-
-<p>Price here keeps crossing its own average. The gate reports:</p>
-
-<table>
-<tr><th>Test</th><th>Result</th></tr>
-<tr><td>first-hour range</td><td>❌ 30pt = 0.12% of 24180 (need >= 0.5%)</td></tr>
-<tr><td>6 closes one side of VWAP</td><td>❌ crosses VWAP 24191 within the last 6 bars</td></tr>
-<tr><td>extension from VWAP</td><td>✅ 11pt vs need 6pt (0.20 x range)</td></tr>
-</table>
-
-<p>Two failures, so the day is off. Note the third test passed — that is the point of having three. Price was 11 points from VWAP, which clears the bar, but on a range of only 30 points that is meaningless. A single test would have been fooled.</p>
-
-<p class="muted">A day that trades nothing produces ₹0. On a strategy built around buying options, ₹0 on a bad day is the whole edge.</p>
-
-<h2 id="money">8. The money, with real numbers</h2>
-
-<p>One lot (65 qty), one strike in-the-money so delta is about 0.6, entry premium around ₹240. Charges below come from the app's own charges calculator, not an estimate.</p>
-
-<table>
-<tr><th>Outcome</th><th>Index move</th><th>Option</th><th>Gross</th><th>Charges</th><th>Net</th></tr>
-<tr><td><b>Target hit</b></td><td>+45.0 pt</td><td>₹240 → ₹267</td><td>₹1755</td><td>−₹88</td><td class="pos"><b>+₹1667</b></td></tr>
-<tr><td><b>Break-even exit</b></td><td>+3 pt</td><td>₹240 → ₹241.8</td><td>₹117</td><td>−₹84</td><td>+₹33</td></tr>
-<tr><td><b>Stop hit</b></td><td>−18 pt</td><td>₹240 → ₹229.2</td><td>−₹702</td><td>−₹83</td><td class="neg"><b>−₹785</b></td></tr>
-</table>
-
-<p class="muted">These exclude slippage, which in practice takes roughly another ₹200 off every round trip. Add that back before judging any of it.</p>
-
-<div class="card warn">
-  <strong>Do the arithmetic yourself before believing any of this.</strong> With a win of about ₹1667 and a loss of about ₹785, and slippage on top, you need to win roughly four trades in ten just to stand still. Whether this strategy does that is <b>completely unknown</b>. Nothing here is evidence that it does.
-</div>
-
-<h2 id="risk">9. Safety limits</h2>
-
-<table>
-<tr><th>Limit</th><th>Default</th><th>What it does</th></tr>
-<tr><td>Max trades/day</td><td>2</td><td>Costs are charged per trade, so trading more is usually worse, not better.</td></tr>
-<tr><td>Stop-outs that end the day</td><td>2</td><td>Two real stop-outs and the day is finished. A break-even or time-stop exit does <b>not</b> count — those are scratches, not bad reads.</td></tr>
-<tr><td>Daily loss cap</td><td>₹3,000</td><td>About two stops. Raised with the stop cap — at ₹1,500 a single 40pt stop-out ended the day, which made the two-trade budget meaningless.</td></tr>
-<tr><td>Daily profit lock</td><td>₹3,000</td><td>Once ahead by this much, the day ends. Handing profit back is what destroys a steady curve.</td></tr>
-<tr><td>No new entries after</td><td>14:00</td><td>Late entries have no room left to reach the target.</td></tr>
-<tr><td>Everything flat by</td><td>15:10</td><td>Nothing is carried overnight.</td></tr>
-<tr><td>Portfolio cap</td><td>shared</td><td>Respects <code>PORTFOLIO_MAX_DAILY_LOSS</code> across every strategy, if you set it. Like the weekly cap (<code>TDS_MAX_WEEKLY_LOSS</code>), breaching it <b>closes the day</b> &mdash; it does not merely skip the one entry being evaluated.</td></tr>
-</table>
-
-<h2 id="modes">10. Paper, Live, Backtest &amp; Replay</h2>
-
-<table>
-<tr><th>Where</th><th>What it is</th></tr>
-<tr><td><a href="/trend-day-scalp-paper/status"><b>Paper</b></a></td><td>The real engine on live prices, simulated fills. This is the authority — the other two copy it.</td></tr>
-<tr><td><a href="/trend-day-scalp-backtest"><b>Backtest</b></a></td><td>Same signal engine over a date range. Where a candle touched both the stop and the target, it books the <b>loss</b>; a candle that gapped past a level fills at the open, never the better price.</td></tr>
-<tr><td><a href="/trend-day-scalp-live"><b>Live</b></a></td><td>Wraps Paper, so live decisions cannot drift from paper ones. Real orders need three switches on at once and are off by default.</td></tr>
-<tr><td><a href="/replay"><b>Replay</b></a></td><td>Re-runs a recorded day tick by tick. This is how you check that live and paper agree.</td></tr>
-</table>
-
-<h2 id="config">11. All the settings, explained</h2>
-
-<p>Every one of these is in <a href="/settings">Settings → Trend Day Scalp</a>. The name in <code>CODE</code> is what the setting is called in the <code>.env</code> file, so you can find it either way. The defaults are shown; <b>none of them is a tuned optimum</b> — they are starting guesses, and two of them have already been caught being wrong (see section 12).</p>
-
-<h3>Turning it on and off</h3>
-<table>
-<tr><th>Setting</th><th>Default</th><th>What it changes</th></tr>
-<tr><td>Trend Day Scalp Mode<br><code>TDS_MODE_ENABLED</code></td><td><code>true</code></td><td>The master switch for the whole strategy. Off, and it disappears from the menu and the settings page entirely — nothing runs.</td></tr>
-<tr><td>Paper Trading<br><code>TDS_PAPER_ENABLED</code></td><td><code>true</code></td><td>Allows new practice sessions to start. This is pretend money on real live prices, so leaving it on costs you nothing.</td></tr>
-<tr><td>Live Orders<br><code>TDS_LIVE_ENABLED</code></td><td><code>false</code></td><td><b>Real money.</b> Off by default, and it must stay off until this strategy has been paper-traded for a long stretch — it has never placed a live order. Even switching it on is not enough on its own; see the row below.</td></tr>
-<tr><td>Live DRY-RUN override<br><code>TDS_LIVE_DRY_RUN</code></td><td><code>false</code></td><td>A private brake for this strategy only. Turn it on and Trend Day Scalp stays simulated even when live trading is switched on everywhere else — useful when you trust the other strategies but not this one yet. (There is also a global brake, <code>LIVE_HARNESS_DRY_RUN</code>, which overrules everything.)</td></tr>
-<tr><td>Lot Multiplier<br><code>TDS_LOT_MULTIPLIER</code></td><td><code>0</code></td><td>How many lots per trade. <code>0</code> means "use whatever the app-wide setting says", which is the sensible choice unless you deliberately want this strategy bigger or smaller than the others.</td></tr>
-</table>
-
-<h3>The clock</h3>
-<table>
-<tr><th>Setting</th><th>Default</th><th>What it changes</th></tr>
-<tr><td>Session / VWAP Anchor<br><code>TDS_SESSION_START</code></td><td><code>09:15</code></td><td>Where the first hour starts counting and where the day's average price (VWAP) is anchored. This is the market open — there is no good reason to move it.</td></tr>
-<tr><td>Day Gate Time<br><code>TDS_GATE_TIME</code></td><td><code>10:15</code></td><td>The single moment the day is judged. Move it later and you judge on more evidence but leave less day to trade; move it earlier and you decide on noise.</td></tr>
-<tr><td>Entry Window End<br><code>TDS_ENTRY_END</code></td><td><code>14:00</code></td><td>No <em>new</em> trades after this. A trade already open is unaffected. Late entries have too little day left to reach a 2.5R target before the forced exit.</td></tr>
-<tr><td>Forced Exit<br><code>TDS_FORCED_EXIT</code></td><td><code>15:10</code></td><td>Anything still open is sold here, win or lose. We never hold an option overnight — a weekend or a gap can destroy it while you sleep.</td></tr>
-<tr><td>Candle Timeframe<br><code>TDS_RESOLUTION</code></td><td><code>5</code></td><td>How many minutes each candle covers. Everything else — the ATR, the bodies, the time stop — is measured against this, so changing it changes the whole strategy, not just the chart.</td></tr>
-</table>
-
-<h3>The day gate — the three questions asked at 10:15</h3>
-<table>
-<tr><th>Setting</th><th>Default</th><th>What it changes</th></tr>
-<tr><td>Min First-Hour Range<br><code>TDS_MIN_RANGE_PCT</code></td><td><code>0.5</code> %</td><td><b>Question 1: did the day actually move?</b> The first hour's high-to-low must be at least this percentage of the index. On a 24,000 index that is 120 points. Raise it to trade fewer, livelier days; lower it and you start buying options on dead mornings, which is how time decay eats you.</td></tr>
-<tr><td>Closes One Side of VWAP<br><code>TDS_VWAP_STREAK_BARS</code></td><td><code>6</code></td><td><b>Question 2: has it picked a side?</b> This many of the most recent candle closes must <em>all</em> be on the same side of the day's average price. If price keeps crossing back and forth, that is chop, and chop is where bought options die. Raise it and you demand more persistence.</td></tr>
-<tr><td>Extension from VWAP<br><code>TDS_EXTENSION_MULT</code></td><td><code>0.20</code> × range</td><td><b>Question 3: has it committed, or is it hugging the middle?</b> Price must sit at least this many times the first-hour range away from the average. This number was <b>measured, not reasoned</b> — see section 4. Raising it starves the strategy alarmingly fast: 0.35 passed only 13% of days.</td></tr>
-</table>
-
-<h3>The entry</h3>
-<table>
-<tr><th>Setting</th><th>Default</th><th>What it changes</th></tr>
-<tr><td>Zone EMA Period<br><code>TDS_EMA_PERIOD</code></td><td><code>20</code></td><td>The buy zone is whichever is <em>nearer</em> to price: the day's average (VWAP) or this moving average. A smaller number hugs price more tightly, so dips reach the zone more often but mean less.</td></tr>
-<tr><td>ATR Period<br><code>TDS_ATR_PERIOD</code></td><td><code>14</code></td><td>How many candles are used to work out "a normal move for today". Everything sized in ATR below depends on it.</td></tr>
-<tr><td>Reclaim Body<br><code>TDS_BODY_ATR_MULT</code></td><td><code>0.4</code> × ATR</td><td>How decisive the entry candle must be. Its body must be at least this fraction of a normal move. This is the conviction test — a small, indecisive candle is not somebody buying the dip, it is nobody doing anything.</td></tr>
-<tr><td>Pullback Lookback<br><code>TDS_PULLBACK_WINDOW</code></td><td><code>3</code> bars</td><td>How recently the dip must have touched the zone. A wick counts — on a real trend day price often just grazes the line and bounces. Widen it and you start buying rallies that left the zone long ago.</td></tr>
-</table>
-
-<h3>Getting out</h3>
-<table>
-<tr><th>Setting</th><th>Default</th><th>What it changes</th></tr>
-<tr><td>Min Stop Distance<br><code>TDS_MIN_SL_PTS</code></td><td><code>12</code> pts</td><td>If the structure puts the stop closer than this, it is <em>widened</em> to 12. A stop inside the noise is not a stop, it is a donation.</td></tr>
-<tr><td>Max Stop Distance<br><code>TDS_MAX_SL_PTS</code></td><td><code>40</code> pts</td><td>If the structure needs a wider stop than this, the trade is <b>skipped entirely</b> — the stop is never tightened into the structure. <b>This was 18, and it was the single worst decision in this strategy:</b> real setups need a median of 35 points, so 18 threw away 48 of 53 of them and kept only the shallowest. Know the cost — 35 points of index risk is roughly ₹1,400 of premium on one lot.</td></tr>
-<tr><td>Target<br><code>TDS_TARGET_R</code></td><td><code>2.5</code> × risk</td><td>The fixed profit, as a multiple of the stop distance. If the stop is 20 points away, the target is 50. Taken and done — never trailed past. At 2.5 you only need to be right <b>29% of the time</b> to break even.</td></tr>
-<tr><td>Break-even Arms At<br><code>TDS_BREAKEVEN_R</code></td><td><code>1</code> × risk</td><td>How far in profit the trade must go before the stop makes its one and only move. At 1, a trade that goes 20 points your way (on a 20-point stop) can no longer become a loss.</td></tr>
-<tr><td>Break-even Buffer<br><code>TDS_BREAKEVEN_BUFFER_PTS</code></td><td><code>3</code> pts</td><td>Where the stop lands on that jump: your entry price plus this. The small buffer means a scratch exit still covers a little of the costs instead of being exactly zero.</td></tr>
-<tr><td>Time Stop<br><code>TDS_TIME_STOP_MINS</code></td><td><code>25</code> min</td><td>If break-even has not armed within this long, the trade is closed flat. A stalled option is not neutral — it is quietly paying time decay every minute. <code>0</code> turns it off.</td></tr>
-<tr><td>Premium Stop<br><code>TDS_PREMIUM_STOP_PCT</code></td><td><code>25</code> %</td><td>The only rule that watches the option's own price rather than the index. If the premium collapses by this much, get out — this catches a volatility crush that the index-based stop simply cannot see. <code>0</code> turns it off.</td></tr>
-</table>
-
-<h3>Which option to buy</h3>
-<table>
-<tr><th>Setting</th><th>Default</th><th>What it changes</th></tr>
-<tr><td>ITM Steps<br><code>TDS_ITM_STEPS</code></td><td><code>1</code></td><td>How far inside the money to buy. <code>0</code> is at-the-money; <code>1</code> is one strike in, which moves about 60 paise for every 1 point the index moves and loses value slowly. Cheap far-out options move less and decay faster — bad for a strategy that holds for half an hour.</td></tr>
-</table>
-
-<h3>Safety limits</h3>
-<table>
-<tr><th>Setting</th><th>Default</th><th>What it changes</th></tr>
-<tr><td>Max Trades/Day<br><code>TDS_MAX_DAILY_TRADES</code></td><td><code>2</code></td><td>Costs are charged per trade, not per day, so fewer is usually better. This is the main brake on over-trading a good day into a bad one.</td></tr>
-<tr><td>Stop-outs That End the Day<br><code>TDS_MAX_DAILY_LOSSES</code></td><td><code>2</code></td><td>After this many <em>real</em> stop-outs the day is over. Break-even exits and time-stops do not count — only trades that actually hit the stop. <code>0</code> turns it off.</td></tr>
-<tr><td>Max Daily Loss<br><code>TDS_MAX_DAILY_LOSS</code></td><td><code>₹3,000</code></td><td>A rupee cap for the day. This was raised alongside the stop cap for a reason: at ₹1,500 a single 40-point stop-out would end the day by itself, which made the two-trade budget meaningless. <code>0</code> turns it off.</td></tr>
-<tr><td>Max Weekly Loss<br><code>TDS_MAX_WEEKLY_LOSS</code></td><td><code>0</code> (off)</td><td>The same idea over a whole week, for when a run of bad days needs stopping rather than a single bad day.</td></tr>
-<tr><td>Daily Profit Lock<br><code>TDS_DAILY_PROFIT_LOCK</code></td><td><code>₹3,000</code></td><td>Stop for the day once this much is <em>banked</em>. Giving profit back is what wrecks a steady equity curve, and this strategy's whole promise is steadiness. <code>0</code> turns it off.</td></tr>
-</table>
-
-<h3>Backtest only — these change nothing in real or practice trading</h3>
-<table>
-<tr><th>Setting</th><th>Default</th><th>What it changes</th></tr>
-<tr><td>Backtest Seed Premium<br><code>TDS_BT_SEED_PREMIUM</code></td><td><code>₹240</code></td><td>History has no record of what options actually cost, so the backtest has to assume an entry price. This is that assumption. It affects the rupee figures a backtest reports, not the decisions it makes.</td></tr>
-<tr><td>Backtest Slippage<br><code>TDS_BT_SLIPPAGE_PTS</code></td><td><code>1.5</code> pts each way</td><td>A cost haircut applied to both entry and exit in a backtest. Without it, option-buying backtests always look better than reality, because in real life you never get filled at the price on the screen.</td></tr>
-</table>
-
-<div class="card warn">
-  <strong>Two settings live outside this page.</strong> <code>LIVE_HARNESS_DRY_RUN</code> is the app-wide master brake — while it is <code>true</code> (the default) no strategy places a real order, whatever its own switches say. And the global lot size is used whenever <code>TDS_LOT_MULTIPLIER</code> is <code>0</code>. This strategy has <b>no VIX filter and no open-interest filter</b> of its own — a chaotic day is treated exactly like a calm one, which is listed as a known limitation in section 12.
-</div>
-
-<h2 id="missing">12. What's still missing</h2>
-
-<div class="card bad">
-  <strong>Nothing here has been validated.</strong> Zero paper sessions, zero live trades. Treat all of it as a starting guess. <b>Two of the constants have already been caught being wrong.</b> The stop cap shipped at 18 points and the extension gate at 0.35, both derived from arithmetic rather than from candles — together they produced <b>five trades in the whole of 2025 and none in 2026</b>. Measured against real sessions, valid setups need a median stop of 35 points, so the 18pt cap was discarding 48 of every 53 setups and keeping only the shallowest. They are now 40 and 0.20, set from the measured distribution. On a 39-session sample that turns 0 trades into 10 — but the net on those 10 is <b>−₹738</b>. The strategy trades now; it is not yet shown to make money, and nothing in this guide should be read as saying otherwise.
-</div>
-
-<p>Before this is trusted with money:</p>
-<ol>
-  <li>Run <b>Paper</b> for a long stretch. Because it stands aside on most days, a couple of weeks will produce only a handful of trades — that is not a sample.</li>
-  <li><b>Replay</b> those recorded days and confirm the replayed decisions match what Paper did.</li>
-  <li>Only then look at the live switches, and leave <code>LIVE_HARNESS_DRY_RUN=true</code> for a while first, reading the "order I would have placed" log lines.</li>
-</ol>
-
-<div class="card warn">
-  <strong>Known limitations, stated plainly.</strong>
-  <ul style="margin:8px 0 0;">
-    <li><b>Backtest rupees are simulated.</b> There is no historical option-price data, so premiums are modelled from the index move plus time decay. Direction is meaningful; the exact ₹ is not.</li>
-    <li><b>The premium stop cannot be backtested honestly.</b> It fires on the modelled premium curve, not on a real volatility collapse.</li>
-    <li><b>Very few trades.</b> The day gate is designed to reject most sessions, so any statistic from a short range is noise. On the measured sample the gate passes about 31% of days and a trade follows on roughly a quarter of those — about 10 trades per 39 sessions.</li>
-    <li><b>No volatility or open-interest awareness.</b> A chaotic day is treated exactly like a calm one.</li>
-    <li><b>The three gate thresholds have never been tested against each other.</b> They may be redundant, or one may be doing all the work. Only a long paper sample will tell.</li>
-    <li><b>1 lot only.</b> There is no position sizing beyond the lot multiplier, and no averaging.</li>
+<div class="card accent summary">
+  <strong>In one minute</strong>
+  <ul>
+    <li><b>10:15 day gate, decided once.</b> Three tests on the first hour (09:15–10:15): it moved at least <b>0.5%</b>; the last <b>6</b> closes are all on one side of VWAP; and price is at least <b>0.20 ×</b> the first-hour range away from VWAP. Fail any one = no trade all day.</li>
+    <li><b>Direction is locked.</b> Price above VWAP = CE (Call) only. Below = PE (Put) only. It never flips later.</li>
+    <li><b>Entry:</b> price dips back to the "zone" (the nearer of VWAP and EMA20) and a strong candle closes back beyond it.</li>
+    <li><b>Stop</b> = the low of the dip (CE) or high of the bounce (PE). At least 12 points; if it needs more than 40, the trade is skipped.</li>
+    <li><b>Target</b> = 2.5 × the stop distance, fixed. At +1 × the stop distance the stop jumps once to entry + 3 points. A 25-minute time stop and a 25% premium stop guard the rest.</li>
+    <li>Entries until 14:00. Everything closed at 15:10. Max 2 trades a day; 2 stop-outs, a ₹3,000 loss or a ₹3,000 profit ends the day.</li>
   </ul>
 </div>
 
-<p class="muted" style="margin-top:30px;">Engine: <code>src/strategies/trend_day_scalp.js</code> · Paper: <code>src/routes/trendDayScalpPaper.js</code> · Backtest: <code>src/routes/trendDayScalpBacktest.js</code> · Live harness: <code>src/routes/trendDayScalpLiveHarness.js</code>. The rules exist only in the engine file; the others call into it.</p>
+<!--LIVE_STATUS_PANEL-->
 
-</div><!-- /wrap -->
+<div class="card warn">
+  <strong>Read this first.</strong> This strategy has not been proven with real trades. Two of its numbers (the 40-point stop cap and the 0.20 extension) were set from 39 measured sessions; the rest are starting guesses. Every chart below is an <b>example</b> made from invented candles. The bot's real code was run on those candles to check each decision. Option prices use a simple model (one strike in the money, the option moves about 0.6 rupee per NIFTY point, entry price ₹240).
+</div>
 
+<nav class="toc">
+  <strong>Contents</strong>
+  <ol>
+    <li><a href="#why">Why it is built this way</a></li>
+    <li><a href="#words">Words you will see</a></li>
+    <li><a href="#gate">Step 1 — Is today a trend day?</a></li>
+    <li><a href="#entry">Step 2 — Buying the dip</a></li>
+    <li><a href="#exits">Step 3 — How it gets out</a></li>
+    <li><a href="#trades">Example trades</a></li>
+    <li><a href="#pe">A PE day</a></li>
+    <li><a href="#nodays">Days it says no</a></li>
+    <li><a href="#skips">Setups it skips</a></li>
+    <li><a href="#limits">Safety limits</a></li>
+    <li><a href="#money">The money</a></li>
+    <li><a href="#modes">Paper, Live, Backtest &amp; Replay</a></li>
+    <li><a href="#settings">All settings</a></li>
+    <li><a href="#unknown">What we do not know yet</a></li>
+  </ol>
+</nav>
+
+<h2 id="why">1. Why it is built this way</h2>
+<ul>
+  <li>Most strategies in this app buy a breakout and let the winner run. Their results depend on a few very big winners.</li>
+  <li>This one aims for <b>small but steady</b>. It takes a fixed profit and does not wait for a huge winner.</li>
+  <li>Its biggest tool is saying <b>no</b>. A day with no trade costs nothing. A bought option on a sideways day loses money to time decay.</li>
+  <li>Costs matter. One round trip on one lot costs about ₹90 in charges plus slippage. That is why the target is 2.5 × the risk, not a tiny 10-point scalp.</li>
+</ul>
+
+<h2 id="words">2. Words you will see</h2>
+<table>
+<tr><th>Word</th><th>What it means</th></tr>
+<tr><td>Candle</td><td>One bar on the chart: open, high, low and close for 5 minutes. Green = closed higher than it opened. Red = closed lower. The "body" is the gap between open and close.</td></tr>
+<tr><td>CE / PE</td><td>CE is a Call option: it gains when NIFTY rises. PE is a Put option: it gains when NIFTY falls. The bot only buys options.</td></tr>
+<tr><td>Premium</td><td>The option's own price in rupees. One lot = 65 units, so ₹1 of premium = ₹65.</td></tr>
+<tr><td>ITM</td><td>In the money. The bot buys one strike (50 points) in the money. It costs more than ATM but follows NIFTY more closely and loses value to time more slowly.</td></tr>
+<tr><td>VWAP</td><td>The day's average price, rebuilt from 09:15 each morning. Above it = buyers have had the upper hand today. (This app uses an equal-weight average of each candle's high, low and close, because the live feed has no index volume.)</td></tr>
+<tr><td>EMA20</td><td>A smooth line that follows the last 20 candles. In a trend, price often dips back to it and bounces.</td></tr>
+<tr><td>The zone</td><td>Whichever of VWAP and EMA20 is nearer to price. That is where the bot wants to buy a dip.</td></tr>
+<tr><td>ATR</td><td>Average True Range: how big a normal candle has been lately (14 candles). Used to judge if a candle is strong.</td></tr>
+<tr><td>R</td><td>One unit of risk = the stop distance. If the stop is 25 points away, 1R = 25 points and the 2.5R target is 62.5 points away.</td></tr>
+</table>
+
+<h2 id="gate">3. Step 1 — Is today a trend day? (10:15, once)</h2>
+<p>At 10:15 the bot looks at the first hour (the candles from 09:15 up to the one that closes at 10:15). It runs three tests. All three must pass.</p>
+<table>
+<tr><th>Test</th><th>Rule</th><th>Why</th><th>Example day below</th></tr>
+<tr><td>1. Did it move?</td><td>First-hour high − low ≥ 0.5% of the price</td><td>A quiet first hour usually means a quiet day. That is no good for an option buyer.</td><td>129.31 pts = 0.53% ✅</td></tr>
+<tr><td>2. One direction?</td><td>The last 6 closes are all above VWAP (or all below)</td><td>Price that keeps crossing its average is chop.</td><td>all 6 above VWAP 24,441.04 ✅</td></tr>
+<tr><td>3. Committed?</td><td>Distance from VWAP ≥ 0.20 × the first-hour range</td><td>Price can stay above VWAP while hugging it. That is not a trend.</td><td>56.96 pts vs 25.86 needed ✅</td></tr>
+</table>
+<div class="tv-chart" id="tdGate"></div>
+<p class="tv-cap"><i>Example — not a real trade.</i> <b>What you see:</b> the first hour inside the dashed box. NIFTY climbs 129 points (0.53%). The six green dots mark six closes in a row above the purple VWAP line. At 10:15 the close is 24,498, which is 56.96 points above VWAP (25.86 needed). All three tests pass. <b>Why it matters:</b> from now on the bot will only look for CE trades. It will never buy a PE today, even if the market turns.</p>
+<ul>
+  <li>The verdict is made <b>once</b> and frozen for the day.</li>
+  <li>Side = CE if the 10:15 close is above VWAP, PE if below. The streak and the distance must point the same way.</li>
+  <li>Nothing can be bought before 10:15.</li>
+</ul>
+
+<h2 id="entry">4. Step 2 — Buying the dip</h2>
+<p>On a CE day, the bot waits for a dip back to the zone that is bought straight back up. On each closed 5-minute candle (from 10:15 to 14:00) it checks four things. (PE days are the mirror: a bounce up to the zone, then a strong red candle closing back below it.)</p>
+<ol>
+  <li><b>Touch.</b> In the last 3 candles, the lowest low reached the zone. A wick is enough.</li>
+  <li><b>Reclaim.</b> This candle closes back above the zone.</li>
+  <li><b>Fresh.</b> Either this candle's low dipped into the zone, or the candle before closed at or below the zone. This stops it buying the 5th candle of a rally that left the zone long ago.</li>
+  <li><b>Strong candle.</b> It is green, and its body is at least 0.4 × ATR.</li>
+</ol>
+<div class="tv-chart" id="tdEntry"></div>
+<p class="tv-cap"><i>Example — not a real trade.</i> <b>What you see:</b> after the gate passes, NIFTY drifts back down. The 10:35 candle dips to 24,446.58 and closes at 24,451, below the zone (VWAP 24,453.82, which is just above EMA20 here, so it is the nearer line). The 10:40 candle closes at <b>24,469</b>, back above the zone, with a 18.48-point green body (needed: 6.98 = 0.4 × ATR 17.44). All four checks pass: BUY CE. <b>Why it matters:</b> the dip was bought, not continued. The stop goes at the lowest low of the last 3 candles, 24,443.92.</p>
+<h3>Where the stop goes</h3>
+<ul>
+  <li>The stop is the dip's lowest low (last 3 candles) for a CE, or the bounce's highest high for a PE.</li>
+  <li>If that is <b>closer than 12 points</b>, the stop is moved out to 12 points.</li>
+  <li>If it is <b>more than 40 points</b> away, the trade is <b>skipped</b>. The stop is never squeezed inside the dip.</li>
+  <li>The stop, target and breakeven levels are set from the actual fill price, so the risk stays exactly the planned number of points.</li>
+</ul>
+<h3>Which option</h3>
+<p>One strike (50 points) in the money. Example: NIFTY at 24,469 → nearest strike 24,450 → the bot buys the <b>24,400 CE</b>. For a PE at 24,475 → nearest strike 24,500 → the <b>24,550 PE</b>.</p>
+
+<h2 id="exits">5. Step 3 — How it gets out</h2>
+<p>Everything is decided at entry. The bot checks these on every price tick, in this order:</p>
+<table>
+<tr><th>#</th><th>Exit</th><th>Rule</th></tr>
+<tr><td>1</td><td><b>Stop</b></td><td>NIFTY reaches the stop (or the breakeven stop after the jump).</td></tr>
+<tr><td>2</td><td><b>Target</b></td><td>NIFTY reaches entry + 2.5R (CE) or entry − 2.5R (PE). Taken at once, never trailed.</td></tr>
+<tr><td>3</td><td><b>Breakeven jump</b></td><td>When the trade is +1R, the stop moves <b>once</b> to entry + 3 points (CE) or entry − 3 (PE). It never moves again.</td></tr>
+<tr><td>4</td><td><b>Time stop</b></td><td>If the breakeven jump has not happened within 25 minutes of entry, sell.</td></tr>
+<tr><td>5</td><td><b>Premium stop</b></td><td>If the option falls 25% below the price paid, sell. This catches a fall in option value that NIFTY's price alone would not show.</td></tr>
+<tr><td>6</td><td><b>Square-off</b></td><td>At 15:10 anything still open is sold.</td></tr>
+</table>
+<div class="card">
+  <strong>No trailing stop, on purpose.</strong> A trailing stop often gets hit by a normal pullback just before the move carries on. Here the fixed target does that job. The stop moves exactly once, to breakeven. The app-wide profit lock used by some other strategies is not part of this strategy's exits.
+</div>
+
+<h2 id="trades">6. Example trades — one entry, four endings</h2>
+<p>The next four charts use the same day and the same entry (CE at 24,469, stop 24,443.92, 1R = 25.08 points). Only what happens after the entry changes.</p>
+<div class="tv-chart" id="tdWin"></div>
+<p class="tv-cap"><i>Example — not a real trade.</i> <b>Winner.</b> <b>What you see:</b> NIFTY rises from 24,469. At 10:55 it reaches +1R (24,494.08), so the orange stop line jumps from 24,443.92 to 24,472 — entry + 3. It never moves again. At 11:10 NIFTY touches the target 24,531.7, and the bot sells. <b>Result: +₹2,445</b> on one lot before charges. <b>Why it matters:</b> the whole plan worked: fixed risk, one stop move, fixed profit.</p>
+<div class="tv-chart" id="tdLose"></div>
+<p class="tv-cap"><i>Example — not a real trade.</i> <b>Loser.</b> <b>What you see:</b> same entry. NIFTY never reaches +1R. It falls back through the dip low, and at 10:55 the stop at 24,443.92 is hit. <b>Result: −₹978</b> (1R). <b>Why it matters:</b> the loss is known before the trade starts. Losses range from about 12 to 40 points, depending on how deep the dip was.</p>
+<div class="tv-chart" id="tdBe"></div>
+<p class="tv-cap"><i>Example — not a real trade.</i> <b>Scratch.</b> <b>What you see:</b> NIFTY reaches +1R at 10:55, so the stop jumps to 24,472. Then it turns down and hits that stop at 11:00. <b>Result: +₹117</b> before charges — about break-even after them. <b>Why it matters:</b> once a trade has been +1R, it cannot become a real loss. A breakeven exit does not count as one of the day's two stop-outs.</p>
+<div class="tv-chart" id="tdTime"></div>
+<p class="tv-cap"><i>Example — not a real trade.</i> <b>Time stop.</b> <b>What you see:</b> NIFTY goes sideways after the entry. It never reaches +1R and never hits the stop. 25 minutes after entry (the end of the 11:05 candle) the bot sells at 24,464. <b>Result: −₹195</b>. <b>Why it matters:</b> a stuck option only loses value to time. Getting out early frees the trade budget for a better chance. A time-stop exit does not count as a stop-out.</p>
+
+<h2 id="pe">7. A PE day</h2>
+<div class="tv-chart" id="tdPe"></div>
+<p class="tv-cap"><i>Example — not a real trade.</i> <b>What you see:</b> the first hour falls 123 points (0.5%), the last six closes are below VWAP, and price is 55.19 points under VWAP (24.65 needed). PE-only day. At 10:35 NIFTY bounces up and touches the zone (VWAP 24,489.33). The 10:40 candle is a strong red candle that closes back below it at <b>24,475</b>: BUY PE. Stop = the bounce high 24,498.2 (23.2 pts). At 10:50 the trade reaches +1R and the stop jumps to 24,472. At 11:05 the target 24,417 is hit. <b>Result: +₹2,262</b>. <b>Why it matters:</b> the PE rules are the exact mirror of the CE rules.</p>
+
+<h2 id="nodays">8. Days it says no</h2>
+<p>This is what most days look like. A day with no trade makes ₹0, and on a bad day for option buyers, ₹0 is a good result.</p>
+<div class="tv-chart" id="tdChop"></div>
+<p class="tv-cap"><i>Example — not a real trade.</i> <b>What you see:</b> a big first hour (130 points, 0.53% — test 1 passes), but price swings across VWAP again and again. Test 2 fails (the last 6 closes are not all on one side). Test 3 also fails: at 10:15 price is only 19.35 points from VWAP (25.9 needed). <b>No trade today.</b> <b>Why it matters:</b> a big range alone is not a trend.</p>
+<div class="tv-chart" id="tdQuiet"></div>
+<p class="tv-cap"><i>Example — not a real trade.</i> <b>What you see:</b> a slow, gentle rise. The last 6 closes are above VWAP and price is far enough from it, so tests 2 and 3 pass. But the whole first hour moved only 35.61 points (0.15% — 0.5% needed). <b>No trade today.</b> <b>Why it matters:</b> one failed test is enough. A quiet morning rarely gives a move big enough to pay for an option.</p>
+
+<h2 id="skips">9. Setups it skips on a good day</h2>
+<div class="tv-chart" id="tdWide"></div>
+<p class="tv-cap"><i>Example — not a real trade.</i> <b>What you see:</b> a valid CE day. A sharp dip to 24,415.92 and a strong reclaim candle closing at 24,465. Every entry check passes. But the stop would have to sit 49.08 points away, more than the 40-point cap. <b>Skipped.</b> The bot does not tighten the stop to make it fit. <b>Why it matters:</b> a 49-point loss on one lot is about ₹1,900 of premium — too big for this strategy.</p>
+<div class="tv-chart" id="tdWeak"></div>
+<p class="tv-cap"><i>Example — not a real trade.</i> <b>What you see:</b> the dip touches the zone and the 10:40 candle closes back above it — but with a body of only 5 points. The rule needs 0.4 × ATR (about 6.6 points here). <b>Skipped.</b> The 10:45 candle is also too small (5.9 pts vs 6.5 needed). After that, price runs away from the zone without dipping back, so there is no fresh setup. <b>Why it matters:</b> a small, unsure candle is not proof that buyers stepped in.</p>
+<p>Other reasons it skips: the reclaim candle is the wrong colour; price is "already running" (no fresh dip); it is after 14:00; the day is closed by a limit; there is no option price or not enough free capital.</p>
+
+<h2 id="limits">10. Safety limits</h2>
+<div class="tv-chart" id="tdTwo"></div>
+<p class="tv-cap"><i>Example — not a real trade.</i> <b>What you see:</b> trade 1 is stopped at 10:55 (−₹978). A second dip-and-reclaim gives trade 2 at 11:35, and it is stopped at 11:45 (−₹1,019). That is 2 real stop-outs, so the day is over. <b>Day result: −₹1,997</b>. <b>Why it matters:</b> two failed dips on a "trend day" means the read was wrong. Stopping protects the account.</p>
+<table>
+<tr><th>Limit</th><th>Default</th><th>What happens</th></tr>
+<tr><td>Max trades per day</td><td>2</td><td>Costs are paid per trade, so fewer is usually better.</td></tr>
+<tr><td>Stop-outs that end the day</td><td>2</td><td>After 2 real stop-outs, no more entries. Breakeven and time-stop exits do not count.</td></tr>
+<tr><td>Max daily loss</td><td>₹3,000</td><td>Day ends once the loss reaches this. (At ₹1,500 a single 40-point stop-out would end the day.)</td></tr>
+<tr><td>Daily profit lock</td><td>₹3,000</td><td>Day ends once the profit reaches this — bank it, do not give it back.</td></tr>
+<tr><td>Max weekly loss</td><td>0 (off)</td><td>If set, no entries for the rest of the week once the week's loss reaches it.</td></tr>
+<tr><td>App-wide loss cap</td><td>shared</td><td>If hit, this strategy stops for the day too.</td></tr>
+<tr><td>Entry window</td><td>10:15–14:00</td><td>Late entries have no time left to reach a 2.5R target.</td></tr>
+<tr><td>Square-off</td><td>15:10</td><td>Nothing is held overnight.</td></tr>
+</table>
+
+<h2 id="money">11. The money</h2>
+<p>One lot (65 units), entry premium ₹240, option moves 0.6 rupee per NIFTY point. Charges are from the app's own charges calculator (Fyers). Slippage is not included — in real trading it takes more off every trade.</p>
+<table>
+<tr><th>Ending</th><th>NIFTY move</th><th>Option</th><th>Gross</th><th>Charges</th><th>Net</th></tr>
+<tr><td>Target hit (2.5R)</td><td>+62.7 pts</td><td>₹240 → ₹277.62</td><td>+₹2,445</td><td>₹89</td><td><b>+₹2,356</b></td></tr>
+<tr><td>Breakeven exit</td><td>+3 pts</td><td>₹240 → ₹241.8</td><td>+₹117</td><td>₹84</td><td><b>+₹33</b></td></tr>
+<tr><td>Time stop</td><td>−5 pts</td><td>₹240 → ₹237</td><td>−₹195</td><td>₹84</td><td><b>−₹279</b></td></tr>
+<tr><td>Stop hit (1R)</td><td>−25.1 pts</td><td>₹240 → ₹224.95</td><td>−₹978</td><td>₹82</td><td><b>−₹1,061</b></td></tr>
+</table>
+<div class="card warn">
+  <strong>Do the math.</strong> With a 2.5R target, the bot breaks even before costs if it is right about 29% of the time (1 win pays for 2.5 losses). After costs and slippage it needs more. Whether it reaches that is <b>not known yet</b>.
+</div>
+
+<h2 id="modes">12. Paper, Live, Backtest &amp; Replay</h2>
+<ul>
+  <li><b>Paper</b> (<code>/trend-day-scalp-paper</code>) — live prices, pretend orders. This is the master copy of the rules.</li>
+  <li><b>Live</b> (<code>/trend-day-scalp-live</code>) — runs Paper and sends the same decisions to Fyers. A real order needs <b>all</b> of: <code>TDS_LIVE_ENABLED=true</code>, the global <code>LIVE_HARNESS_DRY_RUN=false</code>, and <code>TDS_LIVE_DRY_RUN</code> not true. By default no real order is placed.</li>
+  <li><b>Backtest</b> (<code>/trend-day-scalp-backtest</code>) — the same gate and entry rules over past days. If a candle touched both the stop and the target, it books the loss. A candle that opened past a level fills at the open. The breakeven stop can only be hit on a later candle than the one that armed it. There is no option price history, so premiums are a model (seed ₹240) and the premium stop is only an estimate.</li>
+  <li><b>Replay</b> — plays back a recorded day tick by tick, to check that Live and Paper agree.</li>
+  <li><b>Crash safety</b> — an open trade is saved to disk and checked against the broker after a restart.</li>
+</ul>
+
+<h2 id="settings">13. All settings</h2>
+<p>All of these are in <b>Settings → Trend Day Scalp</b>. Defaults are shown.</p>
+<h3>On / off and live</h3>
+<table><tr><th>Setting</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>TDS_MODE_ENABLED</code></td><td>true</td><td>Show the Trend Day Scalp menu and settings.</td></tr>
+<tr><td><code>TDS_PAPER_ENABLED</code></td><td>true</td><td>Allow new paper sessions.</td></tr>
+<tr><td><code>TDS_LIVE_ENABLED</code></td><td>false</td><td>Allow live orders via Fyers. Paper-test first.</td></tr>
+<tr><td><code>TDS_LIVE_DRY_RUN</code></td><td>false</td><td>Keep this strategy simulated even when live is on.</td></tr>
+<tr><td><code>TDS_LOT_MULTIPLIER</code></td><td>0</td><td>Lots per trade. 0 = use the app-wide setting.</td></tr>
+<tr><td><code>TDS_ITM_STEPS</code></td><td>1</td><td>How many strikes in the money to buy. 0 = ATM. 1 step ≈ delta 0.6.</td></tr>
+</table>
+<h3>Day gate</h3>
+<table><tr><th>Setting</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>TDS_SESSION_START</code></td><td>09:15</td><td>Where the first hour and VWAP start (IST).</td></tr>
+<tr><td><code>TDS_GATE_TIME</code></td><td>10:15</td><td>The one moment the day is judged. Decided once, then frozen.</td></tr>
+<tr><td><code>TDS_MIN_RANGE_PCT</code></td><td>0.5</td><td>Test 1: the first hour must move at least this % of the price.</td></tr>
+<tr><td><code>TDS_VWAP_STREAK_BARS</code></td><td>6</td><td>Test 2: how many of the last closes must all be on one side of VWAP.</td></tr>
+<tr><td><code>TDS_EXTENSION_MULT</code></td><td>0.20</td><td>Test 3: price must be this many × the first-hour range away from VWAP. Measured over 39 sessions (median 0.18); 0.35 passed only 13% of days.</td></tr>
+</table>
+<h3>Entry</h3>
+<table><tr><th>Setting</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>TDS_EMA_PERIOD</code></td><td>20</td><td>The EMA used for the zone.</td></tr>
+<tr><td><code>TDS_ATR_PERIOD</code></td><td>14</td><td>The ATR used to judge candle strength.</td></tr>
+<tr><td><code>TDS_BODY_ATR_MULT</code></td><td>0.4</td><td>The reclaim candle's body must be at least this × ATR.</td></tr>
+<tr><td><code>TDS_PULLBACK_WINDOW</code></td><td>3</td><td>How many recent candles can supply the dip touch. A wick counts.</td></tr>
+<tr><td><code>TDS_ENTRY_END</code></td><td>14:00</td><td>No new entries from candles closing after this time.</td></tr>
+<tr><td><code>TDS_FORCED_EXIT</code></td><td>15:10</td><td>Everything still open is sold at this time.</td></tr>
+<tr><td><code>TDS_RESOLUTION</code></td><td>5</td><td>Candle size in minutes.</td></tr>
+</table>
+<h3>Risk and exits</h3>
+<table><tr><th>Setting</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>TDS_MIN_SL_PTS</code></td><td>12</td><td>A closer stop is widened to this.</td></tr>
+<tr><td><code>TDS_MAX_SL_PTS</code></td><td>40</td><td>A wider stop skips the trade. Measured: real dip stops are about 35 points (median); the old 18 skipped 48 of 53 setups.</td></tr>
+<tr><td><code>TDS_TARGET_R</code></td><td>2.5</td><td>Target = this × the stop distance. Taken, never trailed.</td></tr>
+<tr><td><code>TDS_BREAKEVEN_R</code></td><td>1</td><td>At this × the stop distance in profit, the stop makes its one jump.</td></tr>
+<tr><td><code>TDS_BREAKEVEN_BUFFER_PTS</code></td><td>3</td><td>Where the stop lands on that jump: entry ± this.</td></tr>
+<tr><td><code>TDS_TIME_STOP_MINS</code></td><td>25</td><td>Sell if breakeven has not armed within this many minutes (0 = off).</td></tr>
+<tr><td><code>TDS_PREMIUM_STOP_PCT</code></td><td>25</td><td>Sell if the option falls this % below the price paid (0 = off).</td></tr>
+</table>
+<h3>Daily limits</h3>
+<table><tr><th>Setting</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>TDS_MAX_DAILY_TRADES</code></td><td>2</td><td>Max entries per day.</td></tr>
+<tr><td><code>TDS_MAX_DAILY_LOSSES</code></td><td>2</td><td>Real stop-outs that end the day (0 = off).</td></tr>
+<tr><td><code>TDS_MAX_DAILY_LOSS</code></td><td>3000</td><td>Stop for the day after this much loss in ₹ (0 = off).</td></tr>
+<tr><td><code>TDS_DAILY_PROFIT_LOCK</code></td><td>3000</td><td>Stop for the day once this much profit is banked (0 = off).</td></tr>
+<tr><td><code>TDS_MAX_WEEKLY_LOSS</code></td><td>0</td><td>Stop for the week after this much loss in ₹ (0 = off).</td></tr>
+</table>
+<h3>Backtest only</h3>
+<table><tr><th>Setting</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>TDS_BT_SLIPPAGE_PTS</code></td><td>1.5</td><td>Cost per side in the backtest, in points.</td></tr>
+<tr><td><code>TDS_BT_SEED_PREMIUM</code></td><td>240</td><td>The option price the backtest assumes at entry (₹).</td></tr>
+</table>
+<h3>Menu and alerts</h3>
+<table><tr><th>Setting</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>UI_SHOW_TDS_BACKTEST / _PAPER / _LIVE / _HISTORY</code></td><td>true</td><td>Show each sub-menu page in the sidebar.</td></tr>
+<tr><td><code>TG_TDS_STARTED / _ENTRY / _EXIT / _DAYREPORT</code></td><td>true</td><td>Telegram alerts: session start, each entry, each exit, day summary.</td></tr>
+<tr><td><code>LIVE_HARNESS_DRY_RUN</code></td><td>true</td><td>App-wide master brake: while true, no strategy sends real orders.</td></tr>
+</table>
+
+<h2 id="unknown">14. What we do not know yet</h2>
+<ul>
+  <li><b>No proven track record.</b> No win rate or profit figure has been measured.</li>
+  <li><b>Few trades.</b> The gate rejects most days. On the 39 measured sessions it passed about 31% of days, and about 10 trades followed. That sample's net was negative (about −₹738). It is not enough to judge.</li>
+  <li><b>Backtest rupees are a model.</b> There is no option price history.</li>
+  <li><b>No VIX or open-interest filter.</b> A wild day is treated like a calm one.</li>
+  <li><b>Next step:</b> run Paper for a long time, replay the recorded days, and only then think about Live with the dry-run brake on.</li>
+</ul>
+<p class="muted">Code: engine <code>src/strategies/trend_day_scalp.js</code> · Paper <code>src/routes/trendDayScalpPaper.js</code> · Backtest <code>src/routes/trendDayScalpBacktest.js</code> · Live <code>src/routes/trendDayScalpLiveHarness.js</code>.</p>
+
+</div>
 <script>
 /* ============================================================================
  * TVChart v3 — dependency-free TradingView-style candlestick renderer.
@@ -591,15 +552,18 @@
 })(window);
 </script>
 <script>
-(function(){ if(typeof TVChart==="undefined") return;
-  TVChart.render("tds-gate", {"title":"NIFTY 50 Index","subtitle":"5m \u00b7 NSE \u00b7 the 10:15 day gate \u2014 first hour judged once, then frozen","times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10"],"candles":[[24180,24197.5,24177,24194],[24194,24208.5,24191,24205],[24205,24224.5,24202,24221],[24221,24233.5,24218,24230],[24230,24246.5,24227,24243],[24243,24261.5,24240,24258],[24258,24269.5,24255,24266],[24266,24286.5,24263,24283],[24283,24298.5,24280,24295],[24295,24312.5,24292,24309],[24309,24322.5,24306,24319],[24319,24337.5,24316,24334]],"overlays":[{"name":"VWAP","color":"#8b5cf6","data":[24189.5,24195.5,24202.28,24208.5,24214.57,24221,24227.07,24233.38,24239.8,24246.27,24252.59,24258.97]}],"markers":[{"i":0,"type":"dot","color":"#64748b","price":24180,"text":"session open 24180"},{"i":11,"type":"dot","color":"#10b981","price":24334,"text":"gate 10:15 \u2192 CE day"}],"legend":[{"color":"#8b5cf6","label":"session VWAP (equal-weight HLC3)"},{"color":"#10b981","label":"gate PASSED \u2014 CE only"}]});
-  TVChart.render("tds-trade", {"title":"NIFTY 50 Index","subtitle":"5m \u00b7 NSE \u00b7 pullback into the VWAP/EMA20 zone, reclaimed \u2014 fixed 2.5R target","times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55"],"candles":[[24180,24197.5,24177,24194],[24194,24208.5,24191,24205],[24205,24224.5,24202,24221],[24221,24233.5,24218,24230],[24230,24246.5,24227,24243],[24243,24261.5,24240,24258],[24258,24269.5,24255,24266],[24266,24286.5,24263,24283],[24283,24298.5,24280,24295],[24295,24312.5,24292,24309],[24309,24322.5,24306,24319],[24319,24337.5,24316,24334],[24334,24345,24330.5,24341],[24341,24354,24337.5,24350],[24350,24359,24346.5,24355],[24355,24367,24351.5,24363],[24363,24373,24359.5,24369],[24369,24383,24365.5,24379],[24379,24387,24375.5,24383],[24383,24394,24379.5,24390],[24390,24403,24386.5,24399],[24399,24409,24395.5,24405],[24405,24407.5,24388.5,24392],[24392,24394.5,24372.5,24376],[24376,24378.5,24361.5,24365],[24339.41,24354.91,24335.41,24353.41],[24353.41,24371.41,24349.41,24367.41],[24367.41,24380.41,24363.41,24376.41],[24376.41,24380.41,24366.41,24370.41],[24370.41,24386.41,24366.41,24382.41],[24382.41,24394.41,24378.41,24390.41],[24390.41,24394.41,24382.41,24386.41],[24386.41,24401.41,24382.41,24397.41]],"overlays":[{"name":"VWAP","color":"#8b5cf6","data":[24189.5,24195.5,24202.28,24208.5,24214.57,24221,24227.07,24233.38,24239.8,24246.27,24252.59,24258.97,24265.12,24270.98,24276.48,24281.73,24286.75,24291.7,24296.45,24301.02,24305.55,24309.98,24313.72,24316.53,24318.6,24319.73,24321.32,24323.18,24324.88,24326.66,24328.63,24330.48,24332.4]},{"name":"EMA20","color":"#3b82f6","data":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,24304.35,24313.36,24322.09,24328.75,24333.25,24336.27,24337.91,24340.72,24344.11,24346.62,24350.03,24353.87,24356.97,24360.82]},{"name":"stop","color":"#f59e0b","dash":true,"width":1.2,"data":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,24335.41,24356.41,24356.41,24356.41,24356.41,24356.41,24356.41,24356.41]},{"name":"target","color":"#10b981","dash":true,"width":1.2,"data":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,24398.41,24398.41,24398.41,24398.41,24398.41,24398.41,24398.41,24398.41]}],"markers":[{"i":23,"type":"dot","color":"#94a3b8","price":24394.5,"text":"pullback starts"},{"i":25,"type":"buy","price":24353.41,"text":"BUY CE @ 24353.41"},{"i":26,"type":"dot","color":"#f59e0b","price":24371.41,"text":"+1R \u2192 stop to 24356.41"},{"i":32,"type":"exit","price":24398.41,"text":"EXIT \u2014 Target hit (2.5R)"}],"legend":[{"color":"#8b5cf6","label":"VWAP"},{"color":"#3b82f6","label":"EMA20 (the zone is whichever is nearer)"},{"color":"#f59e0b","label":"stop 24335.41 (18pt)"},{"color":"#10b981","label":"target 24398.41 (2.5R)"}]});
-  TVChart.render("tds-reject", {"title":"NIFTY 50 Index","subtitle":"5m \u00b7 NSE \u00b7 price keeps crossing VWAP \u2014 the 10:15 gate says NO TRADE","times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10"],"candles":[[24180,24206,24176,24202],[24202,24206,24176,24180],[24180,24206,24176,24202],[24202,24206,24176,24180],[24180,24206,24176,24202],[24202,24206,24176,24180],[24180,24206,24176,24202],[24202,24206,24176,24180],[24180,24206,24176,24202],[24202,24206,24176,24180],[24180,24206,24176,24202],[24202,24206,24176,24180]],"overlays":[{"name":"VWAP","color":"#8b5cf6","data":[24194.67,24191,24192.22,24191,24191.73,24191,24191.52,24191,24191.41,24191,24191.33,24191]}],"markers":[{"i":11,"type":"dot","color":"#f59e0b","price":24180,"text":"gate FAILED \u2192 stand aside"}],"legend":[{"color":"#8b5cf6","label":"session VWAP"},{"color":"#f59e0b","label":"rejected \u2014 no trade all day"}]});
-    TVChart.render("tds-pe", {"title":"A PE-only day — the gate pointed down at 10:15 and never changed its mind","subtitle":"5m NIFTY · first hour moved 0.63% · six closes all below VWAP · 74.08 pts from VWAP against 30.83 needed","candles":[[24620,24622.28,24606.27,24611.74],[24611.74,24618.02,24595.66,24600.95],[24600.95,24606.78,24586.13,24589.78],[24589.78,24600.82,24579.41,24583.24],[24583.24,24590.23,24562.7,24569.68],[24569.68,24577.2,24554.33,24557.15],[24557.15,24565.4,24528.85,24542.77],[24542.77,24547.83,24524.96,24529.46],[24529.46,24533.79,24513.78,24516.19],[24516.19,24522.06,24503.07,24507.82],[24507.82,24513.13,24481.16,24489.53],[24489.53,24498.2,24473.32,24481.81],[24481.81,24489.23,24468.12,24472.47],[24472.47,24478.05,24466.63,24470.14],[24470.14,24472.75,24467.37,24469.92],[24469.92,24472.09,24466.59,24469.73],[24469.73,24475.98,24459.28,24470.76],[24470.76,24475.31,24463.12,24468.09],[24468.09,24472.97,24464.24,24468.16],[24468.16,24470.33,24460.03,24464.26],[24464.26,24466.34,24456.52,24460.92],[24460.92,24473,24455.12,24468.1],[24468.1,24486.56,24465.12,24481.67],[24481.67,24496.68,24478.71,24487.82],[24487.82,24507.01,24484.14,24499.97],[24502.97,24505.97,24479.97,24482.97],[24482.97,24492.61,24464.6,24470.97],[24470.97,24473.52,24457.1,24463.53],[24463.53,24471.17,24447.71,24457.26],[24457.26,24460.68,24443.57,24448.49],[24448.49,24453.53,24433.01,24442.88],[24442.88,24452.44,24425.16,24434.78],[24434.78,24440.69,24424.03,24426.18],[24426.18,24428.39,24413.85,24419.09],[24419.09,24420.45,24407.93,24410.46],[24410.46,24418.55,24389.48,24398.95],[24398.95,24401.59,24388.99,24392.85],[24392.85,24399.75,24386.59,24389.12],[24389.12,24391.48,24382.72,24385.12],[24385.12,24388.59,24372.98,24379.67]],"overlays":[{"name":"VWAP","color":"#8b5cf6","width":1.7,"data":[24613.43,24609.15,24604.18,24600.09,24594.91,24589.58,24583.3,24577.15,24570.94,24564.95,24558.55,24552.38,24546.55,24541.19,24536.45,24532.26,24528.52,24525.21,24522.22,24519.35,24516.59,24514.26,24512.67,24511.63,24511.05,24510.23,24508.96,24507.38,24505.7,24503.88,24501.92,24499.9,24497.79,24495.52,24493.16,24490.64,24488.04,24485.51,24482.97,24480.4]},{"name":"EMA 20","color":"#3b82f6","width":1.7,"data":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,24516.68,24511.37,24507.25,24504.81,24503.2,24502.89,24500.99,24498.13,24494.84,24491.26,24487.19,24482.97,24478.38,24473.41,24468.23,24462.73,24456.66,24450.58,24444.73,24439.05,24433.39]}],"hlines":[{"price":24507.01,"color":"#ef5350","label":"stop — the top of the bounce (24 pts = 1R)","labelAt":0.02},{"price":24422.87,"color":"#26a69a","label":"target — 2.5R, and we are done","labelAt":0.55}],"shades":[{"from":0,"to":12,"color":"rgba(148,163,184,0.10)","label":"the first hour · judged once at 10:15","text":"#aab6c6"},{"from":25,"to":33,"color":"rgba(239,83,80,0.06)","label":"holding the Put","labelBottom":true}],"markers":[{"i":25,"type":"exit","color":"#26a69a","price":24482.97,"text":"BUY PE 24483"},{"i":27,"type":"dot","color":"#fbbf24","price":24458.93,"text":"+1R → stop jumps to break-even"},{"i":33,"type":"buy","color":"#ef5350","price":24422.87,"text":"TARGET 24423 (+60 pts)"}],"legend":[{"color":"#8b5cf6","label":"VWAP"},{"color":"#3b82f6","label":"EMA 20"},{"color":"#ef5350","label":"stop"},{"color":"#26a69a","label":"target (2.5R)"}],"times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55","12:00","12:05","12:10","12:15","12:20","12:25","12:30"]});
-    TVChart.render("tds-stopped", {"title":"The same setup, stopped out — this is what most losers look like","subtitle":"5m NIFTY · the dip that was supposed to be bought simply kept going · loss = exactly 1R","candles":[[24280,24303.58,24270.66,24295.24],[24295.24,24315.11,24290.55,24307.31],[24307.31,24323.88,24297.01,24317.32],[24317.32,24335.12,24308.13,24329.73],[24329.73,24344.87,24324.57,24340.21],[24340.21,24367.07,24335.12,24358.11],[24358.11,24374.82,24351.29,24366.27],[24366.27,24381.73,24361.97,24379.39],[24379.39,24393.53,24374.47,24388.05],[24388.05,24408.83,24383.85,24404.58],[24404.58,24421.9,24401,24417.03],[24417.03,24434.73,24413.97,24428.3],[24428.3,24450.04,24424.29,24440.16],[24440.16,24450.2,24437.58,24446.91],[24446.91,24455.86,24442.2,24449.39],[24449.39,24461.46,24447.2,24457.99],[24457.99,24468.8,24455.27,24464.46],[24464.46,24471.12,24459.32,24464.92],[24464.92,24471.41,24461.27,24467.39],[24467.39,24478.94,24462.31,24475.21],[24475.21,24484.23,24472.03,24478.55],[24478.55,24481.1,24466.05,24470.02],[24470.02,24480.27,24452.68,24461.96],[24461.96,24468.43,24442.37,24450.18],[24450.18,24459,24432.89,24439.6],[24439.6,24447.23,24424.76,24433.05],[24433.05,24436.04,24423.85,24427.01],[24424.01,24446.01,24422.01,24443.01],[24443.01,24446.13,24436.73,24440.93],[24440.93,24450.19,24437.55,24446.38],[24446.38,24451.14,24441.27,24448.12],[24448.12,24453.26,24434.32,24436.95],[24436.95,24443.44,24413.39,24420.57],[24420.57,24422.59,24405.94,24408.22],[24408.22,24410.89,24391.48,24397.39],[24397.39,24407.68,24385.33,24392.11],[24392.11,24397.52,24380.5,24385.69],[24385.69,24391.48,24371.95,24377.76],[24377.76,24380.67,24371.34,24374.69]],"overlays":[{"name":"VWAP","color":"#8b5cf6","width":1.7,"data":[24289.83,24297.08,24302.3,24307.8,24313.55,24320.2,24326.47,24332.46,24338.34,24344.41,24350.68,24356.93,24363.17,24369.01,24374.35,24379.43,24384.34,24388.82,24392.92,24396.88,24400.76,24404.01,24406.67,24408.62,24410.03,24410.99,24411.66,24412.56,24413.55,24414.59,24415.63,24416.44,24416.72,24416.59,24416.12,24415.53,24414.78,24413.88,24412.9]},{"name":"EMA 20","color":"#3b82f6","width":1.7,"data":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,24399.9,24407.39,24413.35,24417.98,24421.05,24422.82,24423.79,24424.1,24425.9,24427.33,24429.14,24430.95,24431.52,24430.48,24428.36,24425.41,24422.24,24418.76,24414.85,24411.03]}],"hlines":[{"price":24422.01,"color":"#ef5350","label":"stop — the low of the dip (21 pts = 1R)","labelAt":0.02},{"price":24495.51,"color":"#26a69a","label":"target — never got near it","labelAt":0.5}],"shades":[{"from":27,"to":32,"color":"rgba(239,83,80,0.09)","label":"in the trade — 25 min","labelBottom":true}],"markers":[{"i":27,"type":"buy","price":24443.01,"text":"BUY CE 24443"},{"i":32,"type":"exit","price":24422.01,"text":"STOPPED −21 pts (1R)"}],"legend":[{"color":"#8b5cf6","label":"VWAP"},{"color":"#3b82f6","label":"EMA 20"},{"color":"#ef5350","label":"stop (1R)"},{"color":"#26a69a","label":"target (2.5R)"}],"times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55","12:00","12:05","12:10","12:15","12:20","12:25"]});
-})();
+TVChart.render("tdGate", {"times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00"],"candles":[[24379.61,24398.57,24374.55,24392],[24392.64,24409.25,24386.36,24407],[24406.79,24409.06,24399.66,24402],[24402.73,24426.86,24398.07,24420],[24419.93,24436.74,24414.9,24432],[24432.42,24445.9,24428.33,24440],[24439.96,24462.26,24436.15,24456],[24455.97,24458.43,24446.25,24452],[24452.5,24469.79,24449.61,24466],[24466.72,24478.61,24462.45,24476],[24475.93,24491.54,24473.36,24489],[24489.18,24503.86,24486.76,24498],[24498.16,24508.63,24494.83,24502],[24502.14,24505.9,24488.44,24492],[24492.02,24497.58,24476.45,24480],[24479.49,24485.86,24465.87,24471],[24470.82,24477.8,24446.58,24451],[24450.52,24472.27,24443.92,24469],[24469.13,24482.46,24466.26,24478],[24477.9,24492.89,24475.89,24490],[24490.29,24505.8,24487.57,24500],[24500.06,24520.71,24493.65,24515]],"title":"NIFTY 5m · The 10:15 day gate — PASSED (CE-only day)","subtitle":"Example — not a real trade · range 129.31 pts = 0.53% · extension 56.96 pts","zones":[{"from":0,"to":11,"top":24503.86,"bottom":24374.55,"label":"First hour 09:15–10:15 · range 129 pts","color":"rgba(96,165,250,0.06)","stroke":"rgba(96,165,250,0.55)"}],"overlays":[{"data":[24388.37,24394.62,24397.61,24401.95,24407.13,24412.29,24417.89,24422.18,24426.58,24431.16,24436.02,24441.04,24445.71,24449.26,24451.63,24453.04,24453.36,24453.82,24454.97,24456.53,24458.5,24460.83],"color":"#c084fc","width":2}],"shades":[{"from":12,"to":21,"label":"CE only from here","color":"rgba(38,166,154,0.06)"}],"markers":[{"i":6,"price":24432.15,"type":"dot","color":"#22c55e"},{"i":7,"price":24442.25,"type":"dot","color":"#22c55e"},{"i":8,"price":24445.61,"type":"dot","color":"#22c55e"},{"i":9,"price":24458.45,"type":"dot","color":"#22c55e"},{"i":10,"price":24469.36,"type":"dot","color":"#22c55e"},{"i":11,"price":24482.76,"type":"dot","color":"#22c55e","text":"6 closes above VWAP"}],"legend":[{"label":"VWAP","color":"#c084fc"},{"label":"First-hour box","color":"#60a5fa"}]});
+TVChart.render("tdEntry", {"times":["09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15"],"candles":[[24419.93,24436.74,24414.9,24432],[24432.42,24445.9,24428.33,24440],[24439.96,24462.26,24436.15,24456],[24455.97,24458.43,24446.25,24452],[24452.5,24469.79,24449.61,24466],[24466.72,24478.61,24462.45,24476],[24475.93,24491.54,24473.36,24489],[24489.18,24503.86,24486.76,24498],[24498.16,24508.63,24494.83,24502],[24502.14,24505.9,24488.44,24492],[24492.02,24497.58,24476.45,24480],[24479.49,24485.86,24465.87,24471],[24470.82,24477.8,24446.58,24451],[24450.52,24472.27,24443.92,24469],[24469.13,24482.46,24466.26,24478],[24477.9,24492.89,24475.89,24490],[24490.29,24505.8,24487.57,24500],[24500.06,24520.71,24493.65,24515],[24514.81,24528.03,24509.62,24524],[24524.49,24539.52,24520.08,24535],[24535.43,24549.79,24531.81,24543]],"title":"NIFTY 5m · Pullback into the zone, then reclaim","subtitle":"Example — not a real trade · zone = the nearer of VWAP and EMA20","overlays":[{"data":[24407.13,24412.29,24417.89,24422.18,24426.58,24431.16,24436.02,24441.04,24445.71,24449.26,24451.63,24453.04,24453.36,24453.82,24454.97,24456.53,24458.5,24460.83,24463.43,24466.26,24469.27],"color":"#c084fc","width":2},{"data":[24392.55,24397.07,24402.68,24407.38,24412.96,24418.97,24425.64,24432.53,24439.14,24444.18,24447.59,24449.82,24449.93,24451.75,24454.25,24457.65,24461.69,24466.76,24472.21,24478.19,24484.37],"color":"#60a5fa","width":1.6}],"markers":[{"i":12,"price":24446.58,"type":"dot","text":"Dip touches VWAP","color":"#fbbf24"},{"i":13,"price":24443.92,"type":"buy","text":"Reclaim — BUY CE 24,469"}],"hlines":[{"price":24443.92,"label":"Stop = dip low 24,443.92","color":"#ef5350","labelAt":1}],"legend":[{"label":"VWAP","color":"#c084fc"},{"label":"EMA20","color":"#60a5fa"}]});
+TVChart.render("tdWin", {"times":["10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50"],"candles":[[24475.93,24491.54,24473.36,24489],[24489.18,24503.86,24486.76,24498],[24498.16,24508.63,24494.83,24502],[24502.14,24505.9,24488.44,24492],[24492.02,24497.58,24476.45,24480],[24479.49,24485.86,24465.87,24471],[24470.82,24477.8,24446.58,24451],[24450.52,24472.27,24443.92,24469],[24469.13,24482.46,24466.26,24478],[24477.9,24492.89,24475.89,24490],[24490.29,24505.8,24487.57,24500],[24500.06,24520.71,24493.65,24515],[24514.81,24528.03,24509.62,24524],[24524.49,24539.52,24520.08,24535],[24535.43,24549.79,24531.81,24543],[24543.58,24546.62,24535.61,24539],[24539.67,24550.57,24536.63,24545],[24544.33,24547.8,24535.87,24542],[24542.39,24550.05,24537.84,24547],[24547.38,24553.09,24543.73,24549],[24548.78,24551.81,24538.65,24545],[24544.56,24553.39,24539.06,24548]],"title":"NIFTY 5m · CE trade, start to finish — target hit","subtitle":"Example — not a real trade","overlays":[{"data":[24436.02,24441.04,24445.71,24449.26,24451.63,24453.04,24453.36,24453.82,24454.97,24456.53,24458.5,24460.83,24463.43,24466.26,24469.27,24472.01,24474.68,24477.08,24479.42,24481.73,24483.77,24485.74],"color":"#c084fc","width":2},{"data":[24425.64,24432.53,24439.14,24444.18,24447.59,24449.82,24449.93,24451.75,24454.25,24457.65,24461.69,24466.76,24472.21,24478.19,24484.37,24489.57,24494.85,24499.34,24503.88,24508.18,24511.68,24515.14],"color":"#60a5fa","width":1.6},{"data":[null,null,null,null,null,null,null,24443.92,24443.92,24443.92,24443.92,24472,24472,24472,null,null,null,null,null,null,null,null],"color":"#fb923c","width":2.4}],"hlines":[{"price":24531.7,"label":"Target 24,531.7 (2.5R)","color":"#22c55e","labelAt":0},{"price":24494.08,"label":"Breakeven arms 24,494.08 (+1R)","color":"#fbbf24","labelAt":0.75},{"price":24443.92,"label":"Stop 24,443.92 (1R = 25.08 pts)","color":"#ef5350","labelAt":0.75}],"shades":[{"from":7,"to":13,"label":"holding","color":"rgba(38,166,154,0.07)","labelBottom":true}],"markers":[{"i":7,"price":24443.92,"type":"buy","text":"BUY CE"},{"i":10,"price":24505.8,"type":"dot","text":"+1R: stop jumps to 24,472","color":"#fbbf24"},{"i":13,"price":24531.7,"type":"exit","text":"Target 24,532"}],"legend":[{"label":"VWAP","color":"#c084fc"},{"label":"EMA20","color":"#60a5fa"},{"label":"Stop in force","color":"#fb923c"}]});
+TVChart.render("tdLose", {"times":["10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50"],"candles":[[24475.93,24491.54,24473.36,24489],[24489.18,24503.86,24486.76,24498],[24498.16,24508.63,24494.83,24502],[24502.14,24505.9,24488.44,24492],[24492.02,24497.58,24476.45,24480],[24479.49,24485.86,24465.87,24471],[24470.82,24477.8,24446.58,24451],[24450.52,24472.27,24443.92,24469],[24469.13,24479.46,24466.26,24475],[24474.9,24477.79,24458.99,24461],[24461.29,24467.09,24442.28,24445],[24445.06,24450.77,24432.59,24439],[24438.81,24442.84,24425.81,24431],[24431.49,24439.52,24427.08,24435],[24435.43,24442.22,24426.38,24430],[24430.58,24436.04,24427.19,24433],[24433.67,24439.24,24423.96,24427],[24426.33,24432.47,24420.2,24429],[24429.39,24432.44,24421.45,24426],[24426.38,24434.09,24422.73,24430],[24429.78,24432.81,24421.65,24428],[24427.56,24436.39,24422.06,24431]],"title":"NIFTY 5m · CE trade stopped out — a 1R loss","subtitle":"Example — not a real trade","overlays":[{"data":[24436.02,24441.04,24445.71,24449.26,24451.63,24453.04,24453.36,24453.82,24454.86,24455.42,24455.23,24454.57,24453.64,24452.82,24452.02,24451.25,24450.47,24449.64,24448.85,24448.18,24447.51,24446.96],"color":"#c084fc","width":2},{"data":[24425.64,24432.53,24439.14,24444.18,24447.59,24449.82,24449.93,24451.75,24453.96,24454.63,24453.72,24452.31,24450.28,24448.83,24447.04,24445.7,24443.92,24442.5,24440.93,24439.89,24438.75,24438.01],"color":"#60a5fa","width":1.6}],"hlines":[{"price":24531.7,"label":"Target 24,531.7 (2.5R)","color":"#22c55e","labelAt":0.5},{"price":24494.08,"label":"Breakeven arms 24,494.08 (+1R)","color":"#fbbf24","labelAt":0.6},{"price":24443.92,"label":"Stop 24,443.92 (1R = 25.08 pts)","color":"#ef5350","labelAt":0}],"shades":[{"from":7,"to":10,"color":"rgba(239,83,80,0.08)"}],"markers":[{"i":7,"price":24443.92,"type":"buy","text":"BUY CE"},{"i":10,"price":24443.92,"type":"exit","text":"Stop 24,444"}],"legend":[{"label":"VWAP","color":"#c084fc"},{"label":"EMA20","color":"#60a5fa"}]});
+TVChart.render("tdBe", {"times":["10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50"],"candles":[[24475.93,24491.54,24473.36,24489],[24489.18,24503.86,24486.76,24498],[24498.16,24508.63,24494.83,24502],[24502.14,24505.9,24488.44,24492],[24492.02,24497.58,24476.45,24480],[24479.49,24485.86,24465.87,24471],[24470.82,24477.8,24446.58,24451],[24450.52,24472.27,24443.92,24469],[24469.13,24483.46,24466.26,24479],[24478.9,24493.89,24476.89,24491],[24491.29,24497.09,24480.28,24483],[24483.06,24488.77,24464.59,24471],[24470.81,24474.84,24455.81,24461],[24461.49,24466.01,24450.59,24455],[24455.43,24466.79,24451.81,24460],[24460.58,24463.62,24452.61,24456],[24456.67,24464.57,24453.63,24459],[24458.33,24461.8,24450.87,24457],[24457.39,24464.05,24452.84,24461],[24461.38,24465.47,24454.35,24458],[24457.78,24463.03,24451.43,24460],[24459.56,24464.95,24453.5,24459]],"title":"NIFTY 5m · Breakeven jump, then a scratch exit","subtitle":"Example — not a real trade","overlays":[{"data":[24436.02,24441.04,24445.71,24449.26,24451.63,24453.04,24453.36,24453.82,24455,24456.62,24458.05,24458.81,24459.03,24458.96,24458.98,24458.92,24458.93,24458.84,24458.86,24458.87,24458.85,24458.86],"color":"#c084fc","width":2},{"data":[24425.64,24432.53,24439.14,24444.18,24447.59,24449.82,24449.93,24451.75,24454.34,24457.83,24460.23,24461.26,24461.23,24460.64,24460.58,24460.14,24460.03,24459.74,24459.86,24459.69,24459.72,24459.65],"color":"#60a5fa","width":1.6},{"data":[null,null,null,null,null,null,null,24443.92,24443.92,24443.92,24443.92,24472,null,null,null,null,null,null,null,null,null,null],"color":"#fb923c","width":2.4}],"hlines":[{"price":24531.7,"label":"Target 24,531.7 (2.5R)","color":"#22c55e","labelAt":0.5},{"price":24494.08,"label":"Breakeven arms 24,494.08 (+1R)","color":"#fbbf24","labelAt":0.85},{"price":24443.92,"label":"Stop 24,443.92 (1R = 25.08 pts)","color":"#ef5350","labelAt":0.85}],"shades":[{"from":7,"to":11,"color":"rgba(251,191,36,0.07)"}],"markers":[{"i":7,"price":24443.92,"type":"buy","text":"BUY CE"},{"i":10,"price":24497.09,"type":"dot","text":"+1R reached","color":"#fbbf24"},{"i":11,"price":24472,"type":"exit","text":"Breakeven 24,472"}],"legend":[{"label":"VWAP","color":"#c084fc"},{"label":"EMA20","color":"#60a5fa"},{"label":"Stop in force","color":"#fb923c"}]});
+TVChart.render("tdTime", {"times":["10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50"],"candles":[[24475.93,24491.54,24473.36,24489],[24489.18,24503.86,24486.76,24498],[24498.16,24508.63,24494.83,24502],[24502.14,24505.9,24488.44,24492],[24492.02,24497.58,24476.45,24480],[24479.49,24485.86,24465.87,24471],[24470.82,24477.8,24446.58,24451],[24450.52,24472.27,24443.92,24469],[24469.13,24474,24467.13,24472],[24471.9,24473.9,24466,24468],[24468.29,24475,24466.29,24473],[24473.06,24475.06,24468,24470],[24469.81,24471.81,24462,24464],[24464.49,24466.49,24460,24462],[24462.43,24469.79,24458.81,24463],[24463.58,24466.62,24453.61,24457],[24457.67,24463.24,24448.96,24452],[24451.33,24458.47,24445.2,24455],[24455.39,24458.44,24446.45,24451],[24451.38,24457.09,24447.73,24453],[24452.78,24455.81,24443.65,24450],[24449.56,24456.39,24444.06,24451]],"title":"NIFTY 5m · Time stop — 25 minutes with no progress","subtitle":"Example — not a real trade","overlays":[{"data":[24436.02,24441.04,24445.71,24449.26,24451.63,24453.04,24453.36,24453.82,24454.73,24455.46,24456.22,24456.89,24457.28,24457.52,24457.77,24457.82,24457.71,24457.53,24457.34,24457.18,24456.95,24456.74],"color":"#c084fc","width":2},{"data":[24425.64,24432.53,24439.14,24444.18,24447.59,24449.82,24449.93,24451.75,24453.68,24455.04,24456.75,24458.01,24458.58,24458.91,24459.3,24459.08,24458.41,24458.08,24457.41,24456.99,24456.32,24455.81],"color":"#60a5fa","width":1.6}],"hlines":[{"price":24531.7,"label":"Target 24,531.7 (2.5R)","color":"#22c55e","labelAt":0.5},{"price":24494.08,"label":"Breakeven arms 24,494.08 (+1R)","color":"#fbbf24","labelAt":0.6},{"price":24443.92,"label":"Stop 24,443.92 (1R = 25.08 pts)","color":"#ef5350","labelAt":0.6}],"shades":[{"from":8,"to":12,"label":"25 min","color":"rgba(139,152,172,0.10)"}],"markers":[{"i":7,"price":24443.92,"type":"buy","text":"BUY CE"},{"i":12,"price":24464,"type":"exit","text":"Time stop"}],"legend":[{"label":"VWAP","color":"#c084fc"},{"label":"EMA20","color":"#60a5fa"}]});
+TVChart.render("tdPe", {"times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50"],"candles":[[24559.61,24565.71,24543.7,24548],[24547.7,24553.27,24529.34,24533],[24533.26,24542.07,24530.48,24539],[24539.09,24543.64,24518.1,24522],[24521.58,24523.91,24503.56,24510],[24509.91,24513.47,24496.15,24501],[24500.94,24506.54,24482.63,24486],[24485.41,24496.97,24481.08,24491],[24490.26,24496.14,24474.14,24477],[24477.23,24480.33,24461.86,24467],[24466.75,24472.05,24449.26,24455],[24455.28,24461.01,24442.44,24446],[24445.51,24448.24,24439.75,24443],[24442.33,24458.39,24439.28,24453],[24452.41,24468.39,24448.66,24465],[24464.47,24480.22,24462.24,24474],[24473.79,24496.69,24469.75,24492],[24492.41,24498.2,24469.31,24475],[24475.02,24480.04,24458.87,24465],[24464.37,24467.54,24448.73,24453],[24452.49,24456.22,24441.3,24444],[24443.39,24450.33,24425.67,24430],[24430.21,24435.71,24416.13,24420],[24420.05,24423.3,24402.84,24408],[24407.71,24412.76,24393.12,24400],[24400.07,24411.3,24393.92,24405],[24404.29,24411.26,24392.85,24399],[24399.51,24407.76,24396.93,24403],[24403.24,24408.35,24395.43,24398],[24397.43,24401.85,24393.55,24396],[24395.38,24405.23,24390.37,24400],[24399.49,24402.6,24394.18,24397]],"title":"NIFTY 5m · PE day: gate, bounce into the zone, rejection, target","subtitle":"Example — not a real trade · range 123.27 pts, extension 55.19 pts","zones":[{"from":0,"to":11,"top":24565.71,"bottom":24442.44,"label":"First hour","color":"rgba(96,165,250,0.06)","stroke":"rgba(96,165,250,0.55)"}],"overlays":[{"data":[24552.47,24545.5,24542.73,24539.03,24533.72,24528.69,24523.41,24519.19,24515.11,24510.57,24505.86,24501.19,24496.77,24493.44,24491.26,24490.06,24489.83,24489.33,24488.21,24486.62,24484.74,24482.5,24479.95,24477.09,24474.09,24471.37,24468.76,24466.4,24464.13,24461.9,24459.85,24457.92],"color":"#c084fc","width":2},{"data":[24559.52,24556.99,24555.28,24552.11,24548.1,24543.61,24538.13,24533.64,24528.24,24522.41,24515.99,24509.33,24503.01,24498.25,24495.08,24493.07,24492.97,24491.26,24488.76,24485.35,24481.41,24476.52,24471.13,24465.12,24458.92,24453.78,24448.57,24444.23,24439.82,24435.65,24432.26,24428.9],"color":"#60a5fa","width":1.6}],"hlines":[{"price":24417,"label":"Target 24,417 (2.5R)","color":"#22c55e","labelAt":0},{"price":24451.8,"label":"Breakeven arms 24,451.8 (+1R)","color":"#fbbf24","labelAt":1},{"price":24498.2,"label":"Stop 24,498.2 (1R = 23.2 pts)","color":"#ef5350","labelAt":1}],"shades":[{"from":17,"to":22,"color":"rgba(38,166,154,0.07)"}],"markers":[{"i":16,"price":24496.69,"type":"dot","text":"Bounce touches VWAP","color":"#fbbf24"},{"i":17,"price":24469.31,"type":"buy","text":"BUY PE 24,475"},{"i":22,"price":24417,"type":"exit","text":"Target"}],"legend":[{"label":"VWAP","color":"#c084fc"},{"label":"EMA20","color":"#60a5fa"}]});
+TVChart.render("tdChop", {"times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10"],"candles":[[24439.62,24495.64,24436.09,24490],[24490.25,24523.89,24484.2,24520],[24520.72,24524.6,24466.78,24470],[24469.45,24517.24,24466.31,24515],[24515.73,24564.92,24512.87,24560],[24559.4,24565.61,24494.39,24500],[24499.92,24504.86,24467.08,24470],[24470.36,24524.48,24467.44,24520],[24519.52,24522.49,24492.17,24495],[24494.73,24533.6,24488.72,24530],[24529.56,24532.61,24496.1,24500],[24500.37,24530.6,24495.67,24525],[24525.36,24538.83,24522.19,24535],[24535.03,24537.04,24524.47,24527],[24527.31,24539.22,24523.37,24533],[24532.46,24538.53,24519.68,24524],[24523.75,24533.39,24520.1,24531],[24530.81,24534.12,24521.23,24526],[24525.91,24539.58,24521.52,24534],[24534.34,24537.78,24521.47,24528],[24528.2,24538.67,24525.52,24532],[24532.22,24535.39,24522.76,24525],[24525.61,24536.97,24523.07,24530],[24529.62,24536.61,24521.08,24527]],"title":"NIFTY 5m · Day gate FAILED — choppy first hour","subtitle":"Example — not a real trade · range passes, but price keeps crossing VWAP","zones":[{"from":0,"to":11,"top":24565.61,"bottom":24436.09,"label":"First hour · range 130 pts","color":"rgba(96,165,250,0.06)","stroke":"rgba(96,165,250,0.55)"}],"overlays":[{"data":[24473.91,24491.64,24490.13,24492.48,24503.17,24505.97,24502.36,24502.56,24502.63,24504.11,24504.61,24505.65,24507.68,24509.24,24510.74,24511.79,24512.75,24513.55,24514.5,24515.23,24516.03,24516.56,24517.15,24517.61],"color":"#c084fc","width":2}],"shades":[{"from":12,"to":23,"label":"No trade today","color":"rgba(239,83,80,0.06)"}],"markers":[{"i":11,"price":24530.6,"type":"dot","text":"Gate: NO TRADE","color":"#ef5350"}],"legend":[{"label":"VWAP","color":"#c084fc"}]});
+TVChart.render("tdQuiet", {"times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10"],"candles":[[24449.63,24459.17,24446.86,24454],[24453.31,24455.53,24447.56,24451],[24450.69,24460.69,24447.04,24456],[24456.31,24466.92,24453.93,24462],[24462.39,24464.9,24455.73,24460],[24460.39,24467.87,24454.02,24464],[24463.9,24471.28,24461.42,24467],[24466.8,24469.79,24456.5,24463],[24462.78,24473.06,24459.99,24468],[24468.74,24474.09,24461.87,24470],[24469.38,24479.81,24467.31,24474],[24474.47,24482.47,24468.63,24477],[24476.7,24483.93,24473.6,24479],[24479.73,24483.37,24473.99,24476],[24475.7,24484.04,24471.56,24480],[24479.45,24485.37,24471.58,24478],[24477.72,24486.09,24474.45,24481],[24481.71,24487.54,24473.15,24477],[24476.81,24485.14,24474.16,24479],[24478.81,24483.72,24475.03,24480],[24479.4,24484,24474.34,24477],[24476.55,24483.4,24471.4,24479],[24478.51,24481.94,24471.79,24478],[24478.68,24486.73,24472.01,24481]],"title":"NIFTY 5m · Day gate FAILED — first hour too small","subtitle":"Example — not a real trade · range 35.61 pts = 0.15% (needs 0.5%)","zones":[{"from":0,"to":11,"top":24482.47,"bottom":24446.86,"label":"First hour · 36 pts","color":"rgba(96,165,250,0.06)","stroke":"rgba(96,165,250,0.55)"}],"overlays":[{"data":[24453.34,24452.35,24453.09,24455.06,24456.09,24457.07,24458.42,24459.01,24459.9,24460.77,24461.95,24463.12,24464.33,24465.29,24466.18,24466.94,24467.73,24468.37,24468.95,24469.49,24469.91,24470.28,24470.58,24470.97],"color":"#c084fc","width":2}],"shades":[{"from":12,"to":23,"label":"No trade today","color":"rgba(239,83,80,0.06)"}],"legend":[{"label":"VWAP","color":"#c084fc"}]});
+TVChart.render("tdWide", {"times":["09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30"],"candles":[[24419.93,24436.74,24414.9,24432],[24432.42,24445.9,24428.33,24440],[24439.96,24462.26,24436.15,24456],[24455.97,24458.43,24446.25,24452],[24452.5,24469.79,24449.61,24466],[24466.72,24478.61,24462.45,24476],[24475.93,24491.54,24473.36,24489],[24489.18,24503.86,24486.76,24498],[24498.16,24508.63,24494.83,24502],[24502.14,24505.9,24488.44,24492],[24492.02,24497.58,24476.45,24480],[24479.49,24485.86,24465.87,24471],[24470.82,24477.8,24418.58,24423],[24422.52,24468.27,24415.92,24465],[24465.13,24475.46,24462.26,24471],[24470.9,24473.79,24463.99,24466],[24466.29,24475.8,24463.57,24470],[24470.06,24475.77,24457.59,24464],[24463.81,24471.03,24458.62,24467],[24467.49,24472.01,24458.59,24463],[24463.43,24474.79,24459.81,24468],[24468.58,24471.62,24461.61,24465],[24465.67,24472.57,24462.63,24467],[24466.33,24469.8,24456.87,24463]],"title":"NIFTY 5m · Good setup, stop too wide — skipped","subtitle":"Example — not a real trade","overlays":[{"data":[24407.13,24412.29,24417.89,24422.18,24426.58,24431.16,24436.02,24441.04,24445.71,24449.26,24451.63,24453.04,24452.26,24452.12,24453.04,24453.78,24454.54,24455.06,24455.51,24455.89,24456.35,24456.73,24457.12,24457.34],"color":"#c084fc","width":2},{"data":[24392.55,24397.07,24402.68,24407.38,24412.96,24418.97,24425.64,24432.53,24439.14,24444.18,24447.59,24449.82,24447.27,24448.95,24451.05,24452.48,24454.15,24455.08,24456.22,24456.87,24457.93,24458.6,24459.4,24459.74],"color":"#60a5fa","width":1.6}],"hlines":[{"price":24415.92,"label":"Dip low 24,415.92 — 49.08 pts below the entry close","color":"#ef5350","labelAt":1}],"markers":[{"i":13,"price":24468.27,"type":"dot","text":"Reclaim, but stop > 40 pts — SKIP","color":"#ef5350"}],"legend":[{"label":"VWAP","color":"#c084fc"},{"label":"EMA20","color":"#60a5fa"}]});
+TVChart.render("tdWeak", {"times":["09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30"],"candles":[[24419.93,24436.74,24414.9,24432],[24432.42,24445.9,24428.33,24440],[24439.96,24462.26,24436.15,24456],[24455.97,24458.43,24446.25,24452],[24452.5,24469.79,24449.61,24466],[24466.72,24478.61,24462.45,24476],[24475.93,24491.54,24473.36,24489],[24489.18,24503.86,24486.76,24498],[24498.16,24508.63,24494.83,24502],[24502.14,24505.9,24488.44,24492],[24492.02,24497.58,24476.45,24480],[24479.49,24485.86,24465.87,24471],[24470.82,24477.8,24446.58,24451],[24451,24459.27,24444.4,24456],[24456.13,24466.46,24453.26,24462],[24461.9,24468.89,24459.89,24466],[24466.29,24478.8,24463.57,24473],[24473.06,24483.71,24466.65,24478],[24477.81,24488.03,24472.62,24484],[24484.49,24492.52,24480.08,24488],[24488.43,24502.79,24484.81,24496],[24496.58,24504.04,24493.19,24501],[24501.67,24509.57,24498.63,24504],[24503.33,24506.8,24495.87,24502]],"title":"NIFTY 5m · Reclaim candle too small — skipped","subtitle":"Example — not a real trade","overlays":[{"data":[24407.13,24412.29,24417.89,24422.18,24426.58,24431.16,24436.02,24441.04,24445.71,24449.26,24451.63,24453.04,24453.36,24453.35,24453.73,24454.29,24455.12,24456.08,24457.19,24458.42,24459.87,24461.39,24462.97,24464.35],"color":"#c084fc","width":2},{"data":[24392.55,24397.07,24402.68,24407.38,24412.96,24418.97,24425.64,24432.53,24439.14,24444.18,24447.59,24449.82,24449.93,24450.51,24451.6,24452.98,24454.88,24457.08,24459.65,24462.35,24465.55,24468.93,24472.27,24475.1],"color":"#60a5fa","width":1.6}],"markers":[{"i":13,"price":24459.27,"type":"dot","text":"Body 5 pts < 0.4 × ATR","color":"#ef5350"}],"legend":[{"label":"VWAP","color":"#c084fc"},{"label":"EMA20","color":"#60a5fa"}]});
+TVChart.render("tdTwo", {"times":["10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55","12:00","12:05","12:10"],"candles":[[24475.93,24491.54,24473.36,24489],[24489.18,24503.86,24486.76,24498],[24498.16,24508.63,24494.83,24502],[24502.14,24505.9,24488.44,24492],[24492.02,24497.58,24476.45,24480],[24479.49,24485.86,24465.87,24471],[24470.82,24477.8,24446.58,24451],[24450.52,24472.27,24443.92,24469],[24469.13,24479.46,24466.26,24475],[24474.9,24477.79,24458.99,24461],[24461.29,24467.09,24442.28,24445],[24445.06,24450.77,24432.59,24439],[24438.81,24451.03,24433.62,24447],[24447.49,24456.52,24443.08,24452],[24452.43,24459.22,24444.38,24448],[24448.58,24457.04,24445.19,24454],[24454.67,24460.24,24438.96,24442],[24441.33,24444.8,24429.87,24436],[24436.39,24459.05,24431.84,24456],[24456.38,24460.47,24444.35,24448],[24447.78,24450.81,24425.65,24432],[24431.56,24436.95,24414.5,24420],[24419.91,24423.25,24410.38,24415],[24414.76,24420.5,24410.83,24418],[24417.95,24423.7,24407.69,24414],[24414.41,24419.16,24408.98,24416]],"title":"NIFTY 5m · Two stop-outs end the day","subtitle":"Example — not a real trade · day P&L −₹1,997","overlays":[{"data":[24436.02,24441.04,24445.71,24449.26,24451.63,24453.04,24453.36,24453.82,24454.86,24455.42,24455.23,24454.57,24454.11,24453.96,24453.82,24453.75,24453.51,24452.91,24452.78,24452.71,24452.18,24451.29,24450.23,24449.24,24448.26,24447.33],"color":"#c084fc","width":2},{"data":[24425.64,24432.53,24439.14,24444.18,24447.59,24449.82,24449.93,24451.75,24453.96,24454.63,24453.72,24452.31,24451.81,24451.83,24451.46,24451.7,24450.78,24449.37,24450,24449.81,24448.12,24445.44,24442.54,24440.2,24437.71,24435.64],"color":"#60a5fa","width":1.6}],"shades":[{"from":7,"to":10,"color":"rgba(239,83,80,0.08)"},{"from":18,"to":20,"color":"rgba(239,83,80,0.08)"},{"from":21,"to":25,"label":"Day over","color":"rgba(139,152,172,0.08)"}],"markers":[{"i":7,"price":24443.92,"type":"buy","text":"BUY 1"},{"i":10,"price":24443.92,"type":"exit","text":"Stop"},{"i":18,"price":24431.84,"type":"buy","text":"BUY 2"},{"i":20,"price":24429.87,"type":"exit","text":"Stop"}],"legend":[{"label":"VWAP","color":"#c084fc"},{"label":"EMA20","color":"#60a5fa"}]});
 </script>
-
-</div><!-- /.wrap -->
 </body>
 </html>

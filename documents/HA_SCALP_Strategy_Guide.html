@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>HA Scalp — Strategy Guide</title>
 <style>
   :root { color-scheme: dark; }
@@ -49,6 +49,37 @@
   .tv-cap b { color: #c9d1d9; }
   .tv-empty { color: #6e7681; padding: 40px; text-align: center; font-size: 0.9rem; }
 
+
+/* ── Guide v3 additions (HA palette) ── */
+.container { max-width: 920px; margin: 0 auto; }
+section { padding: 6px 0 10px; }
+.section-header h2 { display: flex; align-items: center; gap: 10px; }
+.section-header h2 .num { background: #0ea5e9; color: #0d1117; width: 30px; height: 30px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 0.85rem; font-weight: 800; flex-shrink: 0; font-family: inherit; }
+.section-header p { color: #8b949e; margin-top: 0; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.risk-card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 16px; text-align: center; }
+.risk-card .big { font-size: 1.8rem; font-weight: 800; color: #0ea5e9; }
+.risk-card .label { font-size: 0.82rem; color: #8b949e; }
+.tip-box { background: rgba(14,165,233,0.06); border: 1px solid rgba(14,165,233,0.25); border-left: 4px solid #0ea5e9; border-radius: 8px; padding: 14px 18px; margin: 14px 0; }
+.tip-box .tip-title { font-weight: 700; color: #0ea5e9; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+.tldr { background: linear-gradient(135deg, rgba(14,165,233,0.10), rgba(88,166,255,0.05)); border: 1px solid rgba(14,165,233,0.35); border-radius: 10px; padding: 18px 22px; margin: 22px 0 8px; }
+.tldr h2 { margin: 0 0 8px; border: 0; padding: 0; }
+.steps { counter-reset: st; list-style: none; padding-left: 0; }
+.steps > li { counter-increment: st; position: relative; padding-left: 36px; margin-bottom: 9px; }
+.steps > li::before { content: counter(st); position: absolute; left: 0; top: 2px; width: 24px; height: 24px; border-radius: 50%; background: #0ea5e9; color: #0d1117; font-size: 0.78rem; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; }
+.example-tag { display: inline-block; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase; color: #d29922; border: 1px solid rgba(210,153,34,0.45); border-radius: 4px; padding: 1px 7px; margin-bottom: 4px; }
+h3.sub { margin-top: 26px; }
+.text-green { color: #3fb950; } .text-red { color: #f85149; } .text-muted { color: #8b949e; }
+.fs-sm { font-size: 0.88rem; } .mt-1 { margin-top: 8px; } .mt-2 { margin-top: 16px; }
+.table-wrap { overflow-x: auto; }
+pre { margin: 0; white-space: pre; overflow-x: auto; } pre code { background: none; padding: 0; color: #c9d1d9; }
+nav.toc { margin: 0 -18px; padding: 10px 18px; background: #0d1117; border-bottom: 1px solid #21262d; position: sticky; top: 0; z-index: 50; }
+nav.toc .container { display: flex; flex-wrap: wrap; gap: 4px 6px; }
+nav.toc a { font-size: 0.8rem; padding: 3px 9px; border-radius: 6px; color: #8b949e; text-decoration: none; }
+nav.toc a:hover { background: #161b22; color: #58a6ff; }
+@media (max-width: 768px) { .grid-4 { grid-template-columns: 1fr 1fr !important; } }
+
 /* ── MOBILE (shared block — keep in sync across all guides) ── */
   @media (max-width: 768px) {
     /* The setting tables are three columns of prose. A table cannot lay out
@@ -84,394 +115,234 @@
 </head>
 <body>
 <div class="wrap">
-
 <header class="hero">
-  <div class="kicker">Strategy 13 · Zerodha · NIFTY 50 OPTIONS · Plain-English edition</div>
+  <div class="kicker">Zerodha orders · Fyers data · NIFTY 50 options · Simple-English edition</div>
   <h1>HA Scalp</h1>
-  <p>Ordinary candles are noisy — every wick is a fight that may mean nothing. <em>Heikin Ashi</em> candles smooth that away and leave a simpler picture: a run of same-coloured candles is a trend, and a candle with <b>no wick at all</b> on one side is a candle where the other side never showed up. This strategy waits for exactly that candle, in the direction the 50-period average says the market is already going.</p>
-  <p class="muted" style="margin-top:10px;">Updated 2026-08-28 &nbsp;·&nbsp; plain-English edition &nbsp;·&nbsp; every chart and every number below was produced by running the real engine over real NIFTY data</p>
+  <p>A Heikin Ashi candle with <b>no wick</b>, in the direction of the 50-candle average, on the 15-minute NIFTY chart. The bot buys one CE or PE, puts the stop under (or over) that candle, and gets out when the candles say the push is over.</p>
+  <p class="muted" style="margin-top:10px;">Checked against the code: 2026-10-08 · every chart is an example built by running the real engine over made-up candles</p>
 </header>
+
+<nav class="toc no-print">
+  <div class="container">
+    <a href="#minute">In one minute</a><a href="#ha">What Heikin Ashi is</a><a href="#words">Words</a>
+    <a href="#side">Step 1 · Pick the side</a><a href="#candle">Step 2 · The no-wick candle</a><a href="#entry">Step 3 · Entry &amp; stop</a>
+    <a href="#exits">Step 4 · Exits</a><a href="#limits">Day limits</a><a href="#notrade">A no-trade day</a>
+    <a href="#example">Worked example</a><a href="#modes">Paper, Live, Backtest</a><a href="#settings">All settings</a><a href="#unknown">Good to know</a>
+  </div>
+</nav>
+
+<div class="container">
+  <div class="tldr" id="minute">
+    <h2>In one minute</h2>
+    <ol class="steps">
+      <li>The bot reads <b>15-minute candles</b> of the <b>NIFTY 50 index</b>. It turns them into <b>Heikin Ashi (HA)</b> candles — smoothed candles that make a trend easy to see.</li>
+      <li><b>Pick the side:</b> if the last real close is <b>above</b> the 50-candle simple moving average (<b>50 SMA</b>), only a <b>CE</b> (call, gains when NIFTY rises) is allowed. <b>Below</b> it, only a <b>PE</b> (put, gains when NIFTY falls).</li>
+      <li><b>The signal:</b> a green HA candle with <b>no bottom wick</b> (for CE) or a red HA candle with <b>no top wick</b> (for PE). Its body must be at least 5 points and it must not be a doji.</li>
+      <li><b>Entry:</b> at the very next price after that candle closes (the next candle's open). One lot of a strike <b>one step in-the-money</b>.</li>
+      <li><b>Stop-loss:</b> the signal candle's <b>real</b> low minus 15 points (CE) or real high plus 15 points (PE). It moves to breakeven at +20 points and trails 20 points behind the best price from +25 points.</li>
+      <li><b>Exit</b> on the stop, a <b>doji</b> HA candle, an <b>opposite-colour</b> HA candle, a <b>weak</b> HA candle, the all-strategy <b>profit lock</b>, or the <b>15:15</b> square-off. There is no fixed target.</li>
+      <li><b>Day limits:</b> at most 3 trades, stop after 2 stop-outs or a ₹3,000 loss.</li>
+    </ol>
+  </div>
+</div>
 
 <!--LIVE_STATUS_PANEL-->
 
-<div class="card bad">
-  <strong>Read this first: this strategy has never traded.</strong> Not one paper session, not one live order, zero trades in existence. Every figure in this guide comes from running <code>src/strategies/ha_scalp.js</code> over six months of cached NIFTY 15-minute candles. That measures how often the rules <em>fire</em> and how the trades <em>end</em> — it does not measure whether they make money, because option premiums are not modelled anywhere in it. Any rupee figure you see from a backtest is simulated.
-</div>
-
-<div class="card">
-  <strong>What's inside</strong>
-  <ol style="margin:10px 0 0; columns:2; column-gap:30px;">
-    <li><a href="#idea">The idea in one minute</a></li>
-    <li><a href="#ha">What a Heikin Ashi candle is</a></li>
-    <li><a href="#glossary">Words you'll see</a></li>
-    <li><a href="#trend">Step 1 — Which side we're allowed to take</a></li>
-    <li><a href="#entry">Step 2 — The candle with no wick</a></li>
-    <li><a href="#levels">Step 3 — Where we get in and where we're wrong</a></li>
-    <li><a href="#exit">Step 4 — How we get out</a></li>
-    <li><a href="#reject">The trades it refuses</a></li>
-    <li><a href="#measured">What six months of real data says</a></li>
-    <li><a href="#stopsize">The stop-size problem</a></li>
-    <li><a href="#risk">Safety limits</a></li>
-    <li><a href="#modes">Paper, Live, Backtest &amp; Replay</a></li>
-    <li><a href="#config">All the settings, explained</a></li>
-    <li><a href="#missing">What's still missing</a></li>
-  </ol>
-</div>
-
-<h2 id="idea">1. The idea in one minute</h2>
-
-<p>A normal candlestick tells you four prices and a lot of noise. Price can spend fifteen minutes thrashing up and down, finish where it started, and leave a candle with long wicks on both ends that tells you almost nothing about direction.</p>
-
-<p><b>Heikin Ashi</b> — Japanese for "average bar" — replaces each candle with a smoothed version of itself. Colours stop flickering. A trend shows up as a long run of one colour, and the moments where one side of the market completely gives up show up as a candle with <em>no wick</em> on that side.</p>
-
-<p>That wick-free candle is the whole signal. If a Heikin Ashi candle is green and has <b>no bottom wick</b>, then across that entire fifteen minutes, nothing traded below where the candle opened. Sellers never got a look in. This strategy buys a Call on that candle — but only if the market is already above its 50-period average, so it is pushing with the trend, not against it.</p>
-
-<div class="flow">
-  <span class="step">50 MA says UP → Calls only</span><span class="arrow">→</span>
-  <span class="step">Green HA candle, no bottom wick</span><span class="arrow">→</span>
-  <span class="step">Buy at the next candle's open</span><span class="arrow">→</span>
-  <span class="step">Stop = that candle's real low</span><span class="arrow">→</span>
-  <span class="step">Exit on a doji or a weak candle</span>
-</div>
-
-<p>Everything below the mirror-images for a downtrend: below the 50 MA, red Heikin Ashi candle with no <em>top</em> wick, buy a Put, stop at that candle's real high.</p>
-
-<div class="card accent">
-  <strong>One instrument, one chart.</strong> Every decision is read off <b>15-minute NIFTY 50 spot</b> candles. There is no VIX gate, no open-interest filter, no RSI, no ADX, no ATR, no volume test and no second timeframe. The 50 MA and the shape of one Heikin Ashi candle are the entire input.
-</div>
-
-<h2 id="ha">2. What a Heikin Ashi candle is</h2>
-
-<p>A Heikin Ashi candle is built from the ordinary candle, using four short formulas. This is the only definition used anywhere in this repo:</p>
-
-<pre><code>haClose = (open + high + low + close) / 4        ← the average of this bar's four prices
-haOpen  = (previous haOpen + previous haClose) / 2 ← the midpoint of the last HA candle
-haHigh  = max(high, haOpen, haClose)
-haLow   = min(low,  haOpen, haClose)</code></pre>
-
-<p>Two consequences matter, and they matter a great deal.</p>
-
-<p><b>First: the candle remembers.</b> <code>haOpen</code> is built from the <em>previous</em> HA candle, which was built from the one before it. Each candle carries an echo of everything that came before, which is exactly why the colours stop flickering — and also why the chain has to be warmed up before it means anything. The engine refuses to make any decision until <code>HA_SCALP_HA_WARMUP_BARS</code> (20) candles are behind it. It also keeps the chain running <b>across the overnight gap</b> rather than restarting each morning, because that is what TradingView draws, and the rules were read off a TradingView chart.</p>
-
-<div class="card warn">
-  <strong>Second, and this is the trap: a Heikin Ashi price never traded.</strong> <code>haClose</code> is the average of four numbers. No buyer and no seller ever met there. So the engine splits the two jobs cleanly and never mixes them:
-  <ul style="margin:10px 0 0;">
-    <li><b>Decisions</b> — colour, wick, doji, weakness — are read off the <b>Heikin Ashi</b> candle.</li>
-    <li><b>Prices</b> — the entry reference and the stop level — are read off the <b>raw</b> candle.</li>
+<section id="ha"><div class="container">
+  <div class="section-header"><h2><span class="num">1</span> What a Heikin Ashi candle is</h2>
+  <p>"Heikin Ashi" is Japanese for "average bar". Each HA candle is built from the normal (raw) candle with four short sums.</p></div>
+  <div class="card"><pre><code>HA close = (open + high + low + close) ÷ 4      ← average of this candle's 4 prices
+HA open  = (previous HA open + previous HA close) ÷ 2   ← middle of the last HA body
+HA high  = the highest of: high, HA open, HA close
+HA low   = the lowest of:  low,  HA open, HA close</code></pre></div>
+  <ul>
+    <li><b>The candle remembers.</b> HA open comes from the HA candle before it. That is why colours change less often and trends look clean. The bot waits until at least <b>20</b> candles of history exist before it trusts the colours, and it needs <b>51</b> candles in total (for the 50 SMA), so it loads about 15 days of history when it starts. The HA chain also runs across nights, just like TradingView draws it.</li>
+    <li><b>An HA price never traded.</b> HA close is an average — nobody bought or sold there. So the bot <b>decides</b> with HA candles (colour, wick, doji, weak) but uses <b>raw</b> prices for the entry and the stop.</li>
   </ul>
-  Putting a stop at a Heikin Ashi low would place it at a price the market never printed. That is the classic Heikin Ashi mistake and it silently invents fills that could not have happened.
+  <div class="tv-chart" id="ha-raw"></div>
+<p class="tv-cap"><span class="example-tag">Example — not a real trade</span><br><b>What you see:</b> one day of normal 15-minute NIFTY candles. Colours flip often, and wicks stick out on both ends. It is hard to say when the push really started. <b>Why it matters:</b> this is the chart the exchange prints. The bot's entry and stop prices come from here.</p>
+  <div class="tv-chart" id="ha-ha"></div>
+<p class="tv-cap"><span class="example-tag">Example — not a real trade</span><br><b>What you see:</b> the same day as Heikin Ashi candles. The midday rise becomes a clean run of green candles. The 50 SMA (blue) is below price, so only CE trades are allowed. At 11:00 a green candle still has a bottom wick, so the bot skips it. The 12:00 candle is green with <b>no bottom wick</b> — the signal. The bot buys a CE at the next open, <b>24,402</b>. The stop starts at <b>24,366</b>, then jumps up as the trade gains. At 13:00 the option's premium slips back to the locked floor and the profit lock sells: <b>EXIT 24,436</b>, +34 points (roughly ₹1,328 on one lot). <b>Why it matters:</b> one picture, the whole idea.</p>
+  <h3 class="sub">The sums, on three real candles from that chart</h3>
+  <div class="table-wrap"><table><thead><tr><th>Candle</th><th>Raw O / H / L / C</th><th>HA O / H / L / C</th><th>HA result</th></tr></thead><tbody><tr><td>11:30</td><td>24,367 / 24,385 / 24,362 / 24,374</td><td>24363.8 / 24384.7 / 24362.3 / 24372.2</td><td>green, bottom wick 1.5 pts</td></tr><tr><td>11:45</td><td>24,374 / 24,401 / 24,365 / 24,390</td><td>24368.0 / 24400.7 / 24364.8 / 24382.4</td><td>green, bottom wick 3.1 pts</td></tr><tr><td>12:00</td><td>24,390 / 24,411 / 24,381 / 24,402</td><td>24375.2 / 24410.5 / 24375.2 / 24395.8</td><td>green, bottom wick 0.0 pts</td></tr></tbody></table></div>
+  <p class="fs-sm text-muted mt-1">On the 12:00 candle the raw low (24,381) is above the HA open (24375.2). So the HA low equals the HA open, and the bottom wick is exactly zero. Nothing traded below where the HA candle "opened".</p>
+</div></section>
+
+<section id="words"><div class="container">
+  <div class="section-header"><h2><span class="num">2</span> Words you will see</h2></div>
+  <div class="table-wrap"><table><thead><tr><th>Word</th><th>Plain meaning</th></tr></thead><tbody>
+    <tr><td><b>CE / PE</b></td><td>Call option (gains when NIFTY rises) / put option (gains when NIFTY falls). One at a time.</td></tr>
+    <tr><td><b>Premium</b></td><td>The option's price in rupees per unit.</td></tr>
+    <tr><td><b>ITM</b></td><td>"In the money". This bot buys a strike one step (50 points) in the money — a bit more expensive than at-the-money, but it follows NIFTY more closely (about 0.6 rupee per point).</td></tr>
+    <tr><td><b>Raw candle</b></td><td>The normal candle the exchange prints. Used for every price.</td></tr>
+    <tr><td><b>HA candle</b></td><td>The smoothed candle. Used for every decision.</td></tr>
+    <tr><td><b>Body / range / wick</b></td><td>Body = HA open to HA close. Range = HA high to HA low. Wick = the thin part outside the body.</td></tr>
+    <tr><td><b>No wick</b></td><td>The wick on one side is exactly zero (0% of the range, by default).</td></tr>
+    <tr><td><b>Doji</b></td><td>An HA candle whose body is <b>20% of its range or less</b>. Buyers and sellers are even. A warning that the trend may turn.</td></tr>
+    <tr><td><b>Weak candle</b></td><td>An HA candle of the trade's colour, but with a body <b>under 40%</b> of its range. The push is fading.</td></tr>
+    <tr><td><b>SMA</b></td><td>Simple moving average — the plain average of the last 50 raw closes (12½ hours of 15-minute candles, about two trading days).</td></tr>
+    <tr><td><b>Stop-loss (stop)</b></td><td>The NIFTY price where the trade is closed to cap a loss. Checked on every price tick.</td></tr>
+    <tr><td><b>Breakeven / trail</b></td><td>Moving the stop to the entry price / letting the stop follow the best price.</td></tr>
+    <tr><td><b>Profit lock</b></td><td>An all-strategy rule on the option premium: once it is up 8%, never let the trade fall back below a locked floor.</td></tr>
+  </tbody></table></div>
+</div></section>
+
+<section id="side"><div class="container">
+  <div class="section-header"><h2><span class="num">3</span> Step 1 — Which side we may trade</h2>
+  <p>Before looking at any candle shape, the bot asks one question: is the last raw close above or below the 50 SMA?</p></div>
+  <div class="grid-2">
+    <div class="card"><h3 class="text-green">Close above the 50 SMA → CE only</h3><p class="fs-sm">Only green HA candles with no bottom wick can open a trade.</p></div>
+    <div class="card"><h3 class="text-red">Close below the 50 SMA → PE only</h3><p class="fs-sm">Only red HA candles with no top wick can open a trade.</p></div>
+  </div>
+  <p>If the close sits exactly on the SMA, the bot stands aside. The SMA is computed on <b>raw</b> closes, the way a normal chart draws it. You can switch it to an EMA in Settings, but the rules were written for a plain SMA.</p>
+  <div class="tv-chart" id="ha-trend"></div>
+<p class="tv-cap"><span class="example-tag">Example — not a real trade</span><br><b>What you see:</b> NIFTY bounces hard in the morning. At 11:00 the HA candle is green, has a 23-point body and <b>no bottom wick</b> — on shape alone, a perfect CE signal. But the raw close (24,334) is still below the 50 SMA (24,347). The trend says PE only, so the bot refuses: "no entry against the trend". Later, price is above the SMA, but those green candles all have bottom wicks. <b>Why it matters:</b> the SMA gate is the rule that stops the bot from buying bounces inside a downtrend.</p>
+  <h3 class="sub">Not too far from the average</h3>
+  <p>The bot also skips a setup when the raw close is more than <b>150 points</b> away from the 50 SMA. A move that far from its average is already stretched.</p>
+  <div class="tv-chart" id="ha-stretch"></div>
+<p class="tv-cap"><span class="example-tag">Example — not a real trade</span><br><b>What you see:</b> a strong rally day. At 09:45 a big green HA candle with no bottom wick forms — but the close is 159.2 points above the 50 SMA. The purple line marks SMA + 150. Every candle this day sits above it, so the bot logs "move already stretched, no entry" all day. <b>Why it matters:</b> late entries into an over-extended move often catch the top. (Paper trades entered 150–220 points from the SMA all lost, which is why the 150 default exists.)</p>
+</div></section>
+
+<section id="candle"><div class="container">
+  <div class="section-header"><h2><span class="num">4</span> Step 2 — The candle with no wick</h2>
+  <p>With the side settled, the bot looks at the HA candle that has just closed. It checks these in order. The first "no" ends the check.</p></div>
+  <ol class="steps">
+    <li><b>Is it a doji?</b> If the body is 20% of the range or less, it is a doji — never an entry.</li>
+    <li><b>Is it the right colour?</b> Green for a CE, red for a PE.</li>
+    <li><b>Is the body big enough?</b> At least <b>5 points</b>. (A flat candle has "no wick" by accident.)</li>
+    <li><b>Is the wick zero on the side that matters?</b> CE: no bottom wick. PE: no top wick. The default allows <b>0%</b> of the range — exactly zero.</li>
+    <li><b>Is there room for the stop?</b> The raw close must be above the stop (CE) or below it (PE). An optional maximum stop distance can also skip very wide stops (off by default).</li>
+  </ol>
+  <div class="tip-box"><div class="tip-title">Why "no wick" means something</div><p class="fs-sm">On a green HA candle the bottom of the body is the HA open. No wick below it means that for the whole 15 minutes, the real price never went under that level. Sellers never got a look in. Because of how HA candles are built, this happens quite often in a real trend — the rule is strict, but it does fire.</p></div>
+  <h3 class="sub">When signals are allowed</h3>
+  <p>The candle must <b>close after 09:30</b> and <b>by 15:00</b>. So the first possible signal candle is 09:30–09:45, and the last is 14:45–15:00. The 09:15 candle can never be a signal.</p>
+  <p>The overview chart in Section 1 shows both a refused candle (a bottom wick at 11:00) and the accepted one at 12:00.</p>
+</div></section>
+
+<section id="entry"><div class="container">
+  <div class="section-header"><h2><span class="num">5</span> Step 3 — Entry and stop</h2><p>Both numbers come from the raw candle, never the HA one.</p></div>
+  <div class="table-wrap"><table><thead><tr><th></th><th>Rule</th></tr></thead><tbody>
+    <tr><td><b>Entry</b></td><td>The first NIFTY price after the signal candle closes — the open of the next candle. If that price is already past the stop, the entry is cancelled.</td></tr>
+    <tr><td><b>Stop (CE)</b></td><td>Signal candle's raw low <b>− 15 points</b>.</td></tr>
+    <tr><td><b>Stop (PE)</b></td><td>Signal candle's raw high <b>+ 15 points</b>.</td></tr>
+    <tr><td><b>Target</b></td><td>None.</td></tr>
+  </tbody></table></div>
+  <p>The 15-point cushion exists because stops right on the candle's low were hit by normal noise within minutes in paper trading.</p>
+  <div class="tv-chart" id="ha-pe"></div>
+<p class="tv-cap"><span class="example-tag">Example — not a real trade</span><br><b>What you see:</b> NIFTY is below the 50 SMA, so only PE trades count. The 09:45 HA candle is red with <b>no top wick</b> (body 15 pts). The bot buys a PE at the next open, <b>24,226</b>. The stop is that candle's raw high 24,241 + 15 = <b>24,256</b>. At 10:30 the HA candle is still red but its body is only 29% of its range — a <b>weak</b> candle — so the bot exits at <b>24,217</b>, +9 points. <b>Why it matters:</b> for a PE everything is upside-down: below the SMA, red candle, stop above.</p>
+  <div class="tv-chart" id="ha-stop"></div>
+<p class="tv-cap"><span class="example-tag">Example — not a real trade</span><br><b>What you see:</b> a valid CE signal at 11:30. Raw low 24,391 (grey line) − 15 gives a stop at <b>24,376</b>. The bot buys at <b>24,395</b>. In the same 15 minutes NIFTY drops and touches the stop: <b>−20 points</b>, about ₹762 lost. <b>Why it matters:</b> the risk of each trade is set by how tall the signal candle was. This counts as a stop-out for the day limit.</p>
+</div></section>
+
+<section id="exits"><div class="container">
+  <div class="section-header"><h2><span class="num">6</span> Step 4 — How a trade ends</h2><p>First one to happen wins.</p></div>
+  <div class="table-wrap"><table><thead><tr><th>Exit</th><th>Checked</th><th>Plain words</th></tr></thead><tbody>
+    <tr><td><b>Profit lock</b></td><td>Every tick</td><td>All-strategy rule on the option premium (on by default). Once the premium is <b>8%</b> above the buy price, the trade may never be sold below <b>+5%</b>. The floor then rises with the best premium: it keeps 85% of the gain while the gain is under 20%, 80% under 40%, and 70% above that.</td></tr>
+    <tr><td><b>Stop</b></td><td>Every tick</td><td>NIFTY touches the current stop (first, breakeven or trailed).</td></tr>
+    <tr><td><b>Breakeven</b></td><td>Candle close</td><td>Once the best NIFTY price is <b>20 points</b> in our favour, the stop moves to the entry price.</td></tr>
+    <tr><td><b>Trail</b></td><td>Candle close</td><td>Once the best price is <b>25 points</b> in our favour, the stop sits <b>20 points</b> behind the best price. It only tightens.</td></tr>
+    <tr><td><b>Doji</b></td><td>Candle close</td><td>An HA candle with a body of 20% of its range or less — of any colour.</td></tr>
+    <tr><td><b>Opposite colour</b></td><td>Candle close</td><td>A red HA candle while holding a CE (or green while holding a PE).</td></tr>
+    <tr><td><b>Weak</b></td><td>Candle close</td><td>Right colour, but the body is under 40% of the range.</td></tr>
+    <tr><td><b>Square-off</b></td><td>Clock</td><td>At <b>15:15</b> anything still open is sold.</td></tr>
+  </tbody></table></div>
+  <p class="mt-2">The candle-close exits never look at the signal candle itself — only candles after it. They can fire on the very candle the trade was bought in, when it closes.</p>
+
+  <h3 class="sub">Doji exit</h3>
+  <div class="tv-chart" id="ha-doji"></div>
+<p class="tv-cap"><span class="example-tag">Example — not a real trade</span><br><b>What you see:</b> a CE bought at <b>24,388</b>. The next HA candle (10:30) has a body of only 6 points in a 31-point range — 18%, a doji. The bot exits at that candle's close, <b>24,384</b> (-5 pts). <b>Why it matters:</b> the trade was opened on one-sided strength. A doji says that strength is gone, so the bot does not wait for the stop.</p>
+  <h3 class="sub">Opposite-colour exit</h3>
+  <div class="tv-chart" id="ha-opp"></div>
+<p class="tv-cap"><span class="example-tag">Example — not a real trade</span><br><b>What you see:</b> a CE bought at <b>24,412</b>. The push fades and the 13:00 HA candle closes <b>red</b>. The bot exits at <b>24,391</b> (-20 pts, about ₹797 lost). <b>Why it matters:</b> the stop was 34 points away; the red candle got the bot out earlier, for a smaller loss.</p>
+  <h3 class="sub">Breakeven</h3>
+  <div class="tv-chart" id="ha-be"></div>
+<p class="tv-cap"><span class="example-tag">Example — not a real trade</span><br><b>What you see:</b> a CE bought at <b>24,368</b>. NIFTY reaches 24,392, 23 points in our favour. At that candle's close the stop moves up from 24,341 to the entry price, <b>24,368</b>. Price falls back and touches it: the trade ends flat (only costs lost). <b>Why it matters:</b> without breakeven this trade could have become a full loss. Note: a breakeven exit still counts as a stop-out for the day limit.</p>
+  <h3 class="sub">Trailing stop</h3>
+  <div class="tv-chart" id="ha-trail"></div>
+<p class="tv-cap"><span class="example-tag">Example — not a real trade</span><br><b>What you see:</b> a CE bought at <b>24,380</b>. NIFTY reaches <b>24,406</b> (+26 points). That is past 25, so at the candle close the stop jumps straight to best − 20 = <b>24,385</b> — tighter than breakeven. The next dip touches it: <b>EXIT 24,385</b>, +5 points. <b>Why it matters:</b> the trail was added after the first 14 paper trades all gave back their open profit. Here it banks a small win instead of a loss.</p>
+  <h3 class="sub">Profit lock</h3>
+  <p>In the overview chart, the option was bought at about ₹240 (example price). It peaked near ₹264 (+10%), which armed the lock. The floor became ₹260 (keeping 85% of the gain). When the premium fell back to it, the bot sold. In NIFTY terms that was <b>24,436</b>, 6 points below the best price. This exit does <b>not</b> count as a stop-out.</p>
+  <h3 class="sub">Square-off at 15:15</h3>
+  <div class="tv-chart" id="ha-eod"></div>
+<p class="tv-cap"><span class="example-tag">Example — not a real trade</span><br><b>What you see:</b> a late CE signal at 14:30, bought at <b>24,359</b> at 14:45. No stop, doji or weak candle ends it. At <b>15:15</b> the bot sells: <b>24,380</b>, +21 points. After 15:00 no new signal is allowed (red shade). <b>Why it matters:</b> nothing is held overnight.</p>
+</div></section>
+
+<section id="limits"><div class="container">
+  <div class="section-header"><h2><span class="num">7</span> Day limits</h2><p>Checked after every exit. When one trips, the bot takes no more entries today.</p></div>
+  <div class="grid-4">
+    <div class="risk-card"><div class="big">3</div><div class="label">trades per day</div></div>
+    <div class="risk-card"><div class="big">2</div><div class="label">stop-outs end the day</div></div>
+    <div class="risk-card"><div class="big">₹3,000</div><div class="label">daily loss cap</div></div>
+    <div class="risk-card"><div class="big">15:15</div><div class="label">square-off</div></div>
+  </div>
+  <div class="table-wrap mt-2"><table><thead><tr><th>Limit</th><th>Default</th><th>Plain words</th></tr></thead><tbody>
+    <tr><td>Max trades per day</td><td>3</td><td>No fourth entry.</td></tr>
+    <tr><td>Stop-outs that end the day</td><td>2</td><td>Any exit by the stop counts — first stop, breakeven stop or trailed stop, even if it made money. Profit-lock, doji, weak and square-off exits do not count.</td></tr>
+    <tr><td>Max daily loss</td><td>₹3,000</td><td>Stop when the day's P&amp;L reaches −₹3,000.</td></tr>
+    <tr><td>Daily profit lock</td><td>0 (off)</td><td>Stop for the day after banking this much.</td></tr>
+    <tr><td>Max weekly loss</td><td>0 (off)</td><td>Stop for the week after losing this much.</td></tr>
+    <tr><td>Whole-account loss cap</td><td>off</td><td><code>PORTFOLIO_MAX_DAILY_LOSS</code> across all strategies.</td></tr>
+  </tbody></table></div>
+  <div class="tv-chart" id="ha-two"></div>
+<p class="tv-cap"><span class="example-tag">Example — not a real trade</span><br><b>What you see:</b> two CE signals in the morning. The first, bought at 24,350, is stopped at 24,320 in its first 15 minutes. The second, bought at 24,357, is stopped at 24,326. That is 2 stop-outs, so at 11:45 the day closes (red shade). <b>Why it matters:</b> on a day the signals keep failing, the bot stops before a third loss.</p>
+</div></section>
+
+<section id="notrade"><div class="container">
+  <div class="section-header"><h2><span class="num">8</span> A no-trade day</h2></div>
+  <div class="tv-chart" id="ha-chop"></div>
+<p class="tv-cap"><span class="example-tag">Example — not a real trade</span><br><b>What you see:</b> NIFTY drifts sideways around the 50 SMA. Candles flip colour, many are dojis, and the few strong ones have wicks on the wrong side. The bot logs a reason at every candle close but takes no trade. <b>Why it matters:</b> sideways days are where the SMA gate and the no-wick rule earn their keep — by doing nothing.</p>
+</div></section>
+
+<section id="example"><div class="container">
+  <div class="section-header"><h2><span class="num">9</span> Worked example</h2><p>The overview trade from Section 1, step by step.</p></div>
+  <div class="card"><ol class="steps">
+    <li><b>12:00 candle closes.</b> Raw close <b>24,402</b> is above the 50 SMA (24,322) — CE side, and only 80 points away (under 150).</li>
+    <li>The HA candle is green: HA open 24375.2, HA close 24395.8. Body 20.6 pts out of a 35.4-pt range (58% — not a doji). HA low = HA open, so <b>no bottom wick</b>. Signal!</li>
+    <li><b>12:15</b> — the first price of the next candle is <b>24,402</b>. Buy one lot of the CE one strike in-the-money.</li>
+    <li><b>Stop</b> = raw low 24,381 − 15 = <b>24,366</b> (37 points of risk).</li>
+    <li>NIFTY climbs to <b>24,442</b>. The stop moves up with the trail. The option premium rises over 8%, so the profit lock arms.</li>
+    <li><b>13:00</b> — NIFTY slips back; the premium touches the locked floor. Sold at about <b>24,436</b>: <b>+34 points</b>, roughly ₹1,328 on one lot before costs (using 0.6 rupee per point × 65 units).</li>
+  </ol></div>
+</div></section>
+
+<section id="modes"><div class="container">
+  <div class="section-header"><h2><span class="num">10</span> Paper, Live, Backtest and Replay</h2><p>All four call the same engine file, so the decisions match. Paper is the reference.</p></div>
+  <div class="table-wrap"><table><thead><tr><th>Mode</th><th>What it does</th></tr></thead><tbody>
+    <tr><td><b>Paper</b> <code>/ha-scalp-paper</code></td><td>Live data, pretend orders. Candles come from the Fyers history feed at each 15-minute close (about 5 seconds after, so the candle is published). The live tick feed is used only to test the stop and to fill the entry. Real option quotes are used for P&amp;L and the profit lock.</td></tr>
+    <tr><td><b>Live</b> <code>/ha-scalp-live</code></td><td>Runs the paper engine and copies each decision to <b>Zerodha</b> as a real order. Needs both logins (Fyers for data, Zerodha for orders). A real order needs <b>all three</b>: <code>HA_SCALP_LIVE_ENABLED=true</code>, <code>LIVE_HARNESS_DRY_RUN=false</code>, and <code>HA_SCALP_LIVE_DRY_RUN</code> not true. It has never placed a live order.</td></tr>
+    <tr><td><b>Backtest</b> <code>/ha-scalp-backtest</code></td><td>Past 15-minute candles. Fills at the next candle's open. The stop is tested on the candle's low/high <b>before</b> the candle-close exits, so a candle that did both counts as the loss. A gap past the stop fills at the open. The option price is estimated (0.55 per point, about 8 points of decay a day, ₹240 starting premium) with 1.5 points of slippage each way. It does <b>not</b> model the all-strategy premium profit lock, so its exits can differ from paper.</td></tr>
+    <tr><td><b>Replay</b> <code>/replay</code></td><td>Plays back a recorded day tick by tick, to compare Paper and Live decisions.</td></tr>
+  </tbody></table></div>
+</div></section>
+
+<section id="settings"><div class="container">
+  <div class="section-header"><h2><span class="num">11</span> All the settings</h2><p>Defaults are the values in the code.</p></div>
+  <h3 class="sub">Mode & live</h3><div class="table-wrap"><table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody><tr><td><code>HA_SCALP_MODE_ENABLED</code></td><td>true</td><td>Show the HA Scalp menu and settings.</td></tr><tr><td><code>HA_SCALP_PAPER_ENABLED</code></td><td>true</td><td>Allow new paper sessions.</td></tr><tr><td><code>HA_SCALP_LIVE_ENABLED</code></td><td>false</td><td>Allow real Zerodha orders (still needs the global switch off).</td></tr><tr><td><code>HA_SCALP_LIVE_DRY_RUN</code></td><td>false</td><td>Keep it simulated even when live is on.</td></tr><tr><td><code>LIVE_HARNESS_DRY_RUN</code></td><td>true</td><td>Global master switch — while true, no real orders anywhere.</td></tr></tbody></table></div>
+<h3 class="sub">The chart</h3><div class="table-wrap"><table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody><tr><td><code>HA_SCALP_RESOLUTION</code></td><td>15</td><td>Candle size in minutes. The rules were written for 15.</td></tr><tr><td><code>HA_SCALP_HA_CONTINUOUS</code></td><td>true</td><td>Carry the HA chain across nights (like TradingView). Off = restart each day.</td></tr><tr><td><code>HA_SCALP_HA_WARMUP_BARS</code></td><td>20</td><td>HA candles needed before the bot trusts the colours.</td></tr><tr><td><code>HA_SCALP_WARMUP_DAYS</code></td><td>15</td><td>Calendar days of history loaded at start.</td></tr></tbody></table></div>
+<h3 class="sub">Trend gate</h3><div class="table-wrap"><table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody><tr><td><code>HA_SCALP_MA_PERIOD</code></td><td>50</td><td>Length of the moving average that picks the side.</td></tr><tr><td><code>HA_SCALP_MA_TYPE</code></td><td>sma</td><td>sma or ema.</td></tr><tr><td><code>HA_SCALP_MAX_MA_DIST_PTS</code></td><td>150</td><td>Skip when the raw close is further than this from the MA (0 = off).</td></tr></tbody></table></div>
+<h3 class="sub">Entry candle</h3><div class="table-wrap"><table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody><tr><td><code>HA_SCALP_MAX_WICK_PCT</code></td><td>0</td><td>Wick allowed on the 'no wick' side, as % of range. 0 = exactly none.</td></tr><tr><td><code>HA_SCALP_MIN_BODY_PTS</code></td><td>5</td><td>Smallest HA body for a signal.</td></tr></tbody></table></div>
+<h3 class="sub">Exits</h3><div class="table-wrap"><table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody><tr><td><code>HA_SCALP_EXIT_ON_DOJI</code></td><td>true</td><td>Exit on a doji HA candle.</td></tr><tr><td><code>HA_SCALP_DOJI_BODY_PCT</code></td><td>20</td><td>Body this % of range or less = doji.</td></tr><tr><td><code>HA_SCALP_EXIT_ON_WEAK</code></td><td>true</td><td>Exit on an opposite-colour or weak HA candle.</td></tr><tr><td><code>HA_SCALP_WEAK_BODY_PCT</code></td><td>40</td><td>Body under this % of range = weak.</td></tr><tr><td><code>HA_SCALP_TRAIL_ENABLED</code></td><td>true</td><td>Allow breakeven and trailing. Off = the stop never moves.</td></tr><tr><td><code>HA_SCALP_BREAKEVEN_PTS</code></td><td>20</td><td>Points in favour before the stop moves to entry.</td></tr><tr><td><code>HA_SCALP_TRAIL_START_PTS</code></td><td>25</td><td>Points in favour before the trail starts.</td></tr><tr><td><code>HA_SCALP_TRAIL_PTS</code></td><td>20</td><td>How far behind the best price the trail sits.</td></tr><tr><td><code>HA_SCALP_PREMIUM_BREAKEVEN_ENABLED</code></td><td>false</td><td>Also use the all-strategy premium breakeven stop.</td></tr><tr><td><code>PROFIT_LOCK_ENABLED</code></td><td>true</td><td>All-strategy premium profit lock (arm 8%, floor 5%).</td></tr></tbody></table></div>
+<h3 class="sub">Session</h3><div class="table-wrap"><table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody><tr><td><code>HA_SCALP_SESSION_START</code></td><td>09:15</td><td>Where the day's candles start.</td></tr><tr><td><code>HA_SCALP_ENTRY_START</code></td><td>09:30</td><td>Signal candle must close after this.</td></tr><tr><td><code>HA_SCALP_ENTRY_END</code></td><td>15:00</td><td>Signal candle must close by this.</td></tr><tr><td><code>HA_SCALP_FORCED_EXIT</code></td><td>15:15</td><td>Square-off time.</td></tr></tbody></table></div>
+<h3 class="sub">Risk</h3><div class="table-wrap"><table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody><tr><td><code>HA_SCALP_SL_BUFFER_PTS</code></td><td>15</td><td>Points past the signal candle's raw high/low for the stop.</td></tr><tr><td><code>HA_SCALP_MAX_SL_PTS</code></td><td>0</td><td>Skip setups with a stop further than this (0 = off).</td></tr></tbody></table></div>
+<h3 class="sub">Size & day limits</h3><div class="table-wrap"><table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody><tr><td><code>HA_SCALP_LOT_MULTIPLIER</code></td><td>0</td><td>Lots per trade. 0 = use the global LOT_MULTIPLIER (1 lot).</td></tr><tr><td><code>HA_SCALP_ITM_STEPS</code></td><td>1</td><td>Strikes in-the-money (0 = ATM).</td></tr><tr><td><code>HA_SCALP_MAX_DAILY_TRADES</code></td><td>3</td><td>Most entries per day.</td></tr><tr><td><code>HA_SCALP_MAX_DAILY_LOSSES</code></td><td>2</td><td>Stop-outs that end the day (0 = off).</td></tr><tr><td><code>HA_SCALP_MAX_DAILY_LOSS</code></td><td>3000</td><td>Day's loss that ends the day, ₹ (0 = off).</td></tr><tr><td><code>HA_SCALP_DAILY_PROFIT_LOCK</code></td><td>0</td><td>Day's profit that ends the day, ₹ (0 = off).</td></tr><tr><td><code>HA_SCALP_MAX_WEEKLY_LOSS</code></td><td>0</td><td>Week's loss that stops trading, ₹ (0 = off).</td></tr></tbody></table></div>
+<h3 class="sub">Data</h3><div class="table-wrap"><table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody><tr><td><code>HA_SCALP_POLL_MS</code></td><td>2000</td><td>How often the option premium is refreshed in a trade (ms).</td></tr><tr><td><code>HA_SCALP_HISTORY_LAG_MS</code></td><td>5000</td><td>Wait after a candle closes before fetching it (ms).</td></tr></tbody></table></div>
+<h3 class="sub">Backtest</h3><div class="table-wrap"><table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody><tr><td><code>HA_SCALP_BT_SLIPPAGE_PTS</code></td><td>1.5</td><td>Slippage each way, points.</td></tr><tr><td><code>HA_SCALP_BT_SEED_PREMIUM</code></td><td>240</td><td>Assumed option price at entry, ₹.</td></tr></tbody></table></div>
+  <p class="fs-sm text-muted mt-1">Menu toggles (<code>UI_SHOW_HA_SCALP_*</code>) and Telegram switches (<code>TG_HA_SCALP_*</code>) live in the Interface and Telegram parts of Settings.</p>
+</div></section>
+
+<section id="unknown"><div class="container">
+  <div class="section-header"><h2><span class="num">12</span> Good to know</h2></div>
+  <ul>
+    <li><b>Deliberately not here:</b> no VIX gate, no OI filter, no RSI, ADX, ATR, VWAP or SuperTrend, no volume test, no second timeframe, no fixed target, no partial booking. VIX is only recorded with each trade.</li>
+    <li><b>Wide or tiny stops.</b> The stop depends on how tall the signal candle was. The 15-point buffer fixes the tiny ones; <code>HA_SCALP_MAX_SL_PTS</code> can skip the very wide ones (off by default).</li>
+    <li><b>Live has never traded.</b> Collect clean paper sessions, compare them with <code>/replay</code>, and only then think about live.</li>
+    <li><b>Backtest rupees are rough.</b> No real option prices, and no premium profit lock. Use it for direction, not for exact P&amp;L.</li>
+    <li><b>Tune on clean data.</b> The trail (15 Sept 2026), the 15-point buffer and the 150-point SMA guard changed the rules. Older trades came from different rules.</li>
+  </ul>
+  <p class="text-muted fs-sm mt-2">Checked against <code>src/strategies/ha_scalp.js</code>, <code>src/routes/haScalpPaper.js</code>, <code>src/routes/haScalpBacktest.js</code>, <code>src/routes/haScalpLiveHarness.js</code> and <code>src/utils/tradeGuards.js</code> on 2026-10-08. Chart candles are invented; HA candles, the 50 SMA, signals, stops and exits were produced by running the engine's own functions over them. Rupee figures assume a ₹240 premium moving 0.6 per point, 65 units, before costs.</p>
+</div></section>
+
 </div>
-
-<p>The chart below is the same real session drawn both ways — the raw NIFTY candles the market actually printed, and the Heikin Ashi candles the strategy reads. Same day, same data, two very different pictures.</p>
-
-<div class="tv-chart" id="ha-raw"></div>
-<p class="tv-cap"><b>The raw chart — 20 March 2026.</b> Wicks everywhere, colours alternating. Hard to say what the trend is doing at 11:00.</p>
-
-<div class="tv-chart" id="ha-smooth"></div>
-<p class="tv-cap"><b>The same day in Heikin Ashi.</b> The noise is gone and the afternoon downtrend is a clean run of red candles. This is the chart every rule in this guide is read from.</p>
-
-<h2 id="glossary">3. Words you'll see</h2>
-
-<table>
-<tr><th>Word</th><th>What it means here</th></tr>
-<tr><td><b>Heikin Ashi (HA)</b></td><td>The smoothed candle built by the four formulas above. Used for every decision, never for a price.</td></tr>
-<tr><td><b>Raw candle</b></td><td>The ordinary NIFTY candle the exchange printed. Used for every price — entry reference and stop.</td></tr>
-<tr><td><b>Body</b></td><td>The distance between the HA open and the HA close — the solid part of the candle.</td></tr>
-<tr><td><b>Range</b></td><td>The full height of the HA candle, wick tip to wick tip.</td></tr>
-<tr><td><b>Wick</b></td><td>The thin line sticking out beyond the body. A <em>bottom</em> wick means price went below the open and came back.</td></tr>
-<tr><td><b>No wick</b></td><td>The wick is zero — or at most <code>HA_SCALP_MAX_WICK_PCT</code> of the candle's range, which defaults to <b>exactly zero</b>.</td></tr>
-<tr><td><b>Doji</b></td><td>A candle whose body is 20% of its range or less. Almost all wick, no direction. A reversal warning.</td></tr>
-<tr><td><b>Weak candle</b></td><td>A candle still the right colour but whose body has shrunk below 40% of its range. The push is fading.</td></tr>
-<tr><td><b>50 MA</b></td><td>The average of the last 50 <em>raw</em> closes. The single test of which direction we're allowed to trade.</td></tr>
-<tr><td><b>Signal candle</b></td><td>The wick-free candle that triggered the trade. Its raw low (or high) becomes the stop, frozen forever.</td></tr>
-</table>
-
-<h2 id="trend">4. Step 1 — Which side we're allowed to take</h2>
-
-<p>Before any candle shape is considered, one question is asked: <b>where is price relative to its 50-period moving average?</b> The average is computed on <em>raw</em> closes, not Heikin Ashi ones, because that is what a charting platform draws by default.</p>
-
-<div class="cols" style="display:flex;gap:14px;flex-wrap:nowrap;">
-  <div class="card" style="flex:1;"><strong>Raw close ABOVE the 50 MA</strong><br><span class="pill">CE only</span><p style="margin:8px 0 0;">Calls, and only on a <b>green</b> Heikin Ashi candle with no bottom wick.</p></div>
-  <div class="card" style="flex:1;"><strong>Raw close BELOW the 50 MA</strong><br><span class="pill">PE only</span><p style="margin:8px 0 0;">Puts, and only on a <b>red</b> Heikin Ashi candle with no top wick.</p></div>
-</div>
-
-<p>This is a <b>hard gate</b>, and it is the rule that does the most work. A textbook-perfect green wick-free candle sitting below a falling average is not a trade — it is a bounce inside a downtrend, and the engine says so in the log rather than quietly skipping it. Section 8 shows a real one.</p>
-
-<p>There is deliberately <b>no drawn trend line</b>. A hand-drawn line depends on which swing points you pick, so two people get two different answers and nothing is reproducible. The 50 MA is a number anyone can recompute.</p>
-
-<h2 id="entry">5. Step 2 — The candle with no wick</h2>
-
-<p>With the side settled, the strategy looks at the Heikin Ashi candle that has just closed and asks three things.</p>
-
-<ol>
-  <li><b>Is it the right colour?</b> Green for a Call, red for a Put. A candle of the wrong colour is never an entry, whatever else it does.</li>
-  <li><b>Is it wick-free on the side that matters?</b> For a Call, no bottom wick — nothing traded below the open. For a Put, no top wick. The tolerance is <code>HA_SCALP_MAX_WICK_PCT</code>, and it ships at <b>0</b>: the wick must be <em>exactly</em> zero.</li>
-  <li><b>Is the body real?</b> At least <code>HA_SCALP_MIN_BODY_PTS</code> (5) points. Without this, a completely flat candle satisfies "no wick" trivially and would count as a signal.</li>
-</ol>
-
-<div class="card accent">
-  <strong>Why "no wick" means something.</strong> On a green Heikin Ashi candle, the bottom of the body <em>is</em> the open. If there is no wick below it, then for the whole fifteen minutes, price never once dipped under where the candle started. Every attempt to sell was absorbed instantly. That is what the strategy is buying: not a prediction, but a candle where one side of the market visibly stopped participating.
-</div>
-
-<p>The wick is measured as a <b>percentage of the candle's own range</b>, so the tolerance means the same thing on a quiet 20-point bar and a violent 200-point one. Raising <code>HA_SCALP_MAX_WICK_PCT</code> to 5 or 10 loosens the entry considerably; leaving it at 0 is the rule as specified, and it is strict on purpose.</p>
-
-<h2 id="levels">6. Step 3 — Where we get in and where we're wrong</h2>
-
-<p>Both numbers come off the <b>raw</b> candle, never the Heikin Ashi one.</p>
-
-<table>
-<tr><th></th><th>Where it comes from</th></tr>
-<tr><td><b>Entry</b></td><td>The <b>next candle's open</b>. The signal fires the instant the 15-minute candle closes, and the fill is the very next price the market prints. Paper and Live take the first tick after the close; Backtest takes the next raw bar's open — the same event.</td></tr>
-<tr><td><b>Stop</b></td><td>The <b>signal candle's own raw low</b> for a Call, or its <b>raw high</b> for a Put, plus <code>HA_SCALP_SL_BUFFER_PTS</code> (0 by default). It then <b>moves in your favour only</b>: to breakeven once the trade is <code>HA_SCALP_BREAKEVEN_PTS</code> (15) ahead, and after <code>HA_SCALP_TRAIL_START_PTS</code> (25) it follows the best price <code>HA_SCALP_TRAIL_PTS</code> (20) behind. It never widens. Turn the whole ratchet off with <code>HA_SCALP_TRAIL_ENABLED=false</code>.</td></tr>
-<tr><td><b>Target</b></td><td><b>There isn't one.</b> No fixed target and no partial booking — the trade runs until the stop (frozen, breakeven or trailed) or a candle tells it to stop.</td></tr>
-</table>
-
-<p>The logic of the stop is simple: the signal candle was one where price never traded below its open. If price now goes back below that candle's low, the thing that made it a signal is no longer true, and the reason for the trade is gone.</p>
-
-<p>Because the stop is the candle's own extreme, <b>the trade's risk is decided entirely by how tall that candle happened to be.</b> That is not a detail — it is the strategy's biggest unresolved problem, and section 10 is about it.</p>
-
-<h2 id="exit">7. Step 4 — How we get out</h2>
-
-<p>Four ways out, tested in this order:</p>
-
-<table>
-<tr><th>Exit</th><th>When</th><th>Checked</th></tr>
-<tr><td><b>Stop</b></td><td>Spot reaches the frozen level from section 6.</td><td>Every tick</td></tr>
-<tr><td><b>Doji</b></td><td>An HA candle closes with a body of <b>20% of its range or less</b> (<code>HA_SCALP_DOJI_BODY_PCT</code>). Colour is irrelevant — a doji ends the trend question either way.</td><td>Each 15-min close</td></tr>
-<tr><td><b>Weak / opposite</b></td><td>An HA candle closes the <b>opposite colour</b>, or stays the right colour but its body shrinks below <b>40% of range</b> (<code>HA_SCALP_WEAK_BODY_PCT</code>).</td><td>Each 15-min close</td></tr>
-<tr><td><b>Square-off</b></td><td><b>15:15 IST</b> (<code>HA_SCALP_FORCED_EXIT</code>). Anything still open is closed.</td><td>Clock</td></tr>
-</table>
-
-<p>The reasoning is the same as the entry: the trade was opened because a candle showed one-sided strength, so it is closed as soon as a candle stops showing it. A doji means the fight is even again. A shrinking body means the push is running out. Neither waits for price to come all the way back to the stop.</p>
-
-<p>Here is a real one, drawn from the engine's own output.</p>
-
-<div class="tv-chart" id="ha-win"></div>
-<p class="tv-cap"><b>23 March 2026 — a Put that ran.</b> Spot is far below its 50 SMA, so only Puts are allowed. The 09:30 HA candle closes red with a 225-point body and <b>no top wick</b> — buyers never got above the open. Entry at the next candle's open, <b>22,706</b>; stop frozen at that candle's raw high, <b>22,743</b> (36 points). Five candles later the HA candle at 11:00 is a doji, and the trade is closed at <b>22,555</b> — <b>151 spot points</b> in the trade's favour. Note the stop was never moved: it sat at 22,743 the whole way. <b>This example predates the breakeven/trail ratchet</b> (added 15 Sept 2026, on by default) — it is drawn with the original frozen stop. The trail would not have changed this trade: price never came back near the stop, and the doji still ends it at 22,555.</p>
-
-<h2 id="reject">8. The trades it refuses</h2>
-
-<p>Over the six months measured, the single most common reason a good-looking candle was thrown away was the trend gate. Here is one of them.</p>
-
-<div class="tv-chart" id="ha-reject"></div>
-<p class="tv-cap"><b>20 March 2026, 09:30 — the best candle of the day, refused.</b> A green Heikin Ashi candle with a <b>149-point body and no bottom wick</b>: on shape alone, a textbook Call. But that candle closes at <b>23266.16</b> while the 50 SMA is up at <b>23469</b> — price is 203 points <em>below</em> its average. This is a bounce inside a downtrend, not a trend continuation, so the engine refuses it and logs why. The rest of the day proves the gate right: price drifts down to close at <b>23114.85</b>.</p>
-
-<p>The engine states every refusal in plain words rather than staying silent, so the log shows a setup was seen and rejected on purpose rather than missed. Across the six-month sample, <b>227</b> bullish wick-free candles were refused for sitting below the average — against <b>547</b> that were eligible, so the gate threw away nearly a third of the shapes that otherwise qualified.</p>
-
-<h2 id="measured">9. What six months of real data says</h2>
-
-<p>These figures come from running the engine over <b>3,075 real NIFTY 15-minute candles</b> — six cached months, February to July 2026 — aggregated from the repo's own 5-minute cache. They measure <b>how the rules behave</b>, not how much money they make: no option premium is modelled anywhere in this measurement.</p>
-
-<h3>How often the shapes occur</h3>
-<table>
-<tr><th>Across 3,075 real HA candles</th><th>Count</th><th>Share</th></tr>
-<tr><td>Zero <b>lower</b> wick — Call candidates</td><td class="num">785</td><td class="num">25.5%</td></tr>
-<tr><td>Zero <b>upper</b> wick — Put candidates</td><td class="num">761</td><td class="num">24.7%</td></tr>
-<tr><td>Dojis (body ≤ 20% of range)</td><td class="num">673</td><td class="num">21.9%</td></tr>
-</table>
-
-<p>This answers the obvious worry about an exact-zero wick rule. It is <b>not</b> a rule that never fires: about a quarter of all Heikin Ashi candles are genuinely wick-free on one side. That is a property of the Heikin Ashi construction — <code>haLow</code> is the minimum of the raw low and the two body edges, so it lands exactly on the body edge often.</p>
-
-<h3>How often it would have traded</h3>
-<table>
-<tr><th>Measure</th><th>Result</th></tr>
-<tr><td>15-minute candles examined</td><td class="num">3,075</td></tr>
-<tr><td><b>Entry signals</b></td><td class="num">358 &nbsp;<span class="muted">(187 CE / 171 PE)</span></td></tr>
-<tr><td>Trading days with at least one signal</td><td class="num">121</td></tr>
-<tr><td>Average per trading day</td><td class="num">≈ 3 &nbsp;<span class="muted">(the daily cap)</span></td></tr>
-</table>
-
-<p class="muted">The CE/PE split being near-even (187 vs 171) is a good sign: the rules are not secretly a one-directional bet.</p>
-
-<h3>How the trades ended</h3>
-<table>
-<tr><th>Exit</th><th>Count</th><th>Share</th></tr>
-<tr><td><b>Stop</b></td><td class="num">183</td><td class="num">51.1%</td></tr>
-<tr><td>Doji candle</td><td class="num">89</td><td class="num">24.9%</td></tr>
-<tr><td>Weak candle</td><td class="num">69</td><td class="num">19.3%</td></tr>
-<tr><td>Opposite colour</td><td class="num">11</td><td class="num">3.1%</td></tr>
-<tr><td>End of day</td><td class="num">6</td><td class="num">1.7%</td></tr>
-</table>
-
-<p><b>Average hold: 1.6 candles — about 24 minutes.</b> Every one of the 358 trades terminated; none ran forever. That is worth stating, because a strategy with no target and no time stop <em>could</em> in principle hold something indefinitely, and this proves the candle rules always eventually fire.</p>
-
-<div class="card warn">
-  <strong>Read the exit mix carefully.</strong> More than half of all trades ended at the stop, and the average trade lasted 1.6 candles. A trade that dies in 24 minutes has not had time to pay for the spread it crossed on the way in. The next section explains why the stop-out rate is that high, and it is not because the entry is bad.
-</div>
-
-<h2 id="stopsize">10. The stop-size problem</h2>
-
-<p>This is the thing to watch in paper trading, and it is a direct consequence of the rule "the stop is the signal candle's own extreme".</p>
-
-<p>Measured across the same 358 real signals, the distance from entry to stop was:</p>
-
-<table>
-<tr><th>Smallest</th><th>25th pct</th><th>Median</th><th>75th pct</th><th>Largest</th></tr>
-<tr><td class="num">0.2 pt</td><td class="num">10.75 pt</td><td class="num"><b>23.25 pt</b></td><td class="num">37.9 pt</td><td class="num">129.4 pt</td></tr>
-</table>
-
-<p>The median of 23 points is reasonable. The problem is the bottom of the distribution: <b>81 of the 358 signals — 23% — had a stop less than 10 points away</b>, and the tightest was <b>0.2 points</b>.</p>
-
-<p>Ten points on a 15-minute NIFTY chart is noise. It is smaller than the ordinary bar-to-bar wobble, so a stop that close is not measuring "the trade idea was wrong" — it is measuring "the market breathed". Nearly a quarter of all signals were handed a stop that a random tick could take out.</p>
-
-<p>Here is the extreme case, and it is a real trade the engine produced:</p>
-
-<div class="tv-chart" id="ha-tight"></div>
-<p class="tv-cap"><b>6 April 2026, 12:00 — stopped out on the entry candle itself.</b> A perfectly valid signal: green HA candle, 30-point body, no bottom wick, price comfortably above the 50 SMA. But the signal candle's raw low was <b>22,659.40</b> and the next candle opened at <b>22,660.35</b> — a stop <b>0.2 points</b> away. The trade was stopped within the same bar, for a loss of about one point of spot. Then price ran to <b>22,731</b>, and later to <b>22,998</b> — the direction was right and the trade caught none of it.</p>
-
-<p>This is the single clearest thing paper trading needs to answer. Two levers exist for it, both shipped OFF so the rules run exactly as specified until there is evidence:</p>
-
-<ul>
-  <li><code>HA_SCALP_SL_BUFFER_PTS</code> — pushes the stop a few points past the candle's extreme, so a one-tick poke doesn't take it out.</li>
-  <li><code>HA_SCALP_MAX_SL_PTS</code> — skips setups whose stop is <em>too far</em> away. Note this fixes the opposite end of the distribution: it does nothing about the 0.2-point stops.</li>
-</ul>
-
-<p class="muted">There is currently <b>no minimum</b> stop-distance setting. Whether one is needed is exactly the sort of question a clean paper sample should decide, rather than a guess made in advance.</p>
-
-<h2 id="risk">11. Safety limits</h2>
-
-<p>These sit outside the strategy rules and stop the day when it is going badly.</p>
-
-<table>
-<tr><th>Limit</th><th>Default</th><th>What it does</th></tr>
-<tr><td>Max trades per day</td><td class="num">3</td><td>No fourth entry, however good it looks.</td></tr>
-<tr><td>Stop-outs that end the day</td><td class="num">2</td><td>Two stops and the session is over.</td></tr>
-<tr><td>Max daily loss</td><td class="num">₹3,000</td><td>Trading stops for the day.</td></tr>
-<tr><td>Daily profit lock</td><td class="num">0 <span class="muted">(off)</span></td><td>Would stop the day once a set profit is banked.</td></tr>
-<tr><td>Max weekly loss</td><td class="num">0 <span class="muted">(off)</span></td><td>Would stop the week.</td></tr>
-<tr><td>Entry window</td><td class="num">09:30 – 15:00</td><td>No entries outside it.</td></tr>
-<tr><td>Square-off</td><td class="num">15:15</td><td>Nothing is carried overnight.</td></tr>
-</table>
-
-<p>Note that the three-trades-a-day cap is a real constraint, not a formality: in the six-month measurement it was the most common reason a signal was ignored, blocking <b>1,740</b> further bars from being considered.</p>
-
-<p>Position size is <b>1 lot</b>, one strike in-the-money (<code>HA_SCALP_ITM_STEPS</code> = 1, roughly delta 0.6). Orders route to <b>Zerodha</b>; Fyers supplies the candles and the option premiums.</p>
-
-<h2 id="modes">12. Paper, Live, Backtest &amp; Replay</h2>
-
-<table>
-<tr><th>Mode</th><th>What it does</th></tr>
-<tr><td><b>Paper</b></td><td>Live data, simulated orders. This is the <b>canonical</b> surface — every decision, fill and exit rule is defined here, and the other modes are made to match it, never the reverse.</td></tr>
-<tr><td><b>Backtest</b></td><td>Historical candles. Applies a spread/slippage haircut of <code>HA_SCALP_BT_SLIPPAGE_PTS</code> (1.5 points each way) and assumes a seed premium, because an option-buying backtest without costs always flatters.</td></tr>
-<tr><td><b>Live</b></td><td>Real Zerodha orders. <b>Double-gated</b>: needs <code>HA_SCALP_LIVE_ENABLED</code> <em>and</em> the global dry-run switch turned off. It ships off, and should stay off until paper and replay agree.</td></tr>
-<tr><td><b>Replay</b></td><td>Re-runs a recorded session tick by tick, so a settings change can be tested against a day that actually happened.</td></tr>
-</table>
-
-<div class="card accent">
-  <strong>The four modes agree by construction.</strong> Every value a decision reads comes from a <em>closed</em> 15-minute candle fetched from the history endpoint. No live tick enters any signal calculation. The live price is used for exactly one thing: checking whether the already-frozen stop has been hit. That is what makes Paper, Backtest, Live and Replay compute identical numbers from the same session.
-</div>
-
-<h2 id="config">13. All the settings, explained</h2>
-
-<p>Every key below appears in the Settings UI under <b>HA Scalp</b>. Defaults are the shipped values.</p>
-
-<h3>Mode &amp; Live</h3>
-<table>
-<tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
-<tr><td><code>HA_SCALP_PAPER_ENABLED</code><br><span class="muted">HA Scalp Paper Trading</span></td><td class="num">true</td><td>Allow new HA Scalp paper sessions.</td></tr>
-<tr><td><code>HA_SCALP_LIVE_ENABLED</code><br><span class="muted">HA Scalp Live Orders</span></td><td class="num">false</td><td>Enable live orders via Zerodha. NEVER traded — paper-validate first.</td></tr>
-<tr><td><code>HA_SCALP_LIVE_DRY_RUN</code><br><span class="muted">HA Scalp Live DRY-RUN override</span></td><td class="num">false</td><td>Keep it simulated even when live is on.</td></tr>
-</table>
-
-<h3>The chart (Heikin Ashi, NIFTY 50 spot)</h3>
-<table>
-<tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
-<tr><td><code>HA_SCALP_RESOLUTION</code><br><span class="muted">Candle Timeframe (min)</span></td><td class="num">15</td><td>The chart the rules were read off. 15 minutes is the strategy as specified — the repo-wide 5-min default does not apply here.</td></tr>
-<tr><td><code>HA_SCALP_HA_CONTINUOUS</code><br><span class="muted">Continuous HA Chain Across Days</span></td><td class="num">true</td><td>ON = the HA candle carries over the overnight gap, which is what TradingView draws. OFF reseeds each day and the charts would then disagree with the platform the rules came from.</td></tr>
-<tr><td><code>HA_SCALP_HA_WARMUP_BARS</code><br><span class="muted">Heikin Ashi Warm-up (bars)</span></td><td class="num">20</td><td>No decision until this many bars are behind us. <code>haOpen</code> is a running average, so the first few candle colours are seed artefacts rather than signal.</td></tr>
-<tr><td><code>HA_SCALP_WARMUP_DAYS</code><br><span class="muted">History Preload (calendar days)</span></td><td class="num">15</td><td>How far back to fetch on start so the MA and the HA chain are established. At 25 bars a session, 15 calendar days is comfortably more than the ~51 bars needed, even across holidays.</td></tr>
-</table>
-
-<h3>The trend gate (hard directional filter)</h3>
-<table>
-<tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
-<tr><td><code>HA_SCALP_MA_PERIOD</code><br><span class="muted">Trend MA Period</span></td><td class="num">50</td><td>The moving average that decides the side. Above it, CE only; below it, PE only. Computed on RAW closes, like the platform default.</td></tr>
-<tr><td><code>HA_SCALP_MA_TYPE</code><br><span class="muted">Trend MA Type</span></td><td class="num">sma</td><td>Simple or exponential. The rules were read off a plain 50 MA.</td></tr>
-</table>
-
-<h3>The entry candle</h3>
-<table>
-<tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
-<tr><td><code>HA_SCALP_MAX_WICK_PCT</code><br><span class="muted">"No Wick" Tolerance (% of range)</span></td><td class="num">0</td><td>How much wick still counts as none, as a share of the candle's own range. 0 = exactly wick-free, which is the rule as specified and is deliberately strict — expect few trades. Raising it to 5–10 loosens the entry.</td></tr>
-<tr><td><code>HA_SCALP_MIN_BODY_PTS</code><br><span class="muted">Minimum Candle Body (pts)</span></td><td class="num">5</td><td>A body smaller than this is not a strength candle. Without it, a flat candle satisfies "no wick" trivially.</td></tr>
-</table>
-
-<h3>Exits (there is NO fixed target)</h3>
-<table>
-<tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
-<tr><td><code>HA_SCALP_EXIT_ON_DOJI</code><br><span class="muted">Exit on a Doji Candle</span></td><td class="num">true</td><td>A doji warns of a trend reversal — close the trade. Colour is irrelevant: a doji ends the trend question either way.</td></tr>
-<tr><td><code>HA_SCALP_DOJI_BODY_PCT</code><br><span class="muted">Doji Body (% of range or less)</span></td><td class="num">20</td><td>A candle whose body is this small a share of its range counts as a doji.</td></tr>
-<tr><td><code>HA_SCALP_EXIT_ON_WEAK</code><br><span class="muted">Exit on a Weak or Opposite Candle</span></td><td class="num">true</td><td>The trend is fading — close the trade. Covers both an opposite-coloured candle and a same-coloured one whose body has shrunk.</td></tr>
-<tr><td><code>HA_SCALP_WEAK_BODY_PCT</code><br><span class="muted">Weak Body (% of range)</span></td><td class="num">40</td><td>A same-direction candle with a body below this share of its range is weak. Must sit above the doji threshold to mean anything separate.</td></tr>
-</table>
-
-<h3>Session window</h3>
-<table>
-<tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
-<tr><td><code>HA_SCALP_SESSION_START</code><br><span class="muted">Session Start</span></td><td class="num">09:15</td><td>Where the session's bars start being counted (IST).</td></tr>
-<tr><td><code>HA_SCALP_ENTRY_START</code><br><span class="muted">Entry Window Start</span></td><td class="num">09:30</td><td>No entries before this (IST).</td></tr>
-<tr><td><code>HA_SCALP_ENTRY_END</code><br><span class="muted">Entry Window End</span></td><td class="num">15:00</td><td>No new entries after this time (IST).</td></tr>
-<tr><td><code>HA_SCALP_FORCED_EXIT</code><br><span class="muted">Forced Exit (EOD square-off)</span></td><td class="num">15:15</td><td>Hard square-off time (IST). A trade no candle rule has closed is closed here.</td></tr>
-</table>
-
-<h3>Risk</h3>
-<table>
-<tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
-<tr><td><code>HA_SCALP_SL_BUFFER_PTS</code><br><span class="muted">Stop Buffer Beyond the Candle Extreme</span></td><td class="num">0</td><td>Stop sits this far past the signal candle's raw high/low, so a one-tick poke does not take it out. 0 = exactly on the candle's extreme, as the rule states.</td></tr>
-<tr><td><code>HA_SCALP_MAX_SL_PTS</code><br><span class="muted">Max Stop Distance (pts, 0 = off)</span></td><td class="num">0</td><td>Skip the setup when the signal candle's extreme is further away than this. OFF by default: the rule says that candle IS the stop, however wide.</td></tr>
-</table>
-
-<h3>Sizing &amp; day breakers</h3>
-<table>
-<tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
-<tr><td><code>HA_SCALP_LOT_MULTIPLIER</code><br><span class="muted">Lot Multiplier (HA Scalp only)</span></td><td class="num">0</td><td>Lots per trade. 0 = use the global <code>LOT_MULTIPLIER</code>, which is the default (1 lot).</td></tr>
-<tr><td><code>HA_SCALP_ITM_STEPS</code><br><span class="muted">ITM Steps (strikes in-the-money)</span></td><td class="num">1</td><td>Strikes in-the-money to buy (0 = ATM). 1 step ≈ delta 0.6.</td></tr>
-<tr><td><code>HA_SCALP_MAX_DAILY_TRADES</code><br><span class="muted">Max Trades/Day</span></td><td class="num">3</td><td>Max entries per day.</td></tr>
-<tr><td><code>HA_SCALP_MAX_DAILY_LOSSES</code><br><span class="muted">Stop-outs That End the Day</span></td><td class="num">2</td><td>Day ends after this many stop-outs (0 = off).</td></tr>
-<tr><td><code>HA_SCALP_MAX_DAILY_LOSS</code><br><span class="muted">Max Daily Loss (₹)</span></td><td class="num">3000</td><td>Stop trading after this much loss (0 = off).</td></tr>
-<tr><td><code>HA_SCALP_DAILY_PROFIT_LOCK</code><br><span class="muted">Daily Profit Lock (₹)</span></td><td class="num">0</td><td>Stop for the day once this much is banked (0 = off, the default).</td></tr>
-<tr><td><code>HA_SCALP_MAX_WEEKLY_LOSS</code><br><span class="muted">Max Weekly Loss (₹)</span></td><td class="num">0</td><td>Stop for the week after this much loss (0 = off).</td></tr>
-</table>
-
-<h3>Data plumbing</h3>
-<table>
-<tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
-<tr><td><code>HA_SCALP_POLL_MS</code><br><span class="muted">Option Premium Poll (ms)</span></td><td class="num">2000</td><td>How often the option premium is refreshed while a trade is open. Spot comes from the shared tick socket, so nothing else is polled.</td></tr>
-<tr><td><code>HA_SCALP_HISTORY_LAG_MS</code><br><span class="muted">Bar-Close History Lag (ms)</span></td><td class="num">5000</td><td>How long after a bar closes before the Fyers history endpoint is asked for it. Too short and the bar is not published yet, which delays every decision by a whole candle.</td></tr>
-</table>
-
-<h3>Backtest</h3>
-<table>
-<tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
-<tr><td><code>HA_SCALP_BT_SLIPPAGE_PTS</code><br><span class="muted">Backtest Spread/Slippage Haircut</span></td><td class="num">1.5</td><td>Backtest cost per side, in points. Without this, option-buying backtests always flatter.</td></tr>
-<tr><td><code>HA_SCALP_BT_SEED_PREMIUM</code><br><span class="muted">Backtest Seed Premium (₹)</span></td><td class="num">240</td><td>Assumed entry premium for the backtest (₹).</td></tr>
-</table>
-
-<p class="muted">The menu toggles (<code>HA_SCALP_MODE_ENABLED</code>, <code>UI_SHOW_HA_SCALP_*</code>) and the Telegram alert switches (<code>TG_HA_SCALP_*</code>) live in the Interface and Telegram sections of Settings rather than the strategy section, but they are this strategy's keys too.</p>
-
-<h2 id="missing">14. What's still missing</h2>
-
-<div class="card bad">
-  <strong>It has never traded. Not once.</strong> No paper session, no live order, zero trades in existence. Everything in this guide describes what the code <em>does</em>, verified by running it — not what it earns.
-</div>
-
-<ul>
-  <li><b>There is no win rate, because none has been measured.</b> The 51% stop-out figure in section 9 is a count of how trades <em>ended</em> on spot, not a profit-and-loss result. Option premiums are not modelled in that measurement at all.</li>
-  <li><b>Any rupee figure from the backtest is simulated.</b> The backtest assumes a seed premium of ₹240 and a flat 1.5-point haircut per side rather than replaying real option quotes. Treat its output as an order-of-magnitude sketch, never as a result.</li>
-  <li><b>The exact-zero wick rule is unproven in the wild.</b> The six-month sample says about a quarter of Heikin Ashi candles qualify on shape, which suggests the rule fires often enough. But that was measured on cached history with a clean candle feed. Live, a bar arriving late or a partially-published candle could change the count, and nobody has watched it happen yet.</li>
-  <li><b>The tiny-stop problem in section 10 is unresolved.</b> 23% of signals get a stop under 10 points. There is no minimum-stop setting, and whether one is needed should be decided by a clean paper sample rather than guessed.</li>
-  <li><b>Nothing about the exits has been compared to alternatives.</b> The doji and weak thresholds (20% and 40%) are the values in the original rules. They have not been tested against anything, and the exit mix shows they close 44% of trades — so they matter a lot.</li>
-  <li><b>No regime analysis.</b> Six months is one market. How the strategy behaves in a sustained low-volatility drift, where the 50 MA whipsaws and candle bodies shrink, is unknown.</li>
-</ul>
-
-<div class="card accent">
-  <strong>The order of work.</strong> Collect clean paper sessions first. Then diff them against <code>/replay</code> to confirm Paper and Live make identical decisions on a recorded day. Only then consider touching a live gate — and even then, the tiny-stop question in section 10 should have an answer first.
-</div>
-
-<p class="muted" style="margin-top:30px;">Engine: <code>src/strategies/ha_scalp.js</code> · Paper: <code>src/routes/haScalpPaper.js</code> · Backtest: <code>src/routes/haScalpBacktest.js</code> · Live harness: <code>src/routes/haScalpLiveHarness.js</code>. The rules exist only in the engine file; the others call into it.</p>
-
-</div><!-- /wrap -->
-
 <script>
 /* ============================================================================
  * TVChart v3 — dependency-free TradingView-style candlestick renderer.
@@ -675,13 +546,19 @@ haLow   = min(low,  haOpen, haClose)</code></pre>
 })(window);
 </script>
 <script>
-(function(){ if(typeof TVChart==="undefined") return;
-  TVChart.render("ha-raw", {"title":"NIFTY 50","subtitle":"15m · 20 Mar 2026 · the ordinary candles the exchange printed","times":["09:15","09:30","09:45","10:00","10:15","10:30","10:45","11:00","11:15","11:30","11:45","12:00","12:15","12:30","12:45","13:00","13:15","13:30","13:45","14:00","14:15","14:30","14:45","15:00","15:15"],"candles":[[23110.15,23303.85,23109.9,23286.8],[23287.05,23319.7,23228.95,23228.95],[23230.6,23266.7,23222.75,23259],[23260.2,23261.05,23220.7,23243.65],[23243.4,23261.3,23200.65,23260.6],[23261.75,23301.8,23252.6,23290.15],[23290.6,23317.9,23277.05,23296.6],[23298.65,23303.65,23263.15,23289.15],[23288.95,23345.15,23284.6,23317.3],[23317.9,23331.6,23285.8,23286.9],[23287.4,23292.85,23223.1,23250.3],[23251.25,23259.5,23210.9,23233.05],[23234.15,23234.15,23137.05,23155.15],[23155.65,23216.4,23120.35,23205.75],[23206.5,23249.7,23202.8,23214.8],[23214.9,23251.2,23202.6,23231.5],[23232,23271.1,23230,23257.7],[23258.45,23272.4,23231.95,23232],[23233.7,23234,23188.65,23193.45],[23195,23244.55,23185.25,23199.15],[23200.05,23205.75,23164,23164],[23164.05,23188.05,23097.7,23098.25],[23099.4,23113.4,23067.6,23090.5],[23090.5,23177.45,23078.6,23106.85],[23106.25,23139.8,23078.7,23134.65]],"overlays":[{"name":"50 SMA","color":"#f59e0b","width":1.4,"data":[23478.85,23469,23460.35,23451.94,23442.69,23434.03,23424.55,23414.62,23404.98,23394.36,23383.24,23372.31,23360.07,23348.62,23337.4,23325.96,23314.63,23302.38,23289.58,23277.21,23263.78,23250.14,23235.91,23222.2,23209.61]}],"legend":[{"color":"#f59e0b","label":"50 SMA (raw closes) — price is below it all day"}]});
-  TVChart.render("ha-smooth", {"title":"NIFTY 50 · HEIKIN ASHI","subtitle":"15m · 20 Mar 2026 · the same session, smoothed — this is the chart the rules read","times":["09:15","09:30","09:45","10:00","10:15","10:30","10:45","11:00","11:15","11:30","11:45","12:00","12:15","12:30","12:45","13:00","13:15","13:30","13:45","14:00","14:15","14:30","14:45","15:00","15:15"],"candles":[[23030.64,23303.85,23030.64,23202.68],[23116.66,23319.7,23116.66,23266.16],[23191.41,23266.7,23191.41,23244.76],[23218.09,23261.05,23218.09,23246.4],[23232.24,23261.3,23200.65,23241.49],[23236.87,23301.8,23236.87,23276.57],[23256.72,23317.9,23256.72,23295.54],[23276.13,23303.65,23263.15,23288.65],[23282.39,23345.15,23282.39,23309],[23295.69,23331.6,23285.8,23305.55],[23300.62,23300.62,23223.1,23263.41],[23282.02,23282.02,23210.9,23238.68],[23260.35,23260.35,23137.05,23190.13],[23225.24,23225.24,23120.35,23174.54],[23199.89,23249.7,23199.89,23218.45],[23209.17,23251.2,23202.6,23225.05],[23217.11,23271.1,23217.11,23247.7],[23232.4,23272.4,23231.95,23248.7],[23240.55,23240.55,23188.65,23212.45],[23226.5,23244.55,23185.25,23205.99],[23216.24,23216.24,23164,23183.45],[23199.85,23199.85,23097.7,23137.01],[23168.43,23168.43,23067.6,23092.73],[23130.58,23177.45,23078.6,23113.35],[23121.96,23139.8,23078.7,23114.85]],"overlays":[{"name":"50 SMA","color":"#f59e0b","width":1.4,"data":[23478.85,23469,23460.35,23451.94,23442.69,23434.03,23424.55,23414.62,23404.98,23394.36,23383.24,23372.31,23360.07,23348.62,23337.4,23325.96,23314.63,23302.38,23289.58,23277.21,23263.78,23250.14,23235.91,23222.2,23209.61]}],"legend":[{"color":"#f59e0b","label":"50 SMA — unchanged, it is computed on raw closes"}]});
-  TVChart.render("ha-reject", {"title":"NIFTY 50 · HEIKIN ASHI","subtitle":"15m · 20 Mar 2026 · a textbook Call candle that the trend gate refused","times":["09:15","09:30","09:45","10:00","10:15","10:30","10:45","11:00","11:15","11:30","11:45","12:00","12:15","12:30","12:45","13:00","13:15","13:30","13:45","14:00","14:15","14:30","14:45","15:00","15:15"],"candles":[[23030.64,23303.85,23030.64,23202.68],[23116.66,23319.7,23116.66,23266.16],[23191.41,23266.7,23191.41,23244.76],[23218.09,23261.05,23218.09,23246.4],[23232.24,23261.3,23200.65,23241.49],[23236.87,23301.8,23236.87,23276.57],[23256.72,23317.9,23256.72,23295.54],[23276.13,23303.65,23263.15,23288.65],[23282.39,23345.15,23282.39,23309],[23295.69,23331.6,23285.8,23305.55],[23300.62,23300.62,23223.1,23263.41],[23282.02,23282.02,23210.9,23238.68],[23260.35,23260.35,23137.05,23190.13],[23225.24,23225.24,23120.35,23174.54],[23199.89,23249.7,23199.89,23218.45],[23209.17,23251.2,23202.6,23225.05],[23217.11,23271.1,23217.11,23247.7],[23232.4,23272.4,23231.95,23248.7],[23240.55,23240.55,23188.65,23212.45],[23226.5,23244.55,23185.25,23205.99],[23216.24,23216.24,23164,23183.45],[23199.85,23199.85,23097.7,23137.01],[23168.43,23168.43,23067.6,23092.73],[23130.58,23177.45,23078.6,23113.35],[23121.96,23139.8,23078.7,23114.85]],"overlays":[{"name":"50 SMA","color":"#f59e0b","width":1.4,"data":[23478.85,23469,23460.35,23451.94,23442.69,23434.03,23424.55,23414.62,23404.98,23394.36,23383.24,23372.31,23360.07,23348.62,23337.4,23325.96,23314.63,23302.38,23289.58,23277.21,23263.78,23250.14,23235.91,23222.2,23209.61]}],"markers":[{"i":1,"type":"dot","color":"#f85149","price":23266.16,"text":"green, no bottom wick, 149pt body — but BELOW the MA → NO TRADE"}],"legend":[{"color":"#f59e0b","label":"50 SMA 23469 — the 09:30 HA close 23266.16 sits 203pt under it"},{"color":"#f85149","label":"refused: no entry against the trend"}]});
-  TVChart.render("ha-win", {"title":"NIFTY 50 · HEIKIN ASHI","subtitle":"15m · 23 Mar 2026 · a no-top-wick red candle below the MA — the Put that ran 151 points","times":["09:15","09:30","09:45","10:00","10:15","10:30","10:45","11:00","11:15","11:30","11:45","12:00","12:15","12:30","12:45","13:00","13:15","13:30","13:45","14:00","14:15","14:30","14:45","15:00","15:15"],"candles":[[23118.41,23118.41,22634.55,22753.75],[22936.08,22936.08,22691.8,22710.79],[22823.43,22823.43,22592.6,22650.71],[22737.07,22737.07,22571.1,22593.48],[22665.27,22665.27,22530.3,22555.19],[22610.23,22610.23,22529.05,22547.31],[22578.77,22578.77,22509.65,22534.99],[22556.88,22583.65,22504.15,22543.44],[22550.16,22561.45,22528,22550.8],[22550.48,22571.6,22508.3,22539.48],[22544.98,22564,22518,22538.98],[22541.98,22562.35,22530.6,22546.09],[22544.03,22544.03,22478.15,22514.98],[22529.5,22551.5,22497.7,22524.86],[22527.18,22555.9,22481.7,22518.09],[22522.64,22522.64,22471.25,22492.04],[22507.34,22514.5,22482.85,22493.53],[22500.43,22567.35,22487.15,22525.95],[22513.19,22629.75,22513.19,22586.49],[22549.84,22661.15,22549.84,22617.29],[22583.56,22656.45,22583.56,22619.81],[22601.69,22617.4,22515.25,22585.57],[22593.63,22646.55,22579.05,22609.26],[22601.45,22614.75,22486.1,22556.21],[22578.83,22578.83,22478.1,22497.75]],"overlays":[{"name":"50 SMA","color":"#f59e0b","width":1.4,"data":[23197.37,23186.08,23173.18,23159.89,23145.06,23129.79,23115.22,23101.9,23088.52,23074.09,23060.38,23045.78,23030.92,23016.92,23001.63,22987.41,22973.62,22960.87,22949.6,22939.75,22929.96,22919.73,22912.94,22903.38,22891.47]},{"name":"stop (frozen)","color":"#f85149","dash":true,"width":1.2,"data":[22742.8,22742.8,22742.8,22742.8,22742.8,22742.8,22742.8,22742.8,22742.8,22742.8,22742.8,22742.8,22742.8,22742.8,22742.8,22742.8,22742.8,22742.8,22742.8,22742.8,22742.8,22742.8,22742.8,22742.8,22742.8]}],"markers":[{"i":1,"type":"dot","color":"#0ea5e9","price":22710.79,"text":"signal candle — no top wick, 225pt body"},{"i":2,"type":"sell","price":22706.1,"text":"BUY PE 22706"},{"i":7,"type":"exit","price":22554.75,"text":"EXIT 22555 — doji candle, +151 points"}],"legend":[{"color":"#f59e0b","label":"50 SMA — price far below it, Puts only"},{"color":"#f85149","label":"stop 22743 = the signal candle's raw high (36pt), never moved"},{"color":"#0ea5e9","label":"the wick-free signal candle"}]});
-  TVChart.render("ha-tight", {"title":"NIFTY 50 · HEIKIN ASHI","subtitle":"15m · 6 Apr 2026 · a valid signal handed a 0.2-point stop","times":["09:15","09:30","09:45","10:00","10:15","10:30","10:45","11:00","11:15","11:30","11:45","12:00","12:15","12:30","12:45","13:00","13:15","13:30","13:45","14:00","14:15","14:30","14:45","15:00","15:15"],"candles":[[22695.73,22798.25,22591.7,22694.83],[22695.28,22746.9,22596.5,22642.11],[22668.7,22668.7,22566.65,22598.45],[22633.57,22656.8,22561.9,22610.66],[22622.12,22679.7,22591.3,22641.31],[22631.72,22662.65,22598.85,22637.26],[22634.49,22669.2,22609.6,22642.15],[22638.32,22638.32,22542.95,22595.54],[22616.93,22635.65,22558.65,22597.76],[22607.35,22650.6,22595.9,22630.01],[22618.68,22707.8,22618.68,22665.76],[22642.22,22691.95,22642.22,22672.25],[22657.24,22731.1,22653.1,22689.49],[22673.36,22714.9,22644.45,22687.14],[22680.25,22804,22675.45,22739.53],[22709.89,22865.25,22709.89,22822.13],[22766.01,22898.95,22766.01,22866.08],[22816.04,22900.55,22816.04,22864.65],[22840.35,22887.4,22840.35,22861.58],[22850.96,22913.4,22850.96,22887.25],[22869.11,22929.7,22869.11,22904.55],[22886.83,22940.7,22886.83,22911.76],[22899.3,22930.3,22886.3,22912.01],[22905.65,22998.35,22905.65,22954.3],[22929.98,22991.2,22929.98,22973.79]],"overlays":[{"name":"50 SMA","color":"#f59e0b","width":1.4,"data":[22582.8,22578.11,22571.63,22567.35,22564.11,22561.03,22558.33,22554.41,22551.2,22548.1,22546.11,22542.12,22539.73,22536.55,22535.36,22534.91,22535.95,22539.47,22542.65,22545.82,22549.06,22554.08,22559.47,22565.82,22570.95]},{"name":"stop","color":"#f85149","dash":true,"width":1.2,"data":[22659.4,22659.4,22659.4,22659.4,22659.4,22659.4,22659.4,22659.4,22659.4,22659.4,22659.4,22659.4,22659.4,22659.4,22659.4,22659.4,22659.4,22659.4,22659.4,22659.4,22659.4,22659.4,22659.4,22659.4,22659.4]}],"markers":[{"i":11,"type":"dot","color":"#0ea5e9","price":22672.25,"text":"signal — green, no bottom wick, 30pt body"},{"i":12,"type":"buy","price":22660.35,"text":"BUY CE 22660"},{"i":12,"type":"exit","price":22659.4,"text":"STOP 22659 — same candle, 0.2pt away"}],"legend":[{"color":"#f59e0b","label":"50 SMA — price above it, Calls allowed"},{"color":"#f85149","label":"stop 22659.40 = the signal candle's raw low — 0.2pt below the fill"},{"color":"#0ea5e9","label":"the signal candle"}]});
-})();
+TVChart.render("ha-raw", {"title":"The raw chart — what the exchange printed","subtitle":"NIFTY 50 · 15m normal candles · Example — not a real trade","times":["09:15","09:30","09:45","10:00","10:15","10:30","10:45","11:00","11:15","11:30","11:45","12:00","12:15","12:30","12:45","13:00","13:15","13:30","13:45","14:00","14:15","14:30","14:45","15:00","15:15"],"candles":[[24360,24371.34,24351.37,24358.25],[24358.25,24373.56,24346.16,24366.1],[24366.1,24377.75,24354,24359.98],[24359.98,24368.12,24354.1,24362.87],[24362.87,24374.17,24343.7,24355.2],[24355.2,24364.31,24341.83,24352.54],[24352.54,24359.48,24347.14,24354.46],[24354.46,24383.74,24343.7,24371.64],[24371.64,24380.37,24354.03,24367.38],[24367.38,24384.74,24362.29,24374.29],[24374.29,24400.67,24364.84,24389.82],[24389.82,24410.55,24380.65,24402.21],[24402.21,24414.85,24393.74,24406.7],[24406.7,24424.84,24398.93,24416.16],[24416.16,24424.5,24402.55,24414.24],[24414.24,24442.26,24407.65,24429.17],[24429.17,24440.88,24409.77,24420.32],[24420.32,24432.73,24404.52,24413.13],[24413.13,24423.64,24401.37,24414.55],[24414.55,24424.15,24394.7,24407.24],[24407.24,24416.42,24387.49,24399.09],[24399.09,24420.62,24387.42,24410.85],[24410.85,24425.93,24403.17,24418.69],[24418.69,24427.37,24409.51,24417.01],[24417.01,24425.49,24403.13,24408.42]],"overlays":[{"data":[24293.22,24296.07,24298.73,24301.4,24303.86,24306.21,24308.54,24311.15,24313.63,24316.18,24318.99,24321.99,24325.03,24328.2,24331.27,24334.58,24337.66,24340.54,24343.39,24346.04,24348.46,24351.07,24353.78,24356.39,24358.78],"color":"#60a5fa","width":1.8}],"legend":[{"label":"50 SMA (raw closes)","color":"#60a5fa"}]});
+TVChart.render("ha-ha", {"title":"The same day in Heikin Ashi — CE trade closed by the profit lock","subtitle":"NIFTY 50 · 15m Heikin Ashi · Example — not a real trade","times":["09:15","09:30","09:45","10:00","10:15","10:30","10:45","11:00","11:15","11:30","11:45","12:00","12:15","12:30","12:45","13:00","13:15","13:30","13:45","14:00","14:15","14:30","14:45","15:00","15:15"],"candles":[[24355.58,24371.34,24351.37,24360.24],[24357.91,24373.56,24346.16,24361.02],[24359.46,24377.75,24354,24364.46],[24361.96,24368.12,24354.1,24361.27],[24361.61,24374.17,24343.7,24358.98],[24360.3,24364.31,24341.83,24353.47],[24356.88,24359.48,24347.14,24353.41],[24355.14,24383.74,24343.7,24363.39],[24359.26,24380.37,24354.03,24368.36],[24363.81,24384.74,24362.29,24372.18],[24367.99,24400.67,24364.84,24382.41],[24375.2,24410.55,24375.2,24395.81],[24385.5,24414.85,24385.5,24404.38],[24394.94,24424.84,24394.94,24411.66],[24403.3,24424.5,24402.55,24414.36],[24408.83,24442.26,24407.65,24423.33],[24416.08,24440.88,24409.77,24425.04],[24420.56,24432.73,24404.52,24417.68],[24419.12,24423.64,24401.37,24413.17],[24416.14,24424.15,24394.7,24410.16],[24413.15,24416.42,24387.49,24402.56],[24407.86,24420.62,24387.42,24404.5],[24406.18,24425.93,24403.17,24414.66],[24410.42,24427.37,24409.51,24418.14],[24414.28,24425.49,24403.13,24413.51]],"overlays":[{"data":[24293.22,24296.07,24298.73,24301.4,24303.86,24306.21,24308.54,24311.15,24313.63,24316.18,24318.99,24321.99,24325.03,24328.2,24331.27,24334.58,24337.66,24340.54,24343.39,24346.04,24348.46,24351.07,24353.78,24356.39,24358.78],"color":"#60a5fa","width":1.8},{"data":[null,null,null,null,null,null,null,null,null,null,null,null,24365.65,24365.65,24402.21,24402.21,null,null,null,null,null,null,null,null,null],"color":"#fb923c","width":1.8,"dash":true}],"markers":[{"i":11,"type":"dot","price":24414.55,"color":"#fbbf24","text":"no bottom wick"},{"i":12,"type":"buy","price":24402.21,"text":"BUY CE 24402"},{"i":15,"type":"exit","price":24436.26,"text":"EXIT 24436 (profit lock)"},{"i":7,"type":"dot","price":24339.7,"color":"#ef5350","text":"has a bottom wick — skip"}],"shades":[{"from":12,"to":15,"color":"rgba(96,165,250,0.07)","label":"holding","labelBottom":true}],"hlines":[],"legend":[{"label":"50 SMA (raw closes)","color":"#60a5fa"},{"label":"our stop","color":"#fb923c"}]});
+TVChart.render("ha-trend", {"title":"Trend gate — a perfect green candle under the 50 SMA is refused","subtitle":"NIFTY 50 · 15m Heikin Ashi · Example — not a real trade","times":["09:15","09:30","09:45","10:00","10:15","10:30","10:45","11:00","11:15","11:30","11:45","12:00","12:15","12:30","12:45","13:00","13:15","13:30","13:45","14:00","14:15","14:30","14:45","15:00","15:15"],"candles":[[24304.04,24310.67,24280.94,24296.6],[24300.32,24308.7,24284.25,24295.75],[24298.03,24302.71,24285.21,24293.85],[24295.94,24303.4,24280.17,24290.91],[24293.43,24301.33,24274.03,24288.27],[24290.85,24314.75,24277.87,24296.55],[24293.7,24333.05,24291.72,24312.04],[24302.87,24340.18,24302.87,24326],[24314.44,24343.99,24314.44,24333.17],[24323.8,24356.77,24323.8,24340.06],[24331.93,24356.5,24331.93,24343.77],[24337.85,24354.54,24325.38,24340.05],[24338.95,24362.08,24331.92,24345.06],[24342,24357.52,24328.41,24343.81],[24342.9,24348.29,24330.26,24340.6],[24341.75,24351.04,24332.03,24342.52],[24342.13,24360.96,24334.66,24347.93],[24345.03,24366.07,24341.16,24354.04],[24349.53,24361.5,24343.14,24354.8],[24352.17,24361.86,24345.25,24354.04],[24353.1,24367.47,24344.79,24355.06],[24354.08,24365.97,24337.81,24352.91],[24353.49,24369.15,24341.11,24354.6],[24354.05,24365.9,24341.85,24352.82],[24353.44,24353.44,24331.73,24342.88]],"overlays":[{"data":[24363.46,24360.77,24358.08,24355.35,24352.71,24350.41,24348.48,24346.88,24345.37,24344.07,24342.8,24341.51,24340.47,24339.35,24338.31,24337.36,24336.61,24336.03,24335.5,24334.91,24334.47,24333.98,24333.66,24333.19,24332.68],"color":"#60a5fa","width":1.8}],"markers":[{"i":7,"type":"dot","price":24344.18,"color":"#ef5350","text":"no wick, but below the SMA — no CE"}],"shades":[],"hlines":[],"legend":[{"label":"50 SMA (raw closes)","color":"#60a5fa"}]});
+TVChart.render("ha-stretch", {"title":"Too far from the average — a stretched move is skipped","subtitle":"NIFTY 50 · 15m Heikin Ashi · Example — not a real trade","times":["09:15","09:30","09:45","10:00","10:15","10:30","10:45","11:00","11:15","11:30","11:45","12:00","12:15","12:30","12:45","13:00","13:15","13:30","13:45","14:00","14:15","14:30","14:45","15:00","15:15"],"candles":[[24340.07,24359.56,24338.16,24349.51],[24344.79,24366.1,24341.45,24354.44],[24349.61,24391.75,24349.61,24370.45],[24360.03,24408.97,24360.03,24388.92],[24374.48,24415.24,24374.48,24401.36],[24387.92,24425.11,24387.92,24407.55],[24397.73,24432.39,24397.73,24418.61],[24408.17,24440.04,24408.17,24429],[24418.59,24462.73,24418.59,24443.42],[24431,24467.06,24431,24456.11],[24443.56,24482.91,24443.56,24466.01],[24454.78,24475.86,24454.78,24468.31],[24461.55,24487.18,24461.55,24474.9],[24468.22,24494.9,24468.22,24480.93],[24474.57,24489.88,24471.13,24481.9],[24478.24,24501.14,24478.24,24489.23],[24483.73,24502.24,24483.73,24493.15],[24488.44,24511.83,24482.15,24496.96],[24492.7,24520.82,24490.17,24506.52],[24499.61,24524.63,24499.61,24516.73],[24508.17,24530.87,24508.17,24520.22],[24514.19,24531.16,24514.19,24523.38],[24518.79,24535.57,24511.98,24524.82],[24521.81,24551.28,24517.54,24534.73],[24528.27,24568.24,24528.27,24549.19]],"overlays":[{"data":[24206.98,24213.01,24219.3,24225.83,24232.34,24238.94,24245.69,24252.48,24259.51,24266.59,24273.72,24280.77,24287.84,24294.86,24301.8,24308.8,24315.68,24322.58,24329.65,24336.69,24343.66,24350.5,24357.38,24364.35,24371.5],"color":"#60a5fa","width":1.8},{"data":[24356.98,24363.01,24369.3,24375.83,24382.34,24388.94,24395.69,24402.48,24409.51,24416.59,24423.72,24430.77,24437.84,24444.86,24451.8,24458.8,24465.68,24472.58,24479.65,24486.69,24493.66,24500.5,24507.38,24514.35,24521.5],"color":"#a78bfa","width":1.3,"dash":true}],"markers":[{"i":2,"type":"dot","price":24395.75,"color":"#ef5350","text":"good candle, but 150+ pts above SMA"}],"shades":[],"hlines":[],"legend":[{"label":"50 SMA","color":"#60a5fa"},{"label":"SMA + 150 pts","color":"#a78bfa"}]});
+TVChart.render("ha-pe", {"title":"PE trade — below the 50 SMA, red candle with no top wick","subtitle":"NIFTY 50 · 15m Heikin Ashi · Example — not a real trade","times":["09:15","09:30","09:45","10:00","10:15","10:30","10:45","11:00","11:15","11:30","11:45","12:00","12:15","12:30","12:45","13:00","13:15","13:30","13:45","14:00","14:15","14:30","14:45","15:00","15:15"],"candles":[[24244.55,24265.51,24226.31,24246.24],[24245.39,24266.09,24229.7,24246.18],[24245.79,24245.79,24218.64,24230.46],[24238.12,24238.12,24214.67,24224.93],[24231.53,24231.53,24215.12,24221.33],[24226.43,24232.03,24204.73,24218.56],[24222.49,24232.77,24208.23,24219.68],[24221.08,24225.98,24207.45,24217.23],[24219.16,24222.92,24190.98,24208.37],[24213.76,24216.62,24191.35,24204.97],[24209.37,24217.69,24193.82,24207.96],[24208.66,24221.73,24193.38,24207.42],[24208.04,24211.61,24183.1,24198.34],[24203.19,24217.25,24191.98,24202.96],[24203.08,24223.03,24199.82,24209.41],[24206.24,24223.73,24204.39,24213.1],[24209.67,24225.26,24204.18,24214.64],[24212.15,24232.45,24203.57,24217.46],[24214.81,24232.8,24196.43,24213.85],[24214.33,24222.45,24200.57,24210.72],[24212.52,24219.97,24190.95,24206.81],[24209.67,24224.22,24194.91,24208.39],[24209.03,24235.37,24206.89,24218.82],[24213.93,24244.23,24211.6,24227.13],[24220.53,24251.04,24219.72,24234.75]],"overlays":[{"data":[24307.01,24304.2,24301.26,24298.28,24295.33,24292.38,24289.55,24286.66,24283.63,24280.7,24277.95,24275.02,24272.07,24269.33,24266.73,24264.3,24261.91,24259.69,24257.26,24255.03,24252.64,24250.48,24248.58,24246.92,24245.45],"color":"#60a5fa","width":1.8},{"data":[null,null,null,24256.17,24256.17,24256.17,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],"color":"#fb923c","width":1.8,"dash":true}],"markers":[{"i":2,"type":"dot","price":24214.64,"color":"#fbbf24","text":"no top wick"},{"i":3,"type":"buy","price":24226.22,"text":"BUY PE 24226"},{"i":5,"type":"exit","price":24217.21,"text":"EXIT 24217 (weak candle)"}],"shades":[{"from":3,"to":5,"color":"rgba(96,165,250,0.07)","label":"holding","labelBottom":true}],"hlines":[],"legend":[{"label":"50 SMA (raw closes)","color":"#60a5fa"},{"label":"our stop","color":"#fb923c"}]});
+TVChart.render("ha-stop", {"title":"Losing trade — the stop under the signal candle is hit","subtitle":"NIFTY 50 · 15m Heikin Ashi · Example — not a real trade","times":["09:15","09:30","09:45","10:00","10:15","10:30","10:45","11:00","11:15","11:30","11:45","12:00","12:15","12:30","12:45","13:00","13:15","13:30","13:45","14:00","14:15","14:30","14:45","15:00","15:15"],"candles":[[24355.34,24369.15,24355.02,24361.62],[24358.48,24379.62,24354.31,24366.07],[24362.27,24381.69,24353.45,24367.07],[24364.67,24371.41,24356.2,24364.69],[24364.68,24372.92,24352.89,24363.07],[24363.87,24383.25,24349.07,24365.63],[24364.75,24394.06,24362.25,24377.23],[24370.99,24388.8,24369.24,24381.07],[24376.03,24410.38,24371.67,24391.21],[24383.62,24407.17,24383.62,24398.13],[24390.87,24404.95,24375.73,24391.21],[24391.04,24402.33,24372.98,24387.47],[24389.26,24399.35,24380.55,24388.98],[24389.12,24394.79,24371.64,24385.53],[24387.32,24397.02,24372.16,24383.7],[24385.51,24406.28,24375.9,24389.7],[24387.61,24403.8,24387.04,24395.32],[24391.46,24399.56,24373.45,24388.56],[24390.01,24398.88,24372.06,24385.84],[24387.93,24399.05,24363.41,24381.21],[24384.57,24388.33,24370.53,24377.69],[24381.13,24381.36,24361.73,24373.05],[24377.09,24397.53,24361.89,24380.69],[24378.89,24416.14,24378.89,24397.8],[24388.35,24423.24,24388.35,24410.47]],"overlays":[{"data":[24293.3,24296.19,24298.95,24301.69,24304.25,24306.94,24309.84,24312.69,24315.81,24318.78,24321.57,24324.24,24326.95,24329.5,24331.89,24334.55,24337.1,24339.46,24341.73,24343.77,24345.71,24347.59,24349.7,24352.06,24354.64],"color":"#60a5fa","width":1.8},{"data":[null,null,null,null,null,null,null,null,null,null,24375.73,null,null,null,null,null,null,null,null,null,null,null,null,null,null],"color":"#fb923c","width":1.8,"dash":true}],"markers":[{"i":9,"type":"dot","price":24411.17,"color":"#fbbf24","text":"no bottom wick"},{"i":10,"type":"buy","price":24395.27,"text":"BUY CE 24395"},{"i":10,"type":"exit","price":24375.73,"text":"STOP 24376"}],"shades":[{"from":10,"to":10,"color":"rgba(96,165,250,0.07)","label":"holding","labelBottom":true}],"hlines":[{"price":24390.73,"label":"signal candle raw low 24391","color":"#94a3b8","labelAt":0.02}],"legend":[{"label":"50 SMA (raw closes)","color":"#60a5fa"},{"label":"our stop","color":"#fb923c"}]});
+TVChart.render("ha-doji", {"title":"Doji exit — a tiny-body Heikin Ashi candle ends the trade","subtitle":"NIFTY 50 · 15m Heikin Ashi · Example — not a real trade","times":["09:15","09:30","09:45","10:00","10:15","10:30","10:45","11:00","11:15","11:30","11:45","12:00","12:15","12:30","12:45","13:00","13:15","13:30","13:45","14:00","14:15","14:30","14:45","15:00","15:15"],"candles":[[24356.43,24376.31,24347.69,24361.99],[24359.21,24382.92,24352.27,24367.28],[24363.24,24380.89,24358.51,24371.22],[24367.23,24399.33,24367.23,24382.92],[24375.08,24399.08,24375.08,24390.49],[24382.78,24404.15,24373.46,24388.41],[24385.6,24399.77,24377.07,24386.99],[24386.29,24398.99,24380.17,24390.04],[24388.17,24403.03,24388.04,24394.92],[24391.54,24406.82,24388.28,24396.94],[24394.24,24414.88,24391.37,24403.49],[24398.87,24419.68,24397.62,24409.6],[24404.23,24428.72,24403.7,24415.51],[24409.87,24438.48,24408.44,24423.1],[24416.49,24440.56,24413.43,24425.26],[24420.87,24428.97,24405.25,24417.2],[24419.03,24424.5,24404.28,24413.52],[24416.28,24423.78,24405.58,24412.87],[24414.57,24424.13,24404.33,24412.55],[24413.56,24424.96,24399.71,24412.82],[24413.19,24422.48,24394.62,24410.4],[24411.79,24426.94,24403.41,24413.28],[24412.54,24433.25,24401.44,24417.08],[24414.81,24433.16,24405.67,24419.58],[24417.2,24446.75,24411.84,24427.86]],"overlays":[{"data":[24293.33,24296.26,24299.23,24302.41,24305.61,24308.58,24311.57,24314.63,24317.66,24320.68,24323.9,24327.07,24330.34,24333.72,24336.92,24339.93,24342.82,24345.66,24348.43,24351.26,24353.87,24356.55,24359.27,24361.95,24364.82],"color":"#60a5fa","width":1.8},{"data":[null,null,null,null,24353.52,24353.52,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],"color":"#fb923c","width":1.8,"dash":true}],"markers":[{"i":3,"type":"dot","price":24403.33,"color":"#fbbf24","text":"no bottom wick"},{"i":4,"type":"buy","price":24388.33,"text":"BUY CE 24388"},{"i":5,"type":"exit","price":24383.63,"text":"EXIT on doji"}],"shades":[{"from":4,"to":5,"color":"rgba(96,165,250,0.07)","label":"holding","labelBottom":true}],"hlines":[],"legend":[{"label":"50 SMA (raw closes)","color":"#60a5fa"},{"label":"our stop","color":"#fb923c"}]});
+TVChart.render("ha-opp", {"title":"Opposite-colour exit — the first red Heikin Ashi candle ends a CE","subtitle":"NIFTY 50 · 15m Heikin Ashi · Example — not a real trade","times":["09:15","09:30","09:45","10:00","10:15","10:30","10:45","11:00","11:15","11:30","11:45","12:00","12:15","12:30","12:45","13:00","13:15","13:30","13:45","14:00","14:15","14:30","14:45","15:00","15:15"],"candles":[[24355.5,24364.66,24345.54,24356.72],[24356.11,24364.26,24348.96,24355.75],[24355.93,24369.59,24348.57,24359.14],[24357.53,24374.48,24354.97,24366.07],[24361.8,24381.4,24359.71,24371.18],[24366.49,24394.23,24362.66,24378.77],[24372.63,24391.38,24370.42,24383.03],[24377.83,24394.91,24370.87,24383.38],[24380.6,24389.85,24367.57,24379.33],[24379.97,24384.02,24364.47,24374.55],[24377.26,24389.7,24364.42,24377.3],[24377.28,24407.03,24376.1,24392.27],[24384.78,24423.96,24384.78,24407.68],[24396.23,24424.72,24396.23,24410.74],[24403.48,24419.87,24403.48,24411.24],[24407.36,24415.93,24381.75,24399.7],[24403.53,24403.53,24384.57,24393.21],[24398.37,24400.31,24371.16,24387.46],[24392.92,24395.48,24375.19,24383.63],[24388.27,24388.27,24367.45,24377.46],[24382.86,24387.68,24364.97,24376.49],[24379.67,24385.31,24347.71,24367.8],[24373.74,24373.74,24350.94,24359.78],[24366.76,24366.76,24337.44,24352.4],[24359.58,24359.58,24338.44,24346.26]],"overlays":[{"data":[24293.19,24295.77,24298.55,24301.35,24304.18,24307.16,24310.13,24312.94,24315.64,24318.13,24320.82,24323.82,24326.96,24330,24332.98,24335.54,24338.11,24340.4,24342.57,24344.56,24346.58,24348.16,24349.7,24350.89,24352.05],"color":"#60a5fa","width":1.8},{"data":[null,null,null,null,null,null,null,null,null,null,null,null,null,24377.68,24377.68,24377.68,null,null,null,null,null,null,null,null,null],"color":"#fb923c","width":1.8,"dash":true}],"markers":[{"i":12,"type":"dot","price":24427.96,"color":"#fbbf24","text":"no bottom wick"},{"i":13,"type":"buy","price":24411.86,"text":"BUY CE 24412"},{"i":15,"type":"exit","price":24391.43,"text":"EXIT on red candle"}],"shades":[{"from":13,"to":15,"color":"rgba(96,165,250,0.07)","label":"holding","labelBottom":true}],"hlines":[],"legend":[{"label":"50 SMA (raw closes)","color":"#60a5fa"},{"label":"our stop","color":"#fb923c"}]});
+TVChart.render("ha-be", {"title":"Breakeven — after +20 points the stop moves to the entry","subtitle":"NIFTY 50 · 15m Heikin Ashi · Example — not a real trade","times":["09:15","09:30","09:45","10:00","10:15","10:30","10:45","11:00","11:15","11:30","11:45","12:00","12:15","12:30","12:45","13:00","13:15","13:30","13:45","14:00","14:15","14:30","14:45","15:00","15:15"],"candles":[[24354.94,24369.23,24337.17,24353.85],[24354.39,24355.24,24338.48,24347.52],[24350.96,24360.61,24332.47,24345.27],[24348.12,24352.76,24324.82,24337.55],[24342.83,24349.57,24326.96,24336.08],[24339.46,24355.58,24325.2,24339.95],[24339.71,24354.84,24333.63,24345.07],[24342.39,24355.58,24338.57,24347.99],[24345.19,24359.37,24330.16,24344.47],[24344.83,24354.88,24330.7,24343.3],[24344.06,24361.95,24329.7,24344.88],[24344.47,24344.47,24321.54,24334.8],[24339.64,24355.16,24325.94,24340.42],[24340.03,24360.97,24336.23,24347.95],[24343.99,24367.99,24337.2,24353.99],[24348.99,24376.29,24348.99,24365.86],[24357.43,24388.94,24357.43,24374.07],[24365.75,24391.63,24362.7,24377.13],[24371.44,24383.3,24363.82,24374.58],[24373.01,24382.49,24370.63,24376.9],[24374.96,24385.92,24362.52,24374.84],[24374.9,24386.14,24369.53,24376.63],[24375.76,24383.14,24357.05,24371.15],[24373.45,24378,24349.46,24364.05],[24368.75,24377.99,24353.76,24364.63]],"overlays":[{"data":[24293.03,24295.51,24297.79,24299.84,24301.91,24304.07,24306.28,24308.45,24310.36,24312.4,24314.2,24315.84,24317.67,24319.48,24321.51,24323.61,24325.88,24327.98,24330.08,24332.13,24334.05,24335.99,24337.66,24339.17,24340.69],"color":"#60a5fa","width":1.8},{"data":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,24341.43,24368.28,null,null,null,null,null,null,null],"color":"#fb923c","width":1.8,"dash":true}],"markers":[{"i":15,"type":"dot","price":24380.29,"color":"#fbbf24","text":"no bottom wick"},{"i":16,"type":"buy","price":24368.28,"text":"BUY CE 24368"},{"i":17,"type":"exit","price":24368.28,"text":"EXIT at entry (breakeven)"}],"shades":[{"from":16,"to":17,"color":"rgba(96,165,250,0.07)","label":"holding","labelBottom":true}],"hlines":[],"legend":[{"label":"50 SMA (raw closes)","color":"#60a5fa"},{"label":"our stop","color":"#fb923c"}]});
+TVChart.render("ha-trail", {"title":"Trailing stop — the stop follows the best price, 20 points behind","subtitle":"NIFTY 50 · 15m Heikin Ashi · Example — not a real trade","times":["09:15","09:30","09:45","10:00","10:15","10:30","10:45","11:00","11:15","11:30","11:45","12:00","12:15","12:30","12:45","13:00","13:15","13:30","13:45","14:00","14:15","14:30","14:45","15:00","15:15"],"candles":[[24355.99,24380.44,24349.13,24365.99],[24360.99,24382.35,24353.64,24369.41],[24365.2,24372.48,24348.36,24361.76],[24363.48,24368.1,24344.96,24356.98],[24360.23,24376.87,24343.29,24361.66],[24360.94,24375.71,24355.28,24365.93],[24363.43,24369.25,24357.26,24362.9],[24363.17,24368.46,24348,24358.89],[24361.03,24380.63,24350.4,24363.81],[24362.42,24373.2,24349.16,24362.6],[24362.51,24376.55,24348.02,24363.07],[24362.79,24390.68,24356.52,24373.5],[24368.15,24385.59,24368.15,24378.9],[24373.53,24397.67,24371.87,24384.35],[24378.94,24405.19,24377.56,24391.89],[24385.41,24405.88,24382.81,24393.77],[24389.59,24401.14,24383.77,24392.05],[24390.82,24406.77,24383.46,24393.87],[24392.34,24411.27,24386.8,24397.28],[24394.81,24410.21,24377.86,24394.67],[24394.74,24395.07,24379.71,24388.95],[24391.85,24402.76,24382.62,24392.22],[24392.03,24401.52,24378.71,24390.28],[24391.15,24400.16,24372.91,24385.7],[24388.43,24398.61,24377.81,24387.95]],"overlays":[{"data":[24293.54,24296.41,24299.06,24301.59,24304.35,24306.89,24309.39,24311.7,24314.19,24316.46,24318.82,24321.36,24323.86,24326.46,24329.19,24331.71,24334.26,24336.7,24339.25,24341.58,24343.82,24346.08,24348.16,24350.08,24352.16],"color":"#60a5fa","width":1.8},{"data":[null,null,null,null,null,null,null,null,null,null,null,null,null,24355.99,24355.99,24385.19,null,null,null,null,null,null,null,null,null],"color":"#fb923c","width":1.8,"dash":true}],"markers":[{"i":12,"type":"dot","price":24389.59,"color":"#fbbf24","text":"no bottom wick"},{"i":13,"type":"buy","price":24379.93,"text":"BUY CE 24380"},{"i":15,"type":"exit","price":24385.19,"text":"EXIT 24385 (trailed stop)"}],"shades":[{"from":13,"to":15,"color":"rgba(96,165,250,0.07)","label":"holding","labelBottom":true}],"hlines":[],"legend":[{"label":"50 SMA (raw closes)","color":"#60a5fa"},{"label":"our stop","color":"#fb923c"}]});
+TVChart.render("ha-eod", {"title":"Square-off at 15:15 — nothing is held overnight","subtitle":"NIFTY 50 · 15m Heikin Ashi · Example — not a real trade","times":["09:15","09:30","09:45","10:00","10:15","10:30","10:45","11:00","11:15","11:30","11:45","12:00","12:15","12:30","12:45","13:00","13:15","13:30","13:45","14:00","14:15","14:30","14:45","15:00","15:15"],"candles":[[24355.97,24379.31,24347.93,24365.36],[24360.66,24383.41,24355.82,24370.66],[24365.66,24382.5,24351.82,24365.6],[24365.63,24365.63,24343.48,24356.17],[24360.9,24362.62,24352.47,24357.34],[24359.12,24361.09,24345.1,24354.45],[24356.78,24367.44,24331.1,24349.3],[24353.04,24359.56,24339.02,24347.35],[24350.19,24357.01,24332.12,24343.56],[24346.88,24350.71,24327.7,24337.32],[24342.1,24342.1,24313.15,24326.7],[24334.4,24335.57,24309.86,24322.47],[24328.44,24331.2,24314.06,24323.54],[24325.99,24342.24,24315.51,24329],[24327.5,24342.03,24319.83,24331.6],[24329.55,24350.57,24327.4,24337.29],[24333.42,24352.62,24330.66,24341.58],[24337.5,24358.55,24331.21,24345.75],[24341.62,24361.43,24331.79,24346.17],[24343.9,24350.41,24329.26,24340.77],[24342.33,24366.96,24335.55,24350.62],[24346.47,24367.74,24346.47,24358.57],[24352.52,24381.59,24350.94,24366.29],[24359.4,24387.95,24359.4,24376.53],[24367.96,24408.44,24367.96,24388.98]],"overlays":[{"data":[24293.54,24296.45,24299.09,24301.65,24304.14,24306.53,24308.65,24310.77,24312.67,24314.39,24315.82,24317.25,24318.66,24320.16,24321.58,24323.1,24324.64,24326.25,24327.65,24328.98,24330.59,24332.16,24333.97,24335.85,24338.03],"color":"#60a5fa","width":1.8},{"data":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,24334.05,24359.02,24367.95],"color":"#fb923c","width":1.8,"dash":true}],"markers":[{"i":21,"type":"dot","price":24371.74,"color":"#fbbf24","text":"no bottom wick"},{"i":22,"type":"buy","price":24359.02,"text":"BUY CE 24359"},{"i":24,"type":"exit","price":24380.38,"text":"15:15 EXIT"}],"shades":[{"from":22,"to":24,"color":"rgba(96,165,250,0.07)","label":"holding","labelBottom":true},{"from":23.5,"to":24,"color":"rgba(239,83,80,0.07)","label":"no new entries"}],"hlines":[],"legend":[{"label":"50 SMA (raw closes)","color":"#60a5fa"},{"label":"our stop","color":"#fb923c"}]});
+TVChart.render("ha-two", {"title":"Two stop-outs — the day is over","subtitle":"NIFTY 50 · 15m Heikin Ashi · Example — not a real trade","times":["09:15","09:30","09:45","10:00","10:15","10:30","10:45","11:00","11:15","11:30","11:45","12:00","12:15","12:30","12:45","13:00","13:15","13:30","13:45","14:00","14:15","14:30","14:45","15:00","15:15"],"candles":[[24327.69,24338.27,24318.04,24327.21],[24327.45,24344.18,24311.42,24327.98],[24327.71,24338.94,24313.48,24327.72],[24327.72,24338.61,24312.14,24326.45],[24327.08,24351.44,24317.61,24335.58],[24331.33,24362.73,24331.33,24347.67],[24339.5,24357.11,24320.2,24340.21],[24339.85,24352.32,24319.91,24338.11],[24338.98,24362.28,24338.98,24351.59],[24345.29,24363.61,24344.19,24353.76],[24349.52,24354.63,24324.25,24341.8],[24345.66,24347.9,24316.72,24332.52],[24339.09,24339.09,24321.17,24328.56],[24333.83,24338.91,24317.91,24329.19],[24331.51,24342.87,24314.42,24329.31],[24330.41,24336.35,24309.42,24323.85],[24327.13,24344.86,24313.29,24328.19],[24327.66,24347.63,24324.26,24336.57],[24332.12,24348.42,24331.34,24340.32],[24336.22,24342.69,24320.73,24333.03],[24334.62,24350.2,24319.46,24336.2],[24335.41,24353.25,24323.16,24337.8],[24336.61,24337.31,24312.9,24324.61],[24330.61,24330.61,24303.2,24314.85],[24322.73,24330.71,24299.87,24317.03]],"overlays":[{"data":[24288.53,24290.29,24291.84,24293.46,24295.3,24297.24,24298.83,24300.63,24302.61,24304.42,24305.95,24307.24,24308.46,24309.8,24310.96,24312.02,24313.2,24314.59,24315.85,24316.91,24318.22,24319.21,24319.92,24320.51,24321.26],"color":"#60a5fa","width":1.8},{"data":[null,null,null,null,null,null,24320.27,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],"color":"#fb923c","width":1.8,"dash":true},{"data":[null,null,null,null,null,null,null,null,null,24326.02,24326.02,null,null,null,null,null,null,null,null,null,null,null,null,null,null],"color":"#fb923c","width":1.8,"dash":true}],"markers":[{"i":5,"type":"dot","price":24366.73,"color":"#fbbf24","text":"no bottom wick"},{"i":6,"type":"buy","price":24349.74,"text":"BUY CE 24350"},{"i":6,"type":"exit","price":24320.27,"text":"STOP 1"},{"i":8,"type":"dot","price":24366.28,"color":"#fbbf24","text":"no bottom wick"},{"i":9,"type":"buy","price":24356.61,"text":"BUY CE 24357"},{"i":10,"type":"exit","price":24326.02,"text":"STOP 2"}],"shades":[{"from":6,"to":6,"color":"rgba(96,165,250,0.07)","label":"holding","labelBottom":true},{"from":9,"to":10,"color":"rgba(96,165,250,0.07)","label":"holding","labelBottom":true},{"from":10.5,"to":24,"color":"rgba(239,83,80,0.07)","label":"day closed — no more entries"}],"hlines":[],"legend":[{"label":"50 SMA (raw closes)","color":"#60a5fa"},{"label":"our stop","color":"#fb923c"}]});
+TVChart.render("ha-chop", {"title":"A choppy day around the 50 SMA — no trade","subtitle":"NIFTY 50 · 15m Heikin Ashi · Example — not a real trade","times":["09:15","09:30","09:45","10:00","10:15","10:30","10:45","11:00","11:15","11:30","11:45","12:00","12:15","12:30","12:45","13:00","13:15","13:30","13:45","14:00","14:15","14:30","14:45","15:00","15:15"],"candles":[[24299.65,24316.43,24266.27,24290.95],[24295.3,24303.67,24265.57,24286.68],[24290.99,24311.83,24289.91,24300.21],[24295.6,24311.76,24289.53,24301.86],[24298.73,24309.6,24292.36,24301.44],[24300.09,24315.37,24285.2,24300.07],[24300.08,24310.09,24276.25,24294.16],[24297.12,24301.77,24284.4,24292.47],[24294.79,24316.36,24283.19,24298.08],[24296.43,24315.91,24281.18,24297.36],[24296.9,24308.54,24275.64,24289.44],[24293.17,24299.59,24270.79,24285.35],[24289.26,24307.09,24277.71,24291.22],[24290.24,24296.43,24266.6,24283.5],[24286.87,24287.51,24259.87,24276.11],[24281.49,24282.24,24259.38,24271.96],[24276.72,24282.77,24257.54,24270.26],[24273.49,24283.49,24249.17,24266.99],[24270.24,24291.65,24248.76,24271.12],[24270.68,24286.67,24260.81,24274.7],[24272.69,24298.01,24263.79,24279.28],[24275.98,24293.27,24258.57,24277.34],[24276.66,24279.36,24245.76,24265.33],[24270.99,24274.29,24235.69,24255.93],[24263.46,24265.11,24227.86,24247.25]],"overlays":[{"data":[24299.62,24299.55,24299.6,24299.67,24299.68,24299.67,24299.49,24299.34,24299.34,24299.19,24298.81,24298.61,24298.41,24298.03,24297.56,24296.95,24296.37,24295.66,24295.25,24294.68,24294.36,24293.83,24293.08,24292.11,24291],"color":"#60a5fa","width":1.8}],"markers":[],"shades":[],"hlines":[],"legend":[{"label":"50 SMA (raw closes)","color":"#60a5fa"}]});
 </script>
 </body>
 </html>

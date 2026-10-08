@@ -231,783 +231,524 @@
 
 <header class="hero">
   <h1>Opening Range Breakout (ORB)</h1>
-  <p class="subtitle">Buy a CE or PE when NIFTY breaks out of its first 15-minute range on a trending day &mdash; explained in plain English</p>
+  <p class="subtitle">Buy a CE or a PE when NIFTY breaks out of its first 15-minute box and keeps going &mdash; in plain English, with charts</p>
   <div class="meta">
-    <span><span class="badge badge-orange">v7.0.0</span></span>
-    <span>Updated: 2026-07-26</span>
-    <span>NIFTY Options &mdash; 1 Trade / Day &mdash; Rides Trend Days</span>
+    <span><span class="badge badge-orange">v8.0.0</span></span>
+    <span>Updated: 2026-10-08</span>
+    <span>NIFTY options &mdash; 1 trade a day</span>
   </div>
 </header>
 
 <nav class="toc">
   <h2>&#9776; What's inside</h2>
   <ol>
-    <li><a href="#overview">The idea in one minute</a></li>
-    <li><a href="#glossary">Words you'll see (plain meanings)</a></li>
-    <li><a href="#window">Step 1 &mdash; Draw the opening box</a></li>
-    <li><a href="#entry">Step 2 &mdash; The checklist before a trade</a></li>
-    <li><a href="#confirm">Step 3 &mdash; Wait for proof, then buy</a></li>
+    <li><a href="#overview">ORB in one minute</a></li>
+    <li><a href="#glossary">Words you'll see</a></li>
+    <li><a href="#box">Step 1 &mdash; Draw the opening box</a></li>
+    <li><a href="#checklist">Step 2 &mdash; The checklist</a></li>
+    <li><a href="#confirm">Step 3 &mdash; Break, then proof</a></li>
+    <li><a href="#retest">The backup path: retest or resume</a></li>
+    <li><a href="#filters">Filters that say "not today"</a></li>
     <li><a href="#option">Step 4 &mdash; Pick the option</a></li>
     <li><a href="#exit">Step 5 &mdash; When we sell</a></li>
-    <li><a href="#vix">The "market too jumpy" filter (VIX)</a></li>
-    <li><a href="#risk">Safety limits &amp; the losing-streak brake</a></li>
+    <li><a href="#reentry">A second try after a stop (off)</a></li>
+    <li><a href="#risk">Safety limits</a></li>
     <li><a href="#evidence">How much to trust the numbers</a></li>
-    <li><a href="#modes">Paper, Live &amp; Backtest</a></li>
-    <li><a href="#config">All the settings, explained</a></li>
+    <li><a href="#modes">Paper, Live, Backtest &amp; Replay</a></li>
+    <li><a href="#config">All the settings</a></li>
     <li><a href="#gaps">What's still missing</a></li>
   </ol>
 </nav>
 
 <div class="container">
 
-<!--LIVE_STATUS_PANEL-->
-
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 1. OVERVIEW                                                            -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
 <section class="section orange" id="overview">
-  <h2><span class="section-icon icon-orange">&#9881;</span> 1. The idea in one minute</h2>
-
-  <p>Every morning, in its <strong>first 15 minutes</strong> (9:15 to 9:30), NIFTY draws a small high-and-low box. Think of it as the market "making up its mind." This strategy watches that box and asks one question: <strong>does the price break out of the box and keep running?</strong></p>
-
-  <ul>
-    <li>If price <strong>breaks above the box and keeps going up</strong> &rarr; we buy a <strong>CE (call option)</strong> to profit from the rise.</li>
-    <li>If price <strong>breaks below the box and keeps falling</strong> &rarr; we buy a <strong>PE (put option)</strong> to profit from the drop.</li>
-  </ul>
-
-  <p>We buy only <strong>one option at a time</strong> (no pairs, no hedges), and normally <strong>only one trade for the whole day</strong>. The whole point is to catch a <em>trending day</em> &mdash; a day that picks a direction in the morning and runs with it &mdash; and to <strong>skip the days that just wobble sideways</strong> and trap you.</p>
-
-  <!-- ── how to read the charts (plain-English key) ── -->
-  <div class="tv-key" style="margin:18px 0 6px; border:1px solid #2b3648; border-left:4px solid #60a5fa; border-radius:10px; background:#101725; padding:14px 18px;">
-    <div style="font-weight:700; color:#e8eef8; font-size:0.95rem; margin-bottom:8px;">New to charts? Read this once and every picture below makes sense</div>
-    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:8px 20px; font-size:0.84rem; line-height:1.55; color:#a9b6c9;">
-      <div><b style="color:#26a69a;">Green bar</b> &mdash; that slice of time ended <b>higher</b> than it started. Buyers won.</div>
-      <div><b style="color:#ef5350;">Red bar</b> &mdash; that slice of time ended <b>lower</b> than it started. Sellers won.</div>
-      <div><b style="color:#e8eef8;">The thin spike</b> above and below each bar is the highest and lowest price touched inside it.</div>
-      <div><b style="color:#26a69a;">&#9650; Triangle up</b> = the moment we <b>bought</b>. <b style="color:#ef5350;">&#9660; Triangle down</b> = the moment we <b>sold</b>.</div>
-      <div><b style="color:#fbbf24;">Yellow dot</b> = the candle that set off the signal &mdash; the thing the strategy was waiting for.</div>
-      <div><b style="color:#fbbf24;">Dashed line with a price tag</b> = a level that matters: a stop-loss, a target, or a floor under our profit.</div>
-      <div><b style="color:#94a3b8;">Shaded column</b> = the stretch of time we were actually holding the option.</div>
-      <div><b style="color:#7890c8;">Coloured lines</b> are the strategy's tools. The small legend under each chart names them.</div>
-    </div>
-    <div style="font-size:0.8rem; color:#7d8ba0; margin-top:9px;"><b style="color:#a9b6c9;">A word on "points".</b> Every price on these charts is the <b>index level itself</b> &mdash; not rupees, and not the price of the option you buy. So "+30 points" means the index moved 30 points our way. As a rough rule of thumb the option we buy gains a little over <b>half a point</b> for each point the index moves, and one lot is about 65 units &mdash; so a 30-point index move is roughly &#8377;1,050 on one lot before costs.</div>
+  <h2><span class="section-icon icon-orange">&#9881;</span>1. ORB in one minute</h2>
+  <div class="note note-info">
+    <strong>The whole idea</strong>
+    <ul>
+      <li>From 9:15 to 9:30 NIFTY draws a small <b>box</b>: the highest and lowest price of the first 15 minutes.</li>
+      <li>At 9:30 the box is locked. It never changes again that day.</li>
+      <li>If a 5-minute candle <b>closes above</b> the box, that is a breakout up. If one <b>closes below</b>, that is a breakout down.</li>
+      <li>We never buy that first candle. We wait for the <b>next</b> candle to close even further. That is our proof.</li>
+      <li>Proof up &rarr; buy a <b>CE</b> (call option). Proof down &rarr; buy a <b>PE</b> (put option).</li>
+      <li>Two quick checks must agree: <b>RSI</b> and <b>SuperTrend</b> must point the same way as the trade.</li>
+      <li>The stop goes at the far end of the breakout candle.</li>
+      <li>One trade a day. No new trades after 11:30. Anything still open is sold at 15:15.</li>
+    </ul>
   </div>
-
-  <div class="tv-chart" id="orb-session"></div>
-  <p class="tv-cap"><b>A whole ORB trend day &mdash; one trade, held for four hours.</b> The first three candles (9:15&ndash;9:30) draw the blue dashed <b>opening range</b> box; it is narrow, which is exactly what ORB likes. Price coils just under the top, then at <b>09:55</b> a decisive green candle closes clearly above the box <em>and</em> above the purple fair-value (VWAP) line (yellow dot = the breakout candle). <em>We still don't buy.</em> Only when the <em>next</em> candle pushes higher do we get our proof &rarr; <b>BUY CE at 25,170</b> (10:00). NIFTY then trends up all day; we ride the orange EMA20 line and sell only when a candle finally <b>closes back below EMA20</b> &rarr; <b>EXIT 25,347</b> (14:25), about <b>+177 spot points</b>. On roughly 3 days out of 4 the box never breaks convincingly and we don't trade at all.</p>
-
-  <div class="note note-success">
-    <strong>One engine, rebuilt on 26 July 2026.</strong>
-    There used to be three versions (V1, V2, V3) sitting behind switches. They are all <strong>gone</strong>. Today there is exactly <em>one</em> ORB engine and one set of rules &mdash; the ones in this guide. Anything that was tested and did not help (the extra indicators, the "must clear yesterday's high" rule, the "must close near the candle's tip" rule, the minimum box size) was <strong>deleted from the code</strong> rather than left behind a toggle, so there is nothing hidden to switch back to.
-  </div>
-
-  <p>Its goal is simple: <strong>catch the strong trend days and throw away the fake breakouts &mdash; not to trade more often.</strong> It buys options that are <em>slightly in-the-money</em> (explained below), and it measures everything against how much NIFTY is <em>normally</em> moving that day, so the same settings keep working whether the market is calm or wild.</p>
-
-  <h3>Why only one trade a day?</h3>
-  <p>The morning box only forms once. A "breakout" that shows up at 2 PM is usually a completely different situation (news, a late surge) and tends to be a coin-flip. So ORB commits to a <strong>single</strong> breakout: the first clean one it sees. If that one doesn't work out, it does <strong>not</strong> go looking for a second try. Trying to squeeze in more trades just adds afternoon chop to the results.</p>
-
   <div class="note note-danger">
-    <strong>Read this before you trade a single rupee of this.</strong>
-    Measured over <strong>2.5 years</strong> (1 Jan 2024 &rarr; 11 Aug 2026) ORB took <strong>329 trades</strong> and lost
-    <strong>&#8377;1,78,963</strong> &mdash; 20.7% wins, profit factor 0.39, and <em>every single year negative on its own</em>.
-    An early 39-session sample suggested a small profit; the long sample says that was luck. The rules below are
-    documented because the engine runs them, <strong>not</strong> because they make money. Section 10 has the full verdict.
+    <strong>Read this before you trade real money.</strong>
+    A long backtest (1 Jan 2024 &rarr; 11 Aug 2026) showed ORB losing money: 329 trades, 20.7% winners,
+    &minus;&#8377;1,78,963, and every year negative on its own. The rules below are explained because the engine runs them,
+    not because they are proven to make money. Section 12 has the details.
   </div>
-
-  <h3>Where you run it</h3>
+  <div class="pillars">
+    <span class="pillar">NIFTY 50 spot, 5-min candles</span><span class="pillar">1 trade a day</span><span class="pillar">Entries 09:30&ndash;11:30</span><span class="pillar">Slightly in-the-money option</span><span class="pillar">Square-off 15:15</span>
+  </div>
   <table>
     <thead><tr><th>Mode</th><th>Page</th><th>What happens</th></tr></thead>
     <tbody>
-      <tr><td><strong>Paper</strong></td><td><code>/orb-paper</code></td><td>Practice mode. Real live prices, but pretend money &mdash; no real orders. This is the "official" behaviour everything else is checked against.</td></tr>
-      <tr><td><strong>Live</strong></td><td><code>/orb-live</code></td><td>Real money through Fyers. Locked behind <em>two</em> safety switches so it can't fire by accident (see below).</td></tr>
-      <tr><td><strong>Backtest</strong></td><td><code>/orb-backtest</code></td><td>Test the strategy on past days. There's no real option data in history, so it estimates the option price (details in Section 11).</td></tr>
-      <tr><td><strong>History</strong></td><td><code>/orb-paper/history</code></td><td>Look back at past sessions and their trades.</td></tr>
+      <tr><td>Paper</td><td><code>/orb-paper</code></td><td>Real live prices, pretend money. This is the official version. Live and Backtest are made to match it.</td></tr>
+      <tr><td>Live</td><td><code>/orb-live</code></td><td>Real orders through Fyers. Locked behind two safety switches.</td></tr>
+      <tr><td>Backtest</td><td><code>/orb-backtest</code></td><td>Runs the rules over past days. Option prices are estimated.</td></tr>
+      <tr><td>History</td><td><code>/orb-paper/history</code></td><td>Past paper sessions and their trades.</td></tr>
     </tbody>
   </table>
 </section>
 
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 2. GLOSSARY                                                             -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<section class="section cyan" id="glossary">
-  <h2><span class="section-icon icon-cyan">&#128218;</span> 2. Words you'll see (plain meanings)</h2>
+<!--LIVE_STATUS_PANEL-->
 
-  <p>A few terms come up again and again. Here's what each one means, in everyday language &mdash; keep this handy and the rest of the guide reads easily.</p>
-
+<section class="section blue" id="glossary">
+  <h2><span class="section-icon icon-blue">&#128218;</span>2. Words you'll see</h2>
   <table>
-    <thead><tr><th>Term</th><th>What it really means</th></tr></thead>
+    <thead><tr><th>Word</th><th>Plain meaning</th></tr></thead>
     <tbody>
-      <tr><td><strong>Opening range (OR)</strong></td><td>The high and low of NIFTY's first 15 minutes. The "box" the market draws while it makes up its mind. "OR width" = how tall the box is, in points.</td></tr>
-      <tr><td><strong>CE / PE</strong></td><td>CE (call) makes money when NIFTY goes <em>up</em>. PE (put) makes money when NIFTY goes <em>down</em>. We only ever buy one of them at a time.</td></tr>
-      <tr><td><strong>Candle</strong></td><td>A 5-minute price bar showing where NIFTY opened, closed, and its high/low in that 5 minutes. A "green" candle closed higher than it opened; "red" closed lower.</td></tr>
-      <tr><td><strong>ATR</strong></td><td>"Average True Range" &mdash; simply <em>how much NIFTY normally moves</em> in a bar. If ATR is 30, a typical 5-minute candle spans about 30 points. We use it as a ruler: a "big" move on a calm day is small on a wild day, and ATR tells us which is which.</td></tr>
-      <tr><td><strong>VWAP</strong></td><td>The day's <em>fair-value line</em> &mdash; the average price weighted by how much traded there. If price is above VWAP, buyers are in control; below it, sellers are. We only buy CE above the line, PE below it.</td></tr>
-      <tr><td><strong>In-the-money (ITM) option</strong></td><td>An option that already has real value baked in, so it moves almost point-for-point with NIFTY and loses value slowly. We buy <em>slightly</em> ITM because it tracks a trend better than a cheap far-away option.</td></tr>
-      <tr><td><strong>Premium</strong></td><td>The price you pay for the option (in &#8377; per unit). "Premium collapsed 35%" means the option lost about a third of its value.</td></tr>
-      <tr><td><strong>Bid-ask spread</strong></td><td>The gap between the buy price and the sell price of an option. A wide gap means you lose money just entering and exiting &mdash; so we skip options with a wide spread.</td></tr>
-      <tr><td><strong>VIX</strong></td><td>The market's "fear gauge." High VIX = jumpy, expensive options and bigger swings. We can tell the strategy to sit out when VIX is too high.</td></tr>
-      <tr><td><strong>EMA20</strong></td><td>A smoothed average of the last several closes (the "20" is how many). We use it as a moving trend line: as long as price stays on the right side of it, the trend is still alive.</td></tr>
+      <tr><td>Candle</td><td>One bar on the chart. Here each candle is 5 minutes long. It shows where price opened, closed, and its high and low. Green = closed higher than it opened. Red = closed lower.</td></tr>
+      <tr><td>Close</td><td>The last price of a candle. ORB only acts on closes, never on a price in the middle of a candle.</td></tr>
+      <tr><td>Opening box (opening range, OR)</td><td>The high and low of NIFTY between 9:15 and 9:30. <b>ORH</b> = the top of the box. <b>ORL</b> = the bottom.</td></tr>
+      <tr><td>Breakout candle</td><td>The first candle that closes outside the box.</td></tr>
+      <tr><td>Confirmation candle</td><td>The candle right after the breakout candle. It must close even further out. We buy on its close.</td></tr>
+      <tr><td>CE / PE</td><td>Option types. A <b>CE</b> (call) gains when NIFTY goes up. A <b>PE</b> (put) gains when NIFTY goes down. ORB only ever buys one of them.</td></tr>
+      <tr><td>Premium</td><td>The price of the option, in rupees per unit.</td></tr>
+      <tr><td>In-the-money (ITM)</td><td>An option whose strike is already on the winning side of the current price. It costs more but moves more closely with NIFTY.</td></tr>
+      <tr><td>Delta</td><td>How much the option moves for a 1-point NIFTY move. A slightly ITM option has a delta near 0.6, so 10 NIFTY points &asymp; &#8377;6 of premium.</td></tr>
+      <tr><td>Stop-loss (stop)</td><td>The price where we give up and sell to keep a loss small.</td></tr>
+      <tr><td>Trail / trailing stop</td><td>A stop that moves along behind a winning trade, so some profit is kept.</td></tr>
+      <tr><td>EMA 20</td><td>Exponential moving average: a smooth line through the last 20 closes. Recent closes count more. ORB uses it as a trend line to exit.</td></tr>
+      <tr><td>RSI 14</td><td>Relative Strength Index: a 0&ndash;100 score of recent up-moves against down-moves over 14 candles. Above 50 = buyers have been stronger. Below 50 = sellers.</td></tr>
+      <tr><td>SuperTrend (10, 3)</td><td>A line that sits under price in an uptrend (bullish) and over price in a downtrend (bearish). It uses ATR (below) to decide how far away to sit. "10, 3" = 10-candle ATR, 3 &times; ATR away.</td></tr>
+      <tr><td>ATR</td><td>Average True Range: the average size of recent candles. A ruler for "how much does NIFTY normally move right now".</td></tr>
+      <tr><td>VWAP</td><td>The day's average price. ORB can check it, but that check is off by default.</td></tr>
+      <tr><td>VIX</td><td>India VIX, the market's "fear gauge". High VIX = big swings and expensive options.</td></tr>
+      <tr><td>Bid-ask spread</td><td>The gap between the best buy and best sell price of an option. A wide gap costs you money on every trade.</td></tr>
+      <tr><td>Square-off</td><td>Closing every open trade at a fixed time (15:15) so nothing is held overnight.</td></tr>
     </tbody>
   </table>
+  <div class="note note-info">
+    <strong>How to read the charts</strong>
+    Every chart below is a made-up illustration in TradingView style &mdash; not a real trade. Green and red bars are candles.
+    &#9650; = buy. &#9660; = sell. A dot marks the candle the text is talking about. Dashed lines with a tag on the right are price levels.
+    A shaded column is the time we hold the trade. The lower panel, when there is one, shows RSI, the option premium or VIX.
+    The indicator lines (EMA 20, RSI, SuperTrend) were calculated from the drawn candles, and every entry and exit was checked by
+    running the real ORB engine on those candles.
+  </div>
 </section>
 
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 3. THE BOX                                                              -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<section class="section blue" id="window">
-  <h2><span class="section-icon icon-blue">&#128340;</span> 3. Step 1 &mdash; Draw the opening box</h2>
-
-  <p>From <strong>9:15 to 9:30</strong>, the strategy watches every price tick and records the highest high and lowest low. At 9:30 sharp, the box is <strong>locked for the rest of the day</strong> &mdash; the top of the box (ORH) and bottom (ORL) never change again, no matter what happens later.</p>
-
-  <table>
-    <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
-    <tbody>
-      <tr><td><code>ORB_RANGE_START</code></td><td><code>09:15</code></td><td>When the box starts (market open).</td></tr>
-      <tr><td><code>ORB_RANGE_END</code></td><td><code>09:30</code></td><td>When the box locks. After this, the top and bottom are fixed.</td></tr>
-      <tr><td><code>ORB_ENTRY_START</code></td><td><code>09:30</code></td><td>Earliest we even look at a breakout. Defaults to the moment the opening range locks, so out of the box it changes nothing. Raise it to skip the very first candles after the open &mdash; but measure first: on the Jul&ndash;Aug 2026 sample the early trades lost <em>less</em> than the late ones.</td></tr>
-      <tr><td><code>ORB_ENTRY_END</code></td><td><code>11:30</code></td><td>Latest we'll take a new trade. A breakout after this is "too late" &mdash; the day is half over.</td></tr>
-      <tr><td><code>ORB_FORCED_EXIT</code></td><td><code>15:15</code></td><td>If we're still holding anything at this time, sell it &mdash; win or lose. We never carry overnight.</td></tr>
-      <tr><td><code>ORB_EXPIRY_DAY_ONLY</code></td><td><code>false</code></td><td>If turned on, only trade on weekly-expiry day (Tuesday).</td></tr>
-    </tbody>
-  </table>
-
-  <div class="note note-info">
-    <strong>The "normal move" ruler is fixed at 14 bars and is no longer a setting.</strong> ATR always uses 14 bars. The breakout cushion, however, <em>is</em> still configurable (<code>ORB_BUFFER_OR_MULT</code> / <code>ORB_BUFFER_ATR_MULT</code> / <code>ORB_BUFFER_MIN_PTS</code>) and every one of them defaults to <strong>0</strong> &mdash; so today any close past the box edge counts, with no cushion at all. Setting them to 0.15 / 0.30 / 1 restores the cushion described here, and the retest tolerance is always 10% of the box with a 5-point floor. These used to be env keys; they were removed because they are structural choices, not dials, and having them as keys only let the three modes drift apart. If you see <code>ORB_ATR_PERIOD</code>, <code>ORB_BUFFER_*</code>, <code>ORB_RETEST_TOL_*</code> or <code>ORB_TARGET_RANGE_MULT</code> still sitting in your <code>.env</code>, they are dead text &mdash; the code ignores them.
+<section class="section orange" id="box">
+  <h2><span class="section-icon icon-orange">&#128340;</span>3. Step 1 &mdash; Draw the opening box</h2>
+  <ol>
+    <li>At 9:15 the market opens.</li>
+    <li>The bot takes the first three 5-minute candles: 9:15, 9:20 and 9:25.</li>
+    <li>Their highest high is the top of the box (<b>ORH</b>). Their lowest low is the bottom (<b>ORL</b>).</li>
+    <li>At 9:30 the box is locked for the whole day.</li>
+    <li>Nothing is traded while the box is being drawn.</li>
+  </ol>
+  <div class="tv-chart" id="orb-box"></div>
+<p class="tv-cap"><b>What you see:</b> the last 40 minutes of yesterday (grey), then today's open. Yesterday closed at 24,995.3 and today opened at 25,022. The blue box is the 9:15&ndash;9:30 range: top 25,063, bottom 25,008, so it is 55 points tall. At 09:45 a candle closes at 25,076, above the box (yellow dot). <b>Why it matters:</b> the box is the only reference ORB uses. Every later decision is "did a candle close outside these two lines?"</p>
+  <div class="note note-warn">
+    <strong>Two box checks exist but are switched off</strong>
+    The code can skip a day when the box is too tall (<code>ORB_OR_ATR_MAX</code>, box height vs a 15-minute ATR, or
+    <code>ORB_OR_MAX_PTS</code>, a cap in points) or when the morning gap is huge (<code>ORB_GAP_OR_MULT</code>, gap vs box height).
+    All three ship at <code>0</code> = off, so every box is tradable. If you set them, a missing ATR or a missing yesterday's close
+    lets the day through instead of blocking it.
   </div>
+</section>
 
-  <h3>First question: is the box a good one?</h3>
-  <p>The strategy <em>can</em> inspect the box itself and skip the whole day. Both of these checks exist in the code, and <strong>both are switched OFF at the settings currently shipped</strong> (<code>ORB_OR_ATR_MAX=0</code> and <code>ORB_GAP_OR_MULT=0</code>) &mdash; the funnel trace logs each one as "disabled". They are described here because they are one line away from being back on, and because the numbers below are what you would be choosing when you set them.</p>
+<section class="section green" id="checklist">
+  <h2><span class="section-icon icon-green">&#9654;</span>4. Step 2 &mdash; The checklist</h2>
+  <p>The bot looks again every time a 5-minute candle closes. A trade happens only if every item below says yes. The paper engine checks them in this order:</p>
+  <div class="gate"><div class="gate-num">1</div><div class="gate-content"><div class="gate-name">Any trades left today?</div><div class="gate-desc">One trade a day by default.</div><div class="gate-rule">trades today &lt; ORB_MAX_DAILY_TRADES (1)</div></div></div>
+  <div class="gate"><div class="gate-num">2</div><div class="gate-content"><div class="gate-name">Daily loss limit not hit</div><div class="gate-desc">Only matters if you allow more than one trade.</div><div class="gate-rule">day's loss &lt; &#8377;3,000</div></div></div>
+  <div class="gate"><div class="gate-num">3</div><div class="gate-content"><div class="gate-name">Account-wide loss cap not hit</div><div class="gate-desc">One cap across all strategies. Off by default.</div><div class="gate-rule">PORTFOLIO_MAX_DAILY_LOSS = 0 (off)</div></div></div>
+  <div class="gate"><div class="gate-num">4</div><div class="gate-content"><div class="gate-name">No losing-streak or weekly brake</div><div class="gate-desc">Sit out after 4 losing days in a row, or after losing &#8377;9,000 this week.</div><div class="gate-rule">ORB_RISK_THROTTLE_ENABLED = true</div></div></div>
+  <div class="gate"><div class="gate-num">5</div><div class="gate-content"><div class="gate-name">Expiry-day-only (off)</div><div class="gate-desc">If switched on, trade only on the weekly expiry day.</div><div class="gate-rule">ORB_EXPIRY_DAY_ONLY = false</div></div></div>
+  <div class="gate"><div class="gate-num">6</div><div class="gate-content"><div class="gate-name">Inside the entry window</div><div class="gate-desc">The candle must start at or after 9:30 and before 11:30.</div><div class="gate-rule">09:30 &le; candle &lt; 11:30</div></div></div>
+  <div class="gate"><div class="gate-num">7</div><div class="gate-content"><div class="gate-name">A close outside the box</div><div class="gate-desc">The first candle in the window that closes above ORH (CE) or below ORL (PE). No extra cushion by default.</div><div class="gate-rule">close &gt; ORH &rarr; CE &middot; close &lt; ORL &rarr; PE</div></div></div>
+  <div class="gate"><div class="gate-num">8</div><div class="gate-content"><div class="gate-name">Proof from the next candle</div><div class="gate-desc">The candle after the breakout must close beyond the breakout candle's close. If not, the backup path (Section 6) takes over.</div><div class="gate-rule">CE: next close &gt; breakout close &middot; PE: next close &lt; breakout close</div></div></div>
+  <div class="gate"><div class="gate-num">9</div><div class="gate-content"><div class="gate-name">RSI agrees</div><div class="gate-desc">Read on the candle we are buying.</div><div class="gate-rule">CE: RSI(14) &ge; 51 &middot; PE: RSI(14) &le; 49</div></div></div>
+  <div class="gate"><div class="gate-num">10</div><div class="gate-content"><div class="gate-name">SuperTrend agrees</div><div class="gate-desc">Read on the candle we are buying.</div><div class="gate-rule">CE: SuperTrend(10,3) bullish &middot; PE: bearish</div></div></div>
+  <div class="gate"><div class="gate-num">11</div><div class="gate-content"><div class="gate-name">VIX and OI filters (both off)</div><div class="gate-desc">Optional extra filters. See Section 7.</div><div class="gate-rule">ORB_VIX_ENABLED = false &middot; ORB_OI_ENABLED = false</div></div></div>
+  <div class="gate"><div class="gate-num">12</div><div class="gate-content"><div class="gate-name">The option is fine to buy</div><div class="gate-desc">A live option price must exist and the bid-ask spread must be tight. The price band check is off by default.</div><div class="gate-rule">spread &le; 2 pts</div></div></div>
+  <div class="gate"><div class="gate-num">13</div><div class="gate-content"><div class="gate-name">Enough capital</div><div class="gate-desc">The shared capital pool must be able to pay for the lot.</div><div class="gate-rule">cost &le; available capital</div></div></div>
+  <div class="note note-info">
+    <strong>What is NOT checked by default</strong>
+    The breakout candle's colour, its body size and the VWAP side are only checked when <code>ORB_BODY_ATR_MULT</code> is above 0 or
+    <code>ORB_VWAP_FILTER_ENABLED</code> is on. Both ship off. RSI and SuperTrend "fail open": if there is not enough history
+    to work them out, they let the trade through.
+  </div>
+  <div class="note note-info">
+    <strong>Want to see why nothing traded?</strong>
+    Every candle's checklist is saved in the skip log as one short line, for example
+    <code>time window:P,trade budget:P,OR ready:P,OR vs ATR15:S,gap sanity:S,breakout:F</code> (P = pass, F = fail, S = skipped).
+    Turn on <code>ORB_DEBUG_TRACE</code> to also print the full table to <code>/logs</code>. Turn it off afterwards &mdash; it is noisy.
+  </div>
+</section>
+
+<section class="section green" id="confirm">
+  <h2><span class="section-icon icon-green">&#128260;</span>5. Step 3 &mdash; Break, then proof</h2>
+  <ol>
+    <li>Wait for the first candle that <b>closes</b> outside the box. That is the breakout candle.</li>
+    <li>Do <b>not</b> buy it.</li>
+    <li>Look at the very next candle. For a CE it must close <b>higher</b> than the breakout candle's close. For a PE it must close <b>lower</b>.</li>
+    <li>Check RSI and SuperTrend on that candle.</li>
+    <li>All good &rarr; buy on that candle's close.</li>
+    <li>Place the stop at the breakout candle's <b>low</b> (CE) or <b>high</b> (PE).</li>
+  </ol>
+  <h3>A CE example</h3>
+  <div class="tv-chart" id="orb-ce"></div>
+<p class="tv-cap"><b>What you see:</b> box 25,008&ndash;25,063. At 09:45 the breakout candle closes at 25,076 (yellow dot). At 09:50 the next candle closes at 25,089 &mdash; higher than 25,076, so that is the proof. RSI is 70.26 (needs 51 or more) and the green dashed SuperTrend line is below price (bullish). <b>BUY CE at 25,089</b>. The red stop line is the breakout candle's low, 25,044. The trade ends at 10:15 at 25,113.53 when the global profit lock fires (Section 9 explains it). <b>Why it matters:</b> waiting one candle filters out pokes above the box that fall straight back.</p>
+  <h3>The same rules, going down</h3>
+  <div class="tv-chart" id="orb-pe"></div>
+<p class="tv-cap"><b>What you see:</b> box 24,704&ndash;24,748. At 09:35 a candle closes at 24,694, below the box bottom (yellow dot). The next candle closes lower still: <b>BUY PE at 24,681</b>. RSI is 31.56 (a PE needs 49 or less) and SuperTrend is red (bearish) above price. The stop is the breakout candle's <b>high</b>, 24,714. The trade ends at 10:10 at 24,654.55 through the profit lock. <b>Why it matters:</b> a PE is the exact mirror of a CE &mdash; same steps, opposite direction.</p>
+  <div class="note note-info">
+    <strong>Stricter proof is available</strong>
+    <code>ORB_CONFIRM_MODE</code> ships as <code>close</code> (just close beyond the breakout candle's close). Set it to <code>extend</code> and the
+    next candle must also make a higher high (lower low for PE) and close back beyond the box edge.
+  </div>
+  <div class="note note-info">
+    <strong>The bot keeps looking after a weak poke</strong>
+    With <code>ORB_BREAKOUT_RESCAN</code> on (default), a close outside the box that fails the body/colour/VWAP tests is skipped and the bot keeps
+    watching for a better one. At the default settings those tests are off, so the first close outside the box is the breakout.
+    The breakout chosen for the day does not change after that &mdash; the engine commits to it.
+  </div>
+  <div class="note note-info">
+    <strong>The "target" line on the ORB page does nothing</strong>
+    The page draws a target 1.5 &times; the box height beyond the edge. It is only a picture. There is no target exit.
+  </div>
+</section>
+
+<section class="section purple" id="retest">
+  <h2><span class="section-icon icon-purple">&#8635;</span>6. The backup path: retest or resume</h2>
+  <p>Sometimes the next candle does not close further out. The bot does not give up at once. It stays ready for up to <b>6 more candles</b> (<code>ORB_RETEST_MAX_WAIT</code>) and buys if one of these happens first:</p>
   <ul>
-    <li><strong>Is the box too wide?</strong> (<code>ORB_OR_ATR_MAX</code>, off.) Set it to 2.5 and a box more than 2.5&times; the normal 15-minute move skips the day: the big move already happened before 9:30 and we would just be chasing it.</li>
-    <li><strong>There is deliberately NO minimum box size.</strong> The old engine also skipped days where the box was smaller than 0.7&times; the normal move. Testing showed the two best trades in the whole sample came from the two <em>narrowest</em> boxes, so a minimum was pointing exactly the wrong way. It was deleted.</li>
-    <li><strong>Did the market gap open crazily?</strong> (<code>ORB_GAP_OR_MULT</code>, off.) Set it to 3 and an open more than 3&times; the box height from yesterday's close skips the day as news or panic that has already spent its energy.</li>
-    <li><strong>An absolute width cap</strong> (<code>ORB_OR_MAX_PTS</code>) also exists and is off. Leave it off: it looked like the one cut separating winners from losers across 2025 and 2026, then adding 2024 reversed it outright. Two years agreeing and a third reversing is what a fitted rule looks like, not an edge.</li>
+    <li><b>Resume:</b> a candle closes beyond the breakout candle's close after all.</li>
+    <li><b>Retest that holds:</b> a candle dips back to the box edge &mdash; within 10% of the box height, at least 5 points &mdash; but still closes outside the box.</li>
   </ul>
-
-  <div class="note note-info">
-    <strong>Real numbers &mdash; if you switch these on.</strong> Say the normal 15-minute move (ATR15) today is 40 points, with <code>ORB_OR_ATR_MAX=2.5</code> and <code>ORB_GAP_OR_MULT=3</code>. (At the shipped settings every day below is tradable, because neither check runs.)<br>
-    &bull; Box is 60 pts tall &rarr; 60 &divide; 40 = <strong>1.5&times;</strong> &rarr; under 2.5 &rarr; <span style="color:var(--accent-green)">day is tradable</span>.<br>
-    &bull; Box is 110 pts tall &rarr; 110 &divide; 40 = <strong>2.75&times;</strong> &rarr; over 2.5 &rarr; <span style="color:var(--accent-red)">skip the whole day</span>.<br>
-    &bull; Box is 60 pts and NIFTY opened 200 pts above yesterday's close &rarr; 200 &gt; 3 &times; 60 = 180 &rarr; <span style="color:var(--accent-red)">skip the whole day</span> (news gap).
-  </div>
-
-  <div class="note note-info">
-    <strong>Why measure against "the normal move" instead of fixed points?</strong> A 40-point box means something very different on a sleepy day than on a stormy one. By comparing the box to how much NIFTY is <em>actually</em> moving today, the same settings keep making sense in any market &mdash; you never have to re-tune numbers when volatility changes.
-  </div>
-
-  <div class="note note-warn">
-    <strong>Both day-checks "fail open."</strong> If the ruler isn't ready yet (not enough past bars for ATR) or yesterday's close isn't in the loaded history, the check is <em>skipped</em> rather than treated as a fail. Not knowing the gap is not proof of a bad gap.
-  </div>
-
-  <div class="tv-chart" id="orb-toowide"></div>
-  <p class="tv-cap"><b>A day ORB refuses to trade.</b> The opening 15 minutes swung 112 points &mdash; nearly 2.8&times; the normal 15-min move. All the energy was already spent before 9:30, so no breakout from this box is worth buying. ORB draws the box, marks the day <b>SKIPPED</b>, and does nothing for the rest of the session. Roughly speaking, ORB stands aside on most days: on the 39-session sample it traded only <b>9 times</b>.</p>
-</section>
-
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 4. IS TODAY WORTH TRADING (entry gates)                                 -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<section class="section green" id="entry">
-  <h2><span class="section-icon icon-green">&#9654;</span> 4. Step 2 &mdash; The checklist before a trade</h2>
-
-  <p>For a trade to happen, <strong>every</strong> box below has to tick "yes," <strong>in order</strong>. If any one fails, we skip &mdash; and the reason is written into the log so you can see exactly why nothing traded today.</p>
-
-  <div class="gate">
-    <div class="gate-num">1</div>
-    <div class="gate-content">
-      <div class="gate-name">Are we inside the trading window?</div>
-      <div class="gate-desc">Nothing before the box locks, nothing after the morning is over.</div>
-      <div class="gate-rule">time is 09:30&ndash;11:30 IST</div>
-    </div>
-  </div>
-
-  <div class="gate">
-    <div class="gate-num">2</div>
-    <div class="gate-content">
-      <div class="gate-name">Haven't we already traded today?</div>
-      <div class="gate-desc">One trade per day. A loss is not a reason to try again.</div>
-      <div class="gate-rule">trades today = 0</div>
-    </div>
-  </div>
-
-  <div class="gate">
-    <div class="gate-num">3</div>
-    <div class="gate-content">
-      <div class="gate-name">Is the box too wide? <span style="opacity:.7">(off)</span></div>
-      <div class="gate-desc">Disabled at the shipped settings (<code>ORB_OR_ATR_MAX=0</code>) &mdash; every box height passes. Switch it on and a huge opening range means the move already happened. There is <strong>no minimum</strong> &mdash; narrow boxes are welcome (they were the best trades).</div>
-      <div class="gate-rule">disabled &middot; if on: box height &le; 2.5&times; the normal 15-min move</div>
-    </div>
-  </div>
-
-  <div class="gate">
-    <div class="gate-num">4</div>
-    <div class="gate-content">
-      <div class="gate-name">Did the market open calmly? <span style="opacity:.7">(off)</span></div>
-      <div class="gate-desc">Disabled at the shipped settings (<code>ORB_GAP_OR_MULT=0</code>). Switch it on to skip a giant news-gap that has already burned off the day's move.</div>
-      <div class="gate-rule">disabled &middot; if on: gap &le; 3&times; the box height</div>
-    </div>
-  </div>
-
-  <div class="gate">
-    <div class="gate-num">5</div>
-    <div class="gate-content">
-      <div class="gate-name">A real break past the box edge</div>
-      <div class="gate-desc">The first 5-min candle to <strong>close</strong> past the box edge is the day's one signal. Note the cushion is <strong>zero</strong> at the shipped settings (<code>ORB_BUFFER_OR_MULT</code> / <code>ORB_BUFFER_ATR_MULT</code> / <code>ORB_BUFFER_MIN_PTS</code> all 0), so any close past the edge counts &mdash; even by a single point.</div>
-      <div class="gate-rule">close beyond the edge (cushion currently 0 pts)</div>
-    </div>
-  </div>
-
-  <div class="gate">
-    <div class="gate-num">6</div>
-    <div class="gate-content">
-      <div class="gate-name">Does the breakout candle agree with RSI and SuperTrend?</div>
-      <div class="gate-desc">Two indicator gates, both <strong>ON</strong> (<code>ORB_RSI_ENABLED</code>, <code>ORB_ST_ENABLED</code>, added 2026-08-13), read on the candle being bought and failing <em>open</em> during warm-up. The old body/colour/VWAP decisiveness tests are all off: <code>ORB_BODY_ATR_MULT=0</code> and <code>ORB_VWAP_FILTER_ENABLED=false</code>.</div>
-      <div class="gate-rule">CE: RSI &ge; 51 &amp; SuperTrend(10,3) bullish &middot; PE: RSI &le; 49 &amp; SuperTrend bearish</div>
-    </div>
-  </div>
-
-  <div class="gate">
-    <div class="gate-num">7</div>
-    <div class="gate-content">
-      <div class="gate-name">Wait for the next candle to agree</div>
-      <div class="gate-desc"><strong>We never buy the breakout candle itself.</strong> The <em>next</em> candle must push further: a higher high AND a higher close, still beyond the box edge and still on the right side of VWAP (mirrored for PE). This one extra step is what keeps us on real trend days and off fakeouts.</div>
-      <div class="gate-rule">next candle extends the move &rarr; BUY on its close</div>
-    </div>
-  </div>
-
-  <div class="gate">
-    <div class="gate-num">8</div>
-    <div class="gate-content">
-      <div class="gate-name">If it hesitates &mdash; stay armed for a few candles</div>
-      <div class="gate-desc">If that next candle stalls, we don't give up. For up to 6 more candles we can still enter on a fresh push or a pullback-and-hold of the edge. A close back <em>inside</em> the box cancels the day. (Section 5.)</div>
-      <div class="gate-rule">resume or retest within 6 candles &middot; close back inside the box = day cancelled</div>
-    </div>
-  </div>
-
-  <div class="gate">
-    <div class="gate-num">9</div>
-    <div class="gate-content">
-      <div class="gate-name">Is the option worth buying?</div>
-      <div class="gate-desc">Pick a slightly in-the-money strike, check its price is in a sensible range, and that the buy/sell gap (spread) is tight. Live and practice only &mdash; history has no option prices, so the backtest can't run these.</div>
-      <div class="gate-rule">premium inside the band &middot; spread &le; 2 pts &middot; optional crowd-positioning (OI) check</div>
-    </div>
-  </div>
-
-  <div class="note note-info">
-    <strong>What was deleted, and why.</strong> The older engine also demanded EMA20/50 + ADX + RSI agreement, a break past <em>yesterday's</em> high/low ("fresh ground"), a close in the top/bottom fifth of the breakout candle, a minimum box size, and wick/volume checks. Every one of them was measured and removed:
-    <ul style="margin-top:8px">
-      <li><strong>EMA and ADX</strong> &mdash; the engine carrying them took <em>zero</em> trades in 39 sessions. A strategy that never trades cannot be validated. <strong>RSI came back:</strong> it was reintroduced on 2026-08-13 as a light directional gate (51 for CE / 49 for PE, not the old tight band), alongside a SuperTrend(10,3) direction check. Both are ON today &mdash; see step 6.</li>
-      <li><strong>"Fresh ground" (yesterday's high/low)</strong> &mdash; it kept 7 trades worth 0% wins and cut 6 trades worth +290 points, <em>including both winners</em>. A filter that removes the entire right tail of a right-tail strategy is structurally wrong.</li>
-      <li><strong>"Close near the tip"</strong> &mdash; removing it took the sample from +133 to +346 spot points.</li>
-      <li><strong>Minimum box size</strong> &mdash; it never fired, and the two winners came from the two narrowest boxes.</li>
-    </ul>
-  </div>
-
-  <div class="note note-warn">
-    <strong>Want to see exactly why nothing traded?</strong> Set <code>ORB_DEBUG_TRACE=true</code> and every 5-minute candle prints the full checklist to <code>/logs</code> &mdash; each gate with PASS / FAIL / SKIP, its actual numbers, and the final decision. The same funnel is always saved into the skip log as one short line, e.g. <code>time&nbsp;window:P,trade&nbsp;budget:P,OR&nbsp;ready:P,OR&nbsp;vs&nbsp;ATR15:P,gap&nbsp;sanity:P,breakout:F</code> &mdash; so a quiet day can be diagnosed from the log file alone. The trace is noisy; turn it off again afterwards.
-  </div>
-</section>
-
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 5. CONFIRMATION & RETEST                                                -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<section class="section purple" id="confirm">
-  <h2><span class="section-icon icon-purple">&#128260;</span> 5. Step 3 &mdash; Wait for proof, then buy</h2>
-
-  <p>The strategy never jumps on the breakout candle itself. It waits for proof. There are two ways it can decide to actually buy:</p>
-
-  <h3>The main way &mdash; confirmation</h3>
-  <p>After the breakout candle, we look at the <strong>very next</strong> 5-minute candle. At the shipped setting (<code>ORB_CONFIRM_MODE=close</code>) the test is simply that it <strong>closes beyond the breakout candle's close</strong> &mdash; higher for a CE, lower for a PE. No new extreme is required, and the box edge and VWAP are not re-checked. That is our proof, and we buy on that candle's close. Set <code>ORB_CONFIRM_MODE=extend</code> for the stricter original rule: a higher high <em>and</em> a higher close, still beyond the box edge.</p>
-
-  <div class="note note-info">
-    <strong>Real numbers.</strong> Box top = 25,275. Cushion = 9 pts, so a real break needs a close above 25,284.<br>
-    9:40 candle closes at <strong>25,302</strong>, green, big body &rarr; that's the breakout. <em>We do not buy.</em><br>
-    9:45 candle: high 25,328 (higher than 25,306) and close 25,322 (higher than 25,302) &rarr; <span style="color:var(--accent-green)"><strong>proof &mdash; BUY CE at 25,322</strong></span>.<br>
-    If instead 9:45 had closed at 25,294 &mdash; still above the box, but not higher than the breakout close &mdash; no buy yet; we move to the backup window below.
-  </div>
-
-  <h3>The backup way &mdash; resume or retest</h3>
-  <p>Sometimes the next candle stalls instead of pushing. Rather than give up, the strategy stays armed for up to <strong>6 more candles</strong> (<code>ORB_RETEST_MAX_WAIT</code>) and can still get in if price:</p>
+  <p>Two things end the wait without a trade:</p>
   <ul>
-    <li><strong>Pushes on again</strong> in the breakout direction &mdash; a fresh higher-high-and-higher-close beyond the edge (a "resume"), or</li>
-    <li><strong>Dips back to the box edge, touches it, and holds</strong> &mdash; the candle wicks down to within 10% of the box height (minimum 5 points) of the edge but still <em>closes</em> beyond it (a "retest that holds").</li>
+    <li>The 6 candles run out.</li>
+    <li>A candle closes back through the <b>far side</b> of the box (below ORL for a CE, above ORH for a PE).</li>
   </ul>
-  <p>Either way the candle must still be on the right side of VWAP. If <strong>any</strong> candle closes back <em>inside</em> the box, the breakout is dead and the day is cancelled &mdash; no more attempts. If the 6 candles run out with neither happening, the day is also over.</p>
-
-  <div class="note note-warn">
-    <strong>Important: the backup never blocks a trade.</strong> If price simply rockets away and never comes back to retest, <strong>we still buy</strong> on the confirmation candle &mdash; we don't wait for a pullback that may never come. We tested forcing a retest before every trade and it made results clearly <em>worse</em>: demanding a pullback selected the weak, stall-and-fade breakouts and threw away the strong ones that never look back &mdash; exactly the trades that pay for the whole strategy. Setting <code>ORB_RETEST_MAX_WAIT=0</code> turns the backup off entirely and leaves only confirmed entries.
-  </div>
-
-  <div class="tv-chart" id="orb-fakeout"></div>
-  <p class="tv-cap"><b>Why we wait for proof.</b> Price poked above the box top on one green candle &mdash; but it never got clearly above the fair-value (VWAP) line, and the <em>very next</em> candle slammed straight back down <b>inside the box</b>. The confirmation never came, so we <b>never bought</b>. The orange dot marks the failed poke: a classic fakeout that the confirmation-plus-VWAP rule quietly filters out.</p>
-
   <div class="tv-chart" id="orb-retest"></div>
-  <p class="tv-cap" id="orb-retest-cap"><b>The backup path in action.</b> The breakout candle (orange dot, 9:40) was decisive, but the very next candle <em>stalled</em> &mdash; no higher high, so no buy. We stayed armed. Two candles later price dipped back and kissed the box top from above, then <b>closed back above it</b> &mdash; a retest that held &rarr; <b>BUY CE at 25,291</b>. Had that dip <em>closed</em> below 25,275 (inside the box) instead, the day would simply have been cancelled.</p>
-
-  <div class="tv-chart" id="orb-cancelled"></div>
-  <p class="tv-cap"><b>And here is that cancellation actually happening &mdash; including what it costs.</b> A strong green candle closes clearly above the box top: that is the day's <b>one</b> breakout (yellow dot). The next candle stalls instead of pushing on, so there is no proof and no buy. We stay armed &mdash; but two candles later a red candle <b>closes back inside the box</b>. That single close ends the day: the breakout is declared dead and ORB will not look at this box again, no matter what happens next. And look what happens next &mdash; price turns around and runs <b>+34 points</b> past the breakout level through the whole grey stretch, with us watching. That is the honest cost of the rule. ORB accepts missing moves like this because the alternative &mdash; re-entering after a failed breakout &mdash; tested far worse.</p>
+<p class="tv-cap"><b>What you see:</b> the breakout candle closes at 25,076 at 09:45. The next candle (grey dot) closes at 25,070 &mdash; not higher, so no buy yet. At 09:55 a candle dips to 25,061, within 5.5 points of the box top 25,063, and closes at 25,071, still above the box. That is a retest that held: <b>BUY CE at 25,071</b>, stop 25,044. Exit 25,094.66 at 10:15 by the profit lock. <b>Why it matters:</b> a pause after the break does not have to cost you the trade.</p>
+  <div class="tv-chart" id="orb-expire"></div>
+<p class="tv-cap"><b>What you see:</b> a breakout at 09:45 (close 25,076). The next candle closes at 25,061, so no proof. Price drifts back inside the box and no candle resumes or retests. After 6 waiting candles the engine writes "Retest window expired — no trade today". Later NIFTY climbs to 25,129.6, but ORB has already committed to this breakout and will not chase it. <b>Why it matters:</b> this rule costs some moves like this one. It is the price of trading only the first clean break.</p>
+  <div class="note note-warn">
+    <strong>Correction from the older guide</strong>
+    The older guide said "a close back inside the box cancels the day". The code is different: closing <i>inside</i> the box only uses up waiting
+    candles. The day is cancelled early only by a close through the <i>opposite</i> edge (below ORL for a CE). Otherwise the 6-candle wait decides.
+  </div>
 </section>
 
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 6. OPTION SELECTION                                                     -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section class="section red" id="filters">
+  <h2><span class="section-icon icon-red">&#128683;</span>7. Filters that say "not today"</h2>
+  <h3>RSI blocks the trade</h3>
+  <div class="tv-chart" id="orb-rsi"></div>
+<p class="tv-cap"><b>What you see:</b> yesterday closed at 25,184.6; today opened at 25,010, a big gap down. Price then breaks above the box top 25,024 at 09:40 and the next candle confirms at 25,040. But RSI on that candle is only 34.66, below 51 &mdash; the gap down still dominates the last 14 closes. The engine says: "RSI gate blocked CE: RSI 34.66 vs min 51". <b>Why it matters:</b> once the proof candle is refused, the day's breakout is used up. ORB never buys late on a later candle.</p>
+  <h3>SuperTrend blocks the trade</h3>
+  <div class="tv-chart" id="orb-st"></div>
+<p class="tv-cap"><b>What you see:</b> yesterday fell hard, so SuperTrend (red dashed line, above price) is bearish. Today price breaks above the box top 25,046 and confirms at 25,057. RSI is 52.86, which passes. But SuperTrend is still bearish at 25,076.13, above the price, so the CE is refused: "SuperTrend gate blocked CE: SuperTrend(10,3) is bearish, CE needs bullish". <b>Why it matters:</b> ORB will not buy a CE against a falling SuperTrend, or a PE against a rising one.</p>
+  <h3>Too late, or a sideways morning</h3>
+  <div class="tv-chart" id="orb-late"></div>
+<p class="tv-cap"><b>What you see:</b> a 67-point box (25,004&ndash;25,071). All morning every candle closes inside it, so there is no breakout. At 11:35 a candle finally closes at 25,080, above the box &mdash; but the window ended at 11:30. The engine says: "Past 11:30 IST — no new ORB entries (breakout is stale)". <b>Why it matters:</b> a choppy morning is a no-trade day. ORB treats a breakout after 11:30 as stale.</p>
+  <h3>VIX too high (only if you switch it on)</h3>
+  <div class="tv-chart" id="orb-vix"></div>
+<p class="tv-cap"><b>What you see:</b> the same breakout as the CE example, with India VIX in the lower panel (illustrative values). The engine gives a CE signal at 09:50, but VIX is 23.4, above the 22 ceiling. With <code>ORB_VIX_ENABLED</code> on, the trade is skipped. <b>Why it matters:</b> high VIX means wild swings and costly options. The filter ships <b>off</b>, so by default VIX is ignored.</p>
+  <table>
+    <thead><tr><th>Filter</th><th>Default</th><th>Plain meaning</th></tr></thead>
+    <tbody>
+      <tr><td>VIX ceiling</td><td>off (22 when on)</td><td>No new trade while VIX is above <code>ORB_VIX_MAX_ENTRY</code>.</td></tr>
+      <tr><td>VIX "strong signals only" band</td><td>18</td><td>Between 18 and 22 only "strong" signals may trade. ORB marks every signal as strong, so in practice this band never blocks an ORB trade &mdash; only the 22 ceiling does.</td></tr>
+      <tr><td>OI filter</td><td>off</td><td>Blocks a trade that fights a clear open-interest build-up. Needs both <code>ORB_OI_ENABLED</code> and the master <code>OI_FILTER_ENABLED</code>.</td></tr>
+    </tbody>
+  </table>
+</section>
+
 <section class="section cyan" id="option">
-  <h2><span class="section-icon icon-cyan">&#127919;</span> 6. Step 4 &mdash; Pick the option</h2>
-
-  <p>Once we've decided to trade, we still have to choose <em>which</em> option to buy and check it's worth trading.</p>
-
-  <table>
-    <thead><tr><th>Check</th><th>Default</th><th>In plain words</th></tr></thead>
-    <tbody>
-      <tr><td>Which strike</td><td><code>1 step in-the-money</code></td><td>We pick a strike one step <em>inside</em> the money (for CE that's a lower strike, for PE a higher one). This option already has real value, so it follows NIFTY almost point-for-point and loses value slowly &mdash; much better for riding a trend than a cheap far-out option.</td></tr>
-      <tr><td>Price range</td><td><code>&#8377;120 &ndash; &#8377;400</code></td><td>Skip if the option is too cheap (a near-worthless lottery ticket) or too pricey. Keeps us in options that actually move well. Switch the whole check off with <code>ORB_PREMIUM_GATE_ENABLED</code>.</td></tr>
-      <tr><td>Buy/sell gap</td><td><code>&le; 2 points</code></td><td>Skip if the gap between the buy and sell price is wide &mdash; a wide gap quietly eats your profit on entry and exit. If the broker sends no bid/ask at all, this check is skipped rather than failed.</td></tr>
-      <tr><td>Crowd positioning (OI)</td><td><code>off in code</code></td><td>An optional check on where the big money is building positions. It needs the master OI switch on as well. Note: the shipped <code>.env</code> on this machine turns it <strong>on</strong> (<code>ORB_OI_ENABLED=true</code>) &mdash; check Settings for what is really running.</td></tr>
-    </tbody>
-  </table>
-
-  <div class="note note-danger">
-    <strong>These three checks do NOT exist in the backtest &mdash; so the backtest always takes MORE trades than reality.</strong> History has no option chain, so the premium band, the spread check and the OI filter simply cannot run there. Whatever they block in practice, paper takes <em>fewer</em> trades than the backtest says &mdash; never more. The <code>/orb-backtest</code> page now prints which of these gates are switched on, so the gap is visible on screen instead of implied.
-  </div>
-
-  <div class="note note-info">
-    <strong>In the backtest, there are no real option prices either.</strong> History doesn't record option quotes, so the backtest <em>estimates</em> the option: it starts from a typical slightly-ITM price (&#8377;240) and models how it would move with NIFTY. To stay honest it also charges a <strong>spread/slippage haircut on both entry and exit</strong> (<code>ORB_BT_SLIPPAGE_PTS</code>, default <code>1.5</code> pts each way) and <strong>fills a blown stop at the gap-open</strong> when a candle jumps clean through it, not at the stop price &mdash; so a violent bar is costed realistically. Backtest profit is a rough approximation, not the fills you'd get live &mdash; always confirm against paper trading.
+  <h2><span class="section-icon icon-cyan">&#127919;</span>8. Step 4 &mdash; Pick the option</h2>
+  <ul>
+    <li><b>Strike:</b> one step (50 points) in-the-money. For a CE that is the strike just below price. For a PE it is the strike just above. Delta is about 0.6. Set by <code>ORB_ITM_STEPS</code> (0 = at-the-money).</li>
+    <li><b>Expiry:</b> chosen automatically.</li>
+    <li><b>Price band:</b> skip if the premium is below &#8377;120 or above &#8377;400. This check is <b>off</b> by default (<code>ORB_PREMIUM_GATE_ENABLED</code>).</li>
+    <li><b>Spread:</b> skip if the bid-ask spread is wider than 2 points. If the broker sends no bid/ask, this check is skipped.</li>
+    <li><b>Size:</b> one lot (global lot settings).</li>
+  </ul>
+  <div class="note note-warn">
+    <strong>The backtest cannot run these checks</strong>
+    Old market data has no option chain. So the backtest cannot check the price band, the spread or OI, and it guesses the option price
+    (starting at &#8377;240, <code>ORB_BT_SEED_PREMIUM</code>) and charges 1.5 points of slippage each way (<code>ORB_BT_SLIPPAGE_PTS</code>).
+    Paper therefore takes the same number of trades or fewer than the backtest &mdash; never more.
   </div>
 </section>
 
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 7. EXIT MODEL                                                           -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
 <section class="section red" id="exit">
-  <h2><span class="section-icon icon-red">&#128683;</span> 7. Step 5 &mdash; When we sell</h2>
-
-  <p>The exits are built to <strong>let a winner run</strong> while cutting the losers quickly. There is <strong>no fixed profit target</strong> &mdash; we don't cap the trade at "+40%" and walk away. Instead, a handful of rules watch the trade, and whichever one triggers first closes it:</p>
-
+  <h2><span class="section-icon icon-red">&#128682;</span>9. Step 5 &mdash; When we sell</h2>
+  <p>There is no fixed profit target. Several rules watch the trade and the first one to fire closes it. They run in this order:</p>
+  <p><b>On every price tick:</b></p>
+  <ol>
+    <li><b>Rupee loss cap</b> &mdash; off by default (<code>ORB_MAX_TRADE_LOSS = 0</code>).</li>
+    <li><b>Option melt-down stop</b> &mdash; the premium falls 35% below what we paid.</li>
+    <li><b>Global profit lock</b> &mdash; once the premium is up 8%, a floor follows the best price. It keeps 85% of the gain while the gain is under 20%, 80% under 40%, then 70%. If the premium falls to the floor, sell.</li>
+    <li><b>Global breakeven</b> &mdash; once the premium has been up 5%, sell if it falls back to the entry price. (Used only when the profit lock has not armed.)</li>
+    <li><b>Hard stop</b> &mdash; NIFTY touches the stop level (the breakout candle's far end).</li>
+  </ol>
+  <p><b>When a 5-minute candle closes:</b></p>
+  <ol start="6">
+    <li><b>Strong candle against us</b> &mdash; off by default.</li>
+    <li><b>Move the stop to entry</b> (ORB's own breakeven) &mdash; off by default.</li>
+    <li><b>Candle trail / SuperTrend trail</b> &mdash; both off by default.</li>
+    <li><b>EMA 20 trail</b> &mdash; a candle closes back across EMA 20 (below it for a CE, above for a PE). It only works after price has first closed on the right side of the line once.</li>
+  </ol>
+  <p><b>At 15:15:</b> anything still open is sold.</p>
+  <div class="note note-warn">
+    <strong>Which exit usually wins?</strong>
+    The global profit lock arms at +8% of premium &mdash; about 26.7 NIFTY points on a &#8377;200 option with 0.6 delta &mdash; and then only allows a small give-back.
+    So on winning trades it usually fires long before a candle closes below EMA 20. The EMA 20 trail mostly ends trades that never got going.
+    The profit lock and breakeven are shared by all strategies (<code>PROFIT_LOCK_*</code>, <code>BREAKEVEN_*</code>); the older ORB guide did not mention them.
+  </div>
+  <h3>Exit 1 &mdash; the hard stop (a losing trade)</h3>
+  <div class="tv-chart" id="orb-stop"></div>
+<p class="tv-cap"><b>What you see:</b> <b>BUY CE at 25,089</b> at 09:50. The next candle stalls. Then two red candles fall through the box top. At 10:05 NIFTY touches 25,044, the breakout candle's low: <b>sold at the stop</b>. That is 45 points, roughly ₹1,755 on one 65-unit lot at 0.6 delta. The premium never got 5% up (best ₹204.8 on a ₹200 entry), so the breakeven never armed. <b>Why it matters:</b> this is what a normal ORB loser looks like.</p>
+  <h3>Exit 2 &mdash; the global profit lock</h3>
+  <div class="tv-chart" id="orb-lock"></div>
+<p class="tv-cap"><b>What you see:</b> the CE trade from Section 5, with the option premium in the lower panel (₹200 entry, 0.6 delta assumed). The premium peaks at ₹217.43, above the ₹216 arm line (+8%). The floor is then 85% of the gain: ₹214.82. A small dip takes the premium to ₹214.72 and the trade is sold at 25,113.53. <b>Why it matters:</b> the lock banks a small win quickly. It also means ORB rarely rides a whole trend day at the default settings.</p>
+  <h3>Exit 3 &mdash; the EMA 20 trail</h3>
+  <div class="tv-chart" id="orb-ema"></div>
+<p class="tv-cap"><b>What you see:</b> <b>BUY CE at 25,084</b>. Price creeps up a few points (premium best ₹205.4, never +5%), then sags. The stop is far away at 25,026 because the breakout candle was long. At 10:25 a candle closes at 25,049, below the orange EMA 20 line (25,050.8): <b>sold</b>, 35 points down. <b>Why it matters:</b> the EMA trail cuts a trade that is going nowhere before it reaches the full stop.</p>
+  <h3>Exit 4 &mdash; the 15:15 square-off</h3>
+  <div class="tv-chart" id="orb-eod"></div>
+<p class="tv-cap"><b>What you see:</b> a late-morning breakout. <b>BUY CE at 25,088</b> at 11:05. NIFTY then trends up all afternoon and every candle closes above EMA 20, so nothing sells. At 15:15 the trade is closed at 25,289.75, 201.75 points up. <b>Important:</b> this picture was made with the global profit lock and breakeven switched <b>off</b>. With the defaults, the profit lock would have sold this trade much earlier on one of the small dips. <b>Why it matters:</b> no ORB trade is ever held overnight.</p>
+  <h3>Every exit rule, with its default</h3>
   <table>
-    <thead><tr><th>What sells us out</th><th>Default</th><th>In plain words</th></tr></thead>
+    <thead><tr><th>Rule</th><th>Default</th><th>Plain meaning</th></tr></thead>
     <tbody>
-      <tr><td><strong>Starting stop-loss</strong></td><td>breakout candle extreme</td><td>The low of the candle that first closed past the box (its high for PE). <code>ORB_SL_ATR_MULT</code> is <strong>0</strong> at the shipped settings, so the ATR leg of the old "wider of two" rule does not apply. <code>ORB_SL_SOURCE</code> changes where the stop sits &mdash; <code>entry</code> uses the candle we buy on, <code>lookback</code> clears the extreme of the last 2 candles, and <code>supertrend</code> puts it on the SuperTrend line instead of any candle extreme.</td></tr>
-      <tr><td><strong>Move to break-even</strong></td><td><strong>off</strong></td><td>Disabled at the shipped settings (<code>ORB_BREAKEVEN_PTS=0</code> <em>and</em> <code>ORB_BREAKEVEN_OR_MULT=0</code>). Set either one and the stop slides to your entry price once the trade is that far ahead, so it can no longer turn into a loss.</td></tr>
-      <tr><td><strong>Trend trail (EMA20)</strong></td><td>EMA 20</td><td>The main exit. We ride the trend and only sell when a candle <em>closes</em> back across the moving trend line. One quick dip that closes back on-side does <strong>not</strong> shake us out. It also has to "arm" first &mdash; see the note below.</td></tr>
-      <tr><td><strong>Strong candle against us</strong></td><td><strong>off</strong></td><td>Disabled at the shipped settings (<code>ORB_OPP_CANDLE_EXIT=false</code>). Switch it on and a big candle (body &ge; 0.3&times;box) slamming back <em>and</em> closing inside the box counts as a rejection and sells.</td></tr>
-      <tr><td><strong>Rupee loss cap</strong></td><td><strong>off</strong></td><td>Disabled at the shipped settings (<code>ORB_MAX_TRADE_LOSS=0</code>). With it off the spot stop is the binding risk line and is <em>not</em> clamped &mdash; read the box below, which describes what happens when you switch it back on.</td></tr>
-      <tr><td><strong>Option melted down</strong></td><td>&minus;35%</td><td>If the option price collapses 35% from what we paid (even if NIFTY hasn't hit our spot stop), we bail. This catches the "the option bled out on time-decay" losses.</td></tr>
-      <tr><td><strong>End of day</strong></td><td>15:15</td><td>Anything still open at 3:15 PM is sold. We never hold overnight.</td></tr>
+      <tr><td><strong>Starting stop-loss</strong></td><td>breakout candle extreme</td><td>The low of the candle that first closed past the box (its high for PE). <code>ORB_SL_ATR_MULT</code> is <strong>0</strong>, so the ATR part of the old "wider of two" rule does not apply. <code>ORB_SL_SOURCE</code> changes where the stop sits &mdash; <code>entry</code> uses the candle we buy on, <code>lookback</code> uses the extreme of the last 2 candles, and <code>supertrend</code> puts it on the SuperTrend(10,2) line. If the chosen level is on the wrong side of the entry price, the bot falls back to the entry candle's extreme, then to the opposite box edge.</td></tr>
+      <tr><td>Rupee loss cap</td><td>off</td><td><code>ORB_MAX_TRADE_LOSS = 0</code>. When you set it, the stop is pulled in to whatever price loses that many rupees, so it is usually tighter than the chart stop. Then <code>ORB_SL_ATR_MULT</code> stops mattering.</td></tr>
+      <tr><td>Option melt-down</td><td>&minus;35%</td><td>Sell if the premium falls 35% below entry, even if NIFTY has not hit the stop.</td></tr>
+      <tr><td>Global profit lock</td><td>on, +8% / +5%</td><td>Arms at +8% premium. Floor = at least +5%, raised to keep 85% / 80% / 70% of the best gain (tiers at 20% and 40%).</td></tr>
+      <tr><td>Global breakeven</td><td>on, +5%</td><td>After +5% premium, sell if the premium falls back to entry.</td></tr>
+      <tr><td>Move stop to entry</td><td>off</td><td><code>ORB_BREAKEVEN_PTS</code> / <code>ORB_BREAKEVEN_OR_MULT</code> = 0. When set, the spot stop jumps to entry after that many points.</td></tr>
+      <tr><td>Strong candle against us</td><td>off</td><td><code>ORB_OPP_CANDLE_EXIT</code>. When on: a candle with a body &ge; 0.3 &times; box height that closes back inside the box sells.</td></tr>
+      <tr><td>EMA 20 trail</td><td>on</td><td>Sell on the first close across EMA 20 (after it has armed).</td></tr>
+      <tr><td>Candle trail</td><td>off</td><td>When on: after each close in profit, move the stop to the low of the last 2 candles. Only ever tightens.</td></tr>
+      <tr><td>SuperTrend trail</td><td>off</td><td>When on: move the stop onto the SuperTrend(10,2) line at each close. Only ever tightens. With the candle trail also on, the candle trail is usually the tighter one, so this one rarely decides the exit.</td></tr>
+      <tr><td>Square-off</td><td>15:15</td><td>Everything is sold.</td></tr>
     </tbody>
   </table>
-
-  <div class="note note-danger">
-    <strong>The most important thing to understand about ORB's stop &mdash; and what changed.</strong>
-    Historically the rupee cap, not the spot stop, was what really closed ORB trades. The strategy asks for a fairly wide stop (typically 50&ndash;83 NIFTY points), but &#8377;1,500 on a 65-lot slightly-ITM option only survives about <strong>38 points</strong> of adverse movement, so the cap bound first on 9 of 9 trades in the original sample. The two are reconciled before the trade opens, so the stop you see is the one that will actually fire.
-    <br><br>
-    <strong>At the settings shipped today that cap is OFF</strong> (<code>ORB_MAX_TRADE_LOSS=0</code>). The spot stop &mdash; the entry candle's extreme &mdash; is therefore the real risk line, and it is no longer clamped down to ~38 points. Sizing follows from that: a 60-point stop on one lot is roughly &#8377;2,340 of risk at 0.60 delta, not &#8377;1,500.
-    <br><br>
-    <strong>Practical consequence:</strong> <code>ORB_SL_ATR_MULT</code> is <em>also</em> 0, so it contributes nothing either. If you switch the rupee cap back on, expect it to bind first again and to make <code>ORB_SL_ATR_MULT</code> inert exactly as before.
-  </div>
-
   <div class="note note-info">
-    <strong>Real numbers &mdash; how &#8377;1,500 would become 38 points.</strong> This is the arithmetic behind the cap, kept for when you switch it on. Lot size 65. A slightly-ITM option moves about &#8377;0.60 for every 1 point NIFTY moves (its "delta"). So one adverse NIFTY point costs 65 &times; &#8377;0.60 &asymp; &#8377;39, and &#8377;1,500 &divide; &#8377;39 &asymp; <strong>38 points</strong>. That is why a cap set in rupees quietly overrides a stop set in points. With the cap off today, the point stop stands on its own.
+    <strong>Why the EMA trail must "arm" first</strong>
+    The EMA trail starts working only after a candle has closed on the right side of EMA 20 (above it for a CE). Without that, a CE bought
+    below a still-high EMA (for example after a gap down) would be sold on its very first candle.
+  </div>
+  <div class="note note-info">
+    <strong>Rupee cap arithmetic, for when you switch it on</strong>
+    One lot is 65 units. At 0.6 delta, 1 NIFTY point &asymp; 65 &times; &#8377;0.60 = &#8377;39. So a &#8377;1,500 cap allows only about 38 points against you.
+    A stop wider than that would never be reached &mdash; the cap closes the trade first.
+  </div>
+</section>
+
+<section class="section purple" id="reentry">
+  <h2><span class="section-icon icon-purple">&#8634;</span>10. A second try after a stop (off by default)</h2>
+  <p>Normally a stopped-out day is finished. <code>ORB_REENTRY_AFTER_SL</code> (default <code>0</code>) allows extra tries, but only after a <b>stop-out</b>:</p>
+  <ul>
+    <li>A hard stop, the rupee cap or the melt-down stop counts as a stop-out.</li>
+    <li>An EMA-trail exit, a profit-lock exit or the 15:15 square-off does not &mdash; those mean the move ended, not that the breakout was wrong.</li>
+    <li>After the stop, every candle up to the stop candle is ignored. A <b>fresh</b> close outside the same box starts the whole process again.</li>
+  </ul>
+  <div class="tv-chart" id="orb-reentry"></div>
+<p class="tv-cap"><b>What you see:</b> with re-entry set to 1. First trade: <b>BUY CE at 25,089</b>, stopped at 25,044 at 10:00. Price recovers, and at 10:15 a new candle closes above the box top again (yellow dot). The next candle confirms: <b>BUY CE at 25,093</b>, stop 25,058 (the new breakout candle's low). Exit 25,120.7 by the profit lock. <b>Why it matters:</b> raising <code>ORB_MAX_DAILY_TRADES</code> alone never gives a second trade; this setting does. It is a hypothesis &mdash; measure it before leaving it on.</p>
+  <div class="note note-warn">
+    <strong>Known quirk</strong>
+    A stop that was moved first (for example by a trail) still counts as a stop-out, so it can earn a re-entry even though the move simply ended.
+  </div>
+</section>
+
+<section class="section orange" id="risk">
+  <h2><span class="section-icon icon-orange">&#128737;</span>11. Safety limits</h2>
+  <table>
+    <thead><tr><th>Limit</th><th>Default</th><th>Plain meaning</th></tr></thead>
+    <tbody>
+      <tr><td>Trades per day</td><td>1</td><td>After that, the day is over.</td></tr>
+      <tr><td>Daily loss brake</td><td>&#8377;3,000</td><td>No new trade once the day is down this much. It never closes an open trade.</td></tr>
+      <tr><td>Weekly loss brake</td><td>&#8377;9,000</td><td>Sit out the rest of the week (Monday&ndash;Friday) after losing this much.</td></tr>
+      <tr><td>Losing-streak brake</td><td>4 days</td><td>After 4 losing days in a row, skip a day.</td></tr>
+      <tr><td>Account-wide cap</td><td>off</td><td><code>PORTFOLIO_MAX_DAILY_LOSS</code> blocks every strategy once the combined day loss hits it.</td></tr>
+      <tr><td>Last new entry</td><td>11:30</td><td>No breakout candle is looked at from 11:30 on.</td></tr>
+      <tr><td>Square-off</td><td>15:15</td><td>Nothing is held overnight.</td></tr>
+    </tbody>
+  </table>
+  <div class="note note-info">
+    <strong>The brakes remember</strong>
+    Weekly and streak results are saved in <code>~/trading-data/orb_risk_state.json</code>, so a restart does not reset them. Paper and Live keep separate records.
+  </div>
+  <div class="note note-info">
+    <strong>Crash recovery</strong>
+    An open trade is saved to <code>.active_orb_position.json</code>. After a restart the bot compares it with your Fyers positions and sends a Telegram
+    message if something does not match. The saved file is only cleared when the broker's position list can be read and is flat.
+    If the option price stops updating for 15 seconds, the bot logs a warning (it does not change the exit rules).
+  </div>
+</section>
+
+<section class="section red" id="evidence">
+  <h2><span class="section-icon icon-red">&#128230;</span>12. How much to trust the numbers</h2>
+  <div class="note note-danger">
+    <strong>Long backtest: ORB loses money</strong>
+    1 Jan 2024 &rarr; 11 Aug 2026: 329 trades, 20.7% winners, &minus;&#8377;1,78,963, profit factor 0.39, worst drawdown &minus;&#8377;1,79,110.
+    By year: 2024 &minus;&#8377;95,275 &middot; 2025 &minus;&#8377;51,420 &middot; Jan&ndash;Jul 2026 &minus;&#8377;32,268.
+    Four out of five trades lost about &#8377;1,130 each. Even a flat trade costs about &#8377;420 in spread and time decay.
+  </div>
+  <p>These figures come from earlier backtest runs (<code>scripts/orbValidate.js</code>, <code>scripts/orbSweep.js</code>). They were measured before the global profit lock and breakeven were added in September 2026, so today's exits behave differently. Re-run the scripts before relying on any number.</p>
+  <h3>Why the early numbers looked good</h3>
+  <ul>
+    <li>The first sample was only 39 sessions (Mar&ndash;Apr 2026): 9 trades, 33% wins, about +&#8377;3,415.</li>
+    <li>One trade was 211% of the profit. Without it, the result was &minus;&#8377;3,786.</li>
+    <li>The chance that there was no real edge was about 37%.</li>
+    <li>Older claims ("+346 points, no losers", "&asymp; &#8377;6,737", "&asymp; &#8377;3,112") ignored costs or modelled the exits wrongly.</li>
+  </ul>
+  <h3>The "narrow box" idea did not survive</h3>
+  <p>In 2025 and 2026 a box of 70 points or less looked much better. In 2024 the opposite was true. Two years agreeing and one disagreeing is what an over-fitted rule looks like. That is why <code>ORB_OR_MAX_PTS</code> ships off.</p>
+  <div class="note note-warn">
+    <strong>Do not tune on a small sample</strong>
+    Tightening a filter on 39 sessions makes every number look better, simply because it drops small losers while the 2&ndash;3 big winners survive.
+    Use <code>node scripts/orbSweep.js --from &hellip; --to &hellip;</code>, which tests on data it was not tuned on.
+  </div>
+</section>
+
+<section class="section blue" id="modes">
+  <h2><span class="section-icon icon-blue">&#9881;</span>13. Paper, Live, Backtest &amp; Replay</h2>
+  <h3 style="color:var(--accent-blue);">Paper &mdash; <code>/orb-paper</code></h3>
+  <p>Real prices, pretend money. Paper is the official version of the rules. If Live or Backtest acts differently, they are fixed to match Paper.</p>
+  <h3 style="color:var(--accent-green);">Live &mdash; <code>/orb-live</code></h3>
+  <p>Real Fyers orders, behind two switches: <code>ORB_LIVE_ENABLED</code> must be on and the global <code>LIVE_HARNESS_DRY_RUN</code> must be off. <code>ORB_LIVE_DRY_RUN</code> keeps ORB alone in pretend mode. While dry-run is on, the bot logs the order it would send. An optional exchange-side backup stop (<code>HARNESS_EXCHANGE_SL_ENABLED</code>, off) can rest at the exchange in case the bot crashes.</p>
+  <h3 style="color:var(--accent-purple);">Backtest &mdash; <code>/orb-backtest</code></h3>
+  <p>Runs the same entry and exit code over past candles. It guesses option prices, charges slippage, fills a stop that was jumped over at the jump price, and cannot run the option-chain checks.</p>
+  <h3 style="color:var(--accent-orange);">Replay &mdash; <code>/replay</code></h3>
+  <p>Re-runs a recorded paper day tick by tick, with the settings of that day or with your current settings. The safe way to test a change.</p>
+</section>
+
+<section class="section cyan" id="config">
+  <h2><span class="section-icon icon-cyan">&#128221;</span>14. All the settings</h2>
+  <p>These are the defaults built into the code. Your Settings page shows what is really running, and each day's trade log saves a copy of the settings used.</p>
+  <div class="env-group">On/off switches</div>
+  <table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>ORB_MODE_ENABLED</code></td><td><code>true</code></td><td>Show ORB in the menu and Settings.</td></tr>
+<tr><td><code>ORB_LIVE_ENABLED</code></td><td><code>false</code></td><td>Master switch for real orders (also needs the global dry-run off).</td></tr>
+<tr><td><code>ORB_LIVE_DRY_RUN</code></td><td><code>false</code></td><td>Keep ORB in pretend mode even when other strategies go live.</td></tr>
+<tr><td><code>ORB_OI_ENABLED</code></td><td><code>false</code></td><td>Turn on the OI filter (also needs <code>OI_FILTER_ENABLED</code>).</td></tr>
+<tr><td><code>ORB_EXPIRY_DAY_ONLY</code></td><td><code>false</code></td><td>Only trade on the weekly expiry day.</td></tr>
+<tr><td><code>ORB_DEBUG_TRACE</code></td><td><code>false</code></td><td>Print every candle's checklist to the logs.</td></tr>
+</tbody></table>
+  <div class="env-group">The box &amp; timing</div>
+  <table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>ORB_RANGE_START / ORB_RANGE_END</code></td><td><code>09:15 / 09:30</code></td><td>When the box starts and locks.</td></tr>
+<tr><td><code>ORB_ENTRY_START</code></td><td><code>09:30</code></td><td>Earliest breakout candle looked at. Blank = when the box locks. Cannot be earlier than that.</td></tr>
+<tr><td><code>ORB_ENTRY_END</code></td><td><code>11:30</code></td><td>No breakout candle is looked at from this time.</td></tr>
+<tr><td><code>ORB_FORCED_EXIT</code></td><td><code>15:15</code></td><td>Square-off time.</td></tr>
+</tbody></table>
+  <div class="env-group">Day &amp; breakout checks</div>
+  <table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>ORB_OR_ATR_MAX</code></td><td><code>0 (off)</code></td><td>Skip the day if the box is taller than this &times; the 15-minute ATR (14 candles). Try 2.5.</td></tr>
+<tr><td><code>ORB_OR_MAX_PTS</code></td><td><code>0 (off)</code></td><td>Skip the day if the box is taller than this many points. Measured and rejected &mdash; leave it off.</td></tr>
+<tr><td><code>ORB_GAP_OR_MULT</code></td><td><code>0 (off)</code></td><td>Skip the day if the opening gap is bigger than this &times; the box height. Try 3.</td></tr>
+<tr><td><code>ORB_BUFFER_OR_MULT / ORB_BUFFER_ATR_MULT / ORB_BUFFER_MIN_PTS</code></td><td><code>0 / 0 / 0</code></td><td>Extra cushion a close must clear beyond the box edge. The largest of the three wins. All 0 = any close past the edge counts.</td></tr>
+<tr><td><code>ORB_BODY_ATR_MULT</code></td><td><code>0 (off)</code></td><td>When above 0: the breakout candle must be the right colour and its body at least this &times; the 5-minute ATR.</td></tr>
+<tr><td><code>ORB_BODY_OR_CAP</code></td><td><code>0 (off)</code></td><td>Upper limit on that body rule, as a share of the box height (for example 0.25).</td></tr>
+<tr><td><code>ORB_VWAP_FILTER_ENABLED</code></td><td><code>false</code></td><td>When on: CE breakouts must close above VWAP, PE below.</td></tr>
+<tr><td><code>ORB_BREAKOUT_RESCAN</code></td><td><code>true</code></td><td>Skip a weak close outside the box and keep looking. Off = the first close outside is final.</td></tr>
+<tr><td><code>ORB_CONFIRM_MODE</code></td><td><code>close</code></td><td><code>close</code> = next candle closes beyond the breakout close. <code>extend</code> = also a new high/low and a close beyond the box edge.</td></tr>
+<tr><td><code>ORB_RETEST_MAX_WAIT</code></td><td><code>6</code></td><td>Candles to wait for a retest or resume. 0 = proof candle only.</td></tr>
+<tr><td><code>ORB_RSI_ENABLED</code></td><td><code>true</code></td><td>RSI check on the candle being bought.</td></tr>
+<tr><td><code>ORB_RSI_PERIOD</code></td><td><code>14</code></td><td>RSI length in 5-minute candles.</td></tr>
+<tr><td><code>ORB_RSI_CE_MIN / ORB_RSI_PE_MAX</code></td><td><code>51 / 49</code></td><td>CE needs RSI &ge; 51. PE needs RSI &le; 49.</td></tr>
+<tr><td><code>ORB_ST_ENABLED</code></td><td><code>true</code></td><td>SuperTrend direction check on the candle being bought.</td></tr>
+<tr><td><code>ORB_ST_PERIOD / ORB_ST_MULT</code></td><td><code>10 / 3</code></td><td>SuperTrend settings for that check.</td></tr>
+</tbody></table>
+  <p class="tv-cap">Fixed in the code (not settings): ATR length 14, retest tolerance 10% of the box (at least 5 points), and the drawn target line at 1.5 &times; the box.</p>
+  <div class="env-group">Picking the option</div>
+  <table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>ORB_ITM_STEPS</code></td><td><code>1</code></td><td>Strikes in-the-money (50 points each). 0 = at-the-money. Changes the delta, so it also changes how many points a rupee cap allows.</td></tr>
+<tr><td><code>ORB_PREMIUM_GATE_ENABLED</code></td><td><code>false</code></td><td>Turn the premium band check on.</td></tr>
+<tr><td><code>ORB_PREMIUM_MIN / ORB_PREMIUM_MAX</code></td><td><code>120 / 400</code></td><td>Allowed premium band (₹) when the check is on.</td></tr>
+<tr><td><code>ORB_MAX_SPREAD_PTS</code></td><td><code>2</code></td><td>Largest bid-ask spread allowed. Falls back to <code>MAX_BID_ASK_SPREAD_PTS</code>.</td></tr>
+</tbody></table>
+  <div class="env-group">When we sell</div>
+  <table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>ORB_SL_SOURCE</code></td><td><code>breakout</code></td><td>Where the first stop sits: <code>breakout</code> (the first candle that closed past the box), <code>entry</code> (the candle we buy on), <code>lookback</code> (extreme of the last N candles) or <code>supertrend</code> (on the SuperTrend line).</td></tr>
+<tr><td><code>ORB_SL_LOOKBACK_CANDLES</code></td><td><code>2</code></td><td>N for the <code>lookback</code> stop.</td></tr>
+<tr><td><code>ORB_SL_ATR_MULT</code></td><td><code>0 (off)</code></td><td>When above 0, the stop is the wider of the chosen level and this &times; 5-minute ATR from entry. Off: the chosen level alone.</td></tr>
+<tr><td><code>ORB_SL_ST_PERIOD / ORB_SL_ST_MULT</code></td><td><code>10 / 2</code></td><td>SuperTrend used as a stop (by the <code>supertrend</code> stop and the SuperTrend trail). Separate from the entry check's 10 / 3.</td></tr>
+<tr><td><code>ORB_ST_TRAIL_ENABLED</code></td><td><code>false</code></td><td>Move the stop onto that SuperTrend line at each close. Tighten-only. Exits during the candle, not on a close. If the candle trail is on too, it is usually tighter, so this one rarely decides.</td></tr>
+<tr><td><code>ORB_CANDLE_TRAIL_ENABLED / ORB_CANDLE_TRAIL_CANDLES</code></td><td><code>false / 2</code></td><td>Move the stop to the extreme of the last N candles after each close in profit. Tighten-only.</td></tr>
+<tr><td><code>ORB_MAX_TRADE_LOSS</code></td><td><code>0 (off)</code></td><td>Most you can lose on one trade, in ₹. When set, it pulls the stop in and usually becomes the real stop.</td></tr>
+<tr><td><code>ORB_BREAKEVEN_PTS / ORB_BREAKEVEN_OR_MULT</code></td><td><code>0 / 0</code></td><td>Move the stop to entry once this far in profit (the larger of points and mult &times; box).</td></tr>
+<tr><td><code>ORB_TRAIL_EMA</code></td><td><code>20</code></td><td>EMA length for the trail exit.</td></tr>
+<tr><td><code>ORB_TRAIL_ARM_PTS</code></td><td><code>0</code></td><td>The EMA trail cannot exit until the trade has been this many points in profit.</td></tr>
+<tr><td><code>ORB_TRAIL_CONFIRM_CLOSES</code></td><td><code>1</code></td><td>Closes in a row across the EMA needed to exit.</td></tr>
+<tr><td><code>ORB_OPP_CANDLE_EXIT / ORB_OPP_CANDLE_BODY_MULT</code></td><td><code>false / 0.3</code></td><td>Sell on a big opposite candle that closes back inside the box.</td></tr>
+<tr><td><code>ORB_PREMIUM_STOP_PCT</code></td><td><code>35</code></td><td>Sell if the premium falls this % below entry. 0 = off.</td></tr>
+<tr><td><code>PROFIT_LOCK_ENABLED</code></td><td><code>true</code></td><td>Global profit lock (all strategies).</td></tr>
+<tr><td><code>PROFIT_LOCK_ARM_PCT / PROFIT_LOCK_FLOOR_PCT</code></td><td><code>8 / 5</code></td><td>Arms at +8% premium; never sells below +5% after that.</td></tr>
+<tr><td><code>PROFIT_LOCK_TRAIL_PCT / PROFIT_LOCK_TRAIL_TIERS</code></td><td><code>70 / 20:85,40:80</code></td><td>Share of the best gain the floor keeps: 85% under +20%, 80% under +40%, then 70%.</td></tr>
+<tr><td><code>BREAKEVEN_STOP_ENABLED / BREAKEVEN_ARM_PCT</code></td><td><code>true / 5</code></td><td>Global breakeven: after +5% premium, sell if it falls back to entry.</td></tr>
+</tbody></table>
+  <div class="env-group">VIX filter</div>
+  <table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>ORB_VIX_ENABLED</code></td><td><code>false</code></td><td>Turn the VIX filter on.</td></tr>
+<tr><td><code>ORB_VIX_MAX_ENTRY</code></td><td><code>22</code></td><td>No new trade above this VIX.</td></tr>
+<tr><td><code>ORB_VIX_STRONG_ONLY</code></td><td><code>18</code></td><td>Above this, only strong signals. Every ORB signal is strong, so this never blocks ORB.</td></tr>
+</tbody></table>
+  <div class="env-group">Safety, re-entry &amp; backtest</div>
+  <table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>ORB_MAX_DAILY_TRADES</code></td><td><code>1</code></td><td>Trades per day. Raising it alone does not give a second trade &mdash; use the next setting.</td></tr>
+<tr><td><code>ORB_REENTRY_AFTER_SL</code></td><td><code>0</code></td><td>Extra tries allowed after a stop-out.</td></tr>
+<tr><td><code>ORB_MAX_DAILY_LOSS</code></td><td><code>3000</code></td><td>No new trade once the day is down this much (₹).</td></tr>
+<tr><td><code>ORB_RISK_THROTTLE_ENABLED</code></td><td><code>true</code></td><td>Turn on the weekly and losing-streak brakes.</td></tr>
+<tr><td><code>ORB_MAX_WEEKLY_LOSS</code></td><td><code>9000</code></td><td>Weekly loss brake (₹).</td></tr>
+<tr><td><code>ORB_LOSS_STREAK_SKIP</code></td><td><code>4</code></td><td>Skip a day after this many losing days in a row. 0 = off.</td></tr>
+<tr><td><code>PORTFOLIO_MAX_DAILY_LOSS</code></td><td><code>0 (off)</code></td><td>Account-wide daily loss cap across all strategies.</td></tr>
+<tr><td><code>ORB_SIG_WINDOW</code></td><td><code>260</code></td><td>Backtest only: how many past candles are fed to the engine.</td></tr>
+<tr><td><code>ORB_BT_SEED_PREMIUM</code></td><td><code>240</code></td><td>Backtest only: assumed option price (₹).</td></tr>
+<tr><td><code>ORB_BT_SLIPPAGE_PTS</code></td><td><code>1.5</code></td><td>Backtest only: cost per side, in premium points.</td></tr>
+<tr><td><code>FYERS_INV_AMOUNT</code></td><td><code>100000</code></td><td>Starting paper capital (₹), shared by Fyers strategies.</td></tr>
+</tbody></table>
+  <div class="env-group">Dead keys &mdash; the code ignores them</div>
+  <table>
+    <thead><tr><th>Key</th><th>What it used to do</th></tr></thead>
+    <tbody>
+      <tr><td><code>ORB_ENTRY_V2_ENABLED</code>, <code>ORB_ENTRY_V3_ENABLED</code></td><td>Picked between old engines. There is one engine now.</td></tr>
+      <tr><td><code>ORB_OR_ATR_MIN</code></td><td>Minimum box size. Deleted.</td></tr>
+      <tr><td><code>ORB_PRIORDAY_LEVEL_FILTER</code></td><td>"Must clear yesterday's high/low". Deleted.</td></tr>
+      <tr><td><code>ORB_CLOSE_POS_PCT</code>, <code>ORB_BODY_PCT_MIN</code>, <code>ORB_MAX_WICK_RATIO</code></td><td>Candle-shape filters. Deleted.</td></tr>
+      <tr><td><code>ORB_ADX_*</code>, <code>ORB_TREND_EMA_*</code></td><td>Old indicator gates. Deleted. (The RSI keys listed above are live again.)</td></tr>
+      <tr><td><code>ORB_MIN_RANGE_PTS</code>, <code>ORB_MAX_RANGE_PTS</code>, <code>ORB_MIN_BODY</code>, <code>ORB_MAX_GAP_PTS</code></td><td>Fixed point sizes. Deleted.</td></tr>
+      <tr><td><code>ORB_RETEST_ENABLED</code>, <code>ORB_RETEST_MODE</code>, <code>ORB_RETEST_TOL_MIN/PCT</code></td><td>Old retest dials. Only <code>ORB_RETEST_MAX_WAIT</code> remains.</td></tr>
+      <tr><td><code>ORB_ATR_PERIOD</code>, <code>ORB_BREAKOUT_BUFFER_*</code></td><td>Now fixed (ATR) or renamed (<code>ORB_BUFFER_*</code>).</td></tr>
+      <tr><td><code>ORB_CONFIRM_ENABLED</code></td><td>Confirmation is always on.</td></tr>
+      <tr><td><code>ORB_TARGET_RANGE_MULT</code></td><td>Moved the drawn target line. Now fixed at 1.5 &times; box.</td></tr>
+      <tr><td><code>ORB_STOP_PCT</code>, <code>ORB_SL_CANDLES</code>, <code>ORB_PREMIUM_LOCKIN_*</code></td><td>Old stop schemes. Replaced by the exit list in Section 9.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="section orange" id="gaps">
+  <h2><span class="section-icon icon-orange">&#9888;</span>15. What's still missing</h2>
+  <ul>
+    <li><b>No proven edge.</b> The long backtest lost money in every year.</li>
+    <li><b>The exit stack changed after that backtest.</b> The global profit lock and breakeven (September 2026) now end most winners early. Their effect on ORB has not been measured on a long sample.</li>
+    <li><b>Backtest option prices are guesses</b>, and the backtest cannot run the spread, price band or OI checks.</li>
+    <li><b>The EMA 20 length is not validated.</b> Anything from 13 to 55 was within noise on the first sample.</li>
+    <li><b>The stop you set is not always the stop you get.</b> Turn on <code>ORB_MAX_TRADE_LOSS</code> and it usually binds before the chart stop.</li>
+  </ul>
+  <p class="tv-cap">Checked against <code>src/strategies/orb_breakout.js</code>, <code>src/strategies/orbExits.js</code>, <code>src/routes/orbPaper.js</code> and <code>src/utils/tradeGuards.js</code> on 8 Oct 2026.</p>
+</section>
+
 </div>
 
-  <div class="tv-chart" id="orb-stopped"></div>
-  <p class="tv-cap"><b>What a losing ORB day actually looks like.</b> Everything went right at the entry &mdash; decisive breakout, next candle confirmed, <b>BUY CE at 25,322</b>. Then it simply turned. The strategy's own stop sat at 25,277 (45 pts away), but the <b>&#8377;1,500 budget only allows about 38 points</b>, so the stop that was actually placed was 25,284 &mdash; and that is where the trade ended, for a loss of roughly &#8377;1,500. This is the normal shape of an ORB loser: <b>the rupee cap, not the chart, ends the trade.</b></p>
-
-  <div class="note note-warn">
-    <strong>Why the EMA trail has to "arm" first.</strong> The trail only starts working once price has closed on the correct side of EMA20 at least once. Without that, a CE bought on a gap-down morning &mdash; with EMA20 still high from previous days &mdash; would be stopped out on its very first candle. Until the trail arms, the trade is protected by the hard stop, break-even, the opposite-candle rule and the rupee cap instead.
-  </div>
-
-  <div class="note note-info">
-    <strong>There's a "target" line on the chart, but it's just for looking.</strong> You'll see a target level drawn on the ORB page (1.5&times; the box height beyond the edge). <strong>Nothing sells when price reaches it</strong> &mdash; there is no target exit at all. The trend trail decides how far a winner runs.
-  </div>
-
-  <h3>A worked example &mdash; a CE trend day</h3>
-  <pre><code>9:30   Box locks: top 25,275 / bottom 25,215  (60 points tall).
-       Day-sanity checks are OFF (ORB_OR_ATR_MAX=0, ORB_GAP_OR_MULT=0), so the
-       box height and the overnight gap are not consulted — the day is tradable.
-       Breakout cushion is 0 pts → any close above 25,275 counts.
-
-9:40   A candle closes at 25,302 — past the box top.
-       RSI is 58 (needs ≥ 51 for a CE) and SuperTrend(10,3) is bullish. Both pass.
-       Body size, candle colour and VWAP are NOT checked — those gates are off.
-       →  This is the day's ONE breakout.   (We do NOT buy yet.)
-
-9:45   Next candle closes at 25,322, beyond the breakout candle's close of 25,302.
-       (ORB_CONFIRM_MODE=close, so no new high is required.)
-       →  Proof.  BUY a CE on this close.
-       Option is 1 strike in-the-money, priced ₹190, spread 1.2 pts — both fine.
-       Stop: this candle's low, 25,290 — 32 points away. Nothing clamps it:
-             ORB_SL_ATR_MULT is 0 and the ₹1,500 rupee cap is off.
-             Risk on one lot ≈ 32 × 65 × 0.60 ≈ ₹1,250.
-
-10:05  +30 points in profit. The break-even step is OFF, so the stop does NOT
-       move to entry — 25,290 is still the line. The trade can still turn.
-
-10:40  Trend keeps running; every candle closes above EMA20. We just hold.
-
-13:10  A candle finally CLOSES below EMA20  →  SELL. Trend's over.
-       Win banked. The EMA trail is what carried this trade, and with the
-       break-even and opposite-candle exits off, it was the only thing between
-       the entry stop and the close.
-</pre>
-
-  <div class="tv-chart" id="orb-breakout"></div>
-  <p class="tv-cap"><b>The iconic ORB picture.</b> The blue dashed box is the 9:15&ndash;9:30 opening range. Price coiled inside it, then a big green candle closed clearly above the box top <em>and</em> above the fair-value (VWAP) line (orange dot = the breakout candle). We still didn't buy &mdash; only when the <em>next</em> candle pushed higher did we get our proof &rarr; <b>BUY CE at 25,322</b>. We then rode the orange EMA20 trend line up and sold the moment a candle <b>closed back below EMA20</b> &rarr; <b>EXIT 25,328</b>. No fixed target &mdash; the trend trail decided how far the winner ran.</p>
-
-  <div class="tv-chart" id="orb-pe"></div>
-  <p class="tv-cap"><b>The same day, upside down &mdash; ORB going short.</b> The box here is <b>25,151&ndash;25,190</b>, about 40 points tall. Price breaks <em>downwards</em>: a big red candle closes clearly below the box bottom and below the purple fair-value line (yellow dot). We still don't buy. The next candle makes a lower low <em>and</em> a lower close, still under both &mdash; that is the proof &rarr; <b>BUY PE at 25,100</b>. The red line is the stop, and this is the important bit: the strategy <em>wanted</em> a stop 44 points away, but <b>&#8377;1,500 only pays for 38 points</b>, so the stop that actually went in is the tighter one at 25,138. From there we ride the orange EMA20 line down for over two hours and sell when a candle finally <b>closes back above it</b> &rarr; <b>EXIT at 25,018</b>, roughly <b>+82 points</b>. One trade. That is the whole day.</p>
-
-  <div class="note note-success">
-    <strong>Why no fixed target?</strong> If we always sold at "+40%," we'd throw away the big trend days &mdash; and a few of those big days are what make the whole strategy profitable over a month. The trend trail keeps us in the move as long as it lasts, while the break-even, rupee-cap and meltdown stops make sure a bad trade dies small. The real skill is in the <em>entry</em> checklist &mdash; the exit just decides how much of a good entry we get to keep.
-  </div>
-</section>
-
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 8. VIX FILTER                                                           -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<section class="section red" id="vix">
-  <h2><span class="section-icon icon-red">&#128261;</span> 8. The "market too jumpy" filter (VIX)</h2>
-
-  <p>VIX is the market's fear gauge. When it's high, options get expensive and swings get violent &mdash; a riskier time to trade. ORB has its own optional VIX filter to sit out those days.</p>
-
-  <table>
-    <thead><tr><th>Setting</th><th>Default</th><th>In plain words</th></tr></thead>
-    <tbody>
-      <tr><td><code>ORB_VIX_ENABLED</code></td><td><code>false</code></td><td>The on/off switch. Off by default, so VIX is ignored unless you turn it on.</td></tr>
-      <tr><td><code>ORB_VIX_MAX_ENTRY</code></td><td><code>22</code></td><td>If VIX is above 22, don't trade at all today &mdash; too jumpy.</td></tr>
-      <tr><td><code>ORB_VIX_STRONG_ONLY</code></td><td><code>18</code></td><td>Between 18 and 22, only take the very best setups.</td></tr>
-    </tbody>
-  </table>
-
-  <div class="note note-info">
-    <strong>Why ORB has its own VIX limits:</strong> because we hold the trade for hours with no fixed target, our option's value is especially sensitive to how jumpy the market is. High-VIX days can swing hard against us, so ORB uses its own ceiling rather than the shared one.
-  </div>
-</section>
-
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 9. RISK & PORTFOLIO BREAKER                                             -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<section class="section orange" id="risk">
-  <h2><span class="section-icon icon-orange">&#128737;</span> 9. Safety limits &amp; the losing-streak brake</h2>
-
-  <p>Several limits protect the account. Think of them as circuit-breakers of increasing size &mdash; per trade, per day, and per week.</p>
-
-  <table>
-    <thead><tr><th>Limit</th><th>Default</th><th>In plain words</th></tr></thead>
-    <tbody>
-      <tr><td>One trade a day</td><td><code>1</code></td><td>After today's trade, we're done &mdash; a failed trade is not a reason to try again.</td></tr>
-      <tr><td>Most we'll lose on one trade</td><td><strong>off</strong></td><td>Hard stop on a single trade's loss (<code>ORB_MAX_TRADE_LOSS</code>). Set to <code>0</code> at the shipped settings, so the spot stop is the binding risk line.</td></tr>
-      <tr><td>Option-meltdown stop</td><td><code>&minus;35%</code></td><td>Exit if the option loses 35% of its value (time-decay / volatility crush).</td></tr>
-      <tr><td>Daily loss brake</td><td><code>&#8377;3,000</code></td><td>Stop taking <em>new</em> trades once the day's loss hits &#8377;3,000. (With one trade a day, rarely matters.)</td></tr>
-      <tr><td>Weekly loss brake</td><td><code>&#8377;9,000</code></td><td>If the week's losses reach &#8377;9,000, sit out the rest of the week (Monday&ndash;Friday).</td></tr>
-      <tr><td>Losing-streak brake</td><td><code>4 days</code></td><td>After 4 losing days in a row, take a one-day break to reset.</td></tr>
-      <tr><td>Latest new trade</td><td><code>11:30</code></td><td>No fresh entries after 11:30 &mdash; the day's too far gone.</td></tr>
-      <tr><td>Sell everything by</td><td><code>15:15</code></td><td>Close any open trade at 3:15 PM.</td></tr>
-      <tr><td>Skip wide spreads</td><td><code>2 pts</code></td><td>Don't trade an option whose buy/sell gap is too wide.</td></tr>
-    </tbody>
-  </table>
-
-  <div class="note note-info">
-    <strong>The weekly &amp; streak brakes remember across days.</strong> The strategy saves its recent losses to disk (<code>~/trading-data/orb_risk_state.json</code>), so they survive a restart, and it will <strong>stop itself from trading</strong> during a bad run &mdash; even across days. Practice and live mode keep separate memories, so a rough patch in practice never freezes your live trading, and vice-versa.
-  </div>
-
-  <div class="note note-warn">
-    <strong>Careful with the daily-loss brake.</strong> <code>ORB_MAX_DAILY_LOSS</code> is only checked <em>when you are flat</em> &mdash; it stops the <em>next</em> trade, it never closes an open one. The thing that caps a single open trade is <code>ORB_MAX_TRADE_LOSS</code> (&#8377;1,500). Since ORB takes one trade a day, the daily brake almost never fires.
-  </div>
-
-  <h3>Crash-recovery (survives a restart)</h3>
-  <p>ORB now writes its open trade to disk the moment it's opened (<code>.active_orb_position.json</code>) and clears it on close. If the server crashes or is redeployed with a trade still open, on the next boot the system re-reads that snapshot, <strong>checks it against your Fyers positions</strong>, and Telegrams you if it finds an orphan &mdash; and only clears the snapshot once the broker book is proven readable and flat. ORB previously had <em>no</em> such memory (a crash left an untracked position); it now matches the other five engines.</p>
-
-  <div class="note note-warn">
-    <strong>Portfolio-wide daily loss cap <span class="badge badge-red">default OFF</span></strong>
-    Separate from ORB's own <code>ORB_MAX_DAILY_LOSS</code>, there's now a single cap across <em>all six</em> strategies (<code>PORTFOLIO_MAX_DAILY_LOSS</code>, default <code>0</code> = off). It adds up today's realised P&amp;L from every practice mode; once the combined loss hits the cap, it <strong>blocks new entries in every strategy</strong> (ORB included) for the rest of the day. It only ever blocks &mdash; it never places or changes an order &mdash; and if it can't read the totals it fails open (lets trading continue).
-  </div>
-</section>
-
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 10. LEGACY ENGINES                                                      -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<section class="section purple" id="evidence">
-  <h2><span class="section-icon icon-purple">&#128230;</span> 10. How much to trust the numbers</h2>
-
-  <p>This section exists because it is the most useful thing in the whole guide. ORB <em>looked</em> profitable for a while. It is not.</p>
-
-  <div class="note note-danger">
-    <strong>The answer, on 329 trades over 2.5 years: ORB loses money.</strong>
-    1 Jan 2024 &rarr; 11 Aug 2026 &mdash; <strong>329 trades, 20.7% wins, &minus;&#8377;1,78,963</strong>,
-    profit factor <strong>0.39</strong>, worst drawdown <strong>&minus;&#8377;1,79,110</strong>, and each year loses by itself
-    (2024 &minus;&#8377;95,275 &middot; 2025 &minus;&#8377;51,420 &middot; Jan&ndash;Jul 2026 &minus;&#8377;32,268).
-    Four out of five trades lose about &#8377;1,130 each, and even a trade that goes nowhere costs about &#8377;420 in
-    spread and time-decay. <strong>Do not run this live.</strong> The rest of this section is kept because it shows
-    <em>how</em> the earlier, friendlier numbers were wrong &mdash; that is the part worth learning from.
-  </div>
-
-  <h3>The old measurement &mdash; and why it fooled us</h3>
-  <p>Run <code>node scripts/orbValidate.js</code> for the engine's own number on any date range. On the first sample that existed &mdash; 39 NIFTY sessions, March&ndash;April 2026 &mdash; it reported this, and every warning in the table was already pointing at the verdict above:</p>
-
-  <table>
-    <thead><tr><th>Measure</th><th>Result</th><th>What it means in plain words</th></tr></thead>
-    <tbody>
-      <tr><td>Trades</td><td><strong>9</strong> in 39 sessions</td><td>ORB stands aside about 3 days out of 4.</td></tr>
-      <tr><td>Win rate</td><td><strong>33%</strong></td><td>Two losers for every winner &mdash; by design. The winners have to be big.</td></tr>
-      <tr><td>Net profit</td><td><strong>&asymp; &#8377;3,415</strong></td><td>After costs.</td></tr>
-      <tr><td>Profit factor</td><td><strong>1.44</strong></td><td>&#8377;1.44 won for every &#8377;1 lost.</td></tr>
-      <tr><td>Confidence range</td><td><strong>&minus;&#8377;1,288 to +&#8377;2,511</strong> per trade</td><td>The true average could easily be <em>negative</em>.</td></tr>
-      <tr><td>Chance there is no edge</td><td><strong>&asymp; 37%</strong></td><td>Better than a coin flip, nowhere near proof.</td></tr>
-      <tr><td>Biggest single trade</td><td><strong>211% of the total profit</strong></td><td>Remove that one trade and the strategy loses <strong>&#8377;3,786</strong>.</td></tr>
-    </tbody>
-  </table>
-
-  <div class="note note-danger">
-    <strong>Read that last row again &mdash; it was the tell.</strong> Strip one trade out of nine and even that sample lost money. It was never an edge, it was a right-tail lottery ticket measured over two months. The table itself said 95% confidence needed roughly <strong>147 trades &asymp; 637 sessions &asymp; 2.5 years</strong>. Those 2.5 years have now been run, and they came back at <strong>&minus;&#8377;1,78,963</strong>. When a small sample and its own confidence range disagree, the confidence range wins.
-  </div>
-
-  <h3>Numbers you may have seen before &mdash; all of them were too optimistic</h3>
-  <table>
-    <thead><tr><th>Old claim</th><th>Why it was wrong</th></tr></thead>
-    <tbody>
-      <tr><td>"+346 spot points, no losers"</td><td>Ignored trading costs completely.</td></tr>
-      <tr><td>"&asymp; &#8377;6,737"</td><td>Used a flat 20-point break-even instead of the real max(20, 0.5&times;box) rule.</td></tr>
-      <tr><td>"&asymp; &#8377;3,112"</td><td>Armed break-even off the candle's <em>high</em>; the real engine arms off the <em>close</em>, and it modelled no opposite-candle exit at all.</td></tr>
-    </tbody>
-  </table>
-  <p>If a number here disagrees with something you remember, trust <code>scripts/orbValidate.js</code>.</p>
-
-  <h3>The most promising idea &mdash; tested, and it failed</h3>
-  <div class="note note-info">
-    <strong>The idea was: a narrow opening box may be the entire edge.</strong> On the original 9-trade sample, days where the box was under 1.5&times; the normal move gave <strong>4 trades, 75% wins, +&#8377;10,700</strong>, while days with a box 1.5&times; or wider gave <strong>5 trades, 0% wins, &minus;&#8377;7,285</strong>. Mechanically it made sense &mdash; a quiet open stores energy that the breakout releases &mdash; so it was worth testing properly. It has now been tested properly.
-  </div>
-  <div class="note note-danger">
-    <strong>11 Aug 2026 &mdash; the verdict on 329 trades: ORB does not work, and the box idea was over-fitting.</strong>
-    The full backtest from <strong>1 Jan 2024 to 11 Aug 2026</strong> gives
-    <strong>329 trades, 20.7% wins, &minus;&#8377;1,78,963</strong>, profit factor <strong>0.39</strong>,
-    worst drawdown <strong>&minus;&#8377;1,79,110</strong>. Every year loses on its own:
-    2024 &minus;&#8377;95,275 &middot; 2025 &minus;&#8377;51,420 &middot; Jan&ndash;Jul 2026 &minus;&#8377;32,268.
-    That is well past the 147 trades this page asks for above, so it is a conclusion, not a small sample being unlucky.
-    <br><br>
-    And the box filter died with it. On 2025 and 2026 it looked real &mdash; a box of <strong>70 points or less</strong>
-    made +&#8377;10.6k then lost only &#8377;3.4k, while a box <strong>wider than 70 points</strong> lost &#8377;62k and &#8377;28.9k.
-    Then 2024 <strong>reversed it</strong>: there the narrow box was the <em>worse</em> half
-    (profit factor 0.24 capped vs 0.35 uncapped). Two years agreeing and the third disagreeing is the signature of a
-    rule fitted to the years you looked at. The same happened to "box under 60 points" and "skip plain entries" &mdash;
-    excellent on 2025, gone on 2026.
-    <br><br>
-    <strong>So nothing was switched on.</strong> <code>ORB_OR_MAX_PTS</code> exists only so the idea can be re-measured
-    instead of re-invented. Before proposing any new ORB tweak, run
-    <code>node scripts/orbSweep.js --from &hellip; --to &hellip;</code>, which tunes on one slice of history and scores on a
-    slice it has never seen, and refuses to name a winner that did not hold on the unseen part. If a change cannot beat
-    zero out-of-sample, the entry is what needs replacing &mdash; not the thresholds.
-  </div>
-
-  <h3>Why we don't just tune the settings until the numbers look good</h3>
-  <div class="note note-warn">
-    <strong>Because on this sample they always do &mdash; and it means nothing.</strong> Tightening <code>ORB_BODY_ATR_MULT</code> or <code>ORB_OR_ATR_MAX</code> improves <em>every</em> metric, all the way from profit factor 1.4 up to 14.6. That is not the settings getting better; it is the filter dropping small scratch trades while the 2&ndash;3 known winners survive at every threshold. That is the sample choosing itself. <strong>Do not tune these on 39 sessions.</strong>
-  </div>
-
-  <div class="note note-info">
-    <strong>Which parts are safe-ish, which aren't.</strong>
-    The break-even rule is the single most valuable exit component (removing it cost 106 points and created a &minus;77-point worst case) and it works equally well anywhere from 10 to 25 points &mdash; so it is not a fitted number.
-    The EMA trail is <em>not</em> that stable: EMA9 is clearly too tight, and EMA34 actually beat the shipped EMA20 on this sample. 20 was kept because it was already there, not because it won &mdash; anything from 13 to 55 is inside the noise.
-    The 11:30 cut-off is a <em>structural</em> choice (an "opening range" breakout goes stale as the day wears on), not a measured one; extending it to 14:30 looked better in rupees but also produced the single worst trade.
-  </div>
-</section>
-
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 11. OPERATING MODES                                                     -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<section class="section cyan" id="modes">
-  <h2><span class="section-icon icon-cyan">&#9881;</span> 11. Paper, Live &amp; Backtest</h2>
-
-  <h3 style="color:var(--accent-blue);">Paper &mdash; <code>/orb-paper</code> (practice)</h3>
-  <p>Real live prices, pretend money. No real orders are ever placed. This is the "official" version of the strategy &mdash; whenever live or backtest behaves differently, paper is treated as correct. Every trade is saved to your trading-data folder, and every price tick can be recorded so you can replay the exact day later.</p>
-
-  <h3 style="color:var(--accent-green);">Live &mdash; <code>/orb-live</code> (real money)</h3>
-  <p>Real orders through Fyers &mdash; but locked behind <strong>two</strong> safety switches so it can never fire by accident: <code>ORB_LIVE_ENABLED</code> must be on <em>and</em> the global dry-run switch must be off. While dry-run is on (the default), the system <em>shows</em> the order it would place but doesn't actually send it. Only turn dry-run off after you've checked that live and paper make the same decisions on a replayed day.</p>
-
-  <div class="note note-warn">
-    <strong>Optional exchange-side disaster stop <span class="badge badge-red">default OFF</span></strong>
-    For live (harness) trades you can also rest a backstop stop-loss <em>at the exchange</em> (<code>HARNESS_EXCHANGE_SL_ENABLED</code>, with <code>HARNESS_SL_PCT</code> the trigger as a % of your entry premium). It's a safety net in case the bot crashes mid-trade &mdash; the normal in-app stops stay in charge. The resting order is always cancelled <em>before</em> any normal sell, so it can't fire on a position you're already exiting. It places real orders, so validate it on a dry-run session first.
-  </div>
-
-  <h3 style="color:var(--accent-purple);">Backtest &mdash; <code>/orb-backtest</code> (test on the past)</h3>
-  <p>Runs the strategy over past dates to see how it would have done. Since history has no option prices, it estimates the option's price and movement (see Section 6). You get a downloadable summary at the end.</p>
-
-  <h3 style="color:var(--accent-orange);">Replay &mdash; <code>/replay</code> (re-run a recorded day)</h3>
-  <p>Takes a day you recorded in paper mode and runs it again, tick by tick. You can replay it with the <em>original</em> settings (to reproduce exactly what happened) or with your <em>current</em> settings (to test a tweak against the same real prices, after market hours). Great for safely trying out changes.</p>
-</section>
-
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 12. CONFIG REFERENCE                                                    -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<section class="section orange" id="config">
-  <h2><span class="section-icon icon-orange">&#128221;</span> 12. All the settings, explained</h2>
-
-  <div class="note note-warn">
-    <strong>Read this before you copy any default below.</strong> ORB was deliberately simplified, and a large part of its filtering is switched <em>off</em> in the config that actually ships &mdash; so the strategy trades a much plainer rule than an older guide describes. At today's settings:
-    <br><br>
-    <strong>OFF</strong> &mdash; day-sanity (<code>ORB_OR_ATR_MAX</code>, <code>ORB_GAP_OR_MULT</code>), breakout body test (<code>ORB_BODY_ATR_MULT</code>), VWAP side check (<code>ORB_VWAP_FILTER_ENABLED</code>), breakout cushion (<code>ORB_BUFFER_*</code>), option price band (<code>ORB_PREMIUM_GATE_ENABLED</code>), rupee loss cap (<code>ORB_MAX_TRADE_LOSS</code>), break-even (<code>ORB_BREAKEVEN_*</code>), opposite-candle exit (<code>ORB_OPP_CANDLE_EXIT</code>), ATR stop leg (<code>ORB_SL_ATR_MULT</code>).
-    <br><br>
-    <strong>ON</strong> &mdash; the opening box, the confirmation candle, the RSI direction gate (<code>ORB_RSI_ENABLED</code>), the SuperTrend direction gate (<code>ORB_ST_ENABLED</code>), the entry-candle stop, the EMA20 trail, the &minus;35% option meltdown stop and the 15:15 square-off.
-  </div>
-
-  <p>This is the full list of ORB settings the code actually reads, with the defaults built into the code &mdash; the same names you'll find on the Settings page. You don't need to touch most of them.</p>
-
-  <div class="note note-warn">
-    <strong>Your <code>.env</code> may not match these defaults.</strong> The values below are what the code falls back to when a key is absent. The machine this guide was written on, for example, runs <code>ORB_ENTRY_END=10:30</code> (not 11:30), <code>ORB_MAX_DAILY_LOSS=500</code> (not 3000), <code>ORB_PREMIUM_MIN=80</code> / <code>ORB_PREMIUM_MAX=250</code> (not 120/400) and <code>ORB_OI_ENABLED=true</code> (not false). <strong>The Settings page is the truth about what is running right now</strong> &mdash; and every day's trade log carries a snapshot of the settings that produced it.
-  </div>
-
-  <div class="env-group">On/off switches</div>
-  <table>
-    <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
-    <tbody>
-      <tr><td><code>ORB_MODE_ENABLED</code></td><td><code>true</code></td><td>Show ORB in the menu and Settings. Off = hidden.</td></tr>
-      <tr><td><code>ORB_LIVE_ENABLED</code></td><td><code>false</code></td><td>The master switch for real orders (still needs the global dry-run off).</td></tr>
-      <tr><td><code>ORB_LIVE_DRY_RUN</code></td><td><code>false</code></td><td>Keep ORB in "pretend" mode even when other strategies go live.</td></tr>
-      <tr><td><code>ORB_OI_ENABLED</code></td><td><code>false</code></td><td>Turn on the crowd-positioning (OI) check.</td></tr>
-      <tr><td><code>ORB_EXPIRY_DAY_ONLY</code></td><td><code>false</code></td><td>Only trade on weekly-expiry day (Tuesday).</td></tr>
-    </tbody>
-  </table>
-
-  <div class="env-group">The box &amp; timing</div>
-  <table>
-    <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
-    <tbody>
-      <tr><td><code>ORB_RANGE_START</code> / <code>ORB_RANGE_END</code></td><td><code>09:15</code> / <code>09:30</code></td><td>When the box starts and locks.</td></tr>
-      <tr><td><code>ORB_ENTRY_START</code></td><td><code>09:30</code></td><td>Earliest a breakout candle is considered (defaults to the opening-range lock).</td></tr>
-      <tr><td><code>ORB_ENTRY_END</code></td><td><code>11:30</code></td><td>Latest a new trade may start.</td></tr>
-      <tr><td><code>ORB_FORCED_EXIT</code></td><td><code>15:15</code></td><td>Sell everything by this time.</td></tr>
-    </tbody>
-  </table>
-
-  <div class="env-group">The day &amp; breakout checks</div>
-  <table>
-    <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
-    <tbody>
-      <tr><td><code>ORB_OR_ATR_MAX</code></td><td><code>0 (off)</code></td><td>Skip the day when the box is wider than this &times; the normal 15-min move. There is <strong>no minimum</strong> by design. <strong>Off at the shipped settings</strong> &mdash; set 2.5 to enable.</td></tr>
-      <tr><td><code>ORB_OR_MAX_PTS</code></td><td><code>0</code> (off)</td><td>Skip the day when the box is wider than this many points, measured directly rather than against the 15-min move. See Section 10 &mdash; this looked like the one filter that held up, then 2024 reversed it, so it ships switched off and should stay off.</td></tr>
-      <tr><td><code>ORB_GAP_OR_MULT</code></td><td><code>0 (off)</code></td><td>Skip if the open gap is bigger than this &times; the box height (<code>0</code> = ignore gaps). <strong>Off at the shipped settings</strong> &mdash; set 3.0 to enable.</td></tr>
-      <tr><td><code>ORB_BODY_ATR_MULT</code></td><td><code>0 (off)</code></td><td>How big the breakout candle's body must be, vs the normal 5-min move. The load-bearing entry filter &mdash; but see Section 10 before tuning it. <strong>Off at the shipped settings</strong> &mdash; the breakout candle's body is not checked.</td></tr>
-      <tr><td><code>ORB_RSI_ENABLED</code></td><td><code>true</code></td><td><strong>On.</strong> Directional RSI check on the entry candle. Fails open while RSI is still warming up.</td></tr>
-      <tr><td><code>ORB_RSI_CE_MIN</code> / <code>ORB_RSI_PE_MAX</code></td><td><code>51</code> / <code>49</code></td><td>A CE needs RSI at or above 51; a PE needs it at or below 49. Deliberately light &mdash; a direction check, not the old tight band.</td></tr>
-      <tr><td><code>ORB_ST_ENABLED</code></td><td><code>true</code></td><td><strong>On.</strong> SuperTrend(10,3) must agree with the trade: below price for a CE, above it for a PE.</td></tr>
-      <tr><td><code>ORB_CONFIRM_MODE</code></td><td><code>close</code></td><td>What the confirming candle must do. <code>close</code> = simply close beyond the breakout candle's close. <code>extend</code> = the stricter higher-high-and-higher-close, back beyond the box edge.</td></tr>
-      <tr><td><code>ORB_BREAKOUT_RESCAN</code></td><td><code>true</code></td><td>Ignore a close past the box edge that fails the decisiveness checks and keep watching for a better one. <code>false</code> = the first close past the edge is final, pass or fail (behaviour before 11 Aug 2026).</td></tr>
-      <tr><td><code>ORB_RETEST_MAX_WAIT</code></td><td><code>6</code></td><td>Candles to stay armed for a resume/retest after a hesitating confirmation. <code>0</code> = confirmed entries only.</td></tr>
-      <tr><td><code>ORB_DEBUG_TRACE</code></td><td><code>false</code></td><td>Print the whole per-candle checklist to the logs. Verbose &mdash; turn it back off.</td></tr>
-    </tbody>
-  </table>
-
-  <div class="note note-info">
-    <strong>Not settings any more:</strong> the ATR length (14 bars), the breakout cushion (0.15&times;box / 0.30&times;ATR5), the retest tolerance (10% of the box, minimum 5 pts) and the chart's target line (1.5&times;box) are now fixed in the code. They were removed as env keys because they are structural choices, and having them configurable only let paper, live and backtest drift apart.
-  </div>
-
-  <div class="env-group">Picking &amp; checking the option</div>
-  <table>
-    <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
-    <tbody>
-      <tr><td><code>ORB_ITM_STEPS</code></td><td><code>1</code></td><td>How many strikes (&times;50) in-the-money to buy, for roughly 0.6 delta (<code>0</code> = at-the-money). <strong>Careful:</strong> this delta is also what turns the &#8377; loss cap into a stop distance, so changing it changes your effective stop width too.</td></tr>
-      <tr><td><code>ORB_PREMIUM_GATE_ENABLED</code></td><td><code>false</code></td><td>Turn the option price-range check on/off. <strong>Off at the shipped settings</strong>, so the price-range band is not enforced.</td></tr>
-      <tr><td><code>ORB_PREMIUM_MIN</code> / <code>ORB_PREMIUM_MAX</code></td><td><code>120</code> / <code>400</code></td><td>Allowed option price range (&#8377;).</td></tr>
-      <tr><td><code>ORB_MAX_SPREAD_PTS</code></td><td><code>2</code></td><td>Skip if the buy/sell gap is wider than this. Falls back to the global <code>MAX_BID_ASK_SPREAD_PTS</code>; skipped entirely when the broker sends no depth.</td></tr>
-    </tbody>
-  </table>
-
-  <div class="env-group">When we sell</div>
-  <table>
-    <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
-    <tbody>
-      <tr><td><code>ORB_SL_ATR_MULT</code></td><td><code>0 (off)</code></td><td>Initial stop = wider of the entry candle's extreme and this &times; ATR(5m). Was inert while <code>ORB_MAX_TRADE_LOSS</code> clamped every stop; that now ships at <code>0</code>, so this leg binds again whenever you turn it on. <strong>Off at the shipped settings</strong>: the stop is the structural level alone.</td></tr>
-      <tr><td><code>ORB_SL_SOURCE</code></td><td><code>breakout</code></td><td>Where the initial stop sits. <code>breakout</code> uses the candle that first closed past the box; <code>entry</code> uses the candle we actually buy on; <code>lookback</code> clears the extreme of the last <code>ORB_SL_LOOKBACK_CANDLES</code> candles, which a resume entry can otherwise leave far behind; <code>supertrend</code> is not a candle extreme at all &mdash; it puts the stop on the SuperTrend line (see the two rows below), which is the only anchor that keeps moving after entry.</td></tr>
-      <tr><td><code>ORB_SL_LOOKBACK_CANDLES</code></td><td><code>2</code></td><td>How many candles that lookback stop clears. Only read when <code>ORB_SL_SOURCE=lookback</code>.</td></tr>
-      <tr><td><code>ORB_SL_ST_PERIOD</code> / <code>ORB_SL_ST_MULT</code></td><td><code>10</code> / <code>2</code></td><td>The SuperTrend used as the <em>stop</em> &mdash; read by <code>ORB_SL_SOURCE=supertrend</code> and by the SuperTrend trail below, so both sit on the same line. Deliberately <strong>not</strong> the entry gate's <code>ORB_ST_*</code> (10/3): a direction filter wants a slower band, a stop wants a tighter one. A lower multiplier rides closer to price, so the stop is tighter and trails faster.</td></tr>
-      <tr><td><code>ORB_ST_TRAIL_ENABLED</code></td><td><code>false</code> (off)</td><td>Ratchet the hard stop onto that SuperTrend line on every close, while SuperTrend agrees with the trade. Tighten-only, never placed at the close itself, and &mdash; because it moves the <em>hard</em> stop &mdash; it exits <strong>intrabar</strong> rather than on a close. Set <code>ORB_SL_SOURCE=supertrend</code> as well and the stop the trade opens with is the stop that walks up behind it. Runs alongside the EMA and candle trails; whichever ends the trade first wins. Note the candle trail at 2 candles is normally the <em>tighter</em> of the two, so leaving it on will usually stop this one from ever binding.</td></tr>
-      <tr><td><code>ORB_CANDLE_TRAIL_ENABLED</code> / <code>ORB_CANDLE_TRAIL_CANDLES</code></td><td><code>false</code> (off) / <code>2</code></td><td>Ratchet the hard stop to the last N candles' extreme on every close in profit. Tighten-only, runs alongside the EMA trail, exits intrabar.</td></tr>
-      <tr><td><code>ORB_MAX_TRADE_LOSS</code></td><td><code>0 (off)</code></td><td>Most we'll lose on one trade, in &#8377; (<code>0</code> = off). <strong>This is the stop that really binds.</strong> <strong>Off at the shipped settings</strong>, so the spot stop is not clamped.</td></tr>
-      <tr><td><code>ORB_BREAKEVEN_PTS</code> / <code>ORB_BREAKEVEN_OR_MULT</code></td><td><code>0</code> / <code>0</code> (off)</td><td>Lift the stop to entry once max(fixed pts, mult&times;box) in profit (<code>0</code> mult = fixed only).</td></tr>
-      <tr><td><code>ORB_TRAIL_EMA</code></td><td><code>20</code></td><td>The trend line we trail behind; exit when a candle closes across it. Arms only after price first closes on the right side of it.</td></tr>
-      <tr><td><code>ORB_OPP_CANDLE_EXIT</code> / <code>ORB_OPP_CANDLE_BODY_MULT</code></td><td><code>false</code> (off) / <code>0.3</code></td><td>Exit on a big opposite candle (body &ge; mult&times;box) that closes back inside the box.</td></tr>
-      <tr><td><code>ORB_PREMIUM_STOP_PCT</code></td><td><code>35</code></td><td>Exit if the option loses this % of its value (<code>0</code> = off).</td></tr>
-    </tbody>
-  </table>
-
-  <div class="env-group">Jumpiness filter (VIX)</div>
-  <table>
-    <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
-    <tbody>
-      <tr><td><code>ORB_VIX_ENABLED</code></td><td><code>false</code></td><td>Turn the VIX filter on/off.</td></tr>
-      <tr><td><code>ORB_VIX_MAX_ENTRY</code></td><td><code>22</code></td><td>Above this VIX, don't trade.</td></tr>
-      <tr><td><code>ORB_VIX_STRONG_ONLY</code></td><td><code>18</code></td><td>Between here and the max, take only the best setups.</td></tr>
-    </tbody>
-  </table>
-
-  <div class="env-group">Safety limits &amp; the losing-streak brake</div>
-  <table>
-    <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
-    <tbody>
-      <tr><td><code>ORB_MAX_DAILY_TRADES</code></td><td><code>1</code></td><td>Trades allowed per day. <strong>Raising this alone will not give you a second trade</strong> &mdash; the engine sticks with the day's one committed breakout candle and will not enter late. Use <code>ORB_REENTRY_AFTER_SL</code> for a real second attempt.</td></tr>
-      <tr><td><code>ORB_REENTRY_AFTER_SL</code></td><td><code>0</code></td><td>Extra tries allowed after the breakout is <em>stopped out</em>. The hunt restarts past the stop candle, so only a fresh break of the same range edge can re-enter. A trailing-stop or end-of-day exit never re-tries &mdash; that means the move finished, not that the breakout was wrong. Ships off; measure it before leaving it on.</td></tr>
-      <tr><td><code>ORB_MAX_DAILY_LOSS</code></td><td><code>3000</code></td><td>Stop new trades once the day's loss hits this (&#8377;).</td></tr>
-      <tr><td><code>ORB_RISK_THROTTLE_ENABLED</code></td><td><code>true</code></td><td>Turn on the weekly / losing-streak brakes.</td></tr>
-      <tr><td><code>ORB_MAX_WEEKLY_LOSS</code></td><td><code>9000</code></td><td>Sit out the rest of the week after losing this much (&#8377;).</td></tr>
-      <tr><td><code>ORB_LOSS_STREAK_SKIP</code></td><td><code>4</code></td><td>Take a break after this many losing days in a row.</td></tr>
-      <tr><td><code>ORB_SIG_WINDOW</code></td><td><code>260</code></td><td>Backtest only: how many past bars to feed in (to seed the rulers).</td></tr>
-      <tr><td><code>ORB_BT_SEED_PREMIUM</code></td><td><code>240</code></td><td>Backtest only: the estimated starting option price.</td></tr>
-      <tr><td><code>ORB_BT_SLIPPAGE_PTS</code></td><td><code>1.5</code></td><td>Backtest only: spread/slippage haircut charged on each of entry and exit (premium points).</td></tr>
-      <tr><td><code>FYERS_INV_AMOUNT</code></td><td><code>100000</code></td><td>Starting practice capital (&#8377;) &mdash; shared across Fyers strategies.</td></tr>
-    </tbody>
-  </table>
-
-  <div class="env-group">Dead keys &mdash; delete them if you like, the code ignores them</div>
-  <p>The rebuild deleted the old engines and their filters. If any of these are still sitting in your <code>.env</code>, they do <strong>nothing at all</strong> &mdash; they are not "off", they simply aren't read:</p>
-  <table>
-    <thead><tr><th>Dead setting</th><th>What it used to do</th></tr></thead>
-    <tbody>
-      <tr><td><code>ORB_ENTRY_V2_ENABLED</code>, <code>ORB_ENTRY_V3_ENABLED</code></td><td>Chose between the old V1 / V2 / V3 engines. There is only one engine now.</td></tr>
-      <tr><td><code>ORB_OR_ATR_MIN</code></td><td>Minimum box size. Deleted &mdash; the best trades came from the narrowest boxes.</td></tr>
-      <tr><td><code>ORB_PRIORDAY_LEVEL_FILTER</code></td><td>The "must clear yesterday's high/low" rule. Deleted &mdash; it cut both winners.</td></tr>
-      <tr><td><code>ORB_CLOSE_POS_PCT</code>, <code>ORB_BODY_PCT_MIN</code>, <code>ORB_MAX_WICK_RATIO</code></td><td>Candle-shape filters. Deleted.</td></tr>
-      <tr><td><code>ORB_RSI_*</code>, <code>ORB_ADX_*</code>, <code>ORB_TREND_EMA_*</code></td><td>Indicator gates. Deleted &mdash; the engine carrying them took zero trades in 39 sessions.</td></tr>
-      <tr><td><code>ORB_MIN_RANGE_PTS</code>, <code>ORB_MAX_RANGE_PTS</code>, <code>ORB_MIN_BODY</code>, <code>ORB_MAX_GAP_PTS</code></td><td>Fixed point sizes, replaced by ATR-relative ones.</td></tr>
-      <tr><td><code>ORB_RETEST_ENABLED</code>, <code>ORB_RETEST_MODE</code>, <code>ORB_RETEST_TOL_MIN/PCT</code></td><td>Old retest dials. The retest is now built in with a fixed tolerance; only <code>ORB_RETEST_MAX_WAIT</code> survives.</td></tr>
-      <tr><td><code>ORB_ATR_PERIOD</code>, <code>ORB_BREAKOUT_BUFFER_*</code></td><td>Now fixed constants in the code. Note <code>ORB_BUFFER_OR_MULT</code>, <code>ORB_BUFFER_ATR_MULT</code> and <code>ORB_BUFFER_MIN_PTS</code> are <strong>not</strong> dead &mdash; they are live keys that all default to <strong>0</strong>, which is why the breakout cushion is currently zero.</td></tr>
-      <tr><td><code>ORB_CONFIRM_ENABLED</code></td><td>Confirmation is always on now &mdash; it is the strategy. (<code>ORB_VWAP_FILTER_ENABLED</code> is <strong>not</strong> dead: it is a live key, and it defaults to <code>false</code>, so the VWAP-side check does not run.)</td></tr>
-      <tr><td><code>ORB_TARGET_RANGE_MULT</code></td><td>Moved the chart's target line. The line is now fixed at 1.5&times; the box &mdash; and it never triggered a sale anyway.</td></tr>
-      <tr><td><code>ORB_STOP_PCT</code>, <code>ORB_SL_CANDLES</code>, <code>ORB_PREMIUM_LOCKIN_*</code></td><td>Old stop/lock-in schemes, replaced by the stop stack in Section 7.</td></tr>
-    </tbody>
-  </table>
-</section>
-
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 13. KNOWN GAPS                                                          -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<section class="section red" id="gaps">
-  <h2><span class="section-icon icon-red">&#9888;</span> 13. What's still missing</h2>
-
-  <ul>
-    <li><strong>The sample is far too small.</strong> 9 trades. One of them is 211% of all the profit. This is the single biggest limitation and no amount of tuning fixes it &mdash; only more sessions do. (Section 10.)</li>
-    <li><strong>Backtest option prices are estimated</strong>, and the backtest cannot run three of the entry checks (premium band, spread, OI) because history has no option chain. So it always shows <em>more</em> trades than practice takes.</li>
-    <li><strong>Results are lumpy by design.</strong> ORB's profit comes from a handful of big trend days. Expect quiet, flat stretches between them &mdash; judge it over months, not days.</li>
-    <li><strong>The stop you configure isn't always the stop you get.</strong> Whenever <code>ORB_MAX_TRADE_LOSS</code> is tighter than the spot stop it wins, which makes <code>ORB_SL_ATR_MULT</code> inert. Both are 0 at the settings shipped today, so neither applies right now &mdash; but the interaction returns the moment you set a rupee cap. (Section 7.)</li>
-    <li><strong>The trail period is not validated.</strong> EMA34 beat the shipped EMA20 in-sample. 20 was kept as the incumbent, not because it won.</li>
-  </ul>
-
-  <div class="note note-success">
-    <strong>Fixed since the last edition of this guide:</strong> the two conflicting stops are now reconciled before the trade opens (what the dashboard shows is what executes); the whole entry checklist is traceable per candle and saved into the skip log; the backtest now runs its exits in the same order as practice, charges slippage on both sides and fills a gapped-through stop at the gap-open; ORB survives a server restart with an open trade; and the paper vs live routes were audited and 8 behaviour differences closed &mdash; with practice treated as the correct one.
-  </div>
-
-  <div class="note note-warn">
-    <strong>Last checked: 26 July 2026</strong> &mdash; rewritten against the rebuilt single-engine ORB (<code>src/strategies/orb_breakout.js</code>), <code>src/routes/orbPaper.js</code> and <code>src/utils/orbStopRisk.js</code>. Every rule, default and number above was read straight from that code or from <code>scripts/orbValidate.js</code>.
-  </div>
-</section>
-
-</div><!-- /.container -->
-
 <footer class="page-footer">
-  Opening Range Breakout (ORB) &mdash; Strategy Guide (plain-English edition) &nbsp;|&nbsp; v7.0.0 &nbsp;|&nbsp; updated 26 July 2026
+  Opening Range Breakout (ORB) &mdash; Strategy Guide (plain-English edition) &nbsp;|&nbsp; v8.0.0 &nbsp;|&nbsp; updated 8 October 2026
 </footer>
 
-<!-- ══════════════════════════════════════════════════════ -->
-<!-- CHART KIT — dependency-free TradingView-style renderer   -->
-<!-- (identical block in every strategy guide)                -->
-<!-- ══════════════════════════════════════════════════════ -->
 <script>
 /* ============================================================================
  * TVChart v3 — dependency-free TradingView-style candlestick renderer.
@@ -1210,97 +951,21 @@
   global.TVChart = TVChart;
 })(window);
 </script>
-
 <script>
-(function () {
-  var render = function () {
-    // Whole trading day: opening-range box → consolidation → confirmation BUY → all-day trend → EMA20 close-trail EXIT
-    TVChart.render("orb-session", {"title":"NIFTY 50 Index","subtitle":"5m · NSE · an ORB trend day (1 trade, held all day)","times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55","12:00","12:05","12:10","12:15","12:20","12:25","12:30","12:35","12:40","12:45","12:50","12:55","13:00","13:05","13:10","13:15","13:20","13:25","13:30","13:35","13:40","13:45","13:50","13:55","14:00","14:05","14:10","14:15","14:20","14:25","14:30","14:35","14:40","14:45","14:50","14:55","15:00","15:05","15:10"],"candles":[[25112.76,25117.72,25109.9,25115.72],[25115.72,25123.45,25100.15,25105.64],[25105.64,25111.15,25087.49,25096.35],[25096.35,25153.45,25079.01,25135.04],[25135.04,25140.94,25132.42,25138.69],[25138.69,25140.12,25136.75,25138.7],[25138.7,25139.69,25136.39,25138.21],[25138.21,25151.48,25134.32,25148.37],[25148.37,25163.45,25145.66,25158.66],[25158.66,25174.34,25153.11,25170.05],[25170.05,25192.73,25165.72,25182.96],[25182.96,25184.63,25180.93,25182.48],[25182.48,25189.83,25180.82,25186.5],[25186.5,25191.31,25183.77,25189.97],[25189.97,25194.68,25188.53,25191.2],[25191.2,25195.39,25188.88,25193.53],[25193.53,25204.02,25191.27,25201.93],[25201.93,25204.92,25200.39,25203.26],[25203.26,25209.11,25199.87,25205.5],[25205.5,25215.01,25201.66,25212.09],[25212.09,25215.46,25210.32,25213.77],[25213.77,25219,25212.02,25217.63],[25217.63,25231.42,25210.13,25227.01],[25227.01,25229.58,25224.91,25227.64],[25227.64,25232.46,25225.88,25230.14],[25230.14,25241.98,25226.88,25237.1],[25237.1,25251.79,25234.08,25244.73],[25244.73,25250.96,25242.67,25247.56],[25247.56,25254.23,25242.93,25251.46],[25251.46,25263.39,25246.51,25260.13],[25260.13,25267.44,25258.6,25265.14],[25265.14,25270.86,25261.25,25267.73],[25267.73,25274.34,25265.32,25272.14],[25272.14,25278.51,25269.44,25277.45],[25277.45,25279.96,25274.24,25278.12],[25278.12,25287.72,25275.33,25283.58],[25283.58,25285.97,25282.49,25283.81],[25283.81,25293.49,25280.09,25291.35],[25291.35,25299.19,25288.16,25297.44],[25297.44,25303.93,25293.33,25300.9],[25300.9,25305.04,25298.46,25301.53],[25301.53,25304.64,25300.5,25304.04],[25304.04,25308.74,25302.41,25306.72],[25306.72,25313.44,25303.33,25310.01],[25310.01,25393.52,25278.57,25351.48],[25351.48,25352.41,25349.56,25351.2],[25351.2,25354.25,25348.95,25351.09],[25351.09,25358.16,25349.84,25356.55],[25356.55,25360,25354.86,25355.95],[25355.95,25358.42,25353.84,25357.18],[25357.18,25360.15,25355.71,25358.83],[25358.83,25366.04,25354.13,25364.06],[25364.06,25369.8,25360,25367.9],[25367.9,25376.91,25361.78,25374.45],[25374.45,25376.83,25371.84,25373.6],[25373.6,25377.67,25372.26,25375.92],[25375.92,25388.15,25373.28,25385.55],[25385.55,25390.84,25373.53,25379.23],[25379.23,25383.27,25369.38,25371.03],[25371.03,25372.56,25365.21,25367.75],[25367.75,25371.86,25357.56,25361.99],[25361.99,25367.12,25352.98,25356.3],[25356.3,25362.48,25344.92,25346.92],[25346.92,25349.47,25342.55,25343.74],[25343.74,25344.64,25339.59,25340.4],[25340.4,25346.55,25322.54,25331.44],[25331.44,25332.83,25328.14,25329.48],[25329.48,25331.26,25326.92,25329.24],[25329.24,25331.51,25317.31,25320.89],[25320.89,25323.65,25314.58,25317.68],[25317.68,25320.26,25311.54,25312.88],[25312.88,25323.71,25299.77,25304.05]],"zones":[{"from":0,"to":2,"top":25123.45,"bottom":25087.49,"label":"Opening range 36pt","color":"rgba(96,165,250,0.09)","stroke":"#60a5fa"}],"overlays":[{"name":"VWAP","color":"#a78bfa","data":[25114.45,25112.1,25107.51,25111.26,25116.47,25120.15,25122.71,25125.46,25128.85,25132.55,25136.9,25140.72,25144.18,25147.34,25150.28,25152.92,25155.64,25158.26,25160.71,25163.16,25165.54,25167.84,25170.23,25172.61,25174.89,25177.21,25179.67,25182.08,25184.4,25186.81,25189.29,25191.71,25194.1,25196.48,25198.8,25201.11,25203.36,25205.59,25207.88,25210.17,25212.4,25214.56,25216.69,25218.78,25221.5,25224.32,25227.02,25229.69,25232.28,25234.77,25237.19,25239.58,25241.96,25244.35,25246.71,25249.01,25251.34,25253.58,25255.63,25257.52,25259.26,25260.86,25262.3,25263.6,25264.8,25265.84,25266.8,25267.71,25268.52,25269.23,25269.88,25270.42]},{"name":"EMA20","color":"#f5a623","data":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,25164.74,25169.41,25174,25179.05,25183.68,25188.1,25192.77,25197.72,25202.47,25207.13,25212.18,25217.22,25222.03,25226.81,25231.63,25236.06,25240.58,25244.7,25249.14,25253.74,25258.23,25262.36,25266.33,25270.17,25273.97,25281.35,25288,25294.01,25299.97,25305.3,25310.24,25314.87,25319.55,25324.16,25328.95,25333.2,25337.27,25341.87,25345.42,25347.86,25349.76,25350.92,25351.43,25351,25350.31,25349.37,25347.66,25345.93,25344.34,25342.11,25339.78,25337.22,25334.06]}],"markers":[{"i":8,"type":"dot","color":"#fbbf24","price":25158.66,"text":"breakout candle"},{"i":9,"type":"buy","price":25170.05,"text":"BUY CE 25170"},{"i":62,"type":"exit","price":25346.92,"text":"EXIT — closed below EMA20"}],"legend":[{"color":"#60a5fa","label":"Opening range"},{"color":"#a78bfa","label":"VWAP"},{"color":"#f5a623","label":"EMA20 trail"},{"color":"#26a69a","label":"BUY"},{"color":"#ef5350","label":"EXIT"}]});
-    // The iconic ORB trade: opening-range box → breakout candle → confirmation BUY → EMA20 close-trail EXIT
-    TVChart.render("orb-breakout", {
-      title: "ORB — 5-min NIFTY: box breakout, confirm, EMA20 exit",
-      candles: [[25240,25258,25228,25246],[25246,25262,25234,25238],[25238,25268,25226,25256],
-        [25256,25272,25244,25262],[25264,25306,25262,25302],[25302,25328,25298,25322],
-        [25322,25342,25316,25338],[25338,25356,25332,25350],[25350,25370,25344,25366],
-        [25366,25378,25358,25362],[25362,25370,25348,25354],[25354,25358,25322,25328]],
-      zones: [{ from:0, to:2, top:25275, bottom:25215, label:"Opening range", stroke:"#60a5fa" }],
-      overlays: [
-        { name:"VWAP", color:"#a78bfa", data:[25242,25240,25242,25246,25254,25264,25276,25288,25300,25310,25318,25324] },
-        { name:"EMA20", color:"#f5a623", data:[25250,25248,25248,25250,25256,25266,25278,25292,25306,25318,25328,25342] }],
-      markers: [{ i:4, type:"dot", price:25302 },
-        { i:5, type:"buy", price:25322, text:"BUY CE 25,322" },
-        { i:11, type:"exit", price:25328, text:"EXIT — EMA20 close" }],
-      legend: [{ color:"#60a5fa", label:"Opening range" }, { color:"#a78bfa", label:"VWAP" },
-        { color:"#f5a623", label:"EMA20" }, { color:"#26a69a", label:"BUY" }, { color:"#ef5350", label:"EXIT" }]
-    });
-    // Day skipped: the opening range itself is ~2.8× the normal 15-min move
-    TVChart.render("orb-toowide", {
-      title: "ORB — opening box too wide, whole day skipped",
-      subtitle: "5m · NIFTY · OR 112pt vs ATR15 40pt = 2.8× (max 2.5×)",
-      times: ["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20"],
-      candles: [[25100,25212,25098,25190],[25190,25214,25110,25126],[25126,25182,25102,25156],
-        [25156,25198,25146,25188],[25188,25202,25156,25164],[25164,25194,25152,25186],
-        [25186,25208,25172,25180],[25180,25190,25136,25146],[25146,25178,25134,25170],
-        [25170,25196,25158,25164],[25164,25176,25128,25138],[25138,25172,25126,25166],
-        [25166,25190,25152,25158],[25158,25168,25130,25142]],
-      zones: [{ from:0, to:2, top:25212, bottom:25100, label:"Opening range — 112pt", stroke:"#f85149", color:"rgba(248,81,73,0.07)" }],
-      overlays: [{ name:"VWAP", color:"#a78bfa", data:[25157,25156,25155,25159,25160,25163,25165,25163,25163,25163,25161,25161,25161,25159] }],
-      markers: [{ i:3, type:"dot", color:"#d29922", price:25188, text:"SKIPPED — box too wide" }],
-      legend: [{ color:"#f85149", label:"Opening range (rejected)" }, { color:"#a78bfa", label:"VWAP" },
-        { color:"#d29922", label:"no trade all day" }]
-    });
-    // Backup path: confirmation candle stalls, price retests the box top and holds → BUY
-    TVChart.render("orb-retest", {
-      title: "ORB — confirmation stalled, retest held, entry taken",
-      subtitle: "5m · NIFTY · the fallback window (≤6 candles)",
-      times: ["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05"],
-      candles: [[25240,25260,25215,25250],[25250,25272,25238,25262],[25262,25275,25246,25268],
-        [25268,25302,25264,25298],[25298,25304,25286,25292],[25292,25296,25278,25291],
-        [25291,25318,25288,25312],[25312,25334,25306,25328],[25328,25348,25322,25342],
-        [25342,25354,25334,25346],[25346,25350,25328,25332]],
-      zones: [{ from:0, to:2, top:25275, bottom:25215, label:"Opening range", stroke:"#60a5fa" }],
-      overlays: [{ name:"VWAP", color:"#a78bfa", data:[25242,25248,25254,25262,25268,25272,25278,25286,25296,25304,25310] }],
-      markers: [{ i:3, type:"dot", price:25298, text:"breakout" },
-        { i:4, type:"dot", color:"#d29922", price:25292, text:"stalled — no buy" },
-        { i:5, type:"buy", price:25291, text:"BUY CE 25,291 — retest held" }],
-      legend: [{ color:"#60a5fa", label:"Opening range" }, { color:"#a78bfa", label:"VWAP" },
-        { color:"#d29922", label:"stall" }, { color:"#26a69a", label:"BUY" }]
-    });
-    // A losing day: entry was clean, the ₹1,500 per-trade cap ends it ~38 spot points later
-    TVChart.render("orb-stopped", {
-      title: "ORB — a normal loser: the ₹1,500 cap ends the trade",
-      subtitle: "5m · NIFTY · stop asked for 45pt, budget allowed 38pt",
-      times: ["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55"],
-      candles: [[25240,25260,25215,25250],[25250,25272,25238,25262],[25262,25275,25246,25268],
-        [25268,25306,25264,25302],[25302,25328,25298,25322],[25322,25324,25300,25304],
-        [25304,25308,25280,25284],[25284,25290,25262,25268],[25268,25274,25250,25256]],
-      zones: [{ from:0, to:2, top:25275, bottom:25215, label:"Opening range", stroke:"#60a5fa" }],
-      overlays: [{ name:"VWAP", color:"#a78bfa", data:[25242,25248,25254,25264,25276,25280,25280,25278,25274] }],
-      markers: [{ i:3, type:"dot", price:25302, text:"breakout" },
-        { i:4, type:"buy", price:25322, text:"BUY CE 25,322" },
-        { i:6, type:"exit", price:25284, text:"EXIT — ₹1,500 cap (38pt)" }],
-      legend: [{ color:"#60a5fa", label:"Opening range" }, { color:"#a78bfa", label:"VWAP" },
-        { color:"#26a69a", label:"BUY" }, { color:"#ef5350", label:"EXIT" }]
-    });
-    // False breakout: pokes above the box, no VWAP push, next candle falls back inside → no trade
-    TVChart.render("orb-fakeout", {
-      title: "ORB — false breakout falls back into the box (no trade)",
-      candles: [[25236,25256,25226,25248],[25248,25264,25238,25256],[25256,25272,25246,25262],
-        [25262,25274,25250,25268],[25268,25296,25264,25288],[25288,25290,25250,25256],
-        [25256,25266,25242,25248],[25248,25260,25236,25254],[25254,25268,25246,25262],
-        [25262,25276,25250,25258]],
-      zones: [{ from:0, to:2, top:25275, bottom:25215, label:"Opening range", stroke:"#60a5fa" }],
-      overlays: [{ name:"VWAP", color:"#a78bfa", data:[25254,25256,25258,25260,25262,25262,25260,25258,25258,25258] }],
-      markers: [{ i:5, type:"dot", color:"#d29922", price:25256 }],
-      legend: [{ color:"#60a5fa", label:"Opening range" }, { color:"#a78bfa", label:"VWAP" },
-        { color:"#d29922", label:"fell back — no trade" }]
-    });
-    TVChart.render("orb-pe", {"title":"ORB on the short side — the box breaks DOWNWARDS","subtitle":"5m NIFTY · box 25151–25190 (40 pts) · one trade, ridden on the EMA20 trail","candles":[[25182.47,25190.08,25164.67,25169.94],[25169.94,25178.32,25150.51,25162.82],[25162.82,25174.81,25158.69,25167.45],[25167.45,25185.03,25143.51,25156],[25156,25161.11,25150.15,25156.35],[25156.35,25165.93,25127.01,25131.96],[25131.96,25139.01,25086.64,25100.39],[25100.39,25112.18,25079.07,25089.31],[25089.31,25102.08,25071.96,25086.71],[25086.71,25091.28,25075.23,25081.09],[25081.09,25096.2,25065.39,25078.49],[25078.49,25085.98,25056.81,25066.55],[25066.55,25072.9,25054.86,25062.45],[25062.45,25066.95,25053.64,25057.91],[25057.91,25063.23,25049.43,25052.98],[25052.98,25059.51,25032.94,25036.06],[25036.06,25049.63,25020.88,25028.28],[25028.28,25038.47,25006.32,25013.98],[25013.98,25026.99,24983.79,24998.01],[24998.01,25000.74,24987.33,24992.35],[24992.35,24997.58,24981.33,24985.47],[24985.47,24998.23,24968.16,24972.2],[24972.2,24976.76,24954.77,24966.53],[24966.53,24987.86,24954.34,24973.82],[24973.82,24988.31,24966.6,24985.39],[24985.39,25003.78,24974.93,24993.36],[24993.36,25006.99,24982.51,25000.94],[25000.94,25016.37,24994.54,25002.18],[25002.18,25009.44,24991.77,25002.43],[25002.43,25005.34,24993.02,25001.35],[25001.35,25014.76,24992.64,25008.18],[25008.18,25014.57,25004.93,25008.46],[25008.46,25023.04,25001.02,25014.33],[25014.33,25019.98,25008.03,25012.52],[25012.52,25023.04,25002.04,25018.46],[25018.46,25031.56,25013.27,25025.04],[25025.04,25029.85,25019.37,25024.18],[25024.18,25028.39,25021.32,25025.67],[25025.67,25037.61,25018.77,25031.05],[25031.05,25040.47,25025.32,25035.67],[25035.67,25044.51,25023.69,25038.85]],"zones":[{"from":0,"to":2,"top":25190.08,"bottom":25150.51,"color":"rgba(96,165,250,0.09)","stroke":"rgba(96,165,250,0.55)","label":"09:15–09:30 opening box"}],"overlays":[{"name":"VWAP","color":"#8b5cf6","width":1.6,"data":[25174.9,25169.39,25168.59,25166.82,25164.63,25160.8,25153.35,25145.87,25139.32,25133.64,25128.77,25123.85,25119.2,25114.94,25110.96,25106.7,25102.36,25097.76,25092.77,25087.81,25083.06,25078.35,25073.47,25069.24,25065.68,25062.79,25060.35,25058.35,25056.38,25054.5,25052.91,25051.54,25050.37,25049.29,25048.29,25047.6,25046.97,25046.4,25045.95,25045.65,25045.41]},{"name":"EMA 20 trail","color":"#f97316","width":1.6,"dash":true,"data":[25174.08,25173.01,25172.48,25170.91,25169.52,25165.95,25159.7,25153,25146.69,25140.44,25134.54,25128.06,25121.81,25115.73,25109.75,25102.73,25095.64,25087.87,25079.31,25071.03,25062.88,25054.24,25045.89,25039.02,25033.92,25030.05,25027.28,25024.89,25022.75,25020.71,25019.52,25018.47,25018.07,25017.54,25017.63,25018.34,25018.89,25019.54,25020.63,25022.07,25023.67]}],"hlines":[{"price":25150.51,"color":"#60a5fa","label":"box bottom (ORL)","solid":true,"width":1,"labelAt":0.82},{"price":25138.39,"color":"#ef5350","label":"stop — clamped by the ₹1,500 cap","labelAt":0.5}],"shades":[{"from":6,"to":34,"color":"rgba(239,83,80,0.06)","label":"holding the Put — 140 min","labelBottom":true}],"markers":[{"i":5,"type":"dot","color":"#fbbf24","price":25131.96,"text":"the breakout candle"},{"i":6,"type":"exit","color":"#26a69a","price":25100.39,"text":"BUY PE 25100"},{"i":34,"type":"buy","color":"#ef5350","price":25018.46,"text":"EXIT 25018 (+82 pts)"}],"legend":[{"color":"rgba(96,165,250,0.55)","label":"opening box"},{"color":"#8b5cf6","label":"VWAP"},{"color":"#f97316","label":"EMA20 trail"},{"color":"#ef5350","label":"rupee-capped stop"}],"times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55","12:00","12:05","12:10","12:15","12:20","12:25","12:30","12:35"]});
-    TVChart.render("orb-cancelled", {"title":"The breakout that died — and why the day ends there","subtitle":"5m NIFTY · no confirmation, then a close back inside the box · ORB takes no trade at all","candles":[[25046.69,25054.76,25041.33,25051.89],[25051.89,25058.66,25044.52,25053.44],[25053.44,25061.97,25046.3,25055.41],[25055.41,25061.03,25051.17,25056.59],[25056.59,25061.33,25052.1,25057.53],[25057.53,25094.13,25053.9,25087.25],[25087.25,25091.57,25073.37,25080.5],[25080.5,25084.81,25057.73,25062.95],[25062.95,25067.11,25057.84,25061.36],[25061.36,25067.26,25055.9,25061.69],[25061.69,25071.07,25057.6,25062.27],[25062.27,25068.79,25050.31,25061.23],[25061.23,25074.38,25050.26,25068.91],[25068.91,25075.72,25063.28,25067.36],[25067.36,25072.06,25063.06,25068.73],[25068.73,25078.5,25065.96,25071.66],[25071.66,25078.87,25062.45,25072.43],[25072.43,25079.54,25070.49,25075.13],[25075.13,25079.07,25068.99,25073.96],[25073.96,25085.91,25070.78,25081.36],[25081.36,25085.84,25078.22,25082.26],[25082.26,25098.45,25074.45,25090.83],[25090.83,25104.08,25084.46,25096.08],[25096.08,25100.24,25092.03,25097.72],[25097.72,25105.64,25093.55,25097.99],[25097.99,25101.04,25093.78,25097.42],[25097.42,25106.91,25094.77,25100.38],[25100.38,25116.8,25096.06,25108.65],[25108.65,25120.27,25104.68,25113.59],[25113.59,25121.68,25110.13,25118.73],[25118.73,25121.21,25107.36,25115.17],[25115.17,25119.1,25112.76,25114.79],[25114.79,25121.09,25102.76,25111.67],[25111.67,25120.54,25098.49,25108.08],[25108.08,25117.04,25100.8,25104.11],[25104.11,25106.89,25096.84,25103.46],[25103.46,25106.04,25096.23,25098.91],[25098.91,25103.98,25089.71,25097.09],[25097.09,25100.24,25088.46,25093.9],[25093.9,25102.98,25090.36,25095.26]],"zones":[{"from":0,"to":2,"top":25061.97,"bottom":25041.33,"color":"rgba(96,165,250,0.09)","stroke":"rgba(96,165,250,0.55)","label":"09:15–09:30 opening box"}],"overlays":[{"name":"VWAP","color":"#8b5cf6","width":1.6,"data":[25049.33,25050.77,25052.03,25053.09,25053.87,25057.96,25061.37,25062.26,25062.24,25062.18,25062.31,25062.13,25062.31,25062.78,25063.12,25063.68,25064.12,25064.73,25065.22,25065.93,25066.7,25067.66,25068.84,25070,25071.16,25072.17,25073.23,25074.44,25075.77,25077.14,25078.34,25079.51,25080.49,25081.33,25082.07,25082.63,25083.11,25083.48,25083.75,25084.06]}],"hlines":[{"price":25061.97,"color":"#60a5fa","label":"box top (ORH)","solid":true,"width":1,"labelAt":0.75}],"shades":[{"from":8,"to":39,"color":"rgba(148,163,184,0.10)","label":"day cancelled — no second chance","text":"#aab6c6","labelBottom":true}],"markers":[{"i":5,"type":"dot","color":"#fbbf24","price":25087.25,"text":"breakout"},{"i":6,"type":"dot","color":"#f59e0b","price":25080.5,"text":"stalls — no proof"},{"i":8,"type":"exit","color":"#ef5350","price":25061.36,"text":"closed back INSIDE — day over"},{"i":29,"type":"dot","color":"#94a3b8","price":25121.68,"text":"+34 pts, and we sat it out"}],"legend":[{"color":"rgba(96,165,250,0.55)","label":"opening box"},{"color":"#8b5cf6","label":"VWAP"},{"color":"#ef5350","label":"the cancelling candle"},{"color":"#94a3b8","label":"what we missed"}],"times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55","12:00","12:05","12:10","12:15","12:20","12:25","12:30"]});
-  };
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", render);
-  else render();
-})();
+TVChart.render("orb-box", {"title":"NIFTY 50 · 5 min","subtitle":"Example — not a real trade · yesterday's last 40 min, then today's open","times":["14:50","14:55","15:00","15:05","15:10","15:15","15:20","15:25","09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20"],"candles":[[25021.1,25027.7,25004.85,25011.95],[25010.9,25014,25009.55,25011],[25010.05,25011.25,25002.25,25003],[25003.6,25011.25,24996.85,25009.6],[25009.7,25010.85,24994.6,25000.7],[25000.95,25006.8,24995.5,25006.3],[25007.3,25010.1,25000.9,25008.15],[25008.85,25013.5,24988.05,24995.3],[25022,25051,25008,25041],[25041,25063,25030,25034],[25034,25048,25017,25044],[25044,25058,25038,25049],[25049,25054,25031,25036],[25036,25052,25033,25047],[25047,25081,25044,25076],[25076,25094,25072,25089],[25090.6,25095.25,25089.9,25092.95],[25092.3,25100.25,25087.95,25099.5],[25099,25103.3,25096.65,25098.55],[25099.2,25118.05,25095.4,25113.85],[25114.7,25124.6,25111.65,25121.5],[25120.6,25127.55,25118.35,25119.5]],"overlays":[],"hlines":[{"price":25063,"label":"ORH 25063","color":"#60a5fa","labelAt":0.75},{"price":25008,"label":"ORL 25008","color":"#60a5fa","labelAt":0.75}],"zones":[{"from":8,"to":10,"top":25063,"bottom":25008,"label":"Opening box","color":"rgba(96,165,250,0.14)","stroke":"#60a5fa"}],"shades":[{"from":0,"to":7,"label":"yesterday","color":"rgba(148,163,184,0.06)"},{"from":8,"to":10,"label":"box is drawn","color":"rgba(96,165,250,0.06)","labelBottom":true}],"markers":[{"i":14,"price":25081,"type":"dot","text":"first close above the box","color":"#fbbf24"}],"legend":[{"label":"Opening box 09:15–09:30","color":"#60a5fa"}]});
+TVChart.render("orb-ce", {"title":"NIFTY 50 · 5 min","subtitle":"Example — not a real trade · CE entry after a confirmed break","times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00"],"candles":[[25022,25051,25008,25041],[25041,25063,25030,25034],[25034,25048,25017,25044],[25044,25058,25038,25049],[25049,25054,25031,25036],[25036,25052,25033,25047],[25047,25081,25044,25076],[25076,25094,25072,25089],[25090.6,25095.25,25089.9,25092.95],[25092.3,25100.25,25087.95,25099.5],[25099,25103.3,25096.65,25098.55],[25099.2,25118.05,25095.4,25113.85],[25114.7,25124.6,25111.65,25121.5],[25120.6,25127.55,25118.35,25119.5],[25120.6,25136.6,25118.5,25135.2],[25136.1,25142.1,25120.65,25127.5],[25127.3,25131.8,25125.15,25130.35],[25129.35,25144.35,25128.5,25138.15],[25139.2,25143.9,25135.5,25143.4],[25144.35,25146.6,25133.45,25140.3],[25140.45,25155.9,25135.25,25153.25],[25153.95,25158.9,25141.15,25151.85]],"overlays":[{"data":[25016.17,25017.86,25020.35,25023.08,25024.31,25026.47,25031.19,25036.7,25042.05,25047.52,25052.38,25058.24,25064.26,25069.52,25075.78,25080.7,25085.43,25090.45,25095.5,25099.76,25104.86,25109.33],"color":"#f59e0b","width":1.6},{"data":[24975.52,24988.02,24988.02,24988.02,24988.02,24988.02,24995.67,25016.25,25030.63,25034.66,25044.48,25049.99,25063.18,25070.74,25075.13,25077.76,25078.23,25086.45,25092.2,25093.33,25097.35,25101.3],"color":"#22c55e","width":1.3,"dash":true},{"data":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],"color":"#ef4444","width":1.3,"dash":true}],"hlines":[{"price":25063,"label":"Box top (ORH)","color":"#60a5fa","labelAt":0.88},{"price":25008,"label":"Box bottom (ORL)","color":"#60a5fa","labelAt":0.88},{"price":25044,"label":"Stop = breakout candle low 25044","color":"#f87171","solid":true,"labelAt":0.55}],"zones":[{"from":0,"to":2,"top":25063,"bottom":25008,"label":"Opening box 09:15–09:30","color":"rgba(96,165,250,0.12)","stroke":"#60a5fa"}],"shades":[{"from":7,"to":12,"label":"holding","color":"rgba(38,166,154,0.07)"}],"markers":[{"i":6,"price":25081,"type":"dot","text":"breakout candle","color":"#fbbf24"},{"i":7,"price":25072,"type":"buy","text":"BUY CE 25089"},{"i":12,"price":25124.6,"type":"exit","text":"EXIT 25113.53"}],"legend":[{"label":"EMA 20 (trail line)","color":"#f59e0b"},{"label":"SuperTrend 10,3 bullish","color":"#22c55e"},{"label":"SuperTrend 10,3 bearish","color":"#ef4444"},{"label":"Opening box edges","color":"#60a5fa"},{"label":"Stop-loss","color":"#f87171"}],"pane":{"type":"rsi","data":[60.16,56.68,60.22,61.89,55.37,59.28,67.4,70.26,71.09,72.46,71.93,75.11,76.54,75.32,78.25,73.63,74.24,75.87,76.93,74.84,77.58,76.61],"levels":[{"value":51,"color":"#22c55e"},{"value":49,"color":"#ef4444"}],"label":"RSI 14 — CE needs ≥ 51, PE needs ≤ 49","color":"#c084fc","markers":[{"i":7,"value":70.26,"color":"#fbbf24"}]}});
+TVChart.render("orb-lock", {"title":"NIFTY 50 · 5 min","subtitle":"Example — not a real trade · same trade, option premium in the lower panel (₹200 entry, 0.6 delta assumed)","times":["09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15"],"candles":[[25044,25058,25038,25049],[25049,25054,25031,25036],[25036,25052,25033,25047],[25047,25081,25044,25076],[25076,25094,25072,25089],[25090.6,25095.25,25089.9,25092.95],[25092.3,25100.25,25087.95,25099.5],[25099,25103.3,25096.65,25098.55],[25099.2,25118.05,25095.4,25113.85],[25114.7,25124.6,25111.65,25121.5],[25120.6,25127.55,25118.35,25119.5],[25120.6,25136.6,25118.5,25135.2],[25136.1,25142.1,25120.65,25127.5],[25127.3,25131.8,25125.15,25130.35],[25129.35,25144.35,25128.5,25138.15],[25139.2,25143.9,25135.5,25143.4],[25144.35,25146.6,25133.45,25140.3],[25140.45,25155.9,25135.25,25153.25],[25153.95,25158.9,25141.15,25151.85],[25151.05,25166.75,25148.8,25162.85],[25162.05,25163.75,25152.5,25156.7],[25157.35,25165.35,25148.15,25164.8]],"overlays":[{"data":[25023.08,25024.31,25026.47,25031.19,25036.7,25042.05,25047.52,25052.38,25058.24,25064.26,25069.52,25075.78,25080.7,25085.43,25090.45,25095.5,25099.76,25104.86,25109.33,25114.43,25118.45,25122.87],"color":"#f59e0b","width":1.6}],"hlines":[{"price":25044,"label":"Hard stop 25044","color":"#f87171","solid":true,"labelAt":0.62}],"zones":[],"shades":[{"from":4,"to":9,"label":"holding","color":"rgba(38,166,154,0.07)"}],"markers":[{"i":4,"price":25072,"type":"buy","text":"BUY CE"},{"i":9,"price":25124.6,"type":"exit","text":"profit lock 25113.53"}],"legend":[{"label":"EMA 20 (trail line)","color":"#f59e0b"}],"pane":{"type":"line","data":[null,null,null,null,200,202.37,206.3,205.73,214.91,214.72,null,null,null,null,null,null,null,null,null,null,null,null],"levels":[{"value":200,"color":"#94a3b8"},{"value":210,"color":"#fbbf24"},{"value":216,"color":"#22c55e"}],"label":"Option premium ₹ — 200 entry · 210 breakeven arms · 216 profit lock arms","color":"#38bdf8","min":196,"max":226,"markers":[{"i":9,"value":214.72,"color":"#ef4444"}]}});
+TVChart.render("orb-pe", {"title":"NIFTY 50 · 5 min","subtitle":"Example — not a real trade · PE entry on a break below the box","times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55"],"candles":[[24728,24748,24712,24735],[24735,24741,24709,24716],[24716,24731,24704,24725],[24725,24729,24708,24712],[24711,24714,24690,24694],[24694,24697,24676,24681],[24682.25,24689.3,24676.6,24679.55],[24679,24682.3,24670.5,24673],[24674.6,24676.9,24665.45,24666.15],[24665.5,24666.25,24658.95,24663.3],[24662.8,24667.1,24651.05,24652.95],[24653.6,24663.05,24649.8,24658.85],[24659.7,24662.8,24654.05,24657.1],[24656.2,24663.15,24644.55,24645.7],[24646.8,24653.4,24644.7,24652],[24652.9,24658.9,24628.05,24634.9],[24634.7,24636.15,24626.2,24628.35],[24627.35,24633.55,24625.9,24626.75],[24627.8,24628.3,24618.9,24622.6],[24623.55,24625.8,24603.25,24610.1],[24610.25,24616.3,24605.05,24613.65]],"overlays":[{"data":[24732.33,24730.78,24730.23,24728.49,24725.2,24720.99,24717.05,24712.85,24708.4,24704.11,24699.24,24695.39,24691.74,24687.36,24683.99,24679.32,24674.46,24669.92,24665.41,24660.14,24655.72],"color":"#f59e0b","width":1.6},{"data":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],"color":"#22c55e","width":1.3,"dash":true},{"data":[24749.42,24749.42,24749.42,24749.42,24749.42,24745.77,24740.11,24731.38,24724.09,24712.42,24708.72,24705.08,24704.84,24701.21,24694.28,24693.44,24679.13,24675.18,24667.33,24660.64,24655.56],"color":"#ef4444","width":1.3,"dash":true}],"hlines":[{"price":24748,"label":"Box top (ORH)","color":"#60a5fa","labelAt":0.88},{"price":24704,"label":"Box bottom (ORL)","color":"#60a5fa","labelAt":0.88},{"price":24714,"label":"Stop = breakout candle high 24714","color":"#f87171","solid":true,"labelAt":0.55}],"zones":[{"from":0,"to":2,"top":24748,"bottom":24704,"label":"Opening box 09:15–09:30","color":"rgba(96,165,250,0.12)","stroke":"#60a5fa"}],"shades":[{"from":5,"to":11,"label":"holding","color":"rgba(38,166,154,0.07)"}],"markers":[{"i":4,"price":24690,"type":"dot","text":"breakout candle","color":"#fbbf24"},{"i":5,"price":24676,"type":"buy","text":"BUY PE 24681"},{"i":11,"price":24663.05,"type":"exit","text":"EXIT 24654.55"}],"legend":[{"label":"EMA 20 (trail line)","color":"#f59e0b"},{"label":"SuperTrend 10,3 bullish","color":"#22c55e"},{"label":"SuperTrend 10,3 bearish","color":"#ef4444"},{"label":"Opening box edges","color":"#60a5fa"},{"label":"Stop-loss","color":"#f87171"}],"pane":{"type":"rsi","data":[52.01,42.21,47.28,41.6,35.28,31.56,31.16,29.37,27.59,26.85,24.33,28.46,27.97,24.97,29.47,25.08,23.62,23.27,22.33,19.75,22.49],"levels":[{"value":51,"color":"#22c55e"},{"value":49,"color":"#ef4444"}],"label":"RSI 14 — CE needs ≥ 51, PE needs ≤ 49","color":"#c084fc","markers":[{"i":5,"value":31.56,"color":"#fbbf24"}]}});
+TVChart.render("orb-retest", {"title":"NIFTY 50 · 5 min","subtitle":"Example — not a real trade · the next candle stalls, a later one retests the box top and holds","times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55"],"candles":[[25022,25051,25008,25041],[25041,25063,25030,25034],[25034,25048,25017,25044],[25044,25058,25038,25049],[25049,25054,25031,25036],[25036,25052,25033,25047],[25047,25081,25044,25076],[25076,25082,25066,25070],[25070,25073,25061,25071],[25071,25090,25069,25086],[25086.1,25089.2,25077.35,25079.7],[25079.85,25094.8,25078.5,25092.65],[25093.4,25099.1,25091.2,25091.7],[25092.1,25107.8,25086.7,25103.5],[25103.1,25111.95,25098.25,25104.25],[25104.6,25113.25,25098,25110.1],[25109.45,25112,25108.8,25110.65],[25109.55,25113.35,25097.65,25110],[25109.7,25116.35,25106,25115.55],[25116.65,25130.85,25115.95,25125.5],[25126.6,25139.25,25122.6,25128.15]],"overlays":[{"data":[25019.48,25020.86,25023.07,25025.54,25026.53,25028.48,25033.01,25036.53,25039.81,25044.21,25047.59,25051.88,25055.68,25060.23,25064.42,25068.77,25072.76,25076.31,25080.04,25084.37,25088.54],"color":"#f59e0b","width":1.6}],"hlines":[{"price":25063,"label":"Box top (ORH)","color":"#60a5fa","labelAt":0.88},{"price":25008,"label":"Box bottom (ORL)","color":"#60a5fa","labelAt":0.88},{"price":25044,"label":"Stop 25044","color":"#f87171","solid":true,"labelAt":0.6}],"zones":[{"from":0,"to":2,"top":25063,"bottom":25008,"label":"Opening box 09:15–09:30","color":"rgba(96,165,250,0.12)","stroke":"#60a5fa"}],"shades":[{"from":7,"to":13,"label":"6-candle wait window","color":"rgba(251,191,36,0.06)","labelBottom":true}],"markers":[{"i":6,"price":25081,"type":"dot","text":"breakout","color":"#fbbf24"},{"i":7,"price":25082,"type":"dot","text":"no follow-through","color":"#94a3b8"},{"i":8,"price":25061,"type":"buy","text":"BUY CE (retest) 25071"},{"i":12,"price":25099.1,"type":"exit","text":"EXIT 25094.66"}],"legend":[{"label":"EMA 20 (trail line)","color":"#f59e0b"},{"label":"Opening box edges","color":"#60a5fa"}]});
+TVChart.render("orb-expire", {"title":"NIFTY 50 · 5 min","subtitle":"Example — not a real trade · breakout never confirmed, the wait runs out","times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55","12:00","12:05","12:10","12:15"],"candles":[[25022,25051,25008,25041],[25041,25063,25030,25034],[25034,25048,25017,25044],[25044,25058,25038,25049],[25049,25054,25031,25036],[25036,25052,25033,25047],[25047,25081,25044,25076],[25076,25079,25058,25061],[25061,25064,25047,25052],[25052,25060,25041,25045],[25045,25058,25040,25055],[25055,25062,25046,25049],[25049,25057,25037,25043],[25043,25059,25040,25056],[25056,25061,25045,25050],[25049.65,25058.45,25045.7,25050.2],[25050.4,25059.6,25044.95,25057.95],[25058.5,25066.8,25052.95,25062.85],[25063.65,25071.15,25058.65,25069.8],[25069.05,25072.45,25064.05,25066.35],[25066.9,25082.4,25063.8,25079.95],[25080.6,25083.35,25073.85,25079],[25079.4,25102.65,25076.1,25094.8],[25095.15,25104,25085.5,25089.65],[25090.45,25108.6,25088.6,25105.6],[25106.4,25107.55,25100.05,25102.3],[25102.45,25111.65,25100.9,25109.8],[25110,25114.25,25100.95,25102.55],[25102.35,25121.1,25098.85,25119.95],[25119.75,25125.75,25118.85,25122.4],[25121.25,25129.6,25119.75,25122.9],[25122.9,25123.75,25107.9,25116.8],[25116.95,25119.95,25116.55,25119.25],[25118.95,25123.6,25117.5,25118.55],[25118.45,25119.55,25110.3,25110.95],[25111.9,25115.45,25109.25,25113.05],[25114,25119.5,25106.1,25113.65]],"overlays":[{"data":[25022.65,25023.73,25025.66,25027.88,25028.66,25030.4,25034.75,25037.25,25038.65,25039.26,25040.76,25041.54,25041.68,25043.04,25043.71,25044.32,25045.62,25047.26,25049.41,25051.02,25053.78,25056.18,25059.86,25062.7,25066.78,25070.16,25073.94,25076.66,25080.79,25084.75,25088.38,25091.09,25093.77,25096.13,25097.54,25099.02,25100.41],"color":"#f59e0b","width":1.6}],"hlines":[{"price":25063,"label":"Box top (ORH)","color":"#60a5fa","labelAt":0.88},{"price":25008,"label":"Box bottom (ORL)","color":"#60a5fa","labelAt":0.88}],"zones":[{"from":0,"to":2,"top":25063,"bottom":25008,"label":"Opening box 09:15–09:30","color":"rgba(96,165,250,0.12)","stroke":"#60a5fa"}],"shades":[{"from":8,"to":13,"label":"waiting 6 candles","color":"rgba(251,191,36,0.06)"},{"from":15,"to":36,"label":"later rally — ORB ignores it","color":"rgba(148,163,184,0.05)","labelBottom":true}],"markers":[{"i":6,"price":25081,"type":"dot","text":"breakout","color":"#fbbf24"},{"i":14,"price":25061,"type":"dot","text":"window over — day finished","color":"#ef4444"}],"legend":[{"label":"EMA 20 (trail line)","color":"#f59e0b"},{"label":"Opening box edges","color":"#60a5fa"}]});
+TVChart.render("orb-rsi", {"title":"NIFTY 50 · 5 min","subtitle":"Example — not a real trade · gap-down morning: price breaks up, RSI says no","times":["15:00","15:05","15:10","15:15","15:20","15:25","09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55"],"candles":[[25174.1,25181.4,25169.25,25177.9],[25177.75,25180.8,25172.8,25179.3],[25178.95,25184.3,25172.35,25175.05],[25174.75,25189.9,25169.2,25186.6],[25187.75,25189.25,25183.4,25187.15],[25188.35,25192.2,25180.45,25184.6],[25010,25024,24978,24992],[24992,25018,24985,25012],[25012,25021,24996,25004],[25004,25016,24998,25011],[25011,25019,25001,25008],[25008,25036,25006,25031],[25031,25044,25027,25040],[25040.6,25043.75,25040,25043.2],[25042.55,25060.85,25036.25,25057.45],[25057.25,25060.35,25048.55,25050.9],[25050.85,25065.75,25050.45,25059.3],[25059.7,25061.65,25048.9,25053.55],[25054.75,25063.05,25051.9,25060.3],[25060.9,25069.75,25059.5,25060.4],[25060.95,25075,25054.85,25072.55],[25071.45,25074.15,25064.55,25073.65],[25072.95,25083.75,25065.75,25081.25],[25080.65,25088.75,25079.75,25085.7],[25086.6,25088.95,25084.6,25086.8],[25086.6,25087.3,25082.45,25084.95],[25084.6,25089.9,25084,25086]],"overlays":[{"data":[25164.75,25166.13,25166.98,25168.85,25170.59,25171.93,25154.79,25141.19,25128.13,25116.97,25106.59,25099.39,25093.74,25088.92,25085.93,25082.59,25080.37,25077.82,25076.15,25074.65,25074.45,25074.37,25075.03,25076.04,25077.07,25077.82,25078.6],"color":"#f59e0b","width":1.6},{"data":[25140.92,25140.92,25141.51,25141.51,25149.16,25149.35,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],"color":"#22c55e","width":1.3,"dash":true},{"data":[null,null,null,null,null,null,25096.26,25096.26,25096.26,25096.26,25096.05,25096.05,25096.05,25096.05,25096.05,25096.05,25096.05,25096.05,25096.05,25096.05,25096.05,25096.05,25096.05,25096.05,25096.05,25096.05,25096.05],"color":"#ef4444","width":1.3,"dash":true}],"hlines":[{"price":25024,"label":"ORH 25024","color":"#60a5fa","labelAt":0.3}],"zones":[{"from":6,"to":8,"top":25024,"bottom":24978,"label":"Opening box","color":"rgba(96,165,250,0.12)","stroke":"#60a5fa"}],"shades":[{"from":0,"to":5,"label":"yesterday","color":"rgba(148,163,184,0.06)"}],"markers":[{"i":11,"price":25036,"type":"dot","text":"breakout","color":"#fbbf24"},{"i":12,"price":25044,"type":"dot","text":"confirmed — RSI blocks","color":"#ef4444"}],"legend":[{"label":"EMA 20 (trail line)","color":"#f59e0b"},{"label":"SuperTrend 10,3 bullish","color":"#22c55e"},{"label":"SuperTrend 10,3 bearish","color":"#ef4444"}],"pane":{"type":"rsi","data":[60.3,60.92,57.96,63.2,63.44,61.48,17.55,23.65,22.92,25.1,24.78,32.01,34.66,35.62,39.86,38.6,41.16,39.94,42.12,42.15,46.24,46.6,49.19,50.69,51.07,50.36,50.78],"levels":[{"value":51,"color":"#22c55e"},{"value":49,"color":"#ef4444"}],"label":"RSI 14 — CE needs ≥ 51, PE needs ≤ 49","color":"#c084fc","markers":[{"i":12,"value":34.66,"color":"#fbbf24"}]}});
+TVChart.render("orb-st", {"title":"NIFTY 50 · 5 min","subtitle":"Example — not a real trade · the box breaks up, but SuperTrend still points down","times":["14:50","14:55","15:00","15:05","15:10","15:15","15:20","15:25","09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55"],"candles":[[25044.95,25062.9,25012.35,25031.6],[25030.55,25038.4,25023.15,25026.4],[25025.45,25028.3,25012.6,25014.2],[25014.8,25020.6,24996.5,25016.5],[25016.6,25019.3,24986.9,25003.4],[25003.65,25005.55,24988.95,25004.75],[25005.75,25010.6,24985.05,25002.4],[25003.1,25015.5,24965.5,24985.3],[25030,25044,25021,25038],[25038,25046,25029,25032],[25032,25043,25025,25040],[25040,25045,25033,25042],[25042,25054,25040,25052],[25052,25060,25049,25057],[25058.25,25063.95,25055.45,25057.9],[25057.35,25060.05,25052.65,25054.7],[25056.3,25058.2,25050.65,25051.3],[25050.65,25051.75,25047.1,25051.1],[25050.6,25054.1,25043.3,25044.85],[25045.5,25055.05,25042.4,25051.65],[25052.5,25055.05,25049.8,25052.3],[25051.4,25057,25044.3,25045.25],[25046.35,25053.5,25044.6,25052.35],[25053.25,25058.15,25035.15,25040.7],[25040.5,25041.7,25035.05,25036.85],[25035.85,25042.1,25035.1,25037.05],[25038.1,25038.55,25031.7,25034.7],[25035.65,25037.5,25018.45,25024],[25024.15,25031.45,25019.95,25029.3]],"overlays":[{"data":[25076.03,25071.31,25065.87,25061.16,25055.66,25050.81,25046.2,25040.4,25040.17,25039.4,25039.45,25039.7,25040.87,25042.4,25043.88,25044.91,25045.52,25046.05,25045.94,25046.48,25047.03,25046.86,25047.39,25046.75,25045.81,25044.97,25043.99,25042.09,25040.87],"color":"#f59e0b","width":1.6},{"data":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],"color":"#22c55e","width":1.3,"dash":true},{"data":[25121.41,25115.91,25101.78,25088.98,25085.21,25076.13,25076.13,25076.13,25076.13,25076.13,25076.13,25076.13,25076.13,25076.13,25076.13,25076.13,25076.13,25076.13,25076.13,25076.13,25076.13,25076.13,25076.13,25076.13,25076.13,25076.13,25075.14,25069.7,25066.7],"color":"#ef4444","width":1.3,"dash":true}],"hlines":[{"price":25046,"label":"ORH 25046","color":"#60a5fa","labelAt":0.05}],"zones":[{"from":8,"to":10,"top":25046,"bottom":25021,"label":"Opening box","color":"rgba(96,165,250,0.12)","stroke":"#60a5fa"}],"shades":[{"from":0,"to":7,"label":"yesterday","color":"rgba(148,163,184,0.06)"}],"markers":[{"i":12,"price":25054,"type":"dot","text":"breakout","color":"#fbbf24"},{"i":13,"price":25060,"type":"dot","text":"SuperTrend blocks","color":"#ef4444"}],"legend":[{"label":"EMA 20 (trail line)","color":"#f59e0b"},{"label":"SuperTrend 10,3 bullish","color":"#22c55e"},{"label":"SuperTrend 10,3 bearish","color":"#ef4444"}],"pane":{"type":"rsi","data":[23.33,22.17,19.71,21.48,18.93,19.98,19.51,16.43,45.12,43.3,46.4,47.18,51.02,52.86,53.2,51.77,50.22,50.12,47.12,50.59,50.92,47.22,51.08,45.24,43.47,43.59,42.42,37.48,41.14],"levels":[{"value":51,"color":"#22c55e"},{"value":49,"color":"#ef4444"}],"label":"RSI 14 — CE needs ≥ 51, PE needs ≤ 49","color":"#c084fc","markers":[{"i":13,"value":52.86,"color":"#fbbf24"}]}});
+TVChart.render("orb-stop", {"title":"NIFTY 50 · 5 min","subtitle":"Example — not a real trade · the break fails and the stop is hit","times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15"],"candles":[[25022,25051,25008,25041],[25041,25063,25030,25034],[25034,25048,25017,25044],[25044,25058,25038,25049],[25049,25054,25031,25036],[25036,25052,25033,25047],[25047,25081,25044,25076],[25076,25094,25072,25089],[25089,25097,25080,25083],[25083,25086,25058,25061],[25061,25066,25038,25041],[25040.35,25041.15,25022.7,25035.1],[25035.25,25044.9,25031.7,25041.35],[25042.65,25044.8,25027.7,25035.95],[25035.1,25038.15,25024.05,25024.55],[25025.3,25031,25019.05,25029.5],[25029.85,25034.95,25018.8,25019.15],[25018.15,25042.6,25011.8,25034.9],[25035.05,25035.85,25011.65,25015.55],[25015.4,25020.4,25013.95,25017.8],[25017.95,25020.15,25015.05,25018.7],[25019.7,25022.35,25005.7,25011.3],[25010.5,25015.5,25002.75,25007.25],[25006.8,25011.9,25004.6,25010.15],[25009.6,25014.9,25005.75,25013.05]],"overlays":[{"data":[25019.14,25020.56,25022.79,25025.29,25026.31,25028.28,25032.82,25038.17,25042.44,25044.21,25043.9,25043.07,25042.9,25042.24,25040.56,25039.5,25037.56,25037.31,25035.24,25033.58,25032.16,25030.17,25027.99,25026.29,25025.03],"color":"#f59e0b","width":1.6}],"hlines":[{"price":25063,"label":"Box top (ORH)","color":"#60a5fa","labelAt":0.88},{"price":25008,"label":"Box bottom (ORL)","color":"#60a5fa","labelAt":0.88},{"price":25044,"label":"Stop = breakout candle low 25044","color":"#f87171","solid":true,"labelAt":0.55}],"zones":[{"from":0,"to":2,"top":25063,"bottom":25008,"label":"Opening box 09:15–09:30","color":"rgba(96,165,250,0.12)","stroke":"#60a5fa"}],"shades":[{"from":7,"to":10,"label":"holding","color":"rgba(239,83,80,0.07)"}],"markers":[{"i":6,"price":25081,"type":"dot","text":"breakout","color":"#fbbf24"},{"i":7,"price":25072,"type":"buy","text":"BUY CE 25089"},{"i":10,"price":25044,"type":"exit","text":"STOP 25044"}],"legend":[{"label":"EMA 20 (trail line)","color":"#f59e0b"},{"label":"Opening box edges","color":"#60a5fa"}]});
+TVChart.render("orb-ema", {"title":"NIFTY 50 · 5 min","subtitle":"Example — not a real trade · no follow-through: a close under EMA 20 ends it","times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15"],"candles":[[25022,25051,25008,25041],[25041,25063,25030,25034],[25034,25048,25017,25044],[25044,25058,25038,25049],[25049,25054,25031,25036],[25036,25040,25028,25031],[25031,25079,25026,25074],[25074,25088,25071,25084],[25084,25093,25079,25088],[25088,25092,25078,25081],[25081,25085,25070,25073],[25073,25080,25066,25070],[25070,25074,25058,25062],[25062,25069,25052,25057],[25057,25063,25046,25049],[25049,25055,25042,25045],[25045.75,25053.4,25040.65,25042.2],[25041.5,25050.35,25040.6,25047.4],[25048.1,25049.2,25033.25,25037.35],[25037.55,25037.9,25033.6,25034.7],[25036,25039.95,25025.15,25036.6],[25035.8,25038.65,25034.3,25037.45],[25038.05,25038.65,25020.6,25028.05],[25027,25029.35,25024,25027.8],[25028.05,25030.7,25024.55,25026.9]],"overlays":[{"data":[25017.18,25018.79,25021.19,25023.84,25024.99,25025.57,25030.18,25035.31,25040.32,25044.2,25046.94,25049.14,25050.36,25050.99,25050.8,25050.25,25049.48,25049.29,25048.15,25046.87,25045.89,25045.09,25043.46,25041.97,25040.54],"color":"#f59e0b","width":1.6}],"hlines":[{"price":25063,"label":"Box top (ORH)","color":"#60a5fa","labelAt":0.88},{"price":25008,"label":"Box bottom (ORL)","color":"#60a5fa","labelAt":0.88},{"price":25026,"label":"Stop 25026","color":"#f87171","solid":true,"labelAt":0.55}],"zones":[{"from":0,"to":2,"top":25063,"bottom":25008,"label":"Opening box 09:15–09:30","color":"rgba(96,165,250,0.12)","stroke":"#60a5fa"}],"shades":[{"from":7,"to":14,"label":"holding","color":"rgba(239,83,80,0.07)"}],"markers":[{"i":6,"price":25079,"type":"dot","text":"breakout","color":"#fbbf24"},{"i":7,"price":25071,"type":"buy","text":"BUY CE 25084"},{"i":14,"price":25063,"type":"exit","text":"EMA exit 25049"}],"legend":[{"label":"EMA 20 (trail line)","color":"#f59e0b"},{"label":"Opening box edges","color":"#60a5fa"}]});
+TVChart.render("orb-late", {"title":"NIFTY 50 · 5 min","subtitle":"Example — not a real trade · a sideways morning, then a breakout that comes too late","times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55","12:00","12:05","12:10","12:15","12:20"],"candles":[[25022,25058,25004,25046],[25046,25071,25031,25038],[25038,25049,25012,25029],[25029.15,25039,25020.4,25030.25],[25031.1,25044.6,25028.7,25036.45],[25036.25,25052.4,25033.45,25049.35],[25049.6,25052.9,25038.05,25040.8],[25040.55,25049.1,25038.3,25044.45],[25044.95,25051.4,25044.05,25051],[25050.45,25051.4,25045.15,25047.3],[25047.05,25056.95,25041.75,25044.25],[25044.05,25045.4,25033.75,25038.8],[25039.25,25040.9,25013.7,25020.2],[25020.95,25039.45,25017.45,25032.5],[25033.1,25035.45,25021.8,25028.45],[25029.3,25036.6,25027.35,25029.1],[25028.45,25038.35,25024.6,25035.4],[25035.85,25066.6,25033.35,25064.2],[25064.6,25066.5,25032,25038.35],[25039.05,25041.15,25031.65,25035.25],[25035.55,25058.2,25025.65,25052.2],[25052.9,25062.65,25050.05,25057.35],[25057.35,25062.55,25049.9,25053.45],[25054,25058.45,25042.45,25044.95],[25044.2,25046.75,25034.25,25046.05],[25045.15,25051.25,25041.95,25042.55],[25042.85,25043.8,25036.2,25042.9],[25044.15,25053.25,25038.3,25041.65],[25031,25084,25029,25080],[25080,25093,25074,25090],[25090,25098.25,25083.05,25096.45],[25095.9,25101.45,25090.8,25099.1],[25099.25,25101.95,25086.75,25100.2],[25100.1,25103.9,25095.45,25097.95],[25097.6,25116.35,25093.85,25110.15],[25111.65,25117.15,25099.7,25100.15],[25100.35,25113.6,25097.8,25107.95],[25108.45,25115.4,25106.65,25114.35]],"overlays":[{"data":[25021.14,25022.74,25023.34,25024,25025.18,25027.48,25028.75,25030.25,25032.22,25033.66,25034.67,25035.06,25033.65,25033.54,25033.05,25032.68,25032.94,25035.91,25036.15,25036.06,25037.6,25039.48,25040.81,25041.2,25041.66,25041.75,25041.86,25041.84,25045.47,25049.71,25054.17,25058.44,25062.42,25065.8,25070.03,25072.9,25076.24,25079.87],"color":"#f59e0b","width":1.6}],"hlines":[{"price":25071,"label":"Box top (ORH)","color":"#60a5fa","labelAt":0.88},{"price":25004,"label":"Box bottom (ORL)","color":"#60a5fa","labelAt":0.88}],"zones":[{"from":0,"to":2,"top":25071,"bottom":25004,"label":"Opening box 09:15–09:30","color":"rgba(96,165,250,0.12)","stroke":"#60a5fa"}],"shades":[{"from":3,"to":26,"label":"entry window 09:30–11:30 — every close stays inside","color":"rgba(96,165,250,0.04)"},{"from":27,"to":37,"label":"after 11:30 — no new trades","color":"rgba(239,83,80,0.06)","labelBottom":true}],"markers":[{"i":28,"price":25084,"type":"dot","text":"11:35 break — ignored","color":"#ef4444"}],"legend":[{"label":"EMA 20 (trail line)","color":"#f59e0b"},{"label":"Opening box edges","color":"#60a5fa"}]});
+TVChart.render("orb-eod", {"title":"NIFTY 50 · 5 min","subtitle":"Example — not a real trade · global profit lock and breakeven switched OFF for this picture","times":["10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55","12:00","12:05","12:10","12:15","12:20","12:25","12:30","12:35","12:40","12:45","12:50","12:55","13:00","13:05","13:10","13:15","13:20","13:25","13:30","13:35","13:40","13:45","13:50","13:55","14:00","14:05","14:10","14:15","14:20","14:25","14:30","14:35","14:40","14:45","14:50","14:55","15:00","15:05","15:10","15:15"],"candles":[[25046.85,25055.5,25046.25,25053.7],[25055.25,25058.3,25043.8,25047.05],[25045.95,25048.3,25044.8,25047.55],[25049.15,25056.4,25047.95,25054.4],[25052.3,25052.7,25035.8,25040.9],[25041.25,25053.7,25040.55,25051.9],[25050.55,25051.7,25046.05,25048.8],[25049.2,25055.95,25047.6,25052.15],[25050,25082,25047,25078],[25078,25092,25074,25088],[25088.15,25103.65,25083.05,25097.35],[25096.5,25098.1,25087.5,25091.7],[25091.5,25105.35,25090.15,25097.55],[25097.45,25102.9,25096.6,25098.6],[25098.65,25115.55,25094.2,25112.1],[25111.95,25128.95,25106.75,25121.15],[25122.2,25127.05,25099.3,25110.4],[25109.45,25117.1,25103.45,25113.9],[25113.7,25138.7,25109.95,25130.95],[25130.95,25137.4,25116.9,25122.95],[25124.85,25129.9,25124.55,25128.25],[25128.3,25142.15,25124.9,25137.8],[25138.2,25140.15,25132.8,25136.05],[25135.2,25147.25,25133.5,25143.65],[25142.5,25155.95,25140.05,25144],[25145.15,25154.9,25142.55,25148.55],[25148.8,25169.75,25139.05,25162.45],[25161.8,25166.25,25152.15,25157.65],[25157.15,25176.55,25151.8,25171.35],[25170.25,25185.15,25167.25,25178.45],[25179.5,25182.9,25164.2,25167.5],[25167.7,25184.15,25160,25180.7],[25181.25,25185.35,25170.5,25184.5],[25184.95,25203.8,25181.15,25198.1],[25198.15,25203.8,25189.6,25191.95],[25192.15,25198.25,25188.25,25197.5],[25197.3,25217.85,25194.2,25213.95],[25213.9,25217.15,25193.75,25198.4],[25198.75,25214.2,25194.9,25206.4],[25205.7,25211.6,25203.4,25209.9],[25209.2,25219.35,25203.1,25215.05],[25215.1,25222.4,25212.1,25220.9],[25220.65,25235.85,25219.5,25233],[25232.8,25235,25219.05,25230.5],[25231,25233.3,25227.65,25229.7],[25228.8,25229.85,25220.65,25228.2],[25227.4,25234.9,25222.3,25231.5],[25232.55,25242.1,25231.75,25237.6],[25238.15,25255.25,25233.75,25250.65],[25252.1,25253.35,25238.45,25247.75],[25247.3,25255,25243.1,25252.55],[25252.95,25256.1,25251.95,25252.65],[25253.85,25264.8,25248.85,25261.75],[25260.6,25267.7,25258.75,25267.3],[25268.2,25287.2,25265.9,25278.85],[25280.35,25288.75,25277.35,25288.15],[25288.95,25289.35,25270.5,25271.9],[25272.5,25294.2,25267.45,25289.4],[25290.05,25290.75,25284.55,25289.65],[25289.75,25292.95,25288.65,25289.2]],"overlays":[{"data":[25037.41,25038.33,25039.2,25040.65,25040.68,25041.74,25042.42,25043.34,25046.64,25050.58,25055.04,25058.53,25062.24,25065.71,25070.13,25074.99,25078.36,25081.74,25086.43,25089.91,25093.56,25097.77,25101.42,25105.44,25109.11,25112.87,25117.59,25121.41,25126.16,25131.14,25134.6,25138.99,25143.33,25148.54,25152.68,25156.95,25162.38,25165.81,25169.67,25173.5,25177.46,25181.6,25186.49,25190.68,25194.4,25197.62,25200.85,25204.35,25208.76,25212.47,25216.29,25219.75,25223.75,25227.9,25232.75,25238.03,25241.25,25245.84,25250.01,25253.74],"color":"#f59e0b","width":1.6}],"hlines":[{"price":25071,"label":"Box top 25071","color":"#60a5fa","labelAt":0.02},{"price":25047,"label":"Stop 25047","color":"#f87171","solid":true,"labelAt":0.02}],"zones":[],"shades":[{"from":9,"to":59,"label":"holding — every close stays above EMA 20","color":"rgba(38,166,154,0.06)"}],"markers":[{"i":9,"price":25074,"type":"buy","text":"BUY CE 25088"},{"i":59,"price":25292.95,"type":"exit","text":"15:15 square-off"}],"legend":[{"label":"EMA 20 (trail line)","color":"#f59e0b"}]});
+TVChart.render("orb-vix", {"title":"NIFTY 50 · 5 min","subtitle":"Example — not a real trade · only if you switch the VIX filter on","times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00"],"candles":[[25022,25051,25008,25041],[25041,25063,25030,25034],[25034,25048,25017,25044],[25044,25058,25038,25049],[25049,25054,25031,25036],[25036,25052,25033,25047],[25047,25081,25044,25076],[25076,25094,25072,25089],[25090.6,25095.25,25089.9,25092.95],[25092.3,25100.25,25087.95,25099.5],[25099,25103.3,25096.65,25098.55],[25099.2,25118.05,25095.4,25113.85],[25114.7,25124.6,25111.65,25121.5],[25120.6,25127.55,25118.35,25119.5],[25120.6,25136.6,25118.5,25135.2],[25136.1,25142.1,25120.65,25127.5],[25127.3,25131.8,25125.15,25130.35],[25129.35,25144.35,25128.5,25138.15],[25139.2,25143.9,25135.5,25143.4],[25144.35,25146.6,25133.45,25140.3],[25140.45,25155.9,25135.25,25153.25],[25153.95,25158.9,25141.15,25151.85]],"overlays":[{"data":[25016.17,25017.86,25020.35,25023.08,25024.31,25026.47,25031.19,25036.7,25042.05,25047.52,25052.38,25058.24,25064.26,25069.52,25075.78,25080.7,25085.43,25090.45,25095.5,25099.76,25104.86,25109.33],"color":"#f59e0b","width":1.6}],"hlines":[{"price":25063,"label":"Box top (ORH)","color":"#60a5fa","labelAt":0.88},{"price":25008,"label":"Box bottom (ORL)","color":"#60a5fa","labelAt":0.88}],"zones":[{"from":0,"to":2,"top":25063,"bottom":25008,"label":"Opening box 09:15–09:30","color":"rgba(96,165,250,0.12)","stroke":"#60a5fa"}],"shades":[],"markers":[{"i":6,"price":25081,"type":"dot","text":"breakout","color":"#fbbf24"},{"i":7,"price":25094,"type":"dot","text":"signal — VIX blocks it","color":"#ef4444"}],"legend":[{"label":"EMA 20 (trail line)","color":"#f59e0b"},{"label":"Opening box edges","color":"#60a5fa"}],"pane":{"type":"line","data":[22.6,22.9,23.1,23,23.3,23.2,23.5,23.4,23.6,23.4,23.3,23.5,23.2,23.4,23.1,23.3,23,23.2,22.9,23.1,23,22.8],"levels":[{"value":22,"color":"#ef4444"},{"value":18,"color":"#fbbf24"}],"label":"India VIX — above 22 = no new trades","color":"#fb923c","min":17,"max":24.5,"markers":[{"i":7,"value":23.4,"color":"#ef4444"}]}});
+TVChart.render("orb-reentry", {"title":"NIFTY 50 · 5 min","subtitle":"Example — not a real trade · re-entry switched ON (ORB_REENTRY_AFTER_SL = 1)","times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15"],"candles":[[25022,25051,25008,25041],[25041,25063,25030,25034],[25034,25048,25017,25044],[25044,25058,25038,25049],[25049,25054,25031,25036],[25036,25052,25033,25047],[25047,25081,25044,25076],[25076,25094,25072,25089],[25089,25092,25060,25064],[25064,25067,25038,25046],[25046,25058,25040,25054],[25054,25066,25050,25060],[25060,25085,25058,25081],[25081,25097,25078,25093],[25092.05,25098.7,25090.05,25097.3],[25096.9,25100,25095.3,25099.1],[25097.45,25112.55,25094.1,25109.9],[25110.5,25115.25,25105.45,25111.1],[25111.65,25125.85,25109.65,25125.35],[25125.7,25130.4,25120.2,25126.9],[25128.7,25129.8,25123.2,25126.3],[25125.75,25132,25124,25131.55],[25131,25149.6,25127.45,25146],[25145,25147.4,25140.7,25141.35],[25142.4,25152.75,25139.25,25151.15]],"overlays":[{"data":[25021.41,25022.61,25024.64,25026.96,25027.83,25029.65,25034.07,25039.3,25041.65,25042.06,25043.2,25044.8,25048.25,25052.51,25056.78,25060.81,25065.48,25069.83,25075.11,25080.05,25084.45,25088.94,25094.37,25098.85,25103.83],"color":"#f59e0b","width":1.6}],"hlines":[{"price":25063,"label":"Box top (ORH)","color":"#60a5fa","labelAt":0.88},{"price":25008,"label":"Box bottom (ORL)","color":"#60a5fa","labelAt":0.88},{"price":25044,"label":"1st stop 25044","color":"#f87171","solid":true,"labelAt":0.35}],"zones":[{"from":0,"to":2,"top":25063,"bottom":25008,"label":"Opening box 09:15–09:30","color":"rgba(96,165,250,0.12)","stroke":"#60a5fa"}],"shades":[],"markers":[{"i":7,"price":25072,"type":"buy","text":"BUY 1"},{"i":9,"price":25044,"type":"exit","text":"stopped"},{"i":12,"price":25085,"type":"dot","text":"fresh breakout","color":"#fbbf24"},{"i":13,"price":25078,"type":"buy","text":"BUY 2 25093"},{"i":19,"price":25130.4,"type":"exit","text":"EXIT 25120.7"}],"legend":[{"label":"EMA 20 (trail line)","color":"#f59e0b"},{"label":"Opening box edges","color":"#60a5fa"}]});
 </script>
 </body>
 </html>

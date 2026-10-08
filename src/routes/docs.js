@@ -45,8 +45,18 @@ const GUIDE_MODE_BY_FILE = {
  * @param {Set<string>} enabledModes
  * @returns {boolean} true when the file should appear in the Documents list
  */
+// The commodity guide covers six pages that are not in STRATEGY_MODES (they ship
+// OFF and run outside the NIFTY roster), so it is shown when ANY of them is on.
+const CMX_GUIDE_FILE = "cmx_commodity_strategy_guide.html";
+const CMX_MODE_KEYS = ["CRUDE", "GOLD", "SILVER"].flatMap(c =>
+  [`CMX_${c}_EMA_RSI_ST_MODE_ENABLED`, `CMX_${c}_EMA_RSI_ST_V2_MODE_ENABLED`]);
+
 function isDocVisible(filename, enabledModes) {
-  const mode = GUIDE_MODE_BY_FILE[String(filename).toLowerCase()];
+  const lower = String(filename).toLowerCase();
+  if (lower === CMX_GUIDE_FILE) {
+    return CMX_MODE_KEYS.some(k => (process.env[k] || "false").toLowerCase() === "true");
+  }
+  const mode = GUIDE_MODE_BY_FILE[lower];
   return !mode || enabledModes.has(mode);
 }
 
@@ -928,6 +938,21 @@ const GUIDE_STATUS = {
     { type: "value", label: "Max positions held at once", key: "EARLYBIRD_MAX_CONCURRENT", def: "5" },
     { type: "value", label: "Forced square-off (IST)", key: "EARLYBIRD_FORCED_EXIT", def: "13:00" },
   ] }] },
+  // Paper only — there is no commodity live engine, so no Live Orders row.
+  "CMX_Commodity_Strategy_Guide.html": { title: "Commodity (MCX) — Live Configuration", groups: [
+    { heading: "Crude Oil", rows: [
+      { type: "bool", label: "Crude Oil EMA_RSI_ST Paper page", key: "CMX_CRUDE_EMA_RSI_ST_MODE_ENABLED", def: "false" },
+      { type: "bool", label: "Crude Oil EMA_RSI_ST_V2 Paper page", key: "CMX_CRUDE_EMA_RSI_ST_V2_MODE_ENABLED", def: "false" },
+    ] },
+    { heading: "Gold", rows: [
+      { type: "bool", label: "Gold EMA_RSI_ST Paper page", key: "CMX_GOLD_EMA_RSI_ST_MODE_ENABLED", def: "false" },
+      { type: "bool", label: "Gold EMA_RSI_ST_V2 Paper page", key: "CMX_GOLD_EMA_RSI_ST_V2_MODE_ENABLED", def: "false" },
+    ] },
+    { heading: "Silver", rows: [
+      { type: "bool", label: "Silver EMA_RSI_ST Paper page", key: "CMX_SILVER_EMA_RSI_ST_MODE_ENABLED", def: "false" },
+      { type: "bool", label: "Silver EMA_RSI_ST_V2 Paper page", key: "CMX_SILVER_EMA_RSI_ST_V2_MODE_ENABLED", def: "false" },
+    ] },
+  ] },
   "Application_Setup_Guide.html": { title: "System — Live Configuration", groups: [
     { heading: "Global gates", rows: [
       { type: "globaldry", label: "Live Harness DRY-RUN (global kill-switch)", key: "LIVE_HARNESS_DRY_RUN" },
