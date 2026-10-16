@@ -22,7 +22,13 @@
  *     so the signal is the same strategy; only timing, sizing and day guards
  *     are commodity-specific (CMX_* keys).
  *
- * Exits mirror the NIFTY paper routes at their defaults. Left out on purpose:
+ * Two commodity-only additions on top of the NIFTY rules, both on every page:
+ *   • a trend filter on entries (CMX_MIN_EMA_GAP_PCT, CMX_RSI_CE_MAX /
+ *     CMX_RSI_PE_MIN) — see trendBlock();
+ *   • the global breakeven stop on V2 too (NIFTY V2 has none), so every page
+ *     shares breakeven → profit lock → profit-lock trail.
+ *
+ * Exits otherwise mirror the NIFTY paper routes at their defaults. Left out on purpose:
  * the NIFTY-points features (EMA_RSI_ST_STOP_LOSS_PTS, EMA_RSI_ST_BREAKEVEN_PTS)
  * because a NIFTY point is not a crude or gold rupee, and the VIX / OI / spread gates,
  * which read NSE data. The per-tick stop is checked on each poll
@@ -167,8 +173,7 @@ const ADAPTERS = {
       }
       return null;
     },
-    // Per-poll premium stops (after the profit lock).
-    usesBreakevenStop: true,
+    // Per-poll premium stop (after the profit lock and breakeven).
     optStopPct: () => _num(process.env.OPT_STOP_PCT, 0.15),
     // Chart overlays — the same periods the V1 rules read.
     chartCfg: () => ({
@@ -198,7 +203,6 @@ const ADAPTERS = {
       }
       return null;
     },
-    usesBreakevenStop: false,
     optStopPct: () => 0,
     chartCfg: () => {
       const k = require("../strategies/ema_rsi_st_v2").getConfig("EMA_RSI_ST_V2");
@@ -230,7 +234,7 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     // candle lengths in one series. It applies on the next Start.
     res:        state.res || Math.max(1, _int(process.env[`${prefix}_RESOLUTION`], 5)),
     lots:       Math.max(1, _int(process.env[`${prefix}_LOTS`], 1)),
-    entryStart: _mins(process.env[`${prefix}_ENTRY_START`], "15:00"),
+    entryStart: _mins(process.env[`${prefix}_ENTRY_START`], "10:00"),
     entryEnd:   _mins(process.env[`${prefix}_ENTRY_END`], "22:30"),
     eodExit:    _mins(process.env[`${prefix}_EOD_EXIT_TIME`], "23:00"),
     maxTrades:  Math.max(1, _int(process.env[`${prefix}_MAX_DAILY_TRADES`], 3)),
@@ -240,6 +244,9 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     charges:    Math.max(0, _num(process.env.CMX_CHARGES_PER_TRADE, 60)),
     confirm:    confirmCandle.enabled(A.rulesKey),
     startCap:   Math.max(0, _num(process.env.CMX_STARTING_CAPITAL, 100000)),
+    minGapPct:  Math.max(0, _num(process.env.CMX_MIN_EMA_GAP_PCT, 0.03)),
+    rsiCeMax:   _num(process.env.CMX_RSI_CE_MAX, 63),
+    rsiPeMin:   _num(process.env.CMX_RSI_PE_MIN, 37),
   });
 
   const state = {
@@ -332,6 +339,26 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     if (state.slPauseUntil[side] > Date.now()) return `${side} paused after a stop-out`;
     const oc = state.oppCooldown;
     if (oc && oc.side !== side && oc.until > Date.now()) return `opposite-side cooldown after ${oc.side} exit`;
+    return null;
+  }
+  // Trend filter — refuses the two kinds of signal that lost most on MCX
+  // (Oct 2026 paper, 111 trades): EMA20 and EMA50 almost touching, i.e. no
+  // real trend (27 trades, 4 wins, −₹17.9k), and an RSI that has already run
+  // (crude: 13 trades, 1 win, −₹15.7k). Read off the signal candle; entry only,
+  // so an opposite signal still exits an open trade.
+  function trendBlock(side, sig, price) {
+    const c = cfg();
+    if (c.minGapPct > 0) {
+      if (!Number.isFinite(sig.ema20) || !Number.isFinite(sig.ema50) || !(price > 0)) return "trend filter — EMA value missing";
+      const gapPct = Math.abs(sig.ema20 - sig.ema50) / price * 100;
+      if (gapPct < c.minGapPct) return `EMA20/EMA50 too close (gap ${gapPct.toFixed(3)}% < ${c.minGapPct}%) — no real trend`;
+    }
+    const rsiCapOn = side === "CE" ? c.rsiCeMax < 100 : c.rsiPeMin > 0;
+    if (rsiCapOn) {
+      if (!Number.isFinite(sig.rsi)) return "trend filter — RSI value missing";
+      if (side === "CE" && sig.rsi >= c.rsiCeMax) return `RSI ${r2(sig.rsi)} ≥ ${c.rsiCeMax} — move already run`;
+      if (side === "PE" && sig.rsi <= c.rsiPeMin) return `RSI ${r2(sig.rsi)} ≤ ${c.rsiPeMin} — move already run`;
+    }
     return null;
   }
   function inEntryWindow(barTimeSec) {
@@ -467,6 +494,8 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
       const side = sig.signal === "BUY_CE" ? "CE" : "PE";
       const block = entryBlock(side);
       if (block) { log(`⏸️ ${sig.signal} on ${bar.close} — skipped: ${block}`); return; }
+      const weak = trendBlock(side, sig, bar.close);
+      if (weak) { log(`🚫 ${sig.signal} on ${bar.close} — skipped: ${weak}`); return; }
       if (c.confirm) {
         state.armed = { side, triggerLevel: bar.close, armedBarTime: bar.time, sig };
         hubNeed(id, [state.series.future], true);
@@ -484,7 +513,7 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     if (!e || !tradeGuards.PROFIT_LOCK_ENABLED) return "lock off";
     const armLtp = r2(e * (1 + tradeGuards.PROFIT_LOCK_ARM_PCT / 100));
     if (!best || best < armLtp) {
-      const be = A.usesBreakevenStop && tradeGuards.BREAKEVEN_STOP_ENABLED
+      const be = tradeGuards.BREAKEVEN_STOP_ENABLED
         && best >= e * (1 + tradeGuards.BREAKEVEN_ARM_PCT / 100) ? " | breakeven armed @ ₹" + e : "";
       return `lock not armed (arms at ₹${armLtp}, +${tradeGuards.PROFIT_LOCK_ARM_PCT}%)${be}`;
     }
@@ -502,8 +531,9 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     log(`   OHLC: O=${bar.open} H=${bar.high} L=${bar.low} C=${bar.close} | body=${f(Math.abs(bar.close - bar.open))}`);
     log(`   EMA20=${f(sig.ema20)} EMA50=${f(sig.ema50)} | RSI=${f(sig.rsi)} | ST=${f(sig.supertrend)}(${sig.stTrend || "?"})`);
     // Only where onBarClose would check it anyway — entryBlock can latch state.halted.
+    const sigSide = sig.signal === "BUY_CE" ? "CE" : "PE";
     const blockNote = winOk && !state.position && (sig.signal === "BUY_CE" || sig.signal === "BUY_PE")
-      ? (entryBlock(sig.signal === "BUY_CE" ? "CE" : "PE") || "") : "";
+      ? (entryBlock(sigSide) || trendBlock(sigSide, sig, bar.close) || "") : "";
     log(`   Signal: ${sig.signal || "NONE"}${winOk ? "" : " | outside entry window"}${blockNote ? " | blocked: " + blockNote : ""} | ${sig.reason || "—"}`);
     const pos = state.position;
     if (pos) {
@@ -553,7 +583,7 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
 
     if (state.optLtp) {
       const lock = tradeGuards.checkProfitLock(pos.optionEntryLtp, state.optLtp, pos.bestOptionLtp)
-        || (A.usesBreakevenStop ? tradeGuards.checkBreakevenStop(pos.optionEntryLtp, state.optLtp, pos.bestOptionLtp) : null);
+        || tradeGuards.checkBreakevenStop(pos.optionEntryLtp, state.optLtp, pos.bestOptionLtp);
       if (lock) { await exit(lock, fut); return; }
       const pct = A.optStopPct();
       if (pct > 0 && state.optLtp <= r2(pos.optionEntryLtp * (1 - pct))) {

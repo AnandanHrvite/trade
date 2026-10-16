@@ -541,12 +541,12 @@ ${bbRsiActivityLog({ logsJSON: jsonForScript(s.logs.slice().reverse()) })}
 const RULES = {
   V1: `
     <li><b>Signal:</b> the EMA_RSI_ST rules — EMA20/50 trend + RSI + SuperTrend on the future, using the same settings as the NIFTY EMA_RSI_ST.</li>
-    <li><b>Entry:</b> with the confirmation candle on, the next candle must cross the signal candle's close.</li>
+    <li><b>Entry:</b> skipped when EMA20 and EMA50 are almost touching or RSI has already run (Settings → Trend filter); with the confirmation candle on, the next candle must cross the signal candle's close.</li>
     <li><b>Exits:</b> previous-candle stop trailed on EMA21, EMA21 touch-back, negative-candle stop, option stop %, profit lock / breakeven, opposite signal, and the day's exit time.</li>`,
   V2: `
     <li><b>Signal:</b> the EMA_RSI_ST_V2 rules — EMA20 vs EMA50 + close beyond EMA20 + RSI on the future, using the same settings as the NIFTY EMA_RSI_ST_V2.</li>
-    <li><b>Entry:</b> with the confirmation candle on, the next candle must cross the signal candle's close.</li>
-    <li><b>Exits:</b> SuperTrend trailing stop (its only stop), profit lock, opposite signal, and the day's exit time.</li>`,
+    <li><b>Entry:</b> skipped when EMA20 and EMA50 are almost touching or RSI has already run (Settings → Trend filter); with the confirmation candle on, the next candle must cross the signal candle's close.</li>
+    <li><b>Exits:</b> SuperTrend trailing stop (its only stop), profit lock / breakeven, opposite signal, and the day's exit time.</li>`,
 };
 const ICONS = { CRUDE: "🛢️", GOLD: "🥇", SILVER: "🥈" };
 // The page's own icon, for the monitors that list a commodity page — 🛢 only
