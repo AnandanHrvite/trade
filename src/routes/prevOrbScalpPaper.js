@@ -40,6 +40,7 @@ const instrumentConfig   = require("../config/instrument");
 const sharedSocketState  = require("../utils/sharedSocketState");
 const socketManager      = require("../utils/socketManager");
 const tickRecorder       = require("../utils/tickRecorder");
+const optionFeed         = require("../utils/optionFeed");
 const tradeGuards        = require("../utils/tradeGuards");
 const vixFilter          = require("../services/vixFilter");
 const { verifyFyersToken } = require("../utils/fyersAuthCheck");
@@ -62,6 +63,7 @@ const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
 const CALLBACK_ID        = "prevOrbScalpPaper";
 const MODE_KEY           = "prev_orb_scalp";     // tradeLogger / skipLogger / capitalPool key
 const TAG                = "[PREV-ORB-SCALP-PAPER]";
+const OPTION_FEED_OWNER  = "prev-orb-scalp-paper";
 const MAX_CANDLES        = 900;                  // ~7 sessions of 3-min bars — only yesterday + today are read
 
 const _HOME    = require("os").homedir();
@@ -301,15 +303,23 @@ function startPolling() {
       }
       const optSym = (state.position && !state.position.isFutures) ? state.position.symbol : null;
       if (optSym) {
-        const symbols = [optSym];
-        const r = await fyers.getQuotes(symbols);
-        const q = attributeQuotes(r, symbols, optSym);
+        // Socket-first: the held contract streams on the shared websocket, and
+        // REST is asked only when that price is not fresh.
+        optionFeed.track(OPTION_FEED_OWNER, optSym, null);
+        const streamed = optionFeed.getFresh(optSym);
+        let ltp = streamed ? streamed.ltp : null;
+        if (!streamed) {
+          const symbols = [optSym];
+          const r = await fyers.getQuotes(symbols);
+          ltp = attributeQuotes(r, symbols, optSym).optLtp;
+        }
         // The position may have closed while the quote was in flight.
-        if (q.optLtp != null && state.position && state.position.symbol === optSym) {
-          state.optionLtp = q.optLtp;
-          state.optionChart = optionChart.pushLtp(state.optionChart, optSym, q.optLtp);
-          state.optionLtpUpdatedAt = Date.now();
-          try { tickRecorder.recordOptionLtp(optSym, q.optLtp, "prev-orb-scalp-paper"); } catch (_) {}
+        if (ltp != null && state.position && state.position.symbol === optSym) {
+          state.optionLtp = ltp;
+          state.optionChart = optionChart.pushLtp(state.optionChart, optSym, ltp);
+          state.optionLtpUpdatedAt = streamed ? streamed.at : Date.now();
+          // A streamed price is already recorded by optionFeed.
+          if (!streamed) { try { tickRecorder.recordOptionLtp(optSym, ltp, "prev-orb-scalp-paper"); } catch (_) {} }
         }
       }
     } catch (_) {}
@@ -329,6 +339,7 @@ function startPolling() {
 function stopPolling() {
   _pollStopped = true;
   if (_pollTimer) { clearTimeout(_pollTimer); _pollTimer = null; }
+  try { optionFeed.release(OPTION_FEED_OWNER); } catch (_) {}
 }
 
 /** Display-only forming bar. */

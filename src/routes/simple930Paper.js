@@ -46,6 +46,7 @@ const instrumentConfig   = require("../config/instrument");
 const sharedSocketState  = require("../utils/sharedSocketState");
 const socketManager      = require("../utils/socketManager");
 const tickRecorder       = require("../utils/tickRecorder");
+const optionFeed         = require("../utils/optionFeed");
 const tradeGuards        = require("../utils/tradeGuards");
 const vixFilter          = require("../services/vixFilter");
 const { verifyFyersToken } = require("../utils/fyersAuthCheck");
@@ -73,6 +74,7 @@ const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
 const CALLBACK_ID        = "simple930Paper";
 const MODE_KEY           = "simple930";        // tradeLogger / skipLogger / capitalPool key
 const MODE_TAG           = "SIMPLE930-PAPER";  // notify + tickRecorder mode string
+const OPTION_FEED_OWNER  = "simple930-paper";  // optionFeed lease id (one per leg: -CE / -PE)
 const LOG_TAG            = "[SIMPLE930-PAPER]";
 /** Fyers getQuotes accepts up to 50 symbols per call. */
 const MAX_SYMBOLS_PER_CALL = 50;
@@ -1082,25 +1084,38 @@ function startPolling() {
     try {
       if (!state.selection) {
         await runSelection();
-      } else {
+      } else if (!state.dayClosed || state.position) {
+        // Once the day is closed and flat nothing reads these prices, so stop
+        // asking Fyers for them (the 1s poll used to run until 15:15).
+        // Each leg streams on the shared websocket; REST is asked only for a
+        // leg whose streamed price is not fresh.
+        const q = new Map();
         const syms = [];
-        for (const side of ["CE", "PE"]) if (state.watch[side]) syms.push(state.watch[side].symbol);
-        if (syms.length) {
-          const q = await fetchQuotes(syms);
+        for (const side of ["CE", "PE"]) {
+          const w = state.watch[side];
+          if (!w) continue;
+          optionFeed.track(`${OPTION_FEED_OWNER}-${side}`, w.symbol, null);
+          const streamed = optionFeed.getFresh(w.symbol);
+          if (streamed) q.set(w.symbol, { ltp: streamed.ltp, at: streamed.at, streamed: true });
+          else syms.push(w.symbol);
+        }
+        if (syms.length) for (const [k, v] of await fetchQuotes(syms)) q.set(k, v);
+        if (q.size) {
           for (const side of ["CE", "PE"]) {
             const w = state.watch[side];
             if (!w) continue;
             const row = q.get(w.symbol);
             if (!row || !strategy._px(row.ltp)) continue;
             w.ltp = row.ltp;
-            w.ltpAt = Date.now();
+            w.ltpAt = row.at || Date.now();
             if (row.ltp > w.high) w.high = strategy._r2(row.ltp);
             if (row.ltp < w.low)  w.low  = strategy._r2(row.ltp);
             _updatePremiumBar(w, row.ltp);
-            try { tickRecorder.recordOptionQuote(w.symbol, row.ltp, row.bid, row.ask, "simple930-paper"); } catch (_) {}
+            // A streamed price is already recorded by optionFeed.
+            if (!row.streamed) { try { tickRecorder.recordOptionQuote(w.symbol, row.ltp, row.bid, row.ask, "simple930-paper"); } catch (_) {} }
             if (state.position && state.position.symbol === w.symbol) {
               state.optionLtp = row.ltp;
-              state.optionLtpUpdatedAt = Date.now();
+              state.optionLtpUpdatedAt = w.ltpAt;
             }
           }
         }
@@ -1126,6 +1141,7 @@ function startPolling() {
 function stopPolling() {
   _pollStopped = true;
   if (_pollTimer) { clearTimeout(_pollTimer); _pollTimer = null; }
+  for (const side of ["CE", "PE"]) { try { optionFeed.release(`${OPTION_FEED_OWNER}-${side}`); } catch (_) {} }
 }
 
 // ── Index ticks — ATM sampling, the context chart and the heartbeat ──────────

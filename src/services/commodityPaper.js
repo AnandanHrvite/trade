@@ -40,6 +40,7 @@ const path = require("path");
 const os   = require("os");
 
 const fyers        = require("../config/fyers");
+const optionFeed   = require("../utils/optionFeed");
 const mcx          = require("./mcxContracts");
 const tradeGuards  = require("../utils/tradeGuards");
 const capitalPool  = require("../utils/capitalPool");
@@ -95,16 +96,26 @@ function hubNeed(engineId, symbols, fast) {
 }
 function hubUrgent() { hub.nextAt = 0; }
 async function hubTick() {
-  if (hub.busy || Date.now() < hub.nextAt) return;
   const syms = new Set();
   let fast = false;
   for (const n of hub.needs.values()) { n.symbols.forEach((x) => syms.add(x)); fast = fast || n.fast; }
   if (!syms.size) return;
+  // Socket-first: each symbol streams on the shared Fyers websocket while it is
+  // connected, and only a symbol with no fresh streamed price goes to REST.
+  const rest = [];
+  for (const x of syms) {
+    optionFeed.track(`cmx-hub:${x}`, x, null);
+    const st = optionFeed.getFresh(x);
+    if (!st) { rest.push(x); continue; }
+    const prev = hub.last[x];
+    if (!prev || st.at > prev.at) hub.last[x] = { lp: st.ltp, at: st.at };
+  }
+  if (!rest.length || hub.busy || Date.now() < hub.nextAt) return;
   const poll = Math.max(2, _int(process.env.CMX_POLL_SECONDS, 3));
   hub.nextAt = Date.now() + (fast ? poll : 30) * 1000;
   hub.busy = true;
   try {
-    const list = [...syms];
+    const list = rest;
     for (let i = 0; i < list.length; i += 50) {           // Fyers takes ≤ 50 per call
       const r = await fyers.getQuotes(list.slice(i, i + 50));
       if (r.s !== "ok") throw new Error(`quotes: ${r.message || r.s}`);
@@ -117,6 +128,22 @@ async function hubTick() {
     hub.lastErr = null;
   } catch (err) { hub.lastErr = err.message; }
   finally { hub.busy = false; }
+}
+
+// V1 and V2 of one commodity read the same future at the same resolution, so a
+// history answer is shared between them for a few seconds instead of asking
+// Fyers twice. The same request in flight is joined, not repeated.
+const _histShared = new Map();   // request key → { at, promise }
+function sharedHistory(req) {
+  const key = JSON.stringify(req);
+  const now = Date.now();
+  for (const [k, v] of _histShared) if (now - v.at > 5000) _histShared.delete(k);
+  const hit = _histShared.get(key);
+  if (hit) return hit.promise;
+  const promise = fyers.getHistory(req);
+  _histShared.set(key, { at: now, promise });
+  promise.catch(() => _histShared.delete(key));
+  return promise;
 }
 
 // ── strategy adapters — the ONLY place the two strategies differ ──────────────
@@ -310,7 +337,7 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
 
   // ── broker reads ────────────────────────────────────────────────────────────
   async function fetchCandles(symbol, res, fromDay, toDay) {
-    const r = await fyers.getHistory({ symbol, resolution: String(res), date_format: "1", range_from: fromDay, range_to: toDay, cont_flag: "1" });
+    const r = await sharedHistory({ symbol, resolution: String(res), date_format: "1", range_from: fromDay, range_to: toDay, cont_flag: "1" });
     if (r.s !== "ok" && r.s !== "no_data") throw new Error(`history ${symbol}: ${r.message || r.s}`);
     const nowSec = Math.floor(Date.now() / 1000);
     return (r.candles || [])

@@ -32,6 +32,58 @@ const fyers = new fyersModel({
   enableLogging: false,   // Fyers SDK file-logging disabled — we have our own logging
 });
 
+// ── Request pacing (Fyers Standard plan: 5/sec, 50/min, 5,000/day) ─────────
+// Going over the limit gets the whole app blocked by Fyers' Cloudflare (Error
+// 1015) — REST and the websocket reconnect alike, which is how the 2026-10-16
+// feed went silent for 2 minutes. Every data read waits its turn here so the
+// bot never crosses the line. Orders are not delayed.
+function _paceInt(key, dflt, min, max) {
+  const v = parseInt(process.env[key] || "", 10);
+  return Number.isFinite(v) && v >= min && v <= max ? v : dflt;
+}
+const _pace = { stamps: [], chain: Promise.resolve(), day: null, count: 0, warned: 0 };
+function _paceSlot(name) {
+  const queuedAt = Date.now();
+  const turn = _pace.chain.then(async () => {
+    for (;;) {
+      const now = Date.now();
+      const deadline = queuedAt + _paceInt("FYERS_QUEUE_MAX_WAIT_MS", 15000, 1000, 120000);
+      while (_pace.stamps.length && now - _pace.stamps[0] >= 60000) _pace.stamps.shift();
+      const perSec = _paceInt("FYERS_MAX_REQ_PER_SEC", 4, 1, 50);
+      const perMin = _paceInt("FYERS_MAX_REQ_PER_MIN", 45, 1, 1000);
+      const n = _pace.stamps.length;
+      let waitMs = 0;
+      if (n >= perMin) waitMs = 60000 - (now - _pace.stamps[n - perMin]);
+      else if (n >= perSec && now - _pace.stamps[n - perSec] < 1000) waitMs = 1000 - (now - _pace.stamps[n - perSec]);
+      if (waitMs <= 0) {
+        _pace.stamps.push(now);
+        const day = todayIST();
+        if (_pace.day !== day) { _pace.day = day; _pace.count = 0; _pace.warned = 0; }
+        _pace.count++;
+        if ((_pace.count === 4000 || _pace.count === 4800) && _pace.warned < _pace.count) {
+          _pace.warned = _pace.count;
+          console.warn(`⚠️ [Fyers] ${_pace.count} data requests used today — the Standard plan stops at 5,000`);
+        }
+        return;
+      }
+      // A request that would wait this long would answer with an old price —
+      // fail it now so the caller retries on its own next cycle.
+      if (now + waitMs > deadline) {
+        throw new Error(`${name} skipped — Fyers request limit reached, no free slot within ${Math.round((deadline - queuedAt) / 1000)}s`);
+      }
+      await new Promise((r) => setTimeout(r, waitMs + 5));
+    }
+  });
+  _pace.chain = turn.catch(() => {});
+  return turn;
+}
+for (const name of ["getQuotes", "getHistory", "getMarketDepth", "getOptionChain"]) {
+  const orig = fyers[name] && fyers[name].bind(fyers);
+  if (!orig) continue;
+  fyers[name] = async (...args) => { await _paceSlot(name); return orig(...args); };
+}
+fyers.getRequestStats = () => ({ day: _pace.day, today: _pace.count, lastMinute: _pace.stamps.filter((t) => Date.now() - t < 60000).length });
+
 fyers.setAppId(process.env.APP_ID);
 fyers.setRedirectUrl(process.env.REDIRECT_URL);
 

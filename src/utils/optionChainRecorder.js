@@ -45,7 +45,7 @@
  *
  * Env
  * ───
- *   OPTION_CHAIN_RECORDER_ENABLED     default "true"  — own on/off (read live)
+ *   OPTION_CHAIN_RECORDER_ENABLED     default "false" — own on/off (read live)
  *   OPTION_CHAIN_RECORD_INTERVAL_SEC  default 5   (clamped 2–60)
  *   OPTION_CHAIN_RECORD_STRIKES       default 5   (clamped 1–15) → ATM±N per side
  *   OPTION_CHAIN_RECORD_OI            default "true"  — also capture PER-STRIKE OI
@@ -78,7 +78,10 @@ let _failStreak = 0;
 
 // ── Config (read LIVE from env so the Settings toggle applies without restart) ─
 function _ownEnabled() {
-  return (process.env.OPTION_CHAIN_RECORDER_ENABLED || "true").toLowerCase() !== "false";
+  // Off unless asked for: no strategy reads this data (it feeds Replay and the
+  // OI monitor only) and at one call every 5s it alone spends ~4,500 of the
+  // Fyers Standard plan's 5,000 requests a day.
+  return (process.env.OPTION_CHAIN_RECORDER_ENABLED || "false").toLowerCase() === "true";
 }
 function _masterEnabled() {
   // Reflects tickRecorder's actual (load-frozen) ENABLED — its writers no-op when

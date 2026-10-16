@@ -1003,7 +1003,7 @@ const SETTINGS_SCHEMA = [
 
       { key: "TICK_RECORDER_ENABLED", label: "Tick Recorder (for Replay)", type: "toggle", effect: EFFECT.SESSION, desc: "Record ticks so sessions can be replayed.", default: "true", subheader: "Recording & Replay" },
       { key: "TICK_RECORDER_RETAIN_DAYS", label: "Tick Recordings Retention (days)", type: "number", min: 7, max: 180, step: 1, effect: EFFECT.SERVER, desc: "Delete tick recordings older than this.", default: "30" },
-      { key: "OPTION_CHAIN_RECORDER_ENABLED", label: "Day-Wide Option-Chain Recorder", type: "toggle", effect: EFFECT.INSTANT, desc: "Record the option chain for replay.", default: "true" },
+      { key: "OPTION_CHAIN_RECORDER_ENABLED", label: "Day-Wide Option-Chain Recorder", type: "toggle", effect: EFFECT.INSTANT, desc: "Record the option chain for replay. Uses most of the Fyers 5,000/day request limit — keep off unless you replay.", default: "false" },
       { key: "OPTION_CHAIN_RECORD_INTERVAL_SEC", label: "Option-Chain Record Interval (sec)", type: "number", min: 2, max: 60, step: 1, effect: EFFECT.INSTANT, desc: "How often to record the option chain (sec).", default: "5" },
       { key: "OPTION_CHAIN_RECORD_STRIKES", label: "Option-Chain Strikes (ATM±N)", type: "number", min: 1, max: 15, step: 1, effect: EFFECT.INSTANT, desc: "Strikes each side of ATM to record.", default: "5" },
       { key: "OPTION_CHAIN_RECORD_OI", label: "Record Per-Strike Open Interest", type: "toggle", effect: EFFECT.INSTANT, desc: "Also capture each strike's Open Interest from the same quotes (no extra API calls). Feeds the OI Monitor and chain_oi.jsonl. Fyers has no historical-OI API, so turning this off means that day's OI is gone for good.", default: "true" },

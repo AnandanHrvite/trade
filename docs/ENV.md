@@ -447,7 +447,7 @@ The engine falls back to one value; a status panel or log banner prints another.
 | `OPTION_CHAIN_RECORD_INTERVAL_SEC` | number | `5` | How often to record the option chain (sec). |
 | `OPTION_CHAIN_RECORD_OI` | toggle | `true` | Also capture each strike's Open Interest from the same quotes (no extra API calls). Feeds the OI Monitor and chain_oi.jsonl. Fyers has no historical-OI API, so turning this off means that day's OI is gone for good. |
 | `OPTION_CHAIN_RECORD_STRIKES` | number | `5` | Strikes each side of ATM to record. |
-| `OPTION_CHAIN_RECORDER_ENABLED` | toggle | `true` | Record the option chain for replay. |
+| `OPTION_CHAIN_RECORDER_ENABLED` | toggle | `false` | Record the option chain for replay. Uses most of the Fyers 5,000/day request limit — keep off unless you replay. |
 | `OPTION_CHART_BAR_MIN` | number | `` | Candle size for the option premium chart. 1-15 minutes. |
 | `OPTION_CHART_ENABLED` | toggle | `true` | Show the traded contract's own premium chart under the spot chart. Built from live ticks, so it is empty until a position opens. |
 | `OPTION_EXPIRY_OVERRIDE` | date | — | Option expiry for every NIFTY 50 strategy — NIFTY BANK has its own BANKNIFTY_OPTION_EXPIRY_OVERRIDE, because the two indices expire on different calendars. Filled in automatically once the stored one expires; a future date you set is left alone. |
