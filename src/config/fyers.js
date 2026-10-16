@@ -36,35 +36,66 @@ const fyers = new fyersModel({
 // Going over the limit gets the whole app blocked by Fyers' Cloudflare (Error
 // 1015) — REST and the websocket reconnect alike, which is how the 2026-10-16
 // feed went silent for 2 minutes. Every data read waits its turn here so the
-// bot never crosses the line. Orders are not delayed.
-function _paceInt(key, dflt, min, max) {
-  const v = parseInt(process.env[key] || "", 10);
+// bot never crosses the line. Orders are not delayed (or counted).
+function _paceInt(raw, dflt, min, max) {
+  const v = parseInt(raw || "", 10);
   return Number.isFinite(v) && v >= min && v <= max ? v : dflt;
 }
-const _pace = { stamps: [], chain: Promise.resolve(), day: null, count: 0, warned: 0 };
+const _pace = { stamps: [], chain: Promise.resolve(), day: null, count: 0, heldLogAt: 0 };
+
+// The day's count survives a restart (deploys land mid-session), so the daily
+// pace below is measured against what Fyers has really seen today.
+const _PACE_FILE = path.join(require("os").homedir(), "trading-data", ".fyers_req_count.json");
+try {
+  const saved = JSON.parse(fs.readFileSync(_PACE_FILE, "utf-8"));
+  if (saved && saved.day === todayIST()) { _pace.day = saved.day; _pace.count = saved.count || 0; }
+} catch (_) { /* no file yet */ }
+function _paceSave() {
+  fs.writeFile(_PACE_FILE, JSON.stringify({ day: _pace.day, count: _pace.count }), () => {});
+}
+
+// Daily pace: requests are spread across 09:00–23:30 IST (NSE + MCX) so a
+// busy afternoon cannot spend the evening's share. By any moment the day may
+// have used a tenth of the budget up front plus its share of the time elapsed.
+const _DAY_OPEN_MIN = 540, _DAY_CLOSE_MIN = 1410;
+function _istMinNow() { return Math.floor((Date.now() / 1000 + 19800) / 60) % 1440; }
+function _dailyWaitMs(perDay) {
+  if (_pace.count >= perDay) return Infinity;
+  const burst = Math.floor(perDay / 10);
+  const span = _DAY_CLOSE_MIN - _DAY_OPEN_MIN;
+  const elapsed = Math.min(Math.max(_istMinNow() - _DAY_OPEN_MIN, 0), span);
+  if (_pace.count < burst + ((perDay - burst) * elapsed) / span) return 0;
+  const needMin = _DAY_OPEN_MIN + ((_pace.count + 1 - burst) / (perDay - burst)) * span;
+  return Math.max(1000, (needMin - _istMinNow()) * 60000);
+}
 function _paceSlot(name) {
   const queuedAt = Date.now();
   const turn = _pace.chain.then(async () => {
     for (;;) {
       const now = Date.now();
-      const deadline = queuedAt + _paceInt("FYERS_QUEUE_MAX_WAIT_MS", 15000, 1000, 120000);
+      const deadline = queuedAt + _paceInt(process.env.FYERS_QUEUE_MAX_WAIT_MS, 15000, 1000, 120000);
       while (_pace.stamps.length && now - _pace.stamps[0] >= 60000) _pace.stamps.shift();
-      const perSec = _paceInt("FYERS_MAX_REQ_PER_SEC", 4, 1, 50);
-      const perMin = _paceInt("FYERS_MAX_REQ_PER_MIN", 45, 1, 1000);
+      const perSec = _paceInt(process.env.FYERS_MAX_REQ_PER_SEC, 4, 1, 50);
+      const perMin = _paceInt(process.env.FYERS_MAX_REQ_PER_MIN, 45, 1, 1000);
+      const perDay = _paceInt(process.env.FYERS_MAX_REQ_PER_DAY, 4800, 100, 1000000);
+      const day = todayIST();
+      if (_pace.day !== day) { _pace.day = day; _pace.count = 0; }
       const n = _pace.stamps.length;
-      let waitMs = 0;
-      if (n >= perMin) waitMs = 60000 - (now - _pace.stamps[n - perMin]);
-      else if (n >= perSec && now - _pace.stamps[n - perSec] < 1000) waitMs = 1000 - (now - _pace.stamps[n - perSec]);
+      let waitMs = _dailyWaitMs(perDay);
+      if (n >= perMin) waitMs = Math.max(waitMs, 60000 - (now - _pace.stamps[n - perMin]));
+      else if (n >= perSec && now - _pace.stamps[n - perSec] < 1000) waitMs = Math.max(waitMs, 1000 - (now - _pace.stamps[n - perSec]));
       if (waitMs <= 0) {
         _pace.stamps.push(now);
-        const day = todayIST();
-        if (_pace.day !== day) { _pace.day = day; _pace.count = 0; _pace.warned = 0; }
         _pace.count++;
-        if ((_pace.count === 4000 || _pace.count === 4800) && _pace.warned < _pace.count) {
-          _pace.warned = _pace.count;
+        if (_pace.count % 25 === 0) _paceSave();
+        if (_pace.count === 4000) {
           console.warn(`⚠️ [Fyers] ${_pace.count} data requests used today — the Standard plan stops at 5,000`);
         }
         return;
+      }
+      if (waitMs >= 60000 && now - _pace.heldLogAt > 600000) {
+        _pace.heldLogAt = now;
+        console.warn(`⚠️ [Fyers] ${_pace.count}/${perDay} data requests used today — slowing requests down to keep some for the rest of the day`);
       }
       // A request that would wait this long would answer with an old price —
       // fail it now so the caller retries on its own next cycle.
@@ -82,7 +113,6 @@ for (const name of ["getQuotes", "getHistory", "getMarketDepth", "getOptionChain
   if (!orig) continue;
   fyers[name] = async (...args) => { await _paceSlot(name); return orig(...args); };
 }
-fyers.getRequestStats = () => ({ day: _pace.day, today: _pace.count, lastMinute: _pace.stamps.filter((t) => Date.now() - t < 60000).length });
 
 fyers.setAppId(process.env.APP_ID);
 fyers.setRedirectUrl(process.env.REDIRECT_URL);
