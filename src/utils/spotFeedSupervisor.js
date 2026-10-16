@@ -162,6 +162,60 @@ async function _isTradingDay() {
   return allowed;
 }
 
+// ── Commodity evening feed ───────────────────────────────────────────────────
+// The MCX engines run 09:00–23:30, mostly after the NSE close. Without the
+// websocket every price they read is a REST call, and an evening of open trades
+// at one quote every 3s is more than the Fyers Standard plan's whole day. So
+// while a commodity engine runs outside the NSE session the feed is kept open
+// and the engines stream their contracts on it. If Fyers keeps closing it
+// (EVENING_FLAP_LIMIT quick drops) or no contract price streams in for
+// EVENING_SILENT_MS, give up until the next stretch (pre-open / post-open):
+// the engines fall back to REST, paced by config/fyers.js — exactly the
+// behaviour before this.
+const EVENING_FLAP_LIMIT = 5;
+const EVENING_SILENT_MS  = 180_000;
+let _evening = { day: null, baseFlaps: 0, gaveUp: false, logged: false, ticks: -1, tickAt: 0 };
+
+function _streamedTicks() {
+  try { return require("./optionFeed").getStats().ticks; } catch (_) { return 0; }
+}
+
+function _commodityWantsFeed() {
+  try { return require("../services/commodityPaper").needsLiveFeed(); } catch (_) { return false; }
+}
+
+function _eveningActive() {
+  return _enabled() && !_evening.gaveUp && _commodityWantsFeed();
+}
+
+function _keepFeedForCommodity() {
+  // Judged per stretch — before the NSE open and after it — so a morning that
+  // could not stream does not switch the evening off too.
+  const day = `${_istDay()}:${_istMinutes() < OPEN_MIN ? "pre" : "post"}`;
+  if (_evening.day !== day) {
+    _evening = { day, baseFlaps: socketManager.afterHoursFlaps(), gaveUp: false, logged: false, ticks: -1, tickAt: _realNow() };
+  }
+  if (_evening.gaveUp) return;
+  const ticks = _streamedTicks();
+  if (ticks !== _evening.ticks) { _evening.ticks = ticks; _evening.tickAt = _realNow(); }
+  const flapped = socketManager.afterHoursFlaps() - _evening.baseFlaps >= EVENING_FLAP_LIMIT;
+  const silent  = _realNow() - _evening.tickAt > EVENING_SILENT_MS;
+  if (flapped || silent) {
+    _evening.gaveUp = true;
+    console.log(`📡 [feed] evening feed ${flapped ? "keeps being closed by Fyers" : "is carrying no commodity prices"} — commodity prices come from REST for the rest of today`);
+    if (socketManager.isRunning() && !sharedSocketState.isAnyActive()) socketManager.stop();
+    return;
+  }
+  if (socketManager.isRunning()) return;
+  if (socketManager.isAuthFailed() || !process.env.ACCESS_TOKEN) { _evening.tickAt = _realNow(); return; }
+  _evening.tickAt = _realNow();   // a fresh connection gets the full silent window
+  socketManager.start(SPOT_SYMBOL, null, null);
+  if (!_evening.logged) {
+    _evening.logged = true;
+    console.log("📡 [feed] commodity engine running — live feed kept open outside the NSE session");
+  }
+}
+
 /** Log a skip reason once per distinct reason so /logs isn't flooded every 10s. */
 function _skipOnce(reason) {
   if (_skipReason === reason) return;
@@ -183,6 +237,7 @@ async function _check() {
     // first "no token" (or similar) is reported again instead of being
     // swallowed as a duplicate for the rest of the process's life.
     _skipReason = null;
+    if (_eveningActive()) { _keepFeedForCommodity(); return; }
     // Release the connection so it isn't held open overnight — but never while
     // a strategy is still using it (live square-off, a manual after-hours paper
     // session, etc.).
@@ -215,7 +270,12 @@ async function _check() {
     if (socketManager.isAuthFailed()) return;
   }
   if (!process.env.ACCESS_TOKEN)    { _skipOnce("no Fyers token — log in to start recording"); return; }
-  if (!(await _isTradingDay()))     { _skipOnce("not a trading day"); return; }
+  if (!(await _isTradingDay()))     {
+    // NSE holiday: MCX may still trade, so keep the feed for commodity.
+    if (_eveningActive()) { _keepFeedForCommodity(); return; }
+    _skipOnce("not a trading day");
+    return;
+  }
 
   // Re-check after the await: a strategy may have started the socket, or a
   // replay may have begun, while the holiday lookup was in flight.
@@ -257,6 +317,7 @@ function _schedule() {
 function start() {
   if (_running) return;
   _running = true;
+  socketManager.setKeepAliveDemand(_eveningActive);
   if (_enabled()) {
     console.log("[spotFeedSupervisor] armed — shared spot feed kept alive 09:15–15:30 IST for day-based recording");
   } else {

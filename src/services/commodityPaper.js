@@ -106,7 +106,9 @@ async function hubTick() {
   const rest = [];
   for (const x of syms) {
     optionFeed.track(`cmx-hub:${x}`, x, null);
-    const st = optionFeed.getFresh(x);
+    // A quiet MCX contract can go several seconds without a trade; its last
+    // streamed price is still what a REST quote would return.
+    const st = optionFeed.getFresh(x, 15000);
     if (!st) { rest.push(x); continue; }
     const prev = hub.last[x];
     if (!prev || st.at > prev.at) hub.last[x] = { lp: st.ltp, at: st.at };
@@ -903,4 +905,7 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
   return { start, stop, reset, deleteDay, snapshot, fullLog, manualExit, manualEntry, chartData, historyDays, state };
 }
 
-module.exports = { createEngine };
+/** True while any commodity engine is running and wants live prices. */
+function needsLiveFeed() { return hub.needs.size > 0; }
+
+module.exports = { createEngine, needsLiveFeed };

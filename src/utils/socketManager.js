@@ -468,6 +468,24 @@ class SocketManager {
     return !this._stopped;
   }
 
+  /**
+   * Something outside the NSE session that still needs this feed (the MCX
+   * commodity engines run until 23:30). While `fn()` is true a drop after the
+   * close is reconnected instead of being left down.
+   */
+  setKeepAliveDemand(fn) {
+    this._keepAliveDemand = typeof fn === 'function' ? fn : null;
+  }
+
+  _hasKeepAliveDemand() {
+    try { return !!(this._keepAliveDemand && this._keepAliveDemand()); } catch (_) { return false; }
+  }
+
+  /** Connect-then-drop cycles seen outside market hours (never reset). */
+  afterHoursFlaps() {
+    return this._afterHoursFlaps || 0;
+  }
+
   // ── Extra (option) subscriptions ────────────────────────────────────────────
 
   /**
@@ -1132,7 +1150,7 @@ class SocketManager {
     // session keeps the loop alive and every cycle counted as a flap: 5 of them
     // latch _flapping, and nothing outside market hours can ever clear it again.
     // Retries are untouched — this only decides what counts as a FAULT.
-    if (!this._isMarketHours()) return;
+    if (!this._isMarketHours()) { this._afterHoursFlaps = (this._afterHoursFlaps || 0) + 1; return; }
     this._flapCount += 1;
     if (!this._flapSince) this._flapSince = Date.now();
     if (this._flapCount < FLAP_ALERT_AFTER) return;
@@ -1196,7 +1214,7 @@ class SocketManager {
     // live square-off running past the close (or a manual after-hours session)
     // still retries exactly as before. The supervisor stops a feed left sitting
     // here within seconds; if it is disabled, the watchdog reconnects at 09:15.
-    if (!this._isMarketHours() && !sharedSocketState.isAnyActive()) {
+    if (!this._isMarketHours() && !sharedSocketState.isAnyActive() && !this._hasKeepAliveDemand()) {
       this._clearRetry();
       this._log('💤 [SOCKET] Market closed and no strategy attached — not reconnecting.');
       return;
