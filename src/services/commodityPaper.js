@@ -77,9 +77,10 @@ function tg(key, lines) {
 }
 
 // ── shared quote hub ─────────────────────────────────────────────────────────
-// Engines declare which symbols they need and how urgently; one getQuotes call
-// every CMX_POLL_SECONDS serves them all (every 30 s when nobody holds a trade
-// or an armed signal — the price is then only for display).
+// Engines declare which symbols they need and how urgently. Prices come from the
+// shared websocket when it is up; otherwise one getQuotes call every
+// CMX_POLL_SECONDS serves them all (every 30 s when nobody holds a trade or an
+// armed signal — the price is then only for display).
 const hub = {
   needs: new Map(),     // engineId → { symbols: [], fast: bool }
   last: {},             // symbol → { lp, at }

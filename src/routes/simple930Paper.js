@@ -14,9 +14,10 @@
  * rupee of noise tightens a 20-point stop into a much smaller one. At 09:45 a
  * trade that never touched ₹220 or ₹160 is closed regardless of P&L. One trade per day. EOD square-off 15:15.
  *
- * ONE INSTRUMENT DRIVES EVERY DECISION: the OPTION PREMIUM, polled through
- * fyers.getQuotes every SIMPLE930_POLL_MS and recorded to the tick archive on
- * every poll, which is what makes Paper ≡ Live-harness ≡ Replay. The NIFTY 50
+ * ONE INSTRUMENT DRIVES EVERY DECISION: the OPTION PREMIUM, read every
+ * SIMPLE930_POLL_MS from the shared websocket (fyers.getQuotes only when the
+ * streamed price is stale) and recorded to the tick archive, which is what
+ * makes Paper ≡ Live-harness ≡ Replay. The NIFTY 50
  * index arrives on the shared spot socket and is used for exactly two things —
  * the ATM strike sampled ONCE at 09:25, and the context chart on this page.
  * No rule reads the index chart.
