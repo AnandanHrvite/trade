@@ -65,6 +65,8 @@ All four strategies run **in parallel** on the same WebSocket — different cand
 | **BN Pivot RSI ST Paper** | The RSI Pivot ST rules on **NIFTY BANK** — monthly options, 100-pt strike grid | 5-min | Simulated | `/bn-pivot-rsi-st-paper` |
 | **BN Pivot RSI ST Backtest** | Same engine over a date range (conservative intra-bar ordering, δ+θ premium sim) | 5-min historical | Historical | `/bn-pivot-rsi-st-backtest` |
 | **BN Pivot RSI ST Live (Harness)** | Runs Live by wrapping Paper (Zerodha orders, triple-gated dry-run) | 5-min | Zerodha (PAPER-wrapped) | `/bn-pivot-rsi-st-live` |
+| **ST_RSI_PIV_BB Paper** | SuperTrend + RSI + a close beyond yesterday's pivot R1/S1 + a close outside the Bollinger Band, all four on one closed candle (single-leg ATM CE/PE) | 3-min, 5-min, or 3-min confirmed by 5-min | Simulated | `/st_rsi_piv_bb-paper` |
+| **ST_RSI_PIV_BB Live (Harness)** | Runs Live by wrapping Paper (Zerodha orders, triple-gated dry-run) | 3 / 5-min | Zerodha (PAPER-wrapped) | `/st_rsi_piv_bb-live` |
 | **SIMPLE_9:30 Paper** | At 09:25 picks the ITM strike nearest ₹180 on each side; buys whichever clears ₹180 by 09:35, 20pt stop that trails only after the premium touches the box top, 09:45 sideways exit | 1-sec option premium poll | Simulated | `/simple930-paper` |
 | **SIMPLE_9:30 Backtest** | Same engine over a date range on **real** 1-min option premium candles (no delta/theta model) | 1-min historical (option premium) | Historical | `/simple930-backtest` |
 | **SIMPLE_9:30 Live (Harness)** | Runs Live by wrapping Paper (Zerodha orders, triple-gated dry-run) | 1-sec option premium poll | Zerodha (PAPER-wrapped) | `/simple930-live` |
@@ -330,6 +332,18 @@ Per-index settings (strike grid, lot size, strike offsets, expiry override and t
 
 The two indices share the **single** Fyers WebSocket: `socketManager` subscribes both and routes every tick to the callbacks bound to that index. A tick it cannot attribute is dropped and counted, never delivered to a guess.
 
+### ST_RSI_PIV_BB — SuperTrend + RSI + Pivot R1/S1 + Bollinger, all four on one candle (`src/strategies/st_rsi_piv_bb.js`)
+
+**Never traded, and never validated.** Zero paper sessions, zero live orders. Every threshold is the user's stated rule, not a fitted value. Ships OFF.
+
+NIFTY 50, option buying, intraday. Fyers data, Zerodha orders. All indicators are read on the spot chart on a **closed** candle.
+
+- **BUY CE** when all four agree on the same candle: SuperTrend(10, 2) is green, RSI(14) is above 70, the close is above yesterday's floor-pivot **R1**, and the close is above the upper Bollinger Band(20, 2). **BUY PE** is the exact mirror (red, RSI below 30, close below **S1**, close below the lower band). Three out of four is not a trade. There is no confirmation candle.
+- **Pivots** come from the previous day's daily high/low/close (PP = (H+L+C)/3, R1 = 2·PP − L, S1 = 2·PP − H) and do not move during the day.
+- **Timeframe** is 3-min, 5-min, or BOTH (the default): in BOTH the trade lives on the 3-min chart and the latest closed 5-min candle must also show 4/4 for the same side.
+- **Exit** is the SuperTrend line as a trailing stop, checked on candle close only: the trade closes when the SuperTrend flips, or a candle closes beyond the trailed line. The line only tightens. Anything still open is squared off at the end-of-day time.
+- **Not in this strategy, on purpose:** VIX gate, OI filter, ADX, volume, EMA, VWAP, fixed target, profit booking, breakeven jump, premium stop, cooldowns. The only day guards are the entry window, max trades per day and the daily loss cap.
+
 ### SIMPLE_9:30 — the ₹180 option-premium breakout (`src/strategies/simple930.js`)
 
 **Never traded, and never validated.** Zero paper sessions, zero live orders. ₹180, ₹220/₹160 and the 20-point stop are the operator's own numbers, not fitted ones. Collect clean paper days and diff one against `/replay` before touching a live gate.
@@ -431,6 +445,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   prev_orb_scalp_paper_trades.json # Prev ORB Scalp paper sessions
   rsi_pivot_st_paper_trades.json  # RSI Pivot ST paper sessions
   bn_pivot_rsi_st_paper_trades.json # BN Pivot RSI ST (NIFTY BANK) paper sessions
+  st_rsi_piv_bb_paper_trades.json # ST_RSI_PIV_BB paper sessions
   simple930_paper_trades.json     # SIMPLE_9:30 paper sessions
   historical_pnl.json             # One-time P&L baselines per broker (Kite / Fyers)
   nse_holidays.json               # Last good NSE holiday fetch, keyed by year — keeps 2027+ working if NSE blocks the box
@@ -445,6 +460,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   .active_prev_orb_scalp_position.json # Crash recovery — Prev ORB Scalp position
   .active_rsi_pivot_st_position.json # Crash recovery — RSI Pivot ST position
   .active_bn_pivot_rsi_st_position.json # Crash recovery — BN Pivot RSI ST position
+  .active_st_rsi_piv_bb_position.json # Crash recovery — ST_RSI_PIV_BB position (carries the SuperTrend trail)
   .active_simple930_position.json # Crash recovery — SIMPLE_9:30 position (carries the live trail state)
   .harness_events.json            # Live-harness event log (DRY-RUN/real order events), survives restart
   ema_rsi_st_paper_trades_log.jsonl    # Crash-safe per-trade JSONL audit (cumulative)
@@ -580,6 +596,13 @@ log, so each session's trades carry the exact config that produced them.
 | `/bn-pivot-rsi-st-paper/status` | Paper trade — NIFTY BANK chart with the frozen PP / R1 / S1 levels and the SuperTrend line |
 | `/bn-pivot-rsi-st-paper/history` | Sessions (per-session delete + view modal) |
 | `/bn-pivot-rsi-st-live` | Live via the paper-wrapping harness (**Zerodha** orders; gated by `BN_PIVOT_RSI_ST_LIVE_ENABLED` + `LIVE_HARNESS_DRY_RUN` + `BN_PIVOT_RSI_ST_LIVE_DRY_RUN`) |
+
+### ST_RSI_PIV_BB
+| URL | Description |
+|-----|-------------|
+| `/st_rsi_piv_bb-paper/status` | Paper trade — live position, P&L and session log on the NIFTY chart |
+| `/st_rsi_piv_bb-paper/history` | Sessions (per-session delete + view modal) |
+| `/st_rsi_piv_bb-live` | Live via the paper-wrapping harness (**Zerodha** orders, triple-gated dry-run) |
 
 ### SIMPLE_9:30
 | URL | Description |

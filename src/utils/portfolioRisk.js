@@ -29,6 +29,7 @@ const DATA_DIR = path.join(require("os").homedir(), "trading-data");
 // Paper modes = the canonical decision layer. Summing these gives the book's
 // realized P&L for the day regardless of which surface (paper/harness-live) ran.
 const PAPER_MODES = ["ema_rsi_st", "bb_rsi", "pa", "orb", "ema9vwap", "trend_pb", "trend_day_scalp", "rsi_pivot_st", "bn_pivot_rsi_st", "ema_rsi_st_v2", "bn_ema_rsi_st_v2", "simple930", "ha_scalp", "prev_orb_scalp", "early_bird"];
+PAPER_MODES.push("st_rsi_piv_bb"); // ST_RSI_PIV_BB (NIFTY, Zerodha)
 
 // Pull a realized P&L number out of a logged record. Trade exits carry `pnl`;
 // harness EXIT events carry `paperPnl`. Snapshot / checkpoint lines carry

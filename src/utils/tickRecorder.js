@@ -430,6 +430,8 @@ const _SETTINGS_KEY_MATCHERS = [
   //   cannot fund. It is skipped during replay, but pinning it keeps the
   //   snapshot honest about how the recorded session was gated.
   /^PAPER_CAPITAL_/,
+  //   ST_RSI_PIV_BB_* — the ST_RSI_PIV_BB strategy (NOT matched by /^RSI_/, key starts "ST_").
+  /^ST_RSI_PIV_BB_/,
 ];
 
 function snapshotSettings() {

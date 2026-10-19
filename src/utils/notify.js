@@ -21,6 +21,7 @@
  *   TG_EOD_CHARTS                               — per-strategy chart images at market close
  *
  *   (ORB, TREND_PB, TDS, RSI_PIVOT_ST, BN_PIVOT_RSI_ST, EMA_RSI_ST_V2, BN_EMA_RSI_ST_V2 and SIMPLE930 emit no SIGNAL alerts, so they have no _SIGNALS toggle.)
+ *   ST_RSI_PIV_BB uses the same four per-mode toggles (TG_ST_RSI_PIV_BB_STARTED/_ENTRY/_EXIT/_DAYREPORT) and no _SIGNALS toggle.
  *
  * If TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID are missing, all functions silently
  * do nothing — no errors.
@@ -128,6 +129,9 @@ function modeGroup(mode) {
   // prefix (SIMPLE930_MODE_ENABLED, TG_SIMPLE930_ENTRY, …) — an env var may not
   // contain a colon, which is why the group is not literally "SIMPLE_9:30".
   if (m === "SIMPLE930" || m.startsWith("SIMPLE930-") || m.startsWith("SIMPLE930_")) return "SIMPLE930";
+  // ST_RSI_PIV_BB — its own group key, so TG_ST_RSI_PIV_BB_* and
+  // ST_RSI_PIV_BB_MODE_ENABLED gate it; no earlier branch matches an "ST_" prefix.
+  if (m === "ST_RSI_PIV_BB" || m.startsWith("ST_RSI_PIV_BB-") || m.startsWith("ST_RSI_PIV_BB_")) return "ST_RSI_PIV_BB";
   // BN_EMA_RSI_ST_V2 — the same engine on NIFTY BANK, with its own group key and
   // its own TG_BN_EMA_RSI_ST_V2_* toggles. Tested FIRST, before both the
   // EMA_RSI_ST_V2 branch and the EMA_RSI_ST fallback: like V2 it has no branch of
@@ -154,6 +158,7 @@ function modeGroup(mode) {
 // disabled (the Settings schema, sharedNav, realtime and app.js all default it
 // to "false").
 const DEFAULT_OFF_GROUPS = new Set(["EMA_RSI_ST_V2", "BN_EMA_RSI_ST_V2"]);
+DEFAULT_OFF_GROUPS.add("ST_RSI_PIV_BB"); // ships dark like V2 (Settings defaults it to "false")
 
 function isModeEnabled(group) {
   const v = process.env[`${group}_MODE_ENABLED`];
@@ -439,6 +444,8 @@ function modeLabel(mode) {
   if (m.startsWith("BN_EMA_RSI_ST_V2-LIVE"))  return "⚡ BN EMA_RSI_ST_V2 LIVE" + m.slice("BN_EMA_RSI_ST_V2-LIVE".length);
   if (m.startsWith("EMA_RSI_ST_V2-PAPER")) return "📄 EMA_RSI_ST_V2 PAPER" + m.slice("EMA_RSI_ST_V2-PAPER".length);
   if (m.startsWith("EMA_RSI_ST_V2-LIVE"))  return "⚡ EMA_RSI_ST_V2 LIVE" + m.slice("EMA_RSI_ST_V2-LIVE".length);
+  if (m.startsWith("ST_RSI_PIV_BB-PAPER")) return "📄 ST_RSI_PIV_BB PAPER" + m.slice("ST_RSI_PIV_BB-PAPER".length);
+  if (m.startsWith("ST_RSI_PIV_BB-LIVE"))  return "⚡ ST_RSI_PIV_BB LIVE" + m.slice("ST_RSI_PIV_BB-LIVE".length);
   return m;
 }
 
@@ -800,6 +807,7 @@ function notifyConsolidatedDayReport({ byMode }) {
 
   // Only include strategies that are currently enabled in Settings.
   const groups = ["EMA_RSI_ST", "BB_RSI", "PA", "ORB", "EMA9VWAP", "TREND_PB", "TDS", "RSI_PIVOT_ST", "BN_PIVOT_RSI_ST", "EMA_RSI_ST_V2", "BN_EMA_RSI_ST_V2", "SIMPLE930", "HA_SCALP", "PREV_ORB_SCALP", "EARLYBIRD"].filter(isModeEnabled);
+  if (isModeEnabled("ST_RSI_PIV_BB")) groups.push("ST_RSI_PIV_BB");
   let totalTrades = 0, totalPnl = 0, totalWins = 0, totalLosses = 0;
   const rows = [];
 

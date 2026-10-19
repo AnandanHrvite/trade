@@ -45,6 +45,11 @@ const FILE_BY_MODE = {
   // same reason as its NIFTY sibling above: no strategy logs live trades to
   // disk any more, and the harness passes liveLogKey:null.
   bn_ema_rsi_st_v2: "bn_ema_rsi_st_v2_paper_trades_log.jsonl",
+  // ST_RSI_PIV_BB — SuperTrend + RSI + pivot R1/S1 + Bollinger, all four on one candle.
+  st_rsi_piv_bb: "st_rsi_piv_bb_paper_trades_log.jsonl",
+  // MUST match tradeLogger's key character for character — the harness's
+  // liveLogKey, if it is ever set, must be exactly "st_rsi_piv_bb-live".
+  "st_rsi_piv_bb-live": "st_rsi_piv_bb_live_trades_log.jsonl",
   simple930: "simple930_paper_trades_log.jsonl",
 };
 
@@ -64,6 +69,9 @@ const DAILY_PREFIX_BY_MODE = {
   // MUST match tradeLogger's key character for character (see FILE_BY_MODE).
   ema_rsi_st_v2: "ema_rsi_st_v2_paper_trades_",
   bn_ema_rsi_st_v2: "bn_ema_rsi_st_v2_paper_trades_",
+  st_rsi_piv_bb: "st_rsi_piv_bb_paper_trades_",
+  // MUST match tradeLogger's key character for character (see FILE_BY_MODE).
+  "st_rsi_piv_bb-live": "st_rsi_piv_bb_live_trades_",
   simple930: "simple930_paper_trades_",
 };
 

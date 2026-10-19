@@ -1119,6 +1119,80 @@ function clearBnEmaRsiStV2Position() {
   console.log("[PERSIST] BN_EMA_RSI_ST_V2 (NIFTY BANK) position file cleared.");
 }
 
+// ── ST_RSI_PIV_BB (SuperTrend + RSI + pivot R1/S1 + Bollinger, NIFTY, Zerodha) ─
+// Copied from the EMA_RSI_ST_V2 block above, on its OWN file. Like V2 it has
+// exactly ONE stop: the SuperTrend line, which is the initial stop AND the
+// trail — it tightens on every closed candle of the trade timeframe and never
+// widens. `stopLoss` is therefore live trail state and is persisted at its
+// CURRENT value, never re-derived from the entry on load. `entryTf`/`tradeRes`
+// record which chart the trade lives on (3-min for 3/BOTH, 5-min for 5), so a
+// recovered position keeps trailing on the chart it was opened on.
+
+const ST_RSI_PIV_BB_POS_FILE = path.join(DATA_DIR, ".active_st_rsi_piv_bb_position.json");
+
+function saveStRsiPivBbPosition(position, sessionMeta) {
+  try {
+    if (!position) { _persistAtomic(ST_RSI_PIV_BB_POS_FILE, null); return; }
+    const data = {
+      position: {
+        side:            position.side,
+        symbol:          position.symbol,
+        qty:             position.qty,
+        entryPrice:      position.entryPrice,
+        spotAtEntry:     position.spotAtEntry || position.entrySpot,
+        // The SuperTrend trail — the only stop. Persisted at its CURRENT
+        // tightened value, never re-derived on load.
+        stopLoss:        position.stopLoss != null ? position.stopLoss : position.slSpot,
+        initialStopLoss: position.initialStopLoss != null ? position.initialStopLoss : position.initialSlSpot,
+        bestPrice:       position.bestPrice,
+        entryUnixSec:    position.entryUnixSec,
+        entryTime:       position.entryTime,
+        entryTf:         position.entryTf ?? null,
+        tradeRes:        position.tradeRes ?? null,
+        vixAtEntry:      position.vixAtEntry ?? null,
+        orderId:         position.orderId,
+        isFutures:       !!position.isFutures,
+        optionEntryLtp:  position.optionEntryLtp,
+        optionStrike:    position.optionStrike,
+        optionExpiry:    position.optionExpiry,
+        optionType:      position.optionType || position.side,
+        signalStrength:  position.signalStrength,
+      },
+      sessionMeta: sessionMeta || {},
+      savedAt: Date.now(),
+      savedDate: new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
+    };
+    _persistAtomic(ST_RSI_PIV_BB_POS_FILE, JSON.stringify(data, null, 2));
+    console.log(`💾 [PERSIST] ST_RSI_PIV_BB position saved: ${position.side} ${position.symbol} @ ₹${position.entryPrice}`);
+  } catch (err) {
+    console.warn(`⚠️ [PERSIST] Could not save ST_RSI_PIV_BB position: ${err.message}`);
+  }
+}
+
+function loadStRsiPivBbPosition() {
+  try {
+    if (!fs.existsSync(ST_RSI_PIV_BB_POS_FILE)) return null;
+    const data = _readSnapshot(ST_RSI_PIV_BB_POS_FILE);
+    if (!data) return null;
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    if (data.savedDate && data.savedDate !== today) {
+      console.log(`[PERSIST] Stale ST_RSI_PIV_BB position from ${data.savedDate} — ignoring; kept until the boot reconcile has checked the broker.`);
+      _markStale(ST_RSI_PIV_BB_POS_FILE, data);
+      return null;
+    }
+    if (data.position) console.log(`[PERSIST] ST_RSI_PIV_BB position loaded: ${data.position.side} ${data.position.symbol} @ ₹${data.position.entryPrice}`);
+    return data;
+  } catch (err) {
+    console.warn(`[PERSIST] Could not load ST_RSI_PIV_BB position: ${err.message}`);
+    return null;
+  }
+}
+
+function clearStRsiPivBbPosition() {
+  _persistAtomic(ST_RSI_PIV_BB_POS_FILE, null);
+  console.log("[PERSIST] ST_RSI_PIV_BB position file cleared.");
+}
+
 // ── SIMPLE_9:30 (09:25 ITM pick, premium-trigger entry, Zerodha) ────────────
 // Unlike the frozen-price strategies above, this one DOES
 // carry live trail state: `stop` ratchets up behind `peak` on every new premium
@@ -1343,6 +1417,7 @@ module.exports = {
   saveBnPivotRsiStPosition, loadBnPivotRsiStPosition, clearBnPivotRsiStPosition,
   saveEmaRsiStV2Position, loadEmaRsiStV2Position, clearEmaRsiStV2Position,
   saveBnEmaRsiStV2Position, loadBnEmaRsiStV2Position, clearBnEmaRsiStV2Position,
+  saveStRsiPivBbPosition, loadStRsiPivBbPosition, clearStRsiPivBbPosition,
   saveSimple930Position, loadSimple930Position, clearSimple930Position,
   // Boot-reconcile helpers (corrupt files moved aside, previous-day snapshots kept)
   getCorruptSnapshots, getStaleSnapshots, clearStaleSnapshot,

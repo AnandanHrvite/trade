@@ -50,6 +50,8 @@ const PAPER_SOURCES = [
   { mode: "EMA_RSI_ST_V2", file: "ema_rsi_st_v2_paper_trades.json" },
   // Same engine, NIFTY BANK — a different underlying is a different edge.
   { mode: "BN_EMA_RSI_ST_V2", file: "bn_ema_rsi_st_v2_paper_trades.json" },
+  // ST_RSI_PIV_BB — its own rules, its own edge.
+  { mode: "ST_RSI_PIV_BB", file: "st_rsi_piv_bb_paper_trades.json" },
   { mode: "BB_RSI",    file: "bb_rsi_paper_trades.json" },
   { mode: "PA",       file: "pa_paper_trades.json" },
   { mode: "ORB",      file: "orb_paper_trades.json" },
@@ -69,6 +71,7 @@ const LIVE_SOURCES = [
   { mode: "EMA_RSI_ST",    file: "ema_rsi_st_live_trades.json" },
   { mode: "EMA_RSI_ST_V2", file: "ema_rsi_st_v2_live_trades.json" },
   { mode: "BN_EMA_RSI_ST_V2", file: "bn_ema_rsi_st_v2_live_trades.json" },
+  { mode: "ST_RSI_PIV_BB", file: "st_rsi_piv_bb_live_trades.json" },
   { mode: "BB_RSI",    file: "bb_rsi_live_trades.json" },
   { mode: "PA",       file: "pa_live_trades.json" },
   { mode: "ORB",      file: "orb_live_trades.json" },
@@ -385,6 +388,7 @@ ${multiSelectCSS()}
     .badge-EMA_RSI_ST{background:rgba(59,130,246,0.12);color:#3b82f6;border:0.5px solid rgba(59,130,246,0.3);}
     .badge-EMA_RSI_ST_V2{background:rgba(56,189,248,0.12);color:#38bdf8;border:0.5px solid rgba(56,189,248,0.3);}
     .badge-BN_EMA_RSI_ST_V2{background:rgba(45,212,191,0.12);color:#2dd4bf;border:0.5px solid rgba(45,212,191,0.3);}
+    .badge-ST_RSI_PIV_BB{background:rgba(163,230,53,0.12);color:#a3e635;border:0.5px solid rgba(163,230,53,0.3);}
     .badge-BB_RSI{background:rgba(245,158,11,0.12);color:#f59e0b;border:0.5px solid rgba(245,158,11,0.3);}
     .badge-PA{background:rgba(168,85,247,0.12);color:#a855f7;border:0.5px solid rgba(168,85,247,0.3);}
     .badge-ORB{background:rgba(16,185,129,0.12);color:#10b981;border:0.5px solid rgba(16,185,129,0.3);}

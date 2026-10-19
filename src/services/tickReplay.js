@@ -1052,6 +1052,10 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     // it needs its own pair here — and its mutators are named …Mode, not …Active.
     ss_setEmaRsiStV2Mode:      sharedSocketState.setEmaRsiStV2Mode,
     ss_clearEmaRsiStV2Mode:    sharedSocketState.clearEmaRsiStV2Mode,
+    // ST_RSI_PIV_BB is not replayable (paper + live only), but a replay must
+    // still never touch its REAL mutex slot.
+    ss_setStRsiPivBbMode:      sharedSocketState.setStRsiPivBbMode,
+    ss_clearStRsiPivBbMode:    sharedSocketState.clearStRsiPivBbMode,
     // EMA_RSI_ST_V2 likewise keeps its OWN mutex slot, separate from V1's
     // primaryMode, so it needs its own pair here too.
     // BN_EMA_RSI_ST_V2 (NIFTY BANK) has its OWN mutex slot as well — the same
@@ -1608,6 +1612,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     sharedSocketState.clearBnPivotRsiStMode  = () => {};
     sharedSocketState.setEmaRsiStV2Mode      = () => {};
     sharedSocketState.clearEmaRsiStV2Mode    = () => {};
+    sharedSocketState.setStRsiPivBbMode      = () => {};
+    sharedSocketState.clearStRsiPivBbMode    = () => {};
     sharedSocketState.setBnEmaRsiStV2Mode    = () => {};
     sharedSocketState.clearBnEmaRsiStV2Mode  = () => {};
     sharedSocketState.setSimple930Active     = () => {};
@@ -1885,6 +1891,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     sharedSocketState.clearBnPivotRsiStMode  = orig.ss_clearBnPivotRsiStMode;
     sharedSocketState.setEmaRsiStV2Mode      = orig.ss_setEmaRsiStV2Mode;
     sharedSocketState.clearEmaRsiStV2Mode    = orig.ss_clearEmaRsiStV2Mode;
+    sharedSocketState.setStRsiPivBbMode      = orig.ss_setStRsiPivBbMode;
+    sharedSocketState.clearStRsiPivBbMode    = orig.ss_clearStRsiPivBbMode;
     sharedSocketState.setBnEmaRsiStV2Mode    = orig.ss_setBnEmaRsiStV2Mode;
     sharedSocketState.clearBnEmaRsiStV2Mode  = orig.ss_clearBnEmaRsiStV2Mode;
     sharedSocketState.setSimple930Active     = orig.ss_setSimple930Active;
@@ -2737,6 +2745,7 @@ function replayPreflight() {
   if (sharedSocketState.isRsiPivotStActive && sharedSocketState.isRsiPivotStActive()) activeModes.push(sharedSocketState.getRsiPivotStMode() || "rsi_pivot_st");
   if (sharedSocketState.isBnPivotRsiStActive && sharedSocketState.isBnPivotRsiStActive()) activeModes.push(sharedSocketState.getBnPivotRsiStMode() || "bn_pivot_rsi_st");
   if (sharedSocketState.isEmaRsiStV2Active && sharedSocketState.isEmaRsiStV2Active()) activeModes.push(sharedSocketState.getEmaRsiStV2Mode() || "ema_rsi_st_v2");
+  if (sharedSocketState.isStRsiPivBbActive && sharedSocketState.isStRsiPivBbActive()) activeModes.push(sharedSocketState.getStRsiPivBbMode() || "st_rsi_piv_bb");
   if (sharedSocketState.isBnEmaRsiStV2Active && sharedSocketState.isBnEmaRsiStV2Active()) activeModes.push(sharedSocketState.getBnEmaRsiStV2Mode() || "bn_ema_rsi_st_v2");
   if (sharedSocketState.isSimple930Active && sharedSocketState.isSimple930Active()) activeModes.push(sharedSocketState.getSimple930Mode() || "simple930");
   if (activeModes.length > 0) {
@@ -2803,6 +2812,7 @@ function forceClearSharedState() {
     rsi_pivot_st: sharedSocketState.getRsiPivotStMode ? sharedSocketState.getRsiPivotStMode() : null,
     bn_pivot_rsi_st: sharedSocketState.getBnPivotRsiStMode ? sharedSocketState.getBnPivotRsiStMode() : null,
     ema_rsi_st_v2: sharedSocketState.getEmaRsiStV2Mode ? sharedSocketState.getEmaRsiStV2Mode() : null,
+    st_rsi_piv_bb: sharedSocketState.getStRsiPivBbMode ? sharedSocketState.getStRsiPivBbMode() : null,
     bn_ema_rsi_st_v2: sharedSocketState.getBnEmaRsiStV2Mode ? sharedSocketState.getBnEmaRsiStV2Mode() : null,
     simple930: sharedSocketState.getSimple930Mode ? sharedSocketState.getSimple930Mode() : null,
     replayInProgress: _replayInProgress,
@@ -2823,6 +2833,7 @@ function forceClearSharedState() {
   if (sharedSocketState.clearRsiPivotSt) sharedSocketState.clearRsiPivotSt();
   if (sharedSocketState.clearBnPivotRsiStMode) sharedSocketState.clearBnPivotRsiStMode();
   if (sharedSocketState.clearEmaRsiStV2Mode) sharedSocketState.clearEmaRsiStV2Mode();
+  if (sharedSocketState.clearStRsiPivBbMode) sharedSocketState.clearStRsiPivBbMode();
   if (sharedSocketState.clearBnEmaRsiStV2Mode) sharedSocketState.clearBnEmaRsiStV2Mode();
   if (sharedSocketState.clearSimple930) sharedSocketState.clearSimple930();
   _replayInProgress = false;

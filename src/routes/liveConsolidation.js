@@ -30,6 +30,9 @@ const SOURCES = [
   { mode: "EMA_RSI_ST_V2", file: path.join(DATA_DIR, "ema_rsi_st_v2_live_trades.json"), label: "EMA_RSI_ST_V2", color: "#38bdf8" },
   // The NIFTY BANK sibling — its own live trades file.
   { mode: "BN_EMA_RSI_ST_V2", file: path.join(DATA_DIR, "bn_ema_rsi_st_v2_live_trades.json"), label: "BN EMA_RSI_ST_V2", color: "#2dd4bf" },
+  // ST_RSI_PIV_BB — its own live trades file. The dashboard's Live toggle reads
+  // this list via /live-consolidation/data, so it must be here.
+  { mode: "ST_RSI_PIV_BB", file: path.join(DATA_DIR, "st_rsi_piv_bb_live_trades.json"), label: "ST_RSI_PIV_BB", color: "#a3e635" },
   { mode: "BB_RSI", file: path.join(DATA_DIR, "bb_rsi_live_trades.json"), label: "BB_RSI", color: "#f59e0b" },
   { mode: "PA",    file: path.join(DATA_DIR, "pa_live_trades.json"),    label: "Price Action", color: "#a855f7" },
   { mode: "RSI_PIVOT_ST", file: path.join(DATA_DIR, "rsi_pivot_st_live_trades.json"), label: "RSI PIVOT ST", color: "#facc15" },
@@ -74,6 +77,7 @@ function _sourcesSig() {
 // Every legacy strategy defaults ON, so the fallback below stays "true".
 // Read on every call — Settings saves mutate process.env live.
 const _DEFAULT_OFF_MODES = new Set(["EMA_RSI_ST_V2", "BN_EMA_RSI_ST_V2"]);
+_DEFAULT_OFF_MODES.add("ST_RSI_PIV_BB"); // ships OFF like V2
 function _modeEnabled(mode) {
   const key = mode + "_MODE_ENABLED";
   const dflt = _DEFAULT_OFF_MODES.has(mode) ? "false" : "true";
@@ -227,6 +231,7 @@ router.get("/", (req, res) => {
     .badge-EMA_RSI_ST{background:rgba(59,130,246,0.12);color:#3b82f6;border:0.5px solid rgba(59,130,246,0.3);}
     .badge-EMA_RSI_ST_V2{background:rgba(56,189,248,0.12);color:#38bdf8;border:0.5px solid rgba(56,189,248,0.3);}
     .badge-BN_EMA_RSI_ST_V2{background:rgba(45,212,191,0.12);color:#2dd4bf;border:0.5px solid rgba(45,212,191,0.3);}
+    .badge-ST_RSI_PIV_BB{background:rgba(163,230,53,0.12);color:#a3e635;border:0.5px solid rgba(163,230,53,0.3);}
     .badge-BB_RSI{background:rgba(245,158,11,0.12);color:#f59e0b;border:0.5px solid rgba(245,158,11,0.3);}
     .badge-PA{background:rgba(168,85,247,0.12);color:#a855f7;border:0.5px solid rgba(168,85,247,0.3);}
     .badge-RSI_PIVOT_ST{background:rgba(250,204,21,0.12);color:#facc15;border:0.5px solid rgba(250,204,21,0.3);}

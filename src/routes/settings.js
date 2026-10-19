@@ -820,6 +820,49 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
+    section: "ST_RSI_PIV_BB STRATEGY (SuperTrend + RSI + Pivot R1/S1 + Bollinger) — Zerodha",
+    icon: "\u{1F4CC}",
+    nav: "ST_RSI_PIV_BB",
+    group: "Strategies",
+    fields: [
+      // "All four agree": SuperTrend colour + RSI + a close beyond yesterday's
+      // pivot R1/S1 + a close outside the Bollinger Band, all on ONE closed
+      // candle. The SuperTrend line is also the only stop (a trail, checked on
+      // candle close). Every key is its own ST_RSI_PIV_BB_* key, and every
+      // default below equals the engine's code default.
+      //
+      // Ships OFF and unproven: turn the Mode toggle on (MENU VISIBILITY) and
+      // paper it for a stretch of sessions before thinking about live.
+      { key: "ST_RSI_PIV_BB_PAPER_ENABLED", label: "ST_RSI_PIV_BB Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new ST_RSI_PIV_BB paper sessions to start. OFF blocks the Start button — use it to park the strategy without hiding it.", default: "false", subheader: "Mode & Live" },
+      { key: "ST_RSI_PIV_BB_LIVE_ENABLED", label: "ST_RSI_PIV_BB Live Orders (gates /st_rsi_piv_bb-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Send real orders to Zerodha. NEVER traded live — paper-validate a run of sessions first. Off means the harness refuses to start unless the global dry-run is also on.", default: "false" },
+      { key: "ST_RSI_PIV_BB_LIVE_DRY_RUN", label: "ST_RSI_PIV_BB Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep this strategy simulated even when live orders are switched on — the broker call is written to the log but no real order leaves the machine. A per-strategy safety catch on top of the global one.", default: "false" },
+
+      // ── Timeframe ──
+      { key: "ST_RSI_PIV_BB_ENTRY_TF", label: "Entry Timeframe", type: "select", options: [{ value: "3", label: "3 — 3-min chart only" }, { value: "5", label: "5 — 5-min chart only" }, { value: "BOTH", label: "BOTH — 3-min AND the latest closed 5-min (default)" }], effect: EFFECT.SESSION, desc: "Which chart the four conditions are read on. 3 = the 3-min chart only. 5 = the 5-min chart only. BOTH = the 3-min candle must show 4/4 AND the latest closed 5-min candle must also show 4/4 for the same side — e.g. a 3-min candle closing at 09:48 is checked against the 5-min candle that closed at 09:45. The exit always runs on the trade chart: 3-min for 3 and BOTH, 5-min for 5. Takes effect at the next Start.", default: "BOTH", subheader: "Timeframe" },
+
+      // ── The four entry conditions ──
+      { key: "ST_RSI_PIV_BB_RSI_PERIOD", label: "RSI Period", type: "number", min: 2, max: 100, step: 1, effect: EFFECT.SESSION, desc: "How many candles the RSI is measured over. 14 is the standard and what the rule assumes.", default: "14", subheader: "Signal (all four on one closed candle)" },
+      { key: "ST_RSI_PIV_BB_RSI_CE_MIN", label: "CE needs RSI above", type: "number", min: 0, max: 100, step: 1, effect: EFFECT.SESSION, desc: "A CE (call) needs RSI on the signal candle ABOVE this. Example: at 70, an RSI of 72 passes and 68 does not. Lower it for more (weaker) buys.", default: "70" },
+      { key: "ST_RSI_PIV_BB_RSI_PE_MAX", label: "PE needs RSI below", type: "number", min: 0, max: 100, step: 1, effect: EFFECT.SESSION, desc: "A PE (put) needs RSI on the signal candle BELOW this. Example: at 30, an RSI of 27 passes and 33 does not. Raise it for more (weaker) sells.", default: "30" },
+      { key: "ST_RSI_PIV_BB_ST_PERIOD", label: "SuperTrend ATR Period", type: "number", min: 2, max: 100, step: 1, effect: EFFECT.SESSION, desc: "ATR length behind the SuperTrend line. The line does two jobs: its colour is entry condition 1 (green for CE, red for PE), and the line itself is the trailing stop. Longer = a slower line that gives the trade more room.", default: "10" },
+      { key: "ST_RSI_PIV_BB_ST_MULT", label: "SuperTrend Multiplier", type: "number", min: 0.1, max: 10, step: 0.1, effect: EFFECT.SESSION, desc: "How many ATRs away from price the SuperTrend line sits. Example: ATR 20 pts × 2 = the line sits about 40 pts below price on a CE. Smaller = a tighter stop that is hit more often; larger = more room and bigger losses when it is hit.", default: "2" },
+      { key: "ST_RSI_PIV_BB_BB_PERIOD", label: "Bollinger Band Period", type: "number", min: 2, max: 200, step: 1, effect: EFFECT.SESSION, desc: "Candles behind the Bollinger Band's middle line (a simple average of closes). A CE needs the close ABOVE the upper band, a PE BELOW the lower band.", default: "20" },
+      { key: "ST_RSI_PIV_BB_BB_STDDEV", label: "Bollinger Band Width (std-devs)", type: "number", min: 0.1, max: 10, step: 0.1, effect: EFFECT.SESSION, desc: "How far the bands sit from the middle line, in standard deviations. Example: at 2, with the middle at 24,000 and one std-dev of 15 pts, the upper band is 24,030 — a CE needs a close above it. Wider = fewer, more stretched breakouts.", default: "2" },
+
+      // ── Session window ──
+      { key: "ST_RSI_PIV_BB_ENTRY_START", label: "Entry Window Start", type: "time", effect: EFFECT.SESSION, desc: "No entries on a candle that closes before this time (IST). The pivots are fixed before the open, so nothing else needs to settle — this only skips the opening noise.", default: "09:30", subheader: "Session window" },
+      { key: "ST_RSI_PIV_BB_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No NEW entries on a candle that closes after this time (IST). A position already open is not affected.", default: "15:00" },
+      { key: "ST_RSI_PIV_BB_EOD_EXIT_TIME", label: "Forced Exit (square-off)", type: "time", effect: EFFECT.SESSION, desc: "Anything still open is closed at this time (IST), stop or no stop. Nothing is carried overnight.", default: "15:15" },
+      { key: "ST_RSI_PIV_BB_WARMUP_DAYS", label: "Warm-up Days", type: "number", min: 1, max: 15, step: 1, effect: EFFECT.SESSION, desc: "How many earlier trading days of candles are loaded before the session so RSI, SuperTrend and the bands start the day settled. The engine needs about 25 candles on each chart it reads — 75 minutes of 3-min bars, 125 minutes of 5-min bars — so without warm-up the first signals would not come until late morning.", default: "3" },
+
+      // ── Day-level guards ──
+      { key: "ST_RSI_PIV_BB_MAX_DAILY_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Stop taking new entries once this many trades are done for the day.", default: "3", subheader: "Day guards" },
+      { key: "ST_RSI_PIV_BB_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 0, max: 50000, step: 250, effect: EFFECT.SESSION, desc: "Stop trading for the rest of the day once losses reach this much (0 = off). Example: at 5000, two losers of ₹2,600 each (₹5,200) end the day.", default: "5000" },
+
+      // ── Backtest ──
+    ],
+  },
+  {
     section: "BN_EMA_RSI_ST_V2 STRATEGY (NIFTY BANK — EMA20/50 + RSI + SuperTrend trail) — Zerodha",
     icon: "\u{1F3E6}",
     nav: "BN_EMA_RSI_ST_V2",
@@ -1115,6 +1158,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_BN_PIVOT_RSI_ST_STARTED", label: "BN Pivot RSI ST — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a BN Pivot RSI ST session starts.", default: "true" },
       { key: "TG_EMA_RSI_ST_V2_STARTED", label: "EMA_RSI_ST_V2 — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an EMA_RSI_ST_V2 session starts.", default: "true" },
       { key: "TG_BN_EMA_RSI_ST_V2_STARTED", label: "BN_EMA_RSI_ST_V2 — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a BN_EMA_RSI_ST_V2 (NIFTY BANK) session starts.", default: "true" },
+      { key: "TG_ST_RSI_PIV_BB_STARTED", label: "ST_RSI_PIV_BB — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an ST_RSI_PIV_BB session starts.", default: "true" },
       { key: "TG_CMX_STARTED", label: "Commodity (MCX) — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when any Crude / Gold / Silver paper page starts.", default: "true" },
 
       { key: "TG_EMA_RSI_ST_ENTRY", label: "EMA_RSI_ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST entry.", default: "true", subheader: "Trade Entry" },
@@ -1132,6 +1176,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_BN_PIVOT_RSI_ST_ENTRY", label: "BN Pivot RSI ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BN Pivot RSI ST entry.", default: "true" },
       { key: "TG_EMA_RSI_ST_V2_ENTRY", label: "EMA_RSI_ST_V2 — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST_V2 entry.", default: "true" },
       { key: "TG_BN_EMA_RSI_ST_V2_ENTRY", label: "BN_EMA_RSI_ST_V2 — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BN_EMA_RSI_ST_V2 (NIFTY BANK) entry.", default: "true" },
+      { key: "TG_ST_RSI_PIV_BB_ENTRY", label: "ST_RSI_PIV_BB — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every ST_RSI_PIV_BB entry.", default: "true" },
       { key: "TG_CMX_ENTRY", label: "Commodity (MCX) — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Crude / Gold / Silver paper entry.", default: "true" },
 
       { key: "TG_EMA_RSI_ST_EXIT", label: "EMA_RSI_ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST exit.", default: "true", subheader: "Trade Exit" },
@@ -1149,6 +1194,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_BN_PIVOT_RSI_ST_EXIT", label: "BN Pivot RSI ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BN Pivot RSI ST exit.", default: "true" },
       { key: "TG_EMA_RSI_ST_V2_EXIT", label: "EMA_RSI_ST_V2 — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST_V2 exit.", default: "true" },
       { key: "TG_BN_EMA_RSI_ST_V2_EXIT", label: "BN_EMA_RSI_ST_V2 — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BN_EMA_RSI_ST_V2 (NIFTY BANK) exit.", default: "true" },
+      { key: "TG_ST_RSI_PIV_BB_EXIT", label: "ST_RSI_PIV_BB — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every ST_RSI_PIV_BB exit.", default: "true" },
       { key: "TG_CMX_EXIT", label: "Commodity (MCX) — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Crude / Gold / Silver paper exit.", default: "true" },
 
       { key: "TG_EMA_RSI_ST_SIGNALS", label: "EMA_RSI_ST — Signal/Skip Alerts", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert why a trade was or wasn't taken.", default: "true", subheader: "Signal / Skip" },
@@ -1171,6 +1217,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_BN_PIVOT_RSI_ST_DAYREPORT", label: "BN Pivot RSI ST — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a BN Pivot RSI ST day summary on stop.", default: "true" },
       { key: "TG_EMA_RSI_ST_V2_DAYREPORT", label: "EMA_RSI_ST_V2 — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send an EMA_RSI_ST_V2 day summary on stop.", default: "true" },
       { key: "TG_BN_EMA_RSI_ST_V2_DAYREPORT", label: "BN_EMA_RSI_ST_V2 — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a BN_EMA_RSI_ST_V2 (NIFTY BANK) day summary on stop.", default: "true" },
+      { key: "TG_ST_RSI_PIV_BB_DAYREPORT", label: "ST_RSI_PIV_BB — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send an ST_RSI_PIV_BB day summary on stop.", default: "true" },
       { key: "TG_CMX_DAYREPORT", label: "Commodity (MCX) — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a day summary when a Crude / Gold / Silver paper page stops.", default: "true" },
 
       { key: "TG_DAYREPORT_CONSOLIDATED", label: "Consolidated Day Report (Market Close)", type: "toggle", effect: EFFECT.INSTANT, desc: "Send one combined end-of-day summary at 15:30 IST.", default: "true" },
@@ -1282,6 +1329,7 @@ const SETTINGS_SCHEMA = [
       { key: "BN_PIVOT_RSI_ST_MODE_ENABLED", label: "BN Pivot RSI ST Mode (NIFTY BANK)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the BN Pivot RSI ST menu and settings. This is the NIFTY BANK replica of RSI Pivot ST.", default: "true" },
       { key: "EMA_RSI_ST_V2_MODE_ENABLED", label: "EMA_RSI_ST_V2 Mode", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the EMA_RSI_ST_V2 menu and settings. A separate strategy from EMA_RSI_ST, not a mode of it. Ships OFF because V2 is unproven — turn it on to paper-trade it.", default: "false" },
       { key: "BN_EMA_RSI_ST_V2_MODE_ENABLED", label: "BN EMA_RSI_ST_V2 Mode (NIFTY BANK)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the BN EMA_RSI_ST_V2 menu and settings. The same rules as EMA_RSI_ST_V2 but traded on NIFTY BANK, with its own settings and its own position — the two can run side by side. Ships OFF and unproven.", default: "false" },
+      { key: "ST_RSI_PIV_BB_MODE_ENABLED", label: "ST_RSI_PIV_BB Mode", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the ST_RSI_PIV_BB menu and settings — SuperTrend + RSI + pivot R1/S1 + Bollinger, all four on one candle. Ships OFF because it is unproven — turn it on to paper-trade it.", default: "false" },
       { key: "CMX_CRUDE_EMA_RSI_ST_MODE_ENABLED", label: "Crude Oil EMA_RSI_ST Mode (Commodity)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the COMMODITY → Crude Oil → EMA_RSI_ST Paper page and allow it to start. The EMA_RSI_ST rules on MCX crude oil, paper only, separate from every NIFTY strategy. Ships OFF.", default: "false" },
       { key: "CMX_CRUDE_EMA_RSI_ST_V2_MODE_ENABLED", label: "Crude Oil EMA_RSI_ST_V2 Mode (Commodity)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the COMMODITY → Crude Oil → EMA_RSI_ST_V2 Paper page and allow it to start. The EMA_RSI_ST_V2 rules on MCX crude oil, paper only, separate from every NIFTY strategy. Ships OFF.", default: "false" },
       { key: "CMX_GOLD_EMA_RSI_ST_MODE_ENABLED", label: "Gold EMA_RSI_ST Mode (Commodity)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the COMMODITY → Gold → EMA_RSI_ST Paper page and allow it to start. The EMA_RSI_ST rules on MCX gold, paper only, separate from every NIFTY strategy. Ships OFF.", default: "false" },
@@ -1384,6 +1432,12 @@ const SETTINGS_SCHEMA = [
       { key: "UI_SHOW_BN_EMA_RSI_ST_V2_PAPER",    label: "BN EMA_RSI_ST_V2 → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under BN EMA_RSI_ST_V2 (NIFTY BANK).", default: "false" },
       { key: "UI_SHOW_BN_EMA_RSI_ST_V2_LIVE_HARNESS", label: "BN EMA_RSI_ST_V2 → Live", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (the paper-wrapping harness) under BN EMA_RSI_ST_V2 (NIFTY BANK).", default: "false" },
       { key: "UI_SHOW_BN_EMA_RSI_ST_V2_HISTORY",  label: "BN EMA_RSI_ST_V2 → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under BN EMA_RSI_ST_V2 (NIFTY BANK).", default: "false" },
+      // ── ST_RSI_PIV_BB submenu ── defaults match what sharedNav falls back to
+      // (Backtest/Paper/History on, Live off); the whole group stays hidden
+      // until ST_RSI_PIV_BB_MODE_ENABLED is switched on.
+      { key: "UI_SHOW_ST_RSI_PIV_BB_PAPER",    label: "ST_RSI_PIV_BB → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under ST_RSI_PIV_BB.", default: "true" },
+      { key: "UI_SHOW_ST_RSI_PIV_BB_LIVE_HARNESS", label: "ST_RSI_PIV_BB → Live", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (the paper-wrapping harness at /st_rsi_piv_bb-live) under ST_RSI_PIV_BB.", default: "false" },
+      { key: "UI_SHOW_ST_RSI_PIV_BB_HISTORY",  label: "ST_RSI_PIV_BB → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under ST_RSI_PIV_BB.", default: "true" },
 
       // ── System submenu (Settings is always shown) ──
       { key: "UI_SHOW_LOGS",       label: "Logs → Server Logs tab", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Server Logs tab.", default: "true", subheader: "System sub-menus" },
@@ -1459,6 +1513,7 @@ const MODE_SECTION_TITLES = {
   bn_pivot_rsi_st: "BN_PIVOT_RSI_ST STRATEGY (NIFTY BANK — RSI + Standard Pivot R1/S1 + SuperTrend) — Zerodha",
   ema_rsi_st_v2: "EMA_RSI_ST_V2 STRATEGY (EMA20/50 + RSI + SuperTrend trail) — Zerodha",
   bn_ema_rsi_st_v2: "BN_EMA_RSI_ST_V2 STRATEGY (NIFTY BANK — EMA20/50 + RSI + SuperTrend trail) — Zerodha",
+  st_rsi_piv_bb: "ST_RSI_PIV_BB STRATEGY (SuperTrend + RSI + Pivot R1/S1 + Bollinger) — Zerodha",
   early_bird: "EARLYBIRD STRATEGY (first 15-min breakout, CASH EQUITY) — Fyers",
 };
 const SNAPSHOT_COMMON_SECTION_TITLES = new Set([
@@ -1468,6 +1523,7 @@ const SNAPSHOT_COMMON_SECTION_TITLES = new Set([
 ]);
 
 const _MODE_KEYS = { ema_rsi_st: new Set(), bb_rsi: new Set(), pa: new Set(), orb: new Set(), ema9vwap: new Set(), trend_pb: new Set(), trend_day_scalp: new Set(), ha_scalp: new Set(), prev_orb_scalp: new Set(), simple930: new Set(), rsi_pivot_st: new Set(), bn_pivot_rsi_st: new Set(), ema_rsi_st_v2: new Set(), bn_ema_rsi_st_v2: new Set(), early_bird: new Set() };
+_MODE_KEYS.st_rsi_piv_bb = new Set();
 const _KEY_TO_MODES = new Map();
 (function buildModeKeyIndex() {
   const commonKeys = [];
@@ -2446,6 +2502,8 @@ router.get("/", (req, res) => {
   const emaRsiStV2ModeOn = (envData["EMA_RSI_ST_V2_MODE_ENABLED"] ?? process.env.EMA_RSI_ST_V2_MODE_ENABLED ?? "false").toLowerCase() === "true";
   // The NIFTY BANK sibling — also "false" by default.
   const bnEmaRsiStV2ModeOn = (envData["BN_EMA_RSI_ST_V2_MODE_ENABLED"] ?? process.env.BN_EMA_RSI_ST_V2_MODE_ENABLED ?? "false").toLowerCase() === "true";
+  // ST_RSI_PIV_BB — also "false" by default, like V2.
+  const stRsiPivBbModeOn = (envData["ST_RSI_PIV_BB_MODE_ENABLED"] ?? process.env.ST_RSI_PIV_BB_MODE_ENABLED ?? "false").toLowerCase() === "true";
   // Commodity section shows once any commodity page is on.
   const cmxModeOn = ["CRUDE", "GOLD", "SILVER"].flatMap(c => [`CMX_${c}_EMA_RSI_ST_MODE_ENABLED`, `CMX_${c}_EMA_RSI_ST_V2_MODE_ENABLED`])
     .some(k => (envData[k] ?? process.env[k] ?? "false").toLowerCase() === "true");
@@ -2467,6 +2525,7 @@ router.get("/", (req, res) => {
     "BN_PIVOT_RSI_ST STRATEGY (NIFTY BANK — RSI + Standard Pivot R1/S1 + SuperTrend) — Zerodha": bnPivotRsiStModeOn,
     "EMA_RSI_ST_V2 STRATEGY (EMA20/50 + RSI + SuperTrend trail) — Zerodha": emaRsiStV2ModeOn,
     "BN_EMA_RSI_ST_V2 STRATEGY (NIFTY BANK — EMA20/50 + RSI + SuperTrend trail) — Zerodha": bnEmaRsiStV2ModeOn,
+    "ST_RSI_PIV_BB STRATEGY (SuperTrend + RSI + Pivot R1/S1 + Bollinger) — Zerodha": stRsiPivBbModeOn,
     "COMMODITY (MCX crude / gold / silver) — EMA_RSI_ST + EMA_RSI_ST_V2, paper only": cmxModeOn,
     "EARLYBIRD STRATEGY (first 15-min breakout, CASH EQUITY) — Fyers": earlyBirdModeOn,
   };

@@ -55,6 +55,11 @@ function _activeZerodhaModes() {
     if (!/^get[A-Za-z0-9]*Mode$/.test(name) || typeof fn !== "function") continue;
     try { const m = fn(); if (m && _ZERODHA_STRATEGY_RE.test(m) && !out.includes(m)) out.push(m); } catch (_) {}
   }
+  // ST_RSI_PIV_BB — Fyers candles, Zerodha orders.
+  try {
+    const m = sharedSocketState.getStRsiPivBbMode && sharedSocketState.getStRsiPivBbMode();
+    if (m && /^ST_RSI_PIV_BB_(PAPER|LIVE)$/.test(m) && !out.includes(m)) out.push(m);
+  } catch (_) {}
   return out;
 }
 

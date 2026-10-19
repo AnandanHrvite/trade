@@ -26,6 +26,7 @@ const GUIDE_MODE_BY_FILE = {
   "ema_rsi_st_strategy_guide.html":    "EMA_RSI_ST",
   "ema_rsi_st_v2_strategy_guide.html": "EMA_RSI_ST_V2",
   "bn_ema_rsi_st_v2_strategy_guide.html": "BN_EMA_RSI_ST_V2",
+  "st_rsi_piv_bb_strategy_guide.html": "ST_RSI_PIV_BB",
   "bb_rsi_strategy_guide.html":        "BB_RSI",
   "price_action_strategy_guide.html":  "PA",
   "orb_strategy_guide.html":           "ORB",
@@ -850,6 +851,15 @@ const GUIDE_STATUS = {
     { type: "value", label: "SuperTrend Period", key: "BN_EMA_RSI_ST_V2_SUPERTREND_PERIOD", def: "10" },
     { type: "value", label: "SuperTrend Multiplier", key: "BN_EMA_RSI_ST_V2_SUPERTREND_MULT", def: "2" },
   ] }] },
+  // ST_RSI_PIV_BB — every key below is its own; the mode toggle defaults FALSE
+  // (like V2), so the guide stays hidden until it is switched on in Settings.
+  "ST_RSI_PIV_BB_Strategy_Guide.html": { title: "ST_RSI_PIV_BB — Live Configuration", groups: [{ rows: [
+    { type: "bool", label: "ST_RSI_PIV_BB Mode (sidebar + Settings section)", key: "ST_RSI_PIV_BB_MODE_ENABLED", def: "false" },
+    { type: "live", label: "Live Orders (Zerodha)", enableKey: "ST_RSI_PIV_BB_LIVE_ENABLED", dryKey: "ST_RSI_PIV_BB_LIVE_DRY_RUN" },
+    { type: "value", label: "Entry Timeframe (3 / 5 / BOTH)", key: "ST_RSI_PIV_BB_ENTRY_TF", def: "BOTH" },
+    { type: "value", label: "SuperTrend Period", key: "ST_RSI_PIV_BB_ST_PERIOD", def: "10" },
+    { type: "value", label: "SuperTrend Multiplier", key: "ST_RSI_PIV_BB_ST_MULT", def: "2" },
+  ] }] },
   "BB_RSI_Strategy_Guide.html": { title: "BB_RSI — Live Configuration", groups: [{ rows: [
     { type: "bool", label: "BB_RSI Mode (sidebar + Settings section)", key: "BB_RSI_MODE_ENABLED", def: "true" },
     { type: "live", label: "Live Orders (Fyers)", enableKey: "BB_RSI_LIVE_ENABLED", dryKey: "BB_RSI_LIVE_DRY_RUN" },
@@ -965,6 +975,7 @@ const GUIDE_STATUS = {
       { type: "bool", label: "EMA_RSI_ST Mode", key: "EMA_RSI_ST_MODE_ENABLED", def: "true" },
       { type: "bool", label: "EMA_RSI_ST_V2 Mode", key: "EMA_RSI_ST_V2_MODE_ENABLED", def: "false" },
       { type: "bool", label: "BN EMA_RSI_ST_V2 Mode (NIFTY BANK, monthly options)", key: "BN_EMA_RSI_ST_V2_MODE_ENABLED", def: "false" },
+      { type: "bool", label: "ST_RSI_PIV_BB Mode", key: "ST_RSI_PIV_BB_MODE_ENABLED", def: "false" },
       { type: "bool", label: "BB_RSI Mode", key: "BB_RSI_MODE_ENABLED", def: "true" },
       { type: "bool", label: "Price Action Mode", key: "PA_MODE_ENABLED", def: "true" },
       { type: "bool", label: "ORB Mode", key: "ORB_MODE_ENABLED", def: "true" },

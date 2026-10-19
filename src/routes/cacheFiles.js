@@ -67,6 +67,8 @@ const STRATEGY_BADGE = {
   // Same engine on NIFTY BANK — its own key, so a BN replay output is never
   // badged as the NIFTY one.
   bn_ema_rsi_st_v2: { label: "BN EMA_RSI_ST_V2", cls: "mode-bn_ema_rsi_st_v2" },
+  // ST_RSI_PIV_BB — its own key.
+  st_rsi_piv_bb: { label: "ST_RSI_PIV_BB", cls: "mode-st_rsi_piv_bb" },
   bb_rsi:    { label: "BB_RSI",    cls: "mode-bb_rsi" },
   pa:       { label: "PA",       cls: "mode-pa" },
   orb:      { label: "ORB",      cls: "mode-orb" },
@@ -189,6 +191,8 @@ async function _readHead(abs) {
 
 async function detectMeta(group, rel, abs, mtimeMs) {
   if (!group.tagged) return { strat: null, date: null };
+  // ST_RSI_PIV_BB — tested first so its files carry their own badge.
+  if (/^st_rsi_piv_bb\b/i.test(path.basename(rel))) return { strat: "st_rsi_piv_bb", date: null };
   // Filename-encoded modes (replay / replay_sim outputs) — no per-file date.
   const nameMatch = path.basename(rel).match(/^(bn_ema_rsi_st_v2|ema_rsi_st_v2|ema_rsi_st|bb_rsi|pa|orb|trend_pb|trend_day_scalp|ha_scalp|prev_orb_scalp|bn_pivot_rsi_st|rsi_pivot_st|simple930|early_bird)\b/i);
   if (nameMatch) return { strat: nameMatch[1].toLowerCase(), date: null };
@@ -200,6 +204,7 @@ async function detectMeta(group, rel, abs, mtimeMs) {
     const obj = await _readHead(abs);
     const m = String(obj && obj.mode || "").match(/^(bn_ema_rsi_st_v2|ema_rsi_st_v2|ema_rsi_st|bb_rsi|pa|orb|trend[-_]pb)/i);
     if (m) meta.strat = m[1].toLowerCase().replace(/-/g, "_");   // "trend-pb" → "trend_pb"
+    if (!meta.strat && /^st_rsi_piv_bb/i.test(String(obj && obj.mode || ""))) meta.strat = "st_rsi_piv_bb";
     // `date` was added to cached results later; fall back to a numeric sessionId (epoch ms).
     if (typeof obj.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(obj.date)) meta.date = obj.date;
     else if (typeof obj.sessionId === "number") meta.date = _istDateFromMs(obj.sessionId);
@@ -522,6 +527,7 @@ router.get("/", (req, res) => {
     .mode-ema_rsi_st    { color:#60a5fa; }
     .mode-ema_rsi_st_v2 { color:#7dd3fc; }
     .mode-bn_ema_rsi_st_v2 { color:#5eead4; }
+    .mode-st_rsi_piv_bb { color:#bef264; }
     .mode-bb_rsi    { color:#fbbf24; }
     .mode-pa       { color:#a78bfa; }
     .mode-orb      { color:#10b981; }
@@ -664,6 +670,7 @@ ${embed ? '' : buildSidebar('tradeLogs', liveActive)}
     ema_rsi_st:    { label: 'EMA_RSI_ST',    cls: 'mode-ema_rsi_st' },
     ema_rsi_st_v2: { label: 'EMA_RSI_ST_V2', cls: 'mode-ema_rsi_st_v2' },
     bn_ema_rsi_st_v2: { label: 'BN EMA_RSI_ST_V2', cls: 'mode-bn_ema_rsi_st_v2' },
+    st_rsi_piv_bb: { label: 'ST_RSI_PIV_BB', cls: 'mode-st_rsi_piv_bb' },
     bb_rsi:    { label: 'BB_RSI',    cls: 'mode-bb_rsi' },
     pa:       { label: 'PA',       cls: 'mode-pa' },
     orb:      { label: 'ORB',      cls: 'mode-orb' },

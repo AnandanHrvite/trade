@@ -51,6 +51,9 @@ const STRATEGY_DEFS = [
   // BN_EMA_RSI_ST_V2: EMA_RSI_ST_V2's rules on NIFTY BANK. No legacy live route
   // either, so livePrefix points at its harness. defaultOff like its sibling.
   { key:'BN_EMA_RSI_ST_V2', label:'BN EMA_RSI_ST_V2', accentClass:'bnemarsistv2', accent:'#2dd4bf', paperPrefix:'/bn_ema_rsi_st_v2-paper', livePrefix:'/bn_ema_rsi_st_v2-live-harness', hasDayLog:true, modeFlag:'BN_EMA_RSI_ST_V2_MODE_ENABLED', defaultOff:true },
+  // ST_RSI_PIV_BB: SuperTrend + RSI + pivot R1/S1 + Bollinger. Like V2 it has no
+  // legacy live route — livePrefix is its paper-wrapping harness. defaultOff like V2.
+  { key:'ST_RSI_PIV_BB', label:'ST_RSI_PIV_BB', accentClass:'strsipivbb', accent:'#a3e635', paperPrefix:'/st_rsi_piv_bb-paper', livePrefix:'/st_rsi_piv_bb-live', hasDayLog:true, modeFlag:'ST_RSI_PIV_BB_MODE_ENABLED', defaultOff:true },
   { key:'SIMPLE930', label:'SIMPLE_9:30', accentClass:'simple930', accent:'#fb923c', paperPrefix:'/simple930-paper', livePrefix:'/simple930-live', hasDayLog:true, modeFlag:'SIMPLE930_MODE_ENABLED' },
   // EarlyBird trades CASH EQUITY of several stocks at once — its /status/data
   // returns `positions[]`, not a single `position`, so renderColumn below
@@ -80,6 +83,7 @@ function enabledStrategies() {
 // Broker investment pools: each strategy's paper P&L draws from one shared pool.
 // EMA_RSI_ST trades through Zerodha; BB_RSI/PA/ORB through Fyers.
 const BROKER_OF = { EMA_RSI_ST:'ZERODHA', EMA_RSI_ST_V2:'ZERODHA', BB_RSI:'FYERS', PA:'FYERS', ORB:'FYERS', EMA9VWAP:'ZERODHA', TREND_PB:'FYERS', TDS:'FYERS', HA_SCALP:'ZERODHA', PREV_ORB_SCALP:'ZERODHA', RSI_PIVOT_ST:'ZERODHA', BN_PIVOT_RSI_ST:'ZERODHA', BN_EMA_RSI_ST_V2:'ZERODHA', SIMPLE930:'ZERODHA', EARLYBIRD:'FYERS' };
+BROKER_OF.ST_RSI_PIV_BB = 'ZERODHA'; // Fyers candles, Zerodha orders
 function brokerPools(strategies) {
   // Same fallback as capitalPool.baseCapital — the ribbon must show the amount the gate uses.
   const inv = (v) => (n => Number.isFinite(n) && n >= 0 ? n : 100000)(parseFloat(v || '100000'));
@@ -309,6 +313,7 @@ ${faviconLink()}
   .card.emarsistv2 { border-top-color:#38bdf8; }
   .card.bnpivotrsist { border-top-color:#818cf8; }
   .card.bnemarsistv2 { border-top-color:#2dd4bf; }
+  .card.strsipivbb { border-top-color:#a3e635; }
   .card.simple930 { border-top-color:#fb923c; }
   .card.earlybird { border-top-color:#14b8a6; }
   .card.cmx { border-top-color:#eab308; }

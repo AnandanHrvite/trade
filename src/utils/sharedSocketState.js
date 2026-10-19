@@ -69,6 +69,12 @@ let emaRsiStV2Mode = null;
 // side by side. Only paper-vs-live WITHIN the BN strategy is mutually exclusive.
 let bnEmaRsiStV2Mode = null;
 
+// ST_RSI_PIV_BB mode: "ST_RSI_PIV_BB_PAPER" | "ST_RSI_PIV_BB_LIVE" | null
+// Its OWN slot — a separate strategy with its own settings and position file,
+// so it may run side by side with every other strategy. Only paper-vs-live
+// WITHIN ST_RSI_PIV_BB is mutually exclusive.
+let stRsiPivBbMode = null;
+
 // EarlyBird mode: "EARLY_BIRD_PAPER" | "EARLY_BIRD_LIVE" | null
 let earlyBirdMode = null;
 
@@ -329,6 +335,24 @@ function getBnEmaRsiStV2Mode() {
   return bnEmaRsiStV2Mode;
 }
 
+// ── ST_RSI_PIV_BB mode ──────────────────────────────────────────────────────
+
+function setStRsiPivBbMode(mode) {
+  stRsiPivBbMode = mode;
+}
+
+function clearStRsiPivBbMode() {
+  stRsiPivBbMode = null;
+}
+
+function isStRsiPivBbActive() {
+  return stRsiPivBbMode !== null;
+}
+
+function getStRsiPivBbMode() {
+  return stRsiPivBbMode;
+}
+
 // ── SIMPLE_9:30 mode (9:30 option-premium trigger) ──────────────────────────
 
 function setSimple930Active(mode) {
@@ -360,6 +384,7 @@ function isAnyActive() {
          rsiPivotStMode !== null || bnPivotRsiStMode !== null ||
          emaRsiStV2Mode !== null ||
          bnEmaRsiStV2Mode !== null ||
+         stRsiPivBbMode !== null ||
          simple930Mode !== null;
 }
 
@@ -487,6 +512,15 @@ function _canStartRaw(mode) {
       if (bnEmaRsiStV2Mode === "BN_EMA_RSI_ST_V2_PAPER") return { allowed: false, reason: "BN_EMA_RSI_ST_V2 Paper is running — stop it first" };
       if (bnEmaRsiStV2Mode === "BN_EMA_RSI_ST_V2_LIVE")  return { allowed: false, reason: "BN_EMA_RSI_ST_V2 Live is already running" };
       return { allowed: true };
+    // ST_RSI_PIV_BB is a separate strategy, checked ONLY against its own sibling.
+    case "ST_RSI_PIV_BB_PAPER":
+      if (stRsiPivBbMode === "ST_RSI_PIV_BB_LIVE")  return { allowed: false, reason: "ST_RSI_PIV_BB Live is running — stop it first" };
+      if (stRsiPivBbMode === "ST_RSI_PIV_BB_PAPER") return { allowed: false, reason: "ST_RSI_PIV_BB Paper is already running" };
+      return { allowed: true };
+    case "ST_RSI_PIV_BB_LIVE":
+      if (stRsiPivBbMode === "ST_RSI_PIV_BB_PAPER") return { allowed: false, reason: "ST_RSI_PIV_BB Paper is running — stop it first" };
+      if (stRsiPivBbMode === "ST_RSI_PIV_BB_LIVE")  return { allowed: false, reason: "ST_RSI_PIV_BB Live is already running" };
+      return { allowed: true };
     case "SIMPLE930_PAPER":
       if (simple930Mode === "SIMPLE930_LIVE")  return { allowed: false, reason: "SIMPLE_9:30 Live is running — stop it first" };
       if (simple930Mode === "SIMPLE930_PAPER") return { allowed: false, reason: "SIMPLE_9:30 Paper is already running" };
@@ -560,6 +594,8 @@ module.exports = {
   setEmaRsiStV2Mode, clearEmaRsiStV2Mode, isEmaRsiStV2Active, getEmaRsiStV2Mode,
   // BN_EMA_RSI_ST_V2 (NIFTY BANK)
   setBnEmaRsiStV2Mode, clearBnEmaRsiStV2Mode, isBnEmaRsiStV2Active, getBnEmaRsiStV2Mode,
+  // ST_RSI_PIV_BB
+  setStRsiPivBbMode, clearStRsiPivBbMode, isStRsiPivBbActive, getStRsiPivBbMode,
   // SIMPLE_9:30
   setSimple930Active, clearSimple930, isSimple930Active, getSimple930Mode,
   // Combined
@@ -574,6 +610,7 @@ const _CLEAR_SLOT = {
   clearHaScalp: "HA_SCALP", clearPrevOrbScalp: "PREV_ORB_SCALP", clearEarlyBird: "EARLY_BIRD",
   clearRsiPivotSt: "RSI_PIVOT_ST", clearBnPivotRsiStMode: "BN_PIVOT_RSI_ST",
   clearEmaRsiStV2Mode: "EMA_RSI_ST_V2", clearBnEmaRsiStV2Mode: "BN_EMA_RSI_ST_V2",
+  clearStRsiPivBbMode: "ST_RSI_PIV_BB",
   clearSimple930: "SIMPLE930",
 };
 for (const name of Object.keys(module.exports)) {
