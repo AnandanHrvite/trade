@@ -1162,7 +1162,10 @@ function _entryBlockReason(cfg) {
   if (ptState._dailyLossHit) return `daily loss limit hit (₹${cfg.MAX_DAILY_LOSS}) — no more entries today`;
   // The cap is read live: lowering it in Settings mid-session blocks at once.
   const _dayPnl = (ptState.sessionPnl || 0) + (ptState._priorRealizedToday || 0);
-  if (cfg.MAX_DAILY_LOSS > 0 && _dayPnl <= -cfg.MAX_DAILY_LOSS) return `daily loss limit hit (₹${_dayPnl.toFixed(0)} ≤ -₹${cfg.MAX_DAILY_LOSS}) — no more entries today`;
+  if (cfg.MAX_DAILY_LOSS > 0 && _dayPnl <= -cfg.MAX_DAILY_LOSS) {
+    ptState._dailyLossHit = true;   // latch, so the status card shows it too
+    return `daily loss limit hit (₹${_dayPnl.toFixed(0)} ≤ -₹${cfg.MAX_DAILY_LOSS}) — no more entries today`;
+  }
   const _taken = ptState.sessionTrades.length + (ptState._priorTradesToday || 0);
   if (_taken >= cfg.MAX_DAILY_TRADES) return `daily max trades (${cfg.MAX_DAILY_TRADES}) reached`;
   const pf = require("../utils/portfolioRisk").checkPortfolioCap();
@@ -1285,6 +1288,12 @@ function _attemptEntry(sig, signalCandle, fillSpot, pending) {
       });
     }
     if (pending) ptState._pendingEntry = null;
+    else if (ptState._entryPending && !ptState.position && ptState.running) {
+      // An older fill is still in flight. It abandons itself once it sees this
+      // newer close, so park THIS signal for the tick loop to retry — otherwise
+      // the newer 4/4 is lost along with the stale one.
+      ptState._pendingEntry = { sig, candle: signalCandle, attempts: 0, lastAttemptMs: 0 };
+    }
     return;
   }
   ptState._entryPending = true;   // synchronous — before the first await
