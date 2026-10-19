@@ -165,6 +165,18 @@ test("checkBar: PE mirror", () => {
   assert.strictEqual(k.PE.count, 4);
   assert.strictEqual(E.checkBar(b, 0, fakeSeries(30, 104, 96, 100, -1), PIV).PE.rsi, false);       // 30 is not < 30
 });
+test("checkBar: PE reads S1 and the LOWER band, not R1 / the upper band", () => {
+  // Close 100: below R1 (101) but above S1 (99) → pivot box must fail.
+  const mid = { time: BAR.time, open: 100, high: 100.5, low: 99.5, close: 100 };
+  assert.strictEqual(E.checkBar(mid, 0, fakeSeries(25, 104, 90, 103, -1), PIV).PE.piv, false);
+  // Close 95: below the upper band (104) but above the lower band (94) → band box must fail.
+  const b = { time: BAR.time, open: 96, high: 97, low: 94, close: 95 };
+  assert.strictEqual(E.checkBar(b, 0, fakeSeries(25, 104, 94, 100, -1), PIV).PE.bb, false);
+  assert.strictEqual(E.checkBar(b, 0, fakeSeries(25, 104, 94, 100, -1), PIV).PE.count, 3);
+  // And CE mirrors: close 100 is above S1 but not R1; above the lower band but not the upper.
+  assert.strictEqual(E.checkBar(mid, 0, fakeSeries(75, 104, 96, 97, 1), PIV).CE.piv, false);
+  assert.strictEqual(E.checkBar(mid, 0, fakeSeries(75, 104, 96, 97, 1), PIV).CE.bb, false);
+});
 test("checkBar: missing inputs → not ready", () => {
   assert.strictEqual(E.checkBar(BAR, 0, fakeSeries(null, 104, 96, 100, 1), PIV).ready, false);
   assert.strictEqual(E.checkBar(BAR, 0, fakeSeries(75, 104, 96, null, 1), PIV).ready, false);
@@ -279,9 +291,14 @@ test("BOTH: 5-min chart disagrees (flat) → no trade", () => {
   assert.ok(/5m only/.test(r.reason), r.reason);
 });
 test("BOTH: 5-min chart warming up → refuse", () => {
-  const short = UP5.slice(-10);
+  // 24 bars: every 5-min indicator is ready and 4/4, but the chart is one bar
+  // short of the 25 the engine requires — only the warm-up guard can refuse.
+  const short = UP5.slice(-24);
   const r = E.getSignal(UP3, { pivots: PIV, confirmCandles: short, silent: true });
   assert.strictEqual(r.signal, "NONE"); assert.strictEqual(r.warmup, true);
+  assert.ok(/warming up \(24\/25\)/.test(r.reason), r.reason);
+  // …and 25 of the same bars is enough.
+  assert.strictEqual(E.getSignal(UP3, { pivots: PIV, confirmCandles: UP5.slice(-25), silent: true }).signal, "BUY_CE");
 });
 test("ENTRY_TF 5: trades the 5-min chart alone", () => withEnv({ ST_RSI_PIV_BB_ENTRY_TF: "5" }, () => {
   const r = E.getSignal(UP5, { pivots: PIV, silent: true });
@@ -323,6 +340,14 @@ test("trailStop: CE tightens up, never loosens", () => withEnv(TF3, () => {
   assert.strictEqual(t1.changed, true); assert.strictEqual(t1.stop, lvl);
   const t2 = E.trailStop(UP3, "CE", lvl + 1, cfg);
   assert.strictEqual(t2.changed, false); assert.strictEqual(t2.stop, lvl + 1);
+}));
+test("trailStop: PE tightens down, never loosens", () => withEnv(TF3, () => {
+  const cfg = E.getConfig();
+  const lvl = E.computeSeries(DN3, cfg).supertrend[DN3.length - 1].value;
+  const t1 = E.trailStop(DN3, "PE", lvl + 5, cfg);
+  assert.strictEqual(t1.changed, true); assert.strictEqual(t1.stop, lvl);
+  const t2 = E.trailStop(DN3, "PE", lvl - 1, cfg);
+  assert.strictEqual(t2.changed, false); assert.strictEqual(t2.stop, lvl - 1);
 }));
 test("trailStop: an opposite-trend SuperTrend never moves the stop", () => withEnv(TF3, () => {
   const cfg = E.getConfig();

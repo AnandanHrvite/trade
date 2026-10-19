@@ -20,8 +20,7 @@
  *   1. SuperTrend RED · 2. RSI < ST_RSI_PIV_BB_RSI_PE_MAX (30) ·
  *   3. close < S1 · 4. close < the lower Bollinger Band
  *   3 of 4 is not a trade. Entry is on THAT candle — there is NO confirmation
- *   candle. Paper/Live fill at the first tick after the candle closes; Backtest
- *   fills at the next bar's OPEN. Those are the same market moment.
+ *   candle. Paper/Live fill at the first tick after the candle closes.
  *
  * ── TIMEFRAME — ST_RSI_PIV_BB_ENTRY_TF = 3 | 5 | BOTH (default BOTH) ─────────
  *   3     the four conditions are read on the 3-min chart; the trade lives there.
@@ -52,7 +51,8 @@
  *
  * ── DETERMINISM ─────────────────────────────────────────────────────────────
  *   Every decision reads closed-candle OHLC and the previous day's daily bar.
- *   Never a live tick, never live spot — so Paper ≡ Replay ≡ Backtest.
+ *   Never a live tick, never live spot — so Paper and Live decide identically.
+ *   (Paper + Live only: this strategy has no Backtest or Replay page.)
  *
  * ── NOT MARKET-VALIDATED ────────────────────────────────────────────────────
  *   Zero trades, paper or live. Every threshold is the user's stated rule (from
@@ -179,7 +179,7 @@ function isInTradingWindow(barTimeSec, cfg) {
 // ── Traditional (floor) pivots ───────────────────────────────────────────────
 /**
  * Levels for the IST day `opts.forDayKey`, from the newest daily bar strictly
- * BEFORE that day — so a backtest walking history never peeks at the day it is
+ * BEFORE that day — so a walk over history never peeks at the day it is
  * trading, and a forming daily bar can never make R1/S1 drift intraday.
  * Two daily bars on one IST day means intraday candles were passed → refuse.
  * @returns {{ pp, r1, s1, r2, s2, range, from, fromDayKey, forDayKey } | null}
@@ -324,10 +324,10 @@ const _NO = { stopLoss: null, slSpot: null, entrySpot: null, prevCandleHigh: nul
  *             signal candle.
  *   opts.pivots          — computePivots(daily, { forDayKey: signal day }). REQUIRED.
  *   opts.confirmCandles  — BOTH only: closed 5-min bars from the same feed.
- *   opts.precomputed     — BACKTEST ONLY: { series, endIdx, cfg } over the whole
+ *   opts.precomputed     — OFFLINE ANALYSIS / TESTS ONLY: { series, endIdx, cfg } over the whole
  *                          array; every indicator is causal, so it is identical to
  *                          recomputing on candles.slice(0, endIdx+1).
- *   opts.confirmSeries   — BACKTEST ONLY: computeSeries(confirmCandles) over the whole array.
+ *   opts.confirmSeries   — OFFLINE ANALYSIS / TESTS ONLY: computeSeries(confirmCandles) over the whole array.
  *   opts.skipTimeCheck   — exit-time indicator snapshots only, never the entry path.
  * Returns { signal: "BUY_CE"|"BUY_PE"|"NONE", reason, warmup, stopLoss, slSpot,
  *           entrySpot, checks, confirmChecks, rsi, bbUpper, bbMiddle, bbLower,
@@ -458,7 +458,7 @@ function exitCheck(side, bar, stBar, stop) {
  * Trail the stop to the last closed candle's SuperTrend, tighten-only. A
  * SuperTrend on the wrong side of the close, or in the opposite trend, leaves
  * the stop where it was (exitCheck handles the flip).
- * `precomputed` — BACKTEST ONLY: { supertrend, endIdx } over the whole array.
+ * `precomputed` — OFFLINE ANALYSIS / TESTS ONLY: { supertrend, endIdx } over the whole array.
  */
 function trailStop(candles, side, currentStop, cfg, precomputed) {
   cfg = cfg || getConfig();

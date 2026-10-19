@@ -460,7 +460,8 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const stRsiPivBbItems = [
     ...(showStRsiPivBbPaper    ? [{ key: 'stRsiPivBbPaper',    href: '/st_rsi_piv_bb-paper/status', icon: '📋', label: 'Paper'    }] : []),
     // No native Live engine — /st_rsi_piv_bb-live IS the paper-wrapping harness.
-    // Hidden while Paper is running (mutually exclusive in sharedSocketState).
+    // Hidden while Paper is running: the harness runs AS paper, so a running
+    // paper session (plain or harness-wrapped) owns the slot.
     ...(showStRsiPivBbLiveHarness && !stRsiPivBbPaperRunning ? [{ key: 'stRsiPivBbLiveHarness', href: '/st_rsi_piv_bb-live', icon: '🔧', label: 'Live (Harness)' }] : []),
     ...(showStRsiPivBbHistory  ? [{ key: 'stRsiPivBbHistory',  href: '/st_rsi_piv_bb-paper/history', icon: '📜', label: 'History' }] : []),
   ];

@@ -1160,6 +1160,9 @@ function _entryBlockReason(cfg) {
   const tf = _tfNote(cfg);
   if (tf) return tf;
   if (ptState._dailyLossHit) return `daily loss limit hit (₹${cfg.MAX_DAILY_LOSS}) — no more entries today`;
+  // The cap is read live: lowering it in Settings mid-session blocks at once.
+  const _dayPnl = (ptState.sessionPnl || 0) + (ptState._priorRealizedToday || 0);
+  if (cfg.MAX_DAILY_LOSS > 0 && _dayPnl <= -cfg.MAX_DAILY_LOSS) return `daily loss limit hit (₹${_dayPnl.toFixed(0)} ≤ -₹${cfg.MAX_DAILY_LOSS}) — no more entries today`;
   const _taken = ptState.sessionTrades.length + (ptState._priorTradesToday || 0);
   if (_taken >= cfg.MAX_DAILY_TRADES) return `daily max trades (${cfg.MAX_DAILY_TRADES}) reached`;
   const pf = require("../utils/portfolioRisk").checkPortfolioCap();
@@ -1240,6 +1243,14 @@ async function _fillEntry(sig, signalCandle, fillSpot, side, sid, attempt) {
       log(`⚠️ [PAPER] No option LTP for ${symbol} — ${side} entry not filled.`);
       return { opened: false, retry: true };
     }
+  }
+
+  // A candle closed while this fill was awaiting: its own decision supersedes
+  // this older signal (the newer close may even be a SuperTrend flip).
+  const _lastClosed = ptState.candles[ptState.candles.length - 1];
+  if (!_lastClosed || _lastClosed.time !== signalCandle.time) {
+    log(`⏭️ [PAPER] ${side} fill abandoned — a newer candle closed while it was filling; that candle decides.`);
+    return { opened: false, retry: false };
   }
 
   const _tag = attempt > 0 ? ` | filled on retry #${attempt}` : "";
@@ -1698,7 +1709,9 @@ function generatePaperDailyReport(trades, sessionPnl) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * Preload `days` calendar days of CLOSED candles at `resMin`. Fyers history
+ * Preload the last `days` TRADING days (plus today) of CLOSED candles at
+ * `resMin`. The fetch reaches back days×2+7 calendar days so a weekend next to a
+ * holiday still yields `days` real sessions, then trims to them. Fyers history
  * includes today's still-forming bar: it is returned separately (to seed the live
  * bar) and never fed to the engine. Direct fetch — no candle cache — so a stale
  * partial day can never leave holes in the path-dependent SuperTrend.
@@ -1706,7 +1719,7 @@ function generatePaperDailyReport(trades, sessionPnl) {
 async function _preloadSeries(resMin, days, todayStr) {
   const { fetchCandles } = require("../services/backtestEngine");
   const fromDate = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-  fromDate.setDate(fromDate.getDate() - days);
+  fromDate.setDate(fromDate.getDate() - (days * 2 + 7));
   const fromStr = fromDate.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
   const raw = await fetchCandles(NIFTY_INDEX_SYMBOL, String(resMin), fromStr, todayStr);
   const nowSec = Math.floor(Date.now() / 1000);
@@ -1718,7 +1731,12 @@ async function _preloadSeries(resMin, days, todayStr) {
     else if (c.time <= nowSec) forming = c;
   }
   closed.sort((a, b) => a.time - b.time);
-  return { closed: closed.slice(-MAX_BARS), forming, fromStr };
+  // Keep today plus the newest `days` earlier sessions that actually traded.
+  const todayKey = engine._istDayOf(nowSec);
+  const prior = [...new Set(closed.map(c => engine._istDayOf(c.time)).filter(k => k < todayKey))].slice(-days);
+  const keep = new Set(prior.concat([todayKey]));
+  const kept = closed.filter(c => keep.has(engine._istDayOf(c.time)));
+  return { closed: kept.slice(-MAX_BARS), forming, fromStr: kept.length ? tradeLogger.istDateString(kept[0].time * 1000) : fromStr };
 }
 
 /**
@@ -1726,16 +1744,19 @@ async function _preloadSeries(resMin, days, todayStr) {
  * Connects to live Fyers socket and starts simulating trades
  */
 router.get("/start", async (req, res) => {
-  // Live-harness safety net — FIRST statement, before any early return. Only the
+  // Already running: refuse BEFORE touching the harness — an attached harness
+  // belongs to that running session, and detaching it would let the open
+  // position's exit skip the broker.
+  if (ptState.running) {
+    return res.status(400).json({ success: false, error: "Paper trading already running." });
+  }
+
+  // Live-harness safety net — before every other early return. Only the
   // *LiveHarness twin (which passes _viaHarness=1) may start paper with it attached.
   if (!req.query || req.query._viaHarness !== "1") {
     if (_releaseLiveHarness("paper /start — harness was still installed")) {
       console.log(`🛑 [${LIVE_HARNESS_MODE}] A live harness was still attached and has been REMOVED before starting. This session is paper-only.`);
     }
-  }
-
-  if (ptState.running) {
-    return res.status(400).json({ success: false, error: "Paper trading already running." });
   }
 
   // Re-read env into module-level config so Settings UI changes and replay
@@ -1845,11 +1866,22 @@ router.get("/start", async (req, res) => {
     if (_inReplay) throw { __skip: true };
 
     let _realized = 0, _taken = 0;
+    const _keyOf = (t) => String(t.entryBarTime || t.entryTime || `${t.symbol}@${t.entryPrice}@${t.entryTime}`);
+    const _savedKeys = new Set();
     for (const s of (data.sessions || [])) {
+      for (const t of (s.trades || [])) _savedKeys.add(_keyOf(t));
       if (String(s.date || "").slice(0, 10) === todayStr) {
         _realized += Number(s.sessionPnl) || 0;
         _taken    += Array.isArray(s.trades) ? s.trades.length : (Number(s.totalTrades) || 0);
       }
+    }
+    // A crash (kill -9, OOM) never runs saveSession(): its trades exist ONLY in
+    // today's day file. Count them too, or the restart gets a fresh allowance.
+    for (const t of tradeLogger.readDailyTrades("st_rsi_piv_bb", todayStr)) {
+      if (!t || t.type || !(t.side || t.entryTime || t.entryBarTime || t.symbol)) continue;
+      if (_savedKeys.has(_keyOf(t))) continue;
+      _realized += Number(t.pnl) || 0;
+      _taken++;
     }
     ptState._priorTradesToday = _taken;
     if (_realized !== 0 || _taken > 0) {
@@ -4038,7 +4070,8 @@ router.post("/restore-session/:date", (req, res) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     return res.status(400).json({ success: false, error: "Invalid date — expected YYYY-MM-DD." });
   }
-  const allTrades = tradeLogger.readDailyTrades("st_rsi_piv_bb", date);
+  // Day files interleave settings_snapshot / meta lines with trades — real trades only.
+  const allTrades = tradeLogger.readDailyTrades("st_rsi_piv_bb", date).filter(t => t && !t.type);
   if (!allTrades.length) {
     return res.status(404).json({ success: false, error: "No trades found in daily JSONL for that date." });
   }
@@ -4194,9 +4227,9 @@ function ptExportCSV() {
   var rows = PT.map(function(t){
     return [
       t.side||'', t.symbol||'',
-      t.entryTime||'', t.exitTime||'',
-      t.entryPrice||'', t.optionEntryLtp||'',
-      t.spotAtExit||'', t.optionExitLtp||'',
+      t.entry||'', t.exit||'',
+      t.eSpot||'', t.eOpt||'',
+      t.xSpot||'', t.xOpt||'',
       t.pnl!=null?t.pnl:'', t.reason||''
     ];
   });

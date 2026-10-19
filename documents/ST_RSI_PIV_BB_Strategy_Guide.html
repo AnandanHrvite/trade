@@ -249,7 +249,7 @@
   <tr><td>Square-off</td><td>15:15</td><td>Nothing is held overnight.</td></tr>
   <tr><td>Trades per day</td><td>3</td><td>One trade at a time; at most three in a day.</td></tr>
   <tr><td>Daily loss limit</td><td>&#8377;5,000</td><td>No new trade after the day's losses reach this.</td></tr>
-  <tr><td>Warm-up</td><td>25 candles per chart</td><td>The engine refuses to judge until it has 25 candles. The last 3 days are loaded at start so this is ready from 09:30.</td></tr>
+  <tr><td>Warm-up</td><td>25 candles per chart</td><td>The engine refuses to judge until it has 25 candles. The last 3 trading days are loaded at start (holidays skipped) so this is ready from 09:30.</td></tr>
   <tr><td>No yesterday, no trade</td><td>always</td><td>Without yesterday's high, low and close there is no R1/S1, so the bot refuses.</td></tr>
 </table>
 <div class="card warn">
@@ -355,7 +355,7 @@
 <h3>Which chart</h3>
 <table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>
 <tr><td><code>ST_RSI_PIV_BB_ENTRY_TF</code></td><td><code>BOTH</code></td><td><code>3</code>, <code>5</code> or <code>BOTH</code> (3-min trade, 5-min must agree). Anything else = BOTH.</td></tr>
-<tr><td><code>ST_RSI_PIV_BB_WARMUP_DAYS</code></td><td><code>3</code></td><td>Days of history loaded at start (1&ndash;15) so the indicators are ready and yesterday is known.</td></tr>
+<tr><td><code>ST_RSI_PIV_BB_WARMUP_DAYS</code></td><td><code>3</code></td><td>Earlier trading days of candles loaded at start (1&ndash;15) so the indicators are ready from the first candle.</td></tr>
 </tbody></table>
 <h3>The four boxes</h3>
 <table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>

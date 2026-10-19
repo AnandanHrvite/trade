@@ -858,8 +858,6 @@ const SETTINGS_SCHEMA = [
       // ── Day-level guards ──
       { key: "ST_RSI_PIV_BB_MAX_DAILY_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Stop taking new entries once this many trades are done for the day.", default: "3", subheader: "Day guards" },
       { key: "ST_RSI_PIV_BB_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 0, max: 50000, step: 250, effect: EFFECT.SESSION, desc: "Stop trading for the rest of the day once losses reach this much (0 = off). Example: at 5000, two losers of ₹2,600 each (₹5,200) end the day.", default: "5000" },
-
-      // ── Backtest ──
     ],
   },
   {
@@ -1433,7 +1431,7 @@ const SETTINGS_SCHEMA = [
       { key: "UI_SHOW_BN_EMA_RSI_ST_V2_LIVE_HARNESS", label: "BN EMA_RSI_ST_V2 → Live", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (the paper-wrapping harness) under BN EMA_RSI_ST_V2 (NIFTY BANK).", default: "false" },
       { key: "UI_SHOW_BN_EMA_RSI_ST_V2_HISTORY",  label: "BN EMA_RSI_ST_V2 → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under BN EMA_RSI_ST_V2 (NIFTY BANK).", default: "false" },
       // ── ST_RSI_PIV_BB submenu ── defaults match what sharedNav falls back to
-      // (Backtest/Paper/History on, Live off); the whole group stays hidden
+      // (Paper/History on, Live off); the whole group stays hidden
       // until ST_RSI_PIV_BB_MODE_ENABLED is switched on.
       { key: "UI_SHOW_ST_RSI_PIV_BB_PAPER",    label: "ST_RSI_PIV_BB → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under ST_RSI_PIV_BB.", default: "true" },
       { key: "UI_SHOW_ST_RSI_PIV_BB_LIVE_HARNESS", label: "ST_RSI_PIV_BB → Live", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (the paper-wrapping harness at /st_rsi_piv_bb-live) under ST_RSI_PIV_BB.", default: "false" },
