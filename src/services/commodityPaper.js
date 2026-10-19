@@ -230,7 +230,7 @@ const ADAPTERS = {
     oppCooldownCandles: () => _int(process.env.EMA_RSI_ST_V2_OPPOSITE_SIDE_COOLDOWN_CANDLES, 2),
     consecLimit:    () => Math.max(0, _int(process.env.EMA_RSI_ST_V2_MAX_CONSEC_LOSSES, 2)),
     seedStop(side, price, sig) { return Number.isFinite(sig.stopLoss) ? sig.stopLoss : null; },
-    // SuperTrend trail is V2's only stop; no candle-close exits of its own.
+    // SuperTrend trail is V2's stop on the future; no candle-close exits of its own.
     onClose(eng, pos) {
       const eng2 = require("../strategies/ema_rsi_st_v2");
       const t = eng2.trailStop(eng.state.candles, pos.side, pos.stopLoss, eng2.getConfig("EMA_RSI_ST_V2"));
