@@ -55,10 +55,10 @@ const { sendTelegram, canSend } = require("../utils/notify");
 
 const DATA_DIR = path.join(os.homedir(), "trading-data", "cmx");
 const MAX_CANDLES = 400;
-const LOG_MAX = 3000;
+const LOG_MAX = 3000;   // a full MCX day of per-candle detail (~6 lines × ~170 candles); full copy via /status/log
 // Per-commodity daily loss cap defaults. Crude lost ₹33k of the ₹37k Oct 2026
 // commodity paper loss, at up to ₹4k a trade, so it is held tighter by default.
-const CMX_MAX_LOSS_DEFAULT = { CRUDE: 1500, GOLD: 0, SILVER: 0 };   // a full MCX day of per-candle detail (~6 lines × ~170 candles); full copy via /status/log
+const CMX_MAX_LOSS_DEFAULT = { CRUDE: 1500, GOLD: 0, SILVER: 0 };
 
 // ── small helpers ────────────────────────────────────────────────────────────
 function _mins(raw, def) {

@@ -104,7 +104,7 @@
     <li><b>When:</b> MCX is open 09:00–23:30. The bot only <em>buys</em> between <b>10:00 and 22:30</b>, closes anything still open at <b>23:00</b>, and switches itself off at <b>23:30</b>.</li>
     <li><b>What it watches:</b> 5-minute candles of the commodity <b>future</b>. <b>What it buys:</b> the at-the-money option on that future, 1 lot.</li>
     <li><b>V1</b> buys when the trend, RSI, SuperTrend and the candle close all agree; its stop starts at the previous candle and then rides the EMA21 line.</li>
-    <li><b>V2</b> buys on three simpler rules; its only stop is the SuperTrend line.</li>
+    <li><b>V2</b> buys on three simpler rules; its stop on the future is the SuperTrend line, plus the option stop.</li>
     <li><b>Separate from NIFTY:</b> its own price feed (asked every 3 seconds), its own files, its own money pool and its own daily limits. A crude loss can never stop a NIFTY strategy, and the other way round.</li>
     <li><b>Every page ships OFF.</b> You switch each one on in Settings.</li>
   </ul>
@@ -549,7 +549,7 @@
   <tr><td><code>EMA_RSI_ST_V2_EMA_FAST</code> / <code>EMA_RSI_ST_V2_EMA_SLOW</code></td><td>20 / 50</td><td>The two trend averages.</td></tr>
   <tr><td><code>EMA_RSI_ST_V2_RSI_PERIOD</code></td><td>14</td><td>RSI length.</td></tr>
   <tr><td><code>EMA_RSI_ST_V2_RSI_CE_MIN</code> / <code>EMA_RSI_ST_V2_RSI_PE_MAX</code></td><td>52 / 48</td><td>CE needs RSI above 52; PE needs RSI below 48.</td></tr>
-  <tr><td><code>EMA_RSI_ST_V2_SUPERTREND_PERIOD</code> / <code>_MULT</code></td><td>10 / 2</td><td>The SuperTrend line that is V2&#39;s only stop.</td></tr>
+  <tr><td><code>EMA_RSI_ST_V2_SUPERTREND_PERIOD</code> / <code>_MULT</code></td><td>10 / 2</td><td>The SuperTrend line that is V2&#39;s stop on the future.</td></tr>
   <tr><td><code>EMA_RSI_ST_V2_CONFIRM_CANDLE_ENABLED</code></td><td>true</td><td>Wait for the next candle to cross the signal close.</td></tr>
   <tr><td><code>EMA_RSI_ST_V2_SL_PAUSE_CANDLES</code></td><td>2</td><td>Same-side pause after a stop-out.</td></tr>
   <tr><td><code>EMA_RSI_ST_V2_OPPOSITE_SIDE_COOLDOWN_ENABLED</code> / <code>_CANDLES</code></td><td>true / 2</td><td>Opposite-side cooldown after an exit.</td></tr>

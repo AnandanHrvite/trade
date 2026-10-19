@@ -130,7 +130,7 @@ function createCommodityPaperRouter({ engine, base, navKey, title, icon, rulesTe
     const c = s.cfg;
     const contract = s.series
       ? `Signal from <b>${esc(s.series.future)}</b> (expires ${s.series.futureExpiry}) · buys options expiring <b>${s.series.optionExpiry}</b>`
-      : `The contract is picked when you press Start: ${esc(s.underlying.label)}, nearest option expiry after today.`;
+      : `The contract is picked when you press Start: ${esc(s.underlying.label)}, nearest option expiry more than ${c.rollDays} day(s) away.`;
     const histRows = s.history.slice(0, 10).map((d) => `<tr><td><a class="cx-a" href="${base}/history?date=${d.day}">${d.day}</a></td><td>${d.trades}</td><td style="color:${pnlColor(d.pnl)}">${rs(d.pnl)}</td></tr>`).join("");
     return `
 <div class="cx-card">
@@ -542,11 +542,11 @@ const RULES = {
   V1: `
     <li><b>Signal:</b> the EMA_RSI_ST rules — EMA20/50 trend + RSI + SuperTrend on the future, using the same settings as the NIFTY EMA_RSI_ST.</li>
     <li><b>Entry:</b> skipped when EMA20 and EMA50 are almost touching or RSI has already run (Settings → Trend filter); with the confirmation candle on, the next candle must cross the signal candle's close.</li>
-    <li><b>Exits:</b> previous-candle stop trailed on EMA21, EMA21 touch-back, negative-candle stop, option stop %, profit lock / breakeven, opposite signal, and the day's exit time.</li>`,
+    <li><b>Exits:</b> previous-candle stop trailed on EMA21, EMA21 touch-back, negative-candle stop, option stop (Settings → Risk), profit lock / breakeven, opposite signal, and the day's exit time.</li>`,
   V2: `
     <li><b>Signal:</b> the EMA_RSI_ST_V2 rules — EMA20 vs EMA50 + close beyond EMA20 + RSI on the future, using the same settings as the NIFTY EMA_RSI_ST_V2.</li>
     <li><b>Entry:</b> skipped when EMA20 and EMA50 are almost touching or RSI has already run (Settings → Trend filter); with the confirmation candle on, the next candle must cross the signal candle's close.</li>
-    <li><b>Exits:</b> SuperTrend trailing stop (its only stop), profit lock / breakeven, opposite signal, and the day's exit time.</li>`,
+    <li><b>Exits:</b> SuperTrend trailing stop, option stop (Settings → Risk), profit lock / breakeven, opposite signal, and the day's exit time.</li>`,
 };
 const ICONS = { CRUDE: "🛢️", GOLD: "🥇", SILVER: "🥈" };
 // The page's own icon, for the monitors that list a commodity page — 🛢 only
