@@ -217,13 +217,13 @@
 
 <ol>
   <li><b>When you press Start</b>, the bot loads the MCX contract list. It downloads it at most once a day and keeps a copy. If the download fails, it uses yesterday&#39;s copy.</li>
-  <li>It looks at the commodity you trade (for example Gold Mini) and finds <b>the nearest option expiry after today</b>. It never trades options on their expiry day.</li>
+  <li>It looks at the commodity you trade (for example Gold Mini) and finds <b>the nearest option expiry more than 2 days away</b> (<code>CMX_OPT_ROLL_DAYS</code>). In the last days before expiry the premium melts fast, so it moves to next month early.</li>
   <li>It finds <b>the future those options are written on</b>. That future&#39;s 5-minute candles become the signal source for the whole session.</li>
   <li>At the moment of each entry, it picks <b>the listed strike closest to the future&#39;s current price</b> — the at-the-money CE or PE.</li>
 </ol>
 
 <div class="card">
-  <strong>Example (crude oil).</strong> Crude options for a month expire a few days <em>before</em> the crude future. Say the October options expire on 15 Oct and the October future on 19 Oct. On 8 Oct the bot trades October options and reads the October future. On 15 Oct (options expiry day) it moves to the November options and reads the future <em>they</em> are written on.
+  <strong>Example (crude oil).</strong> Crude options for a month expire a few days <em>before</em> the crude future. Say the October options expire on 15 Oct and the October future on 19 Oct. On 8 Oct the bot trades October options and reads the October future. From 13 Oct (2 days before the options expire) it moves to the November options and reads the future <em>they</em> are written on.
 </div>
 
 <p>The contract is fixed for the session. A contract change in Settings applies at the next Start. The page shows which future and which expiry it is using.</p>
@@ -349,7 +349,7 @@
   <tr><th>Exit</th><th>V1</th><th>V2</th><th>What happens</th></tr>
   <tr><td><b>Profit lock</b></td><td>yes</td><td>yes</td><td>Once the premium has been <b>8%</b> above the buy price, it may never be sold below <b>+5%</b>. After that the floor also follows the best premium: it keeps 85% of the best gain while the gain is under 20%, 80% while under 40%, and 70% above that.</td></tr>
   <tr><td><b>Breakeven stop</b></td><td>yes</td><td>yes</td><td>Once the premium has been <b>5%</b> above the buy price, the trade is sold if the premium falls back to the buy price.</td></tr>
-  <tr><td><b>Option stop</b></td><td>yes</td><td>no</td><td>Sold if the premium falls <b>15%</b> below the buy price.</td></tr>
+  <tr><td><b>Option stop</b></td><td>yes</td><td>yes</td><td>Sold if the premium falls <b>10%</b> below the buy price (<code>CMX_OPT_STOP_PCT</code>).</td></tr>
   <tr><td><b>Stop on the future</b></td><td>yes</td><td>yes</td><td>Sold when the future&#39;s price reaches the stop. It is called &quot;Initial SL&quot; while the stop is still at its first level and &quot;Trail SL&quot; once it has moved.</td></tr>
 </table>
 
@@ -482,6 +482,9 @@
   <tr><td><code>CMX_MIN_EMA_GAP_PCT</code></td><td>0.03</td><td>Skip a signal when EMA20 and EMA50 are closer than this % of the price (no real trend). 0 = off.</td></tr>
   <tr><td><code>CMX_RSI_CE_MAX</code></td><td>63</td><td>Skip a CE signal when RSI is this high or higher (move already run). 100 = off.</td></tr>
   <tr><td><code>CMX_RSI_PE_MIN</code></td><td>37</td><td>Skip a PE signal when RSI is this low or lower (move already run). 0 = off.</td></tr>
+  <tr><td><code>CMX_OPT_STOP_PCT</code></td><td>10</td><td>Option stop on V1 and V2: sold when the premium falls this % below the buy price. 0 = off.</td></tr>
+  <tr><td><code>CMX_OPT_ROLL_DAYS</code></td><td>2</td><td>Trade next month&#39;s options once this month&#39;s expire in this many days or fewer. Next Start.</td></tr>
+  <tr><td><code>CMX_CRUDE_MAX_DAILY_LOSS</code> / <code>CMX_GOLD_…</code> / <code>CMX_SILVER_…</code></td><td>1500 / 0 / 0</td><td>Extra daily loss cap per commodity page; the tighter of this and the strategy cap applies. 0 = strategy cap only.</td></tr>
 </table>
 
 <h3>Per strategy (each applies to that strategy&#39;s three commodity pages)</h3>
@@ -535,7 +538,6 @@
   <tr><td><code>EMA_RSI_ST_EMA_EXIT_MODE</code></td><td>touch</td><td>Touch: EMA21 is the trailing stop and a touch ends the trade. Close: no EMA21 trail; the trade ends only when a candle closes through EMA21.</td></tr>
   <tr><td><code>EMA_RSI_ST_CANDLE_TRAIL_ENABLED</code> / <code>_BARS</code></td><td>false / 3</td><td>Extra trail on the lowest low (CE) or highest high (PE) of the last 3 candles.</td></tr>
   <tr><td><code>EMA_RSI_ST_NEG_CANDLE_LIMIT</code></td><td>2</td><td>Negative-candle stop: out if still losing after this many candles (0 = off).</td></tr>
-  <tr><td><code>OPT_STOP_PCT</code></td><td>0.15</td><td>Option stop: out if the premium falls 15%.</td></tr>
   <tr><td><code>EMA_RSI_ST_SL_PAUSE_CANDLES</code></td><td>3</td><td>Same-side pause after a stop-out.</td></tr>
   <tr><td><code>EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_ENABLED</code> / <code>_CANDLES</code></td><td>true / 3</td><td>Opposite-side cooldown after an exit.</td></tr>
   <tr><td><code>EMA_RSI_ST_MAX_CONSEC_LOSSES</code></td><td>0</td><td>Done for the day after this many losses in a row (0 = off).</td></tr>

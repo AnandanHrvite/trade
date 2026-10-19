@@ -22,11 +22,16 @@
  *     so the signal is the same strategy; only timing, sizing and day guards
  *     are commodity-specific (CMX_* keys).
  *
- * Two commodity-only additions on top of the NIFTY rules, both on every page:
+ * Commodity-only additions on top of the NIFTY rules, all on every page:
  *   • a trend filter on entries (CMX_MIN_EMA_GAP_PCT, CMX_RSI_CE_MAX /
  *     CMX_RSI_PE_MIN) — see trendBlock();
  *   • the global breakeven stop on V2 too (NIFTY V2 has none), so every page
- *     shares breakeven → profit lock → profit-lock trail.
+ *     shares breakeven → profit lock → profit-lock trail;
+ *   • a premium stop (CMX_OPT_STOP_PCT) on V1 and V2 alike — V2's SuperTrend
+ *     stop alone let crude losers run to −20%+ of premium;
+ *   • a per-commodity daily loss cap (CMX_<COMMODITY>_MAX_DAILY_LOSS) on top of
+ *     the per-strategy one, so crude can be held tighter than gold/silver;
+ *   • the option series rolls to next month CMX_OPT_ROLL_DAYS before expiry.
  *
  * Exits otherwise mirror the NIFTY paper routes at their defaults. Left out on purpose:
  * the NIFTY-points features (EMA_RSI_ST_STOP_LOSS_PTS, EMA_RSI_ST_BREAKEVEN_PTS)
@@ -50,7 +55,10 @@ const { sendTelegram, canSend } = require("../utils/notify");
 
 const DATA_DIR = path.join(os.homedir(), "trading-data", "cmx");
 const MAX_CANDLES = 400;
-const LOG_MAX = 3000;   // a full MCX day of per-candle detail (~6 lines × ~170 candles); full copy via /status/log
+const LOG_MAX = 3000;
+// Per-commodity daily loss cap defaults. Crude lost ₹33k of the ₹37k Oct 2026
+// commodity paper loss, at up to ₹4k a trade, so it is held tighter by default.
+const CMX_MAX_LOSS_DEFAULT = { CRUDE: 1500, GOLD: 0, SILVER: 0 };   // a full MCX day of per-candle detail (~6 lines × ~170 candles); full copy via /status/log
 
 // ── small helpers ────────────────────────────────────────────────────────────
 function _mins(raw, def) {
@@ -68,6 +76,7 @@ function istDow(ms = Date.now()) { return new Date(ms + 19800000).getUTCDay(); }
 function istClock(ms = Date.now()) { return new Date(ms + 19800000).toISOString().slice(11, 19); }
 function fmtMins(m) { return String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0"); }
 function r2(n) { return Math.round(n * 100) / 100; }
+function _tighterCap(a, b) { return a > 0 && b > 0 ? Math.min(a, b) : (a || b); }
 
 // Telegram — plain sendTelegram, NOT notifyEntry/notifyExit: those also fire the
 // NIFTY live-order hooks, and a commodity paper trade must never reach them.
@@ -203,8 +212,6 @@ const ADAPTERS = {
       }
       return null;
     },
-    // Per-poll premium stop (after the profit lock and breakeven).
-    optStopPct: () => _num(process.env.OPT_STOP_PCT, 0.15),
     // Chart overlays — the same periods the V1 rules read.
     chartCfg: () => ({
       emaFast: _int(process.env.EMA_RSI_ST_EMA_FAST, 20), emaSlow: _int(process.env.EMA_RSI_ST_EMA_SLOW, 50),
@@ -233,7 +240,6 @@ const ADAPTERS = {
       }
       return null;
     },
-    optStopPct: () => 0,
     chartCfg: () => {
       const k = require("../strategies/ema_rsi_st_v2").getConfig("EMA_RSI_ST_V2");
       return { emaFast: k.EMA_FAST, emaSlow: k.EMA_SLOW, stPeriod: k.ST_PERIOD, stMult: k.ST_MULT, rsiCeMin: k.RSI_CE_MIN, rsiPeMax: k.RSI_PE_MAX };
@@ -268,7 +274,12 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     entryEnd:   _mins(process.env[`${prefix}_ENTRY_END`], "22:30"),
     eodExit:    _mins(process.env[`${prefix}_EOD_EXIT_TIME`], "23:00"),
     maxTrades:  Math.max(1, _int(process.env[`${prefix}_MAX_DAILY_TRADES`], 3)),
-    maxLoss:    Math.max(0, _num(process.env[`${prefix}_MAX_DAILY_LOSS`], 5000)),
+    // Tighter of the per-strategy and per-commodity caps (0 = that cap off).
+    maxLoss:    _tighterCap(
+      Math.max(0, _num(process.env[`${prefix}_MAX_DAILY_LOSS`], 5000)),
+      Math.max(0, _num(process.env[`CMX_${commodity}_MAX_DAILY_LOSS`], CMX_MAX_LOSS_DEFAULT[commodity] || 0))),
+    optStopPct: Math.max(0, _num(process.env.CMX_OPT_STOP_PCT, 10)),
+    rollDays:   Math.max(0, _int(process.env.CMX_OPT_ROLL_DAYS, 2)),
     sessStart:  _mins(process.env.CMX_SESSION_START, "09:00"),
     sessEnd:    _mins(process.env.CMX_SESSION_END, "23:30"),
     charges:    Math.max(0, _num(process.env.CMX_CHARGES_PER_TRADE, 60)),
@@ -615,9 +626,9 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
       const lock = tradeGuards.checkProfitLock(pos.optionEntryLtp, state.optLtp, pos.bestOptionLtp)
         || tradeGuards.checkBreakevenStop(pos.optionEntryLtp, state.optLtp, pos.bestOptionLtp);
       if (lock) { await exit(lock, fut); return; }
-      const pct = A.optStopPct();
-      if (pct > 0 && state.optLtp <= r2(pos.optionEntryLtp * (1 - pct))) {
-        await exit(`Option stop ${(pct * 100).toFixed(0)}% @ opt ₹${state.optLtp}`, fut, { slHit: true });
+      const pct = cfg().optStopPct;
+      if (pct > 0 && state.optLtp <= r2(pos.optionEntryLtp * (1 - pct / 100))) {
+        await exit(`Option stop ${pct}% @ opt ₹${state.optLtp}`, fut, { slHit: true });
         return;
       }
     }
@@ -689,7 +700,7 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     if (istNowMinutes() >= c.sessEnd) return { ok: false, reason: `MCX session is over for today (closes ${fmtMins(c.sessEnd)})` };
 
     rollDay();
-    try { state.series = await mcx.resolveSeries(mcx.contractFor(commodity)); }
+    try { state.series = await mcx.resolveSeries(mcx.contractFor(commodity), { rollDays: c.rollDays }); }
     catch (err) { return { ok: false, reason: `could not pick the contract: ${err.message}` }; }
 
     // Warm-up: ~7 calendar days of closed candles on the signal future.

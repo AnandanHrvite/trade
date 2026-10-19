@@ -7,7 +7,8 @@
  * file does not compute anything. It reads Fyers' own symbol master
  * (public.fyers.in/sym_details/MCX_COM.csv) and picks from what is listed:
  *
- *   option series  = the nearest option expiry AFTER today (never trade expiry day)
+ *   option series  = the nearest option expiry more than `rollDays` days away
+ *                    (default 0 = after today; never trade expiry day)
  *   signal source  = the future that series is written on (column 17 of the master)
  *   ATM strike     = the listed strike of that series nearest the future's price
  *
@@ -116,18 +117,23 @@ async function _rows() {
 
 /**
  * The contract set for today for underlying `U` (e.g. "CRUDEOIL"): the nearest
- * option series expiring AFTER today and the future it is written on. Returns
+ * option series expiring more than `rollDays` days after today (so the last
+ * days of a series, where premium decays fastest, trade next month instead)
+ * and the future it is written on. Falls back to the nearest series after
+ * today when nothing is listed further out. Returns
  * { underlying, future, futureExpiry, optionExpiry, series } or throws with a
  * plain reason.
  */
-async function resolveSeries(U) {
+async function resolveSeries(U, { rollDays = 0 } = {}) {
   if (!UNDERLYINGS[U]) throw new Error(`unknown MCX contract ${U}`);
   const rows = (await _rows()).filter((r) => r.und === U);
   const today = _istDateStr(Date.now());
 
   const opts = rows.filter((r) => (r.type === "CE" || r.type === "PE") && _istDateStr(r.expiry * 1000) > today);
   if (!opts.length) throw new Error(`no ${U} options listed after today in the Fyers symbol master`);
-  const expiry = Math.min(...opts.map((r) => r.expiry));
+  const daysLeft = (r) => (Date.parse(_istDateStr(r.expiry * 1000)) - Date.parse(today)) / 86400000;
+  const far = opts.filter((r) => daysLeft(r) > rollDays);
+  const expiry = Math.min(...(far.length ? far : opts).map((r) => r.expiry));
   const series = opts.filter((r) => r.expiry === expiry);
 
   // The future this series is written on — matched by token, not by guessing a name.
