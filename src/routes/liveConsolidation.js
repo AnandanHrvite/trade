@@ -33,6 +33,8 @@ const SOURCES = [
   // ST_RSI_PIV_BB — its own live trades file. The dashboard's Live toggle reads
   // this list via /live-consolidation/data, so it must be here.
   { mode: "ST_RSI_PIV_BB", file: path.join(DATA_DIR, "st_rsi_piv_bb_live_trades.json"), label: "ST_RSI_PIV_BB", color: "#a3e635" },
+  // SAIL_VWAP_ST — its own live trades file (dashboard Live toggle reads this list).
+  { mode: "SAIL_VWAP_ST", file: path.join(DATA_DIR, "sail_vwap_st_live_trades.json"), label: "SAIL_VWAP_ST", color: "#fda4af" },
   { mode: "BB_RSI", file: path.join(DATA_DIR, "bb_rsi_live_trades.json"), label: "BB_RSI", color: "#f59e0b" },
   { mode: "PA",    file: path.join(DATA_DIR, "pa_live_trades.json"),    label: "Price Action", color: "#a855f7" },
   { mode: "RSI_PIVOT_ST", file: path.join(DATA_DIR, "rsi_pivot_st_live_trades.json"), label: "RSI PIVOT ST", color: "#facc15" },
@@ -78,6 +80,7 @@ function _sourcesSig() {
 // Read on every call — Settings saves mutate process.env live.
 const _DEFAULT_OFF_MODES = new Set(["EMA_RSI_ST_V2", "BN_EMA_RSI_ST_V2"]);
 _DEFAULT_OFF_MODES.add("ST_RSI_PIV_BB"); // ships OFF like V2
+_DEFAULT_OFF_MODES.add("SAIL_VWAP_ST"); // ships OFF
 function _modeEnabled(mode) {
   const key = mode + "_MODE_ENABLED";
   const dflt = _DEFAULT_OFF_MODES.has(mode) ? "false" : "true";
@@ -232,6 +235,7 @@ router.get("/", (req, res) => {
     .badge-EMA_RSI_ST_V2{background:rgba(56,189,248,0.12);color:#38bdf8;border:0.5px solid rgba(56,189,248,0.3);}
     .badge-BN_EMA_RSI_ST_V2{background:rgba(45,212,191,0.12);color:#2dd4bf;border:0.5px solid rgba(45,212,191,0.3);}
     .badge-ST_RSI_PIV_BB{background:rgba(163,230,53,0.12);color:#a3e635;border:0.5px solid rgba(163,230,53,0.3);}
+    .badge-SAIL_VWAP_ST{background:rgba(253,164,175,0.12);color:#fda4af;border:0.5px solid rgba(253,164,175,0.3);}
     .badge-BB_RSI{background:rgba(245,158,11,0.12);color:#f59e0b;border:0.5px solid rgba(245,158,11,0.3);}
     .badge-PA{background:rgba(168,85,247,0.12);color:#a855f7;border:0.5px solid rgba(168,85,247,0.3);}
     .badge-RSI_PIVOT_ST{background:rgba(250,204,21,0.12);color:#facc15;border:0.5px solid rgba(250,204,21,0.3);}

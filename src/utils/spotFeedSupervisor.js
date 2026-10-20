@@ -72,7 +72,10 @@ function _spotSymbols() {
     const list = raw.split(",").map((x) => x.trim()).filter(Boolean);
     if (list.length) return list;
   }
-  const all = instrumentConfig.listUnderlyings().map((u) => u.spot);
+  // An underlying gated on a strategy toggle (SAIL) is streamed only while on.
+  const all = instrumentConfig.listUnderlyings()
+    .filter((u) => !instrumentConfig.isUnderlyingEnabled || instrumentConfig.isUnderlyingEnabled(u))
+    .map((u) => u.spot);
   // Primary first — the order decides which index owns the connection.
   return [SPOT_SYMBOL, ...all.filter((x) => x !== SPOT_SYMBOL)];
 }

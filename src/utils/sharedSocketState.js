@@ -75,6 +75,12 @@ let bnEmaRsiStV2Mode = null;
 // WITHIN ST_RSI_PIV_BB is mutually exclusive.
 let stRsiPivBbMode = null;
 
+// SAIL_VWAP_ST mode: "SAIL_VWAP_ST_PAPER" | "SAIL_VWAP_ST_LIVE" | null
+// Its OWN slot — SAIL stock options, its own settings and position file, so it
+// may run side by side with every other strategy. Only paper-vs-live WITHIN
+// SAIL_VWAP_ST is mutually exclusive.
+let sailVwapStMode = null;
+
 // EarlyBird mode: "EARLY_BIRD_PAPER" | "EARLY_BIRD_LIVE" | null
 let earlyBirdMode = null;
 
@@ -353,6 +359,24 @@ function getStRsiPivBbMode() {
   return stRsiPivBbMode;
 }
 
+// ── SAIL_VWAP_ST mode ───────────────────────────────────────────────────────
+
+function setSailVwapStMode(mode) {
+  sailVwapStMode = mode;
+}
+
+function clearSailVwapStMode() {
+  sailVwapStMode = null;
+}
+
+function isSailVwapStActive() {
+  return sailVwapStMode !== null;
+}
+
+function getSailVwapStMode() {
+  return sailVwapStMode;
+}
+
 // ── SIMPLE_9:30 mode (9:30 option-premium trigger) ──────────────────────────
 
 function setSimple930Active(mode) {
@@ -385,6 +409,7 @@ function isAnyActive() {
          emaRsiStV2Mode !== null ||
          bnEmaRsiStV2Mode !== null ||
          stRsiPivBbMode !== null ||
+         sailVwapStMode !== null ||
          simple930Mode !== null;
 }
 
@@ -521,6 +546,15 @@ function _canStartRaw(mode) {
       if (stRsiPivBbMode === "ST_RSI_PIV_BB_PAPER") return { allowed: false, reason: "ST_RSI_PIV_BB Paper is running — stop it first" };
       if (stRsiPivBbMode === "ST_RSI_PIV_BB_LIVE")  return { allowed: false, reason: "ST_RSI_PIV_BB Live is already running" };
       return { allowed: true };
+    // SAIL_VWAP_ST is a separate strategy, checked ONLY against its own sibling.
+    case "SAIL_VWAP_ST_PAPER":
+      if (sailVwapStMode === "SAIL_VWAP_ST_LIVE")  return { allowed: false, reason: "SAIL_VWAP_ST Live is running — stop it first" };
+      if (sailVwapStMode === "SAIL_VWAP_ST_PAPER") return { allowed: false, reason: "SAIL_VWAP_ST Paper is already running" };
+      return { allowed: true };
+    case "SAIL_VWAP_ST_LIVE":
+      if (sailVwapStMode === "SAIL_VWAP_ST_PAPER") return { allowed: false, reason: "SAIL_VWAP_ST Paper is running — stop it first" };
+      if (sailVwapStMode === "SAIL_VWAP_ST_LIVE")  return { allowed: false, reason: "SAIL_VWAP_ST Live is already running" };
+      return { allowed: true };
     case "SIMPLE930_PAPER":
       if (simple930Mode === "SIMPLE930_LIVE")  return { allowed: false, reason: "SIMPLE_9:30 Live is running — stop it first" };
       if (simple930Mode === "SIMPLE930_PAPER") return { allowed: false, reason: "SIMPLE_9:30 Paper is already running" };
@@ -596,6 +630,8 @@ module.exports = {
   setBnEmaRsiStV2Mode, clearBnEmaRsiStV2Mode, isBnEmaRsiStV2Active, getBnEmaRsiStV2Mode,
   // ST_RSI_PIV_BB
   setStRsiPivBbMode, clearStRsiPivBbMode, isStRsiPivBbActive, getStRsiPivBbMode,
+  // SAIL_VWAP_ST
+  setSailVwapStMode, clearSailVwapStMode, isSailVwapStActive, getSailVwapStMode,
   // SIMPLE_9:30
   setSimple930Active, clearSimple930, isSimple930Active, getSimple930Mode,
   // Combined
@@ -611,6 +647,7 @@ const _CLEAR_SLOT = {
   clearRsiPivotSt: "RSI_PIVOT_ST", clearBnPivotRsiStMode: "BN_PIVOT_RSI_ST",
   clearEmaRsiStV2Mode: "EMA_RSI_ST_V2", clearBnEmaRsiStV2Mode: "BN_EMA_RSI_ST_V2",
   clearStRsiPivBbMode: "ST_RSI_PIV_BB",
+  clearSailVwapStMode: "SAIL_VWAP_ST",
   clearSimple930: "SIMPLE930",
 };
 for (const name of Object.keys(module.exports)) {

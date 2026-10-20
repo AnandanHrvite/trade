@@ -27,6 +27,7 @@ const GUIDE_MODE_BY_FILE = {
   "ema_rsi_st_v2_strategy_guide.html": "EMA_RSI_ST_V2",
   "bn_ema_rsi_st_v2_strategy_guide.html": "BN_EMA_RSI_ST_V2",
   "st_rsi_piv_bb_strategy_guide.html": "ST_RSI_PIV_BB",
+  "sail_vwap_st_strategy_guide.html":  "SAIL_VWAP_ST",
   "bb_rsi_strategy_guide.html":        "BB_RSI",
   "price_action_strategy_guide.html":  "PA",
   "orb_strategy_guide.html":           "ORB",
@@ -860,6 +861,18 @@ const GUIDE_STATUS = {
     { type: "value", label: "SuperTrend Period", key: "ST_RSI_PIV_BB_ST_PERIOD", def: "10" },
     { type: "value", label: "SuperTrend Multiplier", key: "ST_RSI_PIV_BB_ST_MULT", def: "2" },
   ] }] },
+  // SAIL_VWAP_ST — SAIL stock options; every key is its own and the mode toggle
+  // defaults FALSE, so the guide stays hidden until it is switched on in Settings.
+  "SAIL_VWAP_ST_Strategy_Guide.html": { title: "SAIL_VWAP_ST — Live Configuration", groups: [{ rows: [
+    { type: "bool", label: "SAIL_VWAP_ST Mode (sidebar + Settings section)", key: "SAIL_VWAP_ST_MODE_ENABLED", def: "false" },
+    { type: "bool", label: "Paper Trading", key: "SAIL_VWAP_ST_PAPER_ENABLED", def: "false" },
+    { type: "live", label: "Live Orders (Zerodha)", enableKey: "SAIL_VWAP_ST_LIVE_ENABLED", dryKey: "SAIL_VWAP_ST_LIVE_DRY_RUN" },
+    { type: "value", label: "Candle Timeframe (3 / 5 / 15)", key: "SAIL_VWAP_ST_TF", def: "5" },
+    { type: "value", label: "SuperTrend Period", key: "SAIL_VWAP_ST_ST_PERIOD", def: "10" },
+    { type: "value", label: "SuperTrend Multiplier", key: "SAIL_VWAP_ST_ST_MULT", def: "2" },
+    { type: "value", label: "Breakout Window (candles)", key: "SAIL_VWAP_ST_BREAKOUT_BARS", def: "3" },
+    { type: "value", label: "Lots (× SAIL_LOT_SIZE)", key: "SAIL_VWAP_ST_LOTS", def: "1" },
+  ] }] },
   "BB_RSI_Strategy_Guide.html": { title: "BB_RSI — Live Configuration", groups: [{ rows: [
     { type: "bool", label: "BB_RSI Mode (sidebar + Settings section)", key: "BB_RSI_MODE_ENABLED", def: "true" },
     { type: "live", label: "Live Orders (Fyers)", enableKey: "BB_RSI_LIVE_ENABLED", dryKey: "BB_RSI_LIVE_DRY_RUN" },
@@ -976,6 +989,7 @@ const GUIDE_STATUS = {
       { type: "bool", label: "EMA_RSI_ST_V2 Mode", key: "EMA_RSI_ST_V2_MODE_ENABLED", def: "false" },
       { type: "bool", label: "BN EMA_RSI_ST_V2 Mode (NIFTY BANK, monthly options)", key: "BN_EMA_RSI_ST_V2_MODE_ENABLED", def: "false" },
       { type: "bool", label: "ST_RSI_PIV_BB Mode", key: "ST_RSI_PIV_BB_MODE_ENABLED", def: "false" },
+      { type: "bool", label: "SAIL_VWAP_ST Mode (SAIL stock options)", key: "SAIL_VWAP_ST_MODE_ENABLED", def: "false" },
       { type: "bool", label: "BB_RSI Mode", key: "BB_RSI_MODE_ENABLED", def: "true" },
       { type: "bool", label: "Price Action Mode", key: "PA_MODE_ENABLED", def: "true" },
       { type: "bool", label: "ORB Mode", key: "ORB_MODE_ENABLED", def: "true" },

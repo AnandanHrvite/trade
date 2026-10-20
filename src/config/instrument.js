@@ -105,6 +105,40 @@ const UNDERLYING_DEFS = {
       marginPct:      "BANKNIFTY_FUTURES_MARGIN_PCT",
     },
   },
+  // SAIL — a STOCK, not an index (SAIL_VWAP_ST). Stock options are monthly-only
+  // (last Tuesday, like the index monthlies) and struck on a ₹2.5 grid at
+  // today's ~₹170 price, so the grid and the offsets are fractional. Verified
+  // against Fyers' symbol master (public.fyers.in/sym_details/NSE_FO.csv,
+  // 2026-10-20): SAIL26OCT167.5CE / SAIL26OCT170CE, lot 4700, expiry 27-Oct-2026.
+  // `enabledEnv`: the always-on spot recorder and the expiry health check only
+  // carry SAIL while its strategy is switched on.
+  SAIL: {
+    key:         "SAIL",
+    label:       "SAIL",
+    spot:        "NSE:SAIL-EQ",
+    optPrefix:   "SAIL",
+    futPrefix:   "SAIL",
+    chainSymbol: "NSE%3ASAIL-EQ",
+    strikeStep:  2.5,
+    lotSize:     4700,
+    weekly:      false,   // NSE stock options have no weekly contracts
+    marginPct:   20,
+    fractionalStrikes: true,
+    spotDefault: 170,
+    enabledEnv:  "SAIL_VWAP_ST_MODE_ENABLED",
+    env: {
+      strikeStep:     "SAIL_STRIKE_STEP",
+      lotSize:        "SAIL_LOT_SIZE",
+      weekly:         "SAIL_WEEKLY_EXPIRY_ENABLED",
+      offsetCE:       "SAIL_STRIKE_OFFSET_CE",
+      offsetPE:       "SAIL_STRIKE_OFFSET_PE",
+      offsetBoth:     "SAIL_STRIKE_OFFSET",
+      expiryOverride: "SAIL_OPTION_EXPIRY_OVERRIDE",
+      expiryType:     "SAIL_OPTION_EXPIRY_TYPE",
+      spotFallback:   "SAIL_SPOT_FALLBACK",
+      marginPct:      "SAIL_FUTURES_MARGIN_PCT",
+    },
+  },
 };
 
 function _envInt(key, def, { min = 1, max = Infinity } = {}) {
@@ -141,6 +175,7 @@ function underlyingOf(u) {
     const raw = String(u == null ? "" : u).trim().toUpperCase().replace(/[\s_-]/g, "");
     def = (raw === "BANKNIFTY" || raw === "NIFTYBANK" || raw === "BN")
       ? UNDERLYING_DEFS.BANKNIFTY
+      : raw === "SAIL" ? UNDERLYING_DEFS.SAIL
       : UNDERLYING_DEFS.NIFTY;
   }
   const E = def.env;
@@ -153,17 +188,41 @@ function underlyingOf(u) {
     futPrefix:   def.futPrefix,
     chainSymbol: def.chainSymbol,
     env:         E,
-    strikeStep:  _envInt(E.strikeStep, def.strikeStep, { min: 1, max: 10000 }),
+    // A fractional grid (SAIL's ₹2.5) must not go through parseInt — "2.5" → 2
+    // would build strikes that are not listed. Integer grids are read as before.
+    strikeStep:  def.fractionalStrikes
+                   ? _envNum(E.strikeStep, def.strikeStep, { min: 0.05, max: 10000 })
+                   : _envInt(E.strikeStep, def.strikeStep, { min: 1, max: 10000 }),
     lotSize:     _envInt(E.lotSize,    def.lotSize,    { min: 1, max: 100000 }),
     weekly:      _envBool(E.weekly,    def.weekly),
     marginPct:   _envNum(E.marginPct,  def.marginPct,  { min: 0.1, max: 100 }),
-    offsetCE:    parseInt(process.env[E.offsetCE] || process.env[E.offsetBoth] || "0", 10) || 0,
-    offsetPE:    parseInt(process.env[E.offsetPE] || process.env[E.offsetBoth] || "0", 10) || 0,
+    offsetCE:    _offsetOf(process.env[E.offsetCE] || process.env[E.offsetBoth], def.fractionalStrikes),
+    offsetPE:    _offsetOf(process.env[E.offsetPE] || process.env[E.offsetBoth], def.fractionalStrikes),
     expiryOverride: String(process.env[E.expiryOverride] || "").trim(),
     expiryType:     String(process.env[E.expiryType] || "").trim().toLowerCase()
                       || (def.weekly ? "weekly" : "monthly"),
     spotFallback:   parseFloat(process.env[E.spotFallback] || "0") || 0,
+    spotDefault:    def.spotDefault || null,
+    enabledEnv:     def.enabledEnv || null,
   };
+}
+
+/** Strike offset: integer for the index grids (unchanged), fractional for SAIL. */
+function _offsetOf(raw, fractional) {
+  if (!fractional) return parseInt(raw || "0", 10) || 0;
+  const v = parseFloat(raw || "0");
+  return Number.isFinite(v) ? v : 0;
+}
+
+/**
+ * False only for an underlying gated on a strategy toggle (SAIL) whose toggle is
+ * off — so the always-on spot recorder and the expiry health check do not
+ * stream or alert about an instrument nothing trades. The indices are always on.
+ */
+function isUnderlyingEnabled(u) {
+  const r = underlyingOf(u);
+  if (!r.enabledEnv) return true;
+  return String(process.env[r.enabledEnv] || "false").trim().toLowerCase() === "true";
 }
 
 /** The underlyings the app knows about — used by Settings to render one block each. */
@@ -426,7 +485,8 @@ async function getLiveSpot(underlying) {
  */
 function calcATMStrike(spot, side, underlying) {
   const step = underlyingOf(underlying).strikeStep;
-  const base = Math.round(spot / step) * step;
+  // toFixed(2): a fractional grid (2.5) must print "167.5", never float noise.
+  const base = parseFloat((Math.round(spot / step) * step).toFixed(2));
   if (!side) return base;
   if (side !== "CE" && side !== "PE") throw new Error(`[instrument] calcATMStrike: invalid side "${side}" — must be "CE" or "PE"`);
   if (side === "CE") {
@@ -480,7 +540,7 @@ function getSymbolSync(side = "CE", underlying) {
     return `NSE:${u.futPrefix}${getFuturesExpiry()}FUT`;
   }
   const cached = _spotCache[u.key] && _spotCache[u.key].spot;
-  const spot   = cached || u.spotFallback || (u.key === "BANKNIFTY" ? 54000 : 24000);
+  const spot   = cached || u.spotFallback || u.spotDefault || (u.key === "BANKNIFTY" ? 54000 : 24000);
   const strike = calcATMStrike(spot, side, u);
   const expiry = getNearestThursdayExpiry(u);
   return `NSE:${u.optPrefix}${expiry}${strike}${side}`;
@@ -1036,6 +1096,7 @@ module.exports = {
   isExpiryOverrideStale,       // shared by the dashboard banner and the entry guard
   underlyingOf,                // "BANKNIFTY" → the resolved per-index config row
   listUnderlyings,             // every index the app knows, for the Settings UI
+  isUnderlyingEnabled,         // false for SAIL while SAIL_VWAP_ST is switched off
   UNDERLYING_DEFS,             // static table (env key names) — Settings reads this
 };
 

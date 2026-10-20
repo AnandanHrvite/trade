@@ -26,6 +26,7 @@ const haScalpStrategy = require("../strategies/ha_scalp");
 const prevOrbScalpStrategy = require("../strategies/prev_orb_scalp");
 const rsiPivotStStrategy = require("../strategies/rsi_pivot_st");
 const bnPivotRsiStStrategy = require("../strategies/bn_pivot_rsi_st");
+const sailVwapStStrategy = require("../strategies/sail_vwap_st");
 const emaRsiStV2Strategy = require("../strategies/ema_rsi_st_v2");
 const simple930Strategy  = require("../strategies/simple930");
 const earlyBirdStrategy  = require("../strategies/early_bird");
@@ -47,6 +48,8 @@ const BN_PIVOT_RSI_ST_KEY = "BN_PIVOT_RSI_ST_BACKTEST";
 const EMA_RSI_ST_V2_KEY = "EMA_RSI_ST_V2_BACKTEST";
 // MUST match the RESULT_KEY bnEmaRsiStV2Backtest.js saves under.
 const BN_EMA_RSI_ST_V2_KEY = "BN_EMA_RSI_ST_V2_BACKTEST";
+// MUST match the RESULT_KEY sailVwapStBacktest.js saves under.
+const SAIL_VWAP_ST_KEY = "SAIL_VWAP_ST_BACKTEST";
 const SIMPLE930_KEY    = "SIMPLE930_BACKTEST";
 // MUST match the RESULT_KEY earlyBirdBacktest.js saves under.
 const EARLYBIRD_KEY    = "EARLY_BIRD_BACKTEST";
@@ -167,6 +170,8 @@ router.get("/", (req, res) => {
   const emaRsiStV2On = String(process.env.EMA_RSI_ST_V2_MODE_ENABLED || "false").toLowerCase() === "true";
   // The NIFTY BANK sibling also defaults OFF, so it is compared here too.
   const bnEmaRsiStV2On = String(process.env.BN_EMA_RSI_ST_V2_MODE_ENABLED || "false").toLowerCase() === "true";
+  // SAIL_VWAP_ST also defaults OFF, so it is compared here too.
+  const sailVwapStOn = String(process.env.SAIL_VWAP_ST_MODE_ENABLED || "false").toLowerCase() === "true";
   const simple930On  = _modeOn("SIMPLE930_MODE_ENABLED");
   const earlyBirdOn  = _modeOn("EARLYBIRD_MODE_ENABLED");
 
@@ -182,6 +187,7 @@ router.get("/", (req, res) => {
   const bnPivotRsiStResult = bnPivotRsiStOn ? loadResult(BN_PIVOT_RSI_ST_KEY) : null;
   const emaRsiStV2Result = emaRsiStV2On ? loadResult(EMA_RSI_ST_V2_KEY) : null;
   const bnEmaRsiStV2Result = bnEmaRsiStV2On ? loadResult(BN_EMA_RSI_ST_V2_KEY) : null;
+  const sailVwapStResult = sailVwapStOn ? loadResult(SAIL_VWAP_ST_KEY) : null;
   const simple930Result  = simple930On  ? loadResult(SIMPLE930_KEY)  : null;
   const earlyBirdResult  = earlyBirdOn  ? loadResult(EARLYBIRD_KEY)  : null;
 
@@ -247,6 +253,13 @@ router.get("/", (req, res) => {
     "BN EMA_RSI_ST_V2 · NIFTY BANK", { bg: "rgba(45,212,191,0.12)", fg: "#2dd4bf", border: "rgba(45,212,191,0.25)" },
     emaRsiStV2Strategy && emaRsiStV2Strategy.NAME ? emaRsiStV2Strategy.NAME : "BN_EMA_RSI_ST_V2",
     BN_EMA_RSI_ST_V2_KEY, "/bn_ema_rsi_st_v2-backtest", bnEmaRsiStV2Result
+  ) : "";
+  // SAIL STOCK options — the label says so; its P&L comes from a SAIL-scaled
+  // simulated premium (SAIL_VWAP_ST_BT_*), not the NIFTY BACKTEST_* keys.
+  const sailVwapStPanel = sailVwapStOn ? renderPanel(
+    "SAIL VWAP+ST · SAIL stock", { bg: "rgba(253,164,175,0.12)", fg: "#fda4af", border: "rgba(253,164,175,0.25)" },
+    sailVwapStStrategy && sailVwapStStrategy.NAME ? sailVwapStStrategy.NAME : "SAIL_VWAP_ST",
+    SAIL_VWAP_ST_KEY, "/sail_vwap_st-backtest", sailVwapStResult
   ) : "";
   const simple930Panel = simple930On ? renderPanel(
     "SIMPLE_9:30", { bg: "rgba(251,146,60,0.12)", fg: "#fb923c", border: "rgba(251,146,60,0.25)" },
@@ -413,9 +426,10 @@ ${buildSidebar('allBacktest', liveActive)}
   ${rsiPivotStPanel}
   ${bnPivotRsiStPanel}
   ${bnEmaRsiStV2Panel}
+  ${sailVwapStPanel}
   ${simple930Panel}
   ${earlyBirdPanel}
-  ${(!emaRsiStOn && !emaRsiStV2On && !bbRsiOn && !paOn && !orbOn && !trendPbOn && !tdsOn && !haScalpOn && !prevOrbScalpOn && !rsiPivotStOn && !bnPivotRsiStOn && !bnEmaRsiStV2On && !simple930On && !earlyBirdOn) ? `
+  ${(!emaRsiStOn && !emaRsiStV2On && !bbRsiOn && !paOn && !orbOn && !trendPbOn && !tdsOn && !haScalpOn && !prevOrbScalpOn && !rsiPivotStOn && !bnPivotRsiStOn && !bnEmaRsiStV2On && !sailVwapStOn && !simple930On && !earlyBirdOn) ? `
   <div style="background:#08091a;border:0.5px solid #0e1428;border-radius:10px;padding:24px;text-align:center;color:#94a3b8;font-size:0.78rem;">
     No strategies enabled. Toggle one on in <a href="/settings" style="color:#60a5fa;">Settings → Strategy Modes</a>.
   </div>` : ""}

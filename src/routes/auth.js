@@ -60,6 +60,11 @@ function _activeZerodhaModes() {
     const m = sharedSocketState.getStRsiPivBbMode && sharedSocketState.getStRsiPivBbMode();
     if (m && /^ST_RSI_PIV_BB_(PAPER|LIVE)$/.test(m) && !out.includes(m)) out.push(m);
   } catch (_) {}
+  // SAIL_VWAP_ST — Fyers candles, Zerodha orders (SAIL stock options).
+  try {
+    const m = sharedSocketState.getSailVwapStMode && sharedSocketState.getSailVwapStMode();
+    if (m && /^SAIL_VWAP_ST_(PAPER|LIVE)$/.test(m) && !out.includes(m)) out.push(m);
+  } catch (_) {}
   return out;
 }
 

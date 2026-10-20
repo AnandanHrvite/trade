@@ -81,7 +81,10 @@ const WINDOW_CLOSE_MIN = 930;   // 15:30
 // a health check that silently monitors NOTHING is the worst outcome available.
 function underlyingKeys() {
   try {
-    const keys = Object.keys(require("../config/instrument").UNDERLYING_DEFS || {});
+    const inst = require("../config/instrument");
+    // A strategy-gated underlying (SAIL) is checked only while its strategy is on.
+    const keys = Object.keys(inst.UNDERLYING_DEFS || {})
+      .filter((k) => !inst.isUnderlyingEnabled || inst.isUnderlyingEnabled(k));
     if (keys.length) return keys;
   } catch (_) { /* fall through */ }
   return ["NIFTY", "BANKNIFTY"];

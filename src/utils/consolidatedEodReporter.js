@@ -76,6 +76,7 @@ function collectTodayStats(istDate) {
     EMA_RSI_ST_V2:   { trades: 0, wins: 0, losses: 0, pnl: 0 },
     BN_EMA_RSI_ST_V2: { trades: 0, wins: 0, losses: 0, pnl: 0 },
     ST_RSI_PIV_BB:   { trades: 0, wins: 0, losses: 0, pnl: 0 },
+    SAIL_VWAP_ST:    { trades: 0, wins: 0, losses: 0, pnl: 0 },
     SIMPLE930:       { trades: 0, wins: 0, losses: 0, pnl: 0 },
   };
 

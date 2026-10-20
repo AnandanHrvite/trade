@@ -54,6 +54,10 @@ const STRATEGY_DEFS = [
   // ST_RSI_PIV_BB: SuperTrend + RSI + pivot R1/S1 + Bollinger. Like V2 it has no
   // legacy live route — livePrefix is its paper-wrapping harness. defaultOff like V2.
   { key:'ST_RSI_PIV_BB', label:'ST_RSI_PIV_BB', accentClass:'strsipivbb', accent:'#a3e635', paperPrefix:'/st_rsi_piv_bb-paper', livePrefix:'/st_rsi_piv_bb-live', hasDayLog:true, modeFlag:'ST_RSI_PIV_BB_MODE_ENABLED', defaultOff:true },
+  // SAIL_VWAP_ST: SAIL stock options (VWAP cross + breakout, SuperTrend stop).
+  // Its Entry/Live Spot come from its OWN /status/data (SAIL, not NIFTY).
+  // livePrefix is its paper-wrapping harness. defaultOff like V2.
+  { key:'SAIL_VWAP_ST', label:'SAIL VWAP+ST', accentClass:'sailvwapst', accent:'#fda4af', paperPrefix:'/sail_vwap_st-paper', livePrefix:'/sail_vwap_st-live', hasDayLog:true, modeFlag:'SAIL_VWAP_ST_MODE_ENABLED', defaultOff:true },
   { key:'SIMPLE930', label:'SIMPLE_9:30', accentClass:'simple930', accent:'#fb923c', paperPrefix:'/simple930-paper', livePrefix:'/simple930-live', hasDayLog:true, modeFlag:'SIMPLE930_MODE_ENABLED' },
   // EarlyBird trades CASH EQUITY of several stocks at once — its /status/data
   // returns `positions[]`, not a single `position`, so renderColumn below
@@ -84,6 +88,7 @@ function enabledStrategies() {
 // EMA_RSI_ST trades through Zerodha; BB_RSI/PA/ORB through Fyers.
 const BROKER_OF = { EMA_RSI_ST:'ZERODHA', EMA_RSI_ST_V2:'ZERODHA', BB_RSI:'FYERS', PA:'FYERS', ORB:'FYERS', EMA9VWAP:'ZERODHA', TREND_PB:'FYERS', TDS:'FYERS', HA_SCALP:'ZERODHA', PREV_ORB_SCALP:'ZERODHA', RSI_PIVOT_ST:'ZERODHA', BN_PIVOT_RSI_ST:'ZERODHA', BN_EMA_RSI_ST_V2:'ZERODHA', SIMPLE930:'ZERODHA', EARLYBIRD:'FYERS' };
 BROKER_OF.ST_RSI_PIV_BB = 'ZERODHA'; // Fyers candles, Zerodha orders
+BROKER_OF.SAIL_VWAP_ST = 'ZERODHA'; // Fyers candles, Zerodha orders
 function brokerPools(strategies) {
   // Same fallback as capitalPool.baseCapital — the ribbon must show the amount the gate uses.
   const inv = (v) => (n => Number.isFinite(n) && n >= 0 ? n : 100000)(parseFloat(v || '100000'));
@@ -314,6 +319,7 @@ ${faviconLink()}
   .card.bnpivotrsist { border-top-color:#818cf8; }
   .card.bnemarsistv2 { border-top-color:#2dd4bf; }
   .card.strsipivbb { border-top-color:#a3e635; }
+  .card.sailvwapst { border-top-color:#fda4af; }
   .card.simple930 { border-top-color:#fb923c; }
   .card.earlybird { border-top-color:#14b8a6; }
   .card.cmx { border-top-color:#eab308; }

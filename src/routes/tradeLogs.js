@@ -48,6 +48,7 @@ function sendAiSkipMarkdown(res, records, baseName, meta) {
 
 const MODES = ["ema_rsi_st", "ema_rsi_st_v2", "bb_rsi", "pa", "orb", "ema9vwap", "trend_pb", "trend_day_scalp", "ha_scalp", "prev_orb_scalp", "rsi_pivot_st", "bn_pivot_rsi_st", "bn_ema_rsi_st_v2", "simple930", "early_bird"];
 MODES.push("st_rsi_piv_bb"); // ST_RSI_PIV_BB
+MODES.push("sail_vwap_st"); // SAIL_VWAP_ST
 
 function validMode(m) { return MODES.includes(m); }
 function validDate(d) { return typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d); }
@@ -736,6 +737,8 @@ function enabledModesFromEnv() {
     bn_ema_rsi_st_v2: String(process.env.BN_EMA_RSI_ST_V2_MODE_ENABLED || "false").toLowerCase() === "true",
     // ST_RSI_PIV_BB defaults OFF like V2.
     st_rsi_piv_bb: String(process.env.ST_RSI_PIV_BB_MODE_ENABLED || "false").toLowerCase() === "true",
+    // SAIL_VWAP_ST defaults OFF.
+    sail_vwap_st: String(process.env.SAIL_VWAP_ST_MODE_ENABLED || "false").toLowerCase() === "true",
     bb_rsi:    on(process.env.BB_RSI_MODE_ENABLED),
     pa:       on(process.env.PA_MODE_ENABLED),
     orb:      on(process.env.ORB_MODE_ENABLED),
@@ -807,6 +810,7 @@ router.get("/", (req, res) => {
     .mode-ema_rsi_st_v2 { color:#7dd3fc; }
     .mode-bn_ema_rsi_st_v2 { color:#5eead4; }
     .mode-st_rsi_piv_bb { color:#bef264; }
+    .mode-sail_vwap_st { color:#fecdd3; }
     .mode-bb_rsi    { color:#fbbf24; }
     .mode-pa       { color:#a78bfa; }
     .mode-orb      { color:#10b981; }
@@ -1254,6 +1258,7 @@ ${buildSidebar('tradeLogs', liveActive)}
     { key: 'ema_rsi_st_v2', label: 'EMA_RSI_ST_V2',     cls: 'mode-ema_rsi_st_v2' },
     { key: 'bn_ema_rsi_st_v2', label: 'BN EMA_RSI_ST_V2', cls: 'mode-bn_ema_rsi_st_v2' },
     { key: 'st_rsi_piv_bb', label: 'ST_RSI_PIV_BB', cls: 'mode-st_rsi_piv_bb' },
+    { key: 'sail_vwap_st', label: 'SAIL_VWAP_ST', cls: 'mode-sail_vwap_st' },
     { key: 'bb_rsi',    label: 'BB_RSI',        cls: 'mode-bb_rsi' },
     { key: 'pa',       label: 'PRICE ACTION', cls: 'mode-pa' },
     { key: 'orb',      label: 'ORB',          cls: 'mode-orb' },
@@ -1282,6 +1287,7 @@ ${buildSidebar('tradeLogs', liveActive)}
   var _filesPage  = { ema_rsi_st:1, ema_rsi_st_v2:1, bn_ema_rsi_st_v2:1, bb_rsi:1, pa:1, orb:1, ema9vwap:1, trend_pb:1, trend_day_scalp:1, ha_scalp:1, prev_orb_scalp:1, rsi_pivot_st:1, bn_pivot_rsi_st:1, simple930:1, early_bird:1 };
   var _skipsPage  = { ema_rsi_st:1, ema_rsi_st_v2:1, bn_ema_rsi_st_v2:1, bb_rsi:1, pa:1, orb:1, ema9vwap:1, trend_pb:1, trend_day_scalp:1, ha_scalp:1, prev_orb_scalp:1, rsi_pivot_st:1, bn_pivot_rsi_st:1, simple930:1, early_bird:1 };
   _filesPage.st_rsi_piv_bb = 1; _skipsPage.st_rsi_piv_bb = 1;
+  _filesPage.sail_vwap_st = 1; _skipsPage.sail_vwap_st = 1;
   var _auditPage  = 1;
   var _view = { mode:null, date:null, kind:null, page:1, total:0, pageSize:25 }; // modal state
 

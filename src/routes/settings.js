@@ -861,6 +861,53 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
+    section: "SAIL_VWAP_ST STRATEGY (SAIL VWAP cross + breakout, SuperTrend stop) — Zerodha",
+    icon: "\u{1F3ED}",
+    nav: "SAIL_VWAP_ST",
+    group: "Strategies",
+    fields: [
+      // SAIL STOCK options (NSE:SAIL-EQ spot, monthly expiry, ₹2.5 strikes, lot
+      // 4700). A 5-min candle closes across the session VWAP, then within a few
+      // candles one closes beyond that cross candle's high (CE) / low (PE) with
+      // SuperTrend agreeing. The SuperTrend line is the stop, trailed on candle
+      // close. Every key is its own SAIL_VWAP_ST_* key and every default below
+      // equals the engine's code default (src/strategies/sail_vwap_st.js).
+      // The SAIL contract itself (strike grid, lot size, expiry) lives in
+      // Common → PER-INDEX CONFIGURATION → SAIL.
+      //
+      // Ships OFF and unproven: turn the Mode toggle on (MENU VISIBILITY) and
+      // paper it for a stretch of sessions before thinking about live.
+      { key: "SAIL_VWAP_ST_PAPER_ENABLED", label: "SAIL_VWAP_ST Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new SAIL_VWAP_ST paper sessions to start. OFF blocks the Start button — use it to park the strategy without hiding it.", default: "false", subheader: "Mode & Live" },
+      { key: "SAIL_VWAP_ST_LIVE_ENABLED", label: "SAIL_VWAP_ST Live Orders (gates /sail_vwap_st-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Send real SAIL option orders to Zerodha. NEVER traded live — paper-validate a run of sessions first. Off means the harness refuses to start unless the global dry-run is also on.", default: "false" },
+      { key: "SAIL_VWAP_ST_LIVE_DRY_RUN", label: "SAIL_VWAP_ST Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep this strategy simulated even when live orders are switched on — the broker call is written to the log but no real order leaves the machine. A per-strategy safety catch on top of the global one.", default: "false" },
+
+      // ── Chart & signal ──
+      { key: "SAIL_VWAP_ST_TF", label: "Candle Timeframe", type: "select", options: [{ value: "3", label: "3 — 3-min candles" }, { value: "5", label: "5 — 5-min candles (default)" }, { value: "15", label: "15 — 15-min candles" }], effect: EFFECT.SESSION, desc: "Which SAIL candle the whole strategy reads — the VWAP cross, the breakout and the SuperTrend stop all run on this one chart. Example: at 5, a cross candle closing at 10:05 can be confirmed by the 10:10, 10:15 or 10:20 candle. Takes effect at the next Start.", default: "5", subheader: "Chart & signal" },
+      { key: "SAIL_VWAP_ST_ST_PERIOD", label: "SuperTrend ATR Period", type: "number", min: 2, max: 100, step: 1, effect: EFFECT.SESSION, desc: "How many candles the SuperTrend's ATR is measured over. The line does two jobs: its colour must agree with the trade (green for CE, red for PE), and the line itself is the trailing stop. Longer = a slower line that gives the trade more room.", default: "10" },
+      { key: "SAIL_VWAP_ST_ST_MULT", label: "SuperTrend Multiplier", type: "number", min: 0.1, max: 10, step: 0.1, effect: EFFECT.SESSION, desc: "How many ATRs away from price the SuperTrend line sits. Example: SAIL ATR ₹0.20 × 2 = the line sits about ₹0.40 below price on a CE (SAIL at ₹170.00, stop near ₹169.60). Smaller = a tighter stop that is hit more often; larger = more room and bigger losses when it is hit.", default: "2" },
+      { key: "SAIL_VWAP_ST_BREAKOUT_BARS", label: "Breakout Window (candles)", type: "number", min: 1, max: 10, step: 1, effect: EFFECT.SESSION, desc: "After a candle closes across VWAP, how many following candles may confirm it. Example: at 3, the cross candle closes at ₹169.80 above VWAP with a high of ₹169.90 — a CE is bought only if one of the next 3 candles closes above ₹169.90. If none does, or one closes back below VWAP first, the setup is dropped.", default: "3" },
+
+      // ── Session window ──
+      { key: "SAIL_VWAP_ST_ENTRY_START", label: "Entry Window Start", type: "time", effect: EFFECT.SESSION, desc: "No entries on a signal candle that closes before this time (IST). Skips the opening minutes, when the day's VWAP is built from only a few candles.", default: "09:30", subheader: "Session window" },
+      { key: "SAIL_VWAP_ST_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No NEW entries on a signal candle that closes after this time (IST). A position already open is not affected.", default: "14:30" },
+      { key: "SAIL_VWAP_ST_EOD_EXIT_TIME", label: "Forced Exit (square-off)", type: "time", effect: EFFECT.SESSION, desc: "Anything still open is sold at this time (IST), stop or no stop. Nothing is carried overnight.", default: "15:15" },
+      { key: "SAIL_VWAP_ST_WARMUP_DAYS", label: "Warm-up Days", type: "number", min: 1, max: 15, step: 1, effect: EFFECT.SESSION, desc: "How many earlier trading days of SAIL candles are loaded before the session so the SuperTrend starts the day settled (VWAP restarts every day and needs no warm-up). Example: at 2, a 09:15 start already has two full days of 5-min candles behind it and can trade from the first close.", default: "2" },
+
+      // ── Size & day guards ──
+      { key: "SAIL_VWAP_ST_LOTS", label: "Lots", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "How many lots of SAIL to buy per trade; 1 lot = SAIL_LOT_SIZE = 4700 shares. Example: 2 lots of a ₹5.00 option = 9,400 × ₹5 = ₹47,000 of premium.", default: "1", subheader: "Size & day guards" },
+      { key: "SAIL_VWAP_ST_MAX_DAILY_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Stop taking new entries once this many trades are done for the day. The rule is one trade a day — after the first exit, the strategy waits for tomorrow.", default: "1" },
+      { key: "SAIL_VWAP_ST_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 0, max: 50000, step: 250, effect: EFFECT.SESSION, desc: "Stop trading for the rest of the day once losses reach this much (0 = off). Example: at 5000, a loss of ₹1.10 per share on 4,700 shares (₹5,170) ends the day.", default: "5000" },
+      { key: "SAIL_VWAP_ST_OPT_STOP_PCT", label: "Option Premium Stop (fraction)", type: "number", min: 0, max: 0.9, step: 0.05, effect: EFFECT.SESSION, desc: "Exit if the option premium falls this fraction below entry; 0 = off. Example: at 0.25, an option bought at ₹5.00 is sold if it drops to ₹3.75, even if the SuperTrend stop has not been hit.", default: "0.25" },
+
+      // ── Backtest ── SAIL-scaled on purpose: the global BACKTEST_DELTA /
+      // BACKTEST_THETA_DAY are sized for NIFTY and are nonsense on a ₹5 SAIL option.
+      { key: "SAIL_VWAP_ST_BT_SLIPPAGE_PTS", label: "Backtest Slippage (₹ of SAIL spot, each way)", type: "number", min: 0, max: 5, step: 0.05, effect: EFFECT.BACKTEST, desc: "Cost the backtest charges on both the entry and the exit fill, in rupees of the SAIL share price, to stand in for the spread you really pay. Example: at 0.05, a CE signalled at ₹170.00 fills at ₹170.05. Set it to 0 and the backtest flatters itself.", default: "0.05", subheader: "Backtest" },
+      { key: "SAIL_VWAP_ST_BT_SEED_PREMIUM", label: "Backtest Seed Premium (₹ / share)", type: "number", min: 0.05, max: 1000, step: 0.05, effect: EFFECT.BACKTEST, desc: "The option price the backtest starts each trade from, since no historical SAIL option chain exists here. Example: 5 = every trade is assumed bought at ₹5.00. It is a guess, and the weakest number in any SAIL backtest result.", default: "5" },
+      { key: "SAIL_VWAP_ST_BT_DELTA", label: "Backtest Delta", type: "number", min: 0.05, max: 1, step: 0.05, effect: EFFECT.BACKTEST, desc: "How much the simulated option moves per ₹1 move in SAIL. Example: at 0.5, SAIL rising ₹1.00 adds ₹0.50 to a CE's simulated premium. 0.5 is roughly an at-the-money option.", default: "0.5" },
+      { key: "SAIL_VWAP_ST_BT_THETA_DAY", label: "Backtest Time Decay (₹ / share / day)", type: "number", min: 0, max: 100, step: 0.05, effect: EFFECT.BACKTEST, desc: "How much the simulated option loses per full trading day just from time passing. Example: at 0.1, a trade held half the day loses about ₹0.05 per share to decay.", default: "0.1" },
+    ],
+  },
+  {
     section: "BN_EMA_RSI_ST_V2 STRATEGY (NIFTY BANK — EMA20/50 + RSI + SuperTrend trail) — Zerodha",
     icon: "\u{1F3E6}",
     nav: "BN_EMA_RSI_ST_V2",
@@ -1047,6 +1094,20 @@ const SETTINGS_SCHEMA = [
       { key: "BANKNIFTY_SPOT_FALLBACK", label: "NIFTY BANK — Spot Fallback", type: "number", min: 30000, max: 80000, step: 100, effect: EFFECT.INSTANT, desc: "Fallback NIFTY BANK price when no live quote is available.", default: "54000" },
       { key: "BANKNIFTY_FUTURES_MARGIN_PCT", label: "NIFTY BANK — Futures Margin %", type: "number", min: 1, max: 100, step: 0.5, effect: EFFECT.INSTANT, desc: "SPAN+exposure margin as % of notional, used to size the capital pool when the Trade Type is futures. Advisory only — never blocks a trade.", default: "11" },
 
+      // SAIL — a STOCK, not an index (traded only by SAIL_VWAP_ST). Same nine
+      // fields, SAIL_-prefixed keys (instrument.js UNDERLYING_DEFS.SAIL). Stock
+      // options are monthly-only and struck on a ₹2.5 grid, so the step and the
+      // offsets are fractional. Read live per entry — a save applies at once.
+      { key: "SAIL_STRIKE_STEP", label: "SAIL — Strike Step (₹)", type: "number", min: 0.05, max: 100, step: 0.05, effect: EFFECT.INSTANT, desc: "The strike grid SAIL options are listed on. At today's ~₹170 price SAIL strikes exist every ₹2.50, so the ATM strike is the share price rounded to the nearest 2.5 — e.g. SAIL at ₹168.60 → the ₹167.50 strike, at ₹168.90 → ₹170. Change it only if NSE changes the grid.", default: "2.5", subheader: "SAIL (stock options)" },
+      { key: "SAIL_LOT_SIZE", label: "SAIL — Lot Size (shares)", type: "number", min: 1, max: 100000, step: 1, effect: EFFECT.INSTANT, desc: "Shares per SAIL option lot — 4700 per NSE's contract list. Example: 1 lot of a ₹5.00 option costs 4,700 × ₹5 = ₹23,500.", default: "4700" },
+      { key: "SAIL_STRIKE_OFFSET_CE", label: "SAIL — CE Strike Offset (₹)", type: "number", min: -25, max: 25, step: 2.5, effect: EFFECT.INSTANT, desc: "CE strike vs ATM, in rupees on the ₹2.5 grid (-2.5 = one strike ITM, 0 = ATM, +2.5 = one strike OTM). Example: SAIL at ₹170 with +2.5 buys the ₹172.50 CE.", default: "0" },
+      { key: "SAIL_STRIKE_OFFSET_PE", label: "SAIL — PE Strike Offset (₹)", type: "number", min: -25, max: 25, step: 2.5, effect: EFFECT.INSTANT, desc: "PE strike vs ATM, in rupees on the ₹2.5 grid (+2.5 = one strike ITM, 0 = ATM, -2.5 = one strike OTM). Example: SAIL at ₹170 with -2.5 buys the ₹167.50 PE.", default: "0" },
+      { key: "SAIL_WEEKLY_EXPIRY_ENABLED", label: "SAIL — Weekly Expiries Exist", type: "toggle", effect: EFFECT.INSTANT, desc: "OFF, and it must stay off: NSE STOCK options are MONTHLY only (last Tuesday of the month) — there has never been a weekly SAIL contract. Switching this on would make the engine build weekly symbols that do not exist, so every entry would be refused.", default: "false" },
+      { key: "SAIL_OPTION_EXPIRY_TYPE", label: "SAIL — Expiry Type", type: "select", options: ["monthly", "weekly"], effect: EFFECT.INSTANT, desc: "Monthly is the only real answer — SAIL is a stock and stock options expire monthly only. Weekly is honoured only if the Weekly Expiries Exist toggle above is on, which it never should be for SAIL.", default: "monthly" },
+      { key: "SAIL_OPTION_EXPIRY_OVERRIDE", label: "SAIL — Option Expiry (manual)", type: "date", effect: EFFECT.INSTANT, desc: "Manual SAIL expiry (YYYY-MM-DD). Leave blank to use the current month's contract (e.g. 2026-10-27 for October 2026). Like the index keys above, a stored date is rolled forward automatically once it expires while SAIL_VWAP_ST is switched on; a future date you set is left alone. A date that has already passed BLOCKS SAIL entries rather than quietly trading a different expiry." },
+      { key: "SAIL_SPOT_FALLBACK", label: "SAIL — Spot Fallback (₹)", type: "number", min: 1, max: 10000, step: 0.05, effect: EFFECT.INSTANT, desc: "Fallback SAIL share price when no live quote is available — used only to pick a strike, never to fill a trade.", default: "170" },
+      { key: "SAIL_FUTURES_MARGIN_PCT", label: "SAIL — Futures Margin %", type: "number", min: 1, max: 100, step: 0.5, effect: EFFECT.INSTANT, desc: "SPAN+exposure margin as % of notional, for completeness of the SAIL contract definition. SAIL_VWAP_ST trades options only, so this is advisory and never blocks a trade.", default: "20" },
+
       { key: "TICK_RECORDER_ENABLED", label: "Tick Recorder (for Replay)", type: "toggle", effect: EFFECT.SESSION, desc: "Record ticks so sessions can be replayed.", default: "true", subheader: "Recording & Replay" },
       { key: "TICK_RECORDER_RETAIN_DAYS", label: "Tick Recordings Retention (days)", type: "number", min: 7, max: 180, step: 1, effect: EFFECT.SERVER, desc: "Delete tick recordings older than this.", default: "30" },
       { key: "OPTION_CHAIN_RECORDER_ENABLED", label: "Day-Wide Option-Chain Recorder", type: "toggle", effect: EFFECT.INSTANT, desc: "Record the option chain for replay. Uses most of the Fyers 5,000/day request limit — keep off unless you replay.", default: "false" },
@@ -1157,6 +1218,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_EMA_RSI_ST_V2_STARTED", label: "EMA_RSI_ST_V2 — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an EMA_RSI_ST_V2 session starts.", default: "true" },
       { key: "TG_BN_EMA_RSI_ST_V2_STARTED", label: "BN_EMA_RSI_ST_V2 — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a BN_EMA_RSI_ST_V2 (NIFTY BANK) session starts.", default: "true" },
       { key: "TG_ST_RSI_PIV_BB_STARTED", label: "ST_RSI_PIV_BB — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an ST_RSI_PIV_BB session starts.", default: "true" },
+      { key: "TG_SAIL_VWAP_ST_STARTED", label: "SAIL_VWAP_ST — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a SAIL_VWAP_ST session starts.", default: "true" },
       { key: "TG_CMX_STARTED", label: "Commodity (MCX) — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when any Crude / Gold / Silver paper page starts.", default: "true" },
 
       { key: "TG_EMA_RSI_ST_ENTRY", label: "EMA_RSI_ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST entry.", default: "true", subheader: "Trade Entry" },
@@ -1175,6 +1237,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_EMA_RSI_ST_V2_ENTRY", label: "EMA_RSI_ST_V2 — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST_V2 entry.", default: "true" },
       { key: "TG_BN_EMA_RSI_ST_V2_ENTRY", label: "BN_EMA_RSI_ST_V2 — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BN_EMA_RSI_ST_V2 (NIFTY BANK) entry.", default: "true" },
       { key: "TG_ST_RSI_PIV_BB_ENTRY", label: "ST_RSI_PIV_BB — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every ST_RSI_PIV_BB entry.", default: "true" },
+      { key: "TG_SAIL_VWAP_ST_ENTRY", label: "SAIL_VWAP_ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every SAIL_VWAP_ST entry.", default: "true" },
       { key: "TG_CMX_ENTRY", label: "Commodity (MCX) — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Crude / Gold / Silver paper entry.", default: "true" },
 
       { key: "TG_EMA_RSI_ST_EXIT", label: "EMA_RSI_ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST exit.", default: "true", subheader: "Trade Exit" },
@@ -1193,6 +1256,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_EMA_RSI_ST_V2_EXIT", label: "EMA_RSI_ST_V2 — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST_V2 exit.", default: "true" },
       { key: "TG_BN_EMA_RSI_ST_V2_EXIT", label: "BN_EMA_RSI_ST_V2 — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BN_EMA_RSI_ST_V2 (NIFTY BANK) exit.", default: "true" },
       { key: "TG_ST_RSI_PIV_BB_EXIT", label: "ST_RSI_PIV_BB — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every ST_RSI_PIV_BB exit.", default: "true" },
+      { key: "TG_SAIL_VWAP_ST_EXIT", label: "SAIL_VWAP_ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every SAIL_VWAP_ST exit.", default: "true" },
       { key: "TG_CMX_EXIT", label: "Commodity (MCX) — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Crude / Gold / Silver paper exit.", default: "true" },
 
       { key: "TG_EMA_RSI_ST_SIGNALS", label: "EMA_RSI_ST — Signal/Skip Alerts", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert why a trade was or wasn't taken.", default: "true", subheader: "Signal / Skip" },
@@ -1216,6 +1280,7 @@ const SETTINGS_SCHEMA = [
       { key: "TG_EMA_RSI_ST_V2_DAYREPORT", label: "EMA_RSI_ST_V2 — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send an EMA_RSI_ST_V2 day summary on stop.", default: "true" },
       { key: "TG_BN_EMA_RSI_ST_V2_DAYREPORT", label: "BN_EMA_RSI_ST_V2 — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a BN_EMA_RSI_ST_V2 (NIFTY BANK) day summary on stop.", default: "true" },
       { key: "TG_ST_RSI_PIV_BB_DAYREPORT", label: "ST_RSI_PIV_BB — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send an ST_RSI_PIV_BB day summary on stop.", default: "true" },
+      { key: "TG_SAIL_VWAP_ST_DAYREPORT", label: "SAIL_VWAP_ST — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a SAIL_VWAP_ST day summary on stop.", default: "true" },
       { key: "TG_CMX_DAYREPORT", label: "Commodity (MCX) — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a day summary when a Crude / Gold / Silver paper page stops.", default: "true" },
 
       { key: "TG_DAYREPORT_CONSOLIDATED", label: "Consolidated Day Report (Market Close)", type: "toggle", effect: EFFECT.INSTANT, desc: "Send one combined end-of-day summary at 15:30 IST.", default: "true" },
@@ -1328,6 +1393,7 @@ const SETTINGS_SCHEMA = [
       { key: "EMA_RSI_ST_V2_MODE_ENABLED", label: "EMA_RSI_ST_V2 Mode", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the EMA_RSI_ST_V2 menu and settings. A separate strategy from EMA_RSI_ST, not a mode of it. Ships OFF because V2 is unproven — turn it on to paper-trade it.", default: "false" },
       { key: "BN_EMA_RSI_ST_V2_MODE_ENABLED", label: "BN EMA_RSI_ST_V2 Mode (NIFTY BANK)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the BN EMA_RSI_ST_V2 menu and settings. The same rules as EMA_RSI_ST_V2 but traded on NIFTY BANK, with its own settings and its own position — the two can run side by side. Ships OFF and unproven.", default: "false" },
       { key: "ST_RSI_PIV_BB_MODE_ENABLED", label: "ST_RSI_PIV_BB Mode", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the ST_RSI_PIV_BB menu and settings — SuperTrend + RSI + pivot R1/S1 + Bollinger, all four on one candle. Ships OFF because it is unproven — turn it on to paper-trade it.", default: "false" },
+      { key: "SAIL_VWAP_ST_MODE_ENABLED", label: "SAIL_VWAP_ST Mode (SAIL stock options)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the SAIL_VWAP_ST menu (under STOCKS) and its settings, and start streaming SAIL prices. It buys SAIL stock options: a 5-min candle closes across VWAP, then a close beyond that candle's high/low within 3 candles, with SuperTrend agreeing. Ships OFF because it is unproven — turn it on to backtest and paper-trade it.", default: "false" },
       { key: "CMX_CRUDE_EMA_RSI_ST_MODE_ENABLED", label: "Crude Oil EMA_RSI_ST Mode (Commodity)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the COMMODITY → Crude Oil → EMA_RSI_ST Paper page and allow it to start. The EMA_RSI_ST rules on MCX crude oil, paper only, separate from every NIFTY strategy. Ships OFF.", default: "false" },
       { key: "CMX_CRUDE_EMA_RSI_ST_V2_MODE_ENABLED", label: "Crude Oil EMA_RSI_ST_V2 Mode (Commodity)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the COMMODITY → Crude Oil → EMA_RSI_ST_V2 Paper page and allow it to start. The EMA_RSI_ST_V2 rules on MCX crude oil, paper only, separate from every NIFTY strategy. Ships OFF.", default: "false" },
       { key: "CMX_GOLD_EMA_RSI_ST_MODE_ENABLED", label: "Gold EMA_RSI_ST Mode (Commodity)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the COMMODITY → Gold → EMA_RSI_ST Paper page and allow it to start. The EMA_RSI_ST rules on MCX gold, paper only, separate from every NIFTY strategy. Ships OFF.", default: "false" },
@@ -1436,6 +1502,13 @@ const SETTINGS_SCHEMA = [
       { key: "UI_SHOW_ST_RSI_PIV_BB_PAPER",    label: "ST_RSI_PIV_BB → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under ST_RSI_PIV_BB.", default: "true" },
       { key: "UI_SHOW_ST_RSI_PIV_BB_LIVE_HARNESS", label: "ST_RSI_PIV_BB → Live", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (the paper-wrapping harness at /st_rsi_piv_bb-live) under ST_RSI_PIV_BB.", default: "false" },
       { key: "UI_SHOW_ST_RSI_PIV_BB_HISTORY",  label: "ST_RSI_PIV_BB → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under ST_RSI_PIV_BB.", default: "true" },
+      // ── SAIL_VWAP_ST submenu (STOCKS) ── defaults match what sharedNav falls
+      // back to (Backtest/Paper/History on, Live off); the whole group stays
+      // hidden until SAIL_VWAP_ST_MODE_ENABLED is switched on.
+      { key: "UI_SHOW_SAIL_VWAP_ST_BACKTEST", label: "SAIL_VWAP_ST → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under SAIL VWAP+ST.", default: "true", subheader: "SAIL_VWAP_ST sub-menus" },
+      { key: "UI_SHOW_SAIL_VWAP_ST_PAPER",    label: "SAIL_VWAP_ST → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under SAIL VWAP+ST.", default: "true" },
+      { key: "UI_SHOW_SAIL_VWAP_ST_LIVE_HARNESS", label: "SAIL_VWAP_ST → Live", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (the paper-wrapping harness at /sail_vwap_st-live) under SAIL VWAP+ST.", default: "false" },
+      { key: "UI_SHOW_SAIL_VWAP_ST_HISTORY",  label: "SAIL_VWAP_ST → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under SAIL VWAP+ST.", default: "true" },
 
       // ── System submenu (Settings is always shown) ──
       { key: "UI_SHOW_LOGS",       label: "Logs → Server Logs tab", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Server Logs tab.", default: "true", subheader: "System sub-menus" },
@@ -1512,6 +1585,7 @@ const MODE_SECTION_TITLES = {
   ema_rsi_st_v2: "EMA_RSI_ST_V2 STRATEGY (EMA20/50 + RSI + SuperTrend trail) — Zerodha",
   bn_ema_rsi_st_v2: "BN_EMA_RSI_ST_V2 STRATEGY (NIFTY BANK — EMA20/50 + RSI + SuperTrend trail) — Zerodha",
   st_rsi_piv_bb: "ST_RSI_PIV_BB STRATEGY (SuperTrend + RSI + Pivot R1/S1 + Bollinger) — Zerodha",
+  sail_vwap_st: "SAIL_VWAP_ST STRATEGY (SAIL VWAP cross + breakout, SuperTrend stop) — Zerodha",
   early_bird: "EARLYBIRD STRATEGY (first 15-min breakout, CASH EQUITY) — Fyers",
 };
 const SNAPSHOT_COMMON_SECTION_TITLES = new Set([
@@ -1522,6 +1596,7 @@ const SNAPSHOT_COMMON_SECTION_TITLES = new Set([
 
 const _MODE_KEYS = { ema_rsi_st: new Set(), bb_rsi: new Set(), pa: new Set(), orb: new Set(), ema9vwap: new Set(), trend_pb: new Set(), trend_day_scalp: new Set(), ha_scalp: new Set(), prev_orb_scalp: new Set(), simple930: new Set(), rsi_pivot_st: new Set(), bn_pivot_rsi_st: new Set(), ema_rsi_st_v2: new Set(), bn_ema_rsi_st_v2: new Set(), early_bird: new Set() };
 _MODE_KEYS.st_rsi_piv_bb = new Set();
+_MODE_KEYS.sail_vwap_st = new Set();
 const _KEY_TO_MODES = new Map();
 (function buildModeKeyIndex() {
   const commonKeys = [];
@@ -1609,6 +1684,9 @@ const IMMEDIATE_KEYS = new Set([
   "BANKNIFTY_STRIKE_STEP", "BANKNIFTY_LOT_SIZE", "BANKNIFTY_FUTURES_MARGIN_PCT",
   "BANKNIFTY_STRIKE_OFFSET_CE", "BANKNIFTY_STRIKE_OFFSET_PE", "BANKNIFTY_SPOT_FALLBACK",
   "BANKNIFTY_WEEKLY_EXPIRY_ENABLED", "BANKNIFTY_OPTION_EXPIRY_OVERRIDE", "BANKNIFTY_OPTION_EXPIRY_TYPE",
+  "SAIL_STRIKE_STEP", "SAIL_LOT_SIZE", "SAIL_FUTURES_MARGIN_PCT",
+  "SAIL_STRIKE_OFFSET_CE", "SAIL_STRIKE_OFFSET_PE", "SAIL_SPOT_FALLBACK",
+  "SAIL_WEEKLY_EXPIRY_ENABLED", "SAIL_OPTION_EXPIRY_OVERRIDE", "SAIL_OPTION_EXPIRY_TYPE",
   "BACKTEST_CAPITAL", "BACKTEST_OPTION_SIM",
   "BACKTEST_DELTA", "BACKTEST_THETA_DAY", "ZERODHA_INV_AMOUNT", "FYERS_INV_AMOUNT",
   "PAPER_CAPITAL_GATE_ENABLED", "PAPER_CAPITAL_EST_PREMIUM",
@@ -2502,6 +2580,8 @@ router.get("/", (req, res) => {
   const bnEmaRsiStV2ModeOn = (envData["BN_EMA_RSI_ST_V2_MODE_ENABLED"] ?? process.env.BN_EMA_RSI_ST_V2_MODE_ENABLED ?? "false").toLowerCase() === "true";
   // ST_RSI_PIV_BB — also "false" by default, like V2.
   const stRsiPivBbModeOn = (envData["ST_RSI_PIV_BB_MODE_ENABLED"] ?? process.env.ST_RSI_PIV_BB_MODE_ENABLED ?? "false").toLowerCase() === "true";
+  // SAIL_VWAP_ST — also "false" by default.
+  const sailVwapStModeOn = (envData["SAIL_VWAP_ST_MODE_ENABLED"] ?? process.env.SAIL_VWAP_ST_MODE_ENABLED ?? "false").toLowerCase() === "true";
   // Commodity section shows once any commodity page is on.
   const cmxModeOn = ["CRUDE", "GOLD", "SILVER"].flatMap(c => [`CMX_${c}_EMA_RSI_ST_MODE_ENABLED`, `CMX_${c}_EMA_RSI_ST_V2_MODE_ENABLED`])
     .some(k => (envData[k] ?? process.env[k] ?? "false").toLowerCase() === "true");
@@ -2524,6 +2604,7 @@ router.get("/", (req, res) => {
     "EMA_RSI_ST_V2 STRATEGY (EMA20/50 + RSI + SuperTrend trail) — Zerodha": emaRsiStV2ModeOn,
     "BN_EMA_RSI_ST_V2 STRATEGY (NIFTY BANK — EMA20/50 + RSI + SuperTrend trail) — Zerodha": bnEmaRsiStV2ModeOn,
     "ST_RSI_PIV_BB STRATEGY (SuperTrend + RSI + Pivot R1/S1 + Bollinger) — Zerodha": stRsiPivBbModeOn,
+    "SAIL_VWAP_ST STRATEGY (SAIL VWAP cross + breakout, SuperTrend stop) — Zerodha": sailVwapStModeOn,
     "COMMODITY (MCX crude / gold / silver) — EMA_RSI_ST + EMA_RSI_ST_V2, paper only": cmxModeOn,
     "EARLYBIRD STRATEGY (first 15-min breakout, CASH EQUITY) — Fyers": earlyBirdModeOn,
   };

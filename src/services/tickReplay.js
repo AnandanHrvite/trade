@@ -249,11 +249,17 @@ function _fileFingerprint(p) {
 // Inverting that would feed every old day's NIFTY ticks to BANKNIFTY.
 const _NIFTY_INDEX     = "NSE:NIFTY50-INDEX";
 const _BANKNIFTY_INDEX = "NSE:NIFTYBANK-INDEX";
+// SAIL — a STOCK spot (SAIL_VWAP_ST), recorded with idx "NSE:SAIL-EQ". Like
+// BANKNIFTY it accepts ONLY ticks stamped with its own idx (never a no-idx
+// NIFTY tick), so a SAIL replay can never be fed NIFTY / NIFTY BANK prices.
+const _SAIL_SPOT = "NSE:SAIL-EQ";
 const _MODE_TO_SPOT_INDEX = {
   // The NIFTY BANK modes (monthly options). A mode missing here replays NIFTY 50
   // ticks into a BANKNIFTY engine and pins the NIFTY weekly expiry.
   "bn-pivot-rsi-st-paper": _BANKNIFTY_INDEX,
   "bn_ema_rsi_st_v2-paper": _BANKNIFTY_INDEX,
+  // SAIL stock options — the paper callback is bound to NSE:SAIL-EQ.
+  "sail_vwap_st-paper": _SAIL_SPOT,
 };
 /** The spot index a mode's engine subscribes to. Defaults to NIFTY 50. */
 function _spotIndexOf(mode) { return _MODE_TO_SPOT_INDEX[mode] || _NIFTY_INDEX; }
@@ -261,6 +267,7 @@ function _spotIndexOf(mode) { return _MODE_TO_SPOT_INDEX[mode] || _NIFTY_INDEX; 
 const _MODE_UNDERLYING_LABEL = {
   "bn-pivot-rsi-st-paper": "BN_PIVOT_RSI_ST (NIFTY BANK, monthly options)",
   "bn_ema_rsi_st_v2-paper": "BN_EMA_RSI_ST_V2 (NIFTY BANK, monthly options)",
+  "sail_vwap_st-paper": "SAIL_VWAP_ST (SAIL stock, monthly options)",
 };
 function _underlyingLabelOf(mode) {
   return _MODE_UNDERLYING_LABEL[mode]
@@ -429,10 +436,47 @@ function _resolveBankniftyExpiryEnv({ marketContext, snapshot, date, tradedExpir
   };
 }
 
+/**
+ * Expiry for SAIL_VWAP_ST (SAIL stock options). Resolved by UNDERLYING through
+ * instrument.js's SAIL keys (UNDERLYING_DEFS.SAIL.env), exactly like the
+ * BANKNIFTY path above: MONTHLY always — NSE stock options have no weekly
+ * contract — and the NIFTY expiry keys are blanked so a standing NIFTY
+ * override cannot leak into a SAIL run.
+ */
+const _SAIL_EXPIRY_OVERRIDE_KEY = "SAIL_OPTION_EXPIRY_OVERRIDE";
+const _SAIL_EXPIRY_TYPE_KEY     = "SAIL_OPTION_EXPIRY_TYPE";
+function _resolveSailExpiryEnv({ marketContext, snapshot, date, tradedExpiry }) {
+  const snap = snapshot || {};
+  const env  = {};
+  for (const k of _EXPIRY_PIN_KEYS) env[k] = "";   // NIFTY's keys — unread here, blanked so nothing leaks
+  const _pin = (d, source) => {
+    env[_SAIL_EXPIRY_OVERRIDE_KEY] = d;
+    env[_SAIL_EXPIRY_TYPE_KEY]     = "monthly";
+    return { env, source, date: d, type: "monthly", underlying: "SAIL" };
+  };
+  const recorded = String(snap[_SAIL_EXPIRY_OVERRIDE_KEY] || "").trim();
+  if (recorded.length >= 8 && _overrideUsableOn(recorded, date)) return _pin(recorded, "explicit-override");
+  if (tradedExpiry && _overrideUsableOn(tradedExpiry, date)) return _pin(tradedExpiry, "live-trades");
+  const u = marketContext && marketContext.underlyings && marketContext.underlyings.SAIL;
+  if (u && u.monthlyExpiry && _overrideUsableOn(u.monthlyExpiry, date)) return _pin(u.monthlyExpiry, "market-context");
+  // Not recorded anywhere: leave blank so instrument.js auto-computes the SAIL
+  // monthly off the replay clock, and SAY SO. The NIFTY expiry is NOT substituted.
+  env[_SAIL_EXPIRY_OVERRIDE_KEY] = "";
+  env[_SAIL_EXPIRY_TYPE_KEY]     = "";
+  return {
+    env, source: "unpinned-sail", date: null, type: "monthly", underlying: "SAIL",
+    warn: "no recorded SAIL expiry (no SAIL_OPTION_EXPIRY_OVERRIDE in the snapshot, no traded SAIL contract, no underlyings.SAIL in the Market Context Snapshot), so the SAIL monthly expiry is auto-computed from the replay clock. The NIFTY expiry was NOT substituted.",
+  };
+}
+
 function _resolveReplayExpiryEnv({ marketContext, snapshot, mode, date = null, tradedExpiry = null }) {
   // BANKNIFTY resolves through its own index keys — see _resolveBankniftyExpiryEnv.
   if (_spotIndexOf(mode) === _BANKNIFTY_INDEX) {
     return _resolveBankniftyExpiryEnv({ marketContext, snapshot, date, tradedExpiry });
+  }
+  // SAIL resolves through its own SAIL_OPTION_EXPIRY_* keys — see _resolveSailExpiryEnv.
+  if (_spotIndexOf(mode) === _SAIL_SPOT) {
+    return _resolveSailExpiryEnv({ marketContext, snapshot, date, tradedExpiry });
   }
   const prefix = _MODE_TO_ENV_PREFIX[mode] || null;   // null for bb_rsi/pa (common key only)
   const snap = snapshot || {};
@@ -857,6 +901,7 @@ const _MODE_TO_CANONICAL_FILE = {
   "early-bird-paper":      "early_bird_paper_trades.json",
   "rsi-pivot-st-paper":    "rsi_pivot_st_paper_trades.json",
   "bn-pivot-rsi-st-paper": "bn_pivot_rsi_st_paper_trades.json",
+  "sail_vwap_st-paper":    "sail_vwap_st_paper_trades.json",
   "simple930-paper":       "simple930_paper_trades.json",
 };
 function _lookupCanonicalSession(mode, sessionStartTs) {
@@ -1056,6 +1101,9 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     // still never touch its REAL mutex slot.
     ss_setStRsiPivBbMode:      sharedSocketState.setStRsiPivBbMode,
     ss_clearStRsiPivBbMode:    sharedSocketState.clearStRsiPivBbMode,
+    // SAIL_VWAP_ST keeps its OWN mutex slot — a replay must never touch the real one.
+    ss_setSailVwapStMode:      sharedSocketState.setSailVwapStMode,
+    ss_clearSailVwapStMode:    sharedSocketState.clearSailVwapStMode,
     // EMA_RSI_ST_V2 likewise keeps its OWN mutex slot, separate from V1's
     // primaryMode, so it needs its own pair here too.
     // BN_EMA_RSI_ST_V2 (NIFTY BANK) has its OWN mutex slot as well — the same
@@ -1614,6 +1662,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     sharedSocketState.clearEmaRsiStV2Mode    = () => {};
     sharedSocketState.setStRsiPivBbMode      = () => {};
     sharedSocketState.clearStRsiPivBbMode    = () => {};
+    sharedSocketState.setSailVwapStMode      = () => {};
+    sharedSocketState.clearSailVwapStMode    = () => {};
     sharedSocketState.setBnEmaRsiStV2Mode    = () => {};
     sharedSocketState.clearBnEmaRsiStV2Mode  = () => {};
     sharedSocketState.setSimple930Active     = () => {};
@@ -1893,6 +1943,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     sharedSocketState.clearEmaRsiStV2Mode    = orig.ss_clearEmaRsiStV2Mode;
     sharedSocketState.setStRsiPivBbMode      = orig.ss_setStRsiPivBbMode;
     sharedSocketState.clearStRsiPivBbMode    = orig.ss_clearStRsiPivBbMode;
+    sharedSocketState.setSailVwapStMode      = orig.ss_setSailVwapStMode;
+    sharedSocketState.clearSailVwapStMode    = orig.ss_clearSailVwapStMode;
     sharedSocketState.setBnEmaRsiStV2Mode    = orig.ss_setBnEmaRsiStV2Mode;
     sharedSocketState.clearBnEmaRsiStV2Mode  = orig.ss_clearBnEmaRsiStV2Mode;
     sharedSocketState.setSimple930Active     = orig.ss_setSimple930Active;
@@ -1979,6 +2031,8 @@ const MODE_TO_MODULE = {
   "early-bird-paper":      "../routes/earlyBirdPaper",
   "rsi-pivot-st-paper":    "../routes/rsiPivotStPaper",
   "bn-pivot-rsi-st-paper": "../routes/bnPivotRsiStPaper",
+  // SAIL stock options — fed ONLY NSE:SAIL-EQ ticks (_MODE_TO_SPOT_INDEX).
+  "sail_vwap_st-paper":    "../routes/sailVwapStPaper",
   "simple930-paper":       "../routes/simple930Paper",
   // Live modes are NOT supported for replay (they place real orders). If a
   // live session was recorded, replay it as the matching paper mode.
@@ -2746,6 +2800,7 @@ function replayPreflight() {
   if (sharedSocketState.isBnPivotRsiStActive && sharedSocketState.isBnPivotRsiStActive()) activeModes.push(sharedSocketState.getBnPivotRsiStMode() || "bn_pivot_rsi_st");
   if (sharedSocketState.isEmaRsiStV2Active && sharedSocketState.isEmaRsiStV2Active()) activeModes.push(sharedSocketState.getEmaRsiStV2Mode() || "ema_rsi_st_v2");
   if (sharedSocketState.isStRsiPivBbActive && sharedSocketState.isStRsiPivBbActive()) activeModes.push(sharedSocketState.getStRsiPivBbMode() || "st_rsi_piv_bb");
+  if (sharedSocketState.isSailVwapStActive && sharedSocketState.isSailVwapStActive()) activeModes.push(sharedSocketState.getSailVwapStMode() || "sail_vwap_st");
   if (sharedSocketState.isBnEmaRsiStV2Active && sharedSocketState.isBnEmaRsiStV2Active()) activeModes.push(sharedSocketState.getBnEmaRsiStV2Mode() || "bn_ema_rsi_st_v2");
   if (sharedSocketState.isSimple930Active && sharedSocketState.isSimple930Active()) activeModes.push(sharedSocketState.getSimple930Mode() || "simple930");
   if (activeModes.length > 0) {
@@ -2813,6 +2868,7 @@ function forceClearSharedState() {
     bn_pivot_rsi_st: sharedSocketState.getBnPivotRsiStMode ? sharedSocketState.getBnPivotRsiStMode() : null,
     ema_rsi_st_v2: sharedSocketState.getEmaRsiStV2Mode ? sharedSocketState.getEmaRsiStV2Mode() : null,
     st_rsi_piv_bb: sharedSocketState.getStRsiPivBbMode ? sharedSocketState.getStRsiPivBbMode() : null,
+    sail_vwap_st: sharedSocketState.getSailVwapStMode ? sharedSocketState.getSailVwapStMode() : null,
     bn_ema_rsi_st_v2: sharedSocketState.getBnEmaRsiStV2Mode ? sharedSocketState.getBnEmaRsiStV2Mode() : null,
     simple930: sharedSocketState.getSimple930Mode ? sharedSocketState.getSimple930Mode() : null,
     replayInProgress: _replayInProgress,
@@ -2834,6 +2890,7 @@ function forceClearSharedState() {
   if (sharedSocketState.clearBnPivotRsiStMode) sharedSocketState.clearBnPivotRsiStMode();
   if (sharedSocketState.clearEmaRsiStV2Mode) sharedSocketState.clearEmaRsiStV2Mode();
   if (sharedSocketState.clearStRsiPivBbMode) sharedSocketState.clearStRsiPivBbMode();
+  if (sharedSocketState.clearSailVwapStMode) sharedSocketState.clearSailVwapStMode();
   if (sharedSocketState.clearBnEmaRsiStV2Mode) sharedSocketState.clearBnEmaRsiStV2Mode();
   if (sharedSocketState.clearSimple930) sharedSocketState.clearSimple930();
   _replayInProgress = false;

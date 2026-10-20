@@ -55,6 +55,12 @@ const PREMIUM_DENOMINATED = new Set(["simple930Paper.js"]);
 // out of the NIFTY instrument code entirely — asserted below.
 const NOT_NIFTY = { has: (f) => /^cmx[A-Z][A-Za-z0-9]*Paper\.js$/.test(f) };
 
+// STOCK-option strategies (SAIL_VWAP_ST). They never trade NIFTY, so the
+// NIFTY_FUTURES toggle has nothing to switch. Exempt only while EVERY contract
+// they build names their own stock underlying — asserted below.
+const STOCK_OPTIONS = { SAIL: new Set(["sailVwapStPaper.js", "sailVwapStBacktest.js"]) };
+const stockUnderlyingOf = (f) => Object.keys(STOCK_OPTIONS).find((k) => STOCK_OPTIONS[k].has(f)) || null;
+
 // ─────────────────────────────────────────────────────────────────────────────
 section("The helper itself — direction, P&L and charge rates");
 
@@ -339,6 +345,19 @@ for (const file of paperRoutes) {
     continue;
   }
 
+  if (stockUnderlyingOf(file)) {
+    const U = stockUnderlyingOf(file);
+    check(`${file} trades ${U} stock options only — never a NIFTY contract`, () => {
+      const calls = src.match(/validateAndGetOptionSymbol\([^)]*\)/g) || [];
+      assert.ok(calls.length > 0, `${file} must resolve its option through validateAndGetOptionSymbol`);
+      for (const c of calls) assert.ok(/underlying:\s*UNDERLYING/.test(c), `${file}: ${c} does not name the ${U} underlying`);
+      assert.ok(!/\bgetSymbol\(|\bgetLotQty\(/.test(src), `${file} must not call the NIFTY-default getSymbol/getLotQty`);
+      const eng = require(path.join(ROUTES, "..", "strategies", "sail_vwap_st"));
+      assert.strictEqual(eng.UNDERLYING, U);
+    });
+    continue;
+  }
+
   if (PREMIUM_DENOMINATED.has(file)) {
     check(`${file} REFUSES futures mode (its levels are premiums)`, () => {
       assert.ok(/instrumentMode/.test(src),
@@ -419,6 +438,12 @@ check("the discovery found the self-simulating backtests", () => {
 
 for (const file of btRoutes) {
   const src = decomment(read(path.join("routes", file)));
+  if (stockUnderlyingOf(file)) {
+    check(`${file} simulates ${stockUnderlyingOf(file)} stock options only — no NIFTY futures mode`, () => {
+      assert.ok(/underlyingOf\(\s*["']SAIL["']\s*\)|UNDERLYING/.test(src), `${file} must fetch its own stock's candles`);
+    });
+    continue;
+  }
   check(`${file} neutralises delta and theta in futures mode`, () => {
     assert.ok(/NIFTY_FUTURES/.test(src),
       `${file} has no futures branch — it would apply a 0.55 delta to a 1:1 instrument`);

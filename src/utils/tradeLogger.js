@@ -50,6 +50,11 @@ const FILE_BY_MODE = {
   // MUST match tradeLogger's key character for character — the harness's
   // liveLogKey, if it is ever set, must be exactly "st_rsi_piv_bb-live".
   "st_rsi_piv_bb-live": "st_rsi_piv_bb_live_trades_log.jsonl",
+  // SAIL_VWAP_ST — SAIL stock options: VWAP cross + breakout, SuperTrend stop.
+  sail_vwap_st: "sail_vwap_st_paper_trades_log.jsonl",
+  // MUST match tradeLogger's key character for character — the harness's
+  // liveLogKey must be exactly "sail_vwap_st-live".
+  "sail_vwap_st-live": "sail_vwap_st_live_trades_log.jsonl",
   simple930: "simple930_paper_trades_log.jsonl",
 };
 
@@ -72,6 +77,9 @@ const DAILY_PREFIX_BY_MODE = {
   st_rsi_piv_bb: "st_rsi_piv_bb_paper_trades_",
   // MUST match tradeLogger's key character for character (see FILE_BY_MODE).
   "st_rsi_piv_bb-live": "st_rsi_piv_bb_live_trades_",
+  sail_vwap_st: "sail_vwap_st_paper_trades_",
+  // MUST match tradeLogger's key character for character (see FILE_BY_MODE).
+  "sail_vwap_st-live": "sail_vwap_st_live_trades_",
   simple930: "simple930_paper_trades_",
 };
 

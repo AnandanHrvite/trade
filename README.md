@@ -67,6 +67,9 @@ All four strategies run **in parallel** on the same WebSocket — different cand
 | **BN Pivot RSI ST Live (Harness)** | Runs Live by wrapping Paper (Zerodha orders, triple-gated dry-run) | 5-min | Zerodha (PAPER-wrapped) | `/bn-pivot-rsi-st-live` |
 | **ST_RSI_PIV_BB Paper** | SuperTrend + RSI + a close beyond yesterday's pivot R1/S1 + a close outside the Bollinger Band, all four on one closed candle (single-leg ATM CE/PE) | 3-min, 5-min, or 3-min confirmed by 5-min | Simulated | `/st_rsi_piv_bb-paper` |
 | **ST_RSI_PIV_BB Live (Harness)** | Runs Live by wrapping Paper (Zerodha orders, triple-gated dry-run) | 3 / 5-min | Zerodha (PAPER-wrapped) | `/st_rsi_piv_bb-live` |
+| **SAIL_VWAP_ST Paper** | **SAIL stock options**: a candle closes across the session VWAP, then within 3 candles one closes beyond that cross candle's high (CE) / low (PE) with SuperTrend(10, 2) agreeing; SuperTrend trailing stop on candle close | 5-min (3 / 15 selectable) | Simulated | `/sail_vwap_st-paper` |
+| **SAIL_VWAP_ST Backtest** | Same engine over a date range (next-bar-open fills, SAIL-scaled δ+θ premium sim) | 5-min historical | Historical | `/sail_vwap_st-backtest` |
+| **SAIL_VWAP_ST Live (Harness)** | Runs Live by wrapping Paper (Zerodha orders, triple-gated dry-run) | 5-min | Zerodha (PAPER-wrapped) | `/sail_vwap_st-live` |
 | **SIMPLE_9:30 Paper** | At 09:25 picks the ITM strike nearest ₹180 on each side; buys whichever clears ₹180 by 09:35, 20pt stop that trails only after the premium touches the box top, 09:45 sideways exit | 1-sec option premium poll | Simulated | `/simple930-paper` |
 | **SIMPLE_9:30 Backtest** | Same engine over a date range on **real** 1-min option premium candles (no delta/theta model) | 1-min historical (option premium) | Historical | `/simple930-backtest` |
 | **SIMPLE_9:30 Live (Harness)** | Runs Live by wrapping Paper (Zerodha orders, triple-gated dry-run) | 1-sec option premium poll | Zerodha (PAPER-wrapped) | `/simple930-live` |
@@ -344,6 +347,16 @@ NIFTY 50, option buying, intraday. Fyers data, Zerodha orders. All indicators ar
 - **Exit** is the SuperTrend line as a trailing stop, checked on candle close only: the trade closes when the SuperTrend flips, or a candle closes beyond the trailed line. The line only tightens. Anything still open is squared off at the end-of-day time.
 - **Not in this strategy, on purpose:** VIX gate, OI filter, ADX, volume, EMA, VWAP, fixed target, profit booking, breakeven jump, premium stop, cooldowns. The only day guards are the entry window, max trades per day and the daily loss cap.
 
+### SAIL_VWAP_ST — VWAP cross + breakout, SuperTrend stop, on SAIL stock options (`src/strategies/sail_vwap_st.js`)
+
+**Never traded, and never validated.** Zero paper sessions, zero live orders. Ships OFF (`SAIL_VWAP_ST_MODE_ENABLED`); its pages sit under a separate **STOCKS** group in the sidebar.
+
+The only strategy on a **single stock**: SAIL (`NSE:SAIL-EQ`), option buying, intraday. Fyers data, Zerodha orders. Stock options are **monthly only** and struck on a **₹2.5** grid, lot **4700** — configured under Settings → Common → SAIL (`SAIL_*` keys, the same nine fields as NIFTY 50 / NIFTY BANK).
+
+- **BUY CE** when a candle closes above the session VWAP (the one before it closed at or below), then one of the next 3 candles closes above that cross candle's **high**, every close in between stays above VWAP, and SuperTrend(10, 2) is green. **BUY PE** is the mirror (below VWAP, beyond the cross candle's low, SuperTrend red).
+- **Exit** is the SuperTrend line as a trailing stop, checked on candle close only, plus the repo-wide profit lock / breakeven, an option-premium stop (25% below entry by default) and the 15:15 square-off. **One trade a day.**
+- **Replay** feeds it only `NSE:SAIL-EQ` ticks from the day file and pins the SAIL monthly expiry, never the NIFTY one.
+
 ### SIMPLE_9:30 — the ₹180 option-premium breakout (`src/strategies/simple930.js`)
 
 **Never traded, and never validated.** Zero paper sessions, zero live orders. ₹180, ₹220/₹160 and the 20-point stop are the operator's own numbers, not fitted ones. Collect clean paper days and diff one against `/replay` before touching a live gate.
@@ -446,6 +459,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   rsi_pivot_st_paper_trades.json  # RSI Pivot ST paper sessions
   bn_pivot_rsi_st_paper_trades.json # BN Pivot RSI ST (NIFTY BANK) paper sessions
   st_rsi_piv_bb_paper_trades.json # ST_RSI_PIV_BB paper sessions
+  sail_vwap_st_paper_trades.json  # SAIL_VWAP_ST (SAIL stock options) paper sessions
   simple930_paper_trades.json     # SIMPLE_9:30 paper sessions
   historical_pnl.json             # One-time P&L baselines per broker (Kite / Fyers)
   nse_holidays.json               # Last good NSE holiday fetch, keyed by year — keeps 2027+ working if NSE blocks the box
@@ -461,6 +475,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   .active_rsi_pivot_st_position.json # Crash recovery — RSI Pivot ST position
   .active_bn_pivot_rsi_st_position.json # Crash recovery — BN Pivot RSI ST position
   .active_st_rsi_piv_bb_position.json # Crash recovery — ST_RSI_PIV_BB position (carries the SuperTrend trail)
+  .active_sail_vwap_st_position.json # Crash recovery — SAIL_VWAP_ST position (carries the SuperTrend trail; Zerodha group)
   .active_simple930_position.json # Crash recovery — SIMPLE_9:30 position (carries the live trail state)
   .harness_events.json            # Live-harness event log (DRY-RUN/real order events), survives restart
   ema_rsi_st_paper_trades_log.jsonl    # Crash-safe per-trade JSONL audit (cumulative)
@@ -603,6 +618,14 @@ log, so each session's trades carry the exact config that produced them.
 | `/st_rsi_piv_bb-paper/status` | Paper trade — live position, P&L and session log on the NIFTY chart |
 | `/st_rsi_piv_bb-paper/history` | Sessions (per-session delete + view modal) |
 | `/st_rsi_piv_bb-live` | Live via the paper-wrapping harness (**Zerodha** orders, triple-gated dry-run) |
+
+### SAIL_VWAP_ST (SAIL stock options)
+| URL | Description |
+|-----|-------------|
+| `/sail_vwap_st-backtest` | Date-range backtest on SAIL 5-min bars (next-bar-open fills, SAIL-scaled δ+θ premium sim) |
+| `/sail_vwap_st-paper/status` | Paper trade — SAIL chart with session VWAP and the SuperTrend line |
+| `/sail_vwap_st-paper/history` | Sessions (per-session delete + view modal) |
+| `/sail_vwap_st-live` | Live via the paper-wrapping harness (**Zerodha** orders; gated by `SAIL_VWAP_ST_LIVE_ENABLED` + `LIVE_HARNESS_DRY_RUN` + `SAIL_VWAP_ST_LIVE_DRY_RUN`) |
 
 ### SIMPLE_9:30
 | URL | Description |

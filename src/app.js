@@ -41,6 +41,7 @@ const consolidatedEodReporter = require("./utils/consolidatedEodReporter");
 const manualTradesSyncJob = require("./utils/manualTradesSyncJob");
 const { loadTradePosition, clearTradePosition, loadBbRsiPosition, clearBbRsiPosition, loadPAPosition, clearPAPosition, loadEma9VwapPosition, clearEma9VwapPosition, loadOrbPosition, clearOrbPosition, loadTrendPbPosition, clearTrendPbPosition, loadTrendDayScalpPosition, clearTrendDayScalpPosition, loadHaScalpPosition, clearHaScalpPosition, loadPrevOrbScalpPosition, clearPrevOrbScalpPosition, loadRsiPivotStPosition, clearRsiPivotStPosition, loadBnPivotRsiStPosition, clearBnPivotRsiStPosition, loadEmaRsiStV2Position, clearEmaRsiStV2Position, loadBnEmaRsiStV2Position, clearBnEmaRsiStV2Position, loadSimple930Position, clearSimple930Position, loadEarlyBirdPositions, clearEarlyBirdPositions } = require("./utils/positionPersist");
 const { loadStRsiPivBbPosition, clearStRsiPivBbPosition } = require("./utils/positionPersist"); // ST_RSI_PIV_BB crash recovery
+const { loadSailVwapStPosition, clearSailVwapStPosition } = require("./utils/positionPersist"); // SAIL_VWAP_ST crash recovery
 const app = express();
 trackMounts(app);   // record every app.use(path, router) so Start All can discover the strategy routes
 app.use(compression());
@@ -808,6 +809,14 @@ const OPEN_PATHS = [
   "/st_rsi_piv_bb-paper/history",         // read-only history
   "/st_rsi_piv_bb-paper/debug",           // read-only debug
   "/st_rsi_piv_bb-paper/client.js",       // static asset
+  // SAIL_VWAP_ST — same reason: the dashboard tile polls status/data unsecured,
+  // and a missing entry here is a raw 403 on the page once API_SECRET is set.
+  "/sail_vwap_st-paper/status",          // read-only status page
+  "/sail_vwap_st-paper/status/data",     // dashboard AJAX poll — must be open or 403 when API_SECRET is set
+  "/sail_vwap_st-paper/status/chart-data", // chart poll — read-only
+  "/sail_vwap_st-paper/history",         // read-only history
+  "/sail_vwap_st-paper/debug",           // read-only debug
+  "/sail_vwap_st-paper/client.js",       // static asset
   // COMMODITY (MCX crude/gold/silver) paper pages — read-only surfaces; start/stop/exit/reset stay protected.
   "/cmx_crude_ema_rsi_st-paper/status",
   "/cmx_crude_ema_rsi_st-paper/status/data",
@@ -1033,6 +1042,9 @@ const OPEN_PATHS = [
   "/bn_ema_rsi_st_v2-backtest",
   "/bn_ema_rsi_st_v2-backtest/status",
   "/bn_ema_rsi_st_v2-backtest/idle",
+  "/sail_vwap_st-backtest",
+  "/sail_vwap_st-backtest/status",
+  "/sail_vwap_st-backtest/idle",
   // Live-harness pages (read-only view + status poll). Their /start and /stop are
   // deliberately NOT here — those place (or dry-run log) real broker orders.
   "/ema_rsi_st-live-harness",
@@ -1045,6 +1057,10 @@ const OPEN_PATHS = [
   "/st_rsi_piv_bb-live",
   "/st_rsi_piv_bb-live/status",
   "/st_rsi_piv_bb-live/status/data",
+  // SAIL_VWAP_ST's only live page IS its harness, mounted at /sail_vwap_st-live.
+  "/sail_vwap_st-live",
+  "/sail_vwap_st-live/status",
+  "/sail_vwap_st-live/status/data",
   "/bb_rsi-live-harness",
   "/bb_rsi-live-harness/status/data",
   "/pa-live-harness",
@@ -1134,6 +1150,8 @@ const OPEN_PREFIXES = [
   "/bn_ema_rsi_st_v2-paper/download/",
   "/st_rsi_piv_bb-paper/view/",
   "/st_rsi_piv_bb-paper/download/",
+  "/sail_vwap_st-paper/view/",
+  "/sail_vwap_st-paper/download/",
   "/bb_rsi-paper/view/",
   "/bb_rsi-paper/download/",
   "/pa-paper/view/",
@@ -1298,6 +1316,13 @@ app.use("/bn_ema_rsi_st_v2-live-harness", require("./routes/bnEmaRsiStV2LiveHarn
 // harness (it sets router.isLiveHarness, so Start All files it as a harness).
 app.use("/st_rsi_piv_bb-paper",    require("./routes/stRsiPivBbPaper"));       // ← canonical engine
 app.use("/st_rsi_piv_bb-live",     require("./routes/stRsiPivBbLiveHarness")); // ← LIVE via PAPER + harness (triple-gated dry-run, Zerodha)
+
+// ── SAIL_VWAP_ST routes (SAIL stock options: VWAP cross + breakout, SuperTrend stop, Zerodha) ─
+// No separate real-order live engine: /sail_vwap_st-live IS the paper-wrapping
+// harness (it sets router.isLiveHarness, so Start All files it as a harness).
+app.use("/sail_vwap_st-paper",    require("./routes/sailVwapStPaper"));       // ← canonical engine
+app.use("/sail_vwap_st-backtest", lazyRouter(() => require("./routes/sailVwapStBacktest")));    // ← same signal engine, paper's exits
+app.use("/sail_vwap_st-live",     require("./routes/sailVwapStLiveHarness")); // ← LIVE via PAPER + harness (triple-gated dry-run, Zerodha)
 
 // ── COMMODITY (MCX crude / gold / silver) — paper only ───────────────────────
 // Self-contained engine (src/services/commodityPaper.js): REST prices, own files
@@ -1592,6 +1617,9 @@ app.get("/", (req, res) => {
   const stRsiPivBbMode   = sharedSocketState.getStRsiPivBbMode ? sharedSocketState.getStRsiPivBbMode() : null;
   // ST_RSI_PIV_BB — defaults OFF like V2.
   const stRsiPivBbModeOn = (process.env.ST_RSI_PIV_BB_MODE_ENABLED || 'false').toLowerCase() === 'true';
+  const sailVwapStMode   = sharedSocketState.getSailVwapStMode ? sharedSocketState.getSailVwapStMode() : null;
+  // SAIL_VWAP_ST — defaults OFF.
+  const sailVwapStModeOn = (process.env.SAIL_VWAP_ST_MODE_ENABLED || 'false').toLowerCase() === 'true';
   // One chart card per COMMODITY page (switched on, or still running).
   const { visibleEngines: cmxVisibleEngines, commodityIcon } = require("./utils/commodityPaperRouter");
   const dashCmxCards = cmxVisibleEngines().map((e) => {
@@ -1621,6 +1649,7 @@ app.get("/", (req, res) => {
     || (bnPivotRsiStModeOn && bnPivotRsiStMode)
     || (emaRsiStV2ModeOn && emaRsiStV2Mode)
     || (stRsiPivBbModeOn && stRsiPivBbMode)
+    || (sailVwapStModeOn && sailVwapStMode)
     || (bnEmaRsiStV2ModeOn && bnEmaRsiStV2Mode);
   // The mode-specific top-bar badges below only cover a subset of states
   // (EMA_RSI_ST live, BB_RSI_LIVE, PA_LIVE, ORB_PAPER). When some OTHER mode is
@@ -1659,6 +1688,7 @@ app.get("/", (req, res) => {
     { key: 'EMA_RSI_ST_V2', cls: 'emarsistv2', label: 'EMA_RSI_ST_V2', on: emaRsiStV2ModeOn },
     { key: 'BN_EMA_RSI_ST_V2', cls: 'bnemarsistv2', label: 'BN EMA_RSI_ST_V2', on: bnEmaRsiStV2ModeOn },
     { key: 'ST_RSI_PIV_BB', cls: 'strsipivbb', label: 'ST_RSI_PIV_BB', on: stRsiPivBbModeOn },
+    { key: 'SAIL_VWAP_ST', cls: 'sailvwapst', label: 'SAIL VWAP+ST', on: sailVwapStModeOn },
   ].filter((t) => t.on).map((t) => ({
     key: t.key,
     cls: t.cls,
@@ -1726,6 +1756,7 @@ app.get("/", (req, res) => {
     ['zerodha', 'EMA_RSI_ST_V2',    emaRsiStV2ModeOn],
     ['zerodha', 'BN_EMA_RSI_ST_V2', bnEmaRsiStV2ModeOn],
     ['zerodha', 'ST_RSI_PIV_BB',    stRsiPivBbModeOn],
+    ['zerodha', 'SAIL_VWAP_ST',     sailVwapStModeOn],
     ['zerodha', 'RSI_PIVOT_ST',     rsiPivotStModeOn],
     ['zerodha', 'BN_PIVOT_RSI_ST',  bnPivotRsiStModeOn],
     ['zerodha', 'HA_SCALP',         haScalpModeOn],
@@ -2383,6 +2414,7 @@ app.get("/", (req, res) => {
     .mm-card.emarsistv2 .mm-dot { background:#a78bfa; }
     .mm-card.bnemarsistv2 .mm-dot { background:#2dd4bf; }
     .mm-card.strsipivbb .mm-dot { background:#a3e635; }
+    .mm-card.sailvwapst .mm-dot { background:#fda4af; }
     .mm-card.cmx .mm-dot { background:#eab308; }
     .mm-title { font-size:0.62rem; font-weight:700; text-transform:uppercase; letter-spacing:1.4px; color:#a0b0c8; }
     /* Global Paper/Live source toggle (top-bar) — drives every chart on the dashboard */
@@ -2937,6 +2969,17 @@ ${buildSidebar('dashboard', liveActive)}
       <div class="mm-stats" id="mm-stats-ST_RSI_PIV_BB">—</div>
       <div class="mm-wrap"><canvas id="mmChart-ST_RSI_PIV_BB"></canvas></div>
       <div class="mm-empty" id="mm-empty-ST_RSI_PIV_BB" style="display:none;">No paper trades yet</div>
+    </div>
+    ` : ''}
+    ${sailVwapStModeOn ? `
+    <div class="mm-card sailvwapst" data-mode="SAIL_VWAP_ST">
+      <div class="mm-hdr">
+        <span class="mm-dot"></span>
+        <span class="mm-title">SAIL VWAP+ST</span>
+      </div>
+      <div class="mm-stats" id="mm-stats-SAIL_VWAP_ST">—</div>
+      <div class="mm-wrap"><canvas id="mmChart-SAIL_VWAP_ST"></canvas></div>
+      <div class="mm-empty" id="mm-empty-SAIL_VWAP_ST" style="display:none;">No paper trades yet</div>
     </div>
     ` : ''}
     ${dashCmxCards.map((c) => `
@@ -3850,10 +3893,12 @@ document.addEventListener('click', function(e){
   _dcToggle = src;
   ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB','TDS','HA_SCALP','PREV_ORB_SCALP','EARLYBIRD','SIMPLE930','RSI_PIVOT_ST','BN_PIVOT_RSI_ST','EMA_RSI_ST_V2','BN_EMA_RSI_ST_V2'].forEach(function(m){ _mmToggle[m] = src; });
   _mmToggle.ST_RSI_PIV_BB = src;
+  _mmToggle.SAIL_VWAP_ST = src;
   document.querySelectorAll('#dashSrcToggle .dst-btn').forEach(function(b){ b.classList.toggle('active', b === btn); });
   _renderDashTotal();
   ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB','TDS','HA_SCALP','PREV_ORB_SCALP','EARLYBIRD','SIMPLE930','RSI_PIVOT_ST','BN_PIVOT_RSI_ST','EMA_RSI_ST_V2','BN_EMA_RSI_ST_V2'].concat(CMX_MM_MODES).forEach(_renderModuleChart);
   _renderModuleChart('ST_RSI_PIV_BB');
+  _renderModuleChart('SAIL_VWAP_ST');
   _applyAllBtnState(_allBtnState.paperOn, _allBtnState.liveOn);
 });
 
@@ -3867,6 +3912,7 @@ document.addEventListener('click', function(e){
     _renderDashTotal();
     ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB','TDS','HA_SCALP','PREV_ORB_SCALP','EARLYBIRD','SIMPLE930','RSI_PIVOT_ST','BN_PIVOT_RSI_ST','EMA_RSI_ST_V2','BN_EMA_RSI_ST_V2'].concat(CMX_MM_MODES).forEach(_renderModuleChart);
     _renderModuleChart('ST_RSI_PIV_BB');
+    _renderModuleChart('SAIL_VWAP_ST');
     _renderBrokerWallets();
   }
   function syncCustomVisibility(){
@@ -3903,6 +3949,7 @@ var _mmCharts = {};
 var CMX_MM_MODES = ${JSON.stringify(dashCmxCards.map((c) => c.mode))};
 var _mmToggle = { EMA_RSI_ST: 'paper', BB_RSI: 'paper', PA: 'paper', ORB: 'paper', EMA9VWAP: 'paper', TREND_PB: 'paper', TDS: 'paper', HA_SCALP: 'paper', PREV_ORB_SCALP: 'paper', EARLYBIRD: 'paper', SIMPLE930: 'paper', RSI_PIVOT_ST: 'paper', BN_PIVOT_RSI_ST: 'paper', EMA_RSI_ST_V2: 'paper', BN_EMA_RSI_ST_V2: 'paper' };
 _mmToggle.ST_RSI_PIV_BB = 'paper';
+_mmToggle.SAIL_VWAP_ST = 'paper';
 
 // A strategy with no trades in the selected source+range has nothing to show,
 // so its whole card is hidden rather than kept as a "0 trades" placeholder —
@@ -3999,6 +4046,7 @@ async function loadModuleCharts(){
   }
   ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB','TDS','HA_SCALP','PREV_ORB_SCALP','EARLYBIRD','SIMPLE930','RSI_PIVOT_ST','BN_PIVOT_RSI_ST','EMA_RSI_ST_V2','BN_EMA_RSI_ST_V2'].concat(CMX_MM_MODES).forEach(_renderModuleChart);
   _renderModuleChart('ST_RSI_PIV_BB');
+  _renderModuleChart('SAIL_VWAP_ST');
   _renderBrokerWallets();
 }
 
@@ -4146,6 +4194,7 @@ document.addEventListener('visibilitychange', function(){ if (!document.hidden) 
     BN_PIVOT_RSI_ST:'/bn-pivot-rsi-st-paper/status/data',
     EMA_RSI_ST_V2:'/ema_rsi_st_v2-paper/status/data',
     ST_RSI_PIV_BB:'/st_rsi_piv_bb-paper/status/data',
+    SAIL_VWAP_ST:'/sail_vwap_st-paper/status/data',
     BN_EMA_RSI_ST_V2:'/bn_ema_rsi_st_v2-paper/status/data'
   };
 
@@ -5089,6 +5138,7 @@ const _ZERODHA_SNAPSHOT_FILES = new Set([
   ".active_rsi_pivot_st_position.json", ".active_bn_pivot_rsi_st_position.json",
   ".active_ema_rsi_st_v2_position.json", ".active_bn_ema_rsi_st_v2_position.json",
   ".active_st_rsi_piv_bb_position.json",
+  ".active_sail_vwap_st_position.json",
   ".active_simple930_position.json", ".active_ha_scalp_position.json",
   ".active_prev_orb_scalp_position.json",
 ]);
@@ -5276,6 +5326,21 @@ async function reconcileOrphanedPositions() {
       sendTelegram(msg);
     }
 
+    const savedSailVwapSt = loadSailVwapStPosition();
+    if (savedSailVwapSt && savedSailVwapSt.position) {
+      const p = savedSailVwapSt.position;
+      // The SuperTrend line (a SAIL SPOT price, checked on candle close) is
+      // SAIL_VWAP_ST's spot stop, so a null stopLoss means it is unprotected.
+      const msg = `🚨 [STARTUP] Persisted SAIL_VWAP_ST position found (crash recovery)!\n` +
+        `  ${p.side} ${p.symbol}: entry=₹${p.optionEntryLtp} SuperTrend SL (SAIL spot)=${p.stopLoss != null ? p.stopLoss : "NONE"} ` +
+        `initial=${p.initialStopLoss != null ? p.initialStopLoss : "n/a"} qty=${p.qty}\n` +
+        (p.stopLoss == null ? `  ⚠️ NO STOP ON THIS POSITION — the SuperTrend trail is its only spot stop; only the option stop / EOD square-off can close it.\n` : "") +
+        `  Saved at: ${new Date(savedSailVwapSt.savedAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}\n` +
+        `Bot was tracking this before crash. Orders go to ZERODHA (SAIL stock options) — check the Zerodha dashboard!`;
+      console.warn(msg);
+      sendTelegram(msg);
+    }
+
     const savedBnEmaRsiStV2 = loadBnEmaRsiStV2Position();
     if (savedBnEmaRsiStV2 && savedBnEmaRsiStV2.position) {
       const p = savedBnEmaRsiStV2.position;
@@ -5355,6 +5420,7 @@ async function reconcileOrphanedPositions() {
     const _liveActive =
       (process.env.LIVE_HARNESS_DRY_RUN || "true").toLowerCase() !== "true" ||
       (process.env.ST_RSI_PIV_BB_LIVE_ENABLED || "false").toLowerCase() === "true" ||
+      (process.env.SAIL_VWAP_ST_LIVE_ENABLED || "false").toLowerCase() === "true" ||
       ["EMA_RSI_ST", "BB_RSI", "PA", "ORB", "EMA9VWAP", "TREND_PB", "TDS", "HA_SCALP", "PREV_ORB_SCALP", "SIMPLE930", "RSI_PIVOT_ST", "BN_PIVOT_RSI_ST", "EMA_RSI_ST_V2", "BN_EMA_RSI_ST_V2", "EARLYBIRD"].some(
         (s) => (process.env[`${s}_LIVE_ENABLED`] || "").toLowerCase() === "true",
       );
@@ -5362,7 +5428,7 @@ async function reconcileOrphanedPositions() {
     // Count only snapshots that actually carry a position — loadTradePosition()
     // returns the parsed file whenever it exists and is today's, even if the
     // record has no `.position`.
-    const _zSnaps = [savedTrade, savedEma9Vwap, savedRsiPivotSt, savedBnPivotRsiSt, savedEmaRsiStV2, savedBnEmaRsiStV2, savedStRsiPivBb, savedSimple930, savedHaScalp, savedPrevOrbScalp].filter(x => x && x.position).length;
+    const _zSnaps = [savedTrade, savedEma9Vwap, savedRsiPivotSt, savedBnPivotRsiSt, savedEmaRsiStV2, savedBnEmaRsiStV2, savedStRsiPivBb, savedSailVwapSt, savedSimple930, savedHaScalp, savedPrevOrbScalp].filter(x => x && x.position).length;
     const _zStalePos = _staleZ.filter(_staleHasPos).length;
     const _zPending = _zSnaps + _zStalePos + _harnessRecs.length;
     _anySnapshots = _anySnapshots || _zPending > 0;
@@ -5383,6 +5449,10 @@ async function reconcileOrphanedPositions() {
       const zOpen = (zPos.net || zPos.day || []).filter(p =>
         p.quantity !== 0 && p.tradingsymbol && p.tradingsymbol.includes("NIFTY")
       );
+      // SAIL_VWAP_ST trades SAIL stock options (e.g. SAIL26OCT170CE) — no "NIFTY"
+      // in the symbol, so the filter above would call a real SAIL orphan "flat"
+      // and the boot would clear its snapshot. /^SAIL\d/ = SAIL F&O only, not the cash leg.
+      for (const p of (zPos.net || zPos.day || [])) if (p.quantity !== 0 && p.tradingsymbol && /^SAIL\d/.test(p.tradingsymbol) && !zOpen.includes(p)) zOpen.push(p);
       if (zOpen.length > 0) {
         const msg = `🚨 [STARTUP] Orphaned Zerodha position detected!\n` +
           zOpen.map(p => `  ${p.tradingsymbol}: qty=${p.quantity} pnl=₹${p.pnl || 0}`).join("\n") +
@@ -5410,6 +5480,7 @@ async function reconcileOrphanedPositions() {
           if (savedEmaRsiStV2) clearEmaRsiStV2Position();  // EMA_RSI_ST_V2 is a Zerodha strategy too (Fyers candles, Zerodha orders)
           if (savedBnEmaRsiStV2) clearBnEmaRsiStV2Position(); // BN_EMA_RSI_ST_V2 (NIFTY BANK) is the same engine on Zerodha
           if (savedStRsiPivBb) clearStRsiPivBbPosition(); // ST_RSI_PIV_BB is a Zerodha strategy too (Fyers candles, Zerodha orders)
+          if (savedSailVwapSt) clearSailVwapStPosition(); // SAIL_VWAP_ST is a Zerodha strategy too (Fyers candles, Zerodha orders)
           if (savedBnPivotRsiSt) clearBnPivotRsiStPosition(); // BN_PIVOT_RSI_ST (NIFTY BANK) is the same engine on Zerodha
           if (savedSimple930) clearSimple930Position();   // SIMPLE_9:30 is a Zerodha strategy too (Fyers data, Zerodha orders)
           if (savedHaScalp) clearHaScalpPosition();       // HA_SCALP likewise — Fyers candles, Zerodha orders
@@ -5522,6 +5593,7 @@ async function gracefulShutdown(signal) {
     if (sharedSocketState.getEmaRsiStV2Mode && sharedSocketState.getEmaRsiStV2Mode()) activeModes.push(sharedSocketState.getEmaRsiStV2Mode());
     if (sharedSocketState.getBnEmaRsiStV2Mode && sharedSocketState.getBnEmaRsiStV2Mode()) activeModes.push(sharedSocketState.getBnEmaRsiStV2Mode());
     if (sharedSocketState.getStRsiPivBbMode && sharedSocketState.getStRsiPivBbMode()) activeModes.push(sharedSocketState.getStRsiPivBbMode());
+    if (sharedSocketState.getSailVwapStMode && sharedSocketState.getSailVwapStMode()) activeModes.push(sharedSocketState.getSailVwapStMode());
     if (sharedSocketState.getEarlyBirdMode && sharedSocketState.getEarlyBirdMode()) activeModes.push(sharedSocketState.getEarlyBirdMode());
 
     if (activeModes.length === 0) {
@@ -5549,6 +5621,7 @@ async function gracefulShutdown(signal) {
       m === "BN_PIVOT_RSI_ST_LIVE" ||
       m === "EMA_RSI_ST_V2_LIVE" ||
       m === "ST_RSI_PIV_BB_LIVE" ||
+      m === "SAIL_VWAP_ST_LIVE" ||
       m === "BN_EMA_RSI_ST_V2_LIVE");
     console.warn(`⚠️ [SHUTDOWN] Active modes: ${modeList}${_harnessLive ? " (harness LIVE)" : ""} — stopping sessions...`);
 
@@ -5575,6 +5648,7 @@ async function gracefulShutdown(signal) {
       "EMA_RSI_ST_V2_PAPER":   require("./routes/emaRsiStV2Paper"),
       "BN_EMA_RSI_ST_V2_PAPER": require("./routes/bnEmaRsiStV2Paper"),
       "ST_RSI_PIV_BB_PAPER":   require("./routes/stRsiPivBbPaper"),
+      "SAIL_VWAP_ST_PAPER":    require("./routes/sailVwapStPaper"),
     };
     for (const mode of activeModes) {
       const route = routeMap[mode];

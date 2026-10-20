@@ -1193,6 +1193,84 @@ function clearStRsiPivBbPosition() {
   console.log("[PERSIST] ST_RSI_PIV_BB position file cleared.");
 }
 
+// ── SAIL_VWAP_ST (SAIL VWAP cross + breakout, SuperTrend stop, Zerodha) ─────
+// Copied from the ST_RSI_PIV_BB block above, on its OWN file. The SuperTrend
+// line is the initial stop AND the trail — tightened on every closed candle,
+// never widened — so `stopLoss` is live trail state, persisted at its CURRENT
+// value and never re-derived from the entry on load. `crossLevel` (the cross
+// candle's high/low the breakout cleared) and `tradeRes` (the chart the trade
+// lives on) are kept so a recovered position is self-describing. SAIL stock
+// options: `symbol` is the SAIL option contract, `qty` is lots × SAIL_LOT_SIZE.
+
+const SAIL_VWAP_ST_POS_FILE = path.join(DATA_DIR, ".active_sail_vwap_st_position.json");
+
+function saveSailVwapStPosition(position, sessionMeta) {
+  try {
+    if (!position) { _persistAtomic(SAIL_VWAP_ST_POS_FILE, null); return; }
+    const data = {
+      position: {
+        side:            position.side,
+        symbol:          position.symbol,
+        qty:             position.qty,
+        entryPrice:      position.entryPrice,
+        spotAtEntry:     position.spotAtEntry || position.entrySpot,
+        // The SuperTrend trail — the only spot stop. Persisted at its CURRENT
+        // tightened value, never re-derived on load.
+        stopLoss:        position.stopLoss != null ? position.stopLoss : position.slSpot,
+        initialStopLoss: position.initialStopLoss != null ? position.initialStopLoss : position.initialSlSpot,
+        bestPrice:       position.bestPrice,
+        bestOptionLtp:   position.bestOptionLtp ?? null,
+        entryUnixSec:    position.entryUnixSec,
+        entryTime:       position.entryTime,
+        entryBarTime:    position.entryBarTime ?? null,
+        signalBarTime:   position.signalBarTime ?? null,
+        crossTime:       position.crossTime ?? null,
+        crossLevel:      position.crossLevel ?? null,
+        tradeRes:        position.tradeRes ?? null,
+        underlying:      position.underlying || "SAIL",
+        orderId:         position.orderId,
+        isFutures:       !!position.isFutures,
+        optionEntryLtp:  position.optionEntryLtp,
+        optionStrike:    position.optionStrike,
+        optionExpiry:    position.optionExpiry,
+        optionType:      position.optionType || position.side,
+        signalStrength:  position.signalStrength,
+      },
+      sessionMeta: sessionMeta || {},
+      savedAt: Date.now(),
+      savedDate: new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
+    };
+    _persistAtomic(SAIL_VWAP_ST_POS_FILE, JSON.stringify(data, null, 2));
+    console.log(`💾 [PERSIST] SAIL_VWAP_ST position saved: ${position.side} ${position.symbol} @ ₹${position.entryPrice}`);
+  } catch (err) {
+    console.warn(`⚠️ [PERSIST] Could not save SAIL_VWAP_ST position: ${err.message}`);
+  }
+}
+
+function loadSailVwapStPosition() {
+  try {
+    if (!fs.existsSync(SAIL_VWAP_ST_POS_FILE)) return null;
+    const data = _readSnapshot(SAIL_VWAP_ST_POS_FILE);
+    if (!data) return null;
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    if (data.savedDate && data.savedDate !== today) {
+      console.log(`[PERSIST] Stale SAIL_VWAP_ST position from ${data.savedDate} — ignoring; kept until the boot reconcile has checked the broker.`);
+      _markStale(SAIL_VWAP_ST_POS_FILE, data);
+      return null;
+    }
+    if (data.position) console.log(`[PERSIST] SAIL_VWAP_ST position loaded: ${data.position.side} ${data.position.symbol} @ ₹${data.position.entryPrice}`);
+    return data;
+  } catch (err) {
+    console.warn(`[PERSIST] Could not load SAIL_VWAP_ST position: ${err.message}`);
+    return null;
+  }
+}
+
+function clearSailVwapStPosition() {
+  _persistAtomic(SAIL_VWAP_ST_POS_FILE, null);
+  console.log("[PERSIST] SAIL_VWAP_ST position file cleared.");
+}
+
 // ── SIMPLE_9:30 (09:25 ITM pick, premium-trigger entry, Zerodha) ────────────
 // Unlike the frozen-price strategies above, this one DOES
 // carry live trail state: `stop` ratchets up behind `peak` on every new premium
@@ -1418,6 +1496,7 @@ module.exports = {
   saveEmaRsiStV2Position, loadEmaRsiStV2Position, clearEmaRsiStV2Position,
   saveBnEmaRsiStV2Position, loadBnEmaRsiStV2Position, clearBnEmaRsiStV2Position,
   saveStRsiPivBbPosition, loadStRsiPivBbPosition, clearStRsiPivBbPosition,
+  saveSailVwapStPosition, loadSailVwapStPosition, clearSailVwapStPosition,
   saveSimple930Position, loadSimple930Position, clearSimple930Position,
   // Boot-reconcile helpers (corrupt files moved aside, previous-day snapshots kept)
   getCorruptSnapshots, getStaleSnapshots, clearStaleSnapshot,

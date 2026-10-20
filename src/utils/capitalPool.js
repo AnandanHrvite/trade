@@ -89,6 +89,8 @@ const STRATEGIES = {
   bn_ema_rsi_st_v2: { broker: "zerodha", label: "BN_EMA_RSI_ST_V2 (NIFTY BANK)", file: "bn_ema_rsi_st_v2_paper_trades.json" },
   // ST_RSI_PIV_BB — NIFTY, Zerodha orders, so it draws from ZERODHA_INV_AMOUNT.
   st_rsi_piv_bb: { broker: "zerodha", label: "ST_RSI_PIV_BB", file: "st_rsi_piv_bb_paper_trades.json" },
+  // SAIL_VWAP_ST — SAIL stock options, Zerodha orders, so it draws from ZERODHA_INV_AMOUNT.
+  sail_vwap_st: { broker: "zerodha", label: "SAIL_VWAP_ST", file: "sail_vwap_st_paper_trades.json" },
   simple930: { broker: "zerodha", label: "SIMPLE_9:30", file: "simple930_paper_trades.json" },
   ha_scalp:  { broker: "zerodha", label: "HA_SCALP",    file: "ha_scalp_paper_trades.json"  },
   prev_orb_scalp: { broker: "zerodha", label: "PREV_ORB_SCALP", file: "prev_orb_scalp_paper_trades.json" },

@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SAIL_VWAP_ST — Strategy Guide</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0 18px 80px;
+    background: #0d1117; color: #c9d1d9;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.65; font-size: 16px;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; }
+  header.hero {
+    margin: 0 -18px 8px; padding: 40px 26px 30px;
+    background: linear-gradient(135deg, #161b22 0%, #1f1a10 100%);
+    border-bottom: 3px solid #f59e0b;
+  }
+  header.hero .kicker { color: #f59e0b; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; font-size: 0.72rem; }
+  header.hero h1 { margin: 6px 0 8px; font-size: 2rem; color: #f0f6fc; }
+  header.hero p { margin: 0; color: #8b949e; max-width: 640px; }
+  h2 { color: #f0f6fc; font-size: 1.35rem; margin: 38px 0 12px; padding-bottom: 8px; border-bottom: 1px solid #21262d; }
+  h3 { color: #58a6ff; font-size: 1.05rem; margin: 24px 0 8px; }
+  code { background: rgba(110,118,129,0.18); color: #7dd3fc; padding: 1.5px 6px; border-radius: 4px; font-size: 0.85em; font-family: 'SF Mono', ui-monospace, Menlo, monospace; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 18px 22px; margin: 14px 0; }
+  .card.accent { border-left: 4px solid #f59e0b; }
+  .card.warn { border-left: 4px solid #d29922; background: #1c1a12; }
+  .card.bad  { border-left: 4px solid #f85149; background: #1c1214; }
+  ul, ol { padding-left: 22px; }
+  li { margin: 5px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.88rem; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #21262d; vertical-align: top; }
+  th { color: #8b949e; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.6px; }
+  td code { white-space: nowrap; }
+  .flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 14px 0; }
+  .flow .step { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 8px 14px; font-size: 0.85rem; }
+  .flow .arrow { color: #f59e0b; font-weight: 700; }
+  .pill { display: inline-block; background: rgba(245,158,11,0.15); color: #f59e0b; border: 1px solid rgba(245,158,11,0.35); border-radius: 20px; padding: 2px 12px; font-size: 0.78rem; font-weight: 600; }
+  .muted { color: #6e7681; font-size: 0.85rem; }
+  a { color: #58a6ff; }
+  .num { font-family: 'SF Mono', ui-monospace, Menlo, monospace; color: #f0f6fc; }
+  /* TradingView-style chart wrapper */
+  .tv-chart { margin: 16px 0 6px; border: 1px solid #30363d; border-radius: 10px; overflow: hidden; background: #0d1626; }
+  .tv-chart .tv-svg { width: 100%; height: auto; display: block; }
+  .tv-cap { color: #8b949e; font-size: 0.82rem; margin: 0 0 16px; padding-left: 4px; }
+  .tv-cap b { color: #c9d1d9; }
+  .tv-empty { color: #6e7681; padding: 40px; text-align: center; font-size: 0.9rem; }
+
+  nav.toc { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 16px 22px; margin: 18px 0; }
+  nav.toc h2 { margin: 0 0 8px; border: 0; padding: 0; font-size: 1.05rem; color: #f59e0b; }
+  nav.toc ol { margin: 0; columns: 2; column-gap: 28px; }
+  nav.toc a { color: #c9d1d9; text-decoration: none; }
+  nav.toc a:hover { color: #f59e0b; }
+  .rule { display: flex; gap: 12px; align-items: flex-start; background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 10px 14px; margin: 8px 0; }
+  @media (max-width: 768px) { nav.toc ol { columns: 1; } }
+  .rule .no { flex: 0 0 30px; height: 30px; border-radius: 50%; background: rgba(245,158,11,0.18); color: #f59e0b; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+
+/* ── MOBILE (shared block — keep in sync across all guides) ── */
+  @media (max-width: 768px) {
+    /* The setting tables are three columns of prose. A table cannot lay out
+       narrower than its min-content width, so at 393px they ran up to 259px past
+       the right edge and the browser zoomed the whole guide out to fit. Each one
+       now scrolls inside its own box and the page keeps the phone's width. */
+    table { display: block; width: 100%; max-width: 100%; overflow-x: auto;
+            -webkit-overflow-scrolling: touch; }
+    /* Long env keys wrap; fenced blocks keep their formatting and scroll. */
+    code { overflow-wrap: anywhere; word-break: break-word; }
+    pre { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    pre code { overflow-wrap: normal; word-break: normal; }
+    img, svg, canvas { max-width: 100%; }
+    .tv-chart { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    /* .cols is a two-up flex row with no wrap — the second card was pushed off
+       screen rather than dropping under the first. */
+    .cols { flex-direction: column; }
+    .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+    [style*="grid-template-columns"] { grid-template-columns: 1fr !important; }
+    /* Contents links are the guide's only navigation, and they were 18-31px.
+       The three guides each mark theirs up differently: nav.toc (ORB, EMA9VWAP,
+       Setup), a nav.no-print link bar (Price Action) and a two-column card list
+       (BB_RSI, EMA_RSI_ST, Trend Pullback). */
+    nav.toc a, .toc a, nav.no-print .container a,
+    .card li a { min-height: 44px; display: inline-flex; align-items: center; }
+    /* A two-column contents list leaves ~170px per column at 393px. */
+    ul[style*="columns"], ol[style*="columns"] { columns: 1 !important; -webkit-columns: 1 !important; }
+    .hero { padding-left: 16px; padding-right: 16px; }
+    .hero h1 { font-size: 1.7rem; }
+    .section { padding: 20px 14px; }
+  }
+/* ── END MOBILE ── */</style>
+<style>
+  /* step labels (this guide only) */
+  .boxrow-label { font-weight: 700; margin: 16px 0 4px; color: #f0f6fc; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <div class="kicker">SAIL_VWAP_ST · SAIL stock options · Fyers data · Zerodha orders · Plain-English edition</div>
+  <h1>SAIL_VWAP_ST</h1>
+  <p>Trade <b>SAIL</b> (Steel Authority of India) options off its 5-minute chart. Wait for a candle to <b>close across VWAP</b>, then wait for a second candle to <b>close past that first candle's high or low</b>. Buy only if <b>SuperTrend</b> points the same way. The SuperTrend line is the stop.</p>
+  <p class="muted" style="margin-top:10px;">Updated 2026-10-20 &nbsp;·&nbsp; rules checked against <code>src/strategies/sail_vwap_st.js</code> &nbsp;·&nbsp; every chart is real SAIL data run through that engine</p>
+</header>
+
+<nav class="toc">
+  <h2>What's inside</h2>
+  <ol>
+    <li><a href="#minute">In one minute</a></li>
+    <li><a href="#words">Words you'll see</a></li>
+    <li><a href="#entry">How a trade starts</a></li>
+    <li><a href="#exits">How a trade ends</a></li>
+    <li><a href="#session">Session rules</a></li>
+    <li><a href="#why2">Why SuperTrend 10,2</a></li>
+    <li><a href="#examples">Real chart examples</a></li>
+    <li><a href="#data">What 58 days of SAIL data say</a></li>
+    <li><a href="#settings">All the settings</a></li>
+    <li><a href="#missing">What's still missing</a></li>
+  </ol>
+</nav>
+
+<h2 id="minute">1. In one minute</h2>
+<div class="card accent">
+  <ul>
+    <li>Watch SAIL's 5-minute candles and its <b>VWAP</b> line. Only closed candles count.</li>
+    <li><b>Step 1 &mdash; cross.</b> A candle closes above VWAP after the one before it closed at or below. That is the <b>cross candle</b>. Note its high.</li>
+    <li><b>Step 2 &mdash; breakout.</b> Within the next 3 candles, one closes <b>above the cross candle's high</b>. Every close in between must stay above VWAP.</li>
+    <li><b>Step 3 &mdash; SuperTrend agrees.</b> SuperTrend (10, 2) is green. Then <b>buy the ATM SAIL CE</b> at the next tick. If it is red, the setup is skipped.</li>
+    <li><b>PE</b> is the mirror: close below VWAP, then a close below the cross candle's low, SuperTrend red.</li>
+    <li>The <b>stop</b> is the SuperTrend line. It only moves your way. The trade ends when a candle <b>closes</b> through it, or SuperTrend changes colour.</li>
+    <li>On top of that, the repo-wide <b>profit lock</b>, <b>breakeven stop</b> and a <b>25% option-price stop</b> watch every tick. Everything is closed at 15:15.</li>
+    <li>New trades 09:30&ndash;14:30. <b>One trade a day.</b> &#8377;5,000 daily loss limit. One lot = 4,700 shares.</li>
+  </ul>
+</div>
+<div class="flow">
+  <div class="step">Close across VWAP</div><div class="arrow">→</div>
+  <div class="step">Close past its high / low (within 3)</div><div class="arrow">→</div>
+  <div class="step">SuperTrend agrees → buy</div><div class="arrow">→</div>
+  <div class="step">Stop = SuperTrend line</div><div class="arrow">→</div>
+  <div class="step">Close through it → sell</div>
+</div>
+<div class="card warn">
+  <b>Read this first.</b> This strategy is brand new. It has <b>never traded</b> &mdash; no paper session and no live order. Live orders are off by default.
+  The charts and numbers below come from running the engine over 60 days of SAIL 5-minute candles. Results are in <b>rupees per SAIL share</b>, not option rupees.
+</div>
+
+<!--LIVE_STATUS_PANEL-->
+
+<h2 id="words">2. Words you'll see</h2>
+<table>
+  <tr><th>Word</th><th>Plain meaning</th></tr>
+  <tr><td>Candle</td><td>One 5-minute bar: open, high, low, close. Times are the candle's <b>start</b>, as on Kite: the 10:05 candle runs 10:05&ndash;10:10.</td></tr>
+  <tr><td>VWAP</td><td>The day's average price, weighted by volume. Each candle adds (high + low + close) &divide; 3 &times; its volume. It restarts every morning &mdash; the same as Kite's &ldquo;VWAP hlc3, Session&rdquo;.</td></tr>
+  <tr><td>Cross candle</td><td>The candle that closes on the other side of VWAP from the candle before it.</td></tr>
+  <tr><td>Breakout candle</td><td>The first later candle (within 3) that closes past the cross candle's high (CE) or low (PE). It is the signal.</td></tr>
+  <tr><td>SuperTrend (10, 2)</td><td>A line set 2 &times; the average candle size (last 10 candles) away from price. Green and under price = up. Red and over price = down. It is also the stop.</td></tr>
+  <tr><td>CE / PE</td><td>A CE (call) gains when SAIL rises. A PE (put) gains when SAIL falls. This strategy only buys.</td></tr>
+  <tr><td>ATM strike</td><td>The strike nearest SAIL's price on the &#8377;2.50 grid. SAIL at 162.64 &rarr; the 162.50 strike.</td></tr>
+  <tr><td>Monthly expiry</td><td>SAIL is a stock, so it has <b>no weekly options</b>. The bot always uses the current month's contract.</td></tr>
+  <tr><td>Lot</td><td>4,700 SAIL shares. Every &#8377;1 SAIL moves changes one lot's option by roughly &#8377;2,350, if the option moves half as much as the share (delta 0.5).</td></tr>
+  <tr><td>Square-off</td><td>Closing any open trade at 15:15 so nothing is held overnight.</td></tr>
+</table>
+
+<h2 id="entry">3. How a trade starts</h2>
+<p>Every step is read on a <b>closed</b> candle. A wick does not count.</p>
+<div class="boxrow-label">Buy a CE (call)</div>
+<div class="rule"><div class="no">1</div><div><b>Cross.</b> A candle closes <b>above</b> VWAP. The candle before it, the same day, closed <b>at or below</b> VWAP.</div></div>
+<div class="rule"><div class="no">2</div><div><b>Breakout.</b> One of the next <b>3</b> candles closes <b>above the cross candle's high</b>. Only the first such close counts.</div></div>
+<div class="rule"><div class="no">3</div><div><b>Hold above VWAP.</b> Every close from the cross candle to the breakout candle stays above VWAP. One close back at or below VWAP cancels the setup.</div></div>
+<div class="rule"><div class="no">4</div><div><b>SuperTrend is green</b> on the breakout candle (its line is under the close). If it is red, the setup is <b>skipped</b> &mdash; there is no line under price to use as a stop.</div></div>
+<div class="rule"><div class="no">5</div><div><b>Time.</b> The breakout candle closes between 09:30 and 14:30, no trade yet today, and the day's loss is under &#8377;5,000.</div></div>
+<div class="card">
+  <b>Real example (28 Jul 2026).</b> The 10:00 candle closes at 160.76, under VWAP 160.80. The 10:05 candle closes at 161.40, above VWAP 160.84 &mdash; the <b>cross</b>. Its high is <b>161.45</b>.
+  The 10:10 candle closes at 161.20: still above VWAP (160.86) but not above 161.45, so the bot waits.
+  The 10:15 candle closes at <b>162.62</b> &mdash; above 161.45. SuperTrend is green at 160.94. <b>Buy the 162.50 CE</b> at the next tick (SAIL 162.64). Stop = 160.94.
+</div>
+<div class="boxrow-label">Buy a PE (put) &mdash; the mirror</div>
+<ul>
+  <li>A candle closes <b>below</b> VWAP after one that closed at or above it.</li>
+  <li>Within 3 candles, one closes <b>below the cross candle's low</b>, with no close back at or above VWAP in between.</li>
+  <li>SuperTrend is <b>red</b> (its line is over the close).</li>
+</ul>
+<div class="card">
+  <b>Real example (25 Aug 2026).</b> The 10:15 candle closes at 183.20, below VWAP 183.70, after the 10:10 candle closed above it &mdash; the cross. Its low is <b>183.20</b>.
+  The 10:20 candle closes at <b>182.60</b> &mdash; below 183.20. SuperTrend is red at 184.27. <b>Buy the 182.50 PE</b> (SAIL 182.60). Stop = 184.27.
+</div>
+<ul>
+  <li><b>The cross candle is never the entry.</b> At least one more candle must close past its high or low.</li>
+  <li><b>A setup lasts 3 candles.</b> No breakout close in 3 candles &rarr; the setup expires.</li>
+  <li><b>A refused breakout is used up.</b> If the first breakout close is skipped (SuperTrend, time), a later close past the same level does not trade.</li>
+  <li><b>Fill:</b> Paper and Live buy on the first price tick after the breakout candle closes.</li>
+</ul>
+
+<h2 id="exits">4. How a trade ends</h2>
+<p><b>Checked when a candle closes</b> (the strategy's own exit):</p>
+<ol>
+  <li><b>SuperTrend changes colour</b> against the trade (red on a CE, green on a PE) &rarr; sell.</li>
+  <li><b>A candle closes beyond the stop</b> (below it on a CE, above it on a PE) &rarr; sell.</li>
+  <li>Otherwise the stop moves to the new SuperTrend value &mdash; only if that is tighter. It never moves back.</li>
+</ol>
+<div class="card warn">
+  <b>The SuperTrend stop is never checked tick by tick.</b> A candle that dips through the line but closes back on the right side does not end the trade. The flip side: a candle that falls a long way through the line is only sold after it closes, so a loss can be bigger than the gap to the line.
+</div>
+<p><b>Checked on every tick</b> (shared by every strategy in this app, all on the option price):</p>
+<table>
+  <tr><th>Exit</th><th>Rule</th><th>Example: option bought at &#8377;5.00</th></tr>
+  <tr><td>Option-price stop</td><td>Sell if the premium falls 25% below the buy price (<code>SAIL_VWAP_ST_OPT_STOP_PCT</code>).</td><td>Sell at &#8377;3.75 or lower.</td></tr>
+  <tr><td>Breakeven stop</td><td>Once the premium has been up 5%, it may not be sold below the buy price (<code>BREAKEVEN_*</code>).</td><td>Arms at &#8377;5.25. Then a fall back to &#8377;5.00 sells.</td></tr>
+  <tr><td>Profit lock</td><td>Once the premium has been up 8%, at least +5% is kept, and the floor follows new highs (<code>PROFIT_LOCK_*</code>).</td><td>Arms at &#8377;5.40. The floor starts at &#8377;5.25.</td></tr>
+  <tr><td>Square-off</td><td>15:15 &rarr; anything still open is sold.</td><td>&mdash;</td></tr>
+</table>
+<p>There is <b>no</b> fixed target and <b>no</b> re-entry after a stop. One trade a day means a stopped trade is the day's only trade.</p>
+
+<h2 id="session">5. Session rules</h2>
+<table>
+  <tr><th>Rule</th><th>Default</th><th>Plain meaning</th></tr>
+  <tr><td>Entry window</td><td>09:30 &ndash; 14:30</td><td>By the breakout candle's <b>close</b>. The first candle that can trade is 09:25&ndash;09:30; the last is 14:25&ndash;14:30.</td></tr>
+  <tr><td>Square-off</td><td>15:15</td><td>Nothing is held overnight.</td></tr>
+  <tr><td>Trades per day</td><td>1</td><td>After the first trade (win or lose) the bot only watches.</td></tr>
+  <tr><td>Daily loss limit</td><td>&#8377;5,000</td><td>No new trade after the day's losses reach this.</td></tr>
+  <tr><td>Size</td><td>1 lot = 4,700 shares</td><td><code>SAIL_VWAP_ST_LOTS</code> &times; <code>SAIL_LOT_SIZE</code>.</td></tr>
+  <tr><td>Contract</td><td>ATM, monthly</td><td>Nearest &#8377;2.50 strike, current month.</td></tr>
+  <tr><td>Warm-up</td><td>2 earlier days</td><td>The last 2 trading days are loaded at start so SuperTrend is ready from the first candle. VWAP always starts fresh each morning.</td></tr>
+  <tr><td>No volume, no trade</td><td>always</td><td>VWAP needs volume. Until SAIL has traded volume today there is no VWAP, so the bot refuses.</td></tr>
+</table>
+<div class="card warn">
+  <b>Deliberately left out.</b> No RSI, no EMA, no ADX, no VIX filter, no OI filter, no volume filter, no higher-timeframe check, no fixed target and no re-entry after a stop.
+  Adding any of these makes it a different strategy that needs its own testing.
+</div>
+
+<h2 id="why2">6. Why SuperTrend 10,2 and not 10,1</h2>
+<p>The choice was left to us. On SAIL's 5-minute chart a <b>(10, 1)</b> line sits too close to price to be a stop.</p>
+<table>
+  <tr><th>Measured on every candle (60 days)</th><th>Typical gap to the close</th><th>1 candle in 10 is closer than</th></tr>
+  <tr><td>SuperTrend (10, 1)</td><td>&#8377;0.40</td><td>&#8377;0.13</td></tr>
+  <tr><td>SuperTrend (10, 2)</td><td>&#8377;0.73</td><td>&#8377;0.28</td></tr>
+  <tr><td>For scale: one candle's high-to-low</td><td>&#8377;0.35</td><td>&mdash;</td></tr>
+</table>
+<p>A (10, 1) line is about one normal candle away from price, so ordinary wiggle would flip it. (10, 2) gives the trade almost twice the room. Both numbers can be changed in Settings.</p>
+
+<h2 id="examples">7. Real chart examples</h2>
+<div class="card">
+  <b>How to read the charts.</b> These are <b>real SAIL days</b>, run candle by candle through the real engine with default settings, the way Paper does: 2 earlier days loaded first, decide on the close, fill at the next candle's open.
+  Blue line = VWAP. Green/red line = SuperTrend (also the stop). Yellow dots = the cross candle and the breakout candle.
+  The candles are Yahoo Finance's <b>SAIL.NS</b> data. Its volume can differ slightly from NSE's, so VWAP may differ by a few paise from Kite. Yahoo also reports <b>zero volume for the 09:15 candle</b>, so here VWAP starts at 09:20 &mdash; early-morning VWAP can differ from Kite by more than a few paise.
+  Results are in <b>SAIL rupees per share</b>. Option prices are not shown, so the tick-level option exits (profit lock, breakeven, 25% stop) are not drawn.
+</div>
+
+<h3>A winner (CE)</h3>
+<div class="tv-chart" id="svs-ce"></div>
+<p class="tv-cap"><b>What you see:</b> 28 Jul 2026. The 10:05 candle closes at 161.40, above VWAP 160.84, after the 10:00 candle closed at 160.76 under VWAP 160.80 &mdash; the <b>cross</b>, high 161.45. The 10:10 candle closes at 161.20, not above 161.45: wait. The 10:15 candle closes at 162.62, SuperTrend green at 160.94 &rarr; <b>BUY CE at 162.64</b> (10:20 open), 1.70 above the stop. The green line climbs under price; by 12:25 the stop is 165.90. The 13:10 candle dips to 165.89, one paise under the stop, but closes at 166.08 &mdash; no exit. The 13:15 candle closes at 165.89, under 165.90, and SuperTrend turns red &rarr; <b>EXIT at 165.89</b> (13:20 open), <b>+3.25 per share</b>. <b>Why it matters:</b> with no target, the trail is what lets a trend run &mdash; and a close-only stop rides out a wick.</p>
+
+<h3>A loser (PE), after a skip and a whipsaw</h3>
+<div class="tv-chart" id="svs-pe"></div>
+<p class="tv-cap"><b>What you see:</b> 25 Aug 2026. The 09:30 candle closes at 184.67, below VWAP 184.80 (cross, low 184.50). The 09:35 candle closes at 183.40, below 184.50 &mdash; a PE breakout &mdash; but SuperTrend is still green at 182.91, so it is <b>skipped</b>. SuperTrend turns red on the next candle and SAIL falls to 181.71 by 09:45; the skip cost this move. From 10:00 to 10:15, four candles in a row close on alternate sides of VWAP (183.86, 183.06, 183.78, 183.20); each close cancels the setup the one before started. The 10:15 cross holds: the 10:20 candle closes at 182.60, below the cross low 183.20, SuperTrend red at 184.27 &rarr; <b>BUY PE at 182.60</b> (10:25 open). SAIL turns up. The 10:45 candle closes at 184.59, above the stop 184.27, and SuperTrend turns green &rarr; <b>EXIT at 184.51</b> (10:50 open), <b>&minus;1.91 per share</b>. A CE breakout at 11:20 (close 185.25) is ignored: one trade a day. <b>Why it matters:</b> a normal loss is about the gap from entry to the line.</p>
+
+<h3>No trade: SuperTrend disagreed three times</h3>
+<div class="tv-chart" id="svs-skip"></div>
+<p class="tv-cap"><b>What you see:</b> 6 Aug 2026. Three PE setups, three skips. <b>1:</b> the 09:40 candle closes at 178.60, below VWAP 178.67 (low 178.35); the 09:45 candle closes at 178.29, below 178.35 &mdash; but SuperTrend is green at 177.42. <b>2:</b> the 12:05 candle closes at 177.68, below VWAP 178.02 (low 177.62); the 12:10 candle closes at 177.61, one paise below &mdash; SuperTrend green at 177.04. <b>3:</b> the 14:05 candle closes at 177.69, below VWAP 177.92 (low 177.66); the 14:10 candle closes at 177.75 (not past 177.66, wait); the 14:15 candle closes at 177.50 &mdash; SuperTrend green at 177.25. Each time the line is under price, so there is no stop above it, and the bot does nothing. After skip 1, SuperTrend turned red on the 10:00 candle and SAIL fell to 176.52 by 11:15. <b>Why it matters:</b> the SuperTrend rule removes trades against the trend, including some that would have worked. It is one of the 13 no-trade days among the 58.</p>
+
+<h2 id="data">8. What 58 days of SAIL data say</h2>
+<div class="card warn">
+  How this was measured: the engine (default settings) was walked candle by candle over 60 days of Yahoo SAIL.NS 5-minute candles (24 Jul &ndash; 19 Oct 2026). The first 2 days were warm-up, so <b>58 days</b> (28 Jul &ndash; 19 Oct) could trade. Decide on the close, fill at the next open, trail on each close, square off at 15:15.
+  Results are <b>rupees per SAIL share before any costs</b>. Only the SuperTrend stop and the 15:15 square-off were applied: the profit lock, breakeven stop, 25% option stop and &#8377;5,000 loss limit work on option prices, which this data does not have. This is a small sample. Treat it as a check that the engine works, <b>not</b> as proof of an edge.
+</div>
+<h3>How often each step passes</h3>
+<table>
+  <tr><th>Step</th><th>Count</th></tr>
+  <tr><td>VWAP crosses (cross candles)</td><td>401 (203 up, 198 down) &mdash; about 6.9 a day</td></tr>
+  <tr><td>Cancelled by a close back across VWAP</td><td>178</td></tr>
+  <tr><td>Expired: no breakout close within 3 candles</td><td>30</td></tr>
+  <tr><td>Still waiting when the day ended</td><td>16</td></tr>
+  <tr><td>Breakout confirmed</td><td>177</td></tr>
+  <tr><td>&nbsp;&nbsp;&hellip; skipped, SuperTrend disagreed</td><td>64 (20 CE, 44 PE)</td></tr>
+  <tr><td>&nbsp;&nbsp;&hellip; skipped, after 14:30</td><td>22</td></tr>
+  <tr><td>&nbsp;&nbsp;&hellip; valid signals</td><td>91 (49 CE, 42 PE)</td></tr>
+  <tr><td>Trades taken (one a day)</td><td>45 (25 CE, 20 PE) on 45 of 58 days</td></tr>
+</table>
+<p>The other 46 valid signals came while a trade was open or after that day's trade. So the 1-trade cap, not the signal, sets the pace: about one trade on 4 days out of 5.</p>
+
+<h3>How far away the stop starts</h3>
+<p>Distance from the entry price to the first stop (the SuperTrend line), in SAIL rupees, over the 45 trades:</p>
+<table>
+  <tr><th>Measure</th><th>Result</th></tr>
+  <tr><td>Middle trade (median)</td><td>&#8377;1.41 &mdash; about 0.8% of SAIL's price</td></tr>
+  <tr><td>1 in 10 closer than</td><td>&#8377;0.76</td></tr>
+  <tr><td>1 in 10 wider than</td><td>&#8377;2.02</td></tr>
+  <tr><td>Smallest / largest</td><td>&#8377;0.25 / &#8377;3.51</td></tr>
+</table>
+<p>For scale, a normal 5-minute SAIL candle is &#8377;0.35 high to low, so the first stop is usually about four candles away. In option terms (delta 0.5, one lot of 4,700): &#8377;1.41 &rarr; about &#8377;3,300 if the stop is hit, and &#8377;2.02 &rarr; about &#8377;4,750 &mdash; close to the whole &#8377;5,000 daily limit in one trade.</p>
+
+<h3>How trades ended</h3>
+<table>
+  <tr><th>Measure</th><th>Result</th></tr>
+  <tr><td>SuperTrend changed colour / close through the line</td><td>41</td></tr>
+  <tr><td>15:15 square-off</td><td>4 (all winners)</td></tr>
+  <tr><td>Winners / losers</td><td>16 / 29 &mdash; 35.6% winners</td></tr>
+  <tr><td>Average winner / average loser</td><td>+&#8377;1.74 / &minus;&#8377;0.94 per share</td></tr>
+  <tr><td>Total (before costs)</td><td>+&#8377;0.44 per share over 45 trades &mdash; about zero</td></tr>
+  <tr><td>Without the best trade (+&#8377;5.55)</td><td>&minus;&#8377;5.11</td></tr>
+  <tr><td>CE / PE</td><td>CE &minus;&#8377;0.57 (9 of 25 won) &middot; PE +&#8377;1.01 (7 of 20 won)</td></tr>
+  <tr><td>Ended within 6 candles (about 30 minutes)</td><td>10 trades, all losers</td></tr>
+  <tr><td>Losers that lost more than their first stop distance</td><td>9 of 29 (a close-only stop fills past the line)</td></tr>
+  <tr><td>How far past the line the exit filled</td><td>middle &#8377;0.20, worst &#8377;1.53</td></tr>
+</table>
+<div class="card bad">
+  <b>In plain words:</b> about one trade in three won. Winners were bigger than losers, but over 58 days the total was about zero per share <b>before</b> costs &mdash; and one trade made the whole result. Option buying adds spread, brokerage and time decay on top. On this sample there is <b>no sign of an edge yet</b>.
+</div>
+
+<h2 id="settings">9. All the settings</h2>
+<p>Generated from the Settings schema (<code>src/routes/settings.js</code>, section &ldquo;SAIL_VWAP_ST STRATEGY (SAIL VWAP cross + breakout, SuperTrend stop) &mdash; Zerodha&rdquo;). The default column is the value Settings ships; the engine falls back to the same value when a setting is blank or out of range.</p>
+<h3>Mode &amp; Live</h3>
+<table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>SAIL_VWAP_ST_PAPER_ENABLED</code></td><td><code>false</code></td><td><b>SAIL_VWAP_ST Paper Trading</b>. Allow new SAIL_VWAP_ST paper sessions to start. OFF blocks the Start button &mdash; use it to park the strategy without hiding it.</td></tr>
+<tr><td><code>SAIL_VWAP_ST_LIVE_ENABLED</code></td><td><code>false</code></td><td><b>SAIL_VWAP_ST Live Orders (gates /sail_vwap_st-live/start)</b>. Send real SAIL option orders to Zerodha. NEVER traded live &mdash; paper-validate a run of sessions first. Off means the harness refuses to start unless the global dry-run is also on.</td></tr>
+<tr><td><code>SAIL_VWAP_ST_LIVE_DRY_RUN</code></td><td><code>false</code></td><td><b>SAIL_VWAP_ST Live DRY-RUN override</b>. Keep this strategy simulated even when live orders are switched on &mdash; the broker call is written to the log but no real order leaves the machine. A per-strategy safety catch on top of the global one.</td></tr>
+</tbody></table>
+<h3>Chart &amp; signal</h3>
+<table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>SAIL_VWAP_ST_TF</code></td><td><code>5</code></td><td><b>Candle Timeframe</b> (3 / 5 / 15). Which SAIL candle the whole strategy reads &mdash; the VWAP cross, the breakout and the SuperTrend stop all run on this one chart. Example: at 5, a cross candle closing at 10:05 can be confirmed by the 10:10, 10:15 or 10:20 candle. Takes effect at the next Start.</td></tr>
+<tr><td><code>SAIL_VWAP_ST_ST_PERIOD</code></td><td><code>10</code></td><td><b>SuperTrend ATR Period</b> (2&ndash;100). How many candles the SuperTrend's ATR is measured over. The line does two jobs: its colour must agree with the trade (green for CE, red for PE), and the line itself is the trailing stop. Longer = a slower line that gives the trade more room.</td></tr>
+<tr><td><code>SAIL_VWAP_ST_ST_MULT</code></td><td><code>2</code></td><td><b>SuperTrend Multiplier</b> (0.1&ndash;10). How many ATRs away from price the SuperTrend line sits. Example: SAIL ATR &#8377;0.20 &times; 2 = the line sits about &#8377;0.40 below price on a CE (SAIL at &#8377;170.00, stop near &#8377;169.60). Smaller = a tighter stop that is hit more often; larger = more room and bigger losses when it is hit.</td></tr>
+<tr><td><code>SAIL_VWAP_ST_BREAKOUT_BARS</code></td><td><code>3</code></td><td><b>Breakout Window (candles)</b> (1&ndash;10). After a candle closes across VWAP, how many following candles may confirm it. Example: at 3, the cross candle closes at &#8377;169.80 above VWAP with a high of &#8377;169.90 &mdash; a CE is bought only if one of the next 3 candles closes above &#8377;169.90. If none does, or one closes back below VWAP first, the setup is dropped.</td></tr>
+</tbody></table>
+<h3>Session window</h3>
+<table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>SAIL_VWAP_ST_ENTRY_START</code></td><td><code>09:30</code></td><td><b>Entry Window Start</b>. No entries on a signal candle that closes before this time (IST). Skips the opening minutes, when the day's VWAP is built from only a few candles.</td></tr>
+<tr><td><code>SAIL_VWAP_ST_ENTRY_END</code></td><td><code>14:30</code></td><td><b>Entry Window End</b>. No NEW entries on a signal candle that closes after this time (IST). A position already open is not affected.</td></tr>
+<tr><td><code>SAIL_VWAP_ST_EOD_EXIT_TIME</code></td><td><code>15:15</code></td><td><b>Forced Exit (square-off)</b>. Anything still open is sold at this time (IST), stop or no stop. Nothing is carried overnight.</td></tr>
+<tr><td><code>SAIL_VWAP_ST_WARMUP_DAYS</code></td><td><code>2</code></td><td><b>Warm-up Days</b> (1&ndash;15). How many earlier trading days of SAIL candles are loaded before the session so the SuperTrend starts the day settled (VWAP restarts every day and needs no warm-up). Example: at 2, a 09:15 start already has two full days of 5-min candles behind it and can trade from the first close.</td></tr>
+</tbody></table>
+<h3>Size &amp; day guards</h3>
+<table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>SAIL_VWAP_ST_LOTS</code></td><td><code>1</code></td><td><b>Lots</b> (1&ndash;50). How many lots of SAIL to buy per trade; 1 lot = SAIL_LOT_SIZE = 4700 shares. Example: 2 lots of a &#8377;5.00 option = 9,400 &times; &#8377;5 = &#8377;47,000 of premium.</td></tr>
+<tr><td><code>SAIL_VWAP_ST_MAX_DAILY_TRADES</code></td><td><code>1</code></td><td><b>Max Trades/Day</b> (1&ndash;10). Stop taking new entries once this many trades are done for the day. The rule is one trade a day &mdash; after the first exit, the strategy waits for tomorrow.</td></tr>
+<tr><td><code>SAIL_VWAP_ST_MAX_DAILY_LOSS</code></td><td><code>5000</code></td><td><b>Max Daily Loss (&#8377;)</b> (0&ndash;50000). Stop trading for the rest of the day once losses reach this much (0 = off). Example: at 5000, a loss of &#8377;1.10 per share on 4,700 shares (&#8377;5,170) ends the day.</td></tr>
+<tr><td><code>SAIL_VWAP_ST_OPT_STOP_PCT</code></td><td><code>0.25</code></td><td><b>Option Premium Stop (fraction)</b> (0&ndash;0.9). Exit if the option premium falls this fraction below entry; 0 = off. Example: at 0.25, an option bought at &#8377;5.00 is sold if it drops to &#8377;3.75, even if the SuperTrend stop has not been hit.</td></tr>
+</tbody></table>
+<h3>Backtest</h3>
+<table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>SAIL_VWAP_ST_BT_SLIPPAGE_PTS</code></td><td><code>0.05</code></td><td><b>Backtest Slippage (&#8377; of SAIL spot, each way)</b> (0&ndash;5). Cost the backtest charges on both the entry and the exit fill, in rupees of the SAIL share price, to stand in for the spread you really pay. Example: at 0.05, a CE signalled at &#8377;170.00 fills at &#8377;170.05. Set it to 0 and the backtest flatters itself.</td></tr>
+<tr><td><code>SAIL_VWAP_ST_BT_SEED_PREMIUM</code></td><td><code>5</code></td><td><b>Backtest Seed Premium (&#8377; / share)</b> (0.05&ndash;1000). The option price the backtest starts each trade from, since no historical SAIL option chain exists here. Example: 5 = every trade is assumed bought at &#8377;5.00. It is a guess, and the weakest number in any SAIL backtest result.</td></tr>
+<tr><td><code>SAIL_VWAP_ST_BT_DELTA</code></td><td><code>0.5</code></td><td><b>Backtest Delta</b> (0.05&ndash;1). How much the simulated option moves per &#8377;1 move in SAIL. Example: at 0.5, SAIL rising &#8377;1.00 adds &#8377;0.50 to a CE's simulated premium. 0.5 is roughly an at-the-money option.</td></tr>
+<tr><td><code>SAIL_VWAP_ST_BT_THETA_DAY</code></td><td><code>0.1</code></td><td><b>Backtest Time Decay (&#8377; / share / day)</b> (0&ndash;100). How much the simulated option loses per full trading day just from time passing. Example: at 0.1, a trade held half the day loses about &#8377;0.05 per share to decay.</td></tr>
+</tbody></table>
+<h3>Menu &amp; contract (other Settings sections)</h3>
+<table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>SAIL_VWAP_ST_MODE_ENABLED</code></td><td><code>false</code></td><td><b>SAIL_VWAP_ST Mode (SAIL stock options)</b>. Show the SAIL_VWAP_ST menu (under STOCKS) and its settings, and start streaming SAIL prices. It buys SAIL stock options: a 5-min candle closes across VWAP, then a close beyond that candle's high/low within 3 candles, with SuperTrend agreeing. Ships OFF because it is unproven &mdash; turn it on to backtest and paper-trade it.</td></tr>
+<tr><td><code>SAIL_LOT_SIZE</code></td><td><code>4700</code></td><td><b>SAIL &mdash; Lot Size (shares)</b> (1&ndash;100000). Shares per SAIL option lot &mdash; 4700 per NSE's contract list. Example: 1 lot of a &#8377;5.00 option costs 4,700 &times; &#8377;5 = &#8377;23,500.</td></tr>
+<tr><td><code>SAIL_STRIKE_STEP</code></td><td><code>2.5</code></td><td><b>SAIL &mdash; Strike Step (&#8377;)</b> (0.05&ndash;100). The strike grid SAIL options are listed on. The ATM strike is the share price rounded to the nearest 2.5 &mdash; e.g. SAIL at &#8377;162.64 &rarr; the &#8377;162.50 strike, at &#8377;168.90 &rarr; &#8377;170. Change it only if NSE changes the grid.</td></tr>
+<tr><td><code>SAIL_STRIKE_OFFSET_CE</code></td><td><code>0</code></td><td><b>SAIL &mdash; CE Strike Offset (&#8377;)</b> (-25&ndash;25). CE strike vs ATM, in rupees on the &#8377;2.5 grid (-2.5 = one strike ITM, 0 = ATM, +2.5 = one strike OTM). Example: SAIL at &#8377;170 with +2.5 buys the &#8377;172.50 CE.</td></tr>
+<tr><td><code>SAIL_STRIKE_OFFSET_PE</code></td><td><code>0</code></td><td><b>SAIL &mdash; PE Strike Offset (&#8377;)</b> (-25&ndash;25). PE strike vs ATM, in rupees on the &#8377;2.5 grid (+2.5 = one strike ITM, 0 = ATM, -2.5 = one strike OTM). Example: SAIL at &#8377;170 with -2.5 buys the &#8377;167.50 PE.</td></tr>
+<tr><td><code>SAIL_OPTION_EXPIRY_OVERRIDE</code></td><td><code>(blank)</code></td><td><b>SAIL &mdash; Option Expiry (manual)</b>. Manual SAIL expiry (YYYY-MM-DD). Leave blank to use the current month's contract (e.g. 2026-10-27 for October 2026). Like the index keys above, a stored date is rolled forward automatically once it expires while SAIL_VWAP_ST is switched on; a future date you set is left alone. A date that has already passed BLOCKS SAIL entries rather than quietly trading a different expiry.</td></tr>
+<tr><td><code>LIVE_HARNESS_DRY_RUN</code></td><td><code>true</code></td><td><b>Live Harness DRY-RUN (GLOBAL)</b>. Global switch: log live orders but place none.</td></tr>
+</tbody></table>
+
+<h2 id="missing">10. What's still missing</h2>
+<ul>
+  <li><b>It has never traded.</b> No paper session, no live order. Every number above is from old candles.</li>
+  <li><b>No option prices were tested.</b> The 60-day check is in SAIL rupees per share. The backtest's rupee figures are <b>simulated</b>: an option price built from an assumed starting premium, delta 0.5 and a fixed daily time decay &mdash; not real SAIL option quotes.</li>
+  <li><b>The tick-level exits were not tested.</b> Profit lock, breakeven and the 25% option stop need real option ticks. They will change the results above, most likely by cutting winners short.</li>
+  <li><b>The stop can cost most of a day's limit.</b> The middle first stop is &#8377;1.41 away (1 in 10 over &#8377;2.02); at delta 0.5 on 4,700 shares that is about &#8377;3,300&ndash;&#8377;4,750 in one trade. <code>SAIL_VWAP_ST_ST_MULT</code> is the lever: smaller = tighter stop but more noise exits.</li>
+  <li><b>The stop only checks candle closes.</b> 9 of 29 losers lost more than their starting stop distance.</li>
+  <li><b>Slow to learn.</b> One trade a day, and none on about 1 day in 5. At that pace 30 trades take about 39 sessions &mdash; roughly eight weeks.</li>
+  <li><b>Small, recent sample.</b> 58 days of one stock: SAIL ran from about &#8377;160 to &#8377;200 and back to about &#8377;169. The data is Yahoo's, not Fyers', so VWAP (and some crosses) can differ from what the bot sees live.</li>
+  <li><b>SAIL options trade far less than NIFTY's.</b> The bid-ask spread is a real cost on every trade; nothing above charges for it.</li>
+  <li><b>Next step:</b> paper-trade clean sessions on the defaults, run Live in dry-run next to Paper and check its logged orders match Paper's trades, and only then think about live.</li>
+</ul>
+<p class="muted">Engine: <code>src/strategies/sail_vwap_st.js</code>. Charts and numbers were produced by walking that engine over Yahoo Finance SAIL.NS 5-minute candles, 24 Jul &ndash; 19 Oct 2026.</p>
+
+</div>
+<script>
+/* ============================================================================
+ * TVChart v3 — dependency-free TradingView-style candlestick renderer.
+ * v2 features: OHLC header, subtitle, bottom time axis, last-price tag/line.
+ * v3 adds:   hlines (labelled price levels), shades (vertical highlight spans),
+ *            pane (RSI / volume / line sub-panel under the price chart).
+ * Pure buildSVG(spec) -> string (no DOM), never throws on bad data.
+ * Backward-compatible with every v1/v2 spec.
+ * ==========================================================================*/
+(function (global) {
+  "use strict";
+  function isNum(x) { return typeof x === "number" && isFinite(x); }
+  function esc(s) { return String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+  function fmt(v) { return isNum(v) ? v.toFixed(2).replace(/\.00$/,"") : "—"; }
+
+  function priceRange(spec) {
+    var lo = Infinity, hi = -Infinity;
+    function eat(v){ if(isNum(v)){ if(v>hi)hi=v; if(v<lo)lo=v; } }
+    (spec.candles||[]).forEach(function(c){ eat(c[1]); eat(c[2]); });
+    (spec.overlays||[]).forEach(function(o){ (o.data||[]).forEach(eat); });
+    (spec.bands||[]).forEach(function(b){ (b.upper||[]).forEach(eat); (b.lower||[]).forEach(eat); (b.mid||[]).forEach(eat); });
+    (spec.markers||[]).forEach(function(m){ if(isNum(m.price)) eat(m.price); });
+    (spec.hlines||[]).forEach(function(h){ eat(h.price); });
+    (spec.zones||[]).forEach(function(z){ eat(z.top); eat(z.bottom); });
+    if(!isFinite(lo)||!isFinite(hi)){ lo=0; hi=1; }
+    if(lo===hi){ lo-=1; hi+=1; }
+    var pad=(hi-lo)*0.10; return { lo:lo-pad, hi:hi+pad };
+  }
+
+  // Build a path that starts a fresh subpath after every gap. Indicator series
+  // are null until they have enough history (EMA/BB/RSI warm-up), and a path
+  // that opens with "L" is invalid — that used to drop the whole line.
+  function linePath(data, X, Y) {
+    var d = "", pen = false;
+    for (var i=0;i<data.length;i++){
+      if(!isNum(data[i])){ pen = false; continue; }
+      d += (pen ? "L" : "M") + X(i) + " " + Y(data[i]) + " "; pen = true;
+    }
+    return d;
+  }
+
+  function buildSVG(spec) {
+    spec = spec||{};
+    var candles = spec.candles||[]; var n = candles.length;
+    if(!n) return '<div class="tv-empty">chart data unavailable</div>';
+
+    var pane = null;
+    if (spec.pane && spec.pane.data && spec.pane.data.length) pane = spec.pane;
+    var paneH  = pane ? (isNum(pane.height) ? pane.height : 92) : 0;
+    var paneGap = pane ? 12 : 0;
+
+    var W=880, padL=6, padR=74, padT=52, padB=40, plotH=348;
+    var H = padT + plotH + paneGap + paneH + padB;
+    var rng=priceRange(spec); var plotW=W-padL-padR;
+    var slot=plotW/n; var cw=Math.max(2,Math.min(20,slot*0.66)); var wickW=Math.max(0.8,cw*0.12);
+    var up="#26a69a",down="#ef5350",grid="#1b2636",axis="#5a7499",txt="#e8eef8",mut="#8b98ac";
+    var plotBot = padT+plotH;
+    var paneTop = plotBot+paneGap, paneBot = paneTop+paneH;
+    var axisBot = pane ? paneBot : plotBot;
+    function X(i){ return padL+slot*(i+0.5); }
+    function Y(p){ return padT+(rng.hi-p)/(rng.hi-rng.lo)*plotH; }
+    var out=[];
+    out.push('<svg viewBox="0 0 '+W+' '+H+'" class="tv-svg" role="img" aria-label="'+esc(spec.title||"price chart")+'" preserveAspectRatio="xMidYMid meet">');
+    out.push('<rect x="0" y="0" width="'+W+'" height="'+H+'" fill="#0d1421"/>');
+
+    // horizontal price grid + right-side labels
+    for(var g=0;g<=4;g++){ var gp=rng.hi-(rng.hi-rng.lo)*(g/4); var gy=Y(gp);
+      out.push('<line x1="'+padL+'" y1="'+gy+'" x2="'+(W-padR)+'" y2="'+gy+'" stroke="'+grid+'" stroke-width="1"/>');
+      out.push('<text x="'+(W-padR+6)+'" y="'+(gy+3.5)+'" fill="'+axis+'" font-size="10.5" font-family="monospace">'+gp.toFixed(0)+'</text>'); }
+
+    // vertical time grid + bottom axis labels (every ~1/7 of the candles)
+    var times = spec.times || [];
+    var step = Math.max(1, Math.round(n/7));
+    for(var t=0;t<n;t+=step){ var tx=X(t);
+      out.push('<line x1="'+tx+'" y1="'+padT+'" x2="'+tx+'" y2="'+axisBot+'" stroke="'+grid+'" stroke-width="0.7" opacity="0.5"/>');
+      if(times[t]) out.push('<text x="'+tx+'" y="'+(axisBot+15)+'" fill="'+axis+'" font-size="10" text-anchor="middle" font-family="system-ui">'+esc(times[t])+'</text>'); }
+
+    // vertical highlight spans (e.g. "position held", "no-trade window")
+    (spec.shades||[]).forEach(function(s){ if(!isNum(s.from)||!isNum(s.to)) return;
+      var sx=X(s.from)-slot/2, sw=Math.max(1,X(s.to)-X(s.from)+slot);
+      out.push('<rect x="'+sx+'" y="'+padT+'" width="'+sw+'" height="'+plotH+'" fill="'+(s.color||"rgba(96,165,250,0.07)")+'"/>');
+      if(s.label){ var sly = s.labelBottom ? (padT+plotH-7) : (padT+13);
+        out.push('<text x="'+(sx+sw/2)+'" y="'+sly+'" fill="'+(s.text||"#7c93b5")+'" font-size="10" text-anchor="middle" font-family="system-ui">'+esc(s.label)+'</text>'); } });
+
+    // zones (e.g. ORB opening-range box)
+    (spec.zones||[]).forEach(function(z){ if(!isNum(z.from)||!isNum(z.to)) return;
+      var zx=X(z.from)-cw/2, zw=X(z.to)-X(z.from)+cw; var zTop=Y(isNum(z.top)?z.top:rng.hi), zBot=Y(isNum(z.bottom)?z.bottom:rng.lo);
+      out.push('<rect x="'+zx+'" y="'+zTop+'" width="'+zw+'" height="'+(zBot-zTop)+'" fill="'+(z.color||"rgba(96,165,250,0.10)")+'" stroke="'+(z.stroke||"rgba(96,165,250,0.5)")+'" stroke-dasharray="4 3" stroke-width="1"/>');
+      if(z.label) out.push('<text x="'+(zx+4)+'" y="'+(zTop-4)+'" fill="'+(z.stroke||"#60a5fa")+'" font-size="10.5" font-weight="600">'+esc(z.label)+'</text>'); });
+
+    // band envelopes (VWAP band / Bollinger)
+    (spec.bands||[]).forEach(function(b){ var u=b.upper||[], l=b.lower||[];
+      if(u.length&&l.length){ var pts=[]; for(var i=0;i<u.length;i++) if(isNum(u[i])) pts.push(X(i)+","+Y(u[i]));
+        for(var j=l.length-1;j>=0;j--) if(isNum(l[j])) pts.push(X(j)+","+Y(l[j]));
+        out.push('<polygon points="'+pts.join(" ")+'" fill="'+(b.fill||"rgba(120,144,200,0.08)")+'"/>');
+        [u,l].forEach(function(line){
+          out.push('<path d="'+linePath(line,X,Y)+'" fill="none" stroke="'+(b.color||"#a78bfa")+'" stroke-width="1.3" opacity="0.85"/>'); }); }
+      if(b.mid){
+        out.push('<path d="'+linePath(b.mid,X,Y)+'" fill="none" stroke="'+(b.color||"#a78bfa")+'" stroke-width="1" stroke-dasharray="2 3" opacity="0.7"/>'); } });
+
+    // labelled horizontal price levels (stop / target / neckline / OR high-low)
+    (spec.hlines||[]).forEach(function(hl){ if(!isNum(hl.price)) return;
+      var hy=Y(hl.price), hc=hl.color||"#fbbf24";
+      out.push('<line x1="'+padL+'" y1="'+hy+'" x2="'+(W-padR)+'" y2="'+hy+'" stroke="'+hc+'" stroke-width="'+(hl.width||1.2)+'" '+(hl.solid?"":'stroke-dasharray="6 4" ')+'opacity="0.9"/>');
+      out.push('<rect x="'+(W-padR)+'" y="'+(hy-8)+'" width="'+padR+'" height="16" fill="'+hc+'" opacity="0.92"/>');
+      out.push('<text x="'+(W-padR+5)+'" y="'+(hy+3.5)+'" fill="#0d1421" font-size="10" font-weight="700" font-family="monospace">'+hl.price.toFixed(0)+'</text>');
+      if(hl.label){ var lw=hl.label.length*5.9+10;
+        // labelAt (0..1) slides the tag along the line so it can dodge markers
+        var lx1=padL+3+(isNum(hl.labelAt)?hl.labelAt:0)*(W-padR-padL-lw-6);
+        lx1=Math.max(padL+3,Math.min(lx1,W-padR-lw-3));
+        out.push('<rect x="'+lx1+'" y="'+(hy-15)+'" width="'+lw+'" height="14" rx="3" fill="'+hc+'" opacity="0.92"/>');
+        out.push('<text x="'+(lx1+5)+'" y="'+(hy-4.5)+'" fill="#0d1421" font-size="9.8" font-weight="700" font-family="system-ui">'+esc(hl.label)+'</text>'); } });
+
+    // candlesticks
+    candles.forEach(function(c,i){ if(!c||!isNum(c[0])||!isNum(c[3])) return;
+      var o=c[0],h=c[1],lw=c[2],cl=c[3]; var col=cl>=o?up:down, cx=X(i);
+      if(isNum(h)&&isNum(lw)) out.push('<rect x="'+(cx-wickW/2)+'" y="'+Y(h)+'" width="'+wickW+'" height="'+Math.max(0.5,Y(lw)-Y(h))+'" fill="'+col+'"/>');
+      var yo=Y(o),yc=Y(cl),top=Math.min(yo,yc),bh=Math.max(1,Math.abs(yc-yo));
+      out.push('<rect x="'+(cx-cw/2)+'" y="'+top+'" width="'+cw+'" height="'+bh+'" fill="'+col+'"/>'); });
+
+    // overlay indicator lines (EMA / VWAP / MAs)
+    (spec.overlays||[]).forEach(function(ov){
+      out.push('<path d="'+linePath(ov.data||[],X,Y)+'" fill="none" stroke="'+(ov.color||"#fbbf24")+'" stroke-width="'+(ov.width||1.6)+'" '+(ov.dash?'stroke-dasharray="5 3" ':"")+'opacity="0.95"/>'); });
+
+    // last-price dashed line + right-axis tag (TradingView style)
+    if(spec.lastPriceTag !== false){ var last=candles[n-1]; if(last&&isNum(last[3])){ var lp=last[3], ly=Y(lp);
+      var lcol=(isNum(last[0])&&lp>=last[0])?up:down;
+      out.push('<line x1="'+padL+'" y1="'+ly+'" x2="'+(W-padR)+'" y2="'+ly+'" stroke="'+lcol+'" stroke-width="0.8" stroke-dasharray="2 2" opacity="0.7"/>');
+      out.push('<rect x="'+(W-padR)+'" y="'+(ly-8)+'" width="'+padR+'" height="16" fill="'+lcol+'"/>');
+      out.push('<text x="'+(W-padR+6)+'" y="'+(ly+3.5)+'" fill="#0d1421" font-size="10.5" font-weight="700" font-family="monospace">'+lp.toFixed(2)+'</text>'); } }
+
+    // markers (buy / exit / dot)
+    (spec.markers||[]).forEach(function(m){ if(!isNum(m.i)) return; var mx=X(m.i);
+      var my=isNum(m.price)?Y(m.price):(m.type==="buy"?plotBot-14:padT+14);
+      var isBuy=m.type==="buy", isExit=m.type==="exit"; var col=m.color||(isBuy?"#26a69a":isExit?"#ef5350":"#fbbf24");
+      if(isBuy||isExit){ var ay=isBuy?my+18:my-18, tri=isBuy?(mx-6)+","+ay+" "+(mx+6)+","+ay+" "+mx+","+(ay-10):(mx-6)+","+ay+" "+(mx+6)+","+ay+" "+mx+","+(ay+10);
+        out.push('<polygon points="'+tri+'" fill="'+col+'"/>'); }
+      else out.push('<circle cx="'+mx+'" cy="'+my+'" r="3.5" fill="'+col+'" stroke="#0d1421" stroke-width="1"/>');
+      if(m.text){ var lblY=isBuy?my+34:(isExit?my-26:my-10); var tw=m.text.length*6.2+10;
+        var lx0=Math.max(padL+1,Math.min(mx-tw/2,W-padR-tw-1));
+        out.push('<rect x="'+lx0+'" y="'+(lblY-11)+'" width="'+tw+'" height="15" rx="3" fill="'+col+'" opacity="0.94"/>');
+        out.push('<text x="'+(lx0+tw/2)+'" y="'+lblY+'" fill="#0d1421" font-size="10.5" font-weight="700" text-anchor="middle" font-family="system-ui">'+esc(m.text)+'</text>'); } });
+
+    // ── sub-panel: RSI / volume / any line series ─────────────────────────
+    if(pane){
+      var pd=pane.data||[], pType=pane.type||"line";
+      var plo=Infinity, phi=-Infinity;
+      pd.forEach(function(v){ if(isNum(v)){ if(v>phi)phi=v; if(v<plo)plo=v; } });
+      if(pType==="rsi"){ plo=0; phi=100; }
+      if(pType==="volume"){ plo=0; }
+      if(isNum(pane.min)) plo=pane.min;
+      if(isNum(pane.max)) phi=pane.max;
+      if(!isFinite(plo)||!isFinite(phi)){ plo=0; phi=1; }
+      if(plo===phi){ plo-=1; phi+=1; }
+      var pPad=(pType==="rsi"||pType==="volume")?0:(phi-plo)*0.12;
+      var pLo=plo-pPad, pHi=phi+pPad;
+      function PY(v){ return paneTop+(pHi-v)/(pHi-pLo)*paneH; }
+      out.push('<rect x="'+padL+'" y="'+paneTop+'" width="'+(W-padR-padL)+'" height="'+paneH+'" fill="#0b111c"/>');
+      out.push('<line x1="'+padL+'" y1="'+paneTop+'" x2="'+(W-padR)+'" y2="'+paneTop+'" stroke="'+grid+'" stroke-width="1"/>');
+
+      // guide levels inside the pane (e.g. RSI 70 / 40)
+      (pane.levels||[]).forEach(function(lv){ var v=isNum(lv)?lv:lv.value; if(!isNum(v)) return;
+        var c=(lv&&lv.color)||"#3f5570", ly2=PY(v);
+        out.push('<line x1="'+padL+'" y1="'+ly2+'" x2="'+(W-padR)+'" y2="'+ly2+'" stroke="'+c+'" stroke-width="1" stroke-dasharray="4 3" opacity="0.8"/>');
+        out.push('<text x="'+(W-padR+6)+'" y="'+(ly2+3.5)+'" fill="'+c+'" font-size="10" font-family="monospace">'+v+'</text>'); });
+
+      if(pType==="volume"){
+        var bw=Math.max(1.5,slot*0.6);
+        pd.forEach(function(v,i){ if(!isNum(v)) return; var c2=candles[i];
+          var col2=(c2&&isNum(c2[0])&&isNum(c2[3])&&c2[3]>=c2[0])?"rgba(38,166,154,0.55)":"rgba(239,83,80,0.55)";
+          if(pane.colors&&pane.colors[i]) col2=pane.colors[i];
+          var by=PY(v); out.push('<rect x="'+(X(i)-bw/2)+'" y="'+by+'" width="'+bw+'" height="'+Math.max(0.5,paneBot-by)+'" fill="'+col2+'"/>'); });
+      } else {
+        out.push('<path d="'+linePath(pd,X,PY)+'" fill="none" stroke="'+(pane.color||"#c084fc")+'" stroke-width="1.6"/>');
+      }
+      (pane.markers||[]).forEach(function(m){ if(!isNum(m.i)||!isNum(m.value)) return;
+        out.push('<circle cx="'+X(m.i)+'" cy="'+PY(m.value)+'" r="3.2" fill="'+(m.color||"#fbbf24")+'" stroke="#0b111c" stroke-width="1"/>'); });
+      if(pane.label) out.push('<text x="'+(padL+5)+'" y="'+(paneTop+13)+'" fill="'+mut+'" font-size="10.5" font-weight="600" font-family="system-ui">'+esc(pane.label)+'</text>');
+    }
+
+    // header: title, subtitle, and OHLC readout (TradingView top-left)
+    out.push('<text x="'+padL+'" y="17" fill="'+txt+'" font-size="13" font-weight="700" font-family="system-ui">'+esc(spec.title||"")+'</text>');
+    if(spec.subtitle) out.push('<text x="'+padL+'" y="32" fill="'+mut+'" font-size="10.5" font-family="system-ui">'+esc(spec.subtitle)+'</text>');
+    if(spec.ohlc !== false){ var f=candles[n-1]; if(f){ var oc=(isNum(f[0])&&isNum(f[3])&&f[3]>=f[0])?up:down;
+      var parts=[["O",f[0]],["H",f[1]],["L",f[2]],["C",f[3]]], hy2=spec.subtitle?46:32;
+      var lx=padL;
+      parts.forEach(function(p){ out.push('<text x="'+lx+'" y="'+hy2+'" font-size="10.5" font-family="monospace" fill="'+mut+'">'+p[0]+'</text>');
+        lx+=11; out.push('<text x="'+lx+'" y="'+hy2+'" font-size="10.5" font-family="monospace" fill="'+oc+'">'+fmt(p[1])+'</text>'); lx+=(fmt(p[1]).length*6.4)+10; }); } }
+
+    // legend (bottom-left, above time axis)
+    var lgx=padL, lgy=H-4;
+    (spec.legend||[]).forEach(function(lg){ out.push('<rect x="'+lgx+'" y="'+(lgy-8)+'" width="14" height="3" rx="1.5" fill="'+(lg.color||"#fbbf24")+'"/>');
+      out.push('<text x="'+(lgx+18)+'" y="'+(lgy-4)+'" fill="'+axis+'" font-size="10" font-family="system-ui">'+esc(lg.label)+'</text>');
+      lgx+=22+lg.label.length*6.1; });
+
+    out.push("</svg>"); return out.join("");
+  }
+
+  var TVChart = { buildSVG: buildSVG, render: function(elId, spec){ try { var el=document.getElementById(elId); if(!el) return; el.innerHTML=buildSVG(spec); } catch(e){} } };
+  global.TVChart = TVChart;
+})(window);
+</script>
+<script>
+TVChart.render("svs-ce", {"title":"SAIL · 5 min · 2026-07-28","subtitle":"Real candles (Yahoo SAIL.NS) · real engine, default settings · CE winner","times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55","12:00","12:05","12:10","12:15","12:20","12:25","12:30","12:35","12:40","12:45","12:50","12:55","13:00","13:05","13:10","13:15","13:20","13:25","13:30","13:35","13:40"],"candles":[[162.75,163.31,162.03,162.03],[161.99,162.15,161.8,161.9],[161.92,161.92,161.34,161.34],[161.12,161.6,160.85,160.9],[160.9,161.12,160.76,160.76],[160.75,160.75,160.41,160.5],[160.5,160.5,160.2,160.29],[160.25,160.67,160.06,160.66],[160.64,160.66,160.35,160.41],[160.46,160.81,160.44,160.76],[160.78,161.45,160.78,161.4],[161.36,161.48,161.19,161.2],[161.17,162.84,161.17,162.62],[162.64,163.15,162.33,163],[162.96,164.05,162.72,164],[163.94,164.75,163.94,164.69],[164.66,165.88,164.39,165.4],[165.46,166.7,165.37,165.65],[165.65,166.35,165.42,166.1],[166.1,166.62,165.9,166.1],[166.22,166.28,165.68,166.25],[166.25,167.3,165.95,166.8],[166.8,166.8,165.95,166.52],[166.52,166.65,166.04,166.2],[166.2,166.65,166.08,166.25],[166.18,166.4,166.03,166.07],[166.13,166.41,166.07,166.15],[166.15,166.18,165.95,166.05],[166.04,166.93,165.93,166.15],[166.15,166.89,166.15,166.3],[166.3,166.5,166.22,166.24],[166.25,166.28,166.01,166.14],[166.18,166.29,165.97,166.19],[166.18,166.22,166.05,166.14],[166.06,166.32,166.06,166.29],[166.29,166.5,166,166.42],[166.33,166.5,166.19,166.41],[166.32,167.25,166.27,167],[167.02,167.17,166.75,166.9],[166.9,166.92,166,166.13],[166.06,166.5,166.05,166.23],[166.23,166.39,166.2,166.35],[166.23,166.45,166.23,166.32],[166.32,166.48,166.32,166.37],[166.38,166.39,166.27,166.35],[166.2,166.39,166.2,166.3],[166.27,166.35,166.25,166.3],[166.3,166.3,165.89,166.08],[166.08,166.1,165.83,165.89],[165.89,166.46,165.84,166.4],[166.4,166.41,166.16,166.21],[166.21,166.38,166.1,166.3],[166.3,166.39,166.12,166.18],[166.18,166.29,166.05,166.14]],"overlays":[{"name":"VWAP","data":[null,161.95,161.7,161.46,161.26,161.02,160.86,160.81,160.8,160.8,160.84,160.86,161.08,161.21,161.57,162.14,162.52,162.93,163.05,163.33,163.46,163.89,163.98,164.02,164.07,164.1,164.13,164.15,164.76,164.81,164.81,164.82,164.83,164.83,164.84,164.93,164.96,165.01,165.02,165.06,165.07,165.08,165.08,165.08,165.09,165.09,165.1,165.1,165.11,165.11,165.11,165.13,165.13,165.13],"color":"#38bdf8","width":1.8},{"name":"SuperTrend green","data":[null,null,null,null,null,null,null,null,null,null,160.27,160.52,160.94,161.61,162.11,163.03,163.65,164.44,164.44,164.65,164.65,164.95,164.95,164.95,164.95,164.95,164.95,164.95,165.04,165.12,165.12,165.12,165.12,165.12,165.15,165.22,165.35,165.67,165.9,165.9,165.9,165.9,165.9,165.9,165.9,165.9,165.9,165.9,null,null,null,null,null,null],"color":"#22c55e","width":2},{"name":"SuperTrend red","data":[162.89,162.63,162.33,162.01,161.72,161.35,161.1,161.1,161.1,161.1,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,166.69,166.69,166.69,166.69,166.69,166.69],"color":"#ef4444","width":2},{"name":"Cross candle high/low","data":[null,null,null,null,null,null,null,null,null,null,161.45,161.45,161.45,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],"color":"#fbbf24","width":1.4,"dash":true},{"name":"axis anchor low","data":[160,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],"width":0},{"name":"axis anchor high","data":[170,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],"width":0}],"hlines":[],"zones":[],"shades":[{"from":13,"to":49,"label":"holding","color":"rgba(38,166,154,0.07)"}],"markers":[{"i":10,"price":161.4,"type":"dot","text":"cross","color":"#fbbf24"},{"i":12,"price":162.62,"type":"dot","text":"breakout","color":"#fbbf24"},{"i":13,"price":162.33,"type":"buy","text":"BUY CE","color":"#26a69a"},{"i":47,"price":165.89,"type":"dot","text":"wick only","color":"#94a3b8"},{"i":49,"price":166.46,"type":"exit","text":"EXIT 165.89","color":"#ef4444"}],"legend":[{"label":"VWAP (hlc3, session)","color":"#38bdf8"},{"label":"Cross candle high/low","color":"#fbbf24"},{"label":"SuperTrend 10,2 green","color":"#22c55e"},{"label":"SuperTrend 10,2 red","color":"#ef4444"}]});
+TVChart.render("svs-pe", {"title":"SAIL · 5 min · 2026-08-25","subtitle":"Real candles (Yahoo SAIL.NS) · real engine, default settings · PE loser","times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30"],"candles":[[180.75,184.68,180.75,183.82],[184,185.45,183.87,184.8],[184.85,185.27,184.58,184.94],[185,185.28,184.5,184.67],[184.74,184.9,183.05,183.4],[183.32,183.47,182.7,182.73],[182.73,182.84,181.71,181.9],[181.99,182.61,181.82,182.4],[182.4,182.74,182.32,182.7],[182.7,183.99,182.69,183.86],[183.88,184.29,183.03,183.06],[183.06,183.78,183.06,183.78],[183.71,183.95,183.2,183.2],[183.27,183.38,182.21,182.6],[182.6,183.55,182.55,183.47],[183.46,183.88,183.41,183.8],[183.82,183.82,183.55,183.65],[183.74,183.89,183.48,183.85],[183.85,184.65,183.79,184.59],[184.51,184.85,183.74,184.14],[184.14,184.25,183.65,183.93],[183.93,184.3,183.9,183.97],[184.02,184.25,183.92,184.15],[184.16,184.33,183.48,183.67],[183.65,184.42,183.64,184.19],[184.18,185.56,184,185.25],[185.28,185.65,184.9,185.16],[185.17,185.78,185,185.13]],"overlays":[{"name":"VWAP","data":[null,184.71,184.79,184.8,184.47,184.27,183.91,183.83,183.77,183.75,183.73,183.72,183.7,183.66,183.63,183.63,183.63,183.63,183.65,183.68,183.68,183.69,183.7,183.7,183.7,183.78,183.82,183.86],"color":"#38bdf8","width":1.8},{"name":"SuperTrend green","data":[180.74,182.56,182.89,182.91,182.91,null,null,null,null,null,null,null,null,null,null,null,null,null,182.56,182.58,182.58,182.58,182.6,182.6,182.6,183.11,183.62,183.74],"color":"#22c55e","width":2},{"name":"SuperTrend red","data":[null,null,null,null,null,185.18,184.39,184.27,184.27,184.27,184.27,184.27,184.27,184.27,184.27,184.27,184.27,184.27,null,null,null,null,null,null,null,null,null,null],"color":"#ef4444","width":2},{"name":"Cross candle high/low","data":[null,null,null,184.5,184.5,null,null,null,null,null,null,null,183.2,183.2,null,null,null,null,null,null,null,null,null,null,null,null,null,null],"color":"#fbbf24","width":1.4,"dash":true},{"name":"axis anchor low","data":[180.66666666666666,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],"width":0},{"name":"axis anchor high","data":[187.33333333333334,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],"width":0}],"hlines":[],"zones":[],"shades":[{"from":9,"to":12,"label":"4 crosses in 4 candles","color":"rgba(251,191,36,0.06)","labelBottom":true},{"from":14,"to":19,"label":"holding","color":"rgba(239,83,80,0.07)"}],"markers":[{"i":4,"price":183.05,"type":"dot","text":"skipped: ST green","color":"#f59e0b"},{"i":13,"price":182.6,"type":"dot","text":"breakout","color":"#fbbf24"},{"i":14,"price":182.55,"type":"buy","text":"BUY PE 182.60","color":"#26a69a"},{"i":19,"price":184.85,"type":"exit","text":"EXIT 184.51","color":"#ef4444"},{"i":25,"price":185.56,"type":"dot","text":"1 trade/day: ignored","color":"#94a3b8"}],"legend":[{"label":"VWAP (hlc3, session)","color":"#38bdf8"},{"label":"Cross candle high/low","color":"#fbbf24"},{"label":"SuperTrend 10,2 green","color":"#22c55e"},{"label":"SuperTrend 10,2 red","color":"#ef4444"}]});
+TVChart.render("svs-skip", {"title":"SAIL · 5 min · 2026-08-06","subtitle":"Real candles (Yahoo SAIL.NS) · real engine, default settings · three PE breakouts, no trade","times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55","12:00","12:05","12:10","12:15","12:20","12:25","12:30","12:35","12:40","12:45","12:50","12:55","13:00","13:05","13:10","13:15","13:20","13:25","13:30","13:35","13:40","13:45","13:50","13:55","14:00","14:05","14:10","14:15","14:20","14:25","14:30","14:35","14:40"],"candles":[[176.27,176.85,174.98,176.79],[176.82,179.5,176.6,178.88],[178.9,179.7,178.6,178.7],[178.8,179.09,178.25,178.8],[178.8,179.3,178.65,179.13],[179.11,179.29,178.35,178.6],[178.65,178.65,178.05,178.29],[178.29,178.41,178.11,178.21],[178.21,178.36,177.7,177.86],[177.78,177.84,177.04,177.2],[177.25,177.72,177.13,177.58],[177.55,178.4,177.45,178.05],[178.14,178.39,177.95,178.05],[178.05,178.58,177.57,177.65],[177.65,177.9,177.41,177.5],[177.55,177.55,177.23,177.23],[177.22,177.55,177.22,177.49],[177.48,178.12,177.4,177.68],[177.66,177.7,177.46,177.6],[177.55,177.63,177.35,177.37],[177.4,177.65,177.25,177.3],[177.34,177.41,177.11,177.26],[177.29,177.38,176.9,177.08],[177.07,177.15,176.63,176.63],[176.67,176.77,176.52,176.55],[176.55,177.23,176.55,177],[177,177.04,176.55,176.71],[176.76,176.8,176.55,176.73],[176.73,176.89,176.66,176.79],[176.83,176.94,176.64,176.94],[176.95,177.19,176.9,177.12],[177.17,177.19,177,177.08],[177.21,178.29,177.21,177.9],[178,178.12,177.83,178.05],[177.97,178.11,177.62,177.68],[177.65,178,177.54,177.61],[177.63,177.82,177.51,177.52],[177.54,177.57,177.15,177.24],[177.22,177.59,177.21,177.55],[177.55,177.69,177.42,177.5],[177.42,177.47,177.08,177.29],[177.24,177.34,177.13,177.19],[177.18,177.37,177.02,177.04],[177.06,177.12,176.84,176.89],[176.88,177.23,176.88,177.18],[177.18,177.33,177.06,177.26],[177.33,177.33,177.1,177.28],[177.28,177.3,177.15,177.15],[177.12,177.37,177.05,177.33],[177.34,177.34,176.93,176.94],[177.03,177.23,176.95,177.15],[177.16,177.19,177.01,177.05],[177.02,177.5,177.02,177.35],[177.45,178.09,177.33,177.8],[177.8,177.93,177.63,177.66],[177.7,177.95,177.66,177.91],[177.85,177.9,177.75,177.83],[177.93,177.95,177.83,177.94],[177.95,177.99,177.66,177.69],[177.72,177.99,177.71,177.75],[177.75,177.85,177.4,177.5],[177.5,177.56,177.25,177.3],[177.33,177.66,177.31,177.55],[177.59,177.7,177.38,177.64],[177.69,177.8,177.5,177.62],[177.61,177.65,177.43,177.59]],"overlays":[{"name":"VWAP","data":[null,178.33,178.58,178.6,178.67,178.67,178.65,178.64,178.6,178.53,178.5,178.47,178.46,178.44,178.42,178.41,178.4,178.38,178.37,178.36,178.33,178.31,178.17,178.13,178.11,178.1,178.06,178.06,178.05,178.04,178.04,178.03,178.02,178.02,178.02,178.02,178.02,178.02,178.01,178.01,177.98,177.98,177.98,177.97,177.97,177.96,177.96,177.96,177.95,177.95,177.95,177.94,177.93,177.93,177.93,177.93,177.93,177.93,177.92,177.92,177.92,177.92,177.92,177.92,177.91,177.91],"color":"#38bdf8","width":1.8},{"name":"SuperTrend green","data":[174.7,176.37,177.42,177.42,177.42,177.42,177.42,177.42,177.42,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,176.77,177.04,177.04,177.04,177.04,177.04,177.04,177.04,177.04,177.04,177.04,null,null,null,null,null,null,null,null,null,null,176.95,177.04,177.08,177.14,177.25,177.25,177.25,177.25,177.25,177.25,177.25,177.25,177.25],"color":"#22c55e","width":2},{"name":"SuperTrend red","data":[null,null,null,null,null,null,null,null,null,178.98,178.92,178.92,178.92,178.92,178.92,178.78,178.7,178.7,178.7,178.67,178.59,178.34,178.21,177.96,177.66,177.66,177.66,177.66,177.66,177.66,177.66,177.66,null,null,null,null,null,null,null,null,null,null,null,177.75,177.75,177.75,177.75,177.75,177.75,177.75,177.75,177.74,177.74,null,null,null,null,null,null,null,null,null,null,null,null,null],"color":"#ef4444","width":2},{"name":"Cross candle high/low","data":[null,null,null,null,null,178.35,178.35,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,177.62,177.62,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,177.66,177.66,177.66,null,null,null,null,null],"color":"#fbbf24","width":1.4,"dash":true},{"name":"axis anchor low","data":[174.66666666666666,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],"width":0},{"name":"axis anchor high","data":[181.33333333333334,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],"width":0}],"hlines":[],"zones":[],"shades":[],"markers":[{"i":5,"price":179.29,"type":"dot","text":"cross 1","color":"#fbbf24"},{"i":6,"price":178.05,"type":"dot","text":"skip 1","color":"#f59e0b"},{"i":34,"price":178.11,"type":"dot","text":"cross 2","color":"#fbbf24"},{"i":35,"price":177.54,"type":"dot","text":"skip 2","color":"#f59e0b"},{"i":58,"price":177.99,"type":"dot","text":"cross 3","color":"#fbbf24"},{"i":60,"price":177.4,"type":"dot","text":"skip 3","color":"#f59e0b"}],"legend":[{"label":"VWAP (hlc3, session)","color":"#38bdf8"},{"label":"Cross candle high/low","color":"#fbbf24"},{"label":"SuperTrend 10,2 green","color":"#22c55e"},{"label":"SuperTrend 10,2 red","color":"#ef4444"}]});
+</script>
+</body>
+</html>

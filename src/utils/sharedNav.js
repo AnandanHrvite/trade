@@ -41,6 +41,8 @@ const STRATEGY_MODES = [
   { mode: 'BN_EMA_RSI_ST_V2', label: 'BN EMA_RSI_ST_V2', envKey: 'BN_EMA_RSI_ST_V2_MODE_ENABLED', envDefault: 'false' },
   // ST_RSI_PIV_BB ships dark like V2 (envDefault 'false') for the same reason.
   { mode: 'ST_RSI_PIV_BB', label: 'ST_RSI_PIV_BB', envKey: 'ST_RSI_PIV_BB_MODE_ENABLED', envDefault: 'false' },
+  // SAIL_VWAP_ST (SAIL stock options) ships dark (envDefault 'false').
+  { mode: 'SAIL_VWAP_ST', label: 'SAIL VWAP+ST', envKey: 'SAIL_VWAP_ST_MODE_ENABLED', envDefault: 'false' },
   { mode: 'SIMPLE930', label: 'SIMPLE_9:30', envKey: 'SIMPLE930_MODE_ENABLED' },
   { mode: 'EARLYBIRD',  label: 'EarlyBird',    envKey: 'EARLYBIRD_MODE_ENABLED'  },
 ];
@@ -74,6 +76,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   let _bnPivotRsiStMode = null;
   let _emaRsiStV2Mode = null;
   let _stRsiPivBbMode = null;
+  let _sailVwapStMode = null;
   let _simple930Mode = null;
   let _anyTradeActive = false;
   try {
@@ -93,6 +96,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     _emaRsiStV2Mode = sss.getEmaRsiStV2Mode ? sss.getEmaRsiStV2Mode() : null;
     _bnEmaRsiStV2Mode = sss.getBnEmaRsiStV2Mode ? sss.getBnEmaRsiStV2Mode() : null;
     _stRsiPivBbMode = sss.getStRsiPivBbMode ? sss.getStRsiPivBbMode() : null;
+    _sailVwapStMode = sss.getSailVwapStMode ? sss.getSailVwapStMode() : null;
     _simple930Mode = sss.getSimple930Mode ? sss.getSimple930Mode() : null;
     _anyTradeActive = sss.isAnyActive ? sss.isAnyActive() : false;
   } catch (_) {}
@@ -143,6 +147,8 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const bnEmaRsiStV2ModeOn = (process.env.BN_EMA_RSI_ST_V2_MODE_ENABLED || 'false').toLowerCase() === 'true';
   // ST_RSI_PIV_BB — defaults OFF like V2: unvalidated, hidden until switched on.
   const stRsiPivBbModeOn = (process.env.ST_RSI_PIV_BB_MODE_ENABLED || 'false').toLowerCase() === 'true';
+  // SAIL_VWAP_ST — SAIL stock options; defaults OFF, hidden until switched on.
+  const sailVwapStModeOn = (process.env.SAIL_VWAP_ST_MODE_ENABLED || 'false').toLowerCase() === 'true';
   const simple930ModeOn = (process.env.SIMPLE930_MODE_ENABLED || 'true').toLowerCase() === 'true';
 
   // ── Per-module menu-visibility toggles (managed from Settings page) ──
@@ -244,6 +250,12 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const showStRsiPivBbPaper       = (process.env.UI_SHOW_ST_RSI_PIV_BB_PAPER        || 'true').toLowerCase()  === 'true';
   const showStRsiPivBbLiveHarness = (process.env.UI_SHOW_ST_RSI_PIV_BB_LIVE_HARNESS || 'false').toLowerCase() === 'true';
   const showStRsiPivBbHistory     = (process.env.UI_SHOW_ST_RSI_PIV_BB_HISTORY      || 'true').toLowerCase()  === 'true';
+  // SAIL_VWAP_ST — whole group gated by SAIL_VWAP_ST_MODE_ENABLED (default off)
+  // above; these only pick which of its pages show once the group is on.
+  const showSailVwapStBacktest    = (process.env.UI_SHOW_SAIL_VWAP_ST_BACKTEST     || 'true').toLowerCase()  === 'true';
+  const showSailVwapStPaper       = (process.env.UI_SHOW_SAIL_VWAP_ST_PAPER        || 'true').toLowerCase()  === 'true';
+  const showSailVwapStLiveHarness = (process.env.UI_SHOW_SAIL_VWAP_ST_LIVE_HARNESS || 'false').toLowerCase() === 'true';
+  const showSailVwapStHistory     = (process.env.UI_SHOW_SAIL_VWAP_ST_HISTORY      || 'true').toLowerCase()  === 'true';
   // SIMPLE_9:30 — never traded; ships visible but its Live page is triple-gated to dry-run.
   const showSimple930Backtest = (process.env.UI_SHOW_SIMPLE930_BACKTEST    || 'true').toLowerCase()  === 'true';
   const showSimple930Paper    = (process.env.UI_SHOW_SIMPLE930_PAPER       || 'true').toLowerCase()  === 'true';
@@ -276,6 +288,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const emaRsiStV2Keys = ['emaRsiStV2Backtest', 'emaRsiStV2Paper', 'emaRsiStV2LiveHarness', 'emaRsiStV2History'];
   const bnEmaRsiStV2Keys = ['bnEmaRsiStV2Backtest', 'bnEmaRsiStV2Paper', 'bnEmaRsiStV2LiveHarness', 'bnEmaRsiStV2History'];
   const stRsiPivBbKeys = ['stRsiPivBbPaper', 'stRsiPivBbLiveHarness', 'stRsiPivBbHistory'];
+  const sailVwapStKeys = ['sailVwapStBacktest', 'sailVwapStPaper', 'sailVwapStLiveHarness', 'sailVwapStHistory'];
   const simple930Keys = ['simple930Backtest', 'simple930Paper', 'simple930Live', 'simple930History'];
   const earlyBirdKeys = ['earlyBirdBacktest', 'earlyBirdPaper', 'earlyBirdLive', 'earlyBirdHistory'];
   // Dashboard (top-level) and System are collapsible groups too, so the whole
@@ -297,6 +310,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const isEmaRsiStV2Open = emaRsiStV2Keys.includes(activePage);
   const isBnEmaRsiStV2Open = bnEmaRsiStV2Keys.includes(activePage);
   const isStRsiPivBbOpen = stRsiPivBbKeys.includes(activePage);
+  const isSailVwapStOpen = sailVwapStKeys.includes(activePage);
   const isSimple930Open = simple930Keys.includes(activePage);
   const isEarlyBirdOpen = earlyBirdKeys.includes(activePage);
   const isSystemOpen    = systemKeys.includes(activePage);
@@ -313,6 +327,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     || isEmaRsiStV2Open
     || isBnEmaRsiStV2Open
     || isStRsiPivBbOpen
+    || isSailVwapStOpen
     || isEarlyBirdOpen || isSystemOpen
     || commodityKeys.includes(activePage);
   const isDashboardOpen = dashboardKeys.includes(activePage) || !anyGroupOpen;
@@ -335,6 +350,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const emaRsiStV2PaperRunning = _emaRsiStV2Mode === 'EMA_RSI_ST_V2_PAPER';
   const bnEmaRsiStV2PaperRunning = _bnEmaRsiStV2Mode === 'BN_EMA_RSI_ST_V2_PAPER';
   const stRsiPivBbPaperRunning = _stRsiPivBbMode === 'ST_RSI_PIV_BB_PAPER';
+  const sailVwapStPaperRunning = _sailVwapStMode === 'SAIL_VWAP_ST_PAPER';
   const simple930PaperRunning = _simple930Mode === 'SIMPLE930_PAPER';
 
   // Build a ema_rsi_st items list with per-feature toggle
@@ -466,6 +482,15 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     ...(showStRsiPivBbHistory  ? [{ key: 'stRsiPivBbHistory',  href: '/st_rsi_piv_bb-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 
+  const sailVwapStItems = [
+    ...(showSailVwapStBacktest ? [{ key: 'sailVwapStBacktest', href: '/sail_vwap_st-backtest',      icon: '🔍', label: 'Backtest' }] : []),
+    ...(showSailVwapStPaper    ? [{ key: 'sailVwapStPaper',    href: '/sail_vwap_st-paper/status', icon: '📋', label: 'Paper'    }] : []),
+    // No native Live engine — /sail_vwap_st-live IS the paper-wrapping harness.
+    // Hidden while Paper is running (mutually exclusive in sharedSocketState).
+    ...(showSailVwapStLiveHarness && !sailVwapStPaperRunning ? [{ key: 'sailVwapStLiveHarness', href: '/sail_vwap_st-live', icon: '🔧', label: 'Live (Harness)' }] : []),
+    ...(showSailVwapStHistory  ? [{ key: 'sailVwapStHistory',  href: '/sail_vwap_st-paper/history', icon: '📜', label: 'History' }] : []),
+  ];
+
   const simple930Items = [
     ...(showSimple930Backtest ? [{ key: 'simple930Backtest', href: '/simple930-backtest',     icon: '🔍', label: 'Backtest' }] : []),
     ...(showSimple930Paper    ? [{ key: 'simple930Paper',    href: '/simple930-paper/status', icon: '📋', label: 'Paper'    }] : []),
@@ -590,6 +615,16 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       groupId: 'nav-st_rsi_piv_bb',
       parent: 'nifty',
       items: stRsiPivBbItems,
+    }] : []),
+    // ── STOCKS — single-stock option strategies (SAIL_VWAP_ST) ──────────
+    // Its own STOCKS parent, the same way the NIFTY BANK strategies sit under
+    // BANK NIFTY: SAIL is neither index, and a parent with no enabled section
+    // is dropped, so STOCKS only appears once SAIL_VWAP_ST_MODE_ENABLED is on.
+    ...(sailVwapStModeOn ? [{
+      header: 'SAIL VWAP+ST', collapsible: true, collapsed: !isSailVwapStOpen,
+      groupId: 'nav-sail_vwap_st',
+      parent: 'stocks',
+      items: sailVwapStItems,
     }] : []),
     // The same engine on NIFTY BANK — so it sits under the BANK NIFTY parent
     // beside PIVOT RSI ST, not under NIFTY with its sibling.
@@ -760,6 +795,14 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
       : '';
 
+    const sailVwapStLiveBadge = p.key === 'sailVwapStLiveHarness' && _sailVwapStMode === 'SAIL_VWAP_ST_LIVE'
+      ? `<span class="sb-nav-badge live">LIVE</span>`
+      : '';
+
+    const sailVwapStPaperBadge = p.key === 'sailVwapStPaper' && _sailVwapStMode === 'SAIL_VWAP_ST_PAPER'
+      ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
+      : '';
+
     const simple930LiveBadge = p.key === 'simple930Live' && _simple930Mode === 'SIMPLE930_LIVE'
       ? `<span class="sb-nav-badge live">LIVE</span>`
       : '';
@@ -772,6 +815,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       <span class="sb-nav-icon">${p.icon}</span> ${p.label}
       ${liveBadge}${runningBadge}${bbRsiLiveBadge}${bbRsiPaperBadge}${paLiveBadge}${paPaperBadge}${orbLiveBadge}${orbPaperBadge}${tdsLiveBadge}${tdsPaperBadge}${haScalpLiveBadge}${haScalpPaperBadge}${prevOrbScalpLiveBadge}${prevOrbScalpPaperBadge}${rsiPivotStLiveBadge}${rsiPivotStPaperBadge}${bnPivotRsiStLiveBadge}${bnPivotRsiStPaperBadge}${emaRsiStV2LiveBadge}${emaRsiStV2PaperBadge}${simple930LiveBadge}${simple930PaperBadge}
       ${stRsiPivBbLiveBadge}${stRsiPivBbPaperBadge}
+      ${sailVwapStLiveBadge}${sailVwapStPaperBadge}
     </a>`;
   }
 
@@ -808,10 +852,15 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     { id: 'nav-parent-nifty', key: 'nifty', header: 'NIFTY' },
     ...(showBankNifty ? [{ id: 'nav-parent-banknifty', key: 'banknifty', header: 'BANK NIFTY' }] : []),
     ...(showCommodity ? [{ id: 'nav-parent-commodity', key: 'commodity', header: 'COMMODITY' }] : []),
+    // STOCKS — rendered only when one of its sections (SAIL_VWAP_ST) is enabled.
+    { id: 'nav-parent-stocks', key: 'stocks', header: 'STOCKS' },
   ];
   const isBankNiftyOpen = bankNiftyKeys.includes(activePage);
   const isCommodityOpen = commodityKeys.includes(activePage);
   const parentOpen = { nifty: !isBankNiftyOpen && !isCommodityOpen, banknifty: isBankNiftyOpen, commodity: isCommodityOpen };
+  // STOCKS opens when its own page is showing (and then NIFTY stays closed).
+  parentOpen.stocks = sailVwapStKeys.includes(activePage);
+  if (parentOpen.stocks) parentOpen.nifty = false;
 
   function renderParents() {
     return parentDefs.map(pd => {
@@ -2435,6 +2484,7 @@ window.__ltInit = true;
     '.mode-ema_rsi_st_v2{color:#0369a1!important;}',
     '.mode-bn_ema_rsi_st_v2{color:#0f766e!important;}',
     '.mode-st_rsi_piv_bb{color:#3f6212!important;}',
+    '.mode-sail_vwap_st{color:#be123c!important;}',
     '.mode-simple930{color:#c2410c!important;}',
     '.brk-action,.brk-action.re-login{color:#1d4ed8!important;}',
     '.brk-wallet-sub .zero,.pnl-flat,.ms-caret,.log-time,.da-empty,.bc-link,.tbar label,.pager label,.run-bar label,#dashRange label{color:#4b5769!important;}',

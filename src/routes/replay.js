@@ -304,6 +304,10 @@ const STRATEGY_OPTIONS = [
   // EMA_RSI_ST_V2 on NIFTY BANK. modeDefault "false" like its NIFTY sibling:
   // it stays out of the dropdown until the mode toggle is turned on.
   { mode: "bn_ema_rsi_st_v2-paper", label: "BN EMA_RSI_ST_V2 Paper (NIFTY BANK)", envKey: "UI_SHOW_BN_EMA_RSI_ST_V2_PAPER", modeKey: "BN_EMA_RSI_ST_V2_MODE_ENABLED", modeDefault: "false" },
+  // SAIL stock options — replayed from the same day file, filtered to NSE:SAIL-EQ
+  // ticks only (tickReplay._MODE_TO_SPOT_INDEX). modeDefault "false": hidden
+  // until SAIL_VWAP_ST_MODE_ENABLED is turned on.
+  { mode: "sail_vwap_st-paper", label: "SAIL VWAP+ST Paper (SAIL stock)", envKey: "UI_SHOW_SAIL_VWAP_ST_PAPER", modeKey: "SAIL_VWAP_ST_MODE_ENABLED", modeDefault: "false" },
   { mode: "simple930-paper", label: "SIMPLE_9:30 Paper", envKey: "UI_SHOW_SIMPLE930_PAPER", modeKey: "SIMPLE930_MODE_ENABLED" },
   // The mode string MUST match tickReplay MODE_TO_MODULE: "early-bird-paper".
   { mode: "early-bird-paper", label: "EarlyBird Paper", envKey: "UI_SHOW_EARLYBIRD_PAPER", modeKey: "EARLYBIRD_MODE_ENABLED" },
@@ -362,6 +366,7 @@ button:disabled { background:#374151; cursor:not-allowed; }
 .tag.prevorb  { background:rgba(232,121,249,0.15); color:#f0abfc; }
 .tag.rsipivotst { background:rgba(250,204,21,0.15); color:#fde047; }
 .tag.bnpivotrsist { background:rgba(129,140,248,0.15); color:#a5b4fc; }
+.tag.sailvwapst { background:rgba(253,164,175,0.15); color:#fecdd3; }
 .tag.simple930 { background:rgba(251,146,60,0.15); color:#fdba74; }
 .tag.trendpb  { background:rgba(236,72,153,0.15);  color:#f9a8d4; }
 .tag.earlybird { background:rgba(20,184,166,0.15); color:#5eead4; }
@@ -720,6 +725,7 @@ function modeTag(mode) {
   if (mode.startsWith('early-bird')) return 'earlybird';
   if (mode.startsWith('rsi-pivot-st')) return 'rsipivotst';
   if (mode.startsWith('bn-pivot-rsi-st')) return 'bnpivotrsist';
+  if (mode.startsWith('sail_vwap_st')) return 'sailvwapst';
   if (mode.startsWith('simple930')) return 'simple930';
   if (mode.startsWith('trend-day-scalp')) return 'tds';
   return 'pa';
@@ -1828,6 +1834,7 @@ function _modeLabel(mode) {
        : mode === 'trend-day-scalp-paper' ? 'Trend Day Scalp Paper'
        : mode === 'rsi-pivot-st-paper' ? 'RSI Pivot ST Paper'
        : mode === 'bn-pivot-rsi-st-paper' ? 'BN Pivot RSI ST Paper (NIFTY BANK)'
+       : mode === 'sail_vwap_st-paper' ? 'SAIL VWAP+ST Paper (SAIL stock)'
        : mode === 'simple930-paper' ? 'SIMPLE_9:30 Paper'
        : mode === 'early-bird-paper' ? 'EarlyBird Paper'
        : mode;
@@ -2847,6 +2854,7 @@ ${contractNoteClientJS()}
 var _CN_RANGE_ROWS = [], _CN_RANGE_CTX = null;
 var _CN_SINGLE_TRADES = null, _CN_SINGLE_LABEL = '';
 function _cnModeLabel(m){
+  if (m==='sail_vwap_st-paper') return 'SAIL VWAP+ST Paper (SAIL stock)';
   return m==='all'?'All Strategies':m==='ema_rsi_st-paper'?'EMA_RSI_ST Paper':m==='bn_ema_rsi_st_v2-paper'?'BN EMA_RSI_ST_V2 Paper (NIFTY BANK)':m==='ema_rsi_st_v2-paper'?'EMA_RSI_ST_V2 Paper':m==='bb_rsi-paper'?'BB_RSI Paper':m==='pa-paper'?'PA Paper':m==='orb-paper'?'ORB Paper':m==='ema9vwap-paper'?'EMA9+VWAP Paper':m==='trend-pb-paper'?'Trend Pullback Paper':m==='trend-day-scalp-paper'?'Trend Day Scalp Paper':m==='ha-scalp-paper'?'HA Scalp Paper':m==='prev-orb-scalp-paper'?'Prev ORB Scalp Paper':m==='rsi-pivot-st-paper'?'RSI Pivot ST Paper':m==='bn-pivot-rsi-st-paper'?'BN Pivot RSI ST Paper (NIFTY BANK)':m==='simple930-paper'?'SIMPLE_9:30 Paper':m==='early-bird-paper'?'EarlyBird Paper':(m||'Replay');
 }
 function openReplayReportAll(){
