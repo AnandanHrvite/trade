@@ -18,6 +18,7 @@
  */
 
 const express = require("express");
+const { trackPath, pathFields } = require("../utils/tradePath");
 const router  = express.Router();
 const fs      = require("fs");
 const path    = require("path");
@@ -498,6 +499,7 @@ function simulateSell(reason) {
     maePnl:         pos.maePnl || 0,
     secsToMFE:      pos.secsToMFE || 0,
     secsToMAE:      pos.secsToMAE || 0,
+    ...pathFields(pos),
     durationMs:     Date.now() - pos.entryTimeMs,
     charges,
     isFutures:      !!pos.isFutures,
@@ -620,6 +622,7 @@ function _checkExits(spotPrice) {
   if (_favPts > (pos.mfeSpotPts || 0)) { pos.mfeSpotPts = parseFloat(_favPts.toFixed(2)); pos.secsToMFE = parseFloat(((Date.now() - pos.entryTimeMs) / 1000).toFixed(1)); }
   if (_curPnl > (pos.mfePnl     || 0)) pos.mfePnl     = parseFloat(_curPnl.toFixed(2));
   if (_favPts < (pos.maeSpotPts || 0)) { pos.maeSpotPts = parseFloat(_favPts.toFixed(2)); pos.secsToMAE = parseFloat(((Date.now() - pos.entryTimeMs) / 1000).toFixed(1)); }
+  trackPath(pos, _favPts, Date.now());
   if (_curPnl < (pos.maePnl     || 0)) pos.maePnl     = parseFloat(_curPnl.toFixed(2));
 
   // Optional per-trade rupee cap (default off — the structural + trail stops govern).

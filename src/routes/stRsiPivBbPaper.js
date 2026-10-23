@@ -37,6 +37,7 @@
  */
 
 const express = require("express");
+const { trackPath, pathFields } = require("../utils/tradePath");
 const router = express.Router();
 const fs = require("fs");
 const path = require("path");
@@ -1083,6 +1084,7 @@ function simulateSell(exitPrice, reason, spotAtExit, exitBarTime, exitMeta = {})
     maeSpotPts:       pos.maeSpotPts    || 0,
     secsToMFE:        pos.secsToMFE     || 0,
     secsToMAE:        pos.secsToMAE     || 0,
+    ...pathFields(pos),
     durationMs:       _durationMs,
     pnlPoints:        _pnlPoints,
     charges:          charges,
@@ -1547,6 +1549,7 @@ function onTick(tick) {
     const _favPts = (ltp - pos.spotAtEntry) * (pos.side === "CE" ? 1 : -1);
     if (_favPts > (pos.mfeSpotPts || 0)) { pos.mfeSpotPts = parseFloat(_favPts.toFixed(2)); pos.secsToMFE = parseFloat(((now - pos.entryTimeMs) / 1000).toFixed(1)); }
     if (_favPts < (pos.maeSpotPts || 0)) { pos.maeSpotPts = parseFloat(_favPts.toFixed(2)); pos.secsToMAE = parseFloat(((now - pos.entryTimeMs) / 1000).toFixed(1)); }
+    trackPath(pos, _favPts, now);
     if (pos.side === "CE") { if (!pos.bestPrice || ltp > pos.bestPrice) pos.bestPrice = ltp; }
     else                   { if (!pos.bestPrice || ltp < pos.bestPrice) pos.bestPrice = ltp; }
     if (ptState.optionLtp && ptState.optionLtp > (pos.bestOptionLtp || 0)) pos.bestOptionLtp = parseFloat(ptState.optionLtp.toFixed(2));

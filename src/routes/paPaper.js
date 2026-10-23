@@ -14,6 +14,7 @@
  */
 
 const express = require("express");
+const { trackPath, pathFields } = require("../utils/tradePath");
 const router  = express.Router();
 const fs      = require("fs");
 const path    = require("path");
@@ -576,6 +577,7 @@ function simulateSell(exitPrice, reason, spotAtExit) {
     maePnl:          state.position.maePnl           || 0,
     secsToMFE:       state.position.secsToMFE        || 0,
     secsToMAE:       state.position.secsToMAE        || 0,
+    ...pathFields(state.position),
     vixAtExit:       getCachedVix(),
     exitTimeMs:      _exitMsPA,
     durationMs:      _durationMsPA,
@@ -735,6 +737,7 @@ function onTick(tick) {
     if (_favPts > (pos.mfeSpotPts || 0)) { pos.mfeSpotPts = parseFloat(_favPts.toFixed(2)); pos.secsToMFE = parseFloat(((simNow() - pos.entryTimeMs) / 1000).toFixed(1)); }
     if (curPnl  > (pos.mfePnl     || 0)) pos.mfePnl     = parseFloat(curPnl.toFixed(2));
     if (_favPts < (pos.maeSpotPts || 0)) { pos.maeSpotPts = parseFloat(_favPts.toFixed(2)); pos.secsToMAE = parseFloat(((simNow() - pos.entryTimeMs) / 1000).toFixed(1)); }
+    trackPath(pos, _favPts, simNow());
     if (curPnl  < (pos.maePnl     || 0)) pos.maePnl     = parseFloat(curPnl.toFixed(2));
     // Peak option premium (long CE/PE both profit on premium rise) — observer-only, for the UI/log.
     if (state.optionLtp && state.optionLtp > (pos.bestOptionLtp || 0)) pos.bestOptionLtp = parseFloat(state.optionLtp.toFixed(2));

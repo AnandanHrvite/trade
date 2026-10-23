@@ -52,6 +52,7 @@
  */
 
 const { EMA } = require("technicalindicators");
+const { trackPath } = require("../utils/tradePath");
 // Repo convention: SuperTrend is not in `technicalindicators`, so the one shared
 // implementation is used here too — the same module orb_breakout.js reads for its
 // entry gate and for ORB_SL_SOURCE=supertrend. No cycle: supertrend.js requires
@@ -270,6 +271,7 @@ function trackExcursion(pos, spotPrice, optionLtp, nowMs) {
     pos.secsToMAE  = parseFloat(((nowMs - pos.entryTimeMs) / 1000).toFixed(1));
   }
   if (curPnl < (pos.maePnl || 0)) pos.maePnl = parseFloat(curPnl.toFixed(2));
+  trackPath(pos, favPts, nowMs);
 }
 
 /**

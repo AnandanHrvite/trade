@@ -38,6 +38,7 @@
  */
 
 const express = require("express");
+const { trackPath, pathFields } = require("../utils/tradePath");
 const router  = express.Router();
 const fs      = require("fs");
 const path    = require("path");
@@ -870,6 +871,7 @@ function simulateSell(reason, opts) {
     maePnl:          pos.maePnl || 0,
     secsToMFE:       pos.secsToMFE || 0,
     secsToMAE:       pos.secsToMAE || 0,
+    ...pathFields(pos),
     vixAtEntry:     pos.vixAtEntry ?? null,
     vixAtExit:      vixFilter.getCachedVix(),
     durationMs:      Date.now() - pos.entryTimeMs,
@@ -988,6 +990,7 @@ function _checkExits() {
   if (favPts > (pos.mfePts || 0)) { pos.mfePts = favPts; pos.secsToMFE = parseFloat(((Date.now() - pos.entryTimeMs) / 1000).toFixed(1)); }
   if (curPnl > (pos.mfePnl || 0)) pos.mfePnl = parseFloat(curPnl.toFixed(2));
   if (favPts < (pos.maePts || 0)) { pos.maePts = favPts; pos.secsToMAE = parseFloat(((Date.now() - pos.entryTimeMs) / 1000).toFixed(1)); }
+  trackPath(pos, favPts, Date.now());
   if (curPnl < (pos.maePnl || 0)) pos.maePnl = parseFloat(curPnl.toFixed(2));
 
   // Band expansion — announced once, because it is what saves the trade from

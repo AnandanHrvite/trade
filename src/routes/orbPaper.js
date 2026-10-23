@@ -19,6 +19,7 @@
  */
 
 const express = require("express");
+const { trackPath, pathFields } = require("../utils/tradePath");
 const router  = express.Router();
 const fs      = require("fs");
 const path    = require("path");
@@ -545,6 +546,7 @@ function simulateSell(reason) {
     maePnl:         pos.maePnl      || 0,
     secsToMFE:      pos.secsToMFE   || 0,
     secsToMAE:      pos.secsToMAE   || 0,
+    ...pathFields(pos),
     durationMs:     Date.now() - pos.entryTimeMs,
     charges,
     isFutures:      !!pos.isFutures,
