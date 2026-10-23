@@ -28,13 +28,17 @@ function trackPath(pos, favPts, nowMs) {
     pos.secsToFirstMove = parseFloat(secs.toFixed(1));
   }
 
-  // Fill every 30s mark we have passed with the current value (a gap in
-  // ticks just repeats the latest price, which is what it was at that mark).
+  // A mark we have stepped past takes the previous tick's value (that was
+  // the price at the mark); a mark hit exactly takes this tick's value.
   if (!Array.isArray(pos.pathPts)) pos.pathPts = [];
   const v = parseFloat(favPts.toFixed(2));
-  while (pos.pathPts.length < MAX_SAMPLES && secs >= (pos.pathPts.length + 1) * SAMPLE_SECS) {
-    pos.pathPts.push(v);
+  const prev = Number.isFinite(pos.pathPrevPts) ? pos.pathPrevPts : v;
+  while (pos.pathPts.length < MAX_SAMPLES) {
+    const markSecs = (pos.pathPts.length + 1) * SAMPLE_SECS;
+    if (secs < markSecs) break;
+    pos.pathPts.push(secs === markSecs ? v : prev);
   }
+  pos.pathPrevPts = v;
 }
 
 /** Fields to spread into the closed-trade record. */
