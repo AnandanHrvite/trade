@@ -5,6 +5,7 @@
  * extreme, so they cannot answer "did it go our way first, or against us
  * first?". This adds:
  *   firstMoveDir    "UP" | "DOWN" — which side reached ±FIRST_MOVE_PTS first
+ *                   (or ±pos.firstMovePts when the engine sets one)
  *   secsToFirstMove seconds from entry to that first move
  *   pathPts         favourable pts at every 30s mark for the first 15 min
  *                   (pathPts[0] = at 30s, pathPts[1] = at 60s, …)
@@ -23,7 +24,8 @@ function trackPath(pos, favPts, nowMs) {
   const secs = (nowMs - pos.entryTimeMs) / 1000;
   if (!(secs >= 0)) return;
 
-  if (pos.firstMoveDir == null && Math.abs(favPts) >= FIRST_MOVE_PTS) {
+  const minPts = Number.isFinite(pos.firstMovePts) ? pos.firstMovePts : FIRST_MOVE_PTS;
+  if (pos.firstMoveDir == null && Math.abs(favPts) >= minPts) {
     pos.firstMoveDir    = favPts > 0 ? "UP" : "DOWN";
     pos.secsToFirstMove = parseFloat(secs.toFixed(1));
   }

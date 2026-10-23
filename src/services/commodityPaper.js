@@ -52,6 +52,7 @@ const capitalPool  = require("../utils/capitalPool");
 const confirmCandle = require("../utils/confirmCandle");
 const mcxHolidays  = require("../utils/mcxHolidays");
 const { sendTelegram, canSend } = require("../utils/notify");
+const { trackPath } = require("../utils/tradePath");
 
 const DATA_DIR = path.join(os.homedir(), "trading-data", "cmx");
 const MAX_CANDLES = 400;
@@ -437,6 +438,9 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
       spotAtEntry: spot, stopLoss: fix.stopLoss, initialStopLoss: fix.stopLoss,
       optionEntryLtp: premium, bestOptionLtp: premium, bestPrice: spot,
       entryTime: new Date().toISOString(), entryBarTime, candlesHeld: 0,
+      // For the first-move/path log: ±0.015% of the future, the same share of
+      // price as NIFTY's 3 pts (Gold ~₹1.2L → ~18 pts, Crude ~₹5.5k → ~1 pt).
+      entryTimeMs: Date.now(), firstMovePts: Math.max(1, r2(spot * 0.00015)),
       reason: `${how} | ${sig.reason || ""}`.slice(0, 300),
       rsi: sig.rsi ?? null, ema20: sig.ema20 ?? null, ema50: sig.ema50 ?? null, supertrend: sig.supertrend ?? null,
     };
@@ -614,6 +618,7 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     const fav = (fut - pos.spotAtEntry) * (pos.side === "CE" ? 1 : -1);
     pos.mfe = Math.max(pos.mfe || 0, r2(fav));
     pos.mae = Math.min(pos.mae || 0, r2(fav));
+    trackPath(pos, fav, Date.now());
     if (state.optLtp && state.optLtp > (pos.bestOptionLtp || 0)) pos.bestOptionLtp = state.optLtp;
     if (pos.side === "CE" ? fut > pos.bestPrice : fut < pos.bestPrice) pos.bestPrice = fut;
     if (!pos.lockArmedAt && tradeGuards.PROFIT_LOCK_ENABLED && pos.optionEntryLtp
