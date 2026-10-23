@@ -202,6 +202,17 @@ function safeRead(p) {
   } catch (_) { return {}; }
 }
 
+// Entry time as IST "HH:MM". NIFTY books store IST text ("23/10/2026, 09:31:29");
+// commodity books store an ISO UTC timestamp.
+function entryHHMM(v) {
+  const s = String(v || "");
+  if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
+    const d = new Date(s);
+    return isNaN(d) ? "" : d.toLocaleTimeString("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false });
+  }
+  return (s.match(/\d{1,2}:\d{2}/) || [""])[0];
+}
+
 function loadBook(sources, book) {
   const out = [];
   for (const src of sources) {
@@ -217,7 +228,7 @@ function loadBook(sources, book) {
           // hover popup on the P&L cell: entry note (STRONG / WEAK / MARGINAL), side, time
           str:  t.signalStrength || "",
           side: t.side || t.optionType || "",
-          time: (String(t.entryTime || "").match(/\d{1,2}:\d{2}/) || [""])[0],
+          time: entryHHMM(t.entryTime),
         });
       }
     }
@@ -230,7 +241,8 @@ function loadCmxBook() {
   for (const src of CMX_SOURCES) {
     const data = safeRead(path.join(DATA_DIR, src.file));
     for (const [date, d] of Object.entries(data.days || {})) {
-      for (const t of (d.trades || [])) out.push({ book: "paper", mode: src.mode, date, pnl: Number(t.pnl) || 0 });
+      for (const t of (d.trades || [])) out.push({ book: "paper", mode: src.mode, date, pnl: Number(t.pnl) || 0,
+        str: t.signalStrength || "", side: t.side || "", time: entryHHMM(t.entryTime) });
     }
   }
   return out;
