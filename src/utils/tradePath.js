@@ -11,7 +11,7 @@
  *
  * Pure observer: callers pass the same favPts they already use for mfe/mae
  * (same unit — spot pts for most engines, premium pts for simple930), and it
- * only writes these three fields on pos. Never read by any decision.
+ * only writes these three fields (plus its own pathPrevPts) on pos. Never read by any decision.
  */
 
 const FIRST_MOVE_PTS = 3;
