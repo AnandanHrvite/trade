@@ -214,6 +214,10 @@ function loadBook(sources, book) {
           mode: src.mode,
           date: sessionDate,
           pnl:  Number(t.pnl) || 0,
+          // hover popup on the P&L cell: entry note (STRONG / WEAK / MARGINAL), side, time
+          str:  t.signalStrength || "",
+          side: t.side || t.optionType || "",
+          time: (String(t.entryTime || "").match(/\d{1,2}:\d{2}/) || [""])[0],
         });
       }
     }
@@ -354,6 +358,16 @@ ${multiSelectCSS()}
     .pnl-link:hover,.pnl-link:focus-visible{background:rgba(56,189,248,0.12);outline:none;box-shadow:inset 0 0 0 1px rgba(56,189,248,0.45);}
     :root[data-theme="light"] .pnl-link:hover,:root[data-theme="light"] .pnl-link:focus-visible{background:rgba(2,132,199,0.10);}
     @media print{.pnl-link{color:inherit!important;background:none!important;box-shadow:none!important;}}
+    /* Hover popup on a P&L cell — the trades behind it with their entry note.
+       Fixed-position on <body> so the table's scroll box can't clip it. */
+    .trtip{position:fixed;z-index:1000;pointer-events:none;background:#0a1628;border:0.5px solid #1e3a5f;border-radius:8px;padding:8px 10px;box-shadow:0 6px 20px rgba(0,0,0,0.45);font-family:'IBM Plex Mono',monospace;font-size:0.66rem;color:#c8d8f0;max-width:calc(100vw - 16px);}
+    .trtip table{border-collapse:collapse;}
+    .trtip th{font-size:0.52rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-2,#6d85a8);font-weight:600;text-align:left;padding:0 8px 4px 0;}
+    .trtip td{padding:2px 8px 2px 0;white-space:nowrap;text-align:left;}
+    .trtip td.r{text-align:right;padding-right:0;}
+    .trtip .s-STRONG{color:#10b981;font-weight:700;} .trtip .s-WEAK{color:#ef4444;font-weight:700;} .trtip .s-MARGINAL{color:#f59e0b;font-weight:700;}
+    :root[data-theme="light"] .trtip{background:#fff!important;border-color:#e0e4ea!important;color:#334155!important;box-shadow:0 6px 20px rgba(0,0,0,0.12)!important;}
+    @media print{.trtip{display:none!important;}}
     .badge-mode{padding:2px 6px;border-radius:4px;font-size:0.52rem;font-weight:700;letter-spacing:0.5px;}
     .badge-EMA_RSI_ST{background:rgba(59,130,246,0.12);color:#3b82f6;}
     .badge-EMA_RSI_ST_V2{background:rgba(56,189,248,0.12);color:#38bdf8;}
@@ -504,6 +518,37 @@ function fmtVix(n){ return (n==null)?'<span class="muted">—</span>':n.toFixed(
 // 'YYYY-MM-DD' → "Tue, 14 Jul 2026"  (matches the Telegram day-report header)
 function prettyDate(s){ const d=new Date(s+'T12:00:00'); if(isNaN(d)) return s; return d.toLocaleDateString('en-IN',{weekday:'short',day:'2-digit',month:'short',year:'numeric'}); }
 
+// ── Hover popup on a P&L cell ───────────────────────────────────────
+// One trade → a single line with its entry note; more than one → a small table.
+let TIP_LIST = {};   // 'YYYY-MM-DD|MODE' → trades in that cell, refilled by render()
+const TIP_EL = document.createElement('div');
+TIP_EL.className = 'trtip'; TIP_EL.setAttribute('role','tooltip'); TIP_EL.hidden = true;
+document.body.appendChild(TIP_EL);
+function noteSpan(s){ return s ? '<span class="s-'+esc(s)+'">'+esc(s)+'</span>' : '<span class="muted">—</span>'; }
+function tipHtml(list){
+  const ts=list.slice().sort((a,b)=>(a.time||'').localeCompare(b.time||''));
+  if(ts.length===1){
+    const t=ts[0];
+    return noteSpan(t.str)+(t.side?' · '+esc(t.side):'')+(t.time?' · '+esc(t.time):'')+' · <span style="color:'+pc(t.pnl)+'">'+inr2(t.pnl)+'</span>';
+  }
+  let h='<table><tr><th>Time</th><th>Side</th><th>Note</th><th style="text-align:right;padding-right:0">P&amp;L</th></tr>';
+  for(const t of ts) h+='<tr><td>'+(esc(t.time)||'—')+'</td><td>'+(esc(t.side)||'—')+'</td><td>'+noteSpan(t.str)+'</td><td class="r" style="color:'+pc(t.pnl)+'">'+inr2(t.pnl)+'</td></tr>';
+  return h+'</table>';
+}
+function showTip(td){
+  const list=TIP_LIST[td.dataset.tip]; if(!list||!list.length) return;
+  TIP_EL.innerHTML=tipHtml(list); TIP_EL.hidden=false;
+  const r=td.getBoundingClientRect(), w=TIP_EL.offsetWidth, h=TIP_EL.offsetHeight;
+  const left=Math.max(8, Math.min(r.right-w, window.innerWidth-w-8));
+  const top=(r.bottom+6+h <= window.innerHeight) ? r.bottom+6 : Math.max(8, r.top-h-6);
+  TIP_EL.style.left=left+'px'; TIP_EL.style.top=top+'px';
+}
+function hideTip(){ TIP_EL.hidden=true; }
+document.addEventListener('mouseover',e=>{ const td=e.target.closest&&e.target.closest('[data-tip]'); if(td) showTip(td); });
+document.addEventListener('mouseout',e=>{ const td=e.target.closest&&e.target.closest('[data-tip]'); if(td && !td.contains(e.relatedTarget)) hideTip(); });
+document.addEventListener('focusin',e=>{ const td=e.target.closest&&e.target.closest('[data-tip]'); if(td) showTip(td); else hideTip(); });
+window.addEventListener('scroll',hideTip,true);
+
 // ── Skipped days ────────────────────────────────────────────────────
 // A day can be excluded from the report without touching any trade file: the
 // tick lives only in this browser's localStorage, keyed by date, and every
@@ -554,8 +599,8 @@ function byDay(arr){
     const d=t.date||'—';
     if(!m.has(d)) m.set(d,{ date:d, modes:{}, n:0, wins:0, losses:0, net:0 });
     const g=m.get(d);
-    if(!g.modes[t.mode]) g.modes[t.mode]={n:0,pnl:0,paperN:0};
-    g.modes[t.mode].n++; g.modes[t.mode].pnl+=t.pnl;
+    if(!g.modes[t.mode]) g.modes[t.mode]={n:0,pnl:0,paperN:0,list:[]};
+    g.modes[t.mode].n++; g.modes[t.mode].pnl+=t.pnl; g.modes[t.mode].list.push(t);
     if(t.book==='paper') g.modes[t.mode].paperN++;
     g.n++; g.net+=t.pnl;
     if(t.pnl>0) g.wins++; else if(t.pnl<0) g.losses++;
@@ -616,9 +661,12 @@ function dayTable(title, gModes, gArr, showVix){
       // Only a cell that actually holds paper trades gets the deep link — a Live-only
       // cell would otherwise open a paper page showing different trades.
       const hp=HIST_PATH[mo];
+      const tk=g.date+'|'+mo; TIP_LIST[tk]=c.list;
+      const tipAttr=' data-tip="'+esc(tk)+'"';
+      // No title= on the link: the browser tooltip would cover the hover popup.
       row+= (hp && c.paperN)
-        ? '<td'+gc(mo)+'><a class="pnl-link" href="'+hp+'?date='+encodeURIComponent(g.date)+'" target="_blank" rel="noopener" title="Open '+esc(MODE_LABEL[mo]||mo)+' paper history for '+esc(prettyDate(g.date))+'">'+cell+'</a></td>'
-        : '<td'+gc(mo)+'>'+cell+'</td>';
+        ? '<td'+gc(mo)+tipAttr+'><a class="pnl-link" href="'+hp+'?date='+encodeURIComponent(g.date)+'" target="_blank" rel="noopener" aria-label="Open '+esc(MODE_LABEL[mo]||mo)+' paper history for '+esc(prettyDate(g.date))+'">'+cell+'</a></td>'
+        : '<td'+gc(mo)+tipAttr+'>'+cell+'</td>';
     }
     const wr=g.n?(g.wins/g.n*100):0;
     row+='<td>'+g.n+' · <span style="color:#10b981">'+g.wins+'W</span> <span style="color:#ef4444">'+g.losses+'L</span> · '+wr.toFixed(0)+'%</td>'
@@ -650,6 +698,7 @@ function render(){
   const f=currentFilter();
   const arr=applyFilter(f);
   const C=document.getElementById('content');
+  TIP_LIST={}; hideTip();
 
   const bookLabel = f.book==='all'?'Paper + Live':(f.book==='live'?'Live':'Paper');
   const gen = new Date().toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'});
