@@ -2715,8 +2715,6 @@ ${buildSidebar('dashboard', liveActive)}
       ${anyModeActive ? '' : `
       <button id="btn-all-harness" class="top-bar-btn" style="border-color:#b45309;color:#f59e0b;" onclick="startAllHarness(this)" title="Start all Live (Harness) modes in DRY-RUN — runs Paper + logs would-be broker orders (${startAllHarnessModes.map((m) => m.label).join(' + ') || 'no strategy enabled'})">🧪 Start All (Harness)</button>
       <button id="btn-all-start" class="top-bar-btn run-paper" onclick="startAll(this)" title="Start all paper modes">▶ Start All (Paper)</button>`}
-      ${cmxOn && fyersOk ? `
-      <button id="btn-cmx-start" class="top-bar-btn" style="display:none;border-color:#a16207;color:#facc15;" onclick="startAllCmx(this)" title="Start every switched-on COMMODITY (MCX) paper page. MCX runs 9:00 AM – ${cmxSessEnd} IST; press any time before 3 PM.">🛢 Start All (Commodity)</button>` : ""}
       <!-- The manual "Reset Token" button was removed: token clearing is now
            automatic (4:00 PM + 7:00 AM IST schedulers, and the login routes
            wipe any DISCONNECTED broker's saved token before starting OAuth).
@@ -3479,7 +3477,8 @@ function _startAllRow(name, ok, why){
 // Always shown after a Start All. Previously an all-success run just reloaded
 // the page silently, which left no confirmation that every strategy was really
 // up; now every attempted mode is listed by name with its verified state.
-async function _handleStartAllResult(btn, origText, label, endpoints, result){
+async function _handleStartAllResult(btn, origText, label, endpoints, result, cmxRows){
+  cmxRows = cmxRows || [];
   var failByEndpoint = {};
   result.failures.forEach(function(f){ failByEndpoint[f.endpoint] = f; });
 
@@ -3494,9 +3493,12 @@ async function _handleStartAllResult(btn, origText, label, endpoints, result){
            || v.error
            || 'started but not running';
     return _startAllRow(_prettyEndpoint(ep), false, why);
+  }).join('') + cmxRows.map(function(x){
+    if (x.ok) okCount++;
+    return _startAllRow(x.label, !!x.ok, x.note);
   }).join('');
 
-  var total  = endpoints.length;
+  var total  = endpoints.length + cmxRows.length;
   var allOk  = okCount === total;
   var header = allOk
     ? ('All ' + total + ' running — verified.')
@@ -3537,23 +3539,40 @@ async function _noModesEnabled(endpoints, what){
 
 // Single entry point for the three Start-All buttons, so the busy flag can
 // never be left set (or skipped) by one of them drifting from the others.
-async function _runStartAll(btn, origText, label, endpoints){
+async function _runStartAll(btn, origText, label, endpoints, withCmx){
   _startAllBusy = true;
   try {
     var result = await _startAll(endpoints);
-    await _handleStartAllResult(btn, origText, label, endpoints, result);
+    var cmxRows = withCmx ? await _startAllCmx() : [];
+    await _handleStartAllResult(btn, origText, label, endpoints, result, cmxRows);
   } finally {
     _startAllBusy = false;
     _startAllClickBusy = false;
   }
 }
 
+// Paper also starts the COMMODITY (MCX) pages. MCX keeps its own hours, so
+// after the NSE close (or on an NSE holiday evening) only the commodity half runs.
 async function startAllPaper(btn){
   var orig = btn.textContent;
   if (!await _beginStartAll(btn)) return;
-  if (await _noModesEnabled(PAPER_ENDPOINTS, 'Paper')) return _abortStartAll(btn, orig);
-  btn.textContent = '⏳ Starting paper: ' + ALL_MODE_LABELS.join(' + ') + '...';
-  await _runStartAll(btn, orig, 'All Paper', PAPER_ENDPOINTS);
+  var nse = _marketsClosed ? [] : PAPER_ENDPOINTS;
+  if (!_cmxOpen && await _noModesEnabled(nse, 'Paper')) return _abortStartAll(btn, orig);
+  var names = (_marketsClosed ? [] : ALL_MODE_LABELS).concat(_cmxOpen ? ['Commodity'] : []);
+  btn.textContent = '⏳ Starting paper: ' + names.join(' + ') + '...';
+  await _runStartAll(btn, orig, 'All Paper', nse, _cmxOpen);
+}
+
+// Starts every switched-on commodity page; one result row per page.
+async function _startAllCmx(){
+  try {
+    var r = await secretFetch('/api/cmx/start-all', { method: 'POST', timeoutMs: 180000 });
+    if (!r) return [{ label: 'Commodity', ok: false, note: 'No response from server' }];
+    var body = await r.json();
+    return body.results || [];
+  } catch (e) {
+    return [{ label: 'Commodity', ok: false, note: (e && e.message) || 'Request failed' }];
+  }
 }
 
 async function startAllLive(btn){
@@ -3585,26 +3604,6 @@ async function startAllHarness(btn){
   await _runStartAll(btn, orig, 'All Harness', HARNESS_ENDPOINTS);
 }
 
-// COMMODITY pages start on their own button — MCX hours are not NSE hours, so
-// the NSE market-closed logic above never hides it.
-async function startAllCmx(btn){
-  var orig = btn.textContent;
-  btn.disabled = true; btn.textContent = '⏳ Starting commodity…';
-  // Holds the swap poll off, or it navigates away under the result popup.
-  _startAllBusy = true;
-  try {
-    var r = await secretFetch('/api/cmx/start-all', { method: 'POST', timeoutMs: 180000 });
-    if (!r) return;
-    var body = await r.json();
-    var lines = (body.results || []).map(function(x){ return (x.ok ? '✅ ' : '❌ ') + x.label + ' — ' + x.note; });
-    await showAlert({ icon: body.success ? '🛢' : '⚠️', title: 'Start All (Commodity)', message: lines.join('\\n') || 'No commodity page is switched on.' });
-    // Straight to the Real-Time view instead of waiting out the 10s swap poll.
-    if ((body.results || []).some(function(x){ return x.ok; })) { location.replace('/'); return; }
-  } catch (e) {
-    await showAlert({ icon: '⚠️', title: 'Start All (Commodity)', message: (e && e.message) || 'Request failed' });
-  } finally { _startAllBusy = false; btn.disabled = false; btn.textContent = orig; }
-}
-
 // Single Start-All button follows the top-bar PAPER/LIVE toggle.
 function startAll(btn){
   return _dashSrc === 'live' ? startAllLive(btn) : startAllPaper(btn);
@@ -3614,6 +3613,8 @@ function startAll(btn){
 var _dashSrc = 'paper';            // top-bar toggle source; also drives the charts
 var _allBtnState = { paperOn:false, liveOn:false };
 var CMX_ON = ${cmxOn ? 'true' : 'false'};
+var CMX_STARTABLE = ${cmxOn && fyersOk ? 'true' : 'false'};
+var _cmxOpen = false;              // set by checkTradingStatus(): MCX open and a commodity page can start
 var CMX_END_MIN = ${Number(cmxSessEnd.split(':')[0]) * 60 + Number(cmxSessEnd.split(':')[1])};
 var CMX_END_LABEL = ${JSON.stringify(cmxSessEnd)};
 var _marketsClosed = false;        // set by checkTradingStatus(): weekend / NSE holiday / pre- or post-market
@@ -3630,7 +3631,8 @@ function _applyAllBtnState(paperOn, liveOn){
   if(hb) hb.style.display = (_marketsClosed || _dashSrc === 'live') ? 'none' : '';
   var b = document.getElementById('btn-all-start');
   if(!b) return;
-  if(_marketsClosed){ b.style.display = 'none'; return; }
+  // MCX open after the NSE close keeps the Paper button up for the commodity pages.
+  if(_marketsClosed && (_dashSrc === 'live' || !_cmxOpen)){ b.style.display = 'none'; return; }
   b.style.display = '';
   b.classList.remove('run-paper','run-live','is-active-paper','is-active-live','is-locked');
   if(_dashSrc === 'live'){
@@ -4525,15 +4527,11 @@ async function checkTradingStatus(){
         }
       }
     } catch(e){}
-    // Markets shut = nothing to start: hide BOTH Start-All buttons (paper and
-    // harness), not just the paper one. Pre/post-market counts as shut too —
-    // the same window the pill reports as closed, so the buttons and the pill
-    // never disagree.
+    // NSE shut = hide both Start-All buttons (paper and harness), unless MCX is
+    // still open — then Paper stays up to start the commodity pages (applied
+    // below via _applyAllBtnState). Pre/post-market counts as shut too — the
+    // same window the pill reports as closed.
     _marketsClosed = isHoliday || day === 0 || day === 6 || hour < 7 || hour >= 16;
-    ['btn-all-start','btn-all-harness'].forEach(function(id){
-      var b = document.getElementById(id);
-      if(b) b.style.display = _marketsClosed ? 'none' : '';
-    });
     // COMMODITY keeps MCX hours, not NSE's: startable on a weekday from 7 AM
     // (the overnight Fyers token is wiped at 7) until the MCX session ends —
     // the engine refuses a start after that. On an NSE holiday MCX opens at
@@ -4541,8 +4539,8 @@ async function checkTradingStatus(){
     var mins = hour * 60 + now.getMinutes();
     var cmxOpen = CMX_ON && day !== 0 && day !== 6 && mins < CMX_END_MIN
       && !mcxShutAllDay && !(isHoliday && hour < 17);
-    var cb = document.getElementById('btn-cmx-start');
-    if(cb) cb.style.display = (cmxOpen && hour >= 7) ? '' : 'none';
+    _cmxOpen = CMX_STARTABLE && cmxOpen && hour >= 7;
+    _applyAllBtnState(_allBtnState.paperOn, _allBtnState.liveOn);
 
     if(!alertDiv || alertDiv._dismissed) return;
     if(isHoliday){
