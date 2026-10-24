@@ -1130,7 +1130,7 @@ const OPEN_PATHS = [
   "/deploy/status",       // deploy status poll — read-only
   // NOTE: /settings/save requires API_SECRET (write operation)
   // NOTE: /ema_rsi_st-live/start, /ema_rsi_st-live/stop, /ema_rsi_st-live/exit are intentionally NOT here — they require API_SECRET
-  // NOTE: /ema_rsi_st-paper/start, /ema_rsi_st-paper/stop, /ema_rsi_st-paper/reset, /ema_rsi_st-paper/exit also require secret
+  // NOTE: paper /reset and /exit require secret; paper /start and /stop are opened by OPEN_PAPER_CTRL_RE below
   // NOTE: /api/holidays/refresh requires API_SECRET (write operation)
 ];
 // OPEN_PREFIXES: read-only routes that take a path parameter, so an exact match in
