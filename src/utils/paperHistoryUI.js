@@ -122,6 +122,8 @@ function historyCSS() {
     .session-wl{font-size:0.7rem;color:var(--muted-1,#8ba1c2);text-align:right;margin-top:2px;}
     .session-body{display:none;}
     .session-card.open .session-body{display:block;}
+    .rtip{position:fixed;z-index:1000;pointer-events:none;background:#0a1628;border:0.5px solid #1e3a5f;border-radius:8px;padding:8px 10px;box-shadow:0 6px 20px rgba(0,0,0,0.45);font-family:'IBM Plex Mono',monospace;font-size:0.66rem;color:#c8d8f0;max-width:min(420px,calc(100vw - 16px));white-space:normal;word-break:break-word;}
+    :root[data-theme="light"] .rtip{background:#fff!important;border-color:#e0e4ea!important;color:#334155!important;box-shadow:0 6px 20px rgba(0,0,0,0.12)!important;}
     .tbl{width:100%;border-collapse:collapse;font-family:'IBM Plex Mono',monospace;font-size:0.75rem;}
     .tbl th{padding:8px 14px;text-align:left;font-size:0.58rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted-2,#6d85a8);background:#04090f;border-bottom:0.5px solid #0e1e36;font-weight:600;}
     .tbl td{padding:8px 14px;border-top:0.5px solid #0e1e36;color:var(--muted-1,#8ba1c2);vertical-align:middle;}
@@ -1281,8 +1283,8 @@ function buildSessionCards(sessions, opts) {
         <td style="color:#c8d8f0;font-size:0.75rem;">${exitTimeOnly}</td>
         <td style="color:#f59e0b;">${t.stopLoss ? inr(parseFloat(t.stopLoss)) : '—'}</td>
         <td>${pnlStr}</td>
-        <td style="font-size:0.7rem;max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${(t.entryReason||'').replace(/"/g,'&quot;')}">${entryReasonShort}</td>
-        <td style="font-size:0.7rem;max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${(t.exitReason||'').replace(/"/g,'&quot;')}">${exitReasonShort}</td>
+        <td style="font-size:0.7rem;max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" data-rtip="${(t.entryReason||'').replace(/"/g,'&quot;')}">${entryReasonShort}</td>
+        <td style="font-size:0.7rem;max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" data-rtip="${(t.exitReason||'').replace(/"/g,'&quot;')}">${exitReasonShort}</td>
         <td style="text-align:center;padding:4px 8px;"><button onclick="event.stopPropagation();showHistoryTradeModal(${actualIdx}, ${ti})" class="copy-btn" style="padding:3px 10px;font-size:0.75rem;" title="View full details">\u{1F441} View</button></td>
       </tr>`;
     }).join("");
@@ -1502,6 +1504,24 @@ ${dayViewAnalyticsJS({ routePrefix: cfg.routePrefix, startCap, filter })}
 ${cfg.extraAnalyticsJS || ""}
 ${dailyFilesClusterJS(cfg.routePrefix, cfg.allowDailyFileDelete)}
 ${tableEnhancerJS()}
+// Instant hover tooltip for the entry/exit reason cells (the native title= one waits ~1s).
+(function(){
+  var tip = document.createElement('div');
+  tip.className = 'rtip'; tip.setAttribute('role','tooltip'); tip.hidden = true;
+  document.body.appendChild(tip);
+  function show(td){
+    var txt = td.getAttribute('data-rtip'); if (!txt) return;
+    tip.textContent = txt; tip.hidden = false;
+    var r = td.getBoundingClientRect(), w = tip.offsetWidth, h = tip.offsetHeight;
+    var x = Math.max(8, Math.min(r.left, innerWidth - w - 8));
+    var y = r.bottom + 6; if (y + h > innerHeight - 8) y = Math.max(8, r.top - h - 6);
+    tip.style.left = x + 'px'; tip.style.top = y + 'px';
+  }
+  function hide(){ tip.hidden = true; }
+  document.addEventListener('mouseover', function(e){ var td = e.target.closest && e.target.closest('[data-rtip]'); if (td) show(td); });
+  document.addEventListener('mouseout', function(e){ var td = e.target.closest && e.target.closest('[data-rtip]'); if (td && !td.contains(e.relatedTarget)) hide(); });
+  addEventListener('scroll', hide, true);
+})();
 // Deep-link from the Consolidation Report: /<mode>-paper/history?date=YYYY-MM-DD
 // opens every session card recorded on that day and scrolls to the first one, so
 // the P&L cell that was clicked lands directly on its trade rows.
