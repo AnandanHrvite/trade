@@ -14,6 +14,8 @@ function _numOr(raw, def) {
   return Number.isFinite(n) ? n : def;
 }
 function liveMaxSpreadPts()      { return _numOr(parseFloat(process.env.MAX_BID_ASK_SPREAD_PTS || "2"), 2); }
+// Common Trade Rules on/off (Settings). Unset = on, so old .env files keep today's behaviour.
+function liveSpreadCheckEnabled() { return String(process.env.MAX_BID_ASK_SPREAD_ENABLED ?? "true").toLowerCase() !== "false"; }
 function liveTimeStopCandles()   { return _numOr(parseInt(process.env.TIME_STOP_CANDLES || "4", 10), 4); }
 function liveTimeStopFlatPts()   { return _numOr(parseFloat(process.env.TIME_STOP_FLAT_PTS || "20"), 20); }
 
@@ -46,7 +48,7 @@ function checkSpread(bid, ask, maxSpreadPts = liveMaxSpreadPts()) {
     return { ok: true, spread: null, reason: "no-quote" };
   }
   const spread = parseFloat((ask - bid).toFixed(2));
-  return { ok: spread <= maxSpreadPts, spread, reason: `bid=${bid} ask=${ask} spread=${spread}pt` };
+  return { ok: !liveSpreadCheckEnabled() || spread <= maxSpreadPts, spread, reason: `bid=${bid} ask=${ask} spread=${spread}pt` };
 }
 
 // ── Indicator history depth (shared by EMA_RSI_ST paper / live / backtest) ──
@@ -353,6 +355,7 @@ function checkBreakevenStop(entryLtp, currentLtp, bestLtp, {
 // bar's open time for a tick stop and its close time for a candle-close exit.
 // Manual entries bypass it.
 function liveReentryCooldownCandles() {
+  if (String(process.env.EXIT_REENTRY_COOLDOWN_ENABLED ?? "true").toLowerCase() === "false") return 0;
   const n = parseInt(process.env.EXIT_REENTRY_COOLDOWN_CANDLES ?? "2", 10);
   return Number.isFinite(n) && n > 0 ? n : 0;
 }

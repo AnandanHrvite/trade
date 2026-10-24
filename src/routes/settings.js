@@ -1022,6 +1022,22 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
+    // One on/off box per rule that every strategy shares. Turning a box off
+    // switches that rule off for ALL strategies; its numbers stay under
+    // Instrument & Backtest. Unset keys count as ON.
+    section: "COMMON TRADE RULES — apply to every strategy",
+    icon: "✅",
+    nav: "Common Rules",
+    group: "Trading",
+    fields: [
+      { key: "PROFIT_LOCK_ENABLED", label: "Profit Lock (all strategies)", type: "toggle", effect: EFFECT.INSTANT, desc: "One rule for EVERY strategy, now and in future: once the option premium has risen by the arm %, never let the trade be sold below the floor %. Measured on 346 paper trades — losers peaked ~3 min after entry at ~+6pt while winners peaked ~25 min in at ~+39pt, so a small early gain is a reversal signature. It never caps the upside: a runner that keeps climbing is left to the strategy's own trail.", default: "true" },
+      { key: "BREAKEVEN_STOP_ENABLED", label: "Breakeven Stop (all strategies)", type: "toggle", effect: EFFECT.INSTANT, desc: "Once the option premium has risen by the arm %, never let the trade be sold below the entry premium — a winner cannot round-trip into a loss. Catches what the Profit Lock misses: a move that goes +5% and dies arms this but never arms an +8% lock. Measured on 321 trades: lock alone +Rs32,110, lock plus this +Rs44,973. It killed only 6 real winners (Rs499 total), because 66 of the 72 winners that dipped had dipped BEFORE arming. Note a breakeven exit still pays ~Rs71 of charges.", default: "true" },
+      { key: "EXIT_REENTRY_COOLDOWN_ENABLED", label: "Wait after any exit (all strategies)", type: "toggle", effect: EFFECT.INSTANT, desc: "After a trade closes, take no new trade for the number of candles set in \"Wait after any exit (candles)\". Off = a new trade can start on the very next signal.", default: "true" },
+      { key: "MAX_BID_ASK_SPREAD_ENABLED", label: "Bid-Ask Spread Check (all strategies)", type: "toggle", effect: EFFECT.INSTANT, desc: "Skip an entry when the option's bid-ask gap is wider than \"Max Bid-Ask Spread (pts)\". Example with 2: bid 100, ask 103 → skipped. Off = enter whatever the gap.", default: "true" },
+      { key: "PAPER_CAPITAL_GATE_ENABLED", label: "Track Paper Capital", type: "toggle", effect: EFFECT.INSTANT, desc: "Treat the investment amounts as real money: block qty × premium on entry, release it with the P&L on exit, so profits grow the pool and losses shrink it. An entry the pool cannot fund is REFUSED — logged as an error, skip-logged, and flagged on the Real-Time dashboard. Off = display only (every entry is taken).", default: "true" },
+    ],
+  },
+  {
     section: "OPEN-INTEREST FILTER (OI + Price Buildup)",
     icon: "📊",
     nav: "OI Filter",
@@ -1140,10 +1156,8 @@ const SETTINGS_SCHEMA = [
       { key: "VIX_LOG_ENABLED", label: "Record VIX on every trade", type: "toggle", effect: EFFECT.INSTANT, desc: "Keep polling India VIX purely so each trade record carries the VIX at entry and exit, even when no strategy filters on it. Changes no decision. Off = vixAtEntry/vixAtExit are blank, and you cannot ask afterwards whether a strategy only works in a calm market.", default: "true" },
       { key: "EMA_RSI_ST_BREAKEVEN_ENABLED", label: "EMA_RSI_ST Spot Breakeven", type: "toggle", effect: EFFECT.INSTANT, desc: "EMA_RSI_ST's own older breakeven: at candle close, once the trade is this many SPOT points in profit, lift the stop to entry. Separate from the global premium breakeven below and largely superseded by it (on the recorded trades the global one armed on 74 trades vs 33, and caught every trade this would have). Kept for the spot-stop geometry; ships off.", default: "false" },
       { key: "EMA_RSI_ST_BREAKEVEN_PTS", label: "EMA_RSI_ST Spot Breakeven (pts)", type: "number", min: 5, max: 100, step: 1, effect: EFFECT.INSTANT, desc: "Spot points of profit at candle close before the stop is lifted to entry.", default: "25" },
-      { key: "BREAKEVEN_STOP_ENABLED", label: "Breakeven Stop (all strategies)", type: "toggle", effect: EFFECT.INSTANT, desc: "Once the option premium has risen by the arm %, never let the trade be sold below the entry premium — a winner cannot round-trip into a loss. Catches what the Profit Lock misses: a move that goes +5% and dies arms this but never arms an +8% lock. Measured on 321 trades: lock alone +Rs32,110, lock plus this +Rs44,973. It killed only 6 real winners (Rs499 total), because 66 of the 72 winners that dipped had dipped BEFORE arming. Note a breakeven exit still pays ~Rs71 of charges.", default: "true", subheader: "Breakeven Stop (global)" },
-      { key: "BREAKEVEN_ARM_PCT", label: "Arm at (% premium gain)", type: "number", min: 1, max: 100, step: 1, effect: EFFECT.INSTANT, desc: "The breakeven arms once premium touches entry + this %. Lower scores better in replay (+Rs81,100 at +2%) but that is the overfitting trap and it fires on noise — 5 is the conservative default.", default: "5" },
-      { key: "PROFIT_LOCK_ENABLED", label: "Profit Lock (all strategies)", type: "toggle", effect: EFFECT.INSTANT, desc: "One rule for EVERY strategy, now and in future: once the option premium has risen by the arm %, never let the trade be sold below the floor %. Measured on 346 paper trades — losers peaked ~3 min after entry at ~+6pt while winners peaked ~25 min in at ~+39pt, so a small early gain is a reversal signature. It never caps the upside: a runner that keeps climbing is left to the strategy's own trail.", default: "true", subheader: "Profit Lock (global)" },
-      { key: "PROFIT_LOCK_ARM_PCT", label: "Arm at (% premium gain)", type: "number", min: 1, max: 100, step: 1, effect: EFFECT.INSTANT, desc: "The lock arms once premium touches entry + this %. Must be greater than the floor %, or the lock stays inert.", default: "8" },
+      { key: "BREAKEVEN_ARM_PCT", label: "Arm at (% premium gain)", type: "number", min: 1, max: 100, step: 1, effect: EFFECT.INSTANT, desc: "The breakeven arms once premium touches entry + this %. Lower scores better in replay (+Rs81,100 at +2%) but that is the overfitting trap and it fires on noise — 5 is the conservative default.", default: "5", subheader: "Breakeven Stop (global)" },
+      { key: "PROFIT_LOCK_ARM_PCT", label: "Arm at (% premium gain)", type: "number", min: 1, max: 100, step: 1, effect: EFFECT.INSTANT, desc: "The lock arms once premium touches entry + this %. Must be greater than the floor %, or the lock stays inert.", default: "8", subheader: "Profit Lock (global)" },
       { key: "PROFIT_LOCK_FLOOR_PCT", label: "Locked floor (% premium gain)", type: "number", min: 0, max: 99, step: 1, effect: EFFECT.INSTANT, desc: "Once armed, the trade is closed if premium falls back to entry + this %. Replaying 344 trades at arm 8 / floor 5 changed 72 exits and turned the active book from -Rs6,028 to +Rs32,110 — treat that as a hypothesis to confirm in paper, not a promise.", default: "5" },
       { key: "PROFIT_LOCK_TRAIL_PCT", label: "Trail — keep % of best gain", type: "number", min: 0, max: 95, step: 5, effect: EFFECT.INSTANT, desc: "Once the lock is armed, its floor rises with the peak: the trade is closed if premium falls below entry + this % of its best gain so far. Example at 70: entry 142.75, peak 330 → floor 273.82. Only moves up. 0 = off (fixed floor only).", default: "70" },
       { key: "PROFIT_LOCK_TRAIL_TIERS", label: "Trail tiers — tighter on small peaks", type: "text", effect: EFFECT.INSTANT, desc: "Keep more of a small gain, less of a big one. Format \"peak%:keep%\" pairs. Default 20:85,40:80 — below +20% keep 85% of the gain, below +40% keep 80%, above that the trail % above. Example: entry 100, peak 110 → floor 108.5; peak 150 → floor 135. The floor never drops as the peak rises. Blank = flat trail only.", default: "20:85,40:80" },
@@ -1153,7 +1167,6 @@ const SETTINGS_SCHEMA = [
       { key: "ZERODHA_INV_AMOUNT", label: "Zerodha Investment Amount (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.INSTANT, desc: "Paper money pool for Zerodha strategies (₹).", default: "100000", subheader: "Capital" },
       { key: "FYERS_INV_AMOUNT", label: "Fyers Investment Amount (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.INSTANT, desc: "Paper money pool for Fyers strategies (₹).", default: "100000" },
       { key: "BACKTEST_CAPITAL", label: "Backtest Capital (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.BACKTEST },
-      { key: "PAPER_CAPITAL_GATE_ENABLED", label: "Track Paper Capital", type: "toggle", effect: EFFECT.INSTANT, desc: "Treat the investment amounts as real money: block qty × premium on entry, release it with the P&L on exit, so profits grow the pool and losses shrink it. An entry the pool cannot fund is REFUSED — logged as an error, skip-logged, and flagged on the Real-Time dashboard. Off = display only (every entry is taken).", default: "true" },
       { key: "PAPER_CAPITAL_EST_PREMIUM", label: "Assumed Premium for Capital Check (₹)", type: "number", min: 20, max: 1000, step: 10, effect: EFFECT.INSTANT, desc: "EMA_RSI_ST / EMA9+VWAP / BB_RSI / PA decide before their option quote arrives — this premium is assumed for the check, then corrected to the real one a second later.", default: "200" },
     ],
   },
@@ -1591,6 +1604,7 @@ const MODE_SECTION_TITLES = {
 };
 const SNAPSHOT_COMMON_SECTION_TITLES = new Set([
   "Instrument & Backtest",
+  "COMMON TRADE RULES — apply to every strategy",
   "CHARGES & STT — Trading Costs",
   "OPEN-INTEREST FILTER (OI + Price Buildup)",
 ]);
@@ -2618,6 +2632,10 @@ router.get("/", (req, res) => {
     const sectionId = sectionSlug(s);
     const eyeBtn = `<button type="button" class="section-eye-btn" onclick="showSectionSummary(${idx})" title="View all configured values">👁</button>`;
     const defaultsBtn = `<button type="button" class="section-defaults-btn" onclick="loadSectionDefaults('${sectionId}')" title="Fill all fields in this section with the recommended schema defaults — does NOT save until you click Save Changes">↺ Load Defaults</button>`;
+    // Common Rules: tick / untick every box at once (still needs Save Changes).
+    const allNoneBtns = s.nav === "Common Rules"
+      ? `<button type="button" class="section-defaults-btn" onclick="setSectionToggles('${sectionId}', true)" title="Tick every rule — does NOT save until you click Save Changes">☑ Select All</button><button type="button" class="section-defaults-btn" onclick="setSectionToggles('${sectionId}', false)" title="Untick every rule — does NOT save until you click Save Changes">☐ Unselect All</button>`
+      : "";
     const fieldCount = s.fields.length;
     const isMenuVis = s.nav === "Menu Visibility";
     const tabs = isMenuVis ? [{ title: "All", fields: s.fields }] : splitIntoTabs(s.fields);
@@ -2636,7 +2654,7 @@ router.get("/", (req, res) => {
     <div class="settings-section" data-section="${sectionId}">
       <div class="section-head">
         <div class="section-head-title">${s.icon} ${s.section}<span class="sh-count">${fieldCount} settings</span></div>
-        <div class="section-head-actions">${defaultsBtn}${eyeBtn}</div>
+        <div class="section-head-actions">${allNoneBtns}${defaultsBtn}${eyeBtn}</div>
       </div>
       ${tabBar}
       <div class="section-card">${panels}</div>
@@ -3267,7 +3285,7 @@ router.get("/", (req, res) => {
       .settings-split { gap: 10px; }
       .section-head { padding: 10px 12px; gap: 8px; }
       .section-head-title { font-size: 0.74rem; }
-      .section-head-actions { width: 100%; }
+      .section-head-actions { width: 100%; flex-wrap: wrap; }
       .section-defaults-btn, .section-eye-btn { margin-left: 0; min-height: 34px; }
       .section-defaults-btn { flex: 1; text-align: center; }
       .tab-bar { padding: 0 10px 8px; gap: 5px; }
@@ -4949,6 +4967,17 @@ var _sectionNames = ${sectionNamesJSON};
 // ── Load Defaults (per section) ────────────────────────────────────────────
 // Populates every input in the section with its schema default, marks dirty,
 // but does NOT save — user reviews then clicks "Save Changes".
+function setSectionToggles(sectionId, on) {
+  var section = document.querySelector('[data-section="' + sectionId + '"]');
+  if (!section) return;
+  var changed = 0;
+  section.querySelectorAll('input[type="checkbox"][data-key]').forEach(function(el) {
+    if (el.disabled || el.checked === on) return;
+    el.checked = on; markDirty(el); changed++;
+  });
+  showToast(changed ? (changed + ' rule' + (changed > 1 ? 's' : '') + ' ' + (on ? 'ticked' : 'unticked') + ' — click Save Changes') : 'Nothing to change', 'info');
+}
+
 function loadSectionDefaults(sectionId) {
   var section = document.querySelector('[data-section="' + sectionId + '"]');
   if (!section) return;
