@@ -38,6 +38,7 @@ const { renderBacktestResults, computeBacktestStats } = require("../utils/backte
 const { saveResult } = require("../utils/resultStore");
 const backtestJobs = require("../utils/backtestJobManager");
 const instrumentConfig = require("../config/instrument");
+const tradeGuards = require("../utils/tradeGuards");
 
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
 const ACCENT = "#a855f7";
@@ -77,6 +78,10 @@ async function runTrendDayScalpBacktest(intraday) {
   // In futures the entry "premium" is the entry SPOT — seeded per trade below.
   const SLIPPAGE_PTS = parseFloat(process.env.TDS_BT_SLIPPAGE_PTS || "1.5");
   const RES          = _resMin();
+  // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES), unix secs.
+  // Paper takes EVERY TDS exit on a tick (onCandleClose returns while in a
+  // position), so each one is measured from the exit bar's open (≈ c.time here).
+  const REENTRY_COOLDOWN_SECS = tradeGuards.reentryCooldownMs(RES) / 1000;
 
   const MAX_TRADES  = Math.max(1, parseInt(process.env.TDS_MAX_DAILY_TRADES || "2", 10) || 2);
   const MAX_LOSSES  = Math.max(0, parseInt(process.env.TDS_MAX_DAILY_LOSSES || "2", 10));
@@ -131,6 +136,7 @@ async function runTrendDayScalpBacktest(intraday) {
 
     // ── Hunt entries on later closed bars. ────────────────────────────────────
     let dayPnl = 0, dayTrades = 0, dayStopOuts = 0, dayClosed = false;
+    let reentryBlockUntilTs = 0;   // wait-after-any-exit cooldown, per day like paper's session
     let pos = null;
 
     function priceAt(exitSpot, exitTime) {
@@ -174,6 +180,8 @@ async function runTrendDayScalpBacktest(intraday) {
         eOpt: pos.optionEntryLtp, xOpt: p.exitPrem, held: p.held,
       });
       pos = null;
+      // Wait-after-any-exit cooldown — every exit reason, both sides.
+      if (REENTRY_COOLDOWN_SECS > 0) reentryBlockUntilTs = exitTime + REENTRY_COOLDOWN_SECS;
       // Day-level breakers — identical thresholds to the paper route.
       if (MAX_DAY_LOSS > 0 && dayPnl <= -MAX_DAY_LOSS) dayClosed = true;
       else if (PROFIT_LOCK > 0 && dayPnl >= PROFIT_LOCK) dayClosed = true;
@@ -245,6 +253,8 @@ async function runTrendDayScalpBacktest(intraday) {
           precomputed: { series: fullSeries, endIdx: i },
         });
         if (sig.signal === "NONE" || !sig.side) continue;
+        // Wait-after-any-exit cooldown: blocks both sides (paper: evaluateEntry).
+        if (c.time < reentryBlockUntilTs) continue;
 
         pos = {
           side: sig.side,

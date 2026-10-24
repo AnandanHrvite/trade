@@ -36,6 +36,7 @@ const { walkForward } = require("../utils/walkForward");
 const { saveResult } = require("../utils/resultStore");
 const backtestJobs = require("../utils/backtestJobManager");
 const instrumentConfig = require("../config/instrument");
+const tradeGuards = require("../utils/tradeGuards");
 
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
 const ACCENT = "#ec4899";
@@ -130,6 +131,11 @@ async function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [
   // same way paper's in-memory session state starts fresh every morning.
   let _dayPnl = 0;
   let _consecLosses = 0;
+  // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES), unix secs.
+  // Paper measures it from the exit's clock time: a tick stop exits INSIDE the
+  // bar (≈ bar open here), a candle-close rule exits at the bar's CLOSE.
+  const _REENTRY_COOLDOWN_SECS = tradeGuards.reentryCooldownMs(5) / 1000;
+  let _reentryBlockUntilTs = 0;
 
   // δ+θ premium sim + spread/slippage haircut both ways. Returns pnl (₹) + exit premium.
   function priceExit(pos, exitSpot, exitTime) {
@@ -143,8 +149,10 @@ async function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [
     return { pnl, exitPrem: parseFloat(exitPrem.toFixed(2)), heldCandles: Math.round(candlesHeld) };
   }
 
-  function closeAndPush(pos, exitSpot, exitTime, reason) {
+  function closeAndPush(pos, exitSpot, exitTime, reason, atClose = false) {
     const p = priceExit(pos, exitSpot, exitTime);
+    // Wait-after-any-exit cooldown — every exit reason, both sides.
+    if (_REENTRY_COOLDOWN_SECS > 0) _reentryBlockUntilTs = exitTime + (atClose ? 5 * 60 : 0) + _REENTRY_COOLDOWN_SECS;
     _dayPnl += p.pnl;
     // Paper's exact three-way rule: a loss increments, a WIN resets, and an exactly
     // flat trade leaves the counter alone (trendPbPaper: `if (pnl<0) ++; else if (pnl>0) =0`).
@@ -171,6 +179,7 @@ async function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [
     let baselineDone = false;
     _dayPnl = 0;
     _consecLosses = 0;
+    _reentryBlockUntilTs = 0;
 
     for (let i = 0; i < dayCandles.length; i++) {
       const c = dayCandles[i];
@@ -226,15 +235,15 @@ async function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [
         if (ema5 != null) {
           if (pos.side === "CE") {
             if (c.close >= ema5) pos.emaArmed = true;
-            else if (pos.emaArmed && EMA_EXIT_ON) { closeAndPush(pos, c.close, c.time, `Closed below EMA${TRAIL_EMA}(5m) — trend failed`); position = null; continue; }
+            else if (pos.emaArmed && EMA_EXIT_ON) { closeAndPush(pos, c.close, c.time, `Closed below EMA${TRAIL_EMA}(5m) — trend failed`, true); position = null; continue; }
           } else {
             if (c.close <= ema5) pos.emaArmed = true;
-            else if (pos.emaArmed && EMA_EXIT_ON) { closeAndPush(pos, c.close, c.time, `Closed above EMA${TRAIL_EMA}(5m) — trend failed`); position = null; continue; }
+            else if (pos.emaArmed && EMA_EXIT_ON) { closeAndPush(pos, c.close, c.time, `Closed above EMA${TRAIL_EMA}(5m) — trend failed`, true); position = null; continue; }
           }
         }
         // time-stop (theta bleed while flat)
         if (TS_CANDLES > 0 && pos.candlesHeld >= TS_CANDLES && Math.abs(favPts) < TS_FLAT) {
-          closeAndPush(pos, c.close, c.time, `Time stop (${pos.candlesHeld} candles, flat ${favPts.toFixed(1)}pt)`); position = null; continue;
+          closeAndPush(pos, c.close, c.time, `Time stop (${pos.candlesHeld} candles, flat ${favPts.toFixed(1)}pt)`, true); position = null; continue;
         }
         continue;   // in-position candle handled
       }
@@ -281,6 +290,8 @@ async function runTrendPbBacktest(allCandles, { baseline = false, vixCandles = [
         baselineDone = true;
       }
       if (!side) continue;
+      // Wait-after-any-exit cooldown: blocks both sides (paper: simulateBuy).
+      if (c.time < _reentryBlockUntilTs) continue;
 
       let riskPts = Math.abs(c.close - (typeof structStop === "number" ? structStop : (side === "CE" ? c.close - CLAMP_MIN : c.close + CLAMP_MIN)));
       riskPts = Math.min(Math.max(riskPts, CLAMP_MIN), CLAMP_MAX);

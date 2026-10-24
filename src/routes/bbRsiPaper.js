@@ -405,6 +405,16 @@ let _entryGen = 0;
 function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtEntry, slSource, entryMeta = {}) {
   if (state.position) return;
 
+  // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES). Manual
+  // entries are the user's own call and bypass it. Logged once per cooldown.
+  if (!/^Manual /.test(reason) && state._reentryBlockUntil > simNow()) {
+    if (state._reentryBlockLogged !== state._reentryBlockUntil) {
+      state._reentryBlockLogged = state._reentryBlockUntil;
+      log(`⏸️ [BB_RSI-PAPER] Wait-after-exit cooldown — no new entry until ~${new Date(state._reentryBlockUntil).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })} (${side} @ ₹${price} rejected)`);
+    }
+    return;
+  }
+
   // ── Capital gate — HARD: the pool must fund qty × premium or the entry is
   //    refused (error line + skip log + dashboard alert, see capitalPool.gate).
   //    The real premium is stamped by the first option poll (~1s from now), so
@@ -684,6 +694,8 @@ function simulateSell(exitPrice, reason, spotAtExit) {
 
   state.position = null;
   capitalPool.release("bb_rsi", netPnl, { sim: (state._simMode || state._simSession) });
+  // Global wait-after-any-exit cooldown — no entry on either side for N candles.
+  state._reentryBlockUntil = tradeGuards.reentryCooldownUntil(simNow(), BB_RSI_RES);
 
   if (!state._simMode) {
     notifyExit({
@@ -1337,7 +1349,7 @@ router.get("/start", async (req, res) => {
     sessionPnl: 0, _wins: 0, _losses: 0, tickCount: 0, lastTickTime: null, lastTickPrice: null,
     optionLtp: null, optionSymbol: null, optionChart: null, _slPauseUntil: null,
     _slPauseUntilBySide: { CE: 0, PE: 0 }, _consecSLsBySide: { CE: 0, PE: 0 },
-    _lastSLSpotBySide: { CE: 0, PE: 0 },
+    _lastSLSpotBySide: { CE: 0, PE: 0 }, _reentryBlockUntil: 0,
     _dailyLossHit: false, _expiryDayBlocked: _expiryBlocked,
     _armedSignal: null, _entryInFlight: false,
     _simSession: false,   // a real session — persistence is live again
@@ -3364,6 +3376,7 @@ router.post("/simulate/start", async (req, res) => {
       log: [], sessionTrades: [], sessionStart: new Date().toISOString(),
       sessionPnl: 0, _wins: 0, _losses: 0, tickCount: 0, lastTickTime: null, lastTickPrice: null,
       optionLtp: null, optionSymbol: null, optionChart: null, _slPauseUntil: null, _dailyLossHit: false,
+      _reentryBlockUntil: 0,
       _expiryDayBlocked: false,
       _armedSignal: null, _entryInFlight: false,
       _simMode: true, _simScenario: label,

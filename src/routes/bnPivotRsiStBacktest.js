@@ -50,6 +50,7 @@ const { renderBacktestResults, computeBacktestStats } = require("../utils/backte
 const { saveResult } = require("../utils/resultStore");
 const backtestJobs = require("../utils/backtestJobManager");
 const instrumentConfig = require("../config/instrument");
+const tradeGuards = require("../utils/tradeGuards");
 
 const ACCENT = "#c2410c";
 const ENDPOINT = "/bn-pivot-rsi-st-backtest";
@@ -124,6 +125,10 @@ async function runBnPivotRsiStBacktest(intraday, daily) {
   // In futures the entry "premium" is the entry SPOT — seeded per trade below.
   const SLIPPAGE_PTS = parseFloat(process.env.BN_PIVOT_RSI_ST_BT_SLIPPAGE_PTS || "2");
   const RES          = cfg.resolutionMins;
+  // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES), secs.
+  // Paper measures it from the exit's clock time: a stop exits INSIDE the bar
+  // (≈ bar open here), a SuperTrend flip at the bar's CLOSE.
+  const REENTRY_COOLDOWN_SECS = tradeGuards.reentryCooldownMs(RES) / 1000;
 
   const MAX_TRADES   = cfg.maxDailyTrades;
   const MAX_DAY_LOSS = cfg.maxDailyLoss;
@@ -172,6 +177,7 @@ async function runBnPivotRsiStBacktest(intraday, daily) {
     let dayPnl = 0, dayTrades = 0, dayStopOuts = 0, dayClosed = false;
     let pos = null;
     let sawSetup = false;
+    let reentryBlockUntil = 0;   // wait-after-any-exit cooldown (unix secs)
 
     /**
      * Simulated premium at a given spot, with theta decay and the slippage
@@ -197,7 +203,8 @@ async function runBnPivotRsiStBacktest(intraday, daily) {
       };
     }
 
-    function close(exitPx, exitTime, reason, isStopOut) {
+    function close(exitPx, exitTime, reason, isStopOut, atBarClose) {
+      if (REENTRY_COOLDOWN_SECS > 0) reentryBlockUntil = exitTime + (atBarClose ? RES * 60 : 0) + REENTRY_COOLDOWN_SECS;
       const p = priceAt(exitPx, exitTime);
       dayPnl += p.pnl;
       if (isStopOut) dayStopOuts++;
@@ -297,7 +304,7 @@ async function runBnPivotRsiStBacktest(intraday, daily) {
           const st = bnPivotStrategy.superTrendStop(pos.side, series, pos.slSpot, cfg);
           if (st) {
             if (st.flipped) {
-              close(c.close, c.time, `SuperTrend flipped ${stIsCE ? "bearish" : "bullish"} — the ${pos.side}'s trend premise is gone`, true);
+              close(c.close, c.time, `SuperTrend flipped ${stIsCE ? "bearish" : "bullish"} — the ${pos.side}'s trend premise is gone`, true, true);
             } else if (Number.isFinite(st.stop) &&
                        (!Number.isFinite(pos.slSpot) || (stIsCE ? st.stop > pos.slSpot : st.stop < pos.slSpot))) {
               pos.slSpot = st.stop;
@@ -324,6 +331,8 @@ async function runBnPivotRsiStBacktest(intraday, daily) {
 
         gateStats.setups++;
         sawSetup = true;
+        // Wait-after-any-exit cooldown: paper's simulateBuy rejects both sides.
+        if (c.time < reentryBlockUntil) continue;
 
         const entryPrem = IS_FUT ? sig.entrySpot : SEED_PREMIUM;
         // null when the premium stop is switched off for this side — the exit

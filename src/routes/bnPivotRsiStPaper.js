@@ -229,6 +229,7 @@ function _freshState() {
     _entryInFlight: false,
     _lastEntryAttemptMs: null,
     _pendingEntry:  null,
+    _reentryBlockUntil: 0,  // wait-after-any-exit cooldown (epoch ms), see simulateSell
   };
 }
 
@@ -498,6 +499,15 @@ function _refreshIndicatorReadouts() {
 async function simulateBuy(side, sig) {
   const spot = state.lastTickPrice || sig.entrySpot;
   if (!side) return;
+  // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES). Every
+  // entry here is automatic (there is no manual entry route). Logged once per cooldown.
+  if (state._reentryBlockUntil > Date.now()) {
+    if (state._reentryBlockLogged !== state._reentryBlockUntil) {
+      state._reentryBlockLogged = state._reentryBlockUntil;
+      log(`⏸️ [BN-PIVOT-RSI-ST-PAPER] Wait-after-exit cooldown — no new entry until ~${new Date(state._reentryBlockUntil).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })} (${side} rejected)`);
+    }
+    return;
+  }
   const _sid = state._sessionId;
   if (typeof spot !== "number" || !(spot > 0)) {
     log(`⚠️ [BN-PIVOT-RSI-ST-PAPER] No ${_u().label} price yet — cannot choose a strike, entry deferred`);
@@ -837,6 +847,8 @@ function simulateSell(reason, opts) {
   try { require("../utils/positionPersist").clearBnPivotRsiStPosition(); } catch (_) {}
   state.optionLtp = null;
   state.optionLtpUpdatedAt = null;
+  // Global wait-after-any-exit cooldown — no entry on either side for N candles.
+  state._reentryBlockUntil = tradeGuards.reentryCooldownUntil(Date.now(), _resMin());
 
   _applyDayBreakers();
 }
@@ -1052,7 +1064,9 @@ async function evaluateEntry() {
     await simulateBuy(sig.side, sig);
   } finally {
     state._entryInFlight = false;
-    if (state.position) {
+    // A wait-after-exit rejection is a decision, not a failed fill — never
+    // retried, or the setup would fill mid-bar the moment the cooldown lapses.
+    if (state.position || state._reentryBlockUntil > Date.now()) {
       state._pendingEntry = null;
     } else {
       // A failed FILL is an infrastructure problem, not a decision. Hold the

@@ -107,6 +107,11 @@ async function runPrevOrbScalpBacktest(intraday, rangeFrom, opts) {
   const SEED_PREMIUM = parseFloat(process.env.PREV_ORB_SCALP_BT_SEED_PREMIUM || "260");
   const SLIPPAGE_PTS = parseFloat(process.env.PREV_ORB_SCALP_BT_SLIPPAGE_PTS || "1.5");
   const RES          = cfg.resolutionMins;
+  // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES), unix secs.
+  // Every exit here is one paper takes on a tick INSIDE the bar (stop, lock, target,
+  // EOD), so it is measured from the exit bar's open. Can only bite if a second
+  // entry per day is ever allowed — today the first break settles the day.
+  const _REENTRY_COOLDOWN_SECS = tradeGuards.reentryCooldownMs(RES) / 1000;
   const lock = o.lock || {
     enabled: tradeGuards.PROFIT_LOCK_ENABLED,
     armPct: tradeGuards.PROFIT_LOCK_ARM_PCT,
@@ -154,6 +159,7 @@ async function runPrevOrbScalpBacktest(intraday, rangeFrom, opts) {
     let dayBreak = false;
     let daySpent = false;
     let dayNote = null;
+    let reentryBlockUntil = 0;   // wait-after-any-exit cooldown, reset per day like paper's /start
 
     const barsPerDay = Math.max(1, Math.round(375 / RES));
     function premAt(spotPx, t) {
@@ -184,6 +190,7 @@ async function runPrevOrbScalpBacktest(intraday, rangeFrom, opts) {
         held: Math.round(Math.max(0, (exitTime - pos.entryTime) / 60 / RES)),
       });
       pos = null;
+      if (_REENTRY_COOLDOWN_SECS > 0) reentryBlockUntil = exitTime + _REENTRY_COOLDOWN_SECS;
     }
 
     for (let j = 0; j < idxs.length; j++) {
@@ -275,6 +282,8 @@ async function runPrevOrbScalpBacktest(intraday, rangeFrom, opts) {
       if (!pos && !pending && !settled) {
         const sig = strat.getSignal(sorted.slice(winStart, gi + 1), { cfg, silent: true });
         if (sig.signal !== "NONE" && sig.side) {
+          // Wait-after-any-exit cooldown: paper refuses the entry and queues no retry.
+          if (c.time < reentryBlockUntil) continue;
           funnel.breaks++;
           dayBreak = true;
           candleSizes.push(sig.candleSize);

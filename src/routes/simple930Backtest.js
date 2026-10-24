@@ -64,6 +64,7 @@ const { renderBacktestResults, computeBacktestStats } = require("../utils/backte
 const { saveResult }   = require("../utils/resultStore");
 const backtestJobs     = require("../utils/backtestJobManager");
 const instrumentConfig = require("../config/instrument");
+const tradeGuards      = require("../utils/tradeGuards");
 const { isNonTradingDay, getPreviousTradingDay, formatDateToYYYYMMDD } = require("../utils/nseHolidays");
 
 const ACCENT      = "#f59e0b";
@@ -204,6 +205,14 @@ function simulateDay(day, cfg, qty) {
     audit.note = (picked.notes.rejected[0] || {}).why || "neither side produced a usable strike";
     return { trade: null, audit };
   }
+
+  // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES) — a no-op
+  // here BY CONSTRUCTION: this page books at most ONE trade a session, so no entry
+  // can ever follow an exit (paper's default 1-trade budget closes the day too).
+  // Read only so the rule's reach stays universal; if a second trade is ever
+  // modelled, refuse entry bars with time < exitTs + this, on these 1-min bars.
+  const _reentryCooldownSecs = tradeGuards.reentryCooldownMs(RES) / 1000;
+  void _reentryCooldownSecs;
 
   // ── Entry: walk the window minute by minute, both legs together ──
   let fill = null;

@@ -64,6 +64,7 @@ const { renderBacktestResults, computeBacktestStats } = require("../utils/backte
 const { saveResult } = require("../utils/resultStore");
 const backtestJobs = require("../utils/backtestJobManager");
 const instrumentConfig = require("../config/instrument");
+const tradeGuards = require("../utils/tradeGuards");
 
 const ACCENT = "#f59e0b";
 const ENDPOINT = "/ha-scalp-backtest";
@@ -151,6 +152,10 @@ async function runHaScalpBacktest(intraday, rangeFrom) {
   // In futures the entry "premium" is the entry SPOT — seeded per trade below.
   const SLIPPAGE_PTS = parseFloat(process.env.HA_SCALP_BT_SLIPPAGE_PTS || "1.5");
   const RES          = cfg.resolutionMins;
+  // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES), secs.
+  // Paper measures it from the exit's clock time: a stop exits INSIDE the bar
+  // (≈ bar open here), a doji/weak candle exit at the bar's CLOSE.
+  const REENTRY_COOLDOWN_SECS = tradeGuards.reentryCooldownMs(RES) / 1000;
 
   const MAX_TRADES      = Math.max(1, parseInt(process.env.HA_SCALP_MAX_DAILY_TRADES || "3", 10) || 3);
   const FORCED_EXIT_RAW = process.env.HA_SCALP_FORCED_EXIT || "15:15";
@@ -205,6 +210,7 @@ async function runHaScalpBacktest(intraday, rangeFrom) {
     let dayTrendUp = 0, dayTrendDown = 0;
     let pos = null;
     let pendingEntry = null;   // signal fired on a closed bar → fill on the NEXT bar's open
+    let reentryBlockUntil = 0; // wait-after-any-exit cooldown (unix secs)
     const dayExits = [];
     let firstSkip = null;
 
@@ -223,7 +229,8 @@ async function runHaScalpBacktest(intraday, rangeFrom) {
       };
     }
 
-    function close(exitPx, exitTime, reason, reasonCode) {
+    function close(exitPx, exitTime, reason, reasonCode, atBarClose) {
+      if (REENTRY_COOLDOWN_SECS > 0) reentryBlockUntil = exitTime + (atBarClose ? RES * 60 : 0) + REENTRY_COOLDOWN_SECS;
       const p = priceAt(exitPx, exitTime);
       exitReasons[reasonCode] = (exitReasons[reasonCode] || 0) + 1;
       dayExits.push(`${istHHMMSS(exitTime)} ${pos.side} → ${reasonCode} @ ${parseFloat(exitPx.toFixed(2))} (${p.held} bar(s), ₹${p.pnl})`);
@@ -315,7 +322,7 @@ async function runHaScalpBacktest(intraday, rangeFrom) {
             // it is by construction a strong with-trend candle, but a later
             // re-read of it would still be wrong.
             const ex = haStrategy.exitSignal(pos.side, haAll[gi], { cfg });
-            if (ex) close(c.close, c.time, `${ex.label} — ${ex.detail}`, ex.reason);
+            if (ex) close(c.close, c.time, `${ex.label} — ${ex.detail}`, ex.reason, true);
             else {
               // Survived the bar — ratchet the stop for the NEXT one, exactly as
               // paper does on candle close. bestSpot advances on this bar's
@@ -373,6 +380,9 @@ async function runHaScalpBacktest(intraday, rangeFrom) {
         console.log(`${LOG} ${dayStr} ${istHHMMSS(c.time)} SETUP ${sig.side} — ${sig.reason}`);
         if (j === idxs.length - 1) {
           console.log(`${LOG} ${dayStr} ${istHHMMSS(c.time)} setup NOT taken — it is the day's last bar, there is no next candle to open on`);
+        } else if (c.time < reentryBlockUntil) {
+          // Paper's simulateBuy runs at this bar's close and rejects the setup.
+          console.log(`${LOG} ${dayStr} ${istHHMMSS(c.time)} setup NOT taken — wait-after-exit cooldown until ${istHHMMSS(reentryBlockUntil)}`);
         } else {
           pendingEntry = sig;
         }

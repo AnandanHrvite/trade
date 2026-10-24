@@ -204,7 +204,7 @@ function simulate(candles, opts) {
   const funnel = {
     sessions: 0, runwaySessions: 0, confirmed: 0, entries: 0,
     skipWindow: 0, skipStDisagrees: 0, blockedDayCap: 0, blockedDayLoss: 0,
-    blockedExitBar: 0, blockedPastEod: 0, noNextBar: 0, gapThroughStop: 0,
+    blockedExitBar: 0, blockedPastEod: 0, noNextBar: 0, gapThroughStop: 0, blockedReentry: 0,
   };
   const empty = { trades: [], stats: computeBacktestStats([]), days: 0, funnel, exitMix: {}, stopDist: null, params: { cfg, bt, guards: g, qty: QTY } };
   if (!n) return empty;
@@ -225,6 +225,11 @@ function simulate(candles, opts) {
   const trades = [];
   let pos = null;
   let curDay = null, dayTrades = 0, dayPnl = 0;
+  // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES), unix secs.
+  // Paper measures it from the exit's clock time: a tick exit happens INSIDE the
+  // bar (≈ bar open here), a candle-close exit on the first tick after the close.
+  const _REENTRY_COOLDOWN_SECS = tradeGuards.reentryCooldownMs(RES) / 1000;
+  let _reentryBlockUntilTs = 0;
 
   /** Simulated MARKET premium at a raw spot and time (no slippage). */
   function premAt(spot, t) {
@@ -265,6 +270,9 @@ function simulate(candles, opts) {
       eOpt: SEED, xOpt: exitPrem,
     });
     pos = null;
+    // Wait-after-any-exit cooldown — every exit reason, both sides. exitBarTime is
+    // the bar's open for a tick exit and the close / next open for a candle-close one.
+    if (_REENTRY_COOLDOWN_SECS > 0) _reentryBlockUntilTs = exitBarTime + _REENTRY_COOLDOWN_SECS;
   }
 
   /** The common premium exits on one simulated tick. Returns the category or null. */
@@ -289,7 +297,7 @@ function simulate(candles, opts) {
   for (let i = 0; i < n; i++) {
     const c = bars[i];
     const day = dayOf[i];
-    if (day !== curDay) { curDay = day; dayTrades = 0; dayPnl = 0; }
+    if (day !== curDay) { curDay = day; dayTrades = 0; dayPnl = 0; _reentryBlockUntilTs = 0; }
     const barEnd = c.time + RES * 60;
     const startMin = engine._istMins(c.time);
 
@@ -372,6 +380,8 @@ function simulate(candles, opts) {
     if (dayTrades >= cfg.MAX_DAILY_TRADES) { funnel.blockedDayCap++; continue; }
     if (!next) { funnel.noNextBar++; continue; }
     if (engine._istMins(next.time) >= cfg.EOD_EXIT) { funnel.blockedPastEod++; continue; }
+    // Paper's simulateBuy checks the cooldown at the fill — the next bar's open.
+    if (next.time < _reentryBlockUntilTs) { funnel.blockedReentry++; continue; }
 
     const side = sig.signal === "BUY_CE" ? "CE" : "PE";
     const dir = side === "CE" ? 1 : -1;

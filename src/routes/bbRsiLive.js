@@ -740,6 +740,8 @@ async function squareOff(exitPrice, reason) {
 
   state.position = null;
   _squareOffInFlight = false;
+  // Global wait-after-any-exit cooldown — no entry on either side for N candles.
+  state._reentryBlockUntil = tradeGuards.reentryCooldownUntil(Date.now(), BB_RSI_RES);
 
   notifyExit({
     mode: _exitModeLabel,
@@ -1153,6 +1155,16 @@ async function resolveAndEnter(side, spot, result, sid = _entryGen) {
   const _sid = sid;
   if (state._entryPending || state.position) return;
   if (!state.running || _entryGen !== _sid) return;
+  // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES) — the one
+  // chokepoint for candle-close, on-close-confirm and intra-candle entries, as
+  // paper's simulateBuy. Manual entries bypass it. Logged once per cooldown.
+  if (!/^Manual /.test(String(result && result.reason || "")) && state._reentryBlockUntil > Date.now()) {
+    if (state._reentryBlockLogged !== state._reentryBlockUntil) {
+      state._reentryBlockLogged = state._reentryBlockUntil;
+      log(`⏸️ [BB_RSI-LIVE] Wait-after-exit cooldown — no new entry until ~${new Date(state._reentryBlockUntil).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })} (${side} rejected)`);
+    }
+    return;
+  }
   state._entryPending = true;
   const isFutures = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
 
@@ -1493,7 +1505,7 @@ router.get("/start", async (req, res) => {
     optionLtp: null, optionLtpUpdatedAt: null, _ltpStaleLogged: false,
     optionSymbol: null, _slPauseUntil: null,
     _slPauseUntilBySide: { CE: 0, PE: 0 }, _consecSLsBySide: { CE: 0, PE: 0 },
-    _lastSLSpotBySide: { CE: 0, PE: 0 },
+    _lastSLSpotBySide: { CE: 0, PE: 0 }, _reentryBlockUntil: 0,
     _dailyLossHit: false, _entryPending: false,
     _armedSignal: null, _entryInFlight: false,
     _expiryDayBlocked: _expiryBlocked,

@@ -1366,6 +1366,8 @@ async function _squareOffLocked(exitPrice, reason) {
 
   // Opposite-side (flip) cooldown — block opposite-side entry for N candles.
   if (closedSide) _setOppositeCooldown(closedSide, reason);
+  // Global wait-after-any-exit cooldown — no entry on either side for N candles.
+  if (closedSide) tradeState._reentryBlockUntil = tradeGuards.reentryCooldownUntil(Date.now(), parseInt(process.env.TRADE_RESOLUTION || "5", 10));
 
   // ── 50%-rule exit pause (mirrors paperTrade) ──────────────────────────────
   // If exit was caused by 50% rule, pause re-entry for 2 candles to avoid
@@ -1709,6 +1711,11 @@ async function onCandleClose(candle) {
     // ── Same-side SL cooldown: block re-entry on a side that recently hit SL ──
     if (tradeState._slPauseUntilBySide && tradeState._slPauseUntilBySide[side] > Date.now()) {
       log(`⏸️ [LIVE] ${side} SL cooldown — candle-close entry blocked`);
+      return;
+    }
+    // ── Wait-after-any-exit cooldown: no entry on either side ──
+    if (tradeState._reentryBlockUntil > Date.now()) {
+      log(`⏸️ [LIVE] Wait-after-exit cooldown — candle-close entry blocked (${side})`);
       return;
     }
     // ── Opposite-side cooldown: block opposite-side entry within cooldown window ──
@@ -2135,6 +2142,13 @@ function onSpotTick(tick) {
         if (!tradeState._coolLoggedCandle || tradeState._coolLoggedCandle !== _curBarTime) {
           tradeState._coolLoggedCandle = _curBarTime;
           log(`⏸️ [LIVE] ${side} SL cooldown — intra-candle entry blocked`);
+        }
+      } else if (tradeState._reentryBlockUntil > Date.now()) {
+        // ── Wait-after-any-exit cooldown: no entry on either side ──
+        const _curBarTime = tradeState.currentBar ? tradeState.currentBar.time : 0;
+        if (!tradeState._reentryLoggedCandle || tradeState._reentryLoggedCandle !== _curBarTime) {
+          tradeState._reentryLoggedCandle = _curBarTime;
+          log(`⏸️ [LIVE] Wait-after-exit cooldown — intra-candle entry blocked (${side})`);
         }
       } else if (_OPP_COOLDOWN_ENABLED && tradeState._oppositeCooldownLastSide
                  && tradeState._oppositeCooldownLastSide !== side
@@ -2598,6 +2612,7 @@ router.get("/start", async (req, res) => {
     }
   } catch (e) { console.warn(`[LIVE] daily-loss restart recovery failed: ${e.message}`); }
   tradeState._slPauseUntilBySide   = { CE: 0, PE: 0 }; // reset same-side SL cooldown
+  tradeState._reentryBlockUntil    = 0;
   tradeState._oppositeCooldownUntilTs  = 0;
   tradeState._oppositeCooldownLastSide = null;
   tradeState._cachedCE             = null; // clear pre-fetch cache on session start

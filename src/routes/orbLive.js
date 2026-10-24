@@ -117,6 +117,7 @@ function _freshState() {
     position: null, optionLtp: null, optionLtpUpdatedAt: null,
     log: [], _sessionId: null, _expiryDayBlocked: false,
     _ltpStaleLogged: false,   // one stale-premium warning per trade, not per process
+    _reentryBlockUntil: 0,    // wait-after-any-exit cooldown (epoch ms), see _placeLiveSellImpl
     // Today's EARLIER live sessions (restored on /start) — so a stop + restart cannot
     // reset the daily loss cap / trade budget. sessionPnl stays this-session-only,
     // because it is what gets saved (and added to totalPnl) at stop.
@@ -726,6 +727,8 @@ async function _placeLiveSellImpl(reason) {
   }
 
   state.position = null;
+  // Global wait-after-any-exit cooldown — no entry on either side for N candles.
+  state._reentryBlockUntil = tradeGuards.reentryCooldownUntil(Date.now(), RES_MIN);
   try { clearOrbPosition(); } catch (_) {}   // position is closed — drop the snapshot
   state.optionLtp = null;
   state.optionLtpUpdatedAt = null;
@@ -872,6 +875,12 @@ async function onCandleClose(bar) {
       return;
     }
     if (_oi.regime) sig.reason = `${sig.reason} | ${_oi.reason}`;
+  }
+
+  // ── Wait-after-any-exit cooldown: no entry on either side (paper rejects in simulateBuy) ──
+  if (state._reentryBlockUntil > Date.now()) {
+    log(`⏸️ Wait-after-exit cooldown — candle-close entry blocked (${sig.side})`);
+    return;
   }
 
   await placeLiveBuy(sig.side, sig);

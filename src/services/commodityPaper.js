@@ -348,6 +348,7 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     state.consecLosses = 0;
     for (let i = state.trades.length - 1; i >= 0 && state.trades[i].pnl < 0; i--) state.consecLosses++;
     state.halted = null; state.slPauseUntil = { CE: 0, PE: 0 }; state.oppCooldown = null; state.armed = null;
+    state._reentryBlockUntil = 0;
   }
 
   // ── broker reads ────────────────────────────────────────────────────────────
@@ -413,6 +414,15 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     const c = cfg();
     const block = entryBlock(side);
     if (block) { log(`⏸️ ${side} skipped — ${block}`); return; }
+    // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES). Manual
+    // entries are the user's own call and bypass it. Logged once per cooldown.
+    if (how !== "manual entry" && state._reentryBlockUntil > Date.now()) {
+      if (state._reentryBlockLogged !== state._reentryBlockUntil) {
+        state._reentryBlockLogged = state._reentryBlockUntil;
+        log(`⏸️ ${side} skipped — wait-after-exit cooldown, no new entry until ~${istClock(state._reentryBlockUntil)}`);
+      }
+      return;
+    }
     if (istNowMinutes() >= c.eodExit) { log(`⏸️ ${side} skipped — past the ${fmtMins(c.eodExit)} exit time`); return; }
     const opt = mcx.atmOption(state.series, side, spot);
     if (!opt) { log(`❌ ${side} skipped — no listed ${side} strike near ${spot}`); return; }
@@ -493,6 +503,8 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
         && !/opposite signal|eod|day close|market closed|auto-stop|manual|session/i.test(reason)) {
       state.oppCooldown = { side: pos.side, until: Date.now() + A.oppCooldownCandles() * resMs };
     }
+    // Global wait-after-any-exit cooldown — no entry on either side for N candles.
+    state._reentryBlockUntil = tradeGuards.reentryCooldownUntil(Date.now(), c.res);
     log(`${pnl >= 0 ? "💰" : "🔻"} EXIT ${pos.side} ${pos.symbol} @ ₹${prem} | ${reason} | P&L ₹${pnl} (gross ₹${gross}) | day ₹${state.sessionPnl}`);
     log(`   Trade detail: fut ${pos.spotAtEntry} → ${spotExit} | premium ₹${pos.optionEntryLtp} → ₹${prem} (best ₹${pos.bestOptionLtp}) | MFE=${r2(pos.mfe || 0)} MAE=${r2(pos.mae || 0)} | held ${pos.candlesHeld} candles | SL ${pos.initialStopLoss} → ${pos.stopLoss} | lock ${pos.lockArmedAt ? "armed" : "never armed"}`);
     if (modeOn()) tg("TG_CMX_EXIT", [

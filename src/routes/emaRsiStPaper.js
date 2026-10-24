@@ -877,6 +877,16 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
     ptState._entryPending = false;
     return;
   }
+  // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES). Manual
+  // entries are the user's own call and bypass it. Logged once per cooldown.
+  if (!/^Manual /.test(reason) && ptState._reentryBlockUntil > simNow()) {
+    if (ptState._reentryBlockLogged !== ptState._reentryBlockUntil) {
+      ptState._reentryBlockLogged = ptState._reentryBlockUntil;
+      log(`⏸️ [PAPER] Wait-after-exit cooldown — no new entry until ~${new Date(ptState._reentryBlockUntil).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })} (${side} @ ₹${price} rejected)`);
+    }
+    ptState._entryPending = false;
+    return;
+  }
   // Opposite-side cooldown: reject opposite-side entry within cooldown window after a recent exit.
   if (_OPP_COOLDOWN_ENABLED && ptState._oppositeCooldownLastSide
       && ptState._oppositeCooldownLastSide !== side
@@ -1316,6 +1326,8 @@ function simulateSell(exitPrice, reason, spotAtExit) {
 
   // Opposite-side (flip) cooldown — block opposite-side entry for N candles.
   _setOppositeCooldown(side, reason);
+  // Global wait-after-any-exit cooldown — no entry on either side for N candles.
+  ptState._reentryBlockUntil = tradeGuards.reentryCooldownUntil(simNow(), getTradeResolution());
 
   // Notify active strategy (optional callbacks for strategy-level state tracking)
   const activeStrat = getActiveStrategy();
@@ -2490,6 +2502,7 @@ router.get("/start", async (req, res) => {
   ptState._maxTradesLoggedCandle = null;
   ptState._slHitCandleTime     = null;
   ptState._slPauseUntilBySide  = { CE: 0, PE: 0 }; // reset same-side SL cooldown
+  ptState._reentryBlockUntil   = 0;
   ptState._oppositeCooldownUntilTs  = 0;
   ptState._oppositeCooldownLastSide = null;
   ptState._lastCheckedBarHigh  = null;
@@ -5061,6 +5074,7 @@ router.post("/simulate/start", async (req, res) => {
     ptState._maxTradesLoggedCandle = null;
     ptState._slHitCandleTime     = null;
     ptState._slPauseUntilBySide  = { CE: 0, PE: 0 }; // reset same-side SL cooldown
+    ptState._reentryBlockUntil   = 0;
     ptState._oppositeCooldownUntilTs  = 0;
     ptState._oppositeCooldownLastSide = null;
     ptState._lastCheckedBarHigh  = null;

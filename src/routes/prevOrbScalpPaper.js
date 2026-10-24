@@ -177,6 +177,7 @@ function _freshState() {
     _lastEntryAttemptMs: null,
     _pendingEntry:  null,
     _incompleteLogged: false,
+    _reentryBlockUntil: 0,  // wait-after-any-exit cooldown (epoch ms), see simulateSell
   };
 }
 
@@ -637,6 +638,8 @@ function simulateSell(reason, opts) {
 
   // Clear the position FIRST so a re-entrant tick can never double-sell it.
   state.position = null;
+  // Global wait-after-any-exit cooldown — no entry on either side for N candles.
+  state._reentryBlockUntil = tradeGuards.reentryCooldownUntil(Date.now(), _resMin());
   // ...which means a throw anywhere below (trade log, persistence) would leave the
   // position cleared with NO notifyExit — and the live harness, which only sees
   // notifyExit, would never close the REAL position. The finally guarantees it.
@@ -906,6 +909,17 @@ async function evaluateEntry(opts) {
     return;
   }
 
+  // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES). There is
+  // no manual entry on this page, so every entry is automatic. Logged once per
+  // cooldown; no retry is queued, exactly as the gates above return.
+  if (state._reentryBlockUntil > Date.now()) {
+    if (state._reentryBlockLogged !== state._reentryBlockUntil) {
+      state._reentryBlockLogged = state._reentryBlockUntil;
+      log(`⏸️ ${TAG} Wait-after-exit cooldown — no new entry until ~${new Date(state._reentryBlockUntil).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })} (${sig.side} rejected)`);
+    }
+    return;
+  }
+
   log(`🎯 ${TAG} SETUP: ${sig.reason}`);
   state._entryInFlight = true;
   state._lastEntryAttemptMs = Date.now();
@@ -929,6 +943,7 @@ async function _retryPendingEntry() {
   if (state.position || state._entryInFlight) return;
   if (state.dayClosed || state.tradesTaken >= _maxDailyTrades()) { state._pendingEntry = null; return; }
   if (getISTMinutes() >= strat.getConfig().forcedExitMin) { state._pendingEntry = null; return; }
+  if (state._reentryBlockUntil > Date.now()) { state._pendingEntry = null; return; } // wait-after-exit cooldown
   if (Date.now() - p.lastAttemptMs < ENTRY_RETRY_MS) return;
 
   state._entryInFlight = true;

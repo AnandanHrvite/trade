@@ -740,6 +740,15 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, me
     log(`⚠️ [PAPER] simulateBuy called while position already open — ignoring duplicate entry (${side} @ ₹${price})`);
     return;
   }
+  // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES). Manual
+  // entries are the user's own call and bypass it. Logged once per cooldown.
+  if (!meta.manual && ptState._reentryBlockUntil > Date.now()) {
+    if (ptState._reentryBlockLogged !== ptState._reentryBlockUntil) {
+      ptState._reentryBlockLogged = ptState._reentryBlockUntil;
+      log(`⏸️ [PAPER] Wait-after-exit cooldown — no new entry until ~${new Date(ptState._reentryBlockUntil).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })} (${side} @ ₹${price} rejected)`);
+    }
+    return;
+  }
   // Never open a position without a stop. The engine refuses a signal whose
   // SuperTrend is not beyond the close; this only catches a broken caller.
   if (!Number.isFinite(stopLoss)) {
@@ -1008,6 +1017,8 @@ function simulateSell(exitPrice, reason, spotAtExit, exitBarTime, exitMeta = {})
 
   ptState.position = null;
   try { require("../utils/positionPersist").clearSailVwapStPosition(); } catch (_) {}
+  // Global wait-after-any-exit cooldown — no entry on either side for N candles.
+  ptState._reentryBlockUntil = tradeGuards.reentryCooldownUntil(Date.now(), getTradeResolution());
   capitalPool.release("sail_vwap_st", netPnl);
 }
 
@@ -1701,6 +1712,7 @@ router.get("/start", async (req, res) => {
   ptState.optionChart    = null;
   ptState._consecutiveLosses   = 0;
   ptState._dailyLossHit        = false; // reset daily kill switch on new session
+  ptState._reentryBlockUntil   = 0;
   ptState._priorRealizedToday  = 0;     // re-seeded from disk just below
   ptState._priorTradesToday    = 0;
   _chartSeriesCache = { key: null, value: null };

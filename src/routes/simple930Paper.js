@@ -226,6 +226,7 @@ function _freshState() {
     dayClosedReason: null,
     _entryInFlight: false,
     _lastEntryAttemptMs: null,
+    _reentryBlockUntil: 0,   // wait-after-any-exit cooldown (epoch ms), see simulateSell
     _sessionId:     null,
     _staleSession:  false,
     _staleSkipLoggedMs: null,
@@ -644,6 +645,16 @@ async function evaluateEntry() {
     return;
   }
 
+  // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES). There is
+  // no manual entry on this page, so every entry is automatic. Logged once per cooldown.
+  if (state._reentryBlockUntil > Date.now()) {
+    if (state._reentryBlockLogged !== state._reentryBlockUntil) {
+      state._reentryBlockLogged = state._reentryBlockUntil;
+      log(`⏸️ ${LOG_TAG} Wait-after-exit cooldown — no new entry until ~${new Date(state._reentryBlockUntil).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })} (${verdict.leg} @ ₹${leg.ltp} rejected)`);
+    }
+    return;
+  }
+
   state._entryInFlight = true;
   state._lastEntryAttemptMs = Date.now();
   try {
@@ -910,6 +921,9 @@ function simulateSell(reason, opts) {
   });
 
   state.position = null;
+  // Global wait-after-any-exit cooldown — no entry on either side for N candles
+  // (1-min: the premium-bar resolution, the one the backtest walks).
+  state._reentryBlockUntil = tradeGuards.reentryCooldownUntil(Date.now(), PREMIUM_BAR_MIN);
   capitalPool.release(MODE_KEY, pnl);
   try { require("../utils/positionPersist").clearSimple930Position(); } catch (_) {}
   state.optionLtp = null;

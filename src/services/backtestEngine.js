@@ -367,6 +367,11 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
   const _slPauseUntilBySide = { CE: 0, PE: 0 }; // same-side SL cooldown (unix secs), reset per day
   let _oppositeCooldownUntilTs   = 0;     // opposite-side cooldown (unix secs), reset per day
   let _oppositeCooldownLastSide  = null;  // last exited side
+  // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES), unix secs.
+  // Paper measures it from the exit's clock time: a tick stop exits INSIDE the
+  // bar (≈ bar open here), a candle-close rule exits at the bar's CLOSE.
+  const _REENTRY_COOLDOWN_SECS = tradeGuards.reentryCooldownMs(candleResolutionMins) / 1000;
+  let _reentryBlockUntilTs       = 0;
   // Confirmation candle (cross & close, EMA_RSI_ST only — EMA_RSI_ST_CONFIRM_CANDLE_ENABLED).
   // { side, armedBarTime, triggerLevel, signalSL, reason, strength } | null.
   let _armedSwing = null;
@@ -434,6 +439,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         _slPauseUntilBySide.PE = 0;
         _oppositeCooldownUntilTs  = 0;
         _oppositeCooldownLastSide = null;
+        _reentryBlockUntilTs      = 0;
         _armedSwing               = null; // drop any arm across the day boundary
         _pendingArm               = null; // ...including one staged at yesterday's close
         if (_verbose) {
@@ -751,6 +757,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
       //
       // Skipped when a tick stop already fired: paper's position is closed before
       // onCandleClose runs, so paper never increments on that bar either.
+      const _exitedOnTick = !!exitReason;
       if (!exitReason) {
         position.candlesHeld = (position.candlesHeld || 0) + 1;
         // The bar closed with us still holding — this is the exact moment paper's
@@ -951,6 +958,11 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
           if (_verbose) console.log(`  🔁 Opposite-side cooldown — no ${position.side === "CE" ? "PE" : "CE"} entries for ${OPP_COOLDOWN_CANDLES} candles`);
         }
 
+        // Wait-after-any-exit cooldown — every exit reason, both sides.
+        if (_REENTRY_COOLDOWN_SECS > 0) {
+          _reentryBlockUntilTs = candle.time + (_exitedOnTick ? 0 : candleResolutionMins * 60) + _REENTRY_COOLDOWN_SECS;
+        }
+
         // Paper `return`s out of onCandleClose after these two, so no entry can
         // follow on the same candle; it falls through after touch-back / opposite.
         if (/negative \d+-candle stop|eod/i.test(exitReason)) _blockEntryAfterExit = true;
@@ -978,6 +990,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
     const _oppPaused  = (s) => !!(OPP_COOLDOWN_ENABLED && s && _oppositeCooldownLastSide
                                   && s !== _oppositeCooldownLastSide
                                   && candle.time < _oppositeCooldownUntilTs);
+    const _reentryBlocked = _reentryBlockUntilTs > 0 && candle.time < _reentryBlockUntilTs;
     const isSideCoolingDown     = _sidePaused(_sigSide);
     const isOppositeCoolingDown = _oppPaused(_sigSide);
     const isConsecPaused = _consecPauseUntilTs > 0 && candle.time < _consecPauseUntilTs;
@@ -1037,8 +1050,8 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         // above, so a rejection burns it exactly as paper burns _armedSignal
         // before its async order call. Keyed on _a.side, not _sigSide — the armed
         // side is the PREVIOUS candle's signal and the two can differ.
-        if (_sidePaused(_a.side) || _oppPaused(_a.side)) {
-          if (_verbose) console.log(`  ⏸️ CONFIRM ${_a.side} rejected — ${_sidePaused(_a.side) ? "same-side SL" : "opposite-side"} cooldown active [${toIST(candle.time)}]`);
+        if (_sidePaused(_a.side) || _oppPaused(_a.side) || _reentryBlocked) {
+          if (_verbose) console.log(`  ⏸️ CONFIRM ${_a.side} rejected — ${_sidePaused(_a.side) ? "same-side SL" : _oppPaused(_a.side) ? "opposite-side" : "wait-after-exit"} cooldown active [${toIST(candle.time)}]`);
           continue;
         }
         // VIX gate — same reason as the cooldowns above. emaRsiStPaper runs
@@ -1139,6 +1152,8 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         if (isSideCoolingDown) continue;
         // Opposite-side cooldown: skip opposite side within cooldown window
         if (isOppositeCoolingDown) continue;
+        // Wait-after-any-exit cooldown: skip both sides
+        if (_reentryBlocked) continue;
 
         const side     = _sigSide;
         const strength = signalStrength || "STRONG";

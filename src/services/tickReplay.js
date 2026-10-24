@@ -207,7 +207,8 @@ function requestCancel() {
 //      no longer pinned (it made every entry refuse) — live-traded expiry is used.
 // v18: profit-lock trail (PROFIT_LOCK_TRAIL_PCT) — forced 0 for recordings that lack it.
 // v19: tiered trail (PROFIT_LOCK_TRAIL_TIERS) — forced blank (flat trail) for recordings that lack it.
-const REPLAY_CACHE_VERSION = 19;
+// v20: wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES) — forced 0 for recordings that lack it.
+const REPLAY_CACHE_VERSION = 20;
 
 function _replayCacheDir() {
   return path.join(ROOT_DIR, "_replay_cache");
@@ -2316,6 +2317,11 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
       // recording made before tiers shipped, which ran the flat trail.
       if (!("PROFIT_LOCK_TRAIL_TIERS" in _snapSettings)) {
         _snapSettings.PROFIT_LOCK_TRAIL_TIERS = "";
+      }
+      // Wait-after-any-exit cooldown (default 2): same rule — an absent key is a
+      // recording made before it shipped, which re-entered with no wait.
+      if (!("EXIT_REENTRY_COOLDOWN_CANDLES" in _snapSettings)) {
+        _snapSettings.EXIT_REENTRY_COOLDOWN_CANDLES = "0";
       }
       // Snapshot mode is a PARTIAL override: _applySettingsOverride only SETS the
       // keys it is given, so a managed key present in today's env but absent from

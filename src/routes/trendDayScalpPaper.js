@@ -64,6 +64,7 @@ const instrumentMode = require("../utils/instrumentMode");
 const { istDayFromAny, istIsoFromAny, getISTMinutes, getBucketStart } = require("../utils/tradeUtils");
 const skipLogger = require("../utils/skipLogger");
 const capitalPool = require("../utils/capitalPool");
+const tradeGuards = require("../utils/tradeGuards");
 
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
 const CALLBACK_ID        = "trendDayScalpPaper";
@@ -162,6 +163,7 @@ function _freshState() {
     optionLtpUpdatedAt: null,
     log:            [],
     _sessionId:     null,
+    _reentryBlockUntil: 0,  // wait-after-any-exit cooldown (epoch ms)
     // TREND_DAY_SCALP specific
     dayGate:        null,   // FROZEN evaluateDayGate() result — decided once at 10:15
     gateLoggedAt:   null,
@@ -596,6 +598,8 @@ function simulateSell(reason, opts) {
   state.position = null;
   capitalPool.release(MODE_KEY, pnl);
   try { require("../utils/positionPersist").clearTrendDayScalpPosition(); } catch (_) {}
+  // Global wait-after-any-exit cooldown — no entry on either side for N candles.
+  state._reentryBlockUntil = tradeGuards.reentryCooldownUntil(Date.now(), _resMin());
   state.optionLtp = null;
   state.optionLtpUpdatedAt = null;
   stopOptionPolling();
@@ -785,6 +789,17 @@ async function evaluateEntry() {
         pullbackLow: sig.pullbackLow, pullbackHigh: sig.pullbackHigh,
         slRaw: sig.slRaw,
       });
+    }
+    return;
+  }
+
+  // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES). Checked
+  // here, not in simulateBuy: a simulateBuy refusal is read as a failed FILL and
+  // retried mid-bar. Logged once per cooldown.
+  if (state._reentryBlockUntil > Date.now()) {
+    if (state._reentryBlockLogged !== state._reentryBlockUntil) {
+      state._reentryBlockLogged = state._reentryBlockUntil;
+      log(`⏸️ [TDS-PAPER] Wait-after-exit cooldown — no new entry until ~${new Date(state._reentryBlockUntil).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })} (${sig.side} rejected)`);
     }
     return;
   }

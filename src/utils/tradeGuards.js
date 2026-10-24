@@ -341,6 +341,33 @@ function checkBreakevenStop(entryLtp, currentLtp, bestLtp, {
   return `Breakeven stop — premium Rs${currentLtp} fell back to the entry Rs${parseFloat(entryLtp.toFixed(2))} after peaking at Rs${parseFloat(bestLtp.toFixed(2))} (armed at +${armPct}%)`;
 }
 
+// ── Re-entry cooldown after ANY exit (all strategies) ───────────────────────
+// Once a position closes — stop, target, breakeven, profit lock, signal, any
+// reason — no new entry on EITHER side until EXIT_REENTRY_COOLDOWN_CANDLES of
+// the strategy's own candles have passed. Stops the bot re-buying on the very
+// next candle after it was just shaken out (23 Oct: breakeven exit 10:48, same
+// PE re-entered 10:50, breakeven again 10:53). 0 = off.
+//
+// Measured from the EXIT time, like the per-strategy SL pauses: exit 10:48:49 on
+// 5-min candles with 2 → blocked until 10:58:49. Backtests stand in the exit
+// bar's open time for a tick stop and its close time for a candle-close exit.
+// Manual entries bypass it.
+function liveReentryCooldownCandles() {
+  const n = parseInt(process.env.EXIT_REENTRY_COOLDOWN_CANDLES ?? "2", 10);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+// Cooldown length in ms for a strategy running on `resMin`-minute candles.
+function reentryCooldownMs(resMin) {
+  const n = liveReentryCooldownCandles();
+  const r = parseFloat(resMin);
+  return n > 0 && Number.isFinite(r) && r > 0 ? n * r * 60 * 1000 : 0;
+}
+// Epoch-ms until which entries stay blocked after an exit at `exitMs`; 0 = no block.
+function reentryCooldownUntil(exitMs, resMin) {
+  const ms = reentryCooldownMs(resMin);
+  return ms > 0 && Number.isFinite(exitMs) ? exitMs + ms : 0;
+}
+
 module.exports = {
   fetchOptionQuote,
   checkSpread,
@@ -349,6 +376,8 @@ module.exports = {
   profitLockFloorLtp,
   profitLockTrailKeepPct,
   checkBreakevenStop,
+  reentryCooldownMs,
+  reentryCooldownUntil,
   isProtectiveStop,
   resolveProtectiveStop,
   INDICATOR_HISTORY_CANDLES,
@@ -363,4 +392,5 @@ module.exports = {
   get PROFIT_LOCK_TRAIL_TIERS()    { return liveProfitLockTrailTiers(); },
   get BREAKEVEN_STOP_ENABLED()     { return liveBreakevenEnabled(); },
   get BREAKEVEN_ARM_PCT()          { return liveBreakevenArmPct(); },
+  get EXIT_REENTRY_COOLDOWN_CANDLES() { return liveReentryCooldownCandles(); },
 };

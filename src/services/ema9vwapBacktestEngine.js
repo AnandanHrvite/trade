@@ -199,6 +199,11 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
   // Chop guard (paper `_chopConsecLosses` + EMA9VWAP_MAX_CONSEC_LOSSES): halt entries
   // for the rest of the session after N straight losses; any win resets. 0 = off (default).
   let chopConsecLosses = 0;
+  // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES), unix secs.
+  // Paper measures it from the exit's clock time: a tick stop exits INSIDE the
+  // bar (≈ bar open here), a candle-close rule exits at the bar's CLOSE.
+  const _REENTRY_COOLDOWN_SECS = _tradeGuards.reentryCooldownMs(resMins) / 1000;
+  let reentryBlockUntilTs = 0;
   const reportEvery = Math.max(1, Math.floor(total / 50));
 
   // Rolling 200-candle window reused via push/shift (mirrors paper's in-memory cap
@@ -315,6 +320,7 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
       dailyLossHit = false; consecLosses = 0; pauseUntilTs = 0;
       oppCooldownUntilTs = 0; oppCooldownLastSide = null;
       slPauseUntilTs = { CE: 0, PE: 0 }; chopConsecLosses = 0;
+      reentryBlockUntilTs = 0;
     }
     const mins = _istMins(candle.time);
     // M4: paper `return`s after a REVERSAL or EOD exit (no re-entry that candle) but
@@ -501,7 +507,14 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
         doExit = true;
         exitReason = "EOD square-off";
       }
-      if (doExit) { _closeTrade(candle, exitReason, exitLevel, armSlPause); blockEntryThisCandle = blocksReentry; }
+      if (doExit) {
+        _closeTrade(candle, exitReason, exitLevel, armSlPause); blockEntryThisCandle = blocksReentry;
+        // Wait-after-any-exit cooldown — every exit reason, both sides. Only the
+        // intrabar (onTick) exits pass an exitLevel; the rest exit at the close.
+        if (_REENTRY_COOLDOWN_SECS > 0) {
+          reentryBlockUntilTs = candle.time + (Number.isFinite(exitLevel) ? 0 : resMins * 60) + _REENTRY_COOLDOWN_SECS;
+        }
+      }
     }
 
     // ── ENTRY (candle close, inside the entry window, daily guards) ──
@@ -519,8 +532,10 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
       // Same-side SL cooldown + chop guard (both mirrored from paper; see above).
       const _slPauseBlocked = candle.time < slPauseUntilTs[side];
       const _chopBlocked    = chopMax > 0 && chopConsecLosses >= chopMax;
+      // Wait-after-any-exit cooldown: blocks both sides.
+      const _reentryBlocked = candle.time < reentryBlockUntilTs;
       if (dailyTrades < maxDailyTrades && !dailyLossHit && candle.time >= pauseUntilTs
-          && !_oppBlocked && !_slPauseBlocked && !_chopBlocked) {
+          && !_oppBlocked && !_slPauseBlocked && !_chopBlocked && !_reentryBlocked) {
         // VIX gate — evaluated only when we would otherwise enter, like paper.
         const _vc = vixFilter.checkBacktestVix(vixLookup(candle.time), "STRONG", { mode: "ema9vwap" });
         if (_vc.allowed) {

@@ -116,6 +116,7 @@ const { notifyEntry, notifyExit, notifyStarted, notifyDayReport } = require("../
 const { istDayFromAny, istIsoFromAny, getISTMinutes } = require("../utils/tradeUtils");
 const skipLogger  = require("../utils/skipLogger");
 const capitalPool = require("../utils/capitalPool");
+const tradeGuards = require("../utils/tradeGuards");
 // OPTION LEG ONLY (EARLYBIRD_TRADE_MODE=option|both). The default "stock" mode
 // never reaches a single line that uses either of these — see the OPTION LEG
 // block below. They are required at the top rather than lazily so a missing
@@ -264,7 +265,20 @@ function _freshState() {
     // holds) — the capital pool must then stop adding sessionPnl on top of it.
     _saved:         false,
     _entryLocks:    new Set(),   // symbols with an entry in flight
+    _reentryBlockUntil: 0,       // wait-after-exit cooldown (epoch ms) — see _reentryBlocked
   };
+}
+
+// Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES). The whole
+// book — every stock position plus the option leg — is ONE position for this
+// rule: the wait starts when the book goes flat (set in _closePosition /
+// _closeOptionPositionInner), and while anything is still open no fill is held.
+function _reentryBlocked() {
+  return !state.positions.size && !state.optionPosition && state._reentryBlockUntil > Date.now();
+}
+function _armReentryBlock(s) {
+  if (s.positions.size || s.optionPosition) return;
+  s._reentryBlockUntil = tradeGuards.reentryCooldownUntil(Date.now(), earlyBird.getConfig().resolutionMins);
 }
 
 function log(msg) {
@@ -989,6 +1003,17 @@ async function _stepOptionLeg() {
   if (state.tradesTaken >= _maxDailyTrades()) { _applyDayBreakers(); return; }
   if (typeof spot !== "number" || !Number.isFinite(spot) || spot <= 0) return;
   if (!earlyBird.isEntryTriggered(state.optionPending, spot)) return;
+  // Triggered inside the wait-after-exit cooldown: counts as the day's one
+  // option attempt, exactly as a capital refusal does.
+  if (_reentryBlocked()) {
+    const _until = new Date(state._reentryBlockUntil).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" });
+    log(`⏸️ ${LOG_TAG} OPTION triggered @ spot ${spot} inside the wait-after-exit cooldown (until ~${_until}) — no option trade today`);
+    skipLogger.appendSkipLog(MODE_KEY, { gate: "reentry_cooldown", leg: "option", reason: `wait-after-exit cooldown until ~${_until}`, side: state.optionPending.side, optionSide: state.optionPending.optionSide, spot, entry: state.optionPending.entry });
+    state.optionAttempted = true;
+    state.optionLtpFailAt = null;
+    _persist();
+    return;
+  }
   // A premium fetch that just failed is retried on a timer, not on every tick —
   // a dead symbol would otherwise hammer the quote API twice a second.
   if (state.optionLtpFailAt && Date.now() - state.optionLtpFailAt < _optionLtpRetryMs()) return;
@@ -1236,6 +1261,7 @@ async function _closeOptionPositionInner(ex) {
   // Claim it synchronously: this function awaits, and a second poll must not be
   // able to book the same position twice.
   s.optionPosition = null;
+  _armReentryBlock(s);       // wait-after-exit cooldown, once the whole book is flat
 
   // Whatever throws after the claim above, the position's capital block must
   // still be freed — otherwise it stays reserved in the pool for the day.
@@ -1678,6 +1704,18 @@ function _checkTriggers() {
     const price = _priceOf(setup.symbol);
     if (price == null) continue;
     if (!earlyBird.isEntryTriggered(setup, price)) continue;
+    // Triggered inside the wait-after-exit cooldown: the setup is consumed
+    // (pending → attempted) exactly as a capital refusal consumes it — filling
+    // it later at its frozen level would book a price long gone.
+    if (_reentryBlocked()) {
+      const _until = new Date(state._reentryBlockUntil).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" });
+      log(`⏸️ ${LOG_TAG} ${setup.side} ${setup.symbol} triggered @ ₹${price} inside the wait-after-exit cooldown (until ~${_until}) — setup dropped`);
+      skipLogger.appendSkipLog(MODE_KEY, { gate: "reentry_cooldown", leg: "stock", reason: `wait-after-exit cooldown until ~${_until}`, symbol: setup.symbol, side: setup.side, price, entry: setup.entry });
+      state.pending.delete(setup.symbol);
+      state.attempted.add(setup.symbol);
+      _persist();
+      continue;
+    }
 
     state._entryLocks.add(setup.symbol);
     try { _openPosition(setup, price, nowMins); }
@@ -1946,6 +1984,7 @@ function _closePosition(pos, ex) {
   };
 
   state.positions.delete(pos.symbol);
+  _armReentryBlock(state);   // wait-after-exit cooldown, once the whole book is flat
   // Removed from the book FIRST; a throw below (trade log, persist) would skip
   // notifyExit and leave the live harness's REAL position open. Guaranteed below.
   let _exitNotified = false;

@@ -26,6 +26,7 @@ const { getLotQty } = instrumentConfig;
 const { isExpiryDate } = require("../utils/nseHolidays");
 const { getCharges } = require("../utils/charges");
 const confirmCandle = require("../utils/confirmCandle");
+const tradeGuards = require("../utils/tradeGuards");
 
 // Signal strength for bb_rsi — delegated to the engine so paper, live and backtest
 // cannot drift apart on it (the comparison inverted with the V8 mean-reversion flip).
@@ -180,6 +181,11 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
   // Per-side cooldown state
   const _slPauseUntilBySide = { CE: 0, PE: 0 };
   const _consecSLsBySide    = { CE: 0, PE: 0 };
+  // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES), unix secs.
+  // Paper measures it from the exit's clock time: a tick stop exits INSIDE the
+  // bar (≈ bar open here), a candle-close rule exits at the bar's CLOSE.
+  const _REENTRY_COOLDOWN_SECS = tradeGuards.reentryCooldownMs(BB_RSI_RES) / 1000;
+  let _reentryBlockUntilTs = 0;
   let _dailyTradeCount = 0;
   let _dailyPnl = 0;
   let _prevDate = null;
@@ -213,6 +219,7 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
       _consecSLs = 0;
       _slPauseUntilBySide.CE = 0; _slPauseUntilBySide.PE = 0;
       _consecSLsBySide.CE    = 0; _consecSLsBySide.PE    = 0;
+      _reentryBlockUntilTs   = 0;
       _armed = null; // drop any arm across the day boundary
     }
     _prevDate = candleDate;
@@ -233,6 +240,7 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
 
       let exitReason = null;
       let exitPrice  = candle.close;
+      let _exitAtClose = false; // paper takes this exit at candle close (vs on a tick)
 
       // ── Helper: calculate running PNL at a given spot price ──
       // Use flat charge estimate for running PnL (exact charges applied at exit)
@@ -325,12 +333,14 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
           position.slSource = _opp.armed ? "Opposite-candle trail" : "Opposite-candle SL";
           exitPrice  = candle.close;
           exitReason = _opp.reason;
+          _exitAtClose = true;
         }
       }
 
       // 5. EOD
       if (!exitReason && isEOD) {
         exitReason = "EOD square-off";
+        _exitAtClose = true;
       }
 
       if (exitReason) {
@@ -402,6 +412,10 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
           }
           _consecSLs = Math.max(_consecSLsBySide.CE, _consecSLsBySide.PE);
         }
+        // Wait-after-any-exit cooldown — every exit reason, both sides.
+        if (_REENTRY_COOLDOWN_SECS > 0) {
+          _reentryBlockUntilTs = candle.time + (_exitAtClose ? BB_RSI_RES * 60 : 0) + _REENTRY_COOLDOWN_SECS;
+        }
         position = null;
       }
       continue; // skip entry eval when in position
@@ -417,6 +431,8 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
     if (candle.time < _slPauseUntilBySide.CE && candle.time < _slPauseUntilBySide.PE) continue;
 
     const _confirmBbRsi = confirmCandle.enabled("BB_RSI");
+    // Paper rejects in simulateBuy, so arming still happens; only the fill is blocked.
+    const _reentryBlocked = _reentryBlockUntilTs > 0 && candle.time < _reentryBlockUntilTs;
 
     // ── Confirmation candle: fill an armed signal on THIS (immediately-next)
     //    candle. With BB_RSI_CONFIRM_ON_CLOSE on (default) it must CLOSE beyond the
@@ -426,7 +442,7 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
       const _a = _armed;
       _armed = null; // armed signal is good for exactly one candle — consume it
       if (confirmCandle.isNextBar(candle.time, _a.armedBarTime, BB_RSI_RES)
-          && candle.time >= _slPauseUntilBySide[_a.side]) {
+          && candle.time >= _slPauseUntilBySide[_a.side] && !_reentryBlocked) {
         // Two confirmation modes (must match paper):
         //  • ON_CLOSE ON  → confirm at this candle's CLOSE: it must have closed beyond
         //    the signal close; entry at the close.
@@ -510,6 +526,8 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
       _armed = { side, armedBarTime: candle.time, triggerLevel: candle.close, result };
       continue;
     }
+    // Wait-after-any-exit cooldown: skip both sides
+    if (_reentryBlocked) continue;
 
     const entryPrice = parseFloat((candle.close + SLIPPAGE_PTS * (side === "CE" ? 1 : -1)).toFixed(2));
     // Initial SL line = the signal candle's own extreme (recorded for sizing only).

@@ -25,6 +25,7 @@ const { getLotQty } = instrumentConfig;
 const { isExpiryDate } = require("../utils/nseHolidays");
 const { getCharges } = require("../utils/charges");
 const backtestJobs = require("../utils/backtestJobManager");
+const tradeGuards = require("../utils/tradeGuards");
 
 const inr = (n) => typeof n === "number" ? "\u20b9" + n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "\u2014";
 const pts = (n) => typeof n === "number" ? (n >= 0 ? "+" : "") + n.toFixed(2) + " pts" : "\u2014";
@@ -147,6 +148,11 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
   const window = candles.slice(0, 30);
   let _slPauseUntilTs = 0;
   let _consecSLs = 0;
+  // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES), unix secs.
+  // Paper measures it from the exit's clock time: a tick stop exits INSIDE the
+  // bar (≈ bar open here), a candle-close rule exits at the bar's CLOSE.
+  const _REENTRY_COOLDOWN_SECS = tradeGuards.reentryCooldownMs(PA_RES) / 1000;
+  let _reentryBlockUntilTs = 0;
   let _dailyTradeCount = 0;
   let _dailyPnl = 0;
   let _prevDate = null;
@@ -178,6 +184,7 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
       _dailyPnl = 0;
       _slPauseUntilTs = 0;
       _consecSLs = 0;
+      _reentryBlockUntilTs = 0;
       pendingSignal = null; // discard overnight pending signals
     }
     _prevDate = candleDate;
@@ -224,6 +231,7 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
 
       let exitReason = null;
       let exitPrice  = candle.close;
+      let _exitAtClose = false; // paper takes this exit at candle close (vs on a tick)
 
       // ── Helper: calculate running PNL at a given spot price ──
       // Use flat charge estimate for running PnL (exact charges applied at exit)
@@ -287,6 +295,7 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
       // 5. EOD
       if (!exitReason && isEOD) {
         exitReason = "EOD square-off";
+        _exitAtClose = true;
       }
 
       if (exitReason) {
@@ -334,6 +343,10 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
         } else if (pnl > 0) {
           _consecSLs = 0;
         }
+        // Wait-after-any-exit cooldown — every exit reason, both sides.
+        if (_REENTRY_COOLDOWN_SECS > 0) {
+          _reentryBlockUntilTs = candle.time + (_exitAtClose ? PA_RES * 60 : 0) + _REENTRY_COOLDOWN_SECS;
+        }
         position = null;
       }
       continue; // skip entry eval when in position
@@ -346,6 +359,9 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
     if (_dailyTradeCount >= PA_MAX_TRADES) continue;
     if (_dailyPnl <= -PA_MAX_LOSS) continue;
     if (candle.time < _slPauseUntilTs) continue;
+    // Wait-after-any-exit cooldown: skip both sides. Checked on the SIGNAL bar —
+    // paper would enter at its close (the backtest fills at the next open).
+    if (_reentryBlockUntilTs > 0 && candle.time < _reentryBlockUntilTs) continue;
 
     const result = paStrategy.getSignal(window, {
       silent: true,

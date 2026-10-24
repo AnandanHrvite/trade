@@ -29,6 +29,7 @@ const { saveResult } = require("../utils/resultStore");
 const { isExpiryDate } = require("../utils/nseHolidays");
 const backtestJobs = require("../utils/backtestJobManager");
 const instrumentConfig = require("../config/instrument");
+const tradeGuards = require("../utils/tradeGuards");
 
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
 const ACCENT = "#10b981";
@@ -147,6 +148,10 @@ async function runOrbBacktest(allCandles, expirySet, vixCandles = []) {
   const ENTRY_END_MIN   = _parseMin("ORB_ENTRY_END",   "11:30");
   const SEED_PREMIUM    = parseFloat(process.env.ORB_BT_SEED_PREMIUM || "240");   // slightly-ITM ≈ ATM + one strike intrinsic
   const SLIPPAGE_PREM   = parseFloat(process.env.ORB_BT_SLIPPAGE_PTS || "1.5");   // spread+slippage haircut EACH way (premium pts); was 0/frictionless
+  // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES), unix secs.
+  // Paper measures it from the exit's clock time: a tick stop exits INSIDE the
+  // bar (≈ bar open here), a candle-close rule exits at the bar's CLOSE.
+  const _REENTRY_COOLDOWN_SECS = tradeGuards.reentryCooldownMs(5) / 1000;
   // Confirmation and the retest/resume fallback both live INSIDE the engine, so the
   // backtest has no entry logic of its own — it polls getSignal each candle. The old
   // backtest-only `armed` retest gate and the V1/V2/V3 switches are gone.
@@ -214,6 +219,7 @@ async function runOrbBacktest(allCandles, expirySet, vixCandles = []) {
     if (EXPIRY_ONLY && expirySet && !expirySet.has(_dateStr)) { globalBase += _dayLen; continue; }
     let position = null;
     let tradesTaken = 0;
+    let _reentryBlockUntilTs = 0;   // wait-after-any-exit cooldown, reset per day like paper's /start
     const baseMaxTrades = parseInt(process.env.ORB_MAX_DAILY_TRADES || "1", 10);
     // Today's exits, oldest first, feeding orbStrategy.reentryPlan() — the same
     // helper paper and live call, so a re-entry fires here on exactly the days it
@@ -222,9 +228,12 @@ async function runOrbBacktest(allCandles, expirySet, vixCandles = []) {
     // Book a closed position: record the trade AND the exit the re-entry rule reads.
     // Every exit path in this day loop goes through here so none can be forgotten —
     // closePos() itself lives outside the loop and cannot see `dayExits`.
-    const _book = (pos) => {
+    // `exitClockTs` = when paper's clock sees the exit (bar open for a tick exit,
+    // bar close for a candle-close rule) — the start of the wait-after-exit cooldown.
+    const _book = (pos, exitClockTs) => {
       dayExits.push({ reason: pos.exitReason, atUnixSec: pos.exitTime });
       trades.push(buildTradeRecord(pos));
+      if (_REENTRY_COOLDOWN_SECS > 0) _reentryBlockUntilTs = exitClockTs + _REENTRY_COOLDOWN_SECS;
     };
 
     for (let i = 0; i < dayCandles.length; i++) {
@@ -240,7 +249,7 @@ async function runOrbBacktest(allCandles, expirySet, vixCandles = []) {
       // live engine never gets.
       if (position && istMin >= FORCED_EXIT_MIN) {
         closePos(position, c.open, c.time, `EOD square-off (${process.env.ORB_FORCED_EXIT || "15:15"})`);
-        _book(position); position = null; continue;
+        _book(position, c.time); position = null; continue;
       }
 
       // ── In-position management ────────────────────────────────────────────
@@ -282,7 +291,7 @@ async function runOrbBacktest(allCandles, expirySet, vixCandles = []) {
             if (position.side === "CE") _fill = Math.min(_fill, c.open <= _fill ? c.open : _fill);
             else                        _fill = Math.max(_fill, c.open >= _fill ? c.open : _fill);
             closePos(position, _fill, c.time, (_hitPrem && !_hitLoss) ? `Premium disaster stop (−${PREM_STOP_PCT}%)` : `Max trade loss (₹${MAX_TRADE_LOSS})`);
-            _book(position); position = null; continue;
+            _book(position, c.time); position = null; continue;
           }
         }
         // ── 2. INTRABAR: hard SL breach against this candle's extreme ─────────
@@ -295,7 +304,7 @@ async function runOrbBacktest(allCandles, expirySet, vixCandles = []) {
             ? (c.open < position.slSpot ? c.open : position.slSpot)
             : (c.open > position.slSpot ? c.open : position.slSpot);
           closePos(position, _fill, c.time, `Hard SL hit (${position.slSpot})`);
-          _book(position); position = null; continue;
+          _book(position, c.time); position = null; continue;
         }
         // ── 3–5. CANDLE CLOSE: opposite candle → breakeven → EMA trend-trail ──
         //    One call into the SHARED exit engine (src/strategies/orbExits.js), the
@@ -313,7 +322,7 @@ async function runOrbBacktest(allCandles, expirySet, vixCandles = []) {
         const _d = orbExits.evaluateCloseExits(position, c, _emaSeen);
         if (_d.exit) {
           closePos(position, c.close, c.time, _d.reason);
-          _book(position); position = null; continue;
+          _book(position, c.time + 5 * 60); position = null; continue;
         }
       }
 
@@ -378,7 +387,9 @@ async function runOrbBacktest(allCandles, expirySet, vixCandles = []) {
         // VIX gate — paper runs it only AFTER a signal exists, so keep that order.
         const _vixOk = sig.signal === "NONE" || !sig.side
           || vixFilter.checkBacktestVix(lookupVix(c.time), sig.signalStrength, { mode: "orb" }).allowed;
-        if ((sig.signal === "BUY_CE" || sig.signal === "BUY_PE") && _premOk && _vixOk) _open(sig, c);
+        // Wait-after-any-exit cooldown: both sides (paper rejects in simulateBuy, after VIX).
+        const _reentryBlocked = _reentryBlockUntilTs > 0 && c.time < _reentryBlockUntilTs;
+        if ((sig.signal === "BUY_CE" || sig.signal === "BUY_PE") && _premOk && _vixOk && !_reentryBlocked) _open(sig, c);
       }
     }
     if (position) {

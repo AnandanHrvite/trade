@@ -116,6 +116,7 @@ const { aiExportButton, aiExportScriptTag } = require("../utils/backtestAiExport
 const backtestJobs = require("../utils/backtestJobManager");
 const instrumentConfig = require("../config/instrument");
 const { getCharges } = require("../utils/charges");
+const tradeGuards = require("../utils/tradeGuards");
 
 const ACCENT     = "#22d3ee";
 const ENDPOINT   = "/early-bird-backtest";
@@ -661,6 +662,52 @@ function buildPrevCloseIndex(dailyCandles) {
   };
 }
 
+// ── Wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES) ─────────────
+// Paper treats the whole book (every stock + the option leg) as ONE position for
+// this rule: once the book goes flat, a setup that triggers before the wait is
+// over is consumed, not filled. That couples legs the day walks below treat as
+// independent, so it is resolved first: each leg's own trigger / exit time from
+// the same engine calls and gates, then accepted or dropped in time order.
+// A tick exit (stop / target) is stamped at its bar's OPEN, the forced exit at
+// its bar's CLOSE; an entry on a bar whose open is inside the wait is dropped.
+function _legTimes(setup, bars, cfg) {
+  const resSec = cfg.resolutionMins * 60;
+  let trig = null;
+  for (const bar of bars) {
+    if (!_num(bar.time)) continue;
+    const barCloseMins = istMinutes(bar.time) + cfg.resolutionMins;
+    if (barCloseMins <= cfg.entryStartMin) continue;
+    if (trig == null) {
+      if (barCloseMins > cfg.entryEndMin) return null;
+      if (!earlyBird.isEntryTriggeredOnBar(setup, bar)) continue;
+      trig = bar.time;
+    }
+    const ex = earlyBird.checkExitOnBar(setup, bar, { cfg });
+    if (ex && ex.exit && _num(ex.price)) return { trig, exitTs: ex.exitType === "EOD" ? bar.time + resSec : bar.time };
+  }
+  if (trig == null) return null;
+  return { trig, exitTs: bars[bars.length - 1].time + resSec };
+}
+/** The setups (by reference) the cooldown drops on this day. */
+function _reentryDropSet(legs, cfg, cooldownSecs) {
+  const dropped = new Set();
+  if (!(cooldownSecs > 0)) return dropped;
+  const timed = legs.map(l => ({ setup: l.setup, t: _legTimes(l.setup, l.bars, cfg) }))
+    .filter(x => x.t).sort((a, b) => a.t.trig - b.t.trig);
+  const accepted = [];
+  for (const x of timed) {
+    // Every accepted leg triggered at or before this one; the book is flat when
+    // all of them have exited, and went flat at the latest of those exits.
+    const open = accepted.some(a => a.exitTs > x.t.trig);
+    if (!open && accepted.length && x.t.trig < Math.max(...accepted.map(a => a.exitTs)) + cooldownSecs) {
+      dropped.add(x.setup);
+      continue;
+    }
+    accepted.push(x.t);
+  }
+  return dropped;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // THE BACKTEST
 //
@@ -676,6 +723,7 @@ function buildPrevCloseIndex(dailyCandles) {
 async function runEarlyBirdBacktest(data, onProgress) {
   const cfg  = earlyBird.getConfig();
   const SLIP = slippagePts();
+  const REENTRY_COOLDOWN_SECS = tradeGuards.reentryCooldownMs(cfg.resolutionMins) / 1000;
 
   // ── BOTH LEGS ARE BACKTESTED ────────────────────────────────────────────
   // Every EarlyBird level is a NIFTY SPOT level, on both legs, so the option
@@ -706,6 +754,8 @@ async function runEarlyBirdBacktest(data, onProgress) {
     // Option leg — counted separately so the stock funnel keeps meaning what it
     // meant before, and "0 stocks confirmed" never hides an option trade.
     optTaken: 0, optTriggered: 0, optUntriggered: 0,
+    // Triggered inside the wait-after-exit cooldown — consumed, not filled.
+    reentryBlocked: 0, optReentryBlocked: 0,
   };
   const exitTypes = { SL: 0, TARGET: 0, EOD: 0 };
   const sides     = { LONG: 0, SHORT: 0 };
@@ -778,6 +828,13 @@ async function runEarlyBirdBacktest(data, onProgress) {
       candidates: [], rejectedTop: (plan.rejected || []).slice(0, 5),
     };
 
+    // Wait-after-any-exit cooldown — resolved across both legs before they walk.
+    const _reentryDropped = _reentryDropSet([].concat(
+      plan.optionTradeable && plan.optionSetup && plan.optionSetup.ok ? [{ setup: plan.optionSetup, bars: niftyBars }] : [],
+      plan.tradeable ? plan.candidates.slice(0, cfg.maxConcurrent).map(setup => ({
+        setup, bars: (stockDefs.find(s => s.symbol === setup.symbol) || { byDay: new Map() }).byDay.get(dayKey) || [],
+      })) : []), cfg, REENTRY_COOLDOWN_SECS);
+
     // ── OPTION LEG. Walked on the SAME NIFTY spot bars, with the SAME engine
     //    calls as a stock, before the stock-leg gate below — in option-only mode
     //    plan.tradeable is always false and this is the only leg there is.
@@ -794,7 +851,7 @@ async function runEarlyBirdBacktest(data, onProgress) {
       // The option setup carries its own qty for the P&L conversion. Levels are
       // NIFTY spot, so the walk is byte-for-byte the stock walk.
       const optSetup = Object.assign({}, os, { qty: optQty, symbol: `NIFTY ${os.optionSide}` });
-      let opos = null, odone = false;
+      let opos = null, odone = false, oblocked = false;
 
       for (const bar of niftyBars) {
         if (odone) break;
@@ -805,6 +862,12 @@ async function runEarlyBirdBacktest(data, onProgress) {
         if (!opos) {
           if (barCloseMins > cfg.entryEndMin) { odone = true; break; }
           if (earlyBird.isEntryTriggeredOnBar(optSetup, bar)) {
+            if (_reentryDropped.has(os)) {
+              oblocked = true; odone = true;
+              funnel.optReentryBlocked++;
+              console.log(`${LOG} ${dayStr} ${istHHMMSS(bar.time)} OPTION ${os.optionSide} triggered inside the wait-after-exit cooldown — dropped`);
+              break;
+            }
             const fill = os.side === "LONG" ? os.entry + SLIP : os.entry - SLIP;
             opos = {
               side: os.side, stop: os.stop, target: os.target,
@@ -850,7 +913,7 @@ async function runEarlyBirdBacktest(data, onProgress) {
           dayOptPnl += t.pnl; dayOptTrades++;
         }
       }
-      if (!row.optionSetup.triggered) funnel.optUntriggered++;
+      if (!row.optionSetup.triggered && !oblocked) funnel.optUntriggered++;
     }
 
     if (!plan.tradeable) {
@@ -891,6 +954,7 @@ async function runEarlyBirdBacktest(data, onProgress) {
       pos: null,
       done: false,
       triggered: false,
+      blocked: false,
     }));
 
     for (const p of pending) {
@@ -935,6 +999,12 @@ async function runEarlyBirdBacktest(data, onProgress) {
             break;
           }
           if (earlyBird.isEntryTriggeredOnBar(setup, bar)) {
+            if (_reentryDropped.has(setup)) {
+              p.blocked = true; p.done = true;
+              funnel.reentryBlocked++;
+              console.log(`${LOG} ${dayStr} ${istHHMMSS(bar.time)} ${setup.side} ${setup.symbol} triggered inside the wait-after-exit cooldown — dropped`);
+              break;
+            }
             // FILL AT THE LEVEL, never at the bar's high/low. Slippage makes it
             // WORSE: a LONG pays up, a SHORT sells down.
             const fill = setup.side === "LONG" ? setup.entry + SLIP : setup.entry - SLIP;
@@ -1084,7 +1154,7 @@ async function runEarlyBirdBacktest(data, onProgress) {
 
       // NEVER TRIGGERED. This is the headline statistic for this strategy and it
       // is counted, not hidden — a pending order the market never touched.
-      if (!p.triggered) {
+      if (!p.triggered && !p.blocked) {
         row.untriggered++;
         funnel.untriggered++;
         stat.untriggered++;

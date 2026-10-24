@@ -119,6 +119,7 @@ function _freshState() {
     optionLtpUpdatedAt: null,
     log:            [],
     _sessionId:     null,
+    _reentryBlockUntil: 0,     // wait-after-any-exit cooldown (epoch ms)
   };
 }
 
@@ -267,6 +268,15 @@ async function simulateBuy(side, sig) {
   const spot = state.lastTickPrice;
   if (!spot || !side) return;
   if (_entryInFlight || state.position) return;
+  // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES). Manual
+  // entries are the user's own call and bypass it. Logged once per cooldown.
+  if (!(sig && sig.signalStrength === "MANUAL") && state._reentryBlockUntil > Date.now()) {
+    if (state._reentryBlockLogged !== state._reentryBlockUntil) {
+      state._reentryBlockLogged = state._reentryBlockUntil;
+      log(`⏸️ [TREND_PB-PAPER] Wait-after-exit cooldown — no new entry until ~${new Date(state._reentryBlockUntil).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })} (${side} rejected)`);
+    }
+    return;
+  }
   _entryInFlight = true;
   try {
     await _simulateBuyInner(side, sig, spot);
@@ -533,6 +543,8 @@ function simulateSell(reason) {
   state.position = null;
   capitalPool.release("trend_pb", pnl);
   try { require("../utils/positionPersist").clearTrendPbPosition(); } catch (_) {}
+  // Global wait-after-any-exit cooldown — no entry on either side for N candles.
+  state._reentryBlockUntil = tradeGuards.reentryCooldownUntil(Date.now(), RES_MIN);
   state.optionLtp = null;
   state.optionLtpUpdatedAt = null;
   stopOptionPolling();

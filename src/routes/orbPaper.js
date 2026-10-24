@@ -126,6 +126,7 @@ function _freshState() {
     _sessionId:     null,
     _expiryDayBlocked: false,
     _ltpStaleLogged: false,   // one stale-premium warning per trade, not per process
+    _reentryBlockUntil: 0,    // wait-after-any-exit cooldown (epoch ms), see simulateSell
   };
 }
 
@@ -296,6 +297,15 @@ async function simulateBuy(side, sigSnapshot) {
   const spot = state.lastTickPrice;
   if (!spot || !side) return;
   if (_entryInFlight || state.position) return;
+  // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES). Manual
+  // entries are the user's own call and bypass it. Logged once per cooldown.
+  if ((!sigSnapshot || sigSnapshot.signalStrength !== "MANUAL") && state._reentryBlockUntil > Date.now()) {
+    if (state._reentryBlockLogged !== state._reentryBlockUntil) {
+      state._reentryBlockLogged = state._reentryBlockUntil;
+      log(`⏸️ [ORB-PAPER] Wait-after-exit cooldown — no new entry until ~${new Date(state._reentryBlockUntil).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })} (${side} @ spot ${spot} rejected)`);
+    }
+    return;
+  }
   _entryInFlight = true;
   try {
     await _simulateBuyInner(side, sigSnapshot, spot);
@@ -580,6 +590,8 @@ function simulateSell(reason) {
   } catch (_) {}
 
   state.position = null;
+  // Global wait-after-any-exit cooldown — no entry on either side for N candles.
+  state._reentryBlockUntil = tradeGuards.reentryCooldownUntil(Date.now(), RES_MIN);
   capitalPool.release("orb", pnl);
   try { require("../utils/positionPersist").clearOrbPosition(); } catch (_) {}
   state.optionLtp = null;

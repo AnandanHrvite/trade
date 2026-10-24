@@ -70,6 +70,7 @@ const router  = express.Router();
 
 const engine             = require("../strategies/ema_rsi_st_v2");
 const confirmCandle      = require("../utils/confirmCandle");
+const tradeGuards        = require("../utils/tradeGuards");
 const { fetchCandles }   = require("../services/backtestEngine");
 const { fyersErrText }   = require("../utils/fyersErr");
 const { faviconLink }    = require("../utils/sharedNav");
@@ -191,7 +192,7 @@ async function runBnEmaRsiStV2Backtest(candles, activeFromTs) {
     gateStats: { setups: 0, confirmArmed: 0, confirmFilled: 0, confirmExpired: 0,
                  blockedWarmup: 0, blockedWindow: 0, blockedMaxTrades: 0,
                  blockedDayLoss: 0, blockedConsecLoss: 0, blockedSlPause: 0,
-                 blockedOppCooldown: 0 },
+                 blockedOppCooldown: 0, blockedReentry: 0 },
   };
   if (!Array.isArray(candles) || !candles.length) return empty;
 
@@ -206,6 +207,10 @@ async function runBnEmaRsiStV2Backtest(candles, activeFromTs) {
   const LOT_SIZE  = instrumentConfig.getLotQty(UNDERLYING);   // 30 on BANKNIFTY, never NIFTY's 65
   const RES       = g.resolutionMins > 0 ? g.resolutionMins : 5;
   const SLIP      = g.slippagePts;
+  // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES), secs.
+  // Paper measures it from the exit's clock time: a tick stop exits INSIDE the
+  // bar (≈ bar open here), a candle-close rule exits at the bar's CLOSE.
+  const REENTRY_COOLDOWN_SECS = tradeGuards.reentryCooldownMs(RES) / 1000;
 
   const sorted = candles.slice().sort((a, b) => a.time - b.time);
 
@@ -255,6 +260,7 @@ async function runBnEmaRsiStV2Backtest(candles, activeFromTs) {
     let pauseUntilIdx = -1;        // SL_PAUSE_CANDLES — index (global) to resume at
     let oppCooldownSide = null;    // side we may NOT take
     let oppCooldownUntilIdx = -1;
+    let reentryBlockUntilTs = 0;   // wait-after-any-exit — no entry on a bar opening before this
     let pos = null;
     let armed = null;              // { side, triggerLevel, barTime, signal }
 
@@ -282,7 +288,7 @@ async function runBnEmaRsiStV2Backtest(candles, activeFromTs) {
       };
     }
 
-    function close(exitPx, exitTime, reason, globalIdx) {
+    function close(exitPx, exitTime, reason, globalIdx, atBarClose = false) {
       const p = priceAt(exitPx, exitTime);
       dayPnl += p.pnl;
       const spotPts = parseFloat(
@@ -321,6 +327,10 @@ async function runBnEmaRsiStV2Backtest(candles, activeFromTs) {
         // stops a whipsaw pair.
         oppCooldownSide     = pos.side === "CE" ? "PE" : "CE";
         oppCooldownUntilIdx = globalIdx + g.oppCooldownCandles;
+      }
+      // Wait-after-any-exit cooldown — every exit reason, both sides.
+      if (REENTRY_COOLDOWN_SECS > 0) {
+        reentryBlockUntilTs = exitTime + (atBarClose ? RES * 60 : 0) + REENTRY_COOLDOWN_SECS;
       }
       pos = null;
       armed = null;
@@ -439,7 +449,7 @@ async function runBnEmaRsiStV2Backtest(candles, activeFromTs) {
       // so it runs only after the adverse stop above had its chance.
       if (pos && sigSide && sigSide !== pos.side) {
         close(c.close, c.time,
-          `Opposite signal — engine printed BUY_${sigSide} while long ${pos.side}`, gIdx);
+          `Opposite signal — engine printed BUY_${sigSide} while long ${pos.side}`, gIdx, true);
       }
 
       // ── 4. Confirmation-candle fill ────────────────────────────────────────
@@ -450,11 +460,13 @@ async function runBnEmaRsiStV2Backtest(candles, activeFromTs) {
           // The entry window is honoured on the CONFIRMATION bar too — a trigger
           // armed at 12:59 must not fill at 13:04.
           const inWindow = istMin >= g.entryStartMin && istMin < g.entryEndMin;
-          if (fill != null && inWindow && !dayClosed && istMin < g.eodExitMin) {
+          const reentryBlocked = c.time < reentryBlockUntilTs;
+          if (fill != null && inWindow && !dayClosed && istMin < g.eodExitMin && !reentryBlocked) {
             openPosition(armed.side, fill, c.time, armed.signal, gIdx);
             gateStats.confirmFilled++;
           } else {
             if (fill != null && !inWindow) gateStats.blockedWindow++;
+            else if (fill != null && reentryBlocked) gateStats.blockedReentry++;
             gateStats.confirmExpired++;
           }
           armed = null;
@@ -483,6 +495,9 @@ async function runBnEmaRsiStV2Backtest(candles, activeFromTs) {
             signal: sig,
           };
           gateStats.confirmArmed++;
+        } else if (c.time < reentryBlockUntilTs) {
+          // Confirmation off — paper's simulateBuy rejects inside the wait-after-exit window.
+          gateStats.blockedReentry++;
         } else {
           // Confirmation off — paper enters at the signal bar's close.
           openPosition(sigSide, c.close, c.time, sig, gIdx);
@@ -493,7 +508,7 @@ async function runBnEmaRsiStV2Backtest(candles, activeFromTs) {
     // Anything still open at the last bar of the session is squared off there.
     if (pos) {
       const last = bars[bars.length - 1];
-      close(last.close, last.time, "EOD (end of day candles)", globalIndex.get(last.time));
+      close(last.close, last.time, "EOD (end of day candles)", globalIndex.get(last.time), true);
     }
 
   }

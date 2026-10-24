@@ -436,6 +436,8 @@ const _SETTINGS_KEY_MATCHERS = [
   //   instrument keys (strike grid, lot size, expiry) read by instrument.js.
   /^SAIL_VWAP_ST_/,
   /^SAIL_/,
+  //   EXIT_REENTRY_* — the global wait-after-any-exit cooldown; it blocks entries.
+  /^EXIT_REENTRY_/,
 ];
 
 function snapshotSettings() {
@@ -452,6 +454,7 @@ function snapshotSettings() {
   }
   if (out.PROFIT_LOCK_TRAIL_PCT === undefined) out.PROFIT_LOCK_TRAIL_PCT = "70";
   if (out.PROFIT_LOCK_TRAIL_TIERS === undefined) out.PROFIT_LOCK_TRAIL_TIERS = "20:85,40:80";
+  if (out.EXIT_REENTRY_COOLDOWN_CANDLES === undefined) out.EXIT_REENTRY_COOLDOWN_CANDLES = "2";
   return out;
 }
 
