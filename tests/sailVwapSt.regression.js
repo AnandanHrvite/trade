@@ -162,8 +162,11 @@ test("NIFTY / BANKNIFTY rows are unchanged by the SAIL row", () => {
   assert.strictEqual(instrument.underlyingOf(undefined).key, "NIFTY");
 });
 test("SAIL feed/health gate follows SAIL_VWAP_ST_MODE_ENABLED; indices always on", () => {
-  assert.strictEqual(instrument.isUnderlyingEnabled("SAIL"), false);
+  // SAIL_PIVOT_EMA_ST (default ON) also enables SAIL, so pin it OFF to test this toggle alone.
+  withEnv({ SAIL_PIVOT_EMA_ST_MODE_ENABLED: "false" }, () => assert.strictEqual(instrument.isUnderlyingEnabled("SAIL"), false));
   withEnv({ SAIL_VWAP_ST_MODE_ENABLED: "true" }, () => assert.strictEqual(instrument.isUnderlyingEnabled("SAIL"), true));
+  // Either toggle is enough: SAIL_PIVOT_EMA_ST unset = ON.
+  withEnv({ SAIL_VWAP_ST_MODE_ENABLED: "false" }, () => assert.strictEqual(instrument.isUnderlyingEnabled("SAIL"), true));
   assert.strictEqual(instrument.isUnderlyingEnabled("NIFTY"), true);
   assert.strictEqual(instrument.isUnderlyingEnabled("BANKNIFTY"), true);
 });

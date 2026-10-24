@@ -1271,6 +1271,87 @@ function clearSailVwapStPosition() {
   console.log("[PERSIST] SAIL_VWAP_ST position file cleared.");
 }
 
+// ── PIVOT_EMA_ST family (pivot zone + EMA20/50 cross + SuperTrend, Zerodha) ──
+// NIFTY / BANK NIFTY / SAIL, each on its OWN file. Same shape as the
+// ST_RSI_PIV_BB block: exactly ONE stop, the SuperTrend line — the initial stop
+// AND the trail, tightened on every closed candle and never widened. `stopLoss`
+// is live trail state, persisted at its CURRENT value and never re-derived from
+// the entry on load. One builder, three instances, so the three cannot drift.
+function _makePivotEmaStPersist(label, file) {
+  function save(position, sessionMeta) {
+    try {
+      if (!position) { _persistAtomic(file, null); return; }
+      const data = {
+        position: {
+          side:            position.side,
+          symbol:          position.symbol,
+          qty:             position.qty,
+          entryPrice:      position.entryPrice,
+          spotAtEntry:     position.spotAtEntry || position.entrySpot,
+          // The SuperTrend trail — the only stop, at its CURRENT tightened value.
+          stopLoss:        position.stopLoss != null ? position.stopLoss : position.slSpot,
+          initialStopLoss: position.initialStopLoss != null ? position.initialStopLoss : position.initialSlSpot,
+          bestPrice:       position.bestPrice,
+          entryUnixSec:    position.entryUnixSec,
+          entryTime:       position.entryTime,
+          entryBarTime:    position.entryBarTime ?? null,
+          signalBarTime:   position.signalBarTime ?? null,
+          candlesHeld:     position.candlesHeld ?? null,
+          orderId:         position.orderId,
+          isFutures:       !!position.isFutures,
+          optionEntryLtp:  position.optionEntryLtp,
+          optionStrike:    position.optionStrike,
+          optionExpiry:    position.optionExpiry,
+          optionType:      position.optionType || position.side,
+          signalStrength:  position.signalStrength,
+        },
+        sessionMeta: sessionMeta || {},
+        savedAt: Date.now(),
+        savedDate: new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
+      };
+      _persistAtomic(file, JSON.stringify(data, null, 2));
+      console.log(`💾 [PERSIST] ${label} position saved: ${position.side} ${position.symbol} @ ₹${position.entryPrice}`);
+    } catch (err) {
+      console.warn(`⚠️ [PERSIST] Could not save ${label} position: ${err.message}`);
+    }
+  }
+  function load() {
+    try {
+      if (!fs.existsSync(file)) return null;
+      const data = _readSnapshot(file);
+      if (!data) return null;
+      const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+      if (data.savedDate && data.savedDate !== today) {
+        console.log(`[PERSIST] Stale ${label} position from ${data.savedDate} — ignoring; kept until the boot reconcile has checked the broker.`);
+        _markStale(file, data);
+        return null;
+      }
+      if (data.position) console.log(`[PERSIST] ${label} position loaded: ${data.position.side} ${data.position.symbol} @ ₹${data.position.entryPrice}`);
+      return data;
+    } catch (err) {
+      console.warn(`[PERSIST] Could not load ${label} position: ${err.message}`);
+      return null;
+    }
+  }
+  function clear() {
+    _persistAtomic(file, null);
+    console.log(`[PERSIST] ${label} position file cleared.`);
+  }
+  return { save, load, clear };
+}
+const _pivotEmaStPersist     = _makePivotEmaStPersist("PIVOT_EMA_ST", path.join(DATA_DIR, ".active_pivot_ema_st_position.json"));
+const _bnPivotEmaStPersist   = _makePivotEmaStPersist("BN_PIVOT_EMA_ST", path.join(DATA_DIR, ".active_bn_pivot_ema_st_position.json"));
+const _sailPivotEmaStPersist = _makePivotEmaStPersist("SAIL_PIVOT_EMA_ST", path.join(DATA_DIR, ".active_sail_pivot_ema_st_position.json"));
+function savePivotEmaStPosition(position, sessionMeta) { return _pivotEmaStPersist.save(position, sessionMeta); }
+function loadPivotEmaStPosition() { return _pivotEmaStPersist.load(); }
+function clearPivotEmaStPosition() { return _pivotEmaStPersist.clear(); }
+function saveBnPivotEmaStPosition(position, sessionMeta) { return _bnPivotEmaStPersist.save(position, sessionMeta); }
+function loadBnPivotEmaStPosition() { return _bnPivotEmaStPersist.load(); }
+function clearBnPivotEmaStPosition() { return _bnPivotEmaStPersist.clear(); }
+function saveSailPivotEmaStPosition(position, sessionMeta) { return _sailPivotEmaStPersist.save(position, sessionMeta); }
+function loadSailPivotEmaStPosition() { return _sailPivotEmaStPersist.load(); }
+function clearSailPivotEmaStPosition() { return _sailPivotEmaStPersist.clear(); }
+
 // ── SIMPLE_9:30 (09:25 ITM pick, premium-trigger entry, Zerodha) ────────────
 // Unlike the frozen-price strategies above, this one DOES
 // carry live trail state: `stop` ratchets up behind `peak` on every new premium
@@ -1497,6 +1578,9 @@ module.exports = {
   saveBnEmaRsiStV2Position, loadBnEmaRsiStV2Position, clearBnEmaRsiStV2Position,
   saveStRsiPivBbPosition, loadStRsiPivBbPosition, clearStRsiPivBbPosition,
   saveSailVwapStPosition, loadSailVwapStPosition, clearSailVwapStPosition,
+  savePivotEmaStPosition, loadPivotEmaStPosition, clearPivotEmaStPosition,
+  saveBnPivotEmaStPosition, loadBnPivotEmaStPosition, clearBnPivotEmaStPosition,
+  saveSailPivotEmaStPosition, loadSailPivotEmaStPosition, clearSailPivotEmaStPosition,
   saveSimple930Position, loadSimple930Position, clearSimple930Position,
   // Boot-reconcile helpers (corrupt files moved aside, previous-day snapshots kept)
   getCorruptSnapshots, getStaleSnapshots, clearStaleSnapshot,

@@ -54,6 +54,10 @@ const PAPER_SOURCES = [
   { mode: "ST_RSI_PIV_BB", file: "st_rsi_piv_bb_paper_trades.json" },
   // SAIL_VWAP_ST — a different underlying (SAIL stock) is a different edge.
   { mode: "SAIL_VWAP_ST", file: "sail_vwap_st_paper_trades.json" },
+  // PIVOT_EMA_ST family — one rule set, three underlyings = three edges.
+  { mode: "PIVOT_EMA_ST", file: "pivot_ema_st_paper_trades.json" },
+  { mode: "BN_PIVOT_EMA_ST", file: "bn_pivot_ema_st_paper_trades.json" },
+  { mode: "SAIL_PIVOT_EMA_ST", file: "sail_pivot_ema_st_paper_trades.json" },
   { mode: "BB_RSI",    file: "bb_rsi_paper_trades.json" },
   { mode: "PA",       file: "pa_paper_trades.json" },
   { mode: "ORB",      file: "orb_paper_trades.json" },
@@ -75,6 +79,9 @@ const LIVE_SOURCES = [
   { mode: "BN_EMA_RSI_ST_V2", file: "bn_ema_rsi_st_v2_live_trades.json" },
   { mode: "ST_RSI_PIV_BB", file: "st_rsi_piv_bb_live_trades.json" },
   { mode: "SAIL_VWAP_ST", file: "sail_vwap_st_live_trades.json" },
+  { mode: "PIVOT_EMA_ST", file: "pivot_ema_st_live_trades.json" },
+  { mode: "BN_PIVOT_EMA_ST", file: "bn_pivot_ema_st_live_trades.json" },
+  { mode: "SAIL_PIVOT_EMA_ST", file: "sail_pivot_ema_st_live_trades.json" },
   { mode: "BB_RSI",    file: "bb_rsi_live_trades.json" },
   { mode: "PA",       file: "pa_live_trades.json" },
   { mode: "ORB",      file: "orb_live_trades.json" },
@@ -99,6 +106,13 @@ for (const [c, cl] of [["CRUDE", "Crude Oil"], ["GOLD", "Gold"], ["SILVER", "Sil
     CMX_SOURCES.push({ mode: `CMX_${c}_${st}`, label: `${cl} · ${st}`,
                        file: `cmx/${id}_paper_trades.json`, modeKey: `CMX_${c}_${st}_MODE_ENABLED` });
   }
+}
+// PIVOT_EMA_ST commodity pages — same shape; their toggle defaults ON (modeDefault).
+for (const [c, cl] of [["CRUDE", "Crude Oil"], ["GOLD", "Gold"], ["SILVER", "Silver"]]) {
+  const st = "PIVOT_EMA_ST";
+  const id = `cmx_${c.toLowerCase()}_${st.toLowerCase()}`;
+  CMX_SOURCES.push({ mode: `CMX_${c}_${st}`, label: `${cl} · ${st}`,
+                     file: `cmx/${id}_paper_trades.json`, modeKey: `CMX_${c}_${st}_MODE_ENABLED`, modeDefault: "true" });
 }
 
 // Which market a strategy trades — the same split the Consolidation Report tables use.
@@ -253,7 +267,7 @@ router.get("/", (req, res) => {
   // per-strategy table, or the "All" totals. Filtered per-request, never cached:
   // Settings saves mutate process.env while the process is running.
   // COMMODITY engines only count while their own page toggle is on.
-  const cmxOn      = CMX_SOURCES.filter(x => (process.env[x.modeKey] || "false").toLowerCase() === "true");
+  const cmxOn      = CMX_SOURCES.filter(x => (process.env[x.modeKey] || x.modeDefault || "false").toLowerCase() === "true");
   const enabled    = [...enabledStrategies().map(x => ({ mode: x.mode, label: x.label })),
                       ...cmxOn.map(x => ({ mode: x.mode, label: x.label }))];
   const enabledSet = new Set(enabled.map(x => x.mode));
@@ -393,6 +407,9 @@ ${multiSelectCSS()}
     .badge-BN_EMA_RSI_ST_V2{background:rgba(45,212,191,0.12);color:#2dd4bf;border:0.5px solid rgba(45,212,191,0.3);}
     .badge-ST_RSI_PIV_BB{background:rgba(163,230,53,0.12);color:#a3e635;border:0.5px solid rgba(163,230,53,0.3);}
     .badge-SAIL_VWAP_ST{background:rgba(253,164,175,0.12);color:#fda4af;border:0.5px solid rgba(253,164,175,0.3);}
+    .badge-PIVOT_EMA_ST{background:rgba(56,189,248,0.12);color:#38bdf8;border:0.5px solid rgba(56,189,248,0.3);}
+    .badge-BN_PIVOT_EMA_ST{background:rgba(244,114,182,0.12);color:#f472b6;border:0.5px solid rgba(244,114,182,0.3);}
+    .badge-SAIL_PIVOT_EMA_ST{background:rgba(252,211,77,0.12);color:#fcd34d;border:0.5px solid rgba(252,211,77,0.3);}
     .badge-BB_RSI{background:rgba(245,158,11,0.12);color:#f59e0b;border:0.5px solid rgba(245,158,11,0.3);}
     .badge-PA{background:rgba(168,85,247,0.12);color:#a855f7;border:0.5px solid rgba(168,85,247,0.3);}
     .badge-ORB{background:rgba(16,185,129,0.12);color:#10b981;border:0.5px solid rgba(16,185,129,0.3);}

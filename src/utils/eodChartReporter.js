@@ -73,6 +73,10 @@ const STRATEGIES = [
   { group: "ST_RSI_PIV_BB", label: "ST_RSI_PIV_BB", module: "../routes/stRsiPivBbPaper" },
   // SAIL stock options: VWAP cross + breakout, SuperTrend stop.
   { group: "SAIL_VWAP_ST", label: "SAIL_VWAP_ST", module: "../routes/sailVwapStPaper" },
+  // PIVOT_EMA_ST family — pivot zone + EMA20/50 cross + SuperTrend.
+  { group: "PIVOT_EMA_ST", label: "PIVOT_EMA_ST", module: "../routes/pivotEmaStPaper" },
+  { group: "BN_PIVOT_EMA_ST", label: "BN_PIVOT_EMA_ST (NIFTY BANK)", module: "../routes/bnPivotEmaStPaper" },
+  { group: "SAIL_PIVOT_EMA_ST", label: "SAIL_PIVOT_EMA_ST", module: "../routes/sailPivotEmaStPaper" },
   // SIMPLE_9:30 draws the OPTION PREMIUM of the leg it held, not a spot chart —
   // that is the only chart any of its rules read.
   { group: "SIMPLE930",    label: "SIMPLE 9:30",       module: "../routes/simple930Paper" },

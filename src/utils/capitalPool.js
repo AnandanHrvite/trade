@@ -91,6 +91,9 @@ const STRATEGIES = {
   st_rsi_piv_bb: { broker: "zerodha", label: "ST_RSI_PIV_BB", file: "st_rsi_piv_bb_paper_trades.json" },
   // SAIL_VWAP_ST — SAIL stock options, Zerodha orders, so it draws from ZERODHA_INV_AMOUNT.
   sail_vwap_st: { broker: "zerodha", label: "SAIL_VWAP_ST", file: "sail_vwap_st_paper_trades.json" },
+  pivot_ema_st: { broker: "zerodha", label: "PIVOT_EMA_ST", file: "pivot_ema_st_paper_trades.json" },
+  bn_pivot_ema_st: { broker: "zerodha", label: "BN_PIVOT_EMA_ST", file: "bn_pivot_ema_st_paper_trades.json" },
+  sail_pivot_ema_st: { broker: "zerodha", label: "SAIL_PIVOT_EMA_ST", file: "sail_pivot_ema_st_paper_trades.json" },
   simple930: { broker: "zerodha", label: "SIMPLE_9:30", file: "simple930_paper_trades.json" },
   ha_scalp:  { broker: "zerodha", label: "HA_SCALP",    file: "ha_scalp_paper_trades.json"  },
   prev_orb_scalp: { broker: "zerodha", label: "PREV_ORB_SCALP", file: "prev_orb_scalp_paper_trades.json" },
@@ -106,6 +109,11 @@ for (const c of ["crude", "gold", "silver"]) {
     const id = `cmx_${c}_${v}`;
     STRATEGIES[id] = { broker: "commodity", label: `${name} (${c.toUpperCase()})`, file: path.join("cmx", `${id}_paper_trades.json`), days: true };
   }
+}
+// PIVOT_EMA_ST commodity pages — same shape as the loop above.
+for (const c of ["crude", "gold", "silver"]) {
+  const id = `cmx_${c}_pivot_ema_st`;
+  STRATEGIES[id] = { broker: "commodity", label: `PIVOT_EMA_ST (${c.toUpperCase()})`, file: path.join("cmx", `${id}_paper_trades.json`), days: true };
 }
 
 const BROKER_ENV = { zerodha: "ZERODHA_INV_AMOUNT", fyers: "FYERS_INV_AMOUNT", commodity: "CMX_STARTING_CAPITAL" };

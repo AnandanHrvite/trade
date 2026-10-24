@@ -65,6 +65,13 @@ function _activeZerodhaModes() {
     const m = sharedSocketState.getSailVwapStMode && sharedSocketState.getSailVwapStMode();
     if (m && /^SAIL_VWAP_ST_(PAPER|LIVE)$/.test(m) && !out.includes(m)) out.push(m);
   } catch (_) {}
+  // PIVOT_EMA_ST family (NIFTY / BANK NIFTY / SAIL) — Fyers candles, Zerodha orders.
+  for (const g of ["getPivotEmaStMode", "getBnPivotEmaStMode", "getSailPivotEmaStMode"]) {
+    try {
+      const m = sharedSocketState[g] && sharedSocketState[g]();
+      if (m && /^(SAIL_|BN_)?PIVOT_EMA_ST_(PAPER|LIVE)$/.test(m) && !out.includes(m)) out.push(m);
+    } catch (_) {}
+  }
   return out;
 }
 

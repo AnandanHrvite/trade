@@ -436,6 +436,10 @@ const _SETTINGS_KEY_MATCHERS = [
   //   instrument keys (strike grid, lot size, expiry) read by instrument.js.
   /^SAIL_VWAP_ST_/,
   /^SAIL_/,
+  //   PIVOT_EMA_ST family — none is matched by an older prefix (/^PA_/ needs
+  //   "PA_", /^BN_PIVOT_RSI_ST_/ the RSI name); SAIL_PIVOT_EMA_ST_* is already
+  //   inside /^SAIL_/ and listed for clarity only.
+  /^PIVOT_EMA_ST_/, /^BN_PIVOT_EMA_ST_/, /^SAIL_PIVOT_EMA_ST_/,
   //   EXIT_REENTRY_* — the global wait-after-any-exit cooldown; it blocks entries.
   /^EXIT_REENTRY_/,
 ];

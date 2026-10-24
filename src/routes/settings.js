@@ -903,6 +903,104 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
+    section: "PIVOT_EMA_ST STRATEGY (Pivot zone + EMA20/50 cross + SuperTrend) — Zerodha",
+    icon: "\u{1F3AF}",
+    nav: "PIVOT_EMA_ST",
+    group: "Strategies",
+    fields: [
+      // NIFTY: one CLOSED candle must close inside the pivot zone (CE: PP <
+      // close < R1, PE: S1 < close < PP), see EMA20 cross EMA50 on that same
+      // candle, and have SuperTrend agreeing. The SuperTrend line is the stop,
+      // trailed on candle close only. Pivots = yesterday's daily H/L/C
+      // (Traditional). Every key is its own PIVOT_EMA_ST_* key and every default
+      // below equals the engine's code default (src/strategies/pivot_ema_st.js).
+      // Paper + Live harness only — no backtest page, not replayable.
+      { key: "PIVOT_EMA_ST_LIVE_ENABLED", label: "PIVOT_EMA_ST Live Orders (gates /pivot_ema_st-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Send real orders to Zerodha. NEVER traded live — paper-validate a run of sessions first. Off means the harness refuses to start unless the global dry-run is also on.", default: "false", subheader: "Live" },
+      { key: "PIVOT_EMA_ST_LIVE_DRY_RUN", label: "PIVOT_EMA_ST Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep this strategy simulated even when live orders are switched on — the broker call is written to the log but no real order leaves the machine. A per-strategy safety catch on top of the global one.", default: "false" },
+
+      // ── Chart & signal ──
+      { key: "PIVOT_EMA_ST_TF", label: "Candle Timeframe", type: "select", options: [{ value: "3", label: "3 — 3-min candles (default)" }, { value: "5", label: "5 — 5-min candles" }, { value: "15", label: "15 — 15-min candles" }], effect: EFFECT.SESSION, desc: "Which NIFTY candle the whole strategy reads — the pivot zone, the EMA cross, the SuperTrend and the stop all run on this one chart. Takes effect at the next Start.", default: "3", subheader: "Chart & signal" },
+      { key: "PIVOT_EMA_ST_EMA_FAST", label: "Fast EMA Period", type: "number", min: 2, max: 400, step: 1, effect: EFFECT.INSTANT, desc: "The fast EMA in the crossover. A CE needs it to cross ABOVE the slow EMA on the signal candle itself (the bar before: fast ≤ slow; this bar: fast > slow), and the cross level — (fast + slow) / 2 on that candle — must sit inside the same zone as the close (PP–R1 for CE, S1–PP for PE). A cross on an earlier candle, or outside the zone, does not count.", default: "20" },
+      { key: "PIVOT_EMA_ST_EMA_SLOW", label: "Slow EMA Period", type: "number", min: 2, max: 400, step: 1, effect: EFFECT.INSTANT, desc: "The slow EMA in the crossover. Must be longer than the fast EMA — if it is not, the engine falls back to 50.", default: "50" },
+      { key: "PIVOT_EMA_ST_ST_PERIOD", label: "SuperTrend ATR Period", type: "number", min: 2, max: 100, step: 1, effect: EFFECT.INSTANT, desc: "ATR length behind the SuperTrend line. The line does two jobs: its colour must agree with the trade (green for CE, red for PE), and the line itself is the stop — its value on the signal candle is the first stop, then it trails.", default: "10" },
+      { key: "PIVOT_EMA_ST_ST_MULT", label: "SuperTrend Multiplier", type: "number", min: 0.1, max: 10, step: 0.1, effect: EFFECT.INSTANT, desc: "How many ATRs away from price the SuperTrend line sits. Example: ATR 15 pts × 3 = the line sits about 45 pts from price. Smaller = a tighter stop that is hit more often; larger = more room and bigger losses when it is hit.", default: "3" },
+
+      // ── Session window ──
+      { key: "PIVOT_EMA_ST_ENTRY_START", label: "Entry Window Start", type: "time", effect: EFFECT.SESSION, desc: "No entries on a signal candle that closes before this time (IST). While the Common Trade Rules trade window is on, it sets this.", default: "10:00", subheader: "Session window" },
+      { key: "PIVOT_EMA_ST_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No NEW entries on a signal candle that closes after this time (IST). A position already open is not affected.", default: "14:00" },
+      { key: "PIVOT_EMA_ST_EOD_EXIT_TIME", label: "Forced Exit (square-off)", type: "time", effect: EFFECT.SESSION, desc: "Anything still open is closed at this time (IST), stop or no stop. Nothing is carried overnight.", default: "15:00" },
+      { key: "PIVOT_EMA_ST_WARMUP_DAYS", label: "Warm-up Days", type: "number", min: 1, max: 15, step: 1, effect: EFFECT.SESSION, desc: "How many earlier trading days of candles are loaded before the session so EMA50 and SuperTrend start the day settled. EMA50 on 3-min candles needs about 56 bars — more than half a session — so without warm-up the first signals would not come until after midday. On 5-min or 15-min candles it is raised automatically to 5 or 11 days so EMA50 matches the chart.", default: "3" },
+
+      // ── Day guards ──
+      { key: "PIVOT_EMA_ST_MAX_DAILY_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Stop taking new entries once this many trades are done for the day.", default: "3", subheader: "Day guards" },
+      { key: "PIVOT_EMA_ST_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 0, max: 50000, step: 250, effect: EFFECT.SESSION, desc: "Stop trading for the rest of the day once losses reach this much (0 = off). Example: at 5000, two losers of ₹2,600 each (₹5,200) end the day.", default: "5000" },
+    ],
+  },
+  {
+    section: "BN_PIVOT_EMA_ST STRATEGY (NIFTY BANK — Pivot zone + EMA20/50 cross + SuperTrend) — Zerodha",
+    icon: "\u{1F3E6}",
+    nav: "BN_PIVOT_EMA_ST",
+    group: "Strategies",
+    fields: [
+      // NIFTY BANK copy of PIVOT_EMA_ST — the same rules (src/strategies/pivot_ema_st.js)
+      // on NSE:NIFTYBANK-INDEX, with its own BN_PIVOT_EMA_ST_* keys and its own
+      // position, so it runs side by side with the NIFTY one.
+      // Paper + Live harness only — no backtest page, not replayable.
+      { key: "BN_PIVOT_EMA_ST_LIVE_ENABLED", label: "BN_PIVOT_EMA_ST Live Orders (gates /bn_pivot_ema_st-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Send real BANK NIFTY option orders to Zerodha. NEVER traded live — paper-validate a run of sessions first. Off means the harness refuses to start unless the global dry-run is also on.", default: "false", subheader: "Live" },
+      { key: "BN_PIVOT_EMA_ST_LIVE_DRY_RUN", label: "BN_PIVOT_EMA_ST Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep this strategy simulated even when live orders are switched on — the broker call is written to the log but no real order leaves the machine. A per-strategy safety catch on top of the global one.", default: "false" },
+
+      // ── Chart & signal ──
+      { key: "BN_PIVOT_EMA_ST_TF", label: "Candle Timeframe", type: "select", options: [{ value: "3", label: "3 — 3-min candles (default)" }, { value: "5", label: "5 — 5-min candles" }, { value: "15", label: "15 — 15-min candles" }], effect: EFFECT.SESSION, desc: "Which NIFTY BANK candle the whole strategy reads — the pivot zone, the EMA cross, the SuperTrend and the stop all run on this one chart. Takes effect at the next Start.", default: "3", subheader: "Chart & signal" },
+      { key: "BN_PIVOT_EMA_ST_EMA_FAST", label: "Fast EMA Period", type: "number", min: 2, max: 400, step: 1, effect: EFFECT.INSTANT, desc: "The fast EMA in the crossover. A CE needs it to cross ABOVE the slow EMA on the signal candle itself (the bar before: fast ≤ slow; this bar: fast > slow), and the cross level — (fast + slow) / 2 on that candle — must sit inside the same zone as the close (PP–R1 for CE, S1–PP for PE). A cross on an earlier candle, or outside the zone, does not count.", default: "20" },
+      { key: "BN_PIVOT_EMA_ST_EMA_SLOW", label: "Slow EMA Period", type: "number", min: 2, max: 400, step: 1, effect: EFFECT.INSTANT, desc: "The slow EMA in the crossover. Must be longer than the fast EMA — if it is not, the engine falls back to 50.", default: "50" },
+      { key: "BN_PIVOT_EMA_ST_ST_PERIOD", label: "SuperTrend ATR Period", type: "number", min: 2, max: 100, step: 1, effect: EFFECT.INSTANT, desc: "ATR length behind the SuperTrend line. The line does two jobs: its colour must agree with the trade (green for CE, red for PE), and the line itself is the stop — its value on the signal candle is the first stop, then it trails.", default: "10" },
+      { key: "BN_PIVOT_EMA_ST_ST_MULT", label: "SuperTrend Multiplier", type: "number", min: 0.1, max: 10, step: 0.1, effect: EFFECT.INSTANT, desc: "How many ATRs away from price the SuperTrend line sits. Example: ATR 40 pts × 3 = the line sits about 120 pts from price. Smaller = a tighter stop that is hit more often; larger = more room and bigger losses when it is hit.", default: "3" },
+
+      // ── Session window ──
+      { key: "BN_PIVOT_EMA_ST_ENTRY_START", label: "Entry Window Start", type: "time", effect: EFFECT.SESSION, desc: "No entries on a signal candle that closes before this time (IST). While the Common Trade Rules trade window is on, it sets this.", default: "10:00", subheader: "Session window" },
+      { key: "BN_PIVOT_EMA_ST_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No NEW entries on a signal candle that closes after this time (IST). A position already open is not affected.", default: "14:00" },
+      { key: "BN_PIVOT_EMA_ST_EOD_EXIT_TIME", label: "Forced Exit (square-off)", type: "time", effect: EFFECT.SESSION, desc: "Anything still open is closed at this time (IST), stop or no stop. Nothing is carried overnight.", default: "15:00" },
+      { key: "BN_PIVOT_EMA_ST_WARMUP_DAYS", label: "Warm-up Days", type: "number", min: 1, max: 15, step: 1, effect: EFFECT.SESSION, desc: "How many earlier trading days of candles are loaded before the session so EMA50 and SuperTrend start the day settled. EMA50 on 3-min candles needs about 56 bars — more than half a session — so without warm-up the first signals would not come until after midday. On 5-min or 15-min candles it is raised automatically to 5 or 11 days so EMA50 matches the chart.", default: "3" },
+
+      // ── Day guards ──
+      { key: "BN_PIVOT_EMA_ST_MAX_DAILY_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Stop taking new entries once this many trades are done for the day.", default: "3", subheader: "Day guards" },
+      { key: "BN_PIVOT_EMA_ST_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 0, max: 50000, step: 250, effect: EFFECT.SESSION, desc: "Stop trading for the rest of the day once losses reach this much (0 = off). Example: at 5000, two losers of ₹2,600 each (₹5,200) end the day.", default: "5000" },
+    ],
+  },
+  {
+    section: "SAIL_PIVOT_EMA_ST STRATEGY (SAIL — Pivot zone + EMA20/50 cross + SuperTrend) — Zerodha",
+    icon: "\u{1F3ED}",
+    nav: "SAIL_PIVOT_EMA_ST",
+    group: "Strategies",
+    fields: [
+      // SAIL STOCK options (NSE:SAIL-EQ spot, monthly expiry) — the PIVOT_EMA_ST
+      // rules (src/strategies/pivot_ema_st.js) with their own SAIL_PIVOT_EMA_ST_*
+      // keys. The SAIL contract itself (strike grid, lot size, expiry) lives in
+      // Common → PER-INDEX CONFIGURATION → SAIL.
+      // Paper + Live harness only — no backtest page, not replayable.
+      { key: "SAIL_PIVOT_EMA_ST_LIVE_ENABLED", label: "SAIL_PIVOT_EMA_ST Live Orders (gates /sail_pivot_ema_st-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Send real SAIL option orders to Zerodha. NEVER traded live — paper-validate a run of sessions first. Off means the harness refuses to start unless the global dry-run is also on.", default: "false", subheader: "Live" },
+      { key: "SAIL_PIVOT_EMA_ST_LIVE_DRY_RUN", label: "SAIL_PIVOT_EMA_ST Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep this strategy simulated even when live orders are switched on — the broker call is written to the log but no real order leaves the machine. A per-strategy safety catch on top of the global one.", default: "false" },
+
+      // ── Chart & signal ──
+      { key: "SAIL_PIVOT_EMA_ST_TF", label: "Candle Timeframe", type: "select", options: [{ value: "3", label: "3 — 3-min candles (default)" }, { value: "5", label: "5 — 5-min candles" }, { value: "15", label: "15 — 15-min candles" }], effect: EFFECT.SESSION, desc: "Which SAIL candle the whole strategy reads — the pivot zone, the EMA cross, the SuperTrend and the stop all run on this one chart. Takes effect at the next Start.", default: "3", subheader: "Chart & signal" },
+      { key: "SAIL_PIVOT_EMA_ST_EMA_FAST", label: "Fast EMA Period", type: "number", min: 2, max: 400, step: 1, effect: EFFECT.INSTANT, desc: "The fast EMA in the crossover. A CE needs it to cross ABOVE the slow EMA on the signal candle itself (the bar before: fast ≤ slow; this bar: fast > slow), and the cross level — (fast + slow) / 2 on that candle — must sit inside the same zone as the close (PP–R1 for CE, S1–PP for PE). A cross on an earlier candle, or outside the zone, does not count.", default: "20" },
+      { key: "SAIL_PIVOT_EMA_ST_EMA_SLOW", label: "Slow EMA Period", type: "number", min: 2, max: 400, step: 1, effect: EFFECT.INSTANT, desc: "The slow EMA in the crossover. Must be longer than the fast EMA — if it is not, the engine falls back to 50.", default: "50" },
+      { key: "SAIL_PIVOT_EMA_ST_ST_PERIOD", label: "SuperTrend ATR Period", type: "number", min: 2, max: 100, step: 1, effect: EFFECT.INSTANT, desc: "ATR length behind the SuperTrend line. The line does two jobs: its colour must agree with the trade (green for CE, red for PE), and the line itself is the stop — its value on the signal candle is the first stop, then it trails.", default: "10" },
+      { key: "SAIL_PIVOT_EMA_ST_ST_MULT", label: "SuperTrend Multiplier", type: "number", min: 0.1, max: 10, step: 0.1, effect: EFFECT.INSTANT, desc: "How many ATRs away from price the SuperTrend line sits. Example: SAIL ATR ₹0.20 × 3 = the line sits about ₹0.60 from price. Smaller = a tighter stop that is hit more often; larger = more room and bigger losses when it is hit.", default: "3" },
+
+      // ── Session window ──
+      { key: "SAIL_PIVOT_EMA_ST_ENTRY_START", label: "Entry Window Start", type: "time", effect: EFFECT.SESSION, desc: "No entries on a signal candle that closes before this time (IST). While the Common Trade Rules trade window is on, it sets this.", default: "10:00", subheader: "Session window" },
+      { key: "SAIL_PIVOT_EMA_ST_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No NEW entries on a signal candle that closes after this time (IST). A position already open is not affected.", default: "14:00" },
+      { key: "SAIL_PIVOT_EMA_ST_EOD_EXIT_TIME", label: "Forced Exit (square-off)", type: "time", effect: EFFECT.SESSION, desc: "Anything still open is sold at this time (IST), stop or no stop. Nothing is carried overnight.", default: "15:00" },
+      { key: "SAIL_PIVOT_EMA_ST_WARMUP_DAYS", label: "Warm-up Days", type: "number", min: 1, max: 15, step: 1, effect: EFFECT.SESSION, desc: "How many earlier trading days of SAIL candles are loaded before the session so EMA50 and SuperTrend start the day settled. EMA50 on 3-min candles needs about 56 bars — more than half a session — so without warm-up the first signals would not come until after midday. On 5-min or 15-min candles it is raised automatically to 5 or 11 days so EMA50 matches the chart.", default: "3" },
+
+      // ── Size & day guards ──
+      { key: "SAIL_PIVOT_EMA_ST_LOTS", label: "Lots", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "How many lots of SAIL to buy per trade; 1 lot = SAIL_LOT_SIZE = 4700 shares, capped by MAX_LOT_MULTIPLIER. Example: 2 lots of a ₹5.00 option = 9,400 × ₹5 = ₹47,000 of premium.", default: "1", subheader: "Size & day guards" },
+      { key: "SAIL_PIVOT_EMA_ST_MAX_DAILY_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Stop taking new entries once this many trades are done for the day.", default: "3" },
+      { key: "SAIL_PIVOT_EMA_ST_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 0, max: 50000, step: 250, effect: EFFECT.SESSION, desc: "Stop trading for the rest of the day once losses reach this much (0 = off). Example: at 5000, a loss of ₹1.10 per share on 4,700 shares (₹5,170) ends the day.", default: "5000" },
+    ],
+  },
+  {
     section: "BN_EMA_RSI_ST_V2 STRATEGY (NIFTY BANK — EMA20/50 + RSI + SuperTrend trail) — Zerodha",
     icon: "\u{1F3E6}",
     nav: "BN_EMA_RSI_ST_V2",
@@ -1014,6 +1112,15 @@ const SETTINGS_SCHEMA = [
       { key: "CMX_EMA_RSI_ST_V2_EOD_EXIT_TIME", label: "EMA_RSI_ST_V2 — Forced Exit", type: "time", effect: EFFECT.INSTANT, desc: "Anything still open is closed at this time (IST). Nothing is held overnight.", default: "23:00" },
       { key: "CMX_EMA_RSI_ST_V2_MAX_DAILY_TRADES", label: "EMA_RSI_ST_V2 — Max Trades/Day", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "No new entries once this many trades are done for the day, on each commodity page.", default: "3" },
       { key: "CMX_EMA_RSI_ST_V2_MAX_DAILY_LOSS", label: "EMA_RSI_ST_V2 — Max Daily Loss (₹)", type: "number", min: 0, max: 100000, step: 500, effect: EFFECT.INSTANT, desc: "Stop for the day once losses reach this much (0 = off). Counted per commodity page — never mixed with NIFTY trades.", default: "5000" },
+      // PIVOT_EMA_ST on the futures — signal rules read the NIFTY PIVOT_EMA_ST_*
+      // EMA / SuperTrend keys; pivots come from the previous MCX day.
+      { key: "CMX_PIVOT_EMA_ST_RESOLUTION", label: "PIVOT_EMA_ST — Candle Size (min)", type: "number", min: 1, max: 60, step: 1, effect: EFFECT.SESSION, desc: "Candle length the PIVOT_EMA_ST rules run on, for every commodity (the NIFTY PIVOT_EMA_ST_TF is not used here). Takes effect on the next Start.", default: "3", subheader: "PIVOT_EMA_ST" },
+      { key: "CMX_PIVOT_EMA_ST_LOTS", label: "PIVOT_EMA_ST — Lots", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "Lots per paper trade, on each commodity page of this strategy. Example: 1 Crude Oil lot = 100 barrels, so a ₹10 premium move is ₹1,000.", default: "1" },
+      { key: "CMX_PIVOT_EMA_ST_ENTRY_START", label: "PIVOT_EMA_ST — Entry Window Start", type: "time", effect: EFFECT.INSTANT, desc: "No new entries before this time (IST). The first hour after the 09:00 open is skipped while the candles settle.", default: "10:00" },
+      { key: "CMX_PIVOT_EMA_ST_ENTRY_END", label: "PIVOT_EMA_ST — Entry Window End", type: "time", effect: EFFECT.INSTANT, desc: "No new entries after this time (IST). An open trade is not affected.", default: "22:30" },
+      { key: "CMX_PIVOT_EMA_ST_EOD_EXIT_TIME", label: "PIVOT_EMA_ST — Forced Exit", type: "time", effect: EFFECT.INSTANT, desc: "Anything still open is closed at this time (IST). Nothing is held overnight.", default: "23:00" },
+      { key: "CMX_PIVOT_EMA_ST_MAX_DAILY_TRADES", label: "PIVOT_EMA_ST — Max Trades/Day", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "No new entries once this many trades are done for the day, on each commodity page.", default: "3" },
+      { key: "CMX_PIVOT_EMA_ST_MAX_DAILY_LOSS", label: "PIVOT_EMA_ST — Max Daily Loss (₹)", type: "number", min: 0, max: 100000, step: 500, effect: EFFECT.INSTANT, desc: "Stop for the day once losses reach this much (0 = off). Counted per commodity page — never mixed with NIFTY trades.", default: "5000" },
     ],
   },
   {
@@ -1229,6 +1336,9 @@ const SETTINGS_SCHEMA = [
       { key: "TG_BN_EMA_RSI_ST_V2_STARTED", label: "BN_EMA_RSI_ST_V2 — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a BN_EMA_RSI_ST_V2 (NIFTY BANK) session starts.", default: "true" },
       { key: "TG_ST_RSI_PIV_BB_STARTED", label: "ST_RSI_PIV_BB — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an ST_RSI_PIV_BB session starts.", default: "true" },
       { key: "TG_SAIL_VWAP_ST_STARTED", label: "SAIL_VWAP_ST — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a SAIL_VWAP_ST session starts.", default: "true" },
+      { key: "TG_PIVOT_EMA_ST_STARTED", label: "PIVOT_EMA_ST — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a PIVOT_EMA_ST session starts.", default: "true" },
+      { key: "TG_BN_PIVOT_EMA_ST_STARTED", label: "BN_PIVOT_EMA_ST — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a BN_PIVOT_EMA_ST (NIFTY BANK) session starts.", default: "true" },
+      { key: "TG_SAIL_PIVOT_EMA_ST_STARTED", label: "SAIL_PIVOT_EMA_ST — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a SAIL_PIVOT_EMA_ST session starts.", default: "true" },
       { key: "TG_CMX_STARTED", label: "Commodity (MCX) — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when any Crude / Gold / Silver paper page starts.", default: "true" },
 
       { key: "TG_EMA_RSI_ST_ENTRY", label: "EMA_RSI_ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST entry.", default: "true", subheader: "Trade Entry" },
@@ -1248,6 +1358,9 @@ const SETTINGS_SCHEMA = [
       { key: "TG_BN_EMA_RSI_ST_V2_ENTRY", label: "BN_EMA_RSI_ST_V2 — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BN_EMA_RSI_ST_V2 (NIFTY BANK) entry.", default: "true" },
       { key: "TG_ST_RSI_PIV_BB_ENTRY", label: "ST_RSI_PIV_BB — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every ST_RSI_PIV_BB entry.", default: "true" },
       { key: "TG_SAIL_VWAP_ST_ENTRY", label: "SAIL_VWAP_ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every SAIL_VWAP_ST entry.", default: "true" },
+      { key: "TG_PIVOT_EMA_ST_ENTRY", label: "PIVOT_EMA_ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every PIVOT_EMA_ST entry.", default: "true" },
+      { key: "TG_BN_PIVOT_EMA_ST_ENTRY", label: "BN_PIVOT_EMA_ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BN_PIVOT_EMA_ST (NIFTY BANK) entry.", default: "true" },
+      { key: "TG_SAIL_PIVOT_EMA_ST_ENTRY", label: "SAIL_PIVOT_EMA_ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every SAIL_PIVOT_EMA_ST entry.", default: "true" },
       { key: "TG_CMX_ENTRY", label: "Commodity (MCX) — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Crude / Gold / Silver paper entry.", default: "true" },
 
       { key: "TG_EMA_RSI_ST_EXIT", label: "EMA_RSI_ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST exit.", default: "true", subheader: "Trade Exit" },
@@ -1267,6 +1380,9 @@ const SETTINGS_SCHEMA = [
       { key: "TG_BN_EMA_RSI_ST_V2_EXIT", label: "BN_EMA_RSI_ST_V2 — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BN_EMA_RSI_ST_V2 (NIFTY BANK) exit.", default: "true" },
       { key: "TG_ST_RSI_PIV_BB_EXIT", label: "ST_RSI_PIV_BB — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every ST_RSI_PIV_BB exit.", default: "true" },
       { key: "TG_SAIL_VWAP_ST_EXIT", label: "SAIL_VWAP_ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every SAIL_VWAP_ST exit.", default: "true" },
+      { key: "TG_PIVOT_EMA_ST_EXIT", label: "PIVOT_EMA_ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every PIVOT_EMA_ST exit.", default: "true" },
+      { key: "TG_BN_PIVOT_EMA_ST_EXIT", label: "BN_PIVOT_EMA_ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BN_PIVOT_EMA_ST (NIFTY BANK) exit.", default: "true" },
+      { key: "TG_SAIL_PIVOT_EMA_ST_EXIT", label: "SAIL_PIVOT_EMA_ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every SAIL_PIVOT_EMA_ST exit.", default: "true" },
       { key: "TG_CMX_EXIT", label: "Commodity (MCX) — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Crude / Gold / Silver paper exit.", default: "true" },
 
       { key: "TG_EMA_RSI_ST_SIGNALS", label: "EMA_RSI_ST — Signal/Skip Alerts", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert why a trade was or wasn't taken.", default: "true", subheader: "Signal / Skip" },
@@ -1291,6 +1407,9 @@ const SETTINGS_SCHEMA = [
       { key: "TG_BN_EMA_RSI_ST_V2_DAYREPORT", label: "BN_EMA_RSI_ST_V2 — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a BN_EMA_RSI_ST_V2 (NIFTY BANK) day summary on stop.", default: "true" },
       { key: "TG_ST_RSI_PIV_BB_DAYREPORT", label: "ST_RSI_PIV_BB — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send an ST_RSI_PIV_BB day summary on stop.", default: "true" },
       { key: "TG_SAIL_VWAP_ST_DAYREPORT", label: "SAIL_VWAP_ST — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a SAIL_VWAP_ST day summary on stop.", default: "true" },
+      { key: "TG_PIVOT_EMA_ST_DAYREPORT", label: "PIVOT_EMA_ST — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a PIVOT_EMA_ST day summary on stop.", default: "true" },
+      { key: "TG_BN_PIVOT_EMA_ST_DAYREPORT", label: "BN_PIVOT_EMA_ST — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a BN_PIVOT_EMA_ST (NIFTY BANK) day summary on stop.", default: "true" },
+      { key: "TG_SAIL_PIVOT_EMA_ST_DAYREPORT", label: "SAIL_PIVOT_EMA_ST — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a SAIL_PIVOT_EMA_ST day summary on stop.", default: "true" },
       { key: "TG_CMX_DAYREPORT", label: "Commodity (MCX) — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a day summary when a Crude / Gold / Silver paper page stops.", default: "true" },
 
       { key: "TG_DAYREPORT_CONSOLIDATED", label: "Consolidated Day Report (Market Close)", type: "toggle", effect: EFFECT.INSTANT, desc: "Send one combined end-of-day summary at 15:30 IST.", default: "true" },
@@ -1404,12 +1523,18 @@ const SETTINGS_SCHEMA = [
       { key: "BN_EMA_RSI_ST_V2_MODE_ENABLED", label: "BN EMA_RSI_ST_V2 Mode (NIFTY BANK)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the BN EMA_RSI_ST_V2 menu and settings. The same rules as EMA_RSI_ST_V2 but traded on NIFTY BANK, with its own settings and its own position — the two can run side by side. Ships OFF and unproven.", default: "false" },
       { key: "ST_RSI_PIV_BB_MODE_ENABLED", label: "ST_RSI_PIV_BB Mode", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the ST_RSI_PIV_BB menu and settings — SuperTrend + RSI + pivot R1/S1 + Bollinger, all four on one candle. Ships OFF because it is unproven — turn it on to paper-trade it.", default: "false" },
       { key: "SAIL_VWAP_ST_MODE_ENABLED", label: "SAIL_VWAP_ST Mode (SAIL stock options)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the SAIL_VWAP_ST menu (under STOCKS) and its settings, and start streaming SAIL prices. It buys SAIL stock options: a 5-min candle closes across VWAP, then a close beyond that candle's high/low within 3 candles, with SuperTrend agreeing. Ships OFF because it is unproven — turn it on to backtest and paper-trade it.", default: "false" },
+      { key: "PIVOT_EMA_ST_MODE_ENABLED", label: "PIVOT_EMA_ST Mode", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the PIVOT_EMA_ST menu (under NIFTY) and its settings, and include it in Start All. NIFTY options: a closed candle inside the pivot zone (PP–R1 for CE, S1–PP for PE) with EMA20 crossing EMA50 on that candle and SuperTrend agreeing. Paper + Live harness only. On by default; unproven — never traded.", default: "true" },
+      { key: "BN_PIVOT_EMA_ST_MODE_ENABLED", label: "BN_PIVOT_EMA_ST Mode (NIFTY BANK)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the BN_PIVOT_EMA_ST menu (under BANK NIFTY) and its settings, and include it in Start All. The PIVOT_EMA_ST rules on NIFTY BANK, with its own settings and position. On by default; unproven — never traded.", default: "true" },
+      { key: "SAIL_PIVOT_EMA_ST_MODE_ENABLED", label: "SAIL_PIVOT_EMA_ST Mode (SAIL stock options)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the SAIL_PIVOT_EMA_ST menu (under STOCKS) and its settings, include it in Start All, and start streaming SAIL prices. The PIVOT_EMA_ST rules on SAIL stock options. On by default; unproven — never traded.", default: "true" },
       { key: "CMX_CRUDE_EMA_RSI_ST_MODE_ENABLED", label: "Crude Oil EMA_RSI_ST Mode (Commodity)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the COMMODITY → Crude Oil → EMA_RSI_ST Paper page and allow it to start. The EMA_RSI_ST rules on MCX crude oil, paper only, separate from every NIFTY strategy. Ships OFF.", default: "false" },
       { key: "CMX_CRUDE_EMA_RSI_ST_V2_MODE_ENABLED", label: "Crude Oil EMA_RSI_ST_V2 Mode (Commodity)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the COMMODITY → Crude Oil → EMA_RSI_ST_V2 Paper page and allow it to start. The EMA_RSI_ST_V2 rules on MCX crude oil, paper only, separate from every NIFTY strategy. Ships OFF.", default: "false" },
       { key: "CMX_GOLD_EMA_RSI_ST_MODE_ENABLED", label: "Gold EMA_RSI_ST Mode (Commodity)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the COMMODITY → Gold → EMA_RSI_ST Paper page and allow it to start. The EMA_RSI_ST rules on MCX gold, paper only, separate from every NIFTY strategy. Ships OFF.", default: "false" },
       { key: "CMX_GOLD_EMA_RSI_ST_V2_MODE_ENABLED", label: "Gold EMA_RSI_ST_V2 Mode (Commodity)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the COMMODITY → Gold → EMA_RSI_ST_V2 Paper page and allow it to start. The EMA_RSI_ST_V2 rules on MCX gold, paper only, separate from every NIFTY strategy. Ships OFF.", default: "false" },
       { key: "CMX_SILVER_EMA_RSI_ST_MODE_ENABLED", label: "Silver EMA_RSI_ST Mode (Commodity)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the COMMODITY → Silver → EMA_RSI_ST Paper page and allow it to start. The EMA_RSI_ST rules on MCX silver, paper only, separate from every NIFTY strategy. Ships OFF.", default: "false" },
       { key: "CMX_SILVER_EMA_RSI_ST_V2_MODE_ENABLED", label: "Silver EMA_RSI_ST_V2 Mode (Commodity)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the COMMODITY → Silver → EMA_RSI_ST_V2 Paper page and allow it to start. The EMA_RSI_ST_V2 rules on MCX silver, paper only, separate from every NIFTY strategy. Ships OFF.", default: "false" },
+      { key: "CMX_CRUDE_PIVOT_EMA_ST_MODE_ENABLED", label: "Crude Oil PIVOT_EMA_ST Mode (Commodity)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the COMMODITY → Crude Oil → PIVOT_EMA_ST Paper page and allow it to start. The PIVOT_EMA_ST rules on MCX crude oil, paper only, separate from every NIFTY strategy. On by default.", default: "true" },
+      { key: "CMX_GOLD_PIVOT_EMA_ST_MODE_ENABLED", label: "Gold PIVOT_EMA_ST Mode (Commodity)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the COMMODITY → Gold → PIVOT_EMA_ST Paper page and allow it to start. The PIVOT_EMA_ST rules on MCX gold, paper only, separate from every NIFTY strategy. On by default.", default: "true" },
+      { key: "CMX_SILVER_PIVOT_EMA_ST_MODE_ENABLED", label: "Silver PIVOT_EMA_ST Mode (Commodity)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the COMMODITY → Silver → PIVOT_EMA_ST Paper page and allow it to start. The PIVOT_EMA_ST rules on MCX silver, paper only, separate from every NIFTY strategy. On by default.", default: "true" },
       { key: "UI_SHOW_SIMULATE",       label: "Show Simulate Menu",        type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Simulate sub-menu.", default: "false", subheader: "Shared sub-menus (all strategies)" },
       { key: "UI_SHOW_COMPARE",        label: "Show Compare Menu",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Compare sub-menu.", default: "false" },
       { key: "UI_SHOW_TRACKER",        label: "Show Tracker Menu (EMA_RSI_ST only)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Tracker sub-menu (EMA_RSI_ST).", default: "false" },
@@ -1519,6 +1644,17 @@ const SETTINGS_SCHEMA = [
       { key: "UI_SHOW_SAIL_VWAP_ST_PAPER",    label: "SAIL_VWAP_ST → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under SAIL VWAP+ST.", default: "true" },
       { key: "UI_SHOW_SAIL_VWAP_ST_LIVE_HARNESS", label: "SAIL_VWAP_ST → Live", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (the paper-wrapping harness at /sail_vwap_st-live) under SAIL VWAP+ST.", default: "false" },
       { key: "UI_SHOW_SAIL_VWAP_ST_HISTORY",  label: "SAIL_VWAP_ST → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under SAIL VWAP+ST.", default: "true" },
+      // ── PIVOT_EMA_ST family submenus (NIFTY / BANK NIFTY / STOCKS) ── no
+      // Backtest (none exists); defaults match what sharedNav falls back to.
+      { key: "UI_SHOW_PIVOT_EMA_ST_PAPER",    label: "PIVOT_EMA_ST → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under PIVOT_EMA_ST.", default: "true", subheader: "PIVOT_EMA_ST sub-menus" },
+      { key: "UI_SHOW_PIVOT_EMA_ST_LIVE_HARNESS", label: "PIVOT_EMA_ST → Live", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (the paper-wrapping harness at /pivot_ema_st-live) under PIVOT_EMA_ST.", default: "false" },
+      { key: "UI_SHOW_PIVOT_EMA_ST_HISTORY",  label: "PIVOT_EMA_ST → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under PIVOT_EMA_ST.", default: "true" },
+      { key: "UI_SHOW_BN_PIVOT_EMA_ST_PAPER",    label: "BN_PIVOT_EMA_ST → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under BN PIVOT_EMA_ST (NIFTY BANK).", default: "true" },
+      { key: "UI_SHOW_BN_PIVOT_EMA_ST_LIVE_HARNESS", label: "BN_PIVOT_EMA_ST → Live", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (the paper-wrapping harness at /bn_pivot_ema_st-live) under BN PIVOT_EMA_ST (NIFTY BANK).", default: "false" },
+      { key: "UI_SHOW_BN_PIVOT_EMA_ST_HISTORY",  label: "BN_PIVOT_EMA_ST → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under BN PIVOT_EMA_ST (NIFTY BANK).", default: "true" },
+      { key: "UI_SHOW_SAIL_PIVOT_EMA_ST_PAPER",    label: "SAIL_PIVOT_EMA_ST → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under SAIL PIVOT_EMA_ST.", default: "true" },
+      { key: "UI_SHOW_SAIL_PIVOT_EMA_ST_LIVE_HARNESS", label: "SAIL_PIVOT_EMA_ST → Live", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (the paper-wrapping harness at /sail_pivot_ema_st-live) under SAIL PIVOT_EMA_ST.", default: "false" },
+      { key: "UI_SHOW_SAIL_PIVOT_EMA_ST_HISTORY",  label: "SAIL_PIVOT_EMA_ST → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under SAIL PIVOT_EMA_ST.", default: "true" },
 
       // ── System submenu (Settings is always shown) ──
       { key: "UI_SHOW_LOGS",       label: "Logs → Server Logs tab", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Server Logs tab.", default: "true", subheader: "System sub-menus" },
@@ -1596,6 +1732,9 @@ const MODE_SECTION_TITLES = {
   bn_ema_rsi_st_v2: "BN_EMA_RSI_ST_V2 STRATEGY (NIFTY BANK — EMA20/50 + RSI + SuperTrend trail) — Zerodha",
   st_rsi_piv_bb: "ST_RSI_PIV_BB STRATEGY (SuperTrend + RSI + Pivot R1/S1 + Bollinger) — Zerodha",
   sail_vwap_st: "SAIL_VWAP_ST STRATEGY (SAIL VWAP cross + breakout, SuperTrend stop) — Zerodha",
+  pivot_ema_st: "PIVOT_EMA_ST STRATEGY (Pivot zone + EMA20/50 cross + SuperTrend) — Zerodha",
+  bn_pivot_ema_st: "BN_PIVOT_EMA_ST STRATEGY (NIFTY BANK — Pivot zone + EMA20/50 cross + SuperTrend) — Zerodha",
+  sail_pivot_ema_st: "SAIL_PIVOT_EMA_ST STRATEGY (SAIL — Pivot zone + EMA20/50 cross + SuperTrend) — Zerodha",
   early_bird: "EARLYBIRD STRATEGY (first 15-min breakout, CASH EQUITY) — Fyers",
 };
 const SNAPSHOT_COMMON_SECTION_TITLES = new Set([
@@ -1608,6 +1747,9 @@ const SNAPSHOT_COMMON_SECTION_TITLES = new Set([
 const _MODE_KEYS = { ema_rsi_st: new Set(), bb_rsi: new Set(), pa: new Set(), orb: new Set(), ema9vwap: new Set(), trend_pb: new Set(), trend_day_scalp: new Set(), ha_scalp: new Set(), prev_orb_scalp: new Set(), simple930: new Set(), rsi_pivot_st: new Set(), bn_pivot_rsi_st: new Set(), ema_rsi_st_v2: new Set(), bn_ema_rsi_st_v2: new Set(), early_bird: new Set() };
 _MODE_KEYS.st_rsi_piv_bb = new Set();
 _MODE_KEYS.sail_vwap_st = new Set();
+_MODE_KEYS.pivot_ema_st = new Set();
+_MODE_KEYS.bn_pivot_ema_st = new Set();
+_MODE_KEYS.sail_pivot_ema_st = new Set();
 const _KEY_TO_MODES = new Map();
 (function buildModeKeyIndex() {
   const commonKeys = [];
@@ -2596,6 +2738,13 @@ router.get("/", (req, res) => {
   const stRsiPivBbModeOn = (envData["ST_RSI_PIV_BB_MODE_ENABLED"] ?? process.env.ST_RSI_PIV_BB_MODE_ENABLED ?? "false").toLowerCase() === "true";
   // SAIL_VWAP_ST — also "false" by default.
   const sailVwapStModeOn = (envData["SAIL_VWAP_ST_MODE_ENABLED"] ?? process.env.SAIL_VWAP_ST_MODE_ENABLED ?? "false").toLowerCase() === "true";
+  // PIVOT_EMA_ST family — "true" by default (the user wants Start All to start them).
+  const pivotEmaStModeOn     = (envData["PIVOT_EMA_ST_MODE_ENABLED"] ?? process.env.PIVOT_EMA_ST_MODE_ENABLED ?? "true").toLowerCase() === "true";
+  const bnPivotEmaStModeOn   = (envData["BN_PIVOT_EMA_ST_MODE_ENABLED"] ?? process.env.BN_PIVOT_EMA_ST_MODE_ENABLED ?? "true").toLowerCase() === "true";
+  const sailPivotEmaStModeOn = (envData["SAIL_PIVOT_EMA_ST_MODE_ENABLED"] ?? process.env.SAIL_PIVOT_EMA_ST_MODE_ENABLED ?? "true").toLowerCase() === "true";
+  // Commodity PIVOT_EMA_ST pages default ON, so they also open the Commodity section.
+  const cmxPivotModeOn = ["CRUDE", "GOLD", "SILVER"].map(c => `CMX_${c}_PIVOT_EMA_ST_MODE_ENABLED`)
+    .some(k => (envData[k] ?? process.env[k] ?? "true").toLowerCase() === "true");
   // Commodity section shows once any commodity page is on.
   const cmxModeOn = ["CRUDE", "GOLD", "SILVER"].flatMap(c => [`CMX_${c}_EMA_RSI_ST_MODE_ENABLED`, `CMX_${c}_EMA_RSI_ST_V2_MODE_ENABLED`])
     .some(k => (envData[k] ?? process.env[k] ?? "false").toLowerCase() === "true");
@@ -2619,7 +2768,10 @@ router.get("/", (req, res) => {
     "BN_EMA_RSI_ST_V2 STRATEGY (NIFTY BANK — EMA20/50 + RSI + SuperTrend trail) — Zerodha": bnEmaRsiStV2ModeOn,
     "ST_RSI_PIV_BB STRATEGY (SuperTrend + RSI + Pivot R1/S1 + Bollinger) — Zerodha": stRsiPivBbModeOn,
     "SAIL_VWAP_ST STRATEGY (SAIL VWAP cross + breakout, SuperTrend stop) — Zerodha": sailVwapStModeOn,
-    "COMMODITY (MCX crude / gold / silver) — EMA_RSI_ST + EMA_RSI_ST_V2, paper only": cmxModeOn,
+    "PIVOT_EMA_ST STRATEGY (Pivot zone + EMA20/50 cross + SuperTrend) — Zerodha": pivotEmaStModeOn,
+    "BN_PIVOT_EMA_ST STRATEGY (NIFTY BANK — Pivot zone + EMA20/50 cross + SuperTrend) — Zerodha": bnPivotEmaStModeOn,
+    "SAIL_PIVOT_EMA_ST STRATEGY (SAIL — Pivot zone + EMA20/50 cross + SuperTrend) — Zerodha": sailPivotEmaStModeOn,
+    "COMMODITY (MCX crude / gold / silver) — EMA_RSI_ST + EMA_RSI_ST_V2, paper only": cmxModeOn || cmxPivotModeOn,
     "EARLYBIRD STRATEGY (first 15-min breakout, CASH EQUITY) — Fyers": earlyBirdModeOn,
   };
 

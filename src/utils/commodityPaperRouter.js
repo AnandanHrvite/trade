@@ -1,7 +1,7 @@
 /**
  * commodityPaperRouter.js — the Paper page for a COMMODITY engine
  * (src/services/commodityPaper.js). One builder, used by every
- * /cmx_{crude,gold,silver}_{ema_rsi_st,ema_rsi_st_v2}-paper page.
+ * /cmx_{crude,gold,silver}_{ema_rsi_st,ema_rsi_st_v2,pivot_ema_st}-paper page.
  *
  *   GET /status           the page
  *   GET /status/fragment  the live parts of the page, JSON {top, info, bar, trades, logs} (polled every 4 s)
@@ -52,7 +52,8 @@ function fmtMins(m) { return String(Math.floor(m / 60)).padStart(2, "0") + ":" +
 function createCommodityPaperRouter({ engine, base, navKey, title, icon, rulesText }) {
   const router = express.Router();
   const modeKey = () => engine.snapshot().modeKey;
-  const modeOn  = () => String(process.env[modeKey()] || "false").toLowerCase() === "true";
+  // The engine owns the toggle's default ("false" for V1/V2, "true" for PIVOT).
+  const modeOn  = () => engine.modeOn();
   const pill = (side) => `<span class="cx-pill ${side === "CE" ? "cx-ce" : "cx-pe"}">${side}</span>`;
   // A trade in the field names the NIFTY paper pages' Session Trades table reads.
   const tradeView = (t) => ({
@@ -105,7 +106,7 @@ function createCommodityPaperRouter({ engine, base, navKey, title, icon, rulesTe
     <div><span class="k">Now</span>${s.optLtp != null ? "₹" + s.optLtp : "—"}</div>
     <div><span class="k">Open P&L</span><b style="color:${pnlColor(unreal || 0)}">${rs(unreal)}</b></div>
     <div><span class="k">Future at entry</span>${p.spotAtEntry}</div>
-    <div><span class="k">Stop (future)</span>${p.stopLoss != null ? p.stopLoss : "—"}</div>
+    <div><span class="k">${s.strategy === "PIVOT" ? "Stop (future, on close)" : "Stop (future)"}</span>${p.stopLoss != null ? p.stopLoss : "—"}</div>
     <div><span class="k">Candles held</span>${p.candlesHeld}</div>
   </div>
   <div style="margin-top:10px;"><a class="cx-btn cx-red" href="${base}/exit" onclick="return confirm('Exit this paper trade now?')">Exit now</a></div>
@@ -122,7 +123,35 @@ function createCommodityPaperRouter({ engine, base, navKey, title, icon, rulesTe
     const armed = s.armed ? `<div class="cx-note">🎯 ${s.armed.side} signal armed — enters if the future crosses ${s.armed.triggerLevel} during this candle.</div>` : "";
     const halted = s.halted ? `<div class="cx-note cx-warn">⏸️ ${esc(s.halted)}</div>` : "";
     const err = s.lastError ? `<div class="cx-note cx-warn">⚠️ ${esc(s.lastError)}</div>` : "";
-    return `${capital}${stats}${halted}${err}${armed}${posCard}`;
+    return `${capital}${stats}${halted}${err}${armed}${s.strategy === "PIVOT" ? pivotChecklist(s) : ""}${posCard}`;
+  }
+
+  // PIVOT_EMA_ST only: today's pivots and the last closed candle's 3-box
+  // checklist (engine.checkBar, as the signal read it), both sides.
+  function pivotChecklist(s) {
+    const pv = s.pivots, k = s.checks;
+    const tick = (ok) => `<span style="color:${ok ? "#10b981" : "#64748b"};font-weight:700;">${ok ? "✓" : "✗"}</span>`;
+    const levels = pv
+      ? `<div><span class="k">PP</span>${pv.pp}</div><div><span class="k">R1</span>${pv.r1}</div><div><span class="k">S1</span>${pv.s1}</div><div><span class="k">From</span>${esc(pv.from || "—")}</div>`
+      : `<div class="cx-warn" style="padding:4px 8px;border-radius:6px;">⚠️ ${esc(s.pivotsError || (s.running ? "Pivots loading…" : "Pivots load on Start"))} — no entries without R1/S1</div>`;
+    const row = (side) => {
+      const b = k[side];
+      const zone = side === "CE" ? "PP &lt; close &lt; R1" : "S1 &lt; close &lt; PP";
+      // Rule 2: the cross must be on this candle AND inside the zone.
+      const crossed = side === "CE" ? k.crossedUp : k.crossedDown;
+      const cross = `EMA fast ${side === "CE" ? "↑" : "↓"} slow: ${b.cross ? `crossed at ${k.crossLevel} (in zone)` : crossed ? `crossed at ${k.crossLevel} — outside the zone` : "no cross on this candle"}`;
+      const st = side === "CE" ? "SuperTrend green" : "SuperTrend red";
+      return `<div style="margin-top:6px;">${pill(side)} <b>${b.count}/3</b> &nbsp; ${tick(b.zone)} ${zone} &nbsp; ${tick(b.cross)} ${cross} &nbsp; ${tick(b.st)} ${st}</div>`;
+    };
+    const boxes = k
+      ? `<div class="cx-muted" style="margin-top:8px;">Candle ${hhmm(new Date(k.time * 1000).toISOString())} closed ${k.close} · EMA ${k.emaFast} / ${k.emaSlow} · ST ${k.supertrend} (${k.stTrend === 1 ? "green" : "red"})</div>${row("CE")}${row("PE")}`
+      : `<div class="cx-muted" style="margin-top:8px;">Checklist shows after the first closed candle with pivots and warm-up ready.</div>`;
+    return `
+<div class="cx-card">
+  <div class="cx-h">Pivots &amp; entry checklist</div>
+  <div class="cx-row">${levels}</div>
+  <div style="font-size:0.78rem;color:#e2e8f0;">${boxes}</div>
+</div>`;
   }
 
   // Below the log: how this page trades, and the recent days.
@@ -389,7 +418,7 @@ ${bbRsiCurrentBar({ bar: s.formingBar, resMin: c.res })}
   <div class="cx-legend">
     <span style="color:#3b82f6;">▲ Entry</span> &nbsp; <span style="color:#10b981;">▼ Win</span> &nbsp; <span style="color:#ef4444;">▼ Loss</span> &nbsp;
     <span style="color:#fbbf24;">── <span id="lg-fast">Fast EMA</span></span> &nbsp; <span style="color:#3b82f6;">── <span id="lg-slow">Slow EMA</span></span> &nbsp;
-    <span style="color:#22c55e;">──</span><span style="color:#ef4444;">──</span> ST &nbsp; <span style="color:#22d3ee;">── RSI</span> &nbsp; <span style="color:#f59e0b;">╌╌ SL</span>
+    <span style="color:#22c55e;">──</span><span style="color:#ef4444;">──</span> ST &nbsp; ${s.strategy === "PIVOT" ? `<span style="color:#a78bfa;">╌╌ PP</span> <span style="color:#10b981;">R1</span> <span style="color:#ef4444;">S1</span>` : `<span style="color:#22d3ee;">── RSI</span>`} &nbsp; <span style="color:#f59e0b;">╌╌ SL</span>
   </div>
 </div>
 ${sessionTradesHTML(s)}
@@ -459,7 +488,7 @@ ${bbRsiActivityLog({ logsJSON: jsonForScript(s.logs.slice().reverse()) })}
       candles.setMarkers(k(d.markers).sort(function(a,b){return a.time-b.time;}));
       lines.forEach(function(l){candles.removePriceLine(l);}); lines=[];
       var pl=function(p,c,t){ if(p!=null) lines.push(candles.createPriceLine({price:p,color:c,lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dashed,axisLabelVisible:true,title:t})); };
-      pl(d.stopLoss,'#f59e0b','SL'); pl(d.entry,'#3b82f6','Entry'); pl(d.armed,'#a855f7','Trigger');
+      pl(d.stopLoss,'#f59e0b','SL'); pl(d.entry,'#3b82f6','Entry'); pl(d.armed,'#a855f7','Trigger');${s.strategy === "PIVOT" ? "\n      if(d.pivots){ pl(d.pivots.pp,'#a78bfa','PP'); pl(d.pivots.r1,'#10b981','R1'); pl(d.pivots.s1,'#ef4444','S1'); }" : ""}
       if(first){ chart.timeScale().fitContent(); first=false; }
     }).catch(function(){});
   }
@@ -547,7 +576,14 @@ const RULES = {
     <li><b>Signal:</b> the EMA_RSI_ST_V2 rules — EMA20 vs EMA50 + close beyond EMA20 + RSI on the future, using the same settings as the NIFTY EMA_RSI_ST_V2.</li>
     <li><b>Entry:</b> skipped when EMA20 and EMA50 are almost touching or RSI has already run (Settings → Trend filter); with the confirmation candle on, the next candle must cross the signal candle's close.</li>
     <li><b>Exits:</b> SuperTrend trailing stop, option stop (Settings → Risk), profit lock / breakeven, opposite signal, and the day's exit time.</li>`,
+  PIVOT: `
+    <li><b>Signal:</b> the PIVOT_EMA_ST rules on the future's closed candles, using the same EMA / SuperTrend settings as the NIFTY PIVOT_EMA_ST. CE: close between PP and R1, EMA20 crosses above EMA50 on that candle, inside PP–R1, SuperTrend green. PE: close between S1 and PP, EMA20 crosses below EMA50 inside S1–PP, SuperTrend red. A close above R1 or below S1 never enters.</li>
+    <li><b>Pivots:</b> PP / R1 / S1 from the previous MCX day's daily high / low / close of the same future. No pivots → no entries.</li>
+    <li><b>Entry:</b> on the signal candle's close — no confirmation candle and no EMA-gap / RSI trend filter.</li>
+    <li><b>Exits:</b> SuperTrend stop checked on candle close only (SuperTrend flips, or the close crosses the stop; the stop trails to SuperTrend, tighten-only), option stop (Settings → Risk), profit lock / breakeven, and the day's exit time.</li>`,
 };
+const STRATS = { V1: "EMA_RSI_ST", V2: "EMA_RSI_ST_V2", PIVOT: "PIVOT_EMA_ST" };
+const NAV_STRATS = { V1: "EmaRsiSt", V2: "EmaRsiStV2", PIVOT: "PivotEmaSt" };
 const ICONS = { CRUDE: "🛢️", GOLD: "🥇", SILVER: "🥈" };
 // The page's own icon, for the monitors that list a commodity page — 🛢 only
 // fits CRUDE.
@@ -556,14 +592,14 @@ const commodityIcon = (commodity) => ICONS[commodity] || "🛢️";
 // Every commodity engine built by commodityPage(), in mount order — read by the
 // Dashboard's Start All (Commodity) button and the 4 PM token-clear hold.
 const ENGINES = [];
-const enabledEngines = () => ENGINES.filter((e) => String(process.env[e.snapshot().modeKey] || "false").toLowerCase() === "true");
+const enabledEngines = () => ENGINES.filter((e) => e.modeOn());
 
 // True while any commodity engine is running — switched on or not, since a page
 // toggled off mid-session keeps trading until it is stopped.
 const anyRunning = () => ENGINES.some((e) => e.state.running);
 // What the shared monitors list: switched on, or still running after being
 // switched off (it trades until stopped, so it must stay visible and stoppable).
-const visibleEngines = () => ENGINES.filter((e) => e.state.running || String(process.env[e.snapshot().modeKey] || "false").toLowerCase() === "true");
+const visibleEngines = () => ENGINES.filter((e) => e.state.running || e.modeOn());
 
 /**
  * An engine snapshot in the shape the Real-Time monitor (routes/realtime.js)
@@ -618,7 +654,7 @@ function fyersTokenHoldUntil(now = Date.now()) {
 function commodityPage({ commodity, strategy }) {
   const { createEngine } = require("../services/commodityPaper");
   const { COMMODITIES } = require("../services/mcxContracts");
-  const strat = strategy === "V2" ? "EMA_RSI_ST_V2" : "EMA_RSI_ST";
+  const strat = STRATS[strategy] || "EMA_RSI_ST";
   const id = `cmx_${commodity.toLowerCase()}_${strat.toLowerCase()}`;
   const camel = commodity.charAt(0) + commodity.slice(1).toLowerCase();
   const engine = createEngine({
@@ -630,7 +666,7 @@ function commodityPage({ commodity, strategy }) {
   const router = createCommodityPaperRouter({
     engine,
     base:   `/${id}-paper`,
-    navKey: `cmx${camel}${strategy === "V2" ? "EmaRsiStV2" : "EmaRsiSt"}Paper`,
+    navKey: `cmx${camel}${NAV_STRATS[strategy] || "EmaRsiSt"}Paper`,
     title:  `${strat} · ${COMMODITIES[commodity].label}`,
     icon:   ICONS[commodity],
     rulesText: RULES[strategy],

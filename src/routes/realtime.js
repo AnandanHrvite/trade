@@ -58,6 +58,12 @@ const STRATEGY_DEFS = [
   // Its Entry/Live Spot come from its OWN /status/data (SAIL, not NIFTY).
   // livePrefix is its paper-wrapping harness. defaultOff like V2.
   { key:'SAIL_VWAP_ST', label:'SAIL VWAP+ST', accentClass:'sailvwapst', accent:'#fda4af', paperPrefix:'/sail_vwap_st-paper', livePrefix:'/sail_vwap_st-live', hasDayLog:true, modeFlag:'SAIL_VWAP_ST_MODE_ENABLED', defaultOff:true },
+  // PIVOT_EMA_ST family: pivot zone + EMA20/50 cross + SuperTrend. No legacy live
+  // route — livePrefix is each one's paper-wrapping harness. Default ON (no defaultOff).
+  { key:'PIVOT_EMA_ST', label:'PIVOT_EMA_ST', accentClass:'pivotemast', accent:'#38bdf8', paperPrefix:'/pivot_ema_st-paper', livePrefix:'/pivot_ema_st-live', hasDayLog:true, modeFlag:'PIVOT_EMA_ST_MODE_ENABLED' },
+  { key:'BN_PIVOT_EMA_ST', label:'BN PIVOT_EMA_ST', accentClass:'bnpivotemast', accent:'#f472b6', paperPrefix:'/bn_pivot_ema_st-paper', livePrefix:'/bn_pivot_ema_st-live', hasDayLog:true, modeFlag:'BN_PIVOT_EMA_ST_MODE_ENABLED' },
+  // SAIL: Entry/Live Spot come from its OWN /status/data (SAIL, not NIFTY).
+  { key:'SAIL_PIVOT_EMA_ST', label:'SAIL PIVOT_EMA_ST', accentClass:'sailpivotemast', accent:'#fcd34d', paperPrefix:'/sail_pivot_ema_st-paper', livePrefix:'/sail_pivot_ema_st-live', hasDayLog:true, modeFlag:'SAIL_PIVOT_EMA_ST_MODE_ENABLED' },
   { key:'SIMPLE930', label:'SIMPLE_9:30', accentClass:'simple930', accent:'#fb923c', paperPrefix:'/simple930-paper', livePrefix:'/simple930-live', hasDayLog:true, modeFlag:'SIMPLE930_MODE_ENABLED' },
   // EarlyBird trades CASH EQUITY of several stocks at once — its /status/data
   // returns `positions[]`, not a single `position`, so renderColumn below
@@ -72,7 +78,7 @@ function commodityStrategies() {
   const { visibleEngines } = require("../utils/commodityPaperRouter");
   return visibleEngines().map((e) => {
     const s = e.snapshot();
-    const strat = s.strategy === 'V2' ? 'EMA_RSI_ST_V2' : 'EMA_RSI_ST';
+    const strat = s.strategy === 'V2' ? 'EMA_RSI_ST_V2' : s.strategy === 'PIVOT' ? 'PIVOT_EMA_ST' : 'EMA_RSI_ST';
     return { key: `CMX_${s.commodity}_${strat}`, label: `${s.commodityLabel.toUpperCase()} · ${strat}`,
              accentClass: 'cmx', accent: '#eab308', paperPrefix: `/${s.id}-paper`, livePrefix: null,
              hasDayLog: false, modeFlag: s.modeKey, paperOnly: true };
@@ -89,6 +95,7 @@ function enabledStrategies() {
 const BROKER_OF = { EMA_RSI_ST:'ZERODHA', EMA_RSI_ST_V2:'ZERODHA', BB_RSI:'FYERS', PA:'FYERS', ORB:'FYERS', EMA9VWAP:'ZERODHA', TREND_PB:'FYERS', TDS:'FYERS', HA_SCALP:'ZERODHA', PREV_ORB_SCALP:'ZERODHA', RSI_PIVOT_ST:'ZERODHA', BN_PIVOT_RSI_ST:'ZERODHA', BN_EMA_RSI_ST_V2:'ZERODHA', SIMPLE930:'ZERODHA', EARLYBIRD:'FYERS' };
 BROKER_OF.ST_RSI_PIV_BB = 'ZERODHA'; // Fyers candles, Zerodha orders
 BROKER_OF.SAIL_VWAP_ST = 'ZERODHA'; // Fyers candles, Zerodha orders
+BROKER_OF.PIVOT_EMA_ST = 'ZERODHA'; BROKER_OF.BN_PIVOT_EMA_ST = 'ZERODHA'; BROKER_OF.SAIL_PIVOT_EMA_ST = 'ZERODHA'; // Fyers candles, Zerodha orders
 function brokerPools(strategies) {
   // Same fallback as capitalPool.baseCapital — the ribbon must show the amount the gate uses.
   const inv = (v) => (n => Number.isFinite(n) && n >= 0 ? n : 100000)(parseFloat(v || '100000'));
@@ -320,6 +327,9 @@ ${faviconLink()}
   .card.bnemarsistv2 { border-top-color:#2dd4bf; }
   .card.strsipivbb { border-top-color:#a3e635; }
   .card.sailvwapst { border-top-color:#fda4af; }
+  .card.pivotemast { border-top-color:#38bdf8; }
+  .card.bnpivotemast { border-top-color:#f472b6; }
+  .card.sailpivotemast { border-top-color:#fcd34d; }
   .card.simple930 { border-top-color:#fb923c; }
   .card.earlybird { border-top-color:#14b8a6; }
   .card.cmx { border-top-color:#eab308; }

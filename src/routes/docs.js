@@ -53,8 +53,18 @@ const CMX_GUIDE_FILE = "cmx_commodity_strategy_guide.html";
 const CMX_MODE_KEYS = ["CRUDE", "GOLD", "SILVER"].flatMap(c =>
   [`CMX_${c}_EMA_RSI_ST_MODE_ENABLED`, `CMX_${c}_EMA_RSI_ST_V2_MODE_ENABLED`]);
 
+// The PIVOT_EMA_ST guide covers NIFTY, BANK NIFTY, SAIL and the three commodity
+// pages, so it is shown when ANY of them is on. The commodity toggles default TRUE.
+const PIVOT_GUIDE_FILE = "pivot_ema_st_strategy_guide.html";
+const PIVOT_NSE_MODES = ["PIVOT_EMA_ST", "BN_PIVOT_EMA_ST", "SAIL_PIVOT_EMA_ST"];
+const PIVOT_CMX_KEYS = ["CRUDE", "GOLD", "SILVER"].map(c => `CMX_${c}_PIVOT_EMA_ST_MODE_ENABLED`);
+
 function isDocVisible(filename, enabledModes) {
   const lower = String(filename).toLowerCase();
+  if (lower === PIVOT_GUIDE_FILE) {
+    return PIVOT_NSE_MODES.some(m => enabledModes.has(m)) ||
+      PIVOT_CMX_KEYS.some(k => (process.env[k] || "true").toLowerCase() === "true");
+  }
   if (lower === CMX_GUIDE_FILE) {
     return CMX_MODE_KEYS.some(k => (process.env[k] || "false").toLowerCase() === "true");
   }
@@ -873,6 +883,34 @@ const GUIDE_STATUS = {
     { type: "value", label: "Breakout Window (candles)", key: "SAIL_VWAP_ST_BREAKOUT_BARS", def: "3" },
     { type: "value", label: "Lots (× SAIL_LOT_SIZE)", key: "SAIL_VWAP_ST_LOTS", def: "1" },
   ] }] },
+  // PIVOT_EMA_ST — one guide for NIFTY / BANK NIFTY / SAIL (each its own keys) plus the
+  // three MCX pages that read the NIFTY rule keys. Mode toggles default TRUE (Start All).
+  "PIVOT_EMA_ST_Strategy_Guide.html": { title: "PIVOT_EMA_ST — Live Configuration", groups: [
+    { heading: "NIFTY", rows: [
+      { type: "bool", label: "PIVOT_EMA_ST Mode (sidebar + Settings section)", key: "PIVOT_EMA_ST_MODE_ENABLED", def: "true" },
+      { type: "live", label: "Live Orders (Zerodha)", enableKey: "PIVOT_EMA_ST_LIVE_ENABLED", dryKey: "PIVOT_EMA_ST_LIVE_DRY_RUN" },
+      { type: "value", label: "Candle Timeframe (3 / 5 / 15)", key: "PIVOT_EMA_ST_TF", def: "3" },
+      { type: "value", label: "SuperTrend Period", key: "PIVOT_EMA_ST_ST_PERIOD", def: "10" },
+      { type: "value", label: "SuperTrend Multiplier", key: "PIVOT_EMA_ST_ST_MULT", def: "3" },
+    ] },
+    { heading: "BANK NIFTY", rows: [
+      { type: "bool", label: "BN_PIVOT_EMA_ST Mode (NIFTY BANK)", key: "BN_PIVOT_EMA_ST_MODE_ENABLED", def: "true" },
+      { type: "live", label: "Live Orders (Zerodha)", enableKey: "BN_PIVOT_EMA_ST_LIVE_ENABLED", dryKey: "BN_PIVOT_EMA_ST_LIVE_DRY_RUN" },
+      { type: "value", label: "Candle Timeframe (3 / 5 / 15)", key: "BN_PIVOT_EMA_ST_TF", def: "3" },
+    ] },
+    { heading: "SAIL", rows: [
+      { type: "bool", label: "SAIL_PIVOT_EMA_ST Mode (SAIL stock options)", key: "SAIL_PIVOT_EMA_ST_MODE_ENABLED", def: "true" },
+      { type: "live", label: "Live Orders (Zerodha)", enableKey: "SAIL_PIVOT_EMA_ST_LIVE_ENABLED", dryKey: "SAIL_PIVOT_EMA_ST_LIVE_DRY_RUN" },
+      { type: "value", label: "Candle Timeframe (3 / 5 / 15)", key: "SAIL_PIVOT_EMA_ST_TF", def: "3" },
+      { type: "value", label: "Lots (× SAIL_LOT_SIZE)", key: "SAIL_PIVOT_EMA_ST_LOTS", def: "1" },
+    ] },
+    { heading: "Commodity (paper only)", rows: [
+      { type: "bool", label: "Crude Oil PIVOT_EMA_ST Paper page", key: "CMX_CRUDE_PIVOT_EMA_ST_MODE_ENABLED", def: "true" },
+      { type: "bool", label: "Gold PIVOT_EMA_ST Paper page", key: "CMX_GOLD_PIVOT_EMA_ST_MODE_ENABLED", def: "true" },
+      { type: "bool", label: "Silver PIVOT_EMA_ST Paper page", key: "CMX_SILVER_PIVOT_EMA_ST_MODE_ENABLED", def: "true" },
+      { type: "value", label: "Candle Size (min)", key: "CMX_PIVOT_EMA_ST_RESOLUTION", def: "3" },
+    ] },
+  ] },
   "BB_RSI_Strategy_Guide.html": { title: "BB_RSI — Live Configuration", groups: [{ rows: [
     { type: "bool", label: "BB_RSI Mode (sidebar + Settings section)", key: "BB_RSI_MODE_ENABLED", def: "true" },
     { type: "live", label: "Live Orders (Fyers)", enableKey: "BB_RSI_LIVE_ENABLED", dryKey: "BB_RSI_LIVE_DRY_RUN" },
@@ -966,14 +1004,17 @@ const GUIDE_STATUS = {
     { heading: "Crude Oil", rows: [
       { type: "bool", label: "Crude Oil EMA_RSI_ST Paper page", key: "CMX_CRUDE_EMA_RSI_ST_MODE_ENABLED", def: "false" },
       { type: "bool", label: "Crude Oil EMA_RSI_ST_V2 Paper page", key: "CMX_CRUDE_EMA_RSI_ST_V2_MODE_ENABLED", def: "false" },
+      { type: "bool", label: "Crude Oil PIVOT_EMA_ST Paper page", key: "CMX_CRUDE_PIVOT_EMA_ST_MODE_ENABLED", def: "true" },
     ] },
     { heading: "Gold", rows: [
       { type: "bool", label: "Gold EMA_RSI_ST Paper page", key: "CMX_GOLD_EMA_RSI_ST_MODE_ENABLED", def: "false" },
       { type: "bool", label: "Gold EMA_RSI_ST_V2 Paper page", key: "CMX_GOLD_EMA_RSI_ST_V2_MODE_ENABLED", def: "false" },
+      { type: "bool", label: "Gold PIVOT_EMA_ST Paper page", key: "CMX_GOLD_PIVOT_EMA_ST_MODE_ENABLED", def: "true" },
     ] },
     { heading: "Silver", rows: [
       { type: "bool", label: "Silver EMA_RSI_ST Paper page", key: "CMX_SILVER_EMA_RSI_ST_MODE_ENABLED", def: "false" },
       { type: "bool", label: "Silver EMA_RSI_ST_V2 Paper page", key: "CMX_SILVER_EMA_RSI_ST_V2_MODE_ENABLED", def: "false" },
+      { type: "bool", label: "Silver PIVOT_EMA_ST Paper page", key: "CMX_SILVER_PIVOT_EMA_ST_MODE_ENABLED", def: "true" },
     ] },
   ] },
   "Application_Setup_Guide.html": { title: "System — Live Configuration", groups: [
@@ -990,6 +1031,9 @@ const GUIDE_STATUS = {
       { type: "bool", label: "BN EMA_RSI_ST_V2 Mode (NIFTY BANK, monthly options)", key: "BN_EMA_RSI_ST_V2_MODE_ENABLED", def: "false" },
       { type: "bool", label: "ST_RSI_PIV_BB Mode", key: "ST_RSI_PIV_BB_MODE_ENABLED", def: "false" },
       { type: "bool", label: "SAIL_VWAP_ST Mode (SAIL stock options)", key: "SAIL_VWAP_ST_MODE_ENABLED", def: "false" },
+      { type: "bool", label: "PIVOT_EMA_ST Mode", key: "PIVOT_EMA_ST_MODE_ENABLED", def: "true" },
+      { type: "bool", label: "BN PIVOT_EMA_ST Mode (NIFTY BANK)", key: "BN_PIVOT_EMA_ST_MODE_ENABLED", def: "true" },
+      { type: "bool", label: "SAIL PIVOT_EMA_ST Mode (SAIL stock options)", key: "SAIL_PIVOT_EMA_ST_MODE_ENABLED", def: "true" },
       { type: "bool", label: "BB_RSI Mode", key: "BB_RSI_MODE_ENABLED", def: "true" },
       { type: "bool", label: "Price Action Mode", key: "PA_MODE_ENABLED", def: "true" },
       { type: "bool", label: "ORB Mode", key: "ORB_MODE_ENABLED", def: "true" },

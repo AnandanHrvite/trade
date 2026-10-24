@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PIVOT_EMA_ST — Strategy Guide</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0 18px 80px;
+    background: #0d1117; color: #c9d1d9;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.65; font-size: 16px;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; }
+  header.hero {
+    margin: 0 -18px 8px; padding: 40px 26px 30px;
+    background: linear-gradient(135deg, #161b22 0%, #1f1a10 100%);
+    border-bottom: 3px solid #f59e0b;
+  }
+  header.hero .kicker { color: #f59e0b; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; font-size: 0.72rem; }
+  header.hero h1 { margin: 6px 0 8px; font-size: 2rem; color: #f0f6fc; }
+  header.hero p { margin: 0; color: #8b949e; max-width: 640px; }
+  h2 { color: #f0f6fc; font-size: 1.35rem; margin: 38px 0 12px; padding-bottom: 8px; border-bottom: 1px solid #21262d; }
+  h3 { color: #58a6ff; font-size: 1.05rem; margin: 24px 0 8px; }
+  code { background: rgba(110,118,129,0.18); color: #7dd3fc; padding: 1.5px 6px; border-radius: 4px; font-size: 0.85em; font-family: 'SF Mono', ui-monospace, Menlo, monospace; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 18px 22px; margin: 14px 0; }
+  .card.accent { border-left: 4px solid #f59e0b; }
+  .card.warn { border-left: 4px solid #d29922; background: #1c1a12; }
+  .card.bad  { border-left: 4px solid #f85149; background: #1c1214; }
+  ul, ol { padding-left: 22px; }
+  li { margin: 5px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.88rem; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #21262d; vertical-align: top; }
+  th { color: #8b949e; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.6px; }
+  td code { white-space: nowrap; }
+  .flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 14px 0; }
+  .flow .step { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 8px 14px; font-size: 0.85rem; }
+  .flow .arrow { color: #f59e0b; font-weight: 700; }
+  .pill { display: inline-block; background: rgba(245,158,11,0.15); color: #f59e0b; border: 1px solid rgba(245,158,11,0.35); border-radius: 20px; padding: 2px 12px; font-size: 0.78rem; font-weight: 600; }
+  .muted { color: #6e7681; font-size: 0.85rem; }
+  a { color: #58a6ff; }
+  .num { font-family: 'SF Mono', ui-monospace, Menlo, monospace; color: #f0f6fc; }
+  /* TradingView-style chart wrapper */
+  .tv-chart { margin: 16px 0 6px; border: 1px solid #30363d; border-radius: 10px; overflow: hidden; background: #0d1626; }
+  .tv-chart .tv-svg { width: 100%; height: auto; display: block; }
+  .tv-cap { color: #8b949e; font-size: 0.82rem; margin: 0 0 16px; padding-left: 4px; }
+  .tv-cap b { color: #c9d1d9; }
+  .tv-empty { color: #6e7681; padding: 40px; text-align: center; font-size: 0.9rem; }
+
+  nav.toc { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 16px 22px; margin: 18px 0; }
+  nav.toc h2 { margin: 0 0 8px; border: 0; padding: 0; font-size: 1.05rem; color: #f59e0b; }
+  nav.toc ol { margin: 0; columns: 2; column-gap: 28px; }
+  nav.toc a { color: #c9d1d9; text-decoration: none; }
+  nav.toc a:hover { color: #f59e0b; }
+  .rule { display: flex; gap: 12px; align-items: flex-start; background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 10px 14px; margin: 8px 0; }
+  @media (max-width: 768px) { nav.toc ol { columns: 1; } }
+  .rule .no { flex: 0 0 30px; height: 30px; border-radius: 50%; background: rgba(245,158,11,0.18); color: #f59e0b; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+
+/* ── MOBILE (shared block — keep in sync across all guides) ── */
+  @media (max-width: 768px) {
+    /* The setting tables are three columns of prose. A table cannot lay out
+       narrower than its min-content width, so at 393px they ran up to 259px past
+       the right edge and the browser zoomed the whole guide out to fit. Each one
+       now scrolls inside its own box and the page keeps the phone's width. */
+    table { display: block; width: 100%; max-width: 100%; overflow-x: auto;
+            -webkit-overflow-scrolling: touch; }
+    /* Long env keys wrap; fenced blocks keep their formatting and scroll. */
+    code { overflow-wrap: anywhere; word-break: break-word; }
+    pre { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    pre code { overflow-wrap: normal; word-break: normal; }
+    img, svg, canvas { max-width: 100%; }
+    .tv-chart { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    /* .cols is a two-up flex row with no wrap — the second card was pushed off
+       screen rather than dropping under the first. */
+    .cols { flex-direction: column; }
+    .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+    [style*="grid-template-columns"] { grid-template-columns: 1fr !important; }
+    /* Contents links are the guide's only navigation, and they were 18-31px.
+       The three guides each mark theirs up differently: nav.toc (ORB, EMA9VWAP,
+       Setup), a nav.no-print link bar (Price Action) and a two-column card list
+       (BB_RSI, EMA_RSI_ST, Trend Pullback). */
+    nav.toc a, .toc a, nav.no-print .container a,
+    .card li a { min-height: 44px; display: inline-flex; align-items: center; }
+    /* A two-column contents list leaves ~170px per column at 393px. */
+    ul[style*="columns"], ol[style*="columns"] { columns: 1 !important; -webkit-columns: 1 !important; }
+    .hero { padding-left: 16px; padding-right: 16px; }
+    .hero h1 { font-size: 1.7rem; }
+    .section { padding: 20px 14px; }
+  }
+/* ── END MOBILE ── */</style>
+<style>
+  /* step labels (this guide only) */
+  .boxrow-label { font-weight: 700; margin: 16px 0 4px; color: #f0f6fc; }
+  .rule .no { font-size: 0.72rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <div class="kicker">PIVOT_EMA_ST · NIFTY · BANK NIFTY · SAIL · Commodity · Fyers data · Zerodha orders · Plain-English edition</div>
+  <h1>PIVOT_EMA_ST</h1>
+  <p>Draw yesterday's <b>pivot lines</b> on today's chart. Buy a <b>CE</b> when the fast average (<b>EMA20</b>) crosses above the slow one (<b>EMA50</b>) <b>inside</b> the zone between the pivot and R1, the candle closes in that zone, and <b>SuperTrend</b> is green. Buy a <b>PE</b> on the mirror picture between S1 and the pivot. The SuperTrend line is the stop, and it is only checked when a candle closes.</p>
+  <p class="muted" style="margin-top:10px;">Updated 2026-10-24 &nbsp;·&nbsp; rules checked against <code>src/strategies/pivot_ema_st.js</code> &nbsp;·&nbsp; every chart is real NIFTY data run through that engine</p>
+</header>
+
+<nav class="toc">
+  <h2>What's inside</h2>
+  <ol>
+    <li><a href="#minute">In one minute</a></li>
+    <li><a href="#words">Words you'll see</a></li>
+    <li><a href="#pivots">Yesterday's pivot lines</a></li>
+    <li><a href="#entry">How a trade starts</a></li>
+    <li><a href="#exits">How a trade ends</a></li>
+    <li><a href="#common">Common rules &amp; session</a></li>
+    <li><a href="#where">Four instruments, one rule set</a></li>
+    <li><a href="#start">Starting it, and Live</a></li>
+    <li><a href="#examples">Real chart examples</a></li>
+    <li><a href="#data">What the NIFTY data says</a></li>
+    <li><a href="#settings">All the settings</a></li>
+    <li><a href="#missing">What's still missing</a></li>
+  </ol>
+</nav>
+
+<h2 id="minute">1. In one minute</h2>
+<div class="card accent">
+  <ul>
+    <li>Before the open, the bot works out three lines from <b>yesterday's</b> high, low and close: <b>PP</b> (the pivot, in the middle), <b>R1</b> (above it) and <b>S1</b> (below it). They do not move all day.</li>
+    <li>It watches <b>closed</b> candles &mdash; 3-minute candles by default &mdash; with two moving averages, <b>EMA20</b> and <b>EMA50</b>, and the <b>SuperTrend (10, 3)</b> line.</li>
+    <li><b>Buy a CE</b> when one candle ticks all three boxes: it <b>closes between PP and R1</b>; <b>EMA20 crosses above EMA50 on that very candle, and the crossing point is also between PP and R1</b>; and <b>SuperTrend is green</b>.</li>
+    <li><b>Buy a PE</b> on the mirror: closes between S1 and PP, EMA20 crosses below EMA50 on that candle with the crossing point between S1 and PP, SuperTrend red.</li>
+    <li>A close <b>above R1</b> or <b>below S1</b> is never traded, whatever else the chart says.</li>
+    <li>The <b>stop</b> is the SuperTrend line. It only moves your way, and it is only checked when a candle <b>closes</b>.</li>
+    <li>The app-wide <b>common rules</b> also apply: profit lock, breakeven stop, a 2-candle wait after any exit, and a bid-ask spread check. New trades <b>10:00&ndash;14:00</b>, everything closed at <b>15:00</b>.</li>
+    <li>Up to <b>3 trades a day</b>, &#8377;5,000 daily loss limit, <b>1 lot</b>. Orders go to <b>Zerodha</b>; prices come from Fyers. Live is <b>dry-run</b> unless you switch three things.</li>
+    <li>The same rules run on <b>NIFTY</b>, <b>BANK NIFTY</b>, <b>SAIL</b> and on <b>MCX crude, gold and silver</b> (paper only, MCX hours).</li>
+  </ul>
+</div>
+<div class="flow">
+  <div class="step">Yesterday &rarr; PP, R1, S1</div><div class="arrow">→</div>
+  <div class="step">Close inside a zone</div><div class="arrow">→</div>
+  <div class="step">EMA20 crosses EMA50 on that candle, inside the same zone</div><div class="arrow">→</div>
+  <div class="step">SuperTrend agrees &rarr; buy</div><div class="arrow">→</div>
+  <div class="step">SuperTrend flips &rarr; sell</div>
+</div>
+<div class="card warn">
+  <b>Read this first.</b> This strategy is brand new. It has <b>never traded</b> &mdash; no paper session and no live order, on any of the four instruments. Live orders are off by default.
+  The charts and numbers below come from running the engine over NIFTY <b>5-minute</b> candles (the live default is 3-minute). Results are in <b>NIFTY points</b>, not option rupees. There is no backtest page.
+</div>
+
+<!--LIVE_STATUS_PANEL-->
+
+<h2 id="words">2. Words you'll see</h2>
+<table>
+  <tr><th>Word</th><th>Plain meaning</th></tr>
+  <tr><td>Candle</td><td>One 3-minute bar (the default): open, high, low, close. Times are the candle's <b>start</b>, as on Kite: the 10:00 candle runs 10:00&ndash;10:03.</td></tr>
+  <tr><td>PP, R1, S1</td><td>Three price lines worked out from yesterday's high, low and close (see section 3). PP is the middle. R1 is above, S1 below.</td></tr>
+  <tr><td>CE zone</td><td>Between PP and R1. Only a CE can be bought here.</td></tr>
+  <tr><td>PE zone</td><td>Between S1 and PP. Only a PE can be bought here.</td></tr>
+  <tr><td>EMA20 / EMA50</td><td>The average closing price of the last 20 / 50 candles, with recent candles counting more. EMA20 reacts faster.</td></tr>
+  <tr><td>Cross</td><td>On the candle before, EMA20 was at or below EMA50; on this candle it is above (a cross up). A cross down is the mirror.</td></tr>
+  <tr><td>Cross level</td><td>Where the two lines crossed, taken as the halfway point between EMA20 and EMA50 on the crossing candle. EMA20 25,874.91 and EMA50 25,874.23 &rarr; cross level 25,874.57.</td></tr>
+  <tr><td>SuperTrend (10, 3)</td><td>A line set 3 &times; the average candle size (last 10 candles) away from price. Green and under price = up. Red and over price = down. It is also the stop.</td></tr>
+  <tr><td>CE / PE</td><td>A CE (call) gains when the market rises. A PE (put) gains when it falls. This strategy only buys.</td></tr>
+  <tr><td>ATM strike</td><td>The strike nearest the current price. NIFTY at 25,896 &rarr; the 25,900 strike.</td></tr>
+  <tr><td>Square-off</td><td>Closing any open trade at 15:00 so nothing is held overnight.</td></tr>
+</table>
+
+<h2 id="pivots">3. Yesterday's pivot lines</h2>
+<p>Each morning the bot takes <b>yesterday's</b> daily high (H), low (L) and close (C) and works out:</p>
+<div class="rule"><div class="no">PP</div><div><b>PP = (H + L + C) &divide; 3</b> &mdash; the pivot, roughly yesterday's average price.</div></div>
+<div class="rule"><div class="no">R1</div><div><b>R1 = 2 &times; PP &minus; L</b> &mdash; the first line above.</div></div>
+<div class="rule"><div class="no">S1</div><div><b>S1 = 2 &times; PP &minus; H</b> &mdash; the first line below.</div></div>
+<div class="card">
+  <b>Real example</b> (from the stored 5-minute candles). On 12 Nov 2025 NIFTY's high was 25,934.55, its low 25,781.15 and its close 25,874.00.
+  PP = (25,934.55 + 25,781.15 + 25,874.00) &divide; 3 = <b>25,863.23</b>.
+  R1 = 2 &times; 25,863.23 &minus; 25,781.15 = <b>25,945.32</b>.
+  S1 = 2 &times; 25,863.23 &minus; 25,934.55 = <b>25,791.92</b>.
+  Those three lines are fixed for all of 13 Nov 2025 (the CE example in sections 4 and 9).
+</div>
+<table>
+  <tr><th>Where the candle closes</th><th>What the bot may do</th></tr>
+  <tr><td>Above R1</td><td><b>Nothing.</b> No-trade zone.</td></tr>
+  <tr><td>Between PP and R1</td><td>Buy a <b>CE</b>, if the other two boxes tick.</td></tr>
+  <tr><td>Between S1 and PP</td><td>Buy a <b>PE</b>, if the other two boxes tick.</td></tr>
+  <tr><td>Below S1</td><td><b>Nothing.</b> No-trade zone.</td></tr>
+  <tr><td>Exactly on PP, R1 or S1</td><td>Nothing &mdash; on a line is not inside a zone.</td></tr>
+</table>
+<ul>
+  <li>If yesterday's high/low/close cannot be loaded, there are no lines and the bot refuses to trade.</li>
+  <li>If the lines it has are <b>older</b> than the last session on its chart (for example, the daily feed is missing yesterday's bar), it refuses them and fetches them again. Lines from a <b>newer</b> day are fine &mdash; that happens after a special session such as Muhurat trading, whose candles are not on the normal chart.</li>
+  <li>BANK NIFTY and SAIL use their own yesterday; the commodity pages use the traded future's previous MCX day.</li>
+</ul>
+
+<h2 id="entry">4. How a trade starts</h2>
+<p>Everything is read on one <b>closed</b> candle &mdash; the <b>signal candle</b>. A wick does not count.</p>
+<div class="boxrow-label">Buy a CE (call) &mdash; all three on the same candle</div>
+<div class="rule"><div class="no">1</div><div><b>Zone.</b> The candle <b>closes</b> above PP and below R1.</div></div>
+<div class="rule"><div class="no">2</div><div><b>Cross, inside the zone.</b> EMA20 crosses <b>above</b> EMA50 <b>on this candle</b> (one candle earlier EMA20 was at or below EMA50, now it is above), <b>and</b> the cross level is also between PP and R1. A cross on an earlier candle does not count. A cross that happens below PP does not count, even if the candle then closes above PP.</div></div>
+<div class="rule"><div class="no">3</div><div><b>SuperTrend green</b> on this candle (its line is under the close). That line's value is the first stop.</div></div>
+<div class="card">
+  <b>Real example (13 Nov 2025, shown on 5-minute candles).</b> The 10:05 candle closes at <b>25,894.90</b> &mdash; above PP 25,863.23 and below R1 25,945.32. Box 1 ticks.
+  One candle earlier EMA20 was 25,872.81 and EMA50 25,873.38 (fast under slow). On this candle EMA20 is 25,874.91 and EMA50 25,874.23 (fast over slow), so the lines crossed on this candle, at 25,874.57 &mdash; between PP and R1. Box 2 ticks.
+  SuperTrend turns green on this same candle, at 25,815.74. Box 3 ticks. <b>Buy the ATM CE</b> at the next tick (NIFTY 25,896.20 at 10:10). Stop = <b>25,815.74</b>, 80.46 points below.
+</div>
+<div class="boxrow-label">Buy a PE (put) &mdash; the mirror</div>
+<ul>
+  <li>The candle closes above S1 and below PP.</li>
+  <li>EMA20 crosses <b>below</b> EMA50 on this candle, and the cross level is between S1 and PP.</li>
+  <li>SuperTrend is <b>red</b> (its line is over the close). That value is the first stop.</li>
+</ul>
+<div class="card">
+  <b>Real example (26 Feb 2026, 5-minute candles).</b> The 11:45 candle closes at <b>25,483.35</b>, between S1 25,387.03 and PP 25,519.82.
+  EMA20 goes from 25,519.15 (above EMA50 25,517.19) to 25,515.74 (below EMA50 25,515.87) &mdash; a cross down on this candle, at 25,515.81. That is only 4.01 points under PP, but it is inside the PE zone. SuperTrend is red at 25,553.96.
+  <b>Buy the ATM PE</b> at the next tick (NIFTY 25,483.95 at 11:50). Stop = <b>25,553.96</b>.
+</div>
+<div class="card bad">
+  <b>Two ways a good-looking candle is still refused.</b>
+  <ul>
+    <li><b>The close is outside the zone.</b> On 1 Sep 2025 the 09:55 candle closed at 24,547.50 &mdash; 11.67 points <b>above</b> R1 24,535.83. EMA20 crossed above EMA50 on it at 24,506.50 (inside PP&ndash;R1) and SuperTrend was green. The close was above R1, so the bot did nothing.</li>
+    <li><b>The cross happened outside the zone.</b> On 19 Aug 2025 the 10:10 candle closed at 24,921.90, just inside PP 24,919.63&ndash;R1 24,986.42, and SuperTrend was green. EMA20 crossed above EMA50 on it &mdash; but at 24,904.35, 15.28 points <b>below</b> PP. The lines crossed in the PE zone, so there was no CE.</li>
+  </ul>
+  Both are charted in section 9.
+</div>
+<ul>
+  <li><b>No waiting candle.</b> Paper and Live buy on the first price tick after the signal candle closes.</li>
+  <li><b>Time.</b> The signal candle must <b>close</b> between 10:00 and 14:00.</li>
+  <li>The bot also needs: no trade already open, fewer than 3 trades today, today's loss under &#8377;5,000, and 2 candles passed since the last exit.</li>
+</ul>
+
+<h2 id="exits">5. How a trade ends</h2>
+<p><b>Checked when a candle closes</b> (the strategy's own exit):</p>
+<ol>
+  <li><b>SuperTrend changes colour</b> against the trade (red on a CE, green on a PE) &rarr; sell.</li>
+  <li><b>The candle closes beyond the stop</b> (below it on a CE, above it on a PE) &rarr; sell.</li>
+  <li>Otherwise the stop moves up to the new SuperTrend value (down, on a PE) &mdash; only if that is tighter. It never moves back.</li>
+</ol>
+<p>The sale is at the first tick after that candle closes. In the NIFTY data below, rule 1 and rule 2 always happened together: all 154 strategy exits were a SuperTrend colour change.</p>
+<div class="card warn">
+  <b>The SuperTrend stop is never checked tick by tick.</b> A candle that dips through the line but closes back on the right side does not end the trade (the CE chart in section 9 shows three). The flip side: a candle that jumps a long way through the line is only sold after it closes, so a loss can be bigger than the gap to the line (the PE chart shows one).
+</div>
+<p><b>Checked on every tick</b> (the app's common rules, on the option price &mdash; section 6): the <b>profit lock</b> and the <b>breakeven stop</b>. And at <b>15:00</b> anything still open is sold.</p>
+<p>There is <b>no</b> fixed target, <b>no</b> option-price stop of its own on the NIFTY / BANK NIFTY / SAIL pages, and nothing about R2 or S2. Once a trade is open, R1 and S1 no longer matter &mdash; the CE example runs above R1 and is kept.</p>
+
+<h2 id="common">6. Common rules &amp; session</h2>
+<p>These are the app-wide <b>Common Rules</b> in Settings. Every strategy shares them; turning one off turns it off for all.</p>
+<table>
+  <tr><th>Rule</th><th>Default</th><th>Plain meaning, with an example</th></tr>
+  <tr><td>Trade window</td><td>10:00&ndash;14:00, exit 15:00</td><td>New trades only on a signal candle that <b>closes</b> 10:00&ndash;14:00. On 3-minute candles the first one that can trade is 09:57&ndash;10:00 and the last is 13:57&ndash;14:00. Anything open is sold at 15:00. (Commodity keeps MCX hours.)</td></tr>
+  <tr><td>Profit lock</td><td>arm +8%, keep +5%</td><td>Option bought at &#8377;150. Once it has touched &#8377;162 (+8%), it is never sold below a floor: &#8377;160.20 at that point, and the floor follows new highs (peak &#8377;180 &rarr; floor &#8377;175.50).</td></tr>
+  <tr><td>Breakeven stop</td><td>arm +5%</td><td>Bought at &#8377;150. Once it has touched &#8377;157.50 (+5%), a fall back to &#8377;150 sells, so a winner cannot turn into a loss.</td></tr>
+  <tr><td>Wait after any exit</td><td>2 candles</td><td>After a trade closes (any reason), no new trade on either side for 2 of this strategy's candles. On 3-minute candles: exit at 10:48 &rarr; nothing new until 10:54.</td></tr>
+  <tr><td>Bid-ask spread check</td><td>2 points</td><td>Bid &#8377;100, ask &#8377;103 (3 points apart) &rarr; the entry is skipped. Bid &#8377;100, ask &#8377;101.50 &rarr; allowed.</td></tr>
+  <tr><td>Paper capital</td><td>on</td><td>Paper trades draw on the Zerodha paper pool. An entry the pool cannot pay for is refused.</td></tr>
+</table>
+<p>And this strategy's own day rules:</p>
+<table>
+  <tr><th>Rule</th><th>Default</th><th>Plain meaning</th></tr>
+  <tr><td>Trades per day</td><td>3</td><td>After the third trade, the bot only watches.</td></tr>
+  <tr><td>Daily loss limit</td><td>&#8377;5,000</td><td>No new trade once today's losses reach this.</td></tr>
+  <tr><td>Size</td><td>1 lot</td><td>NIFTY 65, BANK NIFTY 30 (the common Lot Multiplier, 1 by default). SAIL 4,700 shares (its own <code>SAIL_PIVOT_EMA_ST_LOTS</code>, 1 by default).</td></tr>
+  <tr><td>Contract</td><td>ATM</td><td>The strike nearest the price at the moment of entry.</td></tr>
+  <tr><td>Warm-up</td><td>3 / 5 / 11 earlier days</td><td>EMA50 needs a long run of candles to settle, so earlier sessions are loaded at Start: 3 days on 3-minute candles, 5 on 5-minute, 11 on 15-minute (or <code>&hellip;_WARMUP_DAYS</code> if that is set higher). The EMAs then run on across days, as on TradingView.</td></tr>
+</table>
+<div class="card warn">
+  <b>Deliberately left out.</b> No RSI, no VIX filter, no OI filter, no ADX, no volume test, no VWAP, no confirmation candle, no fixed target and no &ldquo;cross within the last few candles&rdquo;.
+  Adding any of these makes it a different strategy that needs its own testing.
+</div>
+
+<h2 id="where">7. Four instruments, one rule set</h2>
+<p>All four read the same engine. Each NSE page has its own settings (same names, with a <code>BN_</code> or <code>SAIL_</code> in front), its own position and its own trade book.</p>
+<table>
+  <tr><th>Instrument</th><th>Paper page</th><th>Menu</th><th>1 lot</th><th>Notes</th></tr>
+  <tr><td>NIFTY 50</td><td><code>/pivot_ema_st-paper</code></td><td>NIFTY</td><td>65</td><td>Settings <code>PIVOT_EMA_ST_*</code>. Live: <code>/pivot_ema_st-live</code>.</td></tr>
+  <tr><td>BANK NIFTY</td><td><code>/bn_pivot_ema_st-paper</code></td><td>BANK NIFTY</td><td>30</td><td>Settings <code>BN_PIVOT_EMA_ST_*</code>. Monthly options (NSE has no BANK NIFTY weeklies). Live: <code>/bn_pivot_ema_st-live</code>.</td></tr>
+  <tr><td>SAIL</td><td><code>/sail_pivot_ema_st-paper</code></td><td>STOCKS</td><td>4,700 shares</td><td>Settings <code>SAIL_PIVOT_EMA_ST_*</code>. A stock: monthly options only, strikes every &#8377;2.50. Live: <code>/sail_pivot_ema_st-live</code>.</td></tr>
+  <tr><td>Crude oil, gold, silver (MCX)</td><td><code>/cmx_crude_pivot_ema_st-paper</code>, <code>/cmx_gold_&hellip;</code>, <code>/cmx_silver_&hellip;</code></td><td>COMMODITY</td><td><code>CMX_PIVOT_EMA_ST_LOTS</code> (1)</td><td><b>Paper only.</b> Uses the NIFTY page's EMA and SuperTrend settings, but its own candle size (<code>CMX_PIVOT_EMA_ST_RESOLUTION</code>, 3 min) and MCX hours: entries 10:00&ndash;22:30, exit 23:00. The commodity pages' 10% option stop applies; the spread check does not (it reads NSE data).</td></tr>
+</table>
+
+<h2 id="start">8. Starting it, and Live</h2>
+<ul>
+  <li><b>Start All (Paper)</b> on the Dashboard starts every switched-on paper strategy, one after another. These three NSE pages are switched <b>on</b> by default, so they start with it. While MCX is open it also starts the switched-on commodity pages; after the NSE close only the commodity half runs. The Real-Time monitor has a separate <b>Start All (Commodity)</b> button.</li>
+  <li>Each page also has its own Start and Stop.</li>
+  <li><b>Live</b> is a wrapper around the Paper page: Paper decides, Live copies each entry and exit to Zerodha. It needs both logins &mdash; Fyers for prices, Zerodha for orders. Its menu item is hidden by default.</li>
+  <li><b>A real order needs all three:</b> the strategy's <code>&hellip;_LIVE_ENABLED</code> on, the global <code>LIVE_HARNESS_DRY_RUN</code> off, and the strategy's <code>&hellip;_LIVE_DRY_RUN</code> off. Out of the box the global dry-run is on, so Live only writes the order it <b>would</b> have placed to the log.</li>
+  <li><b>No Backtest page and no Replay</b> &mdash; your choice when the strategy was set up. The only evidence before paper trading is the spot-point check in section 10.</li>
+</ul>
+
+<h2 id="examples">9. Real chart examples</h2>
+<div class="card">
+  <b>How to read the charts.</b> These are <b>real NIFTY days</b>, run candle by candle through the real engine the way Paper does: decide on the close, buy at the next candle's open (standing in for the first tick), check and trail the stop on each close, square off at 15:00.
+  <b>These examples use 5-minute candles</b> (<code>PIVOT_EMA_ST_TF=5</code>), because only 5-minute history is stored. <b>The live default is 3-minute</b>, so on a live day the same idea plays out on smaller candles, at different times and prices.
+  Dashed lines: R1 (blue), PP (grey), S1 (pink), built from the previous day's 5-minute candles. Yellow = EMA20, purple = EMA50, green/red = SuperTrend, white dashes = the stop in force.
+  Results are in <b>NIFTY points</b>. Option prices are not shown, so the tick-level profit lock and breakeven stop are not drawn.
+</div>
+
+<h3>A winner (CE)</h3>
+<div class="tv-chart" id="pes-ce"></div>
+<p class="tv-cap"><b>What you see:</b> 13 Nov 2025. Lines from 12 Nov: PP 25,863.23, R1 25,945.32, S1 25,791.92. The 10:05 candle closes at 25,894.90, inside PP&ndash;R1. EMA20 crosses above EMA50 on it (25,874.91 over 25,874.23) at a cross level of 25,874.57, also inside PP&ndash;R1. SuperTrend turns green on the same candle, at 25,815.74 &rarr; <b>BUY CE at 25,896.20</b> (10:10 open). The green line climbs under price and the stop is moved up 19 times, to 25,947.65 by 12:20. From the 10:55 candle NIFTY closes above R1 (high 25,987.60) &mdash; that does not matter once a trade is open. The 12:35, 12:40 and 12:45 candles all dip below the stop (the 12:35 low is 25,942.05) but close above it &mdash; no exit. The 12:50 candle closes at 25,942.70, below the stop, and SuperTrend turns red &rarr; <b>EXIT at 25,942.00</b> (12:55 open), <b>+45.80 points</b>. <b>Why it matters:</b> with no target, the trailing line is what lets a move run &mdash; and a close-only stop rides out wicks.</p>
+
+<h3>A loser (PE)</h3>
+<div class="tv-chart" id="pes-pe"></div>
+<p class="tv-cap"><b>What you see:</b> 26 Feb 2026. Lines from 25 Feb: PP 25,519.82, R1 25,611.43, S1 25,387.03. The 11:45 candle closes at 25,483.35, inside S1&ndash;PP. EMA20 crosses below EMA50 on it (25,515.74 under 25,515.87) at 25,515.81 &mdash; 4.01 points under PP, so inside the PE zone. SuperTrend is red at 25,553.96 &rarr; <b>BUY PE at 25,483.95</b> (11:50 open), 70.01 points under the stop. NIFTY falls to 25,400.95 by 12:20, 83 points in the trade's favour, and the red line follows it down 6 times, to 25,489.49 by 13:15. Then NIFTY goes sideways. The 14:40 candle jumps from 25,473.80 to close at 25,513.00 &mdash; 23.51 points through the stop &mdash; and SuperTrend turns green &rarr; <b>EXIT at 25,514.80</b> (14:45 open), <b>&minus;30.85 points</b>. <b>Why it matters:</b> a close-only stop can be passed by a lot in one candle, and here a trade that was 83 points up still ended in a loss. On a real day the tick-level profit lock and breakeven stop (on the option price, not drawn here) may have sold it earlier.</p>
+
+<h3>No trade: the close was above R1</h3>
+<div class="tv-chart" id="pes-skip"></div>
+<p class="tv-cap"><b>What you see:</b> 1 Sep 2025. Lines from 29 Aug: PP 24,470.27, R1 24,535.83, S1 24,368.08. NIFTY opens below PP, jumps into the CE zone in the first candle, and the 09:30 candle closes above R1. The 09:55 candle closes at 10:00 &mdash; the first moment entries are allowed &mdash; at 24,547.50, 11.67 points above R1. EMA20 crosses above EMA50 on it (24,507.22 over 24,505.78) at 24,506.50, inside PP&ndash;R1, and SuperTrend is green at 24,475.58. Two boxes tick, but the close is above R1 &rarr; <b>no trade</b>. It was the day's only EMA cross, so nothing traded all day. Here the rule cost a winner: NIFTY kept rising to 24,635.60, and the same entry and exit rules would have made +85.15 points (24,547.55 at 10:00 &rarr; 24,632.70 at 15:00). <b>Why it matters:</b> the R1/S1 rule is a hard no, even when the trend is strong.</p>
+
+<h3>No trade: the lines crossed below PP</h3>
+<div class="tv-chart" id="pes-lvl"></div>
+<p class="tv-cap"><b>What you see:</b> 19 Aug 2025. Lines from 18 Aug: PP 24,919.63, R1 24,986.42, S1 24,817.27. The 10:10 candle closes at 24,921.90, just inside PP&ndash;R1, and SuperTrend is green at 24,861.12. EMA20 crosses above EMA50 on it (24,904.67 over 24,904.03) &mdash; but the cross level is 24,904.35, 15.28 points <b>below</b> PP, in the PE zone (the orange dot). Two boxes tick &rarr; <b>no trade</b>, and nothing else traded that day. Taken anyway, the same exit rules would have made +33.65 points (24,921.20 at 10:15 &rarr; 24,954.85 at 13:55). <b>Why it matters:</b> a close in the zone is not enough &mdash; the cross itself has to happen there. On the data this rule turns away more setups than any rule except the close zone (section 10).</p>
+
+<h2 id="data">10. What the NIFTY data says</h2>
+<div class="card warn">
+  How this was measured: the engine (default settings, except <b>5-minute</b> candles) was walked candle by candle over stored NIFTY 5-minute candles from 1 Jan 2018 to 31 Jul 2026. The first 5 days were warm-up (the engine loads 5 sessions on 5-minute candles), so <b>2,115 trading days</b> (8 Jan 2018 &ndash; 31 Jul 2026, 102.7 months) could trade. Decide on the close, buy at the next open, trail on each close, sell at the next open after an exit close, square off at 15:00, at most 3 trades a day, wait 2 candles after an exit.
+  This is a <b>spot-point simulation</b> &mdash; not a backtest page, and not rupees. The profit lock, breakeven stop, spread check and &#8377;5,000 loss limit need option prices, which this data does not have, so they were <b>not</b> applied. No costs were charged. The live default (3-minute) was not measured, and neither were BANK NIFTY, SAIL or the commodity pages.
+</div>
+<h3>How often the three boxes agree</h3>
+<table>
+  <tr><th>Step (signal candles closing 10:00&ndash;14:00)</th><th>Count</th></tr>
+  <tr><td>EMA20/EMA50 crosses</td><td>1,388 (679 up, 709 down)</td></tr>
+  <tr><td>Up-crosses that closed above R1</td><td>28</td></tr>
+  <tr><td>Up-crosses that closed below PP (the PE zone or lower)</td><td>233</td></tr>
+  <tr><td>Up-crosses that closed in the CE zone but crossed below PP</td><td>176</td></tr>
+  <tr><td>Up-crosses fully in the CE zone but SuperTrend red</td><td>81</td></tr>
+  <tr><td><b>CE: all three boxes</b></td><td><b>161</b></td></tr>
+  <tr><td>Down-crosses that closed below S1</td><td>46</td></tr>
+  <tr><td>Down-crosses that closed at or above PP</td><td>267</td></tr>
+  <tr><td>Down-crosses that closed in the PE zone but crossed above PP</td><td>226</td></tr>
+  <tr><td>Down-crosses fully in the PE zone but SuperTrend green</td><td>60</td></tr>
+  <tr><td><b>PE: all three boxes</b></td><td><b>110</b></td></tr>
+  <tr><td>&nbsp;&nbsp;&hellip; skipped, a trade was already open</td><td>14</td></tr>
+  <tr><td>&nbsp;&nbsp;&hellip; skipped, inside the 2-candle wait after an exit</td><td>0</td></tr>
+  <tr><td>&nbsp;&nbsp;&hellip; skipped, 3 trades already that day</td><td>0</td></tr>
+  <tr><td><b>Trades taken</b></td><td><b>257</b> (152 CE, 105 PE) on 249 of 2,115 days &mdash; about 2.5 a month</td></tr>
+</table>
+<p>The two zone rules remove the most. Setups turned away <b>only</b> because the lines crossed outside the zone (close in the zone, SuperTrend agreeing, no trade open) came up 342 times; taken one at a time with the same exits, 161 of them (47.1%) would have won, +5.14 points each on average &mdash; about the same as the trades taken. Setups turned away only for closing above R1 / below S1 came up 40 times: 17 (42.5%) would have won, +0.02 points on average. So on this data both zone rules mainly mean <b>fewer</b> trades, not better ones. (Each of these is counted on its own; taking one would have blocked some others.)</p>
+
+<h3>How far away the stop starts</h3>
+<p>Distance from the buy price to the first stop (the SuperTrend line), in NIFTY points, over the 257 trades:</p>
+<table>
+  <tr><th>Measure</th><th>Result</th></tr>
+  <tr><td>Middle trade (median)</td><td>about 48 points</td></tr>
+  <tr><td>1 in 10 closer than</td><td>about 24 points</td></tr>
+  <tr><td>1 in 10 wider than</td><td>about 91 points</td></tr>
+  <tr><td>Smallest / largest</td><td>12.12 / 137.92 points</td></tr>
+</table>
+<p>In option terms (delta 0.5, one NIFTY lot of 65): 48 points &rarr; about &#8377;1,560 if the stop is hit; 91 points &rarr; about &#8377;2,940.</p>
+
+<h3>How trades ended</h3>
+<table>
+  <tr><th>Measure</th><th>Result</th></tr>
+  <tr><td>SuperTrend changed colour</td><td>154</td></tr>
+  <tr><td>15:00 square-off</td><td>103</td></tr>
+  <tr><td>Winners / losers</td><td>110 / 147 &mdash; 42.8% winners</td></tr>
+  <tr><td>Average winner / average loser</td><td>+59.51 / &minus;36.52 points</td></tr>
+  <tr><td>Average trade (before costs)</td><td>+4.58 points</td></tr>
+  <tr><td>Total (before costs)</td><td>+1,176.75 points over 257 trades</td></tr>
+  <tr><td>CE / PE</td><td>CE +610.30 (64 of 152 won) &middot; PE +566.45 (46 of 105 won)</td></tr>
+  <tr><td>Best / worst trade</td><td>+308.00 / &minus;142.95 points</td></tr>
+  <tr><td>Middle trade lasted</td><td>23 candles (just under 2 hours)</td></tr>
+  <tr><td>Losers that lost more than their first stop distance</td><td>38 of 147 (a close-only stop fills past the line)</td></tr>
+</table>
+<div class="card bad">
+  <b>In plain words:</b> a bit over 4 trades in 10 won, and winners were bigger than losers. But the average trade is only +4.58 points <b>before</b> costs &mdash; about &#8377;150 on one lot at delta 0.5. Brokerage, the bid-ask spread and time decay come out of that, and could take most or all of it. This says the engine behaves sensibly over 8&frac12; years; it is <b>not</b> proof of an edge.
+</div>
+
+<h2 id="settings">11. All the settings</h2>
+<p>Generated from the Settings schema (<code>src/routes/settings.js</code>). The default column is the value Settings ships; the engine falls back to the same value when a setting is blank or out of range.</p>
+<h3>NIFTY &mdash; mode &amp; live</h3>
+<table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>PIVOT_EMA_ST_LIVE_ENABLED</code></td><td><code>false</code></td><td><b>PIVOT_EMA_ST Live Orders (gates /pivot_ema_st-live/start)</b>. Send real orders to Zerodha. NEVER traded live — paper-validate a run of sessions first. Off means the harness refuses to start unless the global dry-run is also on.</td></tr>
+<tr><td><code>PIVOT_EMA_ST_LIVE_DRY_RUN</code></td><td><code>false</code></td><td><b>PIVOT_EMA_ST Live DRY-RUN override</b>. Keep this strategy simulated even when live orders are switched on — the broker call is written to the log but no real order leaves the machine. A per-strategy safety catch on top of the global one.</td></tr>
+</tbody></table>
+<h3>NIFTY &mdash; chart &amp; signal</h3>
+<table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>PIVOT_EMA_ST_TF</code></td><td><code>3</code></td><td><b>Candle Timeframe</b> (3 / 5 / 15). Which NIFTY candle the whole strategy reads — the pivot zone, the EMA cross, the SuperTrend and the stop all run on this one chart. Takes effect at the next Start.</td></tr>
+<tr><td><code>PIVOT_EMA_ST_EMA_FAST</code></td><td><code>20</code></td><td><b>Fast EMA Period</b> (2&ndash;400). The fast EMA in the crossover. A CE needs it to cross ABOVE the slow EMA on the signal candle itself (the bar before: fast ≤ slow; this bar: fast &gt; slow). A cross on an earlier candle does not count.</td></tr>
+<tr><td><code>PIVOT_EMA_ST_EMA_SLOW</code></td><td><code>50</code></td><td><b>Slow EMA Period</b> (2&ndash;400). The slow EMA in the crossover. Must be longer than the fast EMA — if it is not, the engine falls back to 50.</td></tr>
+<tr><td><code>PIVOT_EMA_ST_ST_PERIOD</code></td><td><code>10</code></td><td><b>SuperTrend ATR Period</b> (2&ndash;100). ATR length behind the SuperTrend line. The line does two jobs: its colour must agree with the trade (green for CE, red for PE), and the line itself is the stop — its value on the signal candle is the first stop, then it trails.</td></tr>
+<tr><td><code>PIVOT_EMA_ST_ST_MULT</code></td><td><code>3</code></td><td><b>SuperTrend Multiplier</b> (0.1&ndash;10). How many ATRs away from price the SuperTrend line sits. Example: ATR 15 pts × 3 = the line sits about 45 pts from price. Smaller = a tighter stop that is hit more often; larger = more room and bigger losses when it is hit.</td></tr>
+</tbody></table>
+<h3>NIFTY &mdash; session</h3>
+<p>While the Common Rules trade window is on (the default), it sets these three times to 10:00 / 14:00 / 15:00 for the running app. The Settings page still shows the strategy's own values, which come back when the window is switched off.</p>
+<table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>PIVOT_EMA_ST_ENTRY_START</code></td><td><code>10:00</code></td><td><b>Entry Window Start</b>. No entries on a signal candle that closes before this time (IST). While the Common Trade Rules trade window is on, it sets this.</td></tr>
+<tr><td><code>PIVOT_EMA_ST_ENTRY_END</code></td><td><code>14:00</code></td><td><b>Entry Window End</b>. No NEW entries on a signal candle that closes after this time (IST). A position already open is not affected.</td></tr>
+<tr><td><code>PIVOT_EMA_ST_EOD_EXIT_TIME</code></td><td><code>15:00</code></td><td><b>Forced Exit (square-off)</b>. Anything still open is closed at this time (IST), stop or no stop. Nothing is carried overnight.</td></tr>
+<tr><td><code>PIVOT_EMA_ST_WARMUP_DAYS</code></td><td><code>3</code></td><td><b>Warm-up Days</b> (1&ndash;15). How many earlier trading days of candles are loaded before the session so EMA50 and SuperTrend start the day settled. EMA50 on 3-min candles needs about 56 bars — more than half a session — so without warm-up the first signals would not come until after midday. On 5-min or 15-min candles it is raised automatically to 5 or 11 days so EMA50 matches the chart.</td></tr>
+</tbody></table>
+<h3>NIFTY &mdash; day guards</h3>
+<table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>PIVOT_EMA_ST_MAX_DAILY_TRADES</code></td><td><code>3</code></td><td><b>Max Trades/Day</b> (1&ndash;50). Stop taking new entries once this many trades are done for the day.</td></tr>
+<tr><td><code>PIVOT_EMA_ST_MAX_DAILY_LOSS</code></td><td><code>5000</code></td><td><b>Max Daily Loss (₹)</b> (0&ndash;50000). Stop trading for the rest of the day once losses reach this much (0 = off). Example: at 5000, two losers of ₹2,600 each (₹5,200) end the day.</td></tr>
+</tbody></table>
+<h3>BANK NIFTY and SAIL</h3>
+<p>Every NIFTY setting above also exists as <code>BN_PIVOT_EMA_ST_&hellip;</code> (BANK NIFTY) and <code>SAIL_PIVOT_EMA_ST_&hellip;</code> (SAIL), each in its own Settings section, with the same default and range &mdash; for example <code>BN_PIVOT_EMA_ST_TF</code> = 3 and <code>SAIL_PIVOT_EMA_ST_ST_MULT</code> = 3. SAIL adds one setting of its own:</p>
+<table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>SAIL_PIVOT_EMA_ST_LOTS</code></td><td><code>1</code></td><td><b>Lots</b> (1&ndash;50). How many lots of SAIL to buy per trade; 1 lot = SAIL_LOT_SIZE = 4700 shares, capped by MAX_LOT_MULTIPLIER. Example: 2 lots of a ₹5.00 option = 9,400 × ₹5 = ₹47,000 of premium.</td></tr>
+</tbody></table>
+<h3>Commodity (MCX crude / gold / silver)</h3>
+<p>The commodity pages read the NIFTY <code>PIVOT_EMA_ST_EMA_FAST</code> / <code>_EMA_SLOW</code> / <code>_ST_PERIOD</code> / <code>_ST_MULT</code> for the rules, and these for timing and size:</p>
+<table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>CMX_PIVOT_EMA_ST_RESOLUTION</code></td><td><code>3</code></td><td><b>PIVOT_EMA_ST — Candle Size (min)</b> (1&ndash;60). Candle length the PIVOT_EMA_ST rules run on, for every commodity (the NIFTY PIVOT_EMA_ST_TF is not used here). Takes effect on the next Start.</td></tr>
+<tr><td><code>CMX_PIVOT_EMA_ST_LOTS</code></td><td><code>1</code></td><td><b>PIVOT_EMA_ST — Lots</b> (1&ndash;50). Lots per paper trade, on each commodity page of this strategy. Example: 1 Crude Oil lot = 100 barrels, so a ₹10 premium move is ₹1,000.</td></tr>
+<tr><td><code>CMX_PIVOT_EMA_ST_ENTRY_START</code></td><td><code>10:00</code></td><td><b>PIVOT_EMA_ST — Entry Window Start</b>. No new entries before this time (IST). The first hour after the 09:00 open is skipped while the candles settle.</td></tr>
+<tr><td><code>CMX_PIVOT_EMA_ST_ENTRY_END</code></td><td><code>22:30</code></td><td><b>PIVOT_EMA_ST — Entry Window End</b>. No new entries after this time (IST). An open trade is not affected.</td></tr>
+<tr><td><code>CMX_PIVOT_EMA_ST_EOD_EXIT_TIME</code></td><td><code>23:00</code></td><td><b>PIVOT_EMA_ST — Forced Exit</b>. Anything still open is closed at this time (IST). Nothing is held overnight.</td></tr>
+<tr><td><code>CMX_PIVOT_EMA_ST_MAX_DAILY_TRADES</code></td><td><code>3</code></td><td><b>PIVOT_EMA_ST — Max Trades/Day</b> (1&ndash;50). No new entries once this many trades are done for the day, on each commodity page.</td></tr>
+<tr><td><code>CMX_PIVOT_EMA_ST_MAX_DAILY_LOSS</code></td><td><code>5000</code></td><td><b>PIVOT_EMA_ST — Max Daily Loss (₹)</b> (0&ndash;100000). Stop for the day once losses reach this much (0 = off). Counted per commodity page — never mixed with NIFTY trades.</td></tr>
+<tr><td><code>CMX_OPT_STOP_PCT</code></td><td><code>10</code></td><td><b>Option Stop (% of premium)</b> (0&ndash;50). Sell when the option premium falls this % below the buy price, on every commodity page (EMA_RSI_ST and V2). Example: bought at ₹200, 10% → out at ₹180. In Oct 2026 crude V2 losers ran to −20% before the SuperTrend stop. 0 = off.</td></tr>
+</tbody></table>
+<h3>Menu, Start All &amp; alerts</h3>
+<p>The <code>UI_SHOW_&hellip;</code> and <code>TG_&hellip;</code> keys also exist with <code>BN_</code> and <code>SAIL_</code> in the name, with the same defaults.</p>
+<table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>PIVOT_EMA_ST_MODE_ENABLED</code></td><td><code>true</code></td><td><b>PIVOT_EMA_ST Mode</b>. Show the PIVOT_EMA_ST menu (under NIFTY) and its settings, and include it in Start All. NIFTY options: a closed candle inside the pivot zone (PP–R1 for CE, S1–PP for PE) with EMA20 crossing EMA50 on that candle and SuperTrend agreeing. Paper + Live harness only. On by default; unproven — never traded.</td></tr>
+<tr><td><code>BN_PIVOT_EMA_ST_MODE_ENABLED</code></td><td><code>true</code></td><td><b>BN_PIVOT_EMA_ST Mode (NIFTY BANK)</b>. Show the BN_PIVOT_EMA_ST menu (under BANK NIFTY) and its settings, and include it in Start All. The PIVOT_EMA_ST rules on NIFTY BANK, with its own settings and position. On by default; unproven — never traded.</td></tr>
+<tr><td><code>SAIL_PIVOT_EMA_ST_MODE_ENABLED</code></td><td><code>true</code></td><td><b>SAIL_PIVOT_EMA_ST Mode (SAIL stock options)</b>. Show the SAIL_PIVOT_EMA_ST menu (under STOCKS) and its settings, include it in Start All, and start streaming SAIL prices. The PIVOT_EMA_ST rules on SAIL stock options. On by default; unproven — never traded.</td></tr>
+<tr><td><code>CMX_CRUDE_PIVOT_EMA_ST_MODE_ENABLED</code></td><td><code>true</code></td><td><b>Crude Oil PIVOT_EMA_ST Mode (Commodity)</b>. Show the COMMODITY → Crude Oil → PIVOT_EMA_ST Paper page and allow it to start. The PIVOT_EMA_ST rules on MCX crude oil, paper only, separate from every NIFTY strategy. On by default.</td></tr>
+<tr><td><code>CMX_GOLD_PIVOT_EMA_ST_MODE_ENABLED</code></td><td><code>true</code></td><td><b>Gold PIVOT_EMA_ST Mode (Commodity)</b>. Show the COMMODITY → Gold → PIVOT_EMA_ST Paper page and allow it to start. The PIVOT_EMA_ST rules on MCX gold, paper only, separate from every NIFTY strategy. On by default.</td></tr>
+<tr><td><code>CMX_SILVER_PIVOT_EMA_ST_MODE_ENABLED</code></td><td><code>true</code></td><td><b>Silver PIVOT_EMA_ST Mode (Commodity)</b>. Show the COMMODITY → Silver → PIVOT_EMA_ST Paper page and allow it to start. The PIVOT_EMA_ST rules on MCX silver, paper only, separate from every NIFTY strategy. On by default.</td></tr>
+<tr><td><code>UI_SHOW_PIVOT_EMA_ST_PAPER</code></td><td><code>true</code></td><td><b>PIVOT_EMA_ST → Paper</b>. Show Paper under PIVOT_EMA_ST.</td></tr>
+<tr><td><code>UI_SHOW_PIVOT_EMA_ST_LIVE_HARNESS</code></td><td><code>false</code></td><td><b>PIVOT_EMA_ST → Live</b>. Show Live (the paper-wrapping harness at /pivot_ema_st-live) under PIVOT_EMA_ST.</td></tr>
+<tr><td><code>UI_SHOW_PIVOT_EMA_ST_HISTORY</code></td><td><code>true</code></td><td><b>PIVOT_EMA_ST → History</b>. Show History under PIVOT_EMA_ST.</td></tr>
+<tr><td><code>TG_PIVOT_EMA_ST_STARTED</code></td><td><code>true</code></td><td><b>PIVOT_EMA_ST — Session Started</b>. Alert when a PIVOT_EMA_ST session starts.</td></tr>
+<tr><td><code>TG_PIVOT_EMA_ST_ENTRY</code></td><td><code>true</code></td><td><b>PIVOT_EMA_ST — Trade Entry</b>. Alert on every PIVOT_EMA_ST entry.</td></tr>
+<tr><td><code>TG_PIVOT_EMA_ST_EXIT</code></td><td><code>true</code></td><td><b>PIVOT_EMA_ST — Trade Exit</b>. Alert on every PIVOT_EMA_ST exit.</td></tr>
+<tr><td><code>TG_PIVOT_EMA_ST_DAYREPORT</code></td><td><code>true</code></td><td><b>PIVOT_EMA_ST — Day Report on Stop</b>. Send a PIVOT_EMA_ST day summary on stop.</td></tr>
+</tbody></table>
+<h3>Common rules (shared by every strategy)</h3>
+<table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>PROFIT_LOCK_ENABLED</code></td><td><code>true</code></td><td><b>Profit Lock (all strategies)</b>. One rule for EVERY strategy, now and in future: once the option premium has risen by the arm %, never let the trade be sold below the floor %. Measured on 346 paper trades — losers peaked ~3 min after entry at ~+6pt while winners peaked ~25 min in at ~+39pt, so a small early gain is a reversal signature. It never caps the upside: a runner that keeps climbing is left to the strategy's own trail.</td></tr>
+<tr><td><code>PROFIT_LOCK_ARM_PCT</code></td><td><code>8</code></td><td><b>Arm at (% premium gain)</b> (1&ndash;100). The lock arms once premium touches entry + this %. Must be greater than the floor %, or the lock stays inert.</td></tr>
+<tr><td><code>PROFIT_LOCK_FLOOR_PCT</code></td><td><code>5</code></td><td><b>Locked floor (% premium gain)</b> (0&ndash;99). Once armed, the trade is closed if premium falls back to entry + this %. Replaying 344 trades at arm 8 / floor 5 changed 72 exits and turned the active book from -Rs6,028 to +Rs32,110 — treat that as a hypothesis to confirm in paper, not a promise.</td></tr>
+<tr><td><code>PROFIT_LOCK_TRAIL_PCT</code></td><td><code>70</code></td><td><b>Trail — keep % of best gain</b> (0&ndash;95). Once the lock is armed, its floor rises with the peak: the trade is closed if premium falls below entry + this % of its best gain so far. Example at 70: entry 142.75, peak 330 → floor 273.82. Only moves up. 0 = off (fixed floor only).</td></tr>
+<tr><td><code>PROFIT_LOCK_TRAIL_TIERS</code></td><td><code>20:85,40:80</code></td><td><b>Trail tiers — tighter on small peaks</b>. Keep more of a small gain, less of a big one. Format "peak%:keep%" pairs. Default 20:85,40:80 — below +20% keep 85% of the gain, below +40% keep 80%, above that the trail % above. Example: entry 100, peak 110 → floor 108.5; peak 150 → floor 135. The floor never drops as the peak rises. Blank = flat trail only.</td></tr>
+<tr><td><code>BREAKEVEN_STOP_ENABLED</code></td><td><code>true</code></td><td><b>Breakeven Stop (all strategies)</b>. Once the option premium has risen by the arm %, never let the trade be sold below the entry premium — a winner cannot round-trip into a loss. Catches what the Profit Lock misses: a move that goes +5% and dies arms this but never arms an +8% lock. Measured on 321 trades: lock alone +Rs32,110, lock plus this +Rs44,973. It killed only 6 real winners (Rs499 total), because 66 of the 72 winners that dipped had dipped BEFORE arming. Note a breakeven exit still pays ~Rs71 of charges.</td></tr>
+<tr><td><code>BREAKEVEN_ARM_PCT</code></td><td><code>5</code></td><td><b>Arm at (% premium gain)</b> (1&ndash;100). The breakeven arms once premium touches entry + this %. Lower scores better in replay (+Rs81,100 at +2%) but that is the overfitting trap and it fires on noise — 5 is the conservative default.</td></tr>
+<tr><td><code>EXIT_REENTRY_COOLDOWN_ENABLED</code></td><td><code>true</code></td><td><b>Wait after any exit (all strategies)</b>. After a trade closes, take no new trade for the number of candles set in "Wait after any exit (candles)". Off = a new trade can start on the very next signal.</td></tr>
+<tr><td><code>EXIT_REENTRY_COOLDOWN_CANDLES</code></td><td><code>2</code></td><td><b>Wait after any exit (candles)</b> (0&ndash;20). One rule for EVERY strategy: after a trade closes for any reason (stop, target, breakeven, profit lock, signal), take no new trade on either side for this many of the strategy's own candles. Example on 5-min candles with 2: exit at 10:48 → no new trade until 10:58. Manual entries are not blocked. 0 = off.</td></tr>
+<tr><td><code>MAX_BID_ASK_SPREAD_ENABLED</code></td><td><code>true</code></td><td><b>Bid-Ask Spread Check (all strategies)</b>. Skip an entry when the option's bid-ask gap is wider than "Max Bid-Ask Spread (pts)". Example with 2: bid 100, ask 103 → skipped. Off = enter whatever the gap.</td></tr>
+<tr><td><code>MAX_BID_ASK_SPREAD_PTS</code></td><td><code>2</code></td><td><b>Max Bid-Ask Spread (pts)</b> (0&ndash;20). Reject entries when the spread is wider than this.</td></tr>
+<tr><td><code>COMMON_TRADE_WINDOW_ENABLED</code></td><td><code>true</code></td><td><b>Trade Window 10:00–14:00, exit 15:00 (all strategies)</b>. Every NIFTY / BANK NIFTY strategy takes new entries only from 10:00 to 14:00 and closes anything still open at 15:00. Not SIMPLE_9:30 or EarlyBird (their rule is the opening candle) and not Commodity (MCX hours). Overrides each strategy's own Entry Start / Entry End / Forced Exit; the Settings page still shows the strategy's own times, which come back when this is off. Restart a running session to pick it up.</td></tr>
+<tr><td><code>LOT_MULTIPLIER</code></td><td><code>(blank) → 1</code></td><td><b>Lot Multiplier</b> (1&ndash;50). Lots per trade for EVERY NIFTY / BANK NIFTY strategy — there is no per-strategy lot count. Example: 2 = 2 × 65 = 130 NIFTY qty. SAIL and Commodity keep their own lots (different contracts).</td></tr>
+<tr><td><code>LIVE_HARNESS_DRY_RUN</code></td><td><code>true</code></td><td><b>Live Harness DRY-RUN (GLOBAL)</b>. Global switch: log live orders but place none.</td></tr>
+<tr><td><code>NIFTY_LOT_SIZE</code></td><td><code>(blank) → 65</code></td><td><b>Lot Size (Qty)</b> (1&ndash;200). Quantity per lot.</td></tr>
+<tr><td><code>BANKNIFTY_LOT_SIZE</code></td><td><code>30</code></td><td><b>NIFTY BANK — Lot Size (Qty)</b> (1&ndash;200). Quantity per NIFTY BANK lot — 30 since NSE's Nov-2024 revision.</td></tr>
+<tr><td><code>SAIL_LOT_SIZE</code></td><td><code>4700</code></td><td><b>SAIL — Lot Size (shares)</b> (1&ndash;100000). Shares per SAIL option lot — 4700 per NSE's contract list. Example: 1 lot of a ₹5.00 option costs 4,700 × ₹5 = ₹23,500.</td></tr>
+</tbody></table>
+
+<h2 id="missing">12. What's still missing</h2>
+<ul>
+  <li><b>It has never traded.</b> No paper session and no live order on NIFTY, BANK NIFTY, SAIL or the commodity pages.</li>
+  <li><b>No backtest page and no Replay</b> &mdash; by your choice. The only test is the spot-point simulation in section 10.</li>
+  <li><b>The numbers are NIFTY spot points on 5-minute candles.</b> Not option rupees, no costs. The live default is 3-minute, which was not measured (there is no 3-minute history). BANK NIFTY, SAIL and the commodities were not measured at all.</li>
+  <li><b>The tick-level rules were not tested.</b> Profit lock, breakeven and the spread check need real option ticks. They will change the results above, most likely by cutting some winners short &mdash; 103 of the 257 trades were held to 15:00.</li>
+  <li><b>The stop is wide and close-only.</b> The middle first stop is about 48 points (about &#8377;1,560 a lot at delta 0.5), and 38 of 147 losers lost more than that first gap. <code>PIVOT_EMA_ST_ST_MULT</code> is the lever: smaller = tighter stop but more noise exits.</li>
+  <li><b>Thin before costs, and slow.</b> +4.58 points a trade on average, at about 2.5 trades a month on 5-minute NIFTY candles. 30 NIFTY paper trades would take about a year at that pace (3-minute candles and the other three instruments will add more).</li>
+  <li><b>Next step:</b> paper-trade clean sessions on the defaults, run Live in dry-run next to Paper and check its logged orders match Paper's trades, and only then think about live.</li>
+</ul>
+<p class="muted">Engine: <code>src/strategies/pivot_ema_st.js</code>. Charts and numbers were produced by walking that engine over the stored NIFTY 5-minute candles (<code>~/trading-data/backtest_cache</code>), 1 Jan 2018 &ndash; 31 Jul 2026, with <code>PIVOT_EMA_ST_TF=5</code>.</p>
+
+</div>
+
+<script>
+/* ============================================================================
+ * TVChart v3 — dependency-free TradingView-style candlestick renderer.
+ * v2 features: OHLC header, subtitle, bottom time axis, last-price tag/line.
+ * v3 adds:   hlines (labelled price levels), shades (vertical highlight spans),
+ *            pane (RSI / volume / line sub-panel under the price chart).
+ * Pure buildSVG(spec) -> string (no DOM), never throws on bad data.
+ * Backward-compatible with every v1/v2 spec.
+ * ==========================================================================*/
+(function (global) {
+  "use strict";
+  function isNum(x) { return typeof x === "number" && isFinite(x); }
+  function esc(s) { return String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+  function fmt(v) { return isNum(v) ? v.toFixed(2).replace(/\.00$/,"") : "—"; }
+
+  function priceRange(spec) {
+    var lo = Infinity, hi = -Infinity;
+    function eat(v){ if(isNum(v)){ if(v>hi)hi=v; if(v<lo)lo=v; } }
+    (spec.candles||[]).forEach(function(c){ eat(c[1]); eat(c[2]); });
+    (spec.overlays||[]).forEach(function(o){ (o.data||[]).forEach(eat); });
+    (spec.bands||[]).forEach(function(b){ (b.upper||[]).forEach(eat); (b.lower||[]).forEach(eat); (b.mid||[]).forEach(eat); });
+    (spec.markers||[]).forEach(function(m){ if(isNum(m.price)) eat(m.price); });
+    (spec.hlines||[]).forEach(function(h){ eat(h.price); });
+    (spec.zones||[]).forEach(function(z){ eat(z.top); eat(z.bottom); });
+    if(!isFinite(lo)||!isFinite(hi)){ lo=0; hi=1; }
+    if(lo===hi){ lo-=1; hi+=1; }
+    var pad=(hi-lo)*0.10; return { lo:lo-pad, hi:hi+pad };
+  }
+
+  // Build a path that starts a fresh subpath after every gap. Indicator series
+  // are null until they have enough history (EMA/BB/RSI warm-up), and a path
+  // that opens with "L" is invalid — that used to drop the whole line.
+  function linePath(data, X, Y) {
+    var d = "", pen = false;
+    for (var i=0;i<data.length;i++){
+      if(!isNum(data[i])){ pen = false; continue; }
+      d += (pen ? "L" : "M") + X(i) + " " + Y(data[i]) + " "; pen = true;
+    }
+    return d;
+  }
+
+  function buildSVG(spec) {
+    spec = spec||{};
+    var candles = spec.candles||[]; var n = candles.length;
+    if(!n) return '<div class="tv-empty">chart data unavailable</div>';
+
+    var pane = null;
+    if (spec.pane && spec.pane.data && spec.pane.data.length) pane = spec.pane;
+    var paneH  = pane ? (isNum(pane.height) ? pane.height : 92) : 0;
+    var paneGap = pane ? 12 : 0;
+
+    var W=880, padL=6, padR=74, padT=52, padB=40, plotH=348;
+    var H = padT + plotH + paneGap + paneH + padB;
+    var rng=priceRange(spec); var plotW=W-padL-padR;
+    var slot=plotW/n; var cw=Math.max(2,Math.min(20,slot*0.66)); var wickW=Math.max(0.8,cw*0.12);
+    var up="#26a69a",down="#ef5350",grid="#1b2636",axis="#5a7499",txt="#e8eef8",mut="#8b98ac";
+    var plotBot = padT+plotH;
+    var paneTop = plotBot+paneGap, paneBot = paneTop+paneH;
+    var axisBot = pane ? paneBot : plotBot;
+    function X(i){ return padL+slot*(i+0.5); }
+    function Y(p){ return padT+(rng.hi-p)/(rng.hi-rng.lo)*plotH; }
+    var out=[];
+    out.push('<svg viewBox="0 0 '+W+' '+H+'" class="tv-svg" role="img" aria-label="'+esc(spec.title||"price chart")+'" preserveAspectRatio="xMidYMid meet">');
+    out.push('<rect x="0" y="0" width="'+W+'" height="'+H+'" fill="#0d1421"/>');
+
+    // horizontal price grid + right-side labels
+    for(var g=0;g<=4;g++){ var gp=rng.hi-(rng.hi-rng.lo)*(g/4); var gy=Y(gp);
+      out.push('<line x1="'+padL+'" y1="'+gy+'" x2="'+(W-padR)+'" y2="'+gy+'" stroke="'+grid+'" stroke-width="1"/>');
+      out.push('<text x="'+(W-padR+6)+'" y="'+(gy+3.5)+'" fill="'+axis+'" font-size="10.5" font-family="monospace">'+gp.toFixed(0)+'</text>'); }
+
+    // vertical time grid + bottom axis labels (every ~1/7 of the candles)
+    var times = spec.times || [];
+    var step = Math.max(1, Math.round(n/7));
+    for(var t=0;t<n;t+=step){ var tx=X(t);
+      out.push('<line x1="'+tx+'" y1="'+padT+'" x2="'+tx+'" y2="'+axisBot+'" stroke="'+grid+'" stroke-width="0.7" opacity="0.5"/>');
+      if(times[t]) out.push('<text x="'+tx+'" y="'+(axisBot+15)+'" fill="'+axis+'" font-size="10" text-anchor="middle" font-family="system-ui">'+esc(times[t])+'</text>'); }
+
+    // vertical highlight spans (e.g. "position held", "no-trade window")
+    (spec.shades||[]).forEach(function(s){ if(!isNum(s.from)||!isNum(s.to)) return;
+      var sx=X(s.from)-slot/2, sw=Math.max(1,X(s.to)-X(s.from)+slot);
+      out.push('<rect x="'+sx+'" y="'+padT+'" width="'+sw+'" height="'+plotH+'" fill="'+(s.color||"rgba(96,165,250,0.07)")+'"/>');
+      if(s.label){ var sly = s.labelBottom ? (padT+plotH-7) : (padT+13);
+        out.push('<text x="'+(sx+sw/2)+'" y="'+sly+'" fill="'+(s.text||"#7c93b5")+'" font-size="10" text-anchor="middle" font-family="system-ui">'+esc(s.label)+'</text>'); } });
+
+    // zones (e.g. ORB opening-range box)
+    (spec.zones||[]).forEach(function(z){ if(!isNum(z.from)||!isNum(z.to)) return;
+      var zx=X(z.from)-cw/2, zw=X(z.to)-X(z.from)+cw; var zTop=Y(isNum(z.top)?z.top:rng.hi), zBot=Y(isNum(z.bottom)?z.bottom:rng.lo);
+      out.push('<rect x="'+zx+'" y="'+zTop+'" width="'+zw+'" height="'+(zBot-zTop)+'" fill="'+(z.color||"rgba(96,165,250,0.10)")+'" stroke="'+(z.stroke||"rgba(96,165,250,0.5)")+'" stroke-dasharray="4 3" stroke-width="1"/>');
+      if(z.label) out.push('<text x="'+(zx+4)+'" y="'+(zTop-4)+'" fill="'+(z.stroke||"#60a5fa")+'" font-size="10.5" font-weight="600">'+esc(z.label)+'</text>'); });
+
+    // band envelopes (VWAP band / Bollinger)
+    (spec.bands||[]).forEach(function(b){ var u=b.upper||[], l=b.lower||[];
+      if(u.length&&l.length){ var pts=[]; for(var i=0;i<u.length;i++) if(isNum(u[i])) pts.push(X(i)+","+Y(u[i]));
+        for(var j=l.length-1;j>=0;j--) if(isNum(l[j])) pts.push(X(j)+","+Y(l[j]));
+        out.push('<polygon points="'+pts.join(" ")+'" fill="'+(b.fill||"rgba(120,144,200,0.08)")+'"/>');
+        [u,l].forEach(function(line){
+          out.push('<path d="'+linePath(line,X,Y)+'" fill="none" stroke="'+(b.color||"#a78bfa")+'" stroke-width="1.3" opacity="0.85"/>'); }); }
+      if(b.mid){
+        out.push('<path d="'+linePath(b.mid,X,Y)+'" fill="none" stroke="'+(b.color||"#a78bfa")+'" stroke-width="1" stroke-dasharray="2 3" opacity="0.7"/>'); } });
+
+    // labelled horizontal price levels (stop / target / neckline / OR high-low)
+    (spec.hlines||[]).forEach(function(hl){ if(!isNum(hl.price)) return;
+      var hy=Y(hl.price), hc=hl.color||"#fbbf24";
+      out.push('<line x1="'+padL+'" y1="'+hy+'" x2="'+(W-padR)+'" y2="'+hy+'" stroke="'+hc+'" stroke-width="'+(hl.width||1.2)+'" '+(hl.solid?"":'stroke-dasharray="6 4" ')+'opacity="0.9"/>');
+      out.push('<rect x="'+(W-padR)+'" y="'+(hy-8)+'" width="'+padR+'" height="16" fill="'+hc+'" opacity="0.92"/>');
+      out.push('<text x="'+(W-padR+5)+'" y="'+(hy+3.5)+'" fill="#0d1421" font-size="10" font-weight="700" font-family="monospace">'+hl.price.toFixed(0)+'</text>');
+      if(hl.label){ var lw=hl.label.length*5.9+10;
+        // labelAt (0..1) slides the tag along the line so it can dodge markers
+        var lx1=padL+3+(isNum(hl.labelAt)?hl.labelAt:0)*(W-padR-padL-lw-6);
+        lx1=Math.max(padL+3,Math.min(lx1,W-padR-lw-3));
+        out.push('<rect x="'+lx1+'" y="'+(hy-15)+'" width="'+lw+'" height="14" rx="3" fill="'+hc+'" opacity="0.92"/>');
+        out.push('<text x="'+(lx1+5)+'" y="'+(hy-4.5)+'" fill="#0d1421" font-size="9.8" font-weight="700" font-family="system-ui">'+esc(hl.label)+'</text>'); } });
+
+    // candlesticks
+    candles.forEach(function(c,i){ if(!c||!isNum(c[0])||!isNum(c[3])) return;
+      var o=c[0],h=c[1],lw=c[2],cl=c[3]; var col=cl>=o?up:down, cx=X(i);
+      if(isNum(h)&&isNum(lw)) out.push('<rect x="'+(cx-wickW/2)+'" y="'+Y(h)+'" width="'+wickW+'" height="'+Math.max(0.5,Y(lw)-Y(h))+'" fill="'+col+'"/>');
+      var yo=Y(o),yc=Y(cl),top=Math.min(yo,yc),bh=Math.max(1,Math.abs(yc-yo));
+      out.push('<rect x="'+(cx-cw/2)+'" y="'+top+'" width="'+cw+'" height="'+bh+'" fill="'+col+'"/>'); });
+
+    // overlay indicator lines (EMA / VWAP / MAs)
+    (spec.overlays||[]).forEach(function(ov){
+      out.push('<path d="'+linePath(ov.data||[],X,Y)+'" fill="none" stroke="'+(ov.color||"#fbbf24")+'" stroke-width="'+(ov.width||1.6)+'" '+(ov.dash?'stroke-dasharray="5 3" ':"")+'opacity="0.95"/>'); });
+
+    // last-price dashed line + right-axis tag (TradingView style)
+    if(spec.lastPriceTag !== false){ var last=candles[n-1]; if(last&&isNum(last[3])){ var lp=last[3], ly=Y(lp);
+      var lcol=(isNum(last[0])&&lp>=last[0])?up:down;
+      out.push('<line x1="'+padL+'" y1="'+ly+'" x2="'+(W-padR)+'" y2="'+ly+'" stroke="'+lcol+'" stroke-width="0.8" stroke-dasharray="2 2" opacity="0.7"/>');
+      out.push('<rect x="'+(W-padR)+'" y="'+(ly-8)+'" width="'+padR+'" height="16" fill="'+lcol+'"/>');
+      out.push('<text x="'+(W-padR+6)+'" y="'+(ly+3.5)+'" fill="#0d1421" font-size="10.5" font-weight="700" font-family="monospace">'+lp.toFixed(2)+'</text>'); } }
+
+    // markers (buy / exit / dot)
+    (spec.markers||[]).forEach(function(m){ if(!isNum(m.i)) return; var mx=X(m.i);
+      var my=isNum(m.price)?Y(m.price):(m.type==="buy"?plotBot-14:padT+14);
+      var isBuy=m.type==="buy", isExit=m.type==="exit"; var col=m.color||(isBuy?"#26a69a":isExit?"#ef5350":"#fbbf24");
+      if(isBuy||isExit){ var ay=isBuy?my+18:my-18, tri=isBuy?(mx-6)+","+ay+" "+(mx+6)+","+ay+" "+mx+","+(ay-10):(mx-6)+","+ay+" "+(mx+6)+","+ay+" "+mx+","+(ay+10);
+        out.push('<polygon points="'+tri+'" fill="'+col+'"/>'); }
+      else out.push('<circle cx="'+mx+'" cy="'+my+'" r="3.5" fill="'+col+'" stroke="#0d1421" stroke-width="1"/>');
+      if(m.text){ var lblY=isBuy?my+34:(isExit?my-26:my-10); var tw=m.text.length*6.2+10;
+        var lx0=Math.max(padL+1,Math.min(mx-tw/2,W-padR-tw-1));
+        out.push('<rect x="'+lx0+'" y="'+(lblY-11)+'" width="'+tw+'" height="15" rx="3" fill="'+col+'" opacity="0.94"/>');
+        out.push('<text x="'+(lx0+tw/2)+'" y="'+lblY+'" fill="#0d1421" font-size="10.5" font-weight="700" text-anchor="middle" font-family="system-ui">'+esc(m.text)+'</text>'); } });
+
+    // ── sub-panel: RSI / volume / any line series ─────────────────────────
+    if(pane){
+      var pd=pane.data||[], pType=pane.type||"line";
+      var plo=Infinity, phi=-Infinity;
+      pd.forEach(function(v){ if(isNum(v)){ if(v>phi)phi=v; if(v<plo)plo=v; } });
+      if(pType==="rsi"){ plo=0; phi=100; }
+      if(pType==="volume"){ plo=0; }
+      if(isNum(pane.min)) plo=pane.min;
+      if(isNum(pane.max)) phi=pane.max;
+      if(!isFinite(plo)||!isFinite(phi)){ plo=0; phi=1; }
+      if(plo===phi){ plo-=1; phi+=1; }
+      var pPad=(pType==="rsi"||pType==="volume")?0:(phi-plo)*0.12;
+      var pLo=plo-pPad, pHi=phi+pPad;
+      function PY(v){ return paneTop+(pHi-v)/(pHi-pLo)*paneH; }
+      out.push('<rect x="'+padL+'" y="'+paneTop+'" width="'+(W-padR-padL)+'" height="'+paneH+'" fill="#0b111c"/>');
+      out.push('<line x1="'+padL+'" y1="'+paneTop+'" x2="'+(W-padR)+'" y2="'+paneTop+'" stroke="'+grid+'" stroke-width="1"/>');
+
+      // guide levels inside the pane (e.g. RSI 70 / 40)
+      (pane.levels||[]).forEach(function(lv){ var v=isNum(lv)?lv:lv.value; if(!isNum(v)) return;
+        var c=(lv&&lv.color)||"#3f5570", ly2=PY(v);
+        out.push('<line x1="'+padL+'" y1="'+ly2+'" x2="'+(W-padR)+'" y2="'+ly2+'" stroke="'+c+'" stroke-width="1" stroke-dasharray="4 3" opacity="0.8"/>');
+        out.push('<text x="'+(W-padR+6)+'" y="'+(ly2+3.5)+'" fill="'+c+'" font-size="10" font-family="monospace">'+v+'</text>'); });
+
+      if(pType==="volume"){
+        var bw=Math.max(1.5,slot*0.6);
+        pd.forEach(function(v,i){ if(!isNum(v)) return; var c2=candles[i];
+          var col2=(c2&&isNum(c2[0])&&isNum(c2[3])&&c2[3]>=c2[0])?"rgba(38,166,154,0.55)":"rgba(239,83,80,0.55)";
+          if(pane.colors&&pane.colors[i]) col2=pane.colors[i];
+          var by=PY(v); out.push('<rect x="'+(X(i)-bw/2)+'" y="'+by+'" width="'+bw+'" height="'+Math.max(0.5,paneBot-by)+'" fill="'+col2+'"/>'); });
+      } else {
+        out.push('<path d="'+linePath(pd,X,PY)+'" fill="none" stroke="'+(pane.color||"#c084fc")+'" stroke-width="1.6"/>');
+      }
+      (pane.markers||[]).forEach(function(m){ if(!isNum(m.i)||!isNum(m.value)) return;
+        out.push('<circle cx="'+X(m.i)+'" cy="'+PY(m.value)+'" r="3.2" fill="'+(m.color||"#fbbf24")+'" stroke="#0b111c" stroke-width="1"/>'); });
+      if(pane.label) out.push('<text x="'+(padL+5)+'" y="'+(paneTop+13)+'" fill="'+mut+'" font-size="10.5" font-weight="600" font-family="system-ui">'+esc(pane.label)+'</text>');
+    }
+
+    // header: title, subtitle, and OHLC readout (TradingView top-left)
+    out.push('<text x="'+padL+'" y="17" fill="'+txt+'" font-size="13" font-weight="700" font-family="system-ui">'+esc(spec.title||"")+'</text>');
+    if(spec.subtitle) out.push('<text x="'+padL+'" y="32" fill="'+mut+'" font-size="10.5" font-family="system-ui">'+esc(spec.subtitle)+'</text>');
+    if(spec.ohlc !== false){ var f=candles[n-1]; if(f){ var oc=(isNum(f[0])&&isNum(f[3])&&f[3]>=f[0])?up:down;
+      var parts=[["O",f[0]],["H",f[1]],["L",f[2]],["C",f[3]]], hy2=spec.subtitle?46:32;
+      var lx=padL;
+      parts.forEach(function(p){ out.push('<text x="'+lx+'" y="'+hy2+'" font-size="10.5" font-family="monospace" fill="'+mut+'">'+p[0]+'</text>');
+        lx+=11; out.push('<text x="'+lx+'" y="'+hy2+'" font-size="10.5" font-family="monospace" fill="'+oc+'">'+fmt(p[1])+'</text>'); lx+=(fmt(p[1]).length*6.4)+10; }); } }
+
+    // legend (bottom-left, above time axis)
+    var lgx=padL, lgy=H-4;
+    (spec.legend||[]).forEach(function(lg){ out.push('<rect x="'+lgx+'" y="'+(lgy-8)+'" width="14" height="3" rx="1.5" fill="'+(lg.color||"#fbbf24")+'"/>');
+      out.push('<text x="'+(lgx+18)+'" y="'+(lgy-4)+'" fill="'+axis+'" font-size="10" font-family="system-ui">'+esc(lg.label)+'</text>');
+      lgx+=22+lg.label.length*6.1; });
+
+    out.push("</svg>"); return out.join("");
+  }
+
+  var TVChart = { buildSVG: buildSVG, render: function(elId, spec){ try { var el=document.getElementById(elId); if(!el) return; el.innerHTML=buildSVG(spec); } catch(e){} } };
+  global.TVChart = TVChart;
+})(window);
+</script>
+<script>
+TVChart.render("pes-ce", {"title":"NIFTY 50 · 5 min · 2025-11-13","subtitle":"Real candles · real engine (PIVOT_EMA_ST_TF=5 for this example; live default is 3-min) · CE winner","times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55","12:00","12:05","12:10","12:15","12:20","12:25","12:30","12:35","12:40","12:45","12:50","12:55","13:00","13:05","13:10","13:15","13:20"],"candles":[[25906.1,25906.8,25834.2,25843.95],[25842.75,25846.45,25808.4,25846.45],[25847.35,25887.75,25846.4,25875.55],[25875.8,25877.75,25847.4,25849.15],[25848.25,25857.7,25831.9,25840.2],[25841.15,25858.4,25837.3,25857],[25856.3,25882.95,25855.55,25879.85],[25880.45,25888.4,25864.8,25864.95],[25865.25,25880,25858.8,25877.65],[25876.9,25886.8,25873.05,25876.35],[25876.85,25898.2,25873.9,25894.9],[25896.2,25900.25,25891.45,25898.5],[25898.55,25907.25,25896.8,25902.4],[25903.2,25915.3,25892.45,25913.2],[25912.15,25912.6,25905.1,25912.45],[25911.7,25926.4,25911.5,25925.1],[25925.4,25928.9,25920.25,25924.2],[25924.05,25930,25923.45,25928.45],[25928.3,25940.4,25925.6,25940.05],[25940.4,25947.75,25939.25,25943.45],[25943.75,25948.15,25941.45,25946.85],[25947.4,25965.2,25947,25964.3],[25965.3,25975.95,25964.75,25967.95],[25968.55,25968.8,25954.6,25963.35],[25963.4,25969.95,25960.55,25962.05],[25961.2,25970.95,25961.2,25967.35],[25966.8,25978.5,25965.35,25969.35],[25969.55,25969.75,25959.15,25960.75],[25960.15,25973.35,25958.05,25971.7],[25971.35,25973.1,25959.05,25963.2],[25963.15,25972.05,25959.1,25968.95],[25968.05,25974.15,25965.9,25972.35],[25972.6,25983.95,25967.2,25983.95],[25981.75,25984.4,25968.1,25972.5],[25972.4,25983.65,25970.25,25981.95],[25982,25984.8,25978.9,25980.1],[25980.5,25986.35,25976.15,25983.3],[25982.35,25987.6,25980.4,25985.6],[25985.1,25985.7,25977.9,25980.15],[25980.55,25980.9,25962.75,25962.75],[25963.85,25964.9,25942.05,25949.85],[25950.25,25954.6,25944.15,25949.3],[25949.9,25954.6,25944.25,25952.55],[25951.8,25961.8,25936.85,25942.7],[25942,25970.2,25940.15,25969.7],[25970.45,25989.65,25970.45,25983.7],[25983.1,25988.55,25978.55,25980.05],[25980.1,25981.55,25972.75,25977.95],[25978.55,25983.3,25970.9,25974.7],[25974.25,25989.1,25972.75,25985]],"overlays":[{"name":"PP","data":[25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23,25863.23],"color":"#94a3b8","width":1.1,"dash":true},{"name":"R1","data":[25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32,25945.32],"color":"#38bdf8","width":1.1,"dash":true},{"name":"S1","data":[25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92,25791.92],"color":"#f472b6","width":1.1,"dash":true},{"name":"EMA20","data":[25883.85,25880.29,25879.84,25876.91,25873.42,25871.85,25872.62,25871.89,25872.43,25872.81,25874.91,25877.16,25879.56,25882.77,25885.59,25889.36,25892.67,25896.08,25900.27,25904.38,25908.43,25913.75,25918.91,25923.14,25926.85,25930.7,25934.39,25936.9,25940.21,25942.4,25944.93,25947.54,25951.01,25953.05,25955.81,25958.12,25960.52,25962.91,25964.55,25964.38,25962.99,25961.69,25960.82,25959.09,25960.1,25962.35,25964.04,25965.36,25966.25,25968.04],"color":"#fbbf24","width":1.6},{"name":"EMA50","data":[25877.49,25876.28,25876.25,25875.19,25873.81,25873.15,25873.42,25873.08,25873.26,25873.38,25874.23,25875.18,25876.25,25877.7,25879.06,25880.87,25882.56,25884.36,25886.55,25888.78,25891.06,25893.93,25896.83,25899.44,25901.9,25904.46,25907.01,25909.11,25911.57,25913.59,25915.76,25917.98,25920.57,25922.61,25924.93,25927.1,25929.3,25931.51,25933.42,25934.57,25935.17,25935.72,25936.38,25936.63,25937.93,25939.72,25941.3,25942.74,25943.99,25945.6],"color":"#a78bfa","width":1.6},{"name":"SuperTrend green","data":[null,null,null,null,null,null,null,null,null,null,25815.74,25829.93,25839.56,25840.8,25849.66,25861.21,25870.01,25875.65,25882.59,25895.58,25899.67,25909.97,25925.34,25925.34,25925.34,25925.34,25930.43,25930.43,25930.43,25930.43,25930.43,25930.7,25935.16,25935.16,25935.79,25943.04,25943.26,25947.65,25947.65,25947.65,25947.65,25947.65,25947.65,null,null,null,null,null,null,null],"color":"#22c55e","width":2},{"name":"SuperTrend red","data":[25906.67,25894.68,25894.68,25894.68,25894.68,25894.68,25894.68,25894.68,25894.68,25894.68,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,25987.87,25987.87,25987.87,25987.87,25987.87,25987.87,25987.87],"color":"#ef4444","width":2},{"name":"Stop","data":[null,null,null,null,null,null,null,null,null,null,25815.74,25829.93,25839.56,25840.8,25849.66,25861.21,25870.01,25875.65,25882.59,25895.58,25899.67,25909.97,25925.34,25925.34,25925.34,25925.34,25930.43,25930.43,25930.43,25930.43,25930.43,25930.7,25935.16,25935.16,25935.79,25943.04,25943.26,25947.65,25947.65,25947.65,25947.65,25947.65,25947.65,25947.65,null,null,null,null,null,null],"color":"#e5e7eb","width":1.1,"dash":true}],"hlines":[{"price":25945.32,"label":"R1 25,945.32","color":"#38bdf8","labelAt":0.02},{"price":25863.23,"label":"PP 25,863.23","color":"#94a3b8","labelAt":0.6},{"price":25791.92,"label":"S1 25,791.92","color":"#f472b6","labelAt":0.02}],"zones":[],"shades":[{"from":11,"to":44,"label":"holding","color":"rgba(38,166,154,0.07)"}],"markers":[{"i":10,"price":25894.9,"type":"dot","text":"3 of 3","color":"#fbbf24"},{"i":10,"price":25874.57,"type":"dot","text":"","color":"#f59e0b"},{"i":11,"price":25891.45,"type":"buy","text":"BUY CE 25,896","color":"#26a69a"},{"i":44,"price":25970.2,"type":"exit","text":"EXIT 25,942","color":"#ef4444"},{"gi":145423,"price":25942.05,"type":"dot","text":"wick only","color":"#94a3b8","i":40}],"legend":[{"label":"EMA20","color":"#fbbf24"},{"label":"EMA50","color":"#a78bfa"},{"label":"SuperTrend 10,3 (green = up)","color":"#22c55e"},{"label":"(red = down)","color":"#ef4444"},{"label":"R1 / PP / S1","color":"#38bdf8"},{"label":"Cross level","color":"#f59e0b"},{"label":"Stop","color":"#e5e7eb"}]});
+TVChart.render("pes-pe", {"title":"NIFTY 50 · 5 min · 2026-02-26","subtitle":"Real candles · real engine (PIVOT_EMA_ST_TF=5 for this example; live default is 3-min) · PE loser","times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55","12:00","12:05","12:10","12:15","12:20","12:25","12:30","12:35","12:40","12:45","12:50","12:55","13:00","13:05","13:10","13:15","13:20","13:25","13:30","13:35","13:40","13:45","13:50","13:55","14:00","14:05","14:10","14:15","14:20","14:25","14:30","14:35","14:40","14:45","14:50","14:55","15:00"],"candles":[[25556.3,25567.6,25524.25,25535.1],[25534.3,25543.1,25488.95,25498.45],[25498.45,25519,25487.85,25504.45],[25505.15,25519.7,25492.1,25518.8],[25518.85,25547.45,25516.4,25545],[25543.3,25556.3,25538.8,25555.9],[25555.3,25565.6,25547.05,25557.2],[25557.3,25559.45,25508.2,25510.6],[25509.8,25520.6,25500.1,25518.35],[25517.95,25543.8,25516.75,25543.8],[25543.25,25563.3,25540.25,25563.3],[25561.95,25572.95,25556.25,25558.25],[25558.6,25562,25544.5,25560.75],[25560.55,25561.7,25534.8,25538.4],[25537.65,25550.25,25519.55,25526.95],[25526.55,25544.35,25523.55,25536.6],[25538.95,25542.3,25523.2,25529.3],[25527.6,25539.85,25521.55,25531.8],[25532.8,25551.55,25527.1,25548.15],[25545.45,25548.05,25525.75,25525.75],[25527.15,25528.65,25505.45,25509.95],[25506.9,25523.45,25491.7,25521.8],[25520.75,25522.55,25509.5,25513.55],[25513.25,25530.45,25509.5,25523.25],[25522.75,25538.85,25517.45,25534.45],[25533.7,25541.1,25526.05,25540.65],[25541.4,25570.85,25535.2,25536.75],[25535.35,25537.25,25512.55,25521.35],[25522.1,25524,25495.75,25502.75],[25501.7,25501.75,25458.05,25461.35],[25460.35,25490.45,25451.5,25483.35],[25483.95,25490.65,25463.05,25469.65],[25468.9,25470.65,25446.55,25453.4],[25453.3,25472.45,25450.9,25470.2],[25469.75,25481.7,25466.85,25472.55],[25471.85,25475.3,25456.25,25459.3],[25458.05,25468.5,25439.45,25447.4],[25446.7,25446.75,25400.95,25432.4],[25432.85,25445.45,25425.25,25430.7],[25430.85,25445.4,25426.4,25436.1],[25435.4,25449.7,25431.3,25445.4],[25445.25,25461.15,25438.35,25459.95],[25457.45,25460.7,25441.8,25452.6],[25452.6,25452.75,25426.65,25430.75],[25432.25,25432.35,25412.05,25414.8],[25415.4,25452.25,25413.75,25451.75],[25451.75,25453.3,25430.5,25436.6],[25436.7,25437.4,25427.05,25428.55],[25428.2,25430.8,25403.4,25420.65],[25420.35,25438.3,25414.1,25438.05],[25437.5,25454.75,25432,25438],[25437.3,25449.3,25430.65,25432.85],[25434.45,25447.15,25432.8,25439.35],[25440.65,25448.15,25435.1,25438.2],[25438.05,25445.2,25417.4,25418.8],[25418.65,25447.75,25415.1,25441.95],[25443.2,25450.9,25431.65,25440.8],[25441.1,25447.25,25419.35,25427.45],[25425.3,25440.35,25406.15,25439.95],[25440.1,25460.55,25438.95,25453.45],[25456.65,25463.15,25442.2,25445.1],[25446.7,25452.4,25428.15,25430.15],[25429.55,25449.4,25427,25442.15],[25441.65,25462.5,25431.85,25462.45],[25464.1,25478,25459,25471.25],[25473.8,25513,25472.1,25513],[25514.8,25527.15,25503.7,25510.65],[25510,25522.15,25486.45,25504.55],[25504.7,25511.6,25492.05,25501.85],[25503.65,25524.85,25477.55,25486]],"overlays":[{"name":"PP","data":[25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82,25519.82],"color":"#94a3b8","width":1.1,"dash":true},{"name":"R1","data":[25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43,25611.43],"color":"#38bdf8","width":1.1,"dash":true},{"name":"S1","data":[25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03,25387.03],"color":"#f472b6","width":1.1,"dash":true},{"name":"EMA20","data":[25482.33,25483.86,25485.82,25488.96,25494.3,25500.17,25505.6,25506.08,25507.24,25510.73,25515.73,25519.78,25523.68,25525.09,25525.26,25526.34,25526.62,25527.12,25529.12,25528.8,25527,25526.51,25525.27,25525.08,25525.97,25527.37,25528.26,25527.61,25525.24,25519.15,25515.74,25511.35,25505.83,25502.44,25499.59,25495.76,25491.15,25485.56,25480.33,25476.12,25473.19,25471.93,25470.09,25466.34,25461.44,25460.51,25458.24,25455.41,25452.1,25450.76,25449.54,25447.95,25447.14,25446.28,25443.67,25443.5,25443.25,25441.74,25441.57,25442.7,25442.93,25441.71,25441.75,25443.73,25446.35,25452.7,25458.21,25462.63,25466.36,25468.23],"color":"#fbbf24","width":1.6},{"name":"EMA50","data":[25497.2,25497.25,25497.53,25498.36,25500.19,25502.38,25504.53,25504.77,25505.3,25506.81,25509.02,25510.95,25512.91,25513.91,25514.42,25515.29,25515.84,25516.46,25517.71,25518.02,25517.7,25517.87,25517.7,25517.91,25518.56,25519.43,25520.11,25520.16,25519.47,25517.19,25515.87,25514.06,25511.68,25510.05,25508.58,25506.65,25504.32,25501.5,25498.73,25496.27,25494.28,25492.93,25491.35,25488.97,25486.06,25484.72,25482.83,25480.7,25478.35,25476.77,25475.25,25473.58,25472.24,25470.91,25468.86,25467.81,25466.75,25465.21,25464.22,25463.79,25463.06,25461.77,25461,25461.06,25461.46,25463.48,25465.33,25466.87,25468.24,25468.94],"color":"#a78bfa","width":1.6},{"name":"SuperTrend green","data":[25463.02,25463.02,25463.02,25463.02,25463.02,25463.02,25472.67,25472.67,25472.67,25472.67,25472.67,25482.83,25482.83,25482.83,25482.83,25482.83,25482.83,25482.83,25482.83,25482.83,25482.83,25482.83,25482.83,25482.83,25482.83,25482.83,25482.83,25482.83,25482.83,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,25415.54,25439.08,25439.08,25439.08,25439.08],"color":"#22c55e","width":2},{"name":"SuperTrend red","data":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,25559.12,25553.96,25553.96,25540.5,25540.5,25540.5,25540.44,25529.89,25506.11,25506.11,25506.11,25506.11,25506.11,25506.11,25506.11,25494.47,25494.47,25494.47,25494.47,25489.49,25489.49,25489.49,25489.49,25489.49,25489.49,25489.49,25489.49,25489.49,25489.49,25489.49,25489.49,25489.49,25489.49,25489.49,25489.49,25489.49,null,null,null,null,null],"color":"#ef4444","width":2},{"name":"Stop","data":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,25553.96,25553.96,25540.5,25540.5,25540.5,25540.44,25529.89,25506.11,25506.11,25506.11,25506.11,25506.11,25506.11,25506.11,25494.47,25494.47,25494.47,25494.47,25489.49,25489.49,25489.49,25489.49,25489.49,25489.49,25489.49,25489.49,25489.49,25489.49,25489.49,25489.49,25489.49,25489.49,25489.49,25489.49,25489.49,25489.49,null,null,null,null],"color":"#e5e7eb","width":1.1,"dash":true}],"hlines":[{"price":25611.43,"label":"R1 25,611.43","color":"#38bdf8","labelAt":0.02},{"price":25519.82,"label":"PP 25,519.82","color":"#94a3b8","labelAt":0.6},{"price":25387.03,"label":"S1 25,387.03","color":"#f472b6","labelAt":0.02}],"zones":[],"shades":[{"from":31,"to":66,"label":"holding","color":"rgba(239,83,80,0.07)"}],"markers":[{"i":30,"price":25483.35,"type":"dot","text":"3 of 3","color":"#fbbf24"},{"i":30,"price":25515.81,"type":"dot","text":"","color":"#f59e0b"},{"i":31,"price":25463.05,"type":"buy","text":"BUY PE 25,483","color":"#26a69a"},{"i":66,"price":25527.15,"type":"exit","text":"EXIT 25,514","color":"#ef4444"}],"legend":[{"label":"EMA20","color":"#fbbf24"},{"label":"EMA50","color":"#a78bfa"},{"label":"SuperTrend 10,3 (green = up)","color":"#22c55e"},{"label":"(red = down)","color":"#ef4444"},{"label":"R1 / PP / S1","color":"#38bdf8"},{"label":"Cross level","color":"#f59e0b"},{"label":"Stop","color":"#e5e7eb"}]});
+TVChart.render("pes-skip", {"title":"NIFTY 50 · 5 min · 2025-09-01","subtitle":"Real candles · real engine (PIVOT_EMA_ST_TF=5 for this example; live default is 3-min) · close above R1, no trade","times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55","12:00","12:05","12:10","12:15","12:20","12:25","12:30","12:35","12:40","12:45","12:50","12:55","13:00","13:05","13:10","13:15","13:20","13:25","13:30","13:35","13:40","13:45","13:50","13:55","14:00","14:05","14:10","14:15","14:20","14:25","14:30","14:35","14:40","14:45","14:50","14:55","15:00"],"candles":[[24432.7,24529.15,24432.7,24523.5],[24522.55,24532.65,24502.6,24529.15],[24529,24533.55,24512.5,24530.25],[24529.25,24542.55,24520.25,24540.9],[24540.75,24546.65,24532.15,24536.85],[24536.4,24538.35,24523.9,24535.8],[24535.15,24548.5,24533.8,24534.65],[24534.6,24560.85,24533.95,24559.55],[24559.1,24560.75,24540.1,24547.5],[24547.55,24549.5,24535.05,24538.5],[24538.1,24538.7,24526.35,24532.9],[24534,24535.1,24522.65,24523.15],[24522.75,24534.35,24514.15,24515.1],[24515.75,24518.45,24502.85,24512.15],[24513.65,24533.45,24511.9,24528.6],[24528.9,24529,24509.05,24511.9],[24511.35,24517.65,24508.05,24514.7],[24514.65,24530.5,24513.15,24529.65],[24530.1,24543.25,24527.3,24538.75],[24539.5,24542.2,24525.65,24528.7],[24528.55,24547,24523.55,24545],[24545.55,24553.3,24541.65,24550.9],[24551.35,24552.3,24537.45,24542.45],[24543.05,24549.6,24542.5,24548.7],[24549.8,24550.5,24539.1,24546.2],[24547.85,24548.4,24539.75,24542.05],[24542,24553.45,24542,24550.35],[24551.1,24556,24537.45,24543.15],[24543.3,24547.7,24540.65,24543.5],[24544.55,24545.95,24537.6,24538.55],[24539.8,24541.95,24522.4,24522.65],[24522.75,24529.35,24519.25,24523],[24523.25,24527.5,24517.95,24521.65],[24521.15,24541.75,24521.15,24536.5],[24536.25,24545.25,24536.25,24543],[24543,24550.05,24540.85,24546.85],[24548.4,24553.45,24543.6,24547.05],[24547.75,24557.65,24540.25,24557.15],[24557.15,24574.15,24557.15,24571.6],[24572.05,24575.15,24563.15,24569.05],[24570.05,24576.2,24558.9,24566.3],[24565.5,24576.45,24559.6,24563.95],[24564.95,24570.85,24559.85,24565.6],[24566.35,24571.35,24557.25,24565.25],[24565.3,24570.1,24556.55,24569.65],[24569.85,24579.5,24566.5,24577.9],[24578.35,24592.85,24576.95,24589.35],[24589,24592.55,24581.05,24590.5],[24588.6,24595.1,24588.1,24592.45],[24592.3,24596.05,24587.3,24588],[24588.6,24594.7,24581.5,24592.9],[24594.15,24606.85,24593.4,24601],[24601.15,24605.3,24597.25,24603.15],[24603.35,24604.3,24588.2,24593.7],[24594.25,24600.45,24591.1,24596.65],[24596.85,24606.75,24591.45,24596.2],[24597.05,24602.65,24593.9,24597.2],[24597.4,24607.5,24597.1,24606.05],[24606.65,24614.95,24602,24612.75],[24613.95,24620.9,24610.2,24617.1],[24617.4,24619.35,24608.45,24610.4],[24610.6,24614.05,24607.15,24609.5],[24609.35,24611.55,24598.8,24600.95],[24601.15,24617.4,24600.55,24616.05],[24616.1,24619.1,24611.65,24617.9],[24618.05,24625.05,24610.1,24615.4],[24616.7,24619.55,24613.9,24617.15],[24617.95,24619.9,24614,24616.6],[24617.4,24634.7,24616.6,24632.25],[24632.7,24635.6,24613.5,24625.65]],"overlays":[{"name":"PP","data":[24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27,24470.27],"color":"#94a3b8","width":1.1,"dash":true},{"name":"R1","data":[24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83,24535.83],"color":"#38bdf8","width":1.1,"dash":true},{"name":"S1","data":[24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08,24368.08],"color":"#f472b6","width":1.1,"dash":true},{"name":"EMA20","data":[24465.86,24471.88,24477.44,24483.49,24488.57,24493.07,24497.03,24502.98,24507.22,24510.2,24512.36,24513.39,24513.55,24513.42,24514.86,24514.58,24514.59,24516.03,24518.19,24519.19,24521.65,24524.44,24526.15,24528.3,24530,24531.15,24532.98,24533.95,24534.86,24535.21,24534.01,24532.96,24531.89,24532.33,24533.34,24534.63,24535.81,24537.84,24541.06,24543.72,24545.87,24547.6,24549.31,24550.83,24552.62,24555.03,24558.3,24561.36,24564.33,24566.58,24569.09,24572.13,24575.08,24576.85,24578.74,24580.4,24582,24584.29,24587,24589.87,24591.82,24593.51,24594.22,24596.3,24598.35,24599.98,24601.61,24603.04,24605.82,24607.71],"color":"#fbbf24","width":1.6},{"name":"EMA50","data":[24492.89,24494.31,24495.72,24497.49,24499.03,24500.48,24501.82,24504.08,24505.78,24507.07,24508.08,24508.67,24508.92,24509.05,24509.82,24509.9,24510.09,24510.85,24511.95,24512.6,24513.87,24515.33,24516.39,24517.66,24518.78,24519.69,24520.89,24521.76,24522.62,24523.24,24523.22,24523.21,24523.15,24523.67,24524.43,24525.31,24526.16,24527.38,24529.11,24530.68,24532.07,24533.32,24534.59,24535.79,24537.12,24538.72,24540.71,24542.66,24544.61,24546.31,24548.14,24550.21,24552.29,24553.91,24555.59,24557.18,24558.75,24560.6,24562.65,24564.79,24566.57,24568.26,24569.54,24571.36,24573.19,24574.84,24576.5,24578.08,24580.2,24581.98],"color":"#a78bfa","width":1.6},{"name":"SuperTrend green","data":[24387.58,24424.6,24432.98,24443.67,24456.1,24456.1,24465.36,24471.12,24475.58,24475.58,24475.58,24475.58,24475.58,24475.58,24475.58,24475.58,24475.58,24475.58,24477.73,24477.73,24477.73,24491.67,24491.67,24494.7,24495.16,24496.81,24501.75,24501.75,24501.75,24501.75,24501.75,24501.75,24501.75,24501.75,24501.75,24505.16,24509.31,24509.31,24524.09,24528.15,24528.15,24528.15,24528.15,24528.15,24528.15,24531.44,24542.72,24545.39,24552.23,24553.62,24553.62,24561.55,24564.14,24564.14,24564.14,24564.14,24564.14,24565.96,24571.88,24579.41,24579.41,24579.41,24579.41,24579.41,24580.5,24581.7,24582.74,24584.59,24591.1,24591.1],"color":"#22c55e","width":2},{"name":"SuperTrend red","data":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],"color":"#ef4444","width":2}],"hlines":[{"price":24535.83,"label":"R1 24,535.83","color":"#38bdf8","labelAt":0.97},{"price":24470.27,"label":"PP 24,470.27","color":"#94a3b8","labelAt":0.5},{"price":24368.08,"label":"S1 24,368.08","color":"#f472b6","labelAt":0.02}],"zones":[],"shades":[],"markers":[{"i":8,"price":24560.75,"type":"dot","text":"closed above R1: skipped","color":"#f59e0b"},{"i":8,"price":24506.5,"type":"dot","text":"","color":"#f59e0b"},{"i":69,"price":24632.7,"type":"dot","text":"15:00","color":"#94a3b8"}],"legend":[{"label":"EMA20","color":"#fbbf24"},{"label":"EMA50","color":"#a78bfa"},{"label":"SuperTrend 10,3 (green = up)","color":"#22c55e"},{"label":"(red = down)","color":"#ef4444"},{"label":"R1 / PP / S1","color":"#38bdf8"},{"label":"Cross level","color":"#f59e0b"}]});
+TVChart.render("pes-lvl", {"title":"NIFTY 50 · 5 min · 2025-08-19","subtitle":"Real candles · real engine (PIVOT_EMA_ST_TF=5 for this example; live default is 3-min) · crossed below PP, no trade","times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55","12:00","12:05","12:10","12:15","12:20","12:25","12:30","12:35","12:40","12:45","12:50","12:55","13:00","13:05","13:10","13:15","13:20","13:25","13:30","13:35","13:40","13:45","13:50","13:55","14:00","14:05","14:10","14:15"],"candles":[[24891.35,24930.35,24886.95,24905.95],[24905.5,24932.8,24893.15,24927.9],[24927.95,24936.45,24912.95,24919.75],[24921.55,24926.55,24900.55,24907.65],[24908.7,24908.7,24889.85,24892.35],[24893.05,24903.15,24878.15,24880.25],[24880.65,24897.25,24873.95,24894.35],[24894.55,24916.65,24894.25,24909.15],[24909.6,24910.5,24899.45,24907.5],[24907.75,24912.35,24896.85,24901.9],[24902.2,24906.25,24897.9,24902.4],[24902.35,24924.7,24901.3,24921.9],[24921.2,24925.1,24902.85,24922.6],[24922.4,24927.5,24918.6,24920.45],[24920.85,24926.1,24912.3,24912.3],[24911.55,24924.85,24909.55,24921.4],[24922.1,24923.15,24902.2,24911.15],[24911.3,24924.45,24909.2,24922.95],[24923.05,24932.95,24907.65,24928.35],[24929.35,24931.2,24920.7,24922.55],[24922.9,24927.55,24920.5,24924.8],[24925.1,24932.25,24924.25,24928.4],[24928.2,24943.5,24925.8,24939.15],[24939.25,24941.1,24932.3,24935.25],[24935.5,24936.2,24930,24936.1],[24936.6,24939.6,24933.4,24934.65],[24935.1,24936.5,24927.3,24934.75],[24935.25,24950.95,24934.75,24938.95],[24939.35,24958.65,24936.6,24956.6],[24956.4,24957.05,24945.75,24947.55],[24947.7,24956.2,24947.35,24953.55],[24953.4,24957.75,24951.4,24957.05],[24957.05,24960.8,24954.4,24956.15],[24955.95,24974.4,24951.9,24963.5],[24963.75,24966.8,24960.75,24966.15],[24966.15,24975.95,24965.4,24973.5],[24974.3,24987.95,24971.65,24987.35],[24987.7,25012.65,24986.4,24989.75],[24989.75,25000.5,24988.75,24992.8],[24993.75,25005.65,24992.2,25004],[25004.05,25010.75,24998.2,25001.8],[25001.8,25004.65,24970.9,24984.5],[24984.15,24987.05,24978.3,24980.95],[24980.8,24991.75,24979.95,24991.4],[24990.65,25003.65,24987.3,24991.4],[24991.65,24992.3,24982.75,24986.35],[24986.15,24993.1,24980.9,24983],[24983.1,24986.6,24982,24986.25],[24986,25004.55,24984.3,24990.15],[24989.5,24992.95,24984.75,24984.75],[24984.25,24986.6,24978.55,24984.5],[24984.9,24995.4,24969.9,24970.7],[24971.05,24977.95,24966.8,24967.85],[24967.95,24978.75,24956.65,24975.85],[24976.35,24977.05,24958.65,24969.5],[24969.25,24970.9,24939.55,24955.35],[24954.85,24956.9,24944.5,24949.4],[24950.35,24957.15,24946.05,24949.45],[24949.05,24950.3,24919.4,24939.65],[24939.6,24946.1,24935.05,24938.9],[24940,24951.5,24922.55,24950.3]],"overlays":[{"name":"PP","data":[24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63,24919.63],"color":"#94a3b8","width":1.1,"dash":true},{"name":"R1","data":[24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42,24986.42],"color":"#38bdf8","width":1.1,"dash":true},{"name":"S1","data":[24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27,24817.27],"color":"#f472b6","width":1.1,"dash":true},{"name":"EMA20","data":[24902.31,24904.75,24906.18,24906.32,24904.99,24902.63,24901.84,24902.54,24903.01,24902.91,24902.86,24904.67,24906.38,24907.72,24908.16,24909.42,24909.58,24910.85,24912.52,24913.48,24914.55,24915.87,24918.09,24919.72,24921.28,24922.56,24923.72,24925.17,24928.16,24930.01,24932.25,24934.61,24936.66,24939.22,24941.78,24944.8,24948.86,24952.75,24956.57,24961.08,24964.96,24966.82,24968.17,24970.38,24972.38,24973.71,24974.6,24975.71,24977.08,24977.81,24978.45,24977.71,24976.77,24976.68,24976,24974.03,24971.69,24969.57,24966.72,24964.07,24962.76],"color":"#fbbf24","width":1.6},{"name":"EMA50","data":[24903.07,24904.04,24904.66,24904.77,24904.29,24903.34,24902.99,24903.23,24903.4,24903.34,24903.3,24904.03,24904.76,24905.38,24905.65,24906.27,24906.46,24907.1,24907.94,24908.51,24909.15,24909.9,24911.05,24912,24912.95,24913.8,24914.62,24915.57,24917.18,24918.37,24919.75,24921.21,24922.58,24924.19,24925.83,24927.7,24930.04,24932.38,24934.75,24937.47,24939.99,24941.74,24943.27,24945.16,24946.98,24948.52,24949.87,24951.3,24952.82,24954.07,24955.27,24955.87,24956.34,24957.11,24957.59,24957.51,24957.19,24956.88,24956.21,24955.53,24955.32],"color":"#a78bfa","width":1.6},{"name":"SuperTrend green","data":[null,24852.08,24861.12,24861.12,24861.12,24861.12,24861.12,24861.12,24861.12,24861.12,24861.12,24861.12,24861.12,24866.85,24866.85,24866.85,24866.85,24866.85,24866.85,24872.36,24873.68,24880.54,24886.4,24890.63,24890.63,24895.65,24895.65,24902.42,24904.62,24909.31,24911.24,24916.19,24921.13,24923.58,24926.34,24933.82,24941.74,24957.4,24957.4,24957.59,24963.51,24963.51,24963.51,24963.51,24963.51,24963.51,24963.51,24963.51,24963.51,24963.51,24963.51,24963.51,24963.51,24963.51,24963.51,null,null,null,null,null,null],"color":"#22c55e","width":2},{"name":"SuperTrend red","data":[24919.08,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,25005.03,24999.25,24998.62,24986.44,24986.44,24986.44],"color":"#ef4444","width":2}],"hlines":[{"price":24986.42,"label":"R1 24,986.42","color":"#38bdf8","labelAt":0.02},{"price":24919.63,"label":"PP 24,919.63","color":"#94a3b8","labelAt":0.8},{"price":24817.27,"label":"S1 24,817.27","color":"#f472b6","labelAt":0.02}],"zones":[],"shades":[],"markers":[{"i":11,"price":24904.35,"type":"dot","text":"cross level 24,904.35: below PP","color":"#f59e0b"},{"i":56,"price":24956.9,"type":"dot","text":"","color":"#94a3b8"}],"legend":[{"label":"EMA20","color":"#fbbf24"},{"label":"EMA50","color":"#a78bfa"},{"label":"SuperTrend 10,3 (green = up)","color":"#22c55e"},{"label":"(red = down)","color":"#ef4444"},{"label":"R1 / PP / S1","color":"#38bdf8"},{"label":"Cross level","color":"#f59e0b"}]});
+</script>
+</body>
+</html>

@@ -59,6 +59,7 @@ const NOT_NIFTY = { has: (f) => /^cmx[A-Z][A-Za-z0-9]*Paper\.js$/.test(f) };
 // NIFTY_FUTURES toggle has nothing to switch. Exempt only while EVERY contract
 // they build names their own stock underlying — asserted below.
 const STOCK_OPTIONS = { SAIL: new Set(["sailVwapStPaper.js", "sailVwapStBacktest.js"]) };
+STOCK_OPTIONS.SAIL.add("sailPivotEmaStPaper.js"); // SAIL_PIVOT_EMA_ST — also SAIL stock options
 const stockUnderlyingOf = (f) => Object.keys(STOCK_OPTIONS).find((k) => STOCK_OPTIONS[k].has(f)) || null;
 
 // ─────────────────────────────────────────────────────────────────────────────

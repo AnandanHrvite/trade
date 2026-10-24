@@ -117,6 +117,9 @@ const PAPER_SOURCES = [
   { mode: "BN_EMA_RSI_ST_V2", file: "bn_ema_rsi_st_v2_paper_trades.json" },
   { mode: "ST_RSI_PIV_BB", file: "st_rsi_piv_bb_paper_trades.json" },
   { mode: "SAIL_VWAP_ST", file: "sail_vwap_st_paper_trades.json" },
+  { mode: "PIVOT_EMA_ST", file: "pivot_ema_st_paper_trades.json" },
+  { mode: "BN_PIVOT_EMA_ST", file: "bn_pivot_ema_st_paper_trades.json" },
+  { mode: "SAIL_PIVOT_EMA_ST", file: "sail_pivot_ema_st_paper_trades.json" },
   { mode: "BB_RSI",     file: "bb_rsi_paper_trades.json" },
   { mode: "PA",         file: "pa_paper_trades.json" },
   { mode: "ORB",        file: "orb_paper_trades.json" },
@@ -136,6 +139,9 @@ const LIVE_SOURCES = [
   { mode: "BN_EMA_RSI_ST_V2", file: "bn_ema_rsi_st_v2_live_trades.json" },
   { mode: "ST_RSI_PIV_BB", file: "st_rsi_piv_bb_live_trades.json" },
   { mode: "SAIL_VWAP_ST", file: "sail_vwap_st_live_trades.json" },
+  { mode: "PIVOT_EMA_ST", file: "pivot_ema_st_live_trades.json" },
+  { mode: "BN_PIVOT_EMA_ST", file: "bn_pivot_ema_st_live_trades.json" },
+  { mode: "SAIL_PIVOT_EMA_ST", file: "sail_pivot_ema_st_live_trades.json" },
   { mode: "BB_RSI",     file: "bb_rsi_live_trades.json" },
   { mode: "PA",         file: "pa_live_trades.json" },
   { mode: "ORB",        file: "orb_live_trades.json" },
@@ -161,6 +167,9 @@ const PAPER_HISTORY_PATH = {
   BN_EMA_RSI_ST_V2:  "/bn_ema_rsi_st_v2-paper/history",
   ST_RSI_PIV_BB:     "/st_rsi_piv_bb-paper/history",
   SAIL_VWAP_ST:      "/sail_vwap_st-paper/history",
+  PIVOT_EMA_ST:      "/pivot_ema_st-paper/history",
+  BN_PIVOT_EMA_ST:   "/bn_pivot_ema_st-paper/history",
+  SAIL_PIVOT_EMA_ST: "/sail_pivot_ema_st-paper/history",
   BB_RSI:            "/bb_rsi-paper/history",
   PA:                "/pa-paper/history",
   ORB:               "/orb-paper/history",
@@ -186,6 +195,13 @@ for (const [c, cl] of [["CRUDE", "Crude Oil"], ["GOLD", "Gold"], ["SILVER", "Sil
     CMX_SOURCES.push({ mode: `CMX_${c}_${st}`, label: `${cl} · ${st}`, group: cl, col: st, file: `cmx/${id}_paper_trades.json`,
                        modeKey: `CMX_${c}_${st}_MODE_ENABLED`, hist: `/${id}-paper/history` });
   }
+}
+// PIVOT_EMA_ST commodity pages — same shape; their toggle defaults ON (modeDefault).
+for (const [c, cl] of [["CRUDE", "Crude Oil"], ["GOLD", "Gold"], ["SILVER", "Silver"]]) {
+  const st = "PIVOT_EMA_ST";
+  const id = `cmx_${c.toLowerCase()}_${st.toLowerCase()}`;
+  CMX_SOURCES.push({ mode: `CMX_${c}_${st}`, label: `${cl} · ${st}`, group: cl, col: st, file: `cmx/${id}_paper_trades.json`,
+                     modeKey: `CMX_${c}_${st}_MODE_ENABLED`, modeDefault: "true", hist: `/${id}-paper/history` });
 }
 
 // Which table a strategy's column sits in.
@@ -275,7 +291,7 @@ router.get("/", async (req, res) => {
   // hidden from the sidebar, so its columns (and its trades in the day totals)
   // must not appear here either. Filtered per-request, never cached: Settings
   // saves mutate process.env while the process is running.
-  const cmxOn       = CMX_SOURCES.filter(c => (process.env[c.modeKey] || "false").toLowerCase() === "true");
+  const cmxOn       = CMX_SOURCES.filter(c => (process.env[c.modeKey] || c.modeDefault || "false").toLowerCase() === "true");
   const enabled     = [...enabledStrategies().map(s => ({ mode: s.mode, label: s.mode })),
                        ...cmxOn.map(c => ({ mode: c.mode, label: c.label, group: c.group, col: c.col }))];
   const enabledSet  = new Set(enabled.map(s => s.mode));
@@ -386,6 +402,9 @@ ${multiSelectCSS()}
     .badge-BN_EMA_RSI_ST_V2{background:rgba(45,212,191,0.12);color:#2dd4bf;}
     .badge-ST_RSI_PIV_BB{background:rgba(163,230,53,0.12);color:#a3e635;}
     .badge-SAIL_VWAP_ST{background:rgba(253,164,175,0.12);color:#fda4af;}
+    .badge-PIVOT_EMA_ST{background:rgba(56,189,248,0.12);color:#38bdf8;}
+    .badge-BN_PIVOT_EMA_ST{background:rgba(244,114,182,0.12);color:#f472b6;}
+    .badge-SAIL_PIVOT_EMA_ST{background:rgba(252,211,77,0.12);color:#fcd34d;}
     .badge-BB_RSI{background:rgba(245,158,11,0.12);color:#f59e0b;}
     .badge-PA{background:rgba(168,85,247,0.12);color:#a855f7;}
     .badge-ORB{background:rgba(16,185,129,0.12);color:#10b981;}

@@ -71,6 +71,10 @@ const STRATEGY_BADGE = {
   st_rsi_piv_bb: { label: "ST_RSI_PIV_BB", cls: "mode-st_rsi_piv_bb" },
   // SAIL_VWAP_ST (SAIL stock options) — its own key.
   sail_vwap_st: { label: "SAIL_VWAP_ST", cls: "mode-sail_vwap_st" },
+  // PIVOT_EMA_ST family — each its own key.
+  pivot_ema_st: { label: "PIVOT_EMA_ST", cls: "mode-pivot_ema_st" },
+  bn_pivot_ema_st: { label: "BN PIVOT_EMA_ST", cls: "mode-bn_pivot_ema_st" },
+  sail_pivot_ema_st: { label: "SAIL PIVOT_EMA_ST", cls: "mode-sail_pivot_ema_st" },
   bb_rsi:    { label: "BB_RSI",    cls: "mode-bb_rsi" },
   pa:       { label: "PA",       cls: "mode-pa" },
   orb:      { label: "ORB",      cls: "mode-orb" },
@@ -197,6 +201,9 @@ async function detectMeta(group, rel, abs, mtimeMs) {
   if (/^st_rsi_piv_bb\b/i.test(path.basename(rel))) return { strat: "st_rsi_piv_bb", date: null };
   // SAIL_VWAP_ST — tested first so its files carry their own badge.
   if (/^sail_vwap_st\b/i.test(path.basename(rel))) return { strat: "sail_vwap_st", date: null };
+  // PIVOT_EMA_ST family — tested before the generic list (none of its names is in it).
+  const _pesName = path.basename(rel).match(/^((?:sail_|bn_)?pivot_ema_st)(?![a-z0-9])/i);
+  if (_pesName) return { strat: _pesName[1].toLowerCase(), date: null };
   // Filename-encoded modes (replay / replay_sim outputs) — no per-file date.
   const nameMatch = path.basename(rel).match(/^(bn_ema_rsi_st_v2|ema_rsi_st_v2|ema_rsi_st|bb_rsi|pa|orb|trend_pb|trend_day_scalp|ha_scalp|prev_orb_scalp|bn_pivot_rsi_st|rsi_pivot_st|simple930|early_bird)\b/i);
   if (nameMatch) return { strat: nameMatch[1].toLowerCase(), date: null };
@@ -210,6 +217,8 @@ async function detectMeta(group, rel, abs, mtimeMs) {
     if (m) meta.strat = m[1].toLowerCase().replace(/-/g, "_");   // "trend-pb" → "trend_pb"
     if (!meta.strat && /^st_rsi_piv_bb/i.test(String(obj && obj.mode || ""))) meta.strat = "st_rsi_piv_bb";
     if (!meta.strat && /^sail_vwap_st/i.test(String(obj && obj.mode || ""))) meta.strat = "sail_vwap_st";
+    const _pesMode = !meta.strat && String(obj && obj.mode || "").match(/^((?:sail_|bn_)?pivot_ema_st)/i);
+    if (_pesMode) meta.strat = _pesMode[1].toLowerCase();
     // `date` was added to cached results later; fall back to a numeric sessionId (epoch ms).
     if (typeof obj.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(obj.date)) meta.date = obj.date;
     else if (typeof obj.sessionId === "number") meta.date = _istDateFromMs(obj.sessionId);
@@ -534,6 +543,9 @@ router.get("/", (req, res) => {
     .mode-bn_ema_rsi_st_v2 { color:#5eead4; }
     .mode-st_rsi_piv_bb { color:#bef264; }
     .mode-sail_vwap_st { color:#fecdd3; }
+    .mode-pivot_ema_st { color:#7dd3fc; }
+    .mode-bn_pivot_ema_st { color:#f9a8d4; }
+    .mode-sail_pivot_ema_st { color:#fde68a; }
     .mode-bb_rsi    { color:#fbbf24; }
     .mode-pa       { color:#a78bfa; }
     .mode-orb      { color:#10b981; }
@@ -678,6 +690,9 @@ ${embed ? '' : buildSidebar('tradeLogs', liveActive)}
     bn_ema_rsi_st_v2: { label: 'BN EMA_RSI_ST_V2', cls: 'mode-bn_ema_rsi_st_v2' },
     st_rsi_piv_bb: { label: 'ST_RSI_PIV_BB', cls: 'mode-st_rsi_piv_bb' },
     sail_vwap_st: { label: 'SAIL_VWAP_ST', cls: 'mode-sail_vwap_st' },
+    pivot_ema_st: { label: 'PIVOT_EMA_ST', cls: 'mode-pivot_ema_st' },
+    bn_pivot_ema_st: { label: 'BN PIVOT_EMA_ST', cls: 'mode-bn_pivot_ema_st' },
+    sail_pivot_ema_st: { label: 'SAIL PIVOT_EMA_ST', cls: 'mode-sail_pivot_ema_st' },
     bb_rsi:    { label: 'BB_RSI',    cls: 'mode-bb_rsi' },
     pa:       { label: 'PA',       cls: 'mode-pa' },
     orb:      { label: 'ORB',      cls: 'mode-orb' },

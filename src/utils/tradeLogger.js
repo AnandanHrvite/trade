@@ -55,6 +55,15 @@ const FILE_BY_MODE = {
   // MUST match tradeLogger's key character for character — the harness's
   // liveLogKey must be exactly "sail_vwap_st-live".
   "sail_vwap_st-live": "sail_vwap_st_live_trades_log.jsonl",
+  // PIVOT_EMA_ST family — pivot zone + EMA20/50 cross + SuperTrend (NIFTY / BANK NIFTY / SAIL).
+  // MUST match tradeLogger's key character for character — each harness's
+  // liveLogKey, if it is ever set, must be exactly "<slug>-live".
+  pivot_ema_st: "pivot_ema_st_paper_trades_log.jsonl",
+  "pivot_ema_st-live": "pivot_ema_st_live_trades_log.jsonl",
+  bn_pivot_ema_st: "bn_pivot_ema_st_paper_trades_log.jsonl",
+  "bn_pivot_ema_st-live": "bn_pivot_ema_st_live_trades_log.jsonl",
+  sail_pivot_ema_st: "sail_pivot_ema_st_paper_trades_log.jsonl",
+  "sail_pivot_ema_st-live": "sail_pivot_ema_st_live_trades_log.jsonl",
   simple930: "simple930_paper_trades_log.jsonl",
 };
 
@@ -80,6 +89,13 @@ const DAILY_PREFIX_BY_MODE = {
   sail_vwap_st: "sail_vwap_st_paper_trades_",
   // MUST match tradeLogger's key character for character (see FILE_BY_MODE).
   "sail_vwap_st-live": "sail_vwap_st_live_trades_",
+  // PIVOT_EMA_ST family — MUST match tradeLogger's key character for character (see FILE_BY_MODE).
+  pivot_ema_st: "pivot_ema_st_paper_trades_",
+  "pivot_ema_st-live": "pivot_ema_st_live_trades_",
+  bn_pivot_ema_st: "bn_pivot_ema_st_paper_trades_",
+  "bn_pivot_ema_st-live": "bn_pivot_ema_st_live_trades_",
+  sail_pivot_ema_st: "sail_pivot_ema_st_paper_trades_",
+  "sail_pivot_ema_st-live": "sail_pivot_ema_st_live_trades_",
   simple930: "simple930_paper_trades_",
 };
 

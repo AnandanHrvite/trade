@@ -23,6 +23,7 @@
  *   (ORB, TREND_PB, TDS, RSI_PIVOT_ST, BN_PIVOT_RSI_ST, EMA_RSI_ST_V2, BN_EMA_RSI_ST_V2 and SIMPLE930 emit no SIGNAL alerts, so they have no _SIGNALS toggle.)
  *   ST_RSI_PIV_BB uses the same four per-mode toggles (TG_ST_RSI_PIV_BB_STARTED/_ENTRY/_EXIT/_DAYREPORT) and no _SIGNALS toggle.
  *   SAIL_VWAP_ST uses the same four per-mode toggles (TG_SAIL_VWAP_ST_STARTED/_ENTRY/_EXIT/_DAYREPORT) and no _SIGNALS toggle.
+ *   PIVOT_EMA_ST / BN_PIVOT_EMA_ST / SAIL_PIVOT_EMA_ST likewise (TG_<group>_STARTED/_ENTRY/_EXIT/_DAYREPORT), no _SIGNALS toggle.
  *
  * If TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID are missing, all functions silently
  * do nothing — no errors.
@@ -136,6 +137,12 @@ function modeGroup(mode) {
   // SAIL_VWAP_ST — its own group key, so TG_SAIL_VWAP_ST_* and
   // SAIL_VWAP_ST_MODE_ENABLED gate it; no earlier branch matches a "SAIL" prefix.
   if (m === "SAIL_VWAP_ST" || m.startsWith("SAIL_VWAP_ST-") || m.startsWith("SAIL_VWAP_ST_")) return "SAIL_VWAP_ST";
+  // PIVOT_EMA_ST family — three group keys (TG_<group>_*, <group>_MODE_ENABLED).
+  // Anchored prefixes, most specific first: no earlier branch matches "PIVOT_",
+  // "BN_PIVOT_EMA" or "SAIL_PIVOT" (BN_PIVOT_RSI_ST / SAIL_VWAP_ST need their full names).
+  if (m === "SAIL_PIVOT_EMA_ST" || m.startsWith("SAIL_PIVOT_EMA_ST-") || m.startsWith("SAIL_PIVOT_EMA_ST_")) return "SAIL_PIVOT_EMA_ST";
+  if (m === "BN_PIVOT_EMA_ST" || m.startsWith("BN_PIVOT_EMA_ST-") || m.startsWith("BN_PIVOT_EMA_ST_")) return "BN_PIVOT_EMA_ST";
+  if (m === "PIVOT_EMA_ST" || m.startsWith("PIVOT_EMA_ST-") || m.startsWith("PIVOT_EMA_ST_")) return "PIVOT_EMA_ST";
   // BN_EMA_RSI_ST_V2 — the same engine on NIFTY BANK, with its own group key and
   // its own TG_BN_EMA_RSI_ST_V2_* toggles. Tested FIRST, before both the
   // EMA_RSI_ST_V2 branch and the EMA_RSI_ST fallback: like V2 it has no branch of
@@ -453,6 +460,12 @@ function modeLabel(mode) {
   if (m.startsWith("ST_RSI_PIV_BB-LIVE"))  return "⚡ ST_RSI_PIV_BB LIVE" + m.slice("ST_RSI_PIV_BB-LIVE".length);
   if (m.startsWith("SAIL_VWAP_ST-PAPER")) return "📄 SAIL_VWAP_ST PAPER" + m.slice("SAIL_VWAP_ST-PAPER".length);
   if (m.startsWith("SAIL_VWAP_ST-LIVE"))  return "⚡ SAIL_VWAP_ST LIVE" + m.slice("SAIL_VWAP_ST-LIVE".length);
+  if (m.startsWith("SAIL_PIVOT_EMA_ST-PAPER")) return "📄 SAIL_PIVOT_EMA_ST PAPER" + m.slice("SAIL_PIVOT_EMA_ST-PAPER".length);
+  if (m.startsWith("SAIL_PIVOT_EMA_ST-LIVE"))  return "⚡ SAIL_PIVOT_EMA_ST LIVE" + m.slice("SAIL_PIVOT_EMA_ST-LIVE".length);
+  if (m.startsWith("BN_PIVOT_EMA_ST-PAPER")) return "📄 BN_PIVOT_EMA_ST PAPER" + m.slice("BN_PIVOT_EMA_ST-PAPER".length);
+  if (m.startsWith("BN_PIVOT_EMA_ST-LIVE"))  return "⚡ BN_PIVOT_EMA_ST LIVE" + m.slice("BN_PIVOT_EMA_ST-LIVE".length);
+  if (m.startsWith("PIVOT_EMA_ST-PAPER")) return "📄 PIVOT_EMA_ST PAPER" + m.slice("PIVOT_EMA_ST-PAPER".length);
+  if (m.startsWith("PIVOT_EMA_ST-LIVE"))  return "⚡ PIVOT_EMA_ST LIVE" + m.slice("PIVOT_EMA_ST-LIVE".length);
   return m;
 }
 
@@ -816,6 +829,7 @@ function notifyConsolidatedDayReport({ byMode }) {
   const groups = ["EMA_RSI_ST", "BB_RSI", "PA", "ORB", "EMA9VWAP", "TREND_PB", "TDS", "RSI_PIVOT_ST", "BN_PIVOT_RSI_ST", "EMA_RSI_ST_V2", "BN_EMA_RSI_ST_V2", "SIMPLE930", "HA_SCALP", "PREV_ORB_SCALP", "EARLYBIRD"].filter(isModeEnabled);
   if (isModeEnabled("ST_RSI_PIV_BB")) groups.push("ST_RSI_PIV_BB");
   if (isModeEnabled("SAIL_VWAP_ST")) groups.push("SAIL_VWAP_ST");
+  for (const g of ["PIVOT_EMA_ST", "BN_PIVOT_EMA_ST", "SAIL_PIVOT_EMA_ST"]) if (isModeEnabled(g)) groups.push(g);
   let totalTrades = 0, totalPnl = 0, totalWins = 0, totalLosses = 0;
   const rows = [];
 

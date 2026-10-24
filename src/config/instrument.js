@@ -126,6 +126,9 @@ const UNDERLYING_DEFS = {
     fractionalStrikes: true,
     spotDefault: 170,
     enabledEnv:  "SAIL_VWAP_ST_MODE_ENABLED",
+    // SAIL_PIVOT_EMA_ST trades SAIL too: SAIL counts as enabled when EITHER
+    // toggle is on. [key, default-when-unset] — SAIL_PIVOT_EMA_ST ships ON.
+    alsoEnabledEnv: [["SAIL_PIVOT_EMA_ST_MODE_ENABLED", "true"]],
     env: {
       strikeStep:     "SAIL_STRIKE_STEP",
       lotSize:        "SAIL_LOT_SIZE",
@@ -204,6 +207,7 @@ function underlyingOf(u) {
     spotFallback:   parseFloat(process.env[E.spotFallback] || "0") || 0,
     spotDefault:    def.spotDefault || null,
     enabledEnv:     def.enabledEnv || null,
+    alsoEnabledEnv: def.alsoEnabledEnv || null,
   };
 }
 
@@ -222,6 +226,10 @@ function _offsetOf(raw, fractional) {
 function isUnderlyingEnabled(u) {
   const r = underlyingOf(u);
   if (!r.enabledEnv) return true;
+  // Any second strategy on the same underlying (SAIL_PIVOT_EMA_ST) also enables it.
+  for (const [k, dflt] of r.alsoEnabledEnv || []) {
+    if (String(process.env[k] || dflt).trim().toLowerCase() === "true") return true;
+  }
   return String(process.env[r.enabledEnv] || "false").trim().toLowerCase() === "true";
 }
 

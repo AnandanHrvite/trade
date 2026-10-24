@@ -81,6 +81,14 @@ let stRsiPivBbMode = null;
 // SAIL_VWAP_ST is mutually exclusive.
 let sailVwapStMode = null;
 
+// PIVOT_EMA_ST family: "<P>_PAPER" | "<P>_LIVE" | null, for P = PIVOT_EMA_ST
+// (NIFTY), BN_PIVOT_EMA_ST (BANK NIFTY), SAIL_PIVOT_EMA_ST (SAIL). Each its OWN
+// slot (own settings + position file), so all three run side by side with every
+// other strategy. Only paper-vs-live WITHIN one of them is mutually exclusive.
+let pivotEmaStMode = null;
+let bnPivotEmaStMode = null;
+let sailPivotEmaStMode = null;
+
 // EarlyBird mode: "EARLY_BIRD_PAPER" | "EARLY_BIRD_LIVE" | null
 let earlyBirdMode = null;
 
@@ -377,6 +385,23 @@ function getSailVwapStMode() {
   return sailVwapStMode;
 }
 
+// ── PIVOT_EMA_ST family modes (NIFTY / BANK NIFTY / SAIL) ──────────────────
+
+function setPivotEmaStMode(mode) { pivotEmaStMode = mode; }
+function clearPivotEmaStMode() { pivotEmaStMode = null; }
+function isPivotEmaStActive() { return pivotEmaStMode !== null; }
+function getPivotEmaStMode() { return pivotEmaStMode; }
+
+function setBnPivotEmaStMode(mode) { bnPivotEmaStMode = mode; }
+function clearBnPivotEmaStMode() { bnPivotEmaStMode = null; }
+function isBnPivotEmaStActive() { return bnPivotEmaStMode !== null; }
+function getBnPivotEmaStMode() { return bnPivotEmaStMode; }
+
+function setSailPivotEmaStMode(mode) { sailPivotEmaStMode = mode; }
+function clearSailPivotEmaStMode() { sailPivotEmaStMode = null; }
+function isSailPivotEmaStActive() { return sailPivotEmaStMode !== null; }
+function getSailPivotEmaStMode() { return sailPivotEmaStMode; }
+
 // ── SIMPLE_9:30 mode (9:30 option-premium trigger) ──────────────────────────
 
 function setSimple930Active(mode) {
@@ -410,6 +435,7 @@ function isAnyActive() {
          bnEmaRsiStV2Mode !== null ||
          stRsiPivBbMode !== null ||
          sailVwapStMode !== null ||
+         pivotEmaStMode !== null || bnPivotEmaStMode !== null || sailPivotEmaStMode !== null ||
          simple930Mode !== null;
 }
 
@@ -555,6 +581,31 @@ function _canStartRaw(mode) {
       if (sailVwapStMode === "SAIL_VWAP_ST_PAPER") return { allowed: false, reason: "SAIL_VWAP_ST Paper is running — stop it first" };
       if (sailVwapStMode === "SAIL_VWAP_ST_LIVE")  return { allowed: false, reason: "SAIL_VWAP_ST Live is already running" };
       return { allowed: true };
+    // PIVOT_EMA_ST family — each checked ONLY against its own sibling.
+    case "PIVOT_EMA_ST_PAPER":
+      if (pivotEmaStMode === "PIVOT_EMA_ST_LIVE")  return { allowed: false, reason: "PIVOT_EMA_ST Live is running — stop it first" };
+      if (pivotEmaStMode === "PIVOT_EMA_ST_PAPER") return { allowed: false, reason: "PIVOT_EMA_ST Paper is already running" };
+      return { allowed: true };
+    case "PIVOT_EMA_ST_LIVE":
+      if (pivotEmaStMode === "PIVOT_EMA_ST_PAPER") return { allowed: false, reason: "PIVOT_EMA_ST Paper is running — stop it first" };
+      if (pivotEmaStMode === "PIVOT_EMA_ST_LIVE")  return { allowed: false, reason: "PIVOT_EMA_ST Live is already running" };
+      return { allowed: true };
+    case "BN_PIVOT_EMA_ST_PAPER":
+      if (bnPivotEmaStMode === "BN_PIVOT_EMA_ST_LIVE")  return { allowed: false, reason: "BN_PIVOT_EMA_ST Live is running — stop it first" };
+      if (bnPivotEmaStMode === "BN_PIVOT_EMA_ST_PAPER") return { allowed: false, reason: "BN_PIVOT_EMA_ST Paper is already running" };
+      return { allowed: true };
+    case "BN_PIVOT_EMA_ST_LIVE":
+      if (bnPivotEmaStMode === "BN_PIVOT_EMA_ST_PAPER") return { allowed: false, reason: "BN_PIVOT_EMA_ST Paper is running — stop it first" };
+      if (bnPivotEmaStMode === "BN_PIVOT_EMA_ST_LIVE")  return { allowed: false, reason: "BN_PIVOT_EMA_ST Live is already running" };
+      return { allowed: true };
+    case "SAIL_PIVOT_EMA_ST_PAPER":
+      if (sailPivotEmaStMode === "SAIL_PIVOT_EMA_ST_LIVE")  return { allowed: false, reason: "SAIL_PIVOT_EMA_ST Live is running — stop it first" };
+      if (sailPivotEmaStMode === "SAIL_PIVOT_EMA_ST_PAPER") return { allowed: false, reason: "SAIL_PIVOT_EMA_ST Paper is already running" };
+      return { allowed: true };
+    case "SAIL_PIVOT_EMA_ST_LIVE":
+      if (sailPivotEmaStMode === "SAIL_PIVOT_EMA_ST_PAPER") return { allowed: false, reason: "SAIL_PIVOT_EMA_ST Paper is running — stop it first" };
+      if (sailPivotEmaStMode === "SAIL_PIVOT_EMA_ST_LIVE")  return { allowed: false, reason: "SAIL_PIVOT_EMA_ST Live is already running" };
+      return { allowed: true };
     case "SIMPLE930_PAPER":
       if (simple930Mode === "SIMPLE930_LIVE")  return { allowed: false, reason: "SIMPLE_9:30 Live is running — stop it first" };
       if (simple930Mode === "SIMPLE930_PAPER") return { allowed: false, reason: "SIMPLE_9:30 Paper is already running" };
@@ -632,6 +683,10 @@ module.exports = {
   setStRsiPivBbMode, clearStRsiPivBbMode, isStRsiPivBbActive, getStRsiPivBbMode,
   // SAIL_VWAP_ST
   setSailVwapStMode, clearSailVwapStMode, isSailVwapStActive, getSailVwapStMode,
+  // PIVOT_EMA_ST family
+  setPivotEmaStMode, clearPivotEmaStMode, isPivotEmaStActive, getPivotEmaStMode,
+  setBnPivotEmaStMode, clearBnPivotEmaStMode, isBnPivotEmaStActive, getBnPivotEmaStMode,
+  setSailPivotEmaStMode, clearSailPivotEmaStMode, isSailPivotEmaStActive, getSailPivotEmaStMode,
   // SIMPLE_9:30
   setSimple930Active, clearSimple930, isSimple930Active, getSimple930Mode,
   // Combined
@@ -648,6 +703,7 @@ const _CLEAR_SLOT = {
   clearEmaRsiStV2Mode: "EMA_RSI_ST_V2", clearBnEmaRsiStV2Mode: "BN_EMA_RSI_ST_V2",
   clearStRsiPivBbMode: "ST_RSI_PIV_BB",
   clearSailVwapStMode: "SAIL_VWAP_ST",
+  clearPivotEmaStMode: "PIVOT_EMA_ST", clearBnPivotEmaStMode: "BN_PIVOT_EMA_ST", clearSailPivotEmaStMode: "SAIL_PIVOT_EMA_ST",
   clearSimple930: "SIMPLE930",
 };
 for (const name of Object.keys(module.exports)) {

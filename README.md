@@ -70,6 +70,12 @@ All four strategies run **in parallel** on the same WebSocket — different cand
 | **SAIL_VWAP_ST Paper** | **SAIL stock options**: a candle closes across the session VWAP, then within 3 candles one closes beyond that cross candle's high (CE) / low (PE) with SuperTrend(10, 2) agreeing; SuperTrend trailing stop on candle close | 5-min (3 / 15 selectable) | Simulated | `/sail_vwap_st-paper` |
 | **SAIL_VWAP_ST Backtest** | Same engine over a date range (next-bar-open fills, SAIL-scaled δ+θ premium sim) | 5-min historical | Historical | `/sail_vwap_st-backtest` |
 | **SAIL_VWAP_ST Live (Harness)** | Runs Live by wrapping Paper (Zerodha orders, triple-gated dry-run) | 5-min | Zerodha (PAPER-wrapped) | `/sail_vwap_st-live` |
+| **PIVOT_EMA_ST Paper** | NIFTY: one closed candle inside yesterday's pivot zone (PP–R1 for CE, S1–PP for PE) with EMA20 crossing EMA50 on that candle and SuperTrend(10, 3) agreeing; SuperTrend trailing stop on candle close | 3-min (5 / 15 selectable) | Simulated | `/pivot_ema_st-paper` |
+| **PIVOT_EMA_ST Live (Harness)** | Runs Live by wrapping Paper (Zerodha orders, triple-gated dry-run) | 3-min | Zerodha (PAPER-wrapped) | `/pivot_ema_st-live` |
+| **BN_PIVOT_EMA_ST Paper** | The PIVOT_EMA_ST rules on **NIFTY BANK** | 3-min (5 / 15 selectable) | Simulated | `/bn_pivot_ema_st-paper` |
+| **BN_PIVOT_EMA_ST Live (Harness)** | Runs Live by wrapping Paper (Zerodha orders, triple-gated dry-run) | 3-min | Zerodha (PAPER-wrapped) | `/bn_pivot_ema_st-live` |
+| **SAIL_PIVOT_EMA_ST Paper** | The PIVOT_EMA_ST rules on **SAIL stock options** | 3-min (5 / 15 selectable) | Simulated | `/sail_pivot_ema_st-paper` |
+| **SAIL_PIVOT_EMA_ST Live (Harness)** | Runs Live by wrapping Paper (Zerodha orders, triple-gated dry-run) | 3-min | Zerodha (PAPER-wrapped) | `/sail_pivot_ema_st-live` |
 | **SIMPLE_9:30 Paper** | At 09:25 picks the ITM strike nearest ₹180 on each side; buys whichever clears ₹180 by 09:35, 20pt stop that trails only after the premium touches the box top, 09:45 sideways exit | 1-sec option premium poll | Simulated | `/simple930-paper` |
 | **SIMPLE_9:30 Backtest** | Same engine over a date range on **real** 1-min option premium candles (no delta/theta model) | 1-min historical (option premium) | Historical | `/simple930-backtest` |
 | **SIMPLE_9:30 Live (Harness)** | Runs Live by wrapping Paper (Zerodha orders, triple-gated dry-run) | 1-sec option premium poll | Zerodha (PAPER-wrapped) | `/simple930-live` |
@@ -357,6 +363,17 @@ The only strategy on a **single stock**: SAIL (`NSE:SAIL-EQ`), option buying, in
 - **Exit** is the SuperTrend line as a trailing stop, checked on candle close only, plus the repo-wide profit lock / breakeven, an option-premium stop (25% below entry by default) and the 15:15 square-off. **One trade a day.**
 - **Replay** feeds it only `NSE:SAIL-EQ` ticks from the day file and pins the SAIL monthly expiry, never the NIFTY one.
 
+### PIVOT_EMA_ST — EMA 20/50 cross inside the pivot zone, SuperTrend stop (`src/strategies/pivot_ema_st.js`)
+
+**Never traded, and never validated.** Zero paper sessions, zero live orders. Every number is the user's stated rule, not a fitted value. Ships ON, so Start All starts it.
+
+One rule set on four instruments, each with its own settings and position: **PIVOT_EMA_ST** (NIFTY 50, under NIFTY in the sidebar), **BN_PIVOT_EMA_ST** (NIFTY BANK, under BANK NIFTY), **SAIL_PIVOT_EMA_ST** (SAIL stock options, under STOCKS) and three paper-only COMMODITY pages (MCX crude / gold / silver). Option buying, intraday, 1 lot. Fyers data, Zerodha orders. All indicators are read on the spot chart on a **closed** candle.
+
+- **BUY CE** when one candle does all three: closes between yesterday's pivot **PP** and **R1**, sees EMA20 cross **above** EMA50 on that very candle (a cross on an earlier candle does not count), and has SuperTrend(10, 3) green. **BUY PE** is the mirror: closes between **S1** and **PP**, EMA20 crosses **below** EMA50, SuperTrend red. A close above R1 or below S1 never enters.
+- **Pivots** are Traditional floor pivots from the previous day's daily high/low/close and do not move during the day.
+- **Exit** is the SuperTrend line as a trailing stop, checked on candle close only: the trade closes when the SuperTrend flips or a candle closes beyond the trailed line, which only tightens. Plus the common rules (profit lock, breakeven, wait-after-exit, bid-ask spread, trade window 10:00–14:00 with a 15:00 square-off), max trades per day and the daily loss cap.
+- **Paper + Live harness only** — no backtest page and not replayable.
+
 ### SIMPLE_9:30 — the ₹180 option-premium breakout (`src/strategies/simple930.js`)
 
 **Never traded, and never validated.** Zero paper sessions, zero live orders. ₹180, ₹220/₹160 and the 20-point stop are the operator's own numbers, not fitted ones. Collect clean paper days and diff one against `/replay` before touching a live gate.
@@ -460,6 +477,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   bn_pivot_rsi_st_paper_trades.json # BN Pivot RSI ST (NIFTY BANK) paper sessions
   st_rsi_piv_bb_paper_trades.json # ST_RSI_PIV_BB paper sessions
   sail_vwap_st_paper_trades.json  # SAIL_VWAP_ST (SAIL stock options) paper sessions
+  pivot_ema_st_paper_trades.json  # PIVOT_EMA_ST paper sessions (bn_ / sail_ prefixes for BANK NIFTY / SAIL)
   simple930_paper_trades.json     # SIMPLE_9:30 paper sessions
   historical_pnl.json             # One-time P&L baselines per broker (Kite / Fyers)
   nse_holidays.json               # Last good NSE holiday fetch, keyed by year — keeps 2027+ working if NSE blocks the box
@@ -476,6 +494,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   .active_bn_pivot_rsi_st_position.json # Crash recovery — BN Pivot RSI ST position
   .active_st_rsi_piv_bb_position.json # Crash recovery — ST_RSI_PIV_BB position (carries the SuperTrend trail)
   .active_sail_vwap_st_position.json # Crash recovery — SAIL_VWAP_ST position (carries the SuperTrend trail; Zerodha group)
+  .active_pivot_ema_st_position.json # Crash recovery — PIVOT_EMA_ST position (bn_ / sail_ prefixes too; SuperTrend trail; Zerodha group)
   .active_simple930_position.json # Crash recovery — SIMPLE_9:30 position (carries the live trail state)
   .harness_events.json            # Live-harness event log (DRY-RUN/real order events), survives restart
   ema_rsi_st_paper_trades_log.jsonl    # Crash-safe per-trade JSONL audit (cumulative)
@@ -626,6 +645,18 @@ log, so each session's trades carry the exact config that produced them.
 | `/sail_vwap_st-paper/status` | Paper trade — SAIL chart with session VWAP and the SuperTrend line |
 | `/sail_vwap_st-paper/history` | Sessions (per-session delete + view modal) |
 | `/sail_vwap_st-live` | Live via the paper-wrapping harness (**Zerodha** orders; gated by `SAIL_VWAP_ST_LIVE_ENABLED` + `LIVE_HARNESS_DRY_RUN` + `SAIL_VWAP_ST_LIVE_DRY_RUN`) |
+
+### PIVOT_EMA_ST (NIFTY / BANK NIFTY / SAIL / COMMODITY)
+| URL | Description |
+|-----|-------------|
+| `/pivot_ema_st-paper/status` | Paper trade — NIFTY chart with EMA20/50, SuperTrend and the PP / R1 / S1 lines |
+| `/pivot_ema_st-paper/history` | Sessions (per-session delete + view modal) |
+| `/pivot_ema_st-live` | Live via the paper-wrapping harness (**Zerodha** orders, triple-gated dry-run) |
+| `/bn_pivot_ema_st-paper/status`, `/history` | The same on NIFTY BANK |
+| `/bn_pivot_ema_st-live` | NIFTY BANK live harness (**Zerodha**, triple-gated dry-run) |
+| `/sail_pivot_ema_st-paper/status`, `/history` | The same on SAIL stock options |
+| `/sail_pivot_ema_st-live` | SAIL live harness (**Zerodha**, triple-gated dry-run) |
+| `/cmx_{crude,gold,silver}_pivot_ema_st-paper/status` | COMMODITY paper pages (MCX futures-option paper, no live) |
 
 ### SIMPLE_9:30
 | URL | Description |

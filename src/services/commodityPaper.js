@@ -19,6 +19,8 @@
  *   • the strategy RULES are the originals, called read-only:
  *       V1 → strategy1_sar_ema_rsi.getSignal (EMA_RSI_ST_* settings)
  *       V2 → ema_rsi_st_v2.getSignal / trailStop (EMA_RSI_ST_V2_* settings)
+ *       PIVOT → pivot_ema_st.getSignal / exitCheck / trailStop (PIVOT_EMA_ST_* settings;
+ *               no trend filter, no confirm candle, future stop on candle close only)
  *     so the signal is the same strategy; only timing, sizing and day guards
  *     are commodity-specific (CMX_* keys).
  *
@@ -246,6 +248,79 @@ const ADAPTERS = {
       return { emaFast: k.EMA_FAST, emaSlow: k.EMA_SLOW, stPeriod: k.ST_PERIOD, stMult: k.ST_MULT, rsiCeMin: k.RSI_CE_MIN, rsiPeMax: k.RSI_PE_MAX };
     },
   },
+
+  // PIVOT_EMA_ST — rules from strategies/pivot_ema_st.js read with the NIFTY
+  // PIVOT_EMA_ST_* keys (EMA / SuperTrend periods), the way V1 reads EMA_RSI_ST.
+  // The optional flags below are read only where `A.<flag>` is checked in
+  // createEngine; V1/V2 leave them undefined, so their behaviour is unchanged.
+  PIVOT: {
+    rulesKey: "PIVOT_EMA_ST",
+    defaultRes: 3,               // CMX_PIVOT_EMA_ST_RESOLUTION default (V1/V2 keep 5)
+    modeDefault: "true",         // CMX_<C>_PIVOT_EMA_ST_MODE_ENABLED default (V1/V2 keep "false")
+    // Entry is on the signal candle's close. confirmCandle.enabled() would read
+    // PIVOT_EMA_ST_CONFIRM_CANDLE_ENABLED with a default of "true" — the rules
+    // have no confirmation candle, so it is forced off here.
+    noConfirm: true,
+    // The commodity trend filter (CMX_MIN_EMA_GAP_PCT / CMX_RSI_*) is a rule
+    // filter the user did not ask for on PIVOT_EMA_ST — not applied. V1/V2 keep it.
+    noTrendFilter: true,
+    // Exits on the future are on CANDLE CLOSE only (exitCheck + trailStop in
+    // onClose). The per-poll future-stop test in onPrice is skipped; the
+    // premium-based common rules (option stop, breakeven, profit lock) still run per poll.
+    candleCloseStopOnly: true,
+    // Previous MCX day's daily H/L/C of the traded future — see ensurePivots().
+    needsPivots: true,
+    signal(candles, ctx) {
+      const E = require("../strategies/pivot_ema_st");
+      const k = E.getConfig("PIVOT_EMA_ST");
+      // The candle size is CMX_PIVOT_EMA_ST_RESOLUTION, not PIVOT_EMA_ST_TF; TF is
+      // only the reason tag here (skipTimeCheck — the engine applies its MCX window).
+      if (ctx && Number.isFinite(ctx.res)) k.TF = ctx.res;
+      return E.getSignal(candles, { prefix: "PIVOT_EMA_ST", cfg: k, pivots: (ctx && ctx.pivots) || null, silent: true, skipTimeCheck: true });
+    },
+    // SL pause, opposite-side cooldown and the consecutive-loss stop are V1/V2
+    // rule keys (EMA_RSI_ST_*), not commodity-wide — PIVOT_EMA_ST has none.
+    slPauseCandles: () => 0,
+    oppCooldownOn:  () => false,
+    oppCooldownCandles: () => 0,
+    consecLimit:    () => 0,
+    // Initial stop = the SuperTrend on the signal candle.
+    seedStop(side, price, sig) { return Number.isFinite(sig.stopLoss) ? sig.stopLoss : null; },
+    // The ONLY future-price exit: engine.exitCheck on this closed candle against
+    // the stop in force before it, then engine.trailStop tighten-only.
+    onClose(eng, pos, bar) {
+      const E = require("../strategies/pivot_ema_st");
+      const k = E.getConfig("PIVOT_EMA_ST");
+      const candles = eng.state.candles;
+      const st = E.computeSeries(candles, k).supertrend;
+      const stBar = st[candles.length - 1] || null;
+      const x = E.exitCheck(pos.side, bar, stBar, pos.stopLoss);
+      if (x.exit) return x.reason;
+      const t = E.trailStop(candles, pos.side, pos.stopLoss, k);
+      if (t && t.changed && Number.isFinite(t.stop)) {
+        eng.log(`📐 SL trail ${pos.side}: ${pos.stopLoss} → ${t.stop} (SuperTrend)`);
+        pos.stopLoss = t.stop;
+      }
+      return null;
+    },
+    // Chart overlays come from engine.computeSeries — the exact numbers the signal read.
+    chartCfg: () => {
+      const k = require("../strategies/pivot_ema_st").getConfig("PIVOT_EMA_ST");
+      return { emaFast: k.EMA_FAST, emaSlow: k.EMA_SLOW, stPeriod: k.ST_PERIOD, stMult: k.ST_MULT, rsiCeMin: null, rsiPeMax: null };
+    },
+    chartSeries(candles) {
+      const E = require("../strategies/pivot_ema_st");
+      return E.computeSeries(candles, E.getConfig("PIVOT_EMA_ST"));
+    },
+    // The per-candle indicator log line (V1/V2 print EMA20/EMA50/RSI/ST).
+    candleLine(sig, f) {
+      const k = sig.checks || {};
+      const lv = sig.pp != null ? ` | PP=${sig.pp} R1=${sig.r1} S1=${sig.s1} (${sig.pivotsFrom || "?"})` : " | pivots: none";
+      const box = (s) => (k[s] ? `${s} ${k[s].count}/3 [zone ${k[s].zone ? "✓" : "✗"} cross ${k[s].cross ? "✓" : "✗"} ST ${k[s].st ? "✓" : "✗"}]` : `${s} ?/3`);
+      const p = require("../strategies/pivot_ema_st").getConfig("PIVOT_EMA_ST");
+      return `   EMA${p.EMA_FAST}=${f(sig.emaFast)} EMA${p.EMA_SLOW}=${f(sig.emaSlow)} | ST=${f(sig.supertrend)}(${sig.stTrend || "?"})${lv} | ${box("CE")} · ${box("PE")}`;
+    },
+  },
 };
 
 /**
@@ -263,13 +338,13 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
   const ACTIVE_FILE = path.join(DATA_DIR, `.active_${id}_position.json`);
   const RUN_FILE    = path.join(DATA_DIR, `.running_${id}.json`);
   const TAG = `[${id.toUpperCase()}-PAPER]`;
-  const modeOn = () => String(process.env[modeKey] || "false").toLowerCase() === "true";
+  const modeOn = () => String(process.env[modeKey] || A.modeDefault || "false").toLowerCase() === "true";
 
   // ── live config ─────────────────────────────────────────────────────────────
   const cfg = () => ({
     // Candle size is fixed for a running session — a mid-session change would mix
     // candle lengths in one series. It applies on the next Start.
-    res:        state.res || Math.max(1, _int(process.env[`${prefix}_RESOLUTION`], 5)),
+    res:        state.res || Math.max(1, _int(process.env[`${prefix}_RESOLUTION`], A.defaultRes || 5)),
     lots:       Math.max(1, _int(process.env[`${prefix}_LOTS`], 1)),
     entryStart: _mins(process.env[`${prefix}_ENTRY_START`], "10:00"),
     entryEnd:   _mins(process.env[`${prefix}_ENTRY_END`], "22:30"),
@@ -284,7 +359,7 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     sessStart:  _mins(process.env.CMX_SESSION_START, "09:00"),
     sessEnd:    _mins(process.env.CMX_SESSION_END, "23:30"),
     charges:    Math.max(0, _num(process.env.CMX_CHARGES_PER_TRADE, 60)),
-    confirm:    confirmCandle.enabled(A.rulesKey),
+    confirm:    A.noConfirm ? false : confirmCandle.enabled(A.rulesKey),
     startCap:   Math.max(0, _num(process.env.CMX_STARTING_CAPITAL, 100000)),
     minGapPct:  Math.max(0, _num(process.env.CMX_MIN_EMA_GAP_PCT, 0.03)),
     rsiCeMax:   _num(process.env.CMX_RSI_CE_MAX, 63),
@@ -297,6 +372,7 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     position: null, armed: null, trades: [], sessionPnl: 0,
     consecLosses: 0, halted: null, slPauseUntil: { CE: 0, PE: 0 }, oppCooldown: null,
     lastSignal: null, lastError: null, logs: [], seenQuoteAt: 0, manualStopDay: null,
+    pivots: null, pivotsError: null, pivotsTryAt: 0, lastChecks: null,   // PIVOT adapter only
   };
   let timer = null, busy = false, lastErrLogAt = 0;
 
@@ -360,6 +436,67 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
       .map(([time, open, high, low, close, volume]) => ({ time, open, high, low, close, volume }))
       .filter((c) => c.time + res * 60 <= nowSec - 1);          // closed bars only
   }
+  // ── PIVOT adapter only: the previous MCX day's floor pivots ────────────────
+  // Fyers stamps every "D" bar at 00:00 IST of its trading date (see the note in
+  // services/backtestEngine.fetchCandles), and an MCX session (09:00–23:30/23:55)
+  // never crosses midnight — so the series is one bar per IST day, which is what
+  // computePivots requires (it refuses two bars on one day). It takes the newest
+  // bar strictly BEFORE today, so today's forming daily bar can never move R1/S1.
+  // Same future the engine trades. Fetched at Start and whenever the IST day no
+  // longer matches; on failure retried at most once a minute, and getSignal
+  // refuses every entry meanwhile (its reason is logged on each candle).
+  const PIVOT_RETRY_MS = 60000;
+  let pivotsBusy = false;
+  const todayKey = () => Math.floor((Math.floor(Date.now() / 1000) + 19800) / 86400);
+  async function refreshPivots() {
+    if (!A.needsPivots || pivotsBusy || !state.series) return;
+    pivotsBusy = true;
+    state.pivotsTryAt = Date.now();
+    const forDayKey = todayKey();
+    try {
+      const r = await sharedHistory({ symbol: state.series.future, resolution: "D", date_format: "1",
+        range_from: istDay(Date.now() - 15 * 86400000), range_to: istDay(), cont_flag: "1" });
+      if (r.s !== "ok" && r.s !== "no_data") throw new Error(`daily history ${state.series.future}: ${r.message || r.s}`);
+      const daily = (r.candles || []).map(([time, open, high, low, close]) => ({ time, open, high, low, close }));
+      const pv = require("../strategies/pivot_ema_st").computePivots(daily, { forDayKey });
+      if (pv && pv.forDayKey === forDayKey) {
+        state.pivots = pv; state.pivotsError = null;
+        log(`📐 Pivots (prev day ${pv.from}, ${state.series.future}): PP ${pv.pp} | R1 ${pv.r1} | S1 ${pv.s1}`);
+      } else {
+        state.pivots = null;
+        state.pivotsError = daily.length ? "previous day's daily bar unusable — no R1/S1" : "no daily candles returned — no R1/S1";
+        log(`⚠️ ${state.pivotsError} (${daily.length} daily bars). No entries until the pivots load — retry in ${PIVOT_RETRY_MS / 1000}s.`);
+      }
+    } catch (err) {
+      state.pivots = null;
+      state.pivotsError = `pivot fetch failed: ${err.message}`;
+      log(`⚠️ ${state.pivotsError} — no entries until R1/S1 load (retry in ${PIVOT_RETRY_MS / 1000}s).`);
+    } finally { pivotsBusy = false; }
+  }
+  /** Background, throttled: keep state.pivots on today's IST day. */
+  function ensurePivots() {
+    if (!A.needsPivots) return;
+    if (state.pivots && state.pivots.forDayKey === todayKey()) return;
+    if (state.pivots) { state.pivots = null; state.pivotsError = "pivots belong to another day — refreshing"; }
+    if (Date.now() - (state.pivotsTryAt || 0) < PIVOT_RETRY_MS) return;
+    refreshPivots().catch(() => {});
+  }
+  /**
+   * PIVOT adapter only: getSignal refused the pivots as "stale_pivots" (older
+   * than the last session in the candle buffer). Drop them so ensurePivots()
+   * on the next loop re-fetches — still at most once a minute (pivotsTryAt).
+   * Without this the forDayKey match would keep the stale levels all day.
+   */
+  let stalePivotsLogged = null;
+  function dropStalePivots(reason) {
+    state.pivots = null;
+    state.pivotsError = `stale pivots — ${reason || "older than the last session"} · re-fetching`;
+    if (stalePivotsLogged !== reason) {
+      stalePivotsLogged = reason;
+      log(`⚠️ ${reason || "stale pivots"} — dropped; re-fetching (at most once every ${PIVOT_RETRY_MS / 1000}s). No entries until fresh R1/S1 load.`);
+    }
+  }
+
   async function quotes(symbols) {
     const r = await fyers.getQuotes(symbols.filter(Boolean));
     if (r.s !== "ok") throw new Error(`quotes: ${r.message || r.s}`);
@@ -453,6 +590,9 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
       entryTimeMs: Date.now(), firstMovePts: Math.max(1, r2(spot * 0.00015)),
       reason: `${how} | ${sig.reason || ""}`.slice(0, 300),
       rsi: sig.rsi ?? null, ema20: sig.ema20 ?? null, ema50: sig.ema50 ?? null, supertrend: sig.supertrend ?? null,
+      // PIVOT adapter only: its signal names the EMAs emaFast/emaSlow (no RSI) and
+      // carries the cross level + zone. V1/V2 spread nothing — their record is unchanged.
+      ...(A.needsPivots ? { ema20: sig.emaFast ?? null, ema50: sig.emaSlow ?? null, crossLevel: sig.crossLevel ?? null, zone: sig.zone ?? null } : {}),
     };
     state.optLtp = premium;
     state.armed = null;
@@ -527,9 +667,11 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     if (state.candles.length > MAX_CANDLES) state.candles.shift();
     state.lastBarTime = bar.time;
     const c = cfg();
-    const sig = A.signal(state.candles) || {};
+    const sig = A.signal(state.candles, { pivots: state.pivots, res: c.res }) || {};   // V1/V2 ignore the 2nd argument
+    if (A.needsPivots && sig.skipReason === "stale_pivots") dropStalePivots(sig.reason);   // PIVOT adapter only
     const winOk = inEntryWindow(bar.time);
     state.lastSignal = { at: bar.time, signal: sig.signal, reason: winOk ? sig.reason : `outside entry window (${sig.reason || ""})`, close: bar.close };
+    if (A.needsPivots) state.lastChecks = sig.checks && sig.checks.ready ? sig.checks : null;
 
     if (state.armed && state.armed.armedBarTime !== bar.time) state.armed = null;   // confirm window passed
     logCandle(bar, sig, winOk);
@@ -551,7 +693,7 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
       const side = sig.signal === "BUY_CE" ? "CE" : "PE";
       const block = entryBlock(side);
       if (block) { log(`⏸️ ${sig.signal} on ${bar.close} — skipped: ${block}`); return; }
-      const weak = trendBlock(side, sig, bar.close);
+      const weak = A.noTrendFilter ? null : trendBlock(side, sig, bar.close);
       if (weak) { log(`🚫 ${sig.signal} on ${bar.close} — skipped: ${weak}`); return; }
       if (c.confirm) {
         state.armed = { side, triggerLevel: bar.close, armedBarTime: bar.time, sig };
@@ -586,11 +728,11 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     const resSec = cfg().res * 60;
     log(`📊 ──── Candle ${istClock(bar.time * 1000).slice(0, 5)}–${istClock((bar.time + resSec) * 1000).slice(0, 5)} closed ────`);
     log(`   OHLC: O=${bar.open} H=${bar.high} L=${bar.low} C=${bar.close} | body=${f(Math.abs(bar.close - bar.open))}`);
-    log(`   EMA20=${f(sig.ema20)} EMA50=${f(sig.ema50)} | RSI=${f(sig.rsi)} | ST=${f(sig.supertrend)}(${sig.stTrend || "?"})`);
+    log(A.candleLine ? A.candleLine(sig, f) : `   EMA20=${f(sig.ema20)} EMA50=${f(sig.ema50)} | RSI=${f(sig.rsi)} | ST=${f(sig.supertrend)}(${sig.stTrend || "?"})`);
     // Only where onBarClose would check it anyway — entryBlock can latch state.halted.
     const sigSide = sig.signal === "BUY_CE" ? "CE" : "PE";
     const blockNote = winOk && !state.position && (sig.signal === "BUY_CE" || sig.signal === "BUY_PE")
-      ? (entryBlock(sigSide) || trendBlock(sigSide, sig, bar.close) || "") : "";
+      ? (entryBlock(sigSide) || (A.noTrendFilter ? null : trendBlock(sigSide, sig, bar.close)) || "") : "";
     log(`   Signal: ${sig.signal || "NONE"}${winOk ? "" : " | outside entry window"}${blockNote ? " | blocked: " + blockNote : ""} | ${sig.reason || "—"}`);
     const pos = state.position;
     if (pos) {
@@ -649,7 +791,8 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
         return;
       }
     }
-    if (Number.isFinite(pos.stopLoss) && (pos.side === "CE" ? fut <= pos.stopLoss : fut >= pos.stopLoss)) {
+    // PIVOT_EMA_ST: the future stop is tested on candle close only (A.onClose), never per poll.
+    if (!A.candleCloseStopOnly && Number.isFinite(pos.stopLoss) && (pos.side === "CE" ? fut <= pos.stopLoss : fut >= pos.stopLoss)) {
       const kind = Math.abs(pos.stopLoss - pos.initialStopLoss) > 0.01 ? "Trail" : "Initial";
       await exit(`${kind} SL hit @ ${pos.stopLoss}`, fut, { slHit: true });
     }
@@ -661,6 +804,7 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     busy = true;
     try {
       rollDay();
+      ensurePivots();   // PIVOT adapter only (no-op for V1/V2)
       const c = cfg();
       const nowMin = istNowMinutes();
 
@@ -726,6 +870,9 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
       state.candles = (await fetchCandles(state.series.future, c.res, from, state.day)).slice(-MAX_CANDLES);
     } catch (err) { return { ok: false, reason: `could not load candles (is the Fyers login fresh?): ${err.message}` }; }
     state.lastBarTime = state.candles.length ? state.candles[state.candles.length - 1].time : null;
+    // PIVOT: the levels before the first candle is judged. A failure does not
+    // block Start — entries are refused until a retry (once a minute) succeeds.
+    if (A.needsPivots) { state.pivots = null; state.pivotsTryAt = 0; state.lastChecks = null; await refreshPivots(); }
 
     // MCX holiday gate — weekday closures (full day, or the morning of an
     // evening-only day). No calendar: if well past the latest session open the
@@ -844,6 +991,8 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
       consecLosses: state.consecLosses, consecLimit: A.consecLimit(), startedAt: state.startedAt || null,
       logs: state.logs.slice(-300), logTotal: state.logs.length, history: days.slice(0, 60).map(([day, d]) => ({ day, trades: (d.trades || []).length, pnl: d.pnl })),
       allTime,
+      // PIVOT adapter only — spreads nothing for V1/V2.
+      ...(A.needsPivots ? { pivots: state.pivots, pivotsError: state.pivotsError, checks: state.lastChecks } : {}),
     };
   }
 
@@ -877,10 +1026,13 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     const line = (arr) => arr.map((v, i) => ({ time: candles[i + candles.length - arr.length].time, value: r2(v) }));
     const ema = (p) => (candles.length >= p ? line(EMA.calculate({ period: p, values: closes })) : []);
     let supertrend = [];
+    // PIVOT: plot engine.computeSeries — the exact numbers the signal read.
+    const ser = A.chartSeries ? A.chartSeries(candles) : null;
     try {
-      supertrend = computeSuperTrend(candles, k.stPeriod, k.stMult)
+      supertrend = (ser ? ser.supertrend : computeSuperTrend(candles, k.stPeriod, k.stMult))
         .map((p, i) => (p && p.value != null ? { time: candles[i].time, value: r2(p.value), trend: p.trend } : null)).filter(Boolean);
     } catch (_) {}
+    const aligned = (arr) => (arr || []).map((v, i) => (Number.isFinite(v) ? { time: candles[i].time, value: r2(v) } : null)).filter(Boolean);
     const markers = [];
     for (const t of state.trades) {
       if (t.entryBarTime) markers.push({ time: t.entryBarTime, position: "belowBar", color: "#3b82f6", shape: "arrowUp", text: `${t.side} @ ${Math.round(t.spotAtEntry)}` });
@@ -888,6 +1040,16 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     }
     const p = state.position;
     if (p && p.entryBarTime) markers.push({ time: p.entryBarTime, position: "belowBar", color: "#3b82f6", shape: "arrowUp", text: `${p.side} @ ${Math.round(p.spotAtEntry)}` });
+    if (ser) {
+      const pv = state.pivots;
+      return {
+        candles, emaFast: aligned(ser.emaFast), emaSlow: aligned(ser.emaSlow), emaFastLen: k.emaFast, emaSlowLen: k.emaSlow,
+        rsi: [], rsiCeMin: null, rsiPeMax: null, supertrend, markers,
+        stopLoss: p && Number.isFinite(p.stopLoss) ? p.stopLoss : null, entry: p ? p.spotAtEntry : null,
+        armed: null,
+        pivots: pv ? { pp: pv.pp, r1: pv.r1, s1: pv.s1, from: pv.from } : null,
+      };
+    }
     return {
       candles, emaFast: ema(k.emaFast), emaSlow: ema(k.emaSlow), emaFastLen: k.emaFast, emaSlowLen: k.emaSlow,
       rsi: candles.length > 15 ? line(RSI.calculate({ period: 14, values: closes })) : [],
@@ -930,7 +1092,7 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
 
   function fullLog() { return state.logs.join("\n"); }
 
-  return { start, stop, reset, deleteDay, snapshot, fullLog, manualExit, manualEntry, chartData, historyDays, state };
+  return { start, stop, reset, deleteDay, snapshot, fullLog, manualExit, manualEntry, chartData, historyDays, state, modeOn };
 }
 
 /** True while any commodity engine is running and wants live prices. */
