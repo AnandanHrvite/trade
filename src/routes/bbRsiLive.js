@@ -1409,20 +1409,21 @@ async function preloadHistory() {
   }
 }
 
-// ── EOD Backup Timer — force exit at 3:25 PM IST if tick-based exit missed ──
+// ── EOD Backup Timer — force exit 5 min after the EOD time if the tick-based exit missed ──
 let _bbRsiEodBackupTimer = null;
 
 function scheduleBbRsiEODBackup() {
   clearBbRsiEODBackup();
-  const _EOD_EXIT_MINS = commonTradeWindow.exitCap(_STOP_MINS - 5); // 3:25 PM (15:00 under the common trade window)
+  const _EOD_EXIT_MINS = commonTradeWindow.exitCap(_STOP_MINS - 10) + 5; // 5 min after the tick EOD exit (3:25 PM, or 3:05 PM under the common trade window)
+  const _eodLabel = `${Math.floor(_EOD_EXIT_MINS / 60)}:${String(_EOD_EXIT_MINS % 60).padStart(2, "0")}`;
   const nowMins = getISTMinutes();
   if (nowMins >= _EOD_EXIT_MINS) return;
   const msUntil = (_EOD_EXIT_MINS - nowMins) * 60 * 1000;
   _bbRsiEodBackupTimer = setTimeout(() => {
     if (!state.running || !state.position) return;
     const exitPrice = state.lastTickPrice || (state.currentBar ? state.currentBar.close : 0);
-    log(`🚨 [BB_RSI] EOD BACKUP TIMER — force exit at 3:25 PM IST`);
-    squareOff(exitPrice, "EOD backup timer (3:25 PM)").catch(e => log(`❌ [BB_RSI] EOD backup exit error: ${e.message}`));
+    log(`🚨 [BB_RSI] EOD BACKUP TIMER — force exit at ${_eodLabel} IST`);
+    squareOff(exitPrice, `EOD backup timer (${_eodLabel})`).catch(e => log(`❌ [BB_RSI] EOD backup exit error: ${e.message}`));
   }, msUntil);
   log(`⏰ [BB_RSI] EOD backup timer set — force exit in ${Math.round(msUntil / 60000)} min`);
 }
