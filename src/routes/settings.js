@@ -1364,10 +1364,10 @@ const SETTINGS_SCHEMA = [
     group: "System",
     fields: [
       { key: "UI_SHOW_DASHBOARD",      label: "Show Dashboard",            type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Dashboard menu.", default: "false", subheader: "Top-level menu items" },
-      { key: "UI_SHOW_ALL_BACKTEST",   label: "Show All Backtest",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show the all-strategy Backtest menu.", default: "true" },
+      { key: "UI_SHOW_ALL_BACKTEST",   label: "Show All Backtest",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show the all-strategy Backtest menu.", default: "false" },
       { key: "UI_SHOW_REALTIME",       label: "Real-Time on Dashboard",    type: "toggle", effect: EFFECT.INSTANT, desc: "Auto-show the Real-Time monitor while a session runs.", default: "true" },
       { key: "UI_DASHBOARD_ANALYTICS_PANEL", label: "Dashboard analytics panel", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the analytics panel on the Dashboard.", default: "true" },
-      { key: "UI_SHOW_REPLAY",         label: "Show Replay",               type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Replay menu.", default: "true" },
+      { key: "UI_SHOW_REPLAY",         label: "Show Replay",               type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Replay menu.", default: "false" },
       { key: "UI_SHOW_PAPER_HISTORY",  label: "Show Paper Traded History", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Paper Traded History menu.", default: "true" },
       { key: "UI_SHOW_LIVE_HISTORY",   label: "Show Live Traded History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Live Traded History menu.", default: "true" },
       { key: "UI_SHOW_EDGE_ANALYTICS", label: "Show Consolidation Report", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Consolidation Report menu.", default: "true" },
@@ -1406,79 +1406,79 @@ const SETTINGS_SCHEMA = [
       { key: "UI_SHOW_TRACKER",        label: "Show Tracker Menu (EMA_RSI_ST only)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the Tracker sub-menu (EMA_RSI_ST).", default: "false" },
 
       // ── EMA_RSI_ST submenu ──
-      { key: "UI_SHOW_EMA_RSI_ST_BACKTEST", label: "EMA_RSI_ST → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under EMA_RSI_ST.", default: "true", subheader: "EMA_RSI_ST sub-menus" },
+      { key: "UI_SHOW_EMA_RSI_ST_BACKTEST", label: "EMA_RSI_ST → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under EMA_RSI_ST.", default: "false", subheader: "EMA_RSI_ST sub-menus" },
       { key: "UI_SHOW_EMA_RSI_ST_PAPER",    label: "EMA_RSI_ST → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under EMA_RSI_ST.",    default: "true" },
       { key: "UI_SHOW_EMA_RSI_ST_LIVE",     label: "EMA_RSI_ST → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live under EMA_RSI_ST.",     default: "true" },
       { key: "UI_SHOW_EMA_RSI_ST_LIVE_HARNESS", label: "EMA_RSI_ST → Live (Harness)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (Harness) under EMA_RSI_ST.", default: "false" },
 
       // ── BB_RSI submenu ──
-      { key: "UI_SHOW_BB_RSI_BACKTEST", label: "BB_RSI → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under BB_RSI.", default: "true", subheader: "BB_RSI sub-menus" },
+      { key: "UI_SHOW_BB_RSI_BACKTEST", label: "BB_RSI → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under BB_RSI.", default: "false", subheader: "BB_RSI sub-menus" },
       { key: "UI_SHOW_BB_RSI_PAPER",    label: "BB_RSI → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under BB_RSI.",    default: "true" },
       { key: "UI_SHOW_BB_RSI_LIVE",     label: "BB_RSI → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live under BB_RSI.",     default: "true" },
       { key: "UI_SHOW_BB_RSI_LIVE_HARNESS", label: "BB_RSI → Live (Harness)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (Harness) under BB_RSI.", default: "false" },
 
       // ── Price Action submenu ──
-      { key: "UI_SHOW_PA_BACKTEST",         label: "PA → Backtest",        type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under Price Action.",     default: "true", subheader: "Price Action sub-menus" },
-      { key: "UI_SHOW_PA_PATTERN_BACKTEST", label: "PA → Pattern Test",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Pattern Test under Price Action.", default: "true" },
+      { key: "UI_SHOW_PA_BACKTEST",         label: "PA → Backtest",        type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under Price Action.",     default: "false", subheader: "Price Action sub-menus" },
+      { key: "UI_SHOW_PA_PATTERN_BACKTEST", label: "PA → Pattern Test",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Pattern Test under Price Action.", default: "false" },
       { key: "UI_SHOW_PA_PAPER",            label: "PA → Paper",           type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under Price Action.",        default: "true" },
       { key: "UI_SHOW_PA_LIVE",             label: "PA → Live (legacy)",   type: "toggle", effect: EFFECT.INSTANT, desc: "Show the legacy Live under Price Action.", default: "true" },
       { key: "UI_SHOW_PA_LIVE_HARNESS",     label: "PA → Live (Harness)",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (Harness) under Price Action.", default: "false" },
 
       // ── ORB submenu ──
-      { key: "UI_SHOW_ORB_BACKTEST", label: "ORB → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under ORB.", default: "true", subheader: "ORB sub-menus" },
+      { key: "UI_SHOW_ORB_BACKTEST", label: "ORB → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under ORB.", default: "false", subheader: "ORB sub-menus" },
       { key: "UI_SHOW_ORB_PAPER",    label: "ORB → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under ORB.", default: "true" },
       { key: "UI_SHOW_ORB_LIVE",     label: "ORB → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live under ORB.", default: "true" },
       { key: "UI_SHOW_ORB_LIVE_HARNESS", label: "ORB → Live (Harness)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (Harness) under ORB.", default: "false" },
       { key: "UI_SHOW_ORB_HISTORY",  label: "ORB → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under ORB.", default: "true" },
 
       // ── EMA9+VWAP submenu ──
-      { key: "UI_SHOW_EMA9VWAP_BACKTEST", label: "EMA9+VWAP → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under EMA9+VWAP.", default: "true", subheader: "EMA9+VWAP sub-menus" },
+      { key: "UI_SHOW_EMA9VWAP_BACKTEST", label: "EMA9+VWAP → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under EMA9+VWAP.", default: "false", subheader: "EMA9+VWAP sub-menus" },
       { key: "UI_SHOW_EMA9VWAP_PAPER",    label: "EMA9+VWAP → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under EMA9+VWAP.", default: "true" },
       { key: "UI_SHOW_EMA9VWAP_LIVE",     label: "EMA9+VWAP → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live under EMA9+VWAP.", default: "true" },
       { key: "UI_SHOW_EMA9VWAP_HISTORY",  label: "EMA9+VWAP → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under EMA9+VWAP.", default: "true" },
 
       // ── Trend Pullback submenu (Paper + History ship in Phase A; Backtest/Live default off until built) ──
-      { key: "UI_SHOW_TREND_PB_BACKTEST", label: "Trend Pullback → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under Trend Pullback.", default: "true", subheader: "Trend Pullback sub-menus" },
+      { key: "UI_SHOW_TREND_PB_BACKTEST", label: "Trend Pullback → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under Trend Pullback.", default: "false", subheader: "Trend Pullback sub-menus" },
       { key: "UI_SHOW_TREND_PB_PAPER",    label: "Trend Pullback → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under Trend Pullback.", default: "true" },
       { key: "UI_SHOW_TREND_PB_LIVE",     label: "Trend Pullback → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live under Trend Pullback.", default: "true" },
       { key: "UI_SHOW_TREND_PB_HISTORY",  label: "Trend Pullback → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under Trend Pullback.", default: "true" },
 
       // ── Trend Day Scalp submenu ──
-      { key: "UI_SHOW_TDS_BACKTEST", label: "Trend Day Scalp → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under Trend Day Scalp.", default: "true", subheader: "Trend Day Scalp sub-menus" },
+      { key: "UI_SHOW_TDS_BACKTEST", label: "Trend Day Scalp → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under Trend Day Scalp.", default: "false", subheader: "Trend Day Scalp sub-menus" },
       { key: "UI_SHOW_TDS_PAPER",    label: "Trend Day Scalp → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under Trend Day Scalp.", default: "true" },
       { key: "UI_SHOW_TDS_LIVE",     label: "Trend Day Scalp → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live under Trend Day Scalp.", default: "true" },
       { key: "UI_SHOW_TDS_HISTORY",  label: "Trend Day Scalp → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under Trend Day Scalp.", default: "true" },
 
       // ── HA Scalp submenu ──
-      { key: "UI_SHOW_HA_SCALP_BACKTEST", label: "HA Scalp → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under HA Scalp.", default: "true", subheader: "HA Scalp sub-menus" },
+      { key: "UI_SHOW_HA_SCALP_BACKTEST", label: "HA Scalp → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under HA Scalp.", default: "false", subheader: "HA Scalp sub-menus" },
       { key: "UI_SHOW_HA_SCALP_PAPER",    label: "HA Scalp → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under HA Scalp.", default: "true" },
       { key: "UI_SHOW_HA_SCALP_LIVE",     label: "HA Scalp → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live under HA Scalp.", default: "true" },
       { key: "UI_SHOW_HA_SCALP_HISTORY",  label: "HA Scalp → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under HA Scalp.", default: "true" },
       // ── Prev ORB Scalp submenu ──
-      { key: "UI_SHOW_PREV_ORB_SCALP_BACKTEST", label: "Prev ORB Scalp → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under Prev ORB Scalp.", default: "true", subheader: "Prev ORB Scalp sub-menus" },
+      { key: "UI_SHOW_PREV_ORB_SCALP_BACKTEST", label: "Prev ORB Scalp → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under Prev ORB Scalp.", default: "false", subheader: "Prev ORB Scalp sub-menus" },
       { key: "UI_SHOW_PREV_ORB_SCALP_PAPER",    label: "Prev ORB Scalp → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under Prev ORB Scalp.", default: "true" },
       { key: "UI_SHOW_PREV_ORB_SCALP_LIVE",     label: "Prev ORB Scalp → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live under Prev ORB Scalp.", default: "true" },
       { key: "UI_SHOW_PREV_ORB_SCALP_HISTORY",  label: "Prev ORB Scalp → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under Prev ORB Scalp.", default: "true" },
-      { key: "UI_SHOW_EARLYBIRD_BACKTEST", label: "EarlyBird → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under EarlyBird.", default: "true", subheader: "EarlyBird sub-menus" },
+      { key: "UI_SHOW_EARLYBIRD_BACKTEST", label: "EarlyBird → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under EarlyBird.", default: "false", subheader: "EarlyBird sub-menus" },
       { key: "UI_SHOW_EARLYBIRD_PAPER",    label: "EarlyBird → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under EarlyBird.", default: "true" },
       { key: "UI_SHOW_EARLYBIRD_LIVE",     label: "EarlyBird → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live under EarlyBird.", default: "true" },
       { key: "UI_SHOW_EARLYBIRD_HISTORY",  label: "EarlyBird → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under EarlyBird.", default: "true" },
 
       // ── SIMPLE_9:30 submenu ──
-      { key: "UI_SHOW_SIMPLE930_BACKTEST", label: "SIMPLE_9:30 → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under SIMPLE_9:30.", default: "true", subheader: "SIMPLE_9:30 sub-menus" },
+      { key: "UI_SHOW_SIMPLE930_BACKTEST", label: "SIMPLE_9:30 → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under SIMPLE_9:30.", default: "false", subheader: "SIMPLE_9:30 sub-menus" },
       { key: "UI_SHOW_SIMPLE930_PAPER",    label: "SIMPLE_9:30 → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under SIMPLE_9:30.", default: "true" },
       { key: "UI_SHOW_SIMPLE930_LIVE",     label: "SIMPLE_9:30 → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live under SIMPLE_9:30.", default: "true" },
       { key: "UI_SHOW_SIMPLE930_HISTORY",  label: "SIMPLE_9:30 → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under SIMPLE_9:30.", default: "true" },
 
 
       // ── RSI Pivot ST submenu ──
-      { key: "UI_SHOW_RSI_PIVOT_ST_BACKTEST", label: "RSI Pivot ST → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under RSI Pivot ST.", default: "true", subheader: "RSI Pivot ST sub-menus" },
+      { key: "UI_SHOW_RSI_PIVOT_ST_BACKTEST", label: "RSI Pivot ST → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under RSI Pivot ST.", default: "false", subheader: "RSI Pivot ST sub-menus" },
       { key: "UI_SHOW_RSI_PIVOT_ST_PAPER",    label: "RSI Pivot ST → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under RSI Pivot ST.", default: "true" },
       { key: "UI_SHOW_RSI_PIVOT_ST_LIVE",     label: "RSI Pivot ST → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live under RSI Pivot ST.", default: "true" },
       { key: "UI_SHOW_RSI_PIVOT_ST_HISTORY",  label: "RSI Pivot ST → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under RSI Pivot ST.", default: "true" },
 
       // ── BN Pivot RSI ST submenu (NIFTY BANK) ──
-      { key: "UI_SHOW_BN_PIVOT_RSI_ST_BACKTEST", label: "BN Pivot RSI ST → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under BN Pivot RSI ST.", default: "true", subheader: "BN Pivot RSI ST sub-menus" },
+      { key: "UI_SHOW_BN_PIVOT_RSI_ST_BACKTEST", label: "BN Pivot RSI ST → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under BN Pivot RSI ST.", default: "false", subheader: "BN Pivot RSI ST sub-menus" },
       { key: "UI_SHOW_BN_PIVOT_RSI_ST_PAPER",    label: "BN Pivot RSI ST → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under BN Pivot RSI ST.", default: "true" },
       { key: "UI_SHOW_BN_PIVOT_RSI_ST_LIVE",     label: "BN Pivot RSI ST → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live under BN Pivot RSI ST.", default: "true" },
       { key: "UI_SHOW_BN_PIVOT_RSI_ST_HISTORY",  label: "BN Pivot RSI ST → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under BN Pivot RSI ST.", default: "true" },
@@ -1506,7 +1506,7 @@ const SETTINGS_SCHEMA = [
       // ── SAIL_VWAP_ST submenu (STOCKS) ── defaults match what sharedNav falls
       // back to (Backtest/Paper/History on, Live off); the whole group stays
       // hidden until SAIL_VWAP_ST_MODE_ENABLED is switched on.
-      { key: "UI_SHOW_SAIL_VWAP_ST_BACKTEST", label: "SAIL_VWAP_ST → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under SAIL VWAP+ST.", default: "true", subheader: "SAIL_VWAP_ST sub-menus" },
+      { key: "UI_SHOW_SAIL_VWAP_ST_BACKTEST", label: "SAIL_VWAP_ST → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Backtest under SAIL VWAP+ST.", default: "false", subheader: "SAIL_VWAP_ST sub-menus" },
       { key: "UI_SHOW_SAIL_VWAP_ST_PAPER",    label: "SAIL_VWAP_ST → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under SAIL VWAP+ST.", default: "true" },
       { key: "UI_SHOW_SAIL_VWAP_ST_LIVE_HARNESS", label: "SAIL_VWAP_ST → Live", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (the paper-wrapping harness at /sail_vwap_st-live) under SAIL VWAP+ST.", default: "false" },
       { key: "UI_SHOW_SAIL_VWAP_ST_HISTORY",  label: "SAIL_VWAP_ST → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under SAIL VWAP+ST.", default: "true" },

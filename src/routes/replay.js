@@ -25,7 +25,7 @@
  *   POST /replay/run               → JSON: run a replay; returns trades + pnl
  *
  * Visibility:
- *   Page is hidden from sidebar when UI_SHOW_REPLAY=false (default true).
+ *   Page is hidden from sidebar unless UI_SHOW_REPLAY=true (default false).
  *   Backend routes remain reachable so the bar-based backtests can dispatch
  *   to /replay/run programmatically.
  * ─────────────────────────────────────────────────────────────────────────────

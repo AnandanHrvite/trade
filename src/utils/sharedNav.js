@@ -158,8 +158,8 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
 
   // ── Top-level menu-visibility toggles ──
   const showDashboard   = (process.env.UI_SHOW_DASHBOARD     || 'false').toLowerCase() === 'true';
-  const showAllBacktest = (process.env.UI_SHOW_ALL_BACKTEST  || 'true').toLowerCase()  === 'true';
-  const showReplay      = (process.env.UI_SHOW_REPLAY        || 'true').toLowerCase()  === 'true' && !_hideReplayLive;
+  const showAllBacktest = (process.env.UI_SHOW_ALL_BACKTEST  || 'false').toLowerCase()  === 'true';
+  const showReplay      = (process.env.UI_SHOW_REPLAY        || 'false').toLowerCase()  === 'true' && !_hideReplayLive;
   const showPaperHist   = (process.env.UI_SHOW_PAPER_HISTORY || 'true').toLowerCase()  === 'true';
   const showLiveHist    = (process.env.UI_SHOW_LIVE_HISTORY  || 'true').toLowerCase()  === 'true';
   const showEdgeAnalytics = (process.env.UI_SHOW_EDGE_ANALYTICS || 'true').toLowerCase() === 'true';
@@ -174,74 +174,74 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const showSwingScanner  = (process.env.UI_SHOW_SWING_SCANNER || 'false').toLowerCase() === 'true';
 
   // ── Per-strategy submenu toggles ──
-  const showEmaRsiStBacktest = (process.env.UI_SHOW_EMA_RSI_ST_BACKTEST || 'true').toLowerCase() === 'true';
+  const showEmaRsiStBacktest = (process.env.UI_SHOW_EMA_RSI_ST_BACKTEST || 'false').toLowerCase() === 'true';
   const showEmaRsiStPaper    = (process.env.UI_SHOW_EMA_RSI_ST_PAPER    || 'true').toLowerCase() === 'true';
   const showEmaRsiStLive     = (process.env.UI_SHOW_EMA_RSI_ST_LIVE     || 'true').toLowerCase() === 'true';
   const showEmaRsiStLiveHarness = (process.env.UI_SHOW_EMA_RSI_ST_LIVE_HARNESS || 'false').toLowerCase() === 'true';
-  const showBbRsiBacktest = (process.env.UI_SHOW_BB_RSI_BACKTEST || 'true').toLowerCase() === 'true';
+  const showBbRsiBacktest = (process.env.UI_SHOW_BB_RSI_BACKTEST || 'false').toLowerCase() === 'true';
   const showBbRsiPaper    = (process.env.UI_SHOW_BB_RSI_PAPER    || 'true').toLowerCase() === 'true';
   const showBbRsiLive     = (process.env.UI_SHOW_BB_RSI_LIVE     || 'true').toLowerCase() === 'true';
   const showBbRsiLiveHarness = (process.env.UI_SHOW_BB_RSI_LIVE_HARNESS || 'false').toLowerCase() === 'true';
-  const showPaBacktest        = (process.env.UI_SHOW_PA_BACKTEST         || 'true').toLowerCase() === 'true';
-  const showPaPatternBacktest = (process.env.UI_SHOW_PA_PATTERN_BACKTEST || 'true').toLowerCase() === 'true';
+  const showPaBacktest        = (process.env.UI_SHOW_PA_BACKTEST         || 'false').toLowerCase() === 'true';
+  const showPaPatternBacktest = (process.env.UI_SHOW_PA_PATTERN_BACKTEST || 'false').toLowerCase() === 'true';
   const showPaPaper           = (process.env.UI_SHOW_PA_PAPER            || 'true').toLowerCase() === 'true';
   const showPaLive            = (process.env.UI_SHOW_PA_LIVE             || 'true').toLowerCase() === 'true';
   const showPaLiveHarness     = (process.env.UI_SHOW_PA_LIVE_HARNESS     || 'false').toLowerCase() === 'true';
-  const showOrbBacktest       = (process.env.UI_SHOW_ORB_BACKTEST         || 'true').toLowerCase() === 'true';
+  const showOrbBacktest       = (process.env.UI_SHOW_ORB_BACKTEST         || 'false').toLowerCase() === 'true';
   const showOrbPaper          = (process.env.UI_SHOW_ORB_PAPER            || 'true').toLowerCase() === 'true';
   const showOrbLive           = (process.env.UI_SHOW_ORB_LIVE             || 'true').toLowerCase() === 'true';
   const showOrbLiveHarness    = (process.env.UI_SHOW_ORB_LIVE_HARNESS     || 'false').toLowerCase() === 'true';
   const showOrbHistory        = (process.env.UI_SHOW_ORB_HISTORY          || 'true').toLowerCase() === 'true';
-  const showEma9vwapBacktest  = (process.env.UI_SHOW_EMA9VWAP_BACKTEST    || 'true').toLowerCase() === 'true';
+  const showEma9vwapBacktest  = (process.env.UI_SHOW_EMA9VWAP_BACKTEST    || 'false').toLowerCase() === 'true';
   const showEma9vwapPaper     = (process.env.UI_SHOW_EMA9VWAP_PAPER       || 'true').toLowerCase() === 'true';
   const showEma9vwapLive      = (process.env.UI_SHOW_EMA9VWAP_LIVE        || 'true').toLowerCase() === 'true';
   const showEma9vwapHistory   = (process.env.UI_SHOW_EMA9VWAP_HISTORY     || 'true').toLowerCase() === 'true';
   // Trend Pullback — Paper + History + Backtest live now; Live default hidden until Phase C.
-  const showTrendPbBacktest    = (process.env.UI_SHOW_TREND_PB_BACKTEST     || 'true').toLowerCase()  === 'true';
+  const showTrendPbBacktest    = (process.env.UI_SHOW_TREND_PB_BACKTEST     || 'false').toLowerCase()  === 'true';
   const showTrendPbPaper       = (process.env.UI_SHOW_TREND_PB_PAPER        || 'true').toLowerCase()  === 'true';
   const showTrendPbLive        = (process.env.UI_SHOW_TREND_PB_LIVE         || 'true').toLowerCase()  === 'true';
   const showTrendPbHistory     = (process.env.UI_SHOW_TREND_PB_HISTORY      || 'true').toLowerCase()  === 'true';
   // Trend Day Scalp — never traded; ships visible but its Live page is triple-gated to dry-run.
-  const showTdsBacktest       = (process.env.UI_SHOW_TDS_BACKTEST          || 'true').toLowerCase()  === 'true';
+  const showTdsBacktest       = (process.env.UI_SHOW_TDS_BACKTEST          || 'false').toLowerCase()  === 'true';
   const showTdsPaper          = (process.env.UI_SHOW_TDS_PAPER             || 'true').toLowerCase()  === 'true';
   const showTdsLive           = (process.env.UI_SHOW_TDS_LIVE              || 'true').toLowerCase()  === 'true';
   const showTdsHistory        = (process.env.UI_SHOW_TDS_HISTORY           || 'true').toLowerCase()  === 'true';
   // HA Scalp — never traded; ships visible but its Live page is triple-gated to dry-run.
-  const showHaScalpBacktest   = (process.env.UI_SHOW_HA_SCALP_BACKTEST      || 'true').toLowerCase()  === 'true';
+  const showHaScalpBacktest   = (process.env.UI_SHOW_HA_SCALP_BACKTEST      || 'false').toLowerCase()  === 'true';
   const showHaScalpPaper      = (process.env.UI_SHOW_HA_SCALP_PAPER         || 'true').toLowerCase()  === 'true';
   const showHaScalpLive       = (process.env.UI_SHOW_HA_SCALP_LIVE          || 'true').toLowerCase()  === 'true';
   const showHaScalpHistory    = (process.env.UI_SHOW_HA_SCALP_HISTORY       || 'true').toLowerCase()  === 'true';
   // PREV ORB Scalp — never traded; ships visible but its Live page is triple-gated to dry-run.
-  const showPrevOrbScalpBacktest = (process.env.UI_SHOW_PREV_ORB_SCALP_BACKTEST || 'true').toLowerCase() === 'true';
+  const showPrevOrbScalpBacktest = (process.env.UI_SHOW_PREV_ORB_SCALP_BACKTEST || 'false').toLowerCase() === 'true';
   const showPrevOrbScalpPaper    = (process.env.UI_SHOW_PREV_ORB_SCALP_PAPER    || 'true').toLowerCase() === 'true';
   const showPrevOrbScalpLive     = (process.env.UI_SHOW_PREV_ORB_SCALP_LIVE     || 'true').toLowerCase() === 'true';
   const showPrevOrbScalpHistory  = (process.env.UI_SHOW_PREV_ORB_SCALP_HISTORY  || 'true').toLowerCase() === 'true';
-  const showEarlyBirdBacktest = (process.env.UI_SHOW_EARLYBIRD_BACKTEST      || 'true').toLowerCase()  === 'true';
+  const showEarlyBirdBacktest = (process.env.UI_SHOW_EARLYBIRD_BACKTEST      || 'false').toLowerCase()  === 'true';
   const showEarlyBirdPaper    = (process.env.UI_SHOW_EARLYBIRD_PAPER         || 'true').toLowerCase()  === 'true';
   const showEarlyBirdLive     = (process.env.UI_SHOW_EARLYBIRD_LIVE          || 'true').toLowerCase()  === 'true';
   const showEarlyBirdHistory  = (process.env.UI_SHOW_EARLYBIRD_HISTORY       || 'true').toLowerCase()  === 'true';
   // RSI Pivot ST — never traded; ships visible but its Live page is triple-gated to dry-run.
-  const showRsiPivotStBacktest = (process.env.UI_SHOW_RSI_PIVOT_ST_BACKTEST || 'true').toLowerCase()  === 'true';
+  const showRsiPivotStBacktest = (process.env.UI_SHOW_RSI_PIVOT_ST_BACKTEST || 'false').toLowerCase()  === 'true';
   const showRsiPivotStPaper    = (process.env.UI_SHOW_RSI_PIVOT_ST_PAPER    || 'true').toLowerCase()  === 'true';
   const showRsiPivotStLive     = (process.env.UI_SHOW_RSI_PIVOT_ST_LIVE     || 'true').toLowerCase()  === 'true';
   const showRsiPivotStHistory  = (process.env.UI_SHOW_RSI_PIVOT_ST_HISTORY  || 'true').toLowerCase()  === 'true';
   // BN Pivot RSI ST (NIFTY BANK) — same engine as RSI Pivot ST on a different
   // underlying; never traded, so its Live page is triple-gated to dry-run too.
-  const showBnPivotRsiStBacktest = (process.env.UI_SHOW_BN_PIVOT_RSI_ST_BACKTEST || 'true').toLowerCase()  === 'true';
+  const showBnPivotRsiStBacktest = (process.env.UI_SHOW_BN_PIVOT_RSI_ST_BACKTEST || 'false').toLowerCase()  === 'true';
   const showBnPivotRsiStPaper    = (process.env.UI_SHOW_BN_PIVOT_RSI_ST_PAPER    || 'true').toLowerCase()  === 'true';
   const showBnPivotRsiStLive     = (process.env.UI_SHOW_BN_PIVOT_RSI_ST_LIVE     || 'true').toLowerCase()  === 'true';
   const showBnPivotRsiStHistory  = (process.env.UI_SHOW_BN_PIVOT_RSI_ST_HISTORY  || 'true').toLowerCase()  === 'true';
   // EMA_RSI_ST_V2 — the EMA_RSI_ST clone with a SuperTrend-only stop. Whole
   // group is gated by EMA_RSI_ST_V2_MODE_ENABLED (default off) above; these
   // only pick which of its pages show once the group is on.
-  const showEmaRsiStV2Backtest    = (process.env.UI_SHOW_EMA_RSI_ST_V2_BACKTEST     || 'true').toLowerCase()  === 'true';
+  const showEmaRsiStV2Backtest    = (process.env.UI_SHOW_EMA_RSI_ST_V2_BACKTEST     || 'false').toLowerCase()  === 'true';
   const showEmaRsiStV2Paper       = (process.env.UI_SHOW_EMA_RSI_ST_V2_PAPER        || 'true').toLowerCase()  === 'true';
   const showEmaRsiStV2LiveHarness = (process.env.UI_SHOW_EMA_RSI_ST_V2_LIVE_HARNESS || 'false').toLowerCase() === 'true';
   const showEmaRsiStV2History     = (process.env.UI_SHOW_EMA_RSI_ST_V2_HISTORY      || 'true').toLowerCase()  === 'true';
   // BN_EMA_RSI_ST_V2 (NIFTY BANK) — whole group is gated by
   // BN_EMA_RSI_ST_V2_MODE_ENABLED (default off) above; these only pick which of
   // its pages show once the group is on.
-  const showBnEmaRsiStV2Backtest    = (process.env.UI_SHOW_BN_EMA_RSI_ST_V2_BACKTEST     || 'true').toLowerCase()  === 'true';
+  const showBnEmaRsiStV2Backtest    = (process.env.UI_SHOW_BN_EMA_RSI_ST_V2_BACKTEST     || 'false').toLowerCase()  === 'true';
   const showBnEmaRsiStV2Paper       = (process.env.UI_SHOW_BN_EMA_RSI_ST_V2_PAPER        || 'true').toLowerCase()  === 'true';
   const showBnEmaRsiStV2LiveHarness = (process.env.UI_SHOW_BN_EMA_RSI_ST_V2_LIVE_HARNESS || 'false').toLowerCase() === 'true';
   const showBnEmaRsiStV2History     = (process.env.UI_SHOW_BN_EMA_RSI_ST_V2_HISTORY      || 'true').toLowerCase()  === 'true';
@@ -252,12 +252,12 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const showStRsiPivBbHistory     = (process.env.UI_SHOW_ST_RSI_PIV_BB_HISTORY      || 'true').toLowerCase()  === 'true';
   // SAIL_VWAP_ST — whole group gated by SAIL_VWAP_ST_MODE_ENABLED (default off)
   // above; these only pick which of its pages show once the group is on.
-  const showSailVwapStBacktest    = (process.env.UI_SHOW_SAIL_VWAP_ST_BACKTEST     || 'true').toLowerCase()  === 'true';
+  const showSailVwapStBacktest    = (process.env.UI_SHOW_SAIL_VWAP_ST_BACKTEST     || 'false').toLowerCase()  === 'true';
   const showSailVwapStPaper       = (process.env.UI_SHOW_SAIL_VWAP_ST_PAPER        || 'true').toLowerCase()  === 'true';
   const showSailVwapStLiveHarness = (process.env.UI_SHOW_SAIL_VWAP_ST_LIVE_HARNESS || 'false').toLowerCase() === 'true';
   const showSailVwapStHistory     = (process.env.UI_SHOW_SAIL_VWAP_ST_HISTORY      || 'true').toLowerCase()  === 'true';
   // SIMPLE_9:30 — never traded; ships visible but its Live page is triple-gated to dry-run.
-  const showSimple930Backtest = (process.env.UI_SHOW_SIMPLE930_BACKTEST    || 'true').toLowerCase()  === 'true';
+  const showSimple930Backtest = (process.env.UI_SHOW_SIMPLE930_BACKTEST    || 'false').toLowerCase()  === 'true';
   const showSimple930Paper    = (process.env.UI_SHOW_SIMPLE930_PAPER       || 'true').toLowerCase()  === 'true';
   const showSimple930Live     = (process.env.UI_SHOW_SIMPLE930_LIVE        || 'true').toLowerCase()  === 'true';
   const showSimple930History  = (process.env.UI_SHOW_SIMPLE930_HISTORY     || 'true').toLowerCase()  === 'true';
