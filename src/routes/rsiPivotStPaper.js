@@ -120,25 +120,9 @@ function _historyLagMs() {
   return Number.isFinite(v) && v >= 0 && v <= 60000 ? v : 5000;
 }
 
-/**
- * Position size. RSI_PIVOT_ST_LOT_MULTIPLIER (when > 0) overrides the global
- * LOT_MULTIPLIER for this strategy only, clamped by the same MAX_LOT_MULTIPLIER
- * ceiling. Divides by the multiplier getLotQty ACTUALLY applied (it clamps
- * internally), not the raw env value. Default 0 = use the common setting.
- */
+/** Position size — the one common Lot Multiplier (Settings → Common Rules). */
 function rsiPivotLotQty() {
-  const base = instrumentConfig.getLotQty();
-  const raw  = parseInt(process.env.RSI_PIVOT_ST_LOT_MULTIPLIER || "0", 10);
-  if (!Number.isFinite(raw) || raw <= 0) return base;
-
-  let maxMult = parseInt(process.env.MAX_LOT_MULTIPLIER || "10", 10);
-  if (!Number.isFinite(maxMult) || maxMult < 1) maxMult = 10;
-
-  let globalMult = parseInt(process.env.LOT_MULTIPLIER || "1", 10);
-  if (!Number.isFinite(globalMult) || globalMult <= 0) globalMult = 1;
-  if (globalMult > maxMult) globalMult = maxMult;
-
-  return Math.round((base / globalMult) * Math.min(raw, maxMult));
+  return instrumentConfig.getLotQty();
 }
 
 function ensureDir() {

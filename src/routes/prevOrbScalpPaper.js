@@ -96,21 +96,9 @@ function _historyLagMs() {
   return Number.isFinite(v) && v >= 0 && v <= 60000 ? v : 5000;
 }
 
-/**
- * Position size. PREV_ORB_SCALP_LOT_MULTIPLIER (when > 0) overrides the global
- * LOT_MULTIPLIER for this strategy only, clamped by MAX_LOT_MULTIPLIER. Divides
- * by the multiplier getLotQty ACTUALLY applied (it clamps), not the raw env.
- */
+/** Position size — the one common Lot Multiplier (Settings → Common Rules). */
 function lotQty() {
-  const base = instrumentConfig.getLotQty();
-  const raw  = parseInt(process.env.PREV_ORB_SCALP_LOT_MULTIPLIER || "0", 10);
-  if (!Number.isFinite(raw) || raw <= 0) return base;
-  let maxMult = parseInt(process.env.MAX_LOT_MULTIPLIER || "10", 10);
-  if (!Number.isFinite(maxMult) || maxMult < 1) maxMult = 10;
-  let globalMult = parseInt(process.env.LOT_MULTIPLIER || "1", 10);
-  if (!Number.isFinite(globalMult) || globalMult <= 0) globalMult = 1;
-  if (globalMult > maxMult) globalMult = maxMult;
-  return Math.round((base / globalMult) * Math.min(raw, maxMult));
+  return instrumentConfig.getLotQty();
 }
 
 function ensureDir() { if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true }); }

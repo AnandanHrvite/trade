@@ -389,17 +389,9 @@ function simulateDay(day, cfg, qty) {
 }
 
 // ── Job body ─────────────────────────────────────────────────────────────────
-/** Position size — the same rule the paper route applies. */
+/** Position size — the one common Lot Multiplier (Settings → Common Rules). */
 function simpleLotQty() {
-  const base = instrumentConfig.getLotQty();
-  const raw  = parseInt(process.env.SIMPLE930_LOT_MULTIPLIER || "0", 10);
-  if (!Number.isFinite(raw) || raw <= 0) return base;
-  let maxMult = parseInt(process.env.MAX_LOT_MULTIPLIER || "10", 10);
-  if (!Number.isFinite(maxMult) || maxMult < 1) maxMult = 10;
-  let globalMult = parseInt(process.env.LOT_MULTIPLIER || "1", 10);
-  if (!Number.isFinite(globalMult) || globalMult <= 0) globalMult = 1;
-  if (globalMult > maxMult) globalMult = maxMult;
-  return Math.round((base / globalMult) * Math.min(raw, maxMult));
+  return instrumentConfig.getLotQty();
 }
 
 /** IST calendar days in [from, to], clamped to today, weekends dropped. */

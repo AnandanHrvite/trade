@@ -89,25 +89,9 @@ function _maxDailyLoss()    { return parseFloat(process.env.TDS_MAX_DAILY_LOSS  
 function _dailyProfitLock() { return parseFloat(process.env.TDS_DAILY_PROFIT_LOCK || "3000"); }
 function _maxWeeklyLoss()   { return parseFloat(process.env.TDS_MAX_WEEKLY_LOSS  || "0"); }
 
-/**
- * Position size. TDS_LOT_MULTIPLIER (when > 0) overrides the global
- * LOT_MULTIPLIER for this strategy only, clamped by the same MAX_LOT_MULTIPLIER
- * ceiling. Divides by the multiplier getLotQty ACTUALLY applied (it clamps
- * internally), not the raw env value.
- */
+/** Position size — the one common Lot Multiplier (Settings → Common Rules). */
 function tdsLotQty() {
-  const base = instrumentConfig.getLotQty();
-  const raw  = parseInt(process.env.TDS_LOT_MULTIPLIER || "0", 10);
-  if (!Number.isFinite(raw) || raw <= 0) return base;
-
-  let maxMult = parseInt(process.env.MAX_LOT_MULTIPLIER || "10", 10);
-  if (!Number.isFinite(maxMult) || maxMult < 1) maxMult = 10;
-
-  let globalMult = parseInt(process.env.LOT_MULTIPLIER || "1", 10);
-  if (!Number.isFinite(globalMult) || globalMult <= 0) globalMult = 1;
-  if (globalMult > maxMult) globalMult = maxMult;
-
-  return Math.round((base / globalMult) * Math.min(raw, maxMult));
+  return instrumentConfig.getLotQty();
 }
 
 function ensureDir() {

@@ -2039,18 +2039,11 @@ const MODE_TO_MODULE = {
   // live session was recorded, replay it as the matching paper mode.
 };
 
-// Per-strategy lot-multiplier keys. These wrappers (haLotQty() and friends)
-// divide the global LOT_MULTIPLIER back out and substitute their own, so setting
-// only LOT_MULTIPLIER would leave those strategies at their configured size. When
-// the Replay page pins a lot count we zero the strategy's own key ("0" = fall back
-// to the global one) so the pinned number is authoritative for every mode.
+// Every NIFTY / BANK NIFTY strategy sizes off the one common LOT_MULTIPLIER, so
+// pinning that is enough — except EarlyBird, whose own lot count multiplies on
+// top of it. When the Replay page pins a lot count, that key is pinned too so
+// the pinned number is authoritative for every mode.
 const MODE_TO_LOT_MULT_KEY = {
-  "ha-scalp-paper":        "HA_SCALP_LOT_MULTIPLIER",
-  "prev-orb-scalp-paper":  "PREV_ORB_SCALP_LOT_MULTIPLIER",
-  "trend-day-scalp-paper": "TDS_LOT_MULTIPLIER",
-  "rsi-pivot-st-paper":    "RSI_PIVOT_ST_LOT_MULTIPLIER",
-  "bn-pivot-rsi-st-paper": "BN_PIVOT_RSI_ST_LOT_MULTIPLIER",
-  "simple930-paper":       "SIMPLE930_LOT_MULTIPLIER",
   // EarlyBird's EARLYBIRD_OPTION_LOTS multiplies the already-multiplied lot
   // instead of replacing it, so it is pinned to 1 rather than 0.
   "early-bird-paper":      "EARLYBIRD_OPTION_LOTS",
