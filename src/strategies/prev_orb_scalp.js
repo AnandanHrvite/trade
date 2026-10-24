@@ -79,6 +79,8 @@
  *   stopHit / targetHit / trailStop     -> the ONLY exit tests (plus route EOD + profit lock)
  */
 
+const commonTradeWindow = require("../utils/commonTradeWindow");
+
 const NAME = "PREV_ORB_SCALP";
 const DESCRIPTION =
   "Prev ORB Scalp — the 09:15 15-min candle closes beyond yesterday's high/low, the first 3-min close beyond " +
@@ -362,7 +364,7 @@ function getSignal(candles, opts) {
   let first = null;
   for (const c of candles) {
     if (!_okBar(c) || _istDayOf(c.time) !== today) continue;
-    if (_utcSecToIstMins(c.time) < cfg.entryStartMin) continue;
+    if (_utcSecToIstMins(c.time) < commonTradeWindow.entryStartFloor(cfg.entryStartMin)) continue;
     if (isPE ? c.close < level : c.close > level) { first = c; break; }
   }
   const setupTxt =

@@ -41,6 +41,7 @@ const fyers = require("../config/fyers");
 const { notifyEntry, notifyExit, notifyStarted, notifySignal, notifyDayReport, sendTelegram, canSend, isConfigured } = require("../utils/notify");
 const { getCharges } = require("../utils/charges");
 const tradeGuards = require("../utils/tradeGuards");
+const commonTradeWindow = require("../utils/commonTradeWindow");
 const { logNearMiss } = require("../utils/nearMissLog");
 const skipLogger = require("../utils/skipLogger");
 const capitalPool = require("../utils/capitalPool");
@@ -785,7 +786,7 @@ function onTick(tick) {
     // EOD check — skip in simulation mode
     if (!state._simMode) {
       const nowMin = getISTMinutes();
-      if (nowMin >= _STOP_MINS - 10) {
+      if (nowMin >= commonTradeWindow.exitCap(_STOP_MINS - 10)) {
         simulateSell(price, "EOD square-off", price);
         return;
       }

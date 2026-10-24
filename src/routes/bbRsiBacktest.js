@@ -27,6 +27,7 @@ const { isExpiryDate } = require("../utils/nseHolidays");
 const { getCharges } = require("../utils/charges");
 const confirmCandle = require("../utils/confirmCandle");
 const tradeGuards = require("../utils/tradeGuards");
+const commonTradeWindow = require("../utils/commonTradeWindow");
 
 // Signal strength for bb_rsi — delegated to the engine so paper, live and backtest
 // cannot drift apart on it (the comparison inverted with the V8 mean-reversion flip).
@@ -195,7 +196,7 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
   const _btEndMin   = (() => { const v = process.env.BB_RSI_ENTRY_END   || "14:30"; const p = v.split(":"); return parseInt(p[0],10)*60+parseInt(p[1],10); })();
   // EOD square-off = TRADE_STOP_TIME − 10, mirroring bbRsiPaper (_STOP_MINS − 10) so a
   // Settings change to TRADE_STOP_TIME moves the backtest exit too (was hardcoded 3:20).
-  const _eodMin     = (() => { const v = process.env.TRADE_STOP_TIME   || "15:30"; const p = v.split(":"); return parseInt(p[0],10)*60+(parseInt(p[1],10)||0) - 10; })();
+  const _eodMin     = commonTradeWindow.exitCap((() => { const v = process.env.TRADE_STOP_TIME   || "15:30"; const p = v.split(":"); return parseInt(p[0],10)*60+(parseInt(p[1],10)||0) - 10; })());
 
   for (let i = 30; i < candles.length; i++) {
     // Yield event loop every 100 candles — keeps server responsive during long backtests

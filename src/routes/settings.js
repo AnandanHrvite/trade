@@ -22,6 +22,7 @@ const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS,
         expiryHolidayModalCSS, expiryHolidayModalHTML, expiryHolidayModalJS } = require("../utils/sharedNav");
 const settingsAudit = require("../utils/settingsAudit");
 const tradeLogger   = require("../utils/tradeLogger");
+const commonTradeWindow = require("../utils/commonTradeWindow");
 const tickRecorder  = require("../utils/tickRecorder");
 const paperReset    = require("../utils/paperReset");
 const { logStore }  = require("../services/logger");
@@ -1034,6 +1035,7 @@ const SETTINGS_SCHEMA = [
       { key: "BREAKEVEN_STOP_ENABLED", label: "Breakeven Stop (all strategies)", type: "toggle", effect: EFFECT.INSTANT, desc: "Once the option premium has risen by the arm %, never let the trade be sold below the entry premium — a winner cannot round-trip into a loss. Catches what the Profit Lock misses: a move that goes +5% and dies arms this but never arms an +8% lock. Measured on 321 trades: lock alone +Rs32,110, lock plus this +Rs44,973. It killed only 6 real winners (Rs499 total), because 66 of the 72 winners that dipped had dipped BEFORE arming. Note a breakeven exit still pays ~Rs71 of charges.", default: "true" },
       { key: "EXIT_REENTRY_COOLDOWN_ENABLED", label: "Wait after any exit (all strategies)", type: "toggle", effect: EFFECT.INSTANT, desc: "After a trade closes, take no new trade for the number of candles set in \"Wait after any exit (candles)\". Off = a new trade can start on the very next signal.", default: "true" },
       { key: "MAX_BID_ASK_SPREAD_ENABLED", label: "Bid-Ask Spread Check (all strategies)", type: "toggle", effect: EFFECT.INSTANT, desc: "Skip an entry when the option's bid-ask gap is wider than \"Max Bid-Ask Spread (pts)\". Example with 2: bid 100, ask 103 → skipped. Off = enter whatever the gap.", default: "true" },
+      { key: "COMMON_TRADE_WINDOW_ENABLED", label: "Trade Window 10:00–14:00, exit 15:00 (all strategies)", type: "toggle", effect: EFFECT.SESSION, desc: "Every NIFTY / BANK NIFTY strategy takes new entries only from 10:00 to 14:00 and closes anything still open at 15:00. Not SIMPLE_9:30 or EarlyBird (their rule is the opening candle) and not Commodity (MCX hours). Overrides each strategy's own Entry Start / Entry End / Forced Exit; the Settings page still shows the strategy's own times, which come back when this is off. Restart a running session to pick it up.", default: "true" },
       { key: "PAPER_CAPITAL_GATE_ENABLED", label: "Track Paper Capital", type: "toggle", effect: EFFECT.INSTANT, desc: "Treat the investment amounts as real money: block qty × premium on entry, release it with the P&L on exit, so profits grow the pool and losses shrink it. An entry the pool cannot fund is REFUSED — logged as an error, skip-logged, and flagged on the Real-Time dashboard. Off = display only (every entry is taken).", default: "true" },
     ],
   },
@@ -1806,6 +1808,9 @@ function updateEnvFile(updates, deletes) {
     process.env[k] = v;
   });
   deleteSet.forEach(k => { delete process.env[k]; });
+  // Re-apply the common trade window: a strategy time saved while it is on is
+  // kept as that strategy's own value; the override stays in force.
+  commonTradeWindow.apply(updates, [...deleteSet]);
 
   // Step 2: Try to persist to .env file on disk
   let fileSaved = false;

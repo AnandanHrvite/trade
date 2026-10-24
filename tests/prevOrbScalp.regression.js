@@ -27,6 +27,9 @@ process.env.HOME = TMP_HOME;
 process.env.USERPROFILE = TMP_HOME;
 for (const k of Object.keys(process.env)) if (k.startsWith("PREV_ORB_SCALP_") || k.startsWith("TG_")) delete process.env[k];
 process.env.PROFIT_LOCK_ENABLED = "false";
+// The 09:30-ish break candles below test the strategy's own window, not the
+// Common Rules 10:00 start.
+process.env.COMMON_TRADE_WINDOW_ENABLED = "false";
 
 const assert = require("assert");
 const strat = require("../src/strategies/prev_orb_scalp");

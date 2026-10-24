@@ -1,5 +1,8 @@
 require("dotenv").config();
 require("./services/logger");              // ← MUST be first: intercepts all console.* from here on
+// Common Trade Rules: override every strategy's entry window / forced exit in
+// process.env before any route module reads them.
+require("./utils/commonTradeWindow").apply();
 // Express 4 does not forward a rejected `async (req, res)` handler to the error
 // middleware — the request hangs forever and the rejection lands on the
 // process-level unhandledRejection handler below (Telegram alert, no response).

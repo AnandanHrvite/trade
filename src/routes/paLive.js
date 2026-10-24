@@ -41,6 +41,7 @@ const oiFilter = require("../services/oiFilter");   // paper-canonical: live mus
 const fyers = require("../config/fyers");
 const liveDryRun = require("../utils/liveDryRun");   // triple-gate: global kill-switch + PA_LIVE_ENABLED + PA override
 const tradeGuards = require("../utils/tradeGuards");
+const commonTradeWindow = require("../utils/commonTradeWindow");
 const { notifyEntry, notifyExit, notifyStarted, notifySignal, notifyDayReport, sendTelegram, canSend, isConfigured } = require("../utils/notify");
 const { awaitExit } = require("../utils/boundedExit");   // bound the wait on a broker square-off
 const { getCharges } = require("../utils/charges");
@@ -859,7 +860,7 @@ function onTick(tick) {
     }
 
     // EOD
-    if (getISTMinutes() >= _STOP_MINS - 10) {
+    if (getISTMinutes() >= commonTradeWindow.exitCap(_STOP_MINS - 10)) {
       squareOff(price, "EOD square-off").catch(e => console.error(`🚨 [PA-LIVE] squareOff error: ${e.message}`));
       return;
     }
@@ -1258,7 +1259,7 @@ let _paEodBackupTimer = null;
 
 function schedulePAEODBackup() {
   clearPAEODBackup();
-  const _EOD_EXIT_MINS = _STOP_MINS - 5; // 3:25 PM
+  const _EOD_EXIT_MINS = commonTradeWindow.exitCap(_STOP_MINS - 5); // 3:25 PM (15:00 under the common trade window)
   const nowMins = getISTMinutes();
   if (nowMins >= _EOD_EXIT_MINS) return;
   const msUntil = (_EOD_EXIT_MINS - nowMins) * 60 * 1000;

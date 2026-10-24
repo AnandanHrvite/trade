@@ -39,6 +39,7 @@ const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = 
 const oiFilter = require("../services/oiFilter");   // paper-canonical: live must apply the same OI gate
 const fyers = require("../config/fyers");
 const tradeGuards = require("../utils/tradeGuards");
+const commonTradeWindow = require("../utils/commonTradeWindow");
 const { notifyEntry, notifyExit, notifyStarted, notifySignal, notifyDayReport, sendTelegram, canSend, isConfigured } = require("../utils/notify");
 const { awaitExit } = require("../utils/boundedExit");   // bound the wait on a broker square-off
 const { getCharges } = require("../utils/charges");
@@ -926,7 +927,7 @@ function onTick(tick) {
     }
 
     // EOD
-    if (getISTMinutes() >= _STOP_MINS - 10) {
+    if (getISTMinutes() >= commonTradeWindow.exitCap(_STOP_MINS - 10)) {
       squareOff(price, "EOD square-off").catch(e => console.error(`🚨 [BB_RSI] squareOff error: ${e.message}`));
       return;
     }
@@ -1413,7 +1414,7 @@ let _bbRsiEodBackupTimer = null;
 
 function scheduleBbRsiEODBackup() {
   clearBbRsiEODBackup();
-  const _EOD_EXIT_MINS = _STOP_MINS - 5; // 3:25 PM
+  const _EOD_EXIT_MINS = commonTradeWindow.exitCap(_STOP_MINS - 5); // 3:25 PM (15:00 under the common trade window)
   const nowMins = getISTMinutes();
   if (nowMins >= _EOD_EXIT_MINS) return;
   const msUntil = (_EOD_EXIT_MINS - nowMins) * 60 * 1000;
