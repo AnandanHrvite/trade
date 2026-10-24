@@ -1184,6 +1184,10 @@ const OPEN_PREFIXES = [
 // exact path nobody remembered to list above. The named entries stay (they also
 // cover /history); this only removes the "new strategy forgot a line" failure.
 const OPEN_STATUS_RE = /^\/[a-z0-9_]+(?:-[a-z0-9_]+)*-(?:paper|live|live-harness)\/status(?:\/data|\/chart-data)?$/;
+// Paper start/stop place no real order, so they skip the secret prompt (still
+// login-gated). Only `-paper` mounts match — live and harness stay protected,
+// as do paper reset/exit.
+const OPEN_PAPER_CTRL_RE = /^\/[a-z0-9_]+(?:-[a-z0-9_]+)*-paper\/(?:start|stop)$/;
 
 app.use((req, res, next) => {
   const secret = process.env.API_SECRET;
@@ -1196,7 +1200,9 @@ app.use((req, res, next) => {
   const isReadMethod = req.method === "GET" || req.method === "HEAD";
   const isOpen = OPEN_PATHS.includes(req.path)
     || (isReadMethod && OPEN_PREFIXES.some(p => req.path.startsWith(p)))
-    || (isReadMethod && OPEN_STATUS_RE.test(req.path));
+    || (isReadMethod && OPEN_STATUS_RE.test(req.path))
+    || OPEN_PAPER_CTRL_RE.test(req.path)
+    || req.path === "/api/cmx/start-all";   // commodity paper only
   if (isOpen) return next();
   const token = req.headers["x-api-secret"] || req.query.secret;
   if (token !== secret) return res.status(403).json({ success: false, error: "Forbidden — missing or wrong secret." });
