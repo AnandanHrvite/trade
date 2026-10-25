@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GAP_runAway__Kirubakaran — Strategy Guide</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0 18px 80px;
+    background: #0d1117; color: #c9d1d9;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.65; font-size: 16px;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; }
+  header.hero {
+    margin: 0 -18px 8px; padding: 40px 26px 30px;
+    background: linear-gradient(135deg, #161b22 0%, #1f1a10 100%);
+    border-bottom: 3px solid #f59e0b;
+  }
+  header.hero .kicker { color: #f59e0b; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; font-size: 0.72rem; }
+  header.hero h1 { margin: 6px 0 8px; font-size: 2rem; color: #f0f6fc; }
+  header.hero p { margin: 0; color: #8b949e; max-width: 640px; }
+  h2 { color: #f0f6fc; font-size: 1.35rem; margin: 38px 0 12px; padding-bottom: 8px; border-bottom: 1px solid #21262d; }
+  h3 { color: #58a6ff; font-size: 1.05rem; margin: 24px 0 8px; }
+  code { background: rgba(110,118,129,0.18); color: #7dd3fc; padding: 1.5px 6px; border-radius: 4px; font-size: 0.85em; font-family: 'SF Mono', ui-monospace, Menlo, monospace; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 18px 22px; margin: 14px 0; }
+  .card.accent { border-left: 4px solid #f59e0b; }
+  .card.warn { border-left: 4px solid #d29922; background: #1c1a12; }
+  .card.bad  { border-left: 4px solid #f85149; background: #1c1214; }
+  ul, ol { padding-left: 22px; }
+  li { margin: 5px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.88rem; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #21262d; vertical-align: top; }
+  th { color: #8b949e; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.6px; }
+  td code { white-space: nowrap; }
+  .flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 14px 0; }
+  .flow .step { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 8px 14px; font-size: 0.85rem; }
+  .flow .arrow { color: #f59e0b; font-weight: 700; }
+  .pill { display: inline-block; background: rgba(245,158,11,0.15); color: #f59e0b; border: 1px solid rgba(245,158,11,0.35); border-radius: 20px; padding: 2px 12px; font-size: 0.78rem; font-weight: 600; }
+  .muted { color: #6e7681; font-size: 0.85rem; }
+  a { color: #58a6ff; }
+  .num { font-family: 'SF Mono', ui-monospace, Menlo, monospace; color: #f0f6fc; }
+  /* TradingView-style chart wrapper */
+  .tv-chart { margin: 16px 0 6px; border: 1px solid #30363d; border-radius: 10px; overflow: hidden; background: #0d1626; }
+  .tv-chart .tv-svg { width: 100%; height: auto; display: block; }
+  .tv-cap { color: #8b949e; font-size: 0.82rem; margin: 0 0 16px; padding-left: 4px; }
+  .tv-cap b { color: #c9d1d9; }
+  .tv-empty { color: #6e7681; padding: 40px; text-align: center; font-size: 0.9rem; }
+
+  nav.toc { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 16px 22px; margin: 18px 0; }
+  nav.toc h2 { margin: 0 0 8px; border: 0; padding: 0; font-size: 1.05rem; color: #f59e0b; }
+  nav.toc ol { margin: 0; columns: 2; column-gap: 28px; }
+  nav.toc a { color: #c9d1d9; text-decoration: none; }
+  nav.toc a:hover { color: #f59e0b; }
+  .rule { display: flex; gap: 12px; align-items: flex-start; background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 10px 14px; margin: 8px 0; }
+  @media (max-width: 768px) { nav.toc ol { columns: 1; } }
+  .rule .no { flex: 0 0 30px; height: 30px; border-radius: 50%; background: rgba(245,158,11,0.18); color: #f59e0b; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+
+/* ── MOBILE (shared block — keep in sync across all guides) ── */
+  @media (max-width: 768px) {
+    /* The setting tables are three columns of prose. A table cannot lay out
+       narrower than its min-content width, so at 393px they ran up to 259px past
+       the right edge and the browser zoomed the whole guide out to fit. Each one
+       now scrolls inside its own box and the page keeps the phone's width. */
+    table { display: block; width: 100%; max-width: 100%; overflow-x: auto;
+            -webkit-overflow-scrolling: touch; }
+    /* Long env keys wrap; fenced blocks keep their formatting and scroll. */
+    code { overflow-wrap: anywhere; word-break: break-word; }
+    pre { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    pre code { overflow-wrap: normal; word-break: normal; }
+    img, svg, canvas { max-width: 100%; }
+    .tv-chart { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    /* .cols is a two-up flex row with no wrap — the second card was pushed off
+       screen rather than dropping under the first. */
+    .cols { flex-direction: column; }
+    .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+    [style*="grid-template-columns"] { grid-template-columns: 1fr !important; }
+    /* Contents links are the guide's only navigation, and they were 18-31px.
+       The three guides each mark theirs up differently: nav.toc (ORB, EMA9VWAP,
+       Setup), a nav.no-print link bar (Price Action) and a two-column card list
+       (BB_RSI, EMA_RSI_ST, Trend Pullback). */
+    nav.toc a, .toc a, nav.no-print .container a,
+    .card li a { min-height: 44px; display: inline-flex; align-items: center; }
+    /* A two-column contents list leaves ~170px per column at 393px. */
+    ul[style*="columns"], ol[style*="columns"] { columns: 1 !important; -webkit-columns: 1 !important; }
+    .hero { padding-left: 16px; padding-right: 16px; }
+    .hero h1 { font-size: 1.7rem; }
+    .section { padding: 20px 14px; }
+  }
+/* ── END MOBILE ── */</style>
+<style>
+  /* step labels (this guide only) */
+  .boxrow-label { font-weight: 700; margin: 16px 0 4px; color: #f0f6fc; }
+  .rule .no { font-size: 0.72rem; }
+  /* the strategy name is one long word; let it and the video links wrap on a phone */
+  header.hero h1, a { overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <div class="kicker">GAP_runAway__Kirubakaran · NIFTY options · F&amp;O stock scanner · Fyers data · Zerodha orders · Plain-English edition</div>
+  <h1>GAP_runAway__Kirubakaran</h1>
+  <p>Look at <b>yesterday's daily candle</b>. If the daily RSI (worked out on the EMA21 line) is <b>below 10</b> and NIFTY <b>opens higher</b> today, buy a <b>CE</b>. If the RSI is <b>above 90</b> and NIFTY <b>opens lower</b>, buy a <b>PE</b>. The stop is <b>yesterday's close</b> &mdash; if price goes back and fills the gap, you are out. A 5-minute candle closing back through EMA21 ends the trade. Everything is closed by 15:15.</p>
+  <p class="muted" style="margin-top:10px;">Updated 2026-10-26 &nbsp;·&nbsp; rules checked against <code>src/strategies/gap_runaway.js</code> &nbsp;·&nbsp; every chart is real NIFTY data run through that engine &nbsp;·&nbsp; reference video: <a href="https://www.youtube.com/watch?v=uLTaXTyDxiI" target="_blank" rel="noopener">youtube.com/watch?v=uLTaXTyDxiI</a></p>
+</header>
+
+<nav class="toc">
+  <h2>What's inside</h2>
+  <ol>
+    <li><a href="#minute">In one minute</a></li>
+    <li><a href="#words">Words you'll see</a></li>
+    <li><a href="#daily">The daily setup</a></li>
+    <li><a href="#entry">How a trade starts</a></li>
+    <li><a href="#exits">How a trade ends</a></li>
+    <li><a href="#notcommon">What does not apply</a></li>
+    <li><a href="#stocks">The stock scanner</a></li>
+    <li><a href="#start">Starting it, and Live</a></li>
+    <li><a href="#examples">Real chart examples</a></li>
+    <li><a href="#data">Real-data check</a></li>
+    <li><a href="#settings">All the settings</a></li>
+    <li><a href="#missing">What's still missing</a></li>
+  </ol>
+</nav>
+
+<h2 id="minute">1. In one minute</h2>
+<div class="card accent">
+  <ul>
+    <li>Every morning the bot reads <b>yesterday's closed daily candle</b> on NIFTY: the close, the <b>EMA21</b> of the daily close, and an <b>RSI(10) worked out on that EMA21 line</b> (not on the close).</li>
+    <li>RSI <b>below 10</b> = oversold. RSI <b>above 90</b> = overbought. Anything in between = no trade today.</li>
+    <li><b>Gap</b> = today's opening price minus yesterday's close.</li>
+    <li><b>Buy the ATM CE</b>: oversold yesterday <b>and</b> today opens <b>above</b> yesterday's close (gap up). <b>Buy the ATM PE</b>: overbought yesterday <b>and</b> today opens <b>below</b> it (gap down). Any size of gap counts.</li>
+    <li>Entry only between <b>09:15 and 09:30</b>. <b>One trade a day</b>, no second try.</li>
+    <li><b>Stop</b> = yesterday's close, checked on <b>every tick</b>. If price goes back to it (the gap &ldquo;fills&rdquo;), the trade is closed.</li>
+    <li><b>Trail</b> = EMA21 on the 5-minute chart. A 5-minute candle that <b>closes</b> back through it ends the trade (a wick does not).</li>
+    <li>Anything still open is closed at <b>15:15</b>. Nothing is held overnight.</li>
+    <li><b>1 lot</b> (its own setting). Orders go to <b>Zerodha</b>; prices come from Fyers. Live is <b>dry-run</b> unless you switch three things.</li>
+    <li>The same rules also run as a <b>stock scanner</b> over the F&amp;O list, paper only, trading shares intraday (section 7).</li>
+  </ul>
+</div>
+<div class="flow">
+  <div class="step">Yesterday's daily RSI-on-EMA21 &lt; 10 or &gt; 90</div><div class="arrow">→</div>
+  <div class="step">Today gaps the opposite way</div><div class="arrow">→</div>
+  <div class="step">Buy at the open</div><div class="arrow">→</div>
+  <div class="step">Out if the gap fills, a 5-min close crosses EMA21, or 15:15</div>
+</div>
+<div class="card bad">
+  <b>Read this first.</b> This strategy is brand new and has <b>never traded</b> &mdash; no paper session and no live order, on NIFTY or on stocks. Live orders are off by default.
+  On <b>8&frac12; years of stored NIFTY data</b> the rules <b>lost points</b>: <b>375 trades</b>, <b>28.3% winners</b>, <b>&minus;10.41 points a trade</b> on average, <b>before</b> any costs, and every single year was negative (section 10). That is the main finding of this guide. Results are NIFTY spot points, not option rupees. There is no backtest page.
+</div>
+
+<!--LIVE_STATUS_PANEL-->
+
+<h2 id="words">2. Words you'll see</h2>
+<table>
+  <tr><th>Word</th><th>Plain meaning</th></tr>
+  <tr><td>Daily candle</td><td>One whole trading day: open, high, low, close. &ldquo;Yesterday's candle&rdquo; is the last day that has fully closed.</td></tr>
+  <tr><td>EMA21 (daily)</td><td>The average of the last 21 daily closes, with recent days counting more. It moves slowly.</td></tr>
+  <tr><td>RSI on EMA21</td><td>RSI measures how one-sided recent moves have been, from 0 to 100. Here it is worked out on the EMA21 line, not on the price. A smooth line moves in one direction for a long time, so this RSI can reach 90 or 10 &mdash; and stay there for weeks (section 10).</td></tr>
+  <tr><td>Oversold / overbought</td><td>RSI below 10 / above 90 on yesterday's daily candle.</td></tr>
+  <tr><td>Gap</td><td>Today's open minus yesterday's close. 18 Nov 2024 closed at 23,465.30 and 19 Nov opened at 23,529.55 &rarr; a gap up of 64.25 points.</td></tr>
+  <tr><td>Gap fill</td><td>Price going back to yesterday's close. That is this strategy's stop.</td></tr>
+  <tr><td>EMA21 (5-min)</td><td>The same kind of average, on 5-minute candles. It is the trailing exit. Separate from the daily EMA21.</td></tr>
+  <tr><td>CE / PE</td><td>A CE (call) gains when NIFTY rises. A PE (put) gains when it falls. This strategy only buys.</td></tr>
+  <tr><td>ATM strike</td><td>The strike nearest the price. NIFTY at 23,529.55 &rarr; the 23,550 strike.</td></tr>
+  <tr><td>Square-off</td><td>Closing any open trade at 15:15 so nothing is held overnight.</td></tr>
+</table>
+
+<h2 id="daily">3. The daily setup</h2>
+<p>Before the open, the bot loads about <b>400 calendar days</b> of NIFTY daily candles and looks only at the ones that have <b>closed</b>. Today's candle is never used for the setup, so nothing during the day can change it.</p>
+<div class="rule"><div class="no">1</div><div><b>EMA21</b> of the daily close.</div></div>
+<div class="rule"><div class="no">2</div><div><b>RSI(10) on that EMA21 line</b> &mdash; in TradingView terms, RSI length 10 with <i>Source: EMA</i>.</div></div>
+<div class="rule"><div class="no">3</div><div>Read both on <b>yesterday's</b> candle. Below 10 &rarr; <b>oversold</b>. Above 90 &rarr; <b>overbought</b>. Otherwise &rarr; nothing today.</div></div>
+<div class="rule"><div class="no">4</div><div>Keep <b>yesterday's close</b>. It is used twice: to measure the gap, and as the stop.</div></div>
+<div class="card">
+  <b>Real example.</b> On 18 Nov 2024 NIFTY closed at 23,465.30, far below its daily EMA21 of 24,205.24. The RSI on the EMA21 read <b>3.2</b> &mdash; below 10, so 19 Nov started <b>oversold</b>: a gap up would buy a CE.
+</div>
+<ul>
+  <li>The bot refuses to decide if it has fewer than <b>100</b> closed daily candles, or if the newest one is more than 7 days old (a broken feed).</li>
+  <li>The numbers come from the same engine the paper page uses, so the setup card on the page shows exactly what the decision read.</li>
+</ul>
+
+<h2 id="entry">4. How a trade starts</h2>
+<p>The decision is made once, as soon as <b>today's official open</b> is known (the open of today's 09:15 one-minute candle; if that cannot be fetched within about 20 seconds, the first live tick after 09:15 is used and logged).</p>
+<div class="boxrow-label">Buy the ATM CE (call)</div>
+<div class="rule"><div class="no">1</div><div>Yesterday's RSI on EMA21 is <b>below 10</b>.</div></div>
+<div class="rule"><div class="no">2</div><div>Today opens <b>above</b> yesterday's close (any gap bigger than 0, and at least <code>GAP_RUNAWAY_MIN_GAP_PTS</code>, which is 0 by default).</div></div>
+<div class="boxrow-label">Buy the ATM PE (put)</div>
+<div class="rule"><div class="no">1</div><div>Yesterday's RSI on EMA21 is <b>above 90</b>.</div></div>
+<div class="rule"><div class="no">2</div><div>Today opens <b>below</b> yesterday's close.</div></div>
+<div class="card">
+  <b>Real example (19 Nov 2024).</b> Oversold (RSI 3.2). Yesterday's close 23,465.30, today's open 23,529.55 &rarr; gap up 64.25 points. <b>Buy the ATM CE.</b> Stop = 23,465.30, 64.25 points below the open.
+  <br><b>Real example (22 May 2025).</b> Overbought (RSI 97.27). Yesterday's close 24,800.95, today's open 24,733.95 &rarr; gap down 67 points. <b>Buy the ATM PE.</b> Stop = 24,800.95.
+</div>
+<ul>
+  <li><b>Wrong-way gap = no trade.</b> Oversold but a gap <b>down</b>, or overbought but a gap <b>up</b>, does nothing all day (example in section 9).</li>
+  <li><b>Window.</b> The fill is the first price after the open, between 09:15 and 09:30. If the option cannot be filled (no symbol or no premium) it retries every 5 seconds until 09:30, then gives up for the day.</li>
+  <li><b>Already filled = no trade.</b> If NIFTY is already back at yesterday's close when the fill happens, the entry is refused &mdash; otherwise the stop would close it on the first tick.</li>
+  <li><b>One trade a day.</b> After any exit, nothing more until tomorrow.</li>
+  <li><b>Strike.</b> Exactly ATM at the moment of entry. The app's global strike offsets do not apply.</li>
+</ul>
+
+<h2 id="exits">5. How a trade ends</h2>
+<p>Whichever happens first:</p>
+<ol>
+  <li><b>Gap stop &mdash; on every tick.</b> CE: NIFTY spot at or below yesterday's close. PE: at or above it. The stop is a fixed <b>price level</b>, not a distance, and it never moves.</li>
+  <li><b>EMA21 trail &mdash; on each closed 5-minute candle.</b> CE: the candle <b>closes below</b> the 5-minute EMA21. PE: it <b>closes above</b> it. A wick through the line does not count.</li>
+  <li><b>15:15 square-off.</b> Anything still open is sold.</li>
+</ol>
+<div class="card warn">
+  <b>The size of the gap is the size of your risk.</b> A 64-point gap means the stop is 64 points away. An 8-point gap means the stop is 8 points away. On a typical day the first 5-minute candle alone is about 48 points tall (median over 2,118 stored days), so a stop that close sits well inside the opening noise. On the stored data, <b>109 of the 158 stops</b> happened inside the <b>first 5-minute candle</b> (09:15&ndash;09:20), and 155 of 158 before 10:00. <code>GAP_RUNAWAY_MIN_GAP_PTS</code> is the setting that skips tiny gaps (section 10 shows what it did on this data).
+</div>
+<p>There is <b>no</b> fixed target, <b>no</b> option-price stop, <b>no</b> profit lock and <b>no</b> breakeven. The EMA21 trail is the only thing that takes profit.</p>
+
+<h2 id="notcommon">6. What does not apply</h2>
+<p>You chose that <b>none of the app's Common Rules</b> apply to this strategy. It keeps its own settings for everything.</p>
+<table>
+  <tr><th>Common rule</th><th>Here</th></tr>
+  <tr><td>Profit lock, breakeven stop</td><td><b>Off.</b> Only the gap stop, the EMA21 trail and 15:15.</td></tr>
+  <tr><td>Wait after any exit</td><td><b>Not needed.</b> One trade a day, no re-entry.</td></tr>
+  <tr><td>Bid-ask spread check</td><td><b>Off.</b> The entry is not skipped for a wide spread.</td></tr>
+  <tr><td>10:00&ndash;14:00 trade window, 15:00 exit</td><td><b>Off.</b> Own window 09:15&ndash;09:30, own square-off 15:15.</td></tr>
+  <tr><td>Lot Multiplier</td><td><b>Off.</b> Own <code>GAP_RUNAWAY_LOTS</code> (1 lot = 65 qty).</td></tr>
+  <tr><td>Paper capital pool, portfolio cap</td><td><b>Off.</b> Own paper capital (<code>GAP_RUNAWAY_CAPITAL</code>).</td></tr>
+  <tr><td>VIX, OI, volume, trend filters</td><td><b>None.</b> No confirmation candle either.</td></tr>
+</table>
+<p class="muted">Two shared things are still used, because they are facts, not rules: the common option expiry (to pick the contract) and the brokerage/charges model.</p>
+<div class="card warn">
+  <b>The video holds for days; this build does not.</b> The reference video keeps the trade for several days. You chose intraday: everything is closed at 15:15. That is a real difference from the video, and the numbers in section 10 are for the intraday version only.
+</div>
+
+<h2 id="stocks">7. The stock scanner</h2>
+<p>The same engine runs over a list of stocks, with its own settings (same names with <code>GAP_RUNAWAY_STK_</code> in front). Page: <code>/gap_runaway_stk-paper</code>, under STOCKS. <b>Paper only</b> &mdash; it never sends an order.</p>
+<ol>
+  <li><b>Scan (at Start, before 09:15).</b> Every stock in the list (default: all F&amp;O stocks, about 220, roughly 75 seconds) gets its daily candles and yesterday's RSI on EMA21. Only stocks with RSI below 10 or above 90 stay on the list.</li>
+  <li><b>Open.</b> From 09:15 it reads those stocks' quotes. Today's open = the quote's official open. If the quote's &ldquo;previous close&rdquo; differs from the daily history by more than 2% (an unadjusted split or stale data), that stock is skipped.</li>
+  <li><b>Pick.</b> Every stock that gives a signal is ranked by the <b>size of its gap in %</b>, biggest first. Up to <b>3 trades a day</b>, one per stock. A stock whose price has already filled its gap is skipped and the next one takes the slot.</li>
+  <li><b>Trade.</b> Gap up after oversold &rarr; <b>buy</b> the shares. Gap down after overbought &rarr; <b>short-sell</b> the shares. Intraday (MIS). Shares = &#8377;1,00,000 &divide; price, rounded down: a &#8377;2,500 stock &rarr; 40 shares.</li>
+  <li><b>Exit.</b> The same three: price back at yesterday's close, a 5-minute close back through EMA21, or 15:15.</li>
+  <li><b>P&amp;L</b> = share price move &times; shares, minus Zerodha intraday-equity charges.</li>
+</ol>
+<p>For a stock, <code>GAP_RUNAWAY_STK_MIN_GAP_PTS</code> is in <b>rupees of share price</b> (0 by default = any gap). A restart in the middle of the day restores that day's open paper positions on the next Start. <b>It has not been run on real stock data yet</b> &mdash; nothing in section 10 is about stocks.</p>
+
+<h2 id="start">8. Starting it, and Live</h2>
+<ul>
+  <li><b>Start All (Paper)</b> on the Dashboard starts both pages (NIFTY and the stock scanner) while their Mode switches are on, which they are by default. Each page also has its own Start and Stop.</li>
+  <li>Start before 09:15 so the daily setup is ready when the market opens. The entry window closes at 09:30; starting later means no trade that day.</li>
+  <li>NIFTY paper page: <code>/gap_runaway-paper</code>. If it is stopped and started again (or the app restarts) in the middle of the day, it counts that day's earlier trades from disk, so the day does not get a second trade.</li>
+  <li><b>Live</b> (<code>/gap_runaway-live</code>) wraps the Paper page: Paper decides, Live copies each entry and exit to Zerodha. It needs both logins &mdash; Fyers for prices, Zerodha for orders. Its menu item is hidden by default.</li>
+  <li><b>A real order needs all three:</b> <code>GAP_RUNAWAY_LIVE_ENABLED</code> on, the global <code>LIVE_HARNESS_DRY_RUN</code> off, and <code>GAP_RUNAWAY_LIVE_DRY_RUN</code> not on. Out of the box the global dry-run is on, so Live only writes the order it <b>would</b> have placed to the log.</li>
+  <li><b>No Backtest page and no Replay</b> &mdash; your choice when the strategy was set up. The stock scanner has no Live at all.</li>
+</ul>
+
+<h2 id="examples">9. Real chart examples</h2>
+<div class="card">
+  <b>How to read the charts.</b> These are <b>real NIFTY days</b> from the stored 5-minute candles, run through the real engine with default settings. Daily candles are built from those 5-minute candles (first open, highest high, lowest low, last close of each day).
+  Each example has two charts. <b>Top:</b> the last 40 daily candles, the daily EMA21 (yellow) and, underneath, the RSI on EMA21 (purple) with the 90 and 10 lines; the yellow dot in the RSI panel is yesterday's reading. <b>Bottom:</b> the trade day on 5-minute candles, with the last hour of yesterday on the left (grey band), the 5-minute EMA21 (yellow) and yesterday's close as a white dashed line &mdash; the stop.
+  The buy is at the 09:15 candle's open (standing in for today's official open). A stop is filled <b>at</b> yesterday's close; a trail exit at the close of the candle that crossed EMA21. Results are <b>NIFTY points</b>, not option rupees, and no costs are taken off.
+</div>
+
+<h3>A winner (CE) &mdash; 19 Nov 2024</h3>
+<div class="tv-chart" id="gr-ce-d"></div>
+<p class="tv-cap"><b>What you see:</b> NIFTY daily, 40 sessions to 19 Nov 2024. Price has fallen well below its daily EMA21 (24,205.24 on 18 Nov 2024). The RSI on EMA21 has been under 10 for days &mdash; 19 Nov 2024 is the 10th session in a row that starts oversold &mdash; and reads <b>3.2</b> on 18 Nov 2024. That day closes at <b>23,465.30</b>. 19 Nov 2024 opens at <b>23,529.55</b>, 64.25 points higher (+0.27%) &rarr; oversold + gap up = <b>CE</b>. <b>Why it matters:</b> the whole decision is made from yesterday's daily candle and today's first price.</p>
+<div class="tv-chart" id="gr-ce"></div>
+<p class="tv-cap"><b>What you see:</b> 19 Nov 2024, 5-minute candles. Yesterday closed at 23,465.30 (white dashes = the stop). <b>BUY CE at 23,529.55</b> (09:15 open), 64.25 points above the stop. The first candle dips to 23,517.10 &mdash; still above the stop &mdash; and closes at 23,590.05. NIFTY climbs to 23,780.65, staying above the yellow EMA21. The 12:40 candle closes at 23,732.75, below EMA21 23,739.98 &rarr; <b>EXIT 23,732.75</b>, <b>+203.20 points</b>. Later the same day NIFTY fell all the way back to 23,464.80 and closed at 23,468.70 &mdash; the gap filled after the exit. <b>Why it matters:</b> with no target, the EMA21 trail is the only thing that banks a profit, and here it got out before the fall.</p>
+
+<h3>A winner (PE) &mdash; 22 May 2025</h3>
+<div class="tv-chart" id="gr-pe-d"></div>
+<p class="tv-cap"><b>What you see:</b> NIFTY daily, 40 sessions to 22 May 2025. Price is above its daily EMA21 (24,419.02 on 21 May 2025) and the RSI on EMA21 is pinned near the top: <b>97.27</b> on 21 May 2025, the 14th session in a row that starts overbought. 21 May 2025 closes at <b>24,800.95</b>; 22 May 2025 opens at <b>24,733.95</b>, 67.00 points lower (&minus;0.27%) &rarr; overbought + gap down = <b>PE</b>. <b>Why it matters:</b> an RSI on a smooth line can sit above 90 for weeks, so &ldquo;overbought&rdquo; is common, not rare.</p>
+<div class="tv-chart" id="gr-pe"></div>
+<p class="tv-cap"><b>What you see:</b> 22 May 2025, 5-minute candles. Stop = yesterday's close 24,800.95. <b>BUY PE at 24,733.95</b> (09:15 open). The first candle only reaches 24,737.50 &mdash; 63.45 points short of the stop &mdash; and closes at 24,643.05. NIFTY keeps falling under the EMA21 to 24,509.10. The 13:30 candle closes at 24,552.90, just 0.41 above EMA21 24,552.49 &rarr; <b>EXIT 24,552.90</b>, <b>+181.05 points</b>. Afterwards NIFTY dipped again to 24,462.40 and closed the day at 24,637.00; held to 15:15 (open 24,606.35) the trade would have made +127.60. <b>Why it matters:</b> a close-only trail can exit on a candle that is barely over the line &mdash; here by 0.41 of a point.</p>
+
+<h3>A gap-stop loser &mdash; 9 Jul 2025</h3>
+<div class="tv-chart" id="gr-stop-d"></div>
+<p class="tv-cap"><b>What you see:</b> NIFTY daily, 40 sessions to 9 Jul 2025. RSI on EMA21 <b>99.09</b> on 8 Jul 2025 &mdash; 9 Jul 2025 is the 48th session in a row that starts overbought. Daily EMA21 25,234.91. 8 Jul 2025 closes at <b>25,523.10</b>; 9 Jul 2025 opens at <b>25,514.60</b>, only 8.50 points lower (&minus;0.03%). Any gap counts by default, so this is a <b>PE</b>. <b>Why it matters:</b> the gap is also the stop distance &mdash; here, 8.50 points.</p>
+<div class="tv-chart" id="gr-stop"></div>
+<p class="tv-cap"><b>What you see:</b> 9 Jul 2025, 5-minute candles. <b>BUY PE at 25,514.60</b>; stop = yesterday's close 25,523.10, 8.50 points above. The very first candle runs from 25,483.30 up to 25,525.05 &mdash; its high touches the stop &rarr; <b>EXIT 25,523.10</b>, <b>&minus;8.50 points</b>, inside the first five minutes. After that NIFTY went back above the stop (up to 25,548.70), then fell to 25,424.35 late in the day and closed at 25,464.65, below the PE entry. (A 5-minute candle does not show whether its high or its low came first; the check counts the stop. A live tick feed may see it differently.) <b>Why it matters:</b> 109 of the 158 gap stops in the data hit in this first candle. A tiny gap is a tiny stop.</p>
+
+<h3>Setup, but no trade &mdash; 12 Mar 2026</h3>
+<div class="tv-chart" id="gr-skip-d"></div>
+<p class="tv-cap"><b>What you see:</b> NIFTY daily, 40 sessions to 12 Mar 2026. A steep fall, far under the daily EMA21 (24,957.12 on 11 Mar 2026). RSI on EMA21 <b>5.38</b> on 11 Mar 2026 &mdash; oversold. 11 Mar 2026 closes at <b>23,848.20</b>; 12 Mar 2026 opens at <b>23,674.85</b>, 173.35 points <b>lower</b>. Oversold needs a gap <b>up</b> &rarr; <b>no trade</b>. <b>Why it matters:</b> the setup is only half the rule; the gap must point back against the move.</p>
+<div class="tv-chart" id="gr-skip"></div>
+<p class="tv-cap"><b>What you see:</b> 12 Mar 2026, 5-minute candles. Yesterday's close 23,848.20 (white dashes). The day opens at 23,674.85 and NIFTY's high all day is 23,833.15 &mdash; it never gets back to yesterday's close. It closes at 23,639.35. Gap the wrong way &rarr; the bot only watches. <b>Why it matters:</b> on the stored data, 573 of the 948 days that started with an extreme RSI were turned away like this.</p>
+
+<h2 id="data">10. Real-data check</h2>
+<div class="card warn">
+  How this was measured: the engine (default settings) was walked over the stored NIFTY 5-minute candles from 1 Jan 2018 to 31 Jul 2026 &mdash; <b>2,120 trading days</b>. The engine needs 100 closed daily candles first, so the first day it could decide was 29 May 2018: <b>2,020 days</b> could trade. Each day: yesterday's RSI and close from <code>dailySetup</code>, the decision from <code>getSignal</code> with the 09:15 candle's open, buy at that open, then candle by candle &mdash; 15:15 square-off at that candle's open; else a touch of yesterday's close exits <b>at</b> that level; else a close through the 5-minute EMA21 exits at that close.
+  This is a <b>spot-point check</b> &mdash; not a backtest page, and not rupees. No option prices, no slippage, no charges.
+</div>
+<h3>How often it trades</h3>
+<table>
+  <tr><th>Step</th><th>Days</th></tr>
+  <tr><td>Days the engine could decide</td><td>2,020</td></tr>
+  <tr><td>Yesterday's RSI between 10 and 90 (no setup)</td><td>1,072</td></tr>
+  <tr><td>Yesterday oversold (RSI below 10)</td><td>247</td></tr>
+  <tr><td>Yesterday overbought (RSI above 90)</td><td>701</td></tr>
+  <tr><td>&nbsp;&nbsp;&hellip; but the gap went the wrong way</td><td>573</td></tr>
+  <tr><td><b>Trades taken</b></td><td><b>375</b> (153 CE, 222 PE) &mdash; 35 to 55 a year in the full years 2019&ndash;2025</td></tr>
+</table>
+<p>An extreme RSI is <b>not rare</b> on this line: 948 of 2,020 days (about 47%) started oversold or overbought. Once the RSI on EMA21 is pinned above 90, every gap-down morning is a PE &mdash; the 9 Jul 2025 example was the 48th overbought session in a row.</p>
+
+<h3>How the trades did</h3>
+<table>
+  <tr><th>Measure</th><th>Result</th></tr>
+  <tr><td>Winners / losers</td><td>106 / 269 &mdash; <b>28.3% winners</b></td></tr>
+  <tr><td>Average winner / average loser</td><td>+71.22 / &minus;42.57 points</td></tr>
+  <tr><td><b>Average trade (before costs)</b></td><td><b>&minus;10.41 points</b></td></tr>
+  <tr><td>Total (before costs)</td><td>&minus;3,903.05 points over 375 trades</td></tr>
+  <tr><td>CE / PE</td><td>CE &minus;1,931.50 (46 of 153 won) &middot; PE &minus;1,971.55 (60 of 222 won)</td></tr>
+  <tr><td>Best trade</td><td>+364.20 &mdash; 7 Apr 2020, CE, held to 15:15</td></tr>
+  <tr><td>Worst trade</td><td>&minus;521.50 &mdash; 3 Feb 2026, CE: a 1,228.15-point gap up (the biggest gap of any trade) that fell 521.50 points before the 5-minute EMA21 exit. Without that one day the average is still &minus;9.04 points.</td></tr>
+</table>
+<h3>How trades ended</h3>
+<table>
+  <tr><th>Exit</th><th>Trades</th><th>Points (total)</th></tr>
+  <tr><td>EMA21 trail (5-min close)</td><td>212 (101 won)</td><td>+341.80</td></tr>
+  <tr><td>Gap stop (yesterday's close)</td><td>158</td><td>&minus;5,368.50 (average &minus;33.98)</td></tr>
+  <tr><td>15:15 square-off</td><td>5</td><td>+1,123.65</td></tr>
+</table>
+<p>The gap stop is where the points go: 158 stops lost 5,368.50 points between them, and 109 of those stops hit inside the first 5-minute candle (155 before 10:00). The trail exits made only a little (+341.80 over 212), and the 5 trades still open at 15:15 were all winners.</p>
+
+<h3>How big the gaps (and so the stops) were</h3>
+<table>
+  <tr><th>Measure (gap size on the 375 trades, NIFTY points)</th><th>Result</th></tr>
+  <tr><td>Middle trade (median)</td><td>46.00</td></tr>
+  <tr><td>1 in 10 smaller than</td><td>7.54</td></tr>
+  <tr><td>1 in 10 bigger than</td><td>166.66</td></tr>
+  <tr><td>Smallest / biggest</td><td>0.30 / 1,228.15</td></tr>
+  <tr><td>Gaps under 10 points</td><td>53 trades &mdash; 42 of them were stopped</td></tr>
+</table>
+<p>A tiny gap means a tiny stop, and a stop that small is inside normal opening noise: 42 of the 53 trades with a gap under 10 points were stopped. Each of those losses was small in points (together the 53 trades made +91.65 points), but in real money every one of them is a full round trip of brokerage, spread and charges for almost nothing.</p>
+
+<h3>Points by year</h3>
+<table>
+  <tr><th>Year</th><th>Trades</th><th>Winners</th><th>Points</th></tr>
+<tr><td>2018 (from 29 May)</td><td>28</td><td>11</td><td>&minus;75.4</td></tr>
+<tr><td>2019</td><td>35</td><td>13</td><td>&minus;141.4</td></tr>
+<tr><td>2020</td><td>55</td><td>14</td><td>&minus;793.4</td></tr>
+<tr><td>2021</td><td>46</td><td>13</td><td>&minus;224</td></tr>
+<tr><td>2022</td><td>48</td><td>14</td><td>&minus;480.8</td></tr>
+<tr><td>2023</td><td>53</td><td>18</td><td>&minus;6.5</td></tr>
+<tr><td>2024</td><td>47</td><td>7</td><td>&minus;217.6</td></tr>
+<tr><td>2025</td><td>50</td><td>12</td><td>&minus;1,250.4</td></tr>
+<tr><td>2026 (to 31 Jul)</td><td>13</td><td>4</td><td>&minus;713.55</td></tr>
+</table>
+<p>Every year was negative at the default settings.</p>
+
+<h3>Does a minimum gap help? (spot points, before costs)</h3>
+<p><code>GAP_RUNAWAY_MIN_GAP_PTS</code> skips gaps smaller than its value. Same check, three values:</p>
+<table>
+  <tr><th>Min gap</th><th>Trades</th><th>Winners</th><th>Avg win</th><th>Avg loss</th><th>Avg trade</th><th>Total</th><th>Years positive</th></tr>
+<tr><td>0</td><td>375</td><td>28.3%</td><td>+71.22</td><td>&minus;42.57</td><td>&minus;10.41</td><td>&minus;3,903.05</td><td>0 of 9</td></tr>
+<tr><td>20</td><td>278</td><td>30.9%</td><td>+79.01</td><td>&minus;55.95</td><td>&minus;14.20</td><td>&minus;3,947.45</td><td>1 of 9</td></tr>
+<tr><td>40</td><td>205</td><td>32.2%</td><td>+91.92</td><td>&minus;67.88</td><td>&minus;16.43</td><td>&minus;3,368.25</td><td>2 of 9</td></tr>
+</table>
+<p>A bigger minimum gap gives a few more winners in %, but a bigger gap is also a wider stop, so the average loser grows faster. On this data, 20 and 40 points did <b>not</b> make the average trade positive &mdash; it got worse per trade. These are spot points before costs; option results were not measured.</p>
+<div class="card bad">
+  <b>In plain words:</b> about 3 trades in 10 won. Winners were bigger than losers, but not big enough: the average trade lost 10.41 NIFTY points <b>before</b> costs. As a rough idea only, at delta 0.5 on one lot of 65 that is about &#8377;338 a trade, and brokerage, the spread and time decay would come on top. Is it just bad luck? Drawing 375 trades at random from these same 375, 20,000 times over, only 1.6% of the draws came out positive. So: <b>as built (intraday, any gap), the rules did not have an edge on NIFTY</b>.
+</div>
+
+<h2 id="settings">11. All the settings</h2>
+<p>Generated from the Settings schema (<code>src/routes/settings.js</code>, the two GAP_runAway sections). The default column is the value Settings ships; the engine falls back to the same value when a setting is blank or out of range. No Common Rule setting changes this strategy.</p>
+<h3>NIFTY &mdash; GAP_runAway__Kirubakaran STRATEGY (NIFTY — daily RSI-on-EMA extreme + gap) — Zerodha</h3>
+<h3 style="font-size:0.95rem;color:#8b949e;">Mode &amp; live</h3>
+<table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>GAP_RUNAWAY_LIVE_ENABLED</code></td><td><code>false</code></td><td><b>GAP_RUNAWAY Live Orders (gates /gap_runaway-live/start)</b>. Send real orders to Zerodha. NEVER traded live — paper-validate a run of sessions first. Off means the live harness refuses to start in real-order mode.</td></tr>
+<tr><td><code>GAP_RUNAWAY_LIVE_DRY_RUN</code></td><td><code>false</code></td><td><b>GAP_RUNAWAY Live DRY-RUN override</b>. Keep this strategy simulated even when live orders are switched on — the broker call is written to the log but no real order goes out.</td></tr>
+</tbody></table>
+<h3 style="font-size:0.95rem;color:#8b949e;">Reference</h3>
+<table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>GAP_RUNAWAY_REFERENCE_URL</code></td><td><code>https://www.youtube.com/watch?v=uLTaXTyDxiI</code></td><td><b>Reference Video</b>. The YouTube video this strategy comes from — kept here to refer back to. Shown as a link on the NIFTY page. Changes nothing in the rules.</td></tr>
+</tbody></table>
+<h3 style="font-size:0.95rem;color:#8b949e;">Daily setup (yesterday's closed bar)</h3>
+<table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>GAP_RUNAWAY_EMA_LENGTH</code></td><td><code>21</code></td><td><b>Daily EMA Length (RSI source)</b> (2&ndash;200). The RSI is worked out on this EMA of the DAILY close, not on the close itself (TradingView: RSI Source = EMA). Smoothing it once is what lets the RSI reach 90 / 10.</td></tr>
+<tr><td><code>GAP_RUNAWAY_RSI_LENGTH</code></td><td><code>10</code></td><td><b>Daily RSI Length</b> (2&ndash;100). RSI length on the EMA line above. Read on YESTERDAY's closed daily bar. Example: RSI 7 yesterday = oversold.</td></tr>
+<tr><td><code>GAP_RUNAWAY_RSI_UPPER</code></td><td><code>90</code></td><td><b>Overbought (RSI above)</b> (0&ndash;100). Yesterday's RSI above this = overbought: a gap DOWN today buys the ATM PE. Must be above Oversold, or both fall back to 90 / 10.</td></tr>
+<tr><td><code>GAP_RUNAWAY_RSI_LOWER</code></td><td><code>10</code></td><td><b>Oversold (RSI below)</b> (0&ndash;100). Yesterday's RSI below this = oversold: a gap UP today buys the ATM CE.</td></tr>
+<tr><td><code>GAP_RUNAWAY_MIN_GAP_PTS</code></td><td><code>0</code></td><td><b>Minimum Gap (pts)</b> (0&ndash;5000). Gap = today's open minus yesterday's close. 0 = any gap counts, exactly like the video. Example at 20: open 24,010 vs close 24,000 is a 10-pt gap → no trade. The gap is also the stop: yesterday's close.</td></tr>
+</tbody></table>
+<h3 style="font-size:0.95rem;color:#8b949e;">Entry &amp; exits</h3>
+<table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>GAP_RUNAWAY_ENTRY_START</code></td><td><code>09:15</code></td><td><b>Entry Window Start</b>. The day's one decision is made from this time (IST), once today's open is known.</td></tr>
+<tr><td><code>GAP_RUNAWAY_ENTRY_END</code></td><td><code>09:30</code></td><td><b>Entry Window End</b>. No entry after this time (IST). If the fill keeps failing until then, there is no trade today.</td></tr>
+<tr><td><code>GAP_RUNAWAY_EXIT_TF</code></td><td><code>5</code></td><td><b>Trail Candle Timeframe</b>. Candles the EMA trail is checked on. The trade exits when one of these candles CLOSES back through the trail EMA (CE: close below, PE: close above). Applies on the next Start.</td></tr>
+<tr><td><code>GAP_RUNAWAY_TRAIL_EMA_LENGTH</code></td><td><code>21</code></td><td><b>Trail EMA Length</b> (2&ndash;200). The trailing EMA on the trail candles. Separate from the daily EMA above, so changing the RSI smoothing never moves the trail.</td></tr>
+<tr><td><code>GAP_RUNAWAY_EOD_EXIT_TIME</code></td><td><code>15:15</code></td><td><b>Forced Exit (square-off)</b>. Anything still open is closed at this time (IST). Nothing is held overnight.</td></tr>
+</tbody></table>
+<h3 style="font-size:0.95rem;color:#8b949e;">Size &amp; capital</h3>
+<table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>GAP_RUNAWAY_LOTS</code></td><td><code>1</code></td><td><b>Lots</b> (1&ndash;10). NIFTY lots per trade. This strategy's own count — the common Lot Multiplier does not apply. Example: 1 lot = 65 qty.</td></tr>
+<tr><td><code>GAP_RUNAWAY_CAPITAL</code></td><td><code>100000</code></td><td><b>Paper Starting Capital (₹)</b> (10000&ndash;10000000). Starting capital shown on the paper page and restored by Reset. Its own number — the common Zerodha pool does not apply.</td></tr>
+</tbody></table>
+<h3>Stock scanner &mdash; GAP_runAway STOCK SCANNER (F&amp;O stocks — intraday shares, paper only)</h3>
+<h3 style="font-size:0.95rem;color:#8b949e;">Reference</h3>
+<table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>GAP_RUNAWAY_STK_REFERENCE_URL</code></td><td><code>https://www.youtube.com/watch?v=uLTaXTyDxiI</code></td><td><b>Reference Video</b>. The YouTube video this strategy comes from — kept here to refer back to. Shown as a link on the stock page. Changes nothing in the rules.</td></tr>
+</tbody></table>
+<h3 style="font-size:0.95rem;color:#8b949e;">Daily setup (yesterday's closed bar)</h3>
+<table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>GAP_RUNAWAY_STK_EMA_LENGTH</code></td><td><code>21</code></td><td><b>Daily EMA Length (RSI source)</b> (2&ndash;200). The RSI is worked out on this EMA of the DAILY close, not on the close itself (TradingView: RSI Source = EMA). Smoothing it once is what lets the RSI reach 90 / 10.</td></tr>
+<tr><td><code>GAP_RUNAWAY_STK_RSI_LENGTH</code></td><td><code>10</code></td><td><b>Daily RSI Length</b> (2&ndash;100). RSI length on the EMA line above. Read on YESTERDAY's closed daily bar. Example: RSI 7 yesterday = oversold.</td></tr>
+<tr><td><code>GAP_RUNAWAY_STK_RSI_UPPER</code></td><td><code>90</code></td><td><b>Overbought (RSI above)</b> (0&ndash;100). Yesterday's RSI above this = overbought: a gap DOWN today short-sells the stock. Must be above Oversold, or both fall back to 90 / 10.</td></tr>
+<tr><td><code>GAP_RUNAWAY_STK_RSI_LOWER</code></td><td><code>10</code></td><td><b>Oversold (RSI below)</b> (0&ndash;100). Yesterday's RSI below this = oversold: a gap UP today buys the stock.</td></tr>
+<tr><td><code>GAP_RUNAWAY_STK_MIN_GAP_PTS</code></td><td><code>0</code></td><td><b>Minimum Gap (pts)</b> (0&ndash;5000). Gap = today's open minus yesterday's close. 0 = any gap counts, exactly like the video. Example at 20: open 24,010 vs close 24,000 is a 10-pt gap → no trade. The gap is also the stop: yesterday's close.</td></tr>
+</tbody></table>
+<h3 style="font-size:0.95rem;color:#8b949e;">Entry &amp; exits</h3>
+<table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>GAP_RUNAWAY_STK_ENTRY_START</code></td><td><code>09:15</code></td><td><b>Entry Window Start</b>. The day's one decision is made from this time (IST), once today's open is known.</td></tr>
+<tr><td><code>GAP_RUNAWAY_STK_ENTRY_END</code></td><td><code>09:30</code></td><td><b>Entry Window End</b>. No entry after this time (IST). If the fill keeps failing until then, there is no trade today.</td></tr>
+<tr><td><code>GAP_RUNAWAY_STK_EXIT_TF</code></td><td><code>5</code></td><td><b>Trail Candle Timeframe</b>. Candles the EMA trail is checked on. The trade exits when one of these candles CLOSES back through the trail EMA (long: close below, short: close above). Applies on the next Start.</td></tr>
+<tr><td><code>GAP_RUNAWAY_STK_TRAIL_EMA_LENGTH</code></td><td><code>21</code></td><td><b>Trail EMA Length</b> (2&ndash;200). The trailing EMA on the trail candles. Separate from the daily EMA above, so changing the RSI smoothing never moves the trail.</td></tr>
+<tr><td><code>GAP_RUNAWAY_STK_EOD_EXIT_TIME</code></td><td><code>15:15</code></td><td><b>Forced Exit (square-off)</b>. Anything still open is closed at this time (IST). Nothing is held overnight.</td></tr>
+</tbody></table>
+<h3 style="font-size:0.95rem;color:#8b949e;">Universe &amp; size</h3>
+<table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>GAP_RUNAWAY_STK_UNIVERSE</code></td><td><code>FNO</code></td><td><b>Stock List</b>. Which stocks are scanned before 09:15. FNO = all F&amp;O stocks (~220, about 75 s to scan). Lists can be edited in ~/trading-data/swing_scanner_universe.json.</td></tr>
+<tr><td><code>GAP_RUNAWAY_STK_TRADE_AMOUNT</code></td><td><code>100000</code></td><td><b>Amount per Trade (₹)</b> (1000&ndash;10000000). Shares per trade = this ÷ price, rounded down. Example: ₹1,00,000 on a ₹2,500 stock = 40 shares.</td></tr>
+<tr><td><code>GAP_RUNAWAY_STK_MAX_TRADES</code></td><td><code>3</code></td><td><b>Max Trades/Day</b> (1&ndash;20). When more stocks fire, the biggest gaps (in %) are taken first, up to this many a day. One trade per stock per day.</td></tr>
+<tr><td><code>GAP_RUNAWAY_STK_CAPITAL</code></td><td><code>300000</code></td><td><b>Paper Starting Capital (₹)</b> (10000&ndash;100000000). Starting capital shown on the scanner page and restored by Reset. Display only — entries are never refused for capital.</td></tr>
+</tbody></table>
+<h3>Menu, Start All &amp; alerts</h3>
+<table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>TG_GAP_RUNAWAY_STARTED</code></td><td><code>true</code></td><td><b>GAP_RUNAWAY — Session Started</b>. Alert when a GAP_runAway__Kirubakaran (NIFTY) session starts.</td></tr>
+<tr><td><code>TG_GAP_RUNAWAY_STK_STARTED</code></td><td><code>true</code></td><td><b>GAP_RUNAWAY Stocks — Session Started</b>. Alert when the GAP_runAway stock scanner starts.</td></tr>
+<tr><td><code>TG_GAP_RUNAWAY_ENTRY</code></td><td><code>true</code></td><td><b>GAP_RUNAWAY — Trade Entry</b>. Alert on every GAP_runAway__Kirubakaran (NIFTY) entry.</td></tr>
+<tr><td><code>TG_GAP_RUNAWAY_STK_ENTRY</code></td><td><code>true</code></td><td><b>GAP_RUNAWAY Stocks — Trade Entry</b>. Alert on every stock-scanner entry.</td></tr>
+<tr><td><code>TG_GAP_RUNAWAY_EXIT</code></td><td><code>true</code></td><td><b>GAP_RUNAWAY — Trade Exit</b>. Alert on every GAP_runAway__Kirubakaran (NIFTY) exit.</td></tr>
+<tr><td><code>TG_GAP_RUNAWAY_STK_EXIT</code></td><td><code>true</code></td><td><b>GAP_RUNAWAY Stocks — Trade Exit</b>. Alert on every stock-scanner exit.</td></tr>
+<tr><td><code>TG_GAP_RUNAWAY_DAYREPORT</code></td><td><code>true</code></td><td><b>GAP_RUNAWAY — Day Report on Stop</b>. Send a GAP_runAway__Kirubakaran (NIFTY) day summary on stop.</td></tr>
+<tr><td><code>TG_GAP_RUNAWAY_STK_DAYREPORT</code></td><td><code>true</code></td><td><b>GAP_RUNAWAY Stocks — Day Report on Stop</b>. Send the stock-scanner day summary on stop.</td></tr>
+<tr><td><code>GAP_RUNAWAY_MODE_ENABLED</code></td><td><code>true</code></td><td><b>GAP_runAway__Kirubakaran Mode</b>. Show the GAP_RUNAWAY menu (under NIFTY) and its settings, and include it in Start All. NIFTY options: yesterday's daily RSI(10) on EMA21 below 10 + gap UP → ATM CE, above 90 + gap DOWN → ATM PE; stop = yesterday's close.</td></tr>
+<tr><td><code>GAP_RUNAWAY_STK_MODE_ENABLED</code></td><td><code>true</code></td><td><b>GAP_runAway Stock Scanner Mode</b>. Show the GAP_RUNAWAY SCANNER menu (under STOCKS) and its settings, and include it in Start All. Same rules over F&amp;O stocks, paper-traded as intraday shares.</td></tr>
+<tr><td><code>UI_SHOW_GAP_RUNAWAY_PAPER</code></td><td><code>true</code></td><td><b>GAP_RUNAWAY → Paper</b>. Show Paper under GAP_RUNAWAY (NIFTY).</td></tr>
+<tr><td><code>UI_SHOW_GAP_RUNAWAY_LIVE_HARNESS</code></td><td><code>false</code></td><td><b>GAP_RUNAWAY → Live</b>. Show Live (the paper-wrapping harness at /gap_runaway-live) under GAP_RUNAWAY.</td></tr>
+<tr><td><code>UI_SHOW_GAP_RUNAWAY_HISTORY</code></td><td><code>true</code></td><td><b>GAP_RUNAWAY → History</b>. Show History under GAP_RUNAWAY (NIFTY).</td></tr>
+<tr><td><code>UI_SHOW_GAP_RUNAWAY_STK_PAPER</code></td><td><code>true</code></td><td><b>GAP_RUNAWAY SCANNER → Paper</b>. Show the stock scanner's Paper page under STOCKS.</td></tr>
+<tr><td><code>UI_SHOW_GAP_RUNAWAY_STK_HISTORY</code></td><td><code>true</code></td><td><b>GAP_RUNAWAY SCANNER → History</b>. Show the stock scanner's History under STOCKS.</td></tr>
+</tbody></table>
+
+<h2 id="missing">12. What's still missing</h2>
+<ul>
+  <li><b>It has never traded.</b> No paper session and no live order, on NIFTY or on stocks.</li>
+  <li><b>No backtest page and not replayable</b> &mdash; by your choice. The only test is the spot-point check in section 10.</li>
+  <li><b>The stock scanner has not been run on real stock data.</b> Nothing above says whether it works on stocks.</li>
+  <li><b>The daily RSI can differ a little from TradingView.</b> The EMA and the RSI are both started (&ldquo;seeded&rdquo;) from the first candles they see, so on a short history they read slightly differently from TradingView's. The engine refuses to decide below 100 daily candles and loads about 400 calendar days (roughly 270 sessions) so the seed has faded. Near the 90 / 10 line, a small difference can still flip a day.</li>
+  <li><b>Option prices, slippage and charges are not in the numbers.</b> Section 10 is NIFTY spot points. A real option moves less than spot (delta), loses value through the day, and every trade pays brokerage and the spread.</li>
+  <li><b>5-minute candles hide the order of the first move.</b> When the first candle touches both the stop and a lower/higher price, the check counts it as a stop. A real tick feed decides that differently on some days.</li>
+  <li><b>Intraday only.</b> The video holds positions for days; this build closes everything at 15:15, by your choice. The video's version was not tested here.</li>
+  <li><b>The result on the data is negative.</b> &minus;10.41 points a trade before costs, every year negative at the default settings, and raising the minimum gap to 20 or 40 points did not turn it positive (section 10). Paper-trading it as it stands will most likely show the same.</li>
+</ul>
+<p class="muted">Engine: <code>src/strategies/gap_runaway.js</code>. Charts and numbers were produced by walking that engine over the stored NIFTY 5-minute candles (<code>~/trading-data/backtest_cache</code>), 1 Jan 2018 &ndash; 31 Jul 2026, default settings. Reference video: <a href="https://www.youtube.com/watch?v=uLTaXTyDxiI" target="_blank" rel="noopener">https://www.youtube.com/watch?v=uLTaXTyDxiI</a>.</p>
+
+</div>
+
+<script>
+/* ============================================================================
+ * TVChart v3 — dependency-free TradingView-style candlestick renderer.
+ * v2 features: OHLC header, subtitle, bottom time axis, last-price tag/line.
+ * v3 adds:   hlines (labelled price levels), shades (vertical highlight spans),
+ *            pane (RSI / volume / line sub-panel under the price chart).
+ * Pure buildSVG(spec) -> string (no DOM), never throws on bad data.
+ * Backward-compatible with every v1/v2 spec.
+ * ==========================================================================*/
+(function (global) {
+  "use strict";
+  function isNum(x) { return typeof x === "number" && isFinite(x); }
+  function esc(s) { return String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+  function fmt(v) { return isNum(v) ? v.toFixed(2).replace(/\.00$/,"") : "—"; }
+
+  function priceRange(spec) {
+    var lo = Infinity, hi = -Infinity;
+    function eat(v){ if(isNum(v)){ if(v>hi)hi=v; if(v<lo)lo=v; } }
+    (spec.candles||[]).forEach(function(c){ eat(c[1]); eat(c[2]); });
+    (spec.overlays||[]).forEach(function(o){ (o.data||[]).forEach(eat); });
+    (spec.bands||[]).forEach(function(b){ (b.upper||[]).forEach(eat); (b.lower||[]).forEach(eat); (b.mid||[]).forEach(eat); });
+    (spec.markers||[]).forEach(function(m){ if(isNum(m.price)) eat(m.price); });
+    (spec.hlines||[]).forEach(function(h){ eat(h.price); });
+    (spec.zones||[]).forEach(function(z){ eat(z.top); eat(z.bottom); });
+    if(!isFinite(lo)||!isFinite(hi)){ lo=0; hi=1; }
+    if(lo===hi){ lo-=1; hi+=1; }
+    var pad=(hi-lo)*0.10; return { lo:lo-pad, hi:hi+pad };
+  }
+
+  // Build a path that starts a fresh subpath after every gap. Indicator series
+  // are null until they have enough history (EMA/BB/RSI warm-up), and a path
+  // that opens with "L" is invalid — that used to drop the whole line.
+  function linePath(data, X, Y) {
+    var d = "", pen = false;
+    for (var i=0;i<data.length;i++){
+      if(!isNum(data[i])){ pen = false; continue; }
+      d += (pen ? "L" : "M") + X(i) + " " + Y(data[i]) + " "; pen = true;
+    }
+    return d;
+  }
+
+  function buildSVG(spec) {
+    spec = spec||{};
+    var candles = spec.candles||[]; var n = candles.length;
+    if(!n) return '<div class="tv-empty">chart data unavailable</div>';
+
+    var pane = null;
+    if (spec.pane && spec.pane.data && spec.pane.data.length) pane = spec.pane;
+    var paneH  = pane ? (isNum(pane.height) ? pane.height : 92) : 0;
+    var paneGap = pane ? 12 : 0;
+
+    var W=880, padL=6, padR=74, padT=52, padB=40, plotH=348;
+    var H = padT + plotH + paneGap + paneH + padB;
+    var rng=priceRange(spec); var plotW=W-padL-padR;
+    var slot=plotW/n; var cw=Math.max(2,Math.min(20,slot*0.66)); var wickW=Math.max(0.8,cw*0.12);
+    var up="#26a69a",down="#ef5350",grid="#1b2636",axis="#5a7499",txt="#e8eef8",mut="#8b98ac";
+    var plotBot = padT+plotH;
+    var paneTop = plotBot+paneGap, paneBot = paneTop+paneH;
+    var axisBot = pane ? paneBot : plotBot;
+    function X(i){ return padL+slot*(i+0.5); }
+    function Y(p){ return padT+(rng.hi-p)/(rng.hi-rng.lo)*plotH; }
+    var out=[];
+    out.push('<svg viewBox="0 0 '+W+' '+H+'" class="tv-svg" role="img" aria-label="'+esc(spec.title||"price chart")+'" preserveAspectRatio="xMidYMid meet">');
+    out.push('<rect x="0" y="0" width="'+W+'" height="'+H+'" fill="#0d1421"/>');
+
+    // horizontal price grid + right-side labels
+    for(var g=0;g<=4;g++){ var gp=rng.hi-(rng.hi-rng.lo)*(g/4); var gy=Y(gp);
+      out.push('<line x1="'+padL+'" y1="'+gy+'" x2="'+(W-padR)+'" y2="'+gy+'" stroke="'+grid+'" stroke-width="1"/>');
+      out.push('<text x="'+(W-padR+6)+'" y="'+(gy+3.5)+'" fill="'+axis+'" font-size="10.5" font-family="monospace">'+gp.toFixed(0)+'</text>'); }
+
+    // vertical time grid + bottom axis labels (every ~1/7 of the candles)
+    var times = spec.times || [];
+    var step = Math.max(1, Math.round(n/7));
+    for(var t=0;t<n;t+=step){ var tx=X(t);
+      out.push('<line x1="'+tx+'" y1="'+padT+'" x2="'+tx+'" y2="'+axisBot+'" stroke="'+grid+'" stroke-width="0.7" opacity="0.5"/>');
+      if(times[t]) out.push('<text x="'+tx+'" y="'+(axisBot+15)+'" fill="'+axis+'" font-size="10" text-anchor="middle" font-family="system-ui">'+esc(times[t])+'</text>'); }
+
+    // vertical highlight spans (e.g. "position held", "no-trade window")
+    (spec.shades||[]).forEach(function(s){ if(!isNum(s.from)||!isNum(s.to)) return;
+      var sx=X(s.from)-slot/2, sw=Math.max(1,X(s.to)-X(s.from)+slot);
+      out.push('<rect x="'+sx+'" y="'+padT+'" width="'+sw+'" height="'+plotH+'" fill="'+(s.color||"rgba(96,165,250,0.07)")+'"/>');
+      if(s.label){ var sly = s.labelBottom ? (padT+plotH-7) : (padT+13);
+        out.push('<text x="'+(sx+sw/2)+'" y="'+sly+'" fill="'+(s.text||"#7c93b5")+'" font-size="10" text-anchor="middle" font-family="system-ui">'+esc(s.label)+'</text>'); } });
+
+    // zones (e.g. ORB opening-range box)
+    (spec.zones||[]).forEach(function(z){ if(!isNum(z.from)||!isNum(z.to)) return;
+      var zx=X(z.from)-cw/2, zw=X(z.to)-X(z.from)+cw; var zTop=Y(isNum(z.top)?z.top:rng.hi), zBot=Y(isNum(z.bottom)?z.bottom:rng.lo);
+      out.push('<rect x="'+zx+'" y="'+zTop+'" width="'+zw+'" height="'+(zBot-zTop)+'" fill="'+(z.color||"rgba(96,165,250,0.10)")+'" stroke="'+(z.stroke||"rgba(96,165,250,0.5)")+'" stroke-dasharray="4 3" stroke-width="1"/>');
+      if(z.label) out.push('<text x="'+(zx+4)+'" y="'+(zTop-4)+'" fill="'+(z.stroke||"#60a5fa")+'" font-size="10.5" font-weight="600">'+esc(z.label)+'</text>'); });
+
+    // band envelopes (VWAP band / Bollinger)
+    (spec.bands||[]).forEach(function(b){ var u=b.upper||[], l=b.lower||[];
+      if(u.length&&l.length){ var pts=[]; for(var i=0;i<u.length;i++) if(isNum(u[i])) pts.push(X(i)+","+Y(u[i]));
+        for(var j=l.length-1;j>=0;j--) if(isNum(l[j])) pts.push(X(j)+","+Y(l[j]));
+        out.push('<polygon points="'+pts.join(" ")+'" fill="'+(b.fill||"rgba(120,144,200,0.08)")+'"/>');
+        [u,l].forEach(function(line){
+          out.push('<path d="'+linePath(line,X,Y)+'" fill="none" stroke="'+(b.color||"#a78bfa")+'" stroke-width="1.3" opacity="0.85"/>'); }); }
+      if(b.mid){
+        out.push('<path d="'+linePath(b.mid,X,Y)+'" fill="none" stroke="'+(b.color||"#a78bfa")+'" stroke-width="1" stroke-dasharray="2 3" opacity="0.7"/>'); } });
+
+    // labelled horizontal price levels (stop / target / neckline / OR high-low)
+    (spec.hlines||[]).forEach(function(hl){ if(!isNum(hl.price)) return;
+      var hy=Y(hl.price), hc=hl.color||"#fbbf24";
+      out.push('<line x1="'+padL+'" y1="'+hy+'" x2="'+(W-padR)+'" y2="'+hy+'" stroke="'+hc+'" stroke-width="'+(hl.width||1.2)+'" '+(hl.solid?"":'stroke-dasharray="6 4" ')+'opacity="0.9"/>');
+      out.push('<rect x="'+(W-padR)+'" y="'+(hy-8)+'" width="'+padR+'" height="16" fill="'+hc+'" opacity="0.92"/>');
+      out.push('<text x="'+(W-padR+5)+'" y="'+(hy+3.5)+'" fill="#0d1421" font-size="10" font-weight="700" font-family="monospace">'+hl.price.toFixed(0)+'</text>');
+      if(hl.label){ var lw=hl.label.length*5.9+10;
+        // labelAt (0..1) slides the tag along the line so it can dodge markers
+        var lx1=padL+3+(isNum(hl.labelAt)?hl.labelAt:0)*(W-padR-padL-lw-6);
+        lx1=Math.max(padL+3,Math.min(lx1,W-padR-lw-3));
+        out.push('<rect x="'+lx1+'" y="'+(hy-15)+'" width="'+lw+'" height="14" rx="3" fill="'+hc+'" opacity="0.92"/>');
+        out.push('<text x="'+(lx1+5)+'" y="'+(hy-4.5)+'" fill="#0d1421" font-size="9.8" font-weight="700" font-family="system-ui">'+esc(hl.label)+'</text>'); } });
+
+    // candlesticks
+    candles.forEach(function(c,i){ if(!c||!isNum(c[0])||!isNum(c[3])) return;
+      var o=c[0],h=c[1],lw=c[2],cl=c[3]; var col=cl>=o?up:down, cx=X(i);
+      if(isNum(h)&&isNum(lw)) out.push('<rect x="'+(cx-wickW/2)+'" y="'+Y(h)+'" width="'+wickW+'" height="'+Math.max(0.5,Y(lw)-Y(h))+'" fill="'+col+'"/>');
+      var yo=Y(o),yc=Y(cl),top=Math.min(yo,yc),bh=Math.max(1,Math.abs(yc-yo));
+      out.push('<rect x="'+(cx-cw/2)+'" y="'+top+'" width="'+cw+'" height="'+bh+'" fill="'+col+'"/>'); });
+
+    // overlay indicator lines (EMA / VWAP / MAs)
+    (spec.overlays||[]).forEach(function(ov){
+      out.push('<path d="'+linePath(ov.data||[],X,Y)+'" fill="none" stroke="'+(ov.color||"#fbbf24")+'" stroke-width="'+(ov.width||1.6)+'" '+(ov.dash?'stroke-dasharray="5 3" ':"")+'opacity="0.95"/>'); });
+
+    // last-price dashed line + right-axis tag (TradingView style)
+    if(spec.lastPriceTag !== false){ var last=candles[n-1]; if(last&&isNum(last[3])){ var lp=last[3], ly=Y(lp);
+      var lcol=(isNum(last[0])&&lp>=last[0])?up:down;
+      out.push('<line x1="'+padL+'" y1="'+ly+'" x2="'+(W-padR)+'" y2="'+ly+'" stroke="'+lcol+'" stroke-width="0.8" stroke-dasharray="2 2" opacity="0.7"/>');
+      out.push('<rect x="'+(W-padR)+'" y="'+(ly-8)+'" width="'+padR+'" height="16" fill="'+lcol+'"/>');
+      out.push('<text x="'+(W-padR+6)+'" y="'+(ly+3.5)+'" fill="#0d1421" font-size="10.5" font-weight="700" font-family="monospace">'+lp.toFixed(2)+'</text>'); } }
+
+    // markers (buy / exit / dot)
+    (spec.markers||[]).forEach(function(m){ if(!isNum(m.i)) return; var mx=X(m.i);
+      var my=isNum(m.price)?Y(m.price):(m.type==="buy"?plotBot-14:padT+14);
+      var isBuy=m.type==="buy", isExit=m.type==="exit"; var col=m.color||(isBuy?"#26a69a":isExit?"#ef5350":"#fbbf24");
+      if(isBuy||isExit){ var ay=isBuy?my+18:my-18, tri=isBuy?(mx-6)+","+ay+" "+(mx+6)+","+ay+" "+mx+","+(ay-10):(mx-6)+","+ay+" "+(mx+6)+","+ay+" "+mx+","+(ay+10);
+        out.push('<polygon points="'+tri+'" fill="'+col+'"/>'); }
+      else out.push('<circle cx="'+mx+'" cy="'+my+'" r="3.5" fill="'+col+'" stroke="#0d1421" stroke-width="1"/>');
+      if(m.text){ var lblY=isBuy?my+34:(isExit?my-26:my-10); var tw=m.text.length*6.2+10;
+        var lx0=Math.max(padL+1,Math.min(mx-tw/2,W-padR-tw-1));
+        out.push('<rect x="'+lx0+'" y="'+(lblY-11)+'" width="'+tw+'" height="15" rx="3" fill="'+col+'" opacity="0.94"/>');
+        out.push('<text x="'+(lx0+tw/2)+'" y="'+lblY+'" fill="#0d1421" font-size="10.5" font-weight="700" text-anchor="middle" font-family="system-ui">'+esc(m.text)+'</text>'); } });
+
+    // ── sub-panel: RSI / volume / any line series ─────────────────────────
+    if(pane){
+      var pd=pane.data||[], pType=pane.type||"line";
+      var plo=Infinity, phi=-Infinity;
+      pd.forEach(function(v){ if(isNum(v)){ if(v>phi)phi=v; if(v<plo)plo=v; } });
+      if(pType==="rsi"){ plo=0; phi=100; }
+      if(pType==="volume"){ plo=0; }
+      if(isNum(pane.min)) plo=pane.min;
+      if(isNum(pane.max)) phi=pane.max;
+      if(!isFinite(plo)||!isFinite(phi)){ plo=0; phi=1; }
+      if(plo===phi){ plo-=1; phi+=1; }
+      var pPad=(pType==="rsi"||pType==="volume")?0:(phi-plo)*0.12;
+      var pLo=plo-pPad, pHi=phi+pPad;
+      function PY(v){ return paneTop+(pHi-v)/(pHi-pLo)*paneH; }
+      out.push('<rect x="'+padL+'" y="'+paneTop+'" width="'+(W-padR-padL)+'" height="'+paneH+'" fill="#0b111c"/>');
+      out.push('<line x1="'+padL+'" y1="'+paneTop+'" x2="'+(W-padR)+'" y2="'+paneTop+'" stroke="'+grid+'" stroke-width="1"/>');
+
+      // guide levels inside the pane (e.g. RSI 70 / 40)
+      (pane.levels||[]).forEach(function(lv){ var v=isNum(lv)?lv:lv.value; if(!isNum(v)) return;
+        var c=(lv&&lv.color)||"#3f5570", ly2=PY(v);
+        out.push('<line x1="'+padL+'" y1="'+ly2+'" x2="'+(W-padR)+'" y2="'+ly2+'" stroke="'+c+'" stroke-width="1" stroke-dasharray="4 3" opacity="0.8"/>');
+        out.push('<text x="'+(W-padR+6)+'" y="'+(ly2+3.5)+'" fill="'+c+'" font-size="10" font-family="monospace">'+v+'</text>'); });
+
+      if(pType==="volume"){
+        var bw=Math.max(1.5,slot*0.6);
+        pd.forEach(function(v,i){ if(!isNum(v)) return; var c2=candles[i];
+          var col2=(c2&&isNum(c2[0])&&isNum(c2[3])&&c2[3]>=c2[0])?"rgba(38,166,154,0.55)":"rgba(239,83,80,0.55)";
+          if(pane.colors&&pane.colors[i]) col2=pane.colors[i];
+          var by=PY(v); out.push('<rect x="'+(X(i)-bw/2)+'" y="'+by+'" width="'+bw+'" height="'+Math.max(0.5,paneBot-by)+'" fill="'+col2+'"/>'); });
+      } else {
+        out.push('<path d="'+linePath(pd,X,PY)+'" fill="none" stroke="'+(pane.color||"#c084fc")+'" stroke-width="1.6"/>');
+      }
+      (pane.markers||[]).forEach(function(m){ if(!isNum(m.i)||!isNum(m.value)) return;
+        out.push('<circle cx="'+X(m.i)+'" cy="'+PY(m.value)+'" r="3.2" fill="'+(m.color||"#fbbf24")+'" stroke="#0b111c" stroke-width="1"/>'); });
+      if(pane.label) out.push('<text x="'+(padL+5)+'" y="'+(paneTop+13)+'" fill="'+mut+'" font-size="10.5" font-weight="600" font-family="system-ui">'+esc(pane.label)+'</text>');
+    }
+
+    // header: title, subtitle, and OHLC readout (TradingView top-left)
+    out.push('<text x="'+padL+'" y="17" fill="'+txt+'" font-size="13" font-weight="700" font-family="system-ui">'+esc(spec.title||"")+'</text>');
+    if(spec.subtitle) out.push('<text x="'+padL+'" y="32" fill="'+mut+'" font-size="10.5" font-family="system-ui">'+esc(spec.subtitle)+'</text>');
+    if(spec.ohlc !== false){ var f=candles[n-1]; if(f){ var oc=(isNum(f[0])&&isNum(f[3])&&f[3]>=f[0])?up:down;
+      var parts=[["O",f[0]],["H",f[1]],["L",f[2]],["C",f[3]]], hy2=spec.subtitle?46:32;
+      var lx=padL;
+      parts.forEach(function(p){ out.push('<text x="'+lx+'" y="'+hy2+'" font-size="10.5" font-family="monospace" fill="'+mut+'">'+p[0]+'</text>');
+        lx+=11; out.push('<text x="'+lx+'" y="'+hy2+'" font-size="10.5" font-family="monospace" fill="'+oc+'">'+fmt(p[1])+'</text>'); lx+=(fmt(p[1]).length*6.4)+10; }); } }
+
+    // legend (bottom-left, above time axis)
+    var lgx=padL, lgy=H-4;
+    (spec.legend||[]).forEach(function(lg){ out.push('<rect x="'+lgx+'" y="'+(lgy-8)+'" width="14" height="3" rx="1.5" fill="'+(lg.color||"#fbbf24")+'"/>');
+      out.push('<text x="'+(lgx+18)+'" y="'+(lgy-4)+'" fill="'+axis+'" font-size="10" font-family="system-ui">'+esc(lg.label)+'</text>');
+      lgx+=22+lg.label.length*6.1; });
+
+    out.push("</svg>"); return out.join("");
+  }
+
+  var TVChart = { buildSVG: buildSVG, render: function(elId, spec){ try { var el=document.getElementById(elId); if(!el) return; el.innerHTML=buildSVG(spec); } catch(e){} } };
+  global.TVChart = TVChart;
+})(window);
+</script>
+<script>
+TVChart.render("gr-ce-d", {"title":"NIFTY 50 · daily · 40 sessions to 2024-11-19","subtitle":"Real daily candles built from stored 5-min data · EMA21 of the close · RSI(10) on that EMA21","times":["20/09","23/09","24/09","25/09","26/09","27/09","30/09","01/10","03/10","04/10","07/10","08/10","09/10","10/10","11/10","14/10","15/10","16/10","17/10","18/10","21/10","22/10","23/10","24/10","25/10","28/10","29/10","30/10","31/10","04/11","05/11","06/11","07/11","08/11","11/11","12/11","13/11","14/11","18/11","19/11"],"candles":[[25525.95,25849.25,25426.6,25820.35],[25872.55,25956,25847.35,25930.15],[25921.45,26011.55,25886.85,25951.9],[25899.45,26032.8,25871.35,26013.5],[26005.4,26250.9,25998.4,26184.65],[26248.25,26277.35,26151.4,26175],[26061.3,26134.7,25794.1,25822.8],[25788.45,25907.6,25739.2,25812.55],[25452.85,25639.45,25230.3,25266],[25181.9,25485.05,24966.8,25049.1],[25084.1,25143,24694.35,24819],[24832.2,25044,24756.8,25039.5],[25065.8,25234.05,24947.7,25019.55],[25067.05,25134.05,24979.4,25007.55],[24985.3,25028.65,24920.05,24975.05],[25023.45,25159.75,25017.5,25142.3],[25186.3,25212.05,25008.15,25065.15],[25008.55,25093.4,24908.45,24959.9],[25027.4,25029.5,24728.9,24750.2],[24664.95,24886.2,24567.65,24862.65],[24956.15,24978.3,24679.6,24739.45],[24798.65,24882,24445.8,24481.75],[24378.15,24604.25,24378.1,24436],[24412.7,24480.65,24341.2,24414.6],[24418.05,24440.25,24073.9,24211.8],[24251.1,24492.6,24134.9,24367.7],[24328.85,24484.5,24140.85,24454],[24371.45,24498.2,24307.3,24350.3],[24349.85,24372.45,24172.6,24238.5],[24315.75,24316.75,23816.15,23990.95],[23916.5,24229.05,23842.75,24198.15],[24308.75,24537.6,24204.05,24493.9],[24489.6,24503.35,24179.05,24194.6],[24207.7,24276.15,24066.65,24110.35],[24087.25,24336.8,24004.6,24122.1],[24225.8,24242,23839.15,23842.95],[23822.45,23873.6,23509.6,23602.9],[23542.15,23675.9,23484.15,23559.6],[23605.3,23606.8,23350.4,23465.3],[23529.55,23780.65,23464.8,23468.7]],"overlays":[{"name":"EMA21","data":[25178.09,25246.46,25310.59,25374.49,25448.14,25514.22,25542.27,25566.84,25539.49,25494.91,25433.47,25397.65,25363.28,25330.94,25298.59,25284.38,25264.45,25236.76,25192.53,25162.54,25124.08,25065.68,25008.44,24954.45,24886.94,24839.74,24804.67,24763.36,24715.65,24649.77,24608.71,24598.27,24561.58,24520.56,24484.33,24426.02,24351.2,24279.23,24205.24,24138.28],"color":"#fbbf24","width":1.6}],"hlines":[{"price":23465.3,"label":"yesterday's close 23,465.30","color":"#e5e7eb","labelAt":0.02}],"shades":[{"from":39,"to":39,"label":"today","color":"rgba(96,165,250,0.10)"}],"markers":[{"i":38,"price":23465.3,"type":"dot","text":"","color":"#e5e7eb"},{"i":39,"price":23529.55,"type":"dot","text":"gap up +64.25","color":"#26a69a"}],"pane":{"type":"rsi","data":[97.51,97.97,98.3,98.56,98.8,98.97,99.03,99.09,92.56,82.69,71.08,65.16,59.84,55.14,50.71,48.79,46.08,42.45,37.23,34.07,30.4,25.72,22.03,19.15,16.21,14.48,13.31,12.03,10.72,9.17,8.34,8.14,7.41,6.68,6.08,5.25,4.39,3.74,3.2,2.79],"label":"RSI(10) on EMA21 · yesterday 3.2","color":"#c084fc","height":100,"levels":[{"value":90,"color":"#ef5350"},{"value":10,"color":"#26a69a"}],"markers":[{"i":38,"value":3.2,"color":"#fbbf24"}]},"legend":[{"label":"EMA21 (daily)","color":"#fbbf24"},{"label":"RSI(10) on EMA21","color":"#c084fc"},{"label":"90 overbought","color":"#ef5350"},{"label":"10 oversold","color":"#26a69a"}]});
+TVChart.render("gr-ce", {"title":"NIFTY 50 · 5 min · 2024-11-19","subtitle":"Real candles · real engine (gap_runaway.js, default settings) · CE winner","times":["14:30","14:35","14:40","14:45","14:50","14:55","15:00","15:05","15:10","15:15","15:20","15:25","09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55","12:00","12:05","12:10","12:15","12:20","12:25","12:30","12:35","12:40","12:45","12:50","12:55","13:00","13:05","13:10","13:15","13:20","13:25","13:30","13:35","13:40","13:45","13:50","13:55","14:00","14:05","14:10","14:15","14:20","14:25","14:30","14:35","14:40","14:45","14:50","14:55","15:00","15:05","15:10","15:15","15:20","15:25"],"candles":[[23443.9,23448.05,23412.55,23420.65],[23421.95,23433.45,23414.25,23432.7],[23433.3,23438.15,23421.9,23437],[23438.2,23469.25,23429.45,23459.5],[23457.3,23475.75,23443.3,23469.8],[23470.35,23471.15,23450.05,23450.05],[23449.25,23461.9,23438.1,23447.3],[23447.05,23451.25,23437.45,23440.65],[23439.85,23459.05,23435.9,23453.55],[23453.3,23474.85,23452,23462.55],[23462.9,23462.9,23447.95,23449.2],[23448.85,23467.9,23448.3,23465.3],[23529.55,23601.7,23517.1,23590.05],[23592.1,23639.4,23581.15,23639.35],[23640.15,23665.65,23620.3,23663.85],[23664.1,23677.05,23641.5,23671.55],[23672,23694.9,23667.3,23689.75],[23689.1,23702.6,23673.5,23702.6],[23701.9,23709.6,23670.7,23671.6],[23672.95,23684.85,23645.4,23684.85],[23683.85,23693.7,23663.9,23675.7],[23675.8,23702.3,23675.8,23688.7],[23689.75,23702.75,23685.25,23695.7],[23695.5,23709.15,23691.3,23691.85],[23691.9,23697.15,23682.45,23687.7],[23687.5,23708.85,23687.35,23708],[23708.15,23744.6,23708.15,23743.5],[23742.9,23750,23719.3,23719.85],[23720.75,23736.95,23719.55,23731.6],[23731.55,23739.5,23709.35,23712.8],[23712.75,23719.7,23693.3,23694.85],[23695.2,23704.9,23690.9,23703.75],[23703.75,23716.2,23700.3,23713.9],[23713.1,23732.9,23713,23732.65],[23731.9,23741.95,23729.5,23737.1],[23737.45,23739.5,23729.05,23736.25],[23736.75,23737.55,23728.7,23730.9],[23731.2,23744.7,23725.75,23743.15],[23743.15,23763,23743.15,23758.9],[23759.45,23770.65,23756.6,23763],[23762.9,23777.55,23755.5,23776.75],[23776.8,23779.7,23766.95,23772],[23773.25,23780.65,23765.25,23775.65],[23775.2,23775.3,23761.25,23761.65],[23761.9,23761.9,23749.4,23752.25],[23752.65,23760.8,23747.95,23759.95],[23758.45,23764.1,23736.3,23740.75],[23740.6,23750.6,23736.15,23749.35],[23749.4,23765.45,23746.6,23757.65],[23757.9,23764.6,23749.55,23749.55],[23750.05,23753.6,23744.5,23746.3],[23745.95,23754.95,23740.75,23753.65],[23753.4,23757.2,23747.25,23751.8],[23752.25,23753.95,23727.65,23732.75],[23732.4,23746.1,23724.2,23745.85],[23745.7,23751,23739.8,23746.8],[23746.25,23754.05,23741.4,23751.7],[23751.25,23758.55,23748.35,23750.25],[23749.3,23757.3,23748.2,23753.1],[23752.95,23762.05,23750.8,23760],[23761,23766.45,23753.55,23762.15],[23763.85,23765.15,23742.7,23746.65],[23746.7,23750.35,23738.45,23744.8],[23745.2,23764,23741.65,23761.05],[23760.45,23763.7,23752.05,23761.3],[23760.25,23765.45,23751.25,23754.7],[23754.8,23764.55,23753.1,23759.35],[23759.1,23766.65,23754.8,23764.9],[23765.2,23771.7,23761.05,23766.55],[23766.05,23767.6,23741,23741.5],[23741.6,23743.7,23710.75,23716.55],[23716.9,23725.3,23701.85,23707.35],[23707.2,23727,23703,23726.25],[23725.85,23726.9,23708.45,23714.35],[23714.4,23715.55,23688.15,23699.3],[23699.35,23709.75,23691.6,23697.6],[23697.4,23703.85,23689.8,23702.55],[23702.4,23704.55,23686.15,23698.6],[23698.35,23717.45,23692.15,23695.9],[23696.4,23696.65,23635.95,23636.75],[23635.2,23635.2,23576.3,23581.2],[23582.2,23583.25,23508.75,23550.75],[23547.35,23578.6,23533.7,23541],[23541.25,23541.85,23486.2,23492.55],[23492.65,23518.3,23477.2,23503.3],[23503.05,23508.7,23497.05,23503.9],[23502.4,23503.75,23464.8,23468.7]],"overlays":[{"name":"EMA21","data":[23471.35,23467.84,23465.03,23464.53,23465.01,23463.65,23462.16,23460.21,23459.6,23459.87,23458.9,23459.48,23471.35,23486.62,23502.74,23518.08,23533.69,23549.04,23560.19,23571.52,23580.99,23590.78,23600.32,23608.64,23615.83,23624.21,23635.05,23642.76,23650.84,23656.47,23659.96,23663.94,23668.48,23674.32,23680.02,23685.13,23689.3,23694.19,23700.07,23705.79,23712.24,23717.68,23722.95,23726.47,23728.81,23731.64,23732.47,23734,23736.15,23737.37,23738.18,23739.59,23740.7,23739.98,23740.51,23741.08,23742.05,23742.79,23743.73,23745.21,23746.75,23746.74,23746.56,23747.88,23749.1,23749.61,23750.5,23751.8,23753.15,23752.09,23748.86,23745.08,23743.37,23740.73,23736.97,23733.39,23730.58,23727.68,23724.79,23716.78,23704.46,23690.48,23676.9,23660.14,23645.88,23632.97,23618.04],"color":"#fbbf24","width":1.6},{"name":"Stop","data":[23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3,23465.3],"color":"#e5e7eb","width":1.1,"dash":true}],"hlines":[{"price":23465.3,"label":"stop = yesterday's close 23,465.30","color":"#e5e7eb","labelAt":0.35}],"zones":[],"shades":[{"from":0,"to":11,"label":"yesterday","color":"rgba(148,163,184,0.08)","labelBottom":true},{"from":12,"to":53,"label":"holding","color":"rgba(38,166,154,0.07)"}],"markers":[{"i":12,"price":23529.55,"type":"buy","text":"BUY CE 23,529","color":"#26a69a"},{"i":53,"price":23732.75,"type":"exit","text":"EXIT 23,732","color":"#ef4444"}],"legend":[{"label":"EMA21 (5-min trail)","color":"#fbbf24"},{"label":"Yesterday's close (the stop)","color":"#e5e7eb"}]});
+TVChart.render("gr-pe-d", {"title":"NIFTY 50 · daily · 40 sessions to 2025-05-22","subtitle":"Real daily candles built from stored 5-min data · EMA21 of the close · RSI(10) on that EMA21","times":["21/03","24/03","25/03","26/03","27/03","28/03","01/04","02/04","03/04","04/04","07/04","08/04","09/04","11/04","15/04","16/04","17/04","21/04","22/04","23/04","24/04","25/04","28/04","29/04","30/04","02/05","05/05","06/05","07/05","08/05","09/05","12/05","13/05","14/05","15/05","16/05","19/05","20/05","21/05","22/05"],"candles":[[23168.25,23402.7,23132.8,23355.65],[23515.4,23708.75,23433.5,23674.15],[23751.5,23869.6,23601.4,23605.95],[23700.95,23736.5,23451.7,23464.3],[23433.95,23646.45,23412.2,23601.05],[23600.4,23649.2,23450.2,23495.15],[23341.1,23565.15,23136.4,23179.7],[23192.6,23350,23158.45,23330.8],[23150.3,23306.5,23145.8,23241.6],[23190.4,23214.7,22857.45,22912.05],[21758.4,22254,21743.65,22238],[22446.75,22697.2,22270.85,22547.2],[22460.3,22468.7,22353.25,22420.4],[22695.4,22923.9,22695.4,22844.5],[23368.35,23368.35,23207,23344.1],[23344.1,23452.2,23273.05,23433.3],[23401.85,23872.35,23298.55,23837.75],[23949.15,24189.55,23903.65,24121.2],[24185.4,24242.6,24072,24134.05],[24357.6,24359.3,24119.95,24300.85],[24277.9,24347.85,24216.15,24245.05],[24289,24365.45,23847.85,23991.65],[24070.25,24355.1,24054.05,24312.9],[24370.7,24457.65,24290.75,24325.45],[24342.05,24396.15,24198.75,24246.25],[24311.9,24589.15,24238.5,24313.65],[24419.5,24526.4,24400.65,24459.5],[24500.75,24509.65,24331.8,24335.9],[24233.3,24449.6,24220,24409.3],[24431.5,24447.25,24150.2,24154.1],[23935.75,24164.25,23935.75,24038.65],[24420.1,24944.8,24378.85,24920.25],[24864.05,24973.8,24547.5,24593.65],[24613.8,24767.55,24535.55,24685.75],[24694.45,25116.25,24494.45,25035.3],[25064.65,25070,24953.05,25013.1],[25005.35,25062.95,24916.65,24935.35],[24996.2,25010.35,24669.7,24713.85],[24744.25,24946.2,24685.35,24800.95],[24733.95,24737.5,24462.4,24637]],"overlays":[{"name":"EMA21","data":[22763.75,22846.51,22915.55,22965.44,23023.22,23066.12,23076.45,23099.57,23112.48,23094.26,23016.42,22973.76,22923.46,22916.28,22955.17,22998.64,23074.92,23170.04,23257.67,23352.51,23433.65,23484.38,23559.7,23629.31,23685.4,23742.51,23807.69,23855.71,23906.04,23928.59,23938.59,24027.83,24079.27,24134.41,24216.31,24288.74,24347.52,24380.83,24419.02,24438.84],"color":"#fbbf24","width":1.6}],"hlines":[{"price":24800.95,"label":"yesterday's close 24,800.95","color":"#e5e7eb","labelAt":0.02}],"shades":[{"from":39,"to":39,"label":"today","color":"rgba(96,165,250,0.10)"}],"markers":[{"i":38,"price":24800.95,"type":"dot","text":"","color":"#e5e7eb"},{"i":39,"price":24733.95,"type":"dot","text":"gap down -67.00","color":"#ef5350"}],"pane":{"type":"rsi","data":[42.18,54.59,62.13,66.58,70.97,73.81,74.48,76,76.86,72.79,58.16,51.82,45.34,44.46,50.28,56,64.06,71.34,76.26,80.33,83.08,84.58,86.54,88.1,89.22,90.26,91.31,92.02,92.71,93.02,93.16,94.29,94.84,95.37,96.04,96.53,96.88,97.07,97.27,97.38],"label":"RSI(10) on EMA21 · yesterday 97.27","color":"#c084fc","height":100,"levels":[{"value":90,"color":"#ef5350"},{"value":10,"color":"#26a69a"}],"markers":[{"i":38,"value":97.27,"color":"#fbbf24"}]},"legend":[{"label":"EMA21 (daily)","color":"#fbbf24"},{"label":"RSI(10) on EMA21","color":"#c084fc"},{"label":"90 overbought","color":"#ef5350"},{"label":"10 oversold","color":"#26a69a"}]});
+TVChart.render("gr-pe", {"title":"NIFTY 50 · 5 min · 2025-05-22","subtitle":"Real candles · real engine (gap_runaway.js, default settings) · PE winner","times":["14:30","14:35","14:40","14:45","14:50","14:55","15:00","15:05","15:10","15:15","15:20","15:25","09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55","12:00","12:05","12:10","12:15","12:20","12:25","12:30","12:35","12:40","12:45","12:50","12:55","13:00","13:05","13:10","13:15","13:20","13:25","13:30","13:35","13:40","13:45","13:50","13:55","14:00","14:05","14:10","14:15","14:20","14:25","14:30","14:35","14:40","14:45","14:50","14:55","15:00","15:05","15:10","15:15","15:20","15:25"],"candles":[[24808.8,24818.95,24803.85,24808.8],[24807.95,24819.6,24802.95,24807.2],[24807,24813,24780.65,24785.55],[24786.1,24806,24785.95,24798.7],[24799.3,24813.9,24790.15,24810.95],[24810.35,24812.9,24796.35,24807],[24807.6,24828.45,24807.2,24816.75],[24816.7,24829.85,24815,24828.4],[24827.45,24827.75,24803.65,24809.4],[24809.25,24815.7,24806.5,24811.45],[24811.05,24819.95,24794.85,24797.45],[24796.65,24806.5,24796.5,24800.95],[24733.95,24737.5,24627.05,24643.05],[24644.7,24644.7,24574.65,24580.55],[24580.6,24614,24574,24590.5],[24591.45,24591.45,24545,24548.95],[24548.75,24603.75,24541.6,24575.25],[24574.8,24616.05,24564.3,24589.95],[24590.5,24593.05,24556.65,24576.4],[24574.65,24599.1,24559.8,24589.3],[24588.15,24629.65,24571.35,24629.65],[24631.65,24631.7,24602.3,24609.05],[24606.1,24609.8,24580.2,24594.95],[24593.85,24612.65,24587.6,24606.05],[24606.45,24621,24601.15,24609.7],[24610.85,24622.8,24602.75,24613.55],[24613.45,24615.65,24571.15,24580.25],[24580.75,24599.4,24576.6,24599.4],[24600.05,24628.6,24598.85,24603.5],[24604.1,24622.8,24603.15,24605.55],[24606.8,24613.05,24594.1,24599.15],[24599.4,24611.3,24597.95,24600.1],[24600.4,24611.75,24593.3,24605.15],[24605.9,24610.25,24593.25,24594.2],[24594.5,24603.7,24588.15,24600.05],[24600.35,24605,24594.15,24594.6],[24594.65,24604.3,24594.55,24599.7],[24599.35,24599.95,24579.2,24586.05],[24585.9,24598.8,24584.25,24595.5],[24595.65,24598.65,24587.9,24590.35],[24590.85,24593.35,24548.75,24559.55],[24559,24565.05,24543.05,24560.65],[24558.9,24578.25,24557.6,24572.6],[24573.3,24607.5,24573.2,24595],[24595.55,24596.35,24578.5,24589.75],[24589.8,24599,24583.25,24594.7],[24594.9,24596.05,24576.05,24576.05],[24576.75,24581.25,24569.55,24572.8],[24572.75,24574.65,24555.65,24557.3],[24558,24569,24549.8,24552.25],[24552.2,24563.45,24548.9,24552.7],[24553.7,24571.9,24551.5,24554.45],[24555.85,24565.15,24554.9,24562.7],[24562.9,24565.7,24553.65,24558.7],[24558.65,24559,24523.05,24528.2],[24525.3,24537.3,24513.5,24516.95],[24517,24528.45,24509.1,24523.85],[24523.7,24526.15,24516.45,24521.75],[24521.85,24521.85,24511.95,24513.95],[24513.85,24543,24512.75,24539.65],[24540.45,24548.9,24531.3,24534.7],[24535.95,24554.1,24534.6,24550.95],[24550.7,24554.45,24542.6,24551.65],[24553.65,24556.6,24543.9,24552.9],[24553.1,24554.3,24539.9,24540.95],[24540.65,24540.95,24518.2,24524.2],[24524.65,24534.85,24523.1,24528.35],[24527.35,24528.3,24515.05,24520.45],[24520.6,24530.2,24518.9,24525.35],[24526.65,24539.55,24522.6,24536.9],[24536.3,24537.3,24518.55,24519.6],[24519.2,24531,24519.2,24529.8],[24529.3,24530.25,24483.35,24491.85],[24489.55,24499.9,24474.75,24481.75],[24483.3,24494.15,24476.55,24492.35],[24492.25,24497.45,24473.3,24483.4],[24484.4,24502.2,24462.4,24500.8],[24502.1,24577.55,24502.1,24557.55],[24557.8,24580.05,24512.7,24576.4],[24575,24575,24545.75,24565.55],[24566.5,24639.85,24562.05,24616.8],[24616.3,24617.6,24594.9,24595.3],[24594.95,24619.35,24594,24618.95],[24619.05,24619.25,24601.35,24606.25],[24606.35,24616.4,24597.5,24614.8],[24615.1,24628.95,24598.6,24624.8],[24622.8,24647.15,24622.8,24637]],"overlays":[{"name":"EMA21","data":[24791.25,24792.7,24792.05,24792.66,24794.32,24795.47,24797.41,24800.22,24801.06,24802,24801.59,24801.53,24787.12,24768.34,24752.18,24733.7,24719.3,24707.54,24695.62,24685.95,24680.83,24674.31,24667.09,24661.54,24656.83,24652.9,24646.29,24642.03,24638.53,24635.53,24632.22,24629.3,24627.11,24624.11,24621.93,24619.44,24617.65,24614.77,24613.02,24610.96,24606.29,24602.14,24599.45,24599.05,24598.2,24597.88,24595.9,24593.8,24590.48,24587.01,24583.89,24581.21,24579.53,24577.63,24573.14,24568.03,24564.02,24560.17,24555.97,24554.49,24552.69,24552.53,24552.45,24552.49,24551.44,24548.97,24547.09,24544.67,24542.91,24542.37,24540.3,24539.34,24535.03,24530.18,24526.74,24522.8,24520.8,24524.14,24528.89,24532.23,24539.91,24544.95,24551.68,24556.64,24561.93,24567.64,24573.95],"color":"#fbbf24","width":1.6},{"name":"Stop","data":[24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95,24800.95],"color":"#e5e7eb","width":1.1,"dash":true}],"hlines":[{"price":24800.95,"label":"stop = yesterday's close 24,800.95","color":"#e5e7eb","labelAt":0.4}],"zones":[],"shades":[{"from":0,"to":11,"label":"yesterday","color":"rgba(148,163,184,0.08)","labelBottom":true},{"from":12,"to":63,"label":"holding","color":"rgba(239,83,80,0.07)"}],"markers":[{"i":12,"price":24733.95,"type":"buy","text":"BUY PE 24,733","color":"#26a69a"},{"i":63,"price":24552.9,"type":"exit","text":"EXIT 24,552","color":"#ef4444"}],"legend":[{"label":"EMA21 (5-min trail)","color":"#fbbf24"},{"label":"Yesterday's close (the stop)","color":"#e5e7eb"}]});
+TVChart.render("gr-stop-d", {"title":"NIFTY 50 · daily · 40 sessions to 2025-07-09","subtitle":"Real daily candles built from stored 5-min data · EMA21 of the close · RSI(10) on that EMA21","times":["15/05","16/05","19/05","20/05","21/05","22/05","23/05","26/05","27/05","28/05","29/05","30/05","02/06","03/06","04/06","05/06","06/06","09/06","10/06","11/06","12/06","13/06","16/06","17/06","18/06","19/06","20/06","23/06","24/06","25/06","26/06","27/06","30/06","01/07","02/07","03/07","04/07","07/07","08/07","09/07"],"candles":[[24694.45,25116.25,24494.45,25035.3],[25064.65,25070,24953.05,25013.1],[25005.35,25062.95,24916.65,24935.35],[24996.2,25010.35,24669.7,24713.85],[24744.25,24946.2,24685.35,24800.95],[24733.95,24737.5,24462.4,24637],[24639.5,24909.05,24614.05,24845.15],[24919.35,25079.2,24900.5,24996.35],[24956.65,25062.9,24704.1,24837.7],[24832.5,24864.25,24737.05,24757.15],[24825.1,24892.6,24677.3,24880.85],[24812.6,24863.95,24717.4,24736.65],[24669.7,24754.4,24526.15,24690.35],[24786.3,24845.1,24502.15,24538.4],[24560.45,24644.25,24530.45,24612],[24691.2,24899.85,24613.1,24761.1],[24748.7,25029.5,24671.45,25000.3],[25160.1,25160.1,25077.15,25103.1],[25196.05,25199.3,25055.45,25091.5],[25134.15,25222.4,25081.3,25126.8],[25164.45,25196.2,24825.9,24856],[24473,24754.35,24473,24735.55],[24732.35,24967.1,24703.6,24940.95],[24977.85,24982.05,24813.7,24841.5],[24788.35,24947.55,24750.45,24798.75],[24803.25,24863.1,24733.4,24744.7],[24787.65,25136.2,24783.65,25079.75],[24939.75,25057,24824.85,24958.9],[25179.9,25317.7,24999.7,25071.55],[25150.35,25266.8,25125.05,25236.35],[25268.95,25565.3,25259.9,25530.4],[25576.65,25654.2,25523.55,25632.45],[25661.65,25669.35,25473.3,25507.45],[25551.35,25593.4,25501.8,25533],[25588.3,25608.1,25378.75,25442.85],[25505.1,25587.5,25384.35,25397.4],[25428.85,25470.25,25331.65,25467.8],[25450.45,25489.8,25407.25,25454.95],[25427.85,25548.05,25424.15,25523.1],[25514.6,25548.7,25424.35,25464.65]],"overlays":[{"name":"EMA21","data":[24216.31,24288.74,24347.52,24380.83,24419.02,24438.84,24475.77,24523.1,24551.7,24570.38,24598.6,24611.15,24618.35,24611.08,24611.17,24624.8,24658.93,24699.31,24734.97,24770.59,24778.35,24774.46,24789.6,24794.31,24794.72,24790.17,24816.5,24829.44,24851.45,24886.44,24944.98,25007.48,25052.93,25096.58,25128.05,25152.54,25181.2,25206.09,25234.91,25255.79],"color":"#fbbf24","width":1.6}],"hlines":[{"price":25523.1,"label":"yesterday's close 25,523.10","color":"#e5e7eb","labelAt":0.02}],"shades":[{"from":39,"to":39,"label":"today","color":"rgba(96,165,250,0.10)"}],"markers":[{"i":38,"price":25523.1,"type":"dot","text":"","color":"#e5e7eb"},{"i":39,"price":25514.6,"type":"dot","text":"gap down -8.50","color":"#ef5350"}],"pane":{"type":"rsi","data":[96.04,96.53,96.88,97.07,97.27,97.38,97.58,97.81,97.94,98.03,98.16,98.22,98.25,96.12,96.12,96.31,96.74,97.18,97.5,97.79,97.85,96.4,96.62,96.69,96.7,94.41,95.15,95.48,95.98,96.65,97.44,98,98.3,98.53,98.68,98.79,98.9,98.99,99.09,99.15],"label":"RSI(10) on EMA21 · yesterday 99.09","color":"#c084fc","height":100,"levels":[{"value":90,"color":"#ef5350"},{"value":10,"color":"#26a69a"}],"markers":[{"i":38,"value":99.09,"color":"#fbbf24"}]},"legend":[{"label":"EMA21 (daily)","color":"#fbbf24"},{"label":"RSI(10) on EMA21","color":"#c084fc"},{"label":"90 overbought","color":"#ef5350"},{"label":"10 oversold","color":"#26a69a"}]});
+TVChart.render("gr-stop", {"title":"NIFTY 50 · 5 min · 2025-07-09","subtitle":"Real candles · real engine (gap_runaway.js, default settings) · gap stop, tiny gap","times":["14:30","14:35","14:40","14:45","14:50","14:55","15:00","15:05","15:10","15:15","15:20","15:25","09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55","12:00","12:05","12:10","12:15","12:20","12:25","12:30","12:35","12:40","12:45","12:50","12:55","13:00","13:05","13:10","13:15","13:20","13:25","13:30","13:35","13:40","13:45","13:50","13:55","14:00","14:05","14:10","14:15","14:20","14:25","14:30","14:35","14:40","14:45","14:50","14:55","15:00","15:05","15:10","15:15","15:20","15:25"],"candles":[[25457.65,25465.35,25456.6,25461.55],[25461.75,25466.15,25447.45,25454.65],[25456.05,25459.1,25452.25,25452.9],[25455,25459.05,25450.75,25455.55],[25457.25,25470.45,25451.95,25470],[25470.6,25486.25,25467.2,25482.3],[25483.55,25505.75,25476.85,25504.05],[25503.95,25529.7,25503.75,25528],[25527.5,25539.4,25515.35,25536],[25536.2,25548.05,25521.3,25523],[25522.35,25524.85,25517.3,25520.6],[25519.25,25535.45,25519.25,25523.1],[25514.6,25525.05,25483.3,25488.3],[25488.8,25500.7,25478.15,25487.45],[25487.7,25494.3,25476.65,25483.2],[25483.35,25492.2,25472.05,25488.25],[25488.8,25495.9,25487.6,25491.7],[25492.3,25492.7,25480.65,25483.85],[25482,25490.55,25477.65,25489],[25489.1,25497,25486.5,25491.6],[25491.1,25519.15,25489.75,25517.4],[25516,25519.45,25504.45,25504.65],[25504.5,25513.6,25503.6,25510.65],[25510.8,25529.45,25508.4,25527.65],[25527.6,25537.15,25522.45,25531.8],[25531.2,25533.5,25527.05,25531.65],[25530.6,25537.55,25518.45,25518.7],[25519.5,25527.5,25516.15,25522.45],[25521.2,25527,25521,25525.4],[25526.05,25528.85,25521.6,25526.4],[25526.35,25531.5,25516.5,25530.2],[25529.4,25531,25524.35,25525.95],[25525.9,25527.6,25521.95,25523.4],[25522.6,25526.8,25515.75,25519.5],[25519.2,25525.95,25518.05,25521.25],[25522.15,25535.2,25521.5,25534.15],[25534.25,25548.7,25534.2,25539.3],[25539.75,25541.35,25533.15,25538.35],[25537.9,25546.55,25537.2,25544.8],[25544.6,25547.3,25538.5,25542.85],[25541.8,25544.45,25535.45,25536.05],[25536,25539.65,25530.4,25531.4],[25531.95,25534.1,25527.2,25528.55],[25528.9,25529.45,25503.25,25517],[25516.9,25524.85,25515.45,25519.6],[25519.2,25521.9,25515.65,25521.8],[25521.4,25533.15,25517.5,25531.8],[25531.1,25539.9,25530.5,25537.95],[25539,25542.1,25534.8,25537.25],[25536.5,25539.1,25530.7,25534.7],[25534.7,25541.1,25534.15,25540.35],[25539.55,25544.25,25534.65,25537.3],[25536.85,25544.2,25536.5,25543.55],[25542.75,25545.95,25532.4,25533.3],[25532.85,25536.9,25523,25536.25],[25535,25537.4,25532.25,25534.2],[25534.2,25534.35,25528.7,25531.65],[25530.95,25531.85,25490.5,25490.5],[25491.35,25518.9,25491.35,25515.05],[25515.05,25527.2,25511.8,25525.4],[25525.15,25529.1,25521.8,25523.95],[25523.15,25537.8,25522.85,25533.2],[25533.2,25535.85,25526.85,25532.5],[25531.55,25534.55,25528.85,25531.8],[25531.5,25532,25523.5,25529.8],[25528.25,25532.85,25525.1,25526.55],[25526.15,25529.55,25522.85,25524.05],[25523.55,25526.05,25516.85,25523.4],[25522,25532.55,25521.65,25529.85],[25529.95,25532.1,25524.35,25525.95],[25525.45,25527.45,25517.6,25524.85],[25524,25531.05,25522.3,25530.3],[25530.25,25533.2,25510.85,25520.1],[25519.7,25521.95,25508.05,25508.6],[25506.35,25510.8,25490.75,25492.05],[25490.5,25491.05,25455.15,25457.4],[25457.05,25480.5,25456.35,25478.15],[25478.05,25479.85,25463.4,25469.45],[25469.85,25470.45,25454.05,25458.15],[25456.8,25462.2,25424.35,25446.4],[25446,25461.8,25443.75,25461.8],[25462.8,25476.1,25460.9,25475.1],[25476.05,25480.35,25473.9,25476.35],[25477.75,25483.1,25476.85,25478.4],[25479.85,25482.35,25469,25470.1],[25471.1,25477.6,25471.1,25474.55],[25475.55,25480.3,25464.4,25464.65]],"overlays":[{"name":"EMA21","data":[25464.74,25463.82,25462.83,25462.16,25462.88,25464.64,25468.23,25473.66,25479.33,25483.3,25486.69,25490,25489.84,25489.63,25489.04,25488.97,25489.22,25488.73,25488.75,25489.01,25491.59,25492.78,25494.41,25497.43,25500.55,25503.38,25504.77,25506.38,25508.11,25509.77,25511.63,25512.93,25513.88,25514.39,25515.02,25516.76,25518.81,25520.58,25522.78,25524.61,25525.65,25526.17,25526.39,25525.53,25524.99,25524.7,25525.35,25526.49,25527.47,25528.13,25529.24,25529.97,25531.21,25531.4,25531.84,25532.05,25532.02,25528.24,25527.04,25526.89,25526.63,25527.22,25527.7,25528.08,25528.23,25528.08,25527.71,25527.32,25527.55,25527.41,25527.17,25527.46,25526.79,25525.14,25522.13,25516.24,25512.78,25508.84,25504.23,25498.98,25495.6,25493.73,25492.15,25490.9,25489.01,25487.7,25485.6],"color":"#fbbf24","width":1.6},{"name":"Stop","data":[25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1,25523.1],"color":"#e5e7eb","width":1.1,"dash":true}],"hlines":[{"price":25523.1,"label":"stop = yesterday's close 25,523.10","color":"#e5e7eb","labelAt":0.97}],"zones":[],"shades":[{"from":0,"to":11,"label":"yesterday","color":"rgba(148,163,184,0.08)","labelBottom":true},{"from":12,"to":12,"label":"holding","color":"rgba(239,83,80,0.07)"}],"markers":[{"i":12,"price":25514.6,"type":"buy","text":"BUY PE 25,514","color":"#26a69a"},{"i":12,"price":25523.1,"type":"exit","text":"EXIT 25,523","color":"#ef4444"}],"legend":[{"label":"EMA21 (5-min trail)","color":"#fbbf24"},{"label":"Yesterday's close (the stop)","color":"#e5e7eb"}]});
+TVChart.render("gr-skip-d", {"title":"NIFTY 50 · daily · 40 sessions to 2026-03-12","subtitle":"Real daily candles built from stored 5-min data · EMA21 of the close · RSI(10) on that EMA21","times":["14/01","16/01","19/01","20/01","21/01","22/01","23/01","27/01","28/01","29/01","30/01","01/02","02/02","03/02","04/02","05/02","06/02","09/02","10/02","11/02","12/02","13/02","16/02","17/02","18/02","19/02","20/02","23/02","24/02","25/02","26/02","27/02","02/03","04/03","05/03","06/03","09/03","10/03","11/03","12/03"],"candles":[[25648.55,25791.75,25603.95,25669.1],[25696.05,25873.5,25662.4,25701.9],[25653.1,25653.3,25494.35,25555.5],[25580.3,25585,25171.35,25225.35],[25141,25300.95,24919.8,25168.1],[25344.15,25435.75,25168.5,25320.45],[25344.6,25347.95,25025.3,25064.75],[25063.35,25246.65,24932.55,25234.1],[25258.85,25372.1,25187.65,25348.05],[25345,25458.15,25159.8,25422.1],[25247.55,25370.7,25213.65,25315.8],[25333.75,25440.9,24571.75,24768],[24796.5,25108.1,24679.4,25079.9],[26308.05,26341.2,25641.3,25714.8],[25675.05,25818.55,25563.95,25737.5],[25755.9,25757.65,25579.5,25641.6],[25605.8,25703.95,25491.9,25673.6],[25888.7,25922.25,25780.9,25863.3],[25922.65,25989.45,25870.45,25916.8],[25997.45,26009.4,25899.8,25945.35],[25906.7,25906.7,25752.4,25796.15],[25571.15,25630.35,25444.3,25460.55],[25423.6,25697,25372.7,25682.45],[25637.95,25764.4,25570.3,25716],[25752.65,25828.05,25645.15,25805.7],[25873.35,25885.3,25388.75,25416.45],[25406.55,25663.55,25379.75,25565.9],[25678.4,25771.45,25609.35,25704],[25641.8,25641.8,25327.6,25460.25],[25512.6,25652.6,25428.2,25478.65],[25556.3,25572.95,25400.95,25493.3],[25459.85,25476.4,25141.3,25181.8],[24659.25,24989.35,24603.5,24849.75],[24388.8,24602.45,24305.4,24473.95],[24615.95,24854.2,24529.4,24737.45],[24656.4,24700.9,24415.75,24469.4],[23868.05,24078.15,23697.8,24005.8],[24280.8,24303.8,24079.95,24286.15],[24231.85,24299,23834.3,23848.2],[23674.85,23833.15,23556.3,23639.35]],"overlays":[{"name":"EMA21","data":[25951.28,25928.6,25894.69,25833.84,25773.32,25732.15,25671.47,25631.71,25605.93,25589.21,25564.36,25491.96,25454.5,25478.17,25501.74,25514.46,25528.92,25559.32,25591.82,25623.96,25639.61,25623.33,25628.71,25636.64,25652.01,25630.6,25624.72,25631.92,25616.32,25603.8,25593.76,25556.31,25492.07,25399.52,25339.33,25260.24,25146.2,25068.02,24957.12,24837.33],"color":"#fbbf24","width":1.6}],"hlines":[{"price":23848.2,"label":"yesterday's close 23,848.20","color":"#e5e7eb","labelAt":0.02}],"shades":[{"from":39,"to":39,"label":"today","color":"rgba(96,165,250,0.10)"}],"markers":[{"i":38,"price":23848.2,"type":"dot","text":"","color":"#e5e7eb"},{"i":39,"price":23674.85,"type":"dot","text":"gap down -173.35","color":"#ef5350"}],"pane":{"type":"rsi","data":[37.16,32.61,27.09,20.26,15.84,13.6,11.05,9.72,8.94,8.45,7.76,6.12,5.46,12.12,18.48,21.87,25.77,33.52,40.85,47.25,50.16,47.15,48.29,50.06,53.47,48.35,46.98,48.95,44.93,41.86,39.46,31.88,23.34,16.33,13.42,10.65,8,6.73,5.38,4.33],"label":"RSI(10) on EMA21 · yesterday 5.38","color":"#c084fc","height":100,"levels":[{"value":90,"color":"#ef5350"},{"value":10,"color":"#26a69a"}],"markers":[{"i":38,"value":5.38,"color":"#fbbf24"}]},"legend":[{"label":"EMA21 (daily)","color":"#fbbf24"},{"label":"RSI(10) on EMA21","color":"#c084fc"},{"label":"90 overbought","color":"#ef5350"},{"label":"10 oversold","color":"#26a69a"}]});
+TVChart.render("gr-skip", {"title":"NIFTY 50 · 5 min · 2026-03-12","subtitle":"Real candles · real engine (gap_runaway.js, default settings) · oversold but gap down, no trade","times":["14:30","14:35","14:40","14:45","14:50","14:55","15:00","15:05","15:10","15:15","15:20","15:25","09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55","12:00","12:05","12:10","12:15","12:20","12:25","12:30","12:35","12:40","12:45","12:50","12:55","13:00","13:05","13:10","13:15","13:20","13:25","13:30","13:35","13:40","13:45","13:50","13:55","14:00","14:05","14:10","14:15","14:20","14:25","14:30","14:35","14:40","14:45","14:50","14:55","15:00","15:05","15:10","15:15","15:20","15:25"],"candles":[[23975.8,23977.05,23924.3,23924.3],[23923.25,23939.5,23918.65,23936.8],[23938.6,23938.6,23913.7,23921.3],[23921.55,23930.4,23912.3,23916.45],[23917.4,23923.85,23894.5,23916.15],[23916.75,23916.75,23871.8,23872.4],[23874.8,23913.1,23871.65,23883.95],[23887.15,23896.4,23854.35,23878.9],[23880.55,23885.85,23857.5,23861.9],[23864.2,23879.6,23856.45,23874.55],[23876.5,23878.45,23846.25,23860.25],[23860.55,23860.55,23834.3,23848.2],[23674.85,23690.85,23556.3,23563.15],[23564.5,23601.4,23557.85,23601.4],[23601.65,23612.75,23586.85,23603.35],[23600.45,23619.6,23589.55,23592.65],[23593.95,23610.1,23571.85,23572.85],[23574.5,23606.9,23569.4,23602.65],[23606.2,23624.55,23595.05,23623.15],[23623.5,23657,23618.45,23656.75],[23657,23696.6,23643.75,23693.8],[23695.4,23696.75,23670.6,23677.85],[23679.85,23679.85,23620.15,23628.2],[23632.45,23651.4,23605.35,23610.15],[23610.5,23615.9,23589.9,23612.65],[23614.75,23628.95,23608.5,23616.45],[23617.2,23681.55,23617.15,23666.65],[23666.35,23690.1,23632.35,23685.45],[23686.15,23720,23673.45,23712.95],[23714.35,23721.05,23684.65,23692.7],[23693.4,23704.85,23690.6,23694],[23694.6,23713.65,23669.3,23694.5],[23695.25,23742.15,23681.7,23740.9],[23741.6,23768.75,23741.15,23767.2],[23768.55,23774,23733.95,23738.4],[23739.45,23764.4,23737.2,23741.05],[23741.75,23756.65,23678.15,23696.9],[23700.7,23703.9,23665,23703.5],[23703.85,23713.45,23690.5,23703.3],[23704.2,23704.2,23676.6,23697.9],[23698.35,23701.25,23682.65,23697.25],[23699.4,23718.25,23689.8,23711.35],[23712.45,23725,23688.1,23694.3],[23695.7,23718.85,23692.5,23712.95],[23713.9,23742.2,23708.15,23739.85],[23739.45,23748.1,23735.3,23744.2],[23744.4,23748.45,23718.1,23725.65],[23727.8,23750.65,23710.5,23749.35],[23751.15,23751.15,23721.8,23724.3],[23724.3,23755.95,23724,23749.2],[23750.85,23759.2,23735.2,23744.1],[23744.4,23747.6,23717.5,23721.9],[23721.75,23731.7,23702.4,23709.75],[23710.65,23722.35,23702.3,23715.8],[23716.7,23731.25,23714.1,23722.1],[23722.85,23728.9,23701.5,23708.35],[23710.7,23723.8,23700.8,23717],[23717.85,23718.7,23691.4,23702.75],[23702.45,23702.6,23656.4,23682.55],[23683.55,23722.4,23678.75,23715.25],[23718.3,23718.5,23697.25,23702.25],[23702.95,23744.1,23695.8,23740.35],[23741.7,23767.95,23732.7,23764.3],[23765.25,23815.8,23764.7,23804.3],[23805.25,23819.1,23796.6,23811.8],[23813.6,23833.15,23784.25,23789.9],[23789.35,23801.25,23776.25,23782.55],[23783.6,23793.1,23762.5,23771.45],[23771.85,23772,23738.6,23738.6],[23740.55,23762.45,23733.5,23752.85],[23752.95,23771.55,23720.05,23721.5],[23721.7,23747.65,23701.95,23738.9],[23739.35,23758.15,23723.3,23749.35],[23749.5,23755.8,23730.35,23732.95],[23734.15,23744.3,23709.65,23711.8],[23713.5,23739.95,23710.4,23738.3],[23739.3,23745.15,23721.4,23724.95],[23726.15,23726.15,23667.6,23673.8],[23673.15,23684.1,23657.2,23672.55],[23674.25,23674.7,23605.55,23633.05],[23634.5,23647.95,23619.95,23639.45],[23641.1,23655.8,23609.95,23654.9],[23655.65,23669.05,23637.9,23666.8],[23665.35,23679.8,23628.8,23633.9],[23636.35,23652,23624.75,23649.55],[23650.65,23652.15,23630.55,23635.6],[23635.55,23643.1,23624.6,23639.35]],"overlays":[{"name":"EMA21","data":[23956.69,23954.89,23951.83,23948.62,23945.66,23939,23934,23928.99,23922.89,23918.5,23913.2,23907.29,23876.01,23851.04,23828.52,23807.08,23785.79,23769.14,23755.87,23746.86,23742.03,23736.2,23726.38,23715.81,23706.44,23698.25,23695.38,23694.48,23696.16,23695.84,23695.68,23695.57,23699.69,23705.83,23708.79,23711.72,23710.37,23709.75,23709.16,23708.14,23707.15,23707.53,23706.33,23706.93,23709.92,23713.04,23714.19,23717.38,23718.01,23720.85,23722.96,23722.86,23721.67,23721.14,23721.23,23720.05,23719.78,23718.23,23714.99,23715.01,23713.85,23716.26,23720.63,23728.23,23735.83,23740.75,23744.55,23746.99,23746.23,23746.83,23744.53,23744.02,23744.5,23743.45,23740.57,23740.37,23738.97,23733.04,23727.54,23718.95,23711.72,23706.56,23702.94,23696.67,23692.38,23687.22,23682.87],"color":"#fbbf24","width":1.6},{"name":"Yesterday's close","data":[23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2,23848.2],"color":"#e5e7eb","width":1.1,"dash":true}],"hlines":[{"price":23848.2,"label":"yesterday's close 23,848.20","color":"#e5e7eb","labelAt":0.5}],"zones":[],"shades":[{"from":0,"to":11,"label":"yesterday","color":"rgba(148,163,184,0.08)","labelBottom":true}],"markers":[{"i":12,"price":23674.85,"type":"dot","text":"open 23,674.85: gap the wrong way, no trade","color":"#f59e0b"}],"legend":[{"label":"EMA21 (5-min trail)","color":"#fbbf24"},{"label":"Yesterday's close","color":"#e5e7eb"}]});
+</script>
+</body>
+</html>

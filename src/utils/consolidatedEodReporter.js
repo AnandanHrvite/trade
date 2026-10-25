@@ -80,6 +80,8 @@ function collectTodayStats(istDate) {
     PIVOT_EMA_ST:      { trades: 0, wins: 0, losses: 0, pnl: 0 },
     BN_PIVOT_EMA_ST:   { trades: 0, wins: 0, losses: 0, pnl: 0 },
     SAIL_PIVOT_EMA_ST: { trades: 0, wins: 0, losses: 0, pnl: 0 },
+    GAP_RUNAWAY:       { trades: 0, wins: 0, losses: 0, pnl: 0 },
+    GAP_RUNAWAY_STK:   { trades: 0, wins: 0, losses: 0, pnl: 0 },
     SIMPLE930:       { trades: 0, wins: 0, losses: 0, pnl: 0 },
   };
 

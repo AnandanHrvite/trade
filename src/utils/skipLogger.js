@@ -53,6 +53,8 @@ const FILE_PREFIX_BY_MODE = {
   pivot_ema_st: "pivot_ema_st_paper_skips_",
   bn_pivot_ema_st: "bn_pivot_ema_st_paper_skips_",
   sail_pivot_ema_st: "sail_pivot_ema_st_paper_skips_",
+  gap_runaway: "gap_runaway_paper_skips_",
+  gap_runaway_stk: "gap_runaway_stk_paper_skips_",
   simple930: "simple930_paper_skips_",
 };
 

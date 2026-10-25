@@ -1352,6 +1352,15 @@ function saveSailPivotEmaStPosition(position, sessionMeta) { return _sailPivotEm
 function loadSailPivotEmaStPosition() { return _sailPivotEmaStPersist.load(); }
 function clearSailPivotEmaStPosition() { return _sailPivotEmaStPersist.clear(); }
 
+// ── GAP_RUNAWAY (GAP_runAway__Kirubakaran, NIFTY options, Zerodha) ──────────
+// Same snapshot shape as the PIVOT_EMA_ST family (one builder, so it cannot
+// drift): ONE stop — yesterday's close, the gap-fill level — fixed for the trade.
+// The stock scanner (GAP_RUNAWAY_STK) is paper-only and keeps its own file.
+const _gapRunawayPersist = _makePivotEmaStPersist("GAP_RUNAWAY", path.join(DATA_DIR, ".active_gap_runaway_position.json"));
+function saveGapRunawayPosition(position, sessionMeta) { return _gapRunawayPersist.save(position, sessionMeta); }
+function loadGapRunawayPosition() { return _gapRunawayPersist.load(); }
+function clearGapRunawayPosition() { return _gapRunawayPersist.clear(); }
+
 // ── SIMPLE_9:30 (09:25 ITM pick, premium-trigger entry, Zerodha) ────────────
 // Unlike the frozen-price strategies above, this one DOES
 // carry live trail state: `stop` ratchets up behind `peak` on every new premium
@@ -1581,6 +1590,7 @@ module.exports = {
   savePivotEmaStPosition, loadPivotEmaStPosition, clearPivotEmaStPosition,
   saveBnPivotEmaStPosition, loadBnPivotEmaStPosition, clearBnPivotEmaStPosition,
   saveSailPivotEmaStPosition, loadSailPivotEmaStPosition, clearSailPivotEmaStPosition,
+  saveGapRunawayPosition, loadGapRunawayPosition, clearGapRunawayPosition,
   saveSimple930Position, loadSimple930Position, clearSimple930Position,
   // Boot-reconcile helpers (corrupt files moved aside, previous-day snapshots kept)
   getCorruptSnapshots, getStaleSnapshots, clearStaleSnapshot,

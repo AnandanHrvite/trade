@@ -47,6 +47,10 @@ const STRATEGY_MODES = [
   { mode: 'PIVOT_EMA_ST', label: 'PIVOT_EMA_ST', envKey: 'PIVOT_EMA_ST_MODE_ENABLED', envDefault: 'true' },
   { mode: 'BN_PIVOT_EMA_ST', label: 'BN PIVOT_EMA_ST', envKey: 'BN_PIVOT_EMA_ST_MODE_ENABLED', envDefault: 'true' },
   { mode: 'SAIL_PIVOT_EMA_ST', label: 'SAIL PIVOT_EMA_ST', envKey: 'SAIL_PIVOT_EMA_ST_MODE_ENABLED', envDefault: 'true' },
+  // GAP_RUNAWAY (GAP_runAway__Kirubakaran) ships ON — the user wants Start All (Paper) to start it,
+  // and its stock scanner beside it (paper only, no live route).
+  { mode: 'GAP_RUNAWAY', label: 'GAP_runAway__Kirubakaran', envKey: 'GAP_RUNAWAY_MODE_ENABLED', envDefault: 'true' },
+  { mode: 'GAP_RUNAWAY_STK', label: 'GAP_runAway Stocks', envKey: 'GAP_RUNAWAY_STK_MODE_ENABLED', envDefault: 'true' },
   { mode: 'SIMPLE930', label: 'SIMPLE_9:30', envKey: 'SIMPLE930_MODE_ENABLED' },
   { mode: 'EARLYBIRD',  label: 'EarlyBird',    envKey: 'EARLYBIRD_MODE_ENABLED'  },
 ];
@@ -82,6 +86,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   let _stRsiPivBbMode = null;
   let _sailVwapStMode = null;
   let _pivotEmaStMode = null, _bnPivotEmaStMode = null, _sailPivotEmaStMode = null;
+  let _gapRunawayMode = null, _gapRunawayStkMode = null;
   let _simple930Mode = null;
   let _anyTradeActive = false;
   try {
@@ -105,6 +110,8 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     _pivotEmaStMode = sss.getPivotEmaStMode ? sss.getPivotEmaStMode() : null;
     _bnPivotEmaStMode = sss.getBnPivotEmaStMode ? sss.getBnPivotEmaStMode() : null;
     _sailPivotEmaStMode = sss.getSailPivotEmaStMode ? sss.getSailPivotEmaStMode() : null;
+    _gapRunawayMode = sss.getGapRunawayMode ? sss.getGapRunawayMode() : null;
+    _gapRunawayStkMode = sss.getGapRunawayStkMode ? sss.getGapRunawayStkMode() : null;
     _simple930Mode = sss.getSimple930Mode ? sss.getSimple930Mode() : null;
     _anyTradeActive = sss.isAnyActive ? sss.isAnyActive() : false;
   } catch (_) {}
@@ -161,6 +168,9 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const pivotEmaStModeOn     = (process.env.PIVOT_EMA_ST_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const bnPivotEmaStModeOn   = (process.env.BN_PIVOT_EMA_ST_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const sailPivotEmaStModeOn = (process.env.SAIL_PIVOT_EMA_ST_MODE_ENABLED || 'true').toLowerCase() === 'true';
+  // GAP_RUNAWAY (NIFTY) + its stock scanner — default ON.
+  const gapRunawayModeOn    = (process.env.GAP_RUNAWAY_MODE_ENABLED || 'true').toLowerCase() === 'true';
+  const gapRunawayStkModeOn = (process.env.GAP_RUNAWAY_STK_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const simple930ModeOn = (process.env.SIMPLE930_MODE_ENABLED || 'true').toLowerCase() === 'true';
 
   // ── Per-module menu-visibility toggles (managed from Settings page) ──
@@ -279,6 +289,12 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const showSailPivotEmaStPaper       = (process.env.UI_SHOW_SAIL_PIVOT_EMA_ST_PAPER        || 'true').toLowerCase()  === 'true';
   const showSailPivotEmaStLiveHarness = (process.env.UI_SHOW_SAIL_PIVOT_EMA_ST_LIVE_HARNESS || 'false').toLowerCase() === 'true';
   const showSailPivotEmaStHistory     = (process.env.UI_SHOW_SAIL_PIVOT_EMA_ST_HISTORY      || 'true').toLowerCase()  === 'true';
+  // GAP_RUNAWAY — no Backtest page; the stock scanner has no Live page either.
+  const showGapRunawayPaper        = (process.env.UI_SHOW_GAP_RUNAWAY_PAPER         || 'true').toLowerCase()  === 'true';
+  const showGapRunawayLiveHarness  = (process.env.UI_SHOW_GAP_RUNAWAY_LIVE_HARNESS  || 'false').toLowerCase() === 'true';
+  const showGapRunawayHistory      = (process.env.UI_SHOW_GAP_RUNAWAY_HISTORY       || 'true').toLowerCase()  === 'true';
+  const showGapRunawayStkPaper     = (process.env.UI_SHOW_GAP_RUNAWAY_STK_PAPER     || 'true').toLowerCase()  === 'true';
+  const showGapRunawayStkHistory   = (process.env.UI_SHOW_GAP_RUNAWAY_STK_HISTORY   || 'true').toLowerCase()  === 'true';
   // SIMPLE_9:30 — never traded; ships visible but its Live page is triple-gated to dry-run.
   const showSimple930Backtest = (process.env.UI_SHOW_SIMPLE930_BACKTEST    || 'false').toLowerCase()  === 'true';
   const showSimple930Paper    = (process.env.UI_SHOW_SIMPLE930_PAPER       || 'true').toLowerCase()  === 'true';
@@ -317,6 +333,8 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const pivotEmaStKeys = ['pivotEmaStPaper', 'pivotEmaStLiveHarness', 'pivotEmaStHistory'];
   const bnPivotEmaStKeys = ['bnPivotEmaStPaper', 'bnPivotEmaStLiveHarness', 'bnPivotEmaStHistory'];
   const sailPivotEmaStKeys = ['sailPivotEmaStPaper', 'sailPivotEmaStLiveHarness', 'sailPivotEmaStHistory'];
+  const gapRunawayKeys = ['gapRunawayPaper', 'gapRunawayLiveHarness', 'gapRunawayHistory'];
+  const gapRunawayStkKeys = ['gapRunawayStkPaper', 'gapRunawayStkHistory'];
   const simple930Keys = ['simple930Backtest', 'simple930Paper', 'simple930Live', 'simple930History'];
   const earlyBirdKeys = ['earlyBirdBacktest', 'earlyBirdPaper', 'earlyBirdLive', 'earlyBirdHistory'];
   // Dashboard (top-level) and System are collapsible groups too, so the whole
@@ -342,6 +360,8 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const isPivotEmaStOpen = pivotEmaStKeys.includes(activePage);
   const isBnPivotEmaStOpen = bnPivotEmaStKeys.includes(activePage);
   const isSailPivotEmaStOpen = sailPivotEmaStKeys.includes(activePage);
+  const isGapRunawayOpen = gapRunawayKeys.includes(activePage);
+  const isGapRunawayStkOpen = gapRunawayStkKeys.includes(activePage);
   const isSimple930Open = simple930Keys.includes(activePage);
   const isEarlyBirdOpen = earlyBirdKeys.includes(activePage);
   const isSystemOpen    = systemKeys.includes(activePage);
@@ -362,6 +382,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     || isStRsiPivBbOpen
     || isSailVwapStOpen
     || isPivotEmaStOpen || isBnPivotEmaStOpen || isSailPivotEmaStOpen
+    || isGapRunawayOpen || isGapRunawayStkOpen
     || isEarlyBirdOpen || isSystemOpen
     || commodityKeys.includes(activePage);
   const isDashboardOpen = dashboardKeys.includes(activePage) || !anyGroupOpen;
@@ -388,6 +409,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const pivotEmaStPaperRunning = _pivotEmaStMode === 'PIVOT_EMA_ST_PAPER';
   const bnPivotEmaStPaperRunning = _bnPivotEmaStMode === 'BN_PIVOT_EMA_ST_PAPER';
   const sailPivotEmaStPaperRunning = _sailPivotEmaStMode === 'SAIL_PIVOT_EMA_ST_PAPER';
+  const gapRunawayPaperRunning = _gapRunawayMode === 'GAP_RUNAWAY_PAPER';
   const simple930PaperRunning = _simple930Mode === 'SIMPLE930_PAPER';
 
   // Build a ema_rsi_st items list with per-feature toggle
@@ -546,6 +568,18 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     ...(showSailPivotEmaStHistory  ? [{ key: 'sailPivotEmaStHistory',  href: '/sail_pivot_ema_st-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 
+  // GAP_RUNAWAY — no Backtest; /gap_runaway-live IS the paper-wrapping harness,
+  // hidden while its Paper runs. The stock scanner is Paper + History only.
+  const gapRunawayItems = [
+    ...(showGapRunawayPaper    ? [{ key: 'gapRunawayPaper',    href: '/gap_runaway-paper/status', icon: '📋', label: 'Paper'    }] : []),
+    ...(showGapRunawayLiveHarness && !gapRunawayPaperRunning ? [{ key: 'gapRunawayLiveHarness', href: '/gap_runaway-live', icon: '🔧', label: 'Live (Harness)' }] : []),
+    ...(showGapRunawayHistory  ? [{ key: 'gapRunawayHistory',  href: '/gap_runaway-paper/history', icon: '📜', label: 'History' }] : []),
+  ];
+  const gapRunawayStkItems = [
+    ...(showGapRunawayStkPaper   ? [{ key: 'gapRunawayStkPaper',   href: '/gap_runaway_stk-paper/status', icon: '📋', label: 'Scanner Paper' }] : []),
+    ...(showGapRunawayStkHistory ? [{ key: 'gapRunawayStkHistory', href: '/gap_runaway_stk-paper/history', icon: '📜', label: 'History' }] : []),
+  ];
+
   const simple930Items = [
     ...(showSimple930Backtest ? [{ key: 'simple930Backtest', href: '/simple930-backtest',     icon: '🔍', label: 'Backtest' }] : []),
     ...(showSimple930Paper    ? [{ key: 'simple930Paper',    href: '/simple930-paper/status', icon: '📋', label: 'Paper'    }] : []),
@@ -699,6 +733,19 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       groupId: 'nav-sail_pivot_ema_st',
       parent: 'stocks',
       items: sailPivotEmaStItems,
+    }] : []),
+    // ── GAP_RUNAWAY — NIFTY options under NIFTY, its stock scanner under STOCKS ──
+    ...(gapRunawayModeOn ? [{
+      header: 'GAP_RUNAWAY', collapsible: true, collapsed: !isGapRunawayOpen,
+      groupId: 'nav-gap_runaway',
+      parent: 'nifty',
+      items: gapRunawayItems,
+    }] : []),
+    ...(gapRunawayStkModeOn ? [{
+      header: 'GAP_RUNAWAY SCANNER', collapsible: true, collapsed: !isGapRunawayStkOpen,
+      groupId: 'nav-gap_runaway_stk',
+      parent: 'stocks',
+      items: gapRunawayStkItems,
     }] : []),
     // The same engine on NIFTY BANK — so it sits under the BANK NIFTY parent
     // beside PIVOT RSI ST, not under NIFTY with its sibling.
@@ -889,6 +936,11 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       (p.key === 'bnPivotEmaStPaper' && _bnPivotEmaStMode === 'BN_PIVOT_EMA_ST_PAPER' ? _pesOnBadge : '') +
       (p.key === 'sailPivotEmaStLiveHarness' && _sailPivotEmaStMode === 'SAIL_PIVOT_EMA_ST_LIVE' ? `<span class="sb-nav-badge live">LIVE</span>` : '') +
       (p.key === 'sailPivotEmaStPaper' && _sailPivotEmaStMode === 'SAIL_PIVOT_EMA_ST_PAPER' ? _pesOnBadge : '');
+    // GAP_RUNAWAY — LIVE on the harness item, ON on the Paper items.
+    const gapRunawayBadges =
+      (p.key === 'gapRunawayLiveHarness' && _gapRunawayMode === 'GAP_RUNAWAY_LIVE' ? `<span class="sb-nav-badge live">LIVE</span>` : '') +
+      (p.key === 'gapRunawayPaper' && _gapRunawayMode === 'GAP_RUNAWAY_PAPER' ? _pesOnBadge : '') +
+      (p.key === 'gapRunawayStkPaper' && _gapRunawayStkMode === 'GAP_RUNAWAY_STK_PAPER' ? _pesOnBadge : '');
 
     const simple930LiveBadge = p.key === 'simple930Live' && _simple930Mode === 'SIMPLE930_LIVE'
       ? `<span class="sb-nav-badge live">LIVE</span>`
@@ -904,6 +956,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       ${stRsiPivBbLiveBadge}${stRsiPivBbPaperBadge}
       ${sailVwapStLiveBadge}${sailVwapStPaperBadge}
       ${pivotEmaStBadges}
+      ${gapRunawayBadges}
     </a>`;
   }
 
@@ -949,6 +1002,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   // STOCKS opens when its own page is showing (and then NIFTY stays closed).
   parentOpen.stocks = sailVwapStKeys.includes(activePage);
   if (sailPivotEmaStKeys.includes(activePage)) parentOpen.stocks = true;   // SAIL_PIVOT_EMA_ST is a STOCKS page too
+  if (gapRunawayStkKeys.includes(activePage)) parentOpen.stocks = true;    // the GAP_RUNAWAY stock scanner too
   if (parentOpen.stocks) parentOpen.nifty = false;
 
   function renderParents() {
@@ -2577,6 +2631,8 @@ window.__ltInit = true;
     '.mode-pivot_ema_st{color:#0369a1!important;}',
     '.mode-bn_pivot_ema_st{color:#be185d!important;}',
     '.mode-sail_pivot_ema_st{color:#a16207!important;}',
+    '.mode-gap_runaway{color:#7c3aed!important;}',
+    '.mode-gap_runaway_stk{color:#9333ea!important;}',
     '.mode-simple930{color:#c2410c!important;}',
     '.brk-action,.brk-action.re-login{color:#1d4ed8!important;}',
     '.brk-wallet-sub .zero,.pnl-flat,.ms-caret,.log-time,.da-empty,.bc-link,.tbar label,.pager label,.run-bar label,#dashRange label{color:#4b5769!important;}',

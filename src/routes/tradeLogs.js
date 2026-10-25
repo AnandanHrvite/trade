@@ -50,6 +50,7 @@ const MODES = ["ema_rsi_st", "ema_rsi_st_v2", "bb_rsi", "pa", "orb", "ema9vwap",
 MODES.push("st_rsi_piv_bb"); // ST_RSI_PIV_BB
 MODES.push("sail_vwap_st"); // SAIL_VWAP_ST
 MODES.push("pivot_ema_st", "bn_pivot_ema_st", "sail_pivot_ema_st"); // PIVOT_EMA_ST family
+MODES.push("gap_runaway", "gap_runaway_stk"); // GAP_RUNAWAY (NIFTY) + its stock scanner
 
 function validMode(m) { return MODES.includes(m); }
 function validDate(d) { return typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d); }
@@ -744,6 +745,9 @@ function enabledModesFromEnv() {
     pivot_ema_st: on(process.env.PIVOT_EMA_ST_MODE_ENABLED),
     bn_pivot_ema_st: on(process.env.BN_PIVOT_EMA_ST_MODE_ENABLED),
     sail_pivot_ema_st: on(process.env.SAIL_PIVOT_EMA_ST_MODE_ENABLED),
+    // GAP_RUNAWAY + its stock scanner default ON.
+    gap_runaway: on(process.env.GAP_RUNAWAY_MODE_ENABLED),
+    gap_runaway_stk: on(process.env.GAP_RUNAWAY_STK_MODE_ENABLED),
     bb_rsi:    on(process.env.BB_RSI_MODE_ENABLED),
     pa:       on(process.env.PA_MODE_ENABLED),
     orb:      on(process.env.ORB_MODE_ENABLED),
@@ -819,6 +823,8 @@ router.get("/", (req, res) => {
     .mode-pivot_ema_st { color:#7dd3fc; }
     .mode-bn_pivot_ema_st { color:#f9a8d4; }
     .mode-sail_pivot_ema_st { color:#fde68a; }
+    .mode-gap_runaway { color:#c4b5fd; }
+    .mode-gap_runaway_stk { color:#d8b4fe; }
     .mode-bb_rsi    { color:#fbbf24; }
     .mode-pa       { color:#a78bfa; }
     .mode-orb      { color:#10b981; }
@@ -1270,6 +1276,8 @@ ${buildSidebar('tradeLogs', liveActive)}
     { key: 'pivot_ema_st', label: 'PIVOT_EMA_ST', cls: 'mode-pivot_ema_st' },
     { key: 'bn_pivot_ema_st', label: 'BN PIVOT_EMA_ST', cls: 'mode-bn_pivot_ema_st' },
     { key: 'sail_pivot_ema_st', label: 'SAIL PIVOT_EMA_ST', cls: 'mode-sail_pivot_ema_st' },
+    { key: 'gap_runaway', label: 'GAP_runAway__Kirubakaran', cls: 'mode-gap_runaway' },
+    { key: 'gap_runaway_stk', label: 'GAP_runAway Stocks', cls: 'mode-gap_runaway_stk' },
     { key: 'bb_rsi',    label: 'BB_RSI',        cls: 'mode-bb_rsi' },
     { key: 'pa',       label: 'PRICE ACTION', cls: 'mode-pa' },
     { key: 'orb',      label: 'ORB',          cls: 'mode-orb' },
@@ -1302,6 +1310,8 @@ ${buildSidebar('tradeLogs', liveActive)}
   _filesPage.pivot_ema_st = 1; _skipsPage.pivot_ema_st = 1;
   _filesPage.bn_pivot_ema_st = 1; _skipsPage.bn_pivot_ema_st = 1;
   _filesPage.sail_pivot_ema_st = 1; _skipsPage.sail_pivot_ema_st = 1;
+  _filesPage.gap_runaway = 1; _skipsPage.gap_runaway = 1;
+  _filesPage.gap_runaway_stk = 1; _skipsPage.gap_runaway_stk = 1;
   var _auditPage  = 1;
   var _view = { mode:null, date:null, kind:null, page:1, total:0, pageSize:25 }; // modal state
 

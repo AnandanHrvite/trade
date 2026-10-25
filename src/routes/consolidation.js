@@ -37,6 +37,9 @@ const SOURCES = [
   { mode: "PIVOT_EMA_ST", file: path.join(DATA_DIR, "pivot_ema_st_paper_trades.json"), label: "PIVOT_EMA_ST", color: "#38bdf8" },
   { mode: "BN_PIVOT_EMA_ST", file: path.join(DATA_DIR, "bn_pivot_ema_st_paper_trades.json"), label: "BN PIVOT_EMA_ST", color: "#f472b6" },
   { mode: "SAIL_PIVOT_EMA_ST", file: path.join(DATA_DIR, "sail_pivot_ema_st_paper_trades.json"), label: "SAIL PIVOT_EMA_ST", color: "#fcd34d" },
+  // GAP_RUNAWAY (NIFTY options) + its stock scanner (intraday shares) — each its own trades file (default ON).
+  { mode: "GAP_RUNAWAY", file: path.join(DATA_DIR, "gap_runaway_paper_trades.json"), label: "GAP_runAway__Kirubakaran", color: "#a78bfa" },
+  { mode: "GAP_RUNAWAY_STK", file: path.join(DATA_DIR, "gap_runaway_stk_paper_trades.json"), label: "GAP_runAway Stocks", color: "#c084fc" },
   { mode: "BB_RSI",    file: path.join(DATA_DIR, "bb_rsi_paper_trades.json"),    label: "BB_RSI", color: "#f59e0b" },
   { mode: "PA",       file: path.join(DATA_DIR, "pa_paper_trades.json"),       label: "Price Action", color: "#a855f7" },
   { mode: "ORB",      file: path.join(DATA_DIR, "orb_paper_trades.json"),      label: "ORB", color: "#10b981" },
@@ -238,6 +241,8 @@ router.get("/", (req, res) => {
     .badge-PIVOT_EMA_ST{background:rgba(56,189,248,0.12);color:#38bdf8;border:0.5px solid rgba(56,189,248,0.3);}
     .badge-BN_PIVOT_EMA_ST{background:rgba(244,114,182,0.12);color:#f472b6;border:0.5px solid rgba(244,114,182,0.3);}
     .badge-SAIL_PIVOT_EMA_ST{background:rgba(252,211,77,0.12);color:#fcd34d;border:0.5px solid rgba(252,211,77,0.3);}
+    .badge-GAP_RUNAWAY{background:rgba(167,139,250,0.12);color:#a78bfa;border:0.5px solid rgba(167,139,250,0.3);}
+    .badge-GAP_RUNAWAY_STK{background:rgba(192,132,252,0.12);color:#c084fc;border:0.5px solid rgba(192,132,252,0.3);}
     .badge-BB_RSI{background:rgba(245,158,11,0.12);color:#f59e0b;border:0.5px solid rgba(245,158,11,0.3);}
     .badge-PA{background:rgba(168,85,247,0.12);color:#a855f7;border:0.5px solid rgba(168,85,247,0.3);}
 
@@ -1243,6 +1248,7 @@ const _MODE_COLOR = { EMA_RSI_ST: '#3b82f6', EMA_RSI_ST_V2: '#38bdf8', BN_EMA_RS
 _MODE_COLOR.ST_RSI_PIV_BB = '#a3e635';
 _MODE_COLOR.SAIL_VWAP_ST = '#fda4af';
 _MODE_COLOR.PIVOT_EMA_ST = '#38bdf8'; _MODE_COLOR.BN_PIVOT_EMA_ST = '#f472b6'; _MODE_COLOR.SAIL_PIVOT_EMA_ST = '#fcd34d';
+_MODE_COLOR.GAP_RUNAWAY = '#a78bfa'; _MODE_COLOR.GAP_RUNAWAY_STK = '#c084fc';
 
 function fmtAna(v){ return '₹' + Math.round(Math.abs(v||0)).toLocaleString('en-IN'); }
 function fmtAnaSigned(v){ const n = v||0; return (n>=0?'+':'-') + '₹' + Math.round(Math.abs(n)).toLocaleString('en-IN'); }

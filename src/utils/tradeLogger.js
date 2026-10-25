@@ -64,6 +64,12 @@ const FILE_BY_MODE = {
   "bn_pivot_ema_st-live": "bn_pivot_ema_st_live_trades_log.jsonl",
   sail_pivot_ema_st: "sail_pivot_ema_st_paper_trades_log.jsonl",
   "sail_pivot_ema_st-live": "sail_pivot_ema_st_live_trades_log.jsonl",
+  // GAP_RUNAWAY (NIFTY options) + GAP_RUNAWAY_STK (stock scanner, paper only).
+  // MUST match tradeLogger's key character for character — the harness's
+  // liveLogKey, if it is ever set, must be exactly "gap_runaway-live".
+  gap_runaway: "gap_runaway_paper_trades_log.jsonl",
+  "gap_runaway-live": "gap_runaway_live_trades_log.jsonl",
+  gap_runaway_stk: "gap_runaway_stk_paper_trades_log.jsonl",
   simple930: "simple930_paper_trades_log.jsonl",
 };
 
@@ -96,6 +102,10 @@ const DAILY_PREFIX_BY_MODE = {
   "bn_pivot_ema_st-live": "bn_pivot_ema_st_live_trades_",
   sail_pivot_ema_st: "sail_pivot_ema_st_paper_trades_",
   "sail_pivot_ema_st-live": "sail_pivot_ema_st_live_trades_",
+  // GAP_RUNAWAY — MUST match tradeLogger's key character for character (see FILE_BY_MODE).
+  gap_runaway: "gap_runaway_paper_trades_",
+  "gap_runaway-live": "gap_runaway_live_trades_",
+  gap_runaway_stk: "gap_runaway_stk_paper_trades_",
   simple930: "simple930_paper_trades_",
 };
 

@@ -55,6 +55,8 @@ const PAPER_SOURCES = [
   { mode: "PIVOT_EMA_ST",      file: "pivot_ema_st_paper_trades.json" },
   { mode: "BN_PIVOT_EMA_ST",   file: "bn_pivot_ema_st_paper_trades.json" },
   { mode: "SAIL_PIVOT_EMA_ST", file: "sail_pivot_ema_st_paper_trades.json" },
+  { mode: "GAP_RUNAWAY",       file: "gap_runaway_paper_trades.json" },
+  { mode: "GAP_RUNAWAY_STK",   file: "gap_runaway_stk_paper_trades.json" },
   { mode: "BB_RSI",           file: "bb_rsi_paper_trades.json" },
   { mode: "PA",               file: "pa_paper_trades.json" },
   { mode: "ORB",              file: "orb_paper_trades.json" },
@@ -311,6 +313,8 @@ ${multiSelectCSS()}
     .badge-PIVOT_EMA_ST{background:rgba(56,189,248,0.12);color:#38bdf8;}
     .badge-BN_PIVOT_EMA_ST{background:rgba(244,114,182,0.12);color:#f472b6;}
     .badge-SAIL_PIVOT_EMA_ST{background:rgba(252,211,77,0.12);color:#fcd34d;}
+    .badge-GAP_RUNAWAY{background:rgba(167,139,250,0.12);color:#a78bfa;}
+    .badge-GAP_RUNAWAY_STK{background:rgba(192,132,252,0.12);color:#c084fc;}
     .badge-BB_RSI{background:rgba(245,158,11,0.12);color:#f59e0b;}
     .badge-PA{background:rgba(168,85,247,0.12);color:#a855f7;}
     .badge-ORB{background:rgba(16,185,129,0.12);color:#10b981;}

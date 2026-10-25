@@ -40,6 +40,8 @@ const GUIDE_MODE_BY_FILE = {
   "bn_pivot_rsi_st_strategy_guide.html": "BN_PIVOT_RSI_ST",
   "simple930_strategy_guide.html":    "SIMPLE930",
   "earlybird_strategy_guide.html":    "EARLYBIRD",
+  // GAP_RUNAWAY's guide also covers its stock scanner — see isDocVisible below.
+  "gap_runaway_strategy_guide.html":  "GAP_RUNAWAY",
 };
 
 /**
@@ -61,6 +63,10 @@ const PIVOT_CMX_KEYS = ["CRUDE", "GOLD", "SILVER"].map(c => `CMX_${c}_PIVOT_EMA_
 
 function isDocVisible(filename, enabledModes) {
   const lower = String(filename).toLowerCase();
+  // One guide for GAP_RUNAWAY (NIFTY) and its stock scanner — shown while either is on.
+  if (lower === "gap_runaway_strategy_guide.html") {
+    return enabledModes.has("GAP_RUNAWAY") || enabledModes.has("GAP_RUNAWAY_STK");
+  }
   if (lower === PIVOT_GUIDE_FILE) {
     return PIVOT_NSE_MODES.some(m => enabledModes.has(m)) ||
       PIVOT_CMX_KEYS.some(k => (process.env[k] || "true").toLowerCase() === "true");
@@ -911,6 +917,25 @@ const GUIDE_STATUS = {
       { type: "value", label: "Candle Size (min)", key: "CMX_PIVOT_EMA_ST_RESOLUTION", def: "3" },
     ] },
   ] },
+  // GAP_RUNAWAY — NIFTY options (paper + live harness) and its stock scanner (paper only).
+  "GAP_RUNAWAY_Strategy_Guide.html": { title: "GAP_runAway__Kirubakaran — Live Configuration", groups: [
+    { heading: "NIFTY", rows: [
+      { type: "bool", label: "GAP_RUNAWAY Mode (sidebar + Settings section)", key: "GAP_RUNAWAY_MODE_ENABLED", def: "true" },
+      { type: "live", label: "Live Orders (Zerodha)", enableKey: "GAP_RUNAWAY_LIVE_ENABLED", dryKey: "GAP_RUNAWAY_LIVE_DRY_RUN" },
+      { type: "value", label: "Daily RSI Length (on EMA)", key: "GAP_RUNAWAY_RSI_LENGTH", def: "10" },
+      { type: "value", label: "Daily EMA Length (RSI source)", key: "GAP_RUNAWAY_EMA_LENGTH", def: "21" },
+      { type: "value", label: "Overbought (RSI above)", key: "GAP_RUNAWAY_RSI_UPPER", def: "90" },
+      { type: "value", label: "Oversold (RSI below)", key: "GAP_RUNAWAY_RSI_LOWER", def: "10" },
+      { type: "value", label: "Minimum Gap (pts)", key: "GAP_RUNAWAY_MIN_GAP_PTS", def: "0" },
+      { type: "value", label: "Lots", key: "GAP_RUNAWAY_LOTS", def: "1" },
+    ] },
+    { heading: "Stock scanner (paper only)", rows: [
+      { type: "bool", label: "GAP_RUNAWAY Stock Scanner Mode", key: "GAP_RUNAWAY_STK_MODE_ENABLED", def: "true" },
+      { type: "value", label: "Stock List", key: "GAP_RUNAWAY_STK_UNIVERSE", def: "FNO" },
+      { type: "value", label: "Amount per Trade (₹)", key: "GAP_RUNAWAY_STK_TRADE_AMOUNT", def: "100000" },
+      { type: "value", label: "Max Trades/Day", key: "GAP_RUNAWAY_STK_MAX_TRADES", def: "3" },
+    ] },
+  ] },
   "BB_RSI_Strategy_Guide.html": { title: "BB_RSI — Live Configuration", groups: [{ rows: [
     { type: "bool", label: "BB_RSI Mode (sidebar + Settings section)", key: "BB_RSI_MODE_ENABLED", def: "true" },
     { type: "live", label: "Live Orders (Fyers)", enableKey: "BB_RSI_LIVE_ENABLED", dryKey: "BB_RSI_LIVE_DRY_RUN" },
@@ -1034,6 +1059,8 @@ const GUIDE_STATUS = {
       { type: "bool", label: "PIVOT_EMA_ST Mode", key: "PIVOT_EMA_ST_MODE_ENABLED", def: "true" },
       { type: "bool", label: "BN PIVOT_EMA_ST Mode (NIFTY BANK)", key: "BN_PIVOT_EMA_ST_MODE_ENABLED", def: "true" },
       { type: "bool", label: "SAIL PIVOT_EMA_ST Mode (SAIL stock options)", key: "SAIL_PIVOT_EMA_ST_MODE_ENABLED", def: "true" },
+      { type: "bool", label: "GAP_runAway__Kirubakaran Mode (NIFTY)", key: "GAP_RUNAWAY_MODE_ENABLED", def: "true" },
+      { type: "bool", label: "GAP_runAway Stock Scanner Mode", key: "GAP_RUNAWAY_STK_MODE_ENABLED", def: "true" },
       { type: "bool", label: "BB_RSI Mode", key: "BB_RSI_MODE_ENABLED", def: "true" },
       { type: "bool", label: "Price Action Mode", key: "PA_MODE_ENABLED", def: "true" },
       { type: "bool", label: "ORB Mode", key: "ORB_MODE_ENABLED", def: "true" },

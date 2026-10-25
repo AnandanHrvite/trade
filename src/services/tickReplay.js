@@ -1113,6 +1113,11 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     ss_clearBnPivotEmaStMode:    sharedSocketState.clearBnPivotEmaStMode,
     ss_setSailPivotEmaStMode:    sharedSocketState.setSailPivotEmaStMode,
     ss_clearSailPivotEmaStMode:  sharedSocketState.clearSailPivotEmaStMode,
+    // GAP_RUNAWAY (+ its stock scanner) is not replayable either — same rule.
+    ss_setGapRunawayMode:        sharedSocketState.setGapRunawayMode,
+    ss_clearGapRunawayMode:      sharedSocketState.clearGapRunawayMode,
+    ss_setGapRunawayStkMode:     sharedSocketState.setGapRunawayStkMode,
+    ss_clearGapRunawayStkMode:   sharedSocketState.clearGapRunawayStkMode,
     // EMA_RSI_ST_V2 likewise keeps its OWN mutex slot, separate from V1's
     // primaryMode, so it needs its own pair here too.
     // BN_EMA_RSI_ST_V2 (NIFTY BANK) has its OWN mutex slot as well — the same
@@ -1679,6 +1684,10 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     sharedSocketState.clearBnPivotEmaStMode    = () => {};
     sharedSocketState.setSailPivotEmaStMode    = () => {};
     sharedSocketState.clearSailPivotEmaStMode  = () => {};
+    sharedSocketState.setGapRunawayMode        = () => {};
+    sharedSocketState.clearGapRunawayMode      = () => {};
+    sharedSocketState.setGapRunawayStkMode     = () => {};
+    sharedSocketState.clearGapRunawayStkMode   = () => {};
     sharedSocketState.setBnEmaRsiStV2Mode    = () => {};
     sharedSocketState.clearBnEmaRsiStV2Mode  = () => {};
     sharedSocketState.setSimple930Active     = () => {};
@@ -1966,6 +1975,10 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     sharedSocketState.clearBnPivotEmaStMode    = orig.ss_clearBnPivotEmaStMode;
     sharedSocketState.setSailPivotEmaStMode    = orig.ss_setSailPivotEmaStMode;
     sharedSocketState.clearSailPivotEmaStMode  = orig.ss_clearSailPivotEmaStMode;
+    sharedSocketState.setGapRunawayMode        = orig.ss_setGapRunawayMode;
+    sharedSocketState.clearGapRunawayMode      = orig.ss_clearGapRunawayMode;
+    sharedSocketState.setGapRunawayStkMode     = orig.ss_setGapRunawayStkMode;
+    sharedSocketState.clearGapRunawayStkMode   = orig.ss_clearGapRunawayStkMode;
     sharedSocketState.setBnEmaRsiStV2Mode    = orig.ss_setBnEmaRsiStV2Mode;
     sharedSocketState.clearBnEmaRsiStV2Mode  = orig.ss_clearBnEmaRsiStV2Mode;
     sharedSocketState.setSimple930Active     = orig.ss_setSimple930Active;
@@ -2823,6 +2836,8 @@ function replayPreflight() {
   if (sharedSocketState.isPivotEmaStActive && sharedSocketState.isPivotEmaStActive()) activeModes.push(sharedSocketState.getPivotEmaStMode() || "pivot_ema_st");
   if (sharedSocketState.isBnPivotEmaStActive && sharedSocketState.isBnPivotEmaStActive()) activeModes.push(sharedSocketState.getBnPivotEmaStMode() || "bn_pivot_ema_st");
   if (sharedSocketState.isSailPivotEmaStActive && sharedSocketState.isSailPivotEmaStActive()) activeModes.push(sharedSocketState.getSailPivotEmaStMode() || "sail_pivot_ema_st");
+  if (sharedSocketState.isGapRunawayActive && sharedSocketState.isGapRunawayActive()) activeModes.push(sharedSocketState.getGapRunawayMode() || "gap_runaway");
+  if (sharedSocketState.isGapRunawayStkActive && sharedSocketState.isGapRunawayStkActive()) activeModes.push(sharedSocketState.getGapRunawayStkMode() || "gap_runaway_stk");
   if (sharedSocketState.isBnEmaRsiStV2Active && sharedSocketState.isBnEmaRsiStV2Active()) activeModes.push(sharedSocketState.getBnEmaRsiStV2Mode() || "bn_ema_rsi_st_v2");
   if (sharedSocketState.isSimple930Active && sharedSocketState.isSimple930Active()) activeModes.push(sharedSocketState.getSimple930Mode() || "simple930");
   if (activeModes.length > 0) {
@@ -2894,6 +2909,8 @@ function forceClearSharedState() {
     pivot_ema_st: sharedSocketState.getPivotEmaStMode ? sharedSocketState.getPivotEmaStMode() : null,
     bn_pivot_ema_st: sharedSocketState.getBnPivotEmaStMode ? sharedSocketState.getBnPivotEmaStMode() : null,
     sail_pivot_ema_st: sharedSocketState.getSailPivotEmaStMode ? sharedSocketState.getSailPivotEmaStMode() : null,
+    gap_runaway: sharedSocketState.getGapRunawayMode ? sharedSocketState.getGapRunawayMode() : null,
+    gap_runaway_stk: sharedSocketState.getGapRunawayStkMode ? sharedSocketState.getGapRunawayStkMode() : null,
     bn_ema_rsi_st_v2: sharedSocketState.getBnEmaRsiStV2Mode ? sharedSocketState.getBnEmaRsiStV2Mode() : null,
     simple930: sharedSocketState.getSimple930Mode ? sharedSocketState.getSimple930Mode() : null,
     replayInProgress: _replayInProgress,
@@ -2919,6 +2936,8 @@ function forceClearSharedState() {
   if (sharedSocketState.clearPivotEmaStMode) sharedSocketState.clearPivotEmaStMode();
   if (sharedSocketState.clearBnPivotEmaStMode) sharedSocketState.clearBnPivotEmaStMode();
   if (sharedSocketState.clearSailPivotEmaStMode) sharedSocketState.clearSailPivotEmaStMode();
+  if (sharedSocketState.clearGapRunawayMode) sharedSocketState.clearGapRunawayMode();
+  if (sharedSocketState.clearGapRunawayStkMode) sharedSocketState.clearGapRunawayStkMode();
   if (sharedSocketState.clearBnEmaRsiStV2Mode) sharedSocketState.clearBnEmaRsiStV2Mode();
   if (sharedSocketState.clearSimple930) sharedSocketState.clearSimple930();
   _replayInProgress = false;

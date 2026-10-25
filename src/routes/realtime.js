@@ -64,6 +64,12 @@ const STRATEGY_DEFS = [
   { key:'BN_PIVOT_EMA_ST', label:'BN PIVOT_EMA_ST', accentClass:'bnpivotemast', accent:'#f472b6', paperPrefix:'/bn_pivot_ema_st-paper', livePrefix:'/bn_pivot_ema_st-live', hasDayLog:true, modeFlag:'BN_PIVOT_EMA_ST_MODE_ENABLED' },
   // SAIL: Entry/Live Spot come from its OWN /status/data (SAIL, not NIFTY).
   { key:'SAIL_PIVOT_EMA_ST', label:'SAIL PIVOT_EMA_ST', accentClass:'sailpivotemast', accent:'#fcd34d', paperPrefix:'/sail_pivot_ema_st-paper', livePrefix:'/sail_pivot_ema_st-live', hasDayLog:true, modeFlag:'SAIL_PIVOT_EMA_ST_MODE_ENABLED' },
+  // GAP_RUNAWAY (GAP_runAway__Kirubakaran): NIFTY options; livePrefix is its paper-wrapping harness.
+  { key:'GAP_RUNAWAY', label:'GAP_runAway__Kirubakaran', accentClass:'gaprunaway', accent:'#a78bfa', paperPrefix:'/gap_runaway-paper', livePrefix:'/gap_runaway-live', hasDayLog:true, modeFlag:'GAP_RUNAWAY_MODE_ENABLED' },
+  // Its stock scanner — intraday shares, paper only. noLive: unlike COMMODITY (paperOnly) it is a
+  // NSE-session strategy, so it stays in the NIFTY start/stop roster; it just has no LIVE source.
+  // Its /status/data returns positions[] in the cash-equity row shape (like EarlyBird).
+  { key:'GAP_RUNAWAY_STK', label:'GAP_runAway Stocks', accentClass:'gaprunawaystk', accent:'#c084fc', paperPrefix:'/gap_runaway_stk-paper', livePrefix:null, noLive:true, hasDayLog:true, modeFlag:'GAP_RUNAWAY_STK_MODE_ENABLED' },
   { key:'SIMPLE930', label:'SIMPLE_9:30', accentClass:'simple930', accent:'#fb923c', paperPrefix:'/simple930-paper', livePrefix:'/simple930-live', hasDayLog:true, modeFlag:'SIMPLE930_MODE_ENABLED' },
   // EarlyBird trades CASH EQUITY of several stocks at once — its /status/data
   // returns `positions[]`, not a single `position`, so renderColumn below
@@ -96,6 +102,9 @@ const BROKER_OF = { EMA_RSI_ST:'ZERODHA', EMA_RSI_ST_V2:'ZERODHA', BB_RSI:'FYERS
 BROKER_OF.ST_RSI_PIV_BB = 'ZERODHA'; // Fyers candles, Zerodha orders
 BROKER_OF.SAIL_VWAP_ST = 'ZERODHA'; // Fyers candles, Zerodha orders
 BROKER_OF.PIVOT_EMA_ST = 'ZERODHA'; BROKER_OF.BN_PIVOT_EMA_ST = 'ZERODHA'; BROKER_OF.SAIL_PIVOT_EMA_ST = 'ZERODHA'; // Fyers candles, Zerodha orders
+// GAP_RUNAWAY / GAP_RUNAWAY_STK are deliberately NOT in BROKER_OF: they run on their OWN paper
+// capital (GAP_RUNAWAY_CAPITAL / GAP_RUNAWAY_STK_CAPITAL), never the Zerodha pool, so listing
+// them under that pool would mislead. (GAP_RUNAWAY's live orders, when armed, go to Zerodha.)
 function brokerPools(strategies) {
   // Same fallback as capitalPool.baseCapital — the ribbon must show the amount the gate uses.
   const inv = (v) => (n => Number.isFinite(n) && n >= 0 ? n : 100000)(parseFloat(v || '100000'));
@@ -154,11 +163,11 @@ function renderPage({ liveActive, sidebarKey = "realtime", autoFlipBack = false 
   const endpointsJson = JSON.stringify({
     PAPER: Object.fromEntries(strategies.map(s => [s.key, s.paperPrefix + '/status/data'])),
     // null = paper-only (COMMODITY): nothing to poll under the LIVE source.
-    LIVE:  Object.fromEntries(strategies.map(s => [s.key, s.paperOnly ? null : s.livePrefix + '/status/data'])),
+    LIVE:  Object.fromEntries(strategies.map(s => [s.key, (s.paperOnly || s.noLive) ? null : s.livePrefix + '/status/data'])),
   });
   const statusPagesJson = JSON.stringify({
     PAPER: Object.fromEntries(strategies.map(s => [s.key, s.paperPrefix + '/status'])),
-    LIVE:  Object.fromEntries(strategies.map(s => [s.key, (s.paperOnly ? s.paperPrefix : s.livePrefix) + '/status'])),
+    LIVE:  Object.fromEntries(strategies.map(s => [s.key, ((s.paperOnly || s.noLive) ? s.paperPrefix : s.livePrefix) + '/status'])),
   });
   // Manual square-off targets. The LIVE prefixes for the newer strategies are
   // paper-wrapping harnesses with no /exit of their own — the paper engine owns
@@ -183,7 +192,7 @@ function renderPage({ liveActive, sidebarKey = "realtime", autoFlipBack = false 
   // no-op when idle), so the HTTP response alone cannot tell running from idle.
   const stopUrlsJson    = JSON.stringify(strategies.map(s => ([
     { key: s.key, mode: 'PAPER', url: s.paperPrefix + '/stop', statusUrl: s.paperPrefix + '/status/data' },
-    ...(s.paperOnly ? [] : [{ key: s.key, mode: 'LIVE',  url: s.livePrefix  + '/stop', statusUrl: s.livePrefix  + '/status/data' }]),
+    ...((s.paperOnly || s.noLive) ? [] : [{ key: s.key, mode: 'LIVE',  url: s.livePrefix  + '/stop', statusUrl: s.livePrefix  + '/status/data' }]),
   ])).flat());
   const paperOnlyJson   = JSON.stringify(strategies.filter(s => s.paperOnly).map(s => s.key));
 
@@ -330,6 +339,8 @@ ${faviconLink()}
   .card.pivotemast { border-top-color:#38bdf8; }
   .card.bnpivotemast { border-top-color:#f472b6; }
   .card.sailpivotemast { border-top-color:#fcd34d; }
+  .card.gaprunaway { border-top-color:#a78bfa; }
+  .card.gaprunawaystk { border-top-color:#c084fc; }
   .card.simple930 { border-top-color:#fb923c; }
   .card.earlybird { border-top-color:#14b8a6; }
   .card.cmx { border-top-color:#eab308; }
@@ -750,7 +761,7 @@ function renderPositionStandard(d, pos) {
 // how many are open and the combined unrealised P&L — followed by one compact
 // line per stock. A SHORT is a real intraday short sale, so its points moved is
 // (entry − live) rather than (live − entry).
-function renderPositionsEarlyBird(d, list) {
+function renderPositionsEarlyBird(d, list, strategy) {
   const total = openPnl(d);
   let rows = '';
   for (const p of list) {
@@ -778,7 +789,7 @@ function renderPositionsEarlyBird(d, list) {
       <span class="eb-pnl \${cls(upnl)}">\${upnl === null ? '—' : fmtINR(upnl)}</span>
       <button type="button" class="eb-exit" title="Square off \${escapeHtml(p.symbol || '')} only"
               data-symbol="\${escapeHtml(p.symbol || '')}"
-              onclick="exitPosition('EARLYBIRD', this, this.dataset.symbol)">EXIT</button>
+              onclick="exitPosition('\${strategy || 'EARLYBIRD'}', this, this.dataset.symbol)">EXIT</button>
     </div>\`;
   }
   return \`
@@ -857,7 +868,7 @@ function renderColumn(strategy, d) {
   if (Array.isArray(d.positions)) {
     // Multi-position strategy (EarlyBird): aggregate block, never a single row.
     bodyEl.innerHTML = openList.length
-      ? renderPositionsEarlyBird(d, openList)
+      ? renderPositionsEarlyBird(d, openList, strategy)
       : \`<div class="flat-block">FLAT — no open positions</div>\`;
   } else if (openList.length) {
     bodyEl.innerHTML = renderPositionStandard(d, openList[0]);

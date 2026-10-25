@@ -46,6 +46,7 @@ const { loadTradePosition, clearTradePosition, loadBbRsiPosition, clearBbRsiPosi
 const { loadStRsiPivBbPosition, clearStRsiPivBbPosition } = require("./utils/positionPersist"); // ST_RSI_PIV_BB crash recovery
 const { loadSailVwapStPosition, clearSailVwapStPosition } = require("./utils/positionPersist"); // SAIL_VWAP_ST crash recovery
 const { loadPivotEmaStPosition, clearPivotEmaStPosition, loadBnPivotEmaStPosition, clearBnPivotEmaStPosition, loadSailPivotEmaStPosition, clearSailPivotEmaStPosition } = require("./utils/positionPersist"); // PIVOT_EMA_ST family crash recovery
+const { loadGapRunawayPosition, clearGapRunawayPosition } = require("./utils/positionPersist"); // GAP_RUNAWAY crash recovery (the stock scanner is paper-only)
 const app = express();
 trackMounts(app);   // record every app.use(path, router) so Start All can discover the strategy routes
 app.use(compression());
@@ -841,6 +842,18 @@ const OPEN_PATHS = [
   "/sail_pivot_ema_st-paper/history",
   "/sail_pivot_ema_st-paper/debug",
   "/sail_pivot_ema_st-paper/client.js",
+  // GAP_RUNAWAY (NIFTY) + its stock scanner — read-only surfaces; the dashboard
+  // tile polls status/data unsecured, so a missing entry is a raw 403 once API_SECRET is set.
+  "/gap_runaway-paper/status",
+  "/gap_runaway-paper/status/data",
+  "/gap_runaway-paper/status/chart-data",
+  "/gap_runaway-paper/history",
+  "/gap_runaway-paper/debug",
+  "/gap_runaway-paper/client.js",
+  "/gap_runaway_stk-paper/status",
+  "/gap_runaway_stk-paper/status/data",
+  "/gap_runaway_stk-paper/history",
+  "/gap_runaway_stk-paper/debug",
   // COMMODITY (MCX crude/gold/silver) paper pages — read-only surfaces; start/stop/exit/reset stay protected.
   "/cmx_crude_ema_rsi_st-paper/status",
   "/cmx_crude_ema_rsi_st-paper/status/data",
@@ -1110,6 +1123,10 @@ const OPEN_PATHS = [
   "/sail_pivot_ema_st-live",
   "/sail_pivot_ema_st-live/status",
   "/sail_pivot_ema_st-live/status/data",
+  // GAP_RUNAWAY — its only live page IS its harness, mounted at /gap_runaway-live.
+  "/gap_runaway-live",
+  "/gap_runaway-live/status",
+  "/gap_runaway-live/status/data",
   "/bb_rsi-live-harness",
   "/bb_rsi-live-harness/status/data",
   "/pa-live-harness",
@@ -1207,6 +1224,10 @@ const OPEN_PREFIXES = [
   "/bn_pivot_ema_st-paper/download/",
   "/sail_pivot_ema_st-paper/view/",
   "/sail_pivot_ema_st-paper/download/",
+  "/gap_runaway-paper/view/",
+  "/gap_runaway-paper/download/",
+  "/gap_runaway_stk-paper/view/",
+  "/gap_runaway_stk-paper/download/",
   "/bb_rsi-paper/view/",
   "/bb_rsi-paper/download/",
   "/pa-paper/view/",
@@ -1394,6 +1415,13 @@ app.use("/bn_pivot_ema_st-paper",      require("./routes/bnPivotEmaStPaper"));  
 app.use("/bn_pivot_ema_st-live",       require("./routes/bnPivotEmaStLiveHarness"));   // ← LIVE via PAPER + harness (triple-gated dry-run, Zerodha)
 app.use("/sail_pivot_ema_st-paper",    require("./routes/sailPivotEmaStPaper"));       // ← canonical engine (SAIL stock options)
 app.use("/sail_pivot_ema_st-live",     require("./routes/sailPivotEmaStLiveHarness")); // ← LIVE via PAPER + harness (triple-gated dry-run, Zerodha)
+
+// ── GAP_RUNAWAY (GAP_runAway__Kirubakaran: daily RSI-on-EMA extreme + gap, Zerodha) ──
+// NIFTY ATM options (paper + live harness) and its F&O stock scanner (intraday
+// shares, paper only). No backtest, not replayable, no common rules.
+app.use("/gap_runaway-paper",          require("./routes/gapRunawayPaper"));           // ← canonical engine (NIFTY options)
+app.use("/gap_runaway-live",           require("./routes/gapRunawayLiveHarness"));     // ← LIVE via PAPER + harness (triple-gated dry-run, Zerodha)
+app.use("/gap_runaway_stk-paper",      require("./routes/gapRunawayStkPaper"));        // ← stock scanner, intraday shares (paper only)
 
 // ── COMMODITY (MCX crude / gold / silver) — paper only ───────────────────────
 // Self-contained engine (src/services/commodityPaper.js): REST prices, own files
@@ -1703,6 +1731,11 @@ app.get("/", (req, res) => {
   const bnPivotEmaStModeOn   = (process.env.BN_PIVOT_EMA_ST_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const sailPivotEmaStMode   = sharedSocketState.getSailPivotEmaStMode ? sharedSocketState.getSailPivotEmaStMode() : null;
   const sailPivotEmaStModeOn = (process.env.SAIL_PIVOT_EMA_ST_MODE_ENABLED || 'true').toLowerCase() === 'true';
+  // GAP_RUNAWAY (NIFTY) + its stock scanner — default ON (Start All starts them).
+  const gapRunawayMode       = sharedSocketState.getGapRunawayMode ? sharedSocketState.getGapRunawayMode() : null;
+  const gapRunawayModeOn     = (process.env.GAP_RUNAWAY_MODE_ENABLED || 'true').toLowerCase() === 'true';
+  const gapRunawayStkMode    = sharedSocketState.getGapRunawayStkMode ? sharedSocketState.getGapRunawayStkMode() : null;
+  const gapRunawayStkModeOn  = (process.env.GAP_RUNAWAY_STK_MODE_ENABLED || 'true').toLowerCase() === 'true';
   // One chart card per COMMODITY page (switched on, or still running).
   const { visibleEngines: cmxVisibleEngines, commodityIcon } = require("./utils/commodityPaperRouter");
   const dashCmxCards = cmxVisibleEngines().map((e) => {
@@ -1736,6 +1769,8 @@ app.get("/", (req, res) => {
     || (pivotEmaStModeOn && pivotEmaStMode)
     || (bnPivotEmaStModeOn && bnPivotEmaStMode)
     || (sailPivotEmaStModeOn && sailPivotEmaStMode)
+    || (gapRunawayModeOn && gapRunawayMode)
+    || (gapRunawayStkModeOn && gapRunawayStkMode)
     || (bnEmaRsiStV2ModeOn && bnEmaRsiStV2Mode);
   // The mode-specific top-bar badges below only cover a subset of states
   // (EMA_RSI_ST live, BB_RSI_LIVE, PA_LIVE, ORB_PAPER). When some OTHER mode is
@@ -1778,6 +1813,8 @@ app.get("/", (req, res) => {
     { key: 'PIVOT_EMA_ST', cls: 'pivotemast', label: 'PIVOT_EMA_ST', on: pivotEmaStModeOn },
     { key: 'BN_PIVOT_EMA_ST', cls: 'bnpivotemast', label: 'BN PIVOT_EMA_ST', on: bnPivotEmaStModeOn },
     { key: 'SAIL_PIVOT_EMA_ST', cls: 'sailpivotemast', label: 'SAIL PIVOT_EMA_ST', on: sailPivotEmaStModeOn },
+    { key: 'GAP_RUNAWAY', cls: 'gaprunaway', label: 'GAP_runAway__Kirubakaran', on: gapRunawayModeOn },
+    { key: 'GAP_RUNAWAY_STK', cls: 'gaprunawaystk', label: 'GAP_runAway Stocks', on: gapRunawayStkModeOn },
   ].filter((t) => t.on).map((t) => ({
     key: t.key,
     cls: t.cls,
@@ -2510,6 +2547,8 @@ app.get("/", (req, res) => {
     .mm-card.pivotemast .mm-dot { background:#38bdf8; }
     .mm-card.bnpivotemast .mm-dot { background:#f472b6; }
     .mm-card.sailpivotemast .mm-dot { background:#fcd34d; }
+    .mm-card.gaprunaway .mm-dot { background:#a78bfa; }
+    .mm-card.gaprunawaystk .mm-dot { background:#c084fc; }
     .mm-card.cmx .mm-dot { background:#eab308; }
     .mm-title { font-size:0.62rem; font-weight:700; text-transform:uppercase; letter-spacing:1.4px; color:#a0b0c8; }
     /* Global Paper/Live source toggle (top-bar) — drives every chart on the dashboard */
@@ -3106,6 +3145,28 @@ ${buildSidebar('dashboard', liveActive)}
       <div class="mm-stats" id="mm-stats-SAIL_PIVOT_EMA_ST">—</div>
       <div class="mm-wrap"><canvas id="mmChart-SAIL_PIVOT_EMA_ST"></canvas></div>
       <div class="mm-empty" id="mm-empty-SAIL_PIVOT_EMA_ST" style="display:none;">No paper trades yet</div>
+    </div>
+    ` : ''}
+    ${gapRunawayModeOn ? `
+    <div class="mm-card gaprunaway" data-mode="GAP_RUNAWAY">
+      <div class="mm-hdr">
+        <span class="mm-dot"></span>
+        <span class="mm-title">GAP_runAway__Kirubakaran</span>
+      </div>
+      <div class="mm-stats" id="mm-stats-GAP_RUNAWAY">—</div>
+      <div class="mm-wrap"><canvas id="mmChart-GAP_RUNAWAY"></canvas></div>
+      <div class="mm-empty" id="mm-empty-GAP_RUNAWAY" style="display:none;">No paper trades yet</div>
+    </div>
+    ` : ''}
+    ${gapRunawayStkModeOn ? `
+    <div class="mm-card gaprunawaystk" data-mode="GAP_RUNAWAY_STK">
+      <div class="mm-hdr">
+        <span class="mm-dot"></span>
+        <span class="mm-title">GAP_runAway Stocks</span>
+      </div>
+      <div class="mm-stats" id="mm-stats-GAP_RUNAWAY_STK">—</div>
+      <div class="mm-wrap"><canvas id="mmChart-GAP_RUNAWAY_STK"></canvas></div>
+      <div class="mm-empty" id="mm-empty-GAP_RUNAWAY_STK" style="display:none;">No paper trades yet</div>
     </div>
     ` : ''}
     ${dashCmxCards.map((c) => `
@@ -4025,12 +4086,14 @@ document.addEventListener('click', function(e){
   _mmToggle.ST_RSI_PIV_BB = src;
   _mmToggle.SAIL_VWAP_ST = src;
   _mmToggle.PIVOT_EMA_ST = src; _mmToggle.BN_PIVOT_EMA_ST = src; _mmToggle.SAIL_PIVOT_EMA_ST = src;
+  _mmToggle.GAP_RUNAWAY = src; _mmToggle.GAP_RUNAWAY_STK = src;
   document.querySelectorAll('#dashSrcToggle .dst-btn').forEach(function(b){ b.classList.toggle('active', b === btn); });
   _renderDashTotal();
   ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB','TDS','HA_SCALP','PREV_ORB_SCALP','EARLYBIRD','SIMPLE930','RSI_PIVOT_ST','BN_PIVOT_RSI_ST','EMA_RSI_ST_V2','BN_EMA_RSI_ST_V2'].concat(CMX_MM_MODES).forEach(_renderModuleChart);
   _renderModuleChart('ST_RSI_PIV_BB');
   _renderModuleChart('SAIL_VWAP_ST');
   ['PIVOT_EMA_ST','BN_PIVOT_EMA_ST','SAIL_PIVOT_EMA_ST'].forEach(_renderModuleChart);
+  ['GAP_RUNAWAY','GAP_RUNAWAY_STK'].forEach(_renderModuleChart);
   _applyAllBtnState(_allBtnState.paperOn, _allBtnState.liveOn);
 });
 
@@ -4046,6 +4109,7 @@ document.addEventListener('click', function(e){
     _renderModuleChart('ST_RSI_PIV_BB');
     _renderModuleChart('SAIL_VWAP_ST');
     ['PIVOT_EMA_ST','BN_PIVOT_EMA_ST','SAIL_PIVOT_EMA_ST'].forEach(_renderModuleChart);
+    ['GAP_RUNAWAY','GAP_RUNAWAY_STK'].forEach(_renderModuleChart);
     _renderBrokerWallets();
   }
   function syncCustomVisibility(){
@@ -4084,6 +4148,7 @@ var _mmToggle = { EMA_RSI_ST: 'paper', BB_RSI: 'paper', PA: 'paper', ORB: 'paper
 _mmToggle.ST_RSI_PIV_BB = 'paper';
 _mmToggle.SAIL_VWAP_ST = 'paper';
 _mmToggle.PIVOT_EMA_ST = 'paper'; _mmToggle.BN_PIVOT_EMA_ST = 'paper'; _mmToggle.SAIL_PIVOT_EMA_ST = 'paper';
+_mmToggle.GAP_RUNAWAY = 'paper'; _mmToggle.GAP_RUNAWAY_STK = 'paper';
 
 // A strategy with no trades in the selected source+range has nothing to show,
 // so its whole card is hidden rather than kept as a "0 trades" placeholder —
@@ -4182,6 +4247,7 @@ async function loadModuleCharts(){
   _renderModuleChart('ST_RSI_PIV_BB');
   _renderModuleChart('SAIL_VWAP_ST');
   ['PIVOT_EMA_ST','BN_PIVOT_EMA_ST','SAIL_PIVOT_EMA_ST'].forEach(_renderModuleChart);
+  ['GAP_RUNAWAY','GAP_RUNAWAY_STK'].forEach(_renderModuleChart);
   _renderBrokerWallets();
 }
 
@@ -4333,6 +4399,8 @@ document.addEventListener('visibilitychange', function(){ if (!document.hidden) 
     PIVOT_EMA_ST:'/pivot_ema_st-paper/status/data',
     BN_PIVOT_EMA_ST:'/bn_pivot_ema_st-paper/status/data',
     SAIL_PIVOT_EMA_ST:'/sail_pivot_ema_st-paper/status/data',
+    GAP_RUNAWAY:'/gap_runaway-paper/status/data',
+    GAP_RUNAWAY_STK:'/gap_runaway_stk-paper/status/data',
     BN_EMA_RSI_ST_V2:'/bn_ema_rsi_st_v2-paper/status/data'
   };
 
@@ -5275,6 +5343,7 @@ const _ZERODHA_SNAPSHOT_FILES = new Set([
   ".active_sail_vwap_st_position.json",
   ".active_pivot_ema_st_position.json", ".active_bn_pivot_ema_st_position.json",
   ".active_sail_pivot_ema_st_position.json",
+  ".active_gap_runaway_position.json",
   ".active_simple930_position.json", ".active_ha_scalp_position.json",
   ".active_prev_orb_scalp_position.json",
 ]);
@@ -5500,6 +5569,19 @@ async function reconcileOrphanedPositions() {
       sendTelegram(msg);
     }
 
+    // GAP_RUNAWAY (NIFTY options). Its one stop is the gap-fill level (yesterday's
+    // close), checked per tick by the paper engine — a restart leaves it unwatched.
+    const savedGapRunaway = loadGapRunawayPosition();
+    if (savedGapRunaway && savedGapRunaway.position) {
+      const p = savedGapRunaway.position;
+      const msg = `🚨 [STARTUP] Persisted GAP_RUNAWAY position found (crash recovery)!\n` +
+        `  ${p.side} ${p.symbol}: entry=₹${p.optionEntryLtp} gap SL (spot, prev close)=${p.stopLoss != null ? p.stopLoss : "NONE"} qty=${p.qty}\n` +
+        `  Saved at: ${new Date(savedGapRunaway.savedAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}\n` +
+        `Bot was tracking this before crash. Orders go to ZERODHA — check the Zerodha dashboard!`;
+      console.warn(msg);
+      sendTelegram(msg);
+    }
+
     const savedBnEmaRsiStV2 = loadBnEmaRsiStV2Position();
     if (savedBnEmaRsiStV2 && savedBnEmaRsiStV2.position) {
       const p = savedBnEmaRsiStV2.position;
@@ -5583,6 +5665,7 @@ async function reconcileOrphanedPositions() {
       (process.env.PIVOT_EMA_ST_LIVE_ENABLED || "false").toLowerCase() === "true" ||
       (process.env.BN_PIVOT_EMA_ST_LIVE_ENABLED || "false").toLowerCase() === "true" ||
       (process.env.SAIL_PIVOT_EMA_ST_LIVE_ENABLED || "false").toLowerCase() === "true" ||
+      (process.env.GAP_RUNAWAY_LIVE_ENABLED || "false").toLowerCase() === "true" ||
       ["EMA_RSI_ST", "BB_RSI", "PA", "ORB", "EMA9VWAP", "TREND_PB", "TDS", "HA_SCALP", "PREV_ORB_SCALP", "SIMPLE930", "RSI_PIVOT_ST", "BN_PIVOT_RSI_ST", "EMA_RSI_ST_V2", "BN_EMA_RSI_ST_V2", "EARLYBIRD"].some(
         (s) => (process.env[`${s}_LIVE_ENABLED`] || "").toLowerCase() === "true",
       );
@@ -5590,7 +5673,7 @@ async function reconcileOrphanedPositions() {
     // Count only snapshots that actually carry a position — loadTradePosition()
     // returns the parsed file whenever it exists and is today's, even if the
     // record has no `.position`.
-    const _zSnaps = [savedTrade, savedEma9Vwap, savedRsiPivotSt, savedBnPivotRsiSt, savedEmaRsiStV2, savedBnEmaRsiStV2, savedStRsiPivBb, savedSailVwapSt, savedPivotEmaSt, savedBnPivotEmaSt, savedSailPivotEmaSt, savedSimple930, savedHaScalp, savedPrevOrbScalp].filter(x => x && x.position).length;
+    const _zSnaps = [savedTrade, savedEma9Vwap, savedRsiPivotSt, savedBnPivotRsiSt, savedEmaRsiStV2, savedBnEmaRsiStV2, savedStRsiPivBb, savedSailVwapSt, savedPivotEmaSt, savedBnPivotEmaSt, savedSailPivotEmaSt, savedGapRunaway, savedSimple930, savedHaScalp, savedPrevOrbScalp].filter(x => x && x.position).length;
     const _zStalePos = _staleZ.filter(_staleHasPos).length;
     const _zPending = _zSnaps + _zStalePos + _harnessRecs.length;
     _anySnapshots = _anySnapshots || _zPending > 0;
@@ -5646,6 +5729,7 @@ async function reconcileOrphanedPositions() {
           if (savedPivotEmaSt) clearPivotEmaStPosition();         // PIVOT_EMA_ST family — Fyers candles, Zerodha orders
           if (savedBnPivotEmaSt) clearBnPivotEmaStPosition();
           if (savedSailPivotEmaSt) clearSailPivotEmaStPosition();
+          if (savedGapRunaway) clearGapRunawayPosition();           // GAP_RUNAWAY — Fyers data, Zerodha orders
           if (savedBnPivotRsiSt) clearBnPivotRsiStPosition(); // BN_PIVOT_RSI_ST (NIFTY BANK) is the same engine on Zerodha
           if (savedSimple930) clearSimple930Position();   // SIMPLE_9:30 is a Zerodha strategy too (Fyers data, Zerodha orders)
           if (savedHaScalp) clearHaScalpPosition();       // HA_SCALP likewise — Fyers candles, Zerodha orders
@@ -5762,6 +5846,8 @@ async function gracefulShutdown(signal) {
     if (sharedSocketState.getPivotEmaStMode && sharedSocketState.getPivotEmaStMode()) activeModes.push(sharedSocketState.getPivotEmaStMode());
     if (sharedSocketState.getBnPivotEmaStMode && sharedSocketState.getBnPivotEmaStMode()) activeModes.push(sharedSocketState.getBnPivotEmaStMode());
     if (sharedSocketState.getSailPivotEmaStMode && sharedSocketState.getSailPivotEmaStMode()) activeModes.push(sharedSocketState.getSailPivotEmaStMode());
+    if (sharedSocketState.getGapRunawayMode && sharedSocketState.getGapRunawayMode()) activeModes.push(sharedSocketState.getGapRunawayMode());
+    if (sharedSocketState.getGapRunawayStkMode && sharedSocketState.getGapRunawayStkMode()) activeModes.push(sharedSocketState.getGapRunawayStkMode());
     if (sharedSocketState.getEarlyBirdMode && sharedSocketState.getEarlyBirdMode()) activeModes.push(sharedSocketState.getEarlyBirdMode());
 
     if (activeModes.length === 0) {
@@ -5793,6 +5879,7 @@ async function gracefulShutdown(signal) {
       m === "PIVOT_EMA_ST_LIVE" ||
       m === "BN_PIVOT_EMA_ST_LIVE" ||
       m === "SAIL_PIVOT_EMA_ST_LIVE" ||
+      m === "GAP_RUNAWAY_LIVE" ||
       m === "BN_EMA_RSI_ST_V2_LIVE");
     console.warn(`⚠️ [SHUTDOWN] Active modes: ${modeList}${_harnessLive ? " (harness LIVE)" : ""} — stopping sessions...`);
 
@@ -5823,6 +5910,8 @@ async function gracefulShutdown(signal) {
       "PIVOT_EMA_ST_PAPER":      require("./routes/pivotEmaStPaper"),
       "BN_PIVOT_EMA_ST_PAPER":   require("./routes/bnPivotEmaStPaper"),
       "SAIL_PIVOT_EMA_ST_PAPER": require("./routes/sailPivotEmaStPaper"),
+      "GAP_RUNAWAY_PAPER":       require("./routes/gapRunawayPaper"),
+      "GAP_RUNAWAY_STK_PAPER":   require("./routes/gapRunawayStkPaper"),
     };
     for (const mode of activeModes) {
       const route = routeMap[mode];

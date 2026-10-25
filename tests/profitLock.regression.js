@@ -355,12 +355,18 @@ const ENGINES_WITHOUT_OPTION_POSITIONS = new Set([
   "bbRsiLive.js", "emaRsiStLive.js", "orbLive.js", // live engines — see note below
 ]);
 
+// GAP_RUNAWAY (NIFTY options + its stock scanner): the user's rule is that NO
+// common rule applies to it — the lock included. Asserted absent below, so the
+// exemption cannot hide a half-wired lock.
+const COMMON_RULES_EXEMPT = new Set(["gapRunawayPaper.js", "gapRunawayStkPaper.js"]);
+
 check("every enabled paper engine calls checkProfitLock", () => {
   const dir = path.join(SRC, "routes");
   const engines = fs.readdirSync(dir).filter(f => /Paper\.js$/.test(f));
   const missing = [];
   for (const f of engines) {
     if (ENGINES_WITHOUT_OPTION_POSITIONS.has(f)) continue;
+    if (COMMON_RULES_EXEMPT.has(f)) continue;
     const src = decomment(read(`routes/${f}`));
     // ORB delegates its tick exits to the shared orbExits module.
     if (/orbExits\.evaluateTickExits/.test(src)) continue;
@@ -373,6 +379,13 @@ check("every enabled paper engine calls checkProfitLock", () => {
   }
   assert.deepStrictEqual(missing, [],
     `paper engines that can hold an option but never call checkProfitLock: ${missing.join(", ")}`);
+});
+
+check("GAP_RUNAWAY never applies the profit lock or breakeven (no common rules, by the user's rule)", () => {
+  for (const f of COMMON_RULES_EXEMPT) {
+    const src = decomment(read(`routes/${f}`));
+    assert.ok(!/checkProfitLock|checkBreakevenStop|tradeGuards/.test(src), `${f} must not apply the common premium exits`);
+  }
 });
 
 check("ORB honours it through the shared orbExits module", () => {

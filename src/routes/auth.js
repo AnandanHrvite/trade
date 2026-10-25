@@ -72,6 +72,11 @@ function _activeZerodhaModes() {
       if (m && /^(SAIL_|BN_)?PIVOT_EMA_ST_(PAPER|LIVE)$/.test(m) && !out.includes(m)) out.push(m);
     } catch (_) {}
   }
+  // GAP_RUNAWAY — Fyers data, Zerodha orders (the stock scanner places none).
+  try {
+    const m = sharedSocketState.getGapRunawayMode && sharedSocketState.getGapRunawayMode();
+    if (m && /^GAP_RUNAWAY_(PAPER|LIVE)$/.test(m) && !out.includes(m)) out.push(m);
+  } catch (_) {}
   return out;
 }
 

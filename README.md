@@ -76,6 +76,9 @@ All four strategies run **in parallel** on the same WebSocket — different cand
 | **BN_PIVOT_EMA_ST Live (Harness)** | Runs Live by wrapping Paper (Zerodha orders, triple-gated dry-run) | 3-min | Zerodha (PAPER-wrapped) | `/bn_pivot_ema_st-live` |
 | **SAIL_PIVOT_EMA_ST Paper** | The PIVOT_EMA_ST rules on **SAIL stock options** | 3-min (5 / 15 selectable) | Simulated | `/sail_pivot_ema_st-paper` |
 | **SAIL_PIVOT_EMA_ST Live (Harness)** | Runs Live by wrapping Paper (Zerodha orders, triple-gated dry-run) | 3-min | Zerodha (PAPER-wrapped) | `/sail_pivot_ema_st-live` |
+| **GAP_runAway__Kirubakaran Paper** | NIFTY: yesterday's daily RSI(10) on EMA21 below 10 + gap UP → ATM CE, above 90 + gap DOWN → ATM PE; stop = yesterday's close, trail = 5-min close through EMA21, square-off 15:15; one trade a day | Daily signal, 5-min exits | Simulated | `/gap_runaway-paper` |
+| **GAP_runAway__Kirubakaran Live (Harness)** | Runs Live by wrapping Paper (Zerodha orders, triple-gated dry-run) | Daily / 5-min | Zerodha (PAPER-wrapped) | `/gap_runaway-live` |
+| **GAP_runAway Stock Scanner Paper** | The same rules over the F&O stock list, biggest gaps first (max 3 a day), paper-traded as **intraday shares** (buy on gap up, short on gap down) | Daily signal, 5-min exits | Simulated | `/gap_runaway_stk-paper` |
 | **SIMPLE_9:30 Paper** | At 09:25 picks the ITM strike nearest ₹180 on each side; buys whichever clears ₹180 by 09:35, 20pt stop that trails only after the premium touches the box top, 09:45 sideways exit | 1-sec option premium poll | Simulated | `/simple930-paper` |
 | **SIMPLE_9:30 Backtest** | Same engine over a date range on **real** 1-min option premium candles (no delta/theta model) | 1-min historical (option premium) | Historical | `/simple930-backtest` |
 | **SIMPLE_9:30 Live (Harness)** | Runs Live by wrapping Paper (Zerodha orders, triple-gated dry-run) | 1-sec option premium poll | Zerodha (PAPER-wrapped) | `/simple930-live` |
@@ -374,6 +377,17 @@ One rule set on four instruments, each with its own settings and position: **PIV
 - **Exit** is the SuperTrend line as a trailing stop, checked on candle close only: the trade closes when the SuperTrend flips or a candle closes beyond the trailed line, which only tightens. Plus the common rules (profit lock, breakeven, wait-after-exit, bid-ask spread, trade window 10:00–14:00 with a 15:00 square-off), max trades per day and the daily loss cap.
 - **Paper + Live harness only** — no backtest page and not replayable.
 
+### GAP_runAway__Kirubakaran — extreme daily RSI + a breakaway gap (`src/strategies/gap_runaway.js`)
+
+**Never traded, and never validated.** Zero paper sessions, zero live orders. Ships ON, so Start All starts both pages. Reference video: https://www.youtube.com/watch?v=uLTaXTyDxiI (kept in Settings).
+
+- **Setup** is read on YESTERDAY's closed NIFTY daily bar: RSI(10) worked out on the EMA21 line (TradingView "Source: EMA"). Below 10 = oversold, above 90 = overbought.
+- **Entry** once a day, 09:15–09:30: oversold + today opens above yesterday's close (gap up) → ATM CE; overbought + gap down → ATM PE. Any gap size by default. No trade if the gap has already filled at the fill.
+- **Exit**: yesterday's close is the stop (a fixed level, every tick); a 5-min candle closing back through EMA21 is the trail; 15:15 square-off. No re-entry.
+- **No common rules** apply (no profit lock, breakeven, cooldown, spread check, trade window, lot multiplier or capital pool) — its own lots and paper capital.
+- **Stock scanner**: the same engine over the F&O list, the biggest gaps (%) first, up to 3 a day, ₹1,00,000 a trade, as intraday shares. Paper only.
+- **Paper + Live harness only** (the scanner is paper only) — no backtest page and not replayable. **Tests**: `npm run test:gaprunaway`.
+
 ### SIMPLE_9:30 — the ₹180 option-premium breakout (`src/strategies/simple930.js`)
 
 **Never traded, and never validated.** Zero paper sessions, zero live orders. ₹180, ₹220/₹160 and the 20-point stop are the operator's own numbers, not fitted ones. Collect clean paper days and diff one against `/replay` before touching a live gate.
@@ -478,6 +492,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   st_rsi_piv_bb_paper_trades.json # ST_RSI_PIV_BB paper sessions
   sail_vwap_st_paper_trades.json  # SAIL_VWAP_ST (SAIL stock options) paper sessions
   pivot_ema_st_paper_trades.json  # PIVOT_EMA_ST paper sessions (bn_ / sail_ prefixes for BANK NIFTY / SAIL)
+  gap_runaway_paper_trades.json   # GAP_RUNAWAY paper sessions (gap_runaway_stk_ for the stock scanner)
   simple930_paper_trades.json     # SIMPLE_9:30 paper sessions
   historical_pnl.json             # One-time P&L baselines per broker (Kite / Fyers)
   nse_holidays.json               # Last good NSE holiday fetch, keyed by year — keeps 2027+ working if NSE blocks the box
@@ -495,6 +510,8 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   .active_st_rsi_piv_bb_position.json # Crash recovery — ST_RSI_PIV_BB position (carries the SuperTrend trail)
   .active_sail_vwap_st_position.json # Crash recovery — SAIL_VWAP_ST position (carries the SuperTrend trail; Zerodha group)
   .active_pivot_ema_st_position.json # Crash recovery — PIVOT_EMA_ST position (bn_ / sail_ prefixes too; SuperTrend trail; Zerodha group)
+  .active_gap_runaway_position.json # Crash recovery — GAP_RUNAWAY position (gap stop = yesterday's close; Zerodha group)
+  .gap_runaway_stk_positions.json   # The stock scanner's open paper positions — resumed by the next /start the same day
   .active_simple930_position.json # Crash recovery — SIMPLE_9:30 position (carries the live trail state)
   .harness_events.json            # Live-harness event log (DRY-RUN/real order events), survives restart
   ema_rsi_st_paper_trades_log.jsonl    # Crash-safe per-trade JSONL audit (cumulative)
@@ -657,6 +674,14 @@ log, so each session's trades carry the exact config that produced them.
 | `/sail_pivot_ema_st-paper/status`, `/history` | The same on SAIL stock options |
 | `/sail_pivot_ema_st-live` | SAIL live harness (**Zerodha**, triple-gated dry-run) |
 | `/cmx_{crude,gold,silver}_pivot_ema_st-paper/status` | COMMODITY paper pages (MCX futures-option paper, no live) |
+
+### GAP_runAway__Kirubakaran (NIFTY + stock scanner)
+| URL | Description |
+|-----|-------------|
+| `/gap_runaway-paper/status` | Paper trade — the daily setup card (RSI, yesterday's close, today's gap) and the NIFTY 5-min chart with EMA21 and the stop line |
+| `/gap_runaway-paper/history` | Sessions (per-session delete + view modal) |
+| `/gap_runaway-live` | Live via the paper-wrapping harness (**Zerodha** orders, triple-gated dry-run) |
+| `/gap_runaway_stk-paper/status`, `/history` | Stock scanner — scan progress, today's candidates, open positions, trades (paper only) |
 
 ### SIMPLE_9:30
 | URL | Description |

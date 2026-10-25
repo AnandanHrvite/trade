@@ -39,6 +39,8 @@ const SOURCES = [
   { mode: "PIVOT_EMA_ST", file: path.join(DATA_DIR, "pivot_ema_st_live_trades.json"), label: "PIVOT_EMA_ST", color: "#38bdf8" },
   { mode: "BN_PIVOT_EMA_ST", file: path.join(DATA_DIR, "bn_pivot_ema_st_live_trades.json"), label: "BN PIVOT_EMA_ST", color: "#f472b6" },
   { mode: "SAIL_PIVOT_EMA_ST", file: path.join(DATA_DIR, "sail_pivot_ema_st_live_trades.json"), label: "SAIL PIVOT_EMA_ST", color: "#fcd34d" },
+  // GAP_RUNAWAY — its own live trades file (the stock scanner is paper only, so it has none).
+  { mode: "GAP_RUNAWAY", file: path.join(DATA_DIR, "gap_runaway_live_trades.json"), label: "GAP_runAway__Kirubakaran", color: "#a78bfa" },
   { mode: "BB_RSI", file: path.join(DATA_DIR, "bb_rsi_live_trades.json"), label: "BB_RSI", color: "#f59e0b" },
   { mode: "PA",    file: path.join(DATA_DIR, "pa_live_trades.json"),    label: "Price Action", color: "#a855f7" },
   { mode: "RSI_PIVOT_ST", file: path.join(DATA_DIR, "rsi_pivot_st_live_trades.json"), label: "RSI PIVOT ST", color: "#facc15" },
@@ -243,6 +245,7 @@ router.get("/", (req, res) => {
     .badge-PIVOT_EMA_ST{background:rgba(56,189,248,0.12);color:#38bdf8;border:0.5px solid rgba(56,189,248,0.3);}
     .badge-BN_PIVOT_EMA_ST{background:rgba(244,114,182,0.12);color:#f472b6;border:0.5px solid rgba(244,114,182,0.3);}
     .badge-SAIL_PIVOT_EMA_ST{background:rgba(252,211,77,0.12);color:#fcd34d;border:0.5px solid rgba(252,211,77,0.3);}
+    .badge-GAP_RUNAWAY{background:rgba(167,139,250,0.12);color:#a78bfa;border:0.5px solid rgba(167,139,250,0.3);}
     .badge-BB_RSI{background:rgba(245,158,11,0.12);color:#f59e0b;border:0.5px solid rgba(245,158,11,0.3);}
     .badge-PA{background:rgba(168,85,247,0.12);color:#a855f7;border:0.5px solid rgba(168,85,247,0.3);}
     .badge-RSI_PIVOT_ST{background:rgba(250,204,21,0.12);color:#facc15;border:0.5px solid rgba(250,204,21,0.3);}

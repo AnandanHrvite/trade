@@ -58,6 +58,9 @@ const PAPER_SOURCES = [
   { mode: "PIVOT_EMA_ST", file: "pivot_ema_st_paper_trades.json" },
   { mode: "BN_PIVOT_EMA_ST", file: "bn_pivot_ema_st_paper_trades.json" },
   { mode: "SAIL_PIVOT_EMA_ST", file: "sail_pivot_ema_st_paper_trades.json" },
+  // GAP_RUNAWAY — NIFTY options and the stock scanner are two different edges.
+  { mode: "GAP_RUNAWAY", file: "gap_runaway_paper_trades.json" },
+  { mode: "GAP_RUNAWAY_STK", file: "gap_runaway_stk_paper_trades.json" },
   { mode: "BB_RSI",    file: "bb_rsi_paper_trades.json" },
   { mode: "PA",       file: "pa_paper_trades.json" },
   { mode: "ORB",      file: "orb_paper_trades.json" },
@@ -82,6 +85,7 @@ const LIVE_SOURCES = [
   { mode: "PIVOT_EMA_ST", file: "pivot_ema_st_live_trades.json" },
   { mode: "BN_PIVOT_EMA_ST", file: "bn_pivot_ema_st_live_trades.json" },
   { mode: "SAIL_PIVOT_EMA_ST", file: "sail_pivot_ema_st_live_trades.json" },
+  { mode: "GAP_RUNAWAY", file: "gap_runaway_live_trades.json" },
   { mode: "BB_RSI",    file: "bb_rsi_live_trades.json" },
   { mode: "PA",       file: "pa_live_trades.json" },
   { mode: "ORB",      file: "orb_live_trades.json" },
@@ -410,6 +414,8 @@ ${multiSelectCSS()}
     .badge-PIVOT_EMA_ST{background:rgba(56,189,248,0.12);color:#38bdf8;border:0.5px solid rgba(56,189,248,0.3);}
     .badge-BN_PIVOT_EMA_ST{background:rgba(244,114,182,0.12);color:#f472b6;border:0.5px solid rgba(244,114,182,0.3);}
     .badge-SAIL_PIVOT_EMA_ST{background:rgba(252,211,77,0.12);color:#fcd34d;border:0.5px solid rgba(252,211,77,0.3);}
+    .badge-GAP_RUNAWAY{background:rgba(167,139,250,0.12);color:#a78bfa;border:0.5px solid rgba(167,139,250,0.3);}
+    .badge-GAP_RUNAWAY_STK{background:rgba(192,132,252,0.12);color:#c084fc;border:0.5px solid rgba(192,132,252,0.3);}
     .badge-BB_RSI{background:rgba(245,158,11,0.12);color:#f59e0b;border:0.5px solid rgba(245,158,11,0.3);}
     .badge-PA{background:rgba(168,85,247,0.12);color:#a855f7;border:0.5px solid rgba(168,85,247,0.3);}
     .badge-ORB{background:rgba(16,185,129,0.12);color:#10b981;border:0.5px solid rgba(16,185,129,0.3);}

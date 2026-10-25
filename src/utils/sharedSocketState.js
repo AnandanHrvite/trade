@@ -89,6 +89,12 @@ let pivotEmaStMode = null;
 let bnPivotEmaStMode = null;
 let sailPivotEmaStMode = null;
 
+// GAP_RUNAWAY (GAP_runAway__Kirubakaran, NIFTY options) and GAP_RUNAWAY_STK (its
+// stock scanner, paper only): "<P>_PAPER" | "<P>_LIVE" | null. Each its OWN slot,
+// parallel with every other strategy; only paper-vs-live within one is exclusive.
+let gapRunawayMode = null;
+let gapRunawayStkMode = null;
+
 // EarlyBird mode: "EARLY_BIRD_PAPER" | "EARLY_BIRD_LIVE" | null
 let earlyBirdMode = null;
 
@@ -402,6 +408,18 @@ function clearSailPivotEmaStMode() { sailPivotEmaStMode = null; }
 function isSailPivotEmaStActive() { return sailPivotEmaStMode !== null; }
 function getSailPivotEmaStMode() { return sailPivotEmaStMode; }
 
+// ── GAP_RUNAWAY modes (NIFTY options + the stock scanner) ──────────────────
+
+function setGapRunawayMode(mode) { gapRunawayMode = mode; }
+function clearGapRunawayMode() { gapRunawayMode = null; }
+function isGapRunawayActive() { return gapRunawayMode !== null; }
+function getGapRunawayMode() { return gapRunawayMode; }
+
+function setGapRunawayStkMode(mode) { gapRunawayStkMode = mode; }
+function clearGapRunawayStkMode() { gapRunawayStkMode = null; }
+function isGapRunawayStkActive() { return gapRunawayStkMode !== null; }
+function getGapRunawayStkMode() { return gapRunawayStkMode; }
+
 // ── SIMPLE_9:30 mode (9:30 option-premium trigger) ──────────────────────────
 
 function setSimple930Active(mode) {
@@ -436,6 +454,7 @@ function isAnyActive() {
          stRsiPivBbMode !== null ||
          sailVwapStMode !== null ||
          pivotEmaStMode !== null || bnPivotEmaStMode !== null || sailPivotEmaStMode !== null ||
+         gapRunawayMode !== null || gapRunawayStkMode !== null ||
          simple930Mode !== null;
 }
 
@@ -606,6 +625,18 @@ function _canStartRaw(mode) {
       if (sailPivotEmaStMode === "SAIL_PIVOT_EMA_ST_PAPER") return { allowed: false, reason: "SAIL_PIVOT_EMA_ST Paper is running — stop it first" };
       if (sailPivotEmaStMode === "SAIL_PIVOT_EMA_ST_LIVE")  return { allowed: false, reason: "SAIL_PIVOT_EMA_ST Live is already running" };
       return { allowed: true };
+    // GAP_RUNAWAY — checked ONLY against its own sibling; the stock scanner is paper-only.
+    case "GAP_RUNAWAY_PAPER":
+      if (gapRunawayMode === "GAP_RUNAWAY_LIVE")  return { allowed: false, reason: "GAP_RUNAWAY Live is running — stop it first" };
+      if (gapRunawayMode === "GAP_RUNAWAY_PAPER") return { allowed: false, reason: "GAP_RUNAWAY Paper is already running" };
+      return { allowed: true };
+    case "GAP_RUNAWAY_LIVE":
+      if (gapRunawayMode === "GAP_RUNAWAY_PAPER") return { allowed: false, reason: "GAP_RUNAWAY Paper is running — stop it first" };
+      if (gapRunawayMode === "GAP_RUNAWAY_LIVE")  return { allowed: false, reason: "GAP_RUNAWAY Live is already running" };
+      return { allowed: true };
+    case "GAP_RUNAWAY_STK_PAPER":
+      if (gapRunawayStkMode === "GAP_RUNAWAY_STK_PAPER") return { allowed: false, reason: "GAP_RUNAWAY_STK Paper is already running" };
+      return { allowed: true };
     case "SIMPLE930_PAPER":
       if (simple930Mode === "SIMPLE930_LIVE")  return { allowed: false, reason: "SIMPLE_9:30 Live is running — stop it first" };
       if (simple930Mode === "SIMPLE930_PAPER") return { allowed: false, reason: "SIMPLE_9:30 Paper is already running" };
@@ -687,6 +718,9 @@ module.exports = {
   setPivotEmaStMode, clearPivotEmaStMode, isPivotEmaStActive, getPivotEmaStMode,
   setBnPivotEmaStMode, clearBnPivotEmaStMode, isBnPivotEmaStActive, getBnPivotEmaStMode,
   setSailPivotEmaStMode, clearSailPivotEmaStMode, isSailPivotEmaStActive, getSailPivotEmaStMode,
+  // GAP_RUNAWAY (NIFTY) + GAP_RUNAWAY_STK (stock scanner)
+  setGapRunawayMode, clearGapRunawayMode, isGapRunawayActive, getGapRunawayMode,
+  setGapRunawayStkMode, clearGapRunawayStkMode, isGapRunawayStkActive, getGapRunawayStkMode,
   // SIMPLE_9:30
   setSimple930Active, clearSimple930, isSimple930Active, getSimple930Mode,
   // Combined
@@ -704,6 +738,7 @@ const _CLEAR_SLOT = {
   clearStRsiPivBbMode: "ST_RSI_PIV_BB",
   clearSailVwapStMode: "SAIL_VWAP_ST",
   clearPivotEmaStMode: "PIVOT_EMA_ST", clearBnPivotEmaStMode: "BN_PIVOT_EMA_ST", clearSailPivotEmaStMode: "SAIL_PIVOT_EMA_ST",
+  clearGapRunawayMode: "GAP_RUNAWAY", clearGapRunawayStkMode: "GAP_RUNAWAY_STK",
   clearSimple930: "SIMPLE930",
 };
 for (const name of Object.keys(module.exports)) {

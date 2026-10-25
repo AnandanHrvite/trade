@@ -77,6 +77,8 @@ const STRATEGIES = [
   { group: "PIVOT_EMA_ST", label: "PIVOT_EMA_ST", module: "../routes/pivotEmaStPaper" },
   { group: "BN_PIVOT_EMA_ST", label: "BN_PIVOT_EMA_ST (NIFTY BANK)", module: "../routes/bnPivotEmaStPaper" },
   { group: "SAIL_PIVOT_EMA_ST", label: "SAIL_PIVOT_EMA_ST", module: "../routes/sailPivotEmaStPaper" },
+  // GAP_RUNAWAY — NIFTY 5-min with its EMA21 trail (the stock scanner has no single chart).
+  { group: "GAP_RUNAWAY", label: "GAP_runAway__Kirubakaran", module: "../routes/gapRunawayPaper", overlay: "trailEma" },
   // SIMPLE_9:30 draws the OPTION PREMIUM of the leg it held, not a spot chart —
   // that is the only chart any of its rules read.
   { group: "SIMPLE930",    label: "SIMPLE 9:30",       module: "../routes/simple930Paper" },

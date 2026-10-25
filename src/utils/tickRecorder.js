@@ -440,6 +440,8 @@ const _SETTINGS_KEY_MATCHERS = [
   //   "PA_", /^BN_PIVOT_RSI_ST_/ the RSI name); SAIL_PIVOT_EMA_ST_* is already
   //   inside /^SAIL_/ and listed for clarity only.
   /^PIVOT_EMA_ST_/, /^BN_PIVOT_EMA_ST_/, /^SAIL_PIVOT_EMA_ST_/,
+  //   GAP_RUNAWAY + GAP_RUNAWAY_STK — no older prefix matches "GAP_RUNAWAY_".
+  /^GAP_RUNAWAY_/,
   //   EXIT_REENTRY_* — the global wait-after-any-exit cooldown; it blocks entries.
   /^EXIT_REENTRY_/,
 ];

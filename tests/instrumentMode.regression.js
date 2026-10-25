@@ -62,6 +62,14 @@ const STOCK_OPTIONS = { SAIL: new Set(["sailVwapStPaper.js", "sailVwapStBacktest
 STOCK_OPTIONS.SAIL.add("sailPivotEmaStPaper.js"); // SAIL_PIVOT_EMA_ST — also SAIL stock options
 const stockUnderlyingOf = (f) => Object.keys(STOCK_OPTIONS).find((k) => STOCK_OPTIONS[k].has(f)) || null;
 
+// GAP_RUNAWAY: the user's rule is that NO common setting applies to it, the
+// INSTRUMENT toggle included — it always buys the exact-ATM NIFTY option. Exempt
+// only while it never reads the toggle and pins every contract to ATM.
+const OPTIONS_ONLY_BY_RULE = new Set(["gapRunawayPaper.js"]);
+// Its stock scanner trades CASH EQUITY (intraday shares) — no NIFTY contract at
+// all. Exempt only while it stays out of the NIFTY instrument code entirely.
+const CASH_EQUITY_ONLY = new Set(["gapRunawayStkPaper.js"]);
+
 // ─────────────────────────────────────────────────────────────────────────────
 section("The helper itself — direction, P&L and charge rates");
 
@@ -355,6 +363,27 @@ for (const file of paperRoutes) {
       assert.ok(!/\bgetSymbol\(|\bgetLotQty\(/.test(src), `${file} must not call the NIFTY-default getSymbol/getLotQty`);
       const eng = require(path.join(ROUTES, "..", "strategies", "sail_vwap_st"));
       assert.strictEqual(eng.UNDERLYING, U);
+    });
+    continue;
+  }
+
+  if (OPTIONS_ONLY_BY_RULE.has(file)) {
+    check(`${file} always buys the exact-ATM NIFTY option — never reads the INSTRUMENT toggle`, () => {
+      assert.ok(!/NIFTY_FUTURES|instrumentMode|\bgetSymbol\(|\bgetLotQty\(/.test(src),
+        `${file} is exempt from the futures toggle only while it never consults it`);
+      const calls = src.match(/validateAndGetOptionSymbol\([^)]*\)/g) || [];
+      assert.ok(calls.length > 0, `${file} must resolve its option through validateAndGetOptionSymbol`);
+      for (const c of calls) assert.ok(/strikeOverride/.test(c), `${file}: ${c} does not pin the ATM strike`);
+      assert.ok(/instrument:\s*"NIFTY_OPTIONS"/.test(src), `${file} must stamp the instrument it traded`);
+    });
+    continue;
+  }
+
+  if (CASH_EQUITY_ONLY.has(file)) {
+    check(`${file} trades cash equity only — never touches the NIFTY instrument code`, () => {
+      assert.ok(!/config\/instrument|instrumentMode|NIFTY_FUTURES|validateAndGetOptionSymbol/.test(src),
+        `${file} is exempt from the NIFTY futures toggle only while it never builds a NIFTY symbol`);
+      assert.ok(/instrument:\s*"NSE_EQUITY_MIS"/.test(src), `${file} must stamp the instrument it traded`);
     });
     continue;
   }

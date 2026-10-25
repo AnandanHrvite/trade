@@ -1001,6 +1001,75 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
+    section: "GAP_runAway__Kirubakaran STRATEGY (NIFTY — daily RSI-on-EMA extreme + gap) — Zerodha",
+    icon: "\u{1F680}",
+    nav: "GAP_RUNAWAY",
+    group: "Strategies",
+    fields: [
+      // NIFTY: yesterday's daily RSI(10) on EMA21 below 10 + a gap UP today → ATM
+      // CE; above 90 + a gap DOWN → ATM PE. Stop = yesterday's close (per tick),
+      // trail = 5-min close through EMA21, square-off 15:15, one trade a day.
+      // Every key is its own GAP_RUNAWAY_* key; NO common rule applies (no profit
+      // lock, breakeven, cooldown, spread check, trade window, lot multiplier or
+      // capital pool). Defaults equal the engine's (src/strategies/gap_runaway.js).
+      // Paper + Live harness only — no backtest page, not replayable.
+      { key: "GAP_RUNAWAY_LIVE_ENABLED", label: "GAP_RUNAWAY Live Orders (gates /gap_runaway-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Send real orders to Zerodha. NEVER traded live — paper-validate a run of sessions first. Off means the live harness refuses to start in real-order mode.", default: "false" },
+      { key: "GAP_RUNAWAY_LIVE_DRY_RUN", label: "GAP_RUNAWAY Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep this strategy simulated even when live orders are switched on — the broker call is written to the log but no real order goes out.", default: "false" },
+      { key: "GAP_RUNAWAY_REFERENCE_URL", label: "Reference Video", type: "text", effect: EFFECT.INSTANT, desc: "The YouTube video this strategy comes from — kept here to refer back to. Shown as a link on the NIFTY page. Changes nothing in the rules.", default: "https://www.youtube.com/watch?v=uLTaXTyDxiI", subheader: "Reference" },
+
+      // ── Daily setup (yesterday's closed bar) ──
+      { key: "GAP_RUNAWAY_EMA_LENGTH", label: "Daily EMA Length (RSI source)", type: "number", min: 2, max: 200, step: 1, effect: EFFECT.INSTANT, desc: "The RSI is worked out on this EMA of the DAILY close, not on the close itself (TradingView: RSI Source = EMA). Smoothing it once is what lets the RSI reach 90 / 10.", default: "21", subheader: "Daily setup (yesterday's closed bar)" },
+      { key: "GAP_RUNAWAY_RSI_LENGTH", label: "Daily RSI Length", type: "number", min: 2, max: 100, step: 1, effect: EFFECT.INSTANT, desc: "RSI length on the EMA line above. Read on YESTERDAY's closed daily bar. Example: RSI 7 yesterday = oversold.", default: "10" },
+      { key: "GAP_RUNAWAY_RSI_UPPER", label: "Overbought (RSI above)", type: "number", min: 0, max: 100, step: 1, effect: EFFECT.INSTANT, desc: "Yesterday's RSI above this = overbought: a gap DOWN today buys the ATM PE. Must be above Oversold, or both fall back to 90 / 10.", default: "90" },
+      { key: "GAP_RUNAWAY_RSI_LOWER", label: "Oversold (RSI below)", type: "number", min: 0, max: 100, step: 1, effect: EFFECT.INSTANT, desc: "Yesterday's RSI below this = oversold: a gap UP today buys the ATM CE.", default: "10" },
+      { key: "GAP_RUNAWAY_MIN_GAP_PTS", label: "Minimum Gap (pts)", type: "number", min: 0, max: 5000, step: 1, effect: EFFECT.INSTANT, desc: "Gap = today's open minus yesterday's close. 0 = any gap counts, exactly like the video. Example at 20: open 24,010 vs close 24,000 is a 10-pt gap → no trade. The gap is also the stop: yesterday's close.", default: "0" },
+
+      // ── Entry & exits ──
+      { key: "GAP_RUNAWAY_ENTRY_START", label: "Entry Window Start", type: "time", effect: EFFECT.SESSION, desc: "The day's one decision is made from this time (IST), once today's open is known.", default: "09:15", subheader: "Entry & exits" },
+      { key: "GAP_RUNAWAY_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No entry after this time (IST). If the fill keeps failing until then, there is no trade today.", default: "09:30" },
+      { key: "GAP_RUNAWAY_EXIT_TF", label: "Trail Candle Timeframe", type: "select", options: [{ value: "3", label: "3 — 3-min candles" }, { value: "5", label: "5 — 5-min candles (default)" }, { value: "15", label: "15 — 15-min candles" }], effect: EFFECT.SESSION, desc: "Candles the EMA trail is checked on. The trade exits when one of these candles CLOSES back through the trail EMA (CE: close below, PE: close above). Applies on the next Start.", default: "5" },
+      { key: "GAP_RUNAWAY_TRAIL_EMA_LENGTH", label: "Trail EMA Length", type: "number", min: 2, max: 200, step: 1, effect: EFFECT.INSTANT, desc: "The trailing EMA on the trail candles. Separate from the daily EMA above, so changing the RSI smoothing never moves the trail.", default: "21" },
+      { key: "GAP_RUNAWAY_EOD_EXIT_TIME", label: "Forced Exit (square-off)", type: "time", effect: EFFECT.SESSION, desc: "Anything still open is closed at this time (IST). Nothing is held overnight.", default: "15:15" },
+
+      // ── Size & capital (its own — the common ones do not apply) ──
+      { key: "GAP_RUNAWAY_LOTS", label: "Lots", type: "number", min: 1, max: 10, step: 1, effect: EFFECT.SESSION, desc: "NIFTY lots per trade. This strategy's own count — the common Lot Multiplier does not apply. Example: 1 lot = 65 qty.", default: "1", subheader: "Size & capital" },
+      { key: "GAP_RUNAWAY_CAPITAL", label: "Paper Starting Capital (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.INSTANT, desc: "Starting capital shown on the paper page and restored by Reset. Its own number — the common Zerodha pool does not apply.", default: "100000" },
+    ],
+  },
+  {
+    section: "GAP_runAway STOCK SCANNER (F&O stocks — intraday shares, paper only)",
+    icon: "\u{1F50E}",
+    nav: "GAP_RUNAWAY Stocks",
+    group: "Strategies",
+    fields: [
+      // The same engine (src/strategies/gap_runaway.js) over a stock universe:
+      // yesterday's RSI extreme + today's gap, biggest gaps first, up to Max
+      // Trades a day, bought (gap up) or short-sold (gap down) as INTRADAY shares.
+      // Paper only — no live orders, no backtest, not replayable. No common rules.
+      { key: "GAP_RUNAWAY_STK_REFERENCE_URL", label: "Reference Video", type: "text", effect: EFFECT.INSTANT, desc: "The YouTube video this strategy comes from — kept here to refer back to. Shown as a link on the stock page. Changes nothing in the rules.", default: "https://www.youtube.com/watch?v=uLTaXTyDxiI", subheader: "Reference" },
+
+      // ── Daily setup (yesterday's closed bar) ──
+      { key: "GAP_RUNAWAY_STK_EMA_LENGTH", label: "Daily EMA Length (RSI source)", type: "number", min: 2, max: 200, step: 1, effect: EFFECT.INSTANT, desc: "The RSI is worked out on this EMA of the DAILY close, not on the close itself (TradingView: RSI Source = EMA). Smoothing it once is what lets the RSI reach 90 / 10.", default: "21", subheader: "Daily setup (yesterday's closed bar)" },
+      { key: "GAP_RUNAWAY_STK_RSI_LENGTH", label: "Daily RSI Length", type: "number", min: 2, max: 100, step: 1, effect: EFFECT.INSTANT, desc: "RSI length on the EMA line above. Read on YESTERDAY's closed daily bar. Example: RSI 7 yesterday = oversold.", default: "10" },
+      { key: "GAP_RUNAWAY_STK_RSI_UPPER", label: "Overbought (RSI above)", type: "number", min: 0, max: 100, step: 1, effect: EFFECT.INSTANT, desc: "Yesterday's RSI above this = overbought: a gap DOWN today short-sells the stock. Must be above Oversold, or both fall back to 90 / 10.", default: "90" },
+      { key: "GAP_RUNAWAY_STK_RSI_LOWER", label: "Oversold (RSI below)", type: "number", min: 0, max: 100, step: 1, effect: EFFECT.INSTANT, desc: "Yesterday's RSI below this = oversold: a gap UP today buys the stock.", default: "10" },
+      { key: "GAP_RUNAWAY_STK_MIN_GAP_PTS", label: "Minimum Gap (pts)", type: "number", min: 0, max: 5000, step: 1, effect: EFFECT.INSTANT, desc: "Gap = today's open minus yesterday's close. 0 = any gap counts, exactly like the video. Example at 20: open 24,010 vs close 24,000 is a 10-pt gap → no trade. The gap is also the stop: yesterday's close.", default: "0" },
+
+      // ── Entry & exits ──
+      { key: "GAP_RUNAWAY_STK_ENTRY_START", label: "Entry Window Start", type: "time", effect: EFFECT.SESSION, desc: "The day's one decision is made from this time (IST), once today's open is known.", default: "09:15", subheader: "Entry & exits" },
+      { key: "GAP_RUNAWAY_STK_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No entry after this time (IST). If the fill keeps failing until then, there is no trade today.", default: "09:30" },
+      { key: "GAP_RUNAWAY_STK_EXIT_TF", label: "Trail Candle Timeframe", type: "select", options: [{ value: "3", label: "3 — 3-min candles" }, { value: "5", label: "5 — 5-min candles (default)" }, { value: "15", label: "15 — 15-min candles" }], effect: EFFECT.SESSION, desc: "Candles the EMA trail is checked on. The trade exits when one of these candles CLOSES back through the trail EMA (long: close below, short: close above). Applies on the next Start.", default: "5" },
+      { key: "GAP_RUNAWAY_STK_TRAIL_EMA_LENGTH", label: "Trail EMA Length", type: "number", min: 2, max: 200, step: 1, effect: EFFECT.INSTANT, desc: "The trailing EMA on the trail candles. Separate from the daily EMA above, so changing the RSI smoothing never moves the trail.", default: "21" },
+      { key: "GAP_RUNAWAY_STK_EOD_EXIT_TIME", label: "Forced Exit (square-off)", type: "time", effect: EFFECT.SESSION, desc: "Anything still open is closed at this time (IST). Nothing is held overnight.", default: "15:15" },
+
+      // ── Universe & size ──
+      { key: "GAP_RUNAWAY_STK_UNIVERSE", label: "Stock List", type: "select", options: ["FNO", "NIFTY100", "NIFTY50"], effect: EFFECT.SESSION, desc: "Which stocks are scanned before 09:15. FNO = all F&O stocks (~220, about 75 s to scan). Lists can be edited in ~/trading-data/swing_scanner_universe.json.", default: "FNO", subheader: "Universe & size" },
+      { key: "GAP_RUNAWAY_STK_TRADE_AMOUNT", label: "Amount per Trade (₹)", type: "number", min: 1000, max: 10000000, step: 1000, effect: EFFECT.SESSION, desc: "Shares per trade = this ÷ price, rounded down. Example: ₹1,00,000 on a ₹2,500 stock = 40 shares.", default: "100000" },
+      { key: "GAP_RUNAWAY_STK_MAX_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 20, step: 1, effect: EFFECT.SESSION, desc: "When more stocks fire, the biggest gaps (in %) are taken first, up to this many a day. One trade per stock per day.", default: "3" },
+      { key: "GAP_RUNAWAY_STK_CAPITAL", label: "Paper Starting Capital (₹)", type: "number", min: 10000, max: 100000000, step: 10000, effect: EFFECT.INSTANT, desc: "Starting capital shown on the scanner page and restored by Reset. Display only — entries are never refused for capital.", default: "300000" },
+    ],
+  },
+  {
     section: "BN_EMA_RSI_ST_V2 STRATEGY (NIFTY BANK — EMA20/50 + RSI + SuperTrend trail) — Zerodha",
     icon: "\u{1F3E6}",
     nav: "BN_EMA_RSI_ST_V2",
@@ -1339,6 +1408,8 @@ const SETTINGS_SCHEMA = [
       { key: "TG_PIVOT_EMA_ST_STARTED", label: "PIVOT_EMA_ST — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a PIVOT_EMA_ST session starts.", default: "true" },
       { key: "TG_BN_PIVOT_EMA_ST_STARTED", label: "BN_PIVOT_EMA_ST — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a BN_PIVOT_EMA_ST (NIFTY BANK) session starts.", default: "true" },
       { key: "TG_SAIL_PIVOT_EMA_ST_STARTED", label: "SAIL_PIVOT_EMA_ST — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a SAIL_PIVOT_EMA_ST session starts.", default: "true" },
+      { key: "TG_GAP_RUNAWAY_STARTED", label: "GAP_RUNAWAY — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a GAP_runAway__Kirubakaran (NIFTY) session starts.", default: "true" },
+      { key: "TG_GAP_RUNAWAY_STK_STARTED", label: "GAP_RUNAWAY Stocks — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when the GAP_runAway stock scanner starts.", default: "true" },
       { key: "TG_CMX_STARTED", label: "Commodity (MCX) — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when any Crude / Gold / Silver paper page starts.", default: "true" },
 
       { key: "TG_EMA_RSI_ST_ENTRY", label: "EMA_RSI_ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST entry.", default: "true", subheader: "Trade Entry" },
@@ -1361,6 +1432,8 @@ const SETTINGS_SCHEMA = [
       { key: "TG_PIVOT_EMA_ST_ENTRY", label: "PIVOT_EMA_ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every PIVOT_EMA_ST entry.", default: "true" },
       { key: "TG_BN_PIVOT_EMA_ST_ENTRY", label: "BN_PIVOT_EMA_ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BN_PIVOT_EMA_ST (NIFTY BANK) entry.", default: "true" },
       { key: "TG_SAIL_PIVOT_EMA_ST_ENTRY", label: "SAIL_PIVOT_EMA_ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every SAIL_PIVOT_EMA_ST entry.", default: "true" },
+      { key: "TG_GAP_RUNAWAY_ENTRY", label: "GAP_RUNAWAY — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every GAP_runAway__Kirubakaran (NIFTY) entry.", default: "true" },
+      { key: "TG_GAP_RUNAWAY_STK_ENTRY", label: "GAP_RUNAWAY Stocks — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every stock-scanner entry.", default: "true" },
       { key: "TG_CMX_ENTRY", label: "Commodity (MCX) — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Crude / Gold / Silver paper entry.", default: "true" },
 
       { key: "TG_EMA_RSI_ST_EXIT", label: "EMA_RSI_ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST exit.", default: "true", subheader: "Trade Exit" },
@@ -1383,6 +1456,8 @@ const SETTINGS_SCHEMA = [
       { key: "TG_PIVOT_EMA_ST_EXIT", label: "PIVOT_EMA_ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every PIVOT_EMA_ST exit.", default: "true" },
       { key: "TG_BN_PIVOT_EMA_ST_EXIT", label: "BN_PIVOT_EMA_ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BN_PIVOT_EMA_ST (NIFTY BANK) exit.", default: "true" },
       { key: "TG_SAIL_PIVOT_EMA_ST_EXIT", label: "SAIL_PIVOT_EMA_ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every SAIL_PIVOT_EMA_ST exit.", default: "true" },
+      { key: "TG_GAP_RUNAWAY_EXIT", label: "GAP_RUNAWAY — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every GAP_runAway__Kirubakaran (NIFTY) exit.", default: "true" },
+      { key: "TG_GAP_RUNAWAY_STK_EXIT", label: "GAP_RUNAWAY Stocks — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every stock-scanner exit.", default: "true" },
       { key: "TG_CMX_EXIT", label: "Commodity (MCX) — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Crude / Gold / Silver paper exit.", default: "true" },
 
       { key: "TG_EMA_RSI_ST_SIGNALS", label: "EMA_RSI_ST — Signal/Skip Alerts", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert why a trade was or wasn't taken.", default: "true", subheader: "Signal / Skip" },
@@ -1410,6 +1485,8 @@ const SETTINGS_SCHEMA = [
       { key: "TG_PIVOT_EMA_ST_DAYREPORT", label: "PIVOT_EMA_ST — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a PIVOT_EMA_ST day summary on stop.", default: "true" },
       { key: "TG_BN_PIVOT_EMA_ST_DAYREPORT", label: "BN_PIVOT_EMA_ST — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a BN_PIVOT_EMA_ST (NIFTY BANK) day summary on stop.", default: "true" },
       { key: "TG_SAIL_PIVOT_EMA_ST_DAYREPORT", label: "SAIL_PIVOT_EMA_ST — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a SAIL_PIVOT_EMA_ST day summary on stop.", default: "true" },
+      { key: "TG_GAP_RUNAWAY_DAYREPORT", label: "GAP_RUNAWAY — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a GAP_runAway__Kirubakaran (NIFTY) day summary on stop.", default: "true" },
+      { key: "TG_GAP_RUNAWAY_STK_DAYREPORT", label: "GAP_RUNAWAY Stocks — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send the stock-scanner day summary on stop.", default: "true" },
       { key: "TG_CMX_DAYREPORT", label: "Commodity (MCX) — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a day summary when a Crude / Gold / Silver paper page stops.", default: "true" },
 
       { key: "TG_DAYREPORT_CONSOLIDATED", label: "Consolidated Day Report (Market Close)", type: "toggle", effect: EFFECT.INSTANT, desc: "Send one combined end-of-day summary at 15:30 IST.", default: "true" },
@@ -1525,6 +1602,8 @@ const SETTINGS_SCHEMA = [
       { key: "SAIL_VWAP_ST_MODE_ENABLED", label: "SAIL_VWAP_ST Mode (SAIL stock options)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the SAIL_VWAP_ST menu (under STOCKS) and its settings, and start streaming SAIL prices. It buys SAIL stock options: a 5-min candle closes across VWAP, then a close beyond that candle's high/low within 3 candles, with SuperTrend agreeing. Ships OFF because it is unproven — turn it on to backtest and paper-trade it.", default: "false" },
       { key: "PIVOT_EMA_ST_MODE_ENABLED", label: "PIVOT_EMA_ST Mode", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the PIVOT_EMA_ST menu (under NIFTY) and its settings, and include it in Start All. NIFTY options: a closed candle inside the pivot zone (PP–R1 for CE, S1–PP for PE) with EMA20 crossing EMA50 on that candle and SuperTrend agreeing. Paper + Live harness only. On by default; unproven — never traded.", default: "true" },
       { key: "BN_PIVOT_EMA_ST_MODE_ENABLED", label: "BN_PIVOT_EMA_ST Mode (NIFTY BANK)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the BN_PIVOT_EMA_ST menu (under BANK NIFTY) and its settings, and include it in Start All. The PIVOT_EMA_ST rules on NIFTY BANK, with its own settings and position. On by default; unproven — never traded.", default: "true" },
+      { key: "GAP_RUNAWAY_MODE_ENABLED", label: "GAP_runAway__Kirubakaran Mode", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the GAP_RUNAWAY menu (under NIFTY) and its settings, and include it in Start All. NIFTY options: yesterday's daily RSI(10) on EMA21 below 10 + gap UP → ATM CE, above 90 + gap DOWN → ATM PE; stop = yesterday's close.", default: "true" },
+      { key: "GAP_RUNAWAY_STK_MODE_ENABLED", label: "GAP_runAway Stock Scanner Mode", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the GAP_RUNAWAY SCANNER menu (under STOCKS) and its settings, and include it in Start All. Same rules over F&O stocks, paper-traded as intraday shares.", default: "true" },
       { key: "SAIL_PIVOT_EMA_ST_MODE_ENABLED", label: "SAIL_PIVOT_EMA_ST Mode (SAIL stock options)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the SAIL_PIVOT_EMA_ST menu (under STOCKS) and its settings, include it in Start All, and start streaming SAIL prices. The PIVOT_EMA_ST rules on SAIL stock options. On by default; unproven — never traded.", default: "true" },
       { key: "CMX_CRUDE_EMA_RSI_ST_MODE_ENABLED", label: "Crude Oil EMA_RSI_ST Mode (Commodity)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the COMMODITY → Crude Oil → EMA_RSI_ST Paper page and allow it to start. The EMA_RSI_ST rules on MCX crude oil, paper only, separate from every NIFTY strategy. Ships OFF.", default: "false" },
       { key: "CMX_CRUDE_EMA_RSI_ST_V2_MODE_ENABLED", label: "Crude Oil EMA_RSI_ST_V2 Mode (Commodity)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the COMMODITY → Crude Oil → EMA_RSI_ST_V2 Paper page and allow it to start. The EMA_RSI_ST_V2 rules on MCX crude oil, paper only, separate from every NIFTY strategy. Ships OFF.", default: "false" },
@@ -1654,6 +1733,13 @@ const SETTINGS_SCHEMA = [
       { key: "UI_SHOW_BN_PIVOT_EMA_ST_HISTORY",  label: "BN_PIVOT_EMA_ST → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under BN PIVOT_EMA_ST (NIFTY BANK).", default: "true" },
       { key: "UI_SHOW_SAIL_PIVOT_EMA_ST_PAPER",    label: "SAIL_PIVOT_EMA_ST → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under SAIL PIVOT_EMA_ST.", default: "true" },
       { key: "UI_SHOW_SAIL_PIVOT_EMA_ST_LIVE_HARNESS", label: "SAIL_PIVOT_EMA_ST → Live", type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (the paper-wrapping harness at /sail_pivot_ema_st-live) under SAIL PIVOT_EMA_ST.", default: "false" },
+      // ── GAP_RUNAWAY submenus (NIFTY + STOCKS) ── no Backtest (none exists), and
+      // the stock scanner has no Live page; defaults match sharedNav's fall-backs.
+      { key: "UI_SHOW_GAP_RUNAWAY_PAPER",        label: "GAP_RUNAWAY → Paper",        type: "toggle", effect: EFFECT.INSTANT, desc: "Show Paper under GAP_RUNAWAY (NIFTY).", default: "true", subheader: "GAP_RUNAWAY sub-menus" },
+      { key: "UI_SHOW_GAP_RUNAWAY_LIVE_HARNESS", label: "GAP_RUNAWAY → Live",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show Live (the paper-wrapping harness at /gap_runaway-live) under GAP_RUNAWAY.", default: "false" },
+      { key: "UI_SHOW_GAP_RUNAWAY_HISTORY",      label: "GAP_RUNAWAY → History",      type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under GAP_RUNAWAY (NIFTY).", default: "true" },
+      { key: "UI_SHOW_GAP_RUNAWAY_STK_PAPER",    label: "GAP_RUNAWAY SCANNER → Paper", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the stock scanner's Paper page under STOCKS.", default: "true" },
+      { key: "UI_SHOW_GAP_RUNAWAY_STK_HISTORY",  label: "GAP_RUNAWAY SCANNER → History", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the stock scanner's History under STOCKS.", default: "true" },
       { key: "UI_SHOW_SAIL_PIVOT_EMA_ST_HISTORY",  label: "SAIL_PIVOT_EMA_ST → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show History under SAIL PIVOT_EMA_ST.", default: "true" },
 
       // ── System submenu (Settings is always shown) ──
@@ -1735,6 +1821,8 @@ const MODE_SECTION_TITLES = {
   pivot_ema_st: "PIVOT_EMA_ST STRATEGY (Pivot zone + EMA20/50 cross + SuperTrend) — Zerodha",
   bn_pivot_ema_st: "BN_PIVOT_EMA_ST STRATEGY (NIFTY BANK — Pivot zone + EMA20/50 cross + SuperTrend) — Zerodha",
   sail_pivot_ema_st: "SAIL_PIVOT_EMA_ST STRATEGY (SAIL — Pivot zone + EMA20/50 cross + SuperTrend) — Zerodha",
+  gap_runaway: "GAP_runAway__Kirubakaran STRATEGY (NIFTY — daily RSI-on-EMA extreme + gap) — Zerodha",
+  gap_runaway_stk: "GAP_runAway STOCK SCANNER (F&O stocks — intraday shares, paper only)",
   early_bird: "EARLYBIRD STRATEGY (first 15-min breakout, CASH EQUITY) — Fyers",
 };
 const SNAPSHOT_COMMON_SECTION_TITLES = new Set([
@@ -1750,6 +1838,8 @@ _MODE_KEYS.sail_vwap_st = new Set();
 _MODE_KEYS.pivot_ema_st = new Set();
 _MODE_KEYS.bn_pivot_ema_st = new Set();
 _MODE_KEYS.sail_pivot_ema_st = new Set();
+_MODE_KEYS.gap_runaway = new Set();
+_MODE_KEYS.gap_runaway_stk = new Set();
 const _KEY_TO_MODES = new Map();
 (function buildModeKeyIndex() {
   const commonKeys = [];
@@ -2742,6 +2832,9 @@ router.get("/", (req, res) => {
   const pivotEmaStModeOn     = (envData["PIVOT_EMA_ST_MODE_ENABLED"] ?? process.env.PIVOT_EMA_ST_MODE_ENABLED ?? "true").toLowerCase() === "true";
   const bnPivotEmaStModeOn   = (envData["BN_PIVOT_EMA_ST_MODE_ENABLED"] ?? process.env.BN_PIVOT_EMA_ST_MODE_ENABLED ?? "true").toLowerCase() === "true";
   const sailPivotEmaStModeOn = (envData["SAIL_PIVOT_EMA_ST_MODE_ENABLED"] ?? process.env.SAIL_PIVOT_EMA_ST_MODE_ENABLED ?? "true").toLowerCase() === "true";
+  // GAP_RUNAWAY + its stock scanner — "true" by default (Start All starts them).
+  const gapRunawayModeOn     = (envData["GAP_RUNAWAY_MODE_ENABLED"] ?? process.env.GAP_RUNAWAY_MODE_ENABLED ?? "true").toLowerCase() === "true";
+  const gapRunawayStkModeOn  = (envData["GAP_RUNAWAY_STK_MODE_ENABLED"] ?? process.env.GAP_RUNAWAY_STK_MODE_ENABLED ?? "true").toLowerCase() === "true";
   // Commodity PIVOT_EMA_ST pages default ON, so they also open the Commodity section.
   const cmxPivotModeOn = ["CRUDE", "GOLD", "SILVER"].map(c => `CMX_${c}_PIVOT_EMA_ST_MODE_ENABLED`)
     .some(k => (envData[k] ?? process.env[k] ?? "true").toLowerCase() === "true");
@@ -2771,6 +2864,8 @@ router.get("/", (req, res) => {
     "PIVOT_EMA_ST STRATEGY (Pivot zone + EMA20/50 cross + SuperTrend) — Zerodha": pivotEmaStModeOn,
     "BN_PIVOT_EMA_ST STRATEGY (NIFTY BANK — Pivot zone + EMA20/50 cross + SuperTrend) — Zerodha": bnPivotEmaStModeOn,
     "SAIL_PIVOT_EMA_ST STRATEGY (SAIL — Pivot zone + EMA20/50 cross + SuperTrend) — Zerodha": sailPivotEmaStModeOn,
+    "GAP_runAway__Kirubakaran STRATEGY (NIFTY — daily RSI-on-EMA extreme + gap) — Zerodha": gapRunawayModeOn,
+    "GAP_runAway STOCK SCANNER (F&O stocks — intraday shares, paper only)": gapRunawayStkModeOn,
     "COMMODITY (MCX crude / gold / silver) — EMA_RSI_ST + EMA_RSI_ST_V2, paper only": cmxModeOn || cmxPivotModeOn,
     "EARLYBIRD STRATEGY (first 15-min breakout, CASH EQUITY) — Fyers": earlyBirdModeOn,
   };
