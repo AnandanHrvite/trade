@@ -644,12 +644,12 @@ function dayTable(title, gModes, gArr, showVix){
   const hasLinks = gArr.some(t => t.book==='paper' && HIST_PATH[t.mode]);
   const keptArr = gArr.filter(t => !SKIP.has(t.date));
   let tN=0,tW=0,tL=0,tNet=0,tWP=0,tLP=0; const totByMode={};
-  for(const mo of gModes) totByMode[mo]={n:0,pnl:0,wins:0,losses:0};
+  for(const mo of gModes) totByMode[mo]={n:0,pnl:0,wins:0,losses:0,wP:0,lP:0};
   for(const t of keptArr){
     tN++; tNet+=t.pnl;
     if(t.pnl>0){ tW++; tWP+=t.pnl; } else if(t.pnl<0){ tL++; tLP+=t.pnl; }
     const m=totByMode[t.mode];
-    if(m){ m.n++; m.pnl+=t.pnl; if(t.pnl>0) m.wins++; else if(t.pnl<0) m.losses++; }
+    if(m){ m.n++; m.pnl+=t.pnl; if(t.pnl>0){ m.wins++; m.wP+=t.pnl; } else if(t.pnl<0){ m.losses++; m.lP+=t.pnl; } }
   }
   const tWR = tN?(tW/tN*100):0;
 
@@ -660,7 +660,19 @@ function dayTable(title, gModes, gArr, showVix){
   const firstOf = {};
   gModes.forEach((mo,i) => { if(grouped && (i===0 || COL_GROUP[mo]!==COL_GROUP[gModes[i-1]])) firstOf[mo]=true; });
   const gc = mo => firstOf[mo] ? ' class="grp-first"' : '';
-  const tradesTh = ' title="Trades taken · winners · losers · share of trades that won">Trades · W / L · Win %</th>';
+  // Realised risk:reward per strategy — average win ÷ average loss over the kept days.
+  const rrOf = mo => {
+    const c=totByMode[mo];
+    if(!c || !c.wins || !c.losses) return '—';
+    return '1:'+((c.wP/c.wins)/Math.abs(c.lP/c.losses)).toFixed(2);
+  };
+  // Shown on hover over the strategy name; covers the chosen range (gArr is already filtered).
+  const modeTip = mo => {
+    const c=totByMode[mo];
+    const wr = c && c.n ? (c.wins/c.n*100).toFixed(0)+'%' : '—';
+    return ' title="RR '+rrOf(mo)+' (avg win ÷ avg loss) · Win rate '+wr+' · '+(c?c.n:0)+' trades"';
+  };
+  const tradesTh = ' title=""Trades taken · winners · losers · share of trades that won">Trades · W / L · Win %</th>';
 
   let thead='<tr><th class="skip-col"'+span+' title="Tick a day to leave it out of the totals">Skip</th><th'+span+'>Date</th>'+(showVix?'<th'+span+'>VIX</th>':'');
   if(grouped){
@@ -671,10 +683,10 @@ function dayTable(title, gModes, gArr, showVix){
       i+=n;
     }
     thead+='<th'+span+tradesTh+'<th'+span+'>Day P&amp;L</th></tr><tr>';
-    for(const mo of gModes) thead+='<th'+gc(mo)+'>'+esc(COL_LABEL[mo]||MODE_LABEL[mo]||mo)+'</th>';
+    for(const mo of gModes) thead+='<th'+gc(mo)+modeTip(mo)+'>'+esc(COL_LABEL[mo]||MODE_LABEL[mo]||mo)+'</th>';
     thead+='</tr>';
   } else {
-    for(const mo of gModes) thead+='<th>'+esc(MODE_LABEL[mo]||mo)+'</th>';
+    for(const mo of gModes) thead+='<th'+modeTip(mo)+'>'+esc(MODE_LABEL[mo]||mo)+'</th>';
     thead+='<th'+tradesTh+'<th>Day P&amp;L</th></tr>';
   }
 
