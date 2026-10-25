@@ -672,7 +672,7 @@ function dayTable(title, gModes, gArr, showVix){
     const wr = c && c.n ? (c.wins/c.n*100).toFixed(0)+'%' : '—';
     return ' title="RR '+rrOf(mo)+' (avg win ÷ avg loss) · Win rate '+wr+' · '+(c?c.n:0)+' trades"';
   };
-  const tradesTh = ' title=""Trades taken · winners · losers · share of trades that won">Trades · W / L · Win %</th>';
+  const tradesTh = ' title="Trades taken · winners · losers · share of trades that won">Trades · W / L · Win %</th>';
 
   let thead='<tr><th class="skip-col"'+span+' title="Tick a day to leave it out of the totals">Skip</th><th'+span+'>Date</th>'+(showVix?'<th'+span+'>VIX</th>':'');
   if(grouped){
