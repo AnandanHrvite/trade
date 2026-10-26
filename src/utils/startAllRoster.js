@@ -109,12 +109,19 @@ function discoverStartRoutes() {
 
 const _warned = new Set();
 
+// Some paper routes have their own `{MODE}_PAPER_ENABLED` gate on /start; a row
+// whose gate ships off declares `paperDefault: 'false'`. No key = always on.
+function paperEnabled(s) {
+  return String(process.env[`${s.mode}_PAPER_ENABLED`] || s.paperDefault || 'true').toLowerCase() === 'true';
+}
+
 /**
  * The strategies enabled in Settings, joined to their start routes.
  * Read per request — Settings saves mutate process.env live, and the dashboard
  * refetches this on every Start-All click.
  *
- * @returns {Array<{mode,label,paper,live,harness}>} `paper` is always present;
+ * @returns {Array<{mode,label,paper,paperOff,live,harness}>} `paper` is always present
+ *          (`paperOff` true when its paper toggle would refuse the start);
  *          `live` is null for a strategy with no real-order live engine, and
  *          `harness` is null for one with no declared harness.
  */
@@ -134,6 +141,8 @@ function startAllRoster() {
       mode:    s.mode,
       label:   s.label,
       paper:   `${routes.paper}/start`,
+      // Paper Start All skips it: its /start would only refuse with 403.
+      paperOff: !paperEnabled(s),
       live:    routes.live    ? `${routes.live}/start`    : null,
       harness: routes.harness ? `${routes.harness}/start` : null,
     });

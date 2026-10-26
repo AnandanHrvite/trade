@@ -1638,7 +1638,7 @@ app.get("/api/start-all-roster", (req, res) => {
   res.json({
     success: true,
     modes,
-    paper:   modes.map((m) => m.paper),
+    paper:   modes.filter((m) => !m.paperOff).map((m) => m.paper),
     live:    modes.filter((m) => m.live).map((m) => m.live),
     harness: modes.filter((m) => m.harness).map((m) => m.harness),
   });
@@ -3455,10 +3455,10 @@ async function pollDashboardStatus(){
 // this button naming any strategy. The render-time lists are the fallback for
 // when that fetch fails. Harness routes wrap PAPER (LIVE = PAPER by
 // construction) and respect LIVE_HARNESS_DRY_RUN.
-var PAPER_ENDPOINTS   = ${JSON.stringify(startAllModes.map((m) => m.paper))};
+var PAPER_ENDPOINTS   = ${JSON.stringify(startAllModes.filter((m) => !m.paperOff).map((m) => m.paper))};
 var LIVE_ENDPOINTS    = ${JSON.stringify(startAllLiveModes.map((m) => m.live))};
 var HARNESS_ENDPOINTS = ${JSON.stringify(startAllHarnessModes.map((m) => m.harness))};
-var ALL_MODE_LABELS   = ${JSON.stringify(startAllModes.map((m) => m.label))};
+var ALL_MODE_LABELS   = ${JSON.stringify(startAllModes.filter((m) => !m.paperOff).map((m) => m.label))};
 var LIVE_MODE_LABELS  = ${JSON.stringify(startAllLiveModes.map((m) => m.label))};
 var HARNESS_MODE_LABELS = ${JSON.stringify(startAllHarnessModes.map((m) => m.label))};
 var ENDPOINT_LABELS   = ${JSON.stringify(startAllEndpointLabels)};
@@ -3472,7 +3472,7 @@ function _applyRoster(modes){
   var labels = [], liveLabels = [], harnessLabels = [], names = {}, poll = [];
   modes.forEach(function(m){
     if(!m || !m.paper) return;
-    paper.push(m.paper); labels.push(m.label);
+    if(!m.paperOff){ paper.push(m.paper); labels.push(m.label); }
     names[m.paper] = m.label + ' Paper';
     poll.push({ url: m.paper.replace('/start','/status/data'), kind: 'paper' });
     if(m.live){

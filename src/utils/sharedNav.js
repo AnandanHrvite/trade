@@ -34,15 +34,15 @@ const STRATEGY_MODES = [
   // envDefault 'false': V2 ships dark. Without it enabledStrategies() below would
   // default it ON and Start-All, the consolidated report and edge analytics would
   // all include a strategy the sidebar and Settings show as disabled.
-  { mode: 'EMA_RSI_ST_V2', label: 'EMA_RSI_ST_V2', envKey: 'EMA_RSI_ST_V2_MODE_ENABLED', envDefault: 'false' },
+  { mode: 'EMA_RSI_ST_V2', label: 'EMA_RSI_ST_V2', envKey: 'EMA_RSI_ST_V2_MODE_ENABLED', envDefault: 'false', paperDefault: 'false' },
   // Same engine on NIFTY BANK. envDefault 'false' for the same reason as its
   // NIFTY sibling: it must stay out of Start-All, the consolidated report and
   // edge analytics until it is deliberately switched on.
-  { mode: 'BN_EMA_RSI_ST_V2', label: 'BN EMA_RSI_ST_V2', envKey: 'BN_EMA_RSI_ST_V2_MODE_ENABLED', envDefault: 'false' },
+  { mode: 'BN_EMA_RSI_ST_V2', label: 'BN EMA_RSI_ST_V2', envKey: 'BN_EMA_RSI_ST_V2_MODE_ENABLED', envDefault: 'false', paperDefault: 'false' },
   // ST_RSI_PIV_BB ships dark like V2 (envDefault 'false') for the same reason.
-  { mode: 'ST_RSI_PIV_BB', label: 'ST_RSI_PIV_BB', envKey: 'ST_RSI_PIV_BB_MODE_ENABLED', envDefault: 'false' },
+  { mode: 'ST_RSI_PIV_BB', label: 'ST_RSI_PIV_BB', envKey: 'ST_RSI_PIV_BB_MODE_ENABLED', envDefault: 'false', paperDefault: 'false' },
   // SAIL_VWAP_ST (SAIL stock options) ships dark (envDefault 'false').
-  { mode: 'SAIL_VWAP_ST', label: 'SAIL VWAP+ST', envKey: 'SAIL_VWAP_ST_MODE_ENABLED', envDefault: 'false' },
+  { mode: 'SAIL_VWAP_ST', label: 'SAIL VWAP+ST', envKey: 'SAIL_VWAP_ST_MODE_ENABLED', envDefault: 'false', paperDefault: 'false' },
   // PIVOT_EMA_ST family ships ON (envDefault 'true') — the user wants Start All to start them.
   { mode: 'PIVOT_EMA_ST', label: 'PIVOT_EMA_ST', envKey: 'PIVOT_EMA_ST_MODE_ENABLED', envDefault: 'true' },
   { mode: 'BN_PIVOT_EMA_ST', label: 'BN PIVOT_EMA_ST', envKey: 'BN_PIVOT_EMA_ST_MODE_ENABLED', envDefault: 'true' },

@@ -1321,7 +1321,7 @@ async function startAllNse() {
     if (!modes.length) { await showAlert({ icon:'⚠️', title:'Nothing to start', message:'No NIFTY / BANK NIFTY strategy is enabled in Settings.' }); return; }
     // Sequential, like the Dashboard: parallel starts race each other for the socket.
     for (const m of modes) {
-      if (!m || !m.paper) continue;
+      if (!m || !m.paper || m.paperOff) continue;   // its Paper toggle is off — /start would refuse
       btn.textContent = '⏳ Starting ' + m.label + '…';
       try {
         const res = await secretFetch(m.paper);
