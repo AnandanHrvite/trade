@@ -74,7 +74,7 @@ const SETTINGS_SCHEMA = [
     section: "EMA_RSI_ST STRATEGY (EMA 20/50 + RSI + SuperTrend) — Zerodha",
     icon: "📊",
     nav: "EMA_RSI_ST",
-    group: "Strategies",
+    group: "NIFTY",
     fields: [
       { key: "EMA_RSI_ST_LIVE_ENABLED", label: "EMA_RSI_ST Live Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Zerodha.", subheader: "Mode & Session" },
       { key: "EMA_RSI_ST_LIVE_DRY_RUN", label: "EMA_RSI_ST Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep this strategy simulated even when live is on.", default: "false" },
@@ -119,7 +119,7 @@ const SETTINGS_SCHEMA = [
     section: "BB_RSI STRATEGY (BB+SuperTrend+RSI) — Fyers",
     icon: "⚡",
     nav: "BB_RSI",
-    group: "Strategies",
+    group: "NIFTY",
     fields: [
       { key: "BB_RSI_ENABLED", label: "BB_RSI Live Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Fyers.", default: "false", subheader: "Mode, Session & VIX" },
       { key: "BB_RSI_EXPIRY_DAY_ONLY", label: "BB_RSI Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only trade on weekly expiry day.", default: "false" },
@@ -181,7 +181,7 @@ const SETTINGS_SCHEMA = [
     section: "PRICE ACTION STRATEGY (5-min) — Fyers",
     icon: "📐",
     nav: "Price Action",
-    group: "Strategies",
+    group: "NIFTY",
     fields: [
       { key: "PA_ENABLED", label: "PA Live Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Fyers.", default: "false", subheader: "Mode & Session" },
       { key: "PA_EXPIRY_DAY_ONLY", label: "PA Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only trade on weekly expiry day.", default: "false" },
@@ -215,7 +215,7 @@ const SETTINGS_SCHEMA = [
     section: "ORB STRATEGY (Opening Range Breakout) — Fyers",
     icon: "📋",
     nav: "ORB",
-    group: "Strategies",
+    group: "NIFTY",
     fields: [
       { key: "ORB_LIVE_ENABLED", label: "ORB Live Orders (gates /orb-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live ORB orders via Fyers.", default: "false", subheader: "Mode & Entry" },
       { key: "ORB_LIVE_DRY_RUN", label: "ORB Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep ORB simulated even when live is on.", default: "false" },
@@ -298,7 +298,7 @@ const SETTINGS_SCHEMA = [
     section: "EMA9 + VWAP STRATEGY — Zerodha",
     icon: "📈",
     nav: "EMA9 + VWAP",
-    group: "Strategies",
+    group: "NIFTY",
     fields: [
       { key: "EMA9VWAP_LIVE_ENABLED", label: "EMA9+VWAP Live Orders (gates /ema9vwap-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Zerodha.", default: "false", subheader: "Mode & Session" },
       { key: "EMA9VWAP_LIVE_DRY_RUN", label: "EMA9+VWAP Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep this strategy simulated even when live is on.", default: "false" },
@@ -340,7 +340,7 @@ const SETTINGS_SCHEMA = [
     section: "TREND PULLBACK STRATEGY — Fyers",
     icon: "📈",
     nav: "Trend Pullback",
-    group: "Strategies",
+    group: "NIFTY",
     fields: [
       { key: "TREND_PB_LIVE_ENABLED", label: "Trend Pullback Live Orders (gates /trend-pb-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Fyers.", default: "false", subheader: "Mode & Entry" },
       { key: "TREND_PB_LIVE_DRY_RUN", label: "Trend Pullback Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep this strategy simulated even when live is on.", default: "false" },
@@ -383,7 +383,7 @@ const SETTINGS_SCHEMA = [
     section: "TREND DAY SCALP STRATEGY — Fyers",
     icon: "⚡",
     nav: "TREND DAY SCALP",
-    group: "Strategies",
+    group: "NIFTY",
     fields: [
       // ── Enable / live gating ──
       { key: "TDS_PAPER_ENABLED", label: "Trend Day Scalp Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new Trend Day Scalp paper sessions.", default: "true", subheader: "Mode & Live" },
@@ -432,7 +432,7 @@ const SETTINGS_SCHEMA = [
     section: "HA SCALP STRATEGY (Heikin Ashi 15m) — Zerodha",
     icon: "\u{1F56F}",
     nav: "HA SCALP",
-    group: "Strategies",
+    group: "NIFTY",
     fields: [
       // ── Enable / live gating ──
       { key: "HA_SCALP_PAPER_ENABLED", label: "HA Scalp Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new HA Scalp paper sessions.", default: "true", subheader: "Mode & Live" },
@@ -496,7 +496,7 @@ const SETTINGS_SCHEMA = [
     section: "PREV ORB SCALP STRATEGY (Prev-day range + 15m/3m) — Zerodha",
     icon: "\u{1F3AF}",
     nav: "PREV ORB SCALP",
-    group: "Strategies",
+    group: "NIFTY",
     fields: [
       // ── Enable / live gating ──
       { key: "PREV_ORB_SCALP_PAPER_ENABLED", label: "Prev ORB Scalp Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new Prev ORB Scalp paper sessions.", default: "true", subheader: "Mode & Live" },
@@ -533,7 +533,7 @@ const SETTINGS_SCHEMA = [
     section: "EARLYBIRD STRATEGY (first 15-min breakout, CASH EQUITY) — Fyers",
     icon: "\u{1F426}",
     nav: "EARLYBIRD",
-    group: "Strategies",
+    group: "NIFTY",
     fields: [
       // ── Enable / live gating ──
       { key: "EARLYBIRD_PAPER_ENABLED", label: "EarlyBird Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new EarlyBird paper sessions.", default: "true", subheader: "Mode & Live" },
@@ -619,7 +619,7 @@ const SETTINGS_SCHEMA = [
     section: "SIMPLE_9:30 STRATEGY (option-premium breakout) — Zerodha",
     icon: "\u{1F3AF}",
     nav: "SIMPLE 9:30",
-    group: "Strategies",
+    group: "NIFTY",
     fields: [
       // ── Enable / live gating ──
       { key: "SIMPLE930_PAPER_ENABLED", label: "SIMPLE_9:30 Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new SIMPLE_9:30 paper sessions.", default: "true", subheader: "Mode & Live" },
@@ -667,7 +667,7 @@ const SETTINGS_SCHEMA = [
     section: "RSI_PIVOT_ST STRATEGY (RSI + Standard Pivot R1/S1 + SuperTrend) — Zerodha",
     icon: "\u{1F4D0}",
     nav: "RSI PIVOT ST",
-    group: "Strategies",
+    group: "NIFTY",
     fields: [
       // ── Enable / live gating ──
       { key: "RSI_PIVOT_ST_PAPER_ENABLED", label: "RSI Pivot ST Paper Trading", type: "toggle", effect: EFFECT.INSTANT, desc: "Allow new RSI Pivot ST paper sessions.", default: "true", subheader: "Mode & Live" },
@@ -713,7 +713,7 @@ const SETTINGS_SCHEMA = [
     section: "BN_PIVOT_RSI_ST STRATEGY (NIFTY BANK — RSI + Standard Pivot R1/S1 + SuperTrend) — Zerodha",
     icon: "\u{1F3E6}",
     nav: "BN PIVOT RSI ST",
-    group: "Strategies",
+    group: "BANK NIFTY",
     fields: [
       // An exact replica of RSI_PIVOT_ST — same rules, same thresholds, same
       // stops, same defaults — trading NIFTY BANK instead of NIFTY 50. Keep
@@ -765,7 +765,7 @@ const SETTINGS_SCHEMA = [
     section: "EMA_RSI_ST_V2 STRATEGY (EMA20/50 + RSI + SuperTrend trail) — Zerodha",
     icon: "\u{1F9EA}",
     nav: "EMA_RSI_ST_V2",
-    group: "Strategies",
+    group: "NIFTY",
     fields: [
       // A SEPARATE strategy, not a second mode of EMA_RSI_ST. It borrows V1's
       // EMA/RSI entry idea but throws away every one of V1's exits: the
@@ -818,7 +818,7 @@ const SETTINGS_SCHEMA = [
     section: "ST_RSI_PIV_BB STRATEGY (SuperTrend + RSI + Pivot R1/S1 + Bollinger) — Zerodha",
     icon: "\u{1F4CC}",
     nav: "ST_RSI_PIV_BB",
-    group: "Strategies",
+    group: "NIFTY",
     fields: [
       // "All four agree": SuperTrend colour + RSI + a close beyond yesterday's
       // pivot R1/S1 + a close outside the Bollinger Band, all on ONE closed
@@ -859,7 +859,7 @@ const SETTINGS_SCHEMA = [
     section: "SAIL_VWAP_ST STRATEGY (SAIL VWAP cross + breakout, SuperTrend stop) — Zerodha",
     icon: "\u{1F3ED}",
     nav: "SAIL_VWAP_ST",
-    group: "Strategies",
+    group: "STOCKS",
     fields: [
       // SAIL STOCK options (NSE:SAIL-EQ spot, monthly expiry, ₹2.5 strikes, lot
       // 4700). A 5-min candle closes across the session VWAP, then within a few
@@ -906,7 +906,7 @@ const SETTINGS_SCHEMA = [
     section: "PIVOT_EMA_ST STRATEGY (Pivot zone + EMA20/50 cross + SuperTrend) — Zerodha",
     icon: "\u{1F3AF}",
     nav: "PIVOT_EMA_ST",
-    group: "Strategies",
+    group: "NIFTY",
     fields: [
       // NIFTY: one CLOSED candle must close inside the pivot zone (CE: PP <
       // close < R1, PE: S1 < close < PP), see EMA20 cross EMA50 on that same
@@ -940,7 +940,7 @@ const SETTINGS_SCHEMA = [
     section: "BN_PIVOT_EMA_ST STRATEGY (NIFTY BANK — Pivot zone + EMA20/50 cross + SuperTrend) — Zerodha",
     icon: "\u{1F3E6}",
     nav: "BN_PIVOT_EMA_ST",
-    group: "Strategies",
+    group: "BANK NIFTY",
     fields: [
       // NIFTY BANK copy of PIVOT_EMA_ST — the same rules (src/strategies/pivot_ema_st.js)
       // on NSE:NIFTYBANK-INDEX, with its own BN_PIVOT_EMA_ST_* keys and its own
@@ -971,7 +971,7 @@ const SETTINGS_SCHEMA = [
     section: "SAIL_PIVOT_EMA_ST STRATEGY (SAIL — Pivot zone + EMA20/50 cross + SuperTrend) — Zerodha",
     icon: "\u{1F3ED}",
     nav: "SAIL_PIVOT_EMA_ST",
-    group: "Strategies",
+    group: "STOCKS",
     fields: [
       // SAIL STOCK options (NSE:SAIL-EQ spot, monthly expiry) — the PIVOT_EMA_ST
       // rules (src/strategies/pivot_ema_st.js) with their own SAIL_PIVOT_EMA_ST_*
@@ -1004,7 +1004,7 @@ const SETTINGS_SCHEMA = [
     section: "GAP_runAway__Kirubakaran STRATEGY (NIFTY — daily RSI-on-EMA extreme + gap) — Zerodha",
     icon: "\u{1F680}",
     nav: "GAP_RUNAWAY",
-    group: "Strategies",
+    group: "NIFTY",
     fields: [
       // NIFTY: yesterday's daily RSI(10) on EMA21 below 10 + a gap UP today → ATM
       // CE; above 90 + a gap DOWN → ATM PE. Stop = yesterday's close (per tick),
@@ -1040,7 +1040,7 @@ const SETTINGS_SCHEMA = [
     section: "GAP_runAway STOCK SCANNER (F&O stocks — intraday shares, paper only)",
     icon: "\u{1F50E}",
     nav: "GAP_RUNAWAY Stocks",
-    group: "Strategies",
+    group: "STOCKS",
     fields: [
       // The same engine (src/strategies/gap_runaway.js) over a stock universe:
       // yesterday's RSI extreme + today's gap, biggest gaps first, up to Max
@@ -1073,7 +1073,7 @@ const SETTINGS_SCHEMA = [
     section: "BN_EMA_RSI_ST_V2 STRATEGY (NIFTY BANK — EMA20/50 + RSI + SuperTrend trail) — Zerodha",
     icon: "\u{1F3E6}",
     nav: "BN_EMA_RSI_ST_V2",
-    group: "Strategies",
+    group: "BANK NIFTY",
     fields: [
       // The SAME engine as EMA_RSI_ST_V2, pointed at NIFTY BANK. Every key here
       // is its own BN_EMA_RSI_ST_V2_* key, so tuning the NIFTY version never
@@ -1140,10 +1140,10 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
-    section: "COMMODITY (MCX crude / gold / silver) — EMA_RSI_ST + EMA_RSI_ST_V2, paper only",
+    section: "COMMODITY (MCX crude / gold / silver) — shared by every commodity page, paper only",
     icon: "\u{1F6E2}",
-    nav: "Commodity (MCX)",
-    group: "Strategies",
+    nav: "Common (MCX)",
+    group: "COMMODITY",
     fields: [
       // Crude copies of EMA_RSI_ST / EMA_RSI_ST_V2. The SIGNAL rules are the
       // originals and read the EMA_RSI_ST_* / EMA_RSI_ST_V2_* settings above —
@@ -1167,23 +1167,50 @@ const SETTINGS_SCHEMA = [
       { key: "CMX_CRUDE_MAX_DAILY_LOSS", label: "Crude Oil — Max Daily Loss (₹)", type: "number", min: 0, max: 100000, step: 500, effect: EFFECT.INSTANT, desc: "Extra daily loss cap for each Crude Oil page. The tighter of this and the strategy's Max Daily Loss applies. Crude lost ₹33k of the ₹37k Oct 2026 commodity loss. 0 = use the strategy cap only.", default: "1500" },
       { key: "CMX_GOLD_MAX_DAILY_LOSS", label: "Gold — Max Daily Loss (₹)", type: "number", min: 0, max: 100000, step: 500, effect: EFFECT.INSTANT, desc: "Extra daily loss cap for each Gold page. The tighter of this and the strategy's Max Daily Loss applies. 0 = use the strategy cap only.", default: "0" },
       { key: "CMX_SILVER_MAX_DAILY_LOSS", label: "Silver — Max Daily Loss (₹)", type: "number", min: 0, max: 100000, step: 500, effect: EFFECT.INSTANT, desc: "Extra daily loss cap for each Silver page. The tighter of this and the strategy's Max Daily Loss applies. 0 = use the strategy cap only.", default: "0" },
-      { key: "CMX_EMA_RSI_ST_RESOLUTION", label: "EMA_RSI_ST — Candle Size (min)", type: "number", min: 1, max: 60, step: 1, effect: EFFECT.SESSION, desc: "Candle length the EMA_RSI_ST rules run on, for every commodity. Takes effect on the next Start.", default: "5", subheader: "EMA_RSI_ST" },
+    ],
+  },
+  {
+    section: "COMMODITY EMA_RSI_ST (MCX crude / gold / silver) — paper only",
+    icon: "\u{1F6E2}",
+    nav: "EMA_RSI_ST",
+    id: "cmx-ema-rsi-st",
+    group: "COMMODITY",
+    fields: [
+      { key: "CMX_EMA_RSI_ST_RESOLUTION", label: "EMA_RSI_ST — Candle Size (min)", type: "number", min: 1, max: 60, step: 1, effect: EFFECT.SESSION, desc: "Candle length the EMA_RSI_ST rules run on, for every commodity. Takes effect on the next Start.", default: "5" },
       { key: "CMX_EMA_RSI_ST_LOTS", label: "EMA_RSI_ST — Lots", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "Lots per paper trade, on each commodity page of this strategy. Example: 1 Crude Oil lot = 100 barrels, so a ₹10 premium move is ₹1,000.", default: "1" },
       { key: "CMX_EMA_RSI_ST_ENTRY_START", label: "EMA_RSI_ST — Entry Window Start", type: "time", effect: EFFECT.INSTANT, desc: "No new entries before this time (IST). The first hour after the 09:00 open is skipped while the candles settle.", default: "10:00" },
       { key: "CMX_EMA_RSI_ST_ENTRY_END", label: "EMA_RSI_ST — Entry Window End", type: "time", effect: EFFECT.INSTANT, desc: "No new entries after this time (IST). An open trade is not affected.", default: "22:30" },
       { key: "CMX_EMA_RSI_ST_EOD_EXIT_TIME", label: "EMA_RSI_ST — Forced Exit", type: "time", effect: EFFECT.INSTANT, desc: "Anything still open is closed at this time (IST). Nothing is held overnight.", default: "23:00" },
       { key: "CMX_EMA_RSI_ST_MAX_DAILY_TRADES", label: "EMA_RSI_ST — Max Trades/Day", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "No new entries once this many trades are done for the day, on each commodity page.", default: "3" },
       { key: "CMX_EMA_RSI_ST_MAX_DAILY_LOSS", label: "EMA_RSI_ST — Max Daily Loss (₹)", type: "number", min: 0, max: 100000, step: 500, effect: EFFECT.INSTANT, desc: "Stop for the day once losses reach this much (0 = off). Counted per commodity page — never mixed with NIFTY trades.", default: "5000" },
-      { key: "CMX_EMA_RSI_ST_V2_RESOLUTION", label: "EMA_RSI_ST_V2 — Candle Size (min)", type: "number", min: 1, max: 60, step: 1, effect: EFFECT.SESSION, desc: "Candle length the EMA_RSI_ST_V2 rules run on, for every commodity. Takes effect on the next Start.", default: "5", subheader: "EMA_RSI_ST_V2" },
+    ],
+  },
+  {
+    section: "COMMODITY EMA_RSI_ST_V2 (MCX crude / gold / silver) — paper only",
+    icon: "\u{1F6E2}",
+    nav: "EMA_RSI_ST_V2",
+    id: "cmx-ema-rsi-st-v2",
+    group: "COMMODITY",
+    fields: [
+      { key: "CMX_EMA_RSI_ST_V2_RESOLUTION", label: "EMA_RSI_ST_V2 — Candle Size (min)", type: "number", min: 1, max: 60, step: 1, effect: EFFECT.SESSION, desc: "Candle length the EMA_RSI_ST_V2 rules run on, for every commodity. Takes effect on the next Start.", default: "5" },
       { key: "CMX_EMA_RSI_ST_V2_LOTS", label: "EMA_RSI_ST_V2 — Lots", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "Lots per paper trade, on each commodity page of this strategy. Example: 1 Crude Oil lot = 100 barrels, so a ₹10 premium move is ₹1,000.", default: "1" },
       { key: "CMX_EMA_RSI_ST_V2_ENTRY_START", label: "EMA_RSI_ST_V2 — Entry Window Start", type: "time", effect: EFFECT.INSTANT, desc: "No new entries before this time (IST). The first hour after the 09:00 open is skipped while the candles settle.", default: "10:00" },
       { key: "CMX_EMA_RSI_ST_V2_ENTRY_END", label: "EMA_RSI_ST_V2 — Entry Window End", type: "time", effect: EFFECT.INSTANT, desc: "No new entries after this time (IST). An open trade is not affected.", default: "22:30" },
       { key: "CMX_EMA_RSI_ST_V2_EOD_EXIT_TIME", label: "EMA_RSI_ST_V2 — Forced Exit", type: "time", effect: EFFECT.INSTANT, desc: "Anything still open is closed at this time (IST). Nothing is held overnight.", default: "23:00" },
       { key: "CMX_EMA_RSI_ST_V2_MAX_DAILY_TRADES", label: "EMA_RSI_ST_V2 — Max Trades/Day", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "No new entries once this many trades are done for the day, on each commodity page.", default: "3" },
       { key: "CMX_EMA_RSI_ST_V2_MAX_DAILY_LOSS", label: "EMA_RSI_ST_V2 — Max Daily Loss (₹)", type: "number", min: 0, max: 100000, step: 500, effect: EFFECT.INSTANT, desc: "Stop for the day once losses reach this much (0 = off). Counted per commodity page — never mixed with NIFTY trades.", default: "5000" },
+    ],
+  },
+  {
+    section: "COMMODITY PIVOT_EMA_ST (MCX crude / gold / silver) — paper only",
+    icon: "\u{1F6E2}",
+    nav: "PIVOT_EMA_ST",
+    id: "cmx-pivot-ema-st",
+    group: "COMMODITY",
+    fields: [
       // PIVOT_EMA_ST on the futures — signal rules read the NIFTY PIVOT_EMA_ST_*
       // EMA / SuperTrend keys; pivots come from the previous MCX day.
-      { key: "CMX_PIVOT_EMA_ST_RESOLUTION", label: "PIVOT_EMA_ST — Candle Size (min)", type: "number", min: 1, max: 60, step: 1, effect: EFFECT.SESSION, desc: "Candle length the PIVOT_EMA_ST rules run on, for every commodity (the NIFTY PIVOT_EMA_ST_TF is not used here). Takes effect on the next Start.", default: "3", subheader: "PIVOT_EMA_ST" },
+      { key: "CMX_PIVOT_EMA_ST_RESOLUTION", label: "PIVOT_EMA_ST — Candle Size (min)", type: "number", min: 1, max: 60, step: 1, effect: EFFECT.SESSION, desc: "Candle length the PIVOT_EMA_ST rules run on, for every commodity (the NIFTY PIVOT_EMA_ST_TF is not used here). Takes effect on the next Start.", default: "3" },
       { key: "CMX_PIVOT_EMA_ST_LOTS", label: "PIVOT_EMA_ST — Lots", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "Lots per paper trade, on each commodity page of this strategy. Example: 1 Crude Oil lot = 100 barrels, so a ₹10 premium move is ₹1,000.", default: "1" },
       { key: "CMX_PIVOT_EMA_ST_ENTRY_START", label: "PIVOT_EMA_ST — Entry Window Start", type: "time", effect: EFFECT.INSTANT, desc: "No new entries before this time (IST). The first hour after the 09:00 open is skipped while the candles settle.", default: "10:00" },
       { key: "CMX_PIVOT_EMA_ST_ENTRY_END", label: "PIVOT_EMA_ST — Entry Window End", type: "time", effect: EFFECT.INSTANT, desc: "No new entries after this time (IST). An open trade is not affected.", default: "22:30" },
@@ -1789,7 +1816,7 @@ const SETTINGS_SCHEMA = [
 // Built from the short `nav` label when there is one; section titles carry
 // brackets, slashes and em-dashes that would come back percent-encoded.
 function sectionSlug(s) {
-  return String(s.nav || s.section)
+  return String(s.id || s.nav || s.section)
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
@@ -1862,15 +1889,13 @@ const _KEY_TO_MODES = new Map();
 })();
 
 // Commodity modes (cmx_<commodity>_<base>) run the base strategy's signal rules
-// with the COMMODITY section's timing/size/guards, so their settings are both.
+// with the COMMODITY sections' timing/size/guards, so their settings are both.
 // Derived from the id, so a new commodity copy of any strategy works unedited.
-const CMX_SECTION_TITLE = "COMMODITY (MCX crude / gold / silver) — EMA_RSI_ST + EMA_RSI_ST_V2, paper only";
 function _cmxModeKeys(mode) {
   const m = /^cmx_[a-z]+_(.+)$/.exec(mode);
   if (!m) return null;
-  const section = SETTINGS_SCHEMA.find(s => s.section === CMX_SECTION_TITLE);
   const keys = new Set(_MODE_KEYS[m[1]] || []);
-  if (section) for (const f of section.fields) keys.add(f.key);
+  for (const s of SETTINGS_SCHEMA) if (s.group === "COMMODITY") for (const f of s.fields) keys.add(f.key);
   return keys;
 }
 
@@ -2838,9 +2863,12 @@ router.get("/", (req, res) => {
   // Commodity PIVOT_EMA_ST pages default ON, so they also open the Commodity section.
   const cmxPivotModeOn = ["CRUDE", "GOLD", "SILVER"].map(c => `CMX_${c}_PIVOT_EMA_ST_MODE_ENABLED`)
     .some(k => (envData[k] ?? process.env[k] ?? "true").toLowerCase() === "true");
-  // Commodity section shows once any commodity page is on.
-  const cmxModeOn = ["CRUDE", "GOLD", "SILVER"].flatMap(c => [`CMX_${c}_EMA_RSI_ST_MODE_ENABLED`, `CMX_${c}_EMA_RSI_ST_V2_MODE_ENABLED`])
+  // Each commodity strategy's section shows once that strategy is on for any
+  // commodity; the shared section shows once any commodity page is on.
+  const cmxStratOn = (strat) => ["CRUDE", "GOLD", "SILVER"].map(c => `CMX_${c}_${strat}_MODE_ENABLED`)
     .some(k => (envData[k] ?? process.env[k] ?? "false").toLowerCase() === "true");
+  const cmxEmaRsiStOn = cmxStratOn("EMA_RSI_ST");
+  const cmxEmaRsiStV2On = cmxStratOn("EMA_RSI_ST_V2");
   // Server Logs (📜 LOGS) and Cache Files buttons moved into the Logs (/trade-logs) page as tabs —
   // UI_SHOW_LOGS / UI_SHOW_CACHE_FILES now gate those tabs there, not top-bar buttons here.
   // (bbRsiModeOn already computed above for isFieldFrozen)
@@ -2866,7 +2894,10 @@ router.get("/", (req, res) => {
     "SAIL_PIVOT_EMA_ST STRATEGY (SAIL — Pivot zone + EMA20/50 cross + SuperTrend) — Zerodha": sailPivotEmaStModeOn,
     "GAP_runAway__Kirubakaran STRATEGY (NIFTY — daily RSI-on-EMA extreme + gap) — Zerodha": gapRunawayModeOn,
     "GAP_runAway STOCK SCANNER (F&O stocks — intraday shares, paper only)": gapRunawayStkModeOn,
-    "COMMODITY (MCX crude / gold / silver) — EMA_RSI_ST + EMA_RSI_ST_V2, paper only": cmxModeOn || cmxPivotModeOn,
+    "COMMODITY (MCX crude / gold / silver) — shared by every commodity page, paper only": cmxEmaRsiStOn || cmxEmaRsiStV2On || cmxPivotModeOn,
+    "COMMODITY EMA_RSI_ST (MCX crude / gold / silver) — paper only": cmxEmaRsiStOn,
+    "COMMODITY EMA_RSI_ST_V2 (MCX crude / gold / silver) — paper only": cmxEmaRsiStV2On,
+    "COMMODITY PIVOT_EMA_ST (MCX crude / gold / silver) — paper only": cmxPivotModeOn,
     "EARLYBIRD STRATEGY (first 15-min breakout, CASH EQUITY) — Fyers": earlyBirdModeOn,
   };
 
@@ -2910,7 +2941,7 @@ router.get("/", (req, res) => {
   // Server Control has no schema fields but still needs an index entry.
   railItems.push({ group: "System", id: "server-control", icon: "🔄", nav: "Server Control", count: 0 });
 
-  const RAIL_GROUP_ORDER = ["Strategies", "Trading", "System"];
+  const RAIL_GROUP_ORDER = ["NIFTY", "BANK NIFTY", "COMMODITY", "STOCKS", "Trading", "System"];
   const railHtml = RAIL_GROUP_ORDER.map(g => {
     const items = railItems.filter(r => r.group === g);
     if (!items.length) return "";
