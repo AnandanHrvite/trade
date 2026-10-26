@@ -4237,8 +4237,8 @@ async function loadModuleCharts(){
     if (r2.status === 401) _authLost();
     if (r2.ok){ var d2 = await r2.json(); _mmData.live = (d2 && d2.trades) || []; }
   } catch(_){ _mmData.live = []; }
-  // COMMODITY rows join the paper list; the broker wallets ignore them (their
-  // modes are in no pool) and so does the cumulative chart (its own fetch).
+  // COMMODITY rows join the paper list; the Fyers wallet counts them and the
+  // cumulative chart ignores them (its own fetch).
   if (CMX_MM_MODES.length) {
     try {
       var r3 = await fetch('/api/cmx/trades', { cache: 'no-store' });
