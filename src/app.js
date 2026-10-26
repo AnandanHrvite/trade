@@ -2202,6 +2202,10 @@ app.get("/", (req, res) => {
        width as a broker row and still costs only one extra line. */
     .brokers { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:8px; margin-bottom:0; }
     .brokers > .brk-expiry { grid-column:1 / -1; }
+    /* All expiry quick-edits share one full-width line; they wrap only when a
+       card would drop under ~360px. */
+    .brk-cfg-strip { grid-column:1 / -1; display:grid; grid-template-columns:repeat(auto-fit, minmax(360px, 1fr)); gap:8px; }
+    @media (max-width:640px) { .brk-cfg-strip { grid-template-columns:1fr; } }
     /* flex-wrap:wrap (not nowrap) so the login button drops to its own line
        when the column is narrow instead of overflowing the clipped body and
        becoming invisible (13" MacBook / un-maximized window / zoomed view). */
@@ -2904,6 +2908,7 @@ ${buildSidebar('dashboard', liveActive)}
           ? `<a href="/auth/zerodha/login" class="brk-action login zerodha">🔐 Login with Zerodha</a>`
           : `<span class="brk-action muted-hint">Set ZERODHA_API_KEY in .env</span>`}
     </div>
+    <div class="brk-cfg-strip">
     ${dashExpiryRows.map((r) => `
     <div class="brk-cfg" data-underlying="${r.key}">
       <span class="brk-cfg-label" title="${r.overrideKey} / ${r.typeKey} — the same keys as Settings. One common expiry for every ${r.label} strategy. Blank = auto-detect.">⏱ ${r.label} Expiry</span>
@@ -2922,6 +2927,7 @@ ${buildSidebar('dashboard', liveActive)}
       <span class="brk-cfg-spacer"></span>
       <button type="button" class="brk-cfg-save" onclick="saveDashExpiry(this,'${r.key}','${r.overrideKey}','${r.typeKey}')" title="Save ${r.overrideKey} + ${r.typeKey} to .env (same as a Settings save)">Save</button>
     </div>`).join('')}
+    </div>
     ${zerodhaOk && zerodhaExpiryHtml ? `<div class="brk-expiry ${pastExpiry ? 'expired' : 'expiring'}">${zerodhaExpiryHtml}</div>` : ''}
   </div>`}
 
@@ -4237,8 +4243,8 @@ async function loadModuleCharts(){
     if (r2.status === 401) _authLost();
     if (r2.ok){ var d2 = await r2.json(); _mmData.live = (d2 && d2.trades) || []; }
   } catch(_){ _mmData.live = []; }
-  // COMMODITY rows join the paper list; the Fyers wallet counts them and the
-  // cumulative chart ignores them (its own fetch).
+  // COMMODITY rows join the paper list; the Fyers wallet counts them. The
+  // cumulative chart does not read this list (it has its own fetch).
   if (CMX_MM_MODES.length) {
     try {
       var r3 = await fetch('/api/cmx/trades', { cache: 'no-store' });
