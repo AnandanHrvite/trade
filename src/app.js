@@ -1861,8 +1861,8 @@ app.get("/", (req, res) => {
 
   // ── Broker investment pools (paper) — remaining = pool + paper P&L over the
   // top-bar date range, summed over every ENABLED strategy that trades through
-  // that broker (same broker map as utils/capitalPool.js). COMMODITY has its own
-  // pool and no broker card here — the Real-Time ribbon shows it.
+  // that broker (same broker map as utils/capitalPool.js). COMMODITY pages draw
+  // from the Fyers pool.
   //
   // The P&L half is filled in client-side from the same trade list the charts
   // read, not from each file's all-time `totalPnl`: a wallet that ignored the
@@ -1891,7 +1891,9 @@ app.get("/", (req, res) => {
     ['zerodha', 'HA_SCALP',         haScalpModeOn],
     ['zerodha', 'PREV_ORB_SCALP',   prevOrbScalpModeOn],
     ['zerodha', 'SIMPLE930',        simple930ModeOn],
-  ];
+    ['zerodha', 'GAP_RUNAWAY',      gapRunawayModeOn],
+    ['zerodha', 'GAP_RUNAWAY_STK',  gapRunawayStkModeOn],
+  ].concat(dashCmxCards.map((c) => ['fyers', c.mode, true]));
   const _modesOf = (broker) => _poolModes.filter(([b, , on]) => b === broker && on).map(([, m]) => m);
   const brokerPools = {
     fyers:   { inv: fyersInv,   modes: _modesOf('fyers') },

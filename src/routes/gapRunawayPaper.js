@@ -32,11 +32,12 @@
  *
  * DELIBERATELY NOT HERE (the user's rule: "any common settings don't apply"):
  * no profit lock / breakeven, no wait-after-exit, no bid-ask spread check, no
- * common 10:00–14:00 window, no LOT_MULTIPLIER, no paper-capital gate / capital
- * pool, no portfolio cap, no expiry-day-only toggle, no NIFTY futures mode, no
- * VIX / OI / volume / trend filter. No backtest page, no replay support. The only
- * shared item used is the common option expiry (to pick the contract) and the
- * brokerage/charges model (real-world costs, not a rule).
+ * common 10:00–14:00 window, no LOT_MULTIPLIER, no portfolio cap, no
+ * expiry-day-only toggle, no NIFTY futures mode, no VIX / OI / volume / trend
+ * filter. No backtest page, no replay support. The only shared items used are
+ * the common option expiry (to pick the contract), the brokerage/charges model
+ * (real-world costs, not a rule) and the ZERODHA capital pool (the user's call:
+ * one money pool for every strategy).
  *
  * Flow:
  *   /gap_runaway-paper/start   → connects to live socket, starts simulating trades
@@ -72,6 +73,7 @@ const chartBackfill = require("../utils/chartBackfill");
 const aiExport    = require("../utils/aiExport");
 const { getCharges } = require("../utils/charges");
 const skipLogger = require("../utils/skipLogger");
+const capitalPool = require("../utils/capitalPool");
 const optionChart  = require("../utils/optionChart");
 // NOTE: no `technicalindicators` import here on purpose. Every indicator value
 // this route displays comes from the engine, so the chart and the setup card
@@ -447,8 +449,8 @@ function scheduleAutoStop(stopFn) {
 }
 
 function getCapitalFromEnv() {
-  // This strategy's OWN paper capital — the common Zerodha pool does not apply.
-  const v = parseFloat(process.env.GAP_RUNAWAY_CAPITAL || "100000");
+  // Zerodha orders, so it draws from the shared Zerodha pool.
+  const v = parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000");
   return Number.isFinite(v) && v > 0 ? v : 100000;
 }
 
@@ -761,6 +763,17 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, me
     skipLogger.appendSkipLog("gap_runaway", { gate: "strategy", reason: "no gap stop available", spot: price, side, path: "stop" });
     return;
   }
+  // Capital gate — HARD: the Zerodha pool must fund qty × premium or the entry
+  // is refused. The day stays open, so the next throttled attempt re-checks.
+  const _capPremium = Number.isFinite(meta.entryLtp) && meta.entryLtp > 0 ? meta.entryLtp : 0;
+  const _cap = capitalPool.gate("gap_runaway", qty * _capPremium, { side, symbol, qty });
+  if (!_cap.ok) {
+    if (!_cap.muted) {
+      log(`❌ [PAPER] Entry REFUSED — ${_cap.reason}`);
+      skipLogger.appendSkipLog("gap_runaway", { gate: "capital", reason: _cap.reason, side, symbol, qty, premium: _capPremium, cost: _cap.cost, available: _cap.available });
+    }
+    return;
+  }
   const optDetails = parseOptionDetails(symbol);
   const _entrySpot = spotAtEntry || price;
   const _entryLtp  = Number.isFinite(meta.entryLtp) && meta.entryLtp > 0 ? meta.entryLtp : null;
@@ -810,6 +823,7 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, me
     gapPct:            sig.gapPct != null ? sig.gapPct : null,
     tradeRes:          TRADE_RES,
   };
+  capitalPool.block("gap_runaway", qty * _capPremium, { side, symbol, qty, premium: _capPremium });
 
   // Crash-recovery snapshot: written on entry, cleared on exit. app.js reconciles
   // it against the broker book on boot.
@@ -961,6 +975,7 @@ function simulateSell(exitPrice, reason, spotAtExit, exitBarTime, exitMeta = {})
   });
 
   ptState.position = null;
+  capitalPool.release("gap_runaway", netPnl);
   _markDayDone("traded — one trade per day");
   try { require("../utils/positionPersist").clearGapRunawayPosition(); } catch (_) {}
 }
@@ -1318,6 +1333,7 @@ function saveSession() {
   data.capital  = parseFloat((data.capital  + ptState.sessionPnl).toFixed(2));
 
   savePaperData(data);
+  capitalPool.sessionSaved("gap_runaway");
   log(`💾 Session saved. Running capital: ₹${data.capital} | Total PnL: ₹${data.totalPnl}`);
 
   generatePaperDailyReport(ptState.sessionTrades, ptState.sessionPnl);
@@ -1569,7 +1585,7 @@ router.get("/start", async (req, res) => {
   log(`   Setup      : daily RSI(${cfg.RSI_LENGTH}) on EMA(${cfg.EMA_LENGTH}) of YESTERDAY's close — < ${cfg.RSI_LOWER} oversold, > ${cfg.RSI_UPPER} overbought`);
   log(`   Entry      : oversold + gap UP → CE · overbought + gap DOWN → PE · gap = today's open − yesterday's close (min ${cfg.MIN_GAP_PTS} pts) · ${_fmtMins(cfg.ENTRY_START)}–${_fmtMins(cfg.ENTRY_END)} · 1 trade/day`);
   log(`   Exit       : gap stop = yesterday's close (per tick) · ${TRADE_RES}-min close through EMA${cfg.TRAIL_EMA_LENGTH} · square-off ${_fmtMins(cfg.EOD_EXIT)} · session end ${_fmtMins(_STOP_MINS)}`);
-  log(`   Common     : NONE — no profit lock / breakeven / cooldown / spread / capital pool / lot multiplier / trade window`);
+  log(`   Common     : Zerodha capital pool only — no profit lock / breakeven / cooldown / spread / lot multiplier / trade window`);
   if (ptState._dayDone) log(`   Today      : ${ptState._dayDoneReason}`);
   log(`════════════════════════════════════════════════════════════════════\n`);
 
@@ -3437,6 +3453,7 @@ router.get("/reset", (req, res) => {
   const freshCapital = getCapitalFromEnv();
   savePaperData({ capital: freshCapital, totalPnl: 0, sessions: [] });
   require("../utils/paperReset").clearTodayFiles("gap_runaway"); // else restart rehydrates today's session
+  capitalPool.sessionSaved("gap_runaway");
 
   log(`🔄 Paper trade data reset. Capital restored to ₹${freshCapital.toLocaleString("en-IN")}`);
 

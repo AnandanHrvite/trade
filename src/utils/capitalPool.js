@@ -98,25 +98,30 @@ const STRATEGIES = {
   ha_scalp:  { broker: "zerodha", label: "HA_SCALP",    file: "ha_scalp_paper_trades.json"  },
   prev_orb_scalp: { broker: "zerodha", label: "PREV_ORB_SCALP", file: "prev_orb_scalp_paper_trades.json" },
   early_bird: { broker: "fyers",  label: "EARLYBIRD",   file: "early_bird_paper_trades.json" },
+  // GAP_RUNAWAY — NIFTY options, Zerodha orders. Its stock scanner holds up to
+  // three cash-equity positions at once, so it blocks additively like EarlyBird.
+  gap_runaway:     { broker: "zerodha", label: "GAP_RUNAWAY",     file: "gap_runaway_paper_trades.json" },
+  gap_runaway_stk: { broker: "zerodha", label: "GAP_RUNAWAY_STK", file: "gap_runaway_stk_paper_trades.json" },
 };
 
-// COMMODITY (MCX) paper engines — their own pool (CMX_STARTING_CAPITAL), so a
-// crude loss can never refuse a NIFTY entry. Keyed by the engine id; the book
+// COMMODITY (MCX) paper engines — draw from the FYERS pool (their prices come
+// from Fyers), so a crude loss can refuse a NIFTY entry. `cmx` keeps them gated
+// during a tick replay, which drives the NSE engines only. Keyed by the engine id; the book
 // lives in ~/trading-data/cmx/ as { days: { YYYY-MM-DD: { pnl } } } and is
 // written on every exit, so realized P&L is the sum of its days.
 for (const c of ["crude", "gold", "silver"]) {
   for (const [v, name] of [["ema_rsi_st", "EMA_RSI_ST"], ["ema_rsi_st_v2", "EMA_RSI_ST_V2"]]) {
     const id = `cmx_${c}_${v}`;
-    STRATEGIES[id] = { broker: "commodity", label: `${name} (${c.toUpperCase()})`, file: path.join("cmx", `${id}_paper_trades.json`), days: true };
+    STRATEGIES[id] = { broker: "fyers", label: `${name} (${c.toUpperCase()})`, file: path.join("cmx", `${id}_paper_trades.json`), days: true, cmx: true };
   }
 }
 // PIVOT_EMA_ST commodity pages — same shape as the loop above.
 for (const c of ["crude", "gold", "silver"]) {
   const id = `cmx_${c}_pivot_ema_st`;
-  STRATEGIES[id] = { broker: "commodity", label: `PIVOT_EMA_ST (${c.toUpperCase()})`, file: path.join("cmx", `${id}_paper_trades.json`), days: true };
+  STRATEGIES[id] = { broker: "fyers", label: `PIVOT_EMA_ST (${c.toUpperCase()})`, file: path.join("cmx", `${id}_paper_trades.json`), days: true, cmx: true };
 }
 
-const BROKER_ENV = { zerodha: "ZERODHA_INV_AMOUNT", fyers: "FYERS_INV_AMOUNT", commodity: "CMX_STARTING_CAPITAL" };
+const BROKER_ENV = { zerodha: "ZERODHA_INV_AMOUNT", fyers: "FYERS_INV_AMOUNT" };
 
 // key -> { blocks: Map<slot, {cost, meta}>, sessionPnl, filePnlEpoch }
 // `slot` is the position's symbol for additive blocks, or SINGLE for the one
@@ -273,7 +278,7 @@ function getPool(broker) {
 }
 
 function snapshot() {
-  return { zerodha: getPool("zerodha"), fyers: getPool("fyers"), commodity: getPool("commodity") };
+  return { zerodha: getPool("zerodha"), fyers: getPool("fyers") };
 }
 
 // ── Gate ─────────────────────────────────────────────────────────────────────
@@ -281,7 +286,7 @@ function snapshot() {
 // Tick replay drives the NSE engines only — commodity runs on live MCX quotes
 // alongside it, so a replay must not switch the commodity gate off.
 function _inReplay(strategyKey) {
-  if (brokerOf(strategyKey) === "commodity") return false;
+  if (STRATEGIES[strategyKey] && STRATEGIES[strategyKey].cmx) return false;
   try { return require("../services/tickReplay").isReplayInProgress(); } catch (_) { return false; }
 }
 

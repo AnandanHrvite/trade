@@ -16,6 +16,8 @@
  *     batched quote call (the hub below), so six engines cost one request per
  *     poll, not six, and cannot crowd the NIFTY engines' broker budget.
  *   • its own files under ~/trading-data/cmx/ — no shared trade logs
+ *   • the one exception: money comes from the shared FYERS capital pool
+ *     (FYERS_INV_AMOUNT), so a commodity loss shrinks what NIFTY can spend
  *   • the strategy RULES are the originals, called read-only:
  *       V1 → strategy1_sar_ema_rsi.getSignal (EMA_RSI_ST_* settings)
  *       V2 → ema_rsi_st_v2.getSignal / trailStop (EMA_RSI_ST_V2_* settings)
@@ -360,7 +362,7 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     sessEnd:    _mins(process.env.CMX_SESSION_END, "23:30"),
     charges:    Math.max(0, _num(process.env.CMX_CHARGES_PER_TRADE, 60)),
     confirm:    A.noConfirm ? false : confirmCandle.enabled(A.rulesKey),
-    startCap:   Math.max(0, _num(process.env.CMX_STARTING_CAPITAL, 100000)),
+    startCap:   Math.max(0, _num(process.env.FYERS_INV_AMOUNT, 100000)),   // the shared Fyers pool
     minGapPct:  Math.max(0, _num(process.env.CMX_MIN_EMA_GAP_PCT, 0.03)),
     rsiCeMax:   _num(process.env.CMX_RSI_CE_MAX, 63),
     rsiPeMin:   _num(process.env.CMX_RSI_PE_MIN, 37),

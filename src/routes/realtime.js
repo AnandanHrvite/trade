@@ -102,9 +102,9 @@ const BROKER_OF = { EMA_RSI_ST:'ZERODHA', EMA_RSI_ST_V2:'ZERODHA', BB_RSI:'FYERS
 BROKER_OF.ST_RSI_PIV_BB = 'ZERODHA'; // Fyers candles, Zerodha orders
 BROKER_OF.SAIL_VWAP_ST = 'ZERODHA'; // Fyers candles, Zerodha orders
 BROKER_OF.PIVOT_EMA_ST = 'ZERODHA'; BROKER_OF.BN_PIVOT_EMA_ST = 'ZERODHA'; BROKER_OF.SAIL_PIVOT_EMA_ST = 'ZERODHA'; // Fyers candles, Zerodha orders
-// GAP_RUNAWAY / GAP_RUNAWAY_STK are deliberately NOT in BROKER_OF: they run on their OWN paper
-// capital (GAP_RUNAWAY_CAPITAL / GAP_RUNAWAY_STK_CAPITAL), never the Zerodha pool, so listing
-// them under that pool would mislead. (GAP_RUNAWAY's live orders, when armed, go to Zerodha.)
+BROKER_OF.GAP_RUNAWAY = 'ZERODHA'; BROKER_OF.GAP_RUNAWAY_STK = 'ZERODHA';
+// COMMODITY pages (CMX_* keys) draw from the Fyers pool — their prices come from Fyers.
+const brokerOfKey = (key) => BROKER_OF[key] || (/^CMX_/.test(key) ? 'FYERS' : undefined);
 function brokerPools(strategies) {
   // Same fallback as capitalPool.baseCapital — the ribbon must show the amount the gate uses.
   const inv = (v) => (n => Number.isFinite(n) && n >= 0 ? n : 100000)(parseFloat(v || '100000'));
@@ -113,16 +113,12 @@ function brokerPools(strategies) {
   const pools = [];
   // sub = the enabled strategies actually routed to that broker, never a
   // hardcoded list (it went stale every time a strategy was added).
-  const subOf = (broker) => strategies.filter(s => BROKER_OF[s.key] === broker)
+  const subOf = (broker) => strategies.filter(s => brokerOfKey(s.key) === broker)
                                       .map(s => s.label).join(' \u00b7 ');
   const zSub = subOf('ZERODHA');
   const fSub = subOf('FYERS');
   if (zSub) pools.push({ id:'ZERODHA', label:'ZERODHA', sub:zSub, inv:z });
   if (fSub) pools.push({ id:'FYERS', label:'FYERS', sub:fSub, inv:f });
-  // COMMODITY has its own pool (CMX_STARTING_CAPITAL) — shown while any
-  // commodity page is switched on.
-  const cmx = require("../utils/commodityPaperRouter").enabledEngines().map(e => e.snapshot().label);
-  if (cmx.length) pools.push({ id:'COMMODITY', label:'COMMODITY', sub:cmx.join(' \u00b7 '), inv:inv(process.env.CMX_STARTING_CAPITAL) });
   return pools;
 }
 

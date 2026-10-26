@@ -224,7 +224,8 @@
   <tr><td>Bid-ask spread check</td><td><b>Off.</b> The entry is not skipped for a wide spread.</td></tr>
   <tr><td>10:00&ndash;14:00 trade window, 15:00 exit</td><td><b>Off.</b> Own window 09:15&ndash;09:30, own square-off 15:15.</td></tr>
   <tr><td>Lot Multiplier</td><td><b>Off.</b> Own <code>GAP_RUNAWAY_LOTS</code> (1 lot = 65 qty).</td></tr>
-  <tr><td>Paper capital pool, portfolio cap</td><td><b>Off.</b> Own paper capital (<code>GAP_RUNAWAY_CAPITAL</code>).</td></tr>
+  <tr><td>Paper capital pool</td><td><b>On.</b> Both pages draw from the shared Zerodha pool (<code>ZERODHA_INV_AMOUNT</code>); an entry is refused when it cannot be paid for.</td></tr>
+  <tr><td>Portfolio cap</td><td><b>Off.</b></td></tr>
   <tr><td>VIX, OI, volume, trend filters</td><td><b>None.</b> No confirmation candle either.</td></tr>
 </table>
 <p class="muted">Two shared things are still used, because they are facts, not rules: the common option expiry (to pick the contract) and the brokerage/charges model.</p>
@@ -392,7 +393,6 @@
 <h3 style="font-size:0.95rem;color:#8b949e;">Size &amp; capital</h3>
 <table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>
 <tr><td><code>GAP_RUNAWAY_LOTS</code></td><td><code>1</code></td><td><b>Lots</b> (1&ndash;10). NIFTY lots per trade. This strategy's own count — the common Lot Multiplier does not apply. Example: 1 lot = 65 qty.</td></tr>
-<tr><td><code>GAP_RUNAWAY_CAPITAL</code></td><td><code>100000</code></td><td><b>Paper Starting Capital (₹)</b> (10000&ndash;10000000). Starting capital shown on the paper page and restored by Reset. Its own number — the common Zerodha pool does not apply.</td></tr>
 </tbody></table>
 <h3>Stock scanner &mdash; GAP_runAway STOCK SCANNER (F&amp;O stocks — intraday shares, paper only)</h3>
 <h3 style="font-size:0.95rem;color:#8b949e;">Reference</h3>
@@ -420,7 +420,6 @@
 <tr><td><code>GAP_RUNAWAY_STK_UNIVERSE</code></td><td><code>FNO</code></td><td><b>Stock List</b>. Which stocks are scanned before 09:15. FNO = all F&amp;O stocks (~220, about 75 s to scan). Lists can be edited in ~/trading-data/swing_scanner_universe.json.</td></tr>
 <tr><td><code>GAP_RUNAWAY_STK_TRADE_AMOUNT</code></td><td><code>100000</code></td><td><b>Amount per Trade (₹)</b> (1000&ndash;10000000). Shares per trade = this ÷ price, rounded down. Example: ₹1,00,000 on a ₹2,500 stock = 40 shares.</td></tr>
 <tr><td><code>GAP_RUNAWAY_STK_MAX_TRADES</code></td><td><code>3</code></td><td><b>Max Trades/Day</b> (1&ndash;20). When more stocks fire, the biggest gaps (in %) are taken first, up to this many a day. One trade per stock per day.</td></tr>
-<tr><td><code>GAP_RUNAWAY_STK_CAPITAL</code></td><td><code>300000</code></td><td><b>Paper Starting Capital (₹)</b> (10000&ndash;100000000). Starting capital shown on the scanner page and restored by Reset. Display only — entries are never refused for capital.</td></tr>
 </tbody></table>
 <h3>Menu, Start All &amp; alerts</h3>
 <table><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>

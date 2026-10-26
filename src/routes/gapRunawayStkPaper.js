@@ -31,8 +31,9 @@
  *   P&L    : share price move × qty, minus Zerodha equity-intraday charges.
  *
  * DELIBERATELY NOT HERE: no common rules (profit lock, breakeven, cooldown,
- * spread check, trade window, lot multiplier, capital pool, portfolio cap), no
- * VIX / OI / volume / trend filter, no backtest, no replay, no live orders.
+ * spread check, trade window, lot multiplier, portfolio cap), no VIX / OI /
+ * volume / trend filter, no backtest, no replay, no live orders. Money comes
+ * from the shared ZERODHA capital pool (the user's call: one pool for all).
  * A restart mid-day restores today's open paper positions from
  * ~/trading-data/.gap_runaway_stk_positions.json on the next /start.
  * ─────────────────────────────────────────────────────────────────────────────
@@ -52,6 +53,7 @@ const stockUniverse     = require("../utils/stockUniverse");
 const swingScanner      = require("../services/swingScanner");
 const tradeLogger       = require("../utils/tradeLogger");
 const skipLogger        = require("../utils/skipLogger");
+const capitalPool       = require("../utils/capitalPool");
 const aiExport          = require("../utils/aiExport");
 const { verifyFyersToken } = require("../utils/fyersAuthCheck");
 const { isTradingAllowed } = require("../utils/nseHolidays");
@@ -85,7 +87,7 @@ const SCAN_CONCURRENCY = 4;
 function _tradeAmount() { const v = parseFloat(process.env.GAP_RUNAWAY_STK_TRADE_AMOUNT || "100000"); return Number.isFinite(v) && v > 0 ? v : 100000; }
 function _maxTrades()   { const v = parseInt(process.env.GAP_RUNAWAY_STK_MAX_TRADES || "3", 10); return Number.isFinite(v) && v >= 1 && v <= 20 ? v : 3; }
 function _universeKey() { return String(process.env.GAP_RUNAWAY_STK_UNIVERSE || "FNO").trim().toUpperCase() || "FNO"; }
-function getCapitalFromEnv() { const v = parseFloat(process.env.GAP_RUNAWAY_STK_CAPITAL || "300000"); return Number.isFinite(v) && v > 0 ? v : 300000; }
+function getCapitalFromEnv() { const v = parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000"); return Number.isFinite(v) && v > 0 ? v : 100000; }   // the shared Zerodha pool
 function _cfg() { return engine.getConfig(PREFIX); }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -388,6 +390,17 @@ function _openPosition(d, price) {
     d.status = "skipped"; d.note = `price ₹${price} above the ₹${_tradeAmount()} trade amount`;
     return false;
   }
+  // Capital gate — HARD: the Zerodha pool must fund qty × price or the stock is
+  // skipped and its slot goes to the next candidate.
+  const _cap = capitalPool.gate(MODE_KEY, qty * price, { side: sig.side, symbol: d.stock, qty });
+  if (!_cap.ok) {
+    d.status = "skipped"; d.note = _cap.reason;
+    if (!_cap.muted) {
+      log(`❌ [STK] ${d.stock} entry REFUSED — ${_cap.reason}`);
+      skipLogger.appendSkipLog(MODE_KEY, { gate: "capital", stock: d.stock, reason: _cap.reason, qty, premium: price, cost: _cap.cost, available: _cap.available });
+    }
+    return;
+  }
   const nowSec = Math.floor(Date.now() / 1000);
   const pos = {
     stock: d.stock, symbol: d.fyersSym, side: sig.side, direction: sig.side === "CE" ? "LONG" : "SHORT",
@@ -399,6 +412,7 @@ function _openPosition(d, price) {
     lastTrailBarTime: null, trailEma: null, candlesHeld: 0,
   };
   st.positions.set(d.stock, pos);
+  capitalPool.block(MODE_KEY, qty * price, { side: pos.side, symbol: d.stock, qty, premium: price }, { add: true });
   st._tradedToday.add(d.stock);
   d.status = "entered";
   d.note = `${pos.direction} ${qty} @ ₹${price}`;
@@ -436,6 +450,7 @@ function _closePosition(stock, price, reason) {
   st.sessionTrades.push(trade);
   tradeLogger.appendTradeLog(MODE_KEY, trade);
   st.sessionPnl = _r2(st.sessionPnl + pnl);
+  capitalPool.release(MODE_KEY, pnl, { symbol: stock });   // frees this stock's block only
   if (pnl > 0) st.wins++; else st.losses++;
   const d = st.decisions.get(stock);
   if (d) { d.status = "exited"; d.note = `${reason} · ₹${pnl}`; }
@@ -625,6 +640,7 @@ function _saveSession() {
   data.totalPnl = _r2(data.totalPnl + st.sessionPnl);
   data.capital  = _r2(data.capital + st.sessionPnl);
   savePaperData(data);
+  capitalPool.sessionSaved(MODE_KEY);
   log(`💾 [STK] Session saved. Capital ₹${data.capital} | Total PnL ₹${data.totalPnl}`);
   if (canSend("TG_GAP_RUNAWAY_STK_DAYREPORT")) {
     sendTelegram([
@@ -706,6 +722,7 @@ router.get("/start", async (req, res) => {
     }
     for (const p of _loadPositions()) {
       st.positions.set(p.stock, Object.assign(p, { ltp: p.entryPrice, ltpAt: 0 }));
+      capitalPool.block(MODE_KEY, p.qty * p.entryPrice, { side: p.side, symbol: p.stock, qty: p.qty, premium: p.entryPrice }, { add: true });
       st._tradedToday.add(p.stock);
     }
     if (st._priorTradesToday || st.positions.size) {
@@ -1063,6 +1080,7 @@ router.get("/reset", (req, res) => {
   const cap = getCapitalFromEnv();
   savePaperData({ capital: cap, totalPnl: 0, sessions: [] });
   require("../utils/paperReset").clearTodayFiles(MODE_KEY);
+  capitalPool.sessionSaved(MODE_KEY);
   try { if (fs.existsSync(POS_FILE)) fs.unlinkSync(POS_FILE); } catch (_) {}
   st.sessionTrades = []; st.sessionPnl = 0; st.wins = 0; st.losses = 0; st._staleSession = false;
   return res.json({ success: true, message: `Paper trade history cleared. Capital reset to ₹${cap.toLocaleString("en-IN")}` });

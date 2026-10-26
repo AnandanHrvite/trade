@@ -281,10 +281,13 @@ check("both routes decide through engine.getSignal / stopHit / trailExit", () =>
     assert.ok(/engine\.trailExit\(/.test(s)); assert.ok(/engine\.entryStillValid\(/.test(s));
   }
 });
-check("no common rule: no profit lock, breakeven, cooldown, spread check, capital pool, portfolio cap, LOT_MULTIPLIER", () => {
+check("no common rule: no profit lock, breakeven, cooldown, spread check, portfolio cap, LOT_MULTIPLIER", () => {
   for (const s of [paper, stk]) {
-    assert.ok(!/tradeGuards|checkProfitLock|checkBreakevenStop|reentryCooldown|checkSpread|capitalPool|portfolioRisk|getLotQty|LOT_MULTIPLIER|commonTradeWindow|TRADE_EXPIRY_DAY_ONLY/.test(s));
+    assert.ok(!/tradeGuards|checkProfitLock|checkBreakevenStop|reentryCooldown|checkSpread|portfolioRisk|getLotQty|LOT_MULTIPLIER|commonTradeWindow|TRADE_EXPIRY_DAY_ONLY/.test(s));
   }
+});
+check("the one common rule kept: both draw from the shared Zerodha capital pool", () => {
+  for (const s of [paper, stk]) assert.ok(/ZERODHA_INV_AMOUNT/.test(s) && /capitalPool\.gate\(/.test(s));
 });
 check("NIFTY sizes off its own GAP_RUNAWAY_LOTS × the NIFTY lot", () => {
   assert.ok(/GAP_RUNAWAY_LOTS/.test(paper)); assert.ok(/underlyingOf\("NIFTY"\)\.lotSize/.test(paper));
@@ -397,8 +400,8 @@ check("Settings exposes every key the engine and routes read, with matching defa
   for (const P of ["GAP_RUNAWAY", "GAP_RUNAWAY_STK"]) for (const [k, d] of Object.entries(want)) {
     const f = fields.get(`${P}_${k}`); assert.ok(f, `${P}_${k} missing`); assert.strictEqual(String(f.default), d, `${P}_${k}`);
   }
-  for (const [k, d] of [["GAP_RUNAWAY_LOTS", "1"], ["GAP_RUNAWAY_CAPITAL", "100000"], ["GAP_RUNAWAY_STK_TRADE_AMOUNT", "100000"],
-    ["GAP_RUNAWAY_STK_MAX_TRADES", "3"], ["GAP_RUNAWAY_STK_UNIVERSE", "FNO"], ["GAP_RUNAWAY_STK_CAPITAL", "300000"],
+  for (const [k, d] of [["GAP_RUNAWAY_LOTS", "1"], ["GAP_RUNAWAY_STK_TRADE_AMOUNT", "100000"],
+    ["GAP_RUNAWAY_STK_MAX_TRADES", "3"], ["GAP_RUNAWAY_STK_UNIVERSE", "FNO"],
     ["GAP_RUNAWAY_MODE_ENABLED", "true"], ["GAP_RUNAWAY_STK_MODE_ENABLED", "true"], ["GAP_RUNAWAY_LIVE_ENABLED", "false"]]) {
     const f = fields.get(k); assert.ok(f, `${k} missing`); assert.strictEqual(String(f.default), d, k);
   }
