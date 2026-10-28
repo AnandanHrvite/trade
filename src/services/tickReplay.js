@@ -2349,6 +2349,11 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
       if (!("EXIT_REENTRY_COOLDOWN_CANDLES" in _snapSettings)) {
         _snapSettings.EXIT_REENTRY_COOLDOWN_CANDLES = "0";
       }
+      // EMA_RSI_ST one trade per move (default ON, 2026-10-28): same rule — an
+      // absent key is a recording made before it shipped, which re-entered freely.
+      if (!("EMA_RSI_ST_ONE_TRADE_PER_MOVE_ENABLED" in _snapSettings)) {
+        _snapSettings.EMA_RSI_ST_ONE_TRADE_PER_MOVE_ENABLED = "false";
+      }
       // Snapshot mode is a PARTIAL override: _applySettingsOverride only SETS the
       // keys it is given, so a managed key present in today's env but absent from
       // the recording keeps its CURRENT value — "snapshot settings" quietly means

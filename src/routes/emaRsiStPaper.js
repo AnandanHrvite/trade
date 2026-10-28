@@ -133,6 +133,20 @@ function _setOppositeCooldown(exitedSide, reason) {
   log(`🔁 [PAPER] Opposite-side cooldown — no ${opp} entries for ${_OPP_COOLDOWN_CANDLES} candles (~${_OPP_COOLDOWN_CANDLES * getTradeResolution()} min)`);
 }
 
+// ── One trade per move (EMA_RSI_ST_ONE_TRADE_PER_MOVE_ENABLED, default on) ──
+// After a trade on a side closes, no new entry on THAT side until SuperTrend
+// flips against it at a candle close — the next entry must belong to a fresh
+// move. Added 2026-10-28: three PEs in one down move; the third was bought at
+// the low and lost Rs2,980 on the bounce.
+function _moveLockOn() { return (process.env.EMA_RSI_ST_ONE_TRADE_PER_MOVE_ENABLED || "true").toLowerCase() === "true"; }
+function _clearMoveLockOnFlip(stTrendInt) {
+  const s = ptState._moveLockSide;
+  if (s && ((s === "CE" && stTrendInt === -1) || (s === "PE" && stTrendInt === 1))) {
+    ptState._moveLockSide = null;
+    log(`🔓 [PAPER] SuperTrend flipped — ${s} entries allowed again (new move)`);
+  }
+}
+
 // _STOP_MINS declared and populated by _refreshConfig() above
 
 // ── isMarketHours() cache (60-second TTL) ────────────────────────────────────
@@ -887,6 +901,12 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
     ptState._entryPending = false;
     return;
   }
+  // One trade per move: this side already traded in the current SuperTrend move.
+  if (_moveLockOn() && ptState._moveLockSide === side && !/^Manual /.test(reason)) {
+    log(`⏸️ [PAPER] One trade per move — ${side} already traded in this move; waiting for a SuperTrend flip (${side} @ ₹${price} rejected)`);
+    ptState._entryPending = false;
+    return;
+  }
   // Opposite-side cooldown: reject opposite-side entry within cooldown window after a recent exit.
   if (_OPP_COOLDOWN_ENABLED && ptState._oppositeCooldownLastSide
       && ptState._oppositeCooldownLastSide !== side
@@ -1326,6 +1346,8 @@ function simulateSell(exitPrice, reason, spotAtExit) {
 
   // Opposite-side (flip) cooldown — block opposite-side entry for N candles.
   _setOppositeCooldown(side, reason);
+  // One trade per move — this side waits for a SuperTrend flip.
+  ptState._moveLockSide = side;
   // Global wait-after-any-exit cooldown — no entry on either side for N candles.
   ptState._reentryBlockUntil = tradeGuards.reentryCooldownUntil(simNow(), getTradeResolution());
 
@@ -1354,6 +1376,7 @@ async function onCandleClose(candle) {
 
   // Cache stable SAR SL for every intra-candle tick — avoids recomputing strategy on every tick
   _cachedClosedCandleSL = stopLoss ?? null;
+  _clearMoveLockOnFlip(indicators.stTrendInt);
 
   // ── Confirmation candle (cross & close) — arm the signal here; entry fires
   //    intra-bar on the NEXT candle once price crosses this candle's close (onTick).
@@ -2505,6 +2528,7 @@ router.get("/start", async (req, res) => {
   ptState._reentryBlockUntil   = 0;
   ptState._oppositeCooldownUntilTs  = 0;
   ptState._oppositeCooldownLastSide = null;
+  ptState._moveLockSide        = null;
   ptState._lastCheckedBarHigh  = null;
   ptState._lastCheckedBarLow   = null;
   ptState._missedLoggedCandle  = null;
@@ -5077,6 +5101,7 @@ router.post("/simulate/start", async (req, res) => {
     ptState._reentryBlockUntil   = 0;
     ptState._oppositeCooldownUntilTs  = 0;
     ptState._oppositeCooldownLastSide = null;
+    ptState._moveLockSide        = null;
     ptState._lastCheckedBarHigh  = null;
     ptState._lastCheckedBarLow   = null;
     ptState._missedLoggedCandle  = null;

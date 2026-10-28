@@ -25,7 +25,7 @@
  *   2. RSI(14) in the PE band  →  RSI_PE_MIN < RSI < RSI_PE_MAX
  *   3. SuperTrend bearish (trend===-1)
  *   4. Close beyond base EMA (opt-in, default ON):  signal candle CLOSE < base EMA.
- *   5. Not stretched (EMA_RSI_ST_MAX_EMA_DIST_PTS, default 50, 0 = off): the signal
+ *   5. Not stretched (EMA_RSI_ST_MAX_EMA_DIST_PTS, default 0 = off): the signal
  *      candle close may sit at most this many points beyond the base EMA. Both sides.
  *
  * STOP LOSS (unchanged — set by the execution layer, value seeded here):
@@ -104,7 +104,7 @@ function getSignal(candles, opts) {
   // (commodity) pass its own value; the swing scanner rescales the env key instead.
   var MAX_EMA_DIST = (opts && opts.maxEmaDistPts != null)
     ? opts.maxEmaDistPts
-    : (parseFloat(process.env.EMA_RSI_ST_MAX_EMA_DIST_PTS || "50") || 0);
+    : (parseFloat(process.env.EMA_RSI_ST_MAX_EMA_DIST_PTS || "0") || 0);
   // Warm-up: the slow EMA needs EMA_SLOW closes; +5 buffer for RSI/SuperTrend to settle.
   var WARMUP = Math.max(EMA_SLOW, 30) + 5;
 

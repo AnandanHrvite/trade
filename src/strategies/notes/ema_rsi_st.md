@@ -4,6 +4,8 @@ Engine: `src/strategies/strategy1_sar_ema_rsi.js` · Routes: `emaRsiSt*.js` · E
 
 Append a dated bullet whenever this strategy changes. Newest on top.
 
+- 2026-10-28 — New `EMA_RSI_ST_ONE_TRADE_PER_MOVE_ENABLED` (default on) in Paper/Live/Backtest: after an exit, that side takes no new entry until SuperTrend flips against it at a candle close. Stretch gate below now defaults to 0 (off) so the first entry of a move is kept.
+
 - 2026-10-28 — New entry gate `EMA_RSI_ST_MAX_EMA_DIST_PTS` (default 50, 0 = off) in `getSignal`, so Paper/Live/Backtest all get it: no entry when the signal close is more than N pts past the base EMA. 28-Oct: three PEs bought 79–102pt under EMA20 at the low; the third lost ₹2,980 on the bounce.
 
 - 2026-09-19 — Global breakeven stop wired into emaRsiStPaper + emaRsiStLive + backtestEngine (spot-equivalent). EMA_RSI_ST's own older spot breakeven (EMA_RSI_ST_BREAKEVEN_ENABLED/_PTS) was read by the code but absent from Settings — now exposed; left OFF, since the global premium breakeven armed on 74 recorded trades vs its 33 and caught every one of them.

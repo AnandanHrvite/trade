@@ -94,6 +94,20 @@ function _setOppositeCooldown(exitedSide, reason) {
   log(`🔁 [LIVE] Opposite-side cooldown — no ${opp} entries for ${_OPP_COOLDOWN_CANDLES} candles (~${_OPP_COOLDOWN_CANDLES * _resMin} min)`);
 }
 
+// ── One trade per move (EMA_RSI_ST_ONE_TRADE_PER_MOVE_ENABLED, default on) ──
+// After a trade on a side closes, no new entry on THAT side until SuperTrend
+// flips against it at a candle close — the next entry must belong to a fresh
+// move. Added 2026-10-28: three PEs in one down move; the third was bought at
+// the low and lost Rs2,980 on the bounce.
+function _moveLockOn() { return (process.env.EMA_RSI_ST_ONE_TRADE_PER_MOVE_ENABLED || "true").toLowerCase() === "true"; }
+function _clearMoveLockOnFlip(stTrendInt) {
+  const s = tradeState._moveLockSide;
+  if (s && ((s === "CE" && stTrendInt === -1) || (s === "PE" && stTrendInt === 1))) {
+    tradeState._moveLockSide = null;
+    log(`🔓 [LIVE] SuperTrend flipped — ${s} entries allowed again (new move)`);
+  }
+}
+
 // EMA_RSI_ST (redefined): initial SL = the prev-candle low/high from getSignal, used as-is.
 //
 // The ONLY adjustment: an initial stop must be PROTECTIVE. Because the
@@ -1366,6 +1380,8 @@ async function _squareOffLocked(exitPrice, reason) {
 
   // Opposite-side (flip) cooldown — block opposite-side entry for N candles.
   if (closedSide) _setOppositeCooldown(closedSide, reason);
+  // One trade per move — this side waits for a SuperTrend flip.
+  if (closedSide) tradeState._moveLockSide = closedSide;
   // Global wait-after-any-exit cooldown — no entry on either side for N candles.
   if (closedSide) tradeState._reentryBlockUntil = tradeGuards.reentryCooldownUntil(Date.now(), parseInt(process.env.TRADE_RESOLUTION || "5", 10));
 
@@ -1418,6 +1434,7 @@ async function onCandleClose(candle) {
 
   // Cache stable SAR SL for every intra-candle tick — avoids recomputing strategy on every tick
   _cachedClosedCandleSL = stopLoss ?? null;
+  _clearMoveLockOnFlip(indicators.stTrendInt);
 
   // ── Confirmation candle (cross & close) — arm here; entry fires intra-bar on the
   //    NEXT candle once price crosses this candle's close (see onTick). ──
@@ -1716,6 +1733,11 @@ async function onCandleClose(candle) {
     // ── Wait-after-any-exit cooldown: no entry on either side ──
     if (tradeState._reentryBlockUntil > Date.now()) {
       log(`⏸️ [LIVE] Wait-after-exit cooldown — candle-close entry blocked (${side})`);
+      return;
+    }
+    // ── One trade per move: this side already traded in the current SuperTrend move ──
+    if (_moveLockOn() && tradeState._moveLockSide === side) {
+      log(`⏸️ [LIVE] One trade per move — candle-close ${side} entry blocked; waiting for a SuperTrend flip`);
       return;
     }
     // ── Opposite-side cooldown: block opposite-side entry within cooldown window ──
@@ -2149,6 +2171,13 @@ function onSpotTick(tick) {
         if (!tradeState._reentryLoggedCandle || tradeState._reentryLoggedCandle !== _curBarTime) {
           tradeState._reentryLoggedCandle = _curBarTime;
           log(`⏸️ [LIVE] Wait-after-exit cooldown — intra-candle entry blocked (${side})`);
+        }
+      } else if (_moveLockOn() && tradeState._moveLockSide === side) {
+        // ── One trade per move: this side already traded in the current SuperTrend move ──
+        const _curBarTime = tradeState.currentBar ? tradeState.currentBar.time : 0;
+        if (!tradeState._moveLockLoggedCandle || tradeState._moveLockLoggedCandle !== _curBarTime) {
+          tradeState._moveLockLoggedCandle = _curBarTime;
+          log(`⏸️ [LIVE] One trade per move — intra-candle ${side} entry blocked; waiting for a SuperTrend flip`);
         }
       } else if (_OPP_COOLDOWN_ENABLED && tradeState._oppositeCooldownLastSide
                  && tradeState._oppositeCooldownLastSide !== side
@@ -2615,6 +2644,7 @@ router.get("/start", async (req, res) => {
   tradeState._reentryBlockUntil    = 0;
   tradeState._oppositeCooldownUntilTs  = 0;
   tradeState._oppositeCooldownLastSide = null;
+  tradeState._moveLockSide         = null;
   tradeState._cachedCE             = null; // clear pre-fetch cache on session start
   tradeState._cachedPE             = null;
   tradeState._fiftyPctPauseUntil   = null;

@@ -167,7 +167,7 @@ const ADAPTERS = [
     timeframes: TIMEFRAME_KEYS,
     needsDaily: false,
     stateful:   false,
-    scaleKeys:  [{ key: "EMA_RSI_ST_MAX_EMA_DIST_PTS", def: "50" }],
+    scaleKeys:  [{ key: "EMA_RSI_ST_MAX_EMA_DIST_PTS", def: "0" }],
     minBars() {
       const slow = parseInt(process.env.EMA_RSI_ST_EMA_SLOW || "50", 10) || 50;
       return Math.max(slow, 30) + 5;            // mirrors the module's own WARMUP

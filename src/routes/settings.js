@@ -93,7 +93,8 @@ const SETTINGS_SCHEMA = [
       { key: "EMA_RSI_ST_EMA_TRIPLE_STACK_ENABLED", label: "Triple-Stack EMA (9>20>50)", type: "toggle", effect: EFFECT.INSTANT, desc: "Require a 9>20>50 EMA stack (stricter).", default: "false" },
       { key: "EMA_RSI_ST_EMA_FASTEST", label: "EMA Fastest Period", type: "number", min: 5, max: 20, step: 1, effect: EFFECT.INSTANT, desc: "Fastest EMA period (triple-stack only).", default: "9" },
       { key: "EMA_RSI_ST_CLOSE_BEYOND_EMA_ENABLED", label: "Close Beyond Base EMA", type: "toggle", effect: EFFECT.INSTANT, desc: "Candle must close on the trade side of the EMA.", default: "true" },
-      { key: "EMA_RSI_ST_MAX_EMA_DIST_PTS", label: "Max Distance From EMA (pts)", type: "number", min: 0, max: 300, step: 5, effect: EFFECT.INSTANT, desc: "Skip entry if the candle closed more than this many points past the EMA — the move is tired and may reverse (0 = off).", default: "50" },
+      { key: "EMA_RSI_ST_MAX_EMA_DIST_PTS", label: "Max Distance From EMA (pts)", type: "number", min: 0, max: 300, step: 5, effect: EFFECT.INSTANT, desc: "Skip entry if the candle closed more than this many points past the EMA — the move is tired and may reverse (0 = off).", default: "0" },
+      { key: "EMA_RSI_ST_ONE_TRADE_PER_MOVE_ENABLED", label: "One Trade Per Move", type: "toggle", effect: EFFECT.INSTANT, desc: "After a trade closes, no new trade on the same side until SuperTrend flips (a fresh move). Stops buying the same move again at its end.", default: "true" },
       { key: "RSI_CE_MIN", label: "RSI CE Min (>)", type: "number", min: 45, max: 65, step: 1, effect: EFFECT.INSTANT, desc: "CE needs RSI above this.", default: "52" },
       { key: "RSI_CE_MAX", label: "RSI CE Max (< overbought)", type: "number", min: 60, max: 90, step: 1, effect: EFFECT.INSTANT, desc: "Block CE when RSI is this high (overbought).", default: "70" },
       { key: "RSI_PE_MAX", label: "RSI PE Max (<)", type: "number", min: 35, max: 55, step: 1, effect: EFFECT.INSTANT, desc: "PE needs RSI below this.", default: "48" },
@@ -1973,7 +1974,7 @@ const IMMEDIATE_KEYS = new Set([
   // EMA_RSI_ST thresholds — read from process.env inside getSignal() / per-tick on every candle
   "RSI_CE_MIN", "RSI_CE_MAX", "RSI_PE_MAX", "RSI_PE_MIN",
   "EMA_RSI_ST_EMA_FAST", "EMA_RSI_ST_EMA_SLOW", "EMA_RSI_ST_EMA_TRIPLE_STACK_ENABLED", "EMA_RSI_ST_EMA_FASTEST",
-  "EMA_RSI_ST_CLOSE_BEYOND_EMA_ENABLED", "EMA_RSI_ST_MAX_EMA_DIST_PTS",
+  "EMA_RSI_ST_CLOSE_BEYOND_EMA_ENABLED", "EMA_RSI_ST_MAX_EMA_DIST_PTS", "EMA_RSI_ST_ONE_TRADE_PER_MOVE_ENABLED",
   "EMA_RSI_ST_CANDLE_TRAIL_ENABLED", "EMA_RSI_ST_CANDLE_TRAIL_BARS", "EMA_RSI_ST_EMA_EXIT_MODE",
   "EMA_RSI_ST_INITIAL_SL_MODE",
   "EMA_RSI_ST_SUPERTREND_PERIOD", "EMA_RSI_ST_SUPERTREND_MULT",

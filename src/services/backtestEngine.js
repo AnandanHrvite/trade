@@ -275,6 +275,8 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
   // Opposite-side (flip) cooldown — block opposite-side entry for N candles after non-flip exit.
   const OPP_COOLDOWN_ENABLED   = (process.env.EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_ENABLED || "true").toLowerCase() === "true";
   const OPP_COOLDOWN_CANDLES   = parseInt(process.env.EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_CANDLES || "3", 10);
+  // One trade per move — after an exit, that side waits for a SuperTrend flip (mirrors paper).
+  const MOVE_LOCK_ENABLED      = (process.env.EMA_RSI_ST_ONE_TRADE_PER_MOVE_ENABLED || "true").toLowerCase() === "true";
   // Backtest has no live option LTP — approximate the premium stop as an adverse
   // SPOT move: optStopSpotPts = (OPT_STOP_PCT × estEntryPremium) / DELTA. estEntryPremium
   // is the same 200 constant the PnL sim uses, so the two stay internally consistent.
@@ -367,6 +369,8 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
   const _slPauseUntilBySide = { CE: 0, PE: 0 }; // same-side SL cooldown (unix secs), reset per day
   let _oppositeCooldownUntilTs   = 0;     // opposite-side cooldown (unix secs), reset per day
   let _oppositeCooldownLastSide  = null;  // last exited side
+  let _moveLockSide              = null;  // one trade per move: side waiting for a SuperTrend flip
+  let _lastStTrendInt            = null;  // SuperTrend side at the PREVIOUS candle's close
   // Global wait-after-any-exit cooldown (EXIT_REENTRY_COOLDOWN_CANDLES), unix secs.
   // Paper measures it from the exit's clock time: a tick stop exits INSIDE the
   // bar (≈ bar open here), a candle-close rule exits at the bar's CLOSE.
@@ -439,6 +443,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         _slPauseUntilBySide.PE = 0;
         _oppositeCooldownUntilTs  = 0;
         _oppositeCooldownLastSide = null;
+        _moveLockSide             = null;
         _reentryBlockUntilTs      = 0;
         _armedSwing               = null; // drop any arm across the day boundary
         _pendingArm               = null; // ...including one staged at yesterday's close
@@ -476,7 +481,13 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
     // silent=true: backtest runs 1000+ candles — suppress per-candle strategy console.log spam
     // Only destructure fields we actually use — skip `...indicators` rest-spread
     // which allocates a new object every candle (hot path: 500K+ calls).
+    // One trade per move — paper clears the lock at a candle CLOSE, before the
+    // next bar's fill, so clear on the previous candle's SuperTrend, not this one's.
+    if (_moveLockSide && ((_moveLockSide === "CE" && _lastStTrendInt === -1) || (_moveLockSide === "PE" && _lastStTrendInt === 1))) {
+      _moveLockSide = null;
+    }
     const _sig = strategy.getSignal(window, { silent: true });
+    if (_sig.stTrendInt != null) _lastStTrendInt = _sig.stTrendInt;
     const signal = _sig.signal;
     const reason = _sig.reason;
     const signalSL = _sig.stopLoss;
@@ -958,6 +969,9 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
           if (_verbose) console.log(`  🔁 Opposite-side cooldown — no ${position.side === "CE" ? "PE" : "CE"} entries for ${OPP_COOLDOWN_CANDLES} candles`);
         }
 
+        // One trade per move — this side waits for a SuperTrend flip.
+        _moveLockSide = position.side;
+
         // Wait-after-any-exit cooldown — every exit reason, both sides.
         if (_REENTRY_COOLDOWN_SECS > 0) {
           _reentryBlockUntilTs = candle.time + (_exitedOnTick ? 0 : candleResolutionMins * 60) + _REENTRY_COOLDOWN_SECS;
@@ -991,6 +1005,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
                                   && s !== _oppositeCooldownLastSide
                                   && candle.time < _oppositeCooldownUntilTs);
     const _reentryBlocked = _reentryBlockUntilTs > 0 && candle.time < _reentryBlockUntilTs;
+    const _moveLocked = (s) => !!(MOVE_LOCK_ENABLED && s && s === _moveLockSide);
     const isSideCoolingDown     = _sidePaused(_sigSide);
     const isOppositeCoolingDown = _oppPaused(_sigSide);
     const isConsecPaused = _consecPauseUntilTs > 0 && candle.time < _consecPauseUntilTs;
@@ -1050,8 +1065,8 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         // above, so a rejection burns it exactly as paper burns _armedSignal
         // before its async order call. Keyed on _a.side, not _sigSide — the armed
         // side is the PREVIOUS candle's signal and the two can differ.
-        if (_sidePaused(_a.side) || _oppPaused(_a.side) || _reentryBlocked) {
-          if (_verbose) console.log(`  ⏸️ CONFIRM ${_a.side} rejected — ${_sidePaused(_a.side) ? "same-side SL" : _oppPaused(_a.side) ? "opposite-side" : "wait-after-exit"} cooldown active [${toIST(candle.time)}]`);
+        if (_sidePaused(_a.side) || _oppPaused(_a.side) || _reentryBlocked || _moveLocked(_a.side)) {
+          if (_verbose) console.log(`  ⏸️ CONFIRM ${_a.side} rejected — ${_sidePaused(_a.side) ? "same-side SL" : _oppPaused(_a.side) ? "opposite-side" : _reentryBlocked ? "wait-after-exit" : "one-trade-per-move"} cooldown active [${toIST(candle.time)}]`);
           continue;
         }
         // VIX gate — same reason as the cooldowns above. emaRsiStPaper runs
@@ -1154,6 +1169,8 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         if (isOppositeCoolingDown) continue;
         // Wait-after-any-exit cooldown: skip both sides
         if (_reentryBlocked) continue;
+        // One trade per move: this side waits for a SuperTrend flip
+        if (_moveLocked(_sigSide)) continue;
 
         const side     = _sigSide;
         const strength = signalStrength || "STRONG";
