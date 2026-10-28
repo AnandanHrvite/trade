@@ -61,7 +61,7 @@ const skipLogger        = require("../utils/skipLogger");
 const capitalPool       = require("../utils/capitalPool");
 const tradeGuards       = require("../utils/tradeGuards");
 const portfolioRisk     = require("../utils/portfolioRisk");
-const aiExport         = require("../utils/aiExport");
+const aiExport          = require("../utils/aiExport");
 const { verifyFyersToken } = require("../utils/fyersAuthCheck");
 const { isTradingAllowed } = require("../utils/nseHolidays");
 const { istDayFromAny }    = require("../utils/tradeUtils");
@@ -465,7 +465,7 @@ function _closePosition(stock, price, reason) {
     todayOpen: pos.todayOpen, gapPts: pos.gapPts, gapPct: pos.gapPct,
     trailEmaAtExit: pos.trailEma, candlesHeld: pos.candlesHeld,
     bestPrice: pos.best, mfePts: pos.mfe, maePts: pos.mae,
-    peakPnl: pos.peakPnl, givenBack: _r2(pos.peakPnl - pnl),
+    peakPnl: pos.peakPnl || 0, givenBack: _r2((pos.peakPnl || 0) - pnl),
     profitLockArmed: !!pos.plArmed, breakevenArmed: !!pos.beArmed, spreadAtEntry: pos.spreadAtEntry,
     instrument: "NSE_EQUITY_MIS", strategy: PREFIX,
   };
@@ -481,7 +481,7 @@ function _closePosition(stock, price, reason) {
   // Common wait-after-exit: no new entry for N trail candles.
   st._reentryBlockUntil = Math.max(st._reentryBlockUntil || 0, tradeGuards.reentryCooldownUntil(Date.now(), _cfg().EXIT_TF));
   log(`${pnl >= 0 ? "✅" : "❌"} [STK] EXIT ${pos.direction} ${pos.qty} × ${stock} @ ₹${price} | P&L ₹${pnl} (charges ₹${charges}) | ${reason}`);
-  log(`   [STK] ${stock} summary — best ₹${pos.best} (peak P&L ₹${pos.peakPnl}, gave back ₹${trade.givenBack}) · MFE ${pos.mfe} / MAE ${pos.mae} pts · ${pos.candlesHeld} candles, ${Math.round(trade.durationMs / 60000)} min · lock ${pos.plArmed ? "armed" : "not armed"} · breakeven ${pos.beArmed ? "armed" : "not armed"} · session ₹${st.sessionPnl}`);
+  log(`   [STK] ${stock} summary — best ₹${pos.best} (peak P&L ₹${trade.peakPnl}, gave back ₹${trade.givenBack}) · MFE ${pos.mfe} / MAE ${pos.mae} pts · ${pos.candlesHeld} candles, ${Math.round(trade.durationMs / 60000)} min · lock ${pos.plArmed ? "armed" : "not armed"} · breakeven ${pos.beArmed ? "armed" : "not armed"} · session ₹${st.sessionPnl}`);
   notifyExit({ mode: MODE_TAG, side: pos.side, symbol: pos.symbol, spotAtEntry: pos.entryPrice, spotAtExit: price, pnl, sessionPnl: st.sessionPnl, exitReason: reason, entryReason: pos.reason, entryTime: pos.entryTime, exitTime: trade.exitTime, qty: pos.qty });
 }
 
