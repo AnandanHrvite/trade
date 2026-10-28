@@ -100,8 +100,11 @@ function getSignal(candles, opts) {
   // Stretch gate: skip when the close is already far past the base EMA — the move is
   // tired and the next candles usually snap back. Added 2026-10-28 after three PEs
   // were bought 79–102pt under EMA20 at the day's low; the third rode a 68pt bounce
-  // to −₹2,980. 0 = off.
-  var MAX_EMA_DIST = parseFloat(process.env.EMA_RSI_ST_MAX_EMA_DIST_PTS || "50") || 0;
+  // to −₹2,980. 0 = off. NIFTY points — opts.maxEmaDistPts lets a non-NIFTY caller
+  // (commodity) pass its own value; the swing scanner rescales the env key instead.
+  var MAX_EMA_DIST = (opts && opts.maxEmaDistPts != null)
+    ? opts.maxEmaDistPts
+    : (parseFloat(process.env.EMA_RSI_ST_MAX_EMA_DIST_PTS || "50") || 0);
   // Warm-up: the slow EMA needs EMA_SLOW closes; +5 buffer for RSI/SuperTrend to settle.
   var WARMUP = Math.max(EMA_SLOW, 30) + 5;
 

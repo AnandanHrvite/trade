@@ -38,7 +38,8 @@
  *   • the option series rolls to next month CMX_OPT_ROLL_DAYS before expiry.
  *
  * Exits otherwise mirror the NIFTY paper routes at their defaults. Left out on purpose:
- * the NIFTY-points features (EMA_RSI_ST_STOP_LOSS_PTS, EMA_RSI_ST_BREAKEVEN_PTS)
+ * the NIFTY-points features (EMA_RSI_ST_STOP_LOSS_PTS, EMA_RSI_ST_BREAKEVEN_PTS,
+ * EMA_RSI_ST_MAX_EMA_DIST_PTS — switched off via getSignal's maxEmaDistPts: 0)
  * because a NIFTY point is not a crude or gold rupee, and the VIX / OI / spread gates,
  * which read NSE data. The per-tick stop is checked on each poll
  * (CMX_POLL_SECONDS), not on every tick.
@@ -168,7 +169,7 @@ const ADAPTERS = {
   V1: {
     rulesKey: "EMA_RSI_ST",
     signal(candles) {
-      return require("../strategies/strategy1_sar_ema_rsi").getSignal(candles, { silent: true, skipTimeCheck: true });
+      return require("../strategies/strategy1_sar_ema_rsi").getSignal(candles, { silent: true, skipTimeCheck: true, maxEmaDistPts: 0 });
     },
     slPauseCandles: () => _int(process.env.EMA_RSI_ST_SL_PAUSE_CANDLES, 3),
     oppCooldownOn:  () => _bool(process.env.EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_ENABLED, "true"),

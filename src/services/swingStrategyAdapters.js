@@ -164,10 +164,10 @@ const ADAPTERS = [
     label:      "EMA_RSI_ST",
     envKey:     "EMA_RSI_ST_MODE_ENABLED",
     blurb:      "EMA20/50 alignment + RSI band + SuperTrend(10,3) side. Trend-following.",
-    timeframes: TIMEFRAME_KEYS,                 // no absolute-point gate anywhere
+    timeframes: TIMEFRAME_KEYS,
     needsDaily: false,
     stateful:   false,
-    scaleKeys:  [],
+    scaleKeys:  [{ key: "EMA_RSI_ST_MAX_EMA_DIST_PTS", def: "50" }],
     minBars() {
       const slow = parseInt(process.env.EMA_RSI_ST_EMA_SLOW || "50", 10) || 50;
       return Math.max(slow, 30) + 5;            // mirrors the module's own WARMUP

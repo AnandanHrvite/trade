@@ -312,9 +312,9 @@ check("a malformed threshold is left alone rather than turned into NaN", () => {
   } finally { process.env.PA_MIN_SL_PTS = "8"; }
 });
 
-check("EMA_RSI_ST declares no point thresholds — its entry has none to rescale", () => {
-  assert.deepStrictEqual(adapters.getAdapter("EMA_RSI_ST").scaleKeys, [],
-    "if EMA_RSI_ST gains an absolute-point gate, it must be added here or stocks will be judged on NIFTY distances");
+check("EMA_RSI_ST rescales its one point threshold — the stretch gate", () => {
+  assert.deepStrictEqual(adapters.getAdapter("EMA_RSI_ST").scaleKeys, [{ key: "EMA_RSI_ST_MAX_EMA_DIST_PTS", def: "50" }],
+    "every absolute-point gate in EMA_RSI_ST's entry must be listed here or stocks will be judged on NIFTY distances");
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
