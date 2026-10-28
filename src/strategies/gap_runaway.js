@@ -48,6 +48,7 @@
  *           intraday).
  *
  * ── DELIBERATELY NOT HERE (the user said so — do not add) ───────────────────
+ *   (NIFTY page. The stock scanner route adds the common exits — see its header.)
  *   No common rules: no profit lock, no breakeven, no wait-after-exit, no bid-ask
  *   spread check, no common 10:00–14:00 window, no lot multiplier, no paper
  *   capital gate, no portfolio cap. No VIX / OI / ADX / volume / VWAP / trend

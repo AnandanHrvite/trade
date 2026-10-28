@@ -281,10 +281,13 @@ check("both routes decide through engine.getSignal / stopHit / trailExit", () =>
     assert.ok(/engine\.trailExit\(/.test(s)); assert.ok(/engine\.entryStillValid\(/.test(s));
   }
 });
-check("no common rule: no profit lock, breakeven, cooldown, spread check, portfolio cap, LOT_MULTIPLIER", () => {
-  for (const s of [paper, stk]) {
-    assert.ok(!/tradeGuards|checkProfitLock|checkBreakevenStop|reentryCooldown|checkSpread|portfolioRisk|getLotQty|LOT_MULTIPLIER|commonTradeWindow|TRADE_EXPIRY_DAY_ONLY/.test(s));
-  }
+check("NIFTY: no common rule: no profit lock, breakeven, cooldown, spread check, portfolio cap, LOT_MULTIPLIER", () => {
+  assert.ok(!/tradeGuards|checkProfitLock|checkBreakevenStop|reentryCooldown|checkSpread|portfolioRisk|getLotQty|LOT_MULTIPLIER|commonTradeWindow|TRADE_EXPIRY_DAY_ONLY/.test(paper));
+});
+check("scanner: common profit lock, breakeven, cooldown, spread, portfolio cap — but no trade window / lot multiplier", () => {
+  for (const re of [/tradeGuards\.checkProfitLock\(/, /tradeGuards\.checkBreakevenStop\(/, /tradeGuards\.reentryCooldownUntil\(/, /tradeGuards\.checkSpread\(/, /portfolioRisk\.checkPortfolioCap\(/]) assert.ok(re.test(stk), String(re));
+  assert.ok(!/commonTradeWindow|getLotQty|LOT_MULTIPLIER/.test(stk));
+  assert.ok(require("../src/utils/portfolioRisk").PAPER_MODES.includes("gap_runaway_stk"));
 });
 check("the one common rule kept: both draw from the shared Zerodha capital pool", () => {
   for (const s of [paper, stk]) assert.ok(/ZERODHA_INV_AMOUNT/.test(s) && /capitalPool\.gate\(/.test(s));

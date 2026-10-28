@@ -103,16 +103,16 @@ check("every paper engine", () => {
     const src = decomment(read(`routes/${f}`));
     // The COMMODITY (MCX) pages are thin wrappers; services/commodityPaper.js owns entries.
     if (/utils\/commodityPaperRouter/.test(src)) continue;
-    // GAP_RUNAWAY + its scanner: no common rule applies (the user's rule), and it
-    // takes one trade a day per instrument with no re-entry — asserted below.
-    if (f === "gapRunawayPaper.js" || f === "gapRunawayStkPaper.js") continue;
+    // GAP_RUNAWAY (NIFTY): no common rule applies (the user's rule), and it
+    // takes one trade a day with no re-entry — asserted below.
+    if (f === "gapRunawayPaper.js") continue;
     if (!uses(`routes/${f}`)) missing.push(f);
   }
   assert.deepStrictEqual(missing, [], `paper engines without the cooldown: ${missing.join(", ")}`);
 });
 
-check("GAP_RUNAWAY never applies the wait-after-exit cooldown (no common rules, no re-entry)", () => {
-  for (const f of ["routes/gapRunawayPaper.js", "routes/gapRunawayStkPaper.js"]) {
+check("GAP_RUNAWAY (NIFTY) never applies the wait-after-exit cooldown (no common rules, no re-entry)", () => {
+  for (const f of ["routes/gapRunawayPaper.js"]) {
     assert.ok(!uses(f), `${f} must not apply the common cooldown`);
   }
 });

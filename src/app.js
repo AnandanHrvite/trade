@@ -854,6 +854,7 @@ const OPEN_PATHS = [
   "/gap_runaway_stk-paper/status/data",
   "/gap_runaway_stk-paper/history",
   "/gap_runaway_stk-paper/debug",
+  "/gap_runaway_stk-paper/logs",            // full activity log for the Copy Log button — read-only
   // COMMODITY (MCX crude/gold/silver) paper pages — read-only surfaces; start/stop/exit/reset stay protected.
   "/cmx_crude_ema_rsi_st-paper/status",
   "/cmx_crude_ema_rsi_st-paper/status/data",
@@ -1418,7 +1419,8 @@ app.use("/sail_pivot_ema_st-live",     require("./routes/sailPivotEmaStLiveHarne
 
 // ── GAP_RUNAWAY (GAP_runAway__Kirubakaran: daily RSI-on-EMA extreme + gap, Zerodha) ──
 // NIFTY ATM options (paper + live harness) and its F&O stock scanner (intraday
-// shares, paper only). No backtest, not replayable, no common rules.
+// shares, paper only). No backtest, not replayable. No common rules on NIFTY;
+// the scanner runs most of them (see gapRunawayStkPaper.js).
 app.use("/gap_runaway-paper",          require("./routes/gapRunawayPaper"));           // ← canonical engine (NIFTY options)
 app.use("/gap_runaway-live",           require("./routes/gapRunawayLiveHarness"));     // ← LIVE via PAPER + harness (triple-gated dry-run, Zerodha)
 app.use("/gap_runaway_stk-paper",      require("./routes/gapRunawayStkPaper"));        // ← stock scanner, intraday shares (paper only)

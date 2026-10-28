@@ -30,9 +30,14 @@
  *            EMA21 = trail exit. GAP_RUNAWAY_STK_EOD_EXIT_TIME (15:15) square-off.
  *   P&L    : share price move × qty, minus Zerodha equity-intraday charges.
  *
- * DELIBERATELY NOT HERE: no common rules (profit lock, breakeven, cooldown,
- * spread check, trade window, lot multiplier, portfolio cap), no VIX / OI /
- * volume / trend filter, no backtest, no replay, no live orders. Money comes
+ * COMMON RULES (user, 2026-10-28 — added after a +₹2.4k day closed at −₹1.9k):
+ *   profit lock + breakeven (the common % applied to the SHARE price — a short
+ *   is checked on the price mirrored around its entry), wait-after-exit,
+ *   bid-ask spread check, portfolio daily cap.
+ * DELIBERATELY NOT HERE: the common 10:00–14:00 trade window (the whole rule
+ * is the 09:15 gap — the window would block every entry), lot multiplier
+ * (shares are sized by ₹ amount), no VIX / OI / volume / trend filter, no
+ * backtest, no replay, no live orders. Money comes
  * from the shared ZERODHA capital pool (the user's call: one pool for all).
  * A restart mid-day restores today's open paper positions from
  * ~/trading-data/.gap_runaway_stk_positions.json on the next /start.
@@ -54,7 +59,9 @@ const swingScanner      = require("../services/swingScanner");
 const tradeLogger       = require("../utils/tradeLogger");
 const skipLogger        = require("../utils/skipLogger");
 const capitalPool       = require("../utils/capitalPool");
-const aiExport          = require("../utils/aiExport");
+const tradeGuards       = require("../utils/tradeGuards");
+const portfolioRisk     = require("../utils/portfolioRisk");
+const aiExport         = require("../utils/aiExport");
 const { verifyFyersToken } = require("../utils/fyersAuthCheck");
 const { isTradingAllowed } = require("../utils/nseHolidays");
 const { istDayFromAny }    = require("../utils/tradeUtils");
@@ -83,7 +90,14 @@ const PREV_CLOSE_TOLERANCE = 0.02; // quote prev_close vs history close — beyo
 const QUOTE_BATCH      = 50;     // Fyers getQuotes accepts up to 50 symbols per call
 const SCAN_CONCURRENCY = 4;
 
-// ── Own settings (no common rules) ───────────────────────────────────────────
+// ── Own settings ─────────────────────────────────────────────────────────────
+// The common profit lock / breakeven numbers (Settings → Common Rules), read
+// here only for the log lines — the checks themselves read them in tradeGuards.
+function _plArmPct()   { return parseFloat(process.env.PROFIT_LOCK_ARM_PCT || "8"); }
+function _plFloorPct() { return parseFloat(process.env.PROFIT_LOCK_FLOOR_PCT || "5"); }
+function _beArmPct()   { return parseFloat(process.env.BREAKEVEN_ARM_PCT || "5"); }
+function _plOn() { return String(process.env.PROFIT_LOCK_ENABLED ?? "true").toLowerCase() === "true"; }
+function _beOn() { return String(process.env.BREAKEVEN_STOP_ENABLED ?? "true").toLowerCase() === "true"; }
 function _tradeAmount() { const v = parseFloat(process.env.GAP_RUNAWAY_STK_TRADE_AMOUNT || "100000"); return Number.isFinite(v) && v > 0 ? v : 100000; }
 function _maxTrades()   { const v = parseInt(process.env.GAP_RUNAWAY_STK_MAX_TRADES || "3", 10); return Number.isFinite(v) && v >= 1 && v <= 20 ? v : 3; }
 function _universeKey() { return String(process.env.GAP_RUNAWAY_STK_UNIVERSE || "FNO").trim().toUpperCase() || "FNO"; }
@@ -356,6 +370,7 @@ async function _fetchOpens(gen) {
     d.signal = engine.getSignal({ setup: d.setup, todayOpen: op, cfg: _cfg(), prefix: PREFIX });
     if (d.signal.signal === "BUY_CE" || d.signal.signal === "BUY_PE") {
       d.status = "signal";
+      log(`📈 [STK] SIGNAL ${d.stock} ${d.signal.side === "CE" ? "LONG" : "SHORT"} — RSI ${d.setup.prevRsi} (${d.setup.zone}) · prev close ₹${d.setup.prevClose} · open ₹${op} · gap ${d.signal.gapPts} pts (${d.signal.gapPct}%) · stop ₹${d.signal.slSpot}`);
     } else {
       d.status = "none";
       d.note = d.signal.reason;
@@ -374,7 +389,8 @@ async function _fetchOpens(gen) {
   if (![...st.decisions.values()].some(d => d.status === "waiting_open")) {
     st._opensDone = true;
     const hits = [...st.decisions.values()].filter(d => d.status === "signal");
-    log(`📋 [STK] Opens known for every candidate — ${hits.length} signal(s): ${hits.map(h => `${h.stock} ${h.signal.side} gap ${h.signal.gapPct}%`).join(", ") || "none"}`);
+    const _cnt = {}; for (const d of st.decisions.values()) _cnt[d.status] = (_cnt[d.status] || 0) + 1;
+    log(`📋 [STK] Opens known for every candidate — ${hits.length} signal(s) (biggest gap first): ${hits.sort((a, b) => Math.abs(b.signal.gapPct || 0) - Math.abs(a.signal.gapPct || 0)).map(h => `${h.stock} ${h.signal.side} gap ${h.signal.gapPct}%`).join(", ") || "none"} · ${Object.entries(_cnt).map(([k, v]) => `${k} ${v}`).join(" · ")}`);
   }
 }
 
@@ -383,7 +399,7 @@ function _slotsLeft() {
   return _maxTrades() - (st.sessionTrades.length + (st._priorTradesToday || 0)) - st.positions.size;
 }
 
-function _openPosition(d, price) {
+function _openPosition(d, price, spread) {
   const sig = d.signal;
   const qty = Math.floor(_tradeAmount() / price);
   if (!(qty >= 1)) {
@@ -410,6 +426,7 @@ function _openPosition(d, price) {
     todayOpen: d.open, gapPts: sig.gapPts, gapPct: sig.gapPct,
     reason: sig.reason, ltp: price, ltpAt: Date.now(), best: price, mfe: 0, mae: 0,
     lastTrailBarTime: null, trailEma: null, candlesHeld: 0,
+    spreadAtEntry: spread ? spread.spread : null, peakPnl: 0, plArmed: false, beArmed: false,
   };
   st.positions.set(d.stock, pos);
   capitalPool.block(MODE_KEY, qty * price, { side: pos.side, symbol: d.stock, qty, premium: price }, { add: true });
@@ -418,7 +435,10 @@ function _openPosition(d, price) {
   d.note = `${pos.direction} ${qty} @ ₹${price}`;
   _savePositions();
   _trackStream(pos);
-  log(`🎯 [STK] ENTRY ${pos.direction} ${qty} × ${d.stock} @ ₹${price} | SL (prev close) ₹${pos.stopLoss} | ${sig.reason}`);
+  const dir = pos.side === "CE" ? 1 : -1;
+  const lv = (pct) => _r2(price * (1 + dir * pct / 100));
+  log(`🎯 [STK] ENTRY ${pos.direction} ${qty} × ${d.stock} @ ₹${price} (₹${_r2(qty * price).toLocaleString("en-IN")}) | SL (prev close) ₹${pos.stopLoss} = risk ₹${_r2(Math.abs(price - pos.stopLoss) * qty)} | spread ${pos.spreadAtEntry != null ? pos.spreadAtEntry + "pt" : "n/a"} | RSI ${d.setup.prevRsi} · open ₹${d.open} · gap ${sig.gapPct}%`);
+  log(`   [STK] ${d.stock} levels — breakeven ${_beOn() ? `arms at ₹${lv(_beArmPct())}` : "OFF"} · profit lock ${_plOn() ? `arms at ₹${lv(_plArmPct())}, floor ₹${lv(_plFloorPct())} (then trails)` : "OFF"} | ${sig.reason}`);
   notifyEntry({ mode: MODE_TAG, side: pos.side, symbol: d.fyersSym, spotAtEntry: price, stopLoss: pos.stopLoss, qty, reason: `${pos.direction} ${d.stock} — ${sig.reason}` });
   return true;
 }
@@ -445,6 +465,8 @@ function _closePosition(stock, price, reason) {
     todayOpen: pos.todayOpen, gapPts: pos.gapPts, gapPct: pos.gapPct,
     trailEmaAtExit: pos.trailEma, candlesHeld: pos.candlesHeld,
     bestPrice: pos.best, mfePts: pos.mfe, maePts: pos.mae,
+    peakPnl: pos.peakPnl, givenBack: _r2(pos.peakPnl - pnl),
+    profitLockArmed: !!pos.plArmed, breakevenArmed: !!pos.beArmed, spreadAtEntry: pos.spreadAtEntry,
     instrument: "NSE_EQUITY_MIS", strategy: PREFIX,
   };
   st.sessionTrades.push(trade);
@@ -456,7 +478,10 @@ function _closePosition(stock, price, reason) {
   if (d) { d.status = "exited"; d.note = `${reason} · ₹${pnl}`; }
   _savePositions();
   _saveDay();
+  // Common wait-after-exit: no new entry for N trail candles.
+  st._reentryBlockUntil = Math.max(st._reentryBlockUntil || 0, tradeGuards.reentryCooldownUntil(Date.now(), _cfg().EXIT_TF));
   log(`${pnl >= 0 ? "✅" : "❌"} [STK] EXIT ${pos.direction} ${pos.qty} × ${stock} @ ₹${price} | P&L ₹${pnl} (charges ₹${charges}) | ${reason}`);
+  log(`   [STK] ${stock} summary — best ₹${pos.best} (peak P&L ₹${pos.peakPnl}, gave back ₹${trade.givenBack}) · MFE ${pos.mfe} / MAE ${pos.mae} pts · ${pos.candlesHeld} candles, ${Math.round(trade.durationMs / 60000)} min · lock ${pos.plArmed ? "armed" : "not armed"} · breakeven ${pos.beArmed ? "armed" : "not armed"} · session ₹${st.sessionPnl}`);
   notifyExit({ mode: MODE_TAG, side: pos.side, symbol: pos.symbol, spotAtEntry: pos.entryPrice, spotAtExit: price, pnl, sessionPnl: st.sessionPnl, exitReason: reason, entryReason: pos.reason, entryTime: pos.entryTime, exitTime: trade.exitTime, qty: pos.qty });
 }
 
@@ -470,9 +495,35 @@ function _onPrice(stock, price, at) {
   if (fav > pos.mfe) pos.mfe = _r2(fav);
   if (fav < pos.mae) pos.mae = _r2(fav);
   if (pos.side === "CE" ? price > pos.best : price < pos.best) pos.best = price;
+  pos.peakPnl = _r2(pos.mfe * pos.qty);
   // Gap stop — price back at yesterday's close.
   if (engine.stopHit(pos.side, price, pos.stopLoss)) {
     _closePosition(stock, price, `Gap stop — price ${price} back at prev close ${pos.stopLoss}`);
+    return;
+  }
+  // Common profit lock, then breakeven — on the share price. The helpers are
+  // written for a rising premium, so a short is fed the price mirrored around
+  // its entry (a fall of x becomes a rise of x).
+  const E = pos.entryPrice;
+  const mir = (px) => (pos.side === "CE" ? px : 2 * E - px);
+  const cur = mir(price), best = mir(pos.best);
+  const gainPct = (best / E - 1) * 100;
+  const floorPx = () => _r2(mir(tradeGuards.profitLockFloorLtp(E, best, _plFloorPct(), parseFloat(process.env.PROFIT_LOCK_TRAIL_PCT ?? "70"))));
+  if (!pos.beArmed && _beOn() && gainPct >= _beArmPct()) {
+    pos.beArmed = true;
+    log(`🛡️ [STK] ${stock} breakeven ARMED — best ₹${pos.best} (+${_r2(gainPct)}%, ₹${pos.peakPnl}) · exit if price returns to entry ₹${E}`);
+  }
+  if (!pos.plArmed && _plOn() && gainPct >= _plArmPct()) {
+    pos.plArmed = true;
+    log(`🔒 [STK] ${stock} profit lock ARMED — best ₹${pos.best} (+${_r2(gainPct)}%, ₹${pos.peakPnl}) · floor now ₹${floorPx()}, rises with the best price`);
+  }
+  const pl = tradeGuards.checkProfitLock(E, cur, best);
+  if (pl) {
+    _closePosition(stock, price, `Profit lock — price ${price} hit the floor ${floorPx()} (best ${pos.best}, entry ${E}, armed at +${_plArmPct()}%)`);
+    return;
+  }
+  if (tradeGuards.checkBreakevenStop(E, cur, best)) {
+    _closePosition(stock, price, `Breakeven stop — price ${price} back to entry ${E} (best ${pos.best}, armed at +${_beArmPct()}%)`);
   }
 }
 function _trackStream(pos) {
@@ -514,6 +565,9 @@ async function _checkTrail(gen) {
       pos.candlesHeld++;
       pos.trailEma = engine._num(ema[i]) ? _r2(ema[i]) : null;
       const ex = engine.trailExit(pos.side, bar, ema[i], cfg);
+      const dir = pos.side === "CE" ? 1 : -1;
+      const px = pos.ltp || bar.close;
+      log(`📊 [STK] ${pos.stock} ${cfg.EXIT_TF}m ${engine._fmtMins(engine._istMins(bar.time))} O ${bar.open} H ${bar.high} L ${bar.low} C ${bar.close} · EMA${cfg.TRAIL_EMA_LENGTH} ${pos.trailEma ?? "n/a"} (${pos.trailEma != null ? _r2((bar.close - pos.trailEma) * dir) : "?"} pts room) · ${ex.exit ? "EXIT" : "hold"} · LTP ₹${px} · open P&L ₹${_r2((px - pos.entryPrice) * dir * pos.qty)} · best ₹${pos.best} (peak ₹${pos.peakPnl})`);
       if (ex.exit) {
         _closePosition(pos.stock, pos.ltp || bar.close, `EMA trail — ${ex.reason}`);
         break;
@@ -580,6 +634,16 @@ function _loop() {
   }
   if (_busy.entry) return;
   if (_slotsLeft() <= 0) return;
+  // Common wait-after-exit and portfolio daily cap — both only hold entries.
+  if (nowMs < (st._reentryBlockUntil || 0)) {
+    if (st._cooldownLogged !== st._reentryBlockUntil) { st._cooldownLogged = st._reentryBlockUntil; log(`⏸️ [STK] Wait after exit — no new entry until ${new Date(st._reentryBlockUntil + 19800000).toISOString().slice(11, 19)}`); }
+    return;
+  }
+  const pf = portfolioRisk.checkPortfolioCap();
+  if (pf.blocked) {
+    if (!st._pfLogged) { st._pfLogged = true; log(`⛔ [STK] Entries held — ${pf.reason}`); skipLogger.appendSkipLog(MODE_KEY, { gate: "portfolio", reason: pf.reason }); }
+    return;
+  }
   const ready = [...st.decisions.values()]
     .filter(d => d.status === "signal" && !st._tradedToday.has(d.stock))
     .sort((a, b) => Math.abs(b.signal.gapPct || 0) - Math.abs(a.signal.gapPct || 0));
@@ -618,7 +682,17 @@ function _loop() {
         skipLogger.appendSkipLog(MODE_KEY, { gate: "strategy", stock: d.stock, reason: d.note, signal: d.signal.signal });
         continue;
       }
-      _openPosition(d, lp);
+      // Common bid-ask spread check (fails open when the quote has no depth).
+      const qv = q.get(d.fyersSym) || {};
+      const sp = tradeGuards.checkSpread(Number(qv.bid || qv.bid_price || 0), Number(qv.ask || qv.ask_price || 0));
+      if (!sp.ok) {
+        d.status = "skipped";
+        d.note = `spread too wide — ${sp.reason}`;
+        log(`⏭️ [STK] ${d.stock} ${d.signal.signal} skipped — ${d.note}`);
+        skipLogger.appendSkipLog(MODE_KEY, { gate: "spread", stock: d.stock, reason: sp.reason, bid: qv.bid, ask: qv.ask, ltp: lp });
+        continue;
+      }
+      _openPosition(d, lp, sp);
     }
     _saveDay();
   })().catch(e => log(`⚠️ [STK] entry error: ${e.message}`)).finally(() => { _busy.entry = false; });
@@ -699,6 +773,7 @@ router.get("/start", async (req, res) => {
   st.sessionPnl = 0; st.wins = 0; st.losses = 0;
   st._staleSession = false;
   st._dayDone = false; st._dayDoneReason = null; st._entriesLogged = false; st._lastTrailKey = null;
+  st._reentryBlockUntil = 0; st._cooldownLogged = 0; st._pfLogged = false;
   st.updates = 0;
   st._tradedToday = new Set();
   st._priorTradesToday = 0;
@@ -743,7 +818,9 @@ router.get("/start", async (req, res) => {
   log(`   Universe  : ${_universeKey()} · ₹${_tradeAmount().toLocaleString("en-IN")} per trade · max ${_maxTrades()} trades/day · intraday shares (MIS)`);
   log(`   Setup     : daily RSI(${cfg.RSI_LENGTH}) on EMA(${cfg.EMA_LENGTH}) of yesterday — < ${cfg.RSI_LOWER} oversold → gap UP = BUY · > ${cfg.RSI_UPPER} overbought → gap DOWN = SHORT`);
   log(`   Exit      : gap stop = prev close · ${cfg.EXIT_TF}-min close through EMA${cfg.TRAIL_EMA_LENGTH} · square-off ${engine._fmtMins(cfg.EOD_EXIT)} · window ${engine._fmtMins(cfg.ENTRY_START)}–${engine._fmtMins(cfg.ENTRY_END)}`);
-  log(`   Common    : NONE apply`);
+  const _onOff = (k) => String(process.env[k] ?? "true").toLowerCase() !== "false" ? "on" : "OFF";
+  log(`   Common    : profit lock ${_onOff("PROFIT_LOCK_ENABLED")} (arm +${_plArmPct()}% / floor +${_plFloorPct()}% of the share price, trail keeps ${process.env.PROFIT_LOCK_TRAIL_PCT ?? "70"}% · tiers ${process.env.PROFIT_LOCK_TRAIL_TIERS ?? "20:85,40:80"}) · breakeven ${_onOff("BREAKEVEN_STOP_ENABLED")} (arm +${_beArmPct()}%)`);
+  log(`              wait-after-exit ${tradeGuards.reentryCooldownMs(cfg.EXIT_TF) / 60000} min · spread check ${_onOff("MAX_BID_ASK_SPREAD_ENABLED")} (max ${process.env.MAX_BID_ASK_SPREAD_PTS || "2"} pts) · portfolio cap ${portfolioRisk.checkPortfolioCap().disabled ? "OFF" : "on"} · trade window 10:00–14:00 NOT applied (09:15 gap rule)`);
   if (st._dayDone) log(`   Today     : ${st._dayDoneReason}`);
   log(`════════════════════════════════════════════════════════════════════`);
 
@@ -816,7 +893,8 @@ function _statusPayload() {
     dayDone: st._dayDone ? st._dayDoneReason : null,
     updates: st.updates,
     config: { rsiLen: cfg.RSI_LENGTH, emaLen: cfg.EMA_LENGTH, rsiLower: cfg.RSI_LOWER, rsiUpper: cfg.RSI_UPPER, minGap: cfg.MIN_GAP_PTS,
-              window: `${engine._fmtMins(cfg.ENTRY_START)}–${engine._fmtMins(cfg.ENTRY_END)}`, eod: engine._fmtMins(cfg.EOD_EXIT), exitTf: cfg.EXIT_TF, trailLen: cfg.TRAIL_EMA_LENGTH, universe: _universeKey() },
+              window: `${engine._fmtMins(cfg.ENTRY_START)}–${engine._fmtMins(cfg.ENTRY_END)}`, eod: engine._fmtMins(cfg.EOD_EXIT), exitTf: cfg.EXIT_TF, trailLen: cfg.TRAIL_EMA_LENGTH, universe: _universeKey(),
+              common: `profit lock ${_plOn() ? `+${_plArmPct()}% → floor +${_plFloorPct()}% (trails)` : "off"} · breakeven ${_beOn() ? `at +${_beArmPct()}%` : "off"} · wait ${tradeGuards.reentryCooldownMs(cfg.EXIT_TF) / 60000} min after exit · spread check · portfolio cap` },
     scan: { status: st.scan.status, universe: st.scan.universe, total: st.scan.total, done: st.scan.done, ready: st.scan.ready, notReady: st.scan.notReady,
             failed: st.scan.failed.length, failedSample: st.scan.failed.slice(0, 5), candidates: st.scan.candidates.length, error: st.scan.error },
     decisions, positions,
@@ -825,6 +903,12 @@ function _statusPayload() {
     logs: st.log.slice(-150).reverse(),
   };
 }
+/** The whole in-memory activity log, oldest first — what the Copy Log button copies. */
+router.get("/logs", (req, res) => {
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store");
+  return res.send(st.log.join("\n") || "No log yet.");
+});
 router.get("/status/data", (req, res) => {
   try { return res.json(_statusPayload()); }
   catch (e) { return res.status(500).json({ error: e.message }); }
@@ -871,6 +955,8 @@ ${modalCSS()}
     .btn{background:#7f1d1d;border:1px solid #ef4444;color:#fca5a5;font-size:0.72rem;font-weight:700;padding:8px 14px;border-radius:7px;cursor:pointer;font-family:inherit;min-height:44px;min-width:64px;}
     .note{font-size:0.66rem;color:#7f9b5c;line-height:1.5;margin-top:6px;word-break:break-word;}
     .logbox{background:#060b06;border:1px solid #162416;border-radius:10px;padding:10px 12px;max-height:340px;overflow:auto;font-family:'IBM Plex Mono',monospace;font-size:0.66rem;line-height:1.55;color:#a0b8a0;white-space:pre-wrap;word-break:break-word;}
+    .copy-btn{margin-left:auto;background:#0d1320;border:1px solid #1a2236;color:#4a9cf5;padding:6px 12px;border-radius:6px;font-size:0.68rem;cursor:pointer;font-family:inherit;min-height:44px;letter-spacing:0;text-transform:none;font-weight:600;}
+    .copy-btn.copied{background:#064e3b;border-color:#10b981;color:#34d399;}
     .bar{height:6px;background:#162416;border-radius:4px;overflow:hidden;margin-top:6px;} .bar>i{display:block;height:100%;background:#10b981;}
     @media(max-width:640px){
       .page{padding:14px 12px calc(40px + env(safe-area-inset-bottom));}
@@ -905,7 +991,11 @@ ${buildSidebar('gapRunawayStkPaper', liveActive, st.running, {
       <button onclick="grReset(this)" style="background:#07111f;border:0.5px solid #0e1e36;color:#8ba1c2;padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;cursor:pointer;font-family:inherit;">↺ Reset</button>
     </div>
   </div>
-  <div class="page" id="gr-root"></div>
+  <div class="page">
+    <div id="gr-root"></div>
+    <div class="section-title">Activity Log (latest 150 — Copy Log copies all) <button class="copy-btn" onclick="grCopyLog(this)">📋 Copy Log</button></div>
+    <div class="logbox" id="gr-log"></div>
+  </div>
 </div>
 </div>
 <script id="gr-data" type="application/json">${JSON.stringify(payload).replace(/</g, "\\u003c")}</script>
@@ -932,7 +1022,7 @@ function render(d){
     + '<div class="sc"><div class="sc-label">Price Updates</div><div class="sc-val">' + d.updates + '</div><div class="sc-sub">stream + REST for held stocks</div></div>'
     + '<div class="sc"><div class="sc-label">Session Start</div><div class="sc-val" style="font-size:0.85rem;">' + esc(d.sessionStart || '\\u2014') + '</div></div>'
     + '</div>';
-  h += '<div class="card"><div class="note" style="margin-top:0;">Rules: yesterday\\u2019s daily RSI(' + d.config.rsiLen + ') on EMA(' + d.config.emaLen + ') below ' + d.config.rsiLower + ' + gap UP \\u2192 <b class="pos">BUY</b> \\u00b7 above ' + d.config.rsiUpper + ' + gap DOWN \\u2192 <b class="neg">SHORT</b>. Stop = yesterday\\u2019s close. Exit on a ' + d.config.exitTf + '-min close through EMA' + d.config.trailLen + ', or ' + d.config.eod + '. Biggest gaps first, max ' + d.maxTrades + ' a day.'
+  h += '<div class="card"><div class="note" style="margin-top:0;">Rules: yesterday\\u2019s daily RSI(' + d.config.rsiLen + ') on EMA(' + d.config.emaLen + ') below ' + d.config.rsiLower + ' + gap UP \\u2192 <b class="pos">BUY</b> \\u00b7 above ' + d.config.rsiUpper + ' + gap DOWN \\u2192 <b class="neg">SHORT</b>. Stop = yesterday\\u2019s close. Exit on a ' + d.config.exitTf + '-min close through EMA' + d.config.trailLen + ', or ' + d.config.eod + '. Biggest gaps first, max ' + d.maxTrades + ' a day. Common rules: ' + esc(d.config.common) + '.'
     + (d.reference ? '<br>Reference: <a href="' + esc(d.reference) + '" target="_blank" rel="noopener" style="color:#60a5fa;">' + esc(d.reference) + '</a>' : '') + '</div></div>';
 
   h += '<div class="section-title">Open Positions</div>';
@@ -967,8 +1057,8 @@ function render(d){
     });
     h += '</tbody></table></div>';
   }
-  h += '<div class="section-title">Activity Log</div><div class="logbox">' + esc((d.logs || []).join('\\n') || 'No log yet.') + '</div>';
   document.getElementById('gr-root').innerHTML = h;
+  document.getElementById('gr-log').textContent = (d.logs || []).join('\\n') || 'No log yet.';
 }
 var GR = JSON.parse(document.getElementById('gr-data').textContent);
 render(GR);
@@ -992,6 +1082,23 @@ async function grCall(url, btn, label){
     if (!d.success) { await showAlert({ icon:'\\u26a0\\ufe0f', title: label + ' failed', message: d.error || 'unknown', btnClass:'modal-btn-danger' }); if (btn) { btn.disabled = false; btn.textContent = label; } return; }
     location.reload();
   } catch (e) { await showAlert({ icon:'\\u26a0\\ufe0f', title: label + ' error', message: e.message, btnClass:'modal-btn-danger' }); if (btn) btn.disabled = false; }
+}
+// Copies the WHOLE log (GET /logs), not just the 150 lines on screen. The
+// ClipboardItem-with-a-promise form keeps Safari's user-gesture rule happy.
+async function grCopyLog(btn){
+  var orig = btn.textContent;
+  function done(){ btn.classList.add('copied'); btn.textContent = '\u2705 Copied!'; setTimeout(function(){ btn.classList.remove('copied'); btn.textContent = orig; }, 2000); }
+  function getText(){ return fetch('/gap_runaway_stk-paper/logs', { cache: 'no-store' }).then(function(r){ return r.text(); }); }
+  try {
+    if (window.ClipboardItem && navigator.clipboard && navigator.clipboard.write) {
+      await navigator.clipboard.write([new ClipboardItem({ 'text/plain': getText().then(function(t){ return new Blob([t], { type: 'text/plain' }); }) })]);
+      return done();
+    }
+  } catch (_) {}
+  var txt = await getText().catch(function(){ return document.getElementById('gr-log').textContent; });
+  try { await navigator.clipboard.writeText(txt); return done(); } catch (_) {}
+  var ta = document.createElement('textarea'); ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); done();
 }
 function grStart(btn){ grCall('/gap_runaway_stk-paper/start', btn, 'Start'); }
 function grStop(btn){ grCall('/gap_runaway_stk-paper/stop', btn, 'Stop'); }
