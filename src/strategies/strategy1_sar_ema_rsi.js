@@ -25,6 +25,8 @@
  *   2. RSI(14) in the PE band  →  RSI_PE_MIN < RSI < RSI_PE_MAX
  *   3. SuperTrend bearish (trend===-1)
  *   4. Close beyond base EMA (opt-in, default ON):  signal candle CLOSE < base EMA.
+ *   5. Not stretched (EMA_RSI_ST_MAX_EMA_DIST_PTS, default 50, 0 = off): the signal
+ *      candle close may sit at most this many points beyond the base EMA. Both sides.
  *
  * STOP LOSS (unchanged — set by the execution layer, value seeded here):
  *   CE: previous (last completed) candle LOW
@@ -95,6 +97,11 @@ function getSignal(candles, opts) {
   // EMA's PERIOD is whatever its Settings value is (EMA_RSI_ST_EMA_FASTEST / EMA_RSI_ST_EMA_FAST) —
   // nothing hardcoded.
   var CLOSE_BEYOND_EMA = (process.env.EMA_RSI_ST_CLOSE_BEYOND_EMA_ENABLED || "true").toLowerCase() === "true";
+  // Stretch gate: skip when the close is already far past the base EMA — the move is
+  // tired and the next candles usually snap back. Added 2026-10-28 after three PEs
+  // were bought 79–102pt under EMA20 at the day's low; the third rode a 68pt bounce
+  // to −₹2,980. 0 = off.
+  var MAX_EMA_DIST = parseFloat(process.env.EMA_RSI_ST_MAX_EMA_DIST_PTS || "50") || 0;
   // Warm-up: the slow EMA needs EMA_SLOW closes; +5 buffer for RSI/SuperTrend to settle.
   var WARMUP = Math.max(EMA_SLOW, 30) + 5;
 
@@ -205,6 +212,11 @@ function getSignal(candles, opts) {
   var _baseLbl    = "EMA" + BASE_PERIOD;
   var closeOkCE   = !CLOSE_BEYOND_EMA || (baseEma != null && signalCandle.close > baseEma);
   var closeOkPE   = !CLOSE_BEYOND_EMA || (baseEma != null && signalCandle.close < baseEma);
+  // 5. Stretch gate — distance of the close past the base EMA on the trade side.
+  var distCE      = baseEma != null ? signalCandle.close - baseEma : 0;
+  var distPE      = baseEma != null ? baseEma - signalCandle.close : 0;
+  var notFarCE    = MAX_EMA_DIST <= 0 || distCE <= MAX_EMA_DIST;
+  var notFarPE    = MAX_EMA_DIST <= 0 || distPE <= MAX_EMA_DIST;
 
   var base = {
     ema20:          Math.round(emaFast * 100) / 100,
@@ -239,7 +251,7 @@ function getSignal(candles, opts) {
   );
 
   // ── BUY CE ────────────────────────────────────────────────────────────────
-  if (emaUp && rsiCE && trendUp && closeOkCE) {
+  if (emaUp && rsiCE && trendUp && closeOkCE && notFarCE) {
     var slCE = Math.round(prevCandle.low * 100) / 100;
     var _ceCloseTag = CLOSE_BEYOND_EMA ? " | C " + signalCandle.close + ">" + _baseLbl + " " + baseEma.toFixed(1) : "";
     if (!silent) console.log("  🟢 BUY_CE — " + _emaUpLbl + " | RSI " + rsi.toFixed(1) + ">" + RSI_CE_MIN + " | ST GREEN" + _ceCloseTag + " | SL(prevLow)=" + slCE);
@@ -251,7 +263,7 @@ function getSignal(candles, opts) {
   }
 
   // ── BUY PE ────────────────────────────────────────────────────────────────
-  if (emaDown && rsiPE && trendDown && closeOkPE) {
+  if (emaDown && rsiPE && trendDown && closeOkPE && notFarPE) {
     var slPE = Math.round(prevCandle.high * 100) / 100;
     var _peCloseTag = CLOSE_BEYOND_EMA ? " | C " + signalCandle.close + "<" + _baseLbl + " " + baseEma.toFixed(1) : "";
     if (!silent) console.log("  🔴 BUY_PE — " + _emaDownLbl + " | RSI " + rsi.toFixed(1) + "<" + RSI_PE_MAX + " | ST RED" + _peCloseTag + " | SL(prevHigh)=" + slPE);
@@ -269,10 +281,12 @@ function getSignal(candles, opts) {
     if (!rsiCE)   why.push("RSI=" + rsi.toFixed(1) + (rsi >= RSI_CE_MAX ? " >=" + RSI_CE_MAX + " (overbought)" : " <=" + RSI_CE_MIN + " (need >)"));
     if (!trendUp) why.push("ST not GREEN @ " + _stVal);
     if (CLOSE_BEYOND_EMA && !closeOkCE) why.push("C " + signalCandle.close + " <=" + _baseLbl + " " + (baseEma != null ? baseEma.toFixed(1) : "?") + " (need close above)");
+    if (!notFarCE) why.push("C " + distCE.toFixed(1) + "pt above " + _baseLbl + " >" + MAX_EMA_DIST + " (stretched)");
   } else if (emaDown) {
     if (!rsiPE)     why.push("RSI=" + rsi.toFixed(1) + (rsi <= RSI_PE_MIN ? " <=" + RSI_PE_MIN + " (oversold)" : " >=" + RSI_PE_MAX + " (need <)"));
     if (!trendDown) why.push("ST not RED @ " + _stVal);
     if (CLOSE_BEYOND_EMA && !closeOkPE) why.push("C " + signalCandle.close + " >=" + _baseLbl + " " + (baseEma != null ? baseEma.toFixed(1) : "?") + " (need close below)");
+    if (!notFarPE) why.push("C " + distPE.toFixed(1) + "pt below " + _baseLbl + " >" + MAX_EMA_DIST + " (stretched)");
   } else {
     why.push(TRIPLE_STACK ? "EMA stack not aligned (9/20/50)" : "EMA20=" + emaFast.toFixed(1) + " ≈ EMA50 " + emaSlow.toFixed(1) + " (no alignment)");
   }
