@@ -148,6 +148,16 @@ async function hubTick() {
   finally { hub.busy = false; }
 }
 
+// Which price has gone quiet for longer than limitSec, or null when both are alive.
+// `since` is the entry or engine start, so a trade is never judged on quotes from before it.
+function staleFeed(limitSec, now, since, futAt, optAt) {
+  if (!(limitSec > 0)) return null;
+  const age = (at) => Math.floor((now - Math.max(at || 0, since)) / 1000);
+  if (age(futAt) >= limitSec) return { what: "future", secs: age(futAt) };
+  if (age(optAt) >= limitSec) return { what: "option", secs: age(optAt) };
+  return null;
+}
+
 // V1 and V2 of one commodity read the same future at the same resolution, so a
 // history answer is shared between them for a few seconds instead of asking
 // Fyers twice. The same request in flight is joined, not repeated.
@@ -362,6 +372,7 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
     sessStart:  _mins(process.env.CMX_SESSION_START, "09:00"),
     sessEnd:    _mins(process.env.CMX_SESSION_END, "23:30"),
     charges:    Math.max(0, _num(process.env.CMX_CHARGES_PER_TRADE, 60)),
+    feedKillSec: Math.max(0, _int(process.env.CMX_FEED_KILL_SECONDS, 120)),
     confirm:    A.noConfirm ? false : confirmCandle.enabled(A.rulesKey),
     startCap:   Math.max(0, _num(process.env.FYERS_INV_AMOUNT, 100000)),   // the shared Fyers pool
     minGapPct:  Math.max(0, _num(process.env.CMX_MIN_EMA_GAP_PCT, 0.03)),
@@ -835,6 +846,15 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
       hubNeed(id, [state.series.future, state.position && state.position.symbol], !!(state.position || state.armed));
       const fq = hub.last[state.series.future];
       if (state.position) { const oq = hub.last[state.position.symbol]; if (oq) state.optLtp = oq.lp; }
+      // No fresh price for this long → the stops are blind, so close at the last price we have.
+      if (state.position && nowMin >= c.sessStart) {
+        const pos = state.position, oq = hub.last[pos.symbol];
+        const blind = staleFeed(c.feedKillSec, Date.now(), Math.max(pos.entryTimeMs || 0, Date.parse(state.startedAt) || 0), fq && fq.at, oq && oq.at);
+        if (blind) {
+          await exit(`No live ${blind.what} price for ${blind.secs}s — closed at the last price`, state.futLtp || pos.spotAtEntry);
+          return;
+        }
+      }
       if (fq && fq.at > state.seenQuoteAt) {
         state.seenQuoteAt = fq.at;
         state.futLtp = fq.lp; state.lastQuoteAt = fq.at;
@@ -1101,4 +1121,4 @@ function createEngine({ id, commodity, strategy, prefix, modeKey, label }) {
 /** True while any commodity engine is running and wants live prices. */
 function needsLiveFeed() { return hub.needs.size > 0; }
 
-module.exports = { createEngine, needsLiveFeed };
+module.exports = { createEngine, needsLiveFeed, staleFeed };
