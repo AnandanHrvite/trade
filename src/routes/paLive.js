@@ -666,6 +666,7 @@ async function squareOff(exitPrice, reason) {
     maePnl:         state.position ? (state.position.maePnl     || 0) : 0,
     secsToMFE:      state.position ? (state.position.secsToMFE  || 0) : 0,
     secsToMAE:      state.position ? (state.position.secsToMAE  || 0) : 0,
+    target:         state.position ? (state.position.target ?? null) : null,
     bestOptionLtp:  state.position ? (state.position.bestOptionLtp || null) : null,   // peak option premium during trade
     candlesHeld:    state.position ? (state.position.candlesHeld || 0) : 0,
     durationMs:     state.position && state.position.entryTimeMs ? (Date.now() - state.position.entryTimeMs) : null,
@@ -826,10 +827,17 @@ function onTick(tick) {
     // Peak option premium (long CE/PE both profit on premium rise) — observer-only, for the UI/log.
     if (state.optionLtp && state.optionLtp > (pos.bestOptionLtp || 0)) pos.bestOptionLtp = parseFloat(state.optionLtp.toFixed(2));
 
-    // PARITY: no global profit-lock / premium-breakeven exit here. paPaper (the
-    // canonical engine) never applies them — PA's only breakeven is its own
-    // spot-based PA_BREAKEVEN_TRIGGER step below — so applying them here closed
-    // real trades that paper kept open.
+    // ── Global profit lock + breakeven (shared across every strategy — see tradeGuards).
+    // PARITY with paPaper: before the stop, and never on a futures leg.
+    if (!isFut && pos.optionEntryLtp && state.optionLtp) {
+      const _plMsg = tradeGuards.checkProfitLock(pos.optionEntryLtp, state.optionLtp, pos.bestOptionLtp)
+        || tradeGuards.checkBreakevenStop(pos.optionEntryLtp, state.optionLtp, pos.bestOptionLtp);
+      if (_plMsg) {
+        log(`🔒 [PA-LIVE] ${_plMsg}`);
+        squareOff(price, _plMsg).catch(e => console.error(`🚨 [PA-LIVE] squareOff error: ${e.message}`));
+        return;
+      }
+    }
 
     // 1. SL hit (initial or swing-trailed)
     if (pos.side === "CE" && price <= pos.stopLoss) {
@@ -842,6 +850,12 @@ function onTick(tick) {
       const _isTrail = Math.abs(pos.stopLoss - pos.initialStopLoss) > 0.5;
       const _src = pos.slSource || "Swing";
       squareOff(pos.stopLoss, _isTrail ? `${_src} Trail SL hit` : `${_src} SL hit`).catch(e => console.error(`🚨 [PA-LIVE] squareOff error: ${e.message}`));
+      return;
+    }
+
+    // Target: the setup's own high/low. Manual entries carry none.
+    if (pos.target != null && (pos.side === "CE" ? price >= pos.target : price <= pos.target)) {
+      squareOff(pos.target, "Target hit").catch(e => console.error(`🚨 [PA-LIVE] squareOff error: ${e.message}`));
       return;
     }
 
@@ -1534,8 +1548,7 @@ router.post("/manualEntry", async (req, res) => {
 
   // SL = Previous candle low/high, capped at MAX_SL_PTS, floored at MIN_SL_PTS
   const candles = state.candles || [];
-  const MAX_SL_PTS  = parseFloat(process.env.PA_MAX_SL_PTS || "25");
-  const MIN_SL_PTS  = parseFloat(process.env.PA_MIN_SL_PTS || "8");
+  const { max: MAX_SL_PTS, min: MIN_SL_PTS } = paStrategy.stopLimits();
   const prevCandle = candles.length >= 2 ? candles[candles.length - 2] : null;
   let sl;
   if (prevCandle) {
@@ -1560,7 +1573,7 @@ router.get("/status/chart-data", (req, res) => {
     const candles = state.candles.map(c => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close }));
     if (state.currentBar) candles.push({ time: state.currentBar.time, open: state.currentBar.open, high: state.currentBar.high, low: state.currentBar.low, close: state.currentBar.close });
     const markers = [];
-    // Pattern pivots (twin tops/bottoms / triangle anchors) — yellow dots so the shape is visible.
+    // Setup points (break, inducement, block) — yellow dots so the setup is visible.
     const addPivots = (pts) => { if (Array.isArray(pts)) for (const p of pts) { if (p && p.time != null) markers.push({ time: p.time, position: 'inBar', color: '#eab308', shape: 'circle', text: p.label || '' }); } };
     for (const t of state.sessionTrades) addPivots(t.patternPoints);
     let patternLevel = null;
@@ -2013,7 +2026,7 @@ ${buildSidebar('paLive', liveActive, state.running, {
 <div class="top-bar">
   <div>
     <div class="top-bar-title">Price Action Live Trade</div>
-    <div class="top-bar-meta">${paStrategy.NAME} \u00b7 ${PA_RES}-min candles \u00b7 SL: pattern structure \u00b7 Breakeven \u20b9${_PA_BE_TRIGGER} then swing trail \u00b7 ${state.running ? "Auto-refreshes 2s" : "Not refreshing"}</div>
+    <div class="top-bar-meta">${paStrategy.NAME} \u00b7 ${PA_RES}-min candles \u00b7 SL: beyond the order block \u00b7 Breakeven \u20b9${_PA_BE_TRIGGER} ${process.env.PA_SMC_TRAIL_ENABLED === "true" ? "then swing trail" : "+ target"} \u00b7 ${state.running ? "Auto-refreshes 2s" : "Not refreshing"}</div>
   </div>
   <div class="top-bar-right">
     ${state.running
@@ -2065,7 +2078,7 @@ ${buildSidebar('paLive', liveActive, state.running, {
     <div class="sc" style="border-top:1.5px solid #8b5cf6;">
       <div class="sc-label">Candles Loaded</div>
       <div class="sc-val" id="ax-candle-count">${state.candles.length}</div>
-      <div id="ax-candle-status" style="font-size:0.7rem;color:${state.candles.length >= 15 ? '#10b981' : '#f59e0b'};margin-top:4px;">${state.candles.length >= 15 ? '\u2705 Strategy ready' : '\u26a0\ufe0f warming'}</div>
+      <div id="ax-candle-status" style="font-size:0.7rem;color:${state.candles.length >= paStrategy.TAIL_BARS ? '#10b981' : '#f59e0b'};margin-top:4px;">${state.candles.length >= paStrategy.TAIL_BARS ? '\u2705 Strategy ready' : '\u26a0\ufe0f warming'}</div>
     </div>
     <div class="sc" style="border-top:1.5px solid #8b5cf6;">
       <div class="sc-label">Trades (W/L)</div>
@@ -2647,8 +2660,8 @@ logFilter();
       if (cnEl) cnEl.textContent = d.candleCount;
       var csEl = document.getElementById('ax-candle-status');
       if (csEl) {
-        csEl.textContent = d.candleCount >= 15 ? '\u2705 Strategy ready' : '\u26a0\ufe0f warming';
-        csEl.style.color = d.candleCount >= 15 ? '#10b981' : '#f59e0b';
+        csEl.textContent = d.candleCount >= ${paStrategy.TAIL_BARS} ? '\u2705 Strategy ready' : '\u26a0\ufe0f warming';
+        csEl.style.color = d.candleCount >= ${paStrategy.TAIL_BARS} ? '#10b981' : '#f59e0b';
       }
 
       // Daily loss

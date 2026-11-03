@@ -480,7 +480,7 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtE
     isTrending:       entryMeta.isTrending     != null ? entryMeta.isTrending     : null,
     patternAtEntry:   entryMeta.patternAtEntry || null,
     srLevelAtEntry:   entryMeta.srLevelAtEntry != null ? entryMeta.srLevelAtEntry : null,
-    // Pattern geometry for the chart (neckline/breakout line + pivot points)
+    // Setup geometry for the chart (block level + break / inducement / block points)
     patternLevel:     entryMeta.patternLevel  != null ? entryMeta.patternLevel  : null,
     patternPoints:    entryMeta.patternPoints || null,
   };
@@ -755,6 +755,19 @@ function onTick(tick) {
     // Peak option premium (long CE/PE both profit on premium rise) — observer-only, for the UI/log.
     if (state.optionLtp && state.optionLtp > (pos.bestOptionLtp || 0)) pos.bestOptionLtp = parseFloat(state.optionLtp.toFixed(2));
 
+    // ── Global profit lock + breakeven (shared across every strategy — see tradeGuards).
+    // Before the stop: once armed, the locked floor sits above entry. Premium rules,
+    // so a futures leg is excluded.
+    if (!isFut && pos.optionEntryLtp && state.optionLtp) {
+      const _plMsg = tradeGuards.checkProfitLock(pos.optionEntryLtp, state.optionLtp, pos.bestOptionLtp)
+        || tradeGuards.checkBreakevenStop(pos.optionEntryLtp, state.optionLtp, pos.bestOptionLtp);
+      if (_plMsg) {
+        log(`🔒 [PA-PAPER] ${_plMsg}`);
+        simulateSell(price, _plMsg, price);
+        return;
+      }
+    }
+
     // 1. SL hit (initial or swing-trailed)
     if (pos.side === "CE" && price <= pos.stopLoss) {
       const _isTrail = Math.abs(pos.stopLoss - pos.initialStopLoss) > 0.5;
@@ -766,6 +779,12 @@ function onTick(tick) {
       const _isTrail = Math.abs(pos.stopLoss - pos.initialStopLoss) > 0.5;
       const _src = pos.slSource || "Swing";
       simulateSell(pos.stopLoss, _isTrail ? `${_src} Trail SL hit` : `${_src} SL hit`, price);
+      return;
+    }
+
+    // Target: the setup's own high/low. Manual entries carry none.
+    if (pos.target != null && (pos.side === "CE" ? price >= pos.target : price <= pos.target)) {
+      simulateSell(pos.target, "Target hit", price);
       return;
     }
 
@@ -1336,8 +1355,7 @@ router.post("/manualEntry", async (req, res) => {
 
   // SL = Previous candle low/high, capped at MAX_SL_PTS, floored at MIN_SL_PTS
   const candles = state.candles || [];
-  const MAX_SL_PTS  = parseFloat(process.env.PA_MAX_SL_PTS || "25");
-  const MIN_SL_PTS  = parseFloat(process.env.PA_MIN_SL_PTS || "8");
+  const { max: MAX_SL_PTS, min: MIN_SL_PTS } = paStrategy.stopLimits();
   const prevCandle = candles.length >= 2 ? candles[candles.length - 2] : null;
   let sl;
   if (prevCandle) {
@@ -1404,12 +1422,14 @@ router.get("/status/chart-data", async (req, res) => {
       } catch (_) { /* ignore swing calc errors */ }
     }
 
-    // Shorten entryReason for marker text ("CE: Double Bottom neckline break 23050 | ..." → "CE DblBot @23050")
+    // Shorten entryReason for marker text ("CE: Bullish OB retest above 23050 | ..." → "CE BullOB @23050"). Old names stay for old trades.
     const shortPAReason = (r) => {
       if (!r) return "";
       const side = /^CE/i.test(r) ? "CE" : /^PE/i.test(r) ? "PE" : "";
       let pattern = "";
-      if (/Double Top/i.test(r))               pattern = "DblTop";
+      if (/Bullish OB/i.test(r))               pattern = "BullOB";
+      else if (/Bearish OB/i.test(r))          pattern = "BearOB";
+      else if (/Double Top/i.test(r))          pattern = "DblTop";
       else if (/Double Bottom/i.test(r))       pattern = "DblBot";
       else if (/Ascending Triangle/i.test(r))  pattern = "AscTri";
       else if (/Descending Triangle/i.test(r)) pattern = "DescTri";
@@ -1417,8 +1437,8 @@ router.get("/status/chart-data", async (req, res) => {
       return [side, pattern, lvl ? "@" + lvl[2] : ""].filter(Boolean).join(" ");
     };
 
-    // Pattern pivots (the twin tops/bottoms / triangle anchors) so the W/M/triangle
-    // shape is visible on the chart. Yellow dots labelled Top1/Bottom1/R1/...
+    // Setup points (break, inducement, block) so the setup
+    // shape is visible on the chart. Yellow dots labelled Break/IDM/OB.
     const pivotMarkers = [];
     const addPivots = (pts) => {
       if (!Array.isArray(pts)) return;
@@ -1866,7 +1886,7 @@ ${buildSidebar('paPaper', liveActive, state.running)}
 <div class="top-bar">
   <div>
     <div class="top-bar-title">Price Action Paper Trade</div>
-    <div class="top-bar-meta">Strategy: ${paStrategy.NAME} \u00b7 ${PA_RES}-min candles \u00b7 SL: pattern structure \u00b7 Breakeven \u20b9${_PA_BE_TRIGGER} then swing trail \u00b7 ${state.running ? 'Auto-refreshes every 2s' : 'Stopped'}</div>
+    <div class="top-bar-meta">Strategy: ${paStrategy.NAME} \u00b7 ${PA_RES}-min candles \u00b7 SL: beyond the order block \u00b7 Breakeven \u20b9${_PA_BE_TRIGGER} ${process.env.PA_SMC_TRAIL_ENABLED === "true" ? "then swing trail" : "+ target"} \u00b7 ${state.running ? 'Auto-refreshes every 2s' : 'Stopped'}</div>
   </div>
   <div class="top-bar-right">
     ${state.running
@@ -1921,8 +1941,8 @@ ${buildSidebar('paPaper', liveActive, state.running)}
   </div>
   <div class="sc" style="border-top:1.5px solid #a07010;">
     <div class="sc-label">Candles Loaded</div>
-    <div class="sc-val" id="ajax-candle-count" style="color:${state.candles.length >= 30 ? '#10b981' : '#f59e0b'}">${state.candles.length}</div>
-    <div id="ajax-candle-status" style="font-size:0.7rem;color:${state.candles.length >= 30 ? "#10b981" : "#f59e0b"};margin-top:4px;">${state.candles.length >= 30 ? 'Strategy ready' : 'Warming up...'}</div>
+    <div class="sc-val" id="ajax-candle-count" style="color:${state.candles.length >= paStrategy.TAIL_BARS ? '#10b981' : '#f59e0b'}">${state.candles.length}</div>
+    <div id="ajax-candle-status" style="font-size:0.7rem;color:${state.candles.length >= paStrategy.TAIL_BARS ? "#10b981" : "#f59e0b"};margin-top:4px;">${state.candles.length >= paStrategy.TAIL_BARS ? 'Strategy ready' : 'Warming up...'}</div>
   </div>
   <div class="sc" style="border-top:1.5px solid #2a6080;">
     <div class="sc-label">WebSocket Ticks</div>
@@ -2566,9 +2586,9 @@ ${optionChart.optionChartScript({ dataUrl: '/pa-paper/status/chart-data', id: 'p
 
       // Candles
       var candleEl = document.getElementById('ajax-candle-count');
-      if (candleEl) { candleEl.textContent = d.candleCount; candleEl.style.color = d.candleCount >= 30 ? '#10b981' : '#f59e0b'; }
+      if (candleEl) { candleEl.textContent = d.candleCount; candleEl.style.color = d.candleCount >= ${paStrategy.TAIL_BARS} ? '#10b981' : '#f59e0b'; }
       var cStatus = document.getElementById('ajax-candle-status');
-      if (cStatus) { cStatus.textContent = d.candleCount >= 30 ? 'Strategy ready' : 'Warming up...'; cStatus.style.color = d.candleCount >= 30 ? '#10b981' : '#f59e0b'; }
+      if (cStatus) { cStatus.textContent = d.candleCount >= ${paStrategy.TAIL_BARS} ? 'Strategy ready' : 'Warming up...'; cStatus.style.color = d.candleCount >= ${paStrategy.TAIL_BARS} ? '#10b981' : '#f59e0b'; }
 
       // Ticks
       var tickEl = document.getElementById('ajax-tick-count');
@@ -2747,12 +2767,15 @@ router.get("/history", (req, res) => {
   const patternOf = (t) => {
     if (t && t.pattern) return t.pattern;
     const r = (t && t.entryReason) || "";
+    if (/Bullish OB/i.test(r))            return "Bullish OB";
+    if (/Bearish OB/i.test(r))            return "Bearish OB";
     if (/Inside Bar/i.test(r))            return "Inside Bar Breakout";
     if (/Bullish Engulfing/i.test(r))     return "Bullish Engulfing";
     if (/Bearish Engulfing/i.test(r))     return "Bearish Engulfing";
     if (/Hammer/i.test(r))                return "Hammer";
     if (/Shooting Star/i.test(r))         return "Shooting Star";
     if (/BOS/i.test(r))                   return "Break of Structure";
+    // Old rule names, for trades made before 2026-11-03.
     if (/Double Top/i.test(r))            return "Double Top";
     if (/Double Bottom/i.test(r))         return "Double Bottom";
     if (/Ascending Triangle/i.test(r))    return "Ascending Triangle";
@@ -3297,7 +3320,7 @@ router.post("/simulate/start", async (req, res) => {
         return res.json({ success: false, error: `No candles found for ${date} — holiday or weekend?` });
       }
 
-      const warmup = warmupCandles.slice(-30);
+      const warmup = warmupCandles.slice(-99); // same depth as preloadHistory — the engine needs its full tail
 
       // Fetch prev day OHLC
       try {
@@ -3356,7 +3379,7 @@ router.post("/simulate/start", async (req, res) => {
   try {
     const result = tickSimulator.start({
       scenario, basePrice, speed, candleCount,
-      warmupCandles: 30, resolution: PA_RES,
+      warmupCandles: 99, resolution: PA_RES, // same depth as preloadHistory
       onTick,
       onCandleDone: makeCandleDone(candleCount),
       onDone: onSimDone,

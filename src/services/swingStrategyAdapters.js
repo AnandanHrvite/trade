@@ -269,38 +269,22 @@ const ADAPTERS = [
     key:        "PA",
     label:      "Price Action",
     envKey:     "PA_MODE_ENABLED",
-    blurb:      "Double top/bottom + ascending/descending triangle breaks, with optional retest.",
+    blurb:      "Smart money order-block retest: close break, inducement sweep, block with a gap.",
     timeframes: TIMEFRAME_KEYS,
     needsDaily: false,
-    // A breakout is REMEMBERED across bars while it waits for its retest, in
-    // module-level state. One call on the last bar would therefore miss every
-    // retest entry and — worse — inherit whichever symbol was scanned before.
-    // So: reset, then replay the tail bar-by-bar so the pending state is built
-    // from THIS symbol's own history, exactly as it is live.
-    stateful:   true,
-    replayBars: 40,
+    // getSignal re-reads its own tail on every call, so one call on the last bar
+    // is the whole answer and nothing can leak between symbols.
+    stateful:   false,
     scaleKeys:  [
-      { key: "PA_MIN_BODY",          def: "5"  },
       { key: "PA_SL_BUFFER_PTS",     def: "3"  },
       { key: "PA_MIN_SL_PTS",        def: "8"  },
       { key: "PA_MAX_SL_PTS",        def: "25" },
-      { key: "PA_CHART_PATTERN_TOL", def: "12" },
-      { key: "PA_RETEST_TOL_PTS",    def: "10" },
-      { key: "PA_TREND_FLAT_BAND",   def: "0"  },
     ],
-    reset() { priceAction.reset(); },
     minBars() {
-      const sr = parseInt(process.env.PA_SR_LOOKBACK || "30", 10) || 30;
-      return Math.max(sr + 5, 30);
+      return priceAction.TAIL_BARS;
     },
-    evaluate(candles, ctx) {
-      // Replay the tail so _pendingBreakout is this symbol's own.
-      const n     = candles.length;
-      const start = Math.max(this.minBars(), n - (ctx.replayBars || this.replayBars));
-      let s = null;
-      for (let i = start; i <= n; i++) {
-        s = priceAction.getSignal(candles.slice(0, i), { silent: true, skipTimeCheck: true });
-      }
+    evaluate(candles) {
+      const s = priceAction.getSignal(candles, { silent: true, skipTimeCheck: true });
       return {
         side:   sideFromSignal(s.signal),
         reason: s.reason || "",

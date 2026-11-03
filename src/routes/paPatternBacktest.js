@@ -4,10 +4,10 @@
  * Per-pattern dashboard for the Price Action strategy. Runs the same engine
  * as /pa-backtest, but for each panel only ONE PA_PATTERN_* flag is enabled
  * (others forced false for the duration of that run). Lets you compare each
- * pattern's edge in isolation without manually toggling settings 8 times.
+ * direction's edge in isolation without manually toggling settings.
  *
  * Routes:
- *   GET /pa-pattern-backtest                         → dashboard (8 panels)
+ *   GET /pa-pattern-backtest                         → dashboard (2 panels)
  *   GET /pa-pattern-backtest/run?pattern=…&from=…    → trigger one backtest
  *   GET /pa-pattern-backtest/idle                    → job-manager idle check
  *   GET /pa-pattern-backtest/stats?pattern=…         → JSON summary
@@ -28,12 +28,11 @@ const { buildSidebar, sidebarCSS, modalCSS, modalJS, clearCacheButtonHTML, clear
 const backtestJobs = require("../utils/backtestJobManager");
 
 const PATTERNS = [
-  { key: 'DOUBLE_BOTTOM', label: 'Double Bottom (W)',   color: { bg: 'rgba(6,182,212,0.12)',   fg: '#22d3ee', border: 'rgba(6,182,212,0.25)'   } },
-  { key: 'DOUBLE_TOP',    label: 'Double Top (M)',      color: { bg: 'rgba(239,68,68,0.12)',   fg: '#f87171', border: 'rgba(239,68,68,0.25)'   } },
-  { key: 'ASC_TRIANGLE',  label: 'Ascending Triangle',  color: { bg: 'rgba(249,115,22,0.12)',  fg: '#fb923c', border: 'rgba(249,115,22,0.25)'  } },
-  { key: 'DESC_TRIANGLE', label: 'Descending Triangle', color: { bg: 'rgba(236,72,153,0.12)',  fg: '#f472b6', border: 'rgba(236,72,153,0.25)'  } },
+  { key: 'BULL_OB', label: 'Bullish Order Block',   color: { bg: 'rgba(6,182,212,0.12)',   fg: '#22d3ee', border: 'rgba(6,182,212,0.25)'   } },
+  { key: 'BEAR_OB', label: 'Bearish Order Block',   color: { bg: 'rgba(239,68,68,0.12)',   fg: '#f87171', border: 'rgba(239,68,68,0.25)'   } },
 ];
 
+const { TAIL_BARS } = require("../strategies/price_action");
 const PATTERN_KEYS = PATTERNS.map(p => p.key);
 const RESULT_KEY   = (p) => `PA_PAT_${p}`;
 
@@ -189,7 +188,7 @@ router.get("/trades", (req, res) => {
   const header = "Pattern\tSide\tDate\tEntry\tEntry Time\tExit\tExit Time\tSL\tPnL\tEntry Reason\tExit Reason";
 
   if (pattern === "ALL") {
-    const enabled = PATTERN_KEYS.filter(k => process.env[`PA_PATTERN_${k}`] === "true");
+    const enabled = PATTERN_KEYS.filter(k => process.env[`PA_PATTERN_${k}`] !== "false");
     const all = [];
     for (const k of enabled) {
       const r = loadResult(RESULT_KEY(k));
@@ -244,8 +243,8 @@ router.get("/run", async (req, res) => {
           ? fetchCandlesCachedBT(VIX_SYMBOL, "D", from, to, false).catch(() => [])
           : Promise.resolve([]),
       ]);
-      if (candles.length < 15) {
-        backtestJobs.failJob(id, 'Too few candles. Try a wider date range.');
+      if (candles.length <= TAIL_BARS) {
+        backtestJobs.failJob(id, 'Too few candles: Price Action needs ' + TAIL_BARS + ' before it can trade. Try a wider date range.');
         return;
       }
 
@@ -289,11 +288,11 @@ router.get("/", (req, res) => {
   // Only render panels for patterns currently enabled in settings
   // (PA_PATTERN_<KEY>=true). Disabled patterns are hidden so this page
   // mirrors what your live/paper run will actually use.
-  const enabledPatterns = PATTERNS.filter(p => process.env[`PA_PATTERN_${p.key}`] === "true");
+  const enabledPatterns = PATTERNS.filter(p => process.env[`PA_PATTERN_${p.key}`] !== "false");
   const panelsHtml = enabledPatterns.length
     ? enabledPatterns.map(p => renderPanel(p, loadResult(RESULT_KEY(p.key)))).join('\n')
     : `<div class="empty-state" style="padding:40px;">No PA patterns enabled in settings. Toggle <b>PA_PATTERN_*</b> on in <a href="/settings#pa" style="color:#60a5fa;">Settings</a> to see panels here.</div>`;
-  const disabledList = PATTERNS.filter(p => process.env[`PA_PATTERN_${p.key}`] !== "true").map(p => p.label).join(', ');
+  const disabledList = PATTERNS.filter(p => process.env[`PA_PATTERN_${p.key}`] === "false").map(p => p.label).join(', ');
 
   res.setHeader("Content-Type", "text/html");
   res.send(`<!DOCTYPE html>
@@ -401,7 +400,7 @@ ${buildSidebar('paPatternBacktest', liveActive)}
     <span class="pill pill-pa">PA PATTERN BACKTEST</span>
     <span style="color:var(--muted-2,#6d85a8);font-size:10px;">›</span>
     <span class="pill pill-range" id="crumbRange">${from} → ${to}</span>
-    <span style="margin-left:auto;font-size:0.6rem;color:var(--muted-2,#6d85a8);font-family:'IBM Plex Mono',monospace;">8 patterns · each runs in isolation · same engine as /pa-backtest</span>
+    <span style="margin-left:auto;font-size:0.6rem;color:var(--muted-2,#6d85a8);font-family:'IBM Plex Mono',monospace;">2 setups · each runs in isolation · same engine as /pa-backtest</span>
   </div>
 
   <!-- Settings form -->
@@ -640,7 +639,7 @@ document.getElementById('runAllBtn').addEventListener('click', function(){
   RUN_STATE.active = true; RUN_STATE.cancel = false;
   document.getElementById('runAllBtn').disabled = true;
   document.getElementById('cancelBtn').style.display = '';
-  document.getElementById('runAllStatus').textContent = 'Running 8 patterns sequentially…';
+  document.getElementById('runAllStatus').textContent = 'Running 2 setups sequentially…';
   document.getElementById('crumbRange').textContent = from + ' → ' + to;
 
   var panels = Array.prototype.slice.call(document.querySelectorAll('.panel'));

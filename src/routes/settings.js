@@ -180,7 +180,7 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
-    section: "PRICE ACTION STRATEGY (5-min) — Fyers",
+    section: "PRICE ACTION STRATEGY (Smart Money order block) — Fyers",
     icon: "📐",
     nav: "Price Action",
     group: "NIFTY",
@@ -191,20 +191,19 @@ const SETTINGS_SCHEMA = [
       { key: "PA_VIX_MAX_ENTRY", label: "PA VIX Max Entry", type: "number", min: 10, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "Block entries above this VIX.", default: "20" },
       { key: "PA_ENTRY_START", label: "Entry Start Time", type: "time", effect: EFFECT.SESSION, desc: "Earliest entry time (IST).", default: "09:20" },
       { key: "PA_ENTRY_END", label: "Entry End Time", type: "time", effect: EFFECT.SESSION, desc: "No new entries after this time (IST).", default: "14:30" },
-      // ── Pattern toggles (the only four entry logics) ──
-      { key: "PA_PATTERN_DOUBLE_BOTTOM", label: "Double Bottom (W) → CE", type: "toggle", effect: EFFECT.SESSION, desc: "Trade double-bottom (W) breakouts as CE.", default: "true", subheader: "Patterns & Trend" },
-      { key: "PA_PATTERN_DOUBLE_TOP",    label: "Double Top (M) → PE",    type: "toggle", effect: EFFECT.SESSION, desc: "Trade double-top (M) breakdowns as PE.", default: "true" },
-      { key: "PA_PATTERN_ASC_TRIANGLE",  label: "Ascending Triangle → CE", type: "toggle", effect: EFFECT.SESSION, desc: "Trade ascending-triangle breakouts as CE.", default: "true" },
-      { key: "PA_PATTERN_DESC_TRIANGLE", label: "Descending Triangle → PE", type: "toggle", effect: EFFECT.SESSION, desc: "Trade descending-triangle breakdowns as PE.", default: "true" },
-      // ── Trend filter (course rule #1: trade breakouts WITH the trend) ──
-      { key: "PA_TREND_FILTER_ENABLED", label: "Trend Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Only trade patterns aligned with the trend.", default: "false" },
-      { key: "PA_TREND_EMA_PERIOD", label: "Trend EMA Period", type: "number", min: 5, max: 100, step: 1, effect: EFFECT.SESSION, desc: "EMA period for the trend read.", default: "20" },
-      { key: "PA_TREND_FLAT_BAND", label: "Trend Flat Band (pts)", type: "number", min: 0, max: 30, step: 1, effect: EFFECT.SESSION, desc: "Neutral zone around the EMA, in points.", default: "0" },
-      // Pattern-shape internals (Min Body / Pattern Tolerance / S/R Lookback) and the
-      // structural SL placement (buffer beyond the pattern level) are computed internally
-      // by the engine — no knobs. The SL sits at the pattern's invalidation level itself.
-      // ── Exit: breakeven then swing trail ──
-      { key: "PA_BREAKEVEN_TRIGGER", label: "Breakeven Trigger (₹)", type: "number", min: 0, max: 2000, step: 50, effect: EFFECT.SESSION, desc: "Move stop to breakeven after this much profit (₹, 0 = off).", default: "300", subheader: "Exits & Risk" },
+      // ── Setup direction + shape ──
+      { key: "PA_PATTERN_BULL_OB", label: "Bullish Order Block → CE", type: "toggle", effect: EFFECT.INSTANT, desc: "Buy CE when price retests a bullish order block.", default: "true", subheader: "Smart Money Setup" },
+      { key: "PA_PATTERN_BEAR_OB", label: "Bearish Order Block → PE", type: "toggle", effect: EFFECT.INSTANT, desc: "Buy PE when price retests a bearish order block.", default: "true" },
+      { key: "PA_SMC_SWING_BARS", label: "Swing Size (candles each side)", type: "number", min: 1, max: 5, step: 1, effect: EFFECT.INSTANT, desc: "Candles on each side that make a swing high or low. Example with 2: a high counts only if the 2 candles before and after it are lower. Bigger = fewer, stronger breaks.", default: "2" },
+      { key: "PA_SMC_MAX_AGE", label: "Setup Life (candles)", type: "number", min: 10, max: 45, step: 5, effect: EFFECT.INSTANT, desc: "Drop a setup this many candles after its break. Example on 5-min with 30: a 10:00 break is dropped after 12:30.", default: "30" },
+      { key: "PA_SMC_REACT_WAIT", label: "Reaction Wait (candles)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.INSTANT, desc: "After price returns to the block, wait this many candles for one that closes up (down for PE). None = the block is used up and skipped.", default: "3" },
+      { key: "PA_SMC_BLOCK_LIQUIDITY", label: "Block Must Take a Low", type: "toggle", effect: EFFECT.INSTANT, desc: "The course's stricter rule: the block candle must also have gone below an earlier small low (above an earlier small high for PE). On = far fewer trades. Off = any candle with a gap after it.", default: "true" },
+      { key: "PA_SMC_MIN_RR", label: "Min Reward:Risk", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.INSTANT, desc: "Skip when the target is not this many times the stop. Example with 1.5: a 20-pt stop needs a target at least 30 pts away.", default: "1.5" },
+      { key: "PA_SL_BUFFER_PTS", label: "Stop Buffer (pts)", type: "number", min: 0, max: 20, step: 0.5, effect: EFFECT.INSTANT, desc: "Stop sits this far beyond the block, in spot points.", default: "3", subheader: "Exits & Risk" },
+      { key: "PA_MIN_SL_PTS", label: "Min Stop (pts)", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "The stop is never closer than this, in spot points.", default: "8" },
+      { key: "PA_MAX_SL_PTS", label: "Max Stop (pts)", type: "number", min: 5, max: 100, step: 1, effect: EFFECT.INSTANT, desc: "Skip the trade when the stop would be wider than this, in spot points.", default: "25" },
+      { key: "PA_SMC_TRAIL_ENABLED", label: "Swing Trail", type: "toggle", effect: EFFECT.INSTANT, desc: "Also tighten the stop to each new swing. Off = the setup's own stop and target only.", default: "false" },
+      { key: "PA_BREAKEVEN_TRIGGER", label: "Breakeven Trigger (₹)", type: "number", min: 0, max: 2000, step: 50, effect: EFFECT.SESSION, desc: "Move stop to breakeven after this much profit (₹, 0 = off).", default: "300" },
       { key: "PA_BREAKEVEN_BUFFER", label: "Breakeven Buffer (pts)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.SESSION, desc: "Cushion above/below entry for the breakeven stop, in points.", default: "1" },
       { key: "PA_SLIPPAGE_PTS", label: "Slippage (pts)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.SESSION, desc: "Simulated slippage for backtest, in points.", default: "0" },
       { key: "PA_MAX_DAILY_TRADES", label: "Max Daily Trades", type: "number", min: 5, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Max entries per day.", default: "30" },
@@ -1831,7 +1830,7 @@ function sectionSlug(s) {
 const MODE_SECTION_TITLES = {
   ema_rsi_st:    "EMA_RSI_ST STRATEGY (EMA 20/50 + RSI + SuperTrend) — Zerodha",
   bb_rsi:    "BB_RSI STRATEGY (BB+SuperTrend+RSI) — Fyers",
-  pa:       "PRICE ACTION STRATEGY (5-min) — Fyers",
+  pa:       "PRICE ACTION STRATEGY (Smart Money order block) — Fyers",
   orb:      "ORB STRATEGY (Opening Range Breakout) — Fyers",
   ema9vwap: "EMA9 + VWAP STRATEGY — Zerodha",
   trend_pb: "TREND PULLBACK STRATEGY — Fyers",
@@ -2875,7 +2874,7 @@ router.get("/", (req, res) => {
   const SECTION_TO_MASTER = {
     "EMA_RSI_ST STRATEGY (EMA 20/50 + RSI + SuperTrend) — Zerodha":     emaRsiStModeOn,
     "BB_RSI STRATEGY (BB+SuperTrend+RSI) — Fyers":                   bbRsiModeOn,
-    "PRICE ACTION STRATEGY (5-min) — Fyers":                        paModeOn,
+    "PRICE ACTION STRATEGY (Smart Money order block) — Fyers":      paModeOn,
     "ORB STRATEGY (Opening Range Breakout) — Fyers":                orbModeOn,
     "EMA9 + VWAP STRATEGY — Zerodha":                               ema9vwapModeOn,
     "TREND PULLBACK STRATEGY — Fyers":                              trendPbModeOn,

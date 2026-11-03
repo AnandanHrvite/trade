@@ -107,38 +107,13 @@ function doubleBottom({ start = 1000, seed = 3 } = {}) {
 module.exports = { hourly, daily, doubleBottom, lcg, BASE, istDayKey, istWeekday };
 
 /**
- * A double bottom that PA can actually trade, on a ~₹900 stock:
- *   two swing lows 12 bars apart within the SCALED tolerance, a neckline
- *   between them, a breakout candle that opens below and closes above it, then
- *   a retest bar that dips back to the level and closes above. Ends ON the
- *   retest bar, which is the bar PA enters on.
+ * A bullish order-block retest PA can trade, on a ~₹900 stock. Moves are tiny
+ * because the scanner scales PA's point settings down to the share price.
+ * Ends ON the reaction candle, which is the bar PA enters on.
  */
-function paDoubleBottomSetup() {
-  // [open, high, low, close] — explicit, because the pattern depends on exact
-  // wick placement and a generator would only obscure that.
-  const pattern = [
-    [900, 901, 899, 898], [898, 899, 893, 894], [894, 895, 887, 888], [888, 889, 879, 880],
-    [880, 881, 871, 872], [872, 873, 863, 864],
-    [864, 865, 857.0, 858],                                   // bottom 1  (low 857.0)
-    [858, 867, 857.6, 866], [866, 877, 865, 876], [876, 887, 875, 886],
-    [886, 895, 885, 894], [894, 901, 893, 900],
-    [900, 904, 899, 903],                                     // neckline  (high 904)
-    [903, 904, 895, 896], [896, 897, 885, 886], [886, 887, 875, 876],
-    [876, 877, 867, 868], [868, 869, 861, 862],
-    [862, 863, 857.3, 858.2],                                 // bottom 2  (low 857.3)
-    [858.2, 868, 857.9, 867], [867, 878, 866, 877], [877, 887, 876, 886],
-    [886, 893, 885, 892], [892, 897, 891, 896], [896, 899, 895, 898],
-    [898, 900, 897, 899], [899, 901, 898, 900], [900, 902, 899, 901],
-    [901, 903, 900, 902],
-    [902, 909, 901, 908],                                     // breakout: opens 902 ≤ 904, closes 908 > 904
-    [908, 909, 904.2, 906],                                   // retest: dips to 904.2, closes 906 > 904
-  ];
-  // Flat filler so the series clears PA's 35-bar warm-up without adding swing
-  // points inside the 30-bar pattern window.
-  const filler = [];
-  for (let i = 0; i < 40; i++) filler.push([902, 903, 901, 902]);
-
-  const rows = [...filler, ...pattern];
+function paOrderBlockSetup() {
+  const s = p => 900 + (p - 1000) * 0.03;
+  const rows = require('./priceActionSmc.fixture').bullBars().map(r => r.map(s));
   const out = [];
   let d = 0, idx = 0;
   while (idx < rows.length) {
@@ -153,4 +128,4 @@ function paDoubleBottomSetup() {
   return out;
 }
 
-module.exports.paDoubleBottomSetup = paDoubleBottomSetup;
+module.exports.paOrderBlockSetup = paOrderBlockSetup;

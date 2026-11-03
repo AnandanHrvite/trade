@@ -31,10 +31,10 @@ All four strategies run **in parallel** on the same WebSocket — different cand
 | **BB_RSI Live** | BB mean reversion + RSI (V8) | 3 / 5-min | Fyers | `/bb_rsi-live` |
 | **BB_RSI Paper** | BB mean reversion + RSI (V8) | 3 / 5-min | Simulated | `/bb_rsi-paper` |
 | **BB_RSI Backtest** | BB mean reversion + RSI (V8) | 3 / 5-min | Historical | `/bb_rsi-backtest` |
-| **PA Live (legacy)** | Price Action Patterns | 5-min | Fyers | `/pa-live` |
-| **PA Live (Harness)** | Price Action Patterns | 5-min | Fyers (PAPER-wrapped) | `/pa-live-harness` |
-| **PA Paper** | Price Action Patterns | 5-min | Simulated | `/pa-paper` |
-| **PA Backtest** | Price Action Patterns | 5-min | Historical | `/pa-backtest` |
+| **PA Live (legacy)** | Price Action (SMC order block) | 5-min | Fyers | `/pa-live` |
+| **PA Live (Harness)** | Price Action (SMC order block) | 5-min | Fyers (PAPER-wrapped) | `/pa-live-harness` |
+| **PA Paper** | Price Action (SMC order block) | 5-min | Simulated | `/pa-paper` |
+| **PA Backtest** | Price Action (SMC order block) | 5-min | Historical | `/pa-backtest` |
 | **PA Pattern Backtest** | Per-pattern attribution | 5-min | Historical | `/pa-pattern-backtest` |
 | **ORB Live** | Opening Range Breakout (single-leg CE/PE) | 1-min ticks on a 15-min OR | Fyers | `/orb-live` |
 | **ORB Paper** | Opening Range Breakout | 1-min ticks on a 15-min OR | Simulated | `/orb-paper` |
@@ -140,18 +140,11 @@ See [BB_RSI.md](BB_RSI.md) for the authoritative spec. Summary:
 - **Per-side SL pause** (`BB_RSI_PER_SIDE_PAUSE`): an SL on CE only pauses CE entries; PE remains free, plus `BB_RSI_CONSEC_SL_EXTRA_PAUSE` extra candles per consecutive SL.
 - **Per-trade context logging** (additive): each trade record captures BB / RSI / trend context at entry and **MFE / MAE** (max-favorable + max-adverse excursion in pts and ₹) over the life of the trade, **`secsToMFE` / `secsToMAE`** (seconds from entry to that peak / trough — distinguishes early-peak-then-giveback from slow-grind, for trail tuning), plus **`vixAtExit`** — feeds the active paper-trade data-collection schema. This enrichment is now uniform across all 4 strategies (paper + live): each logs the signal diagnostics it computes at entry (EMA_RSI_ST: EMA20/50/21 + RSI + SuperTrend; BB_RSI: BB bands / RSI / ADX + band width, RSI range and divergence detail; PA: pattern/trend/SR; ORB: OR width, VWAP side, body-vs-ATR, gate funnel) so post-window analysis can correlate behaviour with market conditions. Timing fields use each engine's replay-safe tick clock so replayed sessions reproduce identical values
 
-### Strategy 3: Price Action — Chart-Pattern Breakouts (5-min)
-- **Patterns (the only four entry logics, all default ON)**:
-  - **Double Bottom (W) → CE** — twin equal swing lows + close above the neckline (peak between them)
-  - **Double Top (M) → PE** — twin equal swing highs + close below the neckline (valley between them)
-  - **Ascending Triangle → CE** — flat resistance (equal swing highs) + rising swing lows, close above resistance
-  - **Descending Triangle → PE** — flat support (equal swing lows) + falling swing highs, close below support
-  - "Equal" levels are within `PA_CHART_PATTERN_TOL=12` pts; the breakout candle body must be ≥ `PA_MIN_BODY=5` pts. Double Top/Bottom also require the two swings ≥5 candles apart. The old Engulfing / Pin Bar / Inside Bar / BOS patterns were removed.
-- **Swings**: last `PA_SR_LOOKBACK=30` candles drive both detection and the structure trail.
-- **No RSI / ADX confluence** — pure chart patterns; the only entry filter beyond the pattern is the `PA_MIN_BODY` breakout-candle-body check.
-- **Retest gate (`PA_RETEST_ENABLED=true`, default ON)**: the breakout candle itself does **not** enter. The breakout is parked and only fires when price pulls back to the broken level (within `PA_RETEST_TOL_PTS=10` pts) and closes back on the breakout side, within `PA_RETEST_MAX_WAIT=4` candles — otherwise it's dropped. This filters breakout-then-instant-reversal fakes (raw-breakout entries once replayed at ~23% WR / −₹11K).
-- **SL (pattern structure)**: placed `PA_SL_BUFFER_PTS=3` beyond the pattern extreme — below the twin bottoms / rising-low support (CE), above the twin tops / falling-high resistance (PE) — then clamped to `[PA_MIN_SL_PTS=8, PA_MAX_SL_PTS=25]`.
-- **Exit — breakeven then swing trail**: once peak PnL ≥ `PA_BREAKEVEN_TRIGGER=300` (₹), the SL lifts to entry ± `PA_BREAKEVEN_BUFFER=1` pts (a winner can't round-trip to a loss); from there the structure trail tightens the SL to each new swing low (CE) / swing high (PE) on candle close. VIX + OI + bid-ask spread guards apply to entries; EOD square-off 10 min before `TRADE_STOP_TIME`. No profit target, no time-stop. The old candle-trail / tiered profit-lock / time-stop were removed.
+### Strategy 3: Price Action — Smart Money Order-Block Retest
+Replaced the chart-pattern breakouts on 2026-11-03. Rules live in [src/strategies/price_action.js](src/strategies/price_action.js).
+- **Entry (CE; PE is the mirror)**: a candle closes above the last swing high → price takes the inducement (the newest pullback low) → the block is the lowest candle of the up move with a gap after it → price returns to the block → a candle closes up.
+- **Exit**: stop beyond the block, target at the highest high before the inducement was taken, plus the Common Rules (profit lock, breakeven, trade window, wait after exit).
+- **Not validated**: the 2018–2026 backtest loses money. Paper only until that changes.
 
 ### Strategy 4: ORB — Opening Range Breakout (15-min OR, single-leg slightly-ITM CE/PE)
 **Rebuilt 2026-07-26.** The V1/V2/V3 engine switches, the RSI/ADX/EMA20-50 stack, the prior-day "fresh ground" filter, and the wick / volume / close-position / fixed-point gates are **deleted, not toggled off** — every one of them was measured on 39 real NIFTY sessions (Mar–Apr 2026) and either had negative edge or never fired. There is now **one engine** with a **9-key signal surface**. See the header of [src/strategies/orb_breakout.js](src/strategies/orb_breakout.js) for the full ablation table.
@@ -581,8 +574,8 @@ log, so each session's trades carry the exact config that produced them.
 ### Price Action
 | URL | Description |
 |-----|-------------|
-| `/pa-backtest` | PA backtest (5-min patterns) |
-| `/pa-pattern-backtest` | Per-pattern attribution backtest (which pattern contributed which P&L) |
+| `/pa-backtest` | PA backtest (order-block retest) |
+| `/pa-pattern-backtest` | Bullish vs bearish order-block backtest (which side contributed which P&L) |
 | `/pa-paper/status` | PA paper trade + NIFTY chart with swing overlay |
 | `/pa-paper/history` | PA sessions (per-session delete + view modal) |
 | `/pa-paper/simulate` | PA simulator |

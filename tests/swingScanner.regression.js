@@ -79,7 +79,6 @@ const F         = require("./swingScanner.fixtures");
 const scanner   = require("../src/services/swingScanner");
 const adapters  = require("../src/services/swingStrategyAdapters");
 const universe  = require("../src/utils/stockUniverse");
-const paModule  = require("../src/strategies/price_action");
 
 // ─────────────────────────────────────────────────────────────────────────────
 section("Universe");
@@ -199,26 +198,28 @@ check("the dropdown drops a strategy the moment its Settings toggle goes off", (
   assert.deepStrictEqual(adapters.activeAdapters().map(a => a.key), before, "and come back");
 });
 
-check("PA fires on a double bottom ONLY when the tail is replayed", () => {
-  // This is the invariant that a naive one-call-per-symbol scanner breaks.
-  const pa   = adapters.getAdapter("PA");
-  const bars = F.paDoubleBottomSetup();
-
-  const replayed = adapters.evaluateSymbol(pa, bars, { tfMinutes: 60, dailyCandles: [], replayBars: pa.replayBars });
-  assert.strictEqual(replayed.side, "LONG", `replayed PA should enter, got: ${replayed.reason}`);
-  assert.ok(/Double Bottom/i.test(replayed.reason), replayed.reason);
-
-  paModule.reset();
-  const single = adapters.withScaledEnv(pa.scaleKeys, bars[bars.length - 1].close,
-    () => paModule.getSignal(bars, { silent: true, skipTimeCheck: true }));
-  assert.strictEqual(single.value.signal, "NONE",
-    "a single call on the last bar must NOT enter — if this starts passing, PA's retest rule changed and replayBars should be re-derived");
+check("PA fires on an order-block retest from one call on the last bar", () => {
+  // Fixed point settings: the local .env must not decide this test's answer.
+  const fixed = { PA_MAX_SL_PTS: "25", PA_MIN_SL_PTS: "8", PA_SL_BUFFER_PTS: "3", PA_SMC_MIN_RR: "1.5" };
+  const saved = {};
+  for (const k of Object.keys(fixed)) { saved[k] = process.env[k]; process.env[k] = fixed[k]; }
+  try {
+    const pa   = adapters.getAdapter("PA");
+    const bars = F.paOrderBlockSetup();
+    const out  = adapters.evaluateSymbol(pa, bars, { tfMinutes: 60, dailyCandles: [] });
+    assert.strictEqual(out.side, "LONG", `PA should enter, got: ${out.reason}`);
+    assert.ok(/Bullish OB/i.test(out.reason), out.reason);
+    const earlier = adapters.evaluateSymbol(pa, bars.slice(0, -2), { tfMinutes: 60, dailyCandles: [] });
+    assert.strictEqual(earlier.side, null, "nothing may fire before the reaction candle");
+  } finally {
+    for (const k of Object.keys(saved)) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; }
+  }
 });
 
 check("PA state cannot leak from one symbol into the next", () => {
   const pa = adapters.getAdapter("PA");
-  // Leave a pending breakout behind, deliberately.
-  adapters.evaluateSymbol(pa, F.paDoubleBottomSetup().slice(0, -1), { tfMinutes: 60, dailyCandles: [], replayBars: pa.replayBars });
+  // Evaluate a nearly complete setup first, deliberately.
+  adapters.evaluateSymbol(pa, F.paOrderBlockSetup().slice(0, -1), { tfMinutes: 60, dailyCandles: [] });
   // A flat, patternless series must be judged on its own merits.
   const flat = F.hourly({ sessions: 60, start: 900, drift: 0, vol: 0.0015, seed: 77 });
   const next = adapters.evaluateSymbol(pa, flat, { tfMinutes: 60, dailyCandles: [], replayBars: pa.replayBars });

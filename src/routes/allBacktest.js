@@ -202,7 +202,7 @@ router.get("/", (req, res) => {
   ) : "";
   const paPanel = paOn ? renderPanel(
     "PRICE ACTION", { bg: "rgba(139,92,246,0.12)", fg: "#a78bfa", border: "rgba(139,92,246,0.25)" },
-    paStrategy && paStrategy.NAME ? paStrategy.NAME : "PRICE_ACTION_5M",
+    paStrategy && paStrategy.NAME ? paStrategy.NAME : "PRICE_ACTION_SMC",
     PA_KEY, "/pa-backtest", paResult
   ) : "";
   const orbPanel = orbOn ? renderPanel(

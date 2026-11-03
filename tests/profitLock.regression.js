@@ -349,7 +349,6 @@ section("Reach — every engine that can hold an option honours the lock");
 // claiming "I cannot hold an option position"; if that stops being true, the
 // entry must be removed and the engine wired instead.
 const ENGINES_WITHOUT_OPTION_POSITIONS = new Set([
-  "paPaper.js", "paLive.js",                 // PA is disabled (PA_MODE_ENABLED=false)
   "trendPbPaper.js", "trendDayScalpPaper.js", // harness-run, disabled
   "earlyBirdPaper.js",                        // stock mode, not options
   "bbRsiLive.js", "emaRsiStLive.js", "orbLive.js", // live engines — see note below
@@ -434,12 +433,11 @@ check("the native LIVE engines honour it too", () => {
     const src = decomment(read(`routes/${f}`));
     assert.ok(/checkProfitLock/.test(src), `${f} never calls checkProfitLock — live would drift from paper`);
   }
-  // PA is the exception: paPaper (canonical) does NOT apply the lock — it is in
-  // ENGINES_WITHOUT_OPTION_POSITIONS — so paLive must not either, or live closes
-  // real trades paper keeps open. Parity, not presence, is the invariant.
+  // PA runs the lock in both paper and live (user, 2026-11-03). Parity is the invariant.
   {
     const paperHas = /checkProfitLock/.test(decomment(read("routes/paPaper.js")));
     const liveHas  = /checkProfitLock/.test(decomment(read("routes/paLive.js")));
+    assert.ok(paperHas, "paPaper.js must apply the common profit lock");
     assert.strictEqual(liveHas, paperHas, `paLive.js ${liveHas ? "calls" : "skips"} checkProfitLock but paPaper.js ${paperHas ? "calls" : "skips"} it — live would drift from paper`);
   }
   // ORB live goes through the shared orbExits module.
