@@ -107,6 +107,7 @@ function classifySegment(row) {
 // includes qty/price/executedAt and so keys each leg separately.
 const FYERS_HEADER_MAP = {
   name: "symbol",
+  symbol_name: "symbol", // newer exports call the "Name" column "Symbol name"
   "date_&_time": "trade_date",
   side: "trade_type",
   qty: "quantity",
@@ -119,7 +120,7 @@ function findHeaderRowIndex(lines) {
     // Spaces count as underscores: Kite's CSV says trade_type, its Excel "Trade Type".
     const cells = splitCsvLine(lines[i]).map((c) => c.trim().toLowerCase().replace(/\s+/g, "_"));
     if (cells.includes("symbol") && cells.includes("trade_type")) return i;
-    if (cells.includes("name") && cells.includes("side")) return i;
+    if ((cells.includes("name") || cells.includes("symbol_name")) && cells.includes("side")) return i;
   }
   return 0;
 }
@@ -129,7 +130,7 @@ function parseCsv(text) {
   if (lines.length < 2) return [];
   const headerIdx = findHeaderRowIndex(lines);
   const rawHeaders = splitCsvLine(lines[headerIdx]).map((h) => h.trim().toLowerCase().replace(/\s+/g, "_"));
-  const isFyers = rawHeaders.includes("name") && rawHeaders.includes("side");
+  const isFyers = (rawHeaders.includes("name") || rawHeaders.includes("symbol_name")) && rawHeaders.includes("side");
   const headers = isFyers ? rawHeaders.map((h) => FYERS_HEADER_MAP[h] || h) : rawHeaders;
   const rows = [];
   for (let i = headerIdx + 1; i < lines.length; i++) {
