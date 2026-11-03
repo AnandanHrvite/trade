@@ -2056,8 +2056,8 @@ app.get("/", (req, res) => {
     return `<div class="opt-expiry-alert">`
       + `<span class="opt-expiry-icon">🚨</span>`
       + `<div class="opt-expiry-text">`
-      +   `<div class="opt-expiry-title">${e.broker} trade sync failed (${failedAt}) — trades are not saved until it works</div>`
-      +   `<div class="opt-expiry-body">${reason}. Log in again: after 15:35 IST auto-sync retries every 15 minutes until midnight, or use Sync Now.</div>`
+      +   `<div class="opt-expiry-title">${e.broker} trade sync failed (${failedAt})</div>`
+      +   `<div class="opt-expiry-body">${reason}. Log in again, then press Sync Now. Brokers only give today's trades, so a missed day can only be added by uploading the tradebook.</div>`
       + `</div>`
       + `<a href="/pnl-history" class="opt-expiry-cta">Open P&amp;L History →</a>`
       + `</div>`;

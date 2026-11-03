@@ -423,7 +423,7 @@ router.get("/", (req, res) => {
           <select id="monthSel-kite" onchange="renderBroker('kite')"><option value="all">All Months</option></select>
           <input type="search" id="search-kite" placeholder="Search symbol" aria-label="Search symbol" oninput="renderBroker('kite')"/>
           <span class="spacer"></span>
-          <span class="btn file-btn">📄 Import Tradebook CSV<input type="file" accept=".csv" multiple onchange="importCsv(this,'kite')"/></span>
+          <span class="btn file-btn">📄 Import Tradebook (CSV / Excel)<input type="file" accept=".csv,.xlsx" multiple onchange="importCsv(this,'kite')"/></span>
           <button class="btn primary" onclick="syncNow('kite')">${kiteConnected ? '⟳ Sync Now' : '⚠ Login to Sync'}</button>
         </div>
         <div class="note" id="syncNote-kite" style="margin-top:-6px;">
@@ -447,7 +447,7 @@ router.get("/", (req, res) => {
           <select id="monthSel-fyers" onchange="renderBroker('fyers')"><option value="all">All Months</option></select>
           <input type="search" id="search-fyers" placeholder="Search symbol" aria-label="Search symbol" oninput="renderBroker('fyers')"/>
           <span class="spacer"></span>
-          <span class="btn file-btn">📄 Import Tradebook CSV<input type="file" accept=".csv" multiple onchange="importCsv(this,'fyers')"/></span>
+          <span class="btn file-btn">📄 Import Tradebook (CSV / Excel)<input type="file" accept=".csv,.xlsx" multiple onchange="importCsv(this,'fyers')"/></span>
           <button class="btn primary" onclick="syncNow('fyers')">${fyersConnected ? '⟳ Sync Now' : '⚠ Login to Sync'}</button>
         </div>
         <div class="note" id="syncNote-fyers" style="margin-top:-6px;">
@@ -721,6 +721,35 @@ function metricCard(label, val, color){
   return '<div class="mc"><div class="mc-label">' + label + '</div><div class="mc-val" style="color:' + color + ';">' + val + '</div></div>';
 }
 
+// Excel files become CSV here in the browser, so the server only ever handles
+// CSV. The reader is fetched only when an Excel file is actually picked.
+function loadXlsxLib(){
+  if (window.XLSX) return Promise.resolve(window.XLSX);
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+    s.integrity = 'sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw';
+    s.crossOrigin = 'anonymous';
+    s.onload = () => resolve(window.XLSX);
+    s.onerror = () => reject(new Error('Could not load the Excel reader. Please use the CSV download instead.'));
+    document.head.appendChild(s);
+  });
+}
+
+// One entry per sheet holding trades. If none does, the first sheet still goes
+// up so the server can explain what is wrong with the file.
+async function fileToCsvParts(file){
+  if (!/[.]xlsx$/i.test(file.name)) return [{ csv: await file.text(), filename: file.name }];
+  const XLSX = await loadXlsxLib();
+  const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true, dateNF: 'yyyy-mm-dd"T"hh:mm:ss' });
+  const parts = wb.SheetNames.map(name => ({
+    csv: XLSX.utils.sheet_to_csv(wb.Sheets[name], { blankrows: false, rawNumbers: true, dateNF: 'yyyy-mm-dd"T"hh:mm:ss' }),
+    filename: file.name + '#' + name,
+  }));
+  const withTrades = parts.filter(p => /trade[ _]type|,side,/i.test(p.csv));
+  return withTrades.length ? withTrades : parts.slice(0, 1);
+}
+
 async function importCsv(input, broker){
   const files = input.files ? Array.from(input.files) : [];
   if (files.length === 0) return;
@@ -729,21 +758,25 @@ async function importCsv(input, broker){
   // Each file's outcome is recorded independently, then summarized once at
   // the end — no accumulated flags to get the combinations of wrong.
   const results = []; // { file, imported, updated, error, cancelled }
+  let cancelled = false;
   for (const file of files) {
+    if (cancelled) break;
     try {
-      const text = await file.text(); // can reject (e.g. NotReadableError) if the file becomes unreadable mid-batch
-      const r = await secretFetch('/pnl-history/manual/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ csv: text, filename: file.name, broker }),
-      });
-      // secretFetch returns null only when the user cancels the API-secret
-      // prompt — stop asking for remaining files, but keep whatever earlier
-      // files already reported instead of discarding it.
-      if (!r) { results.push({ file: file.name, cancelled: true }); break; }
-      const j = await r.json();
-      if (!j.success) results.push({ file: file.name, error: j.error || 'Import failed' });
-      else results.push({ file: file.name, imported: j.imported, updated: j.updated });
+      const parts = await fileToCsvParts(file); // can reject (e.g. NotReadableError) if the file becomes unreadable mid-batch
+      for (const part of parts) {
+        const r = await secretFetch('/pnl-history/manual/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ csv: part.csv, filename: part.filename, broker }),
+        });
+        // secretFetch returns null only when the user cancels the API-secret
+        // prompt — stop asking for remaining files, but keep whatever earlier
+        // files already reported instead of discarding it.
+        if (!r) { results.push({ file: part.filename, cancelled: true }); cancelled = true; break; }
+        const j = await r.json();
+        if (!j.success) results.push({ file: part.filename, error: j.error || 'Import failed' });
+        else results.push({ file: part.filename, imported: j.imported, updated: j.updated });
+      }
     } catch (err) {
       results.push({ file: file.name, error: err.message });
     }

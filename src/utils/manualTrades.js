@@ -36,20 +36,23 @@ function ensureDir() {
 }
 
 function loadStore() {
+  const empty = () => ({ fills: [], meta: { lastSyncedTradeDate: null, importedFiles: [] } });
+  if (!fs.existsSync(STORE_FILE)) return empty();
+  // A failed read (permissions etc.) throws: the file may be fine, and returning
+  // an empty store here would let the next save erase the whole history.
+  const text = fs.readFileSync(STORE_FILE, "utf-8");
   try {
-    if (!fs.existsSync(STORE_FILE)) return { fills: [], meta: { lastSyncedTradeDate: null, importedFiles: [] } };
-    const data = JSON.parse(fs.readFileSync(STORE_FILE, "utf-8"));
+    const data = JSON.parse(text);
     return {
       fills: Array.isArray(data.fills) ? data.fills : [],
-      meta: data.meta || { lastSyncedTradeDate: null, importedFiles: [] },
+      meta: data.meta || empty().meta,
     };
   } catch (err) {
-    // An unreadable file must not be overwritten by the next save — that would
-    // erase the whole history. Move it aside so it can still be recovered.
+    // Damaged file: move it aside so the next save can't overwrite it.
     const backup = `${STORE_FILE}.corrupt-${Date.now()}`;
-    try { fs.renameSync(STORE_FILE, backup); console.error(`[ManualTrades] store unreadable (${err.message}) — moved to ${backup}`); }
-    catch (moveErr) { console.error(`[ManualTrades] store unreadable (${err.message}) and could not be moved: ${moveErr.message}`); }
-    return { fills: [], meta: { lastSyncedTradeDate: null, importedFiles: [] } };
+    fs.renameSync(STORE_FILE, backup);
+    console.error(`[ManualTrades] store damaged (${err.message}) — moved to ${backup}`);
+    return empty();
   }
 }
 
@@ -113,7 +116,8 @@ const FYERS_HEADER_MAP = {
 
 function findHeaderRowIndex(lines) {
   for (let i = 0; i < lines.length; i++) {
-    const cells = splitCsvLine(lines[i]).map((c) => c.trim().toLowerCase());
+    // Spaces count as underscores: Kite's CSV says trade_type, its Excel "Trade Type".
+    const cells = splitCsvLine(lines[i]).map((c) => c.trim().toLowerCase().replace(/\s+/g, "_"));
     if (cells.includes("symbol") && cells.includes("trade_type")) return i;
     if (cells.includes("name") && cells.includes("side")) return i;
   }
@@ -134,6 +138,7 @@ function parseCsv(text) {
     const row = {};
     headers.forEach((h, idx) => { row[h] = (cells[idx] || "").trim(); });
     if (isFyers) normalizeFyersRow(row);
+    if (headers.includes("symbol") && !row.symbol) continue; // empty or footer row
     rows.push(row);
   }
   return rows;
@@ -191,8 +196,8 @@ function splitCsvLine(line) {
 }
 
 function normalizeCsvRow(row, sourceFile, broker) {
-  const qty = Number(row.quantity) || 0;
-  const price = Number(row.price) || 0;
+  const qty = Number(String(row.quantity).replace(/,/g, "")) || 0;
+  const price = Number(String(row.price).replace(/,/g, "")) || 0;
   const type = String(row.trade_type || "").toLowerCase(); // "buy" | "sell"
   return {
     id: row.trade_id ? `csv_${row.trade_id}` : `csv_${sourceFile}_${row.order_execution_time || row.trade_date}_${row.symbol}_${row.order_id || ""}_${Math.random().toString(36).slice(2, 8)}`,
@@ -221,13 +226,14 @@ function normalizeCsvRow(row, sourceFile, broker) {
  *  per broker tab. */
 function importCsv(csvText, sourceFile = "upload.csv", broker = "kite") {
   const rows = parseCsv(csvText);
-  if (rows.length === 0) return { imported: 0, updated: 0, total: 0, error: "No data rows found in CSV." };
+  const whereToGet = broker === "fyers" ? "Fyers → Reports → Trade Book" : "Kite Console → Reports → Tradebook";
+  if (rows.length === 0) return { imported: 0, updated: 0, total: 0, error: `No trades found in this file. Download it from ${whereToGet}.` };
 
   const required = ["symbol", "trade_date", "trade_type", "quantity", "price"];
   const headers = Object.keys(rows[0]);
   const missing = required.filter((r) => !headers.includes(r));
   if (missing.length > 0) {
-    return { imported: 0, updated: 0, total: 0, error: `CSV missing expected column(s): ${missing.join(", ")}. Export from Kite Console → Reports → Tradebook.` };
+    return { imported: 0, updated: 0, total: 0, error: `This is not a tradebook file (missing ${missing.join(", ")}). Download it from ${whereToGet}.` };
   }
 
   const store = loadStore();
@@ -484,8 +490,10 @@ function buildRoundTrips(fills) {
 }
 
 function makeTrip(symbol, broker, segment, openFill, closeFill, qty, direction) {
-  const entryPrice = direction === "long" ? openFill.price : closeFill.price;
-  const exitPrice = direction === "long" ? closeFill.price : openFill.price;
+  // Entry is always the opening fill: a short opens with its sell, so it profits
+  // when the closing buy is cheaper.
+  const entryPrice = openFill.price;
+  const exitPrice = closeFill.price;
   const pnl = direction === "long" ? (exitPrice - entryPrice) * qty : (entryPrice - exitPrice) * qty;
   return {
     symbol,
