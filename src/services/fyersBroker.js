@@ -55,6 +55,9 @@ async function _getOrders() {
 async function _getPositions() {
   return await fyers.get_positions();
 }
+async function _getTradebook() {
+  return await fyers.get_tradebook();
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Order placement
@@ -236,6 +239,17 @@ async function getPositions() {
   }
 }
 
+// Today's executed fills. Unlike getOrders/getPositions this THROWS on a failed
+// call — an empty list here means "no trades today", and the manual-trades sync
+// must not mistake an expired token for that. Skips the circuit breaker: this
+// report-only call, retried for hours, must never hold up a real order.
+async function getTrades() {
+  if (!isAuthenticated()) return [];
+  const response = await withRetry(_getTradebook, { attempts: safetyConfig().retryReadAttempts, baseMs: safetyConfig().retryBaseMs, label: "fyers.get_tradebook" });
+  if (response && response.s === "ok") return response.tradeBook || [];
+  throw new Error((response && response.message) || "Fyers tradebook unavailable");
+}
+
 // opts.isExit — cancelling a protective SL ahead of a square-off: bypasses an
 // OPEN breaker like the exit itself.
 async function cancelOrder(orderId, { isExit = false } = {}) {
@@ -285,6 +299,7 @@ module.exports = {
   modifySLMOrder,
   getOrders,
   getPositions,
+  getTrades,
   cancelOrder,
   exitPosition,
   breakerStatus,

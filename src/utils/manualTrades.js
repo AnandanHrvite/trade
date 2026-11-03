@@ -1,18 +1,19 @@
 /**
  * manualTrades.js
  * ─────────────────────────────────────────────────────────────────────────────
- * Storage + ingestion for the user's own manual Zerodha trading (equity + F&O),
- * as opposed to the bot's own strategy trades. Two ingestion paths feed the same
- * store, because Kite Connect has no historical order/trade endpoint — /orders
- * and /trades are transient, today-only (confirmed against the official docs:
- * "the order history or the order book ... only lives for a day in the system").
+ * Storage + ingestion for the user's own manual Kite and Fyers trading (equity +
+ * F&O), as opposed to the bot's own strategy trades. Two ingestion paths feed the
+ * same store, because Kite Connect has no historical order/trade endpoint —
+ * /orders and /trades are transient, today-only (confirmed against the official
+ * docs: "the order history or the order book ... only lives for a day in the
+ * system"), and Fyers' tradebook is the same.
  *
- *   1. CSV import  — one-time backfill from Kite Console → Reports → Tradebook.
- *                     Covers all past years, Equity + F&O, in one file per segment
- *                     or combined.
- *   2. Kite sync   — going forward only. Pulls today's executed fills via
- *                     zerodhaBroker.getTrades() and appends any not already
- *                     stored (dedup by Kite's own trade_id).
+ *   1. CSV import  — one-time backfill from a broker tradebook export (Kite
+ *                     Console → Reports → Tradebook, or Fyers). Covers all past
+ *                     years, Equity + F&O, in one file per segment or combined.
+ *   2. Broker sync — going forward only. Pulls today's executed fills via each
+ *                     broker's getTrades(), adds new ones and updates any already
+ *                     stored in place (matched by dedupKey).
  *
  * Both paths write raw FILLS (one row per execution), not round-trip trades —
  * Kite's tradebook is fill-level, so a position built from 3 partial exits is
@@ -20,7 +21,7 @@
  * matching per symbol, since that's the only way to get win/loss per trade
  * out of raw fills without guessing which broker "order" they belonged to.
  *
- * Store: ~/trading-data/manual_trades.json — { fills: [...], meta: { lastSyncedTradeDate, importedFiles: [...] } }
+ * Store: ~/trading-data/manual_trades.json — { fills: [...], meta: { lastSyncedTradeDate, lastFyersSyncedAt, importedFiles: [...] } }
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -42,14 +43,21 @@ function loadStore() {
       fills: Array.isArray(data.fills) ? data.fills : [],
       meta: data.meta || { lastSyncedTradeDate: null, importedFiles: [] },
     };
-  } catch (_) {
+  } catch (err) {
+    // An unreadable file must not be overwritten by the next save — that would
+    // erase the whole history. Move it aside so it can still be recovered.
+    const backup = `${STORE_FILE}.corrupt-${Date.now()}`;
+    try { fs.renameSync(STORE_FILE, backup); console.error(`[ManualTrades] store unreadable (${err.message}) — moved to ${backup}`); }
+    catch (moveErr) { console.error(`[ManualTrades] store unreadable (${err.message}) and could not be moved: ${moveErr.message}`); }
     return { fills: [], meta: { lastSyncedTradeDate: null, importedFiles: [] } };
   }
 }
 
 function saveStore(store) {
   ensureDir();
-  fs.writeFileSync(STORE_FILE, JSON.stringify(store, null, 2), "utf-8");
+  const tmp = `${STORE_FILE}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(store, null, 2), "utf-8");
+  fs.renameSync(tmp, STORE_FILE);
 }
 
 // ── Segment classification ──────────────────────────────────────────────────
@@ -146,11 +154,13 @@ function normalizeFyersRow(row) {
     const m = row.trade_date.match(/^(\d{1,2}) (\w{3}) (\d{4}),\s*(\d{1,2}):(\d{2}):(\d{2})\s*(AM|PM)$/i);
     if (m) {
       const [, d, mon, y, hh, mm, ss, ap] = m;
-      const months = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+      const months = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+      const month = months[mon.toLowerCase()];
       let h = Number(hh) % 12;
       if (ap.toUpperCase() === "PM") h += 12;
-      const dt = new Date(Number(y), months[mon.toLowerCase()], Number(d), h, Number(mm), Number(ss));
-      if (!isNaN(dt)) row.trade_date = dt.toISOString().slice(0, 19);
+      // Built as text, not through a Date, so the server timezone can't shift it.
+      const p = (n) => String(n).padStart(2, "0");
+      if (month) row.trade_date = `${y}-${p(month)}-${p(d)}T${p(h)}:${mm}:${ss}`;
     }
   }
   // Fyers tradebook has no exchange column; "Segment" is "Derivatives" or
@@ -221,38 +231,7 @@ function importCsv(csvText, sourceFile = "upload.csv", broker = "kite") {
   }
 
   const store = loadStore();
-  // Build the existing-fill lookup with the SAME seq-per-base-key counting
-  // the import loop below uses, walking store.fills in array (= original
-  // import) order — otherwise a fill that was stored under `${base}_1`
-  // (a same-priced split-leg duplicate) has no way to be found again on
-  // re-import, and would append as a fresh duplicate instead of updating.
-  const indexByKey = new Map();
-  const existingSeqByBaseKey = new Map();
-  store.fills.forEach((f, i) => {
-    const baseKey = dedupKey(f);
-    const seq = existingSeqByBaseKey.get(baseKey) || 0;
-    existingSeqByBaseKey.set(baseKey, seq + 1);
-    indexByKey.set(dedupKey(f, seq), i);
-  });
-
-  let imported = 0, updated = 0;
-  const seqByBaseKey = new Map(); // occurrence count within THIS import, per base key
-  for (const row of rows) {
-    const fill = normalizeCsvRow(row, sourceFile, broker);
-    const baseKey = dedupKey(fill);
-    const seq = seqByBaseKey.get(baseKey) || 0;
-    seqByBaseKey.set(baseKey, seq + 1);
-    const key = dedupKey(fill, seq);
-    const existingIdx = indexByKey.get(key);
-    if (existingIdx !== undefined) {
-      store.fills[existingIdx] = fill;
-      updated++;
-    } else {
-      indexByKey.set(key, store.fills.length);
-      store.fills.push(fill);
-      imported++;
-    }
-  }
+  const { imported, updated } = upsertFills(store, rows.map((row) => normalizeCsvRow(row, sourceFile, broker)));
 
   if (!store.meta.importedFiles.includes(sourceFile)) store.meta.importedFiles.push(sourceFile);
   saveStore(store);
@@ -268,16 +247,68 @@ function importCsv(csvText, sourceFile = "upload.csv", broker = "kite") {
 // instead of appending a fresh duplicate each time.
 function dedupKey(fill, seq = 0) {
   const b = fill.broker || "kite";
-  if (fill.tradeId) return `${b}_tid_${fill.tradeId}`;
+  // Symbol and date go with the trade ID so a reused ID can't overwrite another
+  // trade: upsertFills replaces a matching row rather than skipping it.
+  if (fill.tradeId) return `${b}_tid_${fill.tradeId}_${fill.symbol}_${String(fill.tradeDate || "").slice(0, 10)}`;
   const base = `${b}_k_${fill.symbol}_${fill.side}_${fill.qty}_${fill.price}_${fill.executedAt}_${fill.orderId || ""}`;
   return seq > 0 ? `${base}_${seq}` : base;
 }
 
-// ── Kite live sync (today's fills, going forward only) ─────────────────────
+// Adds new fills to store.fills and replaces already-stored ones in place — a
+// re-import or re-sync of a fill always updates it, never piles up a duplicate.
+function upsertFills(store, fills) {
+  // Build the existing-fill lookup with the SAME seq-per-base-key counting
+  // the loop below uses, walking store.fills in array (= original import)
+  // order — otherwise a fill that was stored under `${base}_1` (a same-priced
+  // split-leg duplicate) has no way to be found again, and would append as a
+  // fresh duplicate instead of updating.
+  const indexByKey = new Map();
+  const existingSeqByBaseKey = new Map();
+  store.fills.forEach((f, i) => {
+    const baseKey = dedupKey(f);
+    const seq = existingSeqByBaseKey.get(baseKey) || 0;
+    existingSeqByBaseKey.set(baseKey, seq + 1);
+    indexByKey.set(dedupKey(f, seq), i);
+  });
+
+  let imported = 0, updated = 0;
+  const seqByBaseKey = new Map(); // occurrence count within THIS batch, per base key
+  for (const fill of fills) {
+    const baseKey = dedupKey(fill);
+    const seq = seqByBaseKey.get(baseKey) || 0;
+    seqByBaseKey.set(baseKey, seq + 1);
+    const key = dedupKey(fill, seq);
+    const existingIdx = indexByKey.get(key);
+    if (existingIdx !== undefined) {
+      store.fills[existingIdx] = fill;
+      updated++;
+    } else {
+      indexByKey.set(key, store.fills.length);
+      store.fills.push(fill);
+      imported++;
+    }
+  }
+  return { imported, updated };
+}
+
+// ── Broker live sync (today's fills, going forward only) ───────────────────
+
+// The Kite SDK turns timestamps into Date objects by parsing Kite's IST string
+// in the server's own timezone, so the LOCAL getters give back exactly the time
+// Kite sent, whatever timezone the server runs in. Output matches the wall-clock
+// format of CSV-imported fills.
+function kiteTimeToIso(v) {
+  if (!v) return null;
+  if (!(v instanceof Date)) return String(v).slice(0, 19).replace(" ", "T");
+  if (isNaN(v)) return null;
+  const p = (n) => String(n).padStart(2, "0");
+  return `${v.getFullYear()}-${p(v.getMonth() + 1)}-${p(v.getDate())}T${p(v.getHours())}:${p(v.getMinutes())}:${p(v.getSeconds())}`;
+}
 
 function normalizeKiteFill(t) {
+  const executedAt = kiteTimeToIso(t.fill_timestamp || t.exchange_timestamp);
   return {
-    id: `kite_${t.trade_id || t.order_id}_${t.exchange_timestamp || t.fill_timestamp || ""}`,
+    id: `kite_${t.trade_id || t.order_id}_${kiteTimeToIso(t.exchange_timestamp || t.fill_timestamp) || ""}`,
     source: "kite_sync",
     broker: "kite",
     symbol: t.tradingsymbol || "",
@@ -286,8 +317,8 @@ function normalizeKiteFill(t) {
     side: String(t.transaction_type || "").toLowerCase() === "sell" ? "sell" : "buy",
     qty: Number(t.quantity) || 0,
     price: Number(t.average_price || t.price) || 0,
-    tradeDate: (t.fill_timestamp || t.exchange_timestamp || "").slice(0, 10) || null,
-    executedAt: t.fill_timestamp || t.exchange_timestamp || null,
+    tradeDate: executedAt ? executedAt.slice(0, 10) : null,
+    executedAt,
     orderId: t.order_id || null,
     tradeId: t.trade_id || null,
     importedAt: new Date().toISOString(),
@@ -295,33 +326,105 @@ function normalizeKiteFill(t) {
   };
 }
 
-/** Pull today's fills from Kite and append any new ones. Safe to call
- *  repeatedly (idempotent via dedup) — used by both the manual "Sync Now"
- *  button and the daily auto-sync job. */
+/** Pull today's fills from Kite, adding new ones and updating stored ones. Safe
+ *  to call repeatedly (idempotent via upsertFills) — used by both the manual
+ *  "Sync Now" button and the daily auto-sync job. */
 async function syncFromKite() {
   const zerodhaBroker = require("../services/zerodhaBroker");
   if (!zerodhaBroker.isAuthenticated()) {
-    return { imported: 0, skipped: 0, total: 0, error: "Not logged in to Zerodha — visit Token Sync to authenticate." };
+    return { imported: 0, updated: 0, total: 0, error: "Not logged in to Zerodha — visit Token Sync to authenticate." };
   }
-  const trades = await zerodhaBroker.getTrades();
-  if (!Array.isArray(trades)) return { imported: 0, skipped: 0, total: 0, error: "Kite returned no data." };
+  let trades;
+  try {
+    trades = await zerodhaBroker.getTrades();
+  } catch (err) {
+    return { imported: 0, updated: 0, total: 0, error: `Kite tradebook failed: ${(err && err.message) || "unknown error"}` };
+  }
+  if (!Array.isArray(trades)) return { imported: 0, updated: 0, total: 0, error: "Kite returned no data." };
+
+  // Same rule as syncFromFyers: a fill with no date would replace a good row and
+  // then vanish from buildRoundTrips, so save nothing.
+  const fills = trades.map((t) => normalizeKiteFill(t));
+  const undated = fills.find((f) => !f.tradeDate);
+  if (undated) return { imported: 0, updated: 0, total: 0, error: `Kite sent trade ${undated.tradeId || undated.orderId} with no time. Nothing was saved.` };
 
   const store = loadStore();
-  const existingKeys = new Set(store.fills.map((f) => dedupKey(f)));
-
-  let imported = 0, skipped = 0;
-  for (const t of trades) {
-    const fill = normalizeKiteFill(t);
-    const key = dedupKey(fill);
-    if (existingKeys.has(key)) { skipped++; continue; }
-    existingKeys.add(key);
-    store.fills.push(fill);
-    imported++;
-  }
+  const { imported, updated } = upsertFills(store, fills);
 
   store.meta.lastSyncedTradeDate = new Date().toISOString();
   saveStore(store);
-  return { imported, skipped, total: store.fills.length };
+  return { imported, updated, total: store.fills.length };
+}
+
+// Fyers sends trade times as an IST string. Its docs say "DD-MM-YYYY hh:mm:ss"
+// but their own sample is "07-Aug-2020 13:51:12", so both are accepted. Returns
+// null for anything else. No Date involved, so the server timezone can't shift it.
+const FYERS_MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+function fyersTimeToIso(v) {
+  const m = String(v == null ? "" : v).trim().match(/^(\d{1,2})-(\d{1,2}|[A-Za-z]{3})-(\d{4})\s+(\d{1,2}):(\d{2}):(\d{2})$/);
+  if (!m) return null;
+  const [, d, mon, y, hh, mm, ss] = m;
+  const month = /^\d/.test(mon) ? Number(mon) : FYERS_MONTHS.indexOf(mon.toLowerCase()) + 1;
+  if (month < 1 || month > 12 || Number(d) < 1 || Number(d) > 31 || Number(hh) > 23 || Number(mm) > 59 || Number(ss) > 59) return null;
+  const p = (n) => String(n).padStart(2, "0");
+  return `${y}-${p(month)}-${p(d)}T${p(hh)}:${mm}:${ss}`;
+}
+
+const FYERS_EXCHANGES = { 10: "NSE", 11: "MCX", 12: "BSE" };
+
+// tradeId stays null on purpose, and orderId is the exchange order number: that
+// makes dedupKey() build the same composite key as a CSV-imported Fyers row, so a
+// fill that arrives both ways stays one fill (see the NOTE above FYERS_HEADER_MAP).
+function normalizeFyersFill(t, executedAt) {
+  const symbol = String(t.symbol || "").replace(/^[A-Z]+:/, "");
+  const exchange = FYERS_EXCHANGES[Number(t.exchange)] || "";
+  return {
+    id: `fyers_${t.tradeNumber || t.orderNumber}_${executedAt}`,
+    source: "fyers_sync",
+    broker: "fyers",
+    symbol,
+    exchange,
+    segment: classifySegment({ symbol, exchange, segment: Number(t.segment) === 10 ? "EQ" : "FO" }),
+    side: Number(t.side) === -1 ? "sell" : "buy",
+    qty: Number(t.tradedQty) || 0,
+    price: Number(t.tradePrice) || 0,
+    tradeDate: executedAt.slice(0, 10),
+    executedAt,
+    orderId: t.exchangeOrderNo || null,
+    tradeId: null,
+    importedAt: new Date().toISOString(),
+    importedFrom: "fyers_sync",
+  };
+}
+
+/** Pull today's fills from Fyers, adding new ones and updating stored ones. Same
+ *  contract as syncFromKite. Saves nothing if any trade time can't be read — a
+ *  fill with no date would silently vanish from buildRoundTrips. */
+async function syncFromFyers() {
+  const fail = (error) => ({ imported: 0, updated: 0, total: 0, error });
+  const fyersBroker = require("../services/fyersBroker");
+  if (!fyersBroker.isAuthenticated()) return fail("Not logged in to Fyers — log in to Fyers first.");
+
+  let trades;
+  try {
+    trades = await fyersBroker.getTrades();
+  } catch (err) {
+    return fail(`Fyers tradebook failed: ${(err && err.message) || "unknown error"}`);
+  }
+
+  const fills = [];
+  for (const t of trades) {
+    const executedAt = fyersTimeToIso(t.orderDateTime);
+    if (!executedAt) return fail(`Fyers sent a trade time we can't read: "${t.orderDateTime}". Nothing was saved.`);
+    fills.push(normalizeFyersFill(t, executedAt));
+  }
+
+  const store = loadStore();
+  const { imported, updated } = upsertFills(store, fills);
+
+  store.meta.lastFyersSyncedAt = new Date().toISOString();
+  saveStore(store);
+  return { imported, updated, total: store.fills.length };
 }
 
 // ── Round-trip derivation (FIFO matching per symbol) ────────────────────────
@@ -401,6 +504,6 @@ function makeTrip(symbol, broker, segment, openFill, closeFill, qty, direction) 
 }
 
 module.exports = {
-  loadStore, saveStore, importCsv, syncFromKite, buildRoundTrips, classifySegment,
+  loadStore, saveStore, importCsv, syncFromKite, syncFromFyers, buildRoundTrips, classifySegment,
   STORE_FILE,
 };

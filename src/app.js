@@ -2048,6 +2048,21 @@ app.get("/", (req, res) => {
     optionExpiryAlertHtml = banners.join("");
   }
 
+  // ── Manual-trades sync failures (expired login etc.) — stays until that
+  // broker's next good sync. The reason is a broker message, so it is escaped.
+  const manualSyncAlertHtml = manualTradesSyncJob.getSyncErrors().map((e) => {
+    const reason = String(e.message).replace(/\.+$/, "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    const failedAt = new Date(e.at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+    return `<div class="opt-expiry-alert">`
+      + `<span class="opt-expiry-icon">🚨</span>`
+      + `<div class="opt-expiry-text">`
+      +   `<div class="opt-expiry-title">${e.broker} trade sync failed (${failedAt}) — trades are not saved until it works</div>`
+      +   `<div class="opt-expiry-body">${reason}. Log in again: after 15:35 IST auto-sync retries every 15 minutes until midnight, or use Sync Now.</div>`
+      + `</div>`
+      + `<a href="/pnl-history" class="opt-expiry-cta">Open P&amp;L History →</a>`
+      + `</div>`;
+  }).join("");
+
   // ── Dashboard quick-edit values, one row per index (same keys the Settings
   // page owns — this is a second editor, not a second source). Each date is
   // pattern-checked before it reaches a value="" attribute, and the type is
@@ -2884,6 +2899,7 @@ ${buildSidebar('dashboard', liveActive)}
 <div class="page">
 
   ${optionExpiryAlertHtml}
+  ${manualSyncAlertHtml}
 
   <!-- ① BROKER CONNECTIONS — compact single-line rows (hidden while a trade runs).
        The option-expiry quick-edit shares this grid row so it costs no extra

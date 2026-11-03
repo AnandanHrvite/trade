@@ -970,7 +970,7 @@ The engine falls back to one value; a status panel or log banner prints another.
 | `APP_ID` | text | _(secret — set in `.env`)_ | Fyers App ID |
 | `CACHE_MAX_DAYS` | number | `60` | Delete cached candles older than this. |
 | `EC2_IP` | text | `43.205.26.92` | EC2 IP |
-| `MANUAL_TRADES_AUTO_SYNC_ENABLED` | toggle | `false` | Daily 15:35 IST auto-pull of today's manual Kite fills into P&L History → Manual Trading Analytics. Kite has no historical-trade API, so this only ever captures today going forward — past trades still need a one-time Console CSV import. |
+| `MANUAL_TRADES_AUTO_SYNC_ENABLED` | toggle | `false` | Daily 15:35 IST auto-pull of today's manual Kite and Fyers fills into P&L History → Manual Trading Analytics. Neither broker has a historical-trade API, so this only ever captures today going forward — past trades still need a one-time tradebook CSV import. |
 | `PORT` | number | `3000` | Port |
 | `REDIRECT_URL` | text | `(unset)` | Fyers Redirect URL |
 | `TOKEN_SYNC_ALLOW_SELF_SIGNED` | toggle | _(secret — set in `.env`)_ | LIVE serves its own certificate, so keep this on unless a real certificate is installed there. |

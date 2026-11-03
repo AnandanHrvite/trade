@@ -9,7 +9,8 @@
  *   live bot pnl     = auto-computed from the bot's own live-trade JSON files
  *                      (EMA_RSI_ST live → Kite; bb_rsi live + PA live → Fyers),
  *                      grouped by Indian financial year (Apr–Mar)
- *   grand total      = past baseline + live bot pnl, per broker and overall
+ *   grand total      = past baseline + manual trades + live bot pnl, per broker
+ *                      and overall; a source filter narrows it (default All)
  *   manual trades    = the user's own hand-placed trades (equity + F&O), fed by
  *                      ~/trading-data/manual_trades.json (see utils/manualTrades.js).
  *                      Kite has no historical order/trade API — /orders and
@@ -19,8 +20,8 @@
  *                      trades come from a one-time Kite Console tradebook CSV
  *                      import; going forward, a daily auto-sync (or the Sync
  *                      Now button) pulls today's fills automatically.
- *                      Fyers manual trades: import-only for now (no sync route
- *                      wired here — the user's manual trading is on Kite).
+ *                      Fyers works the same way: its tradebook API is today-only
+ *                      too, so past trades come from a tradebook CSV import.
  *
  * User sets the past baseline once per broker; it never changes unless edited.
  * Everything else updates automatically as live trades close / manual trades sync.
@@ -34,6 +35,7 @@ const path = require("path");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS, tableEnhancerCSS, tableEnhancerJS, enabledStrategies } = require("../utils/sharedNav");
 const { resolveTheme } = require("../utils/theme");
 const manualTrades = require("../utils/manualTrades");
+const manualTradesSyncJob = require("../utils/manualTradesSyncJob");
 
 const _HOME = require("os").homedir();
 const DATA_DIR = path.join(_HOME, "trading-data");
@@ -78,13 +80,16 @@ function saveBaselines(baselines) {
 // never match a real tag boundary; same value, same JSON.parse result, just
 // not renderable as a tag close.
 function jsonForScript(obj) {
-  return JSON.stringify(obj).replace(/<\/(script)/gi, "<\\/$1");
+  return JSON.stringify(obj).replace(/<\/(script)/gi, "<\\/$1").replace(/<!--/g, "\\u003c!--");
 }
 
 // Indian FY: April–March. Returns string like "2023-24".
+// Bot trades stamp times as "DD/MM/YYYY, HH:MM:SS", which new Date() rejects or
+// reads as month-first, so that form is split by hand.
 function toFy(dateLike) {
   if (!dateLike) return null;
-  const d = new Date(dateLike);
+  const dmy = typeof dateLike === "string" && dateLike.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+  const d = dmy ? new Date(Number(dmy[3]), Number(dmy[2]) - 1, Number(dmy[1])) : new Date(dateLike);
   if (isNaN(d.getTime())) return null;
   const y = d.getFullYear();
   const startYear = d.getMonth() >= 3 ? y : y - 1; // April = month index 3
@@ -187,11 +192,18 @@ router.post("/manual/import", (req, res) => {
 
 // Manual "pull today's fills now" — same code path the daily auto-sync job uses.
 router.post("/manual/sync", async (req, res) => {
+  const broker = (req.body && req.body.broker) || "kite";
+  if (!["kite", "fyers"].includes(broker)) {
+    return res.status(400).json({ success: false, error: "Invalid broker" });
+  }
+  const syncName = broker === "fyers" ? "Fyers" : "Kite";
   try {
-    const result = await manualTrades.syncFromKite();
+    const result = broker === "fyers" ? await manualTrades.syncFromFyers() : await manualTrades.syncFromKite();
+    manualTradesSyncJob.recordSyncResult(syncName, result.error || null);
     if (result.error) return res.status(400).json({ success: false, error: result.error });
     res.json({ success: true, ...result });
   } catch (err) {
+    manualTradesSyncJob.recordSyncResult(syncName, err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -213,37 +225,27 @@ router.get("/", (req, res) => {
   const liveTrades = loadLiveTrades();
   const manualStore = manualTrades.loadStore();
   const manualRoundTrips = manualTrades.buildRoundTrips(manualStore.fills);
-  // This page's manual-trading UI only surfaces Kite (the user's own manual
-  // trading happens on Zerodha) — Fyers manual entries, if any get imported
-  // later, are still stored and included in the JSON blob for the client.
-  const zerodhaBroker = require("../services/zerodhaBroker");
-  const kiteConnected = zerodhaBroker.isAuthenticated();
+  const kiteConnected = require("../services/zerodhaBroker").isAuthenticated();
+  const fyersConnected = require("../services/fyersBroker").isAuthenticated();
 
-  // Group live trades by FY + broker + mode
-  const byFy = new Map(); // fy -> { fy, kite_swing, fyers_scalp, fyers_pa, kite_total, fyers_total, total }
-  const liveTotals = { kite: 0, fyers: 0, grand: 0 };
-  for (const t of liveTrades) {
-    if (!byFy.has(t.fy)) {
-      byFy.set(t.fy, { fy: t.fy, kite_swing: 0, fyers_scalp: 0, fyers_pa: 0, kite_total: 0, fyers_total: 0, total: 0 });
-    }
-    const row = byFy.get(t.fy);
-    if (t.broker === "kite"  && t.mode === "EMA_RSI_ST") row.kite_swing  += t.pnl;
-    if (t.broker === "fyers" && t.mode === "BB_RSI") row.fyers_scalp += t.pnl;
-    if (t.broker === "fyers" && t.mode === "PA")    row.fyers_pa    += t.pnl;
-    row[`${t.broker}_total`] += t.pnl;
-    row.total += t.pnl;
-    liveTotals[t.broker] += t.pnl;
-    liveTotals.grand     += t.pnl;
-  }
-  const fyRows = Array.from(byFy.values()).sort((a, b) => b.fy.localeCompare(a.fy));
+  // Everything the summary cards need, per source and broker. The cards render
+  // client-side so the source filter can switch without a reload.
   const currentFy = toFy(new Date());
-  const currentFyRow = byFy.get(currentFy) || null;
-
-  const kiteBaseline  = baselines.kite.pnl  || 0;
-  const fyersBaseline = baselines.fyers.pnl || 0;
-  const kiteTotal  = kiteBaseline  + liveTotals.kite;
-  const fyersTotal = fyersBaseline + liveTotals.fyers;
-  const grandTotal = kiteTotal + fyersTotal;
+  const consolidated = {
+    past:   { kite: baselines.kite.pnl || 0, fyers: baselines.fyers.pnl || 0 },
+    live:   { kite: 0, fyers: 0 },
+    manual: { kite: 0, fyers: 0 },
+    fy:     { label: currentFy, live: { kite: 0, fyers: 0 }, manual: { kite: 0, fyers: 0 } },
+  };
+  for (const t of liveTrades) {
+    consolidated.live[t.broker] += t.pnl;
+    if (t.fy === currentFy) consolidated.fy.live[t.broker] += t.pnl;
+  }
+  for (const t of manualRoundTrips) {
+    if (!(t.broker in consolidated.manual)) continue;
+    consolidated.manual[t.broker] += t.pnl;
+    if (toFy(t.exitDate) === currentFy) consolidated.fy.manual[t.broker] += t.pnl;
+  }
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -260,7 +262,7 @@ router.get("/", (req, res) => {
     ${sidebarCSS()}
     ${modalCSS()}
     ${tableEnhancerCSS()}
-    .main-content{flex:1;margin-left:200px;padding:18px 22px 40px;min-height:100vh;}
+    .main-content{flex:1;min-width:0;margin-left:200px;padding:18px 22px 40px;min-height:100vh;}
     @media(max-width:768px){.main-content{margin-left:0;padding:14px;}}
     .page-title{font-size:1.1rem;font-weight:700;color:#e0eaf8;margin-bottom:2px;}
     .page-sub{font-size:0.72rem;color:var(--muted-1,#8ba1c2);margin-bottom:14px;}
@@ -316,7 +318,8 @@ router.get("/", (req, res) => {
     .broker-panel.active{display:block;}
 
     .toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:14px;}
-    .toolbar select,.toolbar input[type=file]{background:#04090f;border:0.5px solid #0e1e36;color:#e0eaf8;padding:6px 10px;border-radius:6px;font-family:'IBM Plex Mono',monospace;font-size:0.7rem;}
+    .toolbar select,.toolbar input[type=file],.toolbar input[type=search]{background:#04090f;border:0.5px solid #0e1e36;color:#e0eaf8;padding:6px 10px;border-radius:6px;font-family:'IBM Plex Mono',monospace;font-size:0.7rem;}
+    .toolbar input[type=search]{width:170px;min-width:0;}
     .toolbar .spacer{flex:1;}
     .file-btn{position:relative;overflow:hidden;display:inline-block;}
     .file-btn input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;}
@@ -337,6 +340,21 @@ router.get("/", (req, res) => {
     .mistake-title{font-size:0.78rem;font-weight:700;color:#e0eaf8;margin-bottom:3px;}
     .mistake-detail{font-size:0.68rem;color:var(--muted-1,#8ba1c2);line-height:1.5;}
 
+    /* ── All records table ── */
+    .records-tbl th,.records-tbl td{white-space:nowrap;}
+    .rec-pager{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px;}
+    .rec-pager .rec-info{flex:1;min-width:150px;font-size:0.68rem;color:var(--muted-1,#8ba1c2);}
+    .btn:disabled{opacity:0.45;cursor:default;}
+
+    @media(max-width:560px){
+      .seg-toggle button,.broker-tab,.toolbar select,.toolbar input[type=search],.btn{min-height:44px;}
+      .btn{display:inline-flex;align-items:center;justify-content:center;}
+      .toolbar input[type=search]{flex:1 1 100%;width:auto;}
+      .toolbar .spacer{display:none;}
+    }
+
+    :root[data-theme="light"] .toolbar input[type=search]{background:#f8fafc!important;border-color:#e0e4ea!important;color:#1e293b!important;}
+    :root[data-theme="light"] .rec-pager .rec-info{color:#4b5769!important;}
     :root[data-theme="light"] .broker-tabs{border-bottom-color:#e0e4ea!important;}
     :root[data-theme="light"] .broker-tab{color:#4b5769!important;}
     :root[data-theme="light"] .broker-tab.active{color:#2563eb!important;border-bottom-color:#2563eb!important;}
@@ -372,42 +390,18 @@ router.get("/", (req, res) => {
       <span class="bc-current">💰 P&amp;L History</span>
     </nav>
     <h1 class="page-title">💰 P&amp;L History</h1>
-    <div class="page-sub">Past baseline (one-time, per broker) + live bot P&amp;L (auto, updates as trades close). All values in ₹.</div>
+    <div class="page-sub">Past baseline (one-time, per broker) + manual trades + live bot P&amp;L. Manual P&amp;L is before charges. All values in ₹.</div>
 
-    <!-- Summary cards -->
-    <div class="stat-grid">
-      <div class="sc" style="--accent:${grandTotal >= 0 ? '#10b981' : '#ef4444'};">
-        <div class="sc-label">Grand Total</div>
-        <div class="sc-val" style="color:${colorOf(grandTotal)};">${fmtINR(grandTotal)}</div>
-        <div class="sc-breakdown">
-          Past: ${fmtINR(kiteBaseline + fyersBaseline)}<br/>
-          Live bot: <span style="color:${colorOf(liveTotals.grand)};">${fmtINR(liveTotals.grand)}</span>
-        </div>
-      </div>
-      <div class="sc" style="--accent:#f59e0b;">
-        <div class="sc-label">Kite (Zerodha)</div>
-        <div class="sc-val" style="color:${colorOf(kiteTotal)};">${fmtINR(kiteTotal)}</div>
-        <div class="sc-breakdown">
-          Past: ${fmtINR(kiteBaseline)}<br/>
-          Live bot: <span style="color:${colorOf(liveTotals.kite)};">${fmtINR(liveTotals.kite)}</span>
-        </div>
-      </div>
-      <div class="sc" style="--accent:#3b82f6;">
-        <div class="sc-label">Fyers</div>
-        <div class="sc-val" style="color:${colorOf(fyersTotal)};">${fmtINR(fyersTotal)}</div>
-        <div class="sc-breakdown">
-          Past: ${fmtINR(fyersBaseline)}<br/>
-          Live bot: <span style="color:${colorOf(liveTotals.fyers)};">${fmtINR(liveTotals.fyers)}</span>
-        </div>
-      </div>
-      <div class="sc" style="--accent:${currentFyRow && currentFyRow.total >= 0 ? '#10b981' : '#ef4444'};">
-        <div class="sc-label">Current FY ${currentFy} (Live Bot)</div>
-        <div class="sc-val" style="color:${colorOf(currentFyRow ? currentFyRow.total : 0)};">${fmtINR(currentFyRow ? currentFyRow.total : 0)}</div>
-        <div class="sc-breakdown">
-          ${currentFyRow ? `Kite ${fmtINR(currentFyRow.kite_total)} · Fyers ${fmtINR(currentFyRow.fyers_total)}` : 'No live trades yet this FY'}
-        </div>
-      </div>
+    <!-- Summary cards — filled by renderConsolidated() -->
+    <div class="toolbar">
+      <span class="seg-toggle" id="consToggle">
+        <button class="active" data-src="all" onclick="setConsSource('all')">All</button>
+        <button data-src="manual" onclick="setConsSource('manual')">Manual</button>
+        <button data-src="live" onclick="setConsSource('live')">Live Bot</button>
+        <button data-src="past" onclick="setConsSource('past')">Past</button>
+      </span>
     </div>
+    <div class="stat-grid" id="consCards"></div>
 
     <!-- Manual trading analytics — Kite / Fyers tabs -->
     <div class="panel">
@@ -427,9 +421,10 @@ router.get("/", (req, res) => {
           </span>
           <select id="yearSel-kite" onchange="renderBroker('kite')"><option value="all">All Years</option></select>
           <select id="monthSel-kite" onchange="renderBroker('kite')"><option value="all">All Months</option></select>
+          <input type="search" id="search-kite" placeholder="Search symbol" aria-label="Search symbol" oninput="renderBroker('kite')"/>
           <span class="spacer"></span>
           <span class="btn file-btn">📄 Import Tradebook CSV<input type="file" accept=".csv" multiple onchange="importCsv(this,'kite')"/></span>
-          <button class="btn primary" onclick="syncNow()">${kiteConnected ? '⟳ Sync Now' : '⚠ Login to Sync'}</button>
+          <button class="btn primary" onclick="syncNow('kite')">${kiteConnected ? '⟳ Sync Now' : '⚠ Login to Sync'}</button>
         </div>
         <div class="note" id="syncNote-kite" style="margin-top:-6px;">
           ${manualStore.meta.lastSyncedTradeDate ? 'Last synced: ' + fmtDate(manualStore.meta.lastSyncedTradeDate) : 'Never synced.'}
@@ -437,6 +432,7 @@ router.get("/", (req, res) => {
         </div>
 
         <div id="analytics-kite"></div>
+        <div id="records-kite"></div>
       </div>
 
       <div id="tab-fyers" class="broker-panel">
@@ -449,11 +445,17 @@ router.get("/", (req, res) => {
           </span>
           <select id="yearSel-fyers" onchange="renderBroker('fyers')"><option value="all">All Years</option></select>
           <select id="monthSel-fyers" onchange="renderBroker('fyers')"><option value="all">All Months</option></select>
+          <input type="search" id="search-fyers" placeholder="Search symbol" aria-label="Search symbol" oninput="renderBroker('fyers')"/>
           <span class="spacer"></span>
           <span class="btn file-btn">📄 Import Tradebook CSV<input type="file" accept=".csv" multiple onchange="importCsv(this,'fyers')"/></span>
+          <button class="btn primary" onclick="syncNow('fyers')">${fyersConnected ? '⟳ Sync Now' : '⚠ Login to Sync'}</button>
         </div>
-        <div class="note" style="margin-top:-6px;">Fyers has no live-sync route wired here (the user's manual trading happens on Kite) — import a tradebook CSV to see analytics. Live sync can be added the same way as Kite's if needed.</div>
+        <div class="note" id="syncNote-fyers" style="margin-top:-6px;">
+          ${manualStore.meta.lastFyersSyncedAt ? 'Last synced: ' + fmtDate(manualStore.meta.lastFyersSyncedAt) : 'Never synced.'}
+          Fyers only gives today's trades, so old history comes from the tradebook CSV import; Sync Now fetches today's trades and updates the saved records.
+        </div>
         <div id="analytics-fyers"></div>
+        <div id="records-fyers"></div>
       </div>
     </div>
 
@@ -466,6 +468,53 @@ ${modalJS()}
 // ── Manual trading analytics (Kite / Fyers tabs) ────────────────────────────
 const MANUAL_TRIPS = ${jsonForScript(manualRoundTrips)};
 const SEG_STATE = { kite: 'all', fyers: 'all' };
+const PAGE_STATE = { kite: 1, fyers: 1 };
+const RECORDS_PER_PAGE = 50;
+
+// ── Summary cards, narrowed by the source filter ────────────────────────────
+const CONS = ${jsonForScript(consolidated)};
+const CONS_SOURCES = [{ key: 'manual', label: 'Manual' }, { key: 'live', label: 'Live bot' }, { key: 'past', label: 'Past' }];
+let consSource = 'all';
+
+function setConsSource(src){
+  consSource = src;
+  document.querySelectorAll('#consToggle button').forEach(b => b.classList.toggle('active', b.dataset.src === src));
+  renderConsolidated();
+}
+
+function consCard(label, accent, valHtml, valColor, breakdownHtml){
+  return '<div class="sc" style="--accent:' + accent + ';"><div class="sc-label">' + label + '</div>'
+    + '<div class="sc-val" style="color:' + valColor + ';">' + valHtml + '</div>'
+    + '<div class="sc-breakdown">' + breakdownHtml + '</div></div>';
+}
+
+function renderConsolidated(){
+  const shown = consSource === 'all' ? CONS_SOURCES : CONS_SOURCES.filter(s => s.key === consSource);
+  const sourceTotal = (key, brokers) => brokers.reduce((a, b) => a + CONS[key][b], 0);
+  const brokerCard = (label, accent, brokers) => {
+    const total = shown.reduce((a, s) => a + sourceTotal(s.key, brokers), 0);
+    const lines = shown.map(s => {
+      const v = sourceTotal(s.key, brokers);
+      return s.label + ': <span style="color:' + colR(v) + ';">' + fmtR(v) + '</span>';
+    }).join('<br/>');
+    return consCard(label, accent || (total >= 0 ? '#10b981' : '#ef4444'), fmtR(total), colR(total), lines);
+  };
+
+  // Past is one entry per broker with no date, so it can't count towards a year.
+  const fyShown = shown.filter(s => s.key !== 'past');
+  const fyBroker = b => fyShown.reduce((a, s) => a + CONS.fy[s.key][b], 0);
+  const fyTotal = fyBroker('kite') + fyBroker('fyers');
+  const fyCard = fyShown.length === 0
+    ? consCard('Current FY ' + CONS.fy.label, '#8ba1c2', '—', '#8ba1c2', 'Past has no year.')
+    : consCard('Current FY ' + CONS.fy.label, fyTotal >= 0 ? '#10b981' : '#ef4444', fmtR(fyTotal), colR(fyTotal),
+        fyShown.map(s => s.label).join(' + ') + '<br/>Kite ' + fmtR(fyBroker('kite')) + ' · Fyers ' + fmtR(fyBroker('fyers')));
+
+  document.getElementById('consCards').innerHTML =
+    brokerCard('Grand Total', null, ['kite', 'fyers'])
+    + brokerCard('Kite (Zerodha)', '#f59e0b', ['kite'])
+    + brokerCard('Fyers', '#3b82f6', ['fyers'])
+    + fyCard;
+}
 
 function switchBrokerTab(broker){
   document.querySelectorAll('.broker-tab').forEach(b => b.classList.remove('active'));
@@ -506,9 +555,11 @@ function filteredTrips(broker){
   const seg = SEG_STATE[broker];
   const year = document.getElementById('yearSel-' + broker).value;
   const month = document.getElementById('monthSel-' + broker).value;
+  const search = document.getElementById('search-' + broker).value.trim().toUpperCase();
   return MANUAL_TRIPS.filter(t => {
     if (t.broker !== broker) return false;
     if (seg !== 'all' && t.segment !== seg) return false;
+    if (search && !String(t.symbol || '').toUpperCase().includes(search)) return false;
     const d = t.exitDate || '';
     if (year !== 'all' && d.slice(0,4) !== year) return false;
     if (month !== 'all' && d.slice(5,7) !== month) return false;
@@ -593,10 +644,12 @@ function findMistakes(trips){
 }
 
 function renderBroker(broker){
+  PAGE_STATE[broker] = 1;
+  renderRecords(broker);
   const trips = filteredTrips(broker);
   const el = document.getElementById('analytics-' + broker);
   if (trips.length === 0) {
-    el.innerHTML = '<div class="empty">No manual trades for this filter yet.' + (broker === 'kite' ? ' Import your Kite Console tradebook CSV or click Sync Now above.' : ' Import a Fyers tradebook CSV above.') + '</div>';
+    el.innerHTML = '<div class="empty">No manual trades for this filter yet. Import your ' + (broker === 'kite' ? 'Kite Console' : 'Fyers') + ' tradebook CSV or click Sync Now above.</div>';
     return;
   }
   const m = computeMetrics(trips);
@@ -631,6 +684,37 @@ function renderBroker(broker){
     + '</tbody></table></div>';
 
   el.innerHTML = html;
+}
+
+// Every round-trip matching the filters, newest first. MANUAL_TRIPS arrives
+// sorted oldest first and filtering keeps that order, so reversing is enough.
+function renderRecords(broker){
+  const trips = filteredTrips(broker).reverse();
+  const el = document.getElementById('records-' + broker);
+  if (trips.length === 0) { el.innerHTML = ''; return; }
+
+  const pages = Math.max(1, Math.ceil(trips.length / RECORDS_PER_PAGE));
+  const page = Math.min(pages, Math.max(1, PAGE_STATE[broker]));
+  PAGE_STATE[broker] = page;
+  const start = (page - 1) * RECORDS_PER_PAGE;
+  const rows = trips.slice(start, start + RECORDS_PER_PAGE);
+  const fmtTime = v => escH(String(v || '').slice(0, 19).replace('T', ' '));
+
+  el.innerHTML = '<h3 style="margin:14px 0 8px;">All Records</h3><div class="tbl-wrap"><table class="tbl records-tbl"><thead><tr>'
+    + '<th>Entry time</th><th>Exit time</th><th>Symbol</th><th>Segment</th><th>Side</th><th class="num">Qty</th><th class="num">Entry price</th><th class="num">Exit price</th><th class="num">P&L</th>'
+    + '</tr></thead><tbody>'
+    + rows.map(t => '<tr><td>' + fmtTime(t.entryAt) + '</td><td>' + fmtTime(t.exitAt) + '</td><td>' + escH(t.symbol) + '</td><td>' + escH(t.segment) + '</td><td>' + escH(t.direction) + '</td>'
+      + '<td class="num">' + escH(t.qty) + '</td><td class="num">' + fmtR(t.entryPrice) + '</td><td class="num">' + fmtR(t.exitPrice) + '</td>'
+      + '<td class="num" style="color:' + colR(t.pnl) + ';">' + fmtR(t.pnl) + '</td></tr>').join('')
+    + '</tbody></table></div>'
+    + '<div class="rec-pager"><span class="rec-info">Showing ' + (start + 1) + '–' + (start + rows.length) + ' of ' + trips.length + '</span>'
+    + '<button class="btn" onclick="setRecordsPage(\\'' + broker + '\\',-1)"' + (page <= 1 ? ' disabled' : '') + '>‹ Prev</button>'
+    + '<button class="btn" onclick="setRecordsPage(\\'' + broker + '\\',1)"' + (page >= pages ? ' disabled' : '') + '>Next ›</button></div>';
+}
+
+function setRecordsPage(broker, delta){
+  PAGE_STATE[broker] += delta;
+  renderRecords(broker);
 }
 
 function metricCard(label, val, color){
@@ -686,17 +770,22 @@ async function importCsv(input, broker){
   input.value = '';
 }
 
-async function syncNow(){
+async function syncNow(broker){
   try {
-    const r = await secretFetch('/pnl-history/manual/sync', { method: 'POST' });
+    const r = await secretFetch('/pnl-history/manual/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ broker }),
+    });
     if (!r) return;
     const j = await r.json();
     if (!j.success) { toast(j.error || 'Sync failed', 'error'); return; }
-    toast('Synced ' + j.imported + " new fill(s) from today's trades.");
+    toast('Synced: ' + j.imported + ' new, ' + (j.updated || 0) + ' updated.');
     setTimeout(() => location.reload(), 800);
   } catch (err) { toast('Network error: ' + err.message, 'error'); }
 }
 
+renderConsolidated();
 populateYearMonth('kite');
 populateYearMonth('fyers');
 renderBroker('kite');
@@ -719,17 +808,6 @@ ${tableEnhancerJS()}
 });
 
 // ── Template helpers ─────────────────────────────────────────────────────────
-
-function fmtINR(n) {
-  if (typeof n !== "number" || !Number.isFinite(n)) return "—";
-  const sign = n < 0 ? "-" : "";
-  return sign + "₹" + Math.abs(n).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-function colorOf(n) {
-  if (!n) return "#8ba1c2";
-  return n >= 0 ? "#10b981" : "#ef4444";
-}
 
 function fmtDate(iso) {
   if (!iso) return "—";

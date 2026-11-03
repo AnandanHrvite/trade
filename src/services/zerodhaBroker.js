@@ -495,13 +495,13 @@ async function getFunds() {
 // Kite's /trades — today's executed fills only (order book is transient,
 // lives one day server-side). Used to auto-sync manual trades going forward;
 // past history has no API and must come from a Console tradebook CSV export.
+// THROWS on a failed call — an empty list means "no trades today", and the
+// manual-trades sync must not mistake an expired token for that. Skips the
+// circuit breaker: this report-only call, retried for hours, must never hold up
+// a real order.
 async function getTrades() {
   if (!isAuthenticated()) return [];
-  try {
-    return await guardedCall("zerodha", () =>
-      withRetry(() => getKite().getTrades(), { attempts: safetyConfig().retryReadAttempts, baseMs: safetyConfig().retryBaseMs, label: "zerodha.getTrades" }),
-    );
-  } catch (err) { console.error("Zerodha getTrades error:", err.message); return []; }
+  return await withRetry(() => getKite().getTrades(), { attempts: safetyConfig().retryReadAttempts, baseMs: safetyConfig().retryBaseMs, label: "zerodha.getTrades" });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

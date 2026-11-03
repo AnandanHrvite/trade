@@ -1390,7 +1390,7 @@ const SETTINGS_SCHEMA = [
       { key: "TOKEN_SYNC_LIVE_API_SECRET",   label: "Token Sync: LIVE App Secret",       type: "password", effect: EFFECT.INSTANT, desc: "App secret of the LIVE server (blank = use this machine's App Secret)." },
       { key: "TOKEN_SYNC_ALLOW_SELF_SIGNED", label: "Token Sync: Allow Self-Signed Cert", type: "toggle",  effect: EFFECT.INSTANT, desc: "LIVE serves its own certificate, so keep this on unless a real certificate is installed there.", default: "true" },
 
-      { key: "MANUAL_TRADES_AUTO_SYNC_ENABLED", label: "Manual Trades Auto-Sync (Kite)", type: "toggle", effect: EFFECT.SESSION, desc: "Daily 15:35 IST auto-pull of today's manual Kite fills into P&L History → Manual Trading Analytics. Kite has no historical-trade API, so this only ever captures today going forward — past trades still need a one-time Console CSV import.", default: "true", subheader: "Manual Trades" },
+      { key: "MANUAL_TRADES_AUTO_SYNC_ENABLED", label: "Manual Trades Auto-Sync (Kite + Fyers)", type: "toggle", effect: EFFECT.SESSION, desc: "Daily 15:35 IST auto-pull of today's manual Kite and Fyers fills into P&L History → Manual Trading Analytics. Neither broker has a historical-trade API, so this only ever captures today going forward — past trades still need a one-time tradebook CSV import.", default: "true", subheader: "Manual Trades" },
     ],
   },
   {
