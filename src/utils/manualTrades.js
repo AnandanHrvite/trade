@@ -458,6 +458,7 @@ function buildRoundTrips(fills) {
       list.sort((a, b) => new Date(a.executedAt || a.tradeDate) - new Date(b.executedAt || b.tradeDate));
       const longQueue = [];  // open buy lots (for long trips, closed by sells)
       const shortQueue = []; // open sell lots (for short trips, closed by buys)
+      let positionNo = 0;    // +1 each time this symbol goes from flat to open
 
       for (const f of list) {
         let remaining = f.qty;
@@ -471,7 +472,10 @@ function buildRoundTrips(fills) {
             remaining -= matched;
             if (lot.qty <= 0) shortQueue.shift();
           }
-          if (remaining > 0) longQueue.push({ ...f, qty: remaining });
+          if (remaining > 0) {
+            if (longQueue.length === 0) positionNo++;
+            longQueue.push({ ...f, qty: remaining, positionNo });
+          }
         } else {
           while (remaining > 0 && longQueue.length > 0) {
             const lot = longQueue[0];
@@ -481,7 +485,10 @@ function buildRoundTrips(fills) {
             remaining -= matched;
             if (lot.qty <= 0) longQueue.shift();
           }
-          if (remaining > 0) shortQueue.push({ ...f, qty: remaining });
+          if (remaining > 0) {
+            if (shortQueue.length === 0) positionNo++;
+            shortQueue.push({ ...f, qty: remaining, positionNo });
+          }
         }
       }
     }
@@ -501,6 +508,7 @@ function makeTrip(symbol, broker, segment, openFill, closeFill, qty, direction) 
     broker,
     segment,
     direction,
+    positionNo: openFill.positionNo,
     qty,
     entryPrice,
     exitPrice,

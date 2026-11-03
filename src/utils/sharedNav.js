@@ -2312,12 +2312,12 @@ function tableEnhancerJS() {
     inst.allRows = rows;
     inst.filtered = rows.slice();
     inst.page = inst.page || 1;
-    inst.pageSize = (opts.paginate ? (inst.pageSize || opts.pageSize || 10) : 0);
-    inst.sortIdx = -1;
-    inst.sortDir = null;
     inst.opts = opts;
 
     if (first) {
+      inst.pageSize = opts.paginate ? (opts.pageSize || 10) : 0;
+      inst.sortIdx = -1;
+      inst.sortDir = null;
       // Build controls bar
       if (opts.filter || opts.paginate) {
         var bar = document.createElement('div');

@@ -344,13 +344,16 @@ router.get("/", (req, res) => {
     .records-tbl th,.records-tbl td{white-space:nowrap;}
     .rec-pager{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px;}
     .rec-pager .rec-info{flex:1;min-width:150px;font-size:0.68rem;color:var(--muted-1,#8ba1c2);}
-    .btn:disabled{opacity:0.45;cursor:default;}
 
     @media(max-width:560px){
       .seg-toggle button,.broker-tab,.toolbar select,.toolbar input[type=search],.btn{min-height:44px;}
       .btn{display:inline-flex;align-items:center;justify-content:center;}
       .toolbar input[type=search]{flex:1 1 100%;width:auto;}
       .toolbar .spacer{display:none;}
+      .enh-bar .enh-filter{flex:1 1 100%;width:auto;}
+      .enh-bar .enh-filter,.enh-bar select,.enh-pager .enh-btn{min-height:44px;}
+      .enh-pager .enh-btn{min-width:44px;}
+      .records-tbl th.enh-sort{height:44px;}
     }
 
     :root[data-theme="light"] .toolbar input[type=search]{background:#f8fafc!important;border-color:#e0e4ea!important;color:#1e293b!important;}
@@ -468,7 +471,6 @@ ${modalJS()}
 // ── Manual trading analytics (Kite / Fyers tabs) ────────────────────────────
 const MANUAL_TRIPS = ${jsonForScript(manualRoundTrips)};
 const SEG_STATE = { kite: 'all', fyers: 'all' };
-const PAGE_STATE = { kite: 1, fyers: 1 };
 const RECORDS_PER_PAGE = 50;
 
 // ── Summary cards, narrowed by the source filter ────────────────────────────
@@ -644,7 +646,6 @@ function findMistakes(trips){
 }
 
 function renderBroker(broker){
-  PAGE_STATE[broker] = 1;
   renderRecords(broker);
   const trips = filteredTrips(broker);
   const el = document.getElementById('analytics-' + broker);
@@ -674,47 +675,74 @@ function renderBroker(broker){
     html += mistakes.map(mk => '<div class="mistake-card' + (mk.warn ? ' warn' : '') + '"><div class="mistake-title">' + mk.title + '</div><div class="mistake-detail">' + mk.detail + '</div></div>').join('');
   }
 
-  const worst = [...trips].sort((a,b) => a.pnl - b.pnl).slice(0, 5);
-  const best = [...trips].sort((a,b) => b.pnl - a.pnl).slice(0, 5);
-  html += '<h3 style="margin:14px 0 8px;">Biggest Losers</h3><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Date</th><th>Symbol</th><th>Segment</th><th class="num">Qty</th><th class="num">P&L</th></tr></thead><tbody>'
-    + worst.map(t => '<tr><td>' + escH(t.exitDate) + '</td><td>' + escH(t.symbol) + '</td><td>' + escH(t.segment) + '</td><td class="num">' + escH(t.qty) + '</td><td class="num" style="color:' + colR(t.pnl) + ';">' + fmtR(t.pnl) + '</td></tr>').join('')
-    + '</tbody></table></div>';
-  html += '<h3 style="margin:14px 0 8px;">Biggest Winners</h3><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Date</th><th>Symbol</th><th>Segment</th><th class="num">Qty</th><th class="num">P&L</th></tr></thead><tbody>'
-    + best.map(t => '<tr><td>' + escH(t.exitDate) + '</td><td>' + escH(t.symbol) + '</td><td>' + escH(t.segment) + '</td><td class="num">' + escH(t.qty) + '</td><td class="num" style="color:' + colR(t.pnl) + ';">' + fmtR(t.pnl) + '</td></tr>').join('')
-    + '</tbody></table></div>';
+  const positions = groupPositions(trips);
+  const worst = positions.filter(p => p.pnl < 0).sort((a,b) => a.pnl - b.pnl).slice(0, 5);
+  const best = positions.filter(p => p.pnl > 0).sort((a,b) => b.pnl - a.pnl).slice(0, 5);
+  html += positionsTable('Biggest Losers', worst, 'No losing positions in this filter.');
+  html += positionsTable('Biggest Winners', best, 'No winning positions in this filter.');
 
   el.innerHTML = html;
 }
 
+// The matcher makes one row per matched buy/sell pair, so a position sold in four
+// parts is four rows. This adds them back into one row per position (flat to flat).
+function groupPositions(trips){
+  const byPosition = new Map();
+  trips.forEach(t => {
+    const key = t.symbol + '|' + t.positionNo;
+    const p = byPosition.get(key) || { symbol: t.symbol, segment: t.segment, direction: t.direction, qty: 0, entryValue: 0, exitValue: 0, pnl: 0, entryAt: t.entryAt, exitAt: t.exitAt };
+    p.qty += t.qty;
+    p.entryValue += t.entryPrice * t.qty;
+    p.exitValue += t.exitPrice * t.qty;
+    p.pnl += t.pnl;
+    if (new Date(t.entryAt) < new Date(p.entryAt)) p.entryAt = t.entryAt;
+    if (new Date(t.exitAt) > new Date(p.exitAt)) p.exitAt = t.exitAt;
+    byPosition.set(key, p);
+  });
+  return Array.from(byPosition.values());
+}
+
+function fmtTime(v){
+  return escH(String(v || '').slice(0, 19).replace('T', ' '));
+}
+
+function positionsTable(title, rows, emptyText){
+  const head = '<h3 style="margin:14px 0 8px;">' + title + ' <span class="tag">BY POSITION</span></h3>';
+  if (rows.length === 0) return head + '<div class="empty">' + emptyText + '</div>';
+  return head + '<div class="tbl-wrap"><table class="tbl records-tbl"><thead><tr>'
+    + '<th>Entry time</th><th>Exit time</th><th>Symbol</th><th>Segment</th><th>Side</th><th class="num">Qty</th><th class="num">Avg entry</th><th class="num">Avg exit</th><th class="num">P&L</th>'
+    + '</tr></thead><tbody>'
+    + rows.map(p => '<tr><td>' + fmtTime(p.entryAt) + '</td><td>' + fmtTime(p.exitAt) + '</td><td>' + escH(p.symbol) + '</td><td>' + escH(p.segment) + '</td><td>' + escH(p.direction) + '</td>'
+      + '<td class="num">' + escH(p.qty) + '</td><td class="num">' + fmtR(p.entryValue / p.qty) + '</td><td class="num">' + fmtR(p.exitValue / p.qty) + '</td>'
+      + '<td class="num" style="color:' + colR(p.pnl) + ';">' + fmtR(p.pnl) + '</td></tr>').join('')
+    + '</tbody></table></div>';
+}
+
 // Every round-trip matching the filters, newest first. MANUAL_TRIPS arrives
 // sorted oldest first and filtering keeps that order, so reversing is enough.
+// New rows refill the same table, so its sort, page size and filter box survive
+// a change to the tab's filters above it.
 function renderRecords(broker){
   const trips = filteredTrips(broker).reverse();
   const el = document.getElementById('records-' + broker);
-  if (trips.length === 0) { el.innerHTML = ''; return; }
+  el.style.display = trips.length ? '' : 'none';
+  if (trips.length === 0) return;
 
-  const pages = Math.max(1, Math.ceil(trips.length / RECORDS_PER_PAGE));
-  const page = Math.min(pages, Math.max(1, PAGE_STATE[broker]));
-  PAGE_STATE[broker] = page;
-  const start = (page - 1) * RECORDS_PER_PAGE;
-  const rows = trips.slice(start, start + RECORDS_PER_PAGE);
-  const fmtTime = v => escH(String(v || '').slice(0, 19).replace('T', ' '));
-
-  el.innerHTML = '<h3 style="margin:14px 0 8px;">All Records</h3><div class="tbl-wrap"><table class="tbl records-tbl"><thead><tr>'
-    + '<th>Entry time</th><th>Exit time</th><th>Symbol</th><th>Segment</th><th>Side</th><th class="num">Qty</th><th class="num">Entry price</th><th class="num">Exit price</th><th class="num">P&L</th>'
-    + '</tr></thead><tbody>'
-    + rows.map(t => '<tr><td>' + fmtTime(t.entryAt) + '</td><td>' + fmtTime(t.exitAt) + '</td><td>' + escH(t.symbol) + '</td><td>' + escH(t.segment) + '</td><td>' + escH(t.direction) + '</td>'
-      + '<td class="num">' + escH(t.qty) + '</td><td class="num">' + fmtR(t.entryPrice) + '</td><td class="num">' + fmtR(t.exitPrice) + '</td>'
-      + '<td class="num" style="color:' + colR(t.pnl) + ';">' + fmtR(t.pnl) + '</td></tr>').join('')
-    + '</tbody></table></div>'
-    + '<div class="rec-pager"><span class="rec-info">Showing ' + (start + 1) + '–' + (start + rows.length) + ' of ' + trips.length + '</span>'
-    + '<button class="btn" onclick="setRecordsPage(\\'' + broker + '\\',-1)"' + (page <= 1 ? ' disabled' : '') + '>‹ Prev</button>'
-    + '<button class="btn" onclick="setRecordsPage(\\'' + broker + '\\',1)"' + (page >= pages ? ' disabled' : '') + '>Next ›</button></div>';
-}
-
-function setRecordsPage(broker, delta){
-  PAGE_STATE[broker] += delta;
-  renderRecords(broker);
+  if (!el.firstChild) {
+    el.innerHTML = '<h3 style="margin:14px 0 8px;">All Records</h3><div class="tbl-wrap"><table class="tbl records-tbl"><thead><tr>'
+      + '<th>Entry time</th><th>Exit time</th><th>Symbol</th><th>Segment</th><th>Side</th><th class="num">Qty</th><th class="num">Entry price</th><th class="num">Exit price</th><th class="num">P&L</th>'
+      + '</tr></thead><tbody></tbody></table></div>';
+  }
+  const tbl = el.querySelector('table');
+  tbl.tBodies[0].innerHTML = trips.map(t => '<tr><td>' + fmtTime(t.entryAt) + '</td><td>' + fmtTime(t.exitAt) + '</td><td>' + escH(t.symbol) + '</td><td>' + escH(t.segment) + '</td><td>' + escH(t.direction) + '</td>'
+    + '<td class="num">' + escH(t.qty) + '</td><td class="num">' + fmtR(t.entryPrice) + '</td><td class="num">' + fmtR(t.exitPrice) + '</td>'
+    + '<td class="num" style="color:' + colR(t.pnl) + ';">' + fmtR(t.pnl) + '</td></tr>').join('');
+  if (tbl.__enh) tbl.__enh.page = 1;
+  enhanceTable(tbl, { sort: true, filter: true, paginate: true, pageSize: RECORDS_PER_PAGE });
+  // The table scrolls sideways on a phone; the filter and pager stay out of that.
+  const wrap = tbl.parentNode;
+  wrap.before(tbl.__enh.bar);
+  wrap.after(tbl.__enh.pager);
 }
 
 function metricCard(label, val, color){
@@ -818,12 +846,6 @@ async function syncNow(broker){
   } catch (err) { toast('Network error: ' + err.message, 'error'); }
 }
 
-renderConsolidated();
-populateYearMonth('kite');
-populateYearMonth('fyers');
-renderBroker('kite');
-renderBroker('fyers');
-
 function toast(msg, type){
   const t = document.createElement('div');
   t.textContent = msg;
@@ -833,6 +855,12 @@ function toast(msg, type){
 }
 
 ${tableEnhancerJS()}
+
+renderConsolidated();
+populateYearMonth('kite');
+populateYearMonth('fyers');
+renderBroker('kite');
+renderBroker('fyers');
 </script>
 </body>
 </html>`;
