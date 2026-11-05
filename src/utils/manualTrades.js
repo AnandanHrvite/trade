@@ -437,8 +437,9 @@ async function syncFromFyers() {
 // ── Round-trip derivation (FIFO matching per symbol) ────────────────────────
 // Kite gives fills, not trades. To get win/loss/mistake analytics we FIFO-match
 // buy/sell fills per symbol into round-trips. This mirrors how any broker P&L
-// report derives realised trades from an execution log.
-function buildRoundTrips(fills) {
+// report derives realised trades from an execution log. Whatever no opposite
+// fill closed comes back as open lots.
+function matchFills(fills) {
   // Grouped by [broker, symbol] pairs, not a joined string key — a CSV-imported
   // symbol containing the literal join separator would otherwise split back
   // into the wrong pieces and silently corrupt the displayed symbol name.
@@ -453,6 +454,7 @@ function buildRoundTrips(fills) {
   }
 
   const trips = [];
+  const openLots = [];
   for (const [broker, bySymbol] of byBroker.entries()) {
     for (const [symbol, list] of bySymbol.entries()) {
       list.sort((a, b) => new Date(a.executedAt || a.tradeDate) - new Date(b.executedAt || b.tradeDate));
@@ -491,10 +493,36 @@ function buildRoundTrips(fills) {
           }
         }
       }
+      for (const lot of longQueue) openLots.push(makeOpenLot(symbol, broker, lot, "buy"));
+      for (const lot of shortQueue) openLots.push(makeOpenLot(symbol, broker, lot, "sell"));
     }
   }
 
-  return trips.sort((a, b) => new Date(a.exitAt) - new Date(b.exitAt));
+  return { trips, openLots };
+}
+
+function buildRoundTrips(fills) {
+  return matchFills(fills).trips.sort((a, b) => new Date(a.exitAt) - new Date(b.exitAt));
+}
+
+// Fills with no opposite side, or what is left of a partly closed one, oldest
+// first. They are in no round-trip, so they count towards no P&L total.
+function buildOpenLots(fills) {
+  return matchFills(fills).openLots.sort((a, b) => new Date(a.executedAt) - new Date(b.executedAt));
+}
+
+function makeOpenLot(symbol, broker, lot, side) {
+  const executedAt = lot.executedAt || lot.tradeDate;
+  return {
+    symbol,
+    broker,
+    segment: lot.segment,
+    side,
+    qty: lot.qty,
+    price: lot.price,
+    executedAt,
+    date: String(executedAt).slice(0, 10),
+  };
 }
 
 function makeTrip(symbol, broker, segment, openFill, closeFill, qty, direction) {
@@ -521,6 +549,6 @@ function makeTrip(symbol, broker, segment, openFill, closeFill, qty, direction) 
 }
 
 module.exports = {
-  loadStore, saveStore, importCsv, syncFromKite, syncFromFyers, buildRoundTrips, classifySegment,
+  loadStore, saveStore, importCsv, syncFromKite, syncFromFyers, buildRoundTrips, buildOpenLots, classifySegment,
   STORE_FILE,
 };

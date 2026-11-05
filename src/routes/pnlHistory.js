@@ -76,7 +76,7 @@ function saveBaselines(baselines) {
 // containing that literal sequence would close the embedding <script> tag
 // early and let the rest of its content execute as markup/script. Used for
 // every JSON blob embedded into this page's <script> block that carries
-// user-entered text (MANUAL_TRIPS) — escapes the slash so the sequence can
+// user-entered text (MANUAL_TRIPS, MANUAL_OPEN_LOTS) — escapes the slash so the sequence can
 // never match a real tag boundary; same value, same JSON.parse result, just
 // not renderable as a tag close.
 function jsonForScript(obj) {
@@ -225,6 +225,7 @@ router.get("/", (req, res) => {
   const liveTrades = loadLiveTrades();
   const manualStore = manualTrades.loadStore();
   const manualRoundTrips = manualTrades.buildRoundTrips(manualStore.fills);
+  const manualOpenLots = manualTrades.buildOpenLots(manualStore.fills);
   const kiteConnected = require("../services/zerodhaBroker").isAuthenticated();
   const fyersConnected = require("../services/fyersBroker").isAuthenticated();
 
@@ -436,6 +437,7 @@ router.get("/", (req, res) => {
 
         <div id="analytics-kite"></div>
         <div id="records-kite"></div>
+        <div id="openLots-kite"></div>
       </div>
 
       <div id="tab-fyers" class="broker-panel">
@@ -459,6 +461,7 @@ router.get("/", (req, res) => {
         </div>
         <div id="analytics-fyers"></div>
         <div id="records-fyers"></div>
+        <div id="openLots-fyers"></div>
       </div>
     </div>
 
@@ -470,8 +473,10 @@ ${modalJS()}
 
 // ── Manual trading analytics (Kite / Fyers tabs) ────────────────────────────
 const MANUAL_TRIPS = ${jsonForScript(manualRoundTrips)};
+const MANUAL_OPEN_LOTS = ${jsonForScript(manualOpenLots)};
 const SEG_STATE = { kite: 'all', fyers: 'all' };
 const RECORDS_PER_PAGE = 50;
+const OPEN_LOTS_SHOWN = 50;
 
 // ── Summary cards, narrowed by the source filter ────────────────────────────
 const CONS = ${jsonForScript(consolidated)};
@@ -532,8 +537,9 @@ function setSeg(broker, seg){
 }
 
 function populateYearMonth(broker){
-  const trips = MANUAL_TRIPS.filter(t => t.broker === broker);
-  const years = Array.from(new Set(trips.map(t => (t.exitDate || '').slice(0,4)).filter(Boolean))).sort().reverse();
+  const dates = MANUAL_TRIPS.filter(t => t.broker === broker).map(t => t.exitDate)
+    .concat(MANUAL_OPEN_LOTS.filter(l => l.broker === broker).map(l => l.date));
+  const years = Array.from(new Set(dates.map(d => (d || '').slice(0,4)).filter(Boolean))).sort().reverse();
   const yearSel = document.getElementById('yearSel-' + broker);
   years.forEach(y => { const o = document.createElement('option'); o.value = y; o.textContent = y; yearSel.appendChild(o); });
   const monthSel = document.getElementById('monthSel-' + broker);
@@ -553,20 +559,29 @@ function escH(s){
   return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-function filteredTrips(broker){
+// The tab's segment, year, month and symbol-search filters.
+function filterForTab(rows, broker, dateOf){
   const seg = SEG_STATE[broker];
   const year = document.getElementById('yearSel-' + broker).value;
   const month = document.getElementById('monthSel-' + broker).value;
   const search = document.getElementById('search-' + broker).value.trim().toUpperCase();
-  return MANUAL_TRIPS.filter(t => {
+  return rows.filter(t => {
     if (t.broker !== broker) return false;
     if (seg !== 'all' && t.segment !== seg) return false;
     if (search && !String(t.symbol || '').toUpperCase().includes(search)) return false;
-    const d = t.exitDate || '';
+    const d = dateOf(t) || '';
     if (year !== 'all' && d.slice(0,4) !== year) return false;
     if (month !== 'all' && d.slice(5,7) !== month) return false;
     return true;
   });
+}
+
+function filteredTrips(broker){
+  return filterForTab(MANUAL_TRIPS, broker, t => t.exitDate);
+}
+
+function filteredOpenLots(broker){
+  return filterForTab(MANUAL_OPEN_LOTS, broker, l => l.date);
 }
 
 function computeMetrics(trips){
@@ -647,6 +662,7 @@ function findMistakes(trips){
 
 function renderBroker(broker){
   renderRecords(broker);
+  renderOpenLots(broker);
   const trips = filteredTrips(broker);
   const el = document.getElementById('analytics-' + broker);
   if (trips.length === 0) {
@@ -743,6 +759,24 @@ function renderRecords(broker){
   const wrap = tbl.parentNode;
   wrap.before(tbl.__enh.bar);
   wrap.after(tbl.__enh.pager);
+}
+
+// Fills nothing matched, newest first. MANUAL_OPEN_LOTS arrives oldest first, the
+// same as MANUAL_TRIPS. Listed only: no total, card, metric or mistake uses them.
+function renderOpenLots(broker){
+  const lots = filteredOpenLots(broker).reverse();
+  const el = document.getElementById('openLots-' + broker);
+  if (lots.length === 0) { el.innerHTML = ''; return; }
+
+  el.innerHTML = '<h3 style="margin:14px 0 8px;">Not counted in totals</h3>'
+    + '<div class="note" style="margin:0 0 8px;">These fills have no matching buy or sell, so they are left out of the totals; for example an option left to expire, or a position opened before the uploaded file starts.</div>'
+    + '<div class="tbl-wrap"><table class="tbl records-tbl"><thead><tr>'
+    + '<th>Date</th><th>Symbol</th><th>Segment</th><th>Side</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Value</th>'
+    + '</tr></thead><tbody>'
+    + lots.slice(0, OPEN_LOTS_SHOWN).map(l => '<tr><td>' + escH(l.date) + '</td><td>' + escH(l.symbol) + '</td><td>' + escH(l.segment) + '</td><td>' + escH(l.side) + '</td>'
+      + '<td class="num">' + escH(l.qty) + '</td><td class="num">' + escH(fmtR(l.price)) + '</td><td class="num">' + escH(fmtR(l.qty * l.price)) + '</td></tr>').join('')
+    + '</tbody></table></div>'
+    + (lots.length > OPEN_LOTS_SHOWN ? '<div class="rec-pager"><span class="rec-info">Showing ' + OPEN_LOTS_SHOWN + ' of ' + lots.length + '</span></div>' : '');
 }
 
 function metricCard(label, val, color){
