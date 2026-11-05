@@ -343,8 +343,6 @@ router.get("/", (req, res) => {
 
     /* ── All records table ── */
     .records-tbl th,.records-tbl td{white-space:nowrap;}
-    .rec-pager{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px;}
-    .rec-pager .rec-info{flex:1;min-width:150px;font-size:0.68rem;color:var(--muted-1,#8ba1c2);}
 
     @media(max-width:560px){
       .seg-toggle button,.broker-tab,.toolbar select,.toolbar input[type=search],.btn{min-height:44px;}
@@ -358,12 +356,11 @@ router.get("/", (req, res) => {
     }
 
     :root[data-theme="light"] .toolbar input[type=search]{background:#f8fafc!important;border-color:#e0e4ea!important;color:#1e293b!important;}
-    :root[data-theme="light"] .rec-pager .rec-info{color:#4b5769!important;}
     :root[data-theme="light"] .broker-tabs{border-bottom-color:#e0e4ea!important;}
     :root[data-theme="light"] .broker-tab{color:#4b5769!important;}
     :root[data-theme="light"] .broker-tab.active{color:#2563eb!important;border-bottom-color:#2563eb!important;}
     :root[data-theme="light"] .toolbar select,:root[data-theme="light"] .seg-toggle,:root[data-theme="light"] .mc{background:#f8fafc!important;border-color:#e0e4ea!important;}
-    :root[data-theme="light"] .mc-val{color:#1e293b!important;}
+    :root[data-theme="light"] .mc-val{color:#1e293b;}
     :root[data-theme="light"] .mistake-card{background:#f8fafc!important;border-color:#e0e4ea!important;border-left-color:#ef4444!important;}
     :root[data-theme="light"] .mistake-title{color:#1e293b!important;}
 
@@ -373,11 +370,11 @@ router.get("/", (req, res) => {
     :root[data-theme="light"] .page-sub,:root[data-theme="light"] .sc-sub,:root[data-theme="light"] .sc-breakdown,:root[data-theme="light"] .note,:root[data-theme="light"] .empty{color:#4b5769!important;}
     :root[data-theme="light"] .sc,:root[data-theme="light"] .panel{background:#fff!important;border-color:#e0e4ea!important;box-shadow:0 1px 3px rgba(0,0,0,0.06)!important;}
     :root[data-theme="light"] .sc-label,:root[data-theme="light"] .panel h3{color:#4b5769!important;}
-    :root[data-theme="light"] .sc-val{color:#1e293b!important;}
+    :root[data-theme="light"] .sc-val{color:#1e293b;}
     :root[data-theme="light"] .btn{background:#f8fafc!important;border-color:#e0e4ea!important;color:#2563eb!important;}
     :root[data-theme="light"] .btn:hover{background:#eff6ff!important;border-color:#3b82f6!important;}
     :root[data-theme="light"] .tbl th{background:#f1f5f9!important;color:#4b5769!important;border-bottom-color:#e0e4ea!important;}
-    :root[data-theme="light"] .tbl td{border-color:#e0e4ea!important;color:#334155!important;}
+    :root[data-theme="light"] .tbl td{border-color:#e0e4ea!important;color:#334155;}
     :root[data-theme="light"] .tbl tfoot td{background:#f1f5f9!important;}
     :root[data-theme="light"] .tbl-wrap{border-color:#e0e4ea!important;}
   </style>
@@ -425,7 +422,7 @@ router.get("/", (req, res) => {
           </span>
           <select id="yearSel-kite" onchange="renderBroker('kite')"><option value="all">All Years</option></select>
           <select id="monthSel-kite" onchange="renderBroker('kite')"><option value="all">All Months</option></select>
-          <input type="search" id="search-kite" placeholder="Search symbol" aria-label="Search symbol" oninput="renderBroker('kite')"/>
+          <input type="search" id="search-kite" placeholder="Search symbol" aria-label="Search symbol" oninput="renderBrokerSoon('kite')"/>
           <span class="spacer"></span>
           <span class="btn file-btn">📄 Import Tradebook (CSV / Excel)<input type="file" accept=".csv,.xlsx" multiple onchange="importCsv(this,'kite')"/></span>
           <button class="btn primary" onclick="syncNow('kite')">${kiteConnected ? '⟳ Sync Now' : '⚠ Login to Sync'}</button>
@@ -450,7 +447,7 @@ router.get("/", (req, res) => {
           </span>
           <select id="yearSel-fyers" onchange="renderBroker('fyers')"><option value="all">All Years</option></select>
           <select id="monthSel-fyers" onchange="renderBroker('fyers')"><option value="all">All Months</option></select>
-          <input type="search" id="search-fyers" placeholder="Search symbol" aria-label="Search symbol" oninput="renderBroker('fyers')"/>
+          <input type="search" id="search-fyers" placeholder="Search symbol" aria-label="Search symbol" oninput="renderBrokerSoon('fyers')"/>
           <span class="spacer"></span>
           <span class="btn file-btn">📄 Import Tradebook (CSV / Excel)<input type="file" accept=".csv,.xlsx" multiple onchange="importCsv(this,'fyers')"/></span>
           <button class="btn primary" onclick="syncNow('fyers')">${fyersConnected ? '⟳ Sync Now' : '⚠ Login to Sync'}</button>
@@ -476,7 +473,7 @@ const MANUAL_TRIPS = ${jsonForScript(manualRoundTrips)};
 const MANUAL_OPEN_LOTS = ${jsonForScript(manualOpenLots)};
 const SEG_STATE = { kite: 'all', fyers: 'all' };
 const RECORDS_PER_PAGE = 50;
-const OPEN_LOTS_SHOWN = 50;
+const SEARCH_TIMERS = {};
 
 // ── Summary cards, narrowed by the source filter ────────────────────────────
 const CONS = ${jsonForScript(consolidated)};
@@ -547,10 +544,13 @@ function populateYearMonth(broker){
   MONTHS.forEach((m,i) => { const o = document.createElement('option'); o.value = String(i+1).padStart(2,'0'); o.textContent = m; monthSel.appendChild(o); });
 }
 
+// One shared formatter: All Records formats three values per row across thousands
+// of rows, and toLocaleString with options is far slower per call.
+const INR_FORMAT = new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 function fmtR(n){
   if (typeof n !== 'number' || !isFinite(n)) return '—';
   const sign = n < 0 ? '-' : '';
-  return sign + '₹' + Math.abs(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return sign + '₹' + INR_FORMAT.format(Math.abs(n));
 }
 function colR(n){ return !n ? '#8ba1c2' : (n >= 0 ? '#10b981' : '#ef4444'); }
 // Symbols/segments come from user-uploaded CSV content and are rendered via
@@ -660,13 +660,21 @@ function findMistakes(trips){
   return mistakes;
 }
 
+// Every keystroke would rebuild every row, so the search waits for a short pause.
+function renderBrokerSoon(broker){
+  clearTimeout(SEARCH_TIMERS[broker]);
+  SEARCH_TIMERS[broker] = setTimeout(() => renderBroker(broker), 200);
+}
+
 function renderBroker(broker){
   renderRecords(broker);
   renderOpenLots(broker);
   const trips = filteredTrips(broker);
   const el = document.getElementById('analytics-' + broker);
   if (trips.length === 0) {
-    el.innerHTML = '<div class="empty">No manual trades for this filter yet. Import your ' + (broker === 'kite' ? 'Kite Console' : 'Fyers') + ' tradebook CSV or click Sync Now above.</div>';
+    el.innerHTML = filteredOpenLots(broker).length > 0
+      ? '<div class="empty">No closed trades for this filter.</div>'
+      : '<div class="empty">No manual trades for this filter yet. Import your ' + (broker === 'kite' ? 'Kite Console' : 'Fyers') + ' tradebook CSV or click Sync Now above.</div>';
     return;
   }
   const m = computeMetrics(trips);
@@ -715,7 +723,8 @@ function groupPositions(trips){
     if (new Date(t.exitAt) > new Date(p.exitAt)) p.exitAt = t.exitAt;
     byPosition.set(key, p);
   });
-  return Array.from(byPosition.values());
+  // Adding paise leaves float dust that would make a break-even position a "winner".
+  return Array.from(byPosition.values()).map(p => ({ ...p, pnl: Math.round(p.pnl * 100) / 100 }));
 }
 
 function fmtTime(v){
@@ -734,25 +743,15 @@ function positionsTable(title, rows, emptyText){
     + '</tbody></table></div>';
 }
 
-// Every round-trip matching the filters, newest first. MANUAL_TRIPS arrives
-// sorted oldest first and filtering keeps that order, so reversing is enough.
 // New rows refill the same table, so its sort, page size and filter box survive
-// a change to the tab's filters above it.
-function renderRecords(broker){
-  const trips = filteredTrips(broker).reverse();
-  const el = document.getElementById('records-' + broker);
-  el.style.display = trips.length ? '' : 'none';
-  if (trips.length === 0) return;
+// a change to the tab's filters above it. No rows hides the section.
+function fillPagedTable(el, skeletonHtml, rowsHtml){
+  el.style.display = rowsHtml ? '' : 'none';
+  if (!rowsHtml) return;
 
-  if (!el.firstChild) {
-    el.innerHTML = '<h3 style="margin:14px 0 8px;">All Records</h3><div class="tbl-wrap"><table class="tbl records-tbl"><thead><tr>'
-      + '<th>Entry time</th><th>Exit time</th><th>Symbol</th><th>Segment</th><th>Side</th><th class="num">Qty</th><th class="num">Entry price</th><th class="num">Exit price</th><th class="num">P&L</th>'
-      + '</tr></thead><tbody></tbody></table></div>';
-  }
+  if (!el.firstChild) el.innerHTML = skeletonHtml;
   const tbl = el.querySelector('table');
-  tbl.tBodies[0].innerHTML = trips.map(t => '<tr><td>' + fmtTime(t.entryAt) + '</td><td>' + fmtTime(t.exitAt) + '</td><td>' + escH(t.symbol) + '</td><td>' + escH(t.segment) + '</td><td>' + escH(t.direction) + '</td>'
-    + '<td class="num">' + escH(t.qty) + '</td><td class="num">' + fmtR(t.entryPrice) + '</td><td class="num">' + fmtR(t.exitPrice) + '</td>'
-    + '<td class="num" style="color:' + colR(t.pnl) + ';">' + fmtR(t.pnl) + '</td></tr>').join('');
+  tbl.tBodies[0].innerHTML = rowsHtml;
   if (tbl.__enh) tbl.__enh.page = 1;
   enhanceTable(tbl, { sort: true, filter: true, paginate: true, pageSize: RECORDS_PER_PAGE });
   // The table scrolls sideways on a phone; the filter and pager stay out of that.
@@ -761,22 +760,31 @@ function renderRecords(broker){
   wrap.after(tbl.__enh.pager);
 }
 
+// Every round-trip matching the filters, newest first. MANUAL_TRIPS arrives
+// sorted oldest first and filtering keeps that order, so reversing is enough.
+function renderRecords(broker){
+  const trips = filteredTrips(broker).reverse();
+  fillPagedTable(document.getElementById('records-' + broker),
+    '<h3 style="margin:14px 0 8px;">All Records</h3><div class="tbl-wrap"><table class="tbl records-tbl"><thead><tr>'
+      + '<th>Entry time</th><th>Exit time</th><th>Symbol</th><th>Segment</th><th>Side</th><th class="num">Qty</th><th class="num">Entry price</th><th class="num">Exit price</th><th class="num">P&L</th>'
+      + '</tr></thead><tbody></tbody></table></div>',
+    trips.map(t => '<tr><td>' + fmtTime(t.entryAt) + '</td><td>' + fmtTime(t.exitAt) + '</td><td>' + escH(t.symbol) + '</td><td>' + escH(t.segment) + '</td><td>' + escH(t.direction) + '</td>'
+      + '<td class="num">' + escH(t.qty) + '</td><td class="num">' + fmtR(t.entryPrice) + '</td><td class="num">' + fmtR(t.exitPrice) + '</td>'
+      + '<td class="num" style="color:' + colR(t.pnl) + ';">' + fmtR(t.pnl) + '</td></tr>').join(''));
+}
+
 // Fills nothing matched, newest first. MANUAL_OPEN_LOTS arrives oldest first, the
 // same as MANUAL_TRIPS. Listed only: no total, card, metric or mistake uses them.
 function renderOpenLots(broker){
   const lots = filteredOpenLots(broker).reverse();
-  const el = document.getElementById('openLots-' + broker);
-  if (lots.length === 0) { el.innerHTML = ''; return; }
-
-  el.innerHTML = '<h3 style="margin:14px 0 8px;">Not counted in totals</h3>'
-    + '<div class="note" style="margin:0 0 8px;">These fills have no matching buy or sell, so they are left out of the totals; for example an option left to expire, or a position opened before the uploaded file starts.</div>'
-    + '<div class="tbl-wrap"><table class="tbl records-tbl"><thead><tr>'
-    + '<th>Date</th><th>Symbol</th><th>Segment</th><th>Side</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Value</th>'
-    + '</tr></thead><tbody>'
-    + lots.slice(0, OPEN_LOTS_SHOWN).map(l => '<tr><td>' + escH(l.date) + '</td><td>' + escH(l.symbol) + '</td><td>' + escH(l.segment) + '</td><td>' + escH(l.side) + '</td>'
-      + '<td class="num">' + escH(l.qty) + '</td><td class="num">' + escH(fmtR(l.price)) + '</td><td class="num">' + escH(fmtR(l.qty * l.price)) + '</td></tr>').join('')
-    + '</tbody></table></div>'
-    + (lots.length > OPEN_LOTS_SHOWN ? '<div class="rec-pager"><span class="rec-info">Showing ' + OPEN_LOTS_SHOWN + ' of ' + lots.length + '</span></div>' : '');
+  fillPagedTable(document.getElementById('openLots-' + broker),
+    '<h3 style="margin:14px 0 8px;">Not counted in totals</h3>'
+      + '<div class="note" style="margin:0 0 8px;">These fills have no matching buy or sell, so they are left out of the totals; for example an option left to expire, or a position opened before the uploaded file starts.</div>'
+      + '<div class="tbl-wrap"><table class="tbl records-tbl"><thead><tr>'
+      + '<th>Date</th><th>Symbol</th><th>Segment</th><th>Side</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Value</th>'
+      + '</tr></thead><tbody></tbody></table></div>',
+    lots.map(l => '<tr><td>' + escH(l.date) + '</td><td>' + escH(l.symbol) + '</td><td>' + escH(l.segment) + '</td><td>' + escH(l.side) + '</td>'
+      + '<td class="num">' + escH(l.qty) + '</td><td class="num">' + escH(fmtR(l.price)) + '</td><td class="num">' + escH(fmtR(l.qty * l.price)) + '</td></tr>').join(''));
 }
 
 function metricCard(label, val, color){

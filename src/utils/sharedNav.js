@@ -2379,6 +2379,7 @@ function tableEnhancerJS() {
               }
               if (inst.sortDir && inst.sortIdx >= 0) headerCells[inst.sortIdx].setAttribute('data-dir', inst.sortDir);
               else if (inst.sortIdx >= 0) headerCells[inst.sortIdx].removeAttribute('data-dir');
+              inst.page = 1;
               apply();
             });
           })(i, headerCells[i]);
