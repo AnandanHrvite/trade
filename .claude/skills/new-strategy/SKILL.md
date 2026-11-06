@@ -396,7 +396,7 @@ right. Two rules, both learned the hard way here:
 
 ## Phase 6 — Reporting back
 
-Commit (never push unless told). Then tell the user, in plain English and short:
+Commit, then push once the recheck loop is clean and `npm test` passes (see CLAUDE.md). Then tell the user, in plain English and short:
 what the strategy now does, anything you deliberately left out, and the fact that it
 is **not market-validated** — clean paper sessions plus a `/replay` comparison must
 come before any live gate is touched.
