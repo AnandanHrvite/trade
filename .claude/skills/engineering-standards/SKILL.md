@@ -369,7 +369,7 @@ The exception is a NEW strategy, which does earn a `documents/{NAME}_Strategy_Gu
 
 Deployment here IS `git push origin main` — GitHub Actions rsyncs to EC2, runs npm install --omit=dev and `pm2 startOrRestart ecosystem.config.js --update-env`. There is no staging environment.
 
-Never push unless the user explicitly asks for it. Commit freely; the deploy moment is theirs to time.
+Push only after the recheck loop comes back clean and `npm test` passes — then commit, merge to main and push without asking (standing user order, see CLAUDE.md). Never push red or half-checked work.
 
 The .githooks pre-push hook blocks weekday pushes 09:00–15:30 IST. If it blocks, report it and stop — never ALLOW_PUSH=1, never --no-verify, never --force.
 
