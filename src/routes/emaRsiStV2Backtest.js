@@ -375,7 +375,9 @@ async function runEmaRsiStV2Backtest(candles, activeFromTs) {
       // tested on the adverse leg BEFORE the favourable extreme raises the peak.
       // Futures: paper skips the lock but runs the common stop in index points.
       // The "premium" here IS the futures price (DELTA 1, no theta), same walk.
-      if (pos && (LOCK_ON || IS_FUT)) {
+      // The premium stop rides the same call, so it runs even with the profit lock off
+      // (paper calls checkProfitLock on every tick either way).
+      if (pos && (LOCK_ON || IS_FUT || tradeGuards.PREMIUM_SL_ENABLED)) {
         const lockAt  = IS_FUT ? _futStopMsg : tradeGuards.checkProfitLock;
         const levelAt = IS_FUT ? _futStopLvl : tradeGuards.exitLevelLtp;
         const isCE = pos.side === "CE";
